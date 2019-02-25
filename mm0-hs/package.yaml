@@ -1,0 +1,57 @@
+name:                mm0-hs
+version:             0.1.0.0
+github:              "digama0/mm0"
+license:             PublicDomain
+author:              "Mario Carneiro"
+maintainer:          "di.gama@gmail.com"
+copyright:           "2019 Mario Carneiro"
+
+extra-source-files:
+- README.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/mm0-hs#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- mtl
+- array
+- utf8-string
+
+library:
+  source-dirs: src
+  default-extensions: FlexibleContexts
+
+executables:
+  mm0-hs-exe:
+    main:                Main.hs
+    source-dirs:         app
+    build-tools:
+    - alex
+    - happy
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - mm0-hs
+
+tests:
+  mm0-hs-test:
+    main:                Spec.hs
+    source-dirs:         test
+    build-tools:
+    - alex
+    - happy
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - mm0-hs
