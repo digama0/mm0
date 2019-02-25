@@ -9,11 +9,11 @@ This is a language for writing specifications and proofs. Its emphasis is on bal
 
 From the conjunction of these properties, the auditor finds that `A |- T1,...,Tn`, and if they believe `A` is true or representative of the world then they may conclude that `T1,...,Tn` are as well.
 
-Input to a Metamath Zero verifier consists of two parts: a "specification" or "header file", with extension `.mh`, and a "proof" file with extension `.m0`. The specification file contains axioms, definitions, and theorem statements, while the proof file contains proofs of the theorems and auxiliary data.
+Input to a Metamath Zero verifier consists of two parts: a "specification" or "header file", with extension `.mm0`, and a "proof" file with extension `.mp0`. The specification file contains axioms, definitions, and theorem statements, while the proof file contains proofs of the theorems and auxiliary data.
 
-The major distinction between the two files is that in the hypothetical auditing  process above, *the `.m0` file plays no role*. All information relevant to correctness of the final result is put in the `.mh` file, and the `.m0` file is nothing more than an extended "hint" to the verifier to show why the theorems in the `.mh` file are true. As such, the format of the `.m0` file is not officially specified, although there is a recommended format (see [?]).
+The major distinction between the two files is that in the hypothetical auditing  process above, *the `.mp0` file plays no role*. All information relevant to correctness of the final result is put in the `.mm0` file, and the `.mp0` file is nothing more than an extended "hint" to the verifier to show why the theorems in the `.mm0` file are true. As such, the format of the `.mp0` file is not officially specified, although there is a recommended format (see [?]).
 
-Example `.mh` file
+Example `.mm0` file
 ---
 
     strict provable nonempty sort wff;
@@ -98,7 +98,7 @@ Example `.mh` file
     var A B C: class*;
     term cab (x: set) (ph: wff x): class;
     term welc (a: set) (A: class): wff; infixl welc: $ec.$ prec 50;
-    notation cab (x: set) (ph: wff x): class := ${$ (x prec max) $|$ (ph prec 0) $}$;
+    notation cab (x: set) (ph: wff x): class := ${$ (x: max) $|$ (ph: 0) $}$;
 
     axiom ax-8b: $ a = b -> a ec. A -> b ec. A $;
 
@@ -122,12 +122,51 @@ Example `.mh` file
       theorem df-cel: $ A e. B <-> E. x (x = A /\ welc x B) $;
     }
 
-Syntax for the `.mh` file format
+Lexical structure
+===
+
+    file ::= (lexeme | whitespace)*
+
+The file is separated out into a list of lexemes, or tokens, according to the "maximum munch" principle: the longest matching token is used when ambiguity is possible.
+
+    whitespace ::= whitestuff+
+    whitestuff ::= whitechar | line-comment | multiline-comment
+    whitechar ::= ' ' | '\r' | '\n' | '\t'
+    line-comment ::= ('--' | '---') [^\n]* '\n'
+    multiline-comment ::= ('/-' | '/--') .* '-/'
+
+Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments come in two kinds - the line comment begins with `--` and continues to the end of the line, and the multiline comment is bracketed between `/-` and `-/`. Inside a multiline comment `/-` is not permitted (no nested comments), and `-/` ends the comment.
+
+
+    lexeme ::= symbol | identifier | number | math-string
+    symbol ::= '*' | ':' | ';' | '(' | ')' | '->' | '{' | '}' | ':='
+    identifier ::= [a-zA-Z_.-][a-zA-Z0-9_.-]*
+    number ::= 0 | [1-9][0-9]*
+    math-string ::= '$' ('$$' | dollar-comment | [^\$])* '$'
+    dollar-comment ::= '$-' .* '-$'
+
+A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, `.` and `-`, except that it cannot begin with a digit.
+
+A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear, except that `$$` is permitted (and is interpreted as a single dollar), and `$- ... -$` is a comment inside the string. Like with multiline comments, nested `$- -$` comments are not allowed, although `$- /- -/ -$` is permitted (the `/- -/` comment syntax is not applicable). There is no analogous line comment inside math strings.
+
+These strings will go through a secondary lexing phase, using a dynamic lexer defined by the notations in the file.
+
+Pseudo-keywords
 ---
 
-An `.mh` file is a list of directives. Directives are used to declare sorts, define axioms, definitions, and theorems, as well as notation to be used in the inline math blocks. Directives are block structured, with `{` `}` enclosing scopes.
+The following words appear in the syntax with special meanings:
 
-    mh-file ::= (directive)*
+    axiom bound coercion def infixl infixr max nonempty notation
+    prec prefix provable pure sort strict term theorem var
+
+However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
+
+Grammar for the `.mm0` file format
+===
+
+An `.mm0` file is a list of directives. Directives are used to declare sorts, define axioms, definitions, and theorems, as well as notation to be used in the inline math blocks. Directives are block structured, with `{` `}` enclosing scopes.
+
+    mm0-file ::= (directive)*
     directive ::= statement | '{' (directive)* '}'
     statement ::= sort-stmt
                |  var-stmt
@@ -136,20 +175,15 @@ An `.mh` file is a list of directives. Directives are used to declare sorts, def
                |  def-stmt
                |  notation-stmt
 
-Identifiers
----
-An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, `.` and `-`, except that it cannot begin with a digit.
-
-    identifier ::= [a-zA-Z_.-][a-zA-Z0-9_.-]*
-
 Sorts
 ---
-    sort-stmt ::= ('pure')? ('strict')? ('nonempty')? 'sort' identifier ';'
+    sort-stmt ::= ('pure')? ('strict')? ('provable')? ('nonempty')? 'sort' identifier ';'
 
 The underlying semantics of metamath zero is based on multi-sorted first order logic. The `sort` keyword declares a new sort. There are several properties that a sort may or may not have, indicated by modifiers on the sort declaration.
 
 * `pure` means that this sort does not have any term formers. It is an uninterpreted domain which may have variables but has no constant symbols, binary operators, or anything else targeting this sort. If a sort has this modifier, it is illegal to declare a `term` with this sort as the target.
 * `strict` is the "opposite" of `pure`: it says that the sort does not have any variable binding operators. It is illegal to have a variable of this sort appear as a dependency in another variable. For example, if `x: set` and `ph: wff x` then `set` must not be declared `strict`. (`pure` and `strict` are not mutually exclusive, although a sort with both properties is not very useful.)
+* `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and definitions (between `$`) must have a provable sort.
 * `nonempty` means that theorems and definitions are permitted to introduce `bound` variables of this sort.
 
 Variables and types
@@ -182,14 +216,13 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
        (formula-type-binder)* ':' formula-arrow-type ';'
     formula-type-binder ::= '(' (identifier)* ':' (type | formula) ')'
     formula-arrow-type ::= formula | (type | formula) '->' arrow-type
-    formula ::= '$' (math-token)* '$'
-    math-token ::= '$$' | [^\$]+
+    formula ::= math-string
 
 Definitions
 ---
 A `def` is similar to an `axiom` except that it may also have `bound` quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.
 
-    def-stmt ::= 'axiom' identifier (type-binder | bound-binder)* ':'
+    def-stmt ::= 'def' identifier (type-binder | bound-binder)* ':'
       type ':=' formula '{' (directive)* '}'
     bound-binder ::= '(' 'bound' (identifier)* ':' identifier ')'
 
@@ -210,10 +243,15 @@ As an additional check, `notation` requires its variables be annotated with type
     notation-stmt ::= simple-notation-stmt | coercion-stmt | gen-notation-stmt
     simple-notation-stmt ::= ('infixl' | 'infixr' | 'prefix') identifier ':'
       constant 'prec' precedence-lvl ';'
-    constant ::= '$' math-token '$'
-    precedence-lvl ::= [0-9]+ | 'max'
+    constant ::= math-string
+    precedence-lvl ::= number | 'max'
     coercion-stmt ::= 'coercion' identifier ':' identifier '->' identifier ';'
     gen-notation-stmt ::= 'notation' identifier (type-binder)* ':'
       type ':=' (notation-literal)+ ';'
     notation-literal ::= constant | prec-variable
-    prec-variable ::= '(' identifier 'prec' precedence-lvl ')'
+    prec-variable ::= '(' identifier ':' precedence-lvl ')'
+
+Interpretation
+===
+
+There are two notions of correctness for a specification file. First, it can be *well-formed*, meaning that the file meets the above grammar, all the formulas are syntactically correct, and in this case we have a well defined notion of what the assertions in the file are. Second, it can be *proven*, meaning that the assertions in the file in fact hold - all theorems follow from the axioms. This distinction is not essential, and the choice of what counts as well-formedness is somewhat arbitrary, but roughly speaking a verifier doesn't need to consult the proof file to determine that the specification file is well formed, but it will need more help to check that it is correct, unless it is really good at guessing proofs.
