@@ -69,6 +69,7 @@ An `.mm0` file is a list of directives. Directives are used to declare sorts, de
                |  assert-stmt
                |  def-stmt
                |  notation-stmt
+               |  output-stmt
 
 Sorts
 ---
@@ -144,10 +145,30 @@ As an additional check, `notation` requires its variables be annotated with type
     notation-literal ::= constant | prec-variable
     prec-variable ::= '(' identifier ':' precedence-lvl ')'
 
+Output
+---
+
+*Note*: This command is optional, even more so than the rest of this specification.
+
+    output-stmt ::= 'output' output-kind identifier (dummy-binder)* ';'
+    output-kind ::= identifier
+
+The `output` command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the `output-kind`, which specifies the target format, for example `s-expr`, or a program language such as `g` or `x86_asm`. The details vary depending on the target, but this can be read as an *existential* statement, by contrast to `theorem`, which proves universal statements. A statement such as
+
+    output c halting (e: c-expr) (.x: set) (_: $ A. x e. Input halts(e, x) $);
+
+might assert that the verifier produces a C source file described by `e`, which always halts when executed on any input. Or more simply:
+
+    output s-expr halting (ph: wff) (h: $ ph $);
+
+would print the s-expression corresponding to some provable wff. The proof file is responsible for demonstrating the existential witness - the program that halts, or the provable wff - and the verifier is responsible for interpreting the term from the logic as a string to output or a file to produce.
+
 Interpretation
 ===
 
 There are two notions of correctness for a specification file. First, it can be *well-formed*, meaning that the file meets the above grammar, all the formulas are syntactically correct, and in this case we have a well defined notion of what the assertions in the file are. Second, it can be *proven*, meaning that the assertions in the file in fact hold - all theorems follow from the axioms. This distinction is not essential, and the choice of what counts as well-formedness is somewhat arbitrary, but roughly speaking a verifier doesn't need to consult the proof file to determine that the specification file is well formed, but it will need more help to check that it is correct, unless it is really good at guessing proofs.
+
+When `output` is involved, the specification describes a relation that should hold on the output of the verifier on success.
 
 TODO
 
