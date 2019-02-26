@@ -229,3 +229,73 @@ translates to:
       $ E. y' A. x (ph <-> x = y') <-> E. y A. x (ph <-> x = y) $ := ...;
     theorem example (x y y' y'': set) (ph: wff x):
       $ E. y'' A. x ((E. y' A. y (ph <-> y =s y')) <-> x =s y'') $ := ...;
+
+Proof files
+===
+
+The syntax of a proof file is implementation dependent, but we will give one possible format, used by the reference implementation. It is designed to be read and used by the verifier in an efficient and convenient way. Usually, such a file will be compiled from another language to prepare it for use by the verifier. The contents of the proof file do not affect the correctness of any of the theorems in the specification file. At worst, the verifier will fail on a provable theorem, because it was not able to find the proof with the assistance of the proof file.
+
+The reference implementation uses a binary proof format, but we will show it with a similar syntax to the `.mm0` format for convenience.
+
+For the [set.mm0](set.mm0) running example, which begins as:
+
+    strict provable nonempty sort wff;
+    var ph ps ch: wff*;
+    term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
+    term wn (ph: wff): wff; prefix wn: $~$ prec 40;
+
+    axiom ax-1: $ ph -> ps -> ph $;
+    axiom ax-2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
+    axiom ax-3: $ (~ph -> ~ps) -> ps -> ph $;
+    axiom ax-mp: $ ph $ -> $ ph -> ps $ -> $ ps $;
+
+    theorem a1i: $ ph $ -> $ ps -> ph $;
+
+    def wb (ph ps: wff): wff := $ ~((ph -> ps) -> ~(ps -> ph)) $ {
+      infixl wb: $<->$ prec 20;
+
+      theorem bi1: $ (ph <-> ps) -> ph -> ps $;
+      theorem bi2: $ (ph <-> ps) -> ps -> ph $;
+      theorem bi3: $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
+    }
+
+the corresponding section of the proof file might look like:
+
+    sort wff;
+    term wi;
+    term wn;
+
+    axiom ax-1;
+    axiom ax-2;
+    axiom ax-3;
+    axiom ax-mp;
+
+    new theorem mp2 (ph ps ch: wff) (h1: $ ph $) (h2: $ ps $)
+      (h3: $ ph -> ps -> ch $): $ ch $ :=
+      ax-mp ps ch h2 (ax-mp ph $ps -> ch$ h1 h3);
+
+    theorem a1i (ph ps: wff) (h1: $ ph $): $ ps -> ph $ :=
+      ax-mp ph $ps -> ph$ h1 (ax-1 ph ps);
+
+    theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ := ...;
+    theorem bi2 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ps -> ph $ := ...;
+    theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> ~((ph -> ps) -> ~(ps -> ph)) $ := ...;
+
+    new theorem biid (ph: wff): $ ph <-> ph $ := ...;
+
+    new def wo (ph ps: wff): wff := $ ~ph -> ps $ {
+      -- infixl wo: $\/$ prec 20;
+      new theorem df-or (ph ps: wff): $ (ph \/ ps) <-> (~ph -> ps) $ :=
+        proof (ph ps: wff): $ (~ph -> ps) <-> (~ph -> ps) $ :=
+          biid $ ~ph -> ps $;
+    }
+
+
+The declarations must come in the same order as they appear in the specification file. The `term` and `axiom` declarations serve only to move the "pointer" through the file, acknowledging that these axioms are now available for use in proofs. The theorem `mp2` in this example does not exist in the specification file; this is permitted. Similarly definitions may be added beyond those present in the specification file, and they may be referenced in proofs as well. These follow the same rules as declarations in the specification file itself, with the following modifications:
+
+* `sort`, `term` and `axiom` only refer to the corresponding directive by name and provide no definition. These must be declared in the same order as in the specification file.
+* There are no notation commands. (The math strings appearing above are only there for readability; the actual proof file format uses s-expressions in RPN.)
+* There are no `var` statements and no variable inference. All variables are declared in the theorems.
+* In the concrete syntax above, `new theorem` means the statement was not declared in the specification file, while `theorem`s have corresponding statements. The statements must be given in the same order as in the specification file.
+* Similarly `new def` allows the declaration of definitions that do not appear in the specification.
+  * Theorems in a new definition block have two theorem statements, indicated with the ad hoc notation `new theorem foo: ... := proof ... := ...` above. The first is the "global" version, which is how this theorem appears to users of the theorem; the second is the version that is proved. The verifier should check that the second statement is obtained from the first by substitution of the definition, as in regular definition blocks.
