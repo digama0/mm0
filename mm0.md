@@ -13,7 +13,7 @@ Input to a Metamath Zero verifier consists of two parts: a "specification" or "h
 
 The major distinction between the two files is that in the hypothetical auditing  process above, *the `.mp0` file plays no role*. All information relevant to correctness of the final result is put in the `.mm0` file, and the `.mp0` file is nothing more than an extended "hint" to the verifier to show why the theorems in the `.mm0` file are true. As such, the format of the `.mp0` file is not officially specified, although there is a recommended format (see [?]).
 
-See [set-mm.mm0](set-mm.mm0) for an example of a `.mm0` file.
+See [set.mm0](set.mm0) for an example of a `.mm0` file.
 
 Lexical structure
 ===
