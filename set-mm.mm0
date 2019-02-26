@@ -23,13 +23,13 @@ def wa (ph ps: wff): wff := $ ~(ph -> ~ps) $ {
   theorem df-an: $ (ph /\ ps) <-> ~(ph -> ~ps) $;
 }
 
-def wtru (bound p: wff): wff := $ p <-> p $ {
+def wtru (.p: wff): wff := $ p <-> p $ {
   notation wtru := $ T. $;
   theorem df-tru: $ T. <-> (ph <-> ph) $;
 }
 
 pure nonempty sort set;
-bound x y z w: set;
+var x y z w: set;
 
 term wal (x: set) (ph: wff x): wff; prefix wal: $A.$ prec 30;
 

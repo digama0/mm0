@@ -33,12 +33,12 @@ Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comment
 
     lexeme ::= symbol | identifier | number | math-string
     symbol ::= '*' | ':' | ';' | '(' | ')' | '->' | '{' | '}' | ':='
-    identifier ::= [a-zA-Z_.-][a-zA-Z0-9_.-]*
+    identifier ::= [a-zA-Z_][a-zA-Z0-9_.-]*
     number ::= 0 | [1-9][0-9]*
     math-string ::= '$' ('$$' | dollar-comment | [^\$])* '$'
     dollar-comment ::= '$-' .* '-$'
 
-A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, `.` and `-`, except that it cannot begin with a digit.
+A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, `.` and `-`, except that it cannot begin with a digit or `.` or `-`.
 
 A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear, except that `$$` is permitted (and is interpreted as a single dollar), and `$- ... -$` is a comment inside the string. Like with multiline comments, nested `$- -$` comments are not allowed, although `$- /- -/ -$` is permitted (the `/- -/` comment syntax is not applicable). There is no analogous line comment inside math strings.
 
@@ -49,7 +49,7 @@ Pseudo-keywords
 
 The following words appear in the syntax with special meanings:
 
-    axiom bound coercion def infixl infixr max nonempty notation
+    axiom coercion def infixl infixr max nonempty notation
     prec prefix provable pure sort strict term theorem var
 
 However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
@@ -77,21 +77,18 @@ The underlying semantics of metamath zero is based on multi-sorted first order l
 * `pure` means that this sort does not have any term formers. It is an uninterpreted domain which may have variables but has no constant symbols, binary operators, or anything else targeting this sort. If a sort has this modifier, it is illegal to declare a `term` with this sort as the target.
 * `strict` is the "opposite" of `pure`: it says that the sort does not have any variable binding operators. It is illegal to have a variable of this sort appear as a dependency in another variable. For example, if `x: set` and `ph: wff x` then `set` must not be declared `strict`. (`pure` and `strict` are not mutually exclusive, although a sort with both properties is not very useful.)
 * `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and definitions (between `$`) must have a provable sort.
-* `nonempty` means that theorems and definitions are permitted to introduce `bound` variables of this sort.
+* `nonempty` means that theorems and definitions are permitted to introduce dummy variables of this sort.
 
 Variables and types
 ---
 
     var-stmt ::= 'var' (identifier)* ':' open-type ';'
-              |  'bound' (identifier)* ':' identifier ';'
     type ::= identifier (identifier)*
     open-type ::= type | identifier '*'
 
 A variable statement does not represent any actual statement or theorem, it just sets up variable names with their types so that they may be inferred in later `term`s, `axiom`s, `def`s and `theorem`s. See "Variable Inference" for details on how the inference process works. In the statement itself, we can declare a list of variables with type dependencies.
 
 A type is the name of a sort followed by 0 or more variable names, which represent the values this variable is allowed to depend on. An open type is either a type, or a sort followed by a `*`, representing all variable dependencies.
-
-A variable may be declared as either `var` or `bound`. A `bound` variable is permitted to appear in type dependencies, and will be inferred as `bound` if possible. (See "Variable Inference".) A `bound` variable cannot have a dependent type.
 
 Term constructors
 ---
@@ -113,11 +110,12 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
 
 Definitions
 ---
-A `def` is similar to an `axiom` except that it may also have `bound` quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.
+A `def` is similar to an `axiom` except that it may also have dot-quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.
 
-    def-stmt ::= 'def' identifier (type-binder | bound-binder)* ':'
+    def-stmt ::= 'def' identifier (dummy-binder)* ':'
       type ':=' formula '{' (directive)* '}'
-    bound-binder ::= '(' 'bound' (identifier)* ':' identifier ')'
+    dummy-binder ::= '(' (dummy-identifier)* ':' type ')'
+    dummy-identifier ::= '.' identifier | identifier
 
 Notations
 ---
