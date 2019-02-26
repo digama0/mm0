@@ -51,7 +51,7 @@ def weu (x: set) (ph: wff x): wff :=
   $ E. y A. x (ph <-> x =s y) $ {
   prefix wex: $E!$ prec 30;
 
-  theorem df-ex: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
+  theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
 }
 
 axiom ax-6: $ E. x x =s a $;
@@ -98,8 +98,8 @@ def cv (a: set): class := $ {x | x es. a} $ {
   theorem df-cv: $ a ec. b <-> a es. b $;
 }
 
-def wcel (A B: class): wff := $ E. x (x = A /\ welc x B) $ {
+def wcel (A B: class): wff := $ E. x (x = A /\ x ec. B) $ {
   infixl wcel: $e.$ prec 50;
 
-  theorem df-cel: $ A e. B <-> E. x (x = A /\ welc x B) $;
+  theorem df-cel: $ A e. B <-> E. x (x = A /\ x ec. B) $;
 }
