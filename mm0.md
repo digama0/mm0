@@ -148,3 +148,84 @@ Interpretation
 ===
 
 There are two notions of correctness for a specification file. First, it can be *well-formed*, meaning that the file meets the above grammar, all the formulas are syntactically correct, and in this case we have a well defined notion of what the assertions in the file are. Second, it can be *proven*, meaning that the assertions in the file in fact hold - all theorems follow from the axioms. This distinction is not essential, and the choice of what counts as well-formedness is somewhat arbitrary, but roughly speaking a verifier doesn't need to consult the proof file to determine that the specification file is well formed, but it will need more help to check that it is correct, unless it is really good at guessing proofs.
+
+TODO
+
+Variable inference
+---
+
+A theorem may reference variables inside types and formulas that are not explicitly bound in the declaration. Variable inference is the process by which these variables, declared in the local scope, are automatically inserted into the theorem statement.
+
+Additionally, at this stage variables are organized into two types, bound variables and regular variables. Dummy variables (in dot binders) are always bound. A variable is considered regular unless it is required to be bound.
+
+* Bound variables may not have a dependent type.
+* Bound variables may not have a `strict` type.
+* All variables appearing as dependencies of a type must be bound.
+* If a term constructor has an bound argument, then the substitution to this argument must be a variable, and that variable must be bound.
+
+For example:
+
+    var x y z: set;
+    var ph ps: wff*;
+    theorem foo (x: set) (ph: wff y): $ A. x A. z (ph /\ ps) $ -> $ ps $;
+
+Here the binder `(ph: wff y)` refers to `y` which is not among the previous binders, and the first hypothesis `$ A. x A. z (ph /\ ps) $` refers to `z`, and `ps`, neither of which are declared.
+
+Note that `x` and `ph` are both declared in the local scope; these declarations are ignored because their names are *shadowed* by the theorem binders.
+
+Inference processing proceeds from left to right on the variable bindings, including the arrow bindings. The above theorem has three bindings: `(x: set)`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the nondependent bindings, the dependent variable bindings, and the formulas. It is an error for the explicit bindings to come out of order, and the inferred bindings are added at the boundaries between these groups.
+
+For variables with simple types, like `(x: set)`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `(y: set)` is inserted at the end of the nondependent bindings (after `x`). Bindings are inserted in the order they appear in the type.
+
+For formulas, binders are inserted in the order they appear in the syntax tree. The syntax tree of the example is `wal x (wal z (wa ph ps))`, and so we check for `x,z,ph,ps` in turn that they appear in the binder list, and insert the ones that don't. So this would add `(z: set)` as a nondependent bound variable binder and `(ps: wff*)` as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula `ps` and we don't need to do anything because the variable is already present.
+
+Once all the bindings are accumulated, all the variables with open types are given types that depend on all bound variables. So `(ps: wff*)` becomes `(ps: wff x y z)`. The end result is:
+
+    theorem foo (x y z: set) (ph: wff y) (ps: wff x y z)
+      (_: $ A. x A. z (ph /\ ps) $): $ ps $;
+
+and this is the version of the theorem that is proven in the proof file.
+
+For definitions, the process is the same except that inferred bound variables are marked as dummy variables if possible (if they do not appear as a type dependency). It is illegal for a bound variable in a definition to not appear as a type dependency to some other variable.
+
+Definition substitution
+---
+
+Inside a definition block, theorems are permitted to reference the definition, and even between theorems in the same definition block the definition appears "unexpanded", but the actual proof obligations use expanded forms of the definition. For example:
+
+    def wb (ph ps: wff): wff := $ ~((ph -> ps) -> ~(ps -> ph)) $ {
+      infixl wb: $<->$ prec 20;
+
+      theorem bi1: $ (ph <-> ps) -> ph -> ps $;
+      theorem bi2: $ (ph <-> ps) -> ps -> ph $;
+      theorem bi3: $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
+    }
+
+From the point of view of any other theorem, including `bi2` and `bi3`, `bi1` has the statement `$ (ph <-> ps) -> ph -> ps $`, but the proof obligation corresponding to `bi1` is actually:
+
+      theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ := ...;
+
+These modified theorem statements are calculated as follows:
+
+* Starting from the original syntax tree `wi (wb ph ps) (wi ph ps)`, find all occurrences of `wb e1 e2` where `e1` and `e2` are the subtrees.
+* Let `e` be the syntax tree for the definition, `wn (wi (wi ph ps) (wn (wi ps ph)))`.
+* Rename each dummy variable in the definition with a fresh name, to form `e'`. (In this case `e' = e`.)
+* Substitute `e1` and `e2` for the variables in the definition bindings `ph` and `ps`. In this case `e1 = ph` and `e2 = ps` so the result is `e'' = e` again.
+* Replace the original subtree `wb e1 e2` with this expression `e''`.
+* Repeat for all instances of `wb` in the expression.
+
+As an example of nontrivial modifications:
+
+    def weu (x .y: set) (ph: wff x): wff := $ E. y A. x (ph <-> x =s y) $ {
+      prefix wex: $E!$ prec 30;
+
+      theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
+      theorem example (x y: set) (ph: wff x): $ E! x E! y ph $;
+    }
+
+translates to:
+
+    theorem df-eu (x y y': set) (ph: wff x):
+      $ E. y' A. x (ph <-> x = y') <-> E. y A. x (ph <-> x = y) $ := ...;
+    theorem example (x y y' y'': set) (ph: wff x):
+      $ E. y'' A. x ((E. y' A. y (ph <-> y =s y')) <-> x =s y'') $ := ...;
