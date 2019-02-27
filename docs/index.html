@@ -1,0 +1,227 @@
+<h1 id="metamath-zero">Metamath Zero</h1>
+<p>This is a language for writing specifications and proofs. Its emphasis is on balancing simplicity of verification and human readability, with the intent that a skeptical auditor can be convinced of the following:</p>
+<ol style="list-style-type: decimal">
+<li>The verifier is implemented correctly to this specification (by reading the code)</li>
+<li>This specification ensures that a conforming verifier checks that programs meet their specifications (by a paper proof or formalization, forthcoming)</li>
+<li>The input specification to the verifier correctly describes an axiom system <code>A</code>, and the stated theorems are correct transcriptions of theorems <code>T1,...,Tn</code> (by reading the specification file)</li>
+</ol>
+<p>From the conjunction of these properties, the auditor finds that <code>A |- T1,...,Tn</code>, and if they believe <code>A</code> is true or representative of the world then they may conclude that <code>T1,...,Tn</code> are as well.</p>
+<p>Input to a Metamath Zero verifier consists of two parts: a &quot;specification&quot; or &quot;header file&quot;, with extension <code>.mm0</code>, and a &quot;proof&quot; file with extension <code>.mp0</code>. The specification file contains axioms, definitions, and theorem statements, while the proof file contains proofs of the theorems and auxiliary data.</p>
+<p>The major distinction between the two files is that in the hypothetical auditing process above, <em>the <code>.mp0</code> file plays no role</em>. All information relevant to correctness of the final result is put in the <code>.mm0</code> file, and the <code>.mp0</code> file is nothing more than an extended &quot;hint&quot; to the verifier to show why the theorems in the <code>.mm0</code> file are true. As such, the format of the <code>.mp0</code> file is not officially specified, although there is a recommended format (see [?]).</p>
+<p>See <a href="set.mm0">set.mm0</a> for an example of a <code>.mm0</code> file.</p>
+<p>Unlike many specifications of a similar kind, this specification should be read as an <em>upper bound</em> on allowable specification files. That is, a conforming implementation need not support all of the specification, and may fail for implementation-defined reasons. The important property verifiers must have is that a specification that is accepted by the verifier should be correct to the specification.</p>
+<h1 id="lexical-structure">Lexical structure</h1>
+<pre><code>file ::= (lexeme | whitespace)*</code></pre>
+<p>The file is separated out into a list of lexemes, or tokens, according to the &quot;maximum munch&quot; principle: the longest matching token is used when ambiguity is possible.</p>
+<pre><code>whitespace ::= whitestuff+
+whitestuff ::= whitechar | line-comment | multiline-comment
+whitechar ::= &#39; &#39; | &#39;\r&#39; | &#39;\n&#39; | &#39;\t&#39;
+line-comment ::= &#39;--&#39; [^\n]* &#39;\n&#39;
+multiline-comment ::= &#39;/-&#39; .* &#39;-/&#39;</code></pre>
+<p>Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments come in two kinds - the line comment begins with <code>--</code> and continues to the end of the line, and the multiline comment is bracketed between <code>/-</code> and <code>-/</code>. Inside a multiline comment <code>/-</code> is not permitted (no nested comments), and <code>-/</code> ends the comment.</p>
+<p>Implementations are encouraged to support &quot;special comments&quot; via line comments beginning <code>--|</code> and multiline comments of the form <code>/-| -/</code>, but they have no semantic value in this specification.</p>
+<pre><code>lexeme ::= symbol | identifier | number | math-string
+symbol ::= &#39;*&#39; | &#39;:&#39; | &#39;;&#39; | &#39;(&#39; | &#39;)&#39; | &#39;-&gt;&#39; | &#39;{&#39; | &#39;}&#39; | &#39;:=&#39;
+identifier ::= [a-zA-Z_][a-zA-Z0-9_.-]*
+number ::= 0 | [1-9][0-9]*
+math-string ::= &#39;$&#39; (&#39;$$&#39; | [^\$])* &#39;$&#39;</code></pre>
+<p>A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters <code>_</code>, <code>.</code> and <code>-</code>, except that it cannot begin with a digit or <code>.</code> or <code>-</code>.</p>
+<p>A math string is a sequence of characters quoted by <code>$</code>. Inside a math string <code>$</code> cannot appear, except that <code>$$</code> is permitted (and is interpreted as a single dollar).</p>
+<p>These strings will go through a secondary lexing phase, using a dynamic lexer defined by the notations in the file.</p>
+<h2 id="pseudo-keywords">Pseudo-keywords</h2>
+<p>The following words appear in the syntax with special meanings:</p>
+<pre><code>axiom coercion def infixl infixr max nonempty notation
+prec prefix provable pure sort strict term theorem var</code></pre>
+<p>However, they are not really &quot;keywords&quot; because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.</p>
+<h1 id="grammar-for-the-.mm0-file-format">Grammar for the <code>.mm0</code> file format</h1>
+<p>An <code>.mm0</code> file is a list of directives. Directives are used to declare sorts, define axioms, definitions, and theorems, as well as notation to be used in the inline math blocks. Directives are block structured, with <code>{</code> <code>}</code> enclosing scopes.</p>
+<pre><code>mm0-file ::= (directive)*
+directive ::= statement | &#39;{&#39; (directive)* &#39;}&#39;
+statement ::= sort-stmt
+           |  var-stmt
+           |  term-stmt
+           |  assert-stmt
+           |  def-stmt
+           |  notation-stmt
+           |  output-stmt</code></pre>
+<h2 id="sorts">Sorts</h2>
+<pre><code>sort-stmt ::= (&#39;pure&#39;)? (&#39;strict&#39;)? (&#39;provable&#39;)? (&#39;nonempty&#39;)? &#39;sort&#39; identifier &#39;;&#39;</code></pre>
+<p>The underlying semantics of metamath zero is based on multi-sorted first order logic. The <code>sort</code> keyword declares a new sort. There are several properties that a sort may or may not have, indicated by modifiers on the sort declaration.</p>
+<ul>
+<li><code>pure</code> means that this sort does not have any term formers. It is an uninterpreted domain which may have variables but has no constant symbols, binary operators, or anything else targeting this sort. If a sort has this modifier, it is illegal to declare a <code>term</code> with this sort as the target.</li>
+<li><code>strict</code> is the &quot;opposite&quot; of <code>pure</code>: it says that the sort does not have any variable binding operators. It is illegal to have a variable of this sort appear as a dependency in another variable. For example, if <code>x: set</code> and <code>ph: wff x</code> then <code>set</code> must not be declared <code>strict</code>. (<code>pure</code> and <code>strict</code> are not mutually exclusive, although a sort with both properties is not very useful.)</li>
+<li><code>provable</code> means that the sort is a thing that can be &quot;proven&quot;. All formulas appearing in axioms and definitions (between <code>$</code>) must have a provable sort.</li>
+<li><code>nonempty</code> means that theorems and definitions are permitted to introduce dummy variables of this sort.</li>
+</ul>
+<h2 id="variables-and-types">Variables and types</h2>
+<pre><code>var-stmt ::= &#39;var&#39; (identifier)* &#39;:&#39; open-type &#39;;&#39;
+type ::= identifier (identifier)*
+open-type ::= type | identifier &#39;*&#39;</code></pre>
+<p>A variable statement does not represent any actual statement or theorem, it just sets up variable names with their types so that they may be inferred in later <code>term</code>s, <code>axiom</code>s, <code>def</code>s and <code>theorem</code>s. See &quot;Variable Inference&quot; for details on how the inference process works. In the statement itself, we can declare a list of variables with type dependencies.</p>
+<p>A type is the name of a sort followed by 0 or more variable names, which represent the values this variable is allowed to depend on. An open type is either a type, or a sort followed by a <code>*</code>, representing all variable dependencies.</p>
+<h2 id="term-constructors">Term constructors</h2>
+<p>The <code>term</code> directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so <code>term imp (ph ps: wff): wff;</code> and <code>term imp: wff -&gt; wff -&gt; wff</code> mean the same thing.</p>
+<pre><code>term-stmt ::= &#39;term&#39; identifier (type-binder)* &#39;:&#39; arrow-type &#39;;&#39;
+type-binder ::= &#39;(&#39; (identifier)* &#39;:&#39; type &#39;)&#39;
+arrow-type ::= type | type &#39;-&gt;&#39; arrow-type</code></pre>
+<h2 id="axioms-and-theorems">Axioms and theorems</h2>
+<p>An <code>axiom</code> and a <code>theorem</code> appear exactly the same in the specification file, although only one will require a proof. The syntax is similar to term constructors but now rather than just types, a binder may have a formula as its type. A formula is any sequence of tokens other than <code>$</code>, fenced by <code>$</code>. The <code>$</code> may be escaped by reduplication <code>$$</code>.</p>
+<pre><code>assert-stmt ::= (&#39;axiom&#39; | &#39;theorem&#39;) identifier
+   (formula-type-binder)* &#39;:&#39; formula-arrow-type &#39;;&#39;
+formula-type-binder ::= &#39;(&#39; (identifier)* &#39;:&#39; (type | formula) &#39;)&#39;
+formula-arrow-type ::= formula | (type | formula) &#39;-&gt;&#39; arrow-type
+formula ::= math-string</code></pre>
+<h2 id="definitions">Definitions</h2>
+<p>A <code>def</code> is similar to an <code>axiom</code> except that it may also have dot-quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.</p>
+<pre><code>def-stmt ::= &#39;def&#39; identifier (dummy-binder)* &#39;:&#39;
+  type &#39;:=&#39; formula &#39;{&#39; (directive)* &#39;}&#39;
+dummy-binder ::= &#39;(&#39; (dummy-identifier)* &#39;:&#39; type &#39;)&#39;
+dummy-identifier ::= &#39;.&#39; identifier | identifier</code></pre>
+<h2 id="notations">Notations</h2>
+<p>The notation system is intended to be a minimal operator precedence parser. There is support for <code>prefix</code> and <code>infix</code> notations, <code>coercion</code> (nameless notation), and <code>notation</code> for everything else. The precedence levels are nonnegative integers, or <code>max</code>, representing infinity.</p>
+<ul>
+<li><p>A <code>prefix</code> constructor parses its argument with the given precedence. It should be a unary syntax operator.</p></li>
+<li><p>An <code>infixl</code> or <code>infixr</code> constructor uses the given precedence for the level of the operator, which should be unique. <code>infixl</code> means that the operator is left-associative, and <code>infixr</code> means it is right-associative.</p></li>
+<li><p>A <code>coercion</code> between distinct sorts means that the given syntax axiom will be silently inserted to convert from one sort to another.</p></li>
+<li><p><code>notation</code> allows an arbitrary sequence of constants and variables (annotated with precedence) to act as a notation. To ensure unambiguity, we require that the first token be a constant unique to this notation.</p></li>
+</ul>
+<p>As an additional check, <code>notation</code> requires its variables be annotated with types.</p>
+<pre><code>notation-stmt ::= simple-notation-stmt | coercion-stmt | gen-notation-stmt
+simple-notation-stmt ::= (&#39;infixl&#39; | &#39;infixr&#39; | &#39;prefix&#39;) identifier &#39;:&#39;
+  constant &#39;prec&#39; precedence-lvl &#39;;&#39;
+constant ::= math-string
+precedence-lvl ::= number | &#39;max&#39;
+coercion-stmt ::= &#39;coercion&#39; identifier &#39;:&#39; identifier &#39;-&gt;&#39; identifier &#39;;&#39;
+gen-notation-stmt ::= &#39;notation&#39; identifier (type-binder)* &#39;:&#39;
+  type &#39;:=&#39; (notation-literal)+ &#39;;&#39;
+notation-literal ::= constant | prec-variable
+prec-variable ::= &#39;(&#39; identifier &#39;:&#39; precedence-lvl &#39;)&#39;</code></pre>
+<h2 id="output">Output</h2>
+<p><em>Note</em>: This command is optional, even more so than the rest of this specification.</p>
+<pre><code>output-stmt ::= &#39;output&#39; output-kind identifier (dummy-binder)* &#39;;&#39;
+output-kind ::= identifier</code></pre>
+<p>The <code>output</code> command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the <code>output-kind</code>, which specifies the target format, for example <code>s-expr</code>, or a program language such as <code>g</code> or <code>x86_asm</code>. The details vary depending on the target, but this can be read as an <em>existential</em> statement, by contrast to <code>theorem</code>, which proves universal statements. A statement such as</p>
+<pre><code>output c halting (e: c-expr) (.x: set) (_: $ A. x e. Input halts(e, x) $);</code></pre>
+<p>might assert that the verifier produces a C source file described by <code>e</code>, which always halts when executed on any input. Or more simply:</p>
+<pre><code>output s-expr halting (ph: wff) (h: $ ph $);</code></pre>
+<p>would print the s-expression corresponding to some provable wff. The proof file is responsible for demonstrating the existential witness - the program that halts, or the provable wff - and the verifier is responsible for interpreting the term from the logic as a string to output or a file to produce.</p>
+<h1 id="interpretation">Interpretation</h1>
+<p>There are two notions of correctness for a specification file. First, it can be <em>well-formed</em>, meaning that the file meets the above grammar, all the formulas are syntactically correct, and in this case we have a well defined notion of what the assertions in the file are. Second, it can be <em>proven</em>, meaning that the assertions in the file in fact hold - all theorems follow from the axioms. This distinction is not essential, and the choice of what counts as well-formedness is somewhat arbitrary, but roughly speaking a verifier doesn't need to consult the proof file to determine that the specification file is well formed, but it will need more help to check that it is correct, unless it is really good at guessing proofs.</p>
+<p>When <code>output</code> is involved, the specification describes a relation that should hold on the output of the verifier on success.</p>
+<p>TODO</p>
+<h2 id="variable-inference">Variable inference</h2>
+<p>A theorem may reference variables inside types and formulas that are not explicitly bound in the declaration. Variable inference is the process by which these variables, declared in the local scope, are automatically inserted into the theorem statement.</p>
+<p>Additionally, at this stage variables are organized into two types, bound variables and regular variables. Dummy variables (in dot binders) are always bound. A variable is considered regular unless it is required to be bound.</p>
+<ul>
+<li>Bound variables may not have a dependent type.</li>
+<li>Bound variables may not have a <code>strict</code> type.</li>
+<li>All variables appearing as dependencies of a type must be bound.</li>
+<li>If a term constructor has an bound argument, then the substitution to this argument must be a variable, and that variable must be bound.</li>
+</ul>
+<p>For example:</p>
+<pre><code>var x y z: set;
+var ph ps: wff*;
+theorem foo (x: set) (ph: wff y): $ A. x A. z (ph /\ ps) $ -&gt; $ ps $;</code></pre>
+<p>Here the binder <code>(ph: wff y)</code> refers to <code>y</code> which is not among the previous binders, and the first hypothesis <code>$ A. x A. z (ph /\ ps) $</code> refers to <code>z</code>, and <code>ps</code>, neither of which are declared.</p>
+<p>Note that <code>x</code> and <code>ph</code> are both declared in the local scope; these declarations are ignored because their names are <em>shadowed</em> by the theorem binders.</p>
+<p>Inference processing proceeds from left to right on the variable bindings, including the arrow bindings. The above theorem has three bindings: <code>(x: set)</code>, <code>(ph: wff y)</code> and the anonymous binding <code>(_: $ A. x A. z (ph /\ ps) $)</code>. Bindings come in three groups: the nondependent bindings, the dependent variable bindings, and the formulas. It is an error for the explicit bindings to come out of order, and the inferred bindings are added at the boundaries between these groups.</p>
+<p>For variables with simple types, like <code>(x: set)</code>, no variables are inferred. For <code>(ph: wff y)</code>, this variable depends on <code>y</code> and so <code>(y: set)</code> is inserted at the end of the nondependent bindings (after <code>x</code>). Bindings are inserted in the order they appear in the type.</p>
+<p>For formulas, binders are inserted in the order they appear in the syntax tree. The syntax tree of the example is <code>wal x (wal z (wa ph ps))</code>, and so we check for <code>x,z,ph,ps</code> in turn that they appear in the binder list, and insert the ones that don't. So this would add <code>(z: set)</code> as a nondependent bound variable binder and <code>(ps: wff*)</code> as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula <code>ps</code> and we don't need to do anything because the variable is already present.</p>
+<p>Once all the bindings are accumulated, all the variables with open types are given types that depend on all bound variables. So <code>(ps: wff*)</code> becomes <code>(ps: wff x y z)</code>. The end result is:</p>
+<pre><code>theorem foo (x y z: set) (ph: wff y) (ps: wff x y z)
+  (_: $ A. x A. z (ph /\ ps) $): $ ps $;</code></pre>
+<p>and this is the version of the theorem that is proven in the proof file.</p>
+<p>For definitions, the process is the same except that inferred bound variables are marked as dummy variables if possible (if they do not appear as a type dependency). It is illegal for a bound variable in a definition to not appear as a type dependency to some other variable.</p>
+<h2 id="definition-substitution">Definition substitution</h2>
+<p>Inside a definition block, theorems are permitted to reference the definition, and even between theorems in the same definition block the definition appears &quot;unexpanded&quot;, but the actual proof obligations use expanded forms of the definition. For example:</p>
+<pre><code>def wb (ph ps: wff): wff := $ ~((ph -&gt; ps) -&gt; ~(ps -&gt; ph)) $ {
+  infixl wb: $&lt;-&gt;$ prec 20;
+
+  theorem bi1: $ (ph &lt;-&gt; ps) -&gt; ph -&gt; ps $;
+  theorem bi2: $ (ph &lt;-&gt; ps) -&gt; ps -&gt; ph $;
+  theorem bi3: $ (ph -&gt; ps) -&gt; (ps -&gt; ph) -&gt; (ph &lt;-&gt; ps) $;
+}</code></pre>
+<p>From the point of view of any other theorem, including <code>bi2</code> and <code>bi3</code>, <code>bi1</code> has the statement <code>$ (ph &lt;-&gt; ps) -&gt; ph -&gt; ps $</code>, but the proof obligation corresponding to <code>bi1</code> is actually:</p>
+<pre><code>  theorem bi1 (ph ps: wff): $ ~((ph -&gt; ps) -&gt; ~(ps -&gt; ph)) -&gt; ph -&gt; ps $ := ...;</code></pre>
+<p>These modified theorem statements are calculated as follows:</p>
+<ul>
+<li>Starting from the original syntax tree <code>wi (wb ph ps) (wi ph ps)</code>, find all occurrences of <code>wb e1 e2</code> where <code>e1</code> and <code>e2</code> are the subtrees.</li>
+<li>Let <code>e</code> be the syntax tree for the definition, <code>wn (wi (wi ph ps) (wn (wi ps ph)))</code>.</li>
+<li>Rename each dummy variable in the definition with a fresh name, to form <code>e'</code>. (In this case <code>e' = e</code>.)</li>
+<li>Substitute <code>e1</code> and <code>e2</code> for the variables in the definition bindings <code>ph</code> and <code>ps</code>. In this case <code>e1 = ph</code> and <code>e2 = ps</code> so the result is <code>e'' = e</code> again.</li>
+<li>Replace the original subtree <code>wb e1 e2</code> with this expression <code>e''</code>.</li>
+<li>Repeat for all instances of <code>wb</code> in the expression.</li>
+</ul>
+<p>As an example of nontrivial modifications:</p>
+<pre><code>def weu (x .y: set) (ph: wff x): wff := $ E. y A. x (ph &lt;-&gt; x =s y) $ {
+  prefix wex: $E!$ prec 30;
+
+  theorem df-eu: $ E! x ph &lt;-&gt; E. y A. x (ph &lt;-&gt; x = y) $;
+  theorem example (x y: set) (ph: wff x): $ E! x E! y ph $;
+}</code></pre>
+<p>translates to:</p>
+<pre><code>theorem df-eu (x y y&#39;: set) (ph: wff x):
+  $ E. y&#39; A. x (ph &lt;-&gt; x = y&#39;) &lt;-&gt; E. y A. x (ph &lt;-&gt; x = y) $ := ...;
+theorem example (x y y&#39; y&#39;&#39;: set) (ph: wff x):
+  $ E. y&#39;&#39; A. x ((E. y&#39; A. y (ph &lt;-&gt; y =s y&#39;)) &lt;-&gt; x =s y&#39;&#39;) $ := ...;</code></pre>
+<h1 id="proof-files">Proof files</h1>
+<p>The syntax of a proof file is implementation dependent, but we will give one possible format, used by the reference implementation. It is designed to be read and used by the verifier in an efficient and convenient way. Usually, such a file will be compiled from another language to prepare it for use by the verifier. The contents of the proof file do not affect the correctness of any of the theorems in the specification file. At worst, the verifier will fail on a provable theorem, because it was not able to find the proof with the assistance of the proof file.</p>
+<p>The reference implementation uses a binary proof format, but we will show it with a similar syntax to the <code>.mm0</code> format for convenience.</p>
+<p>For the <a href="set.mm0">set.mm0</a> running example, which begins as:</p>
+<pre><code>strict provable nonempty sort wff;
+var ph ps ch: wff*;
+term wi (ph ps: wff): wff; infixr wi: $-&gt;$ prec 25;
+term wn (ph: wff): wff; prefix wn: $~$ prec 40;
+
+axiom ax-1: $ ph -&gt; ps -&gt; ph $;
+axiom ax-2: $ (ph -&gt; ps -&gt; ch) -&gt; (ph -&gt; ps) -&gt; ph -&gt; ch $;
+axiom ax-3: $ (~ph -&gt; ~ps) -&gt; ps -&gt; ph $;
+axiom ax-mp: $ ph $ -&gt; $ ph -&gt; ps $ -&gt; $ ps $;
+
+theorem a1i: $ ph $ -&gt; $ ps -&gt; ph $;
+
+def wb (ph ps: wff): wff := $ ~((ph -&gt; ps) -&gt; ~(ps -&gt; ph)) $ {
+  infixl wb: $&lt;-&gt;$ prec 20;
+
+  theorem bi1: $ (ph &lt;-&gt; ps) -&gt; ph -&gt; ps $;
+  theorem bi2: $ (ph &lt;-&gt; ps) -&gt; ps -&gt; ph $;
+  theorem bi3: $ (ph -&gt; ps) -&gt; (ps -&gt; ph) -&gt; (ph &lt;-&gt; ps) $;
+}</code></pre>
+<p>the corresponding section of the proof file might look like:</p>
+<pre><code>sort wff;
+term wi;
+term wn;
+
+axiom ax-1;
+axiom ax-2;
+axiom ax-3;
+axiom ax-mp;
+
+new theorem mp2 (ph ps ch: wff) (h1: $ ph $) (h2: $ ps $)
+  (h3: $ ph -&gt; ps -&gt; ch $): $ ch $ :=
+  ax-mp ps ch h2 (ax-mp ph $ps -&gt; ch$ h1 h3);
+
+theorem a1i (ph ps: wff) (h1: $ ph $): $ ps -&gt; ph $ :=
+  ax-mp ph $ps -&gt; ph$ h1 (ax-1 ph ps);
+
+theorem bi1 (ph ps: wff): $ ~((ph -&gt; ps) -&gt; ~(ps -&gt; ph)) -&gt; ph -&gt; ps $ := ...;
+theorem bi2 (ph ps: wff): $ ~((ph -&gt; ps) -&gt; ~(ps -&gt; ph)) -&gt; ps -&gt; ph $ := ...;
+theorem bi3 (ph ps: wff): $ (ph -&gt; ps) -&gt; (ps -&gt; ph) -&gt; ~((ph -&gt; ps) -&gt; ~(ps -&gt; ph)) $ := ...;
+
+new theorem biid (ph: wff): $ ph &lt;-&gt; ph $ := ...;
+
+new def wo (ph ps: wff): wff := $ ~ph -&gt; ps $ {
+  -- infixl wo: $\/$ prec 20;
+  new theorem df-or (ph ps: wff): $ (ph \/ ps) &lt;-&gt; (~ph -&gt; ps) $ :=
+    proof (ph ps: wff): $ (~ph -&gt; ps) &lt;-&gt; (~ph -&gt; ps) $ :=
+      biid $ ~ph -&gt; ps $;
+}</code></pre>
+<p>The declarations must come in the same order as they appear in the specification file. The <code>term</code> and <code>axiom</code> declarations serve only to move the &quot;pointer&quot; through the file, acknowledging that these axioms are now available for use in proofs. The theorem <code>mp2</code> in this example does not exist in the specification file; this is permitted. Similarly definitions may be added beyond those present in the specification file, and they may be referenced in proofs as well. These follow the same rules as declarations in the specification file itself, with the following modifications:</p>
+<ul>
+<li><code>sort</code>, <code>term</code> and <code>axiom</code> only refer to the corresponding directive by name and provide no definition. These must be declared in the same order as in the specification file.</li>
+<li>There are no notation commands. (The math strings appearing above are only there for readability; the actual proof file format uses s-expressions in RPN.)</li>
+<li>There are no <code>var</code> statements and no variable inference. All variables are declared in the theorems.</li>
+<li>In the concrete syntax above, <code>new theorem</code> means the statement was not declared in the specification file, while <code>theorem</code>s have corresponding statements. The statements must be given in the same order as in the specification file.</li>
+<li>Similarly <code>new def</code> allows the declaration of definitions that do not appear in the specification.</li>
+<li>Theorems in a new definition block have two theorem statements, indicated with the ad hoc notation <code>new theorem foo: ... := proof ... := ...</code> above. The first is the &quot;global&quot; version, which is how this theorem appears to users of the theorem; the second is the version that is proved. The verifier should check that the second statement is obtained from the first by substitution of the definition, as in regular definition blocks.</li>
+</ul>
