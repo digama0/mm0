@@ -1,5 +1,5 @@
 module Types where
-import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString as B
 
 type Ident = String
 
@@ -18,26 +18,29 @@ data Stmt =
   | Notation Notation
   | Output OutputKind Ident [Binder]
   | Block [Stmt]
+  deriving (Show)
 
 data Notation =
     Prefix Ident Const Prec
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
   | NNotation Ident [Binder] Type [Literal]
+  deriving (Show)
 
-data Literal = NConst Const | NVar Ident Prec
+data Literal = NConst Const | NVar Ident Prec deriving (Show)
 
 type Const = B.ByteString
 type Prec = Int
 type OutputKind = String
 
-data Local = LReg Ident | LDummy Ident | LAnon
+data Local = LReg Ident | LDummy Ident | LAnon deriving (Show)
 
 data Type =
     TType Ident [Ident]
   | TOpenType Ident
   | TFormula Formula
+  deriving (Show)
 
 type Formula = B.ByteString
 
-data Binder = Binder Local Type
+data Binder = Binder Local Type deriving (Show)

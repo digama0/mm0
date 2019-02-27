@@ -1,20 +1,20 @@
 {
-module Lexer (Token(..),lexer) where
+module Lexer (Token(..), Alex, lexer, failLC, runAlex) where
 import Control.Monad.State
 import Control.Monad.Except
 import Data.Word
 import Types
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as C
 }
-
-%wrapper "basic-bytestring"
 
 $identstart = [a-z A-Z _]
 $identrest = [$identstart 0-9 \-]
 
 @ident = $identstart $identrest*
 @number = 0 | [1-9] [0-9]*
-@formula = \$ [^\$]+ \$
+@formula = \$ [[^\$] \n]+ \$
 
 tokens :-
   $white+   ;
@@ -40,7 +40,7 @@ tokens :-
   "_"       {\_ -> TokAnon}
   @ident    {TokIdent . C.unpack}
   @number   {TokNumber . C.unpack}
-  @formula  {TokFormula}
+  @formula  {\s -> TokFormula $ L.toStrict $ L.drop 1 $ L.take (L.length s - 1) s}
   "*"       {\_ -> TokStar}
   "."       {\_ -> TokDot}
   ":"       {\_ -> TokColon}
@@ -73,7 +73,7 @@ data Token =
   | TokVar
   | TokIdent String
   | TokNumber String
-  | TokFormula ByteString.ByteString
+  | TokFormula B.ByteString
   | TokStar
   | TokDot
   | TokColon
@@ -85,8 +85,50 @@ data Token =
   | TokRBrace
   | TokEqual
   | TokAnon
+  | TokEOF
   deriving (Eq, Show)
 
-lexer :: ByteString.ByteString -> [Token]
-lexer = alexScanTokens
+data AlexPosn = AlexPosn !Int !Int !Int
+
+alexMove :: AlexPosn -> Bool -> AlexPosn
+alexMove (AlexPosn a l _) True  = AlexPosn (a+1) (l+1)   1
+alexMove (AlexPosn a l c) False = AlexPosn (a+1)  l     (c+1)
+
+type AlexInput = (AlexPosn, L.ByteString)
+
+alexGetByte :: AlexInput -> Maybe (Word8, AlexInput)
+alexGetByte (p, cs) =
+  case L.uncons cs of
+    Nothing -> Nothing
+    Just (b, cs') -> Just (b, (alexMove p (b == 10), cs')) -- 10 = '\n'
+
+alexInputPrevChar :: AlexInput -> Char
+alexInputPrevChar = undefined
+
+type Alex = StateT AlexInput (Either String)
+
+failLC :: String -> Alex a
+failLC err = do
+  (AlexPosn _ l c, _) <- get
+  throwError ("Error at line " ++ show l ++ " column " ++ show c ++ ": " ++ err)
+
+readToken :: Alex Token
+readToken = do
+  s <- get
+  case alexScan s 0 of
+    AlexEOF -> return TokEOF
+    AlexError _ -> failLC "Lexical error"
+    AlexSkip s' _ -> do
+      put s'
+      readToken
+    AlexToken s' len tk -> do
+      put s'
+      return (tk (L.take (fromIntegral len) (snd s)))
+
+lexer :: (Token -> Alex a) -> Alex a
+lexer = (readToken >>=)
+
+runAlex :: Alex a -> L.ByteString -> Either String a
+runAlex m s = evalStateT m (AlexPosn 0 1 1, s)
+
 }

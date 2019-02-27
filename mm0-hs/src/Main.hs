@@ -1,10 +1,11 @@
 module Main (main) where
-import System.IO
-import System.IO.Error
-import Lexer
+import System.Environment
+import qualified Data.ByteString.Lazy as B
 import Parser
 import Types
-import Codec.Binary.UTF8.String (encode)
 
 main :: IO ()
-main = undefined
+main = do
+  s <- B.getContents
+  ast <- either fail pure (parse s)
+  print ast

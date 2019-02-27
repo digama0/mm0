@@ -1,12 +1,16 @@
 {
-module Parser(parse) where
+module Parser (parse) where
 import Types
 import Lexer
 import Control.Monad.Except
-import qualified Data.ByteString.Lazy as B
+import Text.Read
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as L
 }
 
-%name parse
+%monad{Alex}
+%lexer{lexer}{TokEOF}
+%name mparse
 %tokentype{Token}
 %error {parseError}
 
@@ -92,12 +96,11 @@ ArrowType : Type {arrow1 $1} | Type '>' ArrowType {arrowCons $1 $3}
 AssertStmt : AssertKind Ident binders(Ident_, TypeFmla) ':' FmlaArrowType ';'
              {unArrow ($1 $2) $3 $5}
 AssertKind : axiom {Axiom} | theorem {Theorem}
-TypeFmla : Type {$1} | Formula {TFormula $1}
-FmlaArrowType : Formula {arrow1 (TFormula $1)}
+TypeFmla : Type {$1} | formula {TFormula $1}
+FmlaArrowType : formula {arrow1 (TFormula $1)}
               | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
-Formula : formula {B.copy $1}
 
-DefStmt : def Ident binders(Dummy, Type) ':' Type '=' Formula '{' list(Directive) '}'
+DefStmt : def Ident binders(Dummy, Type) ':' Type '=' formula '{' list(Directive) '}'
           {Def $2 $3 $5 $7 $9}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 
@@ -107,8 +110,8 @@ NotationStmt : SimpleNotationStmt {$1}
 
 SimpleNotationStmt : NotationKind Ident ':' Constant prec Precedence ';' {$1 $2 $4 $6}
 NotationKind : prefix {Prefix} | infix {Infix $1}
-Constant : formula {B.copy $1}
-Precedence : number {read $1} | max {maxBound}
+Constant : formula {$1}
+Precedence : number {% parseInt $1} | max {maxBound}
 
 CoercionStmt : coercion Ident ':' Ident '>' Ident ';' {Coercion $2 $4 $6}
 GenNotationStmt : notation Ident binders(Ident_, Type) ':' Type '=' list1(Literal) ';'
@@ -125,7 +128,18 @@ binder(p, q) : '(' list(p) ':' q ')' {($2, $4)}
 binders(p, q) : list(binder(p, q)) {joinBinders $1}
 
 {
-parseError _ = error "Parse Error"
+
+parseError :: Token -> Alex a
+parseError s = failLC ("Parse error: " ++ show s)
+
+parseInt :: String -> Alex Int
+parseInt s = case (readMaybe s :: Maybe Integer) of
+  Nothing -> failLC ("not an integer: '" ++ s ++ "'")
+  Just n ->
+    if n > fromIntegral (maxBound :: Int) then
+      failLC ("out of range: '" ++ s ++ "'")
+    else
+      pure (fromIntegral n)
 
 joinBinders :: [([Local], Type)] -> [Binder]
 joinBinders = concatMap $ \(ls, ty) -> (\l -> Binder l ty) <$> ls
@@ -140,5 +154,8 @@ arrowCons ty1 (f, ty) = (f . (Binder LAnon ty1 :), ty)
 
 unArrow :: ([Binder] -> Type -> a) -> [Binder] -> ArrowType -> a
 unArrow f bs (g, ty) = f (g bs) ty
+
+parse :: L.ByteString -> Either String [Stmt]
+parse = runAlex mparse
 
 }

@@ -24,7 +24,7 @@ def wa (ph ps: wff): wff = $ ~(ph -> ~ps) $ {
 }
 
 def wtru (.p: wff): wff = $ p <-> p $ {
-  notation wtru = $ T. $;
+  notation wtru: wff = $ T. $;
   theorem df-tru: $ T. <-> (ph <-> ph) $;
 }
 
