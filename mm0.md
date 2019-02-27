@@ -25,24 +25,23 @@ Lexical structure
 The file is separated out into a list of lexemes, or tokens, according to the "maximum munch" principle: the longest matching token is used when ambiguity is possible.
 
     whitespace ::= whitestuff+
-    whitestuff ::= whitechar | line-comment | multiline-comment
+    whitestuff ::= whitechar | line-comment
     whitechar ::= ' ' | '\r' | '\n' | '\t'
     line-comment ::= '--' [^\n]* '\n'
-    multiline-comment ::= '/-' .* '-/'
 
-Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments come in two kinds - the line comment begins with `--` and continues to the end of the line, and the multiline comment is bracketed between `/-` and `-/`. Inside a multiline comment `/-` is not permitted (no nested comments), and `-/` ends the comment.
+Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments are line comments, begining with `#` and continuing to the end of the line.
 
-Implementations are encouraged to support "special comments" via line comments beginning `--|` and multiline comments of the form `/-| -/`, but they have no semantic value in this specification.
+Implementations are encouraged to support "special comments" via comments beginning `-- |`, but they have no semantic value in this specification.
 
     lexeme ::= symbol | identifier | number | math-string
     symbol ::= '*' | ':' | ';' | '(' | ')' | '->' | '{' | '}' | ':='
     identifier ::= [a-zA-Z_][a-zA-Z0-9_.-]*
     number ::= 0 | [1-9][0-9]*
-    math-string ::= '$' ('$$' | [^\$])* '$'
+    math-string ::= '$' [^\$]* '$'
 
 A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, `.` and `-`, except that it cannot begin with a digit or `.` or `-`.
 
-A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear, except that `$$` is permitted (and is interpreted as a single dollar).
+A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear.
 
 These strings will go through a secondary lexing phase, using a dynamic lexer defined by the notations in the file.
 
