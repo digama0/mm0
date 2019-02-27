@@ -34,12 +34,12 @@ Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comment
 Implementations are encouraged to support "special comments" via comments beginning `--|`, but they have no semantic value in this specification.
 
     lexeme ::= symbol | identifier | number | math-string
-    symbol ::= '*' | '.' | ':' | ';' | '(' | ')' | '>' | '{' | '}' | '='
+    symbol ::= '*' | '.' | ':' | ';' | '(' | ')' | '>' | '{' | '}' | '=' | '_'
     identifier ::= [a-zA-Z_][a-zA-Z0-9_-]*
     number ::= 0 | [1-9][0-9]*
     math-string ::= '$' [^\$]* '$'
 
-A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, and `-`, except that it cannot begin with a digit or `-`.
+A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, and `-`, except that it cannot begin with a digit or `-`, and the single character `_` is not an identifier.
 
 A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear.
 
@@ -50,7 +50,7 @@ Pseudo-keywords
 
 The following words appear in the syntax with special meanings:
 
-    axiom coercion def infixl infixr max nonempty notation
+    axiom coercion def infixl infixr max nonempty notation output
     prec prefix provable pure sort strict term theorem var
 
 However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
@@ -94,10 +94,11 @@ A type is the name of a sort followed by 0 or more variable names, which represe
 
 Term constructors
 ---
-The `term` directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so `term imp (ph ps: wff): wff;` and `term imp: wff -> wff -> wff` mean the same thing.
+The `term` directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so `term imp (ph ps: wff): wff;` and `term imp: wff -> wff -> wff` mean the same thing. The symbol `_` in place of an identifier indicates an anonymous variable.
 
     term-stmt ::= 'term' identifier (type-binder)* ':' arrow-type ';'
-    type-binder ::= '(' (identifier)* ':' type ')'
+    identifier_ ::= identifier | '_'
+    type-binder ::= '(' (identifier_)* ':' type ')'
     arrow-type ::= type | type '>' arrow-type
 
 Axioms and theorems
@@ -106,7 +107,7 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
 
     assert-stmt ::= ('axiom' | 'theorem') identifier
        (formula-type-binder)* ':' formula-arrow-type ';'
-    formula-type-binder ::= '(' (identifier)* ':' (type | formula) ')'
+    formula-type-binder ::= '(' (identifier_)* ':' (type | formula) ')'
     formula-arrow-type ::= formula | (type | formula) '>' arrow-type
     formula ::= math-string
 
@@ -115,9 +116,9 @@ Definitions
 A `def` is similar to an `axiom` except that it may also have dot-quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.
 
     def-stmt ::= 'def' identifier (dummy-binder)* ':'
-      type ':=' formula '{' (directive)* '}'
+      type '=' formula '{' (directive)* '}'
     dummy-binder ::= '(' (dummy-identifier)* ':' type ')'
-    dummy-identifier ::= '.' identifier | identifier
+    dummy-identifier ::= '.' identifier | identifier_
 
 Notations
 ---
@@ -140,7 +141,7 @@ As an additional check, `notation` requires its variables be annotated with type
     precedence-lvl ::= number | 'max'
     coercion-stmt ::= 'coercion' identifier ':' identifier '>' identifier ';'
     gen-notation-stmt ::= 'notation' identifier (type-binder)* ':'
-      type ':=' (notation-literal)+ ';'
+      type '=' (notation-literal)+ ';'
     notation-literal ::= constant | prec-variable
     prec-variable ::= '(' identifier ':' precedence-lvl ')'
 
@@ -149,7 +150,8 @@ Output
 
 *Note*: This command is optional, even more so than the rest of this specification.
 
-    output-stmt ::= 'output' output-kind identifier (dummy-binder)* ';'
+    output-stmt ::= 'output' output-kind identifier (formula-dummy-binder)* ';'
+    formula-dummy-binder ::= '(' (dummy-identifier)* ':' (type | formula) ')'
     output-kind ::= identifier
 
 The `output` command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the `output-kind`, which specifies the target format, for example `s-expr`, or a program language such as `g` or `x86_asm`. The details vary depending on the target, but this can be read as an *existential* statement, by contrast to `theorem`, which proves universal statements. A statement such as
