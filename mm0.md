@@ -31,15 +31,15 @@ The file is separated out into a list of lexemes, or tokens, according to the "m
 
 Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments are line comments, begining with `#` and continuing to the end of the line.
 
-Implementations are encouraged to support "special comments" via comments beginning `-- |`, but they have no semantic value in this specification.
+Implementations are encouraged to support "special comments" via comments beginning `--|`, but they have no semantic value in this specification.
 
     lexeme ::= symbol | identifier | number | math-string
-    symbol ::= '*' | ':' | ';' | '(' | ')' | '->' | '{' | '}' | ':='
-    identifier ::= [a-zA-Z_][a-zA-Z0-9_.-]*
+    symbol ::= '*' | '.' | ':' | ';' | '(' | ')' | '>' | '{' | '}' | '='
+    identifier ::= [a-zA-Z_][a-zA-Z0-9_-]*
     number ::= 0 | [1-9][0-9]*
     math-string ::= '$' [^\$]* '$'
 
-A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, `.` and `-`, except that it cannot begin with a digit or `.` or `-`.
+A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, and `-`, except that it cannot begin with a digit or `-`.
 
 A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear.
 
@@ -98,7 +98,7 @@ The `term` directive constructs a new piece of syntax, a function symbol on the 
 
     term-stmt ::= 'term' identifier (type-binder)* ':' arrow-type ';'
     type-binder ::= '(' (identifier)* ':' type ')'
-    arrow-type ::= type | type '->' arrow-type
+    arrow-type ::= type | type '>' arrow-type
 
 Axioms and theorems
 ---
@@ -107,7 +107,7 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
     assert-stmt ::= ('axiom' | 'theorem') identifier
        (formula-type-binder)* ':' formula-arrow-type ';'
     formula-type-binder ::= '(' (identifier)* ':' (type | formula) ')'
-    formula-arrow-type ::= formula | (type | formula) '->' arrow-type
+    formula-arrow-type ::= formula | (type | formula) '>' arrow-type
     formula ::= math-string
 
 Definitions
@@ -138,7 +138,7 @@ As an additional check, `notation` requires its variables be annotated with type
       constant 'prec' precedence-lvl ';'
     constant ::= math-string
     precedence-lvl ::= number | 'max'
-    coercion-stmt ::= 'coercion' identifier ':' identifier '->' identifier ';'
+    coercion-stmt ::= 'coercion' identifier ':' identifier '>' identifier ';'
     gen-notation-stmt ::= 'notation' identifier (type-binder)* ':'
       type ':=' (notation-literal)+ ';'
     notation-literal ::= constant | prec-variable
@@ -213,7 +213,7 @@ Definition substitution
 
 Inside a definition block, theorems are permitted to reference the definition, and even between theorems in the same definition block the definition appears "unexpanded", but the actual proof obligations use expanded forms of the definition. For example:
 
-    def wb (ph ps: wff): wff := $ ~((ph -> ps) -> ~(ps -> ph)) $ {
+    def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {
       infixl wb: $<->$ prec 20;
 
       theorem bi1: $ (ph <-> ps) -> ph -> ps $;
@@ -223,7 +223,7 @@ Inside a definition block, theorems are permitted to reference the definition, a
 
 From the point of view of any other theorem, including `bi2` and `bi3`, `bi1` has the statement `$ (ph <-> ps) -> ph -> ps $`, but the proof obligation corresponding to `bi1` is actually:
 
-      theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ := ...;
+      theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ = ...;
 
 These modified theorem statements are calculated as follows:
 
@@ -236,7 +236,7 @@ These modified theorem statements are calculated as follows:
 
 As an example of nontrivial modifications:
 
-    def weu (x .y: set) (ph: wff x): wff := $ E. y A. x (ph <-> x =s y) $ {
+    def weu (x .y: set) (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $ {
       prefix wex: $E!$ prec 30;
 
       theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
@@ -246,9 +246,9 @@ As an example of nontrivial modifications:
 translates to:
 
     theorem df-eu (x y y': set) (ph: wff x):
-      $ E. y' A. x (ph <-> x = y') <-> E. y A. x (ph <-> x = y) $ := ...;
+      $ E. y' A. x (ph <-> x = y') <-> E. y A. x (ph <-> x = y) $ = ...;
     theorem example (x y y' y'': set) (ph: wff x):
-      $ E. y'' A. x ((E. y' A. y (ph <-> y =s y')) <-> x =s y'') $ := ...;
+      $ E. y'' A. x ((E. y' A. y (ph <-> y =s y')) <-> x =s y'') $ = ...;
 
 Proof files
 ===
@@ -271,7 +271,7 @@ For the [set.mm0](set.mm0) running example, which begins as:
 
     theorem a1i: $ ph $ -> $ ps -> ph $;
 
-    def wb (ph ps: wff): wff := $ ~((ph -> ps) -> ~(ps -> ph)) $ {
+    def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {
       infixl wb: $<->$ prec 20;
 
       theorem bi1: $ (ph <-> ps) -> ph -> ps $;
@@ -291,22 +291,22 @@ the corresponding section of the proof file might look like:
     axiom ax-mp;
 
     new theorem mp2 (ph ps ch: wff) (h1: $ ph $) (h2: $ ps $)
-      (h3: $ ph -> ps -> ch $): $ ch $ :=
+      (h3: $ ph -> ps -> ch $): $ ch $ =
       ax-mp ps ch h2 (ax-mp ph $ps -> ch$ h1 h3);
 
-    theorem a1i (ph ps: wff) (h1: $ ph $): $ ps -> ph $ :=
+    theorem a1i (ph ps: wff) (h1: $ ph $): $ ps -> ph $ =
       ax-mp ph $ps -> ph$ h1 (ax-1 ph ps);
 
-    theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ := ...;
-    theorem bi2 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ps -> ph $ := ...;
-    theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> ~((ph -> ps) -> ~(ps -> ph)) $ := ...;
+    theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ = ...;
+    theorem bi2 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ps -> ph $ = ...;
+    theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> ~((ph -> ps) -> ~(ps -> ph)) $ = ...;
 
-    new theorem biid (ph: wff): $ ph <-> ph $ := ...;
+    new theorem biid (ph: wff): $ ph <-> ph $ = ...;
 
-    new def wo (ph ps: wff): wff := $ ~ph -> ps $ {
+    new def wo (ph ps: wff): wff = $ ~ph -> ps $ {
       -- infixl wo: $\/$ prec 20;
-      new theorem df-or (ph ps: wff): $ (ph \/ ps) <-> (~ph -> ps) $ :=
-        proof (ph ps: wff): $ (~ph -> ps) <-> (~ph -> ps) $ :=
+      new theorem df-or (ph ps: wff): $ (ph \/ ps) <-> (~ph -> ps) $ =
+        proof (ph ps: wff): $ (~ph -> ps) <-> (~ph -> ps) $ =
           biid $ ~ph -> ps $;
     }
 
@@ -318,4 +318,4 @@ The declarations must come in the same order as they appear in the specification
 * There are no `var` statements and no variable inference. All variables are declared in the theorems.
 * In the concrete syntax above, `new theorem` means the statement was not declared in the specification file, while `theorem`s have corresponding statements. The statements must be given in the same order as in the specification file.
 * Similarly `new def` allows the declaration of definitions that do not appear in the specification.
-  * Theorems in a new definition block have two theorem statements, indicated with the ad hoc notation `new theorem foo: ... := proof ... := ...` above. The first is the "global" version, which is how this theorem appears to users of the theorem; the second is the version that is proved. The verifier should check that the second statement is obtained from the first by substitution of the definition, as in regular definition blocks.
+  * Theorems in a new definition block have two theorem statements, indicated with the ad hoc notation `new theorem foo: ... = proof ... = ...` above. The first is the "global" version, which is how this theorem appears to users of the theorem; the second is the version that is proved. The verifier should check that the second statement is obtained from the first by substitution of the definition, as in regular definition blocks.
