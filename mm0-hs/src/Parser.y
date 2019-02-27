@@ -1,38 +1,144 @@
 {
 module Parser(parse) where
-import AST
-import qualified Lexer as L
+import Types
+import Lexer
 import Control.Monad.Except
+import qualified Data.ByteString.Lazy as B
 }
 
-%monad{L.P}
-%lexer{L.lexer}{L.TEOF}
 %name parse
-%tokentype{L.Token}
+%tokentype{Token}
 %error {parseError}
 
 %token
-  true  	{L.TTrue}
-  false 	{L.TFalse}
-  zero   	{L.TZero}
-  iszero        {L.TIsZero}
-  succ		{L.TSucc}
-  pred		{L.TPred}
-  if		{L.TIf}
-  then		{L.TThen}
-  else		{L.TElse}
+  axiom     {TokAxiom}
+  coercion  {TokCoercion}
+  def       {TokDef}
+  infix     {TokInfix $$}
+  max       {TokMax}
+  nonempty  {TokNonempty}
+  notation  {TokNotation}
+  output    {TokOutput}
+  prec      {TokPrec}
+  prefix    {TokPrefix}
+  provable  {TokProvable}
+  pure      {TokPure}
+  sort      {TokSort}
+  strict    {TokStrict}
+  term      {TokTerm}
+  theorem   {TokTheorem}
+  var       {TokVar}
+  ident     {TokIdent $$}
+  number    {TokNumber $$}
+  formula   {TokFormula $$}
+  '*'       {TokStar}
+  '.'       {TokDot}
+  ':'       {TokColon}
+  ';'       {TokSemi}
+  '('       {TokLParen}
+  ')'       {TokRParen}
+  '>'       {TokArrow}
+  '{'       {TokLBrace}
+  '}'       {TokRBrace}
+  '='       {TokEqual}
+  '_'       {TokAnon}
+
 
 %%
 
-Term	:  true				{STrue}
-	|  false			{SFalse}
-	|  zero				{SZero}
-	|  iszero Term			{SIsZero $2}
-	|  succ Term			{SSucc $2}
-	|  pred Term			{SPred $2}
-	|  if Term then Term else Term	{SIfThen $2 $4 $6}
+Spec  : list(Directive) {$1}
+
+Directive : Statement {$1} | '{' list(Directive) '}' {Block $2}
+
+Statement : SortStmt {$1}
+          | VarStmt {$1}
+          | TermStmt {$1}
+          | AssertStmt {$1}
+          | DefStmt {$1}
+          | NotationStmt {Notation $1}
+          | OutputStmt {$1}
+
+Ident : ident {$1}
+      | axiom {"axiom"}
+      | coercion {"coercion"}
+      | def {"def"}
+      | infix {if $1 then "infixr" else "infixl"}
+      | max {"max"}
+      | nonempty {"nonempty"}
+      | notation {"notation"}
+      | output {"output"}
+      | prec {"prec"}
+      | prefix {"prefix"}
+      | provable {"provable"}
+      | pure {"pure"}
+      | sort {"sort"}
+      | strict {"strict"}
+      | term {"term"}
+      | theorem {"theorem"}
+      | var {"var"}
+
+SortStmt : flag(pure) flag(strict) flag(provable) flag(nonempty)
+             sort Ident ';' {Sort $6 $1 $2 $3 $4}
+
+VarStmt : var list(Ident) ':' OpenType ';' {Var $2 $4}
+Type : Ident list(Ident) {TType $1 $2}
+OpenType : Type {$1} | Ident '*' {TOpenType $1}
+
+TermStmt : term Ident binders(Ident_, Type) ':' ArrowType ';'
+           {unArrow (Term $2) $3 $5}
+Ident_ : Ident {LReg $1} | '_' {LAnon}
+ArrowType : Type {arrow1 $1} | Type '>' ArrowType {arrowCons $1 $3}
+
+AssertStmt : AssertKind Ident binders(Ident_, TypeFmla) ':' FmlaArrowType ';'
+             {unArrow ($1 $2) $3 $5}
+AssertKind : axiom {Axiom} | theorem {Theorem}
+TypeFmla : Type {$1} | Formula {TFormula $1}
+FmlaArrowType : Formula {arrow1 (TFormula $1)}
+              | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
+Formula : formula {B.copy $1}
+
+DefStmt : def Ident binders(Dummy, Type) ':' Type '=' Formula '{' list(Directive) '}'
+          {Def $2 $3 $5 $7 $9}
+Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
+
+NotationStmt : SimpleNotationStmt {$1}
+             | CoercionStmt {$1}
+             | GenNotationStmt {$1}
+
+SimpleNotationStmt : NotationKind Ident ':' Constant prec Precedence ';' {$1 $2 $4 $6}
+NotationKind : prefix {Prefix} | infix {Infix $1}
+Constant : formula {B.copy $1}
+Precedence : number {read $1} | max {maxBound}
+
+CoercionStmt : coercion Ident ':' Ident '>' Ident ';' {Coercion $2 $4 $6}
+GenNotationStmt : notation Ident binders(Ident_, Type) ':' Type '=' list1(Literal) ';'
+                  {NNotation $2 $3 $5 $7}
+Literal : Constant {NConst $1} | '(' Ident ':' Precedence ')' {NVar $2 $4}
+
+OutputStmt : output OutputKind Ident binders(Dummy, TypeFmla) ';' {Output $2 $3 $4}
+OutputKind : Ident {$1}
+
+flag(p) : p {True} | {False}
+list(p) : {[]} | p list(p) {$1 : $2}
+list1(p) : p list(p) {$1 : $2}
+binder(p, q) : '(' list(p) ':' q ')' {($2, $4)}
+binders(p, q) : list(binder(p, q)) {joinBinders $1}
 
 {
-parseError _ = throwError "!Parse Error"
+parseError _ = error "Parse Error"
+
+joinBinders :: [([Local], Type)] -> [Binder]
+joinBinders = concatMap $ \(ls, ty) -> (\l -> Binder l ty) <$> ls
+
+type ArrowType = ([Binder] -> [Binder], Type)
+
+arrow1 :: Type -> ArrowType
+arrow1 ty = (id, ty)
+
+arrowCons :: Type -> ArrowType -> ArrowType
+arrowCons ty1 (f, ty) = (f . (Binder LAnon ty1 :), ty)
+
+unArrow :: ([Binder] -> Type -> a) -> [Binder] -> ArrowType -> a
+unArrow f bs (g, ty) = f (g bs) ty
 
 }

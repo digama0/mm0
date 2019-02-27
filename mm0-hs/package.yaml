@@ -23,35 +23,30 @@ dependencies:
 - mtl
 - array
 - utf8-string
+- bytestring
 
-library:
-  source-dirs: src
-  default-extensions: FlexibleContexts
+default-extensions:
+- FlexibleContexts
+- LambdaCase
+
+build-tools:
+- alex
+- happy
 
 executables:
   mm0-hs-exe:
     main:                Main.hs
-    source-dirs:         app
-    build-tools:
-    - alex
-    - happy
+    source-dirs:         src
     ghc-options:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    dependencies:
-    - mm0-hs
 
 tests:
   mm0-hs-test:
     main:                Spec.hs
     source-dirs:         test
-    build-tools:
-    - alex
-    - happy
     ghc-options:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    dependencies:
-    - mm0-hs
