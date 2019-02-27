@@ -164,6 +164,59 @@ might assert that the verifier produces a C source file described by `e`, which 
 
 would print the s-expression corresponding to some provable wff. The proof file is responsible for demonstrating the existential witness - the program that halts, or the provable wff - and the verifier is responsible for interpreting the term from the logic as a string to output or a file to produce.
 
+Secondary parsing
+===
+
+In the grammar above, math strings are simply treated as strings, deferring interpretation of the strings until after main parsing. Verifiers may choose to interpret math strings on the spot (in a single pass), or collect all notations and build a parser to run on all strings (two pass). A consequence of the two pass approach is that notations may be used before they are defined in the file, for example:
+
+    term wi (ph ps: wff): wff;
+    axiom ax-1 (ph ps: wff): $ ph -> ps -> ph $;
+    infix wi: $->$ prec 25;
+
+Verifiers are allowed but not required to support out of order notation declarations. However, out of order term definitions are not permitted:
+
+    axiom ax-1 (ph ps: wff): $ ph -> ps -> ph $; -- error: wi not defined
+    term wi (ph ps: wff): wff;
+    infix wi: $->$ prec 25;
+
+Lexical analysis is similar to the primary parsing:
+
+    math-string ::= (math-lexeme | math-whitespace)*
+    math-whitespace ::= whitechar+
+    math-lexeme ::= math-symbol | identifier | '(' | ')'
+    math-symbol ::= OP  (if OP appears in a infix/prefix/notation declaration)
+    constant-tk ::= any string of non-whitespace non-$ characters
+
+Notations are intended to be parsed by an operator precedence parser [[1]](https://en.wikipedia.org/wiki/Operator-precedence_parser). The expressions are given by a context free grammar with nonterminals for each precedence level. Precedences are taken from the set of nonnegative integers with infinity adjoined (called `max` in the syntax). Verifiers should support precedences up to at least `2^11 - 2 = 2046`.
+
+    math-string ::= '$' expression(0) '$'
+    constant ::= '$' whitechar* constant-tk whitechar* '$'
+
+The nonterminals `expression(prec)` are defined by the following productions:
+
+    expression(p1) <- expression(p2)                   (if p1 < p2)
+    expression(max) <- '(' expression(0) ')'
+    expression(max) <- VAR                             (if VAR is a variable in scope)
+    expression(1024) <- FUNC expression(max){n}         (if FUNC is an n-ary term constructor)
+    expression(p) <- OP expression(p)                  (if OP is prefix prec p)
+    expression(p) <- expression(p) OP expression(p+1)  (if OP is infixl prec p)
+    expression(p) <- expression(p+1) OP expression(p)  (if OP is infixr prec p)
+    expression(max) <- X(lits)  where                  (if notation := lits)
+      X(const)  = const
+      X(VAR: p) = expression(p)
+
+The term constructors appear in the syntax as s-expressions at precedence level `1024`. Notations declared via `notation` are always at the highest precedence level, but the variables in the pattern can have lower precedence. There are rules on notations to prevent an ambiguous parse:
+
+* A constant is infixy if it is used in an `infix` command (with the given precedence), or if it appears immediately after a variable in a `notation` command (and it acquires the precedence of this variable). The precedence of an infixy constant must be unique.
+* The first token of a `notation` must be a constant, and must not be shared with any other `prefix` constant or infixy constant.
+* If two variables are adjacent in a `notation`, the first one must have precedence `max`.
+
+If a math string is parsed successfully, the result is a syntax tree whose nodes are given by the term constructors referenced by the notations. Type checking is performed during or after this process, from inside out. If an expression with one sort is used in an argument with a different sort, `coercion` functions are inserted. The rules on `coercions`:
+
+* The collection of sorts and coercions should form a directed graph, whose undirected counterpart is acyclic.
+
+There is thus at most one path from one sort to another, and these coercion functions are inserted. If no path exists this is a type error.
+
 Interpretation
 ===
 
