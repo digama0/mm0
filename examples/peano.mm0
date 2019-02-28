@@ -1,0 +1,73 @@
+strict provable nonempty sort wff;
+var ph ps ch: wff*;
+term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
+term neg (ph: wff): wff; prefix neg: $~$ prec 40;
+
+axiom ax-1: $ ph -> ps -> ph $;
+axiom ax-2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
+axiom ax-3: $ (~ph -> ~ps) -> ps -> ph $;
+axiom ax-mp: $ ph $ > $ ph -> ps $ > $ ps $;
+
+def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {}
+infixl iff: $<->$ prec 20;
+
+def and (ph ps: wff): wff = $ ~(ph -> ~ps) $ {}
+infixl and: $/\$ prec 20;
+
+def or (ph ps: wff): wff = $ ~ph -> ps $ {}
+infixl or: $\/$ prec 30;
+
+pure nonempty sort nat;
+var x y z w: nat;
+
+term al (x: nat) (ph: wff x): wff; prefix al: $A.$ prec 30;
+
+def ex (x: nat) (ph: wff x): wff = $ ~A. x ~ph $ {}
+prefix ex: $E.$ prec 30;
+
+axiom ax-gen: $ ph $ > $ A. x ph $;
+axiom ax-4: $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
+axiom ax-5 (ph: wff): $ ph -> A. x ph $;
+
+term eq (a b: nat): wff; infixl eq: $=$ prec 50;
+
+def subst (a x .y: nat) (ph: wff x): wff =
+  $ A. y (y = a -> A. x (x = y -> ph)) $ {}
+notation subst (a x: nat) (ph: wff x): wff =
+  $[$ (a: 0) $/$ (x: 0) $]$ (ph: 0);
+
+var a b: nat;
+axiom ax-6: $ E. x x = a $;
+axiom ax-7: $ a = b -> a = c -> b = c $;
+
+axiom ax-10: $ ~A. x ph -> A. x ~ A. x ph $;
+axiom ax-11: $ A. x A. y ph -> A. y A. x ph $;
+axiom ax-12 (ph: wff y): $ A. y ph -> [y/x]ph $;
+
+term iota (x: nat) (ph: wff x): nat;
+prefix iota: $i.$ prec 30;
+
+axiom iotaeq: $ A. x (ph <-> ps) -> i. x ph = i. x ps $;
+axiom cbviota: $ i. y [y/x]ph = i. x ph $;
+axiom df-iota: $ (i. x x = a) = a $;
+
+term zero: nat; notation zero: nat = $0$;
+term suc: nat > nat; prefix suc: $S$ prec max;
+
+axiom peano1: $ ~(0 = S a) $;
+axiom peano2: $ S a = S b <-> a = b $;
+axiom peano5: $ [0/x] ph -> A. x (ph -> [S x/x] ph) -> A. x ph $;
+
+term add: nat > nat > nat; infixl add: $+$ prec 65;
+term mul: nat > nat > nat; infixl add: $*$ prec 70;
+
+axiom add0: $ a + 0 = a $;
+axiom addS: $ a + S b = S (a + b) $;
+axiom mul0: $ a * 0 = 0 $;
+axiom mulS: $ a * S b = a * b + a $;
+
+def le (a b: nat): wff = $ E. x a + x = b $ {}
+infixl le: $<=$ prec 50;
+
+def lt (a b: nat): wff = $ S a <= b $ {}
+infixl lt: $<$ prec 50;

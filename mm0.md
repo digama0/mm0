@@ -13,7 +13,7 @@ Input to a Metamath Zero verifier consists of two parts: a "specification" or "h
 
 The major distinction between the two files is that in the hypothetical auditing  process above, *the `.mp0` file plays no role*. All information relevant to correctness of the final result is put in the `.mm0` file, and the `.mp0` file is nothing more than an extended "hint" to the verifier to show why the theorems in the `.mm0` file are true. As such, the format of the `.mp0` file is not officially specified, although there is a recommended format (see [?]).
 
-See [set.mm0](set.mm0) for an example of a `.mm0` file.
+See [examples/set.mm0](examples/set.mm0) for an example of a `.mm0` file.
 
 Unlike many specifications of a similar kind, this specification should be read as an *upper bound* on allowable specification files. That is, a conforming implementation need not support all of the specification, and may fail for implementation-defined reasons. The important property verifiers must have is that a specification that is accepted by the verifier should be correct to the specification.
 
@@ -197,7 +197,7 @@ The nonterminals `expression(prec)` are defined by the following productions:
     expression(p1) <- expression(p2)                   (if p1 < p2)
     expression(max) <- '(' expression(0) ')'
     expression(max) <- VAR                             (if VAR is a variable in scope)
-    expression(1024) <- FUNC expression(max){n}         (if FUNC is an n-ary term constructor)
+    expression(1024) <- FUNC expression(max){n}        (if FUNC is an n-ary term constructor)
     expression(p) <- OP expression(p)                  (if OP is prefix prec p)
     expression(p) <- expression(p) OP expression(p+1)  (if OP is infixl prec p)
     expression(p) <- expression(p+1) OP expression(p)  (if OP is infixr prec p)
