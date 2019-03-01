@@ -1,7 +1,9 @@
-module Types where
+module AST where
 import qualified Data.ByteString as B
 
 type Ident = String
+
+type AST = [Stmt]
 
 data Stmt =
     Sort {

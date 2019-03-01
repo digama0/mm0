@@ -1,6 +1,6 @@
 {
 module Parser (parse) where
-import Types
+import AST
 import Lexer
 import Control.Monad.Except
 import Text.Read

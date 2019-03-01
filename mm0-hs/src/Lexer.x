@@ -3,7 +3,7 @@ module Lexer (Token(..), Alex, lexer, failLC, runAlex) where
 import Control.Monad.State
 import Control.Monad.Except
 import Data.Word
-import Types
+import AST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as C
