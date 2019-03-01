@@ -100,8 +100,9 @@ TypeFmla : Type {$1} | formula {TFormula $1}
 FmlaArrowType : formula {arrow1 (TFormula $1)}
               | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
 
-DefStmt : def Ident binders(Dummy, Type) ':' Type '=' formula '{' list(Directive) '}'
-          {Def $2 $3 $5 $7 $9}
+DefStmt : def Ident binders(Dummy, Type) ':' Type OptDef '{' list(Directive) '}'
+          {Def $2 $3 $5 $6 $8}
+OptDef : '=' formula {Just $2} | {Nothing}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 
 NotationStmt : SimpleNotationStmt {$1}

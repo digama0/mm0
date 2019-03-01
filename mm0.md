@@ -115,8 +115,10 @@ Definitions
 ---
 A `def` is similar to an `axiom` except that it may also have dot-quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.
 
+If the definition part is omitted, then the existence of a definition satisfying the theorems in the block is asserted.
+
     def-stmt ::= 'def' identifier (dummy-binder)* ':'
-      type '=' formula '{' (directive)* '}'
+      type ('=' formula)? '{' (directive)* '}'
     dummy-binder ::= '(' (dummy-identifier)* ':' type ')'
     dummy-identifier ::= '.' identifier | identifier_
 
