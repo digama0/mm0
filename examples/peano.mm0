@@ -8,13 +8,13 @@ axiom ax-2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax-3: $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax-mp: $ ph $ > $ ph -> ps $ > $ ps $;
 
-def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {}
+def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
 infixl iff: $<->$ prec 20;
 
-def and (ph ps: wff): wff = $ ~(ph -> ~ps) $ {}
+def and (ph ps: wff): wff = $ ~(ph -> ~ps) $;
 infixl and: $/\$ prec 20;
 
-def or (ph ps: wff): wff = $ ~ph -> ps $ {}
+def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
 
 pure nonempty sort nat;
@@ -22,7 +22,7 @@ var x y z w: nat;
 
 term al (x: nat) (ph: wff x): wff; prefix al: $A.$ prec 30;
 
-def ex (x: nat) (ph: wff x): wff = $ ~A. x ~ph $ {}
+def ex (x: nat) (ph: wff x): wff = $ ~A. x ~ph $;
 prefix ex: $E.$ prec 30;
 
 axiom ax-gen: $ ph $ > $ A. x ph $;
@@ -32,7 +32,7 @@ axiom ax-5 (ph: wff): $ ph -> A. x ph $;
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
 def subst (a x .y: nat) (ph: wff x): wff =
-  $ A. y (y = a -> A. x (x = y -> ph)) $ {}
+  $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation subst (a x: nat) (ph: wff x): wff =
   $[$ (a: 0) $/$ (x: 0) $]$ (ph: 0);
 
@@ -66,8 +66,8 @@ axiom addS: $ a + S b = S (a + b) $;
 axiom mul0: $ a * 0 = 0 $;
 axiom mulS: $ a * S b = a * b + a $;
 
-def le (a b: nat): wff = $ E. x a + x = b $ {}
+def le (a b: nat): wff = $ E. x a + x = b $;
 infixl le: $<=$ prec 50;
 
-def lt (a b: nat): wff = $ S a <= b $ {}
+def lt (a b: nat): wff = $ S a <= b $;
 infixl lt: $<$ prec 50;

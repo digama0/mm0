@@ -16,7 +16,7 @@ data Stmt =
   | Term Ident [Binder] Type
   | Axiom Ident [Binder] Type
   | Theorem Ident [Binder] Type
-  | Def Ident [Binder] Type (Maybe Formula) [Stmt]
+  | Def Ident [Binder] Type (Maybe Formula)
   | Notation Notation
   | Output OutputKind Ident [Binder]
   | Block [Stmt]

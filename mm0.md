@@ -113,12 +113,12 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
 
 Definitions
 ---
-A `def` is similar to an `axiom` except that it may also have dot-quantifiers, representing dummy variables in the definition that are not exposed in the syntax. It also ends with a block rather than a semicolon, because the definition itself has a limited lifetime. Inside the block, the definition is unfolded for the purpose of the proof, and it is made opaque once the block is exited.
+A `def` is similar to an `axiom` except that it may also have dot-quantifiers, representing dummy variables in the definition that are not exposed in the syntax.
 
-If the definition part is omitted, then the existence of a definition satisfying the theorems in the block is asserted.
+If the definition part is omitted, then the existence of a definition satisfying the theorems is asserted.
 
     def-stmt ::= 'def' identifier (dummy-binder)* ':'
-      type ('=' formula)? '{' (directive)* '}'
+      type ('=' formula)? ';'
     dummy-binder ::= '(' (dummy-identifier)* ':' type ')'
     dummy-identifier ::= '.' identifier | identifier_
 
@@ -268,19 +268,18 @@ For definitions, the process is the same except that inferred bound variables ar
 Definition substitution
 ---
 
-Inside a definition block, theorems are permitted to reference the definition, and even between theorems in the same definition block the definition appears "unexpanded", but the actual proof obligations use expanded forms of the definition. For example:
+In the proof file, definitions may be unfolded in the statement of a theorem. This has the effect that the statement being proven is obtained by definition substitution from the given statement. For example:
 
-    def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {
-      infixl wb: $<->$ prec 20;
+    def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
+    infixl wb: $<->$ prec 20;
 
-      theorem bi1: $ (ph <-> ps) -> ph -> ps $;
-      theorem bi2: $ (ph <-> ps) -> ps -> ph $;
-      theorem bi3: $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
-    }
+    theorem bi1: $ (ph <-> ps) -> ph -> ps $;
+    theorem bi2: $ (ph <-> ps) -> ps -> ph $;
+    theorem bi3: $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
 
-From the point of view of any other theorem, including `bi2` and `bi3`, `bi1` has the statement `$ (ph <-> ps) -> ph -> ps $`, but the proof obligation corresponding to `bi1` is actually:
+From the point of view of any other theorem, `bi1` has the statement `$ (ph <-> ps) -> ph -> ps $`, but the proof obligation corresponding to `bi1` is actually:
 
-      theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ = ...;
+    theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ = ...;
 
 These modified theorem statements are calculated as follows:
 
@@ -293,12 +292,11 @@ These modified theorem statements are calculated as follows:
 
 As an example of nontrivial modifications:
 
-    def weu (x .y: set) (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $ {
-      prefix wex: $E!$ prec 30;
+    def weu (x .y: set) (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
+    prefix wex: $E!$ prec 30;
 
-      theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
-      theorem example (x y: set) (ph: wff x): $ E! x E! y ph $;
-    }
+    theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
+    theorem example (x y: set) (ph: wff x): $ E! x E! y ph $;
 
 translates to:
 
