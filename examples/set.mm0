@@ -1,3 +1,4 @@
+delimiter $ ( ) ~ $;
 strict provable nonempty sort wff;
 var ph ps ch: wff*;
 term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;

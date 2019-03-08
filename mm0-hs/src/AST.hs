@@ -3,16 +3,17 @@ import qualified Data.ByteString as B
 
 type Ident = String
 
+data SortData = SortData {
+  sPure :: Bool,
+  sStrict :: Bool,
+  sProvable :: Bool,
+  sNonempty :: Bool }
+  deriving (Show)
+
 type AST = [Stmt]
 
-data Stmt =
-    Sort {
-      sId :: Ident,
-      sPure :: Bool,
-      sStrict :: Bool,
-      sProvable :: Bool,
-      sNonempty :: Bool }
-  | Var [Ident] Type
+data Stmt = Sort Ident SortData
+  | Var [Ident] OpenType
   | Term Ident [Binder] Type
   | Axiom Ident [Binder] Type
   | Theorem Ident [Binder] Type
@@ -23,7 +24,8 @@ data Stmt =
   deriving (Show)
 
 data Notation =
-    Prefix Ident Const Prec
+    Delimiter Const
+  | Prefix Ident Const Prec
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
   | NNotation Ident [Binder] Type [Literal]
@@ -39,9 +41,10 @@ data Local = LReg Ident | LDummy Ident | LAnon deriving (Show)
 
 data Type =
     TType Ident [Ident]
-  | TOpenType Ident
   | TFormula Formula
   deriving (Show)
+
+data OpenType = OType Ident [Ident] | Open Ident deriving (Show)
 
 type Formula = B.ByteString
 

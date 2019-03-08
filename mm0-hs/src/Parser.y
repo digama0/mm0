@@ -18,6 +18,7 @@ import qualified Data.ByteString.Lazy as L
   axiom     {TokAxiom}
   coercion  {TokCoercion}
   def       {TokDef}
+  delimiter {TokDelimiter}
   infix     {TokInfix $$}
   max       {TokMax}
   nonempty  {TokNonempty}
@@ -66,6 +67,7 @@ Ident : ident {$1}
       | axiom {"axiom"}
       | coercion {"coercion"}
       | def {"def"}
+      | delimiter {"delimiter"}
       | infix {if $1 then "infixr" else "infixl"}
       | max {"max"}
       | nonempty {"nonempty"}
@@ -86,7 +88,8 @@ SortStmt : flag(pure) flag(strict) flag(provable) flag(nonempty)
 
 VarStmt : var list(Ident) ':' OpenType ';' {Var $2 $4}
 Type : Ident list(Ident) {TType $1 $2}
-OpenType : Type {$1} | Ident '*' {TOpenType $1}
+OpenType : Ident list(Ident) {OType $1 $2}
+         | Ident '*' {Open $1}
 
 TermStmt : term Ident binders(Ident_, Type) ':' ArrowType ';'
            {unArrow (Term $2) $3 $5}
@@ -104,10 +107,12 @@ DefStmt : def Ident binders(Dummy, Type) ':' Type OptDef ';' {Def $2 $3 $5 $6}
 OptDef : '=' formula {Just $2} | {Nothing}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 
-NotationStmt : SimpleNotationStmt {$1}
+NotationStmt : DelimiterStmt {$1}
+             | SimpleNotationStmt {$1}
              | CoercionStmt {$1}
              | GenNotationStmt {$1}
 
+DelimiterStmt : delimiter formula ';' {Delimiter $2}
 SimpleNotationStmt : NotationKind Ident ':' Constant prec Precedence ';' {$1 $2 $4 $6}
 NotationKind : prefix {Prefix} | infix {Infix $1}
 Constant : formula {$1}

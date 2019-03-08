@@ -57,6 +57,7 @@ data Token =
     TokAxiom
   | TokCoercion
   | TokDef
+  | TokDelimiter
   | TokInfix Bool
   | TokMax
   | TokNonempty

@@ -126,6 +126,8 @@ Notations
 ---
 The notation system is intended to be a minimal operator precedence parser. There is support for `prefix` and `infix` notations, `coercion` (nameless notation), and `notation` for everything else. The precedence levels are nonnegative integers, or `max`, representing infinity.
 
+* A `delimiter` is an instruction for the secondary lexer. The secondary lexer is very simple, splitting on whitespace only, except that a token marked as a delimiter is treated as a standalone token even if it appears in a larger string. A declared token (from another notation commmand) must not contain a delimiter token as a substring, and a delimiter must not consist entirely of identifier characters. A verifier may reject this command entirely (in which case all tokens must be separated by spaces), or only allow single-character delimiters.
+
 * A `prefix` constructor parses its argument with the given precedence. It should be a unary syntax operator.
 
 * An `infixl` or `infixr` constructor uses the given precedence for the level of the operator, which should be unique. `infixl` means that the operator is left-associative, and `infixr` means it is right-associative.
@@ -136,7 +138,11 @@ The notation system is intended to be a minimal operator precedence parser. Ther
 
 As an additional check, `notation` requires its variables be annotated with types.
 
-    notation-stmt ::= simple-notation-stmt | coercion-stmt | gen-notation-stmt
+    notation-stmt ::= delimiter-stmt
+                   |  simple-notation-stmt
+                   |  coercion-stmt
+                   |  gen-notation-stmt
+    delimiter-stmt ::= 'delimiter' math-string ';'
     simple-notation-stmt ::= ('infixl' | 'infixr' | 'prefix') identifier ':'
       constant 'prec' precedence-lvl ';'
     constant ::= math-string
@@ -181,7 +187,7 @@ Verifiers are allowed but not required to support out of order notation declarat
     term wi (ph ps: wff): wff;
     infix wi: $->$ prec 25;
 
-Lexical analysis is similar to the primary parsing:
+Tokenization is somewhat simpler than primary lexical analysis. We can partition the string into substrings such that the beginning and end of every delimiter substring or whitespace sequence is a split point, and interpret each substring in the partition as a token, discarding the whitespace. For example, if the delimiters are `(`, `)` and `**`, then `a**b(***{}) c` tokenizes as `'a', '**', 'b', '(', '**', '*{}', ')', 'c'`. It is illegal to write a string with an ambiguous tokenization. (Verifiers may choose to check this on a per-string basis, or use single-character delimiters or other restrictions to ensure that this property holds.)
 
     math-string ::= (math-lexeme | math-whitespace)*
     math-whitespace ::= whitechar+
@@ -244,7 +250,7 @@ For example:
 
     var x y z: set;
     var ph ps: wff*;
-    theorem foo (x: set) (ph: wff y): $ A. x A. z (ph /\ ps) $ -> $ ps $;
+    theorem foo (x: set) (ph: wff y): $ A. x A. z (ph /\ ps) $ > $ ps $;
 
 Here the binder `(ph: wff y)` refers to `y` which is not among the previous binders, and the first hypothesis `$ A. x A. z (ph /\ ps) $` refers to `z`, and `ps`, neither of which are declared.
 
@@ -322,9 +328,9 @@ For the [set.mm0](set.mm0) running example, which begins as:
     axiom ax-1: $ ph -> ps -> ph $;
     axiom ax-2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
     axiom ax-3: $ (~ph -> ~ps) -> ps -> ph $;
-    axiom ax-mp: $ ph $ -> $ ph -> ps $ -> $ ps $;
+    axiom ax-mp: $ ph $ > $ ph -> ps $ > $ ps $;
 
-    theorem a1i: $ ph $ -> $ ps -> ph $;
+    theorem a1i: $ ph $ > $ ps -> ph $;
 
     def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {
       infixl wb: $<->$ prec 20;
