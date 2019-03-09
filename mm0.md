@@ -128,7 +128,7 @@ The notation system is intended to be a minimal operator precedence parser. Ther
 
 * A `delimiter` is an instruction for the secondary lexer. The secondary lexer is very simple, splitting on whitespace only, except that a token marked as a delimiter is treated as a standalone token even if it appears in a larger string. A declared token (from another notation commmand) must not contain a delimiter token as a substring, and a delimiter must not consist entirely of identifier characters. A verifier may reject this command entirely (in which case all tokens must be separated by spaces), or only allow single-character delimiters.
 
-* A `prefix` constructor parses its argument with the given precedence. It should be a unary syntax operator.
+* A `prefix` constructor parses its argument with the given precedence.
 
 * An `infixl` or `infixr` constructor uses the given precedence for the level of the operator, which should be unique. `infixl` means that the operator is left-associative, and `infixr` means it is right-associative.
 
@@ -206,7 +206,8 @@ The nonterminals `expression(prec)` are defined by the following productions:
     expression(max) <- '(' expression(0) ')'
     expression(max) <- VAR                             (if VAR is a variable in scope)
     expression(1024) <- FUNC expression(max){n}        (if FUNC is an n-ary term constructor)
-    expression(p) <- OP expression(p)                  (if OP is prefix prec p)
+    expression(p) <- OP expression(max){n} expression(p)
+                                                       (if OP is is n+1-ary prefix prec p)
     expression(p) <- expression(p) OP expression(p+1)  (if OP is infixl prec p)
     expression(p) <- expression(p+1) OP expression(p)  (if OP is infixr prec p)
     expression(max) <- X(lits)  where                  (if notation := lits)
