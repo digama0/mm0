@@ -121,7 +121,7 @@ Precedence : number {% parseInt $1} | max {maxBound}
 CoercionStmt : coercion Ident ':' Ident '>' Ident ';' {Coercion $2 $4 $6}
 GenNotationStmt : notation Ident binders(Ident_, Type) ':' Type '=' list1(Literal) ';'
                   {NNotation $2 $3 $5 $7}
-Literal : Constant {NConst $1} | '(' Ident ':' Precedence ')' {NVar $2 $4}
+Literal : '(' Constant ':' Precedence ')' {NConst $2 $4} | Ident {NVar $1}
 
 OutputStmt : output OutputKind Ident binders(Dummy, TypeFmla) ';' {Output $2 $3 $4}
 OutputKind : Ident {$1}

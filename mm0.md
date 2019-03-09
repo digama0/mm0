@@ -149,9 +149,9 @@ As an additional check, `notation` requires its variables be annotated with type
     precedence-lvl ::= number | 'max'
     coercion-stmt ::= 'coercion' identifier ':' identifier '>' identifier ';'
     gen-notation-stmt ::= 'notation' identifier (type-binder)* ':'
-      type '=' (notation-literal)+ ';'
-    notation-literal ::= constant | prec-variable
-    prec-variable ::= '(' identifier ':' precedence-lvl ')'
+      type '=' prec-constant (notation-literal)* ';'
+    notation-literal ::= prec-constant | identifier
+    prec-constant ::= '(' constant ':' precedence-lvl ')'
 
 Output
 ---
@@ -210,13 +210,16 @@ The nonterminals `expression(prec)` are defined by the following productions:
                                                        (if OP is is n+1-ary prefix prec p)
     expression(p) <- expression(p) OP expression(p+1)  (if OP is infixl prec p)
     expression(p) <- expression(p+1) OP expression(p)  (if OP is infixr prec p)
-    expression(max) <- X(lits)  where                  (if notation := lits)
-      X(const)  = const
-      X(VAR: p) = expression(p)
+    expression(p) <- c X(lits, p)  where               (if notation := (c: p) lits)
+      X((c: p) lits, q) = c X(lits, q)
+      X(v (c: p) lits, q) = expression(p+1) X((c: p) lits, q)
+      X(v1 v2 lits, q) = expression(max) X(v2 lits, q)
+      X(v, q) = expression(q)
 
-The term constructors appear in the syntax as s-expressions at precedence level `1024`. Notations declared via `notation` are always at the highest precedence level, but the variables in the pattern can have lower precedence. There are rules on notations to prevent an ambiguous parse:
+The term constructors appear in the syntax as s-expressions at precedence level `1024`. `notation` commands have precedences on the constants, such that the precedence on the immediately preceding variable is one higher. There are rules on notations to prevent an ambiguous parse:
 
 * A constant is infixy if it is used in an `infix` command (with the given precedence), or if it appears immediately after a variable in a `notation` command (and it acquires the precedence of this variable). The precedence of an infixy constant must be unique.
+* An `infix` command must have a precedence less than `max`.
 * The first token of a `notation` must be a constant, and must not be shared with any other `prefix` constant or infixy constant.
 * If two variables are adjacent in a `notation`, the first one must have precedence `max`.
 

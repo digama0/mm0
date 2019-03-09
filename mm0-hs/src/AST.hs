@@ -31,7 +31,7 @@ data Notation =
   | NNotation Ident [Binder] Type [Literal]
   deriving (Show)
 
-data Literal = NConst Const | NVar Ident Prec deriving (Show)
+data Literal = NConst Const Prec | NVar Ident deriving (Show)
 
 type Const = B.ByteString
 type Prec = Int
@@ -49,3 +49,8 @@ data VarType = VType Ident | Open Ident deriving (Show)
 type Formula = B.ByteString
 
 data Binder = Binder Local Type deriving (Show)
+
+localName :: Local -> Maybe Ident
+localName (LReg v) = Just v
+localName (LDummy v) = Just v
+localName LAnon = Nothing
