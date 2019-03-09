@@ -24,6 +24,10 @@ dependencies:
 - array
 - utf8-string
 - bytestring
+- containers
+- transformers
+- mtl
+- split
 
 default-extensions:
 - FlexibleContexts
