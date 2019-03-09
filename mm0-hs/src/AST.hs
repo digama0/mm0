@@ -13,7 +13,7 @@ data SortData = SortData {
 type AST = [Stmt]
 
 data Stmt = Sort Ident SortData
-  | Var [Ident] OpenType
+  | Var [Ident] VarType
   | Term Ident [Binder] Type
   | Axiom Ident [Binder] Type
   | Theorem Ident [Binder] Type
@@ -44,7 +44,7 @@ data Type =
   | TFormula Formula
   deriving (Show)
 
-data OpenType = OType Ident [Ident] | Open Ident deriving (Show)
+data VarType = VType Ident | Open Ident deriving (Show)
 
 type Formula = B.ByteString
 

@@ -86,10 +86,10 @@ Ident : ident {$1}
 SortStmt : flag(pure) flag(strict) flag(provable) flag(nonempty)
              sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
 
-VarStmt : var list(Ident) ':' OpenType ';' {Var $2 $4}
+VarStmt : var list(Ident) ':' VarType ';' {Var $2 $4}
 Type : Ident list(Ident) {TType $1 $2}
-OpenType : Ident list(Ident) {OType $1 $2}
-         | Ident '*' {Open $1}
+VarType : Ident {VType $1}
+        | Ident '*' {Open $1}
 
 TermStmt : term Ident binders(Ident_, Type) ':' ArrowType ';'
            {unArrow (Term $2) $3 $5}

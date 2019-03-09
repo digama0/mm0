@@ -84,13 +84,12 @@ The underlying semantics of metamath zero is based on multi-sorted first order l
 Variables and types
 ---
 
-    var-stmt ::= 'var' (identifier)* ':' open-type ';'
-    type ::= identifier (identifier)*
-    open-type ::= type | identifier '*'
+    var-stmt ::= 'var' (identifier)* ':' var-type ';'
+    var-type ::= identifier '*'?
 
 A variable statement does not represent any actual statement or theorem, it just sets up variable names with their types so that they may be inferred in later `term`s, `axiom`s, `def`s and `theorem`s. See "Variable Inference" for details on how the inference process works. In the statement itself, we can declare a list of variables with type dependencies.
 
-A type is the name of a sort followed by 0 or more variable names, which represent the values this variable is allowed to depend on. An open type is either a type, or a sort followed by a `*`, representing all variable dependencies.
+A type is the name of a sort followed by 0 or more variable names, which represent the values this variable is allowed to depend on. In variable declarations, dependent sorts are not permitted, but a type may be declared with a trailing `*`, representing that this variable depends on all bound variables in statements.
 
 Term constructors
 ---
@@ -98,6 +97,7 @@ The `term` directive constructs a new piece of syntax, a function symbol on the 
 
     term-stmt ::= 'term' identifier (type-binder)* ':' arrow-type ';'
     identifier_ ::= identifier | '_'
+    type ::= identifier (identifier)*
     type-binder ::= '(' (identifier_)* ':' type ')'
     arrow-type ::= type | type '>' arrow-type
 
@@ -256,7 +256,7 @@ Here the binder `(ph: wff y)` refers to `y` which is not among the previous bind
 
 Note that `x` and `ph` are both declared in the local scope; these declarations are ignored because their names are *shadowed* by the theorem binders.
 
-Inference processing proceeds from left to right on the variable bindings, including the arrow bindings. The above theorem has three bindings: `(x: set)`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the nondependent bindings, the dependent variable bindings, and the formulas. It is an error for the explicit bindings to come out of order, and the inferred bindings are added at the boundaries between these groups.
+Inference processing proceeds from left to right on the variable bindings, including the arrow bindings. The above theorem has three bindings: `(x: set)`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the (nondependent) bound variables, the regular variable bindings, and the formulas. It is an error for the explicit bindings to come out of order, and the inferred bindings are added at the boundaries between these groups.
 
 For variables with simple types, like `(x: set)`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `(y: set)` is inserted at the end of the nondependent bindings (after `x`). Bindings are inserted in the order they appear in the type.
 
