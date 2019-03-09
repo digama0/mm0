@@ -241,7 +241,7 @@ TODO
 Variable inference
 ---
 
-A theorem may reference variables inside types and formulas that are not explicitly bound in the declaration. Variable inference is the process by which these variables, declared in the local scope, are automatically inserted into the theorem statement.
+A theorem may reference variables inside types and formulas that are not explicitly bound in the declaration. Variable inference is the process by which these variables, declared in the local scope, are automatically inserted into the theorem statement. To prevent ambiguity of inferred variable order, `term`s and `def`s are not permitted to use inferred variables, although `def`s may infer dummy variables used in the definition.
 
 Additionally, at this stage variables are organized into two types, bound variables and regular variables. Dummy variables (in dot binders) are always bound. A variable is considered regular unless it is required to be bound.
 
@@ -260,11 +260,11 @@ Here the binder `(ph: wff y)` refers to `y` which is not among the previous bind
 
 Note that `x` and `ph` are both declared in the local scope; these declarations are ignored because their names are *shadowed* by the theorem binders.
 
-Inference processing proceeds from left to right on the variable bindings, including the arrow bindings. The above theorem has three bindings: `(x: set)`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the (nondependent) bound variables, the regular variable bindings, and the formulas. It is an error for the explicit bindings to come out of order, and the inferred bindings are added at the boundaries between these groups.
+Inferred variables are unordered in the specification file. Verifiers are permitted to enforce any standard ordering in the proof file (for example, alphabetical order). The above theorem has three bindings: `(x: set)`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the (nondependent) bound variables, the regular variable bindings, and the formulas. It is an error for the explicit bindings to come out of order.
 
-For variables with simple types, like `(x: set)`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `(y: set)` is inserted at the end of the nondependent bindings (after `x`). Bindings are inserted in the order they appear in the type.
+For variables with simple types, like `(x: set)`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `(y: set)` is inferred.
 
-For formulas, binders are inserted in the order they appear in the syntax tree. The syntax tree of the example is `wal x (wal z (wa ph ps))`, and so we check for `x,z,ph,ps` in turn that they appear in the binder list, and insert the ones that don't. So this would add `(z: set)` as a nondependent bound variable binder and `(ps: wff*)` as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula `ps` and we don't need to do anything because the variable is already present.
+For formulas, any variables that are referenced in the syntax tree are inferred. The syntax tree of the example is `wal x (wal z (wa ph ps))`, and so we check for `x,z,ph,ps` that they appear in the binder list, and insert the ones that don't. So this would add `(z: set)` as a nondependent bound variable binder and `(ps: wff*)` as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula `ps` and we don't need to do anything because the variable is already present.
 
 Once all the bindings are accumulated, all the variables with open types are given types that depend on all bound variables. So `(ps: wff*)` becomes `(ps: wff x y z)`. The end result is:
 
@@ -273,7 +273,7 @@ Once all the bindings are accumulated, all the variables with open types are giv
 
 and this is the version of the theorem that is proven in the proof file.
 
-For definitions, the process is the same except that inferred bound variables are marked as dummy variables if possible (if they do not appear as a type dependency). It is illegal for a bound variable in a definition to not appear as a type dependency to some other variable.
+For definitions, the process is the same except that inferred bound variables are marked as dummy variables. It is illegal for a bound variable in a definition to not appear as a type dependency to some other variable.
 
 Definition substitution
 ---
