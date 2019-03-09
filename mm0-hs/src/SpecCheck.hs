@@ -9,8 +9,10 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import AST
 import Environment
-import Util
+import ParserEnv
+import LocalContext
 import MathParser
+import Util
 
 data TCState = TCState {
   env :: Environment,
@@ -82,49 +84,21 @@ checkAST (Output k v bi : ds) =
 checkAST (Block ss : ds) =
   (++) <$> modifyStack pushStack (checkAST ss) <*> checkAST ds
 
-data PType = PType Ident [Ident] | PFormula SExpr
-data PBinder = PBinder Local PType
-
-data Locals = Locals {
-  lBound :: S.Set Ident,
-  lNewVars :: [Ident] }
-
-type LCtx = [PBinder]
-type LocalSpecM a = ReaderT (Stack, (Environment, ParserEnv))
-  (StateT Locals (Either String)) a
-
-lookupLocal :: LCtx -> Ident -> Maybe PType
-lookupLocal [] _ = Nothing
-lookupLocal (PBinder l ty : ls) v =
-  if localName l == Just v then Just ty else lookupLocal ls v
-
-makeBound :: Ident -> LocalSpecM ()
-makeBound v = modify (\loc -> loc {lBound = S.insert v (lBound loc)})
-
-ensureLocal :: Ident -> LCtx -> LocalSpecM ()
-ensureLocal v ctx = do
-  Locals bd nv <- get
-  unless (isJust (lookupLocal ctx v) || v `elem` nv) $ do
-    stk <- fst <$> ask
-    getVar' v stk
-    put (Locals bd (v : nv))
-
-processBinders :: [Binder] -> ([PBinder] -> LCtx -> LocalSpecM a) -> LCtx -> LocalSpecM a
+processBinders :: [Binder] -> ([PBinder] -> LocalCtxM a) -> LocalCtxM a
 processBinders [] f = f []
 processBinders (b:bs) f =
   processBinder b (\b' -> processBinders bs (f . (b':)))
 
-processBinder :: Binder -> (PBinder -> LCtx -> LocalSpecM a) -> LCtx -> LocalSpecM a
-processBinder (Binder l ty) f ctx = do
-  b <- PBinder l <$> processType ty ctx
-  f b (b : ctx)
+processBinder :: Binder -> (PBinder -> LocalCtxM a) -> LocalCtxM a
+processBinder (Binder l ty) f = do
+  b <- PBinder l <$> processType ty
+  local (b:) (f b)
 
-processType :: Type -> LCtx -> LocalSpecM PType
-processType (TType v vs) ctx = do
+processType :: Type -> LocalCtxM PType
+processType (TType v vs) = do
   Locals _ nv <- get
-  mapM_ (\v' -> ensureLocal v' ctx >> makeBound v') vs
+  mapM_ (\v' -> ensureLocal v' >> makeBound v') vs
   return (PType v vs)
-processType (TFormula s) ctx = do
-  (_, (e, pe)) <- ask
-  fmla <- lift $ lift $ parseFormula pe s
+processType (TFormula s) = do
+  fmla <- parseFormula s
   return (PFormula fmla)

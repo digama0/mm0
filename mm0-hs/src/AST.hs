@@ -54,3 +54,7 @@ localName :: Local -> Maybe Ident
 localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing
+
+varTypeSort :: VarType -> Ident
+varTypeSort (VType s) = s
+varTypeSort (Open s) = s

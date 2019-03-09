@@ -1,0 +1,60 @@
+module LocalContext where
+
+import Control.Monad.Trans.Reader
+import Control.Monad.Trans.State (StateT)
+import Control.Monad.State.Class
+import Control.Monad.Except
+import Data.Maybe
+import qualified Data.Map.Strict as M
+import qualified Data.Set as S
+import AST
+import Environment
+import ParserEnv
+
+data PType = PType Ident [Ident] | PFormula SExpr
+data PBinder = PBinder Local PType
+
+data Locals = Locals {
+  lBound :: S.Set Ident,
+  lNewVars :: [Ident] }
+
+type LCtx = [PBinder]
+type LocalCtxM = ReaderT LCtx
+  (ReaderT (Stack, (Environment, ParserEnv))
+    (StateT Locals (Either String)))
+
+readStack :: LocalCtxM Stack
+readStack = fst <$> lift ask
+
+readEnv :: LocalCtxM Environment
+readEnv = fst . snd <$> lift ask
+
+readPE :: LocalCtxM ParserEnv
+readPE = snd . snd <$> lift ask
+
+lookupLocal :: LCtx -> Ident -> Maybe PType
+lookupLocal [] _ = Nothing
+lookupLocal (PBinder l ty : ls) v =
+  if localName l == Just v then Just ty else lookupLocal ls v
+
+lookupVarSort :: Stack -> LCtx -> Ident -> Maybe Ident
+lookupVarSort stk ctx v =
+  case lookupLocal ctx v of
+    Just (PType s _) -> Just s
+    Just _ -> Nothing
+    Nothing -> varTypeSort <$> sVars stk M.!? v
+
+makeBound :: Ident -> LocalCtxM ()
+makeBound v = modify (\loc -> loc {lBound = S.insert v (lBound loc)})
+
+ensureLocal :: Ident -> LocalCtxM Ident
+ensureLocal v = do
+  ctx <- ask
+  Locals bd nv <- get
+  case lookupLocal ctx v of
+    Just (PType s _) -> return s
+    Just _ -> throwError "hypothesis used as variable"
+    Nothing -> do
+      s <- lift (fst <$> ask) >>= getVarM v
+      unless (v `elem` nv) (put (Locals bd (v : nv)))
+      return $ varTypeSort s

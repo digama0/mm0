@@ -1,7 +1,9 @@
 module Environment where
 
+import Control.Monad.Except
 import qualified Data.Map.Strict as M
 import AST
+import Util
 
 data DepType = DepType {
   dSort :: Ident,
@@ -44,3 +46,6 @@ getTerm e v = eDecls e M.!? v >>= go where
 
 getArity :: Environment -> Ident -> Maybe Int
 getArity e v = (\(bs, args, _) -> length bs + length args) <$> getTerm e v
+
+getVarM :: MonadError String m => Ident -> Stack -> m VarType
+getVarM v s = fromJustError "type depends on unknown variable" (sVars s M.!? v)
