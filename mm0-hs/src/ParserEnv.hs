@@ -21,8 +21,8 @@ type Token = String
 
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
-data PrefixInfo = PrefixInfo Ident [PLiteral]
-data InfixInfo = InfixInfo Ident Bool
+data PrefixInfo = PrefixInfo Ident [PLiteral] deriving (Show)
+data InfixInfo = InfixInfo Ident Bool deriving (Show)
 type Coe = SExpr -> SExpr
 
 data ParserEnv = ParserEnv {
@@ -45,21 +45,31 @@ tokenize pe cnst = concatMap go (splitOneOf " \t\r\n" (toString cnst)) where
   go [] = []
   go (c:s) = go1 c s id
   go1 :: Char -> String -> (String -> String) -> [Token]
-  go1 c s f | S.member c ds = f [c] : go s
+  go1 c s f | S.member c ds = case f [] of
+    [] -> [c] : go s
+    s1 -> s1 : [c] : go s
   go1 c [] f = [f [c]]
   go1 c (c':s) f = go1 c' s (f . (c:))
 
 tokenize1 :: ParserEnv -> Const -> Either String Token
 tokenize1 env cnst = case tokenize env cnst of
   [tk] -> return tk
-  _ -> throwError "bad token"
+  tks -> throwError ("bad token" ++ show tks)
 
 checkToken :: ParserEnv -> Token -> Bool
-checkToken e tk = all ok tk && not (all identCh tk) where
+checkToken _ [c] = c `notElem` " \t\r\n"
+checkToken e tk = all ok tk where
   ok c = c `S.notMember` delims e && c `notElem` " \t\r\n"
-  identCh c =
-    'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' ||
-    '0' <= c && c <= '9' || c == '_' || c == '-'
+
+identCh1 :: Char -> Bool
+identCh1 c = 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' || c == '-'
+
+identCh :: Char -> Bool
+identCh c = '0' <= c && c <= '9' || identCh1 c
+
+identStr :: String -> Bool
+identStr [] = False
+identStr (c:s) = identCh1 c && all identCh s
 
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
@@ -155,6 +165,7 @@ addNotation (Delimiter s) _ e = do
   return (e {delims = ds'}) where
     go :: [String] -> S.Set Char -> Either String (S.Set Char)
     go [] s = return s
+    go ([]:ds) s = go ds s
     go ([c]:ds) s = go ds (S.insert c s)
     go (_:_) _ = throwError "multiple char delimiters not supported"
 addNotation (Prefix x s prec) env e = do

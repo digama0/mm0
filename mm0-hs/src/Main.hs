@@ -14,7 +14,7 @@ main :: IO ()
 main = do
   s <- B.getContents
   ast <- either fail pure (parse s)
-  print ast
-  print "\n"
+  -- print ast
+  putStr "\n"
   pos <- liftIO (checkAST ast)
   print pos

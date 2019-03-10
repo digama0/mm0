@@ -1,4 +1,4 @@
-delimiter $ ( ) ~ $;
+delimiter $ ( ) ~ { } $;
 strict provable nonempty sort wff;
 var ph ps ch: wff*;
 term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
@@ -31,9 +31,9 @@ var x y z w: set;
 
 term wal (x: set) (ph: wff x): wff; prefix wal: $A.$ prec 30;
 
-def wex (x: set) (ph: wff x): wff = $ ~A. x ~ph $;
+def wex (x: set) (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix wex: $E.$ prec 30;
-theorem df-ex: $ E. x ph <-> ~A. x ~ph $;
+theorem df-ex: $ E. x ph <-> ~(A. x ~ph) $;
 
 axiom ax-gen: $ ph $ > $ A. x ph $;
 axiom ax-4: $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
@@ -45,7 +45,7 @@ term wel (a b: set): wff; infixl wel: $es.$ prec 40;
 
 def weu (x: set) (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
 prefix wex: $E!$ prec 30;
-theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
+theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
 
 axiom ax-6: $ E. x x =s a $;
 axiom ax-7: $ a =s b -> a =s c -> b =s c $;
@@ -53,21 +53,21 @@ axiom ax-7: $ a =s b -> a =s c -> b =s c $;
 axiom ax-8: $ a =s b -> a es. c -> b es. c $;
 axiom ax-9: $ a =s b -> c es. a -> c es. b $;
 
-axiom ax-10: $ ~A. x ph -> A. x ~ A. x ph $;
+axiom ax-10: $ ~(A. x ph) -> A. x ~(A. x ph) $;
 axiom ax-11: $ A. x A. y ph -> A. y A. x ph $;
-axiom ax-12 (ph: wff y): $ A. y ph -> A. x (x = y -> ph) $;
+axiom ax-12 (ph: wff y): $ A. y ph -> A. x (x =s y -> ph) $;
 
-axiom ax-ext: $ A. x (x e. a <-> x e. b) -> a = b $;
+axiom ax-ext: $ A. x (x es. a <-> x es. b) -> a =s b $;
 axiom ax-rep (ph: wff y z):
-  $ A. y E. x A. z (ph -> z = x) ->
-    E. x A. z (z e. x <-> E. y (y e. a /\ ph)) $;
-axiom ax-pow: $ E. x A. y (A. z (z e. y -> z e. a) -> y e. x) $;
-axiom ax-un: $ E. x A. y (E. z (y e. z /\ z e. a) -> y e. x) $;
-axiom ax-reg: $ E. x x e. a -> E. x (x e. a /\ A. y (y e. x -> ~ y e. a)) $;
-axiom ax-inf: $ E. x (a e. x /\ A. y (y e. x -> E. z (y e. z /\ z e. x))) $;
+  $ A. y E. x A. z (ph -> z =s x) ->
+    E. x A. z (z es. x <-> E. y (y es. a /\ ph)) $;
+axiom ax-pow: $ E. x A. y (A. z (z es. y -> z es. a) -> y es. x) $;
+axiom ax-un: $ E. x A. y (E. z (y es. z /\ z es. a) -> y es. x) $;
+axiom ax-reg: $ E. x x es. a -> E. x (x es. a /\ A. y (y es. x -> ~ y es. a)) $;
+axiom ax-inf: $ E. x (a es. x /\ A. y (y es. x -> E. z (y es. z /\ z es. x))) $;
 axiom ax-ac:
-  $ E. x A. y (y e. a -> E. z z e. y ->
-    E! z (z e. y /\ E. w (w e. x /\ y e. w /\ z e. w))) $;
+  $ E. x A. y (y es. a -> E. z z es. y ->
+    E! z (z es. y /\ E. w (w es. x /\ y es. w /\ z es. w))) $;
 
 strict nonempty sort class;
 var A B C: class*;
@@ -75,7 +75,7 @@ term cab (x: set) (ph: wff x): class;
 term welc (a: set) (A: class): wff; infixl welc: $ec.$ prec 50;
 notation cab (x: set) (ph: wff x): class = (${$:0) x ($|$:0) ph ($}$:0);
 
-axiom ax-8b: $ a = b -> a ec. A -> b ec. A $;
+axiom ax-8b: $ a =s b -> a ec. A -> b ec. A $;
 
 axiom ax-clab: $ x ec. {x | ph} <-> ph $;
 

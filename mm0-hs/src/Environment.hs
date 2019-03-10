@@ -8,9 +8,19 @@ import Util
 data DepType = DepType {
   dSort :: Ident,
   dDeps :: [Ident] }
-  deriving (Show)
 
-data SExpr = SVar Ident | App Ident [SExpr] deriving (Show)
+instance Show DepType where
+  showsPrec _ (DepType t ts) r =
+    t ++ foldr (\t' r -> ' ' : t' ++ r) r ts
+
+data SExpr = SVar Ident | App Ident [SExpr]
+
+instance Show SExpr where
+  showsPrec n (SVar v) r = v ++ r
+  showsPrec n (App v []) r = v ++ r
+  showsPrec n (App v vs) r =
+    let f r = v ++ foldr (\e r -> ' ' : showsPrec 1 e r) r vs in
+    if n == 0 then f r else '(' : f (')' : r)
 
 data Decl =
     DTerm
@@ -36,6 +46,7 @@ type Vars = M.Map Ident VarType
 data Stack = Stack {
   sVars :: Vars,
   sRest :: Maybe Stack }
+  deriving (Show)
 
 data Environment = Environment {
   eSorts :: M.Map Ident SortData,

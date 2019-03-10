@@ -79,16 +79,16 @@ checkDecls [] = return []
 checkDecls (Sort v sd : ds) = insertSort v sd >> checkDecls ds
 checkDecls (Var ids ty : ds) = insertVars ids ty (checkDecls ds)
 checkDecls (Term x vs ty : ds) = do
-  checkTerm vs ty (\bs as -> DTerm bs (snd <$> as)) >>= insertDecl x
+  checkTerm x vs ty (\bs as -> DTerm bs (snd <$> as)) >>= insertDecl x
   checkDecls ds
 checkDecls (Axiom x vs ty : ds) =
-  checkAssert vs ty DAxiom >>= insertDecl x >> checkDecls ds
+  checkAssert x vs ty DAxiom >>= insertDecl x >> checkDecls ds
 checkDecls (Theorem x vs ty : ds) = do
   env <- fst <$> get
-  thm <- checkAssert vs ty (ProofObligation env)
+  thm <- checkAssert x vs ty (ProofObligation env)
   (thm :) <$> checkDecls ds
 checkDecls (Def x vs ty def : ds) =
-  checkDef vs ty def >>= insertDecl x >> checkDecls ds
+  checkDef x vs ty def >>= insertDecl x >> checkDecls ds
 checkDecls (Notation n : ds) = do
   (e, pe) <- get
   modifyParser (addNotation n)
@@ -98,31 +98,31 @@ checkDecls (Output k v bi : ds) =
 checkDecls (Block ss : ds) =
   (++) <$> modifyStack pushStack (checkDecls ss) <*> checkDecls ds
 
-checkTerm :: [Binder] -> Type ->
+checkTerm :: Ident -> [Binder] -> Type ->
   ([(Ident, Ident)] -> [(Ident, DepType)] -> DepType -> a) -> SpecM a
-checkTerm vs ty mk = do
+checkTerm x vs ty mk = do
   ((bis, ret), Locals sbd nv) <- runLocalCtxM' $
     processBinders vs $ \vs' -> (,) vs' <$> processType ty
   ReaderT $ \stk -> lift $ do
     (_, dummies) <- collectDummies bis
-    guardError "dummy variables not permitted in terms" (null dummies)
+    guardError (x ++ ": dummy variables not permitted in terms") (null dummies)
     (bis, bound) <- collectBound sbd bis
     (bis, args) <- collectArgs sbd bis
-    guardError "invalid term binder" (null bis)
+    guardError (x ++ ": invalid term binder " ++ show bis) (null bis)
     guardError "terms are not permitted to use var declarations" (S.null nv)
     ret' <- case ret of
       PType t ts -> return (DepType t ts)
-      _ -> throwError "invalid term return type"
+      _ -> throwError (x ++ ": invalid term return type")
     return (mk bound args ret')
 
-checkAssert :: [Binder] -> Type ->
+checkAssert :: Ident -> [Binder] -> Type ->
   ([(Ident, Ident)] -> [(Ident, DepType)] -> [SExpr] -> SExpr -> a) -> SpecM a
-checkAssert vs ty mk = do
+checkAssert x vs ty mk = do
   ((bis, ret), Locals sbd nv) <- runLocalCtxM' $
     processBinders vs $ \vs' -> (,) vs' <$> processType ty
   ReaderT $ \stk -> lift $ do
     (_, dummies) <- collectDummies bis
-    guardError "dummy variables not permitted in axiom/theorem" (null dummies)
+    guardError (x ++ ": dummy variables not permitted in axiom/theorem") (null dummies)
     (bis, bound) <- collectBound sbd bis
     (bis, args) <- collectArgs sbd bis
     hyps <- collectHyps bis
@@ -132,12 +132,12 @@ checkAssert vs ty mk = do
     let args' = args ++ ((\(v, ty) -> (v, varTypeToDep bd' ty)) <$> os)
     ret' <- case ret of
       PFormula sexpr -> return sexpr
-      _ -> throwError "invalid axiom/theorem return type"
+      _ -> throwError (x ++ ": invalid axiom/theorem return type")
     return (mk bound' args' hyps ret')
 
-checkDef :: [Binder] -> Type -> Maybe Formula -> SpecM Decl
-checkDef vs ty Nothing = checkTerm vs ty (\bs as r -> DDef bs as r Nothing)
-checkDef vs ty (Just defn) = do
+checkDef :: Ident -> [Binder] -> Type -> Maybe Formula -> SpecM Decl
+checkDef x vs ty Nothing = checkTerm x vs ty (\bs as r -> DDef bs as r Nothing)
+checkDef x vs ty (Just defn) = do
   ((bis, ret, defn'), Locals sbd nv) <- runLocalCtxM' $
     processBinders vs $ \vs' -> do
       ty' <- processType ty
@@ -147,7 +147,7 @@ checkDef vs ty (Just defn) = do
     (bis, dummies) <- collectDummies bis
     (bis, bound) <- collectBound sbd bis
     (bis, args) <- collectArgs sbd bis
-    guardError "invalid def binder" (null bis)
+    guardError (x ++ ": invalid def binder " ++ show bis) (null bis)
     let dummies2 = (\v -> (v, varTypeSort $ sVars stk M.! v)) <$> S.toList nv
     let dummies' = dummies ++ dummies2
     ret' <- case ret of
@@ -205,9 +205,12 @@ collectArgs :: S.Set Ident -> [PBinder] -> Either String ([PBinder], [(Ident, De
 collectArgs sbd = go where
   go (PBinder (LReg v) (PType t ts) : bis) | not (S.member v sbd) =
     (\(bis', as') -> (bis', (v, DepType t ts) : as')) <$> go bis
+  go (PBinder LAnon (PType t ts) : bis) =
+    (\(bis', as') -> (bis', ("_", DepType t ts) : as')) <$> go bis
   go bis = return (bis, [])
 
 collectHyps :: [PBinder] -> Either String [SExpr]
+collectHyps [] = return []
 collectHyps (PBinder _ (PFormula sexp) : bis) = (sexp :) <$> collectHyps bis
 collectHyps _ = throwError "incorrect binders"
 

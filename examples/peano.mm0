@@ -1,4 +1,4 @@
-delimiter $ ( ) ~ [ ] / $;
+delimiter $ ( ) ~ [ ] $;
 strict provable nonempty sort wff;
 var ph ps ch: wff*;
 term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
@@ -23,7 +23,7 @@ var x y z w: nat;
 
 term al (x: nat) (ph: wff x): wff; prefix al: $A.$ prec 30;
 
-def ex (x: nat) (ph: wff x): wff = $ ~A. x ~ph $;
+def ex (x: nat) (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix ex: $E.$ prec 30;
 
 axiom ax-gen: $ ph $ > $ A. x ph $;
@@ -32,32 +32,32 @@ axiom ax-5 (ph: wff): $ ph -> A. x ph $;
 
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
-def subst (a x .y: nat) (ph: wff x): wff =
+def subst (x a .y: nat) (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
-notation subst (a x: nat) (ph: wff x): wff =
+notation subst (x a: nat) (ph: wff x): wff =
   ($[$:0) a ($/$:0) x ($]$:0) ph;
 
-var a b: nat;
+var a b c: nat;
 axiom ax-6: $ E. x x = a $;
 axiom ax-7: $ a = b -> a = c -> b = c $;
 
-axiom ax-10: $ ~A. x ph -> A. x ~ A. x ph $;
+axiom ax-10: $ ~(A. x ph) -> A. x ~ (A. x ph) $;
 axiom ax-11: $ A. x A. y ph -> A. y A. x ph $;
-axiom ax-12 (ph: wff y): $ A. y ph -> [y/x]ph $;
+axiom ax-12 (ph: wff y): $ A. y ph -> [y / x]ph $;
 
 term iota (x: nat) (ph: wff x): nat;
-prefix iota: $i.$ prec 30;
+prefix iota: $i.$ prec 55;
 
 axiom iotaeq: $ A. x (ph <-> ps) -> i. x ph = i. x ps $;
-axiom cbviota: $ i. y [y/x]ph = i. x ph $;
-axiom df-iota: $ (i. x x = a) = a $;
+axiom cbviota: $ i. y ([y / x]ph) = i. x ph $;
+axiom df-iota: $ i. x (x = a) = a $;
 
 term zero: nat; prefix zero: $0$ prec max;
 term suc: nat > nat; prefix suc: $S$ prec max;
 
 axiom peano1: $ ~(0 = S a) $;
 axiom peano2: $ S a = S b <-> a = b $;
-axiom peano5: $ [0/x] ph -> A. x (ph -> [S x/x] ph) -> A. x ph $;
+axiom peano5: $ [0 / x] ph -> A. x (ph -> [S x / x] ph) -> A. x ph $;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
 term mul: nat > nat > nat; infixl add: $*$ prec 70;

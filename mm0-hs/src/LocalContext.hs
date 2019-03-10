@@ -14,6 +14,13 @@ import ParserEnv
 data PType = PType Ident [Ident] | PFormula SExpr
 data PBinder = PBinder Local PType
 
+instance Show PType where
+  showsPrec n (PType t ts) = showsPrec n (DepType t ts)
+  showsPrec n (PFormula e) = showsPrec n e
+
+instance Show PBinder where
+  showsPrec n (PBinder l ty) = showsPrec n l . (": " ++) . showsPrec n ty
+
 data Locals = Locals {
   lBound :: S.Set Ident,
   lNewVars :: S.Set Ident }
@@ -40,15 +47,18 @@ lookupLocal [] _ = Nothing
 lookupLocal (PBinder l ty : ls) v =
   if localName l == Just v then Just ty else lookupLocal ls v
 
-lookupVarSort :: Stack -> LCtx -> Ident -> Maybe Ident
+lookupVarSort :: Stack -> LCtx -> Ident -> Maybe (Ident, Bool)
 lookupVarSort stk ctx v =
   case lookupLocal ctx v of
-    Just (PType s _) -> Just s
+    Just (PType s _) -> Just (s, True)
     Just _ -> Nothing
-    Nothing -> varTypeSort <$> sVars stk M.!? v
+    Nothing -> (\t -> (varTypeSort t, False)) <$> sVars stk M.!? v
 
 makeBound :: Ident -> LocalCtxM ()
 makeBound v = modify (\loc -> loc {lBound = S.insert v (lBound loc)})
+
+insertLocal :: Ident -> LocalCtxM ()
+insertLocal v = modify (\loc -> loc {lNewVars = S.insert v (lNewVars loc)})
 
 ensureLocal :: Ident -> LocalCtxM Ident
 ensureLocal v = do

@@ -19,20 +19,23 @@ import Util
 
 type ParserM = StateT [Token] LocalCtxM
 
-parseError :: MonadError String m => String -> m a
-parseError s = throwError ("math parse error: " ++ s)
+parseError :: String -> ParserM a
+parseError s = do
+  tks <- get
+  throwError ("math parse error: " ++ s ++ "; at \"" ++
+    concatMap (++ " ") (take 5 tks) ++ "...\"")
 
 parseFormula :: Formula -> LocalCtxM SExpr
 parseFormula s = do
   pe <- readPE
   runStateT (parseExpr 0) (tokenize pe s) >>= \case
     ((sexp, _), []) -> return sexp
-    _ -> parseError "expected $"
+    _ -> throwError "math parse error: expected '$'"
 
 tkMatch :: (Token -> Maybe b) -> (Token -> b -> ParserM a) -> ParserM a -> ParserM a
 tkMatch f yes no = StateT $ \case
   t : ss -> case f t of
-    Nothing -> runStateT no ss
+    Nothing -> runStateT no (t : ss)
     Just b -> runStateT (yes t b) ss
   ss -> runStateT no ss
 
@@ -40,14 +43,14 @@ tkCond :: (Token -> Bool) -> ParserM a -> ParserM a -> ParserM a
 tkCond p yes no = tkMatch (\t -> if p t then Just () else Nothing) (\_ _ -> yes) no
 
 tk :: Token -> ParserM ()
-tk t = tkCond (== t) (return ()) (parseError ("expected " ++ t))
+tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ t ++ "'"))
 
 parseVar :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
 parseVar no = do
   ctx <- ask
   stk <- lift readStack
-  tkMatch (\v -> lookupVarSort stk ctx v)
-    (\v s -> return (SVar v, s)) no
+  tkMatch (lookupVarSort stk ctx)
+    (\v (s, b) -> unless b (lift $ insertLocal v) >> return (SVar v, s)) no
 
 parseLiteral :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
 parseLiteral no =
@@ -84,14 +87,14 @@ parsePrefix p = parseLiteral $ do
   env <- lift readEnv
   tkMatch (\v -> checkPrec pe p v (prefixes pe M.!? v))
     (\v (PrefixInfo x lits) -> do
-      let (as, bs, r) = fromJust (getTerm env v)
+      let (as, bs, r) = fromJust (getTerm env x)
       ss <- parseLiterals ((snd <$> as) ++ (dSort <$> bs)) lits
       return (App x ss, dSort r)) $
     tkMatch (\v -> if p < appPrec then Nothing else getTerm env v)
       (\x (as, bs, r) -> do
         ss <- mapM parseSExpr ((snd <$> as) ++ (dSort <$> bs))
         return (App x ss, dSort r)) $
-    parseError "expected expression"
+    parseError "expected variable or prefix or term s-expr"
 
 getLhs :: Prec -> (SExpr, Ident) -> ParserM (SExpr, Ident)
 getLhs p lhs = do
@@ -102,7 +105,7 @@ getLhs p lhs = do
       if q >= p then (,) q <$> infixes pe M.!? v else Nothing)
     (\v (q, InfixInfo x _) -> do
       rhs <- parsePrefix p >>= getRhs q
-      let (as, bs, r) = fromJust (getTerm env v)
+      let (as, bs, r) = fromJust (getTerm env x)
       let [s1, s2] = (snd <$> as) ++ (dSort <$> bs)
       lhs' <- coerce s1 lhs
       rhs' <- coerce s2 rhs
@@ -121,4 +124,4 @@ getRhs p rhs = do
     (return rhs)
 
 parseExpr :: Prec -> ParserM (SExpr, Ident)
-parseExpr = \p -> parsePrefix p >>= getLhs p
+parseExpr p = parsePrefix p >>= getLhs p

@@ -37,18 +37,30 @@ type Const = B.ByteString
 type Prec = Int
 type OutputKind = String
 
-data Local = LReg Ident | LDummy Ident | LAnon deriving (Show)
+data Local = LReg Ident | LDummy Ident | LAnon
+
+instance Show Local where
+  showsPrec _ (LReg v) r = v ++ r
+  showsPrec _ (LDummy v) r = '.' : v ++ r
+  showsPrec _ LAnon r = '_' : r
 
 data Type =
     TType Ident [Ident]
   | TFormula Formula
   deriving (Show)
 
-data VarType = VType Ident | Open Ident deriving (Show)
+data VarType = VType Ident | Open Ident
+
+instance Show VarType where
+  showsPrec _ (VType v) r = v ++ r
+  showsPrec _ (Open v) r = v ++ '*' : r
 
 type Formula = B.ByteString
 
-data Binder = Binder Local Type deriving (Show)
+data Binder = Binder Local Type
+
+instance Show Binder where
+  showsPrec n (Binder l ty) = showsPrec n l . (": " ++) . showsPrec n ty
 
 localName :: Local -> Maybe Ident
 localName (LReg v) = Just v
