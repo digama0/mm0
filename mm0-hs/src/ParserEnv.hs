@@ -3,7 +3,7 @@ module ParserEnv(Token,
   ParserEnv(..),
   PrefixInfo(..),
   InfixInfo(..),
-  addNotation, tokenize, getCoe) where
+  addNotation, tokenize, getCoe, newParserEnv) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.State
@@ -31,6 +31,9 @@ data ParserEnv = ParserEnv {
   infixes :: M.Map Token InfixInfo,
   prec :: M.Map Token Prec,
   coes :: M.Map Ident (M.Map Ident Coe) }
+
+newParserEnv :: ParserEnv
+newParserEnv = ParserEnv S.empty M.empty M.empty M.empty M.empty
 
 toString :: Const -> String
 toString = C.unpack

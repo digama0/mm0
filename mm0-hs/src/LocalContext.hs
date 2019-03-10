@@ -1,7 +1,7 @@
 module LocalContext where
 
 import Control.Monad.Trans.Reader
-import Control.Monad.Trans.State (StateT)
+import Control.Monad.Trans.State (StateT, runStateT)
 import Control.Monad.State.Class
 import Control.Monad.Except
 import Data.Maybe
@@ -16,12 +16,15 @@ data PBinder = PBinder Local PType
 
 data Locals = Locals {
   lBound :: S.Set Ident,
-  lNewVars :: [Ident] }
+  lNewVars :: S.Set Ident }
 
 type LCtx = [PBinder]
 type LocalCtxM = ReaderT LCtx
   (ReaderT (Stack, (Environment, ParserEnv))
     (StateT Locals (Either String)))
+
+runLocalCtxM :: LocalCtxM a -> Stack -> (Environment, ParserEnv) -> Either String (a, Locals)
+runLocalCtxM m s e = runStateT (runReaderT (runReaderT m []) (s, e)) (Locals S.empty S.empty)
 
 readStack :: LocalCtxM Stack
 readStack = fst <$> lift ask
@@ -56,5 +59,5 @@ ensureLocal v = do
     Just _ -> throwError "hypothesis used as variable"
     Nothing -> do
       s <- lift (fst <$> ask) >>= getVarM v
-      unless (v `elem` nv) (put (Locals bd (v : nv)))
+      put (Locals bd (S.insert v nv))
       return $ varTypeSort s

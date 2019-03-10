@@ -120,6 +120,5 @@ getRhs p rhs = do
     (\v (q, x) -> modify (v:) >> getLhs q rhs >>= getRhs p)
     (return rhs)
 
-
 parseExpr :: Prec -> ParserM (SExpr, Ident)
 parseExpr = \p -> parsePrefix p >>= getLhs p
