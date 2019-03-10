@@ -23,7 +23,7 @@ infixl wa: $/\$ prec 20;
 theorem df-an: $ (ph /\ ps) <-> ~(ph -> ~ps) $;
 
 def wtru (.p: wff): wff = $ p <-> p $;
-notation wtru: wff = $ T. $;
+prefix wtru: $T.$ prec max;
 theorem df-tru: $ T. <-> (ph <-> ph) $;
 
 pure nonempty sort set;
@@ -73,7 +73,7 @@ strict nonempty sort class;
 var A B C: class*;
 term cab (x: set) (ph: wff x): class;
 term welc (a: set) (A: class): wff; infixl welc: $ec.$ prec 50;
-notation cab (x: set) (ph: wff x): class = ${$ (x: max) $|$ (ph: 0) $}$;
+notation cab (x: set) (ph: wff x): class = (${$:0) x ($|$:0) ph ($}$:0);
 
 axiom ax-8b: $ a = b -> a ec. A -> b ec. A $;
 

@@ -22,6 +22,7 @@ tokens :-
   axiom     {\_ -> TokAxiom}
   coercion  {\_ -> TokCoercion}
   def       {\_ -> TokDef}
+  delimiter {\_ -> TokDelimiter}
   infixl    {\_ -> TokInfix False}
   infixr    {\_ -> TokInfix True}
   max       {\_ -> TokMax}
