@@ -69,6 +69,7 @@ coerce s2 (sexp, s1) = do
 
 parseLiterals :: [Ident] -> [PLiteral] -> ParserM [SExpr]
 parseLiterals ls = go I.empty where
+  go :: I.IntMap SExpr -> [PLiteral] -> ParserM [SExpr]
   go m [] = return (I.elems m)
   go m (PConst t : lits) = tk t >> go m lits
   go m (PVar n p : lits) = do
@@ -87,12 +88,14 @@ parsePrefix p = parseLiteral $ do
   env <- lift readEnv
   tkMatch (\v -> checkPrec pe p v (prefixes pe M.!? v))
     (\v (PrefixInfo x lits) -> do
-      let (as, bs, r) = fromJust (getTerm env x)
-      ss <- parseLiterals ((snd <$> as) ++ (dSort <$> bs)) lits
+      let (bs, r) = fromJust (getTerm env x)
+      let bss = dSort . binderType <$> bs
+      ss <- parseLiterals bss lits
       return (App x ss, dSort r)) $
     tkMatch (\v -> if p < appPrec then Nothing else getTerm env v)
-      (\x (as, bs, r) -> do
-        ss <- mapM parseSExpr ((snd <$> as) ++ (dSort <$> bs))
+      (\x (bs, r) -> do
+        let bss = dSort . binderType <$> bs
+        ss <- mapM parseSExpr bss
         return (App x ss, dSort r)) $
     parseError "expected variable or prefix or term s-expr"
 
@@ -105,8 +108,8 @@ getLhs p lhs = do
       if q >= p then (,) q <$> infixes pe M.!? v else Nothing)
     (\v (q, InfixInfo x _) -> do
       rhs <- parsePrefix p >>= getRhs q
-      let (as, bs, r) = fromJust (getTerm env x)
-      let [s1, s2] = (snd <$> as) ++ (dSort <$> bs)
+      let (bs, r) = fromJust (getTerm env x)
+      let [s1, s2] = dSort . binderType <$> bs
       lhs' <- coerce s1 lhs
       rhs' <- coerce s2 rhs
       getLhs p (App x [lhs', rhs'], dSort r))

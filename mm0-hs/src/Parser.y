@@ -87,23 +87,24 @@ SortStmt : flag(pure) flag(strict) flag(provable) flag(nonempty)
              sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
 
 VarStmt : var list(Ident) ':' VarType ';' {Var $2 $4}
-Type : Ident list(Ident) {TType $1 $2}
 VarType : Ident {VType $1}
         | Ident '*' {Open $1}
 
-TermStmt : term Ident binders(Ident_, Type) ':' ArrowType ';'
+TermStmt : term Ident binders(Ident_, TType) ':' ArrowType ';'
            {unArrow (Term $2) $3 $5}
 Ident_ : Ident {LReg $1} | '_' {LAnon}
-ArrowType : Type {arrow1 $1} | Type '>' ArrowType {arrowCons $1 $3}
+Type : Ident list(Ident) {DepType $1 $2}
+TType : Type {TType $1}
+ArrowType : Type {arrow1 $1} | TType '>' ArrowType {arrowCons $1 $3}
 
 AssertStmt : AssertKind Ident binders(Ident_, TypeFmla) ':' FmlaArrowType ';'
              {unArrow ($1 $2) $3 $5}
 AssertKind : axiom {Axiom} | theorem {Theorem}
-TypeFmla : Type {$1} | formula {TFormula $1}
-FmlaArrowType : formula {arrow1 (TFormula $1)}
+TypeFmla : Type {TType $1} | formula {TFormula $1}
+FmlaArrowType : formula {arrow1 $1}
               | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
 
-DefStmt : def Ident binders(Dummy, Type) ':' Type OptDef ';' {Def $2 $3 $5 $6}
+DefStmt : def Ident binders(Dummy, TType) ':' Type OptDef ';' {Def $2 $3 $5 $6}
 OptDef : '=' formula {Just $2} | {Nothing}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 
@@ -119,7 +120,7 @@ Constant : formula {$1}
 Precedence : number {% parseInt $1} | max {maxBound}
 
 CoercionStmt : coercion Ident ':' Ident '>' Ident ';' {Coercion $2 $4 $6}
-GenNotationStmt : notation Ident binders(Ident_, Type) ':' Type '=' list1(Literal) ';'
+GenNotationStmt : notation Ident binders(Ident_, TType) ':' Type '=' list1(Literal) ';'
                   {NNotation $2 $3 $5 $7}
 Literal : '(' Constant ':' Precedence ')' {NConst $2 $4} | Ident {NVar $1}
 
@@ -149,15 +150,15 @@ parseInt s = case (readMaybe s :: Maybe Integer) of
 joinBinders :: [([Local], Type)] -> [Binder]
 joinBinders = concatMap $ \(ls, ty) -> (\l -> Binder l ty) <$> ls
 
-type ArrowType = ([Binder] -> [Binder], Type)
+type ArrowType a = ([Binder] -> [Binder], a)
 
-arrow1 :: Type -> ArrowType
+arrow1 :: a -> ArrowType a
 arrow1 ty = (id, ty)
 
-arrowCons :: Type -> ArrowType -> ArrowType
+arrowCons :: Type -> ArrowType a -> ArrowType a
 arrowCons ty1 (f, ty) = (f . (Binder LAnon ty1 :), ty)
 
-unArrow :: ([Binder] -> Type -> a) -> [Binder] -> ArrowType -> a
+unArrow :: ([Binder] -> a -> b) -> [Binder] -> ArrowType a -> b
 unArrow f bs (g, ty) = f (g bs) ty
 
 parse :: L.ByteString -> Either String [Stmt]

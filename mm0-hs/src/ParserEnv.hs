@@ -94,21 +94,15 @@ insertInfixInfo tk ti e = do
   ts <- insertNew ("token '" ++ tk ++ "' already declared") tk ti (infixes e)
   return (e {infixes = ts})
 
-matchBinders :: [Binder] -> Type -> ([(Ident, Ident)], [DepType], DepType) -> Bool
-matchBinders bs' r' (bs, as, r) = matchBinders1 bs bs' where
-  matchBinders1 :: [(Ident, Ident)] -> [Binder] -> Bool
-  matchBinders1 [] bs' = matchBinders2 as bs'
-  matchBinders1 ((b, t) : bs) (Binder (LReg b') (TType t' []) : bs') =
-    b == b' && t == t' && matchBinders1 bs bs'
-  matchBinders1 _ _ = False
-  matchBinders2 :: [DepType] -> [Binder] -> Bool
-  matchBinders2 [] [] = matchType r r'
-  matchBinders2 (ty : as) (Binder _ ty' : as') =
-    matchType ty ty' && matchBinders2 as as'
-  matchBinders2 _ _ = False
-  matchType :: DepType -> Type -> Bool
-  matchType (DepType t vs) (TType t' vs') = t == t' && vs == vs'
-  matchType _ _ = False
+matchBinders :: [Binder] -> DepType -> ([PBinder], DepType) -> Bool
+matchBinders bs' r' (bs, r) = go bs bs' where
+  go :: [PBinder] -> [Binder] -> Bool
+  go [] [] = r == r'
+  go (PBound b t : bs) (Binder (LReg b') (TType (DepType t' [])) : bs') =
+    b == b' && t == t' && go bs bs'
+  go (PReg b ty : bs) (Binder (LReg b') (TType ty') : bs') =
+    b == b' && ty == ty' && go bs bs'
+  go _ _ = False
 
 processLits :: [Binder] -> [Literal] -> StateT ParserEnv (Either String) (Token, [PLiteral])
 processLits bis (NConst c p : lits) = liftM2 (,) (processConst c p) (go lits) where
@@ -187,6 +181,6 @@ addNotation (NNotation x bi ty lits) env e = do
   insertPrefixInfo tk (PrefixInfo x ti) e'
 addNotation (Coercion x s1 s2) env e = do
   fromJustError ("term " ++ x ++ " not declared") (getTerm env x) >>= \case
-    ([], [DepType s1' []], DepType s2' []) | s1 == s1' && s2 == s2' ->
+    ([PReg _ (DepType s1' [])], DepType s2' []) | s1 == s1' && s2 == s2' ->
       addCoe s1 s2 x e
     _ -> throwError ("coercion '" ++ x ++ "' does not match declaration")

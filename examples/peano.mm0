@@ -32,9 +32,9 @@ axiom ax-5 (ph: wff): $ ph -> A. x ph $;
 
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
-def subst (x a .y: nat) (ph: wff x): wff =
+def subst (a x .y: nat) (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
-notation subst (x a: nat) (ph: wff x): wff =
+notation subst (a x: nat) (ph: wff x): wff =
   ($[$:0) a ($/$:0) x ($]$:0) ph;
 
 var a b c: nat;

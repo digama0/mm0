@@ -14,10 +14,10 @@ type AST = [Stmt]
 
 data Stmt = Sort Ident SortData
   | Var [Ident] VarType
-  | Term Ident [Binder] Type
-  | Axiom Ident [Binder] Type
-  | Theorem Ident [Binder] Type
-  | Def Ident [Binder] Type (Maybe Formula)
+  | Term Ident [Binder] DepType
+  | Axiom Ident [Binder] Formula
+  | Theorem Ident [Binder] Formula
+  | Def Ident [Binder] DepType (Maybe Formula)
   | Notation Notation
   | Output OutputKind Ident [Binder]
   | Block [Stmt]
@@ -28,7 +28,7 @@ data Notation =
   | Prefix Ident Const Prec
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
-  | NNotation Ident [Binder] Type [Literal]
+  | NNotation Ident [Binder] DepType [Literal]
   deriving (Show)
 
 data Literal = NConst Const Prec | NVar Ident deriving (Show)
@@ -44,10 +44,15 @@ instance Show Local where
   showsPrec _ (LDummy v) r = '.' : v ++ r
   showsPrec _ LAnon r = '_' : r
 
-data Type =
-    TType Ident [Ident]
-  | TFormula Formula
-  deriving (Show)
+data DepType = DepType {
+  dSort :: Ident,
+  dDeps :: [Ident] } deriving (Eq)
+
+instance Show DepType where
+  showsPrec _ (DepType t ts) r =
+    t ++ foldr (\t' r -> ' ' : t' ++ r) r ts
+
+data Type = TType DepType | TFormula Formula deriving (Show)
 
 data VarType = VType Ident | Open Ident
 

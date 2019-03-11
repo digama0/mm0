@@ -1,5 +1,6 @@
 module LocalContext where
 
+import Control.Applicative
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.State (StateT, runStateT)
 import Control.Monad.State.Class
@@ -10,28 +11,42 @@ import qualified Data.Set as S
 import AST
 import Environment
 import ParserEnv
-
-data PType = PType Ident [Ident] | PFormula SExpr
-data PBinder = PBinder Local PType
-
-instance Show PType where
-  showsPrec n (PType t ts) = showsPrec n (DepType t ts)
-  showsPrec n (PFormula e) = showsPrec n e
-
-instance Show PBinder where
-  showsPrec n (PBinder l ty) = showsPrec n l . (": " ++) . showsPrec n ty
+import Util
 
 data Locals = Locals {
   lBound :: S.Set Ident,
   lNewVars :: S.Set Ident }
 
-type LCtx = [PBinder]
+type LCtx = ([PBinder], M.Map Ident Ident)
+
+lookupReg :: [PBinder] -> Ident -> Maybe DepType
+lookupReg [] _ = Nothing
+lookupReg (PBound v' t : bs) v | v == v' = Just (DepType t [])
+lookupReg (PReg v' ty : bs) v | v == v' = Just ty
+lookupReg (b : bs) v = lookupReg bs v
+
+lookupLocal :: LCtx -> Ident -> Maybe DepType
+lookupLocal (bs, ds) v = ((\t -> DepType t []) <$> ds M.!? v) <|> lookupReg bs v
+
+lcRegCons :: PBinder -> LCtx -> Either String LCtx
+lcRegCons b (bs, ds) = do
+  guardError "dummy and regular variables have same name" $ M.notMember (binderName b) ds
+  return (b:bs, ds)
+
+lcDummyCons :: Ident -> Ident -> LCtx -> Either String LCtx
+lcDummyCons d t (bs, ds) = do
+  guardError "dummy and regular variables have same name" $ isNothing (lookupReg bs d)
+  return (bs, M.insert d t ds)
+
 type LocalCtxM = ReaderT LCtx
   (ReaderT (Stack, (Environment, ParserEnv))
     (StateT Locals (Either String)))
 
 runLocalCtxM :: LocalCtxM a -> Stack -> (Environment, ParserEnv) -> Either String (a, Locals)
-runLocalCtxM m s e = runStateT (runReaderT (runReaderT m []) (s, e)) (Locals S.empty S.empty)
+runLocalCtxM m s e = runStateT (runReaderT (runReaderT m ([], M.empty)) (s, e)) (Locals S.empty S.empty)
+
+lcmLocal :: (LCtx -> Either String LCtx) -> LocalCtxM a -> LocalCtxM a
+lcmLocal f m = ReaderT $ \ctx -> lift (lift (f ctx)) >>= runReaderT m
 
 readStack :: LocalCtxM Stack
 readStack = fst <$> lift ask
@@ -42,16 +57,10 @@ readEnv = fst . snd <$> lift ask
 readPE :: LocalCtxM ParserEnv
 readPE = snd . snd <$> lift ask
 
-lookupLocal :: LCtx -> Ident -> Maybe PType
-lookupLocal [] _ = Nothing
-lookupLocal (PBinder l ty : ls) v =
-  if localName l == Just v then Just ty else lookupLocal ls v
-
 lookupVarSort :: Stack -> LCtx -> Ident -> Maybe (Ident, Bool)
 lookupVarSort stk ctx v =
   case lookupLocal ctx v of
-    Just (PType s _) -> Just (s, True)
-    Just _ -> Nothing
+    Just (DepType s _) -> Just (s, True)
     Nothing -> (\t -> (varTypeSort t, False)) <$> sVars stk M.!? v
 
 makeBound :: Ident -> LocalCtxM ()
@@ -60,14 +69,9 @@ makeBound v = modify (\loc -> loc {lBound = S.insert v (lBound loc)})
 insertLocal :: Ident -> LocalCtxM ()
 insertLocal v = modify (\loc -> loc {lNewVars = S.insert v (lNewVars loc)})
 
-ensureLocal :: Ident -> LocalCtxM Ident
+ensureLocal :: Ident -> LocalCtxM ()
 ensureLocal v = do
   ctx <- ask
   Locals bd nv <- get
-  case lookupLocal ctx v of
-    Just (PType s _) -> return s
-    Just _ -> throwError "hypothesis used as variable"
-    Nothing -> do
-      s <- lift (fst <$> ask) >>= getVarM v
-      put (Locals bd (S.insert v nv))
-      return $ varTypeSort s
+  when (isNothing (lookupLocal ctx v)) $
+    put (Locals bd (S.insert v nv))

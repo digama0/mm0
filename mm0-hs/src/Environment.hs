@@ -5,13 +5,19 @@ import qualified Data.Map.Strict as M
 import AST
 import Util
 
-data DepType = DepType {
-  dSort :: Ident,
-  dDeps :: [Ident] }
+data PBinder = PBound Ident Ident | PReg Ident DepType
 
-instance Show DepType where
-  showsPrec _ (DepType t ts) r =
-    t ++ foldr (\t' r -> ' ' : t' ++ r) r ts
+instance Show PBinder where
+  showsPrec n (PBound v t) r = v ++ ": " ++ showsPrec n t r
+  showsPrec n (PReg v t) r = v ++ ": " ++ showsPrec n t r
+
+binderName :: PBinder -> Ident
+binderName (PBound v _) = v
+binderName (PReg v _) = v
+
+binderType :: PBinder -> DepType
+binderType (PBound _ t) = (DepType t [])
+binderType (PReg _ ty) = ty
 
 data SExpr = SVar Ident | App Ident [SExpr]
 
@@ -24,21 +30,18 @@ instance Show SExpr where
 
 data Decl =
     DTerm
-      [(Ident, Ident)]   -- bound variables
-      [DepType]          -- args
-      DepType            -- return type
+      [PBinder]  -- bound variables, args
+      DepType    -- return type
   | DAxiom
-      [(Ident, Ident)]   -- bound variables
-      [(Ident, DepType)] -- args
-      [SExpr]            -- hypotheses
-      SExpr              -- conclusion
+      [PBinder]  -- bound variables, args
+      [SExpr]    -- hypotheses
+      SExpr      -- conclusion
   | DDef
-      [(Ident, Ident)]   -- bound variables
-      [(Ident, DepType)] -- args
-      DepType            -- return type
+      [PBinder]  -- bound variables, args
+      DepType    -- return type
       (Maybe (
-        [(Ident, Ident)], -- dummy vars
-        SExpr))           -- definition
+        M.Map Ident Ident, -- dummy vars
+        SExpr))            -- definition
   deriving (Show)
 
 type Vars = M.Map Ident VarType
@@ -53,14 +56,14 @@ data Environment = Environment {
   eDecls :: M.Map Ident Decl }
   deriving (Show)
 
-getTerm :: Environment -> Ident -> Maybe ([(Ident, Ident)], [DepType], DepType)
+getTerm :: Environment -> Ident -> Maybe ([PBinder], DepType)
 getTerm e v = eDecls e M.!? v >>= go where
-  go (DTerm vs args r) = Just (vs, args, r)
-  go (DDef vs args r _) = Just (vs, snd <$> args, r)
-  go (DAxiom _ _ _ _) = Nothing
+  go (DTerm args r) = Just (args, r)
+  go (DDef args r _) = Just (args, r)
+  go (DAxiom _ _ _) = Nothing
 
 getArity :: Environment -> Ident -> Maybe Int
-getArity e v = (\(bs, args, _) -> length bs + length args) <$> getTerm e v
+getArity e v = length . fst <$> getTerm e v
 
 getVarM :: MonadError String m => Ident -> Stack -> m VarType
 getVarM v s = fromJustError "type depends on unknown variable" (sVars s M.!? v)
