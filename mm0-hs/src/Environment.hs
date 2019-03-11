@@ -2,6 +2,7 @@ module Environment where
 
 import Control.Monad.Except
 import qualified Data.Map.Strict as M
+import qualified Data.Sequence as Q
 import AST
 import Util
 
@@ -51,10 +52,24 @@ data Stack = Stack {
   sRest :: Maybe Stack }
   deriving (Show)
 
+data Spec =
+    SSort Ident SortData
+  | SDecl Ident Decl
+  | SThm {
+      tName :: Ident,
+      tArgs :: [PBinder],
+      tHyps :: [SExpr],
+      tReturn :: SExpr }
+  deriving (Show)
+
 data Environment = Environment {
   eSorts :: M.Map Ident SortData,
-  eDecls :: M.Map Ident Decl }
+  eDecls :: M.Map Ident Decl,
+  eSpec :: Q.Seq Spec }
   deriving (Show)
+
+newEnv :: Environment
+newEnv = Environment M.empty M.empty Q.empty
 
 getTerm :: Environment -> Ident -> Maybe ([PBinder], DepType)
 getTerm e v = eDecls e M.!? v >>= go where

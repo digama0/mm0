@@ -73,5 +73,7 @@ ensureLocal :: Ident -> LocalCtxM ()
 ensureLocal v = do
   ctx <- ask
   Locals bd nv <- get
-  when (isNothing (lookupLocal ctx v)) $
+  when (isNothing (lookupLocal ctx v)) $ do
+    stk <- readStack
+    guardError ("variable " ++ v ++ " not defined") (M.member v (sVars stk))
     put (Locals bd (S.insert v nv))

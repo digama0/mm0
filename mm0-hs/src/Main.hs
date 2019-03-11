@@ -4,7 +4,7 @@ import qualified Data.ByteString.Lazy as B
 import Parser
 import AST
 import Util
-import SpecCheck
+import Elaborate
 
 liftIO :: Either String a -> IO a
 liftIO (Left e) = fail e
@@ -16,5 +16,5 @@ main = do
   ast <- either fail pure (parse s)
   -- print ast
   putStr "\n"
-  pos <- liftIO (checkAST ast)
+  pos <- liftIO (elabAST ast)
   print pos
