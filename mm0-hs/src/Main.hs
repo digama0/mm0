@@ -4,7 +4,7 @@ import qualified Data.ByteString.Lazy as B
 import Parser
 import AST
 import Util
-import Elaborate
+import Elaborator
 
 liftIO :: Either String a -> IO a
 liftIO (Left e) = fail e

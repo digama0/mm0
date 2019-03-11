@@ -1,4 +1,4 @@
-module Elaborate(elabAST) where
+module Elaborator(elabAST) where
 
 import Control.Monad.State.Class
 import Control.Monad.RWS.Strict
