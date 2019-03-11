@@ -1,6 +1,5 @@
 module Elaborator(elabAST) where
 
-import Control.Monad.State.Class
 import Control.Monad.RWS.Strict
 import Control.Monad.Except
 import Data.Maybe
