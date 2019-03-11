@@ -1,12 +1,12 @@
 module SpecCheck(checkAST) where
 
-import Control.Monad.Trans.Reader
-import Control.Monad.Trans.State (StateT(..), evalStateT)
 import Control.Monad.State.Class
+import Control.Monad.RWS.Strict
 import Control.Monad.Except
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Sequence as Q
 import AST
 import Environment
 import ParserEnv
@@ -18,43 +18,44 @@ data TCState = TCState {
   env :: Environment,
   eParser :: ParserEnv }
 
-data ProofObligation = ProofObligation {
-  tEnv :: Environment,
-  tBound :: [(Ident, Ident)],
-  tArgs :: [(Ident, DepType)],
-  tHyps :: [SExpr],
-  tReturn :: SExpr }
+data Spec =
+    SSort Ident SortData
+  | SDecl Ident Decl
+  | SThm {
+      tName :: Ident,
+      tBound :: [(Ident, Ident)],
+      tArgs :: [(Ident, DepType)],
+      tHyps :: [SExpr],
+      tReturn :: SExpr }
   deriving (Show)
 
-type SpecM = ReaderT Stack (StateT (Environment, ParserEnv) (Either String))
-
-modifyEnv :: (Environment -> Either String Environment) -> SpecM ()
-modifyEnv f = do
-  (e, p) <- get
-  e' <- lift $ lift $ f e
-  put (e', p)
+type SpecM = RWST Stack (Q.Seq Spec) (Environment, ParserEnv) (Either String)
 
 modifyParser :: (Environment -> ParserEnv -> Either String ParserEnv) -> SpecM ()
 modifyParser f = do
   (e, p) <- get
-  p' <- lift $ lift $ f e p
+  p' <- lift $ f e p
   put (e, p')
 
-modifyStack :: (Stack -> Stack) -> SpecM a -> SpecM a
-modifyStack = local
+emit :: Spec -> SpecM ()
+emit = tell . Q.singleton
 
 insertSort :: Ident -> SortData -> SpecM ()
-insertSort v sd = modifyEnv $ \e -> do
-  s' <- insertNew ("sort " ++ v ++ " already declared") v sd (eSorts e)
-  return (e {eSorts = s'})
+insertSort v sd = do
+  (e, p) <- get
+  s' <- lift $ insertNew ("sort " ++ v ++ " already declared") v sd (eSorts e)
+  put (e {eSorts = s'}, p)
+  tell (Q.singleton (SSort v sd))
 
 insertDecl :: Ident -> Decl -> SpecM ()
-insertDecl v d = modifyEnv $ \e -> do
-  d' <- insertNew ("decl " ++ v ++ " already declared") v d (eDecls e)
-  return (e {eDecls = d'})
+insertDecl v d = do
+  (e, p) <- get
+  d' <- lift $ insertNew ("decl " ++ v ++ " already declared") v d (eDecls e)
+  put (e {eDecls = d'}, p)
+  emit (SDecl v d)
 
 insertVars :: [Ident] -> VarType -> SpecM a -> SpecM a
-insertVars vs ty = modifyStack (\s -> s {sVars = f vs (sVars s)}) where
+insertVars vs ty = local (\s -> s {sVars = f vs (sVars s)}) where
   f :: [Ident] -> Vars -> Vars
   f [] = id
   f (v:vs) = f vs . M.insert v ty
@@ -68,14 +69,14 @@ getVar v = do s <- ask; getVar' v s
 pushStack :: Stack -> Stack
 pushStack s = Stack (sVars s) (Just s)
 
-evalSpecM :: SpecM a -> Either String a
-evalSpecM m = evalStateT (runReaderT m (Stack M.empty Nothing)) (Environment M.empty M.empty, newParserEnv)
+evalSpecM :: SpecM a -> Either String (a, Q.Seq Spec)
+evalSpecM m = evalRWST m (Stack M.empty Nothing) (Environment M.empty M.empty, newParserEnv)
 
-checkAST :: AST -> Either String [ProofObligation]
-checkAST ast = evalSpecM (checkDecls ast)
+checkAST :: AST -> Either String (Q.Seq Spec)
+checkAST ast = snd <$> evalSpecM (checkDecls ast)
 
-checkDecls :: [Stmt] -> SpecM [ProofObligation]
-checkDecls [] = return []
+checkDecls :: [Stmt] -> SpecM ()
+checkDecls [] = return ()
 checkDecls (Sort v sd : ds) = insertSort v sd >> checkDecls ds
 checkDecls (Var ids ty : ds) = insertVars ids ty (checkDecls ds)
 checkDecls (Term x vs ty : ds) = do
@@ -85,8 +86,8 @@ checkDecls (Axiom x vs ty : ds) =
   checkAssert x vs ty DAxiom >>= insertDecl x >> checkDecls ds
 checkDecls (Theorem x vs ty : ds) = do
   env <- fst <$> get
-  thm <- checkAssert x vs ty (ProofObligation env)
-  (thm :) <$> checkDecls ds
+  checkAssert x vs ty (SThm x) >>= emit
+  checkDecls ds
 checkDecls (Def x vs ty def : ds) =
   checkDef x vs ty def >>= insertDecl x >> checkDecls ds
 checkDecls (Notation n : ds) = do
@@ -95,15 +96,15 @@ checkDecls (Notation n : ds) = do
   checkDecls ds
 checkDecls (Output k v bi : ds) =
   throwError ("output-kind " ++ show k ++ " not supported")
-checkDecls (Block ss : ds) =
-  (++) <$> modifyStack pushStack (checkDecls ss) <*> checkDecls ds
+checkDecls (Block ss : ds) = local pushStack (checkDecls ss) >> checkDecls ds
 
 checkTerm :: Ident -> [Binder] -> Type ->
   ([(Ident, Ident)] -> [(Ident, DepType)] -> DepType -> a) -> SpecM a
 checkTerm x vs ty mk = do
   ((bis, ret), Locals sbd nv) <- runLocalCtxM' $
     processBinders vs $ \vs' -> (,) vs' <$> processType ty
-  ReaderT $ \stk -> lift $ do
+  stk <- ask
+  lift $ do
     (_, dummies) <- collectDummies bis
     guardError (x ++ ": dummy variables not permitted in terms") (null dummies)
     (bis, bound) <- collectBound sbd bis
@@ -120,7 +121,8 @@ checkAssert :: Ident -> [Binder] -> Type ->
 checkAssert x vs ty mk = do
   ((bis, ret), Locals sbd nv) <- runLocalCtxM' $
     processBinders vs $ \vs' -> (,) vs' <$> processType ty
-  ReaderT $ \stk -> lift $ do
+  stk <- ask
+  lift $ do
     (_, dummies) <- collectDummies bis
     guardError (x ++ ": dummy variables not permitted in axiom/theorem") (null dummies)
     (bis, bound) <- collectBound sbd bis
@@ -143,7 +145,8 @@ checkDef x vs ty (Just defn) = do
       ty' <- processType ty
       defn' <- parseFormula defn
       return (vs', ty', defn')
-  ReaderT $ \stk -> lift $ do
+  stk <- ask
+  lift $ do
     (bis, dummies) <- collectDummies bis
     (bis, bound) <- collectBound sbd bis
     (bis, args) <- collectArgs sbd bis
@@ -156,8 +159,8 @@ checkDef x vs ty (Just defn) = do
     return (DDef bound args ret' $ Just (dummies', defn'))
 
 runLocalCtxM' :: LocalCtxM a -> SpecM (a, Locals)
-runLocalCtxM' m = ReaderT $ \stk -> StateT $ \e ->
-  (\r -> (r, e)) <$> runLocalCtxM m stk e
+runLocalCtxM' m = RWST $ \stk e ->
+  (\r -> (r, e, mempty)) <$> runLocalCtxM m stk e
 
 processBinders :: [Binder] -> ([PBinder] -> LocalCtxM a) -> LocalCtxM a
 processBinders [] f = f []
