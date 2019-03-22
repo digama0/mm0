@@ -1,6 +1,8 @@
 Metamath Zero
 ===
 
+> *Warning:* This spec has not yet stabilized. If you are interested in writing a verifier for this spec you should stay appraised for changes to the spec.
+
 This is a language for writing specifications and proofs. Its emphasis is on balancing simplicity of verification and human readability, with the intent that a skeptical auditor can be convinced of the following:
 
 1. The verifier is implemented correctly to this specification (by reading the code)
