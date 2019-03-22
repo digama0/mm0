@@ -44,13 +44,13 @@ checkDef env bis ret defn = do
   ctx <- checkBinders env bis
   checkType ctx ret
   sd <- fromJustError "sort not found" (eSorts env M.!? dSort ret)
-  guardError ("cannot declare term for pure sort '" ++ show ret ++ "'") (not (sPure sd))
+  guardError ("cannot declare term for pure sort '" ++ dSort ret ++ "'") (not (sPure sd))
   case defn of
     Nothing -> return ()
     Just (dummy, e) -> do
       ctx2 <- traverse (\t -> do
           sd <- fromJustError "sort not found" (eSorts env M.!? t)
-          guardError ("sort '" ++ show ret ++ "' is not nonempty, cannot declare dummy") (not (sNonempty sd))
+          guardError ("sort '" ++ dSort ret ++ "' is not nonempty, cannot declare dummy") (not (sNonempty sd))
           return (True, DepType t [])) dummy
       checkSExpr env (ctx <> ctx2) e ret
 
@@ -61,7 +61,8 @@ checkBinders e = go M.empty where
     sd <- fromJustError "sort not found" (eSorts e M.!? t)
     guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
     go (M.insert x (True, DepType t []) ctx) bis
-  go ctx (PReg x ty : bis) =
+  go ctx (PReg x ty : bis) = do
+    fromJustError "sort not found" (eSorts e M.!? dSort ty)
     checkType ctx ty >> go (M.insert x (False, ty) ctx) bis
   go ctx [] = return ctx
 
