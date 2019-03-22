@@ -50,7 +50,7 @@ Pseudo-keywords
 
 The following words appear in the syntax with special meanings:
 
-    axiom coercion def infixl infixr max nonempty notation output
+    axiom coercion def delimiter free infixl infixr max notation output
     prec prefix provable pure sort strict term theorem var
 
 However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
@@ -72,14 +72,14 @@ An `.mm0` file is a list of directives. Directives are used to declare sorts, de
 
 Sorts
 ---
-    sort-stmt ::= ('pure')? ('strict')? ('provable')? ('nonempty')? 'sort' identifier ';'
+    sort-stmt ::= ('pure')? ('strict')? ('provable')? ('free')? 'sort' identifier ';'
 
 The underlying semantics of metamath zero is based on multi-sorted first order logic. The `sort` keyword declares a new sort. There are several properties that a sort may or may not have, indicated by modifiers on the sort declaration.
 
 * `pure` means that this sort does not have any term formers. It is an uninterpreted domain which may have variables but has no constant symbols, binary operators, or anything else targeting this sort. If a sort has this modifier, it is illegal to declare a `term` with this sort as the target.
 * `strict` is the "opposite" of `pure`: it says that the sort does not have any variable binding operators. It is illegal to have a variable of this sort appear as a dependency in another variable. For example, if `x: set` and `ph: wff x` then `set` must not be declared `strict`. (`pure` and `strict` are not mutually exclusive, although a sort with both properties is not very useful.)
 * `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and definitions (between `$`) must have a provable sort.
-* `nonempty` means that theorems and definitions are permitted to introduce dummy variables of this sort.
+* `free` means that theorems and definitions are not permitted to introduce dummy variables of this sort.
 
 Variables and types
 ---
@@ -324,7 +324,7 @@ The reference implementation uses a binary proof format, but we will show it wit
 
 For the [set.mm0](set.mm0) running example, which begins as:
 
-    strict provable nonempty sort wff;
+    strict provable sort wff;
     var ph ps ch: wff*;
     term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
     term wn (ph: wff): wff; prefix wn: $~$ prec 40;

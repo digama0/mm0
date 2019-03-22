@@ -19,9 +19,9 @@ import qualified Data.ByteString.Lazy as L
   coercion  {TokCoercion}
   def       {TokDef}
   delimiter {TokDelimiter}
+  free      {TokFree}
   infix     {TokInfix $$}
   max       {TokMax}
-  nonempty  {TokNonempty}
   notation  {TokNotation}
   output    {TokOutput}
   prec      {TokPrec}
@@ -70,7 +70,7 @@ Ident : ident {$1}
       | delimiter {"delimiter"}
       | infix {if $1 then "infixr" else "infixl"}
       | max {"max"}
-      | nonempty {"nonempty"}
+      | free {"free"}
       | notation {"notation"}
       | output {"output"}
       | prec {"prec"}
@@ -83,7 +83,7 @@ Ident : ident {$1}
       | theorem {"theorem"}
       | var {"var"}
 
-SortStmt : flag(pure) flag(strict) flag(provable) flag(nonempty)
+SortStmt : flag(pure) flag(strict) flag(provable) flag(free)
              sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
 
 VarStmt : var list(Ident) ':' VarType ';' {Var $2 $4}

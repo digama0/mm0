@@ -7,7 +7,7 @@ data SortData = SortData {
   sPure :: Bool,
   sStrict :: Bool,
   sProvable :: Bool,
-  sNonempty :: Bool }
+  sFree :: Bool }
   deriving (Show)
 
 type AST = [Stmt]

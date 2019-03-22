@@ -23,10 +23,10 @@ tokens :-
   coercion  {\_ -> TokCoercion}
   def       {\_ -> TokDef}
   delimiter {\_ -> TokDelimiter}
+  free      {\_ -> TokFree}
   infixl    {\_ -> TokInfix False}
   infixr    {\_ -> TokInfix True}
   max       {\_ -> TokMax}
-  nonempty  {\_ -> TokNonempty}
   notation  {\_ -> TokNotation}
   output    {\_ -> TokOutput}
   prec      {\_ -> TokPrec}
@@ -59,9 +59,9 @@ data Token =
   | TokCoercion
   | TokDef
   | TokDelimiter
+  | TokFree
   | TokInfix Bool
   | TokMax
-  | TokNonempty
   | TokNotation
   | TokOutput
   | TokPrec

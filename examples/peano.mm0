@@ -1,5 +1,5 @@
 delimiter $ ( ) ~ [ ] $;
-strict provable nonempty sort wff;
+strict provable sort wff;
 var ph ps ch: wff*;
 term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
 term neg (ph: wff): wff; prefix neg: $~$ prec 40;
@@ -18,7 +18,7 @@ infixl and: $/\$ prec 20;
 def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
 
-pure nonempty sort nat;
+pure sort nat;
 var x y z w: nat;
 
 term al (x: nat) (ph: wff x): wff; prefix al: $A.$ prec 30;
