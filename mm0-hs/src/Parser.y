@@ -131,6 +131,7 @@ flag(p) : p {True} | {False}
 list(p) : {[]} | p list(p) {$1 : $2}
 list1(p) : p list(p) {$1 : $2}
 binder(p, q) : '(' list(p) ':' q ')' {($2, $4)}
+             | '{' list(p) ':' q '}' {(map toBound $2, $4)}
 binders(p, q) : list(binder(p, q)) {joinBinders $1}
 
 {
@@ -146,6 +147,10 @@ parseInt s = case (readMaybe s :: Maybe Integer) of
       failLC ("out of range: '" ++ s ++ "'")
     else
       pure (fromIntegral n)
+
+toBound :: Local -> Local
+toBound (LReg v) = LBound v
+toBound v = v
 
 joinBinders :: [([Local], Type)] -> [Binder]
 joinBinders = concatMap $ \(ls, ty) -> (\l -> Binder l ty) <$> ls

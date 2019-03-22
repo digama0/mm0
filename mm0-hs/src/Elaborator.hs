@@ -142,6 +142,10 @@ processBinders = go M.empty where
 
   processBinder :: Binder -> (PBinder -> LocalCtxM a) ->
     (Ident -> Ident -> LocalCtxM a) -> (SExpr -> LocalCtxM a) -> LocalCtxM a
+  processBinder (Binder (LBound v) (TType (DepType t ts))) f _ _ = do
+    guardError "bound variable has dependent type" (null ts)
+    let bi = PBound v t
+    lcmLocal (lcRegCons bi) (f bi)
   processBinder (Binder (LDummy v) (TType (DepType t ts))) _ g _ = do
     guardError "dummy variable has dependent type" (null ts)
     lcmLocal (lcDummyCons v t) (g v t)
@@ -162,14 +166,13 @@ setBound :: Stack -> Locals -> [PBinder] -> Either String [PBinder]
 setBound stk (Locals sbd nv) bis = do
   let (nvBd, nvReg) = partition (`S.member` sbd) (S.toList nv)
   let bis2 = (\v -> PBound v $ varTypeSort $ sVars stk M.! v) <$> nvBd
-  (bd, bis') <- collectBound (bis ++ bis2)
+  let bis' = bis ++ bis2
+  bd <- collectBound bis'
   return $ bis' ++ ((\v -> PReg v $ varTypeToDep bd $ sVars stk M.! v) <$> nvReg)
   where
-  collectBound :: [PBinder] -> Either String ([Ident], [PBinder])
-  collectBound [] = return ([], [])
-  collectBound (PBound v t : bis) =
-    (\(vs, bis') -> (v:vs, PBound v t : bis')) <$> collectBound bis
-  collectBound (PReg v ty : bis) | S.member v sbd = case ty of
-    DepType t [] -> (\(vs, bis') -> (v:vs, PBound v t : bis')) <$> collectBound bis
-    _ -> throwError "bound variable has dependent type"
-  collectBound (bi : bis) = (\(vs, bis') -> (vs, bi : bis')) <$> collectBound bis
+  collectBound :: [PBinder] -> Either String [Ident]
+  collectBound [] = return []
+  collectBound (PBound v t : bis) = (v:) <$> collectBound bis
+  collectBound (PReg v ty : bis) | S.member v sbd =
+    throwError "regular variable involved in dependency"
+  collectBound (_ : bis) = collectBound bis

@@ -21,9 +21,9 @@ infixl or: $\/$ prec 30;
 pure sort nat;
 var x y z w: nat;
 
-term al (x: nat) (ph: wff x): wff; prefix al: $A.$ prec 30;
+term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
 
-def ex (x: nat) (ph: wff x): wff = $ ~(A. x ~ph) $;
+def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix ex: $E.$ prec 30;
 
 axiom ax-gen: $ ph $ > $ A. x ph $;
@@ -32,7 +32,7 @@ axiom ax-5 (ph: wff): $ ph -> A. x ph $;
 
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
-def subst (a x .y: nat) (ph: wff x): wff =
+def subst (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation subst (a x: nat) (ph: wff x): wff =
   ($[$:0) a ($/$:0) x ($]$:0) ph;
@@ -45,7 +45,7 @@ axiom ax-10: $ ~(A. x ph) -> A. x ~ (A. x ph) $;
 axiom ax-11: $ A. x A. y ph -> A. y A. x ph $;
 axiom ax-12 (ph: wff y): $ A. y ph -> [y / x]ph $;
 
-term iota (x: nat) (ph: wff x): nat;
+term iota {x: nat} (ph: wff x): nat;
 prefix iota: $i.$ prec 55;
 
 axiom iotaeq: $ A. x (ph <-> ps) -> i. x ph = i. x ps $;
@@ -67,7 +67,7 @@ axiom addS: $ a + S b = S (a + b) $;
 axiom mul0: $ a * 0 = 0 $;
 axiom mulS: $ a * S b = a * b + a $;
 
-def le (a b: nat): wff = $ E. x a + x = b $;
+def le (a b .x: nat): wff = $ E. x a + x = b $;
 infixl le: $<=$ prec 50;
 
 def lt (a b: nat): wff = $ S a <= b $;

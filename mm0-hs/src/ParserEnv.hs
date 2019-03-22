@@ -98,7 +98,7 @@ matchBinders :: [Binder] -> DepType -> ([PBinder], DepType) -> Bool
 matchBinders bs' r' (bs, r) = go bs bs' where
   go :: [PBinder] -> [Binder] -> Bool
   go [] [] = r == r'
-  go (PBound b t : bs) (Binder (LReg b') (TType (DepType t' [])) : bs') =
+  go (PBound b t : bs) (Binder (LBound b') (TType (DepType t' [])) : bs') =
     b == b' && t == t' && go bs bs'
   go (PReg b ty : bs) (Binder (LReg b') (TType ty') : bs') =
     b == b' && ty == ty' && go bs bs'

@@ -29,9 +29,9 @@ theorem df-tru: $ T. <-> (ph <-> ph) $;
 pure sort set;
 var x y z w: set;
 
-term wal (x: set) (ph: wff x): wff; prefix wal: $A.$ prec 30;
+term wal {x: set} (ph: wff x): wff; prefix wal: $A.$ prec 30;
 
-def wex (x: set) (ph: wff x): wff = $ ~(A. x ~ph) $;
+def wex {x: set} (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix wex: $E.$ prec 30;
 theorem df-ex: $ E. x ph <-> ~(A. x ~ph) $;
 
@@ -43,7 +43,7 @@ var a b c: set;
 term weq (a b: set): wff; infixl weq: $=s$ prec 50;
 term wel (a b: set): wff; infixl wel: $es.$ prec 40;
 
-def weu (x: set) (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
+def weu {x: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
 prefix wex: $E!$ prec 30;
 theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
 
@@ -71,9 +71,9 @@ axiom ax-ac:
 
 strict sort class;
 var A B C: class*;
-term cab (x: set) (ph: wff x): class;
+term cab {x: set} (ph: wff x): class;
 term welc (a: set) (A: class): wff; infixl welc: $ec.$ prec 50;
-notation cab (x: set) (ph: wff x): class = (${$:0) x ($|$:0) ph ($}$:0);
+notation cab {x: set} (ph: wff x): class = (${$:0) x ($|$:0) ph ($}$:0);
 
 axiom ax-8b: $ a =s b -> a ec. A -> b ec. A $;
 

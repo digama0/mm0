@@ -37,9 +37,10 @@ type Const = B.ByteString
 type Prec = Int
 type OutputKind = String
 
-data Local = LReg Ident | LDummy Ident | LAnon
+data Local = LBound Ident | LReg Ident | LDummy Ident | LAnon
 
 instance Show Local where
+  showsPrec _ (LBound v) r = v ++ r
   showsPrec _ (LReg v) r = v ++ r
   showsPrec _ (LDummy v) r = '.' : v ++ r
   showsPrec _ LAnon r = '_' : r
@@ -65,9 +66,13 @@ type Formula = B.ByteString
 data Binder = Binder Local Type
 
 instance Show Binder where
-  showsPrec n (Binder l ty) = showsPrec n l . (": " ++) . showsPrec n ty
+  showsPrec n (Binder (LBound v) ty) =
+    (('{' : v ++ ": ") ++) . showsPrec n ty . ('}' :)
+  showsPrec n (Binder l ty) =
+    ('(' :) . showsPrec n l . (": " ++) . showsPrec n ty . (')' :)
 
 localName :: Local -> Maybe Ident
+localName (LBound v) = Just v
 localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing

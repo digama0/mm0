@@ -93,12 +93,13 @@ A type is the name of a sort followed by 0 or more variable names, which represe
 
 Term constructors
 ---
-The `term` directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so `term imp (ph ps: wff): wff;` and `term imp: wff -> wff -> wff` mean the same thing. The symbol `_` in place of an identifier indicates an anonymous variable.
+The `term` directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so `term imp (ph ps: wff): wff;` and `term imp: wff -> wff -> wff` mean the same thing. The symbol `_` in place of an identifier indicates an anonymous variable. A binder enclosed in curly braces as in `{x: set}` denotes a bound variable, which may appear in dependencies of other types (see "Variable Inference").
 
     term-stmt ::= 'term' identifier (type-binder)* ':' arrow-type ';'
     identifier_ ::= identifier | '_'
     type ::= identifier (identifier)*
-    type-binder ::= '(' (identifier_)* ':' type ')'
+    type-binder ::= '{' (identifier)* ':' type '}'
+                 |  '(' (identifier_)* ':' type ')'
     arrow-type ::= type | type '>' arrow-type
 
 Axioms and theorems
@@ -107,7 +108,8 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
 
     assert-stmt ::= ('axiom' | 'theorem') identifier
        (formula-type-binder)* ':' formula-arrow-type ';'
-    formula-type-binder ::= '(' (identifier_)* ':' (type | formula) ')'
+    formula-type-binder ::= '{' (identifier)* ':' type '}'
+                         |  '(' (identifier_)* ':' (type | formula) ')'
     formula-arrow-type ::= formula | (type | formula) '>' arrow-type
     formula ::= math-string
 
@@ -119,7 +121,8 @@ If the definition part is omitted, then the existence of a definition satisfying
 
     def-stmt ::= 'def' identifier (dummy-binder)* ':'
       type ('=' formula)? ';'
-    dummy-binder ::= '(' (dummy-identifier)* ':' type ')'
+    dummy-binder ::= '{' (dummy-identifier)* ':' type '}'
+                  |  '(' (dummy-identifier)* ':' type ')'
     dummy-identifier ::= '.' identifier | identifier_
 
 Notations
@@ -159,7 +162,8 @@ Output
 *Note*: This command is optional, even more so than the rest of this specification.
 
     output-stmt ::= 'output' output-kind identifier (formula-dummy-binder)* ';'
-    formula-dummy-binder ::= '(' (dummy-identifier)* ':' (type | formula) ')'
+    formula-dummy-binder ::= '{' (dummy-identifier)* ':' type '}'
+                          |  '(' (dummy-identifier)* ':' (type | formula) ')'
     output-kind ::= identifier
 
 The `output` command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the `output-kind`, which specifies the target format, for example `s-expr`, or a program language such as `g` or `x86_asm`. The details vary depending on the target, but this can be read as an *existential* statement, by contrast to `theorem`, which proves universal statements. A statement such as
@@ -243,7 +247,7 @@ Variable inference
 
 A theorem may reference variables inside types and formulas that are not explicitly bound in the declaration. Variable inference is the process by which these variables, declared in the local scope, are automatically inserted into the theorem statement. To prevent ambiguity of inferred variable order, `term`s and `def`s are not permitted to use inferred variables, although `def`s may infer dummy variables used in the definition.
 
-Additionally, at this stage variables are organized into two types, bound variables and regular variables. Dummy variables (in dot binders) are always bound. A variable is considered regular unless it is required to be bound.
+Additionally, variables are organized into two types, bound variables and regular variables. For variables in the given binder list, this is denoted by curly braces for bound variables and parentheses for regular variables. Dummy variables (in dot binders) are always bound. An inferred variable is considered regular unless it is required to be bound.
 
 * Bound variables may not have a dependent type.
 * Bound variables may not have a `strict` type.
@@ -254,21 +258,21 @@ For example:
 
     var x y z: set;
     var ph ps: wff*;
-    theorem foo (x: set) (ph: wff y): $ A. x A. z (ph /\ ps) $ > $ ps $;
+    theorem foo {x: set} (ph: wff y): $ A. x A. z (ph /\ ps) $ > $ ps $;
 
 Here the binder `(ph: wff y)` refers to `y` which is not among the previous binders, and the first hypothesis `$ A. x A. z (ph /\ ps) $` refers to `z`, and `ps`, neither of which are declared.
 
 Note that `x` and `ph` are both declared in the local scope; these declarations are ignored because their names are *shadowed* by the theorem binders.
 
-Inferred variables are unordered in the specification file. Verifiers are permitted to enforce any standard ordering in the proof file (for example, alphabetical order). The above theorem has three bindings: `(x: set)`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the (nondependent) bound variables, the regular variable bindings, and the formulas. It is an error for the explicit bindings to come out of order.
+Inferred variables are unordered in the specification file. Verifiers are permitted to enforce any standard ordering in the proof file (for example, alphabetical order). The above theorem has three bindings: `{x: set}`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the (nondependent) bound variables, the regular variable bindings, and the formulas. It is an error for the explicit bindings to come out of order.
 
-For variables with simple types, like `(x: set)`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `(y: set)` is inferred.
+For bound variables and variables with simple types, like `{x: set}`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `{y: set}` is inferred.
 
-For formulas, any variables that are referenced in the syntax tree are inferred. The syntax tree of the example is `wal x (wal z (wa ph ps))`, and so we check for `x,z,ph,ps` that they appear in the binder list, and insert the ones that don't. So this would add `(z: set)` as a nondependent bound variable binder and `(ps: wff*)` as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula `ps` and we don't need to do anything because the variable is already present.
+For formulas, any variables that are referenced in the syntax tree are inferred. The syntax tree of the example is `wal x (wal z (wa ph ps))`, and so we check for `x,z,ph,ps` that they appear in the binder list, and insert the ones that don't. So this would add `{z: set}` as a bound variable binder and `(ps: wff*)` as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula `ps` and we don't need to do anything because the variable is already present.
 
 Once all the bindings are accumulated, all the variables with open types are given types that depend on all bound variables. So `(ps: wff*)` becomes `(ps: wff x y z)`. The end result is:
 
-    theorem foo (x y z: set) (ph: wff y) (ps: wff x y z)
+    theorem foo {x y: set} (ph: wff y) {z: set} (ps: wff x y z)
       (_: $ A. x A. z (ph /\ ps) $): $ ps $;
 
 and this is the version of the theorem that is proven in the proof file.
@@ -302,17 +306,17 @@ These modified theorem statements are calculated as follows:
 
 As an example of nontrivial modifications:
 
-    def weu (x .y: set) (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
+    def weu {x .y: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
     prefix wex: $E!$ prec 30;
 
     theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x = y) $;
-    theorem example (x y: set) (ph: wff x): $ E! x E! y ph $;
+    theorem example {x y: set} (ph: wff x): $ E! x E! y ph $;
 
 translates to:
 
-    theorem df-eu (x y y': set) (ph: wff x):
+    theorem df-eu {x y y': set} (ph: wff x):
       $ E. y' A. x (ph <-> x = y') <-> E. y A. x (ph <-> x = y) $ = ...;
-    theorem example (x y y' y'': set) (ph: wff x):
+    theorem example {x y y' y'': set} (ph: wff x):
       $ E. y'' A. x ((E. y' A. y (ph <-> y =s y')) <-> x =s y'') $ = ...;
 
 Proof files
