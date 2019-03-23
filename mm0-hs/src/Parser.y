@@ -87,7 +87,7 @@ SortStmt : flag(pure) flag(strict) flag(provable) flag(free)
              sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
 
 VarStmt : var list(Ident) ':' VarType ';' {Var $2 $4}
-VarType : Ident {VType $1}
+VarType : Ident {VTReg $1}
         | Ident '*' {Open $1}
 
 TermStmt : term Ident binders(Ident_, TType) ':' ArrowType ';'

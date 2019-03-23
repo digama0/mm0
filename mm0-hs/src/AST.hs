@@ -55,10 +55,10 @@ instance Show DepType where
 
 data Type = TType DepType | TFormula Formula deriving (Show)
 
-data VarType = VType Ident | Open Ident
+data VarType = VTReg Ident | Open Ident
 
 instance Show VarType where
-  showsPrec _ (VType v) r = v ++ r
+  showsPrec _ (VTReg v) r = v ++ r
   showsPrec _ (Open v) r = v ++ '*' : r
 
 type Formula = B.ByteString
@@ -78,5 +78,5 @@ localName (LDummy v) = Just v
 localName LAnon = Nothing
 
 varTypeSort :: VarType -> Ident
-varTypeSort (VType s) = s
+varTypeSort (VTReg s) = s
 varTypeSort (Open s) = s

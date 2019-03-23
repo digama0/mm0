@@ -84,5 +84,5 @@ getVarM :: MonadError String m => Ident -> Stack -> m VarType
 getVarM v s = fromJustError "type depends on unknown variable" (sVars s M.!? v)
 
 varTypeToDep :: [Ident] -> VarType -> DepType
-varTypeToDep ds (VType t) = DepType t []
+varTypeToDep ds (VTReg t) = DepType t []
 varTypeToDep ds (Open t) = DepType t ds
