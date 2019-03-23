@@ -1,0 +1,9 @@
+sort wff
+term wi
+term wn
+axiom ax_1
+axiom ax_2
+axiom ax_3
+axiom ax_mp
+theorem a1i (ph : wff) (ps : wff), (h1 : ph) : (wi ps ph) =
+(ax_mp ph (wi ps ph) h1 (ax_1 ph ps))

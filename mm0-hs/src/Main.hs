@@ -21,13 +21,13 @@ main = do
     (mm0:r) -> (\h -> (h, r)) <$> openFile mm0 ReadMode
   s <- B.hGetContents mm0
   ast <- either fail pure (parse s)
-  putStr "\n"
   env <- liftIO (elabAST ast)
-  print "checked\n"
+  putStrLn "spec checked"
   case rest of
     [] -> fail "error: no proof file"
     (mmp:_) -> do
       pf <- readFile mmp
-      pf <- liftIO (fromJustError "mmp parse failure" (parseProof pf))
+      pf <- liftIO (fromJustError "mmu parse failure" (parseProof pf))
+      print pf
       liftIO (verify env pf)
-      print "verified"
+      putStrLn "verified"

@@ -7,7 +7,7 @@ term wn (ph: wff): wff; prefix wn: $~$ prec 40;
 axiom ax_1: $ ph -> ps -> ph $;
 axiom ax_2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax_3: $ (~ph -> ~ps) -> ps -> ph $;
-axiom ax_mp: $ ph $ > $ ph -> ps $ > $ ps $;
+axiom ax_mp(ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
 
 theorem a1i: $ ph $ > $ ps -> ph $;
 

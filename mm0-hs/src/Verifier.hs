@@ -2,6 +2,7 @@ module Verifier(verify) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.State
+import Debug.Trace
 import Data.Word
 import Data.List
 import Data.Bits
@@ -301,7 +302,7 @@ data StackSlot =
   | SSExpr SortID VExpr VBitSet
   -- | A proof of a term
   | SSProof VExpr
-  deriving (Eq)
+  deriving (Show, Eq)
 
 ofSSExpr :: StackSlot -> Maybe (SortID, VExpr, VBitSet)
 ofSSExpr (SSExpr s e b) = Just (s, e, b)
@@ -320,7 +321,7 @@ data VState = VState {
   -- | Map from HeapID to proven expressions
   vHeap :: Q.Seq StackSlot,
   -- | Recently proven expressions
-  vStack :: [StackSlot] }
+  vStack :: [StackSlot] } deriving (Show)
 
 type VerifyM = StateT VState (Either String)
 
@@ -341,11 +342,15 @@ verifyProof g = \ctx hs cs -> do
   push :: StackSlot -> VerifyM ()
   push ss = modify (\(VState heap stk) -> VState heap (ss:stk))
 
-  popn :: [a] -> ([(a, StackSlot)] -> VerifyM c) -> VerifyM c
-  popn [] f = f []
-  popn (a:as) f = popn as $ \l -> StateT $ \case
-    VState heap [] -> throwError "stack underflow"
-    VState heap (ss:stk) -> runStateT (f ((a, ss) : l)) (VState heap stk)
+  popn :: [a] -> VerifyM [(a, StackSlot)]
+  popn as = (\f -> f []) <$> go as where
+    go :: [a] -> VerifyM ([(a, StackSlot)] -> [(a, StackSlot)])
+    go [] = return id
+    go (a:as) = do
+      f <- go as
+      StateT $ \case
+        VState heap [] -> throwError "stack underflow"
+        VState heap (ss:stk) -> return (((a, ss) :) . f, VState heap stk)
 
   verify1 :: LocalCmd -> VerifyM ()
   verify1 (Load h) = StateT $ \(VState heap stk) -> do
@@ -356,17 +361,22 @@ verifyProof g = \ctx hs cs -> do
     VState heap (ss:stk) -> return ((), VState (heap Q.|> ss) (ss:stk))
   verify1 (PushApp t) = do
     VTermData _ args (VType ret _) <- fromJustError "term not found" (vTerms g Q.!? ofTermID t)
-    (es, b) <- popn args (verifyArgs 0 (.|.))
+    (es, b) <- popn args >>= verifyArgs 0 (.|.)
     push (SSExpr ret (VApp t es) b)
   verify1 (PushThm t) = do
     VAssrtData args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
-    (vs', hs', es, b) <- popn hs $ \hs' -> popn args $ \vs' ->
-      do (es, b) <- verifyArgs Q.empty (Q.<|) vs'; return (vs', hs', es, b)
+    hs' <- popn hs
+    vs' <- popn args
+    (es, b) <- verifyArgs Q.empty (Q.<|) vs'
     let subst = Q.fromList es
     guardError "disjoint variable violation" $
       all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
-    guardError "substitution to hypothesis does not match theorem" $
-      all (\(e, ss) -> SSProof (substExpr subst e) == ss) hs'
+    mapM_ (\case
+      (e, SSProof p) -> do
+        guardError ("substitution to hypothesis does not match theorem\n" ++
+            show e ++ show es ++ " != " ++ show p)
+          (substExpr subst e == p)
+      (e, _) -> throwError "bad stack slot reference") hs'
     push (SSProof (substExpr subst ret))
 
   verifyArgs :: a -> (VBitSet -> a -> a) -> [(VBinder, StackSlot)] -> VerifyM ([VExpr], a)

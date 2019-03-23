@@ -155,16 +155,16 @@ toBound v = v
 joinBinders :: [([Local], Type)] -> [Binder]
 joinBinders = concatMap $ \(ls, ty) -> (\l -> Binder l ty) <$> ls
 
-type ArrowType a = ([Binder] -> [Binder], a)
+type ArrowType a = ([Binder], a)
 
 arrow1 :: a -> ArrowType a
-arrow1 ty = (id, ty)
+arrow1 ty = ([], ty)
 
 arrowCons :: Type -> ArrowType a -> ArrowType a
-arrowCons ty1 (f, ty) = (f . (Binder LAnon ty1 :), ty)
+arrowCons ty1 (f, ty) = (Binder LAnon ty1 : f, ty)
 
 unArrow :: ([Binder] -> a -> b) -> [Binder] -> ArrowType a -> b
-unArrow f bs (g, ty) = f (g bs) ty
+unArrow f bs (as, ty) = f (bs ++ as) ty
 
 parse :: L.ByteString -> Either String [Stmt]
 parse = runAlex mparse

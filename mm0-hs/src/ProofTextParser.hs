@@ -5,6 +5,7 @@ module ProofTextParser(parseProof) where
 import Control.Monad.Trans
 import Control.Monad.Trans.State
 import Control.Applicative
+import Debug.Trace
 import Text.ParserCombinators.ReadP hiding (get)
 import qualified Text.Read.Lex as L
 import qualified Data.Map.Strict as M
@@ -35,11 +36,11 @@ type Parser = StateT ParserState ReadP
 p <|+ q = StateT $ \s -> runStateT p s <++ runStateT q s
 
 readlist :: Parser a -> Parser [a]
-readlist p = go where go = (p >> go) <|+ return []
+readlist p = go where go = ((:) <$> p <*> go) <|+ return []
 
 parseProof :: String -> Maybe Proofs
 parseProof s = let start = ParserState nempty nempty nempty nempty in
-  case readP_to_S (evalStateT readProofs start <* eof) s of
+  case readP_to_S (evalStateT readProofs start <* L.expect L.EOF) s of
     ((c, _):_) -> Just c
     _ -> Nothing
 
@@ -49,8 +50,14 @@ readProofs = readlist readProof
 lex1 :: Parser L.Lexeme
 lex1 = lift L.lex
 
-expect :: String -> Parser ()
-expect = lift . L.expect . L.Symbol
+expect :: L.Lexeme -> Parser ()
+expect = lift . L.expect
+
+expectS :: String -> Parser ()
+expectS = expect . L.Symbol
+
+bracket :: String -> String -> Parser a -> Parser a
+bracket l r a = expect (L.Punc l) *> a <* expect (L.Punc r)
 
 insertSort :: Parser Ident
 insertSort = StateT $ \s -> do
@@ -108,9 +115,9 @@ readProof = lex1 >>= \case
 readDef :: Maybe Ident -> Parser ProofCmd
 readDef st = do
   args <- readlist readBinder
-  expect ":"
+  expectS ":"
   ret <- VType <$> readSort <*> readlist readVar
-  expect "="
+  expect $ L.Punc "="
   ds <- readlist readDummy
   val <- readExpr
   resetVars >> return (ProofDef args ret ds val st)
@@ -118,44 +125,41 @@ readDef st = do
 readThm :: Maybe Ident -> Parser ProofCmd
 readThm st = do
   vs <- readlist readBinder
-  expect ","
+  expect (L.Punc ",")
   uf <- (do
-      expect "unfolding"
+      expect $ L.Ident "unfolding"
       t <- readTerm
-      expect "(" >> readlist insertVar >> expect ")"
+      bracket "(" ")" (readlist insertVar)
       return (Just t))
     <|+ return Nothing
   ds <- readlist readDummy
   hyps <- readlist readHyp
+  expectS ":"
   ret <- readExpr
+  expect $ L.Punc "="
   proof <- readProofExpr
   resetVars >> return (ProofThm vs hyps ret uf ds proof st)
 
-readBinder :: Parser VBinder
-readBinder = lex1 >>= \case
-  L.Symbol "(" -> insertVar >> expect ":" >>
-    VReg <$> readSort <*> readlist readVar <* expect ")"
-  L.Symbol "{" -> insertVar >> expect ":" >>
-    VBound <$> readSort <* expect "}"
-  _ -> empty
-
 readDummy :: Parser SortID
-readDummy = readBinder >>= \case
-  VBound s -> return s
-  _ -> empty
+readDummy = bracket "{" "}" (insertVar >> expectS ":" >> readSort)
+
+readBinder :: Parser VBinder
+readBinder = (VBound <$> readDummy) <|+
+  bracket "(" ")" (insertVar >> expectS ":" >>
+    VReg <$> readSort <*> readlist readVar)
 
 readExpr :: Parser VExpr
 readExpr = (VVar <$> readVar) <|+ (flip VApp [] <$> readTerm) <|+
-  (expect "(" *> (VApp <$> readTerm <*> readlist readExpr) <* expect ")")
+  (bracket "(" ")" (VApp <$> readTerm <*> readlist readExpr))
 
 readHyp :: Parser VExpr
-readHyp = expect "(" >> insertVar >> expect ":" >> readExpr <* expect ")"
+readHyp = bracket "(" ")" (insertVar >> expectS ":" >> readExpr)
 
 readProofExpr :: Parser [LocalCmd]
 readProofExpr = (do
-    expect "let"
+    expect (L.Ident "let")
     insertVar
-    expect "="
+    expect (L.Punc "=")
     es <- readSimpleExpr
     r <- readProofExpr
     return (es (Save : r)))
@@ -167,9 +171,8 @@ exprToLocal (VApp t es) r = foldr exprToLocal (PushApp t : r) es
 
 readSimpleExpr :: Parser ([LocalCmd] -> [LocalCmd])
 readSimpleExpr = (exprToLocal <$> readExpr) <|+
-  (expect "(" *> (do
+  bracket "(" ")" (do
     t <- readAssrt
     es <- readlist readExpr
     hs <- readlist readSimpleExpr
     return (\r -> foldr exprToLocal (foldr ($) (PushThm t : r) hs) es))
-  <* expect ")")
