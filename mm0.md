@@ -37,11 +37,11 @@ Implementations are encouraged to support "special comments" via comments beginn
 
     lexeme ::= symbol | identifier | number | math-string
     symbol ::= '*' | '.' | ':' | ';' | '(' | ')' | '>' | '{' | '}' | '=' | '_'
-    identifier ::= [a-zA-Z_][a-zA-Z0-9_-]*
+    identifier ::= [a-zA-Z_][a-zA-Z0-9_]*
     number ::= 0 | [1-9][0-9]*
     math-string ::= '$' [^\$]* '$'
 
-A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with the punctuation characters `_`, and `-`, except that it cannot begin with a digit or `-`, and the single character `_` is not an identifier.
+A lexeme is either one of the symbols, an identifier, a number (nonnegative integer), or a math string. An identifier is a sequence of alphanumeric symbols, together with `_`, except that it cannot begin with a digit, and the single character `_` is not an identifier.
 
 A math string is a sequence of characters quoted by `$`. Inside a math string `$` cannot appear.
 

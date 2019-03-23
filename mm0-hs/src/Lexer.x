@@ -10,7 +10,7 @@ import qualified Data.ByteString.Lazy.Char8 as C
 }
 
 $identstart = [a-z A-Z _]
-$identrest = [$identstart 0-9 \-]
+$identrest = [$identstart 0-9]
 
 @ident = $identstart $identrest*
 @number = 0 | [1-9] [0-9]*

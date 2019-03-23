@@ -4,10 +4,10 @@ var ph ps ch: wff*;
 term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
 term wn (ph: wff): wff; prefix wn: $~$ prec 40;
 
-axiom ax-1: $ ph -> ps -> ph $;
-axiom ax-2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
-axiom ax-3: $ (~ph -> ~ps) -> ps -> ph $;
-axiom ax-mp: $ ph $ > $ ph -> ps $ > $ ps $;
+axiom ax_1: $ ph -> ps -> ph $;
+axiom ax_2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
+axiom ax_3: $ (~ph -> ~ps) -> ps -> ph $;
+axiom ax_mp: $ ph $ > $ ph -> ps $ > $ ps $;
 
 theorem a1i: $ ph $ > $ ps -> ph $;
 
@@ -20,11 +20,11 @@ theorem bi3: $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
 
 def wa (ph ps: wff): wff = $ ~(ph -> ~ps) $;
 infixl wa: $/\$ prec 20;
-theorem df-an: $ (ph /\ ps) <-> ~(ph -> ~ps) $;
+theorem df_an: $ (ph /\ ps) <-> ~(ph -> ~ps) $;
 
 def wtru (.p: wff): wff = $ p <-> p $;
 prefix wtru: $T.$ prec max;
-theorem df-tru: $ T. <-> (ph <-> ph) $;
+theorem df_tru: $ T. <-> (ph <-> ph) $;
 
 pure sort set;
 var x y z w: set;
@@ -33,11 +33,11 @@ term wal {x: set} (ph: wff x): wff; prefix wal: $A.$ prec 30;
 
 def wex {x: set} (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix wex: $E.$ prec 30;
-theorem df-ex: $ E. x ph <-> ~(A. x ~ph) $;
+theorem df_ex: $ E. x ph <-> ~(A. x ~ph) $;
 
-axiom ax-gen: $ ph $ > $ A. x ph $;
-axiom ax-4: $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
-axiom ax-5 (ph: wff): $ ph -> A. x ph $;
+axiom ax_gen: $ ph $ > $ A. x ph $;
+axiom ax_4: $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
+axiom ax_5 (ph: wff): $ ph -> A. x ph $;
 
 var a b c: set;
 term weq (a b: set): wff; infixl weq: $=s$ prec 50;
@@ -45,27 +45,27 @@ term wel (a b: set): wff; infixl wel: $es.$ prec 40;
 
 def weu {x: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
 prefix wex: $E!$ prec 30;
-theorem df-eu: $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
+theorem df_eu: $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
 
-axiom ax-6: $ E. x x =s a $;
-axiom ax-7: $ a =s b -> a =s c -> b =s c $;
+axiom ax_6: $ E. x x =s a $;
+axiom ax_7: $ a =s b -> a =s c -> b =s c $;
 
-axiom ax-8: $ a =s b -> a es. c -> b es. c $;
-axiom ax-9: $ a =s b -> c es. a -> c es. b $;
+axiom ax_8: $ a =s b -> a es. c -> b es. c $;
+axiom ax_9: $ a =s b -> c es. a -> c es. b $;
 
-axiom ax-10: $ ~(A. x ph) -> A. x ~(A. x ph) $;
-axiom ax-11: $ A. x A. y ph -> A. y A. x ph $;
-axiom ax-12 (ph: wff y): $ A. y ph -> A. x (x =s y -> ph) $;
+axiom ax_10: $ ~(A. x ph) -> A. x ~(A. x ph) $;
+axiom ax_11: $ A. x A. y ph -> A. y A. x ph $;
+axiom ax_12 (ph: wff y): $ A. y ph -> A. x (x =s y -> ph) $;
 
-axiom ax-ext: $ A. x (x es. a <-> x es. b) -> a =s b $;
-axiom ax-rep (ph: wff y z):
+axiom ax_ext: $ A. x (x es. a <-> x es. b) -> a =s b $;
+axiom ax_rep (ph: wff y z):
   $ A. y E. x A. z (ph -> z =s x) ->
     E. x A. z (z es. x <-> E. y (y es. a /\ ph)) $;
-axiom ax-pow: $ E. x A. y (A. z (z es. y -> z es. a) -> y es. x) $;
-axiom ax-un: $ E. x A. y (E. z (y es. z /\ z es. a) -> y es. x) $;
-axiom ax-reg: $ E. x x es. a -> E. x (x es. a /\ A. y (y es. x -> ~ y es. a)) $;
-axiom ax-inf: $ E. x (a es. x /\ A. y (y es. x -> E. z (y es. z /\ z es. x))) $;
-axiom ax-ac:
+axiom ax_pow: $ E. x A. y (A. z (z es. y -> z es. a) -> y es. x) $;
+axiom ax_un: $ E. x A. y (E. z (y es. z /\ z es. a) -> y es. x) $;
+axiom ax_reg: $ E. x x es. a -> E. x (x es. a /\ A. y (y es. x -> ~ y es. a)) $;
+axiom ax_inf: $ E. x (a es. x /\ A. y (y es. x -> E. z (y es. z /\ z es. x))) $;
+axiom ax_ac:
   $ E. x A. y (y es. a -> E. z z es. y ->
     E! z (z es. y /\ E. w (w es. x /\ y es. w /\ z es. w))) $;
 
@@ -75,9 +75,9 @@ term cab {x: set} (ph: wff x): class;
 term welc (a: set) (A: class): wff; infixl welc: $ec.$ prec 50;
 notation cab {x: set} (ph: wff x): class = (${$:0) x ($|$:0) ph ($}$:0);
 
-axiom ax-8b: $ a =s b -> a ec. A -> b ec. A $;
+axiom ax_8b: $ a =s b -> a ec. A -> b ec. A $;
 
-axiom ax-clab: $ x ec. {x | ph} <-> ph $;
+axiom ax_clab: $ x ec. {x | ph} <-> ph $;
 
 def wceq (A B: class): wff = $ A. x (x ec. A <-> x ec. B) $;
 infixl wceq: $=$ prec 50;
