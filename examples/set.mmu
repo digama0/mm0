@@ -78,4 +78,4 @@ def wb (ph: wff) (ps: wff): wff = (wn (wi (wi ph ps) (wn (wi ps ph))))
 
 theorem bi1 (ph: wff) (ps: wff), unfolding wb() (h: ph):
   (wi (wb ph ps) (wi ph ps)) =
-(ax_mp ph (wi ps ph) h (ax_1 ph ps))
+(simplim (wi ph ps) (wn (wi ps ph)))

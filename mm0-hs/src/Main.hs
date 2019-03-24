@@ -27,11 +27,11 @@ doVerify args = do
     [] -> return (stdin, [])
     (mm0:r) -> (\h -> (h, r)) <$> openFile mm0 ReadMode
   s <- B.hGetContents mm0
-  ast <- either fail pure (parse s)
+  ast <- either die pure (parse s)
   env <- liftIO (elabAST ast)
   putStrLn "spec checked"
   case rest of
-    [] -> fail "error: no proof file"
+    [] -> die "error: no proof file"
     (mmp:_) -> do
       pf <- readFile mmp
       pf <- liftIO (fromJustError "mmu parse failure" (parseProof pf))
