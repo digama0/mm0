@@ -6,6 +6,7 @@ import Debug.Trace
 import Data.Word
 import Data.List
 import Data.Bits
+import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
@@ -25,6 +26,7 @@ data VDefData = VDefData {
   vdVal :: VExpr }       -- ^ Definition expr
 
 data VAssrtData = VAssrtData {
+  vaName :: Maybe Ident,    -- ^ Name from the spec
   vaVars :: [VBinder],      -- ^ Sorts of the variables (bound and regular)
   vaDV :: [(VarID, VarID)], -- ^ Disjointness conditions between the variables
   vaHyps :: [VExpr],        -- ^ Hypotheses
@@ -60,6 +62,9 @@ checkNotStrict g t = do
   (t, sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID t)
   guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
 
+withContext :: MonadError String m => String -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("while checking " ++ s ++ ": " ++ e))
+
 verify :: Environment -> Proofs -> Either String ()
 verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
 
@@ -78,26 +83,34 @@ verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
     SDecl x' (DAxiom args hs ret) | x == x' -> modify (\g -> g {
       vThms = vThms g Q.|> translateAxiom (vSortIx g) (vTermIx g) x args hs ret })
     _ -> throwError "incorrect axiom step"
-  verifyCmd (ProofDef vs ret ds def st) = do
+  verifyCmd (ProofDef x vs ret ds def st) = do
     g <- get
-    lift $ checkDef g vs ret ds def
-    case st of
-      Nothing -> return ()
-      Just x -> step >>= \case
-        SDecl x' (DDef vs' ret' o) | x == x' ->
-          guardError ("def '" ++ x ++ "' does not match declaration") $
+    let n = TermID (Q.length (vTerms g))
+    let name = fromMaybe (show n) x
+    withContext name $ do
+      lift $ checkDef g vs ret ds def
+      when st $ step >>= \case
+        SDecl x' (DDef vs' ret' o) | x == Just x' ->
+          guardError "def does not match declaration" $
             matchDef (vTermIx g) (vSortIx g) vs ret ds vs' ret' def o
         _ -> throwError "incorrect def step"
-  verifyCmd (ProofThm vs hs ret unf ds pf st) = do
+    modify (\g -> g {
+      vTerms = vTerms g Q.|> VTermData x vs ret,
+      vTermIx = maybe (vTermIx g) (\x' -> M.insert x' n (vTermIx g)) x,
+      vDefs = I.insert (ofTermID n) (VDefData ds def) (vDefs g) })
+  verifyCmd (ProofThm x vs hs ret unf ds pf st) = do
     g <- get
-    lift $ checkThm g vs hs ret unf ds pf
-    case st of
-      Nothing -> return ()
-      Just x -> step >>= \case
-        SThm x' vs' hs' ret' | x == x' ->
-          guardError ("theorem '" ++ x ++ "' does not match declaration") $
+    let n = ThmID (Q.length (vThms g))
+    let name = fromMaybe (show n) x
+    withContext name $ do
+      lift $ checkThm g vs hs ret unf ds pf
+      when st $ step >>= \case
+        SThm x' vs' hs' ret' | x == Just x' ->
+          guardError "theorem does not match declaration" $
             matchThm (vTermIx g) (vSortIx g) vs hs ret vs' hs' ret'
         _ -> throwError "incorrect theorem step"
+    modify (\g -> g {
+      vThms = vThms g Q.|> VAssrtData x vs (makeDV vs) hs ret })
 
   step :: GVerifyM Spec
   step = do
@@ -273,7 +286,7 @@ translateAxiom :: M.Map Ident SortID -> M.Map Ident TermID ->
   Ident -> [PBinder] -> [SExpr] -> SExpr -> VAssrtData
 translateAxiom sortIx termIx = \x args hs ret ->
   let (args', _, varIx) = trBinders sortIx args in
-  VAssrtData args' (makeDV args')
+  VAssrtData (Just x) args' (makeDV args')
     (trExpr varIx <$> hs) (trExpr varIx ret) where
 
   trExpr :: M.Map Ident VarID -> SExpr -> VExpr
@@ -332,7 +345,7 @@ verifyProof g = \ctx hs cs -> do
   let heap' = foldl (\s h -> s Q.|> SSProof h) heap hs
   execStateT (mapM_ verify1 cs) (VState heap' []) >>= \case
     VState _ [SSProof e] -> return e
-    _ -> throwError "Bad proof state"
+    s -> throwError ("Bad proof state " ++ show s)
   where
   varToStackSlot :: Int -> VBinder -> StackSlot
   varToStackSlot n (VBound s) = SSBound s (VarID n)
@@ -364,20 +377,22 @@ verifyProof g = \ctx hs cs -> do
     (es, b) <- popn args >>= verifyArgs 0 (.|.)
     push (SSExpr ret (VApp t es) b)
   verify1 (PushThm t) = do
-    VAssrtData args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
-    hs' <- popn hs
-    vs' <- popn args
-    (es, b) <- verifyArgs Q.empty (Q.<|) vs'
-    let subst = Q.fromList es
-    guardError "disjoint variable violation" $
-      all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
-    mapM_ (\case
-      (e, SSProof p) -> do
-        guardError ("substitution to hypothesis does not match theorem\n" ++
-            show e ++ show es ++ " != " ++ show p)
-          (substExpr subst e == p)
-      (e, _) -> throwError "bad stack slot reference") hs'
-    push (SSProof (substExpr subst ret))
+    VAssrtData x args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
+    withContext ("step " ++ fromMaybe (show t) x) $ do
+      hs' <- popn hs
+      vs' <- popn args
+      (es, b) <- verifyArgs Q.empty (Q.<|) vs'
+      let subst = Q.fromList es
+      guardError "disjoint variable violation" $
+        all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
+      mapM_ (\case
+        (e, SSProof p) -> do
+          guardError ("substitution to hypothesis does not match theorem\n" ++
+              show e ++ show es ++ " = " ++ show (substExpr subst e) ++ " != " ++ show p)
+            (substExpr subst e == p)
+        (e, _) -> throwError "bad stack slot reference") hs'
+      push (SSProof (substExpr subst ret))
+  verify1 Sorry = throwError "? found in proof"
 
   verifyArgs :: a -> (VBitSet -> a -> a) -> [(VBinder, StackSlot)] -> VerifyM ([VExpr], a)
   verifyArgs a f = go where

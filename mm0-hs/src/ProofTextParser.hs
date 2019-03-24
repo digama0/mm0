@@ -105,40 +105,58 @@ readProof = lex1 >>= \case
   L.Ident "sort" -> StepSort <$> insertSort
   L.Ident "term" -> StepTerm <$> insertTerm
   L.Ident "axiom" -> StepAxiom <$> insertThm
-  L.Ident "def" -> insertTerm >>= readDef . Just
-  L.Ident "theorem" -> insertThm >>= readThm . Just
+  L.Ident "def" -> readDef True
+  L.Ident "theorem" -> readThm True
   L.Ident "local" -> lex1 >>= \case
-    L.Ident "def" -> insertTerm >> readDef Nothing
-    L.Ident "theorem" -> insertThm >> readThm Nothing
+    L.Ident "def" -> readDef False
+    L.Ident "theorem" -> readThm False
   _ -> empty
 
-readDef :: Maybe Ident -> Parser ProofCmd
+readDef :: Bool -> Parser ProofCmd
 readDef st = do
+  trace "readDef" (return ())
+  x <- insertTerm
+  traceShow x (return ())
   args <- readlist readBinder
+  traceShow args (return ())
   expectS ":"
+  traceShow ":" (return ())
   ret <- VType <$> readSort <*> readlist readVar
+  traceShow ret (return ())
   expect $ L.Punc "="
   ds <- readlist readDummy
   val <- readExpr
-  resetVars >> return (ProofDef args ret ds val st)
+  resetVars >> return (ProofDef (Just x) args ret ds val st)
 
-readThm :: Maybe Ident -> Parser ProofCmd
+readThm :: Bool -> Parser ProofCmd
 readThm st = do
+  trace ("readThm " ++ show st) (return ())
+  x <- insertThm
+  traceShow x (return ())
   vs <- readlist readBinder
+  traceShow vs (return ())
   expect (L.Punc ",")
+  traceShow "," (return ())
   uf <- (do
       expect $ L.Ident "unfolding"
       t <- readTerm
       bracket "(" ")" (readlist insertVar)
       return (Just t))
     <|+ return Nothing
+  traceShow uf (return ())
   ds <- readlist readDummy
+  traceShow ds (return ())
   hyps <- readlist readHyp
+  traceShow hyps (return ())
   expectS ":"
+  traceShow ":" (return ())
   ret <- readExpr
+  traceShow ret (return ())
   expect $ L.Punc "="
-  proof <- readProofExpr
-  resetVars >> return (ProofThm vs hyps ret uf ds proof st)
+  traceShow "=" (return ())
+  proof <- (\l -> l []) <$> readProofExpr
+  traceShow proof (return ())
+  resetVars >> return (ProofThm (Just x) vs hyps ret uf ds proof st)
 
 readDummy :: Parser SortID
 readDummy = bracket "{" "}" (insertVar >> expectS ":" >> readSort)
@@ -155,24 +173,25 @@ readExpr = (VVar <$> readVar) <|+ (flip VApp [] <$> readTerm) <|+
 readHyp :: Parser VExpr
 readHyp = bracket "(" ")" (insertVar >> expectS ":" >> readExpr)
 
-readProofExpr :: Parser [LocalCmd]
-readProofExpr = (do
-    expect (L.Ident "let")
-    insertVar
-    expect (L.Punc "=")
-    es <- readSimpleExpr
-    r <- readProofExpr
-    return (es (Save : r)))
-  <|+ ((\l -> l []) <$> readSimpleExpr)
-
 exprToLocal :: VExpr -> [LocalCmd] -> [LocalCmd]
 exprToLocal (VVar (VarID v)) r = Load v : r
 exprToLocal (VApp t es) r = foldr exprToLocal (PushApp t : r) es
 
-readSimpleExpr :: Parser ([LocalCmd] -> [LocalCmd])
-readSimpleExpr = (exprToLocal <$> readExpr) <|+
+readProofExpr :: Parser ([LocalCmd] -> [LocalCmd])
+readProofExpr =
+  (expectS "?" >> return (Sorry :)) <|+
+  (exprToLocal <$> readExpr) <|+
   bracket "(" ")" (do
     t <- readAssrt
     es <- readlist readExpr
-    hs <- readlist readSimpleExpr
-    return (\r -> foldr exprToLocal (foldr ($) (PushThm t : r) hs) es))
+    hs <- readlist readProofExpr
+    return (\r -> foldr exprToLocal (foldr ($) (PushThm t : r) hs) es)) <|+
+  bracket "[" "]" (do
+    trace "[" (return ())
+    e <- readProofExpr
+    traceShow (e[]) (return ())
+    expect (L.Punc "=")
+    trace "=" (return ())
+    insertVar
+    trace "var" (return ())
+    return (e . (Save :)))

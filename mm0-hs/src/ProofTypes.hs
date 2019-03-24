@@ -34,19 +34,21 @@ data ProofCmd =
   | StepTerm Ident
   | StepAxiom Ident
   | ProofDef {
+      pdName :: Maybe Ident,  -- ^ The name of the definition
       pdArgs :: [VBinder],    -- ^ The arguments to the definition
       pdRet :: VType,         -- ^ The return type
       pdDummies :: [SortID],  -- ^ The types of the dummies
       pdVal :: VExpr,         -- ^ The value of the definition
-      pdStep :: Maybe Ident } -- ^ The name of the definition in the spec
+      pdStep :: Bool }        -- ^ True if this def is in the spec
   | ProofThm {
+      ptName :: Maybe Ident,    -- ^ The name of the theorem
       ptVar :: [VBinder],       -- ^ The variables
       ptHyps :: [VExpr],        -- ^ The hypotheses
       ptRet :: VExpr,           -- ^ The return type
       ptUnfold :: Maybe TermID, -- ^ Which definition to unfold in the statement
       ptDummies :: [SortID],    -- ^ The types of the dummies
       ptProof :: [LocalCmd],    -- ^ The actual proof
-      ptStep :: Maybe Ident }   -- ^ The name of the theorem in the spec
+      ptStep :: Bool }          -- ^ True if this theorem is in the spec
   deriving (Show)
 
 type HeapID = Int
@@ -56,4 +58,5 @@ data LocalCmd =
   | PushApp TermID
   | PushThm ThmID
   | Save
+  | Sorry
   deriving (Show)
