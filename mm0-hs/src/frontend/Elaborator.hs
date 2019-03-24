@@ -58,6 +58,9 @@ getVar v = do s <- ask; getVar' v s
 pushStack :: Stack -> Stack
 pushStack s = Stack (sVars s) (Just s)
 
+withContext :: MonadError String m => String -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
+
 evalSpecM :: SpecM a -> Either String (a, Environment)
 evalSpecM m = do
   (a, (e, _), _) <- runRWST m (Stack M.empty Nothing) (newEnv, newParserEnv)
@@ -101,7 +104,7 @@ elabTerm x vs ty mk = do
 
 elabAssert :: Ident -> [Binder] -> Formula -> ([PBinder] -> [SExpr] -> SExpr -> a) -> SpecM a
 elabAssert x vs fmla mk = do
-  ((bis, dummies, hyps, ret), loc) <- runLocalCtxM' $
+  ((bis, dummies, hyps, ret), loc) <- withContext x $ runLocalCtxM' $
     processBinders vs $ \vs' ds hs -> do
       sexp <- parseFormula fmla
       return (vs', ds, hs, sexp)
@@ -114,7 +117,7 @@ elabAssert x vs fmla mk = do
 elabDef :: Ident -> [Binder] -> DepType -> Maybe Formula -> SpecM Decl
 elabDef x vs ty Nothing = elabTerm x vs ty (\bs r -> DDef bs r Nothing)
 elabDef x vs ty (Just defn) = do
-  ((bis, dummies, hyps, defn'), Locals sbd nv) <- runLocalCtxM' $
+  ((bis, dummies, hyps, defn'), Locals sbd nv) <- withContext x $ runLocalCtxM' $
     processBinders vs $ \vs' ds hs -> do
       checkType ty
       defn' <- parseFormula defn

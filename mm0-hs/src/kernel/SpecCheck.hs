@@ -94,7 +94,14 @@ inferSExpr env ctx (App f es) = do
 
 matchTypes :: Environment -> M.Map Ident (Bool, DepType) -> [SExpr] -> [PBinder] -> Either String ()
 matchTypes _ _ [] [] = return ()
-matchTypes env ctx (e:es) (bi:bis) = do
-  t <- checkSExpr env ctx e (binderType bi)
+matchTypes env ctx (e : es) (PBound _ t : bis) = do
+  case e of
+    SVar v -> fromJustError "variable not found" (ctx M.!? v) >>= \case
+      (True, DepType t' _) -> guardError "type error" (t == t')
+      _ -> throwError "non-bound variable in BV slot"
+    _ -> throwError "non-bound variable in BV slot"
+  matchTypes env ctx es bis
+matchTypes env ctx (e : es) (PReg _ ty : bis) = do
+  t <- checkSExpr env ctx e ty
   matchTypes env ctx es bis
 matchTypes _ _ _ _ = throwError "incorrect number of arguments"

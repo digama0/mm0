@@ -64,7 +64,8 @@ checkPrec e p v m = do
 coerce :: Ident -> (SExpr, Ident) -> ParserM SExpr
 coerce s2 (sexp, s1) = do
   pe <- lift readPE
-  c <- fromJustError ("type error, expected " ++ s2 ++ ", got " ++ s1) (getCoe s1 s2 pe)
+  c <- fromJustError ("type error, expected " ++ s2 ++
+    ", got " ++ show sexp ++ ": " ++ s1) (getCoe s1 s2 pe)
   return (c sexp)
 
 parseLiterals :: [Ident] -> [PLiteral] -> ParserM [SExpr]
@@ -79,9 +80,6 @@ parseLiterals ls = go I.empty where
 appPrec :: Int
 appPrec = 1024
 
-parseSExpr :: Ident -> ParserM SExpr
-parseSExpr s = parseLiteral (parseError "expected s-expr") >>= coerce s
-
 parsePrefix :: Prec -> ParserM (SExpr, Ident)
 parsePrefix p = parseLiteral $ do
   pe <- lift readPE
@@ -92,10 +90,10 @@ parsePrefix p = parseLiteral $ do
       let bss = dSort . binderType <$> bs
       ss <- parseLiterals bss lits
       return (App x ss, dSort r)) $
-    tkMatch (\v -> if p < appPrec then Nothing else getTerm env v)
+    tkMatch (\v -> if p <= appPrec then getTerm env v else Nothing)
       (\x (bs, r) -> do
         let bss = dSort . binderType <$> bs
-        ss <- mapM parseSExpr bss
+        ss <- mapM (\s -> parsePrefix maxBound >>= coerce s) bss
         return (App x ss, dSort r)) $
     parseError "expected variable or prefix or term s-expr"
 
