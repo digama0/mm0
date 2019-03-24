@@ -40,7 +40,9 @@ build-tools:
 executables:
   mm0-hs-exe:
     main:                Main.hs
-    source-dirs:         src
+    source-dirs:
+    - src
+    - src/kernel
     ghc-options:
     - -threaded
     - -rtsopts
