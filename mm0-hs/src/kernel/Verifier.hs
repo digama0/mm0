@@ -11,7 +11,6 @@ import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
-import AST (SortData(..), Ident, DepType(..))
 import Environment
 import ProofTypes
 import Util

@@ -38,11 +38,13 @@ build-tools:
 - happy
 
 executables:
-  mm0-hs-exe:
+  mm0-hs:
     main:                Main.hs
     source-dirs:
     - src
     - src/kernel
+    - src/fromMM
+    - src/frontend
     ghc-options:
     - -threaded
     - -rtsopts

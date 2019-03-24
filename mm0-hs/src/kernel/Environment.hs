@@ -1,10 +1,17 @@
 module Environment where
 
-import Control.Monad.Except
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
-import AST
-import Util
+
+type Ident = String
+
+data DepType = DepType {
+  dSort :: Ident,
+  dDeps :: [Ident] } deriving (Eq)
+
+instance Show DepType where
+  showsPrec _ (DepType t ts) r =
+    t ++ foldr (\t' r -> ' ' : t' ++ r) r ts
 
 data PBinder = PBound Ident Ident | PReg Ident DepType
 
@@ -45,11 +52,11 @@ data Decl =
         SExpr))            -- definition
   deriving (Show)
 
-type Vars = M.Map Ident VarType
-
-data Stack = Stack {
-  sVars :: Vars,
-  sRest :: Maybe Stack }
+data SortData = SortData {
+  sPure :: Bool,
+  sStrict :: Bool,
+  sProvable :: Bool,
+  sFree :: Bool }
   deriving (Show)
 
 data Spec =
@@ -79,10 +86,3 @@ getTerm e v = eDecls e M.!? v >>= go where
 
 getArity :: Environment -> Ident -> Maybe Int
 getArity e v = length . fst <$> getTerm e v
-
-getVarM :: MonadError String m => Ident -> Stack -> m VarType
-getVarM v s = fromJustError "type depends on unknown variable" (sVars s M.!? v)
-
-varTypeToDep :: [Ident] -> VarType -> DepType
-varTypeToDep ds (VTReg t) = DepType t []
-varTypeToDep ds (Open t) = DepType t ds

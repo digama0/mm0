@@ -9,7 +9,7 @@ import Debug.Trace
 import Text.ParserCombinators.ReadP hiding (get)
 import qualified Text.Read.Lex as L
 import qualified Data.Map.Strict as M
-import AST
+import Environment (Ident)
 import ProofTypes
 
 type NameMap = (Int, M.Map Ident Int)

@@ -1,6 +1,7 @@
 module Main (main) where
 
 import System.IO
+import System.Exit
 import System.Environment
 import qualified Data.ByteString.Lazy as B
 import Parser
@@ -9,14 +10,20 @@ import Util
 import Elaborator
 import Verifier
 import ProofTextParser
-
-liftIO :: Either String a -> IO a
-liftIO (Left e) = fail e
-liftIO (Right e) = return e
+import FromMM (fromMM)
 
 main :: IO ()
 main = do
-  (mm0, rest) <- getArgs >>= \case
+  getArgs >>= \case
+    "verify" : rest -> doVerify rest
+    "from-mm" : rest -> fromMM rest
+    _ -> die ("incorrect args; use\n" ++
+      "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
+      "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU-FILE]\n")
+
+doVerify :: [String] -> IO ()
+doVerify args = do
+  (mm0, rest) <- case args of
     [] -> return (stdin, [])
     (mm0:r) -> (\h -> (h, r)) <$> openFile mm0 ReadMode
   s <- B.hGetContents mm0

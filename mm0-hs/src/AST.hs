@@ -1,14 +1,10 @@
 module AST where
+
+import Control.Monad.Except
 import qualified Data.ByteString as B
-
-type Ident = String
-
-data SortData = SortData {
-  sPure :: Bool,
-  sStrict :: Bool,
-  sProvable :: Bool,
-  sFree :: Bool }
-  deriving (Show)
+import qualified Data.Map.Strict as M
+import Environment (Ident, DepType(..), SortData)
+import Util
 
 type AST = [Stmt]
 
@@ -45,14 +41,6 @@ instance Show Local where
   showsPrec _ (LDummy v) r = '.' : v ++ r
   showsPrec _ LAnon r = '_' : r
 
-data DepType = DepType {
-  dSort :: Ident,
-  dDeps :: [Ident] } deriving (Eq)
-
-instance Show DepType where
-  showsPrec _ (DepType t ts) r =
-    t ++ foldr (\t' r -> ' ' : t' ++ r) r ts
-
 data Type = TType DepType | TFormula Formula deriving (Show)
 
 data VarType = VTReg Ident | Open Ident
@@ -76,6 +64,20 @@ localName (LBound v) = Just v
 localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing
+
+type Vars = M.Map Ident VarType
+
+data Stack = Stack {
+  sVars :: Vars,
+  sRest :: Maybe Stack }
+  deriving (Show)
+
+getVarM :: MonadError String m => Ident -> Stack -> m VarType
+getVarM v s = fromJustError "type depends on unknown variable" (sVars s M.!? v)
+
+varTypeToDep :: [Ident] -> VarType -> DepType
+varTypeToDep ds (VTReg t) = DepType t []
+varTypeToDep ds (Open t) = DepType t ds
 
 varTypeSort :: VarType -> Ident
 varTypeSort (VTReg s) = s

@@ -1,7 +1,7 @@
 module ProofTypes where
 
 import Data.Bits
-import AST
+import Environment (Ident)
 
 newtype SortID = SortID {ofSortID :: Int} deriving (Eq)
 newtype TermID = TermID {ofTermID :: Int} deriving (Eq)
