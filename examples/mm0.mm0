@@ -1,0 +1,135 @@
+-- This include doesn't actually work, so use copy and paste
+--| #include "peano.mm0"
+
+def all2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
+$ len l1 = len l2 /\ A. n (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
+
+def ex2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
+$ len l1 = len l2 /\ E. n (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
+
+def sPure     (n: nat): wff = $ bool (pi11 n) $;
+def sStrict   (n: nat): wff = $ bool (pi12 n) $;
+def sProvable (n: nat): wff = $ bool (pi21 n) $;
+def sFree     (n: nat): wff = $ bool (pi22 n) $;
+def SortData (pure strict provable free: wff): nat =
+$ (nat pure <> nat strict) <> (nat provable <> nat free) $;
+
+def PBound (s: nat): nat = $ b0 s $;
+def PReg (s vs: nat): nat = $ b1 (s <> vs) $;
+
+def binderSort (x: nat): nat;
+theorem binderSortBound (s: nat): $ binderSort (PBound s) = s $;
+theorem binderSortReg (s vs: nat): $ binderSort (PReg s vs) = s $;
+
+def SVar (v: nat): nat = $ b0 v $;
+def SApp (f x: nat): nat = $ b1 (f <> x) $;
+
+def DTerm (args ret: nat): nat = $ b0 (b0 (args <> ret)) $;
+def DAxiom (args hs ret: nat): nat = $ b0 (b1 (args <> hs <> ret)) $;
+def DDef (args ret def: nat): nat = $ b1 (args <> ret <> def) $;
+
+def SSort (sd: nat): nat = $ b0 (b0 sd) $;
+def SDecl (d: nat): nat = $ b0 (b1 d) $;
+def SThm (vs hs ret: nat): nat = $ b1 (vs <> hs <> ret) $;
+
+def getSD (env n: nat): nat;
+theorem getSD0 (n: nat): $ getSD 0 n = 0 $;
+theorem getSDDecl (d e n: nat): $ getSD (SDecl d : e) n = getSD e n $;
+theorem getSDThm (vs hs ret e n: nat):
+  $ getSD (SThm vs hs ret : e) n = getSD e n $;
+theorem getSDSort0 (sd e: nat): $ getSD (SSort sd : e) 0 = suc sd $;
+theorem getSDSortS (sd e n: nat): $ getSD (SSort sd : e) (suc n) = getSD e n $;
+
+def getTerm (env n: nat): nat;
+theorem getTerm0 (n: nat): $ getTerm 0 n = 0 $;
+theorem getTermSort (sd e n: nat): $ getTerm (SSort sd : e) n = getTerm e n $;
+theorem getTermTerm0 (a r e: nat):
+  $ getTerm (SDecl (DTerm a r) : e) 0 = suc (a <> r <> 0) $;
+theorem getTermTermS (a r e n: nat):
+  $ getTerm (SDecl (DTerm a r) : e) (suc n) = getTerm e n $;
+theorem getTermAxiom (a h r e n: nat):
+  $ getTerm (SDecl (DAxiom a h r) : e) n = getTerm e n $;
+theorem getTermDef0 (a r o e: nat):
+  $ getTerm (SDecl (DDef a r o) : e) 0 = suc (a <> r <> suc o) $;
+theorem getTermDefS (a r o e n: nat):
+  $ getTerm (SDecl (DDef a r o) : e) (suc n) = getTerm e n $;
+theorem getTermThm (vs hs ret e n: nat):
+  $ getTerm (SThm vs hs ret : e) n = getTerm e n $;
+
+def getDef (env n: nat): nat;
+theorem getDef0 (env n: nat): $ getTerm env n = 0 -> getDef env n = 0 $;
+theorem getDefS (env n a r o: nat):
+  $ getTerm env n = suc (a <> r <> o) -> getDef env n = o $;
+
+def isSort (env s: nat): wff = $ getSD env s != 0 $;
+
+def isBound (ctx x .s: nat): wff = $ E. s nth ctx x = suc (PBound s) $;
+
+def DepType (env ctx ty: nat): wff =
+$ isSort env (fst ty) /\ A. x (x e. snd ty -> isBound ctx x) $;
+
+def Ctx (env ctx: nat): wff;
+theorem Ctx0 (env: nat): $ Ctx env 0 $;
+theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
+  Ctx env ctx /\ E. sd (getSD env s = suc sd /\ ~ sStrict sd) $;
+theorem CtxReg (env ctx s vs: nat): $ Ctx env (ctx |> PReg s vs) <->
+  Ctx env ctx /\ DepType env ctx (s <> vs) $;
+
+def Expr (env ctx e s: nat): wff;
+def ExprBi (env ctx e bi: nat): wff;
+theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
+  E. bi (nth ctx v = suc bi /\ binderSort bi = s) $;
+theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
+  $ Expr env ctx (SApp f xs) s <-> E. args E. ret E. o
+    ( getTerm env f = suc (args <> ret <> o) /\
+      all2 x a (ExprBi env ctx x a) xs args /\
+      s = fst ret ) $;
+theorem ExprBiBound (env ctx e s: nat) {v: nat}:
+  $ ExprBi env ctx e (PBound s) <->
+    E. v (e = SVar v /\ nth ctx v = suc (PBound s)) $;
+theorem ExprBiReg (env ctx e s vs: nat):
+  $ ExprBi env ctx e (PReg s vs) <-> ExprBi env ctx e s $;
+
+def ExprProv (env ctx e .s .sd: nat): wff =
+$ E. s E. sd (Expr env ctx e s /\ getSD env s = suc sd /\ sProvable sd) $;
+
+def appendDummies (ctx ds: nat): nat;
+theorem appendDummies0 (ctx: nat): $ appendDummies ctx 0 = ctx $;
+theorem appendDummiesS (ctx d ds: nat):
+  $ appendDummies ctx (d : ds) =
+    appendDummies (ctx |> PBound d) ds $;
+
+def Free (env ctx e v: nat): wff;
+theorem FreeBound (env ctx u v s: nat):
+  $ nth ctx u = suc (PBound s) -> (Free env ctx (SVar u) v <-> u = v) $;
+theorem FreeReg (env ctx u v s vs: nat):
+  $ nth ctx u = suc (PReg s vs) -> (Free env ctx (SVar u) v <-> v e. vs) $;
+
+def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
+$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = SVar v))) $;
+theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
+  $ getTerm env f = suc (args <> (r <> rs) <> o) ->
+    (Free env ctx (SApp f es) v <->
+      ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
+      E. u (u e. rs /\ nth es u = SVar v)) $;
+
+def Decl (env d: nat): wff;
+theorem DeclTerm (env args ret: nat):
+  $ Decl env (DTerm args ret) <-> Ctx env args /\ DepType env args ret $;
+theorem DeclAxiom (env args hs ret: nat) {x: nat}:
+  $ Decl env (DAxiom args hs ret) <-> Ctx env args /\
+    all x (ExprProv env args x) (ret : hs) $;
+theorem DeclDef (env args hs ret: nat) {ds e ctx o v: nat}:
+  $ Decl env (DDef args ret o) <-> Ctx env args /\ DepType env args ret /\
+    A. ds A. e (o = suc (ds <> e) -> [ appendDummies args ds / ctx ]
+      (Expr env ctx e (fst ret) /\ A. v (Free env ctx e v -> v e. snd ret))) $;
+
+def Spec (env s: nat): wff;
+theorem SpecSort (env sd: nat): $ Spec env (SSort sd) $;
+theorem SpecDecl (env d: nat): $ Spec env (SDecl d) <-> Decl env d $;
+theorem SpecThm (env args hs ret: nat): $ Spec env (SThm args hs ret) <->
+  Ctx env args /\ all x (ExprProv env args x) (ret : hs) $;
+
+def Env (e: nat): wff;
+theorem Env0: $ Env 0 $;
+theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Spec e s $;
