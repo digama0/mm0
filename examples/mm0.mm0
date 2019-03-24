@@ -7,6 +7,11 @@ $ len l1 = len l2 /\ A. n (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
 def ex2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ E. n (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
 
+def map {x: nat} (f: nat x) (l: nat): nat;
+theorem map0 {x: nat} (f: nat x): $ map x f 0 = 0 $;
+theorem mapS {x: nat} (f: nat x) (a l: nat):
+  $ map x f (a : l) = ('[ a / x ] f) : map x f l $;
+
 def sPure     (n: nat): wff = $ bool (pi11 n) $;
 def sStrict   (n: nat): wff = $ bool (pi12 n) $;
 def sProvable (n: nat): wff = $ bool (pi21 n) $;
@@ -26,7 +31,8 @@ def SApp (f x: nat): nat = $ b1 (f <> x) $;
 
 def DTerm (args ret: nat): nat = $ b0 (b0 (args <> ret)) $;
 def DAxiom (args hs ret: nat): nat = $ b0 (b1 (args <> hs <> ret)) $;
-def DDef (args ret def: nat): nat = $ b1 (args <> ret <> def) $;
+def DDef (args ret def: nat) (sp: wff): nat =
+  $ b1 (args <> ret <> def <> nat sp) $;
 
 def SSort (sd: nat): nat = $ b0 (b0 sd) $;
 def SDecl (d: nat): nat = $ b0 (b1 d) $;
@@ -44,15 +50,25 @@ def getTerm (env n: nat): nat;
 theorem getTerm0 (n: nat): $ getTerm 0 n = 0 $;
 theorem getTermSort (sd e n: nat): $ getTerm (SSort sd : e) n = getTerm e n $;
 theorem getTermTerm0 (a r e: nat):
-  $ getTerm (SDecl (DTerm a r) : e) 0 = suc (a <> r <> 0) $;
-theorem getTermTermS (a r e n: nat):
-  $ getTerm (SDecl (DTerm a r) : e) (suc n) = getTerm e n $;
+  $ getTerm (SDecl (DTerm a r) : e) (b0 0) = suc (a <> r <> 0) $;
+theorem getTermTermS0 (a r e n: nat):
+  $ getTerm (SDecl (DTerm a r) : e) (b0 (suc n)) = getTerm e (b0 n) $;
+theorem getTermTermS1 (a r e n: nat):
+  $ getTerm (SDecl (DTerm a r) : e) (b1 n) = getTerm e (b1 n) $;
 theorem getTermAxiom (a h r e n: nat):
   $ getTerm (SDecl (DAxiom a h r) : e) n = getTerm e n $;
-theorem getTermDef0 (a r o e: nat):
-  $ getTerm (SDecl (DDef a r o) : e) 0 = suc (a <> r <> suc o) $;
-theorem getTermDefS (a r o e n: nat):
-  $ getTerm (SDecl (DDef a r o) : e) (suc n) = getTerm e n $;
+theorem getTermDef0 (a r o e: nat) (sp: wff):
+  $ sp -> getTerm (SDecl (DDef a r o sp) : e) (b0 0) = suc (a <> r <> suc o) $;
+theorem getTermDefN0 (a r o e: nat) (sp: wff):
+  $ ~sp -> getTerm (SDecl (DDef a r o sp) : e) (b1 0) = suc (a <> r <> suc o) $;
+theorem getTermDefS0 (a r o e n: nat) (sp: wff):
+  $ sp -> getTerm (SDecl (DDef a r o sp) : e) (b0 (suc n)) = getTerm e n $;
+theorem getTermDefNS0 (a r o e n: nat) (sp: wff):
+  $ ~sp -> getTerm (SDecl (DDef a r o sp) : e) (b1 (suc n)) = getTerm e n $;
+theorem getTermDefS1 (a r o e n: nat) (sp: wff):
+  $ sp -> getTerm (SDecl (DDef a r o sp) : e) (b1 n) = getTerm e (b1 n) $;
+theorem getTermDefNS1 (a r o e n: nat) (sp: wff):
+  $ ~sp -> getTerm (SDecl (DDef a r o sp) : e) (b0 n) = getTerm e (b0 n) $;
 theorem getTermThm (vs hs ret e n: nat):
   $ getTerm (SThm vs hs ret : e) n = getTerm e n $;
 
@@ -60,6 +76,22 @@ def getDef (env n: nat): nat;
 theorem getDef0 (env n: nat): $ getTerm env n = 0 -> getDef env n = 0 $;
 theorem getDefS (env n a r o: nat):
   $ getTerm env n = suc (a <> r <> o) -> getDef env n = o $;
+
+def getThm (env n: nat): nat;
+theorem getThm0 (n: nat): $ getThm 0 n = 0 $;
+theorem getThmSort (sd e n: nat): $ getThm (SSort sd : e) n = getThm e n $;
+theorem getThmTerm (a r e n: nat):
+  $ getThm (SDecl (DTerm a r) : e) n = getThm e n $;
+theorem getThmDef (a r o e n: nat) (sp: wff):
+  $ getThm (SDecl (DDef a r o sp) : e) n = getThm e n $;
+theorem getThmAxiom0 (a h r e: nat):
+  $ getThm (SDecl (DAxiom a h r) : e) 0 = suc (a <> h <> r) $;
+theorem getThmAxiomS (a h r e n: nat):
+  $ getThm (SDecl (DAxiom a h r) : e) (suc n) = getThm e n $;
+theorem getThmThm0 (a h r e: nat):
+  $ getThm (SThm a h r : e) 0 = suc (a <> h <> r) $;
+theorem getThmThmS (a h r e n: nat):
+  $ getThm (SThm a h r : e) (suc n) = getThm e n $;
 
 def isSort (env s: nat): wff = $ getSD env s != 0 $;
 
@@ -99,19 +131,28 @@ theorem appendDummiesS (ctx d ds: nat):
   $ appendDummies ctx (d : ds) =
     appendDummies (ctx |> PBound d) ds $;
 
-def Free (env ctx e v: nat): wff;
-theorem FreeBound (env ctx u v s: nat):
-  $ nth ctx u = suc (PBound s) -> (Free env ctx (SVar u) v <-> u = v) $;
-theorem FreeReg (env ctx u v s vs: nat):
-  $ nth ctx u = suc (PReg s vs) -> (Free env ctx (SVar u) v <-> v e. vs) $;
+def HasVar (ctx e v: nat): wff;
+theorem HasVarBound (ctx u v s: nat):
+  $ nth ctx u = suc (PBound s) -> (HasVar ctx (SVar u) v <-> u = v) $;
+theorem HasVarReg (ctx u v s vs: nat):
+  $ nth ctx u = suc (PReg s vs) -> (HasVar ctx (SVar u) v <-> v e. vs) $;
+theorem HasVarApp (ctx f es v: nat) {e: nat}:
+  $ HasVar ctx (SApp f es) v <-> E. e (e IN es /\ HasVar ctx e v) $;
 
+def Free (env ctx e v: nat): wff;
+theorem FreeVar (env ctx u v: nat):
+  $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $;
 def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
-$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = SVar v))) $;
+$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
 theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
   $ getTerm env f = suc (args <> (r <> rs) <> o) ->
     (Free env ctx (SApp f es) v <->
       ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
-      E. u (u e. rs /\ nth es u = SVar v)) $;
+      E. u (u e. rs /\ nth es u = suc (SVar v))) $;
+
+def DeclOk (env args ret ds e .ctx .v: nat): wff =
+$ Ctx env args /\ DepType env args ret /\ [ appendDummies args ds / ctx ]
+  (Expr env ctx e (fst ret) /\ A. v (Free env ctx e v -> v e. snd ret)) $;
 
 def Decl (env d: nat): wff;
 theorem DeclTerm (env args ret: nat):
@@ -119,10 +160,9 @@ theorem DeclTerm (env args ret: nat):
 theorem DeclAxiom (env args hs ret: nat) {x: nat}:
   $ Decl env (DAxiom args hs ret) <-> Ctx env args /\
     all x (ExprProv env args x) (ret : hs) $;
-theorem DeclDef (env args hs ret: nat) {ds e ctx o v: nat}:
-  $ Decl env (DDef args ret o) <-> Ctx env args /\ DepType env args ret /\
-    A. ds A. e (o = suc (ds <> e) -> [ appendDummies args ds / ctx ]
-      (Expr env ctx e (fst ret) /\ A. v (Free env ctx e v -> v e. snd ret))) $;
+theorem DeclDef (env args ret: nat) (sp: wff) {ds e o v: nat}:
+  $ Decl env (DDef args ret o sp) <-> Ctx env args /\ DepType env args ret /\
+    A. ds A. e (o = suc (ds <> e) -> DeclOk env args ret ds e) $;
 
 def Spec (env s: nat): wff;
 theorem SpecSort (env sd: nat): $ Spec env (SSort sd) $;
@@ -130,6 +170,112 @@ theorem SpecDecl (env d: nat): $ Spec env (SDecl d) <-> Decl env d $;
 theorem SpecThm (env args hs ret: nat): $ Spec env (SThm args hs ret) <->
   Ctx env args /\ all x (ExprProv env args x) (ret : hs) $;
 
+-- This defines a valid mm0 specification. These are well formed ASTs for which
+-- we can assign a provability predicate.
 def Env (e: nat): wff;
 theorem Env0: $ Env 0 $;
 theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Spec e s $;
+
+def StepSort: nat = $ b0 0 $;
+def StepTerm: nat = $ b0 1 $;
+def StepAxiom: nat = $ b0 2 $;
+def ProofDef (args ret ds val: nat) (st: wff): nat =
+  $ b1 (b0 (args <> ret <> ds <> val <> nat st)) $;
+def ProofThm (args hs ret uf ds pf: nat) (st: wff): nat =
+  $ b1 (b1 (args <> hs <> ret <> uf <> ds <> pf <> nat st)) $;
+
+def buildSubst (ctx es ds: nat): nat;
+theorem buildSubst0 (ctx es: nat): $ buildSubst ctx es 0 = ctx <> es $;
+theorem buildSubstS (ctx es d ds: nat): $ buildSubst ctx es (d : ds) =
+  buildSubst (ctx |> PBound d) (es |> SVar (len ctx)) ds $;
+
+def substExpr (sub e: nat): nat;
+theorem substExprVar (sub v e: nat):
+  $ nth sub v = suc e -> substExpr sub (SVar v) = e $;
+theorem substExprApp (sub f es: nat):
+  $ substExpr sub (SApp f es) = SApp f (map x (substExpr sub x) es) $;
+
+def unfold (env ctx u es: nat): nat;
+def unfold1 (env ctx u e: nat): nat;
+theorem unfold1Var (env ctx u v: nat):
+  $ unfold1 env ctx u (SVar v) = ctx <> SVar v $;
+theorem unfold1AppN (env ctx ctx2 u f es es2: nat):
+  $ (~f e. u \/ getDef env f = 0) ->
+    unfold env ctx u es = ctx2 <> es2 ->
+    unfold1 env ctx u (SApp f es) = ctx2 <> SApp f es2 $;
+theorem unfold1App (env ctx ctx2 ctx3 u f es es2 es3 ud uv: nat):
+  $ f e. u -> getDef env f = suc (ud <> uv) ->
+    unfold env ctx u es = ctx2 <> es2 ->
+    buildSubst ctx2 es2 ud = ctx3 <> es3 ->
+    unfold1 env ctx u (SApp f es) = ctx3 <> substExpr es3 uv $;
+theorem unfold0 (env ctx u: nat):
+  $ unfold env ctx u 0 = ctx <> 0 $;
+theorem unfoldS (env ctx ctx2 ctx3 e e2 es es2 u: nat):
+  $ unfold env ctx u e = ctx2 <> e2 ->
+    unfold env ctx2 u es = ctx3 <> es2 ->
+    unfold env ctx u (e : es) = ctx3 <> (e : es2) $;
+
+def VHyp (n: nat): nat = $ b0 n $;
+def VThm (t es ps: nat): nat = $ b1 (t <> es <> ps) $;
+
+def DV (ctx u v: nat): wff;
+theorem DV0 (u v: nat): $ ~ DV 0 u v $;
+theorem DVBound (ctx s u v: nat):
+  $ DV (ctx |> PBound s) u v <->
+    DV ctx u v \/ (isBound ctx u /\ v = len ctx) $;
+theorem DVReg (ctx s vs u v: nat):
+  $ DV (ctx |> PReg s vs) u v <->
+    DV ctx u v \/ (isBound ctx u /\ ~ u e. vs /\ v = len ctx) $;
+
+def VerifyProof (env ctx hs pf ret: nat): wff;
+theorem VerifyProofHyp (env ctx hs n ret: nat):
+  $ VerifyProof env ctx hs (VHyp n) ret <-> nth n hs = suc ret $;
+theorem VerifyProofThm (env ctx hs t es ps ret: nat)
+  {hs2 args args2 ret2 u v p h e a e1 e2: nat}:
+  $ VerifyProof env ctx hs (VThm t es ps) ret <-> E. args2 E. hs2 E. ret2
+    (getThm env t = suc (args2 <> hs2 <> ret2) /\
+      all2 e a (ExprBi env ctx e a) es args2 /\
+      A. u A. v (DV args2 u v -> A. e1 A. e2
+        (nth es u = suc e1 -> nth es v = suc e2 ->
+          ~ (HasVar ctx e1 u /\ HasVar ctx e2 v))) /\
+      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
+      substExpr es ret2 = ret) $;
+
+def ProofOk (env args hs ret uf ds pf .args2 .hs2 .ret2: nat): wff =
+$ Spec env (SThm args hs ret) /\ E. args2 E. hs2 E. ret2
+  (unfold env args uf (hs |> ret) = args2 <> (hs2 |> ret2) /\
+   VerifyProof env (appendDummies args2 ds) hs2 pf ret2) $;
+
+def Proof (env e p: nat): wff;
+theorem Proof0 (env e p: nat): $ Proof env e 0 <-> e = 0 $;
+theorem ProofStepSort (env e p: nat) {sd e2: nat}:
+  $ Proof env e (StepSort : p) <-> E. sd E. e2
+    (e = SSort sd : e2 /\ Proof (env |> SSort sd) e2 p) $;
+theorem ProofStepTerm (env e p: nat) {a r e2: nat}:
+  $ Proof env e (StepTerm : p) <-> E. a E. r E. e2
+    (e = SDecl (DTerm a r) : e2 /\ Proof (env |> SDecl (DTerm a r)) e2 p) $;
+theorem ProofStepAxiom (env e p: nat) {a h r e2: nat}:
+  $ Proof env e (StepAxiom : p) <-> E. a E. h E. r E. e2
+    (e = SDecl (DAxiom a h r) : e2 /\
+     Proof (env |> SDecl (DAxiom a h r)) e2 p) $;
+theorem ProofProofDefStep (env e p a r d v: nat) (st: wff) {o e2: nat}:
+  $ st -> (Proof env e (ProofDef a r d v st : p) <->
+      DeclOk env a r d v /\ E. o E. e2
+      ((o = 0 \/ o = suc (d <> v)) /\ e = SDecl (DDef a r o T.) : e2 /\
+      Proof (env |> SDecl (DDef a r (suc (d <> v)) T.)) e2 p)) $;
+theorem ProofProofDef (env e p a r d v: nat) (st: wff):
+  $ ~st -> (Proof env e (ProofDef a r d v st : p) <->
+      DeclOk env a r d v /\
+      Proof (env |> SDecl (DDef a r (suc (d <> v)) F.)) e p) $;
+theorem ProofProofThmStep (env e p a h r u d q: nat) (st: wff) {e2: nat}:
+  $ st -> (Proof env e (ProofThm a h r u d q st : p) <->
+      ProofOk env a h r u d q /\
+      E. e2 (e = SThm a h r : e2 /\ Proof (env |> SThm a h r) e2 p)) $;
+theorem ProofProofThm (env e p a h r u d q: nat) (st: wff):
+  $ ~st -> (Proof env e (ProofThm a h r u d q st : p) <->
+      ProofOk env a h r u d q /\ Proof (env |> SThm a h r) e p) $;
+
+-- A specification is provable if it has a proof, which entails
+-- providing all the omitted definitions and proving all the theorems in the
+-- file.
+def Valid (env: nat) {.p: nat}: wff = $ E. p Proof 0 env p $;

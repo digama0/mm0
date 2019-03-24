@@ -19,6 +19,7 @@ def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
 
 def tru (.p: wff): wff = $ p <-> p $; prefix tru: $T.$ prec max;
+def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 pure sort nat;
 var x y z w: nat;
@@ -169,8 +170,8 @@ def mod (a b: nat): nat; infixl mod: $%$ prec 70;
 theorem divmod: $ b * (a // b) + a % b = a $;
 theorem modlt: $ b != 0 -> a % b < a $;
 
-def b0 (n: nat): nat = $ 2 * n $;
-def b1 (n: nat): nat = $ 2 * n + 1 $;
+def b0 (n: nat): nat = $ n + n $;
+def b1 (n: nat): nat = $ suc (b0 n) $;
 def odd (n: nat): wff = $ n % 2 = 1 $;
 
 def case {x: nat} (a b: nat x) (n: nat): nat =
