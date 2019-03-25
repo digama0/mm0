@@ -1,13 +1,12 @@
 delimiter $ ( ) ~ { } , $;
 strict provable sort wff;
-var ph ps ch: wff*;
 term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
 term neg (ph: wff): wff; prefix neg: $~$ prec 40;
 
-axiom ax_1: $ ph -> ps -> ph $;
-axiom ax_2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
-axiom ax_3: $ (~ph -> ~ps) -> ps -> ph $;
-axiom ax_mp: $ ph $ > $ ph -> ps $ > $ ps $;
+axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
+axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
+axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
+axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
 
 def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
 infixl iff: $<->$ prec 20;
@@ -22,16 +21,14 @@ def tru (.p: wff): wff = $ p <-> p $; prefix tru: $T.$ prec max;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 pure sort nat;
-var x y z w: nat;
-
 term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
 
 def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix ex: $E.$ prec 30;
 
-axiom ax_gen: $ ph $ > $ A. x ph $;
-axiom ax_4: $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
-axiom ax_5 (ph: wff): $ ph -> A. x ph $;
+axiom ax_gen (ph: wff) {x: nat}: $ ph $ > $ A. x ph $;
+axiom ax_4 {x: nat} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
+axiom ax_5 {x: nat} (ph: wff): $ ph -> A. x ph $;
 
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
@@ -42,20 +39,20 @@ def sb (a: nat) {x .y: nat} (ph: wff x): wff =
 notation sb (a: nat) {x: nat} (ph: wff x): wff =
   ($[$:0) a ($/$:0) x ($]$:0) ph;
 
-var a b c l n: nat;
-axiom ax_6: $ E. x x = a $;
-axiom ax_7: $ a = b -> a = c -> b = c $;
+axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
+axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
 
-axiom ax_10: $ ~(A. x ph) -> A. x ~ (A. x ph) $;
-axiom ax_11: $ A. x A. y ph -> A. y A. x ph $;
-axiom ax_12 (ph: wff y): $ A. y ph -> [ y / x ] ph $;
+axiom ax_10 {x: nat} (ph: wff x): $ ~(A. x ph) -> A. x ~ (A. x ph) $;
+axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
+axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> [ y / x ] ph $;
 
 term iota {x: nat} (ph: wff x): nat;
 prefix iota: $i.$ prec 55;
 
-axiom iotaeq: $ A. x (ph <-> ps) -> i. x ph = i. x ps $;
-axiom cbviota: $ i. y ([ y / x ] ph) = i. x ph $;
-axiom df_iota: $ i. x (x = a) = a $;
+axiom iotaeq {x: nat} (ph ps: wff x):
+  $ A. x (ph <-> ps) -> i. x ph = i. x ps $;
+axiom cbviota {x y: nat} (ph: wff x): $ i. y ([ y / x ] ph) = i. x ph $;
+axiom df_iota {x: nat} (a: nat): $ i. x (x = a) = a $;
 
 def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ i. x ([ b / x ] x = a) $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
@@ -75,17 +72,18 @@ def x8:  nat = $suc 7$; prefix x8:  $8$  prec max;
 def x9:  nat = $suc 8$; prefix x9:  $9$  prec max;
 def x10: nat = $suc 9$; prefix x10: $10$ prec max;
 
-axiom peano1: $ ~(0 = suc a) $;
-axiom peano2: $ suc a = suc b <-> a = b $;
-axiom peano5: $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
+axiom peano1 (a: nat): $ ~(0 = suc a) $;
+axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
+axiom peano5 {x: nat} (ph: wff x):
+  $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
 term mul: nat > nat > nat; infixl add: $*$ prec 70;
 
-axiom add0: $ a + 0 = a $;
-axiom addS: $ a + suc b = suc (a + b) $;
-axiom mul0: $ a * 0 = 0 $;
-axiom mulS: $ a * suc b = a * b + a $;
+axiom add0 (a: nat): $ a + 0 = a $;
+axiom addS (a b: nat): $ a + suc b = suc (a + b) $;
+axiom mul0 (a: nat): $ a * 0 = 0 $;
+axiom mulS (a b: nat): $ a * suc b = a * b + a $;
 
 def le (a b .x: nat): wff = $ E. x a + x = b $;
 infixl le: $<=$ prec 50;
@@ -94,8 +92,8 @@ def lt (a b: nat): wff = $ suc a <= b $;
 infixl lt: $<$ prec 50;
 
 def if (ph: wff) (a b: nat): nat;
-theorem iftrue: $ ph -> if ph a b = a $;
-theorem iffalse: $ ~ph -> if ph a b = b $;
+theorem iftrue (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
+theorem iffalse (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
 
 def true (n: nat): wff = $ n != 0 $;
 def bool (n: nat): wff = $ n < 2 $;
@@ -105,9 +103,9 @@ def pr (a b: nat): nat; infixr pr: $<>$ prec 54;
 def fst (a: nat): nat;
 def snd (a: nat): nat;
 
-theorem fstpr: $ fst (a <> b) = a $;
-theorem sndpr: $ snd (a <> b) = b $;
-theorem fstsnd: $ fst a <> snd a = a $;
+theorem fstpr (a b: nat): $ fst (a <> b) = a $;
+theorem sndpr (a b: nat): $ snd (a <> b) = b $;
+theorem fstsnd (a: nat): $ fst a <> snd a = a $;
 
 theorem fst0: $ fst 0 = 0 $;
 theorem snd0: $ snd 0 = 0 $;
@@ -120,12 +118,12 @@ def pi22 (n: nat): nat = $ snd (snd n) $;
 
 def el (a b: nat): wff; infixl el: $e.$ prec 50;
 
-theorem axext: $ A. x (x e. a <-> x e. b) -> a = b $;
-theorem extlt: $ a e. b -> a < b $;
-theorem nel0: $ ~ a e. 0 $;
+theorem axext {x: nat} (a b: nat): $ A. x (x e. a <-> x e. b) -> a = b $;
+theorem extlt (a b: nat): $ a e. b -> a < b $;
+theorem nel0 (a: nat): $ ~ a e. 0 $;
 
 def ins (a b: nat): nat;
-theorem elins: $ a e. ins b c <-> a = b \/ a e. c $;
+theorem elins (a b c: nat): $ a e. ins b c <-> a = b \/ a e. c $;
 
 def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
 theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
@@ -133,8 +131,8 @@ theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
   $ rec z x s (suc n) = '[ rec z x s n / x ] s $;
 
 def pow (a b: nat): nat; infixr pow: $^$ prec 80;
-theorem pow0: $ a ^ 0 = 1 $;
-theorem powS: $ a ^ suc b = a * a ^ b $;
+theorem pow0 (a: nat): $ a ^ 0 = 1 $;
+theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;
 
 def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
 
@@ -149,8 +147,8 @@ notation lam {x: nat} (b: nat x) (a: nat): nat =
 ($\$:55) x ($<$:50) a ($,$:0) b;
 
 def app (f x: nat): nat; infixl app: $@$ prec 200;
-theorem app0: $ a @ 0 = fst a $;
-theorem appS: $ a @ suc n = snd a @ n $;
+theorem app0 (a: nat): $ a @ 0 = fst a $;
+theorem appS (a n: nat): $ a @ suc n = snd a @ n $;
 
 theorem lamapp {x: nat} (a: nat) (b: nat x) (n: nat):
   $ n < a -> (\ x < a, b) @ n = '[ n / x ] b $;
@@ -167,8 +165,8 @@ theorem srecpval {x y: nat} (ph: wff x) (n: nat):
 
 def div (a b: nat): nat; infixl div: $//$ prec 70;
 def mod (a b: nat): nat; infixl mod: $%$ prec 70;
-theorem divmod: $ b * (a // b) + a % b = a $;
-theorem modlt: $ b != 0 -> a % b < a $;
+theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
+theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
 
 def b0 (n: nat): nat = $ n + n $;
 def b1 (n: nat): nat = $ suc (b0 n) $;
@@ -193,8 +191,8 @@ theorem allS {x: nat} (ph: wff x) (a b : nat):
   $ all x ph (a : b) <-> [ a / x ] ph /\ all x ph b $;
 
 def in (a l : nat): wff; infixl in: $IN$ prec 50;
-theorem in0: $ ~ a IN 0 $;
-theorem inS: $ a IN (b : l) <-> a = b \/ a IN l $;
+theorem in0 (a: nat): $ ~ a IN 0 $;
+theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
 
 def lrec (z: nat) {x y: nat} (s: nat x y) (n: nat): nat;
 theorem lrec0 (z: nat) {x y: nat} (s: nat x y): $ lrec z x y s 0 = z $;
@@ -203,14 +201,14 @@ theorem lrecS (z: nat) {x y: nat} (s: nat x y) (a b: nat):
 
 def len (l: nat): nat;
 theorem len0: $ len 0 = 0 $;
-theorem lenS: $ len (a : b) = suc (len b) $;
+theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
 
 def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
-theorem snoc0: $ 0 |> a = a : 0 $;
-theorem snocS: $ (a : b) |> c = a : (b |> c) $;
-theorem snoclt: $ a < a |> b $;
+theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;
+theorem snocS (a b c: nat): $ (a : b) |> c = a : (b |> c) $;
+theorem snoclt (a b: nat): $ a < a |> b $;
 
 def nth (n l: nat): nat;
-theorem nth0: $ nth n 0 = 0 $;
-theorem nthZ: $ nth 0 (a : l) = suc a $;
-theorem nthS: $ nth (suc n) (a : l) = nth n l $;
+theorem nth0 (n: nat): $ nth n 0 = 0 $;
+theorem nthZ (a l: nat): $ nth 0 (a : l) = suc a $;
+theorem nthS (n a l: nat): $ nth (suc n) (a : l) = nth n l $;

@@ -4,11 +4,11 @@
 -- Some additional list operations
 
 -- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
-def all2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
+def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ A. n (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
 
 -- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
-def ex2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
+def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ E. n (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
 
 -- map : (A -> B) -> list A -> list B
@@ -167,7 +167,7 @@ def isBound (ctx x .s: nat): wff = $ E. s nth ctx x = suc (PBound s) $;
 -- Checks if this a well formed dependent type in the context. A DepType is a
 -- pair (SortID, set VarID) giving the sort and the variable dependencies.
 -- DepType : Env -> Ctx -> DepType -> Bool
-def DepType (env ctx ty: nat): wff =
+def DepType (env ctx ty .x: nat): wff =
 $ isSort env (fst ty) /\ A. x (x e. snd ty -> isBound ctx x) $;
 
 -- Checks if this a well formed context. A context can be extended with a bound
@@ -200,7 +200,7 @@ theorem ExprBiBound (env ctx e s: nat) {v: nat}:
   $ ExprBi env ctx e (PBound s) <->
     E. v (e = SVar v /\ nth ctx v = suc (PBound s)) $;
 theorem ExprBiReg (env ctx e s vs: nat):
-  $ ExprBi env ctx e (PReg s vs) <-> ExprBi env ctx e s $;
+  $ ExprBi env ctx e (PReg s vs) <-> Expr env ctx e s $;
 
 -- Is this a type correct expression of provable type? This is used to
 -- typecheck expressions appearing in hypotheses and conclusions of
@@ -283,8 +283,9 @@ theorem DeclAxiom (env args hs ret: nat) {x: nat}:
 theorem DeclDef (env args ret: nat) (sp: wff) {ds e o v: nat}:
   $ Decl env (DDef args ret o sp) <-> TermOk env args ret /\
     A. ds A. e (o = suc (ds <> e) -> DefOk env args ret ds e) $;
-theorem DeclThm (env args hs ret: nat): $ Decl env (DThm args hs ret) <->
-  Ctx env args /\ all x (ExprProv env args x) (ret : hs) $;
+theorem DeclThm (env args hs ret: nat) {x: nat}:
+  $ Decl env (DThm args hs ret) <->
+    Ctx env args /\ all x (ExprProv env args x) (ret : hs) $;
 
 -- This defines a valid mm0 specification. These are well formed ASTs for which
 -- we can assign a provability predicate.
@@ -349,7 +350,7 @@ theorem buildSubstS (ctx es d ds: nat): $ buildSubst ctx es (d : ds) =
 def substExpr (sub e: nat): nat;
 theorem substExprVar (sub v e: nat):
   $ nth sub v = suc e -> substExpr sub (SVar v) = e $;
-theorem substExprApp (sub f es: nat):
+theorem substExprApp {x: nat} (sub f es: nat):
   $ substExpr sub (SApp f es) = SApp f (map x (substExpr sub x) es) $;
 
 -- These mutually recursive functions perform the unfolding operation on

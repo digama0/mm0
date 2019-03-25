@@ -31,7 +31,7 @@ The file is separated out into a list of lexemes, or tokens, according to the "m
     whitechar ::= ' ' | '\r' | '\n' | '\t'
     line-comment ::= '--' [^\n]* '\n'
 
-Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments are line comments, begining with `#` and continuing to the end of the line.
+Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments are line comments, begining with `--` and continuing to the end of the line.
 
 Implementations are encouraged to support "special comments" via comments beginning `--|`, but they have no semantic value in this specification.
 
@@ -83,8 +83,9 @@ The underlying semantics of metamath zero is based on multi-sorted first order l
 * `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and definitions (between `$`) must have a provable sort.
 * `free` means that theorems and definitions are not permitted to introduce dummy variables of this sort.
 
-Variables and types
+Variable declarations
 ---
+This feature is optional. Verifiers that don't support the `var` keyword need not support blocks either, because `var` is the only locally scoped command.
 
     var-stmt ::= 'var' (identifier)* ':' var-type ';'
     var-type ::= identifier '*'?
