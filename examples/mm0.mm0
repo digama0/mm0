@@ -1,105 +1,179 @@
 -- This include doesn't actually work, so use copy and paste
 --| #include "peano.mm0"
 
+-- Some additional list operations
+
+-- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def all2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ A. n (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
 
+-- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def ex2 {x y: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ E. n (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
 
+-- map : (A -> B) -> list A -> list B
 def map {x: nat} (f: nat x) (l: nat): nat;
 theorem map0 {x: nat} (f: nat x): $ map x f 0 = 0 $;
 theorem mapS {x: nat} (f: nat x) (a l: nat):
   $ map x f (a : l) = ('[ a / x ] f) : map x f l $;
 
-def sPure     (n: nat): wff = $ bool (pi11 n) $;
-def sStrict   (n: nat): wff = $ bool (pi12 n) $;
-def sProvable (n: nat): wff = $ bool (pi21 n) $;
-def sFree     (n: nat): wff = $ bool (pi22 n) $;
-def SortData (pure strict provable free: wff): nat =
-$ (nat pure <> nat strict) <> (nat provable <> nat free) $;
 
+-- The sort modifiers 'pure', 'strict', 'provable', 'free'
+-- sPure : SortData -> Bool
+def sPure     (n: nat): wff = $ bool (pi11 n) $;
+-- sStrict : SortData -> Bool
+def sStrict   (n: nat): wff = $ bool (pi12 n) $;
+-- sProvable : SortData -> Bool
+def sProvable (n: nat): wff = $ bool (pi21 n) $;
+-- sFree : SortData -> Bool
+def sFree     (n: nat): wff = $ bool (pi22 n) $;
+
+-- A binder is either a bound variable with sort s, or a regular variable
+-- with sort s and dependencies vs.
+-- PBound : SortID -> Binder
 def PBound (s: nat): nat = $ b0 s $;
+-- PReg : SortID -> set VarID -> Binder
 def PReg (s vs: nat): nat = $ b1 (s <> vs) $;
 
+-- Get the sort of a binder.
+-- binderSort : Binder -> SortID
 def binderSort (x: nat): nat;
 theorem binderSortBound (s: nat): $ binderSort (PBound s) = s $;
 theorem binderSortReg (s vs: nat): $ binderSort (PReg s vs) = s $;
 
+-- An s-expression, representing the terms and formulas. It can be either a
+-- variable (v is a VarID) or an application of the term with TermID `f`
+-- to arguments `x` (a list of s-expressions).
+-- SVar : VarID -> SExpr
 def SVar (v: nat): nat = $ b0 v $;
+-- SApp : TermID -> list SExpr -> SExpr
 def SApp (f x: nat): nat = $ b1 (f <> x) $;
 
-def DTerm (args ret: nat): nat = $ b0 (b0 (args <> ret)) $;
+-- The environment is composed of declarations, which come in a few types:
+-- A `sort` declaration has an associated `SortData` with the sort modifiers.
+-- Sorts are indexed by SortID and picked out by `getSD`.
+-- DSort : SortData -> Decl
+def DSort (sd: nat): nat = $ b0 (b0 (b0 sd)) $;
+-- A `term` declaration has a list of binders, and a target type (a DepType,
+-- which is a `(SortID, set VarID)` pair).
+-- Terms are indexed by TermID and picked out by `getTerm`.
+-- DTerm : Ctx -> DepType -> Decl
+def DTerm (args ret: nat): nat = $ b0 (b0 (b1 (args <> ret))) $;
+-- An `axiom` declaration has a list of binders, a list of hypotheses,
+-- and a consequent.
+-- Axioms are indexed by ThmID and picked out by `getThm`.
+-- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
 def DAxiom (args hs ret: nat): nat = $ b0 (b1 (args <> hs <> ret)) $;
+-- A `def` declaration is the same as a `term` except it also has an optional
+-- definition component which lists the sorts of the dummy variables and the
+-- definition's expression. The `sp` field indicates if this definition was
+-- present in the specification (as opposed to being added during proof
+-- checking).
+-- Defs are indexed by TermID and picked out by `getTerm`.
+-- DDef : Ctx -> DepType -> option (list SortID, SExpr) -> Bool -> Decl
 def DDef (args ret def: nat) (sp: wff): nat =
-  $ b1 (args <> ret <> def <> nat sp) $;
+  $ b1 (b0 (args <> ret <> def <> nat sp)) $;
+-- A `theorem` declaration is exactly the same structure as an `axiom`, but
+-- the interpretation is different - theorems require proofs, while axioms are
+-- added in the spec.
+-- Theorems are indexed by ThmID and picked out by `getThm`.
+-- DThm : Ctx -> list SExpr -> SExpr -> Decl
+def DThm (vs hs ret: nat): nat = $ b1 (b1 (vs <> hs <> ret)) $;
 
-def SSort (sd: nat): nat = $ b0 (b0 sd) $;
-def SDecl (d: nat): nat = $ b0 (b1 d) $;
-def SThm (vs hs ret: nat): nat = $ b1 (vs <> hs <> ret) $;
-
+-- This function extracts the `SortData` for a sort given by `SortID`.
+-- Because all declarations are intermingled in the environment, we must skip
+-- past all the other declarations and count the sorts we pass.
+-- getSD : Env -> SortID -> option SortData
 def getSD (env n: nat): nat;
 theorem getSD0 (n: nat): $ getSD 0 n = 0 $;
-theorem getSDDecl (d e n: nat): $ getSD (SDecl d : e) n = getSD e n $;
+theorem getSDSort0 (sd e: nat): $ getSD (DSort sd : e) 0 = suc sd $;
+theorem getSDSortS (sd e n: nat): $ getSD (DSort sd : e) (suc n) = getSD e n $;
+theorem getSDTerm (a r e n: nat): $ getSD (DTerm a r : e) n = getSD e n $;
+theorem getSDAxiom (a h r e n: nat): $ getSD (DAxiom a h r : e) n = getSD e n $;
+theorem getSDDef (a r o e n: nat) (sp: wff):
+  $ getSD (DDef a r o sp : e) n = getSD e n $;
 theorem getSDThm (vs hs ret e n: nat):
-  $ getSD (SThm vs hs ret : e) n = getSD e n $;
-theorem getSDSort0 (sd e: nat): $ getSD (SSort sd : e) 0 = suc sd $;
-theorem getSDSortS (sd e n: nat): $ getSD (SSort sd : e) (suc n) = getSD e n $;
+  $ getSD (DThm vs hs ret : e) n = getSD e n $;
 
+-- This function gets the term and definition data for a term. Here we have
+-- a complication: The spec and the proof have incompatible numbering schemes
+-- (because the proof wants to insert items between the spec's, but the spec
+-- doesn't know about the proof). To resolve this, there are two disjoint
+-- namespaces for TermIDs. The `b0 n` numbers are used for the spec, and `b1 n`
+-- are additional terms added by the proof. The `sp` field indicates whether
+-- a definition comes from the spec or the proof.
+-- getTerm : Env -> TermID ->
+--   option (Ctx, DepType, option (option (list SortID, SExpr)))
 def getTerm (env n: nat): nat;
 theorem getTerm0 (n: nat): $ getTerm 0 n = 0 $;
-theorem getTermSort (sd e n: nat): $ getTerm (SSort sd : e) n = getTerm e n $;
+theorem getTermSort (sd e n: nat): $ getTerm (DSort sd : e) n = getTerm e n $;
 theorem getTermTerm0 (a r e: nat):
-  $ getTerm (SDecl (DTerm a r) : e) (b0 0) = suc (a <> r <> 0) $;
+  $ getTerm (DTerm a r : e) (b0 0) = suc (a <> r <> 0) $;
 theorem getTermTermS0 (a r e n: nat):
-  $ getTerm (SDecl (DTerm a r) : e) (b0 (suc n)) = getTerm e (b0 n) $;
+  $ getTerm (DTerm a r : e) (b0 (suc n)) = getTerm e (b0 n) $;
 theorem getTermTermS1 (a r e n: nat):
-  $ getTerm (SDecl (DTerm a r) : e) (b1 n) = getTerm e (b1 n) $;
+  $ getTerm (DTerm a r : e) (b1 n) = getTerm e (b1 n) $;
 theorem getTermAxiom (a h r e n: nat):
-  $ getTerm (SDecl (DAxiom a h r) : e) n = getTerm e n $;
+  $ getTerm (DAxiom a h r : e) n = getTerm e n $;
 theorem getTermDef0 (a r o e: nat) (sp: wff):
-  $ sp -> getTerm (SDecl (DDef a r o sp) : e) (b0 0) = suc (a <> r <> suc o) $;
+  $ sp -> getTerm (DDef a r o sp : e) (b0 0) = suc (a <> r <> suc o) $;
 theorem getTermDefN0 (a r o e: nat) (sp: wff):
-  $ ~sp -> getTerm (SDecl (DDef a r o sp) : e) (b1 0) = suc (a <> r <> suc o) $;
+  $ ~sp -> getTerm (DDef a r o sp : e) (b1 0) = suc (a <> r <> suc o) $;
 theorem getTermDefS0 (a r o e n: nat) (sp: wff):
-  $ sp -> getTerm (SDecl (DDef a r o sp) : e) (b0 (suc n)) = getTerm e n $;
+  $ sp -> getTerm (DDef a r o sp : e) (b0 (suc n)) = getTerm e n $;
 theorem getTermDefNS0 (a r o e n: nat) (sp: wff):
-  $ ~sp -> getTerm (SDecl (DDef a r o sp) : e) (b1 (suc n)) = getTerm e n $;
+  $ ~sp -> getTerm (DDef a r o sp : e) (b1 (suc n)) = getTerm e n $;
 theorem getTermDefS1 (a r o e n: nat) (sp: wff):
-  $ sp -> getTerm (SDecl (DDef a r o sp) : e) (b1 n) = getTerm e (b1 n) $;
+  $ sp -> getTerm (DDef a r o sp : e) (b1 n) = getTerm e (b1 n) $;
 theorem getTermDefNS1 (a r o e n: nat) (sp: wff):
-  $ ~sp -> getTerm (SDecl (DDef a r o sp) : e) (b0 n) = getTerm e (b0 n) $;
+  $ ~sp -> getTerm (DDef a r o sp : e) (b0 n) = getTerm e (b0 n) $;
 theorem getTermThm (vs hs ret e n: nat):
-  $ getTerm (SThm vs hs ret : e) n = getTerm e n $;
+  $ getTerm (DThm vs hs ret : e) n = getTerm e n $;
 
+-- This function extracts the definition information from `getTerm`.
+-- getDef : Env -> TermID -> option (list SortID, SExpr)
 def getDef (env n: nat): nat;
 theorem getDef0 (env n: nat): $ getTerm env n = 0 -> getDef env n = 0 $;
 theorem getDefS (env n a r o: nat):
   $ getTerm env n = suc (a <> r <> o) -> getDef env n = o $;
 
+-- This function gets the data for an axiom or theorem by ThmID.
+-- getThm : Env -> ThmID -> option (Ctx, list SExpr, SExpr)
 def getThm (env n: nat): nat;
 theorem getThm0 (n: nat): $ getThm 0 n = 0 $;
-theorem getThmSort (sd e n: nat): $ getThm (SSort sd : e) n = getThm e n $;
+theorem getThmSort (sd e n: nat): $ getThm (DSort sd : e) n = getThm e n $;
 theorem getThmTerm (a r e n: nat):
-  $ getThm (SDecl (DTerm a r) : e) n = getThm e n $;
+  $ getThm (DTerm a r : e) n = getThm e n $;
 theorem getThmDef (a r o e n: nat) (sp: wff):
-  $ getThm (SDecl (DDef a r o sp) : e) n = getThm e n $;
+  $ getThm (DDef a r o sp : e) n = getThm e n $;
 theorem getThmAxiom0 (a h r e: nat):
-  $ getThm (SDecl (DAxiom a h r) : e) 0 = suc (a <> h <> r) $;
+  $ getThm (DAxiom a h r : e) 0 = suc (a <> h <> r) $;
 theorem getThmAxiomS (a h r e n: nat):
-  $ getThm (SDecl (DAxiom a h r) : e) (suc n) = getThm e n $;
+  $ getThm (DAxiom a h r : e) (suc n) = getThm e n $;
 theorem getThmThm0 (a h r e: nat):
-  $ getThm (SThm a h r : e) 0 = suc (a <> h <> r) $;
+  $ getThm (DThm a h r : e) 0 = suc (a <> h <> r) $;
 theorem getThmThmS (a h r e n: nat):
-  $ getThm (SThm a h r : e) (suc n) = getThm e n $;
+  $ getThm (DThm a h r : e) (suc n) = getThm e n $;
 
+-- Is this ID a valid sort?
+-- isSort : Env -> SortID -> Bool
 def isSort (env s: nat): wff = $ getSD env s != 0 $;
 
+-- Looks this variable up in the context, and reports whether it represents a
+-- bound variable.
+-- isBound : Ctx -> VarID -> Bool
 def isBound (ctx x .s: nat): wff = $ E. s nth ctx x = suc (PBound s) $;
 
+-- Checks if this a well formed dependent type in the context. A DepType is a
+-- pair (SortID, set VarID) giving the sort and the variable dependencies.
+-- DepType : Env -> Ctx -> DepType -> Bool
 def DepType (env ctx ty: nat): wff =
 $ isSort env (fst ty) /\ A. x (x e. snd ty -> isBound ctx x) $;
 
+-- Checks if this a well formed context. A context can be extended with a bound
+-- variable binder if the sort of the binder is not `strict`.
+-- Note `Ctx = list Binder`.
+-- Ctx : Env -> Ctx -> Bool
 def Ctx (env ctx: nat): wff;
 theorem Ctx0 (env: nat): $ Ctx env 0 $;
 theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
@@ -107,7 +181,13 @@ theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
 theorem CtxReg (env ctx s vs: nat): $ Ctx env (ctx |> PReg s vs) <->
   Ctx env ctx /\ DepType env ctx (s <> vs) $;
 
+-- These mutually recursive functions check if an expression `e` is well-typed
+-- with sort `s`, and that `e` is well-typed and valid for entry into a binder
+-- `bi`. The main difference is that for an expression to be valid for a
+-- BV binder, the expression must itself be a bound variable.
+-- Expr : Env -> Ctx -> SExpr -> SortID -> Bool
 def Expr (env ctx e s: nat): wff;
+-- ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool
 def ExprBi (env ctx e bi: nat): wff;
 theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
   E. bi (nth ctx v = suc bi /\ binderSort bi = s) $;
@@ -122,15 +202,25 @@ theorem ExprBiBound (env ctx e s: nat) {v: nat}:
 theorem ExprBiReg (env ctx e s vs: nat):
   $ ExprBi env ctx e (PReg s vs) <-> ExprBi env ctx e s $;
 
+-- Is this a type correct expression of provable type? This is used to
+-- typecheck expressions appearing in hypotheses and conclusions of
+-- axiom/theorem.
+-- ExprProv : Env -> Ctx -> SExpr -> Bool
 def ExprProv (env ctx e .s .sd: nat): wff =
 $ E. s E. sd (Expr env ctx e s /\ getSD env s = suc sd /\ sProvable sd) $;
 
+-- A helper function to add dummy variables to the context.
+-- appendDummies : Ctx -> list SortID -> Ctx
 def appendDummies (ctx ds: nat): nat;
 theorem appendDummies0 (ctx: nat): $ appendDummies ctx 0 = ctx $;
 theorem appendDummiesS (ctx d ds: nat):
   $ appendDummies ctx (d : ds) =
     appendDummies (ctx |> PBound d) ds $;
 
+-- Does this expression contain any occurrence of the variable `v`? This check
+-- ignores bound variables, "metamath style". We use this stricter check for
+-- verifying theorem applications.
+-- HasVar : Ctx -> SExpr -> VarID -> Bool
 def HasVar (ctx e v: nat): wff;
 theorem HasVarBound (ctx u v s: nat):
   $ nth ctx u = suc (PBound s) -> (HasVar ctx (SVar u) v <-> u = v) $;
@@ -139,9 +229,20 @@ theorem HasVarReg (ctx u v s vs: nat):
 theorem HasVarApp (ctx f es v: nat) {e: nat}:
   $ HasVar ctx (SApp f es) v <-> E. e (e IN es /\ HasVar ctx e v) $;
 
+-- Does this expression contain any _free_ occurrence of the variable `v`?
+-- This is the more complex binder-respecting check. Intuitively, if
+-- `term foo {x y: set} (ph: set x): set y;`, then `foo` binds occurrences of
+-- `x` in `ph`, and adds a dependency on `y` regardless. We might write this
+-- as `FV(foo x y ph) = (FV(ph) \ {x}) u {y}`, but the definition below is
+-- for arbitrary binding structures.
+-- Free : Env -> Ctx -> SExpr -> VarID -> Bool
 def Free (env ctx e v: nat): wff;
 theorem FreeVar (env ctx u v: nat):
   $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $;
+
+-- A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
+-- is a regular argument and `(/)` if `a` is a bound argument.
+-- MaybeFreeArgs : Env -> Binder -> VarID -> Bool
 def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
 $ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
 theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
@@ -150,52 +251,116 @@ theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
       ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
       E. u (u e. rs /\ nth es u = suc (SVar v))) $;
 
-def DeclOk (env args ret ds e .ctx .v: nat): wff =
-$ Ctx env args /\ DepType env args ret /\ [ appendDummies args ds / ctx ]
+
+-- Is this a valid term in the given environment? A term is valid if
+-- the argument list is valid, the return type is valid, and the return sort
+-- is not `pure` (because `pure` sorts are not allowed to have term
+-- constructors).
+-- TermOk : Env -> Ctx -> DepType -> Bool
+def TermOk (env args ret .sd: nat): wff =
+$ Ctx env args /\ DepType env args ret /\
+  E. sd (getSD env (fst ret) = suc sd /\ ~ sPure sd) $;
+
+-- Is this a valid definition in the given environment? A definition is valid
+-- if it is a valid term, and the definition typechecks, and all free variables
+-- are declared in the return type. (Note in particular that dummies cannot
+-- appear in the return type dependencies, so this ensures that all dummies are
+-- bound by the definition.)
+-- DefOk : Env -> Ctx -> DepType -> Bool
+def DefOk (env args ret ds e .ctx .v: nat): wff =
+$ TermOk env args ret /\ [ appendDummies args ds / ctx ]
   (Expr env ctx e (fst ret) /\ A. v (Free env ctx e v -> v e. snd ret)) $;
 
+-- Is this a valid declaration in the environment?
+-- Decl : Env -> Decl -> Bool
 def Decl (env d: nat): wff;
+theorem DeclSort (env sd: nat): $ Decl env (DSort sd) $;
 theorem DeclTerm (env args ret: nat):
-  $ Decl env (DTerm args ret) <-> Ctx env args /\ DepType env args ret $;
+  $ Decl env (DTerm args ret) <-> TermOk env args ret $;
 theorem DeclAxiom (env args hs ret: nat) {x: nat}:
   $ Decl env (DAxiom args hs ret) <-> Ctx env args /\
     all x (ExprProv env args x) (ret : hs) $;
 theorem DeclDef (env args ret: nat) (sp: wff) {ds e o v: nat}:
-  $ Decl env (DDef args ret o sp) <-> Ctx env args /\ DepType env args ret /\
-    A. ds A. e (o = suc (ds <> e) -> DeclOk env args ret ds e) $;
-
-def Spec (env s: nat): wff;
-theorem SpecSort (env sd: nat): $ Spec env (SSort sd) $;
-theorem SpecDecl (env d: nat): $ Spec env (SDecl d) <-> Decl env d $;
-theorem SpecThm (env args hs ret: nat): $ Spec env (SThm args hs ret) <->
+  $ Decl env (DDef args ret o sp) <-> TermOk env args ret /\
+    A. ds A. e (o = suc (ds <> e) -> DefOk env args ret ds e) $;
+theorem DeclThm (env args hs ret: nat): $ Decl env (DThm args hs ret) <->
   Ctx env args /\ all x (ExprProv env args x) (ret : hs) $;
 
 -- This defines a valid mm0 specification. These are well formed ASTs for which
 -- we can assign a provability predicate.
+-- Env : Env -> Bool
 def Env (e: nat): wff;
 theorem Env0: $ Env 0 $;
-theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Spec e s $;
+theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Decl e s $;
 
+------------------
+-- Verification --
+------------------
+
+-- These are the different kinds of proof steps.
+
+-- A StepSort says "proceed to the next declaration in the spec,
+-- which is a `sort` declaration".
+-- StepSort : ProofCmd
 def StepSort: nat = $ b0 0 $;
+
+-- A StepTerm says "proceed to the next declaration in the spec,
+-- which is a `term` declaration".
+-- StepTerm : ProofCmd
 def StepTerm: nat = $ b0 1 $;
+
+-- A StepAxiom says "proceed to the next declaration in the spec,
+-- which is an `axiom`".
+-- StepAxiom : ProofCmd
 def StepAxiom: nat = $ b0 2 $;
+
+-- A ProofDef adds and checks a new declaration. The proof provides the
+-- signature and the value of the declaration (not optional this time).
+-- If `st` is true then this declaration will be stepped in the spec, i.e.
+-- we will check that the spec declared this declaration as well with the
+-- same signature.
+-- ProofDef : Ctx -> DepType -> list SortID -> SExpr -> Bool -> ProofCmd
 def ProofDef (args ret ds val: nat) (st: wff): nat =
   $ b1 (b0 (args <> ret <> ds <> val <> nat st)) $;
+
+-- A ProofThm adds and checks a new proof. The signature for the theorem is
+-- given, followed by `uf: set TermID` which specifies which definitions in
+-- the statement to unfold before starting the proof. The unfolding process
+-- can produce new dummy variables; these are named after the variables in the
+-- context and before the declared dummy variables. The final argument is the
+-- proof expression itself.
+-- ProofThm : Ctx -> list SExpr -> Sexpr -> set TermID ->
+--   list SortID -> VExpr -> Bool -> ProofCmd
 def ProofThm (args hs ret uf ds pf: nat) (st: wff): nat =
   $ b1 (b1 (args <> hs <> ret <> uf <> ds <> pf <> nat st)) $;
 
+
+-- This helper function appends a new copy of the given dummy variable list
+-- to the context, and also augments the substitution map with these variables.
+-- buildSubst : Ctx -> list SExpr -> list SortID -> (Ctx, list SExpr)
 def buildSubst (ctx es ds: nat): nat;
 theorem buildSubst0 (ctx es: nat): $ buildSubst ctx es 0 = ctx <> es $;
 theorem buildSubstS (ctx es d ds: nat): $ buildSubst ctx es (d : ds) =
   buildSubst (ctx |> PBound d) (es |> SVar (len ctx)) ds $;
 
+-- This performs simultaneous substitution of the variables in `e` with the
+-- expressions in `sub`.
+-- substExpr : list SExpr -> SExpr -> SExpr
 def substExpr (sub e: nat): nat;
 theorem substExprVar (sub v e: nat):
   $ nth sub v = suc e -> substExpr sub (SVar v) = e $;
 theorem substExprApp (sub f es: nat):
   $ substExpr sub (SApp f es) = SApp f (map x (substExpr sub x) es) $;
 
+-- These mutually recursive functions perform the unfolding operation on
+-- a single expression and a list of expressions, changing the context as more
+-- dummy copies are added. Unfolding is performed from the inside out, and
+-- definitions are not unfolded more than once, so it runs by structural
+-- recursion on the term. (This is a bit verbose because I'm doing state monad
+-- stuff without the abstraction.)
+-- unfold : Env -> Ctx -> set TermID -> list SExpr -> (Ctx, list SExpr)
 def unfold (env ctx u es: nat): nat;
+-- unfold1 : Env -> Ctx -> set TermID -> SExpr -> (Ctx, SExpr)
 def unfold1 (env ctx u e: nat): nat;
 theorem unfold1Var (env ctx u v: nat):
   $ unfold1 env ctx u (SVar v) = ctx <> SVar v $;
@@ -215,9 +380,25 @@ theorem unfoldS (env ctx ctx2 ctx3 e e2 es es2 u: nat):
     unfold env ctx2 u es = ctx3 <> es2 ->
     unfold env ctx u (e : es) = ctx3 <> (e : es2) $;
 
+-- A VExpr is a proof term.
+-- A VHyp is a hypothesis step - a term is asserted from the local context.
+-- Indexing is relative to the list of hypotheses to the theorem.
+-- VHyp : HypID -> VExpr
 def VHyp (n: nat): nat = $ b0 n $;
+-- A VThm is a theorem application - a step follows from previous steps by
+-- application of a theorem. The arguments give the theorem to apply, the list
+-- of substitutions of expressions for the variables, and the list of subproofs
+-- for the hypotheses to the theorem.
+-- VThm : ThmID -> list SExpr -> list VExpr -> VExpr
 def VThm (t es ps: nat): nat = $ b1 (t <> es <> ps) $;
 
+-- Given a context, which contains bound variables and regular variables with
+-- dependencies, we can construct a disjoint variable list by making all
+-- bound variables distinct from each other, and all regular variables disjoint
+-- from all previous bound variables, except those that are present in the
+-- type dependencies to the variable. This function expresses the list as a
+-- predicate.
+-- DV : Ctx -> VarID -> VarID -> Bool
 def DV (ctx u v: nat): wff;
 theorem DV0 (u v: nat): $ ~ DV 0 u v $;
 theorem DVBound (ctx s u v: nat):
@@ -227,6 +408,14 @@ theorem DVReg (ctx s vs u v: nat):
   $ DV (ctx |> PReg s vs) u v <->
     DV ctx u v \/ (isBound ctx u /\ ~ u e. vs /\ v = len ctx) $;
 
+-- The main proof checking function. This typechecks a VExpr and determines the
+-- SExpr that it represents. At a hypothesis step, this is just looking up the
+-- nth element in the list, and at a theorem step, we get the theorem data,
+-- check that all the substituting expressions match the binders they are going
+-- in for, check that all the disjoint variable conditions of the theorem
+-- are honored by the substitution, and then check recursively that the
+-- subproofs are okay and the return is what it should be.
+-- VerifyProof : Env -> Ctx -> list SExpr -> VExpr -> SExpr -> Bool
 def VerifyProof (env ctx hs pf ret: nat): wff;
 theorem VerifyProofHyp (env ctx hs n ret: nat):
   $ VerifyProof env ctx hs (VHyp n) ret <-> nth n hs = suc ret $;
@@ -241,41 +430,51 @@ theorem VerifyProofThm (env ctx hs t es ps ret: nat)
       all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
       substExpr es ret2 = ret) $;
 
+-- A theorem is valid if it has a good signature, and when you unfold the
+-- definitions in the signature, the result can be verified with `VerifyProof`.
+-- ProofOk : Env -> Ctx -> list SExpr -> SExpr ->
+--   set TermID -> list SortID -> VExpr -> Bool
 def ProofOk (env args hs ret uf ds pf .args2 .hs2 .ret2: nat): wff =
-$ Spec env (SThm args hs ret) /\ E. args2 E. hs2 E. ret2
+$ Decl env (DThm args hs ret) /\ E. args2 E. hs2 E. ret2
   (unfold env args uf (hs |> ret) = args2 <> (hs2 |> ret2) /\
    VerifyProof env (appendDummies args2 ds) hs2 pf ret2) $;
 
+-- The main recursion for the proof judgment on an environment. Here `env` are
+-- the declarations that have already been processed and `e` are the
+-- declarations we are still stepping through. `p` is a proof object whose
+-- existence entails provability of the environment.
+-- Proof : Env -> list Decl -> list ProofCmd -> Bool
 def Proof (env e p: nat): wff;
 theorem Proof0 (env e p: nat): $ Proof env e 0 <-> e = 0 $;
 theorem ProofStepSort (env e p: nat) {sd e2: nat}:
   $ Proof env e (StepSort : p) <-> E. sd E. e2
-    (e = SSort sd : e2 /\ Proof (env |> SSort sd) e2 p) $;
+    (e = DSort sd : e2 /\ Proof (env |> DSort sd) e2 p) $;
 theorem ProofStepTerm (env e p: nat) {a r e2: nat}:
   $ Proof env e (StepTerm : p) <-> E. a E. r E. e2
-    (e = SDecl (DTerm a r) : e2 /\ Proof (env |> SDecl (DTerm a r)) e2 p) $;
+    (e = DTerm a r : e2 /\ Proof (env |> DTerm a r) e2 p) $;
 theorem ProofStepAxiom (env e p: nat) {a h r e2: nat}:
   $ Proof env e (StepAxiom : p) <-> E. a E. h E. r E. e2
-    (e = SDecl (DAxiom a h r) : e2 /\
-     Proof (env |> SDecl (DAxiom a h r)) e2 p) $;
+    (e = DAxiom a h r : e2 /\
+     Proof (env |> DAxiom a h r) e2 p) $;
 theorem ProofProofDefStep (env e p a r d v: nat) (st: wff) {o e2: nat}:
   $ st -> (Proof env e (ProofDef a r d v st : p) <->
-      DeclOk env a r d v /\ E. o E. e2
-      ((o = 0 \/ o = suc (d <> v)) /\ e = SDecl (DDef a r o T.) : e2 /\
-      Proof (env |> SDecl (DDef a r (suc (d <> v)) T.)) e2 p)) $;
+      DefOk env a r d v /\ E. o E. e2
+      ((o = 0 \/ o = suc (d <> v)) /\ e = DDef a r o T. : e2 /\
+      Proof (env |> DDef a r (suc (d <> v)) T.) e2 p)) $;
 theorem ProofProofDef (env e p a r d v: nat) (st: wff):
   $ ~st -> (Proof env e (ProofDef a r d v st : p) <->
-      DeclOk env a r d v /\
-      Proof (env |> SDecl (DDef a r (suc (d <> v)) F.)) e p) $;
+      DefOk env a r d v /\
+      Proof (env |> DDef a r (suc (d <> v)) F.) e p) $;
 theorem ProofProofThmStep (env e p a h r u d q: nat) (st: wff) {e2: nat}:
   $ st -> (Proof env e (ProofThm a h r u d q st : p) <->
       ProofOk env a h r u d q /\
-      E. e2 (e = SThm a h r : e2 /\ Proof (env |> SThm a h r) e2 p)) $;
+      E. e2 (e = DThm a h r : e2 /\ Proof (env |> DThm a h r) e2 p)) $;
 theorem ProofProofThm (env e p a h r u d q: nat) (st: wff):
   $ ~st -> (Proof env e (ProofThm a h r u d q st : p) <->
-      ProofOk env a h r u d q /\ Proof (env |> SThm a h r) e p) $;
+      ProofOk env a h r u d q /\ Proof (env |> DThm a h r) e p) $;
 
 -- A specification is provable if it has a proof, which entails
 -- providing all the omitted definitions and proving all the theorems in the
 -- file.
+-- Valid : Env -> Bool
 def Valid (env: nat) {.p: nat}: wff = $ E. p Proof 0 env p $;
