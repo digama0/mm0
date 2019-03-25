@@ -130,7 +130,12 @@ verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
     let ctx' = ctx <> Q.fromList (VBound <$> ds)
     (ret', rs') <- defcheckExpr (vTerms g) ctx' def
     guardError "type error" (ret == ret')
-    guardError "unaccounted free variables" (S.isSubsetOf rs' (S.fromList rs))
+    let fv = S.difference rs' (S.fromList rs)
+    S.foldl' (\r v -> r >> case ctx' Q.!? ofVarID v of
+      Just (VBound s) -> do
+        (_, sd') <- fromJustError "sort not found" (vSorts g Q.!? ofSortID s)
+        guardError "unaccounted free variable" (not (sFree sd'))
+      _ -> throwError "undeclared variable in dependency") (return ()) fv
 
   defcheckExpr :: Q.Seq VTermData -> Q.Seq VBinder -> VExpr -> Either String (SortID, S.Set VarID)
   defcheckExpr terms ctx = defcheckExpr' where

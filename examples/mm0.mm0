@@ -267,9 +267,11 @@ $ Ctx env args /\ DepType env args ret /\
 -- appear in the return type dependencies, so this ensures that all dummies are
 -- bound by the definition.)
 -- DefOk : Env -> Ctx -> DepType -> Bool
-def DefOk (env args ret ds e .ctx .v: nat): wff =
+def DefOk (env args ret ds e .ctx .v .s .sd: nat): wff =
 $ TermOk env args ret /\ [ appendDummies args ds / ctx ]
-  (Expr env ctx e (fst ret) /\ A. v (Free env ctx e v -> v e. snd ret)) $;
+  (Expr env ctx e (fst ret) /\ A. v (Free env ctx e v -> v e. snd ret \/
+    E. sd E. s (nth ctx v = suc (PBound s) /\
+      getSD env s = suc sd /\ sFree sd))) $;
 
 -- Is this a valid declaration in the environment?
 -- Decl : Env -> Decl -> Bool

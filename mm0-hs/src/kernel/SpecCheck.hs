@@ -49,8 +49,7 @@ checkDef env bis ret defn = do
     Nothing -> return ()
     Just (dummy, e) -> do
       ctx2 <- traverse (\t -> do
-          sd <- fromJustError "sort not found" (eSorts env M.!? t)
-          guardError ("sort '" ++ dSort ret ++ "' is free, cannot declare dummy") (not (sFree sd))
+          fromJustError "sort not found" (eSorts env M.!? t)
           return (True, DepType t [])) dummy
       checkSExpr env (ctx <> ctx2) e ret
 
