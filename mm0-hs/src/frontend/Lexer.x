@@ -11,13 +11,14 @@ import qualified Data.ByteString.Lazy.Char8 as C
 
 $identstart = [a-z A-Z _]
 $identrest = [$identstart 0-9]
+$ws = [\  \n]
 
 @ident = $identstart $identrest*
 @number = 0 | [1-9] [0-9]*
 @formula = \$ [[^\$] \n]+ \$
 
 tokens :-
-  $white+   ;
+  $ws+      ;
   "--".*    ;
   axiom     {\_ -> TokAxiom}
   coercion  {\_ -> TokCoercion}

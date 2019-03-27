@@ -28,10 +28,12 @@ The file is separated out into a list of lexemes, or tokens, according to the "m
 
     whitespace ::= whitestuff+
     whitestuff ::= whitechar | line-comment
-    whitechar ::= ' ' | '\r' | '\n' | '\t'
+    whitechar ::= ' ' | '\n'
     line-comment ::= '--' [^\n]* '\n'
 
-Whitespace is a sequence of spaces, newlines, carriage returns and tabs. Comments are line comments, begining with `--` and continuing to the end of the line.
+Whitespace is a sequence of spaces and newlines. Comments are line comments, begining with `--` and continuing to the end of the line.
+
+> *Note for Windows users*: For portability reasons, carriage returns are **not** legal characters in a .mm0 file. Make sure your text editor is set to LF line endings.
 
 Implementations are encouraged to support "special comments" via comments beginning `--|`, but they have no semantic value in this specification.
 
