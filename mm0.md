@@ -96,7 +96,7 @@ A type is the name of a sort followed by 0 or more variable names, which represe
 
 Term constructors
 ---
-The `term` directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so `term imp (ph ps: wff): wff;` and `term imp: wff -> wff -> wff` mean the same thing. The symbol `_` in place of an identifier indicates an anonymous variable. A binder enclosed in curly braces as in `{x: set}` denotes a bound variable, which may appear in dependencies of other types (see "Variable Inference").
+The `term` directive constructs a new piece of syntax, a function symbol on the sorts. The syntax permits two ways to list the arguments of the function, via binders or as a simple function. The names are not used except in dependencies of the types, so `term imp (ph ps: wff): wff;` and `term imp: wff > wff > wff` mean the same thing. The symbol `_` in place of an identifier indicates an anonymous variable. A binder enclosed in curly braces as in `{x: set}` denotes a bound variable, which may appear in dependencies of other types (see "Variable Inference").
 
     term-stmt ::= 'term' identifier (type-binder)* ':' arrow-type ';'
     identifier_ ::= identifier | '_'
@@ -107,7 +107,7 @@ The `term` directive constructs a new piece of syntax, a function symbol on the 
 
 Axioms and theorems
 ---
-An `axiom` and a `theorem` appear exactly the same in the specification file, although only one will require a proof. The syntax is similar to term constructors but now rather than just types, a binder may have a formula as its type. A formula is any sequence of tokens other than `$`, fenced by `$`. The `$` may be escaped by reduplication `$$`.
+An `axiom` and a `theorem` appear exactly the same in the specification file, although only one will require a proof. The syntax is similar to term constructors but now rather than just types, a binder may have a formula as its type. A formula is any sequence of tokens other than `$`, fenced by `$`.
 
     assert-stmt ::= ('axiom' | 'theorem') identifier
        (formula-type-binder)* ':' formula-arrow-type ';'
