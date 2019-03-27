@@ -90,7 +90,9 @@ parsePrefix p = parseLiteral $ do
       let bss = dSort . binderType <$> bs
       ss <- parseLiterals bss lits
       return (App x ss, dSort r)) $
-    tkMatch (\v -> if p <= appPrec then getTerm env v else Nothing)
+    tkMatch (\v -> do
+        d <- getTerm env v
+        if p <= appPrec || null (fst d) then Just d else Nothing)
       (\x (bs, r) -> do
         let bss = dSort . binderType <$> bs
         ss <- mapM (\s -> parsePrefix maxBound >>= coerce s) bss

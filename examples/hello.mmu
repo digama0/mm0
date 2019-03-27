@@ -1,0 +1,27 @@
+sort hex
+term x0  term x1  term x2  term x3
+term x4  term x5  term x6  term x7
+term x8  term x9  term xa  term xb
+term xc  term xd  term xe  term xf
+
+sort char
+term ch
+
+sort string
+term s0
+term s1
+term sadd
+
+def nl: string = (s1 (ch x0 xa))
+def __: string = (s1 (ch x2 x0))
+def bang: string = (s1 (ch x2 x1))
+
+def _H: string = (s1 (ch x4 x8))
+def _W: string = (s1 (ch x5 x7))
+def _d: string = (s1 (ch x6 x4))
+def _e: string = (s1 (ch x6 x5))
+def _l: string = (s1 (ch x6 xc))
+def _o: string = (s1 (ch x6 xf))
+def _r: string = (s1 (ch x7 x2))
+
+output string

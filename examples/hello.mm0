@@ -1,0 +1,50 @@
+-- This is an example of using the 'output' command to output
+-- "Hello World!". Because we have to build an infrastructure for
+-- outputting strings from within the logic, we start with a bit of boilerplate.
+
+delimiter $ ( ) $;
+
+-- Declare a sort whose only terms are the 16 hex digits
+sort hex;
+term x0: hex; term x1: hex; term x2: hex; term x3: hex;
+term x4: hex; term x5: hex; term x6: hex; term x7: hex;
+term x8: hex; term x9: hex; term xa: hex; term xb: hex;
+term xc: hex; term xd: hex; term xe: hex; term xf: hex;
+
+-- Declare a sort for 8-bit characters by concatenating
+-- two hex chars. For example `ch x3 x0` is the character `0x30`
+-- which represents ASCII '0'.
+sort char;
+term ch: hex > hex > char;
+
+-- Declare a string sort constructed from contatenating singleton
+-- strings and empty strings. The `sadd` function is treated by
+-- the verifier as associative.
+sort string;
+term s0: string;
+term s1: char > string;
+term sadd: string > string > string; infixr sadd: $+$ prec 50;
+
+-- All the above terms and sorts must be declared with exactly these types,
+-- or `input string` and `output string` will not work. But we are still
+-- a long way from being able to write strings in any reasonable way.
+-- Let's define some codes for ASCII characters:
+
+def nl: string = $ s1 (ch x0 xa) $; -- new line
+def __: string = $ s1 (ch x2 x0) $; -- space
+def bang: string = $ s1 (ch x2 x1) $; -- exclamation point
+prefix bang: $_!$ prec max;
+
+def _H: string = $ s1 (ch x4 x8) $;
+def _W: string = $ s1 (ch x5 x7) $;
+def _d: string = $ s1 (ch x6 x4) $;
+def _e: string = $ s1 (ch x6 x5) $;
+def _l: string = $ s1 (ch x6 xc) $;
+def _o: string = $ s1 (ch x6 xf) $;
+def _r: string = $ s1 (ch x7 x2) $;
+
+output string: $ _H + _e + _l + _l + _o + __ +
+                 _W + _o + _r + _l + _d + _! + nl $;
+
+-- See also 'string.mm0' for a more sophisticated example, using the
+-- `input string` command for the program to read its own specification.

@@ -37,4 +37,4 @@ doVerify args = do
       pf <- liftIO (fromJustError "mmu parse failure" (parseProof pf))
       out <- liftIO (verify s env pf)
       putStrLn "verified"
-      mapM_ putStrLn out
+      mapM_ putStr out
