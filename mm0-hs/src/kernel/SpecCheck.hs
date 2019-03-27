@@ -14,7 +14,7 @@ insertSpec' (SSort v sd) e = do
   s' <- insertNew ("sort " ++ v ++ " already declared") v sd (eSorts e)
   return (e {eSorts = s', eSpec = eSpec e Q.|> SSort v sd})
 insertSpec' (SDecl v d) e = do
-  trace ("insertDecl " ++ v ++ ": " ++ show d) (return ())
+  -- trace ("insertDecl " ++ v ++ ": " ++ show d) (return ())
   d' <- insertNew ("decl " ++ v ++ " already declared") v d (eDecls e)
   return (e {eDecls = d', eSpec = eSpec e Q.|> SDecl v d})
 insertSpec' s e = return (e {eSpec = eSpec e Q.|> s})
