@@ -137,10 +137,10 @@ readThm st = do
   expect (L.Punc ",")
   uf <- (do
       expect $ L.Ident "unfolding"
-      t <- readTerm
+      t <- readlist readTerm
       bracket "(" ")" (readlist insertVar)
-      return (Just t))
-    <|+ return Nothing
+      return t)
+    <|+ return []
   ds <- readlist readDummy
   hyps <- readlist readHyp
   expectS ":"

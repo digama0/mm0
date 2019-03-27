@@ -193,17 +193,15 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     trDummies _ m [] = m
     trDummies n m (v:vs) = trDummies (n+1) (M.insert v (VarID n) m) vs
 
-  checkThm :: VGlobal -> [VBinder] -> [VExpr] -> VExpr -> Maybe TermID ->
+  checkThm :: VGlobal -> [VBinder] -> [VExpr] -> VExpr -> [TermID] ->
     [SortID] -> [LocalCmd] -> Either String ()
   checkThm g vs hs ret unf ds pf = do
     let ctx = Q.fromList vs
     mapM_ (typecheckProvable g ctx) hs
     typecheckProvable g ctx ret
     ((hs', ret'), ctx') <- case unf of
-      Nothing -> return ((hs, ret), ctx)
-      Just u -> do
-        dd <- fromJustError "could not unfold non-def" (vDefs g I.!? ofTermID u)
-        let unfold = unfoldExpr u dd
+      [] -> return ((hs, ret), ctx)
+      _ -> let unfold = unfoldExpr (vDefs g) (S.fromList unf) in
         runStateT ((,) <$> mapM unfold hs <*> unfold ret) ctx
     let ctx'' = ctx' <> Q.fromList (VBound <$> ds)
     ret'' <- verifyProof g ctx'' hs' pf
@@ -238,10 +236,11 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     (si, sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID s)
     guardError ("non-provable sort '" ++ si ++ "' in theorem") (sProvable sd)
 
-  unfoldExpr :: TermID -> VDefData -> VExpr -> StateT (Q.Seq VBinder) (Either String) VExpr
-  unfoldExpr u (VDefData ud uv) = go where
-    go (VApp t es) | t == u = do
+  unfoldExpr :: I.IntMap VDefData -> S.Set TermID -> VExpr -> StateT (Q.Seq VBinder) (Either String) VExpr
+  unfoldExpr defs u = go where
+    go (VApp t es) | t `S.member` u = do
       es' <- mapM go es
+      VDefData ud uv <- fromJustError "could not unfold non-def" (defs I.!? ofTermID t)
       subst <- buildSubst (Q.fromList es') ud
       return (substExpr subst uv)
     go (VApp t es) = VApp t <$> mapM go es

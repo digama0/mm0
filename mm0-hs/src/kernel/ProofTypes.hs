@@ -4,7 +4,7 @@ import Data.Bits
 import Environment (Ident)
 
 newtype SortID = SortID {ofSortID :: Int} deriving (Eq)
-newtype TermID = TermID {ofTermID :: Int} deriving (Eq)
+newtype TermID = TermID {ofTermID :: Int} deriving (Eq, Ord)
 newtype ThmID = ThmID {ofThmID :: Int}
 newtype VarID = VarID {ofVarID :: Int} deriving (Eq, Ord)
 
@@ -43,14 +43,14 @@ data ProofCmd =
       pdVal :: VExpr,         -- ^ The value of the definition
       pdStep :: Bool }        -- ^ True if this def is in the spec
   | ProofThm {
-      ptName :: Maybe Ident,    -- ^ The name of the theorem
-      ptVar :: [VBinder],       -- ^ The variables
-      ptHyps :: [VExpr],        -- ^ The hypotheses
-      ptRet :: VExpr,           -- ^ The return type
-      ptUnfold :: Maybe TermID, -- ^ Which definition to unfold in the statement
-      ptDummies :: [SortID],    -- ^ The types of the dummies
-      ptProof :: [LocalCmd],    -- ^ The actual proof
-      ptStep :: Bool }          -- ^ True if this theorem is in the spec
+      ptName :: Maybe Ident, -- ^ The name of the theorem
+      ptVar :: [VBinder],    -- ^ The variables
+      ptHyps :: [VExpr],     -- ^ The hypotheses
+      ptRet :: VExpr,        -- ^ The return type
+      ptUnfold :: [TermID],  -- ^ Which definition to unfold in the statement
+      ptDummies :: [SortID], -- ^ The types of the dummies
+      ptProof :: [LocalCmd], -- ^ The actual proof
+      ptStep :: Bool }       -- ^ True if this theorem is in the spec
   | StepInout VInoutKind
   deriving (Show)
 
