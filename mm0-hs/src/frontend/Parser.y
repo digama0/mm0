@@ -22,6 +22,7 @@ import qualified Data.ByteString.Lazy as L
   delimiter {TokDelimiter}
   free      {TokFree}
   infix     {TokInfix $$}
+  input     {TokInput}
   max       {TokMax}
   notation  {TokNotation}
   output    {TokOutput}
@@ -62,16 +63,17 @@ Statement : SortStmt {$1}
           | AssertStmt {$1}
           | DefStmt {$1}
           | NotationStmt {Notation $1}
-          | OutputStmt {$1}
+          | InoutStmt {Inout $1}
 
 Ident : ident {$1}
       | axiom {"axiom"}
       | coercion {"coercion"}
       | def {"def"}
       | delimiter {"delimiter"}
-      | infix {if $1 then "infixr" else "infixl"}
-      | max {"max"}
       | free {"free"}
+      | infix {if $1 then "infixr" else "infixl"}
+      | input {"input"}
+      | max {"max"}
       | notation {"notation"}
       | output {"output"}
       | prec {"prec"}
@@ -125,8 +127,12 @@ GenNotationStmt : notation Ident binders(Ident_, TType) ':' Type '=' list1(Liter
                   {NNotation $2 $3 $5 $7}
 Literal : '(' Constant ':' Precedence ')' {NConst $2 $4} | Ident {NVar $1}
 
-OutputStmt : output OutputKind Ident binders(Dummy, TypeFmla) ';' {Output $2 $3 $4}
+InoutStmt : InputStmt {$1} | OutputStmt {$1}
+InputStmt : input InputKind ':' list(IdentFmla) ';' {Input $2 $4}
+OutputStmt : output OutputKind ':' list(IdentFmla) ';' {Output $2 $4}
+InputKind : Ident {$1}
 OutputKind : Ident {$1}
+IdentFmla : Ident {Left $1} | formula {Right $1}
 
 flag(p) : p {True} | {False}
 list(p) : {[]} | p list(p) {$1 : $2}

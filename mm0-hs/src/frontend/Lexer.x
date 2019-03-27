@@ -26,6 +26,7 @@ tokens :-
   free      {\_ -> TokFree}
   infixl    {\_ -> TokInfix False}
   infixr    {\_ -> TokInfix True}
+  input     {\_ -> TokInput}
   max       {\_ -> TokMax}
   notation  {\_ -> TokNotation}
   output    {\_ -> TokOutput}
@@ -61,6 +62,7 @@ data Token =
   | TokDelimiter
   | TokFree
   | TokInfix Bool
+  | TokInput
   | TokMax
   | TokNotation
   | TokOutput

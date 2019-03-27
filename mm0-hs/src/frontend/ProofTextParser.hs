@@ -110,19 +110,20 @@ readProof = lex1 >>= \case
   L.Ident "local" -> lex1 >>= \case
     L.Ident "def" -> readDef False
     L.Ident "theorem" -> readThm False
+  L.Ident "input" -> lex1 >>= \case
+    L.Ident "string" -> return $ StepInout (VIKString False)
+    _ -> empty
+  L.Ident "output" -> lex1 >>= \case
+    L.Ident "string" -> return $ StepInout (VIKString True)
+    _ -> empty
   _ -> empty
 
 readDef :: Bool -> Parser ProofCmd
 readDef st = do
-  trace "readDef" (return ())
   x <- insertTerm
-  traceShow x (return ())
   args <- readlist readBinder
-  traceShow args (return ())
   expectS ":"
-  traceShow ":" (return ())
   ret <- VType <$> readSort <*> readlist readVar
-  traceShow ret (return ())
   expect $ L.Punc "="
   ds <- readlist readDummy
   val <- readExpr
@@ -132,30 +133,20 @@ readThm :: Bool -> Parser ProofCmd
 readThm st = do
   trace ("readThm " ++ show st) (return ())
   x <- insertThm
-  traceShow x (return ())
   vs <- readlist readBinder
-  traceShow vs (return ())
   expect (L.Punc ",")
-  traceShow "," (return ())
   uf <- (do
       expect $ L.Ident "unfolding"
       t <- readTerm
       bracket "(" ")" (readlist insertVar)
       return (Just t))
     <|+ return Nothing
-  traceShow uf (return ())
   ds <- readlist readDummy
-  traceShow ds (return ())
   hyps <- readlist readHyp
-  traceShow hyps (return ())
   expectS ":"
-  traceShow ":" (return ())
   ret <- readExpr
-  traceShow ret (return ())
   expect $ L.Punc "="
-  traceShow "=" (return ())
   proof <- (\l -> l []) <$> readProofExpr
-  traceShow proof (return ())
   resetVars >> return (ProofThm (Just x) vs hyps ret uf ds proof st)
 
 readDummy :: Parser SortID

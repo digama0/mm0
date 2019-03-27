@@ -34,14 +34,14 @@ modifyParser f = do
   p' <- lift $ f e p
   put (e, p')
 
-insertSort :: Ident -> SortData -> SpecM ()
-insertSort v sd = modifyEnv (SpecCheck.insertSort v sd)
-
-insertDecl :: Ident -> Decl -> SpecM ()
-insertDecl v d = modifyEnv (SpecCheck.insertDecl v d)
-
 insertSpec :: Spec -> SpecM ()
 insertSpec = modifyEnv . SpecCheck.insertSpec
+
+insertSort :: Ident -> SortData -> SpecM ()
+insertSort v sd = insertSpec (SSort v sd)
+
+insertDecl :: Ident -> Decl -> SpecM ()
+insertDecl v d = insertSpec (SDecl v d)
 
 insertVars :: [Ident] -> VarType -> SpecM a -> SpecM a
 insertVars vs ty = local (\s -> s {sVars = f vs (sVars s)}) where
@@ -86,8 +86,8 @@ elabDecls (Notation n : ds) = do
   (e, pe) <- get
   modifyParser (addNotation n)
   elabDecls ds
-elabDecls (Output k v bi : ds) =
-  throwError ("output-kind " ++ show k ++ " not supported")
+elabDecls (Inout (Input k s) : ds) = elabInout False k s >> elabDecls ds
+elabDecls (Inout (Output k s) : ds) = elabInout True k s >> elabDecls ds
 elabDecls (Block ss : ds) = local pushStack (elabDecls ss) >> elabDecls ds
 
 elabTerm :: Ident -> [Binder] -> DepType -> ([PBinder] -> DepType -> a) -> SpecM a
@@ -128,6 +128,22 @@ elabDef x vs ty (Just defn) = do
     let dummies' = S.foldr' (\v -> M.insert v (varTypeSort $ sVars stk M.! v)) dummies nv
     bis <- setBound stk (Locals sbd S.empty) bis
     return (DDef bis ty $ Just (dummies, defn'))
+
+elabInout out "string" [x] = do
+  (e, Locals sbd nv) <- runLocalCtxM' $ parseTermFmla x
+  guardError "dummy variables not permitted in input arguments" (null sbd && null nv)
+  insertSpec (SInout (IOKString out e))
+elabInout _ "string" _ = throwError ("input/output-kind string takes one argument")
+elabInout False k _ = throwError ("input-kind " ++ show k ++ " not supported")
+elabInout True k _ = throwError ("output-kind " ++ show k ++ " not supported")
+
+parseTermFmla :: Either Ident Formula -> LocalCtxM SExpr
+parseTermFmla (Left x) = do
+  env <- readEnv
+  case getTerm env x of
+    Just ([], _) -> return (App x [])
+    _ -> throwError ("input argument " ++ x ++ " is not a nullary term constructor")
+parseTermFmla (Right f) = parseFormula f
 
 runLocalCtxM' :: LocalCtxM a -> SpecM (a, Locals)
 runLocalCtxM' m = RWST $ \stk e ->

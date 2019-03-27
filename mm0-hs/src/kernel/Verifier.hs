@@ -7,10 +7,13 @@ import Data.Word
 import Data.List
 import Data.Bits
 import Data.Maybe
+import Data.Char
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
+import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy.Char8 as BC
 import Environment
 import ProofTypes
 import Util
@@ -46,15 +49,17 @@ data VGlobal = VGlobal {
   -- | Map from ThmID to axiom/theorem info (for instantiating theorems)
   vThms :: Q.Seq VAssrtData,
   -- | The current initial segment of the environment that has been checked
-  vPos :: Int }
+  vPos :: Int,
+  -- | The collection of outputs (for IO)
+  vOutput :: Q.Seq String }
 
 type GVerifyM = StateT VGlobal (Either String)
 
-runGVerifyM :: GVerifyM a -> Environment -> Either String a
+runGVerifyM :: GVerifyM a -> Environment -> Either String (a, Q.Seq String)
 runGVerifyM m e = do
-  (a, st) <- runStateT m $ VGlobal Q.empty M.empty Q.empty M.empty I.empty Q.empty 0
+  (a, st) <- runStateT m $ VGlobal Q.empty M.empty Q.empty M.empty I.empty Q.empty 0 Q.empty
   guardError "Not all theorems have been proven" (vPos st == Q.length (eSpec e))
-  return a
+  return (a, vOutput st)
 
 checkNotStrict :: VGlobal -> SortID -> Either String ()
 checkNotStrict g t = do
@@ -62,10 +67,10 @@ checkNotStrict g t = do
   guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
 
 withContext :: MonadError String m => String -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("while checking " ++ s ++ ": " ++ e))
+withContext s m = catchError m (\e -> throwError ("while checking " ++ s ++ ":\n" ++ e))
 
-verify :: Environment -> Proofs -> Either String ()
-verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
+verify :: B.ByteString -> Environment -> Proofs -> Either String (Q.Seq String)
+verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
 
   verifyCmd :: ProofCmd -> GVerifyM ()
   verifyCmd (StepSort x) = step >>= \case
@@ -110,6 +115,11 @@ verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
         _ -> throwError "incorrect theorem step"
     modify (\g -> g {
       vThms = vThms g Q.|> VAssrtData x vs (makeDV vs) hs ret })
+  verifyCmd (StepInout (VIKString out)) = step >>= \case
+    SInout (IOKString False e) | not out -> verifyInputString spectxt e
+    SInout (IOKString True e) | out -> verifyOutputString spectxt e
+    _ | out -> throwError "incorrect output step"
+    _ -> throwError "incorrect input step"
 
   step :: GVerifyM Spec
   step = do
@@ -145,7 +155,7 @@ verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
       Just (VReg s vs) -> return (s, S.fromList vs)
     defcheckExpr' (VApp t es) = do
       VTermData _ args (VType ret rs) <- fromJustError "unknown term in def expr" (terms Q.!? ofTermID t)
-      (m, ev) <- defcheckArgs args es
+      (m, ev) <- withContext (showVExpr terms (VApp t es)) $ defcheckArgs args es
       return (ret, ev <> S.fromList ((\v -> m I.! ofVarID v) <$> rs))
 
     defcheckArgs :: [VBinder] -> [VExpr] -> Either String (I.IntMap VarID, S.Set VarID)
@@ -162,7 +172,12 @@ verify env = \p -> runGVerifyM (mapM_ verifyCmd p) env where
         guardError "type mismatch" (s == s')
         let ev'' = foldl' (\ev' v -> S.delete (m I.! ofVarID v) ev') ev' vs
         go args es (n+1) m (ev <> ev'')
-      go _ _ _ _ _ = throwError "term arguments don't match substitutions"
+      go _ _ _ _ _ | length args == length es =
+        throwError ("term arguments don't match substitutions:" ++
+          " args = " ++ show args ++
+          ", subst = " ++ showVExprList terms es)
+      go _ _ _ _ _ = throwError ("expected " ++ show (length args) ++
+        " arguments, got " ++ show (length es))
 
   matchDef :: M.Map Ident TermID -> M.Map Ident SortID -> [VBinder] -> VType -> [SortID] ->
     [PBinder] -> DepType -> VExpr -> Maybe (M.Map Ident Ident, SExpr) -> Bool
@@ -288,15 +303,15 @@ translateTerm sortIx = \x args (DepType t ts) ->
 
 translateAxiom :: M.Map Ident SortID -> M.Map Ident TermID ->
   Ident -> [PBinder] -> [SExpr] -> SExpr -> VAssrtData
-translateAxiom sortIx termIx = \x args hs ret ->
+translateAxiom sortIx termIx x args hs ret =
   let (args', _, varIx) = trBinders sortIx args in
   VAssrtData (Just x) args' (makeDV args')
-    (trExpr varIx <$> hs) (trExpr varIx ret) where
+    (trExpr termIx varIx <$> hs) (trExpr termIx varIx ret)
 
-  trExpr :: M.Map Ident VarID -> SExpr -> VExpr
-  trExpr varIx = go where
-    go (SVar v) = VVar (varIx M.! v)
-    go (App t es) = VApp (termIx M.! t) (go <$> es)
+trExpr :: M.Map Ident TermID -> M.Map Ident VarID -> SExpr -> VExpr
+trExpr termIx varIx = go where
+  go (SVar v) = VVar (varIx M.! v)
+  go (App t es) = VApp (termIx M.! t) (go <$> es)
 
 substExpr :: Q.Seq VExpr -> VExpr -> VExpr
 substExpr m = go where
@@ -391,8 +406,11 @@ verifyProof g = \ctx hs cs -> do
         all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
       mapM_ (\case
         (e, SSProof p) -> do
-          guardError ("substitution to hypothesis does not match theorem\n" ++
-              show e ++ show es ++ " = " ++ show (substExpr subst e) ++ " != " ++ show p)
+          guardError (let terms = vTerms g in
+              "substitution to hypothesis does not match theorem\n" ++
+              showVExpr terms e ++ showVExprList terms es ++ " = " ++
+              showVExpr terms (substExpr subst e) ++ " != " ++
+              showVExpr terms p)
             (substExpr subst e == p)
         (e, _) -> throwError "bad stack slot reference") hs'
       push (SSProof (substExpr subst ret))
@@ -409,3 +427,155 @@ verifyProof g = \ctx hs cs -> do
       (s, e, b) <- fromJustError "bad stack slot" (ofSSExpr ss)
       guardError "type mismatch" (s == s')
       (\(l, b') -> (e : l, f b b')) <$> go sss
+
+--------------------------------------------------
+-- Input/Output for 'string' (optional feature) --
+--------------------------------------------------
+
+data StringPart = IFull B.ByteString | IHalf Word8 B.ByteString
+type StringInM = StringPart -> Either String StringPart
+
+spUncons :: StringPart -> Maybe (Word8, StringPart)
+spUncons (IFull s) = case B.uncons s of
+  Nothing -> Nothing
+  Just (c, s) -> Just (shiftR c 4, IHalf (c .&. 15) s)
+spUncons (IHalf c s) = Just (c, IFull s)
+
+spRest :: StringPart -> B.ByteString
+spRest (IFull s) = s
+spRest (IHalf _ s) = s
+
+spLen :: StringPart -> Int
+spLen (IFull s) = fromIntegral (B.length s)
+spLen (IHalf _ s) = fromIntegral (B.length s + 1)
+
+toHex :: Word8 -> Char
+toHex i = chr $ (if i < 10 then ord '0' else ord 'a' - 10) + fromIntegral i
+
+verifyInputString :: B.ByteString -> SExpr -> GVerifyM ()
+verifyInputString spectxt e = do
+  g <- get
+  procs <- foldM
+    (\m (s, f) -> do
+      TermID n <- fromJustError
+        ("term '" ++ s ++ "' not found for string i/o") (vTermIx g M.!? s)
+      return (I.insert n f m))
+    I.empty proclist
+  lift $ unify (vTerms g) (vDefs g) procs (trExpr (vTermIx g) M.empty e)
+  where
+  proclist :: [(String, (VExpr -> StringInM) -> [VExpr] -> StringInM)]
+  proclist =
+    ("s0", \_ [] s -> return s) :
+    ("s1", \f [e] -> f e) :
+    ("sadd", \f [e1, e2] s -> f e1 s >>= f e2) :
+    ("ch", \f [e1, e2] s -> f e1 s >>= f e2) :
+    map (\i -> ('x' : toHex i : [],
+      \_ [] s -> case spUncons s of
+        Nothing -> throwError "EOF"
+        Just (c, s') -> do
+          guardError (mismatch s) (c == fromIntegral i)
+          return s')) [0..15]
+
+  unify :: Q.Seq VTermData -> I.IntMap VDefData ->
+    I.IntMap ((VExpr -> StringInM) -> [VExpr] -> StringInM) ->
+    VExpr -> Either String ()
+  unify terms defs procs = \e -> go [] e (IFull spectxt) >>= \case
+    (IFull s) | B.null s -> return ()
+    s' -> throwError (mismatch s')
+    where
+
+    go :: [Q.Seq VExpr] -> VExpr -> StringInM
+    go [] (VVar n) s = error "free variable found"
+    go (es : stk) (VVar (VarID n)) s = go stk (Q.index es n) s
+    go stk (VApp t es) s = do
+      case defs I.!? ofTermID t of
+        Just (VDefData [] val) -> go (Q.fromList es : stk) val s
+        Just (VDefData _ _) -> throwError ("definition " ++
+          showVExpr terms (VApp t []) ++ " has dummy variables")
+        Nothing -> case procs I.!? ofTermID t of
+          Just f -> f (go stk) es s
+          Nothing -> throwError ("term '" ++ showVExpr terms (VApp t []) ++ "' not supported")
+
+  mismatch s = "input mismatch at char " ++
+    show (fromIntegral (B.length spectxt) - spLen s) ++ ": rest = '" ++
+      BC.unpack (B.take 10 (spRest s)) ++
+      if B.length (spRest s) <= 10 then "'" else "'..."
+
+data OStringPart = OString (String -> String) | OHex Word8
+type StringOutM = Either String OStringPart
+
+verifyOutputString :: B.ByteString -> SExpr -> GVerifyM ()
+verifyOutputString s e = do
+  g <- get
+  procs <- foldM
+    (\m (s, f) -> do
+      TermID n <- fromJustError
+        ("term '" ++ s ++ "' not found for string i/o") (vTermIx g M.!? s)
+      return (I.insert n f m))
+    I.empty proclist
+  lift (toString (vTerms g) (vDefs g) procs (trExpr (vTermIx g) M.empty e)) >>= \case
+    OString out -> modify (\g -> g {vOutput = vOutput g Q.|> out []})
+    OHex _ -> throwError "impossible, check axioms"
+  where
+  proclist :: [(String, (VExpr -> StringOutM) -> [VExpr] -> StringOutM)]
+  proclist =
+    ("s0", \_ [] -> return (OString id)) :
+    ("s1", \f [e] -> f e) :
+    ("sadd", \f [e1, e2] ->
+      let app (OString s1) (OString s2) = OString (s1 . s2)
+          app _ _ = error "impossible, check axioms" in
+      app <$> f e1 <*> f e2) :
+    ("ch", \f [e1, e2] ->
+      let app (OHex h1) (OHex h2) =
+            OString (chr (fromIntegral (shiftL h1 4 .|. h2)) :)
+          app _ _ = error "impossible, check axioms" in
+      app <$> f e1 <*> f e2) :
+    map (\i -> ('x' : toHex i : [], \_ [] -> return (OHex i))) [0..15]
+
+  toString :: Q.Seq VTermData -> I.IntMap VDefData ->
+    I.IntMap ((VExpr -> StringOutM) -> [VExpr] -> StringOutM) ->
+    VExpr -> StringOutM
+  toString terms defs procs = go [] where
+    go :: [Q.Seq VExpr] -> VExpr -> StringOutM
+    go [] (VVar n) = error "free variable found"
+    go (es : stk) (VVar (VarID n)) = go stk (Q.index es n)
+    go stk (VApp t es) = do
+      case defs I.!? ofTermID t of
+        Just (VDefData [] val) -> go (Q.fromList es : stk) val
+        Just (VDefData _ _) -> throwError ("definition " ++
+          showVExpr terms (VApp t []) ++ " has dummy variables")
+        Nothing -> case procs I.!? ofTermID t of
+          Just f -> f (go stk) es
+          Nothing -> throwError ("term '" ++ showVExpr terms (VApp t []) ++ "' not supported")
+
+-----------------------------------------------
+-- Expression printing (for error reporting) --
+-----------------------------------------------
+
+showVExpr :: Q.Seq VTermData -> VExpr -> String
+showVExpr terms e = showsVExpr terms e []
+
+showVExprList :: Q.Seq VTermData -> [VExpr] -> String
+showVExprList terms es = showList' (showsVExpr terms) es []
+
+showsVExpr :: Q.Seq VTermData -> VExpr -> ShowS
+showsVExpr terms = go 0 where
+  go n (VVar v) r = showsPrec n v r
+  go n (VApp t []) r = showTerm t r
+  go n (VApp t es) r =
+    let f r = showTerm t (foldr (\e r -> ' ' : go 1 e r) r es) in
+    if n == 0 then f r else '(' : f (')' : r)
+
+  showTerm :: TermID -> ShowS
+  showTerm t r = case terms Q.!? ofTermID t of
+    Just (VTermData (Just x) _ _) -> x ++ r
+    Just (VTermData Nothing _ _) -> showsPrec 0 t r
+    Nothing -> '?' : showsPrec 0 t r
+
+-- from haskell core
+showList' :: (a -> ShowS) ->  [a] -> ShowS
+showList' _     []     s = "[]" ++ s
+showList' showx (x:xs) s = '[' : showx x (showl xs)
+  where
+    showl []     = ']' : s
+    showl (y:ys) = ',' : showx y (showl ys)

@@ -1,4 +1,4 @@
-module SpecCheck(insertSort, insertDecl, insertSpec) where
+module SpecCheck(checkSpec, insertSpec) where
 
 import Control.Monad.Except
 import Debug.Trace
@@ -9,21 +9,18 @@ import AST
 import Environment
 import Util
 
-insertSort :: Ident -> SortData -> Environment -> Either String Environment
-insertSort v sd e = do
+insertSpec' :: Spec -> Environment -> Either String Environment
+insertSpec' (SSort v sd) e = do
   s' <- insertNew ("sort " ++ v ++ " already declared") v sd (eSorts e)
   return (e {eSorts = s', eSpec = eSpec e Q.|> SSort v sd})
-
-insertDecl :: Ident -> Decl -> Environment -> Either String Environment
-insertDecl v d e = do
+insertSpec' (SDecl v d) e = do
   trace ("insertDecl " ++ v ++ ": " ++ show d) (return ())
   d' <- insertNew ("decl " ++ v ++ " already declared") v d (eDecls e)
   return (e {eDecls = d', eSpec = eSpec e Q.|> SDecl v d})
+insertSpec' s e = return (e {eSpec = eSpec e Q.|> s})
 
 insertSpec :: Spec -> Environment -> Either String Environment
-insertSpec (SSort v sd) e = insertSort v sd e
-insertSpec (SDecl v d) e = insertDecl v d e
-insertSpec s e = return (e {eSpec = eSpec e Q.|> s})
+insertSpec s e = checkSpec e s >> insertSpec' s e
 
 checkSpec :: Environment -> Spec -> Either String ()
 checkSpec e (SSort _ _) = return ()
@@ -37,6 +34,8 @@ checkSpec e (SThm _ bis hs ret) = do
   ctx <- checkBinders e bis
   mapM_ (provableSExpr e ctx) hs
   provableSExpr e ctx ret
+checkSpec e (SInout (IOKString _ val)) =
+  checkSExpr e M.empty val (DepType "string" [])
 
 checkDef :: Environment -> [PBinder] -> DepType ->
   Maybe (M.Map Ident Ident, SExpr) -> Either String ()

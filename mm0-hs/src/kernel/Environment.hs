@@ -59,6 +59,8 @@ data SortData = SortData {
   sFree :: Bool }
   deriving (Show)
 
+data IOKind = IOKString Bool SExpr deriving (Show)
+
 data Spec =
     SSort Ident SortData
   | SDecl Ident Decl
@@ -67,6 +69,7 @@ data Spec =
       tArgs :: [PBinder],
       tHyps :: [SExpr],
       tReturn :: SExpr }
+  | SInout IOKind
   deriving (Show)
 
 data Environment = Environment {

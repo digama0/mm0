@@ -52,8 +52,8 @@ Pseudo-keywords
 
 The following words appear in the syntax with special meanings:
 
-    axiom coercion def delimiter free infixl infixr max notation output
-    prec prefix provable pure sort strict term theorem var
+    axiom coercion def delimiter free infixl infixr input max notation
+    output prec prefix provable pure sort strict term theorem var
 
 However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
 
@@ -70,7 +70,7 @@ An `.mm0` file is a list of directives. Directives are used to declare sorts, de
                |  assert-stmt
                |  def-stmt
                |  notation-stmt
-               |  output-stmt
+               |  inout-stmt
 
 Sorts
 ---
@@ -159,25 +159,36 @@ As an additional check, `notation` requires its variables be annotated with type
     notation-literal ::= prec-constant | identifier
     prec-constant ::= '(' constant ':' precedence-lvl ')'
 
-Output
+Input and Output
 ---
 
 *Note*: This command is optional, even more so than the rest of this specification.
 
-    output-stmt ::= 'output' output-kind identifier (formula-dummy-binder)* ';'
-    formula-dummy-binder ::= '{' (dummy-identifier)* ':' type '}'
-                          |  '(' (dummy-identifier)* ':' (type | formula) ')'
+    inout-stmt ::= input-stmt | output-stmt
+    input-stmt ::= 'input' input-kind ':' (identifier | math-string)* ';'
+    output-stmt ::= 'output' output-kind ':' (identifier | math-string)* ';'
     output-kind ::= identifier
 
-The `output` command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the `output-kind`, which specifies the target format, for example `s-expr`, or a program language such as `g` or `x86_asm`. The details vary depending on the target, but this can be read as an *existential* statement, by contrast to `theorem`, which proves universal statements. A statement such as
+The `output` command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the `output-kind`, which specifies the target format, for example `s_expr`, or a program language such as `g` or `x86_asm`. The math string should be an expression or definition which encodes the output. A statement such as
 
-    output c halting (e: c-expr) (.x: set) (_: $ A. x e. Input halts(e, x) $);
+    output c: $ my_program $;
 
-might assert that the verifier produces a C source file described by `e`, which always halts when executed on any input. Or more simply:
+might cause the verifier to produce a C source file described by `my_program`, which we may additionally prove theorems about (because it is a definition in the logic), such as always-halting. Note that `my_program` may be given an implicit `def`, in which case the production of such a program would be the responsibility of the proof file, and the specification is only asserting the existence of such a program. A (cheating) "hello world" program in this language might be:
 
-    output s-expr halting (ph: wff) (h: $ ph $);
+    sort foo;
+    term hello: foo > foo;
+    term world: foo;
+    output s_expr: $ hello world $;
 
-would print the s-expression corresponding to some provable wff. The proof file is responsible for demonstrating the existential witness - the program that halts, or the provable wff - and the verifier is responsible for interpreting the term from the logic as a string to output or a file to produce.
+which would print `hello world` to the console if the verifier supports s-expression printing. (Printing arbitrary strings would require significantly more encoding, because the language does not support string literals.) All definitions may be unfolded by the output command.
+
+Complementary to this is the `input` command, which does something like the opposite. Given an implementation defined `input-kind`, the verifier will check that the `math-string` matches the encoding of some aspect of the current verifier state. For example,
+
+    input ast: $ this_file_ast $;
+
+will check that `this_file_ast` is an encoding of the AST of the specification file itself. Yes, this AST will even include a node for `input ast: $ this_file_ast $;` and the definition of `this_file_ast`, so for this to work the file AST would have to be encoded in the proof file.
+
+Specific input and output commands are expected to depend on the existence of terms and definitions defined in the specification file (but not the proof file).
 
 Secondary parsing
 ===

@@ -28,6 +28,8 @@ isBound :: VBinder -> Bool
 isBound (VBound _) = True
 isBound _ = False
 
+data VInoutKind = VIKString Bool deriving (Show)
+
 type Proofs = [ProofCmd]
 data ProofCmd =
     StepSort Ident
@@ -49,6 +51,7 @@ data ProofCmd =
       ptDummies :: [SortID],    -- ^ The types of the dummies
       ptProof :: [LocalCmd],    -- ^ The actual proof
       ptStep :: Bool }          -- ^ True if this theorem is in the spec
+  | StepInout VInoutKind
   deriving (Show)
 
 type HeapID = Int

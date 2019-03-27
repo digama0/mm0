@@ -15,7 +15,7 @@ data Stmt = Sort Ident SortData
   | Theorem Ident [Binder] Formula
   | Def Ident [Binder] DepType (Maybe Formula)
   | Notation Notation
-  | Output OutputKind Ident [Binder]
+  | Inout Inout
   | Block [Stmt]
   deriving (Show)
 
@@ -31,7 +31,14 @@ data Literal = NConst Const Prec | NVar Ident deriving (Show)
 
 type Const = B.ByteString
 type Prec = Int
+
+type InputKind = String
 type OutputKind = String
+
+data Inout =
+    Input InputKind [Either Ident Formula]
+  | Output OutputKind [Either Ident Formula]
+  deriving (Show)
 
 data Local = LBound Ident | LReg Ident | LDummy Ident | LAnon
 
