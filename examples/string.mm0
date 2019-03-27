@@ -1,4 +1,4 @@
-sort hex;
+strict free sort hex;
 term x0: hex;
 term x1: hex;
 term x2: hex;
@@ -16,10 +16,10 @@ term xd: hex;
 term xe: hex;
 term xf: hex;
 
-sort char;
+strict free sort char;
 term ch: hex > hex > char;
 
-sort string;
+strict free sort string;
 term s0: string;
 term s1: char > string;
 term sadd: string > string > string;

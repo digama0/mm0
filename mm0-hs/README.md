@@ -21,16 +21,16 @@ The MM0 spec leaves many parts of the language implementation defined, and most 
 ---
 Both the `input` and `output` commands use the same grammar for reading strings from the logic, given by the following specification:
 
-    sort hex;
+    strict free sort hex;
     term x0: hex; term x1: hex; term x2: hex; term x3: hex;
     term x4: hex; term x5: hex; term x6: hex; term x7: hex;
     term x8: hex; term x9: hex; term xa: hex; term xb: hex;
     term xc: hex; term xd: hex; term xe: hex; term xf: hex;
 
-    sort char;
+    strict free sort char;
     term ch: hex > hex > char;
 
-    sort string;
+    strict free sort string;
     term s0: string;
     term s1: char > string;
     term sadd: string > string > string;

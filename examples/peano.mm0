@@ -58,19 +58,19 @@ def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ i. x ([ b / x ] x = a) $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
   ($'[$:max) a ($/$:0) x ($]$:0) b;
 
-term x0: nat; prefix x0: $0$ prec max;
+term d0: nat; prefix d0: $0$ prec max;
 term suc: nat > nat;
 
-def x1:  nat = $suc 0$; prefix x1:  $1$  prec max;
-def x2:  nat = $suc 1$; prefix x2:  $2$  prec max;
-def x3:  nat = $suc 2$; prefix x3:  $3$  prec max;
-def x4:  nat = $suc 3$; prefix x4:  $4$  prec max;
-def x5:  nat = $suc 4$; prefix x5:  $5$  prec max;
-def x6:  nat = $suc 5$; prefix x6:  $6$  prec max;
-def x7:  nat = $suc 6$; prefix x7:  $7$  prec max;
-def x8:  nat = $suc 7$; prefix x8:  $8$  prec max;
-def x9:  nat = $suc 8$; prefix x9:  $9$  prec max;
-def x10: nat = $suc 9$; prefix x10: $10$ prec max;
+def d1:  nat = $suc 0$; prefix d1:  $1$  prec max;
+def d2:  nat = $suc 1$; prefix d2:  $2$  prec max;
+def d3:  nat = $suc 2$; prefix d3:  $3$  prec max;
+def d4:  nat = $suc 3$; prefix d4:  $4$  prec max;
+def d5:  nat = $suc 4$; prefix d5:  $5$  prec max;
+def d6:  nat = $suc 5$; prefix d6:  $6$  prec max;
+def d7:  nat = $suc 6$; prefix d7:  $7$  prec max;
+def d8:  nat = $suc 7$; prefix d8:  $8$  prec max;
+def d9:  nat = $suc 8$; prefix d9:  $9$  prec max;
+def d10: nat = $suc 9$; prefix d10: $10$ prec max;
 
 axiom peano1 (a: nat): $ ~(0 = suc a) $;
 axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
@@ -191,7 +191,7 @@ theorem allS {x: nat} (ph: wff x) (a b : nat):
   $ all x ph (a : b) <-> [ a / x ] ph /\ all x ph b $;
 
 def in (a l : nat): wff; infixl in: $IN$ prec 50;
-theorem in0 (a: nat): $ ~ a IN 0 $;
+theorem id0 (a: nat): $ ~ a IN 0 $;
 theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
 
 def lrec (z: nat) {x y: nat} (s: nat x y) (n: nat): nat;
@@ -200,13 +200,17 @@ theorem lrecS (z: nat) {x y: nat} (s: nat x y) (a b: nat):
   $ lrec z x y s (a : b) = '[ a / x ] '[ lrec z x y s b / y ] s $;
 
 def len (l: nat): nat;
-theorem len0: $ len 0 = 0 $;
+theorem led0: $ len 0 = 0 $;
 theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
 
 def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
 theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;
 theorem snocS (a b c: nat): $ (a : b) |> c = a : (b |> c) $;
 theorem snoclt (a b: nat): $ a < a |> b $;
+
+def append (l1 l2: nat): nat; infixl append: $++$ prec 85;
+theorem append0 (a: nat): $ 0 ++ a = a $;
+theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $;
 
 def nth (n l: nat): nat;
 theorem nth0 (n: nat): $ nth n 0 = 0 $;

@@ -53,7 +53,9 @@ local def _w (r: string): string = (k x7 x7 r)
 local def _x (r: string): string = (k x7 x8 r)
 
 local def csort (s: string) (r: string): string =
-(sadd (_s (_o (_r (_t (__ s))))) (semi (nl r)))
+(sadd (_s (_t (_r (_i (_c (_t (__
+  (_f (_r (_e (_e (__ (_s (_o (_r (_t (__ s)))))))))))))))))
+  (semi (nl r)))
 
 local def cdecl (c: string) (t: string) (s: string) (r: string): string =
 (sadd c (sadd (__ t) (sadd (colon (__ s)) (semi (nl r)))))
