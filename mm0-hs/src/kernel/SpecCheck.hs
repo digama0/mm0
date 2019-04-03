@@ -22,20 +22,23 @@ insertSpec' s e = return (e {eSpec = eSpec e Q.|> s})
 insertSpec :: Spec -> Environment -> Either String Environment
 insertSpec s e = checkSpec e s >> insertSpec' s e
 
+withContext :: MonadError String m => String -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("when adding " ++ s ++ ": " ++ e))
+
 checkSpec :: Environment -> Spec -> Either String ()
 checkSpec e (SSort _ _) = return ()
-checkSpec e (SDecl _ (DTerm bis ret)) = checkDef e bis ret Nothing
-checkSpec e (SDecl _ (DAxiom bis hs ret)) = do
+checkSpec e (SDecl x (DTerm bis ret)) = withContext x $ checkDef e bis ret Nothing
+checkSpec e (SDecl x (DAxiom bis hs ret)) = withContext x $ do
   ctx <- checkBinders e bis
   mapM_ (provableSExpr e ctx) hs
   provableSExpr e ctx ret
-checkSpec e (SDecl _ (DDef bis ret defn)) = checkDef e bis ret defn
-checkSpec e (SThm _ bis hs ret) = do
+checkSpec e (SDecl x (DDef bis ret defn)) = withContext x $ checkDef e bis ret defn
+checkSpec e (SThm x bis hs ret) = withContext x $ do
   ctx <- checkBinders e bis
   mapM_ (provableSExpr e ctx) hs
   provableSExpr e ctx ret
 checkSpec e (SInout (IOKString _ val)) =
-  checkSExpr e M.empty val (DepType "string" [])
+  withContext "input/output" (checkSExpr e M.empty val (DepType "string" []))
 
 checkDef :: Environment -> [PBinder] -> DepType ->
   Maybe (M.Map Ident Ident, SExpr) -> Either String ()
@@ -79,7 +82,8 @@ provableSExpr env ctx e = do
 checkSExpr :: Environment -> M.Map Ident (Bool, DepType) -> SExpr -> DepType -> Either String ()
 checkSExpr env ctx e ty = do
   t <- inferSExpr env ctx e
-  guardError "type error" (t == dSort ty)
+  guardError ("type error, expected " ++ show (dSort ty) ++
+    ", got " ++ show e ++ ": " ++ show t) (t == dSort ty)
 
 inferSExpr :: Environment -> M.Map Ident (Bool, DepType) -> SExpr -> Either String Ident
 inferSExpr _ ctx (SVar v) = do

@@ -3,7 +3,7 @@ module ParserEnv(Token,
   ParserEnv(..),
   PrefixInfo(..),
   InfixInfo(..),
-  addNotation, tokenize, getCoe, newParserEnv) where
+  addNotation, recalcCoeProv, tokenize, getCoe, getCoeProv, newParserEnv) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.State
@@ -30,10 +30,11 @@ data ParserEnv = ParserEnv {
   prefixes :: M.Map Token PrefixInfo,
   infixes :: M.Map Token InfixInfo,
   prec :: M.Map Token Prec,
-  coes :: M.Map Ident (M.Map Ident Coe) }
+  coes :: M.Map Ident (M.Map Ident Coe),
+  coeProv :: M.Map Ident Ident }
 
 newParserEnv :: ParserEnv
-newParserEnv = ParserEnv S.empty M.empty M.empty M.empty M.empty
+newParserEnv = ParserEnv S.empty M.empty M.empty M.empty M.empty M.empty
 
 toString :: Const -> String
 toString = C.unpack
@@ -132,6 +133,12 @@ getCoe :: Ident -> Ident -> ParserEnv -> Maybe Coe
 getCoe s1 s2 e | s1 == s2 = Just id
 getCoe s1 s2 e = coes e M.!? s1 >>= (M.!? s2)
 
+getCoeProv :: Ident -> ParserEnv -> Maybe (Ident, Coe)
+getCoeProv s e = do
+  s2 <- coeProv e M.!? s
+  c <- getCoe s s2 e
+  Just (s2, c)
+
 foldCoeLeft :: Ident -> ParserEnv -> (Ident -> Coe -> a -> a) -> a -> a
 foldCoeLeft s2 e f a = M.foldrWithKey' g a (coes e) where
   g s1 m a = maybe a (\l -> f s1 l a) (m M.!? s2)
@@ -152,6 +159,21 @@ addCoe s1 s2 c e = do
   e <- foldCoeLeft s1 e (\s1' l r -> r >>= addCoeInner s1' s2 (cc . l)) (return e)
   e <- addCoeInner s1 s2 cc e
   foldCoeRight s2 e (\s2' l r -> r >>= addCoeInner s1 s2' (l . cc)) (return e)
+
+recalcCoeProv :: Environment -> ParserEnv -> Either String ParserEnv
+recalcCoeProv env e = do
+  m <- M.foldrWithKey' (\s1 m r -> M.foldrWithKey' (f s1) r m)
+    (return (S.foldr (\v -> M.insert v v) M.empty provs)) (coes e)
+  return (e {coeProv = m})
+  where
+  provs :: S.Set Ident
+  provs = M.keysSet (M.filter sProvable (eSorts env))
+  f :: Ident -> Ident -> Coe -> Either String (M.Map Ident Ident) -> Either String (M.Map Ident Ident)
+  f s1 s2 l r = if S.member s2 provs then do
+      m <- r
+      guardError "coercion diamond to provable detected" (M.notMember s1 m)
+      return (M.insert s1 s2 m)
+    else r
 
 addNotation :: Notation -> Environment -> ParserEnv -> Either String ParserEnv
 addNotation (Delimiter s) _ e = do
@@ -182,5 +204,5 @@ addNotation (NNotation x bi ty lits) env e = do
 addNotation (Coercion x s1 s2) env e = do
   fromJustError ("term " ++ x ++ " not declared") (getTerm env x) >>= \case
     ([PReg _ (DepType s1' [])], DepType s2' []) | s1 == s1' && s2 == s2' ->
-      addCoe s1 s2 x e
+      addCoe s1 s2 x e >>= recalcCoeProv env
     _ -> throwError ("coercion '" ++ x ++ "' does not match declaration")

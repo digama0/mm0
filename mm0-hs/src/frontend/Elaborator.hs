@@ -38,7 +38,7 @@ insertSpec :: Spec -> SpecM ()
 insertSpec = modifyEnv . SpecCheck.insertSpec
 
 insertSort :: Ident -> SortData -> SpecM ()
-insertSort v sd = insertSpec (SSort v sd)
+insertSort v sd = insertSpec (SSort v sd) >> modifyParser recalcCoeProv
 
 insertDecl :: Ident -> Decl -> SpecM ()
 insertDecl v d = insertSpec (SDecl v d)
@@ -106,7 +106,7 @@ elabAssert :: Ident -> [Binder] -> Formula -> ([PBinder] -> [SExpr] -> SExpr -> 
 elabAssert x vs fmla mk = do
   ((bis, dummies, hyps, ret), loc) <- withContext x $ runLocalCtxM' $
     processBinders vs $ \vs' ds hs -> do
-      sexp <- parseFormula fmla
+      sexp <- parseFormulaProv fmla
       return (vs', ds, hs, sexp)
   stk <- ask
   lift $ do
@@ -120,7 +120,7 @@ elabDef x vs ty (Just defn) = do
   ((bis, dummies, hyps, defn'), Locals sbd nv) <- withContext x $ runLocalCtxM' $
     processBinders vs $ \vs' ds hs -> do
       checkType ty
-      defn' <- parseFormula defn
+      defn' <- parseFormula (dSort ty) defn
       return (vs', ds, hs, defn')
   stk <- ask
   lift $ do
@@ -130,20 +130,20 @@ elabDef x vs ty (Just defn) = do
     return (DDef bis ty $ Just (dummies, defn'))
 
 elabInout out "string" [x] = do
-  (e, Locals sbd nv) <- runLocalCtxM' $ parseTermFmla x
+  (e, Locals sbd nv) <- runLocalCtxM' $ parseTermFmla "string" x
   guardError "dummy variables not permitted in input arguments" (null sbd && null nv)
   insertSpec (SInout (IOKString out e))
 elabInout _ "string" _ = throwError ("input/output-kind string takes one argument")
 elabInout False k _ = throwError ("input-kind " ++ show k ++ " not supported")
 elabInout True k _ = throwError ("output-kind " ++ show k ++ " not supported")
 
-parseTermFmla :: Either Ident Formula -> LocalCtxM SExpr
-parseTermFmla (Left x) = do
+parseTermFmla :: Ident -> Either Ident Formula -> LocalCtxM SExpr
+parseTermFmla _ (Left x) = do
   env <- readEnv
   case getTerm env x of
     Just ([], _) -> return (App x [])
     _ -> throwError ("input argument " ++ x ++ " is not a nullary term constructor")
-parseTermFmla (Right f) = parseFormula f
+parseTermFmla s (Right f) = parseFormula s f
 
 runLocalCtxM' :: LocalCtxM a -> SpecM (a, Locals)
 runLocalCtxM' m = RWST $ \stk e ->
@@ -174,7 +174,7 @@ processBinders = go M.empty where
     checkType ty
     let bi = PReg (fromMaybe "_" (localName v)) ty
     lcmLocal (lcRegCons bi) (f bi)
-  processBinder (Binder _ (TFormula s)) _ _ h = parseFormula s >>= h
+  processBinder (Binder _ (TFormula s)) _ _ h = parseFormulaProv s >>= h
 
 checkType :: DepType -> LocalCtxM ()
 checkType (DepType v vs) = do

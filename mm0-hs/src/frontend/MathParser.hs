@@ -1,4 +1,4 @@
-module MathParser(parseFormula) where
+module MathParser(parseFormula, parseFormulaProv) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.Reader (ReaderT)
@@ -25,12 +25,21 @@ parseError s = do
   throwError ("math parse error: " ++ s ++ "; at \"" ++
     concatMap (++ " ") (take 5 tks) ++ "...\"")
 
-parseFormula :: Formula -> LocalCtxM SExpr
-parseFormula s = do
+parseFormulaWith :: ((SExpr, Ident) -> ParserM SExpr) -> Formula -> LocalCtxM SExpr
+parseFormulaWith m fmla = do
   pe <- readPE
-  runStateT (parseExpr 0) (tokenize pe s) >>= \case
-    ((sexp, _), []) -> return sexp
+  runStateT (parseExpr 0 >>= m) (tokenize pe fmla) >>= \case
+    (sexp, []) -> return sexp
     _ -> throwError "math parse error: expected '$'"
+
+parseFormula' :: Formula -> LocalCtxM SExpr
+parseFormula' = parseFormulaWith (return . fst)
+
+parseFormula :: Ident -> Formula -> LocalCtxM SExpr
+parseFormula s = parseFormulaWith (coerce s)
+
+parseFormulaProv :: Formula -> LocalCtxM SExpr
+parseFormulaProv = parseFormulaWith (\t -> fst <$> coerceProv t)
 
 tkMatch :: (Token -> Maybe b) -> (Token -> b -> ParserM a) -> ParserM a -> ParserM a
 tkMatch f yes no = StateT $ \case
@@ -67,6 +76,13 @@ coerce s2 (sexp, s1) = do
   c <- fromJustError ("type error, expected " ++ s2 ++
     ", got " ++ show sexp ++ ": " ++ s1) (getCoe s1 s2 pe)
   return (c sexp)
+
+coerceProv :: (SExpr, Ident) -> ParserM (SExpr, Ident)
+coerceProv (sexp, s) = do
+  pe <- lift readPE
+  (s2, c) <- fromJustError ("type error, expected provable sort, got " ++
+    show sexp ++ ": " ++ s) (getCoeProv s pe)
+  return (c sexp, s2)
 
 parseLiterals :: [Ident] -> [PLiteral] -> ParserM [SExpr]
 parseLiterals ls = go I.empty where
