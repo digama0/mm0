@@ -5,28 +5,34 @@
 
 -- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
-$ len l1 = len l2 /\ A. n (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
+$ len l1 = len l2 /\ A. n A. x A. y
+  (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
 
 -- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
-$ len l1 = len l2 /\ E. n (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
+$ len l1 = len l2 /\ E. n E. x E. y
+  (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
 
 -- map : (A -> B) -> list A -> list B
-def map {x: nat} (f: nat x) (l: nat): nat;
-theorem map0 {x: nat} (f: nat x): $ map x f 0 = 0 $;
-theorem mapS {x: nat} (f: nat x) (a l: nat):
-  $ map x f (a : l) = ('[ a / x ] f) : map x f l $;
+def map (F: set) (l: nat): nat;
+theorem map0 (F: set): $ map F 0 = 0 $;
+theorem mapS (F: set) (a l: nat):
+  $ map F (a : l) = F @ a : map F l $;
 
+-- ljoin : list (list A) -> list A
+def ljoin (L: nat): nat;
+theorem ljoin0: $ ljoin 0 = 0 $;
+theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
 
 -- The sort modifiers 'pure', 'strict', 'provable', 'free'
 -- sPure : SortData -> Bool
-def sPure     (n: nat): wff = $ bool (pi11 n) $;
+def sPure     (n: nat): wff = $ true (pi11 n) $;
 -- sStrict : SortData -> Bool
-def sStrict   (n: nat): wff = $ bool (pi12 n) $;
+def sStrict   (n: nat): wff = $ true (pi12 n) $;
 -- sProvable : SortData -> Bool
-def sProvable (n: nat): wff = $ bool (pi21 n) $;
+def sProvable (n: nat): wff = $ true (pi21 n) $;
 -- sFree : SortData -> Bool
-def sFree     (n: nat): wff = $ bool (pi22 n) $;
+def sFree     (n: nat): wff = $ true (pi22 n) $;
 
 -- A binder is either a bound variable with sort s, or a regular variable
 -- with sort s and dependencies vs.
@@ -281,13 +287,13 @@ theorem DeclTerm (env args ret: nat):
   $ Decl env (DTerm args ret) <-> TermOk env args ret $;
 theorem DeclAxiom (env args hs ret: nat) {x: nat}:
   $ Decl env (DAxiom args hs ret) <-> Ctx env args /\
-    all x (ExprProv env args x) (ret : hs) $;
+    all {x | ExprProv env args x} (ret : hs) $;
 theorem DeclDef (env args ret: nat) (sp: wff) {ds e o v: nat}:
   $ Decl env (DDef args ret o sp) <-> TermOk env args ret /\
     A. ds A. e (o = suc (ds <> e) -> DefOk env args ret ds e) $;
 theorem DeclThm (env args hs ret: nat) {x: nat}:
   $ Decl env (DThm args hs ret) <->
-    Ctx env args /\ all x (ExprProv env args x) (ret : hs) $;
+    Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $;
 
 -- This defines a valid mm0 specification. These are well formed ASTs for which
 -- we can assign a provability predicate.
@@ -348,12 +354,12 @@ theorem buildSubstS (ctx es d ds: nat): $ buildSubst ctx es (d : ds) =
 
 -- This performs simultaneous substitution of the variables in `e` with the
 -- expressions in `sub`.
--- substExpr : list SExpr -> SExpr -> SExpr
-def substExpr (sub e: nat): nat;
+-- substExpr : list SExpr -> SExpr => SExpr
+def substExpr (sub: nat): set;
 theorem substExprVar (sub v e: nat):
-  $ nth sub v = suc e -> substExpr sub (SVar v) = e $;
+  $ nth sub v = suc e -> substExpr sub @ (SVar v) = e $;
 theorem substExprApp {x: nat} (sub f es: nat):
-  $ substExpr sub (SApp f es) = SApp f (map x (substExpr sub x) es) $;
+  $ substExpr sub @ (SApp f es) = SApp f (map (substExpr sub) es) $;
 
 -- These mutually recursive functions perform the unfolding operation on
 -- a single expression and a list of expressions, changing the context as more
@@ -375,7 +381,7 @@ theorem unfold1App (env ctx ctx2 ctx3 u f es es2 es3 ud uv: nat):
   $ f e. u -> getDef env f = suc (ud <> uv) ->
     unfold env ctx u es = ctx2 <> es2 ->
     buildSubst ctx2 es2 ud = ctx3 <> es3 ->
-    unfold1 env ctx u (SApp f es) = ctx3 <> substExpr es3 uv $;
+    unfold1 env ctx u (SApp f es) = ctx3 <> substExpr es3 @ uv $;
 theorem unfold0 (env ctx u: nat):
   $ unfold env ctx u 0 = ctx <> 0 $;
 theorem unfoldS (env ctx ctx2 ctx3 e e2 es es2 u: nat):
@@ -430,8 +436,8 @@ theorem VerifyProofThm (env ctx hs t es ps ret: nat)
       A. u A. v (DV args2 u v -> A. e1 A. e2
         (nth es u = suc e1 -> nth es v = suc e2 ->
           ~ (HasVar ctx e1 u /\ HasVar ctx e2 v))) /\
-      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
-      substExpr es ret2 = ret) $;
+      all2 p h (VerifyProof env ctx hs p (substExpr es @ h)) ps hs2 /\
+      substExpr es @ ret2 = ret) $;
 
 -- A theorem is valid if it has a good signature, and when you unfold the
 -- definitions in the signature, the result can be verified with `VerifyProof`.
@@ -480,4 +486,358 @@ theorem ProofProofThm (env e p a h r u d q: nat) (st: wff):
 -- providing all the omitted definitions and proving all the theorems in the
 -- file.
 -- Valid : Env -> Bool
-def Valid (env: nat) {.p: nat}: wff = $ E. p Proof 0 env p $;
+def Valid (env .p: nat): wff = $ E. p Proof 0 env p $;
+
+
+-------------
+-- Parsing --
+-------------
+
+-- The string preamble. This is used for interfacing with
+-- the real world, making concrete inputs and outputs.
+strict free sort hex;
+term x0: hex; term x1: hex; term x2: hex; term x3: hex;
+term x4: hex; term x5: hex; term x6: hex; term x7: hex;
+term x8: hex; term x9: hex; term xa: hex; term xb: hex;
+term xc: hex; term xd: hex; term xe: hex; term xf: hex;
+
+strict free sort char;
+term ch: hex > hex > char;
+
+strict free sort string;
+term s0: string;
+term s1: char > string;
+term sadd: string > string > string; infixr sadd: $'+$ prec 50;
+
+def scons (c: char) (s: string): string = $ s1 c '+ s $;
+infixr scons: $':$ prec 51;
+
+-- Peano translation functions. The sorts `hex`, `char`, `string`
+-- are closed classes, but we can embed them in `nat` as lists
+-- of numbers less than 256, and prove theorems on `nat` instead.
+-- We have to introduce some axioms to deal with the coercion
+-- functions though.
+
+def d11: nat = $suc 10$; prefix d11: $11$ prec max;
+def d12: nat = $suc 11$; prefix d12: $12$ prec max;
+def d13: nat = $suc 12$; prefix d13: $13$ prec max;
+def d14: nat = $suc 13$; prefix d14: $14$ prec max;
+def d15: nat = $suc 14$; prefix d15: $15$ prec max;
+def d16: nat = $suc 15$; prefix d16: $16$ prec max;
+
+term h2n: hex > nat; coercion h2n: hex > nat;
+axiom h2n0: $ x0 = 0 $;   axiom h2n1: $ x1 = 1 $;
+axiom h2n2: $ x2 = 2 $;   axiom h2n3: $ x3 = 3 $;
+axiom h2n4: $ x4 = 4 $;   axiom h2n5: $ x5 = 5 $;
+axiom h2n6: $ x6 = 6 $;   axiom h2n7: $ x7 = 7 $;
+axiom h2n8: $ x8 = 8 $;   axiom h2n9: $ x9 = 9 $;
+axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
+axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
+axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
+
+term c2n: char > nat; coercion c2n: char > nat;
+axiom c2nch (h1 h2: hex): $ ch h1 h2 = h1 * 16 + h2 $;
+
+term s2n: string > nat; coercion s2n: string > nat;
+axiom s2ns0: $ s0 = 0 $;
+axiom s2ns1 (c: char): $ s1 c = c : 0 $;
+axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+
+-- Definition of ASCII, or at least the part of it we need
+def _nl:     char = $ ch x0 xa $; -- "\n" newline character
+def _cr:     char = $ ch x0 xd $; -- "\r" carriage return
+def __:      char = $ ch x2 x0 $; -- " " space
+def _dollar: char = $ ch x2 x4 $; -- "$" dollar sign
+def _lparen: char = $ ch x2 x8 $; -- "(" left parenthesis
+def _rparen: char = $ ch x2 x9 $; -- ")" right parenthesis
+def _ast:    char = $ ch x2 xa $; -- "*" asterisk / multiplication symbol
+def _hyphen: char = $ ch x2 xd $; -- "-" hyphen / minus sign
+def _dot:    char = $ ch x2 xe $; -- "." dot / period / full stop
+def _colon:  char = $ ch x3 xa $; -- ":" colon
+def _semi:   char = $ ch x3 xb $; -- ";" semicolon
+def _equal:  char = $ ch x3 xd $; -- "=" equal sign
+def _gt:     char = $ ch x3 xe $; -- ">" greater than, right arrow
+def _under:  char = $ ch x5 xf $; -- "_" underscore (note: __ is space)
+def _lbrace: char = $ ch x7 xb $; -- "{" left brace / curly bracket
+def _rbrace: char = $ ch x7 xd $; -- "}" right brace / curly bracket
+
+-- Don't really need capitals except as a range
+def _0: char = $ ch x3 x0 $;
+def _1: char = $ ch x3 x1 $;
+def _2: char = $ ch x3 x2 $;
+def _3: char = $ ch x3 x3 $;
+def _4: char = $ ch x3 x4 $;
+def _5: char = $ ch x3 x5 $;
+def _6: char = $ ch x3 x6 $;
+def _7: char = $ ch x3 x7 $;
+def _8: char = $ ch x3 x8 $;
+def _9: char = $ ch x3 x9 $;
+
+-- Don't really need capitals except as a range
+def _A: char = $ ch x4 x1 $;
+def _Z: char = $ ch x5 xa $;
+
+-- Most of the lowercase alphabet, used in keywords
+def _a: char = $ ch x6 x1 $;
+def _b: char = $ ch x6 x2 $;
+def _c: char = $ ch x6 x3 $;
+def _d: char = $ ch x6 x4 $;
+def _e: char = $ ch x6 x5 $;
+def _f: char = $ ch x6 x6 $;
+def _h: char = $ ch x6 x8 $;
+def _i: char = $ ch x6 x9 $;
+def _l: char = $ ch x6 xc $;
+def _m: char = $ ch x6 xd $;
+def _n: char = $ ch x6 xe $;
+def _o: char = $ ch x6 xf $;
+def _p: char = $ ch x7 x0 $;
+def _r: char = $ ch x7 x2 $;
+def _s: char = $ ch x7 x3 $;
+def _t: char = $ ch x7 x4 $;
+def _u: char = $ ch x7 x5 $;
+def _v: char = $ ch x7 x6 $;
+def _x: char = $ ch x7 x8 $;
+def _z: char = $ ch x7 xa $;
+
+-- Now we define the lexer:
+
+def prefix (s t .x: nat): wff = $ E. x s ++ x = t $;
+
+def maxPrefix (A: set) (s: nat): nat;
+theorem maxPrefix0 {x: nat} (A: set) (s: nat):
+  $ ~ (E. x (prefix x s /\ x e. A)) -> maxPrefix A s = 0 $;
+theorem maxPrefixS {x y: nat} (A: set) (s: nat):
+  $ E. x (prefix x s /\ x e. A) ->
+    E. x (prefix x s /\ x e. A /\
+          A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+          maxPrefix A s = suc x) $;
+
+def regexStar (R: set) (.s .t .L .x .y: nat): set =
+$ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;
+def regexApp (R S: set) (.z .a .b .x .y: nat): set =
+$ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
+    z = (x ++ y) <> (a <> b))} $;
+infixr regexApp: $<+>$ prec 75;
+def regexPlus (R: set) (.x: nat): set =
+$ regexStar R i^i {x | snd x != 0} $;
+def regexOpt (R: set) (.s .t .y: nat): set =
+$ sn 0 u. opab s t (E. y (s <> y e. R /\ t = suc y)) $;
+
+-- The set of whitespace characters
+-- white : set char
+def white: nat = $ __ ; sn _nl $;
+
+def regexLineComment (.x .y: nat): set =
+$ (\ x, _hyphen : _hyphen : x ++ _nl : 0) '' {x | all {y | y != _nl} x} $;
+
+def whitespace (.c: nat): set =
+$ ((\ c, c : 0) '' white) u. regexLineComment $;
+
+def regexMath (.x .y: nat): set =
+$ (\ x, _dollar : x ++ _dollar : 0) '' {x | all {y | y != _dollar} x} $;
+
+def IdentStart (.c: nat): set =
+$ {c | (_a <= c /\ c <= _z) \/ (_A <= c /\ c <= _Z) \/ c = _under} $;
+
+def digits (.c: nat): set = $ {c | _0 <= c /\ c <= _9} $;
+
+def IdentRest (.c: nat): set = $ IdentStart u. digits $;
+
+def regexIdent (.s .x .y .t: nat): set =
+$ {s | E. x E. t (s = x : t /\ x e. IdentStart /\ all IdentRest t)} $;
+
+def isNumber (.s .x .y .t: nat): set =
+$ sn _0 u. {s | E. x E. t (s = x : t /\
+  _1 <= x /\ x <= _9 /\ all digits t)} $;
+
+def symbols: nat =
+$ _ast ; _dot ; _colon ; _semi ; _lparen ; _rparen ;
+  _gt ; _lbrace ; _rbrace ; sn _equal $;
+
+def TK (s: nat): nat = $ b0 s $;
+def MATH (s: nat): nat = $ b1 s $;
+
+def Tokenize (s: nat): set;
+theorem Tokenize0: $ Tokenize 0 == sn 0 $;
+theorem TokenizeWS (s x: nat):
+  $ s e. whitespace -> Tokenize (s ++ x) == Tokenize x $;
+theorem TokenizeIdent {t: nat} (s x: nat):
+  $ maxPrefix regexIdent s = suc x ->
+    Tokenize s == (\ t, TK x : t) '' Tokenize x $;
+theorem TokenizeNumber {t: nat} (s x: nat):
+  $ maxPrefix isNumber s = suc x ->
+    Tokenize s == (\ t, TK x : t) '' Tokenize x $;
+theorem TokenizeSymbol {t: nat} (c x: nat):
+  $ c e. symbols -> Tokenize (c : x) == (\ t, TK (c : 0) : t) '' Tokenize x $;
+theorem TokenizeMath {t: nat} (s x: nat):
+  $ s e. regexMath -> Tokenize (s ++ x) == (\ t, MATH s : t) '' Tokenize x $;
+
+
+-- Now the parser:
+
+def regexMap (F R: set): set = $ cnv F o. R $;
+infixr regexMap: $<@>$ prec 100;
+
+def regexAppL (R S: set) (.x: nat): set = $ (\ x, fst x) <@> (R <+> S) $;
+infixl regexAppL: $<+$ prec 77;
+
+def regexAppR (R S: set) (.x: nat): set = $ (\ x, snd x) <@> (R <+> S) $;
+infixr regexAppR: $+>$ prec 76;
+
+def parseTk (tk: string): set = $ sn (TK tk <> 0) $;
+def parseOptTk (tk: string): set = $ regexOpt (parseTk tk) $;
+def parseCh (c: char): set = $ parseTk (s1 c) $;
+
+def _pure: string = $ _p ': _u ': _r ': _e ': s0 $;
+def _strict: string = $ _s ': _t ': _r ': _i ': _c ': _t ': s0 $;
+def _provable: string = $ _p ': _r ': _o ': _v ': _a ': _b ': _l ': _e ': s0 $;
+def _free: string = $ _f ': _r ': _e ': _e ': s0 $;
+
+def parseSortData: set =
+$ (parseOptTk _pure <+> parseOptTk _strict) <+>
+  (parseOptTk _provable <+> parseOptTk _free) $;
+
+def parseIdent_ (.s: nat): set = $ (\ s, TK s <> s) '' regexIdent $;
+def parseIdent (.x: nat): set = $ parseIdent_ i^i {x | snd x != s1 _under} $;
+
+def ASTSort (x: nat): nat = $ b0 (b0 (b0 x)) $;
+def ASTTerm (x: nat): nat = $ b0 (b0 (b1 x)) $;
+def ASTAxiom (x: nat): nat = $ b0 (b1 (b0 x)) $;
+def ASTDef (x: nat): nat = $ b0 (b1 (b1 x)) $;
+def ASTThm (x: nat): nat = $ b1 (b0 (b0 x)) $;
+def ASTIO (x: nat): nat = $ b1 (b0 (b1 x)) $;
+def ASTNota (x: nat): nat = $ b1 (b1 x) $;
+
+def _sort: string = $ _s ': _o ': _r ': _t ': s0 $;
+def parseSort (.x: nat): set = $ (\ x, ASTSort x) <@>
+  (parseSortData <+> parseTk _sort +> parseIdent <+ parseCh _semi) $;
+
+def parseType (.x: nat): set = $ (\ x, b0 x) <@>
+  (parseIdent <+> regexStar parseIdent) $;
+def parseFmla (.s: nat): set = $ ran (\ s, MATH s <> b1 s) $;
+def parseTypeFmla: set = $ parseType u. parseFmla $;
+
+def parseDummyId (.x: nat): set =
+$ (\ x, b0 x) <@> parseIdent_ u.
+  (\ x, b1 x) <@> (parseCh _dot +> parseIdent) $;
+
+-- This throws all binders into a common parsed representation.
+-- {x: set}     goes to    b0 (b0 "x", b0 ("set", []))
+-- (x: set)     goes to    b1 (b0 "x", b0 ("set", []))
+-- (x: set y)   goes to    b1 (b0 "x", b0 ("set", ["y"]))
+-- (x: $foo$)   goes to    b1 (b0 "x", b1 "foo")
+-- (_: $foo$)   goes to    b1 (b0 "_", b1 "foo")
+-- (.x: set)    goes to    b1 (b1 "x", b0 ("set", []))
+
+def parseCurlyBinder (.x .z: nat): set =
+$ (\ z, map (\ x, b0 (x <> snd z)) (fst z)) <@>
+  (parseCh _lbrace +> regexStar parseDummyId <+>
+    parseCh _colon +> parseTypeFmla <+ parseCh _rbrace) $;
+def parseRegBinder (.x .z: nat): set =
+$ (\ z, map (\ x, b1 (x <> snd z)) (fst z)) <@>
+  (parseCh _lparen +> regexStar parseDummyId <+>
+    parseCh _colon +> parseTypeFmla <+ parseCh _rparen) $;
+def parseBinder (.x .y: nat): set = $ parseCurlyBinder u. parseRegBinder $;
+
+def parseBinders (.x .z: nat): set =
+$ (\ x, ljoin x) <@> regexStar parseBinder $;
+
+def parseArrows: set =
+$ regexStar (parseTypeFmla <+ parseCh _gt) <+> parseTypeFmla $;
+
+def parseBindersAndArrows (.x .z: nat): set =
+$ (\ x, (fst x ++ map (\ z, b1 (b0 (s1 _under) <> z)) (pi21 x)) <> pi22 x) <@>
+  (parseBinders <+> parseCh _colon +> parseArrows) $;
+
+def parseSimple (tk: string): set =
+$ parseTk tk +> parseIdent <+> parseBindersAndArrows <+ parseCh _semi $;
+
+def _term: string = $ _t ': _e ': _r ': _m ': s0 $;
+def parseTerm (.x: nat): set = $ (\ x, ASTTerm x) <@> parseSimple _term $;
+
+def _axiom: string = $ _a ': _x ': _i ': _o ': _m ': s0 $;
+def parseAxiom (.x: nat): set = $ (\ x, ASTAxiom x) <@> parseSimple _axiom $;
+
+def _theorem: string = $ _t ': _h ': _e ': _o ': _r ': _e ': _m ': s0 $;
+def parseThm (.x: nat): set = $ (\ x, ASTThm x) <@> parseSimple _theorem $;
+
+def _def: string = $ _d ': _e ': _f ': s0 $;
+def parseDef (.x: nat): set = $ (\ x, ASTDef x) <@>
+  (parseTk _theorem +> parseIdent <+> parseBinders <+>
+    parseCh _colon +> parseType <+>
+    regexOpt (parseCh _equal +> parseFmla) <+ parseCh _semi) $;
+
+def NotaDelim (x: nat): nat = $ b0 (b0 x) $;
+def NotaInfix (x y: nat): nat = $ b0 (b1 (b0 (x <> y))) $;
+def NotaPfx (x: nat): nat = $ b0 (b1 (b1 x)) $;
+def NotaCoe (x: nat): nat = $ b1 (b0 x) $;
+def NotaGen (x: nat): nat = $ b1 (b1 x) $;
+
+def _delimiter: string =
+$ _d ': _e ': _l ': _i ': _m ': _i ': _t ': _e ': _r ': s0 $;
+def parseDelim (.x: nat): set = $ (\ x, NotaDelim x) <@>
+  (parseTk _delimiter +> parseFmla <+ parseCh _semi) $;
+
+def stoi (x: nat): nat;
+theorem stoi0: $ stoi 0 = 0 $;
+theorem stoiS (s x: nat): $ stoi (s |> x) = stoi s * 10 + (x - _0) $;
+
+def parseNumber (.s: nat): set = $ (\ s, TK s <> stoi s) '' isNumber $;
+
+def _max: string = $ _m ': _a ': _x ': s0 $;
+def parsePrec (.x: nat): set = $ parseTk _max u. (\ x, suc x) <@> parseNumber $;
+
+def _prec: string = $ _p ': _r ': _e ': _c ': s0 $;
+def parseSimpleNota (tk: string): set =
+$ parseTk tk +> parseIdent <+> parseCh _colon +> parseFmla <+>
+    parseTk _prec +> parsePrec <+ parseCh _semi $;
+
+def _infixl: string = $ _i ': _n ': _f ': _i ': _x ': _l ': s0 $;
+def _infixr: string = $ _i ': _n ': _f ': _i ': _x ': _r ': s0 $;
+def _prefix: string = $ _p ': _r ': _e ': _f ': _i ': _x ': s0 $;
+def parseInfixl (.x: nat): set = $ (\ x, NotaInfix 0 x) <@> parseSimpleNota _infixl $;
+def parseInfixr (.x: nat): set = $ (\ x, NotaInfix 1 x) <@> parseSimpleNota _infixr $;
+def parsePfx (.x: nat): set = $ (\ x, NotaPfx x) <@> parseSimpleNota _prefix $;
+
+def _coercion: string = $ _c ': _o ': _e ': _r ': _c ': _i ': _o ': _n ': s0 $;
+def parseCoe (.x: nat): set = $ (\ x, NotaCoe x) <@>
+  (parseTk _coercion +> parseIdent <+>
+   parseCh _colon +> parseIdent <+>
+   parseCh _gt +> parseIdent <+> parseCh _semi) $;
+
+def parseLiteral: set =
+$ (parseCh _lparen +> parseFmla <+>
+    parseCh _colon +> parsePrec <+ parseCh _rparen) u. parseIdent $;
+
+def _notation: string = $ _n ': _o ': _t ': _a ': _t ': _i ': _o ': _n ': s0 $;
+def parseGenNota (.x: nat): set = $ (\ x, NotaCoe x) <@>
+  (parseTk _notation +> parseIdent <+>
+   parseBinders <+> parseCh _colon +> parseType <+>
+   parseCh _equal +> regexPlus parseLiteral <+ parseCh _semi) $;
+
+def parseNota (.x: nat): set = $ (\ x, ASTNota x) <@>
+  (parseDelim u. parseInfixl u. parseInfixr u. parsePfx u.
+    parseCoe u. parseGenNota) $;
+
+def _input: string = $ _i ': _n ': _p ': _u ': _t ': s0 $;
+def _output: string = $ _o ': _u ': _t ': _p ': _u ': _t ': s0 $;
+
+def inputKinds: nat = $0$;
+def outputKinds: nat = $0$;
+
+def parseIO1 (tk: string) (k .x .s: nat): set =
+$ parseTk tk +> (parseIdent i^i {x | snd x e. k}) <+>
+  parseCh _colon +>
+    regexStar (((\ s, TK s) <@> parseIdent) u. ran (\ s, MATH s <> MATH s))
+    <+ parseCh _semi $;
+
+def parseIO (.x: nat): set =
+$ ((\ x, ASTIO (b0 x)) <@> parseIO1 _input inputKinds) u.
+  ((\ x, ASTIO (b1 x)) <@> parseIO1 _output outputKinds) $;
+
+def parseAST: set =
+$ regexStar (parseSort u. parseTerm u. parseAxiom u.
+    parseThm u. parseDef u. parseNota u. parseIO) $;
+
+def parse (s: string) (.tks .ast: nat): set =
+$ {ast | E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST)} $;

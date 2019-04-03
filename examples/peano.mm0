@@ -20,7 +20,7 @@ infixl or: $\/$ prec 30;
 def tru (.p: wff): wff = $ p <-> p $; prefix tru: $T.$ prec max;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
-pure sort nat;
+sort nat;
 term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
 
 def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
@@ -37,7 +37,7 @@ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation sb (a: nat) {x: nat} (ph: wff x): wff =
-  ($[$:0) a ($/$:0) x ($]$:0) ph;
+  ($[$:30) a ($/$:0) x ($]$:0) ph;
 
 axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
 axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
@@ -46,17 +46,34 @@ axiom ax_10 {x: nat} (ph: wff x): $ ~(A. x ph) -> A. x ~ (A. x ph) $;
 axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
 axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> [ y / x ] ph $;
 
-term iota {x: nat} (ph: wff x): nat;
-prefix iota: $i.$ prec 55;
+strict sort set;
+term ab {x: nat} (ph: wff x): set;
+notation ab {x: nat} (ph: wff x): set = (${$:max) x ($|$:0) ph ($}$:0);
+term el: nat > set > wff; infixl el: $e.$ prec 50;
+axiom elab (a: nat) {x: nat} (ph: wff x):
+  $ a e. {x | ph} <-> [ a / x ] ph $;
 
-axiom iotaeq {x: nat} (ph ps: wff x):
-  $ A. x (ph <-> ps) -> i. x ph = i. x ps $;
-axiom cbviota {x y: nat} (ph: wff x): $ i. y ([ y / x ] ph) = i. x ph $;
-axiom df_iota {x: nat} (a: nat): $ i. x (x = a) = a $;
+def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
+infixl eqs: $==$ prec 50;
 
-def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ i. x ([ b / x ] x = a) $;
+term the: set > nat;
+axiom the_eq {x: nat} (a: nat): $ the {x | x = a} = a $;
+
+def inter (A B: set) (.x: nat): set = $ {x | x e. A /\ x e. B} $;
+infixl inter: $i^i$ prec 70;
+
+def union (A B: set) (.x: nat): set = $ {x | x e. A \/ x e. B} $;
+infixl union: $u.$ prec 65;
+
+def univ (.x: nat): set = $ {x | T.} $; prefix univ: $V$ prec max;
+
+def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
+notation sbs (a: nat) {x: nat} (A: set x): set =
+  ($S[$:70) a ($/$:0) x ($]$:0) A;
+
+def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the(S[ a / x ] {y | y = b}) $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
-  ($'[$:max) a ($/$:0) x ($]$:0) b;
+  ($N[$:70) a ($/$:0) x ($]$:0) b;
 
 term d0: nat; prefix d0: $0$ prec max;
 term suc: nat > nat;
@@ -116,55 +133,85 @@ def pi12 (n: nat): nat = $ snd (fst n) $;
 def pi21 (n: nat): nat = $ fst (snd n) $;
 def pi22 (n: nat): nat = $ snd (snd n) $;
 
-def el (a b: nat): wff; infixl el: $e.$ prec 50;
-
-theorem axext {x: nat} (a b: nat): $ A. x (x e. a <-> x e. b) -> a = b $;
-theorem extlt (a b: nat): $ a e. b -> a < b $;
-theorem nel0 (a: nat): $ ~ a e. 0 $;
-
-def ins (a b: nat): nat;
-theorem elins (a b c: nat): $ a e. ins b c <-> a = b \/ a e. c $;
-
 def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
 theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
 theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
-  $ rec z x s (suc n) = '[ rec z x s n / x ] s $;
+  $ rec z x s (suc n) = N[ rec z x s n / x ] s $;
+
+def sub (a b: nat): nat; infixl sub: $-$ prec 65;
+theorem sub0 (a: nat): $ a - 0 = a $;
+theorem subZ (b: nat): $ 0 - b = 0 $;
+theorem subSS (a b: nat): $ suc a - suc b = a - b $;
 
 def pow (a b: nat): nat; infixr pow: $^$ prec 80;
 theorem pow0 (a: nat): $ a ^ 0 = 1 $;
 theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;
 
+def nel (a b: nat): wff;
+def ns (a .x: nat): set = ${x | nel x a}$; coercion ns: nat > set;
+theorem axext {x: nat} (a b: nat): $ a == b -> a = b $;
+theorem extlt (a b: nat): $ a e. b -> a < b $;
+theorem nel0 (a: nat): $ ~ a e. 0 $;
+
+def lower (A: set) (.n: nat): nat = $ the {n | n == A} $;
+
+def sn (a: nat): nat;
+theorem elsn (a b: nat): $ a e. sn b <-> a = b $;
+
+def ins (a b: nat): nat; infixr ins: $;$ prec 84;
+theorem elins (a b c: nat): $ a e. ins b c <-> a = b \/ a e. c $;
+
 def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
 
-def ab {x: nat} (ph: wff x) (a: nat): nat;
-notation ab {x: nat} (ph: wff x) (a: nat): nat =
-  (${$:max) x ($<$:50) a ($|$:0) ph ($}$:0);
-theorem elab {x: nat} (a: nat) (ph: wff x) (b: nat):
-  $ b e. {x < a | ph} <-> b < a /\ [ b / x ] ph $;
+def sep (n: nat) (A: set): nat;
+theorem elsep (n: nat) (A: set) (a: nat):
+  $ a e. sep n A <-> a e. n /\ a e. A $;
 
-def lam {x: nat} (b: nat x) (a: nat): nat;
-notation lam {x: nat} (b: nat x) (a: nat): nat =
-($\$:55) x ($<$:50) a ($,$:0) b;
+def range (n: nat): set;
+theorem elrange (n m: nat): $ m e. range n <-> m < n $;
 
-def app (f x: nat): nat; infixl app: $@$ prec 200;
-theorem app0 (a: nat): $ a @ 0 = fst a $;
-theorem appS (a n: nat): $ a @ suc n = snd a @ n $;
+def isfun (A: set) (.a .b .b2: nat): wff =
+$ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
 
-theorem lamapp {x: nat} (a: nat) (b: nat x) (n: nat):
-  $ n < a -> (\ x < a, b) @ n = '[ n / x ] b $;
-theorem lamapp0 {x: nat} (a: nat) (b: nat x) (n: nat):
-  $ ~ n < a -> (\ x < a, b) @ n = 0 $;
+def opab {x y .z: nat} (ph: wff x y): set =
+$ {z | E. x E. y (z = x <> y /\ ph)} $;
 
-def srec {x: nat} (s: nat x) (n: nat): nat;
+def xp (A B: set) (.x .y .z: nat): set = $ opab x y (x e. A /\ y e. B) $;
+
+def dom (A: set) (.x .y: nat): set = $ {x | E. y x <> y e. A} $;
+def ran (A: set) (.x .y: nat): set = $ {y | E. x x <> y e. A} $;
+
+def im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
+infixl im: $''$ prec 80;
+
+def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
+
+def comp (F G: set) (.x .y .z: nat): set =
+$ opab x z (E. y x <> y e. G /\ y <> z e. F) $;
+infixr comp: $o.$ prec 90;
+
+def res (A: set) (n: nat): nat = $ sep (lower (xp (range n) V)) A $;
+infixl res: $|`$ prec 55;
+theorem elres (n a b: nat) (A: set):
+  $ isfun A -> (a <> b e. A |` n <-> a < n /\ a <> b e. A) $;
+
+def lam {x .p: nat} (a: nat x): set = ${p | E. x p = x <> a}$;
+notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
+
+def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
+infixl app: $@$ prec 200;
+
+def srec {x: nat} (s: nat x): set;
 theorem srecval {x y: nat} (s: nat x) (n: nat):
-  $ srec x s n = '[ (\ y < n, srec x s y) / x ] s $;
+  $ srec x s @ n = N[ srec x s |` n / x ] s $;
 
-def srecp {x: nat} (ph: wff x) (n: nat): wff;
-theorem srecpval {x y: nat} (ph: wff x) (n: nat):
-  $ srecp x ph n <-> [ {y < n | srecp x ph y} / x ] ph $;
+def srecp (A: set): set;
+theorem srecpval (A: set) (n: nat):
+  $ n e. srecp A <-> n <> sep n (srecp A) e. A $;
 
 def div (a b: nat): nat; infixl div: $//$ prec 70;
 def mod (a b: nat): nat; infixl mod: $%$ prec 70;
+theorem div0 (a: nat): $ a // 0 = 0 $;
 theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
 theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
 
@@ -172,35 +219,30 @@ def b0 (n: nat): nat = $ n + n $;
 def b1 (n: nat): nat = $ suc (b0 n) $;
 def odd (n: nat): wff = $ n % 2 = 1 $;
 
-def case {x: nat} (a b: nat x) (n: nat): nat =
-  $ if (odd n) ('[ n // 2 / x ] a) ('[ n // 2 / x ] b) $;
-theorem casel {x: nat} (a b: nat x) (n: nat):
-  $ case x a b (b0 n) = '[ n / x ] a $;
-theorem caser {x: nat} (a b: nat x) (n: nat):
-  $ case x a b (b1 n) = '[ n / x ] b $;
+def case (A B: set) (n: nat): nat =
+  $ if (odd n) (B @ (n // 2)) (A @ (n // 2)) $;
+theorem casel (A B: set) (n: nat): $ case A B (b0 n) = A @ n $;
+theorem caser (A B: set) (n: nat): $ case A B (b1 n) = B @ n $;
 
-def casep {x: nat} (a b: wff x) (n: nat): wff;
-theorem casepl {x: nat} (a b: wff x) (n: nat):
-  $ casep x a b (b0 n) <-> [ n / x ] a $;
-theorem casepr {x: nat} (a b: wff x) (n: nat):
-  $ casep x a b (b1 n) <-> [ n / x ] b $;
+def casep (A B: set): set;
+theorem casepl (A B: set) (n: nat): $ b0 n e. casep A B <-> n e. A $;
+theorem casepr (A B: set) (n: nat): $ b1 n e. casep A B <-> n e. B $;
 
-def all {x: nat} (ph: wff x) (n: nat): wff;
-theorem all0 {x: nat} (ph: wff x): $ all x ph 0 $;
-theorem allS {x: nat} (ph: wff x) (a b : nat):
-  $ all x ph (a : b) <-> [ a / x ] ph /\ all x ph b $;
+def all (A: set) (n: nat): wff;
+theorem all0 (A: set): $ all A 0 $;
+theorem allS (A: set) (a b : nat): $ all A (a : b) <-> a e. A /\ all A b $;
 
 def in (a l : nat): wff; infixl in: $IN$ prec 50;
 theorem id0 (a: nat): $ ~ a IN 0 $;
 theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
 
-def lrec (z: nat) {x y: nat} (s: nat x y) (n: nat): nat;
-theorem lrec0 (z: nat) {x y: nat} (s: nat x y): $ lrec z x y s 0 = z $;
-theorem lrecS (z: nat) {x y: nat} (s: nat x y) (a b: nat):
-  $ lrec z x y s (a : b) = '[ a / x ] '[ lrec z x y s b / y ] s $;
+def lrec (z: nat) (S: set) (n: nat): nat;
+theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $;
+theorem lrecS (z: nat) (S: set) (a b: nat):
+  $ lrec z S (a : b) = S @ (a <> lrec z S b) $;
 
 def len (l: nat): nat;
-theorem led0: $ len 0 = 0 $;
+theorem len0: $ len 0 = 0 $;
 theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
 
 def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
