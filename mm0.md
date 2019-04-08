@@ -235,6 +235,7 @@ The nonterminals `expression(prec)` are defined by the following productions:
       X(v (c: p) lits, q) = expression(p+1) X((c: p) lits, q)
       X(v1 v2 lits, q) = expression(max) X(v2 lits, q)
       X(v, q) = expression(q)
+      X([], q) = []
 
 The term constructors appear in the syntax as s-expressions at precedence level `1024`. `notation` commands have precedences on the constants, such that the precedence on the immediately preceding variable is one higher. There are rules on notations to prevent an ambiguous parse:
 
