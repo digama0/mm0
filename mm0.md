@@ -257,7 +257,15 @@ There are two notions of correctness for a specification file. First, it can be 
 
 When `output` is involved, the specification describes a relation that should hold on the output of the verifier on success.
 
-TODO
+The [examples/mm0.mm0](examples/mm0.mm0) file contains a complete formal specification of the interpretation function, from string input through lexing, parsing and elaboration, to well formedness checking and validation.
+
+MM0 should be viewed as a logical foundation, based on many-sorted first order logic without equality. In order to simplify the core validation step, however, we use a simplified underapproximation of bound variables. Unlike HOL, this language does not have higher order sorts or variables. Instead, the built in notion is of an "open term", a variable which only depends on an explicitly designated list of bound variables (as well as other variables in an outer context).
+
+* A `sort` directive declares a new sort. None of the sort modifiers affect the semantics of the sort, although they can be used to restrict uses of the sort.
+* A `term` directive creates a new function symbol in the first order logic. These are combined to produce expressions.
+* An `axiom` directive declares a new axiom or inference rule. This asserts that a term in a provable sort (i.e. a formula) is derivable if all the hypotheses are derivable.
+* A `def` directive allows the creation of a new function symbol, defined to equal some expression in terms of the input variables, as well as some additional "dummy variables", which do not appear as arguments to the definition and are instantiated "arbitrarily" when unfolded. (See Definition Substitution.)
+* A `theorem` directive asserts that a formula is derivable assuming that the hypotheses are derivable.
 
 Variable inference
 ---
@@ -295,6 +303,44 @@ Once all the bindings are accumulated, all the variables with open types are giv
 and this is the version of the theorem that is proven in the proof file.
 
 For definitions, the process is the same except that inferred bound variables are marked as dummy variables. It is illegal for a bound variable in a definition to not appear as a type dependency to some other variable.
+
+Type checking
+---
+
+The math expressions in `theorem`, `axiom`, and `def` commands must be elaborated into type correct expressions during parsing. This process is called type checking. Given `term foo: A > B > C`, any expression `foo a b` requires that `a` be of sort `A` and `b` have sort `B`, and the result has sort `C`. Notations allow additional ways to write such terms, but the type checking process is the same. If coercions are declared, then coercion functions may be inserted into the term in order to prevent a type error; for example, if `a` has type `X` instead, but a coercion `coercion xa: X > A` is declared, then the elaborated s-expression is `foo (xa a) b` instead. The restrictions on coercions prevent the possibility of multiple valid parses.
+
+Some terms accept bound variables, such as `term all {x: set} (ph: wff x): wff`. Here a term `all a P` requires that `a` have sort `set` and `P` have sort `wff` (the `x` in `wff x` does not matter for type checking), but because `x` is a bound variable, `a` must also be a bound variable (not a more complicated expression of sort `set`).
+
+Definition checking
+---
+
+A definition may depend on declared bound and regular variables, as well as dummy variables. The definition itself must be type-correct, but we additionally track that every free variable in the definiens is among the dependencies in the result type. So for example:
+
+    def weu {x .y: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
+
+We can calculate the free variables of the expression recursively.
+
+    FV(ph) = {x}
+    FV(x) = {x}
+    FV(y) = {y}
+    FV(x =s y) = FV(x) u. FV(y) = {x, y}
+    FV(ph <-> x =s y) = FV(ph) u. FV(x =s y) = {x, y}
+    FV(A. x (ph <-> x =s y)) = FV(ph <-> x =s y) \ {x} = {y}
+    FV(E. y A. x (ph <-> x =s y)) = FV(A. x (ph <-> x =s y)) \ {y} = {}
+
+We only care about bound variables (variables with curly binders) for the calculation. Here the fact that `A.` has the declaration `term all {x: set} (ph: wff x): wff` means that any occurrences of `x` in `ph` are bound by the term. If it had type `{x: set}: wff x > wff x` then it would depend on `x` regardless of whether an `x` appears in the subterms, and if it had type `{x: set} (ph: wff): wff` then `x` would not be free in `all x ph` unless it appears in `ph`. More generally, `v` is free in a term `foo x1 ... xn`:
+
+* If `v` is substituted for bound variable `xi`, and `foo` has return type depending on `xi`, or
+* If `v` is free in the substitution for regular variable `xi`,
+  * unless `v` is also substituted for bound variable `xj` and `xi` depends on `xj`
+
+For example, if
+
+    term foo {x y: set} (ph: wff x): wff y;
+
+then for the term `foo a b P`, we have `FV(foo a b P) = (FV(P) \ {a}) u. {b}`, so that if `P := (a = b /\ a = c)` then `FV(P) = {a,b,c}` and `FV(foo a b P) = {b,c}`.
+
+We require for a definition, that every free variable in the definiens with a  `free` sort is among the declared dependencies of the definition (i.e. the return type is `wff x` if `x` is free in the definiens and the sort of `x` is declared as `free`).
 
 Definition substitution
 ---
@@ -339,69 +385,34 @@ translates to:
 Proof files
 ===
 
-The syntax of a proof file is implementation dependent, but we will give one possible format, used by the reference implementation. It is designed to be read and used by the verifier in an efficient and convenient way. Usually, such a file will be compiled from another language to prepare it for use by the verifier. The contents of the proof file do not affect the correctness of any of the theorems in the specification file. At worst, the verifier will fail on a provable theorem, because it was not able to find the proof with the assistance of the proof file.
+The syntax of a proof file is implementation dependent. It is designed to be read and used by the verifier in an efficient and convenient way. Usually, such a file will be compiled from another language to prepare it for use by the verifier. The contents of the proof file do not affect the correctness of any of the theorems in the specification file. At worst, the verifier will fail on a provable theorem, because it was not able to find the proof with the assistance of the proof file.
 
-The reference implementation uses a binary proof format, but we will show it with a similar syntax to the `.mm0` format for convenience.
+See [mm0-hs/README.md](mm0-hs/README.md) for the proof file format of the reference implementation.
 
-For the [set.mm0](set.mm0) running example, which begins as:
+Verification
+---
 
-    strict provable sort wff;
-    var ph ps ch: wff*;
-    term wi (ph ps: wff): wff; infixr wi: $->$ prec 25;
-    term wn (ph: wff): wff; prefix wn: $~$ prec 40;
+The verification of a specification file proceeds in linear order through the file, providing definitions for any `def` directives without a given definition, and providing proofs for all the `theorem` statements.
 
-    axiom ax-1: $ ph -> ps -> ph $;
-    axiom ax-2: $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
-    axiom ax-3: $ (~ph -> ~ps) -> ps -> ph $;
-    axiom ax-mp: $ ph $ > $ ph -> ps $ > $ ps $;
+Inside a theorem context, we have all the variables in the theorem statement (after definition unfolding), plus all the hypotheses, plus any number of additional dummy variables of any desired sorts (these are usually declared up-front as with `def` statements, but they don't appear in the specification file). From this (fixed) context, we can derive two types of statements:
 
-    theorem a1i: $ ph $ > $ ps -> ph $;
+* Expression `e` is well formed of sort `T` (optionally: and `Vars(e) = S`)
+* Expression `ph` is derivable.
 
-    def wb (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $ {
-      infixl wb: $<->$ prec 20;
+We must show that the conclusion of the theorem is derivable. The inference rules are:
 
-      theorem bi1: $ (ph <-> ps) -> ph -> ps $;
-      theorem bi2: $ (ph <-> ps) -> ps -> ph $;
-      theorem bi3: $ (ph -> ps) -> (ps -> ph) -> (ph <-> ps) $;
-    }
-
-the corresponding section of the proof file might look like:
-
-    sort wff;
-    term wi;
-    term wn;
-
-    axiom ax-1;
-    axiom ax-2;
-    axiom ax-3;
-    axiom ax-mp;
-
-    new theorem mp2 (ph ps ch: wff) (h1: $ ph $) (h2: $ ps $)
-      (h3: $ ph -> ps -> ch $): $ ch $ =
-      ax-mp ps ch h2 (ax-mp ph $ps -> ch$ h1 h3);
-
-    theorem a1i (ph ps: wff) (h1: $ ph $): $ ps -> ph $ =
-      ax-mp ph $ps -> ph$ h1 (ax-1 ph ps);
-
-    theorem bi1 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ph -> ps $ = ...;
-    theorem bi2 (ph ps: wff): $ ~((ph -> ps) -> ~(ps -> ph)) -> ps -> ph $ = ...;
-    theorem bi3 (ph ps: wff): $ (ph -> ps) -> (ps -> ph) -> ~((ph -> ps) -> ~(ps -> ph)) $ = ...;
-
-    new theorem biid (ph: wff): $ ph <-> ph $ = ...;
-
-    new def wo (ph ps: wff): wff = $ ~ph -> ps $ {
-      -- infixl wo: $\/$ prec 20;
-      new theorem df-or (ph ps: wff): $ (ph \/ ps) <-> (~ph -> ps) $ =
-        proof (ph ps: wff): $ (~ph -> ps) <-> (~ph -> ps) $ =
-          biid $ ~ph -> ps $;
-    }
-
-
-The declarations must come in the same order as they appear in the specification file. The `term` and `axiom` declarations serve only to move the "pointer" through the file, acknowledging that these axioms are now available for use in proofs. The theorem `mp2` in this example does not exist in the specification file; this is permitted. Similarly definitions may be added beyond those present in the specification file, and they may be referenced in proofs as well. These follow the same rules as declarations in the specification file itself, with the following modifications:
-
-* `sort`, `term` and `axiom` only refer to the corresponding directive by name and provide no definition. These must be declared in the same order as in the specification file.
-* There are no notation commands. (The math strings appearing above are only there for readability; the actual proof file format uses s-expressions in RPN.)
-* There are no `var` statements and no variable inference. All variables are declared in the theorems.
-* In the concrete syntax above, `new theorem` means the statement was not declared in the specification file, while `theorem`s have corresponding statements. The statements must be given in the same order as in the specification file.
-* Similarly `new def` allows the declaration of definitions that do not appear in the specification.
-  * Theorems in a new definition block have two theorem statements, indicated with the ad hoc notation `new theorem foo: ... = proof ... = ...` above. The first is the "global" version, which is how this theorem appears to users of the theorem; the second is the version that is proved. The verifier should check that the second statement is obtained from the first by substitution of the definition, as in regular definition blocks.
+* If `v` is a variable in the context of sort `T`, then `v` is well formed of sort `T`, and `Vars(v) = {v}`.
+* If `foo` is a term or definition, and `e1 ... en` are given such that
+  * `ei` is well formed of sort `Ti` and `Vars(ei) = Si`,
+  * the type of foo is `T1 > ... > Tn > U` (ignoring dependencies), and
+  * all bound variables are substituted for bound variables,
+  then `foo e1 ... en` is well formed of type `U`, and `Vars(foo e1 ... en) = U i, Si`.
+* If `h: T` is a hypothesis in the context, then `T` is derivable.
+* If `foo (v1 ... vn): A1 > ... > Ak > B` is a theorem or axiom, and `e1 ... en` is a substitution for `v1 ... vn`, such that
+  * `ei` is well formed of sort `Ti` and `Vars(ei) = Si`,
+  * `vi` is a variable of sort `Ti`,
+  * if `vi` is a bound variable then `ei` is also a bound variable,
+  * if `vi` is a bound variable and `vj` comes after `vi` and `vj` does not depend on `vi`, then `ei` is not in `Sj`.
+  In this case:
+  * Let `Ai' = Ai[e/v]` be the simultaneous direct substitution of the `ei`'s for the `vi`'s in `Ai`, and let `B' = B[e/v]`.
+  * If `Ai'` is derivable for all `i`, then `B'` is derivable.

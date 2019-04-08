@@ -705,7 +705,7 @@ def ASTTerm (x: nat): nat = $ b0 (b0 (b1 x)) $;
 def ASTAxiom (x: nat): nat = $ b0 (b1 (b0 x)) $;
 def ASTDef (x: nat): nat = $ b0 (b1 (b1 x)) $;
 def ASTThm (x: nat): nat = $ b1 (b0 (b0 x)) $;
-def ASTIO (x: nat): nat = $ b1 (b0 (b1 x)) $;
+def ASTIO (out x: nat): nat = $ b1 (b0 (b1 (out <> x))) $;
 def ASTNota (x: nat): nat = $ b1 (b1 x) $;
 
 def _sort: string = $ _s ': _o ': _r ': _t ': s0 $;
@@ -833,8 +833,8 @@ $ parseTk tk +> (parseIdent i^i {x | snd x e. k}) <+>
     <+ parseCh _semi $;
 
 def parseIO (.x: nat): set =
-$ ((\ x, ASTIO (b0 x)) <@> parseIO1 _input inputKinds) u.
-  ((\ x, ASTIO (b1 x)) <@> parseIO1 _output outputKinds) $;
+$ ((\ x, ASTIO 0 x) <@> parseIO1 _input inputKinds) u.
+  ((\ x, ASTIO 1 x) <@> parseIO1 _output outputKinds) $;
 
 def parseAST: set =
 $ regexStar (parseSort u. parseTerm u. parseAxiom u.
@@ -1156,6 +1156,8 @@ theorem ElaborateThm
       e2 = e |> DThm args hyps2 ret2) $;
 theorem ElaborateNota (ast n: nat):
   $ Elaborate (ast |> ASTNota n) == Elaborate ast $;
+theorem ElaborateIO (ast out n: nat):
+  $ Elaborate (ast |> ASTIO out n) == Elaborate ast $;
 
 def Valid (s .ast .e: nat): wff =
 $ E. ast E. e (ast e. parse s /\ e e. Elaborate ast /\ ValidEnv e) $;
