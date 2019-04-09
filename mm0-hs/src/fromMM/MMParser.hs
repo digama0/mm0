@@ -29,7 +29,7 @@ withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
 runFromMMM m = runStateT m $
-  MMDatabase M.empty Q.empty S.empty M.empty M.empty [([], [])]
+  MMDatabase M.empty Q.empty S.empty M.empty M.empty [([], [], S.empty)]
 
 addConstant :: Const -> FromMMM ()
 addConstant c = modify (\s -> s {mSyms = M.insert c (Const c) (mSyms s)})
@@ -37,14 +37,22 @@ addConstant c = modify (\s -> s {mSyms = M.insert c (Const c) (mSyms s)})
 addVariable :: Var -> FromMMM ()
 addVariable v = modify (\s -> s {mSyms = M.insert v (Var v) (mSyms s)})
 
+fmlaVars :: Fmla -> S.Set String
+fmlaVars [] = S.empty
+fmlaVars (Const _ : ss) = fmlaVars ss
+fmlaVars (Var v : ss) = S.insert v (fmlaVars ss)
+
 scopeAddHyp :: Label -> Hyp -> Scope -> Scope
-scopeAddHyp x h ((hs, ds) : s) = ((x, h):hs, ds) : s
+scopeAddHyp x h ((hs, ds, vs) : s) = ((x, h):hs, ds, vs') : s where
+  vs' = case h of
+    EHyp f -> S.union (fmlaVars f) vs
+    _ -> vs
 
 scopeAddDV :: [Var] -> Scope -> Scope
-scopeAddDV ds' ((hs, ds) : s) = (hs, ds' : ds) : s
+scopeAddDV ds' ((hs, ds, vs) : s) = (hs, ds' : ds, vs) : s
 
 scopeOpen :: Scope -> Scope
-scopeOpen ss = ([], []) : ss
+scopeOpen ss@((_, _, vs) : _) = ([], [], vs) : ss
 
 scopeClose :: Scope -> Maybe Scope
 scopeClose (_ : []) = Nothing
@@ -55,18 +63,17 @@ addHyp x h = do
   addStmt x (Hyp h)
   modify $ \s -> s {mScope = scopeAddHyp x h (mScope s)}
 
-fmlaVars :: Fmla -> S.Set String
-fmlaVars [] = S.empty
-fmlaVars (Const _ : ss) = fmlaVars ss
-fmlaVars (Var v : ss) = S.insert v (fmlaVars ss)
-
 mkFrame :: Fmla -> FromMMM Frame
-mkFrame fmla = do g <- get; return (build (mScope g) ([], S.empty)) where
-  vars = fmlaVars fmla
-  build :: Scope -> Frame -> Frame
-  build [] fr = fr
-  build ((hs, ds) : sc) (hs', ds') =
-    build sc (insertHyps hs hs', foldl' insertDVs ds' ds)
+mkFrame = \fmla -> do
+  g <- get
+  let sc@((_, _, vs) : _) = mScope g
+  return (build (S.union vs (fmlaVars fmla)) sc ([], S.empty))
+
+build :: S.Set Var -> Scope -> Frame -> Frame
+build vars = go where
+  go [] fr = fr
+  go ((hs, ds, vs) : sc) (hs', ds') =
+    go sc (insertHyps hs hs', foldl' insertDVs ds' ds)
 
   insertHyps :: [(Label, Hyp)] -> [String] -> [String]
   insertHyps [] hs' = hs'
@@ -76,12 +83,11 @@ mkFrame fmla = do g <- get; return (build (mScope g) ([], S.empty)) where
 
   insertDVs :: DVs -> [Var] -> DVs
   insertDVs ds [] = ds
-  insertDVs ds (v:vs) =
-    if S.member v vars then insertDV1 v vs ds else ds
+  insertDVs ds (v:vs) = let ds' = insertDVs ds vs in
+    if S.member v vars then foldl' (insertDV1 v) ds' vs else ds'
 
-  insertDV1 :: Var -> [Var] -> DVs -> DVs
-  insertDV1 v [] ds = ds
-  insertDV1 v1 (v2:vs) ds =
+  insertDV1 :: Var -> DVs -> Var -> DVs
+  insertDV1 v1 ds v2 =
     if S.member v2 vars then
       S.insert (if v1 < v2 then (v1, v2) else (v2, v1)) ds
     else ds

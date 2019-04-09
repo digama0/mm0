@@ -20,7 +20,7 @@ type Proof = [String]
 
 data Stmt = Hyp Hyp | Thm Frame Fmla Proof deriving (Show)
 
-type Scope = [([(Label, Hyp)], [[Var]])]
+type Scope = [([(Label, Hyp)], [[Var]], S.Set Var)]
 
 data Decl = Sort Sort | Stmt Label deriving (Show)
 

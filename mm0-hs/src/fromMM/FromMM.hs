@@ -21,9 +21,8 @@ fromMM [] = die "from-mm: no .mm file specified"
 fromMM (mm:rest) = do
   s <- openFile mm ReadMode >>= B.hGetContents
   db <- liftIO (parseMM s)
-  putStrLn $ show (M.size (mStmts db)) ++ " statements"
   ast <- liftIO $ makeAST db
-  putStrLn $ show ast
+  mapM_ (\d -> putStrLn $ shows d "\n") ast
 
 data ParseTrie = PT {
   ptConst :: Parser,
@@ -121,22 +120,28 @@ trDecl d = ask >>= \db -> case d of
       bs <- splitFrame fr
       e <- parseFmla f
       case p of
-        [] -> emit (A.Axiom st bs (C.pack $ show e))
-        _ -> emit (A.Theorem st bs (C.pack $ show e))
+        [] -> emit (A.Axiom st bs (exprToFmla e))
+        _ -> emit (A.Theorem st bs (exprToFmla e))
     Thm _ _ _ -> throwError "bad theorem statement"
   where
   splitFrame :: Frame -> TransM [A.Binder]
   splitFrame (hs, ds) = splitFrame' hs ds <$> ask <*> get
-  splitFrame' hs ds db t = go hs [] [] [] where
-    go :: [Label] -> [(Var, Sort)] -> [(Var, Sort)] -> [A.Binder] -> [A.Binder]
-    go (l:ls) vs bs hs = case fromJust (mStmts db M.!? l) of
-        Hyp (VHyp s v) ->
-          if sPure (snd (fromJust $ mSorts db M.!? s)) then go ls ((v, s) : vs) bs hs
-          else go ls vs ((v, s) : bs) hs
-        Hyp (EHyp f) ->
-          let e = fromJust (tParsedHyps t M.!? l) in
-          go ls vs bs (A.Binder (A.LReg l) (A.TFormula $ C.pack $ show e) : hs)
-    go [] vs bs hs =
+  splitFrame' hs ds db t =
+      let (vs, bs, hs') = go hs in
       map (\(v, s) -> A.Binder (A.LBound v) $ A.TType $ DepType s []) vs ++
       map (\(v, s) -> A.Binder (A.LReg v) $ A.TType $ DepType s $
-        filter (not . memDVs ds v) (fst <$> vs)) bs ++ hs
+        filter (not . memDVs ds v) (fst <$> vs)) bs ++ hs'
+    where
+    go :: [Label] -> ([(Var, Sort)], [(Var, Sort)], [A.Binder])
+    go (l:ls) = let (vs, bs, hs) = go ls in
+      case fromJust (mStmts db M.!? l) of
+        Hyp (VHyp s v) ->
+          if sPure (snd (fromJust $ mSorts db M.!? s)) then ((v, s) : vs, bs, hs)
+          else (vs, (v, s) : bs, hs)
+        Hyp (EHyp f) ->
+          let e = fromJust (tParsedHyps t M.!? l) in
+          (vs, bs, A.Binder (A.LReg l) (A.TFormula $ exprToFmla e) : hs)
+    go [] = ([], [], [])
+
+exprToFmla :: SExpr -> A.Formula
+exprToFmla e = C.pack $ ' ' : showsPrec 0 e " "
