@@ -11,6 +11,7 @@ import qualified Text.Read.Lex as L
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Sequence as Q
+import Environment (SortData(..))
 import MMTypes
 import Util
 
@@ -28,15 +29,15 @@ withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
 runFromMMM m = runStateT m $
-  MMDatabase Q.empty Q.empty S.empty M.empty M.empty [([], [])]
+  MMDatabase M.empty Q.empty S.empty M.empty M.empty [([], [])]
 
-addConstant :: String -> FromMMM ()
+addConstant :: Const -> FromMMM ()
 addConstant c = modify (\s -> s {mSyms = M.insert c (Const c) (mSyms s)})
 
-addVariable :: String -> FromMMM ()
+addVariable :: Var -> FromMMM ()
 addVariable v = modify (\s -> s {mSyms = M.insert v (Var v) (mSyms s)})
 
-scopeAddHyp :: String -> Hyp -> Scope -> Scope
+scopeAddHyp :: Label -> Hyp -> Scope -> Scope
 scopeAddHyp x h ((hs, ds) : s) = ((x, h):hs, ds) : s
 
 scopeAddDV :: [Var] -> Scope -> Scope
@@ -49,10 +50,10 @@ scopeClose :: Scope -> Maybe Scope
 scopeClose (_ : []) = Nothing
 scopeClose (_ : s : ss) = Just (s : ss)
 
-addHyp :: String -> Hyp -> FromMMM ()
-addHyp x h = modify $ \s -> s {
-  mStmts = M.insert x (Hyp h) (mStmts s),
-  mScope = scopeAddHyp x h (mScope s) }
+addHyp :: Label -> Hyp -> FromMMM ()
+addHyp x h = do
+  addStmt x (Hyp h)
+  modify $ \s -> s {mScope = scopeAddHyp x h (mScope s)}
 
 fmlaVars :: Fmla -> S.Set String
 fmlaVars [] = S.empty
@@ -67,7 +68,7 @@ mkFrame fmla = do g <- get; return (build (mScope g) ([], S.empty)) where
   build ((hs, ds) : sc) (hs', ds') =
     build sc (insertHyps hs hs', foldl' insertDVs ds' ds)
 
-  insertHyps :: [(String, Hyp)] -> [String] -> [String]
+  insertHyps :: [(Label, Hyp)] -> [String] -> [String]
   insertHyps [] hs' = hs'
   insertHyps ((s, EHyp _):hs) hs' = insertHyps hs (s:hs')
   insertHyps ((s, VHyp _ v):hs) hs' =
@@ -85,9 +86,14 @@ mkFrame fmla = do g <- get; return (build (mScope g) ([], S.empty)) where
       S.insert (if v1 < v2 then (v1, v2) else (v2, v1)) ds
     else ds
 
-addStmt :: String -> Stmt -> FromMMM ()
+addSort :: Sort -> Maybe Sort -> FromMMM ()
+addSort x s2 = modify $ \m -> m {
+  mSorts = M.insert x (s2, SortData False False False False) (mSorts m),
+  mDecls = mDecls m Q.|> Sort x }
+
+addStmt :: Label -> Stmt -> FromMMM ()
 addStmt x st = modify $ \s -> s {
-  mDecls = mDecls s Q.|> x,
+  mDecls = mDecls s Q.|> Stmt x,
   mStmts = M.insert x st (mStmts s) }
 
 process :: [String] -> FromMMM ()
@@ -181,13 +187,19 @@ parseJ (s : ss) = case P.readP_to_S L.lex s of
 
 processJ :: JComment -> FromMMM ()
 processJ (JKeyword "syntax" j) = case j of
-  JString s (JSemi j') -> do
-    modify $ \m -> m {mSorts = mSorts m Q.|> (s, Nothing)}
-    processJ j'
+  JString s (JSemi j') -> addSort s Nothing >> processJ j'
   JString s1 (JKeyword "as" (JString s2 (JSemi j'))) -> do
-    modify $ \m -> m {mSorts = mSorts m Q.|> (s1, Just s2)}
+    addSort s1 (Just s2)
+    modify $ \m -> m {mSorts =
+      M.adjust (\(s, sd) -> (s, sd {sProvable = True})) s2 (mSorts m)}
     processJ j'
   _ -> throwError "bad $j 'syntax' command"
+processJ (JKeyword "bound" j) = case j of
+  JString s (JSemi j') -> do
+    modify $ \m -> m {mSorts =
+      M.adjust (\(s, sd) -> (s, sd {sPure = True})) s (mSorts m)}
+    processJ j'
+  _ -> throwError "bad $j 'bound' command"
 processJ (JKeyword "primitive" j) = processPrim j where
   processPrim (JString s j) = do
     modify $ \m -> m {mPrim = S.insert s (mPrim m)}
