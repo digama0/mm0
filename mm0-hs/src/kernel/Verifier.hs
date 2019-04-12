@@ -174,8 +174,8 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
         go args es (n+1) m (ev <> ev'')
       go _ _ _ _ _ | length args == length es =
         throwError ("term arguments don't match substitutions:" ++
-          " args = " ++ show args ++
-          ", subst = " ++ showVExprList terms es)
+          " args =" ++ fst (ppBinders () args 0)
+          (", subst = " ++ showVExprList terms es))
       go _ _ _ _ _ = throwError ("expected " ++ show (length args) ++
         " arguments, got " ++ show (length es))
 

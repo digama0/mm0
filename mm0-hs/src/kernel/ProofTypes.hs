@@ -1,6 +1,7 @@
 module ProofTypes where
 
 import Data.Bits
+import Data.Maybe
 import qualified Data.Map.Strict as M
 import Environment (Ident)
 
@@ -14,16 +15,62 @@ instance Show TermID where show (TermID n) = "t" ++ show n
 instance Show ThmID where show (ThmID n) = "T" ++ show n
 instance Show VarID where show (VarID n) = "v" ++ show n
 
-data VType = VType SortID [VarID] deriving (Show)
-data VBinder = VBound SortID | VReg SortID [VarID] deriving (Show, Eq)
+data VType = VType SortID [VarID]
+data VBinder = VBound SortID | VReg SortID [VarID] deriving (Eq)
 data VExpr = VVar VarID | VApp TermID [VExpr] deriving (Eq)
 
-instance Show VExpr where
-  showsPrec n (VVar v) r = showsPrec n v r
-  showsPrec n (VApp v []) r = showsPrec n v r
-  showsPrec n (VApp v vs) r =
-    let f r = showsPrec 0 v (foldr (\e r -> ' ' : showsPrec 1 e r) r vs) in
-    if n == 0 then f r else '(' : f (')' : r)
+class IDPrinter a where
+  ppSort :: a -> SortID -> String
+  ppTerm :: a -> TermID -> String
+  ppThm :: a -> ThmID -> String
+  ppVar :: a -> VarID -> String
+  ppProof :: a -> [LocalCmd] -> ShowS
+  ppInsertSort :: String -> a -> a
+  ppInsertTerm :: Maybe String -> a -> a
+  ppInsertThm :: Maybe String -> a -> a
+  ppInsertVar :: String -> a -> a
+
+instance IDPrinter () where
+  ppSort _ = show
+  ppTerm _ = show
+  ppThm _ = show
+  ppVar _ = show
+  ppProof _ = shows
+  ppInsertSort _ = id
+  ppInsertTerm _ = id
+  ppInsertThm _ = id
+  ppInsertVar _ = id
+
+ppType :: IDPrinter a => a -> VType -> ShowS
+ppType a (VType s vs) =
+  (ppSort a s ++) . flip (foldr (\v -> (' ' :) . (ppVar a v ++))) vs
+
+instance Show VType where showsPrec _ = ppType ()
+
+ppBinder :: IDPrinter a => a -> VarID -> VBinder -> ShowS
+ppBinder a v (VBound s) r = '{' : ppVar a v ++ ": " ++ ppSort a s ++ '}' : r
+ppBinder a v (VReg s vs) r = '(' : ppVar a v ++ ": " ++ ppType a (VType s vs) (')' : r)
+
+ppBinders :: IDPrinter a => a -> [VBinder] -> Int -> (ShowS, Int)
+ppBinders a [] n = (id, n)
+ppBinders a (b : bs) n =
+  let (s, n') = ppBinders a bs (n+1) in
+  ((' ' :) . ppBinder a (VarID n) b . s, n')
+
+ppExpr :: IDPrinter a => a -> Int -> VExpr -> ShowS
+ppExpr a n (VVar v) r = ppVar a v ++ r
+ppExpr a n (VApp t []) r = ppTerm a t ++ r
+ppExpr a n (VApp t es) r =
+  let f r = ppTerm a t ++ foldr (\e r -> ' ' : ppExpr a 1 e r) r es in
+  if n == 0 then f r else '(' : f (')' : r)
+
+instance Show VExpr where showsPrec = ppExpr ()
+
+ppHyps :: IDPrinter a => a -> [VExpr] -> Int -> (ShowS, Int)
+ppHyps a [] n = (id, n)
+ppHyps a (h : hs) n =
+  let (s, n') = ppHyps a hs (n+1) in
+  (\r -> "\n  (" ++ ppVar a (VarID n) ++ ": " ++ ppExpr a 1 h (')' : s r), n')
 
 isBound :: VBinder -> Bool
 isBound (VBound _) = True
@@ -48,12 +95,39 @@ data ProofCmd =
       ptVar :: [VBinder],    -- ^ The variables
       ptHyps :: [VExpr],     -- ^ The hypotheses
       ptRet :: VExpr,        -- ^ The return type
-      ptUnfold :: [TermID],  -- ^ Which definition to unfold in the statement
+      ptUnfold :: [TermID],  -- ^ Which definitions to unfold in the statement
       ptDummies :: [SortID], -- ^ The types of the dummies
       ptProof :: [LocalCmd], -- ^ The actual proof
       ptStep :: Bool }       -- ^ True if this theorem is in the spec
   | StepInout VInoutKind
-  deriving (Show)
+
+ppProofCmd' :: IDPrinter a => a -> ProofCmd -> (ShowS, a)
+ppProofCmd' a (StepSort x) = (("sort " ++) . (x ++), ppInsertSort x a)
+ppProofCmd' a (StepTerm x) = (("term " ++) . (x ++), ppInsertTerm (Just x) a)
+ppProofCmd' a (StepAxiom x) = (("axiom " ++) . (x ++), ppInsertThm (Just x) a)
+ppProofCmd' a (ProofDef x args ret ds val st) =
+  let (sargs, n) = ppBinders a args 0
+      (sds, _) = ppBinders a (VBound <$> ds) n in
+  ((((if st then "" else "local ") ++ "def " ++ fromMaybe "_" x) ++) .
+    sargs . (": " ++) . ppType a ret . (" =\n" ++) . sds . (' ' :) . ppExpr a 1 val,
+  ppInsertTerm x a)
+ppProofCmd' a (ProofThm x args hs ret uf ds pf st) =
+  let (sargs, n) = ppBinders a args 0
+      (shs, n2) = ppHyps a hs n
+      (sds, _) = ppBinders a (VBound <$> ds) n2
+      suf r = case uf of
+        [] -> r
+        u:us -> " unfolding(" ++ ppTerm a u ++
+          foldr (\u' r -> ' ' : ppTerm a u' ++ r) (')' : r) us in
+  (\r -> (if st then "" else "local ") ++ "theorem " ++ fromMaybe "_" x ++
+    sargs ((',' :) $ suf $ sds $ shs $ (": " ++) $
+      ppExpr a 1 ret $ " =\n" ++ ppProof a pf r),
+  ppInsertThm x a)
+
+ppProofCmd :: IDPrinter a => a -> ProofCmd -> ShowS
+ppProofCmd a c = fst (ppProofCmd' a c)
+
+instance Show ProofCmd where showsPrec _ = ppProofCmd ()
 
 type HeapID = Int
 
