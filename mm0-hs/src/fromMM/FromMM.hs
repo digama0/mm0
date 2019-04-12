@@ -279,5 +279,5 @@ mangle (c : s) =
   else '_' : map mangle1 (c : s) where
   mangle1 c = if identCh c then c else '_'
 
-trProof :: Proof -> TransM ([SortID], [LocalCmd])
-trProof p = return ([], [Sorry])
+trProof :: Proof -> TransM ([SortID], ProofTree)
+trProof p = return ([], Sorry)

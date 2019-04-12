@@ -194,7 +194,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     trDummies n m (v:vs) = trDummies (n+1) (M.insert v (VarID n) m) vs
 
   checkThm :: VGlobal -> [VBinder] -> [VExpr] -> VExpr -> [TermID] ->
-    [SortID] -> [LocalCmd] -> Either String ()
+    [SortID] -> ProofTree -> Either String ()
   checkThm g vs hs ret unf ds pf = do
     let ctx = Q.fromList vs
     mapM_ (typecheckProvable g ctx) hs
@@ -350,19 +350,17 @@ ltBitSize n = case bitSizeMaybe (undefined :: VBitSet) of
 -- | Local state of the verifier (inside a proof)
 data VState = VState {
   -- | Map from HeapID to proven expressions
-  vHeap :: Q.Seq StackSlot,
-  -- | Recently proven expressions
-  vStack :: [StackSlot] } deriving (Show)
+  vHeap :: Q.Seq StackSlot } deriving (Show)
 
 type VerifyM = StateT VState (Either String)
 
-verifyProof :: VGlobal -> Q.Seq VBinder -> [VExpr] -> [LocalCmd] -> Either String VExpr
+verifyProof :: VGlobal -> Q.Seq VBinder -> [VExpr] -> ProofTree -> Either String VExpr
 verifyProof g = \ctx hs cs -> do
   guardError "variable limit (64) exceeded" (ltBitSize (Q.length ctx))
   let heap = Q.foldlWithIndex (\s n b -> s Q.|> varToStackSlot n b) Q.empty ctx
   let heap' = foldl (\s h -> s Q.|> SSProof h) heap hs
-  execStateT (mapM_ verify1 cs) (VState heap' []) >>= \case
-    VState _ [SSProof e] -> return e
+  evalStateT (verifyTree cs) (VState heap') >>= \case
+    SSProof e -> return e
     s -> throwError ("Bad proof state " ++ show s)
   where
   varToStackSlot :: Int -> VBinder -> StackSlot
@@ -370,62 +368,62 @@ verifyProof g = \ctx hs cs -> do
   varToStackSlot n (VReg s vs) = SSExpr s (VVar (VarID n))
     (foldl' (\bs (VarID v) -> bs .|. bit v) 0 vs)
 
-  push :: StackSlot -> VerifyM ()
-  push ss = modify (\(VState heap stk) -> VState heap (ss:stk))
-
-  popn :: [a] -> VerifyM [(a, StackSlot)]
-  popn as = (\f -> f []) <$> go as where
-    go :: [a] -> VerifyM ([(a, StackSlot)] -> [(a, StackSlot)])
-    go [] = return id
-    go (a:as) = do
-      f <- go as
-      StateT $ \case
-        VState heap [] -> throwError "stack underflow"
-        VState heap (ss:stk) -> return (((a, ss) :) . f, VState heap stk)
-
-  verify1 :: LocalCmd -> VerifyM ()
-  verify1 (Load h) = StateT $ \(VState heap stk) -> do
-    ss <- fromJustError "index out of bounds" (heap Q.!? h)
-    return ((), VState heap (ss:stk))
-  verify1 Save = StateT $ \case
-    VState heap [] -> throwError "stack underflow"
-    VState heap (ss:stk) -> return ((), VState (heap Q.|> ss) (ss:stk))
-  verify1 (PushApp t) = do
-    VTermData _ args (VType ret _) <- fromJustError "term not found" (vTerms g Q.!? ofTermID t)
-    (es, b) <- popn args >>= verifyArgs 0 (.|.)
-    push (SSExpr ret (VApp t es) b)
-  verify1 (PushThm t) = do
+  verifyTree :: ProofTree -> VerifyM StackSlot
+  verifyTree (Load h) = do
+    VState heap <- get
+    fromJustError "index out of bounds" (heap Q.!? h)
+  verifyTree (Save p) = do
+    ss <- verifyTree p
+    modify $ \(VState heap) -> VState (heap Q.|> ss)
+    return ss
+  verifyTree (VExpr e) = verifyExpr e
+  verifyTree (VThm t es ts) = do
+    vs' <- mapM verifyExpr es
+    hs' <- mapM verifyTree ts
     VAssrtData x args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
     withContext ("step " ++ fromMaybe (show t) x) $ do
-      hs' <- popn hs
-      vs' <- popn args
-      (es, b) <- verifyArgs Q.empty (Q.<|) vs'
+      (es, b) <- verifyArgs Q.empty (Q.<|) args vs'
       let subst = Q.fromList es
       guardError "disjoint variable violation" $
         all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
-      mapM_ (\case
-        (e, SSProof p) -> do
-          guardError (let terms = vTerms g in
-              "substitution to hypothesis does not match theorem\n" ++
-              showVExpr terms e ++ showVExprList terms es ++ " = " ++
-              showVExpr terms (substExpr subst e) ++ " != " ++
-              showVExpr terms p)
-            (substExpr subst e == p)
-        (e, _) -> throwError "bad stack slot reference") hs'
-      push (SSProof (substExpr subst ret))
-  verify1 Sorry = throwError "? found in proof"
+      verifyHyps (Q.fromList es) hs hs'
+      return (SSProof (substExpr subst ret))
+  verifyTree Sorry = throwError "? found in proof"
 
-  verifyArgs :: a -> (VBitSet -> a -> a) -> [(VBinder, StackSlot)] -> VerifyM ([VExpr], a)
+  verifyExpr :: VExpr -> VerifyM StackSlot
+  verifyExpr (VVar (VarID v)) = verifyTree (Load v)
+  verifyExpr (VApp t es) = do
+    sss <- mapM verifyExpr es
+    VTermData _ args (VType ret _) <- fromJustError "term not found" (vTerms g Q.!? ofTermID t)
+    (es, b) <- verifyArgs 0 (.|.) args sss
+    return (SSExpr ret (VApp t es) b)
+
+  verifyArgs :: a -> (VBitSet -> a -> a) -> [VBinder] -> [StackSlot] -> VerifyM ([VExpr], a)
   verifyArgs a f = go where
-    go [] = return ([], a)
-    go ((VBound s', SSBound s v) : sss) = do
+    go [] [] = return ([], a)
+    go [] (_:_) = throwError "argument number mismatch"
+    go (_:_) [] = throwError "argument number mismatch"
+    go (VBound s' : bs) (SSBound s v : sss) = do
       guardError "type mismatch" (s == s')
-      (\(l, b) -> (VVar v : l, f (bit (ofVarID v)) b)) <$> go sss
-    go ((VBound _, _) : _) = throwError "non-bound variable in BV slot"
-    go ((VReg s' _, ss) : sss) = do
+      (\(l, b) -> (VVar v : l, f (bit (ofVarID v)) b)) <$> go bs sss
+    go (VBound _: _) (_ : _) = throwError "non-bound variable in BV slot"
+    go (VReg s' _ : bs) (ss : sss) = do
       (s, e, b) <- fromJustError "bad stack slot" (ofSSExpr ss)
       guardError "type mismatch" (s == s')
-      (\(l, b') -> (e : l, f b b')) <$> go sss
+      (\(l, b') -> (e : l, f b b')) <$> go bs sss
+
+  verifyHyps :: Q.Seq VExpr -> [VExpr] -> [StackSlot] -> VerifyM ()
+  verifyHyps subst = go where
+    go [] [] = return ()
+    go (e : es) (SSProof p : sss) = do
+      guardError (let terms = vTerms g in
+          "substitution to hypothesis does not match theorem\n" ++
+          showVExpr terms e ++ showVExprList terms es ++ " = " ++
+          showVExpr terms (substExpr subst e) ++ " != " ++
+          showVExpr terms p)
+        (substExpr subst e == p)
+      go es sss
+    go _ _ = throwError "bad stack slot reference or argument mismatch"
 
 --------------------------------------------------
 -- Input/Output for 'string' (optional feature) --

@@ -5,7 +5,6 @@ module ProofTextParser(parseProof) where
 import Control.Monad.Trans
 import Control.Monad.Trans.State
 import Control.Applicative
-import Debug.Trace
 import Text.ParserCombinators.ReadP hiding (get)
 import qualified Text.Read.Lex as L
 import qualified Data.Map.Strict as M
@@ -113,7 +112,6 @@ readDef st = do
 
 readThm :: Bool -> Parser ProofCmd
 readThm st = do
-  trace ("readThm " ++ show st) (return ())
   x <- insertThm
   vs <- readlist readBinder
   expect (L.Punc ",")
@@ -128,7 +126,7 @@ readThm st = do
   expectS ":"
   ret <- readExpr
   expect $ L.Punc "="
-  proof <- (\l -> l []) <$> readProofExpr
+  proof <- readProofExpr
   resetVars >> return (ProofThm (Just x) vs hyps ret uf ds proof st)
 
 readDummy :: Parser SortID
@@ -146,25 +144,17 @@ readExpr = (VVar <$> readVar) <|+ (flip VApp [] <$> readTerm) <|+
 readHyp :: Parser VExpr
 readHyp = bracket "(" ")" (insertVar >> expectS ":" >> readExpr)
 
-exprToLocal :: VExpr -> [LocalCmd] -> [LocalCmd]
-exprToLocal (VVar (VarID v)) r = Load v : r
-exprToLocal (VApp t es) r = foldr exprToLocal (PushApp t : r) es
-
-readProofExpr :: Parser ([LocalCmd] -> [LocalCmd])
+readProofExpr :: Parser ProofTree
 readProofExpr =
-  (expectS "?" >> return (Sorry :)) <|+
-  (exprToLocal <$> readExpr) <|+
+  (expectS "?" >> return Sorry) <|+
+  (VExpr <$> readExpr) <|+
   bracket "(" ")" (do
     t <- readAssrt
     es <- readlist readExpr
     hs <- readlist readProofExpr
-    return (\r -> foldr exprToLocal (foldr ($) (PushThm t : r) hs) es)) <|+
+    return (VThm t es hs)) <|+
   bracket "[" "]" (do
-    trace "[" (return ())
     e <- readProofExpr
-    traceShow (e[]) (return ())
     expect (L.Punc "=")
-    trace "=" (return ())
     insertVar
-    trace "var" (return ())
-    return (e . (Save :)))
+    return (Save e))

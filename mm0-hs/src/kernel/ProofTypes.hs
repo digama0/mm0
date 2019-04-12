@@ -24,7 +24,7 @@ class IDPrinter a where
   ppTerm :: a -> TermID -> String
   ppThm :: a -> ThmID -> String
   ppVar :: a -> VarID -> String
-  ppProof :: a -> [LocalCmd] -> ShowS
+  ppProof :: a -> ProofTree -> ShowS
   ppInsertSort :: String -> a -> a
   ppInsertTerm :: Maybe String -> a -> a
   ppInsertThm :: Maybe String -> a -> a
@@ -97,7 +97,7 @@ data ProofCmd =
       ptRet :: VExpr,        -- ^ The return type
       ptUnfold :: [TermID],  -- ^ Which definitions to unfold in the statement
       ptDummies :: [SortID], -- ^ The types of the dummies
-      ptProof :: [LocalCmd], -- ^ The actual proof
+      ptProof :: ProofTree,  -- ^ The actual proof
       ptStep :: Bool }       -- ^ True if this theorem is in the spec
   | StepInout VInoutKind
 
@@ -131,11 +131,11 @@ instance Show ProofCmd where showsPrec _ = ppProofCmd ()
 
 type HeapID = Int
 
-data LocalCmd =
+data ProofTree =
     Load HeapID
-  | PushApp TermID
-  | PushThm ThmID
-  | Save
+  | VExpr VExpr
+  | VThm ThmID [VExpr] [ProofTree]
+  | Save ProofTree
   | Sorry
   deriving (Show)
 
