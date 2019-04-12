@@ -12,25 +12,7 @@ import qualified Data.Map.Strict as M
 import Environment (Ident)
 import ProofTypes
 
-type NameMap = (Int, M.Map Ident Int)
-
-nempty :: NameMap
-nempty = (0, M.empty)
-
-ninsert :: Ident -> NameMap -> NameMap
-ninsert v (n, m) = (n+1, M.insert v n m)
-
-data ParserState = ParserState {
-  -- | Map from sort to SortID
-  pSortIx :: NameMap,
-  -- | Map from term to TermID
-  pTermIx :: NameMap,
-  -- | Map from theorem to ThmID
-  pThmIx :: NameMap,
-  -- | Map from var to VarID
-  pVarIx :: NameMap }
-
-type Parser = StateT ParserState ReadP
+type Parser = StateT IxLookup ReadP
 
 (<|+) :: Parser a -> Parser a -> Parser a
 p <|+ q = StateT $ \s -> runStateT p s <++ runStateT q s
@@ -39,8 +21,8 @@ readlist :: Parser a -> Parser [a]
 readlist p = go where go = ((:) <$> p <*> go) <|+ return []
 
 parseProof :: String -> Maybe Proofs
-parseProof s = let start = ParserState nempty nempty nempty nempty in
-  case readP_to_S (evalStateT readProofs start <* L.expect L.EOF) s of
+parseProof s =
+  case readP_to_S (evalStateT readProofs mkIxLookup <* L.expect L.EOF) s of
     ((c, _):_) -> Just c
     _ -> Nothing
 
@@ -62,24 +44,24 @@ bracket l r a = expect (L.Punc l) *> a <* expect (L.Punc r)
 insertSort :: Parser Ident
 insertSort = StateT $ \s -> do
   L.Ident i <- L.lex
-  return (i, s {pSortIx = ninsert i (pSortIx s)})
+  return (i, ilInsertSort i s)
 
 insertTerm :: Parser Ident
 insertTerm = StateT $ \s -> do
   L.Ident i <- L.lex
-  return (i, s {pTermIx = ninsert i (pTermIx s)})
+  return (i, ilInsertTerm i s)
 
 insertVar :: Parser Ident
 insertVar = StateT $ \s -> do
   L.Ident i <- L.lex
-  return (i, s {pVarIx = ninsert i (pVarIx s)})
+  return (i, ilInsertVar i s)
 
 insertThm :: Parser Ident
 insertThm = StateT $ \s -> do
   L.Ident i <- L.lex
-  return (i, s {pThmIx = ninsert i (pThmIx s)})
+  return (i, ilInsertThm i s)
 
-lookupRead :: (ParserState -> NameMap) -> Parser Int
+lookupRead :: (IxLookup -> NameMap) -> Parser Int
 lookupRead f = do
   L.Ident i <- lex1
   s <- get
@@ -98,7 +80,7 @@ readVar :: Parser VarID
 readVar = VarID <$> lookupRead pVarIx
 
 resetVars :: Parser ()
-resetVars = modify (\s -> s {pVarIx = (0, M.empty)})
+resetVars = modify ilResetVars
 
 readProof :: Parser ProofCmd
 readProof = lex1 >>= \case
