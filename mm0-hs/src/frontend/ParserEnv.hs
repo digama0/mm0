@@ -60,16 +60,6 @@ checkToken _ [c] = c `notElem` " \n"
 checkToken e tk = all ok tk where
   ok c = c `S.notMember` delims e && c `notElem` " \n"
 
-identCh1 :: Char -> Bool
-identCh1 c = 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' || c == '-'
-
-identCh :: Char -> Bool
-identCh c = '0' <= c && c <= '9' || identCh1 c
-
-identStr :: String -> Bool
-identStr [] = False
-identStr (c:s) = identCh1 c && all identCh s
-
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
 mkLiterals 1 p n = [PVar n p]
