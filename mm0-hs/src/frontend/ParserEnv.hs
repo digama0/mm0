@@ -12,6 +12,7 @@ import Data.List.Split
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import AST
 import Environment
@@ -36,11 +37,8 @@ data ParserEnv = ParserEnv {
 newParserEnv :: ParserEnv
 newParserEnv = ParserEnv S.empty M.empty M.empty M.empty M.empty M.empty
 
-toString :: Const -> String
-toString = C.unpack
-
-tokenize :: ParserEnv -> Formula -> [Token]
-tokenize pe cnst = concatMap go (splitOneOf " \t\r\n" (toString cnst)) where
+tokenize :: ParserEnv -> B.ByteString -> [Token]
+tokenize pe cnst = concatMap go (splitOneOf " \n" (C.unpack cnst)) where
   ds = delims pe
   go :: String -> [Token]
   go [] = []
@@ -53,14 +51,14 @@ tokenize pe cnst = concatMap go (splitOneOf " \t\r\n" (toString cnst)) where
   go1 c (c':s) f = go1 c' s (f . (c:))
 
 tokenize1 :: ParserEnv -> Const -> Either String Token
-tokenize1 env cnst = case tokenize env cnst of
+tokenize1 env (Const cnst) = case tokenize env cnst of
   [tk] -> return tk
   tks -> throwError ("bad token" ++ show tks)
 
 checkToken :: ParserEnv -> Token -> Bool
-checkToken _ [c] = c `notElem` " \t\r\n"
+checkToken _ [c] = c `notElem` " \n"
 checkToken e tk = all ok tk where
-  ok c = c `S.notMember` delims e && c `notElem` " \t\r\n"
+  ok c = c `S.notMember` delims e && c `notElem` " \n"
 
 identCh1 :: Char -> Bool
 identCh1 c = 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' || c == '-'
@@ -176,8 +174,8 @@ recalcCoeProv env e = do
     else r
 
 addNotation :: Notation -> Environment -> ParserEnv -> Either String ParserEnv
-addNotation (Delimiter s) _ e = do
-  ds' <- go (splitOneOf " \t\r\n" (toString s)) (delims e)
+addNotation (Delimiter (Const s)) _ e = do
+  ds' <- go (splitOneOf " \t\r\n" (C.unpack s)) (delims e)
   return (e {delims = ds'}) where
     go :: [String] -> S.Set Char -> Either String (S.Set Char)
     go [] s = return s

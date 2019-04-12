@@ -103,12 +103,13 @@ ArrowType : Type {arrow1 $1} | TType '>' ArrowType {arrowCons $1 $3}
 AssertStmt : AssertKind Ident binders(Ident_, TypeFmla) ':' FmlaArrowType ';'
              {unArrow ($1 $2) $3 $5}
 AssertKind : axiom {Axiom} | theorem {Theorem}
-TypeFmla : Type {TType $1} | formula {TFormula $1}
-FmlaArrowType : formula {arrow1 $1}
+Formula : formula {Formula $1}
+TypeFmla : Type {TType $1} | Formula {TFormula $1}
+FmlaArrowType : Formula {arrow1 $1}
               | TypeFmla '>' FmlaArrowType {arrowCons $1 $3}
 
 DefStmt : def Ident binders(Dummy, TType) ':' Type OptDef ';' {Def $2 $3 $5 $6}
-OptDef : '=' formula {Just $2} | {Nothing}
+OptDef : '=' Formula {Just $2} | {Nothing}
 Dummy : '.' Ident {LDummy $2} | Ident_ {$1}
 
 NotationStmt : DelimiterStmt {$1}
@@ -116,10 +117,10 @@ NotationStmt : DelimiterStmt {$1}
              | CoercionStmt {$1}
              | GenNotationStmt {$1}
 
-DelimiterStmt : delimiter formula ';' {Delimiter $2}
+DelimiterStmt : delimiter Constant ';' {Delimiter $2}
 SimpleNotationStmt : NotationKind Ident ':' Constant prec Precedence ';' {$1 $2 $4 $6}
 NotationKind : prefix {Prefix} | infix {Infix $1}
-Constant : formula {$1}
+Constant : formula {Const $1}
 Precedence : number {% parseInt $1} | max {maxBound}
 
 CoercionStmt : coercion Ident ':' Ident '>' Ident ';' {Coercion $2 $4 $6}
@@ -132,7 +133,7 @@ InputStmt : input InputKind ':' list(IdentFmla) ';' {Input $2 $4}
 OutputStmt : output OutputKind ':' list(IdentFmla) ';' {Output $2 $4}
 InputKind : Ident {$1}
 OutputKind : Ident {$1}
-IdentFmla : Ident {Left $1} | formula {Right $1}
+IdentFmla : Ident {Left $1} | Formula {Right $1}
 
 flag(p) : p {True} | {False}
 list(p) : {[]} | p list(p) {$1 : $2}

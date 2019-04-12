@@ -26,7 +26,7 @@ parseError s = do
     concatMap (++ " ") (take 5 tks) ++ "...\"")
 
 parseFormulaWith :: ((SExpr, Ident) -> ParserM SExpr) -> Formula -> LocalCtxM SExpr
-parseFormulaWith m fmla = do
+parseFormulaWith m (Formula fmla) = do
   pe <- readPE
   runStateT (parseExpr 0 >>= m) (tokenize pe fmla) >>= \case
     (sexp, []) -> return sexp

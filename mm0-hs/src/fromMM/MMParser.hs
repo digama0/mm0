@@ -1,6 +1,5 @@
 module MMParser (parseMM) where
 
-import Debug.Trace
 import Data.List
 import Control.Monad.Trans.State
 import Control.Monad.Except hiding (liftIO)
@@ -212,7 +211,7 @@ processJ (JKeyword "primitive" j) = processPrim j where
     processPrim j
   processPrim (JSemi j) = processJ j
   processPrim _ = throwError "bad $j 'primitive' command"
-processJ (JKeyword x j) = trace ("unknown $j " ++ x) (skipJ j)
+processJ (JKeyword x j) = skipJ j
 processJ (JRest ss) = process ss
 processJ (JError e) = throwError e
 processJ _ = throwError "bad $j comment"

@@ -25,12 +25,14 @@ data Notation =
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
   | NNotation Ident [Binder] DepType [Literal]
-  deriving (Show)
 
-data Literal = NConst Const Prec | NVar Ident deriving (Show)
+data Literal = NConst Const Prec | NVar Ident
 
-type Const = B.ByteString
+data Const = Const B.ByteString
 type Prec = Int
+
+instance Show Const where
+  showsPrec _ (Const f) r =  '$' : C.unpack f ++ '$' : r
 
 type InputKind = String
 type OutputKind = String
@@ -38,7 +40,6 @@ type OutputKind = String
 data Inout =
     Input InputKind [Either Ident Formula]
   | Output OutputKind [Either Ident Formula]
-  deriving (Show)
 
 data Local = LBound Ident | LReg Ident | LDummy Ident | LAnon
 
@@ -48,11 +49,11 @@ instance Show Local where
   showsPrec _ (LDummy v) r = '.' : v ++ r
   showsPrec _ LAnon r = '_' : r
 
-data Type = TType DepType | TFormula Formula deriving (Eq)
+data Type = TType DepType | TFormula Formula
 
 instance Show Type where
-  showsPrec _ (TType ty) r = shows ty r
-  showsPrec _ (TFormula f) r = '$' : C.unpack f ++ '$' : r
+  showsPrec _ (TType ty) = shows ty
+  showsPrec _ (TFormula f) = shows f
 
 data VarType = VTReg Ident | Open Ident
 
@@ -60,7 +61,10 @@ instance Show VarType where
   showsPrec _ (VTReg v) r = v ++ r
   showsPrec _ (Open v) r = v ++ '*' : r
 
-type Formula = B.ByteString
+data Formula = Formula B.ByteString
+
+instance Show Formula where
+  showsPrec _ (Formula f) r =  '$' : C.unpack f ++ '$' : r
 
 data Binder = Binder Local Type
 
@@ -100,13 +104,17 @@ varTypeSort :: VarType -> Ident
 varTypeSort (VTReg s) = s
 varTypeSort (Open s) = s
 
+eqType :: Type -> Type -> Bool
+eqType (TType t1) (TType t2) = t1 == t2
+eqType _ _ = False
+
 showsGroupedBinders :: [Binder] -> ShowS
 showsGroupedBinders bis r =
   foldr (\(gr, ty) -> (' ' :) . showsBinderGroup gr ty) r (join bis Nothing)
   where
   join :: [Binder] -> Maybe ([Local], Bool, Type) -> [([Local], Type)]
   join [] o = flush o []
-  join (Binder x ty : bis) (Just (xs, b, ty')) | isLBound x == b && ty == ty' =
+  join (Binder x ty : bis) (Just (xs, b, ty')) | isLBound x == b && eqType ty ty' =
     join bis (Just (x : xs, b, ty'))
   join (Binder x ty : bis) o = flush o (join bis (Just ([x], isLBound x, ty)))
 
@@ -117,8 +125,8 @@ showsGroupedBinders bis r =
 showsAssert :: [Binder] -> Formula -> ShowS
 showsAssert l f = let (l1, l2) = split l in
     showsGroupedBinders l1 . (':' :) .
-    flip (foldr (\f -> ("\n  $" ++) . (C.unpack f ++) . ("$ >" ++))) l2 .
-    ("\n  $" ++) . (C.unpack f ++) . ("$;" ++)
+    flip (foldr (\f -> ("\n  " ++) . shows f . (" >" ++))) l2 .
+    ("\n  " ++) . shows f . (';' :)
   where
   split :: [Binder] -> ([Binder], [Formula])
   split [] = ([], [])
@@ -148,3 +156,28 @@ instance Show Stmt where
   showsPrec _ (Inout io) r = shows io r
   showsPrec _ (Block ss) r = "{" ++
     foldr (\s r -> '\n' : shows s ('\n' : r)) ("}" ++ r) ss
+
+instance Show Notation where
+  showsPrec _ (Delimiter ds) = ("delimiter " ++) . shows ds . (';' :)
+  showsPrec _ (Prefix x s prec) = ("prefix " ++) . (x ++) .
+    (": " ++) . shows s . (" prec " ++) . shows prec . (';' :)
+  showsPrec _ (Infix right x s prec) = ("infix" ++) .
+    (((if right then 'r' else 'l') : ' ' : x) ++) .
+    (": " ++) . shows s . (" prec " ++) . shows prec . (';' :)
+  showsPrec _ (NNotation x bis ty lits) = ("notation " ++) . (x ++) .
+    showsGroupedBinders bis . (": " ++) . shows ty . (" =" ++) .
+    flip (foldr (\lit -> (' ' :) . shows lit)) lits
+
+instance Show Literal where
+  showsPrec _ (NConst c p) = ('(' :) . shows c . (':' :) . shows p . (')' :)
+  showsPrec _ (NVar v) = shows v
+
+showsIdentFmla :: Either Ident Formula -> ShowS
+showsIdentFmla (Left v) = (v ++)
+showsIdentFmla (Right f) = shows f
+
+instance Show Inout where
+  showsPrec _ (Input ik fs) = ("input " ++) . (ik ++) .
+    flip (foldr (\s -> (' ' :) . showsIdentFmla s)) fs
+  showsPrec _ (Output ik fs) = ("output " ++) . (ik ++) .
+    flip (foldr (\s -> (' ' :) . showsIdentFmla s)) fs
