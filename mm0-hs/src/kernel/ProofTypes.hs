@@ -1,8 +1,10 @@
 module ProofTypes where
 
+import Debug.Trace
 import Data.Bits
 import Data.Maybe
 import qualified Data.Map.Strict as M
+import qualified Data.Sequence as Q
 import Environment (Ident)
 
 newtype SortID = SortID {ofSortID :: Int} deriving (Eq)
@@ -20,26 +22,45 @@ data VBinder = VBound SortID | VReg SortID [VarID] deriving (Eq)
 data VExpr = VVar VarID | VApp TermID [VExpr] deriving (Eq)
 
 class IDPrinter a where
-  ppSort :: a -> SortID -> String
-  ppTerm :: a -> TermID -> String
-  ppThm :: a -> ThmID -> String
-  ppVar :: a -> VarID -> String
-  ppProof :: a -> ProofTree -> ShowS
-  ppInsertSort :: String -> a -> a
-  ppInsertTerm :: Maybe String -> a -> a
-  ppInsertThm :: Maybe String -> a -> a
-  ppInsertVar :: String -> a -> a
+  ppSort :: a -> SortID -> Ident
+  ppTerm :: a -> TermID -> Ident
+  ppThm :: a -> ThmID -> Ident
+  ppVar :: a -> VarID -> Ident
+  ppInsertSort :: Ident -> a -> a
+  ppInsertTerm :: Maybe Ident -> a -> a
+  ppInsertThm :: Maybe Ident -> a -> a
+  ppInsertVar :: Ident -> a -> a
 
 instance IDPrinter () where
   ppSort _ = show
   ppTerm _ = show
   ppThm _ = show
   ppVar _ = show
-  ppProof _ = shows
   ppInsertSort _ = id
   ppInsertTerm _ = id
   ppInsertThm _ = id
   ppInsertVar _ = id
+
+data SeqPrinter = SeqPrinter {
+  mpSorts :: Q.Seq Ident,
+  mpTerms :: Q.Seq Ident,
+  mpThms :: Q.Seq Ident,
+  mpVars :: Q.Seq Ident }
+
+mkSeqPrinter :: SeqPrinter
+mkSeqPrinter = SeqPrinter Q.empty Q.empty Q.empty Q.empty
+
+instance IDPrinter SeqPrinter where
+  ppSort m n = fromMaybe (show 42) (mpSorts m Q.!? ofSortID n)
+  ppTerm m n = fromMaybe (show n) (mpTerms m Q.!? ofTermID n)
+  ppThm m n = fromMaybe (show n) (mpThms m Q.!? ofThmID n)
+  ppVar m n = fromMaybe (show n) (mpVars m Q.!? ofVarID n)
+  ppInsertSort x m = m {mpSorts = traceShowId (mpSorts m Q.|> x)}
+  ppInsertTerm x m = m {mpTerms = mpTerms m Q.|>
+    fromMaybe (show (TermID (Q.length (mpTerms m)))) x}
+  ppInsertThm x m = m {mpThms = mpThms m Q.|>
+    fromMaybe (show (ThmID (Q.length (mpThms m)))) x}
+  ppInsertVar x m = m {mpVars = mpVars m Q.|> x}
 
 ppType :: IDPrinter a => a -> VType -> ShowS
 ppType a (VType s vs) =
@@ -114,14 +135,14 @@ ppProofCmd' a (ProofDef x args ret ds val st) =
 ppProofCmd' a (ProofThm x args hs ret uf ds pf st) =
   let (sargs, n) = ppBinders a args 0
       (shs, n2) = ppHyps a hs n
-      (sds, _) = ppBinders a (VBound <$> ds) n2
+      (sds, n3) = ppBinders a (VBound <$> ds) n2
       suf r = case uf of
         [] -> r
         u:us -> " unfolding(" ++ ppTerm a u ++
           foldr (\u' r -> ' ' : ppTerm a u' ++ r) (')' : r) us in
   (\r -> (if st then "" else "local ") ++ "theorem " ++ fromMaybe "_" x ++
     sargs ((',' :) $ suf $ sds $ shs $ (": " ++) $
-      ppExpr a 1 ret $ " =\n" ++ ppProof a pf r),
+      ppExpr a 1 ret $ " =\n" ++ fst (ppProofTree a pf n3) r),
   ppInsertThm x a)
 
 ppProofCmd :: IDPrinter a => a -> ProofCmd -> ShowS
@@ -129,7 +150,7 @@ ppProofCmd a c = fst (ppProofCmd' a c)
 
 instance Show ProofCmd where showsPrec _ = ppProofCmd ()
 
-type HeapID = Int
+type HeapID = VarID
 
 data ProofTree =
     Load HeapID
@@ -138,6 +159,20 @@ data ProofTree =
   | Save ProofTree
   | Sorry
   deriving (Show)
+
+ppProofTree :: IDPrinter a => a -> ProofTree -> Int -> (ShowS, Int)
+ppProofTree a (Load h) n = ((ppVar a h ++), n)
+ppProofTree a (VExpr e) n = (ppExpr a 1 e, n)
+ppProofTree a (VThm t es ts) n =
+  let (s, n') = foldl (\(s1, n1) t' ->
+        let (s2, n2) = ppProofTree a t' n1 in
+        (s1 . (' ' :) . s2, n2)) (id, n) ts in
+  (\r -> '(' : ppThm a t ++
+    foldr (\e r -> ' ' : ppExpr a 1 e r) (s (')' : r)) es, n')
+ppProofTree a (Save p) n =
+  let (s, n') = ppProofTree a p n in
+  (\r -> '[' : s ('=' : ppVar a (VarID n') ++ ']' : r), n' + 1)
+ppProofTree a Sorry n = (('?' :), n)
 
 type NameMap = (Int, M.Map Ident Int)
 

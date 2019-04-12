@@ -3,6 +3,7 @@ module FromMM where
 import System.IO
 import System.Exit
 import System.Environment
+import Control.Monad.State hiding (liftIO)
 import Control.Monad.RWS.Strict hiding (liftIO)
 import Control.Monad.Except hiding (liftIO)
 import Data.Foldable
@@ -35,7 +36,9 @@ fromMM (mm : rest) = do
     mapM_ (\d -> hPutStrLn h $ shows d "\n") ast
   mapM_ (\mmu -> withFile mmu WriteMode $ \h -> do
     hSetNewlineMode h (NewlineMode LF LF)
-    mapM_ (\d -> hPutStrLn h $ shows d "\n") pfs) mmu
+    runStateT (mapM_ (\d -> do
+      str <- state $ flip ppProofCmd' d
+      lift $ hPutStrLn h $ str "\n") pfs) mkSeqPrinter) mmu
 
 data ParseTrie = PT {
   ptConst :: Parser,

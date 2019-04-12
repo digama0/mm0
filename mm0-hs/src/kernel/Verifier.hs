@@ -369,7 +369,7 @@ verifyProof g = \ctx hs cs -> do
     (foldl' (\bs (VarID v) -> bs .|. bit v) 0 vs)
 
   verifyTree :: ProofTree -> VerifyM StackSlot
-  verifyTree (Load h) = do
+  verifyTree (Load (VarID h)) = do
     VState heap <- get
     fromJustError "index out of bounds" (heap Q.!? h)
   verifyTree (Save p) = do
@@ -391,7 +391,7 @@ verifyProof g = \ctx hs cs -> do
   verifyTree Sorry = throwError "? found in proof"
 
   verifyExpr :: VExpr -> VerifyM StackSlot
-  verifyExpr (VVar (VarID v)) = verifyTree (Load v)
+  verifyExpr (VVar v) = verifyTree (Load v)
   verifyExpr (VApp t es) = do
     sss <- mapM verifyExpr es
     VTermData _ args (VType ret _) <- fromJustError "term not found" (vTerms g Q.!? ofTermID t)
