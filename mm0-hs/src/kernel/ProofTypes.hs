@@ -154,21 +154,28 @@ type HeapID = VarID
 
 data ProofTree =
     Load HeapID
-  | VExpr VExpr
-  | VThm ThmID [VExpr] [ProofTree]
+  | VTerm TermID [ProofTree]
+  | VThm ThmID [ProofTree]
   | Save ProofTree
   | Sorry
   deriving (Show)
 
+exprToPT :: VExpr -> ProofTree
+exprToPT (VVar v) = Load v
+exprToPT (VApp t es) = VTerm t (map exprToPT es)
+
 ppProofTree :: IDPrinter a => a -> ProofTree -> Int -> (ShowS, Int)
 ppProofTree a (Load h) n = ((ppVar a h ++), n)
-ppProofTree a (VExpr e) n = (ppExpr a 1 e, n)
-ppProofTree a (VThm t es ts) n =
+ppProofTree a (VTerm t es) n =
   let (s, n') = foldl (\(s1, n1) t' ->
         let (s2, n2) = ppProofTree a t' n1 in
-        (s1 . (' ' :) . s2, n2)) (id, n) ts in
-  (\r -> '(' : ppThm a t ++
-    foldr (\e r -> ' ' : ppExpr a 1 e r) (s (')' : r)) es, n')
+        (s1 . (' ' :) . s2, n2)) (id, n) es in
+  (\r -> '(' : ppTerm a t ++ s (')' : r), n')
+ppProofTree a (VThm t es) n =
+  let (s, n') = foldl (\(s1, n1) t' ->
+        let (s2, n2) = ppProofTree a t' n1 in
+        (s1 . (' ' :) . s2, n2)) (id, n) es in
+  (\r -> '(' : ppThm a t ++ s (')' : r), n')
 ppProofTree a (Save p) n =
   let (s, n') = ppProofTree a p n in
   (\r -> '[' : s ('=' : ppVar a (VarID n') ++ ']' : r), n' + 1)

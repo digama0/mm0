@@ -376,13 +376,17 @@ verifyProof g = \ctx hs cs -> do
     ss <- verifyTree p
     modify $ \(VState heap) -> VState (heap Q.|> ss)
     return ss
-  verifyTree (VExpr e) = verifyExpr e
-  verifyTree (VThm t es ts) = do
-    vs' <- mapM verifyExpr es
-    hs' <- mapM verifyTree ts
+  verifyTree (VTerm t es) = do
+    sss <- mapM verifyTree es
+    VTermData _ args (VType ret _) <- fromJustError "term not found" (vTerms g Q.!? ofTermID t)
+    (es, hs, b) <- verifyArgs 0 (.|.) args sss
+    guardError "argument number mismatch" (null hs)
+    return (SSExpr ret (VApp t es) b)
+  verifyTree (VThm t ts) = do
+    vs' <- mapM verifyTree ts
     VAssrtData x args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
     withContext ("step " ++ fromMaybe (show t) x) $ do
-      (es, b) <- verifyArgs Q.empty (Q.<|) args vs'
+      (es, hs', b) <- verifyArgs Q.empty (Q.<|) args vs'
       let subst = Q.fromList es
       guardError "disjoint variable violation" $
         all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
@@ -390,27 +394,18 @@ verifyProof g = \ctx hs cs -> do
       return (SSProof (substExpr subst ret))
   verifyTree Sorry = throwError "? found in proof"
 
-  verifyExpr :: VExpr -> VerifyM StackSlot
-  verifyExpr (VVar v) = verifyTree (Load v)
-  verifyExpr (VApp t es) = do
-    sss <- mapM verifyExpr es
-    VTermData _ args (VType ret _) <- fromJustError "term not found" (vTerms g Q.!? ofTermID t)
-    (es, b) <- verifyArgs 0 (.|.) args sss
-    return (SSExpr ret (VApp t es) b)
-
-  verifyArgs :: a -> (VBitSet -> a -> a) -> [VBinder] -> [StackSlot] -> VerifyM ([VExpr], a)
+  verifyArgs :: a -> (VBitSet -> a -> a) -> [VBinder] -> [StackSlot] -> VerifyM ([VExpr], [StackSlot], a)
   verifyArgs a f = go where
-    go [] [] = return ([], a)
-    go [] (_:_) = throwError "argument number mismatch"
+    go [] sss = return ([], sss, a)
     go (_:_) [] = throwError "argument number mismatch"
     go (VBound s' : bs) (SSBound s v : sss) = do
       guardError "type mismatch" (s == s')
-      (\(l, b) -> (VVar v : l, f (bit (ofVarID v)) b)) <$> go bs sss
+      (\(l, ss', b) -> (VVar v : l, ss', f (bit (ofVarID v)) b)) <$> go bs sss
     go (VBound _: _) (_ : _) = throwError "non-bound variable in BV slot"
     go (VReg s' _ : bs) (ss : sss) = do
       (s, e, b) <- fromJustError "bad stack slot" (ofSSExpr ss)
       guardError "type mismatch" (s == s')
-      (\(l, b') -> (e : l, f b b')) <$> go bs sss
+      (\(l, ss', b') -> (e : l, ss', f b b')) <$> go bs sss
 
   verifyHyps :: Q.Seq VExpr -> [VExpr] -> [StackSlot] -> VerifyM ()
   verifyHyps subst = go where

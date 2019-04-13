@@ -147,14 +147,20 @@ readHyp = bracket "(" ")" (insertVar >> expectS ":" >> readExpr)
 readProofExpr :: Parser ProofTree
 readProofExpr =
   (expectS "?" >> return Sorry) <|+
-  (VExpr <$> readExpr) <|+
-  bracket "(" ")" (do
-    t <- readAssrt
-    es <- readlist readExpr
-    hs <- readlist readProofExpr
-    return (VThm t es hs)) <|+
+  bracket "(" ")" (
+    (do
+      t <- readTerm
+      es <- readlist readProofExpr
+      return (VTerm t es)) <|+
+    (do
+      t <- readAssrt
+      hs <- readlist readProofExpr
+      return (VThm t hs))) <|+
   bracket "[" "]" (do
     e <- readProofExpr
     expect (L.Punc "=")
     insertVar
-    return (Save e))
+    return (Save e)) <|+
+  (Load <$> readVar) <|+
+  (flip VTerm [] <$> readTerm) <|+
+  (flip VThm [] <$> readAssrt)
