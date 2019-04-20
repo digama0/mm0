@@ -78,7 +78,7 @@ data TransState = TransState {
   tParsedHyps :: M.Map Label MMExpr,
   tNameMap :: M.Map Label Ident,
   tUsedNames :: S.Set Ident,
-  tThmArity :: M.Map Label Int,
+  tThmRemap :: M.Map Label (Int, [Int]),
   tIxLookup :: IxLookup }
 
 mkTransState :: TransState
@@ -189,16 +189,16 @@ trDecl a d = ask >>= \db -> case d of
       modify $ \m -> m {tParsedHyps = M.insert st e (tParsedHyps m)}
       return Nothing
     Thm fr f@(Const s : _) [] | isNothing (fst (mSorts db M.! s)) -> do
-      (bs1, _, _, reord) <- splitFrame fr
+      (bs1, _, _, reord, rm) <- splitFrame fr
       i <- trName st (mangle st)
       let g = App st . reorderMap reord f
       modify $ \m -> m {
         tParser = ptInsert (tVMap m) g f (tParser m),
-        tThmArity = M.insert st (length bs1) (tThmArity m),
+        tThmRemap = M.insert st (length bs1, rm) (tThmRemap m),
         tIxLookup = ilInsertTerm st $ ilResetVars $ tIxLookup m }
       return $ Just (A.Term i bs1 (DepType s []), StepTerm i)
     Thm fr f@(Const s : _) p -> do
-      (bs1, bs2, hs2, _) <- splitFrame fr
+      (bs1, bs2, hs2, _, rm) <- splitFrame fr
       (e1, e2) <- parseFmla f >>= trExpr
       i <- trName st (mangle st)
       ret <- case p of
@@ -210,28 +210,36 @@ trDecl a d = ask >>= \db -> case d of
           return (A.Theorem i bs1 (exprToFmla e1),
             ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
       modify $ \m -> m {
-        tThmArity = M.insert st (length bs2 + length hs2) (tThmArity m),
+        tThmRemap = M.insert st (length bs2 + length hs2, rm) (tThmRemap m),
         tIxLookup = ilInsertThm st $ ilResetVars $ tIxLookup m }
       return $ Just ret
     Thm _ _ _ -> throwError "bad theorem statement"
 
-splitFrame :: Frame -> TransM ([A.Binder], [VBinder], [VExpr], M.Map Var Int)
+splitFrame :: Frame -> TransM ([A.Binder], [VBinder], [VExpr], M.Map Var Int, [Int])
 splitFrame (hs, ds) = do db <- ask; splitFrame' hs ds db
 splitFrame' hs ds db = do
-  (vs, bs, hs') <- partitionHyps hs
+  (vs, bs, hs', f) <- partitionHyps hs 0
   (bs1, bs2, hs2) <- processArgs vs bs hs'
-  return (bs1, bs2, hs2, buildReorder (vs ++ bs) 0 M.empty)
+  return (bs1, bs2, hs2, buildReorder (vs ++ bs) 0 M.empty,
+    I.elems (f 0 (length vs) (length vs + length bs)))
   where
 
-  partitionHyps :: [Label] -> TransM ([(Var, Label, Sort)], [(Var, Label, Sort)], [Label])
-  partitionHyps (l : ls) = case mStmts db M.! l of
+  partitionHyps :: [Label] -> Int -> TransM ([(Var, Label, Sort)],
+    [(Var, Label, Sort)], [Label], Int -> Int -> Int -> I.IntMap Int)
+  partitionHyps (l : ls) li = case mStmts db M.! l of
     Hyp (VHyp s v) -> do
-      (vs, bs, hs') <- partitionHyps ls
+      (vs, bs, hs', f) <- partitionHyps ls (li+1)
       if sPure (snd (mSorts db M.! s)) then
-        return ((v, l, s) : vs, bs, hs')
-      else return (vs, (v, l, s) : bs, hs')
-    Hyp (EHyp _) -> (\(vs, bs, hs) -> (vs, bs, l : hs)) <$> partitionHyps ls
-  partitionHyps [] = return ([], [], [])
+        return ((v, l, s) : vs, bs, hs',
+          \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
+      else
+        return (vs, (v, l, s) : bs, hs',
+          \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
+    Hyp (EHyp _) -> do
+      (vs, bs, hs, f) <- partitionHyps ls (li+1)
+      return (vs, bs, l : hs,
+        \vi bi hi -> I.insert hi li (f vi bi (hi+1)))
+  partitionHyps [] _ = return ([], [], [], \_ _ _ -> I.empty)
 
   processArgs :: [(Var, Label, Sort)] -> [(Var, Label, Sort)] -> [Label] ->
     TransM ([A.Binder], [VBinder], [VExpr])
@@ -257,9 +265,8 @@ splitFrame' hs ds db = do
       let v' = tNameMap t M.! l
       let s' = tNameMap t M.! s
       let s2 = fromJust $ ilSort (tIxLookup t) s
-      let f (v2, l2, _) = if memDVs ds v v2 then
-              Just (tNameMap t M.! l2, fromJust $ ilVar (tIxLookup t) l)
-            else Nothing
+      let f (v2, l2, _) = if memDVs ds v v2 then Nothing else
+            Just (tNameMap t M.! l2, fromJust $ ilVar (tIxLookup t) l2)
           (vs1, vs2) = unzip $ mapMaybe f vs
       return (A.Binder (A.LReg v') (A.TType $ DepType s' vs1) : bs1,
         VReg s2 vs2 : bs2, hs2)
@@ -321,14 +328,22 @@ mangle (c : s) =
   else '_' : map mangle1 (c : s) where
   mangle1 c = if identCh c then c else '_'
 
-data HeapEl = HeapEl HeapID | HTerm TermID Int | HThm ThmID Int deriving (Show)
+data HeapEl = HeapEl HeapID
+  | HTerm TermID (Int, [Int])
+  | HThm ThmID (Int, [Int])
+  deriving (Show)
 
 ppHeapEl :: IDPrinter a => a -> HeapEl -> String
 ppHeapEl a (HeapEl n) = ppVar a n
 ppHeapEl a (HTerm n _) = ppTerm a n
 ppHeapEl a (HThm n _) = ppThm a n
 
-data Numbers = NNum Int Numbers | NSave Numbers | NSorry Numbers | NEOF | NError
+data Numbers =
+    NNum Int Numbers
+  | NSave Numbers
+  | NSorry Numbers
+  | NEOF
+  | NError
 
 instance Show Numbers where
   showsPrec _ (NNum n ns) r = shows n (' ' : shows ns r)
@@ -371,7 +386,7 @@ trProof a (hs, _) db t ("(" : p) =
         (ds . (fromJust (ilSort lup s) :))
     Just (Hyp (EHyp _)) -> throwError "$e found in paren list"
     Just (Thm _ _ _) ->
-      let a = fromJust (tThmArity t M.!? st) in
+      let a = fromJust (tThmRemap t M.!? st) in
       case (ilTerm lup st, ilThm lup st) of
         (_, Just n) -> processPreloads p (heap Q.|> HThm n a) sz ds
         (Just n, _) -> processPreloads p (heap Q.|> HTerm n a) sz ds
@@ -402,10 +417,10 @@ trProof a (hs, _) db t ("(" : p) =
     case heap Q.!? i of
       Nothing -> throwError "proof backref index out of range"
       Just (HeapEl n) -> processBlocks p heap sz (Load n : pts)
-      Just (HTerm n a) -> do
+      Just (HTerm n (a, rm)) -> do
         (es, pts') <- withContext (show p) (popn a pts)
-        processBlocks p heap sz (VTerm n es : pts')
-      Just (HThm n a) -> do
+        processBlocks p heap sz (VTerm n (map (es !!) rm) : pts')
+      Just (HThm n (a, rm)) -> do
         (es, pts') <- withContext (show p) (popn a pts)
-        processBlocks p heap sz (VThm n es : pts')
+        processBlocks p heap sz (VThm n (map (es !!) rm) : pts')
 trProof _ _ _ _ _ = throwError "normal proofs not supported"

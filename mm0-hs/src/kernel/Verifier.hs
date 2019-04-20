@@ -388,8 +388,13 @@ verifyProof g = \ctx hs cs -> do
     withContext ("step " ++ fromMaybe (show t) x) $ do
       (es, hs', b) <- verifyArgs Q.empty (Q.<|) args vs'
       let subst = Q.fromList es
-      guardError "disjoint variable violation" $
-        all (\(VarID v1, VarID v2) -> Q.index b v1 .|. Q.index b v2 == 0) dv
+      mapM_ (\(VarID v1, VarID v2) ->
+        guardError (let terms = vTerms g in
+            "disjoint variable violation (" ++
+            showVExpr terms (Q.index subst v1) ++ " ^ " ++
+            showVExpr terms (Q.index subst v2) ++ " = " ++
+            show (Q.index b v1 .&. Q.index b v2) ++ ")")
+          (Q.index b v1 .&. Q.index b v2 == 0)) dv
       verifyHyps (Q.fromList es) hs hs'
       return (SSProof (substExpr subst ret))
   verifyTree Sorry = throwError "? found in proof"
