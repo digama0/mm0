@@ -21,6 +21,11 @@ data VType = VType SortID [VarID]
 data VBinder = VBound SortID | VReg SortID [VarID] deriving (Eq)
 data VExpr = VVar VarID | VApp TermID [VExpr] deriving (Eq)
 
+substExpr :: Q.Seq VExpr -> VExpr -> VExpr
+substExpr m = go where
+  go (VVar (VarID v)) = Q.index m v
+  go (VApp t es) = VApp t (go <$> es)
+
 class IDPrinter a where
   ppSort :: a -> SortID -> Ident
   ppTerm :: a -> TermID -> Ident

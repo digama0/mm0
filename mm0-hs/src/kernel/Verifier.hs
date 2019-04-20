@@ -312,11 +312,6 @@ trExpr termIx varIx = go where
   go (SVar v) = VVar (varIx M.! v)
   go (App t es) = VApp (termIx M.! t) (go <$> es)
 
-substExpr :: Q.Seq VExpr -> VExpr -> VExpr
-substExpr m = go where
-  go (VVar (VarID v)) = Q.index m v
-  go (VApp t es) = VApp t (go <$> es)
-
 makeDV :: [VBinder] -> [(VarID, VarID)]
 makeDV = go 0 [] where
   go :: Int -> [VarID] -> [VBinder] -> [(VarID, VarID)]

@@ -1,6 +1,7 @@
 module MMParser (parseMM) where
 
 import Data.List
+import Data.Char
 import Control.Monad.Trans.State
 import Control.Monad.Except hiding (liftIO)
 import qualified Text.ParserCombinators.ReadP as P
@@ -132,7 +133,7 @@ process (x : "$a" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
   withContext x $ do
     fr <- mkFrame f
-    addStmt x (Thm fr f [])
+    addStmt x (Thm fr f Nothing)
   process ss'
 process (x : "$p" : ss) = do
   (f, ss1) <- withContext x $ readMath "$=" ss
@@ -140,7 +141,9 @@ process (x : "$p" : ss) = do
   (p, ss2) <- withContext x $ readProof ss1
   withContext x $ do
     (p, ss2) <- readProof ss1
-    addStmt x (Thm fr f p)
+    db <- get
+    pr <- lift $ trProof fr db p
+    addStmt x (Thm fr f (Just pr))
   process ss2
 process (x : ss) = throwError ("wtf " ++ x ++ show (take 100 ss))
 
@@ -164,6 +167,77 @@ readProof = go id where
   go f [] = throwError "unclosed $p"
   go f ("$." : ss) = return (f [], ss)
   go f (s : ss) = go (f . (s:)) ss
+
+data Numbers =
+    NNum Int Numbers
+  | NSave Numbers
+  | NSorry Numbers
+  | NEOF
+  | NError
+
+instance Show Numbers where
+  showsPrec _ (NNum n ns) r = shows n (' ' : shows ns r)
+  showsPrec _ (NSave ns) r = "Z " ++ shows ns r
+  showsPrec _ (NSorry ns) r = "? " ++ shows ns r
+  showsPrec _ NEOF r = r
+  showsPrec _ NError r = "err" ++ r
+
+numberize :: String -> Int -> Numbers
+numberize "" n = if n == 0 then NEOF else NError
+numberize ('?' : s) n = if n == 0 then NSorry (numberize s 0) else NError
+numberize ('Z' : s) n = if n == 0 then NSave (numberize s 0) else NError
+numberize (c : s) n | 'A' <= c && c <= 'Y' =
+  if c < 'U' then
+    let i = ord c - ord 'A' in
+    NNum (20 * n + i) (numberize s 0)
+  else
+    let i = ord c - ord 'U' in
+    numberize s (5 * n + i + 1)
+numberize (c : s) _ = NError
+
+data HeapEl = HeapEl Proof | HThm Label Int deriving (Show)
+
+trProof :: Frame -> MMDatabase -> [String] -> Either String ([Label], Proof)
+trProof (hs, _) db ("(" : p) =
+  let heap = Q.fromList (HeapEl . PHyp <$> hs) in
+  processPreloads p heap 0 id where
+  processPreloads :: [String] -> Q.Seq HeapEl -> Int ->
+    ([Label] -> [Label]) -> Either String ([Label], Proof)
+  processPreloads [] heap sz ds = throwError ("unclosed parens in proof: " ++ show ("(" : p))
+  processPreloads (")" : blocks) heap sz ds = do
+    pt <- processBlocks (numberize (join blocks) 0) heap 0 []
+    return (ds [], pt)
+  processPreloads (st : p) heap sz ds = case mStmts db M.!? st of
+    Nothing -> throwError ("statement " ++ st ++ " not found")
+    Just (Hyp (VHyp s v)) ->
+      processPreloads p (heap Q.|> HeapEl (PDummy sz)) (sz + 1) (ds . (s :))
+    Just (Hyp (EHyp _)) -> throwError "$e found in paren list"
+    Just (Thm (hs, _) _ _) ->
+      processPreloads p (heap Q.|> HThm st (length hs)) sz ds
+
+  popn :: Int -> [Proof] -> Either String ([Proof], [Proof])
+  popn = go [] where
+    go stk2 0 stk     = return (stk2, stk)
+    go _    n []      = throwError "stack underflow"
+    go stk2 n (p:stk) = go (p:stk2) (n-1) stk
+
+  processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [Proof] -> Either String Proof
+  processBlocks NEOF heap sz [pt] = return pt
+  processBlocks NEOF _ _ _ = throwError "bad stack state"
+  processBlocks NError _ _ _ = throwError "proof block parse error"
+  processBlocks (NSave p) heap sz [] = throwError "can't save empty stack"
+  processBlocks (NSave p) heap sz (pt : pts) =
+    processBlocks p (heap Q.|> HeapEl (PBackref sz)) (sz + 1) (PSave pt : pts)
+  processBlocks (NSorry p) heap sz pts =
+    processBlocks p heap sz (PSorry : pts)
+  processBlocks (NNum i p) heap sz pts =
+    case heap Q.!? i of
+      Nothing -> throwError "proof backref index out of range"
+      Just (HeapEl pt) -> processBlocks p heap sz (pt : pts)
+      Just (HThm x n) -> do
+        (es, pts') <- withContext (show p) (popn n pts)
+        processBlocks p heap sz (PThm x es : pts')
+trProof _ _ _ = throwError "normal proofs not supported"
 
 data JComment =
     JKeyword String JComment

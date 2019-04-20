@@ -16,9 +16,12 @@ data Hyp = VHyp Const Var | EHyp [Sym] deriving (Show)
 type DVs = S.Set (Var, Var)
 type Frame = ([Label], DVs)
 type Fmla = [Sym]
-type Proof = [String]
+data Proof = PHyp Label | PDummy Int | PBackref Int
+  | PSorry | PSave Proof | PThm Label [Proof] deriving (Show)
 
-data Stmt = Hyp Hyp | Thm Frame Fmla Proof deriving (Show)
+data Stmt = Hyp Hyp
+  | Thm Frame Fmla (Maybe ([Label], Proof))
+  deriving (Show)
 
 type Scope = [([(Label, Hyp)], [[Var]], S.Set Var)]
 

@@ -8,7 +8,6 @@ import Control.Monad.RWS.Strict hiding (liftIO)
 import Control.Monad.Except hiding (liftIO)
 import Data.Foldable
 import Data.Maybe
-import Data.Char
 import Debug.Trace
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Char8 as C
@@ -78,7 +77,7 @@ data TransState = TransState {
   tParsedHyps :: M.Map Label MMExpr,
   tNameMap :: M.Map Label Ident,
   tUsedNames :: S.Set Ident,
-  tThmRemap :: M.Map Label (Int, [Int]),
+  tBuilders :: M.Map Label (Int, [ProofTree] -> ProofTree),
   tIxLookup :: IxLookup }
 
 mkTransState :: TransState
@@ -188,30 +187,38 @@ trDecl a d = ask >>= \db -> case d of
       e <- parseFmla f
       modify $ \m -> m {tParsedHyps = M.insert st e (tParsedHyps m)}
       return Nothing
-    Thm fr f@(Const s : _) [] | isNothing (fst (mSorts db M.! s)) -> do
+    Thm fr f@(Const s : _) Nothing | isNothing (fst (mSorts db M.! s)) -> do
       (bs1, _, _, reord, rm) <- splitFrame fr
       i <- trName st (mangle st)
       let g = App st . reorderMap reord f
-      modify $ \m -> m {
-        tParser = ptInsert (tVMap m) g f (tParser m),
-        tThmRemap = M.insert st (length bs1, rm) (tThmRemap m),
-        tIxLookup = ilInsertTerm st $ ilResetVars $ tIxLookup m }
+      modify $ \m ->
+        let lup = tIxLookup m
+            n = fst (pTermIx lup)
+            bd es = VTerm (TermID n) (map (es !!) rm) in
+        m {
+          tParser = ptInsert (tVMap m) g f (tParser m),
+          tBuilders = M.insert st (length bs1, bd) (tBuilders m),
+          tIxLookup = ilInsertTerm st $ ilResetVars lup }
       return $ Just (A.Term i bs1 (DepType s []), StepTerm i)
     Thm fr f@(Const s : _) p -> do
       (bs1, bs2, hs2, _, rm) <- splitFrame fr
       (e1, e2) <- parseFmla f >>= trExpr
       i <- trName st (mangle st)
       ret <- case p of
-        [] -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
-        _ -> do
+        Nothing -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
+        Just p -> do
           t <- get
           (ds, pr) <- catch ([], Sorry) $ lift $ withContext st $
             trProof a fr db t p
           return (A.Theorem i bs1 (exprToFmla e1),
             ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
-      modify $ \m -> m {
-        tThmRemap = M.insert st (length bs2 + length hs2, rm) (tThmRemap m),
-        tIxLookup = ilInsertThm st $ ilResetVars $ tIxLookup m }
+      modify $ \m ->
+        let lup = tIxLookup m
+            n = fst (pThmIx lup)
+            bd es = VThm (ThmID n) (map (es !!) rm) in
+        m {
+          tBuilders = M.insert st (length bs2 + length hs2, bd) (tBuilders m),
+          tIxLookup = ilInsertThm st $ ilResetVars lup }
       return $ Just ret
     Thm _ _ _ -> throwError "bad theorem statement"
 
@@ -328,99 +335,33 @@ mangle (c : s) =
   else '_' : map mangle1 (c : s) where
   mangle1 c = if identCh c then c else '_'
 
-data HeapEl = HeapEl HeapID
-  | HTerm TermID (Int, [Int])
-  | HThm ThmID (Int, [Int])
-  deriving (Show)
+data HeapEl = HeapEl HeapID | HBuild (Int, [ProofTree] -> ProofTree)
 
 ppHeapEl :: IDPrinter a => a -> HeapEl -> String
 ppHeapEl a (HeapEl n) = ppVar a n
-ppHeapEl a (HTerm n _) = ppTerm a n
-ppHeapEl a (HThm n _) = ppThm a n
+ppHeapEl a (HBuild (_, f)) = case f [] of
+  VTerm n _ -> ppTerm a n
+  VThm n _ -> ppThm a n
 
-data Numbers =
-    NNum Int Numbers
-  | NSave Numbers
-  | NSorry Numbers
-  | NEOF
-  | NError
-
-instance Show Numbers where
-  showsPrec _ (NNum n ns) r = shows n (' ' : shows ns r)
-  showsPrec _ (NSave ns) r = "Z " ++ shows ns r
-  showsPrec _ (NSorry ns) r = "? " ++ shows ns r
-  showsPrec _ NEOF r = r
-  showsPrec _ NError r = "err" ++ r
-
-numberize :: String -> Int -> Numbers
-numberize "" n = if n == 0 then NEOF else NError
-numberize ('?' : s) n = if n == 0 then NSorry (numberize s 0) else NError
-numberize ('Z' : s) n = if n == 0 then NSave (numberize s 0) else NError
-numberize (c : s) n | 'A' <= c && c <= 'Y' =
-  if c < 'U' then
-    let i = ord c - ord 'A' in
-    NNum (20 * n + i) (numberize s 0)
-  else
-    let i = ord c - ord 'U' in
-    numberize s (5 * n + i + 1)
-numberize (c : s) _ = NError
+instance Show HeapEl where show = ppHeapEl ()
 
 trProof :: IDPrinter a => a -> Frame -> MMDatabase -> TransState ->
-  Proof -> Either String ([SortID], ProofTree)
-trProof a (hs, _) db t ("(" : p) =
-  let {heap = foldl' (\heap l ->
-    heap Q.|> HeapEl (fromJust $ ilVar lup l)) Q.empty hs} in
-  processPreloads p heap (Q.length heap) id where
+  ([Label], Proof) -> Either String ([SortID], ProofTree)
+trProof a (hs, _) db t (ds, pr) = do
+  let ds' = fromJust . ilSort lup <$> ds
+  pr' <- processProof pr
+  return (ds', pr') where
   lup = tIxLookup t
+  nhs = length hs
+  nds = length ds
 
-  processPreloads :: Proof -> Q.Seq HeapEl -> Int ->
-    ([SortID] -> [SortID]) -> Either String ([SortID], ProofTree)
-  processPreloads [] heap sz ds = throwError ("unclosed parens in proof: " ++ show ("(" : p))
-  processPreloads (")" : blocks) heap sz ds = do
-    pt <- processBlocks (numberize (join blocks) 0) heap sz []
-    return (ds [], pt)
-  processPreloads (st : p) heap sz ds = case mStmts db M.!? st of
-    Nothing -> throwError ("statement " ++ st ++ " not found")
-    Just (Hyp (VHyp s v)) ->
-      processPreloads p (heap Q.|> HeapEl (VarID sz)) (sz + 1)
-        (ds . (fromJust (ilSort lup s) :))
-    Just (Hyp (EHyp _)) -> throwError "$e found in paren list"
-    Just (Thm _ _ _) ->
-      let a = fromJust (tThmRemap t M.!? st) in
-      case (ilTerm lup st, ilThm lup st) of
-        (_, Just n) -> processPreloads p (heap Q.|> HThm n a) sz ds
-        (Just n, _) -> processPreloads p (heap Q.|> HTerm n a) sz ds
-
-  popn :: Int -> [ProofTree] -> Either String ([ProofTree], [ProofTree])
-  popn = go [] where
-    go stk2 0 stk     = return (stk2, stk)
-    go _    n []      = throwError "stack underflow"
-    go stk2 n (p:stk) = go (p:stk2) (n-1) stk
-
-  showPTS :: [ProofTree] -> Int -> (ShowS, Int)
-  showPTS [] n = (id, n)
-  showPTS (pt : pts) n =
-    let (s2, n2) = showPTS pts n
-        (s1, n1) = ppProofTree a pt n2 in
-    (s2 . ("- " ++) . s1 . ('\n' :), n1)
-
-  processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [ProofTree] -> Either String ProofTree
-  processBlocks NEOF heap sz [pt] = return pt
-  processBlocks NEOF _ _ _ = throwError "bad stack state"
-  processBlocks NError _ _ _ = throwError "proof block parse error"
-  processBlocks (NSave p) heap sz [] = throwError "can't save empty stack"
-  processBlocks (NSave p) heap sz (pt : pts) =
-    processBlocks p (heap Q.|> HeapEl (VarID sz)) (sz + 1) (Save pt : pts)
-  processBlocks (NSorry p) heap sz pts =
-    processBlocks p heap sz (Sorry : pts)
-  processBlocks (NNum i p) heap sz pts =
-    case heap Q.!? i of
-      Nothing -> throwError "proof backref index out of range"
-      Just (HeapEl n) -> processBlocks p heap sz (Load n : pts)
-      Just (HTerm n (a, rm)) -> do
-        (es, pts') <- withContext (show p) (popn a pts)
-        processBlocks p heap sz (VTerm n (map (es !!) rm) : pts')
-      Just (HThm n (a, rm)) -> do
-        (es, pts') <- withContext (show p) (popn a pts)
-        processBlocks p heap sz (VThm n (map (es !!) rm) : pts')
-trProof _ _ _ _ _ = throwError "normal proofs not supported"
+  processProof :: Proof -> Either String ProofTree
+  processProof (PHyp l) = return $ Load $ fromJust $ ilVar lup l
+  processProof (PDummy n) = return $ Load $ VarID (nhs + n)
+  processProof (PBackref n) = return $ Load $ VarID (nhs + nds + n)
+  processProof PSorry = return Sorry
+  processProof (PSave p) = Save <$> processProof p
+  processProof (PThm st ps) = do
+    ps' <- mapM processProof ps
+    let (_, fn) = tBuilders t M.! st
+    return $ fn ps'
