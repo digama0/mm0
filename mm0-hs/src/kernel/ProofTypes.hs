@@ -51,11 +51,11 @@ mkSeqPrinter :: SeqPrinter
 mkSeqPrinter = SeqPrinter Q.empty Q.empty Q.empty Q.empty
 
 instance IDPrinter SeqPrinter where
-  ppSort m n = fromMaybe (show 42) (mpSorts m Q.!? ofSortID n)
+  ppSort m n = fromMaybe (show n) (mpSorts m Q.!? ofSortID n)
   ppTerm m n = fromMaybe (show n) (mpTerms m Q.!? ofTermID n)
   ppThm m n = fromMaybe (show n) (mpThms m Q.!? ofThmID n)
   ppVar m n = fromMaybe (show n) (mpVars m Q.!? ofVarID n)
-  ppInsertSort x m = m {mpSorts = traceShowId (mpSorts m Q.|> x)}
+  ppInsertSort x m = m {mpSorts = mpSorts m Q.|> x}
   ppInsertTerm x m = m {mpTerms = mpTerms m Q.|>
     fromMaybe (show (TermID (Q.length (mpTerms m)))) x}
   ppInsertThm x m = m {mpThms = mpThms m Q.|>
@@ -166,11 +166,13 @@ exprToPT (VApp t es) = VTerm t (map exprToPT es)
 
 ppProofTree :: IDPrinter a => a -> ProofTree -> Int -> (ShowS, Int)
 ppProofTree a (Load h) n = ((ppVar a h ++), n)
+ppProofTree a (VTerm t []) n = ((ppTerm a t ++), n)
 ppProofTree a (VTerm t es) n =
   let (s, n') = foldl (\(s1, n1) t' ->
         let (s2, n2) = ppProofTree a t' n1 in
         (s1 . (' ' :) . s2, n2)) (id, n) es in
   (\r -> '(' : ppTerm a t ++ s (')' : r), n')
+ppProofTree a (VThm t []) n = ((ppThm a t ++), n)
 ppProofTree a (VThm t es) n =
   let (s, n') = foldl (\(s1, n1) t' ->
         let (s2, n2) = ppProofTree a t' n1 in

@@ -23,26 +23,24 @@ import Environment (Ident, DepType(..), SortData(..), SExpr(..))
 import ProofTypes
 import qualified AST as A
 
+write :: String -> (Handle -> IO ()) -> IO ()
+write f io = withFile f WriteMode $ \h ->
+  hSetNewlineMode h (NewlineMode LF LF) >> io h
+
 fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
 fromMM (mm : rest) = do
   db <- withFile mm ReadMode $ \h ->
     B.hGetContents h >>= liftIO . parseMM
-  let (err, ast, pfs) = makeAST' db
   (mm0, mmu) <- case rest of
-    [] -> return (\k -> k stdout, Nothing)
-    "-o" : mm0 : [] -> return (withFile mm0 WriteMode, Nothing)
-    "-o" : mm0 : mmu : _ -> return (withFile mm0 WriteMode, Just mmu)
+    [] -> return (\k -> k stdout, \k -> k (\_ -> return ()))
+    "-o" : mm0 : [] -> return (write mm0, \k -> k (\_ -> return ()))
+    "-o" : mm0 : mmu : _ -> return (write mm0, \k -> write mmu $ k . hPutStrLn)
     _ -> die "from-mm: too many arguments"
-  mm0 $ \h -> do
-    hSetNewlineMode h (NewlineMode LF LF)
-    mapM_ (\d -> hPutStrLn h $ shows d "\n") ast
-  mapM_ (\mmu -> withFile mmu WriteMode $ \h -> do
-    hSetNewlineMode h (NewlineMode LF LF)
-    runStateT (mapM_ (\d -> do
-      str <- state $ flip ppProofCmd' d
-      lift $ hPutStrLn h $ str "\n") pfs) mkSeqPrinter) mmu
-  liftIO err
+  mm0 $ \h -> mmu $ printAST db (hPutStrLn h)
+
+withContext :: MonadError String m => String -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 data ParseTrie = PT {
   ptConst :: Parser,
@@ -83,29 +81,40 @@ data TransState = TransState {
   tThmArity :: M.Map Label Int,
   tIxLookup :: IxLookup }
 
-type TransM = RWST MMDatabase (Endo A.AST, Endo Proofs) TransState (Either String)
+mkTransState :: TransState
+mkTransState = TransState M.empty M.empty M.empty M.empty S.empty M.empty mkIxLookup
 
-runTransM :: TransM a -> MMDatabase -> Either String (a, (A.AST, Proofs))
-runTransM m db = do
-  (a, (Endo f, Endo g)) <- evalRWST m db
-    (TransState M.empty M.empty M.empty M.empty S.empty M.empty mkIxLookup)
-  return (a, (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") : f [], g []))
+type TransM = RWST MMDatabase (Endo [String]) TransState (Either String)
+
+runTransM :: TransM a -> MMDatabase -> Either String a
+runTransM m db = fst <$> evalRWST m db mkTransState
+  -- return (a, (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") : f [], g []))
 
 makeAST :: MMDatabase -> Either String (A.AST, Proofs)
-makeAST db = snd <$> runTransM (mapM_ trDecl (mDecls db)) db
+makeAST db = trDecls (mDecls db) id id mkTransState where
+  trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
+    TransState -> Either String (A.AST, Proofs)
+  trDecls Q.Empty f g s = return (f [], g [])
+  trDecls (d Q.:<| ds) f g st = runRWST (trDecl () d) db st >>= \case
+    (Nothing, st', _) -> trDecls ds f g st'
+    (Just (d, p), st', _) -> trDecls ds (f . (d :)) (g . (p :)) st'
 
-makeAST' :: MMDatabase -> (Either String (), A.AST, Proofs)
-makeAST' db = trDecls (mDecls db) mempty
-  (TransState M.empty M.empty M.empty M.empty S.empty M.empty mkIxLookup)
+printAST :: MMDatabase -> (String -> IO ()) -> (String -> IO ()) -> IO ()
+printAST db mm0 mmu = trDecls (mDecls db) mkTransState mkSeqPrinter
   where
-  trDecls :: Q.Seq Decl -> (Endo A.AST, Endo Proofs) -> TransState -> (Either String (), A.AST, Proofs)
-  trDecls Q.Empty (Endo f, Endo g) s = (return (), f [], g [])
-  trDecls (d Q.:<| ds) w@(Endo f, Endo g) st = case runRWST (trDecl d) db st of
-    Left s -> (Left s, f [], g [])
-    Right ((), st', w') -> trDecls ds (w <> w') st'
+  trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
+  trDecls Q.Empty s p = return ()
+  trDecls (d Q.:<| ds) st p = liftIO (runRWST (trDecl p d) db st) >>= \case
+    (Nothing, st', w) -> report w >> trDecls ds st' p
+    (Just (a, pf), st', w) -> do
+      let (s, p') = ppProofCmd' p pf
+      mm0 $ shows a "\n"
+      mmu $ s "\n"
+      report w
+      trDecls ds st' p'
 
-emit :: A.Stmt -> ProofCmd -> TransM ()
-emit d p = tell (Endo (d :), Endo (p :))
+  report :: Endo [String] -> IO ()
+  report (Endo f) = mapM_ (hPutStrLn stderr) (f [])
 
 fromJust' :: String -> Maybe a -> a
 fromJust' _ (Just a) = a
@@ -115,6 +124,9 @@ fromJust' s Nothing = error $ "fromJust: " ++ s
 -- (<!>) m k = case m M.!? k of
 --   Nothing -> error $ show m ++ " ! " ++ show k
 --   Just v -> v
+
+catch :: a -> TransM a -> TransM a
+catch a m = catchError m (\e -> tell (Endo (e :)) >> return a)
 
 type ParseResult = [(([MMExpr] -> [MMExpr]) -> MMExpr, [Sym])]
 parseFmla :: Fmla -> TransM MMExpr
@@ -155,23 +167,25 @@ parseFmla = \case
         (g, f'') <- parsePT s f' q
         [(g . (. (v :)), f'')]) ++ r
 
-trDecl :: Decl -> TransM ()
-trDecl d = ask >>= \db -> case d of
+trDecl :: IDPrinter a => a -> Decl -> TransM (Maybe (A.Stmt, ProofCmd))
+trDecl a d = ask >>= \db -> case d of
   Sort s -> case mSorts db M.! s of
     (Nothing, sd) -> do
       i <- trName s (mangle s)
-      emit (A.Sort i sd) (StepSort i)
       modify $ \m -> m {tIxLookup = ilInsertSort s (tIxLookup m)}
-    _ -> return ()
+      return $ Just (A.Sort i sd, StepSort i)
+    _ -> return Nothing
   Stmt st -> case mStmts db M.! st of
     Hyp (VHyp c v) -> do
       trName st (if identStr v then v else mangle st)
       modify $ \m -> m {
         tVMap = M.insert v (c, st) (tVMap m),
         tParsedHyps = M.insert st (SVar v) (tParsedHyps m) }
+      return Nothing
     Hyp (EHyp f) -> do
       e <- parseFmla f
       modify $ \m -> m {tParsedHyps = M.insert st e (tParsedHyps m)}
+      return Nothing
     Thm fr f@(Const s : _) [] | isNothing (fst (mSorts db M.! s)) -> do
       (bs1, _, _, reord) <- splitFrame fr
       i <- trName st (mangle st)
@@ -180,21 +194,23 @@ trDecl d = ask >>= \db -> case d of
         tParser = ptInsert (tVMap m) g f (tParser m),
         tThmArity = M.insert st (length bs1) (tThmArity m),
         tIxLookup = ilInsertTerm st $ ilResetVars $ tIxLookup m }
-      emit (A.Term i bs1 (DepType s [])) (StepTerm i)
+      return $ Just (A.Term i bs1 (DepType s []), StepTerm i)
     Thm fr f@(Const s : _) p -> do
       (bs1, bs2, hs2, _) <- splitFrame fr
       (e1, e2) <- parseFmla f >>= trExpr
       i <- trName st (mangle st)
-      case p of
-        [] -> emit (A.Axiom i bs1 (exprToFmla e1)) (StepAxiom i)
+      ret <- case p of
+        [] -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
         _ -> do
           t <- get
-          (ds, pr) <- lift $ trProof fr db t p
-          emit (A.Theorem i bs1 (exprToFmla e1))
-            (ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
+          (ds, pr) <- catch ([], Sorry) $ lift $ withContext st $
+            trProof a (st == "pm5.32") fr db t p
+          return (A.Theorem i bs1 (exprToFmla e1),
+            ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
       modify $ \m -> m {
         tThmArity = M.insert st (length bs2 + length hs2) (tThmArity m),
         tIxLookup = ilInsertThm st $ ilResetVars $ tIxLookup m }
+      return $ Just ret
     Thm _ _ _ -> throwError "bad theorem statement"
 
 splitFrame :: Frame -> TransM ([A.Binder], [VBinder], [VExpr], M.Map Var Int)
@@ -305,24 +321,36 @@ mangle (c : s) =
 
 data HeapEl = HeapEl HeapID | HTerm TermID Int | HThm ThmID Int deriving (Show)
 
+ppHeapEl :: IDPrinter a => a -> HeapEl -> String
+ppHeapEl a (HeapEl n) = ppVar a n
+ppHeapEl a (HTerm n _) = ppTerm a n
+ppHeapEl a (HThm n _) = ppThm a n
+
 data Numbers = NNum Int Numbers | NSave Numbers | NSorry Numbers | NEOF | NError
 
+instance Show Numbers where
+  showsPrec _ (NNum n ns) r = shows n (' ' : shows ns r)
+  showsPrec _ (NSave ns) r = "Z " ++ shows ns r
+  showsPrec _ (NSorry ns) r = "? " ++ shows ns r
+  showsPrec _ NEOF r = r
+  showsPrec _ NError r = "err" ++ r
+
 numberize :: String -> Int -> Numbers
-numberize "" n = NEOF
+numberize "" n = if n == 0 then NEOF else NError
 numberize ('?' : s) n = if n == 0 then NSorry (numberize s 0) else NError
 numberize ('Z' : s) n = if n == 0 then NSave (numberize s 0) else NError
 numberize (c : s) n | 'A' <= c && c <= 'Y' =
-  if c < 'T' then
+  if c < 'U' then
     let i = ord c - ord 'A' in
     NNum (20 * n + i) (numberize s 0)
   else
-    let i = ord c - ord 'T' in
-    numberize s (5 * n + i)
+    let i = ord c - ord 'U' in
+    numberize s (5 * n + i + 1)
 numberize (c : s) _ = NError
 
-trProof :: Frame -> MMDatabase -> TransState ->
+trProof :: IDPrinter a => a -> Bool -> Frame -> MMDatabase -> TransState ->
   Proof -> Either String ([SortID], ProofTree)
-trProof (hs, _) db t ("(" : p) =
+trProof a x (hs, _) db t ("(" : p) =
   let {heap = foldl' (\heap l ->
     heap Q.|> HeapEl (fromJust $ ilVar lup l)) Q.empty hs} in
   processPreloads p heap (Q.length heap) id where
@@ -352,23 +380,37 @@ trProof (hs, _) db t ("(" : p) =
     go _    n []      = throwError "stack underflow"
     go stk2 n (p:stk) = go (p:stk2) (n-1) stk
 
+  showPTS :: [ProofTree] -> Int -> (ShowS, Int)
+  showPTS [] n = (id, n)
+  showPTS (pt : pts) n =
+    let (s2, n2) = showPTS pts n
+        (s1, n1) = ppProofTree a pt n2 in
+    (s2 . ("- " ++) . s1 . ('\n' :), n1)
+
   processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [ProofTree] -> Either String ProofTree
-  processBlocks NEOF heap sz [pt] = return pt
-  processBlocks NEOF _ _ _ = throwError "bad stack state"
-  processBlocks NError _ _ _ = throwError "proof block parse error"
-  processBlocks (NSave p) heap sz [] = throwError "can't save empty stack"
-  processBlocks (NSave p) heap sz (pt : pts) =
-    processBlocks p (heap Q.|> HeapEl (VarID sz)) (sz + 1) (Save pt : pts)
-  processBlocks (NSorry p) heap sz pts =
-    processBlocks p heap sz (Sorry : pts)
-  processBlocks (NNum i p) heap sz pts =
-    case heap Q.!? i of
-      Nothing -> throwError "proof backref index out of range"
-      Just (HeapEl n) -> processBlocks p heap sz (Load n : pts)
-      Just (HTerm n a) -> do
-        (es, pts') <- popn a pts
-        processBlocks p heap sz (VTerm n es : pts')
-      Just (HThm n a) -> do
-        (es, pts') <- popn a pts
-        processBlocks p heap sz (VThm n es : pts')
-trProof _ _ _ _ = throwError "normal proofs not supported"
+  processBlocks p heap sz1 pts = go p 0 heap sz1 pts where
+    go p k heap sz pts | x &&
+      trace (
+        Q.foldrWithIndex (\i hel r ->
+          show i ++ "=" ++ ppHeapEl a hel  ++ ", " ++ r) "\n" heap ++
+        fst (showPTS pts sz1) (show k ++ " <- " ++ show p)) False = undefined
+    go NEOF _ heap sz [pt] = return pt
+    go NEOF _ _ _ _ = throwError "bad stack state"
+    go NError _ _ _ _ = throwError "proof block parse error"
+    go (NSave p) _ heap sz [] = throwError "can't save empty stack"
+    go (NSave p) k heap sz (pt : pts) =
+      go p k (heap Q.|> HeapEl (VarID sz)) (sz + 1) (Save pt : pts)
+    go (NSorry p) k heap sz pts =
+      go p (k+1) heap sz (Sorry : pts)
+    go (NNum i p) k heap sz pts =
+      case heap Q.!? i of
+        Nothing -> throwError "proof backref index out of range"
+        Just hel | x && trace ("read " ++ ppHeapEl a hel) False -> undefined
+        Just (HeapEl n) -> go p (k+1) heap sz (Load n : pts)
+        Just (HTerm n a) -> do
+          (es, pts') <- withContext (show p) (popn a pts)
+          go p (k+1) heap sz (VTerm n es : pts')
+        Just (HThm n a) -> do
+          (es, pts') <- withContext (show p) (popn a pts)
+          go p (k+1) heap sz (VThm n es : pts')
+trProof _ _ _ _ _ _ = throwError "normal proofs not supported"
