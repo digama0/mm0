@@ -28,6 +28,7 @@ dependencies:
 - transformers
 - mtl
 - split
+- parsec
 
 default-extensions:
 - FlexibleContexts

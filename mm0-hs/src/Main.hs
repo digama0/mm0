@@ -3,6 +3,7 @@ module Main (main) where
 import System.IO
 import System.Exit
 import System.Environment
+import System.Timeout
 import qualified Data.ByteString.Lazy as B
 import Parser
 import AST
@@ -33,8 +34,8 @@ doVerify args = do
   case rest of
     [] -> die "error: no proof file"
     (mmp:_) -> do
-      pf <- readFile mmp
-      pf <- liftIO (fromJustError "mmu parse failure" (parseProof pf))
+      pf <- B.readFile mmp
+      Just pf <- timeout 10000000 $ liftIO (parseProof pf)
       out <- liftIO (verify s env pf)
       putStrLn "verified"
       mapM_ putStr out
