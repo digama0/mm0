@@ -98,7 +98,7 @@ readProof = ident >>= \case
   "output" -> ident >>= \case
     "string" -> return $ StepInout (VIKString True)
     _ -> empty
-  l -> trace ("wtf " ++ show l) empty
+  l -> empty
 
 readDef :: Bool -> Parser ProofCmd
 readDef st = do

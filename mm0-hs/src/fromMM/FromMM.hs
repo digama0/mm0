@@ -88,10 +88,10 @@ type TransM = RWST MMDatabase (Endo [String]) TransState (Either String)
 
 runTransM :: TransM a -> MMDatabase -> Either String a
 runTransM m db = fst <$> evalRWST m db mkTransState
-  -- return (a, (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") : f [], g []))
 
 makeAST :: MMDatabase -> Either String (A.AST, Proofs)
-makeAST db = trDecls (mDecls db) id id mkTransState where
+makeAST db = trDecls (mDecls db)
+  (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") :) id mkTransState where
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
     TransState -> Either String (A.AST, Proofs)
   trDecls Q.Empty f g s = return (f [], g [])
@@ -100,7 +100,9 @@ makeAST db = trDecls (mDecls db) id id mkTransState where
     (Just (d, p), st', _) -> trDecls ds (f . (d :)) (g . (p :)) st'
 
 printAST :: MMDatabase -> (String -> IO ()) -> (String -> IO ()) -> IO ()
-printAST db mm0 mmu = trDecls (mDecls db) mkTransState mkSeqPrinter
+printAST db mm0 mmu = do
+  mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ C.pack " ( ) ") "\n"
+  trDecls (Q.take 10000 (mDecls db)) mkTransState mkSeqPrinter
   where
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
   trDecls Q.Empty s p = return ()
@@ -116,9 +118,9 @@ printAST db mm0 mmu = trDecls (mDecls db) mkTransState mkSeqPrinter
   report :: Endo [String] -> IO ()
   report (Endo f) = mapM_ (hPutStrLn stderr) (f [])
 
-fromJust' :: String -> Maybe a -> a
-fromJust' _ (Just a) = a
-fromJust' s Nothing = error $ "fromJust: " ++ s
+-- fromJust' :: String -> Maybe a -> a
+-- fromJust' _ (Just a) = a
+-- fromJust' s Nothing = error $ "fromJust: " ++ s
 
 -- (<!>) :: (HasCallStack, Ord k, Show k, Show v) => M.Map k v -> k -> v
 -- (<!>) m k = case m M.!? k of
@@ -204,7 +206,7 @@ trDecl a d = ask >>= \db -> case d of
         _ -> do
           t <- get
           (ds, pr) <- catch ([], Sorry) $ lift $ withContext st $
-            trProof a (st == "pm5.32") fr db t p
+            trProof a fr db t p
           return (A.Theorem i bs1 (exprToFmla e1),
             ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
       modify $ \m -> m {
@@ -240,7 +242,7 @@ splitFrame' hs ds db = do
       modify $ \g -> g {tIxLookup = ilInsertVar l (tIxLookup g)}
       (bs1, bs2, hs') <- processBound vs
       t <- get
-      let v' = fromJust' "a" $ tNameMap t M.!? l
+      let v' = tNameMap t M.! l
       let s' = tNameMap t M.! s
       let s2 = fromJust $ ilSort (tIxLookup t) s
       return (A.Binder (A.LBound v') (A.TType $ DepType s' []) : bs1,
@@ -252,7 +254,7 @@ splitFrame' hs ds db = do
       modify $ \g -> g {tIxLookup = ilInsertVar l (tIxLookup g)}
       (bs1, bs2, hs2) <- processReg bs
       t <- get
-      let v' = fromJust' "b" $ tNameMap t M.!? l
+      let v' = tNameMap t M.! l
       let s' = tNameMap t M.! s
       let s2 = fromJust $ ilSort (tIxLookup t) s
       let f (v2, l2, _) = if memDVs ds v v2 then
@@ -294,7 +296,7 @@ trExpr e = (\t -> trExpr' (tNameMap t) (tIxLookup t) e) <$> get
 
 trExpr' :: M.Map Label Ident -> IxLookup -> MMExpr -> (SExpr, VExpr)
 trExpr' names lup = go where
-  go (SVar v) = (SVar (names M.! v), VVar (fromJust' (show (pVarIx lup, v)) $ ilVar lup v))
+  go (SVar v) = (SVar (names M.! v), VVar (fromJust $ ilVar lup v))
   go (App t es) = let (es1, es2) = unzip (go <$> es) in
     (App (names M.! t) es1, VApp (fromJust $ ilTerm lup t) es2)
 
@@ -348,9 +350,9 @@ numberize (c : s) n | 'A' <= c && c <= 'Y' =
     numberize s (5 * n + i + 1)
 numberize (c : s) _ = NError
 
-trProof :: IDPrinter a => a -> Bool -> Frame -> MMDatabase -> TransState ->
+trProof :: IDPrinter a => a -> Frame -> MMDatabase -> TransState ->
   Proof -> Either String ([SortID], ProofTree)
-trProof a x (hs, _) db t ("(" : p) =
+trProof a (hs, _) db t ("(" : p) =
   let {heap = foldl' (\heap l ->
     heap Q.|> HeapEl (fromJust $ ilVar lup l)) Q.empty hs} in
   processPreloads p heap (Q.length heap) id where
@@ -388,29 +390,22 @@ trProof a x (hs, _) db t ("(" : p) =
     (s2 . ("- " ++) . s1 . ('\n' :), n1)
 
   processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [ProofTree] -> Either String ProofTree
-  processBlocks p heap sz1 pts = go p 0 heap sz1 pts where
-    go p k heap sz pts | x &&
-      trace (
-        Q.foldrWithIndex (\i hel r ->
-          show i ++ "=" ++ ppHeapEl a hel  ++ ", " ++ r) "\n" heap ++
-        fst (showPTS pts sz1) (show k ++ " <- " ++ show p)) False = undefined
-    go NEOF _ heap sz [pt] = return pt
-    go NEOF _ _ _ _ = throwError "bad stack state"
-    go NError _ _ _ _ = throwError "proof block parse error"
-    go (NSave p) _ heap sz [] = throwError "can't save empty stack"
-    go (NSave p) k heap sz (pt : pts) =
-      go p k (heap Q.|> HeapEl (VarID sz)) (sz + 1) (Save pt : pts)
-    go (NSorry p) k heap sz pts =
-      go p (k+1) heap sz (Sorry : pts)
-    go (NNum i p) k heap sz pts =
-      case heap Q.!? i of
-        Nothing -> throwError "proof backref index out of range"
-        Just hel | x && trace ("read " ++ ppHeapEl a hel) False -> undefined
-        Just (HeapEl n) -> go p (k+1) heap sz (Load n : pts)
-        Just (HTerm n a) -> do
-          (es, pts') <- withContext (show p) (popn a pts)
-          go p (k+1) heap sz (VTerm n es : pts')
-        Just (HThm n a) -> do
-          (es, pts') <- withContext (show p) (popn a pts)
-          go p (k+1) heap sz (VThm n es : pts')
-trProof _ _ _ _ _ _ = throwError "normal proofs not supported"
+  processBlocks NEOF heap sz [pt] = return pt
+  processBlocks NEOF _ _ _ = throwError "bad stack state"
+  processBlocks NError _ _ _ = throwError "proof block parse error"
+  processBlocks (NSave p) heap sz [] = throwError "can't save empty stack"
+  processBlocks (NSave p) heap sz (pt : pts) =
+    processBlocks p (heap Q.|> HeapEl (VarID sz)) (sz + 1) (Save pt : pts)
+  processBlocks (NSorry p) heap sz pts =
+    processBlocks p heap sz (Sorry : pts)
+  processBlocks (NNum i p) heap sz pts =
+    case heap Q.!? i of
+      Nothing -> throwError "proof backref index out of range"
+      Just (HeapEl n) -> processBlocks p heap sz (Load n : pts)
+      Just (HTerm n a) -> do
+        (es, pts') <- withContext (show p) (popn a pts)
+        processBlocks p heap sz (VTerm n es : pts')
+      Just (HThm n a) -> do
+        (es, pts') <- withContext (show p) (popn a pts)
+        processBlocks p heap sz (VThm n es : pts')
+trProof _ _ _ _ _ = throwError "normal proofs not supported"
