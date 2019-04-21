@@ -1,13 +1,14 @@
 module Verifier(verify) where
 
 import Control.Monad.Except
-import Control.Monad.Trans.State
+import Control.Monad.RWS.Strict hiding (liftIO)
 import Debug.Trace
 import Data.Word
 import Data.List
 import Data.Bits
 import Data.Maybe
 import Data.Char
+import qualified Control.Monad.Trans.State as ST
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
@@ -53,13 +54,18 @@ data VGlobal = VGlobal {
   -- | The collection of outputs (for IO)
   vOutput :: Q.Seq String }
 
-type GVerifyM = StateT VGlobal (Either String)
+type GVerifyM = RWST () (Endo [String]) VGlobal (Either String)
 
 runGVerifyM :: GVerifyM a -> Environment -> Either String (a, Q.Seq String)
 runGVerifyM m e = do
-  (a, st) <- runStateT m $ VGlobal Q.empty M.empty Q.empty M.empty I.empty Q.empty 0 Q.empty
+  (a, st, Endo f) <- runRWST m () $ VGlobal Q.empty M.empty Q.empty M.empty I.empty Q.empty 0 Q.empty
   guardError "Not all theorems have been proven" (vPos st == Q.length (eSpec e))
-  return (a, vOutput st)
+  case f [] of
+    [] -> return (a, vOutput st)
+    ss -> throwError ("errors:\n" ++ concatMap (\s -> s ++ "\n") ss)
+
+report :: a -> GVerifyM a -> GVerifyM a
+report a m = catchError m (\e -> tell (Endo (e :)) >> return a)
 
 checkNotStrict :: VGlobal -> SortID -> Either String ()
 checkNotStrict g t = do
@@ -77,27 +83,26 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     SSort x' sd | x == x' -> modify (\g -> g {
       vSorts = vSorts g Q.|> (x, sd),
       vSortIx = M.insert x (SortID (Q.length (vSorts g))) (vSortIx g) })
-    _ -> throwError "incorrect sort step"
+    e -> throwError ("incorrect step 'sort " ++ x ++ "', found " ++ show e)
   verifyCmd (StepTerm x) = step >>= \case
     SDecl x' (DTerm args ty) | x == x' -> modify (\g -> g {
       vTerms = vTerms g Q.|> translateTerm (vSortIx g) x args ty,
       vTermIx = M.insert x (TermID (Q.length (vTerms g))) (vTermIx g) })
-    _ -> throwError "incorrect term step"
+    e -> throwError ("incorrect step 'term " ++ x ++ "', found " ++ show e)
   verifyCmd (StepAxiom x) = step >>= \case
     SDecl x' (DAxiom args hs ret) | x == x' -> modify (\g -> g {
       vThms = vThms g Q.|> translateAxiom (vSortIx g) (vTermIx g) x args hs ret })
-    _ -> throwError "incorrect axiom step"
+    e -> throwError ("incorrect step 'axiom " ++ x ++ "', found " ++ show e)
   verifyCmd (ProofDef x vs ret ds def st) = do
     g <- get
     let n = TermID (Q.length (vTerms g))
     let name = fromMaybe (show n) x
-    withContext name $ do
-      lift $ checkDef g vs ret ds def
-      when st $ step >>= \case
-        SDecl x' (DDef vs' ret' o) | x == Just x' ->
-          guardError "def does not match declaration" $
-            matchDef (vTermIx g) (vSortIx g) vs ret ds vs' ret' def o
-        _ -> throwError "incorrect def step"
+    report () $ withContext name $ lift $ checkDef g vs ret ds def
+    withContext name $ when st $ step >>= \case
+      SDecl x' (DDef vs' ret' o) | x == Just x' ->
+        guardError "def does not match declaration" $
+          matchDef (vTermIx g) (vSortIx g) vs ret ds vs' ret' def o
+      e -> throwError ("incorrect def step, found " ++ show e)
     modify (\g -> g {
       vTerms = vTerms g Q.|> VTermData x vs ret,
       vTermIx = maybe (vTermIx g) (\x' -> M.insert x' n (vTermIx g)) x,
@@ -106,13 +111,12 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     g <- get
     let n = ThmID (Q.length (vThms g))
     let name = fromMaybe (show n) x
-    withContext name $ do
-      lift $ checkThm g vs hs ret unf ds pf
-      when st $ step >>= \case
-        SThm x' vs' hs' ret' | x == Just x' ->
-          guardError "theorem does not match declaration" $
-            matchThm (vTermIx g) (vSortIx g) vs hs ret vs' hs' ret'
-        _ -> throwError "incorrect theorem step"
+    report () $ withContext name $ lift $ checkThm g vs hs ret unf ds pf
+    withContext name $ when st $ step >>= \case
+      SThm x' vs' hs' ret' | x == Just x' ->
+        guardError "theorem does not match declaration" $
+          matchThm (vTermIx g) (vSortIx g) vs hs ret vs' hs' ret'
+      e -> throwError ("incorrect theorem step, found " ++ show e)
     modify (\g -> g {
       vThms = vThms g Q.|> VAssrtData x vs (makeDV vs) hs ret })
   verifyCmd (StepInout (VIKString out)) = step >>= \case
@@ -202,7 +206,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     ((hs', ret'), ctx') <- case unf of
       [] -> return ((hs, ret), ctx)
       _ -> let unfold = unfoldExpr (vDefs g) (S.fromList unf) in
-        runStateT ((,) <$> mapM unfold hs <*> unfold ret) ctx
+        ST.runStateT ((,) <$> mapM unfold hs <*> unfold ret) ctx
     let ctx'' = ctx' <> Q.fromList (VBound <$> ds)
     ret'' <- verifyProof g ctx'' hs' pf
     guardError "theorem did not prove what it claimed" (ret' == ret'')
@@ -236,7 +240,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     (si, sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID s)
     guardError ("non-provable sort '" ++ si ++ "' in theorem") (sProvable sd)
 
-  unfoldExpr :: I.IntMap VDefData -> S.Set TermID -> VExpr -> StateT (Q.Seq VBinder) (Either String) VExpr
+  unfoldExpr :: I.IntMap VDefData -> S.Set TermID -> VExpr -> ST.StateT (Q.Seq VBinder) (Either String) VExpr
   unfoldExpr defs u = go where
     go (VApp t es) | t `S.member` u = do
       es' <- mapM go es
@@ -246,10 +250,10 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     go (VApp t es) = VApp t <$> mapM go es
     go e = return e
 
-  buildSubst :: Q.Seq VExpr -> [SortID] -> StateT (Q.Seq VBinder) (Either String) (Q.Seq VExpr)
+  buildSubst :: Q.Seq VExpr -> [SortID] -> ST.StateT (Q.Seq VBinder) (Either String) (Q.Seq VExpr)
   buildSubst m [] = return m
-  buildSubst m (d:ds) = StateT $ \ctx ->
-    runStateT (buildSubst (m Q.|> VVar (VarID (Q.length ctx))) ds)
+  buildSubst m (d:ds) = ST.StateT $ \ctx ->
+    ST.runStateT (buildSubst (m Q.|> VVar (VarID (Q.length ctx))) ds)
       (ctx Q.|> VBound d)
 
   matchThm :: M.Map Ident TermID -> M.Map Ident SortID ->
@@ -347,14 +351,14 @@ data VState = VState {
   -- | Map from HeapID to proven expressions
   vHeap :: Q.Seq StackSlot } deriving (Show)
 
-type VerifyM = StateT VState (Either String)
+type VerifyM = ST.StateT VState (Either String)
 
 verifyProof :: VGlobal -> Q.Seq VBinder -> [VExpr] -> ProofTree -> Either String VExpr
 verifyProof g = \ctx hs cs -> do
   guardError "variable limit (64) exceeded" (ltBitSize (Q.length ctx))
   let heap = Q.foldlWithIndex (\s n b -> s Q.|> varToStackSlot n b) Q.empty ctx
   let heap' = foldl (\s h -> s Q.|> SSProof h) heap hs
-  evalStateT (verifyTree cs) (VState heap') >>= \case
+  ST.evalStateT (verifyTree cs) (VState heap') >>= \case
     SSProof e -> return e
     s -> throwError ("Bad proof state " ++ show s)
   where
@@ -386,9 +390,8 @@ verifyProof g = \ctx hs cs -> do
       mapM_ (\(VarID v1, VarID v2) ->
         guardError (let terms = vTerms g in
             "disjoint variable violation (" ++
-            showVExpr terms (Q.index subst v1) ++ " ^ " ++
-            showVExpr terms (Q.index subst v2) ++ " = " ++
-            show (Q.index b v1 .&. Q.index b v2) ++ ")")
+            showVExpr terms (Q.index subst v1) ++ " / " ++
+            showVExpr terms (Q.index subst v2) ++ ")")
           (Q.index b v1 .&. Q.index b v2 == 0)) dv
       verifyHyps (Q.fromList es) hs hs'
       return (SSProof (substExpr subst ret))
