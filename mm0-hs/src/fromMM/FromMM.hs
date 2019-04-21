@@ -77,7 +77,7 @@ data TransState = TransState {
   tParsedHyps :: M.Map Label MMExpr,
   tNameMap :: M.Map Label Ident,
   tUsedNames :: S.Set Ident,
-  tBuilders :: M.Map Label (Int, [ProofTree] -> ProofTree),
+  tBuilders :: M.Map Label (Maybe ([VExpr] -> VExpr), [ProofTree] -> ProofTree),
   tIxLookup :: IxLookup }
 
 mkTransState :: TransState
@@ -187,39 +187,46 @@ trDecl a d = ask >>= \db -> case d of
       e <- parseFmla f
       modify $ \m -> m {tParsedHyps = M.insert st e (tParsedHyps m)}
       return Nothing
-    Thm fr f@(Const s : _) Nothing | isNothing (fst (mSorts db M.! s)) -> do
-      (bs1, _, _, reord, rm) <- splitFrame fr
-      i <- trName st (mangle st)
-      let g = App st . reorderMap reord f
-      modify $ \m ->
-        let lup = tIxLookup m
-            n = fst (pTermIx lup)
-            bd es = VTerm (TermID n) (map (es !!) rm) in
-        m {
-          tParser = ptInsert (tVMap m) g f (tParser m),
-          tBuilders = M.insert st (length bs1, bd) (tBuilders m),
-          tIxLookup = ilInsertTerm st $ ilResetVars lup }
-      return $ Just (A.Term i bs1 (DepType s []), StepTerm i)
-    Thm fr f@(Const s : _) p -> do
-      (bs1, bs2, hs2, _, rm) <- splitFrame fr
-      (e1, e2) <- parseFmla f >>= trExpr
-      i <- trName st (mangle st)
-      ret <- case p of
-        Nothing -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
+    Thm fr f@(Const s : _) p -> case mSorts db M.! s of
+      (Nothing, _) -> case p of
+        Nothing -> do
+          (bs1, _, _, reord, rm) <- splitFrame fr
+          i <- trName st (mangle st)
+          let g = App st . reorderMap reord f
+          modify $ \m ->
+            let lup = tIxLookup m
+                n = fst (pTermIx lup)
+                bd es = VTerm (TermID n) (map (es !!) rm)
+                be es = VApp (TermID n) (map (es !!) rm) in
+            m {
+              tParser = ptInsert (tVMap m) g f (tParser m),
+              tBuilders = M.insert st (Just be, bd) (tBuilders m),
+              tIxLookup = ilInsertTerm st $ ilResetVars lup }
+          return $ Just (A.Term i bs1 (DepType s []), StepTerm i)
         Just p -> do
           t <- get
-          (ds, pr) <- catch ([], Sorry) $ lift $ withContext st $
-            trProof a fr db t p
-          return (A.Theorem i bs1 (exprToFmla e1),
-            ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
-      modify $ \m ->
-        let lup = tIxLookup m
-            n = fst (pThmIx lup)
-            bd es = VThm (ThmID n) (map (es !!) rm) in
-        m {
-          tBuilders = M.insert st (length bs2 + length hs2, bd) (tBuilders m),
-          tIxLookup = ilInsertThm st $ ilResetVars lup }
-      return $ Just ret
+          (be, bd) <- lift $ withContext st $ trSyntaxProof fr t p
+          modify $ \m -> m {tBuilders = M.insert st (Just be, bd) (tBuilders m)}
+          return Nothing
+      (Just _, _) -> do
+        (bs1, bs2, hs2, _, rm) <- splitFrame fr
+        (e1, e2) <- parseFmla f >>= trExpr
+        i <- trName st (mangle st)
+        ret <- case p of
+          Nothing -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
+          Just p -> do
+            t <- get
+            let (ds, pr) = trProof fr t p
+            return (A.Theorem i bs1 (exprToFmla e1),
+              ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
+        modify $ \m ->
+          let lup = tIxLookup m
+              n = fst (pThmIx lup)
+              bd es = VThm (ThmID n) (map (es !!) rm) in
+          m {
+            tBuilders = M.insert st (Nothing, bd) (tBuilders m),
+            tIxLookup = ilInsertThm st $ ilResetVars lup }
+        return $ Just ret
     Thm _ _ _ -> throwError "bad theorem statement"
 
 splitFrame :: Frame -> TransM ([A.Binder], [VBinder], [VExpr], M.Map Var Int, [Int])
@@ -345,23 +352,45 @@ ppHeapEl a (HBuild (_, f)) = case f [] of
 
 instance Show HeapEl where show = ppHeapEl ()
 
-trProof :: IDPrinter a => a -> Frame -> MMDatabase -> TransState ->
-  ([Label], Proof) -> Either String ([SortID], ProofTree)
-trProof a (hs, _) db t (ds, pr) = do
-  let ds' = fromJust . ilSort lup <$> ds
-  pr' <- processProof pr
-  return (ds', pr') where
+trProof :: Frame -> TransState ->
+  ([Label], Proof) -> ([SortID], ProofTree)
+trProof (hs, _) t (ds, pr) = (fromJust . ilSort lup <$> ds, trProof' pr) where
   lup = tIxLookup t
   nhs = length hs
   nds = length ds
 
-  processProof :: Proof -> Either String ProofTree
-  processProof (PHyp l) = return $ Load $ fromJust $ ilVar lup l
-  processProof (PDummy n) = return $ Load $ VarID (nhs + n)
-  processProof (PBackref n) = return $ Load $ VarID (nhs + nds + n)
-  processProof PSorry = return Sorry
-  processProof (PSave p) = Save <$> processProof p
-  processProof (PThm st ps) = do
-    ps' <- mapM processProof ps
-    let (_, fn) = tBuilders t M.! st
-    return $ fn ps'
+  trProof' :: Proof -> ProofTree
+  trProof' (PHyp v _) = Load $ fromJust $ ilVar lup v
+  trProof' (PDummy n) = Load $ VarID (nhs + n)
+  trProof' (PBackref n) = Load $ VarID (nhs + nds + n)
+  trProof' PSorry = Sorry
+  trProof' (PSave p) = Save (trProof' p)
+  trProof' (PThm st ps) = snd (tBuilders t M.! st) (trProof' <$> ps)
+
+trSyntaxProof :: Frame -> TransState -> ([Label], Proof) ->
+  Either String ([VExpr] -> VExpr, [ProofTree] -> ProofTree)
+trSyntaxProof (hs, _) t (ds, pr) = do
+  guardError "dummy variable in syntax proof" (null ds)
+  e <- evalStateT (toExpr pr) Q.empty
+  return (substExpr e, substProof e) where
+
+  toExpr :: Proof -> StateT (Q.Seq VExpr) (Either String) VExpr
+  toExpr (PHyp _ v) = return (VVar (VarID v))
+  toExpr (PDummy n) = throwError "dummy variable in syntax proof"
+  toExpr (PBackref n) = (\s -> Q.index s n) <$> get
+  toExpr PSorry = throwError "? in syntax proof"
+  toExpr (PSave p) = do e <- toExpr p; state (\s -> (e, s Q.|> e))
+  toExpr (PThm st ps) = do
+    ps' <- mapM toExpr ps
+    be <- fromJustError "theorem used in syntax proof" (fst (tBuilders t M.! st))
+    return (be ps')
+
+  substExpr :: VExpr -> [VExpr] -> VExpr
+  substExpr e es = go e where
+    go (VVar (VarID n)) = es !! n
+    go (VApp t es') = VApp t (go <$> es')
+
+  substProof :: VExpr -> [ProofTree] -> ProofTree
+  substProof e es = go e where
+    go (VVar (VarID n)) = es !! n
+    go (VApp t ps) = VTerm t (go <$> ps)

@@ -199,8 +199,11 @@ data HeapEl = HeapEl Proof | HThm Label Int deriving (Show)
 
 trProof :: Frame -> MMDatabase -> [String] -> Either String ([Label], Proof)
 trProof (hs, _) db ("(" : p) =
-  let heap = Q.fromList (HeapEl . PHyp <$> hs) in
-  processPreloads p heap 0 id where
+  processPreloads p (mkHeap hs 0 Q.empty) 0 id where
+  mkHeap :: [Label] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
+  mkHeap [] _ heap = heap
+  mkHeap (h:hs) n heap = mkHeap hs (n+1) (heap Q.|> HeapEl (PHyp h n))
+
   processPreloads :: [String] -> Q.Seq HeapEl -> Int ->
     ([Label] -> [Label]) -> Either String ([Label], Proof)
   processPreloads [] heap sz ds = throwError ("unclosed parens in proof: " ++ show ("(" : p))
