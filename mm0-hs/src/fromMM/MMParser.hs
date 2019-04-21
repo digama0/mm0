@@ -67,19 +67,20 @@ mkFrame :: Fmla -> FromMMM Frame
 mkFrame = \fmla -> do
   g <- get
   let sc@((_, _, vs) : _) = mScope g
-  return (build (S.union vs (fmlaVars fmla)) sc ([], S.empty))
+  return (build g (S.union vs (fmlaVars fmla)) sc ([], S.empty))
 
-build :: S.Set Var -> Scope -> Frame -> Frame
-build vars = go where
+build :: MMDatabase -> S.Set Var -> Scope -> Frame -> Frame
+build db vars = go where
   go [] fr = fr
   go ((hs, ds, vs) : sc) (hs', ds') =
     go sc (insertHyps hs hs', foldl' insertDVs ds' ds)
 
-  insertHyps :: [(Label, Hyp)] -> [String] -> [String]
+  insertHyps :: [(Label, Hyp)] -> [(Bool, String)] -> [(Bool, String)]
   insertHyps [] hs' = hs'
-  insertHyps ((s, EHyp _):hs) hs' = insertHyps hs (s:hs')
-  insertHyps ((s, VHyp _ v):hs) hs' =
-    insertHyps hs (if S.member v vars then s:hs' else hs')
+  insertHyps ((x, EHyp _):hs) hs' = insertHyps hs ((False, x):hs')
+  insertHyps ((x, VHyp s v):hs) hs' =
+    insertHyps hs (if S.member v vars then
+      (sPure (snd (mSorts db M.! s)), x) : hs' else hs')
 
   insertDVs :: DVs -> [Var] -> DVs
   insertDVs ds [] = ds
@@ -200,9 +201,9 @@ data HeapEl = HeapEl Proof | HThm Label Int deriving (Show)
 trProof :: Frame -> MMDatabase -> [String] -> Either String ([Label], Proof)
 trProof (hs, _) db ("(" : p) =
   processPreloads p (mkHeap hs 0 Q.empty) 0 id where
-  mkHeap :: [Label] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
+  mkHeap :: [(Bool, Label)] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
   mkHeap [] _ heap = heap
-  mkHeap (h:hs) n heap = mkHeap hs (n+1) (heap Q.|> HeapEl (PHyp h n))
+  mkHeap ((_, h):hs) n heap = mkHeap hs (n+1) (heap Q.|> HeapEl (PHyp h n))
 
   processPreloads :: [String] -> Q.Seq HeapEl -> Int ->
     ([Label] -> [Label]) -> Either String ([Label], Proof)

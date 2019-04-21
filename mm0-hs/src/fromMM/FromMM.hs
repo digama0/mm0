@@ -255,18 +255,16 @@ splitFrame' hs ds db = do
     I.elems (f 0 (length vs) (length vs + length bs)))
   where
 
-  partitionHyps :: [Label] -> Int -> TransM ([(Var, Label, Sort)],
+  partitionHyps :: [(Bool, Label)] -> Int -> TransM ([(Var, Label, Sort)],
     [(Var, Label, Sort)], [Label], Int -> Int -> Int -> I.IntMap Int)
   partitionHyps [] _ = return ([], [], [], \_ _ _ -> I.empty)
-  partitionHyps (l : ls) li = case mStmts db M.! l of
+  partitionHyps ((b, l) : ls) li = case mStmts db M.! l of
     Hyp (VHyp s v) -> do
       (vs, bs, hs', f) <- partitionHyps ls (li+1)
-      if sPure (snd (mSorts db M.! s)) then
-        return ((v, l, s) : vs, bs, hs',
-          \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
-      else
-        return (vs, (v, l, s) : bs, hs',
-          \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
+      if b then return ((v, l, s) : vs, bs, hs',
+        \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
+      else return (vs, (v, l, s) : bs, hs',
+        \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
     Hyp (EHyp _) -> do
       (vs, bs, hs, f) <- partitionHyps ls (li+1)
       return (vs, bs, l : hs,

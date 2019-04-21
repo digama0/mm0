@@ -25,9 +25,7 @@ findBundled db = execState (mapM_ checkDecl (mDecls db)) M.empty where
     f (Thm (hs, _) _ _) =
       case go hs 0 of { [] -> Nothing; l -> Just l } where
       go [] _ = []
-      go (l:ls) n = case mStmts db M.! l of
-        Hyp (VHyp s v) | sPure (snd (mSorts db M.! s)) -> n : go ls (n+1)
-        _ -> go ls (n+1)
+      go ((b, _):ls) n = if b then n : go ls (n+1) else go ls (n+1)
     f _ = Nothing
 
   checkDecl :: Decl -> State (M.Map Label Bundles) ()
@@ -39,9 +37,8 @@ findBundled db = execState (mapM_ checkDecl (mDecls db)) M.empty where
   allDistinct :: Frame -> I.IntMap Int
   allDistinct (hs, _) = go hs 0 0 I.empty where
     go [] _ _ m = m
-    go (l:ls) k i m = case mStmts db M.! l of
-      Hyp (VHyp s v) -> go ls (k+1) (i+1) (I.insert k i m)
-      Hyp (EHyp _) -> go ls (k+1) i m
+    go ((True, _):ls) k i m = go ls (k+1) (i+1) (I.insert k i m)
+    go ((False, _):ls) k i m = go ls (k+1) i m
 
   checkProof :: I.IntMap Int -> Proof -> State (M.Map Label Bundles) ()
   checkProof m = go where
