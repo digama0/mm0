@@ -11,15 +11,17 @@ import Util
 import Elaborator
 import Verifier
 import ProofTextParser
-import FromMM (fromMM)
+import FromMM
 
 main :: IO ()
 main = do
   getArgs >>= \case
     "verify" : rest -> doVerify rest
     "from-mm" : rest -> fromMM rest
+    "show-bundled" : rest -> showBundled rest
     _ -> die ("incorrect args; use\n" ++
       "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
+      "  mm0-hs show-bundled MM-FILE\n" ++
       "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU-FILE]\n")
 
 doVerify :: [String] -> IO ()
@@ -35,7 +37,7 @@ doVerify args = do
     [] -> die "error: no proof file"
     (mmp:_) -> do
       pf <- B.readFile mmp
-      Just pf <- timeout 10000000 $ liftIO (parseProof pf)
+      pf <- liftIO (parseProof pf)
       out <- liftIO (verify s env pf)
       putStrLn "verified"
       mapM_ putStr out

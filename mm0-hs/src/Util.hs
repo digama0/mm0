@@ -1,6 +1,7 @@
 module Util where
 
 import Control.Monad.Except
+import Data.List (group, sort)
 import System.Exit
 import qualified Data.Map.Strict as M
 
@@ -20,3 +21,11 @@ insertNew e k v m = do
 liftIO :: Either String a -> IO a
 liftIO (Left e) = die e
 liftIO (Right e) = return e
+
+allUnique :: Ord a => [a] -> Bool
+allUnique = all ((==) 1 . length) . group . sort
+
+padL :: Int -> String -> String
+padL n s
+    | length s < n  = s ++ replicate (n - length s) ' '
+    | otherwise = s

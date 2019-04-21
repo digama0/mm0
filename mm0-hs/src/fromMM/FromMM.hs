@@ -1,4 +1,4 @@
-module FromMM where
+module FromMM (fromMM, showBundled) where
 
 import System.IO
 import System.Exit
@@ -9,6 +9,7 @@ import Control.Monad.Except hiding (liftIO)
 import Data.Foldable
 import Data.Maybe
 import Debug.Trace
+import Text.Printf
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M
@@ -18,6 +19,7 @@ import qualified Data.Set as S
 import Util
 import MMTypes
 import MMParser
+import FindBundled
 import Environment (Ident, DepType(..), SortData(..), SExpr(..))
 import ProofTypes
 import qualified AST as A
@@ -25,6 +27,18 @@ import qualified AST as A
 write :: String -> (Handle -> IO ()) -> IO ()
 write f io = withFile f WriteMode $ \h ->
   hSetNewlineMode h (NewlineMode LF LF) >> io h
+
+showBundled :: [String] -> IO ()
+showBundled [] = die "show-bundled: no .mm file specified"
+showBundled (mm : _) = do
+  db <- withFile mm ReadMode $ \h ->
+    B.hGetContents h >>= liftIO . parseMM
+  putStrLn $ show (M.size (findBundled db)) ++ " bundled theorems, " ++
+    show (sum (S.size <$> toList (findBundled db))) ++ " total copies"
+  mapM_ (\(l, s) -> putStrLn $ padL 15 l ++ "  " ++ show (S.toList s)) $
+    mapMaybe (\case
+      Stmt s -> (,) s <$> (findBundled db M.!? s)
+      _ -> Nothing) (toList (mDecls db))
 
 fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
@@ -83,36 +97,39 @@ data TransState = TransState {
 mkTransState :: TransState
 mkTransState = TransState M.empty M.empty M.empty M.empty S.empty M.empty mkIxLookup
 
-type TransM = RWST MMDatabase (Endo [String]) TransState (Either String)
+type TransM = RWST (MMDatabase, M.Map Label Bundles)
+  (Endo [String]) TransState (Either String)
 
 runTransM :: TransM a -> MMDatabase -> Either String a
-runTransM m db = fst <$> evalRWST m db mkTransState
+runTransM m db = fst <$> evalRWST m (db, findBundled db) mkTransState
 
 makeAST :: MMDatabase -> Either String (A.AST, Proofs)
 makeAST db = trDecls (mDecls db)
   (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") :) id mkTransState where
+  init = (db, findBundled db)
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
     TransState -> Either String (A.AST, Proofs)
   trDecls Q.Empty f g s = return (f [], g [])
-  trDecls (d Q.:<| ds) f g st = runRWST (trDecl () d) db st >>= \case
+  trDecls (d Q.:<| ds) f g st = runRWST (trDecl () d) init st >>= \case
     (Nothing, st', _) -> trDecls ds f g st'
     (Just (d, p), st', _) -> trDecls ds (f . (d :)) (g . (p :)) st'
 
 printAST :: MMDatabase -> (String -> IO ()) -> (String -> IO ()) -> IO ()
 printAST db mm0 mmu = do
   mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ C.pack " ( ) ") "\n"
-  trDecls (Q.take 10000 (mDecls db)) mkTransState mkSeqPrinter
+  trDecls (mDecls db) mkTransState mkSeqPrinter
   where
+  init = (db, findBundled db)
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
   trDecls Q.Empty s p = return ()
-  trDecls (d Q.:<| ds) st p = liftIO (runRWST (trDecl p d) db st) >>= \case
-    (Nothing, st', w) -> report w >> trDecls ds st' p
-    (Just (a, pf), st', w) -> do
-      let (s, p') = ppProofCmd' p pf
-      mm0 $ shows a "\n"
-      mmu $ s "\n"
-      report w
-      trDecls ds st' p'
+  trDecls (d Q.:<| ds) st p = liftIO (runRWST (trDecl p d) init st) >>= \case
+      (Nothing, st', w) -> report w >> trDecls ds st' p
+      (Just (a, pf), st', w) -> do
+        let (s, p') = ppProofCmd' p pf
+        mm0 $ shows a "\n"
+        mmu $ s "\n"
+        report w
+        trDecls ds st' p'
 
   report :: Endo [String] -> IO ()
   report (Endo f) = mapM_ (hPutStrLn stderr) (f [])
@@ -126,15 +143,15 @@ printAST db mm0 mmu = do
 --   Nothing -> error $ show m ++ " ! " ++ show k
 --   Just v -> v
 
-catch :: a -> TransM a -> TransM a
-catch a m = catchError m (\e -> tell (Endo (e :)) >> return a)
+report :: a -> TransM a -> TransM a
+report a m = catchError m (\e -> tell (Endo (e :)) >> return a)
 
 type ParseResult = [(([MMExpr] -> [MMExpr]) -> MMExpr, [Sym])]
 parseFmla :: Fmla -> TransM MMExpr
 parseFmla = \case
   Const s : f -> do
     t <- get
-    db <- ask
+    (db, _) <- ask
     let s2 = fromMaybe s (fst $ mSorts db M.! s)
     fromJustError (error ("cannot parse formula " ++ show (Const s : f)))
       (parseFmla' (tVMap t) (tParser t) s2 f)
@@ -169,7 +186,7 @@ parseFmla = \case
         [(g . (. (v :)), f'')]) ++ r
 
 trDecl :: IDPrinter a => a -> Decl -> TransM (Maybe (A.Stmt, ProofCmd))
-trDecl a d = ask >>= \db -> case d of
+trDecl a d = ask >>= \(db, _) -> case d of
   Sort s -> case mSorts db M.! s of
     (Nothing, sd) -> do
       i <- trName s (mangle s)
@@ -230,7 +247,7 @@ trDecl a d = ask >>= \db -> case d of
     Thm _ _ _ -> throwError "bad theorem statement"
 
 splitFrame :: Frame -> TransM ([A.Binder], [VBinder], [VExpr], M.Map Var Int, [Int])
-splitFrame (hs, ds) = do db <- ask; splitFrame' hs ds db
+splitFrame (hs, ds) = do (db, _) <- ask; splitFrame' hs ds db
 splitFrame' hs ds db = do
   (vs, bs, hs', f) <- partitionHyps hs 0
   (bs1, bs2, hs2) <- processArgs vs bs hs'
@@ -240,6 +257,7 @@ splitFrame' hs ds db = do
 
   partitionHyps :: [Label] -> Int -> TransM ([(Var, Label, Sort)],
     [(Var, Label, Sort)], [Label], Int -> Int -> Int -> I.IntMap Int)
+  partitionHyps [] _ = return ([], [], [], \_ _ _ -> I.empty)
   partitionHyps (l : ls) li = case mStmts db M.! l of
     Hyp (VHyp s v) -> do
       (vs, bs, hs', f) <- partitionHyps ls (li+1)
@@ -253,7 +271,6 @@ splitFrame' hs ds db = do
       (vs, bs, hs, f) <- partitionHyps ls (li+1)
       return (vs, bs, l : hs,
         \vi bi hi -> I.insert hi li (f vi bi (hi+1)))
-  partitionHyps [] _ = return ([], [], [], \_ _ _ -> I.empty)
 
   processArgs :: [(Var, Label, Sort)] -> [(Var, Label, Sort)] -> [Label] ->
     TransM ([A.Binder], [VBinder], [VExpr])
