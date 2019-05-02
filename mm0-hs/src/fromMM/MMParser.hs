@@ -2,16 +2,19 @@ module MMParser (parseMM) where
 
 import Data.List
 import Data.Char
+import Data.Maybe
+import Debug.Trace
 import Control.Monad.Trans.State
 import Control.Monad.Except hiding (liftIO)
 import qualified Text.ParserCombinators.ReadP as P
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C
+import qualified Data.IntMap as I
 import qualified Text.Read.Lex as L
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Sequence as Q
-import Environment (SortData(..))
+import qualified Data.Set as S
+import Environment (SortData(..), SExpr(..))
 import MMTypes
 import Util
 
@@ -22,31 +25,46 @@ toks :: B.ByteString -> [String]
 toks = filter (not . null) . map C.unpack .
   C.splitWith (`elem` [' ', '\n', '\t', '\r'])
 
-type FromMMM = StateT MMDatabase (Either String)
+data Sym = Const Const | Var Var deriving (Show)
+type Fmla = [Sym]
+
+data ParseTrie = PT {
+  ptConst :: Parser,
+  ptVar :: M.Map Sort ParseTrie,
+  ptDone :: Maybe (Sort, [MMExpr] -> MMExpr) }
+type Parser = M.Map Const ParseTrie
+
+data MMParserState = MMParserState {
+  mParser :: Parser,
+  mVMap :: M.Map Var (Sort, Label),
+  mSyms :: M.Map String Sym,
+  mDB :: MMDatabase }
+
+type FromMMM = StateT MMParserState (Either String)
+
+modifyDB :: (MMDatabase -> MMDatabase) -> FromMMM ()
+modifyDB f = modify $ \s -> s {mDB = f (mDB s)}
 
 withContext :: MonadError String m => String -> m a -> m a
 withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
-runFromMMM m = runStateT m $
-  MMDatabase M.empty Q.empty S.empty M.empty M.empty [([], [], S.empty)]
+runFromMMM m = (\(a, t) -> (a, mDB t)) <$>
+  runStateT m (MMParserState M.empty M.empty M.empty mkDatabase)
 
 addConstant :: Const -> FromMMM ()
-addConstant c = modify (\s -> s {mSyms = M.insert c (Const c) (mSyms s)})
+addConstant c = modify $ \s -> s {mSyms = M.insert c (Const c) (mSyms s)}
 
 addVariable :: Var -> FromMMM ()
-addVariable v = modify (\s -> s {mSyms = M.insert v (Var v) (mSyms s)})
+addVariable v = modify $ \s -> s {mSyms = M.insert v (Var v) (mSyms s)}
 
 fmlaVars :: Fmla -> S.Set String
 fmlaVars [] = S.empty
 fmlaVars (Const _ : ss) = fmlaVars ss
 fmlaVars (Var v : ss) = S.insert v (fmlaVars ss)
 
-scopeAddHyp :: Label -> Hyp -> Scope -> Scope
-scopeAddHyp x h ((hs, ds, vs) : s) = ((x, h):hs, ds, vs') : s where
-  vs' = case h of
-    EHyp f -> S.union (fmlaVars f) vs
-    _ -> vs
+scopeAddHyp :: Label -> Hyp -> S.Set Var -> Scope -> Scope
+scopeAddHyp x h vs1 ((hs, ds, vs) : s) = ((x, h):hs, ds, S.union vs1 vs) : s
 
 scopeAddDV :: [Var] -> Scope -> Scope
 scopeAddDV ds' ((hs, ds, vs) : s) = (hs, ds' : ds, vs) : s
@@ -58,29 +76,35 @@ scopeClose :: Scope -> Maybe Scope
 scopeClose (_ : []) = Nothing
 scopeClose (_ : s : ss) = Just (s : ss)
 
-addHyp :: Label -> Hyp -> FromMMM ()
-addHyp x h = do
+addHyp :: Label -> Hyp -> S.Set Var -> FromMMM ()
+addHyp x h vs = do
   addStmt x (Hyp h)
-  modify $ \s -> s {mScope = scopeAddHyp x h (mScope s)}
+  modifyDB $ \db -> db {mScope = scopeAddHyp x h vs (mScope db)}
 
-mkFrame :: Fmla -> FromMMM Frame
-mkFrame = \fmla -> do
-  g <- get
-  let sc@((_, _, vs) : _) = mScope g
-  return (build g (S.union vs (fmlaVars fmla)) sc ([], S.empty))
+mkFrame :: Fmla -> FromMMM (Frame, M.Map Var Int)
+mkFrame f = do
+  db <- mDB <$> get
+  let sc@((_, _, vs) : _) = mScope db
+  return (build db (S.union vs (fmlaVars f)) sc ([], S.empty) (M.empty, 0))
 
-build :: MMDatabase -> S.Set Var -> Scope -> Frame -> Frame
+build :: MMDatabase -> S.Set Var -> Scope ->
+  Frame -> (M.Map Var Int, Int) -> (Frame, M.Map Var Int)
 build db vars = go where
-  go [] fr = fr
-  go ((hs, ds, vs) : sc) (hs', ds') =
-    go sc (insertHyps hs hs', foldl' insertDVs ds' ds)
+  go [] fr (m, _) = (fr, m)
+  go ((hs, ds, _) : sc) (hs', ds') m' =
+    let (hs'', m'') = insertHyps hs hs' m' in
+    go sc (hs'', foldl' insertDVs ds' ds) m''
 
-  insertHyps :: [(Label, Hyp)] -> [(Bool, String)] -> [(Bool, String)]
-  insertHyps [] hs' = hs'
-  insertHyps ((x, EHyp _):hs) hs' = insertHyps hs ((False, x):hs')
-  insertHyps ((x, VHyp s v):hs) hs' =
-    insertHyps hs (if S.member v vars then
-      (sPure (snd (mSorts db M.! s)), x) : hs' else hs')
+  insertHyps :: [(Label, Hyp)] -> [(Bool, String)] -> (M.Map Var Int, Int) ->
+    ([(Bool, String)], (M.Map Var Int, Int))
+  insertHyps [] hs' m = (hs', m)
+  insertHyps ((x, EHyp _ _):hs) hs' m =
+    insertHyps hs ((False, x):hs') m
+  insertHyps ((x, VHyp s v):hs) hs' m =
+    let (hs'', (m', n)) = insertHyps hs
+          (if S.member v vars then
+            (sPure (snd (mSorts db M.! s)), x) : hs' else hs') m in
+    (hs'', (M.insert v n m', n+1))
 
   insertDVs :: DVs -> [Var] -> DVs
   insertDVs ds [] = ds
@@ -94,14 +118,14 @@ build db vars = go where
     else ds
 
 addSort :: Sort -> Maybe Sort -> FromMMM ()
-addSort x s2 = modify $ \m -> m {
-  mSorts = M.insert x (s2, SortData False False False False) (mSorts m),
-  mDecls = mDecls m Q.|> Sort x }
+addSort x s2 = modifyDB $ \db -> db {
+  mSorts = M.insert x (s2, SortData False False False False) (mSorts db),
+  mDecls = mDecls db Q.|> Sort x }
 
 addStmt :: Label -> Stmt -> FromMMM ()
-addStmt x st = modify $ \s -> s {
-  mDecls = mDecls s Q.|> Stmt x,
-  mStmts = M.insert x st (mStmts s) }
+addStmt x st = modifyDB $ \db -> db {
+  mDecls = mDecls db Q.|> Stmt x,
+  mStmts = M.insert x st (mStmts db) }
 
 process :: [String] -> FromMMM ()
 process [] = return ()
@@ -115,38 +139,58 @@ process ("$v" : ss) = do
   mapM_ addVariable vs >> process ss'
 process ("$d" : ss) = do
   (vs, ss') <- readUntil "$." ss
-  modify $ \s -> s {mScope = scopeAddDV vs (mScope s)}
+  modifyDB $ \db -> db {mScope = scopeAddDV vs (mScope db)}
   process ss'
 process ("${" : ss) = do
-  modify $ \s -> s {mScope = scopeOpen (mScope s)}
+  modifyDB $ \db -> db {mScope = scopeOpen (mScope db)}
   process ss
 process ("$}" : ss) = do
-  s <- get
-  sc <- fromJustError "too many $}" (scopeClose (mScope s))
-  put (s {mScope = sc})
+  db <- mDB <$> get
+  sc <- fromJustError "too many $}" (scopeClose (mScope db))
+  modifyDB $ \_ -> db {mScope = sc}
   process ss
-process (x : "$f" : c : v : "$." : ss) = addHyp x (VHyp c v) >> process ss
+process (x : "$f" : c : v : "$." : ss) = do
+  modify $ \t -> t {mVMap = M.insert v (c, x) (mVMap t)}
+  addHyp x (VHyp c v) S.empty
+  process ss
 process (x : "$e" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
-  withContext x $ addHyp x (EHyp f)
+  (s, e) <- parseFmla f
+  withContext x $ addHyp x (EHyp s e) (fmlaVars f)
   process ss'
 process (x : "$a" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
   withContext x $ do
-    fr <- mkFrame f
-    addStmt x (Thm fr f Nothing)
+    (fr, m) <- mkFrame f
+    addThm x f fr m Nothing
   process ss'
 process (x : "$p" : ss) = do
   (f, ss1) <- withContext x $ readMath "$=" ss
-  fr <- withContext x $ mkFrame f
-  (p, ss2) <- withContext x $ readProof ss1
+  (p, ss2) <- readProof ss1
   withContext x $ do
-    (p, ss2) <- readProof ss1
-    db <- get
-    pr <- lift $ trProof fr db p
-    addStmt x (Thm fr f (Just pr))
+    (fr, m) <- mkFrame f
+    t <- get
+    pr <- lift $ trProof fr (mDB t) p
+    addThm x f fr m (Just pr)
   process ss2
 process (x : ss) = throwError ("wtf " ++ x ++ show (take 100 ss))
+
+addThm :: Label -> Fmla -> Frame -> M.Map Var Int ->
+  Maybe ([Label], Proof) -> FromMMM ()
+addThm x f@(Const s : _) fr m p = do
+  db <- mDB <$> get
+  case mSorts db M.!? s of
+    Nothing -> throwError ("sort '" ++ s ++ "' not declared")
+    Just (Just s', _) -> do
+      (_, e) <- parseFmla f
+      addStmt x (Thm fr s' e p)
+    Just (Nothing, _) -> do
+      when (isNothing p) $
+        let g = App x . reorderMap m f in
+        modify $ \t -> t {
+          mParser = ptInsert (mVMap t) g f (mParser t) }
+      (s, e) <- parseFmla f
+      addStmt x (Term fr s e p)
 
 readUntil :: String -> [String] -> FromMMM ([String], [String])
 readUntil u = go id where
@@ -158,9 +202,9 @@ readUntil u = go id where
 readMath :: String -> [String] -> FromMMM (Fmla, [String])
 readMath u ss = do
   (sy, ss') <- readUntil u ss
-  m <- get
+  t <- get
   f <- mapM (\s ->
-    fromJustError ("unknown symbol '" ++ s ++ "'") (mSyms m M.!? s)) sy
+    fromJustError ("unknown symbol '" ++ s ++ "'") (mSyms t M.!? s)) sy
   return (f, ss')
 
 readProof :: [String] -> FromMMM ([String], [String])
@@ -196,7 +240,7 @@ numberize (c : s) n | 'A' <= c && c <= 'Y' =
     numberize s (5 * n + i + 1)
 numberize (c : s) _ = NError
 
-data HeapEl = HeapEl Proof | HThm Label Int deriving (Show)
+data HeapEl = HeapEl Proof | HTerm Label Int | HThm Label Int deriving (Show)
 
 trProof :: Frame -> MMDatabase -> [String] -> Either String ([Label], Proof)
 trProof (hs, _) db ("(" : p) =
@@ -215,8 +259,10 @@ trProof (hs, _) db ("(" : p) =
     Nothing -> throwError ("statement " ++ st ++ " not found")
     Just (Hyp (VHyp s v)) ->
       processPreloads p (heap Q.|> HeapEl (PDummy sz)) (sz + 1) (ds . (s :))
-    Just (Hyp (EHyp _)) -> throwError "$e found in paren list"
-    Just (Thm (hs, _) _ _) ->
+    Just (Hyp (EHyp _ _)) -> throwError "$e found in paren list"
+    Just (Term (hs, _) _ _ _) ->
+      processPreloads p (heap Q.|> HTerm st (length hs)) sz ds
+    Just (Thm (hs, _) _ _ _) ->
       processPreloads p (heap Q.|> HThm st (length hs)) sz ds
 
   popn :: Int -> [Proof] -> Either String ([Proof], [Proof])
@@ -238,6 +284,9 @@ trProof (hs, _) db ("(" : p) =
     case heap Q.!? i of
       Nothing -> throwError "proof backref index out of range"
       Just (HeapEl pt) -> processBlocks p heap sz (pt : pts)
+      Just (HTerm x n) -> do
+        (es, pts') <- withContext (show p) (popn n pts)
+        processBlocks p heap sz (PTerm x es : pts')
       Just (HThm x n) -> do
         (es, pts') <- withContext (show p) (popn n pts)
         processBlocks p heap sz (PThm x es : pts')
@@ -273,19 +322,19 @@ processJ (JKeyword "syntax" j) = case j of
   JString s (JSemi j') -> addSort s Nothing >> processJ j'
   JString s1 (JKeyword "as" (JString s2 (JSemi j'))) -> do
     addSort s1 (Just s2)
-    modify $ \m -> m {mSorts =
+    modifyDB $ \m -> m {mSorts =
       M.adjust (\(s, sd) -> (s, sd {sProvable = True})) s2 (mSorts m)}
     processJ j'
   _ -> throwError "bad $j 'syntax' command"
 processJ (JKeyword "bound" j) = case j of
   JString s (JSemi j') -> do
-    modify $ \m -> m {mSorts =
+    modifyDB $ \m -> m {mSorts =
       M.adjust (\(s, sd) -> (s, sd {sPure = True})) s (mSorts m)}
     processJ j'
   _ -> throwError "bad $j 'bound' command"
 processJ (JKeyword "primitive" j) = processPrim j where
   processPrim (JString s j) = do
-    modify $ \m -> m {mPrim = S.insert s (mPrim m)}
+    modifyDB $ \m -> m {mPrim = S.insert s (mPrim m)}
     processPrim j
   processPrim (JSemi j) = processJ j
   processPrim _ = throwError "bad $j 'primitive' command"
@@ -300,3 +349,69 @@ skipJ (JKeyword _ j) = skipJ j
 skipJ (JString _ j) = skipJ j
 skipJ (JRest _) = throwError "unfinished $j statement"
 skipJ (JError e) = throwError e
+
+ptEmpty :: ParseTrie
+ptEmpty = PT M.empty M.empty Nothing
+
+ptInsert :: M.Map Var (Sort, Label) -> ([MMExpr] -> MMExpr) -> Fmla -> Parser -> Parser
+ptInsert vm x (Const s : f) = insert1 s f where
+  insert1 :: String -> [Sym] -> Parser -> Parser
+  insert1 i f = M.alter (Just . insertPT f . fromMaybe ptEmpty) i
+  insertPT :: [Sym] -> ParseTrie -> ParseTrie
+  insertPT [] (PT cs vs Nothing) = PT cs vs (Just (s, x))
+  insertPT [] (PT _ _ _) = error "duplicate parser"
+  insertPT (Const c : f) (PT cs vs d) = PT (insert1 c f cs) vs d
+  insertPT (Var v : f) (PT cs vs d) =
+    PT cs (insert1 (fst (vm M.! v)) f vs) d
+ptInsert _ _ _ = error "bad decl"
+
+mkVarMap :: Frame -> M.Map Var Int
+mkVarMap (hs, _) = go hs M.empty where
+  go [] m = m
+  go (h : hs) m = m
+
+reorderMap :: M.Map Var Int -> Fmla -> [MMExpr] -> [MMExpr]
+reorderMap m f = let l = I.elems (buildIM f 0 I.empty) in \es -> map (es !!) l where
+  buildIM :: Fmla -> Int -> I.IntMap Int -> I.IntMap Int
+  buildIM [] _ i = i
+  buildIM (Const _ : f) n i = buildIM f n i
+  buildIM (Var v : f) n i = buildIM f (n+1) (I.insert (m M.! v) n i)
+
+type ParseResult = [(([MMExpr] -> [MMExpr]) -> MMExpr, [Sym])]
+parseFmla :: Fmla -> FromMMM (Const, MMExpr)
+parseFmla = \case
+  Const s : f -> do
+    t <- get
+    let s2 = fromMaybe s (fst $ mSorts (mDB t) M.! s)
+    e <- fromJustError ("cannot parse formula " ++ show (Const s : f))
+      (parseFmla' (mVMap t) (mParser t) s2 f)
+    return (s, e)
+  f -> throwError ("bad formula" ++ show f)
+  where
+  parseFmla' :: M.Map Var (Sort, Label) -> Parser -> Sort -> [Sym] -> Maybe MMExpr
+  parseFmla' vm p = \s f -> parseEOF (parse s p f) where
+    parseEOF :: [(MMExpr, [Sym])] -> Maybe MMExpr
+    parseEOF [] = Nothing
+    parseEOF ((e, []) : _) = Just e
+    parseEOF (_ : es) = parseEOF es
+    parse :: Sort -> Parser -> [Sym] -> [(MMExpr, [Sym])]
+    parse s p f = (case f of
+      Var v : f' -> let (s', v') = vm M.! v in
+        if s == s' then [(SVar v', f')] else []
+      _ -> []) ++ ((\(g, f') -> (g id, f')) <$> parseC s p s f)
+    parseC :: Sort -> Parser -> Const -> [Sym] -> ParseResult
+    parseC s q c f = parsePT s f (M.findWithDefault ptEmpty c q)
+    parseD :: Sort -> Maybe (Sort, [MMExpr] -> MMExpr) -> [Sym] -> ParseResult
+    parseD s (Just (s', i)) f | s' == s = [(\g -> i (g []), f)]
+    parseD s d f = []
+    parsePT :: Sort -> [Sym] -> ParseTrie -> ParseResult
+    parsePT s f (PT cs vs d) = (case f of
+      Const c : f' -> parseC s cs c f'
+      _ -> []) ++ parseV s vs f ++ parseD s d f
+    parseV :: Sort -> M.Map Sort ParseTrie -> [Sym] -> ParseResult
+    parseV s vs f = M.foldrWithKey parseV1 [] vs where
+      parseV1 :: Sort -> ParseTrie -> ParseResult -> ParseResult
+      parseV1 s' q r = (do
+        (v, f') <- parse s' p f
+        (g, f'') <- parsePT s f' q
+        [(g . (. (v :)), f'')]) ++ r

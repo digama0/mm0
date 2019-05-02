@@ -65,9 +65,6 @@ local theorem nsyl2 (ph: wff) (ps: wff) (ch: wff),
 local theorem con1i (ph: wff) (ps: wff), (h: (wi (wn ph) ps)): (wi (wn ps) ph) =
 (nsyl2 [(wn ps)=a] ps ph (id a) h)
 
-local theorem pm2_21d (ph: wff) (ps: wff),: (wi (wn ph) (wi ph ps)) =
-?
-
 local theorem pm2_21 (ph: wff) (ps: wff),: (wi (wn ph) (wi ph ps)) =
 ?
 

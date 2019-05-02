@@ -22,7 +22,7 @@ findBundled :: MMDatabase -> M.Map Label Bundles
 findBundled db = execState (mapM_ checkDecl (mDecls db)) M.empty where
   pureArgs :: M.Map Label [Int]
   pureArgs = M.mapMaybe f (mStmts db) where
-    f (Thm (hs, _) _ _) =
+    f (Thm (hs, _) _ _ _) =
       case go hs 0 of { [] -> Nothing; l -> Just l } where
       go [] _ = []
       go ((b, _):ls) n = if b then n : go ls (n+1) else go ls (n+1)
@@ -30,7 +30,7 @@ findBundled db = execState (mapM_ checkDecl (mDecls db)) M.empty where
 
   checkDecl :: Decl -> State (M.Map Label Bundles) ()
   checkDecl (Stmt s) = case mStmts db M.! s of
-    Thm fr _ (Just (_, p)) -> checkProof (allDistinct fr) p
+    Thm fr _ _ (Just (_, p)) -> checkProof (allDistinct fr) p
     _ -> return ()
   checkDecl _ = return ()
 
@@ -53,7 +53,7 @@ findBundled db = execState (mapM_ checkDecl (mDecls db)) M.empty where
           let b = bundle l'
           modify $ M.alter (Just . S.insert b . fromMaybe S.empty) t
           case mStmts db M.! t of
-            Thm fr _ (Just (_, p)) -> checkProof (I.fromList (zip l b)) p
+            Thm fr _ _ (Just (_, p)) -> checkProof (I.fromList (zip l b)) p
             _ -> return ()
         ) (pureArgs M.!? t)
     go _ = return ()
