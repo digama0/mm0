@@ -209,16 +209,16 @@ data SplitFrame = SplitFrame {
   sfVBound :: [VBinder],
   sfHyps :: [VExpr],
   sfReord :: [Int],
-  sfVarmap :: Var -> Var,
+  sfVarmap :: Label -> Label,
   sfNumVars :: Int }
 
 splitFrame :: Maybe [Int] -> Frame -> TransM SplitFrame
 splitFrame bu (hs, dv) = do (db, _) <- ask; splitFrame' bu hs dv db
 splitFrame' bu hs dv db = do
-  let (vs, bs, hs', m, f) = partitionHyps hs 0
+  let (vs, bs, hs', f) = partitionHyps hs 0
   let vs' = invertB bu vs
   let vm = mkVarmap bu fst vs vs'
-  let dv' = S.map (\(v1, v2) -> orientPair (vm (m M.! v1), vm (m M.! v2))) dv
+  let dv' = S.map (\(v1, v2) -> orientPair (vm v1, vm v2)) dv
   (bs1, bs2, hs2) <- processArgs vm dv' vs' bs hs'
   let rm = I.elems (f 0 (length vs') (length vs' + length bs))
   return $ SplitFrame bs1 bs2 hs2 rm vm (length vs)
@@ -231,19 +231,18 @@ splitFrame' bu hs dv db = do
     \v -> M.findWithDefault v v m
 
   partitionHyps :: [(Bool, Label)] -> Int -> ([(Label, Sort)],
-    [(Label, Sort)], [(Label, MMExpr)],
-    M.Map Var Label, Int -> Int -> Int -> I.IntMap Int)
-  partitionHyps [] _ = ([], [], [], M.empty, \_ _ _ -> I.empty)
+    [(Label, Sort)], [(Label, MMExpr)], Int -> Int -> Int -> I.IntMap Int)
+  partitionHyps [] _ = ([], [], [], \_ _ _ -> I.empty)
   partitionHyps ((b, l) : ls) li = case mStmts db M.! l of
     Hyp (VHyp s v) ->
-      let (vs, bs, hs', m, f) = partitionHyps ls (li+1) in
-      if b then ((l, s) : vs, bs, hs', M.insert v l m,
+      let (vs, bs, hs', f) = partitionHyps ls (li+1) in
+      if b then ((l, s) : vs, bs, hs',
         \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
-      else (vs, (l, s) : bs, hs', M.insert v l m,
+      else (vs, (l, s) : bs, hs',
         \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
     Hyp (EHyp _ e) ->
-      let (vs, bs, hs, m, f) = partitionHyps ls (li+1) in
-      (vs, bs, (l, e) : hs, m,
+      let (vs, bs, hs, f) = partitionHyps ls (li+1) in
+      (vs, bs, (l, e) : hs,
         \vi bi hi -> I.insert hi li (f vi bi (hi+1)))
 
   processArgs :: (Label -> Label) -> DVs ->

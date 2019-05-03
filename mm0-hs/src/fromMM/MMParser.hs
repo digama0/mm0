@@ -34,10 +34,13 @@ data ParseTrie = PT {
   ptDone :: Maybe (Sort, [MMExpr] -> MMExpr) }
 type Parser = M.Map Const ParseTrie
 
+type Scope = [([(Label, Hyp)], [[Label]], S.Set Label)]
+
 data MMParserState = MMParserState {
   mParser :: Parser,
   mVMap :: M.Map Var (Sort, Label),
   mSyms :: M.Map String Sym,
+  mScope :: Scope,
   mDB :: MMDatabase }
 
 type FromMMM = StateT MMParserState (Either String)
@@ -50,7 +53,7 @@ withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
 runFromMMM m = (\(a, t) -> (a, mDB t)) <$>
-  runStateT m (MMParserState M.empty M.empty M.empty mkDatabase)
+  runStateT m (MMParserState M.empty M.empty M.empty [([], [], S.empty)] mkDatabase)
 
 addConstant :: Const -> FromMMM ()
 addConstant c = modify $ \s -> s {mSyms = M.insert c (Const c) (mSyms s)}
@@ -58,15 +61,22 @@ addConstant c = modify $ \s -> s {mSyms = M.insert c (Const c) (mSyms s)}
 addVariable :: Var -> FromMMM ()
 addVariable v = modify $ \s -> s {mSyms = M.insert v (Var v) (mSyms s)}
 
-fmlaVars :: Fmla -> S.Set String
+exprVars :: MMExpr -> S.Set Label
+exprVars (SVar v) = S.singleton v
+exprVars (App _ es) = foldMap exprVars es
+
+fmlaVars :: Fmla -> S.Set Var
 fmlaVars [] = S.empty
 fmlaVars (Const _ : ss) = fmlaVars ss
 fmlaVars (Var v : ss) = S.insert v (fmlaVars ss)
 
+fmlaVHyps :: Fmla -> FromMMM (S.Set Label)
+fmlaVHyps f = do t <- get; return (S.map (\v -> snd (mVMap t M.! v)) (fmlaVars f))
+
 scopeAddHyp :: Label -> Hyp -> S.Set Var -> Scope -> Scope
 scopeAddHyp x h vs1 ((hs, ds, vs) : s) = ((x, h):hs, ds, S.union vs1 vs) : s
 
-scopeAddDV :: [Var] -> Scope -> Scope
+scopeAddDV :: [Label] -> Scope -> Scope
 scopeAddDV ds' ((hs, ds, vs) : s) = (hs, ds' : ds, vs) : s
 
 scopeOpen :: Scope -> Scope
@@ -76,18 +86,19 @@ scopeClose :: Scope -> Maybe Scope
 scopeClose (_ : []) = Nothing
 scopeClose (_ : s : ss) = Just (s : ss)
 
-addHyp :: Label -> Hyp -> S.Set Var -> FromMMM ()
+addHyp :: Label -> Hyp -> S.Set Label -> FromMMM ()
 addHyp x h vs = do
   addStmt x (Hyp h)
-  modifyDB $ \db -> db {mScope = scopeAddHyp x h vs (mScope db)}
+  modify $ \t -> t {mScope = scopeAddHyp x h vs (mScope t)}
 
 mkFrame :: Fmla -> FromMMM (Frame, M.Map Var Int)
 mkFrame f = do
-  db <- mDB <$> get
-  let sc@((_, _, vs) : _) = mScope db
-  return (build db (S.union vs (fmlaVars f)) sc ([], S.empty) (M.empty, 0))
+  t <- get
+  let sc@((_, _, vs) : _) = mScope t
+  vs' <- fmlaVHyps f
+  return (build (mDB t) (S.union vs vs') sc ([], S.empty) (M.empty, 0))
 
-build :: MMDatabase -> S.Set Var -> Scope ->
+build :: MMDatabase -> S.Set Label -> Scope ->
   Frame -> (M.Map Var Int, Int) -> (Frame, M.Map Var Int)
 build db vars = go where
   go [] fr (m, _) = (fr, m)
@@ -102,16 +113,16 @@ build db vars = go where
     insertHyps hs ((False, x):hs') m
   insertHyps ((x, VHyp s v):hs) hs' m =
     let (hs'', (m', n)) = insertHyps hs
-          (if S.member v vars then
+          (if S.member x vars then
             (sPure (snd (mSorts db M.! s)), x) : hs' else hs') m in
     (hs'', (M.insert v n m', n+1))
 
-  insertDVs :: DVs -> [Var] -> DVs
+  insertDVs :: DVs -> [Label] -> DVs
   insertDVs ds [] = ds
   insertDVs ds (v:vs) = let ds' = insertDVs ds vs in
     if S.member v vars then foldl' (insertDV1 v) ds' vs else ds'
 
-  insertDV1 :: Var -> DVs -> Var -> DVs
+  insertDV1 :: Label -> DVs -> Label -> DVs
   insertDV1 v1 ds v2 =
     if S.member v2 vars then
       S.insert (if v1 < v2 then (v1, v2) else (v2, v1)) ds
@@ -139,15 +150,17 @@ process ("$v" : ss) = do
   mapM_ addVariable vs >> process ss'
 process ("$d" : ss) = do
   (vs, ss') <- readUntil "$." ss
-  modifyDB $ \db -> db {mScope = scopeAddDV vs (mScope db)}
+  t <- get
+  let vs' = (\v -> snd (mVMap t M.! v)) <$> vs
+  modify $ \t -> t {mScope = scopeAddDV vs' (mScope t)}
   process ss'
 process ("${" : ss) = do
-  modifyDB $ \db -> db {mScope = scopeOpen (mScope db)}
+  modify $ \t -> t {mScope = scopeOpen (mScope t)}
   process ss
 process ("$}" : ss) = do
-  db <- mDB <$> get
-  sc <- fromJustError "too many $}" (scopeClose (mScope db))
-  modifyDB $ \_ -> db {mScope = sc}
+  t <- get
+  sc <- fromJustError "too many $}" (scopeClose (mScope t))
+  put $ t {mScope = sc}
   process ss
 process (x : "$f" : c : v : "$." : ss) = do
   modify $ \t -> t {mVMap = M.insert v (c, x) (mVMap t)}
@@ -156,7 +169,7 @@ process (x : "$f" : c : v : "$." : ss) = do
 process (x : "$e" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
   (s, e) <- parseFmla f
-  withContext x $ addHyp x (EHyp s e) (fmlaVars f)
+  withContext x $ addHyp x (EHyp s e) (exprVars e)
   process ss'
 process (x : "$a" : ss) = do
   (f, ss') <- withContext x $ readMath "$." ss
@@ -273,7 +286,7 @@ trProof (hs, _) db ("(" : p) =
 
   processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [Proof] -> Either String Proof
   processBlocks NEOF heap sz [pt] = return pt
-  processBlocks NEOF _ _ _ = throwError "bad stack state"
+  processBlocks NEOF _ _ pts = throwError ("bad stack state " ++ show pts)
   processBlocks NError _ _ _ = throwError "proof block parse error"
   processBlocks (NSave p) heap sz [] = throwError "can't save empty stack"
   processBlocks (NSave p) heap sz (pt : pts) =
@@ -364,11 +377,6 @@ ptInsert vm x (Const s : f) = insert1 s f where
   insertPT (Var v : f) (PT cs vs d) =
     PT cs (insert1 (fst (vm M.! v)) f vs) d
 ptInsert _ _ _ = error "bad decl"
-
-mkVarMap :: Frame -> M.Map Var Int
-mkVarMap (hs, _) = go hs M.empty where
-  go [] m = m
-  go (h : hs) m = m
 
 reorderMap :: M.Map Var Int -> Fmla -> [MMExpr] -> [MMExpr]
 reorderMap m f = let l = I.elems (buildIM f 0 I.empty) in \es -> map (es !!) l where

@@ -14,7 +14,7 @@ type MMExpr = SExpr
 
 data Hyp = VHyp Const Var | EHyp Const MMExpr deriving (Show)
 
-type DVs = S.Set (Var, Var)
+type DVs = S.Set (Label, Label)
 type Frame = ([(Bool, Label)], DVs)
 data Proof =
     PHyp Label Int
@@ -31,24 +31,21 @@ data Stmt = Hyp Hyp
   | Thm Frame Const MMExpr (Maybe ([Label], Proof))
   deriving (Show)
 
-type Scope = [([(Label, Hyp)], [[Var]], S.Set Var)]
-
 data Decl = Sort Sort | Stmt Label deriving (Show)
 
 data MMDatabase = MMDatabase {
   mSorts :: M.Map Sort (Maybe Sort, SortData),
   mDecls :: Q.Seq Decl,
   mPrim :: S.Set Label,
-  mStmts :: M.Map Label Stmt,
-  mScope :: Scope } deriving (Show)
+  mStmts :: M.Map Label Stmt } deriving (Show)
 
 mkDatabase :: MMDatabase
-mkDatabase = MMDatabase M.empty Q.empty S.empty M.empty [([], [], S.empty)]
+mkDatabase = MMDatabase M.empty Q.empty S.empty M.empty
 
 orientPair :: Ord a => (a, a) -> (a, a)
 orientPair (a1, a2) = if a1 < a2 then (a1, a2) else (a2, a1)
 
-memDVs :: DVs -> Var -> Var -> Bool
+memDVs :: DVs -> Label -> Label -> Bool
 memDVs d v1 v2 = S.member (orientPair (v1, v2)) d
 
 unsave :: Proof -> (Proof, Q.Seq Proof)
