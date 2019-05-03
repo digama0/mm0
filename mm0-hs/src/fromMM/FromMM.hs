@@ -8,6 +8,7 @@ import Control.Monad.RWS.Strict hiding (liftIO)
 import Control.Monad.Except hiding (liftIO)
 import Data.Foldable
 import Data.Maybe
+import Data.List.Split
 import Debug.Trace
 import Text.Printf
 import qualified Data.ByteString.Lazy as B
@@ -20,6 +21,7 @@ import Util
 import MMTypes
 import MMParser
 import MMEmancipate
+import MMClosure
 import FindBundled
 import Environment (Ident, DepType(..), SortData(..), SExpr(..))
 import ProofTypes
@@ -70,15 +72,35 @@ fromMM (mm : rest) = do
   db <- withFile mm ReadMode $ \h ->
     B.hGetContents h >>= liftIO . parseMM
   let db' = emancipate db
+  (dbf, rest) <- return $ case rest of
+    "-f" : l : rest ->
+      let {ls = splitOn "," l; (ss, sl) = closure db' ls} in
+      (Just (ss, sl, S.fromList ls), rest)
+    rest -> (Nothing, rest)
+  traceShow dbf $ return ()
   (mm0, mmu) <- case rest of
     [] -> return (\k -> k stdout, \k -> k (\_ -> return ()))
     "-o" : mm0 : [] -> return (write mm0, \k -> k (\_ -> return ()))
     "-o" : mm0 : mmu : _ -> return (write mm0, \k -> write mmu $ k . hPutStrLn)
     _ -> die "from-mm: too many arguments"
-  mm0 $ \h -> mmu $ printAST db' (hPutStrLn h)
+  mm0 $ \h -> mmu $ printAST db' dbf (hPutStrLn h)
 
 withContext :: MonadError String m => String -> m a -> m a
 withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
+
+type DBFilter = Maybe (S.Set Sort, S.Set Label, S.Set Label)
+
+sortMember :: DBFilter -> Sort -> Bool
+sortMember Nothing _ = True
+sortMember (Just (s, _, _)) x = S.member x s
+
+stmtMember :: DBFilter -> Label -> Bool
+stmtMember Nothing _ = True
+stmtMember (Just (_, s, _)) x = S.member x s
+
+stmtPublic :: DBFilter -> Label -> Bool
+stmtPublic Nothing _ = True
+stmtPublic (Just (_, _, s)) x = S.member x s
 
 data Builder = Builder {
   bReord :: [Int],
@@ -95,37 +117,34 @@ data TransState = TransState {
 mkTransState :: TransState
 mkTransState = TransState M.empty M.empty S.empty M.empty mkIxLookup
 
-type TransM = RWST (MMDatabase, M.Map Label Bundles)
+type TransM = RWST (MMDatabase, DBFilter, M.Map Label Bundles)
   (Endo [String]) TransState (Either String)
 
-runTransM :: TransM a -> MMDatabase -> Either String a
-runTransM m db = fst <$> evalRWST m (db, findBundled db) mkTransState
-
-makeAST :: MMDatabase -> Either String (A.AST, Proofs)
-makeAST db = trDecls (mDecls db)
+makeAST :: MMDatabase -> DBFilter -> Either String (A.AST, Proofs)
+makeAST db dbf = trDecls (mDecls db)
   (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") :) id mkTransState where
-  init = (db, findBundled db)
+  init = (db, dbf, findBundled db)
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
     TransState -> Either String (A.AST, Proofs)
   trDecls Q.Empty f g s = return (f [], g [])
   trDecls (d Q.:<| ds) f g st = do
     (os, st', _) <- runRWST (trDecl () d) init st
     let (ds', ps) = unzip os
-    trDecls ds (f . (ds' ++)) (g . (ps ++)) st'
+    trDecls ds (f . (catMaybes ds' ++)) (g . (ps ++)) st'
 
-printAST :: MMDatabase -> (String -> IO ()) -> (String -> IO ()) -> IO ()
-printAST db mm0 mmu = do
+printAST :: MMDatabase -> DBFilter -> (String -> IO ()) -> (String -> IO ()) -> IO ()
+printAST db dbf mm0 mmu = do
   mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ C.pack " ( ) ") "\n"
   trDecls (mDecls db) mkTransState mkSeqPrinter
   where
-  init = (db, findBundled db)
+  init = (db, dbf, findBundled db)
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
   trDecls Q.Empty s p = return ()
   trDecls (d Q.:<| ds) st p = do
     (os, st', w) <- liftIO (runRWST (trDecl p d) init st)
     p' <- foldlM (\p (a, pf) -> do
       let (s, p') = ppProofCmd' p pf
-      mm0 $ shows a "\n"
+      mapM_ (\a -> mm0 $ shows a "\n") a
       mmu $ s "\n"
       return p') p os
     report w
@@ -146,47 +165,52 @@ printAST db mm0 mmu = do
 report :: a -> TransM a -> TransM a
 report a m = catchError m (\e -> tell (Endo (e :)) >> return a)
 
-trDecl :: IDPrinter a => a -> Decl -> TransM [(A.Stmt, ProofCmd)]
-trDecl a d = ask >>= \(db, bm) -> case d of
-  Sort s -> case mSorts db M.! s of
-    (Nothing, sd) -> do
-      i <- trName s (mangle s)
-      modify $ \m -> m {tIxLookup = ilInsertSort s (tIxLookup m)}
-      return [(A.Sort i sd, StepSort i)]
-    _ -> return []
-  Stmt st -> case mStmts db M.! st of
-    Hyp (VHyp c v) ->
-      trName st (if identStr v then v else mangle st) >> return []
-    Hyp (EHyp _ _) -> return []
-    Term fr s _ Nothing -> do
-      SplitFrame bs1 _ _ rm _ _ <- splitFrame Nothing fr
-      i <- trName st (mangle st)
-      modify $ \m ->
-        let {lup = tIxLookup m; n = TermID (fst (pTermIx lup))} in
-        m {
-          tBuilders = M.insert st
-            (Builder rm (Just (VApp n)) (VTerm n))
-            (tBuilders m),
-          tIxLookup = ilInsertTerm st $ ilResetVars lup }
-      return [(A.Term i bs1 (DepType s []), StepTerm i)]
-    Term fr s e (Just _) -> do
-      rm <- sfReord <$> splitFrame Nothing fr
-      (_, e2) <- trExpr id e
-      let (be, bd) = trSyntaxProof e2
-      modify $ \t -> t {
-        tBuilders = M.insert st (Builder rm (Just be) bd) (tBuilders t),
-        tIxLookup = ilResetVars $ tIxLookup t }
-      return []
-    Thm fr s e p -> do
-      let mst = mangle st
-      ((out, n), rm) <- trName st mst >>= trThmB Nothing fr s e p
-      (out2, ns) <- unzip <$> mapM (\bu -> do
-        ((out', n'), _) <-
-          trBName st bu (mst ++ "_b") >>= trThmB (Just bu) fr s e p
-        return (out', (bu, n')))
-        (maybe [] M.keys (bm M.!? st))
-      modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder rm n ns) (tBuilders t)}
-      return (out : out2)
+trDecl :: IDPrinter a => a -> Decl -> TransM [(Maybe A.Stmt, ProofCmd)]
+trDecl a d = ask >>= \(db, dbf, bm) -> case d of
+  Sort s -> if sortMember dbf s then
+    case mSorts db M.! s of
+      (Nothing, sd) -> do
+        i <- trName s (mangle s)
+        modify $ \m -> m {tIxLookup = ilInsertSort s (tIxLookup m)}
+        return [(Just $ A.Sort i sd, StepSort i)]
+      _ -> return []
+    else return []
+  Stmt st -> if stmtMember dbf st then
+    case mStmts db M.! st of
+      Hyp (VHyp c v) ->
+        trName st (if identStr v then v else mangle st) >> return []
+      Hyp (EHyp _ _) -> return []
+      Term fr s _ Nothing -> do
+        SplitFrame bs1 _ _ rm _ _ <- splitFrame Nothing fr
+        i <- trName st (mangle st)
+        modify $ \m ->
+          let {lup = tIxLookup m; n = TermID (fst (pTermIx lup))} in
+          m {
+            tBuilders = M.insert st
+              (Builder rm (Just (VApp n)) (VTerm n))
+              (tBuilders m),
+            tIxLookup = ilInsertTerm st $ ilResetVars lup }
+        return [(Just $ A.Term i bs1 (DepType s []), StepTerm i)]
+      Term fr s e (Just _) -> do
+        rm <- sfReord <$> splitFrame Nothing fr
+        (_, e2) <- trExpr id e
+        let (be, bd) = trSyntaxProof e2
+        modify $ \t -> t {
+          tBuilders = M.insert st (Builder rm (Just be) bd) (tBuilders t),
+          tIxLookup = ilResetVars $ tIxLookup t }
+        return []
+      Thm fr s e p -> do
+        let mst = mangle st
+        let pub = stmtPublic dbf st
+        ((out, n), rm) <- trName st mst >>= trThmB Nothing pub fr s e p
+        (out2, ns) <- unzip <$> mapM (\bu -> do
+          ((out', n'), _) <-
+            trBName st bu (mst ++ "_b") >>= trThmB (Just bu) pub fr s e p
+          return (out', (bu, n')))
+          (maybe [] M.keys (bm M.!? st))
+        modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder rm n ns) (tBuilders t)}
+        return (out : out2)
+    else return []
 
 invertB :: Maybe [Int] -> [a] -> [a]
 invertB Nothing = id
@@ -195,18 +219,19 @@ invertB (Just bs) = go 0 bs where
   go n (b:bs) (a:as) | b == n = a : go (n+1) bs as
   go n (_:bs) (_:as) = go n bs as
 
-trThmB :: Maybe [Int] -> Frame -> Const -> MMExpr -> Maybe ([Label], Proof) ->
-  Ident -> TransM (((A.Stmt, ProofCmd), ThmID), ([Int], Int))
-trThmB bu fr s e p i = do
+trThmB :: Maybe [Int] -> Bool -> Frame -> Const -> MMExpr -> Maybe ([Label], Proof) ->
+  Ident -> TransM (((Maybe A.Stmt, ProofCmd), ThmID), ([Int], Int))
+trThmB bu pub fr s e p i = do
   SplitFrame bs1 bs2 hs2 rm vm nv <- splitFrame bu fr
   (e1, e2) <- trExpr vm e
   ret <- case p of
-    Nothing -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
+    Nothing -> return (Just $ A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
     Just p -> do
       t <- get
       let (ds, pr) = trProof vm (length bs1) t p
-      return (A.Theorem i bs1 (exprToFmla e1),
-        ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
+      return (
+        if pub then Just $ A.Theorem i bs1 (exprToFmla e1) else Nothing,
+        ProofThm (Just i) bs2 hs2 e2 [] ds pr pub)
   t <- get
   let lup = tIxLookup t
   let n = ThmID (fst (pThmIx lup))
@@ -238,7 +263,7 @@ data SplitFrame = SplitFrame {
   sfNumVars :: Int }
 
 splitFrame :: Maybe [Int] -> Frame -> TransM SplitFrame
-splitFrame bu (hs, dv) = do (db, _) <- ask; splitFrame' bu hs dv db
+splitFrame bu (hs, dv) = do (db, _, _) <- ask; splitFrame' bu hs dv db
 splitFrame' bu hs dv db = do
   let (vs, bs, hs', f) = partitionHyps hs 0
   let vs' = invertB bu vs
