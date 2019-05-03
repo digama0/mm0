@@ -62,12 +62,13 @@ data Builder = Builder {
 
 data TransState = TransState {
   tNameMap :: M.Map Label Ident,
+  tBNameMap :: M.Map (Label, [Int]) Ident,
   tUsedNames :: S.Set Ident,
   tBuilders :: M.Map Label Builder,
   tIxLookup :: IxLookup }
 
 mkTransState :: TransState
-mkTransState = TransState M.empty S.empty M.empty mkIxLookup
+mkTransState = TransState M.empty M.empty S.empty M.empty mkIxLookup
 
 type TransM = RWST (MMDatabase, M.Map Label Bundles)
   (Endo [String]) TransState (Either String)
@@ -82,9 +83,10 @@ makeAST db = trDecls (mDecls db)
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
     TransState -> Either String (A.AST, Proofs)
   trDecls Q.Empty f g s = return (f [], g [])
-  trDecls (d Q.:<| ds) f g st = runRWST (trDecl () d) init st >>= \case
-    (Nothing, st', _) -> trDecls ds f g st'
-    (Just (d, p), st', _) -> trDecls ds (f . (d :)) (g . (p :)) st'
+  trDecls (d Q.:<| ds) f g st = do
+    (os, st', _) <- runRWST (trDecl () d) init st
+    let (ds', ps) = unzip os
+    trDecls ds (f . (ds' ++)) (g . (ps ++)) st'
 
 printAST :: MMDatabase -> (String -> IO ()) -> (String -> IO ()) -> IO ()
 printAST db mm0 mmu = do
@@ -94,14 +96,15 @@ printAST db mm0 mmu = do
   init = (db, findBundled db)
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
   trDecls Q.Empty s p = return ()
-  trDecls (d Q.:<| ds) st p = liftIO (runRWST (trDecl p d) init st) >>= \case
-      (Nothing, st', w) -> report w >> trDecls ds st' p
-      (Just (a, pf), st', w) -> do
-        let (s, p') = ppProofCmd' p pf
-        mm0 $ shows a "\n"
-        mmu $ s "\n"
-        report w
-        trDecls ds st' p'
+  trDecls (d Q.:<| ds) st p = do
+    (os, st', w) <- liftIO (runRWST (trDecl p d) init st)
+    p' <- foldlM (\p (a, pf) -> do
+      let (s, p') = ppProofCmd' p pf
+      mm0 $ shows a "\n"
+      mmu $ s "\n"
+      return p') p os
+    report w
+    trDecls ds st' p'
 
   report :: Endo [String] -> IO ()
   report (Endo f) = mapM_ (hPutStrLn stderr) (f [])
@@ -118,20 +121,20 @@ printAST db mm0 mmu = do
 report :: a -> TransM a -> TransM a
 report a m = catchError m (\e -> tell (Endo (e :)) >> return a)
 
-trDecl :: IDPrinter a => a -> Decl -> TransM (Maybe (A.Stmt, ProofCmd))
-trDecl a d = ask >>= \(db, _) -> case d of
+trDecl :: IDPrinter a => a -> Decl -> TransM [(A.Stmt, ProofCmd)]
+trDecl a d = ask >>= \(db, bm) -> case d of
   Sort s -> case mSorts db M.! s of
     (Nothing, sd) -> do
       i <- trName s (mangle s)
       modify $ \m -> m {tIxLookup = ilInsertSort s (tIxLookup m)}
-      return $ Just (A.Sort i sd, StepSort i)
-    _ -> return Nothing
+      return [(A.Sort i sd, StepSort i)]
+    _ -> return []
   Stmt st -> case mStmts db M.! st of
     Hyp (VHyp c v) ->
-      trName st (if identStr v then v else mangle st) >> return Nothing
-    Hyp (EHyp _ _) -> return Nothing
+      trName st (if identStr v then v else mangle st) >> return []
+    Hyp (EHyp _ _) -> return []
     Term fr s _ Nothing -> do
-      (bs1, _, _, rm) <- splitFrame fr
+      SplitFrame bs1 _ _ rm _ _ <- splitFrame Nothing fr
       i <- trName st (mangle st)
       modify $ \m ->
         let {lup = tIxLookup m; n = TermID (fst (pTermIx lup))} in
@@ -140,82 +143,136 @@ trDecl a d = ask >>= \(db, _) -> case d of
             (Builder rm (Just (VApp n)) (VTerm n))
             (tBuilders m),
           tIxLookup = ilInsertTerm st $ ilResetVars lup }
-      return $ Just (A.Term i bs1 (DepType s []), StepTerm i)
+      return [(A.Term i bs1 (DepType s []), StepTerm i)]
     Term fr s e (Just _) -> do
-      (_, _, _, rm) <- splitFrame fr
-      (_, e2) <- trExpr e
+      rm <- sfReord <$> splitFrame Nothing fr
+      (_, e2) <- trExpr id e
       let (be, bd) = trSyntaxProof e2
       modify $ \t -> t {
         tBuilders = M.insert st (Builder rm (Just be) bd) (tBuilders t),
         tIxLookup = ilResetVars $ tIxLookup t }
-      return Nothing
+      return []
     Thm fr s e p -> do
-      (bs1, bs2, hs2, rm) <- splitFrame fr
-      (e1, e2) <- trExpr e
-      i <- trName st (mangle st)
-      ret <- case p of
-        Nothing -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
-        Just p -> do
-          t <- get
-          let (ds, pr) = trProof fr t p
-          return (A.Theorem i bs1 (exprToFmla e1),
-            ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
-      modify $ \m ->
-        let {lup = tIxLookup m; n = ThmID (fst (pThmIx lup))} in
-        m {
-          tBuilders = M.insert st (Builder rm Nothing (VThm n)) (tBuilders m),
-          tIxLookup = ilInsertThm st $ ilResetVars lup }
-      return $ Just ret
+      let mst = mangle st
+      ((out, n), rm) <- trName st mst >>= trThmB Nothing fr s e p
+      (out2, ns) <- unzip <$> mapM (\bu -> do
+        ((out', n'), _) <-
+          trBName st bu (mst ++ "_b") >>= trThmB (Just bu) fr s e p
+        return (out', (bu, n')))
+        (maybe [] S.toList (bm M.!? st))
+      modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder rm n ns) (tBuilders t)}
+      return (out : out2)
 
-splitFrame :: Frame -> TransM ([A.Binder], [VBinder], [VExpr], [Int])
-splitFrame (hs, ds) = do (db, _) <- ask; splitFrame' hs ds db
-splitFrame' hs ds db = do
-  let (vs, bs, hs', f) = partitionHyps hs 0
-  (bs1, bs2, hs2) <- processArgs vs bs hs'
-  return (bs1, bs2, hs2, I.elems (f 0 (length vs) (length vs + length bs)))
+invertB :: Maybe [Int] -> [a] -> [a]
+invertB Nothing = id
+invertB (Just bs) = go 0 bs where
+  go n [] as = []
+  go n (b:bs) (a:as) | b == n = a : go (n+1) bs as
+  go n (_:bs) (_:as) = go n bs as
+
+trThmB :: Maybe [Int] -> Frame -> Const -> MMExpr -> Maybe ([Label], Proof) ->
+  Ident -> TransM (((A.Stmt, ProofCmd), ThmID), ([Int], Int))
+trThmB bu fr s e p i = do
+  SplitFrame bs1 bs2 hs2 rm vm nv <- splitFrame bu fr
+  (e1, e2) <- trExpr vm e
+  ret <- case p of
+    Nothing -> return (A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
+    Just p -> do
+      t <- get
+      let (ds, pr) = trProof vm (length bs1) t p
+      return (A.Theorem i bs1 (exprToFmla e1),
+        ProofThm (Just i) bs2 hs2 e2 [] ds pr True)
+  t <- get
+  let lup = tIxLookup t
+  let n = ThmID (fst (pThmIx lup))
+  put $ t {tIxLookup = ilInsertThm i $ ilResetVars lup}
+  return ((ret, n), (rm, nv))
+
+mkThmBuilder :: ([Int], Int) -> ThmID -> [([Int], ThmID)] -> Builder
+mkThmBuilder (rm, _) n [] = Builder rm Nothing (VThm n)
+mkThmBuilder (rm, nv) n ns = let m = M.fromList ns in
+  Builder rm Nothing $ \ps ->
+    if allUnique ((\(Load v) -> v) <$> take nv ps) then VThm n ps else
+      let (bu, ps') = bundleWith ps nv in VThm (m M.! bu) ps'
+
+bundleWith :: [ProofTree] -> Int -> ([Int], [ProofTree])
+bundleWith = go M.empty 0 where
+  go m n ps 0 = ([], ps)
+  go m n (Load v : ps) nv = case m M.!? v of
+    Just i -> let (bs, ps') = go m n ps (nv-1) in (i : bs, ps')
+    Nothing ->
+      let (bs, ps') = go (M.insert v n m) (n+1) ps (nv-1) in
+      (n : bs, Load v : ps')
+
+data SplitFrame = SplitFrame {
+  sfBound :: [A.Binder],
+  sfVBound :: [VBinder],
+  sfHyps :: [VExpr],
+  sfReord :: [Int],
+  sfVarmap :: Var -> Var,
+  sfNumVars :: Int }
+
+splitFrame :: Maybe [Int] -> Frame -> TransM SplitFrame
+splitFrame bu (hs, dv) = do (db, _) <- ask; splitFrame' bu hs dv db
+splitFrame' bu hs dv db = do
+  let (vs, bs, hs', m, f) = partitionHyps hs 0
+  let vs' = invertB bu vs
+  let vm = mkVarmap bu fst vs vs'
+  let dv' = S.map (\(v1, v2) -> orientPair (vm (m M.! v1), vm (m M.! v2))) dv
+  (bs1, bs2, hs2) <- processArgs vm dv' vs' bs hs'
+  let rm = I.elems (f 0 (length vs') (length vs' + length bs))
+  return $ SplitFrame bs1 bs2 hs2 rm vm (length vs)
   where
 
-  partitionHyps :: [(Bool, Label)] -> Int -> ([(Var, Label, Sort)],
-    [(Var, Label, Sort)], [(Label, MMExpr)], Int -> Int -> Int -> I.IntMap Int)
-  partitionHyps [] _ = ([], [], [], \_ _ _ -> I.empty)
+  mkVarmap :: Maybe [Int] -> (a -> Label) -> [a] -> [a] -> Label -> Label
+  mkVarmap Nothing _ _ _ = id
+  mkVarmap (Just bs) f vs vs' =
+    let m = M.fromList (zipWith (\i old -> (f old, f (vs' !! i))) bs vs) in
+    \v -> M.findWithDefault v v m
+
+  partitionHyps :: [(Bool, Label)] -> Int -> ([(Label, Sort)],
+    [(Label, Sort)], [(Label, MMExpr)],
+    M.Map Var Label, Int -> Int -> Int -> I.IntMap Int)
+  partitionHyps [] _ = ([], [], [], M.empty, \_ _ _ -> I.empty)
   partitionHyps ((b, l) : ls) li = case mStmts db M.! l of
     Hyp (VHyp s v) ->
-      let (vs, bs, hs', f) = partitionHyps ls (li+1) in
-      if b then ((v, l, s) : vs, bs, hs',
+      let (vs, bs, hs', m, f) = partitionHyps ls (li+1) in
+      if b then ((l, s) : vs, bs, hs', M.insert v l m,
         \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
-      else (vs, (v, l, s) : bs, hs',
+      else (vs, (l, s) : bs, hs', M.insert v l m,
         \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
     Hyp (EHyp _ e) ->
-      let (vs, bs, hs, f) = partitionHyps ls (li+1) in
-      (vs, bs, (l, e) : hs,
+      let (vs, bs, hs, m, f) = partitionHyps ls (li+1) in
+      (vs, bs, (l, e) : hs, m,
         \vi bi hi -> I.insert hi li (f vi bi (hi+1)))
 
-  processArgs :: [(Var, Label, Sort)] -> [(Var, Label, Sort)] -> [(Label, MMExpr)] ->
+  processArgs :: (Label -> Label) -> DVs ->
+    [(Label, Sort)] -> [(Label, Sort)] -> [(Label, MMExpr)] ->
     TransM ([A.Binder], [VBinder], [VExpr])
-  processArgs vs bs hs = processBound vs where
-    processBound :: [(Var, Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
+  processArgs vm dv' vs bs hs = processBound vs where
+    processBound :: [(Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
     processBound [] = processReg bs
-    processBound ((_, l, s) : vs) = do
-      modify $ \t -> t {tIxLookup = ilInsertVar l (tIxLookup t)}
+    processBound ((v, s) : vs) = do
+      modify $ \t -> t {tIxLookup = ilInsertVar v (tIxLookup t)}
       (bs1, bs2, hs') <- processBound vs
       t <- get
-      let v' = tNameMap t M.! l
+      let v' = tNameMap t M.! v
       let s' = tNameMap t M.! s
       let s2 = fromJust $ ilSort (tIxLookup t) s
       return (A.Binder (A.LBound v') (A.TType $ DepType s' []) : bs1,
         VBound s2 : bs2, hs')
 
-    processReg :: [(Var, Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
+    processReg :: [(Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
     processReg [] = do (hs1, hs2) <- processHyps hs; return (hs1, [], hs2)
-    processReg ((v, l, s) : bs) = do
-      modify $ \t -> t {tIxLookup = ilInsertVar l (tIxLookup t)}
+    processReg ((v, s) : bs) = do
+      modify $ \t -> t {tIxLookup = ilInsertVar v (tIxLookup t)}
       (bs1, bs2, hs2) <- processReg bs
       t <- get
-      let v' = tNameMap t M.! l
+      let v' = tNameMap t M.! v
       let s' = tNameMap t M.! s
       let s2 = fromJust $ ilSort (tIxLookup t) s
-      let f (v2, l2, _) = if memDVs ds v v2 then Nothing else
-            Just (tNameMap t M.! l2, fromJust $ ilVar (tIxLookup t) l2)
+      let f (v2, _) = if memDVs dv' v v2 then Nothing else
+            Just (tNameMap t M.! v2, fromJust $ ilVar (tIxLookup t) v2)
           (vs1, vs2) = unzip $ mapMaybe f vs
       return (A.Binder (A.LReg v') (A.TType $ DepType s' vs1) : bs1,
         VReg s2 vs2 : bs2, hs2)
@@ -225,33 +282,38 @@ splitFrame' hs ds db = do
     processHyps ((l, e) : ls) = do
       modify $ \t -> t {tIxLookup = ilInsertVar l (tIxLookup t)}
       (hs1, hs2) <- processHyps ls
-      (e1, e2) <- trExpr e
+      (e1, e2) <- trExpr vm e
       i <- trName l (mangle l)
       return (A.Binder (A.LReg i) (A.TFormula $ exprToFmla e1) : hs1, e2 : hs2)
 
-  buildReorder :: [(Var, Label, Sort)] -> Int -> M.Map Var Int -> M.Map Var Int
-  buildReorder [] n m = m
-  buildReorder ((v, _, _):vs) n m = buildReorder vs (n+1) (M.insert v n m)
-
-trName :: Label -> Ident -> TransM Ident
-trName lab name = get >>= \m -> case tNameMap m M.!? lab of
+trNameF :: (TransState -> Maybe Ident) -> (Ident -> TransState -> TransState) -> Ident -> TransM Ident
+trNameF lup set name = get >>= \m -> case lup m of
   Just s -> return s
   Nothing -> alloc (tUsedNames m) (name : ((\n -> name ++ show n) <$> [1..]))
   where
   alloc :: S.Set Ident -> [String] -> TransM Ident
   alloc used (n : ns) | S.member n used = alloc used ns
   alloc used (n : _) = do
-    modify $ \m -> m {
-      tNameMap = M.insert lab n (tNameMap m),
-      tUsedNames = S.insert n (tUsedNames m) }
+    modify $ \m -> set n $ m {tUsedNames = S.insert n (tUsedNames m)}
     return n
 
-trExpr :: MMExpr -> TransM (SExpr, VExpr)
-trExpr = \e -> (\t -> trExpr' (tNameMap t) (tBuilders t) (tIxLookup t) e) <$> get where
+trName :: Label -> Ident -> TransM Ident
+trName lab = trNameF
+  (\t -> tNameMap t M.!? lab)
+  (\n t -> t {tNameMap = M.insert lab n (tNameMap t)})
+
+trBName :: Label -> [Int] -> Ident -> TransM Ident
+trBName lab bu = trNameF
+  (\t -> tBNameMap t M.!? (lab, bu))
+  (\n t -> t {tBNameMap = M.insert (lab, bu) n (tBNameMap t)})
+
+trExpr :: (Label -> Label) -> MMExpr -> TransM (SExpr, VExpr)
+trExpr vm = \e -> (\t -> trExpr' (tNameMap t) (tBuilders t) (tIxLookup t) e) <$> get where
 
   trExpr' :: M.Map Label Ident -> M.Map Label Builder -> IxLookup -> MMExpr -> (SExpr, VExpr)
   trExpr' names bds lup = go where
-    go (SVar v) = (SVar (names M.! v), VVar (fromJust $ ilVar lup v))
+    go (SVar v) = let v' = vm v in
+      (SVar (names M.! v'), VVar (fromJust $ ilVar lup v'))
     go (App t es) =
       let (es1, es2) = unzip (go . (es !!) <$> bReord (bds M.! t)) in
       (App (names M.! t) es1, VApp (fromJust $ ilTerm lup t) es2)
@@ -287,19 +349,16 @@ ppHeapEl a (HBuild (_, f)) = case f [] of
 
 instance Show HeapEl where show = ppHeapEl ()
 
-trProof :: Frame -> TransState ->
+trProof :: (Label -> Label) -> Int -> TransState ->
   ([Label], Proof) -> ([SortID], ProofTree)
-trProof (hs, _) t (ds, pr) =
+trProof vm nhs t (ds, pr) =
   let (pr', heap) = unsave pr in
   (fromJust . ilSort lup <$> ds,
-    evalState (trProof' pr') (nhs + nds, Right <$> heap)) where
-
+    evalState (trProof' pr') (nhs + length ds, Right <$> heap)) where
   lup = tIxLookup t
-  nhs = length hs
-  nds = length ds
 
   trProof' :: Proof -> State (Int, Q.Seq (Either VarID Proof)) ProofTree
-  trProof' (PHyp v _) = return $ Load $ fromJust $ ilVar lup v
+  trProof' (PHyp v _) = return $ Load $ fromJust $ ilVar lup (vm v)
   trProof' (PDummy n) = return $ Load $ VarID (nhs + n)
   trProof' (PBackref n) = do
     (_, heap) <- get
