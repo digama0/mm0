@@ -31,16 +31,38 @@ write f io = withFile f WriteMode $ \h ->
 
 showBundled :: [String] -> IO ()
 showBundled [] = die "show-bundled: no .mm file specified"
-showBundled (mm : _) = do
+showBundled (mm : rest) = do
   db <- withFile mm ReadMode $ \h ->
     B.hGetContents h >>= liftIO . parseMM
   let db' = emancipate db
-  putStrLn $ show (M.size (findBundled db')) ++ " bundled theorems, " ++
-    show (sum (S.size <$> toList (findBundled db'))) ++ " total copies"
-  mapM_ (\(l, s) -> putStrLn $ padL 15 l ++ "  " ++ show (S.toList s)) $
-    mapMaybe (\case
-      Stmt s -> (,) s <$> (findBundled db' M.!? s)
-      _ -> Nothing) (toList (mDecls db'))
+  let bu = findBundled db'
+  case rest of
+    [] -> showBundles db bu
+    "-r" : n : _ -> do
+      let bu' = filt (\_ _ i -> i <= read n) bu
+      let s = reportBundled db' bu'
+      mapM_ (\((x, o), (t, b)) ->
+        putStrLn ("theorem " ++ x ++ maybe "" show o ++ " references " ++ t ++ show b)) s
+      putStrLn ""
+      let s' = S.map fst s
+      showBundles db $ filt (\x i _ -> S.member (x, Just i) s') bu'
+    n : _ -> showBundles db $ filt (\_ _ i -> i <= read n) bu
+  where
+  filt :: (Label -> [Int] -> Int -> Bool) -> M.Map Label Bundles -> M.Map Label Bundles
+  filt f = M.filter (not . M.null) . M.mapWithKey (\x -> M.filterWithKey (f x))
+
+  showBundles :: MMDatabase -> M.Map Label Bundles -> IO ()
+  showBundles db bu = out $ mapMaybe (\case
+    Stmt x -> do
+      s' <- bu M.!? x
+      if M.null s' then Nothing else Just (x, fst <$> M.toList s')
+    _ -> Nothing) (toList (mDecls db))
+
+  out :: [(Label, [[Int]])] -> IO ()
+  out ls = do
+    putStrLn $ show (length ls) ++ " bundled theorems, " ++
+      show (sum (length . snd <$> ls)) ++ " total copies"
+    mapM_ (\(l, s) -> putStrLn $ padL 15 l ++ "  " ++ show s) ls
 
 fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
@@ -162,7 +184,7 @@ trDecl a d = ask >>= \(db, bm) -> case d of
         ((out', n'), _) <-
           trBName st bu (mst ++ "_b") >>= trThmB (Just bu) fr s e p
         return (out', (bu, n')))
-        (maybe [] S.toList (bm M.!? st))
+        (maybe [] M.keys (bm M.!? st))
       modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder rm n ns) (tBuilders t)}
       return (out : out2)
 
