@@ -19,6 +19,7 @@ import qualified Data.Set as S
 import Util
 import MMTypes
 import MMParser
+import MMEmancipate
 import FindBundled
 import Environment (Ident, DepType(..), SortData(..), SExpr(..))
 import ProofTypes
@@ -33,24 +34,26 @@ showBundled [] = die "show-bundled: no .mm file specified"
 showBundled (mm : _) = do
   db <- withFile mm ReadMode $ \h ->
     B.hGetContents h >>= liftIO . parseMM
-  putStrLn $ show (M.size (findBundled db)) ++ " bundled theorems, " ++
-    show (sum (S.size <$> toList (findBundled db))) ++ " total copies"
+  let db' = emancipate db
+  putStrLn $ show (M.size (findBundled db')) ++ " bundled theorems, " ++
+    show (sum (S.size <$> toList (findBundled db'))) ++ " total copies"
   mapM_ (\(l, s) -> putStrLn $ padL 15 l ++ "  " ++ show (S.toList s)) $
     mapMaybe (\case
-      Stmt s -> (,) s <$> (findBundled db M.!? s)
-      _ -> Nothing) (toList (mDecls db))
+      Stmt s -> (,) s <$> (findBundled db' M.!? s)
+      _ -> Nothing) (toList (mDecls db'))
 
 fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
 fromMM (mm : rest) = do
   db <- withFile mm ReadMode $ \h ->
     B.hGetContents h >>= liftIO . parseMM
+  let db' = emancipate db
   (mm0, mmu) <- case rest of
     [] -> return (\k -> k stdout, \k -> k (\_ -> return ()))
     "-o" : mm0 : [] -> return (write mm0, \k -> k (\_ -> return ()))
     "-o" : mm0 : mmu : _ -> return (write mm0, \k -> write mmu $ k . hPutStrLn)
     _ -> die "from-mm: too many arguments"
-  mm0 $ \h -> mmu $ printAST db (hPutStrLn h)
+  mm0 $ \h -> mmu $ printAST db' (hPutStrLn h)
 
 withContext :: MonadError String m => String -> m a -> m a
 withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
