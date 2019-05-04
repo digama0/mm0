@@ -77,7 +77,6 @@ fromMM (mm : rest) = do
       let {ls = splitOn "," l; (ss, sl) = closure db' ls} in
       (Just (ss, sl, S.fromList ls), rest)
     rest -> (Nothing, rest)
-  traceShow dbf $ return ()
   (mm0, mmu) <- case rest of
     [] -> return (\k -> k stdout, \k -> k (\_ -> return ()))
     "-o" : mm0 : [] -> return (write mm0, \k -> k (\_ -> return ()))

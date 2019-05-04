@@ -33,14 +33,37 @@ data Stmt = Hyp Hyp
 
 data Decl = Sort Sort | Stmt Label deriving (Show)
 
+data Equality = Equality {
+  eEq :: Label,
+  eRefl :: Label,
+  eSymm :: Label,
+  eTrans :: Label } deriving (Show)
+
+data NF = NF {
+  nfNF :: Label,
+  nfCond :: Label } deriving (Show)
+
+data MMMetaData = MMMetaData {
+  mPrim :: S.Set Label,
+  mEqual :: M.Map Sort Equality,
+  mNF :: M.Map (Sort, Sort) NF,
+  mCondEq :: M.Map Sort (Label, Label),
+  mJustification :: M.Map Label Label,
+  mCongr :: M.Map Label Label,
+  mCCongr :: [Label] }
+  deriving (Show)
+
+mkMetadata :: MMMetaData
+mkMetadata = MMMetaData S.empty M.empty M.empty M.empty M.empty M.empty []
+
 data MMDatabase = MMDatabase {
   mSorts :: M.Map Sort (Maybe Sort, SortData),
   mDecls :: Q.Seq Decl,
-  mPrim :: S.Set Label,
+  mMeta :: MMMetaData,
   mStmts :: M.Map Label Stmt } deriving (Show)
 
 mkDatabase :: MMDatabase
-mkDatabase = MMDatabase M.empty Q.empty S.empty M.empty
+mkDatabase = MMDatabase M.empty Q.empty mkMetadata M.empty
 
 orientPair :: Ord a => (a, a) -> (a, a)
 orientPair (a1, a2) = if a1 < a2 then (a1, a2) else (a2, a1)

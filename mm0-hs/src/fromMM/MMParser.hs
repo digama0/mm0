@@ -48,6 +48,9 @@ type FromMMM = StateT MMParserState (Either String)
 modifyDB :: (MMDatabase -> MMDatabase) -> FromMMM ()
 modifyDB f = modify $ \s -> s {mDB = f (mDB s)}
 
+modifyMeta :: (MMMetaData -> MMMetaData) -> FromMMM ()
+modifyMeta f = modifyDB $ \db -> db {mMeta = f (mMeta db)}
+
 withContext :: MonadError String m => String -> m a -> m a
 withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
@@ -330,6 +333,12 @@ parseJ (s : ss) = case P.readP_to_S L.lex s of
     [(L.Punc ";", s')] -> JSemi (parseJ (s' : ss))
     _ -> JError ("parse failed \"" ++ s ++ "\"" ++ head ss)
 
+processManyJ :: String -> JComment -> (String -> FromMMM ()) -> FromMMM ()
+processManyJ name j f = go j where
+  go (JString s j) = f s >> go j
+  go (JSemi j) = processJ j
+  go _ = throwError ("bad $j '" ++ name ++ "' command")
+
 processJ :: JComment -> FromMMM ()
 processJ (JKeyword "syntax" j) = case j of
   JString s (JSemi j') -> addSort s Nothing >> processJ j'
@@ -345,12 +354,53 @@ processJ (JKeyword "bound" j) = case j of
       M.adjust (\(s, sd) -> (s, sd {sPure = True})) s (mSorts m)}
     processJ j'
   _ -> throwError "bad $j 'bound' command"
-processJ (JKeyword "primitive" j) = processPrim j where
-  processPrim (JString s j) = do
-    modifyDB $ \m -> m {mPrim = S.insert s (mPrim m)}
-    processPrim j
-  processPrim (JSemi j) = processJ j
-  processPrim _ = throwError "bad $j 'primitive' command"
+processJ (JKeyword "primitive" j) = processManyJ "primitive" j $ \s ->
+  modifyMeta $ \m -> m {mPrim = S.insert s (mPrim m)}
+processJ (JKeyword "justification" j) = case j of
+  JString x (JKeyword "for" (JString df (JSemi j))) -> do
+    modifyMeta $ \m -> m {mJustification = M.insert df x (mJustification m)}
+    processJ j
+  _ -> throwError "bad $j 'justification' command"
+processJ (JKeyword "equality" j) = case j of
+  JString x (JKeyword "from"
+    (JString refl (JString sym (JString trans (JSemi j))))) -> do
+      db <- mDB <$> get
+      s <- fromJustError ("equality '" ++ x ++ "' has the wrong shape") (do
+        Term ([(_, v), _], _) _ _ _ <- mStmts db M.!? x
+        Hyp (VHyp s _) <- mStmts db M.!? v
+        return s)
+      modifyMeta $ \m -> m {mEqual = M.insert s (Equality x refl sym trans) (mEqual m)}
+      processJ j
+  _ -> throwError "bad $j 'equality' command"
+processJ (JKeyword "congruence" j) =
+  processManyJ "congruence" j $ \x -> do
+    db <- mDB <$> get
+    t <- fromJustError ("congruence '" ++ x ++ "' has the wrong shape") (do
+      Thm _ _ (App _ [App t _, _]) _ <- mStmts db M.!? x
+      return t)
+    modifyMeta $ \m -> m {mCongr = M.insert t x (mCongr m)}
+processJ (JKeyword "condequality" j) = case j of
+  JString x (JKeyword "from" (JString th (JSemi j))) -> do
+    db <- mDB <$> get
+    s <- fromJustError ("conditional equality '" ++ x ++ "' has the wrong shape") (do
+      Term ([(_, v), _, _], _) _ _ _ <- mStmts db M.!? x
+      Hyp (VHyp s _) <- mStmts db M.!? v
+      return s)
+    modifyMeta $ \m -> m {mCondEq = M.insert s (x, th) (mCondEq m)}
+  _ -> throwError "bad $j 'condequality' command"
+processJ (JKeyword "condcongruence" j) =
+  processManyJ "condcongruence" j $ \th ->
+    modifyMeta $ \m -> m {mCCongr = th : mCCongr m}
+processJ (JKeyword "notfree" j) = case j of
+  JString x (JKeyword "from" (JString th (JSemi j))) -> do
+    db <- mDB <$> get
+    s <- fromJustError ("not-free term '" ++ x ++ "' has the wrong shape") (do
+      Term ([(_, v), (_, a)], _) _ _ _ <- mStmts db M.!? x
+      Hyp (VHyp s1 _) <- mStmts db M.!? v
+      Hyp (VHyp s2 _) <- mStmts db M.!? a
+      return (s1, s2))
+    modifyMeta $ \m -> m {mNF = M.insert s (NF x th) (mNF m)}
+  _ -> throwError "bad $j 'notfree' command"
 processJ (JKeyword x j) = skipJ j
 processJ (JRest ss) = process ss
 processJ (JError e) = throwError e
