@@ -46,6 +46,7 @@ executables:
     - src/kernel
     - src/fromMM
     - src/frontend
+    - src/toHol
     ghc-options:
     - -threaded
     - -rtsopts

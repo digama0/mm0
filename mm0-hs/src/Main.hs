@@ -12,6 +12,7 @@ import Elaborator
 import Verifier
 import ProofTextParser
 import FromMM
+import ToHol
 
 main :: IO ()
 main = do
