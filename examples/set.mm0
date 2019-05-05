@@ -21,8 +21,8 @@ def wa (ph ps: wff): wff = $ ~(ph -> ~ps) $;
 infixl wa: $/\$ prec 20;
 theorem df_an (ph ps: wff): $ (ph /\ ps) <-> ~(ph -> ~ps) $;
 
-def wtru (.p: wff): wff = $ p <-> p $;
-prefix wtru: $T.$ prec max;
+term wtru: wff; prefix wtru: $T.$ prec max;
+axiom tru: $ T. $;
 theorem df_tru (ph: wff): $ T. <-> (ph <-> ph) $;
 
 pure sort set;

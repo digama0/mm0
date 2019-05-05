@@ -52,6 +52,7 @@ checkDef env bis ret defn = do
     Just (dummy, e) -> do
       ctx2 <- traverse (\t -> do
           fromJustError "sort not found" (eSorts env M.!? t)
+          guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
           return (True, DepType t [])) dummy
       checkSExpr env (ctx <> ctx2) e ret
 

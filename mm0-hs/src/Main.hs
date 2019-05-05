@@ -40,5 +40,5 @@ doVerify args = do
       pf <- B.readFile mmp
       pf <- liftIO (parseProof pf)
       out <- liftIO (verify s env pf)
-      putStrLn "verified"
-      mapM_ putStr out
+      if null out then putStrLn "verified"
+      else mapM_ putStr out
