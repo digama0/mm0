@@ -9,10 +9,10 @@ import Data.Bits
 import Data.Maybe
 import Data.Char
 import qualified Control.Monad.Trans.State as ST
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
+import qualified Data.Set as S
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Environment
@@ -22,7 +22,7 @@ import Util
 data VTermData = VTermData {
   vtName :: Maybe Ident, -- ^ Name from the spec
   vtArgs :: [VBinder],   -- ^ Arguments
-  vtRet :: VType }      -- ^ Return value sort
+  vtRet :: VType }       -- ^ Return value sort
 
 data VDefData = VDefData {
   vdDummies :: [SortID], -- ^ Dummy sorts (dummies are numbered after regular vars)
