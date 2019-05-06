@@ -10,10 +10,9 @@ import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
 import qualified Data.Set as S
-import HolCheck
+import HolTypes
 import Environment
 import ProofTypes
-import Verifier
 import Util
 
 data HTermData = HTermData {
@@ -27,7 +26,9 @@ data HDefData = HDefData {
 
 data HThmData = HThmData {
   haName :: Ident,          -- ^ Name
-  haVars :: [PBinder] }     -- ^ Sorts of the variables (bound and regular)
+  haVars :: [PBinder],      -- ^ Sorts of the variables (bound and regular)
+  haHyps :: [GType],        -- ^ Hypotheses
+  haRet :: GType }          -- ^ Conclusion
 
 data ToHolState = ToHolState {
   thPos :: Int,
@@ -54,7 +55,6 @@ toHol :: Environment -> Proofs -> Either String [HDecl]
 toHol env = \pfs -> do
   (_, st, Endo f) <- runRWST (mapM_ trCmd pfs) () $
     ToHolState 0 Q.empty M.empty Q.empty M.empty Q.empty I.empty
-  guardError "Not all theorems have been proven" (thPos st == Q.length (eSpec env))
   return (f [])
   where
 
@@ -80,8 +80,9 @@ toHol env = \pfs -> do
   trCmd (StepAxiom x) = step >>= \case
     SDecl x' (DAxiom args hs ret) | x == x' -> do
       g <- get
-      tell (Endo (HDThm x (translateAxiom g args hs ret) Nothing :))
-      put $ g { thThms = thThms g Q.|> HThmData x args }
+      let td@(TType _ hs' ret') = translateAxiom g args hs ret
+      tell (Endo (HDThm x td Nothing :))
+      put $ g {thThms = thThms g Q.|> HThmData x args hs' ret'}
     e -> throwError ("incorrect step 'axiom " ++ x ++ "', found " ++ show e)
   trCmd (ProofDef x vs ret ds def st) = do
     when st $ step >> return ()
@@ -99,9 +100,10 @@ toHol env = \pfs -> do
     g <- get
     let n = ThmID (Q.length (thThms g))
     let name = fromMaybe (show n) x
-    let (args, ty, p) = translateThm g vs hs ret (S.fromList unf) ds pf
+    let (args, ty@(TType _ hs' ret'), p) =
+          translateThm g vs hs ret (S.fromList unf) ds pf
     tell (Endo (HDThm name ty (Just p) :))
-    modify $ \g -> g {thThms = thThms g Q.|> HThmData name args}
+    modify $ \g -> g {thThms = thThms g Q.|> HThmData name args hs' ret'}
   trCmd (StepInout _) = step >>= \case
     SInout _ -> return ()
     _ -> throwError "incorrect i/o step"
@@ -228,23 +230,24 @@ translateThm g vs hs ret unf ds pf =
       ((uehs, uer), ctx') = ST.runState
         (liftM2 (,) (mapM (unfoldExpr g unf) hs) (unfoldExpr g unf ret)) ctx
       proof = do
-        ds <- mkHeap uehs hs'
-        return (ds, undefined) -- TODO
-  in (args, ty, ST.evalState proof (HVar <$> ctx, M.empty))
-  -- let ctx = Q.fromList vs
-  -- mapM_ (typecheckProvable g ctx) hs
-  -- typecheckProvable g ctx ret
-  -- ((hs', ret'), ctx') <- case unf of
-  --   [] -> return ((hs, ret), ctx)
-  --   _ -> let unfold = unfoldExpr (vDefs g) (S.fromList unf) in
-  --     ST.runStateT ((,) <$> mapM unfold hs <*> unfold ret) ctx
-  -- let ctx'' = ctx' <> Q.fromList (VBound <$> ds)
-  -- ret'' <- verifyProof g ctx'' hs' pf
-  -- guardError "theorem did not prove what it claimed" (ret' == ret'')
+        ns <- mkHeap uehs hs'
+        addDummies (thSort g <$> ds)
+        (\(HProofF p _) -> (ns, convRet (ueConv uer) p)) <$> trProof g pf
+  in (args, ty, ST.evalState proof (varToSlot <$> ctx, M.empty))
 
-data HSlot = HVar PBinder | HProof (ToHolProofM HProof)
+data HSlot = HExpr Term | HProof (ToHolProofM (HProof, Term))
 
 type ToHolProofM = ST.State (Q.Seq HSlot, M.Map Ident GType)
+
+varToSlot :: PBinder -> HSlot
+varToSlot (PBound v _) = HExpr (LVar v)
+varToSlot (PReg v (DepType _ vs)) = HExpr (RVar v vs)
+
+data HSlotF = HExprF Term | HProofF HProof Term
+
+forceSlot :: HSlot -> ToHolProofM HSlotF
+forceSlot (HExpr e) = return $ HExprF e
+forceSlot (HProof m) = (\(p, t) -> HProofF p t) <$> m
 
 substVExpr :: ToHolState -> Q.Seq (VExpr, Term) -> VExpr -> (VExpr, Term)
 substVExpr g subst = substVExpr' where
@@ -334,15 +337,92 @@ mkHeap (UnfoldExpr e c t1 t2 : ues) (h@(GType xs t) : hs) = do
       v = show (VarID n)
       p = HHyp v (fst <$> xs)
       p' = case reflTerm c of
-        Just _ -> return p
-        Nothing -> save n (v ++ "_unf") xs (HConv c p) t
+        Just _ -> return (p, t2)
+        Nothing -> save n (v ++ "_unf") xs (HConv c p) t2
   put (ctx Q.|> HProof p', M.insert v h heap)
   (v :) <$> mkHeap ues hs
   where
 
-  save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term -> ToHolProofM HProof
+  save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term -> ToHolProofM (HProof, Term)
   save n x vs p t = do
     modify $ \(ctx, heap) ->
-      (Q.update n (HProof (return (HHyp x (fst <$> vs)))) ctx,
+      (Q.update n (HProof (return (HHyp x (fst <$> vs), t))) ctx,
        M.insert x (GType vs t) heap)
-    return (HSave x (HProofLam vs p) (fst <$> vs))
+    return (HSave x (HProofLam vs p) (fst <$> vs), t)
+
+convRet :: HConv -> HProof -> HProof
+convRet c = case reflTerm c of
+  Just _ -> id
+  Nothing -> HConv (CSymm c)
+
+addDummies :: [Sort] -> ToHolProofM ()
+addDummies ds = modify $ \(ctx, heap) -> (go (Q.length ctx) ds ctx, heap) where
+  go _ [] ctx = ctx
+  go n (d:ds) ctx = go (n+1) ds (ctx Q.|> HExpr (LVar (show (VarID n))))
+
+trLoad :: HeapID -> ToHolProofM HSlotF
+trLoad (VarID n) = get >>= \(ctx, _) -> forceSlot $ Q.index ctx n
+
+trProof :: ToHolState -> ProofTree -> ToHolProofM HSlotF
+trProof g = trProof' where
+  trProof' :: ProofTree -> ToHolProofM HSlotF
+  trProof' (Load n) = trLoad n
+  trProof' (VTerm t ps) = do
+    let HTermData x bis ty = thTerm g t
+    (ls, xs) <- trApp ty bis ps
+    return $ HExprF $ HApp x ls xs
+  trProof' (VThm t ps) = do
+    let HThmData x bis hs ret@(GType ss r) = thThm g t
+    (ls, ps', xs) <- trThm hs ret bis ps
+    let ty = vsubstTerm (M.fromList (zip (fst <$> ss) xs)) r
+    return $ HProofF (HThm x ls ps' xs) ty
+  trProof' (Save p) = trProof' p >>= \case
+    HExprF e -> do
+      modify $ \(ctx, heap) -> (ctx Q.|> HExpr e, heap)
+      return (HExprF e)
+    HProofF p' t -> do
+      (ctx, heap) <- get
+      let x = show (VarID (Q.length ctx))
+      put (ctx Q.|> HProof (return (HHyp x [], t)), M.insert x (GType [] t) heap)
+      return $ HProofF (HSave x (HProofLam [] p') []) t
+  trProof' Sorry = return $ HProofF HSorry HTSorry
+
+  trPTExpr :: ProofTree -> ToHolProofM Term
+  trPTExpr p = trProof' p >>= \case
+    HExprF e -> return e
+    _ -> return HTSorry
+
+  trApp :: DepType -> [PBinder] -> [ProofTree] -> ToHolProofM ([SLam], [Ident])
+  trApp (DepType _ ts) = go M.empty where
+    go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [ProofTree] -> ToHolProofM ([SLam], [Ident])
+    go m [] [] = return ([], show . snd . (m M.!) <$> ts)
+    go m (PBound x t : bis) (Load e : es) =
+      trLoad e >>= \(HExprF (LVar v)) ->
+        go (M.insert x (show v, t) m) bis es
+    go m (PReg v (DepType t ts) : bis) (e : es) = do
+      e' <- trPTExpr e
+      (ls, xs) <- go m bis es
+      return (SLam ((m M.!) <$> ts) e' : ls, xs)
+
+  trThm :: [GType] -> GType -> [PBinder] -> [ProofTree] ->
+    ToHolProofM ([SLam], [HProofLam], [Ident])
+  trThm hs (GType rv ret) = trThmArgs M.empty id where
+    trThmArgs :: M.Map Ident (Ident, Sort) -> ([SLam] -> [SLam]) ->
+      [PBinder] -> [ProofTree] -> ToHolProofM ([SLam], [HProofLam], [Ident])
+    trThmArgs m f [] ps = trThmHyps (f []) m hs ps
+    trThmArgs m f (PBound x t : bis) (Load e : ps) =
+      trLoad e >>= \(HExprF (LVar v)) ->
+        trThmArgs (M.insert x (show v, t) m) f bis ps
+    trThmArgs m f (PReg v (DepType t ts) : bis) (p : ps) = do
+      e' <- trPTExpr p
+      trThmArgs m (f . (SLam ((m M.!) <$> ts) e' :)) bis ps
+
+    trThmHyps :: [SLam] -> M.Map Ident (Ident, Sort) ->
+      [GType] -> [ProofTree] -> ToHolProofM ([SLam], [HProofLam], [Ident])
+    trThmHyps ls m = go id where
+      go :: ([HProofLam] -> [HProofLam]) -> [GType] -> [ProofTree] ->
+        ToHolProofM ([SLam], [HProofLam], [Ident])
+      go f [] [] = return (ls, f [], fst . (m M.!) . fst <$> rv)
+      go f (GType hv _ : hs) (p : ps) =
+        trProof' p >>= \(HProofF p' t) ->
+          go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs ps

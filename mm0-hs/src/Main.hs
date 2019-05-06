@@ -12,7 +12,7 @@ import Elaborator
 import Verifier
 import ProofTextParser
 import FromMM
-import ToHol
+import ToHolIO
 
 main :: IO ()
 main = do
@@ -20,6 +20,7 @@ main = do
     "verify" : rest -> doVerify rest
     "from-mm" : rest -> fromMM rest
     "show-bundled" : rest -> showBundled rest
+    "to-hol" : rest -> toHolIO rest
     _ -> die ("incorrect args; use\n" ++
       "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
       "  mm0-hs show-bundled MM-FILE\n" ++

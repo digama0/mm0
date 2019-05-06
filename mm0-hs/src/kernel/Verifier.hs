@@ -28,7 +28,7 @@ data VDefData = VDefData {
   vdDummies :: [SortID], -- ^ Dummy sorts (dummies are numbered after regular vars)
   vdVal :: VExpr }       -- ^ Definition expr
 
-data VAssrtData = VAssrtData {
+data VThmData = VThmData {
   vaName :: Maybe Ident,    -- ^ Name from the spec
   vaVars :: [VBinder],      -- ^ Sorts of the variables (bound and regular)
   vaDV :: [(VarID, VarID)], -- ^ Disjointness conditions between the variables
@@ -48,7 +48,7 @@ data VGlobal = VGlobal {
   -- | Map from TermID to def info (for dummy variable replacement)
   vDefs :: I.IntMap VDefData,
   -- | Map from ThmID to axiom/theorem info (for instantiating theorems)
-  vThms :: Q.Seq VAssrtData,
+  vThms :: Q.Seq VThmData,
   -- | The current initial segment of the environment that has been checked
   vPos :: Int,
   -- | The collection of outputs (for IO)
@@ -118,7 +118,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
           matchThm (vTermIx g) (vSortIx g) vs hs ret vs' hs' ret'
       e -> throwError ("incorrect theorem step, found " ++ show e)
     modify (\g -> g {
-      vThms = vThms g Q.|> VAssrtData x vs (makeDV vs) hs ret })
+      vThms = vThms g Q.|> VThmData x vs (makeDV vs) hs ret })
   verifyCmd (StepInout (VIKString out)) = step >>= \case
     SInout (IOKString False e) | not out -> verifyInputString spectxt e
     SInout (IOKString True e) | out -> verifyOutputString spectxt e
@@ -305,10 +305,10 @@ translateTerm sortIx = \x args (DepType t ts) ->
     VType (sortIx M.! t) ((varIx M.!) <$> ts)
 
 translateAxiom :: M.Map Ident SortID -> M.Map Ident TermID ->
-  Ident -> [PBinder] -> [SExpr] -> SExpr -> VAssrtData
+  Ident -> [PBinder] -> [SExpr] -> SExpr -> VThmData
 translateAxiom sortIx termIx x args hs ret =
   let (args', _, varIx) = trBinders sortIx args in
-  VAssrtData (Just x) args' (makeDV args')
+  VThmData (Just x) args' (makeDV args')
     (trExpr termIx varIx <$> hs) (trExpr termIx varIx ret)
 
 trExpr :: M.Map Ident TermID -> M.Map Ident VarID -> SExpr -> VExpr
@@ -383,7 +383,7 @@ verifyProof g = \ctx hs cs -> do
     return (SSExpr ret (VApp t es) b)
   verifyTree (VThm t ts) = do
     vs' <- mapM verifyTree ts
-    VAssrtData x args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
+    VThmData x args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
     withContext ("step " ++ fromMaybe (show t) x) $ do
       (es, hs', b) <- verifyArgs Q.empty (Q.<|) args vs'
       let subst = Q.fromList es
