@@ -31,14 +31,14 @@ findBundled' :: MMDatabase -> Bool -> FindBundledM ()
 findBundled' db strict = mapM_ checkDecl (mDecls db) where
   pureArgs :: M.Map Label [Int]
   pureArgs = M.mapMaybe f (mStmts db) where
-    f (Thm (hs, _) _ _ _) =
+    f (_, Thm (hs, _) _ _ _) =
       case go hs 0 of { [] -> Nothing; l -> Just l } where
       go [] _ = []
       go ((b, _):ls) n = if b then n : go ls (n+1) else go ls (n+1)
     f _ = Nothing
 
   checkDecl :: Decl -> FindBundledM ()
-  checkDecl (Stmt s) = case mStmts db M.! s of
+  checkDecl (Stmt s) = case snd $ mStmts db M.! s of
     Thm fr _ _ (Just (_, p)) -> checkProof (s, Nothing) 0 (allDistinct fr) p
     _ -> return ()
   checkDecl _ = return ()
@@ -64,7 +64,8 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
           if not strict || M.member b m then do
               modify $ M.insert t (M.alter (Just . maybe k (min k)) b m)
               case mStmts db M.! t of
-                Thm fr _ _ (Just (_, p)) -> checkProof (t, Just b) (k+1) (I.fromList (zip l b)) p
+                (_, Thm fr _ _ (Just (_, p))) ->
+                  checkProof (t, Just b) (k+1) (I.fromList (zip l b)) p
                 _ -> return ()
           else tell $ S.singleton (x, (t, b))
         ) (pureArgs M.!? t)

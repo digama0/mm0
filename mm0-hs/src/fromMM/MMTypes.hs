@@ -43,24 +43,41 @@ data NF = NF {
   nfNF :: Label,
   nfCond :: Label } deriving (Show)
 
+data MMNatDed = MMNatDed {
+  ndProv :: Label,
+  ndConj :: Label,
+  ndEmpty :: Label,
+  ndAssume :: [Label],
+  ndWeak :: [Label],
+  ndCut :: [Label],
+  ndTrue :: Maybe (Label, [Label]),
+  ndImp :: Maybe (Label, [Label]),
+  ndAnd :: Maybe (Label, [Label]),
+  ndOr :: Maybe (Label, [Label]),
+  ndNot :: Maybe (Label, Label, [Label]) } deriving (Show)
+
+mkNatDed :: Label -> Label -> Label -> MMNatDed
+mkNatDed p c e = MMNatDed p c e [] [] [] Nothing Nothing Nothing Nothing Nothing
+
 data MMMetaData = MMMetaData {
   mPrim :: S.Set Label,
-  mEqual :: M.Map Sort Equality,
+  mEqual :: (M.Map Sort Equality, M.Map Label Sort),
   mNF :: M.Map (Sort, Sort) NF,
   mCondEq :: M.Map Sort (Label, Label),
   mJustification :: M.Map Label Label,
   mCongr :: M.Map Label Label,
-  mCCongr :: [Label] }
+  mCCongr :: [Label],
+  mND :: Maybe MMNatDed }
   deriving (Show)
 
 mkMetadata :: MMMetaData
-mkMetadata = MMMetaData S.empty M.empty M.empty M.empty M.empty M.empty []
+mkMetadata = MMMetaData mempty mempty mempty mempty mempty mempty [] Nothing
 
 data MMDatabase = MMDatabase {
   mSorts :: M.Map Sort (Maybe Sort, SortData),
   mDecls :: Q.Seq Decl,
   mMeta :: MMMetaData,
-  mStmts :: M.Map Label Stmt } deriving (Show)
+  mStmts :: M.Map Label (Int, Stmt) } deriving (Show)
 
 mkDatabase :: MMDatabase
 mkDatabase = MMDatabase M.empty Q.empty mkMetadata M.empty

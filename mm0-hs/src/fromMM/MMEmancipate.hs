@@ -11,7 +11,7 @@ emancipate :: MMDatabase -> MMDatabase
 emancipate db = execState (mapM_ emancipateDecl (mDecls db)) db
 
 emancipateDecl :: Decl -> State MMDatabase ()
-emancipateDecl (Stmt x) = get >>= \db -> case mStmts db M.! x of
+emancipateDecl (Stmt x) = get >>= \db -> case snd $ mStmts db M.! x of
   Term (hs, _) _ e Nothing ->
     let s = collectBound hs in
     updateDecl x hs $ if all fst hs then S.empty else s
@@ -34,7 +34,7 @@ collectBound = go S.empty where
 
 checkHyp :: MMDatabase -> (Bool, Label) -> State (S.Set Label) ()
 checkHyp _ (True, _) = return ()
-checkHyp db (_, x) = case mStmts db M.! x of
+checkHyp db (_, x) = case snd $ mStmts db M.! x of
   Hyp (EHyp _ e) -> checkExpr db e
   _ -> return ()
 
@@ -43,7 +43,7 @@ checkExpr db = modify . checkExpr' where
   checkExpr' :: MMExpr -> S.Set Label -> S.Set Label
   checkExpr' (SVar v) = id
   checkExpr' (App t es) = checkApp hs es where
-    Term (hs, _) _ _ _ = mStmts db M.! t
+    Term (hs, _) _ _ _ = snd $ mStmts db M.! t
 
   checkApp :: [(Bool, Label)] -> [MMExpr] -> S.Set Label -> S.Set Label
   checkApp [] [] = id
@@ -54,9 +54,9 @@ checkProof :: MMDatabase -> Proof -> State (S.Set Label) ()
 checkProof db = modify . checkProof' where
   checkProof' :: Proof -> S.Set Label -> S.Set Label
   checkProof' (PTerm t ps) = checkApp hs ps where
-    Term (hs, _) _ _ _ = mStmts db M.! t
+    Term (hs, _) _ _ _ = snd $ mStmts db M.! t
   checkProof' (PThm t ps) = checkApp hs ps where
-    Thm (hs, _) _ _ _ = mStmts db M.! t
+    Thm (hs, _) _ _ _ = snd $ mStmts db M.! t
   checkProof' (PSave p) = checkProof' p
   checkProof' _ = id
 
@@ -71,8 +71,8 @@ updateDecl :: Label -> [(Bool, Label)] -> S.Set Label -> State MMDatabase ()
 updateDecl x hs s = case updateHyps s hs of
   Nothing -> return ()
   Just hs' -> modify $ \db -> db {mStmts = M.adjust (\case
-    Term (_, dv) s e p -> Term (hs', dv) s e p
-    Thm (_, dv) s e p -> Thm (hs', dv) s e p) x $ mStmts db}
+    (n, Term (_, dv) s e p) -> (n, Term (hs', dv) s e p)
+    (n, Thm (_, dv) s e p) -> (n, Thm (hs', dv) s e p)) x $ mStmts db}
 
 updateHyps :: S.Set Label -> [(Bool, Label)] -> Maybe [(Bool, Label)]
 updateHyps s = go where

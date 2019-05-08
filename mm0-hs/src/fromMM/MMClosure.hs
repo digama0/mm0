@@ -20,7 +20,7 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
     (_, sl) <- get
     when (S.notMember x sl) $ do
       addStmt x
-      case mStmts db M.! x of
+      case snd $ mStmts db M.! x of
         Term (hs, _) _ e _ -> do
           mapM_ checkHyp hs
           checkExpr e
@@ -32,7 +32,7 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
         Hyp (EHyp _ e) -> checkExpr e
 
   checkHyp :: (Bool, Label) -> State (S.Set Sort, S.Set Label) ()
-  checkHyp (_, x) = checkStmt x >> case mStmts db M.! x of
+  checkHyp (_, x) = checkStmt x >> case snd $ mStmts db M.! x of
     Hyp (VHyp s _) -> addSort s
     Hyp (EHyp _ e) -> checkExpr e
 
