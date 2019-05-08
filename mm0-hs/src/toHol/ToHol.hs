@@ -90,7 +90,7 @@ toHol env = \pfs -> do
     let n = TermID (Q.length (thTerms g))
     let name = fromMaybe (show n) x
     let (bis, ty, rv, lv, r, e, ds') = translateDef g vs ret ds def
-    tell (Endo (HDDef name rv lv e (fst <$> ds') :))
+    tell (Endo (HDDef name rv lv e :))
     modify $ \g -> g {
       thTerms = thTerms g Q.|> HTermData name bis ty,
       thTermIx = M.insert name n (thTermIx g),
@@ -174,9 +174,9 @@ trVBinders g = go 0 Q.empty where
     go (n+1) (m Q.|> PBound (show (VarID n)) (thSort g t)) bis
   go n m (p@(VReg t ts) : bis) =
     let {
-      v = show (VarID n); t' = thSort g t; ts' = show <$> ts;
-      (rs', n', m') = go (n+1) (m Q.|> PReg v (DepType t' ts')) bis } in
-    ((v, SType ts' t') : rs', n', m')
+      v = show (VarID n); t' = thSort g t;
+      (rs', n', m') = go (n+1) (m Q.|> PReg v (DepType t' (show <$> ts))) bis } in
+    ((v, SType (snd . getVLocal m <$> ts) t') : rs', n', m')
 
 getVLocal :: Q.Seq PBinder -> VarID -> (Ident, Sort)
 getVLocal m (VarID n) = case Q.index m n of PBound x t -> (x, t)
@@ -282,14 +282,13 @@ reflTerm _ = Nothing
 reflLam :: HConvLam -> Maybe SLam
 reflLam (HConvLam vs c) = SLam vs <$> reflTerm c
 
-buildSubst :: Q.Seq (VExpr, Term) -> [(Ident, Sort)] -> ST.State (Q.Seq PBinder) (Q.Seq (VExpr, Term), [Ident])
-buildSubst m [] = return (m, [])
+buildSubst :: Q.Seq (VExpr, Term) -> [(Ident, Sort)] -> ST.State (Q.Seq PBinder) (Q.Seq (VExpr, Term))
+buildSubst m [] = return m
 buildSubst m ((_, d) : ds) = do
   ctx <- get
   let v = VarID (Q.length ctx)
   modify (Q.|> PBound (show v) d)
-  (m', l) <- buildSubst (m Q.|> (VVar v, LVar (show v))) ds
-  return (m', show v : l)
+  buildSubst (m Q.|> (VVar v, LVar (show v))) ds
 
 unfoldExpr :: ToHolState -> S.Set TermID -> VExpr -> ST.State (Q.Seq PBinder) UnfoldExpr
 unfoldExpr g unf = unfoldExpr' where
@@ -299,9 +298,9 @@ unfoldExpr g unf = unfoldExpr' where
     let t1 = HApp x ls xs
     if S.member t unf then do
       let HDefData ud uv = thDefs g I.! ofTermID t
-      (subst, ys) <- buildSubst (Q.fromList es') ud
+      subst <- buildSubst (Q.fromList es') ud
       let (e', t2) = substVExpr g subst uv
-      let c = CDef x rs xs ys
+      let c = CDef x rs xs
       return $ case mapM reflLam cs of
         Nothing -> UnfoldExpr e' (CTrans (CCong x cs xs) c) t1 t2
         Just _ -> UnfoldExpr e' c t1 t2
@@ -364,7 +363,7 @@ trLoad :: HeapID -> ToHolProofM HSlotF
 trLoad (VarID n) = get >>= \(ctx, _) -> forceSlot $ Q.index ctx n
 
 trProof :: ToHolState -> ProofTree -> ToHolProofM HSlotF
-trProof g = trProof' where
+trProof g pr = trProof' pr where
   trProof' :: ProofTree -> ToHolProofM HSlotF
   trProof' (Load n) = trLoad n
   trProof' (VTerm t ps) = do
@@ -398,7 +397,7 @@ trProof g = trProof' where
     go m [] [] = return ([], show . snd . (m M.!) <$> ts)
     go m (PBound x t : bis) (Load e : es) =
       trLoad e >>= \(HExprF (LVar v)) ->
-        go (M.insert x (show v, t) m) bis es
+        go (M.insert x (v, t) m) bis es
     go m (PReg v (DepType t ts) : bis) (e : es) = do
       e' <- trPTExpr e
       (ls, xs) <- go m bis es
@@ -412,7 +411,7 @@ trProof g = trProof' where
     trThmArgs m f [] ps = trThmHyps (f []) m hs ps
     trThmArgs m f (PBound x t : bis) (Load e : ps) =
       trLoad e >>= \(HExprF (LVar v)) ->
-        trThmArgs (M.insert x (show v, t) m) f bis ps
+        trThmArgs (M.insert x (v, t) m) f bis ps
     trThmArgs m f (PReg v (DepType t ts) : bis) (p : ps) = do
       e' <- trPTExpr p
       trThmArgs m (f . (SLam ((m M.!) <$> ts) e' :)) bis ps
@@ -424,5 +423,8 @@ trProof g = trProof' where
         ToHolProofM ([SLam], [HProofLam], [Ident])
       go f [] [] = return (ls, f [], fst . (m M.!) . fst <$> rv)
       go f (GType hv _ : hs) (p : ps) =
-        trProof' p >>= \(HProofF p' t) ->
-          go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs ps
+        trProof' p >>= \case
+         HProofF p' t -> go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs ps
+         HExprF e -> error ("error in translating proof: " ++ show pr ++
+          "\n  at trThm " ++ show hs ++ " " ++ show (GType rv ret) ++
+           "\n  so far " ++ show (f []) ++ "\n  got " ++ show p ++ " --> " ++ show e)

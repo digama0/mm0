@@ -1,9 +1,11 @@
 module HolTypes where
 
+import Debug.Trace
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.Set as S
 import Environment (Ident)
+import Util
 
 type Sort = Ident
 -- An SType is a type of the form s1 -> ... sn -> t where
@@ -51,7 +53,7 @@ instance Show Term where
   showsPrec n (LVar v) = (v ++)
   showsPrec n (RVar v []) = (v ++)
   showsPrec n (RVar v xs) = showParen (n > 0) $
-    flip (foldr (\x -> ((' ' : x) ++))) xs
+    (v ++) . flip (foldr (\x -> ((' ' : x) ++))) xs
   showsPrec n (HApp t [] []) = (t ++)
   showsPrec n (HApp t es xs) = showParen (n > 0) $ (t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
@@ -112,7 +114,7 @@ data HProof =
 instance Show HProof where
   showsPrec n (HHyp v []) = (v ++)
   showsPrec n (HHyp v xs) = showParen (n > 0) $
-    flip (foldr (\x -> ((' ' : x) ++))) xs
+    (v ++) . flip (foldr (\x -> ((' ' : x) ++))) xs
   showsPrec n (HThm t [] [] []) = (t ++)
   showsPrec n (HThm t es hs xs) = showParen (n > 0) $ (t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
@@ -141,9 +143,8 @@ data HConv =
   -- ^ |- e1 = e2 => |- e2 = e3 => |- e1 = e3
   | CCong Ident [HConvLam] [Ident]
   -- ^ |- ei = ei' => |- T es xs = T es' xs
-  | CDef Ident [SLam] [Ident] [Ident]
-  -- ^ |- T es xs = D es xs ys, where ys names the bound vars
-  -- in the definition D of T
+  | CDef Ident [SLam] [Ident]
+  -- ^ |- T es xs = D(es, xs), where D is the definition of T
 
 instance Show HConv where
   showsPrec n (CRefl e) = ("rfl" ++)
@@ -153,7 +154,7 @@ instance Show HConv where
   showsPrec n (CCong t cs xs) = showParen (n > 0) $ ("ap " ++) . (t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) cs .
     flip (foldr (\x -> ((' ' : x) ++))) xs
-  showsPrec n (CDef t es xs _) = showParen (n > 0) $ ("delta " ++) . (t ++) .
+  showsPrec n (CDef t es xs) = showParen (n > 0) $ ("delta " ++) . (t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
     flip (foldr (\x -> ((' ' : x) ++))) xs
 
@@ -162,17 +163,16 @@ data HDecl =
   -- ^ Introduce a new sort
   | HDTerm Ident HType
   -- ^ Define a new term constructor T
-  | HDDef Ident [(Ident, SType)] [(Ident, Sort)] Term [Ident]
-  -- ^ Define !As. !xs. T As xs = t{ys}, where ys gives the names of
-  -- bound variables in t
+  | HDDef Ident [(Ident, SType)] [(Ident, Sort)] Term
+  -- ^ Define !As. !xs. T As xs = t
   | HDThm Ident TType (Maybe ([Ident], HProof))
   -- ^ Prove a theorem or assert an axiom Th : !As. |- Gs => !xs. |- ph.
-  -- The proof, if given, derives |- ph in the context with As, xs, Gs.
+  -- The proof \hs. P, if given, derives |- ph in the context with As, xs, hs:Gs.
 
 instance Show HDecl where
   show (HDSort s) = "sort " ++ s
   show (HDTerm t ty) = "term " ++ t ++ ": " ++ show ty
-  show (HDDef t rv lv val _) =
+  show (HDDef t rv lv val) =
     "def " ++ t ++ showBinds' shows rv (showBinds' (++) lv (" := " ++ show val))
   show (HDThm t ty Nothing) = "axiom " ++ t ++ ": " ++ show ty
   show (HDThm t (TType vs hs (GType ss ret)) (Just (gs, p))) =
@@ -201,8 +201,8 @@ vsubstSLam m (SLam vs t) = SLam vs $
 
 vsubstTerm :: M.Map Ident Ident -> Term -> Term
 vsubstTerm m (LVar x) = LVar (vsubst m x)
-vsubstTerm m v@(RVar _ _) = v
-vsubstTerm m (HApp t es vs) = HApp t (vsubstSLam m <$> es) (vsubst m <$> vs)
+vsubstTerm m (RVar v xs) = RVar v (vsubst m <$> xs)
+vsubstTerm m (HApp t es xs) = HApp t (vsubstSLam m <$> es) (vsubst m <$> xs)
 
 nfTerm :: S.Set Ident -> Term -> Bool
 nfTerm s (LVar x) = S.notMember x s
@@ -212,19 +212,26 @@ nfTerm s (HApp t es vs) = all (nfSLam s) es && all (`S.notMember` s) vs
 nfSLam :: S.Set Ident -> SLam -> Bool
 nfSLam s (SLam vs t) = nfTerm (foldr S.delete s (fst <$> vs)) t
 
-alphaSLam :: M.Map Ident Ident -> SLam -> SLam
-alphaSLam m (SLam vs t) =
-  SLam ((\(x, s) -> (vsubst m x, s)) <$> vs) (alphaTerm m t)
+alphaVar :: M.Map Ident Ident -> Ident -> Ident -> Bool
+alphaVar m x y = vsubst m x == y
 
-alphaTerm :: M.Map Ident Ident -> Term -> Term
-alphaTerm m (LVar x) = LVar (vsubst m x)
-alphaTerm m (RVar v vs) = RVar v (vsubst m <$> vs)
-alphaTerm m (HApp t es vs) = HApp t (alphaSLam m <$> es) (vsubst m <$> vs)
+alphaBind :: (M.Map Ident Ident -> Bool) -> M.Map Ident Ident -> [(Ident, Sort)] -> [(Ident, Sort)] -> Bool
+alphaBind f = go where
+  go m [] [] = f m
+  go m ((x1, t1) : bs1) ((x2, t2) : bs2) =
+    t1 == t2 && go (M.insert x1 x2 m) bs1 bs2
+  go _ _ _ = False
 
-allInTerm :: S.Set Ident -> Term -> Bool
-allInTerm s (LVar x) = S.member x s
-allInTerm s (RVar _ xs) = all (`S.member` s) xs
-allInTerm s (HApp t es vs) = all (allInSLam s) es && all (`S.member` s) vs
+alphaSLam :: M.Map Ident Ident -> SLam -> SLam -> Bool
+alphaSLam m (SLam vs1 t1) (SLam vs2 t2) =
+  alphaBind (\m' -> alphaTerm m' t1 t2) m vs1 vs2
 
-allInSLam :: S.Set Ident -> SLam -> Bool
-allInSLam s (SLam vs t) = all (`S.member` s) (fst <$> vs) && allInTerm s t
+alphaTerm :: M.Map Ident Ident -> Term -> Term -> Bool
+alphaTerm m (LVar x) (LVar y) = alphaVar m x y
+alphaTerm m (RVar v1 vs1) (RVar v2 vs2) = v1 == v2 && all2 (alphaVar m) vs1 vs2
+alphaTerm m (HApp t1 es1 vs1) (HApp t2 es2 vs2) =
+  t1 == t2 && all2 (alphaSLam m) es1 es2 && all2 (alphaVar m) vs1 vs2
+
+alphaGType :: GType -> GType -> Bool
+alphaGType (GType ss1 r1) (GType ss2 r2) =
+  alphaBind (\m' -> alphaTerm m' r1 r2) M.empty ss1 ss2

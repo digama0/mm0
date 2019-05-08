@@ -29,3 +29,9 @@ padL :: Int -> String -> String
 padL n s
     | length s < n  = s ++ replicate (n - length s) ' '
     | otherwise = s
+
+all2 :: (a -> b -> Bool) -> [a] -> [b] -> Bool
+all2 r = go where
+  go [] [] = True
+  go (a:as) (b:bs) = r a b && go as bs
+  go _ _ = False

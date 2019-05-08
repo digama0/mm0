@@ -24,6 +24,6 @@ toHolIO (mm0:mmp:_) = do
   pf <- liftIO (parseProof pf)
   hol <- liftIO (toHol env pf)
   mapM_ (putStrLn . flip shows "\n") hol
-  liftIO $ fromJustError "HOL typecheck failed" (checkDecls hol >> return ())
+  liftIO $ checkDecls hol
   putStrLn "verified HOL"
 toHolIO _ = die "to-hol: incorrect args; use 'to-hol MM0-FILE MMU-FILE'"
