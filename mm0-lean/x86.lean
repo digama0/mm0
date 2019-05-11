@@ -113,6 +113,7 @@ namespace x86
 
 def RAX : regnum := 0
 def RCX : regnum := 1
+def RDX : regnum := 2
 def RSP : regnum := 4
 def RBP : regnum := 5
 
@@ -566,6 +567,10 @@ inductive EA
 | Ea_m : qword → EA
 open EA
 
+def EA.addr : EA → qword
+| (EA.Ea_m a) := a
+| _ := 0
+
 def index_ea (k : config) : option scale_index → qword
 | none := 0
 | (some ⟨sc, ix⟩) := (bitvec.shl 1 sc.to_nat) * (k.regs ix)
@@ -639,6 +644,9 @@ pstate.modify $ λ k, {rip := q, ..k}
 inductive dest_src.read (k : config) (sz : wsize) (ds : dest_src) : EA → qword → qword → Prop
 | mk (d s) : let ea := ea_dest k ds in
   ea.readq k sz d → (ea_src k ds).readq k sz s → dest_src.read ea d s
+
+def dest_src.read' (sz : wsize) (ds : dest_src) : pstate config (EA × qword × qword) :=
+pstate.assert $ λ k ⟨ea, d, s⟩, dest_src.read k sz ds ea d s
 
 def EA.call_dest (k : config) : EA → qword → Prop
 | (Ea_i i) q := q = k.rip + i
@@ -747,7 +755,7 @@ do k ← pstate.get,
 def pop (rm : RM) : pstate config unit :=
 do k ← pstate.get, pop_aux >>= (rm.ea k).write' Sz64
 
-def pop_rip (rm : RM) : pstate config unit := pop_aux >>= write_rip
+def pop_rip : pstate config unit := pop_aux >>= write_rip
 
 def push_aux (w : qword) : pstate config unit :=
 do k ← pstate.get,
@@ -755,10 +763,113 @@ do k ← pstate.get,
   (Ea_r RSP).write' Sz64 sp,
   (Ea_m sp).write' Sz64 w
 
-def push (i : imm_rm) (w : qword) : pstate config unit :=
+def push (i : imm_rm) : pstate config unit :=
 do k ← pstate.get, (i.ea k).read' Sz64 >>= push_aux
 
-def push_rip (i : imm_rm) (w : qword) : pstate config unit :=
+def push_rip : pstate config unit :=
 do k ← pstate.get, push_aux k.rip
+
+def execute : ast → pstate config unit
+| (ast.binop op sz ds) := do
+  (ea, d, s) ← dest_src.read' sz ds,
+  write_binop sz d s ea op
+| (ast.call i) := do
+  push_rip,
+  pstate.lift $ λ k _, (i.ea k).jump k
+| ast.clc := write_flags $ λ _ f, {CF := ff, ..f}
+| ast.cmc := write_flags $ λ _ f, {CF := bnot f.CF, ..f}
+| (ast.cmpxchg sz r n) := do
+  let src := Ea_r n,
+  let acc := Ea_r RAX,
+  k ← pstate.get,
+  let dst := r.ea k,
+  val_dst ← dst.read' sz,
+  val_acc ← acc.read' sz,
+  write_binop sz val_acc val_dst src binop.cmp,
+  if val_acc = val_dst then
+    src.read' sz >>= dst.write' sz
+  else acc.write' sz val_dst
+| (ast.div sz r) := do
+  eax ← (Ea_r RAX).read' sz,
+  edx ← (Ea_r RDX).read' sz,
+  let n := edx.to_nat * (2 ^ sz.to_nat) + edx.to_nat,
+  k ← pstate.get,
+  d ← bitvec.to_nat <$> (r.ea k).read' sz,
+  pstate.assert $ λ _ (_:unit), d ≠ 0 ∧ n / d < 2 ^ sz.to_nat,
+  (Ea_r RAX).write' sz (bitvec.of_nat _ (n / d)),
+  (Ea_r RDX).write' sz (bitvec.of_nat _ (n % d)),
+  erase_flags
+| (ast.jcc c i) := do
+  k ← pstate.get,
+  when (c.read k.flags) (write_rip (k.rip + i))
+| (ast.lea sz ds) := do
+  k ← pstate.get,
+  (ea_dest k ds).write' sz (ea_src k ds).addr
+| ast.leave := do
+  (Ea_r RBP).read' Sz64 >>= (Ea_r RSP).write' Sz64,
+  pop (RM.reg RBP)
+| (ast.loop c i) := do
+  cx ← (Ea_r RCX).read' Sz64,
+  let cx' := cx - 1,
+  (Ea_r RCX).write' Sz64 cx',
+  k ← pstate.get,
+  when (cx' ≠ 0 ∧ c.read k.flags) (write_rip (k.rip + i))
+| (ast.unop op sz rm) := do
+  k ← pstate.get,
+  let ea := rm.ea k,
+  w ← ea.read' sz,
+  write_unop sz w ea op
+| (ast.cmov c sz ds) := do
+  k ← pstate.get,
+  when (c.read k.flags) $
+    (ea_src k ds).read' sz >>= (ea_dest k ds).write' sz
+| (ast.movsx sz1 ds sz2) := do
+  w ← pstate.assert $ λ k, (ea_src k ds).read k sz1,
+  k ← pstate.get,
+  (ea_dest k ds).write' sz2 (EXTZ (EXTS w : bitvec sz2.to_nat))
+| (ast.movzx sz1 ds sz2) := do
+  w ← pstate.assert $ λ k, (ea_src k ds).read k sz1,
+  k ← pstate.get,
+  (ea_dest k ds).write' sz2 (EXTZ w)
+| (ast.mul sz r) := do
+  eax ← (Ea_r RAX).read' sz,
+  k ← pstate.get,
+  src ← (r.ea k).read' sz,
+  match sz with
+  | (Sz8 _) := (Ea_r RAX).write' Sz16 (eax * src)
+  | _ := do
+    let hi := bitvec.of_nat sz.to_nat
+      ((eax.to_nat * src.to_nat).shiftl sz.to_nat),
+    (Ea_r RAX).write' sz (eax * src),
+    (Ea_r RDX).write' sz (EXTZ hi)
+  end,
+  erase_flags
+| (ast.pop r) := pop r
+| (ast.push i) := push i
+| (ast.ret i) := do
+  pop_rip,
+  sp ← (Ea_r RSP).read' Sz64,
+  (Ea_r RSP).write' Sz64 (sp + i)
+| (ast.setcc c b r) := do
+  k ← pstate.get,
+  (r.ea k).write' (Sz8 b) (EXTZ $ S $ c.read k.flags)
+| ast.stc := write_flags $ λ _ f, {CF := tt, ..f}
+| (ast.xadd sz r n) := do
+  let src := Ea_r n,
+  k ← pstate.get,
+  let dst := r.ea k,
+  val_src ← src.read' sz,
+  val_dst ← dst.read' sz,
+  src.write' sz val_dst,
+  write_binop sz val_src val_dst dst binop.add
+| (ast.xchg sz r n) := do
+  let src := Ea_r n,
+  k ← pstate.get,
+  let dst := r.ea k,
+  val_src ← src.read' sz,
+  val_dst ← dst.read' sz,
+  src.write' sz val_dst,
+  dst.write' sz val_src
+| _ := pstate.fail
 
 end x86
