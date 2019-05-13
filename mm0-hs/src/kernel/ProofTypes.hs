@@ -146,8 +146,8 @@ ppProofCmd' a (ProofThm x args hs ret uf ds pf st) =
         u:us -> " unfolding(" ++ ppTerm a u ++
           foldr (\u' r -> ' ' : ppTerm a u' ++ r) (')' : r) us in
   (\r -> (if st then "" else "local ") ++ "theorem " ++ fromMaybe "_" x ++
-    sargs ((',' :) $ suf $ sds $ shs $ (": " ++) $
-      ppExpr a 1 ret $ " =\n" ++ fst (ppProofTree a pf n3) r),
+    sargs ((',' :) $ suf $ shs $ (": " ++) $
+      ppExpr a 1 ret $ " =\n" ++ tail (sds (' ' : fst (ppProofTree a pf n3) r))),
   ppInsertThm x a)
 
 ppProofCmd :: IDPrinter a => a -> ProofCmd -> ShowS

@@ -207,8 +207,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
       [] -> return ((hs, ret), ctx)
       _ -> let unfold = unfoldExpr (vDefs g) (S.fromList unf) in
         ST.runStateT ((,) <$> mapM unfold hs <*> unfold ret) ctx
-    let ctx'' = ctx' <> Q.fromList (VBound <$> ds)
-    ret'' <- verifyProof g ctx'' hs' pf
+    ret'' <- verifyProof g ctx' hs' ds pf
     guardError "theorem did not prove what it claimed" (ret' == ret'')
 
   typecheckExpr :: Q.Seq VTermData -> Q.Seq VBinder -> VExpr -> Either String SortID
@@ -327,7 +326,7 @@ makeDV = go 0 [] where
 
 data StackSlot =
   -- | A bound variable.
-    SSBound SortID VarID
+    SSBound SortID VarID VBitSet
   -- | A term with the given sort. The bit set gives the variables used in the expression.
   | SSExpr SortID VExpr VBitSet
   -- | A proof of a term
@@ -336,7 +335,7 @@ data StackSlot =
 
 ofSSExpr :: StackSlot -> Maybe (SortID, VExpr, VBitSet)
 ofSSExpr (SSExpr s e b) = Just (s, e, b)
-ofSSExpr (SSBound s v) = Just (s, VVar v, bit (ofVarID v))
+ofSSExpr (SSBound s v b) = Just (s, VVar v, b)
 ofSSExpr _ = Nothing
 
 type VBitSet = Word64
@@ -349,31 +348,40 @@ ltBitSize n = case bitSizeMaybe (undefined :: VBitSet) of
 -- | Local state of the verifier (inside a proof)
 data VState = VState {
   -- | Map from HeapID to proven expressions
-  vHeap :: Q.Seq StackSlot } deriving (Show)
+  vHeap :: Q.Seq StackSlot,
+  -- | Number of bound variables in scope
+  vBounds :: Int } deriving (Show)
 
 type VerifyM = ST.StateT VState (Either String)
 
-verifyProof :: VGlobal -> Q.Seq VBinder -> [VExpr] -> ProofTree -> Either String VExpr
-verifyProof g = \ctx hs cs -> do
-  guardError "variable limit (64) exceeded" (ltBitSize (Q.length ctx))
-  let heap = Q.foldlWithIndex (\s n b -> s Q.|> varToStackSlot n b) Q.empty ctx
+verifyProof :: VGlobal -> Q.Seq VBinder -> [VExpr] -> [SortID] -> ProofTree -> Either String VExpr
+verifyProof g = \ctx hs ds cs -> do
+  let VState heap b = Q.foldlWithIndex loadVar (VState Q.empty 0) ctx
   let heap' = foldl (\s h -> s Q.|> SSProof h) heap hs
-  ST.evalStateT (verifyTree cs) (VState heap') >>= \case
+  ST.evalStateT (do
+    mapM_ (\d -> modify $ \s -> loadVar s (Q.length $ vHeap s) (VBound d)) ds
+    get >>= guardError "variable limit (64) exceeded" . ltBitSize . vBounds
+    verifyTree cs
+   ) (VState heap' b) >>= \case
     SSProof e -> return e
     s -> throwError ("Bad proof state " ++ show s)
   where
-  varToStackSlot :: Int -> VBinder -> StackSlot
-  varToStackSlot n (VBound s) = SSBound s (VarID n)
-  varToStackSlot n (VReg s vs) = SSExpr s (VVar (VarID n))
-    (foldl' (\bs (VarID v) -> bs .|. bit v) 0 vs)
+
+  loadVar :: VState -> Int -> VBinder -> VState
+  loadVar (VState heap b) n (VBound s) =
+    VState (heap Q.|> SSBound s (VarID n) (bit b)) (b+1)
+  loadVar (VState heap b) n (VReg s vs) =
+    VState (heap Q.|> SSExpr s (VVar (VarID n))
+      (foldl' (\bs (VarID v) -> case Q.index heap v of
+        SSBound _ _ vb -> bs .|. vb) 0 vs)) b
 
   verifyTree :: ProofTree -> VerifyM StackSlot
   verifyTree (Load (VarID h)) = do
-    VState heap <- get
+    VState heap _ <- get
     fromJustError "index out of bounds" (heap Q.!? h)
   verifyTree (Save p) = do
     ss <- verifyTree p
-    modify $ \(VState heap) -> VState (heap Q.|> ss)
+    modify $ \(VState heap b) -> VState (heap Q.|> ss) b
     return ss
   verifyTree (VTerm t es) = do
     sss <- mapM verifyTree es
@@ -401,9 +409,9 @@ verifyProof g = \ctx hs cs -> do
   verifyArgs a f = go where
     go [] sss = return ([], sss, a)
     go (_:_) [] = throwError "argument number mismatch"
-    go (VBound s' : bs) (SSBound s v : sss) = do
+    go (VBound s' : bs) (SSBound s v vb : sss) = do
       guardError "type mismatch" (s == s')
-      (\(l, ss', b) -> (VVar v : l, ss', f (bit (ofVarID v)) b)) <$> go bs sss
+      (\(l, ss', b) -> (VVar v : l, ss', f vb b)) <$> go bs sss
     go (VBound _: _) (_ : _) = throwError "non-bound variable in BV slot"
     go (VReg s' _ : bs) (ss : sss) = do
       (s, e, b) <- fromJustError "bad stack slot" (ofSSExpr ss)

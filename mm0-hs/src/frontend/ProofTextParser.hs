@@ -122,11 +122,11 @@ readThm st = do
       bracket '(' ')' (many insertVar)
       return t)
     <|> return []
-  ds <- many readDummy
   hyps <- many readHyp
   symbol ':'
   ret <- readExpr
   symbol '='
+  ds <- many readDummy
   proof <- readProofExpr
   resetVars >> return (ProofThm (Just x) vs hyps ret uf ds proof st)
 

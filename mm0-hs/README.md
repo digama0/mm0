@@ -70,7 +70,7 @@ The declarations are visually similar to the `.mm0` format, except that there is
     def-stmt ::= ('local')? 'def' term-name (binder)* ':' type '='
                    (dummy-binder)* expr
     thm-stmt ::= ('local')? 'theorem' assert-name (binder)* ',' (unfolding-stmt)?
-                   (dummy-binder)* (hyp-binder)* ':' expr '=' proof-expr
+                   (hyp-binder)* ':' expr '=' (dummy-binder)* proof-expr
     unfolding-stmt ::= 'unfolding' (term-name)+ '(' var-name ')'
     identifier ::= [0-9a-zA-Z_]+
     sort-name ::= identifier
