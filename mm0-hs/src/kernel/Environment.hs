@@ -16,7 +16,7 @@ instance Show DepType where
 data PBinder = PBound Ident Ident | PReg Ident DepType
 
 instance Show PBinder where
-  showsPrec n (PBound v t) r = v ++ ": " ++ showsPrec n t r
+  showsPrec n (PBound v t) r = v ++ ": " ++ t ++ r
   showsPrec n (PReg v t) r = v ++ ": " ++ showsPrec n t r
 
 binderName :: PBinder -> Ident

@@ -65,8 +65,6 @@ checkProof db = modify . checkProof' where
   checkApp ((True, _) : hs) (PHyp v _ : ps) = checkApp hs ps . S.insert v
   checkApp (_ : hs) (p : ps) = checkApp hs ps . checkProof' p
 
-
-
 updateDecl :: Label -> [(Bool, Label)] -> S.Set Label -> State MMDatabase ()
 updateDecl x hs s = case updateHyps s hs of
   Nothing -> return ()

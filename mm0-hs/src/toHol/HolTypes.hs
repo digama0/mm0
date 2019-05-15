@@ -180,11 +180,45 @@ instance Show HDecl where
     showBinds' shows vs $ showBinds' shows (zip gs hs) $
     showBinds' (++) ss $ (": |- " ++) $ shows ret $ " :=\n" ++ show p
 
+fvLam :: SLam -> S.Set Ident
+fvLam (SLam vs t) = foldr S.delete (fvTerm t) (fst <$> vs)
+
+fvTerm :: Term -> S.Set Ident
+fvTerm (LVar x) = S.singleton x
+fvTerm (RVar _ xs) = S.fromList xs
+fvTerm (HApp _ ls xs) = foldMap fvLam ls <> S.fromList xs
+
+fvRLam :: SLam -> S.Set Ident
+fvRLam (SLam vs t) = fvRTerm t
+
+fvRTerm :: Term -> S.Set Ident
+fvRTerm (LVar _) = S.empty
+fvRTerm (RVar v _) = S.singleton v
+fvRTerm (HApp _ ls _) = foldMap fvRLam ls
+
+(<!>) :: (Ord k, Show k, Show v) => M.Map k v -> k -> v
+(<!>) m k = case m M.!? k of
+  Nothing -> error $ show m ++ " ! " ++ show k
+  Just v -> v
+
+variant :: S.Set Ident -> Ident -> Ident
+variant s v = if S.member v s then variant s (v ++ "'") else v
+
+substAbs :: M.Map Ident SLam -> [(Ident, Sort)] -> Term -> ([(Ident, Sort)], Term)
+substAbs m vs t = go vs M.empty where
+  free :: S.Set Ident
+  free = foldMap (fvLam . (m <!>)) (fvRTerm t)
+  go [] vm = ([], substTerm m $ vsubstTerm vm t)
+  go ((v, s) : vs) vm =
+    let v' = variant free v
+        (vs', t') = go vs (if v' == v then vm else M.insert v v' vm) in
+    ((v', s) : vs', t')
+
 substGType :: M.Map Ident SLam -> GType -> GType
-substGType m (GType ss r) = GType ss (substTerm m r)
+substGType m (GType ss r) = uncurry GType (substAbs m ss r)
 
 substSLam :: M.Map Ident SLam -> SLam -> SLam
-substSLam m (SLam vs t) = SLam vs (substTerm m t)
+substSLam m (SLam vs t) = uncurry SLam (substAbs m vs t)
 
 substTerm :: M.Map Ident SLam -> Term -> Term
 substTerm m v@(LVar _) = v
@@ -196,8 +230,19 @@ vsubst :: M.Map Ident Ident -> Ident -> Ident
 vsubst m v = M.findWithDefault v v m
 
 vsubstSLam :: M.Map Ident Ident -> SLam -> SLam
-vsubstSLam m (SLam vs t) = SLam vs $
-  vsubstTerm (foldr M.delete m (fst <$> vs)) t
+vsubstSLam m (SLam vs t) = go m (S.fromList $ M.elems m) vs where
+  go :: M.Map Ident Ident -> S.Set Ident -> [(Ident, Sort)] -> SLam
+  go m free [] = SLam [] (vsubstTerm m t)
+  go m free ((v, s) : vs) =
+    if S.member v free then
+      let v' = variant free v
+          SLam vs' t' = go (M.insert v v' m)
+            (S.insert v' (maybe free (`S.delete` free) (m M.!? v))) vs in
+      SLam ((v', s) : vs') t'
+    else
+      let SLam vs' t' = go (M.delete v m)
+            (maybe free (`S.delete` free) (m M.!? v)) vs in
+      SLam ((v, s) : vs') t'
 
 vsubstTerm :: M.Map Ident Ident -> Term -> Term
 vsubstTerm m (LVar x) = LVar (vsubst m x)

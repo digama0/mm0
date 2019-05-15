@@ -28,7 +28,8 @@ data HThmData = HThmData {
   haName :: Ident,          -- ^ Name
   haVars :: [PBinder],      -- ^ Sorts of the variables (bound and regular)
   haHyps :: [GType],        -- ^ Hypotheses
-  haRet :: GType }          -- ^ Conclusion
+  haRet :: GType,           -- ^ Conclusion (translated)
+  haVRet :: SExpr }         -- ^ Conclusion
 
 data ToHolState = ToHolState {
   thPos :: Int,
@@ -37,8 +38,7 @@ data ToHolState = ToHolState {
   thTerms :: Q.Seq HTermData,
   thTermIx :: M.Map Ident TermID,
   thThms :: Q.Seq HThmData,
-  thDefs :: I.IntMap HDefData
-   }
+  thDefs :: I.IntMap HDefData }
 
 thSort :: ToHolState -> SortID -> Sort
 thSort g (SortID n) = fst (Q.index (thSorts g) n)
@@ -82,7 +82,7 @@ toHol env = \pfs -> do
       g <- get
       let td@(TType _ hs' ret') = translateAxiom g args hs ret
       tell (Endo (HDThm x td Nothing :))
-      put $ g {thThms = thThms g Q.|> HThmData x args hs' ret'}
+      put $ g {thThms = thThms g Q.|> HThmData x args hs' ret' ret}
     e -> throwError ("incorrect step 'axiom " ++ x ++ "', found " ++ show e)
   trCmd (ProofDef x vs ret ds def st) = do
     when st $ step >> return ()
@@ -100,10 +100,10 @@ toHol env = \pfs -> do
     g <- get
     let n = ThmID (Q.length (thThms g))
     let name = fromMaybe (show n) x
-    let (args, ty@(TType _ hs' ret'), p) =
+    let (args, ty@(TType _ hs' ret'), ret2, p) =
           translateThm g vs hs ret (S.fromList unf) ds pf
     tell (Endo (HDThm name ty (Just p) :))
-    modify $ \g -> g {thThms = thThms g Q.|> HThmData name args hs' ret'}
+    modify $ \g -> g {thThms = thThms g Q.|> HThmData name args hs' ret' ret2}
   trCmd (StepInout _) = step >>= \case
     SInout _ -> return ()
     _ -> throwError "incorrect i/o step"
@@ -129,14 +129,6 @@ translateAxiom g args hs ret =
   let (rs', ctx) = trBinders args in
   TType rs' (trGExpr g ctx args <$> hs) (trGExpr g ctx args ret)
 
-fvLam :: SLam -> S.Set Ident
-fvLam (SLam vs t) = foldr S.delete (fvTerm t) (fst <$> vs)
-
-fvTerm :: Term -> S.Set Ident
-fvTerm (LVar x) = S.singleton x
-fvTerm (RVar _ xs) = S.fromList xs
-fvTerm (HApp _ ls xs) = foldMap fvLam ls <> S.fromList xs
-
 fvBind :: [PBinder] -> Term -> [(Ident, Sort)]
 fvBind vs t = mapMaybe g vs where
   fvs = fvTerm t
@@ -160,12 +152,12 @@ trExpr g ctx = trExpr' where
 
   trApp :: DepType -> [PBinder] -> [SExpr] -> ([SLam], [Ident])
   trApp (DepType _ ts) = go M.empty where
-    go :: M.Map Ident (Sort, Ident) -> [PBinder] -> [SExpr] -> ([SLam], [Ident])
-    go m [] [] = ([], snd . (m M.!) <$> ts)
-    go m (PBound x t : bis) (SVar e : es) = go (M.insert x (t, e) m) bis es
+    go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [SExpr] -> ([SLam], [Ident])
+    go m [] [] = ([], fst . (m M.!) <$> ts)
+    go m (PBound x t : bis) (SVar e : es) = go (M.insert x (e, t) m) bis es
     go m (PReg v (DepType t ts) : bis) (e : es) =
       let (ls, xs) = go m bis es in
-      (SLam ((\x -> (x, fst $ m M.! x)) <$> ts) (trExpr' e) : ls, xs)
+      (SLam ((m M.!) <$> ts) (trExpr' e) : ls, xs)
 
 trVBinders :: ToHolState -> [VBinder] -> ([(Ident, SType)], Int, Q.Seq PBinder)
 trVBinders g = go 0 Q.empty where
@@ -198,6 +190,11 @@ translateDef g vs (VType t ts) ds e =
           (n', ctx', bs') = trDummies (n+1) (ctx Q.|> PBound x s) ds } in
     (n', ctx', (x, s) : bs')
 
+trVSExpr :: ToHolState -> Q.Seq PBinder -> VExpr -> SExpr
+trVSExpr g ctx = go where
+  go (VVar (VarID n)) = SVar (binderName (Q.index ctx n))
+  go (VApp t es) = App (htName (thTerm g t)) (go <$> es)
+
 trVExpr :: ToHolState -> Q.Seq PBinder -> VExpr -> Term
 trVExpr g ctx = trVExpr' where
   trVExpr' (VVar (VarID n)) = case Q.index ctx n of
@@ -220,34 +217,52 @@ trVGExpr :: ToHolState -> Q.Seq PBinder -> [PBinder] -> VExpr -> GType
 trVGExpr g ctx bis = uclose bis . trVExpr g ctx
 
 translateThm :: ToHolState -> [VBinder] -> [VExpr] -> VExpr -> S.Set TermID ->
-  [SortID] -> ProofTree -> ([PBinder], TType, ([Ident], HProof))
+  [SortID] -> ProofTree -> ([PBinder], TType, SExpr, ([Ident], HProof))
 translateThm g vs hs ret unf ds pf =
   let (rs, n, ctx) = trVBinders g vs
       args = toList ctx
       hs' = trVGExpr g ctx args <$> hs
       ret' = trVGExpr g ctx args ret
+      ret2 = trVSExpr g ctx ret
       ty = TType rs hs' ret'
       ((uehs, uer), ctx') = ST.runState
         (liftM2 (,) (mapM (unfoldExpr g unf) hs) (unfoldExpr g unf ret)) ctx
       proof = do
         ns <- mkHeap uehs hs'
         addDummies (thSort g <$> ds)
-        (\(HProofF p _) -> (ns, convRet (ueConv uer) p)) <$> trProof g pf
-  in (args, ty, ST.evalState proof (varToSlot <$> ctx, M.empty))
+        (\(HProofF _ p _) -> (ns, convRet (ueConv uer) p)) <$> trProof g pf
+      init = (varToSlot <$> ctx', foldl mkVars M.empty ctx', M.empty)
+  in (args, ty, ret2, ST.evalState proof init)
 
-data HSlot = HExpr Term | HProof (ToHolProofM (HProof, Term))
+data HSlot =
+    HExpr (S.Set Ident) Term
+  | HProof (ToHolProofM (S.Set Ident, HProof, Term))
 
-type ToHolProofM = ST.State (Q.Seq HSlot, M.Map Ident GType)
+type ToHolProofM = ST.State (Q.Seq HSlot, M.Map Ident Sort, M.Map Ident GType)
 
 varToSlot :: PBinder -> HSlot
-varToSlot (PBound v _) = HExpr (LVar v)
-varToSlot (PReg v (DepType _ vs)) = HExpr (RVar v vs)
+varToSlot (PBound v _) = HExpr (S.singleton v) (LVar v)
+varToSlot (PReg v (DepType _ vs)) = HExpr (S.fromList vs) (RVar v vs)
 
-data HSlotF = HExprF Term | HProofF HProof Term
+mkVars :: M.Map Ident Sort -> PBinder -> M.Map Ident Sort
+mkVars m (PBound v s) = M.insert v s m
+mkVars m _ = m
+
+data HSlotF =
+    HExprF (S.Set Ident) Term
+  | HProofF (S.Set Ident) HProof Term
 
 forceSlot :: HSlot -> ToHolProofM HSlotF
-forceSlot (HExpr e) = return $ HExprF e
-forceSlot (HProof m) = (\(p, t) -> HProofF p t) <$> m
+forceSlot (HExpr vs e) = return $ HExprF vs e
+forceSlot (HProof m) = (\(vs, p, t) -> HProofF vs p t) <$> m
+
+instance Show HSlot where
+  show (HExpr _ e) = "HExpr " ++ show e
+  show (HProof m) = "HProof <suspended>"
+
+instance Show HSlotF where
+  show (HExprF _ e) = "HExpr " ++ show e
+  show (HProofF _ _ t) = "HProof of " ++ show t
 
 substVExpr :: ToHolState -> Q.Seq (VExpr, Term) -> VExpr -> (VExpr, Term)
 substVExpr g subst = substVExpr' where
@@ -331,23 +346,25 @@ unfoldExpr g unf = unfoldExpr' where
 mkHeap :: [UnfoldExpr] -> [GType] -> ToHolProofM [Ident]
 mkHeap [] [] = return []
 mkHeap (UnfoldExpr e c t1 t2 : ues) (h@(GType xs t) : hs) = do
-  (ctx, heap) <- get
+  (ctx, m, heap) <- get
   let n = Q.length ctx
       v = show (VarID n)
       p = HHyp v (fst <$> xs)
       p' = case reflTerm c of
-        Just _ -> return (p, t2)
+        Just _ -> return (fvTerm t2, p, t2)
         Nothing -> save n (v ++ "_unf") xs (HConv c p) t2
-  put (ctx Q.|> HProof p', M.insert v h heap)
+  put (ctx Q.|> HProof p', m, M.insert v h heap)
   (v :) <$> mkHeap ues hs
   where
 
-  save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term -> ToHolProofM (HProof, Term)
+  save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term ->
+    ToHolProofM (S.Set Ident, HProof, Term)
   save n x vs p t = do
-    modify $ \(ctx, heap) ->
-      (Q.update n (HProof (return (HHyp x (fst <$> vs), t))) ctx,
+    let fv = fvTerm t
+    modify $ \(ctx, m, heap) ->
+      (Q.update n (HProof (return (fv, HHyp x (fst <$> vs), t))) ctx, m,
        M.insert x (GType vs t) heap)
-    return (HSave x (HProofLam vs p) (fst <$> vs), t)
+    return (fv, HSave x (HProofLam vs p) (fst <$> vs), t)
 
 convRet :: HConv -> HProof -> HProof
 convRet c = case reflTerm c of
@@ -355,12 +372,36 @@ convRet c = case reflTerm c of
   Nothing -> HConv (CSymm c)
 
 addDummies :: [Sort] -> ToHolProofM ()
-addDummies ds = modify $ \(ctx, heap) -> (go (Q.length ctx) ds ctx, heap) where
-  go _ [] ctx = ctx
-  go n (d:ds) ctx = go (n+1) ds (ctx Q.|> HExpr (LVar (show (VarID n))))
+addDummies ds = modify $ \(ctx, vs, heap) -> go (Q.length ctx) ds ctx vs heap where
+  go _ [] ctx vs heap = (ctx, vs, heap)
+  go n (d:ds) ctx vs heap =
+    let v = show (VarID n) in
+    go (n+1) ds (ctx Q.|> HExpr (S.singleton v) (LVar v)) (M.insert v d vs) heap
+
+substSExpr :: ToHolState -> M.Map Ident Term -> SExpr -> Term
+substSExpr g subst = substSExpr' where
+  substSExpr' (SVar v) = subst M.! v
+  substSExpr' (App t es) =
+    let HTermData x bis ty = thTerm g (thTermIx g M.! t)
+        (ls, xs) = substApp ty bis es in HApp x ls xs
+
+  substApp :: DepType -> [PBinder] -> [SExpr] -> ([SLam], [Ident])
+  substApp (DepType _ ts) = go M.empty where
+    go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [SExpr] -> ([SLam], [Ident])
+    go m [] [] = ([], fst . (m M.!) <$> ts)
+    go m (PBound x t : bis) (SVar v : es) =
+      let LVar z = subst M.! v
+          (ls, xs) = go (M.insert x (z, t) m) bis es in
+      (ls, xs)
+    go m (PReg v (DepType t ts) : bis) (e : es) =
+      let t' = substSExpr' e
+          (ls, xs) = go m bis es in
+      (SLam ((m M.!) <$> ts) t' : ls, xs)
 
 trLoad :: HeapID -> ToHolProofM HSlotF
-trLoad (VarID n) = get >>= \(ctx, _) -> forceSlot $ Q.index ctx n
+trLoad (VarID n) = get >>= \(ctx, _, _) -> forceSlot $ Q.index ctx n
+
+type TrThm = (S.Set Ident, M.Map Ident SLam, M.Map Ident Term, [SLam], [HProofLam], [Ident])
 
 trProof :: ToHolState -> ProofTree -> ToHolProofM HSlotF
 trProof g pr = trProof' pr where
@@ -368,63 +409,74 @@ trProof g pr = trProof' pr where
   trProof' (Load n) = trLoad n
   trProof' (VTerm t ps) = do
     let HTermData x bis ty = thTerm g t
-    (ls, xs) <- trApp ty bis ps
-    return $ HExprF $ HApp x ls xs
+    (fv, ls, xs) <- trApp ty bis ps
+    return $ HExprF fv $ HApp x ls xs
   trProof' (VThm t ps) = do
-    let HThmData x bis hs ret@(GType ss r) = thThm g t
-    (ls, ps', xs) <- trThm hs ret bis ps
-    let ty = vsubstTerm (M.fromList (zip (fst <$> ss) xs)) r
-    return $ HProofF (HThm x ls ps' xs) ty
+    let HThmData x bis hs ret ret' = thThm g t
+    (fv, es, subst, ls, ps', xs) <- trThm hs ret bis ps
+    let ty = substSExpr g subst ret'
+    let fv' = fvTerm ty
+    let p = HThm x ls ps' xs
+    if S.size fv == S.size fv' then
+      return $ HProofF fv' p ty
+    else do
+      let ds = S.toList (S.difference fv fv')
+      (_, m, _) <- get
+      return $ HProofF fv' (HForget (HProofLam ((\d -> (d, m M.! d)) <$> ds) p)) ty
+
   trProof' (Save p) = trProof' p >>= \case
-    HExprF e -> do
-      modify $ \(ctx, heap) -> (ctx Q.|> HExpr e, heap)
-      return (HExprF e)
-    HProofF p' t -> do
-      (ctx, heap) <- get
+    HExprF fv e -> do
+      modify $ \(ctx, m, heap) -> (ctx Q.|> HExpr fv e, m, heap)
+      return (HExprF fv e)
+    HProofF fv p' t -> do
+      (ctx, m, heap) <- get
       let x = show (VarID (Q.length ctx))
-      put (ctx Q.|> HProof (return (HHyp x [], t)), M.insert x (GType [] t) heap)
-      return $ HProofF (HSave x (HProofLam [] p') []) t
-  trProof' Sorry = return $ HProofF HSorry HTSorry
+      put (ctx Q.|> HProof (return (fv, HHyp x [], t)), m, M.insert x (GType [] t) heap)
+      return $ HProofF fv (HSave x (HProofLam [] p') []) t
+  trProof' Sorry = return $ HProofF S.empty HSorry HTSorry
 
-  trPTExpr :: ProofTree -> ToHolProofM Term
+  trPTExpr :: ProofTree -> ToHolProofM (S.Set Ident, Term)
   trPTExpr p = trProof' p >>= \case
-    HExprF e -> return e
-    _ -> return HTSorry
+    HExprF s e -> return (s, e)
+    _ -> return (S.empty, HTSorry)
 
-  trApp :: DepType -> [PBinder] -> [ProofTree] -> ToHolProofM ([SLam], [Ident])
-  trApp (DepType _ ts) = go M.empty where
-    go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [ProofTree] -> ToHolProofM ([SLam], [Ident])
-    go m [] [] = return ([], show . snd . (m M.!) <$> ts)
-    go m (PBound x t : bis) (Load e : es) =
-      trLoad e >>= \(HExprF (LVar v)) ->
-        go (M.insert x (v, t) m) bis es
-    go m (PReg v (DepType t ts) : bis) (e : es) = do
-      e' <- trPTExpr e
-      (ls, xs) <- go m bis es
-      return (SLam ((m M.!) <$> ts) e' : ls, xs)
+  trApp :: DepType -> [PBinder] -> [ProofTree] -> ToHolProofM (S.Set Ident, [SLam], [Ident])
+  trApp (DepType _ ts) = go M.empty S.empty where
+    go :: M.Map Ident (Ident, Sort) -> S.Set Ident ->
+      [PBinder] -> [ProofTree] -> ToHolProofM (S.Set Ident, [SLam], [Ident])
+    go m s [] [] = let ls = fst . (m M.!) <$> ts in
+      return (s <> S.fromList ls, [], ls)
+    go m s (PBound x t : bis) (Load e : es) =
+      trLoad e >>= \(HExprF _ (LVar v)) ->
+        go (M.insert x (v, t) m) s bis es
+    go m s (PReg v (DepType t ts) : bis) (e : es) = do
+      (fv, e') <- trPTExpr e
+      let xts = (m M.!) <$> ts
+      (s', ls, xs) <- go m (s <> foldr S.delete fv (fst <$> xts)) bis es
+      return (s', SLam xts e' : ls, xs)
 
-  trThm :: [GType] -> GType -> [PBinder] -> [ProofTree] ->
-    ToHolProofM ([SLam], [HProofLam], [Ident])
-  trThm hs (GType rv ret) = trThmArgs M.empty id where
-    trThmArgs :: M.Map Ident (Ident, Sort) -> ([SLam] -> [SLam]) ->
-      [PBinder] -> [ProofTree] -> ToHolProofM ([SLam], [HProofLam], [Ident])
-    trThmArgs m f [] ps = trThmHyps (f []) m hs ps
-    trThmArgs m f (PBound x t : bis) (Load e : ps) =
-      trLoad e >>= \(HExprF (LVar v)) ->
-        trThmArgs (M.insert x (v, t) m) f bis ps
-    trThmArgs m f (PReg v (DepType t ts) : bis) (p : ps) = do
-      e' <- trPTExpr p
-      trThmArgs m (f . (SLam ((m M.!) <$> ts) e' :)) bis ps
+  trThm :: [GType] -> GType -> [PBinder] -> [ProofTree] -> ToHolProofM TrThm
+  trThm hs (GType rv _) = trThmArgs M.empty S.empty M.empty M.empty id where
+    trThmArgs :: M.Map Ident (Ident, Sort) -> S.Set Ident -> M.Map Ident SLam ->
+      M.Map Ident Term -> ([SLam] -> [SLam]) -> [PBinder] -> [ProofTree] -> ToHolProofM TrThm
+    trThmArgs m s es q f [] ps = trThmHyps (f []) m s es q hs ps
+    trThmArgs m s es q f (PBound x t : bis) (Load e : ps) =
+      trLoad e >>= \(HExprF _ (LVar v)) ->
+        trThmArgs (M.insert x (v, t) m) s es (M.insert x (LVar v) q) f bis ps
+    trThmArgs m s es q f (PReg v (DepType t ts) : bis) (p : ps) = do
+      (fv, e') <- trPTExpr p
+      let xts = (m M.!) <$> ts
+      let l = SLam xts e'
+      trThmArgs m (s <> foldr S.delete fv (fst <$> xts))
+        (M.insert v l es) (M.insert v e' q) (f . (l :)) bis ps
 
-    trThmHyps :: [SLam] -> M.Map Ident (Ident, Sort) ->
-      [GType] -> [ProofTree] -> ToHolProofM ([SLam], [HProofLam], [Ident])
-    trThmHyps ls m = go id where
-      go :: ([HProofLam] -> [HProofLam]) -> [GType] -> [ProofTree] ->
-        ToHolProofM ([SLam], [HProofLam], [Ident])
-      go f [] [] = return (ls, f [], fst . (m M.!) . fst <$> rv)
+    trThmHyps :: [SLam] -> M.Map Ident (Ident, Sort) -> S.Set Ident -> M.Map Ident SLam ->
+      M.Map Ident Term -> [GType] -> [ProofTree] -> ToHolProofM TrThm
+    trThmHyps ls m s es q = go id where
+      go :: ([HProofLam] -> [HProofLam]) -> [GType] -> [ProofTree] -> ToHolProofM TrThm
+      go f [] [] = let xs = fst . (m M.!) . fst <$> rv in
+        return (s <> S.fromList xs, es, q, ls, f [], xs)
       go f (GType hv _ : hs) (p : ps) =
         trProof' p >>= \case
-         HProofF p' t -> go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs ps
-         HExprF e -> error ("error in translating proof: " ++ show pr ++
-          "\n  at trThm " ++ show hs ++ " " ++ show (GType rv ret) ++
-           "\n  so far " ++ show (f []) ++ "\n  got " ++ show p ++ " --> " ++ show e)
+         HProofF _ p' t -> go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs ps
+         HExprF _ _ -> error "bad stack slot"

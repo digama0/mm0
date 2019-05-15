@@ -1,6 +1,6 @@
 module HolCheck where
 
-import Control.Monad
+import Control.Monad.Except
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import qualified Data.Map.Strict as M
@@ -41,6 +41,9 @@ lcRVar (_, rctx) v = rctx M.!? v
 
 type ProofM = StateT (M.Map Ident GType) (Either String)
 
+withContext :: MonadError String m => String -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("while checking " ++ s ++ ":\n" ++ e))
+
 checkDecls :: [HDecl] -> Either String GlobalCtx
 checkDecls ds = go ds (GlobalCtx S.empty M.empty M.empty M.empty) where
   go [] gctx = return gctx
@@ -59,16 +62,18 @@ addDecl gctx = addDecl' where
   addDecl' (HDDef x ts ss e) = do
     guard (M.notMember x (gTerms gctx))
     let ctx = mkLC ts ss
-    r <- inferTerm ctx e
+    r <- withContext x $ inferTerm ctx e
     return $ gctx {
       gTerms = M.insert x (HType (snd <$> ts) (SType (snd <$> ss) r)) (gTerms gctx),
       gDefs = M.insert x (HDef ts ss r e) (gDefs gctx) }
   addDecl' (HDThm x t@(TType ts hs (GType ss r)) pr) = do
     guard (M.notMember x (gThms gctx))
-    forM_ pr $ \(vs, p) -> do
+    withContext x $ forM_ pr $ \(vs, p) -> do
       guard (length vs == length hs)
       let ctx = mkLC ts ss
-      evalStateT (inferProof ctx p) (M.fromList (zip vs hs)) >>= guard . (r ==)
+      r' <- evalStateT (inferProof ctx p) (M.fromList (zip vs hs))
+      guardError ("result does not match theorem statement:\n    " ++
+        show r ++ "\n != " ++ show r') (alphaTerm M.empty r r')
     return $ gctx {gThms = M.insert x t (gThms gctx)}
 
   inferTerm :: LocalCtx -> Term -> Either String Sort
@@ -116,23 +121,32 @@ addDecl gctx = addDecl' where
     ts' <- lift $ mapM (inferSLam ctx) es
     let m = M.fromList (zip (fst <$> ts) es)
     hs' <- mapM (inferProofLam ctx) ps
-    fromJustError ("failed to check " ++ show p ++
-      ", where:\n  " ++ t ++ " : " ++ show ty ++
-      foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip es ts') ++
-      foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip ps hs')) $ do
-      guard $ (snd <$> ts) == ts'
-      guard $ all2 alphaGType (substGType m <$> hs) hs'
+    let err = "failed to check " ++ show p ++
+          ", where:\n  " ++ t ++ " : " ++ show ty ++
+          foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip es ts') ++
+          foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip ps hs')
+    guardError (err ++ "\ntype mismatch in regular vars") $ (snd <$> ts) == ts'
+    unless (all2 alphaGType (substGType m <$> hs) hs') $
+      forM_ (zip hs hs') $ \(h, h') -> do
+        guardError (err ++ "\nhypothesis substitution does not match:\n  " ++
+          show h ++ "\n  substituted(" ++ show m ++ ")\n   = " ++ show (substGType m h) ++
+          "\n  != " ++ show h') $ alphaGType (substGType m h) h'
+    fromJustError err $ do
       mapM (lcLVar ctx) ys >>= guard . (snd <$> ss ==)
-      return $ vsubstTerm (M.fromList (zip (fst <$> ss) ys)) $ substTerm m r
+      let (ss', r') = substAbs m ss r
+      return $ vsubstTerm (M.fromList (zip (fst <$> ss') ys)) r'
   inferProof ctx p'@(HSave n (HProofLam ss p) ys) = do
     r <- inferProof ctx p
     modify (M.insert n (GType ss r))
     fromJustError ("failed to check " ++ show p') $ do
       mapM (\x -> (,) x <$> lcLVar ctx x) ys >>= guard . (ss ==)
       return r
-  inferProof ctx (HForget p) = do
+  inferProof ctx p'@(HForget p) = do
     GType ss t <- inferProofLam ctx p
-    guard $ nfTerm (S.fromList (fst <$> ss)) t
+    guardError ("failed to check " ++ show p' ++
+      "\n  term " ++ show t ++
+      "\n  contains variables in " ++ show (fst <$> ss)) $
+      nfTerm (S.fromList (fst <$> ss)) t
     return t
   inferProof ctx (HConv eq p) = do
     (t1, t2, _) <- inferConv ctx eq
@@ -178,6 +192,6 @@ addDecl gctx = addDecl' where
       "\n  where " ++ show (HDDef t ts ss e)) $ do
       guard ((snd <$> ts) == ts')
       mapM (\x -> (,) x <$> lcLVar ctx x) xs >>= guard . (ss ==)
-      let e' = vsubstTerm (M.fromList (zip (fst <$> ss) xs)) $
-               substTerm (M.fromList (zip (fst <$> ts) es)) e
+      let (ss', l) = substAbs (M.fromList (zip (fst <$> ts) es)) ss e
+          e' = vsubstTerm (M.fromList (zip (fst <$> ss') xs)) l
       return (HApp t es xs, e', r)

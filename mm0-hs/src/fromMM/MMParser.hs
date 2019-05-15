@@ -482,6 +482,22 @@ processJ (JKeyword "natded_not" j) = case j of
       modifyND $ \nd -> nd {ndNot = Just $
         maybe (not, fal, xs) (\(x', f', xs') -> (x', f', xs' ++ xs)) (ndNot nd)}
   _ -> throwError "bad $j 'natded_not' command"
+processJ (JKeyword "free_var" j) = case j of
+  JString x (JKeyword "with" j) ->
+    getManyJ "free_var" j $ updateDecl x . S.fromList
+  _ -> throwError "bad $j 'free_var' command"
+  where
+  updateDecl :: Label -> S.Set Var -> FromMMM ()
+  updateDecl x ss = modifyDB $ \db -> db {mStmts = M.adjust (\case
+    (n, Term (hs, dv) s e p) -> (n, Term (updateHyp db ss <$> hs, dv) s e p)
+    (n, Thm (hs, dv) s e p) -> (n, Thm (updateHyp db ss <$> hs, dv) s e p)) x $ mStmts db}
+
+  updateHyp :: MMDatabase -> S.Set Var -> (Bool, Label) -> (Bool, Label)
+  updateHyp db s (False, l) = (False, l)
+  updateHyp db s (True, l) = case mStmts db M.! l of
+    (_, Hyp (VHyp _ v)) -> (S.notMember v s, l)
+    _ -> (True, l)
+
 processJ (JKeyword x j) = skipJ j
 processJ (JRest ss) = process ss
 processJ (JError e) = throwError e
