@@ -14,7 +14,10 @@ import HolCheck
 import Util
 
 toHolIO :: [String] -> IO ()
-toHolIO (mm0:mmp:_) = do
+toHolIO (mm0 : mmp : rest) = do
+  let write = case rest of
+        "-o" : hol : _ -> withFile hol WriteMode
+        _ -> \k -> k stdout
   mm0 <- openFile mm0 ReadMode
   s <- B.hGetContents mm0
   ast <- either die pure (parse s)
@@ -23,7 +26,7 @@ toHolIO (mm0:mmp:_) = do
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)
   hol <- liftIO (toHol env pf)
-  mapM_ (putStrLn . flip shows "\n") hol
+  write $ \h -> mapM_ (hPutStrLn h . flip shows "\n") hol
   liftIO $ checkDecls hol
   putStrLn "verified HOL"
 toHolIO _ = die "to-hol: incorrect args; use 'to-hol MM0-FILE MMU-FILE'"
