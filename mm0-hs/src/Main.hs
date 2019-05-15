@@ -24,7 +24,8 @@ main = do
     _ -> die ("incorrect args; use\n" ++
       "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
       "  mm0-hs show-bundled MM-FILE\n" ++
-      "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU-FILE]\n")
+      "  mm0-hs from-mm MM-FILE [-o MM0-FILE MMU-FILE]\n" ++
+      "  mm0-hs to-hol MM0-FILE MMU-FILE\n")
 
 doVerify :: [String] -> IO ()
 doVerify args = do

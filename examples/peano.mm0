@@ -17,7 +17,8 @@ infixl and: $/\$ prec 20;
 def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
 
-def tru (.p: wff): wff = $ p <-> p $; prefix tru: $T.$ prec max;
+term wtru: wff; prefix wtru: $T.$ prec max;
+axiom tru: $ T. $;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 sort nat;

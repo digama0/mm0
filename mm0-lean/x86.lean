@@ -802,6 +802,9 @@ def execute : ast → pstate config unit
 | (ast.jcc c i) := do
   k ← pstate.get,
   when (c.read k.flags) (write_rip (k.rip + i))
+| (ast.jump rm) := do
+  k ← pstate.get,
+  (rm.ea k).read' Sz64 >>= write_rip
 | (ast.lea sz ds) := do
   k ← pstate.get,
   (ea_dest k ds).write' sz (ea_src k ds).addr

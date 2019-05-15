@@ -9,7 +9,8 @@ import Util
 
 type AST = [Stmt]
 
-data Stmt = Sort Ident SortData
+data Stmt =
+    Sort Ident SortData
   | Var [Ident] VarType
   | Term Ident [Binder] DepType
   | Axiom Ident [Binder] Formula
