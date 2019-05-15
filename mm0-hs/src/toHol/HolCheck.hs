@@ -59,10 +59,10 @@ addDecl gctx = addDecl' where
   addDecl' (HDTerm x t) = do
     guard (M.notMember x (gTerms gctx))
     return $ gctx {gTerms = M.insert x t (gTerms gctx)}
-  addDecl' (HDDef x ts ss e) = do
+  addDecl' (HDDef x ts ss r e) = do
     guard (M.notMember x (gTerms gctx))
     let ctx = mkLC ts ss
-    r <- withContext x $ inferTerm ctx e
+    withContext x $ inferTerm ctx e >>= guard . (r ==)
     return $ gctx {
       gTerms = M.insert x (HType (snd <$> ts) (SType (snd <$> ss) r)) (gTerms gctx),
       gDefs = M.insert x (HDef ts ss r e) (gDefs gctx) }
@@ -189,7 +189,7 @@ addDecl gctx = addDecl' where
       gDefs gctx M.!? t
     ts' <- lift $ mapM (inferSLam ctx) es
     fromJustError ("failed to check " ++ show c ++
-      "\n  where " ++ show (HDDef t ts ss e)) $ do
+      "\n  where " ++ show (HDDef t ts ss r e)) $ do
       guard ((snd <$> ts) == ts')
       mapM (\x -> (,) x <$> lcLVar ctx x) xs >>= guard . (ss ==)
       let (ss', l) = substAbs (M.fromList (zip (fst <$> ts) es)) ss e

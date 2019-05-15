@@ -10,7 +10,7 @@ import Util
 type Sort = Ident
 -- An SType is a type of the form s1 -> ... sn -> t where
 -- si and t are basic types (sorts). Regular MM0 variables have an SType
-data SType = SType [Sort] Sort deriving (Eq)
+data SType = SType [Sort] Sort deriving (Eq, Ord)
 
 instance Show SType where
   showsPrec n (SType [] s) = (s ++)
@@ -163,7 +163,7 @@ data HDecl =
   -- ^ Introduce a new sort
   | HDTerm Ident HType
   -- ^ Define a new term constructor T
-  | HDDef Ident [(Ident, SType)] [(Ident, Sort)] Term
+  | HDDef Ident [(Ident, SType)] [(Ident, Sort)] Sort Term
   -- ^ Define !As. !xs. T As xs = t
   | HDThm Ident TType (Maybe ([Ident], HProof))
   -- ^ Prove a theorem or assert an axiom Th : !As. |- Gs => !xs. |- ph.
@@ -172,8 +172,9 @@ data HDecl =
 instance Show HDecl where
   show (HDSort s) = "sort " ++ s
   show (HDTerm t ty) = "term " ++ t ++ ": " ++ show ty
-  show (HDDef t rv lv val) =
-    "def " ++ t ++ showBinds' shows rv (showBinds' (++) lv (" := " ++ show val))
+  show (HDDef t rv lv s val) =
+    "def " ++ t ++ showBinds' shows rv (showBinds' (++) lv
+      (": " ++ s ++ " := " ++ show val))
   show (HDThm t ty Nothing) = "axiom " ++ t ++ ": " ++ show ty
   show (HDThm t (TType vs hs (GType ss ret)) (Just (gs, p))) =
     ("theorem " ++) $ (t ++) $
@@ -196,18 +197,13 @@ fvRTerm (LVar _) = S.empty
 fvRTerm (RVar v _) = S.singleton v
 fvRTerm (HApp _ ls _) = foldMap fvRLam ls
 
-(<!>) :: (Ord k, Show k, Show v) => M.Map k v -> k -> v
-(<!>) m k = case m M.!? k of
-  Nothing -> error $ show m ++ " ! " ++ show k
-  Just v -> v
-
 variant :: S.Set Ident -> Ident -> Ident
 variant s v = if S.member v s then variant s (v ++ "'") else v
 
 substAbs :: M.Map Ident SLam -> [(Ident, Sort)] -> Term -> ([(Ident, Sort)], Term)
 substAbs m vs t = go vs M.empty where
   free :: S.Set Ident
-  free = foldMap (fvLam . (m <!>)) (fvRTerm t)
+  free = foldMap (fvLam . (m M.!)) (fvRTerm t)
   go [] vm = ([], substTerm m $ vsubstTerm vm t)
   go ((v, s) : vs) vm =
     let v' = variant free v

@@ -90,7 +90,7 @@ toHol env = \pfs -> do
     let n = TermID (Q.length (thTerms g))
     let name = fromMaybe (show n) x
     let (bis, ty, rv, lv, r, e, ds') = translateDef g vs ret ds def
-    tell (Endo (HDDef name rv lv e :))
+    tell (Endo (HDDef name rv lv r e :))
     modify $ \g -> g {
       thTerms = thTerms g Q.|> HTermData name bis ty,
       thTermIx = M.insert name n (thTermIx g),
