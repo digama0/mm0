@@ -1,6 +1,7 @@
 module Util where
 
 import Control.Monad.Except
+import Control.Monad.Writer
 import Data.List (group, sort)
 import System.Exit
 import qualified Data.Map.Strict as M
@@ -35,3 +36,7 @@ all2 r = go where
   go [] [] = True
   go (a:as) (b:bs) = r a b && go as bs
   go _ _ = False
+
+-- | Extract the written value of a writer action
+extract :: MonadWriter w m => m a -> m (a, w)
+extract m = censor (const mempty) (listen m)

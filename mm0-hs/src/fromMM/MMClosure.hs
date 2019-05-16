@@ -20,16 +20,17 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
     (_, sl) <- get
     when (S.notMember x sl) $ do
       addStmt x
-      case snd $ mStmts db M.! x of
-        Term (hs, _) _ e _ -> do
+      case mStmts db M.!? x of
+        Just (_, Term (hs, _) _ e _) -> do
           mapM_ checkHyp hs
           checkExpr e
-        Thm (hs, _) _ e pr -> do
+        Just (_, Thm (hs, _) _ e pr) -> do
           mapM_ checkHyp hs
           checkExpr e
           mapM_ (\(ds, p) -> checkProof p) pr
-        Hyp (VHyp s _) -> addSort s
-        Hyp (EHyp _ e) -> checkExpr e
+        Just (_, Hyp (VHyp s _)) -> addSort s
+        Just (_, Hyp (EHyp _ e)) -> checkExpr e
+        Nothing -> error $ "statement " ++ x ++ " not found in the MM file"
 
   checkHyp :: (Bool, Label) -> State (S.Set Sort, S.Set Label) ()
   checkHyp (_, x) = checkStmt x >> case snd $ mStmts db M.! x of

@@ -21,6 +21,7 @@ main = do
     "from-mm" : rest -> fromMM rest
     "show-bundled" : rest -> showBundled rest
     "to-hol" : rest -> toHolIO rest
+    "to-othy" : rest -> toOpenTheory rest
     _ -> die ("incorrect args; use\n" ++
       "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
       "  mm0-hs show-bundled MM-FILE\n" ++
