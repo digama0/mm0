@@ -1,8 +1,9 @@
 module ToOpenTheory where
 
-import GHC.Stack
-import Control.Monad.RWS.Strict hiding (liftIO)
-import qualified Control.Monad.Trans.State as ST
+import Data.Semigroup
+import Control.Monad.Reader
+import Control.Monad.Writer
+import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import Environment (Ident)
 import HolTypes
@@ -27,21 +28,24 @@ mkOTState :: OTState
 mkOTState = OTState 0 Nothing undefined
   mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
-type OTM = RWS () (Endo [String]) OTState
+type OTM m = ReaderT (String -> m ()) (StateT OTState m)
+
+writeOT :: Monad m => (String -> m ()) -> [HDecl] -> m ()
+writeOT f ds = evalStateT (runReaderT (preamble >> mapM_ otDecl ds) f) mkOTState
 
 otToString :: [HDecl] -> [String]
-otToString ds = appEndo (snd $ evalRWS (preamble >> mapM_ otDecl ds) () mkOTState) []
+otToString ds = appEndo (execWriter $ writeOT (tell . Endo . (:)) ds) []
 
-emit :: [String] -> OTM ()
-emit s = tell $ Endo (s ++)
+emit :: Monad m => [String] -> OTM m ()
+emit = mapM_ $ \s -> do f <- ask; lift $ lift $ f s
 
-ref :: Int -> OTM ()
+ref :: Monad m => Int -> OTM m ()
 ref n = app "ref" [emit [show n]]
 
-ref' :: Int -> OTM Int
+ref' :: Monad m => Int -> OTM m Int
 ref' n = ref n >> return n
 
-def :: OTM Int
+def :: Monad m => OTM m Int
 def = do
   g <- get
   let n = otDict g
@@ -49,38 +53,33 @@ def = do
   put $ g {otDict = n + 1}
   return n
 
-save :: OTM Int
+save :: Monad m => OTM m Int
 save = def <* emit ["pop"]
 
-pushWith :: (OTState -> Maybe Int) -> (Int -> OTState -> OTState) -> OTM () -> OTM Int
+pushWith :: Monad m => (OTState -> Maybe Int) -> (Int -> OTState -> OTState) -> OTM m () -> OTM m Int
 pushWith r w go = do
   g <- get
   case r g of
     Just n -> ref' n
     Nothing -> do n <- go >> def; modify (w n); return n
 
-pushSort :: Ident -> OTM Int
+pushSort :: Monad m => Ident -> OTM m Int
 pushSort x = pushWith (\g -> otSorts g M.!? x)
   (\n g -> g {otSorts = M.insert x n (otSorts g)}) $ do
   app "opType" [app "typeOp" [str x], list []]
 
-app :: String -> [OTM a] -> OTM ()
+app :: Monad m => String -> [OTM m a] -> OTM m ()
 app s [] = emit [s]
 app s (m:ms) = m >> app s ms
 
-str :: String -> OTM ()
+str :: Monad m => String -> OTM m ()
 str s = emit [show s]
 
-list :: [OTM a] -> OTM ()
+list :: Monad m => [OTM m a] -> OTM m ()
 list [] = emit ["nil"]
 list (m:ms) = m >> list ms >> emit ["cons"]
 
-(<!>) :: (HasCallStack, Ord k, Show k, Show v) => M.Map k v -> k -> v
-(<!>) m k = case m M.!? k of
-  Nothing -> error $ show m ++ " ! " ++ show k
-  Just v -> v
-
-preamble :: OTM ()
+preamble :: Monad m => OTM m ()
 preamble = do
   app "version" [emit ["6"]]
   -- (
@@ -143,33 +142,33 @@ preamble = do
   apr <- app "sym" [ref ap] >> save -- |- (P = \a. T) = ! P
   modify $ \g -> g {otAll = (al, tru, apr, alth)}
 
-pushArrow :: OTM Int
+pushArrow :: Monad m => OTM m Int
 pushArrow = pushWith otArrow (\n g -> g {otArrow = Just n}) $ do
   app "typeOp" [str "->"]
 
-arrows :: [OTM a] -> OTM b -> OTM ()
+arrows :: Monad m => [OTM m a] -> OTM m b -> OTM m ()
 arrows [] r = () <$ r
 arrows (m : ms) r = app "opType" [
   () <$ pushArrow, list [() <$ m, () <$ arrows ms r]]
 
-pushSType :: SType -> OTM Int
+pushSType :: Monad m => SType -> OTM m Int
 pushSType s@(SType ss t) = pushWith (\g -> otTypes g M.!? s)
   (\n g -> g {otTypes = M.insert s n (otTypes g)})
   (arrows (pushSort <$> ss) (pushSort t))
 
-pushVar :: Ident -> SType -> OTM Int
+pushVar :: Monad m => Ident -> SType -> OTM m Int
 pushVar x t = pushWith (\g -> otVars g M.!? (x, t))
   (\n g -> g {otVars = M.insert (x, t) n (otVars g)}) $ do
   app "var" [str x, () <$ pushSType t]
 
-peekVar :: Ident -> SType -> OTM Int
+peekVar :: Monad m => Ident -> SType -> OTM m Int
 peekVar x t = do
   g <- get
   case otVars g M.!? (x, t) of
     Just n -> return n
     Nothing -> pushVar x t <* emit ["pop"]
 
-pushEq :: [Sort] -> OTM Int
+pushEq :: Monad m => [Sort] -> OTM m Int
 pushEq ss = pushWith (\g -> otEqs g M.!? ss)
   (\n g -> g {otEqs = M.insert ss n (otEqs g)}) $
     let s = pushSType (SType ss "bool") in
@@ -177,7 +176,7 @@ pushEq ss = pushWith (\g -> otEqs g M.!? ss)
       app "const" [str "="],
       arrows [s, s] (pushSType (SType [] "bool"))]
 
-pushAllC :: Sort -> OTM Int
+pushAllC :: Monad m => Sort -> OTM m Int
 pushAllC s = pushWith (\g -> otAllConst g M.!? s)
   (\n g -> g {otAllConst = M.insert s n (otAllConst g)}) $
     app "constTerm" [
@@ -186,7 +185,7 @@ pushAllC s = pushWith (\g -> otAllConst g M.!? s)
 
 -- pr: G |- ! (\x:s. t[x]), P := (\x:s. t[x]), a := a
 -- pushes G |- t[a]
-forallElim :: Sort -> OTM () -> OTM () -> OTM () -> OTM ()
+forallElim :: Monad m => Sort -> OTM m () -> OTM m () -> OTM m () -> OTM m ()
 forallElim s pr p a = app "proveHyp" [
   pr, -- G |- ! (\x:s. t[x])
   app "eqMp" [
@@ -200,7 +199,7 @@ forallElim s pr p a = app "proveHyp" [
 
 -- pr: G |- t[x], var x : s, term t
 -- pushes G |- ! (\x:s, t[x]), returns term (\x:s, t[x]), term ! (\x:s, t[x])
-forallIntro :: Sort -> OTM () -> OTM () -> OTM () -> OTM (Int, OTM ())
+forallIntro :: Monad m => Sort -> OTM m () -> OTM m () -> OTM m () -> OTM m (Int, OTM m ())
 forallIntro s x t pr = do
   (_, tru, apr, _) <- otAll <$> get
   l <- app "absTerm" [x, t] >> save
@@ -214,32 +213,32 @@ forallIntro s x t pr = do
     ] -- G |- ! (\x:s. t[x])
   return (l, app "appTerm" [() <$ pushAllC s, ref l])
 
-pushAppVars :: M.Map Ident (OTM Int) -> OTM () -> [Ident] -> OTM ()
+pushAppVars :: Monad m => M.Map Ident (OTM m Int) -> OTM m () -> [Ident] -> OTM m ()
 pushAppVars m f [] = f
 pushAppVars m f (x:xs) =
   pushAppVars m (app "appTerm" [f, app "varTerm" [m M.! x]]) xs
 
-pushAppLams :: M.Map Ident (OTM Int) -> OTM () -> [SLam] -> OTM ()
+pushAppLams :: Monad m => M.Map Ident (OTM m Int) -> OTM m () -> [SLam] -> OTM m ()
 pushAppLams m f [] = f
 pushAppLams m f (l:ls) =
   pushAppLams m (app "appTerm" [f, pushSLam m l]) ls
 
-pushSLam :: M.Map Ident (OTM Int) -> SLam -> OTM ()
+pushSLam :: Monad m => M.Map Ident (OTM m Int) -> SLam -> OTM m ()
 pushSLam m (SLam ss t) = go m ss where
-  go :: M.Map Ident (OTM Int) -> [(Ident, Sort)] -> OTM ()
+  go :: Monad m => M.Map Ident (OTM m Int) -> [(Ident, Sort)] -> OTM m ()
   go m [] = pushTerm m t
   go m ((x, s) : ss) = do
     n <- pushVar x (SType [] s)
     go (M.insert x (ref' n) m) ss
     emit ["absTerm"]
 
-pushTerm :: M.Map Ident (OTM Int) -> Term -> OTM ()
+pushTerm :: Monad m => M.Map Ident (OTM m Int) -> Term -> OTM m ()
 pushTerm m (LVar x) = app "varTerm" [m M.! x]
 pushTerm m (RVar v xs) = pushAppVars m (app "varTerm" [m M.! v]) xs
 pushTerm m (HApp t ls xs) =
-  pushAppVars m (pushAppLams m (get >>= ref . (<!> t) . otTerms) ls) xs
+  pushAppVars m (pushAppLams m (get >>= ref . (M.! t) . otTerms) ls) xs
 
-otDecl :: HDecl -> OTM ()
+otDecl :: Monad m => HDecl -> OTM m ()
 otDecl (HDSort s) = pushSort s >> emit ["pop"]
 otDecl (HDTerm x (HType ss t)) = do
   n <- app "constTerm" [
@@ -266,9 +265,9 @@ otDecl (HDThm x ty@(TType vs gs (GType xs r)) pr) = do
     otHyps = mempty,
     otHypApps = mempty }
 
-otDef :: [(Ident, SType)] -> Term -> OTM (OTM ())
+otDef :: Monad m => [(Ident, SType)] -> Term -> OTM m (OTM m ())
 otDef ss t = go M.empty ss where
-  go :: M.Map Ident (OTM Int) -> [(Ident, SType)] -> OTM (OTM ())
+  go :: Monad m => M.Map Ident (OTM m Int) -> [(Ident, SType)] -> OTM m (OTM m ())
   go m [] = do
     pushTerm m t
     return (return ())
@@ -281,9 +280,9 @@ otDef ss t = go M.empty ss where
       app "betaConv" [app "appTerm" [ref n, app "varTerm" [ref xn]]] >> emit ["trans"]
       push
 
-pushGType :: M.Map Ident (OTM Int) -> GType -> OTM [Int]
+pushGType :: Monad m => M.Map Ident (OTM m Int) -> GType -> OTM m [Int]
 pushGType m (GType xs t) = go m xs where
-  go :: M.Map Ident (OTM Int) -> [(Ident, Sort)] -> OTM [Int]
+  go :: Monad m => M.Map Ident (OTM m Int) -> [(Ident, Sort)] -> OTM m [Int]
   go m [] = pushTerm m t >> return []
   go m ((x, s) : ss) = do
     pushAllC s
@@ -292,29 +291,29 @@ pushGType m (GType xs t) = go m xs where
     l <- emit ["absTerm"] >> def
     emit ["appTerm"] >> return (l : ls)
 
-type OTCtx = (M.Map Ident Sort, M.Map Ident (OTM Int))
+type OTCtx m = (M.Map Ident Sort, M.Map Ident (OTM m Int))
 
-pushHyp :: OTCtx -> Ident -> [Ident] -> OTM (Term, Int)
+pushHyp :: Monad m => OTCtx m -> Ident -> [Ident] -> OTM m (Term, Int)
 pushHyp (xm, _) h xs = do
   g <- get
   case otHypApps g M.!? (h, xs) of
     Just (ty, n) -> (,) ty <$> ref' n
     Nothing -> do
-      let (GType ts ty, ls, nh) = otHyps g <!> h
+      let (GType ts ty, ls, nh) = otHyps g M.! h
       n <- go xs ls nh >> def
       let r = (vsubstTerm (M.fromList (zip (fst <$> ts) xs)) ty, n)
       modify $ \g -> g {otHypApps = M.insert (h, xs) r (otHypApps g)}
       return r
   where
-  go :: [Ident] -> [Int] -> Int -> OTM ()
+  go :: Monad m => [Ident] -> [Int] -> Int -> OTM m ()
   go [] [] n = ref n
   go (x:xs) (l:ls) n = do
-    let s = xm <!> x
+    let s = xm M.! x
     forallElim s (go xs ls n) (ref l) $
       app "varTerm" [pushVar x (SType [] s)]
 
-otThm :: Ident -> M.Map Ident (OTM Int) -> [GType] ->
-  M.Map Ident Sort -> Term -> Maybe ([Ident], HProof) -> OTM Int
+otThm :: Monad m => Ident -> M.Map Ident (OTM m Int) -> [GType] ->
+  M.Map Ident Sort -> Term -> Maybe ([Ident], HProof) -> OTM m Int
 otThm name m gs vm ret pf = do
   (hns, hts) <- fmap unzip $ forM gs $ \h -> do
     ty <- pushGType m h
@@ -333,11 +332,11 @@ otThm name m gs vm ret pf = do
       list (ref <$> hts) >> pushTerm m ret
       emit ["axiom"] >> save
 
-pushProof :: OTCtx -> HProof -> OTM Term
+pushProof :: Monad m => OTCtx m -> HProof -> OTM m Term
 pushProof ctx (HHyp h xs) = fst <$> pushHyp ctx h xs
 pushProof ctx@(_, m) (HThm t es ps ys) = do
   g <- get
-  let (TType ts hs (GType ss r), nt, nvs) = otThms g <!> t
+  let (TType ts hs (GType ss r), nt, nvs) = otThms g M.! t
   ns <- forM ps $ \p -> pushProofLam ctx p >> save
   foldl (\push n -> app "proveHyp" [ref n, push])
     (app "subst" [list [list [], list $
@@ -364,12 +363,12 @@ pushProof ctx (HConv eq p) = do
   return t2
 pushProof ctx HSorry = error "sorry found"
 
-pushProofLam :: OTCtx -> HProofLam -> OTM (GType, Int, [Int])
+pushProofLam :: Monad m => OTCtx m -> HProofLam -> OTM m (GType, Int, [Int])
 pushProofLam ctx (HProofLam xs p) = do
   (t, d, ls, _) <- go ctx xs
   return (GType xs t, d, ls)
   where
-  go :: OTCtx -> [(Ident, Sort)] -> OTM (Term, Int, [Int], OTM ())
+  go :: Monad m => OTCtx m -> [(Ident, Sort)] -> OTM m (Term, Int, [Int], OTM m ())
   go ctx@(_, m) [] = do
     (t, d) <- liftM2 (,) (pushProof ctx p) def
     return (t, d, [], pushTerm m t)
@@ -380,7 +379,7 @@ pushProofLam ctx (HProofLam xs p) = do
     (l, pushT') <- forallIntro s (() <$ pushX) pushT (ref pr)
     return (t, d, l : ls, pushT')
 
-pushConv :: OTCtx -> HConv -> OTM (Term, Term)
+pushConv :: Monad m => OTCtx m -> HConv -> OTM m (Term, Term)
 pushConv ctx@(_, m) (CRefl e) = do
   app "refl" [pushTerm m e]
   return (e, e)
@@ -392,12 +391,12 @@ pushConv ctx (CTrans p1 p2) = do
   (_, e2) <- pushConv ctx p1
   emit ["trans"] >> return (e1, e2)
 pushConv ctx@(_, m) (CCong t ps xs) = do
-  app "refl" [get >>= ref . (<!> t) . otTerms]
+  app "refl" [get >>= ref . (M.! t) . otTerms]
   (es, es') <- fmap unzip $ forM ps $ \p -> pushConvLam ctx p <* emit ["appThm"]
   forM_ xs $ \x -> app "refl" [pushTerm m (LVar x)] >> emit ["appThm"]
   return (HApp t es xs, HApp t es' xs)
 pushConv ctx@(_, m) (CDef t es xs) = do
-  (ts, ss, e, n) <- (<!> t) . otDefs <$> get
+  (ts, ss, e, n) <- (M.! t) . otDefs <$> get
   app "subst" [
     list [list [], list $
       zipWith (\(x, s) e -> list
@@ -409,12 +408,12 @@ pushConv ctx@(_, m) (CDef t es xs) = do
       e' = vsubstTerm (M.fromList (zip (fst <$> ss') xs)) l
   return (HApp t es xs, e')
 
-pushConvLam :: OTCtx -> HConvLam -> OTM (SLam, SLam)
+pushConvLam :: Monad m => OTCtx m -> HConvLam -> OTM m (SLam, SLam)
 pushConvLam ctx (HConvLam ss p) = do
   (e1, e2) <- go ctx ss
   return (SLam ss e1, SLam ss e2)
   where
-  go :: OTCtx -> [(Ident, Sort)] -> OTM (Term, Term)
+  go :: Monad m => OTCtx m -> [(Ident, Sort)] -> OTM m (Term, Term)
   go ctx [] = pushConv ctx p
   go (xm, m) ((x, s) : xs) = do
     n <- pushVar x (SType [] s)
