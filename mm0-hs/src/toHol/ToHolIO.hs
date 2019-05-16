@@ -45,5 +45,7 @@ toOpenTheory (mm0 : mmp : rest) = do
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)
   hol <- liftIO (toHol env pf)
-  write $ \h -> writeOT (hPutStrLn h) hol
+  write $ \h -> do
+    hSetNewlineMode h (NewlineMode LF LF)
+    writeOT (hPutStrLn h) hol
 toOpenTheory _ = die "to-othy: incorrect args; use 'to-othy MM0-FILE MMU-FILE [-o out.art]'"
