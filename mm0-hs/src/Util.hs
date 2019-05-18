@@ -40,3 +40,18 @@ all2 r = go where
 -- | Extract the written value of a writer action
 extract :: MonadWriter w m => m a -> m (a, w)
 extract m = censor (const mempty) (listen m)
+
+mapFst :: (a -> b) -> (a, c) -> (b, c)
+mapFst f (x, y) = (f x, y)
+
+mapSnd :: (b -> c) -> (a, b) -> (a, c)
+mapSnd f (x, y) = (x, f y)
+
+fst3 :: (a, b, c) -> a
+fst3 (x, _, _) = x
+
+snd3 :: (a, b, c) -> b
+snd3 (_, y, _) = y
+
+thd3 :: (a, b, c) -> c
+thd3 (_, _, z) = z
