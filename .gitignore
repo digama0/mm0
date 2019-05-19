@@ -1,0 +1,5 @@
+.vscode/
+.stack-work/
+mm0-hs/mm0-hs.cabal
+*~
+out.*

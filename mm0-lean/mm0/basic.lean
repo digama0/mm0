@@ -51,8 +51,10 @@ inductive binder : Type
 @[derive has_reflect]
 inductive stmt : Type
 | sort : ident → sort_data → stmt
-| term : ident → list binder → dep_type → option (list binder × sexpr) → stmt
-| thm : ident → list binder → sexpr → option (list binder × sexpr) → stmt
+| term : bool → ident → list binder → dep_type → option (list binder × sexpr) → stmt
+| thm : bool → ident → list binder → sexpr → option (list binder × sexpr) → stmt
+
+def env := list stmt
 
 open tactic native
 
@@ -60,10 +62,15 @@ open tactic native
 inductive mm0_param
 | ax : mm0_param
 | none : mm0_param
+| loc : mm0_param
 | sd : sort_data → mm0_param
 
 def mm0_param.is_ax : mm0_param → bool
 | mm0_param.ax := tt
+| _ := ff
+
+def mm0_param.is_local : mm0_param → bool
+| mm0_param.loc := tt
 | _ := ff
 
 meta def mm0_param.to_sd : mm0_param → option sort_data
@@ -87,6 +94,7 @@ do x ← lean.parser.many lean.parser.ident,
 match x with
 | [] := return mm0_param.none
 | [`ax] := return mm0_param.ax
+| [`Local] := return mm0_param.loc
 | l := mm0_param.sd <$> list_name_to_sort_data l
 end
 
@@ -110,7 +118,7 @@ eval_expr _ (expr.const (n <.> "_stmt") [])
 
 meta def get_term (n : name) : tactic (list binder × dep_type) :=
 (do s ← get_stmt n, match s with
-| (stmt.term _ bs t _) := return (bs, t)
+| (stmt.term _ _ bs t _) := return (bs, t)
 | _ := failed
 end) <|> fail ("term" ++ n.to_string ++ " is not a mm0 term")
 
@@ -267,8 +275,8 @@ do d ← get_decl n,
   | e := do
     pt ← (sum.inl <$> parse_term e) <|> (sum.inr <$> parse_thm e),
     match pt, d.value_opt.filter (λ a:expr, ¬ p.is_ax) with
-    | sum.inl (ls, d), e := stmt.term n.to_simple ls d <$> option.traverse parse_def e
-    | sum.inr (ls, d), e := stmt.thm n.to_simple ls d <$> option.traverse parse_proof e
+    | sum.inl (ls, d), e := stmt.term (¬ p.is_local) n.to_simple ls d <$> option.traverse parse_def e
+    | sum.inr (ls, d), e := stmt.thm (¬ p.is_local) n.to_simple ls d <$> option.traverse parse_proof e
     end
   end
 
