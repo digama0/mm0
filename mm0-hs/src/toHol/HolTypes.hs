@@ -1,5 +1,6 @@
 module HolTypes where
 
+import Debug.Trace
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Environment (Ident)
@@ -179,13 +180,13 @@ instance Show HDecl where
     showBinds' shows vs $ showBinds' shows (zip gs hs) $
     showBinds' (++) ss $ (": |- " ++) $ shows ret $ " :=\n" ++ show p
 
-fvLam :: SLam -> S.Set Ident
-fvLam (SLam vs t) = foldr S.delete (fvTerm t) (fst <$> vs)
+fvLLam :: SLam -> S.Set Ident
+fvLLam (SLam vs t) = foldr S.delete (fvLTerm t) (fst <$> vs)
 
-fvTerm :: Term -> S.Set Ident
-fvTerm (LVar x) = S.singleton x
-fvTerm (RVar _ xs) = S.fromList xs
-fvTerm (HApp _ ls xs) = foldMap fvLam ls <> S.fromList xs
+fvLTerm :: Term -> S.Set Ident
+fvLTerm (LVar x) = S.singleton x
+fvLTerm (RVar _ xs) = S.fromList xs
+fvLTerm (HApp _ ls xs) = foldMap fvLLam ls <> S.fromList xs
 
 fvRLam :: SLam -> S.Set Ident
 fvRLam (SLam vs t) = fvRTerm t
@@ -194,6 +195,14 @@ fvRTerm :: Term -> S.Set Ident
 fvRTerm (LVar _) = S.empty
 fvRTerm (RVar v _) = S.singleton v
 fvRTerm (HApp _ ls _) = foldMap fvRLam ls
+
+fvLam :: SLam -> S.Set Ident
+fvLam (SLam vs t) = foldr S.delete (fvTerm t) (fst <$> vs)
+
+fvTerm :: Term -> S.Set Ident
+fvTerm (LVar x) = S.singleton x
+fvTerm (RVar v xs) = S.insert v $ S.fromList xs
+fvTerm (HApp _ ls xs) = foldMap fvLam ls <> S.fromList xs
 
 variant :: S.Set Ident -> Ident -> Ident
 variant s v = if S.member v s then variant s (v ++ "'") else v
@@ -239,6 +248,7 @@ vsubstSLam m (SLam vs t) = go m (S.fromList $ M.elems m) vs where
       SLam ((v, s) : vs') t'
 
 vsubstTerm :: M.Map Ident Ident -> Term -> Term
+vsubstTerm m t | null m = t
 vsubstTerm m (LVar x) = LVar (vsubst m x)
 vsubstTerm m (RVar v xs) = RVar v (vsubst m <$> xs)
 vsubstTerm m (HApp t es xs) = HApp t (vsubstSLam m <$> es) (vsubst m <$> xs)

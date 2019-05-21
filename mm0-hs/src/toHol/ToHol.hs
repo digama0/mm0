@@ -131,7 +131,7 @@ translateAxiom g args hs ret =
 
 fvBind :: [PBinder] -> Term -> [(Ident, Sort)]
 fvBind vs t = mapMaybe g vs where
-  fvs = fvTerm t
+  fvs = fvLTerm t
   g (PBound x s) | S.member x fvs = Just (x, s)
   g _ = Nothing
 
@@ -351,7 +351,7 @@ mkHeap (UnfoldExpr e c t1 t2 : ues) (h@(GType xs t) : hs) = do
       v = show (VarID n)
       p = HHyp v (fst <$> xs)
       p' = case reflTerm c of
-        Just _ -> return (fvTerm t2, p, t2)
+        Just _ -> return (fvLTerm t2, p, t2)
         Nothing -> save n (v ++ "_unf") xs (HConv c p) t2
   put (ctx Q.|> HProof p', m, M.insert v h heap)
   (v :) <$> mkHeap ues hs
@@ -360,7 +360,7 @@ mkHeap (UnfoldExpr e c t1 t2 : ues) (h@(GType xs t) : hs) = do
   save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term ->
     ToHolProofM (S.Set Ident, HProof, Term)
   save n x vs p t = do
-    let fv = fvTerm t
+    let fv = fvLTerm t
     modify $ \(ctx, m, heap) ->
       (Q.update n (HProof (return (fv, HHyp x (fst <$> vs), t))) ctx, m,
        M.insert x (GType vs t) heap)
@@ -415,7 +415,7 @@ trProof g pr = trProof' pr where
     let HThmData x bis hs ret ret' = thThm g t
     (fv, es, subst, ls, ps', xs) <- trThm hs ret bis ps
     let ty = substSExpr g subst ret'
-    let fv' = fvTerm ty
+    let fv' = fvLTerm ty
     let p = HThm x ls ps' xs
     if S.size fv == S.size fv' then
       return $ HProofF fv' p ty
