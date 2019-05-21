@@ -12,6 +12,7 @@ import ProofTextParser
 import ToHol
 import HolCheck
 import ToOpenTheory
+import ToLean
 import Util
 
 toHolIO :: [String] -> IO ()
@@ -41,7 +42,6 @@ toOpenTheory (mm0 : mmp : rest) = do
   s <- B.hGetContents mm0
   ast <- either die pure (parse s)
   env <- liftIO (elabAST ast)
-  putStrLn "spec checked"
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)
   hol <- liftIO (toHol env pf)
@@ -49,3 +49,20 @@ toOpenTheory (mm0 : mmp : rest) = do
     hSetNewlineMode h (NewlineMode LF LF)
     writeOT (hPutStrLn h) hol
 toOpenTheory _ = die "to-othy: incorrect args; use 'to-othy MM0-FILE MMU-FILE [-o out.art]'"
+
+toLean :: [String] -> IO ()
+toLean (mm0 : mmp : rest) = do
+  let write = case rest of
+        "-o" : hol : _ -> withFile hol WriteMode
+        _ -> \k -> k stdout
+  mm0 <- openFile mm0 ReadMode
+  s <- B.hGetContents mm0
+  ast <- either die pure (parse s)
+  env <- liftIO (elabAST ast)
+  pf <- B.readFile mmp
+  pf <- liftIO (parseProof pf)
+  hol <- liftIO (toHol env pf)
+  write $ \h -> do
+    hSetEncoding h utf8
+    writeLean (hPutStrLn h) hol
+toLean _ = die "to-lean: incorrect args; use 'to-lean MM0-FILE MMU-FILE [-o out.lean]'"

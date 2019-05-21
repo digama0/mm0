@@ -1,6 +1,5 @@
 module HolTypes where
 
-import Debug.Trace
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Environment (Ident)
