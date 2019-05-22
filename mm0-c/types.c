@@ -57,8 +57,14 @@ typedef struct {
                          // p_args is permitted to point right here if the term is small
 } term;
 
-// An entry in the term table
+// An entry in the theorem table
 typedef struct {
+  u8 num_args;           // number of arguments (expression assumptions)
+  u8 num_hyps;           // number of hypotheses (theorem assumptions)
+  u16 heap_sz;           // size of (expression) heap
+  /* u64* */ u32 p_args; // pointer to list of binders
+  // The expression heap comes after the list of binders, and the
+  // command list comes after that.
 } thm;
 
 #define INDEX_KIND_TERM      (u8)0x01 // This is a term
@@ -126,6 +132,7 @@ typedef struct {
 // The high two bits denote the backpointer size (an unsigned number giving the
 // number of bytes backwards to the last command):
 
+#define CMD_BP(opcode) ((opcode) & 0xC0)
 #define CMD_BP_0  0x00
 #define CMD_BP_8  0x40
 #define CMD_BP_16 0x80
@@ -149,7 +156,12 @@ typedef struct {
 // Except the END instruction, each is followed by a pointer to the next command keyword.
 // BP and backreference pointers are relative to the last command keyword.
 
-// End: A null statement, the end of a command sequence. No additional data, BP = 0
+// End: A null statement, the end of a command sequence. No additional data, BP = 0.
+// Although the command does not reserve space after it, no command can appear
+// within 20 bytes (the longest command structure) of the end of the file,
+// to allow for preloading. So if CMD_END is the last thing in the file there
+// should be another 19 bytes padding.
+#define CMD_MAX_SIZE 20
 #define CMD_END 0x00
 
 // The statement commands are the same as the corresponding INDEX_KINDs, except
@@ -162,49 +174,40 @@ typedef struct {
 #define CMD_LOCAL_DEF 0x0D
 #define CMD_LOCAL_THM 0x0E
 
-// For statement commands, the BP field has a different meaning.
-// If BP = 1,2,3 then there is a heap whose length is given in the 1,2,4
-// following bytes. They all have a forward reference to the next
-// command. CMD_TERM, CMD_AXIOM, CMD_SORT use this template.
+// is CMD_THM or CMD_LOCAL_THM
+#define IS_CMD_THM(opcode) (((opcode) & 0xF7) == CMD_THM)
+
+// For statement commands, BP = 0. They have a forward reference to the next
+// command.
 typedef struct {
   u8 cmd;           // statement command, BP = 0
                     // 3 bytes padding
   u32 next;         // the number of bytes to the next statement command (output)
-  /* u32 heap[]; */ // heap begins here. These are
-                    // pointers into the stack relative to this statement command
 } cmd_stmt;
 
+typedef struct {
+  u8 cmd;           // statement command, BP = 0
+                    // 3 bytes padding
+  u32 next;         // the number of bytes to the next statement command (output)
+  u32 heap_sz;      // Size of the expression heap.
+  u32 theap_sz;     // Size of the theorem heap.
+  // The expression heap (u64[]) begins after this, and the
+  // theorem heap (u32[]) after that, and then the beginning of
+  // proof commands.
+} cmd_thm;
+
 // Generic template for expression instructions, opcodes 0x10 - 0x17
+#define IS_EXPR(opcode) (((opcode) & 0x18) == 0x10)
 typedef struct {
   u8 cmd;              // = expression command
-                       // 3 bytes padding
-  u64 type;            // the expression type (output)
+  u8 _[3];             // 3 bytes padding
+  u8 type[8];          // the expression type (output)
 } cmd_expr;
 
-// 8 bit layout
-typedef struct {
-  u8 cmd;              // = expression command with BP = 0,1
-  u8 bp;               // 0,1 bytes backpointer
-  u16 data;            // data field (depends on opcode)
-  u8 type[8];          // the expression type (output)
-} cmd_expr8;
-
-// 16 bit layout
-typedef struct {
-  u8 cmd;              // = expression command with BP = 2
-  u8 data;             // data field (depends on opcode)
-  u16 bp;              // 2 bytes backpointer
-  u8 type[8];          // the expression type (output)
-} cmd_expr16;
-
-// 32 bit layout
-typedef struct {
-  u8 cmd;              // = expression command with BP = 3
-  u8 _[3];             // free space
-  u8 type[8];          // the expression type (output)
-  u32 bp;              // 4 bytes backpointer
-  u32 data;            // data field
-} cmd_expr32;
+// The BP and data fields are arranged depending on the size of BP
+typedef struct { u8 cmd; u8 bp; u16 data; u8 type[8]; } cmd_expr8;
+typedef struct { u8 cmd; u8 data; u16 bp; u8 type[8]; } cmd_expr16;
+typedef struct { u8 cmd; u8 _[3]; u8 type[8]; u32 bp; u32 data; } cmd_expr32;
 
 // Term: Pop n expressions from the stack (n is determined from the term ID),
 // and push a term applied to these expressions. (Note: stack items are popped
@@ -233,29 +236,21 @@ typedef struct {
 
 // Generic template for proof instructions, opcodes 0x18 - 0x1F. Same as expr
 // without the type field
-typedef struct {
-  u8 cmd;              // = expression command with BP = 0,1
-  u8 bp;               // 0,1 bytes backpointer
-  u16 data;            // data field (depends on opcode)
-} cmd_proof8;
-
-typedef struct {
-  u8 cmd;              // = expression command with BP = 2
-  u8 data;             // data field (depends on opcode)
-  u16 bp;              // 2 bytes backpointer
-} cmd_proof16;
-
-typedef struct {
-  u8 cmd;              // = expression command with BP = 3
-  u8 _[3];             // free space
-  u32 bp;              // 4 bytes backpointer
-  u32 data;            // data field
-} cmd_proof32;
+#define IS_PROOF(opcode) (((opcode) & 0x18) == 0x18)
+typedef struct { u8 cmd; u8 bp; u16 data; } cmd_proof8;
+typedef struct { u8 cmd; u8 data; u16 bp; } cmd_proof16;
+typedef struct { u8 cmd; u8 _[3]; u32 bp; u32 data; } cmd_proof32;
 
 // Hyp: Pop an expression from the stack, push an assumption
 // that the expr is true and add it to the hyp list.
 // Uses proof format with data ignored
 #define CMD_PROOF_HYP 0x1B
+
+// DeclHyp: A special version of Hyp for use in axiom/theorem declaraions.
+// Pop an expression from the stack; this command is an assumption
+// that the expr is true, but it is not saved to the heap or stack.
+// Uses proof format with data ignored, BP = 0
+#define CMD_PROOF_DECL_HYP 0x1A
 
 // Ref: Pop an expression from the stack, check that the input hypid has the
 // same expression.
