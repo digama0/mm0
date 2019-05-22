@@ -99,7 +99,7 @@ data HProof =
   -- ^ Abstract and save this proof in the local dictionary.
   -- Similar to dict[n] <- !xs. |- ph ; return |- [ys/xs] ph.
   -- In MM0 xs and ys are the same. The saved value is accessible via HHyp
-  | HForget HProofLam
+  | HForget Term HProofLam
   -- ^ Given a proof of !xs. |- ph, where ph does not depend on xs,
   -- produce a proof of |- ph.
   -- Requires that the sort not be free (i.e. is inhabited)
@@ -120,7 +120,7 @@ instance Show HProof where
     flip (foldr (\x -> ((' ' : x) ++))) xs
   showsPrec n (HSave v p xs) = showParen (n > 0) $ \r ->
     "let " ++ v ++ " = " ++ shows p (" in " ++ shows (HHyp v xs) r)
-  showsPrec n (HForget p) = showParen (n > 0) $ ("forget " ++) . shows p
+  showsPrec n (HForget _ p) = showParen (n > 0) $ ("forget " ++) . shows p
   showsPrec n (HConv c p) = showParen (n > 0) $
     ("mp " ++) . shows c . (' ' :) . shows p
   showsPrec n HSorry = ("?" ++)

@@ -141,13 +141,14 @@ addDecl gctx = addDecl' where
     fromJustError ("failed to check " ++ show p') $ do
       mapM (\x -> (,) x <$> lcLVar ctx x) ys >>= guard . (ss ==)
       return r
-  inferProof ctx p'@(HForget p) = do
-    GType ss t <- inferProofLam ctx p
-    guardError ("failed to check " ++ show p' ++
+  inferProof ctx p'@(HForget t p) = do
+    GType ss t' <- inferProofLam ctx p
+    fromJustError ("failed to check " ++ show p' ++
       "\n  term " ++ show t ++
-      "\n  contains variables in " ++ show (fst <$> ss)) $
-      nfTerm (S.fromList (fst <$> ss)) t
-    return t
+      "\n  contains variables in " ++ show (fst <$> ss)) $ do
+      guard (nfTerm (S.fromList (fst <$> ss)) t)
+      guard (alphaTerm M.empty t t')
+      return t
   inferProof ctx (HConv eq p) = do
     (t1, t2, _) <- inferConv ctx eq
     inferProof ctx p >>= guard . (t1 ==)

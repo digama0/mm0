@@ -525,7 +525,7 @@ pushProof ctx (HSave h pl@(HProofLam ss p) ys) = do
     otHyps = M.insert h (ret, so, ls, n) (otHyps g),
     otHypApps = M.insert (h, ys) (r, so, d) (otHypApps g) }
   return (r, so)
-pushProof ctx (HForget (HProofLam ss p)) =
+pushProof ctx (HForget _ (HProofLam ss p)) =
   pushProof (foldl (\(xm, m) (x, s) ->
     (M.insert x s xm, M.insert x (pushVar x (SType [] s)) m)) ctx ss) p
 pushProof ctx (HConv eq p) = do

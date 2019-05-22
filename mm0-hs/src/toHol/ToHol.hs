@@ -422,7 +422,7 @@ trProof g pr = trProof' pr where
     else do
       let ds = S.toList (S.difference fv fv')
       (_, m, _) <- get
-      return $ HProofF fv' (HForget (HProofLam ((\d -> (d, m M.! d)) <$> ds) p)) ty
+      return $ HProofF fv' (HForget ty (HProofLam ((\d -> (d, m M.! d)) <$> ds) p)) ty
 
   trProof' (Save p) = trProof' p >>= \case
     HExprF fv e -> do
