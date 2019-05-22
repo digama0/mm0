@@ -29,6 +29,7 @@ dependencies:
 - mtl
 - split
 - parsec
+- filepath
 
 default-extensions:
 - FlexibleContexts

@@ -53,12 +53,14 @@ toOpenTheory _ = die "to-othy: incorrect args; use 'to-othy MM0-FILE MMU-FILE [-
 
 toLean :: [String] -> IO ()
 toLean (mm0 : mmp : rest) = do
+  (nax, rest) <- return $ case rest of
+    "-a" : pre : rest -> (Just pre, rest)
+    rest -> (Nothing, rest)
   (cs, rest) <- return $ case rest of
     "-c" : n : rest -> (read n, rest)
     rest -> (maxBound, rest)
   bn <- case rest of
-    "-o" : file : _ -> return $
-      if isSuffixOf ".lean" file then take (length file - 5) file else file
+    "-o" : file : _ -> return file
     _ -> die "to-lean: -o FILE.LEAN required"
   mm0 <- openFile mm0 ReadMode
   s <- B.hGetContents mm0
@@ -67,5 +69,5 @@ toLean (mm0 : mmp : rest) = do
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)
   hol <- liftIO (toHol env pf)
-  writeLean bn cs hol
+  writeLean nax bn cs hol
 toLean _ = die "to-lean: incorrect args; use 'to-lean MM0-FILE MMU-FILE [-o out.lean]'"

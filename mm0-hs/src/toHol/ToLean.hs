@@ -2,7 +2,9 @@ module ToLean (writeLean) where
 
 import Data.Foldable
 import Data.Semigroup
+import System.FilePath
 import System.IO
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.State.Strict
@@ -14,7 +16,7 @@ import Util
 
 data LeanState = LeanState {
   lChunk :: Int,
-  lBaseName :: String,
+  lFileName :: String,
   lHandle :: Handle,
   lIndex :: Int,
   lChunkSize :: Int,
@@ -22,10 +24,10 @@ data LeanState = LeanState {
 
 type LeanM = StateT LeanState IO
 
-writeLean :: String -> Int -> [HDecl] -> IO ()
-writeLean baseName chunkSize ds =
-  evalStateT (open >> mapM_ (\d -> leanDecl d >> increment) ds >> close) $
-    LeanState 1 baseName undefined 0 chunkSize M.empty
+writeLean :: Maybe String -> String -> Int -> [HDecl] -> IO ()
+writeLean pre fname chunkSize ds =
+  evalStateT (open pre >> mapM_ (\d -> leanDecl (not $ null pre) d >> increment) ds >> close) $
+    LeanState 1 fname undefined 0 chunkSize M.empty
 
 emit :: String -> LeanM ()
 emit s = do g <- get; lift $ hPutStrLn (lHandle g) s
@@ -34,14 +36,15 @@ fname :: String -> Int -> String
 fname bn 1 = bn
 fname bn n = bn ++ show n
 
-open :: LeanM ()
-open = do
+open :: Maybe String -> LeanM ()
+open i = do
   g <- get
-  let n = lChunk g
-  h <- lift $ openFile (fname (lBaseName g) n ++ ".lean") WriteMode
+  let fn = lFileName g
+  let name = takeDirectory fn </> fname (takeBaseName fn) (lChunk g) <.> "lean"
+  h <- lift $ openFile name WriteMode
   lift $ hSetEncoding h utf8
   put $ g {lHandle = h}
-  unless (n == 1) $ emit $ "import ." ++ fname (lBaseName g) (n-1) ++ "\n"
+  forM_ i $ \f -> emit $ "import " ++ f ++ "\n"
   emit "namespace mm0\n"
 
 close :: LeanM ()
@@ -68,7 +71,8 @@ increment = do
   else do
     close
     put $ g {lChunk = lChunk g + 1, lIndex = 0}
-    open
+    open $ if lChunk g == 1 then Nothing else
+      Just ('.' : fname (takeBaseName (lFileName g)) (lChunk g - 1))
 
 printSType :: Bool -> SType -> ShowS
 printSType p (SType [] s) = mangle s
@@ -183,21 +187,25 @@ unsaveProofLam ctx (HProofLam vs p) = go ctx vs where
     (s, HProofLam vs' p') <- go (vt : ctx) vs
     return (S.delete v s, HProofLam (vt : vs') p')
 
-leanDecl :: HDecl -> LeanM ()
-leanDecl (HDSort s) = do
+leanDecl :: Bool -> HDecl -> LeanM ()
+leanDecl nax (HDSort s) = do
   let s' = mangle s
-  emit $ "constant " ++ s' " : Type\n"
-  emit $ "constant " ++ s' ".proof : " ++ s' " \x2192 Prop"
-  emit $ "prefix `\x22A6 `:26 := " ++ s' ".proof"
-  emit $ "constant " ++ s' ".forget {p : Prop} : (" ++ s' " \x2192 p) \x2192 p"
-leanDecl (HDTerm x ty) = emit $ "constant " ++ mangle x " : " ++ printHType ty "\n"
-leanDecl (HDDef x ss xs r t) =
+  let c = if nax then ("-- " ++) else id
+  emit $ c $ "constant " ++ s' " : Type\n"
+  emit $ c $ "constant " ++ s' ".proof : " ++ s' " \x2192 Prop"
+  emit $ c $ "prefix `\x22A6 `:26 := " ++ s' ".proof"
+  emit $ c $ "constant " ++ s' ".forget {p : Prop} : (" ++ s' " \x2192 p) \x2192 p"
+leanDecl nax (HDTerm x ty) = do
+  let c = if nax then ("-- " ++) else id
+  emit $ c $ "constant " ++ mangle x " : " ++ printHType ty "\n"
+leanDecl nax (HDDef x ss xs r t) =
   let bis = printGroupedBinders False (ss ++ (mapSnd (SType []) <$> xs)) in
   emit $ ("def " ++) $ mangle x $ bis (" : " ++ r ++ " :=\n" ++ printTerm False t "\n")
-leanDecl (HDThm x (TType vs gs ret) Nothing) =
-  emit $ ("axiom " ++) $ mangle x $ printGroupedBinders True vs $ " : " ++
+leanDecl nax (HDThm x (TType vs gs ret) Nothing) = do
+  let c = if nax then ("-- " ++) else id
+  emit $ c $ ("axiom " ++) $ mangle x $ printGroupedBinders True vs $ " : " ++
     foldr (\g r -> printGType True g (" \x2192 " ++ r)) (printGType False ret "\n") gs
-leanDecl (HDThm x (TType vs gs (GType xs ret)) (Just (hs, pr))) = do
+leanDecl nax (HDThm x (TType vs gs (GType xs ret)) (Just (hs, pr))) = do
   let bis1 = printGroupedBinders True vs
   let bis2 r = foldr (\(h, g) -> ("\n " ++) .
         printBinderGroup False [h] (printGType False g)) r (zip hs gs)
