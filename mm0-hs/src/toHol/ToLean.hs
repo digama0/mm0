@@ -1,8 +1,8 @@
-module ToLean(leanToString, writeLean) where
+module ToLean (writeLean) where
 
 import Data.Foldable
 import Data.Semigroup
-import Debug.Trace
+import System.IO
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.State.Strict
@@ -13,23 +13,45 @@ import HolTypes
 import Util
 
 data LeanState = LeanState {
+  lChunk :: Int,
+  lBaseName :: String,
+  lHandle :: Handle,
+  lIndex :: Int,
+  lChunkSize :: Int,
   lHyps :: M.Map Ident [Ident] }
 
-mkLeanState :: LeanState
-mkLeanState = LeanState M.empty
+type LeanM = StateT LeanState IO
 
-type LeanM m = ReaderT (String -> m ()) (StateT LeanState m)
+writeLean :: String -> Int -> [HDecl] -> IO ()
+writeLean baseName chunkSize ds =
+  evalStateT (open >> mapM_ (\d -> leanDecl d >> increment) ds >> close) $
+    LeanState 1 baseName undefined 0 chunkSize M.empty
 
-writeLean :: Monad m => (String -> m ()) -> [HDecl] -> m ()
-writeLean f ds = evalStateT (runReaderT (preamble $ mapM_ leanDecl ds) f) mkLeanState
+emit :: String -> LeanM ()
+emit s = do g <- get; lift $ hPutStrLn (lHandle g) s
 
-leanToString :: [HDecl] -> [String]
-leanToString ds = appEndo (execWriter $ writeLean (tell . Endo . (:)) ds) []
+fname :: String -> Int -> String
+fname bn 1 = bn
+fname bn n = bn ++ show n
 
-emit :: Monad m => String -> LeanM m ()
-emit s = do f <- ask; lift $ lift $ f s
+open :: LeanM ()
+open = do
+  g <- get
+  let n = lChunk g
+  h <- lift $ openFile (fname (lBaseName g) n ++ ".lean") WriteMode
+  lift $ hSetEncoding h utf8
+  put $ g {lHandle = h}
+  unless (n == 1) $ emit $ "import ." ++ fname (lBaseName g) (n-1) ++ "\n"
+  emit "namespace mm0\n"
 
-preamble :: Monad m => LeanM m () -> LeanM m ()
+close :: LeanM ()
+close = do
+  emit "end mm0"
+  g <- get
+  lift $ hClose (lHandle g)
+  put $ g {lHandle = undefined}
+
+preamble :: LeanM () -> LeanM ()
 preamble m = emit "namespace mm0\n" >> m >> emit "end mm0"
 
 mangle :: String -> ShowS
@@ -37,6 +59,16 @@ mangle "fun" r = '\x00AB' : "fun\x00BB" ++ r
 mangle "class" r = '\x00AB' : "class\x00BB" ++ r
 mangle ('_' : s) r = '\x00AB' : s ++ '\x00BB' : r
 mangle s r = s ++ r
+
+increment :: LeanM ()
+increment = do
+  g <- get
+  if lIndex g + 1 < lChunkSize g then
+    put $ g {lIndex = lIndex g + 1}
+  else do
+    close
+    put $ g {lChunk = lChunk g + 1, lIndex = 0}
+    open
 
 printSType :: Bool -> SType -> ShowS
 printSType p (SType [] s) = mangle s
@@ -116,10 +148,10 @@ printProof p n (HForget t (HProofLam vs pr)) = showParen p $ \r ->
 printProof p n (HConv _ pr) = printProof p n pr
 printProof p n HSorry = ("sorry" ++)
 
-emitLet :: Monad m => Ident -> HProofLam -> LeanM m ()
+emitLet :: Ident -> HProofLam -> LeanM ()
 emitLet v pr = emit $ "let " ++ mangle v (" := " ++ printProofLam False "" pr " in")
 
-unsaveProof :: Monad m => [(Ident, Sort)] -> HProof -> LeanM m (S.Set Ident, HProof)
+unsaveProof :: [(Ident, Sort)] -> HProof -> LeanM (S.Set Ident, HProof)
 unsaveProof ctx p@(HHyp v vs) = do
   g <- get
   case lHyps g M.!? v of
@@ -144,14 +176,14 @@ unsaveProof ctx (HForget t p) = mapSnd (HForget t) <$> unsaveProofLam ctx p
 unsaveProof ctx (HConv c p) = mapSnd (HConv c) <$> unsaveProof ctx p
 unsaveProof ctx HSorry = return (S.empty, HSorry)
 
-unsaveProofLam :: Monad m => [(Ident, Sort)] -> HProofLam -> LeanM m (S.Set Ident, HProofLam)
+unsaveProofLam :: [(Ident, Sort)] -> HProofLam -> LeanM (S.Set Ident, HProofLam)
 unsaveProofLam ctx (HProofLam vs p) = go ctx vs where
   go ctx [] = mapSnd (HProofLam []) <$> unsaveProof ctx p
   go ctx (vt@(v, _) : vs) = do
     (s, HProofLam vs' p') <- go (vt : ctx) vs
     return (S.delete v s, HProofLam (vt : vs') p')
 
-leanDecl :: Monad m => HDecl -> LeanM m ()
+leanDecl :: HDecl -> LeanM ()
 leanDecl (HDSort s) = do
   let s' = mangle s
   emit $ "constant " ++ s' " : Type\n"

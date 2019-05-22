@@ -3,6 +3,7 @@ module ToHolIO where
 import Control.Monad
 import System.IO
 import System.Exit
+import Data.List
 import qualified Data.ByteString.Lazy as B
 import Parser
 import AST
@@ -52,9 +53,13 @@ toOpenTheory _ = die "to-othy: incorrect args; use 'to-othy MM0-FILE MMU-FILE [-
 
 toLean :: [String] -> IO ()
 toLean (mm0 : mmp : rest) = do
-  let write = case rest of
-        "-o" : hol : _ -> withFile hol WriteMode
-        _ -> \k -> k stdout
+  (cs, rest) <- return $ case rest of
+    "-c" : n : rest -> (read n, rest)
+    rest -> (maxBound, rest)
+  bn <- case rest of
+    "-o" : file : _ -> return $
+      if isSuffixOf ".lean" file then take (length file - 5) file else file
+    _ -> die "to-lean: -o FILE.LEAN required"
   mm0 <- openFile mm0 ReadMode
   s <- B.hGetContents mm0
   ast <- either die pure (parse s)
@@ -62,7 +67,5 @@ toLean (mm0 : mmp : rest) = do
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)
   hol <- liftIO (toHol env pf)
-  write $ \h -> do
-    hSetEncoding h utf8
-    writeLean (hPutStrLn h) hol
+  writeLean bn cs hol
 toLean _ = die "to-lean: incorrect args; use 'to-lean MM0-FILE MMU-FILE [-o out.lean]'"
