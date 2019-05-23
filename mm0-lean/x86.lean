@@ -77,7 +77,7 @@ inductive read_ModRM (rex : REX) : regnum → RM → list byte → Prop
 | mem (b : byte) (rm reg_opc : bitvec 3) (mod : Mod) (disp l) :
   split_bits b.to_nat [⟨3, rm⟩, ⟨3, reg_opc⟩, ⟨2, mod⟩] → rm ≠ 0b100 →
   read_displacement mod disp l →
-  read_ModRM (rex_reg rex.B reg_opc)
+  read_ModRM (rex_reg rex.R reg_opc)
     (RM.mem none (base.reg (rex_reg rex.B rm)) disp) (b :: l)
 
 inductive read_opcode_ModRM (rex : REX) : bitvec 3 → RM → list byte → Prop
@@ -90,7 +90,7 @@ inductive read_opcode_ModRM (rex : REX) : bitvec 3 → RM → list byte → Prop
 inductive read_prefixes : REX → list byte → Prop
 | nil : read_prefixes none []
 | rex (b : byte) (rex) :
-  split_bits b.to_nat [⟨4, rex⟩, ⟨4, 0b100⟩] →
+  split_bits b.to_nat [⟨4, rex⟩, ⟨4, 0b0100⟩] →
   read_prefixes (some rex) [b]
 
 @[derive decidable_eq]
@@ -131,6 +131,8 @@ if ¬ v then Sz8 have_rex else
 if w then Sz64 else
 -- if override then Sz16 else
 Sz32
+
+def op_size_W (rex : REX) : bool → wsize := op_size rex.is_some rex.W
 
 inductive dest_src
 | Rm_i : RM → qword → dest_src
@@ -196,44 +198,46 @@ inductive cond_code.bits : cond_code → bitvec 4 → Prop
 inductive ast
 | unop : unop → wsize → RM → ast
 | binop : binop → wsize → dest_src → ast
-| push : imm_rm → ast
-| pop : RM → ast
+| mul : wsize → RM → ast
+| div : wsize → RM → ast
+| lea : wsize → dest_src → ast
+
 | movsx : wsize → dest_src → wsize → ast
 | movzx : wsize → dest_src → wsize → ast
-| jcc : cond_code → qword → ast
 | xchg : wsize → RM → regnum → ast
+| cmpxchg : wsize → RM → regnum → ast
+| xadd : wsize → RM → regnum → ast
 | cmov : cond_code → wsize → dest_src → ast
-| lea : wsize → dest_src → ast
-| ret : qword → ast
-| leave : ast
-| int : byte → ast
-| loop : cond_code → qword → ast
+| setcc : cond_code → bool → RM → ast
+
+| jump : RM → ast
+| jcc : cond_code → qword → ast
 | call : imm_rm → ast
+| ret : qword → ast
+| push : imm_rm → ast
+| pop : RM → ast
+| leave : ast
+
 | cmc
 | clc
 | stc
-| mul : wsize → RM → ast
-| div : wsize → RM → ast
-| jump : RM → ast
-| setcc : cond_code → bool → RM → ast
-| cmpxchg : wsize → RM → regnum → ast
-| xadd : wsize → RM → regnum → ast
+| int : byte → ast
 
 def ast.mov := ast.cmov cond_code.always
 
-inductive decode_misc1 (v : bool) (sz : wsize) (r : RM) :
+inductive decode_hi (v : bool) (sz : wsize) (r : RM) :
   bool → bitvec 3 → ast → list byte → Prop
 | test (imm l) : read_imm sz imm l →
-  decode_misc1 ff 0b000 (ast.binop binop.tst sz (Rm_i r imm)) l
-| not : decode_misc1 ff 0b010 (ast.unop unop.not sz r) []
-| neg : decode_misc1 ff 0b011 (ast.unop unop.neg sz r) []
-| mul : decode_misc1 ff 0b100 (ast.mul sz r) []
-| div : decode_misc1 ff 0b110 (ast.div sz r) []
-| inc : decode_misc1 tt 0b000 (ast.unop unop.inc sz r) []
-| dec : decode_misc1 tt 0b001 (ast.unop unop.dec sz r) []
-| call : v → decode_misc1 tt 0b010 (ast.call (imm_rm.rm r)) []
-| jump : v → decode_misc1 tt 0b100 (ast.jump r) []
-| push : v → decode_misc1 tt 0b110 (ast.push (imm_rm.rm r)) []
+  decode_hi ff 0b000 (ast.binop binop.tst sz (Rm_i r imm)) l
+| not : decode_hi ff 0b010 (ast.unop unop.not sz r) []
+| neg : decode_hi ff 0b011 (ast.unop unop.neg sz r) []
+| mul : decode_hi ff 0b100 (ast.mul sz r) []
+| div : decode_hi ff 0b110 (ast.div sz r) []
+| inc : decode_hi tt 0b000 (ast.unop unop.inc sz r) []
+| dec : decode_hi tt 0b001 (ast.unop unop.dec sz r) []
+| call : v → decode_hi tt 0b010 (ast.call (imm_rm.rm r)) []
+| jump : v → decode_hi tt 0b100 (ast.jump r) []
+| push : v → decode_hi tt 0b110 (ast.push (imm_rm.rm r)) []
 
 inductive decode_two (rex : REX) : ast → list byte → Prop
 | cmov (b : byte) (c reg r l code) :
@@ -256,151 +260,153 @@ inductive decode_two (rex : REX) : ast → list byte → Prop
   decode_two (ast.setcc code rex.is_some r) (b :: l)
 | cmpxchg (b : byte) (v reg r l) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1011000⟩] →
-  let sz := op_size rex.is_some rex.W v in
+  let sz := op_size_W rex v in
   read_ModRM rex reg r l →
   decode_two (ast.cmpxchg sz r reg) (b :: l)
 | movsx (b : byte) (v s reg r l) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨2, 0b11⟩, ⟨1, S s⟩, ⟨4, 0xb⟩] →
-  let sz2 := op_size rex.is_some rex.W tt,
+  let sz2 := op_size_W rex tt,
       sz := if v then Sz16 else Sz8 rex.is_some in
   read_ModRM rex reg r l →
   decode_two ((if s then ast.movsx else ast.movzx) sz (R_rm reg r) sz2) (b :: l)
 | xadd (b : byte) (v reg r l) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100000⟩] →
-  let sz := op_size rex.is_some rex.W v in
+  let sz := op_size_W rex v in
   read_ModRM rex reg r l →
   decode_two (ast.xadd sz r reg) (b :: l)
+
+
 
 inductive decode_aux (rex : REX) : ast → list byte → Prop
 | binop1 (b : byte) (v d opc reg r l op) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨1, S d⟩, ⟨1, 0b0⟩, ⟨3, opc⟩, ⟨2, 0b00⟩] →
-  let sz := op_size rex.is_some rex.W v in
+  let sz := op_size_W rex v in
   read_ModRM rex reg r l →
   let src_dst := if d then R_rm reg r else Rm_r r reg in
   binop.bits op (EXTZ opc) →
   decode_aux (ast.binop op sz src_dst) (b :: l)
 | binop_imm_rax (b : byte) (v opc imm l op) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨2, 0b10⟩, ⟨3, opc⟩, ⟨2, 0b00⟩] →
-  let sz := op_size rex.is_some rex.W v in
+  let sz := op_size_W rex v in
   binop.bits op (EXTZ opc) →
   read_imm sz imm l →
   decode_aux (ast.binop op sz (Rm_i (RM.reg RAX) imm)) (b :: l)
+| binop_imm (b : byte) (v opc r l1 imm l2 op) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1000000⟩] →
+  let sz := op_size_W rex v in
+  read_opcode_ModRM rex opc r l1 →
+  read_imm sz imm l2 →
+  binop.bits op (EXTZ opc) →
+  decode_aux (ast.binop op sz (Rm_i r imm)) (b :: l1 ++ l2)
+| binop_imm8 (opc r l1 imm l2 op) :
+  let sz := op_size_W rex tt in
+  read_opcode_ModRM rex opc r l1 →
+  binop.bits op (EXTZ opc) →
+  read_imm8 imm l2 →
+  decode_aux (ast.binop op sz (Rm_i r imm)) (0x83 :: l1 ++ l2)
+| binop_hi (b : byte) (v opc r imm op l1 l2) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100000⟩] →
+  let sz := op_size_W rex v in
+  read_opcode_ModRM rex opc r l1 → opc ≠ 6 →
+  binop.bits op (rex_reg tt opc) →
+  read_imm8 imm l2 →
+  decode_aux (ast.binop op sz (Rm_i r imm)) (b :: l1 ++ l2)
+| binop_hi_reg (b : byte) (v x opc r op l) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨1, S x⟩, ⟨6, 0b110100⟩] →
+  let sz := op_size_W rex v in
+  read_opcode_ModRM rex opc r l → opc ≠ 6 →
+  binop.bits op (rex_reg tt opc) →
+  decode_aux (ast.binop op sz (if x then Rm_r r RCX else Rm_i r 1)) (b :: l)
+
 | two (a l) : decode_two rex a l → decode_aux a (0x0f :: l)
+
+| movsx (reg r l) :
+  read_ModRM rex reg r l →
+  decode_aux (ast.movsx Sz32 (R_rm reg r) Sz64) (0x63 :: l)
+| mov (b : byte) (v d reg r l) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨1, S d⟩, ⟨6, 0b100010⟩] →
+  let sz := op_size_W rex v in
+  read_ModRM rex reg r l →
+  let src_dst := if d then R_rm reg r else Rm_r r reg in
+  decode_aux (ast.mov sz src_dst) (b :: l)
+| mov64 (b : byte) (r v imm l) :
+  split_bits b.to_nat [⟨3, r⟩, ⟨1, S v⟩, ⟨4, 0xb⟩] →
+  let sz := op_size_W rex v in
+  read_full_imm sz imm l →
+  decode_aux (ast.mov sz (Rm_i (RM.reg (rex_reg rex.B r)) imm)) (b :: l)
+| mov_imm (b : byte) (v opc r imm l1 l2) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100011⟩] →
+  let sz := op_size_W rex v in
+  read_opcode_ModRM rex opc r l1 →
+  read_imm sz imm l2 →
+  decode_aux (ast.mov sz (Rm_i r imm)) (b :: l1 ++ l2)
+
+| xchg (b : byte) (v reg r l) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1000011⟩] →
+  let sz := op_size_W rex v in
+  read_ModRM rex reg r l →
+  decode_aux (ast.xchg sz r reg) (b :: l)
+| xchg_rax (b : byte) (r) :
+  split_bits b.to_nat [⟨3, r⟩, ⟨5, 0b10010⟩] →
+  let sz := op_size tt rex.W tt in
+  decode_aux (ast.xchg sz (RM.reg RAX) (rex_reg rex.B r)) [b]
+
+| push_imm (b : byte) (x imm l) :
+  split_bits b.to_nat [⟨1, 0b0⟩, ⟨1, S x⟩, ⟨6, 0b011010⟩] →
+  read_imm (if x then Sz8 ff else Sz32) imm l →
+  decode_aux (ast.push (imm_rm.imm imm)) (b :: l)
 | push_rm (b : byte) (r) :
   split_bits b.to_nat [⟨3, r⟩, ⟨5, 0b01010⟩] →
   decode_aux (ast.push (imm_rm.rm (RM.reg (rex_reg rex.B r)))) [b]
 | pop (b : byte) (r) :
   split_bits b.to_nat [⟨3, r⟩, ⟨5, 0b01011⟩] →
   decode_aux (ast.pop (RM.reg (rex_reg rex.B r))) [b]
-| movsx (reg r l) :
-  read_ModRM rex reg r l →
-  decode_aux (ast.movsx Sz32 (R_rm reg r) Sz64) (0x63 :: l)
-| push_imm (b : byte) (x imm l) :
-  split_bits b.to_nat [⟨1, 0b0⟩, ⟨1, S x⟩, ⟨6, 0b011010⟩] →
-  read_imm (if x then Sz8 ff else Sz32) imm l →
-  decode_aux (ast.push (imm_rm.imm imm)) (b :: l)
+| pop_rm (r l) :
+  read_opcode_ModRM rex 0 r l →
+  decode_aux (ast.pop r) (0x8f :: l)
+
+| jump (b : byte) (x imm l) :
+  split_bits b.to_nat [⟨1, 0b1⟩, ⟨1, S x⟩, ⟨6, 0b111010⟩] →
+  (if x then read_imm8 imm l else read_imm32 imm l) →
+  decode_aux (ast.jcc cond_code.always imm) (b :: l)
 | jcc8 (b : byte) (c code imm l) :
   split_bits b.to_nat [⟨4, c⟩, ⟨4, 0b0111⟩] →
   cond_code.bits code c →
   read_imm8 imm l →
   decode_aux (ast.jcc code imm) (b :: l)
-| binop_imm (b : byte) (v opc r l1 imm l2 op) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1000000⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_opcode_ModRM rex opc r l1 →
-  read_imm sz imm l2 →
-  binop.bits op (EXTZ opc) →
-  decode_aux (ast.binop op sz (Rm_i r imm)) (b :: l1 ++ l2)
-| binop_imm8 (opc r l1 imm l2 op) :
-  let sz := op_size rex.is_some rex.W tt in
-  read_opcode_ModRM rex opc r l1 →
-  binop.bits op (EXTZ opc) →
-  read_imm8 imm l2 →
-  decode_aux (ast.binop op sz (Rm_i r imm)) (0x83 :: l1 ++ l2)
-| test (b : byte) (v reg r l) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1000010⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_ModRM rex reg r l →
-  decode_aux (ast.binop binop.tst sz (Rm_r r reg)) (b :: l)
-| xchg (b : byte) (v reg r l) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1000011⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_ModRM rex reg r l →
-  decode_aux (ast.xchg sz r reg) (b :: l)
-| mov (b : byte) (v d reg r l) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨1, S d⟩, ⟨6, 0b100010⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_ModRM rex reg r l →
-  let src_dst := if d then R_rm reg r else Rm_r r reg in
-  decode_aux (ast.mov sz src_dst) (b :: l)
+| call (imm l) :
+  read_imm32 imm l →
+  decode_aux (ast.call (imm_rm.imm imm)) (0xe8 :: l)
+| ret (b : byte) (v imm l) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100001⟩] →
+  (if v then imm = 0 ∧ l = [] else read_imm16 imm l) →
+  decode_aux (ast.ret imm) (b :: l)
+| leave : decode_aux ast.leave [0xc9]
+
 | lea (reg r l) :
   let sz := op_size tt rex.W tt in
   read_ModRM rex reg r l → RM.is_mem r →
   decode_aux (ast.lea sz (R_rm reg r)) (0x8d :: l)
-| pop_rm (r l) :
-  read_opcode_ModRM rex 0 r l →
-  decode_aux (ast.pop r) (0x8f :: l)
-| xchg_rax (b : byte) (r) :
-  split_bits b.to_nat [⟨3, r⟩, ⟨5, 0b10010⟩] →
-  let sz := op_size tt rex.W tt in
-  decode_aux (ast.xchg sz (RM.reg RAX) (rex_reg rex.B r)) [b]
+| test (b : byte) (v reg r l) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1000010⟩] →
+  let sz := op_size_W rex v in
+  read_ModRM rex reg r l →
+  decode_aux (ast.binop binop.tst sz (Rm_r r reg)) (b :: l)
 | test_rax (b : byte) (v imm l) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1010100⟩] →
   let sz := op_size tt rex.W v in
   read_imm sz imm l →
   decode_aux (ast.binop binop.tst sz (Rm_i (RM.reg RAX) imm)) (b :: l)
-| mov64 (b : byte) (r v imm l) :
-  split_bits b.to_nat [⟨3, r⟩, ⟨1, S v⟩, ⟨4, 0xb⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_full_imm sz imm l →
-  decode_aux (ast.mov sz (Rm_i (RM.reg (rex_reg rex.B r)) imm)) (b :: l)
-| binop_hi (b : byte) (v opc r imm op l1 l2) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100000⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_opcode_ModRM rex opc r l1 → opc ≠ 6 →
-  binop.bits op (rex_reg tt opc) →
-  read_imm8 imm l2 →
-  decode_aux (ast.binop op sz (Rm_i (RM.reg (rex_reg tt opc)) imm)) (b :: l1 ++ l2)
-| ret (b : byte) (v imm l) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100001⟩] →
-  (if v then imm = 0 ∧ l = [] else read_imm16 imm l) →
-  decode_aux (ast.ret imm) (b :: l)
-| mov_imm (b : byte) (v opc r imm l1 l2) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨7, 0b1100011⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_opcode_ModRM rex opc r l1 →
-  read_imm sz imm l2 →
-  decode_aux (ast.mov sz (Rm_i r imm)) (b :: l1 ++ l2)
-| leave : decode_aux ast.leave [0xc9]
-| int (imm) : decode_aux (ast.int imm) [0xcd, imm]
-| binop_hi_reg (b : byte) (v x opc r op l) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨1, S x⟩, ⟨6, 0b110100⟩] →
-  let sz := op_size rex.is_some rex.W v in
-  read_opcode_ModRM rex opc r l → opc ≠ 6 →
-  binop.bits op (rex_reg tt opc) →
-  decode_aux (ast.binop op sz (if x then Rm_r r RCX else Rm_i r 1)) (b :: l)
-| loopcc (b : byte) (x imm l) :
-  split_bits b.to_nat [⟨1, S x⟩, ⟨7, 0b1110000⟩] →
-  read_imm8 imm l →
-  decode_aux (ast.loop (cond_code.mk (bnot x) basic_cond.e) imm) (b :: l)
-| loop (imm l) :
-  read_imm8 imm l →
-  decode_aux (ast.loop cond_code.always imm) (0xe2 :: l)
-| call (imm l) :
-  read_imm32 imm l →
-  decode_aux (ast.call (imm_rm.imm imm)) (0xe8 :: l)
-| jump (b : byte) (x imm l) :
-  split_bits b.to_nat [⟨1, 0b1⟩, ⟨1, S x⟩, ⟨6, 0b111010⟩] →
-  (if x then read_imm8 imm l else read_imm32 imm l) →
-  decode_aux (ast.jcc cond_code.always imm) (b :: l)
+
 | cmc : decode_aux ast.cmc [0xf5]
 | clc : decode_aux ast.clc [0xf8]
 | stc : decode_aux ast.stc [0xf9]
-| F (b : byte) (v x opc r a l1 l2) :
-  split_bits b.to_nat [⟨1, S v⟩, ⟨2, 0b11⟩, ⟨1, S x⟩, ⟨7, 0xf⟩] →
-  let sz := op_size rex.is_some rex.W v in
+| int (imm) : decode_aux (ast.int imm) [0xcd, imm]
+| hi (b : byte) (v x opc r a l1 l2) :
+  split_bits b.to_nat [⟨1, S v⟩, ⟨2, 0b11⟩, ⟨1, S x⟩, ⟨4, 0xf⟩] →
+  let sz := op_size_W rex v in
   read_opcode_ModRM rex opc r l1 →
-  decode_misc1 v sz r x opc a l2 →
+  decode_hi v sz r x opc a l2 →
   decode_aux a (b :: l1 ++ l2)
 
 inductive decode : ast → list byte → Prop
@@ -705,12 +711,6 @@ def execute : ast → pstate config unit
 | ast.leave := do
   (Ea_r RBP).read' Sz64 >>= (Ea_r RSP).write' Sz64,
   pop (RM.reg RBP)
-| (ast.loop c i) := do
-  cx ← (Ea_r RCX).read' Sz64,
-  let cx' := cx - 1,
-  (Ea_r RCX).write' Sz64 cx',
-  k ← pstate.get,
-  when (cx' ≠ 0 ∧ c.read k.flags) (write_rip (k.rip + i))
 | (ast.unop op sz rm) := do
   k ← pstate.get,
   let ea := rm.ea k,
