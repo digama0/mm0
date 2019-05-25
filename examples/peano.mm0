@@ -136,6 +136,8 @@ def pi11 (n: nat): nat = $ fst (fst n) $;
 def pi12 (n: nat): nat = $ snd (fst n) $;
 def pi21 (n: nat): nat = $ fst (snd n) $;
 def pi22 (n: nat): nat = $ snd (snd n) $;
+def pi221 (n: nat): nat = $ fst (pi22 n) $;
+def pi222 (n: nat): nat = $ snd (pi22 n) $;
 
 def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
 theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
@@ -235,6 +237,11 @@ notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
 
 def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
 infixl app: $@$ prec 200;
+
+def write (f x y .a .b: nat): nat =
+  $ lower (opab a b (a <> b e. f /\ a != x \/ a = x /\ b = y)) $;
+theorem writeEq (f x y: nat): $ write f x y @ x = y $;
+theorem writeNe (f x y a: nat): $ a != x -> write f x y @ a = f @ a $;
 
 def srec {x: nat} (s: nat x): set;
 theorem srecval {x y: nat} (s: nat x) (n: nat):
