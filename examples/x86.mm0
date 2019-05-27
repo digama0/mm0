@@ -1,3 +1,351 @@
+delimiter $ ( ) ~ { } , $;
+strict provable sort wff;
+term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
+term neg (ph: wff): wff; prefix neg: $~$ prec 40;
+
+axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
+axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
+axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
+axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
+
+def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
+infixl iff: $<->$ prec 20;
+
+def and (ph ps: wff): wff = $ ~(ph -> ~ps) $;
+infixl and: $/\$ prec 20;
+
+def or (ph ps: wff): wff = $ ~ph -> ps $;
+infixl or: $\/$ prec 30;
+
+term wtru: wff; prefix wtru: $T.$ prec max;
+axiom tru: $ T. $;
+def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
+
+sort nat;
+term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
+
+def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
+prefix ex: $E.$ prec 30;
+
+axiom ax_gen (ph: wff) {x: nat}: $ ph $ > $ A. x ph $;
+axiom ax_4 {x: nat} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
+axiom ax_5 {x: nat} (ph: wff): $ ph -> A. x ph $;
+
+term eq (a b: nat): wff; infixl eq: $=$ prec 50;
+
+def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
+
+def sb (a: nat) {x .y: nat} (ph: wff x): wff =
+  $ A. y (y = a -> A. x (x = y -> ph)) $;
+notation sb (a: nat) {x: nat} (ph: wff x): wff =
+  ($[$:30) a ($/$:0) x ($]$:0) ph;
+
+axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
+axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
+
+axiom ax_10 {x: nat} (ph: wff x): $ ~(A. x ph) -> A. x ~ (A. x ph) $;
+axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
+axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> [ y / x ] ph $;
+
+strict sort set;
+term ab {x: nat} (ph: wff x): set;
+notation ab {x: nat} (ph: wff x): set = (${$:max) x ($|$:0) ph ($}$:0);
+term el: nat > set > wff; infixl el: $e.$ prec 50;
+axiom elab (a: nat) {x: nat} (ph: wff x):
+  $ a e. {x | ph} <-> [ a / x ] ph $;
+
+def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
+infixl eqs: $==$ prec 50;
+
+term the: set > nat;
+axiom the_eq {x: nat} (a: nat): $ the {x | x = a} = a $;
+axiom eqthe (A B: set): $ A == B -> the A = the B $;
+
+def Inter (A B: set) (.x: nat): set = $ {x | x e. A /\ x e. B} $;
+infixl Inter: $i^i$ prec 70;
+
+def Union (A B: set) (.x: nat): set = $ {x | x e. A \/ x e. B} $;
+infixl Union: $u.$ prec 65;
+
+def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $V$ prec max;
+
+def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
+notation sbs (a: nat) {x: nat} (A: set x): set =
+  ($S[$:70) a ($/$:0) x ($]$:0) A;
+
+def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the(S[ a / x ] {y | y = b}) $;
+notation sbn (a: nat) {x: nat} (b: nat x): nat =
+  ($N[$:70) a ($/$:0) x ($]$:0) b;
+
+term d0: nat; prefix d0: $0$ prec max;
+term suc: nat > nat;
+
+def d1:  nat = $suc 0$; prefix d1:  $1$  prec max;
+def d2:  nat = $suc 1$; prefix d2:  $2$  prec max;
+def d3:  nat = $suc 2$; prefix d3:  $3$  prec max;
+def d4:  nat = $suc 3$; prefix d4:  $4$  prec max;
+def d5:  nat = $suc 4$; prefix d5:  $5$  prec max;
+def d6:  nat = $suc 5$; prefix d6:  $6$  prec max;
+def d7:  nat = $suc 6$; prefix d7:  $7$  prec max;
+def d8:  nat = $suc 7$; prefix d8:  $8$  prec max;
+def d9:  nat = $suc 8$; prefix d9:  $9$  prec max;
+def d10: nat = $suc 9$; prefix d10: $10$ prec max;
+
+axiom peano1 (a: nat): $ ~(0 = suc a) $;
+axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
+axiom peano5 {x: nat} (ph: wff x):
+  $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
+
+term add: nat > nat > nat; infixl add: $+$ prec 65;
+term mul: nat > nat > nat; infixl add: $*$ prec 70;
+
+axiom add0 (a: nat): $ a + 0 = a $;
+axiom addS (a b: nat): $ a + suc b = suc (a + b) $;
+axiom mul0 (a: nat): $ a * 0 = 0 $;
+axiom mulS (a b: nat): $ a * suc b = a * b + a $;
+
+def le (a b .x: nat): wff = $ E. x a + x = b $;
+infixl le: $<=$ prec 50;
+
+def lt (a b: nat): wff = $ suc a <= b $;
+infixl lt: $<$ prec 50;
+
+def if (ph: wff) (a b: nat): nat;
+theorem iftrue (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
+theorem iffalse (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
+
+def true (n: nat): wff = $ n != 0 $;
+def bool (n: nat): wff = $ n < 2 $;
+def nat (ph: wff): nat = $ if ph 1 0 $;
+
+def ifp (ph a b: wff): wff = $ true (if ph (nat a) (nat b)) $;
+
+def pr (a b: nat): nat; infixr pr: $<>$ prec 54;
+def fst (a: nat): nat;
+def snd (a: nat): nat;
+
+theorem fstpr (a b: nat): $ fst (a <> b) = a $;
+theorem sndpr (a b: nat): $ snd (a <> b) = b $;
+theorem fstsnd (a: nat): $ fst a <> snd a = a $;
+
+theorem fst0: $ fst 0 = 0 $;
+theorem snd0: $ snd 0 = 0 $;
+theorem pr0: $ 0 <> 0 = 0 $;
+
+def pi11 (n: nat): nat = $ fst (fst n) $;
+def pi12 (n: nat): nat = $ snd (fst n) $;
+def pi21 (n: nat): nat = $ fst (snd n) $;
+def pi22 (n: nat): nat = $ snd (snd n) $;
+def pi221 (n: nat): nat = $ fst (pi22 n) $;
+def pi222 (n: nat): nat = $ snd (pi22 n) $;
+
+def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
+theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
+theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
+  $ rec z x s (suc n) = N[ rec z x s n / x ] s $;
+
+def sub (a b: nat): nat; infixl sub: $-$ prec 65;
+theorem sub0 (a: nat): $ a - 0 = a $;
+theorem subZ (b: nat): $ 0 - b = 0 $;
+theorem subSS (a b: nat): $ suc a - suc b = a - b $;
+
+def pow (a b: nat): nat; infixr pow: $^$ prec 80;
+theorem pow0 (a: nat): $ a ^ 0 = 1 $;
+theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;
+
+def div (a b: nat): nat; infixl div: $//$ prec 70;
+def mod (a b: nat): nat; infixl mod: $%$ prec 70;
+theorem div0 (a: nat): $ a // 0 = 0 $;
+theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
+theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
+
+def b0 (n: nat): nat = $ n + n $;
+def b1 (n: nat): nat = $ suc (b0 n) $;
+def odd (n: nat): wff = $ n % 2 = 1 $;
+
+def shl (a n: nat): nat = $ a * 2 ^ n $;
+def shr (a n: nat): nat = $ a // 2 ^ n $;
+
+def nel (a b: nat): wff = $ odd (shr a b) $;
+def ns (a .x: nat): set = ${x | nel x a}$; coercion ns: nat > set;
+theorem axext {x: nat} (a b: nat): $ a == b -> a = b $;
+theorem extlt (a b: nat): $ a e. b -> a < b $;
+theorem nel0 (a: nat): $ ~ a e. 0 $;
+
+def finite (A: set) (.n: nat): wff = $ E. n n == A $;
+
+def lower (A: set) (.n: nat): nat = $ the {n | n == A} $;
+
+def sn (a: nat): nat;
+theorem elsn (a b: nat): $ a e. sn b <-> a = b $;
+
+def ins (a b: nat): nat; infixr ins: $;$ prec 84;
+theorem elins (a b c: nat): $ a e. ins b c <-> a = b \/ a e. c $;
+
+def upto (n: nat): nat = $ 2 ^ n - 1 $;
+theorem elupto (k n: nat): $ k e. upto n <-> k < n $;
+
+def Bool: nat = $ 0 ; sn 1 $;
+def Option (A: set) (.n: nat): set = $ {n | n = 0 \/ n - 1 e. A} $;
+
+def subset (A B: set) (.x: nat): wff = $ A. x (x e. A -> x e. B) $;
+infixl subset: $C_$ prec 50;
+
+def Power (A: set) (.x: nat): set = $ {x | x C_ A} $;
+def power (a: nat): nat = $ lower (Power a) $;
+
+def card (s: nat): nat;
+theorem card0: $ card 0 = 0 $;
+theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $;
+
+def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
+
+def sep (n: nat) (A: set): nat;
+theorem elsep (n: nat) (A: set) (a: nat):
+  $ a e. sep n A <-> a e. n /\ a e. A $;
+
+def isfun (A: set) (.a .b .b2: nat): wff =
+$ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
+
+def opab {x y .z: nat} (ph: wff x y): set =
+$ {z | E. x E. y (z = x <> y /\ ph)} $;
+
+def Xp (A B: set) (.x .y .z: nat): set = $ opab x y (x e. A /\ y e. B) $;
+
+def Dom (A: set) (.x .y: nat): set = $ {x | E. y x <> y e. A} $;
+def Ran (A: set) (.x .y: nat): set = $ {y | E. x x <> y e. A} $;
+
+def Im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
+infixl Im: $''$ prec 80;
+
+def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
+
+def comp (F G: set) (.x .y .z: nat): set =
+$ opab x z (E. y x <> y e. G /\ y <> z e. F) $;
+infixr comp: $o.$ prec 90;
+
+def res (A: set) (n: nat): nat = $ sep (lower (Xp n V)) A $;
+infixl res: $|`$ prec 55;
+theorem elres (n a b: nat) (A: set):
+  $ isfun A -> (a <> b e. A |` n <-> a e. n /\ a <> b e. A) $;
+
+def Arrow (A B: set) (.f: nat): set =
+$ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
+
+def lam {x .p: nat} (a: nat x): set = ${p | E. x p = x <> a}$;
+notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
+
+def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
+infixl app: $@$ prec 200;
+
+def write (f x y .a .b: nat): nat =
+  $ lower (opab a b (a <> b e. f /\ a != x \/ a = x /\ b = y)) $;
+theorem writeEq (f x y: nat): $ write f x y @ x = y $;
+theorem writeNe (f x y a: nat): $ a != x -> write f x y @ a = f @ a $;
+
+def srec {x: nat} (s: nat x): set;
+theorem srecval {x y: nat} (s: nat x) (n: nat):
+  $ srec x s @ n = N[ srec x s |` upto n / x ] s $;
+
+def srecp (A: set): set;
+theorem srecpval (A: set) (n: nat):
+  $ n e. srecp A <-> n <> sep n (srecp A) e. A $;
+
+def case (A B: set) (.n: nat): set =
+  $ \ n, if (odd n) (B @ (n // 2)) (A @ (n // 2)) $;
+theorem casel (A B: set) (n: nat): $ case A B @ (b0 n) = A @ n $;
+theorem caser (A B: set) (n: nat): $ case A B @ (b1 n) = B @ n $;
+
+def Sum (A B: set): set;
+theorem Suml (A B: set) (n: nat): $ b0 n e. Sum A B <-> n e. A $;
+theorem Sumr (A B: set) (n: nat): $ b1 n e. Sum A B <-> n e. B $;
+
+def all (A: set) (n: nat): wff;
+theorem all0 (A: set): $ all A 0 $;
+theorem allS (A: set) (a b : nat): $ all A (a : b) <-> a e. A /\ all A b $;
+
+def in (a l : nat): wff; infixl in: $IN$ prec 50;
+theorem id0 (a: nat): $ ~ a IN 0 $;
+theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
+
+def lmems (l : nat): nat;
+theorem ellmems (a l: nat): $ a e. lmems l <-> a IN l $;
+
+def lrec (z: nat) (S: set) (n: nat): nat;
+theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $;
+theorem lrecS (z: nat) (S: set) (a b: nat):
+  $ lrec z S (a : b) = S @ (a <> lrec z S b) $;
+
+def len (l: nat): nat;
+theorem len0: $ len 0 = 0 $;
+theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
+
+def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
+theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;
+theorem snocS (a b c: nat): $ (a : b) |> c = a : (b |> c) $;
+theorem snoclt (a b: nat): $ a < a |> b $;
+
+def append (l1 l2: nat): nat; infixl append: $++$ prec 85;
+theorem append0 (a: nat): $ 0 ++ a = a $;
+theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $;
+
+def nth (n l: nat): nat;
+theorem nth0 (n: nat): $ nth n 0 = 0 $;
+theorem nthZ (a l: nat): $ nth 0 (a : l) = suc a $;
+theorem nthS (n a l: nat): $ nth (suc n) (a : l) = nth n l $;
+
+--| #include "peano.mm0"
+
+-- The string preamble. This is used for interfacing with
+-- the real world, making concrete inputs and outputs.
+strict free sort hex;
+term x0: hex; term x1: hex; term x2: hex; term x3: hex;
+term x4: hex; term x5: hex; term x6: hex; term x7: hex;
+term x8: hex; term x9: hex; term xa: hex; term xb: hex;
+term xc: hex; term xd: hex; term xe: hex; term xf: hex;
+
+strict free sort char;
+term ch: hex > hex > char;
+
+strict free sort string;
+term s0: string;
+term s1: char > string;
+term sadd: string > string > string; infixr sadd: $'+$ prec 50;
+
+def scons (c: char) (s: string): string = $ s1 c '+ s $;
+infixr scons: $':$ prec 51;
+
+-- Peano translation functions. The sorts `hex`, `char`, `string`
+-- are closed classes, but we can embed them in `nat` as lists
+-- of numbers less than 256, and prove theorems on `nat` instead.
+-- We have to introduce some axioms to deal with the coercion
+-- functions though.
+
+def d11: nat = $suc 10$; prefix d11: $11$ prec max;
+def d12: nat = $suc 11$; prefix d12: $12$ prec max;
+def d13: nat = $suc 12$; prefix d13: $13$ prec max;
+def d14: nat = $suc 13$; prefix d14: $14$ prec max;
+def d15: nat = $suc 14$; prefix d15: $15$ prec max;
+def d16: nat = $suc 15$; prefix d16: $16$ prec max;
+
+term h2n: hex > nat; coercion h2n: hex > nat;
+axiom h2n0: $ x0 = 0 $;   axiom h2n1: $ x1 = 1 $;
+axiom h2n2: $ x2 = 2 $;   axiom h2n3: $ x3 = 3 $;
+axiom h2n4: $ x4 = 4 $;   axiom h2n5: $ x5 = 5 $;
+axiom h2n6: $ x6 = 6 $;   axiom h2n7: $ x7 = 7 $;
+axiom h2n8: $ x8 = 8 $;   axiom h2n9: $ x9 = 9 $;
+axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
+axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
+axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
+
+term c2n: char > nat; coercion c2n: char > nat;
+axiom c2nch (h1 h2: hex): $ ch h1 h2 = h1 * 16 + h2 $;
+
+term s2n: string > nat; coercion s2n: string > nat;
+axiom s2ns0: $ s0 = 0 $;
+axiom s2ns1 (c: char): $ s1 c = c : 0 $;
+axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+
 --| #include "peano_hex.mm0"
 
 def consBit (b: wff) (n: nat): nat = $ if b (b1 n) (b0 n) $;
@@ -58,6 +406,12 @@ theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $;
 def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
 def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
 def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
+
+def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
+def bitsSar (k a b: nat): nat =
+$ nat (bitsMSB k a) * (upto k - upto (k - b)) + shr a b $;
+theorem bitsSarT (k a b: nat):
+  $ a e. Bits k /\ b <= k -> bitsSar k a b e. Bits k $;
 
 def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
 def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
@@ -685,7 +1039,7 @@ theorem RM_EAreg (k r: nat): $ RM_EA k (RM_reg r) = EA_r r $;
 theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
   EA_m (readIndex k si +_64 readBase k base +_64 q) $;
 theorem RM_EAT (k rm: nat):
-  $ k e. Config /\ rm e. RM -> RM_EA k rm e. u64 $;
+  $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $;
 
 def destEA (k ds: nat): nat;
 theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $;
@@ -701,22 +1055,30 @@ theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $;
 theorem srcEAT (k ds: nat):
   $ k e. Config /\ ds e. DestSrc -> srcEA k ds e. EA $;
 
-def immRM_EA (k ds: nat): nat;
+def immRM_EA (k irm: nat): nat;
 theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $;
 theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $;
 theorem immRM_EAT (k irm: nat):
   $ k e. Config /\ irm e. ImmRM -> immRM_EA k irm e. EA $;
 
-def readEA (k ea sz v: nat): wff;
-theorem readEA_i (k q sz v: nat):
-  $ readEA k (EA_i q) sz v <-> v = chop (wsizeBits sz) q $;
-theorem readEA_r (k r sz v: nat): $ readEA k (EA_r r) sz v <->
-  v = chop (wsizeBits sz)
+def readRegSz (k sz r: nat): nat =
+$ chop (wsizeBits sz)
     (if (sz = wSz8 F. /\ 2 e. r) (shr (readReg k (r - 4)) 8) (readReg k r)) $;
-theorem readEA_m {l: nat} (k a sz v: nat): $ readEA k (EA_m a) sz v <->
+theorem readRegSzT (k sz r: nat):
+  $ k e. Config /\ sz e. WSize /\ r e. Regs ->
+    readRegSz k sz r e. Bits (wsizeBits sz) $;
+
+def readEA (k sz ea v: nat): wff;
+theorem readEA_i (k q sz v: nat):
+  $ readEA k sz (EA_i q) v <-> v = chop (wsizeBits sz) q $;
+theorem readEA_r (k sz r v: nat):
+  $ readEA k sz (EA_r r) v <-> v = readRegSz k sz r $;
+theorem readEA_m {l: nat} (k a sz v: nat): $ readEA k sz (EA_m a) v <->
   v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v) $;
-theorem readEAT (k ea sz v: nat): $ k e. Config /\ ea e. EA /\ sz e. WSize /\
-  readEA k ea sz v -> v e. Bits (wsizeBits sz) $;
+theorem readEAT (k sz ea v: nat): $ k e. Config /\ ea e. EA /\ sz e. WSize /\
+  readEA k sz ea v -> v e. Bits (wsizeBits sz) $;
+
+def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
 
 def setReg (k r q: nat): nat;
 theorem setRegVal (ip rs f m r q: nat):
@@ -724,27 +1086,34 @@ theorem setRegVal (ip rs f m r q: nat):
 theorem setRegT (k r q: nat):
   $ k e. Config /\ r e. Regs /\ q e. u64 -> setReg k r q e. Config $;
 
-def writeReg (k r sz v: nat): nat;
+def writeReg (k sz r v: nat): nat;
 theorem writeReg8 (k r v: nat) (have_rex: wff):
-  $ writeReg k r (wSz8 have_rex) v = if (~have_rex /\ 2 e. r)
+  $ writeReg k (wSz8 have_rex) r v = if (~have_rex /\ 2 e. r)
       (setReg k (r - 4) (bitsUpdate 8 8 v (readReg k (r - 4))))
       (setReg k r (bitsUpdate 0 8 v (readReg k r))) $;
 theorem writeReg16 (k r v: nat):
-  $ writeReg k r wSz16 v = setReg k r (bitsUpdate 0 16 v (readReg k r)) $;
-theorem writeReg32 (k r v: nat): $ writeReg k r wSz32 v = setReg k r v $;
-theorem writeReg64 (k r v: nat): $ writeReg k r wSz64 v = setReg k r v $;
-theorem writeRegT (k r sz v: nat): $ k e. Config /\ r e. Regs /\
-  sz e. WSize /\ v e. Bits (wsizeBits sz) -> writeReg k r sz v e. Config $;
+  $ writeReg k wSz16 r v = setReg k r (bitsUpdate 0 16 v (readReg k r)) $;
+theorem writeReg32 (k r v: nat): $ writeReg k wSz32 r v = setReg k r v $;
+theorem writeReg64 (k r v: nat): $ writeReg k wSz64 r v = setReg k r v $;
+theorem writeRegT (k sz r v: nat): $ k e. Config /\ sz e. WSize /\
+  r e. Regs /\ v e. Bits (wsizeBits sz) -> writeReg k sz r v e. Config $;
 
-def writeEA (k ea sz v k2: nat): wff;
-theorem writeEA_r (k r sz v k2: nat):
-  $ writeEA k (EA_r r) sz v k2 <-> k2 = writeReg k r sz v $;
-theorem writeEA_m {l: nat} (k a sz v k2: nat):
-  $ writeEA k (EA_m a) sz v k2 <->
+def writeEASz (k sz ea v k2: nat): wff;
+theorem writeEASz_i (k sz i v k2: nat): $ ~ writeEASz k sz (EA_i i) v k2 $;
+theorem writeEASz_r (k sz r v k2: nat):
+  $ writeEASz k sz (EA_r r) v k2 <-> k2 = writeReg k sz r v $;
+theorem writeEASz_m {l: nat} (k sz a v k2: nat):
+  $ writeEASz k sz (EA_m a) v k2 <->
     writeMem k a (toBytes (wsizeBits sz) v) k2 $;
-theorem writeEAT (k r sz v k2: nat):
-  $ k e. Config /\ r e. Regs /\ sz e. WSize /\ v e. Bits (wsizeBits sz) /\
-    writeEA k r sz v k2 -> k2 e. Config $;
+theorem writeEASzT (k sz ea v k2: nat):
+  $ k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
+    writeEASz k sz ea v k2 -> k2 e. Config $;
+
+def writeEA (k sz ea v k2: nat): wff =
+$ writeEASz k sz ea (chop (wsizeBits sz) v) k2 $;
+theorem writeEAT (k sz ea v k2: nat):
+  $ k e. Config /\ sz e. WSize /\ ea e. EA /\
+    writeEA k sz ea v k2 -> k2 e. Config $;
 
 def writeRIP (k q: nat): nat;
 theorem writeRIPVal (ip rs f m q: nat):
@@ -773,29 +1142,22 @@ theorem readUnpackFlagsT (k c z s o: nat):
 $ k e. Config /\ readUnpackFlags k c z s o ->
   bool c /\ bool z /\ bool s /\ bool o $;
 
-def setFlags (k f: nat): nat;
-theorem setFlagsVal (ip rs f m f2: nat):
-  $ writeRIP (ip <> rs <> f <> m) f2 = ip <> rs <> f2 <> m $;
-
 def writeFlags (k f: nat): nat;
 theorem writeFlagsVal (ip rs f m f2: nat):
-  $ writeRIP (ip <> rs <> f <> m) f2 = ip <> rs <> f2 <> m $;
+  $ writeFlags (ip <> rs <> f <> m) f2 = ip <> rs <> f2 <> m $;
 
 def setCZSO (k: nat) (c z s o : wff): nat;
 theorem setCZSOVal (ip rs f m : nat) (c z s o: wff):
   $ setCZSO (ip <> rs <> f <> m) c z s o =
     ip <> rs <> setOF (setSF (setZF (setCF f c) z) s) o <> m $;
 
-def MSB (sz w: nat): wff = $ wsizeBits sz - 1 e. w $;
+def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
-def writeArithFlags (k sz w : nat) (c o : wff): nat =
+def writeResultFlags (k sz w : nat) (c o : wff): nat =
 $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;
 
-def writeLogicalFlags (k sz w : nat): nat =
-$ writeArithFlags k sz w F. F. $;
-
 def writeSFZF (k sz w : nat): nat =
-$ writeArithFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
+$ writeResultFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
 
 def eraseFlags (k k2 .ip .rs .f .f2 .m: nat): wff =
 $ E. ip E. rs E. f E. f2 E. m (f2 e. Flags /\
@@ -806,15 +1168,215 @@ theorem eraseFlagsT (k k2: nat):
 def addCarry (sz a b w c o: nat): wff =
 $ w = a +_64 b /\ c = nat (2 ^ wsizeBits sz <= a + b) /\
   o = nat (MSB sz a <-> MSB sz b /\ ~(MSB sz (a +_64 b) <-> MSB sz a)) $;
+theorem addCarryT (sz a b w c o: nat):
+  $ sz e. WSize /\ a e. u64 /\ b e. u64 /\ addCarry sz a b w c o ->
+    w e. u64 /\ bool c /\ bool o $;
 
 def subBorrow (sz a b w c o: nat): wff =
 $ w = a -_64 b /\ c = nat (a < b) /\
-  o = nat (~(MSB sz a <-> MSB sz b) /\ ~(MSB sz (a +_64 b) <-> MSB sz a)) $;
+  o = nat (~(MSB sz a <-> MSB sz b) /\ ~(MSB sz (a -_64 b) <-> MSB sz a)) $;
+theorem subBorrowT (sz a b w c o: nat):
+  $ sz e. WSize /\ a e. u64 /\ b e. u64 /\ subBorrow sz a b w c o ->
+    w e. u64 /\ bool c /\ bool o $;
 
-def writeArithResult (k ea sz w : nat) (c o : wff) (k3: nat): wff =
-$ writeEA (writeArithFlags k sz w c o) ea sz w k3 $;
-
-def writeSFZFResult (k ea sz w : nat) (c o : wff) (k3: nat): wff =
-$ writeEA (writeArithFlags k sz w c o) ea sz w k3 $;
+def writeCFOFResult (k sz ea w : nat) (c o : wff) (k2: nat): wff =
+$ writeEA (writeResultFlags k sz w c o) sz ea w k2 $;
 
 def maskShift (sz w: nat): nat = $ chop (if (wsizeBits sz = 64) 6 5) w $;
+
+def writeBinop (k op sz ea a b k2: nat): wff;
+theorem writeBinopAdd {w c o: nat} (k sz ea a b k2: nat):
+  $ writeBinop k binopAdd sz ea a b k2 <-> E. w E. c E. o (
+      addCarry sz a b w c o /\
+      writeCFOFResult k sz ea w (true c) (true o) k2) $;
+theorem writeBinopSub {w c o: nat} (k sz ea a b k2: nat):
+  $ writeBinop k binopSub sz ea a b k2 <-> E. w E. c E. o (
+      subBorrow sz a b w c o /\
+      writeCFOFResult k sz ea w (true c) (true o) k2) $;
+theorem writeBinopCmp {w c o: nat} (k sz ea a b k2: nat):
+  $ writeBinop k binopCmp sz ea a b k2 <-> E. w E. c E. o (
+      subBorrow sz a b w c o /\
+      k2 = writeResultFlags k sz w (true c) (true o)) $;
+theorem writeBinopTst (k sz ea a b k2: nat):
+  $ writeBinop k binopTst sz ea a b k2 <->
+    k2 = writeResultFlags k sz (bitAnd a b) F. F. $;
+theorem writeBinopAnd (k sz ea a b k2: nat):
+  $ writeBinop k binopAnd sz ea a b k2 <->
+    writeCFOFResult k sz ea (bitAnd a b) F. F. k2 $;
+theorem writeBinopXor (k sz ea a b k2: nat):
+  $ writeBinop k binopXor sz ea a b k2 <->
+    writeCFOFResult k sz ea (bitXor a b) F. F. k2 $;
+theorem writeBinopOr (k sz ea a b k2: nat):
+  $ writeBinop k binopOr sz ea a b k2 <->
+    writeCFOFResult k sz ea (bitOr a b) F. F. k2 $;
+theorem writeBinopShl {k2: nat} (k sz ea a b k3: nat):
+  $ writeBinop k binopShl sz ea a b k3 <->
+    E. k2 (eraseFlags k k2 /\ writeEA k2 sz ea (shl a (maskShift sz b)) k3) $;
+theorem writeBinopShr {k2: nat} (k sz ea a b k3: nat):
+  $ writeBinop k binopShr sz ea a b k3 <->
+    E. k2 (eraseFlags k k2 /\ writeEA k2 sz ea (shr a (maskShift sz b)) k3) $;
+theorem writeBinopSar {k2: nat} (k sz ea a b k3: nat):
+  $ writeBinop k binopSar sz ea a b k3 <->
+    E. k2 (eraseFlags k k2 /\
+      writeEA k2 sz ea (bitsSar (wsizeBits sz) a (maskShift sz b)) k3) $;
+theorem writeBinopAdc (k sz ea a b k2: nat): $ ~ writeBinop k binopAdc sz ea a b k2 $;
+theorem writeBinopSbb (k sz ea a b k2: nat): $ ~ writeBinop k binopSbb sz ea a b k2 $;
+theorem writeBinopRol (k sz ea a b k2: nat): $ ~ writeBinop k binopRol sz ea a b k2 $;
+theorem writeBinopRor (k sz ea a b k2: nat): $ ~ writeBinop k binopRor sz ea a b k2 $;
+theorem writeBinopRcl (k sz ea a b k2: nat): $ ~ writeBinop k binopRcl sz ea a b k2 $;
+theorem writeBinopRcr (k sz ea a b k2: nat): $ ~ writeBinop k binopRcr sz ea a b k2 $;
+theorem writeBinopT (k op sz ea a b k2: nat):
+  $ k e. Config /\ sz e. WSize /\ a e. u64 /\ b e. u64 /\
+    ea e. EA /\ writeBinop k op sz ea a b k2 -> op e. Binop /\ k2 e. Config $;
+
+def writeUnop (k op sz ea a k2: nat): wff;
+theorem writeUnopInc {w c o: nat} (k sz ea a k2: nat):
+  $ writeUnop k unopInc sz ea a k2 <-> E. w E. c E. o (
+      addCarry sz a 1 w c o /\
+      writeCFOFResult k sz ea w (CF (readFlags k)) (true o) k2) $;
+theorem writeUnopDec {w c o: nat} (k sz ea a k2: nat):
+  $ writeUnop k unopDec sz ea a k2 <-> E. w E. c E. o (
+      subBorrow sz a 1 w c o /\
+      writeCFOFResult k sz ea w (CF (readFlags k)) (true o) k2) $;
+theorem writeUnopNot (k sz ea a k2: nat):
+  $ writeUnop k unopNot sz ea a k2 <->
+    writeEA k sz ea (bitsNot (wsizeBits sz) a) k2 $;
+theorem writeUnopNeg {b: nat} (k sz ea a k2: nat):
+  $ writeUnop k unopNeg sz ea a k2 <->
+    [ bitsNeg (wsizeBits sz) a / b ]
+    writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ ~MSB sz b) k2 $;
+
+def popAux (k q k2: nat): wff =
+$ readEA64 k (EA_m (readReg k RSP)) q /\
+  k2 = setReg k RSP (readReg k RSP +_64 8) $;
+theorem popAuxT (k q k2: nat):
+  $ k e. Config /\ popAux k q k2 -> q e. u64 /\ k2 e. Config $;
+
+def popWrite (k rm k3 .q .k2: nat): wff =
+$ E. k2 E. q (popAux k q k2 /\ writeEA k2 (RM_EA k2 rm) wSz64 q k3) $;
+theorem popWriteT (k rm k2: nat):
+  $ k e. Config /\ rm e. RM /\ popWrite k rm k2 -> k2 e. Config $;
+
+def popRIP (k k3 .q .k2: nat): wff =
+$ E. k2 E. q (popAux k q k2 /\ k3 = writeRIP k2 q) $;
+theorem popRIPT (k rm k2: nat):
+  $ k e. Config /\ popRIP k k2 -> k2 e. Config $;
+
+def pushAux (k q k2 .sp: nat): wff =
+$ E. sp (sp = readReg k RSP -_64 8 /\
+    writeEA (setReg k RSP sp) (EA_m sp) wSz64 q k2) $;
+theorem pushAuxT (k q k2: nat):
+  $ k e. Config /\ q e. u64 /\ pushAux k q k2 -> k2 e. Config $;
+
+def pushImmRM (k irm k2 .q: nat): wff =
+$ E. q (readEA64 k (immRM_EA k irm) q /\ pushAux k q k2) $;
+theorem pushImmRMT (k irm k2: nat):
+  $ k e. Config /\ irm e. ImmRM /\ pushImmRM k irm k2 -> k2 e. Config $;
+
+def pushRIP (k k2 .q: nat): wff = $ pushAux k (readRIP k) k2 $;
+theorem pushRIPT (k irm k2: nat):
+  $ k e. Config /\ pushRIP k k2 -> k2 e. Config $;
+
+def divModSz (sz a b d m: nat): wff =
+$ b != 0 /\ d e. Bits (wsizeBits sz) /\ d = a // b /\ m = a % b $;
+
+def execXAST (k ast k2: nat): wff;
+theorem execXASTUnop {q: nat} (k op sz rm k2: nat):
+  $ execXAST k (xastUnop op sz rm) k2 <-> E. q (
+      readEA k sz (RM_EA k rm) q /\
+      writeUnop k op sz (RM_EA k rm) q k2) $;
+theorem execXASTBinop {d s: nat} (k op sz ds k2: nat):
+  $ execXAST k (xastBinop op sz ds) k2 <-> E. d E. s (
+      readEA k sz (destEA k ds) d /\
+      readEA k sz (srcEA k ds) s /\
+      writeBinop k op sz (destEA k ds) d s k2) $;
+theorem execXASTMul {n src res lo hi: nat} (k sz rm k2: nat):
+  $ execXAST k (xastMul sz rm) k2 <-> E. n E. src E. res (
+      n = wsizeBits sz /\
+      readEA k sz (RM_EA k rm) src /\
+      res = readRegSz k sz RAX * src /\
+      ifp (n = 8)
+        (k2 = writeReg k wSz16 RAX res)
+        (E. lo E. hi (
+          splitBits ((n <> lo) : (n <> hi) : 0) res /\
+          k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $;
+theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
+  $ execXAST k (xastDiv sz rm) k2 <-> E. n E. a E. b E. d E. m (
+      n = wsizeBits sz /\
+      readEA k sz (RM_EA k rm) b /\
+      divModSz sz a b d m /\
+      ifp (n = 8)
+        (a = readRegSz k wSz16 RAX /\
+          eraseFlags (writeReg k sz RAX (shl m 8 + d)) k2)
+        (splitBits ((n <> readRegSz k sz RAX) :
+                    (n <> readRegSz k sz RDX) : 0) a /\
+          eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $;
+theorem execXASTLea (k sz ds k2: nat):
+  $ execXAST k (xastLea sz ds) k2 <->
+    writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $;
+theorem execXASTMovSX {src: nat} (k sz ds sz2 k2: nat):
+  $ execXAST k (xastMovSX sz ds sz2) k2 <-> E. src (
+      readEA k sz (srcEA k ds) src /\
+      writeEA k sz2 (destEA k ds)
+        (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $;
+theorem execXASTMovZX {src: nat} (k sz ds sz2 k2: nat):
+  $ execXAST k (xastMovZX sz ds sz2) k2 <-> E. src (
+      readEA k sz (srcEA k ds) src /\
+      writeEA k sz2 (destEA k ds) src k2) $;
+theorem execXASTXchg {v: nat} (k sz rm r k2: nat):
+  $ execXAST k (xastXchg sz rm r) k2 <-> E. v (
+      readEA k sz (RM_EA k rm) v /\
+      writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $;
+theorem execXASTCmpXchg {src acc dst k2: nat} (k sz rm r k3: nat):
+  $ execXAST k (xastCmpXchg sz rm r) k3 <-> E. src E. acc E. dst E. k2 (
+      acc = readRegSz k sz RAX /\
+      readEA k sz (RM_EA k rm) dst /\
+      writeBinop k binopCmp sz (EA_r r) acc dst k2 /\
+      ifp (acc = dst)
+        (writeEA k2 sz (RM_EA k rm) (readRegSz k sz r) k3)
+        (writeEA k2 sz (EA_r RAX) dst k3)) $;
+theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
+  $ execXAST k (xastXadd sz rm r) k2 <-> E. v (
+      readEA k sz (RM_EA k rm) v /\
+      writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $;
+theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
+  $ execXAST k (xastCMov c sz ds) k2 <->
+      ifp (readCond k c)
+        (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
+        (k2 = k) $;
+theorem execXASTSetCC {v: nat} (k c b rm k2: nat):
+  $ execXAST k (xastSetCC c b rm) k2 <->
+    writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $;
+theorem execXASTJump {v: nat} (k rm k2: nat):
+  $ execXAST k (xastJump rm) k2 <-> E. v (
+      readEA k wSz64 (RM_EA k rm) v /\ k2 = writeRIP k v) $;
+theorem execXASTJCC (k c q k2: nat):
+  $ execXAST k (xastJCC c q) k2 <->
+    k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $;
+theorem execXASTCall {k2: nat} (k irm k3: nat):
+  $ execXAST k (xastCall irm) k3 <-> E. k2 (
+    pushRIP k k2 /\ EA_jump k2 (immRM_EA k irm) k2) $;
+theorem execXASTRet {k2: nat} (k q k3: nat):
+  $ execXAST k (xastRet q) k3 <-> E. k2 (
+    popRIP k k2 /\ k3 = setReg k RSP (readReg k RSP +_64 q)) $;
+theorem execXASTPush (k irm k2: nat):
+  $ execXAST k (xastPush irm) k2 <-> pushImmRM k irm k2 $;
+theorem execXASTPop (k rm k2: nat):
+  $ execXAST k (xastPop rm) k2 <-> popWrite k rm k2 $;
+theorem execXASTLeave (k k2: nat):
+  $ execXAST k xastLeave k2 <->
+    popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
+theorem execXASTCLC (k k2: nat):
+  $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
+theorem execXASTSTC (k k2: nat):
+  $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
+theorem execXASTCMC (k k2: nat):
+  $ execXAST k xastCMC k2 <->
+    k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
+theorem execXASTCMC (k k2: nat):
+  $ execXAST k xastCMC k2 <->
+    k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
+theorem execXASTInt (k n k2: nat): $ ~ execXAST k (xastInt n) k2 $; -- TODO
+
+theorem execASTT (k ast k2: nat):
+  $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
