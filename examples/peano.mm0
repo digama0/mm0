@@ -120,6 +120,9 @@ def nat (ph: wff): nat = $ if ph 1 0 $;
 
 def ifp (ph a b: wff): wff = $ true (if ph (nat a) (nat b)) $;
 
+def min (a b: nat): nat = $ if (a < b) a b $;
+def max (a b: nat): nat = $ if (a < b) b a $;
+
 def pr (a b: nat): nat; infixr pr: $<>$ prec 54;
 def fst (a: nat): nat;
 def snd (a: nat): nat;
@@ -264,6 +267,8 @@ def all (A: set) (n: nat): wff;
 theorem all0 (A: set): $ all A 0 $;
 theorem allS (A: set) (a b : nat): $ all A (a : b) <-> a e. A /\ all A b $;
 
+def List (A: set) (.n: nat): set = $ {n | all A n} $;
+
 def in (a l : nat): wff; infixl in: $IN$ prec 50;
 theorem id0 (a: nat): $ ~ a IN 0 $;
 theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
@@ -279,6 +284,8 @@ theorem lrecS (z: nat) (S: set) (a b: nat):
 def len (l: nat): nat;
 theorem len0: $ len 0 = 0 $;
 theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
+
+def Array (A: set) (n .l: nat): set = $ {l | l e. List A /\ len l = n} $;
 
 def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
 theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;

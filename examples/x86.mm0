@@ -120,6 +120,9 @@ def nat (ph: wff): nat = $ if ph 1 0 $;
 
 def ifp (ph a b: wff): wff = $ true (if ph (nat a) (nat b)) $;
 
+def min (a b: nat): nat = $ if (a < b) a b $;
+def max (a b: nat): nat = $ if (a < b) b a $;
+
 def pr (a b: nat): nat; infixr pr: $<>$ prec 54;
 def fst (a: nat): nat;
 def snd (a: nat): nat;
@@ -264,6 +267,8 @@ def all (A: set) (n: nat): wff;
 theorem all0 (A: set): $ all A 0 $;
 theorem allS (A: set) (a b : nat): $ all A (a : b) <-> a e. A /\ all A b $;
 
+def List (A: set) (.n: nat): set = $ {n | all A n} $;
+
 def in (a l : nat): wff; infixl in: $IN$ prec 50;
 theorem id0 (a: nat): $ ~ a IN 0 $;
 theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
@@ -279,6 +284,8 @@ theorem lrecS (z: nat) (S: set) (a b: nat):
 def len (l: nat): nat;
 theorem len0: $ len 0 = 0 $;
 theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
+
+def Array (A: set) (n .l: nat): set = $ {l | l e. List A /\ len l = n} $;
 
 def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
 theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;
@@ -379,7 +386,7 @@ def toBytes (k n: nat): nat;
 theorem toBytes0 (k n: nat): $ toBytes 0 n = 0 $;
 theorem toBytesS (k n: nat):
   $ toBytes (suc k) n = (n // 256) : toBytes k (n % 256) $;
-theorem toBytesT (k n: nat): $ all u8 (toBytes k n) $;
+theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
 
 def u16Bytes (n: nat): nat = $ toBytes 2 n $;
 def u32Bytes (n: nat): nat = $ toBytes 4 n $;
@@ -422,27 +429,34 @@ def bvSize (bs: nat): nat;
 theorem bvSize0 (n: nat): $ bvSize 0 = 0 $;
 theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
 
-def isBitvecs (k bs: nat): wff = $ all Bitvec bs /\ bvSize bs = k $;
+def isBitvecs (k bs: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
 
 def ofBits (n: nat): nat;
 theorem ofBits0 (n: nat): $ ofBits 0 = 0 $;
 theorem ofBitsS (k bs n: nat):
   $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $;
-theorem ofBitsT (bs: nat): $ all Bitvec bs /\ ofBits 0 e. Bits 0 $;
+theorem ofBitsT (bs: nat): $ bs e. List Bitvec /\ ofBits 0 e. Bits 0 $;
 theorem ofBitsT (k bs n m: nat):
   $ bs e. Bits k /\ ofBits n e. Bits m ->
     ofBits ((k <> bs) : n) e. Bits (k + m) $;
 
-def splitBits (bs n: nat): wff = $ all Bitvec bs /\ ofBits bs = n $;
+def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
 theorem splitBitsT (bs n k: nat):
   $ isBitvecs bs k /\ splitBits bs n -> n e. Bits k $;
+
+----------------------------------------
+-- x86-64 machine code decoding
+----------------------------------------
 
 def Regs: set = $ Bits 4 $;
 def RAX: nat = $ 0 $; theorem RAXT: $ RAX e. Regs $;
 def RCX: nat = $ 1 $; theorem RCXT: $ RCX e. Regs $;
 def RDX: nat = $ 2 $; theorem RDXT: $ RDX e. Regs $;
+def RBX: nat = $ 3 $; theorem RBXT: $ RBX e. Regs $;
 def RSP: nat = $ 4 $; theorem RSPT: $ RSP e. Regs $;
 def RBP: nat = $ 5 $; theorem RBPT: $ RBP e. Regs $;
+def RSI: nat = $ 6 $; theorem RSIT: $ RSI e. Regs $;
+def RDI: nat = $ 7 $; theorem RDIT: $ RDI e. Regs $;
 
 def REX: set = $ Option (Bits 4) $;
 def REX_val (r: nat): nat = $ r - 1 $;
@@ -484,7 +498,7 @@ $ (mod = 0 /\ q = 0 /\ l = 0) \/
   (E. w (w e. u32 /\ mod = 2 /\ q = sExtq 32 w /\ l = u32Bytes w)) $;
 theorem readDisplacementT (mod q l: nat):
   $ readDisplacement mod q l ->
-    mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ all u8 l $;
+    mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ l e. List u8 $;
 
 def readSIBDisplacement (mod bbase q base l .b: nat): wff =
 $ ifp (bbase = RBP /\ mod = 0)
@@ -492,7 +506,7 @@ $ ifp (bbase = RBP /\ mod = 0)
     (readDisplacement mod q l /\ base = base_reg bbase) $;
 theorem readSIBDisplacementT (mod bbase q base l: nat):
   $ bbase e. Regs /\ readSIBDisplacement mod bbase q base l ->
-    mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ base e. Base /\ all u8 l $;
+    mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ base e. Base /\ l e. List u8 $;
 
 def readSIB (rex mod rm l .b .bs .ix .sc .disp .bbase .index: nat): wff =
 $ E. b E. bs E. ix E. sc E. disp E. bbase E. index (
@@ -502,7 +516,7 @@ $ E. b E. bs E. ix E. sc E. disp E. bbase E. index (
     rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp) $;
 theorem readSIBT (rex mod rm l: nat):
   $ readSIB rex mod rm l ->
-    mod e. Bits 2 /\ mod != 3 /\ rm e. RM /\ all u8 l $;
+    mod e. Bits 2 /\ mod != 3 /\ rm e. RM /\ l e. List u8 $;
 
 def readModRM (rex rn rm l .b .rm2 .opc .mod .i .l2 .disp: nat): wff =
 $ E. b E. rm2 E. opc E. mod (
@@ -520,24 +534,24 @@ $ E. b E. rm2 E. opc E. mod (
         (E. disp (readDisplacement mod disp l2 /\
           rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))) $;
 theorem readModRMT (rex rn rm l: nat):
-  $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ all u8 l $;
+  $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $;
 
 def readOpcodeModRM (rex v rm l .rn: nat): wff =
 $ E. rn (readModRM rex rn rm l /\ v = chop 3 rn) $;
 theorem readOpcodeModRMT (rex v rm l: nat):
-  $ readOpcodeModRM rex v rm l -> v e. Bits 3 /\ rm e. RM /\ all u8 l $;
+  $ readOpcodeModRM rex v rm l -> v e. Bits 3 /\ rm e. RM /\ l e. List u8 $;
 
 def readPrefixes (rex l .b .rex2: nat): wff =
 $ (rex = 0 /\ l = 0) \/ (E. b E. rex2 (
     splitBits ((4 <> rex2) : (4 <> 4) : 0) b /\
     rex = suc rex2 /\ l = b : 0)) $;
 theorem readPrefixesT (rex l: nat):
-  $ readPrefixes rex l -> rex e. REX /\ all u8 l $;
+  $ readPrefixes rex l -> rex e. REX /\ l e. List u8 $;
 
 def readImmN (k q l .w: nat): wff =
 $ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
 theorem readImmNT (k q l: nat):
-  $ k <= 64 /\ readImmN k q l -> q e. u64 /\ all u8 l $;
+  $ k <= 64 /\ readImmN k q l -> q e. u64 /\ l e. List u8 $;
 
 def WSize (.n: nat): set = $ lower (
   Inter (Xp (8 ; 16 ; 32 ; sn 64) Bool) {n | fst n = 8 \/ snd n = 0}) $;
@@ -551,12 +565,12 @@ def wSz64: nat = $ 64 <> 0 $;
 def readFullImm (sz q l: nat): wff =
 $ readImmN (wsizeBits sz) q l $;
 theorem readFullImmT (sz q l: nat):
-  $ sz e. WSize /\ readFullImm sz q l -> q e. u64 /\ all u8 l $;
+  $ sz e. WSize /\ readFullImm sz q l -> q e. u64 /\ l e. List u8 $;
 
 def readImm (sz q l: nat): wff =
 $ readFullImm sz q l /\ wsizeBytes sz < 8 $;
 theorem readImmT (sz q l: nat):
-  $ sz e. WSize /\ readImm sz q l -> q e. u64 /\ all u8 l $;
+  $ sz e. WSize /\ readImm sz q l -> q e. u64 /\ l e. List u8 $;
 
 def opSize (have_rex: wff) (w v: nat): nat =
 $ if (true v) (if (true w) wSz64 wSz32) (wSz8 have_rex) $;
@@ -653,11 +667,11 @@ def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
 def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
 def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 
-def XASTMisc: set = $ Sum (upto 3) u8 $;
-def xastCMC: nat = $ b1 (b1 (b0 0)) $;
-def xastCLC: nat = $ b1 (b1 (b0 1)) $;
-def xastSTC: nat = $ b1 (b1 (b0 2)) $;
-def xastInt (n: nat): nat = $ b1 (b1 (b1 n)) $;
+def XASTMisc: set = $ upto 4 $;
+def xastCMC: nat = $ b1 (b1 0) $;
+def xastCLC: nat = $ b1 (b1 1) $;
+def xastSTC: nat = $ b1 (b1 2) $;
+def xastSysCall: nat = $ b1 (b1 3) $;
 
 def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
 
@@ -704,7 +718,7 @@ theorem xastLeaveT: $ xastLeave e. XAST $;
 theorem xastCMCT: $ xastCMC e. XAST $;
 theorem xastCLCT: $ xastCLC e. XAST $;
 theorem xastSTCT: $ xastSTC e. XAST $;
-theorem xastIntT (n: nat): $ n e. u8 -> xastInt n e. XAST $;
+theorem xastSysCallT: $ xastSysCall e. XAST $;
 
 def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4 <> c) : (4 <> 4) : 0) b /\
@@ -733,12 +747,15 @@ $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readModRM rex reg r l /\
     ast = xastXadd (opSizeW rex v) r reg) $;
+def decodeTwoSysCall (rex ast b l .v .reg .r: nat): wff =
+$ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 
 def decodeTwo (rex ast b l .b2 .l2: nat): wff =
 $ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ (
     decodeTwoCMov rex ast b2 l2 \/ decodeTwoJCC rex ast b2 l2 \/
     decodeTwoSetCC rex ast b2 l2 \/ decodeTwoCmpXchg rex ast b2 l2 \/
-    decodeTwoMovX rex ast b2 l2 \/ decodeTwoXadd rex ast b2 l2)) $;
+    decodeTwoMovX rex ast b2 l2 \/ decodeTwoXadd rex ast b2 l2 \/
+    decodeTwoSysCall rex ast b2 l2)) $;
 
 def decodeBinopReg (rex ast b l .v .d .opc .reg .r: nat): wff =
 $ E. v E. d E. opc E. reg E. r (
@@ -887,13 +904,10 @@ $ (b = ch xf x5 /\ l = 0 /\ ast = xastCMC) \/
   (b = ch xf x8 /\ l = 0 /\ ast = xastCLC) \/
   (b = ch xf x9 /\ l = 0 /\ ast = xastSTC) $;
 
-def decodeInt (rex ast b l .imm: nat): wff =
-$ E. imm (imm e. u8 /\ b = ch xc xd /\ l = imm : 0 /\ ast = xastInt imm) $;
-
 def decodeMisc (rex ast b l: nat): wff =
 $ decodeXchg rex ast b l \/ decodeLea rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
-  decodeFlag rex ast b l \/ decodeInt rex ast b l $;
+  decodeFlag rex ast b l $;
 
 def decodeHiAux (v sz r hi n ast l .imm: nat): wff =
 $ ifp (true hi)
@@ -924,11 +938,9 @@ $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
   decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
   decodeHi rex ast b l $;
 
-def decode (rex ast b l: nat): wff =
-$ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
-  decodePush rex ast b l \/ decodePop rex ast b l \/
-  decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
-  decodeHi rex ast b l $;
+def decode (ast l .rex .l1 .opc .l2: nat): wff =
+$ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
+    readPrefixes rex l1 /\ decodeAux rex ast opc l2) $;
 
 ----------------------------------------
 -- Dynamic semantics
@@ -962,7 +974,12 @@ theorem readCondFAlways (f: nat): $ readCondF f condAlways $;
 theorem readCondFPos (f c: nat): $ readCondF f (condPos c) <-> readBCond f c $;
 theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f c $;
 
-def Memory: set = $ Arrow u64 (Option (Xp Bool u8)) $;
+def Prot: set = $ Bits 3 $;
+def PROT_READ: nat = $ 1 $;
+def PROT_WRITE: nat = $ 2 $;
+def PROT_EXEC: nat = $ 4 $;
+
+def Memory: set = $ Arrow u64 (Xp Prot u8) $;
 
 def Config: set = $ Xp u64 (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
 theorem finiteConfig: $ finite Config $;
@@ -972,24 +989,32 @@ def readReg (k r: nat): nat = $ pi21 k @ r $;
 def readFlags (k: nat): nat = $ pi221 k $;
 def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
-def readMemory1 (m a b .ro: nat): wff = $ E. ro m @ a = suc (ro <> b) $;
-theorem readMemory1T (m a b: nat):
-  $ m e. Memory /\ a e. u64 /\ readMemory1 m a b -> b e. u8 $;
+def readMemory1 (ps m a b .prot: nat): wff =
+$ E. prot (m @ a = prot <> b /\ ps C_ prot) $;
+theorem readMemory1T (ps m a b: nat):
+  $ ps e. Prot /\ m e. Memory /\ a e. u64 /\ readMemory1 ps m a b -> b e. u8 $;
 
-def readMemory (m a l: nat): wff;
-theorem readMemory0 (m a: nat): $ readMemory m a 0 $;
-theorem readMemoryS (m a b l: nat):
-  $ readMemory m a (b : l) <->
-    readMemory1 m a b /\ readMemory m (a +_64 1) l $;
-theorem readMemoryT (m a l: nat):
-  $ m e. Memory /\ a e. u64 /\ readMemory m a l -> all u64 l $;
+def readMemory (ps m a l: nat): wff;
+theorem readMemory0 (ps m a: nat): $ readMemory ps m a 0 $;
+theorem readMemoryS (ps m a b l: nat):
+  $ readMemory ps m a (b : l) <->
+    readMemory1 ps m a b /\ readMemory ps m (a +_64 1) l $;
+theorem readMemoryT (ps m a l: nat):
+  $ ps e. Prot /\ m e. Memory /\ a e. u64 /\
+    readMemory ps m a l -> l e. List u8 $;
 
-def readMem (k a l: nat): wff = $ readMemory (pi222 k) a l $;
+def readMem (k a l: nat): wff = $ readMemory PROT_READ (pi222 k) a l $;
 theorem readMemT (k a l: nat):
-  $ k e. Config /\ a e. u64 /\ readMem k a l -> all u64 l $;
+  $ k e. Config /\ a e. u64 /\ readMem k a l -> l e. List u8 $;
 
-def writeMemory1 (m a b m2 .b2 .i: nat): wff =
-$ (E. b2 m @ i = suc (1 <> b2)) /\ m2 = write m a (suc (1 <> b)) $;
+def readMemX (k a l: nat): wff =
+$ readMemory (PROT_READ + PROT_EXEC) (pi222 k) a l $;
+theorem readMemXT (k a l: nat):
+  $ k e. Config /\ a e. u64 /\ readMemX k a l -> l e. List u8 $;
+
+def writeMemory1 (m a b m2 .prot .b2: nat): wff =
+$ E. prot E. b2 (PROT_READ + PROT_WRITE C_ prot /\
+  m @ a = prot <> b2 /\ m2 = write m a (prot <> b)) $;
 
 def writeMemory (m a l m2: nat): wff;
 theorem writeMemory0 (m a l m2: nat): $ writeMemory m a l m2 <-> m2 = m $;
@@ -997,15 +1022,33 @@ theorem writeMemoryS {m2: nat} (m a b l m3: nat):
   $ writeMemory m a (b : l) m3 <->
     E. m2 (writeMemory1 m a b m2 /\ writeMemory m2 (a +_64 1) l m3) $;
 theorem writeMemoryT (m a l m2: nat):
-  $ m e. Memory /\ a e. u64 /\ all u64 l /\
+  $ m e. Memory /\ a e. u64 /\ l e. List u8 /\
     writeMemory m a l m2 -> m2 e. Memory $;
 
 def writeMem (k a l k2 .ip .r .f .m .m2: nat): wff =
 $ E. ip E. r E. f E. m E. m2 (writeMemory m a l m2 /\
   k = ip <> r <> f <> m /\ k2 = ip <> r <> f <> m2) $;
 theorem writeMemT (k a l k2: nat):
-  $ k e. Config /\ a e. u64 /\ all u64 l /\
+  $ k e. Config /\ a e. u64 /\ l e. List u8 /\
     writeMem k a l k2 -> k2 e. Config $;
+
+def mapMemory1 (prot m a b m2: nat): wff = $ m2 = write m a (prot <> b) $;
+
+def mapMemory (prot m a l m2: nat): wff;
+theorem mapMemory0 (prot m a l m2: nat): $ mapMemory prot m a l m2 <-> m2 = m $;
+theorem mapMemoryS {m2: nat} (prot m a b l m3: nat):
+  $ mapMemory prot m a (b : l) m3 <->
+    E. m2 (mapMemory1 prot m a b m2 /\ mapMemory prot m2 (a +_64 1) l m3) $;
+theorem mapMemoryT (prot m a l m2: nat):
+  $ prot e. Prot /\ m e. Memory /\ a e. u64 /\ l e. List u8 /\
+    mapMemory prot m a l m2 -> m2 e. Memory $;
+
+def mapMem (prot k a l k2 .ip .r .f .m .m2: nat): wff =
+$ E. ip E. r E. f E. m E. m2 (mapMemory prot m a l m2 /\
+  k = ip <> r <> f <> m /\ k2 = ip <> r <> f <> m2) $;
+theorem mapMemT (prot k a l k2: nat):
+  $ prot e. Prot /\ k e. Config /\ a e. u64 /\ l e. List u8 /\
+    mapMem prot k a l k2 -> k2 e. Config $;
 
 def EA: set = $ Sum Regs (Xp Bool u64) $;
 def EA_i (q: nat): nat = $ b1 (0 <> q) $;
@@ -1376,7 +1419,170 @@ theorem execXASTCMC (k k2: nat):
 theorem execXASTCMC (k k2: nat):
   $ execXAST k xastCMC k2 <->
     k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
-theorem execXASTInt (k n k2: nat): $ ~ execXAST k (xastInt n) k2 $; -- TODO
+theorem execXASTSysCall (k n k2: nat):
+  $ ~ execXAST k xastSysCall k2 $; -- not handled here
 
-theorem execASTT (k ast k2: nat):
+theorem execXASTT (k ast k2: nat):
   $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
+
+-- This is the step relation for the x86 semantic model, excluding IO.
+-- `step k k2` means that k2 is a possible next state after k. Multiple
+-- next states may exist in the case of undefined/nondeterministic behavior,
+-- and no next states means the state is either invalid or an IO call.
+def step (k k2 .l .ast: nat): wff =
+$ k e. Config /\ E. l E. ast (
+  readMemX k (readRIP k) l /\
+  decode ast l /\
+  execXAST (writeRIP k (readRIP k +_64 len l)) ast k2) $;
+theorem stepT (k k2: nat): $ step k k2 -> k e. Config /\ k2 e. Config $;
+
+-- This is a valid terminating state - the state immediately before calling
+-- a system call (we model the x86-64 SYSCALL instruction instead of INT).
+-- Here k2 is the state that the kernel sees, with RCX and RIP set to
+-- the point after the call.
+def isIO (k k2 .l .rip: nat): wff =
+$ k e. Config /\ E. l E. rip (
+  readMemX k (readRIP k) l /\
+  decode xastSysCall l /\
+  rip = readRIP k +_64 len l /\
+  k2 = setReg (writeRIP k rip) RCX rip) $;
+
+----------------------------------------
+-- IO semantics
+----------------------------------------
+
+-- Now we model enough of the Linux kernel to interpret a few IO system calls.
+def KernelState: set = $ Xp (Xp (List u8) (List u8)) Config $;
+
+def stdin: nat = $ 0 $;
+def stdout: nat = $ 1 $;
+
+def readCStr (k a s .c: nat): wff =
+$ all {c | c != 0} s /\ readMem k a (s |> 0) $;
+theorem readCStrT (k a s: nat):
+  $ k e. Config /\ a e. u64 /\ readCStr k a s -> s e. List u8 $;
+
+def O_RDONLY: nat = $ 0 $;
+def O_WRONLY: nat = $ 1 $;
+def O_CREAT: nat = $ shl 1 6 $;
+def O_TRUNC: nat = $ shl 1 9 $;
+
+def sys_open: nat = $ 2 $;
+def execOpen (k ret .filename .flags: nat): wff =
+$ readReg k RAX = sys_open /\ E. filename E. flags (
+    readCStr k (readReg k RDI) filename /\
+    flags = readReg k RSI /\ readReg k RDX = 0 /\
+    (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
+    ret e. u32) $;
+
+-- we only track progress through stdin
+def readFromFD (fd l l1 l2: nat): wff =
+$ ifp (fd = stdin)
+    (l = l1 ++ l2 /\ (l1 = 0 -> l2 = 0))
+    (l = l2 /\ l1 e. List u8) $;
+
+def sys_read: nat = $ 0 $;
+def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
+$ readReg k RAX = sys_read /\ E. fd E. buf E. count (
+    readReg k RDI = fd /\
+    readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
+    count = readReg k RDX /\
+    ifp (MSB 32 ret)
+      (l2 = l /\ k2 = k)
+      (ret <= count /\ E. l1 (readFromFD fd l l1 l2 /\
+        writeMem k (readReg k RSI) l1 k2))) $;
+
+-- we only track printing to stdout
+def writeToFD (fd l l1 l2: nat): wff =
+$ l2 = if (fd = stdout) (l ++ l1) l $;
+
+def sys_write: nat = $ 1 $;
+def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
+$ readReg k RAX = sys_write /\ E. fd E. buf E. count (
+    readReg k RDI = fd /\
+    readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
+    ifp (MSB 32 ret) (l2 = l)
+      (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
+        readMem k (readReg k RSI) l1))) $;
+
+def Stat: set = $ Array u8 (8 * 10) $;
+def sys_fstat: nat = $ 5 $;
+def execFStat (k k2 ret .fd .stat .stat2: nat): wff =
+$ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
+    fd = readReg k RDI /\ fd e. u32 /\
+    readMem k (readReg k RSI) stat /\
+    stat e. Stat /\ stat2 e. Stat /\
+    ret e. u32 /\ writeMem k (readReg k RSI) stat2 k2) $;
+
+def sys_mmap: nat = $ 9 $;
+def MAP_PRIVATE: nat = $ 2 $;
+def MAP_ANONYMOUS: nat = $ 32 $;
+def MAP_FAILED: nat = $ bitsNeg 64 1 $;
+def execMMap (k k2 ret .len .prot .flags .fd .off .buf: nat): wff =
+$ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
+    readReg k RDI = 0 /\ len = readReg k RSI /\
+    prot = readReg k RDX /\ flags = readReg k 10 /\
+    fd = readReg k 8 /\ off = readReg k 9 /\
+    flags = MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS /\
+    prot e. Prot /\ off = 0 /\ ret e. u64 /\
+    ifp (ret = MAP_FAILED) (k2 = k)
+      (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
+        mapMem prot k ret buf k2))) $;
+
+def execIO (i o k0 i2 o2 k3 .k .k2 .ret: nat): wff =
+$ E. k E. k2 E. ret (isIO k0 k /\ k3 = setReg k2 RAX ret /\ (
+    execOpen k ret /\ i2 = i /\ o2 = o /\ k2 = k \/
+    execRead i k i2 k2 ret /\ o2 = o \/
+    execWrite o k o2 ret /\ i2 = i /\ k2 = k \/
+    execFStat k k2 ret /\ i2 = i /\ o2 = o \/
+    execMMap k k2 ret /\ i2 = i /\ o2 = o)) $;
+theorem execIOT (i o k i2 o2 k2: nat):
+  $ i e. List u8 /\ o e. List u8 /\ k e. Config /\ execIO i o k i2 o2 k2 ->
+    i2 e. List u8 /\ o2 e. List u8 /\ k2 e. Config $;
+
+def sys_exit: nat = $ ch x3 xc $;
+def execExit (k ret: nat): wff =
+$ readReg k RAX = sys_exit /\ ret e. u32 /\ ret = readReg k RDI $;
+
+-- This is the composite step relation for the extended state.
+-- This mixes regular steps of the machine with IO steps where
+-- we hand control to the (POSIX-compliant) Linux kernel and axiomatize
+-- the behavior. (We could avoid this, but if we go any lower level than
+-- this we won't be able to run the result as a normal program - we will have
+-- to replace the bootloader and so on to make a single program OS.)
+def ksStep (ks ks2: nat): wff;
+theorem ksStepVal (i o k i2 o2 k2: nat):
+  $ ksStep ((i <> o) <> k) ((i2 <> o2) <> k2) <->
+    ((i <> o) <> k) e. KernelState /\
+    ((i2 = i /\ o2 = o /\ step k k2) \/ execIO i o k i2 o2 k2) $;
+theorem ksStepT (ks ks2: nat):
+  $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
+
+def ksPath (ks l ks2: nat): wff;
+theorem ksPath0 (ks l ks2: nat):
+  $ ksPath ks 0 ks2 <-> ks e. KernelState /\ ks2 = ks $;
+theorem ksPathS (ks ks2 l ks3: nat):
+  $ ksPath ks (ks2 : l) ks3 <-> ksStep ks ks2 /\ ksPath ks2 l ks3 $;
+theorem ksPathT (ks l ks2: nat):
+  $ ksPath ks l ks2 ->
+    ks e. KernelState /\ all KernelState l /\ ks2 e. KernelState $;
+
+def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
+
+-- `runToComplete k i o` asserts that starting from initial configuration k,
+-- given `i` on standard input, with the ability to read more files as
+-- necessary, the program always reaches the exit point and returns a value,
+-- and moreover, if it returns 0, then it has consumed the entire input and
+-- returned `o`. (Nondeterminism is not permitted to affect the output `o`.)
+def alwaysTerminates (k i o .ks .k2 .i2 .o2 .ret: nat): wff =
+$ A. ks (ksReachable ((i <> 0) <> k) ks ->
+    E. k2 E. i2 E. o2 E. ret (ksReachable ks ((i2 <> o2) <> k2) /\
+      execExit k2 ret /\ (ret = 0 -> i2 = 0 /\ o2 = o))) $;
+
+-- `succeeds k i o` asserts that starting from initial configuration k,
+-- given `i` on standard input, the program reaches the exit point and returns
+-- success (exit code 0), and puts `o` on standard out.
+def succeeds (k i o .i2 .k2: nat): wff =
+$ E. i2 E. k2 (
+    ksReachable ((i <> 0) <> k) ((i2 <> o) <> k2) /\
+    execExit k2 0) $;

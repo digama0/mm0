@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include "types.c"
 
+#define UNREACHABLE() __builtin_unreachable()
 #define EASSERT(err, e, cond) \
   if (__builtin_expect(!(cond), 0)) { \
     fprintf(stderr, err); \
@@ -51,6 +52,7 @@ u32 expr_unpack(u8* cmd, u32* bp, u32* data, u64* type) {
       return sizeof(cmd_expr32);
     } break;
   }
+  UNREACHABLE();
 }
 
 u32 proof_unpack(u8* cmd, u32* bp, u32* data) {
@@ -77,6 +79,7 @@ u32 proof_unpack(u8* cmd, u32* bp, u32* data) {
       return sizeof(cmd_proof32);
     } break;
   }
+  UNREACHABLE();
 }
 
 bool sorts_compatible(u64 from, u64 to) {
@@ -214,7 +217,7 @@ int read_cmds(read_mode mode, u64* args, u64* args_end, u32 heap_sz,
     cmd += sz;
   }
   *cmd_out = last_cmd;
-
+  return 0;
 }
 
 int verify(u64 len, u8* file) {

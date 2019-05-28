@@ -13,7 +13,7 @@
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    fprintf(stderr, "Incorrect args; use 'mm0-c MM0-FILE MMB-FILE'\n");
+    fprintf(stderr, "Incorrect args; use 'mm0-c MMB-FILE < MM0-FILE'\n");
     return ERR_ARGS;
   }
 
