@@ -162,6 +162,8 @@ theorem div0 (a: nat): $ a // 0 = 0 $;
 theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
 theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
 
+def dvd (a b .c: nat): wff = $ E. c c * a = b $;
+
 def b0 (n: nat): nat = $ n + n $;
 def b1 (n: nat): nat = $ suc (b0 n) $;
 def odd (n: nat): wff = $ n % 2 = 1 $;
@@ -300,3 +302,10 @@ def nth (n l: nat): nat;
 theorem nth0 (n: nat): $ nth n 0 = 0 $;
 theorem nthZ (a l: nat): $ nth 0 (a : l) = suc a $;
 theorem nthS (n a l: nat): $ nth (suc n) (a : l) = nth n l $;
+
+def repeat (a n: nat): nat;
+theorem repeat0 (a: nat): $ repeat a 0 = 0 $;
+theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $;
+
+def sublistAt (n l l2 .l1 .l3: nat): wff =
+$ E. l1 E. l3 (l = l1 ++ l2 ++ l3 /\ len l1 = n) $;

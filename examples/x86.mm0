@@ -162,6 +162,8 @@ theorem div0 (a: nat): $ a // 0 = 0 $;
 theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
 theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
 
+def dvd (a b .c: nat): wff = $ E. c c * a = b $;
+
 def b0 (n: nat): nat = $ n + n $;
 def b1 (n: nat): nat = $ suc (b0 n) $;
 def odd (n: nat): wff = $ n % 2 = 1 $;
@@ -301,6 +303,13 @@ theorem nth0 (n: nat): $ nth n 0 = 0 $;
 theorem nthZ (a l: nat): $ nth 0 (a : l) = suc a $;
 theorem nthS (n a l: nat): $ nth (suc n) (a : l) = nth n l $;
 
+def repeat (a n: nat): nat;
+theorem repeat0 (a: nat): $ repeat a 0 = 0 $;
+theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $;
+
+def sublistAt (n l l2 .l1 .l3: nat): wff =
+$ E. l1 E. l3 (l = l1 ++ l2 ++ l3 /\ len l1 = n) $;
+
 --| #include "peano.mm0"
 
 -- The string preamble. This is used for interfacing with
@@ -378,6 +387,7 @@ def d256: nat = $ 2 ^ 8 $; prefix d256: $256$ prec max;
 
 def Bits (k: nat): nat = $ upto (2 ^ k) $;
 def u8: nat = $ Bits 8 $;
+def u16: nat = $ Bits 16 $;
 def u32: nat = $ Bits 32 $;
 def u64: nat = $ Bits 64 $;
 
@@ -448,7 +458,7 @@ theorem splitBitsT (bs n k: nat):
 -- x86-64 machine code decoding
 ----------------------------------------
 
-def Regs: set = $ Bits 4 $;
+def Regs: nat = $ Bits 4 $;
 def RAX: nat = $ 0 $; theorem RAXT: $ RAX e. Regs $;
 def RCX: nat = $ 1 $; theorem RCXT: $ RCX e. Regs $;
 def RDX: nat = $ 2 $; theorem RDXT: $ RDX e. Regs $;
@@ -1032,7 +1042,8 @@ theorem writeMemT (k a l k2: nat):
   $ k e. Config /\ a e. u64 /\ l e. List u8 /\
     writeMem k a l k2 -> k2 e. Config $;
 
-def mapMemory1 (prot m a b m2: nat): wff = $ m2 = write m a (prot <> b) $;
+def mapMemory1 (prot m a b m2: nat): wff =
+$ ~ PROT_READ e. fst (m @ a) /\ m2 = write m a (prot <> b) $;
 
 def mapMemory (prot m a l m2: nat): wff;
 theorem mapMemory0 (prot m a l m2: nat): $ mapMemory prot m a l m2 <-> m2 = m $;
@@ -1457,8 +1468,11 @@ def KernelState: set = $ Xp (Xp (List u8) (List u8)) Config $;
 def stdin: nat = $ 0 $;
 def stdout: nat = $ 1 $;
 
-def readCStr (k a s .c: nat): wff =
-$ all {c | c != 0} s /\ readMem k a (s |> 0) $;
+def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
+theorem toCStrT (s l: nat):
+  $ s e. List u8 /\ toCStr s l -> l e. List u8 $;
+
+def readCStr (k a s .l: nat): wff = $ E. l toCStr s l /\ readMem k a l $;
 theorem readCStrT (k a s: nat):
   $ k e. Config /\ a e. u64 /\ readCStr k a s -> s e. List u8 $;
 
@@ -1499,7 +1513,7 @@ $ l2 = if (fd = stdout) (l ++ l1) l $;
 def sys_write: nat = $ 1 $;
 def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
 $ readReg k RAX = sys_write /\ E. fd E. buf E. count (
-    readReg k RDI = fd /\
+    fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     ifp (MSB 32 ret) (l2 = l)
       (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
@@ -1569,7 +1583,7 @@ theorem ksPathT (ks l ks2: nat):
 
 def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
 
--- `runToComplete k i o` asserts that starting from initial configuration k,
+-- `alwaysTerminates k i o` asserts that starting from initial configuration k,
 -- given `i` on standard input, with the ability to read more files as
 -- necessary, the program always reaches the exit point and returns a value,
 -- and moreover, if it returns 0, then it has consumed the entire input and
@@ -1586,3 +1600,91 @@ def succeeds (k i o .i2 .k2: nat): wff =
 $ E. i2 E. k2 (
     ksReachable ((i <> 0) <> k) ((i2 <> o) <> k2) /\
     execExit k2 0) $;
+
+----------------------------------------
+-- ELF file format and the initial state
+----------------------------------------
+
+def ELF_MAGIC: nat = $ ch x7 xf : ch x4 x5 : ch x4 xc : ch x4 x6 : 0 $;
+def ELF_CLASS_64: nat = $ 2 $;
+def ELF_DATA_2LSB: nat = $ 1 $;
+def ELF_VERSION: nat = $ 1 $;
+def ELF_IDENT: nat =
+$ ELF_MAGIC ++ ELF_CLASS_64 : ELF_DATA_2LSB : ELF_VERSION : repeat 0 9 $;
+theorem ELF_IDENT_T: $ ELF_IDENT e. Array u8 16 $;
+
+def ET_EXEC: nat = $ u16Bytes 2 $;
+def EM_X86_64: nat = $ u16Bytes (ch x3 xe) $;
+def E_VERSION: nat = $ u32Bytes 1 $;
+def E_FLAGS: nat = $ u32Bytes 0 $;
+def EH_SIZE: nat = $ u16Bytes 64 $;
+def PH_SIZE: nat = $ u16Bytes (ch x3 x8) $;
+def SH_SIZE: nat = $ u16Bytes 64 $;
+-- This checks the ELF header assuming x86 architecture.
+def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
+$ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
+  phnum e. u16 /\ phnum < bitsNeg 16 1 /\
+  shnum e. u16 /\ shnum < bitsNeg 16 1 /\
+  E. shstrndx (shstrndx e. u16 /\
+    l = ELF_IDENT ++ ET_EXEC ++ EM_X86_64 ++ E_VERSION ++
+        u64Bytes entry ++ u64Bytes phoff ++ u64Bytes shoff ++
+        E_FLAGS ++ EH_SIZE ++ PH_SIZE ++ u16Bytes phnum ++
+        SH_SIZE ++ u16Bytes shnum ++ u16Bytes shstrndx) $;
+theorem elfHeaderT (l entry phoff shoff phnum shnum: nat):
+  $ elfHeader l entry phoff shoff phnum shnum ->
+    l e. List u8 /\ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
+    phnum e. u16 /\ shnum e. u16 $;
+
+-- sadly the protection flag bits for ELF are different than the memory page
+-- protection flags: R=4, W=2, X=1 for ELF; R=1, W=2, X=4 for the syscall
+def protToFlags (prot: nat): nat =
+$ consBit (PROT_EXEC e. prot) (
+    consBit (PROT_WRITE e. prot) (nat (PROT_READ e. prot))) $;
+
+def PT_LOAD: nat = $ 1 $;
+def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
+$ type e. u32 /\ prot e. Prot /\ off e. u64 /\ vaddr e. u64 /\
+  filesz e. u64 /\ memsz e. u64 /\ filesz <= memsz /\
+  E. i (i < 64 /\ dvd (2 ^ i) vaddr /\ dvd (2 ^ i) off /\
+    l = u32Bytes type ++ u32Bytes (protToFlags prot) ++
+        u64Bytes off ++ u64Bytes vaddr ++ u64Bytes 0 ++
+        u64Bytes filesz ++ u64Bytes memsz ++ u64Bytes (2 ^ i)) $;
+theorem pHeaderT (l type prot off vaddr filesz memsz: nat):
+  $ pHeader l type prot off vaddr filesz memsz ->
+    l e. List u8 /\ type e. u32 /\ prot e. Prot /\ off e. u64 /\
+    vaddr e. u64 /\ filesz e. u64 /\ memsz e. u64 $;
+
+def basicElfEH (file entry phoff .eh: nat): wff =
+$ E. eh (sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0) $;
+
+def basicElfPH (file phoff prot off vaddr filesz memsz .ph: nat): wff =
+$ E. ph (sublistAt phoff file ph /\
+    pHeader ph PT_LOAD prot off vaddr filesz memsz) $;
+
+def blankConfig (entry k .f .m .r: nat): wff =
+$ E. f E. m (f e. Flags /\ m e. Memory /\
+    k = entry <> ((\ r, 0) |` Regs) <> f <> m) $;
+theorem blankConfigT (entry k: nat):
+  $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
+
+def allocStack (k k2 .sp .stack .argc .x .arg .cstr .str: nat): wff =
+$ E. sp E. stack E. argc (
+    sp + len stack e. u64 /\
+    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) sp stack k2 /\
+    argc e. u64 /\ sublistAt 0 stack (u64Bytes argc) /\
+    A. x (x < argc -> E. arg E. cstr (
+      sublistAt (4 * x) stack (u64Bytes (sp + arg)) /\
+      sublistAt arg stack cstr /\ E. str toCStr str cstr))) $;
+
+-- This defines the initial state set up from a basic ELF file (only one
+-- program segment, no sections).
+def basicElfInit (file k .entry .phoff .prot .off
+  .vaddr .filesz .memsz .k0 .k1 .sp .seg: nat): wff =
+$ E. entry E. phoff E. prot E. off E. vaddr E. filesz E. memsz (
+    basicElfEH file entry phoff /\
+    basicElfPH file phoff prot off vaddr filesz memsz /\
+    E. k0 E. k1 E. sp E. seg (
+      sublistAt off file seg /\ len seg = filesz /\
+      blankConfig entry k0 /\
+      allocStack k0 k1 /\
+      mapMem prot k1 vaddr (seg ++ repeat 0 (memsz - filesz)) k)) $;
