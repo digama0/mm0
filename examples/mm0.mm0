@@ -665,7 +665,7 @@ def parseSort (.x: nat): set = $ (\ x, ASTSort x) <@>
 
 def parseType (.x: nat): set = $ (\ x, b0 x) <@>
   (parseIdent <+> regexStar parseIdent) $;
-def parseFmla (.s: nat): set = $ ran (\ s, MATH s <> b1 s) $;
+def parseFmla (.s: nat): set = $ Ran (\ s, MATH s <> b1 s) $;
 def parseTypeFmla: set = $ parseType u. parseFmla $;
 
 def parseDummyId (.x: nat): set =
@@ -780,7 +780,7 @@ def outputKinds: nat = $0$;
 def parseIO1 (tk: string) (k .x .s: nat): set =
 $ parseTk tk +> (parseIdent i^i {x | snd x e. k}) <+>
   parseCh _colon +>
-    regexStar (((\ s, TK s) <@> parseIdent) u. ran (\ s, MATH s <> MATH s))
+    regexStar (((\ s, TK s) <@> parseIdent) u. Ran (\ s, MATH s <> MATH s))
     <+ parseCh _semi $;
 
 def parseIO (.x: nat): set =
@@ -791,8 +791,8 @@ def parseAST: set =
 $ regexStar (parseSort u. parseTerm u. parseAxiom u.
     parseThm u. parseDef u. parseNota u. parseIO) $;
 
-def parse (s .tks .ast: nat): set =
-$ {ast | E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST)} $;
+def parse (s ast .tks: nat): wff =
+$ E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST) $;
 
 --------------------
 -- AST Navigation --
@@ -1111,4 +1111,4 @@ theorem ElaborateIO (ast out n: nat):
   $ Elaborate (ast |> ASTIO out n) == Elaborate ast $;
 
 def Valid (s .ast .e: nat): wff =
-$ E. ast E. e (ast e. parse s /\ e e. Elaborate ast /\ ValidEnv e) $;
+$ E. ast E. e (parse s ast /\ e e. Elaborate ast /\ ValidEnv e) $;
