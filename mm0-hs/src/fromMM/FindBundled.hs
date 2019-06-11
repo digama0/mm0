@@ -1,4 +1,4 @@
-module FindBundled (findBundled, reportBundled, Bundles) where
+module FindBundled (findBundled, bundle, reportBundled, Bundles) where
 
 import Control.Monad.RWS.Strict hiding (liftIO)
 import Data.Maybe
@@ -34,7 +34,8 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
     f (_, Thm (hs, _) _ _ _) =
       case go hs 0 of { [] -> Nothing; l -> Just l } where
       go [] _ = []
-      go ((b, _):ls) n = if b then n : go ls (n+1) else go ls (n+1)
+      go ((p, _):ls) n | vsPure p = n : go ls (n+1)
+      go (_:ls) n = go ls (n+1)
     f _ = Nothing
 
   checkDecl :: Decl -> FindBundledM ()
@@ -46,15 +47,15 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
   allDistinct :: Frame -> I.IntMap Int
   allDistinct (hs, _) = go hs 0 0 I.empty where
     go [] _ _ m = m
-    go ((True, _):ls) k i m = go ls (k+1) (i+1) (I.insert k i m)
-    go ((False, _):ls) k i m = go ls (k+1) i m
+    go ((p, _):ls) k i m | vsPure p = go ls (k+1) (i+1) (I.insert k i m)
+    go (_:ls) k i m = go ls (k+1) i m
 
   checkProof :: (Label, Maybe [Int]) -> Int -> I.IntMap Int -> Proof -> FindBundledM ()
   checkProof x k m = go where
     go (PSave p) = go p
     go (PThm t ps) = do
       mapM_ go ps
-      mapM_ (\l ->
+      forM_ (pureArgs M.!? t) $ \l ->
         let l' = (\n -> case ps !! n of
               PHyp _ i -> Left (m I.! i)
               PDummy i -> Right i) <$> l in
@@ -68,5 +69,4 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
                   checkProof (t, Just b) (k+1) (I.fromList (zip l b)) p
                 _ -> return ()
           else tell $ S.singleton (x, (t, b))
-        ) (pureArgs M.!? t)
     go _ = return ()

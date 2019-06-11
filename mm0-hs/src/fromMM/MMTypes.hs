@@ -15,7 +15,8 @@ type MMExpr = SExpr
 data Hyp = VHyp Const Var | EHyp Const MMExpr deriving (Show)
 
 type DVs = S.Set (Label, Label)
-type Frame = ([(Bool, Label)], DVs)
+data VarStatus = VSBound | VSFree | VSOpen | VSHyp deriving (Eq, Show)
+type Frame = ([(VarStatus, Label)], DVs)
 data Proof =
     PHyp Label Int
   | PDummy Int
@@ -81,6 +82,11 @@ data MMDatabase = MMDatabase {
 
 mkDatabase :: MMDatabase
 mkDatabase = MMDatabase M.empty Q.empty mkMetadata M.empty
+
+vsPure :: VarStatus -> Bool
+vsPure VSBound = True
+vsPure VSFree = True
+vsPure _ = False
 
 orientPair :: Ord a => (a, a) -> (a, a)
 orientPair (a1, a2) = if a1 < a2 then (a1, a2) else (a2, a1)

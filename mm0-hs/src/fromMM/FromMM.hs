@@ -104,8 +104,7 @@ stmtPublic :: DBInfo -> Label -> Bool
 stmtPublic i x = all (\(_, _, s) -> S.member x s) (dbiF i)
 
 data Builder = Builder {
-  bReord :: [Int],
-  bExpr :: Maybe ([VExpr] -> VExpr),
+  bExpr :: Maybe ([Int], [VExpr] -> VExpr),
   bProof :: [ProofTree] -> ProofTree }
 
 data TransState = TransState {
@@ -159,13 +158,16 @@ printAST db dbf mm0 mmu = do
 -- fromJust' _ (Just a) = a
 -- fromJust' s Nothing = error $ "fromJust: " ++ s
 
--- (<!>) :: (HasCallStack, Ord k, Show k, Show v) => M.Map k v -> k -> v
+-- (<!>) :: (HasCallStack, Ord k, Show k) => M.Map k v -> k -> v
 -- (<!>) m k = case m M.!? k of
---   Nothing -> error $ show m ++ " ! " ++ show k
+--   Nothing -> error $ show (M.keys m) ++ " ! " ++ show k
 --   Just v -> v
 
 report :: a -> TransM a -> TransM a
 report a m = catchError m (\e -> tell (Endo (e :)) >> return a)
+
+reorder :: [Int] -> [a] -> [a]
+reorder ns l = (l !!) <$> ns
 
 trDecl :: IDPrinter a => a -> Decl -> TransM [(Maybe A.Stmt, ProofCmd)]
 trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
@@ -184,13 +186,13 @@ trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
       (_, Hyp (EHyp _ _)) -> return []
       (n, Term fr s _ Nothing) -> trDefinition n st >>= \case
         [] -> do
-          splitFrame Nothing fr $ \(SplitFrame bs1 _ _ rm _ _) -> do
+          splitFrame Nothing fr $ \(SplitFrame bs1 _ _ _ rm _) -> do
             i <- trName st (mangle st)
             modify $ \m ->
               let {lup = tIxLookup m; n = TermID (fst (pTermIx lup))} in
               m {
                 tBuilders = M.insert st
-                  (Builder rm (Just (VApp n)) (VTerm n))
+                  (Builder (Just (rm, VApp n)) (VTerm n . reorder rm))
                   (tBuilders m),
                 tIxLookup = ilInsertTerm st lup }
             return [(Just $ A.Term i bs1 (DepType s []), StepTerm i)]
@@ -200,32 +202,26 @@ trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
         (_, e2) <- trExpr id e
         let (be, bd) = trSyntaxProof e2
         modify $ \t -> t {
-          tBuilders = M.insert st (Builder rm (Just be) bd) (tBuilders t) }
+          tBuilders = M.insert st
+            (Builder (Just (rm, be)) (bd . reorder rm)) (tBuilders t) }
         return []
       (_, Thm fr s e p) -> do
         let mst = mangle st
         let pub = stmtPublic i st
-        ((out, n), rm) <- trName st mst >>= trThmB Nothing pub fr s e p
+        (out, n, pa, rm) <- trName st mst >>= trThmB Nothing pub fr s e p
         (out2, ns) <- unzip <$> mapM (\bu -> do
-          ((out', n'), _) <-
+          (out', n', _, rm') <-
             trBName st bu (mst ++ "_b") >>= trThmB (Just bu) pub fr s e p
-          return (out', (bu, n')))
+          return (out', (bu, (n', rm'))))
           (maybe [] M.keys (dbiBundles i M.!? st))
-        modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder rm n ns) (tBuilders t)}
+        modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder pa rm n ns) (tBuilders t)}
         return (out : out2)
     else return []
 
-invertB :: Maybe [Int] -> [a] -> [a]
-invertB Nothing = id
-invertB (Just bs) = go 0 bs where
-  go n [] as = []
-  go n (b:bs) (a:as) | b == n = a : go (n+1) bs as
-  go n (_:bs) (_:as) = go n bs as
-
 trThmB :: Maybe [Int] -> Bool -> Frame -> Const -> MMExpr -> Maybe ([Label], Proof) ->
-  Ident -> TransM (((Maybe A.Stmt, ProofCmd), ThmID), ([Int], Int))
+  Ident -> TransM ((Maybe A.Stmt, ProofCmd), ThmID, [Int], [Int])
 trThmB bu pub fr s e p i =
-  splitFrame bu fr $ \(SplitFrame bs1 bs2 hs2 rm vm nv) -> do
+  splitFrame bu fr $ \(SplitFrame bs1 bs2 hs2 pa rm vm) -> do
     (e1, e2) <- trExpr vm e
     ret <- case p of
       Nothing -> return (Just $ A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
@@ -238,20 +234,22 @@ trThmB bu pub fr s e p i =
     state $ \t ->
       let lup = tIxLookup t
           n = ThmID (fst (pThmIx lup)) in
-      (((ret, n), (rm, nv)), t {tIxLookup = ilInsertThm i lup})
+      ((ret, n, pa, rm), t {tIxLookup = ilInsertThm i lup})
 
-mkThmBuilder :: ([Int], Int) -> ThmID -> [([Int], ThmID)] -> Builder
-mkThmBuilder (rm, _) n [] = Builder rm Nothing (VThm n)
-mkThmBuilder (rm, nv) n ns = let m = M.fromList ns in
-  Builder rm Nothing $ \ps ->
-    if allUnique ((\(Load v) -> v) <$> take nv ps) then VThm n ps else
-      let (bu, ps') = bundleWith ps nv in VThm (m M.! bu) ps'
+mkThmBuilder :: [Int] -> [Int] -> ThmID -> [([Int], (ThmID, [Int]))] -> Builder
+mkThmBuilder pa rm n [] = Builder Nothing (VThm n . reorder rm)
+mkThmBuilder pa rm n ns = let m = M.fromList ns in
+  Builder Nothing $ \ps ->
+    let vs = (\(Load v) -> v) <$> reorder pa ps in
+    if allUnique vs then VThm n (reorder rm ps) else
+      let {bu = bundle vs; (t, rm') = m M.! bu} in
+      VThm t (reorder rm' ps)
 
 bundleWith :: [ProofTree] -> Int -> ([Int], [ProofTree])
 bundleWith = go M.empty 0 where
   go m n ps 0 = ([], ps)
   go m n (Load v : ps) nv = case m M.!? v of
-    Just i -> let (bs, ps') = go m n ps (nv-1) in (i : bs, ps')
+    Just i -> mapFst (i :) (go m n ps (nv-1))
     Nothing ->
       let (bs, ps') = go (M.insert v n m) (n+1) ps (nv-1) in
       (n : bs, Load v : ps')
@@ -260,48 +258,68 @@ data SplitFrame = SplitFrame {
   sfBound :: [A.Binder],
   sfVBound :: [VBinder],
   sfHyps :: [VExpr],
+  sfPureArgs :: [Int],
   sfReord :: [Int],
-  sfVarmap :: Label -> Label,
-  sfNumVars :: Int }
+  sfVarmap :: Label -> Label }
 
 splitFrame :: Maybe [Int] -> Frame -> (SplitFrame -> TransM a) -> TransM a
 splitFrame bu (hs, dv) k = do
   a <- ask >>= splitFrame' bu hs dv . fst >>= k
   modify $ \t -> t {tIxLookup = ilResetVars (tIxLookup t)}
   return a
+splitFrame' :: Maybe [Int] -> [(VarStatus, Label)] -> DVs ->
+  MMDatabase -> TransM SplitFrame
 splitFrame' bu hs dv db = do
-  let (vs, bs, hs', f) = partitionHyps hs 0
-  let vs' = invertB bu vs
-  let vm = mkVarmap bu fst vs vs'
+  let (vs1, pa) = filterPos (vsPure . fst) hs
+  let vs' = invertB bu vs1
+  let vm = mkVarmap bu (snd <$> vs1) vs'
+  let (vs, bs, hs', f) = partitionHyps vm hs 0
   let dv' = S.map (\(v1, v2) -> orientPair (vm v1, vm v2)) dv
-  (bs1, bs2, hs2) <- processArgs vm dv' vs' bs hs'
-  let rm = I.elems (f 0 (length vs') (length vs' + length bs))
-  return $ SplitFrame bs1 bs2 hs2 rm vm (length vs)
+  (bs1, bs2, hs2) <- processArgs vm dv' vs bs hs'
+  let rm = I.elems (f 0 (length vs) (length vs + length bs))
+  return $ SplitFrame bs1 bs2 hs2 pa rm vm
   where
 
-  mkVarmap :: Maybe [Int] -> (a -> Label) -> [a] -> [a] -> Label -> Label
-  mkVarmap Nothing _ _ _ = id
-  mkVarmap (Just bs) f vs vs' =
-    let m = M.fromList (zipWith (\i old -> (f old, f (vs' !! i))) bs vs) in
+  filterPos :: (a -> Bool) -> [a] -> ([a], [Int])
+  filterPos f = go 0 where
+    go _ [] = ([], [])
+    go n (a:as) | f a = let (as', ns) = go (n+1) as in (a:as', n:ns)
+    go n (_:as) = go (n+1) as
+
+  invertB :: Maybe [Int] -> [(VarStatus, Label)] -> Q.Seq (VarStatus, Label)
+  invertB Nothing = Q.fromList
+  invertB (Just bs) = go 0 Q.empty bs where
+    go n m [] [] = m
+    go n m (b:bs) (a:as) | b == n = go (n+1) (m Q.|> a) bs as
+    go n m (b:bs) (a:as) | fst a == VSBound =
+      let f a' = if fst a' == VSBound then a' else a in
+      go n (Q.adjust f b m) bs as
+    go n m (_:bs) (_:as) = go n m bs as
+
+  mkVarmap :: Maybe [Int] -> [Label] -> Q.Seq (VarStatus, Label) -> Label -> Label
+  mkVarmap Nothing _ _ = id
+  mkVarmap (Just bs) vs q =
+    let m = M.fromList (zipWith (\i old -> (old, snd (Q.index q i))) bs vs) in
     \v -> M.findWithDefault v v m
 
-  partitionHyps :: [(Bool, Label)] -> Int -> ([(Label, Sort)],
-    [(Label, Sort)], [(Label, MMExpr)], Int -> Int -> Int -> I.IntMap Int)
-  partitionHyps [] _ = ([], [], [], \_ _ _ -> I.empty)
-  partitionHyps ((b, l) : ls) li = case snd $ mStmts db M.! l of
-    Hyp (VHyp s v) ->
-      let (vs, bs, hs', f) = partitionHyps ls (li+1) in
-      if b then ((l, s) : vs, bs, hs',
-        \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
-      else (vs, (l, s) : bs, hs',
-        \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
-    Hyp (EHyp _ e) ->
-      let (vs, bs, hs, f) = partitionHyps ls (li+1) in
-      (vs, bs, (l, e) : hs,
-        \vi bi hi -> I.insert hi li (f vi bi (hi+1)))
+  partitionHyps :: (Label -> Label) -> [(VarStatus, Label)] -> Int ->
+    ([(Label, Sort)], [(Bool, Label, Sort)], [(Label, MMExpr)],
+     Int -> Int -> Int -> I.IntMap Int)
+  partitionHyps vm = partitionHyps' where
+    partitionHyps' [] _ = ([], [], [], \_ _ _ -> I.empty)
+    partitionHyps' ((b, l) : ls) li | vm l == l =
+      let (vs, bs, hs, f) = partitionHyps' ls (li+1) in
+      case (b, snd $ mStmts db M.! l) of
+        (VSBound, Hyp (VHyp s v)) -> ((l, s) : vs, bs, hs,
+          \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
+        (vst, Hyp (VHyp s v)) -> (vs, (vst == VSFree, l, s) : bs, hs,
+          \vi bi hi -> I.insert bi li (f vi (bi+1) hi))
+        (_, Hyp (EHyp _ e)) -> (vs, bs, (l, e) : hs,
+          \vi bi hi -> I.insert hi li (f vi bi (hi+1)))
+    partitionHyps' ((b, l) : ls) li = partitionHyps' ls (li+1)
 
   processArgs :: (Label -> Label) -> DVs ->
-    [(Label, Sort)] -> [(Label, Sort)] -> [(Label, MMExpr)] ->
+    [(Label, Sort)] -> [(Bool, Label, Sort)] -> [(Label, MMExpr)] ->
     TransM ([A.Binder], [VBinder], [VExpr])
   processArgs vm dv' vs bs hs = processBound vs where
     processBound :: [(Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
@@ -316,9 +334,9 @@ splitFrame' bu hs dv db = do
       return (A.Binder (A.LBound v') (A.TType $ DepType s' []) : bs1,
         VBound s2 : bs2, hs')
 
-    processReg :: [(Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
+    processReg :: [(Bool, Label, Sort)] -> TransM ([A.Binder], [VBinder], [VExpr])
     processReg [] = do (hs1, hs2) <- processHyps hs; return (hs1, [], hs2)
-    processReg ((v, s) : bs) = do
+    processReg ((fr, v, s) : bs) = do
       modify $ \t -> t {tIxLookup = ilInsertVar v (tIxLookup t)}
       (bs1, bs2, hs2) <- processReg bs
       t <- get
@@ -327,7 +345,7 @@ splitFrame' bu hs dv db = do
       let s2 = fromJust $ ilSort (tIxLookup t) s
       let f (v2, _) = if memDVs dv' v v2 then Nothing else
             Just (tNameMap t M.! v2, fromJust $ ilVar (tIxLookup t) v2)
-          (vs1, vs2) = unzip $ mapMaybe f vs
+          (vs1, vs2) = unzip $ if fr then [] else mapMaybe f vs
       return (A.Binder (A.LReg v') (A.TType $ DepType s' vs1) : bs1,
         VReg s2 vs2 : bs2, hs2)
 
@@ -369,7 +387,7 @@ trExpr vm = \e -> (\t -> trExpr' (tNameMap t) (tBuilders t) (tIxLookup t) e) <$>
     go (SVar v) = let v' = vm v in
       (SVar (names M.! v'), VVar (fromJust $ ilVar lup v'))
     go (App t es) =
-      let (es1, es2) = unzip (go . (es !!) <$> bReord (bds M.! t)) in
+      let (es1, es2) = unzip (go <$> reorder (fst $ fromJust $ bExpr (bds M.! t)) es) in
       (App (names M.! t) es1, VApp (fromJust $ ilTerm lup t) es2)
 
 exprToFmla :: SExpr -> A.Formula
@@ -423,12 +441,8 @@ trProof vm nhs t (ds, pr) =
         state $ \(i, heap) -> (Save p', (i+1, Q.update n (Left (VarID i)) heap))
   trProof' PSorry = return Sorry
   trProof' (PSave p) = error "impossible, proof was unsaved"
-  trProof' (PTerm st ps) =
-    let Builder rm _ pf = tBuilders t M.! st in
-    pf <$> mapM (trProof' . (ps !!)) rm
-  trProof' (PThm st ps) =
-    let Builder rm _ pf = tBuilders t M.! st in
-    pf <$> mapM (trProof' . (ps !!)) rm
+  trProof' (PTerm st ps) = bProof (tBuilders t M.! st) <$> mapM trProof' ps
+  trProof' (PThm st ps) = bProof (tBuilders t M.! st) <$> mapM trProof' ps
 
 trSyntaxProof :: VExpr -> ([VExpr] -> VExpr, [ProofTree] -> ProofTree)
 trSyntaxProof e = (substExpr e, substProof e) where

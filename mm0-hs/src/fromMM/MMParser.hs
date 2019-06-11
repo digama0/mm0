@@ -112,16 +112,13 @@ build db vars = go where
     let (hs'', m'') = insertHyps hs hs' m' in
     go sc (hs'', foldl' insertDVs ds' ds) m''
 
-  insertHyps :: [(Label, Hyp)] -> [(Bool, String)] -> (M.Map Var Int, Int) ->
-    ([(Bool, String)], (M.Map Var Int, Int))
+  insertHyps :: [(Label, Hyp)] -> [(VarStatus, String)] ->
+    (M.Map Var Int, Int) -> ([(VarStatus, String)], (M.Map Var Int, Int))
   insertHyps [] hs' m = (hs', m)
-  insertHyps ((x, EHyp _ _):hs) hs' m =
-    insertHyps hs ((False, x):hs') m
-  insertHyps ((x, VHyp s v):hs) hs' m =
-    let (hs'', (m', n)) = insertHyps hs
-          (if S.member x vars then
-            (sPure (snd (mSorts db M.! s)), x) : hs' else hs') m in
-    (hs'', (M.insert v n m', n+1))
+  insertHyps ((x, EHyp _ _):hs) hs' m = insertHyps hs ((VSHyp, x):hs') m
+  insertHyps ((x, VHyp s v):hs) hs' m = (hs'', (M.insert v n m', n+1)) where
+    hs2 = (if sPure (snd (mSorts db M.! s)) then VSBound else VSOpen, x) : hs'
+    (hs'', (m', n)) = insertHyps hs (if S.member x vars then hs2 else hs') m
 
   insertDVs :: DVs -> [Label] -> DVs
   insertDVs ds [] = ds
@@ -264,7 +261,7 @@ data HeapEl = HeapEl Proof | HTerm Label Int | HThm Label Int deriving (Show)
 trProof :: Frame -> MMDatabase -> [String] -> Either String ([Label], Proof)
 trProof (hs, _) db ("(" : p) =
   processPreloads p (mkHeap hs 0 Q.empty) 0 id where
-  mkHeap :: [(Bool, Label)] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
+  mkHeap :: [(VarStatus, Label)] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
   mkHeap [] _ heap = heap
   mkHeap ((_, h):hs) n heap = mkHeap hs (n+1) (heap Q.|> HeapEl (PHyp h n))
 
@@ -492,11 +489,11 @@ processJ (JKeyword "free_var" j) = case j of
     (n, Term (hs, dv) s e p) -> (n, Term (updateHyp db ss <$> hs, dv) s e p)
     (n, Thm (hs, dv) s e p) -> (n, Thm (updateHyp db ss <$> hs, dv) s e p)) x $ mStmts db}
 
-  updateHyp :: MMDatabase -> S.Set Var -> (Bool, Label) -> (Bool, Label)
-  updateHyp db s (False, l) = (False, l)
-  updateHyp db s (True, l) = case mStmts db M.! l of
-    (_, Hyp (VHyp _ v)) -> (S.notMember v s, l)
-    _ -> (True, l)
+  updateHyp :: MMDatabase -> S.Set Var -> (VarStatus, Label) -> (VarStatus, Label)
+  updateHyp db s (VSBound, l) = case mStmts db M.! l of
+    (_, Hyp (VHyp _ v)) | S.member v s -> (VSFree, l)
+    _ -> (VSBound, l)
+  updateHyp db s p = p
 
 processJ (JKeyword x j) = skipJ j
 processJ (JRest ss) = process ss
