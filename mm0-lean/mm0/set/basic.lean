@@ -26,6 +26,7 @@ namespace mm0
 def wff : Type := Prop
 def wff.proof : wff → Prop := id
 def wff.forget {p : Prop} (h : wff → p) : p := h true
+prefix `⊦ `:26 := wff.proof
 def wi : wff → wff → wff := (→)
 def wn : wff → wff := not
 
@@ -109,7 +110,7 @@ def wal (P : setvar → wff) : wff := ∀ x, P x
 
 def wex : (setvar → wff) → wff := Exists
 
-theorem df_ex {ph : setvar → wff} : wb (wex (λ x, ph x)) (wn (wal (λ x, wn (ph x)))) :=
+theorem df_ex {ph : setvar → wff} : (∃ x, ph x) ↔ ¬ ∀ x, ¬ ph x :=
 by classical; exact not_forall_not.symm
 
 def wnf (ph : setvar → wff) : wff := ∀ x, ph x → ∀ y, ph y
@@ -131,28 +132,38 @@ def cv : setvar → «class» := Class.of_Set
 def wceq : «class» → «class» → wff := eq
 local notation x ` ≡ ` y := eq (↑x : «class») ↑y
 
-theorem weq' {x y : setvar} : x ≡ y ↔ x = y := ⟨Class.of_Set.inj, congr_arg _⟩
+@[simp] theorem weq' {x y : setvar} : x ≡ y ↔ x = y := ⟨Class.of_Set.inj, congr_arg _⟩
 
-def wsb (ph : setvar → wff) (y : setvar → setvar) : wff :=
-ph (y ∅)
+def wsb (ph : setvar → wff) : setvar → wff := ph
 
--- this is bad...
-theorem df_sb {ph : setvar → wff} {y : setvar → setvar} (x : setvar) :
-  wsb ph y ↔ (x ≡ y x → ph x) ∧ ∃ x : setvar, x ≡ y x ∧ ph x :=
-sorry
+theorem df_sb {ph : setvar → wff} {y : setvar} (x : setvar) :
+  ph y ↔ (x ≡ y → ph x) ∧ ∃ x : setvar, x ≡ y ∧ ph x :=
+⟨λ h, ⟨λ e, weq'.1 e.symm ▸ h, _, rfl, h⟩, λ ⟨_, x, e, h⟩, weq'.1 e ▸ h⟩
 
--- Hm, this is false
-theorem ax_6 {y : setvar → setvar} : ¬ ∀ x, ¬ x ≡ y x :=
-sorry
+theorem df_sb_b {ph : setvar → wff} (x : setvar) :
+  ph x ↔ (x ≡ x → ph x) ∧ ∃ x : setvar, x ≡ x ∧ ph x :=
+⟨λ h, ⟨λ _, h, _, rfl, h⟩, λ ⟨h, _⟩, h rfl⟩
 
-theorem ax_7 {x y z : setvar} : wi (wceq (cv x) (cv y)) (wi (wceq (cv x) (cv z)) (wceq (cv y) (cv z))) :=
+theorem ax_6 {y : setvar} : ¬ ∀ x:setvar, ¬ x ≡ y :=
+df_ex.1 ⟨_, rfl⟩
+
+theorem ax_7 {x y z : setvar} : x ≡ y → x ≡ z → y ≡ z :=
 λ h1 h2, h1.symm.trans h2
+theorem ax_7_b {x : setvar} : x ≡ x → x ≡ x → x ≡ x := ax_7
+theorem ax_7_b1 {x z : setvar} : x ≡ x → x ≡ z → x ≡ z := ax_7
+theorem ax_7_b2 {x y : setvar} : x ≡ y → x ≡ x → y ≡ x := ax_7
+theorem ax_7_b3 {x y : setvar} : x ≡ y → x ≡ y → y ≡ y := ax_7
 
 def wcel : «class» → «class» → wff := (∈)
-local notation x ` ∈ ` y := (↑x : «class») ∈ (↑y : «class»)
+local infix ` ∈' `:50 := (∈)
+local notation x ` ∈ ` y := (x : «class») ∈ (y : «class»)
 theorem ax_8 {x y z : setvar} (h : x ≡ y) (h' : x ∈ z) : y ∈ z := h ▸ h'
+theorem ax_8_b {x y : setvar} : x ≡ y → x ∈ x → y ∈ x := ax_8
+theorem ax_8_b1 {x y : setvar} : x ≡ y → x ∈ y → y ∈ y := ax_8
 
 theorem ax_9 {x y z : setvar} (h : x ≡ y) (h' : z ∈ x) : z ∈ y := h ▸ h'
+theorem ax_9_b {x y : setvar} : x ≡ y → x ∈ x → x ∈ y := ax_9
+theorem ax_9_b1 {x y : setvar} : x ≡ y → y ∈ x → y ∈ y := ax_9
 
 theorem ax_10 {ph : setvar → wff} (h : ¬ ∀ x, ph x) (x:setvar) : ¬ ∀ x, ph x := h
 
@@ -165,7 +176,85 @@ weq'.1 (h.trans h3.symm) ▸ h2 y
 
 theorem ax_12_b {ph : setvar → wff} (x : setvar) (h : x ≡ x) (h2 : ∀ x, ph x) (x') (h3 : x' ≡ x') : ph x' := h2 x'
 
--- false
-theorem ax_13 {y z : setvar → setvar} (x) : ¬ x ≡ y x → y x ≡ z x → ∀ x, y x ≡ z x := sorry
+theorem ax_13 {y z : setvar} (x:setvar) (_ : ¬ x ≡ y) (h : y ≡ z) (x':setvar) : y ≡ z := h
+theorem ax_13_b {z : setvar} (x:setvar) (h : ¬ x ≡ x) (_ : x ≡ z) (x':setvar) : x' ≡ z := h.elim rfl
+
+theorem ax_c5 {ph : setvar → wff} (x : setvar) (h : ∀ x, ph x) : ph x := h x
+
+theorem ax_c4 {ph ps : setvar → wff} (H : ∀ x, (∀ x, ph x) → ps x) (h : ∀ x, ph x) (x: setvar) : ps x := H x h
+
+theorem ax_c7 {ph : setvar → wff} (x: setvar) (H : ¬ ∀ x':setvar, ¬ ∀ x, ph x) : ph x :=
+let ⟨_, h⟩ := df_ex.2 H in h x
+
+theorem ax_c10 {ph : setvar → wff} {y : setvar} (x : setvar)
+  (H : ∀ x:setvar, x ≡ y → ∀ x, ph x) : ph x := H _ rfl _
+theorem ax_c10_b {ph : setvar → wff} (x : setvar)
+  (H : ∀ x:setvar, x ≡ x → ∀ x, ph x) : ph x := H x rfl _
+
+theorem ax_c11 {ph : setvar → setvar → wff} (x y) (H : ∀ x : setvar, x ≡ y)
+  (h : ∀ x, ph x y) (y') : ph x y' := weq'.1 ((H y).trans (H y').symm) ▸ h _
+theorem ax_c11_b {ph : setvar → wff} (_ : ∀ x : setvar, x ≡ x) (h : ∀ x, ph x) : ∀ x, ph x := h
+
+theorem ax_c11n (x y : setvar) (H : ∀ x:setvar, x ≡ y) (y':setvar) : y' ≡ x :=
+(H _).trans (H _).symm
+
+theorem ax_c15 {ph : setvar → wff} {y : setvar} (x : setvar)
+  (_ : ¬ ∀ x:setvar, x ≡ y) (h : x ≡ y) (h2 : ph x) (x') (h3 : x' ≡ y) : ph x' :=
+weq'.1 (h.trans h3.symm) ▸ h2
+
+theorem ax_c9 {x y : setvar} (_ : ¬ ∀ z:setvar, z ≡ x) (_ : ¬ ∀ z:setvar, z ≡ y)
+  (h : x ≡ y) (z':setvar) : x ≡ y := h
+theorem ax_c9_b (z:setvar) (_ : ¬ ∀ z:setvar, z ≡ z) (_ : ¬ ∀ z:setvar, z ≡ z)
+  (h : z ≡ z) (z':setvar) : z' ≡ z' := rfl
+theorem ax_c9_b1 {x : setvar} (_ : ¬ ∀ z:setvar, z ≡ x) (_ : ¬ ∀ z:setvar, z ≡ x)
+  (h : x ≡ x) (z':setvar) : x ≡ x := rfl
+theorem ax_c9_b2 {y : setvar} (z : setvar) (H : ¬ ∀ z:setvar, z ≡ z) (_ : ¬ ∀ z:setvar, z ≡ y)
+  (_ : z ≡ y) (z':setvar) : z' ≡ y := H.elim (λ _, rfl)
+theorem ax_c9_b3 {x : setvar} (z : setvar) (_ : ¬ ∀ z:setvar, z ≡ x) (H : ¬ ∀ z:setvar, z ≡ z)
+  (_ : x ≡ z) (z':setvar) : x ≡ z' := H.elim (λ _, rfl)
+
+theorem ax_c14 {x y : setvar} (_ : ¬ ∀ z:setvar, z ≡ x) (_ : ¬ ∀ z:setvar, z ≡ y)
+  (h : x ∈ y) (z':setvar) : x ∈ y := h
+
+theorem ax_c16 {ph : setvar → wff} {y : setvar} (x : setvar)
+  (H : ∀ x:setvar, x ≡ y) (h : ph x) (x') : ph x' :=
+weq'.1 ((H x).trans (H x').symm) ▸ h
+
+def weu : (setvar → wff) → wff := exists_unique
+theorem df_eu {ph : setvar → wff} : (∃! x, ph x) ↔ (∃ y:setvar, ∀ x, ph x ↔ x ≡ y) :=
+⟨λ ⟨x, hx, H⟩, ⟨x, λ y, ⟨λ h, weq'.2 (H _ h), λ e, weq'.1 e.symm ▸ hx⟩⟩,
+ λ ⟨x, hx⟩, ⟨x, (hx _).2 rfl, λ y hy, weq'.1 ((hx _).1 hy)⟩⟩
+
+def wmo (ph : setvar → wff) : wff := ∀ x y, ph x → ph y → x = y
+theorem df_mo {ph : setvar → wff} : wmo ph ↔ ((∃ x, ph x) → (∃! x, ph x)) :=
+⟨λ H ⟨x, hx⟩, ⟨x, hx, λ y hy, H _ _ hy hx⟩,
+ λ H x y hx hy, let ⟨z, _, hz⟩ := H ⟨x, hx⟩ in
+   (hz _ hx).trans (hz _ hy).symm⟩
+
+theorem ax_7d {ph : setvar → setvar → wff} (H : ∀ x y:setvar, ph x y) (y x) : ph x y := H x y
+def ax_8d := @ax_7
+theorem ax_9d1 : ¬ ∀ x:setvar, ¬ x ≡ x := df_ex.1 ⟨∅, rfl⟩
+def ax_9d2 := @ax_6
+def ax_10d := @ax_c11n
+def ax_11d := @ax_12
+
+@[simp] theorem wel' {x y : setvar} : x ∈ y ↔ x ∈' y :=
+(Class.mem_hom_left _ _).trans (Class.mem_hom_right _ _)
+
+theorem ax_ext {x y : setvar} : (∀ z:setvar, z ∈ x ↔ z ∈ y) → x ≡ y :=
+by simpa using @Set.ext x y
+
+def cab (ph : setvar → wff) : «class» := {x | ph x}
+
+theorem df_clab {ph : setvar → wff} {x : setvar} : x ∈ cab ph ↔ ph x :=
+Class.mem_hom_left _ _
+
+theorem df_clab_b {ph : setvar → wff} (y : setvar) : ↑y ∈ cab ph ↔ ph y := df_clab
+
+-- y and z are quantified in the wrong place
+theorem df_cleq {y z : setvar} {A B : «class»}
+  (_ : (∀ x, x ∈ y ↔ x ∈ z) → y = z) :
+  A = B ↔ ∀ x:setvar, x ∈ A ↔ x ∈ B :=
+by simp; exact set.ext_iff A B
 
 end mm0

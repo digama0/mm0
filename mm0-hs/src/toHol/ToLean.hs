@@ -71,8 +71,7 @@ increment = do
   else do
     close
     put $ g {lChunk = lChunk g + 1, lIndex = 0}
-    open $ if lChunk g == 1 then Nothing else
-      Just ('.' : fname (takeBaseName (lFileName g)) (lChunk g - 1))
+    open $ Just ('.' : fname (takeBaseName (lFileName g)) (lChunk g))
 
 printSType :: Bool -> SType -> ShowS
 printSType p (SType [] s) = mangle s
