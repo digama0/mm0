@@ -54,8 +54,9 @@ toOpenTheory _ = die "to-othy: incorrect args; use 'to-othy MM0-FILE MMU-FILE [-
 toLean :: [String] -> IO ()
 toLean (mm0 : mmp : rest) = do
   (nax, rest) <- return $ case rest of
-    "-a" : pre : rest -> (Just pre, rest)
-    rest -> (Nothing, rest)
+    "-a" : pre : rest -> (FromFile pre, rest)
+    "+a" : rest -> (Only, rest)
+    rest -> (Regular, rest)
   (cs, rest) <- return $ case rest of
     "-c" : n : rest -> (read n, rest)
     rest -> (maxBound, rest)

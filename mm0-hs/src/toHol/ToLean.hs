@@ -1,4 +1,4 @@
-module ToLean (writeLean) where
+module ToLean (writeLean, Axioms(..)) where
 
 import Data.Foldable
 import Data.Semigroup
@@ -24,9 +24,19 @@ data LeanState = LeanState {
 
 type LeanM = StateT LeanState IO
 
-writeLean :: Maybe String -> String -> Int -> [HDecl] -> IO ()
-writeLean pre fname chunkSize ds =
-  evalStateT (open pre >> mapM_ (\d -> leanDecl (not $ null pre) d >> increment) ds >> close) $
+data Axioms = FromFile String | Regular | Only deriving (Eq)
+
+axFile :: Axioms -> Maybe String
+axFile (FromFile s) = Just s
+axFile _ = Nothing
+
+noAx :: Axioms -> Bool
+noAx (FromFile s) = True
+noAx _ = False
+
+writeLean :: Axioms -> String -> Int -> [HDecl] -> IO ()
+writeLean ax fname chunkSize ds =
+  evalStateT (open (axFile ax) >> mapM_ (\d -> leanDecl ax d >> increment) ds >> close) $
     LeanState 1 fname undefined 0 chunkSize M.empty
 
 emit :: String -> LeanM ()
@@ -186,25 +196,25 @@ unsaveProofLam ctx (HProofLam vs p) = go ctx vs where
     (s, HProofLam vs' p') <- go (vt : ctx) vs
     return (S.delete v s, HProofLam (vt : vs') p')
 
-leanDecl :: Bool -> HDecl -> LeanM ()
-leanDecl nax (HDSort s) = do
+leanDecl :: Axioms -> HDecl -> LeanM ()
+leanDecl ax (HDSort s) = do
   let s' = mangle s
-  let c = if nax then ("-- " ++) else id
+  let c = if noAx ax then ("-- " ++) else id
   emit $ c $ "constant " ++ s' " : Type\n"
   emit $ c $ "constant " ++ s' ".proof : " ++ s' " \x2192 Prop"
   emit $ c $ "prefix `\x22A6 `:26 := " ++ s' ".proof"
   emit $ c $ "constant " ++ s' ".forget {p : Prop} : (" ++ s' " \x2192 p) \x2192 p"
-leanDecl nax (HDTerm x ty) = do
-  let c = if nax then ("-- " ++) else id
+leanDecl ax (HDTerm x ty) = do
+  let c = if noAx ax then ("-- " ++) else id
   emit $ c $ "constant " ++ mangle x " : " ++ printHType ty "\n"
-leanDecl nax (HDDef x ss xs r t) =
+leanDecl ax (HDDef x ss xs r t) = when (ax /= Only) $
   let bis = printGroupedBinders False (ss ++ (mapSnd (SType []) <$> xs)) in
   emit $ ("def " ++) $ mangle x $ bis (" : " ++ r ++ " :=\n" ++ printTerm False t "\n")
-leanDecl nax (HDThm x (TType vs gs ret) Nothing) = do
-  let c = if nax then ("-- " ++) else id
+leanDecl ax (HDThm x (TType vs gs ret) Nothing) = do
+  let c = if noAx ax then ("-- " ++) else id
   emit $ c $ ("axiom " ++) $ mangle x $ printGroupedBinders True vs $ " : " ++
     foldr (\g r -> printGType True g (" \x2192 " ++ r)) (printGType False ret "\n") gs
-leanDecl nax (HDThm x (TType vs gs (GType xs ret)) (Just (hs, pr))) = do
+leanDecl ax (HDThm x (TType vs gs (GType xs ret)) (Just (hs, pr))) = when (ax /= Only) $ do
   let bis1 = printGroupedBinders True vs
   let bis2 r = foldr (\(h, g) -> ("\n " ++) .
         printBinderGroup False [h] (printGType False g)) r (zip hs gs)

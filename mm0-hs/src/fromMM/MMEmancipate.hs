@@ -17,12 +17,12 @@ emancipateDecl (Stmt x) = get >>= \db -> case snd $ mStmts db M.! x of
     updateDecl x hs $ if all ((== VSBound) . fst) hs then S.empty else s
   Term (hs, _) _ e (Just _) ->
     let s = collectBound hs in
-    updateDecl x hs $ execState (checkExpr db e) S.empty
+    updateDecl x hs $ execState (checkExpr db False e) S.empty
   Thm (hs, dv) _ e pr ->
     let s = collectBound hs in
     updateDecl x hs $ execState (do
       mapM_ (checkHyp db) hs
-      checkExpr db e
+      checkExpr db False e
       mapM_ (\(ds, p) -> checkProof db p) pr) S.empty
   _ -> return ()
 emancipateDecl _ = return ()
@@ -35,14 +35,14 @@ collectBound = go S.empty where
 
 checkHyp :: MMDatabase -> (VarStatus, Label) -> State (S.Set Label) ()
 checkHyp db (VSHyp, x) = case snd $ mStmts db M.! x of
-  Hyp (EHyp _ e) -> checkExpr db e
+  Hyp (EHyp _ e) -> checkExpr db True e
   _ -> return ()
 checkHyp _ (_, _) = return ()
 
-checkExpr :: MMDatabase -> MMExpr -> State (S.Set Label) ()
-checkExpr db = modify . checkExpr' where
+checkExpr :: MMDatabase -> Bool -> MMExpr -> State (S.Set Label) ()
+checkExpr db hy = modify . checkExpr' where
   checkExpr' :: MMExpr -> S.Set Label -> S.Set Label
-  checkExpr' (SVar v) = id
+  checkExpr' (SVar v) = if hy then S.insert v else id
   checkExpr' (App t es) = checkApp hs es where
     Term (hs, _) _ _ _ = snd $ mStmts db M.! t
 
