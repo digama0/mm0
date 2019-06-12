@@ -104,13 +104,23 @@ mkFrame f = do
   vs' <- fmlaVHyps f
   return (build (mDB t) (S.union vs vs') sc ([], S.empty) (M.empty, 0))
 
+insertDVs :: (Label -> Bool) -> DVs -> [Label] -> DVs
+insertDVs f ds [] = ds
+insertDVs f ds (v:vs) = let ds' = insertDVs f ds vs in
+  if f v then foldl' (insertDV1 v) ds' vs else ds'
+  where
+
+  insertDV1 :: Label -> DVs -> Label -> DVs
+  insertDV1 v1 ds v2 | f v2 = S.insert (orientPair (v1, v2)) ds
+  insertDV1 v1 ds v2 = ds
+
 build :: MMDatabase -> S.Set Label -> Scope ->
   Frame -> (M.Map Var Int, Int) -> (Frame, M.Map Var Int)
 build db vars = go where
   go [] fr (m, _) = (fr, m)
   go ((hs, ds, _) : sc) (hs', ds') m' =
     let (hs'', m'') = insertHyps hs hs' m' in
-    go sc (hs'', foldl' insertDVs ds' ds) m''
+    go sc (hs'', foldl' (insertDVs (`S.member` vars)) ds' ds) m''
 
   insertHyps :: [(Label, Hyp)] -> [(VarStatus, String)] ->
     (M.Map Var Int, Int) -> ([(VarStatus, String)], (M.Map Var Int, Int))
@@ -119,17 +129,6 @@ build db vars = go where
   insertHyps ((x, VHyp s v):hs) hs' m = (hs'', (M.insert v n m', n+1)) where
     hs2 = (if sPure (snd (mSorts db M.! s)) then VSBound else VSOpen, x) : hs'
     (hs'', (m', n)) = insertHyps hs (if S.member x vars then hs2 else hs') m
-
-  insertDVs :: DVs -> [Label] -> DVs
-  insertDVs ds [] = ds
-  insertDVs ds (v:vs) = let ds' = insertDVs ds vs in
-    if S.member v vars then foldl' (insertDV1 v) ds' vs else ds'
-
-  insertDV1 :: Label -> DVs -> Label -> DVs
-  insertDV1 v1 ds v2 =
-    if S.member v2 vars then
-      S.insert (if v1 < v2 then (v1, v2) else (v2, v1)) ds
-    else ds
 
 addSort :: Sort -> Maybe Sort -> FromMMM ()
 addSort x s2 = modifyDB $ \db -> db {
@@ -201,6 +200,7 @@ addThm x f@(Const s : _) fr m p = do
       (_, e) <- parseFmla f
       addStmt x (Thm fr s' e p)
     Just (Nothing, _) -> do
+      guardError "syntax axiom has $d" (null (snd fr))
       when (isNothing p) $
         let g = App x . reorderMap m f in
         modify $ \t -> t {
@@ -494,6 +494,17 @@ processJ (JKeyword "free_var" j) = case j of
     (_, Hyp (VHyp _ v)) | S.member v s -> (VSFree, l)
     _ -> (VSBound, l)
   updateHyp db s p = p
+processJ (JKeyword "free_var_in" j) = case j of
+  JString x (JKeyword "with" j) ->
+    getManyJ "free_var" j $ \vs -> do
+      t <- get
+      updateDecl x ((\v -> snd (mVMap t M.! v)) <$> vs)
+  _ -> throwError "bad $j 'free_var_in' command"
+  where
+  updateDecl :: Label -> [Label] -> FromMMM ()
+  updateDecl x vs = modifyDB $ \db -> db {mStmts = M.adjust (\case
+    (n, Term (hs, dv) s e p) ->
+      (n, Term (hs, insertDVs (const True) dv vs) s e p)) x $ mStmts db}
 
 processJ (JKeyword x j) = skipJ j
 processJ (JRest ss) = process ss
