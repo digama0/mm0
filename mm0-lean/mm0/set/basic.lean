@@ -376,9 +376,9 @@ def ciin (A B : setvar → «class») : «class» := {y | ∀ x:setvar, x ∈ A 
 theorem df_iin {A B : setvar → «class»} :
   ciin A B = {y | ∀ x:setvar, x ∈ A x → y ∈ B x} := rfl
 
-def wdisj (A B : setvar → «class») : wff := ∀ y, ∃* x, x ∈ A x ∧ y ∈ B x
+def wdisj (A B : setvar → «class») : wff := ∀ y:setvar, ∃* x, x ∈ A x ∧ y ∈ B x
 theorem df_disj {A B : setvar → «class»} :
-  wdisj A B ↔ ∀ y, ∃* x, x ∈ A x ∧ y ∈ B x := iff.rfl
+  wdisj A B ↔ ∀ y:setvar, ∃* x, x ∈ A x ∧ y ∈ B x := iff.rfl
 
 def wbr (A B R : «class») : wff := cop A B ∈ R
 theorem df_br {A B R : «class»} : wbr A B R ↔ cop A B ∈ R := iff.rfl
@@ -418,7 +418,8 @@ theorem ax_sep {ph : setvar → wff} {z : setvar} :
   ∃ y:setvar, ∀ x:setvar, x ∈ y ↔ x ∈ z ∧ ph x :=
 by simp; exact ⟨has_sep.sep ph z, λ x, Set.mem_sep⟩
 
-theorem ax_nul : ∃ x:setvar, ∀ y:setvar, y ∉ x := ⟨∅, Set.mem_empty⟩
+theorem ax_nul : ∃ x:setvar, ∀ y:setvar, ¬ y ∈ x :=
+by simp; exact ⟨∅, Set.mem_empty⟩
 
 theorem ax_pow {x : setvar} :
   ∃ y:setvar, ∀ z:setvar, (∀ w:setvar, w ∈ z → w ∈ x) → z ∈ y :=
@@ -665,7 +666,7 @@ theorem ax_inf {x : setvar} : ∃ y:setvar, x ∈ y ∧
 end⟩
 
 theorem ax_inf2 : ∃ x:setvar,
-  (∃ y:setvar, y ∈ x ∧ ∀ z:setvar, z ∉ y) ∧
+  (∃ y:setvar, y ∈ x ∧ ∀ z:setvar, ¬ z ∈ y) ∧
   ∀ y:setvar, y ∈ x → ∃ z:setvar, z ∈ x ∧ ∀ w:setvar, w ∈ z ↔ w ∈ y ∨ w ≡ y :=
 by simp; exact
 ⟨Set.omega, ⟨∅, Set.omega_zero, Set.mem_empty⟩,
@@ -700,5 +701,667 @@ theorem df_ac : wac ↔ wal (λ x, wex (λ f1, wa (wss (cv f1) (cv x)) (wfn (cv 
 
 def ccda : «class» := cmpt2 (λ x y, V) (λ x y, V) (λ x y, cun (cxp (cv x) (csn c0)) (cxp (cv y) (csn c1o)))
 theorem df_cda : ccda = cmpt2 (λ x y, V) (λ x y, V) (λ x y, cun (cxp (cv x) (csn c0)) (cxp (cv y) (csn c1o))) := rfl
+
+constant cc : «class»
+
+constant cr : «class»
+
+constant cc0 : «class»
+
+constant c1 : «class»
+
+constant ci : «class»
+
+constant caddc : «class»
+
+constant cltrr : «class»
+
+constant cmul : «class»
+
+axiom ax_cnex : cc ∈ cvv
+
+axiom ax_resscn : cr ⊆ cc
+
+axiom ax_1cn : c1 ∈ cc
+
+axiom ax_icn : ci ∈ cc
+
+axiom ax_addcl {A B : «class»} : ⊦ wi (wa (wcel A cc) (wcel B cc)) (wcel (co A B caddc) cc)
+
+axiom ax_addrcl {A B : «class»} : ⊦ wi (wa (wcel A cr) (wcel B cr)) (wcel (co A B caddc) cr)
+
+axiom ax_mulcl {A B : «class»} : ⊦ wi (wa (wcel A cc) (wcel B cc)) (wcel (co A B cmul) cc)
+
+axiom ax_mulrcl {A B : «class»} : ⊦ wi (wa (wcel A cr) (wcel B cr)) (wcel (co A B cmul) cr)
+
+axiom ax_mulcom {A B : «class»} : ⊦ wi (wa (wcel A cc) (wcel B cc)) (wceq (co A B cmul) (co B A cmul))
+
+axiom ax_addass {A B C : «class»} : ⊦ wi (w3a (wcel A cc) (wcel B cc) (wcel C cc)) (wceq (co (co A B caddc) C caddc) (co A (co B C caddc) caddc))
+
+axiom ax_mulass {A B C : «class»} : ⊦ wi (w3a (wcel A cc) (wcel B cc) (wcel C cc)) (wceq (co (co A B cmul) C cmul) (co A (co B C cmul) cmul))
+
+axiom ax_distr {A B C : «class»} : ⊦ wi (w3a (wcel A cc) (wcel B cc) (wcel C cc)) (wceq (co A (co B C caddc) cmul) (co (co A B cmul) (co A C cmul) caddc))
+
+axiom ax_i2m1 : co (co ci ci cmul) c1 caddc = cc0
+
+axiom ax_1ne0 : c1 ≠ cc0
+
+axiom ax_1rid {A : «class»} : ⊦ wi (wcel A cr) (wceq (co A c1 cmul) A)
+
+axiom ax_rnegex {A : «class»} : ⊦ wi (wcel A cr) (wrex (λ x, wceq (co A (cv x) caddc) cc0) (λ x, cr))
+
+axiom ax_rrecex {A : «class»} : ⊦ wi (wa (wcel A cr) (wne A cc0)) (wrex (λ x, wceq (co A (cv x) cmul) c1) (λ x, cr))
+
+axiom ax_cnre {A : «class»} : ⊦ wi (wcel A cc) (wrex (λ x, wrex (λ y, wceq A (co (cv x) (co ci (cv y) cmul) caddc)) (λ y, cr)) (λ x, cr))
+
+axiom ax_pre_lttri {A B : «class»} : ⊦ wi (wa (wcel A cr) (wcel B cr)) (wb (wbr A B cltrr) (wn (wo (wceq A B) (wbr B A cltrr))))
+
+axiom ax_pre_lttrn {A B C : «class»} : ⊦ wi (w3a (wcel A cr) (wcel B cr) (wcel C cr)) (wi (wa (wbr A B cltrr) (wbr B C cltrr)) (wbr A C cltrr))
+
+axiom ax_pre_ltadd {A B C : «class»} : ⊦ wi (w3a (wcel A cr) (wcel B cr) (wcel C cr)) (wi (wbr A B cltrr) (wbr (co C A caddc) (co C B caddc) cltrr))
+
+axiom ax_pre_mulgt0 {A B : «class»} : ⊦ wi (wa (wcel A cr) (wcel B cr)) (wi (wa (wbr cc0 A cltrr) (wbr cc0 B cltrr)) (wbr cc0 (co A B cmul) cltrr))
+
+axiom ax_pre_sup {A : «class»} : ⊦ wi (w3a (wss A cr) (wne A c0) (wrex (λ x, wral (λ y, wbr (cv y) (cv x) cltrr) (λ y, A)) (λ x, cr))) (wrex (λ x, wa (wral (λ y, wn (wbr (cv x) (cv y) cltrr)) (λ y, A)) (wral (λ y, wi (wbr (cv y) (cv x) cltrr) (wrex (λ z, wbr (cv y) (cv z) cltrr) (λ z, A))) (λ y, cr))) (λ x, cr))
+
+axiom ax_addf : wf (cxp cc cc) cc caddc
+
+axiom ax_mulf : wf (cxp cc cc) cc cmul
+
+def cpnf : «class» := cpw (cuni cc)
+theorem df_pnf : cpnf = (cpw (cuni cc)) := rfl
+
+def cmnf : «class» := cpw cpnf
+theorem df_mnf : cmnf = (cpw cpnf) := rfl
+
+def cxr : «class» := cun cr (cpr cpnf cmnf)
+theorem df_xr : cxr = (cun cr (cpr cpnf cmnf)) := rfl
+
+def clt : «class» := cun (copab (λ x y, w3a (wcel (cv x) cr) (wcel (cv y) cr) (wbr (cv x) (cv y) cltrr))) (cun (cxp (cun cr (csn cmnf)) (csn cpnf)) (cxp (csn cmnf) cr))
+theorem df_ltxr : clt = (cun (copab (λ x y, w3a (wcel (cv x) cr) (wcel (cv y) cr) (wbr (cv x) (cv y) cltrr))) (cun (cxp (cun cr (csn cmnf)) (csn cpnf)) (cxp (csn cmnf) cr))) := rfl
+
+def cle : «class» := cdif (cxp cxr cxr) (ccnv clt)
+theorem df_le : cle = (cdif (cxp cxr cxr) (ccnv clt)) := rfl
+
+def cmin : «class» := cmpt2 (λ x y, cc) (λ x y, cc) (λ x y, crio (λ z, wceq (co (cv y) (cv z) caddc) (cv x)) (λ z, cc))
+theorem df_sub : cmin = (cmpt2 (λ x y, cc) (λ x y, cc) (λ x y, crio (λ z, wceq (co (cv y) (cv z) caddc) (cv x)) (λ z, cc))) := rfl
+
+def cneg (A : «class») : «class» := co cc0 A cmin
+theorem df_neg {A : «class»} : cneg A = (co cc0 A cmin) := rfl
+
+def cdiv : «class» := cmpt2 (λ x y, cc) (λ x y, cdif cc (csn cc0)) (λ x y, crio (λ z, wceq (co (cv y) (cv z) cmul) (cv x)) (λ z, cc))
+theorem df_div : cdiv = (cmpt2 (λ x y, cc) (λ x y, cdif cc (csn cc0)) (λ x y, crio (λ z, wceq (co (cv y) (cv z) cmul) (cv x)) (λ z, cc))) := rfl
+
+def cn : «class» := cima (crdg (cmpt (λ x, cvv) (λ x, co (cv x) c1 caddc)) c1) com
+theorem df_nn : cn = (cima (crdg (cmpt (λ x, cvv) (λ x, co (cv x) c1 caddc)) c1) com) := rfl
+
+def c2 : «class» := co c1 c1 caddc
+theorem df_2 : c2 = (co c1 c1 caddc) := rfl
+
+def c3 : «class» := co c2 c1 caddc
+theorem df_3 : c3 = (co c2 c1 caddc) := rfl
+
+def c4 : «class» := co c3 c1 caddc
+theorem df_4 : c4 = (co c3 c1 caddc) := rfl
+
+def c5 : «class» := co c4 c1 caddc
+theorem df_5 : c5 = (co c4 c1 caddc) := rfl
+
+def c6 : «class» := co c5 c1 caddc
+theorem df_6 : c6 = (co c5 c1 caddc) := rfl
+
+def c7 : «class» := co c6 c1 caddc
+theorem df_7 : c7 = (co c6 c1 caddc) := rfl
+
+def c8 : «class» := co c7 c1 caddc
+theorem df_8 : c8 = (co c7 c1 caddc) := rfl
+
+def c9 : «class» := co c8 c1 caddc
+theorem df_9 : c9 = (co c8 c1 caddc) := rfl
+
+def c10 : «class» := co c9 c1 caddc
+theorem df_10 : c10 = (co c9 c1 caddc) := rfl
+
+def cn0 : «class» := cun cn (csn cc0)
+theorem df_n0 : cn0 = (cun cn (csn cc0)) := rfl
+
+def cz : «class» := crab (λ n, w3o (wceq (cv n) cc0) (wcel (cv n) cn) (wcel (cneg (cv n)) cn)) (λ n, cr)
+theorem df_z : cz = (crab (λ n, w3o (wceq (cv n) cc0) (wcel (cv n) cn) (wcel (cneg (cv n)) cn)) (λ n, cr)) := rfl
+def cdc (A B : «class») : «class» := co (co c10 A cmul) B caddc
+theorem df_dec {A B : «class»} : cdc A B = (co (co c10 A cmul) B caddc) := rfl
+
+def cuz : «class» := cmpt (λ j, cz) (λ j, crab (λ k, wbr (cv j) (cv k) cle) (λ k, cz))
+theorem df_uz : cuz = (cmpt (λ j, cz) (λ j, crab (λ k, wbr (cv j) (cv k) cle) (λ k, cz))) := rfl
+
+def cq : «class» := cima cdiv (cxp cz cn)
+
+theorem df_q : cq = (cima cdiv (cxp cz cn)) := rfl
+
+def crp : «class» := crab (λ x, wbr cc0 (cv x) clt) (λ x, cr)
+theorem df_rp : crp = (crab (λ x, wbr cc0 (cv x) clt) (λ x, cr)) := rfl
+
+def cxne (A : «class») : «class» := cif (wceq A cpnf) cmnf (cif (wceq A cmnf) cpnf (cneg A))
+theorem df_xneg {A : «class»} : cxne A = (cif (wceq A cpnf) cmnf (cif (wceq A cmnf) cpnf (cneg A))) := rfl
+
+def cxad : «class» := cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, cif (wceq (cv x) cpnf) (cif (wceq (cv y) cmnf) cc0 cpnf) (cif (wceq (cv x) cmnf) (cif (wceq (cv y) cpnf) cc0 cmnf) (cif (wceq (cv y) cpnf) cpnf (cif (wceq (cv y) cmnf) cmnf (co (cv x) (cv y) caddc)))))
+theorem df_xadd : cxad = (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, cif (wceq (cv x) cpnf) (cif (wceq (cv y) cmnf) cc0 cpnf) (cif (wceq (cv x) cmnf) (cif (wceq (cv y) cpnf) cc0 cmnf) (cif (wceq (cv y) cpnf) cpnf (cif (wceq (cv y) cmnf) cmnf (co (cv x) (cv y) caddc)))))) := rfl
+
+def cxmu : «class» := cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, cif (wo (wceq (cv x) cc0) (wceq (cv y) cc0)) cc0 (cif (wo (wo (wa (wbr cc0 (cv y) clt) (wceq (cv x) cpnf)) (wa (wbr (cv y) cc0 clt) (wceq (cv x) cmnf))) (wo (wa (wbr cc0 (cv x) clt) (wceq (cv y) cpnf)) (wa (wbr (cv x) cc0 clt) (wceq (cv y) cmnf)))) cpnf (cif (wo (wo (wa (wbr cc0 (cv y) clt) (wceq (cv x) cmnf)) (wa (wbr (cv y) cc0 clt) (wceq (cv x) cpnf))) (wo (wa (wbr cc0 (cv x) clt) (wceq (cv y) cmnf)) (wa (wbr (cv x) cc0 clt) (wceq (cv y) cpnf)))) cmnf (co (cv x) (cv y) cmul))))
+theorem df_xmul : cxmu = (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, cif (wo (wceq (cv x) cc0) (wceq (cv y) cc0)) cc0 (cif (wo (wo (wa (wbr cc0 (cv y) clt) (wceq (cv x) cpnf)) (wa (wbr (cv y) cc0 clt) (wceq (cv x) cmnf))) (wo (wa (wbr cc0 (cv x) clt) (wceq (cv y) cpnf)) (wa (wbr (cv x) cc0 clt) (wceq (cv y) cmnf)))) cpnf (cif (wo (wo (wa (wbr cc0 (cv y) clt) (wceq (cv x) cmnf)) (wa (wbr (cv y) cc0 clt) (wceq (cv x) cpnf))) (wo (wa (wbr cc0 (cv x) clt) (wceq (cv y) cmnf)) (wa (wbr (cv x) cc0 clt) (wceq (cv y) cpnf)))) cmnf (co (cv x) (cv y) cmul))))) := rfl
+
+def cioo : «class» := cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) clt) (wbr (cv z) (cv y) clt)) (λ z, cxr))
+theorem df_ioo : cioo = (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) clt) (wbr (cv z) (cv y) clt)) (λ z, cxr))) := rfl
+
+def cioc : «class» := cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) clt) (wbr (cv z) (cv y) cle)) (λ z, cxr))
+theorem df_ioc : cioc = (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) clt) (wbr (cv z) (cv y) cle)) (λ z, cxr))) := rfl
+
+def cico : «class» := cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) cle) (wbr (cv z) (cv y) clt)) (λ z, cxr))
+theorem df_ico : cico = (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) cle) (wbr (cv z) (cv y) clt)) (λ z, cxr))) := rfl
+
+def cicc : «class» := cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) cle) (wbr (cv z) (cv y) cle)) (λ z, cxr))
+theorem df_icc : cicc = (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, crab (λ z, wa (wbr (cv x) (cv z) cle) (wbr (cv z) (cv y) cle)) (λ z, cxr))) := rfl
+
+def cfz : «class» := cmpt2 (λ m n, cz) (λ m n, cz) (λ m n, crab (λ k, wa (wbr (cv m) (cv k) cle) (wbr (cv k) (cv n) cle)) (λ k, cz))
+theorem df_fz : cfz = (cmpt2 (λ m n, cz) (λ m n, cz) (λ m n, crab (λ k, wa (wbr (cv m) (cv k) cle) (wbr (cv k) (cv n) cle)) (λ k, cz))) := rfl
+
+def cfzo : «class» := cmpt2 (λ m n, cz) (λ m n, cz) (λ m n, co (cv m) (co (cv n) c1 cmin) cfz)
+
+theorem df_fzo : cfzo = (cmpt2 (λ m n, cz) (λ m n, cz) (λ m n, co (cv m) (co (cv n) c1 cmin) cfz)) := rfl
+
+def cfl : «class» := cmpt (λ x, cr) (λ x, crio (λ y, wa (wbr (cv y) (cv x) cle) (wbr (cv x) (co (cv y) c1 caddc) clt)) (λ y, cz))
+theorem df_fl : cfl = (cmpt (λ x, cr) (λ x, crio (λ y, wa (wbr (cv y) (cv x) cle) (wbr (cv x) (co (cv y) c1 caddc) clt)) (λ y, cz))) := rfl
+
+def cmo : «class» := cmpt2 (λ x y, cr) (λ x y, crp) (λ x y, co (cv x) (co (cv y) (cfv (co (cv x) (cv y) cdiv) cfl) cmul) cmin)
+
+theorem df_mod : cmo = (cmpt2 (λ x y, cr) (λ x y, crp) (λ x y, co (cv x) (co (cv y) (cfv (co (cv x) (cv y) cdiv) cfl) cmul) cmin)) := rfl
+
+def cseq (c_pl F M : «class») : «class» := cima (crdg (cmpt2 (λ x y, cvv) (λ x y, cvv) (λ x y, cop (co (cv x) c1 caddc) (co (cv y) (cfv (co (cv x) c1 caddc) F) c_pl))) (cop M (cfv M F))) com
+theorem df_seq {c_pl F M : «class»} : cseq c_pl F M = (cima (crdg (cmpt2 (λ x y, cvv) (λ x y, cvv) (λ x y, cop (co (cv x) c1 caddc) (co (cv y) (cfv (co (cv x) c1 caddc) F) c_pl))) (cop M (cfv M F))) com) := rfl
+
+def cexp : «class» := cmpt2 (λ x y, cc) (λ x y, cz) (λ x y, cif (wceq (cv y) cc0) c1 (cif (wbr cc0 (cv y) clt) (cfv (cv y) (cseq cmul (cxp cn (csn (cv x))) c1)) (co c1 (cfv (cneg (cv y)) (cseq cmul (cxp cn (csn (cv x))) c1)) cdiv)))
+theorem df_exp : cexp = (cmpt2 (λ x y, cc) (λ x y, cz) (λ x y, cif (wceq (cv y) cc0) c1 (cif (wbr cc0 (cv y) clt) (cfv (cv y) (cseq cmul (cxp cn (csn (cv x))) c1)) (co c1 (cfv (cneg (cv y)) (cseq cmul (cxp cn (csn (cv x))) c1)) cdiv)))) := rfl
+
+def cfa : «class» := cun (csn (cop cc0 c1)) (cseq cmul cid c1)
+theorem df_fac : cfa = (cun (csn (cop cc0 c1)) (cseq cmul cid c1)) := rfl
+
+def cbc : «class» := cmpt2 (λ n k, cn0) (λ n k, cz) (λ n k, cif (wcel (cv k) (co cc0 (cv n) cfz)) (co (cfv (cv n) cfa) (co (cfv (co (cv n) (cv k) cmin) cfa) (cfv (cv k) cfa) cmul) cdiv) cc0)
+theorem df_bc : cbc = (cmpt2 (λ n k, cn0) (λ n k, cz) (λ n k, cif (wcel (cv k) (co cc0 (cv n) cfz)) (co (cfv (cv n) cfa) (co (cfv (co (cv n) (cv k) cmin) cfa) (cfv (cv k) cfa) cmul) cdiv) cc0)) := rfl
+
+def chash : «class» := cun (ccom (cres (crdg (cmpt (λ x, cvv) (λ x, co (cv x) c1 caddc)) cc0) com) ccrd) (cxp (cdif cvv cfn) (csn cpnf))
+theorem df_hash : chash = (cun (ccom (cres (crdg (cmpt (λ x, cvv) (λ x, co (cv x) c1 caddc)) cc0) com) ccrd) (cxp (cdif cvv cfn) (csn cpnf))) := rfl
+
+def cword (S : «class») : «class» := (cab (λ w, wrex (λ l, wf (co cc0 (cv l) cfzo) S (cv w)) (λ l, cn0)))
+theorem df_word {S : «class»} : cword S = (cab (λ w, wrex (λ l, wf (co cc0 (cv l) cfzo) S (cv w)) (λ l, cn0))) := rfl
+
+def cconcat : «class» := cmpt2 (λ s t, cvv) (λ s t, cvv) (λ s t, cmpt (λ x, co cc0 (co (cfv (cv s) chash) (cfv (cv t) chash) caddc) cfzo) (λ x, cif (wcel (cv x) (co cc0 (cfv (cv s) chash) cfzo)) (cfv (cv x) (cv s)) (cfv (co (cv x) (cfv (cv s) chash) cmin) (cv t))))
+theorem df_concat : cconcat = (cmpt2 (λ s t, cvv) (λ s t, cvv) (λ s t, cmpt (λ x, co cc0 (co (cfv (cv s) chash) (cfv (cv t) chash) caddc) cfzo) (λ x, cif (wcel (cv x) (co cc0 (cfv (cv s) chash) cfzo)) (cfv (cv x) (cv s)) (cfv (co (cv x) (cfv (cv s) chash) cmin) (cv t))))) := rfl
+
+def cs1 (A : «class») : «class» := csn (cop cc0 (cfv A cid))
+theorem df_s1 {A : «class»} : cs1 A = (csn (cop cc0 (cfv A cid))) := rfl
+
+def cshi : «class» := cmpt2 (λ f x, cvv) (λ f x, cc) (λ f x, copab (λ y z, wa (wcel (cv y) cc) (wbr (co (cv y) (cv x) cmin) (cv z) (cv f))))
+theorem df_shft : cshi = (cmpt2 (λ f x, cvv) (λ f x, cc) (λ f x, copab (λ y z, wa (wcel (cv y) cc) (wbr (co (cv y) (cv x) cmin) (cv z) (cv f))))) := rfl
+
+def ccj : «class» := cmpt (λ x, cc) (λ x, crio (λ y, wa (wcel (co (cv x) (cv y) caddc) cr) (wcel (co ci (co (cv x) (cv y) cmin) cmul) cr)) (λ y, cc))
+theorem df_cj : ccj = (cmpt (λ x, cc) (λ x, crio (λ y, wa (wcel (co (cv x) (cv y) caddc) cr) (wcel (co ci (co (cv x) (cv y) cmin) cmul) cr)) (λ y, cc))) := rfl
+
+def cre : «class» := cmpt (λ x, cc) (λ x, co (co (cv x) (cfv (cv x) ccj) caddc) c2 cdiv)
+theorem df_re : cre = (cmpt (λ x, cc) (λ x, co (co (cv x) (cfv (cv x) ccj) caddc) c2 cdiv)) := rfl
+
+def cim : «class» := cmpt (λ x, cc) (λ x, cfv (co (cv x) ci cdiv) cre)
+theorem df_im : cim = (cmpt (λ x, cc) (λ x, cfv (co (cv x) ci cdiv) cre)) := rfl
+
+def csqr : «class» := cmpt (λ x, cc) (λ x, crio (λ y, w3a (wceq (co (cv y) c2 cexp) (cv x)) (wbr cc0 (cfv (cv y) cre) cle) (wnel (co ci (cv y) cmul) crp)) (λ y, cc))
+theorem df_sqr : csqr = (cmpt (λ x, cc) (λ x, crio (λ y, w3a (wceq (co (cv y) c2 cexp) (cv x)) (wbr cc0 (cfv (cv y) cre) cle) (wnel (co ci (cv y) cmul) crp)) (λ y, cc))) := rfl
+
+def cabs : «class» := cmpt (λ x, cc) (λ x, cfv (co (cv x) (cfv (cv x) ccj) cmul) csqr)
+theorem df_abs : cabs = (cmpt (λ x, cc) (λ x, cfv (co (cv x) (cfv (cv x) ccj) cmul) csqr)) := rfl
+
+def clsp : «class» := cmpt (λ x, cvv) (λ x, csup (crn (cmpt (λ k, cr) (λ k, csup (cin (cima (cv x) (co (cv k) cpnf cico)) cxr) cxr clt))) cxr (ccnv clt))
+theorem df_limsup : clsp = (cmpt (λ x, cvv) (λ x, csup (crn (cmpt (λ k, cr) (λ k, csup (cin (cima (cv x) (co (cv k) cpnf cico)) cxr) cxr clt))) cxr (ccnv clt))) := rfl
+
+def cli : «class» := copab (λ f y, wa (wcel (cv y) cc) (wral (λ x, wrex (λ j, wral (λ k, wa (wcel (cfv (cv k) (cv f)) cc) (wbr (cfv (co (cfv (cv k) (cv f)) (cv y) cmin) cabs) (cv x) clt)) (λ k, cfv (cv j) cuz)) (λ j, cz)) (λ x, crp)))
+theorem df_clim : cli = (copab (λ f y, wa (wcel (cv y) cc) (wral (λ x, wrex (λ j, wral (λ k, wa (wcel (cfv (cv k) (cv f)) cc) (wbr (cfv (co (cfv (cv k) (cv f)) (cv y) cmin) cabs) (cv x) clt)) (λ k, cfv (cv j) cuz)) (λ j, cz)) (λ x, crp)))) := rfl
+
+def crli : «class» := copab (λ f x, wa (wa (wcel (cv f) (co cc cr cpm)) (wcel (cv x) cc)) (wral (λ y, wrex (λ z, wral (λ w, wi (wbr (cv z) (cv w) cle) (wbr (cfv (co (cfv (cv w) (cv f)) (cv x) cmin) cabs) (cv y) clt)) (λ w, cdm (cv f))) (λ z, cr)) (λ y, crp)))
+theorem df_rlim : crli = (copab (λ f x, wa (wa (wcel (cv f) (co cc cr cpm)) (wcel (cv x) cc)) (wral (λ y, wrex (λ z, wral (λ w, wi (wbr (cv z) (cv w) cle) (wbr (cfv (co (cfv (cv w) (cv f)) (cv x) cmin) cabs) (cv y) clt)) (λ w, cdm (cv f))) (λ z, cr)) (λ y, crp)))) := rfl
+
+def co1 : «class» := crab (λ f, wrex (λ x, wrex (λ m, wral (λ y, wbr (cfv (cfv (cv y) (cv f)) cabs) (cv m) cle) (λ y, cin (cdm (cv f)) (co (cv x) cpnf cico))) (λ m, cr)) (λ x, cr)) (λ f, co cc cr cpm)
+theorem df_o1 : co1 = (crab (λ f, wrex (λ x, wrex (λ m, wral (λ y, wbr (cfv (cfv (cv y) (cv f)) cabs) (cv m) cle) (λ y, cin (cdm (cv f)) (co (cv x) cpnf cico))) (λ m, cr)) (λ x, cr)) (λ f, co cc cr cpm)) := rfl
+
+def clo1 : «class» := crab (λ f, wrex (λ x, wrex (λ m, wral (λ y, wbr (cfv (cv y) (cv f)) (cv m) cle) (λ y, cin (cdm (cv f)) (co (cv x) cpnf cico))) (λ m, cr)) (λ x, cr)) (λ f, co cr cr cpm)
+theorem df_lo1 : clo1 = (crab (λ f, wrex (λ x, wrex (λ m, wral (λ y, wbr (cfv (cv y) (cv f)) (cv m) cle) (λ y, cin (cdm (cv f)) (co (cv x) cpnf cico))) (λ m, cr)) (λ x, cr)) (λ f, co cr cr cpm)) := rfl
+
+def csu (A : «class») (B : setvar → «class») : «class» := cio (λ x, wo (wrex (λ m, wa (wss A (cfv (cv m) cuz)) (wbr (cseq caddc (cmpt (λ n, cz) (λ n, cif (wcel (cv n) A) (csb (cv n) (λ k, B k)) cc0)) (cv m)) (cv x) cli)) (λ m, cz)) (wrex (λ m, wex (λ f, wa (wf1o (co c1 (cv m) cfz) A (cv f)) (wceq (cv x) (cfv (cv m) (cseq caddc (cmpt (λ n, cn) (λ n, csb (cfv (cv n) (cv f)) (λ k, B k))) c1))))) (λ m, cn)))
+theorem df_sum {A B : setvar → «class»} (k : setvar) : csu (A k) (λ k, B k) = (cio (λ x, wo (wrex (λ m, wa (wss (A k) (cfv (cv m) cuz)) (wbr (cseq caddc (cmpt (λ n, cz) (λ n, cif (wcel (cv n) (A k)) (csb (cv n) (λ k, B k)) cc0)) (cv m)) (cv x) cli)) (λ m, cz)) (wrex (λ m, wex (λ f, wa (wf1o (co c1 (cv m) cfz) (A k) (cv f)) (wceq (cv x) (cfv (cv m) (cseq caddc (cmpt (λ n, cn) (λ n, csb (cfv (cv n) (cv f)) (λ k, B k))) c1))))) (λ m, cn)))) := rfl
+
+def ce : «class» := cmpt (λ x, cc) (λ x, csu cn0 (λ k, co (co (cv x) (cv k) cexp) (cfv (cv k) cfa) cdiv))
+theorem df_ef : ce = (cmpt (λ x, cc) (λ x, csu cn0 (λ k, co (co (cv x) (cv k) cexp) (cfv (cv k) cfa) cdiv))) := rfl
+
+def ceu : «class» := cfv c1 ce
+theorem df_e : ceu = (cfv c1 ce) := rfl
+
+def csin : «class» := cmpt (λ x, cc) (λ x, co (co (cfv (co ci (cv x) cmul) ce) (cfv (co (cneg ci) (cv x) cmul) ce) cmin) (co c2 ci cmul) cdiv)
+theorem df_sin : csin = (cmpt (λ x, cc) (λ x, co (co (cfv (co ci (cv x) cmul) ce) (cfv (co (cneg ci) (cv x) cmul) ce) cmin) (co c2 ci cmul) cdiv)) := rfl
+
+def ccos : «class» := cmpt (λ x, cc) (λ x, co (co (cfv (co ci (cv x) cmul) ce) (cfv (co (cneg ci) (cv x) cmul) ce) caddc) c2 cdiv)
+theorem df_cos : ccos = (cmpt (λ x, cc) (λ x, co (co (cfv (co ci (cv x) cmul) ce) (cfv (co (cneg ci) (cv x) cmul) ce) caddc) c2 cdiv)) := rfl
+
+def ctan : «class» := cmpt (λ x, cima (ccnv ccos) (cdif cc (csn cc0))) (λ x, co (cfv (cv x) csin) (cfv (cv x) ccos) cdiv)
+theorem df_tan : ctan = (cmpt (λ x, cima (ccnv ccos) (cdif cc (csn cc0))) (λ x, co (cfv (cv x) csin) (cfv (cv x) ccos) cdiv)) := rfl
+
+def cpi : «class» := csup (cin crp (cima (ccnv csin) (csn cc0))) cr (ccnv clt)
+theorem df_pi : cpi = (csup (cin crp (cima (ccnv csin) (csn cc0))) cr (ccnv clt)) := rfl
+
+def cdivides : «class» := copab (λ x y, wa (wa (wcel (cv x) cz) (wcel (cv y) cz)) (wrex (λ n, wceq (co (cv n) (cv x) cmul) (cv y)) (λ n, cz)))
+theorem df_dvds : cdivides = (copab (λ x y, wa (wa (wcel (cv x) cz) (wcel (cv y) cz)) (wrex (λ n, wceq (co (cv n) (cv x) cmul) (cv y)) (λ n, cz)))) := rfl
+
+def cgcd : «class» := cmpt2 (λ x y, cz) (λ x y, cz) (λ x y, cif (wa (wceq (cv x) cc0) (wceq (cv y) cc0)) cc0 (csup (crab (λ n, wa (wbr (cv n) (cv x) cdivides) (wbr (cv n) (cv y) cdivides)) (λ n, cz)) cr clt))
+theorem df_gcd : cgcd = (cmpt2 (λ x y, cz) (λ x y, cz) (λ x y, cif (wa (wceq (cv x) cc0) (wceq (cv y) cc0)) cc0 (csup (crab (λ n, wa (wbr (cv n) (cv x) cdivides) (wbr (cv n) (cv y) cdivides)) (λ n, cz)) cr clt))) := rfl
+
+def cprime : «class» := crab (λ p, wbr (crab (λ n, wbr (cv n) (cv p) cdivides) (λ n, cn)) c2o cen) (λ p, cn)
+theorem df_prm : cprime = (crab (λ p, wbr (crab (λ n, wbr (cv n) (cv p) cdivides) (λ n, cn)) c2o cen) (λ p, cn)) := rfl
+
+def cnumer : «class» := cmpt (λ y, cq) (λ y, cfv (crio (λ x, wa (wceq (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cgcd) c1) (wceq (cv y) (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cdiv))) (λ x, cxp cz cn)) c1st)
+theorem df_numer : cnumer = (cmpt (λ y, cq) (λ y, cfv (crio (λ x, wa (wceq (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cgcd) c1) (wceq (cv y) (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cdiv))) (λ x, cxp cz cn)) c1st)) := rfl
+
+def cdenom : «class» := cmpt (λ y, cq) (λ y, cfv (crio (λ x, wa (wceq (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cgcd) c1) (wceq (cv y) (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cdiv))) (λ x, cxp cz cn)) c2nd)
+theorem df_denom : cdenom = (cmpt (λ y, cq) (λ y, cfv (crio (λ x, wa (wceq (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cgcd) c1) (wceq (cv y) (co (cfv (cv x) c1st) (cfv (cv x) c2nd) cdiv))) (λ x, cxp cz cn)) c2nd)) := rfl
+
+def cphi : «class» := cmpt (λ n, cn) (λ n, cfv (crab (λ x, wceq (co (cv x) (cv n) cgcd) c1) (λ x, co c1 (cv n) cfz)) chash)
+theorem df_phi : cphi = (cmpt (λ n, cn) (λ n, cfv (crab (λ x, wceq (co (cv x) (cv n) cgcd) c1) (λ x, co c1 (cv n) cfz)) chash)) := rfl
+
+def cpc : «class» := cmpt2 (λ p r, cprime) (λ p r, cq) (λ p r, cif (wceq (cv r) cc0) cpnf (cio (λ z, wrex (λ x, wrex (λ y, wa (wceq (cv r) (co (cv x) (cv y) cdiv)) (wceq (cv z) (co (csup (crab (λ n, wbr (co (cv p) (cv n) cexp) (cv x) cdivides) (λ n, cn0)) cr clt) (csup (crab (λ n, wbr (co (cv p) (cv n) cexp) (cv y) cdivides) (λ n, cn0)) cr clt) cmin))) (λ y, cn)) (λ x, cz))))
+theorem df_pc : cpc = (cmpt2 (λ p r, cprime) (λ p r, cq) (λ p r, cif (wceq (cv r) cc0) cpnf (cio (λ z, wrex (λ x, wrex (λ y, wa (wceq (cv r) (co (cv x) (cv y) cdiv)) (wceq (cv z) (co (csup (crab (λ n, wbr (co (cv p) (cv n) cexp) (cv x) cdivides) (λ n, cn0)) cr clt) (csup (crab (λ n, wbr (co (cv p) (cv n) cexp) (cv y) cdivides) (λ n, cn0)) cr clt) cmin))) (λ y, cn)) (λ x, cz))))) := rfl
+
+def cstr : «class» := copab (λ f x, w3a (wcel (cv x) (cin cle (cxp cn cn))) (wfun (cdif (cv f) (csn c0))) (wss (cdm (cv f)) (cfv (cv x) cfz)))
+theorem df_struct : cstr = (copab (λ f x, w3a (wcel (cv x) (cin cle (cxp cn cn))) (wfun (cdif (cv f) (csn c0))) (wss (cdm (cv f)) (cfv (cv x) cfz)))) := rfl
+
+def cnx : «class» := cres cid cn
+theorem df_ndx : cnx = (cres cid cn) := rfl
+
+def csts : «class» := cmpt2 (λ s e, cvv) (λ s e, cvv) (λ s e, cun (cres (cv s) (cdif cvv (cdm (csn (cv e))))) (csn (cv e)))
+theorem df_sets : csts = (cmpt2 (λ s e, cvv) (λ s e, cvv) (λ s e, cun (cres (cv s) (cdif cvv (cdm (csn (cv e))))) (csn (cv e)))) := rfl
+
+def cslot (A : «class») : «class» := cmpt (λ x, cvv) (λ x, cfv A (cv x))
+theorem df_slot {A : «class»} : cslot A = (cmpt (λ x, cvv) (λ x, cfv A (cv x))) := rfl
+
+def cbs : «class» := cslot c1
+theorem df_base : cbs = (cslot c1) := rfl
+
+def cress : «class» := cmpt2 (λ w x, cvv) (λ w x, cvv) (λ w x, cif (wss (cfv (cv w) cbs) (cv x)) (cv w) (co (cv w) (cop (cfv cnx cbs) (cin (cv x) (cfv (cv w) cbs))) csts))
+theorem df_ress : cress = (cmpt2 (λ w x, cvv) (λ w x, cvv) (λ w x, cif (wss (cfv (cv w) cbs) (cv x)) (cv w) (co (cv w) (cop (cfv cnx cbs) (cin (cv x) (cfv (cv w) cbs))) csts))) := rfl
+
+def cplusg : «class» := cslot c2
+theorem df_plusg : cplusg = (cslot c2) := rfl
+
+def cmulr : «class» := cslot c3
+theorem df_mulr : cmulr = (cslot c3) := rfl
+
+def cstv : «class» := cslot c4
+theorem df_starv : cstv = (cslot c4) := rfl
+
+def csca : «class» := cslot c5
+theorem df_sca : csca = (cslot c5) := rfl
+
+def cvsca : «class» := cslot c6
+theorem df_vsca : cvsca = (cslot c6) := rfl
+
+def cts : «class» := cslot c9
+theorem df_tset : cts = (cslot c9) := rfl
+
+def cple : «class» := cslot c10
+theorem df_ple : cple = (cslot c10) := rfl
+
+def cds : «class» := cslot (cdc c1 c2)
+theorem df_ds : cds = (cslot (cdc c1 c2)) := rfl
+
+def cunif : «class» := cslot (cdc c1 c3)
+theorem df_unif : cunif = (cslot (cdc c1 c3)) := rfl
+
+def chom : «class» := cslot (cdc c1 c4)
+theorem df_hom : chom = (cslot (cdc c1 c4)) := rfl
+
+def cco : «class» := cslot (cdc c1 c5)
+theorem df_cco : cco = (cslot (cdc c1 c5)) := rfl
+
+def crest : «class» := cmpt2 (λ j x, cvv) (λ j x, cvv) (λ j x, crn (cmpt (λ y, cv j) (λ y, cin (cv y) (cv x))))
+theorem df_rest : crest = (cmpt2 (λ j x, cvv) (λ j x, cvv) (λ j x, crn (cmpt (λ y, cv j) (λ y, cin (cv y) (cv x))))) := rfl
+
+def ctopn : «class» := cmpt (λ w, cvv) (λ w, co (cfv (cv w) cts) (cfv (cv w) cbs) crest)
+theorem df_topn : ctopn = (cmpt (λ w, cvv) (λ w, co (cfv (cv w) cts) (cfv (cv w) cbs) crest)) := rfl
+
+def ctg : «class» := cmpt (λ x, cvv) (λ x, cab (λ y, wss (cv y) (cuni (cin (cv x) (cpw (cv y))))))
+theorem df_topgen : ctg = (cmpt (λ x, cvv) (λ x, cab (λ y, wss (cv y) (cuni (cin (cv x) (cpw (cv y))))))) := rfl
+
+def cpt : «class» := cmpt (λ f, cvv) (λ f, cfv (cab (λ x, wex (λ g, wa (w3a (wfn (cv g) (cdm (cv f))) (wral (λ y, wcel (cfv (cv y) (cv g)) (cfv (cv y) (cv f))) (λ y, cdm (cv f))) (wrex (λ z, wral (λ y, wceq (cfv (cv y) (cv g)) (cuni (cfv (cv y) (cv f)))) (λ y, cdif (cdm (cv f)) (cv z))) (λ z, cfn))) (wceq (cv x) (cixp (λ y, cdm (cv f)) (λ y, cfv (cv y) (cv g))))))) ctg)
+theorem df_pt : cpt = (cmpt (λ f, cvv) (λ f, cfv (cab (λ x, wex (λ g, wa (w3a (wfn (cv g) (cdm (cv f))) (wral (λ y, wcel (cfv (cv y) (cv g)) (cfv (cv y) (cv f))) (λ y, cdm (cv f))) (wrex (λ z, wral (λ y, wceq (cfv (cv y) (cv g)) (cuni (cfv (cv y) (cv f)))) (λ y, cdif (cdm (cv f)) (cv z))) (λ z, cfn))) (wceq (cv x) (cixp (λ y, cdm (cv f)) (λ y, cfv (cv y) (cv g))))))) ctg)) := rfl
+
+def cprds : «class» := cmpt2 (λ s r, cvv) (λ s r, cvv) (λ s r, csb (cixp (λ x, cdm (cv r)) (λ x, cfv (cfv (cv x) (cv r)) cbs)) (λ v, csb (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, cixp (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) chom)))) (λ h, cun (cun (ctp (cop (cfv cnx cbs) (cv v)) (cop (cfv cnx cplusg) (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cplusg))))) (cop (cfv cnx cmulr) (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cmulr)))))) (cpr (cop (cfv cnx csca) (cv s)) (cop (cfv cnx cvsca) (cmpt2 (λ f g, cfv (cv s) cbs) (λ f g, cv v) (λ f g, cmpt (λ x, cdm (cv r)) (λ x, co (cv f) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cvsca))))))) (cun (ctp (cop (cfv cnx cts) (cfv (ccom ctopn (cv r)) cpt)) (cop (cfv cnx cple) (copab (λ f g, wa (wss (cpr (cv f) (cv g)) (cv v)) (wral (λ x, wbr (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cple)) (λ x, cdm (cv r)))))) (cop (cfv cnx cds) (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, csup (cun (crn (cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cds)))) (csn cc0)) cxr clt)))) (cpr (cop (cfv cnx chom) (cv h)) (cop (cfv cnx cco) (cmpt2 (λ a c, cxp (cv v) (cv v)) (λ a c, cv v) (λ a c, cmpt2 (λ d e, co (cv c) (cfv (cv a) c2nd) (cv h)) (λ d e, cfv (cv a) (cv h)) (λ d e, cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv d)) (cfv (cv x) (cv e)) (co (cop (cfv (cv x) (cfv (cv a) c1st)) (cfv (cv x) (cfv (cv a) c2nd))) (cfv (cv x) (cv c)) (cfv (cfv (cv x) (cv r)) cco))))))))))))
+theorem df_prds : cprds = (cmpt2 (λ s r, cvv) (λ s r, cvv) (λ s r, csb (cixp (λ x, cdm (cv r)) (λ x, cfv (cfv (cv x) (cv r)) cbs)) (λ v, csb (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, cixp (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) chom)))) (λ h, cun (cun (ctp (cop (cfv cnx cbs) (cv v)) (cop (cfv cnx cplusg) (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cplusg))))) (cop (cfv cnx cmulr) (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cmulr)))))) (cpr (cop (cfv cnx csca) (cv s)) (cop (cfv cnx cvsca) (cmpt2 (λ f g, cfv (cv s) cbs) (λ f g, cv v) (λ f g, cmpt (λ x, cdm (cv r)) (λ x, co (cv f) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cvsca))))))) (cun (ctp (cop (cfv cnx cts) (cfv (ccom ctopn (cv r)) cpt)) (cop (cfv cnx cple) (copab (λ f g, wa (wss (cpr (cv f) (cv g)) (cv v)) (wral (λ x, wbr (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cple)) (λ x, cdm (cv r)))))) (cop (cfv cnx cds) (cmpt2 (λ f g, cv v) (λ f g, cv v) (λ f g, csup (cun (crn (cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv f)) (cfv (cv x) (cv g)) (cfv (cfv (cv x) (cv r)) cds)))) (csn cc0)) cxr clt)))) (cpr (cop (cfv cnx chom) (cv h)) (cop (cfv cnx cco) (cmpt2 (λ a c, cxp (cv v) (cv v)) (λ a c, cv v) (λ a c, cmpt2 (λ d e, co (cv c) (cfv (cv a) c2nd) (cv h)) (λ d e, cfv (cv a) (cv h)) (λ d e, cmpt (λ x, cdm (cv r)) (λ x, co (cfv (cv x) (cv d)) (cfv (cv x) (cv e)) (co (cop (cfv (cv x) (cfv (cv a) c1st)) (cfv (cv x) (cfv (cv a) c2nd))) (cfv (cv x) (cv c)) (cfv (cfv (cv x) (cv r)) cco))))))))))))) := rfl
+
+def cordt : «class» := cmpt (λ r, cvv) (λ r, cfv (cfv (cun (csn (cdm (cv r))) (crn (cun (cmpt (λ x, cdm (cv r)) (λ x, crab (λ y, wn (wbr (cv y) (cv x) (cv r))) (λ y, cdm (cv r)))) (cmpt (λ x, cdm (cv r)) (λ x, crab (λ y, wn (wbr (cv x) (cv y) (cv r))) (λ y, cdm (cv r))))))) cfi) ctg)
+theorem df_ordt : cordt = (cmpt (λ r, cvv) (λ r, cfv (cfv (cun (csn (cdm (cv r))) (crn (cun (cmpt (λ x, cdm (cv r)) (λ x, crab (λ y, wn (wbr (cv y) (cv x) (cv r))) (λ y, cdm (cv r)))) (cmpt (λ x, cdm (cv r)) (λ x, crab (λ y, wn (wbr (cv x) (cv y) (cv r))) (λ y, cdm (cv r))))))) cfi) ctg)) := rfl
+
+def cxrs : «class» := cun (ctp (cop (cfv cnx cbs) cxr) (cop (cfv cnx cplusg) cxad) (cop (cfv cnx cmulr) cxmu)) (ctp (cop (cfv cnx cts) (cfv cle cordt)) (cop (cfv cnx cple) cle) (cop (cfv cnx cds) (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, cif (wbr (cv x) (cv y) cle) (co (cv y) (cxne (cv x)) cxad) (co (cv x) (cxne (cv y)) cxad)))))
+theorem df_xrs : cxrs = (cun (ctp (cop (cfv cnx cbs) cxr) (cop (cfv cnx cplusg) cxad) (cop (cfv cnx cmulr) cxmu)) (ctp (cop (cfv cnx cts) (cfv cle cordt)) (cop (cfv cnx cple) cle) (cop (cfv cnx cds) (cmpt2 (λ x y, cxr) (λ x y, cxr) (λ x y, cif (wbr (cv x) (cv y) cle) (co (cv y) (cxne (cv x)) cxad) (co (cv x) (cxne (cv y)) cxad)))))) := rfl
+
+def c0g : «class» := cmpt (λ g, cvv) (λ g, cio (λ e, wa (wcel (cv e) (cfv (cv g) cbs)) (wral (λ x, wa (wceq (co (cv e) (cv x) (cfv (cv g) cplusg)) (cv x)) (wceq (co (cv x) (cv e) (cfv (cv g) cplusg)) (cv x))) (λ x, cfv (cv g) cbs))))
+theorem df_0g : c0g = (cmpt (λ g, cvv) (λ g, cio (λ e, wa (wcel (cv e) (cfv (cv g) cbs)) (wral (λ x, wa (wceq (co (cv e) (cv x) (cfv (cv g) cplusg)) (cv x)) (wceq (co (cv x) (cv e) (cfv (cv g) cplusg)) (cv x))) (λ x, cfv (cv g) cbs))))) := rfl
+
+def cgsu : «class» := cmpt2 (λ w f, cvv) (λ w f, cvv) (λ w f, csb (crab (λ x, wral (λ y, wa (wceq (co (cv x) (cv y) (cfv (cv w) cplusg)) (cv y)) (wceq (co (cv y) (cv x) (cfv (cv w) cplusg)) (cv y))) (λ y, cfv (cv w) cbs)) (λ x, cfv (cv w) cbs)) (λ o, cif (wss (crn (cv f)) (cv o)) (cfv (cv w) c0g) (cif (wcel (cdm (cv f)) (crn cfz)) (cio (λ x, wex (λ m, wrex (λ n, wa (wceq (cdm (cv f)) (co (cv m) (cv n) cfz)) (wceq (cv x) (cfv (cv n) (cseq (cfv (cv w) cplusg) (cv f) (cv m))))) (λ n, cfv (cv m) cuz)))) (cio (λ x, wex (λ g, wsbc (λ y, wa (wf1o (co c1 (cfv (cv y) chash) cfz) (cv y) (cv g)) (wceq (cv x) (cfv (cfv (cv y) chash) (cseq (cfv (cv w) cplusg) (ccom (cv f) (cv g)) c1)))) (cima (ccnv (cv f)) (cdif cvv (cv o)))))))))
+theorem df_gsum : cgsu = (cmpt2 (λ w f, cvv) (λ w f, cvv) (λ w f, csb (crab (λ x, wral (λ y, wa (wceq (co (cv x) (cv y) (cfv (cv w) cplusg)) (cv y)) (wceq (co (cv y) (cv x) (cfv (cv w) cplusg)) (cv y))) (λ y, cfv (cv w) cbs)) (λ x, cfv (cv w) cbs)) (λ o, cif (wss (crn (cv f)) (cv o)) (cfv (cv w) c0g) (cif (wcel (cdm (cv f)) (crn cfz)) (cio (λ x, wex (λ m, wrex (λ n, wa (wceq (cdm (cv f)) (co (cv m) (cv n) cfz)) (wceq (cv x) (cfv (cv n) (cseq (cfv (cv w) cplusg) (cv f) (cv m))))) (λ n, cfv (cv m) cuz)))) (cio (λ x, wex (λ g, wsbc (λ y, wa (wf1o (co c1 (cfv (cv y) chash) cfz) (cv y) (cv g)) (wceq (cv x) (cfv (cfv (cv y) chash) (cseq (cfv (cv w) cplusg) (ccom (cv f) (cv g)) c1)))) (cima (ccnv (cv f)) (cdif cvv (cv o)))))))))) := rfl
+
+def cqtop : «class» := cmpt2 (λ j f, cvv) (λ j f, cvv) (λ j f, crab (λ s, wcel (cin (cima (ccnv (cv f)) (cv s)) (cuni (cv j))) (cv j)) (λ s, cpw (cima (cv f) (cuni (cv j)))))
+theorem df_qtop : cqtop = (cmpt2 (λ j f, cvv) (λ j f, cvv) (λ j f, crab (λ s, wcel (cin (cima (ccnv (cv f)) (cv s)) (cuni (cv j))) (cv j)) (λ s, cpw (cima (cv f) (cuni (cv j)))))) := rfl
+
+def cimas : «class» := cmpt2 (λ f r, cvv) (λ f r, cvv) (λ f r, csb (cfv (cv r) cbs) (λ v, cun (cun (ctp (cop (cfv cnx cbs) (crn (cv f))) (cop (cfv cnx cplusg) (ciun (λ p, cv v) (λ p, ciun (λ q, cv v) (λ q, csn (cop (cop (cfv (cv p) (cv f)) (cfv (cv q) (cv f))) (cfv (co (cv p) (cv q) (cfv (cv r) cplusg)) (cv f))))))) (cop (cfv cnx cmulr) (ciun (λ p, cv v) (λ p, ciun (λ q, cv v) (λ q, csn (cop (cop (cfv (cv p) (cv f)) (cfv (cv q) (cv f))) (cfv (co (cv p) (cv q) (cfv (cv r) cmulr)) (cv f)))))))) (cpr (cop (cfv cnx csca) (cfv (cv r) csca)) (cop (cfv cnx cvsca) (ciun (λ q, cv v) (λ q, cmpt2 (λ p x, cfv (cfv (cv r) csca) cbs) (λ p x, csn (cfv (cv q) (cv f))) (λ p x, cfv (co (cv p) (cv q) (cfv (cv r) cvsca)) (cv f))))))) (ctp (cop (cfv cnx cts) (co (cfv (cv r) ctopn) (cv f) cqtop)) (cop (cfv cnx cple) (ccom (ccom (cv f) (cfv (cv r) cple)) (ccnv (cv f)))) (cop (cfv cnx cds) (cmpt2 (λ x y, crn (cv f)) (λ x y, crn (cv f)) (λ x y, csup (ciun (λ n, cn) (λ n, crn (cmpt (λ g, crab (λ h, w3a (wceq (cfv (cfv (cfv c1 (cv h)) c1st) (cv f)) (cv x)) (wceq (cfv (cfv (cfv (cv n) (cv h)) c2nd) (cv f)) (cv y)) (wral (λ i, wceq (cfv (cfv (cfv (cv i) (cv h)) c2nd) (cv f)) (cfv (cfv (cfv (co (cv i) c1 caddc) (cv h)) c1st) (cv f))) (λ i, co c1 (co (cv n) c1 cmin) cfz))) (λ h, co (cxp (cv v) (cv v)) (co c1 (cv n) cfz) cmap)) (λ g, co cxrs (ccom (cfv (cv r) cds) (cv g)) cgsu)))) cxr (ccnv clt)))))))
+theorem df_imas : cimas = (cmpt2 (λ f r, cvv) (λ f r, cvv) (λ f r, csb (cfv (cv r) cbs) (λ v, cun (cun (ctp (cop (cfv cnx cbs) (crn (cv f))) (cop (cfv cnx cplusg) (ciun (λ p, cv v) (λ p, ciun (λ q, cv v) (λ q, csn (cop (cop (cfv (cv p) (cv f)) (cfv (cv q) (cv f))) (cfv (co (cv p) (cv q) (cfv (cv r) cplusg)) (cv f))))))) (cop (cfv cnx cmulr) (ciun (λ p, cv v) (λ p, ciun (λ q, cv v) (λ q, csn (cop (cop (cfv (cv p) (cv f)) (cfv (cv q) (cv f))) (cfv (co (cv p) (cv q) (cfv (cv r) cmulr)) (cv f)))))))) (cpr (cop (cfv cnx csca) (cfv (cv r) csca)) (cop (cfv cnx cvsca) (ciun (λ q, cv v) (λ q, cmpt2 (λ p x, cfv (cfv (cv r) csca) cbs) (λ p x, csn (cfv (cv q) (cv f))) (λ p x, cfv (co (cv p) (cv q) (cfv (cv r) cvsca)) (cv f))))))) (ctp (cop (cfv cnx cts) (co (cfv (cv r) ctopn) (cv f) cqtop)) (cop (cfv cnx cple) (ccom (ccom (cv f) (cfv (cv r) cple)) (ccnv (cv f)))) (cop (cfv cnx cds) (cmpt2 (λ x y, crn (cv f)) (λ x y, crn (cv f)) (λ x y, csup (ciun (λ n, cn) (λ n, crn (cmpt (λ g, crab (λ h, w3a (wceq (cfv (cfv (cfv c1 (cv h)) c1st) (cv f)) (cv x)) (wceq (cfv (cfv (cfv (cv n) (cv h)) c2nd) (cv f)) (cv y)) (wral (λ i, wceq (cfv (cfv (cfv (cv i) (cv h)) c2nd) (cv f)) (cfv (cfv (cfv (co (cv i) c1 caddc) (cv h)) c1st) (cv f))) (λ i, co c1 (co (cv n) c1 cmin) cfz))) (λ h, co (cxp (cv v) (cv v)) (co c1 (cv n) cfz) cmap)) (λ g, co cxrs (ccom (cfv (cv r) cds) (cv g)) cgsu)))) cxr (ccnv clt)))))))) := rfl
+
+def cqus : «class» := cmpt2 (λ r e, cvv) (λ r e, cvv) (λ r e, co (cmpt (λ x, cfv (cv r) cbs) (λ x, cec (cv x) (cv e))) (cv r) cimas)
+theorem df_divs : cqus = (cmpt2 (λ r e, cvv) (λ r e, cvv) (λ r e, co (cmpt (λ x, cfv (cv r) cbs) (λ x, cec (cv x) (cv e))) (cv r) cimas)) := rfl
+
+def cxps : «class» := cmpt2 (λ r s, cvv) (λ r s, cvv) (λ r s, co (ccnv (cmpt2 (λ x y, cfv (cv r) cbs) (λ x y, cfv (cv s) cbs) (λ x y, ccnv (co (csn (cv x)) (csn (cv y)) ccda)))) (co (cfv (cv r) csca) (ccnv (co (csn (cv r)) (csn (cv s)) ccda)) cprds) cimas)
+theorem df_xps : cxps = (cmpt2 (λ r s, cvv) (λ r s, cvv) (λ r s, co (ccnv (cmpt2 (λ x y, cfv (cv r) cbs) (λ x y, cfv (cv s) cbs) (λ x y, ccnv (co (csn (cv x)) (csn (cv y)) ccda)))) (co (cfv (cv r) csca) (ccnv (co (csn (cv r)) (csn (cv s)) ccda)) cprds) cimas)) := rfl
+
+def cmre : «class» := cmpt (λ x, cvv) (λ x, crab (λ c, wa (wcel (cv x) (cv c)) (wral (λ s, wi (wne (cv s) c0) (wcel (cint (cv s)) (cv c))) (λ s, cpw (cv c)))) (λ c, cpw (cpw (cv x))))
+theorem df_mre : cmre = (cmpt (λ x, cvv) (λ x, crab (λ c, wa (wcel (cv x) (cv c)) (wral (λ s, wi (wne (cv s) c0) (wcel (cint (cv s)) (cv c))) (λ s, cpw (cv c)))) (λ c, cpw (cpw (cv x))))) := rfl
+
+def cmrc : «class» := cmpt (λ c, cuni (crn cmre)) (λ c, cmpt (λ x, cpw (cuni (cv c))) (λ x, cint (crab (λ s, wss (cv x) (cv s)) (λ s, cv c))))
+theorem df_mrc : cmrc = (cmpt (λ c, cuni (crn cmre)) (λ c, cmpt (λ x, cpw (cuni (cv c))) (λ x, cint (crab (λ s, wss (cv x) (cv s)) (λ s, cv c))))) := rfl
+
+def cacs : «class» := cmpt (λ x, cvv) (λ x, crab (λ c, wex (λ f, wa (wf (cpw (cv x)) (cpw (cv x)) (cv f)) (wral (λ s, wb (wcel (cv s) (cv c)) (wss (cuni (cima (cv f) (cin (cpw (cv s)) cfn))) (cv s))) (λ s, cpw (cv x))))) (λ c, cfv (cv x) cmre))
+theorem df_acs : cacs = (cmpt (λ x, cvv) (λ x, crab (λ c, wex (λ f, wa (wf (cpw (cv x)) (cpw (cv x)) (cv f)) (wral (λ s, wb (wcel (cv s) (cv c)) (wss (cuni (cima (cv f) (cin (cpw (cv s)) cfn))) (cv s))) (λ s, cpw (cv x))))) (λ c, cfv (cv x) cmre))) := rfl
+
+def cmnd : «class» := cab (λ g, wsbc (λ b, wsbc (λ p, wa (wral (λ x, wral (λ y, wral (λ z, wa (wcel (co (cv x) (cv y) (cv p)) (cv b)) (wceq (co (co (cv x) (cv y) (cv p)) (cv z) (cv p)) (co (cv x) (co (cv y) (cv z) (cv p)) (cv p)))) (λ z, cv b)) (λ y, cv b)) (λ x, cv b)) (wrex (λ e, wral (λ x, wa (wceq (co (cv e) (cv x) (cv p)) (cv x)) (wceq (co (cv x) (cv e) (cv p)) (cv x))) (λ x, cv b)) (λ e, cv b))) (cfv (cv g) cplusg)) (cfv (cv g) cbs))
+theorem df_mnd : cmnd = (cab (λ g, wsbc (λ b, wsbc (λ p, wa (wral (λ x, wral (λ y, wral (λ z, wa (wcel (co (cv x) (cv y) (cv p)) (cv b)) (wceq (co (co (cv x) (cv y) (cv p)) (cv z) (cv p)) (co (cv x) (co (cv y) (cv z) (cv p)) (cv p)))) (λ z, cv b)) (λ y, cv b)) (λ x, cv b)) (wrex (λ e, wral (λ x, wa (wceq (co (cv e) (cv x) (cv p)) (cv x)) (wceq (co (cv x) (cv e) (cv p)) (cv x))) (λ x, cv b)) (λ e, cv b))) (cfv (cv g) cplusg)) (cfv (cv g) cbs))) := rfl
+
+def cgrp : «class» := crab (λ g, wral (λ a, wrex (λ m, wceq (co (cv m) (cv a) (cfv (cv g) cplusg)) (cfv (cv g) c0g)) (λ m, cfv (cv g) cbs)) (λ a, cfv (cv g) cbs)) (λ g, cmnd)
+theorem df_grp : cgrp = (crab (λ g, wral (λ a, wrex (λ m, wceq (co (cv m) (cv a) (cfv (cv g) cplusg)) (cfv (cv g) c0g)) (λ m, cfv (cv g) cbs)) (λ a, cfv (cv g) cbs)) (λ g, cmnd)) := rfl
+
+def cminusg : «class» := cmpt (λ g, cvv) (λ g, cmpt (λ x, cfv (cv g) cbs) (λ x, crio (λ w, wceq (co (cv w) (cv x) (cfv (cv g) cplusg)) (cfv (cv g) c0g)) (λ w, cfv (cv g) cbs)))
+theorem df_minusg : cminusg = (cmpt (λ g, cvv) (λ g, cmpt (λ x, cfv (cv g) cbs) (λ x, crio (λ w, wceq (co (cv w) (cv x) (cfv (cv g) cplusg)) (cfv (cv g) c0g)) (λ w, cfv (cv g) cbs)))) := rfl
+
+def csg : «class» := cmpt (λ g, cvv) (λ g, cmpt2 (λ x y, cfv (cv g) cbs) (λ x y, cfv (cv g) cbs) (λ x y, co (cv x) (cfv (cv y) (cfv (cv g) cminusg)) (cfv (cv g) cplusg)))
+theorem df_sbg : csg = (cmpt (λ g, cvv) (λ g, cmpt2 (λ x y, cfv (cv g) cbs) (λ x y, cfv (cv g) cbs) (λ x y, co (cv x) (cfv (cv y) (cfv (cv g) cminusg)) (cfv (cv g) cplusg)))) := rfl
+
+def cmg : «class» := cmpt (λ g, cvv) (λ g, cmpt2 (λ n x, cz) (λ n x, cfv (cv g) cbs) (λ n x, cif (wceq (cv n) cc0) (cfv (cv g) c0g) (csb (cseq (cfv (cv g) cplusg) (cxp cn (csn (cv x))) c1) (λ s, cif (wbr cc0 (cv n) clt) (cfv (cv n) (cv s)) (cfv (cfv (cneg (cv n)) (cv s)) (cfv (cv g) cminusg))))))
+theorem df_mulg : cmg = (cmpt (λ g, cvv) (λ g, cmpt2 (λ n x, cz) (λ n x, cfv (cv g) cbs) (λ n x, cif (wceq (cv n) cc0) (cfv (cv g) c0g) (csb (cseq (cfv (cv g) cplusg) (cxp cn (csn (cv x))) c1) (λ s, cif (wbr cc0 (cv n) clt) (cfv (cv n) (cv s)) (cfv (cfv (cneg (cv n)) (cv s)) (cfv (cv g) cminusg))))))) := rfl
+
+def cmhm : «class» := cmpt2 (λ s t, cmnd) (λ s t, cmnd) (λ s t, crab (λ f, wa (wral (λ x, wral (λ y, wceq (cfv (co (cv x) (cv y) (cfv (cv s) cplusg)) (cv f)) (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) (cfv (cv t) cplusg))) (λ y, cfv (cv s) cbs)) (λ x, cfv (cv s) cbs)) (wceq (cfv (cfv (cv s) c0g) (cv f)) (cfv (cv t) c0g))) (λ f, co (cfv (cv t) cbs) (cfv (cv s) cbs) cmap))
+theorem df_mhm : cmhm = (cmpt2 (λ s t, cmnd) (λ s t, cmnd) (λ s t, crab (λ f, wa (wral (λ x, wral (λ y, wceq (cfv (co (cv x) (cv y) (cfv (cv s) cplusg)) (cv f)) (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) (cfv (cv t) cplusg))) (λ y, cfv (cv s) cbs)) (λ x, cfv (cv s) cbs)) (wceq (cfv (cfv (cv s) c0g) (cv f)) (cfv (cv t) c0g))) (λ f, co (cfv (cv t) cbs) (cfv (cv s) cbs) cmap))) := rfl
+
+def csubmnd : «class» := cmpt (λ s, cmnd) (λ s, crab (λ t, wa (wcel (cfv (cv s) c0g) (cv t)) (wral (λ x, wral (λ y, wcel (co (cv x) (cv y) (cfv (cv s) cplusg)) (cv t)) (λ y, cv t)) (λ x, cv t))) (λ t, cpw (cfv (cv s) cbs)))
+theorem df_submnd : csubmnd = (cmpt (λ s, cmnd) (λ s, crab (λ t, wa (wcel (cfv (cv s) c0g) (cv t)) (wral (λ x, wral (λ y, wcel (co (cv x) (cv y) (cfv (cv s) cplusg)) (cv t)) (λ y, cv t)) (λ x, cv t))) (λ t, cpw (cfv (cv s) cbs)))) := rfl
+
+def csubg : «class» := cmpt (λ w, cgrp) (λ w, crab (λ s, wcel (co (cv w) (cv s) cress) cgrp) (λ s, cpw (cfv (cv w) cbs)))
+theorem df_subg : csubg = (cmpt (λ w, cgrp) (λ w, crab (λ s, wcel (co (cv w) (cv s) cress) cgrp) (λ s, cpw (cfv (cv w) cbs)))) := rfl
+
+def cnsg : «class» := cmpt (λ w, cgrp) (λ w, crab (λ s, wsbc (λ b, wsbc (λ p, wral (λ x, wral (λ y, wb (wcel (co (cv x) (cv y) (cv p)) (cv s)) (wcel (co (cv y) (cv x) (cv p)) (cv s))) (λ y, cv b)) (λ x, cv b)) (cfv (cv w) cplusg)) (cfv (cv w) cbs)) (λ s, cfv (cv w) csubg))
+theorem df_nsg : cnsg = (cmpt (λ w, cgrp) (λ w, crab (λ s, wsbc (λ b, wsbc (λ p, wral (λ x, wral (λ y, wb (wcel (co (cv x) (cv y) (cv p)) (cv s)) (wcel (co (cv y) (cv x) (cv p)) (cv s))) (λ y, cv b)) (λ x, cv b)) (cfv (cv w) cplusg)) (cfv (cv w) cbs)) (λ s, cfv (cv w) csubg))) := rfl
+
+def cqg : «class» := cmpt2 (λ r i, cvv) (λ r i, cvv) (λ r i, copab (λ x y, wa (wss (cpr (cv x) (cv y)) (cfv (cv r) cbs)) (wcel (co (cfv (cv x) (cfv (cv r) cminusg)) (cv y) (cfv (cv r) cplusg)) (cv i))))
+theorem df_eqg : cqg = (cmpt2 (λ r i, cvv) (λ r i, cvv) (λ r i, copab (λ x y, wa (wss (cpr (cv x) (cv y)) (cfv (cv r) cbs)) (wcel (co (cfv (cv x) (cfv (cv r) cminusg)) (cv y) (cfv (cv r) cplusg)) (cv i))))) := rfl
+
+def cghm : «class» := cmpt2 (λ s t, cgrp) (λ s t, cgrp) (λ s t, cab (λ g, wsbc (λ w, wa (wf (cv w) (cfv (cv t) cbs) (cv g)) (wral (λ x, wral (λ y, wceq (cfv (co (cv x) (cv y) (cfv (cv s) cplusg)) (cv g)) (co (cfv (cv x) (cv g)) (cfv (cv y) (cv g)) (cfv (cv t) cplusg))) (λ y, cv w)) (λ x, cv w))) (cfv (cv s) cbs)))
+theorem df_ghm : cghm = (cmpt2 (λ s t, cgrp) (λ s t, cgrp) (λ s t, cab (λ g, wsbc (λ w, wa (wf (cv w) (cfv (cv t) cbs) (cv g)) (wral (λ x, wral (λ y, wceq (cfv (co (cv x) (cv y) (cfv (cv s) cplusg)) (cv g)) (co (cfv (cv x) (cv g)) (cfv (cv y) (cv g)) (cfv (cv t) cplusg))) (λ y, cv w)) (λ x, cv w))) (cfv (cv s) cbs)))) := rfl
+
+def cgim : «class» := cmpt2 (λ s t, cgrp) (λ s t, cgrp) (λ s t, crab (λ g, wf1o (cfv (cv s) cbs) (cfv (cv t) cbs) (cv g)) (λ g, co (cv s) (cv t) cghm))
+theorem df_gim : cgim = (cmpt2 (λ s t, cgrp) (λ s t, cgrp) (λ s t, crab (λ g, wf1o (cfv (cv s) cbs) (cfv (cv t) cbs) (cv g)) (λ g, co (cv s) (cv t) cghm))) := rfl
+
+def cga : «class» := cmpt2 (λ g s, cgrp) (λ g s, cvv) (λ g s, csb (cfv (cv g) cbs) (λ b, crab (λ m, wral (λ x, wa (wceq (co (cfv (cv g) c0g) (cv x) (cv m)) (cv x)) (wral (λ y, wral (λ z, wceq (co (co (cv y) (cv z) (cfv (cv g) cplusg)) (cv x) (cv m)) (co (cv y) (co (cv z) (cv x) (cv m)) (cv m))) (λ z, cv b)) (λ y, cv b))) (λ x, cv s)) (λ m, co (cv s) (cxp (cv b) (cv s)) cmap)))
+theorem df_ga : cga = (cmpt2 (λ g s, cgrp) (λ g s, cvv) (λ g s, csb (cfv (cv g) cbs) (λ b, crab (λ m, wral (λ x, wa (wceq (co (cfv (cv g) c0g) (cv x) (cv m)) (cv x)) (wral (λ y, wral (λ z, wceq (co (co (cv y) (cv z) (cfv (cv g) cplusg)) (cv x) (cv m)) (co (cv y) (co (cv z) (cv x) (cv m)) (cv m))) (λ z, cv b)) (λ y, cv b))) (λ x, cv s)) (λ m, co (cv s) (cxp (cv b) (cv s)) cmap)))) := rfl
+
+def ccntz : «class» := cmpt (λ m, cvv) (λ m, cmpt (λ s, cpw (cfv (cv m) cbs)) (λ s, crab (λ x, wral (λ y, wceq (co (cv x) (cv y) (cfv (cv m) cplusg)) (co (cv y) (cv x) (cfv (cv m) cplusg))) (λ y, cv s)) (λ x, cfv (cv m) cbs)))
+theorem df_cntz : ccntz = (cmpt (λ m, cvv) (λ m, cmpt (λ s, cpw (cfv (cv m) cbs)) (λ s, crab (λ x, wral (λ y, wceq (co (cv x) (cv y) (cfv (cv m) cplusg)) (co (cv y) (cv x) (cfv (cv m) cplusg))) (λ y, cv s)) (λ x, cfv (cv m) cbs)))) := rfl
+
+def coppg : «class» := cmpt (λ w, cvv) (λ w, co (cv w) (cop (cfv cnx cplusg) (ctpos (cfv (cv w) cplusg))) csts)
+theorem df_oppg : coppg = (cmpt (λ w, cvv) (λ w, co (cv w) (cop (cfv cnx cplusg) (ctpos (cfv (cv w) cplusg))) csts)) := rfl
+
+def cod : «class» := cmpt (λ g, cvv) (λ g, cmpt (λ x, cfv (cv g) cbs) (λ x, csb (crab (λ n, wceq (co (cv n) (cv x) (cfv (cv g) cmg)) (cfv (cv g) c0g)) (λ n, cn)) (λ i, cif (wceq (cv i) c0) cc0 (csup (cv i) cr (ccnv clt)))))
+theorem df_od : cod = (cmpt (λ g, cvv) (λ g, cmpt (λ x, cfv (cv g) cbs) (λ x, csb (crab (λ n, wceq (co (cv n) (cv x) (cfv (cv g) cmg)) (cfv (cv g) c0g)) (λ n, cn)) (λ i, cif (wceq (cv i) c0) cc0 (csup (cv i) cr (ccnv clt)))))) := rfl
+
+def cgex : «class» := cmpt (λ g, cvv) (λ g, csb (crab (λ n, wral (λ x, wceq (co (cv n) (cv x) (cfv (cv g) cmg)) (cfv (cv g) c0g)) (λ x, cfv (cv g) cbs)) (λ n, cn)) (λ i, cif (wceq (cv i) c0) cc0 (csup (cv i) cr (ccnv clt))))
+theorem df_gex : cgex = (cmpt (λ g, cvv) (λ g, csb (crab (λ n, wral (λ x, wceq (co (cv n) (cv x) (cfv (cv g) cmg)) (cfv (cv g) c0g)) (λ x, cfv (cv g) cbs)) (λ n, cn)) (λ i, cif (wceq (cv i) c0) cc0 (csup (cv i) cr (ccnv clt))))) := rfl
+
+def cpgp : «class» := copab (λ p g, wa (wa (wcel (cv p) cprime) (wcel (cv g) cgrp)) (wral (λ x, wrex (λ n, wceq (cfv (cv x) (cfv (cv g) cod)) (co (cv p) (cv n) cexp)) (λ n, cn0)) (λ x, cfv (cv g) cbs)))
+theorem df_pgp : cpgp = (copab (λ p g, wa (wa (wcel (cv p) cprime) (wcel (cv g) cgrp)) (wral (λ x, wrex (λ n, wceq (cfv (cv x) (cfv (cv g) cod)) (co (cv p) (cv n) cexp)) (λ n, cn0)) (λ x, cfv (cv g) cbs)))) := rfl
+
+def clsm : «class» := cmpt (λ w, cvv) (λ w, cmpt2 (λ t u, cpw (cfv (cv w) cbs)) (λ t u, cpw (cfv (cv w) cbs)) (λ t u, crn (cmpt2 (λ x y, cv t) (λ x y, cv u) (λ x y, co (cv x) (cv y) (cfv (cv w) cplusg)))))
+theorem df_lsm : clsm = (cmpt (λ w, cvv) (λ w, cmpt2 (λ t u, cpw (cfv (cv w) cbs)) (λ t u, cpw (cfv (cv w) cbs)) (λ t u, crn (cmpt2 (λ x y, cv t) (λ x y, cv u) (λ x y, co (cv x) (cv y) (cfv (cv w) cplusg)))))) := rfl
+
+def cpj1 : «class» := cmpt (λ w, cvv) (λ w, cmpt2 (λ t u, cpw (cfv (cv w) cbs)) (λ t u, cpw (cfv (cv w) cbs)) (λ t u, cmpt (λ z, co (cv t) (cv u) (cfv (cv w) clsm)) (λ z, crio (λ x, wrex (λ y, wceq (cv z) (co (cv x) (cv y) (cfv (cv w) cplusg))) (λ y, cv u)) (λ x, cv t))))
+theorem df_pj1 : cpj1 = (cmpt (λ w, cvv) (λ w, cmpt2 (λ t u, cpw (cfv (cv w) cbs)) (λ t u, cpw (cfv (cv w) cbs)) (λ t u, cmpt (λ z, co (cv t) (cv u) (cfv (cv w) clsm)) (λ z, crio (λ x, wrex (λ y, wceq (cv z) (co (cv x) (cv y) (cfv (cv w) cplusg))) (λ y, cv u)) (λ x, cv t))))) := rfl
+
+def ccmn : «class» := crab (λ g, wral (λ a, wral (λ b, wceq (co (cv a) (cv b) (cfv (cv g) cplusg)) (co (cv b) (cv a) (cfv (cv g) cplusg))) (λ b, cfv (cv g) cbs)) (λ a, cfv (cv g) cbs)) (λ g, cmnd)
+theorem df_cmn : ccmn = (crab (λ g, wral (λ a, wral (λ b, wceq (co (cv a) (cv b) (cfv (cv g) cplusg)) (co (cv b) (cv a) (cfv (cv g) cplusg))) (λ b, cfv (cv g) cbs)) (λ a, cfv (cv g) cbs)) (λ g, cmnd)) := rfl
+
+def cabel : «class» := cin cgrp ccmn
+theorem df_abl : cabel = (cin cgrp ccmn) := rfl
+
+def ccyg : «class» := crab (λ g, wrex (λ x, wceq (crn (cmpt (λ n, cz) (λ n, co (cv n) (cv x) (cfv (cv g) cmg)))) (cfv (cv g) cbs)) (λ x, cfv (cv g) cbs)) (λ g, cgrp)
+theorem df_cyg : ccyg = (crab (λ g, wrex (λ x, wceq (crn (cmpt (λ n, cz) (λ n, co (cv n) (cv x) (cfv (cv g) cmg)))) (cfv (cv g) cbs)) (λ x, cfv (cv g) cbs)) (λ g, cgrp)) := rfl
+
+def cdprd : «class» := cmpt2 (λ g s, cgrp) (λ g s, cab (λ h, wa (wf (cdm (cv h)) (cfv (cv g) csubg) (cv h)) (wral (λ x, wa (wral (λ y, wss (cfv (cv x) (cv h)) (cfv (cfv (cv y) (cv h)) (cfv (cv g) ccntz))) (λ y, cdif (cdm (cv h)) (csn (cv x)))) (wceq (cin (cfv (cv x) (cv h)) (cfv (cuni (cima (cv h) (cdif (cdm (cv h)) (csn (cv x))))) (cfv (cfv (cv g) csubg) cmrc))) (csn (cfv (cv g) c0g)))) (λ x, cdm (cv h))))) (λ g s, crn (cmpt (λ f, crab (λ h, wcel (cima (ccnv (cv h)) (cdif cvv (csn (cfv (cv g) c0g)))) cfn) (λ h, cixp (λ x, cdm (cv s)) (λ x, cfv (cv x) (cv s)))) (λ f, co (cv g) (cv f) cgsu)))
+theorem df_dprd : cdprd = (cmpt2 (λ g s, cgrp) (λ g s, cab (λ h, wa (wf (cdm (cv h)) (cfv (cv g) csubg) (cv h)) (wral (λ x, wa (wral (λ y, wss (cfv (cv x) (cv h)) (cfv (cfv (cv y) (cv h)) (cfv (cv g) ccntz))) (λ y, cdif (cdm (cv h)) (csn (cv x)))) (wceq (cin (cfv (cv x) (cv h)) (cfv (cuni (cima (cv h) (cdif (cdm (cv h)) (csn (cv x))))) (cfv (cfv (cv g) csubg) cmrc))) (csn (cfv (cv g) c0g)))) (λ x, cdm (cv h))))) (λ g s, crn (cmpt (λ f, crab (λ h, wcel (cima (ccnv (cv h)) (cdif cvv (csn (cfv (cv g) c0g)))) cfn) (λ h, cixp (λ x, cdm (cv s)) (λ x, cfv (cv x) (cv s)))) (λ f, co (cv g) (cv f) cgsu)))) := rfl
+
+def cdpj : «class» := cmpt2 (λ g s, cgrp) (λ g s, cima (cdm cdprd) (csn (cv g))) (λ g s, cmpt (λ i, cdm (cv s)) (λ i, co (cfv (cv i) (cv s)) (co (cv g) (cres (cv s) (cdif (cdm (cv s)) (csn (cv i)))) cdprd) (cfv (cv g) cpj1)))
+theorem df_dpj : cdpj = (cmpt2 (λ g s, cgrp) (λ g s, cima (cdm cdprd) (csn (cv g))) (λ g s, cmpt (λ i, cdm (cv s)) (λ i, co (cfv (cv i) (cv s)) (co (cv g) (cres (cv s) (cdif (cdm (cv s)) (csn (cv i)))) cdprd) (cfv (cv g) cpj1)))) := rfl
+
+def cmgp : «class» := cmpt (λ w, cvv) (λ w, co (cv w) (cop (cfv cnx cplusg) (cfv (cv w) cmulr)) csts)
+theorem df_mgp : cmgp = (cmpt (λ w, cvv) (λ w, co (cv w) (cop (cfv cnx cplusg) (cfv (cv w) cmulr)) csts)) := rfl
+
+def crg : «class» := crab (λ f, wa (wcel (cfv (cv f) cmgp) cmnd) (wsbc (λ r, wsbc (λ p, wsbc (λ t, wral (λ x, wral (λ y, wral (λ z, wa (wceq (co (cv x) (co (cv y) (cv z) (cv p)) (cv t)) (co (co (cv x) (cv y) (cv t)) (co (cv x) (cv z) (cv t)) (cv p))) (wceq (co (co (cv x) (cv y) (cv p)) (cv z) (cv t)) (co (co (cv x) (cv z) (cv t)) (co (cv y) (cv z) (cv t)) (cv p)))) (λ z, cv r)) (λ y, cv r)) (λ x, cv r)) (cfv (cv f) cmulr)) (cfv (cv f) cplusg)) (cfv (cv f) cbs))) (λ f, cgrp)
+theorem df_rng : crg = (crab (λ f, wa (wcel (cfv (cv f) cmgp) cmnd) (wsbc (λ r, wsbc (λ p, wsbc (λ t, wral (λ x, wral (λ y, wral (λ z, wa (wceq (co (cv x) (co (cv y) (cv z) (cv p)) (cv t)) (co (co (cv x) (cv y) (cv t)) (co (cv x) (cv z) (cv t)) (cv p))) (wceq (co (co (cv x) (cv y) (cv p)) (cv z) (cv t)) (co (co (cv x) (cv z) (cv t)) (co (cv y) (cv z) (cv t)) (cv p)))) (λ z, cv r)) (λ y, cv r)) (λ x, cv r)) (cfv (cv f) cmulr)) (cfv (cv f) cplusg)) (cfv (cv f) cbs))) (λ f, cgrp)) := rfl
+
+def ccrg : «class» := crab (λ f, wcel (cfv (cv f) cmgp) ccmn) (λ f, crg)
+theorem df_cring : ccrg = (crab (λ f, wcel (cfv (cv f) cmgp) ccmn) (λ f, crg)) := rfl
+
+def cur : «class» := ccom c0g cmgp
+theorem df_ur : cur = (ccom c0g cmgp) := rfl
+
+def coppr : «class» := cmpt (λ f, cvv) (λ f, co (cv f) (cop (cfv cnx cmulr) (ctpos (cfv (cv f) cmulr))) csts)
+theorem df_oppr : coppr = (cmpt (λ f, cvv) (λ f, co (cv f) (cop (cfv cnx cmulr) (ctpos (cfv (cv f) cmulr))) csts)) := rfl
+
+def cdsr : «class» := cmpt (λ w, cvv) (λ w, copab (λ x y, wa (wcel (cv x) (cfv (cv w) cbs)) (wrex (λ z, wceq (co (cv z) (cv x) (cfv (cv w) cmulr)) (cv y)) (λ z, cfv (cv w) cbs))))
+theorem df_dvdsr : cdsr = (cmpt (λ w, cvv) (λ w, copab (λ x y, wa (wcel (cv x) (cfv (cv w) cbs)) (wrex (λ z, wceq (co (cv z) (cv x) (cfv (cv w) cmulr)) (cv y)) (λ z, cfv (cv w) cbs))))) := rfl
+
+def cui : «class» := cmpt (λ w, cvv) (λ w, cima (ccnv (cin (cfv (cv w) cdsr) (cfv (cfv (cv w) coppr) cdsr))) (csn (cfv (cv w) cur)))
+theorem df_unit : cui = (cmpt (λ w, cvv) (λ w, cima (ccnv (cin (cfv (cv w) cdsr) (cfv (cfv (cv w) coppr) cdsr))) (csn (cfv (cv w) cur)))) := rfl
+
+def cinvr : «class» := cmpt (λ r, cvv) (λ r, cfv (co (cfv (cv r) cmgp) (cfv (cv r) cui) cress) cminusg)
+theorem df_invr : cinvr = (cmpt (λ r, cvv) (λ r, cfv (co (cfv (cv r) cmgp) (cfv (cv r) cui) cress) cminusg)) := rfl
+
+def cdvr : «class» := cmpt (λ r, cvv) (λ r, cmpt2 (λ x y, cfv (cv r) cbs) (λ x y, cfv (cv r) cui) (λ x y, co (cv x) (cfv (cv y) (cfv (cv r) cinvr)) (cfv (cv r) cmulr)))
+theorem df_dvr : cdvr = (cmpt (λ r, cvv) (λ r, cmpt2 (λ x y, cfv (cv r) cbs) (λ x y, cfv (cv r) cui) (λ x y, co (cv x) (cfv (cv y) (cfv (cv r) cinvr)) (cfv (cv r) cmulr)))) := rfl
+
+def crh : «class» := cmpt2 (λ r s, crg) (λ r s, crg) (λ r s, csb (cfv (cv r) cbs) (λ v, csb (cfv (cv s) cbs) (λ w, crab (λ f, wa (wceq (cfv (cfv (cv r) cur) (cv f)) (cfv (cv s) cur)) (wral (λ x, wral (λ y, wa (wceq (cfv (co (cv x) (cv y) (cfv (cv r) cplusg)) (cv f)) (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) (cfv (cv s) cplusg))) (wceq (cfv (co (cv x) (cv y) (cfv (cv r) cmulr)) (cv f)) (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) (cfv (cv s) cmulr)))) (λ y, cv v)) (λ x, cv v))) (λ f, co (cv w) (cv v) cmap))))
+theorem df_rnghom : crh = (cmpt2 (λ r s, crg) (λ r s, crg) (λ r s, csb (cfv (cv r) cbs) (λ v, csb (cfv (cv s) cbs) (λ w, crab (λ f, wa (wceq (cfv (cfv (cv r) cur) (cv f)) (cfv (cv s) cur)) (wral (λ x, wral (λ y, wa (wceq (cfv (co (cv x) (cv y) (cfv (cv r) cplusg)) (cv f)) (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) (cfv (cv s) cplusg))) (wceq (cfv (co (cv x) (cv y) (cfv (cv r) cmulr)) (cv f)) (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) (cfv (cv s) cmulr)))) (λ y, cv v)) (λ x, cv v))) (λ f, co (cv w) (cv v) cmap))))) := rfl
+
+def cdr : «class» := crab (λ r, wceq (cfv (cv r) cui) (cdif (cfv (cv r) cbs) (csn (cfv (cv r) c0g)))) (λ r, crg)
+theorem df_drng : cdr = (crab (λ r, wceq (cfv (cv r) cui) (cdif (cfv (cv r) cbs) (csn (cfv (cv r) c0g)))) (λ r, crg)) := rfl
+
+def csubrg : «class» := cmpt (λ w, crg) (λ w, crab (λ s, wa (wcel (co (cv w) (cv s) cress) crg) (wcel (cfv (cv w) cur) (cv s))) (λ s, cpw (cfv (cv w) cbs)))
+theorem df_subrg : csubrg = (cmpt (λ w, crg) (λ w, crab (λ s, wa (wcel (co (cv w) (cv s) cress) crg) (wcel (cfv (cv w) cur) (cv s))) (λ s, cpw (cfv (cv w) cbs)))) := rfl
+
+def clmod : «class» := crab (λ g, wsbc (λ v, wsbc (λ a, wsbc (λ f, wsbc (λ s, wsbc (λ k, wsbc (λ p, wsbc (λ t, wa (wcel (cv f) crg) (wral (λ q, wral (λ r, wral (λ x, wral (λ w, wa (w3a (wcel (co (cv r) (cv w) (cv s)) (cv v)) (wceq (co (cv r) (co (cv w) (cv x) (cv a)) (cv s)) (co (co (cv r) (cv w) (cv s)) (co (cv r) (cv x) (cv s)) (cv a))) (wceq (co (co (cv q) (cv r) (cv p)) (cv w) (cv s)) (co (co (cv q) (cv w) (cv s)) (co (cv r) (cv w) (cv s)) (cv a)))) (wa (wceq (co (co (cv q) (cv r) (cv t)) (cv w) (cv s)) (co (cv q) (co (cv r) (cv w) (cv s)) (cv s))) (wceq (co (cfv (cv f) cur) (cv w) (cv s)) (cv w)))) (λ w, cv v)) (λ x, cv v)) (λ r, cv k)) (λ q, cv k))) (cfv (cv f) cmulr)) (cfv (cv f) cplusg)) (cfv (cv f) cbs)) (cfv (cv g) cvsca)) (cfv (cv g) csca)) (cfv (cv g) cplusg)) (cfv (cv g) cbs)) (λ g, cgrp)
+theorem df_lmod : clmod = (crab (λ g, wsbc (λ v, wsbc (λ a, wsbc (λ f, wsbc (λ s, wsbc (λ k, wsbc (λ p, wsbc (λ t, wa (wcel (cv f) crg) (wral (λ q, wral (λ r, wral (λ x, wral (λ w, wa (w3a (wcel (co (cv r) (cv w) (cv s)) (cv v)) (wceq (co (cv r) (co (cv w) (cv x) (cv a)) (cv s)) (co (co (cv r) (cv w) (cv s)) (co (cv r) (cv x) (cv s)) (cv a))) (wceq (co (co (cv q) (cv r) (cv p)) (cv w) (cv s)) (co (co (cv q) (cv w) (cv s)) (co (cv r) (cv w) (cv s)) (cv a)))) (wa (wceq (co (co (cv q) (cv r) (cv t)) (cv w) (cv s)) (co (cv q) (co (cv r) (cv w) (cv s)) (cv s))) (wceq (co (cfv (cv f) cur) (cv w) (cv s)) (cv w)))) (λ w, cv v)) (λ x, cv v)) (λ r, cv k)) (λ q, cv k))) (cfv (cv f) cmulr)) (cfv (cv f) cplusg)) (cfv (cv f) cbs)) (cfv (cv g) cvsca)) (cfv (cv g) csca)) (cfv (cv g) cplusg)) (cfv (cv g) cbs)) (λ g, cgrp)) := rfl
+
+def clss : «class» := cmpt (λ w, cvv) (λ w, crab (λ s, wral (λ x, wral (λ a, wral (λ b, wcel (co (co (cv x) (cv a) (cfv (cv w) cvsca)) (cv b) (cfv (cv w) cplusg)) (cv s)) (λ b, cv s)) (λ a, cv s)) (λ x, cfv (cfv (cv w) csca) cbs)) (λ s, cdif (cpw (cfv (cv w) cbs)) (csn c0)))
+theorem df_lss : clss = (cmpt (λ w, cvv) (λ w, crab (λ s, wral (λ x, wral (λ a, wral (λ b, wcel (co (co (cv x) (cv a) (cfv (cv w) cvsca)) (cv b) (cfv (cv w) cplusg)) (cv s)) (λ b, cv s)) (λ a, cv s)) (λ x, cfv (cfv (cv w) csca) cbs)) (λ s, cdif (cpw (cfv (cv w) cbs)) (csn c0)))) := rfl
+
+def clspn : «class» := cmpt (λ w, cvv) (λ w, cmpt (λ s, cpw (cfv (cv w) cbs)) (λ s, cint (crab (λ t, wss (cv s) (cv t)) (λ t, cfv (cv w) clss))))
+theorem df_lsp : clspn = (cmpt (λ w, cvv) (λ w, cmpt (λ s, cpw (cfv (cv w) cbs)) (λ s, cint (crab (λ t, wss (cv s) (cv t)) (λ t, cfv (cv w) clss))))) := rfl
+
+def csra : «class» := cmpt (λ w, cvv) (λ w, cmpt (λ s, cpw (cfv (cv w) cbs)) (λ s, co (co (cv w) (cop (cfv cnx csca) (co (cv w) (cv s) cress)) csts) (cop (cfv cnx cvsca) (cfv (cv w) cmulr)) csts))
+theorem df_sra : csra = (cmpt (λ w, cvv) (λ w, cmpt (λ s, cpw (cfv (cv w) cbs)) (λ s, co (co (cv w) (cop (cfv cnx csca) (co (cv w) (cv s) cress)) csts) (cop (cfv cnx cvsca) (cfv (cv w) cmulr)) csts))) := rfl
+
+def crglmod : «class» := cmpt (λ w, cvv) (λ w, cfv (cfv (cv w) cbs) (cfv (cv w) csra))
+theorem df_rgmod : crglmod = (cmpt (λ w, cvv) (λ w, cfv (cfv (cv w) cbs) (cfv (cv w) csra))) := rfl
+
+def clidl : «class» := ccom clss crglmod
+theorem df_lidl : clidl = (ccom clss crglmod) := rfl
+
+def crsp : «class» := ccom clspn crglmod
+theorem df_rsp : crsp = (ccom clspn crglmod) := rfl
+
+def c2idl : «class» := cmpt (λ r, cvv) (λ r, cin (cfv (cv r) clidl) (cfv (cfv (cv r) coppr) clidl))
+theorem df_2idl : c2idl = (cmpt (λ r, cvv) (λ r, cin (cfv (cv r) clidl) (cfv (cfv (cv r) coppr) clidl))) := rfl
+
+def cpsmet : «class» := cmpt (λ x, cvv) (λ x, crab (λ d, wral (λ y, wa (wceq (co (cv y) (cv y) (cv d)) cc0) (wral (λ z, wral (λ w, wbr (co (cv y) (cv z) (cv d)) (co (co (cv w) (cv y) (cv d)) (co (cv w) (cv z) (cv d)) cxad) cle) (λ w, cv x)) (λ z, cv x))) (λ y, cv x)) (λ d, co cxr (cxp (cv x) (cv x)) cmap))
+theorem df_psmet : cpsmet = (cmpt (λ x, cvv) (λ x, crab (λ d, wral (λ y, wa (wceq (co (cv y) (cv y) (cv d)) cc0) (wral (λ z, wral (λ w, wbr (co (cv y) (cv z) (cv d)) (co (co (cv w) (cv y) (cv d)) (co (cv w) (cv z) (cv d)) cxad) cle) (λ w, cv x)) (λ z, cv x))) (λ y, cv x)) (λ d, co cxr (cxp (cv x) (cv x)) cmap))) := rfl
+
+def cxmt : «class» := cmpt (λ x, cvv) (λ x, crab (λ d, wral (λ y, wral (λ z, wa (wb (wceq (co (cv y) (cv z) (cv d)) cc0) (wceq (cv y) (cv z))) (wral (λ w, wbr (co (cv y) (cv z) (cv d)) (co (co (cv w) (cv y) (cv d)) (co (cv w) (cv z) (cv d)) cxad) cle) (λ w, cv x))) (λ z, cv x)) (λ y, cv x)) (λ d, co cxr (cxp (cv x) (cv x)) cmap))
+theorem df_xmet : cxmt = (cmpt (λ x, cvv) (λ x, crab (λ d, wral (λ y, wral (λ z, wa (wb (wceq (co (cv y) (cv z) (cv d)) cc0) (wceq (cv y) (cv z))) (wral (λ w, wbr (co (cv y) (cv z) (cv d)) (co (co (cv w) (cv y) (cv d)) (co (cv w) (cv z) (cv d)) cxad) cle) (λ w, cv x))) (λ z, cv x)) (λ y, cv x)) (λ d, co cxr (cxp (cv x) (cv x)) cmap))) := rfl
+
+def cme : «class» := cmpt (λ x, cvv) (λ x, crab (λ d, wral (λ y, wral (λ z, wa (wb (wceq (co (cv y) (cv z) (cv d)) cc0) (wceq (cv y) (cv z))) (wral (λ w, wbr (co (cv y) (cv z) (cv d)) (co (co (cv w) (cv y) (cv d)) (co (cv w) (cv z) (cv d)) caddc) cle) (λ w, cv x))) (λ z, cv x)) (λ y, cv x)) (λ d, co cr (cxp (cv x) (cv x)) cmap))
+theorem df_met : cme = (cmpt (λ x, cvv) (λ x, crab (λ d, wral (λ y, wral (λ z, wa (wb (wceq (co (cv y) (cv z) (cv d)) cc0) (wceq (cv y) (cv z))) (wral (λ w, wbr (co (cv y) (cv z) (cv d)) (co (co (cv w) (cv y) (cv d)) (co (cv w) (cv z) (cv d)) caddc) cle) (λ w, cv x))) (λ z, cv x)) (λ y, cv x)) (λ d, co cr (cxp (cv x) (cv x)) cmap))) := rfl
+
+def cbl : «class» := cmpt (λ d, cvv) (λ d, cmpt2 (λ x z, cdm (cdm (cv d))) (λ x z, cxr) (λ x z, crab (λ y, wbr (co (cv x) (cv y) (cv d)) (cv z) clt) (λ y, cdm (cdm (cv d)))))
+theorem df_bl : cbl = (cmpt (λ d, cvv) (λ d, cmpt2 (λ x z, cdm (cdm (cv d))) (λ x z, cxr) (λ x z, crab (λ y, wbr (co (cv x) (cv y) (cv d)) (cv z) clt) (λ y, cdm (cdm (cv d)))))) := rfl
+
+def cfbas : «class» := cmpt (λ w, cvv) (λ w, crab (λ x, w3a (wne (cv x) c0) (wnel c0 (cv x)) (wral (λ y, wral (λ z, wne (cin (cv x) (cpw (cin (cv y) (cv z)))) c0) (λ z, cv x)) (λ y, cv x))) (λ x, cpw (cpw (cv w))))
+theorem df_fbas : cfbas = (cmpt (λ w, cvv) (λ w, crab (λ x, w3a (wne (cv x) c0) (wnel c0 (cv x)) (wral (λ y, wral (λ z, wne (cin (cv x) (cpw (cin (cv y) (cv z)))) c0) (λ z, cv x)) (λ y, cv x))) (λ x, cpw (cpw (cv w))))) := rfl
+
+def cfg : «class» := cmpt2 (λ w x, cvv) (λ w x, cfv (cv w) cfbas) (λ w x, crab (λ y, wne (cin (cv x) (cpw (cv y))) c0) (λ y, cpw (cv w)))
+theorem df_fg : cfg = (cmpt2 (λ w x, cvv) (λ w x, cfv (cv w) cfbas) (λ w x, crab (λ y, wne (cin (cv x) (cpw (cv y))) c0) (λ y, cpw (cv w)))) := rfl
+
+def cmopn : «class» := cmpt (λ d, cuni (crn cxmt)) (λ d, cfv (crn (cfv (cv d) cbl)) ctg)
+theorem df_mopn : cmopn = (cmpt (λ d, cuni (crn cxmt)) (λ d, cfv (crn (cfv (cv d) cbl)) ctg)) := rfl
+
+def cmetu : «class» := cmpt (λ d, cuni (crn cpsmet)) (λ d, co (cxp (cdm (cdm (cv d))) (cdm (cdm (cv d)))) (crn (cmpt (λ a, crp) (λ a, cima (ccnv (cv d)) (co cc0 (cv a) cico)))) cfg)
+theorem df_metu : cmetu = (cmpt (λ d, cuni (crn cpsmet)) (λ d, co (cxp (cdm (cdm (cv d))) (cdm (cdm (cv d)))) (crn (cmpt (λ a, crp) (λ a, cima (ccnv (cv d)) (co cc0 (cv a) cico)))) cfg)) := rfl
+
+def ccnfld : «class» := cun (cun (ctp (cop (cfv cnx cbs) cc) (cop (cfv cnx cplusg) caddc) (cop (cfv cnx cmulr) cmul)) (csn (cop (cfv cnx cstv) ccj))) (cun (ctp (cop (cfv cnx cts) (cfv (ccom cabs cmin) cmopn)) (cop (cfv cnx cple) cle) (cop (cfv cnx cds) (ccom cabs cmin))) (csn (cop (cfv cnx cunif) (cfv (ccom cabs cmin) cmetu))))
+theorem df_cnfld : ccnfld = (cun (cun (ctp (cop (cfv cnx cbs) cc) (cop (cfv cnx cplusg) caddc) (cop (cfv cnx cmulr) cmul)) (csn (cop (cfv cnx cstv) ccj))) (cun (ctp (cop (cfv cnx cts) (cfv (ccom cabs cmin) cmopn)) (cop (cfv cnx cple) cle) (cop (cfv cnx cds) (ccom cabs cmin))) (csn (cop (cfv cnx cunif) (cfv (ccom cabs cmin) cmetu))))) := rfl
+
+def czrh : «class» := cmpt (λ r, cvv) (λ r, cuni (co (co ccnfld cz cress) (cv r) crh))
+theorem df_zrh : czrh = (cmpt (λ r, cvv) (λ r, cuni (co (co ccnfld cz cress) (cv r) crh))) := rfl
+
+def czn : «class» := cmpt (λ n, cn0) (λ n, csb (co ccnfld cz cress) (λ z, csb (co (cv z) (co (cv z) (cfv (csn (cv n)) (cfv (cv z) crsp)) cqg) cqus) (λ s, co (cv s) (cop (cfv cnx cple) (csb (cres (cfv (cv s) czrh) (cif (wceq (cv n) cc0) cz (co cc0 (cv n) cfzo))) (λ f, ccom (ccom (cv f) cle) (ccnv (cv f))))) csts)))
+theorem df_zn : czn = (cmpt (λ n, cn0) (λ n, csb (co ccnfld cz cress) (λ z, csb (co (cv z) (co (cv z) (cfv (csn (cv n)) (cfv (cv z) crsp)) cqg) cqus) (λ s, co (cv s) (cop (cfv cnx cple) (csb (cres (cfv (cv s) czrh) (cif (wceq (cv n) cc0) cz (co cc0 (cv n) cfzo))) (λ f, ccom (ccom (cv f) cle) (ccnv (cv f))))) csts)))) := rfl
+
+def ctop : «class» := cab (λ x, wa (wral (λ y, wcel (cuni (cv y)) (cv x)) (λ y, cpw (cv x))) (wral (λ y, wral (λ z, wcel (cin (cv y) (cv z)) (cv x)) (λ z, cv x)) (λ y, cv x)))
+theorem df_top : ctop = (cab (λ x, wa (wral (λ y, wcel (cuni (cv y)) (cv x)) (λ y, cpw (cv x))) (wral (λ y, wral (λ z, wcel (cin (cv y) (cv z)) (cv x)) (λ z, cv x)) (λ y, cv x)))) := rfl
+
+def ctopon : «class» := cmpt (λ b, cvv) (λ b, crab (λ j, wceq (cv b) (cuni (cv j))) (λ j, ctop))
+theorem df_topon : ctopon = (cmpt (λ b, cvv) (λ b, crab (λ j, wceq (cv b) (cuni (cv j))) (λ j, ctop))) := rfl
+
+def ctps : «class» := cab (λ f, wcel (cfv (cv f) ctopn) (cfv (cfv (cv f) cbs) ctopon))
+theorem df_topsp : ctps = (cab (λ f, wcel (cfv (cv f) ctopn) (cfv (cfv (cv f) cbs) ctopon))) := rfl
+
+def ctb : «class» := cab (λ x, wral (λ y, wral (λ z, wss (cin (cv y) (cv z)) (cuni (cin (cv x) (cpw (cin (cv y) (cv z)))))) (λ z, cv x)) (λ y, cv x))
+theorem df_bases : ctb = (cab (λ x, wral (λ y, wral (λ z, wss (cin (cv y) (cv z)) (cuni (cin (cv x) (cpw (cin (cv y) (cv z)))))) (λ z, cv x)) (λ y, cv x))) := rfl
+
+def ccld : «class» := cmpt (λ j, ctop) (λ j, crab (λ x, wcel (cdif (cuni (cv j)) (cv x)) (cv j)) (λ x, cpw (cuni (cv j))))
+theorem df_cld : ccld = (cmpt (λ j, ctop) (λ j, crab (λ x, wcel (cdif (cuni (cv j)) (cv x)) (cv j)) (λ x, cpw (cuni (cv j))))) := rfl
+
+def cnt : «class» := cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, cuni (cin (cv j) (cpw (cv x)))))
+theorem df_ntr : cnt = (cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, cuni (cin (cv j) (cpw (cv x)))))) := rfl
+
+def ccl : «class» := cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, cint (crab (λ y, wss (cv x) (cv y)) (λ y, cfv (cv j) ccld))))
+theorem df_cls : ccl = (cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, cint (crab (λ y, wss (cv x) (cv y)) (λ y, cfv (cv j) ccld))))) := rfl
+
+def cnei : «class» := cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, crab (λ y, wrex (λ g, wa (wss (cv x) (cv g)) (wss (cv g) (cv y))) (λ g, cv j)) (λ y, cpw (cuni (cv j)))))
+theorem df_nei : cnei = (cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, crab (λ y, wrex (λ g, wa (wss (cv x) (cv g)) (wss (cv g) (cv y))) (λ g, cv j)) (λ y, cpw (cuni (cv j)))))) := rfl
+
+def clp : «class» := cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, cab (λ y, wcel (cv y) (cfv (cdif (cv x) (csn (cv y))) (cfv (cv j) ccl)))))
+theorem df_lp : clp = (cmpt (λ j, ctop) (λ j, cmpt (λ x, cpw (cuni (cv j))) (λ x, cab (λ y, wcel (cv y) (cfv (cdif (cv x) (csn (cv y))) (cfv (cv j) ccl)))))) := rfl
+
+def cperf : «class» := crab (λ j, wceq (cfv (cuni (cv j)) (cfv (cv j) clp)) (cuni (cv j))) (λ j, ctop)
+theorem df_perf : cperf = (crab (λ j, wceq (cfv (cuni (cv j)) (cfv (cv j) clp)) (cuni (cv j))) (λ j, ctop)) := rfl
+
+def ccn : «class» := cmpt2 (λ j k, ctop) (λ j k, ctop) (λ j k, crab (λ f, wral (λ y, wcel (cima (ccnv (cv f)) (cv y)) (cv j)) (λ y, cv k)) (λ f, co (cuni (cv k)) (cuni (cv j)) cmap))
+theorem df_cn : ccn = (cmpt2 (λ j k, ctop) (λ j k, ctop) (λ j k, crab (λ f, wral (λ y, wcel (cima (ccnv (cv f)) (cv y)) (cv j)) (λ y, cv k)) (λ f, co (cuni (cv k)) (cuni (cv j)) cmap))) := rfl
+
+def ccnp : «class» := cmpt2 (λ j k, ctop) (λ j k, ctop) (λ j k, cmpt (λ x, cuni (cv j)) (λ x, crab (λ f, wral (λ y, wi (wcel (cfv (cv x) (cv f)) (cv y)) (wrex (λ g, wa (wcel (cv x) (cv g)) (wss (cima (cv f) (cv g)) (cv y))) (λ g, cv j))) (λ y, cv k)) (λ f, co (cuni (cv k)) (cuni (cv j)) cmap)))
+theorem df_cnp : ccnp = (cmpt2 (λ j k, ctop) (λ j k, ctop) (λ j k, cmpt (λ x, cuni (cv j)) (λ x, crab (λ f, wral (λ y, wi (wcel (cfv (cv x) (cv f)) (cv y)) (wrex (λ g, wa (wcel (cv x) (cv g)) (wss (cima (cv f) (cv g)) (cv y))) (λ g, cv j))) (λ y, cv k)) (λ f, co (cuni (cv k)) (cuni (cv j)) cmap)))) := rfl
+
+def cha : «class» := crab (λ j, wral (λ x, wral (λ y, wi (wne (cv x) (cv y)) (wrex (λ n, wrex (λ m, w3a (wcel (cv x) (cv n)) (wcel (cv y) (cv m)) (wceq (cin (cv n) (cv m)) c0)) (λ m, cv j)) (λ n, cv j))) (λ y, cuni (cv j))) (λ x, cuni (cv j))) (λ j, ctop)
+theorem df_haus : cha = (crab (λ j, wral (λ x, wral (λ y, wi (wne (cv x) (cv y)) (wrex (λ n, wrex (λ m, w3a (wcel (cv x) (cv n)) (wcel (cv y) (cv m)) (wceq (cin (cv n) (cv m)) c0)) (λ m, cv j)) (λ n, cv j))) (λ y, cuni (cv j))) (λ x, cuni (cv j))) (λ j, ctop)) := rfl
+
+def ccmp : «class» := crab (λ x, wral (λ y, wi (wceq (cuni (cv x)) (cuni (cv y))) (wrex (λ z, wceq (cuni (cv x)) (cuni (cv z))) (λ z, cin (cpw (cv y)) cfn))) (λ y, cpw (cv x))) (λ x, ctop)
+theorem df_cmp : ccmp = (crab (λ x, wral (λ y, wi (wceq (cuni (cv x)) (cuni (cv y))) (wrex (λ z, wceq (cuni (cv x)) (cuni (cv z))) (λ z, cin (cpw (cv y)) cfn))) (λ y, cpw (cv x))) (λ x, ctop)) := rfl
+
+def ctx : «class» := cmpt2 (λ r s, cvv) (λ r s, cvv) (λ r s, cfv (crn (cmpt2 (λ x y, cv r) (λ x y, cv s) (λ x y, cxp (cv x) (cv y)))) ctg)
+theorem df_tx : ctx = (cmpt2 (λ r s, cvv) (λ r s, cvv) (λ r s, cfv (crn (cmpt2 (λ x y, cv r) (λ x y, cv s) (λ x y, cxp (cv x) (cv y)))) ctg)) := rfl
+
+def chmeo : «class» := cmpt2 (λ j k, ctop) (λ j k, ctop) (λ j k, crab (λ f, wcel (ccnv (cv f)) (co (cv k) (cv j) ccn)) (λ f, co (cv j) (cv k) ccn))
+theorem df_hmeo : chmeo = (cmpt2 (λ j k, ctop) (λ j k, ctop) (λ j k, crab (λ f, wcel (ccnv (cv f)) (co (cv k) (cv j) ccn)) (λ f, co (cv j) (cv k) ccn))) := rfl
+
+def cfil : «class» := cmpt (λ z, cvv) (λ z, crab (λ f, wral (λ x, wi (wne (cin (cv f) (cpw (cv x))) c0) (wcel (cv x) (cv f))) (λ x, cpw (cv z))) (λ f, cfv (cv z) cfbas))
+theorem df_fil : cfil = (cmpt (λ z, cvv) (λ z, crab (λ f, wral (λ x, wi (wne (cin (cv f) (cpw (cv x))) c0) (wcel (cv x) (cv f))) (λ x, cpw (cv z))) (λ f, cfv (cv z) cfbas))) := rfl
+
+def cfm : «class» := cmpt2 (λ x f, cvv) (λ x f, cvv) (λ x f, cmpt (λ y, cfv (cdm (cv f)) cfbas) (λ y, co (cv x) (crn (cmpt (λ t, cv y) (λ t, cima (cv f) (cv t)))) cfg))
+theorem df_fm : cfm = (cmpt2 (λ x f, cvv) (λ x f, cvv) (λ x f, cmpt (λ y, cfv (cdm (cv f)) cfbas) (λ y, co (cv x) (crn (cmpt (λ t, cv y) (λ t, cima (cv f) (cv t)))) cfg))) := rfl
+
+def cflim : «class» := cmpt2 (λ j f, ctop) (λ j f, cuni (crn cfil)) (λ j f, crab (λ x, wa (wss (cfv (csn (cv x)) (cfv (cv j) cnei)) (cv f)) (wss (cv f) (cpw (cuni (cv j))))) (λ x, cuni (cv j)))
+theorem df_flim : cflim = (cmpt2 (λ j f, ctop) (λ j f, cuni (crn cfil)) (λ j f, crab (λ x, wa (wss (cfv (csn (cv x)) (cfv (cv j) cnei)) (cv f)) (wss (cv f) (cpw (cuni (cv j))))) (λ x, cuni (cv j)))) := rfl
+
+def cflf : «class» := cmpt2 (λ x y, ctop) (λ x y, cuni (crn cfil)) (λ x y, cmpt (λ f, co (cuni (cv x)) (cuni (cv y)) cmap) (λ f, co (cv x) (cfv (cv y) (co (cuni (cv x)) (cv f) cfm)) cflim))
+theorem df_flf : cflf = (cmpt2 (λ x y, ctop) (λ x y, cuni (crn cfil)) (λ x y, cmpt (λ f, co (cuni (cv x)) (cuni (cv y)) cmap) (λ f, co (cv x) (cfv (cv y) (co (cuni (cv x)) (cv f) cfm)) cflim))) := rfl
+
+def cxme : «class» := crab (λ f, wceq (cfv (cv f) ctopn) (cfv (cres (cfv (cv f) cds) (cxp (cfv (cv f) cbs) (cfv (cv f) cbs))) cmopn)) (λ f, ctps)
+theorem df_xms : cxme = (crab (λ f, wceq (cfv (cv f) ctopn) (cfv (cres (cfv (cv f) cds) (cxp (cfv (cv f) cbs) (cfv (cv f) cbs))) cmopn)) (λ f, ctps)) := rfl
+
+def cmt : «class» := crab (λ f, wcel (cres (cfv (cv f) cds) (cxp (cfv (cv f) cbs) (cfv (cv f) cbs))) (cfv (cfv (cv f) cbs) cme)) (λ f, cxme)
+theorem df_ms : cmt = (crab (λ f, wcel (cres (cfv (cv f) cds) (cxp (cfv (cv f) cbs) (cfv (cv f) cbs))) (cfv (cfv (cv f) cbs) cme)) (λ f, cxme)) := rfl
+
+def ctmt : «class» := cmpt (λ d, cuni (crn cxmt)) (λ d, co (cpr (cop (cfv cnx cbs) (cdm (cdm (cv d)))) (cop (cfv cnx cds) (cv d))) (cop (cfv cnx cts) (cfv (cv d) cmopn)) csts)
+theorem df_tms : ctmt = (cmpt (λ d, cuni (crn cxmt)) (λ d, co (cpr (cop (cfv cnx cbs) (cdm (cdm (cv d)))) (cop (cfv cnx cds) (cv d))) (cop (cfv cnx cts) (cfv (cv d) cmopn)) csts)) := rfl
+
+def ccncf : «class» := cmpt2 (λ a b, cpw cc) (λ a b, cpw cc) (λ a b, crab (λ f, wral (λ x, wral (λ e, wrex (λ d, wral (λ y, wi (wbr (cfv (co (cv x) (cv y) cmin) cabs) (cv d) clt) (wbr (cfv (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) cmin) cabs) (cv e) clt)) (λ y, cv a)) (λ d, crp)) (λ e, crp)) (λ x, cv a)) (λ f, co (cv b) (cv a) cmap))
+theorem df_cncf : ccncf = (cmpt2 (λ a b, cpw cc) (λ a b, cpw cc) (λ a b, crab (λ f, wral (λ x, wral (λ e, wrex (λ d, wral (λ y, wi (wbr (cfv (co (cv x) (cv y) cmin) cabs) (cv d) clt) (wbr (cfv (co (cfv (cv x) (cv f)) (cfv (cv y) (cv f)) cmin) cabs) (cv e) clt)) (λ y, cv a)) (λ d, crp)) (λ e, crp)) (λ x, cv a)) (λ f, co (cv b) (cv a) cmap))) := rfl
+
+def c0p : «class» := cxp cc (csn cc0)
+theorem df_0p : c0p = (cxp cc (csn cc0)) := rfl
+
+def climc : «class» := cmpt2 (λ f x, co cc cc cpm) (λ f x, cc) (λ f x, cab (λ y, wsbc (λ j, wcel (cmpt (λ z, cun (cdm (cv f)) (csn (cv x))) (λ z, cif (wceq (cv z) (cv x)) (cv y) (cfv (cv z) (cv f)))) (cfv (cv x) (co (co (cv j) (cun (cdm (cv f)) (csn (cv x))) crest) (cv j) ccnp))) (cfv ccnfld ctopn)))
+theorem df_limc : climc = (cmpt2 (λ f x, co cc cc cpm) (λ f x, cc) (λ f x, cab (λ y, wsbc (λ j, wcel (cmpt (λ z, cun (cdm (cv f)) (csn (cv x))) (λ z, cif (wceq (cv z) (cv x)) (cv y) (cfv (cv z) (cv f)))) (cfv (cv x) (co (co (cv j) (cun (cdm (cv f)) (csn (cv x))) crest) (cv j) ccnp))) (cfv ccnfld ctopn)))) := rfl
+
+def cdv : «class» := cmpt2 (λ s f, cpw cc) (λ s f, co cc (cv s) cpm) (λ s f, ciun (λ x, cfv (cdm (cv f)) (cfv (co (cfv ccnfld ctopn) (cv s) crest) cnt)) (λ x, cxp (csn (cv x)) (co (cmpt (λ z, cdif (cdm (cv f)) (csn (cv x))) (λ z, co (co (cfv (cv z) (cv f)) (cfv (cv x) (cv f)) cmin) (co (cv z) (cv x) cmin) cdiv)) (cv x) climc)))
+theorem df_dv : cdv = (cmpt2 (λ s f, cpw cc) (λ s f, co cc (cv s) cpm) (λ s f, ciun (λ x, cfv (cdm (cv f)) (cfv (co (cfv ccnfld ctopn) (cv s) crest) cnt)) (λ x, cxp (csn (cv x)) (co (cmpt (λ z, cdif (cdm (cv f)) (csn (cv x))) (λ z, co (co (cfv (cv z) (cv f)) (cfv (cv x) (cv f)) cmin) (co (cv z) (cv x) cmin) cdiv)) (cv x) climc)))) := rfl
+
+def cply : «class» := cmpt (λ x, cpw cc) (λ x, cab (λ f, wrex (λ n, wrex (λ a, wceq (cv f) (cmpt (λ z, cc) (λ z, csu (co cc0 (cv n) cfz) (λ k, co (cfv (cv k) (cv a)) (co (cv z) (cv k) cexp) cmul)))) (λ a, co (cun (cv x) (csn cc0)) cn0 cmap)) (λ n, cn0)))
+theorem df_ply : cply = (cmpt (λ x, cpw cc) (λ x, cab (λ f, wrex (λ n, wrex (λ a, wceq (cv f) (cmpt (λ z, cc) (λ z, csu (co cc0 (cv n) cfz) (λ k, co (cfv (cv k) (cv a)) (co (cv z) (cv k) cexp) cmul)))) (λ a, co (cun (cv x) (csn cc0)) cn0 cmap)) (λ n, cn0)))) := rfl
+
+def cidp : «class» := cres cid cc
+theorem df_idp : cidp = (cres cid cc) := rfl
+
+def ccoe : «class» := cmpt (λ f, cfv cc cply) (λ f, crio (λ a, wrex (λ n, wa (wceq (cima (cv a) (cfv (co (cv n) c1 caddc) cuz)) (csn cc0)) (wceq (cv f) (cmpt (λ z, cc) (λ z, csu (co cc0 (cv n) cfz) (λ k, co (cfv (cv k) (cv a)) (co (cv z) (cv k) cexp) cmul))))) (λ n, cn0)) (λ a, co cc cn0 cmap))
+theorem df_coe : ccoe = (cmpt (λ f, cfv cc cply) (λ f, crio (λ a, wrex (λ n, wa (wceq (cima (cv a) (cfv (co (cv n) c1 caddc) cuz)) (csn cc0)) (wceq (cv f) (cmpt (λ z, cc) (λ z, csu (co cc0 (cv n) cfz) (λ k, co (cfv (cv k) (cv a)) (co (cv z) (cv k) cexp) cmul))))) (λ n, cn0)) (λ a, co cc cn0 cmap))) := rfl
+
+def cdgr : «class» := cmpt (λ f, cfv cc cply) (λ f, csup (cima (ccnv (cfv (cv f) ccoe)) (cdif cc (csn cc0))) cn0 clt)
+theorem df_dgr : cdgr = (cmpt (λ f, cfv cc cply) (λ f, csup (cima (ccnv (cfv (cv f) ccoe)) (cdif cc (csn cc0))) cn0 clt)) := rfl
+
+def cquot : «class» := cmpt2 (λ f g, cfv cc cply) (λ f g, cdif (cfv cc cply) (csn c0p)) (λ f g, crio (λ q, wsbc (λ r, wo (wceq (cv r) c0p) (wbr (cfv (cv r) cdgr) (cfv (cv g) cdgr) clt)) (co (cv f) (co (cv g) (cv q) (cof cmul)) (cof cmin))) (λ q, cfv cc cply))
+theorem df_quot : cquot = (cmpt2 (λ f g, cfv cc cply) (λ f g, cdif (cfv cc cply) (csn c0p)) (λ f g, crio (λ q, wsbc (λ r, wo (wceq (cv r) c0p) (wbr (cfv (cv r) cdgr) (cfv (cv g) cdgr) clt)) (co (cv f) (co (cv g) (cv q) (cof cmul)) (cof cmin))) (λ q, cfv cc cply))) := rfl
+
+def clog : «class» := ccnv (cres ce (cima (ccnv cim) (co (cneg cpi) cpi cioc)))
+theorem df_log : clog = (ccnv (cres ce (cima (ccnv cim) (co (cneg cpi) cpi cioc)))) := rfl
+
+def ccxp : «class» := cmpt2 (λ x y, cc) (λ x y, cc) (λ x y, cif (wceq (cv x) cc0) (cif (wceq (cv y) cc0) c1 cc0) (cfv (co (cv y) (cfv (cv x) clog) cmul) ce))
+theorem df_cxp : ccxp = (cmpt2 (λ x y, cc) (λ x y, cc) (λ x y, cif (wceq (cv x) cc0) (cif (wceq (cv y) cc0) c1 cc0) (cfv (co (cv y) (cfv (cv x) clog) cmul) ce))) := rfl
+
+def cem : «class» := csu cn (λ k, co (co c1 (cv k) cdiv) (cfv (co c1 (co c1 (cv k) cdiv) caddc) clog) cmin)
+theorem df_em : cem = (csu cn (λ k, co (co c1 (cv k) cdiv) (cfv (co c1 (co c1 (cv k) cdiv) caddc) clog) cmin)) := rfl
+
+def ccht : «class» := cmpt (λ x, cr) (λ x, csu (cin (co cc0 (cv x) cicc) cprime) (λ p, cfv (cv p) clog))
+theorem df_cht : ccht = (cmpt (λ x, cr) (λ x, csu (cin (co cc0 (cv x) cicc) cprime) (λ p, cfv (cv p) clog))) := rfl
+
+def cvma : «class» := cmpt (λ x, cn) (λ x, csb (crab (λ p, wbr (cv p) (cv x) cdivides) (λ p, cprime)) (λ s, cif (wceq (cfv (cv s) chash) c1) (cfv (cuni (cv s)) clog) cc0))
+theorem df_vma : cvma = (cmpt (λ x, cn) (λ x, csb (crab (λ p, wbr (cv p) (cv x) cdivides) (λ p, cprime)) (λ s, cif (wceq (cfv (cv s) chash) c1) (cfv (cuni (cv s)) clog) cc0))) := rfl
+
+def cchp : «class» := cmpt (λ x, cr) (λ x, csu (co c1 (cfv (cv x) cfl) cfz) (λ n, cfv (cv n) cvma))
+theorem df_chp : cchp = (cmpt (λ x, cr) (λ x, csu (co c1 (cfv (cv x) cfl) cfz) (λ n, cfv (cv n) cvma))) := rfl
+
+def cppi : «class» := cmpt (λ x, cr) (λ x, cfv (cin (co cc0 (cv x) cicc) cprime) chash)
+theorem df_ppi : cppi = (cmpt (λ x, cr) (λ x, cfv (cin (co cc0 (cv x) cicc) cprime) chash)) := rfl
+
+def cmu : «class» := cmpt (λ x, cn) (λ x, cif (wrex (λ p, wbr (co (cv p) c2 cexp) (cv x) cdivides) (λ p, cprime)) cc0 (co (cneg c1) (cfv (crab (λ p, wbr (cv p) (cv x) cdivides) (λ p, cprime)) chash) cexp))
+theorem df_mu : cmu = (cmpt (λ x, cn) (λ x, cif (wrex (λ p, wbr (co (cv p) c2 cexp) (cv x) cdivides) (λ p, cprime)) cc0 (co (cneg c1) (cfv (crab (λ p, wbr (cv p) (cv x) cdivides) (λ p, cprime)) chash) cexp))) := rfl
+
+def cdchr : «class» := cmpt (λ n, cn) (λ n, csb (cfv (cv n) czn) (λ z, csb (crab (λ x, wss (cxp (cdif (cfv (cv z) cbs) (cfv (cv z) cui)) (csn cc0)) (cv x)) (λ x, co (cfv (cv z) cmgp) (cfv ccnfld cmgp) cmhm)) (λ b, cpr (cop (cfv cnx cbs) (cv b)) (cop (cfv cnx cplusg) (cres (cof cmul) (cxp (cv b) (cv b)))))))
+theorem df_dchr : cdchr = (cmpt (λ n, cn) (λ n, csb (cfv (cv n) czn) (λ z, csb (crab (λ x, wss (cxp (cdif (cfv (cv z) cbs) (cfv (cv z) cui)) (csn cc0)) (cv x)) (λ x, co (cfv (cv z) cmgp) (cfv ccnfld cmgp) cmhm)) (λ b, cpr (cop (cfv cnx cbs) (cv b)) (cop (cfv cnx cplusg) (cres (cof cmul) (cxp (cv b) (cv b)))))))) := rfl
 
 end mm0
