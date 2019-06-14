@@ -27,7 +27,7 @@ binderType :: PBinder -> DepType
 binderType (PBound _ t) = (DepType t [])
 binderType (PReg _ ty) = ty
 
-data SExpr = SVar Ident | App Ident [SExpr]
+data SExpr = SVar Ident | App Ident [SExpr] deriving (Eq)
 
 instance Show SExpr where
   showsPrec n (SVar v) r = v ++ r

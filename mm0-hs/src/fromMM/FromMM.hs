@@ -180,11 +180,11 @@ trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
       _ -> return []
     else return []
   Stmt st -> if stmtMember i st && M.notMember st (tNameMap t) then
-    case mStmts db M.! st of
+    case getStmt db st of
       (_, Hyp (VHyp c v)) ->
         trName st (if identStr v then v else mangle st) >> return []
       (_, Hyp (EHyp _ _)) -> return []
-      (n, Term fr s _ Nothing) -> trDefinition n st >>= \case
+      (n, Term fr (s, _) Nothing) -> trDefinition n st >>= \case
         [] -> do
           splitFrame Nothing fr $ \(SplitFrame bs1 _ _ _ rm _) -> do
             i <- trName st (mangle st)
@@ -197,7 +197,7 @@ trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
                 tIxLookup = ilInsertTerm st lup }
             return [(Just $ A.Term i bs1 (DepType s []), StepTerm i)]
         e -> return e
-      (_, Term fr s e (Just _)) -> splitFrame Nothing fr $ \sf -> do
+      (_, Term fr (_, e) (Just _)) -> splitFrame Nothing fr $ \sf -> do
         let rm = sfReord sf
         (_, e2) <- trExpr id e
         let (be, bd) = trSyntaxProof e2
@@ -205,22 +205,22 @@ trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
           tBuilders = M.insert st
             (Builder (Just (rm, be)) (bd . reorder rm)) (tBuilders t) }
         return []
-      (_, Thm fr s e p) -> do
+      (_, Thm fr e p) -> do
         let mst = mangle st
         let pub = stmtPublic i st
-        (out, n, pa, rm) <- trName st mst >>= trThmB Nothing pub fr s e p
+        (out, n, pa, rm) <- trName st mst >>= trThmB Nothing pub fr e p
         (out2, ns) <- unzip <$> mapM (\bu -> do
           (out', n', _, rm') <-
-            trBName st bu (mst ++ "_b") >>= trThmB (Just bu) pub fr s e p
+            trBName st bu (mst ++ "_b") >>= trThmB (Just bu) pub fr e p
           return (out', (bu, (n', rm'))))
           (maybe [] M.keys (dbiBundles i M.!? st))
         modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder pa rm n ns) (tBuilders t)}
         return (out : out2)
     else return []
 
-trThmB :: Maybe [Int] -> Bool -> Frame -> Const -> MMExpr -> Maybe ([Label], Proof) ->
+trThmB :: Maybe [Int] -> Bool -> Frame -> (Const, MMExpr) -> Maybe ([Label], Proof) ->
   Ident -> TransM ((Maybe A.Stmt, ProofCmd), ThmID, [Int], [Int])
-trThmB bu pub fr s e p i =
+trThmB bu pub fr (s, e) p i =
   splitFrame bu fr $ \(SplitFrame bs1 bs2 hs2 pa rm vm) -> do
     (e1, e2) <- trExpr vm e
     ret <- case p of
@@ -309,7 +309,7 @@ splitFrame' bu hs dv db = do
     partitionHyps' [] _ = ([], [], [], \_ _ _ -> I.empty)
     partitionHyps' ((b, l) : ls) li | vm l == l =
       let (vs, bs, hs, f) = partitionHyps' ls (li+1) in
-      case (b, snd $ mStmts db M.! l) of
+      case (b, snd $ getStmt db l) of
         (VSBound, Hyp (VHyp s v)) -> ((l, s) : vs, bs, hs,
           \vi bi hi -> I.insert vi li (f (vi+1) bi hi))
         (vst, Hyp (VHyp s v)) -> (vs, (vst == VSFree, l, s) : bs, hs,
@@ -459,7 +459,7 @@ trSyntaxProof e = (substExpr e, substProof e) where
 
 findDefinitions :: MMDatabase -> M.Map Label Label
 findDefinitions db = M.foldlWithKey' go M.empty (mStmts db) where
-  go m x (_, Thm (hs, ds) _ (App eq [App t es, rhs]) Nothing)
+  go m x (_, Thm (hs, ds) (_, App eq [App t es, rhs]) Nothing)
     | M.member eq (snd $ mEqual $ mMeta db) = M.insert t x m
   go m _ _ = m
 

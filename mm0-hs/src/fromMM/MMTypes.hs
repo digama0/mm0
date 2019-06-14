@@ -1,6 +1,7 @@
 module MMTypes where
 
 import Control.Monad.Trans.State
+import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Sequence as Q
@@ -28,8 +29,9 @@ data Proof =
   deriving (Show)
 
 data Stmt = Hyp Hyp
-  | Term Frame Const MMExpr (Maybe ([Label], Proof))
-  | Thm Frame Const MMExpr (Maybe ([Label], Proof))
+  | Term Frame (Const, MMExpr) (Maybe ([Label], Proof))
+  | Thm Frame (Const, MMExpr) (Maybe ([Label], Proof))
+  | Alias Label
   deriving (Show)
 
 data Decl = Sort Sort | Stmt Label deriving (Show)
@@ -79,6 +81,15 @@ data MMDatabase = MMDatabase {
   mDecls :: Q.Seq Decl,
   mMeta :: MMMetaData,
   mStmts :: M.Map Label (Int, Stmt) } deriving (Show)
+
+getStmtM :: MMDatabase -> Label -> Maybe (Int, Stmt)
+getStmtM db = go where
+  go l = mStmts db M.!? l >>= \case
+    (_, Alias s) -> go s
+    s -> return s
+
+getStmt :: MMDatabase -> Label -> (Int, Stmt)
+getStmt db l = fromJust (getStmtM db l)
 
 mkDatabase :: MMDatabase
 mkDatabase = MMDatabase M.empty Q.empty mkMetadata M.empty

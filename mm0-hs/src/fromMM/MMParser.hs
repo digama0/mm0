@@ -198,15 +198,15 @@ addThm x f@(Const s : _) fr m p = do
     Nothing -> throwError ("sort '" ++ s ++ "' not declared")
     Just (Just s', _) -> do
       (_, e) <- parseFmla f
-      addStmt x (Thm fr s' e p)
+      addStmt x (Thm fr (s', e) p)
     Just (Nothing, _) -> do
       guardError "syntax axiom has $d" (null (snd fr))
       when (isNothing p) $
         let g = App x . reorderMap m f in
         modify $ \t -> t {
           mParser = ptInsert (mVMap t) g f (mParser t) }
-      (s, e) <- parseFmla f
-      addStmt x (Term fr s e p)
+      e <- parseFmla f
+      addStmt x (Term fr e p)
 
 readUntil :: String -> [String] -> FromMMM ([String], [String])
 readUntil u = go id where
@@ -271,14 +271,14 @@ trProof (hs, _) db ("(" : p) =
   processPreloads (")" : blocks) heap sz ds = do
     pt <- processBlocks (numberize (join blocks) 0) heap 0 []
     return (ds [], pt)
-  processPreloads (st : p) heap sz ds = case mStmts db M.!? st of
+  processPreloads (st : p) heap sz ds = case getStmtM db st of
     Nothing -> throwError ("statement " ++ st ++ " not found")
     Just (_, Hyp (VHyp s v)) ->
       processPreloads p (heap Q.|> HeapEl (PDummy sz)) (sz + 1) (ds . (s :))
     Just (_, Hyp (EHyp _ _)) -> throwError "$e found in paren list"
-    Just (_, Term (hs, _) _ _ _) ->
+    Just (_, Term (hs, _) _ _) ->
       processPreloads p (heap Q.|> HTerm st (length hs)) sz ds
-    Just (_, Thm (hs, _) _ _ _) ->
+    Just (_, Thm (hs, _) _ _) ->
       processPreloads p (heap Q.|> HThm st (length hs)) sz ds
 
   popn :: Int -> [Proof] -> Either String ([Proof], [Proof])
@@ -372,8 +372,8 @@ processJ (JKeyword "equality" j) = case j of
     (JString refl (JString sym (JString trans (JSemi j))))) -> do
       db <- mDB <$> get
       s <- fromJustError ("equality '" ++ x ++ "' has the wrong shape") (do
-        (_, Term ([(_, v), _], _) _ _ _) <- mStmts db M.!? x
-        (_, Hyp (VHyp s _)) <- mStmts db M.!? v
+        (_, Term ([(_, v), _], _) _ _) <- getStmtM db x
+        (_, Hyp (VHyp s _)) <- getStmtM db v
         return s)
       modifyMeta $ \m -> m { mEqual =
         let (m1, m2) = mEqual m in
@@ -384,15 +384,15 @@ processJ (JKeyword "congruence" j) =
   processManyJ "congruence" j $ \x -> do
     db <- mDB <$> get
     t <- fromJustError ("congruence '" ++ x ++ "' has the wrong shape") (do
-      (_, Thm _ _ (App _ [App t _, _]) _) <- mStmts db M.!? x
+      (_, Thm _ (_, App _ [App t _, _]) _) <- getStmtM db x
       return t)
     modifyMeta $ \m -> m {mCongr = M.insert t x (mCongr m)}
 processJ (JKeyword "condequality" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j))) -> do
     db <- mDB <$> get
     s <- fromJustError ("conditional equality '" ++ x ++ "' has the wrong shape") (do
-      (_, Term ([(_, v), _, _], _) _ _ _) <- mStmts db M.!? x
-      (_, Hyp (VHyp s _)) <- mStmts db M.!? v
+      (_, Term ([(_, v), _, _], _) _ _) <- getStmtM db x
+      (_, Hyp (VHyp s _)) <- getStmtM db v
       return s)
     modifyMeta $ \m -> m {mCondEq = M.insert s (x, th) (mCondEq m)}
     processJ j
@@ -404,9 +404,9 @@ processJ (JKeyword "notfree" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j))) -> do
     db <- mDB <$> get
     s <- fromJustError ("not-free term '" ++ x ++ "' has the wrong shape") (do
-      (_, Term ([(_, v), (_, a)], _) _ _ _) <- mStmts db M.!? x
-      (_, Hyp (VHyp s1 _)) <- mStmts db M.!? v
-      (_, Hyp (VHyp s2 _)) <- mStmts db M.!? a
+      (_, Term ([(_, v), (_, a)], _) _ _) <- getStmtM db x
+      (_, Hyp (VHyp s1 _)) <- getStmtM db v
+      (_, Hyp (VHyp s2 _)) <- getStmtM db a
       return (s1, s2))
     modifyMeta $ \m -> m {mNF = M.insert s (NF x th) (mNF m)}
     processJ j
@@ -420,26 +420,26 @@ processJ (JKeyword "natded_assume" j) =
   getManyJ "natded_assume" j $ \xs -> do
     db <- mDB <$> get
     forM_ xs $ \x ->
-      fromJustError ("natded_assume stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+      fromJustError ("natded_assume stmt '" ++ x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndAssume = ndAssume nd ++ xs}
 processJ (JKeyword "natded_weak" j) =
   getManyJ "natded_weak" j $ \xs -> do
     db <- mDB <$> get
     forM_ xs $ \x ->
-      fromJustError ("natded_weak stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+      fromJustError ("natded_weak stmt '" ++ x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndWeak = ndWeak nd ++ xs}
 processJ (JKeyword "natded_cut" j) =
   getManyJ "natded_cut" j $ \xs -> do
     db <- mDB <$> get
     forM_ xs $ \x ->
-      fromJustError ("natded_cut stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+      fromJustError ("natded_cut stmt '" ++ x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndCut = ndCut nd ++ xs}
 processJ (JKeyword "natded_true" j) = case j of
   JString x (JKeyword "with" j) ->
     getManyJ "natded_true" j $ \xs -> do
       db <- mDB <$> get
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_true stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+        fromJustError ("natded_true stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndTrue = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndTrue nd)}
   _ -> throwError "bad $j 'natded_true' command"
@@ -448,7 +448,7 @@ processJ (JKeyword "natded_imp" j) = case j of
     getManyJ "natded_imp" j $ \xs -> do
       db <- mDB <$> get
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_imp stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+        fromJustError ("natded_imp stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndImp = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndImp nd)}
   _ -> throwError "bad $j 'natded_imp' command"
@@ -457,7 +457,7 @@ processJ (JKeyword "natded_and" j) = case j of
     getManyJ "natded_and" j $ \xs -> do
       db <- mDB <$> get
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_and stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+        fromJustError ("natded_and stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndAnd = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndAnd nd)}
   _ -> throwError "bad $j 'natded_and' command"
@@ -466,7 +466,7 @@ processJ (JKeyword "natded_or" j) = case j of
     getManyJ "natded_or" j $ \xs -> do
       db <- mDB <$> get
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_or stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+        fromJustError ("natded_or stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndOr = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndOr nd)}
   _ -> throwError "bad $j 'natded_or' command"
@@ -475,7 +475,7 @@ processJ (JKeyword "natded_not" j) = case j of
     getManyJ "natded_not" j $ \xs -> do
       db <- mDB <$> get
       forM_ (not:fal:xs) $ \x ->
-        fromJustError ("natded_not stmt '" ++ x ++ "' not found") (mStmts db M.!? x)
+        fromJustError ("natded_not stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndNot = Just $
         maybe (not, fal, xs) (\(x', f', xs') -> (x', f', xs' ++ xs)) (ndNot nd)}
   _ -> throwError "bad $j 'natded_not' command"
@@ -486,11 +486,11 @@ processJ (JKeyword "free_var" j) = case j of
   where
   updateDecl :: Label -> S.Set Var -> FromMMM ()
   updateDecl x ss = modifyDB $ \db -> db {mStmts = M.adjust (\case
-    (n, Term (hs, dv) s e p) -> (n, Term (updateHyp db ss <$> hs, dv) s e p)
-    (n, Thm (hs, dv) s e p) -> (n, Thm (updateHyp db ss <$> hs, dv) s e p)) x $ mStmts db}
+    (n, Term (hs, dv) e p) -> (n, Term (updateHyp db ss <$> hs, dv) e p)
+    (n, Thm (hs, dv) e p) -> (n, Thm (updateHyp db ss <$> hs, dv) e p)) x $ mStmts db}
 
   updateHyp :: MMDatabase -> S.Set Var -> (VarStatus, Label) -> (VarStatus, Label)
-  updateHyp db s (VSBound, l) = case mStmts db M.! l of
+  updateHyp db s (VSBound, l) = case getStmt db l of
     (_, Hyp (VHyp _ v)) | S.member v s -> (VSFree, l)
     _ -> (VSBound, l)
   updateHyp db s p = p
@@ -503,8 +503,24 @@ processJ (JKeyword "free_var_in" j) = case j of
   where
   updateDecl :: Label -> [Label] -> FromMMM ()
   updateDecl x vs = modifyDB $ \db -> db {mStmts = M.adjust (\case
-    (n, Term (hs, dv) s e p) ->
-      (n, Term (hs, insertDVs (const True) dv vs) s e p)) x $ mStmts db}
+    (n, Term (hs, dv) e p) ->
+      (n, Term (hs, insertDVs (const True) dv vs) e p)) x $ mStmts db}
+processJ (JKeyword "restatement" j) = case j of
+  JString ax (JKeyword "of" (JString th (JSemi j))) -> do
+    db <- mDB <$> get
+    (n, sax) <- case getStmtM db ax of
+      Nothing -> throwError ("axiom '" ++ ax ++ "' not found")
+      Just (n, Thm fr e Nothing) -> return (n, (fr, e))
+      _ -> throwError ("'" ++ ax ++ "' is not an axiom")
+    case getStmtM db th of
+      Nothing -> throwError ("theorem '" ++ ax ++ "' not found")
+      Just (_, Thm fr e _) ->
+        guardError ("restatement '" ++ ax ++ "' does not match '" ++ th ++ "'") $
+          sax == (fr, e)
+      _ -> throwError ("'" ++ th ++ "' is not an axiom/theorem")
+    modifyDB $ \db -> db {mStmts = M.insert ax (n, Alias th) $ mStmts db}
+    processJ j
+  _ -> throwError "bad $j 'restatement' command"
 
 processJ (JKeyword x j) = skipJ j
 processJ (JRest ss) = process ss
