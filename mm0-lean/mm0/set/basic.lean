@@ -13,8 +13,10 @@ mm0-hs to generate files setN.lean in this directory.
   incremental builds. (You may want to adjust this value smaller, 2000 statements
   means the files are around 30000 lines which is quite high by lean standards.)
 
+The following commands were used to generate a set.mm export compatible with
+this prologue and the epilogue in post.lean:
 ```
-stack exec -- mm0-hs from-mm set.mm -o out.mm0 out.mmu
+stack exec -- mm0-hs from-mm set.mm -f dirith,elnnne0 -o out.mm0 out.mmu
 stack exec -- mm0-hs to-lean out.mm0 out.mmu -a .basic -c 2000 -o mm0-lean/mm0/set/set.lean
 ```
 
@@ -24,11 +26,11 @@ import .zfc_extra
 namespace mm0
 
 def wff : Type := Prop
-def wff.proof : wff → Prop := id
-def wff.forget {p : Prop} (h : wff → p) : p := h true
+@[simp] def wff.proof : wff → Prop := id
+@[simp] def wff.forget {p : Prop} (h : wff → p) : p := h true
 prefix `⊦ `:26 := wff.proof
-def wi : wff → wff → wff := (→)
-def wn : wff → wff := not
+@[simp] def wi : wff → wff → wff := (→)
+@[simp] def wn : wff → wff := not
 
 theorem ax_1 {ph ps : wff} : ph → ps → ph := λ h _, h
 theorem ax_2 {ph ps ch : wff} :
@@ -37,7 +39,7 @@ theorem ax_3 {ph ps : wff} : (¬ ph → ¬ ps) → ps → ph :=
 λ h1 h2, classical.by_contradiction $ λ h3, h1 h3 h2
 theorem ax_mp {ph ps : wff} : ph → (ph → ps) → ps := λ h1 h2, h2 h1
 
-def wb : wff → wff → wff := iff
+@[simp] def wb : wff → wff → wff := iff
 
 theorem df_an {ph ps : wff} : ph ∧ ps ↔ ¬ (ph → ¬ ps) :=
 ⟨λ ⟨h1, h2⟩ h3, h3 h1 h2, λ h1, classical.by_contradiction $
@@ -51,16 +53,16 @@ theorem df_bi {ph ps : wff} :
   ¬(¬((ph → ps) → ¬(ps → ph)) → (ph ↔ ps))) :=
 df_bi.aux.1 df_bi.aux
 
-def wo : wff → wff → wff := or
+@[simp] def wo : wff → wff → wff := or
 
 theorem df_or {ph ps : wff} : ph ∨ ps ↔ (¬ ph → ps) :=
 classical.or_iff_not_imp_left
 
-def wa : wff → wff → wff := and
+@[simp] def wa : wff → wff → wff := and
 
-def w3o (p q r : wff) : wff := p ∨ q ∨ r
+@[simp] def w3o (p q r : wff) : wff := p ∨ q ∨ r
 
-def w3a (p q r : wff) : wff := p ∧ q ∧ r
+@[simp] def w3a (p q r : wff) : wff := p ∧ q ∧ r
 
 theorem df_3or {ph ps ch : Prop} : ph ∨ ps ∨ ch ↔ (ph ∨ ps) ∨ ch :=
 or.assoc.symm
@@ -73,7 +75,7 @@ def wnan (ph ps : wff) : wff := ¬ (ph ∧ ps)
 theorem df_nan {ph ps : wff} : wb (wnan ph ps) (wn (wa ph ps)) :=
 iff.rfl
 
-def wxo : wff → wff → wff := xor
+@[simp] def wxo : wff → wff → wff := xor
 
 theorem df_xor {ph ps : wff} : xor ph ps ↔ ¬ (ph ↔ ps) :=
 ⟨λ h1 h2, or.cases_on h1 (λ ⟨h3, h4⟩, h4 (h2.1 h3)) (λ ⟨h3, h4⟩, h4 (h2.2 h3)),
@@ -81,8 +83,8 @@ theorem df_xor {ph ps : wff} : xor ph ps ↔ ¬ (ph ↔ ps) :=
   ⟨λ h, classical.by_contradiction $ λ hn, h2 (or.inl ⟨h, hn⟩),
    λ h, classical.by_contradiction $ λ hn, h2 (or.inr ⟨h, hn⟩)⟩⟩
 
-def wtru := true
-def wfal := false
+@[simp] def wtru := true
+@[simp] def wfal := false
 
 theorem df_tru {ph : wff} : wb wtru (wb ph ph) :=
 (iff_true_intro iff.rfl).symm
@@ -106,9 +108,9 @@ classical.by_contradiction $ λ hc, h (not.elim hn) hc h3
 @[reducible] def setvar : Type 1 := Set
 
 def setvar.forget {p : Prop} (h : setvar → p) : p := h (∅ : Set)
-def wal (P : setvar → wff) : wff := ∀ x, P x
+@[simp] def wal (P : setvar → wff) : wff := ∀ x, P x
 
-def wex : (setvar → wff) → wff := Exists
+@[simp] def wex : (setvar → wff) → wff := Exists
 
 theorem df_ex {ph : setvar → wff} : (∃ x, ph x) ↔ ¬ ∀ x, ¬ ph x :=
 by classical; exact not_forall_not.symm
@@ -126,15 +128,15 @@ theorem ax_5 {ph : wff} (h : ph) (x : setvar) : ph := h
 
 @[reducible] def «class» : Type 1 := Class
 
-def «class».forget {p : Prop} (h : «class» → p) : p := h ∅
-def cv : setvar → «class» := Class.of_Set
+@[simp] def «class».forget {p : Prop} (h : «class» → p) : p := h ∅
+@[simp] def cv : setvar → «class» := coe
 
-def wceq : «class» → «class» → wff := eq
+@[simp] def wceq : «class» → «class» → wff := eq
 local notation x ` ≡ ` y := eq (↑x : «class») ↑y
 
 @[simp] theorem weq' {x y : setvar} : x ≡ y ↔ x = y := ⟨Class.of_Set.inj, congr_arg _⟩
 
-def wsb (ph : setvar → wff) : setvar → wff := ph
+@[simp] def wsb (ph : setvar → wff) : setvar → wff := ph
 
 theorem df_sb {ph : setvar → wff} {y : setvar} (x : setvar) :
   ph y ↔ (x ≡ y → ph x) ∧ ∃ x : setvar, x ≡ y ∧ ph x :=
@@ -154,7 +156,7 @@ theorem ax_7_b1 {x z : setvar} : x ≡ x → x ≡ z → x ≡ z := ax_7
 theorem ax_7_b2 {x y : setvar} : x ≡ y → x ≡ x → y ≡ x := ax_7
 theorem ax_7_b3 {x y : setvar} : x ≡ y → x ≡ y → y ≡ y := ax_7
 
-def wcel : «class» → «class» → wff := (∈)
+@[simp] def wcel : «class» → «class» → wff := (∈)
 local infix ` ∈' `:50 := (∈)
 local notation x ` ∈ ` y := (x : «class») ∈ (y : «class»)
 theorem ax_8 {x y z : setvar} (h : x ≡ y) (h' : x ∈ z) : y ∈ z := h ▸ h'
@@ -220,7 +222,7 @@ theorem ax_c16 {ph : setvar → wff} {y : setvar} (x : setvar)
   (H : ∀ x:setvar, x ≡ y) (h : ph x) (x') : ph x' :=
 weq'.1 ((H x).trans (H x').symm) ▸ h
 
-def weu : (setvar → wff) → wff := exists_unique
+@[simp] def weu : (setvar → wff) → wff := exists_unique
 theorem df_eu {ph : setvar → wff} : (∃! x, ph x) ↔ (∃ y:setvar, ∀ x, ph x ↔ x ≡ y) :=
 ⟨λ ⟨x, hx, H⟩, ⟨x, λ y, ⟨λ h, weq'.2 (H _ h), λ e, weq'.1 e.symm ▸ hx⟩⟩,
  λ ⟨x, hx⟩, ⟨x, (hx _).2 rfl, λ y hy, weq'.1 ((hx _).1 hy)⟩⟩
@@ -246,7 +248,7 @@ def ax_11d := @ax_12
 theorem ax_ext {x y : setvar} : (∀ z:setvar, z ∈ x ↔ z ∈ y) → x ≡ y :=
 by simpa using @Set.ext x y
 
-def cab (ph : setvar → wff) : «class» := {x | ph x}
+@[simp] def cab (ph : setvar → wff) : «class» := {x | ph x}
 local notation `{` binders ` | ` r:(scoped P, cab P) `}` := r
 
 theorem df_clab {ph : setvar → wff} {x : setvar} : x ∈ {y | ph y} ↔ ph x :=
@@ -269,25 +271,25 @@ by simp; exact
 ⟨λ H y x hx x', by rw H x' x; exact hx,
  λ H x x', set.ext $ λ y, ⟨λ h, H _ _ h _, λ h, H _ _ h _⟩⟩
 
-def wne : «class» → «class» → wff := (≠)
+@[simp] def wne : «class» → «class» → wff := (≠)
 theorem df_ne {A B : «class»} : A ≠ B ↔ ¬ A = B := iff.rfl
 
-def wnel : «class» → «class» → wff := (∉)
+@[simp] def wnel : «class» → «class» → wff := (∉)
 theorem df_nel {A B : «class»} : A ∉ B ↔ ¬ A ∈ B := iff.rfl
 
-def wral (ph : setvar → wff) (A : setvar → «class») : wff := ∀ x:setvar, x ∈ A x → ph x
+@[simp] def wral (ph : setvar → wff) (A : setvar → «class») : wff := ∀ x:setvar, x ∈ A x → ph x
 theorem df_ral {ph : setvar → wff} {A : setvar → «class»} :
   wral ph A ↔ (∀ x:setvar, x ∈ A x → ph x) := iff.rfl
 
-def wrex (ph : setvar → wff) (A : setvar → «class») : wff := ∃ x:setvar, x ∈ A x ∧ ph x
+@[simp] def wrex (ph : setvar → wff) (A : setvar → «class») : wff := ∃ x:setvar, x ∈ A x ∧ ph x
 theorem df_rex {ph : setvar → wff} {A : setvar → «class»} :
   wrex ph A ↔ (∃ x:setvar, x ∈ A x ∧ ph x) := iff.rfl
 
-def wreu (ph : setvar → wff) (A : setvar → «class») : wff := ∃! x:setvar, x ∈ A x ∧ ph x
+@[simp] def wreu (ph : setvar → wff) (A : setvar → «class») : wff := ∃! x:setvar, x ∈ A x ∧ ph x
 theorem df_reu {ph : setvar → wff} {A : setvar → «class»} :
   wreu ph A ↔ ∃! x:setvar, x ∈ A x ∧ ph x := iff.rfl
 
-def wrmo (ph : setvar → wff) (A : setvar → «class») : wff := ∃* x:setvar, x ∈ A x ∧ ph x
+@[simp] def wrmo (ph : setvar → wff) (A : setvar → «class») : wff := ∃* x:setvar, x ∈ A x ∧ ph x
 theorem df_rmo {ph : setvar → wff} {A : setvar → «class»} :
   wrmo ph A ↔ ∃* x:setvar, x ∈ A x ∧ ph x := iff.rfl
 
@@ -295,11 +297,11 @@ def crab (ph : setvar → wff) (A : setvar → «class») : «class» := {x | x 
 theorem df_rab {ph : setvar → wff} {A : setvar → «class»} :
   crab ph A = {x | x ∈ A x ∧ ph x} := rfl
 
-def cvv : «class» := set.univ
+@[simp] def cvv : «class» := set.univ
 notation `V` := cvv
 theorem df_v : V = {x | x ≡ x} := set.ext $ λ x, (iff_true_intro rfl).symm
 
-def wcdeq (ph : wff) (x y : setvar) : wff := x ≡ y → ph
+@[simp] def wcdeq (ph : wff) (x y : setvar) : wff := x ≡ y → ph
 theorem df_cdeq {ph : wff} {x y : setvar} :
   wcdeq ph x y ↔ (x ≡ y → ph) := iff.rfl
 
@@ -312,15 +314,15 @@ def csb (A : «class») (B : setvar → «class») : «class» :=
 theorem df_csb {A B : setvar → «class»} (x) :
   csb (A x) B = {y | wsbc (λ x, y ∈ B x) (A x)} := rfl
 
-def cdif : «class» → «class» → «class» := (\)
+@[simp] def cdif : «class» → «class» → «class» := (\)
 
-def cun : «class» → «class» → «class» := (∪)
+@[simp] def cun : «class» → «class» → «class» := (∪)
 
-def cin : «class» → «class» → «class» := (∩)
+@[simp] def cin : «class» → «class» → «class» := (∩)
 
-def wss : «class» → «class» → wff := (⊆)
+@[simp] def wss : «class» → «class» → wff := (⊆)
 
-def wpss : «class» → «class» → wff := (⊂)
+@[simp] def wpss : «class» → «class» → wff := (⊂)
 
 theorem df_dif {A B : «class»} : A \ B = {x | x ∈ A ∧ ↑x ∉ B} := by simp; refl
 
@@ -333,7 +335,7 @@ theorem df_ss {A B : «class»} : A ⊆ B ↔ A ∩ B = A :=
 
 theorem df_pss {A B : «class»} : A ⊂ B ↔ A ⊆ B ∧ A ≠ B := iff.rfl
 
-def c0 : «class» := ∅
+@[simp] def c0 : «class» := ∅
 
 theorem df_nul : ∅ = V \ V := set.diff_self.symm
 
