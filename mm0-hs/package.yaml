@@ -28,8 +28,9 @@ dependencies:
 - transformers
 - mtl
 - split
-- parsec
+- megaparsec
 - filepath
+- word8
 
 default-extensions:
 - FlexibleContexts

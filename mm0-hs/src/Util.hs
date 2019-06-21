@@ -2,8 +2,10 @@ module Util where
 
 import Control.Monad.Except
 import Control.Monad.Writer
+import Data.Word (Word8)
 import Data.List (group, sort)
 import System.Exit
+import qualified Data.Char as C
 import qualified Data.Map.Strict as M
 
 fromJustError :: MonadError e m => e -> Maybe a -> m a
@@ -55,3 +57,6 @@ snd3 (_, y, _) = y
 
 thd3 :: (a, b, c) -> c
 thd3 (_, _, z) = z
+
+toChar :: Word8 -> Char
+toChar = C.chr . fromIntegral

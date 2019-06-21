@@ -3,67 +3,78 @@
 module ProofTextParser(parseProof) where
 
 import Control.Applicative hiding (many, (<|>))
-import Data.Char
+import Data.Word8
+import Data.Void
 import Debug.Trace
-import Text.Parsec
-import Text.Parsec.Char
+import Text.Megaparsec
+import Text.Megaparsec.Byte
+import Control.Monad.Trans.State
 import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy.Char8 as BC
 import qualified Data.Map.Strict as M
 import Environment (Ident)
 import ProofTypes
+import Util
 
-type Parser = Parsec B.ByteString IxLookup
+type Parser = StateT IxLookup (Parsec Void B.ByteString)
 
 parseProof :: B.ByteString -> Either String Proofs
-parseProof s = case runParser readProofs mkIxLookup "" s of
+parseProof s = case runParser (evalStateT readProofs mkIxLookup) "" s of
   Left err -> Left (show err)
   Right c -> Right c
 
 readProofs :: Parser Proofs
-readProofs = spaces *> many readProof <* eof
+readProofs = space *> many readProof <* eof
 
-symbol :: Char -> Parser ()
-symbol c = char c >> spaces
+str :: String -> Parser ()
+str s = () <$ string (BC.pack s)
 
-bracket :: Char -> Char -> Parser a -> Parser a
+symbol :: Word8 -> Parser ()
+symbol c = char c >> space
+
+bracket :: Word8 -> Word8 -> Parser a -> Parser a
 bracket l r = between (symbol l) (symbol r)
 
-identStart :: Char -> Bool
-identStart c = isAlpha c || c == '_'
+paren :: Parser a -> Parser a
+paren = bracket _parenleft _parenright
 
-identRest :: Char -> Bool
-identRest c = isAlphaNum c || c == '_'
+identStart :: Word8 -> Bool
+identStart c = isAlpha c || c == _underscore
+
+identRest :: Word8 -> Bool
+identRest c = isAlphaNum c || c == _underscore
 
 ident :: Parser Ident
-ident = liftA2 (:) (satisfy identStart) (many (satisfy identRest)) <* spaces
+ident = liftA2 (:) (toChar <$> satisfy identStart)
+  (BC.unpack <$> takeWhileP (Just "identifier char") identRest) <* space
 
 insertSort :: Parser Ident
 insertSort = do
   i <- ident
-  modifyState (ilInsertSort i)
+  modify (ilInsertSort i)
   return i
 
 insertTerm :: Parser Ident
 insertTerm = do
   i <- ident
-  modifyState (ilInsertTerm i)
+  modify (ilInsertTerm i)
   return i
 
 insertVar :: Parser Ident
 insertVar = do
   i <- ident
-  modifyState (ilInsertVar i)
+  modify (ilInsertVar i)
   return i
 
 insertThm :: Parser Ident
 insertThm = do
   i <- ident
-  modifyState (ilInsertThm i)
+  modify (ilInsertThm i)
   return i
 
 lookupRead :: (IxLookup -> NameMap) -> Parser Int
 lookupRead f = do
-  s <- getState
+  s <- get
   i <- ident
   maybe empty return (snd (f s) M.!? i)
 
@@ -80,7 +91,7 @@ readVar :: Parser VarID
 readVar = VarID <$> lookupRead pVarIx <?> "lookup var"
 
 resetVars :: Parser ()
-resetVars = modifyState ilResetVars
+resetVars = modify ilResetVars
 
 readProof :: Parser ProofCmd
 readProof = ident >>= \case
@@ -104,9 +115,9 @@ readDef :: Bool -> Parser ProofCmd
 readDef st = do
   x <- insertTerm
   args <- many readBinder
-  symbol ':'
+  symbol _colon
   ret <- liftA2 VType readSort (many (readVar <?> "var"))
-  symbol '='
+  symbol _equal
   ds <- many readDummy
   val <- readExpr
   resetVars >> return (ProofDef (Just x) args ret ds val st)
@@ -115,40 +126,41 @@ readThm :: Bool -> Parser ProofCmd
 readThm st = do
   x <- insertThm
   vs <- many readBinder
-  symbol ','
+  symbol _comma
   uf <- (do
-      string "unfolding" <* spaces
+      str "unfolding" <* space
       t <- many readTerm
-      bracket '(' ')' (many insertVar)
+      paren (many insertVar)
       return t)
     <|> return []
   hyps <- many readHyp
-  symbol ':'
+  symbol _colon
   ret <- readExpr
-  symbol '='
+  symbol _equal
   ds <- many readDummy
   proof <- readProofExpr
   resetVars >> return (ProofThm (Just x) vs hyps ret uf ds proof st)
 
 readDummy :: Parser SortID
-readDummy = bracket '{' '}' (insertVar >> symbol ':' >> readSort)
+readDummy = bracket _braceleft _braceright
+  (insertVar >> symbol _colon >> readSort)
 
 readBinder :: Parser VBinder
 readBinder = (VBound <$> readDummy) <|>
-  bracket '(' ')' (insertVar >> symbol ':' >>
+  paren (insertVar >> symbol _colon >>
     VReg <$> readSort <*> many readVar)
 
 readExpr :: Parser VExpr
 readExpr = (VVar <$> try readVar) <|> (flip VApp [] <$> readTerm) <|>
-  (bracket '(' ')' (VApp <$> readTerm <*> many readExpr))
+  (paren (VApp <$> readTerm <*> many readExpr))
 
 readHyp :: Parser VExpr
-readHyp = bracket '(' ')' (insertVar >> symbol ':' >> readExpr)
+readHyp = paren (insertVar >> symbol _colon >> readExpr)
 
 readProofExpr :: Parser ProofTree
 readProofExpr =
-  (symbol '?' >> return Sorry) <|>
-  bracket '(' ')' (
+  (symbol _question >> return Sorry) <|>
+  paren (
     (do
       t <- try readTerm
       es <- many readProofExpr
@@ -157,9 +169,9 @@ readProofExpr =
       t <- readAssrt
       hs <- many readProofExpr
       return (VThm t hs))) <|>
-  bracket '[' ']' (do
+  bracket _bracketleft _bracketright (do
     e <- readProofExpr
-    symbol '='
+    symbol _equal
     insertVar
     return (Save e)) <|>
   (Load <$> try readVar) <|>
