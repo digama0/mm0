@@ -1,5 +1,5 @@
---| #include "x86.mm0"
---| #include "mm0.mm0"
+--| import "x86.mm0"
+--| import "mm0.mm0"
 
 ---------------------------------------
 -- Specification of a valid verifier --

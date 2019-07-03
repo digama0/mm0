@@ -1,4 +1,4 @@
---| #include "peano_hex.mm0"
+--| import "peano_hex.mm0"
 
 def consBit (b: wff) (n: nat): nat = $ if b (b1 n) (b0 n) $;
 

@@ -1,4 +1,4 @@
---| #include "peano.mm0"
+--| import "peano.mm0"
 
 -- The string preamble. This is used for interfacing with
 -- the real world, making concrete inputs and outputs.
