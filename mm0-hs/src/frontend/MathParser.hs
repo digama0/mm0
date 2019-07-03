@@ -57,9 +57,7 @@ tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ t ++ "'"))
 parseVar :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
 parseVar no = do
   ctx <- ask
-  stk <- lift readStack
-  tkMatch (lookupVarSort stk ctx)
-    (\v (s, b) -> unless b (lift $ insertLocal v) >> return (SVar v, s)) no
+  tkMatch (lookupLocal ctx) (\v (DepType s _) -> return (SVar v, s)) no
 
 parseLiteral :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
 parseLiteral no =

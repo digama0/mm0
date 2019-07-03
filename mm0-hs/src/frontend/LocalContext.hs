@@ -13,10 +13,6 @@ import Environment
 import ParserEnv
 import Util
 
-data Locals = Locals {
-  lBound :: S.Set Ident,
-  lNewVars :: S.Set Ident }
-
 type LCtx = ([PBinder], M.Map Ident Ident)
 
 lookupReg :: [PBinder] -> Ident -> Maybe DepType
@@ -28,6 +24,12 @@ lookupReg (b : bs) v = lookupReg bs v
 lookupLocal :: LCtx -> Ident -> Maybe DepType
 lookupLocal (bs, ds) v = ((\t -> DepType t []) <$> ds M.!? v) <|> lookupReg bs v
 
+lookupBound :: LCtx -> Ident -> Maybe Ident
+lookupBound (bs, ds) v = ds M.!? v <|> lookupBound' bs where
+  lookupBound' [] = Nothing
+  lookupBound' (PBound v' t : bs) | v == v' = Just t
+  lookupBound' (b : bs) = lookupBound' bs
+
 lcRegCons :: PBinder -> LCtx -> Either String LCtx
 lcRegCons b (bs, ds) = do
   guardError "dummy and regular variables have same name" $ M.notMember (binderName b) ds
@@ -38,42 +40,21 @@ lcDummyCons d t (bs, ds) = do
   guardError "dummy and regular variables have same name" $ isNothing (lookupReg bs d)
   return (bs, M.insert d t ds)
 
-type LocalCtxM = ReaderT LCtx
-  (ReaderT (Stack, (Environment, ParserEnv))
-    (StateT Locals (Either String)))
+type LocalCtxM = ReaderT LCtx (ReaderT (Environment, ParserEnv) (Either String))
 
-runLocalCtxM :: LocalCtxM a -> Stack -> (Environment, ParserEnv) -> Either String (a, Locals)
-runLocalCtxM m s e = runStateT (runReaderT (runReaderT m ([], M.empty)) (s, e)) (Locals S.empty S.empty)
+runLocalCtxM :: LocalCtxM a -> (Environment, ParserEnv) -> Either String a
+runLocalCtxM m = runReaderT (runReaderT m ([], M.empty))
 
 lcmLocal :: (LCtx -> Either String LCtx) -> LocalCtxM a -> LocalCtxM a
-lcmLocal f m = ReaderT $ \ctx -> lift (lift (f ctx)) >>= runReaderT m
-
-readStack :: LocalCtxM Stack
-readStack = fst <$> lift ask
+lcmLocal f m = ReaderT $ \ctx -> lift (f ctx) >>= runReaderT m
 
 readEnv :: LocalCtxM Environment
-readEnv = fst . snd <$> lift ask
+readEnv = fst <$> lift ask
 
 readPE :: LocalCtxM ParserEnv
-readPE = snd . snd <$> lift ask
+readPE = snd <$> lift ask
 
-lookupVarSort :: Stack -> LCtx -> Ident -> Maybe (Ident, Bool)
-lookupVarSort stk ctx v =
-  case lookupLocal ctx v of
-    Just (DepType s _) -> Just (s, True)
-    Nothing -> (\t -> (varTypeSort t, False)) <$> sVars stk M.!? v
-
-makeBound :: Ident -> LocalCtxM ()
-makeBound v = modify (\loc -> loc {lBound = S.insert v (lBound loc)})
-
-insertLocal :: Ident -> LocalCtxM ()
-insertLocal v = modify (\loc -> loc {lNewVars = S.insert v (lNewVars loc)})
-
-ensureLocal :: Ident -> LocalCtxM ()
-ensureLocal v = do
+ensureBound :: Ident -> LocalCtxM ()
+ensureBound v = do
   ctx <- ask
-  Locals bd nv <- get
-  when (isNothing (lookupLocal ctx v)) $ do
-    stk <- readStack
-    guardError ("variable " ++ v ++ " not defined") (M.member v (sVars stk))
-    put (Locals bd (S.insert v nv))
+  () <$ fromJustError ("variable " ++ v ++ " not bound") (lookupBound ctx v)

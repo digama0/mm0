@@ -39,7 +39,6 @@ tokens :-
   strict    {\_ -> TokStrict}
   term      {\_ -> TokTerm}
   theorem   {\_ -> TokTheorem}
-  var       {\_ -> TokVar}
   "_"       {\_ -> TokAnon}
   @ident    {TokIdent . C.unpack}
   @number   {TokNumber . C.unpack}
@@ -75,7 +74,6 @@ data Token =
   | TokStrict
   | TokTerm
   | TokTheorem
-  | TokVar
   | TokIdent String
   | TokNumber String
   | TokFormula B.ByteString

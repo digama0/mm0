@@ -11,14 +11,12 @@ type AST = [Stmt]
 
 data Stmt =
     Sort Ident SortData
-  | Var [Ident] VarType
   | Term Ident [Binder] DepType
   | Axiom Ident [Binder] Formula
   | Theorem Ident [Binder] Formula
   | Def Ident [Binder] DepType (Maybe Formula)
   | Notation Notation
   | Inout Inout
-  | Block [Stmt]
 
 data Notation =
     Delimiter Const
@@ -56,12 +54,6 @@ instance Show Type where
   showsPrec _ (TType ty) = shows ty
   showsPrec _ (TFormula f) = shows f
 
-data VarType = VTReg Ident | Open Ident
-
-instance Show VarType where
-  showsPrec _ (VTReg v) r = v ++ r
-  showsPrec _ (Open v) r = v ++ '*' : r
-
 data Formula = Formula B.ByteString
 
 instance Show Formula where
@@ -86,24 +78,6 @@ localName (LBound v) = Just v
 localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing
-
-type Vars = M.Map Ident VarType
-
-data Stack = Stack {
-  sVars :: Vars,
-  sRest :: Maybe Stack }
-  deriving (Show)
-
-getVarM :: MonadError String m => Ident -> Stack -> m VarType
-getVarM v s = fromJustError "type depends on unknown variable" (sVars s M.!? v)
-
-varTypeToDep :: [Ident] -> VarType -> DepType
-varTypeToDep ds (VTReg t) = DepType t []
-varTypeToDep ds (Open t) = DepType t ds
-
-varTypeSort :: VarType -> Ident
-varTypeSort (VTReg s) = s
-varTypeSort (Open s) = s
 
 eqType :: Type -> Type -> Bool
 eqType (TType t1) (TType t2) = t1 == t2
@@ -142,8 +116,6 @@ instance Show Stmt where
     (if p then "pure " else "") ++ (if s then "strict " else "") ++
     (if pr then "provable " else "") ++ (if f then "free " else "") ++
     "sort " ++ x ++ ';' : r
-  showsPrec _ (Var ids ty) r = "var" ++
-    foldr (\i r -> ' ' : i ++ r) (": " ++ shows ty (';' : r)) ids
   showsPrec _ (Term x bis ty) r = "term " ++ x ++
     showsGroupedBinders bis (": " ++ shows ty (';' : r))
   showsPrec _ (Axiom x bis ty) r = "axiom " ++ x ++ showsAssert bis ty r
@@ -155,8 +127,6 @@ instance Show Stmt where
       Just f -> " = " ++ shows f (';' : r)
   showsPrec _ (Notation n) r = shows n r
   showsPrec _ (Inout io) r = shows io r
-  showsPrec _ (Block ss) r = "{" ++
-    foldr (\s r -> '\n' : shows s ('\n' : r)) ("}" ++ r) ss
 
 instance Show Notation where
   showsPrec _ (Delimiter ds) = ("delimiter " ++) . shows ds . (';' :)

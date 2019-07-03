@@ -34,7 +34,6 @@ import qualified Data.ByteString.Lazy as L
   strict    {TokStrict}
   term      {TokTerm}
   theorem   {TokTheorem}
-  var       {TokVar}
   ident     {TokIdent $$}
   number    {TokNumber $$}
   formula   {TokFormula $$}
@@ -53,12 +52,9 @@ import qualified Data.ByteString.Lazy as L
 
 %%
 
-Spec  : list(Directive) {$1}
-
-Directive : Statement {$1} | '{' list(Directive) '}' {Block $2}
+Spec  : list(Statement) {$1}
 
 Statement : SortStmt {$1}
-          | VarStmt {$1}
           | TermStmt {$1}
           | AssertStmt {$1}
           | DefStmt {$1}
@@ -84,14 +80,9 @@ Ident : ident {$1}
       | strict {"strict"}
       | term {"term"}
       | theorem {"theorem"}
-      | var {"var"}
 
 SortStmt : flag(pure) flag(strict) flag(provable) flag(free)
              sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}
-
-VarStmt : var list(Ident) ':' VarType ';' {Var $2 $4}
-VarType : Ident {VTReg $1}
-        | Ident '*' {Open $1}
 
 TermStmt : term Ident binders(Ident_, TType) ':' ArrowType ';'
            {unArrow (Term $2) $3 $5}

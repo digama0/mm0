@@ -55,19 +55,17 @@ Pseudo-keywords
 The following words appear in the syntax with special meanings:
 
     axiom coercion def delimiter free infixl infixr input max notation
-    output prec prefix provable pure sort strict term theorem var
+    output prec prefix provable pure sort strict term theorem
 
 However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
 
 Grammar for the `.mm0` file format
 ===
 
-An `.mm0` file is a list of directives. Directives are used to declare sorts, define axioms, definitions, and theorems, as well as notation to be used in the inline math blocks. Directives are block structured, with `{` `}` enclosing scopes.
+An `.mm0` file is a list of statements. Statements are used to declare sorts, define axioms, definitions, and theorems, as well as notation to be used in the inline math blocks.
 
-    mm0-file ::= (directive)*
-    directive ::= statement | '{' (directive)* '}'
+    mm0-file ::= (statement)*
     statement ::= sort-stmt
-               |  var-stmt
                |  term-stmt
                |  assert-stmt
                |  def-stmt
@@ -84,17 +82,6 @@ The underlying semantics of metamath zero is based on multi-sorted first order l
 * `strict` is the "opposite" of `pure`: it says that the sort does not have any variable binding operators. It is illegal to have a bound variable or dummy variable of this sort, and it cannot appear as a dependency in another variable. For example, if `x: set` and `ph: wff x` then `set` must not be declared `strict`. (`pure` and `strict` are not mutually exclusive, although a sort with both properties is not very useful.)
 * `provable` means that the sort is a thing that can be "proven". All formulas appearing in axioms and definitions (between `$`) must have a provable sort.
 * `free` means that dummy variables may not be dropped in definitions unless they appear in binding syntax constructors.
-
-Variable declarations
----
-This feature is optional. Verifiers that don't support the `var` keyword need not support blocks either, because `var` is the only locally scoped command.
-
-    var-stmt ::= 'var' (identifier)* ':' var-type ';'
-    var-type ::= identifier '*'?
-
-A variable statement does not represent any actual statement or theorem, it just sets up variable names with their types so that they may be inferred in later `term`s, `axiom`s, `def`s and `theorem`s. See "Variable Inference" for details on how the inference process works. In the statement itself, we can declare a list of variables with type dependencies.
-
-A type is the name of a sort followed by 0 or more variable names, which represent the values this variable is allowed to depend on. In variable declarations, dependent sorts are not permitted, but a type may be declared with a trailing `*`, representing that this variable depends on all bound variables in statements.
 
 Term constructors
 ---
@@ -266,43 +253,6 @@ MM0 should be viewed as a logical foundation, based on many-sorted first order l
 * An `axiom` directive declares a new axiom or inference rule. This asserts that a term in a provable sort (i.e. a formula) is derivable if all the hypotheses are derivable.
 * A `def` directive allows the creation of a new function symbol, defined to equal some expression in terms of the input variables, as well as some additional "dummy variables", which do not appear as arguments to the definition and are instantiated "arbitrarily" when unfolded. (See Definition Substitution.)
 * A `theorem` directive asserts that a formula is derivable assuming that the hypotheses are derivable.
-
-Variable inference
----
-
-A theorem may reference variables inside types and formulas that are not explicitly bound in the declaration. Variable inference is the process by which these variables, declared in the local scope, are automatically inserted into the theorem statement. To prevent ambiguity of inferred variable order, `term`s and `def`s are not permitted to use inferred variables, although `def`s may infer dummy variables used in the definition.
-
-Additionally, variables are organized into two types, bound variables and regular variables. For variables in the given binder list, this is denoted by curly braces for bound variables and parentheses for regular variables. Dummy variables (in dot binders) are always bound. An inferred variable is considered regular unless it is required to be bound.
-
-* Bound variables may not have a dependent type.
-* Bound variables may not have a `strict` type.
-* All variables appearing as dependencies of a type must be bound.
-* If a term constructor has an bound argument, then the substitution to this argument must be a variable, and that variable must be bound.
-
-For example:
-
-    var x y z: set;
-    var ph ps: wff*;
-    theorem foo {x: set} (ph: wff y): $ A. x A. z (ph /\ ps) $ > $ ps $;
-
-Here the binder `(ph: wff y)` refers to `y` which is not among the previous binders, and the first hypothesis `$ A. x A. z (ph /\ ps) $` refers to `z`, and `ps`, neither of which are declared.
-
-Note that `x` and `ph` are both declared in the local scope; these declarations are ignored because their names are *shadowed* by the theorem binders.
-
-Inferred variables are unordered in the specification file. Verifiers are permitted to enforce any standard ordering in the proof file (for example, alphabetical order). The above theorem has three bindings: `{x: set}`, `(ph: wff y)` and the anonymous binding `(_: $ A. x A. z (ph /\ ps) $)`. Bindings come in three groups: the (nondependent) bound variables, the regular variable bindings, and the formulas. It is an error for the explicit bindings to come out of order.
-
-For bound variables and variables with simple types, like `{x: set}`, no variables are inferred. For `(ph: wff y)`, this variable depends on `y` and so `{y: set}` is inferred.
-
-For formulas, any variables that are referenced in the syntax tree are inferred. The syntax tree of the example is `wal x (wal z (wa ph ps))`, and so we check for `x,z,ph,ps` that they appear in the binder list, and insert the ones that don't. So this would add `{z: set}` as a bound variable binder and `(ps: wff*)` as a dependent binder. (This is not a proper type yet, but we defer resolution of the open type.) Finally, we look at the target formula `ps` and we don't need to do anything because the variable is already present.
-
-Once all the bindings are accumulated, all the variables with open types are given types that depend on all bound variables. So `(ps: wff*)` becomes `(ps: wff x y z)`. The end result is:
-
-    theorem foo {x y: set} (ph: wff y) {z: set} (ps: wff x y z)
-      (_: $ A. x A. z (ph /\ ps) $): $ ps $;
-
-and this is the version of the theorem that is proven in the proof file.
-
-For definitions, the process is the same except that inferred bound variables are marked as dummy variables. It is illegal for a bound variable in a definition to not appear as a type dependency to some other variable.
 
 Type checking
 ---
