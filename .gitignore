@@ -1,6 +1,9 @@
 .vscode/
 .stack-work/
+node_modules/
+build/
 mm0-hs/mm0-hs.cabal
 *~
 out.*
 *.olean
+*.log

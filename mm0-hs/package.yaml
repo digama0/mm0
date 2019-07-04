@@ -26,11 +26,29 @@ dependencies:
 - bytestring
 - containers
 - transformers
-- mtl
 - split
 - megaparsec
 - filepath
 - word8
+# for the server (TODO: move to separate project)
+- aeson
+- bytestring
+- containers
+- directory
+- data-default
+- filepath
+- hslogger
+- lens >= 4.15.2
+- mtl
+- network-uri
+- rope-utf16-splay >= 0.2
+- stm
+- text
+- time
+- transformers
+- unordered-containers
+- vector
+- haskell-lsp
 
 default-extensions:
 - FlexibleContexts
@@ -48,6 +66,7 @@ executables:
     - src/kernel
     - src/fromMM
     - src/frontend
+    - src/server
     - src/toHol
     ghc-options:
     - -threaded

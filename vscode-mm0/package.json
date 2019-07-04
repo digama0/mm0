@@ -1,0 +1,83 @@
+{
+	"name": "metamath-zero",
+	"displayName": "Metamath Zero",
+	"description": "Language support for Metamath Zero",
+	"author": "Mario Carneiro",
+	"publisher": "digama0",
+	"version": "0.0.1",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/digama0/mm0"
+	},
+	"engines": {
+		"vscode": "^1.36.0"
+	},
+	"categories": [
+		"Programming Languages"
+	],
+	"activationEvents": [
+		"onLanguage:metamath-zero"
+	],
+	"main": "./build/extension.js",
+	"contributes": {
+		"languages": [
+			{
+				"id": "metamath-zero",
+				"aliases": [
+					"Metamath Zero",
+					"metamath-zero"
+				],
+				"extensions": [
+					".mm0",
+					".mmc"
+				],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "metamath-zero",
+				"scopeName": "source.metamath-zero",
+				"path": "./syntaxes/metamath-zero.tmLanguage.json"
+			}
+		],
+		"configuration": {
+			"type": "object",
+			"title": "Example configuration",
+			"properties": {
+				"languageServerExample.maxNumberOfProblems": {
+					"scope": "resource",
+					"type": "number",
+					"default": 100,
+					"description": "Controls the maximum number of problems produced by the server."
+				},
+				"languageServerExample.trace.server": {
+					"scope": "window",
+					"type": "string",
+					"enum": [
+						"off",
+						"messages",
+						"verbose"
+					],
+					"default": "off",
+					"description": "Traces the communication between VS Code and the language server."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"lint": "tslint -p ./",
+		"watch": "tsc -watch -p ./"
+	},
+	"dependencies": {
+		"vscode-languageclient": "^4.2.0"
+	},
+	"devDependencies": {
+		"@types/node": "^8.10.25",
+		"@types/vscode": "^1.34.0",
+		"tslint": "^5.16.0",
+		"typescript": "^3.5.1"
+	}
+}

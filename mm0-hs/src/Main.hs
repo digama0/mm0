@@ -13,6 +13,7 @@ import Verifier
 import ProofTextParser
 import FromMM
 import ToHolIO
+import Server
 
 main :: IO ()
 main = do
@@ -23,6 +24,7 @@ main = do
     "to-hol" : rest -> toHolIO rest
     "to-othy" : rest -> toOpenTheory rest
     "to-lean" : rest -> toLean rest
+    "server" : rest -> server rest
     _ -> die ("incorrect args; use\n" ++
       "  mm0-hs verify MM0-FILE MMU-FILE\n" ++
       "  mm0-hs show-bundled MM-FILE\n" ++

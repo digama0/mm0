@@ -10,7 +10,7 @@ To run the program you can use the following:
 
 The MM0 spec leaves many parts of the language implementation defined, and most of the specification is optional. This implementation has the following behavior:
 
-* All the primary commands are supported: `sort, var, term, axiom, def, theorem, delimiter, notation, infixl/r, prefix, coercion, input, output`.
+* All the primary commands are supported: `sort, term, axiom, def, theorem, delimiter, notation, infixl/r, prefix, coercion, input, output`.
 * All sort modifiers are supported.
 * Delimiters must be single characters. Other tokens may not contain delimiter characters.
 * The following IO kinds are supported:
