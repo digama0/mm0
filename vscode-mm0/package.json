@@ -37,8 +37,8 @@
 		"grammars": [
 			{
 				"language": "metamath-zero",
-				"scopeName": "source.metamath-zero",
-				"path": "./syntaxes/metamath-zero.tmLanguage.json"
+				"scopeName": "source.mm0",
+				"path": "./syntaxes/mm0.json"
 			}
 		],
 		"configuration": {
