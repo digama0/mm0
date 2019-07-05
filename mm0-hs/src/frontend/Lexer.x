@@ -1,5 +1,5 @@
 {
-module Lexer (Token(..), Alex, lexer, failLC, runAlex) where
+module Lexer (Token(..), ParseError(..), Alex, lexer, failLC, runAlex) where
 import Control.Monad.State
 import Control.Monad.Except
 import Data.Word
@@ -94,7 +94,7 @@ data Token =
 data AlexPosn = AlexPosn !Int !Int !Int
 
 alexMove :: AlexPosn -> Bool -> AlexPosn
-alexMove (AlexPosn a l _) True  = AlexPosn (a+1) (l+1)   1
+alexMove (AlexPosn a l _) True  = AlexPosn (a+1) (l+1)   0
 alexMove (AlexPosn a l c) False = AlexPosn (a+1)  l     (c+1)
 
 type AlexInput = (AlexPosn, L.ByteString)
@@ -108,12 +108,16 @@ alexGetByte (p, cs) =
 alexInputPrevChar :: AlexInput -> Char
 alexInputPrevChar = undefined
 
-type Alex = StateT AlexInput (Either String)
+data ParseError = ParseError { peLine :: Int, peCol :: Int, peMsg :: String }
+instance Show ParseError where
+  show (ParseError l c err) = "Error at line " ++ show (l+1) ++ " column " ++ show (c+1) ++ ": " ++ err
+
+type Alex = StateT AlexInput (Either ParseError)
 
 failLC :: String -> Alex a
 failLC err = do
   (AlexPosn _ l c, _) <- get
-  throwError ("Error at line " ++ show l ++ " column " ++ show c ++ ": " ++ err)
+  throwError (ParseError l c err)
 
 readToken :: Alex Token
 readToken = do
@@ -131,7 +135,7 @@ readToken = do
 lexer :: (Token -> Alex a) -> Alex a
 lexer = (readToken >>=)
 
-runAlex :: Alex a -> L.ByteString -> Either String a
-runAlex m s = evalStateT m (AlexPosn 0 1 1, s)
+runAlex :: Alex a -> L.ByteString -> Either ParseError a
+runAlex m s = evalStateT m (AlexPosn 0 0 0, s)
 
 }

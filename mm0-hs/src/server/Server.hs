@@ -14,23 +14,28 @@ import Control.Monad.Reader
 import Control.Monad.STM
 import Data.Default
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.ByteString.Lazy as BL
 import qualified Language.Haskell.LSP.Control as Ctrl (run)
 import Language.Haskell.LSP.Core
 import Language.Haskell.LSP.Diagnostics
 import Language.Haskell.LSP.Messages
-import Language.Haskell.LSP.Types
+import Language.Haskell.LSP.Types hiding (ParseError)
 import qualified Language.Haskell.LSP.Types.Lens as J
 import Language.Haskell.LSP.VFS
 import System.Exit
 import qualified System.Log.Logger as L
 import qualified Data.Rope.UTF16 as Rope
+import qualified Parser as P
+import qualified Elaborator as Elab
 
 server :: [String] -> IO ()
-server _ = atomically newTChan >>= run
+server ("--debug" : _) = atomically newTChan >>= run True
+server _ = atomically newTChan >>= run False
 
-run :: TChan FromClientMessage -> IO ()
-run rin = do
-  setupLogger (Just "lsp.log") [] L.DEBUG
+run :: Bool -> TChan FromClientMessage -> IO ()
+run debug rin = do
+  when debug (setupLogger (Just "lsp.log") [] L.DEBUG)
   exitCode <- Ctrl.run
     (InitializeCallbacks (const (Right ())) (const (Right ())) $
       \lf -> forkIO (reactor lf rin) >> return Nothing)
@@ -75,8 +80,6 @@ type Reactor a = ReaderT (LspFuncs ()) IO a
 -- reactor monad functions
 -- ---------------------------------------------------------------------
 
--- ---------------------------------------------------------------------
-
 reactorSend :: FromServerMessage -> Reactor ()
 reactorSend msg = do
   lf <- ask
@@ -85,6 +88,7 @@ reactorSend msg = do
 publishDiagnostics :: Int -> NormalizedUri -> TextDocumentVersion -> DiagnosticsBySource -> Reactor ()
 publishDiagnostics maxToPublish uri v diags = do
   lf <- ask
+  reactorLogs $ "publishDiagnostics " ++ show v ++ " " ++ show diags
   liftIO $ (publishDiagnosticsFunc lf) maxToPublish uri v diags
 
 nextLspReqId :: Reactor LspId
@@ -142,7 +146,7 @@ reactor lf inp = do
           Nothing -> reactorErr "reactor: Virtual File not found when processing DidChangeTextDocument"
           Just (VirtualFile _ str _) -> do
             reactorLogs $ "reactor:processing NotDidChangeTextDocument: vf got:" ++ show (Rope.toString str)
-            sendDiagnostics doc Nothing (Rope.toText str)
+            sendDiagnostics doc version (Rope.toText str)
 
       -- -------------------------------
 
@@ -161,17 +165,24 @@ reactor lf inp = do
 
 -- ---------------------------------------------------------------------
 
+mkDiagnostic :: Int -> Int -> String -> Diagnostic
+mkDiagnostic l c msg =
+  Diagnostic
+    (Range (Position l c) (Position l (c+1)))
+    (Just DsError)  -- severity
+    Nothing  -- code
+    (Just "MM0") -- source
+    (T.pack msg)
+    (Just (List []))
+
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
 sendDiagnostics fileUri version str = do
-  let diags = [
-        Diagnostic
-          (Range (Position 0 1) (Position 0 5))
-          (Just DsWarning)  -- severity
-          Nothing  -- code
-          (Just "lsp-hello") -- source
-          "Example diagnostic message"
-          (Just (List []))]
+  diags <- case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
+    Left (P.ParseError l c msg) -> return [mkDiagnostic l c msg]
+    Right ast -> case Elab.elabAST ast of
+      Left msg -> return [mkDiagnostic 0 0 msg]
+      Right _ -> return []
   -- reactorSend $ NotificationMessage "2.0" "textDocument/publishDiagnostics" (Just r)
   publishDiagnostics 100 fileUri version (partitionBySource diags)

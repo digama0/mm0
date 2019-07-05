@@ -39,7 +39,7 @@ doVerify args = do
     [] -> return (stdin, [])
     (mm0:r) -> (\h -> (h, r)) <$> openFile mm0 ReadMode
   s <- B.hGetContents mm0
-  ast <- either die pure (parse s)
+  ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
   putStrLn "spec checked"
   case rest of

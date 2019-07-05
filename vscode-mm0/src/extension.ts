@@ -1,4 +1,4 @@
-import { ExtensionContext } from 'vscode';
+import { window, workspace, ExtensionContext, TextDocument, EndOfLine } from 'vscode';
 
 import {
 	LanguageClient,
@@ -8,7 +8,7 @@ import {
 
 let client: LanguageClient;
 
-export function activate(_context: ExtensionContext) {
+export function activate(context: ExtensionContext) {
 	// If the extension is launched in debug mode then the debug server options are used
 	// Otherwise the run options are used
 	let serverOptions: ServerOptions = {
@@ -28,6 +28,21 @@ export function activate(_context: ExtensionContext) {
 
 	// Start the client. This will also launch the server
 	client.start();
+
+	// Unfortunately it is not possible to set the default line endings to LF,
+	// which is required for MM0 files. Instead we just try to set it to LF
+	// on open and save.
+	function makeLF(doc: TextDocument) {
+		if (doc.languageId === 'metamath-zero' &&
+				doc.eol !== EndOfLine.LF &&
+				window.activeTextEditor) {
+			window.activeTextEditor.edit(
+				builder => builder.setEndOfLine(EndOfLine.LF))
+		}
+	}
+	context.subscriptions.push(
+		workspace.onDidOpenTextDocument(makeLF),
+		workspace.onWillSaveTextDocument(e => makeLF(e.document)));
 }
 
 export function deactivate(): Thenable<void> | undefined {

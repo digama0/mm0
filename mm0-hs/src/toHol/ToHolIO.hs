@@ -23,7 +23,7 @@ toHolIO (mm0 : mmp : rest) = do
         _ -> \k -> k stdout
   mm0 <- openFile mm0 ReadMode
   s <- B.hGetContents mm0
-  ast <- either die pure (parse s)
+  ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
   putStrLn "spec checked"
   pf <- B.readFile mmp
@@ -41,7 +41,7 @@ toOpenTheory (mm0 : mmp : rest) = do
         _ -> \k -> k stdout
   mm0 <- openFile mm0 ReadMode
   s <- B.hGetContents mm0
-  ast <- either die pure (parse s)
+  ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)
@@ -65,7 +65,7 @@ toLean (mm0 : mmp : rest) = do
     _ -> die "to-lean: -o FILE.LEAN required"
   mm0 <- openFile mm0 ReadMode
   s <- B.hGetContents mm0
-  ast <- either die pure (parse s)
+  ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
   pf <- B.readFile mmp
   pf <- liftIO (parseProof pf)

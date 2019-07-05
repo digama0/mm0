@@ -1,5 +1,5 @@
 {
-module Parser (parse) where
+module Parser (ParseError(..), parse) where
 import AST
 import Environment
 import Lexer
@@ -165,7 +165,7 @@ arrowCons ty1 (f, ty) = (Binder LAnon ty1 : f, ty)
 unArrow :: ([Binder] -> a -> b) -> [Binder] -> ArrowType a -> b
 unArrow f bs (as, ty) = f (bs ++ as) ty
 
-parse :: L.ByteString -> Either String [Stmt]
+parse :: L.ByteString -> Either ParseError [Stmt]
 parse = runAlex mparse
 
 }
