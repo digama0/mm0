@@ -26,16 +26,13 @@
 			"patterns": [
 				{"include": "#comment"},
 				{"include": "#binder"},
-				{
-					"begin": ":",
-					"end": "(?=;)",
-					"patterns": [{"include": "#math-string"}]
-				}
+				{"include": "#return-type"},
+				{"include": "#math-string"}
 			],
 			"name": "meta.statement.mm0"
 		},
 		{
-			"begin": "(delimiter)|(coercion|infix[lr]|prefix|notation)\\s+(\\w+)",
+			"begin": "(delimiter)|(coercion|infix[lr]|prefix)\\s+(\\w+)",
 			"beginCaptures": {
 				"1": {"name": "keyword.other.notation.mm0"},
 				"2": {"name": "keyword.other.notation.mm0"},
@@ -47,7 +44,31 @@
 				{"include": "#comment"},
 				{"include": "#math-string"},
 				{"match": "prec", "name": "keyword.other.mm0"},
-				{"match": "[0-9]+|max", "name": "constant.numeric.mm0"}
+				{"include": "#number"}
+			],
+			"name": "meta.statement.mm0"
+		},
+		{
+			"begin": "(notation)\\s+(\\w+)",
+			"beginCaptures": {
+				"1": {"name": "keyword.other.notation.mm0"},
+				"2": {"name": "entity.name.function.mm0"}
+			},
+			"end": ";",
+			"endCaptures": {"0": {"name": "punctuation.terminator.statement.mm0"}},
+			"patterns": [
+				{"include": "#comment"},
+				{"include": "#binder"},
+				{"include": "#return-type"},
+				{
+					"begin": "=",
+					"end": "(?=;)",
+					"patterns": [
+						{"include": "#math-string"},
+						{"include": "#number"},
+						{"match": "\\w+", "name": "variable.other.unknown.mm0"}
+					]
+				}
 			],
 			"name": "meta.statement.mm0"
 		}
@@ -119,22 +140,25 @@
 					"end": "(?=\\))",
 					"patterns": [{"include": "#math-string"}]
 				}]
+			}]
+		},
+		"return-type": {
+			"patterns": [{
+				"begin": "(:)\\s*(\\w+)",
+				"beginCaptures": {
+					"1": {"name": "keyword.operator.colon.mm0"},
+					"2": {"name": "entity.name.type.mm0"}
+				},
+				"end": "(?=;|=)",
+				"patterns": [{"match": "\\w+", "name": "variable.parameter.bound.mm0"}]
 			}, {
 				"begin": ":",
 				"beginCaptures": {"0": {"name": "keyword.operator.colon.mm0"}},
-				"end": "(?=;)",
-				"patterns": [
-					{
-						"match": "(\\w+)(?:\\s*(\\w+))*",
-						"captures": {
-							"1": {"name": "entity.name.type.mm0"},
-							"2": {"name": "variable.parameter.bound.mm0"}
-						}
-					},
-					{"include": "#math-string"}
-				]
+				"end": "(?=;|=)",
+				"patterns": [{"include": "#math-string"}]
 			}]
-		}
+		},
+		"number": {"match": "[0-9]+|max", "name": "constant.numeric.mm0"}
 	},
 	"scopeName": "source.mm0"
 }
