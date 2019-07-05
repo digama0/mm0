@@ -32,20 +32,39 @@
 			"name": "meta.statement.mm0"
 		},
 		{
-			"begin": "(delimiter)|(coercion|infix[lr]|prefix)\\s+(\\w+)",
-			"beginCaptures": {
-				"1": {"name": "keyword.other.notation.mm0"},
-				"2": {"name": "keyword.other.notation.mm0"},
-				"3": {"name": "entity.name.function.mm0"}
-			},
+			"begin": "delimiter",
+			"beginCaptures": {"0": {"name": "keyword.other.notation.mm0"}},
 			"end": ";",
 			"endCaptures": {"0": {"name": "punctuation.terminator.statement.mm0"}},
 			"patterns": [
 				{"include": "#comment"},
-				{"include": "#math-string"},
-				{"match": "prec", "name": "keyword.other.mm0"},
-				{"include": "#number"}
+				{"include": "#math-string"}
 			],
+			"name": "meta.statement.mm0"
+		},
+		{
+			"match": "(coercion)\\s+(\\w+)\\s*(:)\\s*(\\w+)\\s*>\\s*(\\w+)\\s*(;)",
+			"captures": {
+				"1": {"name": "keyword.other.notation.mm0"},
+				"2": {"name": "entity.name.function.mm0"},
+				"3": {"name": "keyword.operator.colon.mm0"},
+				"4": {"name": "entity.name.type.mm0"},
+				"5": {"name": "entity.name.type.mm0"},
+				"6": {"name": "punctuation.terminator.statement.mm0"}
+			},
+			"name": "meta.statement.mm0"
+		},
+		{
+			"match": "(infix[lr]|prefix)\\s+(\\w+)\\s*(:)\\s*(\\$[^\\$]*\\$)\\s*(prec)\\s*([0-9]+|max)\\s*(;)",
+			"captures": {
+				"1": {"name": "keyword.other.notation.mm0"},
+				"2": {"name": "entity.name.function.mm0"},
+				"3": {"name": "keyword.operator.colon.mm0"},
+				"4": {"name": "string.quoted.double.constant.mm0"},
+				"5": {"name": "keyword.other.mm0"},
+				"6": {"name": "constant.numeric.mm0"},
+				"7": {"name": "punctuation.terminator.statement.mm0"}
+			},
 			"name": "meta.statement.mm0"
 		},
 		{
@@ -64,7 +83,7 @@
 					"begin": "=",
 					"end": "(?=;)",
 					"patterns": [
-						{"include": "#math-string"},
+						{"match": "\\$[^\\$]*\\$", "name": "string.quoted.double.constant.mm0"},
 						{"include": "#number"},
 						{"match": "\\w+", "name": "variable.other.unknown.mm0"}
 					]
