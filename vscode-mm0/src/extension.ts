@@ -24,7 +24,7 @@ export function activate(context: ExtensionContext) {
 
 	// Create the language client and start the client.
 	client = new LanguageClient(
-		'metamath-zero', 'Metamath Zero', serverOptions, clientOptions);
+		'metamath-zero', 'Metamath Zero Server', serverOptions, clientOptions);
 
 	// Start the client. This will also launch the server
 	client.start();

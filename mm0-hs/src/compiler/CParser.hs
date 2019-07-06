@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 module CParser (parseAST, ParseASTError) where
 
@@ -21,36 +22,53 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import CAST
 import Util
 
-type ParsecST e s m = ParsecT e s (StateT [(PosState s, ParseError s e)] m)
+type ParsecST e s m = ParsecT e s (StateT [ParseError s e] m)
 
-runParserST :: Monad m => ParsecST e s m a -> String -> s ->
-  m (Either (ParseErrorBundle s e) a)
+-- TODO: This should be in Megaparsec
+initialPosState :: String -> s -> PosState s
+initialPosState name s = PosState
+  { pstateInput = s
+  , pstateOffset = 0
+  , pstateSourcePos = initialPos name
+  , pstateTabWidth = defaultTabWidth
+  , pstateLinePrefix = ""
+  }
+
+-- TODO: This should be in Megaparsec
+runParserST :: forall m s e a. Monad m =>
+  ParsecST e s m a -> String -> s -> m (Either (ParseErrorBundle s e, Maybe a) a)
 runParserST p n s = merge <$> runStateT (runParserT p n s) [] where
-  merge :: (Either (ParseErrorBundle s e) a, [(PosState s, ParseError s e)]) -> Either (ParseErrorBundle s e) a
-  merge (a, []) = a
-  merge (Right _, (pos, e) : es) = Left (build es e [] pos)
-  merge (Left (ParseErrorBundle (l :| ls) _), (pos, e) : es) =
-    Left (build es e (l : ls) pos)
-  build :: [(PosState s, ParseError s e)] -> ParseError s e ->
+  merge :: (Either (ParseErrorBundle s e) a, [ParseError s e]) ->
+      Either (ParseErrorBundle s e, Maybe a) a
+  merge (Right a, []) = Right a
+  merge (Left e, []) = Left (e, Nothing)
+  merge (Right a, e : es) = Left (build es e [] (initialPosState n s), Just a)
+  merge (Left (ParseErrorBundle (l :| ls) pos), e : es) =
+    Left (build es e (l : ls) pos, Nothing)
+  build :: [ParseError s e] -> ParseError s e ->
     [ParseError s e] -> PosState s -> ParseErrorBundle s e
-  build [] l ls pos = ParseErrorBundle (l :| ls) pos
-  build ((pos, e) : es) l ls _ = build es e (l : ls) pos
+  build [] l ls = ParseErrorBundle (l :| ls)
+  build (e : es) l ls = build es e (l : ls)
 
-runParserS :: ParsecST e s Identity a -> String -> s -> Either (ParseErrorBundle s e) a
+nonFatal :: Monad m => ParseError s e -> ParsecST e s m ()
+nonFatal e = lift (modify (e :))
+
+runParserS :: ParsecST e s Identity a -> String -> s -> Either (ParseErrorBundle s e, Maybe a) a
 runParserS p n s = runIdentity (runParserST p n s)
 
 type Parser = ParsecST Void T.Text Identity
 type ParseASTError = ParseErrorBundle T.Text Void
 
-parseAST :: T.Text -> Either ParseASTError AST
-parseAST = runParserS (sc *> many (atPos stmt) <* eof) ""
+parseAST :: T.Text -> Either (ParseASTError, Maybe AST) AST
+parseAST = runParserS (sc *> stmts) "" where
+  stmts =
+    (withRecovery (recoverToSemi Nothing) (Just <$> atPos stmt) >>= \case
+      Just (AtPos pos (Just e)) -> (AtPos pos e :) <$> stmts
+      _ -> stmts) <|>
+    ([] <$ eof) <?> "expecting command or EOF"
 
-failer :: Parser (String -> Parser ())
-failer = do
-  pos <- getParserState
-  return $ \s ->
-    lift (modify ((statePosState pos,
-      FancyError (stateOffset pos) (S.singleton (ErrorFail s))) :))
+failAt :: Int -> String -> Parser ()
+failAt o s = nonFatal $ FancyError o (S.singleton (ErrorFail s))
 
 sc :: Parser ()
 sc = L.space space1 (L.skipLineComment "--") empty
@@ -79,9 +97,10 @@ okw w = isJust <$> optional (kw w)
 atPos :: Parser a -> Parser (AtPos a)
 atPos = liftA2 AtPos getSourcePos
 
-stmt :: Parser Stmt
+stmt :: Parser (Maybe Stmt)
 stmt = sortStmt <|> declStmt <|> thmsStmt <|>
-  (Notation <$> notation) <|> (Inout <$> inout) <|> annot <|> doStmt
+  (fmap Notation <$> notation) <|> (fmap Inout <$> inout) <|>
+  annot <|> doStmt
 
 identStart :: Char -> Bool
 identStart c = isAlpha c || c == '_'
@@ -93,15 +112,20 @@ ident :: Parser Ident
 ident = lexeme $ liftA2 (:) (satisfy identStart)
   (T.unpack <$> takeWhileP (Just "identifier char") identRest)
 
+recoverToSemi :: a -> ParseError T.Text Void -> Parser a
+recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
+
+commit :: Parser a -> Parser (Maybe a)
+commit p = withRecovery (recoverToSemi Nothing) (Just <$> (p <* semi))
+
 sortData :: Parser SortData
 sortData = liftM4 SortData
   (okw "pure") (okw "strict") (okw "provable") (okw "free")
 
-sortStmt :: Parser Stmt
+sortStmt :: Parser (Maybe Stmt)
 sortStmt = do
   sd <- sortData <* kw "sort"
-  x <- ident
-  Sort x sd <$ semi
+  commit $ flip Sort sd <$> ident <|> fail "NOOO"
 
 type DeclStmt = Ident -> [Binder] -> Maybe ([AtPos Type], Type) -> Parser Stmt
 
@@ -136,76 +160,74 @@ binder = braces (f LBound) <|> parens (f LReg) where
 binders :: Parser [Binder]
 binders = concat <$> many binder
 
-declStmt :: Parser Stmt
+declStmt :: Parser (Maybe Stmt)
 declStmt = do
   vis <- (Public <$ kw "pub") <|> (Abstract <$ kw "abstract") <|>
          (Local <$ kw "local") <|> return VisDefault
   dk <- (DKTerm <$ kw "term") <|> (DKAxiom <$ kw "axiom") <|>
         (DKTheorem <$ kw "theorem") <|> (DKDef <$ kw "def")
-  x <- ident
-  bis <- binders
-  ty <- optional (symbol ":" *> sepBy1 ptype (symbol ">"))
-  defn <- optional (symbol "=" *> lispVal)
-  Decl vis dk x bis ty defn <$ semi
+  commit $ liftM4 (Decl vis dk) ident binders
+    (optional (symbol ":" *> sepBy1 ptype (symbol ">")))
+    (optional (symbol "=" *> lispVal))
 
-thmsStmt :: Parser Stmt
+thmsStmt :: Parser (Maybe Stmt)
 thmsStmt = kw "theorems" *>
-  liftA2 Theorems binders (braces (many lispVal))
+  commit (liftA2 Theorems binders (symbol "=" *> braces (many lispVal)))
 
 prec :: Parser Prec
 prec = (maxBound <$ kw "max") <|> (do
-  err <- failer
+  o <- getOffset
   n <- lexeme L.decimal
   if n < fromIntegral (maxBound :: Int) then
     return (fromIntegral n)
-  else maxBound <$ err "precedence out of range")
+  else maxBound <$ failAt o "precedence out of range")
 
-notation :: Parser Notation
+notation :: Parser (Maybe Notation)
 notation = delimNota <|> fixNota <|> coeNota <|> genNota where
 
-  delimNota :: Parser Notation
-  delimNota = lexeme $ between
-    (kw "delimiter" >> single '$') (symbol "$" >> semi)
-    (space *> (Delimiter <$> delims))
+  delimNota :: Parser (Maybe Notation)
+  delimNota = kw "delimiter" >> commit
+    (between (single '$') (symbol "$")
+      (space *> (Delimiter <$> delims)))
     where
     delims :: Parser [Char]
     delims = do
-      err <- failer
+      o <- getOffset
       T.unpack <$> takeWhileP (Just "math character") (\c -> c /= '$' && not (isSpace c)) >>= \case
         [] -> return []
         [c] -> space >> (c :) <$> delims
         _ -> do
-          err "multiple character delimiters not supported"
+          failAt o "multiple character delimiters not supported"
           space >> delims
 
-  fixNota :: Parser Notation
+  fixNota :: Parser (Maybe Notation)
   fixNota = do
     mk <- (Prefix <$ kw "prefix") <|>
       (Infix False <$ kw "infixl") <|> (Infix True <$ kw "infixr")
-    liftM3 mk ident (symbol ":" *> constant) (kw "prec" *> prec) <* semi
+    commit $ liftM3 mk ident (symbol ":" *> constant) (kw "prec" *> prec)
 
-  coeNota :: Parser Notation
-  coeNota = liftM3 Coercion (kw "coercion" *> ident) (symbol ":" *> ident) (symbol ">" >> ident) <* semi
+  coeNota :: Parser (Maybe Notation)
+  coeNota = kw "coercion" >> commit
+    (liftM3 Coercion ident (symbol ":" *> ident) (symbol ">" >> ident))
 
-  genNota :: Parser Notation
-  genNota = kw "notation" *>
-    liftM4 NNotation ident binders
+  genNota :: Parser (Maybe Notation)
+  genNota = kw "notation" >> commit
+    (liftM4 NNotation ident binders
       (optional (symbol ":" *> ptype))
       (symbol "=" *> many (
         parens (liftA2 NConst constant (symbol ":" *> prec)) <|>
-        (NVar <$> ident))) <* semi
+        (NVar <$> ident))))
 
-inout :: Parser Inout
+inout :: Parser (Maybe Inout)
 inout = do
-  mk <- (Input <$> (kw "input" >> ident)) <|>
-        (Output <$> (kw "output" >> ident))
-  mk <$> many lispVal
+  mk <- (Input <$ kw "input") <|> (Output <$ kw "output")
+  commit $ liftA2 mk ident (many lispVal)
 
-annot :: Parser Stmt
-annot = symbol "@" >> liftA2 Annot lispVal stmt
+annot :: Parser (Maybe Stmt)
+annot = symbol "@" >> liftA2 (fmap . Annot) lispVal stmt
 
-doStmt :: Parser Stmt
-doStmt = kw "do" >> braces (Do <$> many lispVal)
+doStmt :: Parser (Maybe Stmt)
+doStmt = kw "do" >> commit (braces (Do <$> many lispVal))
 
 strLit :: Parser T.Text
 strLit = single '"' *> (TB.run <$> p) where

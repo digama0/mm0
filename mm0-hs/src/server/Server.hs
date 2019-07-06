@@ -9,6 +9,7 @@ module Server (server) where
 
 import Control.Concurrent
 import Control.Concurrent.STM.TChan
+import qualified Control.Exception as E
 import Control.Lens ((^.))
 import Control.Monad.Reader
 import Control.Monad.STM
@@ -37,9 +38,12 @@ server :: [String] -> IO ()
 server ("--debug" : _) = atomically newTChan >>= run True
 server _ = atomically newTChan >>= run False
 
+catchAll :: forall a. IO a -> IO ()
+catchAll m = () <$ (E.try m :: IO (Either E.SomeException a))
+
 run :: Bool -> TChan FromClientMessage -> IO ()
 run debug rin = do
-  when debug (setupLogger (Just "lsp.log") [] L.DEBUG)
+  when debug $ catchAll $ setupLogger (Just "lsp.log") [] L.DEBUG
   exitCode <- Ctrl.run
     (InitializeCallbacks (const (Right ())) (const (Right ())) $
       \lf -> forkIO (reactor lf rin) >> return Nothing)
@@ -137,7 +141,6 @@ reactor lf inp = do
       -- -------------------------------
 
       NotDidOpenTextDocument msg -> do
-        reactorLogs $ "****** reactor: processing NotDidOpenTextDocument" ++ show msg
         let TextDocumentItem uri _ version str = msg ^. J.params . J.textDocument
         sendDiagnostics (toNormalizedUri uri) (Just version) str
 
@@ -195,7 +198,7 @@ sendDiagnostics fileUri@(NormalizedUri t) version str = do
         Left msg -> return [mkDiagnostic 0 0 msg]
         Right _ -> return []
     else case CP.parseAST str of
-      Left err -> return (errorBundleDiags err)
+      Left (err, _) -> return (errorBundleDiags err)
       Right _ -> return []
   -- reactorSend $ NotificationMessage "2.0" "textDocument/publishDiagnostics" (Just r)
   publishDiagnostics 100 fileUri version (partitionBySource diags)
