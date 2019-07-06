@@ -16,23 +16,23 @@ instance Functor AtPos where
 
 type AST = [AtPos Stmt]
 
-data Visibility = Public | Abstract | Local
+data Visibility = Public | Abstract | Local | VisDefault
 data DeclKind = DKTerm | DKAxiom | DKTheorem | DKDef
 data Stmt =
     Sort Ident SortData
   | Decl Visibility DeclKind Ident [Binder] (Maybe [Type]) (Maybe LispVal)
-  | Theorems [Binder] LispVal
+  | Theorems [Binder] [LispVal]
   | Notation Notation
   | Inout Inout
   | Annot LispVal Stmt
   | Do [LispVal]
 
 data Notation =
-    Delimiter Const
+    Delimiter [Char]
   | Prefix Ident Const Prec
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
-  | NNotation Ident [Binder] DepType [Literal]
+  | NNotation Ident [Binder] (Maybe Type) [Literal]
 
 data Literal = NConst Const Prec | NVar Ident
 
@@ -43,8 +43,8 @@ type InputKind = String
 type OutputKind = String
 
 data Inout =
-    Input InputKind [Either Ident Formula]
-  | Output OutputKind [Either Ident Formula]
+    Input InputKind [LispVal]
+  | Output OutputKind [LispVal]
 
 data Local = LBound Ident | LReg Ident | LDummy Ident | LAnon
 

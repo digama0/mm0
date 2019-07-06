@@ -148,8 +148,7 @@ reactor lf inp = do
             doc = toNormalizedUri uri
         liftIO (getVirtualFileFunc lf doc) >>= \case
           Nothing -> reactorErr "reactor: Virtual File not found when processing DidChangeTextDocument"
-          Just (VirtualFile _ str _) -> do
-            reactorLogs $ "reactor:processing NotDidChangeTextDocument: vf got:" ++ show (Rope.toString str)
+          Just (VirtualFile _ str _) ->
             sendDiagnostics doc version (Rope.toText str)
 
       -- -------------------------------

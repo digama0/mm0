@@ -2,6 +2,7 @@
 	"name": "Metamath Zero",
 	"patterns": [
 		{"include": "#comment"},
+		{"include": "#lisp-annot"},
 		{
 			"match": "(?:(pure)\\s+)?(?:(strict)\\s+)?(?:(provable)\\s+)?(?:(free)\\s+)?(sort)\\s+(\\w+)(;)",
 			"captures": {
@@ -16,10 +17,11 @@
 			"name": "meta.statement.mm0"
 		},
 		{
-			"begin": "(term|def|axiom|theorem)\\s+(\\w+)",
+			"begin": "(?:(pub|abstract|local)\\s+)?(term|def|axiom|theorem)\\s+(\\w+)",
 			"beginCaptures": {
-				"1": {"name": "keyword.other.command.mm0"},
-				"2": {"name": "entity.name.function.mm0"}
+				"1": {"name": "keyword.control.modifier.mm0"},
+				"2": {"name": "keyword.other.command.mm0"},
+				"3": {"name": "entity.name.function.mm0"}
 			},
 			"end": ";",
 			"endCaptures": {"0": {"name": "punctuation.terminator.statement.mm0"}},
@@ -27,7 +29,11 @@
 				{"include": "#comment"},
 				{"include": "#binder"},
 				{"include": "#return-type"},
-				{"include": "#math-string"}
+				{
+					"begin": "=",
+					"end": "(?=;)",
+					"patterns": [{"include": "#lisp-val"}]
+				}
 			],
 			"name": "meta.statement.mm0"
 		},
@@ -55,12 +61,12 @@
 			"name": "meta.statement.mm0"
 		},
 		{
-			"match": "(infix[lr]|prefix)\\s+(\\w+)\\s*(:)\\s*(\\$[^\\$]*\\$)\\s*(prec)\\s*([0-9]+|max)\\s*(;)",
+			"match": "(infix[lr]|prefix)\\s+(\\w+)\\s*(:)\\s*(\\$\\s*[^\\s\\$]+\\s*\\$)\\s*(prec)\\s*([0-9]+|max)\\s*(;)",
 			"captures": {
 				"1": {"name": "keyword.other.notation.mm0"},
 				"2": {"name": "entity.name.function.mm0"},
 				"3": {"name": "keyword.operator.colon.mm0"},
-				"4": {"name": "string.quoted.double.constant.mm0"},
+				"4": {"name": "string.quoted.single.constant.mm0"},
 				"5": {"name": "keyword.other.mm0"},
 				"6": {"name": "constant.numeric.mm0"},
 				"7": {"name": "punctuation.terminator.statement.mm0"}
@@ -83,7 +89,7 @@
 					"begin": "=",
 					"end": "(?=;)",
 					"patterns": [
-						{"match": "\\$[^\\$]*\\$", "name": "string.quoted.double.constant.mm0"},
+						{"match": "\\$\\s*[^\\s\\$]+\\s*\\$", "name": "string.quoted.single.constant.mm0"},
 						{"include": "#number"},
 						{"match": "\\w+", "name": "variable.other.unknown.mm0"}
 					]
@@ -100,11 +106,7 @@
 			},
 			"end": ";",
 			"endCaptures": {"0": {"name": "punctuation.terminator.statement.mm0"}},
-			"patterns": [
-				{"include": "#comment"},
-				{"include": "#math-string"},
-				{"match": "\\w+", "name": "entity.name.function.mm0"}
-			],
+			"patterns": [{"include": "#lisp-val"}],
 			"name": "meta.statement.mm0"
 		}
 	],
@@ -191,7 +193,68 @@
 				}
 			]
 		},
-		"number": {"match": "[0-9]+|max", "name": "constant.numeric.mm0"}
+		"number": {"match": "[0-9]+|max", "name": "constant.numeric.mm0"},
+		"lisp-val": {
+			"patterns": [
+				{"include": "#comment"},
+				{
+					"begin": "\\(\\s*([\\w!%&*/:<=>?^_~+.@-]+)?",
+					"beginCaptures": {"1": {"name": "entity.name.function.mm0.lisp"}},
+					"end": "\\)",
+					"patterns": [{"include": "#lisp-val"}]
+				},
+				{"include": "#math-string"},
+				{"match": "[0-9]+", "name": "constant.numeric.mm0.lisp"},
+				{"match": "#[tf]", "name": "constant.language.mm0.lisp"},
+				{
+					"begin": "\"",
+					"end": "\"",
+					"name": "string.quoted.double.mm0.lisp",
+					"patterns": [{
+						"match": "\\\\[\\\\\"nr]",
+						"name": "constant.character.escape.mm0.lisp"
+					}]
+				},
+				{
+					"begin": "'+\\(",
+					"end": "\\)",
+					"name": "string.quoted.other.mm0.lisp",
+					"patterns": [{"include": "#lisp-val"}]
+				},
+				{
+					"match": "[\\w!%&*/:<=>?^_~+.@-]+",
+					"name": "variable.other.unknown.mm0.lisp"
+				}
+			]
+		},
+		"lisp-annot": {
+			"patterns": [
+				{
+					"begin": "@\\s*\\(\\s*([\\w!%&*/:<=>?^_~+.@-]+)?",
+					"beginCaptures": {"1": {"name": "entity.name.function.mm0.lisp"}},
+					"end": "\\)",
+					"patterns": [{"include": "#lisp-val"}]
+				},
+				{
+					"begin": "@\\s*'+\\(",
+					"end": "\\)",
+					"name": "string.quoted.other.mm0.lisp",
+					"patterns": [{"include": "#lisp-val"}]
+				},
+				{
+					"match": "@\\s*([0-9]+)",
+					"captures": {"1": {"name": "constant.numeric.mm0.lisp"}}
+				},
+				{
+					"match": "@\\s*(#[tf])",
+					"captures": {"1": {"name": "constant.language.mm0.lisp"}}
+				},
+				{
+					"match": "@\\s*([\\w!%&*/:<=>?^_~+.@-]+)",
+					"captures": {"1": {"name": "variable.other.unknown.mm0.lisp"}}
+				}
+			]
+		}
 	},
 	"scopeName": "source.mm0"
 }
