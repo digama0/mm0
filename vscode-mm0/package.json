@@ -5,16 +5,9 @@
 	"author": "Mario Carneiro",
 	"publisher": "digama0",
 	"version": "0.0.1",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/digama0/mm0"
-	},
-	"engines": {
-		"vscode": "^1.36.0"
-	},
-	"categories": [
-		"Programming Languages"
-	],
+	"repository": {"type": "git", "url": "https://github.com/digama0/mm0"},
+	"engines": {"vscode": "^1.36.0"},
+	"categories": ["Programming Languages"],
 	"activationEvents": [
 		"onLanguage:metamath-zero"
 	],
@@ -27,20 +20,15 @@
 					"Metamath Zero",
 					"metamath-zero"
 				],
-				"extensions": [
-					".mm0",
-					".mmc"
-				],
+				"extensions": [".mm0", ".mm1"],
 				"configuration": "./language-configuration.json"
 			}
 		],
-		"grammars": [
-			{
-				"language": "metamath-zero",
-				"scopeName": "source.mm0",
-				"path": "./syntaxes/mm0.json"
-			}
-		],
+		"grammars": [{
+			"language": "metamath-zero",
+			"scopeName": "source.mm0",
+			"path": "./syntaxes/mm0.json"
+		}],
 		"configuration": {
 			"type": "object",
 			"title": "Example configuration",

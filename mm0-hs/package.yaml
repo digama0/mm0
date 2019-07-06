@@ -30,6 +30,8 @@ dependencies:
 - megaparsec
 - filepath
 - word8
+- text
+- text-builder
 # for the server (TODO: move to separate project)
 - aeson
 - bytestring
@@ -43,7 +45,6 @@ dependencies:
 - network-uri
 - rope-utf16-splay >= 0.2
 - stm
-- text
 - time
 - transformers
 - unordered-containers
@@ -66,6 +67,7 @@ executables:
     - src/kernel
     - src/fromMM
     - src/frontend
+    - src/compiler
     - src/server
     - src/toHol
     ghc-options:

@@ -1,8 +1,8 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Server (server) where
@@ -13,6 +13,7 @@ import Control.Lens ((^.))
 import Control.Monad.Reader
 import Control.Monad.STM
 import Data.Default
+import qualified Data.List.NonEmpty as NE (toList)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.ByteString.Lazy as BL
@@ -25,8 +26,11 @@ import qualified Language.Haskell.LSP.Types.Lens as J
 import Language.Haskell.LSP.VFS
 import System.Exit
 import qualified System.Log.Logger as L
+import Text.Megaparsec.Pos (SourcePos(..), unPos)
+import qualified Text.Megaparsec.Error as E
 import qualified Data.Rope.UTF16 as Rope
 import qualified Parser as P
+import qualified CParser as CP
 import qualified Elaborator as Elab
 
 server :: [String] -> IO ()
@@ -168,21 +172,31 @@ reactor lf inp = do
 mkDiagnostic :: Int -> Int -> String -> Diagnostic
 mkDiagnostic l c msg =
   Diagnostic
-    (Range (Position l c) (Position l (c+1)))
+    (Range (Position l c) (Position l c))
     (Just DsError)  -- severity
     Nothing  -- code
     (Just "MM0") -- source
     (T.pack msg)
     (Just (List []))
 
+errorBundleDiags :: CP.ParseASTError -> [Diagnostic]
+errorBundleDiags (E.ParseErrorBundle errs pos) =
+  f <$> NE.toList (fst (E.attachSourcePos E.errorOffset errs pos)) where
+  f (err, SourcePos _ l c) =
+    mkDiagnostic (unPos l - 1) (unPos c - 1) (E.parseErrorTextPretty err)
+
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
-sendDiagnostics fileUri version str = do
-  diags <- case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
-    Left (P.ParseError l c msg) -> return [mkDiagnostic l c msg]
-    Right ast -> case Elab.elabAST ast of
-      Left msg -> return [mkDiagnostic 0 0 msg]
+sendDiagnostics fileUri@(NormalizedUri t) version str = do
+  diags <- if False && T.isSuffixOf "mm0" t
+    then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
+      Left (P.ParseError l c msg) -> return [mkDiagnostic l c msg]
+      Right ast -> case Elab.elabAST ast of
+        Left msg -> return [mkDiagnostic 0 0 msg]
+        Right _ -> return []
+    else case CP.parseAST str of
+      Left err -> return (errorBundleDiags err)
       Right _ -> return []
   -- reactorSend $ NotificationMessage "2.0" "textDocument/publishDiagnostics" (Just r)
   publishDiagnostics 100 fileUri version (partitionBySource diags)
