@@ -4,12 +4,12 @@ import Control.Monad.Except
 import qualified Data.ByteString as B
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
-import Text.Megaparsec.Pos
 import Environment (Ident, SortData(..))
 import Util
 
-data AtPos a = AtPos SourcePos a
-data Span a = Span SourcePos a SourcePos
+type Offset = Int
+data AtPos a = AtPos Offset a
+data Span a = Span Offset a Offset
 
 instance Functor AtPos where
   fmap f (AtPos l a) = AtPos l (f a)
@@ -52,9 +52,9 @@ data DepType = DepType (AtPos Ident) [AtPos Ident]
 
 data Type = TType DepType | TFormula Formula
 
-data Formula = Formula SourcePos T.Text
+data Formula = Formula Offset T.Text
 
-data Binder = Binder SourcePos Local (Maybe Type)
+data Binder = Binder Offset Local (Maybe Type)
 
 isLBound :: Local -> Bool
 isLBound (LBound _) = True

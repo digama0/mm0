@@ -14,6 +14,7 @@ import Control.Lens ((^.))
 import Control.Monad.Reader
 import Control.Monad.STM
 import Data.Default
+import Data.Maybe
 import qualified Data.List.NonEmpty as NE (toList)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -181,7 +182,7 @@ mkDiagnostic l c msg =
     (T.pack msg)
     (Just (List []))
 
-errorBundleDiags :: CP.ParseASTError -> [Diagnostic]
+errorBundleDiags :: CP.ParseASTErrors -> [Diagnostic]
 errorBundleDiags (E.ParseErrorBundle errs pos) =
   f <$> NE.toList (fst (E.attachSourcePos E.errorOffset errs pos)) where
   f (err, SourcePos _ l c) =
@@ -191,13 +192,14 @@ errorBundleDiags (E.ParseErrorBundle errs pos) =
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
 sendDiagnostics fileUri@(NormalizedUri t) version str = do
+  let file = fromMaybe "" $ uriToFilePath $ fromNormalizedUri fileUri
   diags <- if False && T.isSuffixOf "mm0" t
     then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
       Left (P.ParseError l c msg) -> return [mkDiagnostic l c msg]
       Right ast -> case Elab.elabAST ast of
         Left msg -> return [mkDiagnostic 0 0 msg]
         Right _ -> return []
-    else case CP.parseAST str of
+    else case CP.parseAST file str of
       Left (err, _) -> return (errorBundleDiags err)
       Right _ -> return []
   -- reactorSend $ NotificationMessage "2.0" "textDocument/publishDiagnostics" (Just r)

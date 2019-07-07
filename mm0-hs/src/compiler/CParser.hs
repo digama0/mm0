@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
-module CParser (parseAST, ParseASTError) where
+module CParser (parseAST, parseAST', PosState,
+  ParseASTError, ParseASTErrors, errorOffset) where
 
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad
@@ -57,10 +58,16 @@ runParserS :: ParsecST e s Identity a -> String -> s -> Either (ParseErrorBundle
 runParserS p n s = runIdentity (runParserST p n s)
 
 type Parser = ParsecST Void T.Text Identity
-type ParseASTError = ParseErrorBundle T.Text Void
+type ParseASTError = ParseError T.Text Void
+type ParseASTErrors = ParseErrorBundle T.Text Void
 
-parseAST :: T.Text -> Either (ParseASTError, Maybe AST) AST
-parseAST = runParserS (sc *> stmts) "" where
+parseAST' :: String -> T.Text -> ([ParseASTError], PosState T.Text, Maybe AST)
+parseAST' n t = case parseAST n t of
+  Left (ParseErrorBundle (l :| ls) pos, ast) -> (l : ls, pos, ast)
+  Right ast -> ([], initialPosState n t, Just ast)
+
+parseAST :: String -> T.Text -> Either (ParseASTErrors, Maybe AST) AST
+parseAST name = runParserS (sc *> stmts) name where
   stmts =
     (withRecovery (recoverToSemi Nothing) (Just <$> atPos stmt) >>= \case
       Just (AtPos pos (Just e)) -> (AtPos pos e :) <$> stmts
@@ -95,7 +102,7 @@ okw :: T.Text -> Parser Bool
 okw w = isJust <$> optional (kw w)
 
 atPos :: Parser a -> Parser (AtPos a)
-atPos = liftA2 AtPos getSourcePos
+atPos = liftA2 AtPos getOffset
 
 stmt :: Parser (Maybe Stmt)
 stmt = sortStmt <|> declStmt <|> thmsStmt <|>
@@ -112,7 +119,7 @@ ident :: Parser Ident
 ident = lexeme $ liftA2 (:) (satisfy identStart)
   (T.unpack <$> takeWhileP (Just "identifier char") identRest)
 
-recoverToSemi :: a -> ParseError T.Text Void -> Parser a
+recoverToSemi :: a -> ParseASTError -> Parser a
 recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
 
 commit :: Parser a -> Parser (Maybe a)
@@ -135,7 +142,7 @@ constant = between (symbol "$") (symbol "$") $
 
 formula :: Parser Formula
 formula = lexeme $ between (single '$') (single '$') $
-  liftA2 Formula getSourcePos (takeWhileP Nothing (/= '$'))
+  liftA2 Formula getOffset (takeWhileP Nothing (/= '$'))
 
 depType :: Parser DepType
 depType = (\(t:vs) -> DepType t vs) <$> some (atPos ident)
