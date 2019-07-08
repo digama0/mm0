@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
-module CParser (parseAST, parseAST', PosState,
+module CParser (parseAST, parseAST', PosState(..),
   ParseASTError, ParseASTErrors, errorOffset) where
 
 import Control.Applicative hiding (many, some, (<|>), Const)
@@ -69,8 +69,8 @@ parseAST' n t = case parseAST n t of
 parseAST :: String -> T.Text -> Either (ParseASTErrors, Maybe AST) AST
 parseAST name = runParserS (sc *> stmts) name where
   stmts =
-    (withRecovery (recoverToSemi Nothing) (Just <$> atPos stmt) >>= \case
-      Just (AtPos pos (Just e)) -> (AtPos pos e :) <$> stmts
+    (withRecovery (recoverToSemi Nothing) atStmt >>= \case
+      Just st -> (st :) <$> stmts
       _ -> stmts) <|>
     ([] <$ eof) <?> "expecting command or EOF"
 
@@ -104,9 +104,13 @@ okw w = isJust <$> optional (kw w)
 atPos :: Parser a -> Parser (AtPos a)
 atPos = liftA2 AtPos getOffset
 
-stmt :: Parser (Maybe Stmt)
-stmt = sortStmt <|> declStmt <|> thmsStmt <|>
-  (fmap Notation <$> notation) <|> (fmap Inout <$> inout) <|>
+mAtPos :: Parser (Maybe a) -> Parser (Maybe (AtPos a))
+mAtPos = liftA2 (fmap . AtPos) getOffset
+
+atStmt :: Parser (Maybe (AtPos Stmt))
+atStmt = sortStmt <|> declStmt <|> thmsStmt <|>
+  mAtPos (fmap Notation <$> notation) <|>
+  mAtPos (fmap Inout <$> inout) <|>
   annot <|> doStmt
 
 identStart :: Char -> Bool
@@ -115,30 +119,41 @@ identStart c = isAlpha c || c == '_'
 identRest :: Char -> Bool
 identRest c = isAlphaNum c || c == '_'
 
-ident :: Parser Ident
-ident = lexeme $ liftA2 (:) (satisfy identStart)
-  (T.unpack <$> takeWhileP (Just "identifier char") identRest)
+ident_ :: Parser T.Text
+ident_ = lexeme $ liftA2 T.cons (satisfy identStart)
+  (takeWhileP (Just "identifier char") identRest)
+
+ident :: Parser T.Text
+ident = ident_ >>= \case "_" -> empty; i -> return i
 
 recoverToSemi :: a -> ParseASTError -> Parser a
 recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
 
+commit' :: Parser (Maybe a) -> Parser (Maybe a)
+commit' p = withRecovery (recoverToSemi Nothing) (p <* semi)
+
 commit :: Parser a -> Parser (Maybe a)
-commit p = withRecovery (recoverToSemi Nothing) (Just <$> (p <* semi))
+commit p = commit' (Just <$> p)
 
 sortData :: Parser SortData
 sortData = liftM4 SortData
   (okw "pure") (okw "strict") (okw "provable") (okw "free")
 
-sortStmt :: Parser (Maybe Stmt)
+sortStmt :: Parser (Maybe (AtPos Stmt))
 sortStmt = do
-  sd <- sortData <* kw "sort"
-  commit $ flip Sort sd <$> ident <|> fail "NOOO"
+  sd <- sortData
+  ostmt <- getOffset <* kw "sort"
+  commit $ do
+    o <- getOffset
+    x <- ident
+    return $ AtPos ostmt (Sort o x sd)
 
-type DeclStmt = Ident -> [Binder] -> Maybe ([AtPos Type], Type) -> Parser Stmt
+type DeclStmt = T.Text -> [Binder] -> Maybe ([AtPos Type], Type) -> Parser Stmt
 
 constant :: Parser Const
 constant = between (symbol "$") (symbol "$") $
-  Const <$> lexeme (takeWhileP Nothing (\c -> c /= '$' && not (isSpace c)))
+  liftA2 Const getOffset $
+    lexeme (takeWhileP Nothing (\c -> c /= '$' && not (isSpace c)))
 
 formula :: Parser Formula
 formula = lexeme $ between (single '$') (single '$') $
@@ -152,11 +167,11 @@ ptype = (TFormula <$> formula) <|> (TType <$> depType)
 
 binder :: Parser [Binder]
 binder = braces (f LBound) <|> parens (f LReg) where
-  f :: (Ident -> Local) -> Parser [Binder]
+  f :: (T.Text -> Local) -> Parser [Binder]
   f bd = liftA2 mk
-    (some (atPos (liftA2 (local bd) (optional (symbol ".")) ident)))
+    (some (atPos (liftA2 (local bd) (optional (symbol ".")) ident_)))
     (optional (symbol ":" *> ptype))
-  local :: (Ident -> Local) -> Maybe () -> Ident -> Local
+  local :: (T.Text -> Local) -> Maybe () -> T.Text -> Local
   local _ _ "_" = LAnon
   local _ (Just _) x = LDummy x
   local f Nothing x = f x
@@ -167,18 +182,76 @@ binder = braces (f LBound) <|> parens (f LReg) where
 binders :: Parser [Binder]
 binders = concat <$> many binder
 
-declStmt :: Parser (Maybe Stmt)
+declStmt :: Parser (Maybe (AtPos Stmt))
 declStmt = do
+  ovis <- getOffset
   vis <- (Public <$ kw "pub") <|> (Abstract <$ kw "abstract") <|>
          (Local <$ kw "local") <|> return VisDefault
+  ostmt <- getOffset
   dk <- (DKTerm <$ kw "term") <|> (DKAxiom <$ kw "axiom") <|>
         (DKTheorem <$ kw "theorem") <|> (DKDef <$ kw "def")
-  commit $ liftM4 (Decl vis dk) ident binders
-    (optional (symbol ":" *> sepBy1 ptype (symbol ">")))
-    (optional (symbol "=" *> lispVal))
+  commit' $ do
+    px <- getOffset
+    x <- ident
+    bis <- binders
+    ret <- optional (symbol ":" *> sepBy1 ptype (symbol ">"))
+    let errs = maybe [] (checkRet dk) ret ++ checkBinders dk Nothing bis
+    o <- getOffset
+    val <- optional (symbol "=" *> lispVal)
+    let {errs' = case (val, ret, vis, dk) of
+      (Just _, Just (_:_:_), _, _) ->
+        (o, "Arrow type notation is not allowed with '='." <>
+            " Use anonymous binders '(_ : foo)' instead") : errs
+      (Nothing, Nothing, _, _) -> (o, "Cannot infer return type") : errs
+      (Just _, _, _, DKTerm) -> (o, "A term does not take a definition") : errs
+      (Just _, _, _, DKAxiom) -> (o, "An axiom does not take a proof") : errs
+      (_, Nothing, _, DKTheorem) ->
+        (o, "Inferring theorem statements is not supported") : errs
+      (_, _, Abstract, _) | dk /= DKDef ->
+        (ovis, "Only definitions take the 'abstract' keyword") : errs
+      (_, _, _, DKAxiom) | vis /= VisDefault ->
+        (ovis, "Axioms do not take a visibility modifier (they are always public)") : errs
+      (_, _, _, DKTerm) | vis /= VisDefault ->
+        (ovis, "Terms do not take a visibility modifier (they are always public)") : errs
+      _ -> errs}
+    if null errs' then
+      return $ Just (AtPos ostmt (Decl vis dk px x bis ret val))
+    else Nothing <$ mapM_ (\(o, msg) -> failAt o msg) errs'
+  where
 
-thmsStmt :: Parser (Maybe Stmt)
-thmsStmt = kw "theorems" *>
+  checkBinders :: DeclKind -> Maybe Offset -> [Binder] -> [(Offset, String)]
+  checkBinders _ _ [] = []
+  checkBinders dk _ (Binder o l (Just (TFormula _)) : bis) | isLCurly l =
+    (o, "Use regular binders for formula hypotheses") :
+    checkBinders dk (Just o) bis
+  checkBinders dk _ (Binder o _ (Just (TFormula _)) : bis) =
+    if dk == DKTerm || dk == DKDef then
+      [(o, "A term/def does not take formula hypotheses")] else [] ++
+    checkBinders dk (Just o) bis
+  checkBinders dk last (Binder o _ Nothing : bis) =
+    if dk == DKTerm then [(o, "Cannot infer binder type")] else [] ++
+    checkBinders dk last bis
+  checkBinders dk off (Binder o2 l (Just (TType (DepType _ ts))) : bis) =
+    maybe [] (\o ->
+      [(o, "Hypotheses must come after term variables"),
+       (o2, "All term variables must come before all hypotheses")]) off ++
+    if isLCurly l && not (null ts) then
+      [(o2, "Bound variable has dependent type")] else [] ++
+    checkBinders dk Nothing bis
+
+  checkRet :: DeclKind -> [Type] -> [(Offset, String)]
+  checkRet _ [] = []
+  checkRet dk [t@(TFormula _)] =
+    if dk == DKTerm || dk == DKDef then
+      [(tyOffset t, "A term/def does not return a formula")] else []
+  checkRet dk (t@(TFormula _) : tys) =
+    if dk == DKTerm || dk == DKDef then
+      [(tyOffset t, "A term/def does not take formula hypotheses")] else [] ++
+    checkRet dk tys
+  checkRet dk (_ : tys) = checkRet dk tys
+
+thmsStmt :: Parser (Maybe (AtPos Stmt))
+thmsStmt = mAtPos $ kw "theorems" *>
   commit (liftA2 Theorems binders (symbol "=" *> braces (many lispVal)))
 
 prec :: Parser Prec
@@ -211,7 +284,14 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
   fixNota = do
     mk <- (Prefix <$ kw "prefix") <|>
       (Infix False <$ kw "infixl") <|> (Infix True <$ kw "infixr")
-    commit $ liftM3 mk ident (symbol ":" *> constant) (kw "prec" *> prec)
+    commit $ do
+      mk <- liftM3 mk getOffset ident (symbol ":" *> constant) <* kw "prec"
+      o <- getOffset
+      mk <$> prec >>= \case
+        r@(Infix _ _ _ _ n) | n == maxBound -> do
+          failAt o "infix prec max not allowed"
+          return r
+        r -> return r
 
   coeNota :: Parser (Maybe Notation)
   coeNota = kw "coercion" >> commit
@@ -230,11 +310,11 @@ inout = do
   mk <- (Input <$ kw "input") <|> (Output <$ kw "output")
   commit $ liftA2 mk ident (many lispVal)
 
-annot :: Parser (Maybe Stmt)
-annot = symbol "@" >> liftA2 (fmap . Annot) lispVal stmt
+annot :: Parser (Maybe (AtPos Stmt))
+annot = mAtPos (symbol "@" >> liftA2 (fmap . Annot) lispVal atStmt)
 
-doStmt :: Parser (Maybe Stmt)
-doStmt = kw "do" >> commit (braces (Do <$> many lispVal))
+doStmt :: Parser (Maybe (AtPos Stmt))
+doStmt = mAtPos (kw "do" >> commit (braces (Do <$> many lispVal)))
 
 strLit :: Parser T.Text
 strLit = single '"' *> (TB.run <$> p) where

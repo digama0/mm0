@@ -3,7 +3,7 @@ module MMParser (parseMM) where
 import Data.List
 import Data.Char
 import Data.Maybe
-import Debug.Trace
+import Data.Default
 import Control.Monad.Trans.State
 import Control.Monad.Except hiding (liftIO)
 import qualified Text.ParserCombinators.ReadP as P
@@ -43,6 +43,9 @@ data MMParserState = MMParserState {
   mScope :: Scope,
   mDB :: MMDatabase }
 
+instance Default MMParserState where
+  def = MMParserState def def def [def] def
+
 type FromMMM = StateT MMParserState (Either String)
 
 modifyDB :: (MMDatabase -> MMDatabase) -> FromMMM ()
@@ -58,8 +61,7 @@ withContext :: MonadError String m => String -> m a -> m a
 withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
-runFromMMM m = (\(a, t) -> (a, mDB t)) <$>
-  runStateT m (MMParserState M.empty M.empty M.empty [([], [], S.empty)] mkDatabase)
+runFromMMM m = (\(a, t) -> (a, mDB t)) <$> runStateT m def
 
 addConstant :: Const -> FromMMM ()
 addConstant c = modify $ \s -> s {mSyms = M.insert c (Const c) (mSyms s)}

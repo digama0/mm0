@@ -4,7 +4,7 @@ import Control.Monad.Trans.State
 import Control.Monad.Except
 import Data.Maybe
 import Data.List
-import Debug.Trace
+import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Sequence as Q
@@ -48,7 +48,7 @@ withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
 
 evalSpecM :: SpecM a -> Either String (a, Environment)
 evalSpecM m = do
-  (a, (e, _)) <- runStateT m (newEnv, newParserEnv)
+  (a, (e, _)) <- runStateT m def
   return (a, e)
 
 elabAST :: AST -> Either String Environment

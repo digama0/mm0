@@ -1,5 +1,6 @@
 delimiter $ ( ) ~ { } , $;
 strict provable sort wff;
+strict provable sort wff;
 term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
 term neg (ph: wff): wff; prefix neg: $~$ prec 40;
 

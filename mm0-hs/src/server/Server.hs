@@ -14,8 +14,10 @@ import Control.Lens ((^.))
 import Control.Monad.Reader
 import Control.Monad.STM
 import Data.Default
+import Data.List
+import Debug.Trace
 import Data.Maybe
-import qualified Data.List.NonEmpty as NE (toList)
+import qualified Data.IntMap as I
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.ByteString.Lazy as BL
@@ -34,6 +36,8 @@ import qualified Data.Rope.UTF16 as Rope
 import qualified Parser as P
 import qualified CParser as CP
 import qualified Elaborator as Elab
+import qualified CElaborator as CE
+import CElaborator (ErrorLevel(..))
 
 server :: [String] -> IO ()
 server ("--debug" : _) = atomically newTChan >>= run True
@@ -47,7 +51,7 @@ run debug rin = do
   when debug $ catchAll $ setupLogger (Just "lsp.log") [] L.DEBUG
   exitCode <- Ctrl.run
     (InitializeCallbacks (const (Right ())) (const (Right ())) $
-      \lf -> forkIO (reactor lf rin) >> return Nothing)
+      \lf -> forkIO (reactor debug lf rin) >> return Nothing)
     lspHandlers
     lspOptions
     Nothing -- (Just "lsp-session.log")
@@ -70,6 +74,7 @@ run debug rin = do
     didOpenTextDocumentNotificationHandler   = Just $ passHandler NotDidOpenTextDocument,
     didChangeTextDocumentNotificationHandler = Just $ passHandler NotDidChangeTextDocument,
     didCloseTextDocumentNotificationHandler  = Just $ passHandler NotDidCloseTextDocument,
+    didSaveTextDocumentNotificationHandler   = Just $ const $ return (),
     cancelNotificationHandler                = Just $ passHandler NotCancelRequestFromClient,
     responseHandler                          = Just $ passHandler RspFromClient }
 
@@ -83,7 +88,7 @@ run debug rin = do
 -- LSP client, so they can be sent to the backend compiler one at a time, and a
 -- reply sent.
 
-type Reactor a = ReaderT (LspFuncs ()) IO a
+type Reactor a = ReaderT (Bool, LspFuncs ()) IO a
 
 -- ---------------------------------------------------------------------
 -- reactor monad functions
@@ -91,17 +96,16 @@ type Reactor a = ReaderT (LspFuncs ()) IO a
 
 reactorSend :: FromServerMessage -> Reactor ()
 reactorSend msg = do
-  lf <- ask
+  (_, lf) <- ask
   liftIO $ sendFunc lf msg
 
 publishDiagnostics :: Int -> NormalizedUri -> TextDocumentVersion -> DiagnosticsBySource -> Reactor ()
 publishDiagnostics maxToPublish uri v diags = do
-  lf <- ask
-  reactorLogs $ "publishDiagnostics " ++ show v ++ " " ++ show diags
+  (_, lf) <- ask
   liftIO $ (publishDiagnosticsFunc lf) maxToPublish uri v diags
 
 nextLspReqId :: Reactor LspId
-nextLspReqId = asks getNextReqId >>= liftIO
+nextLspReqId = asks (getNextReqId . snd) >>= liftIO
 
 reactorSendId :: (LspId -> FromServerMessage) -> Reactor ()
 reactorSendId msg = nextLspReqId >>= reactorSend . msg
@@ -113,19 +117,29 @@ reactorErr :: T.Text -> Reactor ()
 reactorErr = reactorLogMsg MtError
 
 reactorLog :: T.Text -> Reactor ()
-reactorLog = reactorLogMsg MtLog
+reactorLog s = do
+  (debug, _) <- ask
+  when debug (reactorLogMsg MtLog s)
 
 reactorLogs :: String -> Reactor ()
 reactorLogs = reactorLog . T.pack
+
+reactorHandle :: E.Exception e => (e -> Reactor ()) -> Reactor () -> Reactor ()
+reactorHandle h m = ReaderT $ \lf ->
+  E.handle (\e -> runReaderT (h e) lf) (runReaderT m lf)
+
+reactorHandleAll :: Reactor () -> Reactor ()
+reactorHandleAll = reactorHandle $ \(e :: E.SomeException) ->
+  reactorErr $ T.pack $ E.displayException e
 
 -- ---------------------------------------------------------------------
 
 -- | The single point that all events flow through, allowing management of state
 -- to stitch replies and requests together from the two asynchronous sides: lsp
 -- server and backend compiler
-reactor :: LspFuncs () -> TChan FromClientMessage -> IO ()
-reactor lf inp = do
-  flip runReaderT lf $ forever $ do
+reactor :: Bool -> LspFuncs () -> TChan FromClientMessage -> IO ()
+reactor debug lf inp = do
+  flip runReaderT (debug, lf) $ forever $ do
     liftIO (atomically $ readTChan inp) >>= \case
       -- Handle any response from a message originating at the server, such as
       -- "workspace/applyEdit"
@@ -172,35 +186,69 @@ reactor lf inp = do
 
 -- ---------------------------------------------------------------------
 
-mkDiagnostic :: Int -> Int -> String -> Diagnostic
-mkDiagnostic l c msg =
+elSeverity :: ErrorLevel -> DiagnosticSeverity
+elSeverity ELError = DsError
+elSeverity ELWarning = DsWarning
+elSeverity ELInfo = DsInfo
+
+mkDiagnosticRelated :: ErrorLevel -> Position -> T.Text ->
+  [DiagnosticRelatedInformation] -> Diagnostic
+mkDiagnosticRelated l p msg rel =
   Diagnostic
-    (Range (Position l c) (Position l c))
-    (Just DsError)  -- severity
+    (Range p p)
+    (Just (elSeverity l))  -- severity
     Nothing  -- code
     (Just "MM0") -- source
-    (T.pack msg)
-    (Just (List []))
+    msg
+    (Just (List rel))
 
-errorBundleDiags :: CP.ParseASTErrors -> [Diagnostic]
-errorBundleDiags (E.ParseErrorBundle errs pos) =
-  f <$> NE.toList (fst (E.attachSourcePos E.errorOffset errs pos)) where
-  f (err, SourcePos _ l c) =
-    mkDiagnostic (unPos l - 1) (unPos c - 1) (E.parseErrorTextPretty err)
+mkDiagnostic :: Int -> Int -> T.Text -> Diagnostic
+mkDiagnostic l c msg = mkDiagnosticRelated ELError (Position l c) msg []
+
+parseErrorDiags :: CP.PosState T.Text ->
+  [CP.ParseASTError] -> [Diagnostic]
+parseErrorDiags pos errs =
+  toDiag <$> fst (E.attachSourcePos E.errorOffset errs' pos) where
+  errs' = sortOn E.errorOffset errs
+  toDiag (err, SourcePos _ l c) =
+    mkDiagnostic (unPos l - 1) (unPos c - 1) (T.pack (E.parseErrorTextPretty err))
+
+elabErrorDiags :: Uri -> CP.PosState T.Text -> [CE.ElabError] -> [Diagnostic]
+elabErrorDiags uri pos errs = toDiag <$> errs where
+  offs :: I.IntMap Int
+  offs = foldl' (\m (CE.ElabError _ o _ es) -> I.insert o o $
+    foldl' (\m (o, _) -> I.insert o o m) m es) I.empty errs
+  poss :: I.IntMap (Int, SourcePos)
+  poss = fst $ E.attachSourcePos id offs pos
+  toPosition :: Int -> Position
+  toPosition n =
+    let SourcePos _ l c = snd (poss I.! n) in
+    Position (unPos l - 1) (unPos c - 1)
+  toRange :: Int -> Range
+  toRange n = let p = toPosition n in Range p p
+  toRel :: (Int, T.Text) -> DiagnosticRelatedInformation
+  toRel (o, msg) = DiagnosticRelatedInformation
+    (Location uri (toRange o)) msg
+  toDiag :: CE.ElabError -> Diagnostic
+  toDiag (CE.ElabError l o msg es) =
+    mkDiagnosticRelated l (toPosition o) msg (toRel <$> es)
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
-sendDiagnostics fileUri@(NormalizedUri t) version str = do
-  let file = fromMaybe "" $ uriToFilePath $ fromNormalizedUri fileUri
-  diags <- if False && T.isSuffixOf "mm0" t
-    then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
-      Left (P.ParseError l c msg) -> return [mkDiagnostic l c msg]
-      Right ast -> case Elab.elabAST ast of
-        Left msg -> return [mkDiagnostic 0 0 msg]
-        Right _ -> return []
-    else case CP.parseAST file str of
-      Left (err, _) -> return (errorBundleDiags err)
-      Right _ -> return []
-  -- reactorSend $ NotificationMessage "2.0" "textDocument/publishDiagnostics" (Just r)
-  publishDiagnostics 100 fileUri version (partitionBySource diags)
+sendDiagnostics fileNUri@(NormalizedUri t) version str =
+  reactorHandleAll $ do
+    let fileUri = fromNormalizedUri fileNUri
+        file = fromMaybe "" $ uriToFilePath fileUri
+    diags <- if T.isSuffixOf "mm0" t
+      then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
+        Left (P.ParseError l c msg) -> return [mkDiagnostic l c (T.pack msg)]
+        Right ast -> case Elab.elabAST ast of
+          Left msg -> return [mkDiagnostic 0 0 (T.pack msg)]
+          Right _ -> return []
+      else case CP.parseAST' file str of
+        (errs, pos, Nothing) -> return $ parseErrorDiags pos errs
+        (errs, pos, Just ast) -> do
+          (env, errs') <- liftIO $ CE.elaborate errs ast
+          return (elabErrorDiags fileUri pos errs')
+    publishDiagnostics 100 fileNUri version (partitionBySource diags)

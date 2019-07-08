@@ -9,7 +9,7 @@ import Control.Monad.Except hiding (liftIO)
 import Data.Foldable
 import Data.Maybe
 import Data.List.Split
-import Debug.Trace
+import Data.Default
 import Text.Printf
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Char8 as C
@@ -114,8 +114,8 @@ data TransState = TransState {
   tBuilders :: M.Map Label Builder,
   tIxLookup :: IxLookup }
 
-mkTransState :: TransState
-mkTransState = TransState M.empty M.empty S.empty M.empty mkIxLookup
+instance Default TransState where
+  def = TransState def def def def def
 
 type TransM = RWST (MMDatabase, DBInfo)
   (Endo [String]) TransState (Either String)
@@ -128,7 +128,7 @@ runTransM m db dbf st = do
 
 makeAST :: MMDatabase -> DBFilter -> Either String (A.AST, Proofs)
 makeAST db dbf = trDecls (mDecls db)
-  (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") :) id mkTransState where
+  (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") :) id def where
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
     TransState -> Either String (A.AST, Proofs)
   trDecls Q.Empty f g s = return (f [], g [])
@@ -140,7 +140,7 @@ makeAST db dbf = trDecls (mDecls db)
 printAST :: MMDatabase -> DBFilter -> (String -> IO ()) -> (String -> IO ()) -> IO ()
 printAST db dbf mm0 mmu = do
   mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ C.pack " ( ) ") "\n"
-  trDecls (mDecls db) mkTransState mkSeqPrinter
+  trDecls (mDecls db) def def
   where
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
   trDecls Q.Empty s p = return ()

@@ -3,6 +3,7 @@ module ProofTypes where
 import Debug.Trace
 import Data.Bits
 import Data.Maybe
+import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import Environment (Ident)
@@ -52,8 +53,8 @@ data SeqPrinter = SeqPrinter {
   mpThms :: Q.Seq Ident,
   mpVars :: Q.Seq Ident }
 
-mkSeqPrinter :: SeqPrinter
-mkSeqPrinter = SeqPrinter Q.empty Q.empty Q.empty Q.empty
+instance Default SeqPrinter where
+  def = SeqPrinter def def def def
 
 instance IDPrinter SeqPrinter where
   ppSort m n = fromMaybe (show n) (mpSorts m Q.!? ofSortID n)
@@ -190,9 +191,6 @@ ppProofTree a Sorry n = (('?' :), n)
 
 type NameMap = (Int, M.Map Ident Int)
 
-nempty :: NameMap
-nempty = (0, M.empty)
-
 ninsert :: Ident -> NameMap -> NameMap
 ninsert v (n, m) = (n+1, M.insert v n m)
 
@@ -206,8 +204,8 @@ data IxLookup = IxLookup {
   -- | Map from var to VarID
   pVarIx :: NameMap }
 
-mkIxLookup :: IxLookup
-mkIxLookup = IxLookup nempty nempty nempty nempty
+instance Default IxLookup where
+  def = IxLookup def def def def
 
 ilInsertSort :: Ident -> IxLookup -> IxLookup
 ilInsertSort i s = s {pSortIx = ninsert i (pSortIx s)}

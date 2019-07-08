@@ -22,6 +22,7 @@ dependencies:
 - base >= 4.7 && < 5
 - mtl
 - array
+- data-default
 - utf8-string
 - bytestring
 - containers
@@ -37,7 +38,6 @@ dependencies:
 - bytestring
 - containers
 - directory
-- data-default
 - filepath
 - hslogger
 - lens >= 4.15.2

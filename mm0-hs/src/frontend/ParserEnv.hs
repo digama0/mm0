@@ -3,13 +3,14 @@ module ParserEnv(Token,
   ParserEnv(..),
   PrefixInfo(..),
   InfixInfo(..),
-  addNotation, recalcCoeProv, tokenize, getCoe, getCoeProv, newParserEnv) where
+  addNotation, recalcCoeProv, tokenize, getCoe, getCoeProv) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.State
 import Data.List
 import Data.List.Split
 import Data.Maybe
+import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.ByteString as B
@@ -34,8 +35,8 @@ data ParserEnv = ParserEnv {
   coes :: M.Map Ident (M.Map Ident Coe),
   coeProv :: M.Map Ident Ident }
 
-newParserEnv :: ParserEnv
-newParserEnv = ParserEnv S.empty M.empty M.empty M.empty M.empty M.empty
+instance Default ParserEnv where
+  def = ParserEnv def def def def def def
 
 tokenize :: ParserEnv -> B.ByteString -> [Token]
 tokenize pe cnst = concatMap go (splitOneOf " \n" (C.unpack cnst)) where

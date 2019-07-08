@@ -5,7 +5,7 @@ module ProofTextParser(parseProof) where
 import Control.Applicative hiding (many, (<|>))
 import Data.Word8
 import Data.Void
-import Debug.Trace
+import Data.Default
 import Text.Megaparsec
 import Text.Megaparsec.Byte
 import Control.Monad.Trans.State
@@ -19,7 +19,7 @@ import Util
 type Parser = StateT IxLookup (Parsec Void B.ByteString)
 
 parseProof :: B.ByteString -> Either String Proofs
-parseProof s = case runParser (evalStateT readProofs mkIxLookup) "" s of
+parseProof s = case runParser (evalStateT readProofs def) "" s of
   Left err -> Left (show err)
   Right c -> Right c
 

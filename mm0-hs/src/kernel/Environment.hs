@@ -1,5 +1,6 @@
 module Environment where
 
+import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 
@@ -78,8 +79,8 @@ data Environment = Environment {
   eSpec :: Q.Seq Spec }
   deriving (Show)
 
-newEnv :: Environment
-newEnv = Environment M.empty M.empty Q.empty
+instance Default Environment where
+  def = Environment def def def
 
 getTerm :: Environment -> Ident -> Maybe ([PBinder], DepType)
 getTerm e v = eDecls e M.!? v >>= go where

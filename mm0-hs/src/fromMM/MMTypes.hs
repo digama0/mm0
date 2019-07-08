@@ -2,6 +2,7 @@ module MMTypes where
 
 import Control.Monad.Trans.State
 import Data.Maybe
+import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Sequence as Q
@@ -60,7 +61,7 @@ data MMNatDed = MMNatDed {
   ndNot :: Maybe (Label, Label, [Label]) } deriving (Show)
 
 mkNatDed :: Label -> Label -> Label -> MMNatDed
-mkNatDed p c e = MMNatDed p c e [] [] [] Nothing Nothing Nothing Nothing Nothing
+mkNatDed p c e = MMNatDed p c e def def def def def def def def
 
 data MMMetaData = MMMetaData {
   mPrim :: S.Set Label,
@@ -73,8 +74,8 @@ data MMMetaData = MMMetaData {
   mND :: Maybe MMNatDed }
   deriving (Show)
 
-mkMetadata :: MMMetaData
-mkMetadata = MMMetaData mempty mempty mempty mempty mempty mempty [] Nothing
+instance Default MMMetaData where
+  def = MMMetaData def def def def def def def def
 
 data MMDatabase = MMDatabase {
   mSorts :: M.Map Sort (Maybe Sort, SortData),
@@ -91,8 +92,8 @@ getStmtM db = go where
 getStmt :: MMDatabase -> Label -> (Int, Stmt)
 getStmt db l = fromJust (getStmtM db l)
 
-mkDatabase :: MMDatabase
-mkDatabase = MMDatabase M.empty Q.empty mkMetadata M.empty
+instance Default MMDatabase where
+  def = MMDatabase def def def def
 
 vsPure :: VarStatus -> Bool
 vsPure VSBound = True
