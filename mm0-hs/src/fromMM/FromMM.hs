@@ -380,7 +380,7 @@ trBName lab bu = trNameF
   (\n t -> t {tBNameMap = M.insert (lab, bu) n (tBNameMap t)})
 
 trExpr :: (Label -> Label) -> MMExpr -> TransM (SExpr, VExpr)
-trExpr vm = \e -> (\t -> trExpr' (tNameMap t) (tBuilders t) (tIxLookup t) e) <$> get where
+trExpr vm = \e -> gets $ \t -> trExpr' (tNameMap t) (tBuilders t) (tIxLookup t) e where
 
   trExpr' :: M.Map Label Ident -> M.Map Label Builder -> IxLookup -> MMExpr -> (SExpr, VExpr)
   trExpr' names bds lup = go where

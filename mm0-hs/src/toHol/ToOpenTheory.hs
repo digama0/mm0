@@ -219,7 +219,7 @@ pushAllC s = pushWith (\g -> otAllConst g M.!? s)
 -- pushes G |- t[a]
 forallElim :: Monad m => Sort -> OTM m () -> OTM m () -> OTM m () -> OTM m ()
 forallElim s pr p a = do
-  otp <- otPreamble <$> get
+  otp <- gets otPreamble
   app "proveHyp" [ -- G |- t[a]
     pr, -- G |- ! (\x:s. t[x])
     app "eqMp" [ -- {! P} |- t[a]
@@ -234,7 +234,7 @@ forallElim s pr p a = do
 -- pushes G |- ! (\x:s, t[x]), returns term (\x:s, t[x]), term ! (\x:s, t[x])
 forallIntro :: Monad m => Sort -> OTM m () -> OTM m () -> OTM m () -> OTM m (Int, OTM m ())
 forallIntro s x t pr = do
-  otp <- otPreamble <$> get
+  otp <- gets otPreamble
   l <- app "absTerm" [x, t] >> save
   app "eqMp" [ -- G |- ! (\x:s. t[x])
     app "subst" [ -- |- ((\x:s. t[x]) = (\x:s. T)) = ! (\x:s. t[x])
@@ -277,7 +277,7 @@ pushTerm (xm, m) (LVar x) = app "varTerm" [m M.! x] >> return (xm M.! x)
 pushTerm ctx@(xm, m) (RVar v xs) =
   pushAppVars ctx (app "varTerm" [m M.! v]) xs >> return (xm M.! v)
 pushTerm ctx (HApp t ls xs) = do
-  (n, s) <- (M.! t) . otTerms <$> get
+  (n, s) <- gets ((M.! t) . otTerms)
   pushAppVars ctx (pushAppLams ctx (ref n) ls) xs
   return s
 

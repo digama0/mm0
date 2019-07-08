@@ -6,6 +6,7 @@ import Control.Concurrent.STM.TVar
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
+import Data.List
 import Data.Text (Text)
 import Data.Default
 import qualified Data.Set as S
@@ -17,9 +18,10 @@ import CAST
 data ErrorLevel = ELError | ELWarning | ELInfo
 data ElabError = ElabError {
   eeLevel :: ErrorLevel,
-  eeOffset :: Offset,
+  eeBegin :: Offset,
+  eeEnd :: Offset,
   eeMsg :: Text,
-  eeRelated :: [(Offset, Text)] }
+  eeRelated :: [(Offset, Offset, Text)] }
 
 -- This represents a hierarchical ordering of values:
 -- 1 < 1.1.1 < 1.2 < 2 < 3
@@ -114,7 +116,7 @@ reportErr :: ElabError -> ElabM ()
 reportErr e = lift $ ask >>= \f -> lift $ f e
 
 reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
-reportAt o l s = reportErr $ ElabError l o s []
+reportAt o l s = reportErr $ ElabError l o o s []
 
 report :: ErrorLevel -> Text -> ElabM ()
 report l s = get >>= \env -> reportAt (eHere env) l s
@@ -177,12 +179,3 @@ withInfer :: ElabM () -> ElabM ()
 withInfer m =
   lift (modifyInfer (const def)) >> m >>
   lift (modifyInfer (const undefined))
-
--- inferBinder :: Binder -> ElabM ()
--- inferBinder bi = do
---   case bi of
---     Binder o l (Just (TType (DepType t ts)))) ->
---       modifyInfer (\ic -> ic {
---         icDependents = H.insert l (icDependents ic),
---         icLocals =
---       }

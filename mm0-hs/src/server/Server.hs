@@ -191,19 +191,19 @@ elSeverity ELError = DsError
 elSeverity ELWarning = DsWarning
 elSeverity ELInfo = DsInfo
 
-mkDiagnosticRelated :: ErrorLevel -> Position -> T.Text ->
+mkDiagnosticRelated :: ErrorLevel -> Range -> T.Text ->
   [DiagnosticRelatedInformation] -> Diagnostic
-mkDiagnosticRelated l p msg rel =
+mkDiagnosticRelated l r msg rel =
   Diagnostic
-    (Range p p)
+    r
     (Just (elSeverity l))  -- severity
     Nothing  -- code
     (Just "MM0") -- source
     msg
     (Just (List rel))
 
-mkDiagnostic :: Int -> Int -> T.Text -> Diagnostic
-mkDiagnostic l c msg = mkDiagnosticRelated ELError (Position l c) msg []
+mkDiagnostic :: Position -> T.Text -> Diagnostic
+mkDiagnostic p msg = mkDiagnosticRelated ELError (Range p p) msg []
 
 parseErrorDiags :: CP.PosState T.Text ->
   [CP.ParseASTError] -> [Diagnostic]
@@ -211,27 +211,31 @@ parseErrorDiags pos errs =
   toDiag <$> fst (E.attachSourcePos E.errorOffset errs' pos) where
   errs' = sortOn E.errorOffset errs
   toDiag (err, SourcePos _ l c) =
-    mkDiagnostic (unPos l - 1) (unPos c - 1) (T.pack (E.parseErrorTextPretty err))
+    mkDiagnostic (Position (unPos l - 1) (unPos c - 1))
+      (T.pack (E.parseErrorTextPretty err))
 
 elabErrorDiags :: Uri -> CP.PosState T.Text -> [CE.ElabError] -> [Diagnostic]
 elabErrorDiags uri pos errs = toDiag <$> errs where
   offs :: I.IntMap Int
-  offs = foldl' (\m (CE.ElabError _ o _ es) -> I.insert o o $
-    foldl' (\m (o, _) -> I.insert o o m) m es) I.empty errs
+  offs = foldl'
+    (\m (CE.ElabError _ o1 o2 _ es) ->
+      I.insert o1 o1 $ I.insert o2 o2 $
+      foldl' (\m (o1, o2, _) -> I.insert o1 o1 $ I.insert o2 o2 m) m es)
+    I.empty errs
   poss :: I.IntMap (Int, SourcePos)
   poss = fst $ E.attachSourcePos id offs pos
   toPosition :: Int -> Position
   toPosition n =
     let SourcePos _ l c = snd (poss I.! n) in
     Position (unPos l - 1) (unPos c - 1)
-  toRange :: Int -> Range
-  toRange n = let p = toPosition n in Range p p
-  toRel :: (Int, T.Text) -> DiagnosticRelatedInformation
-  toRel (o, msg) = DiagnosticRelatedInformation
-    (Location uri (toRange o)) msg
+  toRange :: Int -> Int -> Range
+  toRange o1 o2 = Range (toPosition o1) (toPosition o2)
+  toRel :: (Int, Int, T.Text) -> DiagnosticRelatedInformation
+  toRel (o1, o2, msg) = DiagnosticRelatedInformation
+    (Location uri (toRange o1 o2)) msg
   toDiag :: CE.ElabError -> Diagnostic
-  toDiag (CE.ElabError l o msg es) =
-    mkDiagnosticRelated l (toPosition o) msg (toRel <$> es)
+  toDiag (CE.ElabError l o1 o2 msg es) =
+    mkDiagnosticRelated l (toRange o1 o2) msg (toRel <$> es)
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
@@ -242,9 +246,10 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str =
         file = fromMaybe "" $ uriToFilePath fileUri
     diags <- if T.isSuffixOf "mm0" t
       then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
-        Left (P.ParseError l c msg) -> return [mkDiagnostic l c (T.pack msg)]
+        Left (P.ParseError l c msg) ->
+          return [mkDiagnostic (Position l c) (T.pack msg)]
         Right ast -> case Elab.elabAST ast of
-          Left msg -> return [mkDiagnostic 0 0 (T.pack msg)]
+          Left msg -> return [mkDiagnostic (Position 0 0) (T.pack msg)]
           Right _ -> return []
       else case CP.parseAST' file str of
         (errs, pos, Nothing) -> return $ parseErrorDiags pos errs

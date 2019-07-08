@@ -21,7 +21,8 @@ import CTypes
 import Util
 
 toElabError :: ParseASTError -> ElabError
-toElabError e = ElabError ELError (errorOffset e) (T.pack (parseErrorTextPretty e)) []
+toElabError e = ElabError ELError (errorOffset e) (errorOffset e)
+  (T.pack (parseErrorTextPretty e)) []
 
 elaborate :: [ParseASTError] -> AST -> IO (Env, [ElabError])
 elaborate errs ast = do
@@ -37,29 +38,66 @@ elabStmt (Decl vis dk px x bis ret v) = addDecl vis dk px x bis ret v
 elabStmt (Notation (Delimiter cs)) = lift $ addDelimiters cs
 elabStmt (Notation (Prefix px x tk prec)) = addPrefix px x tk prec
 elabStmt (Notation (Infix r px x tk prec)) = addInfix r px x tk prec
-elabStmt s = report ELWarning "unimplemented\n"
+elabStmt s = report ELWarning "unimplemented"
 
-checkNew :: Offset -> T.Text -> (v -> Offset) -> T.Text ->
+checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
   H.HashMap T.Text v -> ElabM (v -> H.HashMap T.Text v)
-checkNew o msg f k m = case H.lookup k m of
+checkNew l o msg f k m = case H.lookup k m of
   Nothing -> return (\v -> H.insert k v m)
   Just a -> do
-    reportErr $ ElabError ELError o msg [(f a, "previously declared here\n")]
+    reportErr $ ElabError l o o msg [(f a, f a, "previously declared here")]
     mzero
 
 addSort :: Offset -> T.Text -> SortData -> ElabM ()
 addSort px x sd = do
   env <- get
-  ins <- checkNew px ("duplicate sort declaration '" <> x <> "'\n")
+  ins <- checkNew ELError px ("duplicate sort declaration '" <> x <> "'")
     (\(_, i, _) -> i) x (eSorts env)
   n <- next
   put $ env {eSorts = ins (n, px, sd)}
+
+inferFormula :: Formula -> ElabM LispVal
+inferFormula (Formula o f) = do
+  reportErr $ ElabError ELWarning (o-1) (o + T.length f + 1) "unimplemented" []
+  return (List [])
+
+addVarDeps :: [AtPos T.Text] -> ElabM ()
+addVarDeps ts =
+  lift $ modifyInfer $ \ic -> ic {
+    icDependents = foldl' (\m (AtPos o x) ->
+      H.alter (Just . maybe [o] (o:)) x m) (icDependents ic) ts }
+
+inferBinder :: Binder -> ElabM ()
+inferBinder bi@(Binder o l ty) = case ty of
+  Nothing -> addVar True
+  Just (TType (DepType t ts)) -> addVarDeps ts >> addVar False
+  Just (TFormula f) -> () <$ inferFormula f
+  where
+  addVar :: Bool -> ElabM ()
+  addVar noType = do
+    ic <- gets eInfer
+    locals' <- case localName l of
+      Nothing -> do
+        when noType $ escapeAt o "cannot infer variable type"
+        return $ icLocals ic
+      Just n -> do
+        ins <- checkNew ELWarning o
+          ("variable '" <> n <> "' shadows previous declaration")
+          (\(Binder i _ _, _) -> i) n (icLocals ic)
+        return (ins (bi, LIOld Nothing))
+    lift $ modifyInfer $ \ic -> ic {icLocals = locals'}
 
 addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
   [Binder] -> Maybe [Type] -> Maybe LispVal -> ElabM ()
 addDecl vis dk px x bis ret v = do
   let (bis', ret') = unArrow bis ret
-  return ()
+  withInfer $ do
+    mapM_ inferBinder bis'
+    case ret' of
+      Nothing -> return ()
+      Just (TType (DepType _ ts)) -> addVarDeps ts
+      Just (TFormula f) -> () <$ inferFormula f
+    return ()
   where
 
   unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
@@ -67,8 +105,6 @@ addDecl vis dk px x bis ret v = do
   unArrow bis (Just tys) = mapFst (bis ++) (go tys) where
     go [ty] = ([], Just ty)
     go (ty:tys) = mapFst (Binder (tyOffset ty) LAnon (Just ty) :) (go tys)
-
-
 
 addDelimiters :: [Char] -> Elab ()
 addDelimiters cs =
@@ -99,9 +135,9 @@ insertPrec (Const o tk) p = do
   env <- get
   case H.lookup tk (pPrec (ePE env)) of
     Just (i, p') | p /= p' ->
-      reportErr $ ElabError ELError o
-        ("incompatible precedence for '" <> tk <> "'\n")
-        [(i, "previously declared here\n")]
+      reportErr $ ElabError ELError o o
+        ("incompatible precedence for '" <> tk <> "'")
+        [(i, i, "previously declared here")]
     _ -> lift $ modifyPE $ \e -> e {pPrec = H.insert tk (o, p) (pPrec e)}
 
 checkToken :: Const -> ElabM ()
@@ -115,7 +151,7 @@ insertPrefixInfo :: Const -> PrefixInfo -> ElabM ()
 insertPrefixInfo c@(Const o tk) ti = do
   checkToken c
   env <- get
-  ins <- checkNew o ("token '" <> tk <> "' already declared")
+  ins <- checkNew ELError o ("token '" <> tk <> "' already declared")
     (\(PrefixInfo i _ _) -> i) tk (pPrefixes (ePE env))
   lift $ modifyPE $ \e -> e {pPrefixes = ins ti}
 
@@ -123,6 +159,6 @@ insertInfixInfo :: Const -> InfixInfo -> ElabM ()
 insertInfixInfo c@(Const o tk) ti = do
   checkToken c
   env <- get
-  ins <- checkNew o ("token '" <> tk <> "' already declared")
+  ins <- checkNew ELError o ("token '" <> tk <> "' already declared")
     (\(InfixInfo i _ _) -> i) tk (pInfixes (ePE env))
   lift $ modifyPE $ \e -> e {pInfixes = ins ti}

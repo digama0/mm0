@@ -195,7 +195,7 @@ process (x : ss) = throwError ("wtf " ++ x ++ show (take 100 ss))
 addThm :: Label -> Fmla -> Frame -> M.Map Var Int ->
   Maybe ([Label], Proof) -> FromMMM ()
 addThm x f@(Const s : _) fr m p = do
-  db <- mDB <$> get
+  db <- gets mDB
   case mSorts db M.!? s of
     Nothing -> throwError ("sort '" ++ s ++ "' not declared")
     Just (Just s', _) -> do
@@ -372,7 +372,7 @@ processJ (JKeyword "justification" j) = case j of
 processJ (JKeyword "equality" j) = case j of
   JString x (JKeyword "from"
     (JString refl (JString sym (JString trans (JSemi j))))) -> do
-      db <- mDB <$> get
+      db <- gets mDB
       s <- fromJustError ("equality '" ++ x ++ "' has the wrong shape") (do
         (_, Term ([(_, v), _], _) _ _) <- getStmtM db x
         (_, Hyp (VHyp s _)) <- getStmtM db v
@@ -384,14 +384,14 @@ processJ (JKeyword "equality" j) = case j of
   _ -> throwError "bad $j 'equality' command"
 processJ (JKeyword "congruence" j) =
   processManyJ "congruence" j $ \x -> do
-    db <- mDB <$> get
+    db <- gets mDB
     t <- fromJustError ("congruence '" ++ x ++ "' has the wrong shape") (do
       (_, Thm _ (_, App _ [App t _, _]) _) <- getStmtM db x
       return t)
     modifyMeta $ \m -> m {mCongr = M.insert t x (mCongr m)}
 processJ (JKeyword "condequality" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j))) -> do
-    db <- mDB <$> get
+    db <- gets mDB
     s <- fromJustError ("conditional equality '" ++ x ++ "' has the wrong shape") (do
       (_, Term ([(_, v), _, _], _) _ _) <- getStmtM db x
       (_, Hyp (VHyp s _)) <- getStmtM db v
@@ -404,7 +404,7 @@ processJ (JKeyword "condcongruence" j) =
     modifyMeta $ \m -> m {mCCongr = th : mCCongr m}
 processJ (JKeyword "notfree" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j))) -> do
-    db <- mDB <$> get
+    db <- gets mDB
     s <- fromJustError ("not-free term '" ++ x ++ "' has the wrong shape") (do
       (_, Term ([(_, v), (_, a)], _) _ _) <- getStmtM db x
       (_, Hyp (VHyp s1 _)) <- getStmtM db v
@@ -420,26 +420,26 @@ processJ (JKeyword "natded_init" j) = case j of
   _ -> throwError "bad $j 'natded_init' command"
 processJ (JKeyword "natded_assume" j) =
   getManyJ "natded_assume" j $ \xs -> do
-    db <- mDB <$> get
+    db <- gets mDB
     forM_ xs $ \x ->
       fromJustError ("natded_assume stmt '" ++ x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndAssume = ndAssume nd ++ xs}
 processJ (JKeyword "natded_weak" j) =
   getManyJ "natded_weak" j $ \xs -> do
-    db <- mDB <$> get
+    db <- gets mDB
     forM_ xs $ \x ->
       fromJustError ("natded_weak stmt '" ++ x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndWeak = ndWeak nd ++ xs}
 processJ (JKeyword "natded_cut" j) =
   getManyJ "natded_cut" j $ \xs -> do
-    db <- mDB <$> get
+    db <- gets mDB
     forM_ xs $ \x ->
       fromJustError ("natded_cut stmt '" ++ x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndCut = ndCut nd ++ xs}
 processJ (JKeyword "natded_true" j) = case j of
   JString x (JKeyword "with" j) ->
     getManyJ "natded_true" j $ \xs -> do
-      db <- mDB <$> get
+      db <- gets mDB
       forM_ (x:xs) $ \x ->
         fromJustError ("natded_true stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndTrue = Just $
@@ -448,7 +448,7 @@ processJ (JKeyword "natded_true" j) = case j of
 processJ (JKeyword "natded_imp" j) = case j of
   JString x (JKeyword "with" j) ->
     getManyJ "natded_imp" j $ \xs -> do
-      db <- mDB <$> get
+      db <- gets mDB
       forM_ (x:xs) $ \x ->
         fromJustError ("natded_imp stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndImp = Just $
@@ -457,7 +457,7 @@ processJ (JKeyword "natded_imp" j) = case j of
 processJ (JKeyword "natded_and" j) = case j of
   JString x (JKeyword "with" j) ->
     getManyJ "natded_and" j $ \xs -> do
-      db <- mDB <$> get
+      db <- gets mDB
       forM_ (x:xs) $ \x ->
         fromJustError ("natded_and stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndAnd = Just $
@@ -466,7 +466,7 @@ processJ (JKeyword "natded_and" j) = case j of
 processJ (JKeyword "natded_or" j) = case j of
   JString x (JKeyword "with" j) ->
     getManyJ "natded_or" j $ \xs -> do
-      db <- mDB <$> get
+      db <- gets mDB
       forM_ (x:xs) $ \x ->
         fromJustError ("natded_or stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndOr = Just $
@@ -475,7 +475,7 @@ processJ (JKeyword "natded_or" j) = case j of
 processJ (JKeyword "natded_not" j) = case j of
   JString not (JString fal (JKeyword "with" j)) ->
     getManyJ "natded_not" j $ \xs -> do
-      db <- mDB <$> get
+      db <- gets mDB
       forM_ (not:fal:xs) $ \x ->
         fromJustError ("natded_not stmt '" ++ x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndNot = Just $
@@ -509,7 +509,7 @@ processJ (JKeyword "free_var_in" j) = case j of
       (n, Term (hs, insertDVs (const True) dv vs) e p)) x $ mStmts db}
 processJ (JKeyword "restatement" j) = case j of
   JString ax (JKeyword "of" (JString th (JSemi j))) -> do
-    db <- mDB <$> get
+    db <- gets mDB
     (n, sax) <- case getStmtM db ax of
       Nothing -> throwError ("axiom '" ++ ax ++ "' not found")
       Just (n, Thm fr e Nothing) -> return (n, (fr, e))

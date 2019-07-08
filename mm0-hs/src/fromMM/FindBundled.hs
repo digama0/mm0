@@ -61,7 +61,7 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
               PDummy i -> Right i) <$> l in
         unless (allUnique l') $ do
           let b = bundle l'
-          m <- M.findWithDefault M.empty t <$> get
+          m <- gets (M.findWithDefault M.empty t)
           if not strict || M.member b m then do
               modify $ M.insert t (M.alter (Just . maybe k (min k)) b m)
               case getStmt db t of
