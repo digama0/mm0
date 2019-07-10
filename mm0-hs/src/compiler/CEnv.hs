@@ -1,4 +1,5 @@
 module CEnv (module CEnv, Offset, SortData, Visibility,
+  Ident, Sort, TermName, ThmName, VarName, Token,
   Binder, DepType(..), PBinder(..), SExpr(..), binderName, binderType,
   LispVal, Prec) where
 
@@ -16,12 +17,14 @@ import qualified Data.Set as S
 import qualified Data.IntMap as I
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
+import qualified Data.HashSet as HS
 import qualified Data.Vector.Mutable.Dynamic as V
 import qualified Data.Vector.Unboxed as U
 import CAST
-import Environment (PBinder(..), SExpr(..), DepType(..), binderName, binderType)
+import Environment (Ident, Sort, TermName, ThmName, VarName, Token,
+  PBinder(..), SExpr(..), DepType(..), binderName, binderType)
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
-import CParser (ParseASTError)
+import CParser (ParseError)
 
 data ErrorLevel = ELError | ELWarning | ELInfo
 data ElabError = ElabError {
@@ -31,7 +34,7 @@ data ElabError = ElabError {
   eeMsg :: Text,
   eeRelated :: [(Offset, Offset, Text)] }
 
-toElabError :: ParseASTError -> ElabError
+toElabError :: ParseError -> ElabError
 toElabError e = ElabError ELError (errorOffset e) (errorOffset e)
   (T.pack (parseErrorTextPretty e)) []
 
@@ -39,6 +42,10 @@ toElabError e = ElabError ELError (errorOffset e) (errorOffset e)
 -- 1 < 1.1 < 1.1.1 < 1.2 < 2 < 3
 -- All sequence numbers are strictly positive.
 data SeqNum = Simple Int | After Int SeqNum deriving (Eq)
+
+instance Show SeqNum where
+  showsPrec _ (Simple n) = shows n
+  showsPrec _ (After n s) = shows n . ('.' :) . shows s
 
 snUnfold :: SeqNum -> (Int, Maybe SeqNum)
 snUnfold (Simple m) = (m, Nothing)
@@ -53,7 +60,7 @@ instance Ord SeqNum where
   compare (After m _) (Simple n) = compare m n <> GT
   compare (After m s) (After n t) = compare m n <> compare s t
 
-data SeqCounter = SeqCounter (I.IntMap SeqCounter) Int
+data SeqCounter = SeqCounter (I.IntMap SeqCounter) Int deriving (Show)
 
 instance Default SeqCounter where
   def = SeqCounter def 1
@@ -81,9 +88,9 @@ appCoe :: Coe -> LispVal -> LispVal
 appCoe (Coe c) = appCoe1 c
 appCoe (Coes c1 _ c2) = appCoe c1 . appCoe c2
 
-coeToList :: Coe -> Text -> Text -> [(Coe1, Text, Text)]
+coeToList :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)]
 coeToList c s1 s2 = go c s1 s2 [] where
-  go :: Coe -> Text -> Text -> [(Coe1, Text, Text)] -> [(Coe1, Text, Text)]
+  go :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)] -> [(Coe1, Ident, Ident)]
   go (Coe c) s1 s2 = ((c, s1, s2) :)
   go (Coes g s2 f) s1 s3 = go g s2 s3 . go f s1 s2
 
@@ -97,11 +104,11 @@ delimVal (Delims v) c = U.unsafeIndex v (fromEnum (toEnum (fromEnum c) :: Word8)
 
 data ParserEnv = ParserEnv {
   pDelims :: Delims,
-  pPrefixes :: H.HashMap Text PrefixInfo,
-  pInfixes :: H.HashMap Text InfixInfo,
-  pPrec :: H.HashMap Text (Offset, Prec),
-  pCoes :: M.Map Text (M.Map Text Coe),
-  pCoeProv :: H.HashMap Text Text }
+  pPrefixes :: H.HashMap Token PrefixInfo,
+  pInfixes :: H.HashMap Token InfixInfo,
+  pPrec :: H.HashMap Token (Offset, Prec),
+  pCoes :: M.Map Sort (M.Map Sort Coe),
+  pCoeProv :: H.HashMap Sort Sort }
 
 instance Default ParserEnv where
   def = ParserEnv def H.empty H.empty H.empty def H.empty
@@ -119,23 +126,24 @@ liOffset (LIOld (Binder o _ _) _) = o
 liOffset (LINew o _ _) = o
 
 data InferCtx = InferCtx {
-  icDependents :: H.HashMap Text [Offset],
-  icLocals :: H.HashMap Text LocalInfer }
+  icDependents :: H.HashMap VarName [Offset],
+  icLocals :: H.HashMap VarName LocalInfer }
 
 instance Default InferCtx where
   def = InferCtx H.empty H.empty
 
 data Env = Env {
   eLispData :: V.IOVector LispVal,
-  eLispNames :: H.HashMap Text Int,
+  eLispNames :: H.HashMap Ident Int,
   eCounter :: SeqCounter,
-  eSorts :: H.HashMap Text (SeqNum, Offset, SortData),
-  eDecls :: H.HashMap Text (SeqNum, Offset, Decl),
+  eSorts :: H.HashMap Sort (SeqNum, Offset, SortData),
+  eProvableSorts :: [Sort],
+  eDecls :: H.HashMap Ident (SeqNum, Offset, Decl),
   ePE :: ParserEnv,
   eInfer :: InferCtx }
 
 instance Default Env where
-  def = Env undefined H.empty def H.empty H.empty def undefined
+  def = Env undefined H.empty def H.empty def H.empty def undefined
 
 type Elab = RWST (ElabError -> IO ()) () Env IO
 type ElabM = MaybeT Elab
@@ -160,6 +168,9 @@ reportAt o l s = reportErr $ ElabError l o o s []
 
 escapeAt :: Offset -> Text -> ElabM a
 escapeAt o s = reportAt o ELError s >> mzero
+
+unimplementedAt :: Offset -> ElabM a
+unimplementedAt pos = reportAt pos ELWarning "unimplemented" >> mzero
 
 unwrap :: ElabM a -> Elab a
 unwrap m = fromJust <$> runMaybeT m
@@ -194,24 +205,21 @@ try :: ElabM a -> ElabM (Maybe a)
 try = lift . runMaybeT
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
-getSort v s = do
-  env <- get
-  case H.lookup v (eSorts env) of
+getSort v s =
+  gets (H.lookup v . eSorts) >>= \case
     Just (n, o, sd) -> guard (n < s) >> return (o, sd)
     _ -> mzero
 
 getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType)
-getTerm v s = do
-  env <- get
-  case H.lookup v (eDecls env) of
+getTerm v s =
+  gets (H.lookup v . eDecls) >>= \case
     Just (n, o, DTerm args r) -> guard (n < s) >> return (o, args, r)
     Just (n, o, DDef _ args r _) -> guard (n < s) >> return (o, args, r)
     _ -> mzero
 
 getThm :: Text -> SeqNum -> ElabM (Offset, [PBinder], [SExpr], SExpr)
-getThm v s = do
-  env <- get
-  case H.lookup v (eDecls env) of
+getThm v s =
+  gets (H.lookup v . eDecls) >>= \case
     Just (n, o, DAxiom args hyps r) -> guard (n < s) >> return (o, args, hyps, r)
     Just (n, o, DTheorem _ args hyps r _) -> guard (n < s) >> return (o, args, hyps, r)
     _ -> mzero
@@ -247,39 +255,66 @@ getCoeProv s = do
   c <- getCoe s s2
   return (s2, c)
 
-addCoeInner :: Offset -> Coe -> Text -> Text ->
-  M.Map Text (M.Map Text Coe) -> ElabM (M.Map Text (M.Map Text Coe))
-addCoeInner o c s1 s2 coes = do
-  let toStrs :: [(Coe1, Text, Text)] -> [Text]
-      toStrs [(c, s1, s2)] = [s1, " -> ", s2]
-      toStrs ((c, s1, s2) : cs) = s1 : " -> " : toStrs cs
-      l = coeToList c s1 s2
-  when (s1 == s2) $ do
-    reportErr $ ElabError ELError o o
-      (T.concat ("coercion cycle detected: " : toStrs l))
-      ((\(Coe1 o x, s1, s2) -> (o, o, s1 <> " -> " <> s2)) <$> l)
-    mzero
-  try (getCoe' s1 s2) >>= mapM_ (\c2 -> do
-    let l2 = coeToList c2 s1 s2
-    reportErr $ ElabError ELError o o
-      (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
-      ((\(Coe1 o x, s1, s2) -> (o, o, s1 <> " -> " <> s2)) <$> (l ++ l2))
-    mzero)
-  return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
-
-addCoe :: Coe1 -> Text -> Text -> ElabM ()
+addCoe :: Coe1 -> Sort -> Sort -> ElabM ()
 addCoe cc@(Coe1 o c) s1 s2 = do
   let cs = Coe cc
   coes <- gets (pCoes . ePE)
   coes <- foldCoeLeft s1 coes (\s1' l r -> r >>= addCoeInner o (Coes cs s1' l) s1' s2) (return coes)
   coes <- addCoeInner o cs s1 s2 coes
   coes <- foldCoeRight s2 coes (\s2' l r -> r >>= addCoeInner o (Coes l s2' cs) s1 s2') (return coes)
-  lift $ modifyPE $ \pe -> pe {pCoes = coes}
+  setCoes coes
   where
 
-  foldCoeLeft :: Text -> M.Map Text (M.Map Text Coe) -> (Text -> Coe -> a -> a) -> a -> a
+  foldCoeLeft :: Sort -> M.Map Sort (M.Map Sort Coe) -> (Sort -> Coe -> a -> a) -> a -> a
   foldCoeLeft s2 coes f a = M.foldrWithKey' g a coes where
     g s1 m a = maybe a (\l -> f s1 l a) (M.lookup s2 m)
 
-  foldCoeRight :: Text -> M.Map Text (M.Map Text Coe) -> (Text -> Coe -> a -> a) -> a -> a
+  foldCoeRight :: Sort -> M.Map Sort (M.Map Sort Coe) -> (Sort -> Coe -> a -> a) -> a -> a
   foldCoeRight s1 coes f a = maybe a (M.foldrWithKey' f a) (M.lookup s1 coes)
+
+  toStrs :: [(Coe1, Sort, Sort)] -> [Text]
+  toStrs [(c, s1, s2)] = [s1, " -> ", s2]
+  toStrs ((c, s1, s2) : cs) = s1 : " -> " : toStrs cs
+
+  toRelated :: [(Coe1, Sort, Sort)] -> [(Offset, Offset, Text)]
+  toRelated = fmap $ \(Coe1 o x, s1, s2) -> (o, o, s1 <> " -> " <> s2)
+
+  addCoeInner :: Offset -> Coe -> Sort -> Sort ->
+    M.Map Sort (M.Map Sort Coe) -> ElabM (M.Map Sort (M.Map Sort Coe))
+  addCoeInner o c s1 s2 coes = do
+    let l = coeToList c s1 s2
+    when (s1 == s2) $ do
+      reportErr $ ElabError ELError o o
+        (T.concat ("coercion cycle detected: " : toStrs l))
+        (toRelated l)
+      mzero
+    try (getCoe' s1 s2) >>= mapM_ (\c2 -> do
+      let l2 = coeToList c2 s1 s2
+      reportErr $ ElabError ELError o o
+        (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
+        (toRelated (l ++ l2))
+      mzero)
+    return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
+
+  setCoes :: M.Map Sort (M.Map Sort Coe) -> ElabM ()
+  setCoes coes = do
+    sorts <- gets eSorts
+    let provs = H.keysSet (H.filter (\(_, _, sd) -> sProvable sd) sorts)
+        f :: Sort -> Sort -> Coe -> ElabM (H.HashMap Sort Sort) -> ElabM (H.HashMap Sort Sort)
+        f s1 s2 c2 r =
+          if HS.member s2 provs then do
+            m <- r
+            forM_ (H.lookup s1 m) $ \s2 -> do
+              c1 <- getCoe' s1 s2
+              let l1 = coeToList c1 s1 s2
+              let l2 = coeToList c2 s1 s2
+              reportErr $ ElabError ELError o o
+                (T.concat ("coercion diamond to provable detected:\n" :
+                  toStrs l1 ++ " provable\n" : toStrs l2 ++ [" provable"]))
+                (toRelated (l1 ++ l2))
+              mzero
+            return (H.insert s1 s2 m)
+          else r
+    m <- M.foldrWithKey' (\s1 m r -> M.foldrWithKey' (f s1) r m)
+      (return (foldr (\v -> H.insert v v) H.empty provs)) coes
+    lift $ modifyPE $ \pe -> pe {pCoes = coes, pCoeProv = m}

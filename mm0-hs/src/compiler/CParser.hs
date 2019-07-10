@@ -1,17 +1,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-module CParser (parseAST, parseAST', PosState(..),
-  ParseASTError, ParseASTErrors, errorOffset, initialPosState) where
+module CParser (parseAST, runParser, PosState(..),
+  ParseError, Parser, errorOffset, initialPosState) where
 
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State (StateT, runStateT)
+-- import Control.Monad.Trans.State (State, runState)
+import qualified Control.Monad.Trans.State as ST
 import Data.Void
 import Data.Char
 import Data.Maybe
 import Data.List.NonEmpty (NonEmpty(..))
-import Text.Megaparsec
+import Text.Megaparsec hiding (runParser, runParser', ParseError)
+import qualified Text.Megaparsec as MT
 import Text.Megaparsec.Char
 import Control.Monad.Trans.State
 import qualified Data.Map.Strict as M
@@ -22,56 +24,31 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import CAST
 import Util
 
-type ParsecST e s m = ParsecT e s (StateT [ParseError s e] m)
-
 -- TODO: This should be in Megaparsec
 initialPosState :: String -> s -> PosState s
-initialPosState name s = PosState
-  { pstateInput = s
-  , pstateOffset = 0
-  , pstateSourcePos = initialPos name
-  , pstateTabWidth = defaultTabWidth
-  , pstateLinePrefix = ""
-  }
+initialPosState name s = PosState s 0 (initialPos name) (mkPos 2) ""
 
--- TODO: This should be in Megaparsec
-runParserST :: forall m s e a. Monad m =>
-  ParsecST e s m a -> String -> s -> m (Either (ParseErrorBundle s e, Maybe a) a)
-runParserST p n s = merge <$> runStateT (runParserT p n s) [] where
-  merge :: (Either (ParseErrorBundle s e) a, [ParseError s e]) ->
-      Either (ParseErrorBundle s e, Maybe a) a
-  merge (Right a, []) = Right a
-  merge (Left e, []) = Left (e, Nothing)
-  merge (Right a, e : es) = Left (build es e [] (initialPosState n s), Just a)
-  merge (Left (ParseErrorBundle (l :| ls) pos), e : es) =
-    Left (build es e (l : ls) pos, Nothing)
-  build :: [ParseError s e] -> ParseError s e ->
-    [ParseError s e] -> PosState s -> ParseErrorBundle s e
-  build [] l ls = ParseErrorBundle (l :| ls)
-  build (e : es) l ls = build es e (l : ls)
+type ParsecST e s m = ParsecT e s (StateT [MT.ParseError s e] m)
+type ParseError = MT.ParseError T.Text Void
+type Parser = ParsecT Void T.Text (ST.State [ParseError])
 
-nonFatal :: Monad m => ParseError s e -> ParsecST e s m ()
-nonFatal e = lift (modify (e :))
+runParser :: Parser a -> String -> Offset -> T.Text -> ([ParseError], Offset, Maybe a)
+runParser p n o s =
+  case runState (runParserT (setOffset o >> liftA2 (,) p getOffset) n s) [] of
+    (Left (ParseErrorBundle (l :| ls) pos), errs) ->
+      (l : ls ++ errs, pstateOffset pos, Nothing)
+    (Right (a, o'), errs) -> (errs, o', Just a)
 
-runParserS :: ParsecST e s Identity a -> String -> s -> Either (ParseErrorBundle s e, Maybe a) a
-runParserS p n s = runIdentity (runParserST p n s)
-
-type Parser = ParsecST Void T.Text Identity
-type ParseASTError = ParseError T.Text Void
-type ParseASTErrors = ParseErrorBundle T.Text Void
-
-parseAST' :: String -> T.Text -> ([ParseASTError], PosState T.Text, Maybe AST)
-parseAST' n t = case parseAST n t of
-  Left (ParseErrorBundle (l :| ls) pos, ast) -> (l : ls, pos, ast)
-  Right ast -> ([], initialPosState n t, Just ast)
-
-parseAST :: String -> T.Text -> Either (ParseASTErrors, Maybe AST) AST
-parseAST name = runParserS (sc *> stmts) name where
+parseAST :: String -> T.Text -> ([ParseError], Offset, Maybe AST)
+parseAST n t = runParser (sc *> stmts) n 0 t where
   stmts =
     (withRecovery (recoverToSemi Nothing) atStmt >>= \case
       Just st -> (st :) <$> stmts
       _ -> stmts) <|>
     ([] <$ eof) <?> "expecting command or EOF"
+
+nonFatal :: Monad m => MT.ParseError s e -> ParsecST e s m ()
+nonFatal e = lift (modify (e :))
 
 failAt :: Int -> String -> Parser ()
 failAt o s = nonFatal $ FancyError o (S.singleton (ErrorFail s))
@@ -125,7 +102,7 @@ ident_ = lexeme $ liftA2 T.cons (satisfy identStart)
 ident :: Parser T.Text
 ident = ident_ >>= \case "_" -> empty; i -> return i
 
-recoverToSemi :: a -> ParseASTError -> Parser a
+recoverToSemi :: a -> ParseError -> Parser a
 recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
 
 commit' :: Parser (Maybe a) -> Parser (Maybe a)

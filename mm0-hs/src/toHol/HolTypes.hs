@@ -1,12 +1,11 @@
-module HolTypes where
+module HolTypes (module HolTypes, Ident, Sort) where
 
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import Environment (Ident)
+import Environment (Ident, Sort)
 import Util
 
-type Sort = Ident
 -- An SType is a type of the form s1 -> ... sn -> t where
 -- si and t are basic types (sorts). Regular MM0 variables have an SType
 data SType = SType [Sort] Sort deriving (Eq, Ord)

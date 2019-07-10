@@ -20,8 +20,6 @@ import AST
 import Environment
 import Util
 
-type Token = T.Text
-
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
 data PrefixInfo = PrefixInfo Ident [PLiteral] deriving (Show)

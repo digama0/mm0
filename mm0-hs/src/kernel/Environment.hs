@@ -6,6 +6,11 @@ import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 
 type Ident = T.Text
+type Sort = Ident
+type TermName = Ident
+type ThmName = Ident
+type VarName = Ident
+type Token = Ident
 
 data DepType = DepType {
   dSort :: Ident,

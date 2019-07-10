@@ -10,7 +10,6 @@ import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import Environment (Ident)
 import HolTypes
 import Util
 

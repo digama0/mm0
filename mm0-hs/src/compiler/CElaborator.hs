@@ -15,16 +15,14 @@ import qualified Data.HashMap.Strict as H
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as U
-import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Text as T
-import Text.Megaparsec.Error
-import CParser (ParseASTError, PosState, errorOffset)
+import CParser (ParseError, PosState, errorOffset)
 import CAST
 import CEnv
 import CMathParser
 import Util
 
-elaborate :: [ParseASTError] -> AST -> IO (Env, [ElabError])
+elaborate :: [ParseError] -> AST -> IO (Env, [ElabError])
 elaborate errs ast = do
   (_, env, errs) <- runElab (mapM_ elabStmt ast) (toElabError <$> errs)
   return (env, errs)
@@ -37,7 +35,7 @@ elabStmt (AtPos pos s) = resuming $ case s of
   Notation (Delimiter ls (Just rs)) -> lift $ addDelimiters ls rs
   Notation (Prefix px x tk prec) -> addPrefix px x tk prec
   Notation (Infix r px x tk prec) -> addInfix r px x tk prec
-  _ -> reportAt pos ELWarning "unimplemented"
+  _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
   H.HashMap T.Text v -> ElabM (v -> H.HashMap T.Text v)
@@ -49,11 +47,12 @@ checkNew l o msg f k m = case H.lookup k m of
 
 addSort :: Offset -> T.Text -> SortData -> ElabM ()
 addSort px x sd = do
-  env <- get
-  ins <- checkNew ELError px ("duplicate sort declaration '" <> x <> "'")
-    (\(_, i, _) -> i) x (eSorts env)
+  ins <- gets eSorts >>= checkNew ELError px
+    ("duplicate sort declaration '" <> x <> "'") (\(_, i, _) -> i) x
   n <- next
-  put $ env {eSorts = ins (n, px, sd)}
+  modify $ \env -> env {
+    eSorts = ins (n, px, sd),
+    eProvableSorts = (guard (sProvable sd) >> [x]) ++ eProvableSorts env }
 
 inferDepType :: AtDepType -> ElabM ()
 inferDepType (AtDepType (AtPos o t) ts) = do
@@ -72,6 +71,7 @@ inferBinder x bi@(Binder o l ty) = case ty of
   Just (TType ty) -> inferDepType ty >> addVar False
   Just (TFormula f) -> () <$ parseFormulaProv x f
   where
+
   addVar :: Bool -> ElabM ()
   addVar noType = do
     ic <- gets eInfer

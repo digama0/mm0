@@ -1,4 +1,4 @@
-module AST where
+module AST (module AST, Ident, DepType(..), SortData(..)) where
 
 import Control.Monad.Except
 import qualified Data.ByteString as B

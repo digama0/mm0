@@ -204,7 +204,7 @@ mkDiagnostic :: Position -> T.Text -> Diagnostic
 mkDiagnostic p msg = mkDiagnosticRelated ELError (Range p p) msg []
 
 parseErrorDiags :: CP.PosState T.Text ->
-  [CP.ParseASTError] -> [Diagnostic]
+  [CP.ParseError] -> [Diagnostic]
 parseErrorDiags pos errs =
   toDiag <$> fst (E.attachSourcePos E.errorOffset errs' pos) where
   errs' = sortOn E.errorOffset errs
@@ -242,6 +242,7 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str =
   reactorHandleAll $ do
     let fileUri = fromNormalizedUri fileNUri
         file = fromMaybe "" $ uriToFilePath fileUri
+        pos = CP.initialPosState file str
     diags <- if T.isSuffixOf "mm0" t
       then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
         Left (P.ParseError l c msg) ->
@@ -249,9 +250,9 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str =
         Right ast -> case Elab.elabAST ast of
           Left msg -> return [mkDiagnostic (Position 0 0) (T.pack msg)]
           Right _ -> return []
-      else case CP.parseAST' file str of
-        (errs, pos, Nothing) -> return $ parseErrorDiags pos errs
-        (errs, pos, Just ast) -> do
+      else case CP.parseAST file str of
+        (errs, _, Nothing) -> return $ parseErrorDiags pos errs
+        (errs, _, Just ast) -> do
           (env, errs') <- liftIO $ CE.elaborate errs ast
           return (elabErrorDiags fileUri pos errs')
     publishDiagnostics 100 fileNUri version (partitionBySource diags)

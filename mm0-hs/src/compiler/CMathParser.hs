@@ -12,12 +12,12 @@ import qualified Data.Vector as V
 import qualified Data.Text as T
 import CAST
 import CEnv
-import CParser (initialPosState)
+import CParser (Parser, initialPosState)
 import MathParser (appPrec)
 import Util
 
 data Tokens = Eof Offset
-  | Token (Span T.Text) Tokens -- token
+  | Token (Span Token) Tokens -- token
   | Unquote (Span LispVal) Tokens -- unquote
 
 tokenOffset :: Tokens -> Offset
@@ -52,29 +52,38 @@ tokenize delims (Formula o t) = space o t where
       -- | space
       4 -> let o' = o + T.length t1 in Token (Span o t1 o') $ space o' t
 
-type Parser = StateT Tokens ElabM
+type MParser = StateT Tokens ElabM
 
-parseFormulaWith :: T.Text -> ((Span LispVal, T.Text) -> Parser (Span LispVal)) -> Formula -> ElabM LispVal
-parseFormulaWith thm m fmla = do
+ofParser :: Parser a -> MParser a
+ofParser p = undefined
+
+parseFormula :: T.Text -> Maybe Sort -> Formula -> ElabM (Span LispVal, Sort)
+parseFormula thm tgt fmla = do
   delims <- gets (pDelims . ePE)
-  runStateT (parseExpr 0 >>= m) (tokenize delims fmla) >>= \case
-    (Span _ v _, Eof _) -> return v
+  runStateT (parseExpr tgt 0) (tokenize delims fmla) >>= \case
+    (v, Eof _) -> return v
     (_, tks) -> escapeAt (tokenOffset tks) "math parse error: expected '$'"
 
-parseFormula :: T.Text -> Maybe T.Text -> Formula -> ElabM LispVal
-parseFormula thm (Just s) = parseFormulaWith thm (coerce s)
-parseFormula thm Nothing = parseFormulaWith thm (return . fst)
+parseFormulaProv :: T.Text -> Formula -> ElabM (Span LispVal, Sort)
+parseFormulaProv thm fmla = do
+  gets eProvableSorts >>= \case
+    [tgt] -> parseFormula thm (Just tgt) fmla
+    _ -> do
+      (Span o1 sexp o2, s) <- parseFormula thm Nothing fmla
+      try (getCoeProv s) >>= \case
+        Just (s2, c) -> return (Span o1 (c sexp) o2, s2)
+        Nothing -> do
+          reportErr $ ElabError ELError o1 o2
+            ("type error, expected provable sort, got " <> s) []
+          mzero
 
-parseFormulaProv :: T.Text -> Formula -> ElabM LispVal
-parseFormulaProv thm = parseFormulaWith thm (\t -> fst <$> coerceProv t)
-
-getOffset :: Parser Offset
+getOffset :: MParser Offset
 getOffset = gets tokenOffset
 
-parseError :: T.Text -> Parser a
+parseError :: T.Text -> MParser a
 parseError msg = getOffset >>= lift . flip escapeAt msg
 
-coerce :: T.Text -> (Span LispVal, T.Text) -> Parser (Span LispVal)
+coerce :: Sort -> (Span LispVal, Sort) -> MParser (Span LispVal)
 coerce s2 (Span o1 sexp o2, s1) =
   lift $ try (getCoe s1 s2) >>= \case
     Just c -> return (Span o1 (c sexp) o2)
@@ -83,54 +92,45 @@ coerce s2 (Span o1 sexp o2, s1) =
         ("type error, expected " <> s2 <> ", got " <> s1) []
       mzero
 
-coerceProv :: (Span LispVal, T.Text) -> Parser (Span LispVal, T.Text)
-coerceProv (Span o1 sexp o2, s) =
-  lift $ try (getCoeProv s) >>= \case
-    Just (s2, c) -> return (Span o1 (c sexp) o2, s2)
-    Nothing -> do
-      reportErr $ ElabError ELError o1 o2
-        ("type error, expected provable sort, got " <> s) []
-      mzero
-
 {-
-tkMatch :: (T.Text -> Maybe b) -> (T.Text -> b -> Parser a) -> Parser a -> Parser a
+tkMatch :: (Token -> Maybe b) -> (Span Token -> b -> MParser a) -> MParser a -> MParser a
 tkMatch f yes no = StateT $ \case
-  t : ss -> case f t of
+  Token t ss -> case f t of
     Nothing -> runStateT no (t : ss)
     Just b -> runStateT (yes t b) ss
   ss -> runStateT no ss
 
-tkCond :: (T.Text -> Bool) -> Parser a -> Parser a -> Parser a
+tkCond :: (T.Text -> Bool) -> MParser a -> MParser a -> MParser a
 tkCond p yes no = tkMatch (\t -> if p t then Just () else Nothing) (\_ _ -> yes) no
 
-tk :: T.Text -> Parser ()
+tk :: T.Text -> MParser ()
 tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ t ++ "'"))
 
-parseVar :: Parser (Span LispVal, T.Text) -> Parser (Span LispVal, T.Text)
+parseVar :: MParser (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
 parseVar no = do
   ctx <- ask
   tkMatch (lookupOrInferLocal ctx) (\v (DepType s _) -> return (SVar v, s)) no
 
-parseLiteral :: Parser (Span LispVal, T.Text) -> Parser (Span LispVal, T.Text)
+parseLiteral :: MParser (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
 parseLiteral no =
   tkCond (== "(") (parseExpr 0 <* tk ")") (parseVar no)
 
-checkPrec :: ParserEnv -> Prec -> T.Text -> Maybe a -> Maybe a
+checkPrec :: MParserEnv -> Prec -> T.Text -> Maybe a -> Maybe a
 checkPrec e p v m = do
   (_, q) <- H.lookup v (pPrec e)
   if q >= p then m else Nothing
 
-parseLiterals :: V.Vector T.Text -> [PLiteral] -> Parser [Span LispVal]
+parseLiterals :: V.Vector T.Text -> [PLiteral] -> MParser [Span LispVal]
 parseLiterals ls = go I.empty where
-  go :: I.IntMap (Span LispVal) -> [PLiteral] -> Parser [Span LispVal]
+  go :: I.IntMap (Span LispVal) -> [PLiteral] -> MParser [Span LispVal]
   go m [] = return (I.elems m)
   go m (PConst t : lits) = tk t >> go m lits
   go m (PVar n p : lits) = do
     e <- parseExpr p >>= coerce (ls V.! n)
     go (I.insert n e m) lits
 
-parsePrefix :: Prec -> Parser (Span LispVal, T.Text)
-parsePrefix p = parseLiteral $ do
+parsePrefix :: Maybe Sort -> Prec -> MParser (Span LispVal, Sort)
+parsePrefix tgt p = parseLiteral $ do
   pe <- gets ePE
   tkMatch (\v -> checkPrec pe p v (H.lookup v (pPrefixes pe)))
     (\v (PrefixInfo _ x lits) -> do
@@ -147,7 +147,7 @@ parsePrefix p = parseLiteral $ do
         return (App x ss, dSort r)) $
     parseError "expected variable or prefix or term s-expr"
 
-getLhs :: Prec -> (Span LispVal, T.Text) -> Parser (Span LispVal, T.Text)
+getLhs :: Prec -> (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
 getLhs p lhs = do
   pe <- gets ePE
   tkMatch (\v -> do
@@ -162,7 +162,7 @@ getLhs p lhs = do
       getLhs p (Span o1 (List [Atom x, lhs', rhs']) o2, dSort r))
     (return lhs)
 
-getRhs :: Prec -> (Span LispVal, T.Text) -> Parser (Span LispVal, T.Text)
+getRhs :: Prec -> (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
 getRhs p rhs = do
   pe <- gets ePE
   tkMatch (\v -> do
@@ -173,5 +173,5 @@ getRhs p rhs = do
     (return rhs)
 -}
 
-parseExpr :: Prec -> Parser (Span LispVal, T.Text)
-parseExpr p = undefined -- parsePrefix p >>= getLhs p
+parseExpr :: Maybe Sort -> Prec -> MParser (Span LispVal, Sort)
+parseExpr tgt p = undefined -- parsePrefix tgt p >>= getLhs p

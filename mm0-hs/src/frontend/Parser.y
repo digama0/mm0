@@ -1,7 +1,6 @@
 {
 module Parser (ParseError(..), parse) where
 import AST
-import Environment
 import Lexer
 import Control.Monad.Except
 import Text.Read
