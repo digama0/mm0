@@ -33,6 +33,11 @@
 			"type": "object",
 			"title": "Example configuration",
 			"properties": {
+				"metamath-zero.executablePath": {
+					"type": "string",
+					"default": "mm0-hs",
+					"description": "Path to the MM0 server."
+				},
 				"metamath-zero.maxNumberOfProblems": {
 					"scope": "resource",
 					"type": "number",
@@ -51,7 +56,21 @@
 					"description": "Traces the communication between VS Code and the language server."
 				}
 			}
-		}
+		},
+		"commands": [
+			{
+				"command": "metamath-zero.restartServer",
+				"category": "MM0",
+				"title": "Restart",
+				"description": "Restart the Language Server."
+			},
+			{
+				"command": "metamath-zero.shutdownServer",
+				"category": "MM0",
+				"title": "Shutdown",
+				"description": "Shut down the Language Server."
+			}
+		]
 	},
 	"scripts": {
 		"vscode:prepublish": "npm run compile",

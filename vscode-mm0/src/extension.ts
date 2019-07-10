@@ -1,19 +1,24 @@
-import { window, workspace, ExtensionContext, TextDocument, EndOfLine } from 'vscode';
+import { commands, window, workspace, ExtensionContext, TextDocument, EndOfLine } from 'vscode';
 
 import {
 	LanguageClient,
 	LanguageClientOptions,
-	ServerOptions
+	ServerOptions,
+	ErrorAction,
+	CloseAction
 } from 'vscode-languageclient';
 
 let client: LanguageClient;
 
-export function activate(context: ExtensionContext) {
+function startClient() {
+	let config = workspace.getConfiguration('metamath-zero');
+	let mm0Path: string = config.get('executablePath') || 'mm0-hs';
+
 	// If the extension is launched in debug mode then the debug server options are used
 	// Otherwise the run options are used
 	let serverOptions: ServerOptions = {
-		run: { command: 'mm0-hs', args: ['server'] },
-		debug: { command: 'mm0-hs', args: ['server', '--debug'] }
+		run: { command: mm0Path, args: ['server'] },
+		debug: { command: mm0Path, args: ['server', '--debug'] }
 	};
 
 	// Options to control the language client
@@ -28,6 +33,10 @@ export function activate(context: ExtensionContext) {
 
 	// Start the client. This will also launch the server
 	client.start();
+}
+
+export function activate(context: ExtensionContext) {
+	startClient();
 
 	// Unfortunately it is not possible to set the default line endings to LF,
 	// which is required for MM0 files. Instead we just try to set it to LF
@@ -42,7 +51,12 @@ export function activate(context: ExtensionContext) {
 	}
 	context.subscriptions.push(
 		workspace.onDidOpenTextDocument(makeLF),
-		workspace.onWillSaveTextDocument(e => makeLF(e.document)));
+		workspace.onWillSaveTextDocument(e => makeLF(e.document)),
+		commands.registerCommand('metamath-zero.shutdownServer',
+		  () => client.stop().then(() => {}, () => {})),
+		commands.registerCommand('metamath-zero.restartServer',
+			() => client.stop().then(startClient, startClient))
+	);
 }
 
 export function deactivate(): Thenable<void> | undefined {
