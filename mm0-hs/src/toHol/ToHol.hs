@@ -10,6 +10,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
 import qualified Data.Set as S
+import qualified Data.Text as T
 import HolTypes
 import Environment
 import ProofTypes
@@ -49,6 +50,9 @@ thTerm g (TermID n) = Q.index (thTerms g) n
 thThm :: ToHolState -> ThmID -> HThmData
 thThm g (ThmID n) = Q.index (thThms g) n
 
+varName :: VarID -> Ident
+varName = T.pack . show
+
 type ToHolM = RWST () (Endo [HDecl]) ToHolState (Either String)
 
 toHol :: Environment -> Proofs -> Either String [HDecl]
@@ -69,26 +73,26 @@ toHol env = \pfs -> do
       tell (Endo (HDSort x :))
       modify $ \g -> g {
         thSorts = thSorts g Q.|> (x, sFree sd) }
-    e -> throwError ("incorrect step 'sort " ++ x ++ "', found " ++ show e)
+    e -> throwError ("incorrect step 'sort " ++ T.unpack x ++ "', found " ++ show e)
   trCmd (StepTerm x) = step >>= \case
     SDecl x' (DTerm args ty) | x == x' -> do
       tell (Endo (HDTerm x (translateTerm args ty) :))
       modify $ \g -> g {
         thTerms = thTerms g Q.|> HTermData x args ty,
         thTermIx = M.insert x (TermID (Q.length (thTerms g))) (thTermIx g) }
-    e -> throwError ("incorrect step 'term " ++ x ++ "', found " ++ show e)
+    e -> throwError ("incorrect step 'term " ++ T.unpack x ++ "', found " ++ show e)
   trCmd (StepAxiom x) = step >>= \case
     SDecl x' (DAxiom args hs ret) | x == x' -> do
       g <- get
       let td@(TType _ hs' ret') = translateAxiom g args hs ret
       tell (Endo (HDThm x td Nothing :))
       put $ g {thThms = thThms g Q.|> HThmData x args hs' ret' ret}
-    e -> throwError ("incorrect step 'axiom " ++ x ++ "', found " ++ show e)
+    e -> throwError ("incorrect step 'axiom " ++ T.unpack x ++ "', found " ++ show e)
   trCmd (ProofDef x vs ret ds def st) = do
     when st $ step >> return ()
     g <- get
     let n = TermID (Q.length (thTerms g))
-    let name = fromMaybe (show n) x
+    let name = fromMaybe (T.pack $ show n) x
     let (bis, ty, rv, lv, r, e, ds') = translateDef g vs ret ds def
     tell (Endo (HDDef name rv lv r e :))
     modify $ \g -> g {
@@ -99,7 +103,7 @@ toHol env = \pfs -> do
     when st $ step >> return ()
     g <- get
     let n = ThmID (Q.length (thThms g))
-    let name = fromMaybe (show n) x
+    let name = fromMaybe (T.pack $ show n) x
     let (args, ty@(TType _ hs' ret'), ret2, p) =
           translateThm g vs hs ret (S.fromList unf) ds pf
     tell (Endo (HDThm name ty (Just p) :))
@@ -163,11 +167,11 @@ trVBinders :: ToHolState -> [VBinder] -> ([(Ident, SType)], Int, Q.Seq PBinder)
 trVBinders g = go 0 Q.empty where
   go n m [] = ([], n, m)
   go n m (p@(VBound t) : bis) =
-    go (n+1) (m Q.|> PBound (show (VarID n)) (thSort g t)) bis
+    go (n+1) (m Q.|> PBound (varName (VarID n)) (thSort g t)) bis
   go n m (p@(VReg t ts) : bis) =
     let {
-      v = show (VarID n); t' = thSort g t;
-      (rs', n', m') = go (n+1) (m Q.|> PReg v (DepType t' (show <$> ts))) bis } in
+      v = varName (VarID n); t' = thSort g t;
+      (rs', n', m') = go (n+1) (m Q.|> PReg v (DepType t' (varName <$> ts))) bis } in
     ((v, SType (snd . getVLocal m <$> ts) t') : rs', n', m')
 
 getVLocal :: Q.Seq PBinder -> VarID -> (Ident, Sort)
@@ -186,7 +190,7 @@ translateDef g vs (VType t ts) ds e =
   trDummies :: Int -> Q.Seq PBinder -> [SortID] -> (Int, Q.Seq PBinder, [(Ident, Sort)])
   trDummies n ctx [] = (n, ctx, [])
   trDummies n ctx (d:ds) =
-    let { x = show (VarID n); s = thSort g d;
+    let { x = varName (VarID n); s = thSort g d;
           (n', ctx', bs') = trDummies (n+1) (ctx Q.|> PBound x s) ds } in
     (n', ctx', (x, s) : bs')
 
@@ -207,8 +211,8 @@ trVExpr g ctx = trVExpr' where
   trApp :: DepType -> [PBinder] -> [VExpr] -> ([SLam], [Ident])
   trApp (DepType _ ts) = go M.empty where
     go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [VExpr] -> ([SLam], [Ident])
-    go m [] [] = ([], show . snd . (m M.!) <$> ts)
-    go m (PBound x t : bis) (VVar e : es) = go (M.insert x (show e, t) m) bis es
+    go m [] [] = ([], fst . (m M.!) <$> ts) -- TODO: test this
+    go m (PBound x t : bis) (VVar e : es) = go (M.insert x (varName e, t) m) bis es
     go m (PReg v (DepType t ts) : bis) (e : es) =
       let (ls, xs) = go m bis es in
       (SLam ((m M.!) <$> ts) (trVExpr' e) : ls, xs)
@@ -274,7 +278,7 @@ substVExpr g subst = substVExpr' where
   substApp :: DepType -> [PBinder] -> [VExpr] -> ([VExpr], [SLam], [Ident])
   substApp (DepType _ ts) = go M.empty where
     go :: M.Map Ident ((Ident, Sort), VarID) -> [PBinder] -> [VExpr] -> ([VExpr], [SLam], [Ident])
-    go m [] [] = ([], [], show . snd . (m M.!) <$> ts)
+    go m [] [] = ([], [], varName . snd . (m M.!) <$> ts)
     go m (PBound x t : bis) (VVar e : es) =
       let (y, LVar z) = Q.index subst (ofVarID e)
           (es', ls, xs) = go (M.insert x ((z, t), e) m) bis es in
@@ -302,8 +306,8 @@ buildSubst m [] = return m
 buildSubst m ((_, d) : ds) = do
   ctx <- get
   let v = VarID (Q.length ctx)
-  modify (Q.|> PBound (show v) d)
-  buildSubst (m Q.|> (VVar v, LVar (show v))) ds
+  modify (Q.|> PBound (varName v) d)
+  buildSubst (m Q.|> (VVar v, LVar (varName v))) ds
 
 unfoldExpr :: ToHolState -> S.Set TermID -> VExpr -> ST.State (Q.Seq PBinder) UnfoldExpr
 unfoldExpr g unf = unfoldExpr' where
@@ -333,10 +337,10 @@ unfoldExpr g unf = unfoldExpr' where
   unfoldApp (DepType _ ts) = go M.empty where
     go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [VExpr] ->
       ST.State (Q.Seq PBinder) ([(VExpr, Term)], [HConvLam], [SLam], [SLam], [Ident])
-    go m [] [] = return ([], [], [], [], show . snd . (m M.!) <$> ts)
+    go m [] [] = return ([], [], [], [], T.pack . show . snd . (m M.!) <$> ts)
     go m (PBound x t : bis) (VVar e : es) = do
-      (es', cs, ls, rs, xs) <- go (M.insert x (show e, t) m) bis es
-      return ((VVar e, LVar (show e)) : es', cs, ls, rs, xs)
+      (es', cs, ls, rs, xs) <- go (M.insert x (varName e, t) m) bis es
+      return ((VVar e, LVar (varName e)) : es', cs, ls, rs, xs)
     go m (PReg v (DepType t ts) : bis) (e : es) = do
       UnfoldExpr e' c l r <- unfoldExpr' e
       (es', cs, ls, rs, xs) <- go m bis es
@@ -348,11 +352,11 @@ mkHeap [] [] = return []
 mkHeap (UnfoldExpr e c t1 t2 : ues) (h@(GType xs t) : hs) = do
   (ctx, m, heap) <- get
   let n = Q.length ctx
-      v = show (VarID n)
+      v = varName (VarID n)
       p = HHyp v (fst <$> xs)
       p' = case reflTerm c of
         Just _ -> return (fvLTerm t2, p, t2)
-        Nothing -> save n (v ++ "_unf") xs (HConv c p) t2
+        Nothing -> save n (v <> "_unf") xs (HConv c p) t2
   put (ctx Q.|> HProof p', m, M.insert v h heap)
   (v :) <$> mkHeap ues hs
   where
@@ -375,7 +379,7 @@ addDummies :: [Sort] -> ToHolProofM ()
 addDummies ds = modify $ \(ctx, vs, heap) -> go (Q.length ctx) ds ctx vs heap where
   go _ [] ctx vs heap = (ctx, vs, heap)
   go n (d:ds) ctx vs heap =
-    let v = show (VarID n) in
+    let v = varName (VarID n) in
     go (n+1) ds (ctx Q.|> HExpr (S.singleton v) (LVar v)) (M.insert v d vs) heap
 
 substSExpr :: ToHolState -> M.Map Ident Term -> SExpr -> Term
@@ -430,7 +434,7 @@ trProof g pr = trProof' pr where
       return (HExprF fv e)
     HProofF fv p' t -> do
       (ctx, m, heap) <- get
-      let x = show (VarID (Q.length ctx))
+      let x = varName (VarID (Q.length ctx))
       put (ctx Q.|> HProof (return (fv, HHyp x [], t)), m, M.insert x (GType [] t) heap)
       return $ HProofF fv (HSave x (HProofLam [] p') []) t
   trProof' Sorry = return $ HProofF S.empty HSorry HTSorry

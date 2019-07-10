@@ -7,6 +7,7 @@ import Data.List
 import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.Sequence as Q
 import AST
 import Environment
@@ -43,8 +44,8 @@ insertSort v sd = insertSpec (SSort v sd) >> modifyParser recalcCoeProv
 insertDecl :: Ident -> Decl -> SpecM ()
 insertDecl v d = insertSpec (SDecl v d)
 
-withContext :: MonadError String m => String -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
+withContext :: MonadError String m => T.Text -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("at " ++ T.unpack s ++ ": " ++ e))
 
 evalSpecM :: SpecM a -> Either String (a, Environment)
 evalSpecM m = do
@@ -78,8 +79,8 @@ elabTerm x vs ty mk = do
   (bis, dummies, hyps) <- runLocalCtxM' $
     processBinders vs $ \vs' ds hs -> checkType ty >> return (vs', ds, hs)
   lift $ do
-    guardError (x ++ ": dummy variables not permitted in terms") (null dummies)
-    guardError (x ++ ": hypotheses not permitted in terms") (null hyps)
+    guardError (T.unpack x ++ ": dummy variables not permitted in terms") (null dummies)
+    guardError (T.unpack x ++ ": hypotheses not permitted in terms") (null hyps)
     return (mk bis ty)
 
 elabAssert :: Ident -> [Binder] -> Formula -> ([PBinder] -> [SExpr] -> SExpr -> a) -> SpecM a
@@ -89,7 +90,7 @@ elabAssert x vs fmla mk = do
       sexp <- parseFormulaProv fmla
       return (vs', ds, hs, sexp)
   lift $ do
-    guardError (x ++ ": dummy variables not permitted in axiom/theorem") (null dummies)
+    guardError (T.unpack x ++ ": dummy variables not permitted in axiom/theorem") (null dummies)
     return (mk bis hyps ret)
 
 elabDef :: Ident -> [Binder] -> DepType -> Maybe Formula -> SpecM Decl
@@ -101,7 +102,7 @@ elabDef x vs ty (Just defn) = do
       defn' <- parseFormula (dSort ty) defn
       return (vs', ds, hs, defn')
   lift $ do
-    guardError (x ++ ": hypotheses not permitted in terms") (null hyps)
+    guardError (T.unpack x ++ ": hypotheses not permitted in terms") (null hyps)
     return (DDef bis ty $ Just (dummies, defn'))
 
 elabInout out "string" [x] = do
@@ -116,7 +117,7 @@ parseTermFmla _ (Left x) = do
   env <- readEnv
   case getTerm env x of
     Just ([], _) -> return (App x [])
-    _ -> throwError ("input argument " ++ x ++ " is not a nullary term constructor")
+    _ -> throwError ("input argument " ++ T.unpack x ++ " is not a nullary term constructor")
 parseTermFmla s (Right f) = parseFormula s f
 
 runLocalCtxM' :: LocalCtxM a -> SpecM a

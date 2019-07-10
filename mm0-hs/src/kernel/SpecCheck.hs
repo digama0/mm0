@@ -4,6 +4,7 @@ import Control.Monad.Except
 import Debug.Trace
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.Sequence as Q
 import AST
 import Environment
@@ -11,19 +12,19 @@ import Util
 
 insertSpec' :: Spec -> Environment -> Either String Environment
 insertSpec' (SSort v sd) e = do
-  s' <- insertNew ("sort " ++ v ++ " already declared") v sd (eSorts e)
+  s' <- insertNew ("sort " ++ T.unpack v ++ " already declared") v sd (eSorts e)
   return (e {eSorts = s', eSpec = eSpec e Q.|> SSort v sd})
 insertSpec' (SDecl v d) e = do
   -- trace ("insertDecl " ++ v ++ ": " ++ show d) (return ())
-  d' <- insertNew ("decl " ++ v ++ " already declared") v d (eDecls e)
+  d' <- insertNew ("decl " ++ T.unpack v ++ " already declared") v d (eDecls e)
   return (e {eDecls = d', eSpec = eSpec e Q.|> SDecl v d})
 insertSpec' s e = return (e {eSpec = eSpec e Q.|> s})
 
 insertSpec :: Spec -> Environment -> Either String Environment
 insertSpec s e = checkSpec e s >> insertSpec' s e
 
-withContext :: MonadError String m => String -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("when adding " ++ s ++ ": " ++ e))
+withContext :: MonadError String m => T.Text -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("when adding " ++ T.unpack s ++ ": " ++ e))
 
 checkSpec :: Environment -> Spec -> Either String ()
 checkSpec e (SSort _ _) = return ()
@@ -46,13 +47,13 @@ checkDef env bis ret defn = do
   ctx <- checkBinders env bis
   checkType ctx ret
   sd <- fromJustError "sort not found" (eSorts env M.!? dSort ret)
-  guardError ("cannot declare term for pure sort '" ++ dSort ret ++ "'") (not (sPure sd))
+  guardError ("cannot declare term for pure sort '" ++ T.unpack (dSort ret) ++ "'") (not (sPure sd))
   case defn of
     Nothing -> return ()
     Just (dummy, e) -> do
       ctx2 <- traverse (\t -> do
           sd <- fromJustError "sort not found" (eSorts env M.!? t)
-          guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
+          guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd))
           return (True, DepType t [])) dummy
       checkSExpr env (ctx <> ctx2) e ret
 
@@ -61,7 +62,7 @@ checkBinders e = go M.empty where
   go :: M.Map Ident (Bool, DepType) -> [PBinder] -> Either String (M.Map Ident (Bool, DepType))
   go ctx (PBound x t : bis) = do
     sd <- fromJustError "sort not found" (eSorts e M.!? t)
-    guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
+    guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd))
     go (M.insert x (True, DepType t []) ctx) bis
   go ctx (PReg x ty : bis) = do
     fromJustError "sort not found" (eSorts e M.!? dSort ty)

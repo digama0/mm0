@@ -8,6 +8,7 @@ import Control.Monad.Except
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import AST
 import Environment
 import ParserEnv
@@ -57,4 +58,4 @@ readPE = snd <$> lift ask
 ensureBound :: Ident -> LocalCtxM ()
 ensureBound v = do
   ctx <- ask
-  () <$ fromJustError ("variable " ++ v ++ " not bound") (lookupBound ctx v)
+  () <$ fromJustError ("variable " ++ T.unpack v ++ " not bound") (lookupBound ctx v)

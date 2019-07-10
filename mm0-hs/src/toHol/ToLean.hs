@@ -10,6 +10,7 @@ import Control.Monad.Writer
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Environment (Ident)
 import HolTypes
 import Util
@@ -68,11 +69,12 @@ close = do
 preamble :: LeanM () -> LeanM ()
 preamble m = emit "namespace mm0\n" >> m >> emit "end mm0"
 
-mangle :: String -> ShowS
+mangle :: T.Text -> ShowS
 mangle "fun" r = '\x00AB' : "fun\x00BB" ++ r
 mangle "class" r = '\x00AB' : "class\x00BB" ++ r
-mangle ('_' : s) r = '\x00AB' : s ++ '\x00BB' : r
-mangle s r = s ++ r
+mangle s r = case T.uncons s of
+  Just ('_', s') -> '\x00AB' : T.unpack s' ++ '\x00BB' : r
+  _ -> T.unpack s ++ r
 
 increment :: LeanM ()
 increment = do
@@ -145,7 +147,7 @@ printProofLam p n (HProofLam vs e) = showParen p $
 printProof :: Bool -> String -> HProof -> ShowS
 printProof p n (HHyp v []) = mangle v
 printProof p n (HHyp v xs) = showParen p $
-  (v ++) . flip (foldr (\x -> (' ' :) . mangle x)) xs
+  (T.unpack v ++) . flip (foldr (\x -> (' ' :) . mangle x)) xs
 printProof p n (HThm t [] [] []) = mangle t
 printProof p n (HThm t es hs xs) = showParen p $ ('@' :) . mangle t .
   flip (foldr (\e -> (' ' :) . printSLam True e)) es .
@@ -210,7 +212,7 @@ leanDecl ax (HDTerm x ty) = do
   emit $ c $ "constant " ++ mangle x " : " ++ printHType ty "\n"
 leanDecl ax (HDDef x ss xs r t) = when (ax /= Only) $
   let bis = printGroupedBinders False (ss ++ (mapSnd (SType []) <$> xs)) in
-  emit $ ("def " ++) $ mangle x $ bis (" : " ++ r ++ " :=\n" ++ printTerm False t "\n")
+  emit $ ("def " ++) $ mangle x $ bis (" : " ++ T.unpack r ++ " :=\n" ++ printTerm False t "\n")
 leanDecl ax (HDThm x (TType vs gs ret) Nothing) = do
   let c = if noAx ax then ("-- " ++) else id
   emit $ c $ ("axiom " ++) $ mangle x $ printGroupedBinders True vs $ " : " ++

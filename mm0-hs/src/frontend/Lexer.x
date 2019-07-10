@@ -7,6 +7,8 @@ import AST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as C
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 }
 
 $identstart = [a-z A-Z _]
@@ -42,7 +44,8 @@ tokens :-
   "_"       {\_ -> TokAnon}
   @ident    {TokIdent . C.unpack}
   @number   {TokNumber . C.unpack}
-  @formula  {\s -> TokFormula $ L.toStrict $ L.drop 1 $ L.take (L.length s - 1) s}
+  @formula  {\s -> TokFormula $ T.decodeLatin1 $ L.toStrict $
+               L.drop 1 $ L.take (L.length s - 1) s}
   "*"       {\_ -> TokStar}
   "."       {\_ -> TokDot}
   ":"       {\_ -> TokColon}
@@ -76,7 +79,7 @@ data Token =
   | TokTheorem
   | TokIdent String
   | TokNumber String
-  | TokFormula B.ByteString
+  | TokFormula T.Text
   | TokStar
   | TokDot
   | TokColon

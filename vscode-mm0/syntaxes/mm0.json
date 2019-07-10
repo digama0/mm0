@@ -220,7 +220,7 @@
 			"patterns": [
 				{"include": "#comment"},
 				{
-					"begin": "\\(\\s*([\\w!%&*/:<=>?^_~+.@-]+)?",
+					"begin": "\\(\\s*([\\w!%&*+\\-./:<=>?@^_~]+)?",
 					"beginCaptures": {"1": {"name": "entity.name.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]

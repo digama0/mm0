@@ -2,6 +2,7 @@ module HolTypes where
 
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Environment (Ident)
 import Util
 
@@ -11,9 +12,9 @@ type Sort = Ident
 data SType = SType [Sort] Sort deriving (Eq, Ord)
 
 instance Show SType where
-  showsPrec n (SType [] s) = (s ++)
+  showsPrec n (SType [] s) = (T.unpack s ++)
   showsPrec n (SType ss s) = showParen (n > 0) $
-    \r -> foldr (\x r -> x ++ " -> " ++ r) (s ++ r) ss
+    \r -> foldr (\x r -> T.unpack x ++ " -> " ++ r) (T.unpack s ++ r) ss
 
 -- An HType is a type of the form s1 -> ... sn -> t where
 -- si and t are simple types. MM0 term constructors have this type.
@@ -28,17 +29,18 @@ instance Show HType where
 showBinds :: String -> (a -> ShowS) -> [(Ident, a)] -> ShowS
 showBinds _ _ [] = id
 showBinds c g (v:vs) =
-  let f (x, t) r = '(' : x ++ ": " ++ g t (')' : r) in
+  let f (x, t) r = '(' : T.unpack x ++ ": " ++ g t (')' : r) in
   \r -> c ++ f v (foldr (\v' -> (' ' :) . f v') (". " ++ r) vs)
 
 showBinds' :: (a -> ShowS) -> [(Ident, a)] -> ShowS
-showBinds' g vs r = foldr (\(x, t) r -> " (" ++ x ++ ": " ++ g t (')' : r)) r vs
+showBinds' g vs r = foldr (\(x, t) r -> " (" ++ T.unpack x ++ ": " ++ g t (')' : r)) r vs
 
 data SLam = SLam [(Ident, Sort)] Term deriving (Eq)
 
 instance Show SLam where
   showsPrec n (SLam [] e) = showsPrec n e
-  showsPrec n (SLam vs e) = showParen (n > 0) $ showBinds "\\" (++) vs . shows e
+  showsPrec n (SLam vs e) = showParen (n > 0) $
+    showBinds "\\" ((++) . T.unpack) vs . shows e
 
 data Term =
     LVar Ident
@@ -48,14 +50,14 @@ data Term =
   deriving (Eq)
 
 instance Show Term where
-  showsPrec n (LVar v) = (v ++)
-  showsPrec n (RVar v []) = (v ++)
+  showsPrec n (LVar v) = (T.unpack v ++)
+  showsPrec n (RVar v []) = (T.unpack v ++)
   showsPrec n (RVar v xs) = showParen (n > 0) $
-    (v ++) . flip (foldr (\x -> ((' ' : x) ++))) xs
-  showsPrec n (HApp t [] []) = (t ++)
-  showsPrec n (HApp t es xs) = showParen (n > 0) $ (t ++) .
+    (T.unpack v ++) . flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
+  showsPrec n (HApp t [] []) = (T.unpack t ++)
+  showsPrec n (HApp t es xs) = showParen (n > 0) $ (T.unpack t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
-    flip (foldr (\x -> ((' ' : x) ++))) xs
+    flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
   showsPrec n HTSorry = ("?" ++)
 
 -- A GType is the type of a MM0 statement. It corresponds to the HOL statement
@@ -65,7 +67,7 @@ data GType = GType [(Ident, Sort)] Term deriving (Eq)
 instance Show GType where
   showsPrec _ (GType [] e) = ("|- " ++) . shows e
   showsPrec n (GType vs e) = showParen (n > 0) $
-    showBinds "!" (++) vs . ("|- " ++) . shows e
+    showBinds "!" ((++) . T.unpack) vs . ("|- " ++) . shows e
 
 -- A TType is the type of a MM0 theorem. The STypes are the regular variables,
 -- and the GTypes are the hypotheses. It corresponds to the HOL statement
@@ -85,7 +87,7 @@ data HProofLam = HProofLam [(Ident, Sort)] HProof
 instance Show HProofLam where
   showsPrec n (HProofLam [] e) = showsPrec n e
   showsPrec n (HProofLam vs e) = showParen (n > 0) $
-    showBinds "\\" (++) vs . shows e
+    showBinds "\\" ((++) . T.unpack) vs . shows e
 
 data HProof =
     HHyp Ident [Ident]
@@ -110,16 +112,16 @@ data HProof =
   | HSorry
 
 instance Show HProof where
-  showsPrec n (HHyp v []) = (v ++)
+  showsPrec n (HHyp v []) = (T.unpack v ++)
   showsPrec n (HHyp v xs) = showParen (n > 0) $
-    (v ++) . flip (foldr (\x -> ((' ' : x) ++))) xs
-  showsPrec n (HThm t [] [] []) = (t ++)
-  showsPrec n (HThm t es hs xs) = showParen (n > 0) $ (t ++) .
+    (T.unpack v ++) . flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
+  showsPrec n (HThm t [] [] []) = (T.unpack t ++)
+  showsPrec n (HThm t es hs xs) = showParen (n > 0) $ (T.unpack t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) hs .
-    flip (foldr (\x -> ((' ' : x) ++))) xs
+    flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
   showsPrec n (HSave v p xs) = showParen (n > 0) $ \r ->
-    "let " ++ v ++ " = " ++ shows p (" in " ++ shows (HHyp v xs) r)
+    "let " ++ T.unpack v ++ " = " ++ shows p (" in " ++ shows (HHyp v xs) r)
   showsPrec n (HForget _ p) = showParen (n > 0) $ ("forget " ++) . shows p
   showsPrec n (HConv c p) = showParen (n > 0) $
     ("mp " ++) . shows c . (' ' :) . shows p
@@ -130,7 +132,7 @@ data HConvLam = HConvLam [(Ident, Sort)] HConv
 instance Show HConvLam where
   showsPrec n (HConvLam [] e) = showsPrec n e
   showsPrec n (HConvLam vs e) = showParen (n > 0) $
-    showBinds "\\" (++) vs . shows e
+    showBinds "\\" ((++) . T.unpack) vs . shows e
 
 data HConv =
     CRefl Term
@@ -149,12 +151,12 @@ instance Show HConv where
   showsPrec n (CSymm c) = ('-' :) . showsPrec 1 c
   showsPrec n (CTrans c1 c2) = showParen (n > 0) $
     shows c1 . (" . " ++) . shows c2
-  showsPrec n (CCong t cs xs) = showParen (n > 0) $ ("ap " ++) . (t ++) .
+  showsPrec n (CCong t cs xs) = showParen (n > 0) $ ("ap " ++) . (T.unpack t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) cs .
-    flip (foldr (\x -> ((' ' : x) ++))) xs
-  showsPrec n (CDef t es xs) = showParen (n > 0) $ ("delta " ++) . (t ++) .
+    flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
+  showsPrec n (CDef t es xs) = showParen (n > 0) $ ("delta " ++) . (T.unpack t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
-    flip (foldr (\x -> ((' ' : x) ++))) xs
+    flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
 
 data HDecl =
     HDSort Sort
@@ -168,16 +170,16 @@ data HDecl =
   -- The proof \hs. P, if given, derives |- ph in the context with As, xs, hs:Gs.
 
 instance Show HDecl where
-  show (HDSort s) = "sort " ++ s
-  show (HDTerm t ty) = "term " ++ t ++ ": " ++ show ty
+  show (HDSort s) = "sort " ++ T.unpack s
+  show (HDTerm t ty) = "term " ++ T.unpack t ++ ": " ++ show ty
   show (HDDef t rv lv s val) =
-    "def " ++ t ++ showBinds' shows rv (showBinds' (++) lv
-      (": " ++ s ++ " := " ++ show val))
-  show (HDThm t ty Nothing) = "axiom " ++ t ++ ": " ++ show ty
+    "def " ++ T.unpack t ++ showBinds' shows rv (showBinds' ((++) . T.unpack) lv
+      (": " ++ T.unpack s ++ " := " ++ show val))
+  show (HDThm t ty Nothing) = "axiom " ++ T.unpack t ++ ": " ++ show ty
   show (HDThm t (TType vs hs (GType ss ret)) (Just (gs, p))) =
-    ("theorem " ++) $ (t ++) $
+    ("theorem " ++) $ (T.unpack t ++) $
     showBinds' shows vs $ showBinds' shows (zip gs hs) $
-    showBinds' (++) ss $ (": |- " ++) $ shows ret $ " :=\n" ++ show p
+    showBinds' ((++) . T.unpack) ss $ (": |- " ++) $ shows ret $ " :=\n" ++ show p
 
 fvLLam :: SLam -> S.Set Ident
 fvLLam (SLam vs t) = foldr S.delete (fvLTerm t) (fst <$> vs)
@@ -204,7 +206,7 @@ fvTerm (RVar v xs) = S.insert v $ S.fromList xs
 fvTerm (HApp _ ls xs) = foldMap fvLam ls <> S.fromList xs
 
 variant :: S.Set Ident -> Ident -> Ident
-variant s v = if S.member v s then variant s (v ++ "'") else v
+variant s v = if S.member v s then variant s (v <> "'") else v
 
 substAbs :: M.Map Ident SLam -> [(Ident, Sort)] -> Term -> ([(Ident, Sort)], Term)
 substAbs m vs t = go vs M.empty where

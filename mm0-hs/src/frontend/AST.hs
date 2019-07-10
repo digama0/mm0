@@ -4,6 +4,7 @@ import Control.Monad.Except
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict as M
+import qualified Data.Text as T
 import Environment (Ident, DepType(..), SortData(..))
 import Util
 
@@ -27,14 +28,14 @@ data Notation =
 
 data Literal = NConst Const Prec | NVar Ident
 
-data Const = Const B.ByteString
+data Const = Const T.Text
 type Prec = Int
 
 instance Show Const where
-  showsPrec _ (Const f) r =  '$' : C.unpack f ++ '$' : r
+  showsPrec _ (Const f) r =  '$' : T.unpack f ++ '$' : r
 
-type InputKind = String
-type OutputKind = String
+type InputKind = T.Text
+type OutputKind = T.Text
 
 data Inout =
     Input InputKind [Either Ident Formula]
@@ -43,9 +44,9 @@ data Inout =
 data Local = LBound Ident | LReg Ident | LDummy Ident | LAnon
 
 instance Show Local where
-  showsPrec _ (LBound v) r = v ++ r
-  showsPrec _ (LReg v) r = v ++ r
-  showsPrec _ (LDummy v) r = '.' : v ++ r
+  showsPrec _ (LBound v) r = T.unpack v ++ r
+  showsPrec _ (LReg v) r = T.unpack v ++ r
+  showsPrec _ (LDummy v) r = '.' : T.unpack v ++ r
   showsPrec _ LAnon r = '_' : r
 
 data Type = TType DepType | TFormula Formula
@@ -54,10 +55,10 @@ instance Show Type where
   showsPrec _ (TType ty) = shows ty
   showsPrec _ (TFormula f) = shows f
 
-data Formula = Formula B.ByteString
+data Formula = Formula T.Text
 
 instance Show Formula where
-  showsPrec _ (Formula f) r =  '$' : C.unpack f ++ '$' : r
+  showsPrec _ (Formula f) r =  '$' : T.unpack f ++ '$' : r
 
 data Binder = Binder Local Type
 
@@ -115,12 +116,12 @@ instance Show Stmt where
   showsPrec _ (Sort x (SortData p s pr f)) r =
     (if p then "pure " else "") ++ (if s then "strict " else "") ++
     (if pr then "provable " else "") ++ (if f then "free " else "") ++
-    "sort " ++ x ++ ';' : r
-  showsPrec _ (Term x bis ty) r = "term " ++ x ++
+    "sort " ++ T.unpack x ++ ';' : r
+  showsPrec _ (Term x bis ty) r = "term " ++ T.unpack x ++
     showsGroupedBinders bis (": " ++ shows ty (';' : r))
-  showsPrec _ (Axiom x bis ty) r = "axiom " ++ x ++ showsAssert bis ty r
-  showsPrec _ (Theorem x bis ty) r = "theorem " ++ x ++ showsAssert bis ty r
-  showsPrec _ (Def x bis ty o) r = "def " ++ x ++
+  showsPrec _ (Axiom x bis ty) r = "axiom " ++ T.unpack x ++ showsAssert bis ty r
+  showsPrec _ (Theorem x bis ty) r = "theorem " ++ T.unpack x ++ showsAssert bis ty r
+  showsPrec _ (Def x bis ty o) r = "def " ++ T.unpack x ++
     showsGroupedBinders bis (": " ++ shows ty s) where
     s = case o of
       Nothing -> ';' : r
@@ -130,12 +131,12 @@ instance Show Stmt where
 
 instance Show Notation where
   showsPrec _ (Delimiter ds) = ("delimiter " ++) . shows ds . (';' :)
-  showsPrec _ (Prefix x s prec) = ("prefix " ++) . (x ++) .
+  showsPrec _ (Prefix x s prec) = ("prefix " ++) . (T.unpack x ++) .
     (": " ++) . shows s . (" prec " ++) . shows prec . (';' :)
   showsPrec _ (Infix right x s prec) = ("infix" ++) .
-    (((if right then 'r' else 'l') : ' ' : x) ++) .
+    (((if right then 'r' else 'l') : ' ' : T.unpack x) ++) .
     (": " ++) . shows s . (" prec " ++) . shows prec . (';' :)
-  showsPrec _ (NNotation x bis ty lits) = ("notation " ++) . (x ++) .
+  showsPrec _ (NNotation x bis ty lits) = ("notation " ++) . (T.unpack x ++) .
     showsGroupedBinders bis . (": " ++) . shows ty . (" =" ++) .
     flip (foldr (\lit -> (' ' :) . shows lit)) lits
 
@@ -144,11 +145,11 @@ instance Show Literal where
   showsPrec _ (NVar v) = shows v
 
 showsIdentFmla :: Either Ident Formula -> ShowS
-showsIdentFmla (Left v) = (v ++)
+showsIdentFmla (Left v) = (T.unpack v ++)
 showsIdentFmla (Right f) = shows f
 
 instance Show Inout where
-  showsPrec _ (Input ik fs) = ("input " ++) . (ik ++) .
+  showsPrec _ (Input ik fs) = ("input " ++) . (T.unpack ik ++) .
     flip (foldr (\s -> (' ' :) . showsIdentFmla s)) fs
-  showsPrec _ (Output ik fs) = ("output " ++) . (ik ++) .
+  showsPrec _ (Output ik fs) = ("output " ++) . (T.unpack ik ++) .
     flip (foldr (\s -> (' ' :) . showsIdentFmla s)) fs

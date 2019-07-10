@@ -1,4 +1,4 @@
-module CAST (module CAST, DepType(..), SortData(..)) where
+module CAST (module CAST, AtDepType(..), SortData(..)) where
 
 import Control.Monad.Except
 import qualified Data.ByteString as B
@@ -13,6 +13,15 @@ data Span a = Span Offset a Offset
 
 instance Functor AtPos where
   fmap f (AtPos l a) = AtPos l (f a)
+
+instance Functor Span where
+  fmap f (Span l a r) = Span l (f a) r
+
+unPos :: AtPos a -> a
+unPos (AtPos _ a) = a
+
+unSpan :: Span a -> a
+unSpan (Span _ a _) = a
 
 type AST = [AtPos Stmt]
 
@@ -29,7 +38,7 @@ data Stmt =
   | Do [LispVal]
 
 data Notation =
-    Delimiter [Char]
+    Delimiter [Char] (Maybe [Char])
   | Prefix Offset T.Text Const Prec
   | Infix Bool Offset T.Text Const Prec
   | Coercion T.Text T.Text T.Text
@@ -49,14 +58,14 @@ data Inout =
 
 data Local = LBound T.Text | LReg T.Text | LDummy T.Text | LAnon
 
-data DepType = DepType (AtPos T.Text) [AtPos T.Text]
+data AtDepType = AtDepType (AtPos T.Text) [AtPos T.Text]
 
 data Formula = Formula Offset T.Text
 
-data Type = TType DepType | TFormula Formula
+data Type = TType AtDepType | TFormula Formula
 
 tyOffset :: Type -> Offset
-tyOffset (TType (DepType (AtPos o _) _)) = o
+tyOffset (TType (AtDepType (AtPos o _) _)) = o
 tyOffset (TFormula (Formula o _)) = o
 
 data Binder = Binder Offset Local (Maybe Type)

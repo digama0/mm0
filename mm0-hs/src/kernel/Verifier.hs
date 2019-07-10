@@ -8,11 +8,13 @@ import Data.List
 import Data.Bits
 import Data.Maybe
 import Data.Char
+import Data.Default
 import qualified Control.Monad.Trans.State as ST
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Environment
@@ -54,11 +56,14 @@ data VGlobal = VGlobal {
   -- | The collection of outputs (for IO)
   vOutput :: Q.Seq String }
 
+instance Default VGlobal where
+  def = VGlobal def def def def def def def def
+
 type GVerifyM = RWST () (Endo [String]) VGlobal (Either String)
 
 runGVerifyM :: GVerifyM a -> Environment -> Either String (a, Q.Seq String)
 runGVerifyM m e = do
-  (a, st, Endo f) <- runRWST m () $ VGlobal Q.empty M.empty Q.empty M.empty I.empty Q.empty 0 Q.empty
+  (a, st, Endo f) <- runRWST m () def
   guardError "Not all theorems have been proven" (vPos st == Q.length (eSpec e))
   case f [] of
     [] -> return (a, vOutput st)
@@ -70,10 +75,10 @@ report a m = catchError m (\e -> tell (Endo (e :)) >> return a)
 checkNotStrict :: VGlobal -> SortID -> Either String ()
 checkNotStrict g t = do
   (t, sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID t)
-  guardError ("cannot bind variable; sort '" ++ t ++ "' is strict") (not (sStrict sd))
+  guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd))
 
-withContext :: MonadError String m => String -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("while checking " ++ s ++ ":\n" ++ e))
+withContext :: MonadError String m => T.Text -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("while checking " ++ T.unpack s ++ ":\n" ++ e))
 
 verify :: B.ByteString -> Environment -> Proofs -> Either String (Q.Seq String)
 verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
@@ -83,20 +88,20 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     SSort x' sd | x == x' -> modify (\g -> g {
       vSorts = vSorts g Q.|> (x, sd),
       vSortIx = M.insert x (SortID (Q.length (vSorts g))) (vSortIx g) })
-    e -> throwError ("incorrect step 'sort " ++ x ++ "', found " ++ show e)
+    e -> throwError ("incorrect step 'sort " ++ T.unpack x ++ "', found " ++ show e)
   verifyCmd (StepTerm x) = step >>= \case
     SDecl x' (DTerm args ty) | x == x' -> modify (\g -> g {
       vTerms = vTerms g Q.|> translateTerm (vSortIx g) x args ty,
       vTermIx = M.insert x (TermID (Q.length (vTerms g))) (vTermIx g) })
-    e -> throwError ("incorrect step 'term " ++ x ++ "', found " ++ show e)
+    e -> throwError ("incorrect step 'term " ++ T.unpack x ++ "', found " ++ show e)
   verifyCmd (StepAxiom x) = step >>= \case
     SDecl x' (DAxiom args hs ret) | x == x' -> modify (\g -> g {
       vThms = vThms g Q.|> translateAxiom (vSortIx g) (vTermIx g) x args hs ret })
-    e -> throwError ("incorrect step 'axiom " ++ x ++ "', found " ++ show e)
+    e -> throwError ("incorrect step 'axiom " ++ T.unpack x ++ "', found " ++ show e)
   verifyCmd (ProofDef x vs ret ds def st) = do
     g <- get
     let n = TermID (Q.length (vTerms g))
-    let name = fromMaybe (show n) x
+    let name = fromMaybe (T.pack $ show n) x
     report () $ withContext name $ lift $ checkDef g vs ret ds def
     withContext name $ when st $ step >>= \case
       SDecl x' (DDef vs' ret' o) | x == Just x' ->
@@ -110,7 +115,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
   verifyCmd (ProofThm x vs hs ret unf ds pf st) = do
     g <- get
     let n = ThmID (Q.length (vThms g))
-    let name = fromMaybe (show n) x
+    let name = fromMaybe (T.pack $ show n) x
     report () $ withContext name $ lift $ checkThm g vs hs ret unf ds pf
     withContext name $ when st $ step >>= \case
       SThm x' vs' hs' ret' | x == Just x' ->
@@ -139,7 +144,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
       Just (VBound _) -> return ()
       _ -> throwError "undeclared variable in dependency") rs
     (ri, sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID ret)
-    guardError ("cannot declare term for pure sort '" ++ ri ++ "'") (not (sPure sd))
+    guardError ("cannot declare term for pure sort '" ++ T.unpack ri ++ "'") (not (sPure sd))
     mapM_ (checkNotStrict g) ds
     let ctx' = ctx <> Q.fromList (VBound <$> ds)
     (ret', rs') <- defcheckExpr (vTerms g) ctx' def
@@ -159,7 +164,8 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
       Just (VReg s vs) -> return (s, S.fromList vs)
     defcheckExpr' (VApp t es) = do
       VTermData _ args (VType ret rs) <- fromJustError "unknown term in def expr" (terms Q.!? ofTermID t)
-      (m, ev) <- withContext (showVExpr terms (VApp t es)) $ defcheckArgs args es
+      (m, ev) <- withContext (T.pack (showVExpr terms (VApp t es))) $
+        defcheckArgs args es
       return (ret, ev <> S.fromList ((\v -> m I.! ofVarID v) <$> rs))
 
     defcheckArgs :: [VBinder] -> [VExpr] -> Either String (I.IntMap VarID, S.Set VarID)
@@ -237,7 +243,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
   typecheckProvable g ctx expr = do
     s <- typecheckExpr (vTerms g) ctx expr
     (si, sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID s)
-    guardError ("non-provable sort '" ++ si ++ "' in theorem") (sProvable sd)
+    guardError ("non-provable sort '" ++ T.unpack si ++ "' in theorem") (sProvable sd)
 
   unfoldExpr :: I.IntMap VDefData -> S.Set TermID -> VExpr -> ST.StateT (Q.Seq VBinder) (Either String) VExpr
   unfoldExpr defs u = go where
@@ -392,7 +398,7 @@ verifyProof g = \ctx hs ds cs -> do
   verifyTree (VThm t ts) = do
     vs' <- mapM verifyTree ts
     VThmData x args dv hs ret <- fromJustError "theorem not found" (vThms g Q.!? ofThmID t)
-    withContext ("step " ++ fromMaybe (show t) x) $ do
+    withContext ("step " <> fromMaybe (T.pack $ show t) x) $ do
       (es, hs', b) <- verifyArgs Q.empty (Q.<|) args vs'
       let subst = Q.fromList es
       mapM_ (\(VarID v1, VarID v2) ->
@@ -461,18 +467,18 @@ verifyInputString spectxt e = do
   procs <- foldM
     (\m (s, f) -> do
       TermID n <- fromJustError
-        ("term '" ++ s ++ "' not found for string i/o") (vTermIx g M.!? s)
+        ("term '" ++ T.unpack s ++ "' not found for string i/o") (vTermIx g M.!? s)
       return (I.insert n f m))
     I.empty proclist
   lift $ unify (vTerms g) (vDefs g) procs (trExpr (vTermIx g) M.empty e)
   where
-  proclist :: [(String, (VExpr -> StringInM) -> [VExpr] -> StringInM)]
+  proclist :: [(T.Text, (VExpr -> StringInM) -> [VExpr] -> StringInM)]
   proclist =
     ("s0", \_ [] s -> return s) :
     ("s1", \f [e] -> f e) :
     ("sadd", \f [e1, e2] s -> f e1 s >>= f e2) :
     ("ch", \f [e1, e2] s -> f e1 s >>= f e2) :
-    map (\i -> ('x' : toHex i : [],
+    map (\i -> (T.pack ('x' : toHex i : []),
       \_ [] s -> case spUncons s of
         Nothing -> throwError "EOF"
         Just (c, s') -> do
@@ -513,14 +519,14 @@ verifyOutputString s e = do
   procs <- foldM
     (\m (s, f) -> do
       TermID n <- fromJustError
-        ("term '" ++ s ++ "' not found for string i/o") (vTermIx g M.!? s)
+        ("term '" ++ T.unpack s ++ "' not found for string i/o") (vTermIx g M.!? s)
       return (I.insert n f m))
     I.empty proclist
   lift (toString (vTerms g) (vDefs g) procs (trExpr (vTermIx g) M.empty e)) >>= \case
     OString out -> modify (\g -> g {vOutput = vOutput g Q.|> out []})
     OHex _ -> throwError "impossible, check axioms"
   where
-  proclist :: [(String, (VExpr -> StringOutM) -> [VExpr] -> StringOutM)]
+  proclist :: [(T.Text, (VExpr -> StringOutM) -> [VExpr] -> StringOutM)]
   proclist =
     ("s0", \_ [] -> return (OString id)) :
     ("s1", \f [e] -> f e) :
@@ -533,7 +539,7 @@ verifyOutputString s e = do
             OString (chr (fromIntegral (shiftL h1 4 .|. h2)) :)
           app _ _ = error "impossible, check axioms" in
       app <$> f e1 <*> f e2) :
-    map (\i -> ('x' : toHex i : [], \_ [] -> return (OHex i))) [0..15]
+    map (\i -> (T.pack ('x' : toHex i : []), \_ [] -> return (OHex i))) [0..15]
 
   toString :: Q.Seq VTermData -> I.IntMap VDefData ->
     I.IntMap ((VExpr -> StringOutM) -> [VExpr] -> StringOutM) ->
@@ -571,7 +577,7 @@ showsVExpr terms = go 0 where
 
   showTerm :: TermID -> ShowS
   showTerm t r = case terms Q.!? ofTermID t of
-    Just (VTermData (Just x) _ _) -> x ++ r
+    Just (VTermData (Just x) _ _) -> T.unpack x ++ r
     Just (VTermData Nothing _ _) -> showsPrec 0 t r
     Nothing -> '?' : showsPrec 0 t r
 

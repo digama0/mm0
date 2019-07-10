@@ -1,4 +1,4 @@
-module MathParser(parseFormula, parseFormulaProv) where
+module MathParser(parseFormula, parseFormulaProv, appPrec) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.Reader (ReaderT)
@@ -10,6 +10,7 @@ import Data.Maybe
 import qualified Data.IntMap.Strict as I
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as C
 import AST
 import Environment
@@ -23,7 +24,7 @@ parseError :: String -> ParserM a
 parseError s = do
   tks <- get
   throwError ("math parse error: " ++ s ++ "; at \"" ++
-    concatMap (++ " ") (take 5 tks) ++ "...\"")
+    concatMap ((++ " ") . T.unpack) (take 5 tks) ++ "...\"")
 
 parseFormulaWith :: ((SExpr, Ident) -> ParserM SExpr) -> Formula -> LocalCtxM SExpr
 parseFormulaWith m (Formula fmla) = do
@@ -52,7 +53,7 @@ tkCond :: (Token -> Bool) -> ParserM a -> ParserM a -> ParserM a
 tkCond p yes no = tkMatch (\t -> if p t then Just () else Nothing) (\_ _ -> yes) no
 
 tk :: Token -> ParserM ()
-tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ t ++ "'"))
+tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ T.unpack t ++ "'"))
 
 parseVar :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
 parseVar no = do
@@ -71,15 +72,15 @@ checkPrec e p v m = do
 coerce :: Ident -> (SExpr, Ident) -> ParserM SExpr
 coerce s2 (sexp, s1) = do
   pe <- lift readPE
-  c <- fromJustError ("type error, expected " ++ s2 ++
-    ", got " ++ show sexp ++ ": " ++ s1) (getCoe s1 s2 pe)
+  c <- fromJustError ("type error, expected " ++ T.unpack s2 ++
+    ", got " ++ show sexp ++ ": " ++ T.unpack s1) (getCoe s1 s2 pe)
   return (c sexp)
 
 coerceProv :: (SExpr, Ident) -> ParserM (SExpr, Ident)
 coerceProv (sexp, s) = do
   pe <- lift readPE
   (s2, c) <- fromJustError ("type error, expected provable sort, got " ++
-    show sexp ++ ": " ++ s) (getCoeProv s pe)
+    show sexp ++ ": " ++ T.unpack s) (getCoeProv s pe)
   return (c sexp, s2)
 
 parseLiterals :: [Ident] -> [PLiteral] -> ParserM [SExpr]

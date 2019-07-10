@@ -1,7 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
 module CParser (parseAST, parseAST', PosState(..),
-  ParseASTError, ParseASTErrors, errorOffset) where
+  ParseASTError, ParseASTErrors, errorOffset, initialPosState) where
 
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad
@@ -159,8 +158,8 @@ formula :: Parser Formula
 formula = lexeme $ between (single '$') (single '$') $
   liftA2 Formula getOffset (takeWhileP Nothing (/= '$'))
 
-depType :: Parser DepType
-depType = (\(t:vs) -> DepType t vs) <$> some (atPos ident)
+depType :: Parser AtDepType
+depType = (\(t:vs) -> AtDepType t vs) <$> some (atPos ident)
 
 ptype :: Parser Type
 ptype = (TFormula <$> formula) <|> (TType <$> depType)
@@ -231,7 +230,7 @@ declStmt = do
   checkBinders dk last (Binder o _ Nothing : bis) =
     if dk == DKTerm then [(o, "Cannot infer binder type")] else [] ++
     checkBinders dk last bis
-  checkBinders dk off (Binder o2 l (Just (TType (DepType _ ts))) : bis) =
+  checkBinders dk off (Binder o2 l (Just (TType (AtDepType _ ts))) : bis) =
     maybe [] (\o ->
       [(o, "Hypotheses must come after term variables"),
        (o2, "All term variables must come before all hypotheses")]) off ++
@@ -266,9 +265,10 @@ notation :: Parser (Maybe Notation)
 notation = delimNota <|> fixNota <|> coeNota <|> genNota where
 
   delimNota :: Parser (Maybe Notation)
-  delimNota = kw "delimiter" >> commit
-    (between (single '$') (symbol "$")
-      (space *> (Delimiter <$> delims)))
+  delimNota = do
+    kw "delimiter"
+    let p = between (single '$') (symbol "$") (space *> delims)
+    commit $ liftA2 Delimiter p (optional p)
     where
     delims :: Parser [Char]
     delims = do

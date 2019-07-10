@@ -1,10 +1,11 @@
 module Environment where
 
 import Data.Default
+import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 
-type Ident = String
+type Ident = T.Text
 
 data DepType = DepType {
   dSort :: Ident,
@@ -12,13 +13,13 @@ data DepType = DepType {
 
 instance Show DepType where
   showsPrec _ (DepType t ts) r =
-    t ++ foldr (\t' r -> ' ' : t' ++ r) r ts
+    T.unpack t ++ foldr (\t' r -> ' ' : T.unpack t' ++ r) r ts
 
 data PBinder = PBound Ident Ident | PReg Ident DepType
 
 instance Show PBinder where
-  showsPrec n (PBound v t) r = v ++ ": " ++ t ++ r
-  showsPrec n (PReg v t) r = v ++ ": " ++ showsPrec n t r
+  showsPrec n (PBound v t) r = T.unpack v ++ ": " ++ T.unpack t ++ r
+  showsPrec n (PReg v t) r = T.unpack v ++ ": " ++ showsPrec n t r
 
 binderName :: PBinder -> Ident
 binderName (PBound v _) = v
@@ -31,10 +32,10 @@ binderType (PReg _ ty) = ty
 data SExpr = SVar Ident | App Ident [SExpr] deriving (Eq)
 
 instance Show SExpr where
-  showsPrec n (SVar v) r = v ++ r
-  showsPrec n (App v []) r = v ++ r
+  showsPrec n (SVar v) r = T.unpack v ++ r
+  showsPrec n (App v []) r = T.unpack v ++ r
   showsPrec n (App v vs) r =
-    let f r = v ++ foldr (\e r -> ' ' : showsPrec 1 e r) r vs in
+    let f r = T.unpack v ++ foldr (\e r -> ' ' : showsPrec 1 e r) r vs in
     if n == 0 then f r else '(' : f (')' : r)
 
 data Decl =

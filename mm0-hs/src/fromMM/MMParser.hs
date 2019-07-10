@@ -14,6 +14,8 @@ import qualified Text.Read.Lex as L
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.Set as S
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Environment (SortData(..), SExpr(..))
 import MMTypes
 import Util
@@ -21,8 +23,8 @@ import Util
 parseMM :: B.ByteString -> Either String MMDatabase
 parseMM s = snd <$> runFromMMM (process (toks s))
 
-toks :: B.ByteString -> [String]
-toks = filter (not . null) . map C.unpack .
+toks :: B.ByteString -> [T.Text]
+toks = filter (not . T.null) . map (T.decodeLatin1 . B.toStrict) .
   C.splitWith (`elem` [' ', '\n', '\t', '\r'])
 
 data Sym = Const Const | Var Var deriving (Show)
@@ -39,7 +41,7 @@ type Scope = [([(Label, Hyp)], [[Label]], S.Set Label)]
 data MMParserState = MMParserState {
   mParser :: Parser,
   mVMap :: M.Map Var (Sort, Label),
-  mSyms :: M.Map String Sym,
+  mSyms :: M.Map T.Text Sym,
   mScope :: Scope,
   mDB :: MMDatabase }
 
@@ -57,8 +59,8 @@ modifyMeta f = modifyDB $ \db -> db {mMeta = f (mMeta db)}
 modifyND :: (MMNatDed -> MMNatDed) -> FromMMM ()
 modifyND f = modifyMeta $ \m -> m {mND = f <$> mND m}
 
-withContext :: MonadError String m => String -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("at " ++ s ++ ": " ++ e))
+withContext :: MonadError String m => T.Text -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("at " ++ T.unpack s ++ ": " ++ e))
 
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
 runFromMMM m = (\(a, t) -> (a, mDB t)) <$> runStateT m def
@@ -124,8 +126,8 @@ build db vars = go where
     let (hs'', m'') = insertHyps hs hs' m' in
     go sc (hs'', foldl' (insertDVs (`S.member` vars)) ds' ds) m''
 
-  insertHyps :: [(Label, Hyp)] -> [(VarStatus, String)] ->
-    (M.Map Var Int, Int) -> ([(VarStatus, String)], (M.Map Var Int, Int))
+  insertHyps :: [(Label, Hyp)] -> [(VarStatus, T.Text)] ->
+    (M.Map Var Int, Int) -> ([(VarStatus, T.Text)], (M.Map Var Int, Int))
   insertHyps [] hs' m = (hs', m)
   insertHyps ((x, EHyp _ _):hs) hs' m = insertHyps hs ((VSHyp, x):hs') m
   insertHyps ((x, VHyp s v):hs) hs' m = (hs'', (M.insert v n m', n+1)) where
@@ -142,7 +144,7 @@ addStmt x st = modifyDB $ \db -> db {
   mDecls = mDecls db Q.|> Stmt x,
   mStmts = M.insert x (Q.length (mDecls db), st) (mStmts db) }
 
-process :: [String] -> FromMMM ()
+process :: [T.Text] -> FromMMM ()
 process [] = return ()
 process ("$(" : "$j" : ss) = processJ (parseJ ss)
 process ("$(" : ss) = readUntil "$)" ss >>= process . snd
@@ -190,14 +192,14 @@ process (x : "$p" : ss) = do
     pr <- lift $ trProof fr (mDB t) p
     addThm x f fr m (Just pr)
   process ss2
-process (x : ss) = throwError ("wtf " ++ x ++ show (take 100 ss))
+process (x : ss) = throwError ("wtf " ++ T.unpack x ++ show (take 100 ss))
 
 addThm :: Label -> Fmla -> Frame -> M.Map Var Int ->
   Maybe ([Label], Proof) -> FromMMM ()
 addThm x f@(Const s : _) fr m p = do
   db <- gets mDB
   case mSorts db M.!? s of
-    Nothing -> throwError ("sort '" ++ s ++ "' not declared")
+    Nothing -> throwError ("sort '" ++ T.unpack s ++ "' not declared")
     Just (Just s', _) -> do
       (_, e) <- parseFmla f
       addStmt x (Thm fr (s', e) p)
@@ -210,22 +212,22 @@ addThm x f@(Const s : _) fr m p = do
       e <- parseFmla f
       addStmt x (Term fr e p)
 
-readUntil :: String -> [String] -> FromMMM ([String], [String])
+readUntil :: T.Text -> [T.Text] -> FromMMM ([T.Text], [T.Text])
 readUntil u = go id where
   go f [] = throwError "unclosed command"
   go f ("$(" : ss) = readUntil "$)" ss >>= go f . snd
   go f (s : ss) | s == u = return (f [], ss)
   go f (s : ss) = go (f . (s:)) ss
 
-readMath :: String -> [String] -> FromMMM (Fmla, [String])
+readMath :: T.Text -> [T.Text] -> FromMMM (Fmla, [T.Text])
 readMath u ss = do
   (sy, ss') <- readUntil u ss
   t <- get
   f <- mapM (\s ->
-    fromJustError ("unknown symbol '" ++ s ++ "'") (mSyms t M.!? s)) sy
+    fromJustError ("unknown symbol '" ++ T.unpack s ++ "'") (mSyms t M.!? s)) sy
   return (f, ss')
 
-readProof :: [String] -> FromMMM ([String], [String])
+readProof :: [T.Text] -> FromMMM ([T.Text], [T.Text])
 readProof = go id where
   go f [] = throwError "unclosed $p"
   go f ("$." : ss) = return (f [], ss)
@@ -260,28 +262,28 @@ numberize (c : s) _ = NError
 
 data HeapEl = HeapEl Proof | HTerm Label Int | HThm Label Int deriving (Show)
 
-trProof :: Frame -> MMDatabase -> [String] -> Either String ([Label], Proof)
+trProof :: Frame -> MMDatabase -> [T.Text] -> Either String ([Label], Proof)
 trProof (hs, _) db ("(" : p) =
   processPreloads p (mkHeap hs 0 Q.empty) 0 id where
   mkHeap :: [(VarStatus, Label)] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
   mkHeap [] _ heap = heap
   mkHeap ((_, h):hs) n heap = mkHeap hs (n+1) (heap Q.|> HeapEl (PHyp h n))
 
-  processPreloads :: [String] -> Q.Seq HeapEl -> Int ->
+  processPreloads :: [T.Text] -> Q.Seq HeapEl -> Int ->
     ([Label] -> [Label]) -> Either String ([Label], Proof)
   processPreloads [] heap sz ds = throwError ("unclosed parens in proof: " ++ show ("(" : p))
   processPreloads (")" : blocks) heap sz ds = do
-    pt <- processBlocks (numberize (join blocks) 0) heap 0 []
+    pt <- processBlocks (numberize (join (T.unpack <$> blocks)) 0) heap 0 []
     return (ds [], pt)
   processPreloads (st : p) heap sz ds = case getStmtM db st of
-    Nothing -> throwError ("statement " ++ st ++ " not found")
-    Just (_, Hyp (VHyp s v)) ->
-      processPreloads p (heap Q.|> HeapEl (PDummy sz)) (sz + 1) (ds . (s :))
-    Just (_, Hyp (EHyp _ _)) -> throwError "$e found in paren list"
-    Just (_, Term (hs, _) _ _) ->
-      processPreloads p (heap Q.|> HTerm st (length hs)) sz ds
-    Just (_, Thm (hs, _) _ _) ->
-      processPreloads p (heap Q.|> HThm st (length hs)) sz ds
+      Nothing -> throwError ("statement " ++ T.unpack st ++ " not found")
+      Just (_, Hyp (VHyp s v)) ->
+        processPreloads p (heap Q.|> HeapEl (PDummy sz)) (sz + 1) (ds . (s :))
+      Just (_, Hyp (EHyp _ _)) -> throwError "$e found in paren list"
+      Just (_, Term (hs, _) _ _) ->
+        processPreloads p (heap Q.|> HTerm st (length hs)) sz ds
+      Just (_, Thm (hs, _) _ _) ->
+        processPreloads p (heap Q.|> HThm st (length hs)) sz ds
 
   popn :: Int -> [Proof] -> Either String ([Proof], [Proof])
   popn = go [] where
@@ -303,49 +305,50 @@ trProof (hs, _) db ("(" : p) =
       Nothing -> throwError "proof backref index out of range"
       Just (HeapEl pt) -> processBlocks p heap sz (pt : pts)
       Just (HTerm x n) -> do
-        (es, pts') <- withContext (show p) (popn n pts)
+        (es, pts') <- withContext (T.pack $ show p) (popn n pts)
         processBlocks p heap sz (PTerm x es : pts')
       Just (HThm x n) -> do
-        (es, pts') <- withContext (show p) (popn n pts)
+        (es, pts') <- withContext (T.pack $ show p) (popn n pts)
         processBlocks p heap sz (PThm x es : pts')
 trProof _ _ _ = throwError "normal proofs not supported"
 
 data JComment =
-    JKeyword String JComment
-  | JString String JComment
+    JKeyword T.Text JComment
+  | JString T.Text JComment
   | JSemi JComment
-  | JRest [String]
+  | JRest [T.Text]
   | JError String
 
-parseJ :: [String] -> JComment
+parseJ :: [T.Text] -> JComment
 parseJ [] = JError "unclosed $j comment"
 parseJ ("$)" : ss) = JRest ss
-parseJ (('\'' : s) : ss) = parseJString s id ss where
-  parseJString [] f [] = JError "unclosed $j string"
-  parseJString [] f (s:ss) = parseJString s (f . (' ' :)) ss
-  parseJString ('\\' : 'n' : s) f ss = parseJString s (f . ('\n' :)) ss
-  parseJString ('\\' : '\\' : s) f ss = parseJString s (f . ('\\' :)) ss
-  parseJString ('\\' : '\'' : s) f ss = parseJString s (f . ('\'' :)) ss
-  parseJString ('\\' : s) f ss = JError ("bad escape sequence '\\" ++ s ++ "'")
-  parseJString ('\'' : s) f ss = JString (f []) (parseJ (s : ss))
-  parseJString (c : s) f ss = parseJString s (f . (c :)) ss
-parseJ (s : ss) = case P.readP_to_S L.lex s of
+parseJ (t : ss) = case T.unpack t of
+  '\'' : s -> parseJString s id ss where
+    parseJString [] f [] = JError "unclosed $j string"
+    parseJString [] f (s:ss) = parseJString (T.unpack s) (f . (' ' :)) ss
+    parseJString ('\\' : 'n' : s) f ss = parseJString s (f . ('\n' :)) ss
+    parseJString ('\\' : '\\' : s) f ss = parseJString s (f . ('\\' :)) ss
+    parseJString ('\\' : '\'' : s) f ss = parseJString s (f . ('\'' :)) ss
+    parseJString ('\\' : s) f ss = JError ("bad escape sequence '\\" ++ s ++ "'")
+    parseJString ('\'' : s) f ss = JString (T.pack (f [])) (parseJ (T.pack s : ss))
+    parseJString (c : s) f ss = parseJString s (f . (c :)) ss
+  s -> case P.readP_to_S L.lex s of -- TODO: better parser
     [(L.EOF, _)] -> parseJ ss
-    [(L.Ident x, s')] -> JKeyword x (parseJ (s' : ss))
-    [(L.Punc ";", s')] -> JSemi (parseJ (s' : ss))
-    _ -> JError ("parse failed \"" ++ s ++ "\"" ++ head ss)
+    [(L.Ident x, s')] -> JKeyword (T.pack x) (parseJ (T.pack s' : ss))
+    [(L.Punc ";", s')] -> JSemi (parseJ (T.pack s' : ss))
+    _ -> JError ("parse failed \"" ++ s ++ "\"" ++ T.unpack (head ss))
 
-getManyJ :: String -> JComment -> ([String] -> FromMMM ()) -> FromMMM ()
+getManyJ :: String -> JComment -> ([T.Text] -> FromMMM ()) -> FromMMM ()
 getManyJ name j f = go j id where
   go (JString s j) g = go j (g . (s :))
   go (JSemi j) g = f (g []) >> processJ j
   go _ _ = throwError ("bad $j '" ++ name ++ "' command")
 
-processManyJ :: String -> JComment -> (String -> FromMMM ()) -> FromMMM ()
+processManyJ :: T.Text -> JComment -> (T.Text -> FromMMM ()) -> FromMMM ()
 processManyJ name j f = go j where
   go (JString s j) = f s >> go j
   go (JSemi j) = processJ j
-  go _ = throwError ("bad $j '" ++ name ++ "' command")
+  go _ = throwError ("bad $j '" ++ T.unpack name ++ "' command")
 
 processJ :: JComment -> FromMMM ()
 processJ (JKeyword "syntax" j) = case j of
@@ -373,7 +376,7 @@ processJ (JKeyword "equality" j) = case j of
   JString x (JKeyword "from"
     (JString refl (JString sym (JString trans (JSemi j))))) -> do
       db <- gets mDB
-      s <- fromJustError ("equality '" ++ x ++ "' has the wrong shape") (do
+      s <- fromJustError ("equality '" ++ T.unpack x ++ "' has the wrong shape") (do
         (_, Term ([(_, v), _], _) _ _) <- getStmtM db x
         (_, Hyp (VHyp s _)) <- getStmtM db v
         return s)
@@ -385,14 +388,14 @@ processJ (JKeyword "equality" j) = case j of
 processJ (JKeyword "congruence" j) =
   processManyJ "congruence" j $ \x -> do
     db <- gets mDB
-    t <- fromJustError ("congruence '" ++ x ++ "' has the wrong shape") (do
+    t <- fromJustError ("congruence '" ++ T.unpack x ++ "' has the wrong shape") (do
       (_, Thm _ (_, App _ [App t _, _]) _) <- getStmtM db x
       return t)
     modifyMeta $ \m -> m {mCongr = M.insert t x (mCongr m)}
 processJ (JKeyword "condequality" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j))) -> do
     db <- gets mDB
-    s <- fromJustError ("conditional equality '" ++ x ++ "' has the wrong shape") (do
+    s <- fromJustError ("conditional equality '" ++ T.unpack x ++ "' has the wrong shape") (do
       (_, Term ([(_, v), _, _], _) _ _) <- getStmtM db x
       (_, Hyp (VHyp s _)) <- getStmtM db v
       return s)
@@ -405,7 +408,7 @@ processJ (JKeyword "condcongruence" j) =
 processJ (JKeyword "notfree" j) = case j of
   JString x (JKeyword "from" (JString th (JSemi j))) -> do
     db <- gets mDB
-    s <- fromJustError ("not-free term '" ++ x ++ "' has the wrong shape") (do
+    s <- fromJustError ("not-free term '" ++ T.unpack x ++ "' has the wrong shape") (do
       (_, Term ([(_, v), (_, a)], _) _ _) <- getStmtM db x
       (_, Hyp (VHyp s1 _)) <- getStmtM db v
       (_, Hyp (VHyp s2 _)) <- getStmtM db a
@@ -422,26 +425,26 @@ processJ (JKeyword "natded_assume" j) =
   getManyJ "natded_assume" j $ \xs -> do
     db <- gets mDB
     forM_ xs $ \x ->
-      fromJustError ("natded_assume stmt '" ++ x ++ "' not found") (getStmtM db x)
+      fromJustError ("natded_assume stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndAssume = ndAssume nd ++ xs}
 processJ (JKeyword "natded_weak" j) =
   getManyJ "natded_weak" j $ \xs -> do
     db <- gets mDB
     forM_ xs $ \x ->
-      fromJustError ("natded_weak stmt '" ++ x ++ "' not found") (getStmtM db x)
+      fromJustError ("natded_weak stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndWeak = ndWeak nd ++ xs}
 processJ (JKeyword "natded_cut" j) =
   getManyJ "natded_cut" j $ \xs -> do
     db <- gets mDB
     forM_ xs $ \x ->
-      fromJustError ("natded_cut stmt '" ++ x ++ "' not found") (getStmtM db x)
+      fromJustError ("natded_cut stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
     modifyND $ \nd -> nd {ndCut = ndCut nd ++ xs}
 processJ (JKeyword "natded_true" j) = case j of
   JString x (JKeyword "with" j) ->
     getManyJ "natded_true" j $ \xs -> do
       db <- gets mDB
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_true stmt '" ++ x ++ "' not found") (getStmtM db x)
+        fromJustError ("natded_true stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndTrue = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndTrue nd)}
   _ -> throwError "bad $j 'natded_true' command"
@@ -450,7 +453,7 @@ processJ (JKeyword "natded_imp" j) = case j of
     getManyJ "natded_imp" j $ \xs -> do
       db <- gets mDB
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_imp stmt '" ++ x ++ "' not found") (getStmtM db x)
+        fromJustError ("natded_imp stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndImp = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndImp nd)}
   _ -> throwError "bad $j 'natded_imp' command"
@@ -459,7 +462,7 @@ processJ (JKeyword "natded_and" j) = case j of
     getManyJ "natded_and" j $ \xs -> do
       db <- gets mDB
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_and stmt '" ++ x ++ "' not found") (getStmtM db x)
+        fromJustError ("natded_and stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndAnd = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndAnd nd)}
   _ -> throwError "bad $j 'natded_and' command"
@@ -468,7 +471,7 @@ processJ (JKeyword "natded_or" j) = case j of
     getManyJ "natded_or" j $ \xs -> do
       db <- gets mDB
       forM_ (x:xs) $ \x ->
-        fromJustError ("natded_or stmt '" ++ x ++ "' not found") (getStmtM db x)
+        fromJustError ("natded_or stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndOr = Just $
         maybe (x, xs) (\(x', xs') -> (x', xs' ++ xs)) (ndOr nd)}
   _ -> throwError "bad $j 'natded_or' command"
@@ -477,7 +480,7 @@ processJ (JKeyword "natded_not" j) = case j of
     getManyJ "natded_not" j $ \xs -> do
       db <- gets mDB
       forM_ (not:fal:xs) $ \x ->
-        fromJustError ("natded_not stmt '" ++ x ++ "' not found") (getStmtM db x)
+        fromJustError ("natded_not stmt '" ++ T.unpack x ++ "' not found") (getStmtM db x)
       modifyND $ \nd -> nd {ndNot = Just $
         maybe (not, fal, xs) (\(x', f', xs') -> (x', f', xs' ++ xs)) (ndNot nd)}
   _ -> throwError "bad $j 'natded_not' command"
@@ -511,15 +514,15 @@ processJ (JKeyword "restatement" j) = case j of
   JString ax (JKeyword "of" (JString th (JSemi j))) -> do
     db <- gets mDB
     (n, sax) <- case getStmtM db ax of
-      Nothing -> throwError ("axiom '" ++ ax ++ "' not found")
+      Nothing -> throwError ("axiom '" ++ T.unpack ax ++ "' not found")
       Just (n, Thm fr e Nothing) -> return (n, (fr, e))
-      _ -> throwError ("'" ++ ax ++ "' is not an axiom")
+      _ -> throwError ("'" ++ T.unpack ax ++ "' is not an axiom")
     case getStmtM db th of
-      Nothing -> throwError ("theorem '" ++ ax ++ "' not found")
+      Nothing -> throwError ("theorem '" ++ T.unpack ax ++ "' not found")
       Just (_, Thm fr e _) ->
-        guardError ("restatement '" ++ ax ++ "' does not match '" ++ th ++ "'") $
+        guardError ("restatement '" ++ T.unpack ax ++ "' does not match '" ++ T.unpack th ++ "'") $
           sax == (fr, e)
-      _ -> throwError ("'" ++ th ++ "' is not an axiom/theorem")
+      _ -> throwError ("'" ++ T.unpack th ++ "' is not an axiom/theorem")
     modifyDB $ \db -> db {mStmts = M.insert ax (n, Alias th) $ mStmts db}
     processJ j
   _ -> throwError "bad $j 'restatement' command"
@@ -541,7 +544,7 @@ ptEmpty = PT M.empty M.empty Nothing
 
 ptInsert :: M.Map Var (Sort, Label) -> ([MMExpr] -> MMExpr) -> Fmla -> Parser -> Parser
 ptInsert vm x (Const s : f) = insert1 s f where
-  insert1 :: String -> [Sym] -> Parser -> Parser
+  insert1 :: T.Text -> [Sym] -> Parser -> Parser
   insert1 i f = M.alter (Just . insertPT f . fromMaybe ptEmpty) i
   insertPT :: [Sym] -> ParseTrie -> ParseTrie
   insertPT [] (PT cs vs Nothing) = PT cs vs (Just (s, x))

@@ -3,6 +3,7 @@ module MMClosure (closure) where
 import Control.Monad.State hiding (liftIO)
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Environment (SExpr(..))
 import MMTypes
 
@@ -30,7 +31,7 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
           mapM_ (\(ds, p) -> checkProof p) pr
         Just (_, Hyp (VHyp s _)) -> addSort s
         Just (_, Hyp (EHyp _ e)) -> checkExpr e
-        Nothing -> error $ "statement " ++ x ++ " not found in the MM file"
+        Nothing -> error $ "statement " ++ T.unpack x ++ " not found in the MM file"
 
   checkHyp :: (VarStatus, Label) -> State (S.Set Sort, S.Set Label) ()
   checkHyp (_, x) = checkStmt x >> case snd $ getStmt db x of

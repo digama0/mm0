@@ -1,44 +1,43 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module CElaborator (elaborate, ErrorLevel(..), ElabError(..)) where
 
-import Data.List
-import Data.Maybe
-import Data.Default
 import Control.Monad.Fail
 import Control.Monad.State
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
+import Data.List
+import Data.Bits
+import Data.Maybe
+import Data.Word8
+import Data.Default
 import qualified Data.IntMap as I
 import qualified Data.HashMap.Strict as H
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Vector.Unboxed as U
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Text as T
 import Text.Megaparsec.Error
 import CParser (ParseASTError, PosState, errorOffset)
 import CAST
-import CTypes
+import CEnv
+import CMathParser
 import Util
-
-toElabError :: ParseASTError -> ElabError
-toElabError e = ElabError ELError (errorOffset e) (errorOffset e)
-  (T.pack (parseErrorTextPretty e)) []
 
 elaborate :: [ParseASTError] -> AST -> IO (Env, [ElabError])
 elaborate errs ast = do
-  (_, env, errs) <- runElab (mapM_ elabAtStmt ast) (toElabError <$> errs)
+  (_, env, errs) <- runElab (mapM_ elabStmt ast) (toElabError <$> errs)
   return (env, errs)
 
-elabAtStmt :: AtPos Stmt -> Elab ()
-elabAtStmt (AtPos pos s) = putHere pos >> resuming (elabStmt s)
-
-elabStmt :: Stmt -> ElabM ()
-elabStmt (Sort px x sd) = addSort px x sd
-elabStmt (Decl vis dk px x bis ret v) = addDecl vis dk px x bis ret v
-elabStmt (Notation (Delimiter cs)) = lift $ addDelimiters cs
-elabStmt (Notation (Prefix px x tk prec)) = addPrefix px x tk prec
-elabStmt (Notation (Infix r px x tk prec)) = addInfix r px x tk prec
-elabStmt s = report ELWarning "unimplemented"
+elabStmt :: AtPos Stmt -> Elab ()
+elabStmt (AtPos pos s) = resuming $ case s of
+  Sort px x sd -> addSort px x sd
+  Decl vis dk px x bis ret v -> addDecl vis dk px x bis ret v
+  Notation (Delimiter cs Nothing) -> lift $ addDelimiters cs cs
+  Notation (Delimiter ls (Just rs)) -> lift $ addDelimiters ls rs
+  Notation (Prefix px x tk prec) -> addPrefix px x tk prec
+  Notation (Infix r px x tk prec) -> addInfix r px x tk prec
+  _ -> reportAt pos ELWarning "unimplemented"
 
 checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
   H.HashMap T.Text v -> ElabM (v -> H.HashMap T.Text v)
@@ -56,22 +55,22 @@ addSort px x sd = do
   n <- next
   put $ env {eSorts = ins (n, px, sd)}
 
-inferFormula :: Formula -> ElabM LispVal
-inferFormula (Formula o f) = do
-  reportErr $ ElabError ELWarning (o-1) (o + T.length f + 1) "unimplemented" []
-  return (List [])
-
-addVarDeps :: [AtPos T.Text] -> ElabM ()
-addVarDeps ts =
+inferDepType :: AtDepType -> ElabM ()
+inferDepType (AtDepType (AtPos o t) ts) = do
+  lift $ resuming $ do
+    (_, sd) <- try (now >>= getSort t) >>=
+      fromJustAt o ("sort '" <> t <> "' not declared")
+    -- TODO: check sd
+    return ()
   lift $ modifyInfer $ \ic -> ic {
     icDependents = foldl' (\m (AtPos o x) ->
       H.alter (Just . maybe [o] (o:)) x m) (icDependents ic) ts }
 
-inferBinder :: Binder -> ElabM ()
-inferBinder bi@(Binder o l ty) = case ty of
+inferBinder :: T.Text -> Binder -> ElabM ()
+inferBinder x bi@(Binder o l ty) = case ty of
   Nothing -> addVar True
-  Just (TType (DepType t ts)) -> addVarDeps ts >> addVar False
-  Just (TFormula f) -> () <$ inferFormula f
+  Just (TType ty) -> inferDepType ty >> addVar False
+  Just (TFormula f) -> () <$ parseFormulaProv x f
   where
   addVar :: Bool -> ElabM ()
   addVar noType = do
@@ -83,8 +82,8 @@ inferBinder bi@(Binder o l ty) = case ty of
       Just n -> do
         ins <- checkNew ELWarning o
           ("variable '" <> n <> "' shadows previous declaration")
-          (\(Binder i _ _, _) -> i) n (icLocals ic)
-        return (ins (bi, LIOld Nothing))
+          liOffset n (icLocals ic)
+        return (ins (LIOld bi Nothing))
     lift $ modifyInfer $ \ic -> ic {icLocals = locals'}
 
 addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
@@ -92,11 +91,11 @@ addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
 addDecl vis dk px x bis ret v = do
   let (bis', ret') = unArrow bis ret
   withInfer $ do
-    mapM_ inferBinder bis'
+    mapM_ (inferBinder x) bis'
     case ret' of
       Nothing -> return ()
-      Just (TType (DepType _ ts)) -> addVarDeps ts
-      Just (TFormula f) -> () <$ inferFormula f
+      Just (TType ty) -> inferDepType ty
+      Just (TFormula f) -> () <$ parseFormulaProv x f
     return ()
   where
 
@@ -106,9 +105,13 @@ addDecl vis dk px x bis ret v = do
     go [ty] = ([], Just ty)
     go (ty:tys) = mapFst (Binder (tyOffset ty) LAnon (Just ty) :) (go tys)
 
-addDelimiters :: [Char] -> Elab ()
-addDelimiters cs =
-  modifyPE $ \e -> e {pDelims = foldl' (flip S.insert) (pDelims e) cs}
+addDelimiters :: [Char] -> [Char] -> Elab ()
+addDelimiters ls rs = modifyPE $ \e ->
+  let delims@(Delims arr) = pDelims e
+      f :: Word8 -> Char -> (Int, Word8)
+      f w c = let i = fromEnum (toEnum (fromEnum c) :: Word8)
+              in (i, (U.unsafeIndex arr i) .|. w)
+  in e { pDelims = Delims $ arr U.// ((f 1 <$> ls) ++ (f 2 <$> rs)) }
 
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
@@ -117,14 +120,14 @@ mkLiterals i p n = PVar n maxBound : mkLiterals (i-1) p (n+1)
 
 addPrefix :: Offset -> T.Text -> Const -> Prec -> ElabM ()
 addPrefix px x tk prec = do
-  (_, bis, _) <- try (getTerm x) >>=
+  (_, bis, _) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   insertPrec tk prec
   insertPrefixInfo tk (PrefixInfo (cOffs tk) x (mkLiterals (length bis) prec 0))
 
 addInfix :: Bool -> Offset -> T.Text -> Const -> Prec -> ElabM ()
 addInfix r px x tk prec = do
-  (_, bis, _) <- try (getTerm x) >>=
+  (_, bis, _) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   guardAt px ("'" <> x <> "' must be a binary operator") (length bis == 2)
   insertPrec tk prec
@@ -143,9 +146,9 @@ insertPrec (Const o tk) p = do
 checkToken :: Const -> ElabM ()
 checkToken (Const _ tk) | T.length tk == 1 = return ()
 checkToken (Const o tk) = do
-  env <- get
+  delims <- gets (pDelims . ePE)
   guardAt o ("invalid token '" <> tk <> "'")
-    (T.all (`S.notMember` pDelims (ePE env)) tk)
+    (T.all ((== 0) . delimVal delims) tk)
 
 insertPrefixInfo :: Const -> PrefixInfo -> ElabM ()
 insertPrefixInfo c@(Const o tk) ti = do

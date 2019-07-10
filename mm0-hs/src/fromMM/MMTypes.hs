@@ -4,14 +4,15 @@ import Control.Monad.Trans.State
 import Data.Maybe
 import Data.Default
 import qualified Data.Map.Strict as M
+import qualified Data.Text as T
 import qualified Data.Set as S
 import qualified Data.Sequence as Q
 import Environment (SortData, SExpr)
 
-type Const = String
-type Var = String
-type Sort = String
-type Label = String
+type Const = T.Text
+type Var = T.Text
+type Sort = T.Text
+type Label = T.Text
 type MMExpr = SExpr
 
 data Hyp = VHyp Const Var | EHyp Const MMExpr deriving (Show)

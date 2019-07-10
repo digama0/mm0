@@ -11,6 +11,7 @@ import Text.Megaparsec.Byte
 import Control.Monad.Trans.State
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as BC
+import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 import Environment (Ident)
 import ProofTypes
@@ -45,7 +46,7 @@ identRest :: Word8 -> Bool
 identRest c = isAlphaNum c || c == _underscore
 
 ident :: Parser Ident
-ident = liftA2 (:) (toChar <$> satisfy identStart)
+ident = T.pack <$> liftA2 (:) (toChar <$> satisfy identStart)
   (BC.unpack <$> takeWhileP (Just "identifier char") identRest) <* space
 
 insertSort :: Parser Ident

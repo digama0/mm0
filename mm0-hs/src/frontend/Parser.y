@@ -7,6 +7,7 @@ import Control.Monad.Except
 import Text.Read
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
+import qualified Data.Text as T
 }
 
 %monad{Alex}
@@ -61,25 +62,25 @@ Statement : SortStmt {$1}
           | NotationStmt {Notation $1}
           | InoutStmt {Inout $1}
 
-Ident : ident {$1}
-      | axiom {"axiom"}
-      | coercion {"coercion"}
-      | def {"def"}
-      | delimiter {"delimiter"}
-      | free {"free"}
-      | infix {if $1 then "infixr" else "infixl"}
-      | input {"input"}
-      | max {"max"}
-      | notation {"notation"}
-      | output {"output"}
-      | prec {"prec"}
-      | prefix {"prefix"}
-      | provable {"provable"}
-      | pure {"pure"}
-      | sort {"sort"}
-      | strict {"strict"}
-      | term {"term"}
-      | theorem {"theorem"}
+Ident : ident {T.pack $1}
+      | axiom {T.pack "axiom"}
+      | coercion {T.pack "coercion"}
+      | def {T.pack "def"}
+      | delimiter {T.pack "delimiter"}
+      | free {T.pack "free"}
+      | infix {T.pack (if $1 then "infixr" else "infixl")}
+      | input {T.pack "input"}
+      | max {T.pack "max"}
+      | notation {T.pack "notation"}
+      | output {T.pack "output"}
+      | prec {T.pack "prec"}
+      | prefix {T.pack "prefix"}
+      | provable {T.pack "provable"}
+      | pure {T.pack "pure"}
+      | sort {T.pack "sort"}
+      | strict {T.pack "strict"}
+      | term {T.pack "term"}
+      | theorem {T.pack "theorem"}
 
 SortStmt : flag(pure) flag(strict) flag(provable) flag(free)
              sort Ident ';' {Sort $6 (SortData $1 $2 $3 $4)}

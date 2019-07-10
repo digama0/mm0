@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module ToOpenTheory(writeOT, otToString) where
 
 import Prelude hiding (log)
@@ -9,6 +9,7 @@ import Control.Monad.Writer
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Environment (Ident)
 import HolTypes
 import Util
@@ -93,14 +94,14 @@ pushProv :: Monad m => Sort -> OTM m Int
 pushProv x = pushWith (\g -> otProv g M.!? x)
   (\n g -> g {otProv = M.insert x n (otProv g)}) $
   app "constTerm" [
-    app "const" [str (x ++ ".|-")],
+    app "const" [str (x <> ".|-")],
     () <$ pushSType (SType [x] "bool")]
 
 app :: Monad m => String -> [OTM m a] -> OTM m ()
 app s [] = emit [s]
 app s (m:ms) = m >> app s ms
 
-str :: Monad m => String -> OTM m ()
+str :: Monad m => T.Text -> OTM m ()
 str s = emit [show s]
 
 list :: Monad m => [OTM m a] -> OTM m ()
@@ -309,7 +310,7 @@ otDecl (HDThm x ty@(TType vs gs (GType xs r)) pr) = do
     otThms = M.insert x (ty, so, n) (otThms g),
     otHyps = mempty,
     otHypApps = mempty }
-  emit ["# theorem " ++ x]
+  emit ["# theorem " ++ T.unpack x]
 
 otDef :: Monad m => [(Ident, SType)] -> Term -> OTM m (OTM m ())
 otDef ss t = go mempty ss where

@@ -13,13 +13,14 @@ import Data.Maybe
 import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import AST
 import Environment
 import Util
 
-type Token = String
+type Token = T.Text
 
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
@@ -38,17 +39,17 @@ data ParserEnv = ParserEnv {
 instance Default ParserEnv where
   def = ParserEnv def def def def def def
 
-tokenize :: ParserEnv -> B.ByteString -> [Token]
-tokenize pe cnst = concatMap go (splitOneOf " \n" (C.unpack cnst)) where
+tokenize :: ParserEnv -> T.Text -> [Token]
+tokenize pe cnst = concatMap go (splitOneOf " \n" (T.unpack cnst)) where
   ds = delims pe
   go :: String -> [Token]
   go [] = []
   go (c:s) = go1 c s id
   go1 :: Char -> String -> (String -> String) -> [Token]
   go1 c s f | S.member c ds = case f [] of
-    [] -> [c] : go s
-    s1 -> s1 : [c] : go s
-  go1 c [] f = [f [c]]
+    [] -> T.singleton c : go s
+    s1 -> T.pack s1 : T.singleton c : go s
+  go1 c [] f = [T.pack $ f [c]]
   go1 c (c':s) f = go1 c' s (f . (c:))
 
 tokenize1 :: ParserEnv -> Const -> Either String Token
@@ -57,9 +58,10 @@ tokenize1 env (Const cnst) = case tokenize env cnst of
   tks -> throwError ("bad token" ++ show tks)
 
 checkToken :: ParserEnv -> Token -> Bool
-checkToken _ [c] = c `notElem` " \n"
-checkToken e tk = all ok tk where
-  ok c = c `S.notMember` delims e && c `notElem` " \n"
+checkToken e tk =
+  if T.length tk == 1 then
+      T.head tk `notElem` (" \n"::String)
+  else T.all (\c -> c `S.notMember` delims e && c `notElem` (" \n"::String)) tk
 
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
@@ -68,20 +70,20 @@ mkLiterals i p n = PVar n maxBound : mkLiterals (i-1) p (n+1)
 
 insertPrec :: Token -> Prec -> ParserEnv -> Either String ParserEnv
 insertPrec tk p e = do
-  guardError ("incompatible precedence for " ++ tk)
+  guardError ("incompatible precedence for " ++ T.unpack tk)
     (maybe True (p ==) (prec e M.!? tk))
   return (e {prec = M.insert tk p (prec e)})
 
 insertPrefixInfo :: Token -> PrefixInfo -> ParserEnv -> Either String ParserEnv
 insertPrefixInfo tk ti e = do
-  guardError ("invalid token '" ++ tk ++ "'") (checkToken e tk)
-  ts <- insertNew ("token '" ++ tk ++ "' already declared") tk ti (prefixes e)
+  guardError ("invalid token '" ++ T.unpack tk ++ "'") (checkToken e tk)
+  ts <- insertNew ("token '" ++ T.unpack tk ++ "' already declared") tk ti (prefixes e)
   return (e {prefixes = ts})
 
 insertInfixInfo :: Token -> InfixInfo -> ParserEnv -> Either String ParserEnv
 insertInfixInfo tk ti e = do
-  guardError ("invalid token '" ++ tk ++ "'") (checkToken e tk)
-  ts <- insertNew ("token '" ++ tk ++ "' already declared") tk ti (infixes e)
+  guardError ("invalid token '" ++ T.unpack tk ++ "'") (checkToken e tk)
+  ts <- insertNew ("token '" ++ T.unpack tk ++ "' already declared") tk ti (infixes e)
   return (e {infixes = ts})
 
 matchBinders :: [Binder] -> DepType -> ([PBinder], DepType) -> Bool
@@ -166,7 +168,7 @@ recalcCoeProv env e = do
 
 addNotation :: Notation -> Environment -> ParserEnv -> Either String ParserEnv
 addNotation (Delimiter (Const s)) _ e = do
-  ds' <- go (splitOneOf " \t\r\n" (C.unpack s)) (delims e)
+  ds' <- go (splitOneOf " \t\r\n" (T.unpack s)) (delims e)
   return (e {delims = ds'}) where
     go :: [String] -> S.Set Char -> Either String (S.Set Char)
     go [] s = return s
@@ -174,24 +176,24 @@ addNotation (Delimiter (Const s)) _ e = do
     go ([c]:ds) s = go ds (S.insert c s)
     go (_:_) _ = throwError "multiple char delimiters not supported"
 addNotation (Prefix x s prec) env e = do
-  n <- fromJustError ("term " ++ x ++ " not declared") (getArity env x)
+  n <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getArity env x)
   tk <- tokenize1 e s
   e' <- insertPrec tk prec e
   insertPrefixInfo tk (PrefixInfo x (mkLiterals n prec 0)) e'
 addNotation (Infix r x s prec) env e = do
-  n <- fromJustError ("term " ++ x ++ " not declared") (getArity env x)
-  guardError ("'" ++ x ++ "' must be a binary operator") (n == 2)
+  n <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getArity env x)
+  guardError ("'" ++ T.unpack x ++ "' must be a binary operator") (n == 2)
   guardError "infix prec max not allowed" (prec < maxBound)
   tk <- tokenize1 e s
   e' <- insertPrec tk prec e
   insertInfixInfo tk (InfixInfo x r) e'
 addNotation (NNotation x bi ty lits) env e = do
-  ty' <- fromJustError ("term " ++ x ++ " not declared") (getTerm env x)
-  guardError ("notation declaration for '" ++ x ++ "' must match term") (matchBinders bi ty ty')
+  ty' <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getTerm env x)
+  guardError ("notation declaration for '" ++ T.unpack x ++ "' must match term") (matchBinders bi ty ty')
   ((tk, ti), e') <- runStateT (processLits bi lits) e
   insertPrefixInfo tk (PrefixInfo x ti) e'
 addNotation (Coercion x s1 s2) env e = do
-  fromJustError ("term " ++ x ++ " not declared") (getTerm env x) >>= \case
+  fromJustError ("term " ++ T.unpack x ++ " not declared") (getTerm env x) >>= \case
     ([PReg _ (DepType s1' [])], DepType s2' []) | s1 == s1' && s2 == s2' ->
       addCoe s1 s2 x e >>= recalcCoeProv env
-    _ -> throwError ("coercion '" ++ x ++ "' does not match declaration")
+    _ -> throwError ("coercion '" ++ T.unpack x ++ "' does not match declaration")

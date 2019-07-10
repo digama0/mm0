@@ -17,6 +17,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.IntMap as I
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Util
 import MMTypes
 import MMParser
@@ -44,7 +45,7 @@ showBundled (mm : rest) = do
       let bu' = filt (\_ _ i -> i <= read n) bu
       let s = reportBundled db' bu'
       forM_ s $ \((x, o), (t, b)) ->
-        putStrLn ("theorem " ++ x ++ maybe "" show o ++ " references " ++ t ++ show b)
+        putStrLn ("theorem " ++ T.unpack x ++ maybe "" show o ++ " references " ++ T.unpack t ++ show b)
       putStrLn ""
       let s' = S.map fst s
       showBundles db $ filt (\x i _ -> S.member (x, Just i) s') bu'
@@ -64,7 +65,7 @@ showBundled (mm : rest) = do
   out ls = do
     putStrLn $ show (length ls) ++ " bundled theorems, " ++
       show (sum (length . snd <$> ls)) ++ " total copies"
-    mapM_ (\(l, s) -> putStrLn $ padL 15 l ++ "  " ++ show s) ls
+    mapM_ (\(l, s) -> putStrLn $ padL 15 (T.unpack l) ++ "  " ++ show s) ls
 
 fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
@@ -74,7 +75,7 @@ fromMM (mm : rest) = do
   let db' = emancipate db
   (dbf, rest) <- return $ case rest of
     "-f" : l : rest ->
-      let {ls = splitOn "," l; (ss, sl) = closure db' ls} in
+      let {ls = T.splitOn "," (T.pack l); (ss, sl) = closure db' ls} in
       (Just (ss, sl, S.fromList ls), rest)
     rest -> (Nothing, rest)
   (mm0, mmu) <- case rest of
@@ -128,7 +129,7 @@ runTransM m db dbf st = do
 
 makeAST :: MMDatabase -> DBFilter -> Either String (A.AST, Proofs)
 makeAST db dbf = trDecls (mDecls db)
-  (A.Notation (A.Delimiter $ A.Const $ C.pack " ( ) ") :) id def where
+  (A.Notation (A.Delimiter $ A.Const $ T.pack " ( ) ") :) id def where
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> (Proofs -> Proofs) ->
     TransState -> Either String (A.AST, Proofs)
   trDecls Q.Empty f g s = return (f [], g [])
@@ -139,7 +140,7 @@ makeAST db dbf = trDecls (mDecls db)
 
 printAST :: MMDatabase -> DBFilter -> (String -> IO ()) -> (String -> IO ()) -> IO ()
 printAST db dbf mm0 mmu = do
-  mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ C.pack " ( ) ") "\n"
+  mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ T.pack " ( ) ") "\n"
   trDecls (mDecls db) def def
   where
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
@@ -211,7 +212,7 @@ trDecl a d = get >>= \t -> ask >>= \(db, i) -> case d of
         (out, n, pa, rm) <- trName st mst >>= trThmB Nothing pub fr e p
         (out2, ns) <- unzip <$> mapM (\bu -> do
           (out', n', _, rm') <-
-            trBName st bu (mst ++ "_b") >>= trThmB (Just bu) pub fr e p
+            trBName st bu (mst <> "_b") >>= trThmB (Just bu) pub fr e p
           return (out', (bu, (n', rm'))))
           (maybe [] M.keys (dbiBundles i M.!? st))
         modify $ \t -> t {tBuilders = M.insert st (mkThmBuilder pa rm n ns) (tBuilders t)}
@@ -361,9 +362,9 @@ splitFrame' bu hs dv db = do
 trNameF :: (TransState -> Maybe Ident) -> (Ident -> TransState -> TransState) -> Ident -> TransM Ident
 trNameF lup set name = get >>= \m -> case lup m of
   Just s -> return s
-  Nothing -> alloc (tUsedNames m) (name : ((\n -> name ++ show n) <$> [1..]))
+  Nothing -> alloc (tUsedNames m) (name : ((\n -> name <> T.pack (show n)) <$> [1..]))
   where
-  alloc :: S.Set Ident -> [String] -> TransM Ident
+  alloc :: S.Set Ident -> [Ident] -> TransM Ident
   alloc used (n : ns) | S.member n used = alloc used ns
   alloc used (n : _) = do
     modify $ \m -> set n $ m {tUsedNames = S.insert n (tUsedNames m)}
@@ -391,7 +392,7 @@ trExpr vm = \e -> gets $ \t -> trExpr' (tNameMap t) (tBuilders t) (tIxLookup t) 
       (App (names M.! t) es1, VApp (fromJust $ ilTerm lup t) es2)
 
 exprToFmla :: SExpr -> A.Formula
-exprToFmla e = A.Formula $ C.pack $ ' ' : showsPrec 0 e " "
+exprToFmla e = A.Formula $ T.pack $ ' ' : showsPrec 0 e " "
 
 identCh1 :: Char -> Bool
 identCh1 c = 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_'
@@ -399,17 +400,19 @@ identCh1 c = 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_'
 identCh :: Char -> Bool
 identCh c = '0' <= c && c <= '9' || identCh1 c
 
-identStr :: String -> Bool
-identStr [] = False
+identStr :: T.Text -> Bool
 identStr "_" = False
-identStr (c:s) = identCh1 c && all identCh s
+identStr s = case T.uncons s of
+  Nothing -> False
+  Just (c, s) -> identCh1 c && T.all identCh s
 
-mangle :: String -> Ident
-mangle "" = "null"
-mangle (c : s) =
-  if identCh1 c then c : map mangle1 s
-  else '_' : map mangle1 (c : s) where
-  mangle1 c = if identCh c then c else '_'
+mangle :: T.Text -> Ident
+mangle s = case T.uncons s of
+  Nothing -> "null"
+  Just (c, s') ->
+    if identCh1 c then T.cons c (T.map mangle1 s')
+    else T.cons '_' (T.map mangle1 s) where
+    mangle1 c = if identCh c then c else '_'
 
 data HeapEl = HeapEl HeapID | HBuild (Int, [ProofTree] -> ProofTree)
 

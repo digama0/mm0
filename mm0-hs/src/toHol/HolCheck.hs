@@ -6,6 +6,7 @@ import Control.Monad.Trans.State
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
 import qualified Data.Set as S
+import qualified Data.Text as T
 import Environment (Ident)
 import HolTypes
 import Util
@@ -41,8 +42,8 @@ lcRVar (_, rctx) v = rctx M.!? v
 
 type ProofM = StateT (M.Map Ident GType) (Either String)
 
-withContext :: MonadError String m => String -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("while checking " ++ s ++ ":\n" ++ e))
+withContext :: MonadError String m => T.Text -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("while checking " ++ T.unpack s ++ ":\n" ++ e))
 
 checkDecls :: [HDecl] -> Either String GlobalCtx
 checkDecls ds = go ds (GlobalCtx S.empty M.empty M.empty M.empty) where
@@ -86,10 +87,10 @@ addDecl gctx = addDecl' where
       return r
   inferTerm ctx (HApp t es vs) = do
     ty@(HType ts (SType ss r)) <-
-      fromJustError ("term '" ++ t ++ "' not found") $ gTerms gctx M.!? t
+      fromJustError ("term '" ++ T.unpack t ++ "' not found") $ gTerms gctx M.!? t
     ts' <- mapM (inferSLam ctx) es
     fromJustError (show ctx ++ " |/- " ++ show (HApp t es vs) ++
-      ", where:\n  " ++ t ++ " : " ++ show ty ++
+      ", where:\n  " ++ T.unpack t ++ " : " ++ show ty ++
       foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip es ts')) $ do
       guard (ts == ts')
       mapM (lcLVar ctx) vs >>= guard . (ss ==)
@@ -110,19 +111,19 @@ addDecl gctx = addDecl' where
 
   inferProof :: LocalCtx -> HProof -> ProofM Term
   inferProof ctx p@(HHyp n ys) = get >>= \heap -> lift $ do
-    ty@(GType ts r) <- fromJustError ("hyp " ++ n ++ " not found") $ heap M.!? n
+    ty@(GType ts r) <- fromJustError ("hyp " ++ T.unpack n ++ " not found") $ heap M.!? n
     fromJustError ("failed to check " ++
-      show p ++ "\n  where ctx[" ++ n ++ "]: " ++ show ty) $ do
+      show p ++ "\n  where ctx[" ++ T.unpack n ++ "]: " ++ show ty) $ do
       mapM (\x -> (,) x <$> lcLVar ctx x) ys >>= guard . (ts ==)
       return r
   inferProof ctx p@(HThm t es ps ys) = do
     ty@(TType ts hs (GType ss r)) <-
-      fromJustError ("theorem '" ++ t ++ "' not found") $ gThms gctx M.!? t
+      fromJustError ("theorem '" ++ T.unpack t ++ "' not found") $ gThms gctx M.!? t
     ts' <- lift $ mapM (inferSLam ctx) es
     let m = M.fromList (zip (fst <$> ts) es)
     hs' <- mapM (inferProofLam ctx) ps
     let err = "failed to check " ++ show p ++
-          ", where:\n  " ++ t ++ " : " ++ show ty ++
+          ", where:\n  " ++ T.unpack t ++ " : " ++ show ty ++
           foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip es ts') ++
           foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip ps hs')
     guardError (err ++ "\ntype mismatch in regular vars") $ (snd <$> ts) == ts'
@@ -179,14 +180,14 @@ addDecl gctx = addDecl' where
   inferConv ctx c@(CCong t ps xs) = do
     (es, es', ts') <- unzip3 <$> mapM (inferConvLam ctx) ps
     ty@(HType ts (SType ss r)) <-
-      fromJustError ("term '" ++ t ++ "' not found") $ gTerms gctx M.!? t
+      fromJustError ("term '" ++ T.unpack t ++ "' not found") $ gTerms gctx M.!? t
     fromJustError ("failed to check " ++
-      show c ++ "\n  where " ++ t ++ ": " ++ show ty) $ do
+      show c ++ "\n  where " ++ T.unpack t ++ ": " ++ show ty) $ do
       guard (ts == ts')
       mapM (lcLVar ctx) xs >>= guard . (ss ==)
       return (HApp t es xs, HApp t es' xs, r)
   inferConv ctx c@(CDef t es xs) = do
-    HDef ts ss r e <- fromJustError ("def '" ++ t ++ "' not found") $
+    HDef ts ss r e <- fromJustError ("def '" ++ T.unpack t ++ "' not found") $
       gDefs gctx M.!? t
     ts' <- lift $ mapM (inferSLam ctx) es
     fromJustError ("failed to check " ++ show c ++

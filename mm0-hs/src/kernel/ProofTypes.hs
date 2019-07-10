@@ -6,6 +6,7 @@ import Data.Maybe
 import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Q
+import qualified Data.Text as T
 import Environment (Ident)
 
 newtype SortID = SortID {ofSortID :: Int} deriving (Eq)
@@ -28,10 +29,10 @@ substExpr m = go where
   go (VApp t es) = VApp t (go <$> es)
 
 class IDPrinter a where
-  ppSort :: a -> SortID -> Ident
-  ppTerm :: a -> TermID -> Ident
-  ppThm :: a -> ThmID -> Ident
-  ppVar :: a -> VarID -> Ident
+  ppSort :: a -> SortID -> String
+  ppTerm :: a -> TermID -> String
+  ppThm :: a -> ThmID -> String
+  ppVar :: a -> VarID -> String
   ppInsertSort :: Ident -> a -> a
   ppInsertTerm :: Maybe Ident -> a -> a
   ppInsertThm :: Maybe Ident -> a -> a
@@ -57,15 +58,15 @@ instance Default SeqPrinter where
   def = SeqPrinter def def def def
 
 instance IDPrinter SeqPrinter where
-  ppSort m n = fromMaybe (show n) (mpSorts m Q.!? ofSortID n)
-  ppTerm m n = fromMaybe (show n) (mpTerms m Q.!? ofTermID n)
-  ppThm m n = fromMaybe (show n) (mpThms m Q.!? ofThmID n)
-  ppVar m n = fromMaybe (show n) (mpVars m Q.!? ofVarID n)
+  ppSort m n = fromMaybe (show n) (T.unpack <$> mpSorts m Q.!? ofSortID n)
+  ppTerm m n = fromMaybe (show n) (T.unpack <$> mpTerms m Q.!? ofTermID n)
+  ppThm m n = fromMaybe (show n) (T.unpack <$> mpThms m Q.!? ofThmID n)
+  ppVar m n = fromMaybe (show n) (T.unpack <$> mpVars m Q.!? ofVarID n)
   ppInsertSort x m = m {mpSorts = mpSorts m Q.|> x}
   ppInsertTerm x m = m {mpTerms = mpTerms m Q.|>
-    fromMaybe (show (TermID (Q.length (mpTerms m)))) x}
+    fromMaybe (T.pack $ show $ TermID $ Q.length $ mpTerms m) x}
   ppInsertThm x m = m {mpThms = mpThms m Q.|>
-    fromMaybe (show (ThmID (Q.length (mpThms m)))) x}
+    fromMaybe (T.pack $ show $ ThmID $ Q.length $ mpThms m) x}
   ppInsertVar x m = m {mpVars = mpVars m Q.|> x}
 
 ppType :: IDPrinter a => a -> VType -> ShowS
@@ -129,13 +130,13 @@ data ProofCmd =
   | StepInout VInoutKind
 
 ppProofCmd' :: IDPrinter a => a -> ProofCmd -> (ShowS, a)
-ppProofCmd' a (StepSort x) = (("sort " ++) . (x ++), ppInsertSort x a)
-ppProofCmd' a (StepTerm x) = (("term " ++) . (x ++), ppInsertTerm (Just x) a)
-ppProofCmd' a (StepAxiom x) = (("axiom " ++) . (x ++), ppInsertThm (Just x) a)
+ppProofCmd' a (StepSort x) = (("sort " ++) . (T.unpack x ++), ppInsertSort x a)
+ppProofCmd' a (StepTerm x) = (("term " ++) . (T.unpack x ++), ppInsertTerm (Just x) a)
+ppProofCmd' a (StepAxiom x) = (("axiom " ++) . (T.unpack x ++), ppInsertThm (Just x) a)
 ppProofCmd' a (ProofDef x args ret ds val st) =
   let (sargs, n) = ppBinders a args 0
       (sds, _) = ppBinders a (VBound <$> ds) n in
-  ((((if st then "" else "local ") ++ "def " ++ fromMaybe "_" x) ++) .
+  ((((if st then "" else "local ") ++ "def " ++ T.unpack (fromMaybe "_" x)) ++) .
     sargs . (": " ++) . ppType a ret . (" =\n" ++) . sds . (' ' :) . ppExpr a 1 val,
   ppInsertTerm x a)
 ppProofCmd' a (ProofThm x args hs ret uf ds pf st) =
@@ -146,7 +147,7 @@ ppProofCmd' a (ProofThm x args hs ret uf ds pf st) =
         [] -> r
         u:us -> " unfolding(" ++ ppTerm a u ++
           foldr (\u' r -> ' ' : ppTerm a u' ++ r) (')' : r) us in
-  (\r -> (if st then "" else "local ") ++ "theorem " ++ fromMaybe "_" x ++
+  (\r -> (if st then "" else "local ") ++ "theorem " ++ T.unpack (fromMaybe "_" x) ++
     sargs ((',' :) $ suf $ shs $ (": " ++) $
       ppExpr a 1 ret $ " =\n" ++ tail (sds (' ' : fst (ppProofTree a pf n3) r))),
   ppInsertThm x a)
