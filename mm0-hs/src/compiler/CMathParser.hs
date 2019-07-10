@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
-module CMathParser (parseMath) where
+module CMathParser (parseMath, QExpr(..)) where
 
 import Control.Monad
 import Control.Monad.State

@@ -1,22 +1,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module CElaborator (elaborate, ErrorLevel(..), ElabError(..)) where
 
-import Control.Monad.Fail
 import Control.Monad.State
-import Control.Monad.Trans.Maybe
-import Control.Monad.RWS.Strict
 import Data.List
 import Data.Bits
-import Data.Maybe
 import Data.Word8
-import Data.Default
-import qualified Data.IntMap as I
 import qualified Data.HashMap.Strict as H
-import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Text as T
-import CParser (ParseError, PosState, errorOffset)
+import CParser (ParseError)
 import CAST
 import CEnv
 import CMathParser
@@ -24,8 +16,8 @@ import Util
 
 elaborate :: [ParseError] -> AST -> IO (Env, [ElabError])
 elaborate errs ast = do
-  (_, env, errs) <- runElab (mapM_ elabStmt ast) (toElabError <$> errs)
-  return (env, errs)
+  (_, env, errs') <- runElab (mapM_ elabStmt ast) (toElabError <$> errs)
+  return (env, errs')
 
 elabStmt :: AtPos Stmt -> Elab ()
 elabStmt (AtPos pos s) = resuming $ case s of
@@ -57,57 +49,57 @@ addSort px x sd = do
 inferDepType :: AtDepType -> ElabM ()
 inferDepType (AtDepType (AtPos o t) ts) = do
   lift $ resuming $ do
-    (_, sd) <- try (now >>= getSort t) >>=
+    (_, _sd) <- try (now >>= getSort t) >>=
       fromJustAt o ("sort '" <> t <> "' not declared")
     -- TODO: check sd
     return ()
   lift $ modifyInfer $ \ic -> ic {
-    icDependents = foldl' (\m (AtPos o x) ->
-      H.alter (Just . maybe [o] (o:)) x m) (icDependents ic) ts }
+    icDependents = foldl' (\m (AtPos i x) ->
+      H.alter (Just . maybe [i] (i:)) x m) (icDependents ic) ts }
 
-inferBinder :: T.Text -> Binder -> ElabM ()
-inferBinder x bi@(Binder o l ty) = case ty of
+inferBinder :: Binder -> ElabM ()
+inferBinder bi@(Binder o l oty) = case oty of
   Nothing -> addVar True
   Just (TType ty) -> inferDepType ty >> addVar False
-  Just (TFormula f) -> () <$ inferFormulaProv x f
+  Just (TFormula f@(Formula o' _)) -> () <$ (parseMath f >>= inferFormulaProv o')
   where
 
   addVar :: Bool -> ElabM ()
   addVar noType = do
-    ic <- gets eInfer
+    locals <- gets (icLocals . eInfer)
     locals' <- case localName l of
       Nothing -> do
         when noType $ escapeAt o "cannot infer variable type"
-        return $ icLocals ic
+        return $ locals
       Just n -> do
         ins <- checkNew ELWarning o
           ("variable '" <> n <> "' shadows previous declaration")
-          liOffset n (icLocals ic)
+          liOffset n locals
         return (ins (LIOld bi Nothing))
     lift $ modifyInfer $ \ic -> ic {icLocals = locals'}
 
 addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
   [Binder] -> Maybe [Type] -> Maybe LispVal -> ElabM ()
-addDecl vis dk px x bis ret v = do
+addDecl _vis _dk _px _x bis ret _v = do
   let (bis', ret') = unArrow bis ret
   withInfer $ do
-    mapM_ (inferBinder x) bis'
+    mapM_ inferBinder bis'
     case ret' of
       Nothing -> return ()
       Just (TType ty) -> inferDepType ty
-      Just (TFormula f) -> () <$ inferFormulaProv x f
+      Just (TFormula f@(Formula o _)) -> () <$ (parseMath f >>= inferFormulaProv o)
     return ()
-  where
 
-  unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
-  unArrow bis Nothing = (bis, Nothing)
-  unArrow bis (Just tys) = mapFst (bis ++) (go tys) where
-    go [ty] = ([], Just ty)
-    go (ty:tys) = mapFst (Binder (tyOffset ty) LAnon (Just ty) :) (go tys)
+unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
+unArrow bis Nothing = (bis, Nothing)
+unArrow bis (Just tys') = mapFst (bis ++) (go tys') where
+  go [] = undefined
+  go [ty] = ([], Just ty)
+  go (ty:tys) = mapFst (Binder (tyOffset ty) LAnon (Just ty) :) (go tys)
 
 addDelimiters :: [Char] -> [Char] -> Elab ()
 addDelimiters ls rs = modifyPE $ \e ->
-  let delims@(Delims arr) = pDelims e
+  let Delims arr = pDelims e
       f :: Word8 -> Char -> (Int, Word8)
       f w c = let i = fromEnum (toEnum (fromEnum c) :: Word8)
               in (i, (U.unsafeIndex arr i) .|. w)
@@ -166,8 +158,8 @@ insertInfixInfo c@(Const o tk) ti = do
     (\(InfixInfo i _ _) -> i) tk (pInfixes (ePE env))
   lift $ modifyPE $ \e -> e {pInfixes = ins ti}
 
-inferFormula :: T.Text -> Maybe Sort -> Formula -> ElabM (Span LispVal, Sort)
-inferFormula thm tgt (Formula o fmla) = unimplementedAt o
+-- inferFormula :: Offset -> Maybe Sort -> QExpr -> ElabM (Span LispVal, Sort)
+-- inferFormula o tgt _ = unimplementedAt o
 
-inferFormulaProv :: T.Text -> Formula -> ElabM (Span LispVal, Sort)
-inferFormulaProv thm (Formula o fmla) = unimplementedAt o
+inferFormulaProv :: Offset -> QExpr -> ElabM (Span LispVal, Sort)
+inferFormulaProv o _ = unimplementedAt o
