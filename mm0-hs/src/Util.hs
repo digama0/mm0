@@ -8,6 +8,10 @@ import System.Exit
 import qualified Data.Char as C
 import qualified Data.Map.Strict as M
 
+fromMaybeM :: MonadPlus m => Maybe a -> m a
+fromMaybeM Nothing = mzero
+fromMaybeM (Just a) = return a
+
 fromJustError :: MonadError e m => e -> Maybe a -> m a
 fromJustError errorval Nothing = throwError errorval
 fromJustError _ (Just normalval) = return normalval

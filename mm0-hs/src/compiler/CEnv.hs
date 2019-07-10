@@ -81,12 +81,9 @@ data InfixInfo = InfixInfo Offset Text Bool deriving (Show)
 data Coe1 = Coe1 Offset Text
 data Coe = Coe Coe1 | Coes Coe Text Coe
 
-appCoe1 :: Coe1 -> LispVal -> LispVal
-appCoe1 (Coe1 _ t) e = List [Atom t, e]
-
-appCoe :: Coe -> LispVal -> LispVal
-appCoe (Coe c) = appCoe1 c
-appCoe (Coes c1 _ c2) = appCoe c1 . appCoe c2
+foldCoe :: (Text -> a -> a) -> Coe -> a -> a
+foldCoe tm (Coe (Coe1 _ t)) = tm t
+foldCoe tm (Coes c1 _ c2) = foldCoe tm c1 . foldCoe tm c2
 
 coeToList :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)]
 coeToList c s1 s2 = go c s1 s2 [] where
@@ -240,20 +237,27 @@ lookupOrInferLocal v s o =
         icLocals = H.insert v (LINew o False s) (icLocals ic)}
       undefined
 
+peGetCoe' :: ParserEnv -> Text -> Text -> Maybe Coe
+peGetCoe' pe s1 s2 = M.lookup s1 (pCoes pe) >>= M.lookup s2
+
 getCoe' :: Text -> Text -> ElabM Coe
-getCoe' s1 s2 = do
-  mm <- gets (pCoes . ePE)
-  fromJust' $ M.lookup s1 mm >>= M.lookup s2
+getCoe' s1 s2 = gets ePE >>= \pe -> fromJust' $ peGetCoe' pe s1 s2
 
-getCoe :: Text -> Text -> ElabM (LispVal -> LispVal)
-getCoe s1 s2 | s1 == s2 = return id
-getCoe s1 s2 = appCoe <$> getCoe' s1 s2
+peGetCoe :: ParserEnv -> (Text -> a -> a) -> Text -> Text -> Maybe (a -> a)
+peGetCoe pe tm s1 s2 | s1 == s2 = return id
+peGetCoe pe tm s1 s2 = foldCoe tm <$> peGetCoe' pe s1 s2
 
-getCoeProv :: Text -> ElabM (Text, LispVal -> LispVal)
-getCoeProv s = do
-  s2 <- gets (H.lookup s . pCoeProv . ePE) >>= fromJust'
-  c <- getCoe s s2
+getCoe :: (Text -> a -> a) -> Text -> Text -> ElabM (a -> a)
+getCoe tm s1 s2 = gets ePE >>= \pe -> fromJust' $ peGetCoe pe tm s1 s2
+
+peGetCoeProv :: ParserEnv -> (Text -> a -> a) -> Text -> Maybe (Text, a -> a)
+peGetCoeProv pe tm s = do
+  s2 <- H.lookup s (pCoeProv pe)
+  c <- peGetCoe pe tm s s2
   return (s2, c)
+
+getCoeProv :: (Text -> a -> a) -> Text -> ElabM (Text, a -> a)
+getCoeProv tm s = gets ePE >>= \pe -> fromJust' $ peGetCoeProv pe tm s
 
 addCoe :: Coe1 -> Sort -> Sort -> ElabM ()
 addCoe cc@(Coe1 o c) s1 s2 = do

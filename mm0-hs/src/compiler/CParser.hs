@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module CParser (parseAST, runParser, PosState(..),
-  ParseError, Parser, errorOffset, initialPosState) where
+  ParseError, Parser, errorOffset, initialPosState, lispVal, identStart, identRest) where
 
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad

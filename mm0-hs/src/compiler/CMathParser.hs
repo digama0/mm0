@@ -1,177 +1,127 @@
 {-# LANGUAGE BangPatterns #-}
-module CMathParser (parseFormula, parseFormulaProv) where
+module CMathParser (parseMath) where
 
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class
 import Data.Void
+import Data.Bits
 import qualified Data.HashMap.Strict as H
 import qualified Data.List.NonEmpty as NE
 import qualified Data.IntMap as I
 import qualified Data.Vector as V
 import qualified Data.Text as T
+import Text.Megaparsec hiding (runParser, try, unPos)
+import Text.Megaparsec.Internal (ParsecT(..))
 import CAST
 import CEnv
-import CParser (Parser, initialPosState)
+import CParser (Parser, runParser, identStart, identRest, lispVal)
 import MathParser (appPrec)
 import Util
 
-data Tokens = Eof Offset
-  | Token (Span Token) Tokens -- token
-  | Unquote (Span LispVal) Tokens -- unquote
+data QExpr = QApp (AtPos Ident) [QExpr] | QUnquote LispVal
 
-tokenOffset :: Tokens -> Offset
-tokenOffset (Eof o) = o
-tokenOffset (Token (Span o _ _) _) = o
-tokenOffset (Unquote (Span o _ _) _) = o
+type MathParser = ReaderT ParserEnv Parser
 
-tokenize :: Delims -> Formula -> Tokens
-tokenize delims (Formula o t) = space o t where
+parseMath :: Formula -> ElabM QExpr
+parseMath (Formula o fmla) = do
+  pe <- gets ePE
+  let p = parseExpr 0 <* (eof <?> "'$'")
+      (errs, o', res) = runParser (runReaderT p pe) "" o fmla
+  mapM_ (reportErr . toElabError) errs
+  fromJust' res
 
-  space :: Offset -> T.Text -> Tokens
-  space !o t =
-    let (t1, t2) = T.span (\c -> c == '\n' || c == ' ') t in
-    token (o + T.length t1) t2
+unquote :: MathParser QExpr
+unquote = do
+  single ','
+  notFollowedBy $ satisfy (\c -> c == ' ' || c == '\n')
+  lift $ QUnquote <$> lispVal
 
-  token :: Offset -> T.Text -> Tokens
-  token !o t =
-    let (t1, t2) = T.span ((== 0) . delimVal delims) t in
-    if T.null t2 then
-      if T.null t1 then Eof o
-      else let o' = o + T.length t1 in Token (Span o t1 o') $ token o' t2
-    else case delimVal delims (T.head t2) of
-      -- | left delimiter
-      1 -> let {n = T.length t1 + 1; (t1, t2) = T.splitAt n t} in
-           Token (Span o t1 (o+n)) $ token (o+n) t2
-      -- | right delimiter
-      2 -> let o' = o + T.length t1 in Token (Span o t1 o') $ token o' t2
-      -- | both delimiter
-      3 -> let o' = o + T.length t1 in Token (Span o t1 o') $
-           let (t2', t3) = T.splitAt 1 t2 in Token (Span o' t2' (o'+1)) $
-           token (o'+1) t3
-      -- | space
-      4 -> let o' = o + T.length t1 in Token (Span o t1 o') $ space o' t
+token1 :: MathParser (AtPos T.Text)
+token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
+  let
+    go t' i = case T.uncons t' of
+      Nothing -> eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
+      Just (c, t2) -> case delimVal (pDelims pe) c of
+        0 -> go t2 (i+1)
+        d | testBit d 0 ->
+          cok (AtPos o (T.take (i+1) t)) (State t2 (o+i+1) pst) mempty
+        d | testBit d 1 ->
+          cok (AtPos o (T.take i t)) (State t' (o+i) pst) mempty
+        4 | i == 0 ->
+          eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
+        4 ->
+          let (t1', t2') = T.span (\c -> c == '\n' || c == ' ') t2 in
+          cok (AtPos o (T.take i t)) (State t2' (o+i+T.length t1') pst) mempty
+  in go t 0
 
-type MParser = StateT Tokens ElabM
+tkSatisfy :: (T.Text -> Bool) -> MathParser (AtPos T.Text)
+tkSatisfy p = do
+  at@(AtPos _ t) <- token1
+  guard (p t)
+  return at
 
-ofParser :: Parser a -> MParser a
-ofParser p = undefined
+tk :: T.Text -> MathParser ()
+tk t = label (T.unpack t) $ () <$ tkSatisfy (== t)
 
-parseFormula :: T.Text -> Maybe Sort -> Formula -> ElabM (Span LispVal, Sort)
-parseFormula thm tgt fmla = do
-  delims <- gets (pDelims . ePE)
-  runStateT (parseExpr tgt 0) (tokenize delims fmla) >>= \case
-    (v, Eof _) -> return v
-    (_, tks) -> escapeAt (tokenOffset tks) "math parse error: expected '$'"
+checkPrec :: Prec -> Bool -> T.Text -> MathParser Prec
+checkPrec p r v = do
+  Just (_, q) <- asks (H.lookup v . pPrec)
+  guard (if r then q >= p else q > p)
+  return q
 
-parseFormulaProv :: T.Text -> Formula -> ElabM (Span LispVal, Sort)
-parseFormulaProv thm fmla = do
-  gets eProvableSorts >>= \case
-    [tgt] -> parseFormula thm (Just tgt) fmla
-    _ -> do
-      (Span o1 sexp o2, s) <- parseFormula thm Nothing fmla
-      try (getCoeProv s) >>= \case
-        Just (s2, c) -> return (Span o1 (c sexp) o2, s2)
-        Nothing -> do
-          reportErr $ ElabError ELError o1 o2
-            ("type error, expected provable sort, got " <> s) []
-          mzero
-
-getOffset :: MParser Offset
-getOffset = gets tokenOffset
-
-parseError :: T.Text -> MParser a
-parseError msg = getOffset >>= lift . flip escapeAt msg
-
-coerce :: Sort -> (Span LispVal, Sort) -> MParser (Span LispVal)
-coerce s2 (Span o1 sexp o2, s1) =
-  lift $ try (getCoe s1 s2) >>= \case
-    Just c -> return (Span o1 (c sexp) o2)
-    Nothing -> do
-      reportErr $ ElabError ELError o1 o2
-        ("type error, expected " <> s2 <> ", got " <> s1) []
-      mzero
-
-{-
-tkMatch :: (Token -> Maybe b) -> (Span Token -> b -> MParser a) -> MParser a -> MParser a
-tkMatch f yes no = StateT $ \case
-  Token t ss -> case f t of
-    Nothing -> runStateT no (t : ss)
-    Just b -> runStateT (yes t b) ss
-  ss -> runStateT no ss
-
-tkCond :: (T.Text -> Bool) -> MParser a -> MParser a -> MParser a
-tkCond p yes no = tkMatch (\t -> if p t then Just () else Nothing) (\_ _ -> yes) no
-
-tk :: T.Text -> MParser ()
-tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ t ++ "'"))
-
-parseVar :: MParser (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
-parseVar no = do
-  ctx <- ask
-  tkMatch (lookupOrInferLocal ctx) (\v (DepType s _) -> return (SVar v, s)) no
-
-parseLiteral :: MParser (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
-parseLiteral no =
-  tkCond (== "(") (parseExpr 0 <* tk ")") (parseVar no)
-
-checkPrec :: MParserEnv -> Prec -> T.Text -> Maybe a -> Maybe a
-checkPrec e p v m = do
-  (_, q) <- H.lookup v (pPrec e)
-  if q >= p then m else Nothing
-
-parseLiterals :: V.Vector T.Text -> [PLiteral] -> MParser [Span LispVal]
-parseLiterals ls = go I.empty where
-  go :: I.IntMap (Span LispVal) -> [PLiteral] -> MParser [Span LispVal]
+parseLiterals :: [PLiteral] -> MathParser [QExpr]
+parseLiterals = go I.empty where
+  go :: I.IntMap QExpr -> [PLiteral] -> MathParser [QExpr]
   go m [] = return (I.elems m)
   go m (PConst t : lits) = tk t >> go m lits
   go m (PVar n p : lits) = do
-    e <- parseExpr p >>= coerce (ls V.! n)
+    e <- parseExpr p
     go (I.insert n e m) lits
 
-parsePrefix :: Maybe Sort -> Prec -> MParser (Span LispVal, Sort)
-parsePrefix tgt p = parseLiteral $ do
-  pe <- gets ePE
-  tkMatch (\v -> checkPrec pe p v (H.lookup v (pPrefixes pe)))
-    (\v (PrefixInfo _ x lits) -> do
-      (_, bs, r) <- now >>= getTerm x
-      let bss = V.fromList (dSort . binderType <$> bs)
-      ss <- parseLiterals bss lits
-      return (App x ss, dSort r)) $
-    tkMatch (\v -> do
-        d <- getTerm v
-        if p <= appPrec || null (fst d) then Just d else Nothing)
-      (\x (bs, r) -> do
-        let bss = dSort . binderType <$> bs
-        ss <- mapM (\s -> parsePrefix maxBound >>= coerce s) bss
-        return (App x ss, dSort r)) $
-    parseError "expected variable or prefix or term s-expr"
+isIdent :: T.Text -> Bool
+isIdent t = case T.uncons t of
+  Nothing -> False
+  Just (c, t') -> identStart c && T.all identRest t'
 
-getLhs :: Prec -> (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
-getLhs p lhs = do
-  pe <- gets ePE
-  tkMatch (\v -> do
-      q <- H.lookup v (pPrec pe)
-      if q >= p then (,) q <$> H.lookup v (pInfixes pe) else Nothing)
-    (\v (q, InfixInfo _ x _) -> do
-      rhs <- parsePrefix p >>= getRhs q
-      (_, [Binder _ _ (Just (DepType s1 _)),
-           Binder _ _ (Just (DepType s2 _))], r) <- now >>= getTerm x
-      Span o1 lhs' _ <- coerce s1 lhs
-      Span _ rhs' o2 <- coerce s2 rhs
-      getLhs p (Span o1 (List [Atom x, lhs', rhs']) o2, dSort r))
-    (return lhs)
+parsePrefix :: Prec -> MathParser QExpr
+parsePrefix p =
+  unquote <|>
+  (tk "(" *> parseExpr 0 <* tk ")") <|>
+  do {
+    AtPos o v <- token1;
+    (checkPrec p True v >> do
+      PrefixInfo _ x lits <- asks (H.lookup v . pPrefixes) >>= fromMaybeM
+      QApp (AtPos o x) <$> parseLiterals lits) <|>
+    (guard (isIdent v) >>
+      QApp (AtPos o v) <$>
+        if p <= appPrec then many (parsePrefix maxBound) else return []) }
 
-getRhs :: Prec -> (Span LispVal, Sort) -> MParser (Span LispVal, Sort)
-getRhs p rhs = do
-  pe <- gets ePE
-  tkMatch (\v -> do
-      (_, q) <- H.lookup v (pPrec pe)
-      InfixInfo _ x r <- H.lookup v (pInfixes pe)
-      if (if r then q >= p else q > p) then Just (q, x) else Nothing)
-    (\v (q, x) -> modify (v:) >> getLhs q rhs >>= getRhs p)
-    (return rhs)
--}
+maybeLookahead :: MathParser a -> MathParser (a, MathParser ())
+maybeLookahead p = lookAhead $
+  liftM2 (,) p (updateParserState . const <$> getParserState)
 
-parseExpr :: Maybe Sort -> Prec -> MParser (Span LispVal, Sort)
-parseExpr tgt p = undefined -- parsePrefix tgt p >>= getLhs p
+getLhs :: Prec -> QExpr -> MathParser QExpr
+getLhs p lhs =
+  (do
+    (AtPos o v, commit) <- maybeLookahead token1
+    q <- checkPrec p True v
+    InfixInfo _ x _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
+    commit
+    rhs <- parsePrefix p >>= getRhs q
+    getLhs p (QApp (AtPos o x) [lhs, rhs])) <|>
+  return lhs
+
+getRhs :: Prec -> QExpr -> MathParser QExpr
+getRhs p rhs =
+  (do
+    (AtPos o v, commit) <- maybeLookahead token1
+    InfixInfo _ x r <- asks (H.lookup v . pInfixes) >>= fromMaybeM
+    q <- checkPrec p r v
+    commit
+    getLhs q rhs >>= getRhs p) <|>
+  return rhs
+
+parseExpr :: Prec -> MathParser QExpr
+parseExpr p = parsePrefix p >>= getLhs p

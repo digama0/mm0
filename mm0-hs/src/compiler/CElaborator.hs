@@ -69,7 +69,7 @@ inferBinder :: T.Text -> Binder -> ElabM ()
 inferBinder x bi@(Binder o l ty) = case ty of
   Nothing -> addVar True
   Just (TType ty) -> inferDepType ty >> addVar False
-  Just (TFormula f) -> () <$ parseFormulaProv x f
+  Just (TFormula f) -> () <$ inferFormulaProv x f
   where
 
   addVar :: Bool -> ElabM ()
@@ -95,7 +95,7 @@ addDecl vis dk px x bis ret v = do
     case ret' of
       Nothing -> return ()
       Just (TType ty) -> inferDepType ty
-      Just (TFormula f) -> () <$ parseFormulaProv x f
+      Just (TFormula f) -> () <$ inferFormulaProv x f
     return ()
   where
 
@@ -165,3 +165,9 @@ insertInfixInfo c@(Const o tk) ti = do
   ins <- checkNew ELError o ("token '" <> tk <> "' already declared")
     (\(InfixInfo i _ _) -> i) tk (pInfixes (ePE env))
   lift $ modifyPE $ \e -> e {pInfixes = ins ti}
+
+inferFormula :: T.Text -> Maybe Sort -> Formula -> ElabM (Span LispVal, Sort)
+inferFormula thm tgt (Formula o fmla) = unimplementedAt o
+
+inferFormulaProv :: T.Text -> Formula -> ElabM (Span LispVal, Sort)
+inferFormulaProv thm (Formula o fmla) = unimplementedAt o
