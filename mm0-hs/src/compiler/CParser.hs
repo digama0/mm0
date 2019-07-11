@@ -271,9 +271,9 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
 
   genNota :: Parser (Maybe Notation)
   genNota = kw "notation" >> commit
-    (liftM4 NNotation ident binders
+    (liftM5 NNotation getOffset ident binders
       (optional (symbol ":" *> ptype))
-      (symbol "=" *> many (
+      (symbol "=" *> some (atPos $
         parens (liftA2 NConst constant (symbol ":" *> prec)) <|>
         (NVar <$> ident))))
 

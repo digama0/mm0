@@ -24,12 +24,17 @@ import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import CParser (ParseError)
 
 data ErrorLevel = ELError | ELWarning | ELInfo
+instance Show ErrorLevel where
+  show ELError = "error"
+  show ELWarning = "warning"
+  show ELInfo = "info"
+
 data ElabError = ElabError {
   eeLevel :: ErrorLevel,
   eeBegin :: Offset,
   eeEnd :: Offset,
   eeMsg :: Text,
-  eeRelated :: [(Offset, Offset, Text)] }
+  eeRelated :: [(Offset, Offset, Text)] } deriving (Show)
 
 toElabError :: ParseError -> ElabError
 toElabError e = ElabError ELError (errorOffset e) (errorOffset e)
@@ -71,20 +76,20 @@ incCounter (Just s) (SeqCounter c n) = do
     Just c' -> incCounter s' c'
   return (i, SeqCounter (I.insert m c'' c) n)
 
-data PLiteral = PConst Text | PVar Int Prec deriving (Show)
+data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
-data PrefixInfo = PrefixInfo Offset Text [PLiteral] deriving (Show)
-data InfixInfo = InfixInfo Offset Text Bool deriving (Show)
-data Coe1 = Coe1 Offset Text
-data Coe = Coe Coe1 | Coes Coe Text Coe
+data PrefixInfo = PrefixInfo Offset Token [PLiteral] deriving (Show)
+data InfixInfo = InfixInfo Offset Token Bool deriving (Show)
+data Coe1 = Coe1 Offset Sort
+data Coe = Coe Coe1 | Coes Coe Sort Coe
 
 foldCoe :: (Text -> a -> a) -> Coe -> a -> a
 foldCoe tm (Coe (Coe1 _ t)) = tm t
 foldCoe tm (Coes c1 _ c2) = foldCoe tm c1 . foldCoe tm c2
 
-coeToList :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)]
+coeToList :: Coe -> Sort -> Sort -> [(Coe1, Sort, Sort)]
 coeToList c' s1' s2' = go c' s1' s2' [] where
-  go :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)] -> [(Coe1, Ident, Ident)]
+  go :: Coe -> Sort -> Sort -> [(Coe1, Sort, Sort)] -> [(Coe1, Sort, Sort)]
   go (Coe c) s1 s2 = ((c, s1, s2) :)
   go (Coes g s2 f) s1 s3 = go g s2 s3 . go f s1 s2
 
@@ -110,7 +115,7 @@ instance Default ParserEnv where
 data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
-  | DDef Visibility [PBinder] DepType SExpr
+  | DDef Visibility [PBinder] DepType [(Offset, VarName, Sort)] SExpr
   | DTheorem Visibility [PBinder] [SExpr] SExpr LispVal
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort
@@ -211,7 +216,7 @@ getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType)
 getTerm v s =
   gets (H.lookup v . eDecls) >>= \case
     Just (n, o, DTerm args r) -> guard (n < s) >> return (o, args, r)
-    Just (n, o, DDef _ args r _) -> guard (n < s) >> return (o, args, r)
+    Just (n, o, DDef _ args r _ _) -> guard (n < s) >> return (o, args, r)
     _ -> mzero
 
 getThm :: Text -> SeqNum -> ElabM (Offset, [PBinder], [SExpr], SExpr)
@@ -224,9 +229,9 @@ getThm v s =
 modifyInfer :: (InferCtx -> InferCtx) -> Elab ()
 modifyInfer f = modify $ \env -> env {eInfer = f (eInfer env)}
 
-withInfer :: ElabM () -> ElabM ()
+withInfer :: ElabM a -> ElabM a
 withInfer m =
-  lift (modifyInfer (const def)) >> m >>
+  lift (modifyInfer (const def)) *> m <*
   lift (modifyInfer (const undefined))
 
 peGetCoe' :: ParserEnv -> Text -> Text -> Maybe Coe

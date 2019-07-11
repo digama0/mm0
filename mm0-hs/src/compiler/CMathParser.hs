@@ -5,7 +5,6 @@ import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans.Reader
 import Data.Bits
-import Debug.Trace
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
@@ -17,7 +16,7 @@ import CParser (Parser, runParser, identStart, identRest, atPos, lispVal)
 import MathParser (appPrec)
 import Util
 
-data QExpr = QApp (AtPos Ident) [QExpr] | QUnquote (AtPos LispVal)
+data QExpr = QApp (AtPos Ident) [QExpr] | QUnquote (AtPos LispVal) deriving (Show)
 
 type MathParser = ReaderT ParserEnv Parser
 
@@ -40,20 +39,21 @@ unquote = do
 token1 :: MathParser (AtPos T.Text)
 token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
   let
+    unspace t' o' = State t2 (o'+T.length t1) where
+      (t1, t2) = T.span isSpace t'
     go t' i = case T.uncons t' of
       Nothing -> eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
       Just (c, t2) -> case delimVal (pDelims pe) c of
         0 -> go t2 (i+1)
-        d | testBit d 0 ->
-          cok (AtPos o (T.take (i+1) t)) (State t2 (o+i+1) pst) mempty
-        d | testBit d 1 ->
-          cok (AtPos o (T.take i t)) (State t' (o+i) pst) mempty
         4 | i == 0 ->
-          eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
-        4 ->
-          let (t1', t2') = T.span isSpace t2 in
-          cok (AtPos o (T.take i t)) (State t2' (o+i+1+T.length t1') pst) mempty
-        _ -> error "impossible"
+            eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
+          | otherwise ->
+            cok (AtPos o (T.take i t)) (unspace t2 (o+i+1) pst) mempty
+        d | testBit d 1 && i /= 0 ->
+            cok (AtPos o (T.take i t)) (unspace t' (o+i) pst) mempty
+          | testBit d 0 ->
+            cok (AtPos o (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
+          | otherwise -> go t2 (i+1)
   in go t 0
 
 tkSatisfy :: (T.Text -> Bool) -> MathParser (AtPos T.Text)
@@ -81,7 +81,7 @@ parseLiterals = go I.empty where
     go (I.insert n e m) lits
 
 isIdent :: T.Text -> Bool
-isIdent t = traceShow t $ traceShowId $ case T.uncons t of
+isIdent t = case T.uncons t of
   Nothing -> False
   Just (c, t') -> identStart c && T.all identRest t'
 
@@ -94,7 +94,7 @@ parsePrefix p =
     ((checkPrec p True v >> do
       PrefixInfo _ x lits <- asks (H.lookup v . pPrefixes) >>= fromMaybeM
       QApp (AtPos o x) <$> parseLiterals lits)
-      <?> ("prefix operator of precedence " ++ show p)) <|>
+      <?> ("prefix operator of precedence >= " ++ show p)) <|>
     ((guard (isIdent v) >>
       QApp (AtPos o v) <$>
         if p <= Prec appPrec then
@@ -102,30 +102,27 @@ parsePrefix p =
         else return [])
       <?> "identifier") })
 
-maybeLookahead :: MathParser a -> MathParser (a, MathParser ())
-maybeLookahead p = lookAhead $
-  liftM2 (,) p (updateParserState . const <$> getParserState)
-
 getLhs :: Prec -> QExpr -> MathParser QExpr
 getLhs p lhs =
   ((do
-    (AtPos o v, commit) <- maybeLookahead token1
+    AtPos o v <- lookAhead token1
     q <- checkPrec p True v
     InfixInfo _ x _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
-    commit
+    _ <- token1
     rhs <- parsePrefix p >>= getRhs q
     getLhs p (QApp (AtPos o x) [lhs, rhs]))
-    <?> ("infix operator of precedence " ++ show p)) <|>
+    <?> ("infix operator of precedence >= " ++ show p)) <|>
   return lhs
 
 getRhs :: Prec -> QExpr -> MathParser QExpr
 getRhs p rhs =
-  ((do
+  (do
     AtPos _ v <- lookAhead token1
     InfixInfo _ _ r <- asks (H.lookup v . pInfixes) >>= fromMaybeM
-    q <- checkPrec p r v
-    getLhs q rhs >>= getRhs p)
-    <?> ("infix operator of precedence " ++ show p)) <|>
+    (do q <- checkPrec p r v
+        getLhs q rhs >>= getRhs p)
+      <?> ("infix operator of precedence " ++
+        (if r then ">= " else "> ") ++ show p)) <|>
   return rhs
 
 parseExpr :: Prec -> MathParser QExpr

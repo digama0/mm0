@@ -1,7 +1,7 @@
 module CAST (module CAST, AtDepType(..), SortData(..)) where
 
 import qualified Data.Text as T
-import Environment (SortData(..))
+import Environment (SortData(..), DepType(..))
 
 type Offset = Int
 data AtPos a = AtPos Offset a deriving (Show)
@@ -23,6 +23,12 @@ type AST = [AtPos Stmt]
 
 data Visibility = Public | Abstract | Local | VisDefault deriving (Eq)
 data DeclKind = DKTerm | DKAxiom | DKTheorem | DKDef deriving (Eq)
+instance Show DeclKind where
+  show DKTerm = "term"
+  show DKAxiom = "axiom"
+  show DKTheorem = "theorem"
+  show DKDef = "def"
+
 data Stmt =
     Sort Offset T.Text SortData
   | Decl Visibility DeclKind Offset T.Text
@@ -38,7 +44,7 @@ data Notation =
   | Prefix Offset T.Text Const Prec
   | Infix Bool Offset T.Text Const Prec
   | Coercion T.Text T.Text T.Text
-  | NNotation T.Text [Binder] (Maybe Type) [Literal]
+  | NNotation Offset T.Text [Binder] (Maybe Type) [AtPos Literal]
 
 data Literal = NConst Const Prec | NVar T.Text
 
@@ -65,7 +71,10 @@ data Local = LBound T.Text | LReg T.Text | LDummy T.Text | LAnon
 
 data AtDepType = AtDepType (AtPos T.Text) [AtPos T.Text]
 
-data Formula = Formula Offset T.Text
+unDepType :: AtDepType -> DepType
+unDepType (AtDepType t ts) = DepType (unPos t) (unPos <$> ts)
+
+data Formula = Formula Offset T.Text deriving (Show)
 
 data Type = TType AtDepType | TFormula Formula
 
@@ -98,6 +107,7 @@ data LispVal =
   | String T.Text
   | Bool Bool
   | LFormula Formula
+  deriving (Show)
 
 cons :: LispVal -> LispVal -> LispVal
 cons l (List r) = List (l : r)
