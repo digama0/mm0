@@ -42,7 +42,10 @@ token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
     unspace t' o' = State t2 (o'+T.length t1) where
       (t1, t2) = T.span isSpace t'
     go t' i = case T.uncons t' of
-      Nothing -> eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
+      Nothing | i == 0 ->
+                eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
+              | otherwise ->
+                cok (AtPos o (T.take i t)) (State t' (o+i) pst) mempty
       Just (c, t2) -> case delimVal (pDelims pe) c of
         0 -> go t2 (i+1)
         4 | i == 0 ->

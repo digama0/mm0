@@ -67,22 +67,22 @@ data Inout =
     Input InputKind [LispVal]
   | Output OutputKind [LispVal]
 
-data Local = LBound T.Text | LReg T.Text | LDummy T.Text | LAnon
+data Local = LBound T.Text | LReg T.Text | LDummy T.Text | LAnon deriving (Show)
 
-data AtDepType = AtDepType (AtPos T.Text) [AtPos T.Text]
+data AtDepType = AtDepType (AtPos T.Text) [AtPos T.Text] deriving (Show)
 
 unDepType :: AtDepType -> DepType
 unDepType (AtDepType t ts) = DepType (unPos t) (unPos <$> ts)
 
 data Formula = Formula Offset T.Text deriving (Show)
 
-data Type = TType AtDepType | TFormula Formula
+data Type = TType AtDepType | TFormula Formula deriving (Show)
 
 tyOffset :: Type -> Offset
 tyOffset (TType (AtDepType (AtPos o _) _)) = o
 tyOffset (TFormula (Formula o _)) = o
 
-data Binder = Binder Offset Local (Maybe Type)
+data Binder = Binder Offset Local (Maybe Type) deriving (Show)
 
 isLBound :: Local -> Bool
 isLBound (LBound _) = True
@@ -118,7 +118,3 @@ lvLength :: LispVal -> Int
 lvLength (DottedList e _) = length e
 lvLength (List e) = length e
 lvLength _ = 0
-
-data LocalCtx = LocalCtx {
-
-}

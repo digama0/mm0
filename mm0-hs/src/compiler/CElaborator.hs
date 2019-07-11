@@ -5,7 +5,6 @@ import Control.Monad.State
 import Data.List
 import Data.Bits
 import Data.Word8
--- import Debug.Trace
 import Data.Maybe
 import qualified Data.HashMap.Strict as H
 import qualified Data.Set as S
@@ -91,7 +90,6 @@ addDecl vis dk px x bis ret v = do
   decl <- withInfer $ do
     fmlas <- catMaybes <$> mapM inferBinder bis'
     (pbs, hs, dums) <- buildBinders (dk == DKDef) bis' fmlas
-    -- traceShow (pbs, hs, dums) $ return ()
     decl <- case (dk, ret', v) of
       (DKDef, Just (TType ty), Nothing) -> do
         inferDepType ty
@@ -102,7 +100,8 @@ addDecl vis dk px x bis ret v = do
         unless (null hs) $ error "impossible"
         let ret'' = case ret' of Just (TType ty) -> Just ty; _ -> Nothing
         forM_ ret'' inferDepType
-        IR _ v' s _ <- parseMath f >>= inferQExprProv
+        IR _ v' s _ <- parseMath f >>=
+          inferQExpr ((\(AtDepType s _) -> (unPos s, False)) <$> ret'')
         vs <- case ret'' of
           Just (AtDepType (AtPos o _) avs) -> do
             vs' <- defcheckExpr pbs v'
@@ -216,7 +215,8 @@ checkToken (Const _ tk) | T.length tk == 1 = return ()
 checkToken (Const o tk) = do
   delims <- gets (pDelims . ePE)
   guardAt o ("invalid token '" <> tk <> "'")
-    (T.all ((== 0) . delimVal delims) tk)
+    (T.all (not . (`testBit` 1) . delimVal delims) (T.tail tk) &&
+     T.all (not . (`testBit` 0) . delimVal delims) (T.init tk))
 
 insertPrefixInfo :: Const -> PrefixInfo -> ElabM ()
 insertPrefixInfo c@(Const o tk) ti = do
@@ -237,7 +237,7 @@ insertInfixInfo c@(Const o tk) ti = do
 app1 :: TermName -> SExpr -> SExpr
 app1 t e = App t [e]
 
-data InferResult = IR Offset SExpr Sort Bool
+data InferResult = IR Offset SExpr Sort Bool deriving (Show)
 coerce :: Maybe (Sort, Bool) -> InferResult -> ElabM InferResult
 coerce (Just (s2, bd2)) (IR o e s1 bd1) | s1 == s2 && (bd1 || not bd2) =
   return (IR o e s2 bd2)
@@ -246,7 +246,8 @@ coerce (Just (_, True)) (IR o _ _ _) =
 coerce (Just (s2, False)) (IR o e s1 _) =
   try (getCoe app1 s1 s2) >>= \case
     Just c -> return (IR o (c e) s2 False)
-    Nothing -> escapeAt o ("type error, expected " <> s2 <> ", got " <> s1)
+    Nothing -> escapeAt o ("type error, expected " <> s2 <>
+      ", got " <> T.pack (show e) <> ": " <> s1)
 coerce Nothing r = return r
 
 inferQExpr :: Maybe (Sort, Bool) -> QExpr -> ElabM InferResult
@@ -315,11 +316,12 @@ buildBinders dum bis fs = do
           if not dum || H.member v (icDependents ic) then LBound v else LDummy v
         else LReg v
       bis1 = mapMaybe f bis where
-        f (Binder _ l _) = let v = fromMaybe "_" (localName l) in
-          H.lookup v locals >>= \case
+        f bi@(Binder _ l _) = case localName l of
+          Nothing -> Just ("_", bi)
+          Just v -> case locals H.! v of
             LIOld (Binder _ _ (Just (TFormula _))) _ -> Nothing
-            LIOld bi@(Binder _ _ (Just (TType _))) _ -> Just (v, bi)
-            LIOld bi@(Binder _ _ Nothing) Nothing -> Just (v, bi)
+            LIOld bi'@(Binder _ _ (Just (TType _))) _ -> Just (v, bi')
+            LIOld bi'@(Binder _ _ Nothing) Nothing -> Just (v, bi')
             LIOld (Binder o l' Nothing) (Just t) ->
               Just (v, Binder o l' (Just (TType (AtDepType (AtPos o t) []))))
             LINew o bd s -> Just (v, newvar v o bd s)
