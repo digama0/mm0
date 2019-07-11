@@ -61,7 +61,7 @@ inferBinder :: Binder -> ElabM ()
 inferBinder bi@(Binder o l oty) = case oty of
   Nothing -> addVar True
   Just (TType ty) -> inferDepType ty >> addVar False
-  Just (TFormula f@(Formula o' _)) -> () <$ (parseMath f >>= inferFormulaProv o')
+  Just (TFormula f) -> () <$ (parseMath f >>= inferQExprProv)
   where
 
   addVar :: Bool -> ElabM ()
@@ -87,7 +87,7 @@ addDecl _vis _dk _px _x bis ret _v = do
     case ret' of
       Nothing -> return ()
       Just (TType ty) -> inferDepType ty
-      Just (TFormula f@(Formula o _)) -> () <$ (parseMath f >>= inferFormulaProv o)
+      Just (TFormula f) -> () <$ (parseMath f >>= inferQExprProv)
     return ()
 
 unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
@@ -98,17 +98,17 @@ unArrow bis (Just tys') = mapFst (bis ++) (go tys') where
   go (ty:tys) = mapFst (Binder (tyOffset ty) LAnon (Just ty) :) (go tys)
 
 addDelimiters :: [Char] -> [Char] -> Elab ()
-addDelimiters ls rs = modifyPE $ \e ->
-  let Delims arr = pDelims e
-      f :: Word8 -> Char -> (Int, Word8)
-      f w c = let i = fromEnum (toEnum (fromEnum c) :: Word8)
-              in (i, (U.unsafeIndex arr i) .|. w)
-  in e { pDelims = Delims $ arr U.// ((f 1 <$> ls) ++ (f 2 <$> rs)) }
+addDelimiters ls rs = modifyPE $ go 2 rs . go 1 ls where
+  go w cs pe = pe { pDelims = Delims $ arr U.// (f <$> cs) } where
+    Delims arr = pDelims pe
+    f :: Char -> (Int, Word8)
+    f c = let i = fromEnum (toEnum (fromEnum c) :: Word8)
+          in (i, (U.unsafeIndex arr i) .|. w)
 
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
 mkLiterals 1 p n = [PVar n p]
-mkLiterals i p n = PVar n maxBound : mkLiterals (i-1) p (n+1)
+mkLiterals i p n = PVar n PrecMax : mkLiterals (i-1) p (n+1)
 
 addPrefix :: Offset -> T.Text -> Const -> Prec -> ElabM ()
 addPrefix px x tk prec = do
@@ -158,8 +158,67 @@ insertInfixInfo c@(Const o tk) ti = do
     (\(InfixInfo i _ _) -> i) tk (pInfixes (ePE env))
   lift $ modifyPE $ \e -> e {pInfixes = ins ti}
 
--- inferFormula :: Offset -> Maybe Sort -> QExpr -> ElabM (Span LispVal, Sort)
--- inferFormula o tgt _ = unimplementedAt o
+app1 :: TermName -> SExpr -> SExpr
+app1 t e = App t [e]
 
-inferFormulaProv :: Offset -> QExpr -> ElabM (Span LispVal, Sort)
-inferFormulaProv o _ = unimplementedAt o
+coerce :: Maybe Sort -> (Offset, SExpr, Sort) -> ElabM (Offset, SExpr, Sort)
+coerce Nothing r = return r
+coerce (Just s2) (o, e, s1) =
+  try (getCoe app1 s1 s2) >>= \case
+    Just c -> return (o, c e, s2)
+    Nothing -> do
+      reportErr $ ElabError ELError o o
+        ("type error, expected " <> s2 <> ", got " <> s1) []
+      mzero
+
+inferQExpr :: Maybe Sort -> QExpr -> ElabM (Offset, SExpr, Sort)
+inferQExpr tgt q = inferQExpr' tgt q >>= coerce tgt
+
+inferQExpr' :: Maybe Sort -> QExpr -> ElabM (Offset, SExpr, Sort)
+inferQExpr' tgt (QApp (AtPos o t) ts) = do
+  var <- gets (H.lookup t . icLocals . eInfer)
+  tm <- try (now >>= getTerm t)
+  case (var, tm) of
+    (Just (LIOld _ (Just s)), _) -> do
+      unless (null ts) $ escapeAt o (t <> " is not a function")
+      return (o, SVar t, s)
+    (Just (LIOld bi Nothing), _) -> do
+      unless (null ts) $ escapeAt o (t <> " is not a function")
+      s <- fromJustAt o "cannot infer type" tgt
+      lift $ modifyInfer $ \ic -> ic {
+        icLocals = H.insert t (LIOld bi (Just s)) (icLocals ic) }
+      return (o, SVar t, s)
+    (_, Just (_, bis, DepType s _)) -> do
+      let {m = length ts; n = length bis}
+      unless (m == n) $ escapeAt o ("term '" <> t <> "' applied to " <>
+        T.pack (show m) <> " arguments, expected " <> T.pack (show n))
+      ts' <- zipWithM (\bi t' -> do
+          (_, e, _) <- inferQExpr (Just $ dSort $ binderType bi) t'
+          return e) bis ts
+      return (o, App t ts', s)
+    (Just (LINew o1 _ s1), Nothing) -> do
+      unless (null ts) $ escapeAt o (t <> " is not a function")
+      forM_ tgt $ \s2 ->
+        unless (s1 == s2) $ escapeErr $ ElabError ELError o o
+          ("inferred two types " <> s1 <> ", " <> s2 <> " for " <> t)
+          [(o1, o1, "inferred " <> s1 <> " here"), (o, o, "inferred " <> s2 <> " here")]
+      return (o, SVar t, s1)
+    (Nothing, Nothing) -> do
+      unless (null ts) $ escapeAt o (t <> " is not a function")
+      s <- fromJustAt o "cannot infer type" tgt
+      lift $ modifyInfer $ \ic -> ic {
+        icLocals = H.insert t (LINew o False s) (icLocals ic) }
+      return (o, SVar t, s)
+inferQExpr' _tgt (QUnquote (AtPos o _l)) = unimplementedAt o
+
+inferQExprProv :: QExpr -> ElabM (Offset, SExpr, Sort)
+inferQExprProv q = gets eProvableSorts >>= \case
+  [s] -> inferQExpr (Just s) q
+  _ -> do
+    (o, e, s) <- inferQExpr Nothing q
+    try (getCoeProv app1 s) >>= \case
+      Just (s2, c) -> return (o, c e, s2)
+      Nothing -> do
+        reportErr $ ElabError ELError o o
+          ("type error, expected provable sort, got " <> s) []
+        mzero

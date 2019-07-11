@@ -13,7 +13,6 @@ import Control.Monad.Reader
 import Control.Monad.STM
 import Data.Default
 import Data.List
-import Debug.Trace
 import Data.Maybe
 import qualified Data.IntMap as I
 import qualified Data.Text as T
@@ -218,7 +217,7 @@ elabErrorDiags uri pos errs = toDiag <$> errs where
   offs = foldl'
     (\m (CE.ElabError _ o1 o2 _ es) ->
       I.insert o1 o1 $ I.insert o2 o2 $
-      foldl' (\m (o1, o2, _) -> I.insert o1 o1 $ I.insert o2 o2 m) m es)
+      foldl' (\m' (o1', o2', _) -> I.insert o1' o1' $ I.insert o2' o2' m') m es)
     I.empty errs
   poss :: I.IntMap (Int, SourcePos)
   poss = fst $ E.attachSourcePos id offs pos
@@ -253,6 +252,6 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str =
       else case CP.parseAST file str of
         (errs, _, Nothing) -> return $ parseErrorDiags pos errs
         (errs, _, Just ast) -> do
-          (env, errs') <- liftIO $ CE.elaborate errs ast
+          (_env, errs') <- liftIO $ CE.elaborate errs ast
           return (elabErrorDiags fileUri pos errs')
     publishDiagnostics 100 fileNUri version (partitionBySource diags)

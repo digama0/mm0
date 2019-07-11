@@ -4,16 +4,13 @@ module CEnv (module CEnv, Offset, SortData, Visibility,
   LispVal, Prec) where
 
 import Control.Concurrent.STM
-import Control.Concurrent.STM.TVar
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
-import Data.List
 import Data.Word8
 import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Default
-import qualified Data.Set as S
 import qualified Data.IntMap as I
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
@@ -86,7 +83,7 @@ foldCoe tm (Coe (Coe1 _ t)) = tm t
 foldCoe tm (Coes c1 _ c2) = foldCoe tm c1 . foldCoe tm c2
 
 coeToList :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)]
-coeToList c s1 s2 = go c s1 s2 [] where
+coeToList c' s1' s2' = go c' s1' s2' [] where
   go :: Coe -> Ident -> Ident -> [(Coe1, Ident, Ident)] -> [(Coe1, Ident, Ident)]
   go (Coe c) s1 s2 = ((c, s1, s2) :)
   go (Coes g s2 f) s1 s3 = go g s2 s3 . go f s1 s2
@@ -116,7 +113,7 @@ data Decl =
   | DDef Visibility [PBinder] DepType SExpr
   | DTheorem Visibility [PBinder] [SExpr] SExpr LispVal
 
-data LocalInfer = LIOld Binder (Maybe Text) | LINew Offset Bool Text
+data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort
 
 liOffset :: LocalInfer -> Offset
 liOffset (LIOld (Binder o _ _) _) = o
@@ -151,14 +148,17 @@ runElab m errs = do
   let report e = atomically $ modifyTVar pErrs (e :)
   dat <- V.unsafeNew 16
   (a, env, _) <- runRWST m report def {eLispData = dat}
-  errs <- readTVarIO pErrs
-  return (a, env, errs)
+  errs' <- readTVarIO pErrs
+  return (a, env, errs')
 
 resuming :: ElabM () -> Elab ()
 resuming m = () <$ runMaybeT m
 
 reportErr :: ElabError -> ElabM ()
 reportErr e = lift $ ask >>= \f -> lift $ f e
+
+escapeErr :: ElabError -> ElabM a
+escapeErr e = reportErr e >> mzero
 
 reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
 reportAt o l s = reportErr $ ElabError l o o s []
@@ -229,14 +229,6 @@ withInfer m =
   lift (modifyInfer (const def)) >> m >>
   lift (modifyInfer (const undefined))
 
-lookupOrInferLocal :: Text -> Text -> Offset -> ElabM Text
-lookupOrInferLocal v s o =
-  gets (H.lookup v . icLocals . eInfer) >>= \case
-    Nothing -> do
-      lift $ modifyInfer $ \ic -> ic {
-        icLocals = H.insert v (LINew o False s) (icLocals ic)}
-      undefined
-
 peGetCoe' :: ParserEnv -> Text -> Text -> Maybe Coe
 peGetCoe' pe s1 s2 = M.lookup s1 (pCoes pe) >>= M.lookup s2
 
@@ -244,7 +236,7 @@ getCoe' :: Text -> Text -> ElabM Coe
 getCoe' s1 s2 = gets ePE >>= \pe -> fromJust' $ peGetCoe' pe s1 s2
 
 peGetCoe :: ParserEnv -> (Text -> a -> a) -> Text -> Text -> Maybe (a -> a)
-peGetCoe pe tm s1 s2 | s1 == s2 = return id
+peGetCoe _ _ s1 s2 | s1 == s2 = return id
 peGetCoe pe tm s1 s2 = foldCoe tm <$> peGetCoe' pe s1 s2
 
 getCoe :: (Text -> a -> a) -> Text -> Text -> ElabM (a -> a)
@@ -260,44 +252,43 @@ getCoeProv :: (Text -> a -> a) -> Text -> ElabM (Text, a -> a)
 getCoeProv tm s = gets ePE >>= \pe -> fromJust' $ peGetCoeProv pe tm s
 
 addCoe :: Coe1 -> Sort -> Sort -> ElabM ()
-addCoe cc@(Coe1 o c) s1 s2 = do
+addCoe cc@(Coe1 o _) = \s1 s2 -> do
   let cs = Coe cc
-  coes <- gets (pCoes . ePE)
-  coes <- foldCoeLeft s1 coes (\s1' l r -> r >>= addCoeInner o (Coes cs s1' l) s1' s2) (return coes)
-  coes <- addCoeInner o cs s1 s2 coes
-  coes <- foldCoeRight s2 coes (\s2' l r -> r >>= addCoeInner o (Coes l s2' cs) s1 s2') (return coes)
-  setCoes coes
+  coes1 <- gets (pCoes . ePE)
+  coes2 <- foldCoeLeft s1 coes1 (\s1' l r -> r >>= addCoeInner (Coes cs s1' l) s1' s2) (return coes1)
+  coes3 <- addCoeInner cs s1 s2 coes2
+  coes4 <- foldCoeRight s2 coes3 (\s2' l r -> r >>= addCoeInner (Coes l s2' cs) s1 s2') (return coes3)
+  setCoes coes4
   where
 
   foldCoeLeft :: Sort -> M.Map Sort (M.Map Sort Coe) -> (Sort -> Coe -> a -> a) -> a -> a
-  foldCoeLeft s2 coes f a = M.foldrWithKey' g a coes where
+  foldCoeLeft s2 coes f a' = M.foldrWithKey' g a' coes where
     g s1 m a = maybe a (\l -> f s1 l a) (M.lookup s2 m)
 
   foldCoeRight :: Sort -> M.Map Sort (M.Map Sort Coe) -> (Sort -> Coe -> a -> a) -> a -> a
   foldCoeRight s1 coes f a = maybe a (M.foldrWithKey' f a) (M.lookup s1 coes)
 
   toStrs :: [(Coe1, Sort, Sort)] -> [Text]
-  toStrs [(c, s1, s2)] = [s1, " -> ", s2]
-  toStrs ((c, s1, s2) : cs) = s1 : " -> " : toStrs cs
+  toStrs [] = undefined
+  toStrs [(_, s1, s2)] = [s1, " -> ", s2]
+  toStrs ((_, s1, _) : cs) = s1 : " -> " : toStrs cs
 
   toRelated :: [(Coe1, Sort, Sort)] -> [(Offset, Offset, Text)]
-  toRelated = fmap $ \(Coe1 o x, s1, s2) -> (o, o, s1 <> " -> " <> s2)
+  toRelated = fmap $ \(Coe1 o' _, s1, s2) -> (o', o', s1 <> " -> " <> s2)
 
-  addCoeInner :: Offset -> Coe -> Sort -> Sort ->
+  addCoeInner :: Coe -> Sort -> Sort ->
     M.Map Sort (M.Map Sort Coe) -> ElabM (M.Map Sort (M.Map Sort Coe))
-  addCoeInner o c s1 s2 coes = do
+  addCoeInner c s1 s2 coes = do
     let l = coeToList c s1 s2
     when (s1 == s2) $ do
-      reportErr $ ElabError ELError o o
+      escapeErr $ ElabError ELError o o
         (T.concat ("coercion cycle detected: " : toStrs l))
         (toRelated l)
-      mzero
     try (getCoe' s1 s2) >>= mapM_ (\c2 -> do
       let l2 = coeToList c2 s1 s2
-      reportErr $ ElabError ELError o o
+      escapeErr $ ElabError ELError o o
         (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
-        (toRelated (l ++ l2))
-      mzero)
+        (toRelated (l ++ l2)))
     return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
 
   setCoes :: M.Map Sort (M.Map Sort Coe) -> ElabM ()
@@ -305,20 +296,19 @@ addCoe cc@(Coe1 o c) s1 s2 = do
     sorts <- gets eSorts
     let provs = H.keysSet (H.filter (\(_, _, sd) -> sProvable sd) sorts)
         f :: Sort -> Sort -> Coe -> ElabM (H.HashMap Sort Sort) -> ElabM (H.HashMap Sort Sort)
-        f s1 s2 c2 r =
-          if HS.member s2 provs then do
+        f s1 s2' c' r =
+          if HS.member s2' provs then do
             m <- r
             forM_ (H.lookup s1 m) $ \s2 -> do
-              c1 <- getCoe' s1 s2
-              let l1 = coeToList c1 s1 s2
-              let l2 = coeToList c2 s1 s2
-              reportErr $ ElabError ELError o o
+              c <- getCoe' s1 s2
+              let l = coeToList c s1 s2
+              let l' = coeToList c' s1 s2'
+              escapeErr $ ElabError ELError o o
                 (T.concat ("coercion diamond to provable detected:\n" :
-                  toStrs l1 ++ " provable\n" : toStrs l2 ++ [" provable"]))
-                (toRelated (l1 ++ l2))
-              mzero
-            return (H.insert s1 s2 m)
+                  toStrs l ++ " provable\n" : toStrs l' ++ [" provable"]))
+                (toRelated (l ++ l'))
+            return (H.insert s1 s2' m)
           else r
-    m <- M.foldrWithKey' (\s1 m r -> M.foldrWithKey' (f s1) r m)
+    m <- M.foldrWithKey' (\s1' m r -> M.foldrWithKey' (f s1') r m)
       (return (foldr (\v -> H.insert v v) H.empty provs)) coes
     lift $ modifyPE $ \pe -> pe {pCoes = coes, pCoeProv = m}

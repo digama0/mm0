@@ -3,10 +3,8 @@ module Main (main) where
 import System.IO
 import System.Exit
 import System.Environment
-import System.Timeout
 import qualified Data.ByteString.Lazy as B
 import Parser
-import AST
 import Util
 import Elaborator
 import Verifier
@@ -47,8 +45,8 @@ doVerify args = do
   case rest of
     [] -> die "error: no proof file"
     (mmp:_) -> do
-      pf <- B.readFile mmp
-      pf <- liftIO (parseProof pf)
+      pff <- B.readFile mmp
+      pf <- liftIO (parseProof pff)
       out <- liftIO (verify s env pf)
       if null out then putStrLn "verified"
       else mapM_ putStr out

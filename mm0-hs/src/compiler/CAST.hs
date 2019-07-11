@@ -1,15 +1,11 @@
 module CAST (module CAST, AtDepType(..), SortData(..)) where
 
-import Control.Monad.Except
-import qualified Data.ByteString as B
-import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Environment (SortData(..))
-import Util
 
 type Offset = Int
-data AtPos a = AtPos Offset a
-data Span a = Span Offset a Offset
+data AtPos a = AtPos Offset a deriving (Show)
+data Span a = Span Offset a Offset deriving (Show)
 
 instance Functor AtPos where
   fmap f (AtPos l a) = AtPos l (f a)
@@ -47,7 +43,16 @@ data Notation =
 data Literal = NConst Const Prec | NVar T.Text
 
 data Const = Const {cOffs :: Offset, cToken :: T.Text}
-type Prec = Int
+data Prec = Prec Int | PrecMax deriving (Eq)
+
+instance Show Prec where
+  show (Prec n) = show n
+  show PrecMax = "max"
+
+instance Ord Prec where
+  _ <= PrecMax = True
+  PrecMax <= _ = False
+  Prec m <= Prec n = m <= n
 
 type InputKind = T.Text
 type OutputKind = T.Text
@@ -97,6 +102,7 @@ data LispVal =
 cons :: LispVal -> LispVal -> LispVal
 cons l (List r) = List (l : r)
 cons l (DottedList rs r) = DottedList (l : rs) r
+cons l r = DottedList [l] r
 
 lvLength :: LispVal -> Int
 lvLength (DottedList e _) = length e

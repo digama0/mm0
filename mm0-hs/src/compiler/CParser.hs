@@ -1,12 +1,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module CParser (parseAST, runParser, PosState(..),
-  ParseError, Parser, errorOffset, initialPosState, lispVal, identStart, identRest) where
+  ParseError, Parser, errorOffset, initialPosState, atPos,
+  lispVal, identStart, identRest) where
 
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad
-import Control.Monad.Identity
 import Control.Monad.Trans.Class
--- import Control.Monad.Trans.State (State, runState)
 import qualified Control.Monad.Trans.State as ST
 import Data.Void
 import Data.Char
@@ -16,13 +15,11 @@ import Text.Megaparsec hiding (runParser, runParser', ParseError)
 import qualified Text.Megaparsec as MT
 import Text.Megaparsec.Char
 import Control.Monad.Trans.State
-import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Text.Builder as TB
 import qualified Text.Megaparsec.Char.Lexer as L
 import CAST
-import Util
 
 -- TODO: This should be in Megaparsec
 initialPosState :: String -> s -> PosState s
@@ -124,8 +121,6 @@ sortStmt = do
     x <- ident
     return $ AtPos ostmt (Sort o x sd)
 
-type DeclStmt = T.Text -> [Binder] -> Maybe ([AtPos Type], Type) -> Parser Stmt
-
 constant :: Parser Const
 constant = between (symbol "$") (symbol "$") $
   liftA2 Const getOffset $
@@ -150,7 +145,7 @@ binder = braces (f LBound) <|> parens (f LReg) where
   local :: (T.Text -> Local) -> Maybe () -> T.Text -> Local
   local _ _ "_" = LAnon
   local _ (Just _) x = LDummy x
-  local f Nothing x = f x
+  local g Nothing x = g x
   mk :: [AtPos Local] -> Maybe Type -> [Binder]
   mk [] _ = []
   mk (AtPos loc l : ls) ty = Binder loc l ty : mk ls ty
@@ -192,7 +187,7 @@ declStmt = do
       _ -> errs}
     if null errs' then
       return $ Just (AtPos ostmt (Decl vis dk px x bis ret val))
-    else Nothing <$ mapM_ (\(o, msg) -> failAt o msg) errs'
+    else Nothing <$ mapM_ (\(o', msg) -> failAt o' msg) errs'
   where
 
   checkBinders :: DeclKind -> Maybe Offset -> [Binder] -> [(Offset, String)]
@@ -204,9 +199,9 @@ declStmt = do
     if dk == DKTerm || dk == DKDef then
       [(o, "A term/def does not take formula hypotheses")] else [] ++
     checkBinders dk (Just o) bis
-  checkBinders dk last (Binder o _ Nothing : bis) =
+  checkBinders dk loff (Binder o _ Nothing : bis) =
     if dk == DKTerm then [(o, "Cannot infer binder type")] else [] ++
-    checkBinders dk last bis
+    checkBinders dk loff bis
   checkBinders dk off (Binder o2 l (Just (TType (AtDepType _ ts))) : bis) =
     maybe [] (\o ->
       [(o, "Hypotheses must come after term variables"),
@@ -231,12 +226,12 @@ thmsStmt = mAtPos $ kw "theorems" *>
   commit (liftA2 Theorems binders (symbol "=" *> braces (many lispVal)))
 
 prec :: Parser Prec
-prec = (maxBound <$ kw "max") <|> (do
+prec = (PrecMax <$ kw "max") <|> (do
   o <- getOffset
-  n <- lexeme L.decimal
+  n :: Integer <- lexeme L.decimal
   if n < fromIntegral (maxBound :: Int) then
-    return (fromIntegral n)
-  else maxBound <$ failAt o "precedence out of range")
+    return (Prec (fromIntegral n))
+  else PrecMax <$ failAt o "precedence out of range")
 
 notation :: Parser (Maybe Notation)
 notation = delimNota <|> fixNota <|> coeNota <|> genNota where
@@ -262,10 +257,10 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
     mk <- (Prefix <$ kw "prefix") <|>
       (Infix False <$ kw "infixl") <|> (Infix True <$ kw "infixr")
     commit $ do
-      mk <- liftM3 mk getOffset ident (symbol ":" *> constant) <* kw "prec"
+      mk' <- liftM3 mk getOffset ident (symbol ":" *> constant) <* kw "prec"
       o <- getOffset
-      mk <$> prec >>= \case
-        r@(Infix _ _ _ _ n) | n == maxBound -> do
+      mk' <$> prec >>= \case
+        r@(Infix _ _ _ _ PrecMax) -> do
           failAt o "infix prec max not allowed"
           return r
         r -> return r
@@ -296,10 +291,10 @@ doStmt = mAtPos (kw "do" >> commit (braces (Do <$> many lispVal)))
 strLit :: Parser T.Text
 strLit = single '"' *> (TB.run <$> p) where
   p = do
-    chunk <- TB.text <$>
+    toks <- TB.text <$>
       takeWhileP (Just "end of string") (\c -> c /= '\\' && c /= '"')
-    let f from to = single from *> ((TB.char to <>) . (chunk <>) <$> p)
-    (chunk <$ single '"') <|> (single '\\' *>
+    let f from to = single from *> ((TB.char to <>) . (toks <>) <$> p)
+    (toks <$ single '"') <|> (single '\\' *>
       (f '"' '"' <|> f '\\' '\\' <|> f 'n' '\n' <|> f 'r' '\r'))
 
 lispIdent :: Char -> Bool
@@ -326,8 +321,8 @@ hashAtom _ = empty
 
 atom :: T.Text -> Parser LispVal
 atom t = if legalIdent t then return (Atom t) else empty where
-  legalIdent t = t `elem` ["+", "-", "..."] ||
-    case T.unpack t of
+  legalIdent t' = t' `elem` ["+", "-", "..."] ||
+    case T.unpack t' of
       '-' : '>' : s -> all (`notElem` ("+-.@" :: String)) s
       c : s -> not (isDigit c) && all (`notElem` ("+-.@" :: String)) s
       [] -> False
