@@ -5,6 +5,7 @@ import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans.Reader
 import Data.Bits
+import Debug.Trace
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
@@ -26,14 +27,15 @@ parseMath (Formula o fmla) = do
   let p = takeWhileP Nothing isSpace *> parseExpr (Prec 0) <* (eof <?> "'$'")
       (errs, _, res) = runParser (runReaderT p pe) "" o fmla
   mapM_ (reportErr . toElabError) errs
-  fromJust' res
+  r <- fromJust' res
+  traceShow r $ return r
 
 isSpace :: Char -> Bool
 isSpace c = c == ' ' || c == '\n'
 
 unquote :: MathParser QExpr
 unquote = do
-  single ',' >> notFollowedBy (satisfy isSpace)
+  try (single ',' >> notFollowedBy (satisfy isSpace))
   lift $ QUnquote <$> atPos lispVal
 
 token1 :: MathParser (AtPos T.Text)
@@ -58,6 +60,15 @@ token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
             cok (AtPos o (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
           | otherwise -> go t2 (i+1)
   in go t 0
+
+setErrorOffset :: Offset -> ParseError s e -> ParseError s e
+setErrorOffset o (TrivialError _ u p) = TrivialError o u p
+setErrorOffset o (FancyError _ x) = FancyError o x
+
+tryAt :: Offset -> MathParser a -> MathParser a
+tryAt o (ReaderT p) = ReaderT $ \pe -> ParsecT $ \s cok _ eok eerr ->
+  let eerr' err _ = eerr (setErrorOffset o err) s
+  in unParser (p pe) s cok eerr' eok eerr'
 
 tkSatisfy :: (T.Text -> Bool) -> MathParser (AtPos T.Text)
 tkSatisfy p = try $ do
@@ -94,13 +105,17 @@ parsePrefix p =
   (tk "(" *> parseExpr (Prec 0) <* tk ")") <|>
   try (do {
     AtPos o v <- token1;
-    ((checkPrec p True v >> do
-      PrefixInfo _ x lits <- asks (H.lookup v . pPrefixes) >>= fromMaybeM
+    ((do
+      PrefixInfo _ x lits <- tryAt o (checkPrec p True v >>
+        asks (H.lookup v . pPrefixes) >>= fromMaybeM)
       QApp (AtPos o x) <$> parseLiterals lits)
-      <?> ("prefix operator of precedence >= " ++ show p)) <|>
-    ((guard (isIdent v) >>
+      <?> ("prefix >= " ++ show p)) <|>
+    ((do
+      tryAt o (do
+        guard (isIdent v)
+        asks (not . H.member v . pPrec) >>= guard)
       QApp (AtPos o v) <$>
-        if p <= Prec appPrec then
+        if p <= Prec appPrec && v /= "_" then
           many (parsePrefix PrecMax)
         else return [])
       <?> "identifier") })
@@ -114,7 +129,7 @@ getLhs p lhs =
     _ <- token1
     rhs <- parsePrefix p >>= getRhs q
     getLhs p (QApp (AtPos o x) [lhs, rhs]))
-    <?> ("infix operator of precedence >= " ++ show p)) <|>
+    <?> ("infix >= " ++ show p)) <|>
   return lhs
 
 getRhs :: Prec -> QExpr -> MathParser QExpr
@@ -124,8 +139,7 @@ getRhs p rhs =
     InfixInfo _ _ r <- asks (H.lookup v . pInfixes) >>= fromMaybeM
     (do q <- checkPrec p r v
         getLhs q rhs >>= getRhs p)
-      <?> ("infix operator of precedence " ++
-        (if r then ">= " else "> ") ++ show p)) <|>
+      <?> ("infix " ++ (if r then ">= " else "> ") ++ show p)) <|>
   return rhs
 
 parseExpr :: Prec -> MathParser QExpr

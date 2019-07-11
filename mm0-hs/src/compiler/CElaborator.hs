@@ -30,6 +30,7 @@ elabStmt (AtPos pos s) = resuming $ case s of
   Notation (Prefix px x tk prec) -> addPrefix px x tk prec
   Notation (Infix r px x tk prec) -> addInfix r px x tk prec
   Notation (NNotation px x bis _ lits) -> addNotation px x bis lits
+  Notation (Coercion px x s1 s2) -> addCoercion px x s1 s2
   _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
@@ -199,6 +200,14 @@ addNotation px x bis = \lits -> do
       (PVar n q :) <$> go lits
   processLits (AtPos o _ : _) = escapeAt o "notation must begin with a constant"
   processLits [] = error "empty notation"
+
+addCoercion :: Offset -> T.Text -> Sort -> Sort -> ElabM ()
+addCoercion px x s1 s2 = do
+  try (now >>= getTerm x) >>= \case
+    Nothing -> escapeAt px ("term '" <> x <> "' not declared")
+    Just (_, [PReg _ (DepType s1' [])], DepType s2' [])
+      | s1 == s1' && s2 == s2' -> addCoe (Coe1 px x) s1 s2
+    _ -> escapeAt px ("coercion '" <> x <> "' does not match declaration")
 
 insertPrec :: Const -> Prec -> ElabM ()
 insertPrec (Const o tk) p = do

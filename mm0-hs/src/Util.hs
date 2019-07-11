@@ -1,9 +1,10 @@
-module Util where
+module Util (module Util, module Debug.Trace) where
 
 import Control.Monad.Except
 import Control.Monad.Writer
 import Data.Word (Word8)
 import Data.List (group, sort)
+import Debug.Trace
 import System.Exit
 import qualified Data.Char as C
 import qualified Data.Map.Strict as M

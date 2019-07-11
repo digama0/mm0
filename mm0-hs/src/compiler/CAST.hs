@@ -43,7 +43,7 @@ data Notation =
     Delimiter [Char] (Maybe [Char])
   | Prefix Offset T.Text Const Prec
   | Infix Bool Offset T.Text Const Prec
-  | Coercion T.Text T.Text T.Text
+  | Coercion Offset T.Text T.Text T.Text
   | NNotation Offset T.Text [Binder] (Maybe Type) [AtPos Literal]
 
 data Literal = NConst Const Prec | NVar T.Text

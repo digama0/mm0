@@ -226,7 +226,7 @@ infixl Im: $''$ prec 80;
 def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
 
 def comp (F G: set) (.x .y .z: nat): set =
-$ opab x z (E. y x <> y e. G /\ y <> z e. F) $;
+$ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
 infixr comp: $o.$ prec 90;
 
 def res (A: set) (n: nat): nat = $ sep (lower (Xp n V)) A $;

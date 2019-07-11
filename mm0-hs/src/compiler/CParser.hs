@@ -267,7 +267,7 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
 
   coeNota :: Parser (Maybe Notation)
   coeNota = kw "coercion" >> commit
-    (liftM3 Coercion ident (symbol ":" *> ident) (symbol ">" >> ident))
+    (liftM4 Coercion getOffset ident (symbol ":" *> ident) (symbol ">" >> ident))
 
   genNota :: Parser (Maybe Notation)
   genNota = kw "notation" >> commit

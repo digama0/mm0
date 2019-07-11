@@ -1,5 +1,5 @@
-delimiter $ ( ) ~ { } , $;
-strict provable sort wff;
+delimiter $ ( [ { ~ , $
+          $ } ] ) ~ , $;
 strict provable sort wff;
 term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
 term neg (ph: wff): wff; prefix neg: $~$ prec 40;
@@ -38,22 +38,21 @@ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
-notation sb (a: nat) {x: nat} (ph: wff x): wff =
-  ($[$:30) a ($/$:0) x ($]$:0) ph;
+notation sb (a x ph) = ($[$:30) a ($/$:0) x ($]$:0) ph;
 
 axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
 axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
 
 axiom ax_10 {x: nat} (ph: wff x): $ ~(A. x ph) -> A. x ~ (A. x ph) $;
 axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
-axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> [ y / x ] ph $;
+axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> [y / x] ph $;
 
 strict sort set;
 term ab {x: nat} (ph: wff x): set;
 notation ab {x: nat} (ph: wff x): set = (${$:max) x ($|$:0) ph ($}$:0);
 term el: nat > set > wff; infixl el: $e.$ prec 50;
 axiom elab (a: nat) {x: nat} (ph: wff x):
-  $ a e. {x | ph} <-> [ a / x ] ph $;
+  $ a e. {x | ph} <-> [a / x] ph $;
 
 def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
 infixl eqs: $==$ prec 50;
@@ -70,11 +69,11 @@ infixl Union: $u.$ prec 65;
 
 def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $V$ prec max;
 
-def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
+def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [a / x] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
   ($S[$:70) a ($/$:0) x ($]$:0) A;
 
-def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the(S[ a / x ] {y | y = b}) $;
+def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the (S[a / x] {y | y = b}) $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
   ($N[$:70) a ($/$:0) x ($]$:0) b;
 
@@ -95,7 +94,7 @@ def d10: nat = $suc 9$; prefix d10: $10$ prec max;
 axiom peano1 (a: nat): $ ~(0 = suc a) $;
 axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
 axiom peano5 {x: nat} (ph: wff x):
-  $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
+  $ [0 / x] ph -> A. x (ph -> [suc x / x] ph) -> A. x ph $;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
 term mul: nat > nat > nat; infixl add: $*$ prec 70;
@@ -146,7 +145,7 @@ def pi222 (n: nat): nat = $ snd (pi22 n) $;
 def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
 theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
 theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
-  $ rec z x s (suc n) = N[ rec z x s n / x ] s $;
+  $ rec z x s (suc n) = N[rec z x s n / x] s $;
 
 def sub (a b: nat): nat; infixl sub: $-$ prec 65;
 theorem sub0 (a: nat): $ a - 0 = a $;
@@ -251,7 +250,7 @@ theorem writeNe (f x y a: nat): $ a != x -> write f x y @ a = f @ a $;
 
 def srec {x: nat} (s: nat x): set;
 theorem srecval {x y: nat} (s: nat x) (n: nat):
-  $ srec x s @ n = N[ srec x s |` upto n / x ] s $;
+  $ srec x s @ n = N[srec x s |` upto n / x] s $;
 
 def srecp (A: set): set;
 theorem srecpval (A: set) (n: nat):
