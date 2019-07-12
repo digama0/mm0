@@ -1,10 +1,8 @@
 module HolCheck where
 
 import Control.Monad.Except
-import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import qualified Data.Map.Strict as M
-import qualified Data.Sequence as Q
 import qualified Data.Set as S
 import qualified Data.Text as T
 import Environment (Ident)
@@ -48,7 +46,7 @@ withContext s m = catchError m (\e -> throwError ("while checking " ++ T.unpack 
 checkDecls :: [HDecl] -> Either String GlobalCtx
 checkDecls ds = go ds (GlobalCtx S.empty M.empty M.empty M.empty) where
   go [] gctx = return gctx
-  go (d : ds) gctx = addDecl gctx d >>= go ds
+  go (d : ds') gctx = addDecl gctx d >>= go ds'
 
 addDecl :: GlobalCtx -> HDecl -> Either String GlobalCtx
 addDecl gctx = addDecl' where
@@ -91,23 +89,23 @@ addDecl gctx = addDecl' where
     ts' <- mapM (inferSLam ctx) es
     fromJustError (show ctx ++ " |/- " ++ show (HApp t es vs) ++
       ", where:\n  " ++ T.unpack t ++ " : " ++ show ty ++
-      foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip es ts')) $ do
+      foldMap (\(e, t') -> "\n  " ++ show e ++ " : " ++ show t') (zip es ts')) $ do
       guard (ts == ts')
       mapM (lcLVar ctx) vs >>= guard . (ss ==)
       return r
-  inferTerm ctx HTSorry = fail "sorry found"
+  inferTerm _ HTSorry = fail "sorry found"
 
   inferSLam :: LocalCtx -> SLam -> Either String SType
   inferSLam ctx (SLam ss t) = SType (snd <$> ss) <$> go ctx ss where
     go :: LocalCtx -> [(Ident, Sort)] -> Either String Sort
-    go ctx [] = inferTerm ctx t
-    go ctx ((x, s) : ss) = go (lcInsert x s ctx) ss
+    go ctx' [] = inferTerm ctx' t
+    go ctx' ((x, s) : ss') = go (lcInsert x s ctx') ss'
 
   inferProofLam :: LocalCtx -> HProofLam -> ProofM GType
   inferProofLam ctx (HProofLam ss p) = GType ss <$> go ctx ss where
     go :: LocalCtx -> [(Ident, Sort)] -> ProofM Term
-    go ctx [] = inferProof ctx p
-    go ctx ((x, s) : ss) = go (lcInsert x s ctx) ss
+    go ctx' [] = inferProof ctx' p
+    go ctx' ((x, s) : ss') = go (lcInsert x s ctx') ss'
 
   inferProof :: LocalCtx -> HProof -> ProofM Term
   inferProof ctx p@(HHyp n ys) = get >>= \heap -> lift $ do
@@ -124,8 +122,8 @@ addDecl gctx = addDecl' where
     hs' <- mapM (inferProofLam ctx) ps
     let err = "failed to check " ++ show p ++
           ", where:\n  " ++ T.unpack t ++ " : " ++ show ty ++
-          foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip es ts') ++
-          foldMap (\(e, t) -> "\n  " ++ show e ++ " : " ++ show t) (zip ps hs')
+          foldMap (\(e, t') -> "\n  " ++ show e ++ " : " ++ show t') (zip es ts') ++
+          foldMap (\(e, t') -> "\n  " ++ show e ++ " : " ++ show t') (zip ps hs')
     guardError (err ++ "\ntype mismatch in regular vars") $ (snd <$> ts) == ts'
     unless (all2 alphaGType (substGType m <$> hs) hs') $
       forM_ (zip hs hs') $ \(h, h') -> do
@@ -154,7 +152,7 @@ addDecl gctx = addDecl' where
     (t1, t2, _) <- inferConv ctx eq
     inferProof ctx p >>= guard . (t1 ==)
     return t2
-  inferProof ctx HSorry = fail "sorry found"
+  inferProof _ HSorry = fail "sorry found"
 
   inferConvLam :: LocalCtx -> HConvLam -> ProofM (SLam, SLam, SType)
   inferConvLam ctx (HConvLam ss p) = do
@@ -162,8 +160,8 @@ addDecl gctx = addDecl' where
     return (SLam ss e1, SLam ss e2, SType (snd <$> ss) t)
     where
     go :: LocalCtx -> [(Ident, Sort)] -> ProofM (Term, Term, Sort)
-    go ctx [] = inferConv ctx p
-    go ctx ((x, s) : ss) = go (lcInsert x s ctx) ss
+    go ctx' [] = inferConv ctx' p
+    go ctx' ((x, s) : ss') = go (lcInsert x s ctx') ss'
 
   inferConv :: LocalCtx -> HConv -> ProofM (Term, Term, Sort)
   inferConv ctx (CRefl e) = do

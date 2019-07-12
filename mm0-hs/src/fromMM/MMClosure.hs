@@ -1,7 +1,6 @@
 module MMClosure (closure) where
 
 import Control.Monad.State hiding (liftIO)
-import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import Environment (SExpr(..))
@@ -28,18 +27,20 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
         Just (_, Thm (hs, _) (_, e) pr) -> do
           mapM_ checkHyp hs
           checkExpr e
-          mapM_ (\(ds, p) -> checkProof p) pr
+          mapM_ (checkProof . snd) pr
         Just (_, Hyp (VHyp s _)) -> addSort s
         Just (_, Hyp (EHyp _ e)) -> checkExpr e
+        Just (_, Alias th) -> checkStmt th
         Nothing -> error $ "statement " ++ T.unpack x ++ " not found in the MM file"
 
   checkHyp :: (VarStatus, Label) -> State (S.Set Sort, S.Set Label) ()
   checkHyp (_, x) = checkStmt x >> case snd $ getStmt db x of
     Hyp (VHyp s _) -> addSort s
     Hyp (EHyp _ e) -> checkExpr e
+    _ -> error "bad hyp"
 
   checkExpr :: MMExpr -> State (S.Set Sort, S.Set Label) ()
-  checkExpr (SVar v) = return ()
+  checkExpr (SVar _) = return ()
   checkExpr (App t es) = checkStmt t >> mapM_ checkExpr es
 
   checkProof :: Proof -> State (S.Set Sort, S.Set Label) ()

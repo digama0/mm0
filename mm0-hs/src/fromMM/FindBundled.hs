@@ -1,11 +1,9 @@
 module FindBundled (findBundled, bundle, reportBundled, Bundles) where
 
 import Control.Monad.RWS.Strict hiding (liftIO)
-import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap as I
 import qualified Data.Set as S
-import Environment (SortData(..))
 import MMTypes
 import Util
 
@@ -13,7 +11,7 @@ type Bundles = M.Map [Int] Int
 
 bundle :: (Ord a) => [a] -> [Int]
 bundle = go M.empty 0 where
-  go m _ [] = []
+  go _ _ [] = []
   go m n (a:as) = case m M.!? a of
     Just i -> i : go m n as
     Nothing -> n : go (M.insert a n m) (n+1) as
@@ -51,21 +49,22 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
     go (_:ls) k i m = go ls (k+1) i m
 
   checkProof :: (Label, Maybe [Int]) -> Int -> I.IntMap Int -> Proof -> FindBundledM ()
-  checkProof x k m = go where
+  checkProof x k im = go where
     go (PSave p) = go p
     go (PThm t ps) = do
       mapM_ go ps
       forM_ (pureArgs M.!? t) $ \l ->
         let l' = (\n -> case ps !! n of
-              PHyp _ i -> Left (m I.! i)
-              PDummy i -> Right i) <$> l in
-        unless (allUnique l') $ do
+              PHyp _ i -> Left (im I.! i)
+              PDummy i -> Right i
+              _ -> error "bad proof") <$> l
+        in unless (allUnique l') $ do
           let b = bundle l'
           m <- gets (M.findWithDefault M.empty t)
           if not strict || M.member b m then do
               modify $ M.insert t (M.alter (Just . maybe k (min k)) b m)
               case getStmt db t of
-                (_, Thm fr _ (Just (_, p))) ->
+                (_, Thm _ _ (Just (_, p))) ->
                   checkProof (t, Just b) (k+1) (I.fromList (zip l b)) p
                 _ -> return ()
           else tell $ S.singleton (x, (t, b))

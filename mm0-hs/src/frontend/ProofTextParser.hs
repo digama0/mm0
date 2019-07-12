@@ -104,13 +104,14 @@ readProof = ident >>= \case
   "local" -> ident >>= \case
     "def" -> readDef False
     "theorem" -> readThm False
+    _ -> empty
   "input" -> ident >>= \case
     "string" -> return $ StepInout (VIKString False)
     _ -> empty
   "output" -> ident >>= \case
     "string" -> return $ StepInout (VIKString True)
     _ -> empty
-  l -> empty
+  _ -> empty
 
 readDef :: Bool -> Parser ProofCmd
 readDef st = do
@@ -131,7 +132,7 @@ readThm st = do
   uf <- (do
       str "unfolding" <* space
       t <- many readTerm
-      paren (many insertVar)
+      _ <- paren (many insertVar)
       return t)
     <|> return []
   hyps <- many readHyp
@@ -173,7 +174,7 @@ readProofExpr =
   bracket _bracketleft _bracketright (do
     e <- readProofExpr
     symbol _equal
-    insertVar
+    _ <- insertVar
     return (Save e)) <|>
   (Load <$> try readVar) <|>
   (flip VTerm [] <$> try readTerm) <|>

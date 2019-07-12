@@ -57,7 +57,7 @@ type ToHolM = RWST () (Endo [HDecl]) ToHolState (Either String)
 
 toHol :: Environment -> Proofs -> Either String [HDecl]
 toHol env = \pfs -> do
-  (_, st, Endo f) <- runRWST (mapM_ trCmd pfs) () $
+  (_, _, Endo f) <- runRWST (mapM_ trCmd pfs) () $
     ToHolState 0 Q.empty M.empty Q.empty M.empty Q.empty I.empty
   return (f [])
   where
@@ -95,10 +95,10 @@ toHol env = \pfs -> do
     let name = fromMaybe (T.pack $ show n) x
     let (bis, ty, rv, lv, r, e, ds') = translateDef g vs ret ds def
     tell (Endo (HDDef name rv lv r e :))
-    modify $ \g -> g {
-      thTerms = thTerms g Q.|> HTermData name bis ty,
-      thTermIx = M.insert name n (thTermIx g),
-      thDefs = I.insert (ofTermID n) (HDefData ds' def) (thDefs g) }
+    modify $ \g' -> g' {
+      thTerms = thTerms g' Q.|> HTermData name bis ty,
+      thTermIx = M.insert name n (thTermIx g'),
+      thDefs = I.insert (ofTermID n) (HDefData ds' def) (thDefs g') }
   trCmd (ProofThm x vs hs ret unf ds pf st) = do
     when st $ step >> return ()
     g <- get
@@ -107,18 +107,20 @@ toHol env = \pfs -> do
     let (args, ty@(TType _ hs' ret'), ret2, p) =
           translateThm g vs hs ret (S.fromList unf) ds pf
     tell (Endo (HDThm name ty (Just p) :))
-    modify $ \g -> g {thThms = thThms g Q.|> HThmData name args hs' ret' ret2}
+    modify $ \g' -> g' {thThms = thThms g' Q.|> HThmData name args hs' ret' ret2}
   trCmd (StepInout _) = step >>= \case
     SInout _ -> return ()
     _ -> throwError "incorrect i/o step"
 
 getLocal :: M.Map Ident PBinder -> Ident -> Sort
-getLocal m v = case m M.! v of PBound _ t -> t
+getLocal m v = case m M.! v of
+  PBound _ t -> t
+  _ -> error "not a bound var"
 
 trBinders :: [PBinder] -> ([(Ident, SType)], M.Map Ident PBinder)
 trBinders = go M.empty where
   go m [] = ([], m)
-  go m (p@(PBound v t) : bis) = go (M.insert v p m) bis
+  go m (p@(PBound v _) : bis) = go (M.insert v p m) bis
   go m (p@(PReg v (DepType t ts)) : bis) =
     let (rs', m') = go (M.insert v p m) bis in
     ((v, SType (getLocal m <$> ts) t) : rs', m')
@@ -159,31 +161,35 @@ trExpr g ctx = trExpr' where
     go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [SExpr] -> ([SLam], [Ident])
     go m [] [] = ([], fst . (m M.!) <$> ts)
     go m (PBound x t : bis) (SVar e : es) = go (M.insert x (e, t) m) bis es
-    go m (PReg v (DepType t ts) : bis) (e : es) =
+    go _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    go m (PReg _ (DepType _ ts') : bis) (e : es) =
       let (ls, xs) = go m bis es in
-      (SLam ((m M.!) <$> ts) (trExpr' e) : ls, xs)
+      (SLam ((m M.!) <$> ts') (trExpr' e) : ls, xs)
+    go _ _ _ = error "incorrect number of arguments"
 
 trVBinders :: ToHolState -> [VBinder] -> ([(Ident, SType)], Int, Q.Seq PBinder)
 trVBinders g = go 0 Q.empty where
   go n m [] = ([], n, m)
-  go n m (p@(VBound t) : bis) =
+  go n m (VBound t : bis) =
     go (n+1) (m Q.|> PBound (varName (VarID n)) (thSort g t)) bis
-  go n m (p@(VReg t ts) : bis) =
+  go n m (VReg t ts : bis) =
     let {
       v = varName (VarID n); t' = thSort g t;
       (rs', n', m') = go (n+1) (m Q.|> PReg v (DepType t' (varName <$> ts))) bis } in
     ((v, SType (snd . getVLocal m <$> ts) t') : rs', n', m')
 
 getVLocal :: Q.Seq PBinder -> VarID -> (Ident, Sort)
-getVLocal m (VarID n) = case Q.index m n of PBound x t -> (x, t)
+getVLocal m (VarID n) = case Q.index m n of
+  PBound x t -> (x, t)
+  PReg _ _ -> error "not a bound variable"
 
 translateDef :: ToHolState -> [VBinder] -> VType -> [SortID] -> VExpr ->
   ([PBinder], DepType, [(Ident, SType)], [(Ident, Sort)], Sort, Term, [(Ident, Sort)])
-translateDef g vs (VType t ts) ds e =
+translateDef g  = \vs (VType t ts) ds e ->
   let (rs, n, ctx) = trVBinders g vs
       t' = thSort g t
       ls = getVLocal ctx <$> ts
-      (n', ctx', ds') = trDummies n ctx ds in
+      (_, ctx', ds') = trDummies n ctx ds in
   (toList ctx, DepType t' (fst <$> ls), rs, ls, t', trVExpr g ctx' e, ds')
   where
 
@@ -202,8 +208,8 @@ trVSExpr g ctx = go where
 trVExpr :: ToHolState -> Q.Seq PBinder -> VExpr -> Term
 trVExpr g ctx = trVExpr' where
   trVExpr' (VVar (VarID n)) = case Q.index ctx n of
-    PBound x s -> LVar x
-    PReg x (DepType t ts) -> RVar x ts
+    PBound x _ -> LVar x
+    PReg x (DepType _ ts) -> RVar x ts
   trVExpr' (VApp t es) =
     let HTermData x bis ty = thTerm g t
         (ls, xs) = trApp ty bis es in HApp x ls xs
@@ -213,9 +219,11 @@ trVExpr g ctx = trVExpr' where
     go :: M.Map Ident (Ident, Sort) -> [PBinder] -> [VExpr] -> ([SLam], [Ident])
     go m [] [] = ([], fst . (m M.!) <$> ts) -- TODO: test this
     go m (PBound x t : bis) (VVar e : es) = go (M.insert x (varName e, t) m) bis es
-    go m (PReg v (DepType t ts) : bis) (e : es) =
+    go _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    go m (PReg _ (DepType _ ts') : bis) (e : es) =
       let (ls, xs) = go m bis es in
-      (SLam ((m M.!) <$> ts) (trVExpr' e) : ls, xs)
+      (SLam ((m M.!) <$> ts') (trVExpr' e) : ls, xs)
+    go _ _ _ = error "incorrect number of arguments"
 
 trVGExpr :: ToHolState -> Q.Seq PBinder -> [PBinder] -> VExpr -> GType
 trVGExpr g ctx bis = uclose bis . trVExpr g ctx
@@ -223,7 +231,7 @@ trVGExpr g ctx bis = uclose bis . trVExpr g ctx
 translateThm :: ToHolState -> [VBinder] -> [VExpr] -> VExpr -> S.Set TermID ->
   [SortID] -> ProofTree -> ([PBinder], TType, SExpr, ([Ident], HProof))
 translateThm g vs hs ret unf ds pf =
-  let (rs, n, ctx) = trVBinders g vs
+  let (rs, _, ctx) = trVBinders g vs
       args = toList ctx
       hs' = trVGExpr g ctx args <$> hs
       ret' = trVGExpr g ctx args ret
@@ -235,8 +243,8 @@ translateThm g vs hs ret unf ds pf =
         ns <- mkHeap uehs hs'
         addDummies (thSort g <$> ds)
         (\(HProofF _ p _) -> (ns, convRet (ueConv uer) p)) <$> trProof g pf
-      init = (varToSlot <$> ctx', foldl mkVars M.empty ctx', M.empty)
-  in (args, ty, ret2, ST.evalState proof init)
+      initSt = (varToSlot <$> ctx', foldl mkVars M.empty ctx', M.empty)
+  in (args, ty, ret2, ST.evalState proof initSt)
 
 data HSlot =
     HExpr (S.Set Ident) Term
@@ -262,7 +270,7 @@ forceSlot (HProof m) = (\(vs, p, t) -> HProofF vs p t) <$> m
 
 instance Show HSlot where
   show (HExpr _ e) = "HExpr " ++ show e
-  show (HProof m) = "HProof <suspended>"
+  show (HProof _) = "HProof <suspended>"
 
 instance Show HSlotF where
   show (HExprF _ e) = "HExpr " ++ show e
@@ -283,10 +291,12 @@ substVExpr g subst = substVExpr' where
       let (y, LVar z) = Q.index subst (ofVarID e)
           (es', ls, xs) = go (M.insert x ((z, t), e) m) bis es in
       (y : es', ls, xs)
-    go m (PReg v (DepType t ts) : bis) (e : es) =
+    go _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    go m (PReg _ (DepType _ ts') : bis) (e : es) =
       let (e', t') = substVExpr' e
           (es', ls, xs) = go m bis es in
-      (e' : es', SLam (fst . (m M.!) <$> ts) t' : ls, xs)
+      (e' : es', SLam (fst . (m M.!) <$> ts') t' : ls, xs)
+    go _ _ _ = error "incorrect number of arguments"
 
 data UnfoldExpr = UnfoldExpr {
   ueVExpr :: VExpr,
@@ -312,7 +322,7 @@ buildSubst m ((_, d) : ds) = do
 unfoldExpr :: ToHolState -> S.Set TermID -> VExpr -> ST.State (Q.Seq PBinder) UnfoldExpr
 unfoldExpr g unf = unfoldExpr' where
   unfoldExpr' (VApp t es) = do
-    let HTermData x bis ty@(DepType s _) = thTerm g t
+    let HTermData x bis ty = thTerm g t
     (es', cs, ls, rs, xs) <- unfoldApp ty bis es
     let t1 = HApp x ls xs
     if S.member t unf then do
@@ -326,7 +336,7 @@ unfoldExpr g unf = unfoldExpr' where
     else
       return $ case mapM reflLam cs of
         Nothing -> UnfoldExpr (VApp t (fst <$> es')) (CCong x cs xs) t1 (HApp x rs xs)
-        Just es'' -> UnfoldExpr (VApp t es) (CRefl t1) t1 t1
+        Just _ -> UnfoldExpr (VApp t es) (CRefl t1) t1 t1
   unfoldExpr' e = do
     ctx <- get
     let t = trVExpr g ctx e
@@ -341,34 +351,36 @@ unfoldExpr g unf = unfoldExpr' where
     go m (PBound x t : bis) (VVar e : es) = do
       (es', cs, ls, rs, xs) <- go (M.insert x (varName e, t) m) bis es
       return ((VVar e, LVar (varName e)) : es', cs, ls, rs, xs)
-    go m (PReg v (DepType t ts) : bis) (e : es) = do
+    go _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    go m (PReg _ (DepType _ ts') : bis) (e : es) = do
       UnfoldExpr e' c l r <- unfoldExpr' e
       (es', cs, ls, rs, xs) <- go m bis es
-      let vs = (m M.!) <$> ts
+      let vs = (m M.!) <$> ts'
       return ((e', l) : es', HConvLam vs c : cs, SLam vs l : ls, SLam vs r : rs, xs)
+    go _ _ _ = error "incorrect number of arguments"
 
 mkHeap :: [UnfoldExpr] -> [GType] -> ToHolProofM [Ident]
 mkHeap [] [] = return []
-mkHeap (UnfoldExpr e c t1 t2 : ues) (h@(GType xs t) : hs) = do
+mkHeap (UnfoldExpr _ c _ t : ues) (h@(GType xs _) : hs) = do
   (ctx, m, heap) <- get
   let n = Q.length ctx
       v = varName (VarID n)
       p = HHyp v (fst <$> xs)
       p' = case reflTerm c of
-        Just _ -> return (fvLTerm t2, p, t2)
-        Nothing -> save n (v <> "_unf") xs (HConv c p) t2
+        Just _ -> return (fvLTerm t, p, t)
+        Nothing -> save n (v <> "_unf") xs (HConv c p) t
   put (ctx Q.|> HProof p', m, M.insert v h heap)
   (v :) <$> mkHeap ues hs
-  where
+mkHeap _ _ = error "incorrect number of arguments"
 
-  save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term ->
-    ToHolProofM (S.Set Ident, HProof, Term)
-  save n x vs p t = do
-    let fv = fvLTerm t
-    modify $ \(ctx, m, heap) ->
-      (Q.update n (HProof (return (fv, HHyp x (fst <$> vs), t))) ctx, m,
-       M.insert x (GType vs t) heap)
-    return (fv, HSave x (HProofLam vs p) (fst <$> vs), t)
+save :: Int -> Ident -> [(Ident, Sort)] -> HProof -> Term ->
+  ToHolProofM (S.Set Ident, HProof, Term)
+save n x vs p t = do
+  let fv = fvLTerm t
+  modify $ \(ctx, m, heap) ->
+    (Q.update n (HProof (return (fv, HHyp x (fst <$> vs), t))) ctx, m,
+     M.insert x (GType vs t) heap)
+  return (fv, HSave x (HProofLam vs p) (fst <$> vs), t)
 
 convRet :: HConv -> HProof -> HProof
 convRet c = case reflTerm c of
@@ -376,7 +388,7 @@ convRet c = case reflTerm c of
   Nothing -> HConv (CSymm c)
 
 addDummies :: [Sort] -> ToHolProofM ()
-addDummies ds = modify $ \(ctx, vs, heap) -> go (Q.length ctx) ds ctx vs heap where
+addDummies = \ds -> modify $ \(ctx, vs, heap) -> go (Q.length ctx) ds ctx vs heap where
   go _ [] ctx vs heap = (ctx, vs, heap)
   go n (d:ds) ctx vs heap =
     let v = varName (VarID n) in
@@ -397,10 +409,12 @@ substSExpr g subst = substSExpr' where
       let LVar z = subst M.! v
           (ls, xs) = go (M.insert x (z, t) m) bis es in
       (ls, xs)
-    go m (PReg v (DepType t ts) : bis) (e : es) =
+    go _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    go m (PReg _ (DepType _ ts') : bis) (e : es) =
       let t' = substSExpr' e
           (ls, xs) = go m bis es in
-      (SLam ((m M.!) <$> ts) t' : ls, xs)
+      (SLam ((m M.!) <$> ts') t' : ls, xs)
+    go _ _ _ = error "incorrect number of arguments"
 
 trLoad :: HeapID -> ToHolProofM HSlotF
 trLoad (VarID n) = get >>= \(ctx, _, _) -> forceSlot $ Q.index ctx n
@@ -417,7 +431,7 @@ trProof g pr = trProof' pr where
     return $ HExprF fv $ HApp x ls xs
   trProof' (VThm t ps) = do
     let HThmData x bis hs ret ret' = thThm g t
-    (fv, es, subst, ls, ps', xs) <- trThm hs ret bis ps
+    (fv, _, subst, ls, ps', xs) <- trThm hs ret bis ps
     let ty = substSExpr g subst ret'
     let fv' = fvLTerm ty
     let p = HThm x ls ps' xs
@@ -453,11 +467,13 @@ trProof g pr = trProof' pr where
     go m s (PBound x t : bis) (Load e : es) =
       trLoad e >>= \(HExprF _ (LVar v)) ->
         go (M.insert x (v, t) m) s bis es
-    go m s (PReg v (DepType t ts) : bis) (e : es) = do
+    go _ _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    go m s (PReg _ (DepType _ ts') : bis) (e : es) = do
       (fv, e') <- trPTExpr e
-      let xts = (m M.!) <$> ts
+      let xts = (m M.!) <$> ts'
       (s', ls, xs) <- go m (s <> foldr S.delete fv (fst <$> xts)) bis es
       return (s', SLam xts e' : ls, xs)
+    go _ _ _ _ = error "incorrect number of arguments"
 
   trThm :: [GType] -> GType -> [PBinder] -> [ProofTree] -> ToHolProofM TrThm
   trThm hs (GType rv _) = trThmArgs M.empty S.empty M.empty M.empty id where
@@ -467,12 +483,14 @@ trProof g pr = trProof' pr where
     trThmArgs m s es q f (PBound x t : bis) (Load e : ps) =
       trLoad e >>= \(HExprF _ (LVar v)) ->
         trThmArgs (M.insert x (v, t) m) s es (M.insert x (LVar v) q) f bis ps
-    trThmArgs m s es q f (PReg v (DepType t ts) : bis) (p : ps) = do
+    trThmArgs _ _ _ _ _ (PBound _ _ : _) (_ : _) = error "bad proof"
+    trThmArgs m s es q f (PReg v (DepType _ ts) : bis) (p : ps) = do
       (fv, e') <- trPTExpr p
       let xts = (m M.!) <$> ts
       let l = SLam xts e'
       trThmArgs m (s <> foldr S.delete fv (fst <$> xts))
         (M.insert v l es) (M.insert v e' q) (f . (l :)) bis ps
+    trThmArgs _ _ _ _ _ _ _ = error "incorrect number of arguments"
 
     trThmHyps :: [SLam] -> M.Map Ident (Ident, Sort) -> S.Set Ident -> M.Map Ident SLam ->
       M.Map Ident Term -> [GType] -> [ProofTree] -> ToHolProofM TrThm
@@ -480,7 +498,8 @@ trProof g pr = trProof' pr where
       go :: ([HProofLam] -> [HProofLam]) -> [GType] -> [ProofTree] -> ToHolProofM TrThm
       go f [] [] = let xs = fst . (m M.!) . fst <$> rv in
         return (s <> S.fromList xs, es, q, ls, f [], xs)
-      go f (GType hv _ : hs) (p : ps) =
+      go f (GType hv _ : hs') (p : ps) =
         trProof' p >>= \case
-         HProofF _ p' t -> go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs ps
+         HProofF _ p' _ -> go (f . (HProofLam ((m M.!) . fst <$> hv) p' :)) hs' ps
          HExprF _ _ -> error "bad stack slot"
+      go _ _ _ = error "incorrect number of arguments"

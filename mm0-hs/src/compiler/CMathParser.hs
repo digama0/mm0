@@ -5,7 +5,6 @@ import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans.Reader
 import Data.Bits
-import Debug.Trace
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
@@ -27,8 +26,7 @@ parseMath (Formula o fmla) = do
   let p = takeWhileP Nothing isSpace *> parseExpr (Prec 0) <* (eof <?> "'$'")
       (errs, _, res) = runParser (runReaderT p pe) "" o fmla
   mapM_ (reportErr . toElabError) errs
-  r <- fromJust' res
-  traceShow r $ return r
+  fromJust' res
 
 isSpace :: Char -> Bool
 isSpace c = c == ' ' || c == '\n'

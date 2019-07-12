@@ -16,14 +16,12 @@ emancipateDecl (Stmt x) = get >>= \db -> case snd $ getStmt db x of
     let s = collectBound hs in
     updateDecl x hs $ if all ((== VSBound) . fst) hs then S.empty else s
   Term (hs, _) (_, e) (Just _) ->
-    let s = collectBound hs in
     updateDecl x hs $ execState (checkExpr db False e) S.empty
-  Thm (hs, dv) (_, e) pr ->
-    let s = collectBound hs in
-    updateDecl x hs $ execState (do
+  Thm (hs, _) (_, e) pr ->
+    updateDecl x hs $ flip execState S.empty $ do
       mapM_ (checkHyp db) hs
       checkExpr db False e
-      mapM_ (\(ds, p) -> checkProof db p) pr) S.empty
+      mapM_ (checkProof db . snd) pr
   _ -> return ()
 emancipateDecl _ = return ()
 
@@ -50,6 +48,7 @@ checkExpr db hy = modify . checkExpr' where
   checkApp [] [] = id
   checkApp ((VSBound, _) : hs) (SVar v : es) = checkApp hs es . S.insert v
   checkApp (_ : hs) (e : es) = checkApp hs es . checkExpr' e
+  checkApp _ _ = error "bad proof"
 
 checkProof :: MMDatabase -> Proof -> State (S.Set Label) ()
 checkProof db = modify . checkProof' where
@@ -65,13 +64,16 @@ checkProof db = modify . checkProof' where
   checkApp [] [] = id
   checkApp ((VSBound, _) : hs) (PHyp v _ : ps) = checkApp hs ps . S.insert v
   checkApp (_ : hs) (p : ps) = checkApp hs ps . checkProof' p
+  checkApp _ _ = error "bad proof"
 
 updateDecl :: Label -> [(VarStatus, Label)] -> S.Set Label -> State MMDatabase ()
 updateDecl x hs s = case updateHyps s hs of
   Nothing -> return ()
-  Just hs' -> modify $ \db -> db {mStmts = M.adjust (\case
-    (n, Term (_, dv) e p) -> (n, Term (hs', dv) e p)
-    (n, Thm (_, dv) e p) -> (n, Thm (hs', dv) e p)) x $ mStmts db}
+  Just hs' -> modify $ \db -> db {mStmts = M.adjust (go hs') x $ mStmts db}
+  where
+  go hs' (n, Term (_, dv) e p) = (n, Term (hs', dv) e p)
+  go hs' (n, Thm (_, dv) e p) = (n, Thm (hs', dv) e p)
+  go _ _ = error "bad decl"
 
 updateHyps :: S.Set Label -> [(VarStatus, Label)] -> Maybe [(VarStatus, Label)]
 updateHyps s = go where

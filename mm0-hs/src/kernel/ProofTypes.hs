@@ -1,7 +1,5 @@
 module ProofTypes where
 
-import Debug.Trace
-import Data.Bits
 import Data.Maybe
 import Data.Default
 import qualified Data.Map.Strict as M
@@ -80,22 +78,22 @@ ppBinder a v (VBound s) r = '{' : ppVar a v ++ ": " ++ ppSort a s ++ '}' : r
 ppBinder a v (VReg s vs) r = '(' : ppVar a v ++ ": " ++ ppType a (VType s vs) (')' : r)
 
 ppBinders :: IDPrinter a => a -> [VBinder] -> Int -> (ShowS, Int)
-ppBinders a [] n = (id, n)
+ppBinders _ [] n = (id, n)
 ppBinders a (b : bs) n =
   let (s, n') = ppBinders a bs (n+1) in
   ((' ' :) . ppBinder a (VarID n) b . s, n')
 
 ppExpr :: IDPrinter a => a -> Int -> VExpr -> ShowS
-ppExpr a n (VVar v) r = ppVar a v ++ r
-ppExpr a n (VApp t []) r = ppTerm a t ++ r
+ppExpr a _ (VVar v) r = ppVar a v ++ r
+ppExpr a _ (VApp t []) r = ppTerm a t ++ r
 ppExpr a n (VApp t es) r =
-  let f r = ppTerm a t ++ foldr (\e r -> ' ' : ppExpr a 1 e r) r es in
+  let f r1 = ppTerm a t ++ foldr (\e r2 -> ' ' : ppExpr a 1 e r2) r1 es in
   if n == 0 then f r else '(' : f (')' : r)
 
 instance Show VExpr where showsPrec = ppExpr ()
 
 ppHyps :: IDPrinter a => a -> [VExpr] -> Int -> (ShowS, Int)
-ppHyps a [] n = (id, n)
+ppHyps _ [] n = (id, n)
 ppHyps a (h : hs) n =
   let (s, n') = ppHyps a hs (n+1) in
   (\r -> "\n  (" ++ ppVar a (VarID n) ++ ": " ++ ppExpr a 1 h (')' : s r), n')
@@ -146,11 +144,13 @@ ppProofCmd' a (ProofThm x args hs ret uf ds pf st) =
       suf r = case uf of
         [] -> r
         u:us -> " unfolding(" ++ ppTerm a u ++
-          foldr (\u' r -> ' ' : ppTerm a u' ++ r) (')' : r) us in
+          foldr (\u' r' -> ' ' : ppTerm a u' ++ r') (')' : r) us in
   (\r -> (if st then "" else "local ") ++ "theorem " ++ T.unpack (fromMaybe "_" x) ++
     sargs ((',' :) $ suf $ shs $ (": " ++) $
       ppExpr a 1 ret $ " =\n" ++ tail (sds (' ' : fst (ppProofTree a pf n3) r))),
   ppInsertThm x a)
+ppProofCmd' a (StepInout (VIKString False)) = (("input string" ++), a)
+ppProofCmd' a (StepInout (VIKString True)) = (("output string" ++), a)
 
 ppProofCmd :: IDPrinter a => a -> ProofCmd -> ShowS
 ppProofCmd a c = fst (ppProofCmd' a c)
@@ -188,7 +188,7 @@ ppProofTree a (VThm t es) n =
 ppProofTree a (Save p) n =
   let (s, n') = ppProofTree a p n in
   (\r -> '[' : s ('=' : ppVar a (VarID n') ++ ']' : r), n' + 1)
-ppProofTree a Sorry n = (('?' :), n)
+ppProofTree _ Sorry n = (('?' :), n)
 
 type NameMap = (Int, M.Map Ident Int)
 

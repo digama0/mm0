@@ -1,9 +1,7 @@
 module SpecCheck(checkSpec, insertSpec) where
 
 import Control.Monad.Except
-import Debug.Trace
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Sequence as Q
 import AST
@@ -27,7 +25,7 @@ withContext :: MonadError String m => T.Text -> m a -> m a
 withContext s m = catchError m (\e -> throwError ("when adding " ++ T.unpack s ++ ": " ++ e))
 
 checkSpec :: Environment -> Spec -> Either String ()
-checkSpec e (SSort _ _) = return ()
+checkSpec _ (SSort _ _) = return ()
 checkSpec e (SDecl x (DTerm bis ret)) = withContext x $ checkDef e bis ret Nothing
 checkSpec e (SDecl x (DAxiom bis hs ret)) = withContext x $ do
   ctx <- checkBinders e bis
@@ -52,9 +50,9 @@ checkDef env bis ret defn = do
     Nothing -> return ()
     Just (dummy, e) -> do
       ctx2 <- traverse (\t -> do
-          sd <- fromJustError "sort not found" (eSorts env M.!? t)
-          guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd))
-          return (True, DepType t [])) dummy
+        sd' <- fromJustError "sort not found" (eSorts env M.!? t)
+        guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd'))
+        return (True, DepType t [])) dummy
       checkSExpr env (ctx <> ctx2) e ret
 
 checkBinders :: Environment -> [PBinder] -> Either String (M.Map Ident (Bool, DepType))
@@ -65,12 +63,12 @@ checkBinders e = go M.empty where
     guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd))
     go (M.insert x (True, DepType t []) ctx) bis
   go ctx (PReg x ty : bis) = do
-    fromJustError "sort not found" (eSorts e M.!? dSort ty)
+    _ <- fromJustError "sort not found" (eSorts e M.!? dSort ty)
     checkType ctx ty >> go (M.insert x (False, ty) ctx) bis
   go ctx [] = return ctx
 
 checkType :: M.Map Ident (Bool, DepType) -> DepType -> Either String ()
-checkType ctx (DepType t ts) = mapM_ ok ts where
+checkType ctx (DepType _ ts) = mapM_ ok ts where
   ok v = do
     (bd, _) <- fromJustError "variable not found" (ctx M.!? v)
     guardError "variable depends on regular variable" bd
@@ -106,6 +104,6 @@ matchTypes env ctx (e : es) (PBound _ t : bis) = do
     _ -> throwError "non-bound variable in BV slot"
   matchTypes env ctx es bis
 matchTypes env ctx (e : es) (PReg _ ty : bis) = do
-  t <- checkSExpr env ctx e ty
+  checkSExpr env ctx e ty
   matchTypes env ctx es bis
 matchTypes _ _ _ _ = throwError "incorrect number of arguments"

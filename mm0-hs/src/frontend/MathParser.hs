@@ -1,17 +1,12 @@
 module MathParser(parseFormula, parseFormulaProv, appPrec) where
 
 import Control.Monad.Except
-import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.State
 import Control.Monad.Reader.Class
-import Data.List
-import Data.List.Split
 import Data.Maybe
 import qualified Data.IntMap.Strict as I
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.ByteString.Char8 as C
 import AST
 import Environment
 import ParserEnv
@@ -32,9 +27,6 @@ parseFormulaWith m (Formula fmla) = do
   runStateT (parseExpr 0 >>= m) (tokenize pe fmla) >>= \case
     (sexp, []) -> return sexp
     _ -> throwError "math parse error: expected '$'"
-
-parseFormula' :: Formula -> LocalCtxM SExpr
-parseFormula' = parseFormulaWith (return . fst)
 
 parseFormula :: Ident -> Formula -> LocalCtxM SExpr
 parseFormula s = parseFormulaWith (coerce s)
@@ -100,7 +92,7 @@ parsePrefix p = parseLiteral $ do
   pe <- lift readPE
   env <- lift readEnv
   tkMatch (\v -> checkPrec pe p v (prefixes pe M.!? v))
-    (\v (PrefixInfo x lits) -> do
+    (\_ (PrefixInfo x lits) -> do
       let (bs, r) = fromJust (getTerm env x)
       let bss = dSort . binderType <$> bs
       ss <- parseLiterals bss lits
@@ -121,7 +113,7 @@ getLhs p lhs = do
   tkMatch (\v -> do
       q <- prec pe M.!? v
       if q >= p then (,) q <$> infixes pe M.!? v else Nothing)
-    (\v (q, InfixInfo x _) -> do
+    (\_ (q, InfixInfo x _) -> do
       rhs <- parsePrefix p >>= getRhs q
       let (bs, r) = fromJust (getTerm env x)
       let [s1, s2] = dSort . binderType <$> bs
@@ -133,12 +125,11 @@ getLhs p lhs = do
 getRhs :: Prec -> (SExpr, Ident) -> ParserM (SExpr, Ident)
 getRhs p rhs = do
   pe <- lift readPE
-  env <- lift readEnv
   tkMatch (\v -> do
       q <- prec pe M.!? v
       InfixInfo x r <- infixes pe M.!? v
       if (if r then q >= p else q > p) then Just (q, x) else Nothing)
-    (\v (q, x) -> modify (v:) >> getLhs q rhs >>= getRhs p)
+    (\v (q, _) -> modify (v:) >> getLhs q rhs >>= getRhs p)
     (return rhs)
 
 parseExpr :: Prec -> ParserM (SExpr, Ident)

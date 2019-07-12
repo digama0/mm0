@@ -11,9 +11,9 @@ import Util
 data SType = SType [Sort] Sort deriving (Eq, Ord)
 
 instance Show SType where
-  showsPrec n (SType [] s) = (T.unpack s ++)
+  showsPrec _ (SType [] s) = (T.unpack s ++)
   showsPrec n (SType ss s) = showParen (n > 0) $
-    \r -> foldr (\x r -> T.unpack x ++ " -> " ++ r) (T.unpack s ++ r) ss
+    \r -> foldr (\x r' -> T.unpack x ++ " -> " ++ r') (T.unpack s ++ r) ss
 
 -- An HType is a type of the form s1 -> ... sn -> t where
 -- si and t are simple types. MM0 term constructors have this type.
@@ -23,7 +23,7 @@ data HType = HType [SType] SType
 instance Show HType where
   showsPrec n (HType [] s) = showsPrec n s
   showsPrec n (HType ss s) = showParen (n > 0) $
-    \r -> foldr (\x r -> showsPrec 1 x (" -> " ++ r)) (shows s r) ss
+    \r -> foldr (\x r' -> showsPrec 1 x (" -> " ++ r')) (shows s r) ss
 
 showBinds :: String -> (a -> ShowS) -> [(Ident, a)] -> ShowS
 showBinds _ _ [] = id
@@ -32,7 +32,7 @@ showBinds c g (v:vs) =
   \r -> c ++ f v (foldr (\v' -> (' ' :) . f v') (". " ++ r) vs)
 
 showBinds' :: (a -> ShowS) -> [(Ident, a)] -> ShowS
-showBinds' g vs r = foldr (\(x, t) r -> " (" ++ T.unpack x ++ ": " ++ g t (')' : r)) r vs
+showBinds' g vs r = foldr (\(x, t) r' -> " (" ++ T.unpack x ++ ": " ++ g t (')' : r')) r vs
 
 data SLam = SLam [(Ident, Sort)] Term deriving (Eq)
 
@@ -49,15 +49,15 @@ data Term =
   deriving (Eq)
 
 instance Show Term where
-  showsPrec n (LVar v) = (T.unpack v ++)
-  showsPrec n (RVar v []) = (T.unpack v ++)
+  showsPrec _ (LVar v) = (T.unpack v ++)
+  showsPrec _ (RVar v []) = (T.unpack v ++)
   showsPrec n (RVar v xs) = showParen (n > 0) $
     (T.unpack v ++) . flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
-  showsPrec n (HApp t [] []) = (T.unpack t ++)
+  showsPrec _ (HApp t [] []) = (T.unpack t ++)
   showsPrec n (HApp t es xs) = showParen (n > 0) $ (T.unpack t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
     flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
-  showsPrec n HTSorry = ("?" ++)
+  showsPrec _ HTSorry = ("?" ++)
 
 -- A GType is the type of a MM0 statement. It corresponds to the HOL statement
 -- !xs. |- t, where t is a wff term depending on xs.
@@ -111,10 +111,10 @@ data HProof =
   | HSorry
 
 instance Show HProof where
-  showsPrec n (HHyp v []) = (T.unpack v ++)
+  showsPrec _ (HHyp v []) = (T.unpack v ++)
   showsPrec n (HHyp v xs) = showParen (n > 0) $
     (T.unpack v ++) . flip (foldr (\x -> ((' ' : T.unpack x) ++))) xs
-  showsPrec n (HThm t [] [] []) = (T.unpack t ++)
+  showsPrec _ (HThm t [] [] []) = (T.unpack t ++)
   showsPrec n (HThm t es hs xs) = showParen (n > 0) $ (T.unpack t ++) .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) es .
     flip (foldr (\e -> (' ' :) . showsPrec 1 e)) hs .
@@ -124,7 +124,7 @@ instance Show HProof where
   showsPrec n (HForget _ p) = showParen (n > 0) $ ("forget " ++) . shows p
   showsPrec n (HConv c p) = showParen (n > 0) $
     ("mp " ++) . shows c . (' ' :) . shows p
-  showsPrec n HSorry = ("?" ++)
+  showsPrec _ HSorry = ("?" ++)
 
 data HConvLam = HConvLam [(Ident, Sort)] HConv
 
@@ -146,8 +146,8 @@ data HConv =
   -- ^ |- T es xs = D(es, xs), where D is the definition of T
 
 instance Show HConv where
-  showsPrec n (CRefl e) = ("rfl" ++)
-  showsPrec n (CSymm c) = ('-' :) . showsPrec 1 c
+  showsPrec _ (CRefl _) = ("rfl" ++)
+  showsPrec _ (CSymm c) = ('-' :) . showsPrec 1 c
   showsPrec n (CTrans c1 c2) = showParen (n > 0) $
     shows c1 . (" . " ++) . shows c2
   showsPrec n (CCong t cs xs) = showParen (n > 0) $ ("ap " ++) . (T.unpack t ++) .
@@ -187,14 +187,16 @@ fvLTerm :: Term -> S.Set Ident
 fvLTerm (LVar x) = S.singleton x
 fvLTerm (RVar _ xs) = S.fromList xs
 fvLTerm (HApp _ ls xs) = foldMap fvLLam ls <> S.fromList xs
+fvLTerm HTSorry = S.empty
 
 fvRLam :: SLam -> S.Set Ident
-fvRLam (SLam vs t) = fvRTerm t
+fvRLam (SLam _ t) = fvRTerm t
 
 fvRTerm :: Term -> S.Set Ident
 fvRTerm (LVar _) = S.empty
 fvRTerm (RVar v _) = S.singleton v
 fvRTerm (HApp _ ls _) = foldMap fvRLam ls
+fvRTerm HTSorry = S.empty
 
 fvLam :: SLam -> S.Set Ident
 fvLam (SLam vs t) = foldr S.delete (fvTerm t) (fst <$> vs)
@@ -203,12 +205,13 @@ fvTerm :: Term -> S.Set Ident
 fvTerm (LVar x) = S.singleton x
 fvTerm (RVar v xs) = S.insert v $ S.fromList xs
 fvTerm (HApp _ ls xs) = foldMap fvLam ls <> S.fromList xs
+fvTerm HTSorry = S.empty
 
 variant :: S.Set Ident -> Ident -> Ident
 variant s v = if S.member v s then variant s (v <> "'") else v
 
 substAbs :: M.Map Ident SLam -> [(Ident, Sort)] -> Term -> ([(Ident, Sort)], Term)
-substAbs m vs t = go vs M.empty where
+substAbs m vs1 t = go vs1 M.empty where
   free :: S.Set Ident
   free = foldMap (fvLam . (m M.!)) (fvRTerm t)
   go [] vm = ([], substTerm m $ vsubstTerm vm t)
@@ -224,18 +227,19 @@ substSLam :: M.Map Ident SLam -> SLam -> SLam
 substSLam m (SLam vs t) = uncurry SLam (substAbs m vs t)
 
 substTerm :: M.Map Ident SLam -> Term -> Term
-substTerm m v@(LVar _) = v
+substTerm _ v@(LVar _) = v
 substTerm m (RVar v ys) = case m M.! v of
   SLam ss t -> vsubstTerm (M.fromList (zip (fst <$> ss) ys)) t
 substTerm m (HApp t es vs) = HApp t (substSLam m <$> es) vs
+substTerm _ HTSorry = HTSorry
 
 vsubst :: M.Map Ident Ident -> Ident -> Ident
 vsubst m v = M.findWithDefault v v m
 
 vsubstSLam :: M.Map Ident Ident -> SLam -> SLam
-vsubstSLam m (SLam vs t) = go m (S.fromList $ M.elems m) vs where
+vsubstSLam m1 (SLam vs1 t) = go m1 (S.fromList $ M.elems m1) vs1 where
   go :: M.Map Ident Ident -> S.Set Ident -> [(Ident, Sort)] -> SLam
-  go m free [] = SLam [] (vsubstTerm m t)
+  go m _ [] = SLam [] (vsubstTerm m t)
   go m free ((v, s) : vs) =
     if S.member v free then
       let v' = variant free v
@@ -252,11 +256,13 @@ vsubstTerm m t | null m = t
 vsubstTerm m (LVar x) = LVar (vsubst m x)
 vsubstTerm m (RVar v xs) = RVar v (vsubst m <$> xs)
 vsubstTerm m (HApp t es xs) = HApp t (vsubstSLam m <$> es) (vsubst m <$> xs)
+vsubstTerm _ HTSorry = HTSorry
 
 nfTerm :: S.Set Ident -> Term -> Bool
 nfTerm s (LVar x) = S.notMember x s
 nfTerm s (RVar _ xs) = all (`S.notMember` s) xs
-nfTerm s (HApp t es vs) = all (nfSLam s) es && all (`S.notMember` s) vs
+nfTerm s (HApp _ es vs) = all (nfSLam s) es && all (`S.notMember` s) vs
+nfTerm _ HTSorry = True
 
 nfSLam :: S.Set Ident -> SLam -> Bool
 nfSLam s (SLam vs t) = nfTerm (foldr S.delete s (fst <$> vs)) t
@@ -280,6 +286,7 @@ alphaTerm m (LVar x) (LVar y) = alphaVar m x y
 alphaTerm m (RVar v1 vs1) (RVar v2 vs2) = v1 == v2 && all2 (alphaVar m) vs1 vs2
 alphaTerm m (HApp t1 es1 vs1) (HApp t2 es2 vs2) =
   t1 == t2 && all2 (alphaSLam m) es1 es2 && all2 (alphaVar m) vs1 vs2
+alphaTerm _ _ _ = False
 
 alphaGType :: GType -> GType -> Bool
 alphaGType (GType ss1 r1) (GType ss2 r2) =

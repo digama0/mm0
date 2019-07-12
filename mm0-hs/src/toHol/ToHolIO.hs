@@ -1,14 +1,10 @@
 module ToHolIO where
 
-import Control.Monad
 import System.IO
 import System.Exit
-import Data.List
 import qualified Data.ByteString.Lazy as B
 import Parser
-import AST
 import Elaborator
-import Verifier
 import ProofTextParser
 import ToHol
 import HolCheck
@@ -21,16 +17,15 @@ toHolIO (mm0 : mmp : rest) = do
   let write = case rest of
         "-o" : hol : _ -> withFile hol WriteMode
         _ -> \k -> k stdout
-  mm0 <- openFile mm0 ReadMode
-  s <- B.hGetContents mm0
+  s <- openFile mm0 ReadMode >>= B.hGetContents
   ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
   putStrLn "spec checked"
-  pf <- B.readFile mmp
-  pf <- liftIO (parseProof pf)
+  pff <- B.readFile mmp
+  pf <- liftIO (parseProof pff)
   hol <- liftIO (toHol env pf)
   write $ \h -> mapM_ (hPutStrLn h . flip shows "\n") hol
-  liftIO $ checkDecls hol
+  _ <- liftIO $ checkDecls hol
   putStrLn "verified HOL"
 toHolIO _ = die "to-hol: incorrect args; use 'to-hol MM0-FILE MMU-FILE [-o out.hol]'"
 
@@ -39,12 +34,11 @@ toOpenTheory (mm0 : mmp : rest) = do
   let write = case rest of
         "-o" : hol : _ -> withFile hol WriteMode
         _ -> \k -> k stdout
-  mm0 <- openFile mm0 ReadMode
-  s <- B.hGetContents mm0
+  s <- openFile mm0 ReadMode >>= B.hGetContents
   ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
-  pf <- B.readFile mmp
-  pf <- liftIO (parseProof pf)
+  pff <- B.readFile mmp
+  pf <- liftIO (parseProof pff)
   hol <- liftIO (toHol env pf)
   write $ \h -> do
     hSetNewlineMode h (NewlineMode LF LF)
@@ -53,22 +47,21 @@ toOpenTheory _ = die "to-othy: incorrect args; use 'to-othy MM0-FILE MMU-FILE [-
 
 toLean :: [String] -> IO ()
 toLean (mm0 : mmp : rest) = do
-  (nax, rest) <- return $ case rest of
-    "-a" : pre : rest -> (FromFile pre, rest)
-    "+a" : rest -> (Only, rest)
-    rest -> (Regular, rest)
-  (cs, rest) <- return $ case rest of
-    "-c" : n : rest -> (read n, rest)
-    rest -> (maxBound, rest)
-  bn <- case rest of
+  (nax, rest2) <- return $ case rest of
+    "-a" : pre : rest2 -> (FromFile pre, rest2)
+    "+a" : rest2 -> (Only, rest2)
+    _ -> (Regular, rest)
+  (cs, rest3) <- return $ case rest2 of
+    "-c" : n : rest3 -> (read n, rest3)
+    _ -> (maxBound, rest2)
+  bn <- case rest3 of
     "-o" : file : _ -> return file
     _ -> die "to-lean: -o FILE.LEAN required"
-  mm0 <- openFile mm0 ReadMode
-  s <- B.hGetContents mm0
+  s <- openFile mm0 ReadMode >>= B.hGetContents
   ast <- either (die . show) pure (parse s)
   env <- liftIO (elabAST ast)
-  pf <- B.readFile mmp
-  pf <- liftIO (parseProof pf)
+  pff <- B.readFile mmp
+  pf <- liftIO (parseProof pff)
   hol <- liftIO (toHol env pf)
   writeLean nax bn cs hol
 toLean _ = die "to-lean: incorrect args; use 'to-lean MM0-FILE MMU-FILE [-o out.lean]'"

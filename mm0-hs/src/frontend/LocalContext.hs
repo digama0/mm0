@@ -2,12 +2,9 @@ module LocalContext where
 
 import Control.Applicative
 import Control.Monad.Trans.Reader
-import Control.Monad.Trans.State (StateT, runStateT)
-import Control.Monad.State.Class
 import Control.Monad.Except
 import Data.Maybe
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Text as T
 import AST
 import Environment
@@ -18,9 +15,9 @@ type LCtx = ([PBinder], M.Map Ident Ident)
 
 lookupReg :: [PBinder] -> Ident -> Maybe DepType
 lookupReg [] _ = Nothing
-lookupReg (PBound v' t : bs) v | v == v' = Just (DepType t [])
-lookupReg (PReg v' ty : bs) v | v == v' = Just ty
-lookupReg (b : bs) v = lookupReg bs v
+lookupReg (PBound v' t : _) v | v == v' = Just (DepType t [])
+lookupReg (PReg v' ty : _) v | v == v' = Just ty
+lookupReg (_ : bs) v = lookupReg bs v
 
 lookupLocal :: LCtx -> Ident -> Maybe DepType
 lookupLocal (bs, ds) v = ((\t -> DepType t []) <$> ds M.!? v) <|> lookupReg bs v
@@ -28,8 +25,8 @@ lookupLocal (bs, ds) v = ((\t -> DepType t []) <$> ds M.!? v) <|> lookupReg bs v
 lookupBound :: LCtx -> Ident -> Maybe Ident
 lookupBound (bs, ds) v = ds M.!? v <|> lookupBound' bs where
   lookupBound' [] = Nothing
-  lookupBound' (PBound v' t : bs) | v == v' = Just t
-  lookupBound' (b : bs) = lookupBound' bs
+  lookupBound' (PBound v' t : _) | v == v' = Just t
+  lookupBound' (_ : bs') = lookupBound' bs'
 
 lcRegCons :: PBinder -> LCtx -> Either String LCtx
 lcRegCons b (bs, ds) = do

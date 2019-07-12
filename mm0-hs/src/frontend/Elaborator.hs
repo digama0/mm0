@@ -3,12 +3,9 @@ module Elaborator(elabAST) where
 import Control.Monad.Trans.State
 import Control.Monad.Except
 import Data.Maybe
-import Data.List
 import Data.Default
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.Sequence as Q
 import AST
 import Environment
 import ParserEnv
@@ -16,10 +13,6 @@ import LocalContext
 import MathParser
 import qualified SpecCheck
 import Util
-
-data TCState = TCState {
-  env :: Environment,
-  eParser :: ParserEnv }
 
 type SpecM = StateT (Environment, ParserEnv) (Either String)
 
@@ -65,12 +58,9 @@ elabDecls (Axiom x vs ty : ds) =
 elabDecls (Theorem x vs ty : ds) = do
   elabAssert x vs ty (SThm x) >>= insertSpec
   elabDecls ds
-elabDecls (Def x vs ty def : ds) =
-  elabDef x vs ty def >>= insertDecl x >> elabDecls ds
-elabDecls (Notation n : ds) = do
-  (e, pe) <- get
-  modifyParser (addNotation n)
-  elabDecls ds
+elabDecls (Def x vs ty defn : ds) =
+  elabDef x vs ty defn >>= insertDecl x >> elabDecls ds
+elabDecls (Notation n : ds) = modifyParser (addNotation n) >> elabDecls ds
 elabDecls (Inout (Input k s) : ds) = elabInout False k s >> elabDecls ds
 elabDecls (Inout (Output k s) : ds) = elabInout True k s >> elabDecls ds
 
@@ -105,6 +95,7 @@ elabDef x vs ty (Just defn) = do
     guardError (T.unpack x ++ ": hypotheses not permitted in terms") (null hyps)
     return (DDef bis ty $ Just (dummies, defn'))
 
+elabInout :: Bool -> T.Text -> [Either Ident Formula] -> SpecM ()
 elabInout out "string" [x] = do
   e <- runLocalCtxM' $ parseTermFmla "string" x
   insertSpec (SInout (IOKString out e))
@@ -151,4 +142,4 @@ processBinders = go M.empty where
   processBinder (Binder _ (TFormula s)) _ _ h = parseFormulaProv s >>= h
 
 checkType :: DepType -> LocalCtxM ()
-checkType (DepType v vs) = mapM_ ensureBound vs
+checkType (DepType _ vs) = mapM_ ensureBound vs

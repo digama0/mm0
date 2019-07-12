@@ -1,12 +1,7 @@
 module AST (module AST, Ident, DepType(..), SortData(..)) where
 
-import Control.Monad.Except
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
-import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Environment (Ident, DepType(..), SortData(..))
-import Util
 
 type AST = [Stmt]
 
@@ -63,6 +58,7 @@ instance Show Formula where
 data Binder = Binder Local Type
 
 showsBinderGroup :: [Local] -> Type -> ShowS
+showsBinderGroup [] _ = undefined
 showsBinderGroup (l : ls) ty =
   let f = shows l . flip (foldr (\i -> (' ' :) . shows i)) ls . (": " ++) . shows ty in
   if isLBound l then ('{' :) . f . ('}' :) else ('(' :) . f . (')' :)
@@ -90,9 +86,9 @@ showsGroupedBinders bis r =
   where
   join :: [Binder] -> Maybe ([Local], Bool, Type) -> [([Local], Type)]
   join [] o = flush o []
-  join (Binder x ty : bis) (Just (xs, b, ty')) | isLBound x == b && eqType ty ty' =
-    join bis (Just (x : xs, b, ty'))
-  join (Binder x ty : bis) o = flush o (join bis (Just ([x], isLBound x, ty)))
+  join (Binder x ty : bis') (Just (xs, b, ty')) | isLBound x == b && eqType ty ty' =
+    join bis' (Just (x : xs, b, ty'))
+  join (Binder x ty : bis') o = flush o (join bis' (Just ([x], isLBound x, ty)))
 
   flush :: Maybe ([Local], Bool, Type) -> [([Local], Type)] -> [([Local], Type)]
   flush Nothing l = l
@@ -101,16 +97,16 @@ showsGroupedBinders bis r =
 showsAssert :: [Binder] -> Formula -> ShowS
 showsAssert l f = let (l1, l2) = split l in
     showsGroupedBinders l1 . (':' :) .
-    flip (foldr (\f -> ("\n  " ++) . shows f . (" >" ++))) l2 .
+    flip (foldr (\f' -> ("\n  " ++) . shows f' . (" >" ++))) l2 .
     ("\n  " ++) . shows f . (';' :)
   where
   split :: [Binder] -> ([Binder], [Formula])
   split [] = ([], [])
   split (bi : bis) = case split bis of
     ([], r) -> case bi of
-      Binder _ (TFormula f) -> ([], f : r)
+      Binder _ (TFormula f') -> ([], f' : r)
       _ -> ([bi], r)
-    (l, r) -> (bi : l, r)
+    (l', r) -> (bi : l', r)
 
 instance Show Stmt where
   showsPrec _ (Sort x (SortData p s pr f)) r =
@@ -139,6 +135,8 @@ instance Show Notation where
   showsPrec _ (NNotation x bis ty lits) = ("notation " ++) . (T.unpack x ++) .
     showsGroupedBinders bis . (": " ++) . shows ty . (" =" ++) .
     flip (foldr (\lit -> (' ' :) . shows lit)) lits
+  showsPrec _ (Coercion x s1 s2) = \r -> "coercion " ++ T.unpack x ++
+    ": " ++ T.unpack s1 ++ " > " ++ T.unpack s2 ++ ';' : r
 
 instance Show Literal where
   showsPrec _ (NConst c p) = ('(' :) . shows c . (':' :) . shows p . (')' :)

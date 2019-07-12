@@ -14,8 +14,6 @@ import Data.Default
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
 import AST
 import Environment
 import Util
@@ -85,7 +83,7 @@ insertInfixInfo tk ti e = do
   return (e {infixes = ts})
 
 matchBinders :: [Binder] -> DepType -> ([PBinder], DepType) -> Bool
-matchBinders bs' r' (bs, r) = go bs bs' where
+matchBinders bs2 r' (bs1, r) = go bs1 bs2 where
   go :: [PBinder] -> [Binder] -> Bool
   go [] [] = r == r'
   go (PBound b t : bs) (Binder (LBound b') (TType (DepType t' [])) : bs') =
@@ -95,11 +93,11 @@ matchBinders bs' r' (bs, r) = go bs bs' where
   go _ _ = False
 
 processLits :: [Binder] -> [Literal] -> StateT ParserEnv (Either String) (Token, [PLiteral])
-processLits bis (NConst c p : lits) = liftM2 (,) (processConst c p) (go lits) where
+processLits bis (NConst c p : lits') = liftM2 (,) (processConst c p) (go lits') where
   processConst :: Const -> Prec -> StateT ParserEnv (Either String) Token
-  processConst c p = StateT $ \e -> do
-    tk <- tokenize1 e c
-    e' <- insertPrec tk p e
+  processConst c' p' = StateT $ \e -> do
+    tk <- tokenize1 e c'
+    e' <- insertPrec tk p' e
     return (tk, e')
   go :: [Literal] -> StateT ParserEnv (Either String) [PLiteral]
   go [] = return []
@@ -111,15 +109,15 @@ processLits bis (NConst c p : lits) = liftM2 (,) (processConst c p) (go lits) wh
         guardError "notation infix prec max not allowed" (q < maxBound)
         return (q + 1)
       (NVar _ : _) -> return maxBound
-    n <- lift $ lookup v
+    n <- lift $ findVar v
     (PVar n q :) <$> go lits
-  lookup :: Ident -> Either String Int
-  lookup v = fromJustError "notation variable not found" $
+  findVar :: Ident -> Either String Int
+  findVar v = fromJustError "notation variable not found" $
     findIndex (\(Binder l _) -> localName l == Just v) bis
 processLits _ _ = throwError "notation must begin with a constant"
 
 getCoe :: Ident -> Ident -> ParserEnv -> Maybe Coe
-getCoe s1 s2 e | s1 == s2 = Just id
+getCoe s1 s2 _ | s1 == s2 = Just id
 getCoe s1 s2 e = coes e M.!? s1 >>= (M.!? s2)
 
 getCoeProv :: Ident -> ParserEnv -> Maybe (Ident, Coe)
@@ -130,7 +128,7 @@ getCoeProv s e = do
 
 foldCoeLeft :: Ident -> ParserEnv -> (Ident -> Coe -> a -> a) -> a -> a
 foldCoeLeft s2 e f a = M.foldrWithKey' g a (coes e) where
-  g s1 m a = maybe a (\l -> f s1 l a) (m M.!? s2)
+  g s1 m a' = maybe a' (\l -> f s1 l a) (m M.!? s2)
 
 foldCoeRight :: Ident -> ParserEnv -> (Ident -> Coe -> a -> a) -> a -> a
 foldCoeRight s1 e f a = maybe a (M.foldrWithKey' f a) (coes e M.!? s1)
@@ -145,9 +143,9 @@ addCoeInner s1 s2 l e = do
 addCoe :: Ident -> Ident -> Ident -> ParserEnv -> Either String ParserEnv
 addCoe s1 s2 c e = do
   let cc i = App c [i]
-  e <- foldCoeLeft s1 e (\s1' l r -> r >>= addCoeInner s1' s2 (cc . l)) (return e)
-  e <- addCoeInner s1 s2 cc e
-  foldCoeRight s2 e (\s2' l r -> r >>= addCoeInner s1 s2' (l . cc)) (return e)
+  e2 <- foldCoeLeft s1 e (\s1' l r -> r >>= addCoeInner s1' s2 (cc . l)) (return e)
+  e3 <- addCoeInner s1 s2 cc e2
+  foldCoeRight s2 e3 (\s2' l r -> r >>= addCoeInner s1 s2' (l . cc)) (return e3)
 
 recalcCoeProv :: Environment -> ParserEnv -> Either String ParserEnv
 recalcCoeProv env e = do
@@ -158,32 +156,32 @@ recalcCoeProv env e = do
   provs :: S.Set Ident
   provs = M.keysSet (M.filter sProvable (eSorts env))
   f :: Ident -> Ident -> Coe -> Either String (M.Map Ident Ident) -> Either String (M.Map Ident Ident)
-  f s1 s2 l r = if S.member s2 provs then do
+  f s1 s2 _ r = if S.member s2 provs then do
       m <- r
       guardError "coercion diamond to provable detected" (M.notMember s1 m)
       return (M.insert s1 s2 m)
     else r
 
 addNotation :: Notation -> Environment -> ParserEnv -> Either String ParserEnv
-addNotation (Delimiter (Const s)) _ e = do
-  ds' <- go (splitOneOf " \t\r\n" (T.unpack s)) (delims e)
+addNotation (Delimiter (Const s')) _ e = do
+  ds' <- go (splitOneOf " \t\r\n" (T.unpack s')) (delims e)
   return (e {delims = ds'}) where
     go :: [String] -> S.Set Char -> Either String (S.Set Char)
     go [] s = return s
     go ([]:ds) s = go ds s
     go ([c]:ds) s = go ds (S.insert c s)
     go (_:_) _ = throwError "multiple char delimiters not supported"
-addNotation (Prefix x s prec) env e = do
+addNotation (Prefix x s p) env e = do
   n <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getArity env x)
   tk <- tokenize1 e s
-  e' <- insertPrec tk prec e
-  insertPrefixInfo tk (PrefixInfo x (mkLiterals n prec 0)) e'
-addNotation (Infix r x s prec) env e = do
+  e' <- insertPrec tk p e
+  insertPrefixInfo tk (PrefixInfo x (mkLiterals n p 0)) e'
+addNotation (Infix r x s p) env e = do
   n <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getArity env x)
   guardError ("'" ++ T.unpack x ++ "' must be a binary operator") (n == 2)
-  guardError "infix prec max not allowed" (prec < maxBound)
+  guardError "infix prec max not allowed" (p < maxBound)
   tk <- tokenize1 e s
-  e' <- insertPrec tk prec e
+  e' <- insertPrec tk p e
   insertInfixInfo tk (InfixInfo x r) e'
 addNotation (NNotation x bi ty lits) env e = do
   ty' <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getTerm env x)
