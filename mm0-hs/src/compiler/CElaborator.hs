@@ -94,7 +94,7 @@ addDecl vis dk px x bis ret v = do
     decl <- case (dk, ret', v) of
       (DKDef, Just (TType ty), Nothing) -> do
         inferDepType ty
-        reportAt px ELWarning "definition has no body, axiomatizing"
+        reportAt px ELWarning "definition has no body; axiomatizing"
         unless (null hs) $ error "impossible"
         return (DTerm pbs (unDepType ty))
       (DKDef, _, Just (LFormula f)) -> do
@@ -122,6 +122,15 @@ addDecl vis dk px x bis ret v = do
       (DKAxiom, Just (TFormula f), _) -> do
         IR _ eret _ _ <- parseMath f >>= inferQExprProv
         return (DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret)
+      (DKTheorem, Just (TFormula f), _) -> do
+        IR _ eret _ _ <- parseMath f >>= inferQExprProv
+        case v of
+          Nothing -> do
+            reportAt px ELWarning "theorem proof missing"
+            return (DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret)
+          Just lv -> do
+            fork <- forkElabM (return lv)
+            return (DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork)
       _ -> unimplementedAt px
     checkVarRefs >> return decl
   ins <- gets eDecls >>= checkNew ELError px

@@ -34,6 +34,8 @@ dependencies:
 - word8
 - text
 - text-builder
+- async
+- stm
 # for the server (TODO: move to separate project)
 - aeson
 - bytestring
@@ -45,7 +47,6 @@ dependencies:
 - mtl
 - network-uri
 - rope-utf16-splay >= 0.2
-- stm
 - time
 - transformers
 - unordered-containers

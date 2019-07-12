@@ -4,6 +4,7 @@ module CEnv (module CEnv, Offset, SortData, Visibility,
   LispVal, Prec) where
 
 import Control.Concurrent.STM
+import Control.Concurrent.Async
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
@@ -116,7 +117,7 @@ data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
   | DDef Visibility [PBinder] DepType [(Offset, VarName, Sort)] SExpr
-  | DTheorem Visibility [PBinder] [SExpr] SExpr LispVal
+  | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM LispVal)
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort
 
@@ -205,6 +206,11 @@ now = gets $ \env -> case eCounter env of SeqCounter _ n -> Simple n
 
 try :: ElabM a -> ElabM (Maybe a)
 try = lift . runMaybeT
+
+forkElabM :: ElabM a -> ElabM (ElabM a)
+forkElabM m = lift $ RWST $ \r s -> do
+  io <- async (fst <$> evalRWST (runMaybeT m) r s)
+  return (MaybeT $ lift $ wait io, s, ())
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
 getSort v s =
