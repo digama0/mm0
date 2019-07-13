@@ -169,6 +169,9 @@ escapeErr e = reportErr e >> mzero
 reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
 reportAt o l s = reportErr $ ElabError l o o s []
 
+reportSpan :: Offset -> Offset -> ErrorLevel -> Text -> ElabM ()
+reportSpan o1 o2 l s = reportErr $ ElabError l o1 o2 s []
+
 escapeAt :: Offset -> Text -> ElabM a
 escapeAt o s = reportAt o ELError s >> mzero
 

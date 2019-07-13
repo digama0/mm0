@@ -323,6 +323,7 @@ hashAtom "t" = return (Bool True)
 hashAtom "f" = return (Bool False)
 hashAtom "def" = return (Syntax Define)
 hashAtom "fn" = return (Syntax Lambda)
+hashAtom "if" = return (Syntax If)
 hashAtom _ = empty
 
 atom :: T.Text -> Parser LispVal

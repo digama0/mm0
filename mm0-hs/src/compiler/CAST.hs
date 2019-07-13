@@ -99,12 +99,12 @@ localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing
 
-data Syntax = Define | Lambda | Quote
+data Syntax = Define | Lambda | Quote | If
 
 data LispVal =
     Atom T.Text
   | List [LispVal]
-  | DottedList [LispVal] LispVal
+  | DottedList LispVal [LispVal] LispVal
   | Number Integer
   | String T.Text
   | Bool Bool
@@ -115,12 +115,13 @@ data LispVal =
 
 instance Show LispVal where
   showsPrec _ (Atom e) = (T.unpack e ++)
+  showsPrec _ (List [Syntax Quote, e]) = ('\'' :) . shows e
   showsPrec _ (List ls) = ('(' :) . f ls . (')' :) where
     f [] = id
     f [e] = shows e
     f (e : es) = shows e . (' ' :) . f es
-  showsPrec _ (DottedList ls e') =
-    ('(' :) . flip (foldr (\e -> shows e . (' ' :))) ls .
+  showsPrec _ (DottedList l ls e') =
+    ('(' :) . flip (foldr (\e -> shows e . (' ' :))) (l : ls) .
     (". " ++) . shows e' . (')' :)
   showsPrec _ (Number n) = shows n
   showsPrec _ (String s) = shows s
@@ -128,16 +129,13 @@ instance Show LispVal where
   showsPrec _ (Bool False) = ("#f" ++)
   showsPrec _ (Syntax Define) = ("#def" ++)
   showsPrec _ (Syntax Lambda) = ("#fn" ++)
+  showsPrec _ (Syntax Quote) = ("#quote" ++)
+  showsPrec _ (Syntax If) = ("#if" ++)
   showsPrec _ Undef = ("#<undef>" ++)
   showsPrec _ (LFormula (Formula _ f)) = ('$' :) . (T.unpack f ++) . ('$' :)
   showsPrec _ (LispAt _ e) = shows e
 
 cons :: LispVal -> LispVal -> LispVal
 cons l (List r) = List (l : r)
-cons l (DottedList rs r) = DottedList (l : rs) r
-cons l r = DottedList [l] r
-
-lvLength :: LispVal -> Int
-lvLength (DottedList e _) = length e
-lvLength (List e) = length e
-lvLength _ = 0
+cons l (DottedList r0 rs r) = DottedList l (r0 : rs) r
+cons l r = DottedList l [] r
