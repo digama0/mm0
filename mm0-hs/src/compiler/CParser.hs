@@ -300,12 +300,16 @@ strLit = single '"' *> (TB.run <$> p) where
 lispIdent :: Char -> Bool
 lispIdent c = isAlphaNum c || c `elem` ("!%&*/:<=>?^_~+-.@" :: String)
 
+lispAt :: Parser LispVal -> Parser LispVal
+lispAt = liftA2 LispAt getOffset
+
 lispVal :: Parser LispVal
-lispVal = parens listVal <|>
+lispVal = lispAt $
+  parens listVal <|>
   (Number <$> lexeme L.decimal) <|>
   (String <$> lexeme strLit) <|>
   (LFormula <$> formula) <|>
-  (single '\'' *> ((\v -> List [Atom "quote", v]) <$> lispVal)) <|>
+  (single '\'' *> ((\v -> List [Syntax Quote, v]) <$> lispVal)) <|>
   (lexeme (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom)) <|>
   (lexeme (takeWhileP (Just "identifier char") lispIdent >>= atom))
 
@@ -317,12 +321,15 @@ listVal = listVal1 <|> return (List []) where
 hashAtom :: T.Text -> Parser LispVal
 hashAtom "t" = return (Bool True)
 hashAtom "f" = return (Bool False)
+hashAtom "def" = return (Syntax Define)
+hashAtom "fn" = return (Syntax Lambda)
 hashAtom _ = empty
 
 atom :: T.Text -> Parser LispVal
-atom t = if legalIdent t then return (Atom t) else empty where
-  legalIdent t' = t' `elem` ["+", "-", "..."] ||
-    case T.unpack t' of
-      '-' : '>' : s -> all (`notElem` ("+-.@" :: String)) s
-      c : s -> not (isDigit c) && all (`notElem` ("+-.@" :: String)) s
-      [] -> False
+atom t = if legalIdent then return (Atom t) else empty where
+  legalIdent = t `elem` ["+", "-", "..."] ||
+    case T.uncons t of
+      Nothing -> False
+      Just (c, _) ->
+        (c `notElem` ("+-.@" :: String) && not (isDigit c)) ||
+        T.isPrefixOf "->" t

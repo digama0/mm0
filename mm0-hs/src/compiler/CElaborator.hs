@@ -31,6 +31,7 @@ elabStmt (AtPos pos s) = resuming $ case s of
   Notation (Infix r px x tk prec) -> addInfix r px x tk prec
   Notation (NNotation px x bis _ lits) -> addNotation px x bis lits
   Notation (Coercion px x s1 s2) -> addCoercion px x s1 s2
+  Do lvs -> mapM_ (evalToplevel pos) lvs
   _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
@@ -393,3 +394,78 @@ defcheckExpr bis = defcheckExpr' where
       let ev2 = foldl' (\ev1 v -> S.delete (m H.! v) ev1) ev' vs
       go args es m (ev <> ev2)
     go _ _ _ _ = error "bad expr, should already have been caught"
+
+-----------------------------
+-- Lisp evaluation
+-----------------------------
+
+unLispAt :: Offset -> LispVal -> (Offset, LispVal)
+unLispAt _ (LispAt o e) = unLispAt o e
+unLispAt o e = (o, e)
+
+evalToplevel :: Offset -> LispVal -> ElabM ()
+evalToplevel o e = case unLispAt o e of
+  (o1, List (e1 : es)) -> case unLispAt o1 e1 of
+    (o2, Syntax Define) -> defineToplevel o2 es
+    _ -> evalAndPrint o e
+  _ -> evalAndPrint o e
+
+evalAndPrint :: Offset -> LispVal -> ElabM ()
+evalAndPrint o e = eval o e >>= \case
+  Undef -> return ()
+  e' -> reportAt o ELInfo $ T.pack $ show e'
+
+defineToplevel :: Offset -> [LispVal] -> ElabM ()
+defineToplevel o _ = unimplementedAt o
+
+eval :: Offset -> LispVal -> ElabM LispVal
+eval _ (LispAt o e) = eval o e
+eval o (Atom _e) = unimplementedAt o
+eval _ val@(String _) = return val
+eval _ val@(Number _) = return val
+eval _ val@(Bool _) = return val
+eval _ val@(List []) = return val
+eval _ val@Undef = return val
+eval o (List (e : es)) = evalApp o e es
+eval o val@(DottedList _ _) =
+  escapeAt o $ "attempted to evaluate an improper list: " <> T.pack (show val)
+eval _ (LFormula f) = parseMath f >>= evalQExpr
+eval o (Syntax _) = escapeAt o "syntax error"
+
+evalApp :: Offset -> LispVal -> [LispVal] -> ElabM LispVal
+evalApp _ (LispAt o e) es = evalApp o e es
+evalApp o (Atom e) es = mapM (eval o) es >>= evalAppAtom o e
+evalApp o (Syntax Define) _ = escapeAt o "#def not permitted in expression context"
+evalApp _ (Syntax Quote) (e : _) = return e
+evalApp o e es = escapeAt o $ "not a function, cannot apply: " <> T.pack (show (List (e : es)))
+
+asString :: Offset -> LispVal -> ElabM T.Text
+asString o (LispAt _ e) = asString o e
+asString _ (String s) = return s
+asString o e = escapeAt o $ "expected a string, got " <> T.pack (show e)
+
+asInt :: Offset -> LispVal -> ElabM Integer
+asInt o (LispAt _ e) = asInt o e
+asInt _ (Number n) = return n
+asInt o e = escapeAt o $ "expected an integer, got " <> T.pack (show e)
+
+unary :: Offset -> [LispVal] -> ElabM LispVal
+unary _ [e] = return e
+unary o es = escapeAt o $ "expected one argument, got " <> T.pack (show (length es))
+
+evalAppAtom :: Offset -> T.Text -> [LispVal] -> ElabM LispVal
+evalAppAtom o ":display" es =
+  unary o es >>= asString o >>= reportAt o ELInfo >> pure Undef
+evalAppAtom o ":print" es =
+  unary o es >>= reportAt o ELInfo . T.pack . show >> pure Undef
+evalAppAtom o "+" es = Number . sum <$> mapM (asInt o) es
+evalAppAtom o "-" es = mapM (asInt o) es >>= \case
+  [] -> escapeAt o "expected at least one argument"
+  [n] -> return $ Number (-n)
+  n : ns -> return $ Number (n - sum ns)
+evalAppAtom o _ _ = unimplementedAt o
+
+evalQExpr :: QExpr -> ElabM LispVal
+evalQExpr (QApp (AtPos o e) es) =
+  List . ((LispAt o (Atom e)) :) <$> mapM evalQExpr es
+evalQExpr (QUnquote (AtPos o e)) = eval o e

@@ -4,7 +4,7 @@ module CEnv (module CEnv, Offset, SortData, Visibility,
   LispVal, Prec) where
 
 import Control.Concurrent.STM
-import Control.Concurrent.Async
+import Control.Concurrent
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
@@ -209,8 +209,9 @@ try = lift . runMaybeT
 
 forkElabM :: ElabM a -> ElabM (ElabM a)
 forkElabM m = lift $ RWST $ \r s -> do
-  io <- async (fst <$> evalRWST (runMaybeT m) r s)
-  return (MaybeT $ lift $ wait io, s, ())
+  v <- newEmptyMVar
+  _ <- forkIO $ fst <$> evalRWST (runMaybeT m) r s >>= putMVar v
+  return (MaybeT $ lift $ readMVar v, s, ())
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
 getSort v s =
