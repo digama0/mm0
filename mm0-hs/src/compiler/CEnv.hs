@@ -1,7 +1,7 @@
-module CEnv (module CEnv, Offset, SortData, Visibility,
+module CEnv (module CEnv, Offset, SortData, Visibility(..),
   Ident, Sort, TermName, ThmName, VarName, Token,
   Binder, DepType(..), PBinder(..), SExpr(..), binderName, binderType,
-  LispVal, Prec) where
+  Prec) where
 
 import Control.Concurrent.STM
 import Control.Concurrent
@@ -18,11 +18,54 @@ import qualified Data.HashMap.Strict as H
 import qualified Data.HashSet as HS
 import qualified Data.Vector.Mutable.Dynamic as V
 import qualified Data.Vector.Unboxed as U
-import CAST
+import CAST (Offset, Binder(..), SortData(..), Prec, Visibility(..))
 import Environment (Ident, Sort, TermName, ThmName, VarName, Token,
   PBinder(..), SExpr(..), DepType(..), binderName, binderType)
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import CParser (ParseError)
+
+data Syntax = Define | Lambda | Quote | If
+
+type Proc = Offset -> Offset -> [LispVal] -> ElabM LispVal
+
+data LispVal =
+    Atom (Maybe Offset) T.Text
+  | List [LispVal]
+  | DottedList LispVal [LispVal] LispVal
+  | Number Integer
+  | String T.Text
+  | UnparsedFormula Offset T.Text
+  | Bool Bool
+  | Syntax Syntax
+  | Undef
+  | Proc Proc
+
+instance Show LispVal where
+  showsPrec _ (Atom _ e) = (T.unpack e ++)
+  showsPrec _ (List [Syntax Quote, e]) = ('\'' :) . shows e
+  showsPrec _ (List ls) = ('(' :) . f ls . (')' :) where
+    f [] = id
+    f [e] = shows e
+    f (e : es) = shows e . (' ' :) . f es
+  showsPrec _ (DottedList l ls e') =
+    ('(' :) . flip (foldr (\e -> shows e . (' ' :))) (l : ls) .
+    (". " ++) . shows e' . (')' :)
+  showsPrec _ (Number n) = shows n
+  showsPrec _ (String s) = shows s
+  showsPrec _ (Bool True) = ("#t" ++)
+  showsPrec _ (Bool False) = ("#f" ++)
+  showsPrec _ (UnparsedFormula _ f) = ('$' :) . (T.unpack f ++) . ('$' :)
+  showsPrec _ (Syntax Define) = ("#def" ++)
+  showsPrec _ (Syntax Lambda) = ("#fn" ++)
+  showsPrec _ (Syntax Quote) = ("#quote" ++)
+  showsPrec _ (Syntax If) = ("#if" ++)
+  showsPrec _ Undef = ("#<undef>" ++)
+  showsPrec _ (Proc _) = ("#<closure>" ++)
+
+cons :: LispVal -> LispVal -> LispVal
+cons l (List r) = List (l : r)
+cons l (DottedList r0 rs r) = DottedList l (r0 : rs) r
+cons l r = DottedList l [] r
 
 data ErrorLevel = ELError | ELWarning | ELInfo
 instance Show ErrorLevel where
@@ -148,12 +191,16 @@ instance Default Env where
 type Elab = RWST (ElabError -> IO ()) () Env IO
 type ElabM = MaybeT Elab
 
-runElab :: Elab a -> [ElabError] -> IO (a, Env, [ElabError])
-runElab m errs = do
+runElab :: Elab a -> [ElabError] -> [(Ident, LispVal)] -> IO (a, Env, [ElabError])
+runElab m errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
-  dat <- V.unsafeNew 16
-  (a, env, _) <- runRWST m report def {eLispData = dat}
+  dat <- V.new 0
+  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident Int -> IO (H.HashMap Ident Int)
+      ins [] _ hm = return hm
+      ins ((x, v) : ls) n hm = V.pushBack dat v >> ins ls (n+1) (H.insert x n hm)
+  hm <- ins lvs 0 H.empty
+  (a, env, _) <- runRWST m report def {eLispData = dat, eLispNames = hm}
   errs' <- readTVarIO pErrs
   return (a, env, errs')
 
@@ -215,6 +262,21 @@ forkElabM m = lift $ RWST $ \r s -> do
   v <- newEmptyMVar
   _ <- forkIO $ fst <$> evalRWST (runMaybeT m) r s >>= putMVar v
   return (MaybeT $ lift $ readMVar v, s, ())
+
+lispAlloc :: LispVal -> ElabM Int
+lispAlloc v = do
+  vec <- gets eLispData
+  liftIO $ V.length vec <* V.pushBack vec v
+
+lispLookupNum :: Int -> ElabM LispVal
+lispLookupNum n = do
+  vec <- gets eLispData
+  liftIO $ V.read vec n
+
+lispLookupName :: T.Text -> ElabM LispVal
+lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
+  Nothing -> mzero
+  Just n -> lispLookupNum n
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
 getSort v s =

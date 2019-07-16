@@ -12,11 +12,11 @@ import Text.Megaparsec hiding (runParser, unPos)
 import Text.Megaparsec.Internal (ParsecT(..))
 import CAST
 import CEnv hiding (try)
-import CParser (Parser, runParser, identStart, identRest, atPos, lispVal)
+import CParser (Parser, runParser, identStart, identRest, lispVal)
 import MathParser (appPrec)
 import Util
 
-data QExpr = QApp (AtPos Ident) [QExpr] | QUnquote (AtPos LispVal) deriving (Show)
+data QExpr = QApp (AtPos Ident) [QExpr] | QUnquote AtLisp deriving (Show)
 
 type MathParser = ReaderT ParserEnv Parser
 
@@ -34,7 +34,7 @@ isSpace c = c == ' ' || c == '\n'
 unquote :: MathParser QExpr
 unquote = do
   try (single ',' >> notFollowedBy (satisfy isSpace))
-  lift $ QUnquote <$> atPos lispVal
+  lift $ QUnquote <$> lispVal
 
 token1 :: MathParser (AtPos T.Text)
 token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->

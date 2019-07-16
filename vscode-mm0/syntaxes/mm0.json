@@ -220,7 +220,13 @@
 			"patterns": [
 				{"include": "#comment"},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|number->string|:(display|print|min|max|not|or|list|cons|hd|tl)|(pair|null)\\?)(?!\\w)",
+					"begin": "\\(\\s*(if|def|fn)(?!\\w)",
+					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},
+					"end": "\\)",
+					"patterns": [{"include": "#lisp-val"}]
+				},
+				{
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|number->string|display|print|min|max|not|or|list|cons|hd|tl|(pair|null)\\?)(?!\\w)",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
@@ -234,7 +240,6 @@
 				{"include": "#math-string"},
 				{"match": "[0-9]+", "name": "constant.numeric.mm0.lisp"},
 				{"match": "#[tf](?!\\w)", "name": "constant.language.mm0.lisp"},
-				{"match": "#(if|def|fn)(?!\\w)", "name": "keyword.other.command.mm0.lisp"},
 				{
 					"begin": "\"",
 					"end": "\"",

@@ -32,12 +32,12 @@ instance Show DeclKind where
 data Stmt =
     Sort Offset T.Text SortData
   | Decl Visibility DeclKind Offset T.Text
-      [Binder] (Maybe [Type]) (Maybe LispVal)
-  | Theorems [Binder] [LispVal]
+      [Binder] (Maybe [Type]) (Maybe AtLisp)
+  | Theorems [Binder] [AtLisp]
   | Notation Notation
   | Inout Inout
-  | Annot LispVal (AtPos Stmt)
-  | Do [LispVal]
+  | Annot AtLisp (AtPos Stmt)
+  | Do [AtLisp]
 
 data Notation =
     Delimiter [Char] (Maybe [Char])
@@ -64,8 +64,8 @@ type InputKind = T.Text
 type OutputKind = T.Text
 
 data Inout =
-    Input InputKind [LispVal]
-  | Output OutputKind [LispVal]
+    Input InputKind [AtLisp]
+  | Output OutputKind [AtLisp]
 
 data Local = LBound T.Text | LReg T.Text | LDummy T.Text | LAnon deriving (Show)
 
@@ -99,43 +99,31 @@ localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing
 
-data Syntax = Define | Lambda | Quote | If
+data AtLisp = AtLisp Offset LispAST
+data LispAST =
+    AAtom T.Text
+  | AList [AtLisp]
+  | ADottedList AtLisp [AtLisp] AtLisp
+  | ANumber Integer
+  | AString T.Text
+  | ABool Bool
+  | AFormula Formula
 
-data LispVal =
-    Atom T.Text
-  | List [LispVal]
-  | DottedList LispVal [LispVal] LispVal
-  | Number Integer
-  | String T.Text
-  | Bool Bool
-  | LFormula Formula
-  | Syntax Syntax
-  | Undef
-  | LispAt Offset LispVal
+instance Show AtLisp where
+  showsPrec _ (AtLisp _ e) = shows e
 
-instance Show LispVal where
-  showsPrec _ (Atom e) = (T.unpack e ++)
-  showsPrec _ (List [Syntax Quote, e]) = ('\'' :) . shows e
-  showsPrec _ (List ls) = ('(' :) . f ls . (')' :) where
+instance Show LispAST where
+  showsPrec _ (AAtom e) = (T.unpack e ++)
+  showsPrec _ (AList [AtLisp _ (AAtom "quote"), e]) = ('\'' :) . shows e
+  showsPrec _ (AList ls) = ('(' :) . f ls . (')' :) where
     f [] = id
     f [e] = shows e
     f (e : es) = shows e . (' ' :) . f es
-  showsPrec _ (DottedList l ls e') =
+  showsPrec _ (ADottedList l ls e') =
     ('(' :) . flip (foldr (\e -> shows e . (' ' :))) (l : ls) .
     (". " ++) . shows e' . (')' :)
-  showsPrec _ (Number n) = shows n
-  showsPrec _ (String s) = shows s
-  showsPrec _ (Bool True) = ("#t" ++)
-  showsPrec _ (Bool False) = ("#f" ++)
-  showsPrec _ (Syntax Define) = ("#def" ++)
-  showsPrec _ (Syntax Lambda) = ("#fn" ++)
-  showsPrec _ (Syntax Quote) = ("#quote" ++)
-  showsPrec _ (Syntax If) = ("#if" ++)
-  showsPrec _ Undef = ("#<undef>" ++)
-  showsPrec _ (LFormula (Formula _ f)) = ('$' :) . (T.unpack f ++) . ('$' :)
-  showsPrec _ (LispAt _ e) = shows e
-
-cons :: LispVal -> LispVal -> LispVal
-cons l (List r) = List (l : r)
-cons l (DottedList r0 rs r) = DottedList l (r0 : rs) r
-cons l r = DottedList l [] r
+  showsPrec _ (ANumber n) = shows n
+  showsPrec _ (AString s) = shows s
+  showsPrec _ (ABool True) = ("#t" ++)
+  showsPrec _ (ABool False) = ("#f" ++)
+  showsPrec _ (AFormula (Formula _ f)) = ('$' :) . (T.unpack f ++) . ('$' :)

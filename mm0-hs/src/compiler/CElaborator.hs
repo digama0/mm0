@@ -6,6 +6,7 @@ import Data.List
 import Data.Bits
 import Data.Word8
 import Data.Maybe
+import Data.Default
 import qualified Data.HashMap.Strict as H
 import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as U
@@ -18,7 +19,7 @@ import Util
 
 elaborate :: [ParseError] -> AST -> IO (Env, [ElabError])
 elaborate errs ast = do
-  (_, env, errs') <- runElab (mapM_ elabStmt ast) (toElabError <$> errs)
+  (_, env, errs') <- runElab (mapM_ elabStmt ast) (toElabError <$> errs) initialBindings
   return (env, errs')
 
 elabStmt :: AtPos Stmt -> Elab ()
@@ -31,7 +32,7 @@ elabStmt (AtPos pos s) = resuming $ case s of
   Notation (Infix r px x tk prec) -> addInfix r px x tk prec
   Notation (NNotation px x bis _ lits) -> addNotation px x bis lits
   Notation (Coercion px x s1 s2) -> addCoercion px x s1 s2
-  Do lvs -> mapM_ (evalToplevel pos) lvs
+  Do lvs -> mapM_ evalToplevel lvs
   _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
@@ -86,7 +87,7 @@ inferBinder bi@(Binder o l oty) = case oty of
     lift $ modifyInfer $ \ic -> ic {icLocals = locals'}
 
 addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
-  [Binder] -> Maybe [Type] -> Maybe LispVal -> ElabM ()
+  [Binder] -> Maybe [Type] -> Maybe AtLisp -> ElabM ()
 addDecl vis dk px x bis ret v = do
   let (bis', ret') = unArrow bis ret
   decl <- withInfer $ do
@@ -98,7 +99,7 @@ addDecl vis dk px x bis ret v = do
         reportAt px ELWarning "definition has no body; axiomatizing"
         unless (null hs) $ error "impossible"
         return (DTerm pbs (unDepType ty))
-      (DKDef, _, Just (LFormula f)) -> do
+      (DKDef, _, Just (AtLisp _ (AFormula f))) -> do
         unless (null hs) $ error "impossible"
         let ret'' = case ret' of Just (TType ty) -> Just ty; _ -> Nothing
         forM_ ret'' inferDepType
@@ -115,7 +116,7 @@ addDecl vis dk px x bis ret v = do
             return vs1
           Nothing -> S.toList <$> defcheckExpr pbs v'
         return (DDef vis pbs (DepType s vs) dums v')
-      (DKDef, _, Just _) -> unimplementedAt px
+      (DKDef, _, Just (AtLisp o _)) -> unimplementedAt o
       (DKTerm, Just (TType ty), _) -> do
         inferDepType ty
         unless (null hs) $ error "impossible"
@@ -129,8 +130,8 @@ addDecl vis dk px x bis ret v = do
           Nothing -> do
             reportAt px ELWarning "theorem proof missing"
             return (DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret)
-          Just lv -> do
-            fork <- forkElabM (return lv)
+          Just (AtLisp o _lv) -> do
+            fork <- forkElabM (unimplementedAt o)
             return (DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork)
       _ -> unimplementedAt px
     checkVarRefs >> return decl
@@ -313,7 +314,7 @@ inferQExpr' tgt (QApp (AtPos o t) ts) = do
       (s, bd) <- fromJustAt o "cannot infer type" tgt
       returnVar s bd $ lift $ modifyInfer $ \ic -> ic {
         icLocals = H.insert t (LINew o bd s) (icLocals ic) }
-inferQExpr' _tgt (QUnquote (AtPos o _l)) = unimplementedAt o
+inferQExpr' _tgt (QUnquote (AtLisp o _l)) = unimplementedAt o
 
 inferQExprProv :: QExpr -> ElabM InferResult
 inferQExprProv q = gets eProvableSorts >>= \case
@@ -399,60 +400,83 @@ defcheckExpr bis = defcheckExpr' where
 -- Lisp evaluation
 -----------------------------
 
-unLispAt :: Offset -> LispVal -> (Offset, LispVal)
-unLispAt _ (LispAt o e) = unLispAt o e
-unLispAt o e = (o, e)
+newtype LCtx = LCtx (H.HashMap T.Text LispVal)
 
-evalToplevel :: Offset -> LispVal -> ElabM ()
-evalToplevel o e = case unLispAt o e of
-  (o1, List (e1 : es)) -> case unLispAt o1 e1 of
-    (o2, Syntax Define) -> defineToplevel o2 es
-    _ -> evalAndPrint o1 e
-  (o1, _) -> evalAndPrint o1 e
+instance Default LCtx where
+  def = LCtx H.empty
 
-evalAndPrint :: Offset -> LispVal -> ElabM ()
-evalAndPrint o e = eval o e >>= \case
+evalToplevel :: AtLisp -> ElabM ()
+evalToplevel (AtLisp _ (AList (AtLisp o (AAtom "def") : es))) = defineToplevel o es
+evalToplevel (AtLisp o e) = evalAndPrint o e
+
+evalAndPrint :: Offset -> LispAST -> ElabM ()
+evalAndPrint o e = eval o def e >>= \case
   Undef -> return ()
   e' -> reportAt o ELInfo $ T.pack $ show e'
 
-defineToplevel :: Offset -> [LispVal] -> ElabM ()
+defineToplevel :: Offset -> [AtLisp] -> ElabM ()
 defineToplevel o _ = unimplementedAt o
 
-eval :: Offset -> LispVal -> ElabM LispVal
-eval _ (LispAt o e) = eval o e
-eval o (Atom _e) = unimplementedAt o
-eval _ val@(String _) = return val
-eval _ val@(Number _) = return val
-eval _ val@(Bool _) = return val
-eval _ val@(List []) = return val
-eval _ val@Undef = return val
-eval o (List (e : es)) = evalApp o e es
-eval o val@(DottedList _ _ _) =
-  escapeAt o $ "attempted to evaluate an improper list: " <> T.pack (show val)
-eval _ (LFormula f) = parseMath f >>= evalQExpr
-eval o (Syntax _) = escapeAt o "syntax error"
+evalAt :: LCtx -> AtLisp -> ElabM LispVal
+evalAt ctx (AtLisp o e) = eval o ctx e
 
-evalApp :: Offset -> LispVal -> [LispVal] -> ElabM LispVal
-evalApp _ (LispAt o e) es = evalApp o e es
-evalApp o (Atom e) es = mapM (eval o) es >>= evalAppAtom o (o + T.length e) e
-evalApp o (Syntax Define) _ = escapeAt o "#def not permitted in expression context"
-evalApp o (Syntax Quote) es = case es of
-  [] -> escapeAt o "expected at least one argument"
-  e : _ -> return e
-evalApp o (Syntax If) es = case es of
-  cond : t : es' -> do
-    cond' <- eval o cond
-    if truthy cond' then eval o t else eval o (fst (lispUncons es'))
-  _ -> escapeAt o "expected at least two arguments"
-evalApp o e es = escapeAt o $ "not a function, cannot apply: " <> T.pack (show (List (e : es)))
+eval :: Offset -> LCtx -> LispAST -> ElabM LispVal
+eval o ctx (AAtom e) = evalAtom o ctx e
+eval _ _ (AString s) = return (String s)
+eval _ _ (ANumber n) = return (Number n)
+eval _ _ (ABool b) = return (Bool b)
+eval _ _ (AList []) = return (List [])
+eval _ ctx (AList (AtLisp o e : es)) = evalApp o ctx e es
+eval _ _ val@(ADottedList (AtLisp o _) _ _) =
+  escapeAt o $ "attempted to evaluate an improper list: " <> T.pack (show val)
+eval _ ctx (AFormula f) = parseMath f >>= evalQExpr ctx
+
+evalAtom :: Offset -> LCtx -> T.Text -> ElabM LispVal
+evalAtom o (LCtx ctx) v = case H.lookup v ctx of
+  Just e -> return e
+  Nothing -> try (lispLookupName v) >>= \case
+    Just e -> return e
+    Nothing -> escapeAt o $ "Reference to unbound variable '" <> v <> "'"
+
+evalApp :: Offset -> LCtx -> LispAST -> [AtLisp] -> ElabM LispVal
+evalApp o ctx (AAtom e) es = evalAtom o ctx e >>= \case
+  Syntax s -> evalSyntax o ctx s es
+  Proc f -> mapM (evalAt ctx) es >>= f o (o + T.length e)
+  v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
+evalApp o ctx e es = eval o ctx e >>= \case
+  Proc f -> mapM (evalAt ctx) es >>= f o o
+  v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
+
+evalSyntax :: Offset -> LCtx -> Syntax -> [AtLisp] -> ElabM LispVal
+evalSyntax o _ Define _ = escapeAt o "#def not permitted in expression context"
+evalSyntax o _ Quote [] = escapeAt o "expected at least one argument"
+evalSyntax _ _ Quote (e : _) = return $ quoteAt e
+evalSyntax _ ctx If (cond : t : es') = do
+  cond' <- evalAt ctx cond
+  if truthy cond' then evalAt ctx t else
+    case es' of
+      [] -> return Undef
+      f : _ -> evalAt ctx f
+evalSyntax o _ If _ = escapeAt o "expected at least two arguments"
+evalSyntax o _ Lambda _ = unimplementedAt o
+
+quoteAt :: AtLisp -> LispVal
+quoteAt (AtLisp o e) = quote o e
+
+quote :: Offset -> LispAST -> LispVal
+quote o (AAtom e) = Atom (Just o) e
+quote _ (AList es) = List (quoteAt <$> es)
+quote _ (ADottedList l es r) = DottedList (quoteAt l) (quoteAt <$> es) (quoteAt r)
+quote _ (AString s) = String s
+quote _ (ANumber n) = Number n
+quote _ (ABool b) = Bool b
+quote _ (AFormula (Formula o f)) = UnparsedFormula o f
 
 asString :: Offset -> LispVal -> ElabM T.Text
-asString o (LispAt _ e) = asString o e
 asString _ (String s) = return s
 asString o e = escapeAt o $ "expected a string, got " <> T.pack (show e)
 
 asInt :: Offset -> LispVal -> ElabM Integer
-asInt o (LispAt _ e) = asInt o e
 asInt _ (Number n) = return n
 asInt o e = escapeAt o $ "expected an integer, got " <> T.pack (show e)
 
@@ -464,12 +488,8 @@ evalFold1 :: Offset -> (a -> a -> a) -> [a] -> ElabM a
 evalFold1 o _ [] = escapeAt o "expected at least one argument"
 evalFold1 _ f es = return (foldl1 f es)
 
-lispUncons :: [LispVal] -> (LispVal, [LispVal])
-lispUncons [] = (Undef, [])
-lispUncons (e : es) = (e, es)
-
-evalIntBoolBinop :: Offset -> (Integer -> Integer -> Bool) -> [LispVal] -> ElabM LispVal
-evalIntBoolBinop o f es = mapM (asInt o) es >>= \case
+intBoolBinopProc :: (Integer -> Integer -> Bool) -> Proc
+intBoolBinopProc f o _ es = mapM (asInt o) es >>= \case
     e : es'@(_:_) -> return $ Bool $ go e es'
     _ -> escapeAt o "expected at least two arguments"
   where
@@ -478,69 +498,73 @@ evalIntBoolBinop o f es = mapM (asInt o) es >>= \case
   go e1 (e2 : es') = f e1 e2 && go e2 es'
 
 truthy :: LispVal -> Bool
-truthy (LispAt _ e) = truthy e
 truthy (Bool False) = False
 truthy _ = True
 
 isPair :: LispVal -> Bool
-isPair (LispAt _ e) = isPair e
 isPair (DottedList _ _ _) = True
 isPair (List (_:_)) = True
 isPair _ = False
 
 isNull :: LispVal -> Bool
-isNull (LispAt _ e) = isNull e
 isNull (List []) = True
 isNull _ = False
 
 lispHd :: Offset -> LispVal -> ElabM LispVal
-lispHd o (LispAt _ e) = lispHd o e
 lispHd o (List []) = escapeAt o "evaluating 'hd ()'"
 lispHd _ (List (e:_)) = return e
 lispHd _ (DottedList e _ _) = return e
 lispHd o _ = escapeAt o "expected a list"
 
 lispTl :: Offset -> LispVal -> ElabM LispVal
-lispTl o (LispAt _ e) = lispTl o e
 lispTl o (List []) = escapeAt o "evaluating 'tl ()'"
 lispTl _ (List (_:es)) = return (List es)
 lispTl _ (DottedList _ [] e) = return e
 lispTl _ (DottedList _ (e:es) t) = return (DottedList e es t)
 lispTl o _ = escapeAt o "expected a list"
 
-evalAppAtom :: Offset -> Offset -> T.Text -> [LispVal] -> ElabM LispVal
-evalAppAtom o o' ":display" es =
-  unary o es >>= asString o >>= reportSpan o o' ELInfo >> pure Undef
-evalAppAtom o o' ":print" es =
-  unary o es >>= reportSpan o o' ELInfo . T.pack . show >> pure Undef
-evalAppAtom o _ "+" es = Number . sum <$> mapM (asInt o) es
-evalAppAtom o _ "*" es = Number . product <$> mapM (asInt o) es
-evalAppAtom o _ ":max" es = mapM (asInt o) es >>= evalFold1 o max >>= return . Number
-evalAppAtom o _ ":min" es = mapM (asInt o) es >>= evalFold1 o min >>= return . Number
-evalAppAtom o _ "-" es = mapM (asInt o) es >>= \case
-  [] -> escapeAt o "expected at least one argument"
-  [n] -> return $ Number (-n)
-  n : ns -> return $ Number (n - sum ns)
-evalAppAtom o _ "<" es = evalIntBoolBinop o (<) es
-evalAppAtom o _ "<=" es = evalIntBoolBinop o (<=) es
-evalAppAtom o _ ">" es = evalIntBoolBinop o (>) es
-evalAppAtom o _ ">=" es = evalIntBoolBinop o (>=) es
-evalAppAtom o _ "=" es = evalIntBoolBinop o (==) es
-evalAppAtom o _ "number->string" es = unary o es >>= asInt o >>= return . String . T.pack . show
-evalAppAtom o _ ":not" es = Bool . not . truthy <$> unary o es
-evalAppAtom _ _ ":and" es = return $ Bool $ all truthy es
-evalAppAtom _ _ ":or" es = return $ Bool $ any truthy es
-evalAppAtom _ _ ":list" es = return $ List es
-evalAppAtom _ _ ":cons" es = case es of
-  [] -> return $ List []
-  es' -> return $ foldl1 cons es'
-evalAppAtom o _ "pair?" es = Bool . isPair <$> unary o es
-evalAppAtom o _ "null?" es = Bool . isNull <$> unary o es
-evalAppAtom o _ ":hd" es = unary o es >>= lispHd o
-evalAppAtom o _ ":tl" es = unary o es >>= lispTl o
-evalAppAtom o _ _ _ = unimplementedAt o
+initialBindings :: [(T.Text, LispVal)]
+initialBindings = [
+  ("def", Syntax Define), ("quote", Syntax Quote),
+  ("fn", Syntax Lambda), ("if", Syntax If) ] ++
+  (mapSnd Proc <$> initialProcs) where
 
-evalQExpr :: QExpr -> ElabM LispVal
-evalQExpr (QApp (AtPos o e) es) =
-  List . ((LispAt o (Atom e)) :) <$> mapM evalQExpr es
-evalQExpr (QUnquote (AtPos o e)) = eval o e
+  initialProcs :: [(T.Text, Proc)]
+  initialProcs = [
+    ("display", \o o' es ->
+      unary o es >>= asString o >>= reportSpan o o' ELInfo >> pure Undef),
+    ("print", \o o' es ->
+      unary o es >>= reportSpan o o' ELInfo . T.pack . show >> pure Undef),
+    ("+", \o _ es -> Number . sum <$> mapM (asInt o) es),
+    ("*", \o _ es -> Number . product <$> mapM (asInt o) es),
+    ("max", \o _ es ->
+      mapM (asInt o) es >>= evalFold1 o max >>= return . Number),
+    ("min", \o _ es ->
+      mapM (asInt o) es >>= evalFold1 o min >>= return . Number),
+    ("-", \o _ es -> mapM (asInt o) es >>= \case
+      [] -> escapeAt o "expected at least one argument"
+      [n] -> return $ Number (-n)
+      n : ns -> return $ Number (n - sum ns)),
+    ("<", intBoolBinopProc (<)),
+    ("<=", intBoolBinopProc (<=)),
+    (">", intBoolBinopProc (>)),
+    (">=", intBoolBinopProc (>=)),
+    ("=", intBoolBinopProc (==)),
+    ("number->string", \o _ es ->
+      unary o es >>= asInt o >>= return . String . T.pack . show),
+    ("not", \o _ es -> Bool . not . truthy <$> unary o es),
+    ("and", \_ _ es -> return $ Bool $ all truthy es),
+    ("or", \_ _ es -> return $ Bool $ any truthy es),
+    ("list", \_ _ -> return . List),
+    ("cons", \_ _ -> \case
+      [] -> return $ List []
+      es' -> return $ foldl1 cons es'),
+    ("pair?", \o _ es -> Bool . isPair <$> unary o es),
+    ("null?", \o _ es -> Bool . isNull <$> unary o es),
+    ("hd", \o _ es -> unary o es >>= lispHd o),
+    ("tl", \o _ es -> unary o es >>= lispTl o) ]
+
+evalQExpr :: LCtx -> QExpr -> ElabM LispVal
+evalQExpr ctx (QApp (AtPos o e) es) =
+  List . (Atom (Just o) e :) <$> mapM (evalQExpr ctx) es
+evalQExpr ctx (QUnquote (AtLisp o e)) = eval o ctx e

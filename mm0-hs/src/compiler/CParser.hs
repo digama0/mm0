@@ -11,7 +11,7 @@ import Data.Void
 import Data.Char
 import Data.Maybe
 import Data.List.NonEmpty (NonEmpty(..))
-import Text.Megaparsec hiding (runParser, runParser', ParseError)
+import Text.Megaparsec hiding (runParser, runParser', ParseError, unPos)
 import qualified Text.Megaparsec as MT
 import Text.Megaparsec.Char
 import Control.Monad.Trans.State
@@ -300,34 +300,37 @@ strLit = single '"' *> (TB.run <$> p) where
 lispIdent :: Char -> Bool
 lispIdent c = isAlphaNum c || c `elem` ("!%&*/:<=>?^_~+-.@" :: String)
 
-lispAt :: Parser LispVal -> Parser LispVal
-lispAt = liftA2 LispAt getOffset
+lispAt :: (Offset -> Parser LispAST) -> Parser AtLisp
+lispAt p = getOffset >>= \o -> AtLisp o <$> p o
 
-lispVal :: Parser LispVal
-lispVal = lispAt $
+lispVal :: Parser AtLisp
+lispVal = lispAt $ \o ->
   parens listVal <|>
-  (Number <$> lexeme L.decimal) <|>
-  (String <$> lexeme strLit) <|>
-  (LFormula <$> formula) <|>
-  (single '\'' *> ((\v -> List [Syntax Quote, v]) <$> lispVal)) <|>
+  (ANumber <$> lexeme L.decimal) <|>
+  (AString <$> lexeme strLit) <|>
+  (AFormula <$> formula) <|>
+  (single '\'' *> ((\v -> AList [AtLisp o (AAtom "quote"), v]) <$> lispVal)) <|>
   (lexeme (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom)) <|>
   (lexeme (takeWhileP (Just "identifier char") lispIdent >>= atom))
 
-listVal :: Parser LispVal
-listVal = listVal1 <|> return (List []) where
+listVal :: Parser LispAST
+listVal = listVal1 <|> return (AList []) where
   listVal1 = lispVal >>= \l ->
-    cons l <$> ((lexeme "." *> lispVal) <|> listVal)
+    (ADottedList l [] <$> (lexeme "." *> lispVal)) <|>
+    (cons l <$> listVal)
 
-hashAtom :: T.Text -> Parser LispVal
-hashAtom "t" = return (Bool True)
-hashAtom "f" = return (Bool False)
-hashAtom "def" = return (Syntax Define)
-hashAtom "fn" = return (Syntax Lambda)
-hashAtom "if" = return (Syntax If)
+  cons :: AtLisp -> LispAST -> LispAST
+  cons l (AList r) = AList (l : r)
+  cons l (ADottedList r0 rs r) = ADottedList l (r0 : rs) r
+  cons _ _ = error "impossible"
+
+hashAtom :: T.Text -> Parser LispAST
+hashAtom "t" = return (ABool True)
+hashAtom "f" = return (ABool False)
 hashAtom _ = empty
 
-atom :: T.Text -> Parser LispVal
-atom t = if legalIdent then return (Atom t) else empty where
+atom :: T.Text -> Parser LispAST
+atom t = if legalIdent then return (AAtom t) else empty where
   legalIdent = t `elem` ["+", "-", "..."] ||
     case T.uncons t of
       Nothing -> False
