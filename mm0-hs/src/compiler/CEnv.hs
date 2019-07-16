@@ -18,6 +18,7 @@ import qualified Data.HashMap.Strict as H
 import qualified Data.HashSet as HS
 import qualified Data.Vector.Mutable.Dynamic as V
 import qualified Data.Vector.Unboxed as U
+import System.IO.Unsafe
 import CAST (Offset, Binder(..), SortData(..), Prec, Visibility(..))
 import Environment (Ident, Sort, TermName, ThmName, VarName, Token,
   PBinder(..), SExpr(..), DepType(..), binderName, binderType)
@@ -46,6 +47,7 @@ data LispVal =
   | Syntax Syntax
   | Undef
   | Proc Proc
+  | Ref (TVar LispVal)
 
 instance Show LispVal where
   showsPrec _ (Atom _ e) = (T.unpack e ++)
@@ -65,6 +67,7 @@ instance Show LispVal where
   showsPrec _ (Syntax s) = shows s
   showsPrec _ Undef = ("#<undef>" ++)
   showsPrec _ (Proc _) = ("#<closure>" ++)
+  showsPrec _ (Ref e) = \r -> "(ref! " ++ shows (unsafePerformIO (readTVarIO e)) (')':r)
 
 cons :: LispVal -> LispVal -> LispVal
 cons l (List r) = List (l : r)
@@ -286,6 +289,15 @@ lispDefine :: T.Text -> LispVal -> ElabM ()
 lispDefine x v = do
   n <- lispAlloc v
   modify $ \env -> env {eLispNames = H.insert x n (eLispNames env)}
+
+newRef :: LispVal -> ElabM LispVal
+newRef v = Ref <$> liftIO (newTVarIO v)
+
+getRef :: TVar LispVal -> ElabM LispVal
+getRef = liftIO . readTVarIO
+
+setRef :: TVar LispVal -> LispVal -> ElabM ()
+setRef x v = liftIO $ atomically $ writeTVar x v
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
 getSort v s =

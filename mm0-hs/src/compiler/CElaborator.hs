@@ -412,7 +412,7 @@ evalToplevel (AtLisp _ (AList (AtLisp o (AAtom "def") : es))) = do
 evalToplevel (AtLisp o e) = evalAndPrint o e
 
 evalAndPrint :: Offset -> LispAST -> ElabM ()
-evalAndPrint o e = eval o def e >>= \case
+evalAndPrint o e = eval o def e >>= unRef >>= \case
   Undef -> return ()
   e' -> reportAt o ELInfo $ T.pack $ show e'
 
@@ -446,12 +446,16 @@ evalAtom o (LCtx ctx) v = case H.lookup v ctx of
     Just e -> return e
     Nothing -> escapeAt o $ "Reference to unbound variable '" <> v <> "'"
 
+unRef :: LispVal -> ElabM LispVal
+unRef (Ref e) = getRef e >>= unRef
+unRef e = return e
+
 evalApp :: Offset -> LCtx -> LispAST -> [AtLisp] -> ElabM LispVal
-evalApp o ctx (AAtom e) es = evalAtom o ctx e >>= \case
+evalApp o ctx (AAtom e) es = evalAtom o ctx e >>= unRef >>= \case
   Syntax s -> evalSyntax o ctx s es
   Proc f -> mapM (evalAt ctx) es >>= f o (o + T.length e)
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
-evalApp o ctx e es = eval o ctx e >>= \case
+evalApp o ctx e es = eval o ctx e >>= unRef >>= \case
   Proc f -> mapM (evalAt ctx) es >>= f o o
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
 
@@ -622,7 +626,17 @@ initialBindings = [
     ("pair?", \o _ es -> Bool . isPair <$> unary o es),
     ("null?", \o _ es -> Bool . isNull <$> unary o es),
     ("hd", \o _ es -> unary o es >>= lispHd o),
-    ("tl", \o _ es -> unary o es >>= lispTl o) ]
+    ("tl", \o _ es -> unary o es >>= lispTl o),
+    ("ref!", \_ _ -> \case
+      [] -> newRef Undef
+      e:_ -> newRef e),
+    ("get!", \o _ es -> unary o es >>= \case
+      Ref e -> getRef e
+      e -> escapeAt o $ "not a ref-cell: " <> T.pack (show e)),
+    ("set!", \o _ -> \case
+      [Ref x, v] -> Undef <$ setRef x v
+      [e, _] -> escapeAt o $ "not a ref-cell: " <> T.pack (show e)
+      _ -> escapeAt o "expected two arguments") ]
 
 evalQExpr :: LCtx -> QExpr -> ElabM LispVal
 evalQExpr ctx (QApp (AtPos o e) es) =
