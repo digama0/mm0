@@ -24,7 +24,14 @@ import Environment (Ident, Sort, TermName, ThmName, VarName, Token,
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import CParser (ParseError)
 
-data Syntax = Define | Lambda | Quote | If
+data Syntax = Define | Lambda | Quote | If | Begin
+
+instance Show Syntax where
+  showsPrec _ Define = ("def" ++)
+  showsPrec _ Lambda = ("fn" ++)
+  showsPrec _ Quote = ("quote" ++)
+  showsPrec _ If = ("if" ++)
+  showsPrec _ Begin = ("begin" ++)
 
 type Proc = Offset -> Offset -> [LispVal] -> ElabM LispVal
 
@@ -55,10 +62,7 @@ instance Show LispVal where
   showsPrec _ (Bool True) = ("#t" ++)
   showsPrec _ (Bool False) = ("#f" ++)
   showsPrec _ (UnparsedFormula _ f) = ('$' :) . (T.unpack f ++) . ('$' :)
-  showsPrec _ (Syntax Define) = ("#def" ++)
-  showsPrec _ (Syntax Lambda) = ("#fn" ++)
-  showsPrec _ (Syntax Quote) = ("#quote" ++)
-  showsPrec _ (Syntax If) = ("#if" ++)
+  showsPrec _ (Syntax s) = shows s
   showsPrec _ Undef = ("#<undef>" ++)
   showsPrec _ (Proc _) = ("#<closure>" ++)
 
@@ -277,6 +281,11 @@ lispLookupName :: T.Text -> ElabM LispVal
 lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
   Nothing -> mzero
   Just n -> lispLookupNum n
+
+lispDefine :: T.Text -> LispVal -> ElabM ()
+lispDefine x v = do
+  n <- lispAlloc v
+  modify $ \env -> env {eLispNames = H.insert x n (eLispNames env)}
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
 getSort v s =

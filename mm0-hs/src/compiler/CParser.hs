@@ -310,6 +310,7 @@ lispVal = lispAt $ \o ->
   (AString <$> lexeme strLit) <|>
   (AFormula <$> formula) <|>
   (single '\'' *> ((\v -> AList [AtLisp o (AAtom "quote"), v]) <$> lispVal)) <|>
+  (single ',' *> ((\v -> AList [AtLisp o (AAtom "unquote"), v]) <$> lispVal)) <|>
   (lexeme (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom)) <|>
   (lexeme (takeWhileP (Just "identifier char") lispIdent >>= atom))
 

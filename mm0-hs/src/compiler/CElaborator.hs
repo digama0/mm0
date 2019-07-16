@@ -406,16 +406,15 @@ instance Default LCtx where
   def = LCtx H.empty
 
 evalToplevel :: AtLisp -> ElabM ()
-evalToplevel (AtLisp _ (AList (AtLisp o (AAtom "def") : es))) = defineToplevel o es
+evalToplevel (AtLisp _ (AList (AtLisp o (AAtom "def") : es))) = do
+  (AtPos _ x, v) <- evalDefine o def es
+  lispDefine x v
 evalToplevel (AtLisp o e) = evalAndPrint o e
 
 evalAndPrint :: Offset -> LispAST -> ElabM ()
 evalAndPrint o e = eval o def e >>= \case
   Undef -> return ()
   e' -> reportAt o ELInfo $ T.pack $ show e'
-
-defineToplevel :: Offset -> [AtLisp] -> ElabM ()
-defineToplevel o _ = unimplementedAt o
 
 evalAt :: LCtx -> AtLisp -> ElabM LispVal
 evalAt ctx (AtLisp o e) = eval o ctx e
@@ -430,6 +429,15 @@ eval _ ctx (AList (AtLisp o e : es)) = evalApp o ctx e es
 eval _ _ val@(ADottedList (AtLisp o _) _ _) =
   escapeAt o $ "attempted to evaluate an improper list: " <> T.pack (show val)
 eval _ ctx (AFormula f) = parseMath f >>= evalQExpr ctx
+
+evals :: LCtx -> AtLisp -> [AtLisp] -> ElabM LispVal
+evals ctx e [] = evalAt ctx e
+evals (LCtx ctx) (AtLisp _ (AList (AtLisp o (AAtom "def") : ds))) es = do
+  (AtPos _ x, v) <- evalDefine o (LCtx ctx) ds
+  case es of
+    [] -> escapeAt o "def not permitted in expression context"
+    e:es' -> evals (LCtx (H.insert x v ctx)) e es'
+evals ctx e1 (e:es) = evalAt ctx e1 >> evals ctx e es
 
 evalAtom :: Offset -> LCtx -> T.Text -> ElabM LispVal
 evalAtom o (LCtx ctx) v = case H.lookup v ctx of
@@ -448,9 +456,9 @@ evalApp o ctx e es = eval o ctx e >>= \case
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
 
 evalSyntax :: Offset -> LCtx -> Syntax -> [AtLisp] -> ElabM LispVal
-evalSyntax o _ Define _ = escapeAt o "#def not permitted in expression context"
+evalSyntax o _ Define _ = escapeAt o "def not permitted in expression context"
 evalSyntax o _ Quote [] = escapeAt o "expected at least one argument"
-evalSyntax _ _ Quote (e : _) = return $ quoteAt e
+evalSyntax _ ctx Quote (e : _) = quoteAt ctx e
 evalSyntax _ ctx If (cond : t : es') = do
   cond' <- evalAt ctx cond
   if truthy cond' then evalAt ctx t else
@@ -458,19 +466,71 @@ evalSyntax _ ctx If (cond : t : es') = do
       [] -> return Undef
       f : _ -> evalAt ctx f
 evalSyntax o _ If _ = escapeAt o "expected at least two arguments"
-evalSyntax o _ Lambda _ = unimplementedAt o
+evalSyntax _ ctx Lambda (vs : e : es) = do
+  ls <- toLambdaSpec vs
+  return (Proc (mkLambda ls ctx e es))
+evalSyntax o _ Lambda _ = escapeAt o "expected at least two arguments"
+evalSyntax o _ Begin [] = escapeAt o "expected at least one argument"
+evalSyntax _ ctx Begin (e : es) = evals ctx e es
 
-quoteAt :: AtLisp -> LispVal
-quoteAt (AtLisp o e) = quote o e
+data LambdaSpec = LSExactly [Ident] | LSAtLeast [Ident] Ident
 
-quote :: Offset -> LispAST -> LispVal
-quote o (AAtom e) = Atom (Just o) e
-quote _ (AList es) = List (quoteAt <$> es)
-quote _ (ADottedList l es r) = DottedList (quoteAt l) (quoteAt <$> es) (quoteAt r)
-quote _ (AString s) = String s
-quote _ (ANumber n) = Number n
-quote _ (ABool b) = Bool b
-quote _ (AFormula (Formula o f)) = UnparsedFormula o f
+toLambdaSpec :: AtLisp -> ElabM LambdaSpec
+toLambdaSpec (AtLisp _ (AList es)) = LSExactly <$> mapM toIdent es
+toLambdaSpec (AtLisp _ (ADottedList e1 es e2)) =
+  liftM2 LSAtLeast (mapM toIdent (e1 : es)) (toIdent e2)
+toLambdaSpec e = LSAtLeast [] <$> toIdent e
+
+mkCtx :: Offset -> LambdaSpec -> [LispVal] -> LCtx -> ElabM LCtx
+mkCtx o (LSExactly xs') = \vs -> mkCtxList xs' vs 0 where
+  mkCtxList [] [] _ ctx = return ctx
+  mkCtxList (x:xs) (v:vs) n (LCtx ctx) =
+    mkCtxList xs vs (n+1) (LCtx (H.insert x v ctx))
+  mkCtxList [] vs n _ = escapeAt o $
+    "expected " <> T.pack (show n) <> " arguments, got " <> T.pack (show (n + length vs))
+  mkCtxList xs [] n _ = escapeAt o $
+    "expected " <> T.pack (show (n + length xs)) <> " arguments, got " <> T.pack (show n)
+mkCtx o (LSAtLeast xs' r) = \vs -> mkCtxImproper xs' vs 0 where
+  mkCtxImproper [] vs _ (LCtx ctx) =
+    return (LCtx (H.insert r (List vs) ctx))
+  mkCtxImproper (x:xs) (v:vs) n (LCtx ctx) =
+    mkCtxImproper xs vs (n+1) (LCtx (H.insert x v ctx))
+  mkCtxImproper xs [] n _ = escapeAt o $
+    "expected at least " <> T.pack (show (n + length xs)) <> " arguments, got " <> T.pack (show n)
+
+mkLambda :: LambdaSpec -> LCtx -> AtLisp -> [AtLisp] -> Proc
+mkLambda ls ctx e es o _ vs = mkCtx o ls vs ctx >>= \ctx' -> evals ctx' e es
+
+evalDefine :: Offset -> LCtx -> [AtLisp] -> ElabM (AtPos Ident, LispVal)
+evalDefine _ ctx (AtLisp o (AAtom x) : e : es) = do
+  v <- evals ctx e es
+  return (AtPos o x, v)
+evalDefine _ ctx (AtLisp _ (AList (AtLisp o (AAtom x) : xs)) : e : es) = do
+  xs' <- mapM toIdent xs
+  return (AtPos o x, Proc $ mkLambda (LSExactly xs') ctx e es)
+evalDefine _ ctx (AtLisp _ (ADottedList (AtLisp o (AAtom x)) xs r) : e : es) = do
+  xs' <- mapM toIdent xs
+  r' <- toIdent r
+  return (AtPos o x, Proc $ mkLambda (LSAtLeast xs' r') ctx e es)
+evalDefine o _ _ = escapeAt o "def: syntax error"
+
+toIdent :: AtLisp -> ElabM Ident
+toIdent (AtLisp _ (AAtom x)) = return x
+toIdent (AtLisp o _) = escapeAt o "expected an identifier"
+
+quoteAt :: LCtx -> AtLisp -> ElabM LispVal
+quoteAt ctx (AtLisp o e) = quote o ctx e
+
+quote :: Offset -> LCtx -> LispAST -> ElabM LispVal
+quote o _ (AAtom e) = return $ Atom (Just o) e
+quote _ ctx (AList [AtLisp _ (AAtom "unquote"), e]) = evalAt ctx e
+quote _ ctx (AList es) = List <$> mapM (quoteAt ctx) es
+quote _ ctx (ADottedList l es r) =
+  liftM3 DottedList (quoteAt ctx l) (mapM (quoteAt ctx) es) (quoteAt ctx r)
+quote _ _ (AString s) = return $ String s
+quote _ _ (ANumber n) = return $ Number n
+quote _ _ (ABool b) = return $ Bool b
+quote _ _ (AFormula (Formula o f)) = return $ UnparsedFormula o f
 
 asString :: Offset -> LispVal -> ElabM T.Text
 asString _ (String s) = return s
@@ -526,7 +586,7 @@ lispTl o _ = escapeAt o "expected a list"
 initialBindings :: [(T.Text, LispVal)]
 initialBindings = [
   ("def", Syntax Define), ("quote", Syntax Quote),
-  ("fn", Syntax Lambda), ("if", Syntax If) ] ++
+  ("fn", Syntax Lambda), ("if", Syntax If), ("begin", Syntax Begin) ] ++
   (mapSnd Proc <$> initialProcs) where
 
   initialProcs :: [(T.Text, Proc)]

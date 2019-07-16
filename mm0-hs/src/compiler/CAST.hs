@@ -115,6 +115,7 @@ instance Show AtLisp where
 instance Show LispAST where
   showsPrec _ (AAtom e) = (T.unpack e ++)
   showsPrec _ (AList [AtLisp _ (AAtom "quote"), e]) = ('\'' :) . shows e
+  showsPrec _ (AList [AtLisp _ (AAtom "unquote"), e]) = (',' :) . shows e
   showsPrec _ (AList ls) = ('(' :) . f ls . (')' :) where
     f [] = id
     f [e] = shows e
