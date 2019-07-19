@@ -30,6 +30,7 @@ dependencies:
 - transformers
 - split
 - megaparsec
+- prettyprinter
 - filepath
 - word8
 - text
@@ -37,6 +38,8 @@ dependencies:
 - async
 - async-pool
 - stm
+- tasty
+- tasty-hunit
 # for the server (TODO: move to separate project)
 - aeson
 - bytestring
@@ -76,9 +79,12 @@ executables:
 
 tests:
   mm0-hs-test:
-    main:                Spec.hs
-    source-dirs:         test
+    main:                test.hs
+    source-dirs:
+    - test
+    - src
     ghc-options:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -Wall
