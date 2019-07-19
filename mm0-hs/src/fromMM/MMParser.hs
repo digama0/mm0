@@ -5,7 +5,7 @@ import Data.Char
 import Data.Maybe
 import Data.Default
 import Control.Monad.Trans.State
-import Control.Monad.Except hiding (liftIO)
+import Control.Monad.Except
 import qualified Text.ParserCombinators.ReadP as P
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C

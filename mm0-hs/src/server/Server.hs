@@ -252,6 +252,6 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str =
       else case CP.parseAST file str of
         (errs, _, Nothing) -> return $ parseErrorDiags pos errs
         (errs, _, Just ast) -> do
-          (_env, errs') <- liftIO $ CE.elaborate errs ast
+          errs' <- liftIO $ CE.elaborate errs ast
           return (elabErrorDiags fileUri pos errs')
     publishDiagnostics 100 fileNUri version (partitionBySource diags)

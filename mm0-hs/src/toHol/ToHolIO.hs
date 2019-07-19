@@ -19,13 +19,13 @@ toHolIO (mm0 : mmp : rest) = do
         _ -> \k -> k stdout
   s <- openFile mm0 ReadMode >>= B.hGetContents
   ast <- either (die . show) pure (parse s)
-  env <- liftIO (elabAST ast)
+  env <- liftIO' $ elabAST ast
   putStrLn "spec checked"
   pff <- B.readFile mmp
-  pf <- liftIO (parseProof pff)
-  hol <- liftIO (toHol env pf)
+  pf <- liftIO' $ parseProof pff
+  hol <- liftIO' $ toHol env pf
   write $ \h -> mapM_ (hPutStrLn h . flip shows "\n") hol
-  _ <- liftIO $ checkDecls hol
+  _ <- liftIO' $ checkDecls hol
   putStrLn "verified HOL"
 toHolIO _ = die "to-hol: incorrect args; use 'to-hol MM0-FILE MMU-FILE [-o out.hol]'"
 
@@ -36,10 +36,10 @@ toOpenTheory (mm0 : mmp : rest) = do
         _ -> \k -> k stdout
   s <- openFile mm0 ReadMode >>= B.hGetContents
   ast <- either (die . show) pure (parse s)
-  env <- liftIO (elabAST ast)
+  env <- liftIO' $ elabAST ast
   pff <- B.readFile mmp
-  pf <- liftIO (parseProof pff)
-  hol <- liftIO (toHol env pf)
+  pf <- liftIO' $ parseProof pff
+  hol <- liftIO' $ toHol env pf
   write $ \h -> do
     hSetNewlineMode h (NewlineMode LF LF)
     writeOT (hPutStrLn h) hol
@@ -59,9 +59,9 @@ toLean (mm0 : mmp : rest) = do
     _ -> die "to-lean: -o FILE.LEAN required"
   s <- openFile mm0 ReadMode >>= B.hGetContents
   ast <- either (die . show) pure (parse s)
-  env <- liftIO (elabAST ast)
+  env <- liftIO' $ elabAST ast
   pff <- B.readFile mmp
-  pf <- liftIO (parseProof pff)
-  hol <- liftIO (toHol env pf)
+  pf <- liftIO' $ parseProof pff
+  hol <- liftIO' $ toHol env pf
   writeLean nax bn cs hol
 toLean _ = die "to-lean: incorrect args; use 'to-lean MM0-FILE MMU-FILE [-o out.lean]'"

@@ -1,10 +1,14 @@
+{-# LANGUAGE RankNTypes #-}
 module CEnv (module CEnv, Offset, SortData, Visibility(..),
   Ident, Sort, TermName, ThmName, VarName, Token,
-  Binder, DepType(..), PBinder(..), SExpr(..), binderName, binderType,
-  Prec) where
+  Binder, DepType(..), PBinder(..), SExpr(..),
+  binderName, binderType, binderBound,
+  Prec, TVar) where
 
 import Control.Concurrent.STM
 import Control.Concurrent
+import Control.Concurrent.Async.Pool
+import Data.Char
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
@@ -16,16 +20,18 @@ import qualified Data.IntMap as I
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
 import qualified Data.HashSet as HS
-import qualified Data.Vector.Mutable.Dynamic as V
+import qualified Data.Vector.Mutable.Dynamic as VD
+import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
+import System.Timeout
 import System.IO.Unsafe
 import CAST (Offset, Binder(..), SortData(..), Prec, Visibility(..))
 import Environment (Ident, Sort, TermName, ThmName, VarName, Token,
-  PBinder(..), SExpr(..), DepType(..), binderName, binderType)
+  PBinder(..), SExpr(..), DepType(..), binderName, binderType, binderBound)
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import CParser (ParseError)
 
-data Syntax = Define | Lambda | Quote | If | Begin
+data Syntax = Define | Lambda | Quote | If | Begin | Let | Letrec
 
 instance Show Syntax where
   showsPrec _ Define = ("def" ++)
@@ -33,11 +39,13 @@ instance Show Syntax where
   showsPrec _ Quote = ("quote" ++)
   showsPrec _ If = ("if" ++)
   showsPrec _ Begin = ("begin" ++)
+  showsPrec _ Let = ("begin" ++)
+  showsPrec _ Letrec = ("letrec" ++)
 
 type Proc = Offset -> Offset -> [LispVal] -> ElabM LispVal
 
 data LispVal =
-    Atom (Maybe Offset) T.Text
+    Atom Offset T.Text
   | List [LispVal]
   | DottedList LispVal [LispVal] LispVal
   | Number Integer
@@ -48,6 +56,14 @@ data LispVal =
   | Undef
   | Proc Proc
   | Ref (TVar LispVal)
+  | MVar Int Offset Sort Bool
+  | Goal Offset LispVal
+
+alphanumber :: Int -> T.Text
+alphanumber = T.reverse . T.pack . go . (+1) where
+  go 0 = ""
+  go n = let (q, r) = quotRem (n - 1) 26 in
+    chr (r + ord 'a') : go q
 
 instance Show LispVal where
   showsPrec _ (Atom _ e) = (T.unpack e ++)
@@ -67,12 +83,22 @@ instance Show LispVal where
   showsPrec _ (Syntax s) = shows s
   showsPrec _ Undef = ("#<undef>" ++)
   showsPrec _ (Proc _) = ("#<closure>" ++)
-  showsPrec _ (Ref e) = \r -> "(ref! " ++ shows (unsafePerformIO (readTVarIO e)) (')':r)
+  showsPrec _ (Ref e) = shows (unsafePerformIO (readTVarIO e))
+  showsPrec _ (MVar n _ _ _) = ('?' :) . (T.unpack (alphanumber n) ++)
+  showsPrec _ (Goal _ v) = ("(goal " ++) . shows v . (')':)
 
 cons :: LispVal -> LispVal -> LispVal
 cons l (List r) = List (l : r)
 cons l (DottedList r0 rs r) = DottedList l (r0 : rs) r
 cons l r = DottedList l [] r
+
+isMVar :: LispVal -> Bool
+isMVar (MVar _ _ _ _) = True
+isMVar _ = False
+
+isGoal :: LispVal -> Bool
+isGoal (Goal _ _) = True
+isGoal _ = False
 
 data ErrorLevel = ELError | ELWarning | ELInfo
 instance Show ErrorLevel where
@@ -182,40 +208,62 @@ data InferCtx = InferCtx {
 instance Default InferCtx where
   def = InferCtx H.empty H.empty
 
+data ThmCtx = ThmCtx {
+  tcVars :: H.HashMap VarName PBinder,
+  tcProofs :: H.HashMap VarName LispVal,
+  tcMVars :: VD.IOVector (TVar LispVal),
+  tcGoals :: V.Vector (TVar LispVal) }
+
 data Env = Env {
-  eLispData :: V.IOVector LispVal,
+  eTimeout :: Int,
+  eLispData :: VD.IOVector LispVal,
   eLispNames :: H.HashMap Ident Int,
   eCounter :: SeqCounter,
   eSorts :: H.HashMap Sort (SeqNum, Offset, SortData),
   eProvableSorts :: [Sort],
   eDecls :: H.HashMap Ident (SeqNum, Offset, Decl),
   ePE :: ParserEnv,
-  eInfer :: InferCtx }
+  eInfer :: InferCtx,
+  eThmCtx :: Maybe ThmCtx }
 
 instance Default Env where
-  def = Env undefined H.empty def H.empty def H.empty def undefined
+  def = Env 5000000 undefined H.empty def H.empty def H.empty def undefined def
 
-type Elab = RWST (ElabError -> IO ()) () Env IO
+data ElabFuncs = ElabFuncs {
+  efReport :: ElabError -> IO (),
+  efAsync :: forall a. IO a -> IO (Async a) }
+type Elab = RWST ElabFuncs () Env IO
 type ElabM = MaybeT Elab
 
-runElab :: Elab a -> [ElabError] -> [(Ident, LispVal)] -> IO (a, Env, [ElabError])
+runElab :: Elab a -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError])
 runElab m errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
-  dat <- V.new 0
+  dat <- VD.new 0
   let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident Int -> IO (H.HashMap Ident Int)
       ins [] _ hm = return hm
-      ins ((x, v) : ls) n hm = V.pushBack dat v >> ins ls (n+1) (H.insert x n hm)
+      ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x n hm)
   hm <- ins lvs 0 H.empty
-  (a, env, _) <- runRWST m report def {eLispData = dat, eLispNames = hm}
-  errs' <- readTVarIO pErrs
-  return (a, env, errs')
+  caps <- getNumCapabilities
+  withTaskGroup caps $ \g -> do
+    (a, _, _) <- runRWST m (ElabFuncs report (async g)) def {eLispData = dat, eLispNames = hm}
+    errs' <- readTVarIO pErrs
+    return (a, errs')
+
+withTimeout :: Offset -> ElabM a -> ElabM a
+withTimeout o m = MaybeT $ RWST $ \r s ->
+  case eTimeout s of
+    0 -> runRWST (runMaybeT m) r s
+    n -> timeout n (runRWST (runMaybeT m) r s) >>= \case
+      Just ret -> return ret
+      Nothing -> runRWST (runMaybeT (escapeAt o $
+        "timeout (use (set-timeout) to increase the timeout)")) r s
 
 resuming :: ElabM () -> Elab ()
 resuming m = () <$ runMaybeT m
 
 reportErr :: ElabError -> ElabM ()
-reportErr e = lift $ ask >>= \f -> lift $ f e
+reportErr e = lift $ ask >>= \(ElabFuncs f _) -> lift $ f e
 
 escapeErr :: ElabError -> ElabM a
 escapeErr e = reportErr e >> mzero
@@ -265,20 +313,19 @@ try :: ElabM a -> ElabM (Maybe a)
 try = lift . runMaybeT
 
 forkElabM :: ElabM a -> ElabM (ElabM a)
-forkElabM m = lift $ RWST $ \r s -> do
-  v <- newEmptyMVar
-  _ <- forkIO $ fst <$> evalRWST (runMaybeT m) r s >>= putMVar v
-  return (MaybeT $ lift $ readMVar v, s, ())
+forkElabM m = lift $ RWST $ \r@(ElabFuncs _ asyncf) s -> do
+  a <- asyncf $ fst <$> evalRWST (runMaybeT m) r s
+  return (MaybeT $ lift $ wait a, s, ())
 
 lispAlloc :: LispVal -> ElabM Int
 lispAlloc v = do
   vec <- gets eLispData
-  liftIO $ V.length vec <* V.pushBack vec v
+  liftIO $ VD.length vec <* VD.pushBack vec v
 
 lispLookupNum :: Int -> ElabM LispVal
 lispLookupNum n = do
   vec <- gets eLispData
-  liftIO $ V.read vec n
+  liftIO $ VD.read vec n
 
 lispLookupName :: T.Text -> ElabM LispVal
 lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
@@ -290,13 +337,13 @@ lispDefine x v = do
   n <- lispAlloc v
   modify $ \env -> env {eLispNames = H.insert x n (eLispNames env)}
 
-newRef :: LispVal -> ElabM LispVal
-newRef v = Ref <$> liftIO (newTVarIO v)
+newRef :: a -> ElabM (TVar a)
+newRef = liftIO . newTVarIO
 
-getRef :: TVar LispVal -> ElabM LispVal
+getRef :: TVar a -> ElabM a
 getRef = liftIO . readTVarIO
 
-setRef :: TVar LispVal -> LispVal -> ElabM ()
+setRef :: TVar a -> a -> ElabM ()
 setRef x v = liftIO $ atomically $ writeTVar x v
 
 getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
@@ -319,13 +366,45 @@ getThm v s =
     Just (n, o, DTheorem _ args hyps r _) -> guard (n < s) >> return (o, args, hyps, r)
     _ -> mzero
 
-modifyInfer :: (InferCtx -> InferCtx) -> Elab ()
+modifyInfer :: (InferCtx -> InferCtx) -> ElabM ()
 modifyInfer f = modify $ \env -> env {eInfer = f (eInfer env)}
 
+modifyTC :: (ThmCtx -> ThmCtx) -> ElabM ()
+modifyTC f = modify $ \env -> env {eThmCtx = f <$> eThmCtx env}
+
 withInfer :: ElabM a -> ElabM a
-withInfer m =
-  lift (modifyInfer (const def)) *> m <*
-  lift (modifyInfer (const undefined))
+withInfer m = modifyInfer (const def) *> m <* modifyInfer (const undefined)
+
+withTC :: H.HashMap VarName PBinder -> H.HashMap VarName LispVal -> ElabM a -> ElabM a
+withTC vs ps m = do
+  mv <- liftIO $ VD.new 0
+  modify $ \env -> env {eThmCtx = Just $ ThmCtx vs ps mv V.empty}
+  m <* modify (\env -> env {eThmCtx = def})
+
+getTC :: ElabM ThmCtx
+getTC = MaybeT $ gets eThmCtx
+
+newMVar :: Offset -> Sort -> Bool -> ElabM (TVar LispVal)
+newMVar o s bd = do
+  mv <- tcMVars <$> getTC
+  n <- VD.length mv
+  v <- newRef (MVar n o s bd)
+  liftIO $ VD.pushBack mv v
+  return v
+
+modifyMVars :: (V.Vector (TVar LispVal) -> ElabM (V.Vector (TVar LispVal))) -> ElabM ()
+modifyMVars f = do
+  v1 <- getTC >>= liftIO . VD.unsafeFreeze . tcMVars
+  mv2 <- f v1 >>= liftIO . VD.unsafeThaw
+  modifyTC $ \tc -> tc {tcMVars = mv2}
+
+cleanMVars :: ElabM ()
+cleanMVars = modifyMVars $ V.filterM (fmap isMVar . getRef)
+
+setGoals :: [TVar LispVal] -> ElabM ()
+setGoals gs = do
+  gs' <- filterM (fmap isGoal . getRef) gs
+  modifyTC $ \tc -> tc {tcGoals = V.fromList gs'}
 
 peGetCoe' :: ParserEnv -> Text -> Text -> Maybe Coe
 peGetCoe' pe s1 s2 = M.lookup s1 (pCoes pe) >>= M.lookup s2

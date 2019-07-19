@@ -1,6 +1,6 @@
 module FindBundled (findBundled, bundle, reportBundled, Bundles) where
 
-import Control.Monad.RWS.Strict hiding (liftIO)
+import Control.Monad.RWS.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap as I
 import qualified Data.Set as S

@@ -1,6 +1,6 @@
 module MMClosure (closure) where
 
-import Control.Monad.State hiding (liftIO)
+import Control.Monad.State
 import qualified Data.Set as S
 import qualified Data.Text as T
 import Environment (SExpr(..))

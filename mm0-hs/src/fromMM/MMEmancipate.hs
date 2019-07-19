@@ -1,6 +1,6 @@
 module MMEmancipate (emancipate) where
 
-import Control.Monad.State hiding (liftIO)
+import Control.Monad.State
 import Data.Maybe
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S

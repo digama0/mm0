@@ -35,6 +35,7 @@ dependencies:
 - text
 - text-builder
 - async
+- async-pool
 - stm
 # for the server (TODO: move to separate project)
 - aeson

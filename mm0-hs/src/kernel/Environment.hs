@@ -13,20 +13,20 @@ type VarName = Ident
 type Token = Ident
 
 data DepType = DepType {
-  dSort :: Ident,
-  dDeps :: [Ident] } deriving (Eq)
+  dSort :: Sort,
+  dDeps :: [VarName] } deriving (Eq)
 
 instance Show DepType where
   showsPrec _ (DepType t ts) r =
     T.unpack t ++ foldr (\t' r' -> ' ' : T.unpack t' ++ r') r ts
 
-data PBinder = PBound Ident Ident | PReg Ident DepType
+data PBinder = PBound VarName Ident | PReg VarName DepType
 
 instance Show PBinder where
   showsPrec _ (PBound v t) r = T.unpack v ++ ": " ++ T.unpack t ++ r
   showsPrec n (PReg v t) r = T.unpack v ++ ": " ++ showsPrec n t r
 
-binderName :: PBinder -> Ident
+binderName :: PBinder -> VarName
 binderName (PBound v _) = v
 binderName (PReg v _) = v
 
@@ -34,7 +34,11 @@ binderType :: PBinder -> DepType
 binderType (PBound _ t) = (DepType t [])
 binderType (PReg _ ty) = ty
 
-data SExpr = SVar Ident | App Ident [SExpr] deriving (Eq)
+binderBound :: PBinder -> Bool
+binderBound (PBound _ _) = True
+binderBound (PReg _ _) = False
+
+data SExpr = SVar VarName | App TermName [SExpr] deriving (Eq)
 
 instance Show SExpr where
   showsPrec _ (SVar v) r = T.unpack v ++ r
@@ -88,11 +92,11 @@ data Environment = Environment {
 instance Default Environment where
   def = Environment def def def
 
-getTerm :: Environment -> Ident -> Maybe ([PBinder], DepType)
+getTerm :: Environment -> TermName -> Maybe ([PBinder], DepType)
 getTerm e v = eDecls e M.!? v >>= go where
   go (DTerm args r) = Just (args, r)
   go (DDef args r _) = Just (args, r)
   go (DAxiom _ _ _) = Nothing
 
-getArity :: Environment -> Ident -> Maybe Int
+getArity :: Environment -> TermName -> Maybe Int
 getArity e v = length . fst <$> getTerm e v

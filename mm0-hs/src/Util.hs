@@ -26,9 +26,9 @@ insertNew e k v m = do
   guardError e (M.notMember k m)
   return (M.insert k v m)
 
-liftIO :: Either String a -> IO a
-liftIO (Left e) = die e
-liftIO (Right e) = return e
+liftIO' :: Either String a -> IO a
+liftIO' (Left e) = die e
+liftIO' (Right e) = return e
 
 allUnique :: Ord a => [a] -> Bool
 allUnique = all ((==) 1 . length) . group . sort

@@ -2,8 +2,8 @@ module FromMM (fromMM, showBundled) where
 
 import System.IO
 import System.Exit
-import Control.Monad.State hiding (liftIO)
-import Control.Monad.RWS.Strict hiding (liftIO)
+import Control.Monad.State
+import Control.Monad.RWS.Strict
 import Data.Foldable
 import Data.Maybe
 import Data.Default
@@ -31,7 +31,7 @@ showBundled :: [String] -> IO ()
 showBundled [] = die "show-bundled: no .mm file specified"
 showBundled (mm : rest) = do
   db <- withFile mm ReadMode $ \h ->
-    B.hGetContents h >>= liftIO . parseMM
+    B.hGetContents h >>= liftIO' . parseMM
   let db' = emancipate db
   let bu = findBundled db'
   case rest of
@@ -66,7 +66,7 @@ fromMM :: [String] -> IO ()
 fromMM [] = die "from-mm: no .mm file specified"
 fromMM (mm : rest) = do
   db <- withFile mm ReadMode $ \h ->
-    B.hGetContents h >>= liftIO . parseMM
+    B.hGetContents h >>= liftIO' . parseMM
   let db' = emancipate db
   (dbf, rest') <- return $ case rest of
     "-f" : l : rest' ->
@@ -138,7 +138,7 @@ printAST db dbf mm0 mmu = do
   trDecls :: Q.Seq Decl -> TransState -> SeqPrinter -> IO ()
   trDecls Q.Empty _ _ = return ()
   trDecls (d Q.:<| ds) st p = do
-    (os, st', w) <- liftIO (runTransM (trDecl d) db dbf st)
+    (os, st', w) <- liftIO' (runTransM (trDecl d) db dbf st)
     p' <- foldlM (\p1 (a, pf) -> do
       let (s, p') = ppProofCmd' p1 pf
       forM_ a $ \a' -> mm0 $ shows a' "\n"

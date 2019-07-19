@@ -1,7 +1,7 @@
 module Verifier(verify) where
 
 import Control.Monad.Except
-import Control.Monad.RWS.Strict hiding (liftIO)
+import Control.Monad.RWS.Strict
 import Data.Word
 import Data.List
 import Data.Bits

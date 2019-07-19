@@ -220,13 +220,13 @@
 			"patterns": [
 				{"include": "#comment"},
 				{
-					"begin": "\\(\\s*(if|def|fn|begin)(?!\\w)",
+					"begin": "\\(\\s*(if|def|fn|begin|let|letrec)(?!\\w)",
 					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|number->string|display|print|min|max|not|or|list|cons|hd|tl|(pair|null)\\?|(ref|get|set)\\!)(?!\\w)",
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|[gs]et-goals|refine|(pair|null|string|goal)\\?|(ref|get|set|mvar)\\!)(?!\\w)",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]

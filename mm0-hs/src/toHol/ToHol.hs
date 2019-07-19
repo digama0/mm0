@@ -2,7 +2,7 @@
 module ToHol where
 
 import Control.Monad.Except
-import Control.Monad.RWS.Strict hiding (liftIO)
+import Control.Monad.RWS.Strict
 import Data.Maybe
 import Data.Foldable
 import qualified Control.Monad.Trans.State as ST
