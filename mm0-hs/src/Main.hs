@@ -2,11 +2,11 @@ module Main (main) where
 
 import System.Exit
 import System.Environment
-import Driver
-import FromMM
-import ToHolIO
-import Compiler
-import Server
+import MM0.Kernel.Driver
+import MM0.FromMM
+import MM0.HOL.ToHolIO
+import MM0.Compiler
+import MM0.Server
 
 main :: IO ()
 main = getArgs >>= \case
