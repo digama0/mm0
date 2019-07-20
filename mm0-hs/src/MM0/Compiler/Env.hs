@@ -5,14 +5,16 @@ module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, SortData, Visibility(.
   binderName, binderType, binderBound,
   Prec(..), TVar) where
 
+import GHC.Stack
 import Control.Concurrent.STM
-import Control.Concurrent
+import Control.Concurrent hiding (newMVar)
 import Control.Concurrent.Async.Pool
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
 import Data.Bits
 import Data.Char
 import Data.Maybe
+import Data.List
 import Data.Word8
 import Data.Text (Text)
 import Data.Default
@@ -32,7 +34,10 @@ import MM0.Kernel.Environment (Ident, Sort, TermName, ThmName, VarName, Token,
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import MM0.Compiler.Parser (ParseError)
 
-data Syntax = Define | Lambda | Quote | If | Begin | Let | Letrec
+-- (<!>) :: (HasCallStack) => H.HashMap T.Text v -> T.Text -> v
+-- (<!>) m k = case H.lookup k m of Nothing -> error $ "<!>" ++ show k; Just a -> a
+
+data Syntax = Define | Lambda | Quote | If | Begin | Focus | Let | Letrec
 
 instance Show Syntax where
   showsPrec _ Define = ("def" ++)
@@ -40,7 +45,8 @@ instance Show Syntax where
   showsPrec _ Quote = ("quote" ++)
   showsPrec _ If = ("if" ++)
   showsPrec _ Begin = ("begin" ++)
-  showsPrec _ Let = ("begin" ++)
+  showsPrec _ Focus = ("focus" ++)
+  showsPrec _ Let = ("let" ++)
   showsPrec _ Letrec = ("letrec" ++)
 
 type Proc = Offset -> Offset -> [LispVal] -> ElabM LispVal
@@ -204,7 +210,7 @@ data Decl =
   | DDef Visibility [PBinder] DepType [(Offset, VarName, Sort)] SExpr
   | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM LispVal)
 
-data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort
+data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort deriving (Show)
 
 liOffset :: LocalInfer -> Offset
 liOffset (LIOld (Binder o _ _) _) = o
@@ -219,7 +225,8 @@ instance Default InferCtx where
 
 data ThmCtx = ThmCtx {
   tcVars :: H.HashMap VarName PBinder,
-  tcProofs :: H.HashMap VarName LispVal,
+  tcProofs :: H.HashMap VarName (LispVal, LispVal),
+  tcProofList :: VD.IOVector VarName,
   tcMVars :: VD.IOVector (TVar LispVal),
   tcGoals :: V.Vector (TVar LispVal) }
 
@@ -255,7 +262,13 @@ runElab m errs lvs = do
   hm <- ins lvs 0 H.empty
   caps <- getNumCapabilities
   withTaskGroup caps $ \g -> do
-    (a, _, _) <- runRWST m (ElabFuncs report (async g)) def {eLispData = dat, eLispNames = hm}
+    let
+      m' = m <* do
+        decls <- gets (sortOn (\(s, _, _, _) -> s) . H.elems . eDecls)
+        forM_ decls $ \case
+          (_, _, DTheorem _ _ _ _ tm, _) -> () <$ runMaybeT tm
+          _ -> return ()
+    (a, _) <- evalRWST m' (ElabFuncs report (async g)) def {eLispData = dat, eLispNames = hm}
     errs' <- readTVarIO pErrs
     return (a, errs')
 
@@ -398,10 +411,12 @@ modifyTC f = modify $ \env -> env {eThmCtx = f <$> eThmCtx env}
 withInfer :: ElabM a -> ElabM a
 withInfer m = modifyInfer (const def) *> m <* modifyInfer (const undefined)
 
-withTC :: H.HashMap VarName PBinder -> H.HashMap VarName LispVal -> ElabM a -> ElabM a
+withTC :: H.HashMap VarName PBinder ->
+  [(VarName, (LispVal, LispVal))] -> ElabM a -> ElabM a
 withTC vs ps m = do
+  pv <- liftIO $ VD.unsafeThaw $ V.fromList (fst <$> ps)
   mv <- liftIO $ VD.new 0
-  modify $ \env -> env {eThmCtx = Just $ ThmCtx vs ps mv V.empty}
+  modify $ \env -> env {eThmCtx = Just $ ThmCtx vs (H.fromList ps) pv mv V.empty}
   m <* modify (\env -> env {eThmCtx = def})
 
 getTC :: ElabM ThmCtx
@@ -415,6 +430,9 @@ newMVar o s bd = do
   liftIO $ VD.pushBack mv v
   return v
 
+newUnknownMVar :: Offset -> ElabM (TVar LispVal)
+newUnknownMVar o = newMVar o "" False
+
 modifyMVars :: (V.Vector (TVar LispVal) -> ElabM (V.Vector (TVar LispVal))) -> ElabM ()
 modifyMVars f = do
   v1 <- getTC >>= liftIO . VD.unsafeFreeze . tcMVars
@@ -422,7 +440,19 @@ modifyMVars f = do
   modifyTC $ \tc -> tc {tcMVars = mv2}
 
 cleanMVars :: ElabM ()
-cleanMVars = modifyMVars $ V.filterM (fmap isMVar . getRef)
+cleanMVars = modifyMVars $ \vec -> do
+  vec' <- V.filterM (fmap isMVar . getRef) vec
+  V.imapM_ (\n g ->
+    let go (MVar _ o s bd) = MVar n o s bd
+        go e = e
+    in liftIO $ atomically $ modifyTVar g go) vec'
+  return vec'
+
+addSubproof :: VarName -> LispVal -> LispVal -> ElabM ()
+addSubproof h t p = do
+  pv <- tcProofList <$> getTC
+  liftIO $ VD.pushBack pv h
+  modifyTC $ \tc -> tc {tcProofs = H.insert h (t, p) (tcProofs tc)}
 
 setGoals :: [TVar LispVal] -> ElabM ()
 setGoals gs = do

@@ -110,6 +110,10 @@ infixl le: $<=$ prec 50;
 def lt (a b: nat): wff = $ suc a <= b $;
 infixl lt: $<$ prec 50;
 
+def ifp (ph a b: wff): wff;
+theorem ifptrue (ph a b: wff): $ ph -> ifp ph a b <-> a $;
+theorem ifpfalse (ph a b: wff): $ ~ph -> ifp ph a b <-> b $;
+
 def if (ph: wff) (a b: nat): nat;
 theorem iftrue (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
 theorem iffalse (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
@@ -117,8 +121,6 @@ theorem iffalse (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
 def true (n: nat): wff = $ n != 0 $;
 def bool (n: nat): wff = $ n < 2 $;
 def nat (ph: wff): nat = $ if ph 1 0 $;
-
-def ifp (ph a b: wff): wff = $ true (if ph (nat a) (nat b)) $;
 
 def min (a b: nat): nat = $ if (a < b) a b $;
 def max (a b: nat): nat = $ if (a < b) b a $;

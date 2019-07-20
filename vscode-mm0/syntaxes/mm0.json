@@ -220,13 +220,13 @@
 			"patterns": [
 				{"include": "#comment"},
 				{
-					"begin": "\\(\\s*(if|def|fn|begin|let|letrec)(?!\\w)",
+					"begin": "\\(\\s*(if|def|fn|begin|let|letrec|focus)(?!\\w)",
 					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|goal-type|pp|[gs]et-goals|refine|(pair|null|string|goal)\\?|(ref|get|set|mvar)\\!)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|refine|stat|(pair|null|string|goal|mvar)\\?|(ref|get|set|mvar)\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]

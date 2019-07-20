@@ -1,13 +1,17 @@
 module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, ppExpr', (<+>),
-  unifyErr) where
+  unifyErr, getStat, ppMVar) where
 
 import Control.Applicative
 import Control.Monad.State
 import Data.Void
+import Data.Maybe
+import Data.Functor
+import Data.Foldable
 import Data.Text.Prettyprint.Doc hiding (lparen, rparen)
 import Data.Text.Prettyprint.Doc.Render.Text
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
+import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
 import MM0.Compiler.Env
 import MM0.FrontEnd.MathParser (appPrec)
@@ -137,3 +141,27 @@ ppExpr1 delims = \v -> ppExpr2 (Prec 0) v where
         List [Atom _ t', e21, e22] | t == t' -> ppInfixr e21 e22
         _ -> dmap group <$> ppExpr2 (Prec p) e2
       return (pp1 <<>> tk <<|>> pp2)
+
+ppMVar :: Int -> Sort -> Bool -> PP
+ppMVar n s bd =
+  let t = "?" <> alphanumber n <> ": " <> (if s == "" then "?" else s)
+  in word $ if bd then "{" <> t <> "}" else t
+
+getStat :: ElabM PP
+getStat = do
+  tc <- getTC
+  vec <- VD.freeze (tcProofList tc)
+  hs <- foldlM (\d h ->
+    (\t -> d <> pretty h <> ": " <> doc t <> hardline) <$>
+      ppExpr (fst (tcProofs tc H.! h))) mempty vec
+  let gs = tcGoals tc
+  gs' <- foldlM (\d g ->
+    getRef g >>= \case
+      Goal _ ty ->
+        (\t -> d <> "|- " <> doc t <> hardline) <$> ppExpr ty
+      _ -> return d) hs gs
+  mvs <- V.toList <$> VD.freeze (tcMVars tc) >>= mapM (\g ->
+    getRef g <&> \case
+      MVar n _ s bd -> Just $ doc $ ppMVar n s bd
+      _ -> Nothing)
+  return $ dlift $ gs' <> fillSep (catMaybes mvs)
