@@ -9,6 +9,19 @@ axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
 
+do {
+  (display (pp $ (~ph -> ~ps) -> ps -> ph $))
+  (def (my-double x) (print x))
+  (apply my-double 4 (list))
+};
+
+
+theorem id (ph: wff): $ ph -> ph $ =
+(begin
+  (display (pp (goal-type (hd (get-goals)))))
+  (refine '(ax_mp (ax_1) (ax_mp ax_1 ax_2)))
+);
+
 def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
 infixl iff: $<->$ prec 20;
 
@@ -97,7 +110,7 @@ axiom peano5 {x: nat} (ph: wff x):
   $ [0 / x] ph -> A. x (ph -> [suc x / x] ph) -> A. x ph $;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
-term mul: nat > nat > nat; infixl add: $*$ prec 70;
+term mul: nat > nat > nat; infixl mul: $*$ prec 70;
 
 axiom add0 (a: nat): $ a + 0 = a $;
 axiom addS (a b: nat): $ a + suc b = suc (a + b) $;
@@ -226,7 +239,7 @@ infixl Im: $''$ prec 80;
 def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
 
 def comp (F G: set) (.x .y .z: nat): set =
-$ opab x z (E. y x <> y e. G /\ y <> z e. F) $;
+$ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
 infixr comp: $o.$ prec 90;
 
 def res (A: set) (n: nat): nat = $ sep (lower (Xp n V)) A $;

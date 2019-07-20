@@ -3,29 +3,30 @@ module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, SortData, Visibility(.
   Ident, Sort, TermName, ThmName, VarName, Token,
   Binder, DepType(..), PBinder(..), SExpr(..),
   binderName, binderType, binderBound,
-  Prec, TVar) where
+  Prec(..), TVar) where
 
 import Control.Concurrent.STM
 import Control.Concurrent
 import Control.Concurrent.Async.Pool
-import Data.Char
-import Data.Maybe
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
+import Data.Bits
+import Data.Char
+import Data.Maybe
 import Data.Word8
-import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Default
 import qualified Data.IntMap as I
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
 import qualified Data.HashSet as HS
+import qualified Data.Text as T
 import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import System.Timeout
 import System.IO.Unsafe
-import MM0.Compiler.AST (Offset, Binder(..), SortData(..), Prec, Visibility(..))
+import MM0.Compiler.AST (Offset, Binder(..), SortData(..), Prec(..), Visibility(..))
 import MM0.Kernel.Environment (Ident, Sort, TermName, ThmName, VarName, Token,
   PBinder(..), SExpr(..), DepType(..), binderName, binderType, binderBound)
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
@@ -178,6 +179,12 @@ instance Default Delims where
 delimVal :: Delims -> Char -> Word8
 delimVal (Delims v) c = U.unsafeIndex v (fromEnum (toEnum (fromEnum c) :: Word8))
 
+isLeftDelim :: Word8 -> Bool
+isLeftDelim w = testBit w 0
+
+isRightDelim :: Word8 -> Bool
+isRightDelim w = testBit w 1
+
 data ParserEnv = ParserEnv {
   pDelims :: Delims,
   pPrefixes :: H.HashMap Token PrefixInfo,
@@ -188,6 +195,8 @@ data ParserEnv = ParserEnv {
 
 instance Default ParserEnv where
   def = ParserEnv def H.empty H.empty H.empty def H.empty
+
+data DeclNota = NPrefix Token | NInfix Token | NCoe Sort Sort
 
 data Decl =
     DTerm [PBinder] DepType
@@ -221,7 +230,7 @@ data Env = Env {
   eCounter :: SeqCounter,
   eSorts :: H.HashMap Sort (SeqNum, Offset, SortData),
   eProvableSorts :: [Sort],
-  eDecls :: H.HashMap Ident (SeqNum, Offset, Decl),
+  eDecls :: H.HashMap Ident (SeqNum, Offset, Decl, Maybe DeclNota),
   ePE :: ParserEnv,
   eInfer :: InferCtx,
   eThmCtx :: Maybe ThmCtx }
@@ -352,18 +361,32 @@ getSort v s =
     Just (n, o, sd) -> guard (n < s) >> return (o, sd)
     _ -> mzero
 
-getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType)
+getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType, Maybe DeclNota)
 getTerm v s =
   gets (H.lookup v . eDecls) >>= \case
-    Just (n, o, DTerm args r) -> guard (n < s) >> return (o, args, r)
-    Just (n, o, DDef _ args r _ _) -> guard (n < s) >> return (o, args, r)
+    Just (n, o, DTerm args r, no) ->
+      guard (n < s) >> return (o, args, r, no)
+    Just (n, o, DDef _ args r _ _, no) ->
+      guard (n < s) >> return (o, args, r, no)
     _ -> mzero
 
 getThm :: Text -> SeqNum -> ElabM (Offset, [PBinder], [SExpr], SExpr)
 getThm v s =
   gets (H.lookup v . eDecls) >>= \case
-    Just (n, o, DAxiom args hyps r) -> guard (n < s) >> return (o, args, hyps, r)
-    Just (n, o, DTheorem _ args hyps r _) -> guard (n < s) >> return (o, args, hyps, r)
+    Just (n, o, DAxiom args hyps r, _) ->
+      guard (n < s) >> return (o, args, hyps, r)
+    Just (n, o, DTheorem _ args hyps r _, _) ->
+      guard (n < s) >> return (o, args, hyps, r)
+    _ -> mzero
+
+getDeclNotaOffset :: DeclNota -> ElabM Offset
+getDeclNotaOffset (NPrefix tk) =
+  gets ((\(PrefixInfo o _ _) -> o) . (H.! tk) . pPrefixes . ePE)
+getDeclNotaOffset (NInfix tk) =
+  gets ((\(InfixInfo o _ _) -> o) . (H.! tk) . pInfixes . ePE)
+getDeclNotaOffset (NCoe s1 s2) =
+  gets ((M.! s2) . (M.! s1) . pCoes . ePE) >>= \case
+    Coe (Coe1 o _) -> return o
     _ -> mzero
 
 modifyInfer :: (InferCtx -> InferCtx) -> ElabM ()

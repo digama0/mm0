@@ -17,6 +17,7 @@ import MM0.Compiler.Parser (ParseError)
 import MM0.Compiler.AST
 import MM0.Compiler.Env
 import MM0.Compiler.MathParser
+import MM0.Compiler.PrettyPrinter
 import MM0.Util
 
 elaborate :: [ParseError] -> AST -> IO [ElabError]
@@ -142,9 +143,10 @@ addDecl vis dk px x bis ret v = do
       _ -> unimplementedAt px
     checkVarRefs >> return decl
   ins <- gets eDecls >>= checkNew ELError px
-    ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'") (\(_, i, _) -> i) x
+    ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'")
+    (\(_, i, _, _) -> i) x
   n <- next
-  modify $ \env -> env {eDecls = ins (n, px, decl)}
+  modify $ \env -> env {eDecls = ins (n, px, decl, Nothing)}
 
 unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
 unArrow bis Nothing = (bis, Nothing)
@@ -166,30 +168,43 @@ mkLiterals 0 _ _ = []
 mkLiterals 1 p n = [PVar n p]
 mkLiterals i p n = PVar n PrecMax : mkLiterals (i-1) p (n+1)
 
+addDeclNota :: Offset -> T.Text -> Maybe DeclNota -> DeclNota -> ElabM ()
+addDeclNota px x old new = do
+  forM_ old $ \no -> do
+    i <- getDeclNotaOffset no
+    reportErr $ ElabError ELWarning px px
+      ("term '" <> x <> "' already has a notation")
+      [(i, i, "previously declared here")]
+  modify $ \env -> env {eDecls =
+    H.adjust (\(s, o, d, _) -> (s, o, d, Just new)) x (eDecls env)}
+
 addPrefix :: Offset -> T.Text -> Const -> Prec -> ElabM ()
-addPrefix px x tk prec = do
-  (_, bis, _) <- try (now >>= getTerm x) >>=
+addPrefix px x c@(Const o tk) prec = do
+  (_, bis, _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
-  insertPrec tk prec
-  insertPrefixInfo tk (PrefixInfo (cOffs tk) x (mkLiterals (length bis) prec 0))
+  insertPrec c prec
+  insertPrefixInfo c (PrefixInfo o x (mkLiterals (length bis) prec 0))
+  addDeclNota px x no (NPrefix tk)
 
 addInfix :: Bool -> Offset -> T.Text -> Const -> Prec -> ElabM ()
-addInfix r px x tk prec = do
-  (_, bis, _) <- try (now >>= getTerm x) >>=
+addInfix r px x c@(Const o tk) prec = do
+  (_, bis, _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   guardAt px ("'" <> x <> "' must be a binary operator") (length bis == 2)
-  insertPrec tk prec
-  insertInfixInfo tk (InfixInfo (cOffs tk) x r)
+  insertPrec c prec
+  insertInfixInfo c (InfixInfo o x r)
+  addDeclNota px x no (NInfix tk)
 
 addNotation :: Offset -> T.Text -> [Binder] -> [AtPos Literal] -> ElabM ()
 addNotation px x bis = \lits -> do
-  (_, bis', _) <- try (now >>= getTerm x) >>=
+  (_, bis', _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   unless (length bis == length bis') $
     escapeAt px ("term '" <> x <> "' has " <> T.pack (show (length bis')) <>
       " arguments, expected " <> T.pack (show (length bis)))
-  (c, ti) <- processLits lits
+  (c@(Const _ tk), ti) <- processLits lits
   insertPrefixInfo c (PrefixInfo px x ti)
+  addDeclNota px x no (NPrefix tk)
   where
 
   binderMap :: H.HashMap VarName Int
@@ -222,8 +237,10 @@ addCoercion :: Offset -> T.Text -> Sort -> Sort -> ElabM ()
 addCoercion px x s1 s2 = do
   try (now >>= getTerm x) >>= \case
     Nothing -> escapeAt px ("term '" <> x <> "' not declared")
-    Just (_, [PReg _ (DepType s1' [])], DepType s2' [])
-      | s1 == s1' && s2 == s2' -> addCoe (Coe1 px x) s1 s2
+    Just (_, [PReg _ (DepType s1' [])], DepType s2' [], no)
+      | s1 == s1' && s2 == s2' -> do
+        addCoe (Coe1 px x) s1 s2
+        addDeclNota px x no (NCoe s1 s2)
     _ -> escapeAt px ("coercion '" <> x <> "' does not match declaration")
 
 insertPrec :: Const -> Prec -> ElabM ()
@@ -296,7 +313,7 @@ inferQExpr' tgt (QApp (AtPos o t) ts) = do
       (s, _) <- fromJustAt o "cannot infer type" tgt
       returnVar s (isLCurly l) $ modifyInfer $ \ic -> ic {
         icLocals = H.insert t (LIOld bi (Just s)) (icLocals ic) }
-    (_, Just (_, bis, DepType s _)) -> do
+    (_, Just (_, bis, DepType s _, _)) -> do
       let m = length ts
           n = length bis
           f bi t' = (\(IR _ e _ _) -> e) <$> inferQExpr (Just (hint bi)) t' where
@@ -327,7 +344,7 @@ inferQExpr' _ (QUnquote (AtLisp o e)) = asSExpr <$> eval o def e >>= \case
       return $ IR o e' s (isLCurly l)
     _ -> escapeAt o $ "unknown variable '" <> v <> "'"
   Just e'@(App t _) -> try (now >>= getTerm t) >>= \case
-    Just (_, _, DepType s _) -> return $ IR o e' s False
+    Just (_, _, DepType s _, _) -> return $ IR o e' s False
     _ -> escapeAt o $ "unknown term constructor '" <> t <> "'"
 
 inferQExprProv :: QExpr -> ElabM InferResult
@@ -394,7 +411,7 @@ defcheckExpr bis = defcheckExpr' where
   defcheckExpr' (SVar v) = return $
     maybe (S.singleton v) S.fromList (H.lookup v ctx)
   defcheckExpr' (App t es) = do
-    (_, args, DepType _ rs) <- now >>= getTerm t
+    (_, args, DepType _ rs, _) <- now >>= getTerm t
     (m, ev) <- defcheckArgs args es
     return (ev <> S.fromList ((m H.!) <$> rs))
 
@@ -592,6 +609,10 @@ asInt :: Offset -> LispVal -> ElabM Integer
 asInt _ (Number n) = return n
 asInt o e = escapeAt o $ "expected an integer, got " <> T.pack (show e)
 
+goalType :: Offset -> LispVal -> ElabM LispVal
+goalType _ (Goal _ ty) = return ty
+goalType o e = escapeAt o $ "expected a goal, got " <> T.pack (show e)
+
 asSExpr :: LispVal -> Maybe SExpr
 asSExpr (List (Atom _ t : ts)) = App t <$> mapM asSExpr ts
 asSExpr (Atom _ x) = return $ SVar x
@@ -719,7 +740,9 @@ initialBindings = [
     ("mvar!", \o _ -> \case
       [Atom _ s, Bool bd] -> Ref <$> newMVar o s bd
       _ -> escapeAt o "invalid arguments"),
+    ("pp", \o _ es -> unary o es >>= ppExpr >>= return . String . render),
     ("goal", \o _ es -> Goal o <$> unary o es),
+    ("goal-type", \o _ es -> unary o es >>= unRef >>= goalType o),
     ("get-goals", \_ _ _ -> List . fmap Ref . V.toList . tcGoals <$> getTC),
     ("set-goals", \o _ es -> Undef <$ (mapM (asRef o) es >>= setGoals)),
     ("refine", \o _ es -> Undef <$ refine o es)]
@@ -746,7 +769,9 @@ elabLisp t e@(AtLisp o _) = do
     e' -> refine o [e']
   gs' <- tcGoals <$> getTC
   forM_ gs' $ \g' -> getRef g' >>= \case
-    Goal o' ty -> reportAt o' ELError $ "|- " <> T.pack (show ty)
+    Goal o' ty -> do
+      pp <- ppExpr ty
+      reportAt o' ELError $ render $ dlift $ "|-" <+> doc pp
     _ -> return ()
   return (Ref g)
 
@@ -789,8 +814,7 @@ parseRefine o _ = escapeAt o "syntax error"
 unifyAt :: Offset -> LispVal -> LispVal -> ElabM ()
 unifyAt o e1 e2 = try (unify o e1 e2) >>= \case
   Just () -> return ()
-  Nothing -> reportAt o ELError $
-    "failed to unify:\n " <> T.pack (show e1) <> "\n   =?=\n" <> T.pack (show e2)
+  Nothing -> unifyErr e1 e2 >>= reportAt o ELError . render
 
 unify :: Offset -> LispVal -> LispVal -> ElabM ()
 unify o (Ref g) v = assign o g v
@@ -901,7 +925,7 @@ refineInner ro gv = refineGoals where
       Nothing -> escapeAt o $ "unknown variable '" <> x <> "'"
   refineTm s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
     Nothing -> escapeAt o $ "unknown term '" <> t <> "'"
-    Just (_, bis, ret) -> do
+    Just (_, bis, ret, _) -> do
       let
         refineBis :: [PBinder] -> [RefineExpr] -> ElabM [LispVal]
         refineBis (bi : bis') rs =

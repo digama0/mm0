@@ -4,7 +4,6 @@ module MM0.Compiler.MathParser (parseMath, QExpr(..)) where
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans.Reader
-import Data.Bits
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
@@ -52,9 +51,9 @@ token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
             eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
           | otherwise ->
             cok (AtPos o (T.take i t)) (unspace t2 (o+i+1) pst) mempty
-        d | testBit d 1 && i /= 0 ->
+        d | isRightDelim d && i /= 0 ->
             cok (AtPos o (T.take i t)) (unspace t' (o+i) pst) mempty
-          | testBit d 0 ->
+          | isLeftDelim d ->
             cok (AtPos o (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
           | otherwise -> go t2 (i+1)
   in go t 0

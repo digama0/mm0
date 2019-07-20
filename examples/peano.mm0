@@ -97,7 +97,7 @@ axiom peano5 {x: nat} (ph: wff x):
   $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
-term mul: nat > nat > nat; infixl add: $*$ prec 70;
+term mul: nat > nat > nat; infixl mul: $*$ prec 70;
 
 axiom add0 (a: nat): $ a + 0 = a $;
 axiom addS (a b: nat): $ a + suc b = suc (a + b) $;

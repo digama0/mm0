@@ -226,7 +226,7 @@
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|[gs]et-goals|refine|(pair|null|string|goal)\\?|(ref|get|set|mvar)\\!)(?!\\w)",
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|goal-type|pp|[gs]et-goals|refine|(pair|null|string|goal)\\?|(ref|get|set|mvar)\\!)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
