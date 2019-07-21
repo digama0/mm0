@@ -6,15 +6,16 @@
 module MM0.Server (server) where
 
 import Control.Concurrent
-import Control.Concurrent.STM.TChan
+import Control.Concurrent.Async
+import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Lens ((^.))
 import Control.Monad.Reader
-import Control.Monad.STM
 import Data.Default
 import Data.List
 import Data.Maybe
 import qualified Data.IntMap as I
+import qualified Data.HashMap.Strict as H
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.ByteString.Lazy as BL
@@ -85,7 +86,11 @@ run debug rin = do
 -- LSP client, so they can be sent to the backend compiler one at a time, and a
 -- reply sent.
 
-type Reactor a = ReaderT (Bool, LspFuncs ()) IO a
+data ReactorState = RS {
+  rsDebug :: Bool,
+  rsFuncs :: LspFuncs (),
+  rsDiagThreads :: TVar (H.HashMap (Maybe Int) (Async ())) }
+type Reactor a = ReaderT ReactorState IO a
 
 -- ---------------------------------------------------------------------
 -- reactor monad functions
@@ -93,16 +98,34 @@ type Reactor a = ReaderT (Bool, LspFuncs ()) IO a
 
 reactorSend :: FromServerMessage -> Reactor ()
 reactorSend msg = do
-  (_, lf) <- ask
+  lf <- asks rsFuncs
   liftIO $ sendFunc lf msg
 
 publishDiagnostics :: Int -> NormalizedUri -> TextDocumentVersion -> DiagnosticsBySource -> Reactor ()
 publishDiagnostics maxToPublish uri v diags = do
-  (_, lf) <- ask
+  lf <- asks rsFuncs
   liftIO $ (publishDiagnosticsFunc lf) maxToPublish uri v diags
 
 nextLspReqId :: Reactor LspId
-nextLspReqId = asks (getNextReqId . snd) >>= liftIO
+nextLspReqId = asks (getNextReqId . rsFuncs) >>= liftIO
+
+newDiagThread :: Maybe Int -> Reactor () -> Reactor ()
+newDiagThread version m = ReaderT $ \rs -> do
+  let dt = rsDiagThreads rs
+  a <- async $ do
+    runReaderT m rs
+    as <- atomically $ do
+      as <- readTVar dt
+      let as' = H.delete version as
+      as' <$ writeTVar dt as'
+    forM_ version $ \v -> forM_ (H.toList as) $ \case
+      (Just v', a) | v' < v -> cancel a
+      _ -> return ()
+  old <- atomically $ do
+    as <- readTVar dt
+    writeTVar dt (H.insert version a as)
+    return (H.lookup version as)
+  mapM_ cancel old
 
 reactorSendId :: (LspId -> FromServerMessage) -> Reactor ()
 reactorSendId msg = nextLspReqId >>= reactorSend . msg
@@ -115,7 +138,7 @@ reactorErr = reactorLogMsg MtError
 
 reactorLog :: T.Text -> Reactor ()
 reactorLog s = do
-  (debug, _) <- ask
+  debug <- asks rsDebug
   when debug (reactorLogMsg MtLog s)
 
 reactorLogs :: String -> Reactor ()
@@ -136,27 +159,22 @@ reactorHandleAll = reactorHandle $ \(e :: E.SomeException) ->
 -- server and backend compiler
 reactor :: Bool -> LspFuncs () -> TChan FromClientMessage -> IO ()
 reactor debug lf inp = do
-  flip runReaderT (debug, lf) $ forever $ do
+  th <- atomically $ newTVar H.empty
+  flip runReaderT (RS debug lf th) $ forever $ do
     liftIO (atomically $ readTChan inp) >>= \case
       -- Handle any response from a message originating at the server, such as
       -- "workspace/applyEdit"
       RspFromClient rm -> do
         reactorLogs $ "reactor:got RspFromClient:" ++ show rm
 
-      -- -------------------------------
-
       NotInitialized _ -> do
         let registrations = []
         reactorSendId $ \n -> ReqRegisterCapability $ fmServerRegisterCapabilityRequest n $
           RegistrationParams $ List registrations
 
-      -- -------------------------------
-
       NotDidOpenTextDocument msg -> do
         let TextDocumentItem uri _ version str = msg ^. J.params . J.textDocument
         sendDiagnostics (toNormalizedUri uri) (Just version) str
-
-      -- -------------------------------
 
       NotDidChangeTextDocument msg -> do
         let VersionedTextDocumentIdentifier uri version = msg ^. J.params . J.textDocument
@@ -166,7 +184,8 @@ reactor debug lf inp = do
           Just (VirtualFile _ str _) ->
             sendDiagnostics doc version (Rope.toText str)
 
-      -- -------------------------------
+      NotCancelRequestFromClient msg -> do
+        reactorLogs $ "reactor:got NotCancelRequestFromClient:" ++ show msg
 
       -- ReqHover req -> do
       --   reactorLogs $ "reactor:got HoverRequest:" ++ show req
@@ -176,8 +195,6 @@ reactor debug lf inp = do
       --       ms = J.HoverContents $ J.markedUpContent "lsp-hello" "TYPE INFO"
       --       range = J.Range pos pos
       --   reactorSend $ RspHover $ makeResponseMessage req ht
-
-      -- -------------------------------
 
       om -> reactorLogs $ "reactor: got HandlerRequest:" ++ show om
 
@@ -238,7 +255,7 @@ elabErrorDiags uri pos errs = toDiag <$> errs where
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
 sendDiagnostics fileNUri@(NormalizedUri t) version str =
-  reactorHandleAll $ do
+  reactorHandleAll $ newDiagThread version $ do
     let fileUri = fromNormalizedUri fileNUri
         file = fromMaybe "" $ uriToFilePath fileUri
         pos = CP.initialPosState file str

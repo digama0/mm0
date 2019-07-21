@@ -966,9 +966,7 @@ unify o v1@(List (Atom _ t1 : es1)) v2@(List (Atom _ t2 : es2)) =
         | n1 < n2 -> unfold o args2 ds2 val2 es2 v1
       (Just (_, _, DDef _ args1 _ ds1 val1, _), _) -> unfold o args1 ds1 val1 es1 v2
       (_, Just (_, _, DDef _ args2 _ ds2 val2, _)) -> unfold o args2 ds2 val2 es2 v1
-      _ -> do
-        reportAt o ELError $ "terms do not match: " <> t1 <> " != " <> t2
-        return mempty
+      _ -> escapeAt o $ "terms do not match: " <> t1 <> " != " <> t2
   where
   go [] [] = return mempty
   go (e1 : es1') (e2 : es2') = liftM2 (<>) (unify o e1 e2) (go es1' es2')
