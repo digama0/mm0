@@ -5,7 +5,6 @@ module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, SortData, Visibility(.
   binderName, binderType, binderBound,
   Prec(..), TVar) where
 
-import GHC.Stack
 import Control.Concurrent.STM
 import Control.Concurrent hiding (newMVar)
 import Control.Concurrent.Async.Pool
@@ -36,6 +35,12 @@ import MM0.Compiler.Parser (ParseError)
 
 -- (<!>) :: (HasCallStack) => H.HashMap T.Text v -> T.Text -> v
 -- (<!>) m k = case H.lookup k m of Nothing -> error $ "<!>" ++ show k; Just a -> a
+
+data Proof =
+    ProofHyp VarName
+  | ProofThm ThmName [SExpr] [Proof]
+  | ProofUnfold SExpr [VarName] Proof
+  | ProofLet VarName Proof Proof
 
 data Syntax = Define | Lambda | Quote | If | Begin | Focus | Let | Letrec
 
@@ -208,7 +213,7 @@ data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
   | DDef Visibility [PBinder] DepType [(Offset, VarName, Sort)] SExpr
-  | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM LispVal)
+  | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM Proof)
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort deriving (Show)
 
@@ -225,8 +230,8 @@ instance Default InferCtx where
 
 data ThmCtx = ThmCtx {
   tcVars :: H.HashMap VarName PBinder,
-  tcProofs :: H.HashMap VarName (LispVal, LispVal),
-  tcProofList :: VD.IOVector VarName,
+  tcProofs :: H.HashMap VarName Int,
+  tcProofList :: VD.IOVector (VarName, LispVal, LispVal),
   tcMVars :: VD.IOVector (TVar LispVal),
   tcGoals :: V.Vector (TVar LispVal) }
 
@@ -411,12 +416,11 @@ modifyTC f = modify $ \env -> env {eThmCtx = f <$> eThmCtx env}
 withInfer :: ElabM a -> ElabM a
 withInfer m = modifyInfer (const def) *> m <* modifyInfer (const undefined)
 
-withTC :: H.HashMap VarName PBinder ->
-  [(VarName, (LispVal, LispVal))] -> ElabM a -> ElabM a
-withTC vs ps m = do
-  pv <- liftIO $ VD.unsafeThaw $ V.fromList (fst <$> ps)
+withTC :: H.HashMap VarName PBinder -> ElabM a -> ElabM a
+withTC vs m = do
+  pv <- liftIO $ VD.new 0
   mv <- liftIO $ VD.new 0
-  modify $ \env -> env {eThmCtx = Just $ ThmCtx vs (H.fromList ps) pv mv V.empty}
+  modify $ \env -> env {eThmCtx = Just $ ThmCtx vs H.empty pv mv V.empty}
   m <* modify (\env -> env {eThmCtx = def})
 
 getTC :: ElabM ThmCtx
@@ -451,8 +455,15 @@ cleanMVars = modifyMVars $ \vec -> do
 addSubproof :: VarName -> LispVal -> LispVal -> ElabM ()
 addSubproof h t p = do
   pv <- tcProofList <$> getTC
-  liftIO $ VD.pushBack pv h
-  modifyTC $ \tc -> tc {tcProofs = H.insert h (t, p) (tcProofs tc)}
+  n <- VD.length pv
+  liftIO $ VD.pushBack pv (h, t, p)
+  modifyTC $ \tc -> tc {tcProofs = H.insert h n (tcProofs tc)}
+
+getSubproof :: VarName -> ElabM LispVal
+getSubproof h = do
+  tc <- getTC
+  (_, e, _) <- fromJust' (H.lookup h (tcProofs tc)) >>= VD.read (tcProofList tc)
+  return e
 
 setGoals :: [TVar LispVal] -> ElabM ()
 setGoals gs = do

@@ -1,9 +1,10 @@
 module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, ppExpr', (<+>),
-  unifyErr, getStat, ppMVar) where
+  unifyErr, getStat, ppMVar, ppExprCyc) where
 
 import Control.Applicative
 import Control.Monad.State
 import Data.Void
+import Data.List (elemIndex)
 import Data.Maybe
 import Data.Functor
 import Data.Foldable
@@ -38,9 +39,9 @@ surround' x (PP l _ _ dl) (PP _ r _ dr) = PP l r False (dl <> x <> dr)
 (<<>>) (PP l lr _ dl) (PP rl r _ dr) = PP l r False $
   dl <> (if lr || rl then softline' else softline) <> dr
 
-(<<|>>) :: PP -> PP -> PP
-(<<|>>) (PP l lr _ dl) (PP rl r _ dr) = PP l r False $
-  dl <> (if lr || rl then line' else line) <> dr
+-- (<<|>>) :: PP -> PP -> PP
+-- (<<|>>) (PP l lr _ dl) (PP rl r _ dr) = PP l r False $
+--   dl <> (if lr || rl then line' else line) <> dr
 
 render :: PP -> T.Text
 render = renderStrict . layoutPretty defaultLayoutOptions . doc
@@ -54,10 +55,14 @@ unifyErr e1 e2 = liftA2
   (ppExpr e1) (ppExpr e2)
 
 ppExpr :: LispVal -> ElabM PP
-ppExpr v = gets (pDelims . ePE) >>= flip ppExpr1 v
+ppExpr v = gets (pDelims . ePE) >>= flip (ppExpr1 False) v
 
-ppExpr1 :: Delims -> LispVal -> ElabM PP
-ppExpr1 delims = \v -> ppExpr2 (Prec 0) v where
+ppExprCyc :: LispVal -> ElabM PP
+ppExprCyc v = gets (pDelims . ePE) >>= flip (ppExpr1 True) v
+
+ppExpr1 :: Bool -> Delims -> LispVal -> ElabM PP
+ppExpr1 cyc delims = \v ->
+  ppExpr2 (if cyc then Just [] else Nothing) (Prec 0) v where
 
   token :: Token -> PP
   token tk =
@@ -68,27 +73,31 @@ ppExpr1 delims = \v -> ppExpr2 (Prec 0) v where
   lparen = token "("
   rparen = token ")"
 
-  ppExpr2 :: Prec -> LispVal -> ElabM PP
-  ppExpr2 tgt (Ref g) = getRef g >>= ppExpr2 tgt
-  ppExpr2 _ (MVar n _ _ _) = return $ word $ "?" <> alphanumber n
-  ppExpr2 _ (Atom _ x) = return $ word x
-  ppExpr2 tgt (List (Atom _ t : es)) = try (now >>= getTerm t) >>= \case
-    Nothing -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 PrecMax) es
-    Just (_, _, _, Nothing) -> ppApp tgt t <$> mapM (ppExpr2 PrecMax) es
+  ppExpr2 :: Maybe [TVar LispVal] -> Prec -> LispVal -> ElabM PP
+  ppExpr2 ctx tgt (Ref g) = case ctx of
+    Nothing -> getRef g >>= ppExpr2 Nothing tgt
+    Just l -> case elemIndex g l of
+      Nothing -> dmap (enclose "<" ">") <$> (getRef g >>= ppExpr2 (Just (g : l)) tgt)
+      Just n -> return $ dlift $ "#" <> pretty n
+  ppExpr2 _ _ (MVar n _ _ _) = return $ word $ "?" <> alphanumber n
+  ppExpr2 _ _ (Atom _ x) = return $ word x
+  ppExpr2 ctx tgt (List (Atom _ t : es)) = try (now >>= getTerm t) >>= \case
+    Nothing -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 ctx PrecMax) es
+    Just (_, _, _, Nothing) -> ppApp tgt t <$> mapM (ppExpr2 ctx PrecMax) es
     Just (_, _, _, Just (NCoe _ _)) -> case es of
-      [e] -> ppExpr2 tgt e
-      _ -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 PrecMax) es
+      [e] -> ppExpr2 ctx tgt e
+      _ -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 ctx PrecMax) es
     Just (_, _, _, Just (NPrefix tk)) -> do
       PrefixInfo _ _ lits <- gets ((H.! tk) . pPrefixes . ePE)
       (_, p) <- gets ((H.! tk) . pPrec . ePE)
-      parenBelow p tgt <$> ppPfx tk lits es
+      parenBelow p tgt <$> ppPfx ctx tk lits es
     Just (_, _, _, Just (NInfix tk)) -> case es of
       [e1, e2] -> do
         InfixInfo _ _ r <- gets ((H.! tk) . pInfixes . ePE)
         (_, p) <- gets ((H.! tk) . pPrec . ePE)
-        parenBelow p tgt <$> ppInfix r p t (token tk) e1 e2
-      _ -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 PrecMax) es
-  ppExpr2 _ _ = return $ word "???"
+        parenBelow p tgt <$> ppInfix r ctx p t (token tk) e1 e2
+      _ -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 ctx PrecMax) es
+  ppExpr2 _ _ _ = return $ word "???"
 
   parenBelow :: Prec -> Prec -> PP -> PP
   parenBelow p tgt e | tgt <= p = e
@@ -110,19 +119,20 @@ ppExpr1 delims = \v -> ppExpr2 (Prec 0) v where
     hard e [] = e
     hard e1 (e2 : es') = surround' line e1 (hard e2 es')
 
-  ppPfx :: Token -> [PLiteral] -> [LispVal] -> ElabM PP
-  ppPfx tk lits es = go (token tk) lits where
+  ppPfx :: Maybe [TVar LispVal] -> Token -> [PLiteral] -> [LispVal] -> ElabM PP
+  ppPfx ctx tk lits es = go (token tk) lits where
     vec = V.fromList es
     go :: PP -> [PLiteral] -> ElabM PP
     go e [] = return e
     go e (PConst c : lits') = go (e <<>> token c) lits'
     go e (PVar n p : lits') = do
-      e' <- ppExpr2 p (vec V.! n)
+      e' <- ppExpr2 ctx p (vec V.! n)
       go (e <<>> e') lits'
 
-  ppInfix :: Bool -> Prec -> TermName -> PP -> LispVal -> LispVal -> ElabM PP
-  ppInfix _ PrecMax _ _ = error "impossible"
-  ppInfix r (Prec p) t tk = \e1 e2 ->
+  ppInfix :: Bool -> Maybe [TVar LispVal] -> Prec -> TermName ->
+    PP -> LispVal -> LispVal -> ElabM PP
+  ppInfix _ _ PrecMax _ _ = error "impossible"
+  ppInfix r ctx (Prec p) t tk = \e1 e2 ->
     dmap (group . nest 2) <$> (if r then ppInfixr else ppInfixl) e1 e2
     where
 
@@ -130,17 +140,17 @@ ppExpr1 delims = \v -> ppExpr2 (Prec 0) v where
     ppInfixl e1 e2 = do
       pp1 <- case e1 of
         List [Atom _ t', e11, e12] | t == t' -> ppInfixl e11 e12
-        _ -> dmap group <$> ppExpr2 (Prec p) e1
-      pp2 <- dmap group <$> ppExpr2 (Prec (p+1)) e2
-      return (pp1 <<>> tk <<|>> pp2)
+        _ -> dmap group <$> ppExpr2 ctx (Prec p) e1
+      pp2 <- dmap group <$> ppExpr2 ctx (Prec (p+1)) e2
+      return $ surround' softline pp1 $ surround' line tk pp2
 
     ppInfixr :: LispVal -> LispVal -> ElabM PP
     ppInfixr e1 e2 = do
-      pp1 <- dmap group <$> ppExpr2 (Prec (p+1)) e1
+      pp1 <- dmap group <$> ppExpr2 ctx (Prec (p+1)) e1
       pp2 <- case e2 of
         List [Atom _ t', e21, e22] | t == t' -> ppInfixr e21 e22
-        _ -> dmap group <$> ppExpr2 (Prec p) e2
-      return (pp1 <<>> tk <<|>> pp2)
+        _ -> dmap group <$> ppExpr2 ctx (Prec p) e2
+      return $ surround' softline pp1 $ surround' line tk pp2
 
 ppMVar :: Int -> Sort -> Bool -> PP
 ppMVar n s bd =
@@ -151,14 +161,12 @@ getStat :: ElabM PP
 getStat = do
   tc <- getTC
   vec <- VD.freeze (tcProofList tc)
-  hs <- foldlM (\d h ->
-    (\t -> d <> pretty h <> ": " <> doc t <> hardline) <$>
-      ppExpr (fst (tcProofs tc H.! h))) mempty vec
+  hs <- foldlM (\d (h, e, _) -> ppExpr e <&>
+    \t -> d <> pretty h <> ": " <> doc t <> hardline) mempty vec
   let gs = tcGoals tc
   gs' <- foldlM (\d g ->
     getRef g >>= \case
-      Goal _ ty ->
-        (\t -> d <> "|- " <> doc t <> hardline) <$> ppExpr ty
+      Goal _ ty -> ppExpr ty <&> \t -> d <> "|- " <> doc t <> hardline
       _ -> return d) hs gs
   mvs <- V.toList <$> VD.freeze (tcMVars tc) >>= mapM (\g ->
     getRef g <&> \case

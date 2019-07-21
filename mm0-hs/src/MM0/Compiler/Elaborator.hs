@@ -7,11 +7,13 @@ import Data.Bits
 import Data.Word8
 import Data.Maybe
 import Data.Default
+import Data.Foldable
 import qualified Data.HashMap.Strict as H
 import qualified Data.Set as S
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Mutable.Dynamic as VD
+import qualified Data.Sequence as Q
 import qualified Data.Text as T
 import MM0.Compiler.Parser (ParseError)
 import MM0.Compiler.AST
@@ -139,10 +141,10 @@ addDecl vis dk px x bis ret v = do
             return (DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret)
           Just lv -> do
             fork <- forkElabM $ withTimeout px $
-                let vs' = H.fromList $ (\bi -> (binderName bi, bi)) <$> pbs
-                    hs' = mapMaybe (\(o, n, e) ->
-                      (\n' -> (n', (sExprToLisp o e, Atom o n'))) <$> n) hs
-                in withTC vs' hs' $ elabLisp eret lv
+              withTC (H.fromList $ (\bi -> (binderName bi, bi)) <$> pbs) $ do
+                forM_ hs $ \(o, on, e) -> forM_ on $ \n ->
+                  addSubproof n (sExprToLisp o e) (Atom o n)
+                elabLisp eret lv
             return (DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork)
       _ -> unimplementedAt px
     checkVarRefs >> return decl
@@ -335,7 +337,7 @@ inferQExpr' tgt (QApp (AtPos o t) ts) = do
             [(o1, o1, "inferred " <> s1 <> " here"), (o, o, "inferred " <> s2 <> " here")]
           return (bd1 || bd2)
         _ -> return bd1
-      returnVar s1 bd1 $ when (bd1 /= bd') $ modifyInfer $ \ic -> ic {
+      returnVar s1 bd' $ when (bd1 /= bd') $ modifyInfer $ \ic -> ic {
         icLocals = H.insert t (LINew o1 bd' s1) (icLocals ic) }
     (Nothing, Nothing) -> do
       (s, bd) <- fromJustAt o "cannot infer type" tgt
@@ -640,10 +642,9 @@ sExprSubst o m = go where
 
 inferType :: Offset -> LispVal -> ElabM LispVal
 inferType _ (Goal _ ty) = return ty
-inferType o (Atom _ h) = do
-  H.lookup h . tcProofs <$> getTC >>= \case
-    Just (v, _) -> return v
-    Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
+inferType o (Atom _ h) = try (getSubproof h) >>= \case
+  Just v -> return v
+  Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
 inferType o (List (Atom _ t : es)) = try (now >>= getThm t) >>= \case
   Nothing -> escapeAt o $ "unknown theorem '" <> t <> "'"
   Just (_, bis, _, ret) ->
@@ -701,6 +702,10 @@ isString :: LispVal -> Bool
 isString (String _) = True
 isString _ = False
 
+isRef :: LispVal -> Bool
+isRef (Ref _) = True
+isRef _ = False
+
 lispHd :: Offset -> LispVal -> ElabM LispVal
 lispHd o (List []) = escapeAt o "evaluating 'hd ()'"
 lispHd _ (List (e:_)) = return e
@@ -726,8 +731,9 @@ initialBindings = [
   initialProcs = [
     ("display", \o o' es ->
       unary o es >>= asString o >>= reportSpan o o' ELInfo >> pure Undef),
-    ("print", \o o' es ->
-      unary o es >>= reportSpan o o' ELInfo . T.pack . show >> pure Undef),
+    ("print", \o o' es -> unary o es >>= \e -> do
+      reportSpan o o' ELInfo $! T.pack (show e)
+      pure Undef),
     ("apply", \o o' -> \case
       Proc proc : e : es ->
         let args (List es') [] = return es'
@@ -770,6 +776,7 @@ initialBindings = [
     ("string?", \o _ es -> Bool . isString <$> unary o es),
     ("hd", \o _ es -> unary o es >>= lispHd o),
     ("tl", \o _ es -> unary o es >>= lispTl o),
+    ("ref?", \o _ es -> Bool . isRef <$> unary o es),
     ("ref!", \_ _ -> \case
       [] -> Ref <$> newRef Undef
       e:_ -> Ref <$> newRef e),
@@ -792,7 +799,18 @@ initialBindings = [
     ("infer-type", \o _ es -> unary o es >>= inferType o),
     ("get-goals", \_ _ _ -> List . fmap Ref . V.toList . tcGoals <$> getTC),
     ("set-goals", \o _ es -> Undef <$ (mapM (asRef o) es >>= setGoals)),
+    ("to-expr", \o _ es -> unary o es >>= parseRefine o >>= toExpr "" False),
     ("refine", \o _ es -> Undef <$ refine o es),
+    ("have", \o _ -> \case
+      [Atom _ x, e] -> do
+        ty <- Ref <$> newUnknownMVar o
+        p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
+        Undef <$ addSubproof x ty p
+      [Atom _ x, ty', e] -> do
+        ty <- parseRefine o ty' >>= toExpr "" False
+        p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
+        Undef <$ addSubproof x ty p
+      _ -> escapeAt o "invalid arguments"),
     ("stat", \o o' _ ->
       getStat >>= reportSpan o o' ELInfo . render >> pure Undef),
 
@@ -822,7 +840,7 @@ tryRefine o e = refine o [e]
 evalRefines :: Offset -> LCtx -> [AtLisp] -> ElabM ()
 evalRefines o = evalList () (\e l -> e >>= tryRefine o >> l)
 
-elabLisp :: SExpr -> AtLisp -> ElabM LispVal
+elabLisp :: SExpr -> AtLisp -> ElabM Proof
 elabLisp t e@(AtLisp o _) = do
   g <- newRef (Goal o (sExprToLisp o t))
   modifyTC $ \tc -> tc {tcGoals = V.singleton g}
@@ -836,17 +854,36 @@ elabLisp t e@(AtLisp o _) = do
   unless (V.null gs') mzero
   cleanProof o (Ref g)
 
-cleanProof :: Offset -> LispVal -> ElabM LispVal
+cleanProof :: Offset -> LispVal -> ElabM Proof
 cleanProof o (Ref g) = getRef g >>= \case
   Goal o' ty -> do
     pp <- ppExpr ty
     escapeAt o' $ render $ dlift $ "??? |-" <+> doc pp
-  MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanProof o e
-cleanProof _ e@(Atom _ _) = return e
-cleanProof o (List (Atom o' t : es)) =
-  List . (Atom o' t :) <$> mapM (cleanProof o) es
+cleanProof _ (Atom _ h) = return $ ProofHyp h
+cleanProof o (List [Atom _ ":unfold", ty, List xs, es]) =
+  liftM3 ProofUnfold (cleanTerm o ty) (mapM (cleanVar o) xs) (cleanProof o es)
+cleanProof o (List (Atom _ t : es)) = try (now >>= getThm t) >>= \case
+  Nothing -> escapeAt o $ "unknown theorem '" <> t <> "'"
+  Just (_, bis, _, _) ->
+    let (es1, es2) = splitAt (length bis) es in
+    liftM2 (ProofThm t) (mapM (cleanTerm o) es1) (mapM (cleanProof o) es2)
 cleanProof o e = escapeAt o $ "bad proof: " <> T.pack (show e)
+
+cleanTerm :: Offset -> LispVal -> ElabM SExpr
+cleanTerm o (Ref g) = getRef g >>= \case
+  MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
+  e -> cleanTerm o e
+cleanTerm _ (Atom _ x) = return $ SVar x
+cleanTerm o (List (Atom _ t : es)) = App t <$> mapM (cleanTerm o) es
+cleanTerm o e = escapeAt o $ "bad term: " <> T.pack (show e)
+
+cleanVar :: Offset -> LispVal -> ElabM VarName
+cleanVar o (Ref g) = getRef g >>= \case
+  MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
+  e -> cleanVar o e
+cleanVar _ (Atom _ x) = return x
+cleanVar o e = escapeAt o $ "bad var: " <> T.pack (show e)
 
 data InferMode = IMRegular | IMExplicit | IMBoundOnly deriving (Eq, Show)
 
@@ -893,41 +930,95 @@ parseRefine o (List (t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMRegular o' t' <$> mapM (parseRefine o') es
 parseRefine o e = escapeAt o $ "syntax error in parseRefine: " <> T.pack (show e)
 
-unifyAt :: Offset -> LispVal -> LispVal -> ElabM ()
-unifyAt o e1 e2 = try (unify o e1 e2) >>= \case
-  Just () -> return ()
-  Nothing -> unifyErr e1 e2 >>= reportAt o ELError . render
+data UnifyResult = UnifyOK | UnifyUnfold (Q.Seq LispVal)
 
-unify :: Offset -> LispVal -> LispVal -> ElabM ()
+instance Semigroup UnifyResult where
+  UnifyOK <> u = u
+  u <> UnifyOK = u
+  UnifyUnfold s1 <> UnifyUnfold s2 = UnifyUnfold (s1 <> s2)
+instance Monoid UnifyResult where mempty = UnifyOK
+
+coerceTo :: Offset -> LispVal -> LispVal -> LispVal -> ElabM LispVal
+coerceTo o tgt p ty = unifyAt o tgt ty >>= \case
+    UnifyOK -> return p
+    UnifyUnfold xs -> return (List [Atom o ":unfold", ty, List (toList xs), p])
+
+coerceTo' :: Offset -> LispVal -> LispVal -> ElabM LispVal
+coerceTo' o tgt p = inferType o p >>= coerceTo o tgt p
+
+unifyAt :: Offset -> LispVal -> LispVal -> ElabM UnifyResult
+unifyAt o e1 e2 = try (unify o e1 e2) >>= \case
+    Just u -> return u
+    Nothing -> unifyErr e1 e2 >>= reportAt o ELError . render >> return mempty
+
+unify :: Offset -> LispVal -> LispVal -> ElabM UnifyResult
 unify o (Ref g) v = assign o g v
 unify o v (Ref g) = assign o g v
-unify o (Atom _ x) (Atom _ y) =
+unify o (Atom _ x) (Atom _ y) = do
   unless (x == y) $ escapeAt o $
     "variables do not match: " <> x <> " != " <> y
-unify o (List (Atom _ t1 : es1)) (List (Atom _ t2 : es2)) = do
-  unless (t1 == t2) $ reportAt o ELError $
-    "terms do not match: " <> t1 <> " != " <> t2
-  go es1 es2 where
-  go [] [] = return ()
-  go (e1 : es1') (e2 : es2') = unify o e1 e2 >> go es1' es2'
-  go _ _ = error (show (t1, length es1, t2, length es2))
+  return UnifyOK
+unify o v1@(List (Atom _ t1 : es1)) v2@(List (Atom _ t2 : es2)) =
+  if t1 == t2 then go es1 es2 else do
+    decls <- gets eDecls
+    case (H.lookup t1 decls, H.lookup t2 decls) of
+      (Just (n1, _, _, _), Just (n2, _, DDef _ args2 _ ds2 val2, _))
+        | n1 < n2 -> unfold o args2 ds2 val2 es2 v1
+      (Just (_, _, DDef _ args1 _ ds1 val1, _), _) -> unfold o args1 ds1 val1 es1 v2
+      (_, Just (_, _, DDef _ args2 _ ds2 val2, _)) -> unfold o args2 ds2 val2 es2 v1
+      _ -> do
+        reportAt o ELError $ "terms do not match: " <> t1 <> " != " <> t2
+        return mempty
+  where
+  go [] [] = return mempty
+  go (e1 : es1') (e2 : es2') = liftM2 (<>) (unify o e1 e2) (go es1' es2')
+  go _ _ = escapeAt o $ "bad terms: " <> T.pack (show (t1, length es1, t2, length es2))
+unify o (Atom _ v) e2@(List (Atom _ _ : _)) = do
+  pp <- ppExpr e2
+  escapeAt o $ "variable vs term: " <> v <> " != " <> render pp
+unify o e1@(List (Atom _ _ : _)) (Atom _ v) = do
+  pp <- ppExpr e1
+  escapeAt o $ "term vs variable: " <> render pp <> " != " <> v
 unify o e1 e2 = escapeAt o $ "bad terms: " <> T.pack (show (e1, e2))
 
-assign :: Offset -> TVar LispVal -> LispVal -> ElabM ()
-assign _ g (Ref g') | g == g' = return ()
-assign o g v = getRef g >>= \case
-  MVar _ _ _ _ -> try (occursCheck g v) >>= \case
-    Just v' -> setRef g v'
-    Nothing -> escapeAt o "occurs-check failed, can't build infinite assignment"
+assign :: Offset -> TVar LispVal -> LispVal -> ElabM UnifyResult
+assign o g = \v -> getRef g >>= \case
+  MVar _ _ _ _ -> go v
   v' -> unify o v v'
+  where
+  go (Ref g') | g == g' = return mempty
+  go v@(Ref g') = getRef g' >>= \case
+    v'@(Ref _) -> go v'
+    _ -> check v
+  go v = check v
+  check v = try (occursCheck g v) >>= \case
+    Just v' -> mempty <$ setRef g v'
+    Nothing -> escapeAt o "occurs-check failed, can't build infinite assignment"
 
 occursCheck :: TVar LispVal -> LispVal -> ElabM LispVal
 occursCheck g (Ref g') | g == g' = mzero
-occursCheck g e@(Ref _) = getRef g >>= \case
+occursCheck g e@(Ref g') = getRef g' >>= \case
   MVar _ _ _ _ -> return e
   e' -> occursCheck g e'
 occursCheck g (List (t : es)) = List . (t :) <$> mapM (occursCheck g) es
 occursCheck _ e = return e
+
+unfold :: Offset -> [PBinder] -> [(Offset, VarName, Sort)] ->
+  SExpr -> [LispVal] -> LispVal -> ElabM UnifyResult
+unfold o bis ds val es e2 = buildSubst bis es H.empty where
+
+  buildSubst :: [PBinder] -> [LispVal] -> H.HashMap VarName LispVal -> ElabM UnifyResult
+  buildSubst (bi : bis') (e : es') m =
+    buildSubst bis' es' (H.insert (binderName bi) e m)
+  buildSubst [] [] m = buildDummies ds Q.empty m
+  buildSubst _ _ _ = escapeAt o "incorrect arguments"
+
+  buildDummies :: [(Offset, VarName, Sort)] -> Q.Seq LispVal ->
+    H.HashMap VarName LispVal -> ElabM UnifyResult
+  buildDummies ((_, x, s) : ds') q m = do
+    v <- Ref <$> newMVar o s True
+    buildDummies ds' (q Q.|> v) (H.insert x v m)
+  buildDummies [] q m = (UnifyUnfold q <>) <$> unify o (sExprSubst o m val) e2
 
 toExpr :: Sort -> Bool -> RefineExpr -> ElabM LispVal
 toExpr s bd (RPlaceholder o) = Ref <$> newMVar o s bd
@@ -936,12 +1027,11 @@ toExpr s bd (RAtom o x) = do
   H.lookup x . tcVars <$> getTC >>= \case
     Just (PBound _ s') -> do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
-      return $ Atom o x
     Just (PReg _ (DepType s' _)) -> do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
       when bd $ reportAt o ELError "expected a bound variable"
-      return $ Atom o x
-    Nothing -> escapeAt o $ "unknown variable '" <> x <> "'"
+    Nothing -> modifyTC $ \tc -> tc {tcVars = H.insert x (PBound x s) (tcVars tc)}
+  return $ Atom o x
 toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
   Nothing -> escapeAt o $ "unknown term '" <> t <> "'"
   Just (_, bis, ret, _) -> do
@@ -960,52 +1050,62 @@ toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
     when bd $ reportAt o ELError "expected a bound variable"
     return $ List $ Atom o t : es'
 
-refine :: Offset -> [LispVal] -> ElabM ()
-refine o es' = do
+getGoals :: Offset -> ElabM [TVar LispVal]
+getGoals o = try getTC >>= \case
+  Just tc -> return $ V.toList $ tcGoals tc
+  Nothing -> escapeAt o "not in a theorem context"
+
+withGoals :: Offset -> (VD.IOVector (TVar LispVal) -> ElabM a) -> ElabM a
+withGoals o m = do
   gv <- VD.new 0
-  gs <- try getTC >>= \case
-    Just tc -> return $ V.toList $ tcGoals tc
-    Nothing -> escapeAt o "not in a theorem context"
-  gs' <- refineInner o gv es' gs
+  a <- m gv
   v <- VD.unsafeFreeze gv
-  setGoals (V.toList v ++ gs')
+  gs <- getGoals o
+  setGoals (V.toList v ++ gs)
+  return a
+
+newGoal :: VD.IOVector (TVar LispVal) -> Offset -> LispVal -> ElabM (TVar LispVal)
+newGoal gv o ty = do
+  g <- newRef (Goal o ty)
+  liftIO $ VD.pushBack gv g
+  return g
+
+refine :: Offset -> [LispVal] -> ElabM ()
+refine o es = do
+  withGoals o $ \gv -> do
+    gs <- getGoals o
+    let go :: [LispVal] -> [TVar LispVal] -> ElabM ()
+        go [] gs' = setGoals gs'
+        go _ [] = setGoals []
+        go es1@(e:es') (g:gs') = do
+          getRef g >>= \case
+            Goal _ ty -> do
+              parseRefine o e >>= refineProof gv ty >>= setRef g
+              go es' gs'
+            _ -> go es1 gs'
+    go es gs
   cleanMVars
 
-refineInner :: Offset -> VD.IOVector (TVar LispVal) ->
-  [LispVal] -> [TVar LispVal] -> ElabM [TVar LispVal]
-refineInner ro gv = refineGoals where
-  refineGoals :: [LispVal] -> [TVar LispVal] -> ElabM [TVar LispVal]
-  refineGoals [] gs = return gs
-  refineGoals _ [] = return []
-  refineGoals es@(e:es') (g:gs) = do
-    getRef g >>= \case
-      Goal _ ty -> do
-        parseRefine ro e >>= refinePf ty >>= setRef g
-        refineGoals es' gs
-      _ -> refineGoals es gs
-
-  newGoal :: Offset -> LispVal -> ElabM (TVar LispVal)
-  newGoal o ty = do
-    g <- newRef (Goal o ty)
-    liftIO $ VD.pushBack gv g
-    return g
-
+refineProof :: VD.IOVector (TVar LispVal) ->
+  LispVal -> RefineExpr -> ElabM LispVal
+refineProof gv = refinePf where
   refinePf :: LispVal -> RefineExpr -> ElabM LispVal
-  refinePf ty (RPlaceholder o) = Ref <$> newGoal o ty
-  refinePf ty (RExact o e) = inferType o e >>= unifyAt o ty >> return e
-  refinePf ty (RAtom o h) = do
-    H.lookup h . tcProofs <$> getTC >>= \case
-      Just (v, _) -> Atom o h <$ unifyAt o v ty
-      Nothing -> try (now >>= getThm h) >>= \case
-        Just (_, bis, hs, ret) -> refinePfThm ty IMRegular o h [] bis hs ret
-        Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
+  refinePf ty (RPlaceholder o) = Ref <$> newGoal gv o ty
+  refinePf ty (RExact o e) = coerceTo' o ty e
+  refinePf ty (RAtom o h) = try (getSubproof h) >>= \case
+    Just v -> coerceTo o ty (Atom o h) v
+    Nothing -> try (now >>= getThm h) >>= \case
+      Just (_, bis, hs, ret) -> refinePfThm ty IMRegular o h [] bis hs ret
+      Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
+  refinePf ty (RApp _ o "_" []) = Ref <$> newGoal gv o ty
+  refinePf ty (RApp _ o "_" es) = do
+    mv <- Ref <$> newUnknownMVar o
+    Ref <$> newGoal gv o mv >>= refineExtraArgs o mv ty es
   refinePf ty (RApp im o t es) = try (now >>= getThm t) >>= \case
     Just (_, bis, hs, ret) -> refinePfThm ty im o t es bis hs ret
-    Nothing -> do
-      tc <- getTC
-      case H.lookup t (tcProofs tc) of
-        Just (v, _) -> refineExtraArgs o v ty es (Atom o t)
-        _ -> escapeAt o $ "unknown theorem '" <> t <> "'"
+    Nothing -> try (getSubproof t) >>= \case
+      Just v -> refineExtraArgs o v ty es (Atom o t)
+      _ -> escapeAt o $ "unknown theorem '" <> t <> "'"
 
   refinePfThm :: LispVal -> InferMode -> Offset -> T.Text -> [RefineExpr] ->
     [PBinder] -> [SExpr] -> SExpr -> ElabM LispVal
@@ -1029,14 +1129,13 @@ refineInner ro gv = refineGoals where
       refineExtraArgs o (sExprSubst o m ret) ty rs (List (Atom o t : f []))
 
   refineExtraArgs :: Offset -> LispVal -> LispVal -> [RefineExpr] -> LispVal -> ElabM LispVal
-  refineExtraArgs o v ty [] e = e <$ unifyAt o v ty
+  refineExtraArgs o v ty [] e = coerceTo o ty e v
   refineExtraArgs o _ ty rs@(r:_) e = do
     es <- forM rs $ \r' -> do
       mv <- newUnknownMVar o
       refinePf (Ref mv) r'
     e' <- call (reOffset r) "refine-extra-args" $ Proc callback : e : es
-    inferType o e' >>= unifyAt o ty
-    return e'
+    coerceTo' o ty e'
     where
     callback o' _ [ty', e'] = parseRefine o' e' >>= refinePf ty'
     callback o' _ [e'] = do
@@ -1045,12 +1144,10 @@ refineInner ro gv = refineGoals where
     callback o' _ _ = escapeAt o' "expected two arguments"
 
 focus :: Offset -> LCtx -> [AtLisp] -> ElabM ()
-focus o ctx es = do
-  gs <- tcGoals <$> getTC
-  when (V.null gs) $ escapeAt o "no goals"
-  let g1 = V.unsafeHead gs
-  let gt = V.unsafeTail gs
-  setGoals [g1]
-  evalRefines o ctx es
-  gs' <- tcGoals <$> getTC
-  setGoals $ V.toList $ gt V.++ gs'
+focus o ctx es = getGoals o >>= \case
+  [] -> escapeAt o "no goals"
+  g1 : gt -> do
+    setGoals [g1]
+    evalRefines o ctx es
+    gs' <- getGoals o
+    setGoals $ gs' ++ gt

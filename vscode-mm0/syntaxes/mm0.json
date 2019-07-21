@@ -226,7 +226,7 @@
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|refine|stat|(pair|null|string|goal|mvar)\\?|(ref|get|set|mvar)\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|apply|min|max|not|or|list|cons|hd|tl|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|to-expr|refine|stat|have|(pair|null|string|goal|mvar|ref)\\?|(ref|get|set|mvar)\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
