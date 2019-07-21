@@ -1,8 +1,8 @@
 delimiter $ ( [ { ~ , $
           $ } ] ) ~ , $;
 strict provable sort wff;
-term imp (ph ps: wff): wff; infixr imp: $->$ prec 25;
-term neg (ph: wff): wff; prefix neg: $~$ prec 40;
+term im (ph ps: wff): wff; infixr im: $->$ prec 25;
+term not (ph: wff): wff; prefix not: $~$ prec 40;
 
 axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
 axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
@@ -10,36 +10,108 @@ axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
 
 do {
+  (set-timeout 500)
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
   (def (rev l) (foldl l () (fn (l a) (cons a l))))
   (def (verb e) (list ':verb e))
+  (def (exact e) (refine (verb e)))
+  (def refine-extra-args-orig refine-extra-args)
   (def (refine-extra-args refine p . ps)
     (foldl ps p
       (fn (acc p2)
         (refine (list 'ax_mp (verb p2) (verb acc))))))
+  (def (result) (hd (get-goals)))
+  (def (target) (goal-type (result)))
 };
 
-local theorem id (ph: wff): $ ph -> ph $ = '(ax_2 ax_1 (! ax_1 _ ph));
+local theorem a1i (h: $ b $): $ a -> b $ = '(ax_1 h);
+local theorem a2i (h: $ a -> b -> c $): $ (a -> b) -> (a -> c) $ = '(ax_2 h);
+local theorem mpd (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ = '(ax_2 h2 h1);
+local theorem mpi (h1: $ b $) (h2: $ a -> b -> c $): $ a -> c $ = '(mpd (a1i h1) h2);
+local theorem id: $ a -> a $ = '(mpd (! ax_1 _ a) ax_1);
+local theorem syl (h1: $ a -> b $) (h2: $ b -> c $): $ a -> c $ = '(mpd h1 (a1i h2));
+local theorem a1d (h: $ a -> b $): $ a -> c -> b $ = '(syl h ax_1);
+local theorem a2d (h: $ a -> b -> c -> d $): $ a -> (b -> c) -> (b -> d) $ = '(syl h ax_2);
+local theorem a3d (h: $ a -> ~b -> ~c $): $ a -> c -> b $ = '(syl h ax_3);
+local theorem sylc (h1: $ a -> b $) (h2: $ a -> c $) (h: $ b -> c -> d $): $ a -> d $ = '(mpd h2 (syl h1 h));
+local theorem syld (h1: $ a -> b -> c $) (h2: $ a -> c -> d $): $ a -> b -> d $ = '(mpd h1 (a2d (a1d h2)));
+local theorem syl5 (h1: $ b -> c $) (h2: $ a -> c -> d $): $ a -> b -> d $ = '(syld (a1i h1) h2);
+local theorem syl6 (h1: $ a -> b -> c $) (h2: $ c -> d $): $ a -> b -> d $ = '(syld h1 (a1i h2));
+local theorem imim2i (h: $ b -> c $): $ (a -> b) -> (a -> c) $ = '(a2i (a1i h));
+local theorem absurd: $ ~a -> a -> b $ = '(a3d ax_1);
+local theorem com12 (h: $ a -> b -> c $): $ b -> a -> c $ = '(syl ax_1 (a2i h));
+local theorem absurdr: $ a -> ~a -> b $ = '(com12 absurd);
+local theorem imidm: $ (a -> a -> b) -> a -> b $ = '(a2i (com12 id));
+local theorem contra: $ (~a -> a) -> a $ = '(imidm (a3d (a2i absurd)));
+local theorem dne: $ ~~a -> a $ = '(syl absurd contra);
+local theorem con2: $ (a -> ~b) -> (b -> ~a) $ = '(a3d (syl5 dne id));
+local theorem notnot1: $ a -> ~~a $ = '(con2 id);
+local theorem con3: $ (a -> b) -> (~b -> ~a) $ = '(syl (imim2i notnot1) con2);
+local theorem mt2d (h1: $ a -> c $) (h2: $ a -> b -> ~c $): $ a -> ~b $ = '(sylc h2 h1 con2);
+local theorem con1: $ (~a -> b) -> (~b -> a) $ = '(a3d (imim2i notnot1));
+local theorem cases (h1: $ a -> b $) (h2: $ ~a -> b $): $ b $ = '(contra (syl (con1 h2) h1));
+local theorem casesd (h1: $ a -> b -> c $) (h2: $ a -> ~b -> c $): $ a -> c $ =
+'(cases (com12 h1) (com12 h2));
+local theorem con1d (h: $ a -> ~b -> c $): $ a -> ~c -> b $ = '(syl h con1);
+local theorem con2d (h: $ a -> b -> ~c $): $ a -> c -> ~b $ = '(syl h con2);
+local theorem con3d (h: $ a -> b -> c $): $ a -> ~c -> ~b $ = '(syl h con3);
+local theorem con4d (h: $ a -> ~b -> ~c $): $ a -> c -> b $ = '(syl h ax_3);
 
-def and (ph ps: wff): wff = $ ~(ph -> ~ps) $;
-infixl and: $/\$ prec 20;
+def and (a b: wff): wff = $ ~(a -> ~b) $;
+infixl and: $/\$ prec 35;
 
-local theorem andl: $ ph /\ ps -> ph $ =
-(focus
-(stat));
+local theorem andl: $ a /\ b -> a $ = '(con1 absurd);
+local theorem andr: $ a /\ b -> b $ = '(con1 ax_1);
+local theorem iand: $ a -> b -> a /\ b $ = '(syl (com12 id) con2);
+local theorem iandd (h1: $ a -> b $) (h2: $ a -> c $): $ a -> b /\ c $ = '(sylc h1 h2 iand);
+local theorem iandi (h1: $ a $) (h2: $ b $): $ a /\ b $ = '(iand h1 h2);
+local theorem andwl (h: $ a -> c $): $ a /\ b -> c $ = '(syl andl h);
+local theorem andwr (h: $ b -> c $): $ a /\ b -> c $ = '(syl andr h);
+local theorem imp (h: $ a -> b -> c $): $ a /\ b -> c $ = '(sylc andl andr h);
+local theorem exp (h: $ a /\ b -> c $): $ a -> b -> c $ = '(syl6 iand h);
 
-def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
+def iff (a b: wff): wff = $ (a -> b) /\ (b -> a) $;
 infixl iff: $<->$ prec 20;
 
-local theorem iff1 (ph ps: wff): $ (ph <-> ps) -> ph -> ps $ = 'andl;
+local theorem bi1: $ (a <-> b) -> a -> b $ = 'andl;
+local theorem bi1i (h: $ a <-> b $): $ a -> b $ = '(bi1 h);
+local theorem bi2: $ (a <-> b) -> b -> a $ = 'andr;
+local theorem bi2i (h: $ a <-> b $): $ b -> a $ = '(bi2 h);
+local theorem ibii (h1: $ a -> b $) (h2: $ b -> a $): $ a <-> b $ = '(iandi h1 h2);
+local theorem ibid (h1: $ a -> b -> c $) (h2: $ a -> c -> b $): $ a -> (b <-> c) $ = '(iandd h1 h2);
+local theorem biid: $ a <-> a $ = '(ibii id id);
+local theorem mpbi (h1: $ a $) (h2: $ a <-> b $): $ b $ = '(bi1i h2 h1);
+local theorem mpbir (h1: $ a $) (h2: $ b <-> a $): $ b $ = '(bi2i h2 h1);
+local theorem con1b: $ (~a <-> b) -> (~b <-> a) $ = '(ibid (con1d bi1) (con2d bi2));
+local theorem con2b: $ (a <-> ~b) -> (b <-> ~a) $ = '(ibid (con2d bi1) (con1d bi2));
+local theorem con3b: $ (a <-> b) -> (~b <-> ~a) $ = '(ibid (con3d bi1) (con3d bi2));
+local theorem con4b: $ (~a <-> ~b) -> (b <-> a) $ = '(ibid (con4d bi1) (con4d bi2));
+local theorem notnot: $ a <-> ~~a $ = '(ibii notnot1 dne);
+local theorem bicom: $ (a <-> b) -> (b <-> a) $ = '(ibid bi2 bi1);
+local theorem bitr: $ (a <-> b) -> (b <-> c) -> (a <-> c) $ =
+'(exp (ibid (syld (andwl bi1) (andwr bi1)) (syld (andwr bi2) (andwl bi2))));
+local theorem sylib (h1: $ a -> b $) (h2: $ b <-> c $): $ a -> c $ = '(syl h1 (bi1i h2));
+local theorem sylbi (h1: $ a <-> b $) (h2: $ b -> c $): $ a -> c $ = '(syl (bi1i h1) h2);
 
-def or (ph ps: wff): wff = $ ~ph -> ps $;
+def or (a b: wff): wff = $ ~a -> b $;
 infixl or: $\/$ prec 30;
+
+local theorem orl: $ a -> a \/ b $ = 'absurdr;
+local theorem orr: $ b -> a \/ b $ = 'ax_1;
+local theorem eori (h1: $ a -> c $) (h2: $ b -> c $): $ a \/ b -> c $ =
+'(casesd (a1i h1) (imim2i h2));
+local theorem eord (h1: $ a -> b -> d $) (h2: $ a -> c -> d $):
+  $ a -> b \/ c -> d $ = '(com12 (eori (com12 h1) (com12 h2)));
+local theorem eor: $ (a -> c) -> (b -> c) -> a \/ b -> c $ = '(exp (eord andl andr));
 
 term wtru: wff; prefix wtru: $T.$ prec max;
 axiom tru: $ T. $;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
+
+local theorem trud (h: $ T. -> a $): $ a $ = '(h tru);
+local theorem notfal: $ ~F. $ = '(notnot1 tru);
+local theorem efal: $ F. -> a $ = '(absurd notfal);
 
 sort nat;
 term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
@@ -47,24 +119,40 @@ term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
 def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
 prefix ex: $E.$ prec 30;
 
+term eq (a b: nat): wff; infixl eq: $=$ prec 50;
+
 axiom ax_gen (ph: wff) {x: nat}: $ ph $ > $ A. x ph $;
 axiom ax_4 {x: nat} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
 axiom ax_5 {x: nat} (ph: wff): $ ph -> A. x ph $;
+axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
+axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
+axiom ax_10 {x: nat} (ph: wff x): $ ~(A. x ph) -> A. x ~ (A. x ph) $;
+axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
+axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> A. x (x = y -> ph) $;
 
-term eq (a b: nat): wff; infixl eq: $=$ prec 50;
+local theorem alimi (a b: wff x) (h: $ a -> b $): $ A. x a -> A. x b $ = '(ax_4 (ax_gen h));
+local theorem albii (a b: wff x) (h: $ a <-> b $): $ A. x a <-> A. x b $ =
+'(ibii (alimi (bi1i h)) (alimi (bi2i h)));
+local theorem alimd (a: wff) (b c: wff x) (h: $ a -> b -> c $):
+  $ a -> A. x b -> A. x c $ = '(syl (syl h ax_5) ax_4);
+local theorem exim (a b: wff x): $ A. x (a -> b) -> E. x a -> E. x b $ =
+'(syl (syl (alimi con3) ax_4) con3);
+local theorem iex (a: wff x): $ a -> E. x a $ =
+'(syl (syl (!! ax_5 y) ax_12) (mpi ax_6 exim));
+local theorem alnex (a: wff x): $ A. x ~a <-> ~(E. x a) $ = 'notnot;
+local theorem alex (a: wff x): $ A. x a <-> ~(E. x ~a) $ =
+'(bitr (albii notnot) alnex);
+local theorem exnal (a: wff x): $ E. x ~a <-> ~(A. x a) $ = '(con2b alex);
+local theorem eal (a: wff x): $ A. x a -> a $ = '(ax_3 (sylib iex exnal));
+local theorem iald (a: wff) (b: wff x) (h: $ a -> b $): $ a -> A. x b $ = '(syl ax_5 (alimi h));
+local theorem eale (a: nat) (b: wff x) (c: wff)
+  (e: $ x = a -> (b <-> c) $): $ A. x b -> c $;
 
 def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation sb (a x ph) = ($[$:30) a ($/$:0) x ($]$:0) ph;
-
-axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
-axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
-
-axiom ax_10 {x: nat} (ph: wff x): $ ~(A. x ph) -> A. x ~ (A. x ph) $;
-axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
-axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> [y / x] ph $;
 
 strict sort set;
 term ab {x: nat} (ph: wff x): set;
