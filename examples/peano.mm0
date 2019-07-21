@@ -11,8 +11,8 @@ axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
 def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
 infixl iff: $<->$ prec 20;
 
-def and (ph ps: wff): wff = $ ~(ph -> ~ps) $;
-infixl and: $/\$ prec 35;
+def an (ph ps: wff): wff = $ ~(ph -> ~ps) $;
+infixl an: $/\$ prec 35;
 
 def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
@@ -22,10 +22,10 @@ axiom tru: $ T. $;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 sort nat;
-term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 30;
+term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 40;
 
 def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
-prefix ex: $E.$ prec 30;
+prefix ex: $E.$ prec 40;
 
 axiom ax_gen (ph: wff) {x: nat}: $ ph $ > $ A. x ph $;
 axiom ax_4 {x: nat} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
