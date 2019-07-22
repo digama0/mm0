@@ -22,8 +22,8 @@ compile args = do
       let errs' = M.ParseErrorBundle (NE.fromList errs) (initialPosState name str)
       die (M.errorBundlePretty errs')
     (errs, _, Just ast) -> elaborate errs ast >>= \case
-      [] -> putStrLn "OK"
-      errs2 -> do
+      ([], _) -> putStrLn "OK"
+      (errs2, _) -> do
         let errs' = M.ParseErrorBundle
               (NE.fromList (sortOn M.errorOffset (toParseError <$> errs2)))
               (initialPosState name str)

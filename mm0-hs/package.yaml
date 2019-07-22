@@ -35,6 +35,8 @@ dependencies:
 - word8
 - text
 - text-builder
+- vector
+- vector-algorithms
 - async
 - async-pool
 - stm
@@ -54,7 +56,6 @@ dependencies:
 - time
 - transformers
 - unordered-containers
-- vector
 - haskell-lsp
 
 default-extensions:

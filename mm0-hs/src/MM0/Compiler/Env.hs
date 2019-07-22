@@ -112,6 +112,10 @@ isGoal :: LispVal -> Bool
 isGoal (Goal _ _) = True
 isGoal _ = False
 
+sExprToLisp :: Offset -> SExpr -> LispVal
+sExprToLisp o (SVar v) = Atom o v
+sExprToLisp o (App t ts) = List (Atom o t : (sExprToLisp o <$> ts))
+
 data ErrorLevel = ELError | ELWarning | ELInfo
 instance Show ErrorLevel where
   show ELError = "error"
@@ -256,7 +260,7 @@ data ElabFuncs = ElabFuncs {
 type Elab = RWST ElabFuncs () Env IO
 type ElabM = MaybeT Elab
 
-runElab :: Elab a -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError])
+runElab :: Elab a -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
 runElab m errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
@@ -273,9 +277,9 @@ runElab m errs lvs = do
         forM_ decls $ \case
           (_, _, DTheorem _ _ _ _ tm, _) -> () <$ runMaybeT tm
           _ -> return ()
-    (a, _) <- evalRWST m' (ElabFuncs report (async g)) def {eLispData = dat, eLispNames = hm}
+    (a, env, _) <- runRWST m' (ElabFuncs report (async g)) def {eLispData = dat, eLispNames = hm}
     errs' <- readTVarIO pErrs
-    return (a, errs')
+    return (a, errs', env)
 
 withTimeout :: Offset -> ElabM a -> ElabM a
 withTimeout o m = MaybeT $ RWST $ \r s ->
@@ -379,22 +383,26 @@ getSort v s =
     Just (n, o, sd) -> guard (n < s) >> return (o, sd)
     _ -> mzero
 
+lookupTerm :: Text -> Env -> Maybe (SeqNum, Offset, [PBinder], DepType, Maybe DeclNota)
+lookupTerm v env = H.lookup v (eDecls env) >>= \case
+    (n, o, DTerm args r, no) -> Just (n, o, args, r, no)
+    (n, o, DDef _ args r _ _, no) -> Just (n, o, args, r, no)
+    _ -> Nothing
+
 getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType, Maybe DeclNota)
-getTerm v s =
-  gets (H.lookup v . eDecls) >>= \case
-    Just (n, o, DTerm args r, no) ->
-      guard (n < s) >> return (o, args, r, no)
-    Just (n, o, DDef _ args r _ _, no) ->
-      guard (n < s) >> return (o, args, r, no)
-    _ -> mzero
+getTerm v s = gets (lookupTerm v) >>= \case
+  Just (n, o, args, r, no) -> guard (n < s) >> return (o, args, r, no)
+  _ -> mzero
+
+lookupThm :: Text -> Env -> Maybe (SeqNum, Offset, [PBinder], [SExpr], SExpr)
+lookupThm v env = H.lookup v (eDecls env) >>= \case
+  (n, o, DAxiom args hyps r, _) -> Just (n, o, args, hyps, r)
+  (n, o, DTheorem _ args hyps r _, _) -> Just (n, o, args, hyps, r)
+  _ -> Nothing
 
 getThm :: Text -> SeqNum -> ElabM (Offset, [PBinder], [SExpr], SExpr)
-getThm v s =
-  gets (H.lookup v . eDecls) >>= \case
-    Just (n, o, DAxiom args hyps r, _) ->
-      guard (n < s) >> return (o, args, hyps, r)
-    Just (n, o, DTheorem _ args hyps r _, _) ->
-      guard (n < s) >> return (o, args, hyps, r)
+getThm v s = gets (lookupThm v) >>= \case
+    Just (n, o, args, hyps, r) -> guard (n < s) >> return (o, args, hyps, r)
     _ -> mzero
 
 getDeclNotaOffset :: DeclNota -> ElabM Offset

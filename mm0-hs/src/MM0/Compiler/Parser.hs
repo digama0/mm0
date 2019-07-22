@@ -16,6 +16,7 @@ import qualified Text.Megaparsec as MT
 import Text.Megaparsec.Char
 import Control.Monad.Trans.State
 import qualified Data.Set as S
+import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Text.Builder as TB
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -37,7 +38,7 @@ runParser p n o s =
     (Right (a, o'), errs) -> (errs, o', Just a)
 
 parseAST :: String -> T.Text -> ([ParseError], Offset, Maybe AST)
-parseAST n t = runParser (sc *> stmts) n 0 t where
+parseAST n t = runParser (sc *> (V.fromList <$> stmts)) n 0 t where
   stmts =
     (withRecovery (recoverToSemi Nothing) atStmt >>= \case
       Just st -> (st :) <$> stmts

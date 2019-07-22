@@ -22,10 +22,10 @@ import MM0.Compiler.MathParser
 import MM0.Compiler.PrettyPrinter
 import MM0.Util
 
-elaborate :: [ParseError] -> AST -> IO [ElabError]
+elaborate :: [ParseError] -> AST -> IO ([ElabError], Env)
 elaborate errs ast = do
-  (_, errs') <- runElab (mapM_ elabStmt ast) (toElabError <$> errs) initialBindings
-  return errs'
+  (_, errs', env) <- runElab (mapM_ elabStmt ast) (toElabError <$> errs) initialBindings
+  return (errs', env)
 
 elabStmt :: AtPos Stmt -> Elab ()
 elabStmt (AtPos pos s) = resuming $ withTimeout pos $ case s of
@@ -828,10 +828,6 @@ evalQExpr ctx (QUnquote (AtLisp o e)) = eval o ctx e
 -----------------------------
 -- Tactics
 -----------------------------
-
-sExprToLisp :: Offset -> SExpr -> LispVal
-sExprToLisp o (SVar v) = Atom o v
-sExprToLisp o (App t ts) = List (Atom o t : (sExprToLisp o <$> ts))
 
 tryRefine :: Offset -> LispVal -> ElabM ()
 tryRefine _ Undef = return ()

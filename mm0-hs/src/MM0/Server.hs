@@ -12,10 +12,10 @@ import qualified Control.Exception as E
 import Control.Lens ((^.))
 import Control.Monad.Reader
 import Data.Default
-import Data.List
+import Data.Functor
 import Data.Maybe
-import qualified Data.IntMap as I
 import qualified Data.HashMap.Strict as H
+import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.ByteString.Lazy as BL
@@ -28,12 +28,15 @@ import qualified Language.Haskell.LSP.Types.Lens as J
 import Language.Haskell.LSP.VFS
 import System.Exit
 import qualified System.Log.Logger as L
-import Text.Megaparsec.Pos (SourcePos(..), unPos)
 import qualified Text.Megaparsec.Error as E
 import qualified Data.Rope.UTF16 as Rope
 import qualified MM0.FrontEnd.Parser as P
+import MM0.Compiler.PositionInfo
+import qualified MM0.Compiler.AST as CA
 import qualified MM0.Compiler.Parser as CP
+import MM0.Compiler.PrettyPrinter hiding (doc)
 import qualified MM0.FrontEnd.Elaborator as Elab
+import qualified MM0.Compiler.Env as CE
 import qualified MM0.Compiler.Elaborator as CE
 import MM0.Compiler.Elaborator (ErrorLevel(..))
 
@@ -68,7 +71,7 @@ run debug rin = do
   lspHandlers :: Handlers
   lspHandlers = def {
     initializedHandler                       = Just $ passHandler NotInitialized,
-    -- hoverHandler                             = Just $ passHandler ReqHover,
+    hoverHandler                             = Just $ passHandler ReqHover,
     didOpenTextDocumentNotificationHandler   = Just $ passHandler NotDidOpenTextDocument,
     didChangeTextDocumentNotificationHandler = Just $ passHandler NotDidChangeTextDocument,
     didCloseTextDocumentNotificationHandler  = Just $ passHandler NotDidCloseTextDocument,
@@ -86,10 +89,21 @@ run debug rin = do
 -- LSP client, so they can be sent to the backend compiler one at a time, and a
 -- reply sent.
 
+data FileParse = FP {
+  _fpAST :: CA.AST,
+  _fpSpans :: V.Vector Spans,
+  _fpEnv :: Maybe CE.Env }
+
+data FileCache = FC {
+  _fcText :: T.Text,
+  _fcLines :: Lines,
+  _fcParse :: Maybe FileParse }
+
 data ReactorState = RS {
   rsDebug :: Bool,
   rsFuncs :: LspFuncs (),
-  rsDiagThreads :: TVar (H.HashMap (Maybe Int) (Async ())) }
+  rsDiagThreads :: TVar (H.HashMap (Maybe Int) (Async ())),
+  rsLastParse :: TVar (Maybe (Maybe Int, FileCache)) }
 type Reactor a = ReaderT ReactorState IO a
 
 -- ---------------------------------------------------------------------
@@ -152,6 +166,10 @@ reactorHandleAll :: Reactor () -> Reactor ()
 reactorHandleAll = reactorHandle $ \(e :: E.SomeException) ->
   reactorErr $ T.pack $ E.displayException e
 
+isOutdated :: Maybe Int -> Maybe Int -> Bool
+isOutdated (Just n) (Just v) = v < n
+isOutdated _ _ = False
+
 -- ---------------------------------------------------------------------
 
 -- | The single point that all events flow through, allowing management of state
@@ -160,7 +178,8 @@ reactorHandleAll = reactorHandle $ \(e :: E.SomeException) ->
 reactor :: Bool -> LspFuncs () -> TChan FromClientMessage -> IO ()
 reactor debug lf inp = do
   th <- atomically $ newTVar H.empty
-  flip runReaderT (RS debug lf th) $ forever $ do
+  fs <- atomically $ newTVar Nothing
+  flip runReaderT (RS debug lf th fs) $ forever $ do
     liftIO (atomically $ readTChan inp) >>= \case
       -- Handle any response from a message originating at the server, such as
       -- "workspace/applyEdit"
@@ -187,14 +206,16 @@ reactor debug lf inp = do
       NotCancelRequestFromClient msg -> do
         reactorLogs $ "reactor:got NotCancelRequestFromClient:" ++ show msg
 
-      -- ReqHover req -> do
-      --   reactorLogs $ "reactor:got HoverRequest:" ++ show req
-      --   let J.TextDocumentPositionParams _doc pos = req ^. J.params
-      --       J.Position _l _c' = pos
-      --       ht = Just $ J.Hover ms (Just range)
-      --       ms = J.HoverContents $ J.markedUpContent "lsp-hello" "TYPE INFO"
-      --       range = J.Range pos pos
-      --   reactorSend $ RspHover $ makeResponseMessage req ht
+      ReqHover req -> do
+        reactorLogs $ "reactor:got HoverRequest:" ++ show req
+        let TextDocumentPositionParams jdoc (Position l c) = req ^. J.params
+            doc = toNormalizedUri $ jdoc ^. J.uri
+        hover <- getFileCache doc <&> \case
+          Just (FC _ larr (Just (FP ast sps (Just env)))) -> do
+            (stmt, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
+            makeHover env (toRange larr o1 o2) stmt pi'
+          _ -> Nothing
+        reactorSend $ RspHover $ makeResponseMessage req hover
 
       om -> reactorLogs $ "reactor: got HandlerRequest:" ++ show om
 
@@ -219,56 +240,100 @@ mkDiagnosticRelated l r msg rel =
 mkDiagnostic :: Position -> T.Text -> Diagnostic
 mkDiagnostic p msg = mkDiagnosticRelated ELError (Range p p) msg []
 
-parseErrorDiags :: CP.PosState T.Text ->
-  [CP.ParseError] -> [Diagnostic]
-parseErrorDiags pos errs =
-  toDiag <$> fst (E.attachSourcePos E.errorOffset errs' pos) where
-  errs' = sortOn E.errorOffset errs
-  toDiag (err, SourcePos _ l c) =
-    mkDiagnostic (Position (unPos l - 1) (unPos c - 1))
-      (T.pack (E.parseErrorTextPretty err))
+parseErrorDiags :: Lines -> [CP.ParseError] -> [Diagnostic]
+parseErrorDiags larr errs = toDiag <$> errs where
+  toDiag err = let (l, c) = offToPos larr (E.errorOffset err) in
+    mkDiagnostic (Position l c) (T.pack (E.parseErrorTextPretty err))
 
-elabErrorDiags :: Uri -> CP.PosState T.Text -> [CE.ElabError] -> [Diagnostic]
-elabErrorDiags uri pos errs = toDiag <$> errs where
-  offs :: I.IntMap Int
-  offs = foldl'
-    (\m (CE.ElabError _ o1 o2 _ es) ->
-      I.insert o1 o1 $ I.insert o2 o2 $
-      foldl' (\m' (o1', o2', _) -> I.insert o1' o1' $ I.insert o2' o2' m') m es)
-    I.empty errs
-  poss :: I.IntMap (Int, SourcePos)
-  poss = fst $ E.attachSourcePos id offs pos
-  toPosition :: Int -> Position
-  toPosition n =
-    let SourcePos _ l c = snd (poss I.! n) in
-    Position (unPos l - 1) (unPos c - 1)
-  toRange :: Int -> Int -> Range
-  toRange o1 o2 = Range (toPosition o1) (toPosition o2)
+toPosition :: Lines -> Int -> Position
+toPosition larr n = let (l, c) = offToPos larr n in Position l c
+
+toRange :: Lines -> Int -> Int -> Range
+toRange larr o1 o2 = Range (toPosition larr o1) (toPosition larr o2)
+
+elabErrorDiags :: Uri -> Lines -> [CE.ElabError] -> [Diagnostic]
+elabErrorDiags uri larr errs = toDiag <$> errs where
   toRel :: (Int, Int, T.Text) -> DiagnosticRelatedInformation
   toRel (o1, o2, msg) = DiagnosticRelatedInformation
-    (Location uri (toRange o1 o2)) msg
+    (Location uri (toRange larr o1 o2)) msg
   toDiag :: CE.ElabError -> Diagnostic
   toDiag (CE.ElabError l o1 o2 msg es) =
-    mkDiagnosticRelated l (toRange o1 o2) msg (toRel <$> es)
+    mkDiagnosticRelated l (toRange larr o1 o2) msg (toRel <$> es)
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
-sendDiagnostics fileNUri@(NormalizedUri t) version str =
-  reactorHandleAll $ newDiagThread version $ do
-    let fileUri = fromNormalizedUri fileNUri
-        file = fromMaybe "" $ uriToFilePath fileUri
-        pos = CP.initialPosState file str
-    diags <- if T.isSuffixOf "mm0" t
-      then case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
-        Left (P.ParseError l c msg) ->
-          return [mkDiagnostic (Position l c) (T.pack msg)]
-        Right ast -> case Elab.elabAST ast of
-          Left msg -> return [mkDiagnostic (Position 0 0) (T.pack msg)]
-          Right _ -> return []
-      else case CP.parseAST file str of
-        (errs, _, Nothing) -> return $ parseErrorDiags pos errs
-        (errs, _, Just ast) -> do
-          errs' <- liftIO $ CE.elaborate errs ast
-          return (elabErrorDiags fileUri pos errs')
-    publishDiagnostics 100 fileNUri version (partitionBySource diags)
+sendDiagnostics fileNUri@(NormalizedUri t) version str = do
+  fs <- asks rsLastParse
+  liftIO (readTVarIO fs) >>= \case
+    Just (oldv, _) | isOutdated oldv version -> return ()
+    _ -> reactorHandleAll $ newDiagThread version $
+      let fileUri = fromNormalizedUri fileNUri
+          file = fromMaybe "" $ uriToFilePath fileUri
+          larr = getLines str
+      in if T.isSuffixOf "mm0" t then
+        let diags = case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
+              Left (P.ParseError l c msg) ->
+                [mkDiagnostic (Position l c) (T.pack msg)]
+              Right ast -> case Elab.elabAST ast of
+                Left msg -> [mkDiagnostic (Position 0 0) (T.pack msg)]
+                Right _ -> []
+        in publishDiagnostics 100 fileNUri version (partitionBySource diags)
+      else do
+        let (errs, _, oast) = CP.parseAST file str
+        res <- liftIO $ atomically $ readTVar fs >>= \case
+          Just (oldv, _) | isOutdated oldv version -> return False
+          _ -> do
+            let mkFP ast = FP ast (toSpans <$> ast) Nothing
+            writeTVar fs (Just (version, FC str larr (mkFP <$> oast)))
+            return True
+        when res $ do
+          diags <- case oast of
+            Nothing -> return $ parseErrorDiags larr errs
+            Just ast -> do
+              (errs', env) <- liftIO $ CE.elaborate errs ast
+              liftIO $ atomically $ modifyTVar fs $ \case
+                Just (oldv, FC str' larr' (Just (FP ast' spans' Nothing))) | oldv == version ->
+                  Just (oldv, FC str' larr' (Just (FP ast' spans' (Just env))))
+                fc -> fc
+              return (elabErrorDiags fileUri larr errs')
+          publishDiagnostics 100 fileNUri version (partitionBySource diags)
+
+getFileCache :: NormalizedUri -> Reactor (Maybe FileCache)
+getFileCache doc = do
+  lf <- asks rsFuncs
+  liftIO (getVirtualFileFunc lf doc) >>= \case
+    Nothing -> return Nothing
+    Just (VirtualFile version str _) ->
+      let
+        tryGet = do
+          sendDiagnostics doc (Just version) (Rope.toText str)
+          dt <- asks rsDiagThreads
+          liftIO $ do
+            a <- atomically (H.lookup (Just version) <$> readTVar dt)
+            mapM_ wait a
+        go = asks rsLastParse >>= liftIO . readTVarIO >>= \case
+          Just (Just oldv, fc) | oldv == version -> return (Just fc)
+          Just (oldv, _) | isOutdated oldv (Just version) -> tryGet >> go
+          Nothing -> tryGet >> go
+          _ -> return Nothing
+      in go
+
+makeHover :: CE.Env -> Range -> CA.AtPos CA.Stmt -> PosInfo -> Maybe Hover
+makeHover env range _ (PosInfo t pi') = case pi' of
+  PISort -> do
+    (_, o, sd) <- H.lookup t (CE.eSorts env)
+    Just $ code $ ppStmt $ CA.Sort o t sd
+  PIVar o -> code . ppBinder <$> o
+  PITerm -> do
+    (_, _, d, _) <- H.lookup t (CE.eDecls env)
+    Just $ code $ ppDecl env t d
+  PIAtom True (Just bi) -> Just $ code $ ppBinder bi
+  PIAtom True Nothing -> do
+    (_, _, d, _) <- H.lookup t (CE.eDecls env)
+    Just $ code $ ppDecl env t d
+  _ -> Nothing
+  where
+
+  hover ms = Hover (HoverContents ms) (Just range)
+  code = hover . markedUpContent "mm0" . render'

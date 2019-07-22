@@ -1,6 +1,7 @@
 module MM0.Compiler.AST (module MM0.Compiler.AST,
   AtDepType(..), SortData(..)) where
 
+import qualified Data.Vector as V
 import qualified Data.Text as T
 import MM0.Kernel.Environment (SortData(..), DepType(..))
 
@@ -20,7 +21,7 @@ unPos (AtPos _ a) = a
 unSpan :: Span a -> a
 unSpan (Span _ a _) = a
 
-type AST = [AtPos Stmt]
+type AST = V.Vector (AtPos Stmt)
 
 data Visibility = Public | Abstract | Local | VisDefault deriving (Eq)
 data DeclKind = DKTerm | DKAxiom | DKTheorem | DKDef deriving (Eq)
