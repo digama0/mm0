@@ -90,15 +90,12 @@ run debug rin = do
 -- LSP client, so they can be sent to the backend compiler one at a time, and a
 -- reply sent.
 
-data FileParse = FP {
-  _fpAST :: CA.AST,
-  _fpSpans :: V.Vector Spans,
-  _fpEnv :: Maybe CE.Env }
-
 data FileCache = FC {
   _fcText :: T.Text,
   _fcLines :: Lines,
-  _fcParse :: Maybe FileParse }
+  _fcAST :: CA.AST,
+  _fcSpans :: V.Vector Spans,
+  _fcEnv :: CE.Env }
 
 data ReactorState = RS {
   rsDebug :: Bool,
@@ -211,7 +208,7 @@ reactor debug lf inp = do
         let TextDocumentPositionParams jdoc (Position l c) = req ^. J.params
             doc = toNormalizedUri $ jdoc ^. J.uri
         hover <- getFileCache doc <&> \case
-          Just (FC _ larr (Just (FP ast sps (Just env)))) -> do
+          Just (FC _ larr ast sps env) -> do
             (_, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
             makeHover env (toRange larr o1 o2) pi'
           _ -> Nothing
@@ -226,7 +223,7 @@ reactor debug lf inp = do
               ResponseError code msg Nothing
             makeResponse = RspDefinition . makeResponseMessage req
         resp <- getFileCache doc <&> \case
-          Just (FC _ larr (Just (FP ast sps (Just env)))) -> Just $ do
+          Just (FC _ larr ast sps env) -> Just $ do
             (stmt, CA.Span _ pi' _) <- maybeToList $ getPosInfo ast sps (posToOff larr l c)
             goToDefinition larr env stmt pi'
           _ -> Nothing
@@ -298,24 +295,15 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str = do
                 Right _ -> []
         in publishDiagnostics 100 fileNUri version (partitionBySource diags)
       else do
-        let (errs, _, oast) = CP.parseAST file str
-        res <- liftIO $ atomically $ readTVar fs >>= \case
-          Just (oldv, _) | isOutdated oldv version -> return False
-          _ -> do
-            let mkFP ast = FP ast (toSpans <$> ast) Nothing
-            writeTVar fs (Just (version, FC str larr (mkFP <$> oast)))
-            return True
-        when res $ do
-          diags <- case oast of
-            Nothing -> return $ parseErrorDiags larr errs
-            Just ast -> do
-              (errs', env) <- liftIO $ CE.elaborate errs ast
-              liftIO $ atomically $ modifyTVar fs $ \case
-                Just (oldv, FC str' larr' (Just (FP ast' spans' Nothing))) | oldv == version ->
-                  Just (oldv, FC str' larr' (Just (FP ast' spans' (Just env))))
-                fc -> fc
-              return (elabErrorDiags fileUri larr errs')
-          publishDiagnostics 100 fileNUri version (partitionBySource diags)
+        diags <- case CP.parseAST file str of
+          (errs, _, Nothing) -> return $ parseErrorDiags larr errs
+          (errs, _, Just ast) -> do
+            (errs', env) <- liftIO $ CE.elaborate errs ast
+            liftIO $ atomically $ modifyTVar fs $ \case
+              fc@(Just (oldv, _)) | isOutdated oldv version -> fc
+              _ -> Just (version, FC str larr ast (toSpans env <$> ast) env)
+            return (elabErrorDiags fileUri larr errs')
+        publishDiagnostics 100 fileNUri version (partitionBySource diags)
 
 getFileCache :: NormalizedUri -> Reactor (Maybe FileCache)
 getFileCache doc = do
@@ -371,7 +359,6 @@ goToDefinition larr env _ (PosInfo t pi') = case pi' of
       _ -> []) ++
     maybeToList (
       H.lookup t (CE.eLispNames env) >>= fst <&> \o -> range o t)
-  _ -> []
   where
   range o t' = toRange larr o (o + T.length t')
   binderRange (CA.Binder o l _) =

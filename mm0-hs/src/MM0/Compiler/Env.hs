@@ -27,7 +27,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import System.Timeout
 import System.IO.Unsafe
-import MM0.Compiler.AST (Offset, Binder(..), SortData(..), Prec(..), Visibility(..))
+import MM0.Compiler.AST (Offset, Binder(..), SortData(..), Prec(..), Visibility(..), QExpr)
 import MM0.Kernel.Environment (Ident, Sort, TermName, ThmName, VarName, Token,
   PBinder(..), SExpr(..), DepType(..), binderName, binderType, binderBound)
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
@@ -247,12 +247,13 @@ data Env = Env {
   eSorts :: H.HashMap Sort (SeqNum, Offset, SortData),
   eProvableSorts :: [Sort],
   eDecls :: H.HashMap Ident (SeqNum, Offset, Decl, Maybe DeclNota),
+  eParsedFmlas :: I.IntMap QExpr,
   ePE :: ParserEnv,
   eInfer :: InferCtx,
   eThmCtx :: Maybe ThmCtx }
 
 instance Default Env where
-  def = Env 5000000 undefined H.empty def H.empty def H.empty def undefined def
+  def = Env 5000000 undefined H.empty def H.empty def H.empty def def undefined def
 
 data ElabFuncs = ElabFuncs {
   efReport :: ElabError -> IO (),

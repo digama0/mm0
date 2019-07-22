@@ -15,8 +15,6 @@ import MM0.Compiler.Parser (Parser, runParser, identStart, identRest, lispVal)
 import MM0.FrontEnd.MathParser (appPrec)
 import MM0.Util
 
-data QExpr = QApp (AtPos Ident) [QExpr] | QUnquote AtLisp deriving (Show)
-
 type MathParser = ReaderT ParserEnv Parser
 
 parseMath :: Formula -> ElabM QExpr
@@ -25,7 +23,9 @@ parseMath (Formula o fmla) = do
   let p = takeWhileP Nothing isSpace *> parseExpr (Prec 0) <* (eof <?> "'$'")
       (errs, _, res) = runParser (runReaderT p pe) "" o fmla
   mapM_ (reportErr . toElabError) errs
-  fromJust' res
+  r <- fromJust' res
+  modify $ \env -> env {eParsedFmlas = I.insert o r (eParsedFmlas env)}
+  return r
 
 isSpace :: Char -> Bool
 isSpace c = c == ' ' || c == '\n'

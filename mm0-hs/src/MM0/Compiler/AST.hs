@@ -130,3 +130,5 @@ instance Show LispAST where
   showsPrec _ (ABool True) = ("#t" ++)
   showsPrec _ (ABool False) = ("#f" ++)
   showsPrec _ (AFormula (Formula _ f)) = ('$' :) . (T.unpack f ++) . ('$' :)
+
+data QExpr = QApp (AtPos T.Text) [QExpr] | QUnquote AtLisp deriving (Show)

@@ -8,10 +8,12 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Data.Vector.Algorithms.Search
 import qualified Data.HashMap.Strict as H
+import qualified Data.IntMap as I
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
 import MM0.Compiler.AST
+import MM0.Compiler.Env
 import MM0.Kernel.Environment (VarName)
 
 type Lines = V.Vector Offset
@@ -39,14 +41,14 @@ posToOff :: Lines -> Int -> Int -> Offset
 posToOff _ 0 c = c
 posToOff larr l c = larr V.! (l - 1) + c
 
-data PIType = PISort | PIVar (Maybe Binder) | PITerm | PIMath | PIAtom Bool (Maybe Binder)
+data PIType = PISort | PIVar (Maybe Binder) | PITerm | PIAtom Bool (Maybe Binder)
 data PosInfo = PosInfo T.Text PIType
 
 type Spans = V.Vector (Span PosInfo)
 type MakeSpan s = ReaderT (H.HashMap VarName Binder) (ST s)
 
-toSpans :: AtPos Stmt -> Spans
-toSpans = \st -> runST $ VD.new 0 >>= \v -> toSpans' v st >> VD.unsafeFreeze v where
+toSpans :: Env -> AtPos Stmt -> Spans
+toSpans env = \st -> runST $ VD.new 0 >>= \v -> toSpans' v st >> VD.unsafeFreeze v where
   toSpans' :: forall s. VD.STVector s (Span PosInfo) -> AtPos Stmt -> ST s ()
   toSpans' vec = \st -> runReaderT (atStmt st) H.empty where
 
@@ -89,7 +91,7 @@ toSpans = \st -> runST $ VD.new 0 >>= \v -> toSpans' v st >> VD.unsafeFreeze v w
     typ (TFormula f) = formula f
 
     formula :: Formula -> MakeSpan s ()
-    formula (Formula o t) = push o t PIMath
+    formula (Formula o t) = mapM_ qExpr (I.lookup o (eParsedFmlas env))
 
     atLit :: AtPos Literal -> MakeSpan s ()
     atLit (AtPos _ (NConst _ _)) = return ()
@@ -103,6 +105,11 @@ toSpans = \st -> runST $ VD.new 0 >>= \v -> toSpans' v st >> VD.unsafeFreeze v w
     atLisp q (AtLisp _ (ADottedList l es r)) = atLisp q l >> mapM_ (atLisp q) es >> atLisp q r
     atLisp _ (AtLisp _ (AFormula f)) = formula f
     atLisp _ (AtLisp _ _) = return ()
+
+    qExpr :: QExpr -> MakeSpan s ()
+    qExpr (QApp (AtPos o t) es) =
+      asks (H.lookup t) >>= push o t . PIAtom True >> mapM_ qExpr es
+    qExpr (QUnquote e) = atLisp False e
 
 getPosInfo :: AST -> V.Vector Spans -> Offset -> Maybe (AtPos Stmt, Span PosInfo)
 getPosInfo ast spans o =
