@@ -1,5 +1,5 @@
 delimiter $ ( [ { ~ , $
-          $ } ] ) ~ , $;
+          $ } ] ) , $;
 strict provable sort wff;
 term im (ph ps: wff): wff; infixr im: $->$ prec 25;
 term not (ph: wff): wff; prefix not: $~$ prec 40;
@@ -188,6 +188,7 @@ theorem alan (a b: wff x): $ A. x (a /\ b) <-> A. x a /\ A. x b $ =
 '(ibii (iand (alimi anl) (alimi anr)) (imp (syl (alimi ian) ax_4)));
 theorem exim (a b: wff x): $ A. x (a -> b) -> E. x a -> E. x b $ =
 '(syl (syl (alimi con3) ax_4) con3);
+theorem eximi (a b: wff x) (h: $ a -> b $): $ E. x a -> E. x b $ = '(exim (ax_gen h));
 theorem iex (a: wff x): $ a -> E. x a $ =
 '(syl (syl (!! ax_5 y) ax_12) (mpi ax_6 exim));
 theorem alnex (a: wff x): $ A. x ~a <-> ~(E. x a) $ = 'notnot;
@@ -198,8 +199,6 @@ theorem eal (a: wff x): $ A. x a -> a $ = '(ax_3 (sylib iex exnal));
 theorem iald (a: wff) (b: wff x) (h: $ a -> b $): $ a -> A. x b $ = '(syl ax_5 (alimi h));
 theorem exor (a b: wff x): $ E. x (a \/ b) <-> E. x a \/ E. x b $ =
 '(bitr (notbii (bitr (albii notor) alan)) notan);
-theorem exim2 (a b: wff x): $ E. x (a -> b) <-> (A. x a -> E. x b) $ =
-'(x _);
 
 local def nf {x: nat} (a: wff x): wff = $ A. x (a -> A. x a) $;
 prefix nf: $F/$ prec 10;
@@ -210,16 +209,56 @@ theorem nfri (a: wff x) (h: $ a -> A. x a $): $ F/ x a $ = '(ax_gen h);
 theorem nfal1 (a: wff x): $ F/ x A. x a $ = '(ax_gen ax_5);
 theorem nfal (a: wff x y) (h: $ F/ x a $): $ F/ x A. y a $ =
 '(nfri (syl (alimi (nfi h)) ax_11));
+theorem nfnot (a: wff x) (h: $ F/ x a $): $ F/ x ~a $ =
+'(nfri (con1 (syl (eximi (nfi h)) (syl (con1 (! ax_10 x a)) eal))));
+theorem nfim (a b: wff x) (h1: $ F/ x a $) (h2: $ F/ x b $): $ F/ x a -> b $ =
+'(nfri (cases
+   (syl6 (com12 id) (syl (nfi h2) (alimi ax_1)))
+   (a1d (syl (nfi (nfnot h1)) (alimi absurd)))));
+theorem nfan (a b: wff x) (h1: $ F/ x a $) (h2: $ F/ x b $): $ F/ x a /\ b $ = '(nfnot (nfim h1 (nfnot h2)));
+theorem nfor (a b: wff x) (h1: $ F/ x a $) (h2: $ F/ x b $): $ F/ x a \/ b $ = '(nfim (nfnot h1) h2);
+theorem nfbi (a b: wff x) (h1: $ F/ x a $) (h2: $ F/ x b $): $ F/ x a <-> b $ = '(nfan (nfim h1 h2) (nfim h2 h1));
+theorem nfex1 (a: wff x): $ F/ x E. x a $ = '(nfnot nfal1);
+theorem nfex (a: wff x y) (h: $ F/ x a $): $ F/ x E. y a $ = '(nfnot (nfal (nfnot h)));
 
-theorem eexb (a: wff x) (b: wff): $ E. x (a -> b) <-> (A. x a -> b) $;
+theorem ialdh (a b: wff x) (h1: $ F/ x a $) (h2: $ a -> b $): $ a -> A. x b $ =
+'(syl (nfi h1) (alimi h2));
+theorem eexh (a b: wff x) (h1: $ F/ x b $) (h2: $ a -> b $): $ E. x a -> b $ =
+'(con1 (ialdh (nfnot h1) (con3 h2)));
+theorem eex (a: wff x) (b: wff) (h: $ a -> b $): $ E. x a -> b $ = '(eexh nfv h);
+theorem eexdh (a b c: wff x) (h1: $ F/ x a $) (h2: $ F/ x c $)
+  (h3: $ a -> b -> c $): $ a -> E. x b -> c $ =
+'(con1d (exp (ialdh (nfan h1 (nfnot h2)) (imp (con3d h3)))));
+theorem eexd (a: wff) (b: wff x) (c: wff)
+  (h: $ a -> b -> c $): $ a -> E. x b -> c $ = '(eexdh nfv nfv h);
+theorem eexb (a: wff x) (b: wff): $ (E. x a -> b) <-> A. x (a -> b) $ =
+'(ibii (ialdh (nfim nfex1 nfv) (imim1i iex)) (eexdh nfal1 nfv eal));
 theorem eale (a: nat) (b: wff x) (c: wff)
-  (e: $ x = a -> (b <-> c) $): $ A. x b -> c $;
+  (e: $ x = a -> (b <-> c) $): $ A. x b -> c $ =
+'(eexh (nfim nfal1 nfv) (syl6 (alimd (bi1d e)) eal) ax_6);
+theorem iexe (a: nat) (b: wff x) (c: wff)
+  (e: $ x = a -> (b <-> c) $): $ c -> E. x b $ = '(con2 (eale (notbid e)));
+
+theorem eqtr3: $ b = a -> b = c -> a = c $ = 'ax_7;
+theorem eqid: $ a = a $ = '(!! eex x (imidm ax_7) ax_6);
+theorem eqcom: $ a = b -> b = a $ = '(mpi eqid ax_7);
+theorem eqtr: $ a = b -> b = c -> a = c $ = '(syl eqcom ax_7);
+theorem eqtr4: $ a = b -> c = b -> a = c $ = '(syl5 eqcom eqtr);
 
 def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation sb (a x ph) = ($[$:30) a ($/$:0) x ($]$:0) ph;
+
+theorem sbeq (a: nat) (b: wff x): $ x = a -> (b <-> [a / x] b) $ =
+'(ibid (exp (!! iald y (a1d (syl (anwr ax_5) ax_12))))
+  (mpi ax_6 (eexd (exp (syl5 eal (syld (com12 (imim1i anr))
+    (syl (imp eqtr4) (com12 eal))))))));
+theorem nfsb1 (a: nat) (b: wff x): $ F/ x [a / x] b $ =
+'(!! nfal _ y (nfim nfv nfal1));
+theorem nfsb (a: nat) (b: wff x) (h: $ F/ x b $): $ F/ x [a / x] b $ =
+'(!! nfal _ y (nfim nfv (nfal (nfim nfv h))));
 
 strict sort set;
 term ab {x: nat} (ph: wff x): set;
