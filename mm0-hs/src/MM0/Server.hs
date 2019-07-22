@@ -72,6 +72,7 @@ run debug rin = do
   lspHandlers = def {
     initializedHandler                       = Just $ passHandler NotInitialized,
     hoverHandler                             = Just $ passHandler ReqHover,
+    definitionHandler                        = Just $ passHandler ReqDefinition,
     didOpenTextDocumentNotificationHandler   = Just $ passHandler NotDidOpenTextDocument,
     didChangeTextDocumentNotificationHandler = Just $ passHandler NotDidChangeTextDocument,
     didCloseTextDocumentNotificationHandler  = Just $ passHandler NotDidCloseTextDocument,
@@ -207,15 +208,32 @@ reactor debug lf inp = do
         reactorLogs $ "reactor:got NotCancelRequestFromClient:" ++ show msg
 
       ReqHover req -> do
-        reactorLogs $ "reactor:got HoverRequest:" ++ show req
         let TextDocumentPositionParams jdoc (Position l c) = req ^. J.params
             doc = toNormalizedUri $ jdoc ^. J.uri
         hover <- getFileCache doc <&> \case
           Just (FC _ larr (Just (FP ast sps (Just env)))) -> do
-            (stmt, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
-            makeHover env (toRange larr o1 o2) stmt pi'
+            (_, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
+            makeHover env (toRange larr o1 o2) pi'
           _ -> Nothing
         reactorSend $ RspHover $ makeResponseMessage req hover
+
+      ReqDefinition req -> do
+        let TextDocumentPositionParams jdoc (Position l c) = req ^. J.params
+            uri = jdoc ^. J.uri
+            doc = toNormalizedUri uri
+            makeErr code msg = RspError $
+              makeResponseError (responseId $ req ^. J.id) $
+              ResponseError code msg Nothing
+            makeResponse = RspDefinition . makeResponseMessage req
+        resp <- getFileCache doc <&> \case
+          Just (FC _ larr (Just (FP ast sps (Just env)))) -> Just $ do
+            (stmt, CA.Span _ pi' _) <- maybeToList $ getPosInfo ast sps (posToOff larr l c)
+            goToDefinition larr env stmt pi'
+          _ -> Nothing
+        reactorSend $ case resp of
+          Nothing -> makeErr InternalError "could not get file data"
+          Just [a] -> makeResponse $ SingleLoc $ Location uri a
+          Just as -> makeResponse $ MultiLoc $ Location uri <$> as
 
       om -> reactorLogs $ "reactor: got HandlerRequest:" ++ show om
 
@@ -319,12 +337,12 @@ getFileCache doc = do
           _ -> return Nothing
       in go
 
-makeHover :: CE.Env -> Range -> CA.AtPos CA.Stmt -> PosInfo -> Maybe Hover
-makeHover env range _ (PosInfo t pi') = case pi' of
+makeHover :: CE.Env -> Range -> PosInfo -> Maybe Hover
+makeHover env range (PosInfo t pi') = case pi' of
   PISort -> do
     (_, o, sd) <- H.lookup t (CE.eSorts env)
     Just $ code $ ppStmt $ CA.Sort o t sd
-  PIVar o -> code . ppBinder <$> o
+  PIVar bi -> code . ppBinder <$> bi
   PITerm -> do
     (_, _, d, _) <- H.lookup t (CE.eDecls env)
     Just $ code $ ppDecl env t d
@@ -337,3 +355,24 @@ makeHover env range _ (PosInfo t pi') = case pi' of
 
   hover ms = Hover (HoverContents ms) (Just range)
   code = hover . markedUpContent "mm0" . render'
+
+goToDefinition :: Lines -> CE.Env -> CA.AtPos CA.Stmt -> PosInfo -> [Range]
+goToDefinition larr env _ (PosInfo t pi') = case pi' of
+  PISort -> maybeToList $
+    H.lookup t (CE.eSorts env) <&> \(_, o, _) -> range o t
+  PIVar bi -> maybeToList $ binderRange <$> bi
+  PITerm -> maybeToList $
+    H.lookup t (CE.eDecls env) <&> \(_, o, _, _) -> range o t
+  PIAtom b obi ->
+    (case (b, obi) of
+      (True, Just bi) -> [binderRange bi]
+      (True, Nothing) -> maybeToList $
+        H.lookup t (CE.eDecls env) <&> \(_, o, _, _) -> range o t
+      _ -> []) ++
+    maybeToList (
+      H.lookup t (CE.eLispNames env) >>= fst <&> \o -> range o t)
+  _ -> []
+  where
+  range o t' = toRange larr o (o + T.length t')
+  binderRange (CA.Binder o l _) =
+    range o (fromMaybe "_" (CA.localName l))

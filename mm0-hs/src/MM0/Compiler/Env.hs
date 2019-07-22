@@ -242,7 +242,7 @@ data ThmCtx = ThmCtx {
 data Env = Env {
   eTimeout :: Int,
   eLispData :: VD.IOVector LispVal,
-  eLispNames :: H.HashMap Ident Int,
+  eLispNames :: H.HashMap Ident (Maybe Offset, Int),
   eCounter :: SeqCounter,
   eSorts :: H.HashMap Sort (SeqNum, Offset, SortData),
   eProvableSorts :: [Sort],
@@ -265,9 +265,9 @@ runElab m errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
   dat <- VD.new 0
-  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident Int -> IO (H.HashMap Ident Int)
+  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident (Maybe Offset, Int) -> IO (H.HashMap Ident (Maybe Offset, Int))
       ins [] _ hm = return hm
-      ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x n hm)
+      ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x (Nothing, n) hm)
   hm <- ins lvs 0 H.empty
   caps <- getNumCapabilities
   withTaskGroup caps $ \g -> do
@@ -361,12 +361,12 @@ lispLookupNum n = do
 lispLookupName :: T.Text -> ElabM LispVal
 lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
   Nothing -> mzero
-  Just n -> lispLookupNum n
+  Just (_, n) -> lispLookupNum n
 
-lispDefine :: T.Text -> LispVal -> ElabM ()
-lispDefine x v = do
+lispDefine :: Offset -> T.Text -> LispVal -> ElabM ()
+lispDefine o x v = do
   n <- lispAlloc v
-  modify $ \env -> env {eLispNames = H.insert x n (eLispNames env)}
+  modify $ \env -> env {eLispNames = H.insert x (Just o, n) (eLispNames env)}
 
 newRef :: a -> ElabM (TVar a)
 newRef = liftIO . newTVarIO

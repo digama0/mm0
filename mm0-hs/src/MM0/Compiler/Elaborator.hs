@@ -448,8 +448,8 @@ lcInsert x v (LCtx ctx) = LCtx (H.insert x v ctx)
 
 evalToplevel :: AtLisp -> ElabM ()
 evalToplevel (AtLisp _ (AList (AtLisp o (AAtom "def") : es))) = do
-  (AtPos _ x, v) <- evalDefine o def es
-  unless (x == "_") $ lispDefine x v
+  (AtPos o' x, v) <- evalDefine o def es
+  unless (x == "_") $ lispDefine o' x v
 evalToplevel (AtLisp o e) = evalAndPrint o e
 
 evalAndPrint :: Offset -> LispAST -> ElabM ()

@@ -277,11 +277,11 @@ ppVis Local = "local "
 ppVis VisDefault = mempty
 
 ppDecl :: Env -> Ident -> Decl -> Doc Void
-ppDecl _ x (DTerm bis ty) = "term" <+> pretty x <>
+ppDecl _ x (DTerm bis ty) = group $ "term" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <+> ppDepType ty <> ";")
-ppDecl env x (DAxiom bis hyps ret) = "axiom" <+> pretty x <>
+ppDecl env x (DAxiom bis hyps ret) = group $ "axiom" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")
-ppDecl env x (DDef vis bis ty _ val) = ppVis vis <> "def" <+> pretty x <>
+ppDecl env x (DDef vis bis ty _ val) = group $ ppVis vis <> "def" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <+> ppDepType ty <+> "=") <> softline <> ppSExpr env val
-ppDecl env x (DTheorem vis bis hyps ret _) = ppVis vis <> "theorem" <+> pretty x <>
+ppDecl env x (DTheorem vis bis hyps ret _) = group $ ppVis vis <> "theorem" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")
