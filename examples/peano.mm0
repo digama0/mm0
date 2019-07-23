@@ -53,13 +53,14 @@ notation ab {x: nat} (ph: wff x): set = (${$:max) x ($|$:0) ph ($}$:0);
 term el: nat > set > wff; infixl el: $e.$ prec 50;
 axiom elab (a: nat) {x: nat} (ph: wff x):
   $ a e. {x | ph} <-> [ a / x ] ph $;
+axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 
 def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
 infixl eqs: $==$ prec 50;
 
 term the: set > nat;
-axiom the_eq {x: nat} (a: nat): $ the {x | x = a} = a $;
-axiom eqthe (A B: set): $ A == B -> the A = the B $;
+axiom theid {x: nat} (a: nat): $ the {x | x = a} = a $;
+axiom theeq (A B: set): $ A == B -> the A = the B $;
 
 def Inter (A B: set) (.x: nat): set = $ {x | x e. A /\ x e. B} $;
 infixl Inter: $i^i$ prec 70;
