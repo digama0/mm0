@@ -216,7 +216,7 @@ data DeclNota = NPrefix Token | NInfix Token | NCoe Sort Sort
 data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
-  | DDef Visibility [PBinder] DepType [(Offset, VarName, Sort)] SExpr
+  | DDef Visibility [PBinder] DepType (Maybe ([(Offset, VarName, Sort)], SExpr))
   | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM Proof)
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort deriving (Show)
@@ -256,17 +256,19 @@ instance Default Env where
   def = Env 5000000 undefined H.empty def H.empty def H.empty def def undefined def
 
 data ElabFuncs = ElabFuncs {
+  efMM0 :: Bool,
   efReport :: ElabError -> IO (),
   efAsync :: forall a. IO a -> IO (Async a) }
 type Elab = RWST ElabFuncs () Env IO
 type ElabM = MaybeT Elab
 
-runElab :: Elab a -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
-runElab m errs lvs = do
+runElab :: Elab a -> Bool -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
+runElab m mm0 errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
   dat <- VD.new 0
-  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident (Maybe Offset, Int) -> IO (H.HashMap Ident (Maybe Offset, Int))
+  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident (Maybe Offset, Int) ->
+        IO (H.HashMap Ident (Maybe Offset, Int))
       ins [] _ hm = return hm
       ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x (Nothing, n) hm)
   hm <- ins lvs 0 H.empty
@@ -278,7 +280,7 @@ runElab m errs lvs = do
         forM_ decls $ \case
           (_, _, DTheorem _ _ _ _ tm, _) -> () <$ runMaybeT tm
           _ -> return ()
-    (a, env, _) <- runRWST m' (ElabFuncs report (async g)) def {eLispData = dat, eLispNames = hm}
+    (a, env, _) <- runRWST m' (ElabFuncs mm0 report (async g)) def {eLispData = dat, eLispNames = hm}
     errs' <- readTVarIO pErrs
     return (a, errs', env)
 
@@ -295,7 +297,10 @@ resuming :: ElabM () -> Elab ()
 resuming m = () <$ runMaybeT m
 
 reportErr :: ElabError -> ElabM ()
-reportErr e = lift $ ask >>= \(ElabFuncs f _) -> lift $ f e
+reportErr e = lift $ asks efReport >>= \f -> lift $ f e
+
+ifMM0 :: ElabM () -> ElabM ()
+ifMM0 m = asks efMM0 >>= \b -> when b m
 
 escapeErr :: ElabError -> ElabM a
 escapeErr e = reportErr e >> mzero
@@ -345,8 +350,8 @@ try :: ElabM a -> ElabM (Maybe a)
 try = lift . runMaybeT
 
 forkElabM :: ElabM a -> ElabM (ElabM a)
-forkElabM m = lift $ RWST $ \r@(ElabFuncs _ asyncf) s -> do
-  a <- asyncf $ fst <$> evalRWST (runMaybeT m) r s
+forkElabM m = lift $ RWST $ \r s -> do
+  a <- efAsync r $ fst <$> evalRWST (runMaybeT m) r s
   return (MaybeT $ lift $ wait a, s, ())
 
 lispAlloc :: LispVal -> ElabM Int
@@ -387,7 +392,7 @@ getSort v s =
 lookupTerm :: Text -> Env -> Maybe (SeqNum, Offset, [PBinder], DepType, Maybe DeclNota)
 lookupTerm v env = H.lookup v (eDecls env) >>= \case
     (n, o, DTerm args r, no) -> Just (n, o, args, r, no)
-    (n, o, DDef _ args r _ _, no) -> Just (n, o, args, r, no)
+    (n, o, DDef _ args r _, no) -> Just (n, o, args, r, no)
     _ -> Nothing
 
 getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType, Maybe DeclNota)

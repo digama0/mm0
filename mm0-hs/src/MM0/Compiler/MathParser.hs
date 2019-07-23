@@ -3,7 +3,7 @@ module MM0.Compiler.MathParser (parseMath, QExpr(..)) where
 
 import Control.Monad
 import Control.Monad.State
-import Control.Monad.Trans.Reader
+import Control.Monad.Reader
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T

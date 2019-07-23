@@ -1,6 +1,6 @@
 module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, render',
   ppExpr', (<+>), unifyErr, getStat, ppMVar, ppExprCyc, ppStmt, ppBinder,
-  ppPBinder, ppDecl) where
+  ppPBinder, ppGroupedBinders, ppDecl) where
 
 import Control.Applicative
 import Control.Concurrent.STM
@@ -214,8 +214,8 @@ ppBinderGroup b ls@(l : _) ty =
     Nothing -> mempty
     Just t -> ":" <+> ppType t
 
-_ppGroupedBinders :: [Binder] -> Doc Void
-_ppGroupedBinders bis = layout False (join' bis Nothing) where
+ppGroupedBinders :: [Binder] -> Doc Void
+ppGroupedBinders bis = layout False (join' bis Nothing) where
   layout :: Bool -> [([Local], Maybe Type)] -> Doc Void
   layout _ [] = mempty
   layout _ ((gr, ty@(Just (TFormula _))) : grs) =
@@ -281,7 +281,9 @@ ppDecl _ x (DTerm bis ty) = group $ "term" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <+> ppDepType ty <> ";")
 ppDecl env x (DAxiom bis hyps ret) = group $ "axiom" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")
-ppDecl env x (DDef vis bis ty _ val) = group $ ppVis vis <> "def" <+> pretty x <>
-  nest 2 (ppGroupedPBinders bis <> ":" <+> ppDepType ty <+> "=") <> softline <> ppSExpr env val
+ppDecl env x (DDef vis bis ty val) = group $ ppVis vis <> "def" <+> pretty x <>
+  nest 2 (ppGroupedPBinders bis <> ":" <+> ppDepType ty) <> case val of
+    Nothing -> ";"
+    Just (_, v) -> space <> "=" <> softline <> ppSExpr env v <> ";"
 ppDecl env x (DTheorem vis bis hyps ret _) = group $ ppVis vis <> "theorem" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")

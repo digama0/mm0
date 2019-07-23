@@ -2,6 +2,7 @@
 module MM0.Compiler.Elaborator (elaborate, ErrorLevel(..), ElabError(..)) where
 
 import Control.Monad.State
+import Control.Monad.RWS.Strict
 import Data.List
 import Data.Bits
 import Data.Word8
@@ -22,9 +23,9 @@ import MM0.Compiler.MathParser
 import MM0.Compiler.PrettyPrinter
 import MM0.Util
 
-elaborate :: [ParseError] -> AST -> IO ([ElabError], Env)
-elaborate errs ast = do
-  (_, errs', env) <- runElab (mapM_ elabStmt ast) (toElabError <$> errs) initialBindings
+elaborate :: Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
+elaborate mm0 errs ast = do
+  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 (toElabError <$> errs) initialBindings
   return (errs', env)
 
 elabStmt :: AtPos Stmt -> Elab ()
@@ -37,7 +38,9 @@ elabStmt (AtPos pos s) = resuming $ withTimeout pos $ case s of
   Notation (Infix r px x tk prec) -> addInfix r px x tk prec
   Notation (NNotation px x bis _ lits) -> addNotation px x bis lits
   Notation (Coercion px x s1 s2) -> addCoercion px x s1 s2
-  Do lvs -> mapM_ evalToplevel lvs
+  Do lvs -> do
+    ifMM0 $ reportAt pos ELWarning "(MM0 mode) do block not supported"
+    mapM_ evalToplevel lvs
   _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
@@ -70,7 +73,9 @@ inferDepType (AtDepType (AtPos o t) ts) = do
 
 inferBinder :: Binder -> ElabM (Maybe (Offset, Local, InferResult))
 inferBinder bi@(Binder o l oty) = case oty of
-  Nothing -> Nothing <$ addVar True
+  Nothing -> do
+    ifMM0 $ reportAt o ELWarning "(MM0 mode) missing type"
+    Nothing <$ addVar True
   Just (TType ty) -> inferDepType ty >> Nothing <$ addVar False
   Just (TFormula f) -> do
     ir <- parseMath f >>= inferQExprProv
@@ -94,22 +99,30 @@ inferBinder bi@(Binder o l oty) = case oty of
 addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
   [Binder] -> Maybe [Type] -> Maybe AtLisp -> ElabM ()
 addDecl vis dk px x bis ret v = do
+  mm0 <- asks efMM0
+  when (mm0 && vis /= VisDefault) $
+    reportAt px ELWarning "(MM0 mode) visibility modifiers not supported"
   let (bis', ret') = unArrow bis ret
   decl <- withInfer $ do
     fmlas <- catMaybes <$> mapM inferBinder bis'
     decl <- case (dk, ret', v) of
       (DKDef, Just (TType ty), Nothing) -> do
         inferDepType ty
-        reportAt px ELWarning "definition has no body; axiomatizing"
-        (pbs, hs, _) <- buildBinders True bis' fmlas
-        unless (null hs) $ error "impossible"
-        return (DTerm pbs (unDepType ty))
+        if mm0 then do
+          (pbs, hs, _) <- buildBinders px True bis' fmlas
+          unless (null hs) $ error "impossible"
+          return $ DDef vis pbs (unDepType ty) Nothing
+        else do
+          reportAt px ELWarning "definition has no body; axiomatizing"
+          (pbs, hs, _) <- buildBinders px True bis' fmlas
+          unless (null hs) $ error "impossible"
+          return $ DTerm pbs (unDepType ty)
       (DKDef, _, Just (AtLisp _ (AFormula f))) -> do
         let ret'' = case ret' of Just (TType ty) -> Just ty; _ -> Nothing
         forM_ ret'' inferDepType
         IR _ v' s _ <- parseMath f >>=
           inferQExpr ((\(AtDepType s _) -> (unPos s, False)) <$> ret'')
-        (pbs, hs, dums) <- buildBinders True bis' fmlas
+        (pbs, hs, dums) <- buildBinders px True bis' fmlas
         unless (null hs) $ error "impossible"
         vs <- case ret'' of
           Just (AtDepType (AtPos o _) avs) -> do
@@ -120,32 +133,38 @@ addDecl vis dk px x bis ret v = do
               escapeAt o ("definition has undeclared free variable(s): " <>
                 T.intercalate ", " (S.toList bad))
             return vs1
-          Nothing -> S.toList <$> defcheckExpr pbs v'
-        return (DDef vis pbs (DepType s vs) dums v')
+          Nothing -> do
+            when mm0 $ reportAt px ELWarning "(MM0 mode) def has no return type"
+            S.toList <$> defcheckExpr pbs v'
+        return $ DDef vis pbs (DepType s vs) (Just (dums, v'))
       (DKDef, _, Just (AtLisp o _)) -> unimplementedAt o
       (DKTerm, Just (TType ty), _) -> do
         inferDepType ty
-        (pbs, hs, _) <- buildBinders False bis' fmlas
+        (pbs, hs, _) <- buildBinders px False bis' fmlas
         unless (null hs) $ error "impossible"
         return (DTerm pbs (unDepType ty))
       (DKAxiom, Just (TFormula f), _) -> do
         IR _ eret _ _ <- parseMath f >>= inferQExprProv
-        (pbs, hs, _) <- buildBinders False bis' fmlas
-        return (DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret)
+        (pbs, hs, _) <- buildBinders px False bis' fmlas
+        return $ DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret
       (DKTheorem, Just (TFormula f), _) -> do
         IR _ eret _ _ <- parseMath f >>= inferQExprProv
-        (pbs, hs, _) <- buildBinders False bis' fmlas
+        (pbs, hs, _) <- buildBinders px False bis' fmlas
         case v of
-          Nothing -> do
-            reportAt px ELWarning "theorem proof missing"
-            return (DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret)
+          Nothing ->
+            if mm0 then
+              return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret mzero
+            else do
+              reportAt px ELWarning "theorem proof missing"
+              return $ DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret
           Just lv -> do
+            when mm0 $ reportAt px ELWarning "(MM0 mode) theorem proofs not accepted"
             fork <- forkElabM $ withTimeout px $
               withTC (H.fromList $ (\bi -> (binderName bi, bi)) <$> pbs) $ do
                 forM_ hs $ \(o, on, e) -> forM_ on $ \n ->
                   addSubproof n (sExprToLisp o e) (Atom o n)
                 elabLisp eret lv
-            return (DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork)
+            return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork
       _ -> unimplementedAt px
     checkVarRefs >> return decl
   ins <- gets eDecls >>= checkNew ELError px
@@ -362,9 +381,9 @@ inferQExprProv q = gets eProvableSorts >>= \case
       Just (s2, c) -> return (IR o (c e) s2 False)
       Nothing -> escapeAt o ("type error, expected provable sort, got " <> s)
 
-buildBinders :: Bool -> [Binder] -> [(Offset, Local, InferResult)] ->
+buildBinders :: Offset -> Bool -> [Binder] -> [(Offset, Local, InferResult)] ->
   ElabM ([PBinder], [(Offset, Maybe VarName, SExpr)], [(Offset, VarName, Sort)])
-buildBinders dum bis fs = do
+buildBinders px dum bis fs = do
   ic <- gets eInfer
   let locals = icLocals ic
       newvar :: VarName -> Offset -> Bool -> Sort -> Binder
@@ -382,9 +401,10 @@ buildBinders dum bis fs = do
             LIOld (Binder o l' Nothing) (Just t) ->
               Just (v, Binder o l' (Just (TType (AtDepType (AtPos o t) []))))
             LINew o bd s -> Just (v, newvar v o bd s)
-      bisNew = sortOn fst (mapMaybe f (H.toList locals)) ++ bis1 where
+      bisAdd = sortOn fst (mapMaybe f (H.toList locals)) where
         f (v, LINew o bd s) = Just (v, newvar v o bd s)
         f _ = Nothing
+      bisNew = bisAdd ++ bis1 where
       bisDum = mapMaybe f bisNew where
         f (v, Binder o (LDummy _) (Just (TType (AtDepType (AtPos _ t) [])))) =
           Just (o, v, t)
@@ -398,6 +418,8 @@ buildBinders dum bis fs = do
       return $ Just $ PReg v (unDepType ty)
     (_, Binder o _ Nothing) -> escapeAt o "could not infer type"
     _ -> return Nothing
+  ifMM0 $ unless (null bisAdd) $ reportAt px ELWarning $ render' $
+    "(MM0 mode) missing binders:" <> ppGroupedBinders (snd <$> bisAdd)
   return (catMaybes bis', fmlas, bisDum)
 
 checkVarRefs :: ElabM ()
@@ -845,7 +867,7 @@ elabLisp t e@(AtLisp o _) = do
   forM_ gs' $ \g' -> getRef g' >>= \case
     Goal o' ty -> do
       pp <- ppExpr ty
-      reportAt o' ELError $ render $ dlift $ "|-" <+> doc pp
+      reportAt o' ELError $ render' $ "|-" <+> doc pp
     _ -> return ()
   unless (V.null gs') mzero
   cleanProof o (Ref g)
@@ -854,7 +876,7 @@ cleanProof :: Offset -> LispVal -> ElabM Proof
 cleanProof o (Ref g) = getRef g >>= \case
   Goal o' ty -> do
     pp <- ppExpr ty
-    escapeAt o' $ render $ dlift $ "??? |-" <+> doc pp
+    escapeAt o' $ render' $ "??? |-" <+> doc pp
   e -> cleanProof o e
 cleanProof _ (Atom _ h) = return $ ProofHyp h
 cleanProof o (List [Atom _ ":unfold", ty, List xs, es]) =
@@ -960,10 +982,10 @@ unify o v1@(List (Atom _ t1 : es1)) v2@(List (Atom _ t2 : es2)) =
   if t1 == t2 then go es1 es2 else do
     decls <- gets eDecls
     case (H.lookup t1 decls, H.lookup t2 decls) of
-      (Just (n1, _, _, _), Just (n2, _, DDef _ args2 _ ds2 val2, _))
+      (Just (n1, _, _, _), Just (n2, _, DDef _ args2 _ (Just (ds2, val2)), _))
         | n1 < n2 -> unfold o args2 ds2 val2 es2 v1
-      (Just (_, _, DDef _ args1 _ ds1 val1, _), _) -> unfold o args1 ds1 val1 es1 v2
-      (_, Just (_, _, DDef _ args2 _ ds2 val2, _)) -> unfold o args2 ds2 val2 es2 v1
+      (Just (_, _, DDef _ args1 _ (Just (ds1, val1)), _), _) -> unfold o args1 ds1 val1 es1 v2
+      (_, Just (_, _, DDef _ args2 _ (Just (ds2, val2)), _)) -> unfold o args2 ds2 val2 es2 v1
       _ -> escapeAt o $ "terms do not match: " <> t1 <> " != " <> t2
   where
   go [] [] = return mempty

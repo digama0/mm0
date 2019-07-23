@@ -17,8 +17,6 @@ import Data.Maybe
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import qualified Data.ByteString.Lazy as BL
 import qualified Language.Haskell.LSP.Control as Ctrl (run)
 import Language.Haskell.LSP.Core
 import Language.Haskell.LSP.Diagnostics
@@ -26,16 +24,15 @@ import Language.Haskell.LSP.Messages
 import Language.Haskell.LSP.Types hiding (ParseError)
 import qualified Language.Haskell.LSP.Types.Lens as J
 import Language.Haskell.LSP.VFS
+import System.Timeout
 import System.Exit
 import qualified System.Log.Logger as L
 import qualified Text.Megaparsec.Error as E
 import qualified Data.Rope.UTF16 as Rope
-import qualified MM0.FrontEnd.Parser as P
 import MM0.Compiler.PositionInfo
 import qualified MM0.Compiler.AST as CA
 import qualified MM0.Compiler.Parser as CP
 import MM0.Compiler.PrettyPrinter hiding (doc)
-import qualified MM0.FrontEnd.Elaborator as Elab
 import qualified MM0.Compiler.Env as CE
 import qualified MM0.Compiler.Elaborator as CE
 import MM0.Compiler.Elaborator (ErrorLevel(..))
@@ -100,8 +97,8 @@ data FileCache = FC {
 data ReactorState = RS {
   rsDebug :: Bool,
   rsFuncs :: LspFuncs (),
-  rsDiagThreads :: TVar (H.HashMap (Maybe Int) (Async ())),
-  rsLastParse :: TVar (Maybe (Maybe Int, FileCache)) }
+  rsDiagThreads :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, Async ())),
+  rsLastParse :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, FileCache)) }
 type Reactor a = ReaderT ReactorState IO a
 
 -- ---------------------------------------------------------------------
@@ -121,22 +118,27 @@ publishDiagnostics maxToPublish uri v diags = do
 nextLspReqId :: Reactor LspId
 nextLspReqId = asks (getNextReqId . rsFuncs) >>= liftIO
 
-newDiagThread :: Maybe Int -> Reactor () -> Reactor ()
-newDiagThread version m = ReaderT $ \rs -> do
+newDiagThread :: NormalizedUri -> TextDocumentVersion -> Reactor () -> Reactor ()
+newDiagThread uri version m = ReaderT $ \rs -> do
   let dt = rsDiagThreads rs
   a <- async $ do
-    runReaderT m rs
+    timeout (10 * 1000000) (runReaderT m rs) >>= \case
+      Just () -> return ()
+      Nothing -> runReaderT (reactorErr "server timeout") rs
     as <- atomically $ do
-      as <- readTVar dt
-      let as' = H.delete version as
-      as' <$ writeTVar dt as'
-    forM_ version $ \v -> forM_ (H.toList as) $ \case
-      (Just v', a) | v' < v -> cancel a
-      _ -> return ()
+      H.lookup uri <$> readTVar dt >>= \case
+        Just (v', a) | not (isOutdated v' version) -> do
+          modifyTVar dt $ H.delete uri
+          return $ Just a
+        _ -> return Nothing
+    mapM_ cancel as
   old <- atomically $ do
-    as <- readTVar dt
-    writeTVar dt (H.insert version a as)
-    return (H.lookup version as)
+    H.lookup uri <$> readTVar dt >>= \case
+      Just (v', _) | isOutdated v' version -> return $ Just a
+      Just (_, a') -> do
+        modifyTVar dt $ H.insert uri (version, a)
+        return $ Just a'
+      Nothing -> return Nothing
   mapM_ cancel old
 
 reactorSendId :: (LspId -> FromServerMessage) -> Reactor ()
@@ -176,7 +178,7 @@ isOutdated _ _ = False
 reactor :: Bool -> LspFuncs () -> TChan FromClientMessage -> IO ()
 reactor debug lf inp = do
   th <- atomically $ newTVar H.empty
-  fs <- atomically $ newTVar Nothing
+  fs <- atomically $ newTVar H.empty
   flip runReaderT (RS debug lf th fs) $ forever $ do
     liftIO (atomically $ readTChan inp) >>= \case
       -- Handle any response from a message originating at the server, such as
@@ -277,33 +279,27 @@ elabErrorDiags uri larr errs = toDiag <$> errs where
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
-sendDiagnostics :: NormalizedUri -> Maybe Int -> T.Text -> Reactor ()
+sendDiagnostics :: NormalizedUri -> TextDocumentVersion -> T.Text -> Reactor ()
 sendDiagnostics fileNUri@(NormalizedUri t) version str = do
   fs <- asks rsLastParse
-  liftIO (readTVarIO fs) >>= \case
+  liftIO (readTVarIO fs) >>= \m -> case H.lookup fileNUri m of
     Just (oldv, _) | isOutdated oldv version -> return ()
-    _ -> reactorHandleAll $ newDiagThread version $
+    _ -> reactorHandleAll $ newDiagThread fileNUri version $ do
+      reactorLogs $ "start diagnostics thread " ++ show version
       let fileUri = fromNormalizedUri fileNUri
           file = fromMaybe "" $ uriToFilePath fileUri
           larr = getLines str
-      in if T.isSuffixOf "mm0" t then
-        let diags = case P.parse (BL.fromStrict (T.encodeUtf8 str)) of
-              Left (P.ParseError l c msg) ->
-                [mkDiagnostic (Position l c) (T.pack msg)]
-              Right ast -> case Elab.elabAST ast of
-                Left msg -> [mkDiagnostic (Position 0 0) (T.pack msg)]
-                Right _ -> []
-        in publishDiagnostics 100 fileNUri version (partitionBySource diags)
-      else do
-        diags <- case CP.parseAST file str of
-          (errs, _, Nothing) -> return $ parseErrorDiags larr errs
-          (errs, _, Just ast) -> do
-            (errs', env) <- liftIO $ CE.elaborate errs ast
-            liftIO $ atomically $ modifyTVar fs $ \case
-              fc@(Just (oldv, _)) | isOutdated oldv version -> fc
-              _ -> Just (version, FC str larr ast (toSpans env <$> ast) env)
-            return (elabErrorDiags fileUri larr errs')
-        publishDiagnostics 100 fileNUri version (partitionBySource diags)
+          isMM0 = T.isSuffixOf "mm0" t
+      diags <- case CP.parseAST file str of
+        (errs, _, Nothing) -> return $ parseErrorDiags larr errs
+        (errs, _, Just ast) -> do
+          (errs', env) <- liftIO $ CE.elaborate isMM0 errs ast
+          liftIO $ atomically $ modifyTVar fs $ flip H.alter fileNUri $ \case
+            fc@(Just (oldv, _)) | isOutdated oldv version -> fc
+            _ -> Just (version, FC str larr ast (toSpans env <$> ast) env)
+          return (elabErrorDiags fileUri larr errs')
+      reactorLogs $ "done diagnostics thread " ++ show version
+      publishDiagnostics 100 fileNUri version (partitionBySource diags)
 
 getFileCache :: NormalizedUri -> Reactor (Maybe FileCache)
 getFileCache doc = do
@@ -312,18 +308,22 @@ getFileCache doc = do
     Nothing -> return Nothing
     Just (VirtualFile version str _) ->
       let
-        tryGet = do
+        tryGet 0 = return Nothing
+        tryGet retries = do
           sendDiagnostics doc (Just version) (Rope.toText str)
           dt <- asks rsDiagThreads
           liftIO $ do
-            a <- atomically (H.lookup (Just version) <$> readTVar dt)
-            mapM_ wait a
-        go = asks rsLastParse >>= liftIO . readTVarIO >>= \case
-          Just (Just oldv, fc) | oldv == version -> return (Just fc)
-          Just (oldv, _) | isOutdated oldv (Just version) -> tryGet >> go
-          Nothing -> tryGet >> go
-          _ -> return Nothing
-      in go
+            a <- atomically (H.lookup doc <$> readTVar dt)
+            mapM_ (wait . snd) a
+          go (retries - 1)
+        go retries = do
+          m <- asks rsLastParse >>= liftIO . readTVarIO
+          case H.lookup doc m of
+            Just (Just oldv, fc) | oldv == version -> return (Just fc)
+            Just (oldv, _) | isOutdated oldv (Just version) -> tryGet retries
+            Nothing -> tryGet retries
+            _ -> return Nothing
+      in go (1 :: Int)
 
 makeHover :: CE.Env -> Range -> CA.AtPos CA.Stmt -> PosInfo -> Maybe Hover
 makeHover env range stmt (PosInfo t pi') = case pi' of
@@ -336,7 +336,7 @@ makeHover env range stmt (PosInfo t pi') = case pi' of
     bis <- H.lookup st (CE.eDecls env) <&> \case
       (_, _, CE.DTerm bis _, _) -> bis
       (_, _, CE.DAxiom bis _ _, _) -> bis
-      (_, _, CE.DDef _ bis _ _ _, _) -> bis
+      (_, _, CE.DDef _ bis _ _, _) -> bis
       (_, _, CE.DTheorem _ bis _ _ _, _) -> bis
     bi:_ <- return $ filter (\bi -> CE.binderName bi == t) bis
     Just $ code $ ppPBinder bi

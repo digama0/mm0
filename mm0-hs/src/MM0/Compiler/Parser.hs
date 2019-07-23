@@ -5,7 +5,7 @@ module MM0.Compiler.Parser (parseAST, runParser, PosState(..),
 
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad
-import Control.Monad.Trans.Class
+import Control.Monad.State.Class
 import qualified Control.Monad.Trans.State as ST
 import Data.Void
 import Data.Char
@@ -14,7 +14,6 @@ import Data.List.NonEmpty (NonEmpty(..))
 import Text.Megaparsec hiding (runParser, runParser', ParseError, unPos)
 import qualified Text.Megaparsec as MT
 import Text.Megaparsec.Char
-import Control.Monad.Trans.State
 import qualified Data.Set as S
 import qualified Data.Vector as V
 import qualified Data.Text as T
@@ -26,13 +25,13 @@ import MM0.Compiler.AST
 initialPosState :: String -> s -> PosState s
 initialPosState name s = PosState s 0 (initialPos name) (mkPos 2) ""
 
-type ParsecST e s m = ParsecT e s (StateT [MT.ParseError s e] m)
 type ParseError = MT.ParseError T.Text Void
 type Parser = ParsecT Void T.Text (ST.State [ParseError])
 
 runParser :: Parser a -> String -> Offset -> T.Text -> ([ParseError], Offset, Maybe a)
 runParser p n o s =
-  case runState (runParserT (setOffset o >> liftA2 (,) p getOffset) n s) [] of
+  let m = setOffset o >> liftA2 (,) p getOffset in
+  case ST.runState (runParserT m n s) [] of
     (Left (ParseErrorBundle (l :| ls) pos), errs) ->
       (l : ls ++ errs, pstateOffset pos, Nothing)
     (Right (a, o'), errs) -> (errs, o', Just a)
@@ -45,8 +44,8 @@ parseAST n t = runParser (sc *> (V.fromList <$> stmts)) n 0 t where
       _ -> stmts) <|>
     ([] <$ eof) <?> "expecting command or EOF"
 
-nonFatal :: Monad m => MT.ParseError s e -> ParsecST e s m ()
-nonFatal e = lift (modify (e :))
+nonFatal :: ParseError -> Parser ()
+nonFatal e = modify (e :)
 
 failAt :: Int -> String -> Parser ()
 failAt o s = nonFatal $ FancyError o (S.singleton (ErrorFail s))
@@ -141,12 +140,12 @@ binder :: Parser [Binder]
 binder = braces (f LBound) <|> parens (f LReg) where
   f :: (T.Text -> Local) -> Parser [Binder]
   f bd = liftA2 mk
-    (some (atPos (liftA2 (local bd) (optional (symbol ".")) ident_)))
+    (some (atPos (liftA2 (local' bd) (optional (symbol ".")) ident_)))
     (optional (symbol ":" *> ptype))
-  local :: (T.Text -> Local) -> Maybe () -> T.Text -> Local
-  local _ _ "_" = LAnon
-  local _ (Just _) x = LDummy x
-  local g Nothing x = g x
+  local' :: (T.Text -> Local) -> Maybe () -> T.Text -> Local
+  local' _ _ "_" = LAnon
+  local' _ (Just _) x = LDummy x
+  local' g Nothing x = g x
   mk :: [AtPos Local] -> Maybe Type -> [Binder]
   mk [] _ = []
   mk (AtPos loc l : ls) ty = Binder loc l ty : mk ls ty
