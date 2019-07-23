@@ -209,8 +209,8 @@ reactor debug lf inp = do
             doc = toNormalizedUri $ jdoc ^. J.uri
         hover <- getFileCache doc <&> \case
           Just (FC _ larr ast sps env) -> do
-            (_, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
-            makeHover env (toRange larr o1 o2) pi'
+            (stmt, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
+            makeHover env (toRange larr o1 o2) stmt pi'
           _ -> Nothing
         reactorSend $ RspHover $ makeResponseMessage req hover
 
@@ -325,12 +325,21 @@ getFileCache doc = do
           _ -> return Nothing
       in go
 
-makeHover :: CE.Env -> Range -> PosInfo -> Maybe Hover
-makeHover env range (PosInfo t pi') = case pi' of
+makeHover :: CE.Env -> Range -> CA.AtPos CA.Stmt -> PosInfo -> Maybe Hover
+makeHover env range stmt (PosInfo t pi') = case pi' of
   PISort -> do
     (_, o, sd) <- H.lookup t (CE.eSorts env)
     Just $ code $ ppStmt $ CA.Sort o t sd
-  PIVar bi -> code . ppBinder <$> bi
+  PIVar (Just bi) -> Just $ code $ ppBinder bi
+  PIVar Nothing -> do
+    CA.AtPos _ (CA.Decl _ _ _ st _ _ _) <- return stmt
+    bis <- H.lookup st (CE.eDecls env) <&> \case
+      (_, _, CE.DTerm bis _, _) -> bis
+      (_, _, CE.DAxiom bis _ _, _) -> bis
+      (_, _, CE.DDef _ bis _ _ _, _) -> bis
+      (_, _, CE.DTheorem _ bis _ _ _, _) -> bis
+    bi:_ <- return $ filter (\bi -> CE.binderName bi == t) bis
+    Just $ code $ ppPBinder bi
   PITerm -> do
     (_, _, d, _) <- H.lookup t (CE.eDecls env)
     Just $ code $ ppDecl env t d

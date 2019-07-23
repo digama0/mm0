@@ -6,6 +6,8 @@ import Control.Monad
 import Control.Monad.ST
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import Data.Ord
+import Data.Vector.Algorithms.Intro
 import Data.Vector.Algorithms.Search
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
@@ -48,7 +50,14 @@ type Spans = V.Vector (Span PosInfo)
 type MakeSpan s = ReaderT (H.HashMap VarName Binder) (ST s)
 
 toSpans :: Env -> AtPos Stmt -> Spans
-toSpans env = \st -> runST $ VD.new 0 >>= \v -> toSpans' v st >> VD.unsafeFreeze v where
+toSpans env = \st -> runST $ do
+  v <- VD.new 0
+  toSpans' v st
+  mv <- VD.unsafeFreeze v >>= V.unsafeThaw
+  sortBy (comparing (\(Span o _ _) -> o)) mv
+  V.unsafeFreeze mv
+  where
+
   toSpans' :: forall s. VD.STVector s (Span PosInfo) -> AtPos Stmt -> ST s ()
   toSpans' vec = \st -> runReaderT (atStmt st) H.empty where
 
@@ -91,7 +100,7 @@ toSpans env = \st -> runST $ VD.new 0 >>= \v -> toSpans' v st >> VD.unsafeFreeze
     typ (TFormula f) = formula f
 
     formula :: Formula -> MakeSpan s ()
-    formula (Formula o t) = mapM_ qExpr (I.lookup o (eParsedFmlas env))
+    formula (Formula o _) = mapM_ qExpr (I.lookup o (eParsedFmlas env))
 
     atLit :: AtPos Literal -> MakeSpan s ()
     atLit (AtPos _ (NConst _ _)) = return ()

@@ -30,6 +30,10 @@ liftIO' :: Either String a -> IO a
 liftIO' (Left e) = die e
 liftIO' (Right e) = return e
 
+headMaybe :: [a] -> Maybe a
+headMaybe [] = Nothing
+headMaybe (a:_) = Just a
+
 allUnique :: Ord a => [a] -> Bool
 allUnique = all ((==) 1 . length) . group . sort
 

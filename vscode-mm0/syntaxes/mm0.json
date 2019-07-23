@@ -250,9 +250,9 @@
 					}]
 				},
 				{
-					"begin": "'+\\(",
+					"begin": "('+)\\(",
+					"beginCaptures": {"1": {"name": "string.quoted.other.mm0.lisp"}},
 					"end": "\\)",
-					"name": "string.quoted.other.mm0.lisp",
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{

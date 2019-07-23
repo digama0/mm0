@@ -924,6 +924,8 @@ parseRefine _ (List (Atom o "!!" : t : es)) =
 parseRefine _ (List [Atom o ":verb", e]) = return $ RExact o e
 parseRefine o (List (t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMRegular o' t' <$> mapM (parseRefine o') es
+parseRefine o (UnparsedFormula o' f) =
+  parseMath (Formula o' f) >>= evalQExpr def >>= parseRefine o
 parseRefine o e = escapeAt o $ "syntax error in parseRefine: " <> T.pack (show e)
 
 data UnifyResult = UnifyOK | UnifyUnfold (Q.Seq LispVal)
@@ -1027,7 +1029,8 @@ toExpr s bd (RAtom o x) = do
     Nothing -> modifyTC $ \tc -> tc {tcVars = H.insert x (PBound x s) (tcVars tc)}
   return $ Atom o x
 toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
-  Nothing -> escapeAt o $ "unknown term '" <> t <> "'"
+  Nothing -> if null es then toExpr s bd (RAtom o t) else
+    escapeAt o $ "unknown term '" <> t <> "'"
   Just (_, bis, ret, _) -> do
     let
       refineBis :: [PBinder] -> [RefineExpr] -> ElabM [LispVal]

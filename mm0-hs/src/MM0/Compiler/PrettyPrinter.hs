@@ -1,6 +1,6 @@
 module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, render',
   ppExpr', (<+>), unifyErr, getStat, ppMVar, ppExprCyc, ppStmt, ppBinder,
-  ppDecl) where
+  ppPBinder, ppDecl) where
 
 import Control.Applicative
 import Control.Concurrent.STM
@@ -238,8 +238,8 @@ _ppGroupedBinders bis = layout False (join' bis Nothing) where
   eqType Nothing Nothing = True
   eqType _ _ = False
 
-_ppPBinder :: PBinder -> Doc Void
-_ppPBinder bi = ppPBinderGroup False [bi]
+ppPBinder :: PBinder -> Doc Void
+ppPBinder bi = ppPBinderGroup False [bi]
 
 ppPBinderGroup :: Bool -> [PBinder] -> Doc Void
 ppPBinderGroup _ [] = undefined
