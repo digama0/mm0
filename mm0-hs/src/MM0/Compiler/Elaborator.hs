@@ -911,14 +911,12 @@ imPopBd IMExplicit _ = True
 imPopBd IMBoundOnly bd = bd
 
 data RefineExpr =
-    RPlaceholder Offset
-  | RAtom Offset T.Text
+    RAtom Offset T.Text
   | RApp InferMode Offset T.Text [RefineExpr]
   | RExact Offset LispVal
   deriving (Show)
 
 reOffset :: RefineExpr -> Offset
-reOffset (RPlaceholder o) = o
 reOffset (RAtom o _) = o
 reOffset (RApp _ o _ _) = o
 reOffset (RExact o _) = o
@@ -933,9 +931,8 @@ asAtom _ (Atom o t) = return (o, t)
 asAtom o _ = escapeAt o "expected an 'atom"
 
 parseRefine :: Offset -> LispVal -> ElabM RefineExpr
-parseRefine _ (Atom o "_") = return (RPlaceholder o)
 parseRefine _ (Atom o x) = return (RAtom o x)
-parseRefine o (List []) = return (RPlaceholder o)
+parseRefine o (List []) = return (RAtom o "_")
 parseRefine _ (List [Atom o "!"]) = escapeAt o "expected at least one argument"
 parseRefine _ (List (Atom o "!" : t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMExplicit o' t' <$> mapM (parseRefine o') es
@@ -1039,8 +1036,8 @@ unfold o bis ds val es e2 = buildSubst bis es H.empty where
   buildDummies [] q m = (UnifyUnfold q <>) <$> unify o (sExprSubst o m val) e2
 
 toExpr :: Sort -> Bool -> RefineExpr -> ElabM LispVal
-toExpr s bd (RPlaceholder o) = Ref <$> newMVar o s bd
 toExpr _ _ (RExact _ e) = return e -- TODO: check type
+toExpr s bd (RAtom o "_") = Ref <$> newMVar o s bd
 toExpr s bd (RAtom o x) = do
   H.lookup x . tcVars <$> getTC >>= \case
     Just (PBound _ s') -> do
@@ -1057,7 +1054,7 @@ toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
     let
       refineBis :: [PBinder] -> [RefineExpr] -> ElabM [LispVal]
       refineBis (bi : bis') rs =
-        let (r, rs') = unconsIf True (RPlaceholder o) rs in
+        let (r, rs') = unconsIf True (RAtom o "_") rs in
         liftM2 (:)
           (toExpr (dSort $ binderType bi) (binderBound bi) r)
           (refineBis bis' rs')
@@ -1109,8 +1106,8 @@ refineProof :: VD.IOVector (TVar LispVal) ->
   LispVal -> RefineExpr -> ElabM LispVal
 refineProof gv = refinePf where
   refinePf :: LispVal -> RefineExpr -> ElabM LispVal
-  refinePf ty (RPlaceholder o) = Ref <$> newGoal gv o ty
   refinePf ty (RExact o e) = coerceTo' o ty e
+  refinePf ty (RAtom o "_") = Ref <$> newGoal gv o ty
   refinePf ty (RAtom o h) = try (getSubproof h) >>= \case
     Just v -> coerceTo o ty (Atom o h) v
     Nothing -> try (now >>= getThm h) >>= \case
@@ -1133,7 +1130,7 @@ refineProof gv = refinePf where
       H.HashMap VarName LispVal -> ElabM LispVal
     refineBis (bi : bis') rs f m = do
       let bd = binderBound bi
-          (r, rs') = unconsIf (imPopBd im bd) (RPlaceholder o) rs
+          (r, rs') = unconsIf (imPopBd im bd) (RAtom o "_") rs
       e <- toExpr (dSort $ binderType bi) bd r
       refineBis bis' rs' (f . (e :)) (H.insert (binderName bi) e m)
     refineBis [] rs f m = refineHs hs rs f m
@@ -1141,7 +1138,7 @@ refineProof gv = refinePf where
     refineHs :: [SExpr] -> [RefineExpr] -> ([LispVal] -> [LispVal]) ->
       H.HashMap VarName LispVal -> ElabM LispVal
     refineHs (e : es') rs f m = do
-      let (r, rs') = unconsIf True (RPlaceholder o) rs
+      let (r, rs') = unconsIf True (RAtom o "_") rs
       p <- refinePf (sExprSubst o m e) r
       refineHs es' rs' (f . (p :)) m
     refineHs [] rs f m =

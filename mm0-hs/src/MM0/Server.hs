@@ -285,7 +285,6 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str = do
   liftIO (readTVarIO fs) >>= \m -> case H.lookup fileNUri m of
     Just (oldv, _) | isOutdated oldv version -> return ()
     _ -> reactorHandleAll $ newDiagThread fileNUri version $ do
-      reactorLogs $ "start diagnostics thread " ++ show version
       let fileUri = fromNormalizedUri fileNUri
           file = fromMaybe "" $ uriToFilePath fileUri
           larr = getLines str
@@ -298,7 +297,6 @@ sendDiagnostics fileNUri@(NormalizedUri t) version str = do
             fc@(Just (oldv, _)) | isOutdated oldv version -> fc
             _ -> Just (version, FC str larr ast (toSpans env <$> ast) env)
           return (elabErrorDiags fileUri larr errs')
-      reactorLogs $ "done diagnostics thread " ++ show version
       publishDiagnostics 100 fileNUri version (partitionBySource diags)
 
 getFileCache :: NormalizedUri -> Reactor (Maybe FileCache)

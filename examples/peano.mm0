@@ -17,6 +17,10 @@ infixl an: $/\$ prec 35;
 def or (ph ps: wff): wff = $ ~ph -> ps $;
 infixl or: $\/$ prec 30;
 
+def ifp (ph a b: wff): wff;
+theorem ifptrue (ph a b: wff): $ ph -> (ifp ph a b <-> a) $;
+theorem ifpfalse (ph a b: wff): $ ~ph -> (ifp ph a b <-> b) $;
+
 term wtru: wff; prefix wtru: $T.$ prec max;
 axiom tru: $ T. $;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
@@ -58,10 +62,6 @@ axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
 infixl eqs: $==$ prec 50;
 
-term the: set > nat;
-axiom theid {x: nat} (a: nat): $ the {x | x = a} = a $;
-axiom theeq (A B: set): $ A == B -> the A = the B $;
-
 def Inter (A B: set) (.x: nat): set = $ {x | x e. A /\ x e. B} $;
 infixl Inter: $i^i$ prec 70;
 
@@ -73,10 +73,6 @@ def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $V$ prec max;
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
   ($S[$:70) a ($/$:0) x ($]$:0) A;
-
-def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the(S[ a / x ] {y | y = b}) $;
-notation sbn (a: nat) {x: nat} (b: nat x): nat =
-  ($N[$:70) a ($/$:0) x ($]$:0) b;
 
 term d0: nat; prefix d0: $0$ prec max;
 term suc: nat > nat;
@@ -92,10 +88,18 @@ def d8:  nat = $suc 7$; prefix d8:  $8$  prec max;
 def d9:  nat = $suc 8$; prefix d9:  $9$  prec max;
 def d10: nat = $suc 9$; prefix d10: $10$ prec max;
 
-axiom peano1 (a: nat): $ ~(0 = suc a) $;
+axiom peano1 (a: nat): $ suc a != 0 $;
 axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
 axiom peano5 {x: nat} (ph: wff x):
   $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
+
+term the: set > nat;
+axiom theid {x: nat} (A: set) (a: nat): $ A == {x | x = a} -> the A = a $;
+axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
+
+def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the(S[ a / x ] {y | y = b}) $;
+notation sbn (a: nat) {x: nat} (b: nat x): nat =
+  ($N[$:70) a ($/$:0) x ($]$:0) b;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
 term mul: nat > nat > nat; infixl mul: $*$ prec 70;
@@ -110,10 +114,6 @@ infixl le: $<=$ prec 50;
 
 def lt (a b: nat): wff = $ suc a <= b $;
 infixl lt: $<$ prec 50;
-
-def ifp (ph a b: wff): wff;
-theorem ifptrue (ph a b: wff): $ ph -> ifp ph a b <-> a $;
-theorem ifpfalse (ph a b: wff): $ ~ph -> ifp ph a b <-> b $;
 
 def if (ph: wff) (a b: nat): nat;
 theorem iftrue (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
