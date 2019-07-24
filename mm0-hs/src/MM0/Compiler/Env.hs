@@ -39,17 +39,22 @@ import MM0.Compiler.Parser (ParseError)
 data Proof =
     ProofHyp VarName
   | ProofThm ThmName [SExpr] [Proof]
-  | ProofUnfold SExpr [VarName] Proof
+  | ProofConv SExpr Conv Proof
   | ProofLet VarName Proof Proof
 
-data Syntax = Define | Lambda | Quote | If | Begin | Focus | Let | Letrec
+data Conv =
+    CVar VarName
+  | CApp TermName [Conv]
+  | CSym Conv
+  | CUnfold TermName [SExpr] [VarName] Conv
+
+data Syntax = Define | Lambda | Quote | If | Focus | Let | Letrec
 
 instance Show Syntax where
   showsPrec _ Define = ("def" ++)
   showsPrec _ Lambda = ("fn" ++)
   showsPrec _ Quote = ("quote" ++)
   showsPrec _ If = ("if" ++)
-  showsPrec _ Begin = ("begin" ++)
   showsPrec _ Focus = ("focus" ++)
   showsPrec _ Let = ("let" ++)
   showsPrec _ Letrec = ("letrec" ++)
