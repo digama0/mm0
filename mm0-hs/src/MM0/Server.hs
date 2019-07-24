@@ -75,7 +75,8 @@ run debug rin = do
     didCloseTextDocumentNotificationHandler  = Just $ passHandler NotDidCloseTextDocument,
     didSaveTextDocumentNotificationHandler   = Just $ const $ return (),
     cancelNotificationHandler                = Just $ passHandler NotCancelRequestFromClient,
-    responseHandler                          = Just $ passHandler RspFromClient }
+    responseHandler                          = Just $ passHandler RspFromClient,
+    customNotificationHandler                = Just $ passHandler NotCustomClient }
 
   passHandler :: (a -> FromClientMessage) -> Handler a
   passHandler c msg = atomically $ writeTChan rin (c msg)
@@ -233,6 +234,9 @@ reactor debug lf inp = do
           Nothing -> makeErr InternalError "could not get file data"
           Just [a] -> makeResponse $ SingleLoc $ Location uri a
           Just as -> makeResponse $ MultiLoc $ Location uri <$> as
+
+      NotCustomClient (NotificationMessage _
+        (CustomClientMethod "$/setTraceNotification") _) -> return ()
 
       om -> reactorLogs $ "reactor: got HandlerRequest:" ++ show om
 
