@@ -22,6 +22,9 @@ instance Functor Span where
 instance Show a => Show (Span a) where
   showsPrec n = showsPrec n . unSpan
 
+textToRange :: Offset -> T.Text -> Range
+textToRange o t = (o, o + T.length t)
+
 unPos :: AtPos a -> a
 unPos (AtPos _ a) = a
 
@@ -78,20 +81,20 @@ data Inout =
 
 data Local = LBound T.Text | LReg T.Text | LDummy T.Text | LAnon deriving (Show)
 
-data AtDepType = AtDepType (AtPos T.Text) [AtPos T.Text] deriving (Show)
+data AtDepType = AtDepType (Span T.Text) [Span T.Text] deriving (Show)
 
 unDepType :: AtDepType -> DepType
-unDepType (AtDepType t ts) = DepType (unPos t) (unPos <$> ts)
+unDepType (AtDepType t ts) = DepType (unSpan t) (unSpan <$> ts)
 
 data Formula = Formula Offset T.Text deriving (Show)
 
 data Type = TType AtDepType | TFormula Formula deriving (Show)
 
 tyOffset :: Type -> Offset
-tyOffset (TType (AtDepType (AtPos o _) _)) = o
+tyOffset (TType (AtDepType (Span (o, _) _) _)) = o
 tyOffset (TFormula (Formula o _)) = o
 
-data Binder = Binder Offset Local (Maybe Type) deriving (Show)
+data Binder = Binder Range Local (Maybe Type) deriving (Show)
 
 isLBound :: Local -> Bool
 isLBound (LBound _) = True

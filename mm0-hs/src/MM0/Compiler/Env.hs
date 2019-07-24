@@ -132,7 +132,7 @@ data ElabError = ElabError {
   eeLevel :: ErrorLevel,
   eeRange :: Range,
   eeMsg :: Text,
-  eeRelated :: [(Offset, Offset, Text)] } deriving (Show)
+  eeRelated :: [(Range, Text)] } deriving (Show)
 
 toElabError :: ParseError -> ElabError
 toElabError e = ElabError ELError (errorOffset e, errorOffset e)
@@ -176,9 +176,9 @@ incCounter (Just s) (SeqCounter c n) = do
 
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
-data PrefixInfo = PrefixInfo Offset Token [PLiteral] deriving (Show)
-data InfixInfo = InfixInfo Offset Token Bool deriving (Show)
-data Coe1 = Coe1 Offset Sort
+data PrefixInfo = PrefixInfo Range Token [PLiteral] deriving (Show)
+data InfixInfo = InfixInfo Range Token Bool deriving (Show)
+data Coe1 = Coe1 Range Sort
 data Coe = Coe Coe1 | Coes Coe Sort Coe
 
 foldCoe :: (Text -> a -> a) -> Coe -> a -> a
@@ -209,7 +209,7 @@ data ParserEnv = ParserEnv {
   pDelims :: Delims,
   pPrefixes :: H.HashMap Token PrefixInfo,
   pInfixes :: H.HashMap Token InfixInfo,
-  pPrec :: H.HashMap Token (Offset, Prec),
+  pPrec :: H.HashMap Token (Range, Prec),
   pCoes :: M.Map Sort (M.Map Sort Coe),
   pCoeProv :: H.HashMap Sort Sort }
 
@@ -221,12 +221,12 @@ data DeclNota = NPrefix Token | NInfix Token | NCoe Sort Sort
 data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
-  | DDef Visibility [PBinder] DepType (Maybe ([(Offset, VarName, Sort)], SExpr))
+  | DDef Visibility [PBinder] DepType (Maybe ([(Range, VarName, Sort)], SExpr))
   | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM Proof)
 
-data LocalInfer = LIOld Binder (Maybe Sort) | LINew Offset Bool Sort deriving (Show)
+data LocalInfer = LIOld Binder (Maybe Sort) | LINew Range Bool Sort deriving (Show)
 
-liOffset :: LocalInfer -> Offset
+liOffset :: LocalInfer -> Range
 liOffset (LIOld (Binder o _ _) _) = o
 liOffset (LINew o _ _) = o
 
@@ -247,11 +247,11 @@ data ThmCtx = ThmCtx {
 data Env = Env {
   eTimeout :: Int,
   eLispData :: VD.IOVector LispVal,
-  eLispNames :: H.HashMap Ident (Maybe Offset, Int),
+  eLispNames :: H.HashMap Ident (Maybe (Range, Range), Int),
   eCounter :: SeqCounter,
-  eSorts :: H.HashMap Sort (SeqNum, Offset, SortData),
+  eSorts :: H.HashMap Sort (SeqNum, (Range, Range), SortData),
   eProvableSorts :: [Sort],
-  eDecls :: H.HashMap Ident (SeqNum, Offset, Decl, Maybe DeclNota),
+  eDecls :: H.HashMap Ident (SeqNum, (Range, Range), Decl, Maybe DeclNota),
   eParsedFmlas :: I.IntMap QExpr,
   ePE :: ParserEnv,
   eInfer :: InferCtx,
@@ -272,8 +272,8 @@ runElab m mm0 errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
   dat <- VD.new 0
-  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident (Maybe Offset, Int) ->
-        IO (H.HashMap Ident (Maybe Offset, Int))
+  let ins :: [(Ident, LispVal)] -> Int -> H.HashMap Ident (Maybe a, Int) ->
+        IO (H.HashMap Ident (Maybe a, Int))
       ins [] _ hm = return hm
       ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x (Nothing, n) hm)
   hm <- ins lvs 0 H.empty
@@ -285,7 +285,8 @@ runElab m mm0 errs lvs = do
         forM_ decls $ \case
           (_, _, DTheorem _ _ _ _ tm, _) -> () <$ runMaybeT tm
           _ -> return ()
-    (a, env, _) <- runRWST m' (ElabFuncs mm0 report (async g)) def {eLispData = dat, eLispNames = hm}
+    (a, env, _) <- runRWST m' (ElabFuncs mm0 report (async g))
+      def {eLispData = dat, eLispNames = hm}
     errs' <- readTVarIO pErrs
     return (a, errs', env)
 
@@ -374,10 +375,10 @@ lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
   Nothing -> mzero
   Just (_, n) -> lispLookupNum n
 
-lispDefine :: Offset -> T.Text -> LispVal -> ElabM ()
-lispDefine o x v = do
+lispDefine :: Range -> Range -> T.Text -> LispVal -> ElabM ()
+lispDefine rd rx x v = do
   n <- lispAlloc v
-  modify $ \env -> env {eLispNames = H.insert x (Just o, n) (eLispNames env)}
+  modify $ \env -> env {eLispNames = H.insert x (Just (rd, rx), n) (eLispNames env)}
 
 newRef :: a -> ElabM (TVar a)
 newRef = liftIO . newTVarIO
@@ -388,35 +389,35 @@ getRef = liftIO . readTVarIO
 setRef :: TVar a -> a -> ElabM ()
 setRef x v = liftIO $ atomically $ writeTVar x v
 
-getSort :: Text -> SeqNum -> ElabM (Offset, SortData)
+getSort :: Text -> SeqNum -> ElabM ((Range, Range), SortData)
 getSort v s =
   gets (H.lookup v . eSorts) >>= \case
     Just (n, o, sd) -> guard (n < s) >> return (o, sd)
     _ -> mzero
 
-lookupTerm :: Text -> Env -> Maybe (SeqNum, Offset, [PBinder], DepType, Maybe DeclNota)
+lookupTerm :: Text -> Env -> Maybe (SeqNum, (Range, Range), [PBinder], DepType, Maybe DeclNota)
 lookupTerm v env = H.lookup v (eDecls env) >>= \case
     (n, o, DTerm args r, no) -> Just (n, o, args, r, no)
     (n, o, DDef _ args r _, no) -> Just (n, o, args, r, no)
     _ -> Nothing
 
-getTerm :: Text -> SeqNum -> ElabM (Offset, [PBinder], DepType, Maybe DeclNota)
+getTerm :: Text -> SeqNum -> ElabM ((Range, Range), [PBinder], DepType, Maybe DeclNota)
 getTerm v s = gets (lookupTerm v) >>= \case
   Just (n, o, args, r, no) -> guard (n < s) >> return (o, args, r, no)
   _ -> mzero
 
-lookupThm :: Text -> Env -> Maybe (SeqNum, Offset, [PBinder], [SExpr], SExpr)
+lookupThm :: Text -> Env -> Maybe (SeqNum, (Range, Range), [PBinder], [SExpr], SExpr)
 lookupThm v env = H.lookup v (eDecls env) >>= \case
   (n, o, DAxiom args hyps r, _) -> Just (n, o, args, hyps, r)
   (n, o, DTheorem _ args hyps r _, _) -> Just (n, o, args, hyps, r)
   _ -> Nothing
 
-getThm :: Text -> SeqNum -> ElabM (Offset, [PBinder], [SExpr], SExpr)
+getThm :: Text -> SeqNum -> ElabM ((Range, Range), [PBinder], [SExpr], SExpr)
 getThm v s = gets (lookupThm v) >>= \case
     Just (n, o, args, hyps, r) -> guard (n < s) >> return (o, args, hyps, r)
     _ -> mzero
 
-getDeclNotaOffset :: DeclNota -> ElabM Offset
+getDeclNotaOffset :: DeclNota -> ElabM Range
 getDeclNotaOffset (NPrefix tk) =
   gets ((\(PrefixInfo o _ _) -> o) . (H.! tk) . pPrefixes . ePE)
 getDeclNotaOffset (NInfix tk) =
@@ -533,20 +534,20 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
   toStrs [(_, s1, s2)] = [s1, " -> ", s2]
   toStrs ((_, s1, _) : cs) = s1 : " -> " : toStrs cs
 
-  toRelated :: [(Coe1, Sort, Sort)] -> [(Offset, Offset, Text)]
-  toRelated = fmap $ \(Coe1 o' _, s1, s2) -> (o', o', s1 <> " -> " <> s2)
+  toRelated :: [(Coe1, Sort, Sort)] -> [(Range, Text)]
+  toRelated = fmap $ \(Coe1 o' _, s1, s2) -> (o', s1 <> " -> " <> s2)
 
   addCoeInner :: Coe -> Sort -> Sort ->
     M.Map Sort (M.Map Sort Coe) -> ElabM (M.Map Sort (M.Map Sort Coe))
   addCoeInner c s1 s2 coes = do
     let l = coeToList c s1 s2
     when (s1 == s2) $ do
-      escapeErr $ ElabError ELError (o, o)
+      escapeErr $ ElabError ELError o
         (T.concat ("coercion cycle detected: " : toStrs l))
         (toRelated l)
     try (getCoe' s1 s2) >>= mapM_ (\c2 -> do
       let l2 = coeToList c2 s1 s2
-      escapeErr $ ElabError ELError (o, o)
+      escapeErr $ ElabError ELError o
         (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
         (toRelated (l ++ l2)))
     return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
@@ -563,7 +564,7 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
               c <- getCoe' s1 s2
               let l = coeToList c s1 s2
               let l' = coeToList c' s1 s2'
-              escapeErr $ ElabError ELError (o, o)
+              escapeErr $ ElabError ELError o
                 (T.concat ("coercion diamond to provable detected:\n" :
                   toStrs l ++ " provable\n" : toStrs l' ++ [" provable"]))
                 (toRelated (l ++ l'))

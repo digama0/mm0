@@ -27,15 +27,15 @@ elaborate mm0 errs ast = do
   return (errs', env)
 
 elabStmt :: Span Stmt -> Elab ()
-elabStmt (Span (pos, _) s) = resuming $ withTimeout pos $ case s of
-  Sort px x sd -> addSort px x sd
-  Decl vis dk px x bis ret v -> addDecl vis dk px x bis ret v
+elabStmt (Span rd@(pos, _) s) = resuming $ withTimeout pos $ case s of
+  Sort px x sd -> addSort rd (textToRange px x) x sd
+  Decl vis dk px x bis ret v -> addDecl rd vis dk (textToRange px x) x bis ret v
   Notation (Delimiter cs Nothing) -> lift $ addDelimiters cs cs
   Notation (Delimiter ls (Just rs)) -> lift $ addDelimiters ls rs
-  Notation (Prefix px x tk prec) -> addPrefix px x tk prec
-  Notation (Infix r px x tk prec) -> addInfix r px x tk prec
-  Notation (NNotation px x bis _ lits) -> addNotation px x bis lits
-  Notation (Coercion px x s1 s2) -> addCoercion px x s1 s2
+  Notation (Prefix px x tk prec) -> addPrefix (textToRange px x) x tk prec
+  Notation (Infix r px x tk prec) -> addInfix r (textToRange px x) x tk prec
+  Notation (NNotation px x bis _ lits) -> addNotation (textToRange px x) x bis lits
+  Notation (Coercion px x s1 s2) -> addCoercion (textToRange px x) x s1 s2
   Do lvs -> do
     ifMM0 $ reportAt pos ELWarning "(MM0 mode) do block not supported"
     mapM_ evalToplevel lvs
@@ -45,12 +45,12 @@ elabStmt (Span (pos, _) s) = resuming $ withTimeout pos $ case s of
     () <$ call pos "annotate" [nameOf stmt, ann]
   _ -> unimplementedAt pos
 
-checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
+checkNew :: ErrorLevel -> Range -> T.Text -> (v -> Range) -> T.Text ->
   H.HashMap T.Text v -> ElabM (v -> H.HashMap T.Text v)
 checkNew l o msg f k m = case H.lookup k m of
   Nothing -> return (\v -> H.insert k v m)
   Just a -> do
-    reportErr $ ElabError l (o, o) msg [(f a, f a, "previously declared here")]
+    reportErr $ ElabError l o msg [(f a, "previously declared here")]
     mzero
 
 nameOf :: Span Stmt -> LispVal
@@ -59,35 +59,35 @@ nameOf (Span _ (Decl _ _ px x _ _ _)) = Atom px x
 nameOf (Span _ (Annot _ s)) = nameOf s
 nameOf _ = Bool False
 
-addSort :: Offset -> T.Text -> SortData -> ElabM ()
-addSort px x sd = do
-  ins <- gets eSorts >>= checkNew ELError px
-    ("duplicate sort declaration '" <> x <> "'") (\(_, i, _) -> i) x
+addSort :: Range -> Range -> T.Text -> SortData -> ElabM ()
+addSort rd rx x sd = do
+  ins <- gets eSorts >>= checkNew ELError rx
+    ("duplicate sort declaration '" <> x <> "'") (\(_, (_, i), _) -> i) x
   n <- next
   modify $ \env -> env {
-    eSorts = ins (n, px, sd),
+    eSorts = ins (n, (rd, rx), sd),
     eProvableSorts = (guard (sProvable sd) >> [x]) ++ eProvableSorts env }
 
 inferDepType :: AtDepType -> ElabM ()
-inferDepType (AtDepType (AtPos o t) ts) = do
+inferDepType (AtDepType (Span (o, _) t) ts) = do
   lift $ resuming $ do
     (_, _sd) <- try (now >>= getSort t) >>=
       fromJustAt o ("sort '" <> t <> "' not declared")
     -- TODO: check sd
     return ()
   modifyInfer $ \ic -> ic {
-    icDependents = foldl' (\m (AtPos i x) ->
+    icDependents = foldl' (\m (Span (i, _) x) ->
       H.alter (Just . maybe [i] (i:)) x m) (icDependents ic) ts }
 
-inferBinder :: Binder -> ElabM (Maybe (Offset, Local, InferResult))
-inferBinder bi@(Binder o l oty) = case oty of
+inferBinder :: Binder -> ElabM (Maybe (Range, Local, InferResult))
+inferBinder bi@(Binder os@(o, _) l oty) = case oty of
   Nothing -> do
     ifMM0 $ reportAt o ELWarning "(MM0 mode) missing type"
     Nothing <$ addVar True
   Just (TType ty) -> inferDepType ty >> Nothing <$ addVar False
   Just (TFormula f) -> do
     ir <- parseMath f >>= inferQExprProv
-    return $ Just (o, l, ir)
+    return $ Just (os, l, ir)
   where
 
   addVar :: Bool -> ElabM ()
@@ -98,18 +98,18 @@ inferBinder bi@(Binder o l oty) = case oty of
         when noType $ escapeAt o "cannot infer variable type"
         return $ locals
       Just n -> do
-        ins <- checkNew ELWarning o
+        ins <- checkNew ELWarning os
           ("variable '" <> n <> "' shadows previous declaration")
           liOffset n locals
         return (ins (LIOld bi Nothing))
     modifyInfer $ \ic -> ic {icLocals = locals'}
 
-addDecl :: Visibility -> DeclKind -> Offset -> T.Text ->
+addDecl :: Range -> Visibility -> DeclKind -> Range -> T.Text ->
   [Binder] -> Maybe [Type] -> Maybe AtLisp -> ElabM ()
-addDecl vis dk px x bis ret v = do
+addDecl rd vis dk rx@(px, _) x bis ret v = do
   mm0 <- asks efMM0
   when (mm0 && vis /= VisDefault) $
-    reportAt px ELWarning "(MM0 mode) visibility modifiers not supported"
+    reportSpan rx ELWarning "(MM0 mode) visibility modifiers not supported"
   let (bis', ret') = unArrow bis ret
   decl <- withInfer $ do
     fmlas <- catMaybes <$> mapM inferBinder bis'
@@ -121,7 +121,7 @@ addDecl vis dk px x bis ret v = do
           unless (null hs) $ error "impossible"
           return $ DDef vis pbs (unDepType ty) Nothing
         else do
-          reportAt px ELWarning "definition has no body; axiomatizing"
+          reportSpan rx ELWarning "definition has no body; axiomatizing"
           (pbs, hs, _) <- buildBinders px True bis' fmlas
           unless (null hs) $ error "impossible"
           return $ DTerm pbs (unDepType ty)
@@ -129,20 +129,20 @@ addDecl vis dk px x bis ret v = do
         let ret'' = case ret' of Just (TType ty) -> Just ty; _ -> Nothing
         forM_ ret'' inferDepType
         IR _ v' s _ <- parseMath f >>=
-          inferQExpr ((\(AtDepType s _) -> (unPos s, False)) <$> ret'')
+          inferQExpr ((\(AtDepType s _) -> (unSpan s, False)) <$> ret'')
         (pbs, hs, dums) <- buildBinders px True bis' fmlas
         unless (null hs) $ error "impossible"
         vs <- case ret'' of
-          Just (AtDepType (AtPos o _) avs) -> do
+          Just (AtDepType (Span (o, _) _) avs) -> do
             vs' <- defcheckExpr pbs v'
-            let vs1 = unPos <$> avs
+            let vs1 = unSpan <$> avs
             let bad = foldr S.delete vs' vs1
             unless (S.null bad) $
               escapeAt o ("definition has undeclared free variable(s): " <>
                 T.intercalate ", " (S.toList bad))
             return vs1
           Nothing -> do
-            when mm0 $ reportAt px ELWarning "(MM0 mode) def has no return type"
+            when mm0 $ reportSpan rx ELWarning "(MM0 mode) def has no return type"
             S.toList <$> defcheckExpr pbs v'
         return $ DDef vis pbs (DepType s vs) (Just (dums, v'))
       (DKDef, _, Just (Span (o, _) _)) -> unimplementedAt o
@@ -163,30 +163,30 @@ addDecl vis dk px x bis ret v = do
             if mm0 then
               return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret mzero
             else do
-              reportAt px ELWarning "theorem proof missing"
+              reportSpan rx ELWarning "theorem proof missing"
               return $ DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret
           Just lv -> do
-            when mm0 $ reportAt px ELWarning "(MM0 mode) theorem proofs not accepted"
+            when mm0 $ reportSpan rx ELWarning "(MM0 mode) theorem proofs not accepted"
             fork <- forkElabM $ withTimeout px $
               withTC (H.fromList $ (\bi -> (binderName bi, bi)) <$> pbs) $ do
-                forM_ hs $ \(o, on, e) -> forM_ on $ \n ->
+                forM_ hs $ \((o, _), on, e) -> forM_ on $ \n ->
                   addSubproof n (sExprToLisp o e) (Atom o n)
                 elabLisp eret lv
             return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork
       _ -> unimplementedAt px
     checkVarRefs >> return decl
-  ins <- gets eDecls >>= checkNew ELError px
+  ins <- gets eDecls >>= checkNew ELError rx
     ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'")
-    (\(_, i, _, _) -> i) x
+    (\(_, (_, i), _, _) -> i) x
   n <- next
-  modify $ \env -> env {eDecls = ins (n, px, decl, Nothing)}
+  modify $ \env -> env {eDecls = ins (n, (rd, rx), decl, Nothing)}
 
 unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
 unArrow bis Nothing = (bis, Nothing)
 unArrow bis (Just tys') = mapFst (bis ++) (go tys') where
   go [] = undefined
   go [ty] = ([], Just ty)
-  go (ty:tys) = mapFst (Binder (tyOffset ty) LAnon (Just ty) :) (go tys)
+  go (ty:tys) = mapFst (Binder (tyOffset ty, tyOffset ty) LAnon (Just ty) :) (go tys)
 
 addDelimiters :: [Char] -> [Char] -> Elab ()
 addDelimiters ls rs = modifyPE $ go 2 rs . go 1 ls where
@@ -201,43 +201,43 @@ mkLiterals 0 _ _ = []
 mkLiterals 1 p n = [PVar n p]
 mkLiterals i p n = PVar n PrecMax : mkLiterals (i-1) p (n+1)
 
-addDeclNota :: Offset -> T.Text -> Maybe DeclNota -> DeclNota -> ElabM ()
-addDeclNota px x old new = do
+addDeclNota :: Range -> T.Text -> Maybe DeclNota -> DeclNota -> ElabM ()
+addDeclNota rx x old new = do
   forM_ old $ \no -> do
     i <- getDeclNotaOffset no
-    reportErr $ ElabError ELWarning (px, px + T.length x)
+    reportErr $ ElabError ELWarning rx
       ("term '" <> x <> "' already has a notation")
-      [(i, i, "previously declared here")]
+      [(i, "previously declared here")]
   modify $ \env -> env {eDecls =
     H.adjust (\(s, o, d, _) -> (s, o, d, Just new)) x (eDecls env)}
 
-addPrefix :: Offset -> T.Text -> Const -> Prec -> ElabM ()
-addPrefix px x c@(Const o tk) prec = do
+addPrefix :: Range -> T.Text -> Const -> Prec -> ElabM ()
+addPrefix rx@(px, _) x c@(Const o tk) prec = do
   (_, bis, _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   insertPrec c prec
-  insertPrefixInfo c (PrefixInfo o x (mkLiterals (length bis) prec 0))
-  addDeclNota px x no (NPrefix tk)
+  insertPrefixInfo c (PrefixInfo (textToRange o tk) x (mkLiterals (length bis) prec 0))
+  addDeclNota rx x no (NPrefix tk)
 
-addInfix :: Bool -> Offset -> T.Text -> Const -> Prec -> ElabM ()
-addInfix r px x c@(Const o tk) prec = do
+addInfix :: Bool -> Range -> T.Text -> Const -> Prec -> ElabM ()
+addInfix r rx@(px, _) x c@(Const o tk) prec = do
   (_, bis, _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   guardAt px ("'" <> x <> "' must be a binary operator") (length bis == 2)
   insertPrec c prec
-  insertInfixInfo c (InfixInfo o x r)
-  addDeclNota px x no (NInfix tk)
+  insertInfixInfo c (InfixInfo (textToRange o tk) x r)
+  addDeclNota rx x no (NInfix tk)
 
-addNotation :: Offset -> T.Text -> [Binder] -> [AtPos Literal] -> ElabM ()
-addNotation px x bis = \lits -> do
+addNotation :: Range -> T.Text -> [Binder] -> [AtPos Literal] -> ElabM ()
+addNotation rx@(px, _) x bis = \lits -> do
   (_, bis', _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   unless (length bis == length bis') $
     escapeAt px ("term '" <> x <> "' has " <> T.pack (show (length bis')) <>
       " arguments, expected " <> T.pack (show (length bis)))
-  (c@(Const _ tk), ti) <- processLits lits
-  insertPrefixInfo c (PrefixInfo px x ti)
-  addDeclNota px x no (NPrefix tk)
+  (c@(Const o tk), ti) <- processLits lits
+  insertPrefixInfo c (PrefixInfo (textToRange o tk) x ti)
+  addDeclNota rx x no (NPrefix tk)
   where
 
   binderMap :: H.HashMap VarName Int
@@ -266,14 +266,14 @@ addNotation px x bis = \lits -> do
   processLits (AtPos o _ : _) = escapeAt o "notation must begin with a constant"
   processLits [] = error "empty notation"
 
-addCoercion :: Offset -> T.Text -> Sort -> Sort -> ElabM ()
-addCoercion px x s1 s2 = do
+addCoercion :: Range -> T.Text -> Sort -> Sort -> ElabM ()
+addCoercion rx@(px, _) x s1 s2 = do
   try (now >>= getTerm x) >>= \case
     Nothing -> escapeAt px ("term '" <> x <> "' not declared")
     Just (_, [PReg _ (DepType s1' [])], DepType s2' [], no)
       | s1 == s1' && s2 == s2' -> do
-        addCoe (Coe1 px x) s1 s2
-        addDeclNota px x no (NCoe s1 s2)
+        addCoe (Coe1 rx x) s1 s2
+        addDeclNota rx x no (NCoe s1 s2)
     _ -> escapeAt px ("coercion '" <> x <> "' does not match declaration")
 
 insertPrec :: Const -> Prec -> ElabM ()
@@ -283,8 +283,8 @@ insertPrec (Const o tk) p = do
     Just (i, p') | p /= p' ->
       reportErr $ ElabError ELError (o, o)
         ("incompatible precedence for '" <> tk <> "'")
-        [(i, i, "previously declared here")]
-    _ -> lift $ modifyPE $ \e -> e {pPrec = H.insert tk (o, p) (pPrec e)}
+        [(i, "previously declared here")]
+    _ -> lift $ modifyPE $ \e -> e {pPrec = H.insert tk (textToRange o tk, p) (pPrec e)}
 
 checkToken :: Const -> ElabM ()
 checkToken (Const _ tk) | T.length tk == 1 = return ()
@@ -298,7 +298,7 @@ insertPrefixInfo :: Const -> PrefixInfo -> ElabM ()
 insertPrefixInfo c@(Const o tk) ti = do
   checkToken c
   env <- get
-  ins <- checkNew ELError o ("token '" <> tk <> "' already declared")
+  ins <- checkNew ELError (textToRange o tk) ("token '" <> tk <> "' already declared")
     (\(PrefixInfo i _ _) -> i) tk (pPrefixes (ePE env))
   lift $ modifyPE $ \e -> e {pPrefixes = ins ti}
 
@@ -306,7 +306,7 @@ insertInfixInfo :: Const -> InfixInfo -> ElabM ()
 insertInfixInfo c@(Const o tk) ti = do
   checkToken c
   env <- get
-  ins <- checkNew ELError o ("token '" <> tk <> "' already declared")
+  ins <- checkNew ELError (textToRange o tk) ("token '" <> tk <> "' already declared")
     (\(InfixInfo i _ _) -> i) tk (pInfixes (ePE env))
   lift $ modifyPE $ \e -> e {pInfixes = ins ti}
 
@@ -330,7 +330,7 @@ inferQExpr :: Maybe (Sort, Bool) -> QExpr -> ElabM InferResult
 inferQExpr tgt q = inferQExpr' tgt q >>= coerce tgt
 
 inferQExpr' :: Maybe (Sort, Bool) -> QExpr -> ElabM InferResult
-inferQExpr' tgt (QApp (Span (o, _) t) ts) = do
+inferQExpr' tgt (QApp (Span os@(o, _) t) ts) = do
   var <- gets (H.lookup t . icLocals . eInfer)
   tm <- try (now >>= getTerm t)
   let returnVar :: Sort -> Bool -> ElabM a -> ElabM InferResult
@@ -338,7 +338,7 @@ inferQExpr' tgt (QApp (Span (o, _) t) ts) = do
         unless (null ts) $ escapeAt o (t <> " is not a function")
         (IR o (SVar t) s bd) <$ m
   case (var, tm) of
-    (Just (LIOld (Binder _ l (Just (TType (AtDepType (AtPos _ s) _)))) _), _) ->
+    (Just (LIOld (Binder _ l (Just (TType (AtDepType (Span _ s) _)))) _), _) ->
       returnVar s (isLCurly l) (return ())
     (Just (LIOld (Binder _ l _) (Just s)), _) ->
       returnVar s (isLCurly l) (return ())
@@ -359,9 +359,9 @@ inferQExpr' tgt (QApp (Span (o, _) t) ts) = do
     (Just (LINew o1 bd1 s1), Nothing) -> do
       bd' <- case tgt of
         Just (s2, bd2) -> do
-          unless (s1 == s2) $ escapeErr $ ElabError ELError (o, o)
+          unless (s1 == s2) $ escapeErr $ ElabError ELError os
             ("inferred two types " <> s1 <> ", " <> s2 <> " for " <> t)
-            [(o1, o1, "inferred " <> s1 <> " here"), (o, o, "inferred " <> s2 <> " here")]
+            [(o1, "inferred " <> s1 <> " here"), (os, "inferred " <> s2 <> " here")]
           return (bd1 || bd2)
         _ -> return bd1
       returnVar s1 bd' $ when (bd1 /= bd') $ modifyInfer $ \ic -> ic {
@@ -369,11 +369,11 @@ inferQExpr' tgt (QApp (Span (o, _) t) ts) = do
     (Nothing, Nothing) -> do
       (s, bd) <- fromJustAt o "cannot infer type" tgt
       returnVar s bd $ modifyInfer $ \ic -> ic {
-        icLocals = H.insert t (LINew o bd s) (icLocals ic) }
+        icLocals = H.insert t (LINew os bd s) (icLocals ic) }
 inferQExpr' _ (QUnquote (Span (o, _) e)) = asSExpr <$> eval o def e >>= \case
   Nothing -> escapeAt o $ "invalid s-expr: " <> T.pack (show e)
   Just e'@(SVar v) -> gets (H.lookup v . icLocals . eInfer) >>= \case
-    Just (LIOld (Binder _ l (Just (TType (AtDepType (AtPos _ s) _)))) _) ->
+    Just (LIOld (Binder _ l (Just (TType (AtDepType (Span _ s) _)))) _) ->
       return $ IR o e' s (isLCurly l)
     _ -> escapeAt o $ "unknown variable '" <> v <> "'"
   Just e'@(App t _) -> try (now >>= getTerm t) >>= \case
@@ -389,13 +389,13 @@ inferQExprProv q = gets eProvableSorts >>= \case
       Just (s2, c) -> return (IR o (c e) s2 False)
       Nothing -> escapeAt o ("type error, expected provable sort, got " <> s)
 
-buildBinders :: Offset -> Bool -> [Binder] -> [(Offset, Local, InferResult)] ->
-  ElabM ([PBinder], [(Offset, Maybe VarName, SExpr)], [(Offset, VarName, Sort)])
+buildBinders :: Offset -> Bool -> [Binder] -> [(Range, Local, InferResult)] ->
+  ElabM ([PBinder], [(Range, Maybe VarName, SExpr)], [(Range, VarName, Sort)])
 buildBinders px dum bis fs = do
   ic <- gets eInfer
   let locals = icLocals ic
-      newvar :: VarName -> Offset -> Bool -> Sort -> Binder
-      newvar v o bd s = Binder o l (Just (TType (AtDepType (AtPos o s) []))) where
+      newvar :: VarName -> Range -> Bool -> Sort -> Binder
+      newvar v o bd s = Binder o l (Just (TType (AtDepType (Span o s) []))) where
         l = if bd then
           if not dum || H.member v (icDependents ic) then LBound v else LDummy v
         else LReg v
@@ -407,14 +407,14 @@ buildBinders px dum bis fs = do
             LIOld bi'@(Binder _ _ (Just (TType _))) _ -> Just (v, bi')
             LIOld bi'@(Binder _ _ Nothing) Nothing -> Just (v, bi')
             LIOld (Binder o l' Nothing) (Just t) ->
-              Just (v, Binder o l' (Just (TType (AtDepType (AtPos o t) []))))
+              Just (v, Binder o l' (Just (TType (AtDepType (Span o t) []))))
             LINew o bd s -> Just (v, newvar v o bd s)
       bisAdd = sortOn fst (mapMaybe f (H.toList locals)) where
         f (v, LINew o bd s) = Just (v, newvar v o bd s)
         f _ = Nothing
       bisNew = bisAdd ++ bis1 where
       bisDum = mapMaybe f bisNew where
-        f (v, Binder o (LDummy _) (Just (TType (AtDepType (AtPos _ t) [])))) =
+        f (v, Binder o (LDummy _) (Just (TType (AtDepType (Span _ t) [])))) =
           Just (o, v, t)
         f _ = Nothing
       fmlas = mapMaybe (\(o, l, IR _ e _ _) -> Just (o, localName l, e)) fs
@@ -424,7 +424,7 @@ buildBinders px dum bis fs = do
     (_, Binder _ (LDummy _) _) -> return Nothing
     (v, Binder _ _ (Just (TType ty))) ->
       return $ Just $ PReg v (unDepType ty)
-    (_, Binder o _ Nothing) -> escapeAt o "could not infer type"
+    (_, Binder (o, _) _ Nothing) -> escapeAt o "could not infer type"
     _ -> return Nothing
   ifMM0 $ unless (null bisAdd) $ reportAt px ELWarning $ render' $
     "(MM0 mode) missing binders:" <> ppGroupedBinders (snd <$> bisAdd)
@@ -477,9 +477,9 @@ lcInsert "_" _ ctx = ctx
 lcInsert x v (LCtx ctx) = LCtx (H.insert x v ctx)
 
 evalToplevel :: AtLisp -> ElabM ()
-evalToplevel (Span _ (AList (Span (o, _) (AAtom "def") : es))) = do
-  (Span (o', _) x, v) <- evalDefine o def es
-  unless (x == "_") $ lispDefine o' x v
+evalToplevel (Span rd (AList (Span (o, _) (AAtom "def") : es))) = do
+  (Span rx x, v) <- evalDefine o def es
+  unless (x == "_") $ lispDefine rd rx x v
 evalToplevel (Span (o, _) e) = evalAndPrint o e
 
 evalAndPrint :: Offset -> LispAST -> ElabM ()
@@ -1044,7 +1044,7 @@ occursCheck g e@(Ref g') = getRef g' >>= \case
 occursCheck g (List (t : es)) = List . (t :) <$> mapM (occursCheck g) es
 occursCheck _ e = return e
 
-unfold :: Offset -> Bool -> LispVal -> [PBinder] -> [(Offset, VarName, Sort)] ->
+unfold :: Offset -> Bool -> LispVal -> [PBinder] -> [(Range, VarName, Sort)] ->
   SExpr -> [LispVal] -> LispVal -> ElabM UnifyResult
 unfold o sym t bis ds val es e2 = buildSubst bis es H.empty where
 
@@ -1054,7 +1054,7 @@ unfold o sym t bis ds val es e2 = buildSubst bis es H.empty where
   buildSubst [] [] m = buildDummies ds id m
   buildSubst _ _ _ = escapeAt o "incorrect arguments"
 
-  buildDummies :: [(Offset, VarName, Sort)] -> ([LispVal] -> [LispVal]) ->
+  buildDummies :: [(Range, VarName, Sort)] -> ([LispVal] -> [LispVal]) ->
     H.HashMap VarName LispVal -> ElabM UnifyResult
   buildDummies ((_, x, s) : ds') q m = do
     v <- Ref <$> newMVar o s True

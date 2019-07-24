@@ -89,14 +89,14 @@ toSpans env = \st -> runST $ do
     withBinders :: [Binder] -> MakeSpan s () -> MakeSpan s ()
     withBinders [] m = m
     withBinders (bi@(Binder o l ty) : bis) m = do
-      forM_ (localName l) $ \n -> push o n (PIVar (Just bi))
+      forM_ (localName l) $ \n -> push' o n (PIVar (Just bi))
       mapM_ typ ty
       local (maybe id (flip H.insert bi) (localName l)) (withBinders bis m)
 
     typ :: Type -> MakeSpan s ()
-    typ (TType (AtDepType (AtPos o t) vs)) = do
-      push o t PISort
-      forM_ vs $ \(AtPos o' v) -> pushVar o' v
+    typ (TType (AtDepType (Span o t) vs)) = do
+      push' o t PISort
+      forM_ vs $ \(Span (o', _) v) -> pushVar o' v
     typ (TFormula f) = formula f
 
     formula :: Formula -> MakeSpan s ()

@@ -101,12 +101,18 @@ identStart c = isAlpha c || c == '_'
 identRest :: Char -> Bool
 identRest c = isAlphaNum c || c == '_'
 
-ident_ :: Parser T.Text
-ident_ = lexeme $ liftA2 T.cons (satisfy identStart)
+ident_' :: Parser T.Text
+ident_' = liftA2 T.cons (satisfy identStart)
   (takeWhileP (Just "identifier char") identRest)
+
+ident_ :: Parser T.Text
+ident_ = lexeme ident_'
 
 ident :: Parser T.Text
 ident = ident_ >>= \case "_" -> empty; i -> return i
+
+ident' :: Parser T.Text
+ident' = ident_' >>= \case "_" -> empty; i -> return i
 
 recoverToSemi :: a -> ParseError -> Parser a
 recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
@@ -147,7 +153,7 @@ formula :: Parser Formula
 formula = lexeme formula'
 
 depType :: Parser AtDepType
-depType = (\(t:vs) -> AtDepType t vs) <$> some (atPos ident)
+depType = (\(t:vs) -> AtDepType t vs) <$> some (lexeme (span ident'))
 
 ptype :: Parser Type
 ptype = (TFormula <$> formula) <|> (TType <$> depType)
@@ -156,15 +162,16 @@ binder :: Parser [Binder]
 binder = braces (f LBound) <|> parens (f LReg) where
   f :: (T.Text -> Local) -> Parser [Binder]
   f bd = liftA2 mk
-    (some (atPos (liftA2 (local' bd) (optional (symbol ".")) ident_)))
+    (some (liftA3 (\o m (Span (_, o2) i) -> Span (o, o2) $ local' bd m i)
+      getOffset (optional (symbol ".")) (lexeme (span ident_'))))
     (optional (symbol ":" *> ptype))
   local' :: (T.Text -> Local) -> Maybe () -> T.Text -> Local
   local' _ _ "_" = LAnon
   local' _ (Just _) x = LDummy x
   local' g Nothing x = g x
-  mk :: [AtPos Local] -> Maybe Type -> [Binder]
+  mk :: [Span Local] -> Maybe Type -> [Binder]
   mk [] _ = []
-  mk (AtPos loc l : ls) ty = Binder loc l ty : mk ls ty
+  mk (Span loc l : ls) ty = Binder loc l ty : mk ls ty
 
 binders :: Parser [Binder]
 binders = concat <$> many binder
@@ -208,17 +215,17 @@ declStmt = fmap toSpan <$> do
 
   checkBinders :: DeclKind -> Maybe Offset -> [Binder] -> [(Offset, String)]
   checkBinders _ _ [] = []
-  checkBinders dk _ (Binder o l (Just (TFormula _)) : bis) | isLCurly l =
+  checkBinders dk _ (Binder (o, _) l (Just (TFormula _)) : bis) | isLCurly l =
     (o, "Use regular binders for formula hypotheses") :
     checkBinders dk (Just o) bis
-  checkBinders dk _ (Binder o _ (Just (TFormula _)) : bis) =
+  checkBinders dk _ (Binder (o, _) _ (Just (TFormula _)) : bis) =
     if dk == DKTerm || dk == DKDef then
       [(o, "A term/def does not take formula hypotheses")] else [] ++
     checkBinders dk (Just o) bis
-  checkBinders dk loff (Binder o _ Nothing : bis) =
+  checkBinders dk loff (Binder (o, _) _ Nothing : bis) =
     if dk == DKTerm then [(o, "Cannot infer binder type")] else [] ++
     checkBinders dk loff bis
-  checkBinders dk off (Binder o2 l (Just (TType (AtDepType _ ts))) : bis) =
+  checkBinders dk off (Binder (o2, _) l (Just (TType (AtDepType _ ts))) : bis) =
     maybe [] (\o ->
       [(o, "Hypotheses must come after term variables"),
        (o2, "All term variables must come before all hypotheses")]) off ++

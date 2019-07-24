@@ -71,6 +71,7 @@ run debug rin = do
     initializedHandler                       = Just $ passHandler NotInitialized,
     hoverHandler                             = Just $ passHandler ReqHover,
     definitionHandler                        = Just $ passHandler ReqDefinition,
+    documentSymbolHandler                    = Just $ passHandler ReqDocumentSymbols,
     didOpenTextDocumentNotificationHandler   = Just $ passHandler NotDidOpenTextDocument,
     didChangeTextDocumentNotificationHandler = Just $ passHandler NotDidChangeTextDocument,
     didCloseTextDocumentNotificationHandler  = Just $ passHandler NotDidCloseTextDocument,
@@ -258,6 +259,20 @@ reactor debug lf inp = do
           Just [a] -> makeResponse $ SingleLoc $ Location uri a
           Just as -> makeResponse $ MultiLoc $ Location uri <$> as
 
+      ReqDocumentSymbols req -> do
+        let uri = req ^. J.params . J.textDocument . J.uri
+            doc = toNormalizedUri uri
+            makeErr code msg = RspError $
+              makeResponseError (responseId $ req ^. J.id) $
+              ResponseError code msg Nothing
+        resp <- getFileCache doc <&> \case
+          Just (FC _ _ _ _ env) -> Just $ getSymbols env
+          _ -> Nothing
+        reactorSend $ case resp of
+          Nothing -> makeErr InternalError "could not get file data"
+          Just as -> RspDocumentSymbols $ makeResponseMessage req $
+            DSDocumentSymbols $ List as
+
       NotCustomClient (NotificationMessage _
         (CustomClientMethod "$/setTraceNotification") _) -> return ()
 
@@ -297,9 +312,9 @@ toRange larr (o1, o2) = Range (toPosition larr o1) (toPosition larr o2)
 
 elabErrorDiags :: Uri -> Lines -> [CE.ElabError] -> [Diagnostic]
 elabErrorDiags uri larr errs = toDiag <$> errs where
-  toRel :: (Int, Int, T.Text) -> DiagnosticRelatedInformation
-  toRel (o1, o2, msg) = DiagnosticRelatedInformation
-    (Location uri (toRange larr (o1, o2))) msg
+  toRel :: ((Int, Int), T.Text) -> DiagnosticRelatedInformation
+  toRel (o, msg) = DiagnosticRelatedInformation
+    (Location uri (toRange larr o)) msg
   toDiag :: CE.ElabError -> Diagnostic
   toDiag (CE.ElabError l o msg es) =
     mkDiagnosticRelated l (toRange larr o) msg (toRel <$> es)
@@ -353,7 +368,7 @@ getFileCache doc = do
 makeHover :: CE.Env -> Range -> CA.Span CA.Stmt -> PosInfo -> Maybe Hover
 makeHover env range stmt (PosInfo t pi') = case pi' of
   PISort -> do
-    (_, o, sd) <- H.lookup t (CE.eSorts env)
+    (_, (_, (o, _)), sd) <- H.lookup t (CE.eSorts env)
     Just $ code $ ppStmt $ CA.Sort o t sd
   PIVar (Just bi) -> Just $ code $ ppBinder bi
   PIVar Nothing -> do
@@ -381,19 +396,20 @@ makeHover env range stmt (PosInfo t pi') = case pi' of
 goToDefinition :: Lines -> CE.Env -> PosInfo -> [Range]
 goToDefinition larr env (PosInfo t pi') = case pi' of
   PISort -> maybeToList $
-    H.lookup t (CE.eSorts env) <&> \(_, o, _) -> range o t
+    H.lookup t (CE.eSorts env) <&> \(_, (_, rx), _) -> toRange larr rx
   PIVar bi -> maybeToList $ binderRange <$> bi
   PITerm -> maybeToList $
-    H.lookup t (CE.eDecls env) <&> \(_, o, _, _) -> range o t
+    H.lookup t (CE.eDecls env) <&> \(_, (_, rx), _, _) -> toRange larr rx
   PIAtom b obi ->
     (case (b, obi) of
       (True, Just bi) -> [binderRange bi]
       (True, Nothing) -> maybeToList $
-        H.lookup t (CE.eDecls env) <&> \(_, o, _, _) -> range o t
+        H.lookup t (CE.eDecls env) <&> \(_, (_, rx), _, _) -> toRange larr rx
       _ -> []) ++
     maybeToList (
-      H.lookup t (CE.eLispNames env) >>= fst <&> \o -> range o t)
+      H.lookup t (CE.eLispNames env) >>= fst <&> \(_, rx) -> toRange larr rx)
   where
-  range o t' = toRange larr (o, o + T.length t')
-  binderRange (CA.Binder o l _) =
-    range o (fromMaybe "_" (CA.localName l))
+  binderRange (CA.Binder o _ _) = toRange larr o
+
+getSymbols :: CE.Env -> [DocumentSymbol]
+getSymbols _ = []
