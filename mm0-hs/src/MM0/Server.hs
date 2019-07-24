@@ -14,6 +14,7 @@ import Control.Monad.Reader
 import Data.Default
 import Data.Functor
 import Data.Maybe
+import qualified Data.Aeson as A
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Text as T
@@ -99,7 +100,8 @@ data ReactorState = RS {
   rsDebug :: Bool,
   rsFuncs :: LspFuncs (),
   rsDiagThreads :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, Async ())),
-  rsLastParse :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, FileCache)) }
+  rsLastParse :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, FileCache)),
+  rsOpenRequests :: TVar (H.HashMap LspId (BareResponseMessage -> IO ())) }
 type Reactor a = ReaderT ReactorState IO a
 
 -- ---------------------------------------------------------------------
@@ -142,9 +144,6 @@ newDiagThread uri version m = ReaderT $ \rs -> do
       Nothing -> return Nothing
   mapM_ cancel old
 
-reactorSendId :: (LspId -> FromServerMessage) -> Reactor ()
-reactorSendId msg = nextLspReqId >>= reactorSend . msg
-
 reactorLogMsg :: MessageType -> T.Text -> Reactor ()
 reactorLogMsg mt msg = reactorSend $ NotLogMessage $ fmServerLogMessageNotification mt msg
 
@@ -171,6 +170,24 @@ isOutdated :: Maybe Int -> Maybe Int -> Bool
 isOutdated (Just n) (Just v) = v < n
 isOutdated _ _ = False
 
+traverseResponse :: Applicative f => (a -> f (Maybe b)) -> ResponseMessage a -> f (ResponseMessage b)
+traverseResponse f (ResponseMessage j i r e) = flip (ResponseMessage j i) e . join <$> traverse f r
+
+reactorReq :: A.FromJSON resp =>
+  (RequestMessage ServerMethod req resp -> FromServerMessage) ->
+  RequestMessage ServerMethod req resp ->
+  (ResponseMessage resp -> Reactor ()) -> Reactor ()
+reactorReq wrap msg resp = do
+  r <- ask
+  liftIO $ atomically $ modifyTVar (rsOpenRequests r) $ H.insert (msg ^. J.id) $
+    \bresp -> case traverseResponse A.fromJSON bresp of
+      A.Error err -> flip runReaderT r $
+        reactorErr $ "mm0-hs: response parse error: " <> T.pack (show err)
+      A.Success res -> do
+        runReaderT (resp res) r
+        liftIO $ atomically $ modifyTVar (rsOpenRequests r) $ H.delete (msg ^. J.id)
+  reactorSend $ wrap msg
+
 -- ---------------------------------------------------------------------
 
 -- | The single point that all events flow through, allowing management of state
@@ -178,19 +195,25 @@ isOutdated _ _ = False
 -- server and backend compiler
 reactor :: Bool -> LspFuncs () -> TChan FromClientMessage -> IO ()
 reactor debug lf inp = do
-  th <- atomically $ newTVar H.empty
-  fs <- atomically $ newTVar H.empty
-  flip runReaderT (RS debug lf th fs) $ forever $ do
+  rs <- liftM3 (RS debug lf) (newTVarIO H.empty) (newTVarIO H.empty) (newTVarIO H.empty)
+  flip runReaderT rs $ forever $ do
     liftIO (atomically $ readTChan inp) >>= \case
       -- Handle any response from a message originating at the server, such as
       -- "workspace/applyEdit"
       RspFromClient rm -> do
-        reactorLogs $ "reactor:got RspFromClient:" ++ show rm
+        reqs <- asks rsOpenRequests
+        case rm ^. J.id of
+          IdRspNull -> reactorErr $ "reactor:got null RspFromClient:" <> T.pack (show rm)
+          lspid -> do
+            liftIO (atomically $ H.lookup (requestId lspid) <$> readTVar reqs) >>= \case
+              Nothing -> reactorErr $ "reactor:got response to unknown message:" <> T.pack (show rm)
+              Just f -> liftIO $ f rm
 
       NotInitialized _ -> do
         let registrations = []
-        reactorSendId $ \n -> ReqRegisterCapability $ fmServerRegisterCapabilityRequest n $
-          RegistrationParams $ List registrations
+        n <- nextLspReqId
+        let msg = fmServerRegisterCapabilityRequest n $ RegistrationParams $ List registrations
+        reactorReq ReqRegisterCapability msg $ const (return ())
 
       NotDidOpenTextDocument msg -> do
         let TextDocumentItem uri _ version str = msg ^. J.params . J.textDocument
