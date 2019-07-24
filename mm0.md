@@ -156,6 +156,7 @@ Input and Output
     inout-stmt ::= input-stmt | output-stmt
     input-stmt ::= 'input' input-kind ':' (identifier | math-string)* ';'
     output-stmt ::= 'output' output-kind ':' (identifier | math-string)* ';'
+    input-kind ::= identifier
     output-kind ::= identifier
 
 The `output` command allows the verifier to produce an output of some kind, in an implementation-defined manner. The manner in which output is produced is controlled by the `output-kind`, which specifies the target format, for example `s_expr`, or a program language such as `g` or `x86_asm`. The math string should be an expression or definition which encodes the output. A statement such as
