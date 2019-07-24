@@ -125,7 +125,7 @@ addDecl vis dk px x bis ret v = do
           (pbs, hs, _) <- buildBinders px True bis' fmlas
           unless (null hs) $ error "impossible"
           return $ DTerm pbs (unDepType ty)
-      (DKDef, _, Just (AtLisp _ (AFormula f))) -> do
+      (DKDef, _, Just (Span _ (AFormula f))) -> do
         let ret'' = case ret' of Just (TType ty) -> Just ty; _ -> Nothing
         forM_ ret'' inferDepType
         IR _ v' s _ <- parseMath f >>=
@@ -145,7 +145,7 @@ addDecl vis dk px x bis ret v = do
             when mm0 $ reportAt px ELWarning "(MM0 mode) def has no return type"
             S.toList <$> defcheckExpr pbs v'
         return $ DDef vis pbs (DepType s vs) (Just (dums, v'))
-      (DKDef, _, Just (AtLisp o _)) -> unimplementedAt o
+      (DKDef, _, Just (Span (o, _) _)) -> unimplementedAt o
       (DKTerm, Just (TType ty), _) -> do
         inferDepType ty
         (pbs, hs, _) <- buildBinders px False bis' fmlas
@@ -330,7 +330,7 @@ inferQExpr :: Maybe (Sort, Bool) -> QExpr -> ElabM InferResult
 inferQExpr tgt q = inferQExpr' tgt q >>= coerce tgt
 
 inferQExpr' :: Maybe (Sort, Bool) -> QExpr -> ElabM InferResult
-inferQExpr' tgt (QApp (AtPos o t) ts) = do
+inferQExpr' tgt (QApp (Span (o, _) t) ts) = do
   var <- gets (H.lookup t . icLocals . eInfer)
   tm <- try (now >>= getTerm t)
   let returnVar :: Sort -> Bool -> ElabM a -> ElabM InferResult
@@ -370,7 +370,7 @@ inferQExpr' tgt (QApp (AtPos o t) ts) = do
       (s, bd) <- fromJustAt o "cannot infer type" tgt
       returnVar s bd $ modifyInfer $ \ic -> ic {
         icLocals = H.insert t (LINew o bd s) (icLocals ic) }
-inferQExpr' _ (QUnquote (AtLisp o e)) = asSExpr <$> eval o def e >>= \case
+inferQExpr' _ (QUnquote (Span (o, _) e)) = asSExpr <$> eval o def e >>= \case
   Nothing -> escapeAt o $ "invalid s-expr: " <> T.pack (show e)
   Just e'@(SVar v) -> gets (H.lookup v . icLocals . eInfer) >>= \case
     Just (LIOld (Binder _ l (Just (TType (AtDepType (AtPos _ s) _)))) _) ->
@@ -477,10 +477,10 @@ lcInsert "_" _ ctx = ctx
 lcInsert x v (LCtx ctx) = LCtx (H.insert x v ctx)
 
 evalToplevel :: AtLisp -> ElabM ()
-evalToplevel (AtLisp _ (AList (AtLisp o (AAtom "def") : es))) = do
-  (AtPos o' x, v) <- evalDefine o def es
+evalToplevel (Span _ (AList (Span (o, _) (AAtom "def") : es))) = do
+  (Span (o', _) x, v) <- evalDefine o def es
   unless (x == "_") $ lispDefine o' x v
-evalToplevel (AtLisp o e) = evalAndPrint o e
+evalToplevel (Span (o, _) e) = evalAndPrint o e
 
 evalAndPrint :: Offset -> LispAST -> ElabM ()
 evalAndPrint o e = eval o def e >>= unRef >>= \case
@@ -488,7 +488,7 @@ evalAndPrint o e = eval o def e >>= unRef >>= \case
   e' -> reportAt o ELInfo $ T.pack $ show e'
 
 evalAt :: LCtx -> AtLisp -> ElabM LispVal
-evalAt ctx (AtLisp o e) = eval o ctx e
+evalAt ctx (Span (o, _) e) = eval o ctx e
 
 eval :: Offset -> LCtx -> LispAST -> ElabM LispVal
 eval o ctx (AAtom e) = evalAtom o ctx e
@@ -496,15 +496,15 @@ eval _ _ (AString s) = return (String s)
 eval _ _ (ANumber n) = return (Number n)
 eval _ _ (ABool b) = return (Bool b)
 eval _ _ (AList []) = return (List [])
-eval _ ctx (AList (AtLisp o e : es)) = evalApp o ctx e es
-eval _ _ val@(ADottedList (AtLisp o _) _ _) =
+eval _ ctx (AList (Span (o, _) e : es)) = evalApp o ctx e es
+eval _ _ val@(ADottedList (Span (o, _) _) _ _) =
   escapeAt o $ "attempted to evaluate an improper list: " <> T.pack (show val)
 eval _ ctx (AFormula f) = parseMath f >>= evalQExpr ctx
 
 evalList :: a -> (ElabM LispVal -> ElabM a -> ElabM a) -> LCtx -> [AtLisp] -> ElabM a
 evalList a _ _ [] = return a
-evalList a f ctx (AtLisp _ (AList (AtLisp o (AAtom "def") : ds)) : es) = do
-  (AtPos _ x, v) <- evalDefine o ctx ds
+evalList a f ctx (Span _ (AList (Span (o, _) (AAtom "def") : ds)) : es) = do
+  (Span _ x, v) <- evalDefine o ctx ds
   evalList a f (lcInsert x v ctx) es
 evalList a f ctx (e : es) = f (evalAt ctx e) (evalList a f ctx es)
 
@@ -562,7 +562,7 @@ evalSyntax o ctx Focus es = Undef <$ focus o ctx es
 evalSyntax _ ctx Let es = do
   (xs, es') <- parseLet es
   let go [] ctx' = eval1 ctx' es'
-      go ((AtPos _ x, f) : xs') ctx' = do
+      go ((Span _ x, f) : xs') ctx' = do
         v <- f ctx'
         go xs' (lcInsert x v ctx')
   go xs ctx
@@ -570,9 +570,9 @@ evalSyntax _ ctx Letrec es = do
   (xs, es') <- parseLet es
   ctx' <- go xs ctx (\_ -> return ())
   eval1 ctx' es' where
-  go :: [(AtPos Ident, LCtx -> ElabM LispVal)] -> LCtx -> (LCtx -> ElabM ()) -> ElabM LCtx
+  go :: [(Span Ident, LCtx -> ElabM LispVal)] -> LCtx -> (LCtx -> ElabM ()) -> ElabM LCtx
   go [] ctx' f = ctx' <$ f ctx'
-  go ((AtPos _ x, e) : xs) ctx' f = do
+  go ((Span _ x, e) : xs) ctx' f = do
     a <- newRef Undef
     go xs (lcInsert x (Ref a) ctx') $
       \ctx2 -> f ctx2 >> e ctx2 >>= setRef a
@@ -580,8 +580,8 @@ evalSyntax _ ctx Letrec es = do
 data LambdaSpec = LSExactly [Ident] | LSAtLeast [Ident] Ident
 
 toLambdaSpec :: AtLisp -> ElabM LambdaSpec
-toLambdaSpec (AtLisp _ (AList es)) = LSExactly <$> mapM toIdent es
-toLambdaSpec (AtLisp _ (ADottedList e1 es e2)) =
+toLambdaSpec (Span _ (AList es)) = LSExactly <$> mapM toIdent es
+toLambdaSpec (Span _ (ADottedList e1 es e2)) =
   liftM2 LSAtLeast (mapM toIdent (e1 : es)) (toIdent e2)
 toLambdaSpec e = LSAtLeast [] <$> toIdent e
 
@@ -607,42 +607,42 @@ mkLambda ls ctx es (o, _) vs = do
   ctx' <- mkCtx o ls vs ctx
   eval1 ctx' es
 
-parseDef :: ElabM (AtPos Ident, LCtx -> ElabM LispVal) ->
-  [AtLisp] -> ElabM (AtPos Ident, LCtx -> ElabM LispVal)
-parseDef _ (AtLisp o (AAtom x) : es) = return (AtPos o x, \ctx -> eval1 ctx es)
-parseDef _ (AtLisp _ (AList (AtLisp o (AAtom x) : xs)) : es) = do
+parseDef :: ElabM (Span Ident, LCtx -> ElabM LispVal) ->
+  [AtLisp] -> ElabM (Span Ident, LCtx -> ElabM LispVal)
+parseDef _ (Span o (AAtom x) : es) = return (Span o x, \ctx -> eval1 ctx es)
+parseDef _ (Span _ (AList (Span o (AAtom x) : xs)) : es) = do
   xs' <- mapM toIdent xs
-  return (AtPos o x, \ctx -> return $ Proc $ mkLambda (LSExactly xs') ctx es)
-parseDef _ (AtLisp _ (ADottedList (AtLisp o (AAtom x)) xs r) : es) = do
+  return (Span o x, \ctx -> return $ Proc $ mkLambda (LSExactly xs') ctx es)
+parseDef _ (Span _ (ADottedList (Span o (AAtom x)) xs r) : es) = do
   xs' <- mapM toIdent xs
   r' <- toIdent r
-  return (AtPos o x, \ctx -> return $ Proc $ mkLambda (LSAtLeast xs' r') ctx es)
+  return (Span o x, \ctx -> return $ Proc $ mkLambda (LSAtLeast xs' r') ctx es)
 parseDef err _ = err
 
-evalDefine :: Offset -> LCtx -> [AtLisp] -> ElabM (AtPos Ident, LispVal)
+evalDefine :: Offset -> LCtx -> [AtLisp] -> ElabM (Span Ident, LispVal)
 evalDefine o ctx es = do
   (x, f) <- parseDef (escapeAt o "def: syntax error") es
   (,) x <$> f ctx
 
 toIdent :: AtLisp -> ElabM Ident
-toIdent (AtLisp _ (AAtom x)) = return x
-toIdent (AtLisp o _) = escapeAt o "expected an identifier"
+toIdent (Span _ (AAtom x)) = return x
+toIdent (Span (o, _) _) = escapeAt o "expected an identifier"
 
-parseLetVar :: AtLisp -> ElabM (AtPos Ident, LCtx -> ElabM LispVal)
-parseLetVar (AtLisp o (AList ls)) = parseDef (escapeAt o "invalid syntax") ls
-parseLetVar (AtLisp o _) = escapeAt o "invalid syntax"
+parseLetVar :: AtLisp -> ElabM (Span Ident, LCtx -> ElabM LispVal)
+parseLetVar (Span (o, _) (AList ls)) = parseDef (escapeAt o "invalid syntax") ls
+parseLetVar (Span (o, _) _) = escapeAt o "invalid syntax"
 
-parseLet :: [AtLisp] -> ElabM ([(AtPos Ident, LCtx -> ElabM LispVal)], [AtLisp])
-parseLet (AtLisp _ (AList ls) : es) = flip (,) es <$> mapM parseLetVar ls
-parseLet (AtLisp o _ : _) = escapeAt o "invalid syntax"
+parseLet :: [AtLisp] -> ElabM ([(Span Ident, LCtx -> ElabM LispVal)], [AtLisp])
+parseLet (Span _ (AList ls) : es) = flip (,) es <$> mapM parseLetVar ls
+parseLet (Span (o, _) _ : _) = escapeAt o "invalid syntax"
 parseLet _ = return ([], [])
 
 quoteAt :: LCtx -> AtLisp -> ElabM LispVal
-quoteAt ctx (AtLisp o e) = quote o ctx e
+quoteAt ctx (Span (o, _) e) = quote o ctx e
 
 quote :: Offset -> LCtx -> LispAST -> ElabM LispVal
 quote o _ (AAtom e) = return $ Atom o e
-quote _ ctx (AList [AtLisp _ (AAtom "unquote"), e]) = evalAt ctx e
+quote _ ctx (AList [Span _ (AAtom "unquote"), e]) = evalAt ctx e
 quote _ ctx (AList es) = List <$> mapM (quoteAt ctx) es
 quote _ ctx (ADottedList l es r) =
   liftM3 DottedList (quoteAt ctx l) (mapM (quoteAt ctx) es) (quoteAt ctx r)
@@ -856,9 +856,9 @@ initialBindings = [
       _ -> escapeAt o "expected at least two arguments")]
 
 evalQExpr :: LCtx -> QExpr -> ElabM LispVal
-evalQExpr ctx (QApp (AtPos o e) es) =
+evalQExpr ctx (QApp (Span (o, _) e) es) =
   List . (Atom o e :) <$> mapM (evalQExpr ctx) es
-evalQExpr ctx (QUnquote (AtLisp o e)) = eval o ctx e
+evalQExpr ctx (QUnquote (Span (o, _) e)) = eval o ctx e
 
 -----------------------------
 -- Tactics
@@ -872,7 +872,7 @@ evalRefines :: Offset -> LCtx -> [AtLisp] -> ElabM ()
 evalRefines o = evalList () (\e l -> e >>= tryRefine o >> l)
 
 elabLisp :: SExpr -> AtLisp -> ElabM Proof
-elabLisp t e@(AtLisp o _) = do
+elabLisp t e@(Span (o, _) _) = do
   g <- newRef (Goal o (sExprToLisp o t))
   modifyTC $ \tc -> tc {tcGoals = V.singleton g}
   evalAt def e >>= tryRefine o

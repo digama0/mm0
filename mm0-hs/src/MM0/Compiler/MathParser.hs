@@ -35,7 +35,7 @@ unquote = do
   try (single ',' >> notFollowedBy (satisfy isSpace))
   lift $ QUnquote <$> lispVal
 
-token1 :: MathParser (AtPos T.Text)
+token1 :: MathParser (Span T.Text)
 token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
   let
     unspace t' o' = State t2 (o'+T.length t1) where
@@ -44,17 +44,17 @@ token1 = ReaderT $ \pe -> ParsecT $ \s@(State t o pst) cok _ _ eerr ->
       Nothing | i == 0 ->
                 eerr (TrivialError (o+i) (pure EndOfInput) mempty) s
               | otherwise ->
-                cok (AtPos o (T.take i t)) (State t' (o+i) pst) mempty
+                cok (Span (o, o+i) (T.take i t)) (State t' (o+i) pst) mempty
       Just (c, t2) -> case delimVal (pDelims pe) c of
         0 -> go t2 (i+1)
         4 | i == 0 ->
             eerr (TrivialError o (Just (Tokens (pure c))) mempty) s
           | otherwise ->
-            cok (AtPos o (T.take i t)) (unspace t2 (o+i+1) pst) mempty
+            cok (Span (o, o+i) (T.take i t)) (unspace t2 (o+i+1) pst) mempty
         d | isRightDelim d && i /= 0 ->
-            cok (AtPos o (T.take i t)) (unspace t' (o+i) pst) mempty
+            cok (Span (o, o+i) (T.take i t)) (unspace t' (o+i) pst) mempty
           | isLeftDelim d ->
-            cok (AtPos o (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
+            cok (Span (o, o+i+1) (T.take (i+1) t)) (unspace t2 (o+i+1) pst) mempty
           | otherwise -> go t2 (i+1)
   in go t 0
 
@@ -67,9 +67,9 @@ tryAt o (ReaderT p) = ReaderT $ \pe -> ParsecT $ \s cok _ eok eerr ->
   let eerr' err _ = eerr (setErrorOffset o err) s
   in unParser (p pe) s cok eerr' eok eerr'
 
-tkSatisfy :: (T.Text -> Bool) -> MathParser (AtPos T.Text)
+tkSatisfy :: (T.Text -> Bool) -> MathParser (Span T.Text)
 tkSatisfy p = try $ do
-  at@(AtPos _ t) <- token1
+  at@(Span _ t) <- token1
   guard (p t)
   return at
 
@@ -101,17 +101,17 @@ parsePrefix p =
   unquote <|>
   (tk "(" *> parseExpr (Prec 0) <* tk ")") <|>
   try (do {
-    AtPos o v <- token1;
+    Span o@(o1, _) v <- token1;
     ((do
-      PrefixInfo _ x lits <- tryAt o (checkPrec p True v >>
+      PrefixInfo _ x lits <- tryAt o1 (checkPrec p True v >>
         asks (H.lookup v . pPrefixes) >>= fromMaybeM)
-      QApp (AtPos o x) <$> parseLiterals lits)
+      QApp (Span o x) <$> parseLiterals lits)
       <?> ("prefix >= " ++ show p)) <|>
     ((do
-      tryAt o (do
+      tryAt o1 (do
         guard (isIdent v)
         asks (not . H.member v . pPrec) >>= guard)
-      QApp (AtPos o v) <$>
+      QApp (Span o v) <$>
         if p <= Prec appPrec && v /= "_" then
           many (parsePrefix PrecMax)
         else return [])
@@ -120,19 +120,19 @@ parsePrefix p =
 getLhs :: Prec -> QExpr -> MathParser QExpr
 getLhs p lhs =
   ((do
-    AtPos o v <- lookAhead token1
+    Span o v <- lookAhead token1
     q <- checkPrec p True v
     InfixInfo _ x _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
     _ <- token1
     rhs <- parsePrefix p >>= getRhs q
-    getLhs p (QApp (AtPos o x) [lhs, rhs]))
+    getLhs p (QApp (Span o x) [lhs, rhs]))
     <?> ("infix >= " ++ show p)) <|>
   return lhs
 
 getRhs :: Prec -> QExpr -> MathParser QExpr
 getRhs p rhs =
   (do
-    AtPos _ v <- lookAhead token1
+    Span _ v <- lookAhead token1
     InfixInfo _ _ r <- asks (H.lookup v . pInfixes) >>= fromMaybeM
     (do q <- checkPrec p r v
         getLhs q rhs >>= getRhs p)

@@ -61,8 +61,11 @@ toSpans env = \st -> runST $ do
   toSpans' :: forall s. VD.STVector s (Span PosInfo) -> Span Stmt -> ST s ()
   toSpans' vec = \(Span _ st) -> runReaderT (stmt st) H.empty where
 
+    push' :: Range -> T.Text -> PIType -> MakeSpan s ()
+    push' o t i = lift $ VD.pushBack vec (Span o (PosInfo t i))
+
     push :: Offset -> T.Text -> PIType -> MakeSpan s ()
-    push o t i = lift $ VD.pushBack vec (Span (o, o + T.length t) (PosInfo t i))
+    push o t = push' (o, o + T.length t) t
 
     pushVar :: Offset -> T.Text -> MakeSpan s ()
     pushVar o t = asks (H.lookup t) >>= push o t . PIVar
@@ -104,17 +107,17 @@ toSpans env = \st -> runST $ do
     atLit (AtPos o (NVar v)) = pushVar o v
 
     atLisp :: Bool -> AtLisp -> MakeSpan s ()
-    atLisp q (AtLisp o (AAtom t)) = asks (H.lookup t) >>= push o t . PIAtom q
-    atLisp _ (AtLisp _ (AList (AtLisp _ (AAtom "quote") : es))) = mapM_ (atLisp True) es
-    atLisp _ (AtLisp _ (AList (AtLisp _ (AAtom "unquote") : es))) = mapM_ (atLisp False) es
-    atLisp q (AtLisp _ (AList es)) = mapM_ (atLisp q) es
-    atLisp q (AtLisp _ (ADottedList l es r)) = atLisp q l >> mapM_ (atLisp q) es >> atLisp q r
-    atLisp _ (AtLisp _ (AFormula f)) = formula f
-    atLisp _ (AtLisp _ _) = return ()
+    atLisp q (Span o (AAtom t)) = asks (H.lookup t) >>= push' o t . PIAtom q
+    atLisp _ (Span _ (AList (Span _ (AAtom "quote") : es))) = mapM_ (atLisp True) es
+    atLisp _ (Span _ (AList (Span _ (AAtom "unquote") : es))) = mapM_ (atLisp False) es
+    atLisp q (Span _ (AList es)) = mapM_ (atLisp q) es
+    atLisp q (Span _ (ADottedList l es r)) = atLisp q l >> mapM_ (atLisp q) es >> atLisp q r
+    atLisp _ (Span _ (AFormula f)) = formula f
+    atLisp _ (Span _ _) = return ()
 
     qExpr :: QExpr -> MakeSpan s ()
-    qExpr (QApp (AtPos o t) es) =
-      asks (H.lookup t) >>= push o t . PIAtom True >> mapM_ qExpr es
+    qExpr (QApp (Span o t) es) =
+      asks (H.lookup t) >>= push' o t . PIAtom True >> mapM_ qExpr es
     qExpr (QUnquote e) = atLisp False e
 
 getPosInfo :: AST -> V.Vector Spans -> Offset -> Maybe (Span Stmt, Span PosInfo)

@@ -3,6 +3,7 @@ module MM0.Compiler.Parser (parseAST, runParser, PosState(..),
   ParseError, Parser, errorOffset, initialPosState, atPos,
   lispVal, identStart, identRest) where
 
+import Prelude hiding (span)
 import Control.Applicative hiding (many, some, (<|>), Const)
 import Control.Monad
 import Control.Monad.State.Class
@@ -66,6 +67,10 @@ semi = symbol ";"
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
+spanParens :: Parser a -> Parser (Span a)
+spanParens p = liftA3 (\o1 a o2 -> Span (o1, o2 + 1) a)
+  (getOffset <* symbol "(") p (getOffset <* symbol ")")
+
 braces :: Parser a -> Parser a
 braces = between (symbol "{") (symbol "}")
 
@@ -77,6 +82,9 @@ okw w = isJust <$> optional (kw w)
 
 atPos :: Parser a -> Parser (AtPos a)
 atPos = liftA2 AtPos getOffset
+
+span :: Parser a -> Parser (Span a)
+span p = liftA3 (\o1 a o2 -> Span (o1, o2) a) getOffset p getOffset
 
 mSpan :: Parser (Maybe (a, Offset)) -> Parser (Maybe (Span a))
 mSpan = liftA2 (fmap . (\o (a, o2) -> Span (o, o2) a)) getOffset
@@ -105,7 +113,7 @@ recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
 
 commit' :: Parser (Maybe a) -> Parser (Maybe (a, Offset))
 commit' p = withRecovery (recoverToSemi Nothing)
-  (liftA2 (\a o -> flip (,) o <$> a) p getOffset)
+  (liftA2 (\a o -> flip (,) (o+1) <$> a) p getOffset <* semi)
 
 commit :: Parser a -> Parser (Maybe (a, Offset))
 commit p = commit' (Just <$> p)
@@ -131,9 +139,12 @@ constant = between (symbol "$") (symbol "$") $
   liftA2 Const getOffset $
     lexeme (takeWhileP Nothing (\c -> c /= '$' && not (isSpace c)))
 
-formula :: Parser Formula
-formula = lexeme $ between (single '$') (single '$') $
+formula' :: Parser Formula
+formula' = between (single '$') (single '$') $
   liftA2 Formula getOffset (takeWhileP Nothing (/= '$'))
+
+formula :: Parser Formula
+formula = lexeme formula'
 
 depType :: Parser AtDepType
 depType = (\(t:vs) -> AtDepType t vs) <$> some (atPos ident)
@@ -306,19 +317,17 @@ strLit = single '"' *> (TB.run <$> p) where
 lispIdent :: Char -> Bool
 lispIdent c = isAlphaNum c || c `elem` ("!%&*/:<=>?^_~+-.@" :: String)
 
-lispAt :: (Offset -> Parser LispAST) -> Parser AtLisp
-lispAt p = getOffset >>= \o -> AtLisp o <$> p o
-
 lispVal :: Parser AtLisp
-lispVal = lispAt $ \o ->
-  parens listVal <|>
-  (ANumber <$> lexeme L.decimal) <|>
-  (AString <$> lexeme strLit) <|>
-  (AFormula <$> formula) <|>
-  (single '\'' *> ((\v -> AList [AtLisp o (AAtom "quote"), v]) <$> lispVal)) <|>
-  (single ',' *> ((\v -> AList [AtLisp o (AAtom "unquote"), v]) <$> lispVal)) <|>
-  (lexeme (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom)) <|>
-  (lexeme (takeWhileP (Just "identifier char") lispIdent >>= atom))
+lispVal = spanParens listVal <|>
+  (fmap ANumber <$> lexeme (span L.decimal)) <|>
+  (fmap AString <$> lexeme (span strLit)) <|>
+  (fmap AFormula <$> lexeme (span formula')) <|>
+  (liftA2 (\(Span o _) v@(Span (_, o2) _) ->
+    Span (fst o, o2) $ AList [Span o (AAtom "quote"), v]) (span (single '\'')) lispVal) <|>
+  (liftA2 (\(Span o _) v@(Span (_, o2) _) ->
+    Span (fst o, o2) $ AList [Span o (AAtom "unquote"), v]) (span (single ',')) lispVal) <|>
+  (lexeme (span (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom))) <|>
+  (lexeme (span (takeWhileP (Just "identifier char") lispIdent >>= atom)))
 
 listVal :: Parser LispAST
 listVal = listVal1 <|> return (AList []) where

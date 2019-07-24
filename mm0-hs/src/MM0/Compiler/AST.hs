@@ -6,15 +6,21 @@ import qualified Data.Text as T
 import MM0.Kernel.Environment (SortData(..), DepType(..))
 
 type Offset = Int
-data AtPos a = AtPos Offset a deriving (Show)
+data AtPos a = AtPos Offset a
 type Range = (Offset, Offset)
-data Span a = Span Range a deriving (Show)
+data Span a = Span Range a
 
 instance Functor AtPos where
   fmap f (AtPos o a) = AtPos o (f a)
 
+instance Show a => Show (AtPos a) where
+  showsPrec n = showsPrec n . unPos
+
 instance Functor Span where
   fmap f (Span o a) = Span o (f a)
+
+instance Show a => Show (Span a) where
+  showsPrec n = showsPrec n . unSpan
 
 unPos :: AtPos a -> a
 unPos (AtPos _ a) = a
@@ -102,7 +108,7 @@ localName (LReg v) = Just v
 localName (LDummy v) = Just v
 localName LAnon = Nothing
 
-data AtLisp = AtLisp Offset LispAST
+type AtLisp = Span LispAST
 data LispAST =
     AAtom T.Text
   | AList [AtLisp]
@@ -112,13 +118,10 @@ data LispAST =
   | ABool Bool
   | AFormula Formula
 
-instance Show AtLisp where
-  showsPrec _ (AtLisp _ e) = shows e
-
 instance Show LispAST where
   showsPrec _ (AAtom e) = (T.unpack e ++)
-  showsPrec _ (AList [AtLisp _ (AAtom "quote"), e]) = ('\'' :) . shows e
-  showsPrec _ (AList [AtLisp _ (AAtom "unquote"), e]) = (',' :) . shows e
+  showsPrec _ (AList [Span _ (AAtom "quote"), e]) = ('\'' :) . shows e
+  showsPrec _ (AList [Span _ (AAtom "unquote"), e]) = (',' :) . shows e
   showsPrec _ (AList ls) = ('(' :) . f ls . (')' :) where
     f [] = id
     f [e] = shows e
@@ -132,4 +135,4 @@ instance Show LispAST where
   showsPrec _ (ABool False) = ("#f" ++)
   showsPrec _ (AFormula (Formula _ f)) = ('$' :) . (T.unpack f ++) . ('$' :)
 
-data QExpr = QApp (AtPos T.Text) [QExpr] | QUnquote AtLisp deriving (Show)
+data QExpr = QApp (Span T.Text) [QExpr] | QUnquote AtLisp deriving (Show)
