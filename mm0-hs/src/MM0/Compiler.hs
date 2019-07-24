@@ -36,5 +36,5 @@ compile args = do
         die (M.errorBundlePretty errs')
 
 toParseError :: ElabError -> ParseError
-toParseError (ElabError el o _ msg _) =
+toParseError (ElabError el (o, _) msg _) =
   M.FancyError o (S.singleton (M.ErrorFail (show el ++ ": " ++ T.unpack msg)))

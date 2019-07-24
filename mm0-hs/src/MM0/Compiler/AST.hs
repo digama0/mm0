@@ -7,21 +7,22 @@ import MM0.Kernel.Environment (SortData(..), DepType(..))
 
 type Offset = Int
 data AtPos a = AtPos Offset a deriving (Show)
-data Span a = Span Offset a Offset deriving (Show)
+type Range = (Offset, Offset)
+data Span a = Span Range a deriving (Show)
 
 instance Functor AtPos where
-  fmap f (AtPos l a) = AtPos l (f a)
+  fmap f (AtPos o a) = AtPos o (f a)
 
 instance Functor Span where
-  fmap f (Span l a r) = Span l (f a) r
+  fmap f (Span o a) = Span o (f a)
 
 unPos :: AtPos a -> a
 unPos (AtPos _ a) = a
 
 unSpan :: Span a -> a
-unSpan (Span _ a _) = a
+unSpan (Span _ a) = a
 
-type AST = V.Vector (AtPos Stmt)
+type AST = V.Vector (Span Stmt)
 
 data Visibility = Public | Abstract | Local | VisDefault deriving (Eq)
 data DeclKind = DKTerm | DKAxiom | DKTheorem | DKDef deriving (Eq)
@@ -38,7 +39,7 @@ data Stmt =
   | Theorems [Binder] [AtLisp]
   | Notation Notation
   | Inout Inout
-  | Annot AtLisp (AtPos Stmt)
+  | Annot AtLisp (Span Stmt)
   | Do [AtLisp]
 
 data Notation =

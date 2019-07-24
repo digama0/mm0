@@ -27,7 +27,8 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import System.Timeout
 import System.IO.Unsafe
-import MM0.Compiler.AST (Offset, Binder(..), SortData(..), Prec(..), Visibility(..), QExpr)
+import MM0.Compiler.AST (Offset, Range,
+  Binder(..), SortData(..), Prec(..), Visibility(..), QExpr)
 import MM0.Kernel.Environment (Ident, Sort, TermName, ThmName, VarName, Token,
   PBinder(..), SExpr(..), DepType(..), binderName, binderType, binderBound)
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
@@ -59,7 +60,7 @@ instance Show Syntax where
   showsPrec _ Let = ("let" ++)
   showsPrec _ Letrec = ("letrec" ++)
 
-type Proc = Offset -> Offset -> [LispVal] -> ElabM LispVal
+type Proc = Range -> [LispVal] -> ElabM LispVal
 
 data LispVal =
     Atom Offset T.Text
@@ -129,13 +130,12 @@ instance Show ErrorLevel where
 
 data ElabError = ElabError {
   eeLevel :: ErrorLevel,
-  eeBegin :: Offset,
-  eeEnd :: Offset,
+  eeRange :: Range,
   eeMsg :: Text,
   eeRelated :: [(Offset, Offset, Text)] } deriving (Show)
 
 toElabError :: ParseError -> ElabError
-toElabError e = ElabError ELError (errorOffset e) (errorOffset e)
+toElabError e = ElabError ELError (errorOffset e, errorOffset e)
   (T.pack (parseErrorTextPretty e)) []
 
 -- This represents a hierarchical ordering of values:
@@ -311,10 +311,10 @@ escapeErr :: ElabError -> ElabM a
 escapeErr e = reportErr e >> mzero
 
 reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
-reportAt o l s = reportErr $ ElabError l o o s []
+reportAt o l s = reportErr $ ElabError l (o, o) s []
 
-reportSpan :: Offset -> Offset -> ErrorLevel -> Text -> ElabM ()
-reportSpan o1 o2 l s = reportErr $ ElabError l o1 o2 s []
+reportSpan :: Range -> ErrorLevel -> Text -> ElabM ()
+reportSpan o l s = reportErr $ ElabError l o s []
 
 escapeAt :: Offset -> Text -> ElabM a
 escapeAt o s = reportAt o ELError s >> mzero
@@ -541,12 +541,12 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
   addCoeInner c s1 s2 coes = do
     let l = coeToList c s1 s2
     when (s1 == s2) $ do
-      escapeErr $ ElabError ELError o o
+      escapeErr $ ElabError ELError (o, o)
         (T.concat ("coercion cycle detected: " : toStrs l))
         (toRelated l)
     try (getCoe' s1 s2) >>= mapM_ (\c2 -> do
       let l2 = coeToList c2 s1 s2
-      escapeErr $ ElabError ELError o o
+      escapeErr $ ElabError ELError (o, o)
         (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
         (toRelated (l ++ l2)))
     return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
@@ -563,7 +563,7 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
               c <- getCoe' s1 s2
               let l = coeToList c s1 s2
               let l' = coeToList c' s1 s2'
-              escapeErr $ ElabError ELError o o
+              escapeErr $ ElabError ELError (o, o)
                 (T.concat ("coercion diamond to provable detected:\n" :
                   toStrs l ++ " provable\n" : toStrs l' ++ [" provable"]))
                 (toRelated (l ++ l'))

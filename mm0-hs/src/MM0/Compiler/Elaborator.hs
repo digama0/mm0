@@ -26,8 +26,8 @@ elaborate mm0 errs ast = do
   (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 (toElabError <$> errs) initialBindings
   return (errs', env)
 
-elabStmt :: AtPos Stmt -> Elab ()
-elabStmt (AtPos pos s) = resuming $ withTimeout pos $ case s of
+elabStmt :: Span Stmt -> Elab ()
+elabStmt (Span (pos, _) s) = resuming $ withTimeout pos $ case s of
   Sort px x sd -> addSort px x sd
   Decl vis dk px x bis ret v -> addDecl vis dk px x bis ret v
   Notation (Delimiter cs Nothing) -> lift $ addDelimiters cs cs
@@ -50,13 +50,13 @@ checkNew :: ErrorLevel -> Offset -> T.Text -> (v -> Offset) -> T.Text ->
 checkNew l o msg f k m = case H.lookup k m of
   Nothing -> return (\v -> H.insert k v m)
   Just a -> do
-    reportErr $ ElabError l o o msg [(f a, f a, "previously declared here")]
+    reportErr $ ElabError l (o, o) msg [(f a, f a, "previously declared here")]
     mzero
 
-nameOf :: AtPos Stmt -> LispVal
-nameOf (AtPos _ (Sort px x _)) = Atom px x
-nameOf (AtPos _ (Decl _ _ px x _ _ _)) = Atom px x
-nameOf (AtPos _ (Annot _ s)) = nameOf s
+nameOf :: Span Stmt -> LispVal
+nameOf (Span _ (Sort px x _)) = Atom px x
+nameOf (Span _ (Decl _ _ px x _ _ _)) = Atom px x
+nameOf (Span _ (Annot _ s)) = nameOf s
 nameOf _ = Bool False
 
 addSort :: Offset -> T.Text -> SortData -> ElabM ()
@@ -205,7 +205,7 @@ addDeclNota :: Offset -> T.Text -> Maybe DeclNota -> DeclNota -> ElabM ()
 addDeclNota px x old new = do
   forM_ old $ \no -> do
     i <- getDeclNotaOffset no
-    reportErr $ ElabError ELWarning px px
+    reportErr $ ElabError ELWarning (px, px + T.length x)
       ("term '" <> x <> "' already has a notation")
       [(i, i, "previously declared here")]
   modify $ \env -> env {eDecls =
@@ -281,7 +281,7 @@ insertPrec (Const o tk) p = do
   env <- get
   case H.lookup tk (pPrec (ePE env)) of
     Just (i, p') | p /= p' ->
-      reportErr $ ElabError ELError o o
+      reportErr $ ElabError ELError (o, o)
         ("incompatible precedence for '" <> tk <> "'")
         [(i, i, "previously declared here")]
     _ -> lift $ modifyPE $ \e -> e {pPrec = H.insert tk (o, p) (pPrec e)}
@@ -359,7 +359,7 @@ inferQExpr' tgt (QApp (AtPos o t) ts) = do
     (Just (LINew o1 bd1 s1), Nothing) -> do
       bd' <- case tgt of
         Just (s2, bd2) -> do
-          unless (s1 == s2) $ escapeErr $ ElabError ELError o o
+          unless (s1 == s2) $ escapeErr $ ElabError ELError (o, o)
             ("inferred two types " <> s1 <> ", " <> s2 <> " for " <> t)
             [(o1, o1, "inferred " <> s1 <> " here"), (o, o, "inferred " <> s2 <> " here")]
           return (bd1 || bd2)
@@ -530,17 +530,17 @@ unRef e = return e
 call :: Offset -> T.Text -> [LispVal] -> ElabM LispVal
 call o v es = try (lispLookupName v) >>= \case
   Just e -> unRef e >>= \case
-    Proc f -> f o o es
+    Proc f -> f (o, o) es
     e' -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show e')
   Nothing -> escapeAt o $ "Unknown function '" <> v <> "'"
 
 evalApp :: Offset -> LCtx -> LispAST -> [AtLisp] -> ElabM LispVal
 evalApp o ctx (AAtom e) es = evalAtom o ctx e >>= unRef >>= \case
   Syntax s -> evalSyntax o ctx s es
-  Proc f -> evals ctx es >>= f o (o + T.length e)
+  Proc f -> evals ctx es >>= f (o, o + T.length e)
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
 evalApp o ctx e es = eval o ctx e >>= unRef >>= \case
-  Proc f -> evals ctx es >>= f o o
+  Proc f -> evals ctx es >>= f (o, o)
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
 
 evalSyntax :: Offset -> LCtx -> Syntax -> [AtLisp] -> ElabM LispVal
@@ -603,7 +603,7 @@ mkCtx o (LSAtLeast xs' r) = \vs -> mkCtxImproper xs' vs 0 where
     "expected at least " <> T.pack (show (n + length xs)) <> " arguments, got " <> T.pack (show n)
 
 mkLambda :: LambdaSpec -> LCtx -> [AtLisp] -> Proc
-mkLambda ls ctx es o _ vs = do
+mkLambda ls ctx es (o, _) vs = do
   ctx' <- mkCtx o ls vs ctx
   eval1 ctx' es
 
@@ -705,7 +705,7 @@ evalFold1 o _ [] = escapeAt o "expected at least one argument"
 evalFold1 _ f es = return (foldl1 f es)
 
 intBoolBinopProc :: (Integer -> Integer -> Bool) -> Proc
-intBoolBinopProc f o _ es = mapM (asInt o) es >>= \case
+intBoolBinopProc f (o, _) es = mapM (asInt o) es >>= \case
     e : es' -> return $ Bool $ go e es'
     _ -> escapeAt o "expected at least one argument"
   where
@@ -757,27 +757,27 @@ initialBindings = [
 
   initialProcs :: [(T.Text, Proc)]
   initialProcs = [
-    ("display", \o o' es ->
-      unary o es >>= asString o >>= reportSpan o o' ELInfo >> pure Undef),
-    ("print", \o o' es -> unary o es >>= \e -> do
-      reportSpan o o' ELInfo $! T.pack (show e)
+    ("display", \os@(o, _) es ->
+      unary o es >>= asString o >>= reportSpan os ELInfo >> pure Undef),
+    ("print", \os@(o, _) es -> unary o es >>= \e -> do
+      reportSpan os ELInfo $! T.pack (show e)
       pure Undef),
-    ("begin", \_ _ -> return . \case [] -> Undef; es -> last es),
-    ("apply", \o o' -> \case
+    ("begin", \_ -> return . \case [] -> Undef; es -> last es),
+    ("apply", \os@(o, _) -> \case
       Proc proc : e : es ->
         let args (List es') [] = return es'
             args e' [] = escapeAt o $ "not a list: " <> T.pack (show e')
             args e' (e2 : es') = (e':) <$> args e2 es'
-        in args e es >>= proc o o'
+        in args e es >>= proc os
       e : _ : _ -> escapeAt o $ "not a procedure: " <> T.pack (show e)
       _ -> escapeAt o "expected at least two arguments"),
-    ("+", \o _ es -> Number . sum <$> mapM (asInt o) es),
-    ("*", \o _ es -> Number . product <$> mapM (asInt o) es),
-    ("max", \o _ es ->
+    ("+", \(o, _) es -> Number . sum <$> mapM (asInt o) es),
+    ("*", \(o, _) es -> Number . product <$> mapM (asInt o) es),
+    ("max", \(o, _) es ->
       mapM (asInt o) es >>= evalFold1 o max >>= return . Number),
-    ("min", \o _ es ->
+    ("min", \(o, _) es ->
       mapM (asInt o) es >>= evalFold1 o min >>= return . Number),
-    ("-", \o _ es -> mapM (asInt o) es >>= \case
+    ("-", \(o, _) es -> mapM (asInt o) es >>= \case
       [] -> escapeAt o "expected at least one argument"
       [n] -> return $ Number (-n)
       n : ns -> return $ Number (n - sum ns)),
@@ -786,57 +786,57 @@ initialBindings = [
     (">", intBoolBinopProc (>)),
     (">=", intBoolBinopProc (>=)),
     ("=", intBoolBinopProc (==)),
-    ("->string", \o _ es -> unary o es >>= \case
+    ("->string", \(o, _) es -> unary o es >>= \case
       Number n -> return $ String $ T.pack $ show n
       String s -> return $ String s
       Atom _ s -> return $ String s
       UnparsedFormula _ s -> return $ String s
       e -> return $ String $! T.pack $ show e),
-    ("string->atom", \o _ es -> unary o es >>= asString o >>= return . Atom o),
-    ("not", \o _ es -> Bool . not . truthy <$> unary o es),
-    ("and", \_ _ es -> return $ Bool $ all truthy es),
-    ("or", \_ _ es -> return $ Bool $ any truthy es),
-    ("list", \_ _ -> return . List),
-    ("cons", \_ _ -> \case
+    ("string->atom", \(o, _) es -> unary o es >>= asString o >>= return . Atom o),
+    ("not", \(o, _) es -> Bool . not . truthy <$> unary o es),
+    ("and", \_ es -> return $ Bool $ all truthy es),
+    ("or", \_ es -> return $ Bool $ any truthy es),
+    ("list", \_ -> return . List),
+    ("cons", \_ -> \case
       [] -> return $ List []
       es' -> return $ foldl1 cons es'),
-    ("pair?", \o _ es -> Bool . isPair <$> unary o es),
-    ("null?", \o _ es -> Bool . isNull <$> unary o es),
-    ("string?", \o _ es -> Bool . isString <$> unary o es),
-    ("hd", \o _ es -> unary o es >>= lispHd o),
-    ("tl", \o _ es -> unary o es >>= lispTl o),
-    ("ref?", \o _ es -> Bool . isRef <$> unary o es),
-    ("ref!", \_ _ -> \case
+    ("pair?", \(o, _) es -> Bool . isPair <$> unary o es),
+    ("null?", \(o, _) es -> Bool . isNull <$> unary o es),
+    ("string?", \(o, _) es -> Bool . isString <$> unary o es),
+    ("hd", \(o, _) es -> unary o es >>= lispHd o),
+    ("tl", \(o, _) es -> unary o es >>= lispTl o),
+    ("ref?", \(o, _) es -> Bool . isRef <$> unary o es),
+    ("ref!", \_ -> \case
       [] -> Ref <$> newRef Undef
       e:_ -> Ref <$> newRef e),
-    ("get!", \o _ es -> unary o es >>= asRef o >>= getRef),
-    ("set!", \o _ -> \case
+    ("get!", \(o, _) es -> unary o es >>= asRef o >>= getRef),
+    ("set!", \(o, _) -> \case
       [e, v] -> asRef o e >>= \x -> Undef <$ setRef x v
       _ -> escapeAt o "expected two arguments"),
-    ("async", \o o' -> \case
+    ("async", \os@(o, _) -> \case
       Proc proc : es -> do
-        res <- forkElabM $ proc o o' es
-        return $ Proc $ \_ _ _ -> res
+        res <- forkElabM $ proc os es
+        return $ Proc $ \_ _ -> res
       e : _ -> escapeAt o $ "not a procedure: " <> T.pack (show e)
       _ -> escapeAt o "expected at least one argument"),
 
     -- MM0 specific
-    ("set-timeout", \o _ es -> unary o es >>= asInt o >>= \n ->
+    ("set-timeout", \(o, _) es -> unary o es >>= asInt o >>= \n ->
       Undef <$ modify (\env -> env {eTimeout = 1000 * fromInteger n})),
-    ("mvar?", \o _ es -> Bool . isMVar <$> unary o es),
-    ("goal?", \o _ es -> Bool . isGoal <$> unary o es),
-    ("mvar!", \o _ -> \case
+    ("mvar?", \(o, _) es -> Bool . isMVar <$> unary o es),
+    ("goal?", \(o, _) es -> Bool . isGoal <$> unary o es),
+    ("mvar!", \(o, _) -> \case
       [Atom _ s, Bool bd] -> Ref <$> newMVar o s bd
       _ -> escapeAt o "invalid arguments"),
-    ("pp", \o _ es -> unary o es >>= ppExpr >>= return . String . render),
-    ("goal", \o _ es -> Goal o <$> unary o es),
-    ("goal-type", \o _ es -> unary o es >>= unRef >>= goalType o),
-    ("infer-type", \o _ es -> unary o es >>= inferType o),
-    ("get-goals", \_ _ _ -> List . fmap Ref . V.toList . tcGoals <$> getTC),
-    ("set-goals", \o _ es -> Undef <$ (mapM (asRef o) es >>= setGoals)),
-    ("to-expr", \o _ es -> unary o es >>= parseRefine o >>= toExpr "" False),
-    ("refine", \o _ es -> Undef <$ refine o es),
-    ("have", \o _ -> \case
+    ("pp", \(o, _) es -> unary o es >>= ppExpr >>= return . String . render),
+    ("goal", \(o, _) es -> Goal o <$> unary o es),
+    ("goal-type", \(o, _) es -> unary o es >>= unRef >>= goalType o),
+    ("infer-type", \(o, _) es -> unary o es >>= inferType o),
+    ("get-goals", \_ _ -> List . fmap Ref . V.toList . tcGoals <$> getTC),
+    ("set-goals", \(o, _) es -> Undef <$ (mapM (asRef o) es >>= setGoals)),
+    ("to-expr", \(o, _) es -> unary o es >>= parseRefine o >>= toExpr "" False),
+    ("refine", \(o, _) es -> Undef <$ refine o es),
+    ("have", \(o, _) -> \case
       [Atom _ x, e] -> do
         ty <- Ref <$> newUnknownMVar o
         p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
@@ -846,11 +846,11 @@ initialBindings = [
         p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
         Undef <$ addSubproof x ty p
       _ -> escapeAt o "invalid arguments"),
-    ("stat", \o o' _ ->
-      getStat >>= reportSpan o o' ELInfo . render >> pure Undef),
+    ("stat", \o _ ->
+      getStat >>= reportSpan o ELInfo . render >> pure Undef),
 
     -- redefinable configuration functions
-    ("refine-extra-args", \o _ -> \case
+    ("refine-extra-args", \(o, _) -> \case
       [_, e] -> return e
       _:e:_ -> e <$ reportAt o ELError "too many arguments"
       _ -> escapeAt o "expected at least two arguments")]
@@ -1182,11 +1182,11 @@ refineProof gv = refinePf where
     e' <- call (reOffset r) "refine-extra-args" $ Proc callback : e : es
     coerceTo' o ty e'
     where
-    callback o' _ [ty', e'] = parseRefine o' e' >>= refinePf ty'
-    callback o' _ [e'] = do
+    callback (o', _) [ty', e'] = parseRefine o' e' >>= refinePf ty'
+    callback (o', _) [e'] = do
       mv <- newUnknownMVar o'
       parseRefine o' e' >>= refinePf (Ref mv)
-    callback o' _ _ = escapeAt o' "expected two arguments"
+    callback (o', _) _ = escapeAt o' "expected two arguments"
 
 focus :: Offset -> LCtx -> [AtLisp] -> ElabM ()
 focus o ctx es = getGoals o >>= \case

@@ -235,8 +235,8 @@ reactor debug lf inp = do
             doc = toNormalizedUri $ jdoc ^. J.uri
         hover <- getFileCache doc <&> \case
           Just (FC _ larr ast sps env) -> do
-            (stmt, CA.Span o1 pi' o2) <- getPosInfo ast sps (posToOff larr l c)
-            makeHover env (toRange larr o1 o2) stmt pi'
+            (stmt, CA.Span o pi') <- getPosInfo ast sps (posToOff larr l c)
+            makeHover env (toRange larr o) stmt pi'
           _ -> Nothing
         reactorSend $ RspHover $ makeResponseMessage req hover
 
@@ -250,8 +250,8 @@ reactor debug lf inp = do
             makeResponse = RspDefinition . makeResponseMessage req
         resp <- getFileCache doc <&> \case
           Just (FC _ larr ast sps env) -> Just $ do
-            (stmt, CA.Span _ pi' _) <- maybeToList $ getPosInfo ast sps (posToOff larr l c)
-            goToDefinition larr env stmt pi'
+            (_, CA.Span _ pi') <- maybeToList $ getPosInfo ast sps (posToOff larr l c)
+            goToDefinition larr env pi'
           _ -> Nothing
         reactorSend $ case resp of
           Nothing -> makeErr InternalError "could not get file data"
@@ -292,17 +292,17 @@ parseErrorDiags larr errs = toDiag <$> errs where
 toPosition :: Lines -> Int -> Position
 toPosition larr n = let (l, c) = offToPos larr n in Position l c
 
-toRange :: Lines -> Int -> Int -> Range
-toRange larr o1 o2 = Range (toPosition larr o1) (toPosition larr o2)
+toRange :: Lines -> (Int, Int) -> Range
+toRange larr (o1, o2) = Range (toPosition larr o1) (toPosition larr o2)
 
 elabErrorDiags :: Uri -> Lines -> [CE.ElabError] -> [Diagnostic]
 elabErrorDiags uri larr errs = toDiag <$> errs where
   toRel :: (Int, Int, T.Text) -> DiagnosticRelatedInformation
   toRel (o1, o2, msg) = DiagnosticRelatedInformation
-    (Location uri (toRange larr o1 o2)) msg
+    (Location uri (toRange larr (o1, o2))) msg
   toDiag :: CE.ElabError -> Diagnostic
-  toDiag (CE.ElabError l o1 o2 msg es) =
-    mkDiagnosticRelated l (toRange larr o1 o2) msg (toRel <$> es)
+  toDiag (CE.ElabError l o msg es) =
+    mkDiagnosticRelated l (toRange larr o) msg (toRel <$> es)
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
@@ -350,14 +350,14 @@ getFileCache doc = do
             _ -> return Nothing
       in go (1 :: Int)
 
-makeHover :: CE.Env -> Range -> CA.AtPos CA.Stmt -> PosInfo -> Maybe Hover
+makeHover :: CE.Env -> Range -> CA.Span CA.Stmt -> PosInfo -> Maybe Hover
 makeHover env range stmt (PosInfo t pi') = case pi' of
   PISort -> do
     (_, o, sd) <- H.lookup t (CE.eSorts env)
     Just $ code $ ppStmt $ CA.Sort o t sd
   PIVar (Just bi) -> Just $ code $ ppBinder bi
   PIVar Nothing -> do
-    CA.AtPos _ (CA.Decl _ _ _ st _ _ _) <- return stmt
+    CA.Span _ (CA.Decl _ _ _ st _ _ _) <- return stmt
     bis <- H.lookup st (CE.eDecls env) <&> \case
       (_, _, CE.DTerm bis _, _) -> bis
       (_, _, CE.DAxiom bis _ _, _) -> bis
@@ -378,8 +378,8 @@ makeHover env range stmt (PosInfo t pi') = case pi' of
   hover ms = Hover (HoverContents ms) (Just range)
   code = hover . markedUpContent "mm0" . render'
 
-goToDefinition :: Lines -> CE.Env -> CA.AtPos CA.Stmt -> PosInfo -> [Range]
-goToDefinition larr env _ (PosInfo t pi') = case pi' of
+goToDefinition :: Lines -> CE.Env -> PosInfo -> [Range]
+goToDefinition larr env (PosInfo t pi') = case pi' of
   PISort -> maybeToList $
     H.lookup t (CE.eSorts env) <&> \(_, o, _) -> range o t
   PIVar bi -> maybeToList $ binderRange <$> bi
@@ -394,6 +394,6 @@ goToDefinition larr env _ (PosInfo t pi') = case pi' of
     maybeToList (
       H.lookup t (CE.eLispNames env) >>= fst <&> \o -> range o t)
   where
-  range o t' = toRange larr o (o + T.length t')
+  range o t' = toRange larr (o, o + T.length t')
   binderRange (CA.Binder o l _) =
     range o (fromMaybe "_" (CA.localName l))

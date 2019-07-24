@@ -49,26 +49,23 @@ data PosInfo = PosInfo T.Text PIType
 type Spans = V.Vector (Span PosInfo)
 type MakeSpan s = ReaderT (H.HashMap VarName Binder) (ST s)
 
-toSpans :: Env -> AtPos Stmt -> Spans
+toSpans :: Env -> Span Stmt -> Spans
 toSpans env = \st -> runST $ do
   v <- VD.new 0
   toSpans' v st
   mv <- VD.unsafeFreeze v >>= V.unsafeThaw
-  sortBy (comparing (\(Span o _ _) -> o)) mv
+  sortBy (comparing (\(Span o _) -> fst o)) mv
   V.unsafeFreeze mv
   where
 
-  toSpans' :: forall s. VD.STVector s (Span PosInfo) -> AtPos Stmt -> ST s ()
-  toSpans' vec = \st -> runReaderT (atStmt st) H.empty where
+  toSpans' :: forall s. VD.STVector s (Span PosInfo) -> Span Stmt -> ST s ()
+  toSpans' vec = \(Span _ st) -> runReaderT (stmt st) H.empty where
 
     push :: Offset -> T.Text -> PIType -> MakeSpan s ()
-    push o t i = lift $ VD.pushBack vec (Span o (PosInfo t i) (o + T.length t))
+    push o t i = lift $ VD.pushBack vec (Span (o, o + T.length t) (PosInfo t i))
 
     pushVar :: Offset -> T.Text -> MakeSpan s ()
     pushVar o t = asks (H.lookup t) >>= push o t . PIVar
-
-    atStmt :: AtPos Stmt -> MakeSpan s ()
-    atStmt (AtPos _ st) = stmt st
 
     stmt :: Stmt -> MakeSpan s ()
     stmt (Decl _ _ _ _ bis ty val) =
@@ -82,7 +79,7 @@ toSpans env = \st -> runST $ do
       withBinders bis (mapM_ typ ty >> mapM_ atLit lits)
     stmt (Inout (Input _ vals)) = mapM_ (atLisp False) vals
     stmt (Inout (Output _ vals)) = mapM_ (atLisp False) vals
-    stmt (Annot anno st) = atLisp False anno >> atStmt st
+    stmt (Annot anno (Span _ st)) = atLisp False anno >> stmt st
     stmt (Do val) = mapM_ (atLisp False) val
     stmt (Sort _ _ _) = return ()
 
@@ -120,12 +117,12 @@ toSpans env = \st -> runST $ do
       asks (H.lookup t) >>= push o t . PIAtom True >> mapM_ qExpr es
     qExpr (QUnquote e) = atLisp False e
 
-getPosInfo :: AST -> V.Vector Spans -> Offset -> Maybe (AtPos Stmt, Span PosInfo)
+getPosInfo :: AST -> V.Vector Spans -> Offset -> Maybe (Span Stmt, Span PosInfo)
 getPosInfo ast spans o =
-  case binarySearch' (\(AtPos i _) -> i) ast o of
+  case binarySearch' (\(Span i _) -> fst i) ast o of
     0 -> Nothing
     n -> let ss = spans V.! (n - 1) in
-      case binarySearch' (\(Span i _ _) -> i) ss o of
+      case binarySearch' (\(Span i _) -> fst i) ss o of
         0 -> Nothing
-        m -> let s@(Span _ _ j) = ss V.! (m - 1) in
-          if o <= j then Just (ast V.! (n - 1), s) else Nothing
+        m -> let s@(Span i _) = ss V.! (m - 1) in
+          if o <= snd i then Just (ast V.! (n - 1), s) else Nothing

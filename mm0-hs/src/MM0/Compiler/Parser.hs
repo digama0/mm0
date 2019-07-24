@@ -20,6 +20,7 @@ import qualified Data.Text as T
 import qualified Text.Builder as TB
 import qualified Text.Megaparsec.Char.Lexer as L
 import MM0.Compiler.AST
+import MM0.Util
 
 -- TODO: This should be in Megaparsec
 initialPosState :: String -> s -> PosState s
@@ -39,7 +40,7 @@ runParser p n o s =
 parseAST :: String -> T.Text -> ([ParseError], Offset, Maybe AST)
 parseAST n t = runParser (sc *> (V.fromList <$> stmts)) n 0 t where
   stmts =
-    (withRecovery (recoverToSemi Nothing) atStmt >>= \case
+    (withRecovery (recoverToSemi Nothing) spanStmt >>= \case
       Just st -> (st :) <$> stmts
       _ -> stmts) <|>
     ([] <$ eof) <?> "expecting command or EOF"
@@ -77,13 +78,13 @@ okw w = isJust <$> optional (kw w)
 atPos :: Parser a -> Parser (AtPos a)
 atPos = liftA2 AtPos getOffset
 
-mAtPos :: Parser (Maybe a) -> Parser (Maybe (AtPos a))
-mAtPos = liftA2 (fmap . AtPos) getOffset
+mSpan :: Parser (Maybe (a, Offset)) -> Parser (Maybe (Span a))
+mSpan = liftA2 (fmap . (\o (a, o2) -> Span (o, o2) a)) getOffset
 
-atStmt :: Parser (Maybe (AtPos Stmt))
-atStmt = sortStmt <|> declStmt <|> thmsStmt <|>
-  mAtPos (fmap Notation <$> notation) <|>
-  mAtPos (fmap Inout <$> inout) <|>
+spanStmt :: Parser (Maybe (Span Stmt))
+spanStmt = sortStmt <|> declStmt <|> thmsStmt <|>
+  mSpan (fmap (mapFst Notation) <$> notation) <|>
+  mSpan (fmap (mapFst Inout) <$> inout) <|>
   annot <|> doStmt
 
 identStart :: Char -> Bool
@@ -102,18 +103,22 @@ ident = ident_ >>= \case "_" -> empty; i -> return i
 recoverToSemi :: a -> ParseError -> Parser a
 recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
 
-commit' :: Parser (Maybe a) -> Parser (Maybe a)
-commit' p = withRecovery (recoverToSemi Nothing) (p <* semi)
+commit' :: Parser (Maybe a) -> Parser (Maybe (a, Offset))
+commit' p = withRecovery (recoverToSemi Nothing)
+  (liftA2 (\a o -> flip (,) o <$> a) p getOffset)
 
-commit :: Parser a -> Parser (Maybe a)
+commit :: Parser a -> Parser (Maybe (a, Offset))
 commit p = commit' (Just <$> p)
+
+toSpan :: (AtPos a, Offset) -> Span a
+toSpan (AtPos o a, o2) = Span (o, o2) a
 
 sortData :: Parser SortData
 sortData = liftM4 SortData
   (okw "pure") (okw "strict") (okw "provable") (okw "free")
 
-sortStmt :: Parser (Maybe (AtPos Stmt))
-sortStmt = do
+sortStmt :: Parser (Maybe (Span Stmt))
+sortStmt = fmap toSpan <$> do
   sd <- sortData
   ostmt <- getOffset <* kw "sort"
   commit $ do
@@ -153,8 +158,8 @@ binder = braces (f LBound) <|> parens (f LReg) where
 binders :: Parser [Binder]
 binders = concat <$> many binder
 
-declStmt :: Parser (Maybe (AtPos Stmt))
-declStmt = do
+declStmt :: Parser (Maybe (Span Stmt))
+declStmt = fmap toSpan <$> do
   ovis <- getOffset
   vis <- (Public <$ kw "pub") <|> (Abstract <$ kw "abstract") <|>
          (Local <$ kw "local") <|> return VisDefault
@@ -221,8 +226,8 @@ declStmt = do
     checkRet dk tys
   checkRet dk (_ : tys) = checkRet dk tys
 
-thmsStmt :: Parser (Maybe (AtPos Stmt))
-thmsStmt = mAtPos $ kw "theorems" *>
+thmsStmt :: Parser (Maybe (Span Stmt))
+thmsStmt = mSpan $ kw "theorems" *>
   commit (liftA2 Theorems binders (symbol "=" *> braces (many lispVal)))
 
 prec :: Parser Prec
@@ -233,10 +238,10 @@ prec = (PrecMax <$ kw "max") <|> (do
     return (Prec (fromIntegral n))
   else PrecMax <$ failAt o "precedence out of range")
 
-notation :: Parser (Maybe Notation)
+notation :: Parser (Maybe (Notation, Offset))
 notation = delimNota <|> fixNota <|> coeNota <|> genNota where
 
-  delimNota :: Parser (Maybe Notation)
+  delimNota :: Parser (Maybe (Notation, Offset))
   delimNota = do
     kw "delimiter"
     let p = between (single '$') (symbol "$") (space *> delims)
@@ -252,7 +257,7 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
           failAt o "multiple character delimiters not supported"
           space >> delims
 
-  fixNota :: Parser (Maybe Notation)
+  fixNota :: Parser (Maybe (Notation, Offset))
   fixNota = do
     mk <- (Prefix <$ kw "prefix") <|>
       (Infix False <$ kw "infixl") <|> (Infix True <$ kw "infixr")
@@ -265,11 +270,11 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
           return r
         r -> return r
 
-  coeNota :: Parser (Maybe Notation)
+  coeNota :: Parser (Maybe (Notation, Offset))
   coeNota = kw "coercion" >> commit
     (liftM4 Coercion getOffset ident (symbol ":" *> ident) (symbol ">" >> ident))
 
-  genNota :: Parser (Maybe Notation)
+  genNota :: Parser (Maybe (Notation, Offset))
   genNota = kw "notation" >> commit
     (liftM5 NNotation getOffset ident binders
       (optional (symbol ":" *> ptype))
@@ -277,16 +282,17 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
         parens (liftA2 NConst constant (symbol ":" *> prec)) <|>
         (NVar <$> ident))))
 
-inout :: Parser (Maybe Inout)
+inout :: Parser (Maybe (Inout, Offset))
 inout = do
   mk <- (Input <$ kw "input") <|> (Output <$ kw "output")
   commit $ liftA2 mk ident (many lispVal)
 
-annot :: Parser (Maybe (AtPos Stmt))
-annot = mAtPos (symbol "@" >> liftA2 (fmap . Annot) lispVal atStmt)
+annot :: Parser (Maybe (Span Stmt))
+annot = mSpan (symbol "@" >>
+  liftA2 (fmap . \v s@(Span o _) -> (Annot v s, snd o)) lispVal spanStmt)
 
-doStmt :: Parser (Maybe (AtPos Stmt))
-doStmt = mAtPos (kw "do" >> commit (braces (Do <$> many lispVal)))
+doStmt :: Parser (Maybe (Span Stmt))
+doStmt = mSpan (kw "do" >> commit (braces (Do <$> many lispVal)))
 
 strLit :: Parser T.Text
 strLit = single '"' *> (TB.run <$> p) where
