@@ -523,10 +523,6 @@ evalAtom o (LCtx ctx) v = case H.lookup v ctx of
     Just e -> return e
     Nothing -> escapeAt o $ "Reference to unbound variable '" <> v <> "'"
 
-unRef :: LispVal -> ElabM LispVal
-unRef (Ref e) = getRef e >>= unRef
-unRef e = return e
-
 call :: Offset -> T.Text -> [LispVal] -> ElabM LispVal
 call o v es = try (lispLookupName v) >>= \case
   Just e -> unRef e >>= \case

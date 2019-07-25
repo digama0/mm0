@@ -1,9 +1,11 @@
-module MM0.Util (module MM0.Util, module Debug.Trace) where
+module MM0.Util (module MM0.Util, module Debug.Trace, (<&>)) where
 
+import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.Writer
 import Data.Word (Word8)
 import Data.List (group, sort)
+import Data.Functor
 import Debug.Trace
 import System.Exit
 import qualified Data.Char as C
@@ -12,6 +14,12 @@ import qualified Data.Map.Strict as M
 fromMaybeM :: MonadPlus m => Maybe a -> m a
 fromMaybeM Nothing = mzero
 fromMaybeM (Just a) = return a
+
+mapMaybeM :: Applicative m => (a -> m (Maybe b)) -> [a] -> m [b]
+mapMaybeM _ [] = pure []
+mapMaybeM f (a : as) = liftA2 go (f a) (mapMaybeM f as) where
+  go Nothing l = l
+  go (Just b) l = b : l
 
 fromJustError :: MonadError e m => e -> Maybe a -> m a
 fromJustError errorval Nothing = throwError errorval

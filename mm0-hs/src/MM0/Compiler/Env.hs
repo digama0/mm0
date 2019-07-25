@@ -446,6 +446,13 @@ withTC vs m = do
 getTC :: ElabM ThmCtx
 getTC = MaybeT $ gets eThmCtx
 
+unRefIO :: LispVal -> IO LispVal
+unRefIO (Ref e) = readTVarIO e >>= unRefIO
+unRefIO e = return e
+
+unRef :: LispVal -> ElabM LispVal
+unRef = liftIO . unRefIO
+
 newMVar :: Offset -> Sort -> Bool -> ElabM (TVar LispVal)
 newMVar o s bd = do
   mv <- tcMVars <$> getTC

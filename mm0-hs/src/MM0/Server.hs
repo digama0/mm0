@@ -12,11 +12,12 @@ import qualified Control.Exception as E
 import Control.Lens ((^.))
 import Control.Monad.Reader
 import Data.Default
-import Data.Functor
+import Data.List
 import Data.Maybe
 import qualified Data.Aeson as A
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
+import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
 import qualified Language.Haskell.LSP.Control as Ctrl (run)
 import Language.Haskell.LSP.Core
@@ -37,6 +38,7 @@ import MM0.Compiler.PrettyPrinter hiding (doc)
 import qualified MM0.Compiler.Env as CE
 import qualified MM0.Compiler.Elaborator as CE
 import MM0.Compiler.Elaborator (ErrorLevel(..))
+import MM0.Util
 
 server :: [String] -> IO ()
 server ("--debug" : _) = atomically newTChan >>= run True
@@ -265,9 +267,9 @@ reactor debug lf inp = do
             makeErr code msg = RspError $
               makeResponseError (responseId $ req ^. J.id) $
               ResponseError code msg Nothing
-        resp <- getFileCache doc <&> \case
-          Just (FC _ _ _ _ env) -> Just $ getSymbols env
-          _ -> Nothing
+        resp <- getFileCache doc >>= \case
+          Just (FC _ larr _ _ env) -> liftIO $ Just <$> getSymbols larr env
+          _ -> return Nothing
         reactorSend $ case resp of
           Nothing -> makeErr InternalError "could not get file data"
           Just as -> RspDocumentSymbols $ makeResponseMessage req $
@@ -411,5 +413,31 @@ goToDefinition larr env (PosInfo t pi') = case pi' of
   where
   binderRange (CA.Binder o _ _) = toRange larr o
 
-getSymbols :: CE.Env -> [DocumentSymbol]
-getSymbols _ = []
+getSymbols :: Lines -> CE.Env -> IO [DocumentSymbol]
+getSymbols larr env = do
+  let mkDS x (rd, rx) sk = DocumentSymbol x Nothing sk Nothing
+        (toRange larr rd) (toRange larr rx) Nothing
+  v <- VD.unsafeFreeze (CE.eLispData env)
+  l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
+    ty <- CE.unRefIO (v V.! n) <&> \case
+      CE.Atom _ _ -> Just SkConstant
+      CE.List _ -> Just SkArray
+      CE.DottedList _ _ _ -> Just SkObject
+      CE.Number _ -> Just SkNumber
+      CE.String _ -> Just SkString
+      CE.UnparsedFormula _ _ -> Just SkString
+      CE.Bool _ -> Just SkBoolean
+      CE.Syntax _ -> Just SkEvent
+      CE.Undef -> Nothing
+      CE.Proc _ -> Just SkFunction
+      CE.Ref _ -> undefined
+      CE.MVar _ _ _ _ -> Just SkConstant
+      CE.Goal _ _ -> Just SkConstant
+    return $ liftM2 (mkDS x) o ty
+  let l2 = H.toList (CE.eSorts env) <&> \(x, (_, r, _)) -> mkDS x r SkClass
+  let l3 = H.toList (CE.eDecls env) <&> \(x, (_, r, d, _)) -> mkDS x r $ case d of
+        CE.DTerm _ _ -> SkConstructor
+        CE.DDef _ _ _ _ -> SkConstructor
+        CE.DAxiom _ _ _ -> SkMethod
+        CE.DTheorem _ _ _ _ _ -> SkMethod
+  return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) (l1 ++ l2 ++ l3)
