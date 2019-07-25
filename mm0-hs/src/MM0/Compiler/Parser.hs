@@ -67,9 +67,9 @@ semi = symbol ";"
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
-spanParens :: Parser a -> Parser (Span a)
-spanParens p = liftA3 (\o1 a o2 -> Span (o1, o2 + 1) a)
-  (getOffset <* symbol "(") p (getOffset <* symbol ")")
+spanBracket :: T.Text -> T.Text -> Parser a -> Parser (Span a)
+spanBracket l r p = liftA3 (\o1 a o2 -> Span (o1, o2 + 1) a)
+  (getOffset <* symbol l) p (getOffset <* symbol r)
 
 braces :: Parser a -> Parser a
 braces = between (symbol "{") (symbol "}")
@@ -325,7 +325,7 @@ lispIdent :: Char -> Bool
 lispIdent c = isAlphaNum c || c `elem` ("!%&*/:<=>?^_~+-.@" :: String)
 
 lispVal :: Parser AtLisp
-lispVal = spanParens listVal <|>
+lispVal = spanBracket "(" ")" listVal <|> spanBracket "[" "]" listVal <|>
   (fmap ANumber <$> lexeme (span L.decimal)) <|>
   (fmap AString <$> lexeme (span strLit)) <|>
   (fmap AFormula <$> lexeme (span formula')) <|>

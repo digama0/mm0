@@ -134,19 +134,26 @@ This command executes some lisp code at the top level, meaning that any definiti
 S-expressions
 ---
 
-    sexpr ::= atom | list | improper-list | number | string | bool | formula
+    sexpr ::= atom | list | number | string | bool | formula
             | ['] sexpr | ',' sexpr
     atom ::= initial (subsequent)* | '+' | '-' | '...' | '->' (subsequent)*
     initial ::=    [a-z] | [A-Z] |         [!%&*/:<=>?^_~]
     subsequent ::= [a-z] | [A-Z] | [0-9] | [!%&*/:<=>?^_~+-.@]
-    list ::= '(' (sexpr)* ')'
-    improper-list ::= '(' (sexpr)+ '.' sexpr ')'
+    list ::= '(' list-inner ')' | '[' list-inner ']'
+    list-inner ::= (sexpr)* | (sexpr)+ '.' sexpr
     number ::= [0-9]+
     string ::= '"' (char)* '"'
     char ::= <any character other than " and \ > | '\"' | '\\' | '\n' | '\r'
     bool ::= '#t' | '#f'
 
-The syntax of s-expressions here is very similar to that of [R6RS Scheme](http://www.r6rs.org/), without the unicode support and with dollar delimited formulas added. Atoms are simple unquoted strings like `foo`, and are used for the names of scheme functions and variables. The `'expr` notation is shorthand for `(quote expr)`, and causes `expr` to be treated literally as data rather than as a function call or variable reference. MM0 theorems and terms are represented using quoted atoms like `'ax_mp`. Inside a quotation, `,expr` or `(unquote expr)` is unquotation and causes the result to be treated as lisp again. Unquotation works also inside math strings; for example `$ foo 1 ,(bar) $` is the expression `(foo 1 v)` where `v` is the result of evaluating `bar`.
+The syntax of s-expressions here is very similar to that of [R6RS Scheme](http://www.r6rs.org/), without the unicode support and with dollar delimited formulas added.
+
+* Atoms are simple unquoted strings like `foo`, and are used for the names of scheme functions and variables.
+* The `'expr` notation is shorthand for `(quote expr)`, and causes `expr` to be treated literally as data rather than as a function call or variable reference.
+  * MM0 theorems and terms are represented using quoted atoms like `'ax_mp`.
+  * Inside a quotation, `,expr` or `(unquote expr)` is unquotation and causes the result to be treated as lisp again.
+  * Unquotation works also inside math strings; for example `$ foo 1 ,(bar) $` is the expression `(foo 1 v)` where `v` is the result of evaluating `bar`.
+* `[]` brackets are mere synonyms for `()` can can be used to make deeply nested brackets more readable.
 
 Evaluation
 ===
@@ -236,15 +243,16 @@ Some expressions have special behavior when evaluated; these roughly correspond 
   * `(fn (a b . c) exprs)` requires that the list has length at least 2. The first two values are bound to `a` and `b`, and `c` is bound to a list with the remainder of the arguments.
   * `(fn a exprs)` binds `a` to the list of all the arguments.
   The list `exprs` is then evaluated as a `begin`-list where the local context is extended with the bindings determined by the first argument.
-* `let` assigns a list of variables to values inside its scope. For example, `(let ((x 1) (y 2) (z 3)) exprs)` evaluates `exprs` as a `begin`-list with the local context extended with `x := 1`, `y := 2`, and `z := 3`.
-  * The bindings are evaluated in order, so `(let ((x1 e1) (x2 e2) (x3 e3)) exprs)` is equivalent to
-    `(let ((x1 e1)) (let ((x2 e2)) (let ((x3 e3)) exprs)))`. This means that when expression `e2` is evaluated, `x1` is in the local context but `x2` and `x3` are not. In Scheme, this is called `let*`.
+* `let` assigns a list of variables to values inside its scope. For example, `(let ([x 1] [y 2] [z 3]) exprs)` evaluates `exprs` as a `begin`-list with the local context extended with `x := 1`, `y := 2`, and `z := 3`.
+  * The use of brackets for individual initializers is conventional but not required.
+  * The bindings are evaluated in order, so `(let ([x1 e1] [x2 e2] [x3 e3]) exprs)` is equivalent to
+    `(let ([x1 e1]) (let ([x2 e2]) (let ([x3 e3]) exprs)))`. This means that when expression `e2` is evaluated, `x1` is in the local context but `x2` and `x3` are not. In Scheme, this is called `let*`.
   * Like `def`, the LHS variable can also be a list or improper list, and it will define a function.\
-    `(let (((f a b) e)) exprs)` is equivalent `(let ((f (fn (a b) e))) exprs)`.
+    `(let ([(f a b) e]) exprs)` is equivalent `(let ([f (fn (a b) e)]) exprs)`.
   * Because of lexical scoping and the fact that `x` is not bound while the expression for `x` is being evaluated, this means that `let` cannot be used to define local recursive functions.
-* `letrec` has the same syntax as `let`, but it can be used to define local recursive and mutually recursive functions. `(letrec ((x e1) (y e2)) exprs)` is equivalent to:
+* `letrec` has the same syntax as `let`, but it can be used to define local recursive and mutually recursive functions. `(letrec ([x e1] [y e2]) exprs)` is equivalent to:
 
-      (let ((x (ref!)) (y (ref!)))
+      (let ([x (ref!)] [y (ref!)])
         (set! x e1)
         (set! y e2)
         exprs)
@@ -253,7 +261,7 @@ Some expressions have special behavior when evaluated; these roughly correspond 
 
   As an example, we can reuse the factorial example as a local function:
 
-      (letrec (((fact x) (if (= x 0) 1 (* x (fact (- x 1))))))
+      (letrec ([(fact x) (if (= x 0) 1 (* x (fact (- x 1))))])
         (fact 5))       -- 120
 
 * `quote` evaluates its argument in "quotation mode", in which syntax expressions evaluate to the corresponding s-expression values. It has the special syntax `'expr` which is the same as `(quote expr)`. So while `x` evaluates to the value that `x` refers to in the local or global context, `'x` evaluates to the atom `x`.
