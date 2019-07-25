@@ -311,14 +311,17 @@ ifMM0 m = asks efMM0 >>= \b -> when b m
 escapeErr :: ElabError -> ElabM a
 escapeErr e = reportErr e >> mzero
 
-reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
-reportAt o l s = reportErr $ ElabError l (o, o) s []
-
 reportSpan :: Range -> ErrorLevel -> Text -> ElabM ()
 reportSpan o l s = reportErr $ ElabError l o s []
 
+reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
+reportAt o = reportSpan (o, o)
+
+escapeSpan :: Range -> Text -> ElabM a
+escapeSpan o s = reportSpan o ELError s >> mzero
+
 escapeAt :: Offset -> Text -> ElabM a
-escapeAt o s = reportAt o ELError s >> mzero
+escapeAt o = escapeSpan (o, o)
 
 unimplementedAt :: Offset -> ElabM a
 unimplementedAt pos = reportAt pos ELWarning "unimplemented" >> mzero

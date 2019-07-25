@@ -313,16 +313,16 @@ insertInfixInfo c@(Const o tk) ti = do
 app1 :: TermName -> SExpr -> SExpr
 app1 t e = App t [e]
 
-data InferResult = IR Offset SExpr Sort Bool deriving (Show)
+data InferResult = IR Range SExpr Sort Bool deriving (Show)
 coerce :: Maybe (Sort, Bool) -> InferResult -> ElabM InferResult
 coerce (Just (s2, bd2)) (IR o e s1 bd1) | s1 == s2 && (bd1 || not bd2) =
   return (IR o e s2 bd2)
 coerce (Just (_, True)) (IR o _ _ _) =
-  escapeAt o "type error, expected bound variable, got expression"
+  escapeSpan o "type error, expected bound variable, got expression"
 coerce (Just (s2, False)) (IR o e s1 _) =
   try (getCoe app1 s1 s2) >>= \case
     Just c -> return (IR o (c e) s2 False)
-    Nothing -> escapeAt o ("type error, expected " <> s2 <>
+    Nothing -> escapeSpan o ("type error, expected " <> s2 <>
       ", got " <> T.pack (show e) <> ": " <> s1)
 coerce Nothing r = return r
 
@@ -336,7 +336,7 @@ inferQExpr' tgt (QApp (Span os@(o, _) t) ts) = do
   let returnVar :: Sort -> Bool -> ElabM a -> ElabM InferResult
       returnVar s bd m = do
         unless (null ts) $ escapeAt o (t <> " is not a function")
-        (IR o (SVar t) s bd) <$ m
+        (IR os (SVar t) s bd) <$ m
   case (var, tm) of
     (Just (LIOld (Binder _ l (Just (TType (AtDepType (Span _ s) _)))) _), _) ->
       returnVar s (isLCurly l) (return ())
@@ -355,7 +355,7 @@ inferQExpr' tgt (QApp (Span os@(o, _) t) ts) = do
       unless (m == n) $ escapeAt o ("term '" <> t <> "' applied to " <>
         T.pack (show m) <> " arguments, expected " <> T.pack (show n))
       ts' <- zipWithM f bis ts
-      return (IR o (App t ts') s False)
+      return (IR os (App t ts') s False)
     (Just (LINew o1 bd1 s1), Nothing) -> do
       bd' <- case tgt of
         Just (s2, bd2) -> do
@@ -370,15 +370,15 @@ inferQExpr' tgt (QApp (Span os@(o, _) t) ts) = do
       (s, bd) <- fromJustAt o "cannot infer type" tgt
       returnVar s bd $ modifyInfer $ \ic -> ic {
         icLocals = H.insert t (LINew os bd s) (icLocals ic) }
-inferQExpr' _ (QUnquote (Span (o, _) e)) = asSExpr <$> eval o def e >>= \case
-  Nothing -> escapeAt o $ "invalid s-expr: " <> T.pack (show e)
+inferQExpr' _ (QUnquote (Span o e)) = asSExpr <$> eval o def e >>= \case
+  Nothing -> escapeSpan o $ "invalid s-expr: " <> T.pack (show e)
   Just e'@(SVar v) -> gets (H.lookup v . icLocals . eInfer) >>= \case
     Just (LIOld (Binder _ l (Just (TType (AtDepType (Span _ s) _)))) _) ->
       return $ IR o e' s (isLCurly l)
-    _ -> escapeAt o $ "unknown variable '" <> v <> "'"
+    _ -> escapeSpan o $ "unknown variable '" <> v <> "'"
   Just e'@(App t _) -> try (now >>= getTerm t) >>= \case
     Just (_, _, DepType s _, _) -> return $ IR o e' s False
-    _ -> escapeAt o $ "unknown term constructor '" <> t <> "'"
+    _ -> escapeSpan o $ "unknown term constructor '" <> t <> "'"
 
 inferQExprProv :: QExpr -> ElabM InferResult
 inferQExprProv q = gets eProvableSorts >>= \case
@@ -387,7 +387,7 @@ inferQExprProv q = gets eProvableSorts >>= \case
     IR o e s _ <- inferQExpr Nothing q
     try (getCoeProv app1 s) >>= \case
       Just (s2, c) -> return (IR o (c e) s2 False)
-      Nothing -> escapeAt o ("type error, expected provable sort, got " <> s)
+      Nothing -> escapeSpan o ("type error, expected provable sort, got " <> s)
 
 buildBinders :: Offset -> Bool -> [Binder] -> [(Range, Local, InferResult)] ->
   ElabM ([PBinder], [(Range, Maybe VarName, SExpr)], [(Range, VarName, Sort)])
@@ -480,23 +480,23 @@ evalToplevel :: AtLisp -> ElabM ()
 evalToplevel (Span rd (AList (Span (o, _) (AAtom "def") : es))) = do
   (Span rx x, v) <- evalDefine o def es
   unless (x == "_") $ lispDefine rd rx x v
-evalToplevel (Span (o, _) e) = evalAndPrint o e
+evalToplevel (Span o e) = evalAndPrint o e
 
-evalAndPrint :: Offset -> LispAST -> ElabM ()
+evalAndPrint :: Range -> LispAST -> ElabM ()
 evalAndPrint o e = eval o def e >>= unRef >>= \case
   Undef -> return ()
-  e' -> reportAt o ELInfo $ T.pack $ show e'
+  e' -> reportSpan o ELInfo $ T.pack $ show e'
 
 evalAt :: LCtx -> AtLisp -> ElabM LispVal
-evalAt ctx (Span (o, _) e) = eval o ctx e
+evalAt ctx (Span o e) = eval o ctx e
 
-eval :: Offset -> LCtx -> LispAST -> ElabM LispVal
-eval o ctx (AAtom e) = evalAtom o ctx e
+eval :: Range -> LCtx -> LispAST -> ElabM LispVal
+eval (o, _) ctx (AAtom e) = evalAtom o ctx e
 eval _ _ (AString s) = return (String s)
 eval _ _ (ANumber n) = return (Number n)
 eval _ _ (ABool b) = return (Bool b)
 eval _ _ (AList []) = return (List [])
-eval _ ctx (AList (Span (o, _) e : es)) = evalApp o ctx e es
+eval _ ctx (AList (e : es)) = evalApp ctx e es
 eval _ _ val@(ADottedList (Span (o, _) _) _ _) =
   escapeAt o $ "attempted to evaluate an improper list: " <> T.pack (show val)
 eval _ ctx (AFormula f) = parseMath f >>= evalQExpr ctx
@@ -530,14 +530,14 @@ call o v es = try (lispLookupName v) >>= \case
     e' -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show e')
   Nothing -> escapeAt o $ "Unknown function '" <> v <> "'"
 
-evalApp :: Offset -> LCtx -> LispAST -> [AtLisp] -> ElabM LispVal
-evalApp o ctx (AAtom e) es = evalAtom o ctx e >>= unRef >>= \case
+evalApp :: LCtx -> AtLisp -> [AtLisp] -> ElabM LispVal
+evalApp ctx (Span (o, _) (AAtom e)) es = evalAtom o ctx e >>= unRef >>= \case
   Syntax s -> evalSyntax o ctx s es
   Proc f -> evals ctx es >>= f (o, o + T.length e)
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
-evalApp o ctx e es = eval o ctx e >>= unRef >>= \case
-  Proc f -> evals ctx es >>= f (o, o)
-  v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
+evalApp ctx (Span o e) es = eval o ctx e >>= unRef >>= \case
+  Proc f -> evals ctx es >>= f o
+  v -> escapeAt (fst o) $ "not a function, cannot apply: " <> T.pack (show v)
 
 evalSyntax :: Offset -> LCtx -> Syntax -> [AtLisp] -> ElabM LispVal
 evalSyntax o _ Define _ = escapeAt o "def not permitted in expression context"
@@ -854,7 +854,7 @@ initialBindings = [
 evalQExpr :: LCtx -> QExpr -> ElabM LispVal
 evalQExpr ctx (QApp (Span (o, _) e) es) =
   List . (Atom o e :) <$> mapM (evalQExpr ctx) es
-evalQExpr ctx (QUnquote (Span (o, _) e)) = eval o ctx e
+evalQExpr ctx (QUnquote (Span o e)) = eval o ctx e
 
 -----------------------------
 -- Tactics
