@@ -325,7 +325,10 @@ lispIdent :: Char -> Bool
 lispIdent c = isAlphaNum c || c `elem` ("!%&*/:<=>?^_~+-.@" :: String)
 
 lispVal :: Parser AtLisp
-lispVal = spanBracket "(" ")" listVal <|> spanBracket "[" "]" listVal <|>
+lispVal =
+  spanBracket "(" ")" listVal <|>
+  spanBracket "[" "]" listVal <|>
+  (toCurlyList <$> spanBracket "{" "}" listVal) <|>
   (fmap ANumber <$> lexeme (span L.decimal)) <|>
   (fmap AString <$> lexeme (span strLit)) <|>
   (fmap AFormula <$> lexeme (span formula')) <|>
@@ -342,10 +345,25 @@ listVal = listVal1 <|> return (AList []) where
     (ADottedList l [] <$> (lexeme "." *> lispVal)) <|>
     (cons l <$> listVal)
 
-  cons :: AtLisp -> LispAST -> LispAST
-  cons l (AList r) = AList (l : r)
-  cons l (ADottedList r0 rs r) = ADottedList l (r0 : rs) r
-  cons _ _ = error "impossible"
+cons :: AtLisp -> LispAST -> LispAST
+cons l (AList r) = AList (l : r)
+cons l (ADottedList r0 rs r) = ADottedList l (r0 : rs) r
+cons _ _ = error "impossible"
+
+toCurlyList :: AtLisp -> AtLisp
+toCurlyList (Span o (AList [])) = Span o (AList [])
+toCurlyList (Span _ (AList [e])) = e
+toCurlyList s@(Span _ (AList [_, _])) = s
+toCurlyList (Span o (AList [e1, op, e2])) = Span o (AList [op, e1, e2])
+toCurlyList (Span o e@(AList (e1 : op@(Span _ (AAtom tk)) : es))) =
+  case go es of
+    Nothing -> Span o (cons (Span o (AAtom ":nfx")) e)
+    Just es' -> Span o (AList (op : e1 : es'))
+  where
+  go [e2] = Just [e2]
+  go (e2 : Span _ (AAtom tk') : es') | tk' == tk = (e2 :) <$> go es'
+  go _ = Nothing
+toCurlyList (Span o e) = (Span o (cons (Span o (AAtom ":nfx")) e))
 
 hashAtom :: T.Text -> Parser LispAST
 hashAtom "t" = return (ABool True)
