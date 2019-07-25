@@ -269,8 +269,8 @@ ppSExpr env e = "$" <+> align p <+> "$" where
   p = doc $ unsafePerformIO $ ppExpr1 False env $ sExprToLisp 0 e
 
 ppArrowSExpr :: Env -> [SExpr] -> SExpr -> Doc Void
-ppArrowSExpr env es e =
-  mconcat (es <&> \e' -> ppSExpr env e' <+> ">" <> softline) <>
+ppArrowSExpr env es e = group $
+  mconcat (es <&> \e' -> ppSExpr env e' <+> ">" <> line) <>
   ppSExpr env e
 
 ppVis :: Visibility -> Doc Void
