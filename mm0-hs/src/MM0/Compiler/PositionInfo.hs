@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, BangPatterns #-}
 module MM0.Compiler.PositionInfo (Lines, Spans, PosInfo(..), PIType(..),
-  getLines, offToPos, posToOff, toSpans, getPosInfo) where
+  getLines, offToPos, posToOff, toSpans, getPosInfo, markPosition) where
 
 import Control.Monad
 import Control.Monad.ST
@@ -129,3 +129,9 @@ getPosInfo ast spans o =
         0 -> Nothing
         m -> let s@(Span i _) = ss V.! (m - 1) in
           if o <= snd i then Just (ast V.! (n - 1), s) else Nothing
+
+markPosition :: Offset -> AST -> Maybe AST
+markPosition o ast =
+  case binarySearch' (\(Span i _) -> fst i) ast o of
+    0 -> Nothing
+    _ -> Just ast -- TODO

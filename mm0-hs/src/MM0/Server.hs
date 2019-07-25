@@ -23,7 +23,7 @@ import qualified Language.Haskell.LSP.Control as Ctrl (run)
 import Language.Haskell.LSP.Core
 import Language.Haskell.LSP.Diagnostics
 import Language.Haskell.LSP.Messages
-import Language.Haskell.LSP.Types hiding (ParseError)
+import Language.Haskell.LSP.Types
 import qualified Language.Haskell.LSP.Types.Lens as J
 import Language.Haskell.LSP.VFS
 import System.Timeout
@@ -71,6 +71,7 @@ run debug rin = do
   lspHandlers :: Handlers
   lspHandlers = def {
     initializedHandler                       = Just $ passHandler NotInitialized,
+    completionHandler                        = Just $ passHandler ReqCompletion,
     hoverHandler                             = Just $ passHandler ReqHover,
     definitionHandler                        = Just $ passHandler ReqDefinition,
     documentSymbolHandler                    = Just $ passHandler ReqDocumentSymbols,
@@ -213,7 +214,8 @@ reactor debug lf inp = do
               Just f -> liftIO $ f rm
 
       NotInitialized _ -> do
-        let registrations = []
+        let registrations = [
+              Registration "mm0-hs-completion" TextDocumentCompletion Nothing]
         n <- nextLspReqId
         let msg = fmServerRegisterCapabilityRequest n $ RegistrationParams $ List registrations
         reactorReq ReqRegisterCapability msg $ const (return ())
@@ -233,47 +235,38 @@ reactor debug lf inp = do
       NotCancelRequestFromClient msg -> do
         reactorLogs $ "reactor:got NotCancelRequestFromClient:" ++ show msg
 
+      ReqCompletion req -> do
+        let CompletionParams jdoc pos _ = req ^. J.params
+        getCompletions (toNormalizedUri $ jdoc ^. J.uri) pos >>= reactorSend . \case
+          Left err -> RspError $ makeResponseError (responseId $ req ^. J.id) err
+          Right res -> RspCompletion $ makeResponseMessage req $ Completions $ List res
+
       ReqHover req -> do
-        let TextDocumentPositionParams jdoc (Position l c) = req ^. J.params
+        let TextDocumentPositionParams jdoc pos = req ^. J.params
             doc = toNormalizedUri $ jdoc ^. J.uri
-        hover <- getFileCache doc <&> \case
-          Just (FC _ larr ast sps env) -> do
-            (stmt, CA.Span o pi') <- getPosInfo ast sps (posToOff larr l c)
+        getFileCache doc >>= reactorSend . \case
+          Left err -> RspError $ makeResponseError (responseId $ req ^. J.id) err
+          Right (FC _ larr ast sps env) -> RspHover $ makeResponseMessage req $ do
+            (stmt, CA.Span o pi') <- getPosInfo ast sps (toOffset larr pos)
             makeHover env (toRange larr o) stmt pi'
-          _ -> Nothing
-        reactorSend $ RspHover $ makeResponseMessage req hover
 
       ReqDefinition req -> do
-        let TextDocumentPositionParams jdoc (Position l c) = req ^. J.params
+        let TextDocumentPositionParams jdoc pos = req ^. J.params
             uri = jdoc ^. J.uri
-            doc = toNormalizedUri uri
-            makeErr code msg = RspError $
-              makeResponseError (responseId $ req ^. J.id) $
-              ResponseError code msg Nothing
-            makeResponse = RspDefinition . makeResponseMessage req
-        resp <- getFileCache doc <&> \case
-          Just (FC _ larr ast sps env) -> Just $ do
-            (_, CA.Span _ pi') <- maybeToList $ getPosInfo ast sps (posToOff larr l c)
-            goToDefinition larr env pi'
-          _ -> Nothing
-        reactorSend $ case resp of
-          Nothing -> makeErr InternalError "could not get file data"
-          Just [a] -> makeResponse $ SingleLoc $ Location uri a
-          Just as -> makeResponse $ MultiLoc $ Location uri <$> as
+        getFileCache (toNormalizedUri uri) >>= reactorSend . \case
+          Left err -> RspError $ makeResponseError (responseId $ req ^. J.id) err
+          Right (FC _ larr ast sps env) ->
+            let {as = do
+              (_, CA.Span _ pi') <- maybeToList $ getPosInfo ast sps (toOffset larr pos)
+              goToDefinition larr env pi'}
+            in RspDefinition $ makeResponseMessage req $ MultiLoc $ Location uri <$> as
 
       ReqDocumentSymbols req -> do
         let uri = req ^. J.params . J.textDocument . J.uri
-            doc = toNormalizedUri uri
-            makeErr code msg = RspError $
-              makeResponseError (responseId $ req ^. J.id) $
-              ResponseError code msg Nothing
-        resp <- getFileCache doc >>= \case
-          Just (FC _ larr _ _ env) -> liftIO $ Just <$> getSymbols larr env
-          _ -> return Nothing
-        reactorSend $ case resp of
-          Nothing -> makeErr InternalError "could not get file data"
-          Just as -> RspDocumentSymbols $ makeResponseMessage req $
-            DSDocumentSymbols $ List as
+        getFileCache (toNormalizedUri uri) >>= \case
+          Left err -> reactorSend $ RspError $ makeResponseError (responseId $ req ^. J.id) err
+          Right (FC _ larr _ _ env) -> liftIO (getSymbols larr env) >>=
+            reactorSend . RspDocumentSymbols . makeResponseMessage req . DSDocumentSymbols . List
 
       NotCustomClient (NotificationMessage _
         (CustomClientMethod "$/setTraceNotification") _) -> return ()
@@ -306,6 +299,9 @@ parseErrorDiags larr errs = toDiag <$> errs where
   toDiag err = let (l, c) = offToPos larr (E.errorOffset err) in
     mkDiagnostic (Position l c) (T.pack (E.parseErrorTextPretty err))
 
+toOffset :: Lines -> Position -> Int
+toOffset larr (Position l c) = posToOff larr l c
+
 toPosition :: Lines -> Int -> Position
 toPosition larr n = let (l, c) = offToPos larr n in Position l c
 
@@ -323,49 +319,47 @@ elabErrorDiags uri larr errs = toDiag <$> errs where
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
-sendDiagnostics :: NormalizedUri -> TextDocumentVersion -> T.Text -> Reactor ()
-sendDiagnostics fileNUri@(NormalizedUri t) version str = do
+elaborateFileAndSendDiags :: NormalizedUri ->
+  TextDocumentVersion -> T.Text -> Reactor (Either ResponseError FileCache)
+elaborateFileAndSendDiags nuri@(NormalizedUri t) version str = do
   fs <- asks rsLastParse
-  liftIO (readTVarIO fs) >>= \m -> case H.lookup fileNUri m of
-    Just (oldv, _) | isOutdated oldv version -> return ()
-    _ -> reactorHandleAll $ newDiagThread fileNUri version $ do
-      let fileUri = fromNormalizedUri fileNUri
+  liftIO (readTVarIO fs) >>= \m -> case H.lookup nuri m of
+    Just (oldv, fc) | isOutdated oldv version -> return $ Right fc
+    _ -> do
+      let fileUri = fromNormalizedUri nuri
           file = fromMaybe "" $ uriToFilePath fileUri
           larr = getLines str
           isMM0 = T.isSuffixOf "mm0" t
-      diags <- case CP.parseAST file str of
-        (errs, _, Nothing) -> return $ parseErrorDiags larr errs
+      (fc, diags) <- case CP.parseAST file str of
+        (errs, _, Nothing) -> return (
+          Left $ ResponseError ParseError "failed to parse file" Nothing,
+          parseErrorDiags larr errs)
         (errs, _, Just ast) -> do
           (errs', env) <- liftIO $ CE.elaborate isMM0 errs ast
-          liftIO $ atomically $ modifyTVar fs $ flip H.alter fileNUri $ \case
-            fc@(Just (oldv, _)) | isOutdated oldv version -> fc
-            _ -> Just (version, FC str larr ast (toSpans env <$> ast) env)
-          return (elabErrorDiags fileUri larr errs')
-      publishDiagnostics 100 fileNUri version (partitionBySource diags)
+          let fc = FC str larr ast (toSpans env <$> ast) env
+          res <- liftIO $ atomically $ do
+            h <- readTVar fs
+            case H.lookup nuri h of
+              Just (oldv, fc') | isOutdated oldv version -> return fc'
+              _ -> fc <$ writeTVar fs (H.insert nuri (version, fc) h)
+          return (Right res, elabErrorDiags fileUri larr errs')
+      publishDiagnostics 100 nuri version (partitionBySource diags)
+      return fc
 
-getFileCache :: NormalizedUri -> Reactor (Maybe FileCache)
+-- | Analyze the file and send any diagnostics to the client in a
+-- "textDocument/publishDiagnostics" msg
+sendDiagnostics :: NormalizedUri -> TextDocumentVersion -> T.Text -> Reactor ()
+sendDiagnostics uri version str =
+  reactorHandleAll $ newDiagThread uri version $
+    () <$ elaborateFileAndSendDiags uri version str
+
+getFileCache :: NormalizedUri -> Reactor (Either ResponseError FileCache)
 getFileCache doc = do
   lf <- asks rsFuncs
   liftIO (getVirtualFileFunc lf doc) >>= \case
-    Nothing -> return Nothing
+    Nothing -> return $ Left $ ResponseError InternalError "could not get file data" Nothing
     Just (VirtualFile version str _) ->
-      let
-        tryGet 0 = return Nothing
-        tryGet retries = do
-          sendDiagnostics doc (Just version) (Rope.toText str)
-          dt <- asks rsDiagThreads
-          liftIO $ do
-            a <- atomically (H.lookup doc <$> readTVar dt)
-            mapM_ (wait . snd) a
-          go (retries - 1)
-        go retries = do
-          m <- asks rsLastParse >>= liftIO . readTVarIO
-          case H.lookup doc m of
-            Just (Just oldv, fc) | oldv == version -> return (Just fc)
-            Just (oldv, _) | isOutdated oldv (Just version) -> tryGet retries
-            Nothing -> tryGet retries
-            _ -> return Nothing
-      in go (1 :: Int)
+      elaborateFileAndSendDiags doc (Just version) (Rope.toText str)
 
 makeHover :: CE.Env -> Range -> CA.Span CA.Stmt -> PosInfo -> Maybe Hover
 makeHover env range stmt (PosInfo t pi') = case pi' of
@@ -442,3 +436,56 @@ getSymbols larr env = do
           CE.DAxiom _ _ _ -> SkMethod
           CE.DTheorem _ _ _ _ _ -> SkMethod
   return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) (l1 ++ l2 ++ l3)
+
+getCompletions :: NormalizedUri -> Position ->
+    Reactor (Either ResponseError [CompletionItem])
+getCompletions doc@(NormalizedUri t) pos = do
+  lf <- asks rsFuncs
+  liftIO (getVirtualFileFunc lf doc) >>= \case
+    Nothing -> return $ Left $ ResponseError InternalError "could not get file data" Nothing
+    Just (VirtualFile version rope _) -> do
+      let fileUri = fromNormalizedUri doc
+          file = fromMaybe "" $ uriToFilePath fileUri
+          str = Rope.toText rope
+          larr = getLines str
+          isMM0 = T.isSuffixOf "mm0" t
+          publish = publishDiagnostics 100 doc (Just version) . partitionBySource
+      case CP.parseAST file str of
+        (errs, _, Nothing) -> do
+          publish $ parseErrorDiags larr errs
+          return $ Left $ ResponseError ParseError "failed to parse file" Nothing
+        (errs, _, Just ast) -> do
+          case markPosition (toOffset larr pos) ast of
+            Nothing -> return $ Right []
+            Just ast' -> do
+              (errs', env) <- ReaderT $ \_r -> do
+                CE.elaborateWithCompletion isMM0 errs ast'
+              fs <- asks rsLastParse
+              liftIO $ atomically $ modifyTVar fs $ flip H.alter doc $ \case
+                fc@(Just (oldv, _)) | isOutdated oldv (Just version) -> fc
+                _ -> Just (Just version, FC str larr ast' (toSpans env <$> ast') env)
+              publish (elabErrorDiags fileUri larr errs')
+              ds <- liftIO $ getSymbols larr env
+              return $ Right $ ds <&> \(DocumentSymbol x det sk _ _ _ _) ->
+                CompletionItem x (Just (toCIK sk)) det
+                  def def def def def def def def def def def def
+  where
+  toCIK :: SymbolKind -> CompletionItemKind
+  toCIK SkMethod        = CiMethod
+  toCIK SkFunction      = CiFunction
+  toCIK SkConstructor   = CiConstructor
+  toCIK SkField         = CiField
+  toCIK SkVariable      = CiVariable
+  toCIK SkClass         = CiClass
+  toCIK SkInterface     = CiInterface
+  toCIK SkModule        = CiModule
+  toCIK SkProperty      = CiProperty
+  toCIK SkEnum          = CiEnum
+  toCIK SkFile          = CiFile
+  toCIK SkEnumMember    = CiEnumMember
+  toCIK SkConstant      = CiConstant
+  toCIK SkStruct        = CiStruct
+  toCIK SkEvent         = CiEvent
+  toCIK SkOperator      = CiOperator
+  toCIK SkTypeParameter = CiTypeParameter
+  toCIK _               = CiValue

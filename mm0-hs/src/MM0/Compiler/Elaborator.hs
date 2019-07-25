@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module MM0.Compiler.Elaborator (elaborate, ErrorLevel(..), ElabError(..)) where
+module MM0.Compiler.Elaborator (elaborate, elaborateWithCompletion,
+  ErrorLevel(..), ElabError(..)) where
 
 import Control.Monad.State
 import Control.Monad.RWS.Strict
@@ -20,6 +21,12 @@ import MM0.Compiler.Env
 import MM0.Compiler.MathParser
 import MM0.Compiler.PrettyPrinter
 import MM0.Util
+
+-- TODO
+elaborateWithCompletion :: Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
+elaborateWithCompletion mm0 errs ast = do
+  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 (toElabError <$> errs) initialBindings
+  return (errs', env)
 
 elaborate :: Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
 elaborate mm0 errs ast = do
