@@ -54,8 +54,8 @@ checkNew l o msg f k m = case H.lookup k m of
     mzero
 
 nameOf :: Span Stmt -> LispVal
-nameOf (Span _ (Sort px x _)) = Atom px x
-nameOf (Span _ (Decl _ _ px x _ _ _)) = Atom px x
+nameOf (Span _ (Sort px x _)) = Atom False px x
+nameOf (Span _ (Decl _ _ px x _ _ _)) = Atom False px x
 nameOf (Span _ (Annot _ s)) = nameOf s
 nameOf _ = Bool False
 
@@ -170,7 +170,7 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
             fork <- forkElabM $ withTimeout px $
               withTC (H.fromList $ (\bi -> (binderName bi, bi)) <$> pbs) $ do
                 forM_ hs $ \((o, _), on, e) -> forM_ on $ \n ->
-                  addSubproof n (sExprToLisp o e) (Atom o n)
+                  addSubproof n (sExprToLisp o e) (Atom False o n)
                 elabLisp eret lv
             return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork
       _ -> unimplementedAt px
@@ -492,6 +492,7 @@ evalAt ctx (Span o e) = eval o ctx e
 
 eval :: Range -> LCtx -> LispAST -> ElabM LispVal
 eval (o, _) ctx (AAtom e) = evalAtom o ctx e
+eval (o, _) ctx (AAtomAtPoint e) = evalAtom o ctx e
 eval _ _ (AString s) = return (String s)
 eval _ _ (ANumber n) = return (Number n)
 eval _ _ (ABool b) = return (Bool b)
@@ -516,7 +517,7 @@ evals :: LCtx -> [AtLisp] -> ElabM [LispVal]
 evals = evalList [] $ liftM2 (:)
 
 evalAtom :: Offset -> LCtx -> T.Text -> ElabM LispVal
-evalAtom o _ v@"_" = return $ Atom o v
+evalAtom o _ v@"_" = return $ Atom False o v
 evalAtom o (LCtx ctx) v = case H.lookup v ctx of
   Just e -> return e
   Nothing -> try (lispLookupName v) >>= \case
@@ -637,7 +638,8 @@ quoteAt :: LCtx -> AtLisp -> ElabM LispVal
 quoteAt ctx (Span (o, _) e) = quote o ctx e
 
 quote :: Offset -> LCtx -> LispAST -> ElabM LispVal
-quote o _ (AAtom e) = return $ Atom o e
+quote o _ (AAtom e) = return $ Atom False o e
+quote o _ (AAtomAtPoint e) = return $ Atom True o e
 quote _ ctx (AList [Span _ (AAtom "unquote"), e]) = evalAt ctx e
 quote _ ctx (AList es) = List <$> mapM (quoteAt ctx) es
 quote _ ctx (ADottedList l es r) =
@@ -662,14 +664,14 @@ goalType o e = escapeAt o $ "expected a goal, got " <> T.pack (show e)
 sExprSubst :: Offset -> H.HashMap VarName LispVal -> SExpr -> LispVal
 sExprSubst o m = go where
   go (SVar v) = m H.! v
-  go (App t es) = List (Atom o t : (go <$> es))
+  go (App t es) = List (Atom False o t : (go <$> es))
 
 inferType :: Offset -> LispVal -> ElabM LispVal
 inferType _ (Goal _ ty) = return ty
-inferType o (Atom _ h) = try (getSubproof h) >>= \case
+inferType o (Atom _ _ h) = try (getSubproof h) >>= \case
   Just v -> return v
   Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
-inferType o (List (Atom _ t : es)) = try (now >>= getThm t) >>= \case
+inferType o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
   Nothing -> escapeAt o $ "unknown theorem '" <> t <> "'"
   Just (_, bis, _, ret) ->
     let
@@ -684,8 +686,8 @@ inferType o (Ref g) = getRef g >>= inferType o
 inferType o e = escapeAt o $ "not a proof: " <> T.pack (show e)
 
 asSExpr :: LispVal -> Maybe SExpr
-asSExpr (List (Atom _ t : ts)) = App t <$> mapM asSExpr ts
-asSExpr (Atom _ x) = return $ SVar x
+asSExpr (List (Atom _ _ t : ts)) = App t <$> mapM asSExpr ts
+asSExpr (Atom _ _ x) = return $ SVar x
 asSExpr _ = Nothing
 
 asRef :: Offset -> LispVal -> ElabM (TVar LispVal)
@@ -785,10 +787,10 @@ initialBindings = [
     ("->string", \(o, _) es -> unary o es >>= \case
       Number n -> return $ String $ T.pack $ show n
       String s -> return $ String s
-      Atom _ s -> return $ String s
+      Atom _ _ s -> return $ String s
       UnparsedFormula _ s -> return $ String s
       e -> return $ String $! T.pack $ show e),
-    ("string->atom", \(o, _) es -> unary o es >>= asString o >>= return . Atom o),
+    ("string->atom", \(o, _) es -> unary o es >>= asString o >>= return . Atom False o),
     ("not", \(o, _) es -> Bool . not . truthy <$> unary o es),
     ("and", \_ es -> return $ Bool $ all truthy es),
     ("or", \_ es -> return $ Bool $ any truthy es),
@@ -822,7 +824,7 @@ initialBindings = [
     ("mvar?", \(o, _) es -> Bool . isMVar <$> unary o es),
     ("goal?", \(o, _) es -> Bool . isGoal <$> unary o es),
     ("mvar!", \(o, _) -> \case
-      [Atom _ s, Bool bd] -> Ref <$> newMVar o s bd
+      [Atom _ _ s, Bool bd] -> Ref <$> newMVar o s bd
       _ -> escapeAt o "invalid arguments"),
     ("pp", \(o, _) es -> unary o es >>= ppExpr >>= return . String . render),
     ("goal", \(o, _) es -> Goal o <$> unary o es),
@@ -833,11 +835,11 @@ initialBindings = [
     ("to-expr", \(o, _) es -> unary o es >>= parseRefine o >>= toExpr "" False),
     ("refine", \(o, _) es -> Undef <$ refine o es),
     ("have", \(o, _) -> \case
-      [Atom _ x, e] -> do
+      [Atom _ _ x, e] -> do
         ty <- Ref <$> newUnknownMVar o
         p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
         Undef <$ addSubproof x ty p
-      [Atom _ x, ty', e] -> do
+      [Atom _ _ x, ty', e] -> do
         ty <- parseRefine o ty' >>= toExpr "" False
         p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
         Undef <$ addSubproof x ty p
@@ -853,7 +855,7 @@ initialBindings = [
 
 evalQExpr :: LCtx -> QExpr -> ElabM LispVal
 evalQExpr ctx (QApp (Span (o, _) e) es) =
-  List . (Atom o e :) <$> mapM (evalQExpr ctx) es
+  List . (Atom False o e :) <$> mapM (evalQExpr ctx) es
 evalQExpr ctx (QUnquote (Span o e)) = eval o ctx e
 
 -----------------------------
@@ -887,10 +889,10 @@ cleanProof o (Ref g) = getRef g >>= \case
     pp <- ppExpr ty
     escapeAt o' $ render' $ "??? |-" <+> doc pp
   e -> cleanProof o e
-cleanProof _ (Atom _ h) = return $ ProofHyp h
-cleanProof o (List [Atom _ ":conv", ty, conv, es]) =
+cleanProof _ (Atom _ _ h) = return $ ProofHyp h
+cleanProof o (List [Atom _ _ ":conv", ty, conv, es]) =
   liftM3 ProofConv (cleanTerm o ty) (cleanConv o conv) (cleanProof o es)
-cleanProof o (List (Atom _ t : es)) = try (now >>= getThm t) >>= \case
+cleanProof o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
   Nothing -> escapeAt o $ "unknown theorem '" <> t <> "'"
   Just (_, bis, _, _) ->
     let (es1, es2) = splitAt (length bis) es in
@@ -901,26 +903,26 @@ cleanTerm :: Offset -> LispVal -> ElabM SExpr
 cleanTerm o (Ref g) = getRef g >>= \case
   MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanTerm o e
-cleanTerm _ (Atom _ x) = return $ SVar x
-cleanTerm o (List (Atom _ t : es)) = App t <$> mapM (cleanTerm o) es
+cleanTerm _ (Atom _ _ x) = return $ SVar x
+cleanTerm o (List (Atom _ _ t : es)) = App t <$> mapM (cleanTerm o) es
 cleanTerm o e = escapeAt o $ "bad term: " <> T.pack (show e)
 
 cleanConv :: Offset -> LispVal -> ElabM Conv
 cleanConv o (Ref g) = getRef g >>= \case
   MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanConv o e
-cleanConv _ (Atom _ x) = return $ CVar x
-cleanConv o (List [Atom _ ":unfold", Atom _ t, List es, List ds, p]) =
+cleanConv _ (Atom _ _ x) = return $ CVar x
+cleanConv o (List [Atom _ _ ":unfold", Atom _ _ t, List es, List ds, p]) =
   liftM3 (CUnfold t) (mapM (cleanTerm o) es) (mapM (cleanVar o) ds) (cleanConv o p)
-cleanConv o (List [Atom _ ":sym", p]) = CSym <$> cleanConv o p
-cleanConv o (List (Atom _ t : es)) = CApp t <$> mapM (cleanConv o) es
+cleanConv o (List [Atom _ _ ":sym", p]) = CSym <$> cleanConv o p
+cleanConv o (List (Atom _ _ t : es)) = CApp t <$> mapM (cleanConv o) es
 cleanConv o e = escapeAt o $ "bad conv: " <> T.pack (show e)
 
 cleanVar :: Offset -> LispVal -> ElabM VarName
 cleanVar o (Ref g) = getRef g >>= \case
   MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanVar o e
-cleanVar _ (Atom _ x) = return x
+cleanVar _ (Atom _ _ x) = return x
 cleanVar o e = escapeAt o $ "bad var: " <> T.pack (show e)
 
 data InferMode = IMRegular | IMExplicit | IMBoundOnly deriving (Eq, Show)
@@ -947,20 +949,20 @@ unconsIf True a [] = (a, [])
 unconsIf True _ (e : es) = (e, es)
 
 asAtom :: Offset -> LispVal -> ElabM (Offset, T.Text)
-asAtom _ (Atom o t) = return (o, t)
+asAtom _ (Atom _ o t) = return (o, t)
 asAtom o _ = escapeAt o "expected an 'atom"
 
 parseRefine :: Offset -> LispVal -> ElabM RefineExpr
-parseRefine _ (Atom o x) = return (RAtom o x)
+parseRefine _ (Atom _ o x) = return (RAtom o x)
 parseRefine o (List []) = return (RAtom o "_")
-parseRefine _ (List [Atom o "!"]) = escapeAt o "expected at least one argument"
-parseRefine _ (List (Atom o "!" : t : es)) =
+parseRefine _ (List [Atom _ o "!"]) = escapeAt o "expected at least one argument"
+parseRefine _ (List (Atom _ o "!" : t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMExplicit o' t' <$> mapM (parseRefine o') es
-parseRefine _ (List [Atom o "!!"]) =
+parseRefine _ (List [Atom _ o "!!"]) =
   escapeAt o "expected at least one argument"
-parseRefine _ (List (Atom o "!!" : t : es)) =
+parseRefine _ (List (Atom _ o "!!" : t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMBoundOnly o' t' <$> mapM (parseRefine o') es
-parseRefine _ (List [Atom o ":verb", e]) = return $ RExact o e
+parseRefine _ (List [Atom _ o ":verb", e]) = return $ RExact o e
 parseRefine o (List (t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMRegular o' t' <$> mapM (parseRefine o') es
 parseRefine o (UnparsedFormula o' f) =
@@ -972,7 +974,7 @@ data UnifyResult = UnifyResult Bool LispVal
 coerceTo :: Offset -> LispVal -> LispVal -> LispVal -> ElabM LispVal
 coerceTo o tgt p ty = unifyAt o tgt ty >>= \case
     UnifyResult False _ -> return p
-    UnifyResult True u -> return (List [Atom o ":conv", ty, u, p])
+    UnifyResult True u -> return (List [Atom False o ":conv", ty, u, p])
 
 coerceTo' :: Offset -> LispVal -> LispVal -> ElabM LispVal
 coerceTo' o tgt p = inferType o p >>= coerceTo o tgt p
@@ -983,16 +985,16 @@ unifyAt o e1 e2 = try (unify o e1 e2) >>= \case
     Nothing -> do
       err <- render <$> unifyErr e1 e2
       reportAt o ELError err
-      return $ UnifyResult False $ List [Atom o ":error", String err]
+      return $ UnifyResult False $ List [Atom False o ":error", String err]
 
 unify :: Offset -> LispVal -> LispVal -> ElabM UnifyResult
 unify o (Ref g) v = assign o g v
 unify o v (Ref g) = assign o g v
-unify o a@(Atom _ x) (Atom _ y) = do
+unify o a@(Atom _ _ x) (Atom _ _ y) = do
   unless (x == y) $ escapeAt o $
     "variables do not match: " <> x <> " != " <> y
   return (UnifyResult False a)
-unify o v1@(List (a1@(Atom _ t1) : es1)) v2@(List (a2@(Atom _ t2) : es2)) =
+unify o v1@(List (a1@(Atom _ _ t1) : es1)) v2@(List (a2@(Atom _ _ t2) : es2)) =
   if t1 == t2 then
     (\(b, l) -> UnifyResult b (List (a1 : l))) <$> go es1 es2
   else do
@@ -1010,10 +1012,10 @@ unify o v1@(List (a1@(Atom _ t1) : es1)) v2@(List (a2@(Atom _ t2) : es2)) =
   go [] [] = return (False, [])
   go (e1 : es1') (e2 : es2') = liftM2 unifyCons (unify o e1 e2) (go es1' es2')
   go _ _ = escapeAt o $ "bad terms: " <> T.pack (show (t1, length es1, t2, length es2))
-unify o (Atom _ v) e2@(List (Atom _ _ : _)) = do
+unify o (Atom _ _ v) e2@(List (Atom _ _ _ : _)) = do
   pp <- ppExpr e2
   escapeAt o $ "variable vs term: " <> v <> " != " <> render pp
-unify o e1@(List (Atom _ _ : _)) (Atom _ v) = do
+unify o e1@(List (Atom _ _ _ : _)) (Atom _ _ v) = do
   pp <- ppExpr e1
   escapeAt o $ "term vs variable: " <> render pp <> " != " <> v
 unify o e1 e2 = escapeAt o $ "bad terms: " <> T.pack (show (e1, e2))
@@ -1057,8 +1059,8 @@ unfold o sym t bis ds val es e2 = buildSubst bis es H.empty where
     buildDummies ds' (q . (v :)) (H.insert x v m)
   buildDummies [] q m = do
     UnifyResult _ p <- unify o (sExprSubst o m val) e2
-    let p' = List [Atom o ":unfold", t, List es, List (q []), p]
-    return $ UnifyResult True $ if sym then List [Atom o ":sym", p'] else p'
+    let p' = List [Atom False o ":unfold", t, List es, List (q []), p]
+    return $ UnifyResult True $ if sym then List [Atom False o ":sym", p'] else p'
 
 toExpr :: Sort -> Bool -> RefineExpr -> ElabM LispVal
 toExpr _ _ (RExact _ e) = return e -- TODO: check type
@@ -1071,7 +1073,7 @@ toExpr s bd (RAtom o x) = do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
       when bd $ reportAt o ELError "expected a bound variable"
     Nothing -> modifyTC $ \tc -> tc {tcVars = H.insert x (PBound x s) (tcVars tc)}
-  return $ Atom o x
+  return $ Atom False o x
 toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
   Nothing -> if null es then toExpr s bd (RAtom o t) else
     escapeAt o $ "unknown term '" <> t <> "'"
@@ -1089,7 +1091,7 @@ toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
     unless (s == dSort ret) $ reportAt o ELError $
       "type error: expected " <> s <> ", got " <> dSort ret
     when bd $ reportAt o ELError "expected a bound variable"
-    return $ List $ Atom o t : es'
+    return $ List $ Atom False o t : es'
 
 getGoals :: Offset -> ElabM [TVar LispVal]
 getGoals o = try getTC >>= \case
@@ -1134,7 +1136,7 @@ refineProof gv = refinePf where
   refinePf ty (RExact o e) = coerceTo' o ty e
   refinePf ty (RAtom o "_") = Ref <$> newGoal gv o ty
   refinePf ty (RAtom o h) = try (getSubproof h) >>= \case
-    Just v -> coerceTo o ty (Atom o h) v
+    Just v -> coerceTo o ty (Atom False o h) v
     Nothing -> try (now >>= getThm h) >>= \case
       Just (_, bis, hs, ret) -> refinePfThm ty IMRegular o h [] bis hs ret
       Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
@@ -1145,7 +1147,7 @@ refineProof gv = refinePf where
   refinePf ty (RApp im o t es) = try (now >>= getThm t) >>= \case
     Just (_, bis, hs, ret) -> refinePfThm ty im o t es bis hs ret
     Nothing -> try (getSubproof t) >>= \case
-      Just v -> refineExtraArgs o v ty es (Atom o t)
+      Just v -> refineExtraArgs o v ty es (Atom False o t)
       _ -> escapeAt o $ "unknown theorem '" <> t <> "'"
 
   refinePfThm :: LispVal -> InferMode -> Offset -> T.Text -> [RefineExpr] ->
@@ -1167,7 +1169,7 @@ refineProof gv = refinePf where
       p <- refinePf (sExprSubst o m e) r
       refineHs es' rs' (f . (p :)) m
     refineHs [] rs f m =
-      refineExtraArgs o (sExprSubst o m ret) ty rs (List (Atom o t : f []))
+      refineExtraArgs o (sExprSubst o m ret) ty rs (List (Atom False o t : f []))
 
   refineExtraArgs :: Offset -> LispVal -> LispVal -> [RefineExpr] -> LispVal -> ElabM LispVal
   refineExtraArgs o v ty [] e = coerceTo o ty e v

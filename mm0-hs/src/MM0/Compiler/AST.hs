@@ -114,6 +114,7 @@ localName LAnon = Nothing
 type AtLisp = Span LispAST
 data LispAST =
     AAtom T.Text
+  | AAtomAtPoint T.Text
   | AList [AtLisp]
   | ADottedList AtLisp [AtLisp] AtLisp
   | ANumber Integer
@@ -123,6 +124,7 @@ data LispAST =
 
 instance Show LispAST where
   showsPrec _ (AAtom e) = (T.unpack e ++)
+  showsPrec _ (AAtomAtPoint e) = (T.unpack e ++)
   showsPrec _ (AList [Span _ (AAtom "quote"), e]) = ('\'' :) . shows e
   showsPrec _ (AList [Span _ (AAtom "unquote"), e]) = (',' :) . shows e
   showsPrec _ (AList ls) = ('(' :) . f ls . (')' :) where

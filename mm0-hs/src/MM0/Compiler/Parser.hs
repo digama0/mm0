@@ -351,19 +351,20 @@ cons l (ADottedList r0 rs r) = ADottedList l (r0 : rs) r
 cons _ _ = error "impossible"
 
 toCurlyList :: AtLisp -> AtLisp
-toCurlyList (Span o (AList [])) = Span o (AList [])
+toCurlyList s@(Span _ (AList [])) = s
 toCurlyList (Span _ (AList [e])) = e
 toCurlyList s@(Span _ (AList [_, _])) = s
-toCurlyList (Span o (AList [e1, op, e2])) = Span o (AList [op, e1, e2])
-toCurlyList (Span o e@(AList (e1 : op@(Span _ (AAtom tk)) : es))) =
+toCurlyList (Span r (AList [e1, op, e2])) = Span r (AList [op, e1, e2])
+toCurlyList (Span r@(o, _) e@(AList (e1 : op@(Span _ (AAtom tk)) : es))) =
   case go es of
-    Nothing -> Span o (cons (Span o (AAtom ":nfx")) e)
-    Just es' -> Span o (AList (op : e1 : es'))
+    Nothing -> Span r (cons (Span (o, o + 1) (AAtom ":nfx")) e)
+    Just es' -> Span r (AList (op : e1 : es'))
   where
   go [e2] = Just [e2]
   go (e2 : Span _ (AAtom tk') : es') | tk' == tk = (e2 :) <$> go es'
   go _ = Nothing
-toCurlyList (Span o e) = (Span o (cons (Span o (AAtom ":nfx")) e))
+toCurlyList (Span r@(o, _) e) =
+  (Span r (cons (Span (o, o + 1) (AAtom ":nfx")) e))
 
 hashAtom :: T.Text -> Parser LispAST
 hashAtom "t" = return (ABool True)

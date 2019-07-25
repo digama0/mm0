@@ -92,8 +92,8 @@ ppExpr1 cyc env = \v ->
       Nothing -> dmap (enclose "<" ">") <$> (readTVarIO g >>= ppExpr2 (Just (g : l)) tgt)
       Just n -> return $ dlift $ "#" <> pretty n
   ppExpr2 _ _ (MVar n _ _ _) = return $ word $ "?" <> alphanumber n
-  ppExpr2 _ _ (Atom _ x) = return $ word x
-  ppExpr2 ctx tgt (List (Atom _ t : es)) = case lookupTerm t env of
+  ppExpr2 _ _ (Atom _ _ x) = return $ word x
+  ppExpr2 ctx tgt (List (Atom _ _ t : es)) = case lookupTerm t env of
     Nothing -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 ctx PrecMax) es
     Just (_, _, _, _, Nothing) -> ppApp tgt t <$> mapM (ppExpr2 ctx PrecMax) es
     Just (_, _, _, _, Just (NCoe _ _)) -> case es of
@@ -151,7 +151,7 @@ ppExpr1 cyc env = \v ->
     ppInfixl :: LispVal -> LispVal -> IO PP
     ppInfixl e1 e2 = do
       pp1 <- case e1 of
-        List [Atom _ t', e11, e12] | t == t' -> ppInfixl e11 e12
+        List [Atom _ _ t', e11, e12] | t == t' -> ppInfixl e11 e12
         _ -> dmap group <$> ppExpr2 ctx (Prec p) e1
       pp2 <- dmap group <$> ppExpr2 ctx (Prec (p+1)) e2
       return $ surround' softline pp1 $ surround' line tk pp2
@@ -160,7 +160,7 @@ ppExpr1 cyc env = \v ->
     ppInfixr e1 e2 = do
       pp1 <- dmap group <$> ppExpr2 ctx (Prec (p+1)) e1
       pp2 <- case e2 of
-        List [Atom _ t', e21, e22] | t == t' -> ppInfixr e21 e22
+        List [Atom _ _ t', e21, e22] | t == t' -> ppInfixr e21 e22
         _ -> dmap group <$> ppExpr2 ctx (Prec p) e2
       return $ surround' softline pp1 $ surround' line tk pp2
 

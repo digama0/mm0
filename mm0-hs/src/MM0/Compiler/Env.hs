@@ -63,7 +63,7 @@ instance Show Syntax where
 type Proc = Range -> [LispVal] -> ElabM LispVal
 
 data LispVal =
-    Atom Offset T.Text
+    Atom Bool Offset T.Text
   | List [LispVal]
   | DottedList LispVal [LispVal] LispVal
   | Number Integer
@@ -84,7 +84,7 @@ alphanumber = T.reverse . T.pack . go . (+1) where
     chr (r + ord 'a') : go q
 
 instance Show LispVal where
-  showsPrec _ (Atom _ e) = (T.unpack e ++)
+  showsPrec _ (Atom _ _ e) = (T.unpack e ++)
   showsPrec _ (List [Syntax Quote, e]) = ('\'' :) . shows e
   showsPrec _ (List ls) = ('(' :) . f ls . (')' :) where
     f [] = id
@@ -119,8 +119,8 @@ isGoal (Goal _ _) = True
 isGoal _ = False
 
 sExprToLisp :: Offset -> SExpr -> LispVal
-sExprToLisp o (SVar v) = Atom o v
-sExprToLisp o (App t ts) = List (Atom o t : (sExprToLisp o <$> ts))
+sExprToLisp o (SVar v) = Atom False o v
+sExprToLisp o (App t ts) = List (Atom False o t : (sExprToLisp o <$> ts))
 
 data ErrorLevel = ELError | ELWarning | ELInfo
 instance Show ErrorLevel where

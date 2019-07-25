@@ -420,7 +420,7 @@ getSymbols larr env = do
   v <- VD.unsafeFreeze (CE.eLispData env)
   l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
     ty <- CE.unRefIO (v V.! n) <&> \case
-      CE.Atom _ _ -> Just SkConstant
+      CE.Atom _ _ _ -> Just SkConstant
       CE.List _ -> Just SkArray
       CE.DottedList _ _ _ -> Just SkObject
       CE.Number _ -> Just SkNumber
