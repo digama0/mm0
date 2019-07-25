@@ -171,7 +171,7 @@ reactorHandleAll = reactorHandle $ \(e :: E.SomeException) ->
   reactorErr $ T.pack $ E.displayException e
 
 isOutdated :: Maybe Int -> Maybe Int -> Bool
-isOutdated (Just n) (Just v) = v < n
+isOutdated (Just n) (Just v) = v <= n
 isOutdated _ _ = False
 
 traverseResponse :: Applicative f => (a -> f (Maybe b)) -> ResponseMessage a -> f (ResponseMessage b)
