@@ -1,6 +1,6 @@
 module MM0.Compiler.PrettyPrinter (PP, doc, dlift, ppExpr, render, render',
-  ppExpr', (<+>), unifyErr, getStat, ppMVar, ppExprCyc, ppStmt, ppBinder,
-  ppPBinder, ppGroupedBinders, ppDecl) where
+  renderNoBreak, ppExpr', (<+>), unifyErr, getStat, ppMVar, ppExprCyc,
+  ppStmt, ppBinder, ppPBinder, ppGroupedBinders, ppDecl, ppDeclType) where
 
 import Control.Applicative
 import Control.Concurrent.STM
@@ -46,6 +46,9 @@ surround' x (PP l _ _ dl) (PP _ r _ dr) = PP l r False (dl <> x <> dr)
 -- (<<|>>) :: PP -> PP -> PP
 -- (<<|>>) (PP l lr _ dl) (PP rl r _ dr) = PP l r False $
 --   dl <> (if lr || rl then line' else line) <> dr
+
+renderNoBreak :: Doc Void -> T.Text
+renderNoBreak = renderStrict . layoutPretty (LayoutOptions Unbounded)
 
 render' :: Doc Void -> T.Text
 render' = renderStrict . layoutPretty defaultLayoutOptions
@@ -287,3 +290,9 @@ ppDecl env x (DDef vis bis ty val) = group $ ppVis vis <> "def" <+> pretty x <>
     Just (_, v) -> space <> "=" <> softline <> ppSExpr env v <> ";"
 ppDecl env x (DTheorem vis bis hyps ret _) = group $ ppVis vis <> "theorem" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")
+
+ppDeclType :: Env -> Decl -> Doc Void
+ppDeclType _ (DTerm bis ty) = group $ ppGroupedPBinders bis <> ":" <+> ppDepType ty
+ppDeclType _ (DDef _ bis ty _) = group $ ppGroupedPBinders bis <> ":" <+> ppDepType ty
+ppDeclType env (DAxiom _ hyps ret) = group $ ppArrowSExpr env hyps ret
+ppDeclType env (DTheorem _ _ hyps ret _) = group $ ppArrowSExpr env hyps ret

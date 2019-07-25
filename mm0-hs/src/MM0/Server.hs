@@ -415,7 +415,7 @@ goToDefinition larr env (PosInfo t pi') = case pi' of
 
 getSymbols :: Lines -> CE.Env -> IO [DocumentSymbol]
 getSymbols larr env = do
-  let mkDS x (rd, rx) sk = DocumentSymbol x Nothing sk Nothing
+  let mkDS x det (rd, rx) sk = DocumentSymbol x det sk Nothing
         (toRange larr rd) (toRange larr rx) Nothing
   v <- VD.unsafeFreeze (CE.eLispData env)
   l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
@@ -433,11 +433,12 @@ getSymbols larr env = do
       CE.Ref _ -> undefined
       CE.MVar _ _ _ _ -> Just SkConstant
       CE.Goal _ _ -> Just SkConstant
-    return $ liftM2 (mkDS x) o ty
-  let l2 = H.toList (CE.eSorts env) <&> \(x, (_, r, _)) -> mkDS x r SkClass
-  let l3 = H.toList (CE.eDecls env) <&> \(x, (_, r, d, _)) -> mkDS x r $ case d of
-        CE.DTerm _ _ -> SkConstructor
-        CE.DDef _ _ _ _ -> SkConstructor
-        CE.DAxiom _ _ _ -> SkMethod
-        CE.DTheorem _ _ _ _ _ -> SkMethod
+    return $ liftM2 (mkDS x Nothing) o ty
+  let l2 = H.toList (CE.eSorts env) <&> \(x, (_, r, _)) -> mkDS x Nothing r SkClass
+  let l3 = H.toList (CE.eDecls env) <&> \(x, (_, r, d, _)) ->
+        mkDS x (Just (renderNoBreak (ppDeclType env d))) r $ case d of
+          CE.DTerm _ _ -> SkConstructor
+          CE.DDef _ _ _ _ -> SkConstructor
+          CE.DAxiom _ _ _ -> SkMethod
+          CE.DTheorem _ _ _ _ _ -> SkMethod
   return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) (l1 ++ l2 ++ l3)
