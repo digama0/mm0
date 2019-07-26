@@ -97,17 +97,22 @@ term the: set > nat;
 axiom theid {x: nat} (A: set) (a: nat): $ A == {x | x = a} -> the A = a $;
 axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
 
-def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the(S[ a / x ] {y | y = b}) $;
+def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the {y | [ a / x ] y = b} $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
   ($N[$:70) a ($/$:0) x ($]$:0) b;
 
 term add: nat > nat > nat; infixl add: $+$ prec 65;
 term mul: nat > nat > nat; infixl mul: $*$ prec 70;
 
+axiom addeq (a b c d: nat): $ a = b -> c = d -> a + c = b + d $;
+axiom muleq (a b c d: nat): $ a = b -> c = d -> a * c = b * d $;
 axiom add0 (a: nat): $ a + 0 = a $;
 axiom addS (a b: nat): $ a + suc b = suc (a + b) $;
 axiom mul0 (a: nat): $ a * 0 = 0 $;
 axiom mulS (a b: nat): $ a * suc b = a * b + a $;
+
+def sub (a b: nat) {.x: nat}: nat = $ the {x | b + x = a} $;
+infixl sub: $-$ prec 65;
 
 def le (a b .x: nat): wff = $ E. x a + x = b $;
 infixl le: $<=$ prec 50;
@@ -149,11 +154,6 @@ def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
 theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
 theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
   $ rec z x s (suc n) = N[ rec z x s n / x ] s $;
-
-def sub (a b: nat): nat; infixl sub: $-$ prec 65;
-theorem sub0 (a: nat): $ a - 0 = a $;
-theorem subZ (b: nat): $ 0 - b = 0 $;
-theorem subSS (a b: nat): $ suc a - suc b = a - b $;
 
 def pow (a b: nat): nat; infixr pow: $^$ prec 80;
 theorem pow0 (a: nat): $ a ^ 0 = 1 $;
