@@ -322,8 +322,8 @@ app1 t e = App t [e]
 
 data InferResult = IR Range SExpr Sort Bool deriving (Show)
 coerce :: Maybe (Sort, Bool) -> InferResult -> ElabM InferResult
-coerce (Just (s2, bd2)) (IR o e s1 bd1) | s1 == s2 && (bd1 || not bd2) =
-  return (IR o e s2 bd2)
+coerce (Just (s2, bd2)) (IR o e s1 bd1) | (s1 == s2 || s2 == "") && (bd1 || not bd2) =
+  return (IR o e s1 bd2)
 coerce (Just (_, True)) (IR o _ _ _) =
   escapeSpan o "type error, expected bound variable, got expression"
 coerce (Just (s2, False)) (IR o e s1 _) =
@@ -1095,7 +1095,7 @@ toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
       refineBis [] [] = return []
       refineBis [] (r:_) = [] <$ reportAt (reOffset r) ELError "too many arguments"
     es' <- refineBis bis es
-    unless (s == dSort ret) $ reportAt o ELError $
+    unless (s == dSort ret || s == "") $ reportAt o ELError $
       "type error: expected " <> s <> ", got " <> dSort ret
     when bd $ reportAt o ELError "expected a bound variable"
     return $ List $ Atom False o t : es'

@@ -219,6 +219,7 @@
 		"lisp-val": {
 			"patterns": [
 				{"include": "#comment"},
+				{"match": "@", "name": "keyword.operator.mm0.lisp"},
 				{
 					"begin": "\\(\\s*(if|def|fn|let|letrec|focus)(?!\\w)",
 					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},

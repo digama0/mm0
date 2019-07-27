@@ -340,7 +340,10 @@ lispVal =
   (lexeme (span (takeWhileP (Just "identifier char") lispIdent >>= atom)))
 
 listVal :: Parser LispAST
-listVal = listVal1 <|> return (AList []) where
+listVal =
+  (lexeme "@" *> ((\e -> AList [e]) <$> span listVal)) <|>
+  listVal1 <|> return (AList [])
+  where
   listVal1 = lispVal >>= \l ->
     (ADottedList l [] <$> (lexeme "." *> lispVal)) <|>
     (cons l <$> listVal)
