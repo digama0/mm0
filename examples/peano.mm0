@@ -131,17 +131,27 @@ def nat (ph: wff): nat = $ if ph 1 0 $;
 def min (a b: nat): nat = $ if (a < b) a b $;
 def max (a b: nat): nat = $ if (a < b) b a $;
 
-def pr (a b: nat): nat; infixr pr: $<>$ prec 54;
+def div (a b: nat): nat; infixl div: $//$ prec 70;
+def mod (a b: nat): nat; infixl mod: $%$ prec 70;
+theorem div0 (a: nat): $ a // 0 = 0 $;
+theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
+theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
+
+def dvd (a b .c: nat): wff = $ E. c c * a = b $;
+
+def b0 (n: nat): nat = $ n + n $;
+def b1 (n: nat): nat = $ suc (b0 n) $;
+def odd (n: nat): wff = $ n % 2 = 1 $;
+
+def pr (a b: nat): nat = $ (a + b) * suc (a + b) // 2 + b $;
+infixr pr: $<>$ prec 54;
 def fst (a: nat): nat;
 def snd (a: nat): nat;
 
+theorem pr0: $ 0 <> 0 = 0 $;
 theorem fstpr (a b: nat): $ fst (a <> b) = a $;
 theorem sndpr (a b: nat): $ snd (a <> b) = b $;
 theorem fstsnd (a: nat): $ fst a <> snd a = a $;
-
-theorem fst0: $ fst 0 = 0 $;
-theorem snd0: $ snd 0 = 0 $;
-theorem pr0: $ 0 <> 0 = 0 $;
 
 def pi11 (n: nat): nat = $ fst (fst n) $;
 def pi12 (n: nat): nat = $ snd (fst n) $;
@@ -158,18 +168,6 @@ theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
 def pow (a b: nat): nat; infixr pow: $^$ prec 80;
 theorem pow0 (a: nat): $ a ^ 0 = 1 $;
 theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;
-
-def div (a b: nat): nat; infixl div: $//$ prec 70;
-def mod (a b: nat): nat; infixl mod: $%$ prec 70;
-theorem div0 (a: nat): $ a // 0 = 0 $;
-theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
-theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
-
-def dvd (a b .c: nat): wff = $ E. c c * a = b $;
-
-def b0 (n: nat): nat = $ n + n $;
-def b1 (n: nat): nat = $ suc (b0 n) $;
-def odd (n: nat): wff = $ n % 2 = 1 $;
 
 def shl (a n: nat): nat = $ a * 2 ^ n $;
 def shr (a n: nat): nat = $ a // 2 ^ n $;
