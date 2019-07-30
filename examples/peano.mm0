@@ -160,6 +160,41 @@ def pi22 (n: nat): nat = $ snd (snd n) $;
 def pi221 (n: nat): nat = $ fst (pi22 n) $;
 def pi222 (n: nat): nat = $ snd (pi22 n) $;
 
+def isfun (A: set) (.a .b .b2: nat): wff =
+$ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
+
+def opab {x y .z: nat} (ph: wff x y): set =
+$ {z | E. x E. y (z = x <> y /\ ph)} $;
+
+def Xp (A B: set) (.x .y .z: nat): set = $ opab x y (x e. A /\ y e. B) $;
+
+def Dom (A: set) (.x .y: nat): set = $ {x | E. y x <> y e. A} $;
+def Ran (A: set) (.x .y: nat): set = $ {y | E. x x <> y e. A} $;
+
+def Im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
+infixl Im: $''$ prec 80;
+
+def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
+
+def comp (F G: set) (.x .y .z: nat): set =
+$ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
+infixr comp: $o.$ prec 90;
+
+def lam {x .p: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
+notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
+
+def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
+infixl app: $@$ prec 200;
+
+def case (A B: set) (.n: nat): set =
+  $ \ n, if (odd n) (B @ (n // 2)) (A @ (n // 2)) $;
+theorem casel (A B: set) (n: nat): $ case A B @ (b0 n) = A @ n $;
+theorem caser (A B: set) (n: nat): $ case A B @ (b1 n) = B @ n $;
+
+def Sum (A B: set): set;
+theorem Suml (A B: set) (n: nat): $ b0 n e. Sum A B <-> n e. A $;
+theorem Sumr (A B: set) (n: nat): $ b1 n e. Sum A B <-> n e. B $;
+
 def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
 theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
 theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
@@ -173,7 +208,7 @@ def shl (a n: nat): nat = $ a * 2 ^ n $;
 def shr (a n: nat): nat = $ a // 2 ^ n $;
 
 def nel (a b: nat): wff = $ odd (shr a b) $;
-def ns (a .x: nat): set = ${x | nel x a}$; coercion ns: nat > set;
+def ns (a .x: nat): set = $ {x | nel x a} $; coercion ns: nat > set;
 theorem axext {x: nat} (a b: nat): $ a == b -> a = b $;
 theorem extlt (a b: nat): $ a e. b -> a < b $;
 theorem nel0 (a: nat): $ ~ a e. 0 $;
@@ -210,26 +245,6 @@ def sep (n: nat) (A: set): nat;
 theorem elsep (n: nat) (A: set) (a: nat):
   $ a e. sep n A <-> a e. n /\ a e. A $;
 
-def isfun (A: set) (.a .b .b2: nat): wff =
-$ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
-
-def opab {x y .z: nat} (ph: wff x y): set =
-$ {z | E. x E. y (z = x <> y /\ ph)} $;
-
-def Xp (A B: set) (.x .y .z: nat): set = $ opab x y (x e. A /\ y e. B) $;
-
-def Dom (A: set) (.x .y: nat): set = $ {x | E. y x <> y e. A} $;
-def Ran (A: set) (.x .y: nat): set = $ {y | E. x x <> y e. A} $;
-
-def Im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
-infixl Im: $''$ prec 80;
-
-def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
-
-def comp (F G: set) (.x .y .z: nat): set =
-$ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
-infixr comp: $o.$ prec 90;
-
 def res (A: set) (n: nat): nat = $ sep (lower (Xp n V)) A $;
 infixl res: $|`$ prec 55;
 theorem elres (n a b: nat) (A: set):
@@ -237,12 +252,6 @@ theorem elres (n a b: nat) (A: set):
 
 def Arrow (A B: set) (.f: nat): set =
 $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
-
-def lam {x .p: nat} (a: nat x): set = ${p | E. x p = x <> a}$;
-notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
-
-def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
-infixl app: $@$ prec 200;
 
 def write (f x y .a .b: nat): nat =
   $ lower (opab a b (a <> b e. f /\ a != x \/ a = x /\ b = y)) $;
@@ -256,15 +265,6 @@ theorem srecval {x y: nat} (s: nat x) (n: nat):
 def srecp (A: set): set;
 theorem srecpval (A: set) (n: nat):
   $ n e. srecp A <-> n <> sep n (srecp A) e. A $;
-
-def case (A B: set) (.n: nat): set =
-  $ \ n, if (odd n) (B @ (n // 2)) (A @ (n // 2)) $;
-theorem casel (A B: set) (n: nat): $ case A B @ (b0 n) = A @ n $;
-theorem caser (A B: set) (n: nat): $ case A B @ (b1 n) = B @ n $;
-
-def Sum (A B: set): set;
-theorem Suml (A B: set) (n: nat): $ b0 n e. Sum A B <-> n e. A $;
-theorem Sumr (A B: set) (n: nat): $ b1 n e. Sum A B <-> n e. B $;
 
 def all (A: set) (n: nat): wff;
 theorem all0 (A: set): $ all A 0 $;
