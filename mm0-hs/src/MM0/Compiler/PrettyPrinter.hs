@@ -287,7 +287,7 @@ ppDecl env x (DAxiom bis hyps ret) = group $ "axiom" <+> pretty x <>
 ppDecl env x (DDef vis bis ty val) = group $ ppVis vis <> "def" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <+> ppDepType ty) <> case val of
     Nothing -> ";"
-    Just (_, v) -> space <> "=" <> softline <> ppSExpr env v <> ";"
+    Just (_, v) -> space <> "=" <> line <> ppSExpr env v <> ";"
 ppDecl env x (DTheorem vis bis hyps ret _) = group $ ppVis vis <> "theorem" <+> pretty x <>
   nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")
 

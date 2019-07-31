@@ -940,13 +940,11 @@ imPopBd IMExplicit _ = True
 imPopBd IMBoundOnly bd = bd
 
 data RefineExpr =
-    RAtom Offset T.Text
-  | RApp InferMode Offset T.Text [RefineExpr]
+    RApp InferMode Offset T.Text [RefineExpr]
   | RExact Offset LispVal
   deriving (Show)
 
 reOffset :: RefineExpr -> Offset
-reOffset (RAtom o _) = o
 reOffset (RApp _ o _ _) = o
 reOffset (RExact o _) = o
 
@@ -960,8 +958,8 @@ asAtom _ (Atom _ o t) = return (o, t)
 asAtom o _ = escapeAt o "expected an 'atom"
 
 parseRefine :: Offset -> LispVal -> ElabM RefineExpr
-parseRefine _ (Atom _ o x) = return (RAtom o x)
-parseRefine o (List []) = return (RAtom o "_")
+parseRefine _ (Atom _ o x) = return (RApp IMRegular o x [])
+parseRefine o (List []) = return (RApp IMRegular o "_" [])
 parseRefine _ (List [Atom _ o "!"]) = escapeAt o "expected at least one argument"
 parseRefine _ (List (Atom _ o "!" : t : es)) =
   asAtom o t >>= \(o', t') -> RApp IMExplicit o' t' <$> mapM (parseRefine o') es
@@ -1071,34 +1069,36 @@ unfold o sym t bis ds val es e2 = buildSubst bis es H.empty where
 
 toExpr :: Sort -> Bool -> RefineExpr -> ElabM LispVal
 toExpr _ _ (RExact _ e) = return e -- TODO: check type
-toExpr s bd (RAtom o "_") = Ref <$> newMVar o s bd
-toExpr s bd (RAtom o x) = do
-  H.lookup x . tcVars <$> getTC >>= \case
+toExpr s bd (RApp _ o "_" _) = Ref <$> newMVar o s bd
+toExpr s bd (RApp _ o t es) =
+  (if null es then H.lookup t . tcVars <$> getTC else return Nothing) >>= \case
     Just (PBound _ s') -> do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
+      return $ Atom False o t
     Just (PReg _ (DepType s' _)) -> do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
       when bd $ reportAt o ELError "expected a bound variable"
-    Nothing -> modifyTC $ \tc -> tc {tcVars = H.insert x (PBound x s) (tcVars tc)}
-  return $ Atom False o x
-toExpr s bd (RApp _ o t es) = try (now >>= getTerm t) >>= \case
-  Nothing -> if null es then toExpr s bd (RAtom o t) else
-    escapeAt o $ "unknown term '" <> t <> "'"
-  Just (_, bis, ret, _) -> do
-    let
-      refineBis :: [PBinder] -> [RefineExpr] -> ElabM [LispVal]
-      refineBis (bi : bis') rs =
-        let (r, rs') = unconsIf True (RAtom o "_") rs in
-        liftM2 (:)
-          (toExpr (dSort $ binderType bi) (binderBound bi) r)
-          (refineBis bis' rs')
-      refineBis [] [] = return []
-      refineBis [] (r:_) = [] <$ reportAt (reOffset r) ELError "too many arguments"
-    es' <- refineBis bis es
-    unless (s == dSort ret || s == "") $ reportAt o ELError $
-      "type error: expected " <> s <> ", got " <> dSort ret
-    when bd $ reportAt o ELError "expected a bound variable"
-    return $ List $ Atom False o t : es'
+      return $ Atom False o t
+    Nothing -> (if bd then return Nothing else try (now >>= getTerm t)) >>= \case
+      Nothing | null es -> do
+        modifyTC $ \tc -> tc {tcVars = H.insert t (PBound t s) (tcVars tc)}
+        return $ Atom False o t
+      Nothing -> escapeAt o $ "unknown term '" <> t <> "'"
+      Just (_, bis, ret, _) -> do
+        let
+          refineBis :: [PBinder] -> [RefineExpr] -> ElabM [LispVal]
+          refineBis (bi : bis') rs =
+            let (r, rs') = unconsIf True (RApp IMRegular o "_" []) rs in
+            liftM2 (:)
+              (toExpr (dSort $ binderType bi) (binderBound bi) r)
+              (refineBis bis' rs')
+          refineBis [] [] = return []
+          refineBis [] (r:_) = [] <$ reportAt (reOffset r) ELError "too many arguments"
+        es' <- refineBis bis es
+        unless (s == dSort ret || s == "") $ reportAt o ELError $
+          "type error: expected " <> s <> ", got " <> dSort ret
+        when bd $ reportAt o ELError "expected a bound variable"
+        return $ List $ Atom False o t : es'
 
 getGoals :: Offset -> ElabM [TVar LispVal]
 getGoals o = try getTC >>= \case
@@ -1141,21 +1141,16 @@ refineProof :: VD.IOVector (TVar LispVal) ->
 refineProof gv = refinePf where
   refinePf :: LispVal -> RefineExpr -> ElabM LispVal
   refinePf ty (RExact o e) = coerceTo' o ty e
-  refinePf ty (RAtom o "_") = Ref <$> newGoal gv o ty
-  refinePf ty (RAtom o h) = try (getSubproof h) >>= \case
-    Just v -> coerceTo o ty (Atom False o h) v
-    Nothing -> try (now >>= getThm h) >>= \case
-      Just (_, bis, hs, ret) -> refinePfThm ty IMRegular o h [] bis hs ret
-      Nothing -> escapeAt o $ "unknown hypothesis '" <> h <> "'"
+  refinePf ty (RApp _ o "?" _) = Ref <$> newRef (Goal o ty)
   refinePf ty (RApp _ o "_" []) = Ref <$> newGoal gv o ty
   refinePf ty (RApp _ o "_" es) = do
     mv <- Ref <$> newUnknownMVar o
     Ref <$> newGoal gv o mv >>= refineExtraArgs o mv ty es
-  refinePf ty (RApp im o t es) = try (now >>= getThm t) >>= \case
-    Just (_, bis, hs, ret) -> refinePfThm ty im o t es bis hs ret
-    Nothing -> try (getSubproof t) >>= \case
-      Just v -> refineExtraArgs o v ty es (Atom False o t)
-      _ -> escapeAt o $ "unknown theorem '" <> t <> "'"
+  refinePf ty (RApp im o t es) = try (getSubproof t) >>= \case
+    Just v -> refineExtraArgs o v ty es (Atom False o t)
+    Nothing -> try (now >>= getThm t) >>= \case
+      Just (_, bis, hs, ret) -> refinePfThm ty im o t es bis hs ret
+      Nothing -> escapeAt o $ "unknown theorem/hypothesis '" <> t <> "'"
 
   refinePfThm :: LispVal -> InferMode -> Offset -> T.Text -> [RefineExpr] ->
     [PBinder] -> [SExpr] -> SExpr -> ElabM LispVal
@@ -1164,7 +1159,7 @@ refineProof gv = refinePf where
       H.HashMap VarName LispVal -> ElabM LispVal
     refineBis (bi : bis') rs f m = do
       let bd = binderBound bi
-          (r, rs') = unconsIf (imPopBd im bd) (RAtom o "_") rs
+          (r, rs') = unconsIf (imPopBd im bd) (RApp IMRegular o "_" []) rs
       e <- toExpr (dSort $ binderType bi) bd r
       refineBis bis' rs' (f . (e :)) (H.insert (binderName bi) e m)
     refineBis [] rs f m = refineHs hs rs f m
@@ -1172,7 +1167,7 @@ refineProof gv = refinePf where
     refineHs :: [SExpr] -> [RefineExpr] -> ([LispVal] -> [LispVal]) ->
       H.HashMap VarName LispVal -> ElabM LispVal
     refineHs (e : es') rs f m = do
-      let (r, rs') = unconsIf True (RAtom o "_") rs
+      let (r, rs') = unconsIf True (RApp IMRegular o "_" []) rs
       p <- refinePf (sExprSubst o m e) r
       refineHs es' rs' (f . (p :)) m
     refineHs [] rs f m =
