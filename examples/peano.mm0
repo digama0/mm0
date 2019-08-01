@@ -6,7 +6,7 @@ term not (ph: wff): wff; prefix not: $~$ prec 40;
 axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
 axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
-axiom ax_mp (ph ps: wff): $ ph $ > $ ph -> ps $ > $ ps $;
+axiom ax_mp (ph ps: wff): $ ph -> ps $ > $ ph $ > $ ps $;
 
 def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
 infixl iff: $<->$ prec 20;
