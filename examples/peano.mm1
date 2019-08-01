@@ -1803,32 +1803,31 @@ theorem eqmzdvdsub: $ mod(n): a = b <-> b0 n |Z b -ZN a $ =
 local def zmod (a n: nat): nat = $ (zfst a + n - zsnd a % n) % n $;
 infixl zmod: $%Z$ prec 70;
 
-theorem zmodb0: $ b0 a %Z n = a % n $;
-
 local def coprime (a b: nat): wff = $ A. d (d || a -> d || b -> d = 1) $;
 
 local def invm (a n: nat): nat = $ least {b | mod(n): a * b = 1} $;
 
--- Godel's beta function
-local def beta (a n: nat): nat = $ fst a % suc (snd a * suc n) $;
+local def pset (a: nat): set = $ {n | suc (fst a * suc n) || snd a} $;
+local def pfin (A: set): wff = $ E. a A == pset a $;
+local def pab (A: set): nat = $ least {a | A == pset a} $;
 
-theorem betaeqd (h1: $ G -> a1 = a2 $) (h2: $ G -> n1 = n2 $):
-  $ G -> beta a1 n1 = beta a2 n2 $ =
-'(modeqd (syl h1 fsteq) (suceqd @ muleqd (syl h1 sndeq) (suceqd h2)));
+theorem elpset: $ n e. pset (m <> v) <-> suc (m * suc n) || v $ =
+'(!! elabe x @ dvdeqd (suceqd @ muleqd (a1i fstpr) suceq) (a1i sndpr));
 
-theorem betaval: $ beta (a <> b) n = a % suc (b * suc n) $ =
-'(modeqd id (a1i @ suceq @ muleq1 @ sndpr) fstpr);
+theorem elpset1: $ ~a e. pset (1 <> 1) $ =
+'(mtbir (mt (mpbi (mpbir lt01S @ leeq2 mul11) lenlt) @ dvdled (a1i d1ne0) id) elpset);
 
-theorem betathmlem1 (v: nat x): $ E. c (n || c /\ A. x (x < n -> v || c)) $;
-theorem betathm (v: nat x): $ E. a A. x (x < n -> beta a i = v) $;
+theorem pfinunsn (p: wff x): $ pfin A -> pfin (A u. {x | x = n}) $;
+
+theorem pfinsep (p: wff x): $ pfin {x | x < n /\ p} $;
 
 abstract def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat =
-$ the {v | E. a (beta a 0 = z /\ beta a n = v /\
-    A. i (i < n -> beta a (suc i) = N[beta a i / x] s))} $;
+$ the {v | E. a (pset a @ 0 = z /\ pset a @ n = v /\
+    A. i (i < n -> pset a @ suc i = N[pset a @ i / x] s))} $;
 
 theorem reclem1 (z: nat) {x: nat} (s: nat x) (n: nat):
-  $ E. a (beta a 0 = z /\
-    A. i (i < n -> beta a (suc i) = N[beta a i / x] s)) $;
+  $ E. a (pset a @ 0 = z /\
+    A. i (i < n -> pset a @ suc i = N[pset a @ i / x] s)) $;
 
 pub theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
 pub theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
