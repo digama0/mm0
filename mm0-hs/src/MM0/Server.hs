@@ -132,20 +132,10 @@ newDiagThread uri version m = ReaderT $ \rs -> do
     timeout (10 * 1000000) (runReaderT m rs) >>= \case
       Just () -> return ()
       Nothing -> runReaderT (reactorErr "server timeout") rs
-    as <- atomically $ do
-      H.lookup uri <$> readTVar dt >>= \case
-        Just (v', a) | not (isOutdated v' version) -> do
-          modifyTVar dt $ H.delete uri
-          return $ Just a
-        _ -> return Nothing
-    mapM_ cancel as
   old <- atomically $ do
     H.lookup uri <$> readTVar dt >>= \case
       Just (v', _) | isOutdated v' version -> return $ Just a
-      Just (_, a') -> do
-        modifyTVar dt $ H.insert uri (version, a)
-        return $ Just a'
-      Nothing -> return Nothing
+      a' -> (snd <$> a') <$ modifyTVar dt (H.insert uri (version, a))
   mapM_ cancel old
 
 reactorLogMsg :: MessageType -> T.Text -> Reactor ()
