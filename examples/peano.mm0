@@ -70,6 +70,9 @@ infixl Union: $u.$ prec 65;
 
 def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $V$ prec max;
 
+def subset (A B: set) (.x: nat): wff = $ A. x (x e. A -> x e. B) $;
+infixl subset: $C_$ prec 50;
+
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
   ($S[$:70) a ($/$:0) x ($]$:0) A;
@@ -119,6 +122,8 @@ infixl le: $<=$ prec 50;
 
 def lt (a b: nat): wff = $ suc a <= b $;
 infixl lt: $<$ prec 50;
+
+def finite (A: set) (.n .x: nat): wff = $ E. n A. x (x e. A -> x < n) $;
 
 def if (ph: wff) (a b: nat): nat;
 theorem iftrue (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
@@ -213,9 +218,8 @@ theorem axext {x: nat} (a b: nat): $ a == b -> a = b $;
 theorem extlt (a b: nat): $ a e. b -> a < b $;
 theorem nel0 (a: nat): $ ~ a e. 0 $;
 
-def finite (A: set) (.n: nat): wff = $ E. n n == A $;
-
 def lower (A: set) (.n: nat): nat = $ the {n | n == A} $;
+theorem eqlower: $ finite A <-> A == lower A $;
 
 def sn (a: nat): nat;
 theorem elsn (a b: nat): $ a e. sn b <-> a = b $;
@@ -228,9 +232,6 @@ theorem elupto (k n: nat): $ k e. upto n <-> k < n $;
 
 def Bool: nat = $ 0 ; sn 1 $;
 def Option (A: set) (.n: nat): set = $ {n | n = 0 \/ n - 1 e. A} $;
-
-def subset (A B: set) (.x: nat): wff = $ A. x (x e. A -> x e. B) $;
-infixl subset: $C_$ prec 50;
 
 def Power (A: set) (.x: nat): set = $ {x | x C_ A} $;
 def power (a: nat): nat = $ lower (Power a) $;
