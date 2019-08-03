@@ -200,10 +200,10 @@ def Sum (A B: set): set;
 theorem Suml (A B: set) (n: nat): $ b0 n e. Sum A B <-> n e. A $;
 theorem Sumr (A B: set) (n: nat): $ b1 n e. Sum A B <-> n e. B $;
 
-def rec (z: nat) {x: nat} (s: nat x) (n: nat): nat;
-theorem rec0 (z: nat) {x: nat} (s: nat x): $ rec z x s 0 = z $;
-theorem recS (z: nat) {x: nat} (s: nat x) (n: nat):
-  $ rec z x s (suc n) = N[ rec z x s n / x ] s $;
+def rec (z: nat) (S: set) (n: nat): nat;
+theorem rec0 (z: nat) (S: set): $ rec z S 0 = z $;
+theorem recS (z: nat) (S: set) (n: nat):
+  $ rec z S (suc n) = S @ rec z S n $;
 
 def pow (a b: nat): nat; infixr pow: $^$ prec 80;
 theorem pow0 (a: nat): $ a ^ 0 = 1 $;
@@ -214,8 +214,8 @@ def shr (a n: nat): nat = $ a // 2 ^ n $;
 
 def nel (a b: nat): wff = $ odd (shr a b) $;
 def ns (a .x: nat): set = $ {x | nel x a} $; coercion ns: nat > set;
-theorem axext {x: nat} (a b: nat): $ a == b -> a = b $;
-theorem extlt (a b: nat): $ a e. b -> a < b $;
+theorem axext (a b: nat): $ a == b -> a = b $;
+theorem ellt (a b: nat): $ a e. b -> a < b $;
 theorem nel0 (a: nat): $ ~ a e. 0 $;
 
 def lower (A: set) (.n: nat): nat = $ the {n | n == A} $;
@@ -259,9 +259,9 @@ def write (f x y .a .b: nat): nat =
 theorem writeEq (f x y: nat): $ write f x y @ x = y $;
 theorem writeNe (f x y a: nat): $ a != x -> write f x y @ a = f @ a $;
 
-def srec {x: nat} (s: nat x): set;
+def srec (S: set): set;
 theorem srecval {x y: nat} (s: nat x) (n: nat):
-  $ srec x s @ n = N[ srec x s |` upto n / x ] s $;
+  $ srec S @ n = S @ (srec S |` upto n) $;
 
 def srecp (A: set): set;
 theorem srecpval (A: set) (n: nat):
