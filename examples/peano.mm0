@@ -126,8 +126,8 @@ infixl lt: $<$ prec 50;
 def finite (A: set) (.n .x: nat): wff = $ E. n A. x (x e. A -> x < n) $;
 
 def if (ph: wff) (a b: nat): nat;
-theorem iftrue (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
-theorem iffalse (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
+theorem ifpos (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
+theorem ifneg (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
 
 def true (n: nat): wff = $ n != 0 $;
 def bool (n: nat): wff = $ n < 2 $;
@@ -185,6 +185,9 @@ def comp (F G: set) (.x .y .z: nat): set =
 $ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
 infixr comp: $o.$ prec 90;
 
+def res (A B: set): set = $ A i^i Xp B V $;
+infixl res: $|`$ prec 55;
+
 def lam {x .p: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
 notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
 
@@ -212,14 +215,14 @@ theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;
 def shl (a n: nat): nat = $ a * 2 ^ n $;
 def shr (a n: nat): nat = $ a // 2 ^ n $;
 
-def nel (a b: nat): wff = $ odd (shr a b) $;
+def nel (a b: nat): wff = $ odd (shr b a) $;
 def ns (a .x: nat): set = $ {x | nel x a} $; coercion ns: nat > set;
 theorem axext (a b: nat): $ a == b -> a = b $;
 theorem ellt (a b: nat): $ a e. b -> a < b $;
 theorem nel0 (a: nat): $ ~ a e. 0 $;
 
 def lower (A: set) (.n: nat): nat = $ the {n | n == A} $;
-theorem eqlower: $ finite A <-> A == lower A $;
+theorem eqlower (A: set): $ finite A <-> A == lower A $;
 
 def sn (a: nat): nat;
 theorem elsn (a b: nat): $ a e. sn b <-> a = b $;
@@ -236,36 +239,31 @@ def Option (A: set) (.n: nat): set = $ {n | n = 0 \/ n - 1 e. A} $;
 def Power (A: set) (.x: nat): set = $ {x | x C_ A} $;
 def power (a: nat): nat = $ lower (Power a) $;
 
-def card (s: nat): nat;
-theorem card0: $ card 0 = 0 $;
-theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $;
-
 def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
 
 def sep (n: nat) (A: set): nat;
 theorem elsep (n: nat) (A: set) (a: nat):
   $ a e. sep n A <-> a e. n /\ a e. A $;
 
-def res (A: set) (n: nat): nat = $ sep (lower (Xp n V)) A $;
-infixl res: $|`$ prec 55;
-theorem elres (n a b: nat) (A: set):
-  $ isfun A -> (a <> b e. A |` n <-> a e. n /\ a <> b e. A) $;
-
 def Arrow (A B: set) (.f: nat): set =
 $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
 
-def write (f x y .a .b: nat): nat =
-  $ lower (opab a b (a <> b e. f /\ a != x \/ a = x /\ b = y)) $;
-theorem writeEq (f x y: nat): $ write f x y @ x = y $;
-theorem writeNe (f x y a: nat): $ a != x -> write f x y @ a = f @ a $;
+def write (F: set) (x y .a .b: nat): set =
+  $ opab a b (a <> b e. F /\ a != x \/ a = x /\ b = y) $;
+theorem writeEq (F: set) (x y: nat): $ write F x y @ x = y $;
+theorem writeNe (F: set) (x y a: nat): $ a != x -> write F x y @ a = F @ a $;
 
-def srec (S: set): set;
-theorem srecval {x y: nat} (s: nat x) (n: nat):
-  $ srec S @ n = S @ (srec S |` upto n) $;
+def srec (S: set) (n: nat): nat;
+theorem srecval {i: nat} (S: set) (n: nat):
+  $ srec S n = S @ lower ((\ i, srec S i) |` upto n) $;
 
 def srecp (A: set): set;
 theorem srecpval (A: set) (n: nat):
   $ n e. srecp A <-> n <> sep n (srecp A) e. A $;
+
+def card (s: nat): nat;
+theorem card0: $ card 0 = 0 $;
+theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $;
 
 def all (A: set) (n: nat): wff;
 theorem all0 (A: set): $ all A 0 $;
