@@ -132,6 +132,54 @@ sExprToLisp :: Offset -> SExpr -> LispVal
 sExprToLisp o (SVar v) = Atom False o v
 sExprToLisp o (App t ts) = List (Atom False o t : (sExprToLisp o <$> ts))
 
+convToLisp :: Offset -> Conv -> LispVal
+convToLisp o (CVar v) = Atom False o v
+convToLisp o (CApp t ts) = List (Atom False o t : (convToLisp o <$> ts))
+convToLisp o (CSym c) = List [Atom False o ":sym", convToLisp o c]
+convToLisp o (CUnfold t es vs c) =
+  List [Atom False o ":unfold", Atom False o t,
+    List (sExprToLisp o <$> es), List (Atom False o <$> vs), convToLisp o c]
+
+proofToLisp :: Offset -> Proof -> LispVal
+proofToLisp o (ProofHyp h) = Atom False o h
+proofToLisp o (ProofThm t es ps) =
+  List (Atom False o t : (sExprToLisp o <$> es) ++ (proofToLisp o <$> ps))
+proofToLisp o (ProofConv t c p) =
+  List [Atom False o ":conv", sExprToLisp o t, convToLisp o c, proofToLisp o p]
+proofToLisp o (ProofLet h p q) =
+  List [Atom False o ":let", Atom False o h, proofToLisp o p, proofToLisp o q]
+
+visibilityToLisp :: Offset -> Visibility -> LispVal
+visibilityToLisp o Public = Atom False o "pub"
+visibilityToLisp o Abstract = Atom False o "abstract"
+visibilityToLisp o Local = Atom False o "local"
+visibilityToLisp _ VisDefault = List []
+
+depTypeToLisp :: Offset -> DepType -> [LispVal]
+depTypeToLisp o (DepType s vs) = [Atom False o s, List (Atom False o <$> vs)]
+
+binderToLisp :: Offset -> PBinder -> LispVal
+binderToLisp o (PBound x s) = List [Atom False o x, Atom False o s]
+binderToLisp o (PReg x s) = List (Atom False o x : depTypeToLisp o s)
+
+declToLisp :: Offset -> Offset -> T.Text -> Decl -> LispVal
+declToLisp o px x (DTerm bis ret) =
+  List [Atom False o "term", Atom False px x, List (binderToLisp o <$> bis), List (depTypeToLisp o ret)]
+declToLisp o px x (DAxiom bis hs ret) =
+  List [Atom False o "axiom", Atom False px x, List (binderToLisp o <$> bis),
+    List ((\h -> List [Atom False o "_", sExprToLisp o h]) <$> hs), sExprToLisp o ret]
+declToLisp o px x (DDef vis bis ret val) =
+  List (Atom False o "def" : Atom False px x : List (binderToLisp o <$> bis) : List (depTypeToLisp o ret) :
+    visibilityToLisp o vis : case val of
+      Nothing -> [List [], List []]
+      Just (ds, v) -> [
+        List ((\(_, d, s) -> List [Atom False o d, Atom False o s]) <$> ds),
+        sExprToLisp o v])
+declToLisp o px x (DTheorem vis bis hs ret val) =
+  List [Atom False o "theorem", Atom False px x, List (binderToLisp o <$> bis),
+    List ((\(h, ht) -> List [Atom False o (fromMaybe "_" h), sExprToLisp o ht]) <$> hs),
+    sExprToLisp o ret, visibilityToLisp o vis, Proc $ \_ _ -> proofToLisp o <$> val]
+
 data ErrorLevel = ELError | ELWarning | ELInfo
 instance Show ErrorLevel where
   show ELError = "error"
@@ -232,7 +280,7 @@ data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
   | DDef Visibility [PBinder] DepType (Maybe ([(Range, VarName, Sort)], SExpr))
-  | DTheorem Visibility [PBinder] [SExpr] SExpr (ElabM Proof)
+  | DTheorem Visibility [PBinder] [(Maybe VarName, SExpr)] SExpr (ElabM Proof)
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Range Bool Sort deriving (Show)
 
@@ -425,7 +473,7 @@ getTerm v s = gets (lookupTerm v) >>= \case
 lookupThm :: Text -> Env -> Maybe (SeqNum, (Range, Range), [PBinder], [SExpr], SExpr)
 lookupThm v env = H.lookup v (eDecls env) >>= \case
   (n, o, DAxiom args hyps r, _) -> Just (n, o, args, hyps, r)
-  (n, o, DTheorem _ args hyps r _, _) -> Just (n, o, args, hyps, r)
+  (n, o, DTheorem _ args hyps r _, _) -> Just (n, o, args, snd <$> hyps, r)
   _ -> Nothing
 
 getThm :: Text -> SeqNum -> ElabM ((Range, Range), [PBinder], [SExpr], SExpr)

@@ -498,6 +498,23 @@ MM0-specific builtin functions
 
 * `(stat)` prints the current proof state, which consists of a list of subproofs, a list of goals, and a list of metavariables accompanied by their sorts.
 
+* `(get-decl x)` returns the declaration information associated to declaration `x`. The result has one of the following forms:
+
+  * `('term x bis ret)`, where `x` is the declaration name (same as the input), `bis` is a list of binders, and `ret` is a type. A bound variable binder `{x: set}` is represented as `'[x set]`, and a regular variable `(ph: wff x)` is represented as `'[ph set (x)]`. The third element of the list is always present but possibly empty for regular variables. The return type `ret` similarly has the form `(s xs)` where `s` is the sort and `xs` is the list of dependent variables.
+
+  * `('def x bis ret vis ds val)`. `x`, `bis` and `ret` have the same form as in the `term` case. `vis` is one of  `'local`, `'abstract`, `'pub` or `()`, where the empty list represents the default visibility. `ds` is a list of dummy variables such as `[x set]` in the same format as the binders. `val` is either `()` indicating that a definition has not been provided, or a term s-expression.
+
+  * `('axiom x bis hyps ret)`, where `x` is the declaration name, `bis` are the bound and regular variables, `hyps` is a list of `[h hyp]` pairs where `hyp` is a term s-expression (`h` will always be `_`), and `ret` is also a term s-expression.
+
+  * `('theorem x bis hyps ret vis vtask)`, where `x`, `bis`, `hyps` and `ret` have the same format as in `axiom`, `vis` is the visibility in the same format as in `def`, and `vtask` is a thunk that will return the proof s-expression when called.
+
+* `(add-decl! decl-data ...)` adds a new declaration, as if a new `def` or `theorem` declaration was created. This does not do any elaboration - all information is expected to be fully elaborated. The input format is the same as the output format of `get-decl`. For example, `(add-decl! 'term 'foo '([_ wff ()]) 'wff)` creates a new term `term foo: wff > wff;`.
+
+  * `(add-term! x bis ret)` is the same as `(add-decl! 'term x bis ret)`.
+  * `(add-term! x bis ret vis ds val)` is the same as `(add-decl! 'def x bis ret vis ds val)`.
+  * `(add-thm! x bis hyps ret)` is the same as `(add-decl! 'axiom x bis hyps ret)`.
+  * `(add-thm! x bis hyps ret vis vtask)` is the same as `(add-decl! 'theorem x bis hyps ret vis vtask)`.
+
 Compilation
 ===
 

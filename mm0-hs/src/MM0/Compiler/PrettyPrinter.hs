@@ -289,10 +289,10 @@ ppDecl env x (DDef vis bis ty val) = group $ ppVis vis <> "def" <+> pretty x <>
     Nothing -> ";"
     Just (_, v) -> space <> "=" <> line <> ppSExpr env v <> ";"
 ppDecl env x (DTheorem vis bis hyps ret _) = group $ ppVis vis <> "theorem" <+> pretty x <>
-  nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env hyps ret <> ";")
+  nest 2 (ppGroupedPBinders bis <> ":" <> line <> ppArrowSExpr env (snd <$> hyps) ret <> ";")
 
 ppDeclType :: Env -> Decl -> Doc Void
 ppDeclType _ (DTerm bis ty) = group $ ppGroupedPBinders bis <> ":" <+> ppDepType ty
 ppDeclType _ (DDef _ bis ty _) = group $ ppGroupedPBinders bis <> ":" <+> ppDepType ty
 ppDeclType env (DAxiom _ hyps ret) = group $ ppArrowSExpr env hyps ret
-ppDeclType env (DTheorem _ _ hyps ret _) = group $ ppArrowSExpr env hyps ret
+ppDeclType env (DTheorem _ _ hyps ret _) = group $ ppArrowSExpr env (snd <$> hyps) ret

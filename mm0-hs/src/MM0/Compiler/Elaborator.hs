@@ -169,7 +169,7 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
         case v of
           Nothing ->
             if mm0 then
-              return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret mzero
+              return $ DTheorem vis pbs ((\(_, v', h) -> (v', h)) <$> hs) eret mzero
             else do
               reportSpan rx ELWarning "theorem proof missing"
               return $ DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret
@@ -180,12 +180,14 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
                 forM_ hs $ \((o, _), on, e) -> forM_ on $ \n ->
                   addSubproof n (sExprToLisp o e) (Atom False o n)
                 elabLisp eret lv
-            return $ DTheorem vis pbs ((\(_, _, h) -> h) <$> hs) eret fork
+            return $ DTheorem vis pbs ((\(_, v', h) -> (v', h)) <$> hs) eret fork
       _ -> unimplementedAt px
     checkVarRefs >> return decl
-  ins <- gets eDecls >>= checkNew ELError rx
-    ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'")
-    (\(_, (_, i), _, _) -> i) x
+  insertDecl x decl rd rx ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'")
+
+insertDecl :: T.Text -> Decl -> Range -> Range -> T.Text -> ElabM ()
+insertDecl x decl rd rx err = do
+  ins <- gets eDecls >>= checkNew ELError rx err (\(_, (_, i), _, _) -> i) x
   n <- next
   modify $ \env -> env {eDecls = ins (n, (rd, rx), decl, Nothing)}
 
@@ -1018,6 +1020,19 @@ initialBindings = [
       _ -> escapeAt o "invalid arguments"),
     ("stat", \o _ ->
       getStat >>= reportSpan o ELInfo . render >> pure Undef),
+    ("get-decl", \os@(o, _) -> \case
+      [Atom _ _ x] -> gets (H.lookup x . eDecls) >>= \case
+        Just (_, (_, px), d, _) -> return $ declToLisp o (fst px) x d
+        _ -> return Undef
+      _ -> escapeSpan os "invalid arguments"),
+    ("add-decl!", \o -> \case
+      Atom _ _ "term" : es -> Undef <$ lispAddTerm o es
+      Atom _ _ "def" : es -> Undef <$ lispAddTerm o es
+      Atom _ _ "axiom" : es -> Undef <$ lispAddThm o es
+      Atom _ _ "theorem" : es -> Undef <$ lispAddThm o es
+      _ -> escapeSpan o "unknown decl kind"),
+    ("add-term!", \o es -> Undef <$ lispAddTerm o es),
+    ("add-thm!", \o es -> Undef <$ lispAddThm o es),
 
     -- redefinable configuration functions
     ("refine-extra-args", \(o, _) -> \case
@@ -1029,6 +1044,76 @@ evalQExpr :: LCtx -> QExpr -> ElabM LispVal
 evalQExpr ctx (QApp (Span (o, _) e) es) =
   List . (Atom False o e :) <$> mapM (evalQExpr ctx) es
 evalQExpr ctx (QUnquote (Span o e)) = eval o ctx e
+
+cleanBinder :: Range -> LispVal -> ElabM PBinder
+cleanBinder _ (List [Atom _ _ x, Atom _ _ s]) = return $ PBound x s
+cleanBinder o (List [Atom _ _ x, Atom _ _ s, List vs]) = PReg x . DepType s <$> mapM (cleanVar o) vs
+cleanBinder o _ = escapeSpan o "invalid binder arguments"
+
+cleanDepType :: Range -> LispVal -> ElabM DepType
+cleanDepType _ (Atom _ _ s) = return $ DepType s []
+cleanDepType o (List [Atom _ _ s, List vs]) = DepType s <$> mapM (cleanVar o) vs
+cleanDepType o _ = escapeSpan o "invalid type arguments"
+
+cleanVis :: Range -> LispVal -> ElabM Visibility
+cleanVis _ (Atom _ _ "pub") = return Public
+cleanVis _ (Atom _ _ "abstract") = return Abstract
+cleanVis _ (Atom _ _ "local") = return Local
+cleanVis _ (List []) = return VisDefault
+cleanVis o _ = escapeSpan o "invalid visibility arguments"
+
+cleanHyp :: Range -> LispVal -> ElabM (Maybe VarName, SExpr)
+cleanHyp o (List [Atom _ _ "_", h]) = (,) Nothing <$> cleanTerm o h
+cleanHyp o (List [Atom _ _ x, h]) = (,) (Just x) <$> cleanTerm o h
+cleanHyp o _ = escapeSpan o "invalid hypothesis"
+
+cleanDummy :: Range -> LispVal -> ElabM (Range, VarName, Sort)
+cleanDummy _ (List [Atom _ o x, Atom _ _ s]) = return (textToRange o x, x, s)
+cleanDummy o _ = escapeSpan o "invalid dummy arguments"
+
+lispTermDecl :: Range -> [LispVal] -> ElabM Decl
+lispTermDecl o [List bis, ret] =
+  liftM2 DTerm (mapM (cleanBinder o) bis) (cleanDepType o ret)
+lispTermDecl o [List bis, ret, vis, List ds, val] = do
+  bis' <- mapM (cleanBinder o) bis
+  ret' <- cleanDepType o ret
+  vis' <- cleanVis o vis
+  DDef vis' bis' ret' <$> case val of
+    List [] -> return Nothing
+    _ -> do
+      ds' <- mapM (cleanDummy o) ds
+      v' <- cleanTerm o val
+      return $ Just (ds', v')
+lispTermDecl o _ = escapeSpan o "invalid term decl arguments"
+
+lispThmDecl :: Range -> [LispVal] -> ElabM Decl
+lispThmDecl o [List bis, List hs, ret] =
+  liftM3 DAxiom (mapM (cleanBinder o) bis) (fmap snd <$> mapM (cleanHyp o) hs) (cleanTerm o ret)
+lispThmDecl o [List bis, List hs, ret, vis, val] = do
+  bis' <- mapM (cleanBinder o) bis
+  hs' <- mapM (cleanHyp o) hs
+  ret' <- cleanTerm o ret
+  vis' <- cleanVis o vis
+  case val of
+    Proc f -> return $ DTheorem vis' bis' hs' ret' $ f o [] >>= cleanProof o
+    _ -> do
+      v' <- cleanProof o val
+      return $ DTheorem vis' bis' hs' ret' (return v')
+lispThmDecl o _ = escapeSpan o "invalid theorem decl arguments"
+
+lispAddTerm :: Range -> [LispVal] -> ElabM ()
+lispAddTerm o (Atom _ px x : es) = do
+  d <- lispTermDecl o es
+  let r = textToRange px x
+  insertDecl x d r r ("duplicate term/def declaration '" <> x <> "'")
+lispAddTerm o _ = escapeSpan o "invalid arguments"
+
+lispAddThm :: Range -> [LispVal] -> ElabM ()
+lispAddThm o (Atom _ px x : es) = do
+  d <- lispThmDecl o es
+  let r = textToRange px x
+  insertDecl x d r r ("duplicate axiom/theorem declaration '" <> x <> "'")
+lispAddThm o _ = escapeSpan o "invalid arguments"
 
 -----------------------------
 -- Tactics
@@ -1042,7 +1127,7 @@ evalRefines :: Offset -> LCtx -> [AtLisp] -> ElabM ()
 evalRefines o = evalList () (\e l -> e >>= tryRefine o >> l)
 
 elabLisp :: SExpr -> AtLisp -> ElabM Proof
-elabLisp t e@(Span (o, _) _) = do
+elabLisp t e@(Span os@(o, _) _) = do
   g <- newRef (Goal o (sExprToLisp o t))
   modifyTC $ \tc -> tc {tcGoals = V.singleton g}
   evalAt def e >>= tryRefine o
@@ -1053,9 +1138,9 @@ elabLisp t e@(Span (o, _) _) = do
       reportAt o' ELError $ render' $ "|-" <+> doc pp
     _ -> return ()
   unless (V.null gs') mzero
-  cleanProof o (Ref g)
+  cleanProof os (Ref g)
 
-cleanProof :: Offset -> LispVal -> ElabM Proof
+cleanProof :: Range -> LispVal -> ElabM Proof
 cleanProof o (Ref g) = getRef g >>= \case
   Goal o' ty -> do
     pp <- ppExpr ty
@@ -1065,21 +1150,21 @@ cleanProof _ (Atom _ _ h) = return $ ProofHyp h
 cleanProof o (List [Atom _ _ ":conv", ty, conv, es]) =
   liftM3 ProofConv (cleanTerm o ty) (cleanConv o conv) (cleanProof o es)
 cleanProof o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
-  Nothing -> escapeAt o $ "unknown theorem '" <> t <> "'"
+  Nothing -> escapeSpan o $ "unknown theorem '" <> t <> "'"
   Just (_, bis, _, _) ->
     let (es1, es2) = splitAt (length bis) es in
     liftM2 (ProofThm t) (mapM (cleanTerm o) es1) (mapM (cleanProof o) es2)
-cleanProof o e = escapeAt o $ "bad proof: " <> T.pack (show e)
+cleanProof o e = escapeSpan o $ "bad proof: " <> T.pack (show e)
 
-cleanTerm :: Offset -> LispVal -> ElabM SExpr
+cleanTerm :: Range -> LispVal -> ElabM SExpr
 cleanTerm o (Ref g) = getRef g >>= \case
   MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanTerm o e
 cleanTerm _ (Atom _ _ x) = return $ SVar x
 cleanTerm o (List (Atom _ _ t : es)) = App t <$> mapM (cleanTerm o) es
-cleanTerm o e = escapeAt o $ "bad term: " <> T.pack (show e)
+cleanTerm o e = escapeSpan o $ "bad term: " <> T.pack (show e)
 
-cleanConv :: Offset -> LispVal -> ElabM Conv
+cleanConv :: Range -> LispVal -> ElabM Conv
 cleanConv o (Ref g) = getRef g >>= \case
   MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanConv o e
@@ -1088,14 +1173,14 @@ cleanConv o (List [Atom _ _ ":unfold", Atom _ _ t, List es, List ds, p]) =
   liftM3 (CUnfold t) (mapM (cleanTerm o) es) (mapM (cleanVar o) ds) (cleanConv o p)
 cleanConv o (List [Atom _ _ ":sym", p]) = CSym <$> cleanConv o p
 cleanConv o (List (Atom _ _ t : es)) = CApp t <$> mapM (cleanConv o) es
-cleanConv o e = escapeAt o $ "bad conv: " <> T.pack (show e)
+cleanConv o e = escapeSpan o $ "bad conv: " <> T.pack (show e)
 
-cleanVar :: Offset -> LispVal -> ElabM VarName
+cleanVar :: Range -> LispVal -> ElabM VarName
 cleanVar o (Ref g) = getRef g >>= \case
   MVar n o' s bd -> escapeAt o' $ render $ ppMVar n s bd
   e -> cleanVar o e
 cleanVar _ (Atom _ _ x) = return x
-cleanVar o e = escapeAt o $ "bad var: " <> T.pack (show e)
+cleanVar o e = escapeSpan o $ "bad var: " <> T.pack (show e)
 
 data InferMode = IMRegular | IMExplicit | IMBoundOnly deriving (Eq, Show)
 
