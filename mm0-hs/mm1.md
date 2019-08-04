@@ -268,6 +268,26 @@ Some expressions have special behavior when evaluated; these roughly correspond 
   * The only expression that does not evaluate to itself in quotation mode is `(unquote e)`, with syntax `,e`, which evaluates `e` in the usual way and returns the result.
 * `if` evaluates a conditional expression. `(if cond e1 e2)` evaluates `cond`, and if `cond` is truthy then it evaluates and returns `e1`, otherwise it returns `e2`. An expression is truthy if it is not `#f` - all other values, including `#<undef>`, `()`, `""`, and `0` are considered as "true".
 
+* `match` performs pattern matching on an expression. It is based on the [Chicken Scheme implementation](https://wiki.call-cc.org/man/3/Pattern%20matching). For example, `(match '(1 (2) 3) [(x (y) z) expr])` will bind `x` to `1`, `y` to `2`, and `z` to `3` in the body of `expr`.
+  * The syntax is `(match e clauses)` where `clauses` is a list of clauses. Each clause is tried in order, and the result of the body of the match is the first successful clause.
+  * A clause has the form `[pat expr]` or `[pat (=> k) expr]`. This matches the pattern `pat` against the input, evaluating `expr` with the bindings resulting from the pattern match if it is successful, and otherwise passing to the next clause. If the `(=> k)` form is used, the variable `k` is bound to a zero-argument continuation which can be called in the body of `expr` to pass to the next clause even though the current clause was successful.
+  * When a pattern is "matched" against a value, it will either succeed and bind a set of variables to values (the set of variables is determined statically), or fail and bind nothing. The patterns are:
+
+    * `x` (an atom) matches anything, and binds the value to `x`.
+    * `_` matches anything, and binds nothing.
+    * A string, `#t` or `#f`, or `()` all match against themselves (they ensure the input is equal to them) and bind nothing.
+    * A quoted pattern `'pat` will match in "quote mode", which is the same as a regular pattern match except that atoms match against themselves instead of binding. An unquotation `,pat` will return to regular pattern matching mode.
+    * A formula `$ foo $` acts like a quotation; the formula is parsed and the resulting expression is treated as a quoted pattern. As with regular quotation, `,x` can be used for unquotation. For example, if there is a notation `<` for the definition `lt`, then `$ ,x < ,y $` will check that the input is a less-than expression and the arguments will be bound to `x` and `y`.
+    * `(p1 ... pn)` ensures the input is a list of length `n`, and matches the `n` patterns with the `n` input values.
+    * `(p1 ... pn "...")` (with a literal `...` at the end) ensures the input is a proper list of length at least `n`, and matches the first `n` patterns with the `n` input values. You can also use `___` in place of `...`.
+    * `(p1 ... pn __ k)`, where `k` is a number, ensures the input is a proper list of length at least `n + k`, and matches the first `n` patterns with the `n` input values.
+    * `(p1 ... pn . p)`, ensures the input is a proper or improper list of length at least `n`, and matches the first `n` patterns with the `n` input values and matches the tail against the pattern `p`.
+    * `(and p1 ... pn)` will match the input against all the patterns `p1` through `pn`, and using all the resulting bindings. It succeeds if all the patterns match.
+    * `(or p1 ... pn)` succeeds if any of the patterns match, and it uses all bindings from the successes. Results are unspecified if the patterns do not all bind the same variables.
+    * `(not p1 ... pn)` succeeds if none of the patterns match, and binds nothing.
+    * `(? pred p1 ... pn)` succeeds if all of the patterns `p1`, ..., `pn` match, and `(pred v)` evaluates to a truthy value where `v` is the value being matched. `pred` should evaluate to a unary predicate *in the context of the match expression*; bindings from the match are not available when the predicate is evaluated.
+
+* The `match-fn` and `match-fn*` keywords are similar to `match`, but define functions instead of matching an input argument immediately. `(match-fn clauses)` is equivalent to `(fn (x) (match x clauses))`, and `(match-fn* clauses)` is equivalent to `(fn x (match x clauses))`.
 * `focus` is a tactic that is a syntax form because it does some preprocessing before evaluating its arguments (which is not something a regular function can do). See [Elaboration](#elaboration) for more details.
 
 Builtin functions
@@ -316,7 +336,7 @@ At the beginning of execution, the global context contains a number of primitive
       (string->atom "foo")         -- foo
       (string->atom "foo$bar baz") -- foo$bar baz
 
-* `(not e)` returns `#f` if its argument is truthy, otherwise `#t`. As mentioned in the `if` section, every expression is truthy except `#f`.
+* `(not e1 e2 e3)` returns `#f` if any argument is truthy, and `#t` otherwise. It is not short-circuiting.
 * `(and e1 e2 e3)` returns `#t` if every argument is truthy, and `#f` otherwise. It is not short-circuiting.
 * `(or e1 e2 e3)` returns `#t` if any argument is truthy, and `#f` otherwise. It is not short-circuiting.
 * `(list e1 e2 e3)` returns the list `(e1 e2 e3)`. It differs from `quote` in that it evaluates its arguments.

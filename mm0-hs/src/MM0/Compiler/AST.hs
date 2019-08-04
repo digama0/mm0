@@ -113,8 +113,7 @@ localName LAnon = Nothing
 
 type AtLisp = Span LispAST
 data LispAST =
-    AAtom T.Text
-  | AAtomAtPoint T.Text
+    AAtom Bool T.Text
   | AList [AtLisp]
   | ADottedList AtLisp [AtLisp] AtLisp
   | ANumber Integer
@@ -123,10 +122,9 @@ data LispAST =
   | AFormula Formula
 
 instance Show LispAST where
-  showsPrec _ (AAtom e) = (T.unpack e ++)
-  showsPrec _ (AAtomAtPoint e) = (T.unpack e ++)
-  showsPrec _ (AList [Span _ (AAtom "quote"), e]) = ('\'' :) . shows e
-  showsPrec _ (AList [Span _ (AAtom "unquote"), e]) = (',' :) . shows e
+  showsPrec _ (AAtom _ e) = (T.unpack e ++)
+  showsPrec _ (AList [Span _ (AAtom _ "quote"), e]) = ('\'' :) . shows e
+  showsPrec _ (AList [Span _ (AAtom _ "unquote"), e]) = (',' :) . shows e
   showsPrec _ (AList ls) = ('(' :) . f ls . (')' :) where
     f [] = id
     f [e] = shows e

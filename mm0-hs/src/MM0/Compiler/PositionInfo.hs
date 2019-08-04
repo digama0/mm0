@@ -107,9 +107,9 @@ toSpans env = \st -> runST $ do
     atLit (AtPos o (NVar v)) = pushVar o v
 
     atLisp :: Bool -> AtLisp -> MakeSpan s ()
-    atLisp q (Span o (AAtom t)) = asks (H.lookup t) >>= push' o t . PIAtom q
-    atLisp _ (Span _ (AList (Span _ (AAtom "quote") : es))) = mapM_ (atLisp True) es
-    atLisp _ (Span _ (AList (Span _ (AAtom "unquote") : es))) = mapM_ (atLisp False) es
+    atLisp q (Span o (AAtom _ t)) = asks (H.lookup t) >>= push' o t . PIAtom q
+    atLisp _ (Span _ (AList (Span _ (AAtom _ "quote") : es))) = mapM_ (atLisp True) es
+    atLisp _ (Span _ (AList (Span _ (AAtom _ "unquote") : es))) = mapM_ (atLisp False) es
     atLisp q (Span _ (AList es)) = mapM_ (atLisp q) es
     atLisp q (Span _ (ADottedList l es r)) = atLisp q l >> mapM_ (atLisp q) es >> atLisp q r
     atLisp _ (Span _ (AFormula f)) = formula f

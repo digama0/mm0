@@ -50,6 +50,7 @@ data Conv =
   | CUnfold TermName [SExpr] [VarName] Conv
 
 data Syntax = Define | Lambda | Quote | If | Focus | Let | Letrec
+  | Match | MatchFn | MatchFns
 
 instance Show Syntax where
   showsPrec _ Define = ("def" ++)
@@ -59,6 +60,9 @@ instance Show Syntax where
   showsPrec _ Focus = ("focus" ++)
   showsPrec _ Let = ("let" ++)
   showsPrec _ Letrec = ("letrec" ++)
+  showsPrec _ Match = ("match" ++)
+  showsPrec _ MatchFn = ("match-fn" ++)
+  showsPrec _ MatchFns = ("match-fn*" ++)
 
 type Proc = Range -> [LispVal] -> ElabM LispVal
 

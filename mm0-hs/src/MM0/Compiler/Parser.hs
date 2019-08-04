@@ -333,9 +333,9 @@ lispVal =
   (fmap AString <$> lexeme (span strLit)) <|>
   (fmap AFormula <$> lexeme (span formula')) <|>
   (liftA2 (\(Span o _) v@(Span (_, o2) _) ->
-    Span (fst o, o2) $ AList [Span o (AAtom "quote"), v]) (span (single '\'')) lispVal) <|>
+    Span (fst o, o2) $ AList [Span o (AAtom False "quote"), v]) (span (single '\'')) lispVal) <|>
   (liftA2 (\(Span o _) v@(Span (_, o2) _) ->
-    Span (fst o, o2) $ AList [Span o (AAtom "unquote"), v]) (span (single ',')) lispVal) <|>
+    Span (fst o, o2) $ AList [Span o (AAtom False "unquote"), v]) (span (single ',')) lispVal) <|>
   (lexeme (span (single '#' *> takeWhileP (Just "identifier char") lispIdent >>= hashAtom))) <|>
   (lexeme (span (takeWhileP (Just "identifier char") lispIdent >>= atom)))
 
@@ -358,16 +358,16 @@ toCurlyList s@(Span _ (AList [])) = s
 toCurlyList (Span _ (AList [e])) = e
 toCurlyList s@(Span _ (AList [_, _])) = s
 toCurlyList (Span r (AList [e1, op, e2])) = Span r (AList [op, e1, e2])
-toCurlyList (Span r@(o, _) e@(AList (e1 : op@(Span _ (AAtom tk)) : es))) =
+toCurlyList (Span r@(o, _) e@(AList (e1 : op@(Span _ (AAtom _ tk)) : es))) =
   case go es of
-    Nothing -> Span r (cons (Span (o, o + 1) (AAtom ":nfx")) e)
+    Nothing -> Span r (cons (Span (o, o + 1) (AAtom False ":nfx")) e)
     Just es' -> Span r (AList (op : e1 : es'))
   where
   go [e2] = Just [e2]
-  go (e2 : Span _ (AAtom tk') : es') | tk' == tk = (e2 :) <$> go es'
+  go (e2 : Span _ (AAtom _ tk') : es') | tk' == tk = (e2 :) <$> go es'
   go _ = Nothing
 toCurlyList (Span r@(o, _) e) =
-  (Span r (cons (Span (o, o + 1) (AAtom ":nfx")) e))
+  (Span r (cons (Span (o, o + 1) (AAtom False ":nfx")) e))
 
 hashAtom :: T.Text -> Parser LispAST
 hashAtom "t" = return (ABool True)
@@ -375,7 +375,7 @@ hashAtom "f" = return (ABool False)
 hashAtom _ = empty
 
 atom :: T.Text -> Parser LispAST
-atom t = if legalIdent then return (AAtom t) else empty where
+atom t = if legalIdent then return (AAtom False t) else empty where
   legalIdent = t `elem` ["+", "-", "..."] ||
     case T.uncons t of
       Nothing -> False

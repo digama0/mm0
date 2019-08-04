@@ -3,6 +3,7 @@ module MM0.Compiler.Elaborator (elaborate, elaborateWithCompletion,
   ErrorLevel(..), ElabError(..)) where
 
 import Control.Monad.State
+import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
 import Data.List
 import Data.Bits
@@ -484,7 +485,7 @@ lcInsert "_" _ ctx = ctx
 lcInsert x v (LCtx ctx) = LCtx (H.insert x v ctx)
 
 evalToplevel :: AtLisp -> ElabM ()
-evalToplevel (Span rd (AList (Span (o, _) (AAtom "def") : es))) = do
+evalToplevel (Span rd (AList (Span (o, _) (AAtom _ "def") : es))) = do
   (Span rx x, v) <- evalDefine o def es
   unless (x == "_") $ lispDefine rd rx x v
 evalToplevel (Span o e) = evalAndPrint o e
@@ -498,8 +499,7 @@ evalAt :: LCtx -> AtLisp -> ElabM LispVal
 evalAt ctx (Span o e) = eval o ctx e
 
 eval :: Range -> LCtx -> LispAST -> ElabM LispVal
-eval (o, _) ctx (AAtom e) = evalAtom o ctx e
-eval (o, _) ctx (AAtomAtPoint e) = evalAtom o ctx e
+eval (o, _) ctx (AAtom _ e) = evalAtom o ctx e
 eval _ _ (AString s) = return (String s)
 eval _ _ (ANumber n) = return (Number n)
 eval _ _ (ABool b) = return (Bool b)
@@ -511,7 +511,7 @@ eval _ ctx (AFormula f) = parseMath f >>= evalQExpr ctx
 
 evalList :: a -> (ElabM LispVal -> ElabM a -> ElabM a) -> LCtx -> [AtLisp] -> ElabM a
 evalList a _ _ [] = return a
-evalList a f ctx (Span _ (AList (Span (o, _) (AAtom "def") : ds)) : es) = do
+evalList a f ctx (Span _ (AList (Span (o, _) (AAtom _ "def") : ds)) : es) = do
   (Span _ x, v) <- evalDefine o ctx ds
   evalList a f (lcInsert x v ctx) es
 evalList a f ctx (e : es) = f (evalAt ctx e) (evalList a f ctx es)
@@ -539,7 +539,7 @@ call o v es = try (lispLookupName v) >>= \case
   Nothing -> escapeAt o $ "Unknown function '" <> v <> "'"
 
 evalApp :: LCtx -> AtLisp -> [AtLisp] -> ElabM LispVal
-evalApp ctx (Span (o, _) (AAtom e)) es = evalAtom o ctx e >>= unRef >>= \case
+evalApp ctx (Span (o, _) (AAtom _ e)) es = evalAtom o ctx e >>= unRef >>= \case
   Syntax s -> evalSyntax o ctx s es
   Proc f -> evals ctx es >>= f (o, o + T.length e)
   v -> escapeAt o $ "not a function, cannot apply: " <> T.pack (show v)
@@ -580,6 +580,16 @@ evalSyntax _ ctx Letrec es = do
     a <- newRef Undef
     go xs (lcInsert x (Ref a) ctx') $
       \ctx2 -> f ctx2 >> e ctx2 >>= setRef a
+evalSyntax o _ Match [] = escapeAt o "expected at least one argument"
+evalSyntax o ctx Match (e : es) = do
+  ms <- mapM (parseMatchBranch ctx) es
+  evalAt ctx e >>= runMatch ms o
+evalSyntax _ ctx MatchFn es = do
+  ms <- mapM (parseMatchBranch ctx) es
+  return $ Proc $ \(o', _) vs -> unary o' vs >>= runMatch ms o'
+evalSyntax _ ctx MatchFns es = do
+  ms <- mapM (parseMatchBranch ctx) es
+  return $ Proc $ \(o', _) -> runMatch ms o' . List
 
 data LambdaSpec = LSExactly [Ident] | LSAtLeast [Ident] Ident
 
@@ -613,11 +623,11 @@ mkLambda ls ctx es (o, _) vs = do
 
 parseDef :: ElabM (Span Ident, LCtx -> ElabM LispVal) ->
   [AtLisp] -> ElabM (Span Ident, LCtx -> ElabM LispVal)
-parseDef _ (Span o (AAtom x) : es) = return (Span o x, \ctx -> eval1 ctx es)
-parseDef _ (Span _ (AList (Span o (AAtom x) : xs)) : es) = do
+parseDef _ (Span o (AAtom _ x) : es) = return (Span o x, \ctx -> eval1 ctx es)
+parseDef _ (Span _ (AList (Span o (AAtom _ x) : xs)) : es) = do
   xs' <- mapM toIdent xs
   return (Span o x, \ctx -> return $ Proc $ mkLambda (LSExactly xs') ctx es)
-parseDef _ (Span _ (ADottedList (Span o (AAtom x)) xs r) : es) = do
+parseDef _ (Span _ (ADottedList (Span o (AAtom _ x)) xs r) : es) = do
   xs' <- mapM toIdent xs
   r' <- toIdent r
   return (Span o x, \ctx -> return $ Proc $ mkLambda (LSAtLeast xs' r') ctx es)
@@ -629,7 +639,7 @@ evalDefine o ctx es = do
   (,) x <$> f ctx
 
 toIdent :: AtLisp -> ElabM Ident
-toIdent (Span _ (AAtom x)) = return x
+toIdent (Span _ (AAtom _ x)) = return x
 toIdent (Span (o, _) _) = escapeAt o "expected an identifier"
 
 parseLetVar :: AtLisp -> ElabM (Span Ident, LCtx -> ElabM LispVal)
@@ -641,13 +651,123 @@ parseLet (Span _ (AList ls) : es) = flip (,) es <$> mapM parseLetVar ls
 parseLet (Span (o, _) _ : _) = escapeAt o "invalid syntax"
 parseLet _ = return ([], [])
 
+runMatch :: [LispVal -> ElabM LispVal -> ElabM LispVal] -> Offset -> LispVal -> ElabM LispVal
+runMatch [] o _ = escapeAt o "match failed"
+runMatch (f : fs) o v = f v (runMatch fs o v)
+
+parseMatchBranch :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM LispVal -> ElabM LispVal)
+parseMatchBranch ctx (Span _ (AList (pat :
+    Span _ (AList [Span _ (AAtom _ "=>"), Span _ (AAtom _ x)]) : es))) = do
+  f <- parsePatt ctx pat
+  return $ \e k -> try (f e) >>= \case
+    Nothing -> k
+    Just g -> eval1 (lcInsert x (Proc $ \_ _ -> k) $ g ctx) es
+parseMatchBranch ctx (Span _ (AList (pat : es))) = do
+  f <- parsePatt ctx pat
+  return $ \e k -> try (f e) >>= \case
+    Nothing -> k
+    Just g -> eval1 (g ctx) es
+parseMatchBranch _ (Span (o, _) _) = escapeAt o "invalid syntax"
+
+data ListPatt = LPCons (LispVal -> ElabM (LCtx -> LCtx)) ListPatt
+  | LPNil | LPAtLeast Int
+
+parseListPatt :: (AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))) ->
+  [AtLisp] -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parseListPatt p = \es -> do
+  fs <- patts es
+  return $ unRef >=> \case List vs -> go fs vs; _ -> mzero
+  where
+  patts :: [AtLisp] -> ElabM ListPatt
+  patts [] = return LPNil
+  patts (Span _ (AList [Span _ (AAtom _ "quote"), Span _ (AAtom _ x)]) : es) =
+    LPCons (\case Atom _ _ x' | x == x' -> return id; _ -> mzero) <$> patts es
+  patts [Span _ (AAtom _ "___")] = return (LPAtLeast 0)
+  patts [Span _ (AAtom _ "...")] = return (LPAtLeast 0)
+  patts [Span _ (AAtom _ "__"), Span _ (ANumber n)] = return (LPAtLeast $ fromIntegral n)
+  patts (e : es) = liftM2 LPCons (p e) (patts es)
+  go :: ListPatt -> [LispVal] -> ElabM (LCtx -> LCtx)
+  go LPNil [] = return id
+  go (LPCons f fs) (v:vs) = liftM2 (flip (.)) (f v) (go fs vs)
+  go (LPAtLeast 0) _ = return id
+  go (LPAtLeast n) vs | length vs >= n = return id
+  go _ _ = mzero
+
+parseDottedListPatt :: (AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))) ->
+  AtLisp -> [AtLisp] -> AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parseDottedListPatt = \p l es r -> liftM2 go (mapM p (l : es)) (p r) where
+  go [] fr v = fr v
+  go (f:fs) fr v = lispUncons <$> unRef v >>= \case
+    Just (vl, vr) -> liftM2 (flip (.)) (f vl) (go fs fr vr)
+    Nothing -> mzero
+
+lispUncons :: LispVal -> Maybe (LispVal, LispVal)
+lispUncons (List (e : es)) = Just (e, List es)
+lispUncons (DottedList l [] r) = Just (l, r)
+lispUncons (DottedList l (e : es) r) = Just (l, DottedList e es r)
+lispUncons _ = Nothing
+
+parsePatt :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parsePatt _ (Span _ (AAtom _ x)) = return $ \v -> return $ lcInsert x v
+parsePatt _ (Span _ (ANumber n)) = return $ unRef >=> \case Number n' | n == n' -> return id; _ -> mzero
+parsePatt _ (Span _ (AString s)) = return $ unRef >=> \case String s' | s == s' -> return id; _ -> mzero
+parsePatt _ (Span _ (ABool b)) = return $ unRef >=> \case Bool b' | b == b' -> return id; _ -> mzero
+parsePatt ctx (Span _ (AList [Span _ (AAtom _ "quote"), e])) = parseQuotePatt ctx e
+parsePatt ctx (Span _ (AList (Span _ (AAtom _ "and") : es))) = go <$> mapM (parsePatt ctx) es where
+  go [] _ = return id
+  go (f:fs) v = liftM2 (flip (.)) (f v) (go fs v)
+parsePatt ctx (Span _ (AList (Span _ (AAtom _ "or") : es))) = go <$> mapM (parsePatt ctx) es where
+  go [] _ = mzero
+  go (f:fs) v = try (f v) >>= \case
+    Just a -> return a
+    Nothing -> go fs v
+parsePatt ctx (Span _ (AList (Span _ (AAtom _ "not") : es))) =
+  mapM (parsePatt ctx) es <&> \fs v -> do
+    forM_ fs $ \f -> try (f v) >>= \case Just _ -> mzero; Nothing -> return ()
+    return id
+parsePatt ctx (Span _ (AList (Span _ (AAtom _ "?") : Span os p : es))) =
+  eval os ctx p >>= \case
+    Proc f -> mapM (parsePatt ctx) es <&> \fs v -> do
+      f os [v] >>= guard . truthy
+      go fs v
+    e -> escapeSpan os $ "not a function: " <> T.pack (show e)
+  where
+  go [] _ = return id
+  go (f:fs) v = liftM2 (flip (.)) (f v) (go fs v)
+parsePatt ctx (Span _ (AList es)) = parseListPatt (parsePatt ctx) es
+parsePatt ctx (Span _ (ADottedList l es r)) = parseDottedListPatt (parsePatt ctx) l es r
+parsePatt ctx (Span _ (AFormula f)) = parseMath f >>= parseQExprPatt ctx
+
+parseQuotePatt :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parseQuotePatt _ (Span _ (AAtom _ x)) = return $ unRef >=> \case Atom _ _ x' | x == x' -> return id; _ -> mzero
+parseQuotePatt _ (Span _ (ANumber n)) = return $ unRef >=> \case Number n' | n == n' -> return id; _ -> mzero
+parseQuotePatt _ (Span _ (AString s)) = return $ unRef >=> \case String s' | s == s' -> return id; _ -> mzero
+parseQuotePatt _ (Span _ (ABool b))   = return $ unRef >=> \case Bool b' | b == b' -> return id; _ -> mzero
+parseQuotePatt ctx (Span _ (AList [Span _ (AAtom _ "unquote"), e])) = parsePatt ctx e
+parseQuotePatt ctx (Span _ (AList es)) = parseListPatt (parseQuotePatt ctx) es
+parseQuotePatt ctx (Span _ (ADottedList l es r)) = parseDottedListPatt (parsePatt ctx) l es r
+parseQuotePatt ctx (Span _ (AFormula f)) = parseMath f >>= parseQExprPatt ctx
+
+parseQExprPatt :: LCtx -> QExpr -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
+parseQExprPatt _ (QApp (Span _ t) []) = return $ unRef >=> \case
+  Atom _ _ t' | t == t' -> return id
+  List [Atom _ _ t'] | t == t' -> return id
+  _ -> mzero
+parseQExprPatt ctx (QApp (Span _ t) es) = do
+  fs <- mapM (parseQExprPatt ctx) es
+  return $ unRef >=> \case List (Atom _ _ t' : vs) | t == t' -> go fs vs; _ -> mzero
+  where
+  go [] [] = return id
+  go (f:fs) (v:vs) = liftM2 (flip (.)) (f v) (go fs vs)
+  go _ _ = mzero
+parseQExprPatt ctx (QUnquote e) = parsePatt ctx e
+
 quoteAt :: LCtx -> AtLisp -> ElabM LispVal
 quoteAt ctx (Span (o, _) e) = quote o ctx e
 
 quote :: Offset -> LCtx -> LispAST -> ElabM LispVal
-quote o _ (AAtom e) = return $ Atom False o e
-quote o _ (AAtomAtPoint e) = return $ Atom True o e
-quote _ ctx (AList [Span _ (AAtom "unquote"), e]) = evalAt ctx e
+quote o _ (AAtom pt e) = return $ Atom pt o e
+quote _ ctx (AList [Span _ (AAtom _ "unquote"), e]) = evalAt ctx e
 quote _ ctx (AList es) = List <$> mapM (quoteAt ctx) es
 quote _ ctx (ADottedList l es r) =
   liftM3 DottedList (quoteAt ctx l) (mapM (quoteAt ctx) es) (quoteAt ctx r)
@@ -757,7 +877,8 @@ initialBindings = [
   ("def", Syntax Define), ("quote", Syntax Quote),
   ("fn", Syntax Lambda), ("if", Syntax If),
   ("let", Syntax Let), ("letrec", Syntax Letrec),
-  ("focus", Syntax Focus) ] ++
+  ("focus", Syntax Focus), ("match", Syntax Match),
+  ("match-fn", Syntax MatchFn), ("match-fn*", Syntax MatchFns) ] ++
   (mapSnd Proc <$> initialProcs) where
 
   initialProcs :: [(T.Text, Proc)]
@@ -798,7 +919,7 @@ initialBindings = [
       UnparsedFormula _ s -> return $ String s
       e -> return $ String $! T.pack $ show e),
     ("string->atom", \(o, _) es -> unary o es >>= asString o >>= return . Atom False o),
-    ("not", \(o, _) es -> Bool . not . truthy <$> unary o es),
+    ("not", \_ es -> return $ Bool $ not $ any truthy es),
     ("and", \_ es -> return $ Bool $ all truthy es),
     ("or", \_ es -> return $ Bool $ any truthy es),
     ("list", \_ -> return . List),

@@ -13,6 +13,8 @@ do {
   (set-timeout 500)
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
+  (def last (match-fn [(a) a] [(_ . l) (last l)]))
+  (def (append . ls) @ foldr ls () @ fn (l l2) @ foldr l l2 cons)
   (def (rev l) (foldl l () (fn (l a) (cons a l))))
   (def (verb e) (list ':verb e))
   (def (exact e) (refine (verb e)))
@@ -21,7 +23,8 @@ do {
     foldl ps p @ fn (acc p2) @
       refine @ list 'ax_mp (verb acc) (verb p2))
   (def (result) (hd (get-goals)))
-  (def (target) (goal-type (result)))
+  (def (later) @ match (get-goals)
+    [(g . gs) (apply set-goals @ append gs @ list g)])
 };
 
 theorem a1i (h: $ b $): $ a -> b $ = '(ax_1 h);

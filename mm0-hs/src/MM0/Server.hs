@@ -19,6 +19,7 @@ import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
+import GHC.Conc
 import qualified Language.Haskell.LSP.Control as Ctrl (run)
 import Language.Haskell.LSP.Core
 import Language.Haskell.LSP.Diagnostics
@@ -129,6 +130,7 @@ newDiagThread :: NormalizedUri -> TextDocumentVersion -> Reactor () -> Reactor (
 newDiagThread uri version m = ReaderT $ \rs -> do
   let dt = rsDiagThreads rs
   a <- async $ do
+    enableAllocationLimit
     timeout (10 * 1000000) (runReaderT m rs) >>= \case
       Just () -> return ()
       Nothing -> runReaderT (reactorErr "server timeout") rs
