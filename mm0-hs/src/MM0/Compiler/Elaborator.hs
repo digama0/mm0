@@ -3,13 +3,13 @@ module MM0.Compiler.Elaborator (elaborate, elaborateWithCompletion,
   ErrorLevel(..), ElabError(..)) where
 
 import Control.Monad.State
-import Control.Monad.Trans.Maybe
 import Control.Monad.RWS.Strict
 import Data.List
 import Data.Bits
 import Data.Word8
 import Data.Maybe
 import Data.Default
+import Data.Foldable
 import qualified Data.HashMap.Strict as H
 import qualified Data.Set as S
 import qualified Data.Vector as V
@@ -780,6 +780,11 @@ asString :: Offset -> LispVal -> ElabM T.Text
 asString _ (String s) = return s
 asString o e = escapeAt o $ "expected a string, got " <> T.pack (show e)
 
+asAtomString :: Offset -> LispVal -> ElabM T.Text
+asAtomString _ (Atom _ _ s) = return s
+asAtomString _ (String s) = return s
+asAtomString o e = escapeAt o $ "expected an atom, got " <> T.pack (show e)
+
 asInt :: Offset -> LispVal -> ElabM Integer
 asInt _ (Number n) = return n
 asInt o e = escapeAt o $ "expected an integer, got " <> T.pack (show e)
@@ -855,6 +860,14 @@ isString :: LispVal -> Bool
 isString (String _) = True
 isString _ = False
 
+isMap :: LispVal -> Bool
+isMap (AtomMap _) = True
+isMap _ = False
+
+isDef :: LispVal -> Bool
+isDef Undef = False
+isDef _ = True
+
 isRef :: LispVal -> Bool
 isRef (Ref _) = True
 isRef _ = False
@@ -871,6 +884,11 @@ lispTl _ (List (_:es)) = return (List es)
 lispTl _ (DottedList _ [] e) = return e
 lispTl _ (DottedList _ (e:es) t) = return (DottedList e es t)
 lispTl o _ = escapeAt o "expected a list"
+
+parseMapIns :: [LispVal] -> Maybe (H.HashMap T.Text LispVal -> H.HashMap T.Text LispVal)
+parseMapIns [Atom _ _ s, v] = Just $ H.insert s v
+parseMapIns [String s, v] = Just $ H.insert s v
+parseMapIns _ = Nothing
 
 initialBindings :: [(T.Text, LispVal)]
 initialBindings = [
@@ -931,6 +949,7 @@ initialBindings = [
     ("string?", \(o, _) es -> Bool . isString <$> unary o es),
     ("hd", \(o, _) es -> unary o es >>= lispHd o),
     ("tl", \(o, _) es -> unary o es >>= lispTl o),
+    ("def?", \(o, _) es -> Bool . isDef <$> unary o es),
     ("ref?", \(o, _) es -> Bool . isRef <$> unary o es),
     ("ref!", \_ -> \case
       [] -> Ref <$> newRef Undef
@@ -945,6 +964,31 @@ initialBindings = [
         return $ Proc $ \_ _ -> res
       e : _ -> escapeAt o $ "not a procedure: " <> T.pack (show e)
       _ -> escapeAt o "expected at least one argument"),
+    ("atom-map?", \(o, _) es -> Bool . isMap <$> unary o es),
+    ("atom-map!", \(o, _) es -> do
+      m' <- foldlM (\m -> \case
+        List e -> case parseMapIns e of
+          Just f -> return (f m)
+          _ -> escapeAt o "invalid arguments"
+        _ -> escapeAt o "invalid arguments") H.empty es
+      Ref <$> newRef (AtomMap m')),
+    ("lookup", \(o, _) -> \case
+      [e, k] -> unRef e >>= \case
+        AtomMap m -> asAtomString o k <&> \s -> H.lookupDefault Undef s m
+        _ -> escapeAt o "not a map"
+      _ -> escapeAt o "expected two arguments"),
+    ("insert!", \(o, _) -> \case
+      Ref r : es -> case parseMapIns es of
+        Nothing -> escapeAt o "expected three arguments"
+        Just f -> Undef <$ modifyRef r (\case AtomMap m -> AtomMap (f m); e -> e)
+      _ -> escapeAt o "expected a mutable map"),
+    ("insert", \(o, _) -> \case
+      em : es -> case parseMapIns es of
+        Nothing -> escapeAt o "expected three arguments"
+        Just f -> unRef em >>= \case
+          AtomMap m -> return $ AtomMap (f m)
+          _ -> escapeAt o "not a map"
+      _ -> escapeAt o "expected three arguments"),
 
     -- MM0 specific
     ("set-timeout", \(o, _) es -> unary o es >>= asInt o >>= \n ->

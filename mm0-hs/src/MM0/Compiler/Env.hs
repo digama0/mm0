@@ -77,6 +77,7 @@ data LispVal =
   | Syntax Syntax
   | Undef
   | Proc Proc
+  | AtomMap (H.HashMap T.Text LispVal)
   | Ref (TVar LispVal)
   | MVar Int Offset Sort Bool
   | Goal Offset LispVal
@@ -105,6 +106,11 @@ instance Show LispVal where
   showsPrec _ (Syntax s) = shows s
   showsPrec _ Undef = ("#<undef>" ++)
   showsPrec _ (Proc _) = ("#<closure>" ++)
+  showsPrec _ (AtomMap m) = ("(atom-map! " ++) . f (H.toList m) . (')' :) where
+    f [] = id
+    f [e] = go e
+    f (e : es) = go e . (' ' :) . f es
+    go (k, v) r = "['" ++ T.unpack k ++ " " ++ shows v (']' : r)
   showsPrec _ (Ref e) = shows (unsafePerformIO (readTVarIO e))
   showsPrec _ (MVar n _ _ _) = ('?' :) . (T.unpack (alphanumber n) ++)
   showsPrec _ (Goal _ v) = ("(goal " ++) . shows v . (')':)
@@ -395,6 +401,9 @@ getRef = liftIO . readTVarIO
 
 setRef :: TVar a -> a -> ElabM ()
 setRef x v = liftIO $ atomically $ writeTVar x v
+
+modifyRef :: TVar a -> (a -> a) -> ElabM ()
+modifyRef x f = liftIO $ atomically $ modifyTVar x f
 
 getSort :: Text -> SeqNum -> ElabM ((Range, Range), SortData)
 getSort v s =

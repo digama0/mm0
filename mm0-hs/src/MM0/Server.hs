@@ -416,6 +416,7 @@ getSymbols larr env = do
       CE.Syntax _ -> Just SkEvent
       CE.Undef -> Nothing
       CE.Proc _ -> Just SkFunction
+      CE.AtomMap _ -> Just SkObject
       CE.Ref _ -> undefined
       CE.MVar _ _ _ _ -> Just SkConstant
       CE.Goal _ _ -> Just SkConstant

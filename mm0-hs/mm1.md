@@ -347,6 +347,7 @@ At the beginning of execution, the global context contains a number of primitive
 * `(pair? e)` is true if its argument is a cons of something, that is, a nonempty list or improper list.
 * `(null? e)` is true if its argument is `()`.
 * `(string? e)` is true if its argument is a string (not a formula or atom).
+* `(def? e)` is true if the argument is not `#<undef>`.
 * `(hd e)` returns the head of the list, or left element of the cons expression. It is known as `car` in most lisps.
 * `(tl e)` returns the tail of the list, or right element of the cons expression. It is known as `cdr` in most lisps.
 * `(ref? e)` is true if the argument is a ref-cell.
@@ -355,6 +356,10 @@ At the beginning of execution, the global context contains a number of primitive
 * `(get! r)` dereferences the ref-cell `r` to get the value.
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
+* `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
+* `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#<undef>` if not present.
+* `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#<undef>`.
+* `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`.
 
 See [MM0-specific builtin functions](#MM0-specific-builtin-functions) for more functions that have to do with interaction between the lisp and MM0 environments.
 

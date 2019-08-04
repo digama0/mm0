@@ -221,13 +221,13 @@
 				{"include": "#comment"},
 				{"match": "@", "name": "keyword.operator.mm0.lisp"},
 				{
-					"begin": "\\(\\s*(if|def|fn|let|letrec|focus)(?!\\w)",
+					"begin": "\\(\\s*(if|def|fn|let|letrec|match(-fn\\*?)?|focus)(?!\\w)",
 					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|begin|apply|min|max|not|or|list|cons|hd|tl|async|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|to-expr|refine|stat|have|(pair|null|string|goal|mvar|ref)\\?|(ref|get|set|mvar)\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string->atom|display|print|begin|apply|min|max|not|or|list|cons|hd|tl|lookup|insert|async|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|to-expr|refine|stat|have|(pair|null|string|atom-map|def|ref|goal|mvar)\\?|(ref|get|set|atom-map|insert|mvar)\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
