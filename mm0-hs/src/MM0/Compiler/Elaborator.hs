@@ -586,12 +586,12 @@ evalSyntax o _ Match [] = escapeAt o "expected at least one argument"
 evalSyntax o ctx Match (e : es) = do
   ms <- mapM (parseMatchBranch ctx) es
   evalAt ctx e >>= runMatch ms o
-evalSyntax _ ctx MatchFn es = do
+evalSyntax o ctx MatchFn es = do
   ms <- mapM (parseMatchBranch ctx) es
-  return $ Proc $ \(o', _) vs -> unary o' vs >>= runMatch ms o'
-evalSyntax _ ctx MatchFns es = do
+  return $ Proc $ \_ vs -> unary o vs >>= runMatch ms o
+evalSyntax o ctx MatchFns es = do
   ms <- mapM (parseMatchBranch ctx) es
-  return $ Proc $ \(o', _) -> runMatch ms o' . List
+  return $ Proc $ \_ -> runMatch ms o . List
 
 data LambdaSpec = LSExactly [Ident] | LSAtLeast [Ident] Ident
 
@@ -654,7 +654,7 @@ parseLet (Span (o, _) _ : _) = escapeAt o "invalid syntax"
 parseLet _ = return ([], [])
 
 runMatch :: [LispVal -> ElabM LispVal -> ElabM LispVal] -> Offset -> LispVal -> ElabM LispVal
-runMatch [] o _ = escapeAt o "match failed"
+runMatch [] o v = escapeAt o $! "match failed: " <> T.pack (show v)
 runMatch (f : fs) o v = f v (runMatch fs o v)
 
 parseMatchBranch :: LCtx -> AtLisp -> ElabM (LispVal -> ElabM LispVal -> ElabM LispVal)
@@ -936,13 +936,13 @@ initialBindings = [
         in args e es >>= proc os
       e : _ : _ -> escapeAt o $ "not a procedure: " <> T.pack (show e)
       _ -> escapeAt o "expected at least two arguments"),
-    ("+", \(o, _) es -> Number . sum <$> mapM (asInt o) es),
-    ("*", \(o, _) es -> Number . product <$> mapM (asInt o) es),
+    ("+", \(o, _) es -> Number . sum <$> mapM (unRef >=> asInt o) es),
+    ("*", \(o, _) es -> Number . product <$> mapM (unRef >=> asInt o) es),
     ("max", \(o, _) es ->
-      mapM (asInt o) es >>= evalFold1 o max >>= return . Number),
+      mapM (unRef >=> asInt o) es >>= evalFold1 o max >>= return . Number),
     ("min", \(o, _) es ->
-      mapM (asInt o) es >>= evalFold1 o min >>= return . Number),
-    ("-", \(o, _) es -> mapM (asInt o) es >>= \case
+      mapM (unRef >=> asInt o) es >>= evalFold1 o min >>= return . Number),
+    ("-", \(o, _) es -> mapM (unRef >=> asInt o) es >>= \case
       [] -> escapeAt o "expected at least one argument"
       [n] -> return $ Number (-n)
       n : ns -> return $ Number (n - sum ns)),
@@ -1036,7 +1036,7 @@ initialBindings = [
       _ -> escapeAt o "expected three arguments"),
 
     -- MM0 specific
-    ("set-timeout", \(o, _) es -> unary o es >>= asInt o >>= \n ->
+    ("set-timeout", \(o, _) es -> unary o es >>= unRef >>= asInt o >>= \n ->
       Undef <$ modify (\env -> env {eTimeout = 1000 * fromInteger n})),
     ("mvar?", \(o, _) es -> Bool . isMVar <$> unary o es),
     ("goal?", \(o, _) es -> Bool . isGoal <$> unary o es),
