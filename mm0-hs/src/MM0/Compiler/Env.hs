@@ -106,11 +106,9 @@ instance Show LispVal where
   showsPrec _ (Syntax s) = shows s
   showsPrec _ Undef = ("#<undef>" ++)
   showsPrec _ (Proc _) = ("#<closure>" ++)
-  showsPrec _ (AtomMap m) = ("(atom-map! " ++) . f (H.toList m) . (')' :) where
-    f [] = id
-    f [e] = go e
-    f (e : es) = go e . (' ' :) . f es
-    go (k, v) r = "['" ++ T.unpack k ++ " " ++ shows v (']' : r)
+  showsPrec _ (AtomMap m) = ("(atom-map!" ++) . f (H.toList m) . (')' :) where
+    f [] r = r
+    f ((k, v) : es) r = " ['" ++ T.unpack k ++ " " ++ shows v (']' : f es r)
   showsPrec _ (Ref e) = shows (unsafePerformIO (readTVarIO e))
   showsPrec _ (MVar n _ _ _) = ('?' :) . (T.unpack (alphanumber n) ++)
   showsPrec _ (Goal _ v) = ("(goal " ++) . shows v . (')':)

@@ -50,7 +50,7 @@ elabStmt (Span rd@(pos, _) s) = resuming $ withTimeout pos $ case s of
   Annot e stmt -> do
     ann <- evalAt def e
     lift $ elabStmt stmt
-    () <$ call pos "annotate" [nameOf stmt, ann]
+    () <$ call pos "annotate" [ann, nameOf stmt]
   _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Range -> T.Text -> (v -> Range) -> T.Text ->
@@ -554,7 +554,7 @@ evalSyntax o _ Define _ = escapeAt o "def not permitted in expression context"
 evalSyntax o _ Quote [] = escapeAt o "expected at least one argument"
 evalSyntax _ ctx Quote (e : _) = quoteAt ctx e
 evalSyntax _ ctx If (cond : t : es') = do
-  cond' <- evalAt ctx cond
+  cond' <- evalAt ctx cond >>= unRef
   if truthy cond' then evalAt ctx t else
     case es' of
       [] -> return Undef
@@ -730,7 +730,7 @@ parsePatt ctx (Span _ (AList (Span _ (AAtom _ "not") : es))) =
 parsePatt ctx (Span _ (AList (Span _ (AAtom _ "?") : Span os p : es))) =
   eval os ctx p >>= \case
     Proc f -> mapM (parsePatt ctx) es <&> \fs v -> do
-      f os [v] >>= guard . truthy
+      f os [v] >>= unRef >>= guard . truthy
       go fs v
     e -> escapeSpan os $ "not a function: " <> T.pack (show e)
   where
@@ -772,7 +772,7 @@ quote o _ (AAtom pt e) = return $ Atom pt o e
 quote _ ctx (AList [Span _ (AAtom _ "unquote"), e]) = evalAt ctx e
 quote _ ctx (AList es) = List <$> mapM (quoteAt ctx) es
 quote _ ctx (ADottedList l es r) =
-  liftM3 DottedList (quoteAt ctx l) (mapM (quoteAt ctx) es) (quoteAt ctx r)
+  liftM2 (flip (foldr cons)) (mapM (quoteAt ctx) (l : es)) (quoteAt ctx r)
 quote _ _ (AString s) = return $ String s
 quote _ _ (ANumber n) = return $ Number n
 quote _ _ (ABool b) = return $ Bool b
@@ -858,6 +858,22 @@ isNull :: LispVal -> Bool
 isNull (List []) = True
 isNull _ = False
 
+isInt :: LispVal -> Bool
+isInt (Number _) = True
+isInt _ = False
+
+isBool :: LispVal -> Bool
+isBool (Bool _) = True
+isBool _ = False
+
+isProc :: LispVal -> Bool
+isProc (Proc _) = True
+isProc _ = False
+
+isAtom :: LispVal -> Bool
+isAtom (Atom _ _ _) = True
+isAtom _ = False
+
 isString :: LispVal -> Bool
 isString (String _) = True
 isString _ = False
@@ -890,6 +906,8 @@ lispTl o _ = escapeAt o "expected a list"
 parseMapIns :: [LispVal] -> Maybe (H.HashMap T.Text LispVal -> H.HashMap T.Text LispVal)
 parseMapIns [Atom _ _ s, v] = Just $ H.insert s v
 parseMapIns [String s, v] = Just $ H.insert s v
+parseMapIns [Atom _ _ s] = Just $ H.delete s
+parseMapIns [String s] = Just $ H.delete s
 parseMapIns _ = Nothing
 
 initialBindings :: [(T.Text, LispVal)]
@@ -905,6 +923,7 @@ initialBindings = [
   initialProcs = [
     ("display", \os@(o, _) es ->
       unary o es >>= asString o >>= reportSpan os ELInfo >> pure Undef),
+    ("error", \os@(o, _) es -> unary o es >>= asString o >>= escapeSpan os),
     ("print", \os@(o, _) es -> unary o es >>= \e -> do
       reportSpan os ELInfo $! T.pack (show e)
       pure Undef),
@@ -939,18 +958,36 @@ initialBindings = [
       UnparsedFormula _ s -> return $ String s
       e -> return $ String $! T.pack $ show e),
     ("string->atom", \(o, _) es -> unary o es >>= asString o >>= return . Atom False o),
-    ("not", \_ es -> return $ Bool $ not $ any truthy es),
-    ("and", \_ es -> return $ Bool $ all truthy es),
-    ("or", \_ es -> return $ Bool $ any truthy es),
+    ("string-append", \(o, _) -> mapM (asString o) >=> return . String . T.concat),
+    ("not", \_ -> mapM unRef >=> \es -> return $ Bool $ not $ any truthy es),
+    ("and", \_ -> mapM unRef >=> \es -> return $ Bool $ all truthy es),
+    ("or", \_ -> mapM unRef >=> \es -> return $ Bool $ any truthy es),
     ("list", \_ -> return . List),
     ("cons", \_ -> \case
       [] -> return $ List []
-      es' -> return $ foldl1 cons es'),
-    ("pair?", \(o, _) es -> Bool . isPair <$> unary o es),
-    ("null?", \(o, _) es -> Bool . isNull <$> unary o es),
-    ("string?", \(o, _) es -> Bool . isString <$> unary o es),
+      es' -> return $ foldr1 cons es'),
     ("hd", \(o, _) es -> unary o es >>= lispHd o),
     ("tl", \(o, _) es -> unary o es >>= lispTl o),
+    ("map", \o -> \case
+      [Proc f] -> f o []
+      Proc f : List l : es -> do
+        let unconses :: [[LispVal]] -> ElabM ([LispVal], [[LispVal]])
+            unconses [] = return ([], [])
+            unconses ([] : _) = escapeSpan o "mismatched input length"
+            unconses ((a : l1) : ls) = unconses ls <&> \(l', ls') -> (a : l', l1 : ls')
+            go :: [LispVal] -> [[LispVal]] -> ElabM [LispVal]
+            go [] ls = if all null ls then return [] else escapeSpan o "mismatched input length"
+            go (a : l1) ls = unconses ls >>= \(l', ls') -> liftM2 (:) (f o (a:l')) (go l1 ls')
+        ls <- forM es $ \case List l' -> return l'; _ -> escapeSpan o "invalid arguments"
+        List <$> go l ls
+      _ -> escapeSpan o "invalid arguments"),
+    ("bool?", \(o, _) es -> Bool . isBool <$> unary o es),
+    ("atom?", \(o, _) es -> Bool . isAtom <$> unary o es),
+    ("pair?", \(o, _) es -> Bool . isPair <$> unary o es),
+    ("null?", \(o, _) es -> Bool . isNull <$> unary o es),
+    ("number?", \(o, _) es -> Bool . isInt <$> unary o es),
+    ("string?", \(o, _) es -> Bool . isString <$> unary o es),
+    ("fn?", \(o, _) es -> Bool . isProc <$> unary o es),
     ("def?", \(o, _) es -> Bool . isDef <$> unary o es),
     ("ref?", \(o, _) es -> Bool . isRef <$> unary o es),
     ("ref!", \_ -> \case
@@ -974,11 +1011,17 @@ initialBindings = [
           _ -> escapeAt o "invalid arguments"
         _ -> escapeAt o "invalid arguments") H.empty es
       Ref <$> newRef (AtomMap m')),
-    ("lookup", \(o, _) -> \case
-      [e, k] -> unRef e >>= \case
-        AtomMap m -> asAtomString o k <&> \s -> H.lookupDefault Undef s m
-        _ -> escapeAt o "not a map"
-      _ -> escapeAt o "expected two arguments"),
+    ("lookup", \o -> \case
+      e : k : es -> unRef e >>= \case
+        AtomMap m -> do
+          s <- asAtomString (fst o) k
+          case H.lookup s m of
+            Just v -> return v
+            Nothing -> case fromMaybe Undef (headMaybe es) of
+              Proc f -> f o []
+              v -> return v
+        _ -> escapeSpan o "not a map"
+      _ -> escapeSpan o "expected two arguments"),
     ("insert!", \(o, _) -> \case
       Ref r : es -> case parseMapIns es of
         Nothing -> escapeAt o "expected three arguments"

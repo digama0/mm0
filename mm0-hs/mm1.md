@@ -122,7 +122,7 @@ Annotations
 
     annot-stmt ::= '@' sexpr statement
 
-Annotations are uninterpreted markers that may be applied to statements. They can be used to mark definitions, or derive statements based on other statements. When an annotation is placed, the annotation is evaluated to `e`, the statement is executed, and then the global lisp function `(annotate s e)` is called. This function does not exist by default, but lisp code can define it to provide a custom behavior here.
+Annotations are uninterpreted markers that may be applied to statements. They can be used to mark definitions, or derive statements based on other statements. When an annotation is placed, the annotation is evaluated to `e`, the statement is executed, and then the global lisp function `(annotate e s)` is called. This function does not exist by default, but lisp code can define it to provide a custom behavior here.
 
 Do blocks
 ---
@@ -299,6 +299,9 @@ At the beginning of execution, the global context contains a number of primitive
 
       (display "hello world")         -- hello world
       (display 42)                    -- error, expected string
+
+* `error` takes a string and throws an error with the given string as the message.
+
 * `print` takes an arbitrary expression and pretty-prints it.
 
       (print "hello world")   -- "hello world"
@@ -347,6 +350,10 @@ At the beginning of execution, the global context contains a number of primitive
 * `(pair? e)` is true if its argument is a cons of something, that is, a nonempty list or improper list.
 * `(null? e)` is true if its argument is `()`.
 * `(string? e)` is true if its argument is a string (not a formula or atom).
+* `(bool? e)` is true if the argument is a boolean, `#t` or `#f`.
+* `(atom? e)` is true if the argument is an atom (also known as a symbol), `'x`.
+* `(number? e)` is true if the argument is an integer.
+* `(fn? e)` is true if the argument is a procedure.
 * `(def? e)` is true if the argument is not `#<undef>`.
 * `(hd e)` returns the head of the list, or left element of the cons expression. It is known as `car` in most lisps.
 * `(tl e)` returns the tail of the list, or right element of the cons expression. It is known as `cdr` in most lisps.
@@ -357,9 +364,9 @@ At the beginning of execution, the global context contains a number of primitive
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
 * `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
-* `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#<undef>` if not present.
-* `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#<undef>`.
-* `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`.
+* `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#<undef>` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
+* `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#<undef>`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
+* `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`. `(insert m k)` returns `k` erased from `m`.
 
 See [MM0-specific builtin functions](#MM0-specific-builtin-functions) for more functions that have to do with interaction between the lisp and MM0 environments.
 
@@ -376,7 +383,7 @@ Each statement effects some change to the global environment:
   * Type inference is used to infer any missing binders or binder types. This uses only the information available from the statement of the theorem.
   * Definitions have their values evaluated right away.
   * For theorems, the proof is evaluated asynchronously.
-* The annotation expression itself is evaluated before the enclosed statement, but the function `(annotate s e)` is called after `s` has been added to the environment. (Any statement can be annotated, but declarations that do not have names pass `#<undef>` to the `annotate` function.)
+* The annotation expression itself is evaluated before the enclosed statement, but the function `(annotate e s)` is called after `s` has been added to the environment. (Any statement can be annotated, but declarations that do not have names pass `#<undef>` to the `annotate` function.)
 
 The fact that `theorem` proofs are evaluated asynchronously has some consequences. In particular the theorem is elaborated in a copy of the global environment, so its ability to affect the environment is limited, for example it cannot add new theorems to the environment. However, mutable ref-cells still allow for communication between threads. For example, this program will return a number nondeterministically:
 

@@ -41,9 +41,15 @@ runParser p n o s =
 parseAST :: String -> T.Text -> ([ParseError], Offset, Maybe AST)
 parseAST n t = runParser (sc *> (V.fromList <$> stmts)) n 0 t where
   stmts =
-    (withRecovery (recoverToSemi Nothing) spanStmt >>= \case
-      Just st -> (st :) <$> stmts
-      _ -> stmts) <|>
+    (withRecovery (recoverToSemi Nothing)
+        ((do
+          o <- getOffset <* kw "exit"
+          semi >> failAt o "early exit on 'exit' command"
+          return (Just Nothing)) <|>
+        (fmap Just <$> spanStmt)) >>= \case
+      Just (Just st) -> (st :) <$> stmts
+      Just Nothing -> return []
+      Nothing -> stmts) <|>
     ([] <$ eof) <?> "expecting command or EOF"
 
 nonFatal :: ParseError -> Parser ()
