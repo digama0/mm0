@@ -351,8 +351,8 @@ listVal =
   listVal1 <|> return (AList [])
   where
   listVal1 = lispVal >>= \l ->
-    (ADottedList l [] <$> (lexeme "." *> lispVal)) <|>
-    (cons l <$> listVal)
+    try (cons l <$> listVal) <|>
+    (ADottedList l [] <$> (lexeme "." *> lispVal))
 
 cons :: AtLisp -> LispAST -> LispAST
 cons l (AList r) = AList (l : r)
