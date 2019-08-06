@@ -248,10 +248,10 @@ theorem elsep (n: nat) (A: set) (a: nat):
 def Arrow (A B: set) (.f: nat): set =
 $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
 
-def write (F: set) (x y .a .b: nat): set =
-  $ opab a b (a <> b e. F /\ a != x \/ a = x /\ b = y) $;
-theorem writeEq (F: set) (x y: nat): $ write F x y @ x = y $;
-theorem writeNe (F: set) (x y a: nat): $ a != x -> write F x y @ a = F @ a $;
+def write (F: set) (a b .x .y: nat): set =
+  $ opab x y (ifp (x = a) (y = b) (x <> y e. F)) $;
+theorem writeEq (F: set) (a b: nat): $ write F a b @ a = b $;
+theorem writeNe (F: set) (a b x: nat): $ x != a -> write F a b @ x = F @ x $;
 
 def srec (S: set) (n: nat): nat;
 theorem srecval {i: nat} (S: set) (n: nat):
