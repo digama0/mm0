@@ -9,20 +9,19 @@ axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax_mp (ph ps: wff): $ ph -> ps $ > $ ph $ > $ ps $;
 
+-- global definitions
 do {
-  (set-timeout 500)
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
   (def last (match-fn [(a) a] [(_ . l) (last l)]))
+  (def split-last @ match-fn
+    [(and (_) l) l]
+    [(a . l) @ match (split-last l) @ (r . l2) '(,r ,a . ,l2)])
   (def (append . ls) @ foldr ls () @ fn (l l2) @ foldr l l2 cons)
   (def (rev l) (foldl l () (fn (l a) (cons a l))))
   (def (repeat a n) (if {n = 0} () (cons a (repeat a {n - 1}))))
   (def (verb e) (list ':verb e))
   (def (exact e) (refine (verb e)))
-  (def refine-extra-args-orig refine-extra-args)
-  (def (refine-extra-args refine p . ps) @
-    foldl ps p @ fn (acc p2) @
-      refine @ list 'ax_mp (verb acc) (verb p2))
   (def (result) (hd (get-goals)))
   (def (later) @ match (get-goals)
     [(g . gs) (apply set-goals @ append gs @ list g)])
@@ -33,7 +32,172 @@ do {
     [(xs) (apply map list xs)]
     [(n xs) (if (null? xs) (repeat () n) (apply map list xs))])
   (def (join xs) (apply append xs))
-  (def default-annotate (fn (_)))
+  (def (rmap . args) (apply map (split-last args)))
+  (def (scan . args) (apply rmap args) (let))
+  (def (undef? x) (not (def? x)))
+
+  (def eq-for @ lookup-fn '([wff iff] [nat eq] [set eqs]))
+  (def nf-for @ lookup-fn '([wff nf] [nat nfn] [set nfs]))
+  (def eqid-for @ lookup-fn '([wff biid] [nat eqid] [set eqsid]))
+  (def eqidd-for @ lookup-fn '([wff biidd] [nat eqidd] [set eqsidd]))
+  (def eqd-map (atom-map!))
+  (def (eqd-for . e) (apply lookup eqd-map e))
+  (def (register-eqd df) (fn (tgt) (insert! eqd-map df tgt)))
+  (def (get-tgt-args args df . s) @ match args
+    [() (apply atom-app df s)]
+    [((? atom? t)) (apply atom-app t s)]
+    [('quote (? atom? t)) t])
+
+  -- This metaprogram proves a statement of the form
+  -- $ G -> a1 = a2 $ > $ G -> b1 = b2 $ > $ G -> foo a1 b1 = foo a2 b2 $
+  -- for any definition foo.
+  (def (add-eqd-thm df . args)
+    (def tgt (get-tgt-args args df "eqd"))
+    @ match (get-decl df)
+      [(? undef?) (error (string-append "declaration '" (->string df) "' not found"))]
+      [(_ _ () ...)]
+      [(_ _ bis (ret _) . rest)
+        @ if (def? (get-decl tgt)) (insert! eqd-map df tgt) @ begin
+        (def ctx (atom-map!))
+        @ match (map join @ transpose 4 @ rmap bis @ match-fn
+          [(and (x s) e) (insert! ctx x (list s)) '((,e) () (,x) (,x))]
+          [(v s vs) @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)] [hv (atom-app 'h v)])
+            (insert! ctx v (list v1 v2 s hv))
+            '(((,v1 ,s ,vs) (,v2 ,s ,vs))
+              ((,hv (im G (,(eq-for s) ,v1 ,v2))))
+              (,v1)
+              (,v2))]) @ (bis hs es1 es2)
+        (def bis '((G wff ()) . ,bis))
+        (def rete '(im G (,(eq-for ret) (,df . ,es1) (,df . ,es2))))
+        (match rest
+          [() (add-thm! tgt bis hs rete)]
+          [(_ ds v) @ add-thm! tgt bis hs rete () @ fn ()
+            (def ds (rmap ds @ match-fn @ (x s) (insert! ctx x (list s)) x))
+            @ letrec (
+              [preproof (match-fn
+                [(? atom? v) (lookup ctx v)]
+                [((? atom? t) . es)
+                  @ match (get-decl t) @ (_ _ bis (ret _) ...)
+                  @ if (null? es) (list ret) @ begin
+                  (def isrefl (ref! #t))
+                  @ match (transpose 4 @ rmap bis es @ match-fn*
+                    [((_ _) x) '((,x) () ,x ,x)]
+                    [((_ _ _) e)
+                      @ match (preproof e)
+                        [(s) '((,e ,e) ((,(eqidd-for s) G ,e)) ,e ,e)]
+                        [(e1 e2 s p) (set! isrefl #f)
+                          '((,e1 ,e2) (,p) ,e1 ,e2)]]) @ (ts ps es1 es2)
+                  @ if isrefl (list ret) @ begin
+                  @ match (eqd-for t)
+                    [(? def? eqd) '((,t . ,es1) (,t . ,es2) ,ret
+                      (,eqd . ,(append (join ts) (join ps))))]
+                    [_ (error @ string-append "equality theorem not found for " (->string t))]])]
+              [(mk-proof e) (match (preproof e)
+                [(s) '(,e ,e (,(eqidd-for s) G ,e))]
+                [(e1 e2 s p) (list e1 e2 p)])])
+            @ match (mk-proof v) @ (t1 t2 p)
+            '(:conv rete (im G (,(eq-for ret)
+              (:unfold ,df ,es1 ,ds ,t1)
+              (:unfold ,df ,es2 ,ds ,t2))) ,p)])
+        (insert! eqd-map df tgt)])
+
+  (def (ded-to-thm t)
+    @ match (get-decl t) @ (_ _ ((G 'wff ()) . bis) hs ('im _ ret) ...)
+    (def rete @ foldr hs ret @ match-fn* [((_ ('im _ h)) r) '(im ,h ,r)])
+    @ list bis rete @ fn ()
+    @ letrec (
+      [(exps l r) @ match r
+        [('im e1 e2) (list 'exp l e1 e2 (exps (list 'and l e1) e2))]
+        [_ (cons t @ append (map hd bis) @
+          map (match-fn [(_ h) h]) @ rev @ conjuncts l)]]
+      [conjuncts @ match-fn
+        [('and e1 e2)
+          @ match (conjuncts e1)
+            [(_) '((,e2 (anr ,e1 ,e2)) (,e1 (anl ,e1 ,e2)))]
+            [hs (cons '(,e2 (anr ,e1 ,e2)) @
+              rmap hs @ match-fn [(e h) '(,e (anwl ,e1 ,e2 ,e ,h))])]]
+        [e '((,e (id ,e)))]])
+    @ match rete [('im l r) (exps l r)])
+
+  -- Using the *eqd proof above, this metaprogram proves the corresponding *eq
+  -- theorem of the form
+  -- $ a1 = a2 -> b1 = b2 -> foo a1 b1 = foo a2 b2 $
+  -- for any definition foo.
+  (def (add-eq-thm t . args)
+    (def tgt (get-tgt-args args t "eq"))
+    @ if (not (def? (get-decl tgt))) @ begin
+    @ match (eqd-for t) [(? undef?)] @ eqd
+    @ match (ded-to-thm eqd) @ (bis ret val)
+    (add-thm! tgt bis () ret () val))
+
+  (def (make-eqNd-thms df)
+    @ match (get-decl df) @ (_ _ bis (ret _) . rest)
+    @ letrec (
+      [mk-bis @ match-fn
+        [() '(() () () ())]
+        [((and (x _) e) . bis)
+          @ match (mk-bis bis) @ (pes es pp data)
+          '((,x . ,pes) (,x . ,es) ,pp
+            ,(rmap data @ match-fn [(b t1 t2 h es ps)
+              '((,e . ,b) (,x . ,t1) (,x . ,t2) ,h (,x . ,es) ,ps)]))]
+        [((and (v s vs) e) . bis)
+          @ match (mk-bis bis) @ (pes es pp data)
+          @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)])
+          '((,v . ,pes)
+            (,v ,v . ,es)
+            ((eqidd G ,v) . ,pp)
+            ((((,v1 ,s ,vs) (,v2 ,s ,vs) . ,bis)
+              (,v1 . ,pes)
+              (,v2 . ,pes)
+              (im G (,(eq-for s) ,v1 ,v2))
+              (,v1 ,v2 . ,es)
+              (h . ,pp)) .
+             ,(rmap data @ match-fn @ (b t1 t2 h es ps)
+              '((,e . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((eqidd G ,v) . ,ps)))))]])
+    @ rmap (match (mk-bis bis) [(_ _ _ data) data]) @ match-fn @ (bis t1 t2 h es ps)
+      @ list '((G wff ()) . ,bis) '((h ,h)) '(im G (,(eq-for ret) (,df . ,t1) (,df . ,t2))) @ fn ()
+        @ match (eqd-for df)
+          [(? def? eqd) '(,eqd G . ,(append es ps))]
+          [_ (error @ string-append "equality theorem not found for " (->string df))])
+
+  -- This program adds *eqNd and *eqN theorems corresponding to the definition
+  -- foo, of the form
+  -- fooeq1: $ a1 = a2 -> foo a1 b = foo a2 b $
+  -- fooeq2: $ b1 = b2 -> foo a b1 = foo a b2 $
+  -- fooeq1d: $ G -> a1 = a2 $ > $ G -> foo a1 b = foo a2 b $
+  -- fooeq2: $ G -> b1 = b2 $ > $ G -> foo a b1 = foo a b2 $
+  -- for any definition foo.
+  (def (add-eqN-thms t . args)
+    (def idx (ref! 0))
+    (def base (get-tgt-args args t "eq"))
+    @ scan (make-eqNd-thms t) @ match-fn @ (bis hs ret val)
+      (set! idx {idx + 1})
+      (def tgt (atom-app base idx "d"))
+      @ if (not (def? (get-decl tgt))) @ begin
+      (add-thm! tgt bis hs ret () val)
+      (def tgt2 (atom-app base idx))
+      @ if (not (def? (get-decl tgt2))) @ begin
+      @ match (ded-to-thm tgt) @ (bis2 ret2 val2)
+      (add-thm! tgt2 bis2 () ret2 () val2))
+
+  (def derive-eq @ match-fn*
+    [(s t1 t2 t3)
+      (add-eqd-thm s '',t1)
+      (add-eq-thm s '',t2)
+      (add-eqN-thms s '',t3)]
+    [args
+      (apply add-eqd-thm args)
+      (apply add-eq-thm args)
+      (apply add-eqN-thms args)])
+};
+
+-- configuration
+do {
+  (set-timeout 500)
+  (def (refine-extra-args refine p . ps) @
+    foldl ps p @ fn (acc p2) @
+      refine @ list 'ax_mp (verb acc) (verb p2))
+  (def default-annotate derive-eq)
   (def (annotate e s) @ match e ['_ (default-annotate s)] [_ (e s)])
 };
 
@@ -198,40 +362,43 @@ theorem bian2a: $ (a -> b) -> (a <-> a /\ b) $ = '(ibid (a2i ian) (a1i anl));
 theorem bian1a: $ (b -> a) -> (b <-> a /\ b) $ = '(syl6bb ancomb bian2a);
 theorem bian1: $ a -> (b <-> a /\ b) $ = '(syl bian1a ax_1);
 theorem bian2: $ b -> (a <-> a /\ b) $ = '(syl bian2a ax_1);
-theorem notbi: $ (a <-> b) -> (~a <-> ~b) $ = 'con3b;
-theorem notbii (h: $ a <-> b $): $ ~a <-> ~b $ = '(notbi h);
-theorem notbid (h: $ a -> (b <-> c) $): $ a -> (~b <-> ~c) $ = '(syl notbi h);
-theorem imbid (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> (b -> d <-> c -> e) $ =
+theorem noteq: $ (a <-> b) -> (~a <-> ~b) $ = 'con3b;
+theorem noteqi (h: $ a <-> b $): $ ~a <-> ~b $ = '(noteq h);
+@(register-eqd 'not) theorem noteqd (h: $ a -> (b <-> c) $): $ a -> (~b <-> ~c) $ = '(syl noteq h);
+@(register-eqd 'im) theorem imeqd
+  (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> (b -> d <-> c -> e) $ =
 '(ibid (imimd (bi2d h1) (bi1d h2)) (imimd (bi1d h1) (bi2d h2)));
-theorem imbi1d (h: $ a -> (b <-> c) $): $ a -> (b -> d <-> c -> d) $ = '(imbid h biidd);
-theorem imbi2d (h: $ a -> (c <-> d) $): $ a -> (b -> c <-> b -> d) $ = '(imbid biidd h);
-theorem imbi1i (h: $ a <-> b $): $ a -> c <-> b -> c $ = '(imbi1d id h);
-theorem imbi2i (h: $ b <-> c $): $ a -> b <-> a -> c $ = '(imbi2d id h);
-theorem imbii (h1: $ a <-> b $) (h2: $ c <-> d $): $ a -> c <-> b -> d $ = '(bitr (imbi1i h1) (imbi2i h2));
-theorem anbid (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> (b /\ d <-> c /\ e) $ =
+theorem imeq1d (h: $ a -> (b <-> c) $): $ a -> (b -> d <-> c -> d) $ = '(imeqd h biidd);
+theorem imeq2d (h: $ a -> (c <-> d) $): $ a -> (b -> c <-> b -> d) $ = '(imeqd biidd h);
+theorem imeq1i (h: $ a <-> b $): $ a -> c <-> b -> c $ = '(imeq1d id h);
+theorem imeq2i (h: $ b <-> c $): $ a -> b <-> a -> c $ = '(imeq2d id h);
+theorem imeqi (h1: $ a <-> b $) (h2: $ c <-> d $): $ a -> c <-> b -> d $ = '(bitr (imeq1i h1) (imeq2i h2));
+@(register-eqd 'an) theorem aneqd
+  (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> (b /\ d <-> c /\ e) $ =
 '(ibid (animd (bi1d h1) (bi1d h2)) (animd (bi2d h1) (bi2d h2)));
-theorem anbi1d (h: $ a -> (b <-> c) $): $ a -> (b /\ d <-> c /\ d) $ = '(anbid h biidd);
-theorem anbi2d (h: $ a -> (c <-> d) $): $ a -> (b /\ c <-> b /\ d) $ = '(anbid biidd h);
-theorem anbi: $ (a <-> b) -> (c <-> d) -> (a /\ c <-> b /\ d) $ = '(exp @ anbid anl anr);
-theorem anbi1i (h: $ a <-> b $): $ a /\ c <-> b /\ c $ = '(anbi1d id h);
-theorem anbi2i (h: $ b <-> c $): $ a /\ b <-> a /\ c $ = '(anbi2d id h);
-theorem anbi2a: $ (a -> (b <-> c)) -> (a /\ b <-> a /\ c) $ =
+theorem aneq1d (h: $ a -> (b <-> c) $): $ a -> (b /\ d <-> c /\ d) $ = '(aneqd h biidd);
+theorem aneq2d (h: $ a -> (c <-> d) $): $ a -> (b /\ c <-> b /\ d) $ = '(aneqd biidd h);
+theorem aneq: $ (a <-> b) -> (c <-> d) -> (a /\ c <-> b /\ d) $ = '(exp @ aneqd anl anr);
+theorem aneq1i (h: $ a <-> b $): $ a /\ c <-> b /\ c $ = '(aneq1d id h);
+theorem aneq2i (h: $ b <-> c $): $ a /\ b <-> a /\ c $ = '(aneq2d id h);
+theorem aneq2a: $ (a -> (b <-> c)) -> (a /\ b <-> a /\ c) $ =
 '(ibid (syl anim2a @ imim2i bi1) (syl anim2a @ imim2i bi2));
-theorem anbi1a: $ (c -> (a <-> b)) -> (a /\ c <-> b /\ c) $ = '(syl5bb ancomb @ syl6bb ancomb anbi2a);
+theorem aneq1a: $ (c -> (a <-> b)) -> (a /\ c <-> b /\ c) $ = '(syl5bb ancomb @ syl6bb ancomb aneq2a);
 theorem rbida (h1: $ a /\ c -> b $) (h2: $ a /\ d -> b $)
   (h: $ a /\ b -> (c <-> d) $): $ a -> (c <-> d) $ =
-'(bitrd (syl bian2a @ exp h1) @ bitr4d (syl anbi1a @ exp h) (syl bian2a @ exp h2));
+'(bitrd (syl bian2a @ exp h1) @ bitr4d (syl aneq1a @ exp h) (syl bian2a @ exp h2));
 theorem rbid (h1: $ b -> a $) (h2: $ c -> a $) (h: $ a -> (b <-> c) $): $ b <-> c $ =
-'(bitr (bian2a h1) @ bitr4 (anbi1a h) (bian2a h2));
-theorem bibid (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> ((b <-> d) <-> (c <-> e)) $ =
-'(anbid (imbid h1 h2) (imbid h2 h1));
-theorem bibi1d (h: $ a -> (b <-> c) $): $ a -> ((b <-> d) <-> (c <-> d)) $ = '(bibid h biidd);
-theorem bibi2d (h: $ a -> (c <-> d) $): $ a -> ((b <-> c) <-> (b <-> d)) $ = '(bibid biidd h);
-theorem bibi: $ (a <-> b) -> (c <-> d) -> ((a <-> c) <-> (b <-> d)) $ = '(exp (bibid anl anr));
+'(bitr (bian2a h1) @ bitr4 (aneq1a h) (bian2a h2));
+@(register-eqd 'iff) theorem bieqd
+  (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> ((b <-> d) <-> (c <-> e)) $ =
+'(aneqd (imeqd h1 h2) (imeqd h2 h1));
+theorem bieq1d (h: $ a -> (b <-> c) $): $ a -> ((b <-> d) <-> (c <-> d)) $ = '(bieqd h biidd);
+theorem bieq2d (h: $ a -> (c <-> d) $): $ a -> ((b <-> c) <-> (b <-> d)) $ = '(bieqd biidd h);
+theorem bieq: $ (a <-> b) -> (c <-> d) -> ((a <-> c) <-> (b <-> d)) $ = '(exp (bieqd anl anr));
 theorem impexp: $ (a /\ b -> c) <-> (a -> b -> c) $ =
 '(ibii (exp @ exp @ mpd (anim1 anr) anll) (exp @ mpd anrr @ mpd anrl anl));
 
-def or (a b: wff): wff = $ ~a -> b $;
+@_ def or (a b: wff): wff = $ ~a -> b $;
 infixl or: $\/$ prec 30;
 
 theorem orl: $ a -> a \/ b $ = 'absurdr;
@@ -249,35 +416,25 @@ theorem orimd (h1: $ a -> b -> c $) (h2: $ a -> d -> e $): $ a -> b \/ d -> c \/
 '(eord (syl6 orl h1) (syl6 orr h2));
 theorem orim1d (h: $ a -> b -> c $): $ a -> b \/ d -> c \/ d $ = '(orimd h idd);
 theorem orim2d (h: $ a -> c -> d $): $ a -> b \/ c -> b \/ d $ = '(orimd idd h);
-theorem orbid (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> (b \/ d <-> c \/ e) $ =
-'(ibid (orimd (bi1d h1) (bi1d h2)) (orimd (bi2d h1) (bi2d h2)));
-theorem orbi1d (h: $ a -> (b <-> c) $): $ a -> (b \/ d <-> c \/ d) $ = '(orbid h biidd);
-theorem orbi2d (h: $ a -> (c <-> d) $): $ a -> (b \/ c <-> b \/ d) $ = '(orbid biidd h);
-theorem orbi1i (h: $ a <-> b $): $ a \/ c <-> b \/ c $ = '(orbi1d id h);
-theorem orbi2i (h: $ b <-> c $): $ a \/ b <-> a \/ c $ = '(orbi2d id h);
-theorem orbii (h1: $ a <-> b $) (h2: $ c <-> d $): $ a \/ c <-> b \/ d $ = '(bitr (orbi1i h1) (orbi2i h2));
+theorem oreq1i (h: $ a <-> b $): $ a \/ c <-> b \/ c $ = '(oreq1d id h);
+theorem oreq2i (h: $ b <-> c $): $ a \/ b <-> a \/ c $ = '(oreq2d id h);
+theorem oreqi (h1: $ a <-> b $) (h2: $ c <-> d $): $ a \/ c <-> b \/ d $ = '(bitr (oreq1i h1) (oreq2i h2));
 theorem orcom: $ a \/ b -> b \/ a $ = 'con1;
 theorem orcomb: $ a \/ b <-> b \/ a $ = '(ibii orcom orcom);
 theorem notan2: $ ~(a /\ b) <-> a -> ~b $ = '(bicom notnot);
-theorem notan: $ ~(a /\ b) <-> (~a \/ ~b) $ = '(bitr notan2 (imbi1i notnot));
-theorem notor: $ ~(a \/ b) <-> (~a /\ ~b) $ = '(con1b (bitr4 notan (orbii notnot notnot)));
+theorem notan: $ ~(a /\ b) <-> (~a \/ ~b) $ = '(bitr notan2 (imeq1i notnot));
+theorem notor: $ ~(a \/ b) <-> (~a /\ ~b) $ = '(con1b (bitr4 notan (oreqi notnot notnot)));
 theorem andi: $ a /\ (b \/ c) <-> a /\ b \/ a /\ c $ =
 '(ibii (imp @ orimd ian ian) @ eor (anim2 orl) (anim2 orr));
 theorem andir: $ (a \/ b) /\ c <-> a /\ c \/ b /\ c $ =
-'(bitr ancomb @ bitr andi @ orbii ancomb ancomb);
+'(bitr ancomb @ bitr andi @ oreqi ancomb ancomb);
 theorem biim1: $ a -> (b <-> a -> b) $ = '(ibid (a1i ax_1) (com12 id));
 theorem biim2: $ ~b -> (~a <-> a -> b) $ = '(ibid (a1i absurd) (com12 con3));
 theorem bior1: $ ~a -> (b <-> a \/ b) $ = 'biim1;
 theorem bior2: $ ~b -> (a <-> a \/ b) $ = '(syl6bb orcomb bior1);
 theorem em: $ p \/ ~p $ = 'id;
 
-abstract def ifp (p a b: wff): wff = $ p /\ a \/ ~p /\ b $;
-
-theorem ifpbid (h1: $ G -> (p <-> q) $) (h2: $ G -> (a <-> b) $) (h3: $ G -> (c <-> d) $):
-  $ G -> (ifp p a c <-> ifp q b d) $ = '(orbid (anbid h1 h2) (anbid (notbid h1) h3));
-theorem ifpbi1d (h: $ G -> (p <-> q) $): $ G -> (ifp p a b <-> ifp q a b) $ = '(ifpbid h biidd biidd);
-theorem ifpbi2d (h: $ G -> (a <-> b) $): $ G -> (ifp p a c <-> ifp p b c) $ = '(ifpbid biidd h biidd);
-theorem ifpbi3d (h: $ G -> (b <-> c) $): $ G -> (ifp p a b <-> ifp p a c) $ = '(ifpbid biidd biidd h);
+@_ abstract def ifp (p a b: wff): wff = $ p /\ a \/ ~p /\ b $;
 
 pub theorem ifppos (p a b: wff): $ p -> (ifp p a b <-> a) $ =
 '(ibid (eord (a1i anr) (syl5 anl absurdr)) (exp orl));
@@ -311,46 +468,44 @@ axiom ax_12 {x y: nat} (ph: wff y): $ A. y ph -> A. x (x = y -> ph) $;
 
 theorem alimi (a b: wff x) (h: $ a -> b $): $ A. x a -> A. x b $ = '(ax_4 (ax_gen h));
 theorem iald (a: wff) (b: wff x) (h: $ a -> b $): $ a -> A. x b $ = '(syl (alimi h) ax_5);
-theorem albi (a b: wff x): $ A. x (a <-> b) -> (A. x a <-> A. x b) $ =
+theorem aleq (a b: wff x): $ A. x (a <-> b) -> (A. x a <-> A. x b) $ =
 '(ibid (syl ax_4 @ alimi bi1) (syl ax_4 @ alimi bi2));
-theorem albii (a b: wff x) (h: $ a <-> b $): $ A. x a <-> A. x b $ = '(albi @ ax_gen h);
+theorem aleqi (a b: wff x) (h: $ a <-> b $): $ A. x a <-> A. x b $ = '(aleq @ ax_gen h);
 theorem alimd (G) (a b: wff x) (h: $ G -> a -> b $):
   $ G -> A. x a -> A. x b $ = '(syl ax_4 @ syl ax_5 h);
-theorem albid (G) {x} (a b: wff x) (h: $ G -> (a <-> b) $):
-  $ G -> (A. x a <-> A. x b) $ = '(syl albi @ iald h);
+@(register-eqd 'al) theorem aleqd (G) {x} (a b: wff x) (h: $ G -> (a <-> b) $):
+  $ G -> (A. x a <-> A. x b) $ = '(syl aleq @ iald h);
 theorem alan (a b: wff x): $ A. x (a /\ b) <-> A. x a /\ A. x b $ =
 '(ibii (iand (alimi anl) (alimi anr)) (imp @ syl ax_4 @ alimi ian));
 theorem exim (a b: wff x): $ A. x (a -> b) -> E. x a -> E. x b $ =
 '(syl con3 @ syl ax_4 @ alimi con3);
 theorem eximi (a b: wff x) (h: $ a -> b $): $ E. x a -> E. x b $ = '(exim @ ax_gen h);
-theorem exbi (a b: wff x): $ A. x (a <-> b) -> (E. x a <-> E. x b) $ =
-'(notbid @ syl albi @ alimi notbi);
-theorem exbid (G) {x} (a b: wff x) (h: $ G -> (a <-> b) $):
-  $ G -> (E. x a <-> E. x b) $ = '(syl exbi @ iald h);
-theorem exbii (a b: wff x) (h: $ a <-> b $):
-  $ E. x a <-> E. x b $ = '(exbi @ ax_gen h);
+theorem exeq (a b: wff x): $ A. x (a <-> b) -> (E. x a <-> E. x b) $ =
+'(noteqd @ syl aleq @ alimi noteq);
+@(register-eqd 'ex) theorem exeqd (G) {x} (a b: wff x) (h: $ G -> (a <-> b) $):
+  $ G -> (E. x a <-> E. x b) $ = '(syl exeq @ iald h);
+theorem exeqi (a b: wff x) (h: $ a <-> b $):
+  $ E. x a <-> E. x b $ = '(exeq @ ax_gen h);
 theorem iex (a: wff x): $ a -> E. x a $ =
 '(syl (mpi ax_6 exim) @ syl ax_12 @ !! ax_5 y);
 theorem alnex (a: wff x): $ A. x ~a <-> ~(E. x a) $ = 'notnot;
 theorem ngen (a: wff x) (h: $ ~a $): $ ~E. x a $ = '(notnot1 (ax_gen h));
 theorem alex (a: wff x): $ A. x a <-> ~(E. x ~a) $ =
-'(bitr (albii notnot) alnex);
+'(bitr (aleqi notnot) alnex);
 theorem exnal (a: wff x): $ E. x ~a <-> ~(A. x a) $ = '(con2b alex);
 theorem eal (a: wff x): $ A. x a -> a $ = '(ax_3 @ sylib exnal iex);
 theorem exor (a b: wff x): $ E. x (a \/ b) <-> E. x a \/ E. x b $ =
-'(bitr (notbii (bitr (albii notor) alan)) notan);
+'(bitr (noteqi (bitr (aleqi notor) alan)) notan);
 theorem eximd (G) (a b: wff x) (h: $ G -> a -> b $): $ G -> E. x a -> E. x b $ = '(syl exim @ iald h);
 
-local def nf {x: nat} (a: wff x): wff = $ A. x (a -> A. x a) $;
+@_ local def nf {x: nat} (a: wff x): wff = $ A. x (a -> A. x a) $;
 prefix nf: $F/$ prec 10;
 
-theorem nfbid (G) {x} (a b: wff x) (h: $ G -> (a <-> b) $):
-  $ G -> ((F/ x a) <-> (F/ x b)) $ = '(albid @ imbid h @ albid h);
 theorem nfv: $ F/ x a $ = '(ax_gen ax_5);
 theorem nfi (a: wff x) (h: $ F/ x a $): $ a -> A. x a $ = '(eal h);
 theorem nfri (a: wff x) (h: $ a -> A. x a $): $ F/ x a $ = '(ax_gen h);
-theorem nfbii (a b: wff x) (h: $ a <-> b $): $ (F/ x a) <-> (F/ x b) $ = '(trud @ nfbid @ a1i h);
-theorem nfx (a b: wff x) (h1: $ a <-> b $) (h2: $ F/ x b $): $ F/ x a $ = '(bi2i (nfbii h1) h2);
+theorem nfeqi (a b: wff x) (h: $ a <-> b $): $ (F/ x a) <-> (F/ x b) $ = '(trud @ nfeqd @ a1i h);
+theorem nfx (a b: wff x) (h1: $ a <-> b $) (h2: $ F/ x b $): $ F/ x a $ = '(bi2i (nfeqi h1) h2);
 theorem nfal1 (a: wff x): $ F/ x A. x a $ = '(ax_gen ax_5);
 theorem nfal (a: wff x y) (h: $ F/ x a $): $ F/ x A. y a $ =
 '(nfri @ syl ax_11 @ alimi @ nfi h);
@@ -376,8 +531,8 @@ theorem eexdh (a b c: wff x) (h1: $ F/ x a $) (h2: $ F/ x c $)
 '(con1d @ exp @ ialdh (nfan h1 (nfnot h2)) (imp @ con3d h3));
 theorem alimdh (a b c: wff x) (h1: $ F/ x a $) (h2: $ a -> b -> c $):
   $ a -> A. x b -> A. x c $ = '(syl ax_4 @ ialdh h1 h2);
-theorem albidh (G a b: wff x) (h1: $ F/ x G $) (h: $ G -> (a <-> b) $):
-  $ G -> (A. x a <-> A. x b) $ = '(syl albi @ ialdh h1 h);
+theorem aleqdh (G a b: wff x) (h1: $ F/ x G $) (h: $ G -> (a <-> b) $):
+  $ G -> (A. x a <-> A. x b) $ = '(syl aleq @ ialdh h1 h);
 theorem al2imi (a b c: wff x) (h: $ a -> b -> c $): $ A. x a -> A. x b -> A. x c $ =
 '(alimdh nfal1 @ syl h eal);
 theorem eexd (a: wff) (b: wff x) (c: wff)
@@ -390,7 +545,7 @@ theorem ealeh (a: nat) (b c: wff x) (h: $ F/ x c $)
   (e: $ x = a -> (b <-> c) $): $ A. x b -> c $ =
 '(eexh (nfim nfal1 h) (syl6 eal @ alimd @ bi1d e) ax_6);
 theorem iexeh (a: nat) (b c: wff x) (h: $ F/ x c $)
-  (e: $ x = a -> (b <-> c) $): $ c -> E. x b $ = '(con2 (ealeh (nfnot h) (notbid e)));
+  (e: $ x = a -> (b <-> c) $): $ c -> E. x b $ = '(con2 (ealeh (nfnot h) (noteqd e)));
 theorem eale (a: nat) (b: wff x) (c: wff)
   (e: $ x = a -> (b <-> c) $): $ A. x b -> c $ = '(ealeh nfv e);
 theorem iexde (G) (a: nat) (b: wff x)
@@ -413,7 +568,7 @@ theorem eqeq1: $ a = b -> (a = c <-> b = c) $ = '(ibid eqtr3 eqtr);
 theorem eqeq2: $ b = c -> (a = b <-> a = c) $ = '(ibid (com12 eqtr) (com12 eqtr4));
 theorem eqeq1d (h: $ G -> a = b $): $ G -> (a = c <-> b = c) $ = '(syl eqeq1 h);
 theorem eqeq2d (h: $ G -> b = c $): $ G -> (a = b <-> a = c) $ = '(syl eqeq2 h);
-theorem eqeqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
+@(register-eqd 'eq) theorem eqeqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
   $ G -> (a = c <-> b = d) $ = '(bitrd (eqeq1d h1) (eqeq2d h2));
 theorem eqeq: $ a = b -> c = d -> (a = c <-> b = d) $ = '(exp (eqeqd anl anr));
 theorem eqtr3d (h1: $ G -> b = a $) (h2: $ G -> b = c $): $ G -> a = c $ = '(sylc eqtr3 h1 h2);
@@ -437,37 +592,26 @@ theorem cbval (p: wff x) (q: wff y)
 
 theorem cbvexh (p q: wff x y) (h1: $ F/ y p $) (h2: $ F/ x q $)
   (e: $ x = y -> (p <-> q) $): $ E. x p <-> E. y q $ =
-'(notbi (cbvalh (nfnot h1) (nfnot h2) (notbid e)));
+'(noteq (cbvalh (nfnot h1) (nfnot h2) (noteqd e)));
 theorem cbvex (p: wff x) (q: wff y)
   (e: $ x = y -> (p <-> q) $): $ E. x p <-> E. y q $ = '(cbvexh nfv nfv e);
 
-def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
+@_ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 
 theorem necom: $ a != b -> b != a $ = '(con3 eqcom);
 
-def sb (a: nat) {x .y: nat} (ph: wff x): wff =
+@_ def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation sb (a x ph) = ($[$:30) a ($/$:0) x ($]$:0) ph;
 
 theorem sbq (a: nat) (b: wff x): $ x = a -> (b <-> [a / x] b) $ =
-'(ibid (exp @ !! iald y @ a1d @ syl ax_12 @ anwr ax_5)
+'(! ibid _ _ (al y _) (exp @ iald @ a1d @ syl ax_12 @ anwr ax_5)
   (mpi ax_6 @ eexd @ exp @ syl5 eal @
     syld (syl (com12 eal) @ imp eqtr4) @ com12 @ imim1i anr));
 theorem nfsb1 (a: nat) (b: wff x): $ F/ x [a / x] b $ =
 '(!! nfal _ y (nfim nfv nfal1));
 theorem nfsb (a: nat) (b: wff x) (h: $ F/ x b $): $ F/ x [a / y] b $ =
 '(!! nfal _ z (nfim nfv (nfal (nfim nfv h))));
-theorem sbeq1d (G) (a b: nat) (c: wff x)
-  (h: $ G -> a = b $): $ G -> ([a / x] c <-> [b / x] c) $ =
-'(!! albid y (imbi1d (eqeq2d h)));
-theorem sbeq1 (a b: nat) (c: wff x): $ a = b -> ([a / x] c <-> [b / x] c) $ = '(sbeq1d id);
-theorem sbeq2d (G) (a: nat x) (b c: wff x)
-  (h: $ G -> (b <-> c) $): $ G -> ([a / x] b <-> [a / x] c) $ =
-'(!! albid y (imbi2d (albid (imbi2d h))));
-theorem sbeqd (G) (a b: nat) (c d: wff x)
-  (h1: $ G -> a = b $) (h2: $ G -> (c <-> d) $):
-  $ G -> ([a / x] c <-> [b / x] d) $ =
-'(bitrd (sbeq1d h1) (sbeq2d h2));
 
 theorem sbeht (a: nat) (b c: wff x) (h: $ F/ x c $):
   $ A. x (x = a -> (b <-> c)) -> ([a / x] b <-> c) $ =
@@ -483,21 +627,22 @@ theorem sbed (a: nat) (b: wff x) (c: wff)
   (e: $ G /\ x = a -> (b <-> c) $): $ G -> ([a / x] b <-> c) $ =
 '(syl sbet @ iald @ exp e);
 theorem dfsb2 (a: nat) (b: wff x): $ [a / x] b <-> A. x (x = a -> b) $ =
-'(ibii
-  (mpi (!! ax_6 y) @ eexd @ syl (a2i @ alimd @ imim1d @ com12 eqtr4) eal)
+'(! ibii (al y _) _
+  (mpi ax_6 @ eexd @ syl (a2i @ alimd @ imim1d @ com12 eqtr4) eal)
   (iald @ com12 @ alimd @ imim1d @ com12 eqtr));
 theorem dfsb3 (a: nat) (b: wff x): $ [a / x] b <-> E. x (x = a /\ b) $ =
-'(sbeh nfex1 @ syl con2b @ syl5bb (bitr4 (albii notan2) dfsb2) @ bicomd sbq);
+'(sbeh nfex1 @ syl con2b @ syl5bb (bitr4 (aleqi notan2) dfsb2) @ bicomd sbq);
 theorem sbco (a: nat x) (b: wff x):
-  $ [a / y] [y / x] b <-> [a / x] b $ = '(bitr dfsb2 (albii (imbi2i dfsb2)));
+  $ [a / y] [y / x] b <-> [a / x] b $ = '(bitr dfsb2 (aleqi (imeq2i dfsb2)));
 theorem sbid (a: wff x): $ [x / x] a <-> a $ =
-'(ibii (mpi (!! ax_6 y) @ eexd @ rsyl eal @ a2i @ rsyl eqcom @ com12 eal)
+'(! ibii (al y _) _
+  (mpi ax_6 @ eexd @ rsyl eal @ a2i @ rsyl eqcom @ com12 eal)
   (iald @ com12 @ bi1d @ syl6bb dfsb2 @ syl sbq eqcom));
 theorem sbth (a: nat x) (p: wff x) (h: $ p $): $ [a / x] p $ =
 '(!! ax_gen y @ a1i @ ax_gen @ a1i h);
 theorem cbvsbh (a: nat) (p q: wff x y) (h1: $ F/ y p $) (h2: $ F/ x q $)
   (e: $ x = y -> (p <-> q) $): $ [a / x] p <-> [a / y] q $ =
-'(!! albii z (imbi2i (cbvalh (nfim nfv h1) (nfim nfv h2) (imbid (eqeq1) e))));
+'(!! aleqi z (imeq2i (cbvalh (nfim nfv h1) (nfim nfv h2) (imeqd (eqeq1) e))));
 theorem cbvsb (a: nat) (p: wff x) (q: wff y)
   (e: $ x = y -> (p <-> q) $): $ [a / x] p <-> [a / y] q $ = '(cbvsbh nfv nfv e);
 
@@ -509,10 +654,10 @@ theorem cbvals (p: wff x): $ A. x p <-> A. y ([y / x] p) $ = '(cbvalh nfv nfsb1 
 theorem cbvexs (p: wff x): $ E. x p <-> E. y ([y / x] p) $ = '(cbvexh nfv nfsb1 sbq);
 theorem cbvald (G) (p: wff x) (q: wff y)
   (h: $ G /\ x = y -> (p <-> q) $): $ G -> (A. x p <-> A. y q) $ =
-'(bitrd (a1i cbvals) (albid @ syl sbet @ iald @ exp h));
+'(bitrd (a1i cbvals) (aleqd @ syl sbet @ iald @ exp h));
 theorem cbvexd (G) (p: wff x) (q: wff y)
   (h: $ G /\ x = y -> (p <-> q) $): $ G -> (E. x p <-> E. y q) $ =
-'(bitrd (a1i cbvexs) (exbid @ syl sbet @ iald @ exp h));
+'(bitrd (a1i cbvexs) (exeqd @ syl sbet @ iald @ exp h));
 
 strict sort set;
 term ab {x: nat} (p: wff x): set;
@@ -522,7 +667,7 @@ axiom elab (a: nat) {x: nat} (p: wff x):
   $ a e. {x | p} <-> [a / x] p $;
 axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 
-def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
+@_ def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
 infixl eqs: $==$ prec 50;
 
 theorem eqsid: $ A == A $ = '(!! ax_gen x biid);
@@ -530,13 +675,6 @@ theorem eqscom: $ A == B -> B == A $ = '(!! alimi x bicom);
 theorem eqstr: $ A == B -> B == C -> A == C $ = '(syl ax_4 @ !! alimi x bitr);
 theorem eqstr3: $ B == A -> B == C -> A == C $ = '(syl eqstr eqscom);
 theorem eqstr4: $ A == B -> C == B -> A == C $ = '(syl5 eqscom eqstr);
-theorem eqseq1: $ A == B -> (A == C <-> B == C) $ = '(ibid eqstr3 eqstr);
-theorem eqseq2: $ B == C -> (A == B <-> A == C) $ = '(ibid (com12 eqstr) (com12 eqstr4));
-theorem eqseq1d (h: $ G -> A == B $): $ G -> (A == C <-> B == C) $ = '(syl eqseq1 h);
-theorem eqseq2d (h: $ G -> B == C $): $ G -> (A == B <-> A == C) $ = '(syl eqseq2 h);
-theorem eqseqd (h1: $ G -> A == B $) (h2: $ G -> C == D $):
-  $ G -> (A == C <-> B == D) $ = '(bitrd (eqseq1d h1) (eqseq2d h2));
-theorem eqseq: $ A == B -> C == D -> (A == C <-> B == D) $ = '(exp (eqseqd anl anr));
 theorem eqstr3d (h1: $ G -> B == A $) (h2: $ G -> B == C $): $ G -> A == C $ = '(sylc eqstr3 h1 h2);
 theorem eqsidd (G A): $ G -> A == A $ = '(a1i eqsid);
 theorem eqscomd (h: $ G -> A == B $): $ G -> B == A $ = '(syl eqscom h);
@@ -547,12 +685,12 @@ theorem eleq1: $ a = b -> (a e. A <-> b e. A) $ = '(ibid ax_8 @ syl ax_8 eqcom);
 theorem eleq2: $ A == B -> (a e. A <-> a e. B) $ = 'eal;
 theorem eleq1d (h: $ G -> a = b $): $ G -> (a e. A <-> b e. A) $ = '(syl eleq1 h);
 theorem eleq2d (h: $ G -> A == B $): $ G -> (a e. A <-> a e. B) $ = '(syl eleq2 h);
-theorem eleqd (G a b A B) (h1: $ G -> a = b $) (h2: $ G -> A == B $):
+@(register-eqd 'el) theorem eleqd (G a b A B) (h1: $ G -> a = b $) (h2: $ G -> A == B $):
   $ G -> (a e. A <-> b e. B) $ = '(bitrd (eleq1d h1) (eleq2d h2));
 
 theorem abeq (p q: wff x): $ A. x (p <-> q) -> {x | p} == {x | q} $ =
-'(!! iald y @ bitr4g elab elab @ ealeh (nfbi nfsb1 nfsb1) (bibid sbq sbq));
-theorem abeqd (G) (p q: wff x)
+'(!! iald y @ bitr4g elab elab @ ealeh (nfbi nfsb1 nfsb1) (bieqd sbq sbq));
+@(register-eqd 'ab) theorem abeqd (G) (p q: wff x)
   (h: $ G -> (p <-> q) $): $ G -> {x | p} == {x | q} $ = '(syl abeq @ iald h);
 theorem eqri {x} (h: $ x e. A <-> x e. B $): $ A == B $ = '(ax_gen h);
 theorem eqrd (G) {x} (h: $ G -> (x e. A <-> x e. B) $): $ G -> A == B $ = '(iald h);
@@ -575,32 +713,30 @@ theorem abid2: $ {x | x e. A} == A $ = '(!! eqri y @ elabe eleq1);
 @_ def Inter (A B: set): set = $ {x | x e. A /\ x e. B} $;
 infixl Inter: $i^i$ prec 70;
 
-theorem elin: $ a e. A i^i B <-> a e. A /\ a e. B $ = '(!! elabe x @ anbid eleq1 eleq1);
+theorem elin: $ a e. A i^i B <-> a e. A /\ a e. B $ = '(!! elabe x @ aneqd eleq1 eleq1);
 
-def Union (A B: set): set = $ {x | x e. A \/ x e. B} $;
+@_ def Union (A B: set): set = $ {x | x e. A \/ x e. B} $;
 infixl Union: $u.$ prec 65;
 
-theorem uneqd (h1: $ G -> A == B $) (h2: $ G -> C == D $):
-  $ G -> A u. C == B u. D $ = '(!! abeqd x (orbid (eleq2d h1) (eleq2d h2)));
-theorem elun: $ a e. A u. B <-> a e. A \/ a e. B $ = '(!! elabe x @ orbid eleq1 eleq1);
+theorem elun: $ a e. A u. B <-> a e. A \/ a e. B $ = '(!! elabe x @ oreqd eleq1 eleq1);
 
-def Univ: set = $ {x | T.} $; prefix Univ: $V$ prec max;
+@_ def Univ: set = $ {x | T.} $; prefix Univ: $V$ prec max;
 
 theorem eluniv: $ a e. V $ = '(mpbir (!! elabe x biidd) tru);
 
 def subset (A B: set): wff = $ A. x (x e. A -> x e. B) $;
 infixl subset: $C_$ prec 50;
+do { (derive-eq 'subset 'ss) };
 
-theorem sseqd (G A1 A2 B1 B2) (h1: $ G -> A1 == A2 $) (h2: $ G -> B1 == B2 $):
-  $ G -> (A1 C_ B1 <-> A2 C_ B2) $ =
-'(!! albid x @ imbid (eleq2d h1) (eleq2d h2));
 theorem dfss: $ A C_ B <-> A. x (x e. A -> x e. B) $ =
-'(!! cbval y _ @ imbid eleq1 eleq1);
-theorem ssel: $ A C_ B -> a e. A -> a e. B $ = '(!! eale x @ imbid eleq1 eleq1);
+'(!! cbval y _ @ imeqd eleq1 eleq1);
+theorem ssel: $ A C_ B -> a e. A -> a e. B $ = '(!! eale x @ imeqd eleq1 eleq1);
 theorem sseld (h1: $ G -> A C_ B $) (h2: $ G -> a e. A $): $ G -> a e. B $ = '(sylc ssel h1 h2);
 theorem ssid: $ A C_ A $ = '(!! ax_gen x id);
 theorem sstr: $ A C_ B -> B C_ C -> A C_ C $ =
 '(exp @ !! iald x @ syld (anwr ssel) (anwl ssel));
+theorem eqss: $ A == B -> A C_ B $ = '(mpbii ssid sseq2);
+theorem eqssr: $ A == B -> B C_ A $ = '(mpbii ssid sseq1);
 
 theorem inss1: $ A i^i B C_ A $ = '(!! ax_gen x @ sylbi elin anl);
 theorem inss2: $ A i^i B C_ B $ = '(!! ax_gen x @ sylbi elin anr);
@@ -611,17 +747,17 @@ local def nfn {x: nat} (a: nat x): wff = $ A. y (F/ x y = a) $;
 prefix nfn: $FN/$ prec 10;
 
 theorem nfsbid (G) {x} (A B: set x) (h: $ G -> A == B $):
-  $ G -> ((FS/ x A) <-> (FS/ x B)) $ = '(!! albid y @ nfbid @ eleq2d h);
+  $ G -> ((FS/ x A) <-> (FS/ x B)) $ = '(!! aleqd y @ nfeqd @ eleq2d h);
 theorem nfnbid (G) {x} (a b: nat x) (h: $ G -> a = b $):
-  $ G -> ((FN/ x a) <-> (FN/ x b)) $ = '(!! albid y @ nfbid @ eqeq2d h);
+  $ G -> ((FN/ x a) <-> (FN/ x b)) $ = '(!! aleqd y @ nfeqd @ eqeq2d h);
 theorem nfsv: $ FS/ x A $ = '(!! ax_gen y nfv);
 theorem nfnv: $ FN/ x a $ = '(!! ax_gen y nfv);
 theorem nfsri {x y} (A: set x) (h: $ F/ x y e. A $): $ FS/ x A $ = '(ax_gen h);
 theorem nfnri {x y} (a: nat x) (h: $ F/ x y = a $): $ FN/ x a $ = '(ax_gen h);
 theorem nfel2 (a: nat) (A: set x) (h: $ FS/ x A $): $ F/ x a e. A $ = '(eal h);
-theorem nfeq (a b: nat x) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ F/ x a = b $ =
+theorem nf_eq (a b: nat x) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ F/ x a = b $ =
 '(nfx (bicom @ !! exeqe y eqeq1) (nfex @ nfan (eal h1) (eal h2)));
-theorem nfeq2 (b: nat x) (h: $ FN/ x b $): $ F/ x a = b $ = '(nfeq nfnv h);
+theorem nfeq2 (b: nat x) (h: $ FN/ x b $): $ F/ x a = b $ = '(nf_eq nfnv h);
 theorem nfel (a: nat x) (A: set x) (h1: $ FN/ x a $) (h2: $ FS/ x A $): $ F/ x a e. A $ =
 '(nfx (bicom @ !! exeqe y eleq1) (nfex @ nfan (eal h1) (eal h2)));
 theorem nfab1 (p: wff x): $ FS/ x {x | p} $ = '(!! nfsri _ y @ nfx elab nfsb1);
@@ -639,19 +775,19 @@ theorem nfsbh (a: nat x) (b: wff x) (h1: $ FN/ x a $) (h2: $ F/ x b $): $ F/ x [
 '(!! nfal _ z (nfim (nfeq2 h1) (nfal (nfim nfv h2))));
 
 theorem abeqb (p q: wff x): $ A. x (p <-> q) <-> {x | p} == {x | q} $ =
-'(ibii abeq (ialdh (nfeqs nfab1 nfab1) (sylib (bibi abid abid) eleq2)));
+'(ibii abeq (ialdh (nfeqs nfab1 nfab1) (sylib (bieq abid abid) eleq2)));
 theorem eqab2d (h: $ G -> (x e. A <-> p) $): $ G -> A == {x | p} $ =
-'(sylib (!! cbvalh _ y nfv (nfbi nfv @ nfel2 nfab1) @ bibid eleq1 @ syl5bbr abid eleq1) (iald h));
+'(sylib (!! cbvalh _ y nfv (nfbi nfv @ nfel2 nfab1) @ bieqd eleq1 @ syl5bbr abid eleq1) (iald h));
 theorem eqab2i (h: $ x e. A <-> p $): $ A == {x | p} $ = '(trud @ eqab2d @ a1i h);
 theorem eqab1d (h: $ G -> (p <-> x e. A) $): $ G -> {x | p} == A $ = '(eqscomd @ eqab2d @ bicomd h);
 theorem eqab1i (h: $ p <-> x e. A $): $ {x | p} == A $ = '(trud @ eqab1d @ a1i h);
 theorem ssab (p q: wff x): $ A. x (p -> q) <-> {x | p} C_ {x | q} $ =
 '(!! cbvalh _ y nfv (nfim (nfel2 nfab1) (nfel2 nfab1)) @
-  imbid (syl6bbr elab sbq) (syl6bbr elab sbq));
+  imeqd (syl6bbr elab sbq) (syl6bbr elab sbq));
 theorem ssab1 (p: wff x): $ A. x (p -> x e. A) <-> {x | p} C_ A $ =
-'(!! cbvalh _ y nfv (nfim (nfel2 nfab1) nfv) @ imbid (syl6bbr elab sbq) eleq1);
+'(!! cbvalh _ y nfv (nfim (nfel2 nfab1) nfv) @ imeqd (syl6bbr elab sbq) eleq1);
 theorem ssab2 (p: wff x): $ A. x (x e. A -> p) <-> A C_ {x | p} $ =
-'(!! cbvalh _ y nfv (nfim nfv (nfel2 nfab1)) @ imbid eleq1 (syl6bbr elab sbq));
+'(!! cbvalh _ y nfv (nfim nfv (nfel2 nfab1)) @ imeqd eleq1 (syl6bbr elab sbq));
 
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [a / x] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
@@ -689,170 +825,6 @@ theorem sbsed (a: nat) (A: set x) (B: set)
 theorem sbsid (a: set x): $ S[x / x] A == A $ =
 '(!! eqri y @ bitr elsbs sbid);
 
-do {
-  (def eq-for @ lookup-fn '([wff iff] [nat eq] [set eqs]))
-  (def nf-for @ lookup-fn '([wff nf] [nat nfn] [set nfs]))
-  (def eqid-for @ lookup-fn '([wff biid] [nat eqid] [set eqsid]))
-  (def eqidd-for @ lookup-fn '([wff biidd] [nat eqidd] [set eqsidd]))
-  (def eqd-map @ apply atom-map! '([im imbid] [not notbid]
-    [an anbid] [iff bibid] [or orbid] [ifp ifpbid] [al albid]
-    [ex exbid]  [eq eqeqd] [nf nfbid] [ne neeqd] [sb sbeqd] [ab abeqd]
-    [el eleqd] [eqs eqseqd] [Inter ineqd] [Union uneqd]
-    [subset sseqd] [nfs nfsbid] [nfn nfnbid] [sbs sbseqd]))
-  (def (eqd-for . e) (apply lookup eqd-map e))
-  (def (register-eqd df) (fn (tgt) (insert! eqd-map df tgt)))
-  (def (prepare-tgt-args args s k) @ match args
-    [(#f) _] [(()) (k s)] [((? def? tgt)) (k tgt)] [_ (k s)])
-
-  -- This metaprogram proves a statement of the form
-  -- $ G -> a1 = a2 $ > $ G -> b1 = b2 $ > $ G -> foo a1 b1 = foo a2 b2 $
-  -- for any definition foo.
-  (def (add-eqd-thm df . args)
-    @ prepare-tgt-args args (atom-app df "eqd") @ fn (tgt)
-    @ match (get-decl df) @ (_ _ bis (ret _) . rest)
-    @ if (def? (get-decl tgt)) (insert! eqd-map df tgt) @ begin
-    (def ctx (atom-map!))
-    @ match (map join @ transpose 4 @ map
-      (match-fn
-        [(and (x s) e) (insert! ctx x (list s)) '((,e) () (,x) (,x))]
-        [(v s vs) @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)] [hv (atom-app 'h v)])
-          (insert! ctx v (list v1 v2 s hv))
-          '(((,v1 ,s ,vs) (,v2 ,s ,vs))
-            ((,hv (im G (,(eq-for s) ,v1 ,v2))))
-            (,v1)
-            (,v2))])
-      bis) @ (bis hs es1 es2)
-    (def bis '((G wff ()) . ,bis))
-    (def rete '(im G (,(eq-for ret) (,df . ,es1) (,df . ,es2))))
-    (match rest
-      [() (add-thm! tgt bis hs rete)]
-      [(_ ds v) @ add-thm! tgt bis hs rete () @ fn ()
-        (def ds (map (match-fn @ (x s) (insert! ctx x (list s)) x) ds))
-        @ letrec (
-          [preproof (match-fn
-            [(? atom? v) (lookup ctx v)]
-            [((? atom? t) . es)
-              @ match (get-decl t) @ (_ _ bis (ret _) ...)
-              @ if (null? es) (list ret) @ begin
-              (def isrefl (ref! #t))
-              @ match (transpose 4 @ map
-                (match-fn*
-                  [((_ _) x) '((,x) () ,x ,x)]
-                  [((_ _ _) e)
-                    @ match (preproof e)
-                      [(s) '((,e ,e) ((,(eqidd-for s) G ,e)) ,e ,e)]
-                      [(e1 e2 s p) (set! isrefl #f)
-                        '((,e1 ,e2) (,p) ,e1 ,e2)]])
-                bis es) @ (ts ps es1 es2)
-              @ if isrefl (list ret) @ begin
-              @ match (eqd-for t)
-                [(? def? eqd) '((,t . ,es1) (,t . ,es2) ,ret
-                  (,eqd . ,(append (join ts) (join ps))))]
-                [_ (error @ string-append "equality theorem not found for " (->string t))]])]
-          [(mk-proof e) (match (preproof e)
-            [(s) '(,e ,e (,(eqidd-for s) G ,e))]
-            [(e1 e2 s p) (list e1 e2 p)])])
-        @ match (mk-proof v) @ (t1 t2 p)
-        '(:conv rete (im G (,(eq-for ret)
-          (:unfold ,df ,es1 ,ds ,t1)
-          (:unfold ,df ,es2 ,ds ,t2))) ,p)])
-    (insert! eqd-map df tgt))
-
-  (def (ded-to-thm t)
-    @ match (get-decl t) @ (_ _ ((G 'wff ()) . bis) hs ('im _ ret) ...)
-    (def rete @ foldr hs ret @ match-fn* [((_ ('im _ h)) r) '(im ,h ,r)])
-    @ list bis rete @ fn ()
-    @ letrec (
-      [(exps l r) @ match r
-        [('im e1 e2) (list 'exp l e1 e2 (exps (list 'and l e1) e2))]
-        [_ (cons t @ append (map hd bis) @
-          map (match-fn [(_ h) h]) @ rev @ conjuncts l)]]
-      [conjuncts @ match-fn
-        [('and e1 e2)
-          @ match (conjuncts e1)
-            [(_) '((,e2 (anr ,e1 ,e2)) (,e1 (anl ,e1 ,e2)))]
-            [hs (cons '(,e2 (anr ,e1 ,e2)) @
-                map (match-fn [(e h) '(,e (anwl ,e1 ,e2 ,e ,h))]) hs)]]
-        [e '((,e (id ,e)))]])
-    @ match rete [('im l r) (exps l r)])
-
-  -- Using the *eqd proof above, this metaprogram proves the corresponding *eq
-  -- theorem of the form
-  -- $ a1 = a2 -> b1 = b2 -> foo a1 b1 = foo a2 b2 $
-  -- for any definition foo.
-  (def (add-eq-thm t . args)
-    @ prepare-tgt-args args (atom-app t "eq") @ fn (tgt)
-    @ if (not (def? (get-decl tgt))) @ begin
-    @ match (ded-to-thm (eqd-for t)) @ (bis ret val)
-    (add-thm! tgt bis () ret () val))
-
-  (def (make-eqNd-thms df)
-    @ match (get-decl df) @ (_ _ bis (ret _) . rest)
-    @ letrec (
-      [mk-bis @ match-fn
-        [() '(() () () ())]
-        [((and (x _) e) . bis)
-          @ match (mk-bis bis) @ (pes es pp data)
-          '((,x . ,pes) (,x . ,es) ,pp
-            ,(map (match-fn [(b t1 t2 h es ps)
-              '((,e . ,b) (,x . ,t1) (,x . ,t2) ,h (,x . ,es) ,ps)]) data))]
-        [((and (v s vs) e) . bis)
-          @ match (mk-bis bis) @ (pes es pp data)
-          @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)])
-          '((,v . ,pes)
-            (,v ,v . ,es)
-            ((eqidd G ,v) . ,pp)
-            ((((,v1 ,s ,vs) (,v2 ,s ,vs) . ,bis)
-              (,v1 . ,pes)
-              (,v2 . ,pes)
-              (im G (,(eq-for s) ,v1 ,v2))
-              (,v1 ,v2 . ,es)
-              (h . ,pp)) .
-            ,(map (match-fn [(b t1 t2 h es ps)
-              '((,e . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((eqidd G ,v) . ,ps))]) data)))]])
-    @ map (match-fn [(bis t1 t2 h es ps)
-      @ list '((G wff ()) . ,bis) '((h ,h)) '(im G (,(eq-for ret) (,df . ,t1) (,df . ,t2))) @ fn ()
-      @ match (eqd-for df)
-        [(? def? eqd) '(,eqd G . ,(append es ps))]
-        [_ (error @ string-append "equality theorem not found for " (->string df))]
-    ]) (match (mk-bis bis) [(_ _ _ data) data]))
-
-  -- This program adds *eqNd and *eqN theorems corresponding to the definition
-  -- foo, of the form
-  -- fooeq1: $ a1 = a2 -> foo a1 b = foo a2 b $
-  -- fooeq2: $ b1 = b2 -> foo a b1 = foo a b2 $
-  -- fooeq1d: $ G -> a1 = a2 $ > $ G -> foo a1 b = foo a2 b $
-  -- fooeq2: $ G -> b1 = b2 $ > $ G -> foo a b1 = foo a b2 $
-  -- for any definition foo.
-  (def (add-eqN-thms t . args)
-    (def idx (ref! 0))
-    (def process @ match-fn* @ ((bis hs ret val) . arg)
-      (set! idx {idx + 1})
-      @ match (match arg
-        [() '(() ())]
-        [(#f) '((#f) (#f))]
-        [((e1 e2)) '((,e1) (,e2))]) @ (arg1 arg2)
-      @ prepare-tgt-args arg1 (atom-app t "eq" idx "d") @ fn (tgt)
-      @ if (not (def? (get-decl tgt))) @ begin
-      (add-thm! tgt bis hs ret () val)
-      @ prepare-tgt-args arg2 (atom-app t "eq" idx) @ fn (tgt2)
-      @ if (not (def? (get-decl tgt2))) @ begin
-      @ match (ded-to-thm tgt) @ (bis2 ret2 val2)
-      (add-thm! tgt2 bis2 () ret2 () val2))
-    @ match args
-      [(#f)]
-      [() (map process (make-eqNd-thms t)) (let)]
-      [(and (...) ls) (map process (make-eqNd-thms t) ls) (let)])
-
-  (def (derive-eq s)
-    (add-eqd-thm s)
-    (add-eq-thm s)
-    (add-eqN-thms s))
-  (def default-annotate derive-eq)
-
-  (derive-eq 'ne)
-};
-
 @_ def eu {x: nat} (p: wff x): wff = $ E. y A. x (p <-> x = y) $;
 
 term d0: nat; prefix d0: $0$ prec max;
@@ -888,7 +860,7 @@ theorem ind {x y} (a) (px: wff x) (p0 pa: wff) (py ps: wff y)
   (h1: $ p0 $) (h2: $ py -> ps $): $ pa $ =
 '(eale ha @ peano5
   (mpbir (sbe h0) h1)
-  (mpbir (cbvalh nfv (nfim nfv nfsb1) @ imbid hy @ sbeq1d suceq)
+  (mpbir (cbvalh nfv (nfim nfv nfsb1) @ imeqd hy @ sbeq1d suceq)
     (ax_gen @ rsyl h2 @ bi2i @ sbe hs)));
 
 theorem indd {x y} (a) (px: wff x) (p0 pa: wff) (py ps: wff y)
@@ -897,13 +869,13 @@ theorem indd {x y} (a) (px: wff x) (p0 pa: wff) (py ps: wff y)
   (hs: $ x = suc y -> (px <-> ps) $)
   (ha: $ x = a -> (px <-> pa) $)
   (h1: $ G -> p0 $) (h2: $ G /\ py -> ps $): $ G -> pa $ =
-'(ind (imbi2d h0) (imbi2d hy) (imbi2d hs) (imbi2d ha) h1 (a2i (exp h2)));
+'(ind (imeq2d h0) (imeq2d hy) (imeq2d hs) (imeq2d ha) h1 (a2i (exp h2)));
 
 theorem exsuc (a: nat): $ a != 0 <-> E. x suc x = a $ =
 '(ibii
   (! ind y z _ $ y != 0 -> E. x suc x = y $ _ _ _ _
-    (imbid (notbid eqeq1) (exbid eqeq2)) (imbid (notbid eqeq1) (exbid eqeq2))
-    (imbid (notbid eqeq1) (exbid eqeq2)) (imbid (notbid eqeq1) (exbid eqeq2))
+    (imeqd (noteqd eqeq1) (exeqd eqeq2)) (imeqd (noteqd eqeq1) (exeqd eqeq2))
+    (imeqd (noteqd eqeq1) (exeqd eqeq2)) (imeqd (noteqd eqeq1) (exeqd eqeq2))
     (absurdr eqid) (a1i (a1i (iexe (eqeq1d suceq) eqid))))
   (eex (mpbii peano1 neeq1)));
 
@@ -914,12 +886,12 @@ axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
 @(register-eqd 'the) theorem theeqd (h: $ G -> A == B $): $ G -> the A = the B $ =
 '(! casesd _ $ E. y A == {x | x = y} $ _
   (eexda @ eqtr4d (anwr theid) @ syl theid @ imp @ syl eqstr3 h)
-  (exp @ eqtr4d (anwr the0) @ syl the0 @ impbi @ notbid @ exbid @ eqseq1d h));
+  (exp @ eqtr4d (anwr the0) @ syl the0 @ impbi @ noteqd @ exeqd @ eqseq1d h));
 theorem eqthed {x} (h: $ G -> (x e. A <-> x = a) $): $ G -> the A = a $ =
 '(syl (!! theid z) @ eqrd @ syl6bbr (elabe eqeq1) h);
 theorem eqtheabd (p: wff x) (h: $ G -> (p <-> x = a) $): $ G -> the {x | p} = a $ =
 '(!! eqthed y @ syl5bb elab @
-  rsyl (iald h) @ ealeh (nfbi nfsb1 nfv) @ bibid sbq eqeq1);
+  rsyl (iald h) @ ealeh (nfbi nfsb1 nfv) @ bieqd sbq eqeq1);
 
 theorem eqthe0d {x} (h: $ G -> x e. A -> x = 0 $): $ G -> the A = 0 $ =
 (focus
@@ -928,7 +900,7 @@ theorem eqthe0d {x} (h: $ G -> x e. A -> x = 0 $): $ G -> the A = 0 $ =
   '(mpd (mpbiri (mpbir (elabe eqeq1) eqid) (anwr eleq2)) (anwl h)));
 theorem eqthe0abd (p: wff x) (h: $ G -> p -> x = 0 $): $ G -> the {x | p} = 0 $ =
 '(!! eqthe0d y @ syl5bi elab @
-  rsyl (iald h) @ ealeh (nfim nfsb1 nfv) @ imbid sbq eqeq1);
+  rsyl (iald h) @ ealeh (nfim nfsb1 nfv) @ imeqd sbq eqeq1);
 
 theorem eqtheb: $ a = the A <-> (A == {x | x = a} \/ ~E. y A == {x | x = y} /\ a = 0) $ =
 '(ibii
@@ -1040,8 +1012,8 @@ theorem add4: $ (a + b) + (c + d) = (a + c) + (b + d) $ =
 
 theorem addcan1: $ a + c = b + c <-> a = b $ =
 '(! ind x y _ $ a + x = b + x <-> a = b $ _ _ _ _
-  (bibi1d (eqeqd addeq2 addeq2)) (bibi1d (eqeqd addeq2 addeq2))
-  (bibi1d (eqeqd addeq2 addeq2)) (bibi1d (eqeqd addeq2 addeq2))
+  (bieq1d (eqeqd addeq2 addeq2)) (bieq1d (eqeqd addeq2 addeq2))
+  (bieq1d (eqeqd addeq2 addeq2)) (bieq1d (eqeqd addeq2 addeq2))
   (eqeq add0 add0) (syl5bb (bitr (eqeq addS addS) peano2) id));
 theorem addcan2: $ a + b = a + c <-> b = c $ =
 '(bitr (eqeq addcom addcom) addcan1);
@@ -1126,7 +1098,7 @@ theorem lesucid: $ a <= suc a $ = '(mpbi (leeq2 add12) leaddid2);
 theorem le01: $ 0 <= a $ = '(mpbi (leeq2 add0) leaddid1);
 
 theorem leadd1: $ a <= b <-> a + c <= b + c $ =
-'(bitr dfle (!! exbii x (bitr3 addcan1 (eqeq1 add32))));
+'(bitr dfle (!! exeqi x (bitr3 addcan1 (eqeq1 add32))));
 theorem leadd2: $ b <= c <-> a + b <= a + c $ = '(bitr leadd1 (leeq addcom addcom));
 theorem lesuc: $ a <= b <-> suc a <= suc b $ = '(bitr leadd1 (leeq add12 add12));
 
@@ -1154,7 +1126,7 @@ theorem eqlele: $ a = b <-> a <= b /\ b <= a $ =
 '(ibii (iand eqle eqler) (imp leasym));
 
 theorem le02: $ a <= 0 <-> a = 0 $ = '(ibii (mpi le01 leasym) eqle);
-theorem le11: $ 1 <= a <-> a != 0 $ = '(bitr4 (!! exbii x (eqeq1 add11)) exsuc);
+theorem le11: $ 1 <= a <-> a != 0 $ = '(bitr4 (!! exeqi x (eqeq1 add11)) exsuc);
 
 theorem sub1can: $ a != 0 -> suc (a - 1) = a $ = '(sylbir le11 @ syl5eqr add12 npcan);
 
@@ -1209,7 +1181,7 @@ theorem lt12: $ a < 1 <-> a = 0 $ = '(bitr3 leltsuc le02);
 theorem nlesubeq0: $ ~b <= a -> a - b = 0 $ =
 (focus
   '(syl (!! the0 x y) @ con3 @ eximi @ sylbir abeqb _)
-  '(mpbiri eqid @ eale @ bibid (eqeq1d addeq2) eqeq1));
+  '(mpbiri eqid @ eale @ bieqd (eqeq1d addeq2) eqeq1));
 
 theorem subleid: $ a - b <= a $ =
 '(cases (mpbii leaddid2 @ leeq2d npcan) (mpbiri le01 @ leeq1d nlesubeq0));
@@ -1233,7 +1205,7 @@ theorem ltlenle: $ a < b <-> a <= b /\ ~b <= a $ =
 
 theorem ltorle: $ a < b \/ b <= a $ =
 '(! ind x y _ $ a < x \/ x <= a $ _ _ _ _
-  (orbid lteq2 leeq1) (orbid lteq2 leeq1) (orbid lteq2 leeq1) (orbid lteq2 leeq1)
+  (oreqd lteq2 leeq1) (oreqd lteq2 leeq1) (oreqd lteq2 leeq1) (oreqd lteq2 leeq1)
   (orr le01)
   (eor (orld (mpi ltsucid lttr))
     (syl5 (con3 (bi1 lesuc)) @ exp @ bi2 ltlenle)));
@@ -1253,7 +1225,7 @@ theorem lesubeq0: $ a <= b <-> a - b = 0 $ =
   syl contra @ exp @ syl eqle @
   eqtr3d (syl npcan @ anwr leorle) (syl6eq add01 @ anwl addeq1));
 
-theorem subpos: $ a < b <-> 0 < b - a $ = '(bitr ltnle @ bitr4 (notbi lesubeq0) lt01);
+theorem subpos: $ a < b <-> 0 < b - a $ = '(bitr ltnle @ bitr4 (noteq lesubeq0) lt01);
 
 theorem mulsub: $ a * (b - c) = a * b - a * c $ =
 '(eor
@@ -1266,16 +1238,16 @@ theorem submul: $ (a - b) * c = a * c - b * c $ =
 theorem ltmul1: $ 0 < c -> (a < b <-> a * c < b * c) $ =
 '(ibid
   (com12 @ ! indd _ x y _ $ 0 < x -> a * x < b * x $ _ _ _ _
-    (imbid lteq2 (lteqd muleq2 muleq2)) (imbid lteq2 (lteqd muleq2 muleq2))
-    (imbid lteq2 (lteqd muleq2 muleq2)) (imbid lteq2 (lteqd muleq2 muleq2))
+    (imeqd lteq2 (lteqd muleq2 muleq2)) (imeqd lteq2 (lteqd muleq2 muleq2))
+    (imeqd lteq2 (lteqd muleq2 muleq2)) (imeqd lteq2 (lteqd muleq2 muleq2))
     (a1i @ absurd lt02)
     (a1d @ anwl @ sylibr (lteq mulS mulS) @
       ltletrd (bi1 ltadd2) @ sylib leadd1 @ syl lemul1a ltle))
-  (a1i (mpbir (imbii ltnle ltnle) (con3 lemul1a))));
+  (a1i (mpbir (imeqi ltnle ltnle) (con3 lemul1a))));
 theorem ltmul2: $ 0 < a -> (b < c <-> a * b < a * c) $ =
 '(syl6bb (lteq mulcom mulcom) ltmul1);
 theorem lemul1: $ 0 < c -> (a <= b <-> a * c <= b * c) $ =
-'(sylibr (bibi lenlt lenlt) (notbid ltmul1));
+'(sylibr (bieq lenlt lenlt) (noteqd ltmul1));
 theorem lemul2: $ 0 < a -> (b <= c <-> a * b <= a * c) $ =
 '(syl6bb (leeq mulcom mulcom) lemul1);
 
@@ -1294,7 +1266,7 @@ theorem mulpos: $ 0 < a * b <-> 0 < a /\ 0 < b $ =
   (sylib (lteq1 mul0) @ mpbid (anwl ltmul2) anr));
 
 theorem mulne0: $ a * b != 0 <-> a != 0 /\ b != 0 $ =
-'(bitr3 lt01 @ bitr mulpos @ anbi lt01 lt01);
+'(bitr3 lt01 @ bitr mulpos @ aneq lt01 lt01);
 
 theorem sub01: $ 0 - a = 0 $ =
 '(cases (sylbi le02 @ syl6eq sub02 subeq2) nlesubeq0);
@@ -1302,7 +1274,7 @@ theorem sub01: $ 0 - a = 0 $ =
 theorem pnpcan2: $ (a + c) - (b + c) = a - b $ =
 '(cases
   (syl eqsub1 @ syl5eqr addass @ addeq1d npcan)
-  (eqtr4d (sylbi (notbi leadd1) nlesubeq0) nlesubeq0));
+  (eqtr4d (sylbi (noteq leadd1) nlesubeq0) nlesubeq0));
 
 theorem pnpcan: $ (a + b) - (a + c) = b - c $ = '(eqtr (subeq addcom addcom) pnpcan2);
 theorem subSS: $ suc a - suc b = a - b $ = '(eqtr3 (subeq add12 add12) pnpcan2);
@@ -1314,17 +1286,17 @@ theorem indlt {x y} (a) (px: wff x) (p0 pa: wff) (py ps: wff y)
   (ha: $ x = a -> (px <-> pa) $)
   (h1: $ G -> p0 $) (h2: $ G /\ y < a /\ py -> ps $): $ G -> pa $ =
 '(mpi leid @ indd
-  (imbid leeq1 h0) (imbid leeq1 hy) (imbid leeq1 hs) (imbid leeq1 ha)
+  (imeqd leeq1 h0) (imeqd leeq1 hy) (imeqd leeq1 hs) (imeqd leeq1 ha)
   (a1d h1) (imp @ syl5 (imim1i ltle) @ a2d @ exp @ exp h2));
 
 theorem indstr {x y} (a) (px: wff x) (pa: wff) (py: wff y)
   (hy: $ x = y -> (px <-> py) $)
   (ha: $ x = a -> (px <-> pa) $)
   (h: $ G /\ A. x (x < y -> px) -> py $): $ G -> pa $ =
-'(syl (mpi ltsucid @ eale @ imbid lteq1 ha) @
+'(syl (mpi ltsucid @ eale @ imeqd lteq1 ha) @
   ! indd _ z y _ $ A. x (x < z -> px) $ _ _ _ _
-  (albid @ imbi1d lteq2) (albid @ imbi1d lteq2)
-  (albid @ imbi1d lteq2) (albid @ imbi1d lteq2)
+  (aleqd @ imeq1d lteq2) (aleqd @ imeq1d lteq2)
+  (aleqd @ imeq1d lteq2) (aleqd @ imeq1d lteq2)
   (a1i @ ax_gen @ absurd lt02)
   (mpd (rsyl h @ iald @ com12 @ bi2d hy) @
     anwr @ al2imi @ syl6 (imim1i @ bi1i @ bitr3 leltsuc leloe) eor));
@@ -1332,16 +1304,16 @@ theorem indstr {x y} (a) (px: wff x) (pa: wff) (py: wff y)
 @_ def finite (A: set): wff = $ E. n A. x (x e. A -> x < n) $;
 
 theorem fineq: $ A == B -> (finite A <-> finite B) $ =
-'(!! cbvexd n1 n2 @ !! cbvald x1 x2 @ imbid (eleqd anr anll) (lteqd anr anlr));
+'(!! cbvexd n1 n2 @ !! cbvald x1 x2 @ imeqd (eleqd anr anll) (lteqd anr anlr));
 
 theorem finss: $ A C_ B -> finite B -> finite A $ =
 '(!! eximd n @ !! alimd x @ imim1d ssel);
 
 theorem finlt: $ finite {x | x < n} $ =
-'(!! iexe m (albid @ imbi2d @ lteq2) @ !! ax_gen y @ bi1i @ elabe lteq1);
+'(!! iexe m (aleqd @ imeq2d @ lteq2) @ !! ax_gen y @ bi1i @ elabe lteq1);
 
 theorem finle: $ finite {x | x <= n} $ =
-'(!! iexe m (albid @ imbi2d @ lteq2) @ !! ax_gen y @ sylbi (elabe leeq1) @ bi1i leltsuc);
+'(!! iexe m (aleqd @ imeq2d @ lteq2) @ !! ax_gen y @ sylbi (elabe leeq1) @ bi1i leltsuc);
 
 theorem finsn: $ finite {x | x = n} $ =
 '(finss (mpbi ssab @ ax_gen eqle) finle);
@@ -1360,13 +1332,26 @@ theorem ifid: $ if p a a = a $ = '(cases ifpos ifneg);
 theorem true1: $ true 1 $ = 'd1ne0;
 theorem true0: $ ~ true 0 $ = '(notnot1 eqid);
 
+theorem letrue: $ a <= b -> true a -> true b $ =
+'(sylib (imeqi lt01 lt01) @ com12 ltletr);
+
 theorem bool0: $ bool 0 $ = 'd0lt2;
 theorem bool1: $ bool 1 $ = 'd1lt2;
 theorem bool01: $ bool n <-> n = 0 \/ n = 1 $ =
-'(bitr3 leltsuc (bitr leloe (orbi1i lt12)));
+'(bitr3 leltsuc (bitr leloe (oreq1i lt12)));
+
+theorem lebool: $ a <= b -> bool b -> bool a $ = 'lelttr;
+
+theorem letrueb: $ bool a -> (a <= b <-> (true a -> true b)) $ =
+'(ibid (a1i letrue) @ sylbi bool01 @ eor
+  (a1d @ mpbiri le01 leeq1)
+  (mpbiri (bi2i le11) @ imeqd (bicomd @ syl biim1 @ mpbiri true1 trueeq) leeq1));
 
 theorem dftrue2: $ bool n -> (true n <-> n = 1) $ =
 '(ibid (bi1 bool01) (a1i @ mpbiri d1ne0 neeq1));
+
+theorem boolnat: $ bool (nat p) $ =
+'(cases (mpbiri d1lt2 @ lteq1d ifpos) (mpbiri d0lt2 @ lteq1d ifneg));
 
 theorem truenat: $ true (nat p) <-> p $ =
 '(ibii (con1 ifneg) (mpbiri d1ne0 (neeq1d ifpos)));
@@ -1374,6 +1359,12 @@ theorem nattrue: $ bool n -> nat (true n) = n $ =
 '(sylbi bool01 @ eor
   (eqtr4d (nateqd trueeq) @ syl6eqr (ifneg true0) id)
   (eqtr4d (nateqd trueeq) @ syl6eqr (ifpos true1) id));
+
+theorem natle: $ (p -> q) <-> nat p <= nat q $ =
+'(bicom @ bitr (letrueb boolnat) (imeqi truenat truenat));
+
+theorem nattruele: $ nat (true n) <= n $ =
+'(eor id (syl eqle @ syl nattrue @ mpi boolnat lebool) leorle);
 
 theorem boolext: $ bool a -> bool b -> ((true a <-> true b) <-> a = b) $ =
 '(exp @ ibid
@@ -1425,25 +1416,25 @@ theorem maxle: $ max a b <= c <-> a <= c /\ b <= c $ =
   (mpbird (anwr @ leeq1d ifneg) anll));
 
 theorem ltmax: $ a < max b c <-> a < b \/ a < c $ =
-'(con4b @ bitr3 lenlt @ bitr maxle @ bitr4 (anbi lenlt lenlt) notor);
+'(con4b @ bitr3 lenlt @ bitr maxle @ bitr4 (aneq lenlt lenlt) notor);
 
 theorem maxadd1: $ max a b + c = max (a + c) (b + c) $ =
 '(cases (eqtr4d (addeq1d ifpos) (sylbi ltadd1 ifpos))
-  (eqtr4d (addeq1d ifneg) (sylbi (notbi ltadd1) ifneg)));
+  (eqtr4d (addeq1d ifneg) (sylbi (noteq ltadd1) ifneg)));
 
 theorem maxS: $ suc (max a b) = max (suc a) (suc b) $ =
 '(eqtr3 add12 @ eqtr maxadd1 @ trud @ maxeqd (a1i add12) (a1i add12));
 
 theorem maxlt: $ max a b < c <-> a < c /\ b < c $ = '(bitr (leeq1 maxS) maxle);
 theorem lemax: $ a <= max b c <-> a <= b \/ a <= c $ =
-'(con4b @ bitr3 ltnle @ bitr maxlt @ bitr4 (anbi ltnle ltnle) notor);
+'(con4b @ bitr3 ltnle @ bitr maxlt @ bitr4 (aneq ltnle ltnle) notor);
 
 theorem unfin: $ finite A -> finite B -> finite (A u. B) $ =
 '(!! eex m @ !! eexd n @
-  syl6 (!! iexe z @ albid @ imbi2d lteq2) @ !! al2imi x @
+  syl6 (!! iexe z @ aleqd @ imeq2d lteq2) @ !! al2imi x @
   rsyl (imim2i @ mpi lemax1 ltletr) @
   syl5 (imim2i @ mpi lemax2 ltletr) @
-  syl6ibr (imbi1i elun) eor);
+  syl6ibr (imeq1i elun) eor);
 
 @_ abstract def div (a b: nat): nat = $ the {q | E. r (r < b /\ b * q + r = a)} $;
 infixl div: $//$ prec 70;
@@ -1471,18 +1462,18 @@ theorem divlem2 (h1: $ G -> R < b $) (h2: $ G -> b * Q + R = a $):
       (divlem1 anrl (anwl h1) @ syl eqle @ eqtr4d anrr (anwl h2))
       (divlem1 (anwl h1) anrl @ syl eqle @ eqtr4d (anwl h2) anrr))
     (exp @ syl
-      (iexe @ anbid lteq1 @ eqeq1d addeq2)
+      (iexe @ aneqd lteq1 @ eqeq1d addeq2)
       (iand (anwl h1) @ eqtrd (anwr @ addeq1d muleq2) (anwl h2)))));
 
 theorem divlem3: $ b != 0 -> E. q E. r (r < b /\ b * q + r = a) $ =
 '(! indd _ x y _ $ E. q E. r (r < b /\ b * q + r = x) $ _ _ _ _
-  (exbid @ exbid @ anbi2d eqeq2) (exbid @ exbid @ anbi2d eqeq2)
-  (exbid @ exbid @ anbi2d eqeq2) (exbid @ exbid @ anbi2d eqeq2)
+  (exeqd @ exeqd @ aneq2d eqeq2) (exeqd @ exeqd @ aneq2d eqeq2)
+  (exeqd @ exeqd @ aneq2d eqeq2) (exeqd @ exeqd @ aneq2d eqeq2)
   (iexde @ iexde @ iand
     (mpbird (anwr lteq1) @ sylibr lt01 anll)
     (syl6eq add0 @ addeqd (syl6eq mul02 @ anwl @ anwr muleq2) anr))
   (imp @ syl5bi (!! cbvex _ u @ !! cbvexd _ v
-    (anbid (anwr lteq1) @ eqeq1d @ addeqd (anwl muleq2) anr))
+    (aneqd (anwr lteq1) @ eqeq1d @ addeqd (anwl muleq2) anr))
     (eexd @ eexda @ mpd (sylib leloe anrl) @ eorda
       (iexde @ iexde @ iand
         (mpbird (anwr lteq1) (anwll anr))
@@ -1553,7 +1544,7 @@ theorem ledivmul1: $ c != 0 -> (a <= b // c <-> c * a <= b) $ =
 theorem ledivmul2: $ c != 0 -> (a <= b // c <-> a * c <= b) $ =
 '(syl6bb (leeq1 mulcom) ledivmul1);
 theorem ltdivmul1: $ b != 0 -> (a // b < c <-> a < b * c) $ =
-'(syl5bb ltnle @ syl6bbr ltnle @ notbid @ledivmul1);
+'(syl5bb ltnle @ syl6bbr ltnle @ noteqd @ledivmul1);
 theorem ltdivmul2: $ b != 0 -> (a // b < c <-> a < c * b) $ =
 '(syl6bb (lteq2 mulcom) ltdivmul1);
 
@@ -1620,8 +1611,8 @@ theorem dvdmul12: $ a || b -> a || c * b $ = '(mpi dvdmul1 dvdtr);
 theorem dvdmul11: $ a || b -> a || b * c $ = '(mpi dvdmul2 dvdtr);
 
 theorem modeq0: $ a % n = 0 <-> n || a $ =
-'(ibii
-  (!! iexde x @ eqtrd (anwr muleq1) @ syl5eq mulcom @
+'(! ibii _ (ex x _)
+  (iexde @ eqtrd (anwr muleq1) @ syl5eq mulcom @
     syl5eqr add0 @ eqtr3d (anwl addeq2) @ a1i divmod)
   (eex @ syl6eq mulmod2 @ modeqd eqcom eqidd));
 
@@ -1653,10 +1644,10 @@ theorem d2dvdS: $ 2 || suc n <-> ~2 || n $ =
 '(ibii
   (mtd (a1i d2dvd1) @ exp @ mpbird (syl6bb (dvdeq2 add12) (anwr dvdadd1)) anl)
   (! ind x y _ $ 2 || x \/ 2 || suc x $ _ _ _ _
-  (orbid dvdeq2 @ dvdeq2d suceq)
-  (orbid dvdeq2 @ dvdeq2d suceq)
-  (orbid dvdeq2 @ dvdeq2d suceq)
-  (orbid dvdeq2 @ dvdeq2d suceq)
+  (oreqd dvdeq2 @ dvdeq2d suceq)
+  (oreqd dvdeq2 @ dvdeq2d suceq)
+  (oreqd dvdeq2 @ dvdeq2d suceq)
+  (oreqd dvdeq2 @ dvdeq2d suceq)
   (orl dvd02)
   (eor (orrd @ sylib (dvdeq2 @ eqtr addS @ suceq add12) @ mpbii dvdid dvdadd1) orl)));
 
@@ -1746,7 +1737,7 @@ theorem b0dvd2: $ 2 || b0 n $ = '(idvd b0mul22);
 theorem b1dvd2: $ ~2 || b1 n $ = '(mpbi (con2b d2dvdS) b0dvd2);
 
 theorem dfodd2: $ odd n <-> true (n % 2) $ = '(bicom @ dftrue2 boolmod2);
-theorem odddvd: $ odd n <-> ~ 2 || n $ = '(bitr dfodd2 @ notbi modeq0);
+theorem odddvd: $ odd n <-> ~ 2 || n $ = '(bitr dfodd2 @ noteq modeq0);
 
 theorem b0odd: $ ~odd (b0 n) $ = '(mpbi (con2b odddvd) b0dvd2);
 theorem b1odd: $ odd (b1 n) $ = '(mpbir odddvd b1dvd2);
@@ -1767,7 +1758,7 @@ theorem b0orb1: $ n = b0 (n // 2) \/ n = b1 (n // 2) $ =
 
 theorem odd0: $ ~ odd 0 $ = '(mtbir (eqeq1 mod01) (mt eqcom d1ne0));
 theorem oddS: $ odd (suc n) <-> ~odd n $ =
-'(bitr odddvd @ notbi @ bitr4 d2dvdS odddvd);
+'(bitr odddvd @ noteq @ bitr4 d2dvdS odddvd);
 theorem odd1: $ odd 1 $ = '(mpbir oddS odd0);
 
 @_ def pr (a b: nat): nat = $ (a + b) * suc (a + b) // 2 + b $;
@@ -1807,8 +1798,8 @@ pub theorem pr0: $ 0 <> 0 = 0 $ =
 theorem expr: $ E. x E. y a = x <> y $ =
 (focus
   '(! ind u v _ $ E. x E. y u = x <> y $ _ _ _ _
-    (exbid @ exbid eqeq1) (exbid @ exbid eqeq1)
-    (exbid @ exbid eqeq1) (exbid @ exbid eqeq1)
+    (exeqd @ exeqd eqeq1) (exeqd @ exeqd eqeq1)
+    (exeqd @ exeqd eqeq1) (exeqd @ exeqd eqeq1)
     (trud @ iexde @ iexde @ syl5eqr pr0 @ eqcomd @ preqd anlr anr)
     (sylib (cbvex @ cbvexd @ eqeq2d @ preqd anl anr) _))
   '(eex @ eex @ casesd _ _)
@@ -1868,8 +1859,8 @@ theorem isfund (h1: $ G -> isfun F $)
   (h2: $ G -> a <> b e. F $) (h3: $ G -> a <> b2 e. F $):
   $ G -> b = b2 $ =
 '(mpd h3 @ mpd h2 @ mpd h1 @ !! ealde x @ !! ealde y @ !! ealde z @ bi1d @
-  imbid (eleq1d @ preqd anllr anlr) @
-  imbid (eleq1d @ preqd anllr anr) @ eqeqd anlr anr);
+  imeqd (eleq1d @ preqd anllr anlr) @
+  imeqd (eleq1d @ preqd anllr anr) @ eqeqd anlr anr);
 
 theorem isfunbd (h1: $ G -> isfun F $) (h2: $ G -> a <> b e. F $):
   $ G -> (a <> b2 e. F <-> b = b2) $ =
@@ -1883,8 +1874,8 @@ theorem isfunss: $ A C_ B -> isfun B -> isfun A $ =
 $ {z | E. x E. y (z = x <> y /\ p)} $;
 
 theorem elopabs (p: wff x y): $ a <> b e. opab x y p <-> [a / x] [b / y] p $ =
-'(!! elabe z @ syl6bbr dfsb3 @ exbid @ syl6bbr (anbi2i dfsb3) @ syl6bb exan1 @
-  exbid @ syl6bb anass @ anbi1d @ syl6bb prth @ syl6bb eqcomb eqeq1);
+'(!! elabe z @ syl6bbr dfsb3 @ exeqd @ syl6bbr (aneq2i dfsb3) @ syl6bb exan1 @
+  exeqd @ syl6bb anass @ aneq1d @ syl6bb prth @ syl6bb eqcomb eqeq1);
 
 theorem elopabd (p: wff x y) (h: $ G /\ x = a /\ y = b -> (p <-> q) $):
   $ G -> (a <> b e. opab x y p <-> q) $ = '(syl5bb elopabs @ sbed @ sbed h);
@@ -1901,19 +1892,19 @@ theorem nfopab (p: wff x y z) (h: $ F/ x p $): $ FS/ x opab y z p $ =
 theorem nfxp (h1: $ FS/ x A $) (h2: $ FS/ x B $): $ FS/ x Xp A B $ =
 '(!! nfopab _ y z @ nfan (nfel2 h1) (nfel2 h2));
 theorem prelxp: $ a <> b e. Xp A B <-> a e. A /\ b e. B $ =
-'(!! elopab x y (anbid (eleq1d anl) (eleq1d anr)));
+'(!! elopab x y (aneqd (eleq1d anl) (eleq1d anr)));
 theorem elxp: $ a e. Xp A B <-> fst a e. A /\ snd a e. B $ =
 '(bitr3 (eleq1 fstsnd) prelxp);
 
 theorem xpfin: $ finite A -> finite B -> finite (Xp A B) $ =
-'(!! eex m @ !! eexda n @ syl (!! iexe z @ albid @ imbi2d lteq2) @
+'(!! eex m @ !! eexda n @ syl (!! iexe z @ aleqd @ imeq2d lteq2) @
   !! iald p @ syl5bi elxp @ syl6
-    (sylib (lteq1 fstsnd) @ imp @ sylibr (imbii ltnle ltnle) @ con3d @
+    (sylib (lteq1 fstsnd) @ imp @ sylibr (imeqi ltnle ltnle) @ con3d @
       syl5 prlem2 @ syl5bi (leeq1 add0) @
       syl6ibr leadd2 @ syl letr @ sylib leadd1 ltle)
     (animd
-      (anwl @ !! eale x @ imbid eleq1 lteq1)
-      (anwr @ !! eale y @ imbid eleq1 lteq1)));
+      (anwl @ !! eale x @ imeqd eleq1 lteq1)
+      (anwr @ !! eale y @ imeqd eleq1 lteq1)));
 
 @_ def Dom (A: set): set = $ {x | E. y x <> y e. A} $;
 @_ def Ran (A: set): set = $ {y | E. x x <> y e. A} $;
@@ -1933,9 +1924,9 @@ infixl res: $|`$ prec 55;
 theorem nfres (h1: $ FS/ x A $) (h2: $ FS/ x B $): $ FS/ x A |` B $ =
 '(nfin h1 @ nfxp h2 nfsv);
 theorem elres: $ a e. A |` B <-> a e. A /\ fst a e. B $ =
-'(bitr elin @ anbi2i @ bitr4 elxp @ bian2 eluniv);
+'(bitr elin @ aneq2i @ bitr4 elxp @ bian2 eluniv);
 theorem prelres: $ a <> b e. A |` B <-> a <> b e. A /\ a e. B $ =
-'(bitr elres @ anbi2i @ eleq1 fstpr);
+'(bitr elres @ aneq2i @ eleq1 fstpr);
 theorem resss: $ A |` B C_ A $ = 'inss1;
 
 @_ def lam {x: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
@@ -1943,7 +1934,7 @@ notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
 
 theorem nflam1 (a: nat x): $ FS/ x \ x, a $ = '(!! nfab _ p nfex1);
 theorem nflam (a: nat x y) (h: $ FN/ x a $): $ FS/ x \ y, a $ =
-'(!! nfab _ p @ nfex @ nfeq nfnv @ nfpr nfnv h);
+'(!! nfab _ p @ nfex @ nf_eq nfnv @ nfpr nfnv h);
 theorem cbvlamh (a b: nat x y) (h1: $ FN/ y a $) (h2: $ FN/ x b $)
   (e: $ x = y -> a = b $): $ (\ x, a) == (\ y, b) $ =
 '(!! cbvab p1 p2 @ cbvexd @ eqeqd anl @ anwr @ preqd id e);
@@ -1956,8 +1947,8 @@ theorem cbvlamd (G) (a: nat x) (b: nat y)
 
 theorem lamisf (a: nat x): $ isfun (\ x, a) $ =
 '(!! ax_gen u @ !! ax_gen v @ !! ax_gen w @
-  sylbi (!! elabe p @ exbid eqeq1) @ eexh (nfim (nfel2 nflam1) nfv) @ sylbi prth @
-  syl5bi (bitr (!! elabe p @ exbid eqeq1) @
+  sylbi (!! elabe p @ exeqd eqeq1) @ eexh (nfim (nfel2 nflam1) nfv) @ sylbi prth @
+  syl5bi (bitr (!! elabe p @ exeqd eqeq1) @
     cbvexh nfv (nfeq2 @ nfpr nfnv nfsbn1) @ eqeq2d @ preqd id sbnq) @
   !! eexd y @ syl5bi prth @ exp @ eqtr4d anlr @ eqtr4d anrr @ syl sbnq @
   eqtr3d anll anrl);
@@ -1965,19 +1956,19 @@ theorem lamisf (a: nat x): $ isfun (\ x, a) $ =
 theorem finlam (v: nat x): $ finite A -> finite ((\ x, v) |` A) $ =
 (focus
   (have 'h '(! ind a b _ $ E. n A. x (x < a -> x <> v < n) $ _ _ _ _
-    (exbid @ albid @ imbi1d @ lteq2) (exbid @ albid @ imbi1d @ lteq2)
-    (exbid @ albid @ imbi1d @ lteq2) (exbid @ albid @ imbi1d @ lteq2)
+    (exeqd @ aleqd @ imeq1d @ lteq2) (exeqd @ aleqd @ imeq1d @ lteq2)
+    (exeqd @ aleqd @ imeq1d @ lteq2) (exeqd @ aleqd @ imeq1d @ lteq2)
     (trud @ ! iexde _ _ $0$ _ @ iald @ a1i @ absurd lt02)
-    (sylibr (!! cbvex _ m @ albid @ imbi2d @ lteq2) @
-      eex @ syl (iexe @ albidh (nfeq2 @ nfmax nfnv @ nfsuc @ nfpr nfnv nfsbn1) @ imbi2d @ lteq2) @
+    (sylibr (!! cbvex _ m @ aleqd @ imeq2d @ lteq2) @
+      eex @ syl (iexe @ aleqdh (nfeq2 @ nfmax nfnv @ nfsuc @ nfpr nfnv nfsbn1) @ imeq2d @ lteq2) @
       alimi @ syl5bir leltsuc @ syl5bi leloe @ eord
         (imim2i @ mpi lemax1 ltletr)
         (a1i @ mpbii lemax2 @ lteq2d @
           maxeqd eqidd @ suceqd @ preqd id sbnq))))
   '(!! eex n @ mpi h @ eximd @ syl6 _ @ al2imi @ exp @ syld anr anl)
   '(!! iald p @ syl5bi elres @ sylibr impexp @
-    syl5bi (!! elabe q @ exbid eqeq1) @ sylibr eexb @ alimi @
-    syl5ibrcom (imbid (eleq1d @ syl6eq fstpr fsteq) lteq1) id));
+    syl5bi (!! elabe q @ exeqd eqeq1) @ sylibr eexb @ alimi @
+    syl5ibrcom (imeqd (eleq1d @ syl6eq fstpr fsteq) lteq1) id));
 
 @_ def app (F: set) (x: nat): nat = $ the {y | x <> y e. F} $;
 infixl app: $@$ prec 200;
@@ -1994,7 +1985,7 @@ theorem lamapps (a b: nat x): $ (\ x, a) @ b = N[b / x] a $ =
 '(trud @ isfappd (a1i lamisf) @ a1i @ mpbir
   (!! elabe p @ syl5bb
     (cbvexh nfv (nfeq2 @ nfpr nfnv nfsbn1) @ eqeq2d @ preqd id sbnq)
-    (!! exbid z eqeq1))
+    (!! exeqd z eqeq1))
   (iexe (eqeq2d @ preqd id sbneq1) eqid));
 theorem lamapp (a: nat x): $ (\ x, a) @ x = a $ = '(eqtr lamapps sbnid);
 theorem lamappe (a: nat x) (e: $ x = b -> a = c $):
@@ -2029,33 +2020,33 @@ theorem leastlem: $ a e. A -> least A e. A /\ A. z (z e. A -> least A <= z) $ =
 (focus
   (have 'h1 $ A. z (z e. A -> a < z) \/ E. u (u e. A /\ A. z (z e. A -> u <= z)) $
     '(!! ind x y
-      (orbi1d @ albid @ imbi2d lteq1) (orbi1d @ albid @ imbi2d lteq1)
-      (orbi1d @ albid @ imbi2d lteq1) (orbi1d @ albid @ imbi2d lteq1)
+      (oreq1d @ aleqd @ imeq2d lteq1) (oreq1d @ aleqd @ imeq2d lteq1)
+      (oreq1d @ aleqd @ imeq2d lteq1) (oreq1d @ aleqd @ imeq2d lteq1)
       (cases
-        (orrd @ sylan (iexe @ anbid eleq1 @ albid @ imbi2d leeq1)
+        (orrd @ sylan (iexe @ aneqd eleq1 @ aleqd @ imeq2d leeq1)
           id (a1i @ ax_gen @ a1i le01))
         (orld @ iald @ exp @ sylibr lt01 @
           mtd anl @ com12 @ syl5 anr (bi1d eleq1)))
       (eor
         (casesda
-          (orrd @ sylan (iexe @ anbid eleq1 @ albid @ imbi2d leeq1) anr anl)
+          (orrd @ sylan (iexe @ aneqd eleq1 @ aleqd @ imeq2d leeq1) anr anl)
           (orld @ ialdh (nfan nfal1 nfv) @ exp @ sylibr ltlene
             (iand (imp @ anwl eal) (mtand anlr @ mpbird (anwr eleq1) anlr))))
         orr)))
   (have 'h2 $ a e. A -> E. u (u e. A /\ A. z (z e. A -> u <= z)) $
-    '(syl h1 @ mtd (a1i ltirr) @ com12 @ eale @ imbid eleq1 lteq2))
+    '(syl h1 @ mtd (a1i ltirr) @ com12 @ eale @ imeqd eleq1 lteq2))
   (have 'h3 $ u e. A /\ A. z (z e. A -> u <= z) -> least A = u $
     '(!! eqtheabd v @ ibid
       (exp @ leasymd
-        (mpd anll @ anwr @ anwr @ eale @ imbid eleq1 leeq2)
-        (mpd anrl @ anwl @ anwr @ eale @ imbid eleq1 leeq2))
-      (com12 @ bi2d @ anbid eleq1 @ albid @ imbi2d leeq1)))
-  '(rsyl h2 @ eex @ mpbird (anbid (eleq1d h3) (albid @ imbi2d @ leeq1d h3)) id));
+        (mpd anll @ anwr @ anwr @ eale @ imeqd eleq1 leeq2)
+        (mpd anrl @ anwl @ anwr @ eale @ imeqd eleq1 leeq2))
+      (com12 @ bi2d @ aneqd eleq1 @ aleqd @ imeq2d leeq1)))
+  '(rsyl h2 @ eex @ mpbird (aneqd (eleq1d h3) (aleqd @ imeq2d @ leeq1d h3)) id));
 
 theorem leastel: $ a e. A -> least A e. A $ = '(anld @ !! leastlem x);
 
 theorem leastle: $ a e. A -> least A <= a $ =
-'(mpd (!! leastlem x) @ com12 @ anwr @ eale @ imbid eleq1 leeq2);
+'(mpd (!! leastlem x) @ com12 @ anwr @ eale @ imeqd eleq1 leeq2);
 
 theorem least0: $ ~E. x x e. A -> least A = 0 $ =
 '(! eqthe0abd _ y $ _ /\ A. z _ $ @ com12 @ syl absurdr @ anwl @ iexe eleq1);
@@ -2198,18 +2189,18 @@ infixl zmod: $%Z$ prec 70;
 @_ local def gcd (a b: nat): nat = $ the {d | A. x (x || d <-> x || a /\ x || b)} $;
 
 theorem gcdcom: $ gcd a b = gcd b a $ =
-'(theeqd id @ !! cbvab d1 d2 @ !! cbvald x y @ bibid (dvdeqd anr anl) @
-  syl5bb ancomb @ anwr @ anbid dvdeq1 dvdeq1);
+'(theeqd id @ !! cbvab d1 d2 @ !! cbvald x y @ bieqd (dvdeqd anr anl) @
+  syl5bb ancomb @ anwr @ aneqd dvdeq1 dvdeq1);
 
 theorem eqgcd {x} (h: $ G -> (x || d <-> x || a /\ x || b) $):
   $ G -> gcd a b = d $ =
 (focus
-  (def h1 '(rsyl (anwl @ iald h) @ eale @ bibid dvdeq1 @ anbid dvdeq1 dvdeq1))
-  (def h2 '(anwr @ eale @ bibid dvdeq1 @ anbid dvdeq1 dvdeq1))
+  (def h1 '(rsyl (anwl @ iald h) @ eale @ bieqd dvdeq1 @ aneqd dvdeq1 dvdeq1))
+  (def h2 '(anwr @ eale @ bieqd dvdeq1 @ aneqd dvdeq1 dvdeq1))
   '(!! eqtheabd d2 @ ibida
     (dvdasymd (mpbird ,h1 @ mpbii dvdid ,h2) (mpbird ,h2 @ mpbii dvdid ,h1))
     (mpbird
-      (!! cbvald y x @ bibid (dvdeqd anr anlr) (anwr @ anbid dvdeq1 dvdeq1))
+      (!! cbvald y x @ bieqd (dvdeqd anr anlr) (anwr @ aneqd dvdeq1 dvdeq1))
       (anwl @ iald h))));
 
 theorem gcd00: $ gcd 0 0 = 0 $ =
@@ -2218,21 +2209,21 @@ theorem gcd00: $ gcd 0 0 = 0 $ =
 @_ local def bgcd (a b: nat): nat = $ least {d | 0 < d /\ E. x E. y x * a = y * b + d} $;
 
 theorem dfbgcd: $ bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d} $ =
-'(leasteq @ !! cbvab d2 d @ anbid lteq2 @ !! cbvexd z x @ !! cbvexd w y @
+'(leasteq @ !! cbvab d2 d @ aneqd lteq2 @ !! cbvexd z x @ !! cbvexd w y @
     eqeqd (muleq1d anlr) @ addeqd (anwr muleq1) anll);
 
 theorem bgcd01: $ bgcd 0 b = 0 $ =
 '(least0 @ !! ngen d @ mt (sylbi
-  (!! elabe d2 @ anbid lteq2 @ exbid @ exbid @
+  (!! elabe d2 @ aneqd lteq2 @ exeqd @ exeqd @
     eqeqd (a1i mul02) addeq2) @
   imp @ !! eexd x @ !! eexd y @
   syl absurd @ syl ltne @ mpi leaddid1 ltletr) notfal);
 
 theorem bgcdlem: $ a != 0 -> 0 < bgcd a b /\ E. x E. y x * a = y * b + bgcd a b $ =
 '(sylib
-  (!! elabe d @ anbid lteq2 @ !! cbvexd z x @ !! cbvexd w y @
+  (!! elabe d @ aneqd lteq2 @ !! cbvexd z x @ !! cbvexd w y @
     eqeqd (muleq1d anlr) @ addeqd (anwr muleq1) anll) @
-  syl leastel @ sylibr (elabe @ anbid lteq2 @ exbid @ exbid @ eqeq2d addeq2) @
+  syl leastel @ sylibr (elabe @ aneqd lteq2 @ exeqd @ exeqd @ eqeq2d addeq2) @
   iand (bi2 lt01) @ iexde @ iexde @
   eqtr4d (syl6eq mul11 @ muleq1d anlr) @
   syl6eq add01 @ addeq1d @ syl6eq mul01 @ anwr muleq1);
@@ -2247,7 +2238,7 @@ theorem bgcdbezout: $ E. x E. y x * a = y * b + bgcd a b $ =
 
 theorem bgcdled (h: $ G -> 0 < d $) (h2: $ G -> x * a = y * b + d $):
   $ G -> bgcd a b <= d $ =
-'(syl leastle @ sylibr (!! elabe d2 @ anbid lteq2 @ exbid @ exbid @ eqeq2d addeq2) @
+'(syl leastle @ sylibr (!! elabe d2 @ aneqd lteq2 @ exeqd @ exeqd @ eqeq2d addeq2) @
   iand h @ !! iexde z @ !! iexde w @
   mpbird (eqeqd (muleq1d anlr) (addeq1d @ anwr muleq1)) (anwll h2));
 
@@ -2328,7 +2319,7 @@ theorem gcd01: $ gcd 0 b = b $ = '(trud @ !! eqgcd d @ a1i @ bian1 dvd02);
 theorem dvdgcdlem {x} (h: $ G -> (x || d <-> x || a /\ x || b) $):
   $ G -> (c || gcd a b <-> c || a /\ c || b) $ =
 '(bitrd (dvdeq2d @ eqgcd h) @
-  syl (eale @ bibid dvdeq1 @ anbid dvdeq1 dvdeq1) (iald h));
+  syl (eale @ bieqd dvdeq1 @ aneqd dvdeq1 dvdeq1) (iald h));
 
 theorem dvdgcd: $ d || gcd a b <-> d || a /\ d || b $ =
 '(cases (!! dvdgcdlem x @ syl bian1 @ mpbiri dvd02 dvdeq2) (!! dvdgcdlem x dvdbgcdb));
@@ -2338,7 +2329,7 @@ theorem gcddvd2: $ gcd a b || b $ = '(anr @ mpbi dvdgcd dvdid);
 theorem gcd02: $ gcd a 0 = a $ = '(eqtr gcdcom gcd01);
 
 theorem bezout: $ a != 0 -> E. x E. y x * a = y * b + gcd a b $ =
-'(mpbiri bgcdbezout @ exbid @ exbid @ eqeq2d @ addeq2d gcdbgcd);
+'(mpbiri bgcdbezout @ exeqd @ exeqd @ eqeq2d @ addeq2d gcdbgcd);
 
 @_ local def coprime (a b: nat): wff = $ gcd a b = 1 $;
 
@@ -2354,11 +2345,11 @@ theorem dfcop2: $ coprime a b <-> A. x (x || a -> x || b -> x = 1) $ =
   (!! eqgcd y @ ibid
     (a1i @ iand (mpi dvd11 dvdtr) (mpi dvd11 dvdtr))
     (exp @ sylibr dvd12 @ mpd anrr @ mpd anrl @ anwl @
-      eale @ imbid dvdeq1 @ imbid dvdeq1 eqeq1)));
+      eale @ imeqd dvdeq1 @ imeqd dvdeq1 eqeq1)));
 
 theorem copbezout (h1: $ G -> coprime a b $) (h2: $ G -> a != 0 $):
   $ G -> E. x E. y x * a = y * b + 1 $ =
-'(mpbid (exbid @ exbid @ eqeq2d @ addeq2d h1) (syl bezout h2));
+'(mpbid (exeqd @ exeqd @ eqeq2d @ addeq2d h1) (syl bezout h2));
 
 theorem copdvdmul2 (h1: $ G -> coprime a b $) (h2: $ G -> a || b * c $): $ G -> a || c $ =
 '(casesda
@@ -2390,8 +2381,8 @@ theorem mulinvm (h: $ G -> coprime a n $):
 
 theorem elpset: $ n e. pset (m <> v) <-> 0 < m /\ 0 < v /\
   A. x (0 < x /\ x <= n -> x || m) /\ suc (m * suc n) || v $ =
-'(!! elabe y @ anbid (anbid (anbid (lteq2d @ a1i @ fstpr) (lteq2d @ a1i @ sndpr)) @
-    !! cbvald x1 _ @ imbid (anbid (anwr lteq2) (leeqd anr anl)) (dvdeqd anr (a1i fstpr))) @
+'(!! elabe y @ aneqd (aneqd (aneqd (lteq2d @ a1i @ fstpr) (lteq2d @ a1i @ sndpr)) @
+    !! cbvald x1 _ @ imeqd (aneqd (anwr lteq2) (leeqd anr anl)) (dvdeqd anr (a1i fstpr))) @
   dvdeqd (suceqd @ muleqd (a1i fstpr) suceq) @ a1i sndpr);
 
 theorem elpset1: $ ~n e. pset (m <> 1) $ =
@@ -2409,7 +2400,7 @@ theorem psetSlem1 (h1: $ G -> A. x (0 < x /\ x < n -> x || m) $)
     sylc dvdtr (mpbird
       (syl dvdadd1 @ anwr dvdmul11)
       (mpbird (dvdeq2d _) (syl dvdmul11 anlr))) @
-    sylc (eale @ imbid (anbid lteq2 lteq1) dvdeq1) (anwll h1) @
+    sylc (eale @ imeqd (aneqd lteq2 lteq1) dvdeq1) (anwll h1) @
     iand (sylib subpos @ anwll h2) @ lelttrd (a1i subleid) (anwll h3))
   '(syl5eq (addeq1 mulS1) @ syl5eq addass @
     syl6eqr mulS1 @ syl6eq (addeq1 mul32) @ addeq2d @
@@ -2426,7 +2417,7 @@ theorem psetS (h1: $ G -> 0 < m $) (h2: $ G -> 0 < v $)
   (h3: $ G -> A. x (0 < x /\ x <= n -> x || m) $): $ G ->
   (a e. pset (m <> v * suc (m * suc n)) <-> a e. pset (m <> v) \/ a = n) $ =
 (focus
-  '(syl5bb elpset @ syl6bbr (orbi1i elpset) @ ibid
+  '(syl5bb elpset @ syl6bbr (oreq1i elpset) @ ibid
     (exp @ syl orcom @ exp @ iand (iand (iand
       (anwll h1)
       (anld @ sylib mulpos @ syl anllr anlr))
@@ -2435,22 +2426,22 @@ theorem psetS (h1: $ G -> 0 < m $) (h2: $ G -> 0 < v $)
         anr (a1i lemax1) (a1i lemax2)) (anwl anrr)))
     (eord (animd (a1i @ anim1 @ anim2 @ sylibr mulpos @ iand id @ a1i lt01S)
       (a1i dvdmul11)) @
-      syl5ibrcom (anbid (anbi2d @ albid @ imbi1d @ anbi2d leeq2) @
+      syl5ibrcom (aneqd (aneq2d @ aleqd @ imeq1d @ aneq2d leeq2) @
         dvdeq1d @ suceqd @ muleq2d suceq) @
       iand (iand (iand h1 (sylibr mulpos @ iand h2 @ a1i lt01S)) h3) @ a1i dvdmul1))
   '(al2imi @ syl6 (imim1i @ sylib andi @ anim2 @
-    sylbi ltmax @ bi2 @ orbii leltsuc leltsuc) eor));
+    sylbi ltmax @ bi2 @ oreqi leltsuc leltsuc) eor));
 
 theorem lcmex: $ E. m (0 < m /\ A. x (0 < x /\ x <= n -> x || m)) $ =
 '(! ind u v _ $ E. m (0 < m /\ A. x (0 < x /\ x <= u -> x || m)) $ _ _ _ _
-  (exbid @ anbi2d @ albid @ imbi1d @ anbi2d leeq2)
-  (exbid @ anbi2d @ albid @ imbi1d @ anbi2d leeq2)
-  (exbid @ anbi2d @ albid @ imbi1d @ anbi2d leeq2)
-  (exbid @ anbi2d @ albid @ imbi1d @ anbi2d leeq2)
-  (iexe (anbid leeq2 @ albid @ imbi2d dvdeq2) @
+  (exeqd @ aneq2d @ aleqd @ imeq1d @ aneq2d leeq2)
+  (exeqd @ aneq2d @ aleqd @ imeq1d @ aneq2d leeq2)
+  (exeqd @ aneq2d @ aleqd @ imeq1d @ aneq2d leeq2)
+  (exeqd @ aneq2d @ aleqd @ imeq1d @ aneq2d leeq2)
+  (iexe (aneqd leeq2 @ aleqd @ imeq2d dvdeq2) @
     ian d0lt1 @ ax_gen @ imp @ sylbi ltnle absurd)
-  (sylbi (!! cbvex _ a @ anbid leeq2 @ albid @ imbi2d dvdeq2) @ eex @ sylan
-    (iexe @ anbid leeq2 @ albid @ imbi2d dvdeq2)
+  (sylbi (!! cbvex _ a @ aneqd leeq2 @ aleqd @ imeq2d dvdeq2) @ eex @ sylan
+    (iexe @ aneqd leeq2 @ aleqd @ imeq2d dvdeq2)
     (sylibr mulpos @ iand anl @ a1i lt01S)
     (anwr @ alimi @ sylbi impexp @ sylibr impexp @ imim2 @ syl5bi leloe @ eord
       (syl5bir leltsuc @ imim2i dvdmul11)
@@ -2459,40 +2450,40 @@ theorem lcmex: $ E. m (0 < m /\ A. x (0 < x /\ x <= n -> x || m)) $ =
 theorem psetsep (p: wff x): $ E. b pset b == {x | x < n /\ p} $ =
 (focus
   (have 'h1 $ y < suc v /\ ([y / x] p) <-> y < v /\ ([y / x] p) \/ y = v /\ ([v / x] p) $
-    '(bitr (anbi1i @ bitr3 leltsuc leloe) @ bitr andir @ orbi2i @ anbi2a sbeq1))
+    '(bitr (aneq1i @ bitr3 leltsuc leloe) @ bitr andir @ oreq2i @ aneq2a sbeq1))
   (have 'h2 $ 0 < m /\ A. x (0 < x /\ x <= n -> x || m) ->
               E. a (0 < a /\ pset (m <> a) == {x | x < n /\ p}) $
     '(! indlt _ u v _
         $ E. a (0 < a /\ pset (m <> a) == {x | x < u /\ p}) $ _ _ _ _
-      (exbid @ anbi2d @ eqseq2d @ abeqd @ anbi1d lteq2)
-      (exbid @ anbi2d @ eqseq2d @ abeqd @ anbi1d lteq2)
-      (exbid @ anbi2d @ eqseq2d @ abeqd @ anbi1d lteq2)
-      (exbid @ anbi2d @ eqseq2d @ abeqd @ anbi1d lteq2)
-      (a1i @ iexe (anbid lteq2 @ eqseq1d @ pseteqd preq2) @
+      (exeqd @ aneq2d @ eqseq2d @ abeqd @ aneq1d lteq2)
+      (exeqd @ aneq2d @ eqseq2d @ abeqd @ aneq1d lteq2)
+      (exeqd @ aneq2d @ eqseq2d @ abeqd @ aneq1d lteq2)
+      (exeqd @ aneq2d @ eqseq2d @ abeqd @ aneq1d lteq2)
+      (a1i @ iexe (aneqd lteq2 @ eqseq1d @ pseteqd preq2) @
         ian d0lt1 @ eqab2i @ binth elpset1 @ mt anl lt02)
       (imp @ casesda
-        (syl6ibr (!! cbvex _ b @ anbid lteq2 @ eqseq1d @ pseteqd preq2) @
-          eexda @ syl (iexe @ anbid lteq2 @ eqseq1d @ pseteqd preq2) @
+        (syl6ibr (!! cbvex _ b @ aneqd lteq2 @ eqseq1d @ pseteqd preq2) @
+          eexda @ syl (iexe @ aneqd lteq2 @ eqseq1d @ pseteqd preq2) @
           iand (sylibr mulpos @ iand anrl @ a1i lt01S) @ !! eqrd y @
-          syl6bbr (bitr elab @ sbeh (nfan nfv nfsb1) @ anbid lteq1 sbq) @
+          syl6bbr (bitr elab @ sbeh (nfan nfv nfsb1) @ aneqd lteq1 sbq) @
           bitrd (psetS (anld an3l) anrl @ mpd (anrd an3l) @
             rsyl (syl (letr lesucid) anllr) @ alimd @ imim1d @ anim2d @ com12 letr) @
-          bitrd (orbi1d @ syl6bb
-            (bitr elab @ sbeh (nfan nfv nfsb1) @ anbid lteq1 sbq) @ eleq2d anrr) @
-          syl6bbr h1 @ orbi2d @ syl bian2 anlr)
-        (bi2d @ exbid @ anbi2d @ eqseq2d @ !! eqrd y @
-          syl5bb (bitr elab @ sbeh (nfan nfv nfsb1) @ anbid lteq1 sbq) @
-          syl6bbr (bitr elab @ sbeh (nfan nfv nfsb1) @ anbid lteq1 sbq) @
+          bitrd (oreq1d @ syl6bb
+            (bitr elab @ sbeh (nfan nfv nfsb1) @ aneqd lteq1 sbq) @ eleq2d anrr) @
+          syl6bbr h1 @ oreq2d @ syl bian2 anlr)
+        (bi2d @ exeqd @ aneq2d @ eqseq2d @ !! eqrd y @
+          syl5bb (bitr elab @ sbeh (nfan nfv nfsb1) @ aneqd lteq1 sbq) @
+          syl6bbr (bitr elab @ sbeh (nfan nfv nfsb1) @ aneqd lteq1 sbq) @
           syl5bb h1 @ bicomd @ syl bior2 @ anwr @ con3 anr))))
   '(eex (mpd h2 @ eexda @ !! iexde b @ eqstrd (anwr pseteq) (anwl anrr)) lcmex));
 
 theorem expset: $ finite A <-> E. a pset a == A $ =
 (focus
   (have 'h '(sylib (!! elpset y) @ mpbird (eleq2d @ eqstrd (a1i @ pseteq fstsnd) anll) anr))
-  '(ibii
-    (!! eex n @ mpbiri psetsep @ exbid @ eqseq2d @ !! eqab2d y @ syl bian1a @
-      !! eale x @ imbid eleq1 lteq1)
-    (!! eex a @ iexde @ iald @ exp @
+  '(! ibii $ E. n A. x _ $ _
+    (eex @ mpbiri psetsep @ exeqd @ eqseq2d @ !! eqab2d y @ syl bian1a @
+      eale @ imeqd eleq1 lteq1)
+    (eex @ iexde @ iald @ exp @
       letrd (syl (mpi lesucid letr) @
         sylib (leeq1 mul11) @ syl lemul1a @ syl an3l h) @
       letrd (dvdle (syl ltner @ syl anllr h) (anrd h)) @
@@ -2526,22 +2517,22 @@ theorem reclem {i}
     (exp @ !! iexde b @ iand (iand
         (eqtrd (appeq1d @ anwr pseteq) (anwll h1))
         (eqtrd (appeq1d @ anwr pseteq) @ eqtr4d (anwll h2) anlr)) @
-      mpbird (albid @ imbi2d @ eqeqd (appeq1d @ anwr pseteq) @
+      mpbird (aleqd @ imeq2d @ eqeqd (appeq1d @ anwr pseteq) @
         appeq2d @ appeq1d @ anwr pseteq) (anwll h3)))
   '(! indlt _ x y _ $ pset b @ x = pset a @ x $ _ _ _ _
     (eqeqd appeq2 appeq2) (eqeqd appeq2 appeq2)
     (eqeqd appeq2 appeq2) (eqeqd appeq2 appeq2)
     (eqtr4d (anwr anll) (anwl h1))
-    (eqtrd (mpd anlr @ rsyl anllr @ anwr @ eale @ imbid lteq1 @
+    (eqtrd (mpd anlr @ rsyl anllr @ anwr @ eale @ imeqd lteq1 @
         eqeqd (appeq2d suceq) (appeq2d appeq2)) @
       eqtr4d (anwr appeq2) @
-      mpd anlr @ anw3l @ rsyl h3 @ eale @ imbid lteq1 @
+      mpd anlr @ anw3l @ rsyl h3 @ eale @ imeqd lteq1 @
         eqeqd (appeq2d suceq) (appeq2d appeq2))));
 
 pub theorem rec0 (z: nat) (S: set): $ rec z S 0 = z $ =
 (focus
   (have 'h $ A. x (x = 0 -> pset a @ x = z) -> pset a @ 0 = z $
-    '(mpi eqid (eale @ imbid eqeq1 @ eqeq1d appeq2)))
+    '(mpi eqid (eale @ imeqd eqeq1 @ eqeq1d appeq2)))
   '(eex (reclem h h @ a1i @ !! ax_gen i @ absurd lt02) (psetfn finsn)));
 
 pub theorem recS (z: nat) (S: set) (n: nat):
@@ -2553,11 +2544,11 @@ pub theorem recS (z: nat) (S: set) (n: nat):
     mpi (psetfn finle) @ ! eexda _ _ $ A. x (x <= suc k ->
       pset a @ x = if (x = suc k) (S @ rec z S k) (rec z S x)) $ _ @
     reclem
-      (anwr @ syl6eq rec0 @ mpi le01 @ eale @ imbid leeq1 @ eqeqd appeq2 @
+      (anwr @ syl6eq rec0 @ mpi le01 @ eale @ imeqd leeq1 @ eqeqd appeq2 @
         eqtrd (syl ifneg @ mpbiri (necom peano1) neeq1) receq3)
-      (anwr @ mpi leid @ eale @ imbid leeq1 @ eqeqd appeq2 ifpos)
+      (anwr @ mpi leid @ eale @ imeqd leeq1 @ eqeqd appeq2 ifpos)
       (!! iald y @ syl5bir leltsuc @ exp @
-        eqtrd (mpd (sylib lesuc anr) @ rsyl anlr @ eale @ imbid leeq1 @
+        eqtrd (mpd (sylib lesuc anr) @ rsyl anlr @ eale @ imeqd leeq1 @
           eqeqd appeq2 @ ifeqd (syl6bb peano2 eqeq1) eqidd receq3) _))
   (have 'h
     $ A. m (m < k -> rec z S (suc m) = S @ rec z S m) /\
@@ -2572,7 +2563,7 @@ pub theorem recS (z: nat) (S: set) (n: nat):
     (eqtr4d (anwr ifpos) @ appeq2d @ eqtr3d (anwl h) (anwr receq3))
     (eqtrd (anwr ifneg) @
       eqtrd (mpd (imp @ syl orcom @ sylib leloe anr) @
-        rsyl an3l @ eale @ imbid lteq1 @
+        rsyl an3l @ eale @ imeqd lteq1 @
         eqeqd (receq3d suceq) (appeq2d receq3)) @
       appeq2d @ anwl h)));
 
@@ -2683,21 +2674,32 @@ theorem elb1: $ a e. b1 b <-> a = 0 \/ a - 1 e. ns b $ =
 '(cases (bithd (mpbiri (mpbir el01 b1odd) eleq1) orl) @
   bitr3d (syl5bb (bitr3 (elneq2 b1div2) eldiv2) @ eleq1d sub1can) bior1);
 
-theorem bndext:
-  $ A. x (x < n -> (x e. ns a <-> x e. ns b)) -> mod(2 ^ n): a = b $ =
+theorem bndextle:
+  $ A. x (x < n -> x e. ns a -> x e. ns b) -> a % 2 ^ n <= b % 2 ^ n $ =
 '(!! ind i j
-  (imbid (albid @ imbi1d lteq2) (eqmeq1d @ syl6eq pow0 poweq2))
-  (imbid (albid @ imbi1d lteq2) (eqmeq1d poweq2))
-  (imbid (albid @ imbi1d lteq2) (eqmeq1d poweq2))
-  (imbid (albid @ imbi1d lteq2) (eqmeq1d poweq2))
-  (a1i eqm11) @
+  (imeqd (aleqd @ imeq1d lteq2) (leeqd (modeq2d poweq2) (modeq2d poweq2)))
+  (imeqd (aleqd @ imeq1d lteq2) (leeqd (modeq2d poweq2) (modeq2d poweq2)))
+  (imeqd (aleqd @ imeq1d lteq2) (leeqd (modeq2d poweq2) (modeq2d poweq2)))
+  (imeqd (aleqd @ imeq1d lteq2) (leeqd (modeq2d poweq2) (modeq2d poweq2)))
+  (a1i @ mpbir (leeq1 @ eqtr (modeq2 pow0) mod12) le01) @
   rsyl (imim1i @ alimi @ imim1i @ mpi ltsucid lttr) @
-  a2i @ rsyl (mpi ltsucid @ eale @ imbid lteq1 (bibid eleq1 eleq1)) @ exp @
-  syl5eq (eqtr3 divmod @ addeq (muleq2 @ eqtr4 (diveq1 @ modeq2 powS2) divmod1) (modmod @ powdvd lesucid)) @
-  syl6eqr (eqtr3 divmod @ addeq (muleq2 @ eqtr4 (diveq1 @ modeq2 powS2) divmod1) (modmod @ powdvd lesucid)) @
-  addeqd (muleq2d @ sylib (boolext boolmod2 boolmod2) @
-    syl5bbr dfodd2 @ syl6bb dfodd2 @
-    syl5bbr elnel @ syl6bb elnel anl) anr);
+  a2i @ rsyl (mpi ltsucid @ eale @ imeqd lteq1 (imeqd eleq1 eleq1)) @ exp @
+  sylib (leeq divmod divmod) @
+  sylibr (leeq
+    (addeq (muleq2 @ eqtr4 (diveq1 @ modeq2 powS2) divmod1) (modmod @ powdvd lesucid))
+    (addeq (muleq2 @ eqtr4 (diveq1 @ modeq2 powS2) divmod1) (modmod @ powdvd lesucid))) @
+  leaddd (syl lemul2a @ sylibr (letrueb boolmod2) @
+    syl5bir dfodd2 @ syl6ib dfodd2 @
+    syl5bir elnel @ syl6ib elnel anl) anr);
+
+theorem bndext: $ A. x (x < n -> (x e. ns a <-> x e. ns b)) -> mod(2 ^ n): a = b $ =
+'(leasymd (syl bndextle @ alimi @ imim2i bi1) (syl bndextle @ alimi @ imim2i bi2));
+
+theorem ssle: $ ns a C_ ns b -> a <= b $ =
+'(sylib (leeq
+    (modlteq @ lelttr lemax1 @ powltid2 d1lt2)
+    (modlteq @ lelttr lemax2 @ powltid2 d1lt2)) @
+  syl bndextle @ !! alimi x ax_1);
 
 pub theorem axext: $ ns a == ns b -> a = b $ =
 '(syl5eqr (modlteq @ lelttr lemax1 @ powltid2 d1lt2) @
@@ -2718,7 +2720,7 @@ theorem el12: $ a e. 1 <-> a = 0 $ =
 
 theorem elpow2: $ a e. 2 ^ n <-> a = n $ =
 '(bitr3 (elneq2 shl11) @ bitr elshl @
-  bitr4 (anbi2i @ bitr4 el12 lesubeq0) @ bitr eqcomb eqlele);
+  bitr4 (aneq2i @ bitr4 el12 lesubeq0) @ bitr eqcomb eqlele);
 
 theorem finns (a: nat): $ finite a $ =
 '(finss (mpbi ssab2 @ !! ax_gen x ellt) finlt);
@@ -2727,34 +2729,36 @@ theorem finns (a: nat): $ finite a $ =
 pub theorem eqlower: $ finite A <-> A == lower A $ =
 (focus
   (have 'h1 '(! ind y z _ $ E. n A. x (x e. ns n <-> x + y e. A) -> E. n A == ns n $ _ _ _ _
-    (imbi1d @ exbid @ albid @ bibi2d @ eleq1d addeq2)
-    (imbi1d @ exbid @ albid @ bibi2d @ eleq1d addeq2)
-    (imbi1d @ exbid @ albid @ bibi2d @ eleq1d addeq2)
-    (imbi1d @ exbid @ albid @ bibi2d @ eleq1d addeq2)
+    (imeq1d @ exeqd @ aleqd @ bieq2d @ eleq1d addeq2)
+    (imeq1d @ exeqd @ aleqd @ bieq2d @ eleq1d addeq2)
+    (imeq1d @ exeqd @ aleqd @ bieq2d @ eleq1d addeq2)
+    (imeq1d @ exeqd @ aleqd @ bieq2d @ eleq1d addeq2)
     (eximi @ alimi @ bicomd @ syl6bb (eleq1 add0) id)
     (imim1i @ sylib (!! cbvex m _ @ !! cbvald y _ @
-        bibid (elneqd anr anl) (eleq1d @ anwr addeq1)) @
+        bieqd (elneqd anr anl) (eleq1d @ anwr addeq1)) @
       eex @ iexde @ iald @ impcom @ casesda
         (a1d @ mpbiri (bitr el01 @ ibii
             (ax_3 @ mtbird (oddeqd ifneg) (a1i b0odd))
             (mpbiri b1odd @ oddeqd ifpos)) @
-          bibid (elneqd anr anl) (eleq1d @ syl6eq add01 @ anwr addeq1))
-        (ealde @ bi1d @ bibid
+          bieqd (elneqd anr anl) (eleq1d @ syl6eq add01 @ anwr addeq1))
+        (ealde @ bi1d @ bieqd
           (mpbiri
             (bitr3 (elneq2 @ cases
               (syl6eq b1div2 @ diveq1d ifpos)
               (syl6eq b0div2 @ diveq1d ifneg)) eldiv2)
-            (bibid (eleq1d anr) @ elneqd (eqcomd @ syl sub1can anlr) anll))
+            (bieqd (eleq1d anr) @ elneqd (eqcomd @ syl sub1can anlr) anll))
           (eleq1d @ syl5eqr addSass @ addeq1d @
             eqtrd (suceqd anr) (syl sub1can anlr))))))
   (have 'h2 $ finite A -> E. n A == ns n $
     '(!! eex z @ syl h1 @ iexde @ iald @
       bitrd (elneq2d anr) @ binthd (a1i el02) @
-      mtd (a1i @ mpbi lenlt leaddid1) (anwl @ !! eale y @ imbid eleq1 lteq1)))
+      mtd (a1i @ mpbi lenlt leaddid1) (anwl @ !! eale y @ imeqd eleq1 lteq1)))
   '(ibii (rsyl h2 @ eex @ eqstrd id @ nseqd @ eqcomd @
       !! eqtheabd x @ syl6bb nseqb eqseq2) (mpbiri finns fineq)));
 
 theorem ellower: $ finite A -> (a e. lower A <-> a e. A) $ = '(bicomd @ eleq2d @ bi1 eqlower);
+
+theorem lowerns (a: nat): $ lower a = a $ = '(eqcom @ axext @ mpbi eqlower finns);
 
 @_ abstract def sn (a: nat): nat = $ 2 ^ a $;
 pub theorem elsn (a b: nat): $ a e. sn b <-> a = b $ = 'elpow2;
@@ -2765,7 +2769,7 @@ pub theorem elins (a b c: nat): $ a e. b ; c <-> a = b \/ a e. c $ =
 '(bitr (ellower @ finss (mpbi ssab @
     ax_gen @ eor (mpbiri lemax1 leeq1) @
     rsyl ellt @ letrd ltle @ a1i lemax2) finle) @
-  !! elabe x @ orbid eqeq1 eleq1);
+  !! elabe x @ oreqd eqeq1 eleq1);
 
 @_ def upto (n: nat): nat = $ 2 ^ n - 1 $;
 
@@ -2800,14 +2804,14 @@ pub theorem elupto (k n: nat): $ k e. upto n <-> k < n $ =
 def Bool: nat = $ 0 ; sn 1 $;
 
 theorem elbool: $ n e. Bool <-> bool n $ =
-'(bitr elins @ bitr4 (orbi2i elsn) bool01);
+'(bitr elins @ bitr4 (oreq2i elsn) bool01);
 
 theorem boolfin: $ finite Bool $ = '(mpbir (fineq @ !! eqab2i n elbool) finlt);
 
 @_ def Option (A: set): set = $ {n | n = 0 \/ n - 1 e. A} $;
 
 theorem elopt: $ a e. Option A <-> a = 0 \/ a - 1 e. A $ =
-'(!! elabe n @ orbid eqeq1 (eleq1d subeq1));
+'(!! elabe n @ oreqd eqeq1 (eleq1d subeq1));
 
 theorem opt0: $ 0 e. Option A $ = '(mpbir elopt (orl eqid));
 theorem optS: $ a e. A <-> suc a e. Option A $ =
@@ -2816,14 +2820,19 @@ theorem optS: $ a e. A <-> suc a e. Option A $ =
 theorem optfin: $ finite A -> finite (Option A) $ =
 '(!! eex n @ !! iexde m @ !! iald x @ casesda
   (a1d @ imp @ syl5ibrcom lteq1 @ anwr @ mpbiri lt01S lteq2)
-  (mpbird (imbid (eleq1d (eqcomd @ anwr sub1can)) (lteqd (eqcomd @ anwr sub1can) anlr)) @
-    sylib (imbii optS ltsuc) @ anwll @ !! eale y @ imbid eleq1 lteq1));
+  (mpbird (imeqd (eleq1d (eqcomd @ anwr sub1can)) (lteqd (eqcomd @ anwr sub1can) anlr)) @
+    sylib (imeqi optS ltsuc) @ anwll @ !! eale y @ imeqd eleq1 lteq1));
 
 @_ def Power (A: set): set = $ {x | ns x C_ A} $;
+
+theorem elPower: $ a e. Power A <-> ns a C_ A $ = '(!! elabe x @ sseq1d nseq);
 
 theorem powerfin: $ finite A -> finite (Power A) $;
 
 @_ def power (a: nat): nat = $ lower (Power a) $;
+
+theorem elpower (a b: nat): $ a e. power b <-> a C_ b $ =
+'(bitr (ellower @ powerfin finns) elPower);
 
 @_ def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
 
