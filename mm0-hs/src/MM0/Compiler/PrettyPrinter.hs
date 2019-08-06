@@ -123,7 +123,7 @@ ppExpr1 cyc env = \v ->
     soft :: PP -> [PP] -> PP
     soft e [] = e
     soft e1 (e2 : es') =
-      if small e1 then
+      if small e2 then
         surround' softline e1 (soft e2 es')
       else hard e1 (e2 : es')
 

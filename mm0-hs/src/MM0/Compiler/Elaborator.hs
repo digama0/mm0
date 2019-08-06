@@ -1269,13 +1269,13 @@ parseRefine o e = escapeAt o $ "syntax error in parseRefine: " <> T.pack (show e
 
 data UnifyResult = UnifyResult Bool LispVal
 
-coerceTo :: Offset -> LispVal -> LispVal -> LispVal -> ElabM LispVal
-coerceTo o tgt p ty = unifyAt o tgt ty >>= \case
-    UnifyResult False _ -> return p
-    UnifyResult True u -> return (List [Atom False o ":conv", ty, u, p])
+coerceTo :: Offset -> LispVal -> LispVal -> ElabM (LispVal -> LispVal)
+coerceTo o tgt ty = unifyAt o tgt ty >>= \case
+    UnifyResult False _ -> return id
+    UnifyResult True u -> return (\p -> List [Atom False o ":conv", ty, u, p])
 
 coerceTo' :: Offset -> LispVal -> LispVal -> ElabM LispVal
-coerceTo' o tgt p = inferType o p >>= coerceTo o tgt p
+coerceTo' o tgt p = (inferType o p >>= coerceTo o tgt) <*> return p
 
 unifyAt :: Offset -> LispVal -> LispVal -> ElabM UnifyResult
 unifyAt o e1 e2 = try (unify o e1 e2) >>= \case
@@ -1438,9 +1438,9 @@ refineProof gv = refinePf where
   refinePf ty (RApp _ o "_" []) = Ref <$> newGoal gv o ty
   refinePf ty (RApp _ o "_" es) = do
     mv <- Ref <$> newUnknownMVar o
-    Ref <$> newGoal gv o mv >>= refineExtraArgs o mv ty es
+    refineExtraArgs o mv ty es (Ref <$> newGoal gv o mv)
   refinePf ty (RApp im o t es) = try (getSubproof t) >>= \case
-    Just v -> refineExtraArgs o v ty es (Atom False o t)
+    Just v -> refineExtraArgs o v ty es (return $ Atom False o t)
     Nothing -> try (now >>= getThm t) >>= \case
       Just (_, bis, hs, ret) -> refinePfThm ty im o t es bis hs ret
       Nothing -> escapeAt o $ "unknown theorem/hypothesis '" <> t <> "'"
@@ -1455,20 +1455,21 @@ refineProof gv = refinePf where
           (r, rs') = unconsIf (imPopBd im bd) (RApp IMRegular o "_" []) rs
       e <- toExpr (dSort $ binderType bi) bd r
       refineBis bis' rs' (f . (e :)) (H.insert (binderName bi) e m)
-    refineBis [] rs f m = refineHs hs rs f m
+    refineBis [] rs f m = refineHs hs rs f (return []) m
 
-    refineHs :: [SExpr] -> [RefineExpr] -> ([LispVal] -> [LispVal]) ->
+    refineHs :: [SExpr] -> [RefineExpr] -> ([LispVal] -> [LispVal]) -> ElabM [LispVal] ->
       H.HashMap VarName LispVal -> ElabM LispVal
-    refineHs (e : es') rs f m = do
+    refineHs (e : es') rs f ps m = do
       let (r, rs') = unconsIf True (RApp IMRegular o "_" []) rs
-      p <- refinePf (sExprSubst o m e) r
-      refineHs es' rs' (f . (p :)) m
-    refineHs [] rs f m =
-      refineExtraArgs o (sExprSubst o m ret) ty rs (List (Atom False o t : f []))
+      refineHs es' rs' f (liftM2 (flip (:)) ps (refinePf (sExprSubst o m e) r)) m
+    refineHs [] rs f ps m =
+      refineExtraArgs o (sExprSubst o m ret) ty rs
+        (ps <&> \l -> List (Atom False o t : f (reverse l)))
 
-  refineExtraArgs :: Offset -> LispVal -> LispVal -> [RefineExpr] -> LispVal -> ElabM LispVal
-  refineExtraArgs o v ty [] e = coerceTo o ty e v
-  refineExtraArgs o _ ty rs@(r:_) e = do
+  refineExtraArgs :: Offset -> LispVal -> LispVal -> [RefineExpr] -> ElabM LispVal -> ElabM LispVal
+  refineExtraArgs o v ty [] m = coerceTo o ty v <*> m
+  refineExtraArgs o _ ty rs@(r:_) m = do
+    e <- m
     es <- forM rs $ \r' -> do
       mv <- newUnknownMVar o
       refinePf (Ref mv) r'
