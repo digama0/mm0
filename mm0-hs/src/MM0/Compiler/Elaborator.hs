@@ -1388,10 +1388,13 @@ toExpr s bd (RApp _ o t es) =
           refineBis [] [] = return []
           refineBis [] (r:_) = [] <$ reportAt (reOffset r) ELError "too many arguments"
         es' <- refineBis bis es
-        unless (s == dSort ret || s == "") $ reportAt o ELError $
-          "type error: expected " <> s <> ", got " <> dSort ret
         when bd $ reportAt o ELError "expected a bound variable"
-        return $ List $ Atom False o t : es'
+        let e = List $ Atom False o t : es'
+        if s == dSort ret || s == "" then return e else
+          try (getCoe (\c v -> List [Atom False o c, v]) (dSort ret) s) >>= \case
+            Just c -> return (c e)
+            Nothing -> e <$ reportAt o ELError
+              ("type error: expected " <> s <> ", got " <> dSort ret)
 
 getGoals :: Offset -> ElabM [TVar LispVal]
 getGoals o = try getTC >>= \case

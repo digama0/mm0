@@ -62,6 +62,9 @@ axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
 infixl eqs: $==$ prec 50;
 
+def subset (A B: set) (.x: nat): wff = $ A. x (x e. A -> x e. B) $;
+infixl subset: $C_$ prec 50;
+
 def Inter (A B: set) (.x: nat): set = $ {x | x e. A /\ x e. B} $;
 infixl Inter: $i^i$ prec 70;
 
@@ -69,9 +72,6 @@ def Union (A B: set) (.x: nat): set = $ {x | x e. A \/ x e. B} $;
 infixl Union: $u.$ prec 65;
 
 def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $V$ prec max;
-
-def subset (A B: set) (.x: nat): wff = $ A. x (x e. A -> x e. B) $;
-infixl subset: $C_$ prec 50;
 
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
@@ -259,7 +259,7 @@ theorem srecval {i: nat} (S: set) (n: nat):
 
 def srecp (A: set): set;
 theorem srecpval (A: set) (n: nat):
-  $ n e. srecp A <-> n <> sep n (srecp A) e. A $;
+  $ n e. srecp A <-> n <> sep (upto n) (srecp A) e. A $;
 
 def card (s: nat): nat;
 theorem card0: $ card 0 = 0 $;
