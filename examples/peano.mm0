@@ -257,31 +257,28 @@ def srec (S: set) (n: nat): nat;
 theorem srecval {i: nat} (S: set) (n: nat):
   $ srec S n = S @ lower ((\ i, srec S i) |` upto n) $;
 
-def srecp (A: set): set;
-theorem srecpval (A: set) (n: nat):
-  $ n e. srecp A <-> n <> sep (upto n) (srecp A) e. A $;
+def srecp (A: set) (n: nat): wff;
+theorem srecpval {i: nat} (A: set) (n: nat):
+  $ srecp A n <-> n <> sep (upto n) {i | srecp A i} e. A $;
 
 def card (s: nat): nat;
 theorem card0: $ card 0 = 0 $;
 theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $;
 
-def all (A: set) (n: nat): wff;
-theorem all0 (A: set): $ all A 0 $;
-theorem allS (A: set) (a b: nat): $ all A (a : b) <-> a e. A /\ all A b $;
-
-def List (A: set) (.n: nat): set = $ {n | all A n} $;
-
-def in (a l: nat): wff; infixl in: $IN$ prec 50;
-theorem id0 (a: nat): $ ~ a IN 0 $;
-theorem inS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $;
-
-def lmems (l: nat): nat;
-theorem ellmems (a l: nat): $ a e. lmems l <-> a IN l $;
-
 def lrec (z: nat) (S: set) (n: nat): nat;
 theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $;
 theorem lrecS (z: nat) (S: set) (a b: nat):
   $ lrec z S (a : b) = S @ (a <> lrec z S b) $;
+
+def lmems (l: nat): nat;
+theorem lmems0: $ lmems 0 = 0 $;
+theorem lmemsS (a l: nat): $ lmems (a : l) = a ; lmems l $;
+
+def in (a l: nat): wff = $ a e. lmems l $; infixl in: $IN$ prec 50;
+
+def all (A: set) (l: nat): wff = $ lmems l C_ A $;
+
+def List (A: set) (.n: nat): set = $ {n | all A n} $;
 
 def len (l: nat): nat;
 theorem len0: $ len 0 = 0 $;
@@ -289,14 +286,14 @@ theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
 
 def Array (A: set) (n .l: nat): set = $ {l | l e. List A /\ len l = n} $;
 
+def append (l1 l2: nat): nat; infixl append: $++$ prec 85;
+theorem append0 (a: nat): $ 0 ++ a = a $;
+theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $;
+
 def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
 theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;
 theorem snocS (a b c: nat): $ (a : b) |> c = a : (b |> c) $;
 theorem snoclt (a b: nat): $ a < a |> b $;
-
-def append (l1 l2: nat): nat; infixl append: $++$ prec 85;
-theorem append0 (a: nat): $ 0 ++ a = a $;
-theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $;
 
 def nth (n l: nat): nat;
 theorem nth0 (n: nat): $ nth n 0 = 0 $;
