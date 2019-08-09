@@ -1047,6 +1047,7 @@ initialBindings = [
     ("goal", \(o, _) es -> Goal o <$> unary o es),
     ("goal-type", \(o, _) es -> unary o es >>= unRef >>= goalType o),
     ("infer-type", \(o, _) es -> unary o es >>= inferType o),
+    ("get-mvars", \_ _ -> List . fmap Ref . V.toList <$> (getTC >>= VD.freeze . tcMVars)),
     ("get-goals", \_ _ -> List . fmap Ref . V.toList . tcGoals <$> getTC),
     ("set-goals", \(o, _) es -> Undef <$ (mapM (asRef o) es >>= setGoals)),
     ("to-expr", \(o, _) es -> unary o es >>= parseRefine o >>= toExpr "" False),

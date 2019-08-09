@@ -35,6 +35,13 @@ do {
   (def (rmap . args) (apply map (split-last args)))
   (def (scan . args) (apply rmap args) (let))
   (def (undef? x) (not (def? x)))
+  (def named @ match-fn*
+    [((? atom? d) es) (refine es) (scan (get-mvars) (list d) set!)]
+    [(ds es) (refine es) (scan (get-mvars) ds set!)]
+    [(es) (refine es)
+      (def n (ref! 1))
+      (scan (get-mvars) @ fn (v)
+        (set! v (atom-app "x" n)) (set! n {n + 1}))])
 
   (def eq-for @ lookup-fn '([wff iff] [nat eq] [set eqs]))
   (def nf-for @ lookup-fn '([wff nf] [nat nfn] [set nfs]))
@@ -2230,14 +2237,10 @@ infixl znsub: $-ZN$ prec 65;
 @_ local def zfst (n) = $ case (\ mpos, mpos) (\ mneg, 0) @ n $;
 @_ local def zsnd (n) = $ case (\ mpos, 0) (\ mneg, suc mneg) @ n $;
 
-theorem zfstb0: $ zfst (b0 n) = n $ =
-'(eqtr (! casel $\ x, x$ $\ y, 0$ _) @ applame id);
-theorem zfstb1: $ zfst (b1 n) = 0 $ =
-'(eqtr (! caser $\ x, x$ $\ y, 0$ _) @ applame eqidd);
-theorem zsndb0: $ zsnd (b0 n) = 0 $ =
-'(eqtr (! casel $\ x, 0$ $\ y, suc y$ _) @ applame eqidd);
-theorem zsndb1: $ zsnd (b1 n) = suc n $ =
-'(eqtr (! caser $\ x, 0$ $\ y, suc y$ _) @ applame suceq);
+theorem zfstb0: $ zfst (b0 n) = n $ = (named '(eqtr casel @ applame id));
+theorem zfstb1: $ zfst (b1 n) = 0 $ = (named '(eqtr caser @ applame eqidd));
+theorem zsndb0: $ zsnd (b0 n) = 0 $ = (named '(eqtr casel @ applame eqidd));
+theorem zsndb1: $ zsnd (b1 n) = suc n $ = (named '(eqtr caser @ applame suceq));
 
 theorem zfstsnd: $ zfst n -ZN zsnd n = n $ =
 '(eor
@@ -3142,7 +3145,7 @@ theorem dmwrite: $ Dom (write F a b) == Dom F u. sn a $ =
 $ rec 0 (\ p, suc (fst p) <> lower (write (snd p) (fst p) (S @ snd p))) n $;
 @_ abstract def srec (S: set) (n: nat): nat = $ snd (srecaux S (suc n)) @ n $;
 
-theorem srecaux0: $ srecaux S 0 = 0 $ = '(! rec0 _ $\ p, _$);
+theorem srecaux0: $ srecaux S 0 = 0 $ = (named 'rec0);
 theorem srecauxS (a b: nat) (h: $ G -> srecaux S n = a <> b $):
   $ G -> srecaux S (suc n) = suc a <> lower (write b a (S @ b)) $ =
 (focus
@@ -3221,7 +3224,7 @@ $ srec (\ f, nat (size (Dom f) <> lower {x | true (f @ x)} e. A)) n $;
 
 theorem srecpauxval:
   $ srecpaux A n = nat (n <> sep (upto n) {i | srecp A i} e. A) $ =
-'(! eqtr _ $ _ @ lower ((\ j, srecpaux A j) |` _) $ _ srecval @
+(named '(eqtr srecval @
   eqtr4 (!! applame f @ nateqd @ eleq1d @ preqd sreclem
     (lowereqd @ !! abeqd x @ trueeqd @ appeq1d @
       bi2 @ eqlower2 @ finlam finns)) @
@@ -3229,7 +3232,7 @@ theorem srecpauxval:
   eqab2i @ bitr elsep @
   rbid anl (sylib (eleq2 dmreslam) @ con1 ndmapp) @
   bitr4d bian1 @ syl6bbr (elabe srecpeq2) @ trueeqd @
-  syl6eq (applame srecpauxeq2) resapp);
+  syl6eq (applame srecpauxeq2) resapp));
 
 pub theorem srecpval (A: set) (n: nat):
   $ srecp A n <-> n <> sep (upto n) {i | srecp A i} e. A $ =
@@ -3299,11 +3302,11 @@ theorem lrecval: $ lrec z S n =
   if (n = 0) z (S @ (fst (n - 1) <> lrec z S (snd (n - 1)))) $ =
 (focus
   (have 'h '(eqtrd anr @ anwl sreclem))
-  '(! eqtr _ $ _ @ lower ((\ x, lrec z S x) |` _) $ _ srecval @
+  (named 'x '(eqtr srecval @
     !! applame f @ !! sbned i @ eqtrd (ifeq1d @ eqeq1d h) @
     syla ifeq3a @ appeq2d @ preqd (anwl @ fsteqd @ subeq1d h) @
     eqtrd (appeq2d @ anwl @ sndeqd @ subeq1d h) @ syl6eq (sbne lreceq3) @
-    sylc sreclem2 anll @ mpbii ltconsid2 @ lteq2d @ anwr consfstsnd));
+    sylc sreclem2 anll @ mpbii ltconsid2 @ lteq2d @ anwr consfstsnd)));
 
 pub theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $ = '(eqtr lrecval @ ifpos eqid);
 pub theorem lrecS (z: nat) (S: set) (a b: nat):
@@ -3333,7 +3336,7 @@ theorem listind {x a l} (n) (px: wff x) (p0 pn: wff) (pl: wff l) (ps: wff a l)
 '(trud @ listindd h0 hl hs hn (a1i h1) (anwr h2));
 
 @_ abstract def lmems (l: nat): nat = $ lrec 0 (\\ x, \ y, x ; y) l $;
-pub theorem lmems0: $ lmems 0 = 0 $ = '(! lrec0 _ $\\ x, \ y, _$);
+pub theorem lmems0: $ lmems 0 = 0 $ = (named 'lrec0);
 pub theorem lmemsS (a l: nat): $ lmems (a : l) = a ; lmems l $ =
 '(eqtr lrecS @ ! appslame _ (lmems l) _ x _ @ !! applamed y @ inseqd anl anr);
 
@@ -3353,7 +3356,7 @@ theorem allS (A: set) (a b: nat): $ all A (a : b) <-> a e. A /\ all A b $ =
 theorem elList: $ l e. List A <-> all A l $ = '(!! elabe n alleq2);
 
 @_ abstract def len (l: nat): nat = $ lrec 0 (\\ x, \ y, suc y) l $;
-pub theorem len0: $ len 0 = 0 $ = '(! lrec0 _ $\\ x, \ y, _$);
+pub theorem len0: $ len 0 = 0 $ = (named 'lrec0);
 pub theorem lenS (a b: nat): $ len (a : b) = suc (len b) $ =
 '(eqtr lrecS @ ! appslame _ (len b) _ x _ @ !! applamed y @ suceqd anr);
 
@@ -3364,7 +3367,7 @@ theorem elArray: $ l e. Array A n <-> l e. List A /\ len l = n $ =
 
 @_ abstract def append (l1 l2: nat): nat = $ lrec l2 (\\ x, \ y, x : y) l1 $;
 infixl append: $++$ prec 85;
-pub theorem append0 (a: nat): $ 0 ++ a = a $ = '(! lrec0 _ $\\ x, \ y, _$);
+pub theorem append0 (a: nat): $ 0 ++ a = a $ = (named 'lrec0);
 pub theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $ =
 '(eqtr lrecS @ ! appslame _ (append b) _ x _ @ !! applamed y @ imp conseq);
 
@@ -3381,7 +3384,7 @@ pub theorem snoclt (a b: nat): $ a < a |> b $ =
 @_ local def listfn (l .f: nat): nat = $ lrec 0 (\\ a, \ f,
   lower ((\ i, if (i = 0) a (f @ (i - 1))) |` upto (suc (size (Dom f))))) l $;
 
-theorem listfn0: $ listfn 0 = 0 $ = '(! lrec0 _ $\\ a, \ f, lower ((\ i, _) |` _)$);
+theorem listfn0: $ listfn 0 = 0 $ = (named 'lrec0);
 theorem listfnS2: $ listfn (a : l) ==
   (\ i, if (i = 0) a (listfn l @ (i - 1))) |` upto (suc (size (Dom (listfn l)))) $ =
 '(mpbir (eqlower2 @ finlam finns) @
@@ -3437,7 +3440,7 @@ pub theorem nthS (n a l: nat): $ nth (suc n) (a : l) = nth n l $ =
   (eqtr4d (sylbi (noteq @ bitr4 ltsuc @ lteq2 lenS) ifneg) ifneg));
 
 @_ abstract def repeat (a n: nat): nat = $ rec 0 (\ x, a : x) n $;
-pub theorem repeat0 (a: nat): $ repeat a 0 = 0 $ = '(! rec0 _ (lam x));
+pub theorem repeat0 (a: nat): $ repeat a 0 = 0 $ =  (named 'rec0);
 pub theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $ =
 '(eqtr recS @ !! applame x conseq2);
 
