@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, Range,
   SortData, Visibility(..), Ident, Sort, TermName, ThmName, VarName, Token,
-  Binder, DepType(..), PBinder(..), SExpr(..),
+  Binder, DepType(..), PBinder(..), SExpr(..), SortData(..),
   binderName, binderType, binderBound,
   Prec(..), TVar) where
 
@@ -171,12 +171,12 @@ declToLisp o px x (DDef vis bis ret val) =
     visibilityToLisp o vis : case val of
       Nothing -> [List [], List []]
       Just (ds, v) -> [
-        List ((\(_, d, s) -> List [Atom False o d, Atom False o s]) <$> ds),
+        List ((\(d, s) -> List [Atom False o d, Atom False o s]) <$> ds),
         sExprToLisp o v])
 declToLisp o px x (DTheorem vis bis hs ret val) =
   List [Atom False o "theorem", Atom False px x, List (binderToLisp o <$> bis),
     List ((\(h, ht) -> List [Atom False o (fromMaybe "_" h), sExprToLisp o ht]) <$> hs),
-    sExprToLisp o ret, visibilityToLisp o vis, Proc $ \_ _ -> proofToLisp o <$> val]
+    sExprToLisp o ret, visibilityToLisp o vis, Proc $ \_ _ -> proofToLisp o <$> MaybeT (liftIO val)]
 
 data ErrorLevel = ELError | ELWarning | ELInfo
 instance Show ErrorLevel where
@@ -277,8 +277,8 @@ data DeclNota = NPrefix Token | NInfix Token | NCoe Sort Sort
 data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
-  | DDef Visibility [PBinder] DepType (Maybe ([(Range, VarName, Sort)], SExpr))
-  | DTheorem Visibility [PBinder] [(Maybe VarName, SExpr)] SExpr (ElabM Proof)
+  | DDef Visibility [PBinder] DepType (Maybe ([(VarName, Sort)], SExpr))
+  | DTheorem Visibility [PBinder] [(Maybe VarName, SExpr)] SExpr (IO (Maybe Proof))
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Range Bool Sort deriving (Show)
 
@@ -339,7 +339,7 @@ runElab m mm0 errs lvs = do
       m' = m <* do
         decls <- gets (sortOn (\(s, _, _, _) -> s) . H.elems . eDecls)
         forM_ decls $ \case
-          (_, _, DTheorem _ _ _ _ tm, _) -> () <$ runMaybeT tm
+          (_, _, DTheorem _ _ _ _ tm, _) -> () <$ liftIO tm
           _ -> return ()
     (a, env, _) <- runRWST m' (ElabFuncs mm0 report (async g))
       def {eLispData = dat, eLispNames = hm}
@@ -414,10 +414,10 @@ now = gets $ \env -> case eCounter env of SeqCounter _ n -> Simple n
 try :: ElabM a -> ElabM (Maybe a)
 try = lift . runMaybeT
 
-forkElabM :: ElabM a -> ElabM (ElabM a)
+forkElabM :: ElabM a -> ElabM (IO (Maybe a))
 forkElabM m = lift $ RWST $ \r s -> do
   a <- efAsync r $ fst <$> evalRWST (runMaybeT m) r s
-  return (MaybeT $ lift $ wait a, s, ())
+  return (wait a, s, ())
 
 lispAlloc :: LispVal -> ElabM Int
 lispAlloc v = do

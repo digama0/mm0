@@ -21,6 +21,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7
 - mtl
+- binary
 - array
 - dynamic-mvector
 - data-default

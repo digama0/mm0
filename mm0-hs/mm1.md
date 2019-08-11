@@ -153,7 +153,7 @@ The syntax of s-expressions here is very similar to that of [R6RS Scheme](http:/
   * MM0 theorems and terms are represented using quoted atoms like `'ax_mp`.
   * Inside a quotation, `,expr` or `(unquote expr)` is unquotation and causes the result to be treated as lisp again.
   * Unquotation works also inside math strings; for example `$ foo 1 ,(bar) $` is the expression `(foo 1 v)` where `v` is the result of evaluating `bar`.
-* `[]` brackets are mere synonyms for `()` can can be used to make deeply nested brackets more readable.
+* `[]` brackets are mere synonyms for `()` and can be used to make deeply nested brackets more readable.
 
 Evaluation
 ===

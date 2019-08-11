@@ -4,6 +4,7 @@ module MM0.Compiler.Elaborator (elaborate, elaborateWithCompletion,
 
 import Control.Monad.State
 import Control.Monad.RWS.Strict
+import Control.Monad.Trans.Maybe
 import Data.List
 import Data.Bits
 import Data.Word8
@@ -400,7 +401,7 @@ inferQExprProv q = gets eProvableSorts >>= \case
       Nothing -> escapeSpan o ("type error, expected provable sort, got " <> s)
 
 buildBinders :: Offset -> Bool -> [Binder] -> [(Range, Local, InferResult)] ->
-  ElabM ([PBinder], [(Range, Maybe VarName, SExpr)], [(Range, VarName, Sort)])
+  ElabM ([PBinder], [(Range, Maybe VarName, SExpr)], [(VarName, Sort)])
 buildBinders px dum bis fs = do
   ic <- gets eInfer
   let locals = icLocals ic
@@ -424,8 +425,8 @@ buildBinders px dum bis fs = do
         f _ = Nothing
       bisNew = bisAdd ++ bis1 where
       bisDum = mapMaybe f bisNew where
-        f (v, Binder o (LDummy _) (Just (TType (AtDepType (Span _ t) [])))) =
-          Just (o, v, t)
+        f (v, Binder _ (LDummy _) (Just (TType (AtDepType (Span _ t) [])))) =
+          Just (v, t)
         f _ = Nothing
       fmlas = mapMaybe (\(o, l, IR _ e _ _) -> Just (o, localName l, e)) fs
   bis' <- forM bisNew $ \case
@@ -1000,7 +1001,7 @@ initialBindings = [
     ("async", \os@(o, _) -> \case
       Proc proc : es -> do
         res <- forkElabM $ proc os es
-        return $ Proc $ \_ _ -> res
+        return $ Proc $ \_ _ -> MaybeT (lift res)
       e : _ -> escapeAt o $ "not a procedure: " <> T.pack (show e)
       _ -> escapeAt o "expected at least one argument"),
     ("atom-map?", \(o, _) es -> Bool . isMap <$> unary o es),
@@ -1111,8 +1112,8 @@ cleanHyp o (List [Atom _ _ "_", h]) = (,) Nothing <$> cleanTerm o h
 cleanHyp o (List [Atom _ _ x, h]) = (,) (Just x) <$> cleanTerm o h
 cleanHyp o _ = escapeSpan o "invalid hypothesis"
 
-cleanDummy :: Range -> LispVal -> ElabM (Range, VarName, Sort)
-cleanDummy _ (List [Atom _ o x, Atom _ _ s]) = return (textToRange o x, x, s)
+cleanDummy :: Range -> LispVal -> ElabM (VarName, Sort)
+cleanDummy _ (List [Atom _ _ x, Atom _ _ s]) = return (x, s)
 cleanDummy o _ = escapeSpan o "invalid dummy arguments"
 
 lispTermDecl :: Range -> [LispVal] -> ElabM Decl
@@ -1139,10 +1140,8 @@ lispThmDecl o [List bis, List hs, ret, vis, val] = do
   ret' <- cleanTerm o ret
   vis' <- cleanVis o vis
   case val of
-    Proc f -> return $ DTheorem vis' bis' hs' ret' $ f o [] >>= cleanProof o
-    _ -> do
-      v' <- cleanProof o val
-      return $ DTheorem vis' bis' hs' ret' (return v')
+    Proc f -> DTheorem vis' bis' hs' ret' <$> forkElabM (f o [] >>= cleanProof o)
+    _ -> DTheorem vis' bis' hs' ret' . return . Just <$> cleanProof o val
 lispThmDecl o _ = escapeSpan o "invalid theorem decl arguments"
 
 lispAddTerm :: Range -> [LispVal] -> ElabM ()
@@ -1341,7 +1340,7 @@ occursCheck g e@(Ref g') = getRef g' >>= \case
 occursCheck g (List (t : es)) = List . (t :) <$> mapM (occursCheck g) es
 occursCheck _ e = return e
 
-unfold :: Offset -> Bool -> LispVal -> [PBinder] -> [(Range, VarName, Sort)] ->
+unfold :: Offset -> Bool -> LispVal -> [PBinder] -> [(VarName, Sort)] ->
   SExpr -> [LispVal] -> LispVal -> ElabM UnifyResult
 unfold o sym t bis ds val es e2 = buildSubst bis es H.empty where
 
@@ -1351,9 +1350,9 @@ unfold o sym t bis ds val es e2 = buildSubst bis es H.empty where
   buildSubst [] [] m = buildDummies ds id m
   buildSubst _ _ _ = escapeAt o "incorrect arguments"
 
-  buildDummies :: [(Range, VarName, Sort)] -> ([LispVal] -> [LispVal]) ->
+  buildDummies :: [(VarName, Sort)] -> ([LispVal] -> [LispVal]) ->
     H.HashMap VarName LispVal -> ElabM UnifyResult
-  buildDummies ((_, x, s) : ds') q m = do
+  buildDummies ((x, s) : ds') q m = do
     v <- Ref <$> newMVar o s True
     buildDummies ds' (q . (v :)) (H.insert x v m)
   buildDummies [] q m = do
