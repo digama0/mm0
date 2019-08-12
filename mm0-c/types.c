@@ -5,6 +5,8 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+#define ALIGNED(n) __attribute__((aligned(1)))
+
 // Each sort has one byte associated to it, which
 // contains flags for the sort modifiers.
 // The high four bits are unused.
@@ -49,23 +51,23 @@ typedef struct {
 
 // An entry in the term table (8 byte aligned)
 typedef struct {
-  u8 sort;               // sort of the return value, 1 in high bit means
-                         // ret_deps is filled
-  u8 num_args;           // number of arguments
-  u16 heap_sz;           // = FFFF if term, = heap_size if definition
+  u16 num_args;          // number of arguments
+  u8 sort;               // sort of the return value, 1 in high bit means this
+                         // is a definition
+  u8 reserved;
   /* u64* */ u32 p_args; // pointer to list of binders
-  u64 ret_deps[3];       // space for three binders, including the optional return deps
-                         // p_args is permitted to point right here if the term is small
+  // The list of binders has n+1 elements, with the last element being
+  // the return type, followed by a CMD_END-terminated unification command list
+  // for definitions.
 } term;
 
 // An entry in the theorem table (4 byte aligned)
 typedef struct {
-  u8 num_args;           // number of arguments (expression assumptions)
-  u8 num_hyps;           // number of hypotheses (theorem assumptions)
-  u16 heap_sz;           // size of (expression) heap
+  u16 num_args;           // number of arguments (expression assumptions)
+  u16 reserved;
   /* u64* */ u32 p_args; // pointer to list of binders
-  // The expression heap comes after the list of binders, and the
-  // command list comes after that.
+  // The list of binders has n elements, followed by a CMD_END-terminated
+  // unification command list.
 } thm;
 
 #define INDEX_KIND_TERM      (u8)0x01 // This is a term
@@ -84,6 +86,7 @@ typedef struct {
   u64 left;                  // pointer to left subchild (for binary searching by strings)
   u64 right;                 // pointer to right subchild
   u8 kind;                   // sort, term, thm, var
+  u8 padding[3];
   u32 ix;                    // Index of the object in the relevant table
   u32 row, col;              // For locating in the spec file
   u64 proof;                 // pointer to the command that declares this item
@@ -125,84 +128,89 @@ typedef struct {
 #define CMD_END 0x00
 
 // The statement commands are the same as the corresponding INDEX_KINDs, except
-// that there is no CMD_VAR, and CMD_TERM is the same as CMD_DEF
-#define CMD_TERM      0x05
-#define CMD_AXIOM     0x02
-#define CMD_SORT      0x04
-#define CMD_DEF       0x05
-#define CMD_THM       0x06
-#define CMD_LOCAL_DEF 0x0D
-#define CMD_LOCAL_THM 0x0E
+// that there is no CMD_STMT_VAR, and CMD_STMT_TERM is the same as CMD_STMT_DEF
+#define CMD_STMT_TERM      0x05
+#define CMD_STMT_AXIOM     0x02
+#define CMD_STMT_SORT      0x04
+#define CMD_STMT_DEF       0x05
+#define CMD_STMT_THM       0x06
+#define CMD_STMT_LOCAL_DEF 0x0D
+#define CMD_STMT_LOCAL_THM 0x0E
 
 // is CMD_THM or CMD_LOCAL_THM
-#define IS_CMD_THM(opcode) (((opcode) & 0xF7) == CMD_THM)
+#define IS_CMD_STMT_THM(opcode) (((opcode) & 0xF7) == CMD_THM)
 
 // All commands are byte aligned, and have a forward reference to the
 // next command.
-typedef struct __attribute__((aligned(1))) {
+typedef struct ALIGNED(1) {
   u8 cmd;           // statement command
   u32 next;         // the number of bytes to the next statement command (output)
   // Proof commands begin here
 } cmd_stmt;
 
-typedef struct {
+typedef struct ALIGNED(1) {
   u8 cmd;              // = expression command
 } cmd;
 
 // The length of the data field depends on the high bits of the command
-typedef struct __attribute__((aligned(1))) { u8 cmd; u8 data; } cmd8;
-typedef struct __attribute__((aligned(1))) { u8 cmd; u16 data; } cmd16;
-typedef struct __attribute__((aligned(1))) { u8 cmd; u32 data; } cmd32;
+typedef struct ALIGNED(1) { u8 cmd; u8 data; } cmd8;
+typedef struct ALIGNED(1) { u8 cmd; u16 data; } cmd16;
+typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 
 // Term: Pop n expressions from the stack (n is determined from the term ID),
 // and push a term applied to these expressions. (The n elements are popped
 // as a group so that they end up in the same order as they were pushed.)
 // Uses data = termid
-#define CMD_TERM 0x10
+#define CMD_PROOF_TERM 0x10
 
 // TermSave: Same as Term, but also adds the resulting expression to the heap.
 // Uses data = termid
-#define CMD_TERM_SAVE 0x11
+#define CMD_PROOF_TERM_SAVE 0x11
 
 // Ref: Push a variable / hypothesis or previously constructed
 // expression / theorem.
 // Uses data = heapid, a reference to the heap element.
-#define CMD_REF 0x12
+#define CMD_PROOF_REF 0x12
 
 // Dummy: Push a new variable on the stack, and add it to the heap.
 // Uses data = sortid
-#define CMD_DUMMY 0x13
+#define CMD_PROOF_DUMMY 0x13
 
 // Thm: Pop an expression from the stack, pop n subproofs, pop m expressions
 // (m and n are determined from the theorem) and check that the substitution
 // of the expressions into the conclusion of the theorem is the given
 // expression, and the hyps match their substitutions as well.
 // Uses data = thmid
-#define CMD_THM 0x14
+#define CMD_PROOF_THM 0x14
 
 // ThmSave: Same as Thm, but also adds the resulting subproof to the heap.
 // Uses data = thmid
-#define CMD_THM_SAVE 0x15
+#define CMD_PROOF_THM_SAVE 0x15
+
+// Hyp: Pop an expression from the stack, and ensure that the unifier for
+// the current theorem declares this hypothesis correctly.
+// Uses data = 0
+#define CMD_PROOF_HYP 0x16
 
 // Conv: Pop a proof of e2, pop an expression e1, push a proof of e1, push
 // a convertibility obligation e1 =?= e2.
 // Uses data = 0
-#define CMD_CONV 0x17
+#define CMD_PROOF_CONV 0x17
 
 // Refl: Pop a convertibility obligation e =?= e. The two sides should be
 // references to the same heap element.
 // Uses data = 0
-#define CMD_REFL 0x18
+#define CMD_PROOF_REFL 0x18
 
 // Symm: Pop a convertibility obligation e1 =?= e2, push a convertibility
 // obligation e2 =?= e1.
 // Uses data = 0
-#define CMD_SYMM 0x19
+#define CMD_PROOF_SYMM 0x19
 
 // Cong: Pop a convertibility obligation t e1 ... en =?= t e1' ... en',
 // push e1 =?= e1', ..., push en =?= en'.
 // Uses data = 0
-#define CMD_CONG 0x1A
+#define CMD_PROOF_CONG 0x1A
 
 // Unfold: Pop a convertibility obligation t e1 ... en =?= e', where t is a
 // definition, and execute the unifier for t, which will pop an additional
@@ -210,19 +218,53 @@ typedef struct __attribute__((aligned(1))) { u8 cmd; u32 data; } cmd32;
 // the definition of t. The last expression popped, e, is the result of the
 // unfolding; push e =?= e' to the stack.
 // Uses data = 0
-#define CMD_UNFOLD 0x1B
+#define CMD_PROOF_UNFOLD 0x1B
 
 // ConvCut: Pop an expression e2, pop an expression e1, push a proof of
 // e1 = e2, push a convertibility obligation e1 =?= e2.
 // Uses data = 0
-#define CMD_CONV_CUT 0x1C
+#define CMD_PROOF_CONV_CUT 0x1C
 
 // ConvRef: Pop a convertibility obligation e1 =?= e2, where e1 = e2 is the
 // referenced heap element.
 // Uses data = heapid
-#define CMD_CONV_REF 0x1D
+#define CMD_PROOF_CONV_REF 0x1D
 
-// Hyp: Pop an expression from the stack, and ensure that the unifier for
-// the current theorem declares this hypothesis correctly.
+// Unify commands are used in definitions and theorem statements.
+// They are consumed when a definition is unfolded, or when a theorem is
+// applied, and interact with both the main stack and a separate unification
+// stack, which stores expressions that will be matched relative to an input
+// substitution. The substitution is stored on a separate unify heap, which
+// may be extended during unification via Save commands.
+
+// Term: Pop an expression from the unify stack, ensure that the head
+// of the expression is the given term ID, and push the n arguments to the
+// unify stack.
+// Uses data = termid
+#define CMD_UNIFY_TERM 0x30
+
+// TermSave: Same as Term, but also puts the expression popped from the
+// unify stack on the substitution heap.
+// Uses data = termid
+#define CMD_UNIFY_TERM_SAVE 0x31
+
+// Ref: Pop an expression from the unify stack, and ensure it is equal
+// to the referenced element on the substitution heap.
+// Uses data = heapid, a reference to the substitution heap.
+#define CMD_UNIFY_REF 0x32
+
+// Dummy: (Only in definitions) Pop an expression from the unify stack,
+// and check that it is a bound variable with the specified sort.
+// Uses data = sortid
+#define CMD_UNIFY_DUMMY 0x33
+
+// Thm: (Only in theorem statements) Pop an expression e from the main stack,
+// and record it for later; we will push a proof of e at the end of
+// unification. Push e to the unify stack.
 // Uses data = 0
-#define CMD_HYP 0x14
+#define CMD_UNIFY_THM 0x34
+
+// Hyp: (Only in theorem statements) Pop a proof of e from the main stack,
+// and push e to the unify stack.
+// Uses data = 0
+#define CMD_UNIFY_HYP 0x36

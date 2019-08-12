@@ -15,6 +15,7 @@ inductive proof_cmd : Type
 | ref : heapid → proof_cmd
 | dummy : sortid → proof_cmd
 | thm : thmid → proof_cmd
+| hyp : proof_cmd
 | conv : proof_cmd
 | refl : proof_cmd
 | symm : proof_cmd
@@ -22,7 +23,6 @@ inductive proof_cmd : Type
 | unfold : proof_cmd
 | conv_cut : proof_cmd
 | conv_ref : heapid → proof_cmd
-| hyp : proof_cmd
 
 inductive type : Type
 | bound : sortid → type
@@ -47,8 +47,8 @@ inductive unify_cmd
 | term : termid → unify_cmd
 | ref : heapid → unify_cmd
 | dummy : sortid → unify_cmd
-| hyp : unify_cmd
 | thm : unify_cmd
+| hyp : unify_cmd
 
 structure termel :=
 (bis : list type)
@@ -92,12 +92,12 @@ inductive unify : list sexpr → list ptr × list unify_cmd → list ptr → lis
   σ.nth e = some (sexpr.var (type.bound s) v) →
   unify σ (H, us) K S S' →
   unify σ (H, unify_cmd.dummy s :: us) (e :: K) S S'
-| hyp (σ H us e K S S') :
-  unify σ (H, us) (e :: K) S S' →
-  unify σ (H, unify_cmd.hyp :: us) K (stackel.proof e :: S) S'
 | thm (σ H us e K S S') :
   unify σ (H, us) (e :: K) S S' →
   unify σ (H, unify_cmd.thm :: us) K (stackel.expr e :: S) (stackel.proof e :: S')
+| hyp (σ H us e K S S') :
+  unify σ (H, us) (e :: K) S S' →
+  unify σ (H, unify_cmd.hyp :: us) K (stackel.proof e :: S) S'
 | nil (σ H S) : unify σ (H, []) [] S S
 
 inductive partial_unify : list sexpr → list ptr × list unify_cmd → list ptr → list ptr × list unify_cmd → Prop
@@ -134,6 +134,11 @@ inductive step_proof (env : env) : proof_cmd → state → state → Prop
   get_term_args el.bis.length S args S₁ →
   unify σ (args, el.unify) [] S₁ S₂ →
   step_proof (proof_cmd.thm t) ⟨S, H, σ, U⟩ ⟨S₂, H, σ, U⟩
+| hyp (e S H σ HU U U') :
+  partial_unify σ (HU, U) [e] U' →
+  step_proof proof_cmd.hyp
+    ⟨stackel.expr e :: S, H, σ, (HU, unify_cmd.hyp :: U)⟩
+    ⟨S, H ++ [stackel.proof e], σ, U'⟩
 | conv (e1 e2 S H σ U) :
   step_proof proof_cmd.conv
     ⟨stackel.proof e2 :: stackel.expr e1 :: S, H, σ, U⟩
@@ -165,11 +170,6 @@ inductive step_proof (env : env) : proof_cmd → state → state → Prop
   H.nth v = some (stackel.conv e1 e2) →
   step_proof (proof_cmd.conv_ref v)
     ⟨stackel.co_conv e1 e2 :: S, H, σ, U⟩ ⟨S, H, σ, U⟩
-| hyp (e S H σ HU U U') :
-  partial_unify σ (HU, U) [e] U' →
-  step_proof proof_cmd.hyp
-    ⟨stackel.expr e :: S, H, σ, (HU, unify_cmd.hyp :: U)⟩
-    ⟨S, H ++ [stackel.proof e], σ, U'⟩
 
 inductive proof (env : env) : list proof_cmd → state → Prop
 | cons (p ps st st') :
