@@ -5,14 +5,9 @@
 #define EENSURE(err, e, cond) \
   if (__builtin_expect(!(cond), 0)) { \
     fprintf(stderr, err); \
-    return e; \
+    abort(e); \
   }
 #define ENSURE(err, cond) EENSURE(err, -1, cond)
-
-#define JOIN(expr) { \
-    int _temp = expr; \
-    if (__builtin_expect(_temp, 0)) return _temp; \
-  }
 
 u8* g_file; u8* g_end;
 u8 g_num_sorts; u8*   g_sorts;
@@ -46,29 +41,78 @@ u32* g_stack_top;
 u32 g_heap[HEAP_SIZE];
 u32 g_heap_size;
 
+// The store contains all the expressions used by the stack and heap. Internal
+// pointers in the store (from a term to its children), as well as pointers from
+// the stack and heap, are all 4 byte aligned offsets from g_store.
+#define STORE_SIZE (1 << 26)
+ALIGNED(4) u8 g_store[STORE_SIZE];
+u32 g_store_size;
+
+typedef struct ALIGNED(4) {
+  u64 type;
+  u8 tag;
+} store_expr;
+
+#define EXPR_VAR 0
+typedef struct ALIGNED(4) {
+  u64 type;
+  u8 tag; // = EXPR_VAR
+  u16 var;
+} store_var;
+
+#define EXPR_TERM 1
+typedef struct ALIGNED(4) {
+  u64 type;
+  u8 tag; // = EXPR_TERM
+  u16 num_args;
+  u32 termid;
+  u32 args[];
+} store_term;
+
+u64 g_next_bv;
+u8* g_unify_cmd;
+u8* g_proof_cmd;
 // scratch space
 u8* g_subst[256];
 u64 g_deps[256];
 u32 g_bp, g_data; u64 g_type;
 
-u32 cmd_unpack(u8* cmd, u32* data) {
+u32 push_stack(u32 val) {
+  ENSURE("stack overflow", g_stack_top < &g_stack[STACK_SIZE]);
+  *g_stack_top++ = val;
+}
+
+u32 push_heap(u32 val) {
+  ENSURE("heap overflow", g_heap_size < HEAP_SIZE);
+  g_heap[g_heap_size++] = val;
+}
+
+#define ALLOC(val, size) ({ \
+  ENSURE("store overflow", g_store_size + size <= STORE_SIZE); \
+  u32 p = g_store_size; \
+  *(typeof(val)*)&g_store[p] = val; \
+  g_store_size += size; \
+  p; \
+})
+
+u32 cmd_unpack(u8* cmd) {
   switch (CMD_DATA(*cmd)) {
     case CMD_DATA_0:
     case CMD_DATA_8: {
       cmd8* p = (cmd8*)cmd;
-      *data = p->data;
+      g_data = p->data;
       return sizeof(cmd8);
     } break;
 
     case CMD_DATA_16: {
       cmd16* p = (cmd16*)cmd;
-      *data = p->data;
+      g_data = p->data;
       return sizeof(cmd16);
     } break;
 
     case CMD_DATA_32: {
       cmd32* p = (cmd32*)cmd;
-      *data = p->data;
+      g_data = p->data;
       return sizeof(cmd32);
     } break;
   }
@@ -82,55 +126,48 @@ bool sorts_compatible(u64 from, u64 to) {
     (from & TYPE_BOUND_MASK) != 0);
 }
 
-int check_args(u64* args, u64* args_end, u64* next_bv_out) {
-  u64 next_bound_var = 1;
-  while (args < args_end) {
-    u64 ty = *args;
+void load_args(u64* args, u32 num_args) {
+  g_next_bv = 1;
+  for (int i = 0; i < num_args; i++) {
+    u64 ty = args[i];
     u64 vars_bitset = ty & TYPE_DEPS_MASK;
-    u8 sort = TYPE_SORT(*args);
+    u8 sort = TYPE_SORT(ty);
     ENSURE("bad binder sort", sort < g_num_sorts);
     if (ty & TYPE_BOUND_MASK) {
       ENSURE("bound variable in strict sort", (g_sorts[sort] & SORT_STRICT) == 0);
-      ENSURE("bad binder deps", vars_bitset == next_bound_var);
-      next_bound_var *= 2;
+      ENSURE("bad binder deps", vars_bitset == g_next_bv);
+      g_next_bv *= 2;
     } else {
-      ENSURE("bad binder deps", (vars_bitset & ~(next_bound_var - 1)) == 0);
+      ENSURE("bad binder deps", (vars_bitset & ~(g_next_bv - 1)) == 0);
     }
-    args++;
+    push_heap(STACK_TYPE_EXPR |
+      ALLOC((store_var){ty, EXPR_VAR, i}, sizeof(store_var)));
   }
-  *next_bv_out = next_bound_var;
-  return 0;
 }
 
-typedef enum { Def, Thm, Proof } read_mode;
+typedef enum { Def, Thm } proof_mode;
 
-int read_cmds(read_mode mode, u64* args, u64* args_end, u32 heap_sz,
-    u64* next_bound_var, u8** cmd_out) {
-  u64* heap_end = args_end;
-  u64* heap_cap = &args_end[heap_sz];
-  u8* cmd = (u8*)heap_cap;
-  u8* last_cmd = cmd;
-  u32 bp, data; u64 type;
+void run_proof(proof_mode mode) {
+  u8* last_cmd = g_proof_cmd;
   while (true) {
-    ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
-    if (*cmd == CMD_END) break;
+    ENSURE("command out of range", g_proof_cmd + CMD_MAX_SIZE <= g_end);
+    if (*g_proof_cmd == CMD_END) break;
 
-    u32 sz;
-    switch (*cmd & 0x1F) {
-      case CMD_EXPR_VAR: {
-        sz = expr_unpack(cmd, &bp, &data, &type);
-        ENSURE("bad var step", &args[data] < heap_end && type == args[data]);
-        ENSURE("bad BP", cmd == last_cmd + bp);
+    u32 sz = cmd_unpack(g_proof_cmd); // sets g_data
+    switch (*g_proof_cmd & 0x1F) {
+      case CMD_PROOF_REF: {
+        ENSURE("bad ref step", g_data < g_heap_size);
+        push_stack(g_heap[g_data]);
       } break;
 
-      case CMD_EXPR_DUMMY: {
-        ENSURE("dummies not permitted in theorem statements", mode != Thm);
-        sz = expr_unpack(cmd, &bp, &data, &type);
+      case CMD_PROOF_DUMMY: {
+        push_heap(STACK_TYPE_EXPR |
+          ALLOC((store_var){ty, EXPR_VAR, i}, sizeof(store_var)));
         ENSURE("heap overflow", heap_end < heap_cap);
         ENSURE("dummy type mismatch", type == *heap_end);
-        if ((type & TYPE_DEPS_MASK) != *next_bound_var) {
+        if ((type & TYPE_DEPS_MASK) != *g_next_bv) {
           ENSURE("too many bound variables, please rewrite the verifier",
-            *next_bound_var & TYPE_BOUND_MASK);
+            *g_next_bv & TYPE_BOUND_MASK);
           ENSURE("bad dummy deps", false);
         }
         u8 sort = TYPE_SORT(type);
@@ -139,17 +176,17 @@ int read_cmds(read_mode mode, u64* args, u64* args_end, u32 heap_sz,
           (g_sorts[sort] & SORT_STRICT) == 0);
         ENSURE("non-bound dummy", type & TYPE_BOUND_MASK);
         heap_end++;
-        *next_bound_var *= 2;
-        ENSURE("bad BP", cmd == last_cmd + bp);
+        *g_next_bv *= 2;
+        ENSURE("bad BP", g_proof_cmd == last_cmd + bp);
       } break;
 
-      case CMD_EXPR_TERM:
-      case CMD_EXPR_SAVE: {
-        sz = expr_unpack(cmd, &bp, &data, &type);
+      case CMD_PROOF_TERM:
+      case CMD_PROOF_SAVE: {
+        sz = cmd_unpack(g_proof_cmd, &bp, &data, &type);
         ENSURE("term out of range", data < g_num_terms);
         term* t = &g_terms[data];
         u8* p = last_cmd;
-        ENSURE("stack underflow", t->num_args == 0 || p != cmd);
+        ENSURE("stack underflow", t->num_args == 0 || p != g_proof_cmd);
         u64* targs = (u64*)&g_file[t->p_args];
         // alloc g_deps;
         u8 bound = 0;
@@ -157,7 +194,7 @@ int read_cmds(read_mode mode, u64* args, u64* args_end, u32 heap_sz,
         for (u8 i = 0; i < t->num_args; i++) {
           // alloc g_bp, g_data, g_type;
           ENSURE("bad stack slot", IS_EXPR(*p));
-          expr_unpack(p, &g_bp, &g_data, &g_type);
+          cmd_unpack(p, &g_bp, &g_data, &g_type);
           u64 target = targs[i];
           ENSURE("type mismatch", sorts_compatible(g_type, target));
           u64 deps = g_type & TYPE_DEPS_MASK;
@@ -186,7 +223,7 @@ int read_cmds(read_mode mode, u64* args, u64* args_end, u32 heap_sz,
           accum &= ~TYPE_BOUND_MASK;
         }
         // free g_deps;
-        ENSURE("bad BP", cmd == p + bp);
+        ENSURE("bad BP", g_proof_cmd == p + bp);
         ENSURE("bad term type/deps", type == accum);
         if (*p_stmt & 0x01) { // save
           ENSURE("heap overflow", heap_end < heap_cap);
@@ -197,23 +234,21 @@ int read_cmds(read_mode mode, u64* args, u64* args_end, u32 heap_sz,
 
       case CMD_PROOF_DECL_HYP: {
         ENSURE("DeclHyp instruction used outside theorem statement", mode == Thm);
-        ENSURE("DeclHyp instruction should have BP = 0", CMD_DATA(*cmd) == CMD_DATA_0);
+        ENSURE("DeclHyp instruction should have BP = 0", CMD_DATA(*g_proof_cmd) == CMD_DATA_0);
         ENSURE("bad stack slot", IS_EXPR(*last_cmd));
         ENSURE("hypothesis should have provable sort",
           (g_sorts[TYPE_SORT(type)] & SORT_PROVABLE) != 0)
       } break;
 
-      // case CMD_EXPR_UNFOLD: not permitted
+      // case CMD_PROOF_UNFOLD: not permitted
       default: ENSURE("Unknown opcode in def", false); break;
     }
-    last_cmd = cmd;
-    cmd += sz;
+    last_cmd = g_proof_cmd;
+    g_proof_cmd += sz;
   }
-  *cmd_out = last_cmd;
-  return 0;
 }
 
-int verify(u64 len, u8* file) {
+void verify(u64 len, u8* file) {
   ENSURE("header not long enough", len >= sizeof(header));
   header* p = (header*)file;
   ENSURE("Not a MM0B file", p->magic == MM0B_MAGIC);
@@ -256,16 +291,19 @@ int verify(u64 len, u8* file) {
         u64* args_ret = &args[t->num_args];
         u64* args_end = &args_ret[1];
         ENSURE("bad args pointer", (u8*)args_end <= g_end);
-        u64 next_bound_var;
-        JOIN(check_args(args, args_end, &next_bound_var));
+        g_store_size = 0;
+        g_heap_size = 0;
+        g_stack_top = &g_stack;
+        load_args(args, t->num_args + 1);
         ENSURE("bad return type", (*args_ret >> 56) == sort);
+        g_heap_size--;
 
         if (t->sort & 0x80) {
           u8* cmd;
-          JOIN(run_proof(Def, args, args_end, t->heap_sz, &next_bound_var, &cmd));
+          run_proof(Def, args, args_end, &cmd);
           ENSURE("bad stack slot", IS_EXPR(*cmd));
           // alloc g_bp, g_data, g_type;
-          expr_unpack(cmd, &g_bp, &g_data, &g_type);
+          cmd_unpack(cmd, &g_bp, &g_data, &g_type);
           ENSURE("stack has more than one element", g_bp == 0);
           ENSURE("type mismatch", sorts_compatible(g_type, t->sort));
           ENSURE("type has unaccounted dependencies",
@@ -284,12 +322,12 @@ int verify(u64 len, u8* file) {
         u64* args_end = &args[t->num_args];
         u64* heap_end = args_end;
         u64* heap_cap = &args_end[t->heap_sz];
-        u64 next_bound_var; u8* cmd;
-        JOIN(check_args(args, args_end, &next_bound_var));
-        JOIN(read_cmds(Thm, args, args_end, t->heap_sz, &next_bound_var, &cmd));
+        u8* cmd;
+        load_args(args, args_end);
+        run_proof(Thm, args, args_end, &cmd);
         ENSURE("bad stack slot", IS_EXPR(*cmd));
         // alloc g_bp, g_data, g_type;
-        expr_unpack(cmd, &g_bp, &g_data, &g_type);
+        cmd_unpack(cmd, &g_bp, &g_data, &g_type);
         ENSURE("stack has more than one element", g_bp == 0);
         ENSURE("conclusion should have provable sort",
           (g_sorts[TYPE_SORT(g_type)] & SORT_PROVABLE) != 0)
@@ -307,7 +345,7 @@ int verify(u64 len, u8* file) {
           u8* cmd2;
           for (u64 *p = args, *q = args2; p < args_end; p++, q++)
             ENSURE("bad variable on heap", *p == *q);
-          u64 next_bound_var; u8* cmd;
+          u8* cmd;
 
           ENSURE("unimplemented", false);
         }
@@ -324,5 +362,4 @@ int verify(u64 len, u8* file) {
   ENSURE("not all sorts proved", g_num_sorts == p->num_sorts);
   ENSURE("not all terms proved", g_num_terms == p->num_terms);
   ENSURE("not all theorems proved", g_num_thms == p->num_thms);
-  return 0;
 }

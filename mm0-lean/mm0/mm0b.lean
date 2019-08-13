@@ -90,7 +90,7 @@ inductive unify : list sexpr → list ptr × list unify_cmd → list ptr → lis
   unify σ (H, unify_cmd.ref v :: us) (e :: K) S S'
 | dummy (σ : list sexpr) (H us e s v K S S') :
   σ.nth e = some (sexpr.var (type.bound s) v) →
-  unify σ (H, us) K S S' →
+  unify σ (H ++ [e], us) K S S' →
   unify σ (H, unify_cmd.dummy s :: us) (e :: K) S S'
 | thm (σ H us e K S S') :
   unify σ (H, us) (e :: K) S S' →

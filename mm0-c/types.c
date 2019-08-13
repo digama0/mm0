@@ -16,7 +16,7 @@ typedef uint64_t u64;
 #define SORT_FREE     8
 
 #define MM0B_MAGIC (u32)0x42304D4D // = "MM0B"
-#define MM0B_VERSION (u16)1
+#define MM0B_VERSION (u8)1
 #define MAX_SORTS 128
 
 typedef struct {
@@ -254,7 +254,8 @@ typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 #define CMD_UNIFY_REF 0x32
 
 // Dummy: (Only in definitions) Pop an expression from the unify stack,
-// and check that it is a bound variable with the specified sort.
+// check that it is a bound variable with the specified sort, and
+// put it on the substitution heap.
 // Uses data = sortid
 #define CMD_UNIFY_DUMMY 0x33
 
