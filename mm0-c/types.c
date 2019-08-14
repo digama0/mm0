@@ -90,7 +90,7 @@ typedef struct {
   u32 ix;                    // Index of the object in the relevant table
   u32 row, col;              // For locating in the spec file
   u64 proof;                 // pointer to the command that declares this item
-  // followed by a zero-terminated char* buffer
+  char value[];              // zero-terminated char* buffer
 } index;
 
 // A command is a variable length instruction that forms the bulk of the proof
@@ -137,19 +137,19 @@ typedef struct {
 #define CMD_STMT_LOCAL_DEF 0x0D
 #define CMD_STMT_LOCAL_THM 0x0E
 
-// is CMD_THM or CMD_LOCAL_THM
-#define IS_CMD_STMT_THM(opcode) (((opcode) & 0xF7) == CMD_THM)
+// is CMD_STMT_THM or CMD_STMT_LOCAL_THM
+#define IS_CMD_STMT_THM(opcode) (((opcode) & 0xF7) == CMD_STMT_THM)
 
 // All commands are byte aligned, and have a forward reference to the
 // next command.
 typedef struct ALIGNED(1) {
   u8 cmd;           // statement command
   u32 next;         // the number of bytes to the next statement command (output)
-  // Proof commands begin here
+  u8 proof[];       // Proof commands begin here
 } cmd_stmt;
 
 typedef struct ALIGNED(1) {
-  u8 cmd;              // = expression command
+  u8 cmd;
 } cmd;
 
 // The length of the data field depends on the high bits of the command
