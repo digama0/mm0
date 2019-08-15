@@ -1,4 +1,6 @@
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "types.c"
 
 #define UNREACHABLE() __builtin_unreachable()
