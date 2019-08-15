@@ -1,6 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, Range,
-  SortData, Visibility(..), Ident, Sort, TermName, ThmName, VarName, Token,
+  Visibility(..), Ident, Sort, TermName, ThmName, VarName, Token,
   Binder, DepType(..), PBinder(..), SExpr(..), SortData(..),
   binderName, binderType, binderBound,
   Prec(..), TVar) where

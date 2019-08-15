@@ -1,17 +1,25 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE DeriveGeneric, DeriveFunctor, DeriveTraversable, TypeFamilies #-}
 module MM0.Compiler.Export where
 
+import GHC.Generics (Generic)
+import Control.Applicative
 import Control.Monad.State
 import Control.Monad.RWS.Strict
 import Data.Bits
 import Data.Default
 import Data.Foldable
+import Data.Hashable
+import Data.Reify
 import Data.IORef
 import Data.Maybe
 import Data.Word
 import System.IO
+import System.IO.Unsafe
 import System.Exit
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
+import qualified Data.IntMap as I
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Binary.Builder as BB
@@ -38,25 +46,100 @@ isPublic (DAxiom _ _ _) = True
 isPublic (DDef vis _ _ _) = vis /= Local
 isPublic (DTheorem vis _ _ _ _) = vis == Public
 
-type DeclMap = M.Map SeqNum (Either Sort (Ident, Decl))
-collectDecls :: Env -> IO [Either Sort (Ident, Decl)]
+data ProofF a =
+    SVarF VarName
+  | SAppF TermName [a]
+
+  | CVarF VarName
+  | CAppF TermName [a]
+  | CSymF a
+  | CUnfoldF TermName [a] [VarName] a
+
+  | PHypF VarName
+  | PThmF ThmName [a] [a]
+  | PConvF a a a
+  | PLetF VarName a a
+
+  | ProofF [(Maybe VarName, a)] Bool a
+  deriving (Generic, Functor, Foldable, Traversable)
+instance Hashable a => Hashable (ProofF a) where
+
+instance MuRef SExpr where
+  type DeRef SExpr = ProofF
+  mapDeRef _ (SVar v) = pure $ SVarF v
+  mapDeRef f (App t es) = SAppF t <$> traverse f es
+
+instance MuRef Conv where
+  type DeRef Conv = ProofF
+  mapDeRef _ (CVar v) = pure $ CVarF v
+  mapDeRef f (CApp t es) = CAppF t <$> traverse f es
+  mapDeRef f (CSym c) = CSymF <$> f c
+  mapDeRef f (CUnfold t es xs c) =
+    liftA2 (flip (CUnfoldF t) xs) (traverse f es) (f c)
+
+instance MuRef Proof where
+  type DeRef Proof = ProofF
+  mapDeRef _ (ProofHyp v) = pure $ PHypF v
+  mapDeRef f (ProofThm t es ps) = liftA2 (PThmF t) (traverse f es) (traverse f ps)
+  mapDeRef f (ProofConv e c p) = liftA3 PConvF (f e) (f c) (f p)
+  mapDeRef f (ProofLet x p1 p2) = liftA2 (PLetF x) (f p1) (f p2)
+
+data ProofStmt = ProofStmt [(Maybe VarName, SExpr)] SExpr (Maybe Proof)
+
+instance MuRef ProofStmt where
+  type DeRef ProofStmt = ProofF
+  mapDeRef f (ProofStmt hs ret Nothing) =
+    liftA2 (flip ProofF False) (traverse (traverse f) hs) (f ret)
+  mapDeRef f (ProofStmt hs _ (Just p)) =
+    liftA2 (flip ProofF True) (traverse (traverse f) hs) (f p)
+
+data ProofE =
+    SVarE VarName Int
+  | SAppE Int [Int]
+
+  | CReflE Int
+  | CSymE Int
+  | CCongE Int [Int]
+  | CUnfoldE Int Int [Int] Int
+
+  | PHypE VarName
+  | PThmE Int [Int] [Int] Int
+  | PConvE Int Int Int
+
+  | ProofE [(Maybe VarName, Int)] Bool Int
+  deriving (Generic, Eq)
+instance Hashable ProofE where
+
+data Name = SortName Sort | TermName TermName | ThmName ThmName
+nIdent :: Name -> Ident
+nIdent (SortName s) = s
+nIdent (TermName s) = s
+nIdent (ThmName s) = s
+
+type DeclMap = M.Map SeqNum Name
+collectDecls :: Env -> IO [Name]
 collectDecls env = do
   m <- processDecls (H.toList (eDecls env)) M.empty
-  return $ M.elems $ H.foldlWithKey' (\m' x (s, _, _) -> M.insert s (Left x) m') m (eSorts env)
+  return $ M.elems $ H.foldlWithKey' (\m' x (s, _, _) -> M.insert s (SortName x) m') m (eSorts env)
   where
 
   processDecls :: [(Ident, (SeqNum, (Range, Range), Decl, a))] -> DeclMap -> IO DeclMap
   processDecls ((x, (s, (_, o), d, _)) : ds) m | isPublic d && not (M.member s m) =
-    execStateT (checkDecl' o s d) (M.insert s (Right (x, d)) m) >>= processDecls ds
+    execStateT (checkDecl' o s x d) m >>= processDecls ds
   processDecls (_ : ds) m = processDecls ds m
   processDecls [] m = return m
 
-  checkDecl' :: Range -> SeqNum -> Decl -> StateT DeclMap IO ()
-  checkDecl' _ _ (DTerm _ _) = return ()
-  checkDecl' o s (DAxiom _ hs ret) = mapM_ (checkSExpr o s) hs >> checkSExpr o s ret
-  checkDecl' _ _ (DDef _ _ _ Nothing) = return ()
-  checkDecl' o s (DDef _ _ _ (Just (_, e))) = checkSExpr o s e
-  checkDecl' o s (DTheorem _ _ hs ret pr) = do
+  checkDecl' :: Range -> SeqNum -> Ident -> Decl -> StateT DeclMap IO ()
+  checkDecl' _ s x (DTerm _ _) = modify (M.insert s (TermName x))
+  checkDecl' o s x (DAxiom _ hs ret) = do
+    modify (M.insert s (ThmName x))
+    mapM_ (checkSExpr o s) hs
+    checkSExpr o s ret
+  checkDecl' _ s x (DDef _ _ _ Nothing) = modify (M.insert s (TermName x))
+  checkDecl' o s x (DDef _ _ _ (Just (_, e))) =
+    modify (M.insert s (TermName x)) >> checkSExpr o s e
+  checkDecl' o s x (DTheorem _ _ hs ret pr) = do
+    modify (M.insert s (ThmName x))
     mapM_ (checkSExpr o s . snd) hs
     checkSExpr o s ret
     lift pr >>= mapM_ (checkProof o s)
@@ -66,7 +149,7 @@ collectDecls env = do
     Just (s', (_, o'), d, _) -> do
       unless (s' < s) $ lift $ reportErr o $ T.pack (show x) <> " is forward-referenced"
       m <- get
-      unless (M.member s' m) $ modify (M.insert s' (Right (x, d))) >> checkDecl' o' s' d
+      unless (M.member s' m) $ checkDecl' o' s' x d
     Nothing -> lift $ reportErr o $ "unknown declaration " <> T.pack (show x)
 
   checkSExpr :: Range -> SeqNum -> SExpr -> StateT DeclMap IO ()
@@ -102,28 +185,33 @@ pushIO (IOMapping m v) x a = do
 freezeMapping :: IOMapping a -> IO (Mapping a)
 freezeMapping (IOMapping m v) = liftM2 Mapping (readIORef m) (VD.unsafeFreeze v)
 
-data TermData = TermData (V.Vector PBinder) DepType (Maybe ([(VarName, Sort)], SExpr))
-data ThmData = ThmData (V.Vector PBinder) [SExpr] SExpr (Maybe Proof)
+data TermData = TermData Visibility (V.Vector PBinder) DepType (Maybe ([(VarName, Sort)], SExpr))
+data ThmData = ThmData Visibility (V.Vector PBinder) ProofStmt
 
 data Tables = Tables {
   tSorts :: Mapping SortData,
   tTerms :: Mapping TermData,
   tThms :: Mapping ThmData }
 
-buildTables :: Env -> [Either Sort (Ident, Decl)] -> IO Tables
+buildTables :: Env -> [Name] -> IO Tables
 buildTables env ds = do
   sorts <- newIOMapping
   terms <- newIOMapping
   thms <- newIOMapping
   forM_ ds $ \case
-    Left s -> pushIO sorts s (thd3 (eSorts env H.! s))
-    Right (x, _) -> case eDecls env H.! x of
-      (_, _, DTerm bis ret, _) -> pushIO terms x (TermData (V.fromList bis) ret Nothing)
-      (_, _, DDef _ bis ret val, _) -> pushIO terms x (TermData (V.fromList bis) ret val)
-      (_, _, DAxiom bis hs ret, _) -> pushIO thms x (ThmData (V.fromList bis) hs ret Nothing)
-      (_, _, DTheorem _ bis hs ret val, _) -> do
+    SortName s -> pushIO sorts s (thd3 (eSorts env H.! s))
+    d -> case eDecls env H.! (nIdent d) of
+      (_, _, DTerm bis ret, _) ->
+        pushIO terms (nIdent d) (TermData Public (V.fromList bis) ret Nothing)
+      (_, _, DDef vis bis ret val, _) ->
+        pushIO terms (nIdent d) (TermData vis (V.fromList bis) ret val)
+      (_, _, DAxiom bis hs ret, _) ->
+        pushIO thms (nIdent d) $ ThmData Public (V.fromList bis) $
+          ProofStmt ((,) Nothing <$> hs) ret Nothing
+      (_, _, DTheorem vis bis hs ret val, _) -> do
         pf <- fromJust <$> val
-        pushIO thms x (ThmData (V.fromList bis) (snd <$> hs) ret (Just pf))
+        pushIO thms (nIdent d) $ ThmData vis (V.fromList bis) $
+          ProofStmt hs ret (Just pf)
   liftM3 Tables (freezeMapping sorts) (freezeMapping terms) (freezeMapping thms)
 
 putExportM :: Handle -> ExportM a -> IO a
@@ -132,18 +220,22 @@ putExportM h m = do
   BL.hPut h $ BB.toLazyByteString b
   return a
 
-writeMM0B :: Tables -> [Either Sort (Ident, Decl)] -> ExportM ()
+type UnifyM = RWS () (Endo [UnifyCmd]) (Int, H.HashMap Ident Int, H.HashMap Ident Sort)
+type ProofM = RWS (V.Vector (ProofE, Bool), H.HashMap ProofE Int)
+  (Endo [ProofCmd]) (Int, I.IntMap Int)
+
+writeMM0B :: Tables -> [Name] -> ExportM ()
 writeMM0B (Tables sorts terms thms) decls = do
-  writeBS "MM0B"                     -- magic
-  writeU8 (1 :: Word32)              -- version
+  writeBS "MM0B"                                    -- magic
+  writeU8 1                                         -- version
   let numSorts = V.length (mArr sorts)
   guardError "too many sorts (max 128)" (numSorts <= 128)
-  writeU8 numSorts                   -- num_sorts
-  writeU16 (0 :: Word16)             -- reserved
-  writeU32 $ V.length $ mArr terms   -- num_terms
-  writeU32 $ V.length $ mArr thms    -- num_thms
-  fixup32 $ fixup32 $ fixup32 $ do   -- pTerms, pThms, pProof
-    writeU64 (0 :: Word64)           -- pIndex
+  writeU8 $ fromIntegral numSorts                   -- num_sorts
+  writeU16 0                                        -- reserved
+  writeU32 $ fromIntegral $ V.length $ mArr terms   -- num_terms
+  writeU32 $ fromIntegral $ V.length $ mArr thms    -- num_thms
+  fixup32 $ fixup32 $ fixup32 $ do                  -- pTerms, pThms, pProof
+    writeU64 0                                      -- pIndex
     forM_ (mArr sorts) $ writeSortData . snd
     pTerms <- alignTo 8 >> fromIntegral <$> get
     revision (mapM_ writeTermHead)
@@ -164,17 +256,17 @@ writeMM0B (Tables sorts terms thms) decls = do
   writeBis bis f = foldr go f bis 0 H.empty 0 H.empty where
     go (PBound x s) m ln lctx n ctx = do
       guardError "term has more than 56 bound variables" (ln < 56)
-      writeU64 (shiftL 1 63 .|. shiftL (mIx sorts M.! s) 56 .|. shiftL 1 ln)
+      writeU64 (shiftL 1 63 .|. shiftL (fromIntegral $ mIx sorts M.! s) 56 .|. shiftL 1 ln)
       m (ln+1) (H.insert x ln lctx) (n+1) (H.insert x n ctx)
     go (PReg v (DepType s xs)) m ln lctx n ctx = do
       writeU64 $ foldl' (\w x -> w .|. shiftL 1 (lctx H.! x))
-        (shiftL (mIx sorts M.! s) 56) xs
+        (shiftL (fromIntegral $ mIx sorts M.! s) 56) xs
       m ln lctx (n+1) (H.insert v n ctx)
 
-  runUnify :: RWS () (Endo [UnifyCmd]) (Int, H.HashMap Ident Int, H.HashMap Ident Sort) () -> (Int, H.HashMap Ident Int, H.HashMap Ident Sort) -> [UnifyCmd]
+  runUnify :: UnifyM () -> (Int, H.HashMap Ident Int, H.HashMap Ident Sort) -> [UnifyCmd]
   runUnify m s = case evalRWS m () s of (_, Endo f) -> f []
 
-  sExprUnify :: SExpr -> RWS () (Endo [UnifyCmd]) (Int, H.HashMap Ident Int, H.HashMap Ident Sort) ()
+  sExprUnify :: SExpr -> UnifyM ()
   sExprUnify (SVar v) = do
     (n, vm, dm) <- get
     case H.lookup v dm of
@@ -186,48 +278,190 @@ writeMM0B (Tables sorts terms thms) decls = do
     tell (Endo (UTerm (fromIntegral (mIx terms M.! t)) :)) >> mapM_ sExprUnify es
 
   writeTermHead :: (TermData, Word32) -> ExportM ()
-  writeTermHead (TermData bis (DepType s _) val, pTerm) = do
+  writeTermHead (TermData _ bis (DepType s _) val, pTerm) = do
     guardError "term has more than 65536 args" (V.length bis < 65536)
-    writeU16 $ V.length bis
-    writeU8 (mIx sorts M.! s .|. flag (not $ null val) 128)
-    writeU8 (0 :: Word8)
+    writeU16 $ fromIntegral $ V.length bis
+    writeU8 $ fromIntegral $ mIx sorts M.! s .|. flag (not $ null val) 128
+    writeU8 0
     writeU32 pTerm
 
   writeTerm :: (Ident, TermData) -> ExportM (TermData, Word32)
-  writeTerm (_, td@(TermData bis (DepType sret vs) val)) = do
+  writeTerm (_, td@(TermData _ bis (DepType sret vs) val)) = do
     pTerm <- fromIntegral <$> get
     writeBis bis $ \_ lctx n ctx -> do
       writeU64 $ foldl' (\w x -> w .|. shiftL 1 (lctx H.! x))
-        (shiftL (mIx sorts M.! sret) 56) vs
+        (shiftL (fromIntegral (mIx sorts M.! sret)) 56) vs
       case val of
         Nothing -> return ()
         Just (ds, e) -> writeUnify $ runUnify (sExprUnify e) (n, ctx, H.fromList ds)
     return (td, pTerm)
 
   writeThmHead :: (ThmData, Word32) -> ExportM ()
-  writeThmHead (ThmData bis _ _ _, pThm) = do
+  writeThmHead (ThmData _ bis _, pThm) = do
     guardError "theorem has more than 65536 args" (V.length bis < 65536)
-    writeU16 $ V.length bis
-    writeU16 (0 :: Word16)
+    writeU16 $ fromIntegral $ V.length bis
+    writeU16 0
     writeU32 pThm
 
   writeThm :: (Ident, ThmData) -> ExportM (ThmData, Word32)
-  writeThm (_, td@(ThmData bis hs ret _)) = do
+  writeThm (_, td@(ThmData _ bis (ProofStmt hs ret _))) = do
     pThm <- fromIntegral <$> get
     writeBis bis $ \_ _ n ctx ->
       writeUnify $ flip runUnify (n, ctx, H.empty) $ do
-        forM_ hs $ \h -> tell (Endo (UHyp :)) >> sExprUnify h
+        forM_ hs $ \(_, h) -> tell (Endo (UHyp :)) >> sExprUnify h
         tell (Endo (UThm :)) >> sExprUnify ret
     return (td, pThm)
 
-  writeDecl :: Either Sort (Ident, Decl) -> ExportM ()
-  writeDecl (Left _) = do
-    writeU8 (4 :: Word8)   -- CMD_STMT_SORT
-    writeU32 (5 :: Word32) -- sizeof(cmd_stmt)
-  writeDecl (Right (_x, DTerm _bis _ret)) = error "unimplemented"
-  writeDecl (Right (_x, DDef _ _bis _ret _val)) = error "unimplemented"
-  writeDecl (Right (_x, DAxiom _bis _hs _ret)) = error "unimplemented"
-  writeDecl (Right (_x, DTheorem _ _bis _hs _ret _val)) = error "unimplemented"
+  writeDecl :: Name -> ExportM ()
+  writeDecl (SortName _) = do
+    writeU8 0x04   -- CMD_STMT_SORT
+    writeU32 5 -- sizeof(cmd_stmt)
+  writeDecl (TermName t) = case snd $ mArr terms V.! (mIx terms M.! t) of
+    TermData _ _ _ Nothing -> do
+      writeU8 0x05   -- CMD_STMT_TERM
+      writeU32 5 -- sizeof(cmd_stmt)
+    TermData vis bis (DepType s _) (Just (_, e)) -> do
+      start <- get
+      writeU8 (flag (vis == Local) 0x08 .|. 0x05) -- CMD_STMT_DEF,  CMD_STMT_LOCAL_DEF
+      fixup32 $ do
+        mapM_ writeProofCmd $ runProof bis (Just s) e
+        end <- get
+        return ((), fromIntegral (end - start))
+  writeDecl (ThmName t) = do
+    let ThmData vis bis p@(ProofStmt _ _ val) = snd $ mArr thms V.! (mIx thms M.! t)
+    start <- get
+    writeU8 $ if isJust val
+      then flag (vis == Local) 0x08 .|. 0x05 -- CMD_STMT_THM, CMD_STMT_LOCAL_THM
+      else 0x02 -- CMD_STMT_AXIOM
+    fixup32 $ do
+      mapM_ writeProofCmd $ runProof bis Nothing p
+      end <- get
+      return ((), fromIntegral (end - start))
+
+  toProofE :: I.IntMap (ProofF Int) -> VD.IOVector (ProofE, Bool) -> IORef (H.HashMap ProofE Int) ->
+    (Maybe Sort -> Int -> IO ProofE, ProofE -> IO Int)
+  toProofE im vec m = (toE, hashCons) where
+    hashCons :: ProofE -> IO Int
+    hashCons p = H.lookup p <$> readIORef m >>= \case
+      Nothing -> do
+        n <- VD.length vec
+        VD.pushBack vec (p, False)
+        modifyIORef m (H.insert p n)
+        return n
+      Just n -> do
+        (p', b) <- VD.read vec n
+        unless b (VD.write vec n (p', True))
+        return n
+
+    substE :: H.HashMap VarName Int -> SExpr -> IO Int
+    substE subst (SVar v) = return (subst H.! v)
+    substE subst (App t es) = hashCons . SAppE (mIx terms M.! t) =<< mapM (substE subst) es
+
+    toIx :: Maybe Sort -> Int -> IO Int
+    toIx tgt i = toE tgt i >>= hashCons
+
+    toE :: Maybe Sort -> Int -> IO ProofE
+    toE tgt ix = case im I.! ix of
+      SVarF v -> return $ SVarE v (mIx sorts M.! fromJust tgt)
+      SAppF t es -> do
+        let t' = mIx terms M.! t
+            (_, TermData _ bis _ _) = mArr terms V.! t'
+        SAppE t' <$> zipWithM (toIx . Just . dSort . binderType) (toList bis) es
+      CVarF v -> CReflE <$> hashCons (SVarE v (mIx sorts M.! fromJust tgt))
+      CSymF c -> toE tgt c >>= \case
+        CReflE i -> return (CReflE i)
+        p -> CSymE <$> hashCons p
+      CAppF t cs -> do
+        let t' = mIx terms M.! t
+            (_, TermData _ bis _ _) = mArr terms V.! t'
+        cs' <- zipWithM (toE . Just . dSort . binderType) (toList bis) cs
+        case sequence (cs' <&> \case CReflE i -> Just i; _ -> Nothing) of
+          Nothing -> CCongE t' <$> mapM hashCons cs'
+          Just ns -> CReflE <$> hashCons (SAppE t' ns)
+      CUnfoldF t es xs c -> do
+        let t' = mIx terms M.! t
+            (_, TermData _ bis _ val) = mArr terms V.! t'
+            (ds, v) = fromJust val
+        es' <- zipWithM (toIx . Just . dSort . binderType) (toList bis) es
+        e1 <- hashCons (SAppE t' es')
+        xs' <- zipWithM (\(_, s) x -> hashCons (SVarE x (mIx sorts M.! s))) ds xs
+        e2 <- substE (H.fromList
+          (zip (binderName <$> toList bis) es' ++ zip (fst <$> ds) xs')) v
+        CUnfoldE e1 e2 xs' <$> toIx tgt c
+      PHypF h -> return (PHypE h)
+      PThmF t es ps -> do
+        let t' = mIx thms M.! t
+            (_, ThmData _ bis (ProofStmt _ ret _)) = mArr thms V.! t'
+        es' <- zipWithM (toIx . Just . dSort . binderType) (toList bis) es
+        ps' <- mapM (toIx Nothing) ps
+        ret' <- substE (H.fromList (zip (binderName <$> toList bis) es')) ret
+        return (PThmE t' es' ps' ret')
+      PConvF e c p -> do
+        e' <- toIx Nothing e
+        toE Nothing c >>= \case
+          CReflE _ -> toE Nothing p
+          c' -> liftA2 (PConvE e') (hashCons c') (toIx Nothing p)
+      PLetF x p1 p2 -> do
+        n <- toIx Nothing p1
+        modifyIORef m (H.insert (PHypE x) n)
+        toE tgt p2
+      ProofF hs th ret -> do
+        hs' <- forM hs $ \(v, n) -> (,) v <$> toIx Nothing n
+        ProofE hs' th <$> toIx Nothing ret
+
+  runProof :: (MuRef a, DeRef a ~ ProofF) =>
+    V.Vector PBinder -> Maybe Sort -> a -> [ProofCmd]
+  runProof bis s a = f [] where
+    (_, Endo f) = evalRWS (mapM pushHeap bis2 >> mkProof pe2) st (0, I.empty)
+    (st, bis2, pe2) = unsafePerformIO $ do
+      Graph pairs root <- reifyGraph a
+      let m = I.fromList pairs
+      v <- VD.new 0
+      h <- newIORef H.empty
+      let (toE, hashCons) = toProofE m v h
+      bis' <- forM bis $ \bi -> do
+        let x = binderName bi
+        hashCons $ SVarE x $ mIx sorts M.! dSort (binderType bi)
+      pe <- toE s root >>= hashCons
+      v' <- VD.unsafeFreeze v
+      h' <- readIORef h
+      return ((v', h'), bis', pe)
+
+  pushHeap :: Int -> ProofM ()
+  pushHeap n = modify $ \(k, heap) -> (k+1, I.insert n k heap)
+
+  mkProof :: Int -> ProofM ()
+  mkProof n = I.lookup n . snd <$> get >>= \case
+    Just i -> tell $ Endo (PRef (fromIntegral i) :)
+    Nothing -> (V.! n) . fst <$> ask >>= \case
+      (SVarE _ s, _) -> tell (Endo (PDummy (fromIntegral s) :)) >> pushHeap n
+      (SAppE t es, save) -> mapM_ mkProof es >>
+        if save then do
+          tell $ Endo (PTermSave (fromIntegral t) :)
+          pushHeap n
+        else tell $ Endo (PTerm (fromIntegral t) :)
+      (CReflE _, _) -> tell $ Endo (PRefl :)
+      (CSymE e, _) -> tell (Endo (PSym :)) >> mkProof e
+      (CCongE _ cs, _) -> tell (Endo (PCong :)) >> mapM_ mkProof cs
+      (CUnfoldE e1 e2 _ c, _) -> mkProof e1 >> mkProof e2 >>
+        tell (Endo (PUnfold :)) >> mkProof c
+      (PHypE _, _) -> error "unknown hypothesis"
+      (PThmE t es ps e, save) ->
+        mapM mkProof ps >> mapM mkProof es >> mkProof e >>
+        if save then do
+          tell $ Endo (PThmSave (fromIntegral t) :)
+          pushHeap n
+        else tell $ Endo (PThm (fromIntegral t) :)
+      (PConvE e c p, _) ->
+        mkProof e >> mkProof p >> tell (Endo (PConv :)) >> mkProof c
+      (ProofE hs _ ret, _) -> do
+        forM_ hs $ \(h, i) -> do
+          mkProof i >> tell (Endo (PHyp :))
+          (_, heap) <- ask
+          case h >>= flip H.lookup heap . PHypE of
+            Nothing -> modify $ mapFst (+1)
+            Just k -> pushHeap k
+        mkProof ret
 
 type ExportM = RWST () BB.Builder Word64 (Either String)
 
@@ -259,21 +493,21 @@ alignTo n = get >>= \ix -> padN $ fromIntegral (-ix `mod` fromIntegral n)
 padN :: Int -> ExportM ()
 padN n = writeBS (BS.replicate n 0)
 
-writeU8 :: Integral a => a -> ExportM ()
-writeU8 w = tell (BB.singleton $ fromIntegral w) >> modify (+ 1)
+writeU8 :: Word8 -> ExportM ()
+writeU8 w = tell (BB.singleton w) >> modify (+ 1)
 
-writeU16 :: Integral a => a -> ExportM ()
-writeU16 w = tell (BB.putWord16le $ fromIntegral w) >> modify (+ 2)
+writeU16 :: Word16 -> ExportM ()
+writeU16 w = tell (BB.putWord16le w) >> modify (+ 2)
 
-writeU32 :: Integral a => a -> ExportM ()
-writeU32 w = tell (BB.putWord32le $ fromIntegral w) >> modify (+ 4)
+writeU32 :: Word32 -> ExportM ()
+writeU32 w = tell (BB.putWord32le w) >> modify (+ 4)
 
-writeU64 :: Integral a => a -> ExportM ()
-writeU64 w = tell (BB.putWord64le $ fromIntegral w) >> modify (+ 8)
+writeU64 :: Word64 -> ExportM ()
+writeU64 w = tell (BB.putWord64le w) >> modify (+ 8)
 
 writeSortData :: SortData -> ExportM ()
 writeSortData (SortData p s pr f) =
-  writeU8 (flag p 1 .|. flag s 2 .|. flag pr 4 .|. flag f 8 :: Word8)
+  writeU8 (flag p 1 .|. flag s 2 .|. flag pr 4 .|. flag f 8)
 
 data UnifyCmd =
     UTerm Word32
@@ -285,17 +519,49 @@ data UnifyCmd =
 
 writeCmd :: Word8 -> Word32 -> ExportM ()
 writeCmd c 0 = writeU8 c
-writeCmd c n | n < 0x100 = writeU8 (c .|. 0x40) >> writeU8 n
-writeCmd c n | n < 0x10000 = writeU8 (c .|. 0x80) >> writeU16 n
+writeCmd c n | n < 0x100 = writeU8 (c .|. 0x40) >> writeU8 (fromIntegral n)
+writeCmd c n | n < 0x10000 = writeU8 (c .|. 0x80) >> writeU16 (fromIntegral n)
 writeCmd c n = writeU8 (c .|. 0xC0) >> writeU32 n
 
 writeUnifyCmd :: UnifyCmd -> ExportM ()
-writeUnifyCmd (UTerm n) = writeCmd 0x30 n
+writeUnifyCmd (UTerm n)     = writeCmd 0x30 n
 writeUnifyCmd (UTermSave n) = writeCmd 0x31 n
-writeUnifyCmd (URef n) = writeCmd 0x32 n
-writeUnifyCmd (UDummy n) = writeCmd 0x33 n
-writeUnifyCmd UThm = writeU8 (0x34 :: Word8)
-writeUnifyCmd UHyp = writeU8 (0x36 :: Word8)
+writeUnifyCmd (URef n)      = writeCmd 0x32 n
+writeUnifyCmd (UDummy n)    = writeCmd 0x33 n
+writeUnifyCmd UThm          = writeU8 0x34
+writeUnifyCmd UHyp          = writeU8 0x36
 
 writeUnify :: [UnifyCmd] -> ExportM ()
-writeUnify l = mapM writeUnifyCmd l >> writeU8 (0 :: Word8)
+writeUnify l = mapM writeUnifyCmd l >> writeU8 0
+
+data ProofCmd =
+    PTerm Word32
+  | PTermSave Word32
+  | PRef Word32
+  | PDummy Word32
+  | PThm Word32
+  | PThmSave Word32
+  | PHyp
+  | PConv
+  | PRefl
+  | PSym
+  | PCong
+  | PUnfold
+  | PConvCut
+  | PConvRef Word32
+
+writeProofCmd :: ProofCmd -> ExportM ()
+writeProofCmd (PTerm n)     = writeCmd 0x10 n
+writeProofCmd (PTermSave n) = writeCmd 0x11 n
+writeProofCmd (PRef n)      = writeCmd 0x12 n
+writeProofCmd (PDummy n)    = writeCmd 0x13 n
+writeProofCmd (PThm n)      = writeCmd 0x14 n
+writeProofCmd (PThmSave n)  = writeCmd 0x15 n
+writeProofCmd PHyp          = writeU8 0x16
+writeProofCmd PConv         = writeU8 0x17
+writeProofCmd PRefl         = writeU8 0x18
+writeProofCmd PSym          = writeU8 0x19
+writeProofCmd PCong         = writeU8 0x1A
+writeProofCmd PUnfold       = writeU8 0x1B
+writeProofCmd PConvCut      = writeU8 0x1C
+writeProofCmd (PConvRef n)  = writeCmd 0x1D n

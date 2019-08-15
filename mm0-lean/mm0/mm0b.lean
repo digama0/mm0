@@ -37,6 +37,7 @@ inductive stackel
 | proof : ptr → stackel
 | conv : ptr → ptr → stackel
 | co_conv : ptr → ptr → stackel
+| hyp : ptr → stackel
 
 def type.sort : type → sortid
 | (type.bound s) := s
@@ -47,7 +48,6 @@ inductive unify_cmd
 | term : termid → unify_cmd
 | ref : heapid → unify_cmd
 | dummy : sortid → unify_cmd
-| thm : unify_cmd
 | hyp : unify_cmd
 
 structure termel :=
@@ -74,7 +74,6 @@ structure state :=
 (stack : list stackel)
 (heap : list stackel)
 (store : list sexpr)
-(unify : list ptr × list unify_cmd)
 
 inductive unify : list sexpr → list ptr × list unify_cmd → list ptr → list stackel → list stackel → Prop
 | save (σ H us e K S S') :
@@ -92,9 +91,6 @@ inductive unify : list sexpr → list ptr × list unify_cmd → list ptr → lis
   σ.nth e = some (sexpr.var (type.bound s) v) →
   unify σ (H ++ [e], us) K S S' →
   unify σ (H, unify_cmd.dummy s :: us) (e :: K) S S'
-| thm (σ H us e K S S') :
-  unify σ (H, us) (e :: K) S S' →
-  unify σ (H, unify_cmd.thm :: us) K (stackel.expr e :: S) (stackel.proof e :: S')
 | hyp (σ H us e K S S') :
   unify σ (H, us) (e :: K) S S' →
   unify σ (H, unify_cmd.hyp :: us) K (stackel.proof e :: S) S'
@@ -115,71 +111,73 @@ inductive partial_unify : list sexpr → list ptr × list unify_cmd → list ptr
 | nil (σ U) : partial_unify σ U [] U
 
 inductive step_proof (env : env) : proof_cmd → state → state → Prop
-| save (e S H σ U) : step_proof proof_cmd.save ⟨e :: S, H, σ, U⟩ ⟨e :: S, H ++ [e], σ, U⟩
-| term (t el S args S' H σ U) :
+| save (e S H σ) : step_proof proof_cmd.save ⟨e :: S, H, σ⟩ ⟨e :: S, H ++ [e], σ⟩
+| term (t el S args S' H σ) :
   env.terms.nth t = some el →
   get_term_args el.bis.length S args S' →
-  step_proof (proof_cmd.term t) ⟨S, H, σ, U⟩
-    ⟨stackel.expr σ.length :: S', H, σ ++ [sexpr.app el.ret t args], U⟩
-| ref (v S) (H : list stackel) (el σ U) :
+  step_proof (proof_cmd.term t) ⟨S, H, σ⟩
+    ⟨stackel.expr σ.length :: S', H, σ ++ [sexpr.app el.ret t args]⟩
+| ref (v S) (H : list stackel) (el σ) :
   H.nth v = some el →
-  step_proof (proof_cmd.ref v) ⟨S, H, σ, U⟩ ⟨el :: S, H, σ, U⟩
-| dummy (s S H σ U) :
-  step_proof (proof_cmd.dummy s) ⟨S, H, σ, U⟩
+  step_proof (proof_cmd.ref v) ⟨S, H, σ⟩ ⟨el :: S, H, σ⟩
+| dummy (s S H σ) :
+  step_proof (proof_cmd.dummy s) ⟨S, H, σ⟩
     ⟨stackel.expr σ.length :: S,
      H ++ [stackel.expr σ.length],
-     σ ++ [sexpr.var (type.bound s) H.length], U⟩
-| thm (t el S args S₁ S₂ H σ U) :
+     σ ++ [sexpr.var (type.bound s) H.length]⟩
+| thm (t e el S args S₁ S₂ H σ) :
   env.thms.nth t = some el →
   get_term_args el.bis.length S args S₁ →
-  unify σ (args, el.unify) [] S₁ S₂ →
-  step_proof (proof_cmd.thm t) ⟨S, H, σ, U⟩ ⟨S₂, H, σ, U⟩
-| hyp (e S H σ HU U U') :
-  partial_unify σ (HU, U) [e] U' →
+  unify σ (args, el.unify) [e] S₁ S₂ →
+  step_proof (proof_cmd.thm t) ⟨stackel.expr e :: S, H, σ⟩ ⟨S₂, H, σ⟩
+| hyp (e S H σ) :
   step_proof proof_cmd.hyp
-    ⟨stackel.expr e :: S, H, σ, (HU, unify_cmd.hyp :: U)⟩
-    ⟨S, H ++ [stackel.proof e], σ, U'⟩
-| conv (e1 e2 S H σ U) :
+    ⟨stackel.expr e :: S, H, σ⟩
+    ⟨stackel.hyp e :: S, H ++ [stackel.proof e], σ⟩
+| conv (e1 e2 S H σ) :
   step_proof proof_cmd.conv
-    ⟨stackel.proof e2 :: stackel.expr e1 :: S, H, σ, U⟩
-    ⟨stackel.co_conv e1 e2 :: S, H, σ, U⟩
-| refl (e S H σ U) :
+    ⟨stackel.proof e2 :: stackel.expr e1 :: S, H, σ⟩
+    ⟨stackel.co_conv e1 e2 :: stackel.proof e1 :: S, H, σ⟩
+| refl (e S H σ) :
   step_proof proof_cmd.refl
-    ⟨stackel.co_conv e e :: S, H, σ, U⟩ ⟨S, H, σ, U⟩
-| symm (e1 e2 S H σ U) :
+    ⟨stackel.co_conv e e :: S, H, σ⟩ ⟨S, H, σ⟩
+| symm (e1 e2 S H σ) :
   step_proof proof_cmd.symm
-    ⟨stackel.co_conv e1 e2 :: S, H, σ, U⟩
-    ⟨stackel.co_conv e2 e1 :: S, H, σ, U⟩
-| cong (e1 e2 t τ1 τ2 es1 es2 S H) (σ : list sexpr) (U) :
+    ⟨stackel.co_conv e1 e2 :: S, H, σ⟩
+    ⟨stackel.co_conv e2 e1 :: S, H, σ⟩
+| cong (e1 e2 t τ1 τ2 es1 es2 S H) (σ : list sexpr) :
   σ.nth e1 = sexpr.app τ1 t es1 →
   σ.nth e2 = sexpr.app τ2 t es2 →
   step_proof proof_cmd.cong
-    ⟨stackel.co_conv e1 e2 :: S, H, σ, U⟩
-    ⟨list.zip_with stackel.co_conv es1 es2 ++ S, H, σ, U⟩
-| unfold (e e' t el us e2 args S H S') (σ : list sexpr) (U) :
+    ⟨stackel.co_conv e1 e2 :: S, H, σ⟩
+    ⟨list.zip_with stackel.co_conv es1 es2 ++ S, H, σ⟩
+| unfold (e e' τ t el us e2 args S H S') (σ : list sexpr) :
+  σ.nth e = sexpr.app τ t args →
   env.terms.nth t = some el → el.defn = some us →
-  unify σ (args, us) [e2] S S' →
+  unify σ (args, us) [e2] S (stackel.co_conv e e' :: S') →
   step_proof proof_cmd.cong
-    ⟨stackel.expr e2 :: stackel.co_conv e e' :: S, H, σ, U⟩
-    ⟨stackel.co_conv e2 e' :: S', H, σ, U⟩
-| conv_cut (e1 e2 S H) (σ : list sexpr) (U) :
+    ⟨stackel.expr e2 :: stackel.expr e :: S, H, σ⟩
+    ⟨stackel.co_conv e2 e' :: S', H, σ⟩
+| conv_cut (e1 e2 S H) (σ : list sexpr) :
   step_proof proof_cmd.conv_cut
-    ⟨stackel.expr e2 :: stackel.expr e1 :: S, H, σ, U⟩
-    ⟨stackel.co_conv e1 e2 :: stackel.conv e1 e2 :: S, H, σ, U⟩
-| conv_ref (v e1 e2 S) (H : list stackel) (σ U) :
+    ⟨stackel.expr e2 :: stackel.expr e1 :: S, H, σ⟩
+    ⟨stackel.co_conv e1 e2 :: stackel.conv e1 e2 :: S, H, σ⟩
+| conv_ref (v e1 e2 S) (H : list stackel) (σ) :
   H.nth v = some (stackel.conv e1 e2) →
   step_proof (proof_cmd.conv_ref v)
-    ⟨stackel.co_conv e1 e2 :: S, H, σ, U⟩ ⟨S, H, σ, U⟩
+    ⟨stackel.co_conv e1 e2 :: S, H, σ⟩ ⟨S, H, σ⟩
 
-inductive proof (env : env) : list proof_cmd → state → Prop
+inductive initial_state (env : env) : list type → state → Prop
+
+inductive proof (env : env) (args : list ptr) (us : list unify_cmd)
+  (thm : bool) : list proof_cmd → state → Prop
 | cons (p ps st st') :
   step_proof env p st st' →
   proof ps st' → proof (p :: ps) st
-| thm (e S H σ HU U U') :
-  partial_unify σ (HU, U) [e] U' →
-  proof [] ⟨stackel.proof e :: S, H, σ, U'⟩ →
-  proof [] ⟨stackel.proof e :: S, H, σ, (HU, unify_cmd.thm :: U)⟩
-| nil (H σ HU) : proof [] ⟨[], H, σ, (HU, [])⟩
+| nil (S H σ e) :
+  unify σ (args, us) [e] (stackel.proof <$> S) [] →
+  proof [] ⟨(if thm then stackel.proof e else stackel.expr e) ::
+    (stackel.hyp <$> S), H, σ⟩
 
 end mm0b
 end mm0

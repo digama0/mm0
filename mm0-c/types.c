@@ -176,7 +176,7 @@ typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 // Uses data = sortid
 #define CMD_PROOF_DUMMY 0x13
 
-// Thm: Pop an expression from the stack, pop n subproofs, pop m expressions
+// Thm: Pop an expression from the stack, pop m expressions, pop n subproofs
 // (m and n are determined from the theorem) and check that the substitution
 // of the expressions into the conclusion of the theorem is the given
 // expression, and the hyps match their substitutions as well.
@@ -187,8 +187,9 @@ typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 // Uses data = thmid
 #define CMD_PROOF_THM_SAVE 0x15
 
-// Hyp: Pop an expression from the stack, and ensure that the unifier for
-// the current theorem declares this hypothesis correctly.
+// Hyp: Pop an expression e from the stack, and ensure that the unifier for
+// the current theorem declares this hypothesis correctly. Put a proof of e on
+// the heap.
 // Uses data = 0
 #define CMD_PROOF_HYP 0x16
 
@@ -212,11 +213,12 @@ typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 // Uses data = 0
 #define CMD_PROOF_CONG 0x1A
 
-// Unfold: Pop a convertibility obligation t e1 ... en =?= e', where t is a
-// definition, and execute the unifier for t, which will pop an additional
-// m+1 expressions from the stack, where m is the number of heap elements in
-// the definition of t. The last expression popped, e, is the result of the
-// unfolding; push e =?= e' to the stack.
+// Unfold: Pop an expression e, pop an expression t e1 ... en,
+// where t is a definition, and execute the unifier for t to verify that
+// t e1 ... en  unfolds to e, which will pop an additional m expressions from
+// the stack, where m is the number of heap elements in the definition of t.
+// Pop a convertibility obligation t e1 ... en =?= e',
+// and push e =?= e' to the stack.
 // Uses data = 0
 #define CMD_PROOF_UNFOLD 0x1B
 
@@ -258,12 +260,6 @@ typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 // put it on the substitution heap.
 // Uses data = sortid
 #define CMD_UNIFY_DUMMY 0x33
-
-// Thm: (Only in theorem statements) Pop an expression e from the main stack,
-// and record it for later; we will push a proof of e at the end of
-// unification. Push e to the unify stack.
-// Uses data = 0
-#define CMD_UNIFY_THM 0x34
 
 // Hyp: (Only in theorem statements) Pop a proof of e from the main stack,
 // and push e to the unify stack.

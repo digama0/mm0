@@ -73,6 +73,10 @@ typedef struct ALIGNED(4) {
 } store_term;
 #define get_term(p) ((store_term*)&g_store[p])
 
+#define HYP_STACK_SIZE 256
+u32 g_hstack[HYP_STACK_SIZE];
+u32* g_hstack_top;
+
 #define UNIFY_STACK_SIZE 256
 u32 g_ustack[UNIFY_STACK_SIZE];
 u32* g_ustack_top;
@@ -82,7 +86,6 @@ u32 g_uheap[UNIFY_HEAP_SIZE];
 u32 g_uheap_size;
 
 u64 g_next_bv;
-u8* g_thm_unify_progress;
 // scratch space
 u64 g_deps[256];
 u32 g_data;
@@ -108,6 +111,11 @@ u32 g_data;
 #define pop_ustack() ({ \
   ENSURE("unify stack underflow", g_ustack_top > g_ustack); \
   *(--g_ustack_top); \
+})
+
+#define pop_hstack() ({ \
+  ENSURE("hypothesis stack underflow", g_hstack_top > g_hstack); \
+  *(--g_hstack_top); \
 })
 
 #define push_uheap(val) { \
@@ -171,7 +179,7 @@ void load_args(u64 args[], u32 num_args) {
   }
 }
 
-typedef enum { UDef, UThmEnd } unify_mode;
+typedef enum { UDef, UThm, UThmEnd } unify_mode;
 
 u8* run_unify(unify_mode mode, u8* cmd) {
   u8* last_cmd = cmd;
@@ -202,7 +210,7 @@ u8* run_unify(unify_mode mode, u8* cmd) {
           push_uheap(p);
       } break;
 
-      case CMD_PROOF_DUMMY: {
+      case CMD_UNIFY_DUMMY: {
         ENSURE("Dummy command not allowed in theorem statements", mode == UDef);
         u32 p = pop_ustack();
         store_var* e = get_var(p);
@@ -217,6 +225,29 @@ u8* run_unify(unify_mode mode, u8* cmd) {
         push_uheap(p);
       } break;
 
+      case CMD_UNIFY_HYP: {
+        switch (mode) {
+          case UThm: {
+            ENSURE("stack underflow", g_stack_top > &g_stack);
+            u32 val = *(--g_stack_top);
+            ENSURE("bad stack slot", (val & STACK_TYPE_MASK) == STACK_TYPE_PROOF);
+            val &= STACK_DATA_MASK;
+            push_uheap(val);
+          } break;
+
+          case UThmEnd: {
+            ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
+            ENSURE("unify stack overflow",
+              &g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]);
+            *(g_ustack_top++) = pop_hstack();
+          } break;
+
+          default: {
+            ENSURE("Hyp command not allowed in definition statements", false);
+          } break;
+        }
+      } break;
+
       default: {
         if (mode == UDef) {
           ENSURE("Unknown opcode in def statement", false);
@@ -229,6 +260,8 @@ u8* run_unify(unify_mode mode, u8* cmd) {
     cmd += sz;
   }
   loop_end:
+  if (mode == UThmEnd)
+    ENSURE("Unfinished hypothesis stack", g_hstack_top == g_hstack);
   ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
   return cmd;
 }
@@ -396,7 +429,6 @@ void verify(u64 len, u8* file) {
         ENSURE("Step theorem overflow", g_num_thms < p->num_thms);
         u64* args = (u64*)&file[t->p_args];
         load_args(args, t->num_args);
-        g_thm_unify_progress = (u8*)&args[t->num_args];
         ENSURE("Next statement incorrect",
           next_stmt == run_proof(Thm, stmt->proof));
         ENSURE("stack has != one element", g_stack_top == &g_stack[1]);
@@ -404,14 +436,11 @@ void verify(u64 len, u8* file) {
         ENSURE("bad stack slot", (val & STACK_TYPE_MASK) ==
           (IS_CMD_STMT_THM(stmt->cmd) ? STACK_TYPE_PROOF : STACK_TYPE_EXPR));
         val &= STACK_DATA_MASK;
-        u8* ucmd = g_thm_unify_progress;
-        u32 sz = cmd_unpack(ucmd); // sets g_data
-        ENSURE("unify failure, not a theorem", *ucmd == CMD_UNIFY_THM);
         ENSURE("conclusion should have provable sort",
           (g_sorts[TYPE_SORT(get_expr(val)->type)] & SORT_PROVABLE) != 0)
         g_ustack_top = &g_ustack[1];
         g_ustack[0] = val;
-        run_unify(UThmEnd, ucmd + sz);
+        run_unify(UThmEnd, (u8*)&args[t->num_args]);
         g_num_thms++;
       } break;
 

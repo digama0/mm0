@@ -11,6 +11,7 @@ import Data.Word8
 import Data.Maybe
 import Data.Default
 import Data.Foldable
+import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
 import qualified Data.Set as S
 import qualified Data.Vector as V
@@ -153,7 +154,7 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
           Nothing -> do
             when mm0 $ reportSpan rx ELWarning "(MM0 mode) def has no return type"
             S.toList <$> defcheckExpr pbs v'
-        return $ DDef vis pbs (DepType s vs) (Just (dums, v'))
+        return $ DDef vis pbs (DepType s vs) (Just (orderDummies dums v', v'))
       (DKDef, _, Just (Span (o, _) _)) -> unimplementedAt o
       (DKTerm, Just (TType ty), _) -> do
         inferDepType ty
@@ -401,7 +402,7 @@ inferQExprProv q = gets eProvableSorts >>= \case
       Nothing -> escapeSpan o ("type error, expected provable sort, got " <> s)
 
 buildBinders :: Offset -> Bool -> [Binder] -> [(Range, Local, InferResult)] ->
-  ElabM ([PBinder], [(Range, Maybe VarName, SExpr)], [(VarName, Sort)])
+  ElabM ([PBinder], [(Range, Maybe VarName, SExpr)], M.Map VarName Sort)
 buildBinders px dum bis fs = do
   ic <- gets eInfer
   let locals = icLocals ic
@@ -424,7 +425,7 @@ buildBinders px dum bis fs = do
         f (v, LINew o bd s) = Just (v, newvar v o bd s)
         f _ = Nothing
       bisNew = bisAdd ++ bis1 where
-      bisDum = mapMaybe f bisNew where
+      bisDum = M.fromList (mapMaybe f bisNew) where
         f (v, Binder _ (LDummy _) (Just (TType (AtDepType (Span _ t) [])))) =
           Just (v, t)
         f _ = Nothing
@@ -440,6 +441,14 @@ buildBinders px dum bis fs = do
   ifMM0 $ unless (null bisAdd) $ reportAt px ELWarning $ render' $
     "(MM0 mode) missing binders:" <> ppGroupedBinders (snd <$> bisAdd)
   return (catMaybes bis', fmlas, bisDum)
+
+orderDummies :: M.Map VarName Sort -> SExpr -> [(VarName, Sort)]
+orderDummies = \m e -> let (_, Endo f) = execRWS (go e) () m in f [] where
+  go :: SExpr -> RWS () (Endo [(VarName, Sort)]) (M.Map VarName Sort) ()
+  go (SVar v) = do
+    m <- gets (M.lookup v)
+    forM_ m $ \s -> tell (Endo ((v, s) :)) >> modify (M.delete v)
+  go (App _ es) = mapM_ go es
 
 checkVarRefs :: ElabM ()
 checkVarRefs = do
@@ -1272,7 +1281,7 @@ data UnifyResult = UnifyResult Bool LispVal
 coerceTo :: Offset -> LispVal -> LispVal -> ElabM (LispVal -> LispVal)
 coerceTo o tgt ty = unifyAt o tgt ty >>= \case
     UnifyResult False _ -> return id
-    UnifyResult True u -> return (\p -> List [Atom False o ":conv", ty, u, p])
+    UnifyResult True u -> return (\p -> List [Atom False o ":conv", tgt, u, p])
 
 coerceTo' :: Offset -> LispVal -> LispVal -> ElabM LispVal
 coerceTo' o tgt p = (inferType o p >>= coerceTo o tgt) <*> return p

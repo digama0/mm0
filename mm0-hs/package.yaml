@@ -41,6 +41,8 @@ dependencies:
 - async
 - async-pool
 - stm
+- hashable
+- data-reify
 - tasty
 - tasty-hunit
 # for the server (TODO: move to separate project)
