@@ -61,7 +61,11 @@ typedef struct ALIGNED(4) {
   u8 tag; // = EXPR_VAR
   u16 var;
 } store_var;
-#define get_var(p) ((store_var*)&g_store[p])
+#define get_var(p) ({ \
+  store_var* e = (store_var*)&g_store[p]; \
+  ENSURE("store type error", e->tag == EXPR_VAR); \
+  e; \
+})
 
 #define EXPR_TERM 1
 typedef struct ALIGNED(4) {
@@ -71,7 +75,23 @@ typedef struct ALIGNED(4) {
   u32 termid;
   u32 args[];
 } store_term;
-#define get_term(p) ((store_term*)&g_store[p])
+#define get_term(p) ({ \
+  store_term* e = (store_term*)&g_store[p]; \
+  ENSURE("store type error", e->tag == EXPR_TERM); \
+  e; \
+})
+
+#define EXPR_CONV 2
+typedef struct ALIGNED(4) {
+  u32 e1;
+  u32 e2;
+  u8 tag; // = EXPR_CONV
+} store_conv;
+#define get_conv(p) ({ \
+  store_conv* e = (store_conv*)&g_store[p]; \
+  ENSURE("store type error", e->tag == EXPR_CONV); \
+  e; \
+})
 
 #define HYP_STACK_SIZE 256
 u32 g_hstack[HYP_STACK_SIZE];
@@ -81,7 +101,7 @@ u32* g_hstack_top;
 u32 g_ustack[UNIFY_STACK_SIZE];
 u32* g_ustack_top;
 
-#define UNIFY_HEAP_SIZE 256
+#define UNIFY_HEAP_SIZE 65536
 u32 g_uheap[UNIFY_HEAP_SIZE];
 u32 g_uheap_size;
 
@@ -108,14 +128,19 @@ u32 g_data;
   p; \
 })
 
+static inline u32 as_type(u32 val, u32 type) {
+  ENSURE("bad stack slot", (val & STACK_TYPE_MASK) == type);
+  return val & STACK_DATA_MASK;
+}
+
+#define pop_stack() ({ \
+  ENSURE("unify stack underflow", g_stack_top > g_stack); \
+  *(--g_stack_top); \
+})
+
 #define pop_ustack() ({ \
   ENSURE("unify stack underflow", g_ustack_top > g_ustack); \
   *(--g_ustack_top); \
-})
-
-#define pop_hstack() ({ \
-  ENSURE("hypothesis stack underflow", g_hstack_top > g_hstack); \
-  *(--g_hstack_top); \
 })
 
 #define push_uheap(val) { \
@@ -181,7 +206,9 @@ void load_args(u64 args[], u32 num_args) {
 
 typedef enum { UDef, UThm, UThmEnd } unify_mode;
 
-u8* run_unify(unify_mode mode, u8* cmd) {
+void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
+  g_ustack_top = &g_ustack[1];
+  g_ustack[0] = tgt;
   u8* last_cmd = cmd;
   while (true) {
     u32 sz = cmd_unpack(cmd); // sets g_data
@@ -199,8 +226,7 @@ u8* run_unify(unify_mode mode, u8* cmd) {
       case CMD_UNIFY_TERM_SAVE: {
         u32 p = pop_ustack();
         store_term* e = get_term(p);
-        ENSURE("unify failure at term",
-          e->tag == EXPR_TERM && e->termid == g_data);
+        ENSURE("unify failure at term", e->termid == g_data);
         ENSURE("unify stack overflow",
           &g_ustack_top[e->num_args] <= &g_ustack[UNIFY_STACK_SIZE]);
         for (int i = 0; i < e->num_args; i++) {
@@ -215,8 +241,7 @@ u8* run_unify(unify_mode mode, u8* cmd) {
         u32 p = pop_ustack();
         store_var* e = get_var(p);
         u64 type = e->type;
-        ENSURE("unify failure at dummy",
-          e->tag == EXPR_VAR && (type >> 56) == (0x80 | g_data));
+        ENSURE("unify failure at dummy", (type >> 56) == (0x80 | g_data));
         type &= TYPE_DEPS_MASK;
         for (int i = 0; i < g_uheap_size; i++) {
           ENSURE("dummy DV violation",
@@ -228,18 +253,15 @@ u8* run_unify(unify_mode mode, u8* cmd) {
       case CMD_UNIFY_HYP: {
         switch (mode) {
           case UThm: {
-            ENSURE("stack underflow", g_stack_top > &g_stack);
-            u32 val = *(--g_stack_top);
-            ENSURE("bad stack slot", (val & STACK_TYPE_MASK) == STACK_TYPE_PROOF);
-            val &= STACK_DATA_MASK;
-            push_uheap(val);
+            push_uheap(as_type(pop_stack(), STACK_TYPE_PROOF));
           } break;
 
           case UThmEnd: {
             ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
             ENSURE("unify stack overflow",
-              &g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]);
-            *(g_ustack_top++) = pop_hstack();
+              g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]);
+            ENSURE("hypothesis stack underflow", g_hstack_top > g_hstack);
+            *(g_ustack_top++) = *(--g_hstack_top);
           } break;
 
           default: {
@@ -263,7 +285,6 @@ u8* run_unify(unify_mode mode, u8* cmd) {
   if (mode == UThmEnd)
     ENSURE("Unfinished hypothesis stack", g_hstack_top == g_hstack);
   ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
-  return cmd;
 }
 
 typedef enum { Def, Thm } proof_mode;
@@ -306,9 +327,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           EXPR_TERM, t->num_args, g_data}), sizeof(store_term) + 4 * t->num_args);
         store_term* result = get_term(p);
         for (u16 i = 0; i < t->num_args; i++) {
-          u32 arg = g_stack_top[i];
-          ENSURE("bad stack slot", (arg & STACK_TYPE_MASK) == STACK_TYPE_EXPR);
-          arg &= STACK_DATA_MASK;
+          u32 arg = as_type(g_stack_top[i], STACK_TYPE_EXPR);
           result->args[i] = arg;
           store_expr* e = get_expr(arg);
           u64 target = targs[i];
@@ -336,6 +355,101 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         push_stack(STACK_TYPE_EXPR | p);
         if (*cmd & 0x01) // save
           push_heap(STACK_TYPE_EXPR | p);
+      } break;
+
+      case CMD_PROOF_THM:
+      case CMD_PROOF_THM_SAVE: {
+        ENSURE("Invalid opcode in def", cmd != Def);
+        ENSURE("theorem out of range", g_data < g_num_thms);
+        thm* t = &g_thms[g_data];
+        u64* targs = (u64*)&g_file[t->p_args];
+        u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
+        ENSURE("stack underflow", g_stack_top >= &g_stack[t->num_args]);
+        g_stack_top -= t->num_args;
+        g_uheap_size = t->num_args;
+        for (u16 i = 0; i < t->num_args; i++) {
+          g_uheap[i] = as_type(g_stack_top[i], STACK_TYPE_EXPR);
+          // TODO: DV conditions
+        }
+        run_unify(UThm, (u8*)&targs[t->num_args], e);
+        push_stack(STACK_TYPE_PROOF | e);
+        if (*cmd & 0x01) // save
+          push_heap(STACK_TYPE_PROOF | e);
+      } break;
+
+      case CMD_PROOF_HYP: {
+        ENSURE("Invalid opcode in def", cmd != Def);
+        u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
+        ENSURE("hypothesis stack overflow", g_hstack_top < &g_hstack[HYP_STACK_SIZE]);
+        *g_hstack_top++ = e;
+        push_heap(STACK_TYPE_PROOF | e);
+      } break;
+
+      case CMD_PROOF_CONV: {
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_PROOF);
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        push_stack(STACK_TYPE_PROOF | e1);
+        push_stack(STACK_TYPE_EXPR | e2);
+        push_stack(STACK_TYPE_CO_CONV | e1);
+      } break;
+
+      case CMD_PROOF_REFL: {
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        ENSURE("Refl unify failure", e1 == e2);
+      } break;
+
+      case CMD_PROOF_SYMM: {
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        push_stack(STACK_TYPE_EXPR | e1);
+        push_stack(STACK_TYPE_CO_CONV | e2);
+      } break;
+
+      case CMD_PROOF_CONG: {
+        store_term* e1 = get_term(as_type(pop_stack(), STACK_TYPE_CO_CONV));
+        store_term* e2 = get_term(as_type(pop_stack(), STACK_TYPE_EXPR));
+        ENSURE("Cong unify error", e1->termid == e2->termid);
+        for (int i = e1->num_args - 1; i >= 0; i--) {
+          push_stack(STACK_TYPE_EXPR | e2->args[i]);
+          push_stack(STACK_TYPE_CO_CONV | e1->args[i]);
+        }
+      } break;
+
+      case CMD_PROOF_UNFOLD: {
+        u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        store_term* p = get_term(e1);
+        term* t = &g_terms[p->termid];
+        ENSURE("Unfold: not a definition", (t->sort & 0x80) != 0);
+        u64* targs = (u64*)&g_file[t->p_args];
+        g_uheap_size = p->num_args;
+        for (u16 i = 0; i < p->num_args; i++) {
+          g_uheap[i] = p->args[i];
+          // TODO: DV conditions
+        }
+        run_unify(UThm, (u8*)&targs[p->num_args], e);
+        ENSURE("Unfold unify error", e1 == as_type(pop_stack(), STACK_TYPE_CO_CONV));
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        push_stack(STACK_TYPE_EXPR | e2);
+        push_stack(STACK_TYPE_CO_CONV | e);
+      } break;
+
+      case CMD_PROOF_CONV_CUT: {
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        push_stack(STACK_TYPE_EXPR | e2);
+        push_stack(STACK_TYPE_CONV | e1);
+        push_stack(STACK_TYPE_EXPR | e2);
+        push_stack(STACK_TYPE_CO_CONV | e1);
+      } break;
+
+      case CMD_PROOF_CONV_REF: {
+          ENSURE("bad ConvRef step", g_data < g_heap_size);
+        store_conv* c = get_conv(as_type(g_heap[g_data], STACK_TYPE_CONV));
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        ENSURE("ConvRef unify error", c->e1 == e1 && c->e2 == e2);
       } break;
 
       default: {
@@ -413,9 +527,7 @@ void verify(u64 len, u8* file) {
           ENSURE("type mismatch", sorts_compatible(type, ret));
           ENSURE("type has unaccounted dependencies",
             (type & TYPE_DEPS_MASK & ~ret) == 0);
-          g_ustack_top = &g_ustack[1];
-          g_ustack[0] = val;
-          run_unify(UDef, ucmd);
+          run_unify(UDef, ucmd, val);
         } else {
           ENSURE("Next statement incorrect", stmt->next == sizeof(cmd_stmt));
         }
@@ -438,9 +550,7 @@ void verify(u64 len, u8* file) {
         val &= STACK_DATA_MASK;
         ENSURE("conclusion should have provable sort",
           (g_sorts[TYPE_SORT(get_expr(val)->type)] & SORT_PROVABLE) != 0)
-        g_ustack_top = &g_ustack[1];
-        g_ustack[0] = val;
-        run_unify(UThmEnd, (u8*)&args[t->num_args]);
+        run_unify(UThmEnd, (u8*)&args[t->num_args], val);
         g_num_thms++;
       } break;
 

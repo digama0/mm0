@@ -209,7 +209,7 @@ typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
 #define CMD_PROOF_SYMM 0x19
 
 // Cong: Pop a convertibility obligation t e1 ... en =?= t e1' ... en',
-// push e1 =?= e1', ..., push en =?= en'.
+// push en =?= en', ..., push e1 =?= e1'.
 // Uses data = 0
 #define CMD_PROOF_CONG 0x1A
 
