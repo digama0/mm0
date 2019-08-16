@@ -3,18 +3,54 @@
 #include <stdlib.h>
 #include "types.c"
 
-#define UNREACHABLE() __builtin_unreachable()
-#define EENSURE(err, e, cond) \
-  if (__builtin_expect(!(cond), 0)) { \
-    fprintf(stderr, err); \
-    exit(e); \
-  }
-#define ENSURE(err, cond) EENSURE(err, -1, cond)
-
 u8* g_file; u8* g_end;
 u8 g_num_sorts; u8*   g_sorts;
 u8 g_num_terms; term* g_terms;
 u8 g_num_thms;  thm*  g_thms;
+cmd_stmt* g_stmt;
+u8* g_cmd;
+
+void fail(char* err, int e) {
+  header* p = (header*)g_file;
+  index* ix = 0;
+  if (p->p_index) {
+    index_header* ih = (index_header*)&g_file[p->p_index];
+    u64* sorts = ih->p_sorts;
+    u64* terms = &sorts[p->num_sorts];
+    u64* thms = &sorts[p->num_terms];
+    index* ix;
+    switch (g_stmt->cmd) {
+      case CMD_STMT_SORT: {
+        ix = (index*)&g_file[sorts[g_num_sorts]];
+      } break;
+
+      case CMD_STMT_DEF:
+      case CMD_STMT_LOCAL_DEF: {
+        ix = (index*)&g_file[terms[g_num_terms]];
+      } break;
+
+      case CMD_STMT_THM:
+      case CMD_STMT_LOCAL_THM: {
+        ix = (index*)&g_file[thms[g_num_thms]];
+      } break;
+    }
+  }
+  if (ix) {
+    fprintf(stderr, "stmt: %X, cmd: %X\nat %s: %s",
+      (u8*)g_stmt - g_file, g_cmd - g_file, ix->value, err);
+  } else {
+    fprintf(stderr, "stmt: %X, cmd: %X\n%s",
+      (u8*)g_stmt - g_file, g_cmd - g_file, err);
+  }
+  exit(e);
+}
+
+#define UNREACHABLE() __builtin_unreachable()
+#define EENSURE(err, e, cond) \
+  if (__builtin_expect(!(cond), 0)) { \
+    fail(err, e); \
+  }
+#define ENSURE(err, cond) EENSURE(err, -1, cond)
 
 // The stack is stored as a sequence of 32-bit words.
 // The 2 low bits are used for discriminating, and
@@ -48,21 +84,21 @@ u32 g_heap_size;
 // pointers in the store (from a term to its children), as well as pointers from
 // the stack and heap, are all 4 byte aligned offsets from g_store.
 #define STORE_SIZE (1 << 26)
-ALIGNED(4) u8 g_store[STORE_SIZE];
+u8 g_store[STORE_SIZE];
 u32 g_store_size;
 
-typedef struct ALIGNED(4) {
+typedef struct {
   u64 type;
   u8 tag;
-} store_expr;
+} PACKED store_expr;
 #define get_expr(p) ((store_expr*)&g_store[p])
 
 #define EXPR_VAR 0
-typedef struct ALIGNED(4) {
+typedef struct {
   u64 type;
   u8 tag; // = EXPR_VAR
   u16 var;
-} store_var;
+} PACKED store_var;
 #define get_var(p) ({ \
   store_var* e = (store_var*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_VAR); \
@@ -70,13 +106,13 @@ typedef struct ALIGNED(4) {
 })
 
 #define EXPR_TERM 1
-typedef struct ALIGNED(4) {
+typedef struct {
   u64 type;
   u8 tag; // = EXPR_TERM
   u16 num_args;
   u32 termid;
   u32 args[];
-} store_term;
+} PACKED store_term;
 #define get_term(p) ({ \
   store_term* e = (store_term*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_TERM); \
@@ -84,11 +120,11 @@ typedef struct ALIGNED(4) {
 })
 
 #define EXPR_CONV 2
-typedef struct ALIGNED(4) {
+typedef struct {
   u32 e1;
   u32 e2;
   u8 tag; // = EXPR_CONV
-} store_conv;
+} PACKED store_conv;
 #define get_conv(p) ({ \
   store_conv* e = (store_conv*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_CONV); \
@@ -213,6 +249,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
   g_ustack[0] = tgt;
   u8* last_cmd = cmd;
   while (true) {
+    g_cmd = cmd;
     u32 sz = cmd_unpack(cmd); // sets g_data
     ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
 
@@ -294,6 +331,7 @@ typedef enum { Def, Thm } proof_mode;
 u8* run_proof(proof_mode mode, u8* cmd) {
   u8* last_cmd = cmd;
   while (true) {
+    g_cmd = cmd;
     u32 sz = cmd_unpack(cmd); // sets g_data
     switch (*cmd & 0x3F) {
       case CMD_END: goto loop_end;
@@ -489,6 +527,7 @@ void verify(u64 len, u8* file) {
 
   while (*p_stmt != CMD_END) {
     cmd_stmt* stmt = (cmd_stmt*)p_stmt;
+    g_stmt = stmt;
     u8* next_stmt = p_stmt + stmt->next;
     ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
 

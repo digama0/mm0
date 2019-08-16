@@ -236,8 +236,7 @@ writeMM0B (Tables sorts terms thms) decls = do
   writeU16 0                                        -- reserved
   writeU32 $ fromIntegral $ V.length $ mArr terms   -- num_terms
   writeU32 $ fromIntegral $ V.length $ mArr thms    -- num_thms
-  fixup32 $ fixup32 $ fixup32 $ do                  -- pTerms, pThms, pProof
-    writeU64 0                                      -- pIndex
+  fixup32 $ fixup32 $ fixup32 $ fixup64 $ do        -- pTerms, pThms, pProof, pIndex
     forM_ (mArr sorts) $ writeSortData . snd
     pTerms <- alignTo 8 >> fromIntegral <$> get
     revision (mapM_ writeTermHead)
@@ -248,8 +247,10 @@ writeMM0B (Tables sorts terms thms) decls = do
       (8 * fromIntegral (V.length (mArr thms)))
       ((,) () <$> forM (mArr thms) writeThm)
     pProof <- fromIntegral <$> get
-    return ((((), pTerms), pThms), pProof)
-  mapM_ writeDecl decls
+    mapM_ writeDecl decls >> padN 5 >> alignTo 8
+    -- pIndex <- fromIntegral <$> get
+    return (((((), pTerms), pThms), pProof), 0)
+  -- writeIndex
   where
 
   writeBis :: V.Vector PBinder ->
@@ -338,7 +339,7 @@ writeMM0B (Tables sorts terms thms) decls = do
       start <- get
       writeU8 (flag (vis == Local) 0x08 .|. 0x05) -- CMD_STMT_DEF,  CMD_STMT_LOCAL_DEF
       fixup32 $ do
-        lift (withContext t $ runProof bis (Just s) e) >>= mapM_ writeProofCmd
+        lift (withContext t $ runProof bis (Just s) e) >>= writeProof
         end <- get
         return ((), fromIntegral (end - start))
   writeDecl (ThmName t) = do
@@ -348,7 +349,7 @@ writeMM0B (Tables sorts terms thms) decls = do
       then flag (vis == Local) 0x08 .|. 0x05 -- CMD_STMT_THM, CMD_STMT_LOCAL_THM
       else 0x02 -- CMD_STMT_AXIOM
     fixup32 $ do
-      lift (withContext t $ runProof bis Nothing p) >>= mapM_ writeProofCmd
+      lift (withContext t $ runProof bis Nothing p) >>= writeProof
       end <- get
       return ((), fromIntegral (end - start))
 
@@ -506,8 +507,8 @@ makeFixup f = revision (tell . f)
 fixup32 :: ExportM (r, Word32) -> ExportM r
 fixup32 = makeFixup BB.putWord32le 4
 
-_fixup64 :: ExportM (r, Word64) -> ExportM r
-_fixup64 = makeFixup BB.putWord64le 8
+fixup64 :: ExportM (r, Word64) -> ExportM r
+fixup64 = makeFixup BB.putWord64le 8
 
 writeBS :: BS.ByteString -> ExportM ()
 writeBS s = tell (BB.fromByteString s) >> modify (+ fromIntegral (BS.length s))
@@ -590,3 +591,6 @@ writeProofCmd PCong         = writeU8 0x1A
 writeProofCmd PUnfold       = writeU8 0x1B
 writeProofCmd PConvCut      = writeU8 0x1C
 writeProofCmd (PConvRef n)  = writeCmd 0x1D n
+
+writeProof :: [ProofCmd] -> ExportM ()
+writeProof l = mapM writeProofCmd l >> writeU8 0

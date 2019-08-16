@@ -5,7 +5,8 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-#define ALIGNED(n) __attribute__((aligned(1)))
+#define ALIGNED(n) __attribute__((aligned(n)))
+#define PACKED __attribute__((packed))
 
 // Each sort has one byte associated to it, which
 // contains flags for the sort modifiers.
@@ -31,7 +32,7 @@ typedef struct {
   /* term* */ u32 p_terms;  // pointer to start of term table
   /* thm*  */ u32 p_thms;   // pointer to start of theorem table
   u32 p_proof;              // pointer to start of proof section
-  u64 p_index;              // pointer to start of index, or 0
+  /* index_header* */ u64 p_index; // pointer to start of index, or 0
 
   // The list of all sorts. The number of sorts is
   // limited to 128 because of the data layout.
@@ -82,6 +83,15 @@ typedef struct {
 // The index contains information not needed for the verifier but
 // helpful for display and debugging (like string representations of the
 // constants).
+
+typedef struct {
+  /* index* */ u64 p_root;    // pointer to root of BST of index structures
+  /* index* */ u64 p_sorts[]; // pointers to sort indexes
+  /* index* */ // u64[num_terms] p_terms; pointers to term indexes
+  /* index* */ // u64[num_thms] p_thms; pointers to thm indexes
+} index_header;
+// The p_index pointer points to another u64[num_terms] array of pointers,
+// followed by
 typedef struct {
   u64 left;                  // pointer to left subchild (for binary searching by strings)
   u64 right;                 // pointer to right subchild
@@ -121,10 +131,10 @@ typedef struct {
 
 // End: A null statement, the end of a command sequence. Data = 0.
 // Although the command does not reserve space after it, no command can appear
-// within 12 bytes (the longest command structure) of the end of the file,
+// within 5 bytes (the longest command structure) of the end of the file,
 // to allow for preloading. So if CMD_END is the last thing in the file there
-// should be another 19 bytes padding.
-#define CMD_MAX_SIZE 12
+// should be another 4 bytes padding.
+#define CMD_MAX_SIZE 5
 #define CMD_END 0x00
 
 // The statement commands are the same as the corresponding INDEX_KINDs, except
@@ -142,20 +152,21 @@ typedef struct {
 
 // All commands are byte aligned, and have a forward reference to the
 // next command.
-typedef struct ALIGNED(1) {
+typedef struct {
   u8 cmd;           // statement command
-  u32 next;         // the number of bytes to the next statement command (output)
+  u32 next;         // the number of bytes to the next statement command (output),
+                    // starting from the beginning of this struct
   u8 proof[];       // Proof commands begin here
-} cmd_stmt;
+} PACKED cmd_stmt;
 
-typedef struct ALIGNED(1) {
+typedef struct {
   u8 cmd;
-} cmd;
+} PACKED cmd;
 
 // The length of the data field depends on the high bits of the command
-typedef struct ALIGNED(1) { u8 cmd; u8 data; } cmd8;
-typedef struct ALIGNED(1) { u8 cmd; u16 data; } cmd16;
-typedef struct ALIGNED(1) { u8 cmd; u32 data; } cmd32;
+typedef struct { u8 cmd; u8 data; } PACKED cmd8;
+typedef struct { u8 cmd; u16 data; } PACKED cmd16;
+typedef struct { u8 cmd; u32 data; } PACKED cmd32;
 
 // Term: Pop n expressions from the stack (n is determined from the term ID),
 // and push a term applied to these expressions. (The n elements are popped
