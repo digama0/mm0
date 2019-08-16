@@ -16,14 +16,15 @@ import MM0.Compiler.Export
 
 compile :: [String] -> IO ()
 compile args = do
-  (isMM0, rest) <- return $ case args of
-    "--mm0" : rest -> (Just True, rest)
-    "--mm1" : rest -> (Just False, rest)
-    rest -> (Nothing, rest)
-  (mmb, rest') <- return $ case rest of
-    "-o" : mmb : rest' -> (Just mmb, rest')
-    rest' -> (Nothing, rest')
-  (name, mm0) <- case rest' of
+  (strip, mmb, rest1) <- return $ case args of
+    "-S" : "-o" : mmb : rest1 -> (True, Just mmb, rest1)
+    "-o" : mmb : rest1 -> (False, Just mmb, rest1)
+    rest1 -> (False, Nothing, rest1)
+  (isMM0, rest2) <- return $ case rest1 of
+    "--mm0" : rest2 -> (Just True, rest2)
+    "--mm1" : rest2 -> (Just False, rest2)
+    rest2 -> (Nothing, rest2)
+  (name, mm0) <- case rest2 of
     [] -> return ("", stdin)
     (mm0:_) -> (,) mm0 <$> openFile mm0 ReadMode
   let isMM0' = fromMaybe (isSuffixOf "mm0" name) isMM0
@@ -39,8 +40,8 @@ compile args = do
                 (NE.fromList (sortOn M.errorOffset (toParseError <$> errs2)))
                 (initialPosState name str)
           hPutStrLn stderr (M.errorBundlePretty errs')
-        when (all (\e -> eeLevel e /= ELError) errs2) $ do
-          forM_ mmb $ flip export env
+        when (any (\e -> eeLevel e == ELError) errs2) exitFailure
+        forM_ mmb $ flip (export strip) env
 
 toParseError :: ElabError -> ParseError
 toParseError (ElabError el (o, _) msg _) =

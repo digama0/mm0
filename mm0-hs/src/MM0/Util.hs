@@ -1,4 +1,4 @@
-module MM0.Util (module MM0.Util, module Debug.Trace, (<&>)) where
+module MM0.Util (module MM0.Util, module Debug.Trace, module GHC.Stack, (<&>)) where
 
 import Control.Applicative
 import Control.Monad.Except
@@ -7,6 +7,7 @@ import Data.Word (Word8)
 import Data.List (group, sort)
 import Data.Functor
 import Debug.Trace
+import GHC.Stack
 import System.Exit
 import qualified Data.Text as T
 import qualified Data.Char as C

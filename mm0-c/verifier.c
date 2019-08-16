@@ -17,25 +17,30 @@ void fail(char* err, int e) {
     index_header* ih = (index_header*)&g_file[p->p_index];
     u64* sorts = ih->p_sorts;
     u64* terms = &sorts[p->num_sorts];
-    u64* thms = &sorts[p->num_terms];
-    index* ix;
-    switch (g_stmt->cmd) {
-      case CMD_STMT_SORT: {
-        ix = (index*)&g_file[sorts[g_num_sorts]];
-      } break;
+    u64* thms = &terms[p->num_terms];
+    if ((u8*)&thms[p->num_thms] <= g_end) {
+      switch (g_stmt->cmd & 0x3F) {
+        case CMD_STMT_SORT: {
+          if (g_num_sorts < p->num_sorts)
+            ix = (index*)&g_file[sorts[g_num_sorts]];
+        } break;
 
-      case CMD_STMT_DEF:
-      case CMD_STMT_LOCAL_DEF: {
-        ix = (index*)&g_file[terms[g_num_terms]];
-      } break;
+        case CMD_STMT_DEF:
+        case CMD_STMT_LOCAL_DEF: {
+          if (g_num_terms < p->num_terms)
+            ix = (index*)&g_file[terms[g_num_terms]];
+        } break;
 
-      case CMD_STMT_THM:
-      case CMD_STMT_LOCAL_THM: {
-        ix = (index*)&g_file[thms[g_num_thms]];
-      } break;
+        case CMD_STMT_AXIOM:
+        case CMD_STMT_THM:
+        case CMD_STMT_LOCAL_THM: {
+          if (g_num_thms < p->num_thms)
+            ix = (index*)&g_file[thms[g_num_thms]];
+        } break;
+      }
     }
   }
-  if (ix) {
+  if (ix && (u8*)ix <= g_end) {
     fprintf(stderr, "stmt: %X, cmd: %X\nat %s: %s",
       (u8*)g_stmt - g_file, g_cmd - g_file, ix->value, err);
   } else {
@@ -531,7 +536,7 @@ void verify(u64 len, u8* file) {
     u8* next_stmt = p_stmt + stmt->next;
     ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
 
-    switch (*p_stmt) {
+    switch (*p_stmt & 0x3F) {
       case CMD_STMT_SORT: {
         ENSURE("Next statement incorrect", stmt->next == sizeof(cmd_stmt));
         ENSURE("Step sort overflow", g_num_sorts < p->num_sorts);

@@ -20,6 +20,7 @@ import System.IO.Unsafe
 import System.Exit
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
+import qualified Data.List.NonEmpty as NE
 import qualified Data.IntMap as I
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -27,16 +28,17 @@ import qualified Data.Binary.Builder as BB
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import MM0.Compiler.Env hiding (reportErr, getTerm, getThm)
 import MM0.Util
 
-export :: String -> Env -> IO ()
-export fname env = do
+export :: Bool -> String -> Env -> IO ()
+export strip fname env = do
   m <- collectDecls env
   t <- liftIO $ buildTables env m
   withBinaryFile fname WriteMode $ \h -> do
     hSetBuffering h (BlockBuffering Nothing)
-    putExportM h (writeMM0B t m)
+    putExportM h (writeMM0B strip t m)
 
 reportErr :: Range -> T.Text -> IO ()
 reportErr _ = hPutStrLn stderr . T.unpack
@@ -225,9 +227,11 @@ type UnifyM = RWST () (Endo [UnifyCmd])
   (Int, H.HashMap Ident Int, H.HashMap Ident Sort) (Either String)
 type ProofM = RWST (V.Vector (ProofE, Bool), H.HashMap ProofE Int)
   (Endo [ProofCmd]) (Int, I.IntMap Int) (Either String)
+type PMapping = (I.IntMap Word64, I.IntMap Word64, I.IntMap Word64)
+type IndexM = StateT PMapping ExportM
 
-writeMM0B :: Tables -> [Name] -> ExportM ()
-writeMM0B (Tables sorts terms thms) decls = do
+writeMM0B :: Bool -> Tables -> [Name] -> ExportM ()
+writeMM0B strip (Tables sorts terms thms) decls = do
   writeBS "MM0B"                                    -- magic
   writeU8 1                                         -- version
   let numSorts = V.length (mArr sorts)
@@ -236,7 +240,7 @@ writeMM0B (Tables sorts terms thms) decls = do
   writeU16 0                                        -- reserved
   writeU32 $ fromIntegral $ V.length $ mArr terms   -- num_terms
   writeU32 $ fromIntegral $ V.length $ mArr thms    -- num_thms
-  fixup32 $ fixup32 $ fixup32 $ fixup64 $ do        -- pTerms, pThms, pProof, pIndex
+  fixup32 $ fixup32 $ fixup64 $ fixup64 $ do        -- pTerms, pThms, pProof, pIndex
     forM_ (mArr sorts) $ writeSortData . snd
     pTerms <- alignTo 8 >> fromIntegral <$> get
     revision (mapM_ writeTermHead)
@@ -247,10 +251,10 @@ writeMM0B (Tables sorts terms thms) decls = do
       (8 * fromIntegral (V.length (mArr thms)))
       ((,) () <$> forM (mArr thms) writeThm)
     pProof <- fromIntegral <$> get
-    mapM_ writeDecl decls >> padN 5 >> alignTo 8
-    -- pIndex <- fromIntegral <$> get
-    return (((((), pTerms), pThms), pProof), 0)
-  -- writeIndex
+    mapM_ writeDecl decls >> writeU8 0
+    pIndex <- if strip then 0 <$ padN 4 else alignTo 8 >> fromIntegral <$> get
+    return (((((), pTerms), pThms), pProof), pIndex)
+  unless strip writeIndex
   where
 
   writeBis :: V.Vector PBinder ->
@@ -329,15 +333,15 @@ writeMM0B (Tables sorts terms thms) decls = do
 
   writeDecl :: Name -> ExportM ()
   writeDecl (SortName _) = do
-    writeU8 0x04   -- CMD_STMT_SORT
+    writeU8 0xC4   -- CMD_DATA_32 | CMD_STMT_SORT
     writeU32 5 -- sizeof(cmd_stmt)
   writeDecl (TermName t) = case snd $ mArr terms V.! (mIx terms M.! t) of
     TermData _ _ _ Nothing -> do
-      writeU8 0x05   -- CMD_STMT_TERM
+      writeU8 0xC5   -- CMD_DATA_32 | CMD_STMT_TERM
       writeU32 5 -- sizeof(cmd_stmt)
     TermData vis bis (DepType s _) (Just (_, e)) -> do
       start <- get
-      writeU8 (flag (vis == Local) 0x08 .|. 0x05) -- CMD_STMT_DEF,  CMD_STMT_LOCAL_DEF
+      writeU8 (flag (vis == Local) 0x08 .|. 0xC5) -- CMD_DATA_32 | CMD_STMT_DEF, CMD_STMT_LOCAL_DEF
       fixup32 $ do
         lift (withContext t $ runProof bis (Just s) e) >>= writeProof
         end <- get
@@ -346,8 +350,8 @@ writeMM0B (Tables sorts terms thms) decls = do
     let ThmData vis bis p@(ProofStmt _ _ val) = snd $ mArr thms V.! (mIx thms M.! t)
     start <- get
     writeU8 $ if isJust val
-      then flag (vis == Local) 0x08 .|. 0x05 -- CMD_STMT_THM, CMD_STMT_LOCAL_THM
-      else 0x02 -- CMD_STMT_AXIOM
+      then flag (vis == Local) 0x08 .|. 0xC6 -- CMD_DATA_32 | CMD_STMT_THM, CMD_STMT_LOCAL_THM
+      else 0xC2 -- CMD_DATA_32 | CMD_STMT_AXIOM
     fixup32 $ do
       lift (withContext t $ runProof bis Nothing p) >>= writeProof
       end <- get
@@ -489,6 +493,72 @@ writeMM0B (Tables sorts terms thms) decls = do
             Just k -> pushHeap k
         mkProof ret
 
+  writeIndex :: ExportM ()
+  writeIndex = do
+    let headerLen = 8 * (1 +
+          V.length (mArr sorts) + V.length (mArr terms) + V.length (mArr thms))
+    revision fixup (fromIntegral headerLen) $
+      (,) () <$> runStateT (writeIndex' $ buildIndex [] (M.size nameTree, nameTree)) def
+    where
+    fixup (pRoot, (pSorts, pTerms, pIndex)) = do
+      writeU64 pRoot >> mapM_ writeU64 pSorts >> mapM_ writeU64 pTerms >> mapM_ writeU64 pIndex
+
+    nameTree :: M.Map Ident (NE.NonEmpty Name)
+    nameTree = go thms ThmName $ go terms TermName $ go sorts SortName M.empty where
+      go :: Mapping a -> (Ident -> Name) ->
+        M.Map Ident (NE.NonEmpty Name) -> M.Map Ident (NE.NonEmpty Name)
+      go ix f = flip (V.foldl' $ \m (x, _) ->
+        M.alter (Just . (f x NE.:|) . maybe [] NE.toList) x m) (mArr ix)
+
+    buildIndex :: [Name] -> (Int, M.Map Ident (NE.NonEmpty Name)) -> Index
+    buildIndex ns (0, _) = go ns where
+      go [] = INil
+      go (n : ns') = INode (buildEntry n) INil (go ns')
+    buildIndex ns (len, m) =
+      let i = len `div` 2
+          (left, right') = M.splitAt i m
+          ((_, n NE.:| ns2), right) = M.deleteFindMin right' in
+      INode (buildEntry n) (buildIndex ns (i, left))
+        (buildIndex ns2 (len - i - 1, right))
+
+    buildEntry :: Name -> IEntry
+    buildEntry n = IEntry n (ix n) 0 0 where
+      ix (SortName x) = mIx sorts M.! x
+      ix (TermName x) = mIx terms M.! x
+      ix (ThmName x) = mIx thms M.! x
+
+    writeIndex' :: Index -> IndexM Word64
+    writeIndex' INil = return 0
+    writeIndex' (INode (IEntry n ix row col) l r) = do
+      il <- writeIndex' l
+      ir <- writeIndex' r
+      pos <- lift $ alignTo 8 >> get
+      f <- lift $ do
+        writeU64 il
+        writeU64 ir
+        writeU32 row
+        writeU32 col
+        writeU64 0 -- TODO: pointer to command
+        writeU32 $ fromIntegral ix
+        let (x, k, f) = mkKind ix pos n
+        writeU8 k
+        writeBS (T.encodeUtf8 x) >> writeU8 0
+        return f
+      fromIntegral pos <$ modify f
+
+    mkKind :: Int -> Word64 -> Name -> (Ident, Word8, PMapping -> PMapping)
+    mkKind ix p (SortName x) = (x, 0x04, \(a, b, c) -> (I.insert ix p a, b, c))
+    mkKind ix p (TermName x) =
+        (x, go (mArr terms V.! ix), \(a, b, c) -> (a, I.insert ix p b, c)) where
+      go (_, TermData _ _ _ Nothing)              = 0x01
+      go (_, TermData Local _ _ _)                = 0x0D
+      go (_, TermData _ _ _ _)                    = 0x05
+    mkKind ix p (ThmName x) =
+        (x, go (mArr thms V.! ix), \(a, b, c) -> (a, b, I.insert ix p c)) where
+      go (_, ThmData _ _ (ProofStmt _ _ Nothing)) = 0x02
+      go (_, ThmData Public _ _)                  = 0x06
+      go (_, ThmData _ _ _)                       = 0x0E
+
 type ExportM = RWST () BB.Builder Word64 (Either String)
 
 flag :: Num a => Bool -> a -> a
@@ -498,26 +568,24 @@ flag True n = n
 revision :: (a -> ExportM ()) -> Word64 -> ExportM (r, a) -> ExportM r
 revision f n m = RWST $ \() ix -> do
   ((r, a), ix', w') <- runRWST m () (ix + n)
-  ((), _, w) <- runRWST (f a) () ix
+  ((), ix2, w) <- runRWST (f a) () ix
+  unless (ix2 == ix + n) $ error "index mismatch"
   return (r, ix', w <> w')
 
-makeFixup :: (a -> BB.Builder) -> Word64 -> ExportM (r, a) -> ExportM r
-makeFixup f = revision (tell . f)
-
 fixup32 :: ExportM (r, Word32) -> ExportM r
-fixup32 = makeFixup BB.putWord32le 4
+fixup32 = revision writeU32 4
 
 fixup64 :: ExportM (r, Word64) -> ExportM r
-fixup64 = makeFixup BB.putWord64le 8
+fixup64 = revision writeU64 8
 
 writeBS :: BS.ByteString -> ExportM ()
 writeBS s = tell (BB.fromByteString s) >> modify (+ fromIntegral (BS.length s))
 
 alignTo :: Int -> ExportM ()
-alignTo n = get >>= \ix -> padN $ fromIntegral (-ix `mod` fromIntegral n)
+alignTo n = get >>= \ix -> padN $ fromIntegral ((-ix) `mod` fromIntegral n)
 
 padN :: Int -> ExportM ()
-padN n = writeBS (BS.replicate n 0)
+padN n = tell (BB.fromByteString (BS.replicate n 0)) >> modify (+ fromIntegral n)
 
 writeU8 :: Word8 -> ExportM ()
 writeU8 w = tell (BB.singleton w) >> modify (+ 1)
@@ -594,3 +662,11 @@ writeProofCmd (PConvRef n)  = writeCmd 0x1D n
 
 writeProof :: [ProofCmd] -> ExportM ()
 writeProof l = mapM writeProofCmd l >> writeU8 0
+
+data Index = INil | INode IEntry Index Index
+
+data IEntry = IEntry {
+  _ieKey :: Name,
+  _ieIx :: Int,
+  _ieRow :: Word32,
+  _ieCol :: Word32 }

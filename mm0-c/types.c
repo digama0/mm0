@@ -32,13 +32,14 @@ typedef struct {
   /* term* */ u32 p_terms;  // pointer to start of term table
   /* thm*  */ u32 p_thms;   // pointer to start of theorem table
   u32 p_proof;              // pointer to start of proof section
+  u32 reserved2;
   /* index_header* */ u64 p_index; // pointer to start of index, or 0
 
   // The list of all sorts. The number of sorts is
   // limited to 128 because of the data layout.
   // So don't monomorphize too much.
-  u8 sorts[MAX_SORTS];
-} header;
+  u8 sorts[];
+} PACKED header;
 
 // The term arguments table is composed of 64 bit values, where:
 // * the low 56 bits (7 bytes) are used for encoding the list of bound variables
@@ -60,7 +61,7 @@ typedef struct {
   // The list of binders has n+1 elements, with the last element being
   // the return type, followed by a CMD_END-terminated unification command list
   // for definitions.
-} term;
+} PACKED term;
 
 // An entry in the theorem table (4 byte aligned)
 typedef struct {
@@ -69,7 +70,7 @@ typedef struct {
   /* u64* */ u32 p_args; // pointer to list of binders
   // The list of binders has n elements, followed by a CMD_END-terminated
   // unification command list.
-} thm;
+} PACKED thm;
 
 #define INDEX_KIND_TERM      (u8)0x01 // This is a term
 #define INDEX_KIND_AXIOM     (u8)0x02 // This is an axiom
@@ -82,26 +83,33 @@ typedef struct {
 
 // The index contains information not needed for the verifier but
 // helpful for display and debugging (like string representations of the
-// constants).
+// constants). All index entries and the index header should be 8 byte aligned.
 
+// The p_index pointer from the file header points to this structure,
+// an array of 1 + num_sorts + num_terms + num_thms pointers (all file-relative)
+// to index entries.
 typedef struct {
   /* index* */ u64 p_root;    // pointer to root of BST of index structures
   /* index* */ u64 p_sorts[]; // pointers to sort indexes
   /* index* */ // u64[num_terms] p_terms; pointers to term indexes
   /* index* */ // u64[num_thms] p_thms; pointers to thm indexes
-} index_header;
-// The p_index pointer points to another u64[num_terms] array of pointers,
-// followed by
+} PACKED index_header;
+
+// An index entry contains information necessary for translating between
+// string and index representations of entities. The left/right pointers lace
+// the entries into a binary search tree on the string values. If multiple
+// entries have the same string key, they should be right-associated (they
+// should be enumerable by following right-child pointers once the first entry
+// with that key is reached).
 typedef struct {
   u64 left;                  // pointer to left subchild (for binary searching by strings)
   u64 right;                 // pointer to right subchild
-  u8 kind;                   // sort, term, thm, var
-  u8 padding[3];
-  u32 ix;                    // Index of the object in the relevant table
-  u32 row, col;              // For locating in the spec file
+  u32 row, col;              // For locating in the source file
   u64 proof;                 // pointer to the command that declares this item
+  u32 ix;                    // Index of the object in the relevant table
+  u8 kind;                   // sort, term, thm, var
   char value[];              // zero-terminated char* buffer
-} index;
+} PACKED index;
 
 // A command is a variable length instruction that forms the bulk of the proof
 // file. The commands are processed by a stack machine.

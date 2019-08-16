@@ -7,3 +7,4 @@ mm0-hs/mm0-hs.cabal
 out.*
 *.olean
 *.log
+*.exe
