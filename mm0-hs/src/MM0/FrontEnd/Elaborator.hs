@@ -37,9 +37,6 @@ insertSort v sd = insertSpec (SSort v sd) >> modifyParser recalcCoeProv
 insertDecl :: Ident -> Decl -> SpecM ()
 insertDecl v d = insertSpec (SDecl v d)
 
-withContext :: MonadError String m => T.Text -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("at " ++ T.unpack s ++ ": " ++ e))
-
 evalSpecM :: SpecM a -> Either String (a, Environment)
 evalSpecM m = do
   (a, (e, _)) <- runStateT m def

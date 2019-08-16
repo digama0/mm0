@@ -178,7 +178,7 @@ declToLisp o px x (DTheorem vis bis hs ret val) =
     List ((\(h, ht) -> List [Atom False o (fromMaybe "_" h), sExprToLisp o ht]) <$> hs),
     sExprToLisp o ret, visibilityToLisp o vis, Proc $ \_ _ -> proofToLisp o <$> MaybeT (liftIO val)]
 
-data ErrorLevel = ELError | ELWarning | ELInfo
+data ErrorLevel = ELError | ELWarning | ELInfo deriving (Eq)
 instance Show ErrorLevel where
   show ELError = "error"
   show ELWarning = "warning"

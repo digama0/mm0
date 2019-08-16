@@ -8,6 +8,7 @@ import Data.List (group, sort)
 import Data.Functor
 import Debug.Trace
 import System.Exit
+import qualified Data.Text as T
 import qualified Data.Char as C
 import qualified Data.Map.Strict as M
 
@@ -28,6 +29,9 @@ fromJustError _ (Just normalval) = return normalval
 guardError :: MonadError e m => e -> Bool -> m ()
 guardError _ True = return ()
 guardError e _ = throwError e
+
+withContext :: MonadError String m => T.Text -> m a -> m a
+withContext s m = catchError m (\e -> throwError ("at " ++ T.unpack s ++ ": " ++ e))
 
 insertNew :: (Ord k, MonadError e m) => e -> k -> v -> M.Map k v -> m (M.Map k v)
 insertNew e k v m = do

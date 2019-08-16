@@ -21,9 +21,6 @@ insertSpec' s e = return (e {eSpec = eSpec e Q.|> s})
 insertSpec :: Spec -> Environment -> Either String Environment
 insertSpec s e = checkSpec e s >> insertSpec' s e
 
-withContext :: MonadError String m => T.Text -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("when adding " ++ T.unpack s ++ ": " ++ e))
-
 checkSpec :: Environment -> Spec -> Either String ()
 checkSpec _ (SSort _ _) = return ()
 checkSpec e (SDecl x (DTerm bis ret)) = withContext x $ checkDef e bis ret Nothing

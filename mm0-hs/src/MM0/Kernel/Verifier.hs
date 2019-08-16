@@ -76,9 +76,6 @@ checkNotStrict g t = do
   (t', sd) <- fromJustError "sort not found" (vSorts g Q.!? ofSortID t)
   guardError ("cannot bind variable; sort '" ++ T.unpack t' ++ "' is strict") (not (sStrict sd))
 
-withContext :: MonadError String m => T.Text -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("while checking " ++ T.unpack s ++ ":\n" ++ e))
-
 verify :: B.ByteString -> Environment -> Proofs -> Either String (Q.Seq String)
 verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
 

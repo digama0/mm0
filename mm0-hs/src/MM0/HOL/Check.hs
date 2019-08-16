@@ -40,9 +40,6 @@ lcRVar (_, rctx) v = rctx M.!? v
 
 type ProofM = StateT (M.Map Ident GType) (Either String)
 
-withContext :: MonadError String m => T.Text -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("while checking " ++ T.unpack s ++ ":\n" ++ e))
-
 checkDecls :: [HDecl] -> Either String GlobalCtx
 checkDecls ds = go ds (GlobalCtx S.empty M.empty M.empty M.empty) where
   go [] gctx = return gctx

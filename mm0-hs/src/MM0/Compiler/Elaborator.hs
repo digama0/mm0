@@ -1063,14 +1063,12 @@ initialBindings = [
     ("to-expr", \(o, _) es -> unary o es >>= parseRefine o >>= toExpr "" False),
     ("refine", \(o, _) es -> Undef <$ refine o es),
     ("have", \(o, _) -> \case
-      [Atom _ _ x, e] -> do
+      [Atom _ px x, e] -> do
         ty <- Ref <$> newUnknownMVar o
-        p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
-        Undef <$ addSubproof x ty p
-      [Atom _ _ x, ty', e] -> do
+        Undef <$ have o px x ty e
+      [Atom _ px x, ty', e] -> do
         ty <- parseRefine o ty' >>= toExpr "" False
-        p <- withGoals o $ \gv -> parseRefine o e >>= refineProof gv ty
-        Undef <$ addSubproof x ty p
+        Undef <$ have o px x ty e
       _ -> escapeAt o "invalid arguments"),
     ("stat", \o _ ->
       getStat >>= reportSpan o ELInfo . render >> pure Undef),
@@ -1199,12 +1197,19 @@ cleanProof o (Ref g) = getRef g >>= \case
     escapeAt o' $ render' $ "??? |-" <+> doc pp
   e -> cleanProof o e
 cleanProof _ (Atom _ _ h) = return $ ProofHyp h
-cleanProof o (List [Atom _ _ ":conv", ty, conv, es]) =
-  liftM3 ProofConv (cleanTerm o ty) (cleanConv o conv) (cleanProof o es)
+cleanProof o (List [Atom _ _ ":conv", ty, conv, p]) =
+  liftM3 ProofConv (cleanTerm o ty) (cleanConv o conv) (cleanProof o p)
+cleanProof o (List [Atom _ _ ":let", Atom _ _ h, p1, p2]) =
+  liftM2 (ProofLet h) (cleanProof o p1) (cleanProof o p2)
 cleanProof o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
   Nothing -> escapeSpan o $ "unknown theorem '" <> t <> "'"
-  Just (_, bis, _, _) ->
-    let (es1, es2) = splitAt (length bis) es in
+  Just (_, bis, hs, _) -> do
+    unless (length es == length bis + length hs) $
+      escapeSpan o $ "incorrect number of arguments to " <> t <>
+        "; expected " <> T.pack (show (length bis)) <>
+        " + " <> T.pack (show (length hs)) <>
+        ", got " <> T.pack (show es)
+    let (es1, es2) = splitAt (length bis) es
     liftM2 (ProofThm t) (mapM (cleanTerm o) es1) (mapM (cleanProof o) es2)
 cleanProof o e = escapeSpan o $ "bad proof: " <> T.pack (show e)
 
@@ -1502,3 +1507,18 @@ focus o ctx es = getGoals o >>= \case
     evalRefines o ctx es
     gs' <- getGoals o
     setGoals $ gs' ++ gt
+
+have :: Offset -> Offset -> VarName -> LispVal -> LispVal -> ElabM ()
+have o px x ty e = do
+  gv <- VD.new 0
+  p <- parseRefine o e >>= refineProof gv ty
+  v <- VD.unsafeFreeze gv
+  addSubproof x ty p
+  gs <- getGoals o
+  gs' <- forM gs $ \g -> getRef g >>= \case
+    Goal o' ty' -> do
+      g' <- newRef (Goal o' ty')
+      setRef g (List [Atom False o ":let", Atom False px x, p, Ref g'])
+      return (Just g')
+    _ -> return Nothing
+  setGoals (V.toList v ++ catMaybes gs')

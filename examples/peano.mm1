@@ -35,6 +35,9 @@ do {
   (def (rmap . args) (apply map (split-last args)))
   (def (scan . args) (apply rmap args) (let))
   (def (undef? x) (not (def? x)))
+  (def (get-proof x) @ match (get-decl x)
+    [('theorem _ _ _ _ _ pf) (pf)]
+    [_ (error "not a theorem")])
   (def named @ match-fn*
     [((? atom? d) es) (refine es) (scan (get-mvars) (list d) set!)]
     [(ds es) (refine es) (scan (get-mvars) ds set!)]
@@ -97,13 +100,13 @@ do {
                   @ if isrefl (list ret) @ begin
                   @ match (eqd-for t)
                     [(? def? eqd) '((,t . ,es1) (,t . ,es2) ,ret
-                      (,eqd . ,(append (join ts) (join ps))))]
+                      (,eqd G . ,(append (join ts) (join ps))))]
                     [_ (error @ string-append "equality theorem not found for " (->string t))]])]
               [(mk-proof e) (match (preproof e)
                 [(s) '(,e ,e (,(eqidd-for s) G ,e))]
                 [(e1 e2 s p) (list e1 e2 p)])])
             @ match (mk-proof v) @ (t1 t2 p)
-            '(:conv rete (im G (,(eq-for ret)
+            '(:conv ,rete (im G (,(eq-for ret)
               (:unfold ,df ,es1 ,ds ,t1)
               (:unfold ,df ,es2 ,ds ,t2))) ,p)])
         (insert! eqd-map df tgt)])
@@ -116,7 +119,7 @@ do {
     @ letrec (
       [(exps l r) @ match r
         [('im e1 e2) (list 'exp l e1 e2 (exps (list 'and l e1) e2))]
-        [_ (cons t @ append (map hd bis) @
+        [_ (cons t G @ append (map hd bis) @
           map (match-fn [(_ h) h]) @ rev @ conjuncts l)]]
       [conjuncts @ match-fn
         [('and e1 e2)
@@ -153,7 +156,7 @@ do {
           @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)])
           '((,v . ,pes)
             (,v ,v . ,es)
-            ((eqidd G ,v) . ,pp)
+            ((,(eqidd-for s) G ,v) . ,pp)
             ((((,v1 ,s ,vs) (,v2 ,s ,vs) . ,bis)
               (,v1 . ,pes)
               (,v2 . ,pes)
@@ -161,7 +164,7 @@ do {
               (,v1 ,v2 . ,es)
               (h . ,pp)) .
              ,(rmap data @ match-fn @ (b t1 t2 h es ps)
-              '((,e . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((eqidd G ,v) . ,ps)))))]])
+              '((,e . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((,(eqidd-for s) G ,v) . ,ps)))))]])
     @ rmap (match (mk-bis bis) [(_ _ _ data) data]) @ match-fn @ (bis t1 t2 h es ps)
       @ list '((G wff ()) . ,bis) '((h ,h)) '(im G (,(eq-for ret) (,df . ,t1) (,df . ,t2))) @ fn ()
         @ match (eqd-for df)
@@ -687,7 +690,7 @@ axiom elab (a: nat) {x: nat} (p: wff x):
   $ a e. {x | p} <-> [a / x] p $;
 axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 
-@_ def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
+def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
 infixl eqs: $==$ prec 50;
 
 theorem eqsid: $ A == A $ = '(!! ax_gen x biid);
@@ -712,6 +715,7 @@ theorem eleq1d (h: $ G -> a = b $): $ G -> (a e. A <-> b e. A) $ = '(syl eleq1 h
 theorem eleq2d (h: $ G -> A == B $): $ G -> (a e. A <-> a e. B) $ = '(syl eleq2 h);
 @(register-eqd 'el) theorem eleqd (G a b A B) (h1: $ G -> a = b $) (h2: $ G -> A == B $):
   $ G -> (a e. A <-> b e. B) $ = '(bitrd (eleq1d h1) (eleq2d h2));
+do { ((derive-eq) 'eqs) };
 
 theorem abeq (p q: wff x): $ A. x (p <-> q) -> {x | p} == {x | q} $ =
 '(!! iald y @ bitr4g elab elab @ ealeh (nfbi nfsb1 nfsb1) (bieqd sbq sbq));

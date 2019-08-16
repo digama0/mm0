@@ -59,9 +59,6 @@ modifyMeta f = modifyDB $ \db -> db {mMeta = f (mMeta db)}
 modifyND :: (MMNatDed -> MMNatDed) -> FromMMM ()
 modifyND f = modifyMeta $ \m -> m {mND = f <$> mND m}
 
-withContext :: MonadError String m => T.Text -> m a -> m a
-withContext s m = catchError m (\e -> throwError ("at " ++ T.unpack s ++ ": " ++ e))
-
 runFromMMM :: FromMMM a -> Either String (a, MMDatabase)
 runFromMMM m = (\(a, t) -> (a, mDB t)) <$> runStateT m def
 
