@@ -96,20 +96,6 @@ inductive unify : list sexpr → list ptr × list unify_cmd → list ptr → lis
   unify σ (H, unify_cmd.hyp :: us) K (stackel.proof e :: S) S'
 | nil (σ H S) : unify σ (H, []) [] S S
 
-inductive partial_unify : list sexpr → list ptr × list unify_cmd → list ptr → list ptr × list unify_cmd → Prop
-| save (σ H us e K U') :
-  partial_unify σ (H ++ [e], us) (e :: K) U' →
-  partial_unify σ (H, unify_cmd.save :: us) (e :: K) U'
-| term (σ : list sexpr) (H us e t τ es K U') :
-  σ.nth e = some (sexpr.app τ t es) →
-  partial_unify σ (H, us) (es ++ K) U' →
-  partial_unify σ (H, unify_cmd.term t :: us) (e :: K) U'
-| ref (σ) (H : list ptr) (us e v K U') :
-  H.nth v = some e →
-  partial_unify σ (H, us) K U' →
-  partial_unify σ (H, unify_cmd.ref v :: us) (e :: K) U'
-| nil (σ U) : partial_unify σ U [] U
-
 inductive step_proof (env : env) : proof_cmd → state → state → Prop
 | save (e S H σ) : step_proof proof_cmd.save ⟨e :: S, H, σ⟩ ⟨e :: S, H ++ [e], σ⟩
 | term (t el S args S' H σ) :

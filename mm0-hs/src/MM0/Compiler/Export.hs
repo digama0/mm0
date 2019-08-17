@@ -110,7 +110,7 @@ data ProofE =
   | PConvE Int Int Int
 
   | ProofE [(Maybe VarName, Int)] Bool Int
-  deriving (Generic, Eq)
+  deriving (Generic, Eq, Show)
 instance Hashable ProofE where
 
 data Name = SortName Sort | TermName TermName | ThmName ThmName
@@ -296,7 +296,7 @@ writeMM0B strip (Tables sorts terms thms) decls = do
 
   writeTerm :: (Ident, TermData) -> ExportM (TermData, Word32)
   writeTerm (t, td@(TermData _ bis (DepType sret vs) val)) = do
-    pTerm <- fromIntegral <$> get
+    pTerm <- alignTo 8 >> fromIntegral <$> get
     writeBis bis $ \_ lctx n ctx -> do
       writeU64 $ foldl' (\w x -> w .|. shiftL 1 (lctx H.! x))
         (shiftL (fromIntegral (mIx sorts M.! sret)) 56) vs
@@ -317,11 +317,11 @@ writeMM0B strip (Tables sorts terms thms) decls = do
 
   writeThm :: (Ident, ThmData) -> ExportM (ThmData, Word32)
   writeThm (x, td@(ThmData _ bis (ProofStmt hs ret _))) = do
-    pThm <- fromIntegral <$> get
+    pThm <- alignTo 8 >> fromIntegral <$> get
     writeBis bis $ \_ _ n ctx -> do
       us <- liftEither $ withContext x $ runUnify (n, ctx, H.empty) $ do
-        forM_ hs $ \(_, h) -> tell (Endo (UHyp :)) >> sExprUnify h
-        tell (Endo (UThm :)) >> sExprUnify ret
+        sExprUnify ret
+        forM_ (reverse hs) $ \(_, h) -> tell (Endo (UHyp :)) >> sExprUnify h
       writeUnify us
     return (td, pThm)
 
@@ -333,12 +333,12 @@ writeMM0B strip (Tables sorts terms thms) decls = do
 
   writeDecl :: Name -> ExportM ()
   writeDecl (SortName _) = do
-    writeU8 0xC4   -- CMD_DATA_32 | CMD_STMT_SORT
-    writeU32 5 -- sizeof(cmd_stmt)
+    writeU8 0x44   -- CMD_DATA_8 | CMD_STMT_SORT
+    writeU8 2 -- sizeof(cmd8)
   writeDecl (TermName t) = case snd $ mArr terms V.! (mIx terms M.! t) of
     TermData _ _ _ Nothing -> do
-      writeU8 0xC5   -- CMD_DATA_32 | CMD_STMT_TERM
-      writeU32 5 -- sizeof(cmd_stmt)
+      writeU8 0x45   -- CMD_DATA_8 | CMD_STMT_TERM
+      writeU8 2 -- sizeof(cmd8)
     TermData vis bis (DepType s _) (Just (_, e)) -> do
       start <- get
       writeU8 (flag (vis == Local) 0x08 .|. 0xC5) -- CMD_DATA_32 | CMD_STMT_DEF, CMD_STMT_LOCAL_DEF
@@ -362,6 +362,12 @@ writeMM0B strip (Tables sorts terms thms) decls = do
     (Maybe Sort -> Int -> ExceptT String IO ProofE,
       ProofE -> ExceptT String IO Int)
   toProofE im vec m args = (toE, hashCons) where
+    incRef :: Int -> ExceptT String IO Int
+    incRef n = do
+      (p, b) <- VD.read vec n
+      unless b $ VD.write vec n (p, True)
+      return n
+
     hashCons :: ProofE -> ExceptT String IO Int
     hashCons p = H.lookup p <$> lift (readIORef m) >>= \case
       Nothing -> do
@@ -369,13 +375,10 @@ writeMM0B strip (Tables sorts terms thms) decls = do
         VD.pushBack vec (p, False)
         lift $ modifyIORef m (H.insert p n)
         return n
-      Just n -> do
-        (p', b) <- VD.read vec n
-        unless b $ VD.write vec n (p', True)
-        return n
+      Just n -> incRef n
 
     substE :: H.HashMap VarName Int -> SExpr -> ExceptT String IO Int
-    substE subst (SVar v) = return (subst H.! v)
+    substE subst (SVar v) = incRef (subst H.! v)
     substE subst (App t es) = do
       t' <- getTerm t
       es' <- mapM (substE subst) es
@@ -464,7 +467,7 @@ writeMM0B strip (Tables sorts terms thms) decls = do
   mkProof n = I.lookup n . snd <$> get >>= \case
     Just i -> tell $ Endo (PRef (fromIntegral i) :)
     Nothing -> (V.! n) . fst <$> ask >>= \case
-      (SVarE _ s, _) -> tell (Endo (PDummy (fromIntegral s) :)) >> pushHeap n
+      (SVarE v s, _) -> tell (Endo (PDummy (fromIntegral s) v :)) >> pushHeap n
       (SAppE t es, save) -> mapM_ mkProof es >>
         if save then do
           tell $ Endo (PTermSave (fromIntegral t) :)
@@ -608,8 +611,8 @@ data UnifyCmd =
   | UTermSave Word32
   | URef Word32
   | UDummy Word32
-  | UThm
   | UHyp
+  deriving (Show)
 
 writeCmd :: Word8 -> Word32 -> ExportM ()
 writeCmd c 0 = writeU8 c
@@ -622,8 +625,12 @@ writeUnifyCmd (UTerm n)     = writeCmd 0x30 n
 writeUnifyCmd (UTermSave n) = writeCmd 0x31 n
 writeUnifyCmd (URef n)      = writeCmd 0x32 n
 writeUnifyCmd (UDummy n)    = writeCmd 0x33 n
-writeUnifyCmd UThm          = writeU8 0x34
 writeUnifyCmd UHyp          = writeU8 0x36
+
+-- writeUnifyCmd' :: UnifyCmd -> ExportM ()
+-- writeUnifyCmd' c = do
+--   ix <- get <* writeUnifyCmd c
+--   traceM ("  " ++ showHex ix (": " ++ show c))
 
 writeUnify :: [UnifyCmd] -> ExportM ()
 writeUnify l = mapM writeUnifyCmd l >> writeU8 0
@@ -632,7 +639,7 @@ data ProofCmd =
     PTerm Word32
   | PTermSave Word32
   | PRef Word32
-  | PDummy Word32
+  | PDummy Word32 Ident
   | PThm Word32
   | PThmSave Word32
   | PHyp
@@ -643,12 +650,13 @@ data ProofCmd =
   | PUnfold
   | PConvCut
   | PConvRef Word32
+  deriving (Show)
 
 writeProofCmd :: ProofCmd -> ExportM ()
 writeProofCmd (PTerm n)     = writeCmd 0x10 n
 writeProofCmd (PTermSave n) = writeCmd 0x11 n
 writeProofCmd (PRef n)      = writeCmd 0x12 n
-writeProofCmd (PDummy n)    = writeCmd 0x13 n
+writeProofCmd (PDummy n _)  = writeCmd 0x13 n
 writeProofCmd (PThm n)      = writeCmd 0x14 n
 writeProofCmd (PThmSave n)  = writeCmd 0x15 n
 writeProofCmd PHyp          = writeU8 0x16
@@ -659,6 +667,11 @@ writeProofCmd PCong         = writeU8 0x1A
 writeProofCmd PUnfold       = writeU8 0x1B
 writeProofCmd PConvCut      = writeU8 0x1C
 writeProofCmd (PConvRef n)  = writeCmd 0x1D n
+
+-- writeProofCmd' :: ProofCmd -> ExportM ()
+-- writeProofCmd' c = do
+--   ix <- get <* writeProofCmd c
+--   traceM ("  " ++ showHex ix (": " ++ show c))
 
 writeProof :: [ProofCmd] -> ExportM ()
 writeProof l = mapM writeProofCmd l >> writeU8 0

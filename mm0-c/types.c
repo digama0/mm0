@@ -7,6 +7,7 @@ typedef uint64_t u64;
 
 #define ALIGNED(n) __attribute__((aligned(n)))
 #define PACKED __attribute__((packed))
+#define UNREACHABLE() __builtin_unreachable()
 
 // Each sort has one byte associated to it, which
 // contains flags for the sort modifiers.
@@ -156,22 +157,16 @@ typedef struct {
 #define CMD_STMT_LOCAL_THM 0x0E
 
 // is CMD_STMT_THM or CMD_STMT_LOCAL_THM
-#define IS_CMD_STMT_THM(opcode) (((opcode) & 0xF7) == CMD_STMT_THM)
+#define IS_CMD_STMT_THM(opcode) (((opcode) & 0x37) == CMD_STMT_THM)
 
 // All commands are byte aligned, and have a forward reference to the
-// next command.
-typedef struct {
-  u8 cmd;           // statement command
-  u32 next;         // the number of bytes to the next statement command (output),
-                    // starting from the beginning of this struct
-  u8 proof[];       // Proof commands begin here
-} PACKED cmd_stmt;
+// next command to allow for quick scanning skipping proofs.
 
-typedef struct {
-  u8 cmd;
-} PACKED cmd;
+// For statement commands, the data field contains the number of bytes to the
+// next statement command, starting from the beginning of the command.
 
 // The length of the data field depends on the high bits of the command
+typedef struct { u8 cmd; } PACKED cmd0;
 typedef struct { u8 cmd; u8 data; } PACKED cmd8;
 typedef struct { u8 cmd; u16 data; } PACKED cmd16;
 typedef struct { u8 cmd; u32 data; } PACKED cmd32;

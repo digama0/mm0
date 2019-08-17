@@ -42,12 +42,14 @@ data Proof =
   | ProofThm ThmName [SExpr] [Proof]
   | ProofConv SExpr Conv Proof
   | ProofLet VarName Proof Proof
+  deriving (Show)
 
 data Conv =
     CVar VarName
   | CApp TermName [Conv]
   | CSym Conv
   | CUnfold TermName [SExpr] [VarName] Conv
+  deriving (Show)
 
 data Syntax = Define | Lambda | Quote | If | Focus | Let | Letrec
   | Match | MatchFn | MatchFns

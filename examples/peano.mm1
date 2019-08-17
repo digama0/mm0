@@ -118,11 +118,11 @@ do {
     @ list bis rete @ fn ()
     @ letrec (
       [(exps l r) @ match r
-        [('im e1 e2) (list 'exp l e1 e2 (exps (list 'and l e1) e2))]
-        [_ (cons t G @ append (map hd bis) @
+        [('im e1 e2) (list 'exp l e1 e2 (exps (list 'an l e1) e2))]
+        [_ (cons t l @ append (map hd bis) @
           map (match-fn [(_ h) h]) @ rev @ conjuncts l)]]
       [conjuncts @ match-fn
-        [('and e1 e2)
+        [('an e1 e2)
           @ match (conjuncts e1)
             [(_) '((,e2 (anr ,e1 ,e2)) (,e1 (anl ,e1 ,e2)))]
             [hs (cons '(,e2 (anr ,e1 ,e2)) @
@@ -710,7 +710,7 @@ theorem syl6eqs (h1: $ B == C $) (h2: $ G -> A == B $): $ G -> A == C $ = '(eqst
 theorem syl6eqsr (h1: $ C == B $) (h2: $ G -> A == B $): $ G -> A == C $ = '(eqstr4d h2 (a1i h1));
 
 theorem eleq1: $ a = b -> (a e. A <-> b e. A) $ = '(ibid ax_8 @ syl ax_8 eqcom);
-theorem eleq2: $ A == B -> (a e. A <-> a e. B) $ = 'eal;
+theorem eleq2: $ A == B -> (a e. A <-> a e. B) $ = '(!! eale x @ bieqd eleq1 eleq1);
 theorem eleq1d (h: $ G -> a = b $): $ G -> (a e. A <-> b e. A) $ = '(syl eleq1 h);
 theorem eleq2d (h: $ G -> A == B $): $ G -> (a e. A <-> a e. B) $ = '(syl eleq2 h);
 @(register-eqd 'el) theorem eleqd (G a b A B) (h1: $ G -> a = b $) (h2: $ G -> A == B $):
@@ -719,7 +719,7 @@ do { ((derive-eq) 'eqs) };
 
 theorem abeq (p q: wff x): $ A. x (p <-> q) -> {x | p} == {x | q} $ =
 '(!! iald y @ bitr4g elab elab @ ealeh (nfbi nfsb1 nfsb1) (bieqd sbq sbq));
-@(register-eqd 'ab) theorem abeqd (G) (p q: wff x)
+@(register-eqd 'ab) theorem abeqd (G) {x} (p q: wff x)
   (h: $ G -> (p <-> q) $): $ G -> {x | p} == {x | q} $ = '(syl abeq @ iald h);
 theorem eqri {x} (h: $ x e. A <-> x e. B $): $ A == B $ = '(ax_gen h);
 theorem eqrd (G) {x} (h: $ G -> (x e. A <-> x e. B) $): $ G -> A == B $ = '(iald h);
@@ -806,7 +806,7 @@ theorem nfsv: $ FS/ x A $ = '(!! ax_gen y nfv);
 theorem nfnv: $ FN/ x a $ = '(!! ax_gen y nfv);
 theorem nfsri {x y} (A: set x) (h: $ F/ x y e. A $): $ FS/ x A $ = '(ax_gen h);
 theorem nfnri {x y} (a: nat x) (h: $ F/ x y = a $): $ FN/ x a $ = '(ax_gen h);
-theorem nfel2 (a: nat) (A: set x) (h: $ FS/ x A $): $ F/ x a e. A $ = '(eal h);
+theorem nfel2 (a: nat) (A: set x) (h: $ FS/ x A $): $ F/ x a e. A $ = '(!! eale y (nfeqd eleq1) h);
 theorem nf_eq (a b: nat x) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ F/ x a = b $ =
 '(nfx (bicom @ !! exeqe y eqeq1) (nfex @ nfan (eal h1) (eal h2)));
 theorem nfeq2 (b: nat x) (h: $ FN/ x b $): $ F/ x a = b $ = '(nf_eq nfnv h);
@@ -935,7 +935,8 @@ term the (A: set): nat;
 axiom theid {x: nat} (A: set) (a: nat): $ A == {x | x = a} -> the A = a $;
 axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
 
-@(register-eqd 'the) theorem theeqd (h: $ G -> A == B $): $ G -> the A = the B $ =
+@(register-eqd 'the) theorem theeqd (G A B)
+  (h: $ G -> A == B $): $ G -> the A = the B $ =
 '(! casesd _ $ E. y A == {x | x = y} $ _
   (eexda @ eqtr4d (anwr theid) @ syl theid @ imp @ syl eqstr3 h)
   (exp @ eqtr4d (anwr the0) @ syl the0 @ impbi @ noteqd @ exeqd @ eqseq1d h));
@@ -976,7 +977,7 @@ theorem sbnq (a: nat) (b: nat x): $ x = a -> b = N[a / x] b $ =
 theorem nfsbn1 (a: nat) (b: nat x): $ FN/ x N[a / x] b $ =
 '(nfthe @ !! nfab _ y nfsb1);
 theorem nfsbnh (a b: nat x y) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ FN/ x N[a / y] b $ =
-'(nfthe @ !! nfab _ y @ nfsbh h1 @ nfeq2 h2);
+'(nfthe @ !! nfab _ z @ nfsbh h1 @ nfeq2 h2);
 theorem nfsbn (a: nat) (b: nat x y) (h: $ FN/ x b $): $ FN/ x N[a / y] b $ = '(nfsbnh nfnv h);
 theorem sbneq2d (G) (a b c: nat x)
   (h: $ G -> b = c $): $ G -> N[a / x] b = N[a / x] c $ =

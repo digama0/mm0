@@ -1285,23 +1285,23 @@ data UnifyResult = UnifyResult Bool LispVal
 
 coerceTo :: Offset -> LispVal -> LispVal -> ElabM (LispVal -> LispVal)
 coerceTo o tgt ty = unifyAt o tgt ty >>= \case
-    UnifyResult False _ -> return id
-    UnifyResult True u -> return (\p -> List [Atom False o ":conv", tgt, u, p])
+  UnifyResult False _ -> return id
+  UnifyResult True u -> return (\p -> List [Atom False o ":conv", tgt, u, p])
 
 coerceTo' :: Offset -> LispVal -> LispVal -> ElabM LispVal
 coerceTo' o tgt p = (inferType o p >>= coerceTo o tgt) <*> return p
 
 unifyAt :: Offset -> LispVal -> LispVal -> ElabM UnifyResult
 unifyAt o e1 e2 = try (unify o e1 e2) >>= \case
-    Just u -> return u
-    Nothing -> do
-      err <- render <$> unifyErr e1 e2
-      reportAt o ELError err
-      return $ UnifyResult False $ List [Atom False o ":error", String err]
+  Just u -> return u
+  Nothing -> do
+    err <- render <$> unifyErr e1 e2
+    reportAt o ELError err
+    return $ UnifyResult False $ List [Atom False o ":error", String err]
 
 unify :: Offset -> LispVal -> LispVal -> ElabM UnifyResult
-unify o (Ref g) v = assign o g v
-unify o v (Ref g) = assign o g v
+unify o (Ref g) v = assign o False g v
+unify o v (Ref g) = assign o True g v
 unify o a@(Atom _ _ x) (Atom _ _ y) = do
   unless (x == y) $ escapeAt o $
     "variables do not match: " <> x <> " != " <> y
@@ -1332,10 +1332,10 @@ unify o e1@(List (Atom _ _ _ : _)) (Atom _ _ v) = do
   escapeAt o $ "term vs variable: " <> render pp <> " != " <> v
 unify o e1 e2 = escapeAt o $ "bad terms: " <> T.pack (show (e1, e2))
 
-assign :: Offset -> TVar LispVal -> LispVal -> ElabM UnifyResult
-assign o g = \v -> getRef g >>= \case
+assign :: Offset -> Bool -> TVar LispVal -> LispVal -> ElabM UnifyResult
+assign o sym g = \v -> getRef g >>= \case
   MVar _ _ _ _ -> go v
-  v' -> unify o v v'
+  v' -> if sym then unify o v v' else unify o v' v
   where
   go (Ref g') | g == g' = return $ UnifyResult False (Ref g)
   go v@(Ref g') = getRef g' >>= \case

@@ -1,152 +1,51 @@
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "types.c"
+#include "verifier_types.c"
+#include "verifier_debug.c"
 
-u8* g_file; u8* g_end;
-u8 g_num_sorts; u8*   g_sorts;
-u8 g_num_terms; term* g_terms;
-u8 g_num_thms;  thm*  g_thms;
-cmd_stmt* g_stmt;
+u8* g_stmt;
+u8* g_cmd_start;
 u8* g_cmd;
 
 void fail(char* err, int e) {
-  header* p = (header*)g_file;
-  index* ix = 0;
-  if (p->p_index) {
-    index_header* ih = (index_header*)&g_file[p->p_index];
-    u64* sorts = ih->p_sorts;
-    u64* terms = &sorts[p->num_sorts];
-    u64* thms = &terms[p->num_terms];
-    if ((u8*)&thms[p->num_thms] <= g_end) {
-      switch (g_stmt->cmd & 0x3F) {
-        case CMD_STMT_SORT: {
-          if (g_num_sorts < p->num_sorts)
-            ix = (index*)&g_file[sorts[g_num_sorts]];
-        } break;
-
-        case CMD_STMT_DEF:
-        case CMD_STMT_LOCAL_DEF: {
-          if (g_num_terms < p->num_terms)
-            ix = (index*)&g_file[terms[g_num_terms]];
-        } break;
-
-        case CMD_STMT_AXIOM:
-        case CMD_STMT_THM:
-        case CMD_STMT_LOCAL_THM: {
-          if (g_num_thms < p->num_thms)
-            ix = (index*)&g_file[thms[g_num_thms]];
-        } break;
-      }
-    }
-  }
-  if (ix && (u8*)ix <= g_end) {
+  index* ix = lookup_stmt(g_stmt);
+  if (ix) {
     fprintf(stderr, "stmt: %X, cmd: %X\nat %s: %s",
       (u8*)g_stmt - g_file, g_cmd - g_file, ix->value, err);
   } else {
     fprintf(stderr, "stmt: %X, cmd: %X\n%s",
       (u8*)g_stmt - g_file, g_cmd - g_file, err);
   }
+  printf("\ncmds:\n");
+  debug_print_cmds(g_cmd_start, g_cmd);
+  printf("\n");
+  debug_print_stack();
+  debug_print_ustack();
   exit(e);
 }
 
-#define UNREACHABLE() __builtin_unreachable()
 #define EENSURE(err, e, cond) \
   if (__builtin_expect(!(cond), 0)) { \
     fail(err, e); \
   }
 #define ENSURE(err, cond) EENSURE(err, -1, cond)
 
-// The stack is stored as a sequence of 32-bit words.
-// The 2 low bits are used for discriminating, and
-// the 30 high bits are an index into the expr store.
-// 0: expr e
-// 1: proof e (a proof of e on the stack)
-// 2: e1 = e2, where e1 is here and expr e2 is below this on the stack
-// 3: e1 =?= e2, where e1 is here and expr e2 is below this on the stack
-
-#define STACK_TYPE_EXPR    0x00
-#define STACK_TYPE_PROOF   0x01
-#define STACK_TYPE_CONV    0x02
-#define STACK_TYPE_CO_CONV 0x03
-#define STACK_TYPE_MASK (u32)0x03
-#define STACK_DATA_MASK (u32)(~0x03)
-
-#define STACK_SIZE 65536
-u32 g_stack[STACK_SIZE];
-u32* g_stack_top;
-
-// The "heap" here is more of a collection of pointers into the store, where
-// the actual data is kept. The heap contains stack elements in the same format
-// as the stack, except that everything is only one word; CONV and CO_CONV
-// cells are allocated on the store in place of the two word storage on the
-// stack.
-#define HEAP_SIZE 65536
-u32 g_heap[HEAP_SIZE];
-u32 g_heap_size;
-
-// The store contains all the expressions used by the stack and heap. Internal
-// pointers in the store (from a term to its children), as well as pointers from
-// the stack and heap, are all 4 byte aligned offsets from g_store.
-#define STORE_SIZE (1 << 26)
-u8 g_store[STORE_SIZE];
-u32 g_store_size;
-
-typedef struct {
-  u64 type;
-  u8 tag;
-} PACKED store_expr;
 #define get_expr(p) ((store_expr*)&g_store[p])
-
-#define EXPR_VAR 0
-typedef struct {
-  u64 type;
-  u8 tag; // = EXPR_VAR
-  u16 var;
-} PACKED store_var;
 #define get_var(p) ({ \
   store_var* e = (store_var*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_VAR); \
   e; \
 })
-
-#define EXPR_TERM 1
-typedef struct {
-  u64 type;
-  u8 tag; // = EXPR_TERM
-  u16 num_args;
-  u32 termid;
-  u32 args[];
-} PACKED store_term;
 #define get_term(p) ({ \
   store_term* e = (store_term*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_TERM); \
   e; \
 })
-
-#define EXPR_CONV 2
-typedef struct {
-  u32 e1;
-  u32 e2;
-  u8 tag; // = EXPR_CONV
-} PACKED store_conv;
 #define get_conv(p) ({ \
   store_conv* e = (store_conv*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_CONV); \
   e; \
 })
-
-#define HYP_STACK_SIZE 256
-u32 g_hstack[HYP_STACK_SIZE];
-u32* g_hstack_top;
-
-#define UNIFY_STACK_SIZE 256
-u32 g_ustack[UNIFY_STACK_SIZE];
-u32* g_ustack_top;
-
-#define UNIFY_HEAP_SIZE 65536
-u32 g_uheap[UNIFY_HEAP_SIZE];
-u32 g_uheap_size;
 
 u64 g_next_bv;
 // scratch space
@@ -186,6 +85,11 @@ static inline u32 as_type(u32 val, u32 type) {
   *(--g_ustack_top); \
 })
 
+#define push_ustack(val) { \
+  ENSURE("unify stack overflow", g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]); \
+  *g_ustack_top++ = val; \
+}
+
 #define push_uheap(val) { \
   ENSURE("unify heap overflow", g_uheap_size < UNIFY_HEAP_SIZE); \
   g_uheap[g_uheap_size++] = val; \
@@ -196,7 +100,7 @@ u32 cmd_unpack(u8* cmd) {
   switch (CMD_DATA(*cmd)) {
     case CMD_DATA_0: {
       g_data = 0;
-      return sizeof(cmd);
+      return sizeof(cmd0);
     } break;
 
     case CMD_DATA_8: {
@@ -223,11 +127,12 @@ u32 cmd_unpack(u8* cmd) {
 bool sorts_compatible(u64 from, u64 to) {
   u64 diff = from ^ to;
   return (diff & ~TYPE_DEPS_MASK) == 0 ||
-    ((diff & (TYPE_BOUND_MASK | ~TYPE_DEPS_MASK)) == 0 &&
+    ((diff & ~TYPE_BOUND_MASK & ~TYPE_DEPS_MASK) == 0 &&
     (from & TYPE_BOUND_MASK) != 0);
 }
 
 void load_args(u64 args[], u32 num_args) {
+  g_heap_size = 0;
   g_next_bv = 1;
   ENSURE("bad args pointer", (u8*)&args[num_args] <= g_end);
   for (int i = 0; i < num_args; i++) {
@@ -252,14 +157,20 @@ typedef enum { UDef, UThm, UThmEnd } unify_mode;
 void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
   g_ustack_top = &g_ustack[1];
   g_ustack[0] = tgt;
+  g_cmd_start = cmd;
   u8* last_cmd = cmd;
   while (true) {
     g_cmd = cmd;
     u32 sz = cmd_unpack(cmd); // sets g_data
+    // debug_print_ustack();
+    // debug_print_uheap();
     ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
+    // printf("\n"); debug_print_cmd(cmd, g_data);
 
     switch (*cmd & 0x3F) {
-      case CMD_END: goto loop_end;
+      case CMD_END: {
+        cmd += sz;
+      } goto loop_end;
 
       case CMD_UNIFY_REF: {
         ENSURE("bad ref step", g_data < g_uheap_size);
@@ -273,8 +184,8 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         ENSURE("unify failure at term", e->termid == g_data);
         ENSURE("unify stack overflow",
           &g_ustack_top[e->num_args] <= &g_ustack[UNIFY_STACK_SIZE]);
-        for (int i = 0; i < e->num_args; i++) {
-          g_ustack_top[i] = e->args[i];
+        for (int i = e->num_args - 1; i >= 0; i--) {
+          *g_ustack_top++ = e->args[i];
         }
         if (*cmd & 0x01) // save
           push_uheap(p);
@@ -289,7 +200,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         type &= TYPE_DEPS_MASK;
         for (int i = 0; i < g_uheap_size; i++) {
           ENSURE("dummy DV violation",
-            (get_var(g_uheap[i])->type & type) == 0);
+            (get_expr(g_uheap[i])->type & type) == 0);
         }
         push_uheap(p);
       } break;
@@ -297,15 +208,13 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
       case CMD_UNIFY_HYP: {
         switch (mode) {
           case UThm: {
-            push_uheap(as_type(pop_stack(), STACK_TYPE_PROOF));
+            push_ustack(as_type(pop_stack(), STACK_TYPE_PROOF));
           } break;
 
           case UThmEnd: {
             ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
-            ENSURE("unify stack overflow",
-              g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]);
             ENSURE("hypothesis stack underflow", g_hstack_top > g_hstack);
-            *(g_ustack_top++) = *(--g_hstack_top);
+            push_ustack(*--g_hstack_top);
           } break;
 
           default: {
@@ -335,11 +244,18 @@ typedef enum { Def, Thm } proof_mode;
 
 u8* run_proof(proof_mode mode, u8* cmd) {
   u8* last_cmd = cmd;
+  g_cmd_start = cmd;
   while (true) {
     g_cmd = cmd;
     u32 sz = cmd_unpack(cmd); // sets g_data
+    // debug_print_stack();
+    // debug_print_heap();
+    // printf("\n"); debug_print_cmd(cmd, g_data);
+
     switch (*cmd & 0x3F) {
-      case CMD_END: goto loop_end;
+      case CMD_END: {
+        cmd += sz;
+      } goto loop_end;
 
       case CMD_PROOF_REF: {
         ENSURE("bad ref step", g_data < g_heap_size);
@@ -354,8 +270,10 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           (g_next_bv >> 56) == 0);
         u64 type = TYPE_BOUND_MASK | ((u64)g_data << 56) | g_next_bv;
         g_next_bv *= 2;
-        push_heap(STACK_TYPE_EXPR |
-          ALLOC(((store_var){type, EXPR_VAR, g_heap_size}), sizeof(store_var)));
+        u32 e = STACK_TYPE_EXPR |
+          ALLOC(((store_var){type, EXPR_VAR, g_heap_size}), sizeof(store_var));
+        push_stack(e);
+        push_heap(e);
       } break;
 
       case CMD_PROOF_TERM:
@@ -367,9 +285,9 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         g_stack_top -= t->num_args;
         // alloc g_deps;
         u8 bound = 0;
-        u64 accum = 0;
-        u32 p = ALLOC(((store_term){(u64)(t->sort & 0x7F) << 56,
-          EXPR_TERM, t->num_args, g_data}), sizeof(store_term) + 4 * t->num_args);
+        u64 accum = (u64)(t->sort & 0x7F) << 56;
+        u32 p = ALLOC(((store_term){0, EXPR_TERM, t->num_args, g_data}),
+          sizeof(store_term) + 4 * t->num_args);
         store_term* result = get_term(p);
         for (u16 i = 0; i < t->num_args; i++) {
           u32 arg = as_type(g_stack_top[i], STACK_TYPE_EXPR);
@@ -473,7 +391,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           g_uheap[i] = p->args[i];
           // TODO: DV conditions
         }
-        run_unify(UThm, (u8*)&targs[p->num_args], e);
+        run_unify(UDef, (u8*)&targs[p->num_args+1], e);
         ENSURE("Unfold unify error", e1 == as_type(pop_stack(), STACK_TYPE_CO_CONV));
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
         push_stack(STACK_TYPE_EXPR | e2);
@@ -528,17 +446,17 @@ void verify(u64 len, u8* file) {
   g_num_terms = 0; g_terms = (term*)&file[p->p_terms];
   g_num_thms  = 0; g_thms  = (thm*)&file[p->p_thms];
 
-  u8* p_stmt = &file[p->p_proof];
+  u8* stmt = &file[p->p_proof];
 
-  while (*p_stmt != CMD_END) {
-    cmd_stmt* stmt = (cmd_stmt*)p_stmt;
+  while (*stmt != CMD_END) {
+    u32 sz = cmd_unpack(stmt);
     g_stmt = stmt;
-    u8* next_stmt = p_stmt + stmt->next;
+    u8* next_stmt = stmt + g_data;
     ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
 
-    switch (*p_stmt & 0x3F) {
+    switch (*stmt & 0x3F) {
       case CMD_STMT_SORT: {
-        ENSURE("Next statement incorrect", stmt->next == sizeof(cmd_stmt));
+        ENSURE("Next statement incorrect", g_data == sz);
         ENSURE("Step sort overflow", g_num_sorts < p->num_sorts);
         g_num_sorts++;
       } break;
@@ -555,7 +473,6 @@ void verify(u64 len, u8* file) {
         u64* args_ret = &args[t->num_args];
         u8* ucmd = (u8*)&args_ret[1];
         g_store_size = 0;
-        g_heap_size = 0;
         g_stack_top = g_stack;
         load_args(args, t->num_args + 1);
         u64 ret = *args_ret;
@@ -564,7 +481,7 @@ void verify(u64 len, u8* file) {
 
         if (t->sort & 0x80) {
           ENSURE("Next statement incorrect",
-            next_stmt == run_proof(Def, stmt->proof));
+            next_stmt == run_proof(Def, stmt+sz));
           ENSURE("stack has != one element", g_stack_top == &g_stack[1]);
           u32 val = g_stack[0];
           ENSURE("bad stack slot", (val & STACK_TYPE_MASK) == STACK_TYPE_EXPR);
@@ -573,9 +490,12 @@ void verify(u64 len, u8* file) {
           ENSURE("type mismatch", sorts_compatible(type, ret));
           ENSURE("type has unaccounted dependencies",
             (type & TYPE_DEPS_MASK & ~ret) == 0);
+          g_uheap_size = 0;
+          for (int i = 0; i < t->num_args; i++)
+            push_uheap(g_heap[i]);
           run_unify(UDef, ucmd, val);
         } else {
-          ENSURE("Next statement incorrect", stmt->next == sizeof(cmd_stmt));
+          ENSURE("Next statement incorrect", g_data == sz);
         }
         g_num_terms++;
       } break;
@@ -586,16 +506,23 @@ void verify(u64 len, u8* file) {
         thm* t = &g_thms[g_num_thms];
         ENSURE("Step theorem overflow", g_num_thms < p->num_thms);
         u64* args = (u64*)&file[t->p_args];
+        g_store_size = 0;
+        g_stack_top = g_stack;
+        g_hstack_top = g_hstack;
         load_args(args, t->num_args);
+        u8* end = run_proof(Thm, stmt+sz);
         ENSURE("Next statement incorrect",
-          next_stmt == run_proof(Thm, stmt->proof));
+          next_stmt == end);
         ENSURE("stack has != one element", g_stack_top == &g_stack[1]);
         u32 val = g_stack[0];
         ENSURE("bad stack slot", (val & STACK_TYPE_MASK) ==
-          (IS_CMD_STMT_THM(stmt->cmd) ? STACK_TYPE_PROOF : STACK_TYPE_EXPR));
+          (IS_CMD_STMT_THM(*stmt) ? STACK_TYPE_PROOF : STACK_TYPE_EXPR));
         val &= STACK_DATA_MASK;
         ENSURE("conclusion should have provable sort",
           (g_sorts[TYPE_SORT(get_expr(val)->type)] & SORT_PROVABLE) != 0)
+        g_uheap_size = 0;
+        for (int i = 0; i < t->num_args; i++)
+          push_uheap(g_heap[i]);
         run_unify(UThmEnd, (u8*)&args[t->num_args], val);
         g_num_thms++;
       } break;
@@ -604,7 +531,7 @@ void verify(u64 len, u8* file) {
         ENSURE("bad statement command", false);
       } break;
     }
-    p_stmt = next_stmt;
+    stmt = next_stmt;
   }
 
   ENSURE("not all sorts proved", g_num_sorts == p->num_sorts);
