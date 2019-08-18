@@ -318,13 +318,14 @@ trExpr termIx varIx = go where
   go (App t es) = VApp (termIx M.! t) (go <$> es)
 
 makeDV :: [VBinder] -> [(VarID, VarID)]
-makeDV = go 0 [] where
-  go :: Int -> [VarID] -> [VBinder] -> [(VarID, VarID)]
-  go _ _ [] = []
-  go n bs (VReg _ ts : bis) =
+makeDV = go 0 [] [] where
+  go :: Int -> [VarID] -> [VarID] -> [VBinder] -> [(VarID, VarID)]
+  go _ _ _ [] = []
+  go n xs bs (VReg _ ts : bis) =
     let s = S.fromList ts in
-    ((,) (VarID n) <$> (filter (`S.notMember` s) bs)) ++ go (n+1) bs bis
-  go n bs (VBound _ : bis) = ((,) (VarID n) <$> bs) ++ go (n+1) (VarID n : bs) bis
+    ((,) (VarID n) <$> (filter (`S.notMember` s) xs)) ++ go (n+1) xs (VarID n : bs) bis
+  go n xs bs (VBound _ : bis) =
+    ((,) (VarID n) <$> bs) ++ go (n+1) (VarID n : xs) (VarID n : bs) bis
 
 data StackSlot =
   -- | A bound variable.

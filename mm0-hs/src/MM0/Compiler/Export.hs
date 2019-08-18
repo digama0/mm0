@@ -266,8 +266,9 @@ writeMM0B strip (Tables sorts terms thms) decls = do
       writeU64 (shiftL 1 63 .|. shiftL (fromIntegral $ mIx sorts M.! s) 56 .|. shiftL 1 ln)
       m (ln+1) (H.insert x ln lctx) (n+1) (H.insert x n ctx)
     go (PReg v (DepType s xs)) m ln lctx n ctx = do
-      writeU64 $ foldl' (\w x -> w .|. shiftL 1 (lctx H.! x))
-        (shiftL (fromIntegral $ mIx sorts M.! s) 56) xs
+      ns <- forM xs $ fromJustError "bound variable not in context" . flip H.lookup lctx
+      writeU64 $ foldl' (\w i -> w .|. shiftL 1 i)
+        (shiftL (fromIntegral $ mIx sorts M.! s) 56) ns
       m ln lctx (n+1) (H.insert v n ctx)
 
   runUnify :: (Int, H.HashMap Ident Int, H.HashMap Ident Sort) -> UnifyM () -> Either String [UnifyCmd]
@@ -297,14 +298,13 @@ writeMM0B strip (Tables sorts terms thms) decls = do
   writeTerm :: (Ident, TermData) -> ExportM (TermData, Word32)
   writeTerm (t, td@(TermData _ bis (DepType sret vs) val)) = do
     pTerm <- alignTo 8 >> fromIntegral <$> get
-    writeBis bis $ \_ lctx n ctx -> do
+    withContext t $ writeBis bis $ \_ lctx n ctx -> do
       writeU64 $ foldl' (\w x -> w .|. shiftL 1 (lctx H.! x))
         (shiftL (fromIntegral (mIx sorts M.! sret)) 56) vs
       case val of
         Nothing -> return ()
         Just (ds, e) -> do
-          us <- liftEither $ withContext t $
-            runUnify (n, ctx, H.fromList ds) (sExprUnify e)
+          us <- liftEither $ runUnify (n, ctx, H.fromList ds) (sExprUnify e)
           writeUnify us
     return (td, pTerm)
 
@@ -318,8 +318,8 @@ writeMM0B strip (Tables sorts terms thms) decls = do
   writeThm :: (Ident, ThmData) -> ExportM (ThmData, Word32)
   writeThm (x, td@(ThmData _ bis (ProofStmt hs ret _))) = do
     pThm <- alignTo 8 >> fromIntegral <$> get
-    writeBis bis $ \_ _ n ctx -> do
-      us <- liftEither $ withContext x $ runUnify (n, ctx, H.empty) $ do
+    withContext x $ writeBis bis $ \_ _ n ctx -> do
+      us <- liftEither $ runUnify (n, ctx, H.empty) $ do
         sExprUnify ret
         forM_ (reverse hs) $ \(_, h) -> tell (Endo (UHyp :)) >> sExprUnify h
       writeUnify us

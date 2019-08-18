@@ -8,18 +8,19 @@ u8* g_cmd_start;
 u8* g_cmd;
 
 void fail(char* err, int e) {
+  fprintf(stderr, "stmt: %X, cmd: ", (u8*)g_stmt - g_file);
+  u32 data; debug_cmd_unpack(g_cmd, &data);
+  debug_print_cmd(g_cmd, data);
   index* ix = lookup_stmt(g_stmt);
   if (ix) {
-    fprintf(stderr, "stmt: %X, cmd: %X\nat %s: %s",
-      (u8*)g_stmt - g_file, g_cmd - g_file, ix->value, err);
-  } else {
-    fprintf(stderr, "stmt: %X, cmd: %X\n%s",
-      (u8*)g_stmt - g_file, g_cmd - g_file, err);
+    fprintf(stderr, "at %s: ", ix->value);
   }
-  printf("\ncmds:\n");
+  fprintf(stderr, "%s\n\n", err);
+  fprintf(stderr, "cmds:\n");
   debug_print_cmds(g_cmd_start, g_cmd);
-  printf("\n");
+  fprintf(stderr, "\n");
   debug_print_stack();
+  debug_print_heap();
   debug_print_ustack();
   exit(e);
 }
@@ -165,7 +166,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
     // debug_print_ustack();
     // debug_print_uheap();
     ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
-    // printf("\n"); debug_print_cmd(cmd, g_data);
+    // fprintf(stderr, "\n"); debug_print_cmd(cmd, g_data);
 
     switch (*cmd & 0x3F) {
       case CMD_END: {
@@ -199,7 +200,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         ENSURE("unify failure at dummy", (type >> 56) == (0x80 | g_data));
         type &= TYPE_DEPS_MASK;
         for (int i = 0; i < g_uheap_size; i++) {
-          ENSURE("dummy DV violation",
+          ENSURE("dummy disjoint variable violation",
             (get_expr(g_uheap[i])->type & type) == 0);
         }
         push_uheap(p);
@@ -244,13 +245,14 @@ typedef enum { Def, Thm } proof_mode;
 
 u8* run_proof(proof_mode mode, u8* cmd) {
   u8* last_cmd = cmd;
-  g_cmd_start = cmd;
+  u8* cmd_start = cmd;
   while (true) {
     g_cmd = cmd;
+    g_cmd_start = cmd_start;
     u32 sz = cmd_unpack(cmd); // sets g_data
     // debug_print_stack();
     // debug_print_heap();
-    // printf("\n"); debug_print_cmd(cmd, g_data);
+    // fprintf(stderr, "\n"); debug_print_cmd(cmd, g_data);
 
     switch (*cmd & 0x3F) {
       case CMD_END: {
@@ -330,10 +332,25 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         ENSURE("stack underflow", g_stack_top >= &g_stack[t->num_args]);
         g_stack_top -= t->num_args;
         g_uheap_size = t->num_args;
+        // alloc g_deps;
+        u8 bound = 0;
         for (u16 i = 0; i < t->num_args; i++) {
-          g_uheap[i] = as_type(g_stack_top[i], STACK_TYPE_EXPR);
-          // TODO: DV conditions
+          u32 arg = as_type(g_stack_top[i], STACK_TYPE_EXPR);
+          g_uheap[i] = arg;
+          u64 target = targs[i];
+          u64 deps = get_expr(arg)->type & TYPE_DEPS_MASK;
+          if (target & TYPE_BOUND_MASK) {
+            g_deps[bound++] = deps;
+            for (u16 j = 0; j < i; j++)
+              ENSURE("disjoint variable violation",
+                (get_expr(g_uheap[j])->type & deps) == 0);
+          } else {
+            for (u8 j = 0; j < bound; j++)
+              ENSURE("disjoint variable violation",
+                (target & ((u64)1<<j)) || (g_deps[j] & deps) == 0);
+          }
         }
+        // free g_deps;
         run_unify(UThm, (u8*)&targs[t->num_args], e);
         push_stack(STACK_TYPE_PROOF | e);
         if (*cmd & 0x01) // save
@@ -387,10 +404,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         ENSURE("Unfold: not a definition", (t->sort & 0x80) != 0);
         u64* targs = (u64*)&g_file[t->p_args];
         g_uheap_size = p->num_args;
-        for (u16 i = 0; i < p->num_args; i++) {
+        for (u16 i = 0; i < p->num_args; i++)
           g_uheap[i] = p->args[i];
-          // TODO: DV conditions
-        }
         run_unify(UDef, (u8*)&targs[p->num_args+1], e);
         ENSURE("Unfold unify error", e1 == as_type(pop_stack(), STACK_TYPE_CO_CONV));
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
