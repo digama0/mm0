@@ -1,14 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include "verifier_types.c"
 #include "verifier_debug.c"
+
+extern void _exit(int exitcode);
 
 u8* g_stmt;
 u8* g_cmd_start;
 u8* g_cmd;
 
 void fail(char* err, int e) {
-  fprintf(stderr, "stmt: %X, cmd: ", (u8*)g_stmt - g_file);
+#ifndef BARE
+  fprintf(stderr, "stmt: %lX, cmd: ", (u8*)g_stmt - g_file);
   u32 data; debug_cmd_unpack(g_cmd, &data);
   debug_print_cmd(g_cmd, data);
   index* ix = lookup_stmt(g_stmt);
@@ -22,6 +23,7 @@ void fail(char* err, int e) {
   debug_print_stack();
   debug_print_heap();
   debug_print_ustack();
+#endif
   exit(e);
 }
 
@@ -136,7 +138,7 @@ void load_args(u64 args[], u32 num_args) {
   g_heap_size = 0;
   g_next_bv = 1;
   ENSURE("bad args pointer", (u8*)&args[num_args] <= g_end);
-  for (int i = 0; i < num_args; i++) {
+  for (u16 i = 0; i < num_args; i++) {
     u64 ty = args[i];
     u64 vars_bitset = ty & TYPE_DEPS_MASK;
     u8 sort = TYPE_SORT(ty);
@@ -273,7 +275,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         u64 type = TYPE_BOUND_MASK | ((u64)g_data << 56) | g_next_bv;
         g_next_bv *= 2;
         u32 e = STACK_TYPE_EXPR |
-          ALLOC(((store_var){type, EXPR_VAR, g_heap_size}), sizeof(store_var));
+          ALLOC(((store_var){type, EXPR_VAR, (u16)g_heap_size}), sizeof(store_var));
         push_stack(e);
         push_heap(e);
       } break;
@@ -324,7 +326,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
 
       case CMD_PROOF_THM:
       case CMD_PROOF_THM_SAVE: {
-        ENSURE("Invalid opcode in def", cmd != Def);
+        ENSURE("Invalid opcode in def", mode != Def);
         ENSURE("theorem out of range", g_data < g_num_thms);
         thm* t = &g_thms[g_data];
         u64* targs = (u64*)&g_file[t->p_args];
@@ -358,7 +360,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       } break;
 
       case CMD_PROOF_HYP: {
-        ENSURE("Invalid opcode in def", cmd != Def);
+        ENSURE("Invalid opcode in def", mode != Def);
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("hypothesis stack overflow", g_hstack_top < &g_hstack[HYP_STACK_SIZE]);
         *g_hstack_top++ = e;

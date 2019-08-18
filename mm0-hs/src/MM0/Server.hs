@@ -327,7 +327,7 @@ elaborateFileAndSendDiags nuri@(NormalizedUri t) version str = do
           Left $ ResponseError ParseError "failed to parse file" Nothing,
           parseErrorDiags larr errs)
         (errs, _, Just ast) -> do
-          (errs', env) <- liftIO $ CE.elaborate isMM0 errs ast
+          (errs', env) <- liftIO $ CE.elaborate isMM0 True errs ast
           let fc = FC str larr ast (toSpans env <$> ast) env
           res <- liftIO $ atomically $ do
             h <- readTVar fs
@@ -406,27 +406,27 @@ getSymbols larr env = do
   v <- VD.unsafeFreeze (CE.eLispData env)
   l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
     ty <- CE.unRefIO (v V.! n) <&> \case
-      CE.Atom _ _ _ -> Just SkConstant
-      CE.List _ -> Just SkArray
-      CE.DottedList _ _ _ -> Just SkObject
-      CE.Number _ -> Just SkNumber
-      CE.String _ -> Just SkString
+      CE.Atom _ _ _          -> Just SkConstant
+      CE.List _              -> Just SkArray
+      CE.DottedList _ _ _    -> Just SkObject
+      CE.Number _            -> Just SkNumber
+      CE.String _            -> Just SkString
       CE.UnparsedFormula _ _ -> Just SkString
-      CE.Bool _ -> Just SkBoolean
-      CE.Syntax _ -> Just SkEvent
-      CE.Undef -> Nothing
-      CE.Proc _ -> Just SkFunction
-      CE.AtomMap _ -> Just SkObject
-      CE.Ref _ -> undefined
-      CE.MVar _ _ _ _ -> Just SkConstant
-      CE.Goal _ _ -> Just SkConstant
+      CE.Bool _              -> Just SkBoolean
+      CE.Syntax _            -> Just SkEvent
+      CE.Undef               -> Nothing
+      CE.Proc _              -> Just SkFunction
+      CE.AtomMap _           -> Just SkObject
+      CE.Ref _               -> undefined
+      CE.MVar _ _ _ _        -> Just SkConstant
+      CE.Goal _ _            -> Just SkConstant
     return $ liftM2 (mkDS x Nothing) o ty
   let l2 = H.toList (CE.eSorts env) <&> \(x, (_, r, _)) -> mkDS x Nothing r SkClass
   let l3 = H.toList (CE.eDecls env) <&> \(x, (_, r, d, _)) ->
         mkDS x (Just (renderNoBreak (ppDeclType env d))) r $ case d of
-          CE.DTerm _ _ -> SkConstructor
-          CE.DDef _ _ _ _ -> SkConstructor
-          CE.DAxiom _ _ _ -> SkMethod
+          CE.DTerm _ _          -> SkConstructor
+          CE.DDef _ _ _ _       -> SkConstructor
+          CE.DAxiom _ _ _       -> SkMethod
           CE.DTheorem _ _ _ _ _ -> SkMethod
   return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) (l1 ++ l2 ++ l3)
 
@@ -452,7 +452,7 @@ getCompletions doc@(NormalizedUri t) pos = do
             Nothing -> return $ Right []
             Just ast' -> do
               (errs', env) <- ReaderT $ \_r -> do
-                CE.elaborateWithCompletion isMM0 errs ast'
+                CE.elaborateWithCompletion isMM0 True errs ast'
               fs <- asks rsLastParse
               liftIO $ atomically $ modifyTVar fs $ flip H.alter doc $ \case
                 fc@(Just (oldv, _)) | isOutdated oldv (Just version) -> fc

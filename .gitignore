@@ -1,5 +1,6 @@
 .vscode/
 .stack-work/
+.stack-work-profile/
 node_modules/
 build/
 mm0-hs/mm0-hs.cabal

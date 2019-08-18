@@ -26,14 +26,14 @@ import MM0.Compiler.PrettyPrinter
 import MM0.Util
 
 -- TODO
-elaborateWithCompletion :: Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
-elaborateWithCompletion mm0 errs ast = do
-  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 (toElabError <$> errs) initialBindings
+elaborateWithCompletion :: Bool -> Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
+elaborateWithCompletion mm0 par errs ast = do
+  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 par (toElabError <$> errs) initialBindings
   return (errs', env)
 
-elaborate :: Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
-elaborate mm0 errs ast = do
-  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 (toElabError <$> errs) initialBindings
+elaborate :: Bool -> Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
+elaborate mm0 par errs ast = do
+  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 par (toElabError <$> errs) initialBindings
   return (errs', env)
 
 elabStmt :: Span Stmt -> Elab ()

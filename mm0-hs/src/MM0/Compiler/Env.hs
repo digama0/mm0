@@ -321,12 +321,18 @@ instance Default Env where
 data ElabFuncs = ElabFuncs {
   efMM0 :: Bool,
   efReport :: ElabError -> IO (),
-  efAsync :: forall a. IO a -> IO (Async a) }
+  efAsync :: forall a. IO a -> IO (Either a (Async a)) }
 type Elab = RWST ElabFuncs () Env IO
 type ElabM = MaybeT Elab
 
-runElab :: Elab a -> Bool -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
-runElab m mm0 errs lvs = do
+parallelize :: Bool -> ((forall a. IO a -> IO (Either a (Async a))) -> IO b) -> IO b
+parallelize False m = m (fmap Left)
+parallelize True m = do
+  caps <- getNumCapabilities
+  withTaskGroup caps $ \g -> m (fmap Right . async g)
+
+runElab :: Elab a -> Bool -> Bool -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
+runElab m mm0 par errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
   dat <- VD.new 0
@@ -335,15 +341,14 @@ runElab m mm0 errs lvs = do
       ins [] _ hm = return hm
       ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x (Nothing, n) hm)
   hm <- ins lvs 0 H.empty
-  caps <- getNumCapabilities
-  withTaskGroup caps $ \g -> do
+  parallelize par $ \async' -> do
     let
       m' = m <* do
         decls <- gets (sortOn (\(s, _, _, _) -> s) . H.elems . eDecls)
         forM_ decls $ \case
           (_, _, DTheorem _ _ _ _ tm, _) -> () <$ liftIO tm
           _ -> return ()
-    (a, env, _) <- runRWST m' (ElabFuncs mm0 report (async g))
+    (a, env, _) <- runRWST m' (ElabFuncs mm0 report async')
       def {eLispData = dat, eLispNames = hm}
     errs' <- readTVarIO pErrs
     return (a, errs', env)
@@ -419,7 +424,7 @@ try = lift . runMaybeT
 forkElabM :: ElabM a -> ElabM (IO (Maybe a))
 forkElabM m = lift $ RWST $ \r s -> do
   a <- efAsync r $ fst <$> evalRWST (runMaybeT m) r s
-  return (wait a, s, ())
+  return (either return wait a, s, ())
 
 lispAlloc :: LispVal -> ElabM Int
 lispAlloc v = do

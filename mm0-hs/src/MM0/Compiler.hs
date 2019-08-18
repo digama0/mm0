@@ -24,7 +24,10 @@ compile args = do
     "--mm0" : rest2 -> (Just True, rest2)
     "--mm1" : rest2 -> (Just False, rest2)
     rest2 -> (Nothing, rest2)
-  (name, mm0) <- case rest2 of
+  (par, rest3) <- return $ case rest2 of
+    "-j1" : rest3 -> (False, rest3)
+    rest3 -> (True, rest3)
+  (name, mm0) <- case rest3 of
     [] -> return ("", stdin)
     (mm0:_) -> (,) mm0 <$> openFile mm0 ReadMode
   let isMM0' = fromMaybe (isSuffixOf "mm0" name) isMM0
@@ -33,7 +36,7 @@ compile args = do
     (errs, _, Nothing) -> do
       let errs' = M.ParseErrorBundle (NE.fromList errs) (initialPosState name str)
       die (M.errorBundlePretty errs')
-    (errs, _, Just ast) -> elaborate isMM0' errs ast >>= \case
+    (errs, _, Just ast) -> elaborate isMM0' par errs ast >>= \case
       (errs2, env) -> do
         unless (null errs2) $ do
           let errs' = M.ParseErrorBundle

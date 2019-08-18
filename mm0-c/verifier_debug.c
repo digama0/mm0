@@ -1,4 +1,7 @@
 #include "verifier_types.c"
+#ifndef BARE
+#include <stdio.h>
+#include <stdlib.h>
 
 void debug_print_expr(u32 n, bool type) {
   if (n % 4 != 0) {fprintf(stderr, "unaligned expr"); return;}
@@ -84,7 +87,7 @@ void debug_print_stack() {
 void debug_print_heap() {
   fprintf(stderr, "heap:\n");
   for (int i = 0; i < g_heap_size; i++) {
-    fprintf(stderr, "%d: "); debug_print_stackel(&g_heap[i]); fprintf(stderr, "\n");
+    fprintf(stderr, "%d: ", i); debug_print_stackel(&g_heap[i]); fprintf(stderr, "\n");
   }
 }
 
@@ -99,7 +102,7 @@ void debug_print_ustack() {
 void debug_print_uheap() {
   fprintf(stderr, "uheap:\n");
   for (int i = 0; i < g_uheap_size; i++) {
-    fprintf(stderr, "%d: ");
+    fprintf(stderr, "%d: ", i);
     debug_print_expr(g_uheap[i], true);
     fprintf(stderr, "\n");
   }
@@ -144,10 +147,10 @@ void debug_print_cmd(u8* cmd, u32 data) {
   }
   u64 pos = cmd - g_file;
   switch (*cmd & 0x3F) {
-    case CMD_END: fprintf(stderr, "%X: End", pos); break;
+    case CMD_END: fprintf(stderr, "%lX: End", pos); break;
 
     case CMD_PROOF_REF: {
-      fprintf(stderr, "%X: Ref %d", pos, data);
+      fprintf(stderr, "%lX: Ref %d", pos, data);
       if (data < g_heap_size) {
         fprintf(stderr, "  // = ");
         debug_print_stackel(&g_heap[data]);
@@ -156,16 +159,16 @@ void debug_print_cmd(u8* cmd, u32 data) {
 
     case CMD_PROOF_TERM:
     case CMD_PROOF_TERM_SAVE: {
-      fprintf(stderr, "%X: Term %d", pos, data);
+      fprintf(stderr, "%lX: Term %d", pos, data);
       index* ix;
       if (data < g_num_terms && (ix = lookup_term(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
-      if (*cmd & 0x01) fprintf(stderr, "\n  %X: Save", pos);
+      if (*cmd & 0x01) fprintf(stderr, "\n  %lX: Save", pos);
     } break;
 
     case CMD_PROOF_DUMMY: {
-      fprintf(stderr, "%X: Dummy %d", pos, data);
+      fprintf(stderr, "%lX: Dummy %d", pos, data);
       index* ix;
       if (data < g_num_sorts && (ix = lookup_sort(data))) {
         fprintf(stderr, "  // = %s", ix->value);
@@ -174,24 +177,24 @@ void debug_print_cmd(u8* cmd, u32 data) {
 
     case CMD_PROOF_THM:
     case CMD_PROOF_THM_SAVE: {
-      fprintf(stderr, "%X: Thm %d", pos, data);
+      fprintf(stderr, "%lX: Thm %d", pos, data);
       index* ix;
       if (data < g_num_thms && (ix = lookup_thm(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
-      if (*cmd & 0x01) fprintf(stderr, "\n%X: Save", pos);
+      if (*cmd & 0x01) fprintf(stderr, "\n%lX: Save", pos);
     } break;
 
-    case CMD_PROOF_HYP: fprintf(stderr, "%X: Hyp", pos); break;
-    case CMD_PROOF_CONV: fprintf(stderr, "%X: Conv", pos); break;
-    case CMD_PROOF_REFL: fprintf(stderr, "%X: Refl", pos); break;
-    case CMD_PROOF_SYMM: fprintf(stderr, "%X: Symm", pos); break;
-    case CMD_PROOF_CONG: fprintf(stderr, "%X: Cong", pos); break;
-    case CMD_PROOF_UNFOLD: fprintf(stderr, "%X: Unfold", pos); break;
-    case CMD_PROOF_CONV_CUT: fprintf(stderr, "%X: ConvCut", pos); break;
+    case CMD_PROOF_HYP: fprintf(stderr, "%lX: Hyp", pos); break;
+    case CMD_PROOF_CONV: fprintf(stderr, "%lX: Conv", pos); break;
+    case CMD_PROOF_REFL: fprintf(stderr, "%lX: Refl", pos); break;
+    case CMD_PROOF_SYMM: fprintf(stderr, "%lX: Symm", pos); break;
+    case CMD_PROOF_CONG: fprintf(stderr, "%lX: Cong", pos); break;
+    case CMD_PROOF_UNFOLD: fprintf(stderr, "%lX: Unfold", pos); break;
+    case CMD_PROOF_CONV_CUT: fprintf(stderr, "%lX: ConvCut", pos); break;
 
     case CMD_PROOF_CONV_REF: {
-      fprintf(stderr, "%X: ConvRef %d", pos, data);
+      fprintf(stderr, "%lX: ConvRef %d", pos, data);
       if (data < g_heap_size) {
         fprintf(stderr, "  // = ");
         debug_print_stackel(&g_heap[data]);
@@ -199,7 +202,7 @@ void debug_print_cmd(u8* cmd, u32 data) {
     } break;
 
     case CMD_UNIFY_REF: {
-      fprintf(stderr, "%X: URef %d", pos, data);
+      fprintf(stderr, "%lX: URef %d", pos, data);
       if (data < g_uheap_size) {
         fprintf(stderr, "  // = ");
         debug_print_expr(g_uheap[data], true);
@@ -208,24 +211,24 @@ void debug_print_cmd(u8* cmd, u32 data) {
 
     case CMD_UNIFY_TERM:
     case CMD_UNIFY_TERM_SAVE: {
-      fprintf(stderr, "%X: UTerm %d", pos, data);
+      fprintf(stderr, "%lX: UTerm %d", pos, data);
       index* ix;
       if (data < g_num_terms && (ix = lookup_term(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
-      if (*cmd & 0x01) fprintf(stderr, "\n%X: Save", pos);
+      if (*cmd & 0x01) fprintf(stderr, "\n%lX: Save", pos);
     } break;
 
     case CMD_UNIFY_DUMMY: {
-      fprintf(stderr, "%X: UDummy", pos);
+      fprintf(stderr, "%lX: UDummy", pos);
     } break;
 
     case CMD_UNIFY_HYP: {
-      fprintf(stderr, "%X: UHyp", pos);
+      fprintf(stderr, "%lX: UHyp", pos);
     } break;
 
     default: {
-      fprintf(stderr, "%X: ?%02X", pos, *cmd);
+      fprintf(stderr, "%lX: ?%02X", pos, *cmd);
     } break;
   }
   fprintf(stderr, "\n");
@@ -247,3 +250,5 @@ void debug_print_cmds(u8* cmd, u8* stop) {
     cmd += sz;
   }
 }
+
+#endif
