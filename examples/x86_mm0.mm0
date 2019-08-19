@@ -1,5 +1,5 @@
-import "x86.mm0"
-import "mm0.mm0"
+-- import "x86.mm0";
+import "mm0.mm0";
 
 ---------------------------------------
 -- Specification of a valid verifier --
@@ -19,5 +19,5 @@ theorem Verifier_terminates (k s: nat):
   $ initialConfig VerifierElf k -> alwaysTerminates k s 0 $;
 
 -- If the verifier succeeds, then the theorems in the input are derivable
-theorem Verifier_terminates (k s: nat):
+theorem Verifier_Valid (k s: nat):
   $ initialConfig VerifierElf k /\ succeeds k s 0 -> Valid s $;

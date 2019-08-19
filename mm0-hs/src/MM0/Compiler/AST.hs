@@ -50,6 +50,7 @@ data Stmt =
   | Inout Inout
   | Annot AtLisp (Span Stmt)
   | Do [AtLisp]
+  | Import (Span T.Text)
 
 data Notation =
     Delimiter [Char] (Maybe [Char])

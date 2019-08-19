@@ -99,7 +99,7 @@ spanStmt :: Parser (Maybe (Span Stmt))
 spanStmt = sortStmt <|> declStmt <|> thmsStmt <|>
   mSpan (fmap (mapFst Notation) <$> notation) <|>
   mSpan (fmap (mapFst Inout) <$> inout) <|>
-  annot <|> doStmt
+  annot <|> doStmt <|> importStmt
 
 identStart :: Char -> Bool
 identStart c = isAlpha c || c == '_'
@@ -317,6 +317,9 @@ annot = mSpan (symbol "@" >>
 
 doStmt :: Parser (Maybe (Span Stmt))
 doStmt = mSpan (kw "do" >> commit (braces (Do <$> many lispVal)))
+
+importStmt :: Parser (Maybe (Span Stmt))
+importStmt = mSpan (kw "import" >> commit (Import <$> lexeme (span strLit)))
 
 strLit :: Parser T.Text
 strLit = single '"' *> (TB.run <$> p) where

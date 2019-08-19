@@ -46,6 +46,17 @@
 			"name": "meta.statement.mm0"
 		},
 		{
+			"begin": "import",
+			"beginCaptures": {"0": {"name": "keyword.other.notation.mm0"}},
+			"end": ";",
+			"endCaptures": {"0": {"name": "punctuation.terminator.statement.mm0"}},
+			"patterns": [
+				{"include": "#comment"},
+				{"include": "#string"}
+			],
+			"name": "meta.statement.mm0"
+		},
+		{
 			"begin": "delimiter",
 			"beginCaptures": {"0": {"name": "keyword.other.notation.mm0"}},
 			"end": ";",
@@ -160,6 +171,15 @@
 			"end": "\\$",
 			"endCaptures": {"0": {"name": "punctuation.definition.math-string.end.mm0"}}
 		},
+		"string": {
+			"begin": "\"",
+			"end": "\"",
+			"name": "string.quoted.double.mm0.lisp",
+			"patterns": [{
+				"match": "\\\\[\\\\\"nr]",
+				"name": "constant.character.escape.mm0.lisp"
+			}]
+		},
 		"binder": {
 			"patterns": [{
 				"begin": "\\{",
@@ -249,15 +269,7 @@
 				{"include": "#math-string"},
 				{"match": "[0-9]+", "name": "constant.numeric.mm0.lisp"},
 				{"match": "#[tf](?!\\w)", "name": "constant.language.mm0.lisp"},
-				{
-					"begin": "\"",
-					"end": "\"",
-					"name": "string.quoted.double.mm0.lisp",
-					"patterns": [{
-						"match": "\\\\[\\\\\"nr]",
-						"name": "constant.character.escape.mm0.lisp"
-					}]
-				},
+				{"include": "#string"},
 				{
 					"begin": "('+)\\(",
 					"beginCaptures": {"1": {"name": "string.quoted.other.mm0.lisp"}},

@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+// #include <time.h>
 #ifdef WIN32
 #include <windows.h>
 #else
@@ -52,6 +53,12 @@ int main(int argc, char** argv) {
   }
 #endif
 
+  // struct timespec start_time;
+  // clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_time);
   verify(len, result);
+  // struct timespec end_time;
+  // clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_time);
+  // long diffInNanos = (end_time.tv_sec - start_time.tv_sec) * (long)1e9 + (end_time.tv_nsec - start_time.tv_nsec);
+  // printf("%ld", diffInNanos);
   return 0;
 }

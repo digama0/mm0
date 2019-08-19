@@ -1,4 +1,4 @@
-import "peano_hex.mm0"
+import "peano_hex.mm0";
 
 def consBit (b: wff) (n: nat): nat = $ if b (b1 n) (b0 n) $;
 
@@ -82,7 +82,7 @@ theorem ofBits0 (n: nat): $ ofBits 0 = 0 $;
 theorem ofBitsS (k bs n: nat):
   $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $;
 theorem ofBitsT (bs: nat): $ bs e. List Bitvec /\ ofBits 0 e. Bits 0 $;
-theorem ofBitsT (k bs n m: nat):
+theorem ofBitsST (k bs n m: nat):
   $ bs e. Bits k /\ ofBits n e. Bits m ->
     ofBits ((k <> bs) : n) e. Bits (k + m) $;
 
@@ -424,13 +424,13 @@ $ E. v E. opc E. r E. l1 E. imm E. l2 (l = l1 ++ l2 /\
     ast = xastBinop opc (opSizeW rex v) (Rm_i r imm)) $;
 
 def decodeBinopImm8 (rex ast b l .opc .r .l1 .imm .l2: nat): wff =
-$ E. opc E. r E. l1 E. l2 (l = l1 ++ l2 /\ b = ch x8 x3 /\
+$ E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\ b = ch x8 x3 /\
     readOpcodeModRM rex opc r l1 /\
     readImmN 8 imm l2 /\
     ast = xastBinop opc (opSizeW rex 1) (Rm_i r imm)) $;
 
 def decodeBinopHi (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
-$ E. v E. opc E. r E. l1 E. l2 (l = l1 ++ l2 /\
+$ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readOpcodeModRM rex opc r l1 /\ opc != 6 /\
     readImmN 8 imm l2 /\
@@ -660,7 +660,7 @@ theorem readMemXT (k a l: nat):
 
 def writeMemory1 (m a b m2 .prot .b2: nat): wff =
 $ E. prot E. b2 (PROT_READ + PROT_WRITE C_ prot /\
-  m @ a = prot <> b2 /\ m2 = write m a (prot <> b)) $;
+  m @ a = prot <> b2 /\ m2 == write m a (prot <> b)) $;
 
 def writeMemory (m a l m2: nat): wff;
 theorem writeMemory0 (m a l m2: nat): $ writeMemory m a l m2 <-> m2 = m $;
@@ -679,7 +679,7 @@ theorem writeMemT (k a l k2: nat):
     writeMem k a l k2 -> k2 e. Config $;
 
 def mapMemory1 (prot m a b m2: nat): wff =
-$ ~ PROT_READ e. fst (m @ a) /\ m2 = write m a (prot <> b) $;
+$ ~ PROT_READ e. fst (m @ a) /\ m2 == write m a (prot <> b) $;
 
 def mapMemory (prot m a l m2: nat): wff;
 theorem mapMemory0 (prot m a l m2: nat): $ mapMemory prot m a l m2 <-> m2 = m $;
@@ -772,7 +772,7 @@ def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
 
 def setReg (k r q: nat): nat;
 theorem setRegVal (ip rs f m r q: nat):
-  $ setReg (ip <> rs <> f <> m) r q = ip <> write rs r q <> f <> m $;
+  $ setReg (ip <> rs <> f <> m) r q = ip <> lower (write rs r q) <> f <> m $;
 theorem setRegT (k r q: nat):
   $ k e. Config /\ r e. Regs /\ q e. u64 -> setReg k r q e. Config $;
 
@@ -1063,9 +1063,6 @@ theorem execXASTSTC (k k2: nat):
 theorem execXASTCMC (k k2: nat):
   $ execXAST k xastCMC k2 <->
     k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
-theorem execXASTCMC (k k2: nat):
-  $ execXAST k xastCMC k2 <->
-    k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
 theorem execXASTSysCall (k n k2: nat):
   $ ~ execXAST k xastSysCall k2 $; -- not handled here
 
@@ -1108,7 +1105,7 @@ def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
 theorem toCStrT (s l: nat):
   $ s e. List u8 /\ toCStr s l -> l e. List u8 $;
 
-def readCStr (k a s .l: nat): wff = $ E. l toCStr s l /\ readMem k a l $;
+def readCStr (k a s .l: nat): wff = $ E. l (toCStr s l /\ readMem k a l) $;
 theorem readCStrT (k a s: nat):
   $ k e. Config /\ a e. u64 /\ readCStr k a s -> s e. List u8 $;
 
@@ -1303,7 +1300,7 @@ $ {f | E. entry E. prot E. off E. seg (
 -- and extracts the program segment and its protection and location.
 def basicElf (file elf .entry .prot .vaddr
   .eh .ph .phoff .off .seg .memsz: nat): wff =
-$ E. eh E. ph E. phoff E. off E. seg E. memsz (
+$ E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
     sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0 /\
     sublistAt phoff file ph /\
     pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
@@ -1312,7 +1309,7 @@ $ E. eh E. ph E. phoff E. off E. seg E. memsz (
 
 def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
-    k = entry <> ((\ r, 0) |` Regs) <> f <> m) $;
+    k = entry <> lower ((\ r, 0) |` Regs) <> f <> m) $;
 theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
 

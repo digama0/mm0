@@ -1,5 +1,6 @@
--- This include doesn't actually work, so use copy and paste
-import "peano_hex.mm0";
+-- We import x86 instead of peano_hex to keep the imports linear
+-- import "peano_hex.mm0";
+import "x86.mm0";
 
 -- Some additional list operations
 
@@ -833,7 +834,7 @@ def simpleTokenize (s: nat): nat;
 theorem simpleTokenize0: $ simpleTokenize 0 = 0 $;
 theorem simpleTokenizeWS (c s: nat):
   $ c e. white -> simpleTokenize (c : s) = simpleTokenize s $;
-theorem simpleTokenizeTk {y c: nat} (c s x r: nat):
+theorem simpleTokenizeTk (s x r: nat):
   $ maxPrefix nonemptyNonwhite s = suc (x <> r) ->
     simpleTokenize s = x : simpleTokenize r $;
 

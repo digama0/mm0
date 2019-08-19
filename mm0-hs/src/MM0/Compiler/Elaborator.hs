@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module MM0.Compiler.Elaborator (elaborate, elaborateWithCompletion,
-  ErrorLevel(..), ElabError(..)) where
+module MM0.Compiler.Elaborator (elaborate, elabLoad,
+  ErrorLevel(..), ElabError(..), ElabConfig(..), toElabError) where
 
 import Control.Monad.State
 import Control.Monad.RWS.Strict
@@ -11,6 +11,7 @@ import Data.Word8
 import Data.Maybe
 import Data.Default
 import Data.Foldable
+import System.IO.Error
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as H
 import qualified Data.Set as S
@@ -18,22 +19,24 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
-import MM0.Compiler.Parser (ParseError)
+import qualified Data.Text.IO as T
+import MM0.Compiler.Parser (parseAST)
 import MM0.Compiler.AST
 import MM0.Compiler.Env
 import MM0.Compiler.MathParser
 import MM0.Compiler.PrettyPrinter
 import MM0.Util
 
--- TODO
-elaborateWithCompletion :: Bool -> Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
-elaborateWithCompletion mm0 par errs ast = do
-  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 par (toElabError <$> errs) initialBindings
-  return (errs', env)
+elabLoad :: ElabConfig -> FilePath -> IO (Either T.Text Env)
+elabLoad cfg name = tryIOError (T.readFile name) >>= \case
+  Left err -> return $ Left $ T.pack $ show err
+  Right str -> case parseAST name str of
+    (_, _, Nothing) -> return $ Left $ T.pack $ "failed to parse " ++ name
+    (_, _, Just ast) -> Right . snd <$> elaborate cfg {ecName = name} [] ast
 
-elaborate :: Bool -> Bool -> [ParseError] -> AST -> IO ([ElabError], Env)
-elaborate mm0 par errs ast = do
-  (_, errs', env) <- runElab (mapM_ elabStmt ast) mm0 par (toElabError <$> errs) initialBindings
+elaborate :: ElabConfig -> [ElabError] -> AST -> IO ([ElabError], Env)
+elaborate cfg errs ast = do
+  (_, errs', env) <- runElab (mapM_ elabStmt ast) cfg errs initialBindings
   return (errs', env)
 
 elabStmt :: Span Stmt -> Elab ()
@@ -53,6 +56,7 @@ elabStmt (Span rd@(pos, _) s) = resuming $ withTimeout pos $ case s of
     ann <- evalAt def e
     lift $ elabStmt stmt
     () <$ call pos "annotate" [ann, nameOf stmt]
+  Import (Span _ t) -> loadEnv rd t >>= put -- TODO: this just replaces the current env
   _ -> unimplementedAt pos
 
 checkNew :: ErrorLevel -> Range -> T.Text -> (v -> Range) -> T.Text ->

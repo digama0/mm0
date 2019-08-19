@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
 module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, Range,
   Visibility(..), Ident, Sort, TermName, ThmName, VarName, Token,
@@ -13,7 +14,6 @@ import Control.Monad.RWS.Strict
 import Data.Bits
 import Data.Char
 import Data.Maybe
-import Data.List
 import Data.Word8
 import Data.Text (Text)
 import Data.Default
@@ -25,7 +25,9 @@ import qualified Data.Text as T
 import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
+import System.FilePath
 import System.Timeout
+import System.IO.Error
 import System.IO.Unsafe
 import MM0.Compiler.AST (Offset, Range,
   Binder(..), SortData(..), Prec(..), Visibility(..), QExpr)
@@ -320,6 +322,8 @@ instance Default Env where
 
 data ElabFuncs = ElabFuncs {
   efMM0 :: Bool,
+  efName :: FilePath,
+  efLoader :: T.Text -> IO (Either T.Text Env),
   efReport :: ElabError -> IO (),
   efAsync :: forall a. IO a -> IO (Either a (Async a)) }
 type Elab = RWST ElabFuncs () Env IO
@@ -331,8 +335,15 @@ parallelize True m = do
   caps <- getNumCapabilities
   withTaskGroup caps $ \g -> m (fmap Right . async g)
 
-runElab :: Elab a -> Bool -> Bool -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
-runElab m mm0 par errs lvs = do
+data ElabConfig = ElabConfig {
+  ecMM0 :: Bool,
+  ecParallel :: Bool,
+  ecCompletion :: Bool, -- TODO
+  ecName :: FilePath,
+  ecLoader :: FilePath -> IO (Either T.Text Env) }
+
+runElab :: Elab a -> ElabConfig -> [ElabError] -> [(Ident, LispVal)] -> IO (a, [ElabError], Env)
+runElab m (ElabConfig mm0 par _ name load) errs lvs = do
   pErrs <- newTVarIO errs
   let report e = atomically $ modifyTVar pErrs (e :)
   dat <- VD.new 0
@@ -342,13 +353,8 @@ runElab m mm0 par errs lvs = do
       ins ((x, v) : ls) n hm = VD.pushBack dat v >> ins ls (n+1) (H.insert x (Nothing, n) hm)
   hm <- ins lvs 0 H.empty
   parallelize par $ \async' -> do
-    let
-      m' = m <* do
-        decls <- gets (sortOn (\(s, _, _, _) -> s) . H.elems . eDecls)
-        forM_ decls $ \case
-          (_, _, DTheorem _ _ _ _ tm, _) -> () <$ liftIO tm
-          _ -> return ()
-    (a, env, _) <- runRWST m' (ElabFuncs mm0 report async')
+    let load' t = load (takeDirectory name </> T.unpack t)
+    (a, env, _) <- runRWST m (ElabFuncs mm0 name load' report async')
       def {eLispData = dat, eLispNames = hm}
     errs' <- readTVarIO pErrs
     return (a, errs', env)
@@ -405,6 +411,14 @@ guardAt o msg False = escapeAt o msg
 
 modifyPE :: (ParserEnv -> ParserEnv) -> Elab ()
 modifyPE f = modify $ \env -> env {ePE = f (ePE env)}
+
+loadEnv :: Range -> T.Text -> ElabM Env
+loadEnv o t = do
+  load <- asks efLoader
+  liftIO (tryIOError (load t)) >>= \case
+    Left err -> escapeSpan o $ T.pack $ "loader error: " ++ show err
+    Right (Left err) -> escapeSpan o err
+    Right (Right env) -> return env
 
 after :: Maybe SeqNum -> ElabM SeqNum
 after s = MaybeT $ state $ \env ->

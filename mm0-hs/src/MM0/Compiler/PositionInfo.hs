@@ -43,7 +43,7 @@ posToOff :: Lines -> Int -> Int -> Offset
 posToOff _ 0 c = c
 posToOff larr l c = larr V.! (l - 1) + c
 
-data PIType = PISort | PIVar (Maybe Binder) | PITerm | PIAtom Bool (Maybe Binder)
+data PIType = PISort | PIVar (Maybe Binder) | PITerm | PIAtom Bool (Maybe Binder) | PIFile
 data PosInfo = PosInfo T.Text PIType
 
 type Spans = V.Vector (Span PosInfo)
@@ -84,6 +84,7 @@ toSpans env = \st -> runST $ do
     stmt (Inout (Output _ vals)) = mapM_ (atLisp False) vals
     stmt (Annot anno (Span _ st)) = atLisp False anno >> stmt st
     stmt (Do val) = mapM_ (atLisp False) val
+    stmt (Import (Span o t)) = push' o t PIFile
     stmt (Sort _ _ _) = return ()
 
     withBinders :: [Binder] -> MakeSpan s () -> MakeSpan s ()
