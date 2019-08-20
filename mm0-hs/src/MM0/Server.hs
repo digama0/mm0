@@ -32,7 +32,6 @@ import System.IO.Error
 import System.Timeout
 import System.Exit
 import qualified System.Log.Logger as L
-import qualified Text.Megaparsec.Error as E
 import qualified Data.Rope.UTF16 as Rope
 import MM0.Compiler.PositionInfo
 import qualified MM0.Compiler.AST as CA
@@ -286,14 +285,6 @@ mkDiagnosticRelated l r msg rel =
     msg
     (Just (List rel))
 
-mkDiagnostic :: Position -> T.Text -> Diagnostic
-mkDiagnostic p msg = mkDiagnosticRelated ELError (Range p p) msg []
-
-parseErrorDiags :: Lines -> [CP.ParseError] -> [Diagnostic]
-parseErrorDiags larr errs = toDiag <$> errs where
-  toDiag err = let (l, c) = offToPos larr (E.errorOffset err) in
-    mkDiagnostic (Position l c) (T.pack (E.parseErrorTextPretty err))
-
 toOffset :: Lines -> Position -> Int
 toOffset larr (Position l c) = posToOff larr l c
 
@@ -325,23 +316,19 @@ elaborateFileAndSendDiags nuri@(NormalizedUri t) ds version str = do
           file = fromMaybe "" $ uriToFilePath fileUri
           larr = getLines str
           isMM0 = T.isSuffixOf "mm0" t
-      (fc, diags) <- case CP.parseAST file str of
-        (errs, _, Nothing) -> return (
-          Left $ ResponseError ParseError "failed to parse file" Nothing,
-          parseErrorDiags larr errs)
-        (errs, _, Just ast) -> do
-          (errs', env) <- ReaderT $ \r ->
-            CE.elaborate (mkElabConfig nuri ds isMM0 False r)
-              (CE.toElabError <$> errs) ast
-          let fc = FC str larr ast (toSpans env <$> ast) env
-          res <- liftIO $ atomically $ do
-            h <- readTVar fs
-            case H.lookup nuri h of
-              Just (oldv, fc') | isOutdated oldv version -> return fc'
-              _ -> fc <$ writeTVar fs (H.insert nuri (version, fc) h)
-          return (Right res, elabErrorDiags fileUri larr errs')
+          (errs, _, ast) = CP.parseAST file str
+      (errs', env) <- ReaderT $ \r ->
+        CE.elaborate (mkElabConfig nuri ds isMM0 False r)
+          (CE.toElabError <$> errs) ast
+      let fc1 = FC str larr ast (toSpans env <$> ast) env
+      fc <- liftIO $ atomically $ do
+        h <- readTVar fs
+        case H.lookup nuri h of
+          Just (oldv, fc') | isOutdated oldv version -> return fc'
+          _ -> fc1 <$ writeTVar fs (H.insert nuri (version, fc1) h)
+      let diags = elabErrorDiags fileUri larr errs'
       publishDiagnostics 100 nuri version (partitionBySource diags)
-      return fc
+      return (Right fc)
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
@@ -457,26 +444,22 @@ getCompletions doc@(NormalizedUri t) pos = do
           larr = getLines str
           isMM0 = T.isSuffixOf "mm0" t
           publish = publishDiagnostics 100 doc (Just version) . partitionBySource
-      case CP.parseAST file str of
-        (errs, _, Nothing) -> do
-          publish $ parseErrorDiags larr errs
-          return $ Left $ ResponseError ParseError "failed to parse file" Nothing
-        (errs, _, Just ast) -> do
-          case markPosition (toOffset larr pos) ast of
-            Nothing -> return $ Right []
-            Just ast' -> do
-              (errs', env) <- ReaderT $ \r ->
-                CE.elaborate (mkElabConfig doc [] isMM0 True r)
-                  (CE.toElabError <$> errs) ast'
-              fs <- asks rsLastParse
-              liftIO $ atomically $ modifyTVar fs $ flip H.alter doc $ \case
-                fc@(Just (oldv, _)) | isOutdated oldv (Just version) -> fc
-                _ -> Just (Just version, FC str larr ast' (toSpans env <$> ast') env)
-              publish (elabErrorDiags fileUri larr errs')
-              ds <- liftIO $ getSymbols larr env
-              return $ Right $ ds <&> \(DocumentSymbol x det sk _ _ _ _) ->
-                CompletionItem x (Just (toCIK sk)) det
-                  def def def def def def def def def def def def
+          (errs, _, ast) = CP.parseAST file str
+      case markPosition (toOffset larr pos) ast of
+        Nothing -> return $ Right []
+        Just ast' -> do
+          (errs', env) <- ReaderT $ \r ->
+            CE.elaborate (mkElabConfig doc [] isMM0 True r)
+              (CE.toElabError <$> errs) ast'
+          fs <- asks rsLastParse
+          liftIO $ atomically $ modifyTVar fs $ flip H.alter doc $ \case
+            fc@(Just (oldv, _)) | isOutdated oldv (Just version) -> fc
+            _ -> Just (Just version, FC str larr ast' (toSpans env <$> ast') env)
+          publish (elabErrorDiags fileUri larr errs')
+          ds <- liftIO $ getSymbols larr env
+          return $ Right $ ds <&> \(DocumentSymbol x det sk _ _ _ _) ->
+            CompletionItem x (Just (toCIK sk)) det
+              def def def def def def def def def def def def
   where
   toCIK :: SymbolKind -> CompletionItemKind
   toCIK SkMethod        = CiMethod

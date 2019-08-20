@@ -30,9 +30,8 @@ import MM0.Util
 elabLoad :: ElabConfig -> FilePath -> IO (Either T.Text Env)
 elabLoad cfg name = tryIOError (T.readFile name) >>= \case
   Left err -> return $ Left $ T.pack $ show err
-  Right str -> case parseAST name str of
-    (_, _, Nothing) -> return $ Left $ T.pack $ "failed to parse " ++ name
-    (_, _, Just ast) -> Right . snd <$> elaborate cfg {ecName = name} [] ast
+  Right str -> let ast = thd3 (parseAST name str) in
+    Right . snd <$> elaborate cfg {ecName = name} [] ast
 
 elaborate :: ElabConfig -> [ElabError] -> AST -> IO ([ElabError], Env)
 elaborate cfg errs ast = do

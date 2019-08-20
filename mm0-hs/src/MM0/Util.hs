@@ -80,5 +80,14 @@ snd3 (_, y, _) = y
 thd3 :: (a, b, c) -> c
 thd3 (_, _, z) = z
 
+mapFst3 :: (a -> b) -> (a, c, d) -> (b, c, d)
+mapFst3 f (x, y, z) = (f x, y, z)
+
+mapSnd3 :: (b -> c) -> (a, b, d) -> (a, c, d)
+mapSnd3 f (x, y, z) = (x, f y, z)
+
+mapThd3 :: (c -> d) -> (a, b, c) -> (a, b, d)
+mapThd3 f (x, y, z) = (x, y, f z)
+
 toChar :: Word8 -> Char
 toChar = C.chr . fromIntegral

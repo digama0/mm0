@@ -38,19 +38,20 @@ runParser p n o s =
       (l : ls ++ errs, pstateOffset pos, Nothing)
     (Right (a, o'), errs) -> (errs, o', Just a)
 
-parseAST :: String -> T.Text -> ([ParseError], Offset, Maybe AST)
-parseAST n t = runParser (sc *> (V.fromList <$> stmts)) n 0 t where
-  stmts =
-    (withRecovery (recoverToSemi Nothing)
-        ((do
-          o <- getOffset <* kw "exit"
-          semi >> failAt o "early exit on 'exit' command"
-          return (Just Nothing)) <|>
-        (fmap Just <$> spanStmt)) >>= \case
+parseAST :: String -> T.Text -> ([ParseError], Offset, AST)
+parseAST n t = mapThd3 fromJust $ runParser (sc *> (V.fromList <$> stmts)) n 0 t where
+  stmts = ([] <$ eof) <|> do
+    res <- withRecovery
+      (\err -> maybe (Just Nothing) (const Nothing) <$> recoverToSemi' err)
+      ((do
+        o <- getOffset <* kw "exit"
+        semi >> failAt o "early exit on 'exit' command"
+        return (Just Nothing)) <|>
+      (fmap Just <$> spanStmt))
+    case res of
       Just (Just st) -> (st :) <$> stmts
       Just Nothing -> return []
-      Nothing -> stmts) <|>
-    ([] <$ eof) <?> "expecting command or EOF"
+      Nothing -> stmts
 
 nonFatal :: ParseError -> Parser ()
 nonFatal e = modify (e :)
@@ -119,6 +120,9 @@ ident = ident_ >>= \case "_" -> empty; i -> return i
 
 ident' :: Parser T.Text
 ident' = ident_' >>= \case "_" -> empty; i -> return i
+
+recoverToSemi' :: ParseError -> Parser (Maybe ())
+recoverToSemi' err = takeWhileP Nothing (/= ';') >> optional semi <* nonFatal err
 
 recoverToSemi :: a -> ParseError -> Parser a
 recoverToSemi a err = takeWhileP Nothing (/= ';') >> semi >> a <$ nonFatal err
