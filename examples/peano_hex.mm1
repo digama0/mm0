@@ -1,4 +1,4 @@
-import "peano.mm0";
+import "peano.mm1";
 
 -- The string preamble. This is used for interfacing with
 -- the real world, making concrete inputs and outputs.
@@ -42,16 +42,15 @@ axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
 axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
 axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
 
--- This allows us to prove facts about hex digits by case analysis.
--- It is not provable from the above axioms because the fact that the "hex"
--- sort has only the given 16 constructors is only observable from outside the theory.
-axiom h2nlt (h: hex): $ h < 16 $;
-
 term c2n: char > nat; coercion c2n: char > nat;
 axiom c2nch (h1 h2: hex): $ ch h1 h2 = h1 * 16 + h2 $;
-axiom c2nlt (c: char): $ c < 16 * 16 $;
 
 term s2n: string > nat; coercion s2n: string > nat;
 axiom s2ns0: $ s0 = 0 $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;
 axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+
+do {
+  (def ->expr @ match-fn [(? number? e) (num->expr e)] [e e])
+  (->expr 55)
+};
