@@ -77,4 +77,16 @@ u32* g_ustack_top;
 u32 g_uheap[UNIFY_HEAP_SIZE];
 u32 g_uheap_size;
 
+#ifdef HIGHWATER
+u32* g_stack_highwater;
+u32 g_heap_highwater;
+u32 g_store_highwater;
+u32* g_hstack_highwater;
+u32* g_ustack_highwater;
+u32 g_uheap_highwater;
+#define UPDATE_HIGHWATER(p, hw) if (hw <= p) hw = p;
+#else
+#define UPDATE_HIGHWATER(p, hw)
+#endif
+
 u64 g_next_bv;

@@ -58,11 +58,13 @@ u32 g_data;
 #define push_stack(val) { \
   ENSURE("stack overflow", g_stack_top < &g_stack[STACK_SIZE]); \
   *g_stack_top++ = val; \
+  UPDATE_HIGHWATER(g_stack_top, g_stack_highwater) \
 }
 
 #define push_heap(val) { \
   ENSURE("heap overflow", g_heap_size < HEAP_SIZE); \
   g_heap[g_heap_size++] = val; \
+  UPDATE_HIGHWATER(g_heap_size, g_heap_highwater) \
 }
 
 #define ALLOC(val, size) ({ \
@@ -70,6 +72,7 @@ u32 g_data;
   u32 p = g_store_size; \
   *(typeof(val)*)&g_store[p] = val; \
   g_store_size += size; \
+  UPDATE_HIGHWATER(g_store_size, g_store_highwater) \
   p; \
 })
 
@@ -91,11 +94,13 @@ static inline u32 as_type(u32 val, u32 type) {
 #define push_ustack(val) { \
   ENSURE("unify stack overflow", g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]); \
   *g_ustack_top++ = val; \
+  UPDATE_HIGHWATER(g_ustack_top, g_ustack_highwater) \
 }
 
 #define push_uheap(val) { \
   ENSURE("unify heap overflow", g_uheap_size < UNIFY_HEAP_SIZE); \
   g_uheap[g_uheap_size++] = val; \
+  UPDATE_HIGHWATER(g_uheap_size, g_uheap_highwater) \
 }
 
 u32 cmd_unpack(u8* cmd) {
@@ -190,6 +195,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         for (int i = e->num_args - 1; i >= 0; i--) {
           *g_ustack_top++ = e->args[i];
         }
+        UPDATE_HIGHWATER(g_ustack_top, g_ustack_highwater)
         if (*cmd & 0x01) // save
           push_uheap(p);
       } break;
@@ -334,6 +340,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         ENSURE("stack underflow", g_stack_top >= &g_stack[t->num_args]);
         g_stack_top -= t->num_args;
         g_uheap_size = t->num_args;
+        UPDATE_HIGHWATER(g_uheap_size, g_uheap_highwater)
         // alloc g_deps;
         u8 bound = 0;
         for (u16 i = 0; i < t->num_args; i++) {
@@ -364,6 +371,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("hypothesis stack overflow", g_hstack_top < &g_hstack[HYP_STACK_SIZE]);
         *g_hstack_top++ = e;
+        UPDATE_HIGHWATER(g_hstack_top, g_hstack_highwater)
         push_heap(STACK_TYPE_PROOF | e);
       } break;
 
@@ -554,4 +562,13 @@ void verify(u64 len, u8* file) {
   ENSURE("not all sorts proved", g_num_sorts == p->num_sorts);
   ENSURE("not all terms proved", g_num_terms == p->num_terms);
   ENSURE("not all theorems proved", g_num_thms == p->num_thms);
+
+#ifdef HIGHWATER
+  fprintf(stderr, "stack highwater: %ld / %d\n", g_stack_highwater - g_stack, STACK_SIZE);
+  fprintf(stderr, "heap highwater: %d / %d\n", g_heap_highwater, HEAP_SIZE);
+  fprintf(stderr, "store highwater: %d / %d\n", g_store_highwater, STORE_SIZE);
+  fprintf(stderr, "hypothesis stack highwater: %ld / %d\n", g_hstack_highwater - g_hstack, HYP_STACK_SIZE);
+  fprintf(stderr, "unify stack highwater: %ld / %d\n", g_ustack_highwater - g_ustack, UNIFY_STACK_SIZE);
+  fprintf(stderr, "unify heap highwater: %d / %d\n", g_uheap_highwater, UNIFY_HEAP_SIZE);
+#endif
 }
