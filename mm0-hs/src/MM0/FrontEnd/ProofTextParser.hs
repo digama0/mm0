@@ -5,30 +5,27 @@ module MM0.FrontEnd.ProofTextParser (parseProof) where
 import Control.Applicative hiding (many, (<|>))
 import Data.Word8
 import Data.Void
-import Data.Default
 import Text.Megaparsec
 import Text.Megaparsec.Byte
-import Control.Monad.Trans.State
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as BC
 import qualified Data.Text as T
-import qualified Data.Map.Strict as M
-import MM0.Kernel.Environment (Ident)
+import MM0.Kernel.Environment
 import MM0.Kernel.Types
 import MM0.Util
 
-type Parser = StateT IxLookup (Parsec Void B.ByteString)
+type Parser = Parsec Void B.ByteString
 
-parseProof :: B.ByteString -> Either String Proofs
-parseProof s = case runParser (evalStateT readProofs def) "" s of
+parseProof :: B.ByteString -> Either String [Stmt]
+parseProof s = case runParser readStmts "" s of
   Left err -> Left (show err)
   Right c -> Right c
 
-readProofs :: Parser Proofs
-readProofs = space *> many readProof <* eof
+readStmts :: Parser [Stmt]
+readStmts = space *> many readStmt <* eof
 
-str :: String -> Parser ()
-str s = () <$ string (BC.pack s)
+_str :: String -> Parser ()
+_str s = () <$ string (BC.pack s)
 
 symbol :: Word8 -> Parser ()
 symbol c = char c >> space
@@ -49,56 +46,23 @@ ident :: Parser Ident
 ident = T.pack <$> liftA2 (:) (toChar <$> satisfy identStart)
   (BC.unpack <$> takeWhileP (Just "identifier char") identRest) <* space
 
-insertSort :: Parser Ident
-insertSort = do
-  i <- ident
-  modify (ilInsertSort i)
-  return i
+readSort :: Parser Sort
+readSort = ident <?> "lookup sort"
 
-insertTerm :: Parser Ident
-insertTerm = do
-  i <- ident
-  modify (ilInsertTerm i)
-  return i
+readTerm :: Parser TermName
+readTerm = ident <?> "lookup term"
 
-insertVar :: Parser Ident
-insertVar = do
-  i <- ident
-  modify (ilInsertVar i)
-  return i
+readAssrt :: Parser ThmName
+readAssrt = ident <?> "lookup thm"
 
-insertThm :: Parser Ident
-insertThm = do
-  i <- ident
-  modify (ilInsertThm i)
-  return i
+readVar :: Parser VarName
+readVar = ident <?> "lookup var"
 
-lookupRead :: (IxLookup -> NameMap) -> Parser Int
-lookupRead f = do
-  s <- get
-  i <- ident
-  maybe empty return (snd (f s) M.!? i)
-
-readSort :: Parser SortID
-readSort = SortID <$> lookupRead pSortIx <?> "lookup sort"
-
-readTerm :: Parser TermID
-readTerm = TermID <$> lookupRead pTermIx <?> "lookup term"
-
-readAssrt :: Parser ThmID
-readAssrt = ThmID <$> lookupRead pThmIx <?> "lookup thm"
-
-readVar :: Parser VarID
-readVar = VarID <$> lookupRead pVarIx <?> "lookup var"
-
-resetVars :: Parser ()
-resetVars = modify ilResetVars
-
-readProof :: Parser ProofCmd
-readProof = ident >>= \case
-  "sort" -> StepSort <$> insertSort
-  "term" -> StepTerm <$> insertTerm
-  "axiom" -> StepAxiom <$> insertThm
+readStmt :: Parser Stmt
+readStmt = ident >>= \case
+  "sort" -> StepSort <$> readSort
+  "term" -> StepTerm <$> readTerm
+  "axiom" -> StepAxiom <$> readAssrt
   "def" -> readDef True
   "theorem" -> readThm True
   "local" -> ident >>= \case
@@ -113,69 +77,62 @@ readProof = ident >>= \case
     _ -> empty
   _ -> empty
 
-readDef :: Bool -> Parser ProofCmd
+readDef :: Bool -> Parser Stmt
 readDef st = do
-  x <- insertTerm
+  x <- readTerm
   args <- many readBinder
   symbol _colon
-  ret <- liftA2 VType readSort (many (readVar <?> "var"))
+  ret <- liftA2 DepType readSort (many (readVar <?> "var"))
   symbol _equal
-  ds <- many readDummy
+  ds <- many (readBound (,))
   val <- readExpr
-  resetVars >> return (ProofDef (Just x) args ret ds val st)
+  return $ StmtDef x args ret ds val st
 
-readThm :: Bool -> Parser ProofCmd
+readThm :: Bool -> Parser Stmt
 readThm st = do
-  x <- insertThm
+  x <- readAssrt
   vs <- many readBinder
   symbol _comma
-  uf <- (do
-      str "unfolding" <* space
-      t <- many readTerm
-      _ <- paren (many insertVar)
-      return t)
-    <|> return []
   hyps <- many readHyp
   symbol _colon
   ret <- readExpr
   symbol _equal
-  ds <- many readDummy
-  proof <- readProofExpr
-  resetVars >> return (ProofThm (Just x) vs hyps ret uf ds proof st)
+  ds <- many (readBound (,))
+  proof <- readProof
+  return $ StmtThm x vs hyps ret ds proof st
 
-readDummy :: Parser SortID
-readDummy = bracket _braceleft _braceright
-  (insertVar >> symbol _colon >> readSort)
+readBound :: (VarName -> Sort -> a) -> Parser a
+readBound f = bracket _braceleft _braceright
+  (liftA2 f ident (symbol _colon >> readSort))
 
-readBinder :: Parser VBinder
-readBinder = (VBound <$> readDummy) <|>
-  paren (insertVar >> symbol _colon >>
-    VReg <$> readSort <*> many readVar)
+readBinder :: Parser PBinder
+readBinder = (readBound PBound) <|>
+  paren (liftA2 PReg ident $
+    symbol _colon >> liftA2 DepType readSort (many readVar))
 
-readExpr :: Parser VExpr
-readExpr = (VVar <$> try readVar) <|> (flip VApp [] <$> readTerm) <|>
-  (paren (VApp <$> readTerm <*> many readExpr))
+readExpr :: Parser SExpr
+readExpr = (SVar <$> try ident) <|> (paren (liftA2 App readTerm (many readExpr)))
 
-readHyp :: Parser VExpr
-readHyp = paren (insertVar >> symbol _colon >> readExpr)
+readHyp :: Parser (VarName, SExpr)
+readHyp = paren (liftA2 (,) ident $ symbol _colon >> readExpr)
 
-readProofExpr :: Parser ProofTree
-readProofExpr =
-  (symbol _question >> return Sorry) <|>
-  paren (
-    (do
-      t <- try readTerm
-      es <- many readProofExpr
-      return (VTerm t es)) <|>
-    (do
-      t <- readAssrt
-      hs <- many readProofExpr
-      return (VThm t hs))) <|>
-  bracket _bracketleft _bracketright (do
-    e <- readProofExpr
-    symbol _equal
-    _ <- insertVar
-    return (Save e)) <|>
-  (Load <$> try readVar) <|>
-  (flip VTerm [] <$> try readTerm) <|>
-  (flip VThm [] <$> readAssrt)
+readProof :: Parser Proof
+readProof = error "unimplemented" -- TODO
+  -- (symbol _question >> return Sorry) <|>
+  -- paren (
+  --   (do
+  --     t <- try readTerm
+  --     es <- many readProof
+  --     return (App t es)) <|>
+  --   (do
+  --     t <- readAssrt
+  --     hs <- many readProof
+  --     return (VThm t hs))) <|>
+  -- bracket _bracketleft _bracketright (do
+  --   e <- readProof
+  --   symbol _equal
+  --   _ <- insertVar
+  --   return (Save e)) <|>
+  -- (Load <$> try readVar) <|>
+  -- (flip VTerm [] <$> try readTerm) <|>
+  -- (flip VThm [] <$> readAssrt)

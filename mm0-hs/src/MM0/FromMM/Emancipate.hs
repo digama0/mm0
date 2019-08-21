@@ -50,9 +50,9 @@ checkExpr db hy = modify . checkExpr' where
   checkApp (_ : hs) (e : es) = checkApp hs es . checkExpr' e
   checkApp _ _ = error "bad proof"
 
-checkProof :: MMDatabase -> Proof -> State (S.Set Label) ()
+checkProof :: MMDatabase -> MMProof -> State (S.Set Label) ()
 checkProof db = modify . checkProof' where
-  checkProof' :: Proof -> S.Set Label -> S.Set Label
+  checkProof' :: MMProof -> S.Set Label -> S.Set Label
   checkProof' (PTerm t ps) = checkApp hs ps where
     Term (hs, _) _ _ = snd $ getStmt db t
   checkProof' (PThm t ps) = checkApp hs ps where
@@ -60,7 +60,7 @@ checkProof db = modify . checkProof' where
   checkProof' (PSave p) = checkProof' p
   checkProof' _ = id
 
-  checkApp :: [(VarStatus, Label)] -> [Proof] -> S.Set Label -> S.Set Label
+  checkApp :: [(VarStatus, Label)] -> [MMProof] -> S.Set Label -> S.Set Label
   checkApp [] [] = id
   checkApp ((VSBound, _) : hs) (PHyp v _ : ps) = checkApp hs ps . S.insert v
   checkApp (_ : hs) (p : ps) = checkApp hs ps . checkProof' p

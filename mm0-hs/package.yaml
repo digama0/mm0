@@ -65,6 +65,7 @@ default-extensions:
 - FlexibleContexts
 - LambdaCase
 - OverloadedStrings
+- TupleSections
 
 build-tools:
 - alex

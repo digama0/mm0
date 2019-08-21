@@ -48,7 +48,7 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
     go ((p, _):ls) k i m | vsPure p = go ls (k+1) (i+1) (I.insert k i m)
     go (_:ls) k i m = go ls (k+1) i m
 
-  checkProof :: (Label, Maybe [Int]) -> Int -> I.IntMap Int -> Proof -> FindBundledM ()
+  checkProof :: (Label, Maybe [Int]) -> Int -> I.IntMap Int -> MMProof -> FindBundledM ()
   checkProof x k im = go where
     go (PSave p) = go p
     go (PThm t ps) = do

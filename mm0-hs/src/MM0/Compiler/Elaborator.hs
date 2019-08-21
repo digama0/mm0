@@ -1199,11 +1199,11 @@ cleanProof o (Ref g) = getRef g >>= \case
     pp <- ppExpr ty
     escapeAt o' $ render' $ "??? |-" <+> doc pp
   e -> cleanProof o e
-cleanProof _ (Atom _ _ h) = return $ ProofHyp h
+cleanProof _ (Atom _ _ h) = return $ PHyp h
 cleanProof o (List [Atom _ _ ":conv", ty, conv, p]) =
-  liftM3 ProofConv (cleanTerm o ty) (cleanConv o conv) (cleanProof o p)
+  liftM3 PConv (cleanTerm o ty) (cleanConv o conv) (cleanProof o p)
 cleanProof o (List [Atom _ _ ":let", Atom _ _ h, p1, p2]) =
-  liftM2 (ProofLet h) (cleanProof o p1) (cleanProof o p2)
+  liftM2 (PLet h) (cleanProof o p1) (cleanProof o p2)
 cleanProof o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
   Nothing -> escapeSpan o $ "unknown theorem '" <> t <> "'"
   Just (_, bis, hs, _) -> do
@@ -1213,7 +1213,7 @@ cleanProof o (List (Atom _ _ t : es)) = try (now >>= getThm t) >>= \case
         " + " <> T.pack (show (length hs)) <>
         ", got " <> T.pack (show es)
     let (es1, es2) = splitAt (length bis) es
-    liftM2 (ProofThm t) (mapM (cleanTerm o) es1) (mapM (cleanProof o) es2)
+    liftM2 (PThm t) (mapM (cleanTerm o) es1) (mapM (cleanProof o) es2)
 cleanProof o e = escapeSpan o $ "bad proof: " <> T.pack (show e)
 
 cleanTerm :: Range -> LispVal -> ElabM SExpr

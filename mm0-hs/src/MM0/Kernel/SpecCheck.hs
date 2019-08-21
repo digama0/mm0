@@ -37,7 +37,7 @@ checkSpec e (SInout (IOKString _ val)) =
   withContext "input/output" (checkSExpr e M.empty val (DepType "string" []))
 
 checkDef :: Environment -> [PBinder] -> DepType ->
-  Maybe (M.Map Ident Ident, SExpr) -> Either String ()
+  Maybe ([(VarName, Sort)], SExpr) -> Either String ()
 checkDef env bis ret defn = do
   ctx <- checkBinders env bis
   checkType ctx ret
@@ -49,7 +49,7 @@ checkDef env bis ret defn = do
       ctx2 <- traverse (\t -> do
         sd' <- fromJustError "sort not found" (eSorts env M.!? t)
         guardError ("cannot bind variable; sort '" ++ T.unpack t ++ "' is strict") (not (sStrict sd'))
-        return (True, DepType t [])) dummy
+        return (True, DepType t [])) (M.fromList dummy)
       checkSExpr env (ctx <> ctx2) e ret
 
 checkBinders :: Environment -> [PBinder] -> Either String (M.Map Ident (Bool, DepType))

@@ -90,7 +90,7 @@ elabDef x vs ty (Just defn) = do
       return (vs', ds, hs, defn')
   lift $ do
     guardError (T.unpack x ++ ": hypotheses not permitted in terms") (null hyps)
-    return (DDef bis ty $ Just (dummies, defn'))
+    return (DDef bis ty $ Just (M.toList dummies, defn'))
 
 elabInout :: Bool -> T.Text -> [Either Ident Formula] -> SpecM ()
 elabInout out "string" [x] = do

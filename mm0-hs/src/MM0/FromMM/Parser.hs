@@ -196,7 +196,7 @@ process (x : "$p" : ss) = do
 process (x : ss) = throwError ("wtf " ++ T.unpack x ++ show (take 100 ss))
 
 addThm :: Label -> Fmla -> Frame -> M.Map Var Int ->
-  Maybe ([Label], Proof) -> FromMMM ()
+  Maybe ([(Label, Label)], MMProof) -> FromMMM ()
 addThm x f@(Const s : _) fr m p = do
   db <- gets mDB
   case mSorts db M.!? s of
@@ -262,9 +262,9 @@ numberize (c : s) n | 'A' <= c && c <= 'Y' =
     numberize s (5 * n + i + 1)
 numberize (_ : _) _ = NError
 
-data HeapEl = HeapEl Proof | HTerm Label Int | HThm Label Int deriving (Show)
+data HeapEl = HeapEl MMProof | HTerm Label Int | HThm Label Int deriving (Show)
 
-trProof :: Frame -> MMDatabase -> [T.Text] -> Either String ([Label], Proof)
+trProof :: Frame -> MMDatabase -> [T.Text] -> Either String ([(Label, Label)], MMProof)
 trProof (hs, _) db = \case
   "(" : p -> processPreloads p (mkHeap hs 0 Q.empty) 0 id
   _ -> throwError "normal proofs not supported"
@@ -275,7 +275,7 @@ trProof (hs, _) db = \case
   mkHeap ((_, h):hs') n heap = mkHeap hs' (n+1) (heap Q.|> HeapEl (PHyp h n))
 
   processPreloads :: [T.Text] -> Q.Seq HeapEl -> Int ->
-    ([Label] -> [Label]) -> Either String ([Label], Proof)
+    ([(Label, Label)] -> [(Label, Label)]) -> Either String ([(Label, Label)], MMProof)
   processPreloads [] _ _ _ = throwError "unclosed parens in proof"
   processPreloads (")" : blocks) heap _ ds = do
     pt <- processBlocks (numberize (join (T.unpack <$> blocks)) 0) heap 0 []
@@ -283,7 +283,7 @@ trProof (hs, _) db = \case
   processPreloads (st : p) heap sz ds = case getStmtM db st of
       Nothing -> throwError ("statement " ++ T.unpack st ++ " not found")
       Just (_, Hyp (VHyp s _)) ->
-        processPreloads p (heap Q.|> HeapEl (PDummy sz)) (sz + 1) (ds . (s :))
+        processPreloads p (heap Q.|> HeapEl (PDummy st)) (sz + 1) (ds . ((st, s) :))
       Just (_, Hyp (EHyp _ _)) -> throwError "$e found in paren list"
       Just (_, Term (hs', _) _ _) ->
         processPreloads p (heap Q.|> HTerm st (length hs')) sz ds
@@ -291,13 +291,13 @@ trProof (hs, _) db = \case
         processPreloads p (heap Q.|> HThm st (length hs')) sz ds
       Just (_, Alias th) -> processPreloads (th : p) heap sz ds
 
-  popn :: Int -> [Proof] -> Either String ([Proof], [Proof])
+  popn :: Int -> [MMProof] -> Either String ([MMProof], [MMProof])
   popn = go [] where
     go stk2 0 stk     = return (stk2, stk)
     go _    _ []      = throwError "stack underflow"
     go stk2 n (p:stk) = go (p:stk2) (n-1) stk
 
-  processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [Proof] -> Either String Proof
+  processBlocks :: Numbers -> Q.Seq HeapEl -> Int -> [MMProof] -> Either String MMProof
   processBlocks NEOF _ _ [pt] = return pt
   processBlocks NEOF _ _ pts = throwError ("bad stack state " ++ show pts)
   processBlocks NError _ _ _ = throwError "proof block parse error"

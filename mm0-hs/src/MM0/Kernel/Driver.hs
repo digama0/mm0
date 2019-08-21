@@ -25,4 +25,4 @@ verifyIO args = do
       pf <- liftIO' $ parseProof pff
       out <- liftIO' $ verify s env pf
       if null out then putStrLn "verified"
-      else mapM_ putStr out
+      else mapM_ B.putStr out

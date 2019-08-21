@@ -20,15 +20,19 @@ instance Show DepType where
   showsPrec _ (DepType t ts) r =
     T.unpack t ++ foldr (\t' r' -> ' ' : T.unpack t' ++ r') r ts
 
-data PBinder = PBound VarName Ident | PReg VarName DepType
+data PBinder = PBound VarName Ident | PReg VarName DepType deriving (Eq)
 
 instance Show PBinder where
-  showsPrec _ (PBound v t) r = T.unpack v ++ ": " ++ T.unpack t ++ r
-  showsPrec n (PReg v t) r = T.unpack v ++ ": " ++ showsPrec n t r
+  showsPrec _ (PBound v t) r = '{' : T.unpack v ++ ": " ++ T.unpack t ++ '}' : r
+  showsPrec _ (PReg v t) r = '(' : T.unpack v ++ ": " ++ showsPrec 0 t (')' : r)
 
 binderName :: PBinder -> VarName
 binderName (PBound v _) = v
 binderName (PReg v _) = v
+
+binderSort :: PBinder -> Sort
+binderSort (PBound _ s) = s
+binderSort (PReg _ (DepType s _)) = s
 
 binderType :: PBinder -> DepType
 binderType (PBound _ t) = (DepType t [])
@@ -59,7 +63,7 @@ data Decl =
       [PBinder]  -- bound variables, args
       DepType    -- return type
       (Maybe (
-        M.Map Ident Ident, -- dummy vars
+        [(VarName, Sort)], -- dummy vars
         SExpr))            -- definition
   deriving (Show)
 

@@ -4,7 +4,7 @@ module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, Range,
   Visibility(..), Ident, Sort, TermName, ThmName, VarName, Token,
   Binder, DepType(..), PBinder(..), SExpr(..), SortData(..),
   binderName, binderType, binderBound,
-  Prec(..), TVar) where
+  Proof(..), Conv(..), Prec(..), TVar) where
 
 import Control.Concurrent.STM
 import Control.Concurrent hiding (newMVar)
@@ -33,25 +33,12 @@ import MM0.Compiler.AST (Offset, Range,
   Binder(..), SortData(..), Prec(..), Visibility(..), QExpr)
 import MM0.Kernel.Environment (Ident, Sort, TermName, ThmName, VarName, Token,
   PBinder(..), SExpr(..), DepType(..), binderName, binderType, binderBound)
+import MM0.Kernel.Types
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import MM0.Compiler.Parser (ParseError)
 
 -- (<!>) :: (HasCallStack) => H.HashMap T.Text v -> T.Text -> v
 -- (<!>) m k = case H.lookup k m of Nothing -> error $ "<!>" ++ show k; Just a -> a
-
-data Proof =
-    ProofHyp VarName
-  | ProofThm ThmName [SExpr] [Proof]
-  | ProofConv SExpr Conv Proof
-  | ProofLet VarName Proof Proof
-  deriving (Show)
-
-data Conv =
-    CVar VarName
-  | CApp TermName [Conv]
-  | CSym Conv
-  | CUnfold TermName [SExpr] [VarName] Conv
-  deriving (Show)
 
 data Syntax = Define | Lambda | Quote | If | Focus | Let | Letrec
   | Match | MatchFn | MatchFns
@@ -143,13 +130,14 @@ convToLisp o (CUnfold t es vs c) =
     List (sExprToLisp o <$> es), List (Atom False o <$> vs), convToLisp o c]
 
 proofToLisp :: Offset -> Proof -> LispVal
-proofToLisp o (ProofHyp h) = Atom False o h
-proofToLisp o (ProofThm t es ps) =
+proofToLisp o (PHyp h) = Atom False o h
+proofToLisp o (PThm t es ps) =
   List (Atom False o t : (sExprToLisp o <$> es) ++ (proofToLisp o <$> ps))
-proofToLisp o (ProofConv t c p) =
+proofToLisp o (PConv t c p) =
   List [Atom False o ":conv", sExprToLisp o t, convToLisp o c, proofToLisp o p]
-proofToLisp o (ProofLet h p q) =
+proofToLisp o (PLet h p q) =
   List [Atom False o ":let", Atom False o h, proofToLisp o p, proofToLisp o q]
+proofToLisp o PSorry = Atom False o ":sorry"
 
 visibilityToLisp :: Offset -> Visibility -> LispVal
 visibilityToLisp o Public = Atom False o "pub"

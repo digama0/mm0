@@ -43,7 +43,7 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
   checkExpr (SVar _) = return ()
   checkExpr (App t es) = checkStmt t >> mapM_ checkExpr es
 
-  checkProof :: Proof -> State (S.Set Sort, S.Set Label) ()
+  checkProof :: MMProof -> State (S.Set Sort, S.Set Label) ()
   checkProof (PSave p) = checkProof p
   checkProof (PTerm t ps) = checkStmt t >> mapM_ checkProof ps
   checkProof (PThm t ps) = checkStmt t >> mapM_ checkProof ps

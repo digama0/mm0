@@ -20,19 +20,19 @@ data Hyp = VHyp Const Var | EHyp Const MMExpr deriving (Show)
 type DVs = S.Set (Label, Label)
 data VarStatus = VSBound | VSFree | VSOpen | VSHyp deriving (Eq, Show)
 type Frame = ([(VarStatus, Label)], DVs)
-data Proof =
+data MMProof =
     PHyp Label Int
-  | PDummy Int
+  | PDummy Label
   | PBackref Int
   | PSorry
-  | PSave Proof
-  | PTerm Label [Proof]
-  | PThm Label [Proof]
+  | PSave MMProof
+  | PTerm Label [MMProof]
+  | PThm Label [MMProof]
   deriving (Show)
 
 data Stmt = Hyp Hyp
-  | Term Frame (Const, MMExpr) (Maybe ([Label], Proof))
-  | Thm Frame (Const, MMExpr) (Maybe ([Label], Proof))
+  | Term Frame (Const, MMExpr) (Maybe ([(Label, Label)], MMProof))
+  | Thm Frame (Const, MMExpr) (Maybe ([(Label, Label)], MMProof))
   | Alias Label
   deriving (Show)
 
@@ -107,9 +107,9 @@ orientPair (a1, a2) = if a1 < a2 then (a1, a2) else (a2, a1)
 memDVs :: DVs -> Label -> Label -> Bool
 memDVs d v1 v2 = S.member (orientPair (v1, v2)) d
 
-unsave :: Proof -> (Proof, Q.Seq Proof)
+unsave :: MMProof -> (MMProof, Q.Seq MMProof)
 unsave = \p -> runState (go p) Q.empty where
-  go :: Proof -> State (Q.Seq Proof) Proof
+  go :: MMProof -> State (Q.Seq MMProof) MMProof
   go (PTerm t ps) = PTerm t <$> mapM go ps
   go (PThm t ps) = PThm t <$> mapM go ps
   go (PSave p) = do

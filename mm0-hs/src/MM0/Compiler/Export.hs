@@ -30,12 +30,27 @@ import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import MM0.Compiler.Env hiding (reportErr, getTerm, getThm)
+import qualified MM0.Kernel.Environment as K
+import qualified MM0.Kernel.Types as K
 import MM0.Util
 
 export :: Bool -> String -> Env -> IO ()
 export strip fname env = do
   m <- collectDecls env
   t <- liftIO $ buildTables env m
+  exportTables strip fname t m
+
+_exportK :: Bool -> String -> K.Environment -> [K.Stmt] -> IO ()
+_exportK strip fname env pfs = do
+  m <- collectDeclsK env
+  t <- liftIO $ buildTablesK env pfs
+  exportTables strip fname t m
+
+collectDeclsK :: K.Environment -> IO [Name]
+collectDeclsK = undefined
+
+exportTables :: Bool -> String -> Tables -> [Name] -> IO ()
+exportTables strip fname t m = do
   withBinaryFile fname WriteMode $ \h -> do
     hSetBuffering h (BlockBuffering Nothing)
     putExportM h (writeMM0B strip t m)
@@ -72,20 +87,21 @@ instance MuRef SExpr where
   mapDeRef _ (SVar v) = pure $ SVarF v
   mapDeRef f (App t es) = SAppF t <$> traverse f es
 
-instance MuRef Conv where
-  type DeRef Conv = ProofF
+instance MuRef K.Conv where
+  type DeRef K.Conv = ProofF
   mapDeRef _ (CVar v) = pure $ CVarF v
   mapDeRef f (CApp t es) = CAppF t <$> traverse f es
   mapDeRef f (CSym c) = CSymF <$> f c
   mapDeRef f (CUnfold t es xs c) =
     liftA2 (flip (CUnfoldF t) xs) (traverse f es) (f c)
 
-instance MuRef Proof where
-  type DeRef Proof = ProofF
-  mapDeRef _ (ProofHyp v) = pure $ PHypF v
-  mapDeRef f (ProofThm t es ps) = liftA2 (PThmF t) (traverse f es) (traverse f ps)
-  mapDeRef f (ProofConv e c p) = liftA3 PConvF (f e) (f c) (f p)
-  mapDeRef f (ProofLet x p1 p2) = liftA2 (PLetF x) (f p1) (f p2)
+instance MuRef K.Proof where
+  type DeRef K.Proof = ProofF
+  mapDeRef _ (PHyp v) = pure $ PHypF v
+  mapDeRef f (PThm t es ps) = liftA2 (PThmF t) (traverse f es) (traverse f ps)
+  mapDeRef f (PConv e c p) = liftA3 PConvF (f e) (f c) (f p)
+  mapDeRef f (PLet x p1 p2) = liftA2 (PLetF x) (f p1) (f p2)
+  mapDeRef _ PSorry = error "sorry found in proof"
 
 data ProofStmt = ProofStmt [(Maybe VarName, SExpr)] SExpr (Maybe Proof)
 
@@ -160,11 +176,12 @@ collectDecls env = do
   checkSExpr o s (App t es) = checkDecl o s t >> mapM_ (checkSExpr o s) es
 
   checkProof :: Range -> SeqNum -> Proof -> StateT DeclMap IO ()
-  checkProof _ _ (ProofHyp _) = return ()
-  checkProof o s (ProofThm t es ps) =
+  checkProof _ _ PSorry = error "sorry found in proof"
+  checkProof _ _ (PHyp _) = return ()
+  checkProof o s (PThm t es ps) =
     checkDecl o s t >> mapM_ (checkSExpr o s) es >> mapM_ (checkProof o s) ps
-  checkProof o s (ProofConv _ c p) = checkConv o s c >> checkProof o s p
-  checkProof o s (ProofLet _ p1 p2) = checkProof o s p1 >> checkProof o s p2
+  checkProof o s (PConv _ c p) = checkConv o s c >> checkProof o s p
+  checkProof o s (PLet _ p1 p2) = checkProof o s p1 >> checkProof o s p2
 
   checkConv :: Range -> SeqNum -> Conv -> StateT DeclMap IO ()
   checkConv _ _ (CVar _) = return ()
@@ -196,11 +213,18 @@ data Tables = Tables {
   _tTerms :: Mapping TermData,
   _tThms :: Mapping ThmData }
 
-buildTables :: Env -> [Name] -> IO Tables
-buildTables env ds = do
+buildTablesWith :: (IOMapping SortData ->
+                    IOMapping TermData ->
+                    IOMapping ThmData -> IO ()) -> IO Tables
+buildTablesWith f = do
   sorts <- newIOMapping
   terms <- newIOMapping
   thms <- newIOMapping
+  f sorts terms thms
+  liftM3 Tables (freezeMapping sorts) (freezeMapping terms) (freezeMapping thms)
+
+buildTables :: Env -> [Name] -> IO Tables
+buildTables env ds = buildTablesWith $ \sorts terms thms ->
   forM_ ds $ \case
     SortName s -> pushIO sorts s (thd3 (eSorts env H.! s))
     d -> case eDecls env H.! (nIdent d) of
@@ -215,7 +239,20 @@ buildTables env ds = do
         pf <- fromJust <$> val
         pushIO thms (nIdent d) $ ThmData vis (V.fromList bis) $
           ProofStmt hs ret (Just pf)
-  liftM3 Tables (freezeMapping sorts) (freezeMapping terms) (freezeMapping thms)
+
+buildTablesK :: K.Environment -> [K.Stmt] -> IO Tables
+buildTablesK env pfs = buildTablesWith $ \sorts terms thms ->
+  forM_ pfs $ \case
+    K.StepSort s -> pushIO sorts s (K.eSorts env M.! s)
+    K.StepTerm t -> case K.eDecls env M.! t of
+      K.DTerm bis ret -> pushIO terms t (TermData Public (V.fromList bis) ret Nothing)
+      _ -> error $ "not a term: " ++ T.unpack t
+    K.StepAxiom t -> case K.eDecls env M.! t of
+      K.DAxiom bis hs ret ->
+        pushIO thms t $ ThmData Public (V.fromList bis) $
+          ProofStmt ((,) Nothing <$> hs) ret Nothing
+      _ -> error $ "not an axiom: " ++ T.unpack t
+    _ -> error "unimplemented"
 
 putExportM :: Handle -> ExportM a -> IO a
 putExportM h m = do
@@ -465,31 +502,31 @@ writeMM0B strip (Tables sorts terms thms) decls = do
 
   mkProof :: Int -> ProofM ()
   mkProof n = I.lookup n . snd <$> get >>= \case
-    Just i -> tell $ Endo (PRef (fromIntegral i) :)
+    Just i -> tell $ Endo (PCRef (fromIntegral i) :)
     Nothing -> (V.! n) . fst <$> ask >>= \case
-      (SVarE v s, _) -> tell (Endo (PDummy (fromIntegral s) v :)) >> pushHeap n
+      (SVarE v s, _) -> tell (Endo (PCDummy (fromIntegral s) v :)) >> pushHeap n
       (SAppE t es, save) -> mapM_ mkProof es >>
         if save then do
-          tell $ Endo (PTermSave (fromIntegral t) :)
+          tell $ Endo (PCTermSave (fromIntegral t) :)
           pushHeap n
-        else tell $ Endo (PTerm (fromIntegral t) :)
-      (CReflE _, _) -> tell $ Endo (PRefl :)
-      (CSymE e, _) -> tell (Endo (PSym :)) >> mkProof e
-      (CCongE _ cs, _) -> tell (Endo (PCong :)) >> mapM_ mkProof cs
+        else tell $ Endo (PCTerm (fromIntegral t) :)
+      (CReflE _, _) -> tell $ Endo (PCRefl :)
+      (CSymE e, _) -> tell (Endo (PCSym :)) >> mkProof e
+      (CCongE _ cs, _) -> tell (Endo (PCCong :)) >> mapM_ mkProof cs
       (CUnfoldE e1 e2 _ c, _) -> mkProof e1 >> mkProof e2 >>
-        tell (Endo (PUnfold :)) >> mkProof c
+        tell (Endo (PCUnfold :)) >> mkProof c
       (PHypE h, _) -> throwError $ "unknown hypothesis " ++ T.unpack h
       (PThmE t es ps e, save) ->
         mapM mkProof ps >> mapM mkProof es >> mkProof e >>
         if save then do
-          tell $ Endo (PThmSave (fromIntegral t) :)
+          tell $ Endo (PCThmSave (fromIntegral t) :)
           pushHeap n
-        else tell $ Endo (PThm (fromIntegral t) :)
+        else tell $ Endo (PCThm (fromIntegral t) :)
       (PConvE e c p, _) ->
-        mkProof e >> mkProof p >> tell (Endo (PConv :)) >> mkProof c
+        mkProof e >> mkProof p >> tell (Endo (PCConv :)) >> mkProof c
       (ProofE hs _ ret, _) -> do
         forM_ hs $ \(h, i) -> do
-          mkProof i >> tell (Endo (PHyp :))
+          mkProof i >> tell (Endo (PCHyp :))
           (_, heap) <- ask
           case h >>= flip H.lookup heap . PHypE of
             Nothing -> modify $ mapFst (+1)
@@ -636,37 +673,37 @@ writeUnify :: [UnifyCmd] -> ExportM ()
 writeUnify l = mapM writeUnifyCmd l >> writeU8 0
 
 data ProofCmd =
-    PTerm Word32
-  | PTermSave Word32
-  | PRef Word32
-  | PDummy Word32 Ident
-  | PThm Word32
-  | PThmSave Word32
-  | PHyp
-  | PConv
-  | PRefl
-  | PSym
-  | PCong
-  | PUnfold
-  | PConvCut
-  | PConvRef Word32
+    PCTerm Word32
+  | PCTermSave Word32
+  | PCRef Word32
+  | PCDummy Word32 Ident
+  | PCThm Word32
+  | PCThmSave Word32
+  | PCHyp
+  | PCConv
+  | PCRefl
+  | PCSym
+  | PCCong
+  | PCUnfold
+  | PCConvCut
+  | PCConvRef Word32
   deriving (Show)
 
 writeProofCmd :: ProofCmd -> ExportM ()
-writeProofCmd (PTerm n)     = writeCmd 0x10 n
-writeProofCmd (PTermSave n) = writeCmd 0x11 n
-writeProofCmd (PRef n)      = writeCmd 0x12 n
-writeProofCmd (PDummy n _)  = writeCmd 0x13 n
-writeProofCmd (PThm n)      = writeCmd 0x14 n
-writeProofCmd (PThmSave n)  = writeCmd 0x15 n
-writeProofCmd PHyp          = writeU8 0x16
-writeProofCmd PConv         = writeU8 0x17
-writeProofCmd PRefl         = writeU8 0x18
-writeProofCmd PSym          = writeU8 0x19
-writeProofCmd PCong         = writeU8 0x1A
-writeProofCmd PUnfold       = writeU8 0x1B
-writeProofCmd PConvCut      = writeU8 0x1C
-writeProofCmd (PConvRef n)  = writeCmd 0x1D n
+writeProofCmd (PCTerm n)     = writeCmd 0x10 n
+writeProofCmd (PCTermSave n) = writeCmd 0x11 n
+writeProofCmd (PCRef n)      = writeCmd 0x12 n
+writeProofCmd (PCDummy n _)  = writeCmd 0x13 n
+writeProofCmd (PCThm n)      = writeCmd 0x14 n
+writeProofCmd (PCThmSave n)  = writeCmd 0x15 n
+writeProofCmd PCHyp          = writeU8 0x16
+writeProofCmd PCConv         = writeU8 0x17
+writeProofCmd PCRefl         = writeU8 0x18
+writeProofCmd PCSym          = writeU8 0x19
+writeProofCmd PCCong         = writeU8 0x1A
+writeProofCmd PCUnfold       = writeU8 0x1B
+writeProofCmd PCConvCut      = writeU8 0x1C
+writeProofCmd (PCConvRef n)  = writeCmd 0x1D n
 
 -- writeProofCmd' :: ProofCmd -> ExportM ()
 -- writeProofCmd' c = do
