@@ -129,18 +129,17 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     guardError "unaccounted free variable" $
       S.null (S.difference rs' (S.fromList rs))
 
-  defcheckExpr :: M.Map TermName VTermData -> M.Map VarName PBinder -> SExpr -> Either String (Sort, S.Set VarName)
+  defcheckExpr :: M.Map TermName VTermData -> M.Map VarName PBinder ->
+    SExpr -> Either String (Sort, S.Set VarName)
   defcheckExpr terms ctx = defcheckExpr' where
-    defcheckExpr' (SVar v) = case ctx M.!? v of
-      Nothing -> throwError "undeclared variable in def expr"
-      Just (PBound _ s) -> return (s, S.singleton v)
-      Just (PReg _ (DepType s vs)) -> return (s, S.fromList vs)
+    defcheckExpr' (SVar v) = typecheckVar ctx v <&> \(s, _, vs) -> (s, vs)
     defcheckExpr' e@(App t es) = do
       VTermData args (DepType ret rs) _ <- fromJustError "unknown term in def expr" (terms M.!? t)
       (m, ev) <- withContext (T.pack (show e)) $ defcheckArgs args es
       return (ret, ev <> S.fromList ((m M.!) <$> rs))
 
-    defcheckArgs :: [PBinder] -> [SExpr] -> Either String (M.Map VarName VarName, S.Set VarName)
+    defcheckArgs :: [PBinder] -> [SExpr] ->
+      Either String (M.Map VarName VarName, S.Set VarName)
     defcheckArgs args es = go args es M.empty S.empty where
       go [] [] m ev = return (m, ev)
       go (PBound x s : args') (SVar v : es') m ev = case ctx M.!? v of
@@ -176,7 +175,8 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     sd <- fromJustError "sort not found" (vSorts g M.!? s)
     guardError ("non-provable sort " ++ show s ++ " in theorem") (sProvable sd)
 
-  checkBinders :: VGlobal -> [PBinder] -> M.Map VarName PBinder -> Either String (M.Map VarName PBinder)
+  checkBinders :: VGlobal -> [PBinder] -> M.Map VarName PBinder ->
+      Either String (M.Map VarName PBinder)
   checkBinders g = go where
     go [] ctx = return ctx
     go (bi@(PBound v t) : bis) ctx = do
@@ -189,15 +189,20 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
       guardError "sort not found" (M.member t (vSorts g))
       go bis (M.insert v bi ctx)
 
+typecheckVar :: M.Map VarName PBinder -> VarName ->
+  Either String (Sort, Bool, S.Set VarName)
+typecheckVar ctx v = case ctx M.!? v of
+  Nothing -> throwError "undeclared variable in def expr"
+  Just (PBound _ s) -> return (s, True, S.singleton v)
+  Just (PReg _ (DepType s vs)) -> return (s, False, S.fromList vs)
+
 typecheckExpr :: M.Map TermName VTermData -> M.Map VarName PBinder ->
   SExpr -> Either String (Sort, Bool, S.Set VarName)
 typecheckExpr terms ctx = go where
-  go (SVar v) = do
-    bi <- fromJustError "undeclared variable in def expr" (ctx M.!? v)
-    return (binderSort bi, binderBound bi, S.singleton v)
+  go (SVar v) = typecheckVar ctx v
   go (App t es) = do
     VTermData args (DepType ret _) _ <-
-      fromJustError "unknown term in def expr" (terms M.!? t)
+      fromJustError "unknown term in expr" (terms M.!? t)
     (ret, False,) <$> goArgs args es def
 
   goArgs :: [PBinder] -> [SExpr] -> S.Set VarName -> Either String (S.Set VarName)
@@ -240,22 +245,24 @@ verifyProof g ctx = verifyProof' where
 
   verifyArgs :: [PBinder] -> [SExpr] -> Either String (M.Map VarName SExpr)
   verifyArgs = go [] where
-    go :: [(VarName, (SExpr, (Sort, Bool, S.Set VarName)))] ->
+    go :: [(VarName, (SExpr, Bool, S.Set VarName))] ->
       [PBinder] -> [SExpr] -> Either String (M.Map VarName SExpr)
-    go subst [] [] = return $ M.fromList (mapSnd fst <$> subst)
+    go subst [] [] = return $ M.fromList (mapSnd fst3 <$> subst)
     go subst (bi : bs) (e : es) = do
-      p@(s, b, vs) <- typecheckExpr (vTerms g) ctx e
+      (s, b, vs) <- typecheckExpr (vTerms g) ctx e
       guardError "type mismatch" (binderSort bi == s)
       case bi of
         PBound _ _ -> do
           guardError "non-bound variable in BV slot" b
-          guardError "disjoint variable violation" $
-            all (\v -> all (S.notMember v . thd3 . snd . snd) subst) vs
+          guardError ("disjoint variable violation: " ++ show vs ++
+            " / " ++ show (map (thd3 . snd) subst)) $
+            all (\v -> all (S.notMember v . thd3 . snd) subst) vs
         PReg _ (DepType _ vs') ->
-          forM_ subst $ \(_, (_, (_, b', vs1))) -> when b' $
-            guardError "disjoint variable violation" $
-              all (\v -> elem v vs' || S.notMember v vs) vs1
-      go ((binderName bi, (e, p)) : subst) bs es
+          forM_ subst $ \(v', (_, b', vs1)) -> when b' $
+            guardError
+              ("disjoint variable violation: " ++ show vs1 ++ " / " ++ show vs) $
+              elem v' vs' || all (`S.notMember` vs) vs1
+      go ((binderName bi, (e, binderBound bi, vs)) : subst) bs es
     go _ _ _ = throwError "argument number mismatch"
 
   verifyConv :: Conv -> Either String (SExpr, SExpr, Sort, Bool)

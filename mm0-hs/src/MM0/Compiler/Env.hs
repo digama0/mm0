@@ -3,7 +3,7 @@
 module MM0.Compiler.Env (module MM0.Compiler.Env, Offset, Range,
   Visibility(..), Ident, Sort, TermName, ThmName, VarName, Token,
   Binder, DepType(..), PBinder(..), SExpr(..), SortData(..),
-  binderName, binderType, binderBound,
+  binderName, binderType, binderSort, binderBound,
   Proof(..), Conv(..), Prec(..), TVar) where
 
 import Control.Concurrent.STM
@@ -32,7 +32,8 @@ import System.IO.Unsafe
 import MM0.Compiler.AST (Offset, Range,
   Binder(..), SortData(..), Prec(..), Visibility(..), QExpr)
 import MM0.Kernel.Environment (Ident, Sort, TermName, ThmName, VarName, Token,
-  PBinder(..), SExpr(..), DepType(..), binderName, binderType, binderBound)
+  PBinder(..), SExpr(..), DepType(..),
+  binderName, binderType, binderSort, binderBound)
 import MM0.Kernel.Types
 import Text.Megaparsec (errorOffset, parseErrorTextPretty)
 import MM0.Compiler.Parser (ParseError)
@@ -168,7 +169,8 @@ declToLisp o px x (DDef vis bis ret val) =
 declToLisp o px x (DTheorem vis bis hs ret val) =
   List [Atom False o "theorem", Atom False px x, List (binderToLisp o <$> bis),
     List ((\(h, ht) -> List [Atom False o (fromMaybe "_" h), sExprToLisp o ht]) <$> hs),
-    sExprToLisp o ret, visibilityToLisp o vis, Proc $ \_ _ -> proofToLisp o <$> MaybeT (liftIO val)]
+    sExprToLisp o ret, visibilityToLisp o vis,
+    Proc $ \_ _ -> proofToLisp o . snd <$> MaybeT (liftIO val)]
 
 data ErrorLevel = ELError | ELWarning | ELInfo deriving (Eq)
 instance Show ErrorLevel where
@@ -269,8 +271,17 @@ data DeclNota = NPrefix Token | NInfix Token | NCoe Sort Sort
 data Decl =
     DTerm [PBinder] DepType
   | DAxiom [PBinder] [SExpr] SExpr
-  | DDef Visibility [PBinder] DepType (Maybe ([(VarName, Sort)], SExpr))
-  | DTheorem Visibility [PBinder] [(Maybe VarName, SExpr)] SExpr (IO (Maybe Proof))
+  | DDef {
+      _ddVis :: Visibility,
+      _ddArgs :: [PBinder],
+      _ddRet :: DepType,
+      _ddVal :: Maybe ([(VarName, Sort)], SExpr) }
+  | DTheorem {
+      _dtVis :: Visibility,
+      _dtArgs :: [PBinder],
+      _dtHyps :: [(Maybe VarName, SExpr)],
+      _dtRet :: SExpr,
+      _dtProof :: IO (Maybe ([(VarName, Sort)], Proof)) }
 
 data LocalInfer = LIOld Binder (Maybe Sort) | LINew Range Bool Sort deriving (Show)
 

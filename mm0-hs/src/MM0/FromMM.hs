@@ -397,7 +397,7 @@ trProof vm t (ds, pr) = (
 
   toHeapEl :: (VarStatus, Label) -> Either SExpr Proof
   toHeapEl (VSHyp, l) = Right $ K.PHyp $ tNameMap t M.! l
-  toHeapEl (_, l) = Left $ SVar $ vm l
+  toHeapEl (_, l) = Left $ SVar $ tNameMap t M.! vm l
 
   trProof' :: MMProof -> State (Q.Seq (Either SExpr Proof)) (Either SExpr Proof)
   trProof' (T.PHyp s v _) = return $ toHeapEl (s, v)

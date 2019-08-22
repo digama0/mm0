@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric, DeriveFunctor, DeriveTraversable, TypeFamilies #-}
-module MM0.Compiler.Export (export) where
+module MM0.Compiler.Export (export, exportK) where
 
 import GHC.Generics (Generic)
 import Control.Applicative
@@ -40,14 +40,20 @@ export strip fname env = do
   t <- liftIO $ buildTables env m
   exportTables strip fname t m
 
-_exportK :: Bool -> String -> K.Environment -> [K.Stmt] -> IO ()
-_exportK strip fname env pfs = do
-  m <- collectDeclsK env
+exportK :: Bool -> String -> K.Environment -> [K.Stmt] -> IO ()
+exportK strip fname env pfs = do
+  let m = collectDeclsK pfs
   t <- liftIO $ buildTablesK env pfs
   exportTables strip fname t m
 
-collectDeclsK :: K.Environment -> IO [Name]
-collectDeclsK = undefined
+collectDeclsK :: [K.Stmt] -> [Name]
+collectDeclsK pfs = mapMaybe go pfs where
+  go (K.StepSort s) = Just $ SortName s
+  go (K.StepTerm s) = Just $ TermName s
+  go (K.StepAxiom s) = Just $ ThmName s
+  go (K.StmtDef s _ _ _ _ _) = Just $ TermName s
+  go (K.StmtThm s _ _ _ _ _ _) = Just $ ThmName s
+  go (K.StepInout _) = Nothing
 
 exportTables :: Bool -> String -> Tables -> [Name] -> IO ()
 exportTables strip fname t m = do
@@ -78,7 +84,7 @@ data ProofF a =
   | PConvF a a a
   | PLetF VarName a a
 
-  | ProofF [(Maybe VarName, a)] Bool a
+  | ProofF [(Maybe VarName, a)] Bool [(VarName, Sort)] a
   deriving (Generic, Functor, Foldable, Traversable)
 instance Hashable a => Hashable (ProofF a) where
 
@@ -103,14 +109,14 @@ instance MuRef K.Proof where
   mapDeRef f (PLet x p1 p2) = liftA2 (PLetF x) (f p1) (f p2)
   mapDeRef _ PSorry = error "sorry found in proof"
 
-data ProofStmt = ProofStmt [(Maybe VarName, SExpr)] SExpr (Maybe Proof)
+data ProofStmt = ProofStmt [(Maybe VarName, SExpr)] SExpr (Maybe ([(VarName, Sort)], Proof))
 
 instance MuRef ProofStmt where
   type DeRef ProofStmt = ProofF
   mapDeRef f (ProofStmt hs ret Nothing) =
-    liftA2 (flip ProofF False) (traverse (traverse f) hs) (f ret)
-  mapDeRef f (ProofStmt hs _ (Just p)) =
-    liftA2 (flip ProofF True) (traverse (traverse f) hs) (f p)
+    liftA2 (\hs' -> ProofF hs' False []) (traverse (traverse f) hs) (f ret)
+  mapDeRef f (ProofStmt hs _ (Just (ds, p))) =
+    liftA2 (\hs' -> ProofF hs' True ds) (traverse (traverse f) hs) (f p)
 
 data ProofE =
     SVarE VarName Int
@@ -161,7 +167,7 @@ collectDecls env = do
     modify (M.insert s (ThmName x))
     mapM_ (checkSExpr o s . snd) hs
     checkSExpr o s ret
-    lift pr >>= mapM_ (checkProof o s)
+    lift pr >>= mapM_ (checkProof o s . snd)
 
   checkDecl :: Range -> SeqNum -> Ident -> StateT DeclMap IO ()
   checkDecl o s x = case H.lookup x (eDecls env) of
@@ -234,7 +240,7 @@ buildTables env ds = buildTablesWith $ \sorts terms thms ->
         pushIO terms (nIdent d) (TermData vis (V.fromList bis) ret val)
       (_, _, DAxiom bis hs ret, _) ->
         pushIO thms (nIdent d) $ ThmData Public (V.fromList bis) $
-          ProofStmt ((,) Nothing <$> hs) ret Nothing
+          ProofStmt ((Nothing,) <$> hs) ret Nothing
       (_, _, DTheorem vis bis hs ret val, _) -> do
         pf <- fromJust <$> val
         pushIO thms (nIdent d) $ ThmData vis (V.fromList bis) $
@@ -250,9 +256,16 @@ buildTablesK env pfs = buildTablesWith $ \sorts terms thms ->
     K.StepAxiom t -> case K.eDecls env M.! t of
       K.DAxiom bis hs ret ->
         pushIO thms t $ ThmData Public (V.fromList bis) $
-          ProofStmt ((,) Nothing <$> hs) ret Nothing
+          ProofStmt ((Nothing,) <$> hs) ret Nothing
       _ -> error $ "not an axiom: " ++ T.unpack t
-    _ -> error "unimplemented"
+    K.StmtDef t bis ret ds val st -> pushIO terms t $
+      TermData (if st then Public else Local) (V.fromList bis) ret (Just (ds, val))
+    K.StmtThm t bis hs ret ds pf st -> pushIO thms t $
+      ThmData (if st then Public else Local) (V.fromList bis) $
+        ProofStmt (mapFst go <$> hs) ret (Just (ds, pf)) where
+      go "_" = Nothing
+      go v = Just v
+    K.StepInout _ -> error "input/output not yet supported"
 
 putExportM :: Handle -> ExportM a -> IO a
 putExportM h m = do
@@ -376,11 +389,11 @@ writeMM0B strip (Tables sorts terms thms) decls = do
     TermData _ _ _ Nothing -> do
       writeU8 0x45   -- CMD_DATA_8 | CMD_STMT_TERM
       writeU8 2 -- sizeof(cmd8)
-    TermData vis bis (DepType s _) (Just (_, e)) -> do
+    TermData vis bis _ (Just (_, e)) -> do
       start <- get
       writeU8 (flag (vis == Local) 0x08 .|. 0xC5) -- CMD_DATA_32 | CMD_STMT_DEF, CMD_STMT_LOCAL_DEF
       fixup32 $ do
-        lift (withContext t $ runProof bis (Just s) e) >>= writeProof
+        lift (withContext t $ runProof bis e) >>= writeProof
         end <- get
         return ((), fromIntegral (end - start))
   writeDecl (ThmName t) = do
@@ -390,15 +403,20 @@ writeMM0B strip (Tables sorts terms thms) decls = do
       then flag (vis == Local) 0x08 .|. 0xC6 -- CMD_DATA_32 | CMD_STMT_THM, CMD_STMT_LOCAL_THM
       else 0xC2 -- CMD_DATA_32 | CMD_STMT_AXIOM
     fixup32 $ do
-      lift (withContext t $ runProof bis Nothing p) >>= writeProof
+      lift (withContext t $ runProof bis p) >>= writeProof
       end <- get
       return ((), fromIntegral (end - start))
 
   toProofE :: I.IntMap (ProofF Int) -> VD.IOVector (ProofE, Bool) ->
-    IORef (H.HashMap ProofE Int) -> H.HashMap VarName Sort ->
-    (Maybe Sort -> Int -> ExceptT String IO ProofE,
-      ProofE -> ExceptT String IO Int)
-  toProofE im vec m args = (toE, hashCons) where
+    IORef (H.HashMap ProofE Int) -> H.HashMap VarName Sort -> ProofF Int ->
+    ExceptT String IO (Int, ProofE -> ExceptT String IO Int)
+  toProofE im vec m args (ProofF hs1 th1 ds1 ret1) = do
+    hs' <- forM hs1 $ \(v, n) -> (v,) <$> toIx n
+    ret' <- toIx ret1
+    (, hashCons) <$> hashCons (ProofE hs' th1 ret')
+    where
+    vmap = foldl' (\m' (v, s) -> H.insert v s m') args ds1
+
     incRef :: Int -> ExceptT String IO Int
     incRef n = do
       (p, b) <- VD.read vec n
@@ -421,76 +439,71 @@ writeMM0B strip (Tables sorts terms thms) decls = do
       es' <- mapM (substE subst) es
       hashCons (SAppE t' es')
 
-    toIx :: Maybe Sort -> Int -> ExceptT String IO Int
-    toIx tgt i = toE tgt i >>= hashCons
+    toIx :: Int -> ExceptT String IO Int
+    toIx i = toE i >>= hashCons
 
-    toE :: Maybe Sort -> Int -> ExceptT String IO ProofE
-    toE tgt ix = case im I.! ix of
-      SVarF v -> case tgt <|> H.lookup v args of
-        Just s -> return $ SVarE v (mIx sorts M.! s)
-        Nothing -> throwError $ "unknown dummy sort for " ++ T.unpack v
-      SAppF t es -> do
-        t' <- getTerm t
-        let (_, TermData _ bis _ _) = mArr terms V.! t'
-        SAppE t' <$> zipWithM (toIx . Just . dSort . binderType) (toList bis) es
-      CVarF v -> case tgt <|> H.lookup v args of
-        Just s -> CReflE <$> hashCons (SVarE v (mIx sorts M.! s))
-        Nothing -> throwError $ "unknown dummy sort for " ++ T.unpack v
-      CSymF c -> toE tgt c >>= \case
+    toE :: Int -> ExceptT String IO ProofE
+    toE ix = case im I.! ix of
+      SVarF v -> do
+        s <- fromJustError ("unknown variable " ++ T.unpack v) $ H.lookup v vmap
+        return $ SVarE v (mIx sorts M.! s)
+      SAppF t es -> liftA2 SAppE (getTerm t) (mapM toIx es)
+      CVarF v -> do
+        s <- fromJustError ("unknown variable " ++ T.unpack v) $ H.lookup v vmap
+        CReflE <$> hashCons (SVarE v (mIx sorts M.! s))
+      CSymF c -> toE c >>= \case
         CReflE i -> return (CReflE i)
         p -> CSymE <$> hashCons p
       CAppF t cs -> do
         t' <- getTerm t
-        let (_, TermData _ bis _ _) = mArr terms V.! t'
-        cs' <- zipWithM (toE . Just . dSort . binderType) (toList bis) cs
+        cs' <- mapM toE cs
         case sequence (cs' <&> \case CReflE i -> Just i; _ -> Nothing) of
           Nothing -> CCongE t' <$> mapM hashCons cs'
           Just ns -> CReflE <$> hashCons (SAppE t' ns)
       CUnfoldF t es xs c -> do
         t' <- getTerm t
         let (_, TermData _ bis _ val) = mArr terms V.! t'
-        (ds, v) <- fromJustError (T.unpack t ++ " is not a definition") val
-        es' <- zipWithM (toIx . Just . dSort . binderType) (toList bis) es
+        (ds', v) <- fromJustError (T.unpack t ++ " is not a definition") val
+        es' <- mapM toIx es
         e1 <- hashCons (SAppE t' es')
-        xs' <- zipWithM (\(_, s) x -> hashCons (SVarE x (mIx sorts M.! s))) ds xs
+        xs' <- zipWithM (\(_, s) x -> hashCons (SVarE x (mIx sorts M.! s))) ds' xs
         e2 <- substE (H.fromList
-          (zip (binderName <$> toList bis) es' ++ zip (fst <$> ds) xs')) v
-        CUnfoldE e1 e2 xs' <$> toIx tgt c
+          (zip (binderName <$> toList bis) es' ++ zip (fst <$> ds') xs')) v
+        CUnfoldE e1 e2 xs' <$> toIx c
       PHypF h -> return (PHypE h)
       PThmF t es ps -> do
         t' <- getThm t
         let (_, ThmData _ bis (ProofStmt _ ret _)) = mArr thms V.! t'
-        es' <- zipWithM (toIx . Just . dSort . binderType) (toList bis) es
-        ps' <- mapM (toIx Nothing) ps
+        es' <- mapM toIx es
+        ps' <- mapM toIx ps
         ret' <- substE (H.fromList (zip (binderName <$> toList bis) es')) ret
         return (PThmE t' es' ps' ret')
       PConvF e c p -> do
-        e' <- toIx Nothing e
-        toE Nothing c >>= \case
-          CReflE _ -> toE Nothing p
-          c' -> liftA2 (PConvE e') (hashCons c') (toIx Nothing p)
+        e' <- toIx e
+        toE c >>= \case
+          CReflE _ -> toE p
+          c' -> liftA2 (PConvE e') (hashCons c') (toIx p)
       PLetF x p1 p2 -> do
-        n <- toIx Nothing p1
+        n <- toIx p1
         lift $ modifyIORef m (H.insert (PHypE x) n)
-        toE tgt p2
-      ProofF hs th ret -> do
-        hs' <- forM hs $ \(v, n) -> (,) v <$> toIx Nothing n
-        ProofE hs' th <$> toIx Nothing ret
+        toE p2
+      ProofF _ _ _ _ -> undefined
+  toProofE _ _ _ _ _ = undefined
 
   runProof :: (MuRef a, DeRef a ~ ProofF) =>
-    V.Vector PBinder -> Maybe Sort -> a -> Either String [ProofCmd]
-  runProof bis s a = do
+    V.Vector PBinder -> a -> Either String [ProofCmd]
+  runProof bis a = do
     (st, bis2, pe2) <- unsafePerformIO $ runExceptT $ do
       Graph pairs root <- lift $ reifyGraph a
       let m = I.fromList pairs
       v <- lift $ VD.new 0
       h <- lift $ newIORef H.empty
-      let (toE, hashCons) = toProofE m v h (H.fromList
-            ((\bi -> (binderName bi, dSort $ binderType bi)) <$> toList bis))
+      (pe, hashCons) <- toProofE m v h
+        (H.fromList ((\bi -> (binderName bi, dSort $ binderType bi)) <$> toList bis))
+        (m I.! root)
       bis' <- forM bis $ \bi -> do
         let x = binderName bi
         hashCons $ SVarE x $ mIx sorts M.! dSort (binderType bi)
-      pe <- toE s root >>= hashCons
       v' <- VD.unsafeFreeze v
       h' <- lift (readIORef h)
       return ((v', h'), bis', pe)

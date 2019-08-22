@@ -3,6 +3,7 @@
 module MM0.FrontEnd.ProofTextParser (parseProof) where
 
 import Control.Applicative hiding (many, (<|>))
+import Control.Monad
 import Data.Word8
 import Data.Void
 import Text.Megaparsec
@@ -10,6 +11,7 @@ import Text.Megaparsec.Byte
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as BC
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import MM0.Kernel.Environment
 import MM0.Kernel.Types
 import MM0.Util
@@ -17,122 +19,114 @@ import MM0.Util
 type Parser = Parsec Void B.ByteString
 
 parseProof :: B.ByteString -> Either String [Stmt]
-parseProof s = case runParser readStmts "" s of
+parseProof s = case runParser (space *> many readLisp <* eof) "" s of
   Left err -> Left (show err)
-  Right c -> Right c
+  Right c -> mapM readStmt c
 
-readStmts :: Parser [Stmt]
-readStmts = space *> many readStmt <* eof
-
-_str :: String -> Parser ()
-_str s = () <$ string (BC.pack s)
+data Lisp = Atom T.Text | List [Lisp] deriving (Show)
 
 symbol :: Word8 -> Parser ()
 symbol c = char c >> space
 
-bracket :: Word8 -> Word8 -> Parser a -> Parser a
-bracket l r = between (symbol l) (symbol r)
-
 paren :: Parser a -> Parser a
-paren = bracket _parenleft _parenright
+paren = between (symbol _parenleft) (symbol _parenright)
 
-identStart :: Word8 -> Bool
-identStart c = isAlpha c || c == _underscore
+lispIdentV :: V.Vector Bool
+lispIdentV = V.generate 256 (f . fromIntegral) where
+  f c = isAlphaNum c || toChar c `elem` ("!%&*/:<=>?^_~+-.@" :: String)
 
-identRest :: Word8 -> Bool
-identRest c = isAlphaNum c || c == _underscore
+lispIdent :: Word8 -> Bool
+lispIdent = (lispIdentV V.!) . fromIntegral where
 
 ident :: Parser Ident
-ident = T.pack <$> liftA2 (:) (toChar <$> satisfy identStart)
-  (BC.unpack <$> takeWhileP (Just "identifier char") identRest) <* space
+ident = do
+  s <- takeWhileP (Just "identifier char") lispIdent
+  guard (not (BC.null s))
+  T.pack (BC.unpack s) <$ space
 
-readSort :: Parser Sort
-readSort = ident <?> "lookup sort"
+readLisp :: Parser Lisp
+readLisp = paren (List <$> many readLisp) <|> (Atom <$> ident)
 
-readTerm :: Parser TermName
-readTerm = ident <?> "lookup term"
+readStmt :: Lisp -> Either String Stmt
+readStmt (List [Atom "sort", Atom x]) = return (StepSort x)
+readStmt (List [Atom "term", Atom x]) = return (StepTerm x)
+readStmt (List [Atom "axiom", Atom x]) = return (StepAxiom x)
+readStmt (List (Atom "def" : es)) = readDef True es
+readStmt (List (Atom "pub" : Atom "def" : es)) = readDef True es
+readStmt (List (Atom "local" : Atom "def" : es)) = readDef False es
+readStmt (List (Atom "theorem" : es)) = readThm True es
+readStmt (List (Atom "pub" : Atom "theorem" : es)) = readThm True es
+readStmt (List (Atom "local" : Atom "theorem" : es)) = readThm False es
+readStmt (List [Atom "input", Atom "string"]) = return $ StepInout (VIKString False)
+readStmt (List [Atom "output", Atom "string"]) = return $ StepInout (VIKString True)
+readStmt l = Left $ "invalid command " ++ show l
 
-readAssrt :: Parser ThmName
-readAssrt = ident <?> "lookup thm"
+readDef :: Bool -> [Lisp] -> Either String Stmt
+readDef st [Atom x, List bis, List ret, List ds, val] = do
+  bis' <- mapM readBinder bis
+  ret' <- readDepType ret
+  ds' <- mapM readBound ds
+  val' <- readSExpr val
+  return $ StmtDef x bis' ret' ds' val' st
+readDef _ l = Left $ "invalid def " ++ show l
 
-readVar :: Parser VarName
-readVar = ident <?> "lookup var"
+readThm :: Bool -> [Lisp] -> Either String Stmt
+readThm st [Atom x, List bis, List hs, ret, List ds, pf] = do
+  bis' <- mapM readBinder bis
+  hs' <- mapM readHyp hs
+  ret' <- readSExpr ret
+  ds' <- mapM readBound ds
+  pf' <- readProof pf
+  return $ StmtThm x bis' hs' ret' ds' pf' st
+readThm _ l = Left $ "invalid theorem " ++ show l
 
-readStmt :: Parser Stmt
-readStmt = ident >>= \case
-  "sort" -> StepSort <$> readSort
-  "term" -> StepTerm <$> readTerm
-  "axiom" -> StepAxiom <$> readAssrt
-  "def" -> readDef True
-  "theorem" -> readThm True
-  "local" -> ident >>= \case
-    "def" -> readDef False
-    "theorem" -> readThm False
-    _ -> empty
-  "input" -> ident >>= \case
-    "string" -> return $ StepInout (VIKString False)
-    _ -> empty
-  "output" -> ident >>= \case
-    "string" -> return $ StepInout (VIKString True)
-    _ -> empty
-  _ -> empty
+readAtom :: Lisp -> Either String Ident
+readAtom (Atom x) = return x
+readAtom e = Left $ "invalid variable " ++ show e
 
-readDef :: Bool -> Parser Stmt
-readDef st = do
-  x <- readTerm
-  args <- many readBinder
-  symbol _colon
-  ret <- liftA2 DepType readSort (many (readVar <?> "var"))
-  symbol _equal
-  ds <- many (readBound (,))
-  val <- readExpr
-  return $ StmtDef x args ret ds val st
+readDepType :: [Lisp] -> Either String DepType
+readDepType [Atom s, List vs] = DepType s <$> mapM readAtom vs
+readDepType l = Left $ "invalid type " ++ show l
 
-readThm :: Bool -> Parser Stmt
-readThm st = do
-  x <- readAssrt
-  vs <- many readBinder
-  symbol _comma
-  hyps <- many readHyp
-  symbol _colon
-  ret <- readExpr
-  symbol _equal
-  ds <- many (readBound (,))
-  proof <- readProof
-  return $ StmtThm x vs hyps ret ds proof st
+readBound :: Lisp -> Either String (VarName, Sort)
+readBound (List [Atom x, Atom s]) = return (x, s)
+readBound l = Left $ "invalid dummy declaration " ++ show l
 
-readBound :: (VarName -> Sort -> a) -> Parser a
-readBound f = bracket _braceleft _braceright
-  (liftA2 f ident (symbol _colon >> readSort))
+readBinder :: Lisp -> Either String PBinder
+readBinder (List [Atom x, Atom s]) = return $ PBound x s
+readBinder (List (Atom x : es)) = PReg x <$> readDepType es
+readBinder l = Left $ "invalid binder " ++ show l
 
-readBinder :: Parser PBinder
-readBinder = (readBound PBound) <|>
-  paren (liftA2 PReg ident $
-    symbol _colon >> liftA2 DepType readSort (many readVar))
+readSExpr :: Lisp -> Either String SExpr
+readSExpr (Atom x) = return $ SVar x
+readSExpr (List (Atom t : es)) = App t <$> mapM readSExpr es
+readSExpr e = Left $ "invalid s-expr " ++ show e
 
-readExpr :: Parser SExpr
-readExpr = (SVar <$> try ident) <|> (paren (liftA2 App readTerm (many readExpr)))
+readHyp :: Lisp -> Either String (VarName, SExpr)
+readHyp (List [Atom x, e]) = (x,) <$> readSExpr e
+readHyp l = Left $ "invalid hypothesis " ++ show l
 
-readHyp :: Parser (VarName, SExpr)
-readHyp = paren (liftA2 (,) ident $ symbol _colon >> readExpr)
+readProof :: Lisp -> Either String Proof
+readProof (Atom "?") = return PSorry
+readProof (Atom x) = return $ PHyp x
+readProof (List (Atom ":conv" : es)) = case es of
+  [e, c, p] -> liftA3 PConv (readSExpr e) (readConv c) (readProof p)
+  _ -> Left $ "invalid :conv " ++ show es
+readProof (List (Atom ":let" : es)) = case es of
+  [Atom x, p1, p2] -> liftA2 (PLet x) (readProof p1) (readProof p2)
+  _ -> Left $ "invalid :let " ++ show es
+readProof (List (Atom t : List es : ps)) =
+  liftA2 (PThm t) (mapM readSExpr es) (mapM readProof ps)
+readProof l = Left $ "invalid hypothesis " ++ show l
 
-readProof :: Parser Proof
-readProof = error "unimplemented" -- TODO
-  -- (symbol _question >> return Sorry) <|>
-  -- paren (
-  --   (do
-  --     t <- try readTerm
-  --     es <- many readProof
-  --     return (App t es)) <|>
-  --   (do
-  --     t <- readAssrt
-  --     hs <- many readProof
-  --     return (VThm t hs))) <|>
-  -- bracket _bracketleft _bracketright (do
-  --   e <- readProof
-  --   symbol _equal
-  --   _ <- insertVar
-  --   return (Save e)) <|>
-  -- (Load <$> try readVar) <|>
-  -- (flip VTerm [] <$> try readTerm) <|>
-  -- (flip VThm [] <$> readAssrt)
+readConv :: Lisp -> Either String Conv
+readConv (Atom x) = return $ CVar x
+readConv (List (Atom ":sym" : es)) = case es of
+  [c] -> CSym <$> readConv c
+  _ -> Left $ "invalid :sym " ++ show es
+readConv (List (Atom ":unfold" : es)) = case es of
+  [Atom t, List es', List vs, c] ->
+    liftA3 (CUnfold t) (mapM readSExpr es') (mapM readAtom vs) (readConv c)
+  _ -> Left $ "invalid :unfold " ++ show es
+readConv (List (Atom t : es)) = CApp t <$> mapM readConv es
+readConv e = Left $ "invalid conv " ++ show e

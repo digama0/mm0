@@ -1,5 +1,6 @@
 module MM0.Kernel.Driver where
 
+import Control.Monad
 import System.IO
 import System.Exit
 import qualified Data.ByteString.Lazy as B
@@ -8,6 +9,7 @@ import MM0.Util
 import MM0.FrontEnd.Elaborator
 import MM0.Kernel.Verifier
 import MM0.FrontEnd.ProofTextParser
+import MM0.Compiler.Export
 
 verifyIO :: [String] -> IO ()
 verifyIO args = do
@@ -20,9 +22,13 @@ verifyIO args = do
   putStrLn "spec checked"
   case rest of
     [] -> die "error: no proof file"
-    (mmp:_) -> do
+    mmp : rest' -> do
       pff <- B.readFile mmp
       pf <- liftIO' $ parseProof pff
       out <- liftIO' $ verify s env pf
-      if null out then putStrLn "verified"
-      else mapM_ B.putStr out
+      when (not (null out)) $ mapM_ B.putStr out >> exitFailure
+      putStrLn "verified"
+      case rest' of
+        "-S" : "-o" : mmb : _ -> exportK True mmb env pf
+        "-o" : mmb : _ -> exportK False mmb env pf
+        _ -> return ()

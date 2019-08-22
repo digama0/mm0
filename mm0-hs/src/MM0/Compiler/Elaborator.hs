@@ -1150,8 +1150,8 @@ lispThmDecl o [List bis, List hs, ret, vis, val] = do
   ret' <- cleanTerm o ret
   vis' <- cleanVis o vis
   case val of
-    Proc f -> DTheorem vis' bis' hs' ret' <$> forkElabM (f o [] >>= cleanProof o)
-    _ -> DTheorem vis' bis' hs' ret' . return . Just <$> cleanProof o val
+    Proc f -> DTheorem vis' bis' hs' ret' <$> forkElabM (f o [] >>= cleanProofD o)
+    _ -> DTheorem vis' bis' hs' ret' . return . Just <$> cleanProofD o val
 lispThmDecl o _ = escapeSpan o "invalid theorem decl arguments"
 
 lispAddTerm :: Range -> [LispVal] -> ElabM ()
@@ -1179,7 +1179,7 @@ tryRefine o e = refine o [e]
 evalRefines :: Offset -> LCtx -> [AtLisp] -> ElabM ()
 evalRefines o = evalList () (\e l -> e >>= tryRefine o >> l)
 
-elabLisp :: SExpr -> AtLisp -> ElabM Proof
+elabLisp :: SExpr -> AtLisp -> ElabM ([(VarName, Sort)], Proof)
 elabLisp t e@(Span os@(o, _) _) = do
   g <- newRef (Goal o (sExprToLisp o t))
   modifyTC $ \tc -> tc {tcGoals = V.singleton g}
@@ -1191,7 +1191,51 @@ elabLisp t e@(Span os@(o, _) _) = do
       reportAt o' ELError $ render' $ "|-" <+> doc pp
     _ -> return ()
   unless (V.null gs') mzero
-  cleanProof os (Ref g)
+  cleanProofD os (Ref g)
+
+cleanProofD :: Range -> LispVal -> ElabM ([(VarName, Sort)], Proof)
+cleanProofD o e = do
+  p <- cleanProof o e
+  m <- execStateT (inferDummiesProof o p) M.empty
+  return (M.toList m, p)
+
+inferDummiesProof :: Range -> Proof -> StateT (M.Map VarName Sort) ElabM ()
+inferDummiesProof _ (PHyp _) = return ()
+inferDummiesProof o (PThm t es ps) = do
+  (_, bis, _, _) <- lift $ now >>= getThm t
+  zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
+  mapM_ (inferDummiesProof o) ps
+inferDummiesProof o (PConv _ c p) = inferDummiesConv o Nothing c >> inferDummiesProof o p
+inferDummiesProof o (PLet _ p1 p2) = inferDummiesProof o p1 >> inferDummiesProof o p2
+inferDummiesProof _ PSorry = return ()
+
+inferDummiesConv :: Range -> Maybe Sort -> Conv -> StateT (M.Map VarName Sort) ElabM ()
+inferDummiesConv o s (CVar v) = inferDummiesVar o s v
+inferDummiesConv o _ (CApp t cs) = do
+  (_, bis, _, _) <- lift $ now >>= getTerm t
+  zipWithM_ (inferDummiesConv o . Just . binderSort) bis cs
+inferDummiesConv o s (CSym c) = inferDummiesConv o s c
+inferDummiesConv o s (CUnfold t es _ c) = do
+  (_, bis, _, _) <- lift $ now >>= getTerm t
+  zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
+  inferDummiesConv o s c
+
+inferDummiesExpr :: Range -> Maybe Sort -> SExpr -> StateT (M.Map VarName Sort) ElabM ()
+inferDummiesExpr o s (SVar v) = inferDummiesVar o s v
+inferDummiesExpr o _ (App t es) = do
+  (_, bis, _, _) <- lift $ now >>= getTerm t
+  zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
+
+inferDummiesVar :: Range -> Maybe Sort -> VarName -> StateT (M.Map VarName Sort) ElabM ()
+inferDummiesVar o s v =
+  H.lookup v . tcVars <$> lift getTC >>= \case
+    Just _ -> return ()
+    Nothing -> case s of
+      Nothing -> lift $ escapeSpan o $ "cannot infer type for " <> v
+      Just s' -> gets (M.lookup v) >>= \case
+        Nothing -> modify (M.insert v s')
+        Just s2 -> lift $ escapeSpan o $
+          "inferred two types " <> s' <> ", " <> s2 <> " for " <> v
 
 cleanProof :: Range -> LispVal -> ElabM Proof
 cleanProof o (Ref g) = getRef g >>= \case

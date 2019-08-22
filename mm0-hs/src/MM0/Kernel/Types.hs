@@ -60,7 +60,7 @@ convToLP (CUnfold t es vs c) =
 proofToLP :: Proof -> LispPP
 proofToLP (PHyp h) = LPAtom h
 proofToLP (PThm t es ps) =
-  LPList (LPAtom t : (sExprToLP <$> es) ++ (LPLarge . proofToLP <$> ps))
+  LPList (LPAtom t : LPList (sExprToLP <$> es) : (LPLarge . proofToLP <$> ps))
 proofToLP (PConv t c p) =
   LPList [LPAtom ":conv", sExprToLP t, LPLarge $ convToLP c, LPLarge $ proofToLP p]
 proofToLP (PLet h p q) =
