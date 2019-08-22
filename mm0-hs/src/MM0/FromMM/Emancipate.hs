@@ -62,7 +62,7 @@ checkProof db = modify . checkProof' where
 
   checkApp :: [(VarStatus, Label)] -> [MMProof] -> S.Set Label -> S.Set Label
   checkApp [] [] = id
-  checkApp ((VSBound, _) : hs) (PHyp v _ : ps) = checkApp hs ps . S.insert v
+  checkApp ((VSBound, _) : hs) (PHyp _ v _ : ps) = checkApp hs ps . S.insert v
   checkApp (_ : hs) (p : ps) = checkApp hs ps . checkProof' p
   checkApp _ _ = error "bad proof"
 

@@ -21,7 +21,7 @@ type DVs = S.Set (Label, Label)
 data VarStatus = VSBound | VSFree | VSOpen | VSHyp deriving (Eq, Show)
 type Frame = ([(VarStatus, Label)], DVs)
 data MMProof =
-    PHyp Label Int
+    PHyp VarStatus Label Int
   | PDummy Label
   | PBackref Int
   | PSorry

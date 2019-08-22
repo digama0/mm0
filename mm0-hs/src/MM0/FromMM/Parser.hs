@@ -272,7 +272,7 @@ trProof (hs, _) db = \case
 
   mkHeap :: [(VarStatus, Label)] -> Int -> Q.Seq HeapEl -> Q.Seq HeapEl
   mkHeap [] _ heap = heap
-  mkHeap ((_, h):hs') n heap = mkHeap hs' (n+1) (heap Q.|> HeapEl (PHyp h n))
+  mkHeap ((s, h):hs') n heap = mkHeap hs' (n+1) (heap Q.|> HeapEl (PHyp s h n))
 
   processPreloads :: [T.Text] -> Q.Seq HeapEl -> Int ->
     ([(Label, Label)] -> [(Label, Label)]) -> Either String ([(Label, Label)], MMProof)

@@ -282,25 +282,25 @@ trProof g = trProof' where
     let e' = App t es
     lvs <- asks psLVars
     let t'@(HApp _ ts xs) = trExpr g lvs e'
-    (s1, e1, e2, c2, t1, t2) <- trConv False c
+    (s1, _, e2, c2, _, t2) <- trConv False c
     let s' = fvLTerm t' <> s1
     let c' = CTrans (CDef t ts xs) c2
-    return $ if sym then (s', e2, e1, CSymm c', t1, t') else (s', e', e2, c', t', t1)
+    return $ if sym then (s', e2, e', CSymm c', t2, t') else (s', e', e2, c', t', t2)
 
   trConvApp :: Bool -> DepType -> [PBinder] -> [Conv] ->
     ToHolProofM (S.Set Ident, [SExpr], [SExpr], [HConvLam], [SLam], [SLam], [Ident])
   trConvApp sym (DepType _ ts) = go M.empty where
     go m [] [] = return (mempty, [], [], [], [], [], fst . (m M.!) <$> ts)
     go m (PBound x t : bis) (c : cs) = f c where
-      f (CSym c) = f c
+      f (CSym c') = f c'
       f (CVar e) = do
         (s1, es1, es2, cls, ts1, ts2, xs) <- go (M.insert x (e, t) m) bis cs
         return (s1, SVar e : es1, SVar e : es2, cls, ts1, ts2, xs)
       f _ = error "bad proof"
     go m (PReg _ (DepType _ ts') : bis) (c : cs) = do
-      (s1, e1, e2, c, t1, t2) <- trConv sym c
+      (s1, e1, e2, c', t1, t2) <- trConv sym c
       (s2, es1, es2, cls, ts1, ts2, xs) <- go m bis cs
       let vs = (m M.!) <$> ts'
       return (foldr S.delete s1 (fst <$> vs) <> s2, e1 : es1, e2 : es2,
-        HConvLam vs c : cls, SLam vs t1 : ts1, SLam vs t2 : ts2, xs)
+        HConvLam vs c' : cls, SLam vs t1 : ts1, SLam vs t2 : ts2, xs)
     go _ _ _ = error "incorrect number of arguments"

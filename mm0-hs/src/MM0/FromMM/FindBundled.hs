@@ -55,7 +55,7 @@ findBundled' db strict = mapM_ checkDecl (mDecls db) where
       mapM_ go ps
       forM_ (pureArgs M.!? t) $ \l ->
         let l' = (\n -> case ps !! n of
-              PHyp _ i -> Left (im I.! i)
+              PHyp _ _ i -> Left (im I.! i)
               PDummy i -> Right i
               _ -> error "bad proof") <$> l
         in unless (allUnique l') $ do

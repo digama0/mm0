@@ -215,7 +215,7 @@ trThmB bu pub fr (_, e) p i =
       Nothing -> return (Just $ A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
       Just p' -> do
         t <- get
-        let (ds, pr) = trProof vm fr t p'
+        let (ds, pr) = trProof vm t p'
         return (
           if pub then Just $ A.Theorem i bs1 (exprToFmla e1) else Nothing,
           StmtThm i bs2 hs2 e1 ds pr pub)
@@ -388,19 +388,19 @@ mangle s = case T.uncons s of
     else T.cons '_' (T.map mangle1 s) where
     mangle1 c' = if identCh c' then c' else '_'
 
-trProof :: (Label -> Label) -> Frame -> TransState ->
+trProof :: (Label -> Label) -> TransState ->
   ([(Label, Label)], MMProof) -> ([(VarName, Sort)], Proof)
-trProof vm (hs, _) t (ds, pr) = (
+trProof vm t (ds, pr) = (
   (\(d, s) -> (tNameMap t M.! d, tNameMap t M.! s)) <$> ds,
-  fromRight undefined $ evalState (trProof' pr) (Q.fromList (toHeapEl <$> hs)))
+  fromRight undefined $ evalState (trProof' pr) def)
   where
 
   toHeapEl :: (VarStatus, Label) -> Either SExpr Proof
   toHeapEl (VSHyp, l) = Right $ K.PHyp $ tNameMap t M.! l
-  toHeapEl (_, l) = Left $ SVar $ tNameMap t M.! l
+  toHeapEl (_, l) = Left $ SVar $ vm l
 
   trProof' :: MMProof -> State (Q.Seq (Either SExpr Proof)) (Either SExpr Proof)
-  trProof' (T.PHyp v _) = return $ Right $ K.PHyp (vm v)
+  trProof' (T.PHyp s v _) = return $ toHeapEl (s, v)
   trProof' (PDummy v) = return $ Left $ SVar (tNameMap t M.! v)
   trProof' (PBackref n) = gets (`Q.index` n)
   trProof' T.PSorry = return $ Right K.PSorry
