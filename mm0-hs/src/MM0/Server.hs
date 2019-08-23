@@ -105,7 +105,8 @@ data FileCache = FC {
 data ReactorState = RS {
   rsDebug :: Bool,
   rsFuncs :: LspFuncs (),
-  rsDiagThreads :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, Async ())),
+  rsDiagThreads :: TVar (H.HashMap NormalizedUri
+    (TextDocumentVersion, Async (Either ResponseError FileCache))),
   rsLastParse :: TVar (H.HashMap NormalizedUri (TextDocumentVersion, FileCache)),
   rsOpenRequests :: TVar (H.HashMap LspId (BareResponseMessage -> IO ())) }
 type Reactor a = ReaderT ReactorState IO a
@@ -127,19 +128,28 @@ publishDiagnostics maxToPublish uri v diags = do
 nextLspReqId :: Reactor LspId
 nextLspReqId = asks (getNextReqId . rsFuncs) >>= liftIO
 
-newDiagThread :: NormalizedUri -> TextDocumentVersion -> Reactor () -> Reactor ()
+asyncRec :: (Async a -> IO a) -> IO (Async a)
+asyncRec f = do
+  v <- newEmptyMVar
+  a <- async $ takeMVar v >>= f
+  a <$ putMVar v a
+
+newDiagThread :: NormalizedUri -> TextDocumentVersion ->
+  Reactor (Either ResponseError FileCache) ->
+  Reactor (Async (Either ResponseError FileCache))
 newDiagThread uri version m = ReaderT $ \rs -> do
   let dt = rsDiagThreads rs
-  a <- async $ do
-    -- enableAllocationLimit   -- TODO: Import following seems to exceed the alloc limit
-    timeout (10 * 1000000) (runReaderT m rs) >>= \case
-      Just () -> return ()
-      Nothing -> runReaderT (reactorErr "server timeout") rs
-  old <- atomically $ do
-    H.lookup uri <$> readTVar dt >>= \case
-      Just (v', _) | isOutdated v' version -> return $ Just a
-      a' -> (snd <$> a') <$ modifyTVar dt (H.insert uri (version, a))
-  mapM_ cancel old
+  asyncRec $ \a -> do
+    ao <- atomically $ H.lookup uri <$> readTVar dt >>= \case
+      Just (v', a') | isOutdated v' version -> return $ Left a'
+      a' -> Right (snd <$> a') <$ modifyTVar dt (H.insert uri (version, a))
+    case ao of
+      Left a' -> wait a'
+      Right old -> do
+        mapM_ cancel old
+        -- enableAllocationLimit   -- TODO: Import following seems to exceed the alloc limit
+        fromMaybe (Left $ ResponseError InternalError "server timeout" Nothing) <$>
+          timeout (10 * 1000000) (runReaderT m rs)
 
 reactorLogMsg :: MessageType -> T.Text -> Reactor ()
 reactorLogMsg mt msg = reactorSend $ NotLogMessage $ fmServerLogMessageNotification mt msg
@@ -305,12 +315,12 @@ elabErrorDiags uri larr errs = toDiag <$> errs where
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
-elaborateFileAndSendDiags :: NormalizedUri -> [NormalizedUri] ->
-  TextDocumentVersion -> T.Text -> Reactor (Either ResponseError FileCache)
-elaborateFileAndSendDiags nuri@(NormalizedUri t) ds version str = do
+elaborateFileAndSendDiags :: NormalizedUri ->
+  TextDocumentVersion -> T.Text -> Reactor FileCache
+elaborateFileAndSendDiags nuri@(NormalizedUri t) version str = do
   fs <- asks rsLastParse
   liftIO (readTVarIO fs) >>= \m -> case H.lookup nuri m of
-    Just (oldv, fc) | isOutdated oldv version -> return $ Right fc
+    Just (oldv, fc) | isOutdated oldv version -> return fc
     _ -> do
       let fileUri = fromNormalizedUri nuri
           file = fromMaybe "" $ uriToFilePath fileUri
@@ -318,7 +328,7 @@ elaborateFileAndSendDiags nuri@(NormalizedUri t) ds version str = do
           isMM0 = T.isSuffixOf "mm0" t
           (errs, _, ast) = CP.parseAST file str
       (errs', env) <- ReaderT $ \r ->
-        CE.elaborate (mkElabConfig nuri ds isMM0 False r)
+        CE.elaborate (mkElabConfig nuri isMM0 False r)
           (CE.toElabError <$> errs) ast
       let fc1 = FC str larr ast (toSpans env <$> ast) env
       fc <- liftIO $ atomically $ do
@@ -328,22 +338,44 @@ elaborateFileAndSendDiags nuri@(NormalizedUri t) ds version str = do
           _ -> fc1 <$ writeTVar fs (H.insert nuri (version, fc1) h)
       let diags = elabErrorDiags fileUri larr errs'
       publishDiagnostics 100 nuri version (partitionBySource diags)
-      return (Right fc)
+      return fc
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
 sendDiagnostics :: NormalizedUri -> TextDocumentVersion -> T.Text -> Reactor ()
 sendDiagnostics uri version str =
-  reactorHandleAll $ newDiagThread uri version $
-    () <$ elaborateFileAndSendDiags uri [] version str
+  reactorHandleAll $ (() <$) $ newDiagThread uri version $
+    Right <$> elaborateFileAndSendDiags uri version str
+
+getFileContents :: NormalizedUri -> Reactor (Either IOError T.Text)
+getFileContents doc = do
+  let fileUri = fromNormalizedUri doc
+      file = fromMaybe "" $ uriToFilePath fileUri
+  lf <- asks rsFuncs
+  liftIO (getVirtualFileFunc lf doc) >>= \case
+    Nothing -> lift $ E.try $ T.readFile file
+    Just (VirtualFile _ rope _) -> return $ Right $ Rope.toText rope
 
 getFileCache :: NormalizedUri -> Reactor (Either ResponseError FileCache)
 getFileCache doc = do
-  lf <- asks rsFuncs
-  liftIO (getVirtualFileFunc lf doc) >>= \case
-    Nothing -> return $ Left $ ResponseError InternalError "could not get file data" Nothing
+  rs <- ask
+  let lf = rsFuncs rs
+  let dt = rsDiagThreads rs
+  res <- liftIO (getVirtualFileFunc lf doc) >>= \case
+    Nothing -> getFileContents doc <&> \case
+      Left err -> Left (ResponseError InternalError
+        (T.pack ("IO error: " ++ show err)) Nothing)
+      Right str -> Right (Nothing, str)
     Just (VirtualFile version str _) ->
-      elaborateFileAndSendDiags doc [] (Just version) (Rope.toText str)
+      return $ Right (Just version, Rope.toText str)
+  case res of
+    Left err -> return (Left err)
+    Right (version, str) -> do
+      a <- H.lookup doc <$> liftIO (readTVarIO dt) >>= \case
+        Just (v', a') | isOutdated v' version -> return a'
+        _ -> newDiagThread doc version $
+          Right <$> elaborateFileAndSendDiags doc version str
+      liftIO $ wait a
 
 makeHover :: CE.Env -> Range -> CA.Span CA.Stmt -> PosInfo -> Maybe Hover
 makeHover env range stmt (PosInfo t pi') = case pi' of
@@ -449,7 +481,7 @@ getCompletions doc@(NormalizedUri t) pos = do
         Nothing -> return $ Right []
         Just ast' -> do
           (errs', env) <- ReaderT $ \r ->
-            CE.elaborate (mkElabConfig doc [] isMM0 True r)
+            CE.elaborate (mkElabConfig doc isMM0 True r)
               (CE.toElabError <$> errs) ast'
           fs <- asks rsLastParse
           liftIO $ atomically $ modifyTVar fs $ flip H.alter doc $ \case
@@ -481,38 +513,21 @@ getCompletions doc@(NormalizedUri t) pos = do
   toCIK SkTypeParameter = CiTypeParameter
   toCIK _               = CiValue
 
-getFileContents :: NormalizedUri -> Reactor (Either IOError T.Text)
-getFileContents doc = do
-  let fileUri = fromNormalizedUri doc
-      file = fromMaybe "" $ uriToFilePath fileUri
-  lf <- asks rsFuncs
-  liftIO (getVirtualFileFunc lf doc) >>= \case
-    Nothing -> lift $ E.try $ T.readFile file
-    Just (VirtualFile _ rope _) -> return $ Right $ Rope.toText rope
-
-elabLoad :: NormalizedUri -> [NormalizedUri] -> TextDocumentVersion -> Reactor (Either T.Text CE.Env)
-elabLoad doc ds version = H.lookup doc <$> ReaderT (readTVarIO . rsLastParse) >>= \case
-  Just (oldv, fc) | isOutdated oldv version -> return $ Right $ fcEnv fc
-  _ -> getFileContents doc >>= \case
-    Left err -> return $ Left $ T.pack $ show err
-    Right str -> elaborateFileAndSendDiags doc ds Nothing str <&> \case
-      Left err -> Left $ err ^. J.message
-      Right fc -> Right $ fcEnv fc
-
-elabLoader :: NormalizedUri -> [NormalizedUri] -> FilePath -> Reactor (Either T.Text CE.Env)
-elabLoader uri ds p =
+elabLoader :: FilePath -> Reactor (Either T.Text CE.Env)
+elabLoader p =
   let uri' = toNormalizedUri (filePathToUri p) in
-  if uri' `elem` (uri : ds) then
-    return $ Left $ T.pack $ "import cycle detected: " ++ show (uri : ds)
-  else if length ds >= 4 then
-    return $ Left $ T.pack $ "import depth limit exceeded: " ++ show (uri' : uri : ds)
-  else ReaderT $ \r ->
-    tryIOError (runReaderT (elabLoad uri' (uri : ds) Nothing) r) >>= \case
-      Left err -> return $ Left $ T.pack $ "elabLoader failed: " ++ show err
-      Right res -> return res
+  -- if uri' `elem` (uri : ds) then
+  --   return $ Left $ T.pack $ "import cycle detected: " ++ show (uri : ds)
+  -- else if length ds >= 4 then
+  --   return $ Left $ T.pack $ "import depth limit exceeded: " ++ show (uri' : uri : ds)
+  -- else
+  ReaderT $ \r ->
+    tryIOError (runReaderT (getFileCache uri') r) <&> \case
+      Left err -> Left $ T.pack $ "elabLoader failed: " ++ show err
+      Right (Left err) -> Left $ T.pack $ show err
+      Right (Right fc) -> Right $ fcEnv fc
 
-mkElabConfig :: NormalizedUri -> [NormalizedUri] ->
-  Bool -> Bool -> ReactorState -> CE.ElabConfig
-mkElabConfig uri ds mm0 c r = CE.ElabConfig mm0 True c
+mkElabConfig :: NormalizedUri -> Bool -> Bool -> ReactorState -> CE.ElabConfig
+mkElabConfig uri mm0 c r = CE.ElabConfig mm0 True c
   (fromMaybe "" $ uriToFilePath $ fromNormalizedUri uri)
-  (\t -> runReaderT (elabLoader uri ds t) r)
+  (\t -> runReaderT (elabLoader t) r)

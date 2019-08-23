@@ -845,9 +845,9 @@ unary :: Offset -> [LispVal] -> ElabM LispVal
 unary _ [e] = return e
 unary o es = escapeAt o $ "expected one argument, got " <> T.pack (show (length es))
 
-evalFold1 :: Offset -> (a -> a -> a) -> [a] -> ElabM a
-evalFold1 o _ [] = escapeAt o "expected at least one argument"
-evalFold1 _ f es = return (foldl1 f es)
+evalFoldl1 :: Offset -> (a -> a -> a) -> [a] -> ElabM a
+evalFoldl1 o _ [] = escapeAt o "expected at least one argument"
+evalFoldl1 _ f es = return (foldl1 f es)
 
 intBoolBinopProc :: (Integer -> Integer -> Bool) -> Proc
 intBoolBinopProc f (o, _) es = mapM (asInt o) es >>= \case
@@ -952,13 +952,17 @@ initialBindings = [
     ("+", \(o, _) es -> Number . sum <$> mapM (unRef >=> asInt o) es),
     ("*", \(o, _) es -> Number . product <$> mapM (unRef >=> asInt o) es),
     ("max", \(o, _) es ->
-      mapM (unRef >=> asInt o) es >>= evalFold1 o max >>= return . Number),
+      mapM (unRef >=> asInt o) es >>= evalFoldl1 o max >>= return . Number),
     ("min", \(o, _) es ->
-      mapM (unRef >=> asInt o) es >>= evalFold1 o min >>= return . Number),
+      mapM (unRef >=> asInt o) es >>= evalFoldl1 o min >>= return . Number),
     ("-", \(o, _) es -> mapM (unRef >=> asInt o) es >>= \case
       [] -> escapeAt o "expected at least one argument"
       [n] -> return $ Number (-n)
       n : ns -> return $ Number (n - sum ns)),
+    ("//", \(o, _) es ->
+      mapM (unRef >=> asInt o) es >>= evalFoldl1 o div >>= return . Number),
+    ("%", \(o, _) es ->
+      mapM (unRef >=> asInt o) es >>= evalFoldl1 o mod >>= return . Number),
     ("<", intBoolBinopProc (<)),
     ("<=", intBoolBinopProc (<=)),
     (">", intBoolBinopProc (>)),

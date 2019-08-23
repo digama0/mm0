@@ -50,7 +50,15 @@ axiom s2ns0: $ s0 = 0 $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;
 axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
 
+local def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
+infixl hex: $:x$ prec 120;
+
+theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
+
 do {
-  (def ->expr @ match-fn [(? number? e) (num->expr e)] [e e])
-  (->expr 55)
+  (def (->hex n)
+    @ if {n >= 16} (list 'hex (->hex {n // 16}) (->hex {n % 16}))
+    @ if {n < 10} (atom-app 'x n)
+    @ match n [10 'xa] [11 'xb] [12 'xc] [13 'xd] [14 'xe] [15 'xf])
+  (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
 };
