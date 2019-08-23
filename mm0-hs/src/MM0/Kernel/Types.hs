@@ -85,7 +85,7 @@ stmtToLP :: Stmt -> LispPP
 stmtToLP (StmtSort x sd) = LPList (LPAtom "sort" : LPAtom x : sortDataToLP sd)
 stmtToLP (StmtTerm x bis ret) = LPList [LPAtom "term", LPAtom x,
   LPList (binderToLP <$> bis), LPList (depTypeToLP ret)]
-stmtToLP (StmtAxiom x bis hs ret) = LPList [LPAtom "axiom", LPAtom x,
+stmtToLP (StmtAxiom x bis hs ret) = LPList [LPAtom "axiom",
   LPAtom x, LPList (binderToLP <$> bis),
   LPLarge $ LPList (LPLarge . sExprToLP <$> hs), sExprToLP ret]
 stmtToLP (StmtDef x bis ret ds val st) = LPList [

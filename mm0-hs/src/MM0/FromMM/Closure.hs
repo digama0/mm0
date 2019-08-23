@@ -27,7 +27,7 @@ closure db = \ls -> execState (mapM_ checkStmt ls) (S.empty, S.empty) where
         Just (_, Thm (hs, _) (_, e) pr) -> do
           mapM_ checkHyp hs
           checkExpr e
-          mapM_ (checkProof . snd) pr
+          mapM_ (\(ds, p) -> mapM_ (checkStmt . fst) ds >> checkProof p) pr
         Just (_, Hyp (VHyp s _)) -> addSort s
         Just (_, Hyp (EHyp _ e)) -> checkExpr e
         Just (_, Alias th) -> checkStmt th

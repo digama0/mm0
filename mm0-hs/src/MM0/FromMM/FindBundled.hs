@@ -29,6 +29,7 @@ findBundled' :: MMDatabase -> Bool -> FindBundledM ()
 findBundled' db strict = mapM_ checkDecl (mDecls db) where
   pureArgs :: M.Map Label [Int]
   pureArgs = M.mapMaybe f (mStmts db) where
+    f (_, Alias x) = f (mStmts db M.! x)
     f (_, Thm (hs, _) _ _) =
       case go hs 0 of { [] -> Nothing; l -> Just l } where
       go [] _ = []
