@@ -1,6 +1,7 @@
 module MM0.Kernel.Types (VInoutKind(..), Stmt(..), Proof(..), Conv(..)) where
 
 import qualified Data.Text as T
+import Data.Maybe
 import Data.Void
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.String
@@ -10,9 +11,9 @@ data VInoutKind = VIKString Bool -- ^ False for input, True for output
   deriving (Show)
 
 data Stmt =
-    StepSort Ident
-  | StepTerm Ident
-  | StepAxiom Ident
+    StmtSort Ident SortData
+  | StmtTerm Ident [PBinder] DepType
+  | StmtAxiom Ident [PBinder] [SExpr] SExpr
   | StmtDef {
       pdName :: TermName,     -- ^ The name of the definition
       pdArgs :: [PBinder],    -- ^ The arguments to the definition
@@ -74,10 +75,19 @@ binderToLP :: PBinder -> LispPP
 binderToLP (PBound x s) = LPList [LPAtom x, LPAtom s]
 binderToLP (PReg x s) = LPList (LPAtom x : depTypeToLP s)
 
+sortDataToLP :: SortData -> [LispPP]
+sortDataToLP (SortData p s pr f) =
+  catMaybes [go "pure" p, go "strict" s, go "provable" pr, go "free" f] where
+  go _ False = Nothing
+  go str True = Just (LPAtom str)
+
 stmtToLP :: Stmt -> LispPP
-stmtToLP (StepSort x) = LPList [LPAtom "sort", LPAtom x]
-stmtToLP (StepTerm x) = LPList [LPAtom "term", LPAtom x]
-stmtToLP (StepAxiom x) = LPList [LPAtom "axiom", LPAtom x]
+stmtToLP (StmtSort x sd) = LPList (LPAtom "sort" : LPAtom x : sortDataToLP sd)
+stmtToLP (StmtTerm x bis ret) = LPList [LPAtom "term", LPAtom x,
+  LPList (binderToLP <$> bis), LPList (depTypeToLP ret)]
+stmtToLP (StmtAxiom x bis hs ret) = LPList [LPAtom "axiom", LPAtom x,
+  LPAtom x, LPList (binderToLP <$> bis),
+  LPLarge $ LPList (LPLarge . sExprToLP <$> hs), sExprToLP ret]
 stmtToLP (StmtDef x bis ret ds val st) = LPList [
   LPAtom $ if st then "pub" else "local", LPAtom "def",
   LPAtom x, LPList (binderToLP <$> bis), LPList (depTypeToLP ret),

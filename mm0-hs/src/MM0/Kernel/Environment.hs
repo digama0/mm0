@@ -72,7 +72,7 @@ data SortData = SortData {
   sStrict :: Bool,
   sProvable :: Bool,
   sFree :: Bool }
-  deriving (Show)
+  deriving (Show, Eq)
 
 data IOKind = IOKString Bool SExpr deriving (Show)
 

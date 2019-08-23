@@ -67,17 +67,18 @@ verify :: B.ByteString -> Environment -> [Stmt] -> Either String (Q.Seq B.ByteSt
 verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
 
   verifyCmd :: Stmt -> GVerifyM ()
-  verifyCmd (StepSort x) = step >>= \case
-    SSort x' sd | x == x' ->
+  verifyCmd (StmtSort x sd) = step >>= \case
+    SSort x' sd' | x == x' && sd == sd' ->
       modify $ \g -> g {vSorts = M.insert x sd (vSorts g)}
     e -> throwError ("incorrect step 'sort " ++ T.unpack x ++ "', found " ++ show e)
-  verifyCmd (StepTerm x) = step >>= \case
-    SDecl x' (DTerm args ty) | x == x' ->
+  verifyCmd (StmtTerm x args ty) = step >>= \case
+    SDecl x' (DTerm args' ty') | x == x' && args == args' && ty == ty' ->
       modify $ \g -> g {vTerms =
         M.insert x (VTermData args ty Nothing) (vTerms g)}
     e -> throwError ("incorrect step 'term " ++ T.unpack x ++ "', found " ++ show e)
-  verifyCmd (StepAxiom x) = step >>= \case
-    SDecl x' (DAxiom args hs ret) | x == x' ->
+  verifyCmd (StmtAxiom x args hs ret) = step >>= \case
+    SDecl x' (DAxiom args' hs' ret')
+      | x == x' && args == args' && hs == hs' && ret == ret' ->
       modify $ \g -> g {vThms =
         M.insert x (VThmData args hs ret) (vThms g)}
     e -> throwError ("incorrect step 'axiom " ++ T.unpack x ++ "', found " ++ show e)

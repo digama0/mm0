@@ -9,12 +9,14 @@ u8* g_cmd;
 
 void fail(char* err, int e) {
 #ifndef BARE
-  fprintf(stderr, "stmt: %lX, cmd: ", (u8*)g_stmt - g_file);
-  u32 data; debug_cmd_unpack(g_cmd, &data);
-  debug_print_cmd(g_cmd, data);
-  index* ix = lookup_stmt(g_stmt);
-  if (ix) {
-    fprintf(stderr, "at %s: ", ix->value);
+  if (g_stmt) {
+    fprintf(stderr, "stmt: %lX, cmd: ", (u8*)g_stmt - g_file);
+    u32 data; debug_cmd_unpack(g_cmd, &data);
+    debug_print_cmd(g_cmd, data);
+    index* ix = lookup_stmt(g_stmt);
+    if (ix) {
+      fprintf(stderr, "at %s: ", ix->value);
+    }
   }
   fprintf(stderr, "%s\n\n", err);
   fprintf(stderr, "cmds:\n");
@@ -456,6 +458,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
 }
 
 void verify(u64 len, u8* file) {
+  g_file = file; g_end = file + len;
+
   ENSURE("header not long enough", len >= sizeof(header));
   header* p = (header*)file;
   ENSURE("Not a MM0B file", p->magic == MM0B_MAGIC);
@@ -466,7 +470,6 @@ void verify(u64 len, u8* file) {
   ENSURE("Theorem table out of range",
     len >= p->p_thms + p->num_thms * sizeof(term));
   ENSURE("Proof section out of range", len > p->p_proof);
-  g_file = file; g_end = file + len;
   g_num_sorts = 0; g_sorts = p->sorts;
   g_num_terms = 0; g_terms = (term*)&file[p->p_terms];
   g_num_thms  = 0; g_thms  = (thm*)&file[p->p_thms];

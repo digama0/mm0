@@ -109,7 +109,7 @@ void debug_print_uheap() {
 }
 
 u32 debug_cmd_unpack(u8* cmd, u32* data_out) {
-  if (cmd + CMD_MAX_SIZE > g_end) {
+  if (cmd < g_file || cmd + CMD_MAX_SIZE > g_end) {
     fprintf(stderr, "command out of range");
     return 0;
   }
@@ -141,7 +141,8 @@ u32 debug_cmd_unpack(u8* cmd, u32* data_out) {
 }
 
 void debug_print_cmd(u8* cmd, u32 data) {
-  if (cmd + CMD_MAX_SIZE > g_end) {
+  if (!cmd) return;
+  if (cmd < g_file || cmd + CMD_MAX_SIZE > g_end) {
     fprintf(stderr, "command out of range");
     return;
   }
@@ -235,7 +236,8 @@ void debug_print_cmd(u8* cmd, u32 data) {
 }
 
 void debug_print_cmds(u8* cmd, u8* stop) {
-  if (cmd + CMD_MAX_SIZE > g_end) {
+  if (!cmd) return;
+  if (cmd < g_file || cmd + CMD_MAX_SIZE > g_end) {
     fprintf(stderr, "command out of range");
     return;
   }

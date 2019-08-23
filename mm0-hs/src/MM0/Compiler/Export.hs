@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric, DeriveFunctor, DeriveTraversable, TypeFamilies #-}
-module MM0.Compiler.Export (export, exportK) where
+module MM0.Compiler.Export (export, exportK, exportKP) where
 
 import GHC.Generics (Generic)
 import Control.Applicative
@@ -30,36 +30,26 @@ import qualified Data.Vector.Mutable.Dynamic as VD
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import MM0.Compiler.Env hiding (reportErr, getTerm, getThm)
-import qualified MM0.Kernel.Environment as K
 import qualified MM0.Kernel.Types as K
 import MM0.Util
 
 export :: Bool -> String -> Env -> IO ()
-export strip fname env = do
-  m <- collectDecls env
-  t <- liftIO $ buildTables env m
-  exportTables strip fname t m
+export strip fname env =
+  collectDecls env >>= buildTables env >>= exportTables strip fname
 
-exportK :: Bool -> String -> K.Environment -> [K.Stmt] -> IO ()
-exportK strip fname env pfs = do
-  let m = collectDeclsK pfs
-  t <- liftIO $ buildTablesK env pfs
-  exportTables strip fname t m
+exportK :: Bool -> String -> [K.Stmt] -> IO ()
+exportK strip fname pfs =
+  exportKP strip fname $ \f -> mapM_ f pfs
 
-collectDeclsK :: [K.Stmt] -> [Name]
-collectDeclsK pfs = mapMaybe go pfs where
-  go (K.StepSort s) = Just $ SortName s
-  go (K.StepTerm s) = Just $ TermName s
-  go (K.StepAxiom s) = Just $ ThmName s
-  go (K.StmtDef s _ _ _ _ _) = Just $ TermName s
-  go (K.StmtThm s _ _ _ _ _ _) = Just $ ThmName s
-  go (K.StepInout _) = Nothing
+exportKP :: Bool -> String -> ((K.Stmt -> IO ()) -> IO ()) -> IO ()
+exportKP strip fname ppfs = do
+  buildTablesK ppfs >>= exportTables strip fname
 
-exportTables :: Bool -> String -> Tables -> [Name] -> IO ()
-exportTables strip fname t m = do
+exportTables :: Bool -> String -> (V.Vector Name, Tables) -> IO ()
+exportTables strip fname (ns, t) =
   withBinaryFile fname WriteMode $ \h -> do
     hSetBuffering h (BlockBuffering Nothing)
-    putExportM h (writeMM0B strip t m)
+    putExportM h (writeMM0B strip ns t)
 
 reportErr :: Range -> T.Text -> IO ()
 reportErr _ = hPutStrLn stderr . T.unpack
@@ -219,48 +209,50 @@ data Tables = Tables {
   _tTerms :: Mapping TermData,
   _tThms :: Mapping ThmData }
 
-buildTablesWith :: (IOMapping SortData ->
-                    IOMapping TermData ->
-                    IOMapping ThmData -> IO ()) -> IO Tables
+buildTablesWith ::
+  ((Ident -> SortData -> IO ()) ->
+    (Ident -> TermData -> IO ()) ->
+    (Ident -> ThmData -> IO ()) -> IO ()) -> IO (V.Vector Name, Tables)
 buildTablesWith f = do
   sorts <- newIOMapping
   terms <- newIOMapping
   thms <- newIOMapping
-  f sorts terms thms
-  liftM3 Tables (freezeMapping sorts) (freezeMapping terms) (freezeMapping thms)
+  ns <- VD.new 0
+  let go :: (Ident -> Name) -> IOMapping a -> Ident -> a -> IO ()
+      go g m x a = pushIO m x a >> VD.pushBack ns (g x)
+  f (go SortName sorts) (go TermName terms) (go ThmName thms)
+  liftM2 (,) (VD.unsafeFreeze ns) $
+    liftM3 Tables (freezeMapping sorts) (freezeMapping terms) (freezeMapping thms)
 
-buildTables :: Env -> [Name] -> IO Tables
-buildTables env ds = buildTablesWith $ \sorts terms thms ->
+buildTables :: Env -> [Name] -> IO (V.Vector Name, Tables)
+buildTables env ds = buildTablesWith $ \mksort mkterm mkthm ->
   forM_ ds $ \case
-    SortName s -> pushIO sorts s (thd3 (eSorts env H.! s))
+    SortName s -> mksort s $ thd3 (eSorts env H.! s)
     d -> case eDecls env H.! (nIdent d) of
       (_, _, DTerm bis ret, _) ->
-        pushIO terms (nIdent d) (TermData Public (V.fromList bis) ret Nothing)
+        mkterm (nIdent d) $ TermData Public (V.fromList bis) ret Nothing
       (_, _, DDef vis bis ret val, _) ->
-        pushIO terms (nIdent d) (TermData vis (V.fromList bis) ret val)
+        mkterm (nIdent d) (TermData vis (V.fromList bis) ret val)
       (_, _, DAxiom bis hs ret, _) ->
-        pushIO thms (nIdent d) $ ThmData Public (V.fromList bis) $
+        mkthm (nIdent d) $ ThmData Public (V.fromList bis) $
           ProofStmt ((Nothing,) <$> hs) ret Nothing
       (_, _, DTheorem vis bis hs ret val, _) -> do
         pf <- fromJust <$> val
-        pushIO thms (nIdent d) $ ThmData vis (V.fromList bis) $
+        mkthm (nIdent d) $ ThmData vis (V.fromList bis) $
           ProofStmt hs ret (Just pf)
 
-buildTablesK :: K.Environment -> [K.Stmt] -> IO Tables
-buildTablesK env pfs = buildTablesWith $ \sorts terms thms ->
-  forM_ pfs $ \case
-    K.StepSort s -> pushIO sorts s (K.eSorts env M.! s)
-    K.StepTerm t -> case K.eDecls env M.! t of
-      K.DTerm bis ret -> pushIO terms t (TermData Public (V.fromList bis) ret Nothing)
-      _ -> error $ "not a term: " ++ T.unpack t
-    K.StepAxiom t -> case K.eDecls env M.! t of
-      K.DAxiom bis hs ret ->
-        pushIO thms t $ ThmData Public (V.fromList bis) $
-          ProofStmt ((Nothing,) <$> hs) ret Nothing
-      _ -> error $ "not an axiom: " ++ T.unpack t
-    K.StmtDef t bis ret ds val st -> pushIO terms t $
-      TermData (if st then Public else Local) (V.fromList bis) ret (Just (ds, val))
-    K.StmtThm t bis hs ret ds pf st -> pushIO thms t $
+buildTablesK :: ((K.Stmt -> IO ()) -> IO ()) -> IO (V.Vector Name, Tables)
+buildTablesK ppfs =
+  buildTablesWith $ \mksort mkterm mkthm -> ppfs $ \case
+    K.StmtSort s sd -> mksort s sd
+    K.StmtTerm t bis ret -> mkterm t $
+      TermData Public (V.fromList bis) ret Nothing
+    K.StmtAxiom t bis hs ret -> mkthm t $
+      ThmData Public (V.fromList bis) $
+        ProofStmt ((Nothing,) <$> hs) ret Nothing
+    K.StmtDef t bis ret ds val st -> mkterm t $
+      (TermData (if st then Public else Local) (V.fromList bis) ret (Just (ds, val)))
+    K.StmtThm t bis hs ret ds pf st -> mkthm t $
       ThmData (if st then Public else Local) (V.fromList bis) $
         ProofStmt (mapFst go <$> hs) ret (Just (ds, pf)) where
       go "_" = Nothing
@@ -280,8 +272,8 @@ type ProofM = RWST (V.Vector (ProofE, Bool), H.HashMap ProofE Int)
 type PMapping = (I.IntMap Word64, I.IntMap Word64, I.IntMap Word64)
 type IndexM = StateT PMapping ExportM
 
-writeMM0B :: Bool -> Tables -> [Name] -> ExportM ()
-writeMM0B strip (Tables sorts terms thms) decls = do
+writeMM0B :: Bool -> V.Vector Name -> Tables -> ExportM ()
+writeMM0B strip decls (Tables sorts terms thms) = do
   writeBS "MM0B"                                    -- magic
   writeU8 1                                         -- version
   let numSorts = V.length (mArr sorts)

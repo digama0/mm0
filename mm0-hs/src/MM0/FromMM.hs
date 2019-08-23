@@ -7,6 +7,7 @@ import Control.Monad.RWS.Strict
 import Data.Foldable
 import Data.Maybe
 import Data.Either
+import Data.List
 import Data.Default
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Map.Strict as M
@@ -23,6 +24,7 @@ import MM0.FromMM.FindBundled
 import MM0.Kernel.Environment (Ident, DepType(..), SExpr(..), PBinder(..),
   VarName, TermName, ThmName)
 import MM0.Kernel.Types as K
+import MM0.Compiler.Export (exportKP)
 import qualified MM0.FrontEnd.AST as A
 
 write :: String -> (Handle -> IO ()) -> IO ()
@@ -75,12 +77,20 @@ fromMM (mm : rest) = do
       let {ls = T.splitOn "," (T.pack l); (ss, sl) = closure db' ls} in
       (Just (ss, sl, S.fromList ls), rest')
     _ -> (Nothing, rest)
-  (mm0, mmu) <- case rest' of
-    [] -> return (\k -> k stdout, \k -> k (\_ -> return ()))
-    "-o" : mm0 : [] -> return (write mm0, \k -> k (\_ -> return ()))
-    "-o" : mm0 : mmu : _ -> return (write mm0, \k -> write mmu $ k . hPutStrLn)
+  case rest' of
+    [] -> printAST db' dbf (\a -> putStr (shows a "\n\n")) (\_ -> return ())
+    "-o" : mm0 : [] ->
+      write mm0 $ \h -> printAST db' dbf
+        (\a -> hPutStr h (shows a "\n\n")) (\_ -> return ())
+    "-o" : mm0 : mmo : _ ->
+      if isSuffixOf "mmb" mmo then
+        write mm0 $ \hmm0 -> exportKP False mmo $
+          printAST db' dbf (\a -> hPutStr hmm0 (shows a "\n\n"))
+      else write mm0 $ \hmm0 -> write mmo $ \hmmu ->
+        printAST db' dbf
+          (\a -> hPutStr hmm0 (shows a "\n\n"))
+          (\a -> hPutStr hmmu (shows a "\n\n"))
     _ -> die "from-mm: too many arguments"
-  mm0 $ \h -> mmu $ printAST db' dbf (hPutStrLn h)
 
 data DBInfo = DBInfo {
   dbiF :: DBFilter,
@@ -131,18 +141,16 @@ _makeAST db dbf = trDecls (mDecls db)
     let (ds', ps) = unzip os
     trDecls ds (f . (catMaybes ds' ++)) (g . (ps ++)) st'
 
-printAST :: MMDatabase -> DBFilter -> (String -> IO ()) -> (String -> IO ()) -> IO ()
+printAST :: MMDatabase -> DBFilter -> (A.Stmt -> IO ()) -> (K.Stmt -> IO ()) -> IO ()
 printAST db dbf mm0 mmu = do
-  mm0 $ shows (A.Notation $ A.Delimiter $ A.Const $ T.pack " ( ) ") "\n"
+  mm0 (A.Notation $ A.Delimiter $ A.Const $ T.pack " ( ) ")
   trDecls (mDecls db) def
   where
   trDecls :: Q.Seq Decl -> TransState -> IO ()
   trDecls Q.Empty _ = return ()
   trDecls (d Q.:<| ds) st = do
     (os, st', w) <- liftIO' (runTransM (trDecl d) db dbf st)
-    forM_ os $ \(a, pf) -> do
-      forM_ a $ \a' -> mm0 $ shows a' "\n"
-      mmu $ shows pf "\n"
+    forM_ os $ \(a, pf) -> forM_ a mm0 >> mmu pf
     mapM_ (hPutStrLn stderr) w
     trDecls ds st'
 
@@ -164,7 +172,7 @@ trDecl d = get >>= \t -> ask >>= \(db, i) -> case d of
     case mSorts db M.! s of
       (Nothing, sd) -> do
         st' <- trName s (mangle s)
-        return [(Just $ A.Sort st' sd, StepSort st')]
+        return [(Just $ A.Sort st' sd, StmtSort st' sd)]
       _ -> return []
     else return []
   Stmt st -> if stmtMember i st && M.notMember st (tNameMap t) then
@@ -174,13 +182,15 @@ trDecl d = get >>= \t -> ask >>= \(db, i) -> case d of
       (_, Hyp (EHyp _ _)) -> return []
       (ix, Term fr (s, _) Nothing) -> trDefinition ix st >>= \case
         [] -> do
-          splitFrame Nothing fr $ \(SplitFrame bs1 _ _ _ rm _) -> do
+          splitFrame Nothing fr $ \(SplitFrame bs1 bs2 _ _ rm _) -> do
             st' <- trName st (mangle st)
             modify $ \m -> m {
               tBuilders = M.insert st
                 (mkAppBuilder rm (App st'))
                 (tBuilders m) }
-            return [(Just $ A.Term st' bs1 (DepType s []), StepTerm st')]
+            return [(
+              Just $ A.Term st' bs1 (DepType s []),
+              StmtTerm st' bs2 (DepType s []))]
         e -> return e
       (_, Term fr (_, e) (Just _)) -> splitFrame Nothing fr $ \sf -> do
         let rm = sfReord sf
@@ -212,7 +222,9 @@ trThmB bu pub fr (_, e) p i =
   splitFrame bu fr $ \(SplitFrame bs1 bs2 hs2 pa rm vm) -> do
     e1 <- trExpr vm e
     ret <- case p of
-      Nothing -> return (Just $ A.Axiom i bs1 (exprToFmla e1), StepAxiom i)
+      Nothing -> return (
+        Just $ A.Axiom i bs1 (exprToFmla e1),
+        StmtAxiom i bs2 (snd <$> hs2) e1)
       Just p' -> do
         t <- get
         let (ds, pr) = trProof vm t p'

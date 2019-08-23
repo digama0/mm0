@@ -1,15 +1,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module MM0.HOL.ToHol where
 
-import Control.Monad.Except
 import Control.Monad.RWS.Strict hiding (local, asks)
 import Control.Monad.Trans.Reader
 import Data.Maybe
 import Data.Foldable
 import qualified Data.Map.Strict as M
-import qualified Data.Sequence as Q
 import qualified Data.Set as S
-import qualified Data.Text as T
 import MM0.HOL.Types
 import MM0.Kernel.Environment
 import MM0.Kernel.Types
@@ -34,55 +31,39 @@ data ToHolState = ToHolState {
 
 type ToHolM = RWST () (Endo [HDecl]) ToHolState (Either String)
 
-toHol :: Environment -> [Stmt] -> Either String [HDecl]
-toHol env = \pfs -> do
+toHol :: [Stmt] -> Either String [HDecl]
+toHol = \pfs -> do
   (_, _, Endo f) <- runRWST (mapM_ trStmt pfs) () $
     ToHolState 0 M.empty M.empty M.empty
   return (f [])
   where
-
-  step :: ToHolM Spec
-  step = do
-    n <- state (\g -> (thPos g, g {thPos = thPos g + 1}))
-    fromJustError "nothing more to prove" (eSpec env Q.!? n)
-
   trStmt :: Stmt -> ToHolM ()
-  trStmt (StepSort x) = step >>= \case
-    SSort x' sd | x == x' -> do
-      tell (Endo (HDSort x :))
-      modify $ \g -> g {
-        thSorts = M.insert x (sFree sd) (thSorts g) }
-    e -> throwError ("incorrect step 'sort " ++ T.unpack x ++ "', found " ++ show e)
-  trStmt (StepTerm x) = step >>= \case
-    SDecl x' (DTerm args ty) | x == x' -> do
-      tell (Endo (HDTerm x (translateTerm args ty) :))
-      modify $ \g -> g {
-        thTerms = M.insert x (HTermData args ty Nothing) (thTerms g) }
-    e -> throwError ("incorrect step 'term " ++ T.unpack x ++ "', found " ++ show e)
-  trStmt (StepAxiom x) = step >>= \case
-    SDecl x' (DAxiom args hs ret) | x == x' -> do
-      g <- get
-      let td@(TType _ hs' ret') = translateAxiom g args hs ret
-      tell (Endo (HDThm x td Nothing :))
-      put $ g {thThms = M.insert x (HThmData args hs' ret' ret) (thThms g)}
-    e -> throwError ("incorrect step 'axiom " ++ T.unpack x ++ "', found " ++ show e)
-  trStmt (StmtDef x vs ret ds def st) = do
-    when st $ () <$ step
+  trStmt (StmtSort x sd) = do
+    tell (Endo (HDSort x :))
+    modify $ \g -> g {
+      thSorts = M.insert x (sFree sd) (thSorts g) }
+  trStmt (StmtTerm x args ty) = do
+    tell (Endo (HDTerm x (translateTerm args ty) :))
+    modify $ \g -> g {
+      thTerms = M.insert x (HTermData args ty Nothing) (thTerms g) }
+  trStmt (StmtAxiom x args hs ret) = do
+    g <- get
+    let td@(TType _ hs' ret') = translateAxiom g args hs ret
+    tell (Endo (HDThm x td Nothing :))
+    put $ g {thThms = M.insert x (HThmData args hs' ret' ret) (thThms g)}
+  trStmt (StmtDef x vs ret ds def _) = do
     g <- get
     let (rv, lv, e) = translateDef g vs ret ds def
     tell (Endo (HDDef x rv lv (dSort ret) e :))
     modify $ \g' -> g' {
       thTerms = M.insert x (HTermData vs ret (Just (ds, def))) (thTerms g') }
-  trStmt (StmtThm x args hs ret ds pf st) = do
-    when st $ () <$ step
+  trStmt (StmtThm x args hs ret ds pf _) = do
     g <- get
     let (ty@(TType _ hs' ret'), p) = translateThm g args hs ret ds pf
     tell (Endo (HDThm x ty (Just p) :))
     modify $ \g' -> g' {
       thThms = M.insert x (HThmData args hs' ret' ret) (thThms g') }
-  trStmt (StepInout _) = step >>= \case
-    SInout _ -> return ()
-    _ -> throwError "incorrect i/o step"
+  trStmt (StepInout _) = return ()
 
 getLocal :: M.Map Ident PBinder -> Ident -> Sort
 getLocal m v = case m M.! v of

@@ -18,7 +18,7 @@
 
 #define STACK_SIZE 65536
 u32 g_stack[STACK_SIZE];
-u32* g_stack_top;
+u32* g_stack_top = g_stack;
 
 // The "heap" here is more of a collection of pointers into the store, where
 // the actual data is kept. The heap contains stack elements in the same format
@@ -27,14 +27,14 @@ u32* g_stack_top;
 // stack.
 #define HEAP_SIZE 65536
 u32 g_heap[HEAP_SIZE];
-u32 g_heap_size;
+u32 g_heap_size = 0;
 
 // The store contains all the expressions used by the stack and heap. Internal
 // pointers in the store (from a term to its children), as well as pointers from
 // the stack and heap, are all 4 byte aligned offsets from g_store.
 #define STORE_SIZE (1 << 26)
 u8 g_store[STORE_SIZE];
-u32 g_store_size;
+u32 g_store_size = 0;
 
 typedef struct {
   u64 type;
@@ -67,15 +67,15 @@ typedef struct {
 
 #define HYP_STACK_SIZE 256
 u32 g_hstack[HYP_STACK_SIZE];
-u32* g_hstack_top;
+u32* g_hstack_top = g_hstack;
 
 #define UNIFY_STACK_SIZE 256
 u32 g_ustack[UNIFY_STACK_SIZE];
-u32* g_ustack_top;
+u32* g_ustack_top = g_ustack;
 
 #define UNIFY_HEAP_SIZE 65536
 u32 g_uheap[UNIFY_HEAP_SIZE];
-u32 g_uheap_size;
+u32 g_uheap_size = 0;
 
 #ifdef HIGHWATER
 u32* g_stack_highwater;
@@ -89,4 +89,4 @@ u32 g_uheap_highwater;
 #define UPDATE_HIGHWATER(p, hw)
 #endif
 
-u64 g_next_bv;
+u64 g_next_bv = 0;
