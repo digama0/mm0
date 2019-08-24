@@ -166,6 +166,7 @@ Inside a `do` block, the language looks very similar to scheme. For example:
       (if (null? '(1)) 0 1)        -- 1
       (if (null? ()) 0 1)          -- 0
       (+ 2 2)                      -- 4
+      {2 + 2}                      -- 4
       '(+ 2 2)                     -- (+ 2 2)
       (< 1 2 3 4)                  -- #t
       (< 1 2 3 3)                  -- #f
