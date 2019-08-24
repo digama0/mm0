@@ -1610,6 +1610,9 @@ theorem lediv1: $ a <= b -> a // c <= b // c $ =
   (divlem1 (anwr modlt) (anwr modlt) @ sylibr (leeq divmod divmod) anl));
 
 theorem muldivle: $ b * (a // b) <= a $ = '(mpbi (leeq2 divmod) leaddid1);
+theorem divleid: $ a // b <= a $ =
+'(cases (mpbiri le01 @ leeq1d @ syl6eq div0 diveq2)
+  (letrd (sylib (leeq1 mul11) @ sylbir le11 lemul1a) (a1i muldivle)));
 
 theorem ledivmul1: $ c != 0 -> (a <= b // c <-> c * a <= b) $ =
 '(ibida (letrd (anwr lemul2a) (a1i muldivle))

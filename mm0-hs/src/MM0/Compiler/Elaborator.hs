@@ -1238,7 +1238,7 @@ inferDummiesVar o s v =
       Nothing -> lift $ escapeSpan o $ "cannot infer type for " <> v
       Just s' -> gets (M.lookup v) >>= \case
         Nothing -> modify (M.insert v s')
-        Just s2 -> lift $ escapeSpan o $
+        Just s2 -> unless (s' == s2) $ lift $ escapeSpan o $
           "inferred two types " <> s' <> ", " <> s2 <> " for " <> v
 
 cleanProof :: Range -> LispVal -> ElabM Proof

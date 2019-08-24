@@ -1,170 +1,218 @@
-import "peano_hex.mm0";
+import "peano_hex.mm1";
 
-def consBit (b: wff) (n: nat): nat = $ if b (b1 n) (b0 n) $;
+@_ def consBit (b: wff) (n: nat): nat = $ if b (b1 n) (b0 n) $;
 
-def bit (n i: nat): nat = $ nat (i e. n) $;
-theorem bitT (n i: nat): $ bool (bit n i) $;
+@_ def bit (n i: nat): nat = $ nat (i e. n) $;
+pub theorem bitT (n i: nat): $ bool (bit n i) $ = 'boolnat;
 
-def bitAnd (a b: nat): nat;
-theorem bitAndEq (a b: nat): $ bitAnd a b == a i^i b $;
+@_ abstract def bitAnd (a b: nat): nat = $ lower (a i^i b) $;
+pub theorem bitAndEq (a b: nat): $ bitAnd a b == a i^i b $ =
+'(eqscom @ mpbi eqlower @ infin1 finns);
 
-def bitOr (a b: nat): nat;
-theorem bitOrEq (a b: nat): $ bitOr a b == a u. b $;
+@_ abstract def bitOr (a b: nat): nat = $ lower (a u. b) $;
+pub theorem bitOrEq (a b: nat): $ bitOr a b == a u. b $ =
+'(eqscom @ mpbi eqlower @ unfin finns finns);
 
-def bitDif (a b: nat): nat;
-theorem bitDif_mem (a b i: nat): $ i e. bitDif a b <-> (i e. a /\ ~i e. b) $;
+@_ abstract def bitDif (a b: nat): nat = $ lower {n | n e. a /\ ~n e. b} $;
+pub theorem bitDif_mem (a b i: nat): $ i e. bitDif a b <-> (i e. a /\ ~i e. b) $ =
+'(bitr (ellower @ finss (mpbi ssab1 @ !! ax_gen n anl) finns) @
+  elabe @ aneqd eleq1 (noteqd eleq1));
 
-def bitXor (a b: nat): nat;
-theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) $;
+@_ abstract def bitXor (a b: nat): nat = $ lower {n | ~(n e. a <-> n e. b)} $;
+pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) $ =
+'(bitr (ellower @
+    finss (mpbi ssab1 @ !! ax_gen n @
+      sylibr elun @ con1 @ sylbi notor @ imp binth) @
+    unfin finns finns) @
+  elabe @ noteqd @ bieqd eleq1 eleq1);
 
-def d32: nat = $ 2 ^ 5 $; prefix d32: $32$ prec max;
-def d64: nat = $ 2 ^ 6 $; prefix d64: $64$ prec max;
-def d256: nat = $ 2 ^ 8 $; prefix d256: $256$ prec max;
+@_ def d32: nat = $ 2 ^ 5 $; prefix d32: $32$ prec max;
+@_ def d64: nat = $ 2 ^ 6 $; prefix d64: $64$ prec max;
+@_ def d256: nat = $ 2 ^ 8 $; prefix d256: $256$ prec max;
 
-def Bits (k: nat): nat = $ upto (2 ^ k) $;
-def u8: nat = $ Bits 8 $;
-def u16: nat = $ Bits 16 $;
-def u32: nat = $ Bits 32 $;
-def u64: nat = $ Bits 64 $;
+@_ def Bits (k: nat): nat = $ upto (2 ^ k) $;
+@_ def u8: nat = $ Bits 8 $;
+@_ def u16: nat = $ Bits 16 $;
+@_ def u32: nat = $ Bits 32 $;
+@_ def u64: nat = $ Bits 64 $;
+
+@_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
+  lower ((\ i, (i % 256) : a @ (i // 256)) |` upto (suc n))) k $;
+
+theorem toBytesAux0: $ toBytesAux 0 n = 0 $ = (named 'rec0);
+theorem toBytesAux0_app: $ toBytesAux 0 n @ i = 0 $ =
+'(eqtr (appeq1 @ nseq toBytesAux0) app01);
+
+theorem toBytesAuxS: $ toBytesAux (suc k) n ==
+  (\ i, (i % 256) : toBytesAux k n @ (i // 256)) |` upto (suc n) $ =
+'(mpbir (eqlower2 @ finlam finns) @
+  ! eqtr _ $ _ @ toBytesAux k n $ _ recS @
+  !! applame a @ lowereqd @ reseq1d @ lameqd @ conseq2d @ appeq1d nseq);
+
+theorem toBytesAuxS_app: $ a <= n ->
+  toBytesAux (suc k) n @ a = (a % 256) : toBytesAux k n @ (a // 256) $ =
+'(syl5eq (appeq1 toBytesAuxS) @
+  syl6eq (!! applame x @ conseqd modeq1 @ appeq2d diveq1) @
+  sylbi leltsuc @ sylbir elupto resapp);
 
 -- little endian encoding
-def toBytes (k n: nat): nat;
-theorem toBytes0 (k n: nat): $ toBytes 0 n = 0 $;
-theorem toBytesS (k n: nat):
-  $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $;
-theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
+@_ abstract def toBytes (k n: nat): nat = $ toBytesAux k n @ n $;
 
-def u16Bytes (n: nat): nat = $ toBytes 2 n $;
-def u32Bytes (n: nat): nat = $ toBytes 4 n $;
-def u64Bytes (n: nat): nat = $ toBytes 8 n $;
+pub theorem toBytes0 (k n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
+
+theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
+(focus
+  (def e '(aleqd @ imeq2d @ imeq2d @
+    eqeqd (appeq1d @ nseqd toBytesAuxeq1) (appeq1d @ nseqd toBytesAuxeq1)))
+  (def e2 '(imeqd leeq1 @ imeqd leeq1 @ eqeqd appeq2 appeq2))
+  '(!! eale x ,e2
+    (!! ind y z ,e ,e ,e ,e
+      (ax_gen @ a1i @ a1i @ eqtr4 toBytesAux0_app toBytesAux0_app)
+      (sylbi (!! cbval x y ,e2) @
+        iald @ exp @ exp @ eqtr4d (anwr toBytesAuxS_app) @
+        eqtr4d (syl toBytesAuxS_app anlr) @
+        conseq2d @
+        -- eqtr4d (mpd (letrd (a1i divleid) anr) @ anwl @ eale ,e2) @
+        mpd (letrd (a1i divleid) anr) @ mpd (letrd (a1i divleid) anlr) @
+        anwll @ eale ,e2))
+    leid));
+
+pub theorem toBytesS (k n: nat):
+  $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $ =
+'(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
+pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
+
+@_ def u16Bytes (n: nat): nat = $ toBytes 2 n $;
+@_ def u32Bytes (n: nat): nat = $ toBytes 4 n $;
+@_ def u64Bytes (n: nat): nat = $ toBytes 8 n $;
 
 -- sign extend (v: bitvec m) to length n
-def sExt (m n v: nat): nat = $ if (m - 1 e. v) (2 ^ n - 2 ^ m + v) v $;
-def sExtq (n v: nat): nat = $ sExt n 64 v $;
-theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $;
-theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
+@_ def sExt (m n v: nat): nat = $ if (m - 1 e. v) (2 ^ n - 2 ^ m + v) v $;
+@_ def sExtq (n v: nat): nat = $ sExt n 64 v $;
+pub theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $;
+pub theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
 
 -- get lower bits of a number
-def chop (k n: nat): nat = $ n % 2 ^ k $;
-theorem chopT (k n: nat): $ chop k n e. Bits k $;
+@_ def chop (k n: nat): nat = $ n % 2 ^ k $;
+pub theorem chopT (k n: nat): $ chop k n e. Bits k $;
 
 -- write a e. Bits m to bits k thru k+m-1 of n
-def bitsUpdate (k m a n: nat): nat = $ bitDif n (shl (upto m) k) + shl a k $;
-theorem bitsUpdateT (k m l a n: nat):
+@_ def bitsUpdate (k m a n: nat): nat = $ bitDif n (shl (upto m) k) + shl a k $;
+pub theorem bitsUpdateT (k m l a n: nat):
   $ k + m <= l /\ a e. Bits m /\ n e. Bits l -> bitsUpdate k m a n e. Bits l $;
 
-def bitsNot (k n: nat): nat = $ bitDif (upto k) n $;
-theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $;
+@_ def bitsNot (k n: nat): nat = $ bitDif (upto k) n $;
+pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $;
 
-def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
-def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
-def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
+@_ def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
+@_ def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
+@_ def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
 
-def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
-def bitsSar (k a b: nat): nat =
+@_ def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
+@_ def bitsSar (k a b: nat): nat =
 $ nat (bitsMSB k a) * (upto k - upto (k - b)) + shr a b $;
-theorem bitsSarT (k a b: nat):
+pub theorem bitsSarT (k a b: nat):
   $ a e. Bits k /\ b <= k -> bitsSar k a b e. Bits k $;
 
-def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
-def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
+@_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
+@_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 
-def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
+@_ def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 
-def bvSize (bs: nat): nat;
-theorem bvSize0 (n: nat): $ bvSize 0 = 0 $;
-theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
+@_ abstract def bvSize (bs: nat): nat;
+pub theorem bvSize0 (n: nat): $ bvSize 0 = 0 $;
+pub theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
 
-def isBitvecs (k bs: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
+@_ def isBitvecs (k bs: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
 
-def ofBits (n: nat): nat;
-theorem ofBits0 (n: nat): $ ofBits 0 = 0 $;
-theorem ofBitsS (k bs n: nat):
+@_ abstract def ofBits (n: nat): nat;
+pub theorem ofBits0 (n: nat): $ ofBits 0 = 0 $;
+pub theorem ofBitsS (k bs n: nat):
   $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $;
-theorem ofBitsT (bs: nat): $ bs e. List Bitvec /\ ofBits 0 e. Bits 0 $;
-theorem ofBitsST (k bs n m: nat):
+pub theorem ofBitsT (bs: nat): $ bs e. List Bitvec /\ ofBits 0 e. Bits 0 $;
+pub theorem ofBitsST (k bs n m: nat):
   $ bs e. Bits k /\ ofBits n e. Bits m ->
     ofBits ((k <> bs) : n) e. Bits (k + m) $;
 
-def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
-theorem splitBitsT (bs n k: nat):
+@_ def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
+pub theorem splitBitsT (bs n k: nat):
   $ isBitvecs bs k /\ splitBits bs n -> n e. Bits k $;
 
 ----------------------------------------
 -- x86-64 machine code decoding
 ----------------------------------------
 
-def Regs: nat = $ Bits 4 $;
-def RAX: nat = $ 0 $; theorem RAXT: $ RAX e. Regs $;
-def RCX: nat = $ 1 $; theorem RCXT: $ RCX e. Regs $;
-def RDX: nat = $ 2 $; theorem RDXT: $ RDX e. Regs $;
-def RBX: nat = $ 3 $; theorem RBXT: $ RBX e. Regs $;
-def RSP: nat = $ 4 $; theorem RSPT: $ RSP e. Regs $;
-def RBP: nat = $ 5 $; theorem RBPT: $ RBP e. Regs $;
-def RSI: nat = $ 6 $; theorem RSIT: $ RSI e. Regs $;
-def RDI: nat = $ 7 $; theorem RDIT: $ RDI e. Regs $;
+@_ def Regs: nat = $ Bits 4 $;
+@_ def RAX: nat = $ 0 $; pub theorem RAXT: $ RAX e. Regs $;
+@_ def RCX: nat = $ 1 $; pub theorem RCXT: $ RCX e. Regs $;
+@_ def RDX: nat = $ 2 $; pub theorem RDXT: $ RDX e. Regs $;
+@_ def RBX: nat = $ 3 $; pub theorem RBXT: $ RBX e. Regs $;
+@_ def RSP: nat = $ 4 $; pub theorem RSPT: $ RSP e. Regs $;
+@_ def RBP: nat = $ 5 $; pub theorem RBPT: $ RBP e. Regs $;
+@_ def RSI: nat = $ 6 $; pub theorem RSIT: $ RSI e. Regs $;
+@_ def RDI: nat = $ 7 $; pub theorem RDIT: $ RDI e. Regs $;
 
-def REX: set = $ Option (Bits 4) $;
-def REX_val (r: nat): nat = $ r - 1 $;
-def REX_W (r: nat): nat = $ bit (REX_val r) 3 $;
-def REX_R (r: nat): nat = $ bit (REX_val r) 2 $;
-def REX_X (r: nat): nat = $ bit (REX_val r) 1 $;
-def REX_B (r: nat): nat = $ bit (REX_val r) 0 $;
-theorem REX_valT (r: nat): $ r e. REX -> REX_val r e. Bits 4 $;
-theorem REX_WT (r: nat): $ bool (REX_W r) $;
-theorem REX_RT (r: nat): $ bool (REX_R r) $;
-theorem REX_XT (r: nat): $ bool (REX_X r) $;
-theorem REX_BT (r: nat): $ bool (REX_B r) $;
+@_ def REX: set = $ Option (Bits 4) $;
+@_ def REX_val (r: nat): nat = $ r - 1 $;
+@_ def REX_W (r: nat): nat = $ bit (REX_val r) 3 $;
+@_ def REX_R (r: nat): nat = $ bit (REX_val r) 2 $;
+@_ def REX_X (r: nat): nat = $ bit (REX_val r) 1 $;
+@_ def REX_B (r: nat): nat = $ bit (REX_val r) 0 $;
+pub theorem REX_valT (r: nat): $ r e. REX -> REX_val r e. Bits 4 $;
+pub theorem REX_WT (r: nat): $ bool (REX_W r) $;
+pub theorem REX_RT (r: nat): $ bool (REX_R r) $;
+pub theorem REX_XT (r: nat): $ bool (REX_X r) $;
+pub theorem REX_BT (r: nat): $ bool (REX_B r) $;
 
-def rex_reg (r b: nat): nat = $ r + shl b 3 $;
-theorem rex_regT (r b: nat): $ r e. Bits 3 /\ bool b -> rex_reg r b e. Regs $;
+@_ def rex_reg (r b: nat): nat = $ r + shl b 3 $;
+pub theorem rex_regT (r b: nat): $ r e. Bits 3 /\ bool b -> rex_reg r b e. Regs $;
 
-def Base: set = $ Option (Option Regs) $;
-def base_RIP: nat = $ suc 0 $;
-def base_reg (r: nat): nat = $ suc (suc r) $;
-theorem base0T: $ 0 e. Base $;
-theorem base_RIPT: $ base_RIP e. Base $;
-theorem base_regT (r: nat): $ r e. Regs -> base_reg r e. Base $;
+@_ def Base: set = $ Option (Option Regs) $;
+@_ def base_RIP: nat = $ suc 0 $;
+@_ def base_reg (r: nat): nat = $ suc (suc r) $;
+pub theorem base0T: $ 0 e. Base $;
+pub theorem base_RIPT: $ base_RIP e. Base $;
+pub theorem base_regT (r: nat): $ r e. Regs -> base_reg r e. Base $;
 
-def ScaleIndex: set = $ Xp (Bits 2) Regs $;
+@_ def ScaleIndex: set = $ Xp (Bits 2) Regs $;
 
-def RM: set = $ Sum Regs (Xp (Option ScaleIndex) (Xp Base u64)) $;
-def RM_reg (r: nat): nat = $ b0 r $;
-def RM_mem (si base q: nat): nat = $ b1 (si <> base <> q) $;
-theorem RM_regT (r: nat): $ r e. Regs -> RM_reg r e. RM $;
-theorem RM_memT (si base q: nat):
+@_ def RM: set = $ Sum Regs (Xp (Option ScaleIndex) (Xp Base u64)) $;
+@_ def RM_reg (r: nat): nat = $ b0 r $;
+@_ def RM_mem (si base q: nat): nat = $ b1 (si <> base <> q) $;
+pub theorem RM_regT (r: nat): $ r e. Regs -> RM_reg r e. RM $;
+pub theorem RM_memT (si base q: nat):
   $ si e. Option ScaleIndex /\ base e. Base /\ q e. u64 ->
     RM_mem si base q e. RM $;
 
-def RM_isMem (rm: nat): wff = $ odd rm $;
+@_ def RM_isMem (rm: nat): wff = $ odd rm $;
 
-def readDisplacement (mod q l .b .w: nat): wff =
+@_ def readDisplacement (mod q l .b .w: nat): wff =
 $ (mod = 0 /\ q = 0 /\ l = 0) \/
   (E. b (b e. u8 /\ mod = 1 /\ q = sExtq 8 b /\ l = b : 0)) \/
   (E. w (w e. u32 /\ mod = 2 /\ q = sExtq 32 w /\ l = u32Bytes w)) $;
-theorem readDisplacementT (mod q l: nat):
+pub theorem readDisplacementT (mod q l: nat):
   $ readDisplacement mod q l ->
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ l e. List u8 $;
 
-def readSIBDisplacement (mod bbase q base l .b: nat): wff =
+@_ def readSIBDisplacement (mod bbase q base l .b: nat): wff =
 $ ifp (bbase = RBP /\ mod = 0)
     (E. b (b e. u8 /\ q = sExtq 8 b /\ base = 0 /\ l = b : 0))
     (readDisplacement mod q l /\ base = base_reg bbase) $;
-theorem readSIBDisplacementT (mod bbase q base l: nat):
+pub theorem readSIBDisplacementT (mod bbase q base l: nat):
   $ bbase e. Regs /\ readSIBDisplacement mod bbase q base l ->
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ base e. Base /\ l e. List u8 $;
 
-def readSIB (rex mod rm l .b .bs .ix .sc .disp .bbase .index: nat): wff =
+@_ def readSIB (rex mod rm l .b .bs .ix .sc .disp .bbase .index: nat): wff =
 $ E. b E. bs E. ix E. sc E. disp E. bbase E. index (
     splitBits ((3 <> bs) : (3 <> ix) : (2 <> sc) : 0) b /\
     index = rex_reg (REX_X rex) ix /\
     readSIBDisplacement mod (rex_reg (REX_B rex) bs) disp bbase l /\
     rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp) $;
-theorem readSIBT (rex mod rm l: nat):
+pub theorem readSIBT (rex mod rm l: nat):
   $ readSIB rex mod rm l ->
     mod e. Bits 2 /\ mod != 3 /\ rm e. RM /\ l e. List u8 $;
 
-def readModRM (rex rn rm l .b .rm2 .opc .mod .i .l2 .disp: nat): wff =
+@_ def readModRM (rex rn rm l .b .rm2 .opc .mod .i .l2 .disp: nat): wff =
 $ E. b E. rm2 E. opc E. mod (
     splitBits ((3 <> rm2) : (3 <> opc) : (2 <> mod) : 0) b /\
     (rm2 = 5 /\ mod = 0 /\ E. i (i e. u32 /\
@@ -179,257 +227,257 @@ $ E. b E. rm2 E. opc E. mod (
       ifp (rm2 = 4) (readSIB rex mod rm l2)
         (E. disp (readDisplacement mod disp l2 /\
           rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))) $;
-theorem readModRMT (rex rn rm l: nat):
+pub theorem readModRMT (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $;
 
-def readOpcodeModRM (rex v rm l .rn: nat): wff =
+@_ def readOpcodeModRM (rex v rm l .rn: nat): wff =
 $ E. rn (readModRM rex rn rm l /\ v = chop 3 rn) $;
-theorem readOpcodeModRMT (rex v rm l: nat):
+pub theorem readOpcodeModRMT (rex v rm l: nat):
   $ readOpcodeModRM rex v rm l -> v e. Bits 3 /\ rm e. RM /\ l e. List u8 $;
 
-def readPrefixes (rex l .b .rex2: nat): wff =
+@_ def readPrefixes (rex l .b .rex2: nat): wff =
 $ (rex = 0 /\ l = 0) \/ (E. b E. rex2 (
     splitBits ((4 <> rex2) : (4 <> 4) : 0) b /\
     rex = suc rex2 /\ l = b : 0)) $;
-theorem readPrefixesT (rex l: nat):
+pub theorem readPrefixesT (rex l: nat):
   $ readPrefixes rex l -> rex e. REX /\ l e. List u8 $;
 
-def readImmN (k q l .w: nat): wff =
+@_ def readImmN (k q l .w: nat): wff =
 $ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
-theorem readImmNT (k q l: nat):
+pub theorem readImmNT (k q l: nat):
   $ k <= 64 /\ readImmN k q l -> q e. u64 /\ l e. List u8 $;
 
-def WSize (.n: nat): set = $ lower (
-  Xp (8 ; 16 ; 32 ; sn 64) Bool i^i {n | fst n = 8 \/ snd n = 0}) $;
-def wsizeBits (sz: nat): nat = $ fst sz $;
-def wsizeBytes (sz: nat): nat = $ wsizeBits sz // 8 $;
-def wSz8 (have_rex: wff): nat = $ 8 <> nat have_rex $;
-def wSz16: nat = $ 16 <> 0 $;
-def wSz32: nat = $ 32 <> 0 $;
-def wSz64: nat = $ 64 <> 0 $;
+@_ def WSize (.n: nat): set = $ lower (
+  Inter (Xp (8 ; 16 ; 32 ; sn 64) Bool) {n | fst n = 8 \/ snd n = 0}) $;
+@_ def wsizeBits (sz: nat): nat = $ fst sz $;
+@_ def wsizeBytes (sz: nat): nat = $ wsizeBits sz // 8 $;
+@_ def wSz8 (have_rex: wff): nat = $ 8 <> nat have_rex $;
+@_ def wSz16: nat = $ 16 <> 0 $;
+@_ def wSz32: nat = $ 32 <> 0 $;
+@_ def wSz64: nat = $ 64 <> 0 $;
 
-def readFullImm (sz q l: nat): wff =
+@_ def readFullImm (sz q l: nat): wff =
 $ readImmN (wsizeBits sz) q l $;
-theorem readFullImmT (sz q l: nat):
+pub theorem readFullImmT (sz q l: nat):
   $ sz e. WSize /\ readFullImm sz q l -> q e. u64 /\ l e. List u8 $;
 
-def readImm (sz q l: nat): wff =
+@_ def readImm (sz q l: nat): wff =
 $ readFullImm sz q l /\ wsizeBytes sz < 8 $;
-theorem readImmT (sz q l: nat):
+pub theorem readImmT (sz q l: nat):
   $ sz e. WSize /\ readImm sz q l -> q e. u64 /\ l e. List u8 $;
 
-def opSize (have_rex: wff) (w v: nat): nat =
+@_ def opSize (have_rex: wff) (w v: nat): nat =
 $ if (true v) (if (true w) wSz64 wSz32) (wSz8 have_rex) $;
-theorem opSizeT (have_rex: wff) (w v: nat):
+pub theorem opSizeT (have_rex: wff) (w v: nat):
   $ bool v /\ bool w -> opSize have_rex w v e. WSize $;
 
-def opSizeW (rex v: nat): nat = $ opSize (rex != 0) (REX_W rex) v $;
+@_ def opSizeW (rex v: nat): nat = $ opSize (rex != 0) (REX_W rex) v $;
 
-def DestSrc: set = $ Sum (Xp RM (Sum u64 Regs)) (Xp Regs RM) $;
-def Rm_i (rm i: nat): nat = $ b0 (rm <> b0 i) $;
-def Rm_r (rm r: nat): nat = $ b0 (rm <> b1 r) $;
-def R_rm (r rm: nat): nat = $ b1 (r <> rm) $;
-theorem Rm_iT (rm i: nat): $ rm e. RM /\ i e. u64 -> Rm_i rm i e. DestSrc $;
-theorem Rm_rT (rm r: nat): $ rm e. RM /\ r e. Regs -> Rm_r rm r e. DestSrc $;
-theorem R_rmT (r rm: nat): $ r e. Regs /\ rm e. RM -> R_rm r rm e. DestSrc $;
+@_ def DestSrc: set = $ Sum (Xp RM (Sum u64 Regs)) (Xp Regs RM) $;
+@_ def Rm_i (rm i: nat): nat = $ b0 (rm <> b0 i) $;
+@_ def Rm_r (rm r: nat): nat = $ b0 (rm <> b1 r) $;
+@_ def R_rm (r rm: nat): nat = $ b1 (r <> rm) $;
+pub theorem Rm_iT (rm i: nat): $ rm e. RM /\ i e. u64 -> Rm_i rm i e. DestSrc $;
+pub theorem Rm_rT (rm r: nat): $ rm e. RM /\ r e. Regs -> Rm_r rm r e. DestSrc $;
+pub theorem R_rmT (r rm: nat): $ r e. Regs /\ rm e. RM -> R_rm r rm e. DestSrc $;
 
-def ImmRM: set = $ Sum RM u64 $;
-def immRM_rm (rm: nat): nat = $ b0 rm $;
-def immRM_imm (i: nat): nat = $ b1 i $;
-theorem immRM_rmT (rm: nat): $ rm e. RM -> immRM_rm rm e. ImmRM $;
-theorem immRM_immT (i: nat): $ i e. RM -> immRM_imm i e. ImmRM $;
+@_ def ImmRM: set = $ Sum RM u64 $;
+@_ def immRM_rm (rm: nat): nat = $ b0 rm $;
+@_ def immRM_imm (i: nat): nat = $ b1 i $;
+pub theorem immRM_rmT (rm: nat): $ rm e. RM -> immRM_rm rm e. ImmRM $;
+pub theorem immRM_immT (i: nat): $ i e. RM -> immRM_imm i e. ImmRM $;
 
-def Unop: nat = $ upto 4 $;
-def unopInc: nat = $ 0 $;
-def unopDec: nat = $ 1 $;
-def unopNot: nat = $ 2 $;
-def unopNeg: nat = $ 3 $;
+@_ def Unop: nat = $ upto 4 $;
+@_ def unopInc: nat = $ 0 $;
+@_ def unopDec: nat = $ 1 $;
+@_ def unopNot: nat = $ 2 $;
+@_ def unopNeg: nat = $ 3 $;
 
-def Binop: nat = $ Bits 4 $;
-def binopAdd: nat = $ 0 $;
-def binopOr:  nat = $ 1 $;
-def binopAdc: nat = $ 2 $;
-def binopSbb: nat = $ 3 $;
-def binopAnd: nat = $ 4 $;
-def binopSub: nat = $ 5 $;
-def binopXor: nat = $ 6 $;
-def binopCmp: nat = $ 7 $;
-def binopRol: nat = $ 8 $;
-def binopRor: nat = $ 9 $;
-def binopRcl: nat = $ 10 $;
-def binopRcr: nat = $ 11 $;
-def binopShl: nat = $ 12 $;
-def binopShr: nat = $ 13 $;
-def binopTst: nat = $ 14 $;
-def binopSar: nat = $ 15 $;
+@_ def Binop: nat = $ Bits 4 $;
+@_ def binopAdd: nat = $ 0 $;
+@_ def binopOr:  nat = $ 1 $;
+@_ def binopAdc: nat = $ 2 $;
+@_ def binopSbb: nat = $ 3 $;
+@_ def binopAnd: nat = $ 4 $;
+@_ def binopSub: nat = $ 5 $;
+@_ def binopXor: nat = $ 6 $;
+@_ def binopCmp: nat = $ 7 $;
+@_ def binopRol: nat = $ 8 $;
+@_ def binopRor: nat = $ 9 $;
+@_ def binopRcl: nat = $ 10 $;
+@_ def binopRcr: nat = $ 11 $;
+@_ def binopShl: nat = $ 12 $;
+@_ def binopShr: nat = $ 13 $;
+@_ def binopTst: nat = $ 14 $;
+@_ def binopSar: nat = $ 15 $;
 
-def BCond: nat = $ Bits 3 $;
-def bcondO:  nat = $ 0 $;
-def bcondB:  nat = $ 1 $;
-def bcondE:  nat = $ 2 $;
-def bcondNA: nat = $ 3 $;
-def bcondS:  nat = $ 4 $;
-def bcondL:  nat = $ 6 $;
-def bcondNG: nat = $ 7 $;
+@_ def BCond: nat = $ Bits 3 $;
+@_ def bcondO:  nat = $ 0 $;
+@_ def bcondB:  nat = $ 1 $;
+@_ def bcondE:  nat = $ 2 $;
+@_ def bcondNA: nat = $ 3 $;
+@_ def bcondS:  nat = $ 4 $;
+@_ def bcondL:  nat = $ 6 $;
+@_ def bcondNG: nat = $ 7 $;
 
-def Cond: set = $ Option (Bits 4) $;
-def condAlways: nat = $ 0 $;
-def condPos (c: nat): nat = $ suc c $;
-def condNeg (c: nat): nat = $ suc (c + 8) $;
-theorem condAlwaysT: $ condAlways e. Cond $;
-theorem condPosT (c: nat): $ c e. BCond -> condPos c e. Cond $;
-theorem condNegT (c: nat): $ c e. BCond -> condNeg c e. Cond $;
+@_ def Cond: set = $ Option (Bits 4) $;
+@_ def condAlways: nat = $ 0 $;
+@_ def condPos (c: nat): nat = $ suc c $;
+@_ def condNeg (c: nat): nat = $ suc (c + 8) $;
+pub theorem condAlwaysT: $ condAlways e. Cond $;
+pub theorem condPosT (c: nat): $ c e. BCond -> condPos c e. Cond $;
+pub theorem condNegT (c: nat): $ c e. BCond -> condNeg c e. Cond $;
 
-def XASTArith: set =
+@_ def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
     (Sum (Xp Bool (Xp WSize RM)) (Xp WSize DestSrc)) $;
-def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
-def xastBinop (binop sz rm: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> rm)))) $;
-def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
-def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
-def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b0 (sz <> ds)))) $;
+@_ def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
+@_ def xastBinop (binop sz rm: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> rm)))) $;
+@_ def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
+@_ def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
+@_ def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b0 (sz <> ds)))) $;
 
-def XASTData: set =
+@_ def XASTData: set =
 $ Sum (Xp WSize (Sum (Xp Bool (Xp DestSrc WSize)) (Xp (upto 3) (Xp RM Regs))))
       (Xp Cond (Sum (Xp WSize DestSrc) (Xp Bool RM))) $;
-def xastMovX (b sz ds sz2: nat): nat = $ b0 (b1 (b0 (sz <> b0 (b <> ds <> sz2)))) $;
-def xastXchg (sz rm rn: nat): nat = $ b0 (b1 (b0 (sz <> b1 (0 <> rm <> rn)))) $;
-def xastCmpXchg (sz rm rn: nat): nat = $ b0 (b1 (b0 (sz <> b1 (1 <> rm <> rn)))) $;
-def xastXadd (sz rm rn: nat): nat = $ b0 (b1 (b0 (sz <> b1 (2 <> rm <> rn)))) $;
-def xastCMov (c sz ds: nat): nat = $ b0 (b1 (b1 (c <> b0 (sz <> ds)))) $;
-def xastSetCC (c b ds: nat): nat = $ b0 (b1 (b1 (c <> b1 (b <> ds)))) $;
+@_ def xastMovX (b sz ds sz2: nat): nat = $ b0 (b1 (b0 (sz <> b0 (b <> ds <> sz2)))) $;
+@_ def xastXchg (sz rm rn: nat): nat = $ b0 (b1 (b0 (sz <> b1 (0 <> rm <> rn)))) $;
+@_ def xastCmpXchg (sz rm rn: nat): nat = $ b0 (b1 (b0 (sz <> b1 (1 <> rm <> rn)))) $;
+@_ def xastXadd (sz rm rn: nat): nat = $ b0 (b1 (b0 (sz <> b1 (2 <> rm <> rn)))) $;
+@_ def xastCMov (c sz ds: nat): nat = $ b0 (b1 (b1 (c <> b0 (sz <> ds)))) $;
+@_ def xastSetCC (c b ds: nat): nat = $ b0 (b1 (b1 (c <> b1 (b <> ds)))) $;
 
-def xastMov (sz ds: nat): nat = $ xastCMov condAlways sz ds $;
-def xastMovZX (sz ds sz2: nat): nat = $ xastMovX 0 sz ds sz2 $;
-def xastMovSX (sz ds sz2: nat): nat = $ xastMovX 1 sz ds sz2 $;
+@_ def xastMov (sz ds: nat): nat = $ xastCMov condAlways sz ds $;
+@_ def xastMovZX (sz ds sz2: nat): nat = $ xastMovX 0 sz ds sz2 $;
+@_ def xastMovSX (sz ds sz2: nat): nat = $ xastMovX 1 sz ds sz2 $;
 
-def XASTFlow: set =
+@_ def XASTFlow: set =
 $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
-def xastJump (rm: nat): nat = $ b1 (b0 (b0 (b0 (b0 rm)))) $;
-def xastJCC (c q: nat): nat = $ b1 (b0 (b0 (b0 (b1 (c <> q))))) $;
-def xastCall (irm: nat): nat = $ b1 (b0 (b0 (b1 (b0 irm)))) $;
-def xastRet (q: nat): nat = $ b1 (b0 (b0 (b1 (b1 q)))) $;
-def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
-def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
-def xastLeave: nat = $ b1 (b0 (b1 0)) $;
+@_ def xastJump (rm: nat): nat = $ b1 (b0 (b0 (b0 (b0 rm)))) $;
+@_ def xastJCC (c q: nat): nat = $ b1 (b0 (b0 (b0 (b1 (c <> q))))) $;
+@_ def xastCall (irm: nat): nat = $ b1 (b0 (b0 (b1 (b0 irm)))) $;
+@_ def xastRet (q: nat): nat = $ b1 (b0 (b0 (b1 (b1 q)))) $;
+@_ def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
+@_ def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
+@_ def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 
-def XASTMisc: set = $ upto 4 $;
-def xastCMC: nat = $ b1 (b1 0) $;
-def xastCLC: nat = $ b1 (b1 1) $;
-def xastSTC: nat = $ b1 (b1 2) $;
-def xastSysCall: nat = $ b1 (b1 3) $;
+@_ def XASTMisc: set = $ upto 4 $;
+@_ def xastCMC: nat = $ b1 (b1 0) $;
+@_ def xastCLC: nat = $ b1 (b1 1) $;
+@_ def xastSTC: nat = $ b1 (b1 2) $;
+@_ def xastSysCall: nat = $ b1 (b1 3) $;
 
-def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
+@_ def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
 
 -- some typechecking sanity checks
-theorem xastUnopT (unop sz rm: nat):
+pub theorem xastUnopT (unop sz rm: nat):
   $ unop e. Unop /\ sz e. WSize /\ rm e. RM -> xastUnop unop sz rm e. XAST $;
-theorem xastBinopT (bop sz rm: nat):
+pub theorem xastBinopT (bop sz rm: nat):
   $ bop e. Binop /\ sz e. WSize /\ rm e. RM -> xastBinop bop sz rm e. XAST $;
-theorem xastMulT (sz rm: nat):
+pub theorem xastMulT (sz rm: nat):
   $ sz e. WSize /\ rm e. RM -> xastMul sz rm e. XAST $;
-theorem xastDivT (sz rm: nat):
+pub theorem xastDivT (sz rm: nat):
   $ sz e. WSize /\ rm e. RM -> xastDiv sz rm e. XAST $;
-theorem xastLeaT (sz ds: nat):
+pub theorem xastLeaT (sz ds: nat):
   $ sz e. WSize /\ ds e. DestSrc -> xastLea sz ds e. XAST $;
 
-theorem xastMovXT (b sz ds sz2: nat):
+pub theorem xastMovXT (b sz ds sz2: nat):
   $ bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize ->
     xastMovX b sz ds sz2 e. XAST $;
-theorem xastXchgT (sz rm rn: nat):
+pub theorem xastXchgT (sz rm rn: nat):
   $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXchg sz rm rn e. XAST $;
-theorem xastCmpXchgT (sz rm rn: nat):
+pub theorem xastCmpXchgT (sz rm rn: nat):
   $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastCmpXchg sz rm rn e. XAST $;
-theorem xastXaddT (sz rm rn: nat):
+pub theorem xastXaddT (sz rm rn: nat):
   $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXadd sz rm rn e. XAST $;
-theorem xastCMovT (c sz ds: nat):
+pub theorem xastCMovT (c sz ds: nat):
   $ c e. Cond /\ sz e. WSize /\ ds e. DestSrc -> xastCMov c sz ds e. XAST $;
-theorem xastSetCCT (c b ds: nat):
+pub theorem xastSetCCT (c b ds: nat):
   $ c e. Cond /\ bool b /\ ds e. DestSrc -> xastSetCC c b ds e. XAST $;
-theorem xastMovSXT (sz ds sz2: nat):
+pub theorem xastMovSXT (sz ds sz2: nat):
   $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovSX sz ds sz2 e. XAST $;
-theorem xastMovZXT (sz ds sz2: nat):
+pub theorem xastMovZXT (sz ds sz2: nat):
   $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovZX sz ds sz2 e. XAST $;
-theorem xastMovT (sz ds: nat):
+pub theorem xastMovT (sz ds: nat):
   $ sz e. WSize /\ ds e. DestSrc -> xastMov sz ds e. XAST $;
 
-theorem xastJumpT (rm: nat): $ rm e. RM -> xastJump rm e. XAST $;
-theorem xastJCCT (c q: nat): $ c e. Cond /\ q e. u64 -> xastJCC c q e. XAST $;
-theorem xastCallT (irm: nat): $ irm e. ImmRM -> xastCall irm e. XAST $;
-theorem xastRetT (q: nat): $ q e. u64 -> xastRet q e. XAST $;
-theorem xastPushT (irm: nat): $ irm e. ImmRM -> xastPush irm e. XAST $;
-theorem xastPopT (rm: nat): $ rm e. RM -> xastPop rm e. XAST $;
-theorem xastLeaveT: $ xastLeave e. XAST $;
+pub theorem xastJumpT (rm: nat): $ rm e. RM -> xastJump rm e. XAST $;
+pub theorem xastJCCT (c q: nat): $ c e. Cond /\ q e. u64 -> xastJCC c q e. XAST $;
+pub theorem xastCallT (irm: nat): $ irm e. ImmRM -> xastCall irm e. XAST $;
+pub theorem xastRetT (q: nat): $ q e. u64 -> xastRet q e. XAST $;
+pub theorem xastPushT (irm: nat): $ irm e. ImmRM -> xastPush irm e. XAST $;
+pub theorem xastPopT (rm: nat): $ rm e. RM -> xastPop rm e. XAST $;
+pub theorem xastLeaveT: $ xastLeave e. XAST $;
 
-theorem xastCMCT: $ xastCMC e. XAST $;
-theorem xastCLCT: $ xastCLC e. XAST $;
-theorem xastSTCT: $ xastSTC e. XAST $;
-theorem xastSysCallT: $ xastSysCall e. XAST $;
+pub theorem xastCMCT: $ xastCMC e. XAST $;
+pub theorem xastCLCT: $ xastCLC e. XAST $;
+pub theorem xastSTCT: $ xastSTC e. XAST $;
+pub theorem xastSysCallT: $ xastSysCall e. XAST $;
 
-def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
+@_ def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4 <> c) : (4 <> 4) : 0) b /\
     readModRM rex reg r l /\
     ast = xastCMov (suc c) (opSize T. (REX_W rex) 1) (R_rm reg r)) $;
-def decodeTwoJCC (rex ast b l .c .imm: nat): wff =
+@_ def decodeTwoJCC (rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4 <> c) : (4 <> 8) : 0) b /\
     readImmN 32 imm l /\
     ast = xastJCC (suc c) imm) $;
-def decodeTwoSetCC (rex ast b l .c .reg .r: nat): wff =
+@_ def decodeTwoSetCC (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4 <> c) : (4 <> 9) : 0) b /\
     readModRM rex reg r l /\
     ast = xastSetCC (suc c) (nat (rex != 0)) r) $;
-def decodeTwoCmpXchg (rex ast b l .v .reg .r: nat): wff =
+@_ def decodeTwoCmpXchg (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (splitBits ((1 <> v) : (3 <> 0) : (4 <> 11) : 0) b /\
     readModRM rex reg r l /\
     ast = xastCmpXchg (opSizeW rex v) r reg) $;
-def decodeTwoMovX (rex ast b l .v .s .reg .r: nat): wff =
+@_ def decodeTwoMovX (rex ast b l .v .s .reg .r: nat): wff =
 $ E. v E. s E. reg E. r (
     splitBits ((1 <> v) : (2 <> 3) : (1 <> s) : (4 <> 11) : 0) b /\
     readModRM rex reg r l /\
     ast = xastMovX s (if (bool v) wSz16 (wSz8 (rex != 0)))
       (R_rm reg r) (opSizeW rex 1)) $;
-def decodeTwoXadd (rex ast b l .v .reg .r: nat): wff =
+@_ def decodeTwoXadd (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readModRM rex reg r l /\
     ast = xastXadd (opSizeW rex v) r reg) $;
-def decodeTwoSysCall (rex ast b l .v .reg .r: nat): wff =
+@_ def decodeTwoSysCall (rex ast b l .v .reg .r: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 
-def decodeTwo (rex ast b l .b2 .l2: nat): wff =
+@_ def decodeTwo (rex ast b l .b2 .l2: nat): wff =
 $ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ (
     decodeTwoCMov rex ast b2 l2 \/ decodeTwoJCC rex ast b2 l2 \/
     decodeTwoSetCC rex ast b2 l2 \/ decodeTwoCmpXchg rex ast b2 l2 \/
     decodeTwoMovX rex ast b2 l2 \/ decodeTwoXadd rex ast b2 l2 \/
     decodeTwoSysCall rex ast b2 l2)) $;
 
-def decodeBinopReg (rex ast b l .v .d .opc .reg .r: nat): wff =
+@_ def decodeBinopReg (rex ast b l .v .d .opc .reg .r: nat): wff =
 $ E. v E. d E. opc E. reg E. r (
     splitBits ((1 <> v) : (1 <> d) : (1 <> 0) : (3 <> opc) : (2 <> 0) : 0) b /\
     readModRM rex reg r l /\
     ast = xastBinop opc (opSizeW rex v)
       (if (true d) (R_rm reg r) (Rm_r r reg))) $;
 
-def decodeBinopRAX (rex ast b l .v .opc .imm .sz: nat): wff =
+@_ def decodeBinopRAX (rex ast b l .v .opc .imm .sz: nat): wff =
 $ E. v E. opc E. imm (
     splitBits ((1 <> v) : (2 <> 2) : (3 <> opc) : (2 <> 0) : 0) b /\
     readImm (opSizeW rex v) imm l /\
     ast = xastBinop opc (opSizeW rex v) (Rm_i (RM_reg RAX) imm)) $;
 
-def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2 .sz: nat): wff =
+@_ def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2 .sz: nat): wff =
 $ E. v E. opc E. r E. l1 E. imm E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 8) : 0) b /\
     readOpcodeModRM rex opc r l1 /\
     readImm (opSizeW rex v) imm l2 /\
     ast = xastBinop opc (opSizeW rex v) (Rm_i r imm)) $;
 
-def decodeBinopImm8 (rex ast b l .opc .r .l1 .imm .l2: nat): wff =
+@_ def decodeBinopImm8 (rex ast b l .opc .r .l1 .imm .l2: nat): wff =
 $ E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\ b = ch x8 x3 /\
     readOpcodeModRM rex opc r l1 /\
     readImmN 8 imm l2 /\
     ast = xastBinop opc (opSizeW rex 1) (Rm_i r imm)) $;
 
-def decodeBinopHi (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
+@_ def decodeBinopHi (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
 $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readOpcodeModRM rex opc r l1 /\ opc != 6 /\
@@ -437,46 +485,46 @@ $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     ast = xastBinop (rex_reg opc 1)
       (opSizeW rex v) (Rm_i r imm)) $;
 
-def decodeBinopHiReg (rex ast b l .v .x .opc .r: nat): wff =
+@_ def decodeBinopHiReg (rex ast b l .v .x .opc .r: nat): wff =
 $ E. v E. x E. opc E. r (
     splitBits ((1 <> v) : (1 <> x) : (2 <> 0) : (4 <> 13) : 0) b /\
     readOpcodeModRM rex opc r l /\ opc != 6 /\
     ast = xastBinop (rex_reg opc 1) (opSizeW rex v)
       (if (true x) (Rm_r r RCX) (Rm_i r 1))) $;
 
-def decodeBinop (rex ast b l: nat): wff =
+@_ def decodeBinop (rex ast b l: nat): wff =
 $ decodeBinopReg rex ast b l \/ decodeBinopRAX rex ast b l \/
   decodeBinopImm rex ast b l \/ decodeBinopImm8 rex ast b l \/
   decodeBinopHi rex ast b l \/ decodeBinopHiReg rex ast b l $;
 
-def decodeMovSX (rex ast b l .reg .r: nat): wff =
+@_ def decodeMovSX (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (l = ch x6 x3 /\
     readModRM rex reg r l /\ ast = xastMovSX wSz32 (R_rm reg r) wSz64) $;
 
-def decodeMovReg (rex ast b l .v .d .reg .r: nat): wff =
+@_ def decodeMovReg (rex ast b l .v .d .reg .r: nat): wff =
 $ E. v E. d E. reg E. r (l = ch x6 x3 /\
     splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
     ast = xastMov (opSizeW rex v) (if (true d) (R_rm reg r) (Rm_r r reg))) $;
 
-def decodeMov64 (rex ast b l .r .v .imm: nat): wff =
+@_ def decodeMov64 (rex ast b l .r .v .imm: nat): wff =
 $ E. r E. v E. imm (l = ch x6 x3 /\
     splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) b /\
     readFullImm (opSizeW rex v) imm l /\
     ast = xastMov (opSizeW rex v) (Rm_i (RM_reg (rex_reg r (REX_B rex))) imm)) $;
 
-def decodeMovImm (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
+@_ def decodeMovImm (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
 $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 3) : (4 <> 12) : 0) b /\
     readOpcodeModRM rex opc r l1 /\
     readImm (opSizeW rex v) imm l2 /\
     ast = xastMov (opSizeW rex v) (Rm_i r imm)) $;
 
-def decodeMov (rex ast b l: nat): wff =
+@_ def decodeMov (rex ast b l: nat): wff =
 $ decodeMovSX rex ast b l \/ decodeMovReg rex ast b l \/
   decodeMov64 rex ast b l \/ decodeMovImm rex ast b l $;
 
-def decodePush (rex ast b l .x .imm .r: nat): wff =
+@_ def decodePush (rex ast b l .x .imm .r: nat): wff =
 $ (E. x E. imm (
     splitBits ((1 <> 0) : (1 <> x) : (2 <> 2) : (4 <> 6) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
@@ -485,40 +533,40 @@ $ (E. x E. imm (
     splitBits ((3 <> r) : (1 <> 0) : (4 <> 5) : 0) b /\
     ast = xastPush (immRM_rm (rex_reg (REX_B rex) r)))) $;
 
-def decodePop (rex ast b l .v .reg .r: nat): wff =
+@_ def decodePop (rex ast b l .v .reg .r: nat): wff =
 $ (l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
     ast = xastPop (RM_reg (rex_reg (REX_B rex) r)))) \/
   (E. r (b = ch x8 xf /\ readOpcodeModRM rex 0 r l /\ ast = xastPop r)) $;
 
-def decodeJump (rex ast b l .x .imm: nat): wff =
+@_ def decodeJump (rex ast b l .x .imm: nat): wff =
 $ E. x E. imm (
     splitBits ((1 <> 1) : (1 <> x) : (2 <> 2) : (4 <> 14) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
     ast = xastJCC condAlways imm) $;
 
-def decodeJCC8 (rex ast b l .c .imm: nat): wff =
+@_ def decodeJCC8 (rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4 <> c) : (4 <> 7) : 0) b /\
     readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
 
-def decodeCall (rex ast b l .imm: nat): wff =
+@_ def decodeCall (rex ast b l .imm: nat): wff =
 $ E. imm (b = ch xe x8 /\
     readImmN 32 imm l /\ ast = xastCall (immRM_imm imm)) $;
 
-def decodeRet (rex ast b l .v .imm: nat): wff =
+@_ def decodeRet (rex ast b l .v .imm: nat): wff =
 $ E. v E. imm (
     splitBits ((1 <> v) : (3 <> 1) : (4 <> 12) : 0) b /\
     ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) /\
     ast = xastRet imm) $;
 
-def decodeLeave (rex ast b l: nat): wff =
+@_ def decodeLeave (rex ast b l: nat): wff =
 $ b = ch xc x9 /\ l = 0 /\ ast = xastLeave $;
 
-def decodeFlow (rex ast b l: nat): wff =
+@_ def decodeFlow (rex ast b l: nat): wff =
 $ decodeJump rex ast b l \/ decodeJCC8 rex ast b l \/
   decodeCall rex ast b l \/ decodeRet rex ast b l \/ decodeLeave rex ast b l $;
 
-def decodeXchg (rex ast b l .v .reg .r: nat): wff =
+@_ def decodeXchg (rex ast b l .v .reg .r: nat): wff =
 $ (E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 3) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
@@ -527,35 +575,35 @@ $ (E. v E. reg E. r (
     splitBits ((3 <> r) : (1 <> 0) : (4 <> 9) : 0) b /\
     ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r))) $;
 
-def decodeLea (rex ast b l .reg .r: nat): wff =
+@_ def decodeLea (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (b = ch x8 xd /\
     readModRM rex reg r l /\ RM_isMem r /\
     ast = xastLea (opSize T. (REX_W rex) 1) (R_rm reg r)) $;
 
-def decodeTest (rex ast b l .v .reg .r: nat): wff =
+@_ def decodeTest (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
     ast = xastBinop binopTst (opSizeW rex 1) (Rm_r r reg)) $;
 
-def decodeTestRAX (rex ast b l .v .imm .sz: nat): wff =
+@_ def decodeTestRAX (rex ast b l .v .imm .sz: nat): wff =
 $ E. v E. imm E. sz (
     splitBits ((1 <> v) : (3 <> 4) : (4 <> 10) : 0) b /\
     sz = opSize T. (REX_W rex) v /\
     readImm sz imm l /\
     ast = xastBinop binopTst sz (Rm_i (RM_reg RAX) imm)) $;
 
-def decodeFlag (rex ast b l: nat): wff =
+@_ def decodeFlag (rex ast b l: nat): wff =
 $ (b = ch xf x5 /\ l = 0 /\ ast = xastCMC) \/
   (b = ch xf x8 /\ l = 0 /\ ast = xastCLC) \/
   (b = ch xf x9 /\ l = 0 /\ ast = xastSTC) $;
 
-def decodeMisc (rex ast b l: nat): wff =
+@_ def decodeMisc (rex ast b l: nat): wff =
 $ decodeXchg rex ast b l \/ decodeLea rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
   decodeFlag rex ast b l $;
 
-def decodeHiAux (v sz r hi n ast l .imm: nat): wff =
+@_ def decodeHiAux (v sz r hi n ast l .imm: nat): wff =
 $ ifp (true hi)
     (l = 0 /\ (
       n = 0 /\ ast = xastUnop unopInc sz r \/
@@ -572,19 +620,19 @@ $ ifp (true hi)
         n = 4 /\ ast = xastMul sz r \/
         n = 6 /\ ast = xastDiv sz r))) $;
 
-def decodeHi (rex ast b l .v .x .opc .r .l1 .l2: nat): wff =
+@_ def decodeHi (rex ast b l .v .x .opc .r .l1 .l2: nat): wff =
 $ E. v E. x E. opc E. r E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (2 <> 3) : (1 <> x) : (4 <> 15) : 0) b /\
     readOpcodeModRM rex opc r l1 /\
     decodeHiAux v (opSizeW rex v) r x opc ast l2) $;
 
-def decodeAux (rex ast b l: nat): wff =
+@_ def decodeAux (rex ast b l: nat): wff =
 $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
   decodePush rex ast b l \/ decodePop rex ast b l \/
   decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
   decodeHi rex ast b l $;
 
-def decode (ast l .rex .l1 .opc .l2: nat): wff =
+@_ def decode (ast l .rex .l1 .opc .l2: nat): wff =
 $ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
     readPrefixes rex l1 /\ decodeAux rex ast opc l2) $;
 
@@ -592,395 +640,395 @@ $ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
 -- Dynamic semantics
 ----------------------------------------
 
-def Flags: nat = $ u64 $;
-def CF (flags: nat): wff = $ 0 e. flags $;
-def ZF (flags: nat): wff = $ 6 e. flags $;
-def SF (flags: nat): wff = $ 7 e. flags $;
-def OF (flags: nat): wff = $ 11 e. flags $;
+@_ def Flags: nat = $ u64 $;
+@_ def CF (flags: nat): wff = $ 0 e. flags $;
+@_ def ZF (flags: nat): wff = $ 6 e. flags $;
+@_ def SF (flags: nat): wff = $ 7 e. flags $;
+@_ def OF (flags: nat): wff = $ 11 e. flags $;
 
-def setCF (f: nat) (p: wff): nat = $ bitsUpdate 0 1 (nat p) f $;
-def setZF (f: nat) (p: wff): nat = $ bitsUpdate 6 1 (nat p) f $;
-def setSF (f: nat) (p: wff): nat = $ bitsUpdate 7 1 (nat p) f $;
-def setOF (f: nat) (p: wff): nat = $ bitsUpdate 11 1 (nat p) f $;
+@_ def setCF (f: nat) (p: wff): nat = $ bitsUpdate 0 1 (nat p) f $;
+@_ def setZF (f: nat) (p: wff): nat = $ bitsUpdate 6 1 (nat p) f $;
+@_ def setSF (f: nat) (p: wff): nat = $ bitsUpdate 7 1 (nat p) f $;
+@_ def setOF (f: nat) (p: wff): nat = $ bitsUpdate 11 1 (nat p) f $;
 
-def unpackFlags (f c z s o: nat): wff =
+@_ def unpackFlags (f c z s o: nat): wff =
 $ c = nat (CF f) /\ z = nat (ZF f) /\ s = nat (SF f) /\ o = nat (OF f) $;
 
-def readBCond (f c: nat): wff;
-theorem readBCondO (f: nat): $ readBCond f bcondO <-> OF f $;
-theorem readBCondB (f: nat): $ readBCond f bcondB <-> CF f $;
-theorem readBCondE (f: nat): $ readBCond f bcondE <-> ZF f $;
-theorem readBCondNA (f: nat): $ readBCond f bcondNA <-> CF f \/ ZF f $;
-theorem readBCondS (f: nat): $ readBCond f bcondS <-> SF f $;
-theorem readBCondL (f: nat): $ readBCond f bcondL <-> ~(SF f <-> OF f) $;
-theorem readBCondNG (f: nat): $ readBCond f bcondNG <-> ZF f \/ ~(SF f <-> OF f) $;
+@_ abstract def readBCond (f c: nat): wff;
+pub theorem readBCondO (f: nat): $ readBCond f bcondO <-> OF f $;
+pub theorem readBCondB (f: nat): $ readBCond f bcondB <-> CF f $;
+pub theorem readBCondE (f: nat): $ readBCond f bcondE <-> ZF f $;
+pub theorem readBCondNA (f: nat): $ readBCond f bcondNA <-> CF f \/ ZF f $;
+pub theorem readBCondS (f: nat): $ readBCond f bcondS <-> SF f $;
+pub theorem readBCondL (f: nat): $ readBCond f bcondL <-> ~(SF f <-> OF f) $;
+pub theorem readBCondNG (f: nat): $ readBCond f bcondNG <-> ZF f \/ ~(SF f <-> OF f) $;
 
-def readCondF (f c: nat): wff;
-theorem readCondFAlways (f: nat): $ readCondF f condAlways $;
-theorem readCondFPos (f c: nat): $ readCondF f (condPos c) <-> readBCond f c $;
-theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f c $;
+@_ abstract def readCondF (f c: nat): wff;
+pub theorem readCondFAlways (f: nat): $ readCondF f condAlways $;
+pub theorem readCondFPos (f c: nat): $ readCondF f (condPos c) <-> readBCond f c $;
+pub theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f c $;
 
-def Prot: set = $ Bits 3 $;
-def PROT_READ: nat = $ 1 $;
-def PROT_WRITE: nat = $ 2 $;
-def PROT_EXEC: nat = $ 4 $;
+@_ def Prot: set = $ Bits 3 $;
+@_ def PROT_READ: nat = $ 1 $;
+@_ def PROT_WRITE: nat = $ 2 $;
+@_ def PROT_EXEC: nat = $ 4 $;
 
-def Memory: set = $ Arrow u64 (Xp Prot u8) $;
+@_ def Memory: set = $ Arrow u64 (Xp Prot u8) $;
 
-def Config: set = $ Xp u64 (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
-theorem finiteConfig: $ finite Config $;
+@_ def Config: set = $ Xp u64 (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
+pub theorem finiteConfig: $ finite Config $;
 
-def readRIP (k: nat): nat = $ fst k $;
-def readReg (k r: nat): nat = $ pi21 k @ r $;
-def readFlags (k: nat): nat = $ pi221 k $;
-def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
+@_ def readRIP (k: nat): nat = $ fst k $;
+@_ def readReg (k r: nat): nat = $ pi21 k @ r $;
+@_ def readFlags (k: nat): nat = $ pi221 k $;
+@_ def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
-def readMemory1 (ps m a b .prot: nat): wff =
+@_ def readMemory1 (ps m a b .prot: nat): wff =
 $ E. prot (m @ a = prot <> b /\ ps C_ prot) $;
-theorem readMemory1T (ps m a b: nat):
+pub theorem readMemory1T (ps m a b: nat):
   $ ps e. Prot /\ m e. Memory /\ a e. u64 /\ readMemory1 ps m a b -> b e. u8 $;
 
-def readMemory (ps m a l: nat): wff;
-theorem readMemory0 (ps m a: nat): $ readMemory ps m a 0 $;
-theorem readMemoryS (ps m a b l: nat):
+@_ abstract def readMemory (ps m a l: nat): wff;
+pub theorem readMemory0 (ps m a: nat): $ readMemory ps m a 0 $;
+pub theorem readMemoryS (ps m a b l: nat):
   $ readMemory ps m a (b : l) <->
     readMemory1 ps m a b /\ readMemory ps m (a +_64 1) l $;
-theorem readMemoryT (ps m a l: nat):
+pub theorem readMemoryT (ps m a l: nat):
   $ ps e. Prot /\ m e. Memory /\ a e. u64 /\
     readMemory ps m a l -> l e. List u8 $;
 
-def readMem (k a l: nat): wff = $ readMemory PROT_READ (pi222 k) a l $;
-theorem readMemT (k a l: nat):
+@_ def readMem (k a l: nat): wff = $ readMemory PROT_READ (pi222 k) a l $;
+pub theorem readMemT (k a l: nat):
   $ k e. Config /\ a e. u64 /\ readMem k a l -> l e. List u8 $;
 
-def readMemX (k a l: nat): wff =
+@_ def readMemX (k a l: nat): wff =
 $ readMemory (PROT_READ + PROT_EXEC) (pi222 k) a l $;
-theorem readMemXT (k a l: nat):
+pub theorem readMemXT (k a l: nat):
   $ k e. Config /\ a e. u64 /\ readMemX k a l -> l e. List u8 $;
 
-def writeMemory1 (m a b m2 .prot .b2: nat): wff =
+@_ def writeMemory1 (m a b m2 .prot .b2: nat): wff =
 $ E. prot E. b2 (PROT_READ + PROT_WRITE C_ prot /\
   m @ a = prot <> b2 /\ m2 == write m a (prot <> b)) $;
 
-def writeMemory (m a l m2: nat): wff;
-theorem writeMemory0 (m a l m2: nat): $ writeMemory m a l m2 <-> m2 = m $;
-theorem writeMemoryS {m2: nat} (m a b l m3: nat):
+@_ abstract def writeMemory (m a l m2: nat): wff;
+pub theorem writeMemory0 (m a l m2: nat): $ writeMemory m a l m2 <-> m2 = m $;
+pub theorem writeMemoryS {m2: nat} (m a b l m3: nat):
   $ writeMemory m a (b : l) m3 <->
     E. m2 (writeMemory1 m a b m2 /\ writeMemory m2 (a +_64 1) l m3) $;
-theorem writeMemoryT (m a l m2: nat):
+pub theorem writeMemoryT (m a l m2: nat):
   $ m e. Memory /\ a e. u64 /\ l e. List u8 /\
     writeMemory m a l m2 -> m2 e. Memory $;
 
-def writeMem (k a l k2 .ip .r .f .m .m2: nat): wff =
+@_ def writeMem (k a l k2 .ip .r .f .m .m2: nat): wff =
 $ E. ip E. r E. f E. m E. m2 (writeMemory m a l m2 /\
   k = ip <> r <> f <> m /\ k2 = ip <> r <> f <> m2) $;
-theorem writeMemT (k a l k2: nat):
+pub theorem writeMemT (k a l k2: nat):
   $ k e. Config /\ a e. u64 /\ l e. List u8 /\
     writeMem k a l k2 -> k2 e. Config $;
 
-def mapMemory1 (prot m a b m2: nat): wff =
+@_ def mapMemory1 (prot m a b m2: nat): wff =
 $ ~ PROT_READ e. fst (m @ a) /\ m2 == write m a (prot <> b) $;
 
-def mapMemory (prot m a l m2: nat): wff;
-theorem mapMemory0 (prot m a l m2: nat): $ mapMemory prot m a l m2 <-> m2 = m $;
-theorem mapMemoryS {m2: nat} (prot m a b l m3: nat):
+@_ abstract def mapMemory (prot m a l m2: nat): wff;
+pub theorem mapMemory0 (prot m a l m2: nat): $ mapMemory prot m a l m2 <-> m2 = m $;
+pub theorem mapMemoryS {m2: nat} (prot m a b l m3: nat):
   $ mapMemory prot m a (b : l) m3 <->
     E. m2 (mapMemory1 prot m a b m2 /\ mapMemory prot m2 (a +_64 1) l m3) $;
-theorem mapMemoryT (prot m a l m2: nat):
+pub theorem mapMemoryT (prot m a l m2: nat):
   $ prot e. Prot /\ m e. Memory /\ a e. u64 /\ l e. List u8 /\
     mapMemory prot m a l m2 -> m2 e. Memory $;
 
-def mapMem (prot k a l k2 .ip .r .f .m .m2: nat): wff =
+@_ def mapMem (prot k a l k2 .ip .r .f .m .m2: nat): wff =
 $ E. ip E. r E. f E. m E. m2 (mapMemory prot m a l m2 /\
   k = ip <> r <> f <> m /\ k2 = ip <> r <> f <> m2) $;
-theorem mapMemT (prot k a l k2: nat):
+pub theorem mapMemT (prot k a l k2: nat):
   $ prot e. Prot /\ k e. Config /\ a e. u64 /\ l e. List u8 /\
     mapMem prot k a l k2 -> k2 e. Config $;
 
-def EA: set = $ Sum Regs (Xp Bool u64) $;
-def EA_i (q: nat): nat = $ b1 (0 <> q) $;
-def EA_r (r: nat): nat = $ b0 r $;
-def EA_m (q: nat): nat = $ b1 (1 <> q) $;
-theorem EA_iT (q: nat): $ q e. u64 -> EA_i q e. EA $;
-theorem EA_rT (r: nat): $ r e. Regs -> EA_r r e. EA $;
-theorem EA_mT (q: nat): $ q e. u64 -> EA_m q e. EA $;
+@_ def EA: set = $ Sum Regs (Xp Bool u64) $;
+@_ def EA_i (q: nat): nat = $ b1 (0 <> q) $;
+@_ def EA_r (r: nat): nat = $ b0 r $;
+@_ def EA_m (q: nat): nat = $ b1 (1 <> q) $;
+pub theorem EA_iT (q: nat): $ q e. u64 -> EA_i q e. EA $;
+pub theorem EA_rT (r: nat): $ r e. Regs -> EA_r r e. EA $;
+pub theorem EA_mT (q: nat): $ q e. u64 -> EA_m q e. EA $;
 
-def EA_addr (ea: nat): nat;
-theorem EA_addrm (a: nat): $ EA_addr (EA_m a) = a $;
-theorem EA_addr0 {a: nat} (ea: nat): $ ~(E. a ea = EA_m a) -> EA_addr ea = 0 $;
-theorem EA_addrT (ea: nat): $ ea e. EA -> EA_addr ea e. u64 $;
+@_ abstract def EA_addr (ea: nat): nat;
+pub theorem EA_addrm (a: nat): $ EA_addr (EA_m a) = a $;
+pub theorem EA_addr0 {a: nat} (ea: nat): $ ~(E. a ea = EA_m a) -> EA_addr ea = 0 $;
+pub theorem EA_addrT (ea: nat): $ ea e. EA -> EA_addr ea e. u64 $;
 
-def readIndex (k si: nat): nat;
-theorem readIndex0 (k: nat): $ readIndex k 0 = 0 $;
-theorem readIndexS (k sc r: nat):
+@_ abstract def readIndex (k si: nat): nat;
+pub theorem readIndex0 (k: nat): $ readIndex k 0 = 0 $;
+pub theorem readIndexS (k sc r: nat):
   $ readIndex k (suc (sc <> r)) = chop 64 (shl (readReg k r) sc) $;
-theorem readIndexT (k si: nat):
+pub theorem readIndexT (k si: nat):
   $ k e. Config /\ si e. Option ScaleIndex -> readIndex k si e. u64 $;
 
-def readBase (k b: nat): nat;
-theorem readBase0 (k: nat): $ readBase k 0 = 0 $;
-theorem readBaseRIP (k: nat): $ readBase k base_RIP = readRIP k $;
-theorem readBaseReg (k r: nat): $ readBase k (base_reg r) = readReg k r $;
-theorem readBaseT (k b: nat):
+@_ abstract def readBase (k b: nat): nat;
+pub theorem readBase0 (k: nat): $ readBase k 0 = 0 $;
+pub theorem readBaseRIP (k: nat): $ readBase k base_RIP = readRIP k $;
+pub theorem readBaseReg (k r: nat): $ readBase k (base_reg r) = readReg k r $;
+pub theorem readBaseT (k b: nat):
   $ k e. Config /\ b e. Base -> readBase k b e. u64 $;
 
-def RM_EA (k rm: nat): nat;
-theorem RM_EAreg (k r: nat): $ RM_EA k (RM_reg r) = EA_r r $;
-theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
+@_ abstract def RM_EA (k rm: nat): nat;
+pub theorem RM_EAreg (k r: nat): $ RM_EA k (RM_reg r) = EA_r r $;
+pub theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
   EA_m (readIndex k si +_64 readBase k base +_64 q) $;
-theorem RM_EAT (k rm: nat):
+pub theorem RM_EAT (k rm: nat):
   $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $;
 
-def destEA (k ds: nat): nat;
-theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $;
-theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $;
-theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $;
-theorem destEAT (k ds: nat):
+@_ abstract def destEA (k ds: nat): nat;
+pub theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $;
+pub theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $;
+pub theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $;
+pub theorem destEAT (k ds: nat):
   $ k e. Config /\ ds e. DestSrc -> destEA k ds e. EA $;
 
-def srcEA (k ds: nat): nat;
-theorem srcEAm_i (k v q: nat): $ srcEA k (Rm_i v q) = EA_i q $;
-theorem srcEAm_r (k v r: nat): $ srcEA k (Rm_r v r) = EA_r r $;
-theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $;
-theorem srcEAT (k ds: nat):
+@_ abstract def srcEA (k ds: nat): nat;
+pub theorem srcEAm_i (k v q: nat): $ srcEA k (Rm_i v q) = EA_i q $;
+pub theorem srcEAm_r (k v r: nat): $ srcEA k (Rm_r v r) = EA_r r $;
+pub theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $;
+pub theorem srcEAT (k ds: nat):
   $ k e. Config /\ ds e. DestSrc -> srcEA k ds e. EA $;
 
-def immRM_EA (k irm: nat): nat;
-theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $;
-theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $;
-theorem immRM_EAT (k irm: nat):
+@_ abstract def immRM_EA (k irm: nat): nat;
+pub theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $;
+pub theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $;
+pub theorem immRM_EAT (k irm: nat):
   $ k e. Config /\ irm e. ImmRM -> immRM_EA k irm e. EA $;
 
-def readRegSz (k sz r: nat): nat =
+@_ def readRegSz (k sz r: nat): nat =
 $ chop (wsizeBits sz)
     (if (sz = wSz8 F. /\ 2 e. r) (shr (readReg k (r - 4)) 8) (readReg k r)) $;
-theorem readRegSzT (k sz r: nat):
+pub theorem readRegSzT (k sz r: nat):
   $ k e. Config /\ sz e. WSize /\ r e. Regs ->
     readRegSz k sz r e. Bits (wsizeBits sz) $;
 
-def readEA (k sz ea v: nat): wff;
-theorem readEA_i (k q sz v: nat):
+@_ abstract def readEA (k sz ea v: nat): wff;
+pub theorem readEA_i (k q sz v: nat):
   $ readEA k sz (EA_i q) v <-> v = chop (wsizeBits sz) q $;
-theorem readEA_r (k sz r v: nat):
+pub theorem readEA_r (k sz r v: nat):
   $ readEA k sz (EA_r r) v <-> v = readRegSz k sz r $;
-theorem readEA_m {l: nat} (k a sz v: nat): $ readEA k sz (EA_m a) v <->
+pub theorem readEA_m {l: nat} (k a sz v: nat): $ readEA k sz (EA_m a) v <->
   v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v) $;
-theorem readEAT (k sz ea v: nat): $ k e. Config /\ ea e. EA /\ sz e. WSize /\
+pub theorem readEAT (k sz ea v: nat): $ k e. Config /\ ea e. EA /\ sz e. WSize /\
   readEA k sz ea v -> v e. Bits (wsizeBits sz) $;
 
-def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
+@_ def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
 
-def setReg (k r q: nat): nat;
-theorem setRegVal (ip rs f m r q: nat):
+@_ abstract def setReg (k r q: nat): nat;
+pub theorem setRegVal (ip rs f m r q: nat):
   $ setReg (ip <> rs <> f <> m) r q = ip <> lower (write rs r q) <> f <> m $;
-theorem setRegT (k r q: nat):
+pub theorem setRegT (k r q: nat):
   $ k e. Config /\ r e. Regs /\ q e. u64 -> setReg k r q e. Config $;
 
-def writeReg (k sz r v: nat): nat;
-theorem writeReg8 (k r v: nat) (have_rex: wff):
+@_ abstract def writeReg (k sz r v: nat): nat;
+pub theorem writeReg8 (k r v: nat) (have_rex: wff):
   $ writeReg k (wSz8 have_rex) r v = if (~have_rex /\ 2 e. r)
       (setReg k (r - 4) (bitsUpdate 8 8 v (readReg k (r - 4))))
       (setReg k r (bitsUpdate 0 8 v (readReg k r))) $;
-theorem writeReg16 (k r v: nat):
+pub theorem writeReg16 (k r v: nat):
   $ writeReg k wSz16 r v = setReg k r (bitsUpdate 0 16 v (readReg k r)) $;
-theorem writeReg32 (k r v: nat): $ writeReg k wSz32 r v = setReg k r v $;
-theorem writeReg64 (k r v: nat): $ writeReg k wSz64 r v = setReg k r v $;
-theorem writeRegT (k sz r v: nat): $ k e. Config /\ sz e. WSize /\
+pub theorem writeReg32 (k r v: nat): $ writeReg k wSz32 r v = setReg k r v $;
+pub theorem writeReg64 (k r v: nat): $ writeReg k wSz64 r v = setReg k r v $;
+pub theorem writeRegT (k sz r v: nat): $ k e. Config /\ sz e. WSize /\
   r e. Regs /\ v e. Bits (wsizeBits sz) -> writeReg k sz r v e. Config $;
 
-def writeEASz (k sz ea v k2: nat): wff;
-theorem writeEASz_i (k sz i v k2: nat): $ ~ writeEASz k sz (EA_i i) v k2 $;
-theorem writeEASz_r (k sz r v k2: nat):
+@_ abstract def writeEASz (k sz ea v k2: nat): wff;
+pub theorem writeEASz_i (k sz i v k2: nat): $ ~ writeEASz k sz (EA_i i) v k2 $;
+pub theorem writeEASz_r (k sz r v k2: nat):
   $ writeEASz k sz (EA_r r) v k2 <-> k2 = writeReg k sz r v $;
-theorem writeEASz_m {l: nat} (k sz a v k2: nat):
+pub theorem writeEASz_m {l: nat} (k sz a v k2: nat):
   $ writeEASz k sz (EA_m a) v k2 <->
     writeMem k a (toBytes (wsizeBits sz) v) k2 $;
-theorem writeEASzT (k sz ea v k2: nat):
+pub theorem writeEASzT (k sz ea v k2: nat):
   $ k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
     writeEASz k sz ea v k2 -> k2 e. Config $;
 
-def writeEA (k sz ea v k2: nat): wff =
+@_ def writeEA (k sz ea v k2: nat): wff =
 $ writeEASz k sz ea (chop (wsizeBits sz) v) k2 $;
-theorem writeEAT (k sz ea v k2: nat):
+pub theorem writeEAT (k sz ea v k2: nat):
   $ k e. Config /\ sz e. WSize /\ ea e. EA /\
     writeEA k sz ea v k2 -> k2 e. Config $;
 
-def writeRIP (k q: nat): nat;
-theorem writeRIPVal (ip rs f m q: nat):
+@_ abstract def writeRIP (k q: nat): nat;
+pub theorem writeRIPVal (ip rs f m q: nat):
   $ writeRIP (ip <> rs <> f <> m) q = q <> rs <> f <> m $;
-theorem writeRIPT (k q: nat):
+pub theorem writeRIPT (k q: nat):
   $ k e. Config /\ q e. u64 -> writeRIP k q e. Config $;
 
-def EA_callDest (k ea v: nat): wff;
-theorem EA_callDest_i (k i v: nat):
+@_ abstract def EA_callDest (k ea v: nat): wff;
+pub theorem EA_callDest_i (k i v: nat):
   $ EA_callDest k (EA_i i) v <-> v = readRIP k +_64 i $;
-theorem EA_callDest_r (k r v: nat):
+pub theorem EA_callDest_r (k r v: nat):
   $ EA_callDest k (EA_r r) v <-> v = readReg k r $;
-theorem EA_callDest_m (k a v: nat):
+pub theorem EA_callDest_m (k a v: nat):
   $ EA_callDest k (EA_m a) v <-> v e. u64 /\ readMem k a (u64Bytes v) $;
-theorem EA_callDestT (k ea v: nat):
+pub theorem EA_callDestT (k ea v: nat):
   $ k e. Config /\ ea e. EA /\ EA_callDest k ea v -> v e. u64 $;
 
-def EA_jump (k ea k2 .v: nat): wff =
+@_ def EA_jump (k ea k2 .v: nat): wff =
 $ E. v (EA_callDest k ea v /\ k2 = writeRIP k v) $;
-theorem EA_jumpT (k ea k2: nat):
+pub theorem EA_jumpT (k ea k2: nat):
   $ k e. Config /\ ea e. EA /\ EA_jump k ea k2 -> k2 e. Config $;
 
-def readUnpackFlags (k c z s o: nat): wff =
+@_ def readUnpackFlags (k c z s o: nat): wff =
 $ unpackFlags (readFlags k) c z s o $;
-theorem readUnpackFlagsT (k c z s o: nat):
+pub theorem readUnpackFlagsT (k c z s o: nat):
 $ k e. Config /\ readUnpackFlags k c z s o ->
   bool c /\ bool z /\ bool s /\ bool o $;
 
-def writeFlags (k f: nat): nat;
-theorem writeFlagsVal (ip rs f m f2: nat):
+@_ abstract def writeFlags (k f: nat): nat;
+pub theorem writeFlagsVal (ip rs f m f2: nat):
   $ writeFlags (ip <> rs <> f <> m) f2 = ip <> rs <> f2 <> m $;
 
-def setCZSO (k: nat) (c z s o : wff): nat;
-theorem setCZSOVal (ip rs f m : nat) (c z s o: wff):
+@_ abstract def setCZSO (k: nat) (c z s o : wff): nat;
+pub theorem setCZSOVal (ip rs f m : nat) (c z s o: wff):
   $ setCZSO (ip <> rs <> f <> m) c z s o =
     ip <> rs <> setOF (setSF (setZF (setCF f c) z) s) o <> m $;
 
-def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
+@_ def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
-def writeResultFlags (k sz w : nat) (c o : wff): nat =
+@_ def writeResultFlags (k sz w : nat) (c o : wff): nat =
 $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;
 
-def writeSFZF (k sz w : nat): nat =
+@_ def writeSFZF (k sz w : nat): nat =
 $ writeResultFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
 
-def eraseFlags (k k2 .ip .rs .f .f2 .m: nat): wff =
+@_ def eraseFlags (k k2 .ip .rs .f .f2 .m: nat): wff =
 $ E. ip E. rs E. f E. f2 E. m (f2 e. Flags /\
     k = ip <> rs <> f <> m /\ k2 = ip <> rs <> f2 <> m) $;
-theorem eraseFlagsT (k k2: nat):
+pub theorem eraseFlagsT (k k2: nat):
   $ k e. Config /\ eraseFlags k k2 -> k2 e. Config $;
 
-def addCarry (sz a b w c o: nat): wff =
+@_ def addCarry (sz a b w c o: nat): wff =
 $ w = a +_64 b /\ c = nat (2 ^ wsizeBits sz <= a + b) /\
   o = nat (MSB sz a <-> MSB sz b /\ ~(MSB sz (a +_64 b) <-> MSB sz a)) $;
-theorem addCarryT (sz a b w c o: nat):
+pub theorem addCarryT (sz a b w c o: nat):
   $ sz e. WSize /\ a e. u64 /\ b e. u64 /\ addCarry sz a b w c o ->
     w e. u64 /\ bool c /\ bool o $;
 
-def subBorrow (sz a b w c o: nat): wff =
+@_ def subBorrow (sz a b w c o: nat): wff =
 $ w = a -_64 b /\ c = nat (a < b) /\
   o = nat (~(MSB sz a <-> MSB sz b) /\ ~(MSB sz (a -_64 b) <-> MSB sz a)) $;
-theorem subBorrowT (sz a b w c o: nat):
+pub theorem subBorrowT (sz a b w c o: nat):
   $ sz e. WSize /\ a e. u64 /\ b e. u64 /\ subBorrow sz a b w c o ->
     w e. u64 /\ bool c /\ bool o $;
 
-def writeCFOFResult (k sz ea w : nat) (c o : wff) (k2: nat): wff =
+@_ def writeCFOFResult (k sz ea w : nat) (c o : wff) (k2: nat): wff =
 $ writeEA (writeResultFlags k sz w c o) sz ea w k2 $;
 
-def maskShift (sz w: nat): nat = $ chop (if (wsizeBits sz = 64) 6 5) w $;
+@_ def maskShift (sz w: nat): nat = $ chop (if (wsizeBits sz = 64) 6 5) w $;
 
-def writeBinop (k op sz ea a b k2: nat): wff;
-theorem writeBinopAdd {w c o: nat} (k sz ea a b k2: nat):
+@_ abstract def writeBinop (k op sz ea a b k2: nat): wff;
+pub theorem writeBinopAdd {w c o: nat} (k sz ea a b k2: nat):
   $ writeBinop k binopAdd sz ea a b k2 <-> E. w E. c E. o (
       addCarry sz a b w c o /\
       writeCFOFResult k sz ea w (true c) (true o) k2) $;
-theorem writeBinopSub {w c o: nat} (k sz ea a b k2: nat):
+pub theorem writeBinopSub {w c o: nat} (k sz ea a b k2: nat):
   $ writeBinop k binopSub sz ea a b k2 <-> E. w E. c E. o (
       subBorrow sz a b w c o /\
       writeCFOFResult k sz ea w (true c) (true o) k2) $;
-theorem writeBinopCmp {w c o: nat} (k sz ea a b k2: nat):
+pub theorem writeBinopCmp {w c o: nat} (k sz ea a b k2: nat):
   $ writeBinop k binopCmp sz ea a b k2 <-> E. w E. c E. o (
       subBorrow sz a b w c o /\
       k2 = writeResultFlags k sz w (true c) (true o)) $;
-theorem writeBinopTst (k sz ea a b k2: nat):
+pub theorem writeBinopTst (k sz ea a b k2: nat):
   $ writeBinop k binopTst sz ea a b k2 <->
     k2 = writeResultFlags k sz (bitAnd a b) F. F. $;
-theorem writeBinopAnd (k sz ea a b k2: nat):
+pub theorem writeBinopAnd (k sz ea a b k2: nat):
   $ writeBinop k binopAnd sz ea a b k2 <->
     writeCFOFResult k sz ea (bitAnd a b) F. F. k2 $;
-theorem writeBinopXor (k sz ea a b k2: nat):
+pub theorem writeBinopXor (k sz ea a b k2: nat):
   $ writeBinop k binopXor sz ea a b k2 <->
     writeCFOFResult k sz ea (bitXor a b) F. F. k2 $;
-theorem writeBinopOr (k sz ea a b k2: nat):
+pub theorem writeBinopOr (k sz ea a b k2: nat):
   $ writeBinop k binopOr sz ea a b k2 <->
     writeCFOFResult k sz ea (bitOr a b) F. F. k2 $;
-theorem writeBinopShl {k2: nat} (k sz ea a b k3: nat):
+pub theorem writeBinopShl {k2: nat} (k sz ea a b k3: nat):
   $ writeBinop k binopShl sz ea a b k3 <->
     E. k2 (eraseFlags k k2 /\ writeEA k2 sz ea (shl a (maskShift sz b)) k3) $;
-theorem writeBinopShr {k2: nat} (k sz ea a b k3: nat):
+pub theorem writeBinopShr {k2: nat} (k sz ea a b k3: nat):
   $ writeBinop k binopShr sz ea a b k3 <->
     E. k2 (eraseFlags k k2 /\ writeEA k2 sz ea (shr a (maskShift sz b)) k3) $;
-theorem writeBinopSar {k2: nat} (k sz ea a b k3: nat):
+pub theorem writeBinopSar {k2: nat} (k sz ea a b k3: nat):
   $ writeBinop k binopSar sz ea a b k3 <->
     E. k2 (eraseFlags k k2 /\
       writeEA k2 sz ea (bitsSar (wsizeBits sz) a (maskShift sz b)) k3) $;
-theorem writeBinopAdc (k sz ea a b k2: nat): $ ~ writeBinop k binopAdc sz ea a b k2 $;
-theorem writeBinopSbb (k sz ea a b k2: nat): $ ~ writeBinop k binopSbb sz ea a b k2 $;
-theorem writeBinopRol (k sz ea a b k2: nat): $ ~ writeBinop k binopRol sz ea a b k2 $;
-theorem writeBinopRor (k sz ea a b k2: nat): $ ~ writeBinop k binopRor sz ea a b k2 $;
-theorem writeBinopRcl (k sz ea a b k2: nat): $ ~ writeBinop k binopRcl sz ea a b k2 $;
-theorem writeBinopRcr (k sz ea a b k2: nat): $ ~ writeBinop k binopRcr sz ea a b k2 $;
-theorem writeBinopT (k op sz ea a b k2: nat):
+pub theorem writeBinopAdc (k sz ea a b k2: nat): $ ~ writeBinop k binopAdc sz ea a b k2 $;
+pub theorem writeBinopSbb (k sz ea a b k2: nat): $ ~ writeBinop k binopSbb sz ea a b k2 $;
+pub theorem writeBinopRol (k sz ea a b k2: nat): $ ~ writeBinop k binopRol sz ea a b k2 $;
+pub theorem writeBinopRor (k sz ea a b k2: nat): $ ~ writeBinop k binopRor sz ea a b k2 $;
+pub theorem writeBinopRcl (k sz ea a b k2: nat): $ ~ writeBinop k binopRcl sz ea a b k2 $;
+pub theorem writeBinopRcr (k sz ea a b k2: nat): $ ~ writeBinop k binopRcr sz ea a b k2 $;
+pub theorem writeBinopT (k op sz ea a b k2: nat):
   $ k e. Config /\ sz e. WSize /\ a e. u64 /\ b e. u64 /\
     ea e. EA /\ writeBinop k op sz ea a b k2 -> op e. Binop /\ k2 e. Config $;
 
-def writeUnop (k op sz ea a k2: nat): wff;
-theorem writeUnopInc {w c o: nat} (k sz ea a k2: nat):
+@_ abstract def writeUnop (k op sz ea a k2: nat): wff;
+pub theorem writeUnopInc {w c o: nat} (k sz ea a k2: nat):
   $ writeUnop k unopInc sz ea a k2 <-> E. w E. c E. o (
       addCarry sz a 1 w c o /\
       writeCFOFResult k sz ea w (CF (readFlags k)) (true o) k2) $;
-theorem writeUnopDec {w c o: nat} (k sz ea a k2: nat):
+pub theorem writeUnopDec {w c o: nat} (k sz ea a k2: nat):
   $ writeUnop k unopDec sz ea a k2 <-> E. w E. c E. o (
       subBorrow sz a 1 w c o /\
       writeCFOFResult k sz ea w (CF (readFlags k)) (true o) k2) $;
-theorem writeUnopNot (k sz ea a k2: nat):
+pub theorem writeUnopNot (k sz ea a k2: nat):
   $ writeUnop k unopNot sz ea a k2 <->
     writeEA k sz ea (bitsNot (wsizeBits sz) a) k2 $;
-theorem writeUnopNeg {b: nat} (k sz ea a k2: nat):
+pub theorem writeUnopNeg {b: nat} (k sz ea a k2: nat):
   $ writeUnop k unopNeg sz ea a k2 <->
     [ bitsNeg (wsizeBits sz) a / b ]
     writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ ~MSB sz b) k2 $;
 
-def popAux (k q k2: nat): wff =
+@_ def popAux (k q k2: nat): wff =
 $ readEA64 k (EA_m (readReg k RSP)) q /\
   k2 = setReg k RSP (readReg k RSP +_64 8) $;
-theorem popAuxT (k q k2: nat):
+pub theorem popAuxT (k q k2: nat):
   $ k e. Config /\ popAux k q k2 -> q e. u64 /\ k2 e. Config $;
 
-def popWrite (k rm k3 .q .k2: nat): wff =
+@_ def popWrite (k rm k3 .q .k2: nat): wff =
 $ E. k2 E. q (popAux k q k2 /\ writeEA k2 (RM_EA k2 rm) wSz64 q k3) $;
-theorem popWriteT (k rm k2: nat):
+pub theorem popWriteT (k rm k2: nat):
   $ k e. Config /\ rm e. RM /\ popWrite k rm k2 -> k2 e. Config $;
 
-def popRIP (k k3 .q .k2: nat): wff =
+@_ def popRIP (k k3 .q .k2: nat): wff =
 $ E. k2 E. q (popAux k q k2 /\ k3 = writeRIP k2 q) $;
-theorem popRIPT (k rm k2: nat):
+pub theorem popRIPT (k rm k2: nat):
   $ k e. Config /\ popRIP k k2 -> k2 e. Config $;
 
-def pushAux (k q k2 .sp: nat): wff =
+@_ def pushAux (k q k2 .sp: nat): wff =
 $ E. sp (sp = readReg k RSP -_64 8 /\
     writeEA (setReg k RSP sp) (EA_m sp) wSz64 q k2) $;
-theorem pushAuxT (k q k2: nat):
+pub theorem pushAuxT (k q k2: nat):
   $ k e. Config /\ q e. u64 /\ pushAux k q k2 -> k2 e. Config $;
 
-def pushImmRM (k irm k2 .q: nat): wff =
+@_ def pushImmRM (k irm k2 .q: nat): wff =
 $ E. q (readEA64 k (immRM_EA k irm) q /\ pushAux k q k2) $;
-theorem pushImmRMT (k irm k2: nat):
+pub theorem pushImmRMT (k irm k2: nat):
   $ k e. Config /\ irm e. ImmRM /\ pushImmRM k irm k2 -> k2 e. Config $;
 
-def pushRIP (k k2 .q: nat): wff = $ pushAux k (readRIP k) k2 $;
-theorem pushRIPT (k irm k2: nat):
+@_ def pushRIP (k k2 .q: nat): wff = $ pushAux k (readRIP k) k2 $;
+pub theorem pushRIPT (k irm k2: nat):
   $ k e. Config /\ pushRIP k k2 -> k2 e. Config $;
 
-def divModSz (sz a b d m: nat): wff =
+@_ def divModSz (sz a b d m: nat): wff =
 $ b != 0 /\ d e. Bits (wsizeBits sz) /\ d = a // b /\ m = a % b $;
 
-def execXAST (k ast k2: nat): wff;
-theorem execXASTUnop {q: nat} (k op sz rm k2: nat):
+@_ abstract def execXAST (k ast k2: nat): wff;
+pub theorem execXASTUnop {q: nat} (k op sz rm k2: nat):
   $ execXAST k (xastUnop op sz rm) k2 <-> E. q (
       readEA k sz (RM_EA k rm) q /\
       writeUnop k op sz (RM_EA k rm) q k2) $;
-theorem execXASTBinop {d s: nat} (k op sz ds k2: nat):
+pub theorem execXASTBinop {d s: nat} (k op sz ds k2: nat):
   $ execXAST k (xastBinop op sz ds) k2 <-> E. d E. s (
       readEA k sz (destEA k ds) d /\
       readEA k sz (srcEA k ds) s /\
       writeBinop k op sz (destEA k ds) d s k2) $;
-theorem execXASTMul {n src res lo hi: nat} (k sz rm k2: nat):
+pub theorem execXASTMul {n src res lo hi: nat} (k sz rm k2: nat):
   $ execXAST k (xastMul sz rm) k2 <-> E. n E. src E. res (
       n = wsizeBits sz /\
       readEA k sz (RM_EA k rm) src /\
@@ -990,7 +1038,7 @@ theorem execXASTMul {n src res lo hi: nat} (k sz rm k2: nat):
         (E. lo E. hi (
           splitBits ((n <> lo) : (n <> hi) : 0) res /\
           k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $;
-theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
+pub theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
   $ execXAST k (xastDiv sz rm) k2 <-> E. n E. a E. b E. d E. m (
       n = wsizeBits sz /\
       readEA k sz (RM_EA k rm) b /\
@@ -1001,23 +1049,23 @@ theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
         (splitBits ((n <> readRegSz k sz RAX) :
                     (n <> readRegSz k sz RDX) : 0) a /\
           eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $;
-theorem execXASTLea (k sz ds k2: nat):
+pub theorem execXASTLea (k sz ds k2: nat):
   $ execXAST k (xastLea sz ds) k2 <->
     writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $;
-theorem execXASTMovSX {src: nat} (k sz ds sz2 k2: nat):
+pub theorem execXASTMovSX {src: nat} (k sz ds sz2 k2: nat):
   $ execXAST k (xastMovSX sz ds sz2) k2 <-> E. src (
       readEA k sz (srcEA k ds) src /\
       writeEA k sz2 (destEA k ds)
         (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $;
-theorem execXASTMovZX {src: nat} (k sz ds sz2 k2: nat):
+pub theorem execXASTMovZX {src: nat} (k sz ds sz2 k2: nat):
   $ execXAST k (xastMovZX sz ds sz2) k2 <-> E. src (
       readEA k sz (srcEA k ds) src /\
       writeEA k sz2 (destEA k ds) src k2) $;
-theorem execXASTXchg {v: nat} (k sz rm r k2: nat):
+pub theorem execXASTXchg {v: nat} (k sz rm r k2: nat):
   $ execXAST k (xastXchg sz rm r) k2 <-> E. v (
       readEA k sz (RM_EA k rm) v /\
       writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $;
-theorem execXASTCmpXchg {src acc dst k2: nat} (k sz rm r k3: nat):
+pub theorem execXASTCmpXchg {src acc dst k2: nat} (k sz rm r k3: nat):
   $ execXAST k (xastCmpXchg sz rm r) k3 <-> E. src E. acc E. dst E. k2 (
       acc = readRegSz k sz RAX /\
       readEA k sz (RM_EA k rm) dst /\
@@ -1025,66 +1073,66 @@ theorem execXASTCmpXchg {src acc dst k2: nat} (k sz rm r k3: nat):
       ifp (acc = dst)
         (writeEA k2 sz (RM_EA k rm) (readRegSz k sz r) k3)
         (writeEA k2 sz (EA_r RAX) dst k3)) $;
-theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
+pub theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
   $ execXAST k (xastXadd sz rm r) k2 <-> E. v (
       readEA k sz (RM_EA k rm) v /\
       writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $;
-theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
+pub theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
   $ execXAST k (xastCMov c sz ds) k2 <->
       ifp (readCond k c)
         (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
         (k2 = k) $;
-theorem execXASTSetCC {v: nat} (k c b rm k2: nat):
+pub theorem execXASTSetCC {v: nat} (k c b rm k2: nat):
   $ execXAST k (xastSetCC c b rm) k2 <->
     writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $;
-theorem execXASTJump {v: nat} (k rm k2: nat):
+pub theorem execXASTJump {v: nat} (k rm k2: nat):
   $ execXAST k (xastJump rm) k2 <-> E. v (
       readEA k wSz64 (RM_EA k rm) v /\ k2 = writeRIP k v) $;
-theorem execXASTJCC (k c q k2: nat):
+pub theorem execXASTJCC (k c q k2: nat):
   $ execXAST k (xastJCC c q) k2 <->
     k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $;
-theorem execXASTCall {k2: nat} (k irm k3: nat):
+pub theorem execXASTCall {k2: nat} (k irm k3: nat):
   $ execXAST k (xastCall irm) k3 <-> E. k2 (
     pushRIP k k2 /\ EA_jump k2 (immRM_EA k irm) k2) $;
-theorem execXASTRet {k2: nat} (k q k3: nat):
+pub theorem execXASTRet {k2: nat} (k q k3: nat):
   $ execXAST k (xastRet q) k3 <-> E. k2 (
     popRIP k k2 /\ k3 = setReg k RSP (readReg k RSP +_64 q)) $;
-theorem execXASTPush (k irm k2: nat):
+pub theorem execXASTPush (k irm k2: nat):
   $ execXAST k (xastPush irm) k2 <-> pushImmRM k irm k2 $;
-theorem execXASTPop (k rm k2: nat):
+pub theorem execXASTPop (k rm k2: nat):
   $ execXAST k (xastPop rm) k2 <-> popWrite k rm k2 $;
-theorem execXASTLeave (k k2: nat):
+pub theorem execXASTLeave (k k2: nat):
   $ execXAST k xastLeave k2 <->
     popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
-theorem execXASTCLC (k k2: nat):
+pub theorem execXASTCLC (k k2: nat):
   $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
-theorem execXASTSTC (k k2: nat):
+pub theorem execXASTSTC (k k2: nat):
   $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
-theorem execXASTCMC (k k2: nat):
+pub theorem execXASTCMC (k k2: nat):
   $ execXAST k xastCMC k2 <->
     k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
-theorem execXASTSysCall (k n k2: nat):
+pub theorem execXASTSysCall (k n k2: nat):
   $ ~ execXAST k xastSysCall k2 $; -- not handled here
 
-theorem execXASTT (k ast k2: nat):
+pub theorem execXASTT (k ast k2: nat):
   $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
 
 -- This is the step relation for the x86 semantic model, excluding IO.
 -- `step k k2` means that k2 is a possible next state after k. Multiple
 -- next states may exist in the case of undefined/nondeterministic behavior,
 -- and no next states means the state is either invalid or an IO call.
-def step (k k2 .l .ast: nat): wff =
+@_ def step (k k2 .l .ast: nat): wff =
 $ k e. Config /\ E. l E. ast (
   readMemX k (readRIP k) l /\
   decode ast l /\
   execXAST (writeRIP k (readRIP k +_64 len l)) ast k2) $;
-theorem stepT (k k2: nat): $ step k k2 -> k e. Config /\ k2 e. Config $;
+pub theorem stepT (k k2: nat): $ step k k2 -> k e. Config /\ k2 e. Config $;
 
 -- This is a valid terminating state - the state immediately before calling
 -- a system call (we model the x86-64 SYSCALL instruction instead of INT).
 -- Here k2 is the state that the kernel sees, with RCX and RIP set to
 -- the point after the call.
-def isIO (k k2 .l .rip: nat): wff =
+@_ def isIO (k k2 .l .rip: nat): wff =
 $ k e. Config /\ E. l E. rip (
   readMemX k (readRIP k) l /\
   decode xastSysCall l /\
@@ -1096,26 +1144,26 @@ $ k e. Config /\ E. l E. rip (
 ----------------------------------------
 
 -- Now we model enough of the Linux kernel to interpret a few IO system calls.
-def KernelState: set = $ Xp (Xp (List u8) (List u8)) Config $;
+@_ def KernelState: set = $ Xp (Xp (List u8) (List u8)) Config $;
 
-def stdin: nat = $ 0 $;
-def stdout: nat = $ 1 $;
+@_ def stdin: nat = $ 0 $;
+@_ def stdout: nat = $ 1 $;
 
-def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
-theorem toCStrT (s l: nat):
+@_ def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
+pub theorem toCStrT (s l: nat):
   $ s e. List u8 /\ toCStr s l -> l e. List u8 $;
 
-def readCStr (k a s .l: nat): wff = $ E. l (toCStr s l /\ readMem k a l) $;
-theorem readCStrT (k a s: nat):
+@_ def readCStr (k a s .l: nat): wff = $ E. l (toCStr s l /\ readMem k a l) $;
+pub theorem readCStrT (k a s: nat):
   $ k e. Config /\ a e. u64 /\ readCStr k a s -> s e. List u8 $;
 
-def O_RDONLY: nat = $ 0 $;
-def O_WRONLY: nat = $ 1 $;
-def O_CREAT: nat = $ shl 1 6 $;
-def O_TRUNC: nat = $ shl 1 9 $;
+@_ def O_RDONLY: nat = $ 0 $;
+@_ def O_WRONLY: nat = $ 1 $;
+@_ def O_CREAT: nat = $ shl 1 6 $;
+@_ def O_TRUNC: nat = $ shl 1 9 $;
 
-def sys_open: nat = $ 2 $;
-def execOpen (k ret .filename .flags: nat): wff =
+@_ def sys_open: nat = $ 2 $;
+@_ def execOpen (k ret .filename .flags: nat): wff =
 $ readReg k RAX = sys_open /\ E. filename E. flags (
     readCStr k (readReg k RDI) filename /\
     flags = readReg k RSI /\ readReg k RDX = 0 /\
@@ -1123,13 +1171,13 @@ $ readReg k RAX = sys_open /\ E. filename E. flags (
     ret e. u32) $;
 
 -- we only track progress through stdin
-def readFromFD (fd l l1 l2: nat): wff =
+@_ def readFromFD (fd l l1 l2: nat): wff =
 $ ifp (fd = stdin)
     (l = l1 ++ l2 /\ (l1 = 0 -> l2 = 0))
     (l = l2 /\ l1 e. List u8) $;
 
-def sys_read: nat = $ 0 $;
-def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
+@_ def sys_read: nat = $ 0 $;
+@_ def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
 $ readReg k RAX = sys_read /\ E. fd E. buf E. count (
     readReg k RDI = fd /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
@@ -1140,11 +1188,11 @@ $ readReg k RAX = sys_read /\ E. fd E. buf E. count (
         writeMem k (readReg k RSI) l1 k2))) $;
 
 -- we only track printing to stdout
-def writeToFD (fd l l1 l2: nat): wff =
+@_ def writeToFD (fd l l1 l2: nat): wff =
 $ l2 = if (fd = stdout) (l ++ l1) l $;
 
-def sys_write: nat = $ 1 $;
-def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
+@_ def sys_write: nat = $ 1 $;
+@_ def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
 $ readReg k RAX = sys_write /\ E. fd E. buf E. count (
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
@@ -1152,20 +1200,20 @@ $ readReg k RAX = sys_write /\ E. fd E. buf E. count (
       (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
 
-def Stat: set = $ Array u8 (8 * 10) $;
-def sys_fstat: nat = $ 5 $;
-def execFStat (k k2 ret .fd .stat .stat2: nat): wff =
+@_ def Stat: set = $ Array u8 (8 * 10) $;
+@_ def sys_fstat: nat = $ 5 $;
+@_ def execFStat (k k2 ret .fd .stat .stat2: nat): wff =
 $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
     fd = readReg k RDI /\ fd e. u32 /\
     readMem k (readReg k RSI) stat /\
     stat e. Stat /\ stat2 e. Stat /\
     ret e. u32 /\ writeMem k (readReg k RSI) stat2 k2) $;
 
-def sys_mmap: nat = $ 9 $;
-def MAP_PRIVATE: nat = $ 2 $;
-def MAP_ANONYMOUS: nat = $ 32 $;
-def MAP_FAILED: nat = $ bitsNeg 64 1 $;
-def execMMap (k k2 ret .len .prot .flags .fd .off .buf: nat): wff =
+@_ def sys_mmap: nat = $ 9 $;
+@_ def MAP_PRIVATE: nat = $ 2 $;
+@_ def MAP_ANONYMOUS: nat = $ 32 $;
+@_ def MAP_FAILED: nat = $ bitsNeg 64 1 $;
+@_ def execMMap (k k2 ret .len .prot .flags .fd .off .buf: nat): wff =
 $ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
     readReg k RDI = 0 /\ len = readReg k RSI /\
     prot = readReg k RDX /\ flags = readReg k 10 /\
@@ -1176,19 +1224,19 @@ $ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
         mapMem prot k ret buf k2))) $;
 
-def execIO (i o k0 i2 o2 k3 .k .k2 .ret: nat): wff =
+@_ def execIO (i o k0 i2 o2 k3 .k .k2 .ret: nat): wff =
 $ E. k E. k2 E. ret (isIO k0 k /\ k3 = setReg k2 RAX ret /\ (
     execOpen k ret /\ i2 = i /\ o2 = o /\ k2 = k \/
     execRead i k i2 k2 ret /\ o2 = o \/
     execWrite o k o2 ret /\ i2 = i /\ k2 = k \/
     execFStat k k2 ret /\ i2 = i /\ o2 = o \/
     execMMap k k2 ret /\ i2 = i /\ o2 = o)) $;
-theorem execIOT (i o k i2 o2 k2: nat):
+pub theorem execIOT (i o k i2 o2 k2: nat):
   $ i e. List u8 /\ o e. List u8 /\ k e. Config /\ execIO i o k i2 o2 k2 ->
     i2 e. List u8 /\ o2 e. List u8 /\ k2 e. Config $;
 
-def sys_exit: nat = $ ch x3 xc $;
-def execExit (k ret: nat): wff =
+@_ def sys_exit: nat = $ ch x3 xc $;
+@_ def execExit (k ret: nat): wff =
 $ readReg k RAX = sys_exit /\ ret e. u32 /\ ret = readReg k RDI $;
 
 -- This is the composite step relation for the extended state.
@@ -1197,31 +1245,31 @@ $ readReg k RAX = sys_exit /\ ret e. u32 /\ ret = readReg k RDI $;
 -- the behavior. (We could avoid this, but if we go any lower level than
 -- this we won't be able to run the result as a normal program - we will have
 -- to replace the bootloader and so on to make a single program OS.)
-def ksStep (ks ks2: nat): wff;
-theorem ksStepVal (i o k i2 o2 k2: nat):
+@_ abstract def ksStep (ks ks2: nat): wff;
+pub theorem ksStepVal (i o k i2 o2 k2: nat):
   $ ksStep ((i <> o) <> k) ((i2 <> o2) <> k2) <->
     ((i <> o) <> k) e. KernelState /\
     ((i2 = i /\ o2 = o /\ step k k2) \/ execIO i o k i2 o2 k2) $;
-theorem ksStepT (ks ks2: nat):
+pub theorem ksStepT (ks ks2: nat):
   $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
 
-def ksPath (ks l ks2: nat): wff;
-theorem ksPath0 (ks l ks2: nat):
+@_ abstract def ksPath (ks l ks2: nat): wff;
+pub theorem ksPath0 (ks l ks2: nat):
   $ ksPath ks 0 ks2 <-> ks e. KernelState /\ ks2 = ks $;
-theorem ksPathS (ks ks2 l ks3: nat):
+pub theorem ksPathS (ks ks2 l ks3: nat):
   $ ksPath ks (ks2 : l) ks3 <-> ksStep ks ks2 /\ ksPath ks2 l ks3 $;
-theorem ksPathT (ks l ks2: nat):
+pub theorem ksPathT (ks l ks2: nat):
   $ ksPath ks l ks2 ->
     ks e. KernelState /\ all KernelState l /\ ks2 e. KernelState $;
 
-def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
+@_ def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
 
 -- `alwaysTerminates k i o` asserts that starting from initial configuration k,
 -- given `i` on standard input, with the ability to read more files as
 -- necessary, the program always reaches the exit point and returns a value,
 -- and moreover, if it returns 0, then it has consumed the entire input and
 -- returned `o`. (Nondeterminism is not permitted to affect the output `o`.)
-def alwaysTerminates (k i o .ks .k2 .i2 .o2 .ret: nat): wff =
+@_ def alwaysTerminates (k i o .ks .k2 .i2 .o2 .ret: nat): wff =
 $ A. ks (ksReachable ((i <> 0) <> k) ks ->
     E. k2 E. i2 E. o2 E. ret (ksReachable ks ((i2 <> o2) <> k2) /\
       execExit k2 ret /\ (ret = 0 -> i2 = 0 /\ o2 = o))) $;
@@ -1229,7 +1277,7 @@ $ A. ks (ksReachable ((i <> 0) <> k) ks ->
 -- `succeeds k i o` asserts that starting from initial configuration k,
 -- given `i` on standard input, the program reaches the exit point and returns
 -- success (exit code 0), and puts `o` on standard out.
-def succeeds (k i o .i2 .k2: nat): wff =
+@_ def succeeds (k i o .i2 .k2: nat): wff =
 $ E. i2 E. k2 (
     ksReachable ((i <> 0) <> k) ((i2 <> o) <> k2) /\
     execExit k2 0) $;
@@ -1238,23 +1286,23 @@ $ E. i2 E. k2 (
 -- ELF file format and the initial state
 ----------------------------------------
 
-def ELF_MAGIC: nat = $ ch x7 xf : ch x4 x5 : ch x4 xc : ch x4 x6 : 0 $;
-def ELF_CLASS_64: nat = $ 2 $;
-def ELF_DATA_2LSB: nat = $ 1 $;
-def ELF_VERSION: nat = $ 1 $;
-def ELF_IDENT: nat =
+@_ def ELF_MAGIC: nat = $ ch x7 xf : ch x4 x5 : ch x4 xc : ch x4 x6 : 0 $;
+@_ def ELF_CLASS_64: nat = $ 2 $;
+@_ def ELF_DATA_2LSB: nat = $ 1 $;
+@_ def ELF_VERSION: nat = $ 1 $;
+@_ def ELF_IDENT: nat =
 $ ELF_MAGIC ++ ELF_CLASS_64 : ELF_DATA_2LSB : ELF_VERSION : repeat 0 9 $;
-theorem ELF_IDENT_T: $ ELF_IDENT e. Array u8 16 $;
+pub theorem ELF_IDENT_T: $ ELF_IDENT e. Array u8 16 $;
 
-def ET_EXEC: nat = $ u16Bytes 2 $;
-def EM_X86_64: nat = $ u16Bytes (ch x3 xe) $;
-def E_VERSION: nat = $ u32Bytes 1 $;
-def E_FLAGS: nat = $ u32Bytes 0 $;
-def EH_SIZE: nat = $ u16Bytes 64 $;
-def PH_SIZE: nat = $ u16Bytes (ch x3 x8) $;
-def SH_SIZE: nat = $ u16Bytes 64 $;
+@_ def ET_EXEC: nat = $ u16Bytes 2 $;
+@_ def EM_X86_64: nat = $ u16Bytes (ch x3 xe) $;
+@_ def E_VERSION: nat = $ u32Bytes 1 $;
+@_ def E_FLAGS: nat = $ u32Bytes 0 $;
+@_ def EH_SIZE: nat = $ u16Bytes 64 $;
+@_ def PH_SIZE: nat = $ u16Bytes (ch x3 x8) $;
+@_ def SH_SIZE: nat = $ u16Bytes 64 $;
 -- This checks the ELF header assuming x86 architecture.
-def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
+@_ def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
 $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
   phnum e. u16 /\ phnum < bitsNeg 16 1 /\
   shnum e. u16 /\ shnum < bitsNeg 16 1 /\
@@ -1263,34 +1311,34 @@ $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
         u64Bytes entry ++ u64Bytes phoff ++ u64Bytes shoff ++
         E_FLAGS ++ EH_SIZE ++ PH_SIZE ++ u16Bytes phnum ++
         SH_SIZE ++ u16Bytes shnum ++ u16Bytes shstrndx) $;
-theorem elfHeaderT (l entry phoff shoff phnum shnum: nat):
+pub theorem elfHeaderT (l entry phoff shoff phnum shnum: nat):
   $ elfHeader l entry phoff shoff phnum shnum ->
     l e. List u8 /\ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
     phnum e. u16 /\ shnum e. u16 $;
 
 -- sadly the protection flag bits for ELF are different than the memory page
 -- protection flags: R=4, W=2, X=1 for ELF; R=1, W=2, X=4 for the syscall
-def protToFlags (prot: nat): nat =
+@_ def protToFlags (prot: nat): nat =
 $ consBit (PROT_EXEC e. prot) (
     consBit (PROT_WRITE e. prot) (nat (PROT_READ e. prot))) $;
 
-def PT_LOAD: nat = $ 1 $;
-def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
+@_ def PT_LOAD: nat = $ 1 $;
+@_ def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
 $ type e. u32 /\ prot e. Prot /\ off e. u64 /\ vaddr e. u64 /\
   filesz e. u64 /\ memsz e. u64 /\ filesz <= memsz /\
   E. i (i < 64 /\ dvd (2 ^ i) vaddr /\ dvd (2 ^ i) off /\
     l = u32Bytes type ++ u32Bytes (protToFlags prot) ++
         u64Bytes off ++ u64Bytes vaddr ++ u64Bytes 0 ++
         u64Bytes filesz ++ u64Bytes memsz ++ u64Bytes (2 ^ i)) $;
-theorem pHeaderT (l type prot off vaddr filesz memsz: nat):
+pub theorem pHeaderT (l type prot off vaddr filesz memsz: nat):
   $ pHeader l type prot off vaddr filesz memsz ->
     l e. List u8 /\ type e. u32 /\ prot e. Prot /\ off e. u64 /\
     vaddr e. u64 /\ filesz e. u64 /\ memsz e. u64 $;
 
-def basicElfEH (file entry phoff .eh: nat): wff =
+@_ def basicElfEH (file entry phoff .eh: nat): wff =
 $ E. eh (sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0) $;
 
-def BasicElf (.f .entry .prot .off .seg: nat): set =
+@_ def BasicElf (.f .entry .prot .off .seg: nat): set =
 $ {f | E. entry E. prot E. off E. seg (
     entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
     f = entry <> prot <> off <> seg /\
@@ -1298,7 +1346,7 @@ $ {f | E. entry E. prot E. off E. seg (
 
 -- This defines a basic ELF file (only one program segment, no sections)
 -- and extracts the program segment and its protection and location.
-def basicElf (file elf .entry .prot .vaddr
+@_ def basicElf (file elf .entry .prot .vaddr
   .eh .ph .phoff .off .seg .memsz: nat): wff =
 $ E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
     sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0 /\
@@ -1307,13 +1355,13 @@ $ E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
     sublistAt off file seg /\
     elf = entry <> prot <> off <> (seg ++ repeat 0 (memsz - len seg))) $;
 
-def blankConfig (entry k .f .m .r: nat): wff =
+@_ def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
     k = entry <> lower ((\ r, 0) |` Regs) <> f <> m) $;
-theorem blankConfigT (entry k: nat):
+pub theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
 
-def allocStack (k k2 .sp .stack .argc .x .arg .cstr .str: nat): wff =
+@_ def allocStack (k k2 .sp .stack .argc .x .arg .cstr .str: nat): wff =
 $ E. sp E. stack E. argc (
     sp + len stack e. u64 /\
     mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) sp stack k2 /\
@@ -1324,7 +1372,7 @@ $ E. sp E. stack E. argc (
 
 -- This defines the initial state set up from a basic ELF file (only one
 -- program segment, no sections).
-def initialConfig (elf k .entry .prot .off .seg .k0 .k1: nat): wff =
+@_ def initialConfig (elf k .entry .prot .off .seg .k0 .k1: nat): wff =
 $ E. entry E. prot E. off E. seg E. k0 E. k1 (
     elf = entry <> prot <> off <> seg /\
     blankConfig entry k0 /\ allocStack k0 k1 /\
