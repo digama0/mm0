@@ -14,6 +14,11 @@
 #define ERR_MMAP 3
 
 int main(int argc, char** argv) {
+  if (sizeof(cmd32) != 5) {
+    fprintf(stderr, "Static assert: __attribute__((packed)) fail\n");
+    return 999;
+  }
+
   if (argc < 2) {
     fprintf(stderr, "Incorrect args; use 'mm0-c MMB-FILE < MM0-FILE'\n");
     return ERR_ARGS;

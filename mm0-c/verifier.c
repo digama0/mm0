@@ -480,7 +480,11 @@ void verify(u64 len, u8* file) {
     u32 sz = cmd_unpack(stmt);
     g_stmt = stmt;
     u8* next_stmt = stmt + g_data;
-    ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
+    if (!(next_stmt + CMD_MAX_SIZE <= g_end)) {
+      fprintf(stderr, "stmt: %lX, g_data: %X, len: %lX\n",
+        stmt - g_file, g_data, g_end - g_file);
+      ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
+    }
 
     switch (*stmt & 0x3F) {
       case CMD_STMT_SORT: {

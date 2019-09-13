@@ -8,6 +8,7 @@ u8 g_num_sorts; u8*   g_sorts;
 u32 g_num_terms; term* g_terms;
 u32 g_num_thms;  thm*  g_thms;
 
+#ifndef BARE
 bool gi_init = false;
 header* gi_header;
 u64* gi_sorts;
@@ -68,3 +69,4 @@ index* lookup_stmt(u8* cmd) {
     default: return 0;
   }
 }
+#endif

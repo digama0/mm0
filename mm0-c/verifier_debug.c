@@ -109,8 +109,12 @@ void debug_print_uheap() {
 }
 
 u32 debug_cmd_unpack(u8* cmd, u32* data_out) {
+  if (!cmd) {
+    fprintf(stderr, "null");
+    return 0;
+  }
   if (cmd < g_file || cmd + CMD_MAX_SIZE > g_end) {
-    fprintf(stderr, "command out of range");
+    fprintf(stderr, "%lX: command out of range", cmd - g_file);
     return 0;
   }
   switch (CMD_DATA(*cmd)) {
@@ -142,11 +146,11 @@ u32 debug_cmd_unpack(u8* cmd, u32* data_out) {
 
 void debug_print_cmd(u8* cmd, u32 data) {
   if (!cmd) return;
+  u64 pos = cmd - g_file;
   if (cmd < g_file || cmd + CMD_MAX_SIZE > g_end) {
-    fprintf(stderr, "command out of range");
+    fprintf(stderr, "%lX: command out of range", pos);
     return;
   }
-  u64 pos = cmd - g_file;
   switch (*cmd & 0x3F) {
     case CMD_END: fprintf(stderr, "%lX: End", pos); break;
 
@@ -238,7 +242,7 @@ void debug_print_cmd(u8* cmd, u32 data) {
 void debug_print_cmds(u8* cmd, u8* stop) {
   if (!cmd) return;
   if (cmd < g_file || cmd + CMD_MAX_SIZE > g_end) {
-    fprintf(stderr, "command out of range");
+    fprintf(stderr, "%lX: command out of range", cmd - g_file);
     return;
   }
   while (*cmd != CMD_END) {

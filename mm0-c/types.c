@@ -30,6 +30,7 @@ typedef struct {
   u32 num_terms;     // number of terms and defs
   u32 num_thms;      // number of axioms and theorems
 
+  // /* name** */ u32 p_sort_names; // pointer to start of sort name table
   /* term* */ u32 p_terms;  // pointer to start of term table
   /* thm*  */ u32 p_thms;   // pointer to start of theorem table
   u32 p_proof;              // pointer to start of proof section
@@ -52,12 +53,23 @@ typedef struct {
 #define TYPE_BOUND_MASK ((u64)1<<63)
 #define TYPE_SORT(type) (((type) >> 56) & 0x7F)
 
+// This struct contains data on symbol names used by the verfifier to ensure
+// that there are no name collisions. It has similar data but a different
+// purpose to the index, which contains more information about the names
+// and is unverified.
+typedef struct {
+  u32 ix;       // index into the relevant table
+  u8 kind;      // One of INDEX_KIND_SORT, INDEX_KIND_TERM, INDEX_KIND_AXIOM
+  char name[];
+} PACKED name;
+
 // An entry in the term table (8 byte aligned)
 typedef struct {
   u16 num_args;          // number of arguments
   u8 sort;               // sort of the return value, 1 in high bit means this
                          // is a definition
   u8 reserved;
+  // /* name* */ u32 p_name; // pointer to the name of the term, or 0
   /* u64* */ u32 p_args; // pointer to list of binders
   // The list of binders has n+1 elements, with the last element being
   // the return type, followed by a CMD_END-terminated unification command list
@@ -68,6 +80,7 @@ typedef struct {
 typedef struct {
   u16 num_args;           // number of arguments (expression assumptions)
   u16 reserved;
+  // /* name* */ u32 p_name; // pointer to the name of the theorem, or 0
   /* u64* */ u32 p_args; // pointer to list of binders
   // The list of binders has n elements, followed by a CMD_END-terminated
   // unification command list.
