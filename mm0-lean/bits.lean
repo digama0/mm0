@@ -95,6 +95,9 @@ instance {n} : byte_encoder (vector byte n) := ⟨λ x l, x.1 = l⟩
 instance {α β} [byte_encoder α] [byte_encoder β] : byte_encoder (α × β) :=
 ⟨λ ⟨a, b⟩ l, ∃ l1 l2, encodes a l1 ∧ encodes a l2 ∧ l = l1 ++ l2⟩
 
+def string.to_cstr (s : string) : list byte :=
+s.to_list.map (λ c, bitvec.of_nat _ c.1) ++ [0]
+
 structure pstate_result (σ α : Type*) :=
 (safe : Prop)
 (P : α → σ → Prop)

@@ -1,4 +1,4 @@
-import bits
+import bits logic.relation
 
 namespace x86
 local notation `S` := bitvec.singleton
@@ -10,6 +10,8 @@ def RCX : regnum := 1
 def RDX : regnum := 2
 def RSP : regnum := 4
 def RBP : regnum := 5
+def RSI : regnum := 6
+def RDI : regnum := 7
 
 def REX := option (bitvec 4)
 
@@ -221,7 +223,8 @@ inductive ast
 | cmc
 | clc
 | stc
-| int : byte → ast
+-- | int : byte → ast
+| syscall
 
 def ast.mov := ast.cmov cond_code.always
 
@@ -274,8 +277,7 @@ inductive decode_two (rex : REX) : ast → list byte → Prop
   let sz := op_size_W rex v in
   read_ModRM rex reg r l →
   decode_two (ast.xadd sz r reg) (b :: l)
-
-
+| syscall : decode_two ast.syscall [0x05]
 
 inductive decode_aux (rex : REX) : ast → list byte → Prop
 | binop1 (b : byte) (v d opc reg r l op) :
@@ -401,7 +403,7 @@ inductive decode_aux (rex : REX) : ast → list byte → Prop
 | cmc : decode_aux ast.cmc [0xf5]
 | clc : decode_aux ast.clc [0xf8]
 | stc : decode_aux ast.stc [0xf9]
-| int (imm) : decode_aux (ast.int imm) [0xcd, imm]
+-- | int (imm) : decode_aux (ast.int imm) [0xcd, imm]
 | hi (b : byte) (v x opc r a l1 l2) :
   split_bits b.to_nat [⟨1, S v⟩, ⟨2, 0b11⟩, ⟨1, S x⟩, ⟨4, 0xf⟩] →
   let sz := op_size_W rex v in
@@ -433,10 +435,20 @@ def cond_code.read : cond_code → flags → bool
 | (cond_code.pos c) f := c.read f
 | (cond_code.neg c) f := bnot $ c.read f
 
+structure perm := (isR isW isX : bool)
+def perm.R : perm := ⟨tt, ff, ff⟩
+def perm.W : perm := ⟨ff, tt, ff⟩
+def perm.X : perm := ⟨ff, ff, tt⟩
+
+instance : has_add perm :=
+⟨λ p1 p2, ⟨p1.isR || p2.isR, p1.isW || p2.isW, p1.isX || p2.isX⟩⟩
+
+instance : has_le perm := ⟨λ p1 p2, p1 + p2 = p2⟩
+
 structure mem :=
 (valid : qword → Prop)
-(ro : qword → Prop)
 (mem : ∀ w, valid w → byte)
+(perm : ∀ w, valid w → perm)
 
 structure config :=
 (rip : qword)
@@ -444,17 +456,21 @@ structure config :=
 (flags : flags)
 (mem : mem)
 
-def mem.read1 (m : mem) (w : qword) (b : byte) : Prop := ∃ h, b = m.mem w h
+def mem.read1 (p : perm) (m : mem) (w : qword) (b : byte) : Prop :=
+∃ h, b = m.mem w h ∧ p ≤ m.perm w h
 
-inductive mem.read (m : mem) : qword → list byte → Prop
-| nil (w) : mem.read w []
-| cons {w b l} : m.read1 w b → mem.read (w + 1) l → mem.read w (b :: l)
+inductive mem.read' (p : perm) (m : mem) : qword → list byte → Prop
+| nil (w) : mem.read' w []
+| cons {w b l} : m.read1 p w b → mem.read' (w + 1) l → mem.read' w (b :: l)
+
+def mem.read (m : mem) : qword → list byte → Prop := m.read' perm.R
+def mem.readX (m : mem) : qword → list byte → Prop := m.read' (perm.R + perm.X)
 
 def mem.set (m : mem) (w : qword) (b : byte) : mem :=
 {mem := λ w' h', if w = w' then b else m.mem w' h', ..m}
 
 inductive mem.write1 (m : mem) (w : qword) (b : byte) : mem → Prop
-| mk (h : m.valid w) : ¬ m.ro w → mem.write1 (m.set w b)
+| mk (h : m.valid w) : perm.R + perm.W ≤ m.perm w h → mem.write1 (m.set w b)
 
 inductive mem.write : mem → qword → list byte → mem → Prop
 | nil (m w) : mem.write m w [] m
@@ -525,12 +541,15 @@ def config.write_reg (k : config) (r : regnum) : ∀ sz : wsize, bitvec sz.to_na
 | Sz32 v := config.set_reg k r (EXTZ v)
 | Sz64 v := config.set_reg k r v
 
+inductive config.write_mem (k : config) : qword → list byte → config → Prop
+| mk {a l m'} : k.mem.write a l m' → config.write_mem a l {mem := m', ..k}
+
 inductive EA.write (k : config) : EA → ∀ sz : wsize, bitvec sz.to_nat → config → Prop
 | EA_r (r sz v) : EA.write (EA_r r) sz v (config.write_reg k r sz v)
-| EA_m (a) (sz : wsize) (v l m') :
+| EA_m (a) (sz : wsize) (v l k') :
   let n := sz.to_nat / 8 in
-  bits_to_byte n v l → k.mem.write a l m' →
-  EA.write (EA_m a) sz v {mem := m', ..k}
+  bits_to_byte n v l → k.write_mem a l k' →
+  EA.write (EA_m a) sz v k'
 
 def EA.writeq (k : config) (ea : EA) (sz : wsize) (q : qword) (k' : config) : Prop :=
 ea.write k sz (EXTZ q) k'
@@ -761,6 +780,89 @@ def execute : ast → pstate config unit
 | ast.clc := write_flags $ λ _ f, {CF := ff, ..f}
 | ast.cmc := write_flags $ λ _ f, {CF := bnot f.CF, ..f}
 | ast.stc := write_flags $ λ _ f, {CF := tt, ..f}
-| (ast.int _) := pstate.fail
+-- | (ast.int _) := pstate.fail
+| ast.syscall := pstate.fail
+
+inductive config.step (k : config) : config → Prop
+| mk {l a k'} :
+  k.mem.readX k.rip l →
+  decode a l →
+  ((do
+    write_rip (k.rip + bitvec.of_nat _ l.length),
+    execute a) k).P () k' →
+  config.step k'
+
+inductive config.isIO (k : config) : config → Prop
+| mk {l k'} :
+  k.mem.readX k.rip l →
+  decode ast.syscall l →
+  ((do
+    let rip := k.rip + bitvec.of_nat _ l.length,
+    write_rip rip,
+    (EA.EA_r RCX).write' Sz64 rip) k).P () k' →
+  config.isIO k'
+
+structure kcfg :=
+(input : list byte)
+(output : list byte)
+(k : config)
+
+inductive config.read_cstr (k : config) (a : qword) : string → Prop
+| mk {s : string} :
+  (∀ c : char, c ∈ s.to_list → c.1 ≠ 0) →
+  k.mem.read a s.to_cstr →
+  config.read_cstr s
+
+inductive read_from_fd (fd : qword) : list byte → list byte → list byte → Prop
+| other {i buf} : fd ≠ 0 → read_from_fd i buf i
+| stdin {i' buf} : fd = 0 → (buf = [] → i' = []) →
+  read_from_fd (buf ++ i') buf i'
+
+inductive exec_read (i : list byte) (k : config)
+  (fd : qword) (count : ℕ) :
+  list byte → config → qword → Prop
+| fail {ret} : MSB Sz32 ret → exec_read i k ret
+| success {i' dat k' ret} : ¬ MSB Sz32 ret →
+  ret.to_nat ≤ count →
+  read_from_fd fd i dat i' →
+  k.write_mem (k.regs RSI) dat k' →
+  exec_read i' k' ret
+
+inductive exec_io (i o : list byte) (k : config) : qword → list byte → list byte → config → qword → Prop
+| _open {pathname fd} :
+  k.read_cstr (k.regs RDI) pathname →
+  let flags := k.regs RSI in
+  flags.to_nat ∈ [0, 0x241] → -- O_RDONLY, or O_WRONLY | O_CREAT | O_TRUNC
+  exec_io 2 i o k fd
+| _read {buf i' k' ret} :
+  let fd := k.regs RDI, count := (k.regs RDX).to_nat in
+  k.mem.read (k.regs RSI) buf → buf.length = count →
+  exec_read i k fd count i' k' ret →
+  exec_io 0 i' o k' ret
+-- TODO: write, fstat, mmap
+
+inductive config.exit (k : config) : qword → Prop
+| mk : k.regs RAX = 0x3c → config.exit (k.regs RAX)
+
+inductive kcfg.step : kcfg → kcfg → Prop
+| noio {i o k k'} : config.step k k' → kcfg.step ⟨i, o, k⟩ ⟨i, o, k'⟩
+| io {i o k k₁ i' o' k' ret} : config.isIO k k₁ →
+  exec_io i o k₁ (k₁.regs RAX) i' o' k' ret →
+  kcfg.step ⟨i, o, k⟩ ⟨i', o', k'.set_reg RAX ret⟩
+
+def kcfg.steps : kcfg → kcfg → Prop := relation.refl_trans_gen kcfg.step
+
+def kcfg.valid (k : kcfg) : Prop :=
+(∃ k', k.step k') ∨ ∃ ret, k.k.exit ret
+
+def kcfg.safe (k : kcfg) : Prop := ∀ k', k.steps k' → k'.valid
+
+def terminates (k : config) (i o : list byte) :=
+∀ K', kcfg.steps ⟨i, [], k⟩ K' →
+  ∃ i' o' k' ret, kcfg.steps K' ⟨i', o', k'⟩ ∧
+    k'.exit ret ∧ (ret = 0 → i' = [] ∧ o' = o)
+
+def succeeds (k : config) (i o : list byte) :=
+∃ i' k', kcfg.steps ⟨i, [], k⟩ ⟨i', o, k'⟩ ∧ k'.exit 0
 
 end x86
