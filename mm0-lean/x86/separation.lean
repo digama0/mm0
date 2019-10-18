@@ -1,5 +1,4 @@
-import x86 data.set.lattice data.list.basic tactic.sanity_check
-
+import x86.x86 data.set.lattice data.list.basic
 
 namespace x86
 
@@ -165,7 +164,7 @@ def exit_kind.result (L : labels_ctx) (pos : qword) : exit_kind → sProp
 | exit_kind.straight := sProp.sn place.rip pos
 | (exit_kind.label n) := sProp.ex $ λ h, sProp.sn place.rip (L.2.nth_le n h)
 
-def stmt (n) :=
+def stmt (n) : Type :=
 labels_ctx → locals_ctx n →
 ∀ rip : qword, list byte → Prop
 
@@ -310,7 +309,7 @@ stmt.all $ λ val, hstmt
   (sProp.block dst val * sProp.block src val)
 
 def expr.set {n} (e₁ e₂ : expr n) : stmt n :=
-expr.bindS e₁ $ λ dst, expr.bindS e₂ $ block.mov dst
+expr.bindS e₁ $ λ dst, expr.bindS e₂ $ λ src, block.mov dst src
 
 inductive label | fail | label (n : ℕ)
 
@@ -404,6 +403,10 @@ def for_seq {n} (sz : qword) (max : expr n) (body : stmt (n+1)) : stmt n :=
 for sz (const' wsize.Sz64 0) (lt (const' wsize.Sz64 0) max.lift) (incr n) body
 
 ----------------------------------------
+-- Determinism
+----------------------------------------
+
+----------------------------------------
 -- Assembly
 ----------------------------------------
 
@@ -460,7 +463,7 @@ theorem sHoareIO.step {P P' : sProp} {Q : list byte → list byte → sProp}
 
 theorem sHoareIO.asm (P : sProp) (Q : list byte → list byte → sProp) :
   sHoareIO P Q :=
-λ i o, _
+λ i o, sorry
 
 theorem sHoare.mono {P Q : sProp} (H : ∀ {{k S}}, P k S → Q k S) : sHoare P Q :=
 sHoareIO.mono $ λ k S h, ⟨H h, rfl, rfl⟩

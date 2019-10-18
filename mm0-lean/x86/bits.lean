@@ -1,6 +1,84 @@
-import data.bitvec
+-- import data.bitvec
+import data.vector
 
-def bitvec.singleton (b : bool) : bitvec 1 := vector.cons b vector.nil
+@[reducible] def bitvec (n : ℕ) := vector bool n
+
+namespace bitvec
+open vector nat
+
+-- Create a zero bitvector
+@[reducible] protected def zero (n : ℕ) : bitvec n := repeat ff n
+
+-- Create a bitvector with the constant one.
+@[reducible] protected def one : Π (n : ℕ), bitvec n
+| 0        := nil
+| (succ n) := tt :: repeat ff n
+
+-- bitvec specific version of vector.append
+def append {m n} : bitvec m → bitvec n → bitvec (m + n) := vector.append
+
+def singleton (b : bool) : bitvec 1 := vector.cons b vector.nil
+
+protected def cong {a b : ℕ} (h : a = b) : bitvec a → bitvec b
+| ⟨x, p⟩ := ⟨x, h ▸ p⟩
+
+section bitwise
+  variable {n : ℕ}
+
+  def not : bitvec n → bitvec n := map bnot
+  def and : bitvec n → bitvec n → bitvec n := map₂ band
+  def or  : bitvec n → bitvec n → bitvec n := map₂ bor
+  def xor : bitvec n → bitvec n → bitvec n := map₂ bxor
+
+  def shl (x : bitvec n) (i : ℕ) : bitvec n :=
+  bitvec.cong (by simp) $ (repeat ff (min n i)).append (drop i x)
+
+  def from_bits_fill (fill : bool) : list bool → ∀ {n}, bitvec n
+  | [] n := repeat fill n
+  | (a :: l) 0 := vector.nil
+  | (a :: l) (n+1) := vector.cons a (from_bits_fill l)
+
+  def fill_shr (x : bitvec n) (i : ℕ) (fill : bool) : bitvec n :=
+  from_bits_fill fill (list.repeat ff i ++ x.1)
+
+  -- unsigned shift right
+  def ushr (x : bitvec n) (i : ℕ) : bitvec n :=
+  fill_shr x i ff
+
+end bitwise
+
+protected def of_nat : Π (n : ℕ), nat → bitvec n
+| 0        x := nil
+| (succ n) x := let ⟨b, y⟩ := bodd_div2 x in b :: of_nat n y
+
+def bits_to_nat (v : list bool) : nat := v.foldr nat.bit 0
+
+def to_nat {n} (v : bitvec n) : ℕ := bits_to_nat v.1
+
+section arith
+  variable {n : ℕ}
+
+  protected def neg {n} (v : bitvec n) : bitvec n :=
+  bitvec.of_nat _ (to_nat v.not + 1)
+
+  protected def add (x y : bitvec n) : bitvec n :=
+  bitvec.of_nat _ (to_nat x + to_nat y)
+
+  protected def sub (x y : bitvec n) : bitvec n := x.add y.neg
+
+  instance : has_zero (bitvec n) := ⟨bitvec.zero n⟩
+  instance : has_one (bitvec n)  := ⟨bitvec.one n⟩
+  instance : has_add (bitvec n)  := ⟨bitvec.add⟩
+  instance : has_sub (bitvec n)  := ⟨bitvec.sub⟩
+  instance : has_neg (bitvec n)  := ⟨bitvec.neg⟩
+
+  protected def mul (x y : bitvec n) : bitvec n :=
+  bitvec.of_nat _ (to_nat x * to_nat y)
+
+  instance : has_mul (bitvec n)  := ⟨bitvec.mul⟩
+end arith
+
+end bitvec
 
 @[reducible] def byte := bitvec 8
 
@@ -20,8 +98,8 @@ inductive split_bits : ℕ → list (Σ n, bitvec n) → Prop
 | nil : split_bits 0 []
 | zero {b l} : split_bits b l → split_bits b (⟨0, vector.nil⟩ :: l)
 | succ {b n l bs} :
-  split_bits b (⟨n, bs⟩ :: l) →
-  split_bits (nat.div2 b) (⟨n + 1, vector.cons (nat.bodd b) bs⟩ :: l)
+  split_bits (nat.div2 b) (⟨n, bs⟩ :: l) →
+  split_bits b (⟨n + 1, vector.cons (nat.bodd b) bs⟩ :: l)
 
 def from_list_byte : list byte → ℕ
 | [] := 0

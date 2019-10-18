@@ -1,4 +1,4 @@
-import bits logic.relation
+import x86.bits logic.relation
 
 namespace x86
 local notation `S` := bitvec.singleton
