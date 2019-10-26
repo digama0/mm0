@@ -10,3 +10,4 @@ out.*
 *.log
 *.exe
 *.s
+a.out

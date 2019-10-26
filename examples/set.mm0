@@ -40,7 +40,7 @@ term weq (a b: set): wff; infixl weq: $=s$ prec 50;
 term wel (a b: set): wff; infixl wel: $es.$ prec 40;
 
 def weu {x .y: set} (ph: wff x): wff = $ E. y A. x (ph <-> x =s y) $;
-prefix wex: $E!$ prec 30;
+prefix weu: $E!$ prec 30;
 theorem df_eu {x y: set} (ph: wff x):
   $ E! x ph <-> E. y A. x (ph <-> x =s y) $;
 
