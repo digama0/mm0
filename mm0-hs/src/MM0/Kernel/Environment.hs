@@ -42,14 +42,14 @@ binderBound :: PBinder -> Bool
 binderBound (PBound _ _) = True
 binderBound (PReg _ _) = False
 
-data SExpr = SVar VarName | App TermName [SExpr] deriving (Eq)
+data SExpr = SVar VarName | App TermName [SExpr] deriving (Eq, Show)
 
-instance Show SExpr where
-  showsPrec _ (SVar v) r = T.unpack v ++ r
-  showsPrec _ (App v []) r = T.unpack v ++ r
-  showsPrec n (App v vs) r =
-    let f r1 = T.unpack v ++ foldr (\e r2 -> ' ' : showsPrec 1 e r2) r1 vs in
-    if n == 0 then f r else '(' : f (')' : r)
+-- instance Show SExpr where
+--   showsPrec _ (SVar v) r = T.unpack v ++ r
+--   showsPrec _ (App v []) r = T.unpack v ++ r
+--   showsPrec n (App v vs) r =
+--     let f r1 = T.unpack v ++ foldr (\e r2 -> ' ' : showsPrec 1 e r2) r1 vs in
+--     if n == 0 then f r else '(' : f (')' : r)
 
 data Decl =
     DTerm

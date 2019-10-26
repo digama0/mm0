@@ -19,6 +19,11 @@ import MM0.Kernel.Environment
 import MM0.Kernel.Types
 import MM0.Util
 
+(<!>) :: (HasCallStack, Ord k, Show k) => M.Map k v -> k -> v
+(<!>) m k = case m M.!? k of
+  Nothing -> error $ show (M.keys m) ++ " ! " ++ show k
+  Just v -> v
+
 data VTermData = VTermData {
   _vtArgs :: [PBinder],   -- ^ Arguments
   _vtRet :: DepType,      -- ^ Return value sort
@@ -105,8 +110,10 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     modify $ \g' -> g' {vThms =
       M.insert x (VThmData vs (snd <$> hs) ret) (vThms g')}
   verifyCmd (StepInout (VIKString out)) = step >>= \case
-    SInout (IOKString False e) | not out -> verifyInputString spectxt e
-    SInout (IOKString True e) | out -> verifyOutputString e
+    SInout (IOKString False e) | not out ->
+     report () $ withContext "input" $ verifyInputString spectxt e
+    SInout (IOKString True e) | out ->
+     report () $ withContext "output" $ verifyOutputString e
     _ | out -> throwError "incorrect output step"
     _ -> throwError "incorrect input step"
 
@@ -137,7 +144,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
     defcheckExpr' e@(App t es) = do
       VTermData args (DepType ret rs) _ <- fromJustError "unknown term in def expr" (terms M.!? t)
       (m, ev) <- withContext (T.pack (show e)) $ defcheckArgs args es
-      return (ret, ev <> S.fromList ((m M.!) <$> rs))
+      return (ret, ev <> S.fromList ((m <!>) <$> rs))
 
     defcheckArgs :: [PBinder] -> [SExpr] ->
       Either String (M.Map VarName VarName, S.Set VarName)
@@ -152,7 +159,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
       go (PReg _ (DepType s vs) : args') (e : es') m ev = do
         (s', ev') <- defcheckExpr' e
         guardError "type mismatch" (s == s')
-        let ev'' = foldl' (\ev1 v -> S.delete (m M.! v) ev1) ev' vs
+        let ev'' = foldl' (\ev1 v -> S.delete (m <!> v) ev1) ev' vs
         go args' es' m (ev <> ev'')
       go _ _ _ _ | length args == length es =
         throwError ("term arguments don't match substitutions:" ++
@@ -193,7 +200,7 @@ verify spectxt env = \p -> snd <$> runGVerifyM (mapM_ verifyCmd p) env where
 typecheckVar :: M.Map VarName PBinder -> VarName ->
   Either String (Sort, Bool, S.Set VarName)
 typecheckVar ctx v = case ctx M.!? v of
-  Nothing -> throwError "undeclared variable in def expr"
+  Nothing -> throwError $ "undeclared variable " ++ show v ++ " in def expr"
   Just (PBound _ s) -> return (s, True, S.singleton v)
   Just (PReg _ (DepType s vs)) -> return (s, False, S.fromList vs)
 
@@ -216,7 +223,7 @@ typecheckExpr terms ctx = go where
   goArgs _ _ _ = throwError "term arguments don't match substitutions"
 
 substExpr :: M.Map VarName SExpr -> SExpr -> SExpr
-substExpr subst (SVar v) = subst M.! v
+substExpr subst (SVar v) = subst <!> v
 substExpr subst (App t es) = App t (substExpr subst <$> es)
 
 verifyProof :: VGlobal -> M.Map VarName PBinder -> M.Map VarName SExpr ->
@@ -327,16 +334,26 @@ verifyInputString spectxt = \e -> do
   where
   proclist :: [(T.Text, (SExpr -> StringInM) -> [SExpr] -> StringInM)]
   proclist =
-    ("s0", \_ [] s -> return s) :
-    ("s1", \f [e] -> f e) :
-    ("sadd", \f [e1, e2] s -> f e1 s >>= f e2) :
-    ("ch", \f [e1, e2] s -> f e1 s >>= f e2) :
+    ("s0", \_ -> \case
+      [] -> return
+      _ -> \_ -> throwError "invalid args") :
+    ("s1", \f -> \case
+      [e] -> f e
+      _ -> \_ -> throwError "invalid args") :
+    ("sadd", \f -> \case
+      [e1, e2] -> \s -> f e1 s >>= f e2
+      _ -> \_ -> throwError "invalid args") :
+    ("ch", \f -> \case
+      [e1, e2] -> \s -> f e1 s >>= f e2
+      _ -> \_ -> throwError "invalid args") :
     map (\i -> (T.pack ('x' : toHex i : []),
-      \_ [] s -> case spUncons s of
-        Nothing -> throwError "EOF"
-        Just (c, s') -> do
-          guardError (mismatch s) (c == fromIntegral i)
-          return s')) [0..15]
+      \_ -> \case
+        [] -> \s -> case spUncons s of
+          Nothing -> throwError "EOF"
+          Just (c, s') -> do
+            guardError (mismatch s) (c == fromIntegral i)
+            return s'
+        _ -> \_ -> throwError "invalid args")) [0..15]
 
   unify :: M.Map TermName VTermData ->
     M.Map TermName ((SExpr -> StringInM) -> [SExpr] -> StringInM) ->
@@ -347,14 +364,17 @@ verifyInputString spectxt = \e -> do
     where
 
     go :: [M.Map VarName SExpr] -> SExpr -> StringInM
-    go [] (SVar _) _ = error "free variable found"
-    go (es : stk) (SVar v) s = go stk (es M.! v) s
-    go stk (App t es) s = case terms M.! t of
-      VTermData args _ (Just ([], val)) ->
+    go [] (SVar _) _ = throwError "free variable found"
+    go (es : stk) (SVar v) s = do
+      e <- fromJustError "variable out of range" (es M.!? v)
+      go stk e s
+    go stk (App t es) s = case terms M.!? t of
+      Nothing -> throwError ("term " ++ show t ++ " not found")
+      Just (VTermData args _ (Just ([], val))) ->
         go (M.fromList (zip (binderName <$> args) es) : stk) val s
-      VTermData _ _ (Just _) ->
+      Just (VTermData _ _ (Just _)) ->
         throwError ("definition " ++ show t ++ " has dummy variables")
-      VTermData _ _ Nothing -> case procs M.!? t of
+      Just (VTermData _ _ Nothing) -> case procs M.!? t of
         Just f -> f (go stk) es s
         Nothing -> throwError ("term " ++ show t ++ " not supported")
 
@@ -376,30 +396,44 @@ verifyOutputString = \e -> do
   where
   proclist :: [(T.Text, (SExpr -> StringOutM) -> [SExpr] -> StringOutM)]
   proclist =
-    ("s0", \_ [] -> return (OString mempty)) :
-    ("s1", \f [e] -> f e) :
-    ("sadd", \f [e1, e2] ->
-      let app (OString s1) (OString s2) = OString (s1 <> s2)
-          app _ _ = error "impossible, check axioms" in
-      app <$> f e1 <*> f e2) :
-    ("ch", \f [e1, e2] ->
-      let app (OHex h1) (OHex h2) = OString $ BB.singleton $ shiftL h1 4 .|. h2
-          app _ _ = error "impossible, check axioms" in
-      app <$> f e1 <*> f e2) :
-    map (\i -> (T.pack ('x' : toHex i : []), \_ [] -> return (OHex i))) [0..15]
+    ("s0", \_ -> \case
+      [] -> return (OString mempty)
+      _ -> throwError "invalid args") :
+    ("s1", \f -> \case
+      [e] -> f e
+      _ -> throwError "invalid args") :
+    ("sadd", \f -> \case
+      [e1, e2] -> f e1 >>= \case
+        OString s1 -> f e2 >>= \case
+          OString s2 -> return $ OString (s1 <> s2)
+          _ -> throwError "impossible, check axioms"
+        _ -> throwError "impossible, check axioms"
+      _ -> throwError "invalid args") :
+    ("ch", \f -> \case
+      [e1, e2] -> f e1 >>= \case
+        OHex h1 -> f e2 >>= \case
+          OHex h2 -> return $ OString $ BB.singleton $ shiftL h1 4 .|. h2
+          _ -> throwError "impossible, check axioms"
+        _ -> throwError "impossible, check axioms"
+      _ -> throwError "invalid args") :
+    map (\i -> (T.pack ('x' : toHex i : []), \_ -> \case
+      [] -> return (OHex i)
+      _ -> throwError "invalid args")) [0..15]
 
   toString :: M.Map TermName VTermData ->
     M.Map TermName ((SExpr -> StringOutM) -> [SExpr] -> StringOutM) ->
     SExpr -> StringOutM
   toString terms procs = go [] where
     go :: [M.Map Ident SExpr] -> SExpr -> StringOutM
-    go [] (SVar _) = error "free variable found"
-    go (es : stk) (SVar v) = go stk (es M.! v)
-    go stk (App t es) = case terms M.! t of
-      VTermData args _ (Just ([], val)) ->
+    go [] (SVar _) = throwError "free variable found"
+    go (es : stk) (SVar v) =
+      fromJustError "variable out of range" (es M.!? v) >>= go stk
+    go stk (App t es) = case terms M.!? t of
+      Nothing -> throwError ("term " ++ show t ++ " not found")
+      Just (VTermData args _ (Just ([], val))) ->
         go (M.fromList (zip (binderName <$> args) es) : stk) val
-      VTermData _ _ (Just _) ->
+      Just (VTermData _ _ (Just _)) ->
         throwError ("definition " ++ show t ++ " has dummy variables")
-      VTermData _ _ Nothing -> do
+      Just (VTermData _ _ Nothing) -> do
         f <- fromJustError ("term " ++ show t ++ " not supported") (procs M.!? t)
         f (go stk) es

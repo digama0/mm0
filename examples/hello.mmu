@@ -1,27 +1,39 @@
-sort hex
-term x0  term x1  term x2  term x3
-term x4  term x5  term x6  term x7
-term x8  term x9  term xa  term xb
-term xc  term xd  term xe  term xf
+(sort hex strict free)
+(term x0 () (hex ()))
+(term x1 () (hex ()))
+(term x2 () (hex ()))
+(term x3 () (hex ()))
+(term x4 () (hex ()))
+(term x5 () (hex ()))
+(term x6 () (hex ()))
+(term x7 () (hex ()))
+(term x8 () (hex ()))
+(term x9 () (hex ()))
+(term xa () (hex ()))
+(term xb () (hex ()))
+(term xc () (hex ()))
+(term xd () (hex ()))
+(term xe () (hex ()))
+(term xf () (hex ()))
 
-sort char
-term ch
+(sort char strict free)
+(term ch ((_ hex ()) (_ hex ())) (char ()))
 
-sort string
-term s0
-term s1
-term sadd
+(sort string strict free)
+(term s0 () (string ()))
+(term s1 ((_ char ())) (string ()))
+(term sadd ((_ string ()) (_ string ())) (string ()))
 
-def nl: string = (s1 (ch x0 xa))
-def __: string = (s1 (ch x2 x0))
-def bang: string = (s1 (ch x2 x1))
+(def nl () (string ()) () (s1 (ch (x0) (xa))))
+(def __ () (string ()) () (s1 (ch (x2) (x0))))
+(def bang () (string ()) () (s1 (ch (x2) (x1))))
 
-def _H: string = (s1 (ch x4 x8))
-def _W: string = (s1 (ch x5 x7))
-def _d: string = (s1 (ch x6 x4))
-def _e: string = (s1 (ch x6 x5))
-def _l: string = (s1 (ch x6 xc))
-def _o: string = (s1 (ch x6 xf))
-def _r: string = (s1 (ch x7 x2))
+(def _H () (string ()) () (s1 (ch (x4) (x8))))
+(def _W () (string ()) () (s1 (ch (x5) (x7))))
+(def _d () (string ()) () (s1 (ch (x6) (x4))))
+(def _e () (string ()) () (s1 (ch (x6) (x5))))
+(def _l () (string ()) () (s1 (ch (x6) (xc))))
+(def _o () (string ()) () (s1 (ch (x6) (xf))))
+(def _r () (string ()) () (s1 (ch (x7) (x2))))
 
-output string
+(output string)

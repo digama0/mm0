@@ -1,6 +1,5 @@
 module MM0.Kernel.Driver where
 
-import Control.Monad
 import System.IO
 import System.Exit
 import qualified Data.ByteString as B
@@ -26,8 +25,7 @@ verifyIO args = do
     mmp : _ -> do
       pf <- parseProofOrDie <$> B.readFile mmp
       out <- liftIO' $ verify s env pf
-      when (not (null out)) $ mapM_ BL.putStr out >> exitFailure
-      putStrLn "verified"
+      if null out then putStrLn "verified" else mapM_ BL.putStr out
 
 exportIO :: [String] -> IO ()
 exportIO [] = die "error: no proof file"
