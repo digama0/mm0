@@ -67,6 +67,7 @@ do {
       [(? undef?) (error (string-append "declaration '" (->string df) "' not found"))]
       [(_ _ () ...)]
       [(_ _ bis (ret _) . rest)
+        (def G @ if (apply or (map (match-fn [('G ...) #t] [_ #f]) bis)) '_G '_G)
         @ if (def? (get-decl tgt)) (insert! eqd-map df tgt) @ begin
         (def ctx (atom-map!))
         @ match (map join @ transpose 4 @ rmap bis @ match-fn
@@ -76,10 +77,10 @@ do {
             '(() ((,v ,s ,(atom-app v 1) ,(atom-app v 2) ,(atom-app 'h v)))
               (,v1) (,v2))]) @ (xs vs es1 es2)
         (def xs1 (map hd xs))
-        (def bis '((G wff ()) . ,(append xs @ join @ rmap vs
+        (def bis '((,G wff ()) . ,(append xs @ join @ rmap vs
           @ match-fn [(v s v1 v2 hv) '((,v1 ,s ,xs1) (,v2 ,s ,xs1))])))
-        (def hs @ rmap vs @ match-fn [(v s v1 v2 hv) '(,hv (im G (,(eq-for s) ,v1 ,v2)))])
-        (def rete '(im G (,(eq-for ret) (,df . ,es1) (,df . ,es2))))
+        (def hs @ rmap vs @ match-fn [(v s v1 v2 hv) '(,hv (im ,G (,(eq-for s) ,v1 ,v2)))])
+        (def rete '(im ,G (,(eq-for ret) (,df . ,es1) (,df . ,es2))))
         (match rest
           [() (add-thm! tgt bis hs rete)]
           [(_ ds v) @ add-thm! tgt bis hs rete () @ fn ()
@@ -95,19 +96,19 @@ do {
                     [((_ _) x) '((,x) () () ,x ,x)]
                     [((_ _ _) e)
                       @ match (preproof e)
-                        [(s) '(() (,e ,e) ((,(eqidd-for s) G ,e)) ,e ,e)]
+                        [(s) '(() (,e ,e) ((,(eqidd-for s) ,G ,e)) ,e ,e)]
                         [(e1 e2 s p) (set! isrefl #f)
                           '(() (,e1 ,e2) (,p) ,e1 ,e2)]]) @ (xs ts ps es1 es2)
                   @ if isrefl (list ret) @ begin
                   @ match (eqd-for t)
                     [(? def? eqd) '((,t . ,es1) (,t . ,es2) ,ret
-                      (,eqd G . ,(append (join xs) (join ts) (join ps))))]
+                      (,eqd ,G . ,(append (join xs) (join ts) (join ps))))]
                     [_ (error @ string-append "equality theorem not found for " (->string t))]])]
               [(mk-proof e) (match (preproof e)
-                [(s) '(,e ,e (,(eqidd-for s) G ,e))]
+                [(s) '(,e ,e (,(eqidd-for s) ,G ,e))]
                 [(e1 e2 s p) (list e1 e2 p)])])
             @ match (mk-proof v) @ (t1 t2 p)
-            '(:conv ,rete (im G (,(eq-for ret)
+            '(:conv ,rete (im ,G (,(eq-for ret)
               (:unfold ,df ,es1 ,ds ,t1)
               (:unfold ,df ,es2 ,ds ,t2))) ,p)])
         (insert! eqd-map df tgt)])
@@ -144,6 +145,7 @@ do {
 
   (def (make-eqNd-thms df)
     @ match (get-decl df) @ (_ _ bis (ret _) . rest)
+    (def G @ if (apply or (map (match-fn [('G ...) #t] [_ #f]) bis)) '_G 'G)
     @ letrec (
       [mk-bis @ match-fn
         [() '(() () () () ())]
@@ -158,11 +160,11 @@ do {
           '((,v . ,pes)
             ((,v ,s) . ,vs)
             (,v ,v . ,es)
-            ((,(eqidd-for s) G ,v) . ,pp)
+            ((,(eqidd-for s) ,G ,v) . ,pp)
             ((((,v1 ,s) (,v2 ,s) . ,vs)
               (,v1 . ,pes)
               (,v2 . ,pes)
-              (im G (,(eq-for s) ,v1 ,v2))
+              (im ,G (,(eq-for s) ,v1 ,v2))
               (,v1 ,v2 . ,es)
               (h . ,pp)) .
              ,(rmap data @ match-fn @ (b t1 t2 h es ps)
@@ -172,11 +174,11 @@ do {
       (def xs1 (map hd xs))
       (def vs+ (rmap vs @ match-fn @ (v s) '(,v ,s ,xs1)))
       @ list
-        '((G wff ()) . ,(append xs vs+))
+        '((,G wff ()) . ,(append xs vs+))
         '((h ,h))
-        '(im G (,(eq-for ret) (,df . ,t1) (,df . ,t2)))
+        '(im ,G (,(eq-for ret) (,df . ,t1) (,df . ,t2)))
         (match (eqd-for df)
-          [(? def? eqd) '(,eqd G . ,(append xs1 es ps))]
+          [(? def? eqd) '(,eqd ,G . ,(append xs1 es ps))]
           [_ (error @ string-append "equality theorem not found for " (->string df))]))
 
   -- This program adds *eqNd and *eqN theorems corresponding to the definition
@@ -874,7 +876,7 @@ theorem sbseq1d (G) (a b: nat) (A: set x) (h: $ G -> a = b $):
 theorem sbseq2d (G) (a: nat x) (A B: set x)
   (h: $ G -> A == B $): $ G -> S[a / x] A == S[a / x] B $ =
 '(!! abeqd y (sbeq2d (eleq2d h)));
-@(register-eqd 'sbs) theorem sbseqd (G) (a b: nat) (A B: set x)
+@(register-eqd 'sbs) theorem sbseqd (G) {x} (a b: nat) (A B: set x)
   (h1: $ G -> a = b $) (h2: $ G -> A == B $):
   $ G -> S[a / x] A == S[b / x] B $ = '(eqstrd (sbseq1d h1) (sbseq2d h2));
 theorem sbseht (a: nat) (A B: set x) (h: $ FS/ x B $):

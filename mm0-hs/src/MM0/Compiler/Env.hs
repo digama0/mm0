@@ -297,7 +297,7 @@ instance Default InferCtx where
   def = InferCtx H.empty H.empty
 
 data ThmCtx = ThmCtx {
-  tcVars :: H.HashMap VarName PBinder,
+  tcVars :: H.HashMap VarName (PBinder, Bool),
   tcProofs :: H.HashMap VarName Int,
   tcProofList :: VD.IOVector (VarName, LispVal, LispVal),
   tcMVars :: VD.IOVector (TVar LispVal),
@@ -436,8 +436,11 @@ try = lift . runMaybeT
 
 forkElabM :: ElabM a -> ElabM (IO (Maybe a))
 forkElabM m = lift $ RWST $ \r s -> do
-  a <- efAsync r $ fst <$> evalRWST (runMaybeT m) r s
-  return (either return wait a, s, ())
+  a <- fst <$> evalRWST (runMaybeT m) r s
+  return (return a, s, ())
+  -- FIXME
+  -- a <- efAsync r $ fst <$> evalRWST (runMaybeT m) r s
+  -- return (either return wait a, s, ())
 
 lispAlloc :: LispVal -> ElabM Int
 lispAlloc v = do
@@ -518,7 +521,7 @@ modifyTC f = modify $ \env -> env {eThmCtx = f <$> eThmCtx env}
 withInfer :: ElabM a -> ElabM a
 withInfer m = modifyInfer (const def) *> m <* modifyInfer (const undefined)
 
-withTC :: H.HashMap VarName PBinder -> ElabM a -> ElabM a
+withTC :: H.HashMap VarName (PBinder, Bool) -> ElabM a -> ElabM a
 withTC vs m = do
   pv <- liftIO $ VD.new 0
   mv <- liftIO $ VD.new 0

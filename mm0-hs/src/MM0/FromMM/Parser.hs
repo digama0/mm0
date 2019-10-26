@@ -107,7 +107,7 @@ mkFrame f = do
   t <- get
   let sc@((_, _, vs) : _) = mScope t
   vs' <- fmlaVHyps f
-  return (build (mDB t) (S.union vs vs') sc ([], S.empty) (M.empty, 0))
+  return $ mapSnd fst $ build (mDB t) (S.union vs vs') sc ([], S.empty)
 
 insertDVs :: (Label -> Bool) -> DVs -> [Label] -> DVs
 insertDVs _ ds [] = ds
@@ -119,21 +119,20 @@ insertDVs f ds (v:vs) = let ds' = insertDVs f ds vs in
   insertDV1 v1 ds' v2 | f v2 = S.insert (orientPair (v1, v2)) ds'
   insertDV1 _ ds' _ = ds'
 
-build :: MMDatabase -> S.Set Label -> Scope ->
-  Frame -> (M.Map Var Int, Int) -> (Frame, M.Map Var Int)
+build :: MMDatabase -> S.Set Label -> Scope -> Frame -> (Frame, (M.Map Var Int, Int))
 build db vars = go where
-  go [] fr (m, _) = (fr, m)
-  go ((hs, ds, _) : sc) (hs', ds') m' =
-    let (hs'', m'') = insertHyps hs hs' m' in
-    go sc (hs'', foldl' (insertDVs (`S.member` vars)) ds' ds) m''
+  go [] fr = (fr, (M.empty, 0))
+  go ((hs, ds, _) : sc) (hs', ds') =
+    let (hs'', f) = insertHyps hs hs' in
+    mapSnd f $ go sc (hs'', foldl' (insertDVs (`S.member` vars)) ds' ds)
 
   insertHyps :: [(Label, Hyp)] -> [(VarStatus, T.Text)] ->
-    (M.Map Var Int, Int) -> ([(VarStatus, T.Text)], (M.Map Var Int, Int))
-  insertHyps [] hs' m = (hs', m)
-  insertHyps ((x, EHyp _ _):hs) hs' m = insertHyps hs ((VSHyp, x):hs') m
-  insertHyps ((x, VHyp s v):hs) hs' m = (hs'', (M.insert v n m', n+1)) where
+    ([(VarStatus, T.Text)], (M.Map Var Int, Int) -> (M.Map Var Int, Int))
+  insertHyps [] hs' = (hs', id)
+  insertHyps ((x, EHyp _ _):hs) hs' = insertHyps hs ((VSHyp, x):hs')
+  insertHyps ((x, VHyp s v):hs) hs' = (hs'', (\(m', n) -> (M.insert v n m', n+1)) . f) where
     hs2 = (if sPure (snd (mSorts db M.! s)) then VSBound else VSOpen, x) : hs'
-    (hs'', (m', n)) = insertHyps hs (if S.member x vars then hs2 else hs') m
+    (hs'', f) = insertHyps hs (if S.member x vars then hs2 else hs')
 
 addSort :: Sort -> Maybe Sort -> FromMMM ()
 addSort x s2 = modifyDB $ \db -> db {

@@ -181,7 +181,7 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
           Just lv -> do
             when mm0 $ reportSpan rx ELWarning "(MM0 mode) theorem proofs not accepted"
             fork <- forkElabM $ withTimeout px $
-              withTC (H.fromList $ (\bi -> (binderName bi, bi)) <$> pbs) $ do
+              withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> pbs) $ do
                 forM_ hs $ \((o, _), on, e) -> forM_ on $ \n ->
                   addSubproof n (sExprToLisp o e) (Atom False o n)
                 elabLisp eret lv
@@ -1154,19 +1154,26 @@ lispThmDecl o [List bis, List hs, ret, vis, val] = do
   ret' <- cleanTerm o ret
   vis' <- cleanVis o vis
   case val of
-    Proc f -> DTheorem vis' bis' hs' ret' <$> forkElabM (f o [] >>= cleanProofD o)
+    Proc f -> fmap (DTheorem vis' bis' hs' ret') $ forkElabM $
+      withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> bis') $
+        f o [] >>= cleanProofD o
     _ -> DTheorem vis' bis' hs' ret' . return . Just <$> cleanProofD o val
 lispThmDecl o _ = escapeSpan o "invalid theorem decl arguments"
 
+addContext :: Range -> T.Text -> ElabM a -> ElabM a
+addContext o t m = try m >>= \case
+  Nothing -> escapeSpan o t
+  Just a -> return a
+
 lispAddTerm :: Range -> [LispVal] -> ElabM ()
-lispAddTerm o (Atom _ px x : es) = do
+lispAddTerm o e@(Atom _ px x : es) = addContext o ("while adding " <> T.pack (show e)) $ do
   d <- lispTermDecl o es
   let r = textToRange px x
   insertDecl x d r r ("duplicate term/def declaration '" <> x <> "'")
 lispAddTerm o _ = escapeSpan o "invalid arguments"
 
 lispAddThm :: Range -> [LispVal] -> ElabM ()
-lispAddThm o (Atom _ px x : es) = do
+lispAddThm o e@(Atom _ px x : es) = addContext o ("while adding " <> T.pack (show e)) $ do
   d <- lispThmDecl o es
   let r = textToRange px x
   insertDecl x d r r ("duplicate axiom/theorem declaration '" <> x <> "'")
@@ -1198,7 +1205,7 @@ elabLisp t e@(Span os@(o, _) _) = do
   cleanProofD os (Ref g)
 
 cleanProofD :: Range -> LispVal -> ElabM ([(VarName, Sort)], Proof)
-cleanProofD o e = do
+cleanProofD o e = addContext o ("while cleaning " <> T.pack (show e)) $ do
   p <- cleanProof o e
   m <- execStateT (inferDummiesProof o p) M.empty
   return (M.toList m, p)
@@ -1206,8 +1213,9 @@ cleanProofD o e = do
 inferDummiesProof :: Range -> Proof -> StateT (M.Map VarName Sort) ElabM ()
 inferDummiesProof _ (PHyp _) = return ()
 inferDummiesProof o (PThm t es ps) = do
-  (_, bis, _, _) <- lift $ now >>= getThm t
-  zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
+  lift (try (now >>= getThm t)) >>= \case
+    Nothing -> lift $ escapeSpan o $ "could not find theorem " <> t
+    Just (_, bis, _, _) -> zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
   mapM_ (inferDummiesProof o) ps
 inferDummiesProof o (PConv _ c p) = inferDummiesConv o Nothing c >> inferDummiesProof o p
 inferDummiesProof o (PLet _ p1 p2) = inferDummiesProof o p1 >> inferDummiesProof o p2
@@ -1216,25 +1224,28 @@ inferDummiesProof _ PSorry = return ()
 inferDummiesConv :: Range -> Maybe Sort -> Conv -> StateT (M.Map VarName Sort) ElabM ()
 inferDummiesConv o s (CVar v) = inferDummiesVar o s v
 inferDummiesConv o _ (CApp t cs) = do
-  (_, bis, _, _) <- lift $ now >>= getTerm t
-  zipWithM_ (inferDummiesConv o . Just . binderSort) bis cs
+  lift (try (now >>= getTerm t)) >>= \case
+    Nothing -> lift $ escapeSpan o $ "could not find term " <> t
+    Just (_, bis, _, _) -> zipWithM_ (inferDummiesConv o . Just . binderSort) bis cs
 inferDummiesConv o s (CSym c) = inferDummiesConv o s c
 inferDummiesConv o s (CUnfold t es _ c) = do
-  (_, bis, _, _) <- lift $ now >>= getTerm t
-  zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
+  lift (try (now >>= getTerm t)) >>= \case
+    Nothing -> lift $ escapeSpan o $ "could not find term " <> t
+    Just (_, bis, _, _) -> zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
   inferDummiesConv o s c
 
 inferDummiesExpr :: Range -> Maybe Sort -> SExpr -> StateT (M.Map VarName Sort) ElabM ()
 inferDummiesExpr o s (SVar v) = inferDummiesVar o s v
 inferDummiesExpr o _ (App t es) = do
-  (_, bis, _, _) <- lift $ now >>= getTerm t
-  zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
+  lift (try (now >>= getTerm t)) >>= \case
+    Nothing -> lift $ escapeSpan o $ "could not find term " <> t
+    Just (_, bis, _, _) -> zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
 
 inferDummiesVar :: Range -> Maybe Sort -> VarName -> StateT (M.Map VarName Sort) ElabM ()
 inferDummiesVar o s v =
   H.lookup v . tcVars <$> lift getTC >>= \case
-    Just _ -> return ()
-    Nothing -> case s of
+    Just (_, False) -> return ()
+    _ -> case s of
       Nothing -> lift $ escapeSpan o $ "cannot infer type for " <> v
       Just s' -> gets (M.lookup v) >>= \case
         Nothing -> modify (M.insert v s')
@@ -1430,16 +1441,16 @@ toExpr _ _ (RExact _ e) = return e -- TODO: check type
 toExpr s bd (RApp _ o "_" _) = Ref <$> newMVar o s bd
 toExpr s bd (RApp _ o t es) =
   (if null es then H.lookup t . tcVars <$> getTC else return Nothing) >>= \case
-    Just (PBound _ s') -> do
+    Just (PBound _ s', _) -> do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
       return $ Atom False o t
-    Just (PReg _ (DepType s' _)) -> do
+    Just (PReg _ (DepType s' _), _) -> do
       unless (s == s') $ reportAt o ELError "variable has the wrong sort"
       when bd $ reportAt o ELError "expected a bound variable"
       return $ Atom False o t
     Nothing -> (if bd then return Nothing else try (now >>= getTerm t)) >>= \case
       Nothing | null es -> do
-        modifyTC $ \tc -> tc {tcVars = H.insert t (PBound t s) (tcVars tc)}
+        modifyTC $ \tc -> tc {tcVars = H.insert t (PBound t s, True) (tcVars tc)}
         return $ Atom False o t
       Nothing -> escapeAt o $ "unknown term '" <> t <> "'"
       Just (_, bis, ret, _) -> do
