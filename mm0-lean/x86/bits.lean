@@ -105,9 +105,8 @@ def from_list_byte : list byte → ℕ
 | [] := 0
 | (b :: l) := b.to_nat + 0x100 * from_list_byte l
 
-inductive bits_to_byte {n} (m) (w : bitvec n) : list byte → Prop
-| mk (bs : vector byte m) : split_bits w.to_nat (bs.1.map (λ b, ⟨8, b⟩)) →
-  bits_to_byte bs.1
+def bits_to_byte {n} (m) (w : bitvec n) (l : list byte) : Prop :=
+l.length = m ∧ split_bits w.to_nat (l.map (λ b, ⟨8, b⟩))
 
 def short.to_list_byte : short → list byte → Prop := bits_to_byte 2
 
@@ -125,7 +124,7 @@ def EXTS {m n} (v : bitvec n) : bitvec m := EXTS_aux v.1 ff
 def EXTZ_aux : list bool → ∀ {m}, bitvec m
 | []     m     := vector.repeat ff _
 | (a::l) 0     := vector.nil
-| (a::l) (m+1) := vector.cons a (EXTS_aux l a)
+| (a::l) (m+1) := vector.cons a (EXTZ_aux l)
 
 def EXTZ {m n} (v : bitvec n) : bitvec m := EXTZ_aux v.1
 

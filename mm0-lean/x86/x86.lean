@@ -61,7 +61,7 @@ inductive read_SIB (rex : REX) (mod : Mod) : RM → list byte → Prop
       scaled_index : option scale_index :=
         if index = RSP then none else some ⟨SS, index⟩ in
   read_sib_displacement mod bbase disp bbase' l →
-  read_SIB (RM.mem scaled_index bbase' disp) l
+  read_SIB (RM.mem scaled_index bbase' disp) (b :: l)
 
 inductive read_ModRM (rex : REX) : regnum → RM → list byte → Prop
 | imm32 (b : byte) (reg_opc : bitvec 3) (i : word) (disp) :
@@ -78,6 +78,7 @@ inductive read_ModRM (rex : REX) : regnum → RM → list byte → Prop
   read_ModRM (rex_reg rex.R reg_opc) sib (b :: l)
 | mem (b : byte) (rm reg_opc : bitvec 3) (mod : Mod) (disp l) :
   split_bits b.to_nat [⟨3, rm⟩, ⟨3, reg_opc⟩, ⟨2, mod⟩] → rm ≠ 0b100 →
+  ¬ (rm = 0b101 ∧ mod = 0b00) →
   read_displacement mod disp l →
   read_ModRM (rex_reg rex.R reg_opc)
     (RM.mem none (base.reg (rex_reg rex.B rm)) disp) (b :: l)
@@ -251,13 +252,11 @@ inductive decode_two (rex : REX) : ast → list byte → Prop
   decode_two (ast.cmov code sz (R_rm reg r)) (b :: l)
 | jcc (b : byte) (c imm l code) :
   split_bits b.to_nat [⟨4, c⟩, ⟨4, 0x8⟩] →
-  let sz := op_size tt rex.W tt in
   read_imm32 imm l →
   cond_code.bits code c →
   decode_two (ast.jcc code imm) (b :: l)
 | setcc (b : byte) (c reg r l code) :
   split_bits b.to_nat [⟨4, c⟩, ⟨4, 0x9⟩] →
-  let sz := op_size tt rex.W tt in
   read_ModRM rex reg r l →
   cond_code.bits code c →
   decode_two (ast.setcc code rex.is_some r) (b :: l)

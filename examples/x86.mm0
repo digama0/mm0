@@ -155,11 +155,12 @@ theorem readSIBDisplacementT (mod bbase q base l: nat):
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ base e. Base /\ l e. List u8 $;
 
 def readSIB (rex mod rm l .b .bs .ix .sc .disp .bbase .index: nat): wff =
-$ E. b E. bs E. ix E. sc E. disp E. bbase E. index (
+$ E. b E. l2 E. bs E. ix E. sc E. disp E. bbase E. index (
     splitBits ((3 <> bs) : (3 <> ix) : (2 <> sc) : 0) b /\
     index = rex_reg (REX_X rex) ix /\
-    readSIBDisplacement mod (rex_reg (REX_B rex) bs) disp bbase l /\
-    rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp) $;
+    readSIBDisplacement mod (rex_reg (REX_B rex) bs) disp bbase l2 /\
+    rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp /\
+    l = b : l2) $;
 theorem readSIBT (rex mod rm l: nat):
   $ readSIB rex mod rm l ->
     mod e. Bits 2 /\ mod != 3 /\ rm e. RM /\ l e. List u8 $;
@@ -167,18 +168,18 @@ theorem readSIBT (rex mod rm l: nat):
 def readModRM (rex rn rm l .b .rm2 .opc .mod .i .l2 .disp: nat): wff =
 $ E. b E. rm2 E. opc E. mod (
     splitBits ((3 <> rm2) : (3 <> opc) : (2 <> mod) : 0) b /\
-    (rm2 = 5 /\ mod = 0 /\ E. i (i e. u32 /\
-      rn = rex_reg (REX_R rex) opc /\
-      rm = RM_mem 0 base_RIP (sExtq 32 i) /\
-      l = b : u32Bytes i)) \/
-    (mod = 3 /\
-      rn = rex_reg (REX_R rex) opc /\
-      rm = RM_reg (rex_reg (REX_B rex) rm2) /\
-      l = b : 0) \/
-    E. l2 (rn = rex_reg (REX_R rex) opc /\ l = b : l2 /\
-      ifp (rm2 = 4) (readSIB rex mod rm l2)
-        (E. disp (readDisplacement mod disp l2 /\
-          rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))) $;
+    rn = rex_reg (REX_R rex) opc /\
+    ifp (mod = 3)
+      (rm = RM_reg (rex_reg (REX_B rex) rm2) /\
+        l = b : 0)
+      (ifp (rm2 = 5 /\ mod = 0)
+        (E. i (i e. u32 /\
+          rm = RM_mem 0 base_RIP (sExtq 32 i) /\
+          l = b : u32Bytes i))
+        (E. l2 (l = b : l2 /\
+          ifp (rm2 = 4) (readSIB rex mod rm l2)
+            (E. disp (readDisplacement mod disp l2 /\
+              rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))))) $;
 theorem readModRMT (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $;
 
