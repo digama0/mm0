@@ -183,15 +183,13 @@ inductive hoare_p (Q : kcfg → Prop) : kcfg → Prop
 | exit (k : kcfg) (ret) :
   k.k.exit ret → (ret = 0 → Q k) → hoare_p k
 
-def hoare (P Q : kcfg → Prop) :=
-∀ {{k}}, P k → hoare_p Q k
+def hoare (P : kcfg → Prop) (Q : kcfg → kcfg → Prop) :=
+∀ {{k}}, P k → hoare_p (Q k) k
 
-def sHoareIO (P : sProp) (Q : list byte → list byte → sProp) :=
-∀ {{i o}}, hoare (λ k, P k.k ∧ k.input = i ∧ k.output = o)
-  (λ k, ∃ i' o', i = i' ++ k.input ∧ o = k.output ++ o' ∧
-    (Q i' o') k.k)
 def mHoareIO (P : sProp) (Q : list byte → list byte → mProp) :=
-sHoareIO P (λ i o, (Q i o).apply P)
+∀ {{i o}}, hoare (λ k, P k.k ∧ k.input = i ∧ k.output = o)
+  (λ k k', ∃ i' o', i = i' ++ k.input ∧ o = k.output ++ o' ∧
+    (Q i' o') k.k k'.k)
 
 def noIO (Q : mProp) (i o : list byte) : mProp := Q.with (i = [] ∧ o = [])
 def mHoare (P : sProp) (Q : mProp) := mHoareIO P (noIO Q)
@@ -460,5 +458,124 @@ bool_binop (λ a b : qword, a.to_nat < b.to_nat) e₁ e₂
 
 def for_seq (sz : qword) (max : expr qword) (body : name qword → stmt) : stmt :=
 for (const' (0 : qword)) (λ i, ltq (const' 0) max) (λ i, incr (var i)) body
+
+----------------------------------------
+-- Assembly
+----------------------------------------
+
+theorem hoare_p.mono {P P' : kcfg → Prop}
+  (H : ∀ {{k}}, P k → P' k) {k} : hoare_p P k → hoare_p P' k :=
+begin
+  intro h, induction h,
+  exact hoare_p.zero (H h_a),
+  exact hoare_p.step h_a (λ k', h_ih _),
+  exact hoare_p.exit _ _ h_a (λ e, H (h_a_1 e)),
+end
+
+theorem hoare.zero {P : kcfg → Prop} {Q : kcfg → kcfg → Prop}
+  (H : ∀ {{k}}, P k → Q k k) : hoare P Q :=
+λ k p, hoare_p.zero (H p)
+
+theorem hoare.step {P P' : kcfg → Prop} {Q Q' : kcfg → kcfg → Prop}
+  (h₁ : ∀ {{k}}, P k → ∃ k', k.step k')
+  (h₂ : ∀ {{k}}, P k → ∀ {{k'}}, k.step k' → P' k' ∧ ∀ {{k''}}, Q' k' k'' → Q k k'')
+  (h₃ : hoare P' Q') : hoare P Q :=
+λ k p, hoare_p.step (h₁ p) (λ k' s, hoare_p.mono (h₂ p s).2 (h₃ (h₂ p s).1))
+
+theorem hoare.mono_l {P P' : kcfg → Prop} {Q : kcfg → kcfg → Prop}
+  (H : ∀ {{k}}, P k → P' k) : hoare P' Q → hoare P Q :=
+λ H' k h, H' (H h)
+
+theorem hoare.mono_r {P : kcfg → Prop} {Q Q' : kcfg → kcfg → Prop}
+  (H : ∀ {{k k'}}, Q k k' → Q' k k') : hoare P Q → hoare P Q' :=
+λ H' k h, hoare_p.mono (@H _) (H' h)
+
+theorem mHoareIO.zero {P : sProp} {Q : list byte → list byte → mProp}
+  (H : ∀ {{k}}, P k → Q [] [] k k) : mHoareIO P Q :=
+λ i o, hoare.zero $ by rintro k ⟨h, rfl, rfl⟩; exact
+  ⟨[], [], rfl, (list.append_nil _).symm, H h⟩
+
+theorem mHoareIO.mono_l {P P' : sProp} {Q : list byte → list byte → mProp}
+  (H : ∀ {{k}}, P k → P' k) : mHoareIO P' Q → mHoareIO P Q :=
+λ h i o, hoare.mono_l (by exact λ k ⟨h₁, h₂⟩, ⟨H h₁, h₂⟩) (@h i o)
+
+theorem mHoareIO.mono_r {P : sProp} {Q Q' : list byte → list byte → mProp}
+  (H : ∀ {{i o k k'}}, Q i o k k' → Q' i o k k') : mHoareIO P Q → mHoareIO P Q' :=
+λ h i o, hoare.mono_r (by exact λ k k' ⟨i', o', h₁, h₂, h₃⟩,
+  ⟨i', o', h₁, h₂, H h₃⟩) (@h i o)
+
+theorem mHoareIO.step {P P' : sProp} {Q Q' : list byte → list byte → mProp}
+  (H₁ : ∀ ⦃k i o⦄, P k → ∃ k', kcfg.step ⟨i, o, k⟩ k')
+  (H₂ : ∀ {{k₁ i₁ o₁ k₂ i₂ o₂}}, P k₁ →
+    kcfg.step ⟨i₁, o₁, k₁⟩ ⟨i₂, o₂, k₂⟩ → P' k₂ ∧ i₂ = i₁ ∧ o₂ = o₁ ∧
+      ∀ {{k₃}}, Q' [] [] k₂ k₃ → Q [] [] k₁ k₃)
+  (H₃ : mHoareIO P' Q') : mHoareIO P Q :=
+λ i o, begin
+  refine hoare.step (λ ⟨i', o', k⟩ h, H₁ h.1) _ (@H₃ i o),
+  rintro ⟨i₁, o₁, k₁⟩ ⟨h, rfl, rfl⟩ ⟨i₂, o₂, k₂⟩ h',
+  rcases @H₂ k₁ i₁ o₁ k₂ i₂ o₂ h h' with ⟨h₁, rfl, rfl, h₄⟩,
+  refine ⟨⟨h₁, rfl, rfl⟩, _⟩,
+  rintro k₃ ⟨i', o', e₁, e₂, h₅⟩,
+  refine ⟨i', o', e₁, e₂, _⟩,
+  cases ((list.append_right_inj _).1 e₁ : [] = i'),
+  cases ((list.append_left_inj _).1 ((list.append_nil _).trans e₂) : [] = o'),
+  exact h₄ h₅
+end
+
+theorem mHoareIO.asm (P : sProp) (Q : list byte → list byte → mProp) :
+  mHoareIO P Q :=
+λ i o, sorry
+
+theorem sHoare.mono {P Q : sProp} (H : ∀ {{k}}, P k → Q k) : sHoare P Q :=
+sHoareIO.mono $ λ k S h, ⟨H h, rfl, rfl⟩
+
+theorem sHoare.mono_l {P P' Q : sProp}
+  (H : ∀ {{k S}}, P k S → P' k S) : sHoare P' Q → sHoare P Q :=
+sHoareIO.mono_l H
+
+theorem sHoare.mono_r {P Q Q' : sProp}
+  (H : ∀ {{k S}}, Q k S → Q' k S) : sHoare P Q → sHoare P Q' :=
+sHoareIO.mono_r $ λ i o k S ⟨h₁, h₂⟩, ⟨H h₁, h₂⟩
+
+theorem config.isIO_terminal {k} :
+  (∃ k', config.step k k') → ¬ ∃ k', k.isIO k' := sorry
+
+theorem sHoare.step {P P' Q : sProp}
+  (h₁ : ∀ ⦃k S⦄, P k S → ∃ k', config.step k k')
+  (h₂ : ∀ ⦃k S⦄, P k S → ∀ k', config.step k k' → P' k' S) :
+  sHoare P' Q → sHoare P Q :=
+sHoareIO.step
+  (λ k i o S h, let ⟨k', h'⟩ := h₁ h in ⟨_, kcfg.step.noio h'⟩)
+  (λ k₁ i₁ o₁ k₂ i₂ o₂ S h h', begin
+    cases h', exact ⟨h₂ h _ h'_a, rfl, rfl⟩,
+    cases config.isIO_terminal (h₁ h) ⟨_, h'_a⟩
+  end)
+
+def stmt.asm {n} (s : stmt n) := Π L Γ rip, ∃ v, s L Γ rip v
+
+theorem hstmt.step {n} {P P' Q : sProp}
+  (h₁ : ∀ (L : labels_ctx) (Γ : locals_ctx n) rip,
+    ∃ l, ∀ v k S,
+    (P * sProp.sn place.rip rip *
+        sProp.mem_block (perm.R + perm.X) rip (l ++ v)) k S →
+    ∃ a k', decode a l ∧
+      (write_rip (k.rip + bitvec.of_nat 64 l.length) k).P () k' ∧
+      (execute a k').P () k ∧
+      ∀ H, P k H → P' k' H)
+  (h₂ : (@hstmt n P' Q).asm)
+  : (@hstmt n P Q).asm :=
+λ L Γ rip, let ⟨l, H⟩ := h₁ L Γ rip, ⟨v, H₂⟩ := h₂ L Γ rip in
+⟨l ++ v, begin
+  refine sHoare.step (λ k S h, _) (λ k S h k', _) (sHoare.mono_r _ H₂),
+  { rcases H v k S h with ⟨a, k', h₃, h₄, h₅, h₆⟩,
+    have : mem.readX (k.mem) (k.rip) l, sorry,
+    exact ⟨k, this, h₃, (), k', h₄, h₅⟩ },
+  { rintro ⟨l, a, _, m, d, h⟩,
+    sorry },
+  sorry,
+end⟩
+
+theorem hstmt.asm {n} (P : sProp) (Q : sProp) : (@hstmt n P Q).asm :=
+sorry
 
 end x86
