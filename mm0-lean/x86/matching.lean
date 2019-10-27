@@ -239,17 +239,17 @@ def stmt.or (s₁ s₂ : stmt) : stmt :=
 def stmt.stabilize (S : set place) (s : stmt) : stmt :=
 λ L Γ D, s L Γ (D ∪ S)
 
-def expr := block → stmt
+def expr (α : Type) := block → stmt
 
-def expr.hoareIO (P : sProp) (E : expr)
+def expr.hoareIO {α} (P : sProp) (E : expr α)
   (Q : block → list byte → list byte → mProp) : Prop :=
 ∀ b, (E b).hoareIO P $
   λ e i o, exit_kind.cases_on e (Q b i o) (λ n, mlift false)
 
-def expr.hoare (P : sProp) (E : expr) (Q : block → mProp) : Prop :=
+def expr.hoare {α} (P : sProp) (E : expr α) (Q : block → mProp) : Prop :=
 expr.hoareIO P E (λ ret, noIO (Q ret))
 
-def expr.stabilize (S : set place) (s : expr) : expr := λ b, (s b).stabilize S
+def expr.stabilize {α} (S : set place) (s : expr α) : expr α := λ b, (s b).stabilize S
 
 class value (α : Type*) :=
 (size : ℕ)
@@ -285,10 +285,6 @@ instance (α) [value α] : type α :=
   λ a b k k' ⟨v, h₁, h₂⟩, by rw [← h₁.size, @value.eval_eq α _ a v h₂],
   λ a v k k' ⟨s, h₁, h₂⟩, ⟨_, _, block.read_write h₁, h₂, rfl⟩,
   λ a l s k k' ⟨v, h₁, h₂, e⟩ ss, ⟨v, h₁.stable (e ▸ ss), h₂, e⟩⟩
-
-def expr.hoareT (P : sProp) (E : expr) {α} [type α] (Q : α → set place → mProp) : Prop :=
-expr.hoare P E $ λ v,
-mProp.ex $ λ a, mProp.ex $ λ s, (Q a s).final (type.read a v s)
 
 theorem bits_to_byte_length {n m w v} : @bits_to_byte n m w v → v.length = m :=
 by rintro ⟨bs⟩; exact bs.2
@@ -327,27 +323,29 @@ instance box.type (α) [type α] : type (box α) :=
     let ⟨ss₁, ss₂⟩ := set.union_subset_iff.1 (by rwa e at ss) in
     ⟨a, l, s', h₁.stable ss₁, h₂, type.read_stable h₃ ss₂, e⟩⟩
 
-def ret (b : block) : expr :=
+def ret (α) (b : block) : expr α :=
 λ bl L Γ D a v, bl = b ∧ v = []
 
-def const (l : list byte) : expr := ret (block.const l)
+def const (α) (l : list byte) : expr α := ret α (block.const l)
 
-def var (i : ℕ) : expr :=
+def name (α : Type) := ℕ
+
+def var {α} (i : name α) : expr α :=
 λ bl L Γ D a v, bl ∈ Γ.get i ∧ v = []
 
-def hexpr (P : sProp) (Q : block → mProp) : expr :=
+def hexpr {α} (P : sProp) (Q : block → mProp) : expr α :=
 λ ret, hstmt P (Q ret)
 
-def expr.all {α} (e : α → expr) : expr :=
+def expr.all {α β} (e : α → expr β) : expr β :=
 λ ret, stmt.all $ λ a, e a ret
 
-def expr.ex {α} (e : α → expr) : expr :=
+def expr.ex {α β} (e : α → expr β) : expr β :=
 λ ret, stmt.ex $ λ a, e a ret
 
-def expr.with (p : Prop) (s : expr) : expr :=
+def expr.with {α} (p : Prop) (s : expr α) : expr α :=
 expr.ex $ λ h : p, s
 
-def const' {α} [type α] (a : α) : expr :=
+def const' {α} [type α] (a : α) : expr α :=
 hexpr ⊤ $ λ b, mProp.final mProp.id (type.read' a b)
 
 inductive stmt.seq (s₁ : stmt) (s₂ : stmt) : stmt
@@ -356,20 +354,20 @@ inductive stmt.seq (s₁ : stmt) (s₂ : stmt) : stmt
   s₂ L Γ D (rip + v₁.length) v₂ →
   stmt.seq L Γ D rip (v₁ ++ v₂)
 
-inductive expr.bindS (e₁ : expr) (s₂ : block → stmt) : stmt
+inductive expr.bindS {α} (e₁ : expr α) (s₂ : block → stmt) : stmt
 | mk {b L Γ D rip v₁ v₂} :
   e₁ b L Γ D rip v₁ →
   s₂ b L Γ D (rip + v₁.length) v₂ →
   expr.bindS L Γ D rip (v₁ ++ v₂)
 
-def expr.bind (e₁ : expr) (e₂ : block → expr) : expr :=
+def expr.bind {α β} (e₁ : expr α) (e₂ : block → expr β) : expr β :=
 λ b₂, expr.bindS e₁ $ λ b₁, e₂ b₁ b₂
 
 def block.mov (dst src : block) : stmt :=
 stmt.with (dst.size = src.size) $
 stmt.all $ λ val, hstmt (block.read src val) (block.write dst val)
 
-def expr.set (e₁ e₂ : expr) : stmt :=
+def expr.set {α} (e₁ e₂ : expr α) : stmt :=
 expr.bindS e₁ $ λ dst, expr.bindS e₂ $ λ src, block.mov dst src
 
 inductive label | fail | label (n : ℕ)
@@ -420,47 +418,47 @@ block_stmt $ loop $
   s.seq $
   stmt.jump (label.label 0)
 
-def decl_block (b : block) (s : ℕ → stmt) : stmt :=
+def decl_block {α} (b : block) (s : name α → stmt) : stmt :=
 λ L Γ D rip v, ∃ i, s i L (Γ.insert i b) D rip v
 
-def decl (sz : qword) (s : ℕ → stmt) : stmt :=
+def decl {α} (sz : qword) (s : name α → stmt) : stmt :=
 stmt.ex $ λ b, stmt.with (block.size b = sz) $ decl_block b s
 
-def init (e : expr) (s : ℕ → stmt) : stmt :=
+def init {α} (e : expr α) (s : name α → stmt) : stmt :=
 e.bindS $ λ b, decl_block b s
 
 def binop_expr {α β γ} [type α] [type β] [type γ]
-  (f : α → β → γ) (e₁ e₂ : expr) : expr :=
+  (f : α → β → γ) (e₁ : expr α) (e₂ : expr β) : expr γ :=
 e₁.bind $ λ b₁, e₂.bind $ λ b₂ b, stmt.ex $ λ x, stmt.ex $ λ y,
 hstmt (type.read' x b₁ ⊓ type.read' y b₂) (type.write (f x y) b)
 
-def asn_binop {α β} [type α] [type β] (f : α → β → α) (e₁ e₂ : expr) : stmt :=
-e₁.bindS $ λ b₁, (ret b₁).set (binop_expr f (ret b₁) e₂)
+def asn_binop {α β} [type α] [type β] (f : α → β → α) (e₁ : expr α) (e₂ : expr β) : stmt :=
+e₁.bindS $ λ b₁, (ret α b₁).set (binop_expr f (ret α b₁) e₂)
 
 def unop_expr {α β} [type α] [type β]
-  (f : α → β) (e : expr) : expr :=
+  (f : α → β) (e : expr α) : expr β :=
 e.bind $ λ b₁ b, stmt.ex $ λ x,
 hstmt (type.read' x b₁) (type.write (f x) b)
 
-def asn_unop {α} [type α] (f : α → α) (e : expr) : stmt :=
-e.bindS $ λ b, (ret b).set (unop_expr f (ret b))
+def asn_unop {α} [type α] (f : α → α) (e : expr α) : stmt :=
+e.bindS $ λ b, (ret α b).set (unop_expr f (ret α b))
 
-def for (start : expr) (test : ℕ → boolexpr) (incr body : ℕ → stmt) : stmt :=
+def for {α} (start : expr α) (test : name α → boolexpr) (incr body : name α → stmt) : stmt :=
 init start $ λ i, while (test i) $ (body i).seq (incr i)
 
-def incr (α) [type α] [has_add α] [has_one α] : expr → stmt :=
-asn_unop (+ (1 : α))
+def incr {α} [type α] [has_add α] [has_one α] : expr α → stmt :=
+asn_unop (+ 1)
 
 def bool_binop {α β} [type α] [type β]
-  (f : α → β → bool) (e₁ e₂ : expr) : boolexpr :=
+  (f : α → β → bool) (e₁ : expr α) (e₂ : expr β) : boolexpr :=
 λ p, e₁.bindS $ λ b₁, e₂.bindS $ λ b₂, stmt.ex $ λ x, stmt.ex $ λ y,
 hstmt (type.read' x b₁ ⊓ type.read' y b₂)
   (mProp.final mProp.id (λ k, p k.flags = f x y))
 
-def lt (e₁ e₂ : expr) : boolexpr :=
+def ltq (e₁ e₂ : expr qword) : boolexpr :=
 bool_binop (λ a b : qword, a.to_nat < b.to_nat) e₁ e₂
 
-def for_seq (sz : qword) (max : expr) (body : ℕ → stmt) : stmt :=
-for (const' (0 : qword)) (λ i, lt (const' (0 : qword)) max) (λ i, incr qword (var i)) body
+def for_seq (sz : qword) (max : expr qword) (body : name qword → stmt) : stmt :=
+for (const' (0 : qword)) (λ i, ltq (const' 0) max) (λ i, incr (var i)) body
 
 end x86
