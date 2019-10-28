@@ -2,7 +2,6 @@ import x86.x86 data.list.basic
 
 namespace bitvec
 
-
 @[class] def reify {n} (v : bitvec n) (l : out_param (list bool)) : Prop :=
 from_bits_fill ff l = v
 
@@ -136,6 +135,10 @@ begin
   rw [of_nat_bit, of_nat_to_nat],
 end
 
+theorem add_zero {n} (v : bitvec n) : v + 0 = v :=
+show bitvec.of_nat _ _ = _,
+by rw [to_nat_zero, add_zero, of_nat_to_nat]
+
 instance reify_0 {n} : @reify n 0 [] := rfl
 
 instance reify_1 {n} : @reify n 1 [tt] :=
@@ -170,12 +173,6 @@ subtype.eq $ bits_to_nat_inj h (v₁.2.trans v₂.2.symm)
 end bitvec
 
 namespace x86
-
-def decoder := state_t (list byte) option
-instance : monad decoder := state_t.monad
-
-def read1 : decoder byte :=
-⟨λ l, list.cases_on l none (λ b l, some (b, l))⟩
 
 def split_bits_spec : list (Σ n, bitvec n) → list bool → Prop
 | [] l := list.all l bnot
@@ -474,45 +471,72 @@ theorem read_ModRM.determ {rex reg1 r1 reg2 r2 l}
 by cases read_ModRM.determ_aux h₁
   (by rw list.append_nil; exact h₂); refl
 
-theorem read_ModRM.determ₂_aux {rex reg1 r1 reg2 r2 l1 l2 l1' l2'}
-  (h₁ : read_ModRM rex reg1 r1 l1)
-  (h₂ : read_ModRM rex reg2 r2 l2)
-  (e : ∃ a', l2 = l1 ++ a' ∧ l1' = a' ++ l2') :
-  (l1, l1') = (l2, l2') :=
-begin
-  rcases e with ⟨l3, rfl, rfl⟩,
-  cases read_ModRM.determ_aux h₁ h₂, simp,
-end
-
 theorem read_ModRM.determ₂ {rex reg1 r1 reg2 r2 l1 l2 l1' l2'}
   (h₁ : read_ModRM rex reg1 r1 l1)
   (h₂ : read_ModRM rex reg2 r2 l2)
   (e : l1 ++ l1' = l2 ++ l2') : (reg1, r1, l1, l1') = (reg2, r2, l2, l2') :=
 begin
+  have : ∀ {reg1 r1 reg2 r2 l1 l2 l1' l2'}
+    (h₁ : read_ModRM rex reg1 r1 l1)
+    (h₂ : read_ModRM rex reg2 r2 l2)
+    (e : ∃ a', l2 = l1 ++ a' ∧ l1' = a' ++ l2'),
+    (l1, l1') = (l2, l2'),
+  { intros, rcases e_1 with ⟨l3, rfl, rfl⟩,
+    cases read_ModRM.determ_aux h₁_1 h₂_1, simp },
   cases (list.append_eq_append_iff.1 e).elim
-    (λ h, read_ModRM.determ₂_aux h₁ h₂ h)
-    (λ h, (read_ModRM.determ₂_aux h₂ h₁ h).symm),
+    (λ h, this h₁ h₂ h)
+    (λ h, (this h₂ h₁ h).symm),
   cases read_ModRM.determ h₁ h₂, refl,
+end
+
+theorem read_opcode_ModRM.determ_aux {rex v1 r1 v2 r2 l l'}
+  (h₁ : read_opcode_ModRM rex v1 r1 l)
+  (h₂ : read_opcode_ModRM rex v2 r2 (l ++ l')) : (v1, r1, l') = (v2, r2, []) :=
+begin
+  cases h₁, cases h₂,
+  cases read_ModRM.determ_aux h₁_a h₂_a,
+  cases split_bits.determ h₁_a_1 h₂_a_1 rfl, refl,
 end
 
 theorem read_opcode_ModRM.determ {rex v1 r1 v2 r2 l}
   (h₁ : read_opcode_ModRM rex v1 r1 l)
   (h₂ : read_opcode_ModRM rex v2 r2 l) : (v1, r1) = (v2, r2) :=
+by cases read_opcode_ModRM.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
+
+theorem read_opcode_ModRM.determ₂_aux {rex v1 r1 v2 r2 l1 l2 l1' l2' l'}
+  (h₁ : read_opcode_ModRM rex v1 r1 l1)
+  (h₂ : read_opcode_ModRM rex v2 r2 l2)
+  (e : l1 ++ l1' ++ l' = l2 ++ l2') : (v1, r1, l1, l1' ++ l') = (v2, r2, l2, l2') :=
 begin
   cases h₁, cases h₂,
-  cases read_ModRM.determ h₁_a h₂_a,
-  cases split_bits.determ h₁_a_1 h₂_a_1 rfl, refl,
+  rw [list.append_assoc, list.append_eq_append_iff] at e,
+  rcases e with ⟨x, rfl, e⟩ | ⟨x, rfl, rfl⟩,
+  { cases read_ModRM.determ_aux h₁_a h₂_a, cases e,
+    cases split_bits.determ h₁_a_1 h₂_a_1 rfl,
+    rw list.append_nil, refl },
+  { cases read_ModRM.determ_aux h₂_a h₁_a,
+    cases split_bits.determ h₁_a_1 h₂_a_1 rfl,
+    rw list.append_nil, refl },
 end
 
 theorem read_opcode_ModRM.determ₂ {rex v1 r1 v2 r2 l1 l2 l1' l2'}
   (h₁ : read_opcode_ModRM rex v1 r1 l1)
-  (h₂ : read_opcode_ModRM rex v2 r2 l2)
-  (e : l1 ++ l1' = l2 ++ l2') : (v1, r1, l1, l1') = (v2, r2, l2, l2') :=
-begin
-  cases h₁, cases h₂,
-  cases read_ModRM.determ₂ h₁_a h₂_a e,
-  cases split_bits.determ h₁_a_1 h₂_a_1 rfl, refl,
-end
+  (h₂ : read_opcode_ModRM rex v2 r2 l2) :
+  l1 ++ l1' = l2 ++ l2' → (v1, r1, l1, l1') = (v2, r2, l2, l2') :=
+by simpa using @read_opcode_ModRM.determ₂_aux _ _ _ _ _ _ _ l1' l2' [] h₁ h₂
+
+theorem read_imm8.determ_aux {w1 w2 l l'}
+  (h₁ : read_imm8 w1 l) (h₂ : read_imm8 w2 (l ++ l')) : (w1, l') = (w2, []) :=
+by cases h₁; cases h₂; refl
+
+theorem read_imm16.determ_aux {w1 w2 l l'}
+  (h₁ : read_imm16 w1 l) (h₂ : read_imm16 w2 (l ++ l')) : (w1, l') = (w2, []) :=
+by cases h₁; cases h₂; cases bits_to_byte.determ_aux h₁_a h₂_a; refl
+
+theorem read_imm32.determ_aux {w1 w2 l l'}
+  (h₁ : read_imm32 w1 l) (h₂ : read_imm32 w2 (l ++ l')) : (w1, l') = (w2, []) :=
+by cases h₁; cases h₂; cases bits_to_byte.determ_aux h₁_a h₂_a; refl
 
 theorem read_imm8.determ {w1 w2 l}
   (h₁ : read_imm8 w1 l) (h₂ : read_imm8 w2 l) : w1 = w2 :=
@@ -526,19 +550,29 @@ theorem read_imm32.determ {w1 w2 l}
   (h₁ : read_imm32 w1 l) (h₂ : read_imm32 w2 l) : w1 = w2 :=
 by cases h₁; cases h₂; cases bits_to_byte.determ h₁_a h₂_a; refl
 
-theorem read_imm.determ : ∀ {sz w1 w2 l},
-  read_imm sz w1 l → read_imm sz w2 l → w1 = w2
-| (wsize.Sz8 _) _ _ _ := read_imm8.determ
-| wsize.Sz16 _ _ _ := read_imm16.determ
-| wsize.Sz32 _ _ _ := read_imm32.determ
-| wsize.Sz64 _ _ _ := false.elim
+theorem read_imm.determ_aux : ∀ {sz w1 w2 l l'},
+  read_imm sz w1 l → read_imm sz w2 (l ++ l') → (w1, l') = (w2, [])
+| (wsize.Sz8 _) _ _ _ _ := read_imm8.determ_aux
+| wsize.Sz16 _ _ _ _ := read_imm16.determ_aux
+| wsize.Sz32 _ _ _ _ := read_imm32.determ_aux
+| wsize.Sz64 _ _ _ _ := false.elim
 
-theorem read_full_imm.determ : ∀ {sz w1 w2 l},
-  read_full_imm sz w1 l → read_full_imm sz w2 l → w1 = w2
-| (wsize.Sz8 _) _ _ _ := read_imm8.determ
-| wsize.Sz16 _ _ _ := read_imm16.determ
-| wsize.Sz32 _ _ _ := read_imm32.determ
-| wsize.Sz64 _ _ _ := bits_to_byte.determ
+theorem read_full_imm.determ_aux : ∀ {sz w1 w2 l l'},
+  read_full_imm sz w1 l → read_full_imm sz w2 (l ++ l') → (w1, l') = (w2, [])
+| (wsize.Sz8 _) _ _ _ _ := read_imm8.determ_aux
+| wsize.Sz16 _ _ _ _ := read_imm16.determ_aux
+| wsize.Sz32 _ _ _ _ := read_imm32.determ_aux
+| wsize.Sz64 _ _ _ _ := bits_to_byte.determ_aux
+
+theorem read_imm.determ {sz w1 w2 l}
+  (h₁ : read_imm sz w1 l) (h₂ : read_imm sz w2 l) : w1 = w2 :=
+by cases read_imm.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
+
+theorem read_full_imm.determ {sz w1 w2 l}
+  (h₁ : read_full_imm sz w1 l) (h₂ : read_full_imm sz w2 l) : w1 = w2 :=
+by cases read_full_imm.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
 
 def decode_two' (rex : REX) (a : ast) (b0 b1 b2 b3 b4 b5 b6 b7 : bool) (l : list byte) : Prop :=
 cond b7
@@ -622,7 +656,8 @@ end
 
 theorem decode_two_nil {rex a} : ¬ decode_two rex a [].
 
-theorem decode_two.determ {rex a₁ a₂ l} : decode_two rex a₁ l → decode_two rex a₂ l → a₁ = a₂ :=
+theorem decode_two.determ_aux {rex a₁ a₂ l l'} :
+  decode_two rex a₁ l → decode_two rex a₂ (l ++ l') → (a₁, l') = (a₂, []) :=
 begin
   cases l with b l, {exact decode_two_nil.elim},
   apply byte_split b, introv h1 h2,
@@ -632,29 +667,35 @@ begin
   repeat { do
     `(cond %%e _ _) ← tactic.get_local `h1 >>= tactic.infer_type,
     tactic.cases e $> (); `[dsimp only [cond] at h1 h2] },
-  { exact h1.2.1.trans h2.2.1.symm },
+  { rcases h1.2 with ⟨rfl, rfl⟩,
+    rcases h2.2 with ⟨rfl, ⟨⟩⟩, refl },
   { rcases h1.2 with ⟨reg1, r1, h11, h12, h13, rfl⟩,
     rcases h2.2 with ⟨reg2, r2, h21, h22, h23, rfl⟩,
-    cases read_ModRM.determ h12 h22,
+    cases read_ModRM.determ_aux h12 h22,
     cases h13.symm.trans h23, refl },
   { rcases h1 with ⟨imm1, code1, h11, h12, rfl⟩,
     rcases h2 with ⟨imm2, code2, h21, h22, rfl⟩,
-    cases read_imm32.determ h11 h21,
+    cases read_imm32.determ_aux h11 h21,
     cases h12.symm.trans h22, refl },
   { rcases h1 with ⟨reg1, r1, code1, h11, h12, rfl⟩,
     rcases h2 with ⟨reg2, r2, code2, h21, h22, rfl⟩,
-    cases read_ModRM.determ h11 h21,
+    cases read_ModRM.determ_aux h11 h21,
     cases h12.symm.trans h22, refl },
   { rcases h1 with ⟨reg1, r1, code1, h11, h12, rfl⟩,
     rcases h2 with ⟨reg2, r2, code2, h21, h22, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1.2 with ⟨reg1, r1, h11, rfl⟩,
     rcases h2.2 with ⟨reg2, r2, h21, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1.2 with ⟨reg1, r1, h11, rfl⟩,
     rcases h2.2 with ⟨reg2, r2, h21, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
 end
+
+theorem decode_two.determ {rex a₁ a₂ l}
+  (h₁ : decode_two rex a₁ l) (h₂ : decode_two rex a₂ l) : a₁ = a₂ :=
+by cases decode_two.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
 
 def decode_hi' (v : bool) (sz : wsize) (r : RM) :
   ∀ (b0 b1 b2 x : bool), ast → list byte → Prop
@@ -680,16 +721,23 @@ begin
   exact ⟨_, h_a, rfl⟩, all_goals { exact ⟨rfl, rfl⟩ }
 end
 
-theorem decode_hi.determ {v sz r x a1 a2 l} : ∀ {opc},
-  decode_hi v sz r x opc a1 l → decode_hi v sz r x opc a2 l → a1 = a2
+theorem decode_hi.determ_aux {v sz r x a₁ a₂ l l'} : ∀ {opc},
+  decode_hi v sz r x opc a₁ l → decode_hi v sz r x opc a₂ (l ++ l') → (a₁, l') = (a₂, [])
 | ⟨[b0, b1, b2], _⟩ h1 h2 := begin
   replace h1 := decode_hi_hi' h1,
-  replace h2 := decode_hi_hi' h2, clear decode_hi.determ,
+  replace h2 := decode_hi_hi' h2, clear decode_hi.determ_aux,
   cases b0; cases b1; cases b2; cases x; cases h1; cases h2,
-  { cases read_imm.determ h1_h.1 h2_h.1,
-    exact h1_h.2.trans h2_h.2.symm },
-  all_goals { exact h1_left.trans h2_left.symm }
+  { cases read_imm.determ_aux h1_h.1 h2_h.1,
+    cases h1_h.2.trans h2_h.2.symm, refl },
+  all_goals {
+    rw [h1_left, ← h2_left],
+    cases h1_right, cases h2_right, refl }
 end
+
+theorem decode_hi.determ {v sz r x opc a₁ a₂ l}
+  (h₁ : decode_hi v sz r x opc a₁ l) (h₂ : decode_hi v sz r x opc a₂ l) : a₁ = a₂ :=
+by cases decode_hi.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
 
 def decode_aux' (rex : REX) (a : ast) (b0 b1 b2 b3 b4 b5 b6 b7 : bool) (l : list byte) : Prop :=
 cond b7
@@ -830,11 +878,13 @@ cond b7
             ∃ reg r,
             read_ModRM rex reg r l ∧
             a = ast.movsx wsize.Sz32 (dest_src.R_rm reg r) wsize.Sz64)))
-      ( -- pop, push_rm
-        b4 = tt ∧
-        let reg := RM.reg ⟨[b0, b1, b2, rex.B], rfl⟩ in
-        a = cond b3 (ast.pop reg) (ast.push (imm_rm.rm reg)) ∧
-        l = []))
+      (cond b4
+        ( -- pop, push_rm
+          let reg := RM.reg ⟨[b0, b1, b2, rex.B], rfl⟩ in
+          a = cond b3 (ast.pop reg) (ast.push (imm_rm.rm reg)) ∧
+          l = [])
+        ( -- prefix byte
+          false)))
     (cond b2
       (cond b1
         ( -- decode_two
@@ -907,11 +957,11 @@ begin
   { cases e, rcases split_bits_ok a_a with ⟨h₁, h₂, _⟩,
     cases subtype.eq h₁,
     cases bitvec.reify_eq h₂,
-    exact ⟨rfl, rfl, rfl⟩ },
+    exact ⟨rfl, rfl⟩ },
   { cases e, rcases split_bits_ok a_a with ⟨h₁, h₂, _⟩,
     cases subtype.eq h₁,
     cases bitvec.reify_eq h₂,
-    exact ⟨rfl, rfl, rfl⟩ },
+    exact ⟨rfl, rfl⟩ },
   { injection e, cases congr_arg subtype.val (bitvec.reify_eq' h_1),
     cases h_2, exact ⟨rfl, _, a_a, rfl⟩ },
   { cases e, rcases split_bits_ok a_a with ⟨⟨⟩, ⟨⟩, h₁, _⟩,
@@ -950,7 +1000,8 @@ end
 
 theorem decode_aux_nil {rex a} : ¬ decode_aux rex a [].
 
-theorem decode_aux.determ {rex a₁ a₂ l} : decode_aux rex a₁ l → decode_aux rex a₂ l → a₁ = a₂ :=
+theorem decode_aux.determ_aux {rex a₁ a₂ l l'} :
+  decode_aux rex a₁ l → decode_aux rex a₂ (l ++ l') → (a₁, l') = (a₂, []) :=
 begin
   cases l with b l, {exact decode_aux_nil.elim},
   apply byte_split b, introv h1 h2,
@@ -962,121 +1013,103 @@ begin
     tactic.cases e $> (); `[dsimp only [cond] at h1 h2] },
   { rcases h1 with ⟨reg1, r1, h11, rfl⟩,
     rcases h2 with ⟨reg2, r2, h21, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1 with ⟨imm1, h11, rfl⟩,
     rcases h2 with ⟨imm2, h21, rfl⟩,
-    cases read_imm.determ h11 h21, refl },
-  { exact decode_two.determ h1.2 h2.2 },
-  { exact h1.2.1.trans h2.2.1.symm },
+    cases read_imm.determ_aux h11 h21, refl },
+  { exact decode_two.determ_aux h1.2 h2.2 },
+  { cases h2 },
+  { rcases h1 with ⟨rfl, rfl⟩,
+    rcases h2 with ⟨rfl, ⟨⟩⟩, refl },
   { rcases h1.2 with ⟨reg1, r1, h11, rfl⟩,
     rcases h2.2 with ⟨reg2, r2, h21, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1.2 with ⟨imm1, h11, rfl⟩,
     rcases h2.2 with ⟨imm2, h21, rfl⟩,
-    cases read_imm.determ h11 h21, refl },
+    cases read_imm.determ_aux h11 h21, refl },
   { rcases h1 with ⟨code1, imm1, h11, h12, rfl⟩,
     rcases h2 with ⟨code2, imm2, h21, h22, rfl⟩,
     cases h11.symm.trans h21,
-    cases read_imm8.determ h12 h22, refl },
+    cases read_imm8.determ_aux h12 h22, refl },
   { rcases h1 with ⟨opc1, r1, l11, imm1, l12, op1, h11, h12, h13, rfl, rfl⟩,
     rcases h2 with ⟨opc2, r2, l21, imm2, l22, op2, h21, h22, h23, rfl, e⟩,
-    cases read_opcode_ModRM.determ₂ h11 h21 e,
+    cases read_opcode_ModRM.determ₂_aux h11 h21 e,
     cases binop.bits.determ h12 h22,
     cases b1,
-    { cases read_imm.determ h13 h23, refl },
-    { cases read_imm8.determ h13 h23, refl } },
+    { cases read_imm.determ_aux h13 h23, refl },
+    { cases read_imm8.determ_aux h13 h23, refl } },
   { rcases h1 with ⟨reg1, r1, h11, rfl⟩,
     rcases h2 with ⟨reg2, r2, h21, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1 with ⟨reg1, r1, h11, rfl⟩,
     rcases h2 with ⟨reg2, r2, h21, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1.2 with ⟨reg1, r1, h11, h12, rfl⟩,
     rcases h2.2 with ⟨reg2, r2, h21, h22, rfl⟩,
-    cases read_ModRM.determ h11 h21, refl },
+    cases read_ModRM.determ_aux h11 h21, refl },
   { rcases h1.2 with ⟨r1, h11, h12, rfl⟩,
     rcases h2.2 with ⟨r2, h21, h22, rfl⟩,
-    cases read_opcode_ModRM.determ h11 h21, refl },
-  { rcases h1.2 with rfl,
-    rcases h2.2 with rfl, refl },
+    cases read_opcode_ModRM.determ_aux h11 h21, refl },
+  { rcases h1.2 with ⟨rfl, rfl⟩,
+    rcases h2.2 with ⟨rfl, ⟨⟩⟩, refl },
   { rcases h1.2 with ⟨imm1, h11, rfl⟩,
     rcases h2.2 with ⟨imm2, h21, rfl⟩,
-    cases read_imm.determ h11 h21, refl },
+    cases read_imm.determ_aux h11 h21, refl },
   { rcases h1 with ⟨imm1, h11, rfl⟩,
     rcases h2 with ⟨imm2, h21, rfl⟩,
-    cases read_full_imm.determ h11 h21, refl },
+    cases read_full_imm.determ_aux h11 h21, refl },
   { rcases h1 with ⟨opc1, r1, imm1, op1, l11, l12, h11, _, h12, h13, rfl, rfl⟩,
     rcases h2 with ⟨opc2, r2, imm2, op2, l21, l22, h21, _, h22, h23, rfl, e⟩,
-    cases read_opcode_ModRM.determ₂ h11 h21 e,
+    cases read_opcode_ModRM.determ₂_aux h11 h21 e,
     cases binop.bits.determ h12 h22,
-    cases read_imm8.determ h13 h23, refl },
+    cases read_imm8.determ_aux h13 h23, refl },
   { rcases h1 with ⟨imm1, h11, rfl⟩,
     rcases h2 with ⟨imm2, h21, rfl⟩,
     split_ifs at h11 h21,
-    { cases h11.1.trans h21.1.symm, refl },
-    { cases read_imm16.determ h11 h21, refl } },
+    { rcases h11 with ⟨rfl, rfl⟩,
+      rcases h21 with ⟨rfl, ⟨⟩⟩, refl },
+    { cases read_imm16.determ_aux h11 h21, refl } },
   { rcases h1 with ⟨opc1, r1, imm1, op1, l11, l12, h11, h12, rfl, rfl⟩,
     rcases h2 with ⟨opc2, r2, imm2, op2, l21, l22, h21, h22, rfl, e⟩,
-    cases read_opcode_ModRM.determ₂ h11 h21 e,
-    cases read_imm.determ h12 h22, refl },
-  { exact h1.2.1.trans h2.2.1.symm },
+    cases read_opcode_ModRM.determ₂_aux h11 h21 e,
+    cases read_imm.determ_aux h12 h22, refl },
+  { rcases h1.2 with ⟨rfl, rfl⟩,
+    rcases h2.2 with ⟨rfl, ⟨⟩⟩, refl },
   { rcases h1.2 with ⟨opc1, r1, op1, h11, _, h12, rfl⟩,
     rcases h2.2 with ⟨opc2, r2, op2, h21, _, h22, rfl⟩,
-    cases read_opcode_ModRM.determ h11 h21,
+    cases read_opcode_ModRM.determ_aux h11 h21,
     cases binop.bits.determ h12 h22, refl },
   { rcases h1.2 with ⟨imm1, h11, rfl⟩,
     rcases h2.2 with ⟨imm2, h21, rfl⟩,
-    cases read_imm32.determ h11 h21, refl },
+    cases read_imm32.determ_aux h11 h21, refl },
   { rcases h1.2 with ⟨imm1, h11, rfl⟩,
     rcases h2.2 with ⟨imm2, h21, rfl⟩,
     split_ifs at h11 h21,
-    { cases read_imm8.determ h11 h21, refl },
-    { cases read_imm32.determ h11 h21, refl } },
-  { exact h1.2.1.trans h2.2.1.symm },
-  { exact h1.2.1.trans h2.2.1.symm },
+    { cases read_imm8.determ_aux h11 h21, refl },
+    { cases read_imm32.determ_aux h11 h21, refl } },
+  { rcases h1.2 with ⟨rfl, rfl⟩,
+    rcases h2.2 with ⟨rfl, ⟨⟩⟩, refl },
+  { rcases h1.2 with ⟨rfl, rfl⟩,
+    rcases h2.2 with ⟨rfl, ⟨⟩⟩, refl },
   { rcases h1 with ⟨opc1, r1, l11, l12, h11, h12, rfl⟩,
     rcases h2 with ⟨opc2, r2, l21, l22, h21, h22, e⟩,
-    cases read_opcode_ModRM.determ₂ h11 h21 e,
-    exact decode_hi.determ h12 h22 },
+    cases read_opcode_ModRM.determ₂_aux h11 h21 e,
+    exact decode_hi.determ_aux h12 h22 },
 end
+
+theorem decode_aux.determ {rex a₁ a₂ l}
+  (h₁ : decode_aux rex a₁ l) (h₂ : decode_aux rex a₂ l) : a₁ = a₂ :=
+by cases decode_aux.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
 
 theorem decode.no_prefix {rex rex' a l b l'} :
   read_prefixes rex l → b ∈ l → ¬ decode_aux rex' a (b :: l') :=
 begin
   rintro ⟨⟩ (rfl|⟨⟨⟩⟩),
-  generalize e : b :: l' = l₂,
-  revert a_1_a l₂, apply byte_split b, intros,
+  -- generalize e : b :: l' = l₂,
+  revert a_1_a, apply byte_split b, intros,
   rcases split_bits_ok a_1_a with ⟨_, ⟨⟩, _⟩,
-  rintro ⟨⟩,
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, _, _, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, _, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, h, _⟩, cases bitvec.reify_eq h },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, _, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { cases e, rcases split_bits_ok a_2_a with ⟨_, h, _⟩, cases bitvec.reify_eq h },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { injection e, cases bitvec.reify_eq' h_1 },
-  { cases e, rcases split_bits_ok a_2_a_1 with ⟨_, _, _, h, _⟩, cases bitvec.reify_eq h },
+  exact decode_aux_aux'
 end
 
 theorem decode_nil {a} : ¬ decode a [] :=
@@ -1086,25 +1119,56 @@ begin
   exact decode_aux_nil a_1_a_2
 end
 
-theorem decode.determ : ∀ {a₁ a₂ l}, decode a₁ l → decode a₂ l → a₁ = a₂ :=
-suffices ∀ {a₁ a₂ : ast}
-  {rex1 rex2 : REX} {l11 l21 l12 l22 : list byte},
-  (∃ (r : list byte), l12 = l11 ++ r ∧ l21 = r ++ l22) →
-  read_prefixes rex1 l11 →
-  decode_aux rex1 a₁ l21 →
-  read_prefixes rex2 l12 →
-  decode_aux rex2 a₂ l22 → a₁ = a₂,
-{ intros a₁ a₂ l h₁ h₂, cases h₁, generalize_hyp e : h₁_l1.append h₁_l2 = x at h₂,
-  cases h₂,
-  cases list.append_eq_append_iff.1 e,
-  exact this h h₁_a_1 h₁_a_2 h₂_a_1 h₂_a_2,
-  exact (this h h₂_a_1 h₂_a_2 h₁_a_1 h₁_a_2).symm },
+theorem decode.determ_aux {a₁ a₂ l l'}
+  (h₁ : decode a₁ l) (h₂ : decode a₂ (l ++ l')) : (a₁, l') = (a₂, []) :=
 begin
-  rintro _ _ _ _ _ _ _ _ ⟨_|⟨b, r⟩, rfl, rfl⟩ p1 aux1 p2 aux2,
-  { simp at p2 aux1,
-    cases read_prefixes.determ p1 p2,
-    exact decode_aux.determ aux1 aux2 },
-  { cases decode.no_prefix p2 (list.mem_append_right _ (or.inl rfl)) aux1 }
+  generalize_hyp e : l ++ l' = x at h₂,
+  induction h₁, induction h₂,
+  rw [list.append_assoc, list.append_eq_append_iff] at e,
+  rcases e with ⟨_|⟨b, x⟩, rfl, e⟩ | ⟨_|⟨b, x⟩, rfl, rfl⟩,
+  { rw list.append_nil at h₂_a_1, cases e,
+    cases read_prefixes.determ h₁_a_1 h₂_a_1,
+    exact decode_aux.determ_aux h₁_a_2 h₂_a_2 },
+  { cases h₁_l2 with b' l2, cases decode_aux_nil h₁_a_2,
+    injection e, subst b',
+    cases decode.no_prefix h₂_a_1 (list.mem_append_right _ (or.inl rfl)) h₁_a_2 },
+  { rw list.append_nil at h₁_a_1,
+    cases read_prefixes.determ h₁_a_1 h₂_a_1,
+    exact decode_aux.determ_aux h₁_a_2 h₂_a_2 },
+  { cases decode.no_prefix h₁_a_1 (list.mem_append_right _ (or.inl rfl)) h₂_a_2 },
+end
+
+theorem decode.determ {a₁ a₂ l}
+  (h₁ : decode a₁ l) (h₂ : decode a₂ l) : a₁ = a₂ :=
+by cases decode.determ_aux h₁
+  (by rw list.append_nil; exact h₂); refl
+
+theorem mem.read1.determ {p1 p2 m a b1 b2} :
+  mem.read1 p1 m a b1 → mem.read1 p2 m a b2 → b1 = b2 :=
+by rintro ⟨_, rfl, _⟩ ⟨_, rfl, _⟩; refl
+
+theorem mem.read.determ_aux {p1 p2 m a l1 l2}
+  (h₁ : mem.read' p1 m a l1) (h₂ : mem.read' p2 m a l2) :
+   l1 <+: l2 ∨ l2 <+: l1 :=
+begin
+  induction h₁ generalizing l2,
+  { exact or.inl (list.nil_prefix _) },
+  cases h₂,
+  { exact or.inr (list.nil_prefix _) },
+  cases h₁_a.determ h₂_a,
+  rw [list.prefix_cons_inj, list.prefix_cons_inj],
+  exact h₁_ih h₂_a_1,
+end
+
+theorem config.step_noIO {k k₁ k₂} :
+  config.step k k₁ → ¬ config.isIO k k₂ :=
+λ h₁ h₂, begin
+  cases h₁, cases h₂,
+  rcases mem.read.determ_aux h₁_a_1 h₂_a with ⟨x, rfl⟩ | ⟨x, rfl⟩,
+  { cases decode.determ_aux h₁_a_2 h₂_a_1,
+    rcases h₁_a_3 with ⟨_, s₁, _, ⟨⟩, _⟩ },
+  { cases decode.determ_aux h₂_a_1 h₁_a_2,
+    rcases h₁_a_3 with ⟨_, s₁, _, ⟨⟩, _⟩ },
 end
 
 end x86
