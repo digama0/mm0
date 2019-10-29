@@ -168,7 +168,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
   g_ustack_top = &g_ustack[1];
   g_ustack[0] = tgt;
   g_cmd_start = cmd;
-  u8* last_cmd = cmd;
+  // u8* last_cmd = cmd;
   while (true) {
     g_cmd = cmd;
     u32 sz = cmd_unpack(cmd); // sets g_data
@@ -242,7 +242,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         }
       } break;
     }
-    last_cmd = cmd;
+    // last_cmd = cmd;
     cmd += sz;
   }
   loop_end:
@@ -254,7 +254,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
 typedef enum { Def, Thm } proof_mode;
 
 u8* run_proof(proof_mode mode, u8* cmd) {
-  u8* last_cmd = cmd;
+  // u8* last_cmd = cmd;
   u8* cmd_start = cmd;
   while (true) {
     g_cmd = cmd;
@@ -450,7 +450,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         }
       } break;
     }
-    last_cmd = cmd;
+    // last_cmd = cmd;
     cmd += sz;
   }
   loop_end:

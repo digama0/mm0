@@ -107,7 +107,7 @@ typedef struct {
   /* index* */ u64 p_sorts[]; // pointers to sort indexes
   /* index* */ // u64[num_terms] p_terms; pointers to term indexes
   /* index* */ // u64[num_thms] p_thms; pointers to thm indexes
-} PACKED index_header;
+} index_header;
 
 // An index entry contains information necessary for translating between
 // string and index representations of entities. The left/right pointers lace

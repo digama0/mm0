@@ -1,9 +1,7 @@
 #! /bin/sh
-# This does profile guided optimization using peano.mmb, and also emits the
-# generated assembly with gcc cruft removed.
+# This does profile guided optimization using peano.mmb.
 # You can also just compile with "gcc main.c" for the simple version.
-gcc main.c -O2 -fprofile-generate
+gcc main.c -O2 -Wall -fprofile-generate
 ./a.out ../examples/peano.mmb
-gcc main.c -O2 -fprofile-use -S -fno-asynchronous-unwind-tables \
-  -fno-pie -fomit-frame-pointer -fno-stack-protector
+gcc main.c -O2 -Wall -fprofile-use
 rm main.gcda
