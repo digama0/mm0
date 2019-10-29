@@ -109,7 +109,7 @@ static inline u32 as_type(u32 val, u32 type) {
 
 // Pop the main stack and return the stored stack element.
 #define pop_stack() ({ \
-  ENSURE("unify stack underflow", g_stack_top > g_stack); \
+  ENSURE("stack underflow", g_stack_top > g_stack); \
   *(--g_stack_top); \
 })
 
