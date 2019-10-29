@@ -249,7 +249,7 @@ typedef struct { u8 cmd; u32 data; } PACKED cmd32;
 // Uses data = 0
 #define CMD_PROOF_UNFOLD 0x1B
 
-// ConvCut: Pop an expression e2, pop an expression e1, push a proof of
+// ConvCut: Pop a convertibility obligation e1 =?= e2, push a proof of
 // e1 = e2, push a convertibility obligation e1 =?= e2.
 // Uses data = 0
 #define CMD_PROOF_CONV_CUT 0x1C
@@ -258,6 +258,10 @@ typedef struct { u8 cmd; u32 data; } PACKED cmd32;
 // referenced heap element.
 // Uses data = heapid
 #define CMD_PROOF_CONV_REF 0x1D
+
+// ConvSave: Pop a convertibility proof e1 = e2, add e1 = e2 to the heap.
+// Uses data = 0
+#define CMD_PROOF_CONV_SAVE 0x1E
 
 // Unify commands are used in definitions and theorem statements.
 // They are consumed when a definition is unfolded, or when a theorem is

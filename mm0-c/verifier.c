@@ -7,6 +7,14 @@ u8* g_stmt;
 u8* g_cmd_start;
 u8* g_cmd;
 
+// This is called by the ENSURE macro on failure. The verifier is optimized
+// for the non-failure case, and keeps very little nonessential information
+// about what is going on, so this function is responsible for reconstructing
+// the command that failed, loading the index so that the names of terms
+// and theorems can be found, and printing the surrounding information.
+//
+// err: a static error message
+// e: the nonzero return code (default -1)
 void fail(char* err, int e) {
 #ifndef BARE
   if (g_stmt) {
@@ -35,17 +43,24 @@ void fail(char* err, int e) {
   }
 #define ENSURE(err, cond) EENSURE(err, -1, cond)
 
+// Return a store_expr* given a pointer index
 #define get_expr(p) ((store_expr*)&g_store[p])
+
+// Return a pointer to the var at location p (checked dynamic cast)
 #define get_var(p) ({ \
   store_var* e = (store_var*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_VAR); \
   e; \
 })
+
+// Return a pointer to the term at location p (checked dynamic cast)
 #define get_term(p) ({ \
   store_term* e = (store_term*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_TERM); \
   e; \
 })
+
+// Return a pointer to the conv cell at location p (checked dynamic cast)
 #define get_conv(p) ({ \
   store_conv* e = (store_conv*)&g_store[p]; \
   ENSURE("store type error", e->tag == EXPR_CONV); \
@@ -57,18 +72,24 @@ u64 g_next_bv;
 u64 g_deps[256];
 u32 g_data;
 
+// Push a stack element to the main stack.
 #define push_stack(val) { \
   ENSURE("stack overflow", g_stack_top < &g_stack[STACK_SIZE]); \
   *g_stack_top++ = val; \
   UPDATE_HIGHWATER(g_stack_top, g_stack_highwater) \
 }
 
+// Add a new element to the main heap.
 #define push_heap(val) { \
   ENSURE("heap overflow", g_heap_size < HEAP_SIZE); \
   g_heap[g_heap_size++] = val; \
   UPDATE_HIGHWATER(g_heap_size, g_heap_highwater) \
 }
 
+// Allocate some memory from the store.
+// val: the initial value (usually a structure literal, I know, it's a nonstandard extension)
+// size: the allocation size in bytes (possibly more than sizeof(val)
+//   because store_term has a flexible array member)
 #define ALLOC(val, size) ({ \
   ENSURE("store overflow", g_store_size + size <= STORE_SIZE); \
   u32 p = g_store_size; \
@@ -78,33 +99,44 @@ u32 g_data;
   p; \
 })
 
+// Assert the type of a stack element, and get the data field.
+// val: the stack element
+// type: the target stack type (STACK_TYPE_EXPR, STACK_TYPE_PROOF, STACK_TYPE_CONV, STACK_TYPE_CO_CONV)
 static inline u32 as_type(u32 val, u32 type) {
   ENSURE("bad stack slot", (val & STACK_TYPE_MASK) == type);
   return val & STACK_DATA_MASK;
 }
 
+// Pop the main stack and return the stored stack element.
 #define pop_stack() ({ \
   ENSURE("unify stack underflow", g_stack_top > g_stack); \
   *(--g_stack_top); \
 })
 
+// Pop the unify stack and return the stored expression.
 #define pop_ustack() ({ \
   ENSURE("unify stack underflow", g_ustack_top > g_ustack); \
   *(--g_ustack_top); \
 })
 
+// Push an expression on the unify stack.
 #define push_ustack(val) { \
   ENSURE("unify stack overflow", g_ustack_top < &g_ustack[UNIFY_STACK_SIZE]); \
   *g_ustack_top++ = val; \
   UPDATE_HIGHWATER(g_ustack_top, g_ustack_highwater) \
 }
 
+// Push an expression on the unify heap.
 #define push_uheap(val) { \
   ENSURE("unify heap overflow", g_uheap_size < UNIFY_HEAP_SIZE); \
   g_uheap[g_uheap_size++] = val; \
   UPDATE_HIGHWATER(g_uheap_size, g_uheap_highwater) \
 }
 
+// Unpack a command opcode. The cmd pointer is pointing at a byte
+// which has the length of the data field encoded in its high bits.
+// This function fills the g_data global variable with the parsed data field,
+// returns the size of the whole command (data + opcode).
 u32 cmd_unpack(u8* cmd) {
   ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
   switch (CMD_DATA(*cmd)) {
@@ -134,6 +166,9 @@ u32 cmd_unpack(u8* cmd) {
   UNREACHABLE();
 }
 
+// Returns true if a value with type 'from' can be cast to a value of type 'to'.
+// This requires that the sorts be the same, and additionally if 'from' is a
+// name then so is 'to'.
 bool sorts_compatible(u64 from, u64 to) {
   u64 diff = from ^ to;
   return (diff & ~TYPE_DEPS_MASK) == 0 ||
@@ -141,6 +176,8 @@ bool sorts_compatible(u64 from, u64 to) {
     (from & TYPE_BOUND_MASK) != 0);
 }
 
+// Given a list of binders, load the main heap and allocate all the variables.
+// Also perform binder validity checking.
 void load_args(u64 args[], u32 num_args) {
   g_heap_size = 0;
   g_next_bv = 1;
@@ -164,6 +201,18 @@ void load_args(u64 args[], u32 num_args) {
 
 typedef enum { UDef, UThm, UThmEnd } unify_mode;
 
+// Run a unify command stream.
+//
+// There are three places where we need to read a unify stream:
+//   UDef: We are checking that a definition header is correct, or processing an Unfold command
+//   UThm: We are applying a theorem (Thm), and need to check the substitution is correct
+//   UThmEnd: We are checking that a theorem header is correct
+// They are largely the same but differ in the processing of the UDummy and UHyp commands.
+//
+// mode: which kind of unify command: UDef, UThm, UThmEnd
+// cmd: the place where the unify command stream starts
+// tgt: an expression that is to be unified (the unfolded definition for UDef,
+//   the substituted theorem for UThm, and the target statement for UThmEnd)
 void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
   g_ustack_top = &g_ustack[1];
   g_ustack[0] = tgt;
@@ -178,15 +227,32 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
     // fprintf(stderr, "\n"); debug_print_cmd(cmd, g_data);
 
     switch (*cmd & 0x3F) {
+      // End: the end of the command stream.
+      // The unify stack should be empty at this point
       case CMD_END: {
-        cmd += sz;
-      } goto loop_end;
+        if (mode == UThmEnd)
+          ENSURE("Unfinished hypothesis stack", g_hstack_top == g_hstack);
+        ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
+      } return;
 
+      // URef i: H; S, Hi --> H; S
+      // Get the i-th element from the unify heap (the substitution), and match it against
+      // the head of the unify stack.
       case CMD_UNIFY_REF: {
         ENSURE("bad ref step", g_data < g_uheap_size);
         ENSURE("unify failure at ref", g_uheap[g_data] == pop_ustack());
       } break;
 
+      // UTerm t: S, (t e1 ... en) --> S, en, ..., e1
+      // USave: H; S, e --> H, e; S, e
+      // UTermSave t = USave; UTerm t:
+      //   H; S, (t e1 ... en) --> H, (t e1 ... en); S, en, ..., e1
+      //
+      // Pop an element from the stack, ensure that the head is t, then
+      // push the n arguments to the term (in reverse order, so that they
+      // are dealt with in the correct order in the command stream).
+      // UTermSave does the same thing but saves the term to the unify heap
+      // before the destructuring.
       case CMD_UNIFY_TERM:
       case CMD_UNIFY_TERM_SAVE: {
         u32 p = pop_ustack();
@@ -202,6 +268,10 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
           push_uheap(p);
       } break;
 
+      // UDummy s: H; S, x --> H, x; S   (where x:s)
+      // Pop a variable from the unify stack (ensure that it is a name of
+      // the appropriate sort) and push it to the heap (ensure that it is
+      // distinct from everything else in the substitution).
       case CMD_UNIFY_DUMMY: {
         ENSURE("Dummy command not allowed in theorem statements", mode == UDef);
         u32 p = pop_ustack();
@@ -216,6 +286,16 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         push_uheap(p);
       } break;
 
+      // UHyp (UThm mode):  MS, |- e; S --> MS; S, e
+      // UHyp (UThmEnd mode):  HS, e; S --> HS; S, e
+      // UHyp is a command that is used in theorem declarations to indicate that
+      // we are about to read a hypothesis. There are two contexts where we read
+      // this, when we are first declaring the theorem and check the statement (UThmEnd mode),
+      // and later when we are applying the theorem and have to apply a substitution (UThm mode).
+      // When we are applying the theorem, we have |- e on the main stack, and we
+      // pop that and load the expression onto the unify stack.
+      // When we are checking a theorem, we have been pushing hypotheses onto the
+      // hypothesis stack, so we pop it from there instead.
       case CMD_UNIFY_HYP: {
         switch (mode) {
           case UThm: {
@@ -245,14 +325,16 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
     // last_cmd = cmd;
     cmd += sz;
   }
-  loop_end:
-  if (mode == UThmEnd)
-    ENSURE("Unfinished hypothesis stack", g_hstack_top == g_hstack);
-  ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
 }
 
 typedef enum { Def, Thm } proof_mode;
 
+// Run a proof command stream. There are two kinds of proof command streams:
+//   Def: We are constructing a definition body
+//   Thm: We are constructing a theorem proof
+// mode: the kind of proof stream
+// cmd: the beginning of the stream
+// returns: the end of the stream (just after the End command)
 u8* run_proof(proof_mode mode, u8* cmd) {
   // u8* last_cmd = cmd;
   u8* cmd_start = cmd;
@@ -265,15 +347,21 @@ u8* run_proof(proof_mode mode, u8* cmd) {
     // fprintf(stderr, "\n"); debug_print_cmd(cmd, g_data);
 
     switch (*cmd & 0x3F) {
+      // End: the end of the command stream.
+      // The stack should have exactly one element on it at this point
       case CMD_END: {
         cmd += sz;
-      } goto loop_end;
+      } return cmd;
 
+      // Ref i: H; S --> H; S, Hi
+      // Get the i-th heap element and push it on the stack.
       case CMD_PROOF_REF: {
         ENSURE("bad ref step", g_data < g_heap_size);
         push_stack(g_heap[g_data]);
       } break;
 
+      // Dummy s: H; S --> H, x; S, x    alloc(x:s)
+      // Allocate a new variable x of sort s, and push it to the stack and the heap.
       case CMD_PROOF_DUMMY: {
         ENSURE("bad dummy sort", g_data < g_num_sorts);
         ENSURE("dummy variable in strict sort",
@@ -288,6 +376,17 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         push_heap(e);
       } break;
 
+      // Term t: H; S, e1, ..., en --> H; S, (t e1 .. en)    alloc(t e1 .. en)
+      // Save: H; S, e --> H, e; S, e
+      // TermSave t = Term t; Save:
+      //   H; S, e1, ..., en --> H, (t e1 .. en); S, (t e1 .. en)    alloc(t e1 .. en)
+      //
+      // Pop n elements from the stack and allocate a new term t applied to those
+      // expressions. The mode determines whether the free variable calculation uses
+      // FV(e) (Def) or V(e) (Thm). That is, bound variables are considered bound in Def
+      // mode but all variables are considered in Thm mode.
+      //
+      // When Save is used, the new term is also saved to the heap.
       case CMD_PROOF_TERM:
       case CMD_PROOF_TERM_SAVE: {
         ENSURE("term out of range", g_data < g_num_terms);
@@ -332,6 +431,15 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           push_heap(STACK_TYPE_EXPR | p);
       } break;
 
+      // Thm T: H; S, e1, ..., en, e --> H; S', |- e    (where Unify(T): S; e1, ... en; e --> S'; H'; .)
+      // Save: H; S, |- e --> H, |- e; S, |- e
+      //
+      // Pop n elements from the stack and put them on the unify heap, then call the
+      // unifier for T (in UThm mode) with e as the target. The unifier will pop additional
+      // proofs from the stack if the UHyp command is used, and when it is done,
+      // the conclusion is pushed as a proven statement.
+      //
+      // When Save is used, the proven statement is also saved to the heap.
       case CMD_PROOF_THM:
       case CMD_PROOF_THM_SAVE: {
         ENSURE("Invalid opcode in def", mode != Def);
@@ -368,15 +476,26 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           push_heap(STACK_TYPE_PROOF | e);
       } break;
 
+      // Hyp: HS; S, e --> HS, e; S, |- e
+      // This command means that we are finished constructing the expression e
+      // which denotes a statement, and wish to assume it as a hypothesis.
+      // Push e to the hypothesis stack, and push |- e to the main stack.
       case CMD_PROOF_HYP: {
         ENSURE("Invalid opcode in def", mode != Def);
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("hypothesis stack overflow", g_hstack_top < &g_hstack[HYP_STACK_SIZE]);
+        ENSURE("hypothesis should have provable sort",
+          (g_sorts[TYPE_SORT(get_expr(e)->type)] & SORT_PROVABLE) != 0)
         *g_hstack_top++ = e;
         UPDATE_HIGHWATER(g_hstack_top, g_hstack_highwater)
         push_heap(STACK_TYPE_PROOF | e);
       } break;
 
+      // Conv: S, e1, |- e2 --> S, |- e1, e1 =?= e2
+      //
+      // Pop e1 and |- e2, and push |- e1, guarded by a convertibility obligation
+      // e1 =?= e2. Note that convertibility obligations are double-wide stack
+      // elements, with S, e1 =?= e2 appearing as S, e2, (e1 =?=) on the stack.
       case CMD_PROOF_CONV: {
         u32 e2 = as_type(pop_stack(), STACK_TYPE_PROOF);
         u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
@@ -385,12 +504,16 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         push_stack(STACK_TYPE_CO_CONV | e1);
       } break;
 
+      // Refl: S, e =?= e --> S
+      // Pop a convertibility obligation where the two sides are equal.
       case CMD_PROOF_REFL: {
         u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("Refl unify failure", e1 == e2);
       } break;
 
+      // Symm: S, e1 =?= e2 --> S, e2 =?= e1
+      // Swap the direction of a convertibility obligation.
       case CMD_PROOF_SYMM: {
         u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
@@ -398,6 +521,11 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         push_stack(STACK_TYPE_CO_CONV | e2);
       } break;
 
+      // Cong: S, (t e1 ... en) =?= (t e1' ... en') --> S, en =?= en', ..., e1 =?= e1'
+      // Pop a convertibility obligation for two term expressions, and
+      // push convertibility obligations for all the parts.
+      // The parts are pushed in reverse order so that they are dealt with
+      // in declaration order in the proof stream.
       case CMD_PROOF_CONG: {
         store_term* e1 = get_term(as_type(pop_stack(), STACK_TYPE_CO_CONV));
         store_term* e2 = get_term(as_type(pop_stack(), STACK_TYPE_EXPR));
@@ -408,6 +536,12 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         }
       } break;
 
+      // Unfold t: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
+      //    (where Unify(t): e1, ..., en; e --> H'; .)
+      //
+      // Pop terms (t e1 ... en), e from the stack and run the unifier for t
+      // (which should be a definition) to make sure that (t e1 ... en) unfolds to e.
+      // Then pop (t e1 ... en) =?= e' and push e =?= e'.
       case CMD_PROOF_UNFOLD: {
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
         u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
@@ -425,21 +559,36 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         push_stack(STACK_TYPE_CO_CONV | e);
       } break;
 
+      // ConvCut: S, e1 =?= e2 --> S, e1 = e2, e1 =?= e2
+      // Pop a convertibility obligation e1 =?= e2, and
+      // push a convertability assertion e1 = e2 guarded by e1 =?= e2.
       case CMD_PROOF_CONV_CUT: {
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
-        u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
         push_stack(STACK_TYPE_EXPR | e2);
         push_stack(STACK_TYPE_CONV | e1);
         push_stack(STACK_TYPE_EXPR | e2);
         push_stack(STACK_TYPE_CO_CONV | e1);
       } break;
 
+      // ConvRef i: H; S, e1 =?= e2 --> H; S   (where Hi is e1 = e2)
+      // Pop a convertibility obligation e1 =?= e2, where e1 = e2 is
+      // i-th on the heap.
       case CMD_PROOF_CONV_REF: {
-          ENSURE("bad ConvRef step", g_data < g_heap_size);
+        ENSURE("bad ConvRef step", g_data < g_heap_size);
         store_conv* c = get_conv(as_type(g_heap[g_data], STACK_TYPE_CONV));
         u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("ConvRef unify error", c->e1 == e1 && c->e2 == e2);
+      } break;
+
+      // ConvSave: H; S, e1 = e2 --> H, e1 = e2; S
+      // Pop a convertibility proof e1 = e2 and save it to the heap.
+      case CMD_PROOF_CONV_SAVE: {
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_CONV);
+        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        push_heap(STACK_TYPE_EXPR |
+          ALLOC(((store_conv){e1, e2, EXPR_CONV}), sizeof(store_conv)));
       } break;
 
       default: {
@@ -453,13 +602,15 @@ u8* run_proof(proof_mode mode, u8* cmd) {
     // last_cmd = cmd;
     cmd += sz;
   }
-  loop_end:
-  return cmd;
 }
 
-void verify(u64 len, u8* file) {
+// The main entry point for the verifier. It is given a pointer to the memory-mapped
+// proof file, and reports success by returning from the function and failure by calling
+// exit(n) for n != 0.
+void verify(u8* file, u64 len) {
   g_file = file; g_end = file + len;
 
+  // Check the header info and initialize globals
   ENSURE("header not long enough", len >= sizeof(header));
   header* p = (header*)file;
   ENSURE("Not a MM0B file", p->magic == MM0B_MAGIC);
@@ -476,6 +627,10 @@ void verify(u64 len, u8* file) {
 
   u8* stmt = &file[p->p_proof];
 
+  // This is the main statement loop. The proof stream consists of an opcode declaring
+  // what kind of declaration this is, and depending on the declaration it may
+  // do nothing, verify the next element in the term or theorem table, or
+  // read a proof from the stream and verify against the term or theorem table.
   while (*stmt != CMD_END) {
     u32 sz = cmd_unpack(stmt);
     g_stmt = stmt;
@@ -487,12 +642,18 @@ void verify(u64 len, u8* file) {
     }
 
     switch (*stmt & 0x3F) {
+      // A sort command has no data in the proof stream. It simply bumps the
+      // sort counter (after checking that a sort is available in the table).
       case CMD_STMT_SORT: {
         ENSURE("Next statement incorrect", g_data == sz);
         ENSURE("Step sort overflow", g_num_sorts < p->num_sorts);
         g_num_sorts++;
       } break;
 
+      // A term, def or local def requires consulting the next entry in the
+      // term table. We verify the data in the table, and find out whether this
+      // is a term or def by seeing if there is a unify stream declared.
+      // If so, we read a proof stream here and match against the unify stream.
       // case CMD_STMT_TERM: // = CMD_STMT_DEF
       case CMD_STMT_DEF:
       case CMD_STMT_LOCAL_DEF: {
@@ -532,6 +693,11 @@ void verify(u64 len, u8* file) {
         g_num_terms++;
       } break;
 
+      // An axiom, theorem or local theorem requires checking the theorem table
+      // for the information about the new axiom or theorem. We then read a proof
+      // stream, expecting to see 0 or more Hyp commands, and terminating with
+      // one element on the stack; for an axiom it should be an expression e,
+      // and for a theorem it should be a proof |- e.
       case CMD_STMT_AXIOM:
       case CMD_STMT_THM:
       case CMD_STMT_LOCAL_THM: {

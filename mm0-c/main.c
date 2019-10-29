@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
 
   // struct timespec start_time;
   // clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_time);
-  verify(len, result);
+  verify(result, len);
   // struct timespec end_time;
   // clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_time);
   // long diffInNanos = (end_time.tv_sec - start_time.tv_sec) * (long)1e9 + (end_time.tv_nsec - start_time.tv_nsec);
