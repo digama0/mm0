@@ -58,12 +58,12 @@ elabStmt (Span rd@(pos, _) s) = resuming $ withTimeout pos $ case s of
   Import (Span _ t) -> loadEnv rd t >>= put -- TODO: this just replaces the current env
   _ -> unimplementedAt pos
 
-checkNew :: ErrorLevel -> Range -> T.Text -> (v -> Range) -> T.Text ->
+checkNew :: ErrorLevel -> Range -> T.Text -> (v -> Location) -> T.Text ->
   H.HashMap T.Text v -> ElabM (v -> H.HashMap T.Text v)
 checkNew l o msg f k m = case H.lookup k m of
   Nothing -> return (\v -> H.insert k v m)
   Just a -> do
-    reportErr $ ElabError l o msg [(f a, "previously declared here")]
+    mkElabError l o msg [(f a, "previously declared here")] >>= reportErr'
     mzero
 
 nameOf :: Span Stmt -> LispVal
@@ -75,10 +75,11 @@ nameOf _ = Bool False
 addSort :: Range -> Range -> T.Text -> SortData -> ElabM ()
 addSort rd rx x sd = do
   ins <- gets eSorts >>= checkNew ELError rx
-    ("duplicate sort declaration '" <> x <> "'") (\(_, (_, i), _) -> i) x
+    ("duplicate sort declaration '" <> x <> "'") (\(_, (p, _, i), _) -> (p, i)) x
   n <- next
+  p <- asks efName
   modify $ \env -> env {
-    eSorts = ins (n, (rd, rx), sd),
+    eSorts = ins (n, (p, rd, rx), sd),
     eProvableSorts = (guard (sProvable sd) >> [x]) ++ eProvableSorts env }
 
 inferDepType :: AtDepType -> ElabM ()
@@ -111,9 +112,10 @@ inferBinder bi@(Binder os@(o, _) l oty) = case oty of
         when noType $ escapeAt o "cannot infer variable type"
         return $ locals
       Just n -> do
+        p <- asks efName
         ins <- checkNew ELWarning os
           ("variable '" <> n <> "' shadows previous declaration")
-          liOffset n locals
+          (\li -> (p, liOffset li)) n locals
         return (ins (LIOld bi Nothing))
     modifyInfer $ \ic -> ic {icLocals = locals'}
 
@@ -192,9 +194,10 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
 
 insertDecl :: T.Text -> Decl -> Range -> Range -> T.Text -> ElabM ()
 insertDecl x decl rd rx err = do
-  ins <- gets eDecls >>= checkNew ELError rx err (\(_, (_, i), _, _) -> i) x
+  fp <- asks efName
+  ins <- gets eDecls >>= checkNew ELError rx err (\(_, (p, _, i), _, _) -> (p, i)) x
   n <- next
-  modify $ \env -> env {eDecls = ins (n, (rd, rx), decl, Nothing)}
+  modify $ \env -> env {eDecls = ins (n, (fp, rd, rx), decl, Nothing)}
 
 unArrow :: [Binder] -> Maybe [Type] -> ([Binder], Maybe Type)
 unArrow bis Nothing = (bis, Nothing)
@@ -220,7 +223,7 @@ addDeclNota :: Range -> T.Text -> Maybe DeclNota -> DeclNota -> ElabM ()
 addDeclNota rx x old new = do
   forM_ old $ \no -> do
     i <- getDeclNotaOffset no
-    reportErr $ ElabError ELWarning rx
+    reportErr ELWarning rx
       ("term '" <> x <> "' already has a notation")
       [(i, "previously declared here")]
   modify $ \env -> env {eDecls =
@@ -231,27 +234,31 @@ addPrefix rx@(px, _) x c@(Const o tk) prec = do
   (_, bis, _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   insertPrec c prec
-  insertPrefixInfo c (PrefixInfo (textToRange o tk) x (mkLiterals (length bis) prec 0))
+  fp <- asks efName
+  insertPrefixInfo c $
+    PrefixInfo (fp, textToRange o tk) x (mkLiterals (length bis) prec 0)
   addDeclNota rx x no (NPrefix tk)
 
 addInfix :: Bool -> Range -> T.Text -> Const -> Prec -> ElabM ()
 addInfix r rx@(px, _) x c@(Const o tk) prec = do
+  fp <- asks efName
   (_, bis, _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   guardAt px ("'" <> x <> "' must be a binary operator") (length bis == 2)
   insertPrec c prec
-  insertInfixInfo c (InfixInfo (textToRange o tk) x r)
+  insertInfixInfo c (InfixInfo (fp, textToRange o tk) x r)
   addDeclNota rx x no (NInfix tk)
 
 addNotation :: Range -> T.Text -> [Binder] -> [AtPos Literal] -> ElabM ()
 addNotation rx@(px, _) x bis = \lits -> do
+  fp <- asks efName
   (_, bis', _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   unless (length bis == length bis') $
     escapeAt px ("term '" <> x <> "' has " <> T.pack (show (length bis')) <>
       " arguments, expected " <> T.pack (show (length bis)))
   (c@(Const o tk), ti) <- processLits lits
-  insertPrefixInfo c (PrefixInfo (textToRange o tk) x ti)
+  insertPrefixInfo c (PrefixInfo (fp, textToRange o tk) x ti)
   addDeclNota rx x no (NPrefix tk)
   where
 
@@ -287,19 +294,21 @@ addCoercion rx@(px, _) x s1 s2 = do
     Nothing -> escapeAt px ("term '" <> x <> "' not declared")
     Just (_, [PReg _ (DepType s1' [])], DepType s2' [], no)
       | s1 == s1' && s2 == s2' -> do
-        addCoe (Coe1 rx x) s1 s2
+        addCoe rx x s1 s2
         addDeclNota rx x no (NCoe s1 s2)
     _ -> escapeAt px ("coercion '" <> x <> "' does not match declaration")
 
 insertPrec :: Const -> Prec -> ElabM ()
 insertPrec (Const o tk) p = do
+  fp <- asks efName
   env <- get
   case H.lookup tk (pPrec (ePE env)) of
     Just (i, p') | p /= p' ->
-      reportErr $ ElabError ELError (o, o)
+      mkElabError ELError (o, o)
         ("incompatible precedence for '" <> tk <> "'")
-        [(i, "previously declared here")]
-    _ -> lift $ modifyPE $ \e -> e {pPrec = H.insert tk (textToRange o tk, p) (pPrec e)}
+        [(i, "previously declared here")] >>= reportErr'
+    _ -> lift $ modifyPE $ \e -> e {pPrec =
+      H.insert tk ((fp, textToRange o tk), p) (pPrec e)}
 
 checkToken :: Const -> ElabM ()
 checkToken (Const _ tk) | T.length tk == 1 = return ()
@@ -374,9 +383,11 @@ inferQExpr' tgt (QApp (Span os@(o, _) t) ts) = do
     (Just (LINew o1 bd1 s1), Nothing) -> do
       bd' <- case tgt of
         Just (s2, bd2) -> do
-          unless (s1 == s2) $ escapeErr $ ElabError ELError os
+          p <- asks efName
+          unless (s1 == s2) $ escapeErr ELError os
             ("inferred two types " <> s1 <> ", " <> s2 <> " for " <> t)
-            [(o1, "inferred " <> s1 <> " here"), (os, "inferred " <> s2 <> " here")]
+            [((p, o1), "inferred " <> s1 <> " here"),
+             ((p, os), "inferred " <> s2 <> " here")]
           return (bd1 || bd2)
         _ -> return bd1
       returnVar s1 bd' $ when (bd1 /= bd') $ modifyInfer $ \ic -> ic {
@@ -1080,9 +1091,9 @@ initialBindings = [
     ("stat", \o _ ->
       getStat >>= reportSpan o ELInfo . render >> pure Undef),
     ("get-decl", \os@(o, _) -> \case
-      [Atom _ _ x] -> gets (H.lookup x . eDecls) >>= \case
-        Just (_, (_, px), d, _) -> return $ declToLisp o (fst px) x d
-        _ -> return Undef
+      [Atom _ _ x] -> gets (H.lookup x . eDecls) <&> \case
+        Just (_, (_, _, px), d, _) -> declToLisp o (fst px) x d
+        _ -> Undef
       _ -> escapeSpan os "invalid arguments"),
     ("add-decl!", \o -> \case
       Atom _ _ "term" : es -> Undef <$ lispAddTerm o es
@@ -1092,6 +1103,15 @@ initialBindings = [
       _ -> escapeSpan o "unknown decl kind"),
     ("add-term!", \o es -> Undef <$ lispAddTerm o es),
     ("add-thm!", \o es -> Undef <$ lispAddThm o es),
+    ("set-reporting", \o -> \case
+      [Bool b] -> Undef <$ modifyReportMode (\_ -> ReportMode b b b)
+      [Atom _ _ "info", Bool i] ->
+        Undef <$ modifyReportMode (\(ReportMode _ w e) -> ReportMode i w e)
+      [Atom _ _ "warn", Bool w] ->
+        Undef <$ modifyReportMode (\(ReportMode i _ e) -> ReportMode i w e)
+      [Atom _ _ "error", Bool e] ->
+        Undef <$ modifyReportMode (\(ReportMode i w _) -> ReportMode i w e)
+      _ -> escapeSpan o "invalid arguments"),
 
     -- redefinable configuration functions
     ("refine-extra-args", \(o, _) -> \case

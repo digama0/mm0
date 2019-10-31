@@ -51,7 +51,7 @@ exportTables strip fname (ns, t) =
     hSetBuffering h (BlockBuffering Nothing)
     putExportM h (writeMM0B strip ns t)
 
-reportErr :: Range -> T.Text -> IO ()
+reportErr :: Location -> T.Text -> IO ()
 reportErr _ = hPutStrLn stderr . T.unpack
 
 isPublic :: Decl -> Bool
@@ -138,13 +138,13 @@ collectDecls env = do
   return $ M.elems $ H.foldlWithKey' (\m' x (s, _, _) -> M.insert s (SortName x) m') m (eSorts env)
   where
 
-  processDecls :: [(Ident, (SeqNum, (Range, Range), Decl, a))] -> DeclMap -> IO DeclMap
-  processDecls ((x, (s, (_, o), d, _)) : ds) m | isPublic d && not (M.member s m) =
-    execStateT (checkDecl' o s x d) m >>= processDecls ds
+  processDecls :: [(Ident, (SeqNum, (FilePath, Range, Range), Decl, a))] -> DeclMap -> IO DeclMap
+  processDecls ((x, (s, (p, _, o), d, _)) : ds) m | isPublic d && not (M.member s m) =
+    execStateT (checkDecl' (p, o) s x d) m >>= processDecls ds
   processDecls (_ : ds) m = processDecls ds m
   processDecls [] m = return m
 
-  checkDecl' :: Range -> SeqNum -> Ident -> Decl -> StateT DeclMap IO ()
+  checkDecl' :: Location -> SeqNum -> Ident -> Decl -> StateT DeclMap IO ()
   checkDecl' _ s x (DTerm _ _) = modify (M.insert s (TermName x))
   checkDecl' o s x (DAxiom _ hs ret) = do
     modify (M.insert s (ThmName x))
@@ -159,19 +159,19 @@ collectDecls env = do
     checkSExpr o s ret
     lift pr >>= mapM_ (checkProof o s . snd)
 
-  checkDecl :: Range -> SeqNum -> Ident -> StateT DeclMap IO ()
+  checkDecl :: Location -> SeqNum -> Ident -> StateT DeclMap IO ()
   checkDecl o s x = case H.lookup x (eDecls env) of
-    Just (s', (_, o'), d, _) -> do
+    Just (s', (p, _, o'), d, _) -> do
       unless (s' < s) $ lift $ reportErr o $ T.pack (show x) <> " is forward-referenced"
       m <- get
-      unless (M.member s' m) $ checkDecl' o' s' x d
+      unless (M.member s' m) $ checkDecl' (p, o') s' x d
     Nothing -> lift $ reportErr o $ "unknown declaration " <> T.pack (show x)
 
-  checkSExpr :: Range -> SeqNum -> SExpr -> StateT DeclMap IO ()
+  checkSExpr :: Location -> SeqNum -> SExpr -> StateT DeclMap IO ()
   checkSExpr _ _ (SVar _) = return ()
   checkSExpr o s (App t es) = checkDecl o s t >> mapM_ (checkSExpr o s) es
 
-  checkProof :: Range -> SeqNum -> Proof -> StateT DeclMap IO ()
+  checkProof :: Location -> SeqNum -> Proof -> StateT DeclMap IO ()
   checkProof _ _ PSorry = error "sorry found in proof"
   checkProof _ _ (PHyp _) = return ()
   checkProof o s (PThm t es ps) =
@@ -179,7 +179,7 @@ collectDecls env = do
   checkProof o s (PConv _ c p) = checkConv o s c >> checkProof o s p
   checkProof o s (PLet _ p1 p2) = checkProof o s p1 >> checkProof o s p2
 
-  checkConv :: Range -> SeqNum -> Conv -> StateT DeclMap IO ()
+  checkConv :: Location -> SeqNum -> Conv -> StateT DeclMap IO ()
   checkConv _ _ (CVar _) = return ()
   checkConv o s (CApp t cs) = checkDecl o s t >> mapM_ (checkConv o s) cs
   checkConv o s (CSym c) = checkConv o s c

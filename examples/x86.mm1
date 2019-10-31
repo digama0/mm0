@@ -36,6 +36,14 @@ pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) 
 @_ def u32: nat = $ Bits 32 $;
 @_ def u64: nat = $ Bits 64 $;
 
+theorem Bitsle (m n v: nat): $ m <= n -> v e. Bits m -> v e. Bits n $ =
+'(sylibr (imeq elupto elupto) @ syl (com12 ltletr) @ lepow2a d2ne0);
+
+theorem Bitsss (m n: nat): $ m <= n -> Bits m C_ Bits n $ = '(!! iald x Bitsle);
+
+theorem modelBits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
+theorem modelu8: $ a % 256 e. u8 $ = 'modelBits;
+
 @_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
   lower ((\ i, (i % 256) : a @ (i // 256)) |` upto (suc n))) k $;
 
@@ -58,7 +66,7 @@ theorem toBytesAuxS_app: $ a <= n ->
 -- little endian encoding
 @_ abstract def toBytes (k n: nat): nat = $ toBytesAux k n @ n $;
 
-pub theorem toBytes0 (k n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
+pub theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
 
 theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
 (focus
@@ -72,7 +80,6 @@ theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
         iald @ exp @ exp @ eqtr4d (anwr toBytesAuxS_app) @
         eqtr4d (syl toBytesAuxS_app anlr) @
         conseq2d @
-        -- eqtr4d (mpd (letrd (a1i divleid) anr) @ anwl @ eale ,e2) @
         mpd (letrd (a1i divleid) anr) @ mpd (letrd (a1i divleid) anlr) @
         anwll @ eale ,e2))
     leid));
@@ -80,7 +87,16 @@ theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
 pub theorem toBytesS (k n: nat):
   $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $ =
 '(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
-pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
+
+pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
+'(!! eale x (eleq1d toByteseq2) @
+  !! ind y z
+    (aleqd @ eleqd toByteseq1 Arrayeq2) (aleqd @ eleqd toByteseq1 Arrayeq2)
+    (aleqd @ eleqd toByteseq1 Arrayeq2) (aleqd @ eleqd toByteseq1 Arrayeq2)
+    (ax_gen @ mpbir (eleq1 toBytes0) elArray0)
+    (sylbi (!! cbval _ y @ eleq1d toByteseq2) @ iald @
+      sylibr (eleq1 toBytesS) @ syl (elArrayS modelu8) @
+      eale @ eleq1d toByteseq2));
 
 @_ def u16Bytes (n: nat): nat = $ toBytes 2 n $;
 @_ def u32Bytes (n: nat): nat = $ toBytes 4 n $;
@@ -89,7 +105,15 @@ pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
 -- sign extend (v: bitvec m) to length n
 @_ def sExt (m n v: nat): nat = $ if (m - 1 e. v) (2 ^ n - 2 ^ m + v) v $;
 @_ def sExtq (n v: nat): nat = $ sExt n 64 v $;
-pub theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $;
+
+pub theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $ =
+'(casesda
+  (mpbird (eleq1d @ anwr ifpos) @
+    sylibr elupto @ mpbid (lteq2d @ syl npcan @ anwll @ lepow2a d2ne0) @
+    sylib ltadd2 @ sylib elupto anlr)
+  (mpbird (eleq1d @ anwr ifneg) @ anwl @ imp Bitsle));
+
+do {(set-reporting 'warn #f)};
 pub theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
 
 -- get lower bits of a number
@@ -203,11 +227,12 @@ pub theorem readSIBDisplacementT (mod bbase q base l: nat):
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ base e. Base /\ l e. List u8 $;
 
 @_ def readSIB (rex mod rm l .b .bs .ix .sc .disp .bbase .index: nat): wff =
-$ E. b E. bs E. ix E. sc E. disp E. bbase E. index (
+$ E. b E. l2 E. bs E. ix E. sc E. disp E. bbase E. index (
     splitBits ((3 <> bs) : (3 <> ix) : (2 <> sc) : 0) b /\
     index = rex_reg (REX_X rex) ix /\
-    readSIBDisplacement mod (rex_reg (REX_B rex) bs) disp bbase l /\
-    rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp) $;
+    readSIBDisplacement mod (rex_reg (REX_B rex) bs) disp bbase l2 /\
+    rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp /\
+    l = b : l2) $;
 pub theorem readSIBT (rex mod rm l: nat):
   $ readSIB rex mod rm l ->
     mod e. Bits 2 /\ mod != 3 /\ rm e. RM /\ l e. List u8 $;
@@ -215,18 +240,18 @@ pub theorem readSIBT (rex mod rm l: nat):
 @_ def readModRM (rex rn rm l .b .rm2 .opc .mod .i .l2 .disp: nat): wff =
 $ E. b E. rm2 E. opc E. mod (
     splitBits ((3 <> rm2) : (3 <> opc) : (2 <> mod) : 0) b /\
-    (rm2 = 5 /\ mod = 0 /\ E. i (i e. u32 /\
-      rn = rex_reg (REX_R rex) opc /\
-      rm = RM_mem 0 base_RIP (sExtq 32 i) /\
-      l = b : u32Bytes i)) \/
-    (mod = 3 /\
-      rn = rex_reg (REX_R rex) opc /\
-      rm = RM_reg (rex_reg (REX_B rex) rm2) /\
-      l = b : 0) \/
-    E. l2 (rn = rex_reg (REX_R rex) opc /\ l = b : l2 /\
-      ifp (rm2 = 4) (readSIB rex mod rm l2)
-        (E. disp (readDisplacement mod disp l2 /\
-          rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))) $;
+    rn = rex_reg (REX_R rex) opc /\
+    ifp (mod = 3)
+      (rm = RM_reg (rex_reg (REX_B rex) rm2) /\
+        l = b : 0)
+      (ifp (rm2 = 5 /\ mod = 0)
+        (E. i (i e. u32 /\
+          rm = RM_mem 0 base_RIP (sExtq 32 i) /\
+          l = b : u32Bytes i))
+        (E. l2 (l = b : l2 /\
+          ifp (rm2 = 4) (readSIB rex mod rm l2)
+            (E. disp (readDisplacement mod disp l2 /\
+              rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))))) $;
 pub theorem readModRMT (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $;
 
@@ -1360,6 +1385,7 @@ $ E. f E. m (f e. Flags /\ m e. Memory /\
     k = entry <> lower ((\ r, 0) |` Regs) <> f <> m) $;
 pub theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
+do {(set-reporting #t)};
 
 @_ def allocStack (k k2 .sp .stack .argc .x .arg .cstr .str: nat): wff =
 $ E. sp E. stack E. argc (
@@ -1367,7 +1393,7 @@ $ E. sp E. stack E. argc (
     mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) sp stack k2 /\
     argc e. u64 /\ sublistAt 0 stack (u64Bytes argc) /\
     A. x (x < argc -> E. arg E. cstr (
-      sublistAt (4 * x) stack (u64Bytes (sp + arg)) /\
+      sublistAt (8 * suc x) stack (u64Bytes (sp + arg)) /\
       sublistAt arg stack cstr /\ E. str toCStr str cstr))) $;
 
 -- This defines the initial state set up from a basic ELF file (only one

@@ -116,14 +116,11 @@ type Reactor a = ReaderT ReactorState IO a
 -- ---------------------------------------------------------------------
 
 reactorSend :: FromServerMessage -> Reactor ()
-reactorSend msg = do
-  lf <- asks rsFuncs
-  liftIO $ sendFunc lf msg
+reactorSend msg = ReaderT $ \r -> sendFunc (rsFuncs r) msg
 
 publishDiagnostics :: Int -> NormalizedUri -> TextDocumentVersion -> DiagnosticsBySource -> Reactor ()
-publishDiagnostics maxToPublish uri v diags = do
-  lf <- asks rsFuncs
-  liftIO $ (publishDiagnosticsFunc lf) maxToPublish uri v diags
+publishDiagnostics maxToPublish uri v diags = ReaderT $ \r ->
+  publishDiagnosticsFunc (rsFuncs r) maxToPublish uri v diags
 
 nextLspReqId :: Reactor LspId
 nextLspReqId = asks (getNextReqId . rsFuncs) >>= liftIO
@@ -266,10 +263,12 @@ reactor debug lf inp = do
             in RspDefinition $ makeResponseMessage req $ MultiLoc as
 
       ReqDocumentSymbols req -> do
-        let uri = req ^. J.params . J.textDocument . J.uri
-        getFileCache (toNormalizedUri uri) >>= \case
+        let doc = toNormalizedUri $ req ^. J.params . J.textDocument . J.uri
+            fileUri = fromNormalizedUri doc
+            file = fromMaybe "" $ uriToFilePath fileUri
+        getFileCache doc >>= \case
           Left err -> reactorSend $ RspError $ makeResponseError (responseId $ req ^. J.id) err
-          Right (FC _ larr _ _ env) -> liftIO (getSymbols larr env) >>=
+          Right (FC _ larr _ _ env) -> liftIO (getSymbols larr file env) >>=
             reactorSend . RspDocumentSymbols . makeResponseMessage req . DSDocumentSymbols . List
 
       NotCustomClient (NotificationMessage _
@@ -304,14 +303,17 @@ toPosition larr n = let (l, c) = offToPos larr n in Position l c
 toRange :: Lines -> (Int, Int) -> Range
 toRange larr (o1, o2) = Range (toPosition larr o1) (toPosition larr o2)
 
-elabErrorDiags :: Uri -> Lines -> [CE.ElabError] -> [Diagnostic]
-elabErrorDiags uri larr errs = toDiag <$> errs where
-  toRel :: ((Int, Int), T.Text) -> DiagnosticRelatedInformation
-  toRel (o, msg) = DiagnosticRelatedInformation
-    (Location uri (toRange larr o)) msg
-  toDiag :: CE.ElabError -> Diagnostic
-  toDiag (CE.ElabError l o msg es) =
-    mkDiagnosticRelated l (toRange larr o) msg (toRel <$> es)
+toLocation :: Lines -> (FilePath, (Int, Int)) -> Location
+toLocation larr (p, r) = Location (filePathToUri p) (toRange larr r)
+
+elabErrorDiags :: Lines -> [CE.ElabError] -> [Diagnostic]
+elabErrorDiags larr errs = mapMaybe toDiag errs where
+  toRel :: ((FilePath, (Int, Int)), T.Text) -> DiagnosticRelatedInformation
+  toRel (loc, msg) = DiagnosticRelatedInformation (toLocation larr loc) msg
+  toDiag :: CE.ElabError -> Maybe Diagnostic
+  toDiag (CE.ElabError _ _ False _ _) = Nothing
+  toDiag (CE.ElabError l (_, o) True msg es) =
+    Just $ mkDiagnosticRelated l (toRange larr o) msg (toRel <$> es)
 
 -- | Analyze the file and send any diagnostics to the client in a
 -- "textDocument/publishDiagnostics" msg
@@ -329,14 +331,14 @@ elaborateFileAndSendDiags nuri@(NormalizedUri t) version str = do
           (errs, _, ast) = CP.parseAST file str
       (errs', env) <- ReaderT $ \r ->
         CE.elaborate (mkElabConfig nuri isMM0 False r)
-          (CE.toElabError <$> errs) ast
+          (CE.toElabError def file <$> errs) ast
       let fc1 = FC str larr ast (toSpans env <$> ast) env
       fc <- liftIO $ atomically $ do
         h <- readTVar fs
         case H.lookup nuri h of
           Just (oldv, fc') | isOutdated oldv version -> return fc'
           _ -> fc1 <$ writeTVar fs (H.insert nuri (version, fc1) h)
-      let diags = elabErrorDiags fileUri larr errs'
+      let diags = elabErrorDiags larr errs'
       publishDiagnostics 100 nuri version (partitionBySource diags)
       return fc
 
@@ -380,7 +382,7 @@ getFileCache doc = do
 makeHover :: CE.Env -> Range -> CA.Span CA.Stmt -> PosInfo -> Maybe Hover
 makeHover env range stmt (PosInfo t pi') = case pi' of
   PISort -> do
-    (_, (_, (o, _)), sd) <- H.lookup t (CE.eSorts env)
+    (_, (_, _, (o, _)), sd) <- H.lookup t (CE.eSorts env)
     Just $ code $ ppStmt $ CA.Sort o t sd
   PIVar (Just bi) -> Just $ code $ ppBinder bi
   PIVar Nothing -> do
@@ -414,28 +416,28 @@ relativeUri t (Uri uri) = do
 goToDefinition :: Lines -> CE.Env -> Uri -> PosInfo -> [Location]
 goToDefinition larr env uri (PosInfo t pi') = case pi' of
   PISort -> maybeToList $
-    H.lookup t (CE.eSorts env) <&> \(_, (_, rx), _) -> toLoc rx
+    H.lookup t (CE.eSorts env) <&> \(_, (p, _, rx), _) -> toLoc (p, rx)
   PIVar bi -> maybeToList $ binderLoc <$> bi
   PITerm -> maybeToList $
-    H.lookup t (CE.eDecls env) <&> \(_, (_, rx), _, _) -> toLoc rx
+    H.lookup t (CE.eDecls env) <&> \(_, (p, _, rx), _, _) -> toLoc (p, rx)
   PIAtom b obi ->
     (case (b, obi) of
       (True, Just bi) -> [binderLoc bi]
       (True, Nothing) -> maybeToList $
-        H.lookup t (CE.eDecls env) <&> \(_, (_, rx), _, _) -> toLoc rx
+        H.lookup t (CE.eDecls env) <&> \(_, (p, _, rx), _, _) -> toLoc (p, rx)
       _ -> []) ++
     maybeToList (
-      H.lookup t (CE.eLispNames env) >>= fst <&> \(_, rx) -> toLoc rx)
+      H.lookup t (CE.eLispNames env) >>= fst <&> \(p, _, rx) -> toLoc (p, rx))
   PIFile -> traceShowId $ maybeToList $ flip Location (Range pos0 pos0) <$> relativeUri t uri
   where
-  toLoc = Location uri . toRange larr
-  binderLoc (CA.Binder o _ _) = toLoc o
+  toLoc = toLocation larr
+  binderLoc (CA.Binder o _ _) = Location uri (toRange larr o)
   pos0 = Position 0 0
 
-getSymbols :: Lines -> CE.Env -> IO [DocumentSymbol]
-getSymbols larr env = do
-  let mkDS x det (rd, rx) sk = DocumentSymbol x det sk Nothing
-        (toRange larr rd) (toRange larr rx) Nothing
+getSymbols :: Lines -> FilePath -> CE.Env -> IO [DocumentSymbol]
+getSymbols larr doc env = do
+  let mkDS x det (p, rd, rx) sk = (p, DocumentSymbol x det sk Nothing
+        (toRange larr rd) (toRange larr rx) Nothing)
   v <- VD.unsafeFreeze (CE.eLispData env)
   l1 <- flip mapMaybeM (H.toList (CE.eLispNames env)) $ \(x, (o, n)) -> do
     ty <- CE.unRefIO (v V.! n) <&> \case
@@ -461,7 +463,8 @@ getSymbols larr env = do
           CE.DDef _ _ _ _       -> SkConstructor
           CE.DAxiom _ _ _       -> SkMethod
           CE.DTheorem _ _ _ _ _ -> SkMethod
-  return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) (l1 ++ l2 ++ l3)
+  return $ sortOn (\ds -> ds ^. J.selectionRange . J.start) $
+    mapMaybe (\(p, ds) -> if p == doc then Just ds else Nothing) (l1 ++ l2 ++ l3)
 
 getCompletions :: NormalizedUri -> Position ->
     Reactor (Either ResponseError [CompletionItem])
@@ -482,13 +485,13 @@ getCompletions doc@(NormalizedUri t) pos = do
         Just ast' -> do
           (errs', env) <- ReaderT $ \r ->
             CE.elaborate (mkElabConfig doc isMM0 True r)
-              (CE.toElabError <$> errs) ast'
+              (CE.toElabError def file <$> errs) ast'
           fs <- asks rsLastParse
           liftIO $ atomically $ modifyTVar fs $ flip H.alter doc $ \case
             fc@(Just (oldv, _)) | isOutdated oldv (Just version) -> fc
             _ -> Just (Just version, FC str larr ast' (toSpans env <$> ast') env)
-          publish (elabErrorDiags fileUri larr errs')
-          ds <- liftIO $ getSymbols larr env
+          publish (elabErrorDiags larr errs')
+          ds <- liftIO $ getSymbols larr file env
           return $ Right $ ds <&> \(DocumentSymbol x det sk _ _ _ _) ->
             CompletionItem x (Just (toCIK sk)) det
               def def def def def def def def def def def def

@@ -178,14 +178,27 @@ instance Show ErrorLevel where
   show ELWarning = "warning"
   show ELInfo = "info"
 
+data ReportMode = ReportMode Bool Bool Bool
+instance Default ReportMode where
+  def = ReportMode True True True
+
+reporting :: ErrorLevel -> ReportMode -> Bool
+reporting ELInfo (ReportMode b _ _) = b
+reporting ELWarning (ReportMode _ b _) = b
+reporting ELError (ReportMode _ _ b) = b
+
+type Location = (FilePath, Range)
 data ElabError = ElabError {
   eeLevel :: ErrorLevel,
-  eeRange :: Range,
+  eeRange :: Location,
+  eeReport :: Bool,
   eeMsg :: Text,
-  eeRelated :: [(Range, Text)] } deriving (Show)
+  eeRelated :: [(Location, Text)] } deriving (Show)
 
-toElabError :: ParseError -> ElabError
-toElabError e = ElabError ELError (errorOffset e, errorOffset e)
+toElabError :: ReportMode -> FilePath -> ParseError -> ElabError
+toElabError m p e = ElabError ELError
+  (p, (errorOffset e, errorOffset e))
+  (reporting ELError m)
   (T.pack (parseErrorTextPretty e)) []
 
 -- This represents a hierarchical ordering of values:
@@ -226,12 +239,12 @@ incCounter (Just s) (SeqCounter c n) = do
 
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
-data PrefixInfo = PrefixInfo Range Token [PLiteral] deriving (Show)
-data InfixInfo = InfixInfo Range Token Bool deriving (Show)
-data Coe1 = Coe1 Range Sort
+data PrefixInfo = PrefixInfo Location Token [PLiteral] deriving (Show)
+data InfixInfo = InfixInfo Location Token Bool deriving (Show)
+data Coe1 = Coe1 Location TermName
 data Coe = Coe Coe1 | Coes Coe Sort Coe
 
-foldCoe :: (Text -> a -> a) -> Coe -> a -> a
+foldCoe :: (TermName -> a -> a) -> Coe -> a -> a
 foldCoe tm (Coe (Coe1 _ t)) = tm t
 foldCoe tm (Coes c1 _ c2) = foldCoe tm c1 . foldCoe tm c2
 
@@ -259,7 +272,7 @@ data ParserEnv = ParserEnv {
   pDelims :: Delims,
   pPrefixes :: H.HashMap Token PrefixInfo,
   pInfixes :: H.HashMap Token InfixInfo,
-  pPrec :: H.HashMap Token (Range, Prec),
+  pPrec :: H.HashMap Token (Location, Prec),
   pCoes :: M.Map Sort (M.Map Sort Coe),
   pCoeProv :: H.HashMap Sort Sort }
 
@@ -305,19 +318,20 @@ data ThmCtx = ThmCtx {
 
 data Env = Env {
   eTimeout :: Int,
+  eReportMode :: ReportMode,
   eLispData :: VD.IOVector LispVal,
-  eLispNames :: H.HashMap Ident (Maybe (Range, Range), Int),
+  eLispNames :: H.HashMap Ident (Maybe (FilePath, Range, Range), Int),
   eCounter :: SeqCounter,
-  eSorts :: H.HashMap Sort (SeqNum, (Range, Range), SortData),
+  eSorts :: H.HashMap Sort (SeqNum, (FilePath, Range, Range), SortData),
   eProvableSorts :: [Sort],
-  eDecls :: H.HashMap Ident (SeqNum, (Range, Range), Decl, Maybe DeclNota),
+  eDecls :: H.HashMap Ident (SeqNum, (FilePath, Range, Range), Decl, Maybe DeclNota),
   eParsedFmlas :: I.IntMap QExpr,
   ePE :: ParserEnv,
   eInfer :: InferCtx,
   eThmCtx :: Maybe ThmCtx }
 
 instance Default Env where
-  def = Env 5000000 undefined H.empty def H.empty def H.empty def def undefined def
+  def = Env 5000000 def undefined H.empty def H.empty def H.empty def def undefined def
 
 data ElabFuncs = ElabFuncs {
   efMM0 :: Bool,
@@ -370,17 +384,29 @@ withTimeout o m = MaybeT $ RWST $ \r s ->
 resuming :: ElabM () -> Elab ()
 resuming m = () <$ runMaybeT m
 
-reportErr :: ElabError -> ElabM ()
-reportErr e = lift $ asks efReport >>= \f -> lift $ f e
+mkElabError :: ErrorLevel -> Range -> Text -> [(Location, Text)] -> ElabM ElabError
+mkElabError l o msg i = do
+  o' <- toLoc o
+  m <- gets eReportMode
+  return $ ElabError l o' (reporting l m) msg i
+
+modifyReportMode :: (ReportMode -> ReportMode) -> ElabM ()
+modifyReportMode f = modify $ \env -> env {eReportMode = f (eReportMode env)}
+
+reportErr' :: ElabError -> ElabM ()
+reportErr' e = lift $ asks efReport >>= \f -> lift $ f e
+
+reportErr :: ErrorLevel -> Range -> Text -> [(Location, Text)] -> ElabM ()
+reportErr l r msg i = mkElabError l r msg i >>= reportErr'
 
 ifMM0 :: ElabM () -> ElabM ()
 ifMM0 m = asks efMM0 >>= \b -> when b m
 
-escapeErr :: ElabError -> ElabM a
-escapeErr e = reportErr e >> mzero
+escapeErr :: ErrorLevel -> Range -> Text -> [(Location, Text)] -> ElabM a
+escapeErr l r msg i = reportErr l r msg i >> mzero
 
 reportSpan :: Range -> ErrorLevel -> Text -> ElabM ()
-reportSpan o l s = reportErr $ ElabError l o s []
+reportSpan o l s = mkElabError l o s [] >>= reportErr'
 
 reportAt :: Offset -> ErrorLevel -> Text -> ElabM ()
 reportAt o = reportSpan (o, o)
@@ -425,6 +451,9 @@ after s = MaybeT $ state $ \env ->
     Nothing -> (Nothing, env)
     Just (n, c') -> (Just (snFold n s), env {eCounter = c'})
 
+toLoc :: Range -> ElabM Location
+toLoc o = asks ((,o) . efName)
+
 next :: ElabM SeqNum
 next = after Nothing
 
@@ -460,7 +489,9 @@ lispLookupName v = gets (H.lookup v . eLispNames) >>= \case
 lispDefine :: Range -> Range -> T.Text -> LispVal -> ElabM ()
 lispDefine rd rx x v = do
   n <- lispAlloc v
-  modify $ \env -> env {eLispNames = H.insert x (Just (rd, rx), n) (eLispNames env)}
+  p <- asks efName
+  modify $ \env -> env {eLispNames =
+    H.insert x (Just (p, rd, rx), n) (eLispNames env)}
 
 newRef :: a -> ElabM (TVar a)
 newRef = liftIO . newTVarIO
@@ -474,35 +505,35 @@ setRef x v = liftIO $ atomically $ writeTVar x v
 modifyRef :: TVar a -> (a -> a) -> ElabM ()
 modifyRef x f = liftIO $ atomically $ modifyTVar x f
 
-getSort :: Text -> SeqNum -> ElabM ((Range, Range), SortData)
+getSort :: Text -> SeqNum -> ElabM ((FilePath, Range, Range), SortData)
 getSort v s =
   gets (H.lookup v . eSorts) >>= \case
     Just (n, o, sd) -> guard (n < s) >> return (o, sd)
     _ -> mzero
 
-lookupTerm :: Text -> Env -> Maybe (SeqNum, (Range, Range), [PBinder], DepType, Maybe DeclNota)
+lookupTerm :: Text -> Env -> Maybe (SeqNum, (FilePath, Range, Range), [PBinder], DepType, Maybe DeclNota)
 lookupTerm v env = H.lookup v (eDecls env) >>= \case
     (n, o, DTerm args r, no) -> Just (n, o, args, r, no)
     (n, o, DDef _ args r _, no) -> Just (n, o, args, r, no)
     _ -> Nothing
 
-getTerm :: Text -> SeqNum -> ElabM ((Range, Range), [PBinder], DepType, Maybe DeclNota)
+getTerm :: Text -> SeqNum -> ElabM ((FilePath, Range, Range), [PBinder], DepType, Maybe DeclNota)
 getTerm v s = gets (lookupTerm v) >>= \case
   Just (n, o, args, r, no) -> guard (n < s) >> return (o, args, r, no)
   _ -> mzero
 
-lookupThm :: Text -> Env -> Maybe (SeqNum, (Range, Range), [PBinder], [SExpr], SExpr)
+lookupThm :: Text -> Env -> Maybe (SeqNum, (FilePath, Range, Range), [PBinder], [SExpr], SExpr)
 lookupThm v env = H.lookup v (eDecls env) >>= \case
   (n, o, DAxiom args hyps r, _) -> Just (n, o, args, hyps, r)
   (n, o, DTheorem _ args hyps r _, _) -> Just (n, o, args, snd <$> hyps, r)
   _ -> Nothing
 
-getThm :: Text -> SeqNum -> ElabM ((Range, Range), [PBinder], [SExpr], SExpr)
+getThm :: Text -> SeqNum -> ElabM ((FilePath, Range, Range), [PBinder], [SExpr], SExpr)
 getThm v s = gets (lookupThm v) >>= \case
     Just (n, o, args, hyps, r) -> guard (n < s) >> return (o, args, hyps, r)
     _ -> mzero
 
-getDeclNotaOffset :: DeclNota -> ElabM Range
+getDeclNotaOffset :: DeclNota -> ElabM Location
 getDeclNotaOffset (NPrefix tk) =
   gets ((\(PrefixInfo o _ _) -> o) . (H.! tk) . pPrefixes . ePE)
 getDeclNotaOffset (NInfix tk) =
@@ -582,31 +613,32 @@ setGoals gs = do
   gs' <- filterM (fmap isGoal . getRef) gs
   modifyTC $ \tc -> tc {tcGoals = V.fromList gs'}
 
-peGetCoe' :: ParserEnv -> Text -> Text -> Maybe Coe
+peGetCoe' :: ParserEnv -> Sort -> Sort -> Maybe Coe
 peGetCoe' pe s1 s2 = M.lookup s1 (pCoes pe) >>= M.lookup s2
 
-getCoe' :: Text -> Text -> ElabM Coe
+getCoe' :: Sort -> Sort -> ElabM Coe
 getCoe' s1 s2 = gets ePE >>= \pe -> fromJust' $ peGetCoe' pe s1 s2
 
-peGetCoe :: ParserEnv -> (Text -> a -> a) -> Text -> Text -> Maybe (a -> a)
+peGetCoe :: ParserEnv -> (TermName -> a -> a) -> Sort -> Sort -> Maybe (a -> a)
 peGetCoe _ _ s1 s2 | s1 == s2 = return id
 peGetCoe pe tm s1 s2 = foldCoe tm <$> peGetCoe' pe s1 s2
 
-getCoe :: (Text -> a -> a) -> Text -> Text -> ElabM (a -> a)
+getCoe :: (TermName -> a -> a) -> Sort -> Sort -> ElabM (a -> a)
 getCoe tm s1 s2 = gets ePE >>= \pe -> fromJust' $ peGetCoe pe tm s1 s2
 
-peGetCoeProv :: ParserEnv -> (Text -> a -> a) -> Text -> Maybe (Text, a -> a)
+peGetCoeProv :: ParserEnv -> (TermName -> a -> a) -> Sort -> Maybe (Sort, a -> a)
 peGetCoeProv pe tm s = do
   s2 <- H.lookup s (pCoeProv pe)
   c <- peGetCoe pe tm s s2
   return (s2, c)
 
-getCoeProv :: (Text -> a -> a) -> Text -> ElabM (Text, a -> a)
+getCoeProv :: (TermName -> a -> a) -> Sort -> ElabM (Sort, a -> a)
 getCoeProv tm s = gets ePE >>= \pe -> fromJust' $ peGetCoeProv pe tm s
 
-addCoe :: Coe1 -> Sort -> Sort -> ElabM ()
-addCoe cc@(Coe1 o _) = \s1 s2 -> do
-  let cs = Coe cc
+addCoe :: Range -> TermName -> Sort -> Sort -> ElabM ()
+addCoe o t = \s1 s2 -> do
+  o' <- toLoc o
+  let cs = Coe (Coe1 o' t)
   coes1 <- gets (pCoes . ePE)
   coes2 <- foldCoeLeft s1 coes1 (\s1' l r -> r >>= addCoeInner (Coes cs s1' l) s1' s2) (return coes1)
   coes3 <- addCoeInner cs s1 s2 coes2
@@ -626,7 +658,7 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
   toStrs [(_, s1, s2)] = [s1, " -> ", s2]
   toStrs ((_, s1, _) : cs) = s1 : " -> " : toStrs cs
 
-  toRelated :: [(Coe1, Sort, Sort)] -> [(Range, Text)]
+  toRelated :: [(Coe1, Sort, Sort)] -> [(Location, Text)]
   toRelated = fmap $ \(Coe1 o' _, s1, s2) -> (o', s1 <> " -> " <> s2)
 
   addCoeInner :: Coe -> Sort -> Sort ->
@@ -634,12 +666,12 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
   addCoeInner c s1 s2 coes = do
     let l = coeToList c s1 s2
     when (s1 == s2) $ do
-      escapeErr $ ElabError ELError o
+      escapeErr ELError o
         (T.concat ("coercion cycle detected: " : toStrs l))
         (toRelated l)
     try (getCoe' s1 s2) >>= mapM_ (\c2 -> do
       let l2 = coeToList c2 s1 s2
-      escapeErr $ ElabError ELError o
+      escapeErr ELError o
         (T.concat ("coercion diamond detected: " : toStrs l ++ ";   " : toStrs l2))
         (toRelated (l ++ l2)))
     return $ M.alter (Just . M.insert s2 c . maybe M.empty id) s1 coes
@@ -656,7 +688,7 @@ addCoe cc@(Coe1 o _) = \s1 s2 -> do
               c <- getCoe' s1 s2
               let l = coeToList c s1 s2
               let l' = coeToList c' s1 s2'
-              escapeErr $ ElabError ELError o
+              escapeErr ELError o
                 (T.concat ("coercion diamond to provable detected:\n" :
                   toStrs l ++ " provable\n" : toStrs l' ++ [" provable"]))
                 (toRelated (l ++ l'))

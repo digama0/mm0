@@ -5,6 +5,7 @@ import System.IO
 import System.Exit
 import Data.List
 import Data.Maybe
+import Data.Default
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.List.NonEmpty as NE
@@ -36,7 +37,7 @@ compile args = do
       cfg n = ElabConfig isMM0' par False name (load n)
       load 4 = \_ -> die "depth limit exceeded"
       load n = elabLoad (cfg (n+1))
-  elaborate (cfg (0::Int)) (toElabError <$> errs) ast >>= \case
+  elaborate (cfg (0::Int)) (toElabError def name <$> errs) ast >>= \case
     (errs2, env) -> do
       unless (null errs2) $ do
         let errs' = M.ParseErrorBundle
@@ -47,5 +48,5 @@ compile args = do
       forM_ mmb $ flip (export strip) env
 
 toParseError :: ElabError -> ParseError
-toParseError (ElabError el (o, _) msg _) =
-  M.FancyError o (S.singleton (M.ErrorFail (show el ++ ": " ++ T.unpack msg)))
+toParseError (ElabError el (_, (o, _)) _ msg _) =
+  M.FancyError o $ S.singleton $ M.ErrorFail (show el ++ ": " ++ T.unpack msg)

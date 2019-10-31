@@ -22,7 +22,9 @@ parseMath (Formula o fmla) = do
   pe <- gets ePE
   let p = takeWhileP Nothing isSpace *> parseExpr (Prec 0) <* (eof <?> "'$'")
       (errs, _, res) = runParser (runReaderT p pe) "" o fmla
-  mapM_ (reportErr . toElabError) errs
+  mode <- gets eReportMode
+  fp <- asks efName
+  mapM_ (reportErr' . toElabError mode fp) errs
   r <- fromJust' res
   modify $ \env -> env {eParsedFmlas = I.insert o r (eParsedFmlas env)}
   return r

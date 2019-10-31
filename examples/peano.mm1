@@ -2818,8 +2818,8 @@ theorem powmul: $ a ^ (b * c) = (a ^ b) ^ c $ =
 
 theorem powdvd: $ b <= c -> a ^ b || a ^ c $ =
 '(mpbii dvdmul1 @ dvdeq2d @ syl5eqr powadd @ poweq2d npcan);
-theorem lepow2a: $ a != 0 /\ b <= c -> a ^ b <= a ^ c $ =
-'(dvdle (anwl powne0) (anwr powdvd));
+theorem lepow2a: $ a != 0 -> b <= c -> a ^ b <= a ^ c $ =
+'(exp @ dvdle (anwl powne0) (anwr powdvd));
 
 @_ def shl (a n: nat): nat = $ a * 2 ^ n $;
 @_ def shr (a n: nat): nat = $ a // 2 ^ n $;
@@ -3030,7 +3030,7 @@ theorem uptolem: $ shr (upto n) a = upto (n - a) /\ upto n % 2 ^ a = upto (min n
 '(trud @ eqdivmod
   (ltletrd
     (a1i @ subltid @ ian (powpos d0lt2) d0lt1)
-    (a1i @ lepow2a @ ian d2ne0 minle2))
+    (a1i @ lepow2a d2ne0 minle2))
   (a1i @ mpbi addcan1 @ eqtr addass @ eqtr4 (addeq2 uptoadd1) @ eqtr4 uptoadd1 @
     eqtr3 (addeq (cases
       (muleq1d @ poweq2d eqmin2)
@@ -3382,15 +3382,33 @@ theorem allS (A: set) (a b: nat): $ all A (a : b) <-> a e. A /\ all A b $ =
 
 theorem elList: $ l e. List A <-> all A l $ = '(!! elabe n alleq2);
 
+theorem elList0: $ 0 e. List A $ = '(mpbir elList all0);
+theorem elListS: $ (a : b) e. List A <-> a e. A /\ b e. List A $ =
+'(bitr elList @ bitr4 allS @ aneq2i elList);
+
 @_ abstract def len (l: nat): nat = $ lrec 0 (\\ x, \ y, suc y) l $;
 pub theorem len0: $ len 0 = 0 $ = (named 'lrec0);
 pub theorem lenS (a b: nat): $ len (a : b) = suc (len b) $ =
 '(eqtr lrecS @ ! appslame _ (len b) _ x _ @ !! applamed y @ suceqd anr);
 
+theorem leneq0: $ len n = 0 <-> n = 0 $ =
+'(ibii (ax_3 @ mpbii peano1 @ neeq1d @ syl5eqr lenS @ leneqd consfstsnd)
+  (syl6eq len0 leneq));
+
 @_ def Array (A: set) (n .l: nat): set = $ {l | l e. List A /\ len l = n} $;
 
 theorem elArray: $ l e. Array A n <-> l e. List A /\ len l = n $ =
 '(!! elabe x @ aneqd eleq1 (eqeq1d leneq));
+
+theorem elArrayList: $ l e. Array A n -> l e. List A $ = '(sylbi elArray anl);
+theorem elArraylen: $ l e. Array A n -> len l = n $ = '(sylbi elArray anr);
+
+theorem elArray02: $ l e. Array A 0 <-> l = 0 $ =
+'(bitr elArray @ bitr (aneq2i leneq0) @ bian1a @ mpbiri elList0 eleq1);
+theorem elArray0: $ 0 e. Array A 0 $ = '(mpbir elArray02 eqid);
+theorem elArrayS: $ a e. A -> b e. Array A n -> (a : b) e. Array A (suc n) $ =
+'(exp @ sylibr elArray @ iand (sylibr elListS @ anim2 elArrayList) @
+  syl5eq lenS @ suceqd @ anwr elArraylen);
 
 @_ abstract def append (l1 l2: nat): nat = $ lrec l2 (\\ x, \ y, x : y) l1 $;
 infixl append: $++$ prec 85;
