@@ -231,8 +231,8 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
       // The unify stack should be empty at this point
       case CMD_END: {
         if (mode == UThmEnd)
-          ENSURE("Unfinished hypothesis stack", g_hstack_top == g_hstack);
-        ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
+          ENSURE("unfinished hypothesis stack", g_hstack_top == g_hstack);
+        ENSURE("unfinished unify stack", g_ustack_top == g_ustack);
       } return;
 
       // URef i: H; S, Hi --> H; S
@@ -303,7 +303,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
           } break;
 
           case UThmEnd: {
-            ENSURE("Unfinished unify stack", g_ustack_top == g_ustack);
+            ENSURE("unfinished unify stack", g_ustack_top == g_ustack);
             ENSURE("hypothesis stack underflow", g_hstack_top > g_hstack);
             push_ustack(*--g_hstack_top);
           } break;
@@ -316,9 +316,9 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
 
       default: {
         if (mode == UDef) {
-          ENSURE("Unknown opcode in def statement", false);
+          ENSURE("unknown opcode in def statement", false);
         } else {
-          ENSURE("Unknown opcode in theorem statement", false);
+          ENSURE("unknown opcode in theorem statement", false);
         }
       } break;
     }
@@ -442,7 +442,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // When Save is used, the proven statement is also saved to the heap.
       case CMD_PROOF_THM:
       case CMD_PROOF_THM_SAVE: {
-        ENSURE("Invalid opcode in def", mode != Def);
+        ENSURE("invalid opcode in def", mode != Def);
         ENSURE("theorem out of range", g_data < g_num_thms);
         thm* t = &g_thms[g_data];
         u64* targs = (u64*)&g_file[t->p_args];
@@ -481,7 +481,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // which denotes a statement, and wish to assume it as a hypothesis.
       // Push e to the hypothesis stack, and push |- e to the main stack.
       case CMD_PROOF_HYP: {
-        ENSURE("Invalid opcode in def", mode != Def);
+        ENSURE("invalid opcode in def", mode != Def);
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("hypothesis stack overflow", g_hstack_top < &g_hstack[HYP_STACK_SIZE]);
         ENSURE("hypothesis should have provable sort",
@@ -593,9 +593,9 @@ u8* run_proof(proof_mode mode, u8* cmd) {
 
       default: {
         if (mode == Def) {
-          ENSURE("Unknown opcode in def", false);
+          ENSURE("unknown opcode in def", false);
         } else {
-          ENSURE("Unknown opcode in theorem", false);
+          ENSURE("unknown opcode in theorem", false);
         }
       } break;
     }
