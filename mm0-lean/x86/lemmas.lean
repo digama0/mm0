@@ -1,17 +1,12 @@
-import x86.x86 data.list.basic
+import x86.x86 data.list.basic data.zmod.basic
 
 namespace bitvec
 
-@[class] def reify {n} (v : bitvec n) (l : out_param (list bool)) : Prop :=
-from_bits_fill ff l = v
+theorem of_nat_zero (n) : bitvec.of_nat n 0 = 0 :=
+by induction n; [refl, exact congr_arg (vector.cons ff) n_ih]
 
-theorem reify.mk {n} (v) {l} [h : @reify n v l] :
-  from_bits_fill ff l = v := h
-
-theorem reify_eq {n v l l'} [@reify n v l] (h : l' = v.1) :
-  l' = (@from_bits_fill ff l n).1 := by rwa reify.mk v
-theorem reify_eq' {n v l l'} [@reify n v l] (h : l' = v) :
-  l' = @from_bits_fill ff l n := by rwa reify.mk v
+theorem of_nat_one (n) : bitvec.of_nat n 1 = 1 :=
+by cases n; [refl, exact congr_arg (vector.cons tt) (of_nat_zero _)]
 
 theorem from_bits_fill_eq : ∀ {n b l} (e : list.length l = n),
   from_bits_fill b l = ⟨l, e⟩
@@ -42,11 +37,156 @@ by rw [bitvec.of_nat, nat.bodd_div2_eq, bitvec.of_nat]
   bitvec.of_nat n.succ (nat.bit b i) = b :: bitvec.of_nat n i :=
 by rw [of_nat_succ, nat.div2_bit, nat.bodd_bit]
 
-theorem of_nat_zero (n) : bitvec.of_nat n 0 = 0 :=
-by induction n; [refl, exact congr_arg (vector.cons ff) n_ih]
+theorem of_nat_bits_to_nat {n} (l : list bool) :
+  bitvec.of_nat n (bits_to_nat l) = from_bits_fill ff l :=
+begin
+  rw bits_to_nat,
+  induction l generalizing n, exact of_nat_zero _,
+  cases n, refl,
+  simp [*, bits_to_nat, from_bits_fill,
+    bitvec.of_nat, nat.bodd_bit, nat.div2_bit]
+end
 
-theorem of_nat_one (n) : bitvec.of_nat n 1 = 1 :=
-by cases n; [refl, exact congr_arg (vector.cons tt) (of_nat_zero _)]
+theorem of_nat_bits_to_nat_eq {n} (l : list bool) (e : l.length = n) :
+  bitvec.of_nat n (bits_to_nat l) = ⟨l, e⟩ :=
+begin
+  induction n generalizing l; cases l; injection e, refl,
+  simp [bits_to_nat, nat.div2_bit, nat.bodd_bit],
+  exact congr_arg (vector.cons l_hd) (n_ih _ h_1)
+end
+
+theorem of_nat_to_nat : ∀ {n} (v : bitvec n),
+  bitvec.of_nat n (to_nat v) = v
+| n ⟨l, e⟩ := of_nat_bits_to_nat_eq l e
+
+theorem to_nat_of_nat_aux (m n b) :
+  nat.bit b (n % 2 ^ m) = nat.bit b n % 2 ^ nat.succ m :=
+begin
+  have := nat.mod_add_div (n.bit b) (2^m * 2),
+  conv at this { to_rhs, rw [nat.bit_val, ← nat.mod_add_div n (2^m),
+    mul_add, add_right_comm, ← nat.bit_val, mul_left_comm,
+    ← mul_assoc] },
+  rw [nat.pow_succ],
+  refine add_right_cancel (this.symm.trans _), congr' 2,
+  rw [mul_comm, ← nat.div_div_eq_div_mul, ← nat.div2_val, nat.div2_bit]
+end
+
+theorem to_nat_of_nat (m n) : to_nat (bitvec.of_nat m n) = n % 2 ^ m :=
+begin
+  induction m generalizing n,
+  { simp [bitvec.of_nat, to_nat], refl },
+  simp [bitvec.of_nat, m_ih],
+  conv { to_rhs, rw ← nat.bit_decomp n },
+  apply to_nat_of_nat_aux
+end
+
+theorem to_nat_lt_pow2 {n} (v : bitvec n) : to_nat v < 2 ^ n :=
+begin
+  rw [← of_nat_to_nat v, to_nat_of_nat],
+  exact nat.mod_lt _ (nat.pow_pos dec_trivial _),
+end
+
+def pow2 (n : ℕ) : ℕ+ := ⟨2^n, nat.pow_pos dec_trivial _⟩
+
+def to_zmod {n} (v : bitvec n) : zmod (pow2 n) := bitvec.to_nat v
+def of_zmod {n} (i : zmod (pow2 n)) : bitvec n := bitvec.of_nat _ i.1
+
+theorem to_zmod_of_zmod {n} (i : zmod (pow2 n)) : to_zmod (of_zmod i) = i :=
+((zmod.eq_iff_modeq_nat' _).2
+  (by convert nat.modeq.mod_modeq _ _; apply to_nat_of_nat)).trans (zmod.cast_val _)
+
+theorem of_zmod_to_zmod {n} (v : bitvec n) : of_zmod (to_zmod v) = v :=
+by unfold of_zmod to_zmod; convert of_nat_to_nat v; exact
+zmod.val_cast_of_lt (to_nat_lt_pow2 _)
+
+theorem to_nat_eq_iff_modeq {m n₁ n₂} :
+  bitvec.of_nat m n₁ = bitvec.of_nat m n₂ ↔ n₁ ≡ n₂ [MOD 2 ^ m] :=
+begin
+  dunfold nat.modeq, split; intro h,
+  { rw [← to_nat_of_nat, h, to_nat_of_nat] },
+  { rw [← of_nat_to_nat (bitvec.of_nat m n₁),
+      to_nat_of_nat, h, ← to_nat_of_nat, of_nat_to_nat] },
+end
+
+theorem of_nat_eq_of_zmod (m n) :
+  bitvec.of_nat m n = bitvec.of_zmod n :=
+eq.symm $ to_nat_eq_iff_modeq.2 $
+by convert nat.modeq.mod_modeq _ _; apply zmod.val_cast_nat
+
+theorem to_zmod_zero (n) : to_zmod (0 : bitvec n) = 0 :=
+by rw [to_zmod, to_nat_zero]; refl
+
+theorem of_zmod_zero (n) : (of_zmod 0 : bitvec n) = 0 :=
+by rw [← to_zmod_zero, of_zmod_to_zmod]
+
+theorem of_zmod_one (n) : (of_zmod 1 : bitvec n) = 1 :=
+begin
+  cases n, {refl},
+  change bitvec.of_nat _ (1 % 2 ^ _) = _,
+  rw [nat.mod_eq_of_lt, of_nat_one],
+  exact @nat.pow_lt_pow_of_lt_right _ dec_trivial 0 _ (nat.succ_pos _)
+end
+
+theorem to_zmod_one (n) : to_zmod (1 : bitvec n) = 1 :=
+by rw [← of_zmod_one, to_zmod_of_zmod]
+
+theorem to_zmod_add {n} (a b : bitvec n) : to_zmod (a + b) = to_zmod a + to_zmod b :=
+show to_zmod (bitvec.of_nat _ _) = _,
+by rw [of_nat_eq_of_zmod, to_zmod_of_zmod, to_zmod, to_zmod, nat.cast_add]
+
+theorem to_zmod_mul {n} (a b : bitvec n) : to_zmod (a * b) = to_zmod a * to_zmod b :=
+show to_zmod (bitvec.of_nat _ _) = _,
+by rw [of_nat_eq_of_zmod, to_zmod_of_zmod, to_zmod, to_zmod, nat.cast_mul]
+
+theorem to_zmod_neg {n} (a : bitvec n) : to_zmod (-a) = -to_zmod a :=
+show to_zmod (bitvec.of_nat _ _) = _,
+begin
+  rw [of_nat_eq_of_zmod, to_zmod_of_zmod, eq_neg_iff_add_eq_zero, to_zmod,
+    ← nat.cast_add, nat.sub_add_cancel (le_of_lt (to_nat_lt_pow2 _))],
+  exact zmod.cast_self_eq_zero,
+end
+
+theorem of_zmod_add {n} (a b : zmod (pow2 n)) : of_zmod (a + b) = of_zmod a + of_zmod b :=
+by conv_lhs {rw [← to_zmod_of_zmod a, ← to_zmod_of_zmod b]};
+   rw [← to_zmod_add, of_zmod_to_zmod]
+
+theorem of_zmod_mul {n} (a b : zmod (pow2 n)) : of_zmod (a * b) = of_zmod a * of_zmod b :=
+by conv_lhs {rw [← to_zmod_of_zmod a, ← to_zmod_of_zmod b]};
+   rw [← to_zmod_mul, of_zmod_to_zmod]
+
+theorem of_zmod_neg {n} (a : zmod (pow2 n)) : of_zmod (-a) = -of_zmod a :=
+by conv_lhs {rw [← to_zmod_of_zmod a]}; rw [← to_zmod_neg, of_zmod_to_zmod]
+
+instance (n : ℕ) : add_comm_semigroup (bitvec n) :=
+{ add_assoc := λ a b c, by rw [← of_zmod_to_zmod a, ← of_zmod_to_zmod b, ← of_zmod_to_zmod c,
+    ← of_zmod_add, ← of_zmod_add, add_assoc, of_zmod_add, of_zmod_add],
+  add_comm := λ a b, by rw [← of_zmod_to_zmod a, ← of_zmod_to_zmod b,
+    ← of_zmod_add, add_comm, of_zmod_add],
+  ..bitvec.has_add }
+
+instance (n : ℕ) : comm_semigroup (bitvec n) :=
+{ mul_assoc := λ a b c, by rw [← of_zmod_to_zmod a, ← of_zmod_to_zmod b, ← of_zmod_to_zmod c,
+    ← of_zmod_mul, ← of_zmod_mul, mul_assoc, of_zmod_mul, of_zmod_mul],
+  mul_comm := λ a b, by rw [← of_zmod_to_zmod a, ← of_zmod_to_zmod b,
+    ← of_zmod_mul, mul_comm, of_zmod_mul],
+  ..bitvec.has_mul }
+
+instance (n : ℕ) : comm_ring (bitvec n) :=
+{ zero_add := λ a, by rw [← of_zmod_to_zmod a, ← of_zmod_zero, ← of_zmod_add, zero_add],
+  add_zero := λ a, by rw [← of_zmod_to_zmod a, ← of_zmod_zero, ← of_zmod_add, add_zero],
+  add_left_neg := λ a, by rw [← of_zmod_to_zmod a,
+    ← of_zmod_neg, ← of_zmod_add, add_left_neg, ← of_zmod_zero],
+  one_mul := λ a, by rw [← of_zmod_to_zmod a, ← of_zmod_one, ← of_zmod_mul, one_mul],
+  mul_one := λ a, by rw [← of_zmod_to_zmod a, ← of_zmod_one, ← of_zmod_mul, mul_one],
+  left_distrib := λ a b c, by rw [← of_zmod_to_zmod a, ← of_zmod_to_zmod b, ← of_zmod_to_zmod c,
+    ← of_zmod_add, ← of_zmod_mul, left_distrib, of_zmod_add, of_zmod_mul, of_zmod_mul]; refl,
+  right_distrib := λ a b c, by rw [← of_zmod_to_zmod a, ← of_zmod_to_zmod b, ← of_zmod_to_zmod c,
+    ← of_zmod_add, ← of_zmod_mul, right_distrib, of_zmod_add, of_zmod_mul, of_zmod_mul]; refl,
+  ..bitvec.has_zero,
+  ..bitvec.has_one,
+  ..bitvec.has_neg,
+  ..bitvec.add_comm_semigroup n,
+  ..bitvec.comm_semigroup n }
 
 theorem to_nat_nth {n} (i j) :
   (bitvec.of_nat n i).nth j = i.test_bit j.1 :=
@@ -63,31 +203,6 @@ begin
   rw [← nat.bit_decomp i, nat.test_bit_succ],
   exact n_ih _ _ _ _ e₂ (nat.lt_of_succ_lt_succ h)
 end
-
-theorem of_nat_bits_to_nat {n} (l : list bool) :
-  bitvec.of_nat n (bits_to_nat l) = from_bits_fill ff l :=
-begin
-  rw bits_to_nat,
-  induction l generalizing n, exact of_nat_zero _,
-  cases n, refl,
-  simp [*, bits_to_nat, from_bits_fill,
-    bitvec.of_nat, nat.bodd_bit, nat.div2_bit]
-end
-
-theorem reify_iff {n v l} : @reify n v l ↔ bitvec.of_nat n (bits_to_nat l) = v :=
-iff_of_eq $ congr_arg (= v) (of_nat_bits_to_nat _).symm
-
-theorem of_nat_bits_to_nat_eq {n} (l : list bool) (e : l.length = n) :
-  bitvec.of_nat n (bits_to_nat l) = ⟨l, e⟩ :=
-begin
-  induction n generalizing l; cases l; injection e, refl,
-  simp [bits_to_nat, nat.div2_bit, nat.bodd_bit],
-  exact congr_arg (vector.cons l_hd) (n_ih _ h_1)
-end
-
-theorem of_nat_to_nat : ∀ {n} (v : bitvec n),
-  bitvec.of_nat n (to_nat v) = v
-| n ⟨l, e⟩ := of_nat_bits_to_nat_eq l e
 
 theorem of_nat_from_bits_fill (n m i) (h : n ≤ m) :
   bitvec.of_nat n i = from_bits_fill ff (bitvec.of_nat m i).1 :=
@@ -135,9 +250,42 @@ begin
   rw [of_nat_bit, of_nat_to_nat],
 end
 
-theorem add_zero {n} (v : bitvec n) : v + 0 = v :=
-show bitvec.of_nat _ _ = _,
-by rw [to_nat_zero, add_zero, of_nat_to_nat]
+theorem add_nat_assoc {n} (v : bitvec n) (a b : ℕ) :
+  v + a + b = v + (a + b : ℕ) :=
+by rw [nat.cast_add, add_assoc]
+
+theorem bits_to_nat_inj : ∀ {l₁ l₂},
+  bits_to_nat l₁ = bits_to_nat l₂ → l₁.length = l₂.length → l₁ = l₂
+| [] [] _ _ := rfl
+| (a :: l₁) (b :: l₂) e e' := begin
+  rw [bits_to_nat_cons, bits_to_nat_cons] at e,
+  rw [← nat.bodd_bit a (bits_to_nat l₁), e, nat.bodd_bit,
+    @bits_to_nat_inj l₁ l₂ _ (nat.succ_inj e')],
+  rw [← nat.div2_bit a (bits_to_nat l₁), e, nat.div2_bit]
+end
+
+theorem to_nat_inj {n v₁ v₂}
+  (h : @bitvec.to_nat n v₁ = bitvec.to_nat v₂) : v₁ = v₂ :=
+subtype.eq $ bits_to_nat_inj h (v₁.2.trans v₂.2.symm)
+
+@[class] def reify {n} (v : bitvec n) (l : out_param (list bool)) : Prop :=
+from_bits_fill ff l = v
+
+theorem reify.mk {n} (v) {l} [h : @reify n v l] :
+  from_bits_fill ff l = v := h
+
+theorem reify_eq {n v l l'} [@reify n v l] (h : l' = v.1) :
+  l' = (@from_bits_fill ff l n).1 := by rwa reify.mk v
+theorem reify_eq' {n v l l'} [@reify n v l] (h : l' = v) :
+  l' = @from_bits_fill ff l n := by rwa reify.mk v
+
+theorem reify_eq₂ {n v₁ l₁ v₂ l₂}
+  [@reify n v₁ l₁] [@reify n v₂ l₂] (h : v₁ = v₂) :
+  @from_bits_fill ff l₁ n = from_bits_fill ff l₂ :=
+by rwa [reify.mk v₁, reify.mk v₂]
+
+theorem reify_iff {n v l} : @reify n v l ↔ bitvec.of_nat n (bits_to_nat l) = v :=
+iff_of_eq $ congr_arg (= v) (of_nat_bits_to_nat _).symm
 
 instance reify_0 {n} : @reify n 0 [] := rfl
 
@@ -155,20 +303,6 @@ instance reify_bit1 {n} (v l) [h : @reify n v l] :
 reify_iff.2 $
 by have := of_nat_bit1 n (bits_to_nat l);
    rwa [reify_iff.1 h] at this
-
-theorem bits_to_nat_inj : ∀ {l₁ l₂},
-  bits_to_nat l₁ = bits_to_nat l₂ → l₁.length = l₂.length → l₁ = l₂
-| [] [] _ _ := rfl
-| (a :: l₁) (b :: l₂) e e' := begin
-  rw [bits_to_nat_cons, bits_to_nat_cons] at e,
-  rw [← nat.bodd_bit a (bits_to_nat l₁), e, nat.bodd_bit,
-    @bits_to_nat_inj l₁ l₂ _ (nat.succ_inj e')],
-  rw [← nat.div2_bit a (bits_to_nat l₁), e, nat.div2_bit]
-end
-
-theorem to_nat_inj {n v₁ v₂}
-  (h : @bitvec.to_nat n v₁ = bitvec.to_nat v₂) : v₁ = v₂ :=
-subtype.eq $ bits_to_nat_inj h (v₁.2.trans v₂.2.symm)
 
 end bitvec
 
@@ -241,21 +375,29 @@ begin
   { cases h₁, cases h₂, cases i_ih _ _ h₁_a h₂_a, refl }
 end
 
-theorem bits_to_byte.determ {n m w1 w2 l} :
+theorem bits_to_byte.determ_l {n m w1 w2 l} :
   @bits_to_byte n m w1 l → @bits_to_byte n m w2 l → w1 = w2
 | ⟨e₁, h₁⟩ ⟨_, h₂⟩ := bitvec.to_nat_inj $ split_bits.determ_l h₁ h₂
 
-theorem bits_to_byte.determ_aux {n m w1 w2 l l'} :
+theorem bits_to_byte.determ_l_aux {n m w1 w2 l l'} :
   @bits_to_byte n m w1 l → @bits_to_byte n m w2 (l ++ l') → (w1, l') = (w2, [])
 | ⟨e₁, h₁⟩ ⟨e₂, h₂⟩ := begin
   simp, suffices, refine ⟨_, this⟩, swap,
   { apply list.length_eq_zero.1,
     apply @eq_of_add_eq_add_left _ _ l.length,
     rw [add_zero, ← list.length_append, e₁, e₂] },
-  clear bits_to_byte.determ_aux, subst this,
+  clear bits_to_byte.determ_l_aux, subst this,
   rw list.append_nil at h₂,
   exact bitvec.to_nat_inj (split_bits.determ_l h₁ h₂)
 end
+
+theorem bits_to_byte.determ {n m w l1 l2} :
+  @bits_to_byte n m w l1 → @bits_to_byte n m w l2 → l1 = l2
+| ⟨e₁, h₁⟩ ⟨e₂, h₂⟩ := list.injective_map_iff.2
+  (by rintro x y ⟨⟩; refl)
+  (split_bits.determ h₁ h₂
+    (by rw [list.map_map, list.map_map, (_ : _∘_ = _),
+      list.map_const _ 8, e₁, list.map_const, e₂]; refl))
 
 theorem read_prefixes.determ {r₁ r₂ l} : read_prefixes r₁ l → read_prefixes r₂ l → r₁ = r₂ :=
 begin
@@ -343,7 +485,7 @@ theorem read_displacement.determ_aux {mod disp1 disp2 l l'}
   (h₂ : read_displacement mod disp2 (l ++ l')) : (disp1, l') = (disp2, []) :=
 begin
   cases h₁; cases h₂; try {refl},
-  cases bits_to_byte.determ_aux h₁_a h₂_a, refl
+  cases bits_to_byte.determ_l_aux h₁_a h₂_a, refl
 end
 
 theorem read_displacement.determ {mod disp1 disp2 l}
@@ -418,7 +560,7 @@ theorem read_ModRM_ModRM' {rex : REX} {reg : regnum} {r : RM}
   (h₂ : read_ModRM rex reg r (b :: l)) :
   reg = rex_reg rex.R reg_opc ∧ read_ModRM' rex r rm mod l :=
 begin
-  generalize_hyp e : b :: l = l' at h₂,
+  generalize_hyp e : list.cons b l = l' at h₂,
   induction h₂; cases e;
     cases split_bits.determ h₁ h₂_a rfl;
     refine ⟨rfl, _⟩,
@@ -457,7 +599,7 @@ begin
   { cases read_SIB.determ_aux h₁' h₂', exact ⟨rfl, rfl⟩ },
   { rcases h₁' with ⟨i1, h11, h12⟩,
     rcases h₂' with ⟨i2, h21, h22⟩,
-    cases bits_to_byte.determ_aux h11 h21,
+    cases bits_to_byte.determ_l_aux h11 h21,
     exact ⟨h12.trans h22.symm, rfl⟩ },
   { rcases h₁' with ⟨i1, h11, h12⟩,
     rcases h₂' with ⟨i2, h21, h22⟩,
@@ -532,11 +674,11 @@ by cases h₁; cases h₂; refl
 
 theorem read_imm16.determ_aux {w1 w2 l l'}
   (h₁ : read_imm16 w1 l) (h₂ : read_imm16 w2 (l ++ l')) : (w1, l') = (w2, []) :=
-by cases h₁; cases h₂; cases bits_to_byte.determ_aux h₁_a h₂_a; refl
+by cases h₁; cases h₂; cases bits_to_byte.determ_l_aux h₁_a h₂_a; refl
 
 theorem read_imm32.determ_aux {w1 w2 l l'}
   (h₁ : read_imm32 w1 l) (h₂ : read_imm32 w2 (l ++ l')) : (w1, l') = (w2, []) :=
-by cases h₁; cases h₂; cases bits_to_byte.determ_aux h₁_a h₂_a; refl
+by cases h₁; cases h₂; cases bits_to_byte.determ_l_aux h₁_a h₂_a; refl
 
 theorem read_imm8.determ {w1 w2 l}
   (h₁ : read_imm8 w1 l) (h₂ : read_imm8 w2 l) : w1 = w2 :=
@@ -544,11 +686,11 @@ by cases h₁; cases h₂; refl
 
 theorem read_imm16.determ {w1 w2 l}
   (h₁ : read_imm16 w1 l) (h₂ : read_imm16 w2 l) : w1 = w2 :=
-by cases h₁; cases h₂; cases bits_to_byte.determ h₁_a h₂_a; refl
+by cases h₁; cases h₂; cases bits_to_byte.determ_l h₁_a h₂_a; refl
 
 theorem read_imm32.determ {w1 w2 l}
   (h₁ : read_imm32 w1 l) (h₂ : read_imm32 w2 l) : w1 = w2 :=
-by cases h₁; cases h₂; cases bits_to_byte.determ h₁_a h₂_a; refl
+by cases h₁; cases h₂; cases bits_to_byte.determ_l h₁_a h₂_a; refl
 
 theorem read_imm.determ_aux : ∀ {sz w1 w2 l l'},
   read_imm sz w1 l → read_imm sz w2 (l ++ l') → (w1, l') = (w2, [])
@@ -562,7 +704,7 @@ theorem read_full_imm.determ_aux : ∀ {sz w1 w2 l l'},
 | (wsize.Sz8 _) _ _ _ _ := read_imm8.determ_aux
 | wsize.Sz16 _ _ _ _ := read_imm16.determ_aux
 | wsize.Sz32 _ _ _ _ := read_imm32.determ_aux
-| wsize.Sz64 _ _ _ _ := bits_to_byte.determ_aux
+| wsize.Sz64 _ _ _ _ := bits_to_byte.determ_l_aux
 
 theorem read_imm.determ {sz w1 w2 l}
   (h₁ : read_imm sz w1 l) (h₂ : read_imm sz w2 l) : w1 = w2 :=
@@ -1143,6 +1285,38 @@ theorem decode.determ {a₁ a₂ l}
 by cases decode.determ_aux h₁
   (by rw list.append_nil; exact h₂); refl
 
+instance : add_comm_monoid perm :=
+{ zero := ⟨ff, ff, ff⟩,
+  add_assoc := λ a b c,
+    show perm.mk (_||_||_) (_||_||_) (_||_||_) = _,
+    by repeat {rw bool.bor_assoc}; refl,
+  zero_add := λ ⟨r, w, x⟩,
+    show perm.mk (ff||_) (ff||_) (ff||_) = _,
+    by repeat {rw ff_bor},
+  add_zero := λ ⟨r, w, x⟩,
+    show perm.mk (_||ff) (_||ff) (_||ff) = _,
+    by repeat {rw bor_ff},
+  add_comm := λ a b,
+    show perm.mk (_||_) (_||_) (_||_) = _,
+    by rw [bool.bor_comm, bool.bor_comm a.isW, bool.bor_comm a.isX]; refl,
+  ..perm.has_add }
+
+theorem perm.add_self : ∀ p : perm, p + p = p
+| ⟨r, w, x⟩ :=
+  show perm.mk (r||r) (w||w) (x||x) = _,
+  by repeat {rw bor_self}
+
+instance : partial_order perm :=
+{ le_refl := perm.add_self,
+  le_trans := λ a b c (h₁ : a + b = b) (h₂ : b + c = c),
+    show a + c = c, by rw [← h₂, ← add_assoc, h₁],
+  le_antisymm := λ a b (h₁ : a + b = b) (h₂ : b + a = a),
+    by rw [← h₂, add_comm, h₁],
+  ..perm.has_le }
+
+theorem perm.le_add_left {p₁ p₂ : perm} : p₁ ≤ p₁ + p₂ :=
+show _=_, by rw [← add_assoc, perm.add_self]
+
 theorem mem.read1.determ {p1 p2 m a b1 b2} :
   mem.read1 p1 m a b1 → mem.read1 p2 m a b2 → b1 = b2 :=
 by rintro ⟨_, rfl, _⟩ ⟨_, rfl, _⟩; refl
@@ -1160,15 +1334,92 @@ begin
   exact h₁_ih h₂_a_1,
 end
 
+theorem mem_decode.determ {p1 p2 m a l1 l2 ast1 ast2}
+  (m₁ :  mem.read' p1 m a l1) (h₁ : decode ast1 l1)
+  (m₂ :  mem.read' p2 m a l2) (h₂ : decode ast2 l2) :
+  (ast1, l1) = (ast2, l2) :=
+begin
+  rcases mem.read.determ_aux m₁ m₂ with ⟨x, rfl⟩ | ⟨x, rfl⟩,
+  { cases decode.determ_aux h₁ h₂, simp },
+  { cases decode.determ_aux h₂ h₁, simp },
+end
+
 theorem config.step_noIO {k k₁ k₂} :
   config.step k k₁ → ¬ config.isIO k k₂ :=
 λ h₁ h₂, begin
   cases h₁, cases h₂,
-  rcases mem.read.determ_aux h₁_a_1 h₂_a with ⟨x, rfl⟩ | ⟨x, rfl⟩,
-  { cases decode.determ_aux h₁_a_2 h₂_a_1,
-    rcases h₁_a_3 with ⟨_, s₁, _, ⟨⟩, _⟩ },
-  { cases decode.determ_aux h₂_a_1 h₁_a_2,
-    rcases h₁_a_3 with ⟨_, s₁, _, ⟨⟩, _⟩ },
+  cases mem_decode.determ h₁_a_1 h₁_a_2 h₂_a h₂_a_1,
+  rcases h₁_a_3 with ⟨_, s₁, _, ⟨⟩, _⟩
+end
+
+theorem mem.write1.determ {m a b m₁ m₂}
+  (h₁ : mem.write1 m a b m₁)
+  (h₂ : mem.write1 m a b m₂) : m₁ = m₂ :=
+by cases h₁; cases h₂; refl
+
+theorem mem.write.determ {m a l m₁ m₂}
+  (h₁ : mem.write m a l m₁)
+  (h₂ : mem.write m a l m₂) : m₁ = m₂ :=
+begin
+  induction h₁ generalizing m₂; cases h₂, refl,
+  cases mem.write1.determ h₁_a h₂_a,
+  cases h₁_ih h₂_a_1, refl
+end
+
+theorem config.write_mem.determ {k a l k₁ k₂}
+  (h₁ : config.write_mem k a l k₁)
+  (h₂ : config.write_mem k a l k₂) : k₁ = k₂ :=
+by cases h₁; cases h₂; cases mem.write.determ h₁_a_1 h₂_a_1; refl
+
+theorem EA.write.determ {k ea sz v k₁ k₂}
+  (h₁ : EA.write k ea sz v k₁)
+  (h₂ : EA.write k ea sz v k₂) : k₁ = k₂ :=
+begin
+  cases h₁; cases h₂, refl,
+  cases bits_to_byte.determ h₁_a_1 h₂_a_1,
+  exact config.write_mem.determ h₁_a_2 h₂_a_2
+end
+
+theorem config.isIO.determ {k k₁ k₂} :
+  config.isIO k k₁ → config.isIO k k₂ → k₁ = k₂ :=
+begin
+  rintro ⟨l₁, _, m₁, d₁, _, _, ⟨⟩, h₁⟩ ⟨l₂, _, m₂, d₂, _, _, ⟨⟩, h₂⟩,
+  cases mem_decode.determ m₁ d₁ m₂ d₂,
+  exact EA.write.determ h₁ h₂
+end
+
+theorem config.step_no_exit {k k₁ r} :
+  config.step k k₁ → ¬ config.exit k r :=
+λ h ⟨k', h', _⟩, config.step_noIO h h'
+
+theorem read_from_fd.io_part {fd i H_dat i'}
+  (H : read_from_fd fd i H_dat i') : i' <:+ i :=
+begin
+  cases H, apply list.suffix_refl,
+  exact ⟨_, rfl⟩
+end
+
+theorem exec_read.io_part {i k fd count i' k' ret}
+  (H : exec_read i k fd count i' k' ret) : i' <:+ i :=
+begin
+  cases H, apply list.suffix_refl,
+  exact read_from_fd.io_part H_a_2
+end
+
+theorem exec_io.io_part {k₁ i₁ o₁ k₂ i₂ o₂ call ret}
+  (H : exec_io i₁ o₁ k₁ call i₂ o₂ k₂ ret) :
+  i₂ <:+ i₁ ∧ o₁ <+: o₂ :=
+begin
+  induction H, exact ⟨list.suffix_refl _, list.prefix_refl _⟩,
+  exact ⟨exec_read.io_part H_a_2, list.prefix_refl _⟩,
+end
+
+theorem kcfg.step.io_part {k₁ i₁ o₁ k₂ i₂ o₂}
+  (H : kcfg.step ⟨i₁, o₁, k₁⟩ ⟨i₂, o₂, k₂⟩) :
+  i₂ <:+ i₁ ∧ o₁ <+: o₂ :=
+begin
+  cases H, exact ⟨list.suffix_refl _, list.prefix_refl _⟩,
+  exact exec_io.io_part H_a_1
 end
 
 end x86

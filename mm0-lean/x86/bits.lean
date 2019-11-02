@@ -59,7 +59,7 @@ section arith
   variable {n : ℕ}
 
   protected def neg {n} (v : bitvec n) : bitvec n :=
-  bitvec.of_nat _ (to_nat v.not + 1)
+  bitvec.of_nat _ (2^n - to_nat v)
 
   protected def add (x y : bitvec n) : bitvec n :=
   bitvec.of_nat _ (to_nat x + to_nat y)

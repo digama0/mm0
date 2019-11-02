@@ -439,10 +439,10 @@ def perm.R : perm := ⟨tt, ff, ff⟩
 def perm.W : perm := ⟨ff, tt, ff⟩
 def perm.X : perm := ⟨ff, ff, tt⟩
 
-instance : has_add perm :=
+instance perm.has_add : has_add perm :=
 ⟨λ p1 p2, ⟨p1.isR || p2.isR, p1.isW || p2.isW, p1.isX || p2.isX⟩⟩
 
-instance : has_le perm := ⟨λ p1 p2, p1 + p2 = p2⟩
+instance perm.has_le : has_le perm := ⟨λ p1 p2, p1 + p2 = p2⟩
 
 structure mem :=
 (valid : qword → Prop)
@@ -840,8 +840,11 @@ inductive exec_io (i o : list byte) (k : config) : qword → list byte → list 
   exec_io 0 i' o k' ret
 -- TODO: write, fstat, mmap
 
-inductive config.exit (k : config) : qword → Prop
-| mk : k.regs RAX = 0x3c → config.exit (k.regs RAX)
+inductive exec_exit (k : config) : qword → Prop
+| mk : k.regs RAX = 0x3c → exec_exit (k.regs RDI)
+
+def config.exit (k : config) (a : qword) : Prop :=
+∃ k', config.isIO k k' ∧ exec_exit k' a
 
 inductive kcfg.step : kcfg → kcfg → Prop
 | noio {i o k k'} : config.step k k' → kcfg.step ⟨i, o, k⟩ ⟨i, o, k'⟩

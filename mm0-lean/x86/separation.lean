@@ -1,4 +1,4 @@
-import x86.x86 data.set.lattice data.list.basic
+import x86.lemmas data.set.lattice data.list.basic data.list.alist
 
 namespace x86
 
@@ -34,48 +34,78 @@ inductive place.write (k : config) : place → ∀ {n}, bitvec n → config → 
 | rip {q} : place.write place.rip q {rip := q, ..k}
 | mem {a b m'} : k.mem.write1 a b m' → place.write (place.mem a) b {mem := m', ..k}
 
-def split (H h₁ h₂ : set place) : Prop :=
+inductive heaplet
+| flag : flag_place → bool → heaplet
+| reg : regnum → qword → heaplet
+| rip : qword → heaplet
+| mem : qword → perm → byte → heaplet
+
+def heaplet.place : heaplet → place
+| (heaplet.flag fp b) := place.flag fp
+| (heaplet.reg r q)   := place.reg r
+| (heaplet.rip q)     := place.rip
+| (heaplet.mem a p v) := place.mem a
+
+def heaplet.value : heaplet → Σ n, bitvec n
+| (heaplet.flag fp b) := ⟨_, bitvec.singleton b⟩
+| (heaplet.reg r q)   := ⟨_, q⟩
+| (heaplet.rip q)     := ⟨_, q⟩
+| (heaplet.mem a p v) := ⟨_, v⟩
+
+def heaplet.read (k : config) : heaplet → Prop
+| (heaplet.flag fp b) := fp.read k.flags = b
+| (heaplet.reg r q)   := k.regs r = q
+| (heaplet.rip q)     := k.rip = q
+| (heaplet.mem a p v) := k.mem.read1 p a v
+
+def split {α} (H h₁ h₂ : set α) : Prop :=
 H = h₁ ∪ h₂ ∧ disjoint h₁ h₂
 
-def sProp := config → set place → Prop
+@[reducible] def heap := set heaplet
+def sProp := heap → Prop
+
+def config.heap (k : config) : heap := {h | h.read k}
 
 def sProp.sep (P Q : sProp) : sProp :=
-λ k H, ∃ H₁ H₂, split H H₁ H₂ ∧ P k H₁ ∧ Q k H₂
+λ S, ∃ S₁ S₂, split S S₁ S₂ ∧ P S₁ ∧ Q S₂
+
+def sProp.sepish (P Q : sProp) : sProp :=
+λ S, ∃ S₁ S₂, S = S₁ ∪ S₂ ∧ P S₁ ∧ Q S₂
 
 instance : has_mul sProp := ⟨sProp.sep⟩
 
 def sProp.wand (P Q : sProp) : sProp :=
-λ k H₂, ∀ H₁ H, split H H₁ H₂ → P k H₁ → Q k H
+λ S₂, ∀ S₁ S, split S S₁ S₂ → P S₁ → Q S
 
-def sProp.mk (H : config → set place) : sProp := λ k, eq (H k)
+def heap.sn (H : heap) : sProp := eq H
 
-def sProp.reserve (S : set place) : sProp :=
-sProp.mk $ λ k, {p | p ∈ S ∧ ∃ n v, @place.read k p n v}
+def heaplet.sn (h : heaplet) : sProp := heap.sn {h}
 
-def emp : sProp := sProp.mk $ λ _, ∅
+def emp : sProp := heap.sn ∅
 
-def lift' (p : config → Prop) : sProp := λ k _, p k
+def lift (p : Prop) : sProp := λ _, p
 
-def lift (p : Prop) : sProp := λ _ _, p
+open lattice
+instance lattice.complete_lattice.sProp : complete_lattice sProp :=
+pi.complete_lattice
 
-def sProp.and (P Q : sProp) : sProp := λ k H, P k H ∧ Q k H
+def sProp.with (p : sProp) (q : Prop) : sProp := p ⊓ lift q
 
-def sProp.or (P Q : sProp) : sProp := λ k H, P k H ∨ Q k H
-
-def sProp.with' (p : sProp) (q : config → Prop) : sProp := p.and (lift' q)
-def sProp.with (p : sProp) (q : Prop) : sProp := p.and (lift q)
 def liftE (p : Prop) : sProp := sProp.with emp p
 
-def sProp.sn (p : place) {n} (v : bitvec n) : sProp :=
-sProp.mk $ λ k, {p' | p = p' ∧ p.read k v}
+def sProp.ex {α} (p : α → sProp) : sProp := λ S, ∃ a, p a S
 
-def sProp.ex {α} (p : α → sProp) : sProp := λ k H, ∃ a, p a k H
+def sProp.al {α} (p : α → sProp) : sProp := λ S, ∀ a, p a S
 
-def sProp.al {α} (p : α → sProp) : sProp := λ k H, ∀ a, p a k H
+theorem sep_le_sep {P₁ P₂ Q₁ Q₂ : sProp}
+  (H₁ : P₁ ≤ Q₁) (H₂ : P₂ ≤ Q₂) : P₁ * P₂ ≤ Q₁ * Q₂ :=
+λ S ⟨S₁, S₂, h₁, h₂, h₃⟩, ⟨S₁, S₂, h₁, H₁ _ h₂, H₂ _ h₃⟩
+
+def place.clob (p : place) : sProp :=
+sProp.ex $ λ h:heaplet, h.sn.with (h.place = p)
 
 def sProp.flags (f : flags) : sProp :=
-sProp.al $ λ p : flag_place,
-sProp.sn (place.flag p) (bitvec.singleton $ p.read f)
+sProp.al $ λ p, (heaplet.flag p $ p.read f).sn
 
 inductive block
 | reg : regnum → wsize → block
@@ -95,155 +125,173 @@ inductive block.places : block → set place
 
 def block.disj (b1 b2 : block) := disjoint b1.places b2.places
 
-def sProp.mem_block (p : perm) (a : qword) (v : list byte) : sProp :=
-(sProp.reserve (block.mem a v.length).places).with' $ λ k, k.mem.read' p a v
+def sProp.mem_block (p : perm) : qword → list byte → sProp
+| a [] := emp
+| a (b :: v) :=
+  sProp.ex (λ q, (heaplet.mem a q b).sn.with (p ≤ q)) *
+  sProp.mem_block (a + 1) v
 
-def sProp.block : block → list byte → sProp
-| (block.reg r sz) v :=
-  (sProp.reserve (block.reg r sz).places).with' $ λ k,
-    read_full_imm sz (k.regs r) v
-| (block.mem a sz) v :=
-  (sProp.reserve (block.mem a sz).places).with' $ λ k,
-    k.mem.read a v ∧ v.length = sz.to_nat
+theorem sProp.mem_block.mono {p₁ p₂} (h : p₁ ≤ p₂) :
+  ∀ {a v}, sProp.mem_block p₂ a v ≤ sProp.mem_block p₁ a v
+| a [] := le_refl _
+| a (b :: v) := sep_le_sep
+  (λ S ⟨q, h₁, h₂⟩, ⟨q, h₁, le_trans h h₂⟩)
+  sProp.mem_block.mono
+
+def block.read : block → list byte → sProp
+| (block.reg r sz) v := sProp.ex $ λ q,
+  (heaplet.reg r q).sn.with $ read_full_imm sz q v
+| (block.mem a sz) v := (sProp.mem_block perm.R a v).with $ v.length = sz.to_nat
 | (block.const l) v := liftE $ v = l
 
-def sProp.block_writable : block → sProp
-| (block.reg r sz) := sProp.reserve (block.reg r sz).places
-| (block.mem a sz) :=
-  (sProp.reserve (block.mem a sz).places).with' $ λ k,
-    ∃ v, k.mem.read' perm.W a v ∧ v.length = sz.to_nat
-| (block.const _) := lift false
+def block.readW : block → list byte → sProp
+| (block.reg r sz) v := sProp.ex $ λ q,
+  (heaplet.reg r q).sn.with $ read_full_imm sz q v
+| (block.mem a sz) v := (sProp.mem_block (perm.R + perm.W) a v).with $ v.length = sz.to_nat
+| (block.const l) v := lift false
 
-def locals_ctx (n : ℕ) := {Γ : list (ℕ × block) //
-  Γ.pairwise (λ i j, i.1 ≠ j.1 ∧ i.2.disj j.2) ∧
-  ∀ i : ℕ × block, i ∈ Γ → i.1 < n}
+theorem block.read.size : ∀ {b v k},
+  block.read b v k → v.length = b.size.to_nat := sorry
 
-instance {n} : has_mem (ℕ × block) (locals_ctx n) := ⟨λ a Γ, a ∈ Γ.1⟩
+theorem block.readW_le_read : ∀ {b v},
+  block.readW b v ≤ block.read b v
+| (block.reg r sz) v := le_refl _
+| (block.mem a sz) v := λ s ⟨h₁, h₂⟩,
+  ⟨sProp.mem_block.mono perm.le_add_left _ h₁, h₂⟩
+| (block.const l) v := by rintro _ ⟨⟩
 
-def locals_ctx.cons {n} (Γ : locals_ctx n) (b : block)
-  (h : ∀ i : ℕ × block, i ∈ Γ → b.disj i.2) : locals_ctx (n+1) :=
-⟨(n, b) :: Γ.1,
-  list.pairwise_cons.2 ⟨λ i h', ⟨ne_of_gt $ Γ.2.2 _ h', h _ h'⟩, Γ.2.1⟩,
-  by rintro i (rfl|h'); [
-    apply nat.lt_succ_self,
-    exact nat.lt_succ_of_lt (Γ.2.2 _ h')]⟩
+inductive hoare_p (Q : kcfg → Prop) : kcfg → Prop
+| zero {{k}} : Q k → hoare_p k
+| step {{k}} : (∃ k', kcfg.step k k') →
+  (∀ k', k.step k' → hoare_p k') → hoare_p k
+| exit (k : kcfg) (ret) :
+  k.k.exit ret → (ret = 0 → Q k) → hoare_p k
 
-def locals_ctx.shrink {m n} (Γ : locals_ctx m) : locals_ctx n :=
-⟨Γ.1.filter (λ i, i.1 < n),
-  list.pairwise_of_sublist (list.filter_sublist _) Γ.2.1,
-  λ i h, (list.mem_filter.1 h).2⟩
+def hoare (P : kcfg → Prop) (Q : kcfg → Prop) :=
+∀ {{k}}, P k → hoare_p Q k
+
+def sHoareIO (P : sProp) (Q : list byte → list byte → sProp) :=
+∀ i₁ o₁ R, hoare
+  (λ ⟨i, o, k⟩, (P * R) k.heap ∧ i = i₁ ∧ o = o₁)
+  (λ ⟨i₂, o₂, k₂⟩, ∃ i' o', i₁ = i' ++ i₂ ∧ o₂ = o₁ ++ o' ∧ (Q i' o' * R) k₂.heap)
+
+def noIO (Q : sProp) (i o : list byte) : sProp := Q.with (i = [] ∧ o = [])
+def sHoare (P Q : sProp) := sHoareIO P (noIO Q)
+def sHoareW (C P Q : sProp) := sHoare (P * C) (Q * C)
+
+def locals_ctx := alist (λ _ : ℕ, block)
+
+def locals_ctx.get (Γ : locals_ctx) (n : ℕ) : option block := Γ.lookup n
 
 def labels_ctx := qword × list qword
 
 def labels_ctx.cons (q : qword) (L : labels_ctx) : labels_ctx :=
 ⟨L.1, q :: L.2⟩
 
-inductive hoare_p (Q : kcfg → set place → Prop) : kcfg → set place → Prop
-| zero {{k H}} : Q k H → hoare_p k H
-| step {{k H}} : (∃ k', kcfg.step k k') →
-  (∀ k', k.step k' → hoare_p k' H) → hoare_p k H
-| exit (k : kcfg) (H ret) :
-  k.k.exit ret → (ret = 0 → Q k H) → hoare_p k H
+structure asm_ctx :=
+(L : list qword)
+(Γ : alist (λ _ : ℕ, block))
+(exit : qword)
+(die : ∃ l, sHoare ((heaplet.rip exit).sn ⊓
+  sProp.mem_block (perm.R + perm.X) exit l) ⊥)
 
-def hoare (P Q : kcfg → set place → Prop) :=
-∀ {{k H}}, P k H → hoare_p Q k H
+def asm_ctx.read (A : asm_ctx) (n : ℕ) : option block := A.Γ.lookup n
 
-def sHoareIO (P : sProp) (Q : list byte → list byte → sProp) :=
-∀ {{i o}}, hoare (λ k H, P k.k H ∧ k.input = i ∧ k.output = o)
-  (λ k H, ∃ i' o', i = i' ++ k.input ∧ o = k.output ++ o' ∧
-    (Q i' o') k.k H)
+def asm_ctx.push_local (A : asm_ctx) (i : ℕ) (b : block) : asm_ctx :=
+⟨A.1, A.2.insert i b, A.3, A.4⟩
 
-def noIO (Q : sProp) (i o : list byte) : sProp := Q.with (i = [] ∧ o = [])
-def sHoare (P Q : sProp) := sHoareIO P (noIO Q)
+def asm_ctx.push_label (A : asm_ctx) (q : qword) : asm_ctx :=
+⟨q :: A.1, A.2, A.3, A.4⟩
 
 inductive exit_kind
 | straight
 | label (n : ℕ)
 
-def exit_kind.result (L : labels_ctx) (pos : qword) : exit_kind → sProp
-| exit_kind.straight := sProp.sn place.rip pos
-| (exit_kind.label n) := sProp.ex $ λ h, sProp.sn place.rip (L.2.nth_le n h)
+def exit_kind.result (A : asm_ctx) (pos : qword) : exit_kind → sProp
+| exit_kind.straight := (heaplet.rip pos).sn
+| (exit_kind.label n) := sProp.ex $ λ h, (heaplet.rip (A.1.nth_le n h)).sn
 
-def stmt (n) : Type :=
-labels_ctx → locals_ctx n →
+def stmt : Type :=
+asm_ctx → set place →
 ∀ rip : qword, list byte → Prop
 
-def stmt.hoareIO (P : sProp) {n} (C : stmt n)
+def stmt.hoareIO (A) (P : sProp) (C : stmt)
   (Q : exit_kind → list byte → list byte → sProp) : Prop :=
-∀ L Γ rip l, C L Γ rip l →
-  sHoareIO (P * sProp.sn place.rip rip *
+∀ D rip l, C A D rip l →
+  sHoareIO (P * (heaplet.rip rip).sn *
       sProp.mem_block (perm.R + perm.X) rip l)
-    (λ i o,
-      ((sProp.sn place.rip L.1).or $
-        sProp.ex $ λ e, Q e i o * e.result L (rip + l.length)) *
+    (λ i o, sProp.ex $ λ e,
+      Q e i o * e.result A (rip + l.length) *
       sProp.mem_block (perm.R + perm.X) rip l)
 
-def stmt.hoare (P : sProp) {n} (C : stmt n) (Q : exit_kind → sProp) : Prop :=
-stmt.hoareIO P C (λ e, noIO (Q e))
+def stmt.hoare (A P C) (Q : exit_kind → sProp) : Prop :=
+stmt.hoareIO A P C (λ e, noIO (Q e))
 
-def hstmt {n} (P : sProp) (Q : sProp) : stmt n :=
-λ L Γ rip v,
-  sHoare (P * sProp.sn place.rip rip * sProp.mem_block (perm.R + perm.X) rip v)
-    (Q * sProp.sn place.rip (rip + v.length) * sProp.mem_block (perm.R + perm.X) rip v)
+def hstmt (P Q : sProp) : stmt :=
+λ L Γ rip v, sHoareW (sProp.mem_block (perm.R + perm.X) rip v)
+  (P * (heaplet.rip rip).sn)
+  (Q * (heaplet.rip (rip + v.length)).sn)
 
-def stmt.all {α n} (s : α → stmt n) : stmt n :=
-λ L Γ rip v, ∀ a, s a L Γ rip v
+def hstmtW (C P Q : sProp) : stmt := hstmt (P * C) (Q * C)
 
-def stmt.ex {α n} (s : α → stmt n) : stmt n :=
-λ L Γ rip v, ∃ a, s a L Γ rip v
+instance complete_lattice.stmt : complete_lattice stmt :=
+pi.complete_lattice
 
-def stmt.with {n} (p : Prop) (s : stmt n) : stmt n :=
+def stmt.all {α} (s : α → stmt) : stmt :=
+λ A D rip v, ∀ a, s a A D rip v
+
+def stmt.ex {α} (s : α → stmt) : stmt :=
+λ A D rip v, ∃ a, s a A D rip v
+
+def stmt.with (p : Prop) (s : stmt) : stmt :=
 stmt.ex $ λ h : p, s
 
-def stmt.or {n} (s₁ s₂ : stmt n) : stmt n :=
-λ L Γ rip v, s₁ L Γ rip v ∨ s₂ L Γ rip v
+def stmt.or (s₁ s₂ : stmt) : stmt :=
+λ A D rip v, s₁ A D rip v ∨ s₂ A D rip v
 
-def stmt.lift {m n} (s : stmt n) : stmt m := λ L Γ, s L Γ.shrink
+def expr (α : Type) := block → stmt
 
-def expr (n) := block → stmt n
+instance complete_lattice.expr {α} : complete_lattice (expr α) :=
+pi.complete_lattice
 
-def expr.hoareIO (P : sProp) {n} (E : expr n)
-  (Q : list byte → list byte → list byte → sProp) : Prop :=
-∀ b, (E b).hoareIO (P * sProp.reserve b.places) $
-  λ e i o, exit_kind.cases_on e
-    (sProp.ex $ λ l, Q l i o * sProp.block b l)
-    (λ n, lift false)
+def expr.hoareIO {α} (A) (P : sProp) (E : expr α)
+  (Q : block → list byte → list byte → sProp) : Prop :=
+∀ b, (E b).hoareIO A P $
+  λ e i o, (Q b i o).with (e = exit_kind.straight)
 
-def expr.hoare (P : sProp) {n} (E : expr n) (Q : list byte → sProp) : Prop :=
-expr.hoareIO P E (λ ret, noIO (Q ret))
-
-def expr.lift {m n} (e : expr n) : expr m := λ b, stmt.lift (e b)
+def expr.hoare {α} (A) (P : sProp) (E : expr α) (Q : block → sProp) : Prop :=
+expr.hoareIO A P E (λ ret i o, noIO (Q ret) i o)
 
 class value (α : Type*) :=
 (size : ℕ)
 (eval : α → list byte → Prop)
-(eq_size : ∀ {v a}, eval a v → v.length = size)
+(eval_eq : ∀ {{a l}}, eval a l → l.length = size)
+
+def value.evalB {α} [value α] (x : α) (b : block) : sProp :=
+sProp.ex $ λ l, (block.read b l).with $ value.eval x l
+
+def value.read_sized {α} [value α] (a : qword) (x : α) (b : block) : sProp :=
+(value.evalB x b).with (b = block.mem a (value.size α))
 
 class type (α : Type*) :=
 (size : ℕ)
-(eval : α → list byte → sProp)
-(eq_size : ∀ {a v k H}, eval a v k H → v.length = size)
-
-def type.evalB {α} [type α] (a : α) (b : block) : sProp :=
-sProp.ex $ λ v, sProp.block b v * type.eval a v
+(read : α → block → sProp)
+(read_eq : ∀ {{a b s}}, read a b s → b.size.to_nat = size)
 
 instance (α) [value α] : type α :=
-⟨value.size α, λ a v, lift $ value.eval a v, λ a v k H, value.eq_size⟩
-
-def expr.hoareT (P : sProp) {n} (E : expr n) {α} [type α] (Q : α → sProp) : Prop :=
-expr.hoare P E (λ v, sProp.ex $ λ a, Q a * type.eval a v)
-
-theorem bits_to_byte_length {n m w v} : @bits_to_byte n m w v → v.length = m :=
-by rintro ⟨bs⟩; exact bs.2
+⟨value.size α,
+  λ a b, sProp.ex $ λ v,
+    (block.read b v).with (value.eval a v),
+  λ a b s ⟨v, h₁, h₂⟩, by rw [← h₁.size, @value.eval_eq α _ a v h₂]⟩
 
 def bits.value {n} (m : ℕ) : value (bitvec n) :=
-⟨m, bits_to_byte m, λ v a h, bits_to_byte_length h⟩
+⟨m, bits_to_byte m, λ a v h, h.1⟩
 
 instance unit.value : value unit :=
-⟨0, λ _ v, v = [], by rintro v _ ⟨⟩; refl⟩
+⟨0, λ _ v, v = [], by rintro _ _ ⟨⟩; refl⟩
 
 instance byte.value : value byte :=
-⟨1, λ b v, v = [b], by rintro v k ⟨⟩; refl⟩
+⟨1, λ b v, v = [b], by rintro _ _ ⟨⟩; refl⟩
 
 instance word.value : value word := bits.value 4
 instance qword.value : value qword := bits.value 8
@@ -251,160 +299,154 @@ instance qword.value : value qword := bits.value 8
 class box (α) [type α] := (deref : α)
 
 instance box.type (α) [type α] : type (box α) :=
-⟨8, λ x v, sProp.ex $ λ a, (sProp.ex $ λ l,
-    sProp.mem_block perm.R a l *
-    type.eval x.deref l).with (value.eval a v),
-  λ P v k H ⟨_, _, h⟩, bits_to_byte_length h⟩
+⟨8, λ x b, sProp.ex $ λ a, sProp.ex $ λ v,
+  (block.read b v).with (qword.to_list_byte a v) *
+  type.read x.deref (block.mem a (type.size α)),
+  λ x b s ⟨a, v, _, _, _, ⟨h₁, h₂, _⟩, _⟩,
+    by rw [← h₁.size, h₂]⟩
 
-def const {n} (l : list byte) : expr n :=
-λ bl L Γ a v, bl = block.const l ∧ v = []
+def ret (α) (b : block) : expr α :=
+λ bl A D a v, bl = b ∧ v = []
 
-def var {n} (i : ℕ) : expr n :=
-λ bl L Γ a v, (i, bl) ∈ Γ.1 ∧ v = []
+def const (α) (l : list byte) : expr α := ret α (block.const l)
 
-def hexpr {n} (P : sProp) (Q : block → sProp) : expr n :=
+def name (α : Type) := ℕ
+
+def var {α} (i : name α) : expr α :=
+λ bl A D a v, bl ∈ A.read i ∧ v = []
+
+def hexpr {α} (P : sProp) (Q : block → sProp) : expr α :=
 λ ret, hstmt P (Q ret)
 
-def expr.all {α n} (e : α → expr n) : expr n :=
+def hexprW {α} (C P : sProp) (Q : block → sProp) : expr α :=
+λ ret, hstmtW C P (Q ret)
+
+def expr.all {α β} (e : α → expr β) : expr β :=
 λ ret, stmt.all $ λ a, e a ret
 
-def expr.ex {α n} (e : α → expr n) : expr n :=
+def expr.ex {α β} (e : α → expr β) : expr β :=
 λ ret, stmt.ex $ λ a, e a ret
 
-def expr.with {n} (p : Prop) (s : expr n) : expr n :=
+def expr.with {α} (p : Prop) (s : expr α) : expr α :=
 expr.ex $ λ h : p, s
 
-def const' {n} (sz : wsize) (i : ℕ) : expr n :=
-expr.ex $ λ q, expr.ex $ λ l,
-expr.with (read_full_imm sz q l ∧ q.to_nat = i) $
-const l
+def const' {α} [type α] (a : α) : expr α := hexpr ⊤ $ type.read a
 
-inductive stmt.seq {n} (s₁ : stmt n) (s₂ : stmt n) : stmt n
-| mk {L Γ rip v₁ v₂} :
-  s₁ L Γ rip v₁ →
-  s₂ L Γ (rip + v₁.length) v₂ →
-  stmt.seq L Γ rip (v₁ ++ v₂)
+inductive stmt.seq (s₁ s₂ : stmt) : stmt
+| mk {A D rip v₁ v₂} :
+  s₁ A D rip v₁ →
+  s₂ A D (rip + v₁.length) v₂ →
+  stmt.seq A D rip (v₁ ++ v₂)
 
-inductive expr.bindS {n} (e₁ : expr n) (s₂ : block → stmt n) : stmt n
-| mk {b L Γ rip v₁ v₂} :
-  e₁ b L Γ rip v₁ →
-  s₂ b L Γ (rip + v₁.length) v₂ →
-  expr.bindS L Γ rip (v₁ ++ v₂)
+inductive expr.bindS {α} (e₁ : expr α) (s₂ : block → stmt) : stmt
+| mk {b A D rip v₁ v₂} :
+  e₁ b A D rip v₁ →
+  s₂ b A D (rip + v₁.length) v₂ →
+  expr.bindS A D rip (v₁ ++ v₂)
 
-def expr.bind {n} (e₁ : expr n) (e₂ : block → expr n) : expr n :=
+def expr.bind {α β} (e₁ : expr α) (e₂ : block → expr β) : expr β :=
 λ b₂, expr.bindS e₁ $ λ b₁, e₂ b₁ b₂
 
-def expr.bindST {n α} [type α] (e₁ : expr n) (s₂ : α → stmt n) : stmt n :=
-expr.bindS e₁ $ λ b, stmt.all $ λ a : α,
-λ L Γ rip v, sHoare (type.evalB a b)
-  ((type.evalB a b).with (s₂ a L Γ rip v))
+def block.mov (dst src : block) : stmt :=
+λ A D rip v, dst.size = src.size ∧ ∀ val P,
+sProp.ex (block.readW dst) * P ≤ block.read src val →
+hstmtW P (sProp.ex (block.readW dst)) (block.readW dst val) A D rip v
 
-def expr.bindT {n α} [type α] (e₁ : expr n) (e₂ : α → expr n) : expr n :=
-λ b₂, expr.bindST e₁ $ λ a, e₂ a b₂
-
-def block.mov {n} (dst src : block) : stmt n :=
-stmt.with (dst.size = src.size) $
-stmt.all $ λ val, hstmt
-  (sProp.block_writable dst * sProp.block src val)
-  (sProp.block dst val * sProp.block src val)
-
-def expr.set {n} (e₁ e₂ : expr n) : stmt n :=
+def expr.set {α} (e₁ e₂ : expr α) : stmt :=
 expr.bindS e₁ $ λ dst, expr.bindS e₂ $ λ src, block.mov dst src
 
 inductive label | fail | label (n : ℕ)
 
-inductive label.loc (L : labels_ctx) : label → qword → Prop
-| fail : label.loc label.fail L.1
-| label (n h) : label.loc (label.label n) (L.2.nth_le n h)
+inductive label.loc (A : asm_ctx) : label → qword → Prop
+| fail : label.loc label.fail A.exit
+| label (n h) : label.loc (label.label n) (A.L.nth_le n h)
 
-def stmt.jump_cc {n} (p : flags → bool) (l : label) : stmt n :=
-λ L Γ rip v, ∀ tgt, l.loc L tgt → ∀ f,
-sHoare (sProp.flags f * sProp.sn place.rip rip * sProp.mem_block (perm.R + perm.X) rip v)
-  (sProp.sn place.rip (cond (p f) tgt (rip + v.length)) * sProp.mem_block (perm.R + perm.X) rip v)
+def stmt.jump_cc (p : flags → bool) (l : label) : stmt :=
+λ A D rip v, ∀ tgt, l.loc A tgt →
+sHoareW (sProp.mem_block (perm.R + perm.X) rip v)
+  (sProp.ex sProp.flags * (heaplet.rip rip).sn)
+  (sProp.ex $ λ f, sProp.flags f *
+    (heaplet.rip (cond (p f) tgt (rip + v.length))).sn)
 
-def stmt.jump {n} : label → stmt n := stmt.jump_cc (λ _, tt)
+def stmt.jump : label → stmt := stmt.jump_cc (λ _, tt)
 
-def boolexpr (n) := (flags → bool) × stmt n
+def boolexpr := (flags → bool) → stmt
 
-def boolexpr.hoare (P : sProp) {n} (E : boolexpr n) (Q : bool → sProp) : Prop :=
-stmt.hoare (P * sProp.reserve (set.range place.flag))
-  E.2
-  (λ e, exit_kind.cases_on e
-    (sProp.ex $ λ f, Q (E.1 f) * sProp.flags f)
-    (λ n, lift false))
+def boolexpr.hoare (A) (P : sProp) (E : boolexpr) (Q : bool → sProp) : Prop :=
+∃ p, stmt.hoare A (sProp.ex sProp.flags * P) (E p)
+  (λ e, sProp.ex $ λ f, sProp.flags f *
+    (Q (p f)).with (e = exit_kind.straight))
 
-def boolexpr.not {n} (c : boolexpr n) : boolexpr n :=
-⟨λ f, bnot $ c.1 f, c.2⟩
+def boolexpr.not (c : boolexpr) : boolexpr :=
+λ p, c (bnot ∘ p)
 
-def boolexpr.jump_if {n} (c : boolexpr n) (l : label) : stmt n :=
-stmt.seq c.2 $ stmt.jump_cc c.1 l
+def boolexpr.jump_if (c : boolexpr) (l : label) : stmt :=
+stmt.ex $ λ p, (c p).seq $ stmt.jump_cc p l
 
-def stmt.nop {n} : stmt n := λ L Γ rip v, v = []
+def stmt.nop : stmt := λ A D rip v, v = []
 
-def if_stmt {n} (c : boolexpr n) (s₁ s₂ : stmt n) : stmt n :=
-stmt.seq c.not.2 $ λ L Γ rip v,
+def if_stmt (c : boolexpr) (s₁ s₂ : stmt) : stmt :=
+stmt.ex $ λ p, stmt.seq (c p) $ λ A D rip v,
 ∃ v₁ v₂ v₃, v = v₁ ++ v₂ ++ v₃ ∧
 let q₁ := rip + v₁.length, q₂ := q₁ + v₂.length in
-stmt.jump_cc c.not.1 (label.label 0) (L.cons q₁) Γ rip v₁ ∧
-s₁.seq (stmt.jump (label.label 0)) (L.cons q₂) Γ q₁ v₂ ∧
-s₂.seq (stmt.jump (label.label 0)) (L.cons q₂) Γ q₂ v₃
+stmt.jump_cc (bnot ∘ p) (label.label 0) (A.push_label q₁) D rip v₁ ∧
+s₁.seq (stmt.jump (label.label 0)) (A.push_label q₂) D q₁ v₂ ∧
+s₂.seq (stmt.jump (label.label 0)) (A.push_label q₂) D q₂ v₃
 
-def loop {n} (s : stmt n) : stmt n :=
-λ L Γ rip, s (L.cons rip) Γ rip
+def loop (s : stmt) : stmt :=
+λ A D rip, s (A.push_label rip) D rip
 
-def block_stmt {n} (s : stmt n) : stmt n :=
-λ L Γ rip v, s (L.cons (rip + v.length)) Γ rip v
+def block_stmt (s : stmt) : stmt :=
+λ A D rip v, s (A.push_label (rip + v.length)) D rip v
 
-def while {n} (c : boolexpr n) (s : stmt n) : stmt n :=
+def while (c : boolexpr) (s : stmt) : stmt :=
 block_stmt $ loop $
   (c.not.jump_if (label.label 1)).seq $
   s.seq $
   stmt.jump (label.label 0)
 
-def decl_block {n} (b : block) (s : stmt (n + 1)) : stmt n :=
-λ L Γ rip v, ∀ h, s L (Γ.cons b h) rip v
+def decl_block {α} (b : block) (s : name α → stmt) : stmt :=
+λ A D rip v, ∃ i, s i (A.push_local i b) D rip v
 
-def decl {n} (sz : qword) (s : stmt (n + 1)) : stmt n :=
-λ L Γ rip v, ∀ b h, block.size b = sz → s L (Γ.cons b h) rip v
+def decl {α} (sz : qword) (s : name α → stmt) : stmt :=
+stmt.ex $ λ b, stmt.with (block.size b = sz) $ decl_block b s
 
-def init_rvo {n} (sz : qword) (e : expr n) (s : stmt (n + 1)) : stmt n :=
-e.bindS $ λ b, stmt.with (b.size = sz) $
-λ L Γ rip v, ∃ h, s L (Γ.cons b h) rip v
+def init {α} (e : expr α) (s : name α → stmt) : stmt :=
+e.bindS $ λ b, decl_block b s
 
-def init_assign {n} (sz : qword) (e : expr n) (s : stmt (n + 1)) : stmt n :=
-e.bindS $ λ b, stmt.with (b.size = sz) $
-decl sz $ ((var n).set e.lift).seq s
+def binop_expr {α β γ} [type α] [type β] [type γ]
+  (f : α → β → γ) (e₁ : expr α) (e₂ : expr β) : expr γ :=
+e₁.bind $ λ b₁, e₂.bind $ λ b₂ b, stmt.all $ λ x, stmt.all $ λ y,
+hstmt (type.read' x b₁ ⊓ type.read' y b₂) (type.write (f x y) b)
 
-def init {n} (sz : qword) (e : expr n) (s : stmt (n + 1)) : stmt n :=
-(init_rvo sz e s).or (init_assign sz e s)
+def asn_binop {α β} [type α] [type β] (f : α → β → α) (e₁ : expr α) (e₂ : expr β) : stmt :=
+e₁.bindS $ λ b₁, (ret α b₁).set (binop_expr f (ret α b₁) e₂)
 
-def for {n} (sz : qword) (start : expr n)
-  (test : boolexpr (n+1)) (incr body : stmt (n+1)) : stmt n :=
-init sz start $ while test $ body.seq incr
+def unop_expr {α β} [type α] [type β]
+  (f : α → β) (e : expr α) : expr β :=
+e.bind $ λ b₁ b, stmt.ex $ λ x,
+hstmt (type.read' x b₁) (type.write (f x) b)
 
-def binop_expr {n α β γ} [type α] [type β]
-  (f : α → β → γ) (mk : γ → list byte → Prop)
-  (e₁ e₂ : expr n) : expr n :=
-e₁.bindT $ λ a : α, e₂.bindT $ λ b : β, 
-sorry
+def asn_unop {α} [type α] (f : α → α) (e : expr α) : stmt :=
+e.bindS $ λ b, (ret α b).set (unop_expr f (ret α b))
 
-def incr {n} (i) : stmt n :=
-(var i).set $ binop_expr (+) qword.to_list_byte (var i) (const [1])
+def for {α} (start : expr α) (test : name α → boolexpr) (incr body : name α → stmt) : stmt :=
+init start $ λ i, while (test i) $ (body i).seq (incr i)
 
-def bool_binop {n α β} [type α] [type β]
-  (f : α → β → bool) (e₁ e₂ : expr n) : boolexpr n :=
-⟨sorry, e₁.bindST $ λ a : α, e₂.bindST $ λ b : β,
-  sorry⟩
+def incr {α} [type α] [has_add α] [has_one α] : expr α → stmt :=
+asn_unop (+ 1)
 
-def lt {n} (e₁ e₂ : expr n) : boolexpr n :=
+def bool_binop {α β} [type α] [type β]
+  (f : α → β → bool) (e₁ : expr α) (e₂ : expr β) : boolexpr :=
+λ p, e₁.bindS $ λ b₁, e₂.bindS $ λ b₂, stmt.ex $ λ x, stmt.ex $ λ y,
+hstmt (type.read' x b₁ ⊓ type.read' y b₂)
+  (mProp.final mProp.id (λ k, p k.flags = f x y))
+
+def ltq (e₁ e₂ : expr qword) : boolexpr :=
 bool_binop (λ a b : qword, a.to_nat < b.to_nat) e₁ e₂
 
-def for_seq {n} (sz : qword) (max : expr n) (body : stmt (n+1)) : stmt n :=
-for sz (const' wsize.Sz64 0) (lt (const' wsize.Sz64 0) max.lift) (incr n) body
-
-----------------------------------------
--- Determinism
-----------------------------------------
+def for_seq (sz : qword) (max : expr qword) (body : name qword → stmt) : stmt :=
+for (const' (0 : qword)) (λ i, ltq (const' 0) max) (λ i, incr (var i)) body
 
 ----------------------------------------
 -- Assembly
@@ -448,7 +490,7 @@ theorem sHoareIO.mono_l {P P' : sProp} {Q : list byte → list byte → sProp}
 
 theorem sHoareIO.mono_r {P : sProp} {Q Q' : list byte → list byte → sProp}
   (H : ∀ {{i o k S}}, Q i o k S → Q' i o k S) : sHoareIO P Q → sHoareIO P Q' :=
-λ h i o, hoare.mono_r (by exact λ k S ⟨i', o', h₁, h₂, h₃⟩, 
+λ h i o, hoare.mono_r (by exact λ k S ⟨i', o', h₁, h₂, h₃⟩,
   ⟨i', o', h₁, h₂, H h₃⟩) (@h i o)
 
 theorem sHoareIO.step {P P' : sProp} {Q : list byte → list byte → sProp}
