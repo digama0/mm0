@@ -55,6 +55,13 @@ def bits_to_nat (v : list bool) : nat := v.foldr nat.bit 0
 
 def to_nat {n} (v : bitvec n) : ℕ := bits_to_nat v.1
 
+def sign : ∀ {n} (v : bitvec n), bool
+| 0     _ := ff
+| (n+1) v := v.nth ⟨n, lt_succ_self _⟩
+
+def to_int {n} (v : bitvec n) : ℤ :=
+cond (sign v) (to_nat v - (2^(n+1) : ℕ) : ℤ) (to_nat v)
+
 section arith
   variable {n : ℕ}
 
