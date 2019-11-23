@@ -2706,6 +2706,9 @@ theorem psetfn (p: wff x) (v: nat x):
   eqtrd (anwl appeq1) @ syl6eq (eqtr3 (appeq1 cbvlams) applam) @
   anwr @ sylbir abid resapp);
 
+-- simple recursion operator:
+--   rec(0) = z
+--   rec(n+1) = S(rec(n))
 @_ abstract def rec (z: nat) (S: set) (n: nat): nat =
 $ the {v | E. a (pset a @ 0 = z /\ pset a @ n = v /\
     A. i (i < n -> pset a @ suc i = S @ (pset a @ i)))} $;
@@ -2769,6 +2772,32 @@ pub theorem recS (z: nat) (S: set) (n: nat):
         rsyl an3l @ eale @ imeqd lteq1 @
         eqeqd (receq3d suceq) (appeq2d receq3)) @
       appeq2d @ anwl h)));
+
+@_ local def recnaux (z: nat) (S: set) (n: nat): nat =
+$ rec (0 <> z) (\ p, suc (fst p) <> S @ p) n $;
+
+theorem recnaux0: $ recnaux z S 0 = 0 <> z $ = (named 'rec0);
+
+theorem recnauxS2: $ recnaux z S (suc n) =
+  suc (fst (recnaux z S n)) <> S @ (recnaux z S n) $ =
+'(eqtr recS @ ! applame $ recnaux z S n $ _ p _ @
+  preqd (suceqd fsteq) appeq2);
+
+theorem recnauxfst: $ fst (recnaux z S n) = n $ =
+(let ([h '(eqeqd (fsteqd recnauxeq3) id)])
+  '(!! ind x y ,h ,h ,h ,h
+    (eqtr (fsteq recnaux0) fstpr)
+    (syl5eq (eqtr (fsteq recnauxS2) fstpr) suceq)));
+
+-- recursion operator with iteration variable:
+--   recn(0) = z
+--   recn(n+1) = S(n, recn(n))
+@_ local def recn (z: nat) (S: set) (n: nat): nat = $ snd (recnaux z S n) $;
+
+theorem recn0: $ recn z S 0 = z $ = (named '(eqtr (sndeq rec0) sndpr));
+theorem recnS: $ recn z S (suc n) = S @ (n <> recn z S n) $ =
+'(eqtr (sndeq recnauxS2) @ eqtr sndpr @ appeq2 @
+  eqtr3 fstsnd @ preq1 recnauxfst);
 
 @_ abstract def pow (a b: nat): nat = $ rec 1 (\ n, a * n) b $;
 infixr pow: $^$ prec 80;
@@ -3168,66 +3197,52 @@ theorem dmwrite: $ Dom (write F a b) == Dom F u. sn a $ =
         mpbii preldm @ imeq1d @ syl5bb elwrite ifpneg))) @
   bitr elun @ bitr orcomb @ oreq1 elsn);
 
-@_ local def srecaux (S: set) (n: nat): nat =
-$ rec 0 (\ p, suc (fst p) <> lower (write (snd p) (fst p) (S @ snd p))) n $;
-@_ abstract def srec (S: set) (n: nat): nat = $ snd (srecaux S (suc n)) @ n $;
+@_ local def srecaux (S: set) (n: nat) {.a .b: nat}: nat =
+$ recn 0 (\\ a, \ b, lower (write b a (S @ b))) n $;
 
-theorem srecaux0: $ srecaux S 0 = 0 $ = (named 'rec0);
-theorem srecauxS (a b: nat) (h: $ G -> srecaux S n = a <> b $):
-  $ G -> srecaux S (suc n) = suc a <> lower (write b a (S @ b)) $ =
-(focus
-  (have 'h1 '(syl6eq fstpr @ fsteqd @ eqtrd anr (anwl h)))
-  (have 'h2 '(syl6eq sndpr @ sndeqd @ eqtrd anr (anwl h)))
-  '(syl5eq recS @ syl5eq (! applams p _ srecaux) @ sbned @
-    preqd (suceqd h1) @ lowereqd @ writeeqd (nseqd h2) h1 @ appeq2d h2));
-
-theorem srecauxfst: $ fst (srecaux S n) = n $ =
-'(!! ind x y
-  (eqeqd (fsteqd srecauxeq2) id) (eqeqd (fsteqd srecauxeq2) id)
-  (eqeqd (fsteqd srecauxeq2) id) (eqeqd (fsteqd srecauxeq2) id)
-  (eqtr (fsteq srecaux0) fst0)
-  (syl6eq fstpr @ fsteqd @ srecauxS @ syl5eqr fstsnd preq1));
-
-theorem srecauxsndS: $ snd (srecaux S (suc n)) ==
-  write (snd (srecaux S n)) n (S @ snd (srecaux S n)) $ =
+theorem srecaux0: $ srecaux S 0 = 0 $ = (named 'recn0);
+theorem srecauxS: $ srecaux S (suc n) ==
+  write (srecaux S n) n (S @ srecaux S n) $ =
 '(mpbir (eqlower2 @ writefin finns) @
-  eqtr (sndeq @ srecauxS id @ eqtr3 fstsnd @ preq1 srecauxfst) sndpr);
+  eqtr recnS @ ! appslame _ $ srecaux S n $ _ a _ @ !! applamed b @
+  lowereqd @ writeeqd (nseqd anr) anl (appeq2d anr));
 
-theorem dmsrecaux: $ Dom (snd (srecaux S n)) == upto n $ =
-'(!! ind x y
-  (eqseqd (dmeqd @ nseqd @ sndeqd srecauxeq2) (nseqd uptoeq))
-  (eqseqd (dmeqd @ nseqd @ sndeqd srecauxeq2) (nseqd uptoeq))
-  (eqseqd (dmeqd @ nseqd @ sndeqd srecauxeq2) (nseqd uptoeq))
-  (eqseqd (dmeqd @ nseqd @ sndeqd srecauxeq2) (nseqd uptoeq))
-  (eqstr (dmeq @ nseq @ eqtr (sndeq srecaux0) snd0) @ eqstr4 dm0 @ nseq upto0)
-  (syl5eqs (eqstr (dmeq srecauxsndS) dmwrite) @ syl6eqsr
+theorem dmsrecaux: $ Dom (srecaux S n) == upto n $ =
+(let ([h '(eqseqd (dmeqd @ nseqd srecauxeq2) (nseqd uptoeq))])
+'(!! ind x y ,h ,h ,h ,h
+  (eqstr (dmeq @ nseq srecaux0) @ eqstr4 dm0 @ nseq upto0)
+  (syl5eqs (eqstr (dmeq srecauxS) dmwrite) @ syl6eqsr
     (!! eqri z @ bitr elupto @ bitr3 leltsuc @ bitr4 leloe @ bitr elun @ oreq elupto elsn)
-    uneq1));
+    uneq1)));
 
-theorem srecauxisf: $ isfun (snd (srecaux S n)) $ =
+theorem srecauxisf: $ isfun (srecaux S n) $ =
 '(!! ind x y
-  (isfeqd @ nseqd @ sndeqd srecauxeq2)
-  (isfeqd @ nseqd @ sndeqd srecauxeq2)
-  (isfeqd @ nseqd @ sndeqd srecauxeq2)
-  (isfeqd @ nseqd @ sndeqd srecauxeq2)
-  (mpbir (isfeq @ nseq @ eqtr (sndeq srecaux0) snd0) isf0)
-  (sylibr (isfeq srecauxsndS) writeisf));
+  (isfeqd @ nseqd srecauxeq2)
+  (isfeqd @ nseqd srecauxeq2)
+  (isfeqd @ nseqd srecauxeq2)
+  (isfeqd @ nseqd srecauxeq2)
+  (mpbir (isfeq @ nseq srecaux0) isf0)
+  (sylibr (isfeq srecauxS) writeisf));
 
-theorem srecauxapp: $ a < n -> snd (srecaux S n) @ a = srec S a $ =
+-- strong recursion operator:
+--   srec(n) = S(srec(0), ..., srec(n-1))
+@_ abstract def srec (S: set) (n: nat): nat = $ srecaux S (suc n) @ n $;
+
+theorem srecauxapp: $ a < n -> srecaux S n @ a = srec S a $ =
 '(!! ind x y
-  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ sndeqd @ srecauxeq2))
-  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ sndeqd @ srecauxeq2))
-  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ sndeqd @ srecauxeq2))
-  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ sndeqd @ srecauxeq2))
+  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ srecauxeq2))
+  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ srecauxeq2))
+  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ srecauxeq2))
+  (imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ srecauxeq2))
   (absurd lt02)
   (syl5bir leltsuc @ syl5bi leloe @ eord
-    (a2i @ bi2d @ eqeq1d @ syl5eq (appeq1 @ srecauxsndS) (syl writeNe ltne))
-    (a1i @ appeq1d @ nseqd @ sndeqd @ srecauxeq2d @ suceqd eqcom)));
+    (a2i @ bi2d @ eqeq1d @ syl5eq (appeq1 @ srecauxS) (syl writeNe ltne))
+    (a1i @ appeq1d @ nseqd @ srecauxeq2d @ suceqd eqcom)));
 
-theorem srecval2: $ srec S n = S @ snd (srecaux S n) $ =
-'(eqtr3 (srecauxapp ltsucid) @ eqtr (appeq1 srecauxsndS) writeEq);
+theorem srecval2: $ srec S n = S @ srecaux S n $ =
+'(eqtr3 (srecauxapp ltsucid) @ eqtr (appeq1 srecauxS) writeEq);
 
-theorem srecres: $ (\ i, srec S i) |` upto n == snd (srecaux S n) $ =
+theorem srecres: $ (\ i, srec S i) |` upto n == srecaux S n $ =
 '(eqstr3 (reslameq @ ax_gen @ sylbi elupto srecauxapp) @
   eqstr3 (reseq2 dmsrecaux) (lamapp srecauxisf));
 
@@ -3247,6 +3262,9 @@ pub theorem srecval: $ srec S n = S @ lower ((\ i, srec S i) |` upto n) $ =
 
 @_ local def srecpaux (A n) (.f: nat): nat =
 $ srec (\ f, nat (size (Dom f) <> lower {x | true (f @ x)} e. A)) n $;
+
+-- strong recursion operator (for wffs):
+--   srecp(n) <-> (srecp(0), ..., srecp(n-1)) e. A
 @_ abstract def srecp (A: set) (n: nat): wff = $ true (srecpaux A n) $;
 
 theorem srecpauxval:
@@ -3321,6 +3339,9 @@ pub theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $ =
                 sylbir el01 @ sylbi elins @ bi1 @ oreq eqcomb el01)
               (suceqd @ syl5eqr cardb0 @ cardeqd @ eqcomd @ sylib eqb0 anr))));
 
+-- list recursion operator:
+--   lrec(0) = z
+--   lrec(a : l) = S(a, lrec(l))
 @_ abstract def lrec (z: nat) (S: set) (n: nat): nat =
 $ srec (\ f, N[size (Dom (ns f)) / i]
   if (i = 0) z (S @ (fst (i - 1) <> (ns f @ snd (i - 1))))) n $;
@@ -3491,3 +3512,46 @@ pub theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $ =
 
 @_ def sublistAt (n l l2 .l1 .l3: nat): wff =
 $ E. l1 E. l3 (l = l1 ++ l2 ++ l3 /\ len l1 = n) $;
+
+@_ local def grecaux1 (K: set) (x z n: nat): nat =
+$ recn z (\\ u, \ i, K @ ((x - suc u) <> i)) n $;
+
+theorem grecaux10: $ grecaux1 K x k 0 = k $ = (named 'recn0);
+theorem grecaux1S: $ grecaux1 K x k (suc n) =
+  K @ ((x - suc n) <> grecaux1 K x k n) $ =
+(named '(eqtr recnS @ ! appslame _ $ grecaux1 K x k n $ _ _ _ @
+  applamed @ appeq2d @ preqd (subeq2d @ suceqd anl) anr));
+
+theorem grecaux1Sx: $ grecaux1 K (suc x) k (suc n) = grecaux1 K x (K @ (x <> k)) n $ =
+(let ([h '(eqeqd (grecaux1eq4d suceq) grecaux1eq4)])
+'(!! ind a b ,h ,h ,h ,h
+  (eqtr grecaux1S @ eqtr4 (appeq2 @ preq (eqtr subSS sub02) grecaux10) grecaux10)
+  (eqtr4g grecaux1S grecaux1S @ appeq2d @ preqd (a1i subSS) id)));
+
+@_ local def grecaux2 (z: nat) (K F: set) (x n k: nat): nat =
+$ recn z (\\ u, \ i, F @ (u <> grecaux1 K x k (x - suc u) <> i)) n $;
+
+theorem grecaux20: $ grecaux2 z K F x 0 k = z $ = (named 'recn0);
+theorem grecaux2S: $ grecaux2 z K F x (suc n) k =
+  F @ (n <> grecaux1 K x k (x - suc n) <> grecaux2 z K F x n k) $ =
+(named '(eqtr recnS @ ! appslame _ $ grecaux2 z K F x n k $ _ _ _ @
+  applamed @ appeq2d @ preqd anl @
+  preqd (grecaux1eq4d @ subeq2d @ suceqd anl) anr));
+
+theorem grecaux2Sx: $ n <= x -> grecaux2 z K F (suc x) n k = grecaux2 z K F x n (K @ (x <> k)) $ =
+(let ([h '(eqeqd grecaux2eq5 grecaux2eq5)])
+'(!! indlt a b ,h ,h ,h ,h (a1i @ eqtr4 grecaux20 grecaux20) @
+  eqtr4g grecaux2S grecaux2S @ appeq2d @ preq2d @
+  preqd (anwl @ syl6eq grecaux1Sx @ grecaux1eq4d @ syl5eq subSS @
+    syl eqsub1 @ syl5eq addSass @ syl npcan @ impcom letr) @
+  anr));
+
+-- general recursion operator:
+--   grec(0, k) = z
+--   grec(n+1, k) = F(n, k, grec(n, K(n, k)))
+@_ local def grec (z: nat) (K F: set) (n k: nat): nat = $ grecaux2 z K F n n k $;
+
+theorem grec0: $ grec z K F 0 k = z $ = 'grecaux20;
+
+theorem grecS: $ grec z K F (suc n) k = F @ (n <> k <> grec z K F n (K @ (n <> k))) $ =
+'(eqtr grecaux2S @ appeq2 @ preq2 @ preq (eqtr (grecaux1eq4 subid) grecaux10) (grecaux2Sx leid));
