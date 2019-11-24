@@ -476,10 +476,10 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           push_heap(STACK_TYPE_PROOF | e);
       } break;
 
-      // Hyp: HS; S, e --> HS, e; S, |- e
+      // Hyp: HS; H; S, e --> HS, e; H, |- e; S
       // This command means that we are finished constructing the expression e
       // which denotes a statement, and wish to assume it as a hypothesis.
-      // Push e to the hypothesis stack, and push |- e to the main stack.
+      // Push e to the hypothesis stack, and push |- e to the heap.
       case CMD_PROOF_HYP: {
         ENSURE("invalid opcode in def", mode != Def);
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
