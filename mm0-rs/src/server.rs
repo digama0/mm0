@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar, PoisonError};
@@ -146,7 +147,7 @@ struct VirtualFile {
   /// Cached Url for the file path
   _url: Url,
   /// File data, saved (true) or unsaved (false)
-  text: Mutex<(bool, Arc<String>)>,
+  text: Mutex<(bool, Arc<LinedString>)>,
   /// File parse
   parsed: Mutex<Option<FileCache>>,
   /// Get notified on cache fill
@@ -155,20 +156,129 @@ struct VirtualFile {
   downstream: Mutex<HashSet<Arc<PathBuf>>>,
 }
 
+#[derive(Default, Clone)]
+struct LinedString { s: String, lines: Vec<usize> }
+
+impl LinedString {
+
+  fn get_lines(s: &str) -> Vec<usize> {
+    let mut lines = vec![0];
+    for (b, c) in s.char_indices() {
+      if c == '\n' { lines.push(b + 1) }
+    }
+    lines
+  }
+
+  fn to_pos(&self, idx: usize) -> Position {
+    let (pos, line) = match self.lines.binary_search(&idx) {
+      Ok(n) => (idx, n),
+      Err(n) => (self.lines[n], n)
+    };
+    Position::new(line as u64, (idx - pos) as u64)
+  }
+
+  fn num_lines(&self) -> u64 { self.lines.len() as u64 - 1 }
+  fn end(&self) -> Position { self.to_pos(self.s.len()) }
+
+  fn to_idx(&self, pos: Position) -> Option<usize> {
+    self.lines.get(pos.line as usize).map(|&idx| idx + (pos.character as usize))
+  }
+
+  fn extend(&mut self, s: &str) {
+    let len = self.s.len();
+    self.s.push_str(s);
+    for (b, c) in s.char_indices() {
+      if c == '\n' { self.lines.push(b + len + 1) }
+    }
+  }
+
+  fn extend_until<'a>(&mut self, s: &'a str, pos: Position) -> &'a str {
+    debug_assert!(self.end() <= pos);
+    let len = self.s.len();
+    self.s.push_str(s);
+    let mut it = s.char_indices();
+    let tail = loop {
+      if let Some((b, c)) = it.next() {
+        if c == '\n' {
+          self.lines.push(b + len + 1);
+          if pos.line == self.num_lines() {
+            break unsafe { s.get_unchecked(b+1..) }
+          }
+        }
+      } else {break ""}
+    };
+    let off = pos.character as usize;
+    let (left, right) = if off < tail.len() {tail.split_at(off)} else {(tail, "")};
+    self.extend(left);
+    right
+  }
+
+  fn truncate(&mut self, pos: Position) {
+    if let Some(idx) = self.to_idx(pos) {
+      if idx < self.s.len() {
+        self.s.truncate(idx);
+        self.lines.truncate(pos.line as usize + 1);
+      }
+    }
+  }
+
+  fn apply_changes(&self, changes: impl Iterator<Item=TextDocumentContentChangeEvent>) ->
+      (Position, LinedString) {
+    let mut old: LinedString;
+    let mut out = LinedString::default();
+    let mut uncopied: &str = &self.s;
+    let mut first_change = None;
+    for TextDocumentContentChangeEvent {range, text: change, ..} in changes {
+      if let Some(Range {start, end}) = range {
+        if first_change.map_or(true, |c| start < c) { first_change = Some(start) }
+        if out.end() > start {
+          out.extend(uncopied);
+          old = mem::replace(&mut out, LinedString::default());
+          uncopied = &old;
+        }
+        uncopied = out.extend_until(uncopied, end);
+        out.truncate(start);
+        out.extend(&change);
+      } else {
+        out = change.into();
+        first_change = Some(Position::default());
+        uncopied = "";
+      }
+    }
+    out.extend(uncopied);
+    if let Some(pos) = first_change {
+      let start = out.to_idx(pos).unwrap();
+      let from = unsafe { self.s.get_unchecked(start..) };
+      let to = unsafe { out.s.get_unchecked(start..) };
+      for ((b, c1), c2) in from.char_indices().zip(to.chars()) {
+        if c1 != c2 {return (out.to_pos(b + start), out)}
+      }
+    }
+    (out.end(), out)
+  }
+}
+
+impl Deref for LinedString {
+  type Target = String;
+  fn deref(&self) -> &String { &self.s }
+}
+
+impl From<String> for LinedString {
+  fn from(s: String) -> LinedString {
+    LinedString {lines: LinedString::get_lines(&s), s}
+  }
+}
+
 impl VirtualFile {
   fn new(path: impl AsRef<Path>, text: String) -> Result<VirtualFile> {
     Ok(VirtualFile {
       _url: Url::from_file_path(path).map_err(|_| "bad path")?,
-      text: Mutex::new((true, Arc::new(text))),
+      text: Mutex::new((true, Arc::new(text.into()))),
       parsed: Mutex::new(None),
       cvar: Condvar::new(),
       downstream: Mutex::new(HashSet::new())
     })
   }
-}
-
-fn apply_changes(_changes: Vec<TextDocumentContentChangeEvent>, _text: &str) -> (Position, String) {
-  unimplemented!()
 }
 
 struct VFS(Mutex<HashMap<Arc<PathBuf>, Arc<VirtualFile>>>);
@@ -410,9 +520,10 @@ impl Server {
                       let file = vfs.get(&path)?.ok_or("changed nonexistent file")?;
                       let mut text = file.text.lock()?;
                       text.0 = true;
-                      let (start, s) = apply_changes(content_changes, &text.1);
+                      let (start, s) = text.1.apply_changes(content_changes.into_iter());
                       text.1 = Arc::new(s);
-                      start };
+                      start
+                    };
                     jobs.extend(vec![Job::Elaborate{path, start}])?;
                   }
                 }
