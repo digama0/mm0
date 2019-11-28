@@ -1,5 +1,5 @@
-use std::any::Any;
 use std::ops::Deref;
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar, PoisonError};
 use std::collections::{HashMap, HashSet, hash_map::Entry, VecDeque};
@@ -13,7 +13,7 @@ use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 
 #[derive(Debug)]
-struct ServerError(Box<(dyn Any + Send + 'static)>);
+struct ServerError(Box<dyn Error>);
 
 type Result<T> = result::Result<T, ServerError>;
 
@@ -34,15 +34,15 @@ impl<T: Send + 'static> From<SendError<T>> for ServerError {
 }
 
 impl From<&'static str> for ServerError {
-  fn from(e: &'static str) -> Self { ServerError(Box::new(e)) }
+  fn from(e: &'static str) -> Self { ServerError(e.into()) }
 }
 
 impl<T> From<PoisonError<T>> for ServerError {
   fn from(_: PoisonError<T>) -> Self { "poison error".into() }
 }
 
-impl From<Box<(dyn Any + Send + 'static)>> for ServerError {
-  fn from(e: Box<(dyn Any + Send + 'static)>) -> Self { ServerError(e) }
+impl From<Box<dyn Error>> for ServerError {
+  fn from(e: Box<dyn Error>) -> Self { ServerError(e) }
 }
 
 fn nos_id(nos: NumberOrString) -> RequestId {
@@ -110,8 +110,8 @@ impl Jobs {
           if let Some(file) = server.vfs.get(&path)? {
             let ((idx, errs, ast), old_env, old_deps) = match file.parsed.lock()?.take() {
               None => (parse(file.text.lock()?.1.clone(), None), None, Vec::new()),
-              Some(FileCache::Dirty(ast)) => ((ast.decls.len(), vec![], ast), None, Vec::new()),
-              Some(FileCache::Ready{ast, deps, env}) => ((ast.decls.len(), vec![], ast), Some(env), deps),
+              Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), vec![], ast), None, Vec::new()),
+              Some(FileCache::Ready{ast, deps, env}) => ((ast.stmts.len(), vec![], ast), Some(env), deps),
             };
             let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
             server.send_diagnostics(file.url.clone(),
@@ -129,6 +129,15 @@ impl Jobs {
     self.0.lock()?.take();
     Ok(self.1.notify_all())
   }
+}
+
+lazy_static! {
+  static ref LOGGER: (Mutex<Vec<String>>, Condvar) = Default::default();
+}
+#[allow(unused)]
+pub fn log(s: String) {
+  LOGGER.0.lock().unwrap().push(s);
+  LOGGER.1.notify_one();
 }
 
 struct Environment;
@@ -282,10 +291,10 @@ impl ServerRef<'_> {
   }
 
   #[allow(unused)]
-  fn log_message(&self, typ: MessageType, message: String) -> Result<()> {
+  fn log(&self, message: String) -> Result<()> {
     self.send(Notification {
       method: "window/logMessage".to_owned(),
-      params: to_value(LogMessageParams {typ, message})?
+      params: to_value(LogMessageParams {typ: MessageType::Log, message})?
     })
   }
 
@@ -371,6 +380,11 @@ impl Server {
       let server = self.as_ref();
       let jobs = &self.jobs;
       s.spawn(move |_| jobs.new_worker(server).unwrap());
+      s.spawn(move |_| loop {
+        for s in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
+          server.log(s).unwrap()
+        }
+      });
       let conn = &self.conn;
       let reqs = &self.reqs;
       let vfs = &self.vfs;
@@ -391,8 +405,7 @@ impl Server {
               }
             }
             Message::Response(resp) => {
-              reqs.lock()?.get(&resp.id).ok_or_else(
-                  || ServerError(Box::new("response to unknown request")))?
+              reqs.lock()?.get(&resp.id).ok_or_else(|| "response to unknown request")?
                 .store(true, Ordering::Relaxed);
             }
             Message::Notification(notif) => {
@@ -443,7 +456,7 @@ impl Server {
           Err(e) => eprintln!("Server panicked: {:?}", e)
         }
       }
-    })?;
+    }).expect("other thread panicked");
     Ok(())
   }
 }
