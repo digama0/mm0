@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar, PoisonError};
@@ -10,6 +9,8 @@ use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use lsp_types::*;
 use crossbeam::{channel::{Sender, SendError, RecvError}};
+use crate::lined_string::LinedString;
+use crate::parser::{AST, parse};
 
 #[derive(Debug)]
 struct ServerError(Box<(dyn Any + Send + 'static)>);
@@ -96,8 +97,10 @@ impl Jobs {
               Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
               Some(FileCache::Ready{ast, deps, env}) => (Some((start, ast)), Some(env), deps),
             };
-            let (idx, ast) = parse(&file.text.lock()?.1.clone(), old_ast);
+            let (idx, errs, ast) = parse(file.text.lock()?.1.clone(), old_ast);
             let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
+            server.send_diagnostics(file.url.clone(),
+              errs.into_iter().map(|e| e.to_diag(&ast.source)).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path)?;
             *file.parsed.lock()? = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
@@ -105,12 +108,14 @@ impl Jobs {
         }
         Job::DepChange(path) => {
           if let Some(file) = server.vfs.get(&path)? {
-            let ((idx, ast), old_env, old_deps) = match file.parsed.lock()?.take() {
-              None => (parse(&file.text.lock()?.1.clone(), None), None, Vec::new()),
-              Some(FileCache::Dirty(ast)) => ((ast.size, ast), None, Vec::new()),
-              Some(FileCache::Ready{ast, deps, env}) => ((ast.size, ast), Some(env), deps),
+            let ((idx, errs, ast), old_env, old_deps) = match file.parsed.lock()?.take() {
+              None => (parse(file.text.lock()?.1.clone(), None), None, Vec::new()),
+              Some(FileCache::Dirty(ast)) => ((ast.decls.len(), vec![], ast), None, Vec::new()),
+              Some(FileCache::Ready{ast, deps, env}) => ((ast.decls.len(), vec![], ast), Some(env), deps),
             };
             let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
+            server.send_diagnostics(file.url.clone(),
+              errs.into_iter().map(|e| e.to_diag(&ast.source)).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path)?;
             *file.parsed.lock()? = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
@@ -126,12 +131,11 @@ impl Jobs {
   }
 }
 
-struct AST { size: usize }
 struct Environment;
 
-fn parse(_file: &str, _old: Option<(Position, AST)>) -> (usize, AST) { unimplemented!() }
 fn elaborate(_ast: &AST, _old: Option<(usize, Environment)>) -> (Environment, Vec<Arc<PathBuf>>) {
-  unimplemented!()
+  // unimplemented!()
+  (Environment, Vec::new())
 }
 
 enum FileCache {
@@ -145,7 +149,7 @@ enum FileCache {
 
 struct VirtualFile {
   /// Cached Url for the file path
-  _url: Url,
+  url: Url,
   /// File data, saved (true) or unsaved (false)
   text: Mutex<(bool, Arc<LinedString>)>,
   /// File parse
@@ -156,123 +160,10 @@ struct VirtualFile {
   downstream: Mutex<HashSet<Arc<PathBuf>>>,
 }
 
-#[derive(Default, Clone)]
-struct LinedString { s: String, lines: Vec<usize> }
-
-impl LinedString {
-
-  fn get_lines(s: &str) -> Vec<usize> {
-    let mut lines = vec![0];
-    for (b, c) in s.char_indices() {
-      if c == '\n' { lines.push(b + 1) }
-    }
-    lines
-  }
-
-  fn to_pos(&self, idx: usize) -> Position {
-    let (pos, line) = match self.lines.binary_search(&idx) {
-      Ok(n) => (idx, n),
-      Err(n) => (self.lines[n], n)
-    };
-    Position::new(line as u64, (idx - pos) as u64)
-  }
-
-  fn num_lines(&self) -> u64 { self.lines.len() as u64 - 1 }
-  fn end(&self) -> Position { self.to_pos(self.s.len()) }
-
-  fn to_idx(&self, pos: Position) -> Option<usize> {
-    self.lines.get(pos.line as usize).map(|&idx| idx + (pos.character as usize))
-  }
-
-  fn extend(&mut self, s: &str) {
-    let len = self.s.len();
-    self.s.push_str(s);
-    for (b, c) in s.char_indices() {
-      if c == '\n' { self.lines.push(b + len + 1) }
-    }
-  }
-
-  fn extend_until<'a>(&mut self, s: &'a str, pos: Position) -> &'a str {
-    debug_assert!(self.end() <= pos);
-    let len = self.s.len();
-    self.s.push_str(s);
-    let mut it = s.char_indices();
-    let tail = loop {
-      if let Some((b, c)) = it.next() {
-        if c == '\n' {
-          self.lines.push(b + len + 1);
-          if pos.line == self.num_lines() {
-            break unsafe { s.get_unchecked(b+1..) }
-          }
-        }
-      } else {break ""}
-    };
-    let off = pos.character as usize;
-    let (left, right) = if off < tail.len() {tail.split_at(off)} else {(tail, "")};
-    self.extend(left);
-    right
-  }
-
-  fn truncate(&mut self, pos: Position) {
-    if let Some(idx) = self.to_idx(pos) {
-      if idx < self.s.len() {
-        self.s.truncate(idx);
-        self.lines.truncate(pos.line as usize + 1);
-      }
-    }
-  }
-
-  fn apply_changes(&self, changes: impl Iterator<Item=TextDocumentContentChangeEvent>) ->
-      (Position, LinedString) {
-    let mut old: LinedString;
-    let mut out = LinedString::default();
-    let mut uncopied: &str = &self.s;
-    let mut first_change = None;
-    for TextDocumentContentChangeEvent {range, text: change, ..} in changes {
-      if let Some(Range {start, end}) = range {
-        if first_change.map_or(true, |c| start < c) { first_change = Some(start) }
-        if out.end() > start {
-          out.extend(uncopied);
-          old = mem::replace(&mut out, LinedString::default());
-          uncopied = &old;
-        }
-        uncopied = out.extend_until(uncopied, end);
-        out.truncate(start);
-        out.extend(&change);
-      } else {
-        out = change.into();
-        first_change = Some(Position::default());
-        uncopied = "";
-      }
-    }
-    out.extend(uncopied);
-    if let Some(pos) = first_change {
-      let start = out.to_idx(pos).unwrap();
-      let from = unsafe { self.s.get_unchecked(start..) };
-      let to = unsafe { out.s.get_unchecked(start..) };
-      for ((b, c1), c2) in from.char_indices().zip(to.chars()) {
-        if c1 != c2 {return (out.to_pos(b + start), out)}
-      }
-    }
-    (out.end(), out)
-  }
-}
-
-impl Deref for LinedString {
-  type Target = String;
-  fn deref(&self) -> &String { &self.s }
-}
-
-impl From<String> for LinedString {
-  fn from(s: String) -> LinedString {
-    LinedString {lines: LinedString::get_lines(&s), s}
-  }
-}
-
 impl VirtualFile {
   fn new(path: impl AsRef<Path>, text: String) -> Result<VirtualFile> {
     Ok(VirtualFile {
-      _url: Url::from_file_path(path).map_err(|_| "bad path")?,
+      url: Url::from_file_path(path).map_err(|_| "bad path")?,
       text: Mutex::new((true, Arc::new(text.into()))),
       parsed: Mutex::new(None),
       cvar: Condvar::new(),
@@ -395,6 +286,13 @@ impl ServerRef<'_> {
     self.send(Notification {
       method: "window/logMessage".to_owned(),
       params: to_value(LogMessageParams {typ, message})?
+    })
+  }
+
+  fn send_diagnostics(&self, uri: Url, diagnostics: Vec<Diagnostic>) -> Result<()> {
+    self.send(Notification {
+      method: "textDocument/publishDiagnostics".to_owned(),
+      params: to_value(PublishDiagnosticsParams {uri, diagnostics})?
     })
   }
 }

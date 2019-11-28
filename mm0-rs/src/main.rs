@@ -1,5 +1,8 @@
 extern crate log;
+#[macro_use] extern crate bitflags;
 
+mod lined_string;
+mod parser;
 mod server;
 use std::{env, io};
 
