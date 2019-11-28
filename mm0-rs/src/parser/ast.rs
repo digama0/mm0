@@ -146,6 +146,7 @@ pub enum StmtKind {
   Inout { out: bool, k: Span, hs: Vec<SExpr> },
   Annot(SExpr, Box<Stmt>),
   Do(Vec<SExpr>),
+  Import(Span, String),
 }
 
 pub struct Stmt {
@@ -155,6 +156,7 @@ pub struct Stmt {
 
 pub struct AST {
   pub source: Arc<LinedString>,
+  pub imports: Vec<(Span, String)>,
   pub stmts: Vec<Stmt>,
   pub errors: Vec<ParseError>,
 }

@@ -51,6 +51,7 @@ impl ParseError {
 struct Parser<'a> {
   source: &'a [u8],
   errors: Vec<ParseError>,
+  imports: Vec<(Span, String)>,
   idx: usize,
 }
 
@@ -223,7 +224,7 @@ impl<'a> Parser<'a> {
 
   fn string(&mut self) -> Result<(Span, String)> {
     let start = self.idx;
-    debug_assert!(self.cur() == b'\"');
+    if self.cur_opt() != Some(b'\"') {return self.err_str("expected an string literal")}
     self.idx += 1;
     let mut s = String::new();
     while self.idx < self.source.len() {
@@ -544,6 +545,12 @@ impl<'a> Parser<'a> {
           let end = self.chr_err(b';')?;
           Ok(Some(Stmt {span: start..end, k: StmtKind::Do(es)}))
         }
+        "import" => {
+          let (sp, s) = self.string()?;
+          let span = start..self.chr_err(b';')?;
+          self.imports.push((sp.clone(), s.clone()));
+          Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
+        }
         k => {
           self.idx = start;
           Err(ParseError {
@@ -575,14 +582,15 @@ impl<'a> Parser<'a> {
 
 pub fn parse(file: Arc<LinedString>, old: Option<(Position, AST)>) ->
     (usize, AST) {
-  let (errors, idx, mut stmts) =
+  let (errors, imports, idx, mut stmts) =
     if let Some((pos, mut ast)) = old {
       let (ix, start) = ast.last_checkpoint(file.to_idx(pos).unwrap());
       ast.errors.retain(|e| e.pos.start < start);
+      ast.imports.retain(|e| e.0.start < start);
       ast.stmts.truncate(ix);
-      (ast.errors, start, ast.stmts)
+      (ast.errors, ast.imports, start, ast.stmts)
     } else {Default::default()};
-  let mut p = Parser {source: file.as_bytes(), errors, idx};
+  let mut p = Parser {source: file.as_bytes(), errors, imports, idx};
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
-  (0, AST { errors: p.errors, source: file, stmts })
+  (0, AST { errors: p.errors, imports: p.imports, source: file, stmts })
 }
