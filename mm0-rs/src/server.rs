@@ -37,10 +37,6 @@ impl From<&'static str> for ServerError {
   fn from(e: &'static str) -> Self { ServerError(e.into()) }
 }
 
-impl<T> From<PoisonError<T>> for ServerError {
-  fn from(_: PoisonError<T>) -> Self { "poison error".into() }
-}
-
 impl From<Box<dyn Error>> for ServerError {
   fn from(e: Box<dyn Error>) -> Self { ServerError(e) }
 }
@@ -71,7 +67,7 @@ struct Jobs(Mutex<Option<VecDeque<Job>>>, Condvar);
 impl Jobs {
   fn extend(&self, new: Vec<Job>) -> Result<()> {
     if !new.is_empty() {
-      let changed = if let Some(jobs) = &mut *self.0.lock()? {
+      let changed = if let Some(jobs) = &mut *self.0.lock().unwrap() {
         jobs.retain(|job| new.iter().all(|njob| njob.path() != job.path()));
         jobs.extend(new); true
       } else {false};
@@ -82,7 +78,7 @@ impl Jobs {
 
   fn new_worker(&self, server: ServerRef) -> Result<()> {
     loop {
-      let job = match &mut *self.1.wait(self.0.lock()?)? {
+      let job = match &mut *self.1.wait(self.0.lock().unwrap()).unwrap() {
         None => return Ok(()),
         Some(jobs) => match jobs.pop_front() {
           None => continue,
@@ -92,24 +88,24 @@ impl Jobs {
       match job {
         Job::Elaborate {path, start} => {
           if let Some(file) = server.vfs.get(&path)? {
-            let (old_ast, old_env, old_deps) = match file.parsed.lock()?.take() {
+            let (old_ast, old_env, old_deps) = match file.parsed.lock().unwrap().take() {
               None => (None, None, Vec::new()),
               Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
               Some(FileCache::Ready{ast, deps, env}) => (Some((start, ast)), Some(env), deps),
             };
-            let (idx, ast) = parse(file.text.lock()?.1.clone(), old_ast);
+            let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
             let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
             server.send_diagnostics(file.url.clone(),
               ast.errors.iter().map(|e| e.to_diag(&ast.source)).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path)?;
-            *file.parsed.lock()? = Some(FileCache::Ready {ast, deps, env});
+            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
           }
         }
         Job::DepChange(path) => {
           if let Some(file) = server.vfs.get(&path)? {
-            let ((idx, ast), old_env, old_deps) = match file.parsed.lock()?.take() {
-              None => (parse(file.text.lock()?.1.clone(), None), None, Vec::new()),
+            let ((idx, ast), old_env, old_deps) = match file.parsed.lock().unwrap().take() {
+              None => (parse(file.text.lock().unwrap().1.clone(), None), None, Vec::new()),
               Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), ast), None, Vec::new()),
               Some(FileCache::Ready{ast, deps, env}) => ((ast.stmts.len(), ast), Some(env), deps),
             };
@@ -117,7 +113,7 @@ impl Jobs {
             server.send_diagnostics(file.url.clone(),
               ast.errors.iter().map(|e| e.to_diag(&ast.source)).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path)?;
-            *file.parsed.lock()? = Some(FileCache::Ready {ast, deps, env});
+            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
           }
         }
@@ -126,7 +122,7 @@ impl Jobs {
   }
 
   fn stop(&self) -> Result<()> {
-    self.0.lock()?.take();
+    self.0.lock().unwrap().take();
     Ok(self.1.notify_all())
   }
 }
@@ -185,15 +181,15 @@ struct VFS(Mutex<HashMap<Arc<PathBuf>, Arc<VirtualFile>>>);
 
 impl VFS {
   fn get(&self, path: &PathBuf) -> Result<Option<Arc<VirtualFile>>> {
-    Ok(self.0.lock()?.get(path).cloned())
+    Ok(self.0.lock().unwrap().get(path).cloned())
   }
 
   fn open_virt(&self, queue: &mut Vec<Job>, path: Arc<PathBuf>, text: String) -> Result<Arc<VirtualFile>> {
     queue.push(Job::Elaborate {path: path.clone(), start: Position::new(0, 0)});
     let file = Arc::new(VirtualFile::new(&*path, text)?);
-    match self.0.lock()?.entry(path.clone()) {
+    match self.0.lock().unwrap().entry(path.clone()) {
       Entry::Occupied(entry) => {
-        for dep in entry.get().downstream.lock()?.clone() {
+        for dep in entry.get().downstream.lock().unwrap().clone() {
           self.dirty(queue, &dep)?;
         }
         Ok(file)
@@ -203,9 +199,9 @@ impl VFS {
   }
 
   fn close(&self, queue: &mut Vec<Job>, path: &PathBuf) -> Result<()> {
-    if let Some(file) = self.0.lock()?.remove(path) {
-      if !file.text.lock()?.0 {
-        for dep in file.downstream.lock()?.clone() {
+    if let Some(file) = self.0.lock().unwrap().remove(path) {
+      if !file.text.lock().unwrap().0 {
+        for dep in file.downstream.lock().unwrap().clone() {
           self.dirty(queue, &dep)?;
         }
       }
@@ -214,8 +210,8 @@ impl VFS {
   }
 
   fn set_downstream(&self, from: &PathBuf, to: Arc<PathBuf>, val: bool) -> Result<()> {
-    let file = self.0.lock()?.get(from).unwrap().clone();
-    let mut ds = file.downstream.lock()?;
+    let file = self.0.lock().unwrap().get(from).unwrap().clone();
+    let mut ds = file.downstream.lock().unwrap();
     if val { ds.insert(to); }
     else { ds.remove(&to); }
     Ok(())
@@ -237,16 +233,16 @@ impl VFS {
 
   fn dirty(&self, queue: &mut Vec<Job>, path: &Arc<PathBuf>) -> Result<()> {
     queue.push(Job::DepChange(path.clone()));
-    let file = self.0.lock()?.get(path).unwrap().clone();
+    let file = self.0.lock().unwrap().get(path).unwrap().clone();
     {
-      let lock = &mut *file.parsed.lock()?;
+      let lock = &mut *file.parsed.lock().unwrap();
       match lock.take() {
         None => {}
         Some(FileCache::Ready{ast, ..}) => *lock = Some(FileCache::Dirty(ast)),
         Some(FileCache::Dirty(ast)) => *lock = Some(FileCache::Dirty(ast)),
       }
     }
-    for dep in file.downstream.lock()?.clone() {
+    for dep in file.downstream.lock().unwrap().clone() {
       self.dirty(queue, &dep)?;
     }
     Ok(())
@@ -331,7 +327,7 @@ impl RequestHandler<'_> {
   }
 
   fn finish<T: Serialize>(self, resp: result::Result<T, ResponseError>) -> Result<()> {
-    self.reqs.lock()?.remove(&self.id);
+    self.reqs.lock().unwrap().remove(&self.id);
     self.sender.send(Message::Response(match resp {
       Ok(val) => Response { id: self.id, result: Some(to_value(val)?), error: None },
       Err(e) => Response { id: self.id, result: None, error: Some(e) }
@@ -399,20 +395,20 @@ impl Server {
               }
               if let Some((id, req)) = parse_request(req)? {
                 let cancel = Arc::new(AtomicBool::new(false));
-                reqs.lock()?.insert(id.clone(), cancel.clone());
+                reqs.lock().unwrap().insert(id.clone(), cancel.clone());
                 s.spawn(move |_|
                   RequestHandler {reqs, id, cancel: &cancel, server}.handle(req).unwrap());
               }
             }
             Message::Response(resp) => {
-              reqs.lock()?.get(&resp.id).ok_or_else(|| "response to unknown request")?
+              reqs.lock().unwrap().get(&resp.id).ok_or_else(|| "response to unknown request")?
                 .store(true, Ordering::Relaxed);
             }
             Message::Notification(notif) => {
               match notif.method.as_str() {
                 "$/cancelRequest" => {
                   let CancelParams {id} = from_value(notif.params)?;
-                  if let Some(cancel) = reqs.lock()?.get(&nos_id(id)) {
+                  if let Some(cancel) = reqs.lock().unwrap().get(&nos_id(id)) {
                     cancel.store(true, Ordering::Relaxed);
                   }
                 }
@@ -429,7 +425,7 @@ impl Server {
                     let path = Arc::new(doc.uri.to_file_path().map_err(|_| "bad URI")?);
                     let start = {
                       let file = vfs.get(&path)?.ok_or("changed nonexistent file")?;
-                      let mut text = file.text.lock()?;
+                      let mut text = file.text.lock().unwrap();
                       text.0 = true;
                       let (start, s) = text.1.apply_changes(content_changes.into_iter());
                       text.1 = Arc::new(s);
