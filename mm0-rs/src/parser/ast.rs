@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use num::BigUint;
 use crate::lined_string::LinedString;
+use super::ParseError;
 
 pub type Span = std::ops::Range<usize>;
 
@@ -155,10 +156,19 @@ pub struct Stmt {
 pub struct AST {
   pub source: Arc<LinedString>,
   pub stmts: Vec<Stmt>,
+  pub errors: Vec<ParseError>,
 }
 
 impl AST {
   pub fn _span(&self, s: Span) -> &str {
     unsafe { std::str::from_utf8_unchecked(&self.source.as_bytes()[s]) }
+  }
+
+  pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
+    match self.stmts.binary_search_by_key(&pos, |stmt| stmt.span.end) {
+      Ok(i) => (i+1, pos),
+      Err(0) => (0, 0),
+      Err(i) => (i, self.stmts[i-1].span.end)
+    }
   }
 }

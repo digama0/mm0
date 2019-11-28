@@ -23,22 +23,22 @@ impl ErrorLevel {
     }
   }
 }
-
+pub type BoxError = Box<dyn Error + Send + Sync>;
 pub struct ParseError {
   pub pos: Span,
   pub level: ErrorLevel,
-  pub msg: Box<dyn Error>,
+  pub msg: BoxError,
 }
 type Result<T> = std::result::Result<T, ParseError>;
 
 impl ParseError {
-  fn new(pos: Span, msg: Box<dyn Error>) -> ParseError {
+  fn new(pos: Span, msg: BoxError) -> ParseError {
     ParseError { pos, level: ErrorLevel::Error, msg }
   }
 
-  pub fn to_diag(self, file: &LinedString) -> Diagnostic {
+  pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
-      range: file.to_range(self.pos),
+      range: file.to_range(self.pos.clone()),
       severity: Some(self.level.to_diag_severity()),
       code: None,
       source: Some("mm0-rs".to_owned()),
@@ -62,7 +62,7 @@ impl<'a> Parser<'a> {
   fn cur(&self) -> u8 { self.source[self.idx] }
   fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
 
-  fn err(&self, msg: Box<dyn Error>) -> ParseError {
+  fn err(&self, msg: BoxError) -> ParseError {
     ParseError::new(self.idx..self.idx, msg)
   }
 
@@ -116,8 +116,7 @@ impl<'a> Parser<'a> {
   }
 
   fn ident(&mut self) -> Option<Span> {
-    self.ident_().and_then(|s|
-      if self.span(&s) == "_" {None} else {Some(s)})
+    self.ident_().filter(|s| self.span(&s) != "_")
   }
 
   fn ident_err_(&mut self) -> Result<Span> {
@@ -574,15 +573,16 @@ impl<'a> Parser<'a> {
   }
 }
 
-pub fn parse(file: Arc<LinedString>, _old: Option<(Position, AST)>) ->
-    (usize, Vec<ParseError>, AST) {
-  let mut p = Parser {
-    source: file.as_bytes(),
-    errors: Vec::new(),
-    idx: 0
-  };
-  let mut stmts = Vec::new();
+pub fn parse(file: Arc<LinedString>, old: Option<(Position, AST)>) ->
+    (usize, AST) {
+  let (errors, idx, mut stmts) =
+    if let Some((pos, mut ast)) = old {
+      let (ix, start) = ast.last_checkpoint(file.to_idx(pos).unwrap());
+      ast.errors.retain(|e| e.pos.start < start);
+      ast.stmts.truncate(ix);
+      (ast.errors, start, ast.stmts)
+    } else {Default::default()};
+  let mut p = Parser {source: file.as_bytes(), errors, idx};
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
-  (0, p.errors, AST { source: file, stmts })
+  (0, AST { errors: p.errors, source: file, stmts })
 }
-

@@ -97,10 +97,10 @@ impl Jobs {
               Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
               Some(FileCache::Ready{ast, deps, env}) => (Some((start, ast)), Some(env), deps),
             };
-            let (idx, errs, ast) = parse(file.text.lock()?.1.clone(), old_ast);
+            let (idx, ast) = parse(file.text.lock()?.1.clone(), old_ast);
             let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
             server.send_diagnostics(file.url.clone(),
-              errs.into_iter().map(|e| e.to_diag(&ast.source)).collect())?;
+              ast.errors.iter().map(|e| e.to_diag(&ast.source)).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path)?;
             *file.parsed.lock()? = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
@@ -108,14 +108,14 @@ impl Jobs {
         }
         Job::DepChange(path) => {
           if let Some(file) = server.vfs.get(&path)? {
-            let ((idx, errs, ast), old_env, old_deps) = match file.parsed.lock()?.take() {
+            let ((idx, ast), old_env, old_deps) = match file.parsed.lock()?.take() {
               None => (parse(file.text.lock()?.1.clone(), None), None, Vec::new()),
-              Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), vec![], ast), None, Vec::new()),
-              Some(FileCache::Ready{ast, deps, env}) => ((ast.stmts.len(), vec![], ast), Some(env), deps),
+              Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), ast), None, Vec::new()),
+              Some(FileCache::Ready{ast, deps, env}) => ((ast.stmts.len(), ast), Some(env), deps),
             };
             let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
             server.send_diagnostics(file.url.clone(),
-              errs.into_iter().map(|e| e.to_diag(&ast.source)).collect())?;
+              ast.errors.iter().map(|e| e.to_diag(&ast.source)).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path)?;
             *file.parsed.lock()? = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
