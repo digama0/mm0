@@ -5,6 +5,8 @@ extern crate log;
 mod lined_string;
 mod parser;
 mod server;
+mod elab;
+
 use std::{env, io};
 
 fn main() -> io::Result<()> {

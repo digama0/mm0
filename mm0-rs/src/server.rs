@@ -1,7 +1,7 @@
 use std::ops::Deref;
-use std::error::Error;
+use std::{fs, io};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar, PoisonError};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{HashMap, HashSet, hash_map::Entry, VecDeque};
 use std::result;
 use lsp_server::*;
@@ -10,10 +10,11 @@ use serde_json::{from_value, to_value};
 use lsp_types::*;
 use crossbeam::{channel::{Sender, SendError, RecvError}};
 use crate::lined_string::LinedString;
-use crate::parser::{AST, parse};
+use crate::parser::{AST, parse, BoxError};
+use crate::elab::{Environment, ElabError, FileServer};
 
 #[derive(Debug)]
-struct ServerError(Box<dyn Error>);
+struct ServerError(BoxError);
 
 type Result<T> = result::Result<T, ServerError>;
 
@@ -29,7 +30,7 @@ impl From<RecvError> for ServerError {
   fn from(e: RecvError) -> Self { ServerError(Box::new(e)) }
 }
 
-impl<T: Send + 'static> From<SendError<T>> for ServerError {
+impl<T: Send + Sync + 'static> From<SendError<T>> for ServerError {
   fn from(e: SendError<T>) -> Self { ServerError(Box::new(e)) }
 }
 
@@ -37,8 +38,12 @@ impl From<&'static str> for ServerError {
   fn from(e: &'static str) -> Self { ServerError(e.into()) }
 }
 
-impl From<Box<dyn Error>> for ServerError {
-  fn from(e: Box<dyn Error>) -> Self { ServerError(e) }
+impl From<io::Error> for ServerError {
+  fn from(e: io::Error) -> Self { ServerError(Box::new(e)) }
+}
+
+impl From<BoxError> for ServerError {
+  fn from(e: BoxError) -> Self { ServerError(e) }
 }
 
 fn nos_id(nos: NumberOrString) -> RequestId {
@@ -65,7 +70,7 @@ impl Job {
 struct Jobs(Mutex<Option<VecDeque<Job>>>, Condvar);
 
 impl Jobs {
-  fn extend(&self, new: Vec<Job>) -> Result<()> {
+  fn extend(&self, new: Vec<Job>) {
     if !new.is_empty() {
       let changed = if let Some(jobs) = &mut *self.0.lock().unwrap() {
         jobs.retain(|job| new.iter().all(|njob| njob.path() != job.path()));
@@ -73,7 +78,6 @@ impl Jobs {
       } else {false};
       if changed { self.1.notify_one() }
     }
-    Ok(())
   }
 
   fn new_worker(&self, server: ServerRef) -> Result<()> {
@@ -87,32 +91,34 @@ impl Jobs {
       };
       match job {
         Job::Elaborate {path, start} => {
-          if let Some(file) = server.vfs.get(&path)? {
+          if let Some(file) = server.vfs.get(&path) {
             let (old_ast, old_env, old_deps) = match file.parsed.lock().unwrap().take() {
               None => (None, None, Vec::new()),
               Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
               Some(FileCache::Ready{ast, deps, env}) => (Some((start, ast)), Some(env), deps),
             };
             let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
-            let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
+            let (env, deps) = server.elaborate(path.clone(), &ast, old_env.map(|e| (idx, e)));
             server.send_diagnostics(file.url.clone(),
-              ast.errors.iter().map(|e| e.to_diag(&ast.source)).collect())?;
-            server.vfs.update_downstream(&old_deps, &deps, &path)?;
+              ast.errors.iter().chain(env.errors.iter())
+                .map(|e| e.to_diag(&ast.source)).collect())?;
+            server.vfs.update_downstream(&old_deps, &deps, &path);
             *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
           }
         }
         Job::DepChange(path) => {
-          if let Some(file) = server.vfs.get(&path)? {
+          if let Some(file) = server.vfs.get(&path) {
             let ((idx, ast), old_env, old_deps) = match file.parsed.lock().unwrap().take() {
               None => (parse(file.text.lock().unwrap().1.clone(), None), None, Vec::new()),
               Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), ast), None, Vec::new()),
               Some(FileCache::Ready{ast, deps, env}) => ((ast.stmts.len(), ast), Some(env), deps),
             };
-            let (env, deps) = elaborate(&ast, old_env.map(|e| (idx, e)));
+            let (env, deps) = server.elaborate(path.clone(), &ast, old_env.map(|e| (idx, e)));
             server.send_diagnostics(file.url.clone(),
-              ast.errors.iter().map(|e| e.to_diag(&ast.source)).collect())?;
-            server.vfs.update_downstream(&old_deps, &deps, &path)?;
+              ast.errors.iter().chain(env.errors.iter())
+                .map(|e| e.to_diag(&ast.source)).collect())?;
+            server.vfs.update_downstream(&old_deps, &deps, &path);
             *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, deps, env});
             file.cvar.notify_all();
           }
@@ -121,9 +127,9 @@ impl Jobs {
     }
   }
 
-  fn stop(&self) -> Result<()> {
+  fn stop(&self) {
     self.0.lock().unwrap().take();
-    Ok(self.1.notify_all())
+    self.1.notify_all()
   }
 }
 
@@ -134,13 +140,6 @@ lazy_static! {
 pub fn log(s: String) {
   LOGGER.0.lock().unwrap().push(s);
   LOGGER.1.notify_one();
-}
-
-struct Environment;
-
-fn elaborate(_ast: &AST, _old: Option<(usize, Environment)>) -> (Environment, Vec<Arc<PathBuf>>) {
-  // unimplemented!()
-  (Environment, Vec::new())
 }
 
 enum FileCache {
@@ -180,8 +179,8 @@ impl VirtualFile {
 struct VFS(Mutex<HashMap<Arc<PathBuf>, Arc<VirtualFile>>>);
 
 impl VFS {
-  fn get(&self, path: &PathBuf) -> Result<Option<Arc<VirtualFile>>> {
-    Ok(self.0.lock().unwrap().get(path).cloned())
+  fn get(&self, path: &PathBuf) -> Option<Arc<VirtualFile>> {
+    self.0.lock().unwrap().get(path).cloned()
   }
 
   fn open_virt(&self, queue: &mut Vec<Job>, path: Arc<PathBuf>, text: String) -> Result<Arc<VirtualFile>> {
@@ -190,7 +189,7 @@ impl VFS {
     match self.0.lock().unwrap().entry(path.clone()) {
       Entry::Occupied(entry) => {
         for dep in entry.get().downstream.lock().unwrap().clone() {
-          self.dirty(queue, &dep)?;
+          self.dirty(queue, &dep);
         }
         Ok(file)
       }
@@ -198,40 +197,37 @@ impl VFS {
     }
   }
 
-  fn close(&self, queue: &mut Vec<Job>, path: &PathBuf) -> Result<()> {
+  fn close(&self, queue: &mut Vec<Job>, path: &PathBuf) {
     if let Some(file) = self.0.lock().unwrap().remove(path) {
       if !file.text.lock().unwrap().0 {
         for dep in file.downstream.lock().unwrap().clone() {
-          self.dirty(queue, &dep)?;
+          self.dirty(queue, &dep);
         }
       }
     }
-    Ok(())
   }
 
-  fn set_downstream(&self, from: &PathBuf, to: Arc<PathBuf>, val: bool) -> Result<()> {
+  fn set_downstream(&self, from: &PathBuf, to: Arc<PathBuf>, val: bool) {
     let file = self.0.lock().unwrap().get(from).unwrap().clone();
     let mut ds = file.downstream.lock().unwrap();
     if val { ds.insert(to); }
     else { ds.remove(&to); }
-    Ok(())
   }
 
-  fn update_downstream(&self, old_deps: &Vec<Arc<PathBuf>>, deps: &Vec<Arc<PathBuf>>, to: &Arc<PathBuf>) -> Result<()> {
+  fn update_downstream(&self, old_deps: &Vec<Arc<PathBuf>>, deps: &Vec<Arc<PathBuf>>, to: &Arc<PathBuf>) {
     for from in old_deps {
       if !deps.contains(from) {
-        self.set_downstream(from, to.clone(), false)?
+        self.set_downstream(from, to.clone(), false)
       }
     }
     for from in deps {
       if !old_deps.contains(from) {
-        self.set_downstream(from, to.clone(), true)?
+        self.set_downstream(from, to.clone(), true)
       }
     }
-    Ok(())
   }
 
-  fn dirty(&self, queue: &mut Vec<Job>, path: &Arc<PathBuf>) -> Result<()> {
+  fn dirty(&self, queue: &mut Vec<Job>, path: &Arc<PathBuf>) {
     queue.push(Job::DepChange(path.clone()));
     let file = self.0.lock().unwrap().get(path).unwrap().clone();
     {
@@ -243,9 +239,8 @@ impl VFS {
       }
     }
     for dep in file.downstream.lock().unwrap().clone() {
-      self.dirty(queue, &dep)?;
+      self.dirty(queue, &dep);
     }
-    Ok(())
   }
 }
 
@@ -271,6 +266,7 @@ fn parse_request(req: Request) -> Result<Option<(RequestId, RequestType)>> {
 struct ServerRef<'a> {
   sender: &'a Sender<Message>,
   vfs: &'a VFS,
+  jobs: &'a Jobs,
 }
 
 impl ServerRef<'_> {
@@ -300,6 +296,28 @@ impl ServerRef<'_> {
       params: to_value(PublishDiagnosticsParams {uri, diagnostics})?
     })
   }
+}
+
+impl FileServer for ServerRef<'_> {
+  type WaitToken = Arc<VirtualFile>;
+
+  fn request_elab(&self, path: PathBuf, f: impl Fn(BoxError) -> ElabError) ->
+      std::result::Result<(Arc<PathBuf>, Arc<VirtualFile>), ElabError> {
+    (move || -> Result<_> {
+      let res = match self.vfs.0.lock().unwrap().entry(Arc::new(path)) {
+        Entry::Occupied(e) => (e.key().clone(), e.get().clone()),
+        Entry::Vacant(e) => {
+          let path = e.key().clone();
+          let val = e.insert(Arc::new(VirtualFile::new(&*path,
+            fs::read_to_string(&*path)?)?)).clone();
+          (path, val)
+        }
+      };
+      self.jobs.extend(vec![Job::Elaborate {path: res.0.clone(), start: Position::default()}]);
+      Ok(res)
+    })().map_err(|e| f(e.0))
+  }
+
 }
 
 type OpenRequests = Mutex<HashMap<RequestId, Arc<AtomicBool>>>;
@@ -369,9 +387,9 @@ impl Server {
   }
 
   fn as_ref(&self) -> ServerRef {
-    ServerRef {sender: &self.conn.sender, vfs: &self.vfs}
+    ServerRef {sender: &self.conn.sender, vfs: &self.vfs, jobs: &self.jobs}
   }
-  fn run(self) -> Result<()> {
+  fn run(self) {
     crossbeam::scope(|s| {
       let server = self.as_ref();
       let jobs = &self.jobs;
@@ -386,11 +404,11 @@ impl Server {
       let vfs = &self.vfs;
       loop {
         match (move || -> Result<bool> {
-          let server = ServerRef {sender: &conn.sender, vfs};
+          let server = ServerRef {sender: &conn.sender, vfs, jobs};
           match conn.receiver.recv()? {
             Message::Request(req) => {
               if conn.handle_shutdown(&req)? {
-                jobs.stop()?;
+                jobs.stop();
                 return Ok(true)
               }
               if let Some((id, req)) = parse_request(req)? {
@@ -417,29 +435,29 @@ impl Server {
                   let mut queue = Vec::new();
                   let path = Arc::new(doc.uri.to_file_path().map_err(|_| "bad URI")?);
                   vfs.open_virt(&mut queue, path, doc.text)?;
-                  jobs.extend(queue)?;
+                  jobs.extend(queue);
                 }
                 "textDocument/didChange" => {
                   let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
                   if !content_changes.is_empty() {
                     let path = Arc::new(doc.uri.to_file_path().map_err(|_| "bad URI")?);
                     let start = {
-                      let file = vfs.get(&path)?.ok_or("changed nonexistent file")?;
+                      let file = vfs.get(&path).ok_or("changed nonexistent file")?;
                       let mut text = file.text.lock().unwrap();
                       text.0 = true;
                       let (start, s) = text.1.apply_changes(content_changes.into_iter());
                       text.1 = Arc::new(s);
                       start
                     };
-                    jobs.extend(vec![Job::Elaborate{path, start}])?;
+                    jobs.extend(vec![Job::Elaborate {path, start}]);
                   }
                 }
                 "textDocument/didClose" => {
                   let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                   let path = doc.uri.to_file_path().map_err(|_| "bad URI")?;
                   let mut queue = Vec::new();
-                  vfs.close(&mut queue, &path)?;
-                  jobs.extend(queue)?;
+                  vfs.close(&mut queue, &path);
+                  jobs.extend(queue);
                 }
                 _ => {}
               }
@@ -452,8 +470,7 @@ impl Server {
           Err(e) => eprintln!("Server panicked: {:?}", e)
         }
       }
-    }).expect("other thread panicked");
-    Ok(())
+    }).expect("other thread panicked")
   }
 }
 
@@ -463,7 +480,5 @@ pub fn main(mut args: impl Iterator<Item=String>) {
     let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
   }
   // log::debug!("hi");
-  (|| Server::new()?.run())().unwrap_or_else(|e| {
-    eprintln!("Server panicked: {:?}", e);
-  })
+  Server::new().expect("Initialization failed").run()
 }

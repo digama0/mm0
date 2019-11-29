@@ -32,7 +32,7 @@ pub struct ParseError {
 type Result<T> = std::result::Result<T, ParseError>;
 
 impl ParseError {
-  fn new(pos: Span, msg: BoxError) -> ParseError {
+  pub fn new(pos: Span, msg: BoxError) -> ParseError {
     ParseError { pos, level: ErrorLevel::Error, msg }
   }
 
