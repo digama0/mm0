@@ -1,11 +1,56 @@
 use std::mem;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut, Range, Index};
 pub use lsp_types::Position;
-use lsp_types::{Range, TextDocumentContentChangeEvent};
-use crate::parser::Span;
+use lsp_types::{TextDocumentContentChangeEvent};
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Span {
+  pub start: usize,
+  pub end: usize,
+}
+
+impl From<Range<usize>> for Span {
+  #[inline] fn from(r: Range<usize>) -> Self { Span {start: r.start, end: r.end} }
+}
+
+impl From<usize> for Span {
+  #[inline] fn from(n: usize) -> Self { Span {start: n, end: n} }
+}
+
+impl From<Span> for Range<usize> {
+  #[inline] fn from(s: Span) -> Self { s.start..s.end }
+}
+
+impl Deref for Span {
+  type Target = Range<usize>;
+  fn deref(&self) -> &Range<usize> {
+    unsafe { mem::transmute(self) }
+  }
+}
+
+impl DerefMut for Span {
+  fn deref_mut(&mut self) -> &mut Range<usize> {
+    unsafe { mem::transmute(self) }
+  }
+}
+
+impl Iterator for Span {
+  type Item = usize;
+  fn next(&mut self) -> Option<usize> { self.deref_mut().next() }
+}
+impl DoubleEndedIterator for Span {
+  fn next_back(&mut self) -> Option<usize> { self.deref_mut().next_back() }
+}
 
 #[derive(Default, Clone)]
 pub struct LinedString { s: String, pub lines: Vec<usize> }
+
+impl Index<Span> for LinedString {
+  type Output = str;
+  fn index(&self, s: Span) -> &str {
+    unsafe { std::str::from_utf8_unchecked(&self.as_bytes()[s.start..s.end]) }
+  }
+}
 
 impl LinedString {
 
@@ -25,8 +70,8 @@ impl LinedString {
     Position::new(line as u64, (idx - pos) as u64)
   }
 
-  pub fn to_range(&self, s: Span) -> Range {
-    Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
+  pub fn to_range(&self, s: Span) -> lsp_types::Range {
+    lsp_types::Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
   }
 
   pub fn num_lines(&self) -> u64 { self.lines.len() as u64 }
@@ -89,7 +134,7 @@ impl LinedString {
     let mut uncopied: &str = &self.s;
     let mut first_change = None;
     for TextDocumentContentChangeEvent {range, text: change, ..} in changes {
-      if let Some(Range {start, end}) = range {
+      if let Some(lsp_types::Range {start, end}) = range {
         if first_change.map_or(true, |c| start < c) { first_change = Some(start) }
         if out.end() > start {
           out.extend(uncopied);

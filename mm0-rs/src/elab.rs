@@ -13,7 +13,6 @@ type Result<T> = std::result::Result<T, ElabError>;
 struct _Elaborator<'a> {
   ast: &'a AST,
   errors: Vec<ElabError>,
-  imports: Vec<(Span, String)>,
   idx: usize,
 }
 

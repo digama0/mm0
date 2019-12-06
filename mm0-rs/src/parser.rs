@@ -32,13 +32,13 @@ pub struct ParseError {
 type Result<T> = std::result::Result<T, ParseError>;
 
 impl ParseError {
-  pub fn new(pos: Span, msg: BoxError) -> ParseError {
-    ParseError { pos, level: ErrorLevel::Error, msg }
+  pub fn new(pos: impl Into<Span>, msg: BoxError) -> ParseError {
+    ParseError { pos: pos.into(), level: ErrorLevel::Error, msg }
   }
 
   pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
-      range: file.to_range(self.pos.clone()),
+      range: file.to_range(self.pos),
       severity: Some(self.level.to_diag_severity()),
       code: None,
       source: Some("mm0-rs".to_owned()),
@@ -90,8 +90,8 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn span(&self, s: &Span) -> &'a str {
-    unsafe { std::str::from_utf8_unchecked(&self.source[s.clone()]) }
+  fn span(&self, s: Span) -> &'a str {
+    unsafe { std::str::from_utf8_unchecked(&self.source[s.start..s.end]) }
   }
 
   fn chr(&mut self, c: u8) -> Option<usize> {
@@ -111,13 +111,13 @@ impl<'a> Parser<'a> {
     loop {
       self.idx += 1;
       if !self.cur_opt().map_or(false, ident_rest) {
-        return (Some(start..self.idx), self.ws()).0
+        return (Some((start..self.idx).into()), self.ws()).0
       }
     }
   }
 
   fn ident(&mut self) -> Option<Span> {
-    self.ident_().filter(|s| self.span(&s) != "_")
+    self.ident_().filter(|&s| self.span(s) != "_")
   }
 
   fn ident_err_(&mut self) -> Result<Span> {
@@ -138,7 +138,7 @@ impl<'a> Parser<'a> {
       if c == b'$' {
         let end = self.idx;
         self.ws();
-        return Ok(Some(Formula(start..end)))
+        return Ok(Some(Formula((start..end).into())))
       }
     }
     Err(ParseError::new(
@@ -151,7 +151,7 @@ impl<'a> Parser<'a> {
     loop {
       match self.ident_() {
         None => return (modifiers, None),
-        Some(id) => match Modifiers::from_name(self.span(&id)) {
+        Some(id) => match Modifiers::from_name(self.span(id)) {
           None => return (modifiers, Some(id)),
           Some(m) => {
             if modifiers.intersects(m) { self.push_err(self.err_str("double modifier")) }
@@ -184,7 +184,7 @@ impl<'a> Parser<'a> {
       let x = if dummy {Some(self.ident_err_()?)} else {self.ident_()};
       if let Some(x) = x {
         let k =
-          if self.span(&x) == "_" {LocalKind::Anon}
+          if self.span(x) == "_" {LocalKind::Anon}
           else if dummy {LocalKind::Dummy}
           else if curly {LocalKind::Bound}
           else {LocalKind::Reg};
@@ -193,14 +193,14 @@ impl<'a> Parser<'a> {
     }
     let ty = if let Some(_) = self.chr(b':') {Some(self.ty()?)} else {None};
     let end = self.chr_err(if curly {b'}'} else {b')'})?;
-    Ok(Some((start..end, locals, ty)))
+    Ok(Some(((start..end).into(), locals, ty)))
   }
 
   fn binders(&mut self) -> Result<Vec<Binder>> {
     let mut bis = Vec::new();
-    while let Some((sp, locals, ty)) = self.binder_group()? {
+    while let Some((span, locals, ty)) = self.binder_group()? {
       bis.extend(locals.into_iter().map(|local|
-        Binder { span: sp.clone(), local, ty: ty.clone() }));
+        Binder { span, local, ty: ty.clone() }));
     }
     Ok(bis)
   }
@@ -219,7 +219,7 @@ impl<'a> Parser<'a> {
       self.idx += 1;
     }
     if self.idx == start {return self.err_str("expected an s-expression")}
-    (Ok(start..self.idx), self.ws()).0
+    (Ok((start..self.idx).into()), self.ws()).0
   }
 
   fn string(&mut self) -> Result<(Span, String)> {
@@ -237,7 +237,7 @@ impl<'a> Parser<'a> {
           Some(b'\"') => '\"',
           Some(c) => {
             self.errors.push(ParseError {
-              pos: self.idx - 2..self.idx,
+              pos: (self.idx - 2..self.idx).into(),
               level: ErrorLevel::Warning,
               msg: "unknown escape sequence".into()
             });
@@ -245,7 +245,7 @@ impl<'a> Parser<'a> {
             continue
           }
         }),
-        b'\"' => return (Ok((start..self.idx, s)), self.ws()).0,
+        b'\"' => return (Ok(((start..self.idx).into(), s)), self.ws()).0,
         c => s.push(c as char)
       }
     }
@@ -264,12 +264,12 @@ impl<'a> Parser<'a> {
       val = 10u8 * val + (c - b'0');
     }
     if self.idx == start {return self.err_str("expected a number")}
-    (Ok((start..self.idx, val)), self.ws()).0
+    (Ok(((start..self.idx).into(), val)), self.ws()).0
   }
 
   pub fn is_atom(&self, e: &SExpr, s: &str) -> bool {
     if let SExpr {span, k: SExprKind::Atom(Atom::Ident)} = e {
-      self.span(span) == s
+      self.span(*span) == s
     } else {false}
   }
 
@@ -336,7 +336,7 @@ impl<'a> Parser<'a> {
       Some(b'#') => {
         self.idx += 1;
         let mut span = self.ident_err()?;
-        match (self.span(&span), span.start -= 1).0 {
+        match (self.span(span), span.start -= 1).0 {
           "t" => Ok(SExpr {span, k: SExprKind::Bool(true)}),
           "f" => Ok(SExpr {span, k: SExprKind::Bool(false)}),
           k => Err(ParseError {
@@ -348,7 +348,7 @@ impl<'a> Parser<'a> {
       }
       Some(b'$') => {
         let f = self.formula()?.unwrap();
-        Ok(SExpr {span: f.0.clone(), k: SExprKind::Formula(f)})
+        Ok(SExpr {span: f.0, k: SExprKind::Formula(f)})
       }
       Some(c) if b'0' <= c && c <= b'9' => {
         let (span, n) = self.number()?;
@@ -358,9 +358,9 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn decl(&mut self, mods: Modifiers, sp: &Span, k: DeclKind) -> Result<(usize, Decl)> {
+  fn decl(&mut self, mods: Modifiers, sp: Span, k: DeclKind) -> Result<(usize, Decl)> {
     if !mods.allowed_visibility(k) {
-      return Err(ParseError::new(sp.clone(), "invalid modifiers for this keyword".into()))
+      return Err(ParseError::new(sp, "invalid modifiers for this keyword".into()))
     }
     let id = self.ident_err()?;
     let bis = self.binders()?;
@@ -369,19 +369,19 @@ impl<'a> Parser<'a> {
     Ok((self.chr_err(b';')?, Decl {mods, k, bis, id, ty, val}))
   }
 
-  fn decl_stmt(&mut self, start: usize, m: Modifiers, sp: &Span, k: DeclKind) -> Result<Option<Stmt>> {
+  fn decl_stmt(&mut self, start: usize, m: Modifiers, sp: Span, k: DeclKind) -> Result<Option<Stmt>> {
     let (end, d) = self.decl(m, sp, k)?;
-    Ok(Some(Stmt {span: start..end, k: StmtKind::Decl(d)}))
+    Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Decl(d)}))
   }
 
   fn cnst(&mut self) -> Result<Const> {
     let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
-    for i in trim.clone().rev() {
+    for i in trim.rev() {
       if b" \n".contains(&self.source[i]) {trim.end -= 1}
       else {break}
     }
-    for i in trim.clone() {
+    for i in trim {
       if b" \n".contains(&self.source[i]) {trim.start += 1}
       else {break}
     }
@@ -399,7 +399,7 @@ impl<'a> Parser<'a> {
           ParseError::new(span, "precedence out of range".into()))?))
       }
       _ => {
-        self.ident_().filter(|id| self.span(&id) == "max")
+        self.ident_().filter(|&id| self.span(id) == "max")
           .ok_or_else(|| self.err("expected number or 'max'".into()))?;
         Ok(Prec::Max)
       }
@@ -410,23 +410,23 @@ impl<'a> Parser<'a> {
     let id = self.ident_err()?;
     self.chr_err(b':')?;
     let c = self.cnst()?;
-    self.ident_().filter(|id| self.span(&id) == "prec")
+    self.ident_().filter(|&id| self.span(id) == "prec")
       .ok_or_else(|| self.err("expected 'prec'".into()))?;
     let prec = self.prec()?;
     Ok((self.chr_err(b';')?, SimpleNota {k, id, c, prec}))
   }
 
-  fn nota_modifiers(&mut self, m: Modifiers, sp: &Span) {
+  fn nota_modifiers(&mut self, m: Modifiers, sp: Span) {
     if !m.is_empty() {
-      self.push_err(Err(ParseError::new(sp.clone(),
+      self.push_err(Err(ParseError::new(sp,
         "notation commands do not take modifiers".into())));
     }
   }
 
-  fn simple_nota_stmt(&mut self, start: usize, m: Modifiers, sp: &Span, k: SimpleNotaKind) -> Result<Option<Stmt>> {
+  fn simple_nota_stmt(&mut self, start: usize, m: Modifiers, sp: Span, k: SimpleNotaKind) -> Result<Option<Stmt>> {
     self.nota_modifiers(m, sp);
     let (end, n) = self.simple_nota(k)?;
-    Ok(Some(Stmt {span: start..end, k: StmtKind::SimpleNota(n)}))
+    Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::SimpleNota(n)}))
   }
 
   fn literals(&mut self) -> Result<Vec<Literal>> {
@@ -444,9 +444,9 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn inout_stmt(&mut self, start: usize, m: Modifiers, sp: &Span, out: bool) -> Result<Option<Stmt>> {
+  fn inout_stmt(&mut self, start: usize, m: Modifiers, sp: Span, out: bool) -> Result<Option<Stmt>> {
     if !m.is_empty() {
-      self.push_err(Err(ParseError::new(sp.clone(),
+      self.push_err(Err(ParseError::new(sp,
         "input/output commands do not take modifiers".into())));
     }
     let mut hs = Vec::new();
@@ -454,7 +454,7 @@ impl<'a> Parser<'a> {
     self.chr_err(b':')?;
     loop {
       if let Some(end) = self.chr(b';') {
-        return Ok(Some(Stmt {span: start..end, k: StmtKind::Inout {out, k, hs}}))
+        return Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Inout {out, k, hs}}))
       }
       hs.push(self.sexpr()?)
     }
@@ -467,7 +467,7 @@ impl<'a> Parser<'a> {
       let s = self.stmt()?.ok_or_else(||
         self.err("statement expected after annotation".into()))?;
       return Ok(Some(Stmt {
-        span: start..s.span.end,
+        span: (start..s.span.end).into(),
         k: StmtKind::Annot(e, Box::new(s))
       }))
     }
@@ -476,7 +476,7 @@ impl<'a> Parser<'a> {
         if m.is_empty() {Ok(None)}
         else {self.err_str("expected command keyword")}
       }
-      (mut m, Some(id)) => match self.span(&id) {
+      (mut m, Some(id)) => match self.span(id) {
         "sort" => {
           if !Modifiers::sort_data().contains(m) {
             self.push_err(self.err_str("sorts do not take visibility modifiers"));
@@ -484,7 +484,7 @@ impl<'a> Parser<'a> {
           }
           let id = self.ident_err()?;
           let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: start..end, k: StmtKind::Sort(id, m)}))
+          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Sort(id, m)}))
         }
         "delimiter" => {
           if !m.is_empty() {
@@ -496,29 +496,29 @@ impl<'a> Parser<'a> {
             Some(f2) => Delimiter::LeftRight(f1, f2),
           };
           let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: start..end, k: StmtKind::Delimiter(delim)}))
+          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Delimiter(delim)}))
         }
-        "term"    => self.decl_stmt(start, m, &id, DeclKind::Term),
-        "axiom"   => self.decl_stmt(start, m, &id, DeclKind::Axiom),
-        "theorem" => self.decl_stmt(start, m, &id, DeclKind::Theorem),
-        "def"     => self.decl_stmt(start, m, &id, DeclKind::Def),
-        "input"   => self.inout_stmt(start, m, &id, false),
-        "output"  => self.inout_stmt(start, m, &id, true),
-        "prefix"  => self.simple_nota_stmt(start, m, &id, SimpleNotaKind::Prefix),
-        "infixl"  => self.simple_nota_stmt(start, m, &id, SimpleNotaKind::Infix {right: false}),
-        "infixr"  => self.simple_nota_stmt(start, m, &id, SimpleNotaKind::Infix {right: true}),
+        "term"    => self.decl_stmt(start, m, id, DeclKind::Term),
+        "axiom"   => self.decl_stmt(start, m, id, DeclKind::Axiom),
+        "theorem" => self.decl_stmt(start, m, id, DeclKind::Theorem),
+        "def"     => self.decl_stmt(start, m, id, DeclKind::Def),
+        "input"   => self.inout_stmt(start, m, id, false),
+        "output"  => self.inout_stmt(start, m, id, true),
+        "prefix"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Prefix),
+        "infixl"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: false}),
+        "infixr"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: true}),
         "coercion" => {
-          self.nota_modifiers(m, &id);
+          self.nota_modifiers(m, id);
           let id = self.ident_err()?;
           self.chr_err(b':')?;
           let from = self.ident_err()?;
           self.chr_err(b'>')?;
           let to = self.ident_err()?;
           let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: start..end, k: StmtKind::Coercion {id, from, to}}))
+          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Coercion {id, from, to}}))
         }
         "notation" => {
-          self.nota_modifiers(m, &id);
+          self.nota_modifiers(m, id);
           let id = self.ident_err()?;
           let bis = self.binders()?;
           let ty = if self.chr(b':').is_some() {Some(self.ty()?)} else {None};
@@ -526,7 +526,7 @@ impl<'a> Parser<'a> {
           let lits = self.literals()?;
           let prec = if self.chr(b':').is_some() {
             let prec = self.prec()?;
-            let r = self.ident_().and_then(|s| match self.span(&s) {
+            let r = self.ident_().and_then(|s| match self.span(s) {
               "lassoc" => Some(false),
               "rassoc" => Some(true),
               _ => None
@@ -534,7 +534,7 @@ impl<'a> Parser<'a> {
             Some((prec, r))
           } else {None};
           let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: start..end, k: StmtKind::Notation(
+          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Notation(
             GenNota {id, bis, ty, lits, prec})}))
         }
         "do" => {
@@ -543,12 +543,12 @@ impl<'a> Parser<'a> {
             while self.chr(b'}').is_none() {es.push(self.sexpr()?)}
           } else {es.push(self.sexpr()?)}
           let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: start..end, k: StmtKind::Do(es)}))
+          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Do(es)}))
         }
         "import" => {
           let (sp, s) = self.string()?;
-          let span = start..self.chr_err(b';')?;
-          self.imports.push((sp.clone(), s.clone()));
+          let span = (start..self.chr_err(b';')?).into();
+          self.imports.push((sp, s.clone()));
           Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
         }
         k => {

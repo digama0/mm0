@@ -1,9 +1,8 @@
 use std::sync::Arc;
 use num::BigUint;
 use crate::lined_string::LinedString;
+pub use crate::lined_string::Span;
 use super::ParseError;
-
-pub type Span = std::ops::Range<usize>;
 
 bitflags! {
   pub struct Modifiers: u8 {
@@ -52,7 +51,7 @@ pub enum Delimiter {
 #[derive(Clone)]
 pub struct Formula(pub Span);
 impl Formula {
-  pub fn inner(&self) -> Span { self.0.start + 1 .. self.0.end - 1 }
+  pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
 }
 
 #[derive(Clone)]
@@ -97,11 +96,11 @@ pub enum SExprKind {
   Formula(Formula),
 }
 impl SExpr {
-  pub fn atom(span: Span, a: Atom) -> SExpr {
-    SExpr {span, k: SExprKind::Atom(a)}
+  pub fn atom(span: impl Into<Span>, a: Atom) -> SExpr {
+    SExpr {span: span.into(), k: SExprKind::Atom(a)}
   }
-  pub fn list(span: Span, dotted: bool, curly: bool, es: Vec<SExpr>) -> SExpr {
-    SExpr {span, k: SExprKind::List(dotted, curly, es)}
+  pub fn list(span: impl Into<Span>, dotted: bool, curly: bool, es: Vec<SExpr>) -> SExpr {
+    SExpr {span: span.into(), k: SExprKind::List(dotted, curly, es)}
   }
 }
 
@@ -163,7 +162,7 @@ pub struct AST {
 
 impl AST {
   pub fn _span(&self, s: Span) -> &str {
-    unsafe { std::str::from_utf8_unchecked(&self.source.as_bytes()[s]) }
+    unsafe { std::str::from_utf8_unchecked(&self.source.as_bytes()[s.start..s.end]) }
   }
 
   pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
