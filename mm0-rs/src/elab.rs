@@ -1,6 +1,7 @@
 pub mod environment;
 
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use std::path::PathBuf;
 use std::collections::{HashMap};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
@@ -96,28 +97,32 @@ impl<T> Elaborator<'_, T> {
   fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
   fn report(&mut self, e: ElabError) { self.errors.push(e) }
 
-  fn add_delimiters(&mut self, ls: &[u8], rs: &[u8]) {
-    for &c in ls { self.env.delims_l.set(c) }
-    for &c in rs { self.env.delims_r.set(c) }
+  fn elaborate_decl(&mut self, d: &Decl) {
+    match d.k {
+      _ => self.report(ElabError::new_e(d.id, "unimplemented"))
+    }
   }
 
-  fn elaborate_decl(&mut self, stmt: &Stmt, d: &Decl) {
-    match d.k {
-      _ => self.report(ElabError::new_e(stmt.span, "unimplemented"))
+  fn add_simple_nota(&mut self, n: &SimpleNota) {
+
+    match n.k {
+      _ => self.report(ElabError::new_e(n.id, "unimplemented"))
     }
   }
 
   fn elaborate_stmt(&mut self, stmt: &Stmt) {
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
-        let s = self.span(sp).to_owned();
+        let s = Arc::new(self.span(sp).to_owned());
         let fsp = self.fspan(sp);
-        self.add_sort(s.clone(), fsp, sd).unwrap_or_else(|r|
-          self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())])))
+        if let (_, Err(r)) = self.add_sort(s.clone(), fsp, sd) {
+          self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]));
+        }
       }
-      StmtKind::Decl(d) => self.elaborate_decl(stmt, d),
-      StmtKind::Delimiter(Delimiter::Both(f)) => self.add_delimiters(f, f),
-      StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.add_delimiters(ls, rs),
+      StmtKind::Decl(d) => self.elaborate_decl(d),
+      StmtKind::Delimiter(Delimiter::Both(f)) => self.env.add_delimiters(f, f),
+      StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.env.add_delimiters(ls, rs),
+      StmtKind::SimpleNota(n) => self.add_simple_nota(n),
       _ => self.report(ElabError::new_e(stmt.span, "unimplemented"))
     }
   }
