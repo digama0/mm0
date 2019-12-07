@@ -1,6 +1,9 @@
+use std::sync::Arc;
+use std::path::PathBuf;
 use std::mem;
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut, Range, Index};
-pub use lsp_types::Position;
+pub use lsp_types::{Position, Url};
 use lsp_types::{TextDocumentContentChangeEvent};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -42,6 +45,34 @@ impl DoubleEndedIterator for Span {
   fn next_back(&mut self) -> Option<usize> { self.deref_mut().next_back() }
 }
 
+#[derive(Clone)]
+pub struct FileRef(Arc<(PathBuf, Url)>);
+impl FileRef {
+  pub fn new(buf: PathBuf) -> FileRef {
+    let u = Url::from_file_path(&buf).expect("bad file path");
+    FileRef(Arc::new((buf, u)))
+  }
+  pub fn from_url(url: Url) -> FileRef {
+    FileRef(Arc::new((url.to_file_path().expect("bad URL"), url)))
+  }
+  pub fn path(&self) -> &PathBuf { &self.0 .0 }
+  pub fn url(&self) -> &Url { &self.0 .1 }
+}
+impl PartialEq for FileRef {
+  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+}
+impl Eq for FileRef {}
+
+impl Hash for FileRef {
+  fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct FileSpan {
+  pub file: FileRef,
+  pub span: Span,
+}
+
 #[derive(Default, Clone)]
 pub struct LinedString { s: String, pub lines: Vec<usize> }
 
@@ -72,6 +103,10 @@ impl LinedString {
 
   pub fn to_range(&self, s: Span) -> lsp_types::Range {
     lsp_types::Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
+  }
+
+  pub fn to_loc(&self, fs: &FileSpan) -> lsp_types::Location {
+    lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}
   }
 
   pub fn num_lines(&self) -> u64 { self.lines.len() as u64 }

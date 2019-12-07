@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::{fs, io};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{HashMap, HashSet, hash_map::Entry, VecDeque};
 use std::result;
@@ -9,7 +9,7 @@ use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use lsp_types::*;
 use crossbeam::{channel::{Sender, SendError, RecvError}};
-use crate::lined_string::LinedString;
+use crate::lined_string::{LinedString, FileRef};
 use crate::parser::{AST, parse, BoxError};
 use crate::elab::{Environment, ElabError, FileServer};
 
@@ -54,12 +54,12 @@ fn nos_id(nos: NumberOrString) -> RequestId {
 }
 
 enum Job {
-  Elaborate {path: Arc<PathBuf>, start: Position},
-  DepChange(Arc<PathBuf>)
+  Elaborate {path: FileRef, start: Position},
+  DepChange(FileRef)
 }
 
 impl Job {
-  fn path(&self) -> &Arc<PathBuf> {
+  fn path(&self) -> &FileRef {
     match self {
       Job::Elaborate{path, ..} => path,
       Job::DepChange(path) => path
@@ -95,15 +95,16 @@ impl Jobs {
             let (old_ast, old_env, old_deps) = match file.parsed.lock().unwrap().take() {
               None => (None, None, Vec::new()),
               Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
-              Some(FileCache::Ready{ast, deps, env}) => (Some((start, ast)), Some(env), deps),
+              Some(FileCache::Ready{ast, errors, deps, env}) => (Some((start, ast)), Some((errors, env)), deps),
             };
             let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
-            let (env, deps) = server.elaborate(path.clone(), &ast, old_env.map(|e| (idx, e)));
-            server.send_diagnostics(file.url.clone(),
-              ast.errors.iter().chain(env.errors.iter())
-                .map(|e| e.to_diag(&ast.source)).collect())?;
+            let (errors, env, deps) = server.elaborate(path.clone(), &ast,
+              old_env.map(|(errs, e)| (idx, errs, e)));
+            server.send_diagnostics(path.url().clone(),
+              ast.errors.iter().map(|e| e.to_diag(&ast.source))
+                .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path);
-            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, deps, env});
+            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env});
             file.cvar.notify_all();
           }
         }
@@ -112,14 +113,15 @@ impl Jobs {
             let ((idx, ast), old_env, old_deps) = match file.parsed.lock().unwrap().take() {
               None => (parse(file.text.lock().unwrap().1.clone(), None), None, Vec::new()),
               Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), ast), None, Vec::new()),
-              Some(FileCache::Ready{ast, deps, env}) => ((ast.stmts.len(), ast), Some(env), deps),
+              Some(FileCache::Ready{ast, errors, deps, env}) => ((ast.stmts.len(), ast), Some((errors, env)), deps),
             };
-            let (env, deps) = server.elaborate(path.clone(), &ast, old_env.map(|e| (idx, e)));
-            server.send_diagnostics(file.url.clone(),
-              ast.errors.iter().chain(env.errors.iter())
-                .map(|e| e.to_diag(&ast.source)).collect())?;
+            let (errors, env, deps) = server.elaborate(path.clone(), &ast,
+              old_env.map(|(errs, e)| (idx, errs, e)));
+            server.send_diagnostics(path.url().clone(),
+              ast.errors.iter().map(|e| e.to_diag(&ast.source))
+                .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path);
-            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, deps, env});
+            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env});
             file.cvar.notify_all();
           }
         }
@@ -146,14 +148,13 @@ enum FileCache {
   Dirty(AST),
   Ready {
     ast: AST,
+    errors: Vec<ElabError>,
     env: Environment,
-    deps: Vec<Arc<PathBuf>>,
+    deps: Vec<FileRef>,
   }
 }
 
 struct VirtualFile {
-  /// Cached Url for the file path
-  url: Url,
   /// File data, saved (true) or unsaved (false)
   text: Mutex<(bool, Arc<LinedString>)>,
   /// File parse
@@ -161,13 +162,12 @@ struct VirtualFile {
   /// Get notified on cache fill
   cvar: Condvar,
   /// Files that depend on this one
-  downstream: Mutex<HashSet<Arc<PathBuf>>>,
+  downstream: Mutex<HashSet<FileRef>>,
 }
 
 impl VirtualFile {
-  fn new(path: impl AsRef<Path>, text: String) -> Result<VirtualFile> {
+  fn new(text: String) -> Result<VirtualFile> {
     Ok(VirtualFile {
-      url: Url::from_file_path(path).map_err(|_| "bad path")?,
       text: Mutex::new((true, Arc::new(text.into()))),
       parsed: Mutex::new(None),
       cvar: Condvar::new(),
@@ -176,17 +176,17 @@ impl VirtualFile {
   }
 }
 
-struct VFS(Mutex<HashMap<Arc<PathBuf>, Arc<VirtualFile>>>);
+struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
 impl VFS {
-  fn get(&self, path: &PathBuf) -> Option<Arc<VirtualFile>> {
+  fn get(&self, path: &FileRef) -> Option<Arc<VirtualFile>> {
     self.0.lock().unwrap().get(path).cloned()
   }
 
-  fn open_virt(&self, queue: &mut Vec<Job>, path: Arc<PathBuf>, text: String) -> Result<Arc<VirtualFile>> {
+  fn open_virt(&self, queue: &mut Vec<Job>, path: FileRef, text: String) -> Result<Arc<VirtualFile>> {
     queue.push(Job::Elaborate {path: path.clone(), start: Position::new(0, 0)});
-    let file = Arc::new(VirtualFile::new(&*path, text)?);
-    match self.0.lock().unwrap().entry(path.clone()) {
+    let file = Arc::new(VirtualFile::new(text)?);
+    match self.0.lock().unwrap().entry(path) {
       Entry::Occupied(entry) => {
         for dep in entry.get().downstream.lock().unwrap().clone() {
           self.dirty(queue, &dep);
@@ -197,7 +197,7 @@ impl VFS {
     }
   }
 
-  fn close(&self, queue: &mut Vec<Job>, path: &PathBuf) {
+  fn close(&self, queue: &mut Vec<Job>, path: &FileRef) {
     if let Some(file) = self.0.lock().unwrap().remove(path) {
       if !file.text.lock().unwrap().0 {
         for dep in file.downstream.lock().unwrap().clone() {
@@ -207,14 +207,14 @@ impl VFS {
     }
   }
 
-  fn set_downstream(&self, from: &PathBuf, to: Arc<PathBuf>, val: bool) {
+  fn set_downstream(&self, from: &FileRef, to: FileRef, val: bool) {
     let file = self.0.lock().unwrap().get(from).unwrap().clone();
     let mut ds = file.downstream.lock().unwrap();
     if val { ds.insert(to); }
     else { ds.remove(&to); }
   }
 
-  fn update_downstream(&self, old_deps: &Vec<Arc<PathBuf>>, deps: &Vec<Arc<PathBuf>>, to: &Arc<PathBuf>) {
+  fn update_downstream(&self, old_deps: &Vec<FileRef>, deps: &Vec<FileRef>, to: &FileRef) {
     for from in old_deps {
       if !deps.contains(from) {
         self.set_downstream(from, to.clone(), false)
@@ -227,7 +227,7 @@ impl VFS {
     }
   }
 
-  fn dirty(&self, queue: &mut Vec<Job>, path: &Arc<PathBuf>) {
+  fn dirty(&self, queue: &mut Vec<Job>, path: &FileRef) {
     queue.push(Job::DepChange(path.clone()));
     let file = self.0.lock().unwrap().get(path).unwrap().clone();
     {
@@ -302,14 +302,13 @@ impl FileServer for ServerRef<'_> {
   type WaitToken = Arc<VirtualFile>;
 
   fn request_elab(&self, path: PathBuf, f: impl Fn(BoxError) -> ElabError) ->
-      std::result::Result<(Arc<PathBuf>, Arc<VirtualFile>), ElabError> {
+      std::result::Result<(FileRef, Arc<VirtualFile>), ElabError> {
     (move || -> Result<_> {
-      let res = match self.vfs.0.lock().unwrap().entry(Arc::new(path)) {
+      let res = match self.vfs.0.lock().unwrap().entry(FileRef::new(path)) {
         Entry::Occupied(e) => (e.key().clone(), e.get().clone()),
         Entry::Vacant(e) => {
           let path = e.key().clone();
-          let val = e.insert(Arc::new(VirtualFile::new(&*path,
-            fs::read_to_string(&*path)?)?)).clone();
+          let val = e.insert(Arc::new(VirtualFile::new(fs::read_to_string(path.path())?)?)).clone();
           (path, val)
         }
       };
@@ -433,14 +432,14 @@ impl Server {
                 "textDocument/didOpen" => {
                   let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                   let mut queue = Vec::new();
-                  let path = Arc::new(doc.uri.to_file_path().map_err(|_| "bad URI")?);
+                  let path = FileRef::from_url(doc.uri);
                   vfs.open_virt(&mut queue, path, doc.text)?;
                   jobs.extend(queue);
                 }
                 "textDocument/didChange" => {
                   let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
                   if !content_changes.is_empty() {
-                    let path = Arc::new(doc.uri.to_file_path().map_err(|_| "bad URI")?);
+                    let path = FileRef::from_url(doc.uri);
                     let start = {
                       let file = vfs.get(&path).ok_or("changed nonexistent file")?;
                       let mut text = file.text.lock().unwrap();
@@ -454,7 +453,7 @@ impl Server {
                 }
                 "textDocument/didClose" => {
                   let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
-                  let path = doc.uri.to_file_path().map_err(|_| "bad URI")?;
+                  let path = FileRef::from_url(doc.uri);
                   let mut queue = Vec::new();
                   vfs.close(&mut queue, &path);
                   jobs.extend(queue);

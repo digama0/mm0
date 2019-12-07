@@ -44,11 +44,11 @@ impl Modifiers {
 }
 
 pub enum Delimiter {
-  Both(Formula),
-  LeftRight(Formula, Formula),
+  Both(Box<[u8]>),
+  LeftRight(Box<[u8]>, Box<[u8]>),
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Formula(pub Span);
 impl Formula {
   pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
@@ -161,7 +161,7 @@ pub struct AST {
 }
 
 impl AST {
-  pub fn _span(&self, s: Span) -> &str {
+  pub fn span(&self, s: Span) -> &str {
     unsafe { std::str::from_utf8_unchecked(&self.source.as_bytes()[s.start..s.end]) }
   }
 

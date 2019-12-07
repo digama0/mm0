@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 
 use std::mem;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity};
 use num::BigUint;
 use num::cast::ToPrimitive;
 use crate::lined_string::*;
-pub use ast::{AST, Span};
+pub use ast::AST;
 use ast::*;
 
 #[derive(Copy, Clone)]
@@ -460,6 +460,39 @@ impl<'a> Parser<'a> {
     }
   }
 
+  fn delim_chars(&mut self, f: Formula) -> Box<[u8]> {
+    let end = f.inner().end;
+    let mut it = self.span(f.inner()).as_bytes().iter();
+    let mut delims = Vec::new();
+    loop {
+      fn ws(c: u8) -> bool { c == b' ' || c == b'\n' }
+      delims.push(loop {
+        match it.next() {
+          None => return delims.into_boxed_slice(),
+          Some(&c) => if !ws(c) {break c}
+        }
+      });
+      match it.next() {
+        Some(&c) if !ws(c) => {
+          delims.push(c);
+          let mut end = end - it.as_slice().len();
+          let start = end - 2;
+          loop {
+            match it.next() {
+              Some(&c) if !ws(c) => {
+                delims.push(c);
+                end += 1
+              }
+              _ => break self.errors.push(
+                ParseError::new(start..end, "delimiter must have one character".into()))
+            }
+          }
+        }
+        _ => ()
+      }
+    }
+  }
+
   fn stmt(&mut self) -> Result<Option<Stmt>> {
     let start = self.idx;
     if self.chr(b'@').is_some() {
@@ -491,9 +524,10 @@ impl<'a> Parser<'a> {
             self.push_err(self.err_str("'delimiter' does not take modifiers"));
           }
           let f1 = self.formula()?.ok_or_else(|| self.err("expected formula".into()))?;
+          let cs1 = self.delim_chars(f1);
           let delim = match self.formula()? {
-            None => Delimiter::Both(f1),
-            Some(f2) => Delimiter::LeftRight(f1, f2),
+            None => Delimiter::Both(cs1),
+            Some(f2) => Delimiter::LeftRight(cs1, self.delim_chars(f2)),
           };
           let end = self.chr_err(b';')?;
           Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Delimiter(delim)}))
@@ -593,4 +627,32 @@ pub fn parse(file: Arc<LinedString>, old: Option<(Position, AST)>) ->
   let mut p = Parser {source: file.as_bytes(), errors, imports, idx};
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
   (0, AST { errors: p.errors, imports: p.imports, source: file, stmts })
+}
+
+pub struct DelimTokens<'a>(pub usize, pub std::slice::Iter<'a, u8>);
+
+impl Iterator for DelimTokens<'_> {
+  type Item = std::result::Result<u8, Span>;
+  fn next(&mut self) -> Option<std::result::Result<u8, Span>> {
+    fn ws(c: u8) -> bool { c == b' ' || c == b'\n' }
+    let c = loop {
+      match self.1.next() {
+        None => return None,
+        Some(&c) => if !ws(c) {break c}
+      }
+    };
+    match self.1.next() {
+      Some(&c) if !ws(c) => {
+        let mut end = self.0 - self.1.as_slice().len();
+        let start = end - 2;
+        loop {
+          match self.1.next() {
+            Some(&c) if !ws(c) => end += 1,
+            _ => return Some(Err((start..end).into()))
+          }
+        }
+      }
+      _ => Some(Ok(c))
+    }
+  }
 }

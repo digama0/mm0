@@ -2,6 +2,7 @@ extern crate log;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
 
+mod util;
 mod lined_string;
 mod parser;
 mod server;
