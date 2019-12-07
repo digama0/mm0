@@ -66,27 +66,27 @@ impl ElabError {
   }
 }
 
-struct Elaborator<'a, T> {
+struct Elaborator<'a, T: FileServer + ?Sized> {
   ast: &'a AST,
+  fs: &'a T,
   path: FileRef,
   errors: Vec<ElabError>,
-  toks: HashMap<Span, Option<T>>,
+  toks: HashMap<Span, Option<T::WaitToken>>,
   env: Environment,
 }
 
-impl<T> Deref for Elaborator<'_, T> {
+impl<T: FileServer + ?Sized> Deref for Elaborator<'_, T> {
   type Target = Environment;
   fn deref(&self) -> &Environment { &self.env }
 }
-impl<T> DerefMut for Elaborator<'_, T> {
+impl<T: FileServer + ?Sized> DerefMut for Elaborator<'_, T> {
   fn deref_mut(&mut self) -> &mut Environment { &mut self.env }
 }
 
-impl<T> Elaborator<'_, T> {
-  fn new(ast: &AST, path: FileRef) -> Elaborator<T> {
+impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
+  fn new(ast: &'a AST, path: FileRef, fs: &'a T) -> Elaborator<'a, T> {
     Elaborator {
-      ast,
-      path,
+      ast, fs, path,
       errors: Vec::new(),
       toks: HashMap::new(),
       env: Environment::default(),
@@ -104,7 +104,6 @@ impl<T> Elaborator<'_, T> {
   }
 
   fn add_simple_nota(&mut self, n: &SimpleNota) {
-
     match n.k {
       _ => self.report(ElabError::new_e(n.id, "unimplemented"))
     }
@@ -123,20 +122,28 @@ impl<T> Elaborator<'_, T> {
       StmtKind::Delimiter(Delimiter::Both(f)) => self.env.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.env.add_delimiters(ls, rs),
       StmtKind::SimpleNota(n) => self.add_simple_nota(n),
+      &StmtKind::Import(sp, _) => {
+        if let Some(ref tok) = self.toks[&sp] {
+          let env = self.fs.get_elab(tok);
+          self.env.merge(&env, sp, &mut self.errors)
+        }
+      }
       _ => self.report(ElabError::new_e(stmt.span, "unimplemented"))
     }
   }
 }
 
 pub trait FileServer {
-  type WaitToken;
+  type WaitToken: Clone;
   fn request_elab(&self, path: PathBuf, f: impl Fn(BoxError) -> ElabError) ->
     Result<(FileRef, Self::WaitToken)>;
 
-  fn elaborate(&self, path: FileRef, ast: &AST,
-      _old: Option<(usize, Vec<ElabError>, Environment)>) ->
+  fn get_elab(&self, tok: &Self::WaitToken) -> Arc<Environment>;
+
+  fn elaborate<'a>(&'a self, path: FileRef, ast: &'a AST,
+      _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>) ->
       (Vec<ElabError>, Environment, Vec<FileRef>) {
-    let mut elab = Elaborator::new(ast, path);
+    let mut elab = Elaborator::new(ast, path, self);
     let mut deps: Vec<FileRef> = Vec::new();
     for (sp, f) in &ast.imports {
       match elab.path.path().join(f).canonicalize()

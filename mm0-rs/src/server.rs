@@ -104,7 +104,7 @@ impl Jobs {
               ast.errors.iter().map(|e| e.to_diag(&ast.source))
                 .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path);
-            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env});
+            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env: Arc::new(env)});
             file.cvar.notify_all();
           }
         }
@@ -121,7 +121,7 @@ impl Jobs {
               ast.errors.iter().map(|e| e.to_diag(&ast.source))
                 .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
             server.vfs.update_downstream(&old_deps, &deps, &path);
-            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env});
+            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env: Arc::new(env)});
             file.cvar.notify_all();
           }
         }
@@ -149,7 +149,7 @@ enum FileCache {
   Ready {
     ast: AST,
     errors: Vec<ElabError>,
-    env: Environment,
+    env: Arc<Environment>,
     deps: Vec<FileRef>,
   }
 }
@@ -315,6 +315,14 @@ impl FileServer for ServerRef<'_> {
       self.jobs.extend(vec![Job::Elaborate {path: res.0.clone(), start: Position::default()}]);
       Ok(res)
     })().map_err(|e| f(e.0))
+  }
+
+  fn get_elab(&self, tok: &Self::WaitToken) -> Arc<Environment> {
+    loop {
+      if let Some(FileCache::Ready {env, ..}) = &*tok.cvar.wait(tok.parsed.lock().unwrap()).unwrap() {
+        return env.clone()
+      }
+    }
   }
 
 }
