@@ -10,7 +10,7 @@ use environment::Literal as ELiteral;
 pub use environment::Environment;
 pub use crate::parser::ErrorLevel;
 use crate::util::*;
-use crate::parser::{*, ast::*};
+use crate::parser::{*, ast::*, ast::Literal as ALiteral};
 use crate::lined_string::*;
 
 pub enum ElabErrorKind {
@@ -122,11 +122,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
             ELiteral::Var(1, Prec::Prec(r))])
         } else {Err(ElabError::new_e(n.id, "max prec not allowed for infix"))?},
     };
-    let ref t = self.env.terms[term.0];
-    if t.args.len() != nargs {
-      Err(ElabError::with_info(n.id, "incorrect number of arguments".into(),
-        vec![(t.span.clone(), "declared here".into())]))?
-    }
+    self.check_term_nargs(n.id, term, nargs)?;
     let info = NotaInfo { span: self.fspan(n.id), term, rassoc: Some(rassoc), lits };
     match n.k {
       SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
@@ -136,7 +132,102 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       vec![(r.decl1, "declared here".into())]))
   }
 
-  fn elab_stmt(&mut self, stmt: &Stmt) {
+  fn elab_coe(&mut self, id: Span, from: Span, to: Span) -> Result<()> {
+    let t = self.term(self.span(id)).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
+    let &s1 = self.sort_keys.get(self.span(from)).ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
+    let &s2 = self.sort_keys.get(self.span(to)).ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
+    let fsp = self.fspan(id);
+    self.check_term_nargs(id, t, 2)?;
+    self.add_coe(s1, s2, fsp, t)
+  }
+
+  fn add_const(&mut self, tk: Span, p: Prec) -> Result<()> {
+    let s = self.span(tk).into();
+    let fsp = self.fspan(tk);
+    self.pe.add_const(s, fsp, p).map_err(|r| ElabError::with_info(tk,
+      "constant already declared with a different precedence".into(),
+      vec![(r.decl1, "declared here".into())]))
+  }
+
+  fn elab_gen_nota(&mut self, n: &GenNota) -> Result<()> {
+    let term = self.term(self.span(n.id)).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
+    self.check_term_nargs(n.id, term, n.bis.len())?;
+    let mut vars = HashMap::<&str, (usize, bool)>::new();
+    for (i, bi) in n.bis.iter().enumerate() {
+      match bi.local.1 {
+        LocalKind::Dummy => Err(ElabError::new_e(bi.local.0,
+          "dummies not permitted in notation declarations"))?,
+        LocalKind::Anon => Err(ElabError::new_e(bi.local.0,
+          "all variables must be used in notation declaration"))?,
+        _ => { vars.insert(self.ast.span(bi.local.0), (i, false)); }
+      }
+    }
+
+    fn bump(yes: bool, sp: Span, p: Prec) -> Result<Prec> {
+      if !yes {return Ok(p)}
+      if let Prec::Prec(n) = p {
+        if let Some(i) = n.checked_add(1) { Ok(Prec::Prec(i)) }
+        else {Err(ElabError::new_e(sp, "precedence out of range"))}
+      } else {Err(ElabError::new_e(sp, "infix constants cannot have prec max"))}
+    }
+    let mut get_var = |elab: &mut Self, sp: Span| -> Result<usize> {
+      let v = vars.get_mut(elab.span(sp))
+        .ok_or_else(|| ElabError::new_e(sp, "variable not found"))?;
+      v.1 = true;
+      Ok(v.0)
+    };
+
+    let mut it = n.lits.iter().peekable();
+    let (mut lits, mut rassoc, infix, tk, prec) = match it.next() {
+      None => Err(ElabError::new_e(n.id, "notation requires at least one literal"))?,
+      Some(&ALiteral::Const(ref c, p)) => (vec![], None, false, c, p),
+      Some(&ALiteral::Var(v)) => match it.next() {
+        None => Err(ElabError::new_e(v, "notation requires at least one constant"))?,
+        Some(&ALiteral::Var(v)) => Err(ElabError::new_e(v, "notation cannot start with two variables"))?,
+        Some(&ALiteral::Const(ref c, p)) => match n.prec {
+          None => Err(ElabError::new_e(n.id, "notation requires at least one constant"))?,
+          Some((q, _)) if q != p => Err(ElabError::new_e(c.fmla.0, "notation precedence must match first constant"))?,
+          Some((_, r)) =>
+            (vec![
+              ELiteral::Var(get_var(self, v)?, bump(r, c.fmla.0, p)?),
+              ELiteral::Const(self.span(c.trim).into())],
+            Some(r), true, c, p)
+        }
+      }
+    };
+
+    self.add_const(tk.trim, prec)?;
+    while let Some(lit) = it.next() {
+      match lit {
+        &ALiteral::Const(ref c, p) => {
+          lits.push(ELiteral::Const(self.span(c.trim).into()));
+          self.add_const(c.trim, p)?;
+        }
+        &ALiteral::Var(v) => {
+          let prec = match it.peek() {
+            None => bump(!rassoc.unwrap_or_else(|| {rassoc = Some(true); true}), tk.fmla.0, prec)?,
+            Some(&&ALiteral::Const(ref c, p)) => bump(true, c.fmla.0, p)?,
+            Some(ALiteral::Var(_)) => Prec::Max,
+          };
+          lits.push(ELiteral::Var(get_var(self, v)?, prec));
+        }
+      }
+    }
+
+    for (_, (i, b)) in vars {
+      if !b { Err(ElabError::new_e(n.bis[i].local.0, "variable not used in notation"))? }
+    }
+    let s: ArcString = self.span(tk.trim).into();
+    let info = NotaInfo { span: self.fspan(n.id), term, rassoc, lits };
+    match infix {
+      false => self.pe.add_prefix(s.clone(), info),
+      true => self.pe.add_infix(s.clone(), info),
+    }.map_err(|r| ElabError::with_info(n.id,
+      format!("constant '{}' already declared", s).into(),
+      vec![(r.decl1, "declared here".into())]))
+  }
+
+  fn elab_stmt(&mut self, stmt: &Stmt) -> Result<()> {
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
         let s = ArcString::new(self.span(sp).to_owned());
@@ -148,12 +239,15 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       StmtKind::Decl(d) => self.elab_decl(d),
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
-      StmtKind::SimpleNota(n) => {let r = self.elab_simple_nota(n); self.catch(r)}
+      StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
+      &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
+      StmtKind::Notation(n) => self.elab_gen_nota(n)?,
       &StmtKind::Import(sp, _) => if let Some(ref tok) = self.toks[&sp] {
         self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)
       },
-      _ => self.report(ElabError::new_e(stmt.span, "unimplemented"))
+      _ => Err(ElabError::new_e(stmt.span, "unimplemented"))?
     }
+    Ok(())
   }
 }
 
@@ -178,8 +272,10 @@ pub trait FileServer {
       }
     }
 
-    for s in ast.stmts.iter() { elab.elab_stmt(s) }
-    // unimplemented!()
+    for s in ast.stmts.iter() {
+      let r = elab.elab_stmt(s);
+      elab.catch(r)
+    }
     (elab.errors, elab.env, deps)
   }
 }

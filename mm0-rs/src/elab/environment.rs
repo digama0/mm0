@@ -529,6 +529,10 @@ impl Environment {
     }
   }
 
+  pub fn add_coe(&mut self, s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
+    self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
+  }
+
   pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) {
     if self.stmts.is_empty() { return *self = other.clone() }
     let mut remap = Remapper::default();
@@ -579,5 +583,12 @@ impl Environment {
       }
     }
     self.pe.merge(&other.pe, &remap, sp, &self.sorts, errors);
+  }
+
+  pub fn check_term_nargs(&self, sp: Span, term: TermID, nargs: usize) -> Result<(), ElabError> {
+    let ref t = self.terms[term.0];
+    if t.args.len() == nargs { return Ok(()) }
+    Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
+      vec![(t.span.clone(), "declared here".into())]))
   }
 }
