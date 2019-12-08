@@ -86,6 +86,7 @@ pub struct SExpr {
   pub span: Span,
   pub k: SExprKind,
 }
+#[derive(Copy, Clone)]
 pub enum Atom { Ident, Quote, Unquote }
 pub enum SExprKind {
   Atom(Atom),

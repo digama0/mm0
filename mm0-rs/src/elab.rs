@@ -1,4 +1,5 @@
 pub mod environment;
+pub mod lisp;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -44,7 +45,7 @@ pub struct ElabError {
   pub level: ErrorLevel,
   pub kind: ElabErrorKind,
 }
-type Result<T> = std::result::Result<T, ElabError>;
+pub type Result<T> = std::result::Result<T, ElabError>;
 
 impl ElabError {
   pub fn new(pos: impl Into<Span>, kind: ElabErrorKind) -> ElabError {
@@ -69,7 +70,7 @@ impl ElabError {
   }
 }
 
-struct Elaborator<'a, T: FileServer + ?Sized> {
+pub struct Elaborator<'a, T: FileServer + ?Sized> {
   ast: &'a AST,
   fs: &'a T,
   path: FileRef,

@@ -5,12 +5,14 @@ use std::hash::Hash;
 use std::collections::HashMap;
 use super::{ElabError, BoxError};
 use crate::util::*;
+use super::lisp::{LispVal, UNDEF, LispRemapper};
 pub use crate::parser::ast::{Modifiers, Prec};
 pub use crate::lined_string::{Span, FileSpan};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct SortID(pub usize);
 #[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct TermID(pub usize);
 #[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct ThmID(pub usize);
+#[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct AtomID(pub usize);
 
 #[derive(Clone)]
 pub struct Sort {
@@ -163,6 +165,8 @@ pub struct Environment {
   pub decl_keys: HashMap<ArcString, DeclKey>,
   pub terms: Vec<Term>,
   pub thms: Vec<Thm>,
+  pub atoms: HashMap<ArcString, AtomID>,
+  pub lisp_ctx: Vec<(ArcString, LispVal)>,
   pub stmts: Vec<StmtTrace>,
 }
 
@@ -184,46 +188,46 @@ struct Remapper {
   thm: HashMap<ThmID, ThmID>,
 }
 
-trait Remap {
-  fn remap(&self, r: &Remapper) -> Self;
+pub trait Remap<R> {
+  fn remap(&self, r: &mut R) -> Self;
 }
-impl Remap for SortID {
-  fn remap(&self, r: &Remapper) -> Self { *r.sort.get(self).unwrap_or(self) }
+impl Remap<Remapper> for SortID {
+  fn remap(&self, r: &mut Remapper) -> Self { *r.sort.get(self).unwrap_or(self) }
 }
-impl Remap for TermID {
-  fn remap(&self, r: &Remapper) -> Self { *r.term.get(self).unwrap_or(self) }
+impl Remap<Remapper> for TermID {
+  fn remap(&self, r: &mut Remapper) -> Self { *r.term.get(self).unwrap_or(self) }
 }
-impl Remap for ThmID {
-  fn remap(&self, r: &Remapper) -> Self { *r.thm.get(self).unwrap_or(self) }
+impl Remap<Remapper> for ThmID {
+  fn remap(&self, r: &mut Remapper) -> Self { *r.thm.get(self).unwrap_or(self) }
 }
-impl Remap for String {
-  fn remap(&self, _: &Remapper) -> Self { self.clone() }
+impl<R> Remap<R> for String {
+  fn remap(&self, _: &mut R) -> Self { self.clone() }
 }
-impl<A: Remap, B: Remap> Remap for (A, B) {
-  fn remap(&self, r: &Remapper) -> Self { (self.0.remap(r), self.1.remap(r)) }
+impl<R, A: Remap<R>, B: Remap<R>> Remap<R> for (A, B) {
+  fn remap(&self, r: &mut R) -> Self { (self.0.remap(r), self.1.remap(r)) }
 }
-impl<A: Remap> Remap for Option<A> {
-  fn remap(&self, r: &Remapper) -> Self { self.as_ref().map(|x| x.remap(r)) }
+impl<R, A: Remap<R>> Remap<R> for Option<A> {
+  fn remap(&self, r: &mut R) -> Self { self.as_ref().map(|x| x.remap(r)) }
 }
-impl<A: Remap> Remap for Vec<A> {
-  fn remap(&self, r: &Remapper) -> Self { self.iter().map(|x| x.remap(r)).collect() }
+impl<R, A: Remap<R>> Remap<R> for Vec<A> {
+  fn remap(&self, r: &mut R) -> Self { self.iter().map(|x| x.remap(r)).collect() }
 }
-impl<A: Remap> Remap for Box<A> {
-  fn remap(&self, r: &Remapper) -> Self { Box::new(self.deref().remap(r)) }
+impl<R, A: Remap<R>> Remap<R> for Box<A> {
+  fn remap(&self, r: &mut R) -> Self { Box::new(self.deref().remap(r)) }
 }
-impl<A: Remap> Remap for Arc<A> {
-  fn remap(&self, r: &Remapper) -> Self { Arc::new(self.deref().remap(r)) }
+impl<R, A: Remap<R>> Remap<R> for Arc<A> {
+  fn remap(&self, r: &mut R) -> Self { Arc::new(self.deref().remap(r)) }
 }
-impl Remap for Type {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for Type {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       Type::Bound(s) => Type::Bound(s.remap(r)),
       &Type::Reg(s, deps) => Type::Reg(s.remap(r), deps),
     }
   }
 }
-impl Remap for ExprNode {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for ExprNode {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ExprNode::Ref(i) => ExprNode::Ref(i),
       ExprNode::Dummy(i, s) => ExprNode::Dummy(i.clone(), s.remap(r)),
@@ -231,16 +235,16 @@ impl Remap for ExprNode {
     }
   }
 }
-impl Remap for Expr {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for Expr {
+  fn remap(&self, r: &mut Remapper) -> Self {
     Expr {
       heap: self.heap.remap(r),
       head: self.head.remap(r),
     }
   }
 }
-impl Remap for Term {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for Term {
+  fn remap(&self, r: &mut Remapper) -> Self {
     Term {
       span: self.span.clone(),
       vis: self.vis,
@@ -251,8 +255,8 @@ impl Remap for Term {
     }
   }
 }
-impl Remap for ProofNode {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for ProofNode {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ProofNode::Ref(i) => ProofNode::Ref(i),
       ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
@@ -262,16 +266,16 @@ impl Remap for ProofNode {
     }
   }
 }
-impl Remap for Proof {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for Proof {
+  fn remap(&self, r: &mut Remapper) -> Self {
     Proof {
       heap: self.heap.remap(r),
       head: self.head.remap(r),
     }
   }
 }
-impl Remap for Thm {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for Thm {
+  fn remap(&self, r: &mut Remapper) -> Self {
     Thm {
       span: self.span.clone(),
       vis: self.vis,
@@ -284,8 +288,8 @@ impl Remap for Thm {
     }
   }
 }
-impl Remap for NotaInfo {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for NotaInfo {
+  fn remap(&self, r: &mut Remapper) -> Self {
     NotaInfo {
       span: self.span.clone(),
       term: self.term.remap(r),
@@ -294,8 +298,8 @@ impl Remap for NotaInfo {
     }
   }
 }
-impl Remap for Coe {
-  fn remap(&self, r: &Remapper) -> Self {
+impl Remap<Remapper> for Coe {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       Coe::One(sp, t) => Coe::One(sp.clone(), t.remap(r)),
       Coe::Trans(c1, s, c2) => Coe::Trans(c1.remap(r), s.remap(r), c2.remap(r)),
@@ -407,7 +411,7 @@ impl ParserEnv {
     self.update_provs(sp, sorts)
   }
 
-  fn merge(&mut self, other: &Self, r: &Remapper, sp: Span, sorts: &Vec<Sort>, errors: &mut Vec<ElabError>) {
+  fn merge(&mut self, other: &Self, r: &mut Remapper, sp: Span, sorts: &Vec<Sort>, errors: &mut Vec<ElabError>) {
     self.delims_l.merge(&other.delims_l);
     self.delims_r.merge(&other.delims_r);
     for (tk, &(ref fsp, p)) in &other.consts {
@@ -533,6 +537,12 @@ impl Environment {
     self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
   }
 
+  pub fn get_atom(&mut self, s: ArcString) -> AtomID {
+    let ctx = &mut self.lisp_ctx;
+    *self.atoms.entry(s.clone()).or_insert_with(move ||
+      (AtomID(ctx.len()), ctx.push((s, UNDEF.clone()))).0)
+  }
+
   pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) {
     if self.stmts.is_empty() { return *self = other.clone() }
     let mut remap = Remapper::default();
@@ -553,7 +563,7 @@ impl Environment {
         StmtTrace::Decl(s) => match other.decl_keys[s] {
           DeclKey::Term(i) => {
             let ref o = other.terms[i.0];
-            let id = match self.add_term(s.clone(), o.span.clone(), || o.remap(&remap)) {
+            let id = match self.add_term(s.clone(), o.span.clone(), || o.remap(&mut remap)) {
               Ok(id) => id,
               Err((id, r)) => {
                 errors.push(ElabError::with_info(sp, r.msg.into(), vec![
@@ -567,7 +577,7 @@ impl Environment {
           }
           DeclKey::Thm(i) => {
             let ref o = other.thms[i.0];
-            let id = match self.add_thm(s.clone(), o.span.clone(), || o.remap(&remap)) {
+            let id = match self.add_thm(s.clone(), o.span.clone(), || o.remap(&mut remap)) {
               Ok(id) => id,
               Err((id, r)) => {
                 errors.push(ElabError::with_info(sp, r.msg.into(), vec![
@@ -582,7 +592,14 @@ impl Environment {
         }
       }
     }
-    self.pe.merge(&other.pe, &remap, sp, &self.sorts, errors);
+    self.pe.merge(&other.pe, &mut remap, sp, &self.sorts, errors);
+    let mut r = LispRemapper {
+      atom: other.lisp_ctx.iter().map(|(s, _)| self.get_atom(s.clone())).collect(),
+      lisp: Default::default(),
+    };
+    for (i, (_, v)) in other.lisp_ctx.iter().enumerate() {
+      self.lisp_ctx[r.atom[i].0].1 = v.remap(&mut r)
+    }
   }
 
   pub fn check_term_nargs(&self, sp: Span, term: TermID, nargs: usize) -> Result<(), ElabError> {
