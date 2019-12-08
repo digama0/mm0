@@ -113,7 +113,17 @@ pub struct Decl {
   pub val: Option<SExpr>,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Prec { Prec(u32), Max }
+
+impl Prec {
+  pub fn next(p: Prec) -> Option<Prec> {
+    match p {
+      Prec::Prec(n) => n.checked_add(1).map(Prec::Prec),
+      Prec::Max => None
+    }
+  }
+}
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
 pub struct SimpleNota {
   pub k: SimpleNotaKind,

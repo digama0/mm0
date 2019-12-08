@@ -2,10 +2,10 @@ pub mod ast;
 
 use std::mem;
 use std::sync::Arc;
-use std::error::Error;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
 use num::BigUint;
 use num::cast::ToPrimitive;
+use crate::util::*;
 use crate::lined_string::*;
 pub use ast::AST;
 use ast::*;
@@ -23,7 +23,7 @@ impl ErrorLevel {
     }
   }
 }
-pub type BoxError = Box<dyn Error + Send + Sync>;
+
 pub struct ParseError {
   pub pos: Span,
   pub level: ErrorLevel,

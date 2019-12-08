@@ -5,8 +5,11 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use std::collections::{HashMap};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
+use environment::*;
+use environment::Literal as ELiteral;
 pub use environment::Environment;
-pub use crate::parser::{ErrorLevel, BoxError};
+pub use crate::parser::ErrorLevel;
+use crate::util::*;
 use crate::parser::{*, ast::*};
 use crate::lined_string::*;
 
@@ -96,38 +99,59 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   fn span(&self, s: Span) -> &str { self.ast.span(s) }
   fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
   fn report(&mut self, e: ElabError) { self.errors.push(e) }
+  fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
 
-  fn elaborate_decl(&mut self, d: &Decl) {
+  fn elab_decl(&mut self, d: &Decl) {
     match d.k {
       _ => self.report(ElabError::new_e(d.id, "unimplemented"))
     }
   }
 
-  fn add_simple_nota(&mut self, n: &SimpleNota) {
-    match n.k {
-      _ => self.report(ElabError::new_e(n.id, "unimplemented"))
+  fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
+    let term = self.term(self.span(n.id)).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
+    let tk: ArcString = self.span(n.c.trim).into();
+    let (rassoc, nargs, lits) = match n.k {
+      SimpleNotaKind::Prefix => (true, 1, vec![ELiteral::Var(0, n.prec)]),
+      SimpleNotaKind::Infix {right} =>
+        if let Prec::Prec(i) = n.prec {
+          let i2 = i.checked_add(1).ok_or_else(|| ElabError::new_e(n.id, "precedence out of range"))?;
+          let (l, r) = if right {(i2, i)} else {(i, i2)};
+          (right, 2, vec![
+            ELiteral::Var(0, Prec::Prec(l)),
+            ELiteral::Const(tk.clone()),
+            ELiteral::Var(1, Prec::Prec(r))])
+        } else {Err(ElabError::new_e(n.id, "max prec not allowed for infix"))?},
+    };
+    let ref t = self.env.terms[term.0];
+    if t.args.len() != nargs {
+      Err(ElabError::with_info(n.id, "incorrect number of arguments".into(),
+        vec![(t.span.clone(), "declared here".into())]))?
     }
+    let info = NotaInfo { span: self.fspan(n.id), term, rassoc: Some(rassoc), lits };
+    match n.k {
+      SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
+      SimpleNotaKind::Infix {..} => self.pe.add_infix(tk.clone(), info),
+    }.map_err(|r| ElabError::with_info(n.id,
+      format!("constant '{}' already declared", tk).into(),
+      vec![(r.decl1, "declared here".into())]))
   }
 
-  fn elaborate_stmt(&mut self, stmt: &Stmt) {
+  fn elab_stmt(&mut self, stmt: &Stmt) {
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
-        let s = Arc::new(self.span(sp).to_owned());
+        let s = ArcString::new(self.span(sp).to_owned());
         let fsp = self.fspan(sp);
         if let (_, Err(r)) = self.add_sort(s.clone(), fsp, sd) {
           self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]));
         }
       }
-      StmtKind::Decl(d) => self.elaborate_decl(d),
-      StmtKind::Delimiter(Delimiter::Both(f)) => self.env.add_delimiters(f, f),
-      StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.env.add_delimiters(ls, rs),
-      StmtKind::SimpleNota(n) => self.add_simple_nota(n),
-      &StmtKind::Import(sp, _) => {
-        if let Some(ref tok) = self.toks[&sp] {
-          let env = self.fs.get_elab(tok);
-          self.env.merge(&env, sp, &mut self.errors)
-        }
-      }
+      StmtKind::Decl(d) => self.elab_decl(d),
+      StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
+      StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
+      StmtKind::SimpleNota(n) => {let r = self.elab_simple_nota(n); self.catch(r)}
+      &StmtKind::Import(sp, _) => if let Some(ref tok) = self.toks[&sp] {
+        self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)
+      },
       _ => self.report(ElabError::new_e(stmt.span, "unimplemented"))
     }
   }
@@ -154,7 +178,7 @@ pub trait FileServer {
       }
     }
 
-    for s in ast.stmts.iter() { elab.elaborate_stmt(s) }
+    for s in ast.stmts.iter() { elab.elab_stmt(s) }
     // unimplemented!()
     (elab.errors, elab.env, deps)
   }
