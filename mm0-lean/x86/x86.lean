@@ -798,7 +798,9 @@ inductive config.isIO (k : config) : config → Prop
   ((do
     let rip := k.rip + bitvec.of_nat _ l.length,
     write_rip rip,
-    (EA.EA_r RCX).write' Sz64 rip) k).P () k' →
+    (EA.EA_r RCX).write' Sz64 rip,
+    r11 ← pstate.any,
+    (EA.EA_r 11).write' Sz64 r11) k).P () k' →
   config.isIO k'
 
 structure kcfg :=

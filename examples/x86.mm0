@@ -1085,12 +1085,12 @@ theorem stepT (k k2: nat): $ step k k2 -> k e. Config /\ k2 e. Config $;
 -- a system call (we model the x86-64 SYSCALL instruction instead of INT).
 -- Here k2 is the state that the kernel sees, with RCX and RIP set to
 -- the point after the call.
-def isIO (k k2 .l .rip: nat): wff =
-$ k e. Config /\ E. l E. rip (
+def isIO (k k2 .l .rip .r11: nat): wff =
+$ k e. Config /\ E. l E. rip E. r11 (
   readMemX k (readRIP k) l /\
   decode xastSysCall l /\
   rip = readRIP k +_64 len l /\
-  k2 = setReg (writeRIP k rip) RCX rip) $;
+  k2 = setReg (setReg (writeRIP k rip) RCX rip) 11 r11 $;
 
 ----------------------------------------
 -- IO semantics
