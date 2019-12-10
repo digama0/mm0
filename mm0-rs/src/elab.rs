@@ -233,8 +233,12 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       &StmtKind::Sort(sp, sd) => {
         let s = ArcString::new(self.span(sp).to_owned());
         let fsp = self.fspan(sp);
-        if let (_, Err(r)) = self.add_sort(s.clone(), fsp, sd) {
-          self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]));
+        match self.add_sort(s.clone(), fsp, sd) {
+          Ok(_) => {}
+          Err(AddItemError::Redeclaration(_, r)) =>
+            self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())])),
+          Err(AddItemError::Overflow) =>
+            self.report(ElabError::new_e(sp, "too many sorts")),
         }
       }
       StmtKind::Decl(d) => self.elab_decl(d),
@@ -244,7 +248,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
       &StmtKind::Import(sp, _) => if let Some(ref tok) = self.toks[&sp] {
-        self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)
+        self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)?
       },
       _ => Err(ElabError::new_e(stmt.span, "unimplemented"))?
     }

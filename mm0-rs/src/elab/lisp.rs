@@ -37,11 +37,13 @@ impl Syntax {
       _ => None
     }
   }
-  pub fn from_atom(s: &str, a: ast::Atom) -> Option<Syntax> {
+
+  pub fn from_atom(s: &str, a: ast::Atom) -> std::result::Result<Syntax, &str> {
     match a {
-      ast::Atom::Ident => Self::from_str(s),
-      ast::Atom::Quote => Some(Syntax::Quote),
-      ast::Atom::Unquote => Some(Syntax::Unquote),
+      ast::Atom::Ident => Self::from_str(s).ok_or(s),
+      ast::Atom::Quote => Ok(Syntax::Quote),
+      ast::Atom::Unquote => Ok(Syntax::Unquote),
+      ast::Atom::Nfx => Err(":nfx"),
     }
   }
 }
@@ -79,17 +81,25 @@ pub enum BuiltinProc {
 }
 
 pub enum Code {
-  Local(usize),
+  Local(u16),
+  ClosureLocal(u16, u16),
   Global(AtomID),
+}
+
+pub enum PreCode {
+  Code(Code),
+}
+impl From<Code> for PreCode {
+  fn from(c: Code) -> PreCode { PreCode::Code(c) }
 }
 
 #[derive(Default)]
 pub struct LispRemapper {
-  pub atom: Vec<AtomID>,
+  pub atom: AtomVec<AtomID>,
   pub lisp: HashMap<*const LispKind, LispVal>,
 }
 impl Remap<LispRemapper> for AtomID {
-  fn remap(&self, r: &mut LispRemapper) -> Self { *r.atom.get(self.0).unwrap_or(self) }
+  fn remap(&self, r: &mut LispRemapper) -> Self { *r.atom.get(*self).unwrap_or(self) }
 }
 impl<R, K: Clone + Hash + Eq, V: Remap<R>> Remap<R> for HashMap<K, V> {
   fn remap(&self, r: &mut R) -> Self { self.iter().map(|(k, v)| (k.clone(), v.remap(r))).collect() }
@@ -126,38 +136,40 @@ impl Remap<LispRemapper> for Code {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
       &Code::Local(i) => Code::Local(i),
+      &Code::ClosureLocal(l, i) => Code::ClosureLocal(l, i),
       &Code::Global(a) => Code::Global(a.remap(r)),
     }
   }
 }
 
-pub struct Compiler<'a, T: FileServer + ?Sized> {
+pub struct Precompiler<'a, T: FileServer + ?Sized> {
   elab: &'a mut Elaborator<'a, T>,
-  code: Vec<Code>,
-  ctx: (HashMap<ArcString, usize>, Vec<(ArcString, bool)>),
+  names: HashMap<ArcString, (u16, u16)>,
+  ctx: Vec<Vec<(ArcString, bool)>>,
+  code: Vec<PreCode>,
 }
-impl<'a, T: FileServer + ?Sized> Deref for Compiler<'a, T> {
+impl<'a, T: FileServer + ?Sized> Deref for Precompiler<'a, T> {
   type Target = Elaborator<'a, T>;
   fn deref(&self) -> &Elaborator<'a, T> { self.elab }
 }
-impl<'a, T: FileServer + ?Sized> DerefMut for Compiler<'a, T> {
+impl<'a, T: FileServer + ?Sized> DerefMut for Precompiler<'a, T> {
   fn deref_mut(&mut self) -> &mut Elaborator<'a, T> { self.elab }
 }
 
-impl<'a, T: FileServer + ?Sized> Compiler<'a, T> {
-  pub fn compile_expr(&mut self, e: &SExpr) -> Result<()> {
+impl<'a, T: FileServer + ?Sized> Precompiler<'a, T> {
+  pub fn precompile_expr(&mut self, e: &SExpr) -> Result<()> {
     match e.k {
       SExprKind::Atom(a) => {
-        let s = self.span(e.span);
-        if Syntax::from_atom(s, a).is_some() {
-          Err(ElabError::new_e(e.span, "keyword in invalid position"))?
-        }
-        if let Some(&i) = self.ctx.0.get(s) {
-          self.code.push(Code::Local(i));
+        let s = match Syntax::from_atom(self.span(e.span), a) {
+          Ok(_) => Err(ElabError::new_e(e.span, "keyword in invalid position"))?,
+          Err(s) => s
+        };
+        if let Some(&(l, i)) = self.names.get(s) {
+          self.code.push(Code::ClosureLocal(l, i).into());
         } else {
           let s = s.into();
           let id = self.get_atom(s);
-          self.code.push(Code::Global(id));
+          self.code.push(Code::Global(id).into());
         }
       }
       _ => unimplemented!()

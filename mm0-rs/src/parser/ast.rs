@@ -87,21 +87,61 @@ pub struct SExpr {
   pub k: SExprKind,
 }
 #[derive(Copy, Clone)]
-pub enum Atom { Ident, Quote, Unquote }
+pub enum Atom { Ident, Quote, Unquote, Nfx }
 pub enum SExprKind {
   Atom(Atom),
-  List(bool, bool, Vec<SExpr>),
+  List(Vec<SExpr>),
+  DottedList(Vec<SExpr>, Box<SExpr>),
   Number(BigUint),
   String(String),
   Bool(bool),
   Formula(Formula),
 }
+
+// separated from curly_list for testing
+pub fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool, nfx: impl FnOnce() -> T) {
+  let n = es.len();
+  if n > 2 {
+    let valid_curly = no_dot && n % 2 != 0 && {
+      let e = &es[1];
+      (3..n).step_by(2).all(|i| eq(&es[i], e))
+    };
+    if valid_curly {
+      es.swap(0, 1);
+      let mut from = 3;
+      let mut to = 2;
+      while from < n {
+        es.swap(from, to);
+        to += 1;
+        from += 2;
+      }
+      es.truncate(to);
+    } else {
+      es.insert(0, nfx());
+    }
+  }
+}
+
 impl SExpr {
   pub fn atom(span: impl Into<Span>, a: Atom) -> SExpr {
     SExpr {span: span.into(), k: SExprKind::Atom(a)}
   }
-  pub fn list(span: impl Into<Span>, dotted: bool, curly: bool, es: Vec<SExpr>) -> SExpr {
-    SExpr {span: span.into(), k: SExprKind::List(dotted, curly, es)}
+  pub fn list(span: impl Into<Span>, es: Vec<SExpr>) -> SExpr {
+    SExpr {span: span.into(), k: SExprKind::List(es)}
+  }
+  pub fn dotted_list(span: impl Into<Span>, es: Vec<SExpr>, dot: Option<SExpr>) -> SExpr {
+    match dot {
+      None => SExpr {span: span.into(), k: SExprKind::List(es)},
+      Some(e) => SExpr {span: span.into(), k: SExprKind::DottedList(es, Box::new(e))},
+    }
+  }
+
+  pub fn curly_list(span: Span, curly: bool, mut es: Vec<SExpr>, dot: Option<SExpr>, eq: impl Fn(&SExpr, &SExpr) -> bool) -> SExpr {
+    if curly {
+      curly_transform(&mut es, dot.is_none(), eq,
+        || SExpr::atom(span.start..span.start+1, Atom::Nfx))
+    }
+    Self::dotted_list(span, es, dot)
   }
 }
 

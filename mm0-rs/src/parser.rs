@@ -280,11 +280,20 @@ impl<'a> Parser<'a> {
     } else {Ok(e)}
   }
 
+  fn curly_list(&self, span: impl Into<Span>, curly: bool, es: Vec<SExpr>, dot: Option<SExpr>) -> SExpr {
+    SExpr::curly_list(span.into(), curly, es, dot, |e1, e2| match (&e1.k, &e2.k) {
+      (SExprKind::Atom(Atom::Ident), SExprKind::Atom(Atom::Ident)) => {
+        self.span(e1.span) == self.span(e2.span)
+      }
+      _ => false
+    })
+  }
+
   fn sexpr_list(&mut self, start: usize, curly: bool, c: u8) -> Result<SExpr> {
     let mut es = Vec::new();
     loop {
       if let Some(end) = self.chr(c) {
-        return Ok(SExpr::list(start..end, false, curly, es))
+        return Ok(self.curly_list(start..end, curly, es, None))
       }
       let e = self.sexpr_dot()?;
       if self.is_atom(&e, ".") {
@@ -292,11 +301,12 @@ impl<'a> Parser<'a> {
           return Err(ParseError::new(e.span,
             "(. x) partial dotted list is invalid".into()))
         }
-        es.push(self.sexpr()?);
-        return Ok(SExpr::list(start..self.chr_err(c)?, true, curly, es))
+        let e = self.sexpr()?;
+        let end = self.chr_err(c)?;
+        return Ok(self.curly_list(start..end, curly, es, Some(e)))
       } else if !curly && self.is_atom(&e, "@") {
         let e = self.sexpr_list(e.span.start, false, c)?;
-        return Ok(SExpr::list(start..e.span.end, false, false, {es.push(e); es}))
+        return Ok(SExpr::list(start..e.span.end, {es.push(e); es}))
       }
       es.push(e);
     }
@@ -308,14 +318,12 @@ impl<'a> Parser<'a> {
       Some(b'\'') => {
         self.idx += 1;
         let e = self.sexpr()?;
-        Ok(SExpr::list(start..e.span.end, false, false,
-          vec![SExpr::atom(start..start+1, Atom::Quote), e]))
+        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..start+1, Atom::Quote), e]))
       }
       Some(b',') => {
         self.idx += 1;
         let e = self.sexpr()?;
-        Ok(SExpr::list(start..e.span.end, false, false,
-          vec![SExpr::atom(start..start+1, Atom::Unquote), e]))
+        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..start+1, Atom::Unquote), e]))
       }
       Some(b'(') => {
         let start = self.idx; self.idx += 1; self.ws();
