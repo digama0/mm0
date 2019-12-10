@@ -67,6 +67,9 @@ pub enum LispKind {
 }
 lazy_static! {
   pub static ref UNDEF: LispVal = Arc::new(LispKind::Undef);
+  pub static ref TRUE: LispVal = Arc::new(LispKind::Bool(true));
+  pub static ref FALSE: LispVal = Arc::new(LispKind::Bool(false));
+  pub static ref NIL: LispVal = Arc::new(LispKind::List(vec![]));
 }
 
 pub enum Proc {
@@ -84,6 +87,7 @@ pub enum Code {
   Local(u16),
   ClosureLocal(u16, u16),
   Global(AtomID),
+  Const(LispVal),
 }
 
 pub enum PreCode {
@@ -138,6 +142,7 @@ impl Remap<LispRemapper> for Code {
       &Code::Local(i) => Code::Local(i),
       &Code::ClosureLocal(l, i) => Code::ClosureLocal(l, i),
       &Code::Global(a) => Code::Global(a.remap(r)),
+      Code::Const(a) => Code::Const(a.remap(r)),
     }
   }
 }
@@ -158,8 +163,8 @@ impl<'a, T: FileServer + ?Sized> DerefMut for Precompiler<'a, T> {
 
 impl<'a, T: FileServer + ?Sized> Precompiler<'a, T> {
   pub fn precompile_expr(&mut self, e: &SExpr) -> Result<()> {
-    match e.k {
-      SExprKind::Atom(a) => {
+    match &e.k {
+      &SExprKind::Atom(a) => {
         let s = match Syntax::from_atom(self.span(e.span), a) {
           Ok(_) => Err(ElabError::new_e(e.span, "keyword in invalid position"))?,
           Err(s) => s
@@ -172,7 +177,17 @@ impl<'a, T: FileServer + ?Sized> Precompiler<'a, T> {
           self.code.push(Code::Global(id).into());
         }
       }
-      _ => unimplemented!()
+      SExprKind::DottedList(_, _) => Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?,
+      SExprKind::Number(n) => self.code.push(Code::Const(Arc::new(LispKind::Number(n.clone().into()))).into()),
+      SExprKind::String(s) => self.code.push(Code::Const(Arc::new(LispKind::String(s.clone()))).into()),
+      SExprKind::Bool(true) => self.code.push(Code::Const(TRUE.clone()).into()),
+      SExprKind::Bool(false) => self.code.push(Code::Const(FALSE.clone()).into()),
+      SExprKind::List(es) if es.is_empty() => self.code.push(Code::Const(NIL.clone()).into()),
+      SExprKind::List(es) => unimplemented!(),
+      SExprKind::Formula(f) => {
+        f.inner();
+        unimplemented!()
+      }
     }
     Ok(())
   }

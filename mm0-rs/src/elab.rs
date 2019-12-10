@@ -1,5 +1,6 @@
 pub mod environment;
 pub mod lisp;
+pub mod math_parser;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -70,6 +71,12 @@ impl ElabError {
   }
 }
 
+impl From<ParseError> for ElabError {
+  fn from(e: ParseError) -> Self {
+    ElabError {pos: e.pos, level: e.level, kind: ElabErrorKind::Boxed(e.msg, None) }
+  }
+}
+
 pub struct Elaborator<'a, T: FileServer + ?Sized> {
   ast: &'a AST,
   fs: &'a T,
@@ -124,7 +131,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
         } else {Err(ElabError::new_e(n.id, "max prec not allowed for infix"))?},
     };
     self.check_term_nargs(n.id, term, nargs)?;
-    let info = NotaInfo { span: self.fspan(n.id), term, rassoc: Some(rassoc), lits };
+    let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc: Some(rassoc), lits };
     match n.k {
       SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
       SimpleNotaKind::Infix {..} => self.pe.add_infix(tk.clone(), info),
@@ -152,7 +159,8 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
 
   fn elab_gen_nota(&mut self, n: &GenNota) -> Result<()> {
     let term = self.term(self.span(n.id)).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
-    self.check_term_nargs(n.id, term, n.bis.len())?;
+    let nargs = n.bis.len();
+    self.check_term_nargs(n.id, term, nargs)?;
     let mut vars = HashMap::<&str, (usize, bool)>::new();
     for (i, bi) in n.bis.iter().enumerate() {
       match bi.local.1 {
@@ -185,14 +193,16 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       Some(&ALiteral::Var(v)) => match it.next() {
         None => Err(ElabError::new_e(v, "notation requires at least one constant"))?,
         Some(&ALiteral::Var(v)) => Err(ElabError::new_e(v, "notation cannot start with two variables"))?,
-        Some(&ALiteral::Const(ref c, p)) => match n.prec {
-          None => Err(ElabError::new_e(n.id, "notation requires at least one constant"))?,
-          Some((q, _)) if q != p => Err(ElabError::new_e(c.fmla.0, "notation precedence must match first constant"))?,
-          Some((_, r)) =>
-            (vec![
-              ELiteral::Var(get_var(self, v)?, bump(r, c.fmla.0, p)?),
-              ELiteral::Const(self.span(c.trim).into())],
-            Some(r), true, c, p)
+        Some(&ALiteral::Const(ref c, p)) => {
+          let r = match n.prec {
+            None => None,
+            Some((q, _)) if q != p => Err(ElabError::new_e(c.fmla.0, "notation precedence must match first constant"))?,
+            Some((_, r)) => Some(r),
+          };
+          (vec![
+            ELiteral::Var(get_var(self, v)?, bump(r.unwrap_or(false), c.fmla.0, p)?),
+            ELiteral::Const(self.span(c.trim).into())],
+          r, true, c, p)
         }
       }
     };
@@ -206,7 +216,15 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
         }
         &ALiteral::Var(v) => {
           let prec = match it.peek() {
-            None => bump(!rassoc.unwrap_or_else(|| {rassoc = Some(true); true}), tk.fmla.0, prec)?,
+            None => {
+              let r = if let Some(r) = rassoc {r} else {
+                if let Some((_, r)) = n.prec {r} else {
+                  Err(ElabError::new_e(n.id, "general infix notation requires explicit associativity"))?
+                }
+              };
+              rassoc = Some(r);
+              bump(!r, tk.fmla.0, prec)?
+            }
             Some(&&ALiteral::Const(ref c, p)) => bump(true, c.fmla.0, p)?,
             Some(ALiteral::Var(_)) => Prec::Max,
           };
@@ -219,7 +237,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       if !b { Err(ElabError::new_e(n.bis[i].local.0, "variable not used in notation"))? }
     }
     let s: ArcString = self.span(tk.trim).into();
-    let info = NotaInfo { span: self.fspan(n.id), term, rassoc, lits };
+    let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc, lits };
     match infix {
       false => self.pe.add_prefix(s.clone(), info),
       true => self.pe.add_infix(s.clone(), info),

@@ -152,6 +152,7 @@ pub enum Literal {
 pub struct NotaInfo {
   pub span: FileSpan,
   pub term: TermID,
+  pub nargs: usize,
   pub rassoc: Option<bool>,
   pub lits: Vec<Literal>,
 }
@@ -166,7 +167,7 @@ impl Coe {
   fn write_arrows_r(&self, sorts: &SortVec<Sort>, s: &mut String, related: &mut Vec<(FileSpan, BoxError)>,
       sl: SortID, sr: SortID) -> Result<(), std::fmt::Error> {
     match self {
-      Coe::One(fsp, t) => {
+      Coe::One(fsp, _) => {
         related.push((fsp.clone(), format!("{} -> {}", sorts[sl].name, sorts[sr].name).into()));
         write!(s, " -> {}", sorts[sr].name)
       }
@@ -332,6 +333,7 @@ impl Remap<Remapper> for NotaInfo {
     NotaInfo {
       span: self.span.clone(),
       term: self.term.remap(r),
+      nargs: self.nargs,
       rassoc: self.rassoc,
       lits: self.lits.clone(),
     }
@@ -407,7 +409,7 @@ impl ParserEnv {
   fn update_provs(&mut self, sp: Span, sorts: &SortVec<Sort>) -> Result<(), ElabError> {
     let mut provs = HashMap::new();
     for (&s1, m) in &self.coes {
-      for (&s2, c) in m {
+      for (&s2, _) in m {
         if sorts[s2].mods.contains(Modifiers::PROVABLE) {
           if let Some(s2_) = provs.insert(s1, s2) {
             let mut err = "coercion diamond to provable detected:\n".to_owned();

@@ -1,0 +1,157 @@
+use std::ops::{Deref, DerefMut};
+use std::mem;
+use crate::parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
+use crate::elab::{FileServer, Elaborator, ElabError};
+use crate::elab::ast::{Formula, SExpr};
+use crate::util::*;
+use crate::elab::environment::*;
+
+pub enum QExpr {
+  Ident(Span),
+  App(TermID, Vec<QExpr>),
+  Unquote(SExpr),
+}
+
+impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
+  pub fn parse_formula(&mut self, f: Formula) -> Result<QExpr, ElabError> {
+    let mut p = MathParser {
+      pe: &self.pe,
+      p: Parser {
+        source: self.ast.source.as_bytes(),
+        errors: vec![],
+        imports: vec![],
+        idx: f.0.start + 1,
+      }
+    };
+    p.ws();
+    let expr = p.expr(Prec::Prec(0))?;
+    assert!(p.imports.is_empty());
+    for e in p.p.errors { self.errors.push(e.into()) }
+    Ok(expr)
+  }
+}
+
+struct MathParser<'a> {
+  p: Parser<'a>,
+  pe: &'a ParserEnv,
+}
+impl<'a> Deref for MathParser<'a> {
+  type Target = Parser<'a>;
+  fn deref(&self) -> &Parser<'a> { &self.p }
+}
+impl<'a> DerefMut for MathParser<'a> {
+  fn deref_mut(&mut self) -> &mut Parser<'a> { &mut self.p }
+}
+
+impl<'a> MathParser<'a> {
+
+  fn ws(&mut self) {
+    loop {
+      match self.cur() {
+        b' ' | b'\n' => self.idx += 1,
+        _ => return
+      }
+    }
+  }
+
+  fn token(&mut self) -> Option<Span> {
+    let start = self.idx;
+    loop {
+      match self.cur() {
+        c if self.pe.delims_r.get(c) && self.idx != start =>
+          return Some((start..(self.idx, self.ws()).0).into()),
+        c if self.pe.delims_l.get(c) => {
+          self.idx += 1;
+          return Some((start..(self.idx, self.ws()).0).into())
+        }
+        b'$' => return None,
+        b' ' | b'\n' =>
+          return Some((start..(self.idx, self.ws()).0).into()),
+        _ => self.idx += 1,
+      }
+    }
+  }
+
+  fn peek_token(&mut self) -> (Option<Span>, usize) {
+    let start = self.idx;
+    let tk = self.token();
+    (tk, mem::replace(&mut self.idx, start))
+  }
+
+  fn check_prec(&self, s: &str, p: Prec, r: bool) -> Option<Prec> {
+    self.pe.consts.get(s).map(|&(_, q)| q).filter(|&q| if r {q >= p} else {q > p})
+  }
+
+  fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal]) -> Result<(), ParseError> {
+    for lit in lits {
+      match lit {
+        &Literal::Var(i, q) => res.set(i, self.expr(q)?),
+        &Literal::Const(ref c) => {
+          let tk = self.token().ok_or_else(|| self.err(format!("expecting '{}'", c).into()))?;
+          if self.span(tk) != c.deref() {
+            Err(ParseError::new(tk, format!("expecting '{}'", c).into()))?
+          }
+        }
+      }
+    }
+    Ok(())
+  }
+
+  fn prefix(&mut self, p: Prec) -> Result<QExpr, ParseError> {
+    let c = match self.cur() {
+      b',' if !whitespace(self.source[self.idx+1]) => {
+        self.idx += 1;
+        return Ok(QExpr::Unquote(self.sexpr()?))
+      }
+      b'(' => return Ok((self.idx += 1, self.expr(Prec::Prec(0))?, self.chr_err(b')')?).1),
+      c => c
+    };
+    let sp = self.token().ok_or_else(|| self.err("expecting expression".into()))?;
+    let v = self.span(sp);
+    if let Some(&(_, q)) = self.pe.consts.get(v) {
+      if q >= p {
+        if let Some(info) = self.pe.prefixes.get(v) {
+          let mut args = VecUninit::new(info.nargs);
+          self.literals(&mut args, &info.lits)?;
+          return Ok(QExpr::App(info.term, unsafe { args.assume_init() }))
+        }
+      }
+    } else if ident_start(c) && (sp.start + 1..sp.end).all(|i| ident_rest(self.source[i])) {
+      return Ok(QExpr::Ident(sp))
+    }
+    Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))?
+  }
+
+  fn lhs(&mut self, p: Prec, mut lhs: QExpr) -> Result<QExpr, ParseError> {
+    let (mut tok, end) = self.peek_token();
+    loop {
+      let s = if let Some(tk) = tok {self.span(tk)} else {break};
+      if !self.pe.consts.get(s).map_or(false, |&(_, q)| q >= p) {break}
+      let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
+      self.idx = end;
+      let mut args = VecUninit::new(info.nargs);
+      if let Literal::Var(i, _) = info.lits[0] {args.set(i, lhs)} else {unreachable!()}
+      self.literals(&mut args, &info.lits[2..info.lits.len()-1])?;
+      let (i, mut rhs) = if let Some(&Literal::Var(i, q)) = info.lits.last() {
+        (i, self.prefix(q)?)
+      } else {unreachable!()};
+      tok = self.peek_token().0;
+      loop {
+        let s = if let Some(tk) = tok {self.span(tk)} else {break};
+        let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
+        let q = self.pe.consts[s].1;
+        if !(if info2.rassoc.unwrap() {q >= p} else {q > p}) {break}
+        rhs = self.lhs(q, rhs)?;
+        tok = self.peek_token().0;
+      }
+      args.set(i, rhs);
+      lhs = QExpr::App(info.term, unsafe { args.assume_init() });
+    }
+    return Ok(lhs)
+  }
+
+  fn expr(&mut self, p: Prec) -> Result<QExpr, ParseError> {
+    let lhs = self.prefix(p)?;
+    self.lhs(p, lhs)
+  }
+}

@@ -48,26 +48,27 @@ impl ParseError {
   }
 }
 
-struct Parser<'a> {
-  source: &'a [u8],
-  errors: Vec<ParseError>,
-  imports: Vec<(Span, String)>,
-  idx: usize,
+pub struct Parser<'a> {
+  pub source: &'a [u8],
+  pub errors: Vec<ParseError>,
+  pub imports: Vec<(Span, String)>,
+  pub idx: usize,
 }
 
-fn ident_start(c: u8) -> bool { b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' || c == b'_' }
-fn ident_rest(c: u8) -> bool { ident_start(c) || b'0' <= c && c <= b'9' }
-fn lisp_ident(c: u8) -> bool { ident_rest(c) || b"!%&*/:<=>?^~+-.@".contains(&c) }
+pub fn ident_start(c: u8) -> bool { b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' || c == b'_' }
+pub fn ident_rest(c: u8) -> bool { ident_start(c) || b'0' <= c && c <= b'9' }
+pub fn lisp_ident(c: u8) -> bool { ident_rest(c) || b"!%&*/:<=>?^~+-.@".contains(&c) }
+pub fn whitespace(c: u8) -> bool { c == b' ' || c == b'\n' }
 
 impl<'a> Parser<'a> {
-  fn cur(&self) -> u8 { self.source[self.idx] }
-  fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  pub fn cur(&self) -> u8 { self.source[self.idx] }
+  pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
 
-  fn err(&self, msg: BoxError) -> ParseError {
+  pub fn err(&self, msg: BoxError) -> ParseError {
     ParseError::new(self.idx..self.idx, msg)
   }
 
-  fn err_str<T>(&self, msg: &'static str) -> Result<T> {
+  pub fn err_str<T>(&self, msg: &'static str) -> Result<T> {
     Err(self.err(msg.into()))
   }
 
@@ -78,7 +79,7 @@ impl<'a> Parser<'a> {
   fn ws(&mut self) {
     while self.idx < self.source.len() {
       let c = self.cur();
-      if c == b' ' || c == b'\n' {self.idx += 1; continue}
+      if whitespace(c) {self.idx += 1; continue}
       if c == b'-' && self.source.get(self.idx + 1) == Some(&b'-') {
         self.idx += 1;
         while self.idx < self.source.len() {
@@ -90,7 +91,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn span(&self, s: Span) -> &'a str {
+  pub fn span(&self, s: Span) -> &'a str {
     unsafe { std::str::from_utf8_unchecked(&self.source[s.start..s.end]) }
   }
 
@@ -100,7 +101,7 @@ impl<'a> Parser<'a> {
     (Some(self.idx), self.ws()).0
   }
 
-  fn chr_err(&mut self, c: u8) -> Result<usize> {
+  pub fn chr_err(&mut self, c: u8) -> Result<usize> {
     self.chr(c).ok_or_else(|| self.err(format!("expecting '{}'", c as char).into()))
   }
 
@@ -273,7 +274,7 @@ impl<'a> Parser<'a> {
     } else {false}
   }
 
-  fn sexpr(&mut self) -> Result<SExpr> {
+  pub fn sexpr(&mut self) -> Result<SExpr> {
     let e = self.sexpr_dot()?;
     if self.is_atom(&e, ".") {
       Err(ParseError::new(e.span, "'.' is not a valid s-expression".into()))
@@ -473,21 +474,20 @@ impl<'a> Parser<'a> {
     let mut it = self.span(f.inner()).as_bytes().iter();
     let mut delims = Vec::new();
     loop {
-      fn ws(c: u8) -> bool { c == b' ' || c == b'\n' }
       delims.push(loop {
         match it.next() {
           None => return delims.into_boxed_slice(),
-          Some(&c) => if !ws(c) {break c}
+          Some(&c) => if !whitespace(c) {break c}
         }
       });
       match it.next() {
-        Some(&c) if !ws(c) => {
+        Some(&c) if !whitespace(c) => {
           delims.push(c);
           let mut end = end - it.as_slice().len();
           let start = end - 2;
           loop {
             match it.next() {
-              Some(&c) if !ws(c) => {
+              Some(&c) if !whitespace(c) => {
                 delims.push(c);
                 end += 1
               }
@@ -635,32 +635,4 @@ pub fn parse(file: Arc<LinedString>, old: Option<(Position, AST)>) ->
   let mut p = Parser {source: file.as_bytes(), errors, imports, idx};
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
   (0, AST { errors: p.errors, imports: p.imports, source: file, stmts })
-}
-
-pub struct DelimTokens<'a>(pub usize, pub std::slice::Iter<'a, u8>);
-
-impl Iterator for DelimTokens<'_> {
-  type Item = std::result::Result<u8, Span>;
-  fn next(&mut self) -> Option<std::result::Result<u8, Span>> {
-    fn ws(c: u8) -> bool { c == b' ' || c == b'\n' }
-    let c = loop {
-      match self.1.next() {
-        None => return None,
-        Some(&c) => if !ws(c) {break c}
-      }
-    };
-    match self.1.next() {
-      Some(&c) if !ws(c) => {
-        let mut end = self.0 - self.1.as_slice().len();
-        let start = end - 2;
-        loop {
-          match self.1.next() {
-            Some(&c) if !ws(c) => end += 1,
-            _ => return Some(Err((start..end).into()))
-          }
-        }
-      }
-      _ => Some(Ok(c))
-    }
-  }
 }

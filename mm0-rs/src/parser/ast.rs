@@ -129,10 +129,20 @@ impl SExpr {
   pub fn list(span: impl Into<Span>, es: Vec<SExpr>) -> SExpr {
     SExpr {span: span.into(), k: SExprKind::List(es)}
   }
-  pub fn dotted_list(span: impl Into<Span>, es: Vec<SExpr>, dot: Option<SExpr>) -> SExpr {
+  pub fn dotted_list(span: impl Into<Span>, mut es: Vec<SExpr>, dot: Option<SExpr>) -> SExpr {
     match dot {
       None => SExpr {span: span.into(), k: SExprKind::List(es)},
-      Some(e) => SExpr {span: span.into(), k: SExprKind::DottedList(es, Box::new(e))},
+      Some(e) => match e.k {
+        SExprKind::DottedList(es2, e2) => {
+          es.extend(es2);
+          SExpr {span: span.into(), k: SExprKind::DottedList(es, e2)}
+        }
+        SExprKind::List(es2) => {
+          es.extend(es2);
+          SExpr::list(span, es)
+        }
+        _ => SExpr {span: span.into(), k: SExprKind::DottedList(es, Box::new(e))}
+      }
     }
   }
 
@@ -156,6 +166,15 @@ pub struct Decl {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Prec { Prec(u32), Max }
+
+impl std::fmt::Display for Prec {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    match self {
+      &Prec::Prec(p) => p.fmt(f),
+      &Prec::Max => "max".fmt(f)
+    }
+  }
+}
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
 pub struct SimpleNota {
   pub k: SimpleNotaKind,
