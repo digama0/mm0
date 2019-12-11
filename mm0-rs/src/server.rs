@@ -10,7 +10,7 @@ use serde_json::{from_value, to_value};
 use lsp_types::*;
 use crossbeam::{channel::{Sender, SendError, RecvError}};
 use crate::util::*;
-use crate::lined_string::{LinedString, FileRef};
+use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::elab::{Environment, ElabError, FileServer};
 

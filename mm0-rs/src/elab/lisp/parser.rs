@@ -10,39 +10,52 @@ use super::super::math_parser::{QExpr, QExprKind};
 
 pub enum IR {
   Local(usize),
-  Global(AtomID),
+  Global(Span, AtomID),
   Const(LispVal),
   List(Box<[IR]>),
   DottedList(Box<[IR]>, Box<IR>),
-  App(Box<IR>, Box<[IR]>),
+  App(Span, Span, Box<IR>, Box<[IR]>),
   If(Box<(IR, IR, IR)>),
   Focus(Box<[IR]>),
-  Def(Option<AtomID>, Box<IR>),
+  Def(Option<(Span, AtomID)>, Box<IR>),
   Eval(Box<[IR]>),
-  LambdaExact(Vec<Option<AtomID>>, Box<IR>),
-  LambdaAtLeast(Vec<Option<AtomID>>, Option<AtomID>, Box<IR>),
-  NewRef(Box<IR>),
-  SetRef(Box<(IR, IR)>),
-  Match(Box<IR>, Box<[Branch]>),
-  MatchFn(Box<[Branch]>),
-  MatchFns(Box<[Branch]>),
+  LambdaExact(Span, Vec<Option<AtomID>>, Arc<IR>),
+  LambdaAtLeast(Span, Vec<Option<AtomID>>, Option<AtomID>, Arc<IR>),
+  Match(Span, Box<IR>, Arc<[Branch]>),
+  MatchFn(Span, Arc<[Branch]>),
+  MatchFns(Span, Arc<[Branch]>),
 }
 
 impl IR {
-  fn eval(es: impl Into<Box<[IR]>>) -> Box<IR> {
+  fn eval(es: impl Into<Box<[IR]>>) -> IR {
     let es: Box<[IR]> = es.into();
-    Box::new(match es.len() {
+    match es.len() {
       0 => IR::Const(UNDEF.clone()),
       1 => es.into_vec().drain(..).next().unwrap(), // why is this so hard
       _ => IR::Eval(es)
-    })
+    }
+  }
+
+  fn builtin_app(sp1: Span, sp2: Span, f: BuiltinProc, es: Box<[IR]>) -> IR {
+    IR::App(sp1, sp2, Box::new(IR::Const(Arc::new(LispKind::Proc(Proc::Builtin(f))))), es)
+  }
+
+  fn new_ref(sp1: Span, sp2: Span, e: IR) -> IR {
+    IR::builtin_app(sp1, sp2, BuiltinProc::NewRef, Box::new([e]))
+  }
+  fn set_ref(sp1: Span, sp2: Span, e1: IR, e2: IR) -> IR {
+    IR::builtin_app(sp1, sp2, BuiltinProc::SetRef, Box::new([e1, e2]))
+  }
+  fn match_fn_body(sp: Span, i: usize, brs: Arc<[Branch]>) -> IR {
+    IR::Match(sp, Box::new(IR::Local(i)), brs)
   }
 }
+
 pub struct Branch {
-  vars: Vec<AtomID>,
-  cont: Option<AtomID>,
-  pat: Pattern,
-  eval: Box<[IR]>,
+  pub vars: Vec<AtomID>,
+  pub cont: Option<AtomID>,
+  pub pat: Pattern,
+  pub eval: Box<IR>,
 }
 
 pub enum Pattern {
@@ -60,7 +73,61 @@ pub enum Pattern {
   Not(Box<[Pattern]>),
   Test(usize, Box<[Pattern]>),
   QExprAtom(AtomID),
-  QExprApp(AtomID, Box<[Pattern]>),
+}
+
+impl Remap<LispRemapper> for IR {
+  fn remap(&self, r: &mut LispRemapper) -> Self {
+    match self {
+      &IR::Local(i) => IR::Local(i),
+      &IR::Global(sp, a) => IR::Global(sp, a.remap(r)),
+      IR::Const(v) => IR::Const(v.remap(r)),
+      IR::List(v) => IR::List(v.remap(r)),
+      IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
+      &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
+      IR::If(e) => IR::If(e.remap(r)),
+      IR::Focus(e) => IR::Focus(e.remap(r)),
+      IR::Def(a, e) => IR::Def(a.map(|(sp, a)| (sp, a.remap(r))), e.remap(r)),
+      IR::Eval(e) => IR::Eval(e.remap(r)),
+      &IR::LambdaExact(sp, ref xs, ref e) => IR::LambdaExact(sp, xs.remap(r), e.remap(r)),
+      &IR::LambdaAtLeast(sp, ref xs, ref a, ref e) =>
+        IR::LambdaAtLeast(sp, xs.remap(r), a.remap(r), e.remap(r)),
+      &IR::Match(sp, ref e, ref br) => IR::Match(sp, e.remap(r), br.remap(r)),
+      &IR::MatchFn(sp, ref br) => IR::MatchFn(sp, br.remap(r)),
+      &IR::MatchFns(sp, ref br) => IR::MatchFns(sp, br.remap(r)),
+    }
+  }
+}
+
+impl Remap<LispRemapper> for Branch {
+  fn remap(&self, r: &mut LispRemapper) -> Self {
+    Self {
+      vars: self.vars.remap(r),
+      cont: self.cont.remap(r),
+      pat: self.pat.remap(r),
+      eval: self.eval.remap(r)
+    }
+  }
+}
+
+impl Remap<LispRemapper> for Pattern {
+  fn remap(&self, r: &mut LispRemapper) -> Self {
+    match self {
+      Pattern::Skip => Pattern::Skip,
+      &Pattern::Atom(i) => Pattern::Atom(i),
+      Pattern::QuoteAtom(a) => Pattern::QuoteAtom(a.remap(r)),
+      Pattern::String(s) => Pattern::String(s.clone()),
+      &Pattern::Bool(b) => Pattern::Bool(b),
+      Pattern::Number(i) => Pattern::Number(i.clone()),
+      Pattern::DottedList(v, e) => Pattern::DottedList(v.remap(r), e.remap(r)),
+      &Pattern::ListAtLeast(ref es, n) => Pattern::ListAtLeast(es.remap(r), n),
+      Pattern::ListExact(es) => Pattern::ListExact(es.remap(r)),
+      Pattern::And(es) => Pattern::And(es.remap(r)),
+      Pattern::Or(es) => Pattern::Or(es.remap(r)),
+      Pattern::Not(es) => Pattern::Not(es.remap(r)),
+      &Pattern::Test(i, ref es) => Pattern::Test(i, es.remap(r)),
+      Pattern::QExprAtom(a) => Pattern::QExprAtom(a.remap(r)),
+    }
+  }
 }
 
 impl IR {
@@ -216,33 +283,33 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     Ok(cs.into())
   }
 
-  fn def(&mut self, e: &SExpr, es: &[SExpr]) -> Result<(Option<AtomID>, Vec<IR>), ElabError> {
+  fn def(&mut self, e: &SExpr, es: &[SExpr]) -> Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
     fn rec<T: FileServer + ?Sized>(this: &mut LispParser<'_, T>, e: &SExpr,
-      tail: impl FnOnce(&mut LispParser<'_, T>) -> Result<Vec<IR>, ElabError>) ->
-      Result<(Option<AtomID>, Vec<IR>), ElabError> {
+      tail: impl FnOnce(&mut LispParser<'_, T>, Span) -> Result<Vec<IR>, ElabError>) ->
+      Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
       match &e.k {
         &SExprKind::Atom(a) =>
-          Ok((this.parse_ident(e.span, a)?, tail(this)?)),
+          Ok((e.span, this.parse_ident(e.span, a)?, tail(this, e.span)?)),
         SExprKind::List(xs) if !xs.is_empty() => {
-          rec(this, &xs[0], |this| {
+          rec(this, &xs[0], |this, sp| {
             let xs = this.to_idents(&xs[1..])?;
-            Ok(vec![IR::LambdaExact(xs, IR::eval(tail(this)?))])
+            Ok(vec![IR::LambdaExact(sp, xs, IR::eval(tail(this, sp)?).into())])
           })
         }
         SExprKind::DottedList(xs, y) if !xs.is_empty() => {
-          rec(this, &xs[0], |this| {
+          rec(this, &xs[0], |this, sp| {
             let xs = this.to_idents(&xs[1..])?;
             let y = this.to_ident(y)?;
-            Ok(vec![IR::LambdaAtLeast(xs, y, IR::eval(tail(this)?))])
+            Ok(vec![IR::LambdaAtLeast(sp, xs, y, IR::eval(tail(this, sp)?).into())])
           })
         }
         _ => Err(ElabError::new_e(e.span, "def: invalid spec"))?
       }
     }
-    rec(self, e, |this| this.exprs(false, es))
+    rec(self, e, |this, _| this.exprs(false, es))
   }
 
-  fn let_var(&mut self, e: &SExpr) -> Result<(Option<AtomID>, Vec<IR>), ElabError> {
+  fn let_var(&mut self, e: &SExpr) -> Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
     match &e.k {
       SExprKind::List(es) if !es.is_empty() => self.def(&es[0], &es[1..]),
       _ => Err(ElabError::new_e(e.span, "let: invalid spec"))
@@ -257,27 +324,26 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     if rec {
       let mut ds = vec![];
       for l in ls {
-        let (x, v) = self.let_var(l)?;
+        let (sp, x, v) = self.let_var(l)?;
         let n = if let Some(x) = x {
-          cs.push(IR::Def(Some(x), Box::new(
-            IR::NewRef(Box::new(IR::Const(UNDEF.clone()))))));
+          cs.push(IR::Def(Some((sp, x)), Box::new(IR::new_ref(sp, sp, IR::Const(UNDEF.clone())))));
           Some(self.ctx.push(x))
         } else {None};
-        ds.push((n, v))
+        ds.push((sp, n, v))
       }
-      for (n, mut v) in ds {
+      for (sp, n, mut v) in ds {
         if let Some(n) = n {
           if let Some(r) = v.pop() {
             cs.extend(v);
-            cs.push(IR::SetRef(Box::new((IR::Local(n), r))))
+            cs.push(IR::set_ref(sp, sp, IR::Local(n), r))
           }
         } else {cs.extend(v)}
       }
     } else {
       for l in ls {
         cs.push(match self.let_var(l)? {
-          (None, cs) => IR::Eval(cs.into()),
-          (Some(x), cs) => {self.ctx.push(x); IR::Def(Some(x), IR::eval(cs))}
+          (_, None, cs) => IR::Eval(cs.into()),
+          (sp, Some(x), cs) => {self.ctx.push(x); IR::Def(Some((sp, x)), IR::eval(cs).into())}
         })
       }
     }
@@ -406,14 +472,14 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     let pat = self.pattern(&mut ctx, code, false, e)?;
     let vars = ctx.ctx;
     self.ctx.ctx.extend(vars.iter().map(|&x| Some(x)));
-    Ok(Branch {pat, vars, cont, eval: self.exprs(false, es)?.into()})
+    Ok(Branch {pat, vars, cont, eval: Box::new(IR::eval(self.exprs(false, es)?))})
   }
-  fn branches(&mut self, code: &mut Vec<IR>, es: &[SExpr]) -> Result<Box<[Branch]>, ElabError> {
+  fn branches(&mut self, code: &mut Vec<IR>, es: &[SExpr]) -> Result<Arc<[Branch]>, ElabError> {
     let mut bs = vec![];
     for e in es { bs.push(self.branch(code, e)?) }
     Ok(bs.into())
   }
-  fn match_(&mut self, es: &[SExpr], f: impl FnOnce(Box<[Branch]>) -> IR) -> Result<IR, ElabError> {
+  fn match_(&mut self, es: &[SExpr], f: impl FnOnce(Arc<[Branch]>) -> IR) -> Result<IR, ElabError> {
     let mut code = vec![];
     let m = self.branches(&mut code, es)?;
     if code.is_empty() {
@@ -424,9 +490,9 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     }
   }
 
-  fn eval_atom(&self, x: AtomID) -> IR {
+  fn eval_atom(&self, sp: Span, x: AtomID) -> IR {
     match self.ctx.get(x) {
-      None => IR::Global(x),
+      None => IR::Global(sp, x),
       Some(i) => IR::Local(i)
     }
   }
@@ -436,7 +502,7 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     let res = match &e.k {
       &SExprKind::Atom(a) => Ok(match self.parse_ident(e.span, a)? {
         None => IR::Const(Arc::new(LispKind::Atom(self.get_atom("_")))),
-        Some(x) => self.eval_atom(x),
+        Some(x) => self.eval_atom(e.span, x),
       }),
       SExprKind::DottedList(es, e) => {
         if !quote {Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?}
@@ -454,16 +520,17 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
           match self.parse_ident_or_syntax(e.span, a) {
             Ok(None) => Err(ElabError::new_e(e.span, "'_' is not a function"))?,
             Ok(Some(x)) =>
-              Ok(IR::App(Box::new(self.eval_atom(x)), self.exprs(true, &es[1..])?.into())),
+              Ok(IR::App(e.span, es[0].span,
+                Box::new(self.eval_atom(es[0].span, x)), self.exprs(true, &es[1..])?.into())),
             Err(Syntax::Define) if es.len() < 2 =>
               Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
             Err(Syntax::Define) =>
               Ok(match self.def(&es[1], &es[2..])? {
-                (None, cs) => *IR::eval(cs),
-                (Some(x), cs) => {
+                (_, None, cs) => IR::eval(cs),
+                (sp, Some(x), cs) => {
                   restore = None;
                   self.ctx.push(x);
-                  IR::Def(Some(x), IR::eval(cs))
+                  IR::Def(Some((sp, x)), IR::eval(cs).into())
                 }
               }),
             Err(Syntax::Lambda) if es.len() < 2 =>
@@ -472,19 +539,19 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
               SExprKind::List(xs) => {
                 let xs = self.to_idents(xs)?;
                 self.ctx.push_list(&xs);
-                Ok(IR::LambdaExact(xs, IR::eval(self.exprs(false, &es[2..])?)))
+                Ok(IR::LambdaExact(es[0].span, xs, IR::eval(self.exprs(false, &es[2..])?).into()))
               }
               SExprKind::DottedList(xs, y) => {
                 let xs = self.to_idents(xs)?;
                 let y = self.to_ident(y)?;
                 self.ctx.push_list(&xs);
                 self.ctx.push_opt(&y);
-                Ok(IR::LambdaAtLeast(xs, y, IR::eval(self.exprs(false, &es[2..])?)))
+                Ok(IR::LambdaAtLeast(es[0].span, xs, y, IR::eval(self.exprs(false, &es[2..])?).into()))
               }
               _ => {
                 let x = self.to_ident(&es[1])?;
                 self.ctx.push_opt(&x);
-                Ok(IR::LambdaAtLeast(vec![], x, IR::eval(self.exprs(false, &es[2..])?)))
+                Ok(IR::LambdaAtLeast(es[0].span, vec![], x, IR::eval(self.exprs(false, &es[2..])?).into()))
               }
             },
             Err(Syntax::Quote) if es.len() < 2 =>
@@ -510,13 +577,13 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
             Err(Syntax::Match) => {
               let e = self.expr(false, &es[1])?;
               self.ctx.restore(restore.unwrap());
-              self.match_(&es[2..], |m| IR::Match(Box::new(e), m))
+              self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
             },
-            Err(Syntax::MatchFn) => self.match_(&es[2..], IR::MatchFn),
-            Err(Syntax::MatchFns) => self.match_(&es[2..], IR::MatchFns),
+            Err(Syntax::MatchFn) => self.match_(&es[2..], |m| IR::MatchFn(es[0].span, m)),
+            Err(Syntax::MatchFns) => self.match_(&es[2..], |m| IR::MatchFns(es[0].span, m)),
           }
         } else {
-          Ok(IR::App(Box::new(self.expr(true, &es[0])?),
+          Ok(IR::App(e.span, es[0].span, Box::new(self.expr(true, &es[0])?),
             self.exprs(true, &es[1..])?.into()))
         },
       &SExprKind::Formula(f) => {let q = self.parse_formula(f)?; self.qexpr(q)}

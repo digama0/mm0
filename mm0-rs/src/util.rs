@@ -1,11 +1,13 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut, Range};
 use std::borrow::Borrow;
 use std::mem::{self, MaybeUninit};
 use std::fmt;
 use std::error::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::hash::{Hash, BuildHasher};
+use std::hash::{Hash, Hasher, BuildHasher};
 use std::collections::{HashMap, hash_map::{Entry, OccupiedEntry}};
+use lsp_types::Url;
 
 pub type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -56,4 +58,71 @@ impl<T> VecUninit<T> {
   pub unsafe fn assume_init(self) -> Vec<T> {
     mem::transmute(self.0)
   }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Span {
+  pub start: usize,
+  pub end: usize,
+}
+
+impl From<Range<usize>> for Span {
+  #[inline] fn from(r: Range<usize>) -> Self { Span {start: r.start, end: r.end} }
+}
+
+impl From<usize> for Span {
+  #[inline] fn from(n: usize) -> Self { Span {start: n, end: n} }
+}
+
+impl From<Span> for Range<usize> {
+  #[inline] fn from(s: Span) -> Self { s.start..s.end }
+}
+
+impl Deref for Span {
+  type Target = Range<usize>;
+  fn deref(&self) -> &Range<usize> {
+    unsafe { mem::transmute(self) }
+  }
+}
+
+impl DerefMut for Span {
+  fn deref_mut(&mut self) -> &mut Range<usize> {
+    unsafe { mem::transmute(self) }
+  }
+}
+
+impl Iterator for Span {
+  type Item = usize;
+  fn next(&mut self) -> Option<usize> { self.deref_mut().next() }
+}
+impl DoubleEndedIterator for Span {
+  fn next_back(&mut self) -> Option<usize> { self.deref_mut().next_back() }
+}
+
+#[derive(Clone)]
+pub struct FileRef(Arc<(PathBuf, Url)>);
+impl FileRef {
+  pub fn new(buf: PathBuf) -> FileRef {
+    let u = Url::from_file_path(&buf).expect("bad file path");
+    FileRef(Arc::new((buf, u)))
+  }
+  pub fn from_url(url: Url) -> FileRef {
+    FileRef(Arc::new((url.to_file_path().expect("bad URL"), url)))
+  }
+  pub fn path(&self) -> &PathBuf { &self.0 .0 }
+  pub fn url(&self) -> &Url { &self.0 .1 }
+}
+impl PartialEq for FileRef {
+  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+}
+impl Eq for FileRef {}
+
+impl Hash for FileRef {
+  fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct FileSpan {
+  pub file: FileRef,
+  pub span: Span,
 }

@@ -7,10 +7,8 @@ use std::hash::Hash;
 use std::collections::HashMap;
 use super::{ElabError, BoxError};
 use crate::util::*;
-use super::lisp::{LispVal, UNDEF, LispRemapper};
-use crate::parser::ast;
+use super::lisp::{LispVal, LispRemapper};
 pub use crate::parser::ast::{Modifiers, Prec};
-pub use crate::lined_string::{Span, FileSpan};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct SortID(pub u8);
 #[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct TermID(pub u32);
@@ -207,7 +205,7 @@ pub struct Environment {
   pub terms: TermVec<Term>,
   pub thms: ThmVec<Thm>,
   pub atoms: HashMap<ArcString, AtomID>,
-  pub lisp_ctx: AtomVec<(ArcString, LispVal)>,
+  pub lisp_ctx: AtomVec<(ArcString, Option<(FileSpan, LispVal)>)>,
   pub stmts: Vec<StmtTrace>,
 }
 
@@ -247,6 +245,9 @@ impl<R> Remap<R> for String {
 impl<R, A: Remap<R>, B: Remap<R>> Remap<R> for (A, B) {
   fn remap(&self, r: &mut R) -> Self { (self.0.remap(r), self.1.remap(r)) }
 }
+impl<R, A: Remap<R>, B: Remap<R>, C: Remap<R>> Remap<R> for (A, B, C) {
+  fn remap(&self, r: &mut R) -> Self { (self.0.remap(r), self.1.remap(r), self.2.remap(r)) }
+}
 impl<R, A: Remap<R>> Remap<R> for Option<A> {
   fn remap(&self, r: &mut R) -> Self { self.as_ref().map(|x| x.remap(r)) }
 }
@@ -258,6 +259,12 @@ impl<R, A: Remap<R>> Remap<R> for Box<A> {
 }
 impl<R, A: Remap<R>> Remap<R> for Arc<A> {
   fn remap(&self, r: &mut R) -> Self { Arc::new(self.deref().remap(r)) }
+}
+impl<R, A: Remap<R>> Remap<R> for Box<[A]> {
+  fn remap(&self, r: &mut R) -> Self { self.iter().map(|v| v.remap(r)).collect() }
+}
+impl<R, A: Remap<R>> Remap<R> for Arc<[A]> {
+  fn remap(&self, r: &mut R) -> Self { self.iter().map(|v| v.remap(r)).collect() }
 }
 impl Remap<Remapper> for Type {
   fn remap(&self, r: &mut Remapper) -> Self {
@@ -592,7 +599,7 @@ impl Environment {
         let id = AtomID(self.lisp_ctx.len().try_into().expect("too many atoms"));
         let s: ArcString = s.into();
         self.atoms.insert(s.clone(), id);
-        self.lisp_ctx.push((s, UNDEF.clone()));
+        self.lisp_ctx.push((s, None));
         id
       }
     }
@@ -600,7 +607,7 @@ impl Environment {
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
     let ctx = &mut self.lisp_ctx;
     *self.atoms.entry(s.clone()).or_insert_with(move ||
-      (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push((s, UNDEF.clone()))).0)
+      (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push((s, None))).0)
   }
 
   pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
@@ -664,7 +671,8 @@ impl Environment {
       lisp: Default::default(),
     };
     for (i, (_, v)) in other.lisp_ctx.iter().enumerate() {
-      self.lisp_ctx[r.atom[AtomID(i as u32)]].1 = v.remap(&mut r)
+      self.lisp_ctx[r.atom[AtomID(i as u32)]].1 =
+        v.as_ref().map(|(fs, v)| (fs.clone(), v.remap(&mut r)))
     }
     Ok(())
   }

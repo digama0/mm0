@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use num::BigUint;
 use crate::lined_string::LinedString;
-pub use crate::lined_string::Span;
+use crate::util::Span;
 use super::ParseError;
 
 bitflags! {
