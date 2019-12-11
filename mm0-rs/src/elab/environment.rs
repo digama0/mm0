@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use super::{ElabError, BoxError};
 use crate::util::*;
 use super::lisp::{LispVal, UNDEF, LispRemapper};
+use crate::parser::ast;
 pub use crate::parser::ast::{Modifiers, Prec};
 pub use crate::lined_string::{Span, FileSpan};
 
@@ -584,7 +585,19 @@ impl Environment {
     self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
   }
 
-  pub fn get_atom(&mut self, s: ArcString) -> AtomID {
+  pub fn get_atom(&mut self, s: &str) -> AtomID {
+    match self.atoms.get(s) {
+      Some(&a) => a,
+      None => {
+        let id = AtomID(self.lisp_ctx.len().try_into().expect("too many atoms"));
+        let s: ArcString = s.into();
+        self.atoms.insert(s.clone(), id);
+        self.lisp_ctx.push((s, UNDEF.clone()));
+        id
+      }
+    }
+  }
+  pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
     let ctx = &mut self.lisp_ctx;
     *self.atoms.entry(s.clone()).or_insert_with(move ||
       (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push((s, UNDEF.clone()))).0)
@@ -647,7 +660,7 @@ impl Environment {
     }
     self.pe.merge(&other.pe, &mut remap, sp, &self.sorts, errors);
     let mut r = LispRemapper {
-      atom: other.lisp_ctx.iter().map(|(s, _)| self.get_atom(s.clone())).collect(),
+      atom: other.lisp_ctx.iter().map(|(s, _)| self.get_atom_arc(s.clone())).collect(),
       lisp: Default::default(),
     };
     for (i, (_, v)) in other.lisp_ctx.iter().enumerate() {

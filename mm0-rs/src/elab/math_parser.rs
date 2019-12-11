@@ -6,8 +6,12 @@ use crate::elab::ast::{Formula, SExpr};
 use crate::util::*;
 use crate::elab::environment::*;
 
-pub enum QExpr {
-  Ident(Span),
+pub struct QExpr {
+  pub span: Span,
+  pub k: QExprKind,
+}
+pub enum QExprKind {
+  Ident,
   App(TermID, Vec<QExpr>),
   Unquote(SExpr),
 }
@@ -82,26 +86,37 @@ impl<'a> MathParser<'a> {
     self.pe.consts.get(s).map(|&(_, q)| q).filter(|&q| if r {q >= p} else {q > p})
   }
 
-  fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal]) -> Result<(), ParseError> {
+  fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal], mut end: usize) ->
+      Result<usize, ParseError> {
     for lit in lits {
       match lit {
-        &Literal::Var(i, q) => res.set(i, self.expr(q)?),
+        &Literal::Var(i, q) => {
+          let e = self.expr(q)?;
+          end = e.span.end;
+          res.set(i, e);
+        },
         &Literal::Const(ref c) => {
           let tk = self.token().ok_or_else(|| self.err(format!("expecting '{}'", c).into()))?;
           if self.span(tk) != c.deref() {
             Err(ParseError::new(tk, format!("expecting '{}'", c).into()))?
           }
+          end = tk.end;
         }
       }
     }
-    Ok(())
+    Ok(end)
   }
 
   fn prefix(&mut self, p: Prec) -> Result<QExpr, ParseError> {
+    let start = self.idx;
     let c = match self.cur() {
-      b',' if !whitespace(self.source[self.idx+1]) => {
+      b',' if {
+        let c = self.source[self.idx+1];
+        !(whitespace(c) || c == b'$')
+      } => {
         self.idx += 1;
-        return Ok(QExpr::Unquote(self.sexpr()?))
+        let e = self.sexpr()?;
+        return Ok(QExpr {span: (start..e.span.end).into(), k: QExprKind::Unquote(e) })
       }
       b'(' => return Ok((self.idx += 1, self.expr(Prec::Prec(0))?, self.chr_err(b')')?).1),
       c => c
@@ -112,12 +127,15 @@ impl<'a> MathParser<'a> {
       if q >= p {
         if let Some(info) = self.pe.prefixes.get(v) {
           let mut args = VecUninit::new(info.nargs);
-          self.literals(&mut args, &info.lits)?;
-          return Ok(QExpr::App(info.term, unsafe { args.assume_init() }))
+          let end = self.literals(&mut args, &info.lits, sp.end)?;
+          return Ok(QExpr {
+            span: (start..end).into(),
+            k: QExprKind::App(info.term, unsafe { args.assume_init() })
+          })
         }
       }
     } else if ident_start(c) && (sp.start + 1..sp.end).all(|i| ident_rest(self.source[i])) {
-      return Ok(QExpr::Ident(sp))
+      return Ok(QExpr {span: sp, k: QExprKind::Ident})
     }
     Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))?
   }
@@ -130,8 +148,9 @@ impl<'a> MathParser<'a> {
       let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
       self.idx = end;
       let mut args = VecUninit::new(info.nargs);
+      let start = lhs.span.start;
       if let Literal::Var(i, _) = info.lits[0] {args.set(i, lhs)} else {unreachable!()}
-      self.literals(&mut args, &info.lits[2..info.lits.len()-1])?;
+      self.literals(&mut args, &info.lits[2..info.lits.len()-1], 0)?;
       let (i, mut rhs) = if let Some(&Literal::Var(i, q)) = info.lits.last() {
         (i, self.prefix(q)?)
       } else {unreachable!()};
@@ -144,8 +163,10 @@ impl<'a> MathParser<'a> {
         rhs = self.lhs(q, rhs)?;
         tok = self.peek_token().0;
       }
+      let span = (start..rhs.span.end).into();
       args.set(i, rhs);
-      lhs = QExpr::App(info.term, unsafe { args.assume_init() });
+      lhs = QExpr { span, k: QExprKind::App(info.term, unsafe { args.assume_init() })
+      };
     }
     return Ok(lhs)
   }

@@ -226,6 +226,15 @@ impl AST {
     unsafe { std::str::from_utf8_unchecked(&self.source.as_bytes()[s.start..s.end]) }
   }
 
+  pub fn span_atom(&self, sp: Span, a: Atom) -> &str {
+    match a {
+      Atom::Ident => self.span(sp),
+      Atom::Quote => "quote",
+      Atom::Unquote => "unquote",
+      Atom::Nfx => ":nfx",
+    }
+  }
+
   pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
     match self.stmts.binary_search_by_key(&pos, |stmt| stmt.span.end) {
       Ok(i) => (i+1, pos),
