@@ -19,11 +19,8 @@ pub enum IR {
   Focus(Box<[IR]>),
   Def(Option<(Span, AtomID)>, Box<IR>),
   Eval(Box<[IR]>),
-  LambdaExact(Span, Vec<Option<AtomID>>, Arc<IR>),
-  LambdaAtLeast(Span, Vec<Option<AtomID>>, Option<AtomID>, Arc<IR>),
-  Match(Span, Box<IR>, Arc<[Branch]>),
-  MatchFn(Span, Arc<[Branch]>),
-  MatchFns(Span, Arc<[Branch]>),
+  Lambda(Span, ProcSpec, Arc<IR>),
+  Match(Span, Box<IR>, Box<[Branch]>),
 }
 
 impl IR {
@@ -46,14 +43,14 @@ impl IR {
   fn set_ref(sp1: Span, sp2: Span, e1: IR, e2: IR) -> IR {
     IR::builtin_app(sp1, sp2, BuiltinProc::SetRef, Box::new([e1, e2]))
   }
-  fn match_fn_body(sp: Span, i: usize, brs: Arc<[Branch]>) -> IR {
+  fn match_fn_body(sp: Span, i: usize, brs: Box<[Branch]>) -> IR {
     IR::Match(sp, Box::new(IR::Local(i)), brs)
   }
 }
 
 pub struct Branch {
-  pub vars: Vec<AtomID>,
-  pub cont: Option<AtomID>,
+  pub vars: usize,
+  pub cont: bool,
   pub pat: Pattern,
   pub eval: Box<IR>,
 }
@@ -88,12 +85,8 @@ impl Remap<LispRemapper> for IR {
       IR::Focus(e) => IR::Focus(e.remap(r)),
       IR::Def(a, e) => IR::Def(a.map(|(sp, a)| (sp, a.remap(r))), e.remap(r)),
       IR::Eval(e) => IR::Eval(e.remap(r)),
-      &IR::LambdaExact(sp, ref xs, ref e) => IR::LambdaExact(sp, xs.remap(r), e.remap(r)),
-      &IR::LambdaAtLeast(sp, ref xs, ref a, ref e) =>
-        IR::LambdaAtLeast(sp, xs.remap(r), a.remap(r), e.remap(r)),
+      &IR::Lambda(sp, spec, ref e) => IR::Lambda(sp, spec, e.remap(r)),
       &IR::Match(sp, ref e, ref br) => IR::Match(sp, e.remap(r), br.remap(r)),
-      &IR::MatchFn(sp, ref br) => IR::MatchFn(sp, br.remap(r)),
-      &IR::MatchFns(sp, ref br) => IR::MatchFns(sp, br.remap(r)),
     }
   }
 }
@@ -101,8 +94,8 @@ impl Remap<LispRemapper> for IR {
 impl Remap<LispRemapper> for Branch {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     Self {
-      vars: self.vars.remap(r),
-      cont: self.cont.remap(r),
+      vars: self.vars,
+      cont: self.cont,
       pat: self.pat.remap(r),
       eval: self.eval.remap(r)
     }
@@ -173,39 +166,35 @@ impl IR {
   }
 }
 
-struct LocalCtx<T> {
+struct LocalCtx {
   names: HashMap<AtomID, Vec<usize>>,
-  ctx: Vec<T>,
+  ctx: Vec<Option<AtomID>>,
 }
 
-impl<T: From<AtomID>> LocalCtx<T> {
+impl LocalCtx {
   fn new() -> Self { Self {names: HashMap::new(), ctx: vec![]} }
   fn len(&self) -> usize { self.ctx.len() }
   fn get(&self, x: AtomID) -> Option<usize> {
     self.names.get(&x).and_then(|v| v.last().cloned())
   }
   fn push(&mut self, x: AtomID) -> usize {
-    let old = self.ctx.len();
-    self.names.entry(x).or_insert(vec![]).push(old);
-    self.ctx.push(x.into());
-    old
+    self.push_opt(Some(x))
   }
-  fn push_opt(&mut self, x: &Option<AtomID>) -> usize {
+  fn push_opt(&mut self, x: Option<AtomID>) -> usize {
     let old = self.ctx.len();
-    if let &Some(x) = x { self.push(x); }
+    if let Some(x) = x { self.names.entry(x).or_insert(vec![]).push(old) }
+    self.ctx.push(x);
     old
   }
   fn push_list(&mut self, xs: &Vec<Option<AtomID>>) -> usize {
     let old = self.ctx.len();
-    for x in xs { self.push_opt(x); }
+    for &x in xs { self.push_opt(x); }
     old
   }
   fn get_or_push(&mut self, x: AtomID) -> usize {
     self.get(x).unwrap_or_else(|| self.push(x))
   }
-}
 
-impl LocalCtx<Option<AtomID>> {
   fn pop(&mut self) {
     if let Some(x) = self.ctx.pop().unwrap() {
       self.names.get_mut(&x).unwrap().pop();
@@ -218,7 +207,7 @@ impl LocalCtx<Option<AtomID>> {
 
 struct LispParser<'a, T: FileServer + ?Sized> {
   elab: &'a mut Elaborator<'a, T>,
-  ctx: LocalCtx<Option<AtomID>>,
+  ctx: LocalCtx,
 }
 impl<'a, T: FileServer + ?Sized> Deref for LispParser<'a, T> {
   type Target = Elaborator<'a, T>;
@@ -293,14 +282,17 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
         SExprKind::List(xs) if !xs.is_empty() => {
           rec(this, &xs[0], |this, sp| {
             let xs = this.to_idents(&xs[1..])?;
-            Ok(vec![IR::LambdaExact(sp, xs, IR::eval(tail(this, sp)?).into())])
+            this.ctx.push_list(&xs);
+            Ok(vec![IR::Lambda(sp, ProcSpec::Exact(xs.len()), IR::eval(tail(this, sp)?).into())])
           })
         }
         SExprKind::DottedList(xs, y) if !xs.is_empty() => {
           rec(this, &xs[0], |this, sp| {
             let xs = this.to_idents(&xs[1..])?;
+            this.ctx.push_list(&xs);
             let y = this.to_ident(y)?;
-            Ok(vec![IR::LambdaAtLeast(sp, xs, y, IR::eval(tail(this, sp)?).into())])
+            this.ctx.push_opt(y);
+            Ok(vec![IR::Lambda(sp, ProcSpec::AtLeast(xs.len()), IR::eval(tail(this, sp)?).into())])
           })
         }
         _ => Err(ElabError::new_e(e.span, "def: invalid spec"))?
@@ -351,8 +343,8 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     Ok(IR::Eval(cs.into()))
   }
 
-  fn list_pattern(&mut self, ctx: &mut LocalCtx<AtomID>, code: &mut Vec<IR>,
-      quote: bool, mut es: &[SExpr]) -> Result<Pattern, ElabError> {
+  fn list_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
+      quote: bool, es: &[SExpr]) -> Result<Pattern, ElabError> {
     let (en, es1) = es.split_last().unwrap();
     let (es, n) = match &en.k {
       &SExprKind::Atom(Atom::Ident) => match self.span(en.span) {
@@ -375,7 +367,7 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     }
   }
 
-  fn qexpr_pattern(&mut self, ctx: &mut LocalCtx<AtomID>, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
+  fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
     match e.k {
       QExprKind::Ident => match self.ast.span(e.span) {
         "_" => Ok(Pattern::Skip),
@@ -397,14 +389,14 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
   }
 
 
-  fn patterns(&mut self, ctx: &mut LocalCtx<AtomID>, code: &mut Vec<IR>,
+  fn patterns(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
       quote: bool, es: &[SExpr]) -> Result<Box<[Pattern]>, ElabError> {
     let mut ps = vec![];
     for e in es {ps.push(self.pattern(ctx, code, quote, e)?)}
     Ok(ps.into())
   }
 
-  fn pattern(&mut self, ctx: &mut LocalCtx<AtomID>, code: &mut Vec<IR>,
+  fn pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
       quote: bool, e: &SExpr) -> Result<Pattern, ElabError> {
     match &e.k {
       &SExprKind::Atom(a) => Ok(match (quote, self.parse_ident(e.span, a)?) {
@@ -470,16 +462,19 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     }
     let mut ctx = LocalCtx::new();
     let pat = self.pattern(&mut ctx, code, false, e)?;
-    let vars = ctx.ctx;
-    self.ctx.ctx.extend(vars.iter().map(|&x| Some(x)));
-    Ok(Branch {pat, vars, cont, eval: Box::new(IR::eval(self.exprs(false, es)?))})
+    let vars = ctx.ctx.len();
+    let start = self.ctx.push_list(&ctx.ctx);
+    if let Some(x) = cont {self.ctx.push(x);}
+    let eval = Box::new(IR::eval(self.exprs(false, es)?));
+    self.ctx.restore(start);
+    Ok(Branch {pat, vars, cont: cont.is_some(), eval})
   }
-  fn branches(&mut self, code: &mut Vec<IR>, es: &[SExpr]) -> Result<Arc<[Branch]>, ElabError> {
+  fn branches(&mut self, code: &mut Vec<IR>, es: &[SExpr]) -> Result<Box<[Branch]>, ElabError> {
     let mut bs = vec![];
     for e in es { bs.push(self.branch(code, e)?) }
     Ok(bs.into())
   }
-  fn match_(&mut self, es: &[SExpr], f: impl FnOnce(Arc<[Branch]>) -> IR) -> Result<IR, ElabError> {
+  fn match_(&mut self, es: &[SExpr], f: impl FnOnce(Box<[Branch]>) -> IR) -> Result<IR, ElabError> {
     let mut code = vec![];
     let m = self.branches(&mut code, es)?;
     if code.is_empty() {
@@ -539,19 +534,22 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
               SExprKind::List(xs) => {
                 let xs = self.to_idents(xs)?;
                 self.ctx.push_list(&xs);
-                Ok(IR::LambdaExact(es[0].span, xs, IR::eval(self.exprs(false, &es[2..])?).into()))
+                Ok(IR::Lambda(es[0].span, ProcSpec::Exact(xs.len()),
+                  IR::eval(self.exprs(false, &es[2..])?).into()))
               }
               SExprKind::DottedList(xs, y) => {
                 let xs = self.to_idents(xs)?;
                 let y = self.to_ident(y)?;
                 self.ctx.push_list(&xs);
-                self.ctx.push_opt(&y);
-                Ok(IR::LambdaAtLeast(es[0].span, xs, y, IR::eval(self.exprs(false, &es[2..])?).into()))
+                self.ctx.push_opt(y);
+                Ok(IR::Lambda(es[0].span, ProcSpec::AtLeast(xs.len()),
+                  IR::eval(self.exprs(false, &es[2..])?).into()))
               }
               _ => {
                 let x = self.to_ident(&es[1])?;
-                self.ctx.push_opt(&x);
-                Ok(IR::LambdaAtLeast(es[0].span, vec![], x, IR::eval(self.exprs(false, &es[2..])?).into()))
+                self.ctx.push_opt(x);
+                Ok(IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
+                  IR::eval(self.exprs(false, &es[2..])?).into()))
               }
             },
             Err(Syntax::Quote) if es.len() < 2 =>
@@ -579,8 +577,16 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
               self.ctx.restore(restore.unwrap());
               self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
             },
-            Err(Syntax::MatchFn) => self.match_(&es[2..], |m| IR::MatchFn(es[0].span, m)),
-            Err(Syntax::MatchFns) => self.match_(&es[2..], |m| IR::MatchFns(es[0].span, m)),
+            Err(Syntax::MatchFn) => {
+              let i = self.ctx.len();
+              self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::Exact(1),
+                Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+            }
+            Err(Syntax::MatchFns) => {
+              let i = self.ctx.len();
+              self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
+                Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+            }
           }
         } else {
           Ok(IR::App(e.span, es[0].span, Box::new(self.expr(true, &es[0])?),

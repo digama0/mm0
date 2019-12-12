@@ -1,22 +1,11 @@
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::mem;
-use std::sync::Arc;
+use std::borrow::Cow;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use crate::util::*;
 use super::super::{Result, AtomID, FileServer, Elaborator, ElabError, BoxError};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
-
-struct Evaluator<'a, T: FileServer + ?Sized> {
-  elab: &'a mut Evaluator<'a, T>,
-  ctx: Vec<LispVal>,
-}
-impl<'a, T: FileServer + ?Sized> Deref for Evaluator<'a, T> {
-  type Target = Elaborator<'a, T>;
-  fn deref(&self) -> &Elaborator<'a, T> { self.elab }
-}
-impl<'a, T: FileServer + ?Sized> DerefMut for Evaluator<'a, T> {
-  fn deref_mut(&mut self) -> &mut Elaborator<'a, T> { self.elab }
-}
 
 enum Stack<'a> {
   List(Vec<LispVal>, std::slice::Iter<'a, IR>),
@@ -27,9 +16,10 @@ enum Stack<'a> {
   If(&'a IR, &'a IR),
   Def(&'a Option<(Span, AtomID)>),
   Eval(std::slice::Iter<'a, IR>),
-  Match(Span, &'a Arc<[Branch]>, usize),
+  Match(Span, std::slice::Iter<'a, Branch>),
   Drop_,
-  Call(Vec<LispVal>),
+  Ret(ProcPos, Vec<LispVal>, Arc<IR>),
+  MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
 }
 
 impl Stack<'_> {
@@ -47,20 +37,16 @@ enum State<'a> {
   List(Vec<LispVal>, std::slice::Iter<'a, IR>),
   DottedList(Vec<LispVal>, std::slice::Iter<'a, IR>, &'a IR),
   App(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
+  Match(Span, LispVal, std::slice::Iter<'a, Branch>),
 }
 
-fn stack_e(stack: Vec<Stack>, pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
-  unimplemented!()
-}
-
-fn unreffed<T>(e: &LispVal, f: impl FnOnce(&LispVal) -> T) -> T {
-  if let LispKind::Ref(m) = e.deref() { unreffed(&m.lock().unwrap(), f) }
-  else {f(e)}
-}
-
-fn unref(e: &LispVal) -> LispVal {
-  if let LispKind::Ref(m) = e.deref() { unref(&m.lock().unwrap()) }
-  else {e.clone()}
+fn unref(e: &LispVal) -> Cow<LispVal> {
+  let mut ret = Cow::Borrowed(e);
+  while let LispKind::Ref(m) = &**ret {
+    let e = m.lock().unwrap().clone();
+    ret = Cow::Owned(e)
+  }
+  ret
 }
 fn truthy(e: &LispKind) -> bool {
   if let LispKind::Bool(false) = e {false} else {true}
@@ -69,24 +55,24 @@ fn truthy(e: &LispKind) -> bool {
 #[derive(Clone)]
 struct Uncons(LispVal, usize);
 impl Uncons {
-  fn from(e: &LispVal) -> Uncons { Uncons(unref(e), 0) }
+  fn from(e: &LispVal) -> Uncons { Uncons(unref(e).into_owned(), 0) }
   fn exactly(&self, n: usize) -> bool {
-    match self.0.deref() {
+    match &*self.0 {
       LispKind::List(es) => self.1 + n == es.len(),
-      LispKind::DottedList(es, r) if self.1 + n <= es.len() => false,
+      LispKind::DottedList(es, _) if self.1 + n <= es.len() => false,
       LispKind::DottedList(es, r) => Self::from(r).exactly(n - es.len()),
       _ => false,
     }
   }
   fn is_list(&self) -> bool {
-    match self.0.deref() {
+    match &*self.0 {
       LispKind::List(_) => true,
       LispKind::DottedList(_, r) => Self::from(r).is_list(),
       _ => false,
     }
   }
   fn at_least(&self, n: usize) -> bool {
-    match self.0.deref() {
+    match &*self.0 {
       LispKind::List(es) => return self.1 + n == es.len(),
       LispKind::DottedList(es, r) if self.1 + n <= es.len() => Self::from(r).is_list(),
       LispKind::DottedList(es, r) => Self::from(r).at_least(n - es.len()),
@@ -95,7 +81,7 @@ impl Uncons {
   }
   fn uncons(&mut self) -> Option<LispVal> {
     loop {
-      match self.0.deref() {
+      match &*self.0 {
         LispKind::List(es) => match es.get(self.1) {
           None => return None,
           Some(e) => {self.1 += 1; return Some(e.clone())}
@@ -110,7 +96,7 @@ impl Uncons {
   }
   fn as_lisp(self) -> LispVal {
     if self.1 == 0 {return self.0}
-    match self.0.deref() {
+    match &*self.0 {
       LispKind::List(es) if self.1 == es.len() => NIL.clone(),
       LispKind::List(es) => Arc::new(LispKind::List(es[self.1..].into())),
       LispKind::DottedList(es, r) if self.1 == es.len() => r.clone(),
@@ -125,14 +111,14 @@ impl Pattern {
     match self {
       Pattern::Skip => true,
       &Pattern::Atom(i) => {ctx[i] = e.clone(); true}
-      &Pattern::QuoteAtom(a) => match &*unref(e) {&LispKind::Atom(a2) => a == a2, _ => false},
-      Pattern::String(s) => match &*unref(e) {LispKind::String(s2) => s.deref() == s2, _ => false},
-      &Pattern::Bool(b) => match &*unref(e) {&LispKind::Bool(b2) => b == b2, _ => false},
-      Pattern::Number(i) => match &*unref(e) {LispKind::Number(i2) => i == i2, _ => false},
+      &Pattern::QuoteAtom(a) => match &**unref(e) {&LispKind::Atom(a2) => a == a2, _ => false},
+      Pattern::String(s) => match &**unref(e) {LispKind::String(s2) => s.deref() == s2, _ => false},
+      &Pattern::Bool(b) => match &**unref(e) {&LispKind::Bool(b2) => b == b2, _ => false},
+      Pattern::Number(i) => match &**unref(e) {LispKind::Number(i2) => i == i2, _ => false},
       Pattern::DottedList(ps, r) => {
         let mut u = Uncons::from(e);
         ps.iter().all(|p| u.uncons().map_or(false, |l| p.match_(ctx, &l))) &&
-          self.match_(ctx, &u.as_lisp())
+          r.match_(ctx, &u.as_lisp())
       }
       &Pattern::ListAtLeast(ref ps, n) => {
         let mut u = Uncons::from(e);
@@ -146,9 +132,9 @@ impl Pattern {
       Pattern::Or(ps) => ps.iter().any(|p| p.match_(ctx, e)),
       Pattern::Not(ps) => !ps.iter().any(|p| p.match_(ctx, e)),
       &Pattern::Test(i, ref ps) => unimplemented!(),
-      &Pattern::QExprAtom(a) => match &*unref(e) {
+      &Pattern::QExprAtom(a) => match &**unref(e) {
         &LispKind::Atom(a2) => a == a2,
-        LispKind::List(es) if es.len() == 1 => match &*unref(&es[0]) {
+        LispKind::List(es) if es.len() == 1 => match &**unref(&es[0]) {
           &LispKind::Atom(a2) => a == a2,
           _ => false
         },
@@ -158,34 +144,54 @@ impl Pattern {
   }
 }
 impl Branch {
-  fn match_(&self, ctx: &mut Vec<LispVal>,
-       sp: Span, e: &LispVal, brs: &Arc<[Branch]>, i: usize) -> Option<usize> {
+  fn match_(&self, ctx: &mut Vec<LispVal>, e: &LispVal) -> Option<usize> {
     let start = ctx.len();
-    ctx.resize_with(start + self.vars.len(), || UNDEF.clone());
+    ctx.resize_with(start + self.vars, || UNDEF.clone());
     if !self.pat.match_(&mut ctx[start..], e) {
       ctx.truncate(start); return None
     }
-    if self.cont.is_some() {
-      ctx.push(Arc::new(LispKind::Proc(Proc::MatchCont(
-        sp, ctx[..start].into(), e.clone(), brs.clone(), i))));
-    }
-    Some(ctx.len() - start)
+    Some(start)
   }
 }
 
-impl<'a, T: FileServer + ?Sized> Evaluator<'a, T> {
+impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
+  fn throw_err(&mut self, stack: Vec<Stack>, mut fspan: FileSpan, e: impl Into<BoxError>) -> ElabError {
+    let mut msg: BoxError = "error occurred here".into();
+    let mut info = vec![];
+    for s in stack.into_iter().rev() {
+      if let Stack::Ret(pos, _, _) = s {
+        let (fsp, x) = match pos {
+          ProcPos::Named(fsp, a) => (fsp, format!("{}()", self.lisp_ctx[a].0).into()),
+          ProcPos::Unnamed(fsp) => (fsp, "[fn]".into())
+        };
+        info.push((mem::replace(&mut fspan, fsp), mem::replace(&mut msg, x)))
+      }
+    }
+    ElabError::with_info(fspan.span, e.into(), info)
+  }
+
   pub fn evaluate(&mut self, ir: &IR) -> Result<LispVal> {
+    let mut file = self.path.clone();
     let mut ctx: Vec<LispVal> = Vec::new();
     let mut stack: Vec<Stack> = vec![];
     let mut active = State::Eval(ir);
 
+    macro_rules! fsp {($e:expr) => {FileSpan {file: file.clone(), span: $e}}}
+    macro_rules! throw {($sp:expr, $e:expr) => {{
+      let err = $e;
+      return Err(self.throw_err(stack, FileSpan {file, span: $sp}, err))
+    }}}
+    macro_rules! proc_pos {($sp:expr) => {
+      if let Some(Stack::Def(&Some((sp, x)))) = stack.last() { ProcPos::Named(fsp!(sp), x) }
+      else { ProcPos::Unnamed(fsp!($sp)) }
+    }}
+
     loop {
       active = match active {
         State::Eval(ir) => match ir {
-          &IR::Local(i) => State::Ret(self.ctx[i].clone()),
+          &IR::Local(i) => State::Ret(ctx[i].clone()),
           &IR::Global(sp, a) => State::Ret(match &self.lisp_ctx[a] {
-            (s, None) => return Err(stack_e(stack, sp,
-              format!("Reference to unbound variable '{}'", s))),
+            (s, None) => throw!(sp, format!("Reference to unbound variable '{}'", s)),
             (_, Some((_, x))) => x.clone(),
           }),
           IR::Const(val) => State::Ret(val.clone()),
@@ -202,19 +208,14 @@ impl<'a, T: FileServer + ?Sized> Evaluator<'a, T> {
               Some(e) => { stack.push(Stack::Eval(it)); State::Eval(e) }
             }
           }
-          &IR::LambdaExact(sp, ref xs, ref e) =>
-            State::Ret(Arc::new(LispKind::Proc(
-              Proc::LambdaExact(sp, ctx.clone(), xs.len(), e.clone())))),
-          &IR::LambdaAtLeast(sp, ref xs, _, ref e) =>
-            State::Ret(Arc::new(LispKind::Proc(
-              Proc::LambdaAtLeast(sp, ctx.clone(), xs.len(), e.clone())))),
-          &IR::Match(sp, ref e, ref brs) => {stack.push(Stack::Match(sp, brs, 0)); State::Eval(e)}
-          &IR::MatchFn(sp, ref brs) =>
-            State::Ret(Arc::new(LispKind::Proc(Proc::LambdaExact(sp, ctx.clone(), 1,
-              Arc::new(IR::Match(sp, Box::new(IR::Local(ctx.len())), brs.clone())))))),
-          &IR::MatchFns(sp, ref brs) =>
-            State::Ret(Arc::new(LispKind::Proc(Proc::LambdaAtLeast(sp, ctx.clone(), 0,
-              Arc::new(IR::Match(sp, Box::new(IR::Local(ctx.len())), brs.clone())))))),
+          &IR::Lambda(sp, spec, ref e) =>
+            State::Ret(Arc::new(LispKind::Proc(Proc::Lambda {
+              pos: proc_pos!(sp),
+              env: ctx.clone(),
+              spec,
+              code: e.clone()
+            }))),
+          &IR::Match(sp, ref e, ref brs) => {stack.push(Stack::Match(sp, brs.iter())); State::Eval(e)}
         },
         State::Ret(ret) => match stack.pop() {
           None => return Ok(ret),
@@ -233,7 +234,7 @@ impl<'a, T: FileServer + ?Sized> Evaluator<'a, T> {
           Some(Stack::Def(x)) => {
             match stack.pop() {
               None => if let &Some((sp, a)) = x {
-                self.lisp_ctx[a].1 = Some((self.fspan(sp), ret))
+                self.lisp_ctx[a].1 = Some((fsp!(sp), ret))
               },
               Some(s) if s.supports_def() => {
                 stack.push(Stack::Drop_); stack.push(s); ctx.push(ret) }
@@ -245,18 +246,13 @@ impl<'a, T: FileServer + ?Sized> Evaluator<'a, T> {
             None => State::Ret(ret),
             Some(e) => { stack.push(Stack::Eval(it)); State::Eval(e) }
           },
-          Some(Stack::Match(sp, brs, mut i)) => loop {
-            match brs.get(i) {
-              None => return Err(stack_e(stack, sp, "match failed")),
-              Some(br) => if let Some(n) = br.match_(&mut ctx, sp, &ret, &brs, i + 1) {
-                stack.resize_with(stack.len() + n, || Stack::Drop_);
-                break State::Eval(&br.eval)
-              },
-            }
-            i += 1;
-          }
+          Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
           Some(Stack::Drop_) => {ctx.pop(); State::Ret(ret)}
-          Some(Stack::Call(ctx2)) => {ctx = ctx2; State::Ret(ret)}
+          Some(Stack::Ret(pos, old, _)) => {file = pos.fspan().file.clone(); ctx = old; State::Ret(ret)}
+          Some(Stack::MatchCont(_, _, _, valid)) => {
+            if let Err(valid) = Arc::try_unwrap(valid) {valid.store(false, Ordering::Relaxed)}
+            State::Ret(ret)
+          }
         },
         State::List(vec, mut it) => match it.next() {
           None => State::Ret(Arc::new(LispKind::List(vec))),
@@ -266,33 +262,83 @@ impl<'a, T: FileServer + ?Sized> Evaluator<'a, T> {
           None => { stack.push(Stack::DottedList2(vec)); State::Eval(r) }
           Some(e) => { stack.push(Stack::DottedList(vec, it, r)); State::Eval(e) }
         },
-        State::App(sp1, sp2, f, vec, mut it) => match it.next() {
-          None => {
-            if let LispKind::Proc(p) = &*unref(&f) {
-              match p {
-                Proc::Builtin(_) => unimplemented!(),
-                &Proc::LambdaExact(sp, ref ctx2, n, ref ir) => {
-                  if vec.len() != n {
-                    return Err(stack_e(stack, sp2, "called with incorrect number of arguments"))
-                  }
-                  stack.push(Stack::Call(mem::replace(&mut ctx, ctx2.clone())));
-                  ctx.extend(vec);
-                  // State::Eval(ir)
-                  unimplemented!()
-                },
-                &Proc::LambdaAtLeast(sp, ref ctx2, n, ref ir) => {
-                  stack.push(Stack::Call(mem::replace(&mut ctx, ctx2.clone())));
-                  unimplemented!()
-                },
-                Proc::MatchCont(sp, ref ctx2, ref e, ref brs, i) => {
-                  stack.push(Stack::Call(mem::replace(&mut ctx, ctx2.clone())));
-                  unimplemented!()
-                },
+        State::App(sp1, sp2, f, mut args, mut it) => match it.next() {
+          None => match &**unref(&f) {
+            LispKind::Proc(Proc::Builtin(p)) => match p {
+              BuiltinProc::NewRef if args.len() != 1 =>
+                throw!(sp2, "called with incorrect number of arguments"),
+              BuiltinProc::NewRef => State::Ret(Arc::new(LispKind::Ref(Mutex::new(args[0].clone())))),
+              BuiltinProc::SetRef if args.len() != 2 =>
+                throw!(sp2, "called with incorrect number of arguments"),
+              BuiltinProc::SetRef => {
+                if let LispKind::Ref(m) = &*args[0] {*m.lock().unwrap() = args[1].clone()}
+                else {throw!(sp2, "set!: not a ref")}
+                State::Ret(UNDEF.clone())
+              },
+            }
+            &LispKind::Proc(Proc::Lambda {ref pos, ref env, spec, ref code}) => {
+              if !spec.valid(args.len()) {throw!(sp2, "called with incorrect number of arguments")}
+              if let Some(Stack::Ret(_, _, _)) = stack.last() { // tail call
+                if let Some(Stack::Ret(fsp, old, _)) = stack.pop() {
+                  ctx = env.clone();
+                  stack.push(Stack::Ret(fsp, old, code.clone()));
+                } else {unsafe {std::hint::unreachable_unchecked()}}
+              } else {
+                stack.push(Stack::Ret(pos.clone(), mem::replace(&mut ctx, env.clone()), code.clone()));
               }
-            } else {return Err(stack_e(stack, sp2, "not a function, cannot apply"))}
+              match spec {
+                ProcSpec::Exact(_) => ctx.extend(args),
+                ProcSpec::AtLeast(nargs) => {
+                  ctx.extend(args.drain(..nargs));
+                  ctx.push(Arc::new(LispKind::List(args)));
+                }
+              }
+              // Unfortunately we're fighting the borrow checker here. The problem is that
+              // ir is borrowed in the Stack type, with most IR being owned outside the
+              // function, but when you apply a lambda, the Proc::LambdaExact constructor
+              // stores an Arc to the code to execute, hence it comes under our control,
+              // which means that when the temporaries in this block go away, so does
+              // ir (which is borrowed from f). We solve the problem by storing an Arc of
+              // the IR inside the Ret instruction above, so that it won't get deallocated
+              // while in use. Rust doesn't reason about other owners of an Arc though, so...
+              State::Eval(unsafe {&*(&**code as *const IR)})
+            },
+            LispKind::Proc(Proc::MatchCont(valid)) => {
+              if !valid.load(Ordering::Relaxed) {throw!(sp2, "continuation has expired")}
+              loop {
+                match stack.pop() {
+                  Some(Stack::MatchCont(span, expr, it, a)) => {
+                    a.store(false, Ordering::Relaxed);
+                    if Arc::ptr_eq(&a, &valid) {
+                      break State::Match(span, expr, it)
+                    }
+                  }
+                  Some(Stack::Drop_) => {ctx.pop();}
+                  Some(Stack::Ret(pos, old, _)) => {file = pos.into_fspan().file; ctx = old},
+                  Some(_) => {}
+                  None => throw!(sp2, "continuation has expired")
+                }
+              }
+            }
+            _ => throw!(sp2, "not a function, cannot apply")
+          },
+          Some(e) => { stack.push(Stack::App2(sp1, sp2, f, args, it)); State::Eval(e) }
+        }
+        State::Match(sp, e, mut it) => match it.next() {
+          None => throw!(sp, "match failed"),
+          Some(br) => match br.match_(&mut ctx, &e) {
+            None => State::Match(sp, e, it),
+            Some(start) => {
+              if br.cont {
+                let valid = Arc::new(AtomicBool::new(true));
+                ctx.push(Arc::new(LispKind::Proc(Proc::MatchCont(valid.clone()))));
+                stack.push(Stack::MatchCont(sp, e.clone(), it, valid))
+              }
+              stack.resize_with(stack.len() + (ctx.len() - start), || Stack::Drop_);
+              State::Eval(&br.eval)
+            }
           }
-          Some(e) => { stack.push(Stack::App2(sp1, sp2, f, vec, it)); State::Eval(e) }
-        },
+        }
       }
     }
   }

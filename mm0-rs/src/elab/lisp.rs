@@ -3,13 +3,13 @@ pub mod eval;
 
 use std::ops::Deref;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use std::collections::HashMap;
 use num::BigInt;
 use crate::parser::ast::{Atom};
-use crate::util::{ArcString, Span};
+use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap};
-use parser::{IR, Branch};
+use parser::IR;
 
 pub enum Syntax {
   Define,
@@ -77,11 +77,50 @@ lazy_static! {
   pub static ref NIL: LispVal = Arc::new(LispKind::List(vec![]));
 }
 
+#[derive(Clone)]
+pub enum ProcPos {
+  Named(FileSpan, AtomID),
+  Unnamed(FileSpan),
+}
+impl ProcPos {
+  fn into_fspan(self) -> FileSpan {
+    match self {
+      ProcPos::Named(fsp, _) => fsp,
+      ProcPos::Unnamed(fsp) => fsp,
+    }
+  }
+  fn fspan(&self) -> &FileSpan {
+    match self {
+      ProcPos::Named(fsp, _) => fsp,
+      ProcPos::Unnamed(fsp) => fsp,
+    }
+  }
+}
+
 pub enum Proc {
   Builtin(BuiltinProc),
-  LambdaExact(Span, Vec<LispVal>, usize, Arc<IR>),
-  LambdaAtLeast(Span, Vec<LispVal>, usize, Arc<IR>),
-  MatchCont(Span, Vec<LispVal>, LispVal, Arc<[Branch]>, usize),
+  Lambda {
+    pos: ProcPos,
+    env: Vec<LispVal>,
+    spec: ProcSpec,
+    code: Arc<IR>
+  },
+  MatchCont(Arc<AtomicBool>),
+}
+
+#[derive(Copy, Clone)]
+pub enum ProcSpec {
+  Exact(usize),
+  AtLeast(usize),
+}
+
+impl ProcSpec {
+  pub fn valid(self, i: usize) -> bool {
+    match self {
+      ProcSpec::Exact(n) => i == n,
+      ProcSpec::AtLeast(n) => i >= n,
+    }
+  }
 }
 
 #[derive(Copy, Clone)]
@@ -120,16 +159,21 @@ impl Remap<LispRemapper> for LispVal {
     r.lisp.entry(p).or_insert(v).clone()
   }
 }
+impl Remap<LispRemapper> for ProcPos {
+  fn remap(&self, r: &mut LispRemapper) -> Self {
+    match self {
+      ProcPos::Named(sp, a) => ProcPos::Named(sp.clone(), a.remap(r)),
+      ProcPos::Unnamed(sp) => ProcPos::Unnamed(sp.clone()),
+    }
+  }
+}
 impl Remap<LispRemapper> for Proc {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
       &Proc::Builtin(p) => Proc::Builtin(p),
-      &Proc::LambdaExact(sp, ref env, n, ref c) =>
-        Proc::LambdaExact(sp, env.remap(r), n, c.remap(r)),
-      &Proc::LambdaAtLeast(sp, ref env, n, ref c) =>
-        Proc::LambdaAtLeast(sp, env.remap(r), n, c.remap(r)),
-      &Proc::MatchCont(sp, ref env, ref e, ref brs, i) =>
-        Proc::MatchCont(sp, env.remap(r), e.remap(r), brs.remap(r), i),
+      &Proc::Lambda {ref pos, ref env, spec, ref code} =>
+        Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
+      Proc::MatchCont(_) => Proc::MatchCont(Arc::new(AtomicBool::new(false))),
     }
   }
 }
