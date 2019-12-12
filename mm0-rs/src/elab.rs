@@ -9,6 +9,7 @@ use std::collections::{HashMap};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
 use environment::*;
 use environment::Literal as ELiteral;
+use lisp::{LispVal, LispKind, FALSE};
 pub use environment::Environment;
 pub use crate::parser::ErrorLevel;
 use crate::util::*;
@@ -57,6 +58,10 @@ impl ElabError {
   }
   pub fn with_info(pos: impl Into<Span>, msg: BoxError, v: Vec<(FileSpan, BoxError)>) -> ElabError {
     ElabError::new(pos, ElabErrorKind::Boxed(msg, Some(v)))
+  }
+
+  pub fn info(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
+    ElabError { pos: pos.into(), level: ErrorLevel::Info, kind: ElabErrorKind::Boxed(e.into(), None)}
   }
 
   pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
@@ -108,6 +113,15 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
   fn report(&mut self, e: ElabError) { self.errors.push(e) }
   fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
+
+  fn name_of(&mut self, stmt: &Stmt) -> LispVal {
+    match &stmt.k {
+      StmtKind::Annot(_, s) => self.name_of(s),
+      StmtKind::Decl(d) => Arc::new(LispKind::Atom(self.env.get_atom(self.ast.span(d.id)))),
+      &StmtKind::Sort(id, _) => Arc::new(LispKind::Atom(self.env.get_atom(self.ast.span(id)))),
+      _ => FALSE.clone(),
+    }
+  }
 
   fn elab_decl(&mut self, d: &Decl) {
     match d.k {
@@ -246,6 +260,16 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       vec![(r.decl1, "declared here".into())]))
   }
 
+  fn parse_and_run(&mut self, e: &SExpr) -> Result<LispVal> {
+    let ir = self.parse_lisp(e)?;
+    self.evaluate(&ir)
+  }
+
+  fn parse_and_print(&mut self, e: &SExpr) -> Result<()> {
+    let val = self.parse_and_run(e)?;
+    self.print_lisp(e.span, &val)
+  }
+
   fn elab_stmt(&mut self, stmt: &Stmt) -> Result<()> {
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
@@ -267,6 +291,18 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
       &StmtKind::Import(sp, _) => if let Some(ref tok) = self.toks[&sp] {
         self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)?
+      },
+      StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },
+      StmtKind::Annot(e, s) => {
+        let v = self.parse_and_run(e)?;
+        self.elab_stmt(s)?;
+        let ann = self.get_atom("annotate");
+        let ann = match &self.lisp_ctx[ann].1 {
+          Some((_, e)) => e.clone(),
+          None => Err(ElabError::new_e(e.span, "define 'annotate' before using annotations"))?,
+        };
+        let args = vec![v, self.name_of(s)];
+        self.call_func(e.span, ann, args)?;
       },
       _ => Err(ElabError::new_e(stmt.span, "unimplemented"))?
     }

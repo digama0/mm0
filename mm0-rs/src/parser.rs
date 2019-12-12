@@ -12,12 +12,14 @@ use ast::*;
 
 #[derive(Copy, Clone)]
 pub enum ErrorLevel {
+  Info,
   Warning,
-  Error
+  Error,
 }
 impl ErrorLevel {
   pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
+      ErrorLevel::Info => DiagnosticSeverity::Information,
       ErrorLevel::Warning => DiagnosticSeverity::Warning,
       ErrorLevel::Error => DiagnosticSeverity::Error,
     }

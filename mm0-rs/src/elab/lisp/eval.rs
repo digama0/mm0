@@ -17,6 +17,8 @@ enum Stack<'a> {
   Def(&'a Option<(Span, AtomID)>),
   Eval(std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
+  TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
+    &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>),
   Drop_,
   Ret(ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
@@ -38,6 +40,8 @@ enum State<'a> {
   DottedList(Vec<LispVal>, std::slice::Iter<'a, IR>, &'a IR),
   App(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
   Match(Span, LispVal, std::slice::Iter<'a, Branch>),
+  Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
+    &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
 }
 
 fn unref(e: &LispVal) -> Cow<LispVal> {
@@ -106,51 +110,88 @@ impl Uncons {
   }
 }
 
-impl Pattern {
-  fn match_(&self, ctx: &mut [LispVal], e: &LispVal) -> bool {
-    match self {
-      Pattern::Skip => true,
-      &Pattern::Atom(i) => {ctx[i] = e.clone(); true}
-      &Pattern::QuoteAtom(a) => match &**unref(e) {&LispKind::Atom(a2) => a == a2, _ => false},
-      Pattern::String(s) => match &**unref(e) {LispKind::String(s2) => s.deref() == s2, _ => false},
-      &Pattern::Bool(b) => match &**unref(e) {&LispKind::Bool(b2) => b == b2, _ => false},
-      Pattern::Number(i) => match &**unref(e) {LispKind::Number(i2) => i == i2, _ => false},
-      Pattern::DottedList(ps, r) => {
-        let mut u = Uncons::from(e);
-        ps.iter().all(|p| u.uncons().map_or(false, |l| p.match_(ctx, &l))) &&
-          r.match_(ctx, &u.as_lisp())
-      }
-      &Pattern::ListAtLeast(ref ps, n) => {
-        let mut u = Uncons::from(e);
-        ps.iter().all(|p| u.uncons().map_or(false, |l| p.match_(ctx, &l))) && u.at_least(n)
-      }
-      Pattern::ListExact(ps) => {
-        let mut u = Uncons::from(e);
-        ps.iter().all(|p| u.uncons().map_or(false, |l| p.match_(ctx, &l))) && u.exactly(0)
-      }
-      Pattern::And(ps) => ps.iter().all(|p| p.match_(ctx, e)),
-      Pattern::Or(ps) => ps.iter().any(|p| p.match_(ctx, e)),
-      Pattern::Not(ps) => !ps.iter().any(|p| p.match_(ctx, e)),
-      &Pattern::Test(sp, i, ref ps) => unimplemented!(),
-      &Pattern::QExprAtom(a) => match &**unref(e) {
-        &LispKind::Atom(a2) => a == a2,
-        LispKind::List(es) if es.len() == 1 => match &**unref(&es[0]) {
-          &LispKind::Atom(a2) => a == a2,
-          _ => false
-        },
-        _ => false
-      }
-    }
-  }
+enum Dot<'a> { List(Option<usize>), DottedList(&'a Pattern) }
+enum PatternStack<'a> {
+  List(Uncons, std::slice::Iter<'a, Pattern>, Dot<'a>),
+  Binary(bool, bool, LispVal, std::slice::Iter<'a, Pattern>),
 }
-impl Branch {
-  fn match_(&self, ctx: &mut Vec<LispVal>, e: &LispVal) -> Option<usize> {
-    let start = ctx.len();
-    ctx.resize_with(start + self.vars, || UNDEF.clone());
-    if !self.pat.match_(&mut ctx[start..], e) {
-      ctx.truncate(start); return None
+
+enum PatternState<'a> {
+  Eval(&'a Pattern, LispVal),
+  Ret(bool),
+  List(Uncons, std::slice::Iter<'a, Pattern>, Dot<'a>),
+  Binary(bool, bool, LispVal, std::slice::Iter<'a, Pattern>),
+}
+
+struct TestPending(Span, usize);
+
+impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
+  fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
+      mut active: PatternState<'b>) -> std::result::Result<bool, TestPending>
+      where 'a: 'b {
+    loop {
+      active = match active {
+        PatternState::Eval(p, e) => match p {
+          Pattern::Skip => PatternState::Ret(true),
+          &Pattern::Atom(i) => {ctx[i] = e; PatternState::Ret(true)}
+          &Pattern::QuoteAtom(a) => PatternState::Ret(
+            match &**unref(&e) {&LispKind::Atom(a2) => a == a2, _ => false}),
+          Pattern::String(s) => PatternState::Ret(
+            match &**unref(&e) {LispKind::String(s2) => s.deref() == s2, _ => false}),
+          &Pattern::Bool(b) => PatternState::Ret(
+            match &**unref(&e) {&LispKind::Bool(b2) => b == b2, _ => false}),
+          Pattern::Number(i) => PatternState::Ret(
+            match &**unref(&e) {LispKind::Number(i2) => i == i2, _ => false}),
+          &Pattern::QExprAtom(a) => PatternState::Ret(match &**unref(&e) {
+            &LispKind::Atom(a2) => a == a2,
+            LispKind::List(es) if es.len() == 1 => match &**unref(&es[0]) {
+              &LispKind::Atom(a2) => a == a2,
+              _ => false
+            },
+            _ => false
+          }),
+          Pattern::DottedList(ps, r) => PatternState::List(Uncons::from(&e), ps.iter(), Dot::DottedList(r)),
+          &Pattern::List(ref ps, n) => PatternState::List(Uncons::from(&e), ps.iter(), Dot::List(n)),
+          Pattern::And(ps) => PatternState::Binary(false, false, e, ps.iter()),
+          Pattern::Or(ps) => PatternState::Binary(true, true, e, ps.iter()),
+          Pattern::Not(ps) => PatternState::Binary(true, false, e, ps.iter()),
+          &Pattern::Test(sp, i, ref ps) => {
+            stack.push(PatternStack::Binary(false, false, e, ps.iter()));
+            return Err(TestPending(sp, i))
+          },
+        },
+        PatternState::Ret(b) => match stack.pop() {
+          None => return Ok(b),
+          Some(PatternStack::List(u, it, r)) =>
+            if b {PatternState::List(u, it, r)}
+            else {PatternState::Ret(false)},
+          Some(PatternStack::Binary(or, out, u, it)) =>
+            if b^or {PatternState::Binary(or, out, u, it)}
+            else {PatternState::Ret(out)},
+        }
+        PatternState::List(mut u, mut it, dot) => match it.next() {
+          None => match dot {
+            Dot::List(None) => PatternState::Ret(u.exactly(0)),
+            Dot::List(Some(n)) => PatternState::Ret(u.at_least(n)),
+            Dot::DottedList(p) => PatternState::Eval(p, u.as_lisp()),
+          }
+          Some(p) => match u.uncons() {
+            None => PatternState::Ret(false),
+            Some(l) => {
+              stack.push(PatternStack::List(u, it, dot));
+              PatternState::Eval(p, l)
+            }
+          }
+        },
+        PatternState::Binary(or, out, e, mut it) => match it.next() {
+          None => PatternState::Ret(!out),
+          Some(p) => {
+            stack.push(PatternStack::Binary(or, out, e.clone(), it));
+            PatternState::Eval(p, e)
+          }
+        }
+      }
     }
-    Some(start)
   }
 }
 
@@ -174,7 +215,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     Ok(self.errors.push(ElabError::info(sp, format!("{}", self.printer(e)))))
   }
 
-  pub fn evaluate(&mut self, ir: &IR) -> Result<LispVal> {
+  pub fn evaluate<'b>(&'b mut self, ir: &'b IR) -> Result<LispVal> where 'a: 'b {
     self.evaluate_core(vec![], State::Eval(ir))
   }
 
@@ -191,7 +232,8 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     self.call_func(sp, val, es)
   }
 
-  fn evaluate_core(&mut self, mut ctx: Vec<LispVal>, mut active: State) -> Result<LispVal> {
+  fn evaluate_core<'b>(&'b mut self, mut ctx: Vec<LispVal>, mut active: State<'b>) -> Result<LispVal>
+      where 'a: 'b {
     let mut file = self.path.clone();
     let mut stack: Vec<Stack> = vec![];
 
@@ -266,6 +308,8 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
             Some(e) => { stack.push(Stack::Eval(it)); State::Eval(e) }
           },
           Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
+          Some(Stack::TestPattern(sp, e, it, br, pstack, vars)) =>
+            State::Pattern(sp, e, it, br, pstack, vars, PatternState::Ret(truthy(&unref(&ret)))),
           Some(Stack::Drop_) => {ctx.pop(); State::Ret(ret)}
           Some(Stack::Ret(pos, old, _)) => {file = pos.fspan().file.clone(); ctx = old; State::Ret(ret)}
           Some(Stack::MatchCont(_, _, _, valid)) => {
@@ -345,16 +389,27 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
         }
         State::Match(sp, e, mut it) => match it.next() {
           None => throw!(sp, "match failed"),
-          Some(br) => match br.match_(&mut ctx, &e) {
-            None => State::Match(sp, e, it),
-            Some(start) => {
+          Some(br) =>
+            State::Pattern(sp, e.clone(), it, br, vec![], vec![UNDEF.clone(); br.vars].into(),
+              PatternState::Eval(&br.pat, e))
+        },
+        State::Pattern(sp, e, it, br, mut pstack, mut vars, st) => {
+          match self.pattern_match(&mut pstack, &mut vars, st) {
+            Ok(false) => State::Match(sp, e, it),
+            Ok(true) => {
+              ctx.extend_from_slice(&vars);
               if br.cont {
                 let valid = Arc::new(AtomicBool::new(true));
                 ctx.push(Arc::new(LispKind::Proc(Proc::MatchCont(valid.clone()))));
-                stack.push(Stack::MatchCont(sp, e.clone(), it, valid))
+                stack.push(Stack::MatchCont(sp, e.clone(), it, valid));
+                stack.push(Stack::Drop_);
               }
-              stack.resize_with(stack.len() + (ctx.len() - start), || Stack::Drop_);
+              stack.resize_with(stack.len() + vars.len(), || Stack::Drop_);
               State::Eval(&br.eval)
+            },
+            Err(TestPending(sp, i)) => {
+              stack.push(Stack::TestPattern(sp, e.clone(), it, br, pstack, vars));
+              State::App(sp, sp, ctx[i].clone(), vec![e], [].iter())
             }
           }
         }

@@ -63,8 +63,7 @@ pub enum Pattern {
   Bool(bool),
   Number(BigInt),
   DottedList(Box<[Pattern]>, Box<Pattern>),
-  ListAtLeast(Box<[Pattern]>, usize),
-  ListExact(Box<[Pattern]>),
+  List(Box<[Pattern]>, Option<usize>),
   And(Box<[Pattern]>),
   Or(Box<[Pattern]>),
   Not(Box<[Pattern]>),
@@ -112,8 +111,7 @@ impl Remap<LispRemapper> for Pattern {
       &Pattern::Bool(b) => Pattern::Bool(b),
       Pattern::Number(i) => Pattern::Number(i.clone()),
       Pattern::DottedList(v, e) => Pattern::DottedList(v.remap(r), e.remap(r)),
-      &Pattern::ListAtLeast(ref es, n) => Pattern::ListAtLeast(es.remap(r), n),
-      Pattern::ListExact(es) => Pattern::ListExact(es.remap(r)),
+      &Pattern::List(ref es, n) => Pattern::List(es.remap(r), n),
       Pattern::And(es) => Pattern::And(es.remap(r)),
       Pattern::Or(es) => Pattern::Or(es.remap(r)),
       Pattern::Not(es) => Pattern::Not(es.remap(r)),
@@ -374,10 +372,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       }
       _ => (es, None)
     };
-    match n {
-      None => Ok(Pattern::ListExact(self.patterns(ctx, code, quote, es)?)),
-      Some(n) => Ok(Pattern::ListAtLeast(self.patterns(ctx, code, quote, es)?, n)),
-    }
+    Ok(Pattern::List(self.patterns(ctx, code, quote, es)?, n))
   }
 
   fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
@@ -394,7 +389,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
         } else {
           let mut cs = vec![Pattern::QExprAtom(x)];
           for e in es { cs.push(self.qexpr_pattern(ctx, code, e)?) }
-          Ok(Pattern::ListExact(cs.into()))
+          Ok(Pattern::List(cs.into(), None))
         }
       }
       QExprKind::Unquote(e) => self.pattern(ctx, code, false, &e)
@@ -423,7 +418,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       SExprKind::Number(n) => Ok(Pattern::Number(n.clone().into())),
       SExprKind::String(s) => Ok(Pattern::String(ArcString::new(s.clone()))),
       &SExprKind::Bool(b) => Ok(Pattern::Bool(b)),
-      SExprKind::List(es) if es.is_empty() => Ok(Pattern::ListExact(Box::new([]))),
+      SExprKind::List(es) if es.is_empty() => Ok(Pattern::List(Box::new([]), None)),
       SExprKind::List(es) =>
         if quote {
           if let &[SExpr {span, k: SExprKind::Atom(a)}, ref e] = es.deref() {
