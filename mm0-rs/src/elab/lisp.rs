@@ -12,7 +12,7 @@ use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap};
 use parser::IR;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Syntax {
   Define,
   Lambda,
@@ -76,6 +76,7 @@ impl std::fmt::Display for Syntax {
 }
 
 pub type LispVal = Arc<LispKind>;
+#[derive(Debug)]
 pub enum LispKind {
   Atom(AtomID),
   List(Vec<LispVal>),
@@ -99,7 +100,7 @@ lazy_static! {
   pub static ref NIL: LispVal = Arc::new(LispKind::List(vec![]));
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ProcPos {
   Named(FileSpan, AtomID),
   Unnamed(FileSpan),
@@ -119,6 +120,7 @@ impl ProcPos {
   }
 }
 
+#[derive(Debug)]
 pub enum Proc {
   Builtin(BuiltinProc),
   Lambda {
@@ -130,7 +132,7 @@ pub enum Proc {
   MatchCont(Arc<AtomicBool>),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum ProcSpec {
   Exact(usize),
   AtLeast(usize),
@@ -145,7 +147,7 @@ impl ProcSpec {
   }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum BuiltinProc {
   NewRef,
   SetRef,

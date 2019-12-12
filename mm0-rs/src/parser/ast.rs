@@ -48,7 +48,7 @@ pub enum Delimiter {
   LeftRight(Box<[u8]>, Box<[u8]>),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Formula(pub Span);
 impl Formula {
   pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
@@ -82,12 +82,14 @@ pub struct Binder {
   pub ty: Option<Type>,
 }
 
+#[derive(Debug)]
 pub struct SExpr {
   pub span: Span,
   pub k: SExprKind,
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Atom { Ident, Quote, Unquote, Nfx }
+#[derive(Debug)]
 pub enum SExprKind {
   Atom(Atom),
   List(Vec<SExpr>),
@@ -108,8 +110,8 @@ pub fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> 
     };
     if valid_curly {
       es.swap(0, 1);
-      let mut from = 3;
-      let mut to = 2;
+      let mut from = 4;
+      let mut to = 3;
       while from < n {
         es.swap(from, to);
         to += 1;

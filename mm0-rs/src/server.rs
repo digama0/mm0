@@ -484,6 +484,7 @@ impl Server {
 
 pub fn main(mut args: impl Iterator<Item=String>) {
   if args.next().map_or(false, |s| s == "--debug") {
+    std::env::set_var("RUST_BACKTRACE", "1");
     use {simplelog::*, std::fs::File};
     let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
   }

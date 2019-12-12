@@ -16,6 +16,7 @@ use crate::util::*;
 use crate::parser::{*, ast::*, ast::Literal as ALiteral};
 use crate::lined_string::*;
 
+#[derive(Debug)]
 pub enum ElabErrorKind {
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
 }
@@ -42,6 +43,7 @@ impl From<BoxError> for ElabErrorKind {
   fn from(e: BoxError) -> ElabErrorKind { ElabErrorKind::Boxed(e, None) }
 }
 
+#[derive(Debug)]
 pub struct ElabError {
   pub pos: Span,
   pub level: ErrorLevel,

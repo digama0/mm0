@@ -10,10 +10,10 @@ use crate::util::*;
 use super::lisp::{LispVal, LispRemapper};
 pub use crate::parser::ast::{Modifiers, Prec};
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct SortID(pub u8);
-#[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct TermID(pub u32);
-#[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct ThmID(pub u32);
-#[derive(Copy, Clone, Hash, PartialEq, Eq)] pub struct AtomID(pub u32);
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct SortID(pub u8);
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct TermID(pub u32);
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct ThmID(pub u32);
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct AtomID(pub u32);
 
 macro_rules! vec_index {
   ($vec:ident, $id:ty) => {
@@ -206,7 +206,7 @@ pub struct Environment {
   pub terms: TermVec<Term>,
   pub thms: ThmVec<Thm>,
   pub atoms: HashMap<ArcString, AtomID>,
-  pub lisp_ctx: AtomVec<(ArcString, Option<(FileSpan, LispVal)>)>,
+  pub lisp_ctx: AtomVec<(ArcString, Option<(Option<FileSpan>, LispVal)>)>,
   pub stmts: Vec<StmtTrace>,
 }
 
@@ -508,11 +508,11 @@ pub struct RedeclarationError {
 
 impl Environment {
   pub fn term(&self, s: &str) -> Option<TermID> {
-    if let DeclKey::Term(i) = self.decl_keys[s] { Some(i) } else { None }
+    if let Some(&DeclKey::Term(i)) = self.decl_keys.get(s) { Some(i) } else { None }
   }
 
   pub fn thm(&self, s: &str) -> Option<ThmID> {
-    if let DeclKey::Thm(i) = self.decl_keys[s] { Some(i) } else { None }
+    if let Some(&DeclKey::Thm(i)) = self.decl_keys.get(s) { Some(i) } else { None }
   }
 }
 

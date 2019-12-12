@@ -23,7 +23,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)] pub struct ArcString(pub Arc<String>);
+#[derive(Clone, Hash, PartialEq, Eq, Debug)] pub struct ArcString(pub Arc<String>);
 
 impl Borrow<str> for ArcString {
   fn borrow(&self) -> &str { &*self.0 }
@@ -60,7 +60,7 @@ impl<T> VecUninit<T> {
   }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Span {
   pub start: usize,
   pub end: usize,
@@ -99,7 +99,7 @@ impl DoubleEndedIterator for Span {
   fn next_back(&mut self) -> Option<usize> { self.deref_mut().next_back() }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FileRef(Arc<(PathBuf, Url)>);
 impl FileRef {
   pub fn new(buf: PathBuf) -> FileRef {
@@ -121,7 +121,7 @@ impl Hash for FileRef {
   fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FileSpan {
   pub file: FileRef,
   pub span: Span,

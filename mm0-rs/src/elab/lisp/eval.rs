@@ -127,8 +127,7 @@ struct TestPending(Span, usize);
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
-      mut active: PatternState<'b>) -> std::result::Result<bool, TestPending>
-      where 'a: 'b {
+      mut active: PatternState<'b>) -> std::result::Result<bool, TestPending> {
     loop {
       active = match active {
         PatternState::Eval(p, e) => match p {
@@ -215,7 +214,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     Ok(self.errors.push(ElabError::info(sp, format!("{}", self.printer(e)))))
   }
 
-  pub fn evaluate<'b>(&'b mut self, ir: &'b IR) -> Result<LispVal> where 'a: 'b {
+  pub fn evaluate<'b>(&'b mut self, ir: &'b IR) -> Result<LispVal> {
     self.evaluate_core(vec![], State::Eval(ir))
   }
 
@@ -232,8 +231,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     self.call_func(sp, val, es)
   }
 
-  fn evaluate_core<'b>(&'b mut self, mut ctx: Vec<LispVal>, mut active: State<'b>) -> Result<LispVal>
-      where 'a: 'b {
+  fn evaluate_core<'b>(&'b mut self, mut ctx: Vec<LispVal>, mut active: State<'b>) -> Result<LispVal> {
     let mut file = self.path.clone();
     let mut stack: Vec<Stack> = vec![];
 
@@ -252,7 +250,16 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
         State::Eval(ir) => match ir {
           &IR::Local(i) => State::Ret(ctx[i].clone()),
           &IR::Global(sp, a) => State::Ret(match &self.lisp_ctx[a] {
-            (s, None) => throw!(sp, format!("Reference to unbound variable '{}'", s)),
+            (s, None) => match BuiltinProc::from_str(s) {
+              None => throw!(sp, format!("Reference to unbound variable '{}'", s)),
+              Some(p) => {
+                let s = s.clone();
+                let a = self.get_atom(&s);
+                let ret = Arc::new(LispKind::Proc(Proc::Builtin(p)));
+                self.lisp_ctx[a].1 = Some((None, ret.clone()));
+                ret
+              }
+            },
             (_, Some((_, x))) => x.clone(),
           }),
           IR::Const(val) => State::Ret(val.clone()),
@@ -295,7 +302,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
           Some(Stack::Def(x)) => {
             match stack.pop() {
               None => if let &Some((sp, a)) = x {
-                self.lisp_ctx[a].1 = Some((fsp!(sp), ret))
+                self.lisp_ctx[a].1 = Some((Some(fsp!(sp)), ret))
               },
               Some(s) if s.supports_def() => {
                 stack.push(Stack::Drop_); stack.push(s); ctx.push(ret) }

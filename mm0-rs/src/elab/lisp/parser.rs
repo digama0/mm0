@@ -8,6 +8,7 @@ use super::super::{AtomID, Span, FileServer, Elaborator, Environment, ElabError}
 use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 
+#[derive(Debug)]
 pub enum IR {
   Local(usize),
   Global(Span, AtomID),
@@ -48,6 +49,7 @@ impl IR {
   }
 }
 
+#[derive(Debug)]
 pub struct Branch {
   pub vars: usize,
   pub cont: bool,
@@ -55,6 +57,7 @@ pub struct Branch {
   pub eval: Box<IR>,
 }
 
+#[derive(Debug)]
 pub enum Pattern {
   Skip,
   Atom(usize),
@@ -266,7 +269,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
 
   fn exprs(&mut self, quote: bool, es: &[SExpr]) -> Result<Vec<IR>, ElabError> {
     let mut cs = vec![];
-    for e in &es[1..] { cs.push(self.expr(quote, e)?) }
+    for e in es { cs.push(self.expr(quote, e)?) }
     Ok(cs.into())
   }
 
@@ -503,10 +506,17 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   fn expr(&mut self, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
     let mut restore = Some(self.ctx.len());
     let res = match &e.k {
-      &SExprKind::Atom(a) => Ok(match self.parse_ident(e.span, a)? {
-        None => IR::Const(Arc::new(LispKind::Atom(self.get_atom("_")))),
-        Some(x) => self.eval_atom(e.span, x),
-      }),
+      &SExprKind::Atom(a) => if quote {
+        Ok(IR::Const(Arc::new(match self.parse_ident_or_syntax(e.span, a) {
+          Ok(x) => LispKind::Atom(x.unwrap_or_else(|| self.get_atom("_"))),
+          Err(s) => LispKind::Syntax(s),
+        })))
+      } else {
+        Ok(match self.parse_ident(e.span, a)? {
+          None => IR::Const(Arc::new(LispKind::Atom(self.get_atom("_")))),
+          Some(x) => self.eval_atom(e.span, x),
+        })
+      },
       SExprKind::DottedList(es, e) => {
         if !quote {Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?}
         Ok(IR::dotted_list(self.exprs(true, &es)?.into(), self.expr(true, e)?))
@@ -516,90 +526,89 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       SExprKind::Bool(true) => Ok(IR::Const(TRUE.clone()).into()),
       SExprKind::Bool(false) => Ok(IR::Const(FALSE.clone()).into()),
       SExprKind::List(es) if es.is_empty() => Ok(IR::Const(NIL.clone()).into()),
-      SExprKind::List(es) =>
-        if quote {
-          Ok(IR::list(self.exprs(true, &es)?))
-        } else if let SExprKind::Atom(a) = es[0].k {
-          match self.parse_ident_or_syntax(e.span, a) {
-            Ok(None) => Err(ElabError::new_e(e.span, "'_' is not a function"))?,
-            Ok(Some(x)) =>
-              Ok(IR::App(e.span, es[0].span,
-                Box::new(self.eval_atom(es[0].span, x)), self.exprs(true, &es[1..])?.into())),
-            Err(Syntax::Define) if es.len() < 2 =>
-              Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
-            Err(Syntax::Define) =>
-              Ok(match self.def(&es[1], &es[2..])? {
-                (_, None, cs) => IR::eval(cs),
-                (sp, Some(x), cs) => {
-                  restore = None;
-                  self.ctx.push(x);
-                  IR::Def(Some((sp, x)), IR::eval(cs).into())
-                }
-              }),
-            Err(Syntax::Lambda) if es.len() < 2 =>
-              Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
-            Err(Syntax::Lambda) => match &es[1].k {
-              SExprKind::List(xs) => {
-                let xs = self.to_idents(xs)?;
-                self.ctx.push_list(&xs);
-                Ok(IR::Lambda(es[0].span, ProcSpec::Exact(xs.len()),
-                  IR::eval(self.exprs(false, &es[2..])?).into()))
+      SExprKind::List(es) => if quote {
+        Ok(IR::list(self.exprs(true, &es)?))
+      } else if let SExprKind::Atom(a) = es[0].k {
+        match self.parse_ident_or_syntax(es[0].span, a) {
+          Ok(None) => Err(ElabError::new_e(es[0].span, "'_' is not a function"))?,
+          Ok(Some(x)) =>
+            Ok(IR::App(e.span, es[0].span,
+              Box::new(self.eval_atom(es[0].span, x)), self.exprs(false, &es[1..])?.into())),
+          Err(Syntax::Define) if es.len() < 2 =>
+            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Define) =>
+            Ok(match self.def(&es[1], &es[2..])? {
+              (_, None, cs) => IR::eval(cs),
+              (sp, Some(x), cs) => {
+                restore = None;
+                self.ctx.push(x);
+                IR::Def(Some((sp, x)), IR::eval(cs).into())
               }
-              SExprKind::DottedList(xs, y) => {
-                let xs = self.to_idents(xs)?;
-                let y = self.to_ident(y)?;
-                self.ctx.push_list(&xs);
-                self.ctx.push_opt(y);
-                Ok(IR::Lambda(es[0].span, ProcSpec::AtLeast(xs.len()),
-                  IR::eval(self.exprs(false, &es[2..])?).into()))
-              }
-              _ => {
-                let x = self.to_ident(&es[1])?;
-                self.ctx.push_opt(x);
-                Ok(IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
-                  IR::eval(self.exprs(false, &es[2..])?).into()))
-              }
-            },
-            Err(Syntax::Quote) if es.len() < 2 =>
-              Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
-            Err(Syntax::Quote) => self.expr(true, &es[1]),
-            Err(Syntax::Unquote) if es.len() < 2 =>
-              Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
-            Err(Syntax::Unquote) => self.expr(false, &es[1]),
-            Err(Syntax::If) if es.len() < 3 =>
-              Err(ElabError::new_e(es[0].span, "expected at least two arguments"))?,
-            Err(Syntax::If) => Ok(IR::If(Box::new((
-              self.expr(false, &es[1])?,
-              self.expr(false, &es[2])?,
-              if let Some(e) = es.get(3) {
-                self.expr(false, e)?
-              } else { IR::Const(UNDEF.clone()) }
-            )))),
-            Err(Syntax::Focus) => Ok(IR::Focus(self.exprs(false, &es[1..])?.into())),
-            Err(Syntax::Let) => self.let_(false, &es[1..]),
-            Err(Syntax::Letrec) => self.let_(true, &es[1..]),
-            Err(Syntax::Match) if es.len() < 2 =>
-              Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
-            Err(Syntax::Match) => {
-              let e = self.expr(false, &es[1])?;
-              self.ctx.restore(restore.unwrap());
-              self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
-            },
-            Err(Syntax::MatchFn) => {
-              let i = self.ctx.len();
-              self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::Exact(1),
-                Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+            }),
+          Err(Syntax::Lambda) if es.len() < 2 =>
+            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Lambda) => match &es[1].k {
+            SExprKind::List(xs) => {
+              let xs = self.to_idents(xs)?;
+              self.ctx.push_list(&xs);
+              Ok(IR::Lambda(es[0].span, ProcSpec::Exact(xs.len()),
+                IR::eval(self.exprs(false, &es[2..])?).into()))
             }
-            Err(Syntax::MatchFns) => {
-              let i = self.ctx.len();
-              self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
-                Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+            SExprKind::DottedList(xs, y) => {
+              let xs = self.to_idents(xs)?;
+              let y = self.to_ident(y)?;
+              self.ctx.push_list(&xs);
+              self.ctx.push_opt(y);
+              Ok(IR::Lambda(es[0].span, ProcSpec::AtLeast(xs.len()),
+                IR::eval(self.exprs(false, &es[2..])?).into()))
             }
+            _ => {
+              let x = self.to_ident(&es[1])?;
+              self.ctx.push_opt(x);
+              Ok(IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
+                IR::eval(self.exprs(false, &es[2..])?).into()))
+            }
+          },
+          Err(Syntax::Quote) if es.len() < 2 =>
+            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Quote) => self.expr(true, &es[1]),
+          Err(Syntax::Unquote) if es.len() < 2 =>
+            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Unquote) => self.expr(false, &es[1]),
+          Err(Syntax::If) if es.len() < 3 =>
+            Err(ElabError::new_e(es[0].span, "expected at least two arguments"))?,
+          Err(Syntax::If) => Ok(IR::If(Box::new((
+            self.expr(false, &es[1])?,
+            self.expr(false, &es[2])?,
+            if let Some(e) = es.get(3) {
+              self.expr(false, e)?
+            } else { IR::Const(UNDEF.clone()) }
+          )))),
+          Err(Syntax::Focus) => Ok(IR::Focus(self.exprs(false, &es[1..])?.into())),
+          Err(Syntax::Let) => self.let_(false, &es[1..]),
+          Err(Syntax::Letrec) => self.let_(true, &es[1..]),
+          Err(Syntax::Match) if es.len() < 2 =>
+            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Match) => {
+            let e = self.expr(false, &es[1])?;
+            self.ctx.restore(restore.unwrap());
+            self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
+          },
+          Err(Syntax::MatchFn) => {
+            let i = self.ctx.len();
+            self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::Exact(1),
+              Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
           }
-        } else {
-          Ok(IR::App(e.span, es[0].span, Box::new(self.expr(true, &es[0])?),
-            self.exprs(true, &es[1..])?.into()))
-        },
+          Err(Syntax::MatchFns) => {
+            let i = self.ctx.len();
+            self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
+              Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+          }
+        }
+      } else {
+        Ok(IR::App(e.span, es[0].span, Box::new(self.expr(false, &es[0])?),
+          self.exprs(false, &es[1..])?.into()))
+      },
       &SExprKind::Formula(f) => {let q = self.parse_formula(f)?; self.qexpr(q)}
     };
     if let Some(old) = restore { self.ctx.restore(old) }
