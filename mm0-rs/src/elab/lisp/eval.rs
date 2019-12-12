@@ -131,7 +131,7 @@ impl Pattern {
       Pattern::And(ps) => ps.iter().all(|p| p.match_(ctx, e)),
       Pattern::Or(ps) => ps.iter().any(|p| p.match_(ctx, e)),
       Pattern::Not(ps) => !ps.iter().any(|p| p.match_(ctx, e)),
-      &Pattern::Test(i, ref ps) => unimplemented!(),
+      &Pattern::Test(sp, i, ref ps) => unimplemented!(),
       &Pattern::QExprAtom(a) => match &**unref(e) {
         &LispKind::Atom(a2) => a == a2,
         LispKind::List(es) if es.len() == 1 => match &**unref(&es[0]) {
@@ -170,11 +170,30 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     ElabError::with_info(fspan.span, e.into(), info)
   }
 
+  pub fn print_lisp(&mut self, sp: Span, e: &LispVal) -> Result<()> {
+    Ok(self.errors.push(ElabError::info(sp, format!("{}", self.printer(e)))))
+  }
+
   pub fn evaluate(&mut self, ir: &IR) -> Result<LispVal> {
+    self.evaluate_core(vec![], State::Eval(ir))
+  }
+
+  pub fn call_func(&mut self, sp: Span, f: LispVal, es: Vec<LispVal>) -> Result<LispVal> {
+    self.evaluate_core(vec![], State::App(sp, sp, f, es, [].iter()))
+  }
+
+  pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
+    let a = self.get_atom(p.to_str());
+    let val = match &self.lisp_ctx[a].1 {
+      Some((_, e)) => e.clone(),
+      None => Arc::new(LispKind::Proc(Proc::Builtin(p)))
+    };
+    self.call_func(sp, val, es)
+  }
+
+  fn evaluate_core(&mut self, mut ctx: Vec<LispVal>, mut active: State) -> Result<LispVal> {
     let mut file = self.path.clone();
-    let mut ctx: Vec<LispVal> = Vec::new();
     let mut stack: Vec<Stack> = vec![];
-    let mut active = State::Eval(ir);
 
     macro_rules! fsp {($e:expr) => {FileSpan {file: file.clone(), span: $e}}}
     macro_rules! throw {($sp:expr, $e:expr) => {{

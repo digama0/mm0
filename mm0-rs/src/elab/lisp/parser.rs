@@ -68,7 +68,7 @@ pub enum Pattern {
   And(Box<[Pattern]>),
   Or(Box<[Pattern]>),
   Not(Box<[Pattern]>),
-  Test(usize, Box<[Pattern]>),
+  Test(Span, usize, Box<[Pattern]>),
   QExprAtom(AtomID),
 }
 
@@ -117,7 +117,7 @@ impl Remap<LispRemapper> for Pattern {
       Pattern::And(es) => Pattern::And(es.remap(r)),
       Pattern::Or(es) => Pattern::Or(es.remap(r)),
       Pattern::Not(es) => Pattern::Not(es.remap(r)),
-      &Pattern::Test(i, ref es) => Pattern::Test(i, es.remap(r)),
+      &Pattern::Test(sp, i, ref es) => Pattern::Test(sp, i, es.remap(r)),
       Pattern::QExprAtom(a) => Pattern::QExprAtom(a.remap(r)),
     }
   }
@@ -205,15 +205,15 @@ impl LocalCtx {
   }
 }
 
-struct LispParser<'a, T: FileServer + ?Sized> {
-  elab: &'a mut Elaborator<'a, T>,
+struct LispParser<'a: 'b, 'b, T: FileServer + ?Sized> {
+  elab: &'b mut Elaborator<'a, T>,
   ctx: LocalCtx,
 }
-impl<'a, T: FileServer + ?Sized> Deref for LispParser<'a, T> {
+impl<'a: 'b, 'b, T: FileServer + ?Sized> Deref for LispParser<'a, 'b, T> {
   type Target = Elaborator<'a, T>;
   fn deref(&self) -> &Elaborator<'a, T> { self.elab }
 }
-impl<'a, T: FileServer + ?Sized> DerefMut for LispParser<'a, T> {
+impl<'a: 'b, 'b, T: FileServer + ?Sized> DerefMut for LispParser<'a, 'b, T> {
   fn deref_mut(&mut self) -> &mut Elaborator<'a, T> { self.elab }
 }
 
@@ -224,7 +224,7 @@ fn quoted_ident(env: &mut Environment, s: &str, a: Atom) -> LispVal {
   })
 }
 
-impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
+impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   fn parse_ident_or_syntax(&mut self, sp: Span, a: Atom) -> Result<Option<AtomID>, Syntax> {
     match Syntax::parse(self.ast.span(sp), a) {
       Ok(s) => Err(s),
@@ -272,33 +272,46 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
     Ok(cs.into())
   }
 
-  fn def(&mut self, e: &SExpr, es: &[SExpr]) -> Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
-    fn rec<T: FileServer + ?Sized>(this: &mut LispParser<'_, T>, e: &SExpr,
-      tail: impl FnOnce(&mut LispParser<'_, T>, Span) -> Result<Vec<IR>, ElabError>) ->
-      Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
+  fn def(&mut self, mut e: &SExpr, es: &[SExpr]) -> Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
+    enum Item<'a> {
+      List(&'a [SExpr]),
+      DottedList(&'a [SExpr], &'a SExpr),
+    }
+    let mut stack: Vec<Item> = vec![];
+    let (sp, x) = loop {
       match &e.k {
-        &SExprKind::Atom(a) =>
-          Ok((e.span, this.parse_ident(e.span, a)?, tail(this, e.span)?)),
-        SExprKind::List(xs) if !xs.is_empty() => {
-          rec(this, &xs[0], |this, sp| {
-            let xs = this.to_idents(&xs[1..])?;
-            this.ctx.push_list(&xs);
-            Ok(vec![IR::Lambda(sp, ProcSpec::Exact(xs.len()), IR::eval(tail(this, sp)?).into())])
-          })
-        }
-        SExprKind::DottedList(xs, y) if !xs.is_empty() => {
-          rec(this, &xs[0], |this, sp| {
-            let xs = this.to_idents(&xs[1..])?;
-            this.ctx.push_list(&xs);
-            let y = this.to_ident(y)?;
-            this.ctx.push_opt(y);
-            Ok(vec![IR::Lambda(sp, ProcSpec::AtLeast(xs.len()), IR::eval(tail(this, sp)?).into())])
-          })
-        }
+        &SExprKind::Atom(a) => break (e.span, self.parse_ident(e.span, a)?),
+        SExprKind::List(xs) if !xs.is_empty() =>
+          {stack.push(Item::List(xs)); e = &xs[0]}
+        SExprKind::DottedList(xs, y) if !xs.is_empty() =>
+          {stack.push(Item::DottedList(xs, y)); e = &xs[0]}
         _ => Err(ElabError::new_e(e.span, "def: invalid spec"))?
       }
+    };
+    for e in stack.iter().rev() {
+      match e {
+        Item::List(xs) => {
+          let xs = self.to_idents(&xs[1..])?;
+          self.ctx.push_list(&xs);
+        }
+        Item::DottedList(xs, y) => {
+          let xs = self.to_idents(&xs[1..])?;
+          self.ctx.push_list(&xs);
+          let y = self.to_ident(y)?;
+          self.ctx.push_opt(y);
+        }
+      }
     }
-    rec(self, e, |this, _| this.exprs(false, es))
+    let mut ir = self.exprs(false, es)?;
+    for e in stack {
+      ir = match e {
+        Item::List(xs) =>
+          vec![IR::Lambda(sp, ProcSpec::Exact(xs.len() - 1), IR::eval(ir).into())],
+        Item::DottedList(xs, _) =>
+          vec![IR::Lambda(sp, ProcSpec::AtLeast(xs.len() - 1), IR::eval(ir).into())],
+      }
+    }
+    Ok((sp, x, ir))
   }
 
   fn let_var(&mut self, e: &SExpr) -> Result<(Span, Option<AtomID>, Vec<IR>), ElabError> {
@@ -432,7 +445,7 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
               code.push(IR::Def(None, Box::new(self.expr(false, &es[1])?)));
               let p = self.ctx.len();
               self.ctx.ctx.push(None);
-              Ok(Pattern::Test(p, self.patterns(ctx, code, quote, &es[2..])?))
+              Ok(Pattern::Test(es[1].span, p, self.patterns(ctx, code, quote, &es[2..])?))
             },
             _ => self.list_pattern(ctx, code, quote, es)
           }
@@ -600,7 +613,7 @@ impl<'a, T: FileServer + ?Sized> LispParser<'a, T> {
 }
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
-  pub fn parse_lisp(&'a mut self, e: &SExpr) -> Result<IR, ElabError> {
-    LispParser {elab: self, ctx: LocalCtx::new()}.expr(false, e)
+  pub fn parse_lisp<'b, 'c>(&'b mut self, e: &'c SExpr) -> Result<IR, ElabError> {
+    LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr(false, e)
   }
 }

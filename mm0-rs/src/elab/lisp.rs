@@ -1,5 +1,6 @@
 pub mod parser;
 pub mod eval;
+pub mod print;
 
 use std::ops::Deref;
 use std::hash::Hash;
@@ -11,6 +12,7 @@ use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap};
 use parser::IR;
 
+#[derive(Copy, Clone)]
 pub enum Syntax {
   Define,
   Lambda,
@@ -42,7 +44,21 @@ impl Syntax {
       _ => None
     }
   }
-
+  pub fn to_str(self) -> &'static str {
+    match self {
+      Syntax::Define => "def",
+      Syntax::Lambda => "fn",
+      Syntax::Quote => "quote",
+      Syntax::Unquote => "unquote",
+      Syntax::If => "if",
+      Syntax::Focus => "focus",
+      Syntax::Let => "let",
+      Syntax::Letrec => "letrec",
+      Syntax::Match => "match",
+      Syntax::MatchFn => "match-fn",
+      Syntax::MatchFns => "match-fn*",
+    }
+  }
   pub fn parse(s: &str, a: Atom) -> Result<Syntax, &str> {
     match a {
       Atom::Ident => Self::from_str(s).ok_or(s),
@@ -50,6 +66,12 @@ impl Syntax {
       Atom::Unquote => Ok(Syntax::Unquote),
       Atom::Nfx => Err(":nfx"),
     }
+  }
+}
+
+impl std::fmt::Display for Syntax {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    self.to_str().fmt(f)
   }
 }
 
@@ -128,6 +150,28 @@ pub enum BuiltinProc {
   NewRef,
   SetRef,
 }
+impl BuiltinProc {
+  pub fn from_str(s: &str) -> Option<BuiltinProc> {
+    match s {
+      "ref!" => Some(BuiltinProc::NewRef),
+      "set!" => Some(BuiltinProc::SetRef),
+      _ => None
+    }
+  }
+  pub fn to_str(self) -> &'static str {
+    match self {
+      BuiltinProc::NewRef => "ref!",
+      BuiltinProc::SetRef => "set!",
+    }
+  }
+}
+
+impl std::fmt::Display for BuiltinProc {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    self.to_str().fmt(f)
+  }
+}
+
 
 #[derive(Default)]
 pub struct LispRemapper {

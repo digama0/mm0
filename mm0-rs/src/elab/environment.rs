@@ -20,6 +20,7 @@ macro_rules! vec_index {
     #[derive(Clone)]
     pub struct $vec<T>(pub Vec<T>);
 
+    #[allow(dead_code)]
     impl<T> $vec<T> {
       pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
       pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }

@@ -82,10 +82,6 @@ impl<'a> MathParser<'a> {
     (tk, mem::replace(&mut self.idx, start))
   }
 
-  fn check_prec(&self, s: &str, p: Prec, r: bool) -> Option<Prec> {
-    self.pe.consts.get(s).map(|&(_, q)| q).filter(|&q| if r {q >= p} else {q > p})
-  }
-
   fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal], mut end: usize) ->
       Result<usize, ParseError> {
     for lit in lits {
