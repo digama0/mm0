@@ -1,6 +1,6 @@
 use std::fmt;
 use super::super::{AtomID, LinedString, FileServer, Environment, Elaborator};
-use super::{LispKind, LispVal, Proc, ProcPos};
+use super::{LispKind, Proc, ProcPos};
 
 #[derive(Copy, Clone)]
 pub struct LispFormat<'a> {
@@ -29,7 +29,7 @@ fn alphanumber(n: usize) -> String {
 impl<'a> fmt::Display for LispFormat<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self.e {
-      &LispKind::Atom(a) => write!(f, "{}", self.atom(a)),
+      &LispKind::Atom(a) => self.atom(a).fmt(f),
       LispKind::List(es) => {
         write!(f, "(")?;
         let mut it = es.iter();
@@ -42,13 +42,14 @@ impl<'a> fmt::Display for LispFormat<'a> {
         for e in es {write!(f, "{} ", self.to(e))?}
         write!(f, ". {})", self.to(r))
       }
-      LispKind::Number(n) => write!(f, "{}", n),
+      LispKind::Span(_, e) => self.to(e).fmt(f),
+      LispKind::Number(n) => n.fmt(f),
       LispKind::String(s) => write!(f, "{:?}", s),
       LispKind::UnparsedFormula(s) => write!(f, "${}$", s),
-      LispKind::Bool(b) => write!(f, "{}", b),
-      LispKind::Syntax(s) => write!(f, "{}", s),
+      LispKind::Bool(b) => b.fmt(f),
+      LispKind::Syntax(s) => s.fmt(f),
       LispKind::Undef => write!(f, "#undef"),
-      LispKind::Proc(Proc::Builtin(p)) => write!(f, "{}", p),
+      LispKind::Proc(Proc::Builtin(p)) => p.fmt(f),
       LispKind::Proc(Proc::Lambda {pos: ProcPos::Unnamed(pos), ..}) => {
         let r = self.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().unwrap().to_str().unwrap();

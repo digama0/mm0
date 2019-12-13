@@ -82,9 +82,10 @@ pub enum LispKind {
   Atom(AtomID),
   List(Vec<LispVal>),
   DottedList(Vec<LispVal>, LispVal),
+  Span(FileSpan, LispVal),
   Number(BigInt),
-  String(String),
-  UnparsedFormula(String),
+  String(ArcString),
+  UnparsedFormula(ArcString),
   Bool(bool),
   Syntax(Syntax),
   Undef,
@@ -101,13 +102,18 @@ lazy_static! {
   pub static ref NIL: LispVal = Arc::new(LispKind::List(vec![]));
 }
 
-pub fn unref(e: &LispVal) -> Cow<LispVal> {
+pub fn unwrap(e: &LispVal) -> Cow<LispVal> {
   let mut ret = Cow::Borrowed(e);
-  while let LispKind::Ref(m) = &**ret {
-    let e = m.lock().unwrap().clone();
-    ret = Cow::Owned(e)
+  loop {
+    match &**ret {
+      LispKind::Ref(m) => {
+        let e = m.lock().unwrap().clone();
+        ret = Cow::Owned(e)
+      }
+      LispKind::Span(_, v) => ret = Cow::Owned(v.clone()),
+      _ => return ret
+    }
   }
-  ret
 }
 
 impl From<&LispKind> for bool {
@@ -115,7 +121,12 @@ impl From<&LispKind> for bool {
 }
 impl LispKind {
   fn truthy(&self) -> bool {
-    if let LispKind::Bool(false) = self {false} else {true}
+    match self {
+      LispKind::Bool(false) => false,
+      LispKind::Span(_, v) => v.truthy(),
+      LispKind::Ref(m) => m.lock().unwrap().truthy(),
+      _ => true
+    }
   }
   pub fn is_bool(&self) -> bool {
     if let LispKind::Bool(_) = self {true} else {false}
@@ -151,6 +162,15 @@ impl LispKind {
   pub fn is_ref(&self) -> bool {
     if let LispKind::Ref(_) = self {true} else {false}
   }
+
+  pub fn fspan(&self) -> Option<FileSpan> {
+    match self {
+      LispKind::Ref(m) => m.lock().unwrap().fspan(),
+      LispKind::Span(sp, _) => Some(sp.clone()),
+      _ => None
+    }
+  }
+
 }
 
 #[derive(Clone, Debug)]
@@ -279,9 +299,9 @@ make_builtins! {
   Async: "async", AtLeast(1);
   IsAtomMap: "atom-map?", Exact(1);
   NewAtomMap: "atom-map!", AtLeast(0);
-  Lookup: "lookup", Exact(2);
-  Insert: "insert!", Exact(3);
-  InsertNew: "insert", Exact(3);
+  Lookup: "lookup", AtLeast(2);
+  Insert: "insert!", AtLeast(2);
+  InsertNew: "insert", AtLeast(2);
   SetTimeout: "set-timeout", Exact(1);
   IsMVar: "mvar?", Exact(1);
   IsGoal: "goal?", Exact(1);

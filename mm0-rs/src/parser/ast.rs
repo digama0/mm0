@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use num::BigUint;
 use crate::lined_string::LinedString;
-use crate::util::Span;
+use crate::util::{Span, ArcString};
 use super::ParseError;
 
 bitflags! {
@@ -95,7 +95,7 @@ pub enum SExprKind {
   List(Vec<SExpr>),
   DottedList(Vec<SExpr>, Box<SExpr>),
   Number(BigUint),
-  String(String),
+  String(ArcString),
   Bool(bool),
   Formula(Formula),
 }

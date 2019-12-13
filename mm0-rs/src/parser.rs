@@ -346,7 +346,7 @@ impl<'a> Parser<'a> {
       }
       Some(b'\"') => {
         let (span, s) = self.string()?;
-        Ok(SExpr {span, k: SExprKind::String(s)})
+        Ok(SExpr {span, k: SExprKind::String(ArcString::new(s))})
       }
       Some(b'#') => {
         self.idx += 1;

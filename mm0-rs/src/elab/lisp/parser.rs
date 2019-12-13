@@ -13,7 +13,7 @@ pub enum IR {
   Local(usize),
   Global(Span, AtomID),
   Const(LispVal),
-  List(Box<[IR]>),
+  List(Span, Box<[IR]>),
   DottedList(Box<[IR]>, Box<IR>),
   App(Span, Span, Box<IR>, Box<[IR]>),
   If(Box<(IR, IR, IR)>),
@@ -80,7 +80,7 @@ impl Remap<LispRemapper> for IR {
       &IR::Local(i) => IR::Local(i),
       &IR::Global(sp, a) => IR::Global(sp, a.remap(r)),
       IR::Const(v) => IR::Const(v.remap(r)),
-      IR::List(v) => IR::List(v.remap(r)),
+      IR::List(sp, v) => IR::List(*sp, v.remap(r)),
       IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
       &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
       IR::If(e) => IR::If(e.remap(r)),
@@ -132,18 +132,18 @@ impl IR {
         else {unsafe {std::hint::unreachable_unchecked()}}).collect())
     } else {Err(cs)}
   }
-  fn list(cs: Vec<IR>) -> IR {
+  fn list(fsp: FileSpan, cs: Vec<IR>) -> IR {
     match IR::unconst(cs) {
-      Ok(es) => IR::Const(Arc::new(LispKind::List(es))),
-      Err(cs) => IR::List(cs.into())
+      Ok(es) => IR::Const(Arc::new(LispKind::Span(fsp, Arc::new(LispKind::List(es))))),
+      Err(cs) => IR::List(fsp.span, cs.into())
     }
   }
-  fn dotted_list(mut cs: Vec<IR>, c: IR) -> IR {
+  fn dotted_list(sp: Span, mut cs: Vec<IR>, c: IR) -> IR {
     match c {
       IR::Const(e) => match e.deref() {
         LispKind::List(es) => {
           cs.extend(es.iter().map(|e| IR::Const(e.clone())));
-          IR::List(cs.into())
+          IR::List(sp, cs.into())
         }
         LispKind::DottedList(es, e) => {
           cs.extend(es.iter().map(|e| IR::Const(e.clone())));
@@ -154,9 +154,9 @@ impl IR {
           Err(cs) => IR::DottedList(cs.into(), Box::new(IR::Const(e)))
         }
       },
-      IR::List(cs2) => {
+      IR::List(_, cs2) => {
         cs.extend(cs2.into_vec());
-        IR::List(cs.into())
+        IR::List(sp, cs.into())
       }
       IR::DottedList(cs2, c) => {
         cs.extend(cs2.into_vec());
@@ -261,7 +261,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
         let s = self.ast.span(self.terms[t].id);
         let mut cs = vec![IR::Const(Arc::new(LispKind::Atom(self.get_atom(s))))];
         for e in es { cs.push(self.qexpr(e)?) }
-        Ok(IR::list(cs))
+        Ok(IR::list(self.fspan(e.span), cs))
       }
       QExprKind::Unquote(e) => self.expr(false, &e)
     }
@@ -419,7 +419,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
         self.patterns(ctx, code, quote, es)?,
         self.pattern(ctx, code, quote, e)?.into())),
       SExprKind::Number(n) => Ok(Pattern::Number(n.clone().into())),
-      SExprKind::String(s) => Ok(Pattern::String(ArcString::new(s.clone()))),
+      SExprKind::String(s) => Ok(Pattern::String(s.clone())),
       &SExprKind::Bool(b) => Ok(Pattern::Bool(b)),
       SExprKind::List(es) if es.is_empty() => Ok(Pattern::List(Box::new([]), None)),
       SExprKind::List(es) =>
@@ -504,13 +504,18 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   }
 
   fn expr(&mut self, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
+    macro_rules! span {($sp:expr, $e:expr) => {{
+      Arc::new(LispKind::Span(self.fspan($sp), $e))
+    }}}
     let mut restore = Some(self.ctx.len());
     let res = match &e.k {
       &SExprKind::Atom(a) => if quote {
-        Ok(IR::Const(Arc::new(match self.parse_ident_or_syntax(e.span, a) {
-          Ok(x) => LispKind::Atom(x.unwrap_or_else(|| self.get_atom("_"))),
-          Err(s) => LispKind::Syntax(s),
-        })))
+        Ok(IR::Const(span!(e.span, Arc::new(
+          match self.parse_ident_or_syntax(e.span, a) {
+            Ok(x) => LispKind::Atom(x.unwrap_or_else(|| self.get_atom("_"))),
+            Err(s) => LispKind::Syntax(s),
+          }
+        ))))
       } else {
         Ok(match self.parse_ident(e.span, a)? {
           None => IR::Const(Arc::new(LispKind::Atom(self.get_atom("_")))),
@@ -519,15 +524,15 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       },
       SExprKind::DottedList(es, e) => {
         if !quote {Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?}
-        Ok(IR::dotted_list(self.exprs(true, &es)?.into(), self.expr(true, e)?))
+        Ok(IR::dotted_list(e.span, self.exprs(true, &es)?.into(), self.expr(true, e)?))
       }
       SExprKind::Number(n) => Ok(IR::Const(Arc::new(LispKind::Number(n.clone().into()))).into()),
       SExprKind::String(s) => Ok(IR::Const(Arc::new(LispKind::String(s.clone()))).into()),
       SExprKind::Bool(true) => Ok(IR::Const(TRUE.clone()).into()),
       SExprKind::Bool(false) => Ok(IR::Const(FALSE.clone()).into()),
-      SExprKind::List(es) if es.is_empty() => Ok(IR::Const(NIL.clone()).into()),
+      SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, NIL.clone())).into()),
       SExprKind::List(es) => if quote {
-        Ok(IR::list(self.exprs(true, &es)?))
+        Ok(IR::list(self.fspan(e.span), self.exprs(true, &es)?))
       } else if let SExprKind::Atom(a) = es[0].k {
         match self.parse_ident_or_syntax(es[0].span, a) {
           Ok(None) => Err(ElabError::new_e(es[0].span, "'_' is not a function"))?,
