@@ -1,6 +1,5 @@
 use std::ops::Deref;
 use std::mem;
-use std::borrow::Cow;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use crate::util::*;
 use super::super::{Result, AtomID, FileServer, Elaborator, ElabError, BoxError};
@@ -42,18 +41,6 @@ enum State<'a> {
   Match(Span, LispVal, std::slice::Iter<'a, Branch>),
   Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
-}
-
-fn unref(e: &LispVal) -> Cow<LispVal> {
-  let mut ret = Cow::Borrowed(e);
-  while let LispKind::Ref(m) = &**ret {
-    let e = m.lock().unwrap().clone();
-    ret = Cow::Owned(e)
-  }
-  ret
-}
-fn truthy(e: &LispKind) -> bool {
-  if let LispKind::Bool(false) = e {false} else {true}
 }
 
 #[derive(Clone)]
@@ -124,6 +111,8 @@ enum PatternState<'a> {
 }
 
 struct TestPending(Span, usize);
+
+type SResult<T> = std::result::Result<T, String>;
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
@@ -210,8 +199,12 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     ElabError::with_info(fspan.span, e.into(), info)
   }
 
-  pub fn print_lisp(&mut self, sp: Span, e: &LispVal) -> Result<()> {
-    Ok(self.errors.push(ElabError::info(sp, format!("{}", self.printer(e)))))
+  pub fn print(&mut self, sp: Span, e: impl Into<BoxError>) {
+    self.errors.push(ElabError::info(sp, e))
+  }
+
+  pub fn print_lisp(&mut self, sp: Span, e: &LispVal) {
+    self.print(sp, format!("{}", self.printer(e)))
   }
 
   pub fn evaluate<'b>(&'b mut self, ir: &'b IR) -> Result<LispVal> {
@@ -229,6 +222,158 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       None => Arc::new(LispKind::Proc(Proc::Builtin(p)))
     };
     self.call_func(sp, val, es)
+  }
+
+  fn as_string<'b>(&self, e: &'b LispKind) -> SResult<&'b str> {
+    if let LispKind::String(s) = e {Ok(s)} else {
+      Err(format!("expected a string, got {}", self.printer(e)))
+    }
+  }
+
+  fn as_atom_string<'b>(&'b self, e: &'b LispKind) -> SResult<&'b str> {
+    match e {
+      LispKind::String(s) => Ok(s),
+      &LispKind::Atom(a) => Ok(&*self.lisp_ctx[a].0),
+      _ => Err(format!("expected a atom, got {}", self.printer(e)))
+    }
+  }
+
+  fn as_int<'b>(&self, e: &'b LispKind) -> SResult<&'b BigInt> {
+    if let LispKind::Number(n) = e {Ok(n)} else {
+      Err(format!("expected a integer, got {}", self.printer(e)))
+    }
+  }
+
+  fn goal_type<'b>(&self, e: &'b LispKind) -> SResult<&'b LispVal> {
+    if let LispKind::Goal(ty) = e {Ok(ty)} else {
+      Err(format!("expected a integer, got {}", self.printer(e)))
+    }
+  }
+
+  fn as_ref<'b>(&self, e: &'b LispKind) -> SResult<&'b Mutex<LispVal>> {
+    if let LispKind::Ref(m) = e {Ok(m)} else {
+      Err(format!("not a ref-cell: {}", self.printer(e)))
+    }
+  }
+
+  fn eval_foldl1(&self, mut f: impl FnMut(LispVal, &LispVal) -> LispVal, args: &[LispVal]) -> LispVal {
+    let mut it = args.iter();
+    let mut ret = it.next().unwrap().clone();
+    while let Some(v) = it.next() { ret = f(ret, v) }
+    ret
+  }
+
+  fn int_bool_binop(&self, mut f: impl FnMut(&BigInt, &BigInt) -> bool, args: &[LispVal]) -> SResult<bool> {
+    let mut it = args.iter();
+    let mut last = self.as_int(it.next().unwrap())?;
+    while let Some(v) = it.next() {
+      let new = self.as_int(v)?;
+      if !f(mem::replace(&mut last, new), new) {return Ok(false)}
+    }
+    Ok(true)
+  }
+
+  fn head<'b>(&self, e: &'b LispKind) -> SResult<&'b LispVal> {
+    match e {
+      LispKind::List(es) if es.is_empty() => Err("evaluating 'hd ()'".into()),
+      LispKind::List(es) => Ok(&es[0]),
+      LispKind::DottedList(es, r) if es.is_empty() => self.head(r),
+      LispKind::DottedList(es, _) => Ok(&es[0]),
+      _ => Err(format!("expected a list, got {}", self.printer(e)))
+    }
+  }
+
+  fn tail<'b>(&self, e: &'b LispKind) -> SResult<LispVal> {
+    fn exponential_backoff(es: &[LispVal], i: usize, r: impl FnOnce(Vec<LispVal>) -> LispKind) -> LispVal {
+      let j = 2 * i;
+      if j >= es.len() { Arc::new(r(es[i..].into())) }
+      else { Arc::new(LispKind::DottedList(es[i..j].into(), exponential_backoff(es, j, r))) }
+    }
+    match e {
+      LispKind::List(es) if es.is_empty() => Err("evaluating 'tl ()'".into()),
+      LispKind::List(es) =>
+        Ok(exponential_backoff(es, 1, LispKind::List)),
+      LispKind::DottedList(es, r) if es.is_empty() => self.tail(r),
+      LispKind::DottedList(es, r) =>
+        Ok(exponential_backoff(es, 1, |v| LispKind::DottedList(v, r.clone()))),
+      _ => Err(format!("expected a list, got {}", self.printer(e)))
+    }
+  }
+
+  fn evaluate_builtin(&mut self, sp1: Span, sp2: Span, f: BuiltinProc, args: Vec<LispVal>) -> SResult<LispVal> {
+    Ok(match f {
+      BuiltinProc::Display => {self.print(sp1, self.as_string(&args[0])?); UNDEF.clone()}
+      BuiltinProc::Error => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Print => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Begin => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Apply => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Add => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Mul => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Max => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Min => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Sub => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Div => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Mod => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Lt => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Le => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Gt => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Ge => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Eq => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::ToString => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::StringToAtom => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::StringAppend => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Not => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::And => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Or => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::List => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Cons => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Head => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Tail => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Map => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsBool => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsAtom => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsPair => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsNull => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsNumber => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsString => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsProc => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsDef => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsRef => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::NewRef => Arc::new(LispKind::Ref(Mutex::new(args[0].clone()))),
+      BuiltinProc::GetRef => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::SetRef => {
+        if let LispKind::Ref(m) = &*args[0] {*m.lock().unwrap() = args[1].clone()}
+        else {Err("set!: not a ref".to_owned())?}
+        UNDEF.clone()
+      }
+      BuiltinProc::Async => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsAtomMap => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::NewAtomMap => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Lookup => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Insert => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::InsertNew => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::SetTimeout => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsMVar => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::IsGoal => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::SetMVar => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::PrettyPrint => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::NewGoal => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::GoalType => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::InferType => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::GetMVars => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::GetGoals => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::SetGoals => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::ToExpr => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Refine => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Have => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::Stat => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::GetDecl => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::AddDecl => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::AddTerm => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::AddThm => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::SetReporting => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+      BuiltinProc::RefineExtraArgs => {self.print(sp2, "unimplemented"); UNDEF.clone()}
+    })
   }
 
   fn evaluate_core<'b>(&'b mut self, mut ctx: Vec<LispVal>, mut active: State<'b>) -> Result<LispVal> {
@@ -298,7 +443,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
           })),
           Some(Stack::App(sp1, sp2, es)) => State::App(sp1, sp2, ret, vec![], es.iter()),
           Some(Stack::App2(sp1, sp2, f, mut vec, it)) => { vec.push(ret); State::App(sp1, sp2, f, vec, it) }
-          Some(Stack::If(e1, e2)) => State::Eval(if truthy(&unref(&ret)) {e1} else {e2}),
+          Some(Stack::If(e1, e2)) => State::Eval(if unref(&ret).truthy() {e1} else {e2}),
           Some(Stack::Def(x)) => {
             match stack.pop() {
               None => if let &Some((sp, a)) = x {
@@ -316,7 +461,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
           },
           Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
           Some(Stack::TestPattern(sp, e, it, br, pstack, vars)) =>
-            State::Pattern(sp, e, it, br, pstack, vars, PatternState::Ret(truthy(&unref(&ret)))),
+            State::Pattern(sp, e, it, br, pstack, vars, PatternState::Ret(unref(&ret).truthy())),
           Some(Stack::Drop_) => {ctx.pop(); State::Ret(ret)}
           Some(Stack::Ret(pos, old, _)) => {file = pos.fspan().file.clone(); ctx = old; State::Ret(ret)}
           Some(Stack::MatchCont(_, _, _, valid)) => {
@@ -333,64 +478,69 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
           Some(e) => { stack.push(Stack::DottedList(vec, it, r)); State::Eval(e) }
         },
         State::App(sp1, sp2, f, mut args, mut it) => match it.next() {
-          None => match &**unref(&f) {
-            LispKind::Proc(Proc::Builtin(p)) => match p {
-              BuiltinProc::NewRef if args.len() != 1 =>
-                throw!(sp2, "called with incorrect number of arguments"),
-              BuiltinProc::NewRef => State::Ret(Arc::new(LispKind::Ref(Mutex::new(args[0].clone())))),
-              BuiltinProc::SetRef if args.len() != 2 =>
-                throw!(sp2, "called with incorrect number of arguments"),
-              BuiltinProc::SetRef => {
-                if let LispKind::Ref(m) = &*args[0] {*m.lock().unwrap() = args[1].clone()}
-                else {throw!(sp2, "set!: not a ref")}
-                State::Ret(UNDEF.clone())
-              },
-            }
-            &LispKind::Proc(Proc::Lambda {ref pos, ref env, spec, ref code}) => {
-              if !spec.valid(args.len()) {throw!(sp2, "called with incorrect number of arguments")}
-              if let Some(Stack::Ret(_, _, _)) = stack.last() { // tail call
-                if let Some(Stack::Ret(fsp, old, _)) = stack.pop() {
-                  ctx = env.clone();
-                  stack.push(Stack::Ret(fsp, old, code.clone()));
-                } else {unsafe {std::hint::unreachable_unchecked()}}
-              } else {
-                stack.push(Stack::Ret(pos.clone(), mem::replace(&mut ctx, env.clone()), code.clone()));
-              }
+          None => {
+            let f = unref(&f);
+            let f = match &**f {
+              LispKind::Proc(f) => f,
+              _ => throw!(sp2, "not a function, cannot apply")
+            };
+            let spec = f.spec();
+            if !spec.valid(args.len()) {
               match spec {
-                ProcSpec::Exact(_) => ctx.extend(args),
-                ProcSpec::AtLeast(nargs) => {
-                  ctx.extend(args.drain(..nargs));
-                  ctx.push(Arc::new(LispKind::List(args)));
-                }
+                ProcSpec::Exact(n) => throw!(sp2, format!("expected {} argument(s)", n)),
+                ProcSpec::AtLeast(n) => throw!(sp2, format!("expected at least {} argument(s)", n)),
               }
-              // Unfortunately we're fighting the borrow checker here. The problem is that
-              // ir is borrowed in the Stack type, with most IR being owned outside the
-              // function, but when you apply a lambda, the Proc::LambdaExact constructor
-              // stores an Arc to the code to execute, hence it comes under our control,
-              // which means that when the temporaries in this block go away, so does
-              // ir (which is borrowed from f). We solve the problem by storing an Arc of
-              // the IR inside the Ret instruction above, so that it won't get deallocated
-              // while in use. Rust doesn't reason about other owners of an Arc though, so...
-              State::Eval(unsafe {&*(&**code as *const IR)})
-            },
-            LispKind::Proc(Proc::MatchCont(valid)) => {
-              if !valid.load(Ordering::Relaxed) {throw!(sp2, "continuation has expired")}
-              loop {
-                match stack.pop() {
-                  Some(Stack::MatchCont(span, expr, it, a)) => {
-                    a.store(false, Ordering::Relaxed);
-                    if Arc::ptr_eq(&a, &valid) {
-                      break State::Match(span, expr, it)
-                    }
+            }
+            match f {
+              &Proc::Builtin(f) => match self.evaluate_builtin(sp1, sp2, f, args) {
+                Ok(r) => State::Ret(r),
+                Err(s) => throw!(sp2, s)
+              },
+              &Proc::Lambda {ref pos, ref env, spec, ref code} => {
+                if !spec.valid(args.len()) {throw!(sp2, "called with incorrect number of arguments")}
+                if let Some(Stack::Ret(_, _, _)) = stack.last() { // tail call
+                  if let Some(Stack::Ret(fsp, old, _)) = stack.pop() {
+                    ctx = env.clone();
+                    stack.push(Stack::Ret(fsp, old, code.clone()));
+                  } else {unsafe {std::hint::unreachable_unchecked()}}
+                } else {
+                  stack.push(Stack::Ret(pos.clone(), mem::replace(&mut ctx, env.clone()), code.clone()));
+                }
+                match spec {
+                  ProcSpec::Exact(_) => ctx.extend(args),
+                  ProcSpec::AtLeast(nargs) => {
+                    ctx.extend(args.drain(..nargs));
+                    ctx.push(Arc::new(LispKind::List(args)));
                   }
-                  Some(Stack::Drop_) => {ctx.pop();}
-                  Some(Stack::Ret(pos, old, _)) => {file = pos.into_fspan().file; ctx = old},
-                  Some(_) => {}
-                  None => throw!(sp2, "continuation has expired")
+                }
+                // Unfortunately we're fighting the borrow checker here. The problem is that
+                // ir is borrowed in the Stack type, with most IR being owned outside the
+                // function, but when you apply a lambda, the Proc::LambdaExact constructor
+                // stores an Arc to the code to execute, hence it comes under our control,
+                // which means that when the temporaries in this block go away, so does
+                // ir (which is borrowed from f). We solve the problem by storing an Arc of
+                // the IR inside the Ret instruction above, so that it won't get deallocated
+                // while in use. Rust doesn't reason about other owners of an Arc though, so...
+                State::Eval(unsafe {&*(&**code as *const IR)})
+              },
+              Proc::MatchCont(valid) => {
+                if !valid.load(Ordering::Relaxed) {throw!(sp2, "continuation has expired")}
+                loop {
+                  match stack.pop() {
+                    Some(Stack::MatchCont(span, expr, it, a)) => {
+                      a.store(false, Ordering::Relaxed);
+                      if Arc::ptr_eq(&a, &valid) {
+                        break State::Match(span, expr, it)
+                      }
+                    }
+                    Some(Stack::Drop_) => {ctx.pop();}
+                    Some(Stack::Ret(pos, old, _)) => {file = pos.into_fspan().file; ctx = old},
+                    Some(_) => {}
+                    None => throw!(sp2, "continuation has expired")
+                  }
                 }
               }
             }
-            _ => throw!(sp2, "not a function, cannot apply")
           },
           Some(e) => { stack.push(Stack::App2(sp1, sp2, f, args, it)); State::Eval(e) }
         }

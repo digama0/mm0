@@ -74,7 +74,7 @@ impl<'a> fmt::Display for LispFormat<'a> {
 }
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
-  pub fn printer<'b>(&'b self, e: &'b LispVal) -> LispFormat<'b> {
+  pub fn printer<'b>(&'b self, e: &'b LispKind) -> LispFormat<'b> {
     LispFormat {source: &self.ast.source, env: self, e}
   }
 }

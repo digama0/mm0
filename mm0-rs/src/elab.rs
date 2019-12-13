@@ -269,7 +269,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
 
   fn parse_and_print(&mut self, e: &SExpr) -> Result<()> {
     let val = self.parse_and_run(e)?;
-    self.print_lisp(e.span, &val)
+    Ok(self.print_lisp(e.span, &val))
   }
 
   fn elab_stmt(&mut self, stmt: &Stmt) -> Result<()> {
