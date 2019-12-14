@@ -366,181 +366,200 @@ impl<'a, 'b, T: FileServer + ?Sized> Evaluator<'a, 'b, T> {
   fn err(&mut self, sp: Span, err: impl Into<BoxError>) -> ElabError {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
+}
 
-  fn evaluate_builtin(&mut self, sp1: Span, sp2: Span, f: BuiltinProc, mut args: Vec<LispVal>) -> Result<State<'b>> {
-    macro_rules! print {($sp:expr, $e:expr) => {{
-      let msg = $e; self.print($sp, f.to_str(), msg)
-    }}}
-    macro_rules! try1 {($e:expr) => {{
-      match $e {
-        Ok(e) => e,
-        Err(s) => return Err(self.err(sp1, s))
+macro_rules! make_builtins {
+  ($self:ident, $sp1:ident, $sp2:ident, $args:ident,
+      $($e:ident: $ty:ident($n:expr) => $res:expr),*) => {
+    impl BuiltinProc {
+      pub fn spec(self) -> ProcSpec {
+        match self {
+          $(BuiltinProc::$e => ProcSpec::$ty($n)),*
+        }
       }
-    }}}
+    }
 
-    Ok(State::Ret(match f {
-      BuiltinProc::Display => {print!(sp1, &*try1!(self.as_string(&args[0]))); UNDEF.clone()}
-      BuiltinProc::Error => try1!(Err(&*try1!(self.as_string(&args[0])))),
-      BuiltinProc::Print => {print!(sp1, format!("{}", self.printer(&args[0]))); UNDEF.clone()}
-      BuiltinProc::Begin => args.last().unwrap_or(&UNDEF).clone(),
-      BuiltinProc::Apply => {
-        let proc = args.remove(0);
-        let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
-        let mut tail = &*args.pop().unwrap();
-        loop {match tail {
-          LispKind::List(es) => {
-            args.extend_from_slice(&es);
-            return Ok(State::App(sp1, sp, proc, args, [].iter()))
+    impl<'a, 'b, T: FileServer + ?Sized> Evaluator<'a, 'b, T> {
+      fn evaluate_builtin(&mut $self, $sp1: Span, $sp2: Span, f: BuiltinProc, mut $args: Vec<LispVal>) -> Result<State<'b>> {
+        macro_rules! print {($sp:expr, $x:expr) => {{
+          let msg = $x; $self.print($sp, f.to_str(), msg)
+        }}}
+        macro_rules! try1 {($x:expr) => {{
+          match $x {
+            Ok(e) => e,
+            Err(s) => return Err($self.err($sp1, s))
           }
-          LispKind::DottedList(es, r) => {
-            args.extend_from_slice(&es);
-            tail = r;
-          }
-          _ => try1!(Err("apply: last argument is not a list"))
-        }}
-      },
-      BuiltinProc::Add => {
-        let mut n: BigInt = 0.into();
-        for e in args { n += try1!(self.as_int(&e)) }
-        Arc::new(LispKind::Number(n))
+        }}}
+
+        Ok(State::Ret(match f { $(BuiltinProc::$e => $res),* }))
       }
-      BuiltinProc::Mul => {
-        let mut n: BigInt = 1.into();
-        for e in args { n *= try1!(self.as_int(&e)) }
-        Arc::new(LispKind::Number(n))
-      }
-      BuiltinProc::Max => {
-        let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
-        for e in args { n = n.max(try1!(self.as_int(&e)).clone()) }
-        Arc::new(LispKind::Number(n))
-      }
-      BuiltinProc::Min => {
-        let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
-        for e in args { n = n.min(try1!(self.as_int(&e)).clone()) }
-        Arc::new(LispKind::Number(n))
-      }
-      BuiltinProc::Sub if args.len() == 1 =>
-        Arc::new(LispKind::Number(-try1!(self.as_int(&args[0])).clone())),
-      BuiltinProc::Sub => {
-        let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
-        for e in args { n -= try1!(self.as_int(&e)) }
-        Arc::new(LispKind::Number(n))
-      }
-      BuiltinProc::Div => {
-        let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
-        for e in args { n /= try1!(self.as_int(&e)) }
-        Arc::new(LispKind::Number(n))
-      }
-      BuiltinProc::Mod => {
-        let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
-        for e in args { n %= try1!(self.as_int(&e)) }
-        Arc::new(LispKind::Number(n))
-      }
-      BuiltinProc::Lt => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a < b, &args)))),
-      BuiltinProc::Le => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a <= b, &args)))),
-      BuiltinProc::Gt => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a > b, &args)))),
-      BuiltinProc::Ge => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a >= b, &args)))),
-      BuiltinProc::Eq => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a == b, &args)))),
-      BuiltinProc::ToString => Arc::new(LispKind::String(self.to_string(&args[0]))),
-      BuiltinProc::StringToAtom => {
-        let s = try1!(self.as_string(&args[0]));
-        Arc::new(LispKind::Atom(self.get_atom(&s)))
-      }
-      BuiltinProc::StringAppend => {
-        let mut out = String::new();
-        for e in args { out.push_str(&try1!(self.as_string(&e))) }
-        Arc::new(LispKind::String(ArcString::new(out)))
-      }
-      BuiltinProc::Not => Arc::new(LispKind::Bool(!args.iter().any(|e| e.truthy()))),
-      BuiltinProc::And => Arc::new(LispKind::Bool(args.iter().all(|e| e.truthy()))),
-      BuiltinProc::Or => Arc::new(LispKind::Bool(args.iter().any(|e| e.truthy()))),
-      BuiltinProc::List => Arc::new(LispKind::List(args)),
-      BuiltinProc::Cons => match args.len() {
-        0 => NIL.clone(),
-        1 => args[0].clone(),
-        _ => {let r = args.pop().unwrap(); Arc::new(LispKind::DottedList(args, r))}
-      },
-      BuiltinProc::Head => try1!(self.head(&args[0])),
-      BuiltinProc::Tail => try1!(self.tail(&args[0])),
-      BuiltinProc::Map => {
-        let proc = args[0].clone();
-        let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
-        if args.len() == 1 {return Ok(State::App(sp1, sp, proc, vec![], [].iter()))}
-        return Ok(State::MapProc(sp1, sp, proc,
-          args.into_iter().map(|e| Uncons::from(&e)).collect(), vec![]))
-      },
-      BuiltinProc::IsBool => Arc::new(LispKind::Bool(args[0].is_bool())),
-      BuiltinProc::IsAtom => Arc::new(LispKind::Bool(args[0].is_atom())),
-      BuiltinProc::IsPair => Arc::new(LispKind::Bool(args[0].is_pair())),
-      BuiltinProc::IsNull => Arc::new(LispKind::Bool(args[0].is_null())),
-      BuiltinProc::IsNumber => Arc::new(LispKind::Bool(args[0].is_int())),
-      BuiltinProc::IsString => Arc::new(LispKind::Bool(args[0].is_string())),
-      BuiltinProc::IsProc => Arc::new(LispKind::Bool(args[0].is_proc())),
-      BuiltinProc::IsDef => Arc::new(LispKind::Bool(args[0].is_def())),
-      BuiltinProc::IsRef => Arc::new(LispKind::Bool(args[0].is_ref())),
-      BuiltinProc::NewRef => Arc::new(LispKind::Ref(Mutex::new(args[0].clone()))),
-      BuiltinProc::GetRef => try1!(self.as_ref(&args[0])).lock().unwrap().clone(),
-      BuiltinProc::SetRef => {
-        *try1!(self.as_ref(&args[0])).lock().unwrap() = args[1].clone();
-        UNDEF.clone()
-      }
-      BuiltinProc::Async => {
-        let proc = args.remove(0);
-        let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
-        // TODO: actually async this
+    }
+  }
+}
+
+make_builtins! { self, sp1, sp2, args,
+  Display: Exact(1) => {print!(sp1, &*try1!(self.as_string(&args[0]))); UNDEF.clone()},
+  Error: Exact(1) => try1!(Err(&*try1!(self.as_string(&args[0])))),
+  Print: Exact(1) => {print!(sp1, format!("{}", self.printer(&args[0]))); UNDEF.clone()},
+  Begin: AtLeast(0) => args.last().unwrap_or(&UNDEF).clone(),
+  Apply: AtLeast(2) => {
+    let proc = args.remove(0);
+    let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
+    let mut tail = &*args.pop().unwrap();
+    loop {match tail {
+      LispKind::List(es) => {
+        args.extend_from_slice(&es);
         return Ok(State::App(sp1, sp, proc, args, [].iter()))
       }
-      BuiltinProc::IsAtomMap => Arc::new(LispKind::Bool(args[0].is_map())),
-      BuiltinProc::NewAtomMap => {
-        let mut m = HashMap::new();
-        for e in args {
-          match try1!(self.parse_map_insert(&e)) {
-            (a, None) => {m.remove(&a);}
-            (a, Some(v)) => {m.insert(a, v);}
-          }
-        }
-        Arc::new(LispKind::AtomMap(m))
+      LispKind::DottedList(es, r) => {
+        args.extend_from_slice(&es);
+        tail = r;
       }
-      BuiltinProc::Lookup => {
-        let m = unwrap(&args[0]);
-        let m = try1!(self.as_map(&m));
-        match m.get(&try1!(self.as_string_atom(&args[1]))) {
-          Some(e) => e.clone(),
-          None => {
-            let v = args.get(2).unwrap_or(&*UNDEF).clone();
-            if v.is_proc() {
-              let sp = v.fspan().map_or(sp2, |fsp| fsp.span);
-              return Ok(State::App(sp1, sp, v, vec![], [].iter()))
-            } else {v}
-          }
-        }
+      _ => try1!(Err("apply: last argument is not a list"))
+    }}
+  },
+  Add: AtLeast(0) => {
+    let mut n: BigInt = 0.into();
+    for e in args { n += try1!(self.as_int(&e)) }
+    Arc::new(LispKind::Number(n))
+  },
+  Mul: AtLeast(0) => {
+    let mut n: BigInt = 1.into();
+    for e in args { n *= try1!(self.as_int(&e)) }
+    Arc::new(LispKind::Number(n))
+  },
+  Max: AtLeast(1) => {
+    let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
+    for e in args { n = n.max(try1!(self.as_int(&e)).clone()) }
+    Arc::new(LispKind::Number(n))
+  },
+  Min: AtLeast(1) => {
+    let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
+    for e in args { n = n.min(try1!(self.as_int(&e)).clone()) }
+    Arc::new(LispKind::Number(n))
+  },
+  Sub: AtLeast(1) => if args.len() == 1 {
+    Arc::new(LispKind::Number(-try1!(self.as_int(&args[0])).clone()))
+  } else {
+    let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
+    for e in args { n -= try1!(self.as_int(&e)) }
+    Arc::new(LispKind::Number(n))
+  },
+  Div: AtLeast(1) => {
+    let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
+    for e in args { n /= try1!(self.as_int(&e)) }
+    Arc::new(LispKind::Number(n))
+  },
+  Mod: AtLeast(1) => {
+    let mut n: BigInt = try1!(self.as_int(&args.pop().unwrap())).clone();
+    for e in args { n %= try1!(self.as_int(&e)) }
+    Arc::new(LispKind::Number(n))
+  },
+  Lt: AtLeast(1) => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a < b, &args)))),
+  Le: AtLeast(1) => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a <= b, &args)))),
+  Gt: AtLeast(1) => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a > b, &args)))),
+  Ge: AtLeast(1) => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a >= b, &args)))),
+  Eq: AtLeast(1) => Arc::new(LispKind::Bool(try1!(self.int_bool_binop(|a, b| a == b, &args)))),
+  ToString: Exact(1) => Arc::new(LispKind::String(self.to_string(&args[0]))),
+  StringToAtom: Exact(1) => {
+    let s = try1!(self.as_string(&args[0]));
+    Arc::new(LispKind::Atom(self.get_atom(&s)))
+  },
+  StringAppend: AtLeast(0) => {
+    let mut out = String::new();
+    for e in args { out.push_str(&try1!(self.as_string(&e))) }
+    Arc::new(LispKind::String(ArcString::new(out)))
+  },
+  Not: AtLeast(0) => Arc::new(LispKind::Bool(!args.iter().any(|e| e.truthy()))),
+  And: AtLeast(0) => Arc::new(LispKind::Bool(args.iter().all(|e| e.truthy()))),
+  Or: AtLeast(0) => Arc::new(LispKind::Bool(args.iter().any(|e| e.truthy()))),
+  List: AtLeast(0) => Arc::new(LispKind::List(args)),
+  Cons: AtLeast(0) => match args.len() {
+    0 => NIL.clone(),
+    1 => args[0].clone(),
+    _ => {let r = args.pop().unwrap(); Arc::new(LispKind::DottedList(args, r))}
+  },
+  Head: Exact(1) => try1!(self.head(&args[0])),
+  Tail: Exact(1) => try1!(self.tail(&args[0])),
+  Map: AtLeast(1) => {
+    let proc = args[0].clone();
+    let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
+    if args.len() == 1 {return Ok(State::App(sp1, sp, proc, vec![], [].iter()))}
+    return Ok(State::MapProc(sp1, sp, proc,
+      args.into_iter().map(|e| Uncons::from(&e)).collect(), vec![]))
+  },
+  IsBool: Exact(1) => Arc::new(LispKind::Bool(args[0].is_bool())),
+  IsAtom: Exact(1) => Arc::new(LispKind::Bool(args[0].is_atom())),
+  IsPair: Exact(1) => Arc::new(LispKind::Bool(args[0].is_pair())),
+  IsNull: Exact(1) => Arc::new(LispKind::Bool(args[0].is_null())),
+  IsNumber: Exact(1) => Arc::new(LispKind::Bool(args[0].is_int())),
+  IsString: Exact(1) => Arc::new(LispKind::Bool(args[0].is_string())),
+  IsProc: Exact(1) => Arc::new(LispKind::Bool(args[0].is_proc())),
+  IsDef: Exact(1) => Arc::new(LispKind::Bool(args[0].is_def())),
+  IsRef: Exact(1) => Arc::new(LispKind::Bool(args[0].is_ref())),
+  NewRef: AtLeast(0) => Arc::new(LispKind::Ref(Mutex::new(args.get(0).unwrap_or(&*UNDEF).clone()))),
+  GetRef: Exact(1) => try1!(self.as_ref(&args[0])).lock().unwrap().clone(),
+  SetRef: Exact(2) => {
+    *try1!(self.as_ref(&args[0])).lock().unwrap() = args[1].clone();
+    UNDEF.clone()
+  },
+  Async: AtLeast(1) => {
+    let proc = args.remove(0);
+    let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
+    // TODO: actually async this
+    return Ok(State::App(sp1, sp, proc, args, [].iter()))
+  },
+  IsAtomMap: Exact(1) => Arc::new(LispKind::Bool(args[0].is_map())),
+  NewAtomMap: AtLeast(0) => {
+    let mut m = HashMap::new();
+    for e in args {
+      match try1!(self.parse_map_insert(&e)) {
+        (a, None) => {m.remove(&a);}
+        (a, Some(v)) => {m.insert(a, v);}
       }
-      BuiltinProc::Insert => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::InsertNew => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::SetTimeout => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::IsMVar => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::IsGoal => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::SetMVar => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::PrettyPrint => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::NewGoal => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::GoalType => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::InferType => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::GetMVars => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::GetGoals => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::SetGoals => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::ToExpr => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::Refine => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::Have => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::Stat => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::GetDecl => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::AddDecl => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::AddTerm => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::AddThm => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::SetReporting => {print!(sp2, "unimplemented"); UNDEF.clone()}
-      BuiltinProc::RefineExtraArgs => {print!(sp2, "unimplemented"); UNDEF.clone()}
-    }))
-  }
+    }
+    Arc::new(LispKind::AtomMap(m))
+  },
+  Lookup: AtLeast(2) => {
+    let m = unwrap(&args[0]);
+    let m = try1!(self.as_map(&m));
+    match m.get(&try1!(self.as_string_atom(&args[1]))) {
+      Some(e) => e.clone(),
+      None => {
+        let v = args.get(2).unwrap_or(&*UNDEF).clone();
+        if v.is_proc() {
+          let sp = v.fspan().map_or(sp2, |fsp| fsp.span);
+          return Ok(State::App(sp1, sp, v, vec![], [].iter()))
+        } else {v}
+      }
+    }
+  },
+  Insert: AtLeast(2) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  InsertNew: AtLeast(2) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  SetTimeout: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  IsMVar: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  IsGoal: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  SetMVar: Exact(2) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  PrettyPrint: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  NewGoal: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  GoalType: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  InferType: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  GetMVars: AtLeast(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  GetGoals: AtLeast(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  SetGoals: AtLeast(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  ToExpr: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  Refine: AtLeast(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  Have: AtLeast(2) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  Stat: Exact(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  GetDecl: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  AddDecl: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  AddTerm: AtLeast(3) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  AddThm: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  SetReporting: AtLeast(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  RefineExtraArgs: AtLeast(2) => {print!(sp2, "unimplemented"); UNDEF.clone()}
+}
 
+impl<'a, 'b, T: FileServer + ?Sized> Evaluator<'a, 'b, T> {
   fn fspan(&self, span: Span) -> FileSpan {
     FileSpan {file: self.file.clone(), span}
   }

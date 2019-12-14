@@ -13,53 +13,43 @@ use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap};
 use parser::IR;
 
-#[derive(Copy, Clone, Debug)]
-pub enum Syntax {
-  Define,
-  Lambda,
-  Quote,
-  Unquote,
-  If,
-  Focus,
-  Let,
-  Letrec,
-  Match,
-  MatchFn,
-  MatchFns,
+macro_rules! str_enum {
+  (enum $name:ident {$($e:ident: $s:expr,)*}) => {
+    #[derive(Copy, Clone, Debug)]
+    pub enum $name { $($e),* }
+    impl $name {
+      pub fn from_str(s: &str) -> Option<$name> {
+        match s {
+          $($s => Some($name::$e),)*
+          _ => None
+        }
+      }
+      pub fn to_str(self) -> &'static str {
+        match self {
+          $($name::$e => $s),*
+        }
+      }
+    }
+  }
+}
+
+str_enum! {
+  enum Syntax {
+    Define: "def",
+    Lambda: "fn",
+    Quote: "quote",
+    Unquote: "unquote",
+    If: "if",
+    Focus: "focus",
+    Let: "let",
+    Letrec: "letrec",
+    Match: "match",
+    MatchFn: "match-fn",
+    MatchFns: "match-fn*",
+  }
 }
 
 impl Syntax {
-  pub fn from_str(s: &str) -> Option<Syntax> {
-    match s {
-      "def" => Some(Syntax::Define),
-      "fn" => Some(Syntax::Lambda),
-      "quote" => Some(Syntax::Quote),
-      "unquote" => Some(Syntax::Unquote),
-      "if" => Some(Syntax::If),
-      "focus" => Some(Syntax::Focus),
-      "let" => Some(Syntax::Let),
-      "letrec" => Some(Syntax::Letrec),
-      "match" => Some(Syntax::Match),
-      "match-fn" => Some(Syntax::MatchFn),
-      "match-fn*" => Some(Syntax::MatchFns),
-      _ => None
-    }
-  }
-  pub fn to_str(self) -> &'static str {
-    match self {
-      Syntax::Define => "def",
-      Syntax::Lambda => "fn",
-      Syntax::Quote => "quote",
-      Syntax::Unquote => "unquote",
-      Syntax::If => "if",
-      Syntax::Focus => "focus",
-      Syntax::Let => "let",
-      Syntax::Letrec => "letrec",
-      Syntax::Match => "match",
-      Syntax::MatchFn => "match-fn",
-      Syntax::MatchFns => "match-fn*",
-    }
-  }
   pub fn parse(s: &str, a: Atom) -> Result<Syntax, &str> {
     match a {
       Atom::Ident => Self::from_str(s).ok_or(s),
@@ -230,99 +220,76 @@ impl Proc {
   }
 }
 
-macro_rules! make_builtins {
-  ($($e:ident: $s:expr, $ty:ident($n:expr);)*) => {
-    #[derive(Copy, Clone, Debug)]
-    pub enum BuiltinProc { $($e),* }
-    impl BuiltinProc {
-      pub fn from_str(s: &str) -> Option<BuiltinProc> {
-        match s {
-          $($s => Some(BuiltinProc::$e),)*
-          _ => None
-        }
-      }
-      pub fn to_str(self) -> &'static str {
-        match self {
-          $(BuiltinProc::$e => $s),*
-        }
-      }
-      pub fn spec(self) -> ProcSpec {
-        match self {
-          $(BuiltinProc::$e => ProcSpec::$ty($n)),*
-        }
-      }
-    }
+str_enum! {
+  enum BuiltinProc {
+    Display: "display",
+    Error: "error",
+    Print: "print",
+    Begin: "begin",
+    Apply: "apply",
+    Add: "+",
+    Mul: "*",
+    Max: "max",
+    Min: "min",
+    Sub: "-",
+    Div: "//",
+    Mod: "%",
+    Lt: "<",
+    Le: "<=",
+    Gt: ">",
+    Ge: ">=",
+    Eq: "=",
+    ToString: "->string",
+    StringToAtom: "string->atom",
+    StringAppend: "string-append",
+    Not: "not",
+    And: "and",
+    Or: "or",
+    List: "list",
+    Cons: "cons",
+    Head: "hd",
+    Tail: "tl",
+    Map: "map",
+    IsBool: "bool?",
+    IsAtom: "atom?",
+    IsPair: "pair?",
+    IsNull: "null?",
+    IsNumber: "number?",
+    IsString: "string?",
+    IsProc: "fn?",
+    IsDef: "def?",
+    IsRef: "ref?",
+    NewRef: "ref!",
+    GetRef: "get!",
+    SetRef: "set!",
+    Async: "async",
+    IsAtomMap: "atom-map?",
+    NewAtomMap: "atom-map!",
+    Lookup: "lookup",
+    Insert: "insert!",
+    InsertNew: "insert",
+    SetTimeout: "set-timeout",
+    IsMVar: "mvar?",
+    IsGoal: "goal?",
+    SetMVar: "mvar!",
+    PrettyPrint: "pp",
+    NewGoal: "goal",
+    GoalType: "goal-type",
+    InferType: "infer-type",
+    GetMVars: "get-mvars",
+    GetGoals: "get-goals",
+    SetGoals: "set-goals",
+    ToExpr: "to-expr",
+    Refine: "refine",
+    Have: "have",
+    Stat: "stat",
+    GetDecl: "get-decl",
+    AddDecl: "add-decl!",
+    AddTerm: "add-term!",
+    AddThm: "add-thm!",
+    SetReporting: "set-reporting",
+    RefineExtraArgs: "refine-extra-args",
   }
-}
-
-make_builtins! {
-  Display: "display", Exact(1);
-  Error: "error", Exact(1);
-  Print: "print", Exact(1);
-  Begin: "begin", AtLeast(0);
-  Apply: "apply", AtLeast(2);
-  Add: "+", AtLeast(0);
-  Mul: "*", AtLeast(0);
-  Max: "max", AtLeast(1);
-  Min: "min", AtLeast(1);
-  Sub: "-", AtLeast(1);
-  Div: "//", AtLeast(1);
-  Mod: "%", AtLeast(1);
-  Lt: "<", AtLeast(1);
-  Le: "<=", AtLeast(1);
-  Gt: ">", AtLeast(1);
-  Ge: ">=", AtLeast(1);
-  Eq: "=", AtLeast(1);
-  ToString: "->string", Exact(1);
-  StringToAtom: "string->atom", Exact(1);
-  StringAppend: "string-append", AtLeast(0);
-  Not: "not", AtLeast(0);
-  And: "and", AtLeast(0);
-  Or: "or", AtLeast(0);
-  List: "list", AtLeast(0);
-  Cons: "cons", AtLeast(0);
-  Head: "hd", Exact(1);
-  Tail: "tl", Exact(1);
-  Map: "map", AtLeast(1);
-  IsBool: "bool?", Exact(1);
-  IsAtom: "atom?", Exact(1);
-  IsPair: "pair?", Exact(1);
-  IsNull: "null?", Exact(1);
-  IsNumber: "number?", Exact(1);
-  IsString: "string?", Exact(1);
-  IsProc: "fn?", Exact(1);
-  IsDef: "def?", Exact(1);
-  IsRef: "ref?", Exact(1);
-  NewRef: "ref!", AtLeast(0);
-  GetRef: "get!", Exact(1);
-  SetRef: "set!", Exact(2);
-  Async: "async", AtLeast(1);
-  IsAtomMap: "atom-map?", Exact(1);
-  NewAtomMap: "atom-map!", AtLeast(0);
-  Lookup: "lookup", AtLeast(2);
-  Insert: "insert!", AtLeast(2);
-  InsertNew: "insert", AtLeast(2);
-  SetTimeout: "set-timeout", Exact(1);
-  IsMVar: "mvar?", Exact(1);
-  IsGoal: "goal?", Exact(1);
-  SetMVar: "mvar!", Exact(2);
-  PrettyPrint: "pp", Exact(1);
-  NewGoal: "goal", Exact(1);
-  GoalType: "goal-type", Exact(1);
-  InferType: "infer-type", Exact(1);
-  GetMVars: "get-mvars", AtLeast(0);
-  GetGoals: "get-goals", AtLeast(0);
-  SetGoals: "set-goals", AtLeast(0);
-  ToExpr: "to-expr", Exact(1);
-  Refine: "refine", AtLeast(0);
-  Have: "have", AtLeast(2);
-  Stat: "stat", Exact(0);
-  GetDecl: "get-decl", Exact(1);
-  AddDecl: "add-decl!", AtLeast(4);
-  AddTerm: "add-term!", AtLeast(3);
-  AddThm: "add-thm!", AtLeast(4);
-  SetReporting: "set-reporting", AtLeast(1);
-  RefineExtraArgs: "refine-extra-args", AtLeast(2);
 }
 
 impl std::fmt::Display for BuiltinProc {
