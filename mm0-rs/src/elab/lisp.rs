@@ -3,7 +3,6 @@ pub mod eval;
 pub mod print;
 
 use std::ops::Deref;
-use std::borrow::Cow;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use std::collections::HashMap;
@@ -72,7 +71,7 @@ pub enum LispKind {
   Atom(AtomID),
   List(Vec<LispVal>),
   DottedList(Vec<LispVal>, LispVal),
-  Span(FileSpan, LispVal),
+  Annot(Annot, LispVal),
   Number(BigInt),
   String(ArcString),
   UnparsedFormula(ArcString),
@@ -82,7 +81,7 @@ pub enum LispKind {
   Proc(Proc),
   AtomMap(HashMap<AtomID, LispVal>),
   Ref(Mutex<LispVal>),
-  MVar(usize, ArcString, bool),
+  MVar(usize, AtomID, bool),
   Goal(LispVal),
 }
 lazy_static! {
@@ -92,75 +91,87 @@ lazy_static! {
   pub static ref NIL: LispVal = Arc::new(LispKind::List(vec![]));
 }
 
-pub fn unwrap(e: &LispVal) -> Cow<LispVal> {
-  let mut ret = Cow::Borrowed(e);
-  loop {
-    match &**ret {
-      LispKind::Ref(m) => {
-        let e = m.lock().unwrap().clone();
-        ret = Cow::Owned(e)
-      }
-      LispKind::Span(_, v) => ret = Cow::Owned(v.clone()),
-      _ => return ret
-    }
-  }
-}
-
 impl From<&LispKind> for bool {
   fn from(e: &LispKind) -> bool { e.truthy() }
 }
 impl LispKind {
-  fn truthy(&self) -> bool {
+  pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     match self {
-      LispKind::Bool(false) => false,
-      LispKind::Span(_, v) => v.truthy(),
-      LispKind::Ref(m) => m.lock().unwrap().truthy(),
-      _ => true
+      LispKind::Ref(m) => m.lock().unwrap().unwrapped(f),
+      LispKind::Annot(_, v) => v.unwrapped(f),
+      _ => f(self)
     }
   }
+
+  pub fn truthy(&self) -> bool {
+    self.unwrapped(|e| if let LispKind::Bool(false) = e {false} else {true})
+  }
   pub fn is_bool(&self) -> bool {
-    if let LispKind::Bool(_) = self {true} else {false}
+    self.unwrapped(|e| if let LispKind::Bool(_) = e {true} else {false})
+  }
+  pub fn as_bool(&self) -> Option<bool> {
+    self.unwrapped(|e| if let &LispKind::Bool(b) = e {Some(b)} else {None})
   }
   pub fn is_atom(&self) -> bool {
-    if let LispKind::Atom(_) = self {true} else {false}
+    self.unwrapped(|e| if let LispKind::Atom(_) = e {true} else {false})
+  }
+  pub fn as_atom(&self) -> Option<AtomID> {
+    self.unwrapped(|e| if let &LispKind::Atom(a) = e {Some(a)} else {None})
   }
   pub fn is_pair(&self) -> bool {
-    match self {
+    self.unwrapped(|e| match e {
       LispKind::List(es) => !es.is_empty(),
       LispKind::DottedList(es, r) => !es.is_empty() || r.is_pair(),
       _ => false,
-    }
+    })
   }
   pub fn is_null(&self) -> bool {
-    if let LispKind::List(es) = self {es.is_empty()} else {false}
+    self.unwrapped(|e| if let LispKind::List(es) = e {es.is_empty()} else {false})
   }
   pub fn is_int(&self) -> bool {
-    if let LispKind::Number(_) = self {true} else {false}
+    self.unwrapped(|e| if let LispKind::Number(_) = e {true} else {false})
   }
   pub fn is_proc(&self) -> bool {
-    if let LispKind::Proc(_) = self {true} else {false}
+    self.unwrapped(|e| if let LispKind::Proc(_) = e {true} else {false})
   }
   pub fn is_string(&self) -> bool {
-    if let LispKind::String(_) = self {true} else {false}
+    self.unwrapped(|e| if let LispKind::String(_) = e {true} else {false})
   }
   pub fn is_map(&self) -> bool {
-    if let LispKind::AtomMap(_) = self {true} else {false}
+    self.unwrapped(|e| if let LispKind::AtomMap(_) = e {true} else {false})
   }
   pub fn is_def(&self) -> bool {
-    if let LispKind::Undef = self {false} else {true}
+    self.unwrapped(|e| if let LispKind::Undef = e {false} else {true})
   }
   pub fn is_ref(&self) -> bool {
-    if let LispKind::Ref(_) = self {true} else {false}
+    match self {
+      LispKind::Ref(_) => true,
+      LispKind::Annot(_, v) => v.is_ref(),
+      _ => false,
+    }
   }
-
   pub fn fspan(&self) -> Option<FileSpan> {
     match self {
       LispKind::Ref(m) => m.lock().unwrap().fspan(),
-      LispKind::Span(sp, _) => Some(sp.clone()),
+      LispKind::Annot(Annot::Span(sp), _) => Some(sp.clone()),
+      LispKind::Annot(_, e) => e.fspan(),
       _ => None
     }
   }
+  pub fn is_mvar(&self) -> bool {
+    self.unwrapped(|e| if let LispKind::MVar(_, _, _) = e {true} else {false})
+  }
+  pub fn is_goal(&self) -> bool {
+    self.unwrapped(|e| if let LispKind::Goal(_) = e {true} else {false})
+  }
+  pub fn goal_type(&self) -> Option<LispVal> {
+    self.unwrapped(|e| if let LispKind::Goal(e) = e {Some(e.clone())} else {None})
+  }
+}
 
+#[derive(Clone, Debug)]
+pub enum Annot {
+  Span(FileSpan),
 }
 
 #[derive(Clone, Debug)]
@@ -169,12 +180,6 @@ pub enum ProcPos {
   Unnamed(FileSpan),
 }
 impl ProcPos {
-  fn into_fspan(self) -> FileSpan {
-    match self {
-      ProcPos::Named(fsp, _) => fsp,
-      ProcPos::Unnamed(fsp) => fsp,
-    }
-  }
   fn fspan(&self) -> &FileSpan {
     match self {
       ProcPos::Named(fsp, _) => fsp,
@@ -271,7 +276,7 @@ str_enum! {
     SetTimeout: "set-timeout",
     IsMVar: "mvar?",
     IsGoal: "goal?",
-    SetMVar: "mvar!",
+    NewMVar: "mvar!",
     PrettyPrint: "pp",
     NewGoal: "goal",
     GoalType: "goal-type",
@@ -321,14 +326,23 @@ impl Remap<LispRemapper> for LispVal {
       LispKind::Atom(a) => Arc::new(LispKind::Atom(a.remap(r))),
       LispKind::List(v) => Arc::new(LispKind::List(v.remap(r))),
       LispKind::DottedList(v, l) => Arc::new(LispKind::DottedList(v.remap(r), l.remap(r))),
+      LispKind::Annot(sp, m) => Arc::new(LispKind::Annot(sp.clone(), m.remap(r))),
       LispKind::Proc(f) => Arc::new(LispKind::Proc(f.remap(r))),
       LispKind::AtomMap(m) => Arc::new(LispKind::AtomMap(m.remap(r))),
       LispKind::Ref(m) => Arc::new(LispKind::Ref(m.remap(r))),
-      _ => self.clone(),
+      &LispKind::MVar(n, s, b) => Arc::new(LispKind::MVar(n, s.remap(r), b)),
+      LispKind::Number(_) |
+      LispKind::String(_) |
+      LispKind::UnparsedFormula(_) |
+      LispKind::Bool(_) |
+      LispKind::Syntax(_) |
+      LispKind::Undef |
+      LispKind::Goal(_) => self.clone(),
     };
     r.lisp.entry(p).or_insert(v).clone()
   }
 }
+
 impl Remap<LispRemapper> for ProcPos {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {

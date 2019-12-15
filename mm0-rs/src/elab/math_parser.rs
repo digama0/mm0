@@ -30,7 +30,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     p.ws();
     let expr = p.expr(Prec::Prec(0))?;
     assert!(p.imports.is_empty());
-    for e in p.p.errors { self.errors.push(e.into()) }
+    for e in p.p.errors { self.report(e.into()) }
     Ok(expr)
   }
 }

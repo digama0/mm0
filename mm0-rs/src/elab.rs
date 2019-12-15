@@ -4,6 +4,7 @@ pub mod math_parser;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::time::{Instant, Duration};
 use std::path::PathBuf;
 use std::collections::{HashMap};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
@@ -84,6 +85,26 @@ impl From<ParseError> for ElabError {
   }
 }
 
+struct ReportMode {
+  error: bool,
+  warn: bool,
+  info: bool,
+}
+
+impl ReportMode {
+  fn new() -> ReportMode {
+    ReportMode {error: true, warn: true, info: true}
+  }
+
+  fn active(&self, lvl: ErrorLevel) -> bool {
+    match lvl {
+      ErrorLevel::Error => self.error,
+      ErrorLevel::Warning => self.warn,
+      ErrorLevel::Info => self.info,
+    }
+  }
+}
+
 pub struct Elaborator<'a, T: FileServer + ?Sized> {
   ast: &'a AST,
   fs: &'a T,
@@ -91,6 +112,11 @@ pub struct Elaborator<'a, T: FileServer + ?Sized> {
   errors: Vec<ElabError>,
   toks: HashMap<Span, Option<T::WaitToken>>,
   env: Environment,
+  timeout: Option<Duration>,
+  cur_timeout: Option<Instant>,
+  mvars: Vec<LispVal>,
+  goals: Vec<LispVal>,
+  reporting: ReportMode,
 }
 
 impl<T: FileServer + ?Sized> Deref for Elaborator<'_, T> {
@@ -108,12 +134,19 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       errors: Vec::new(),
       toks: HashMap::new(),
       env: Environment::default(),
+      timeout: Some(Duration::from_secs(5)),
+      cur_timeout: None,
+      mvars: Vec::new(),
+      goals: Vec::new(),
+      reporting: ReportMode::new(),
     }
   }
 
   fn span(&self, s: Span) -> &str { self.ast.span(s) }
   fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
-  fn report(&mut self, e: ElabError) { self.errors.push(e) }
+  fn report(&mut self, e: ElabError) {
+    if self.reporting.active(e.level) {self.errors.push(e)}
+  }
   fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
 
   fn name_of(&mut self, stmt: &Stmt) -> LispVal {
@@ -264,15 +297,17 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
 
   fn parse_and_run(&mut self, e: &SExpr) -> Result<LispVal> {
     let ir = self.parse_lisp(e)?;
-    self.evaluate(&ir)
+    self.evaluate(e.span, &ir)
   }
 
   fn parse_and_print(&mut self, e: &SExpr) -> Result<()> {
     let val = self.parse_and_run(e)?;
-    Ok(self.print_lisp(e.span, &val))
+    if val.is_def() {self.print_lisp(e.span, &val)}
+    Ok(())
   }
 
   fn elab_stmt(&mut self, stmt: &Stmt) -> Result<()> {
+    self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
         let s = ArcString::new(self.span(sp).to_owned());
@@ -329,7 +364,7 @@ pub trait FileServer {
         .map_err(|e| ElabError::new_e(sp.clone(), e))
         .and_then(|p| self.request_elab(p, |e| ElabError::new_e(sp.clone(), e))) {
         Ok((buf, tok)) => { deps.push(buf); elab.toks.insert(sp.clone(), Some(tok)); }
-        Err(e) => { elab.errors.push(e); elab.toks.insert(sp.clone(), None); }
+        Err(e) => { elab.report(e); elab.toks.insert(sp.clone(), None); }
       }
     }
 

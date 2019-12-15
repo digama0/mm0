@@ -134,7 +134,7 @@ impl IR {
   }
   fn list(fsp: FileSpan, cs: Vec<IR>) -> IR {
     match IR::unconst(cs) {
-      Ok(es) => IR::Const(Arc::new(LispKind::Span(fsp, Arc::new(LispKind::List(es))))),
+      Ok(es) => IR::Const(Arc::new(LispKind::Annot(Annot::Span(fsp), Arc::new(LispKind::List(es))))),
       Err(cs) => IR::List(fsp.span, cs.into())
     }
   }
@@ -505,7 +505,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
 
   fn expr(&mut self, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
     macro_rules! span {($sp:expr, $e:expr) => {{
-      Arc::new(LispKind::Span(self.fspan($sp), $e))
+      Arc::new(LispKind::Annot(Annot::Span(self.fspan($sp)), $e))
     }}}
     let mut restore = Some(self.ctx.len());
     let res = match &e.k {

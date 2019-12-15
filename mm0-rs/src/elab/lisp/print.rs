@@ -14,6 +14,34 @@ impl<'a> LispFormat<'a> {
     LispFormat {source: self.source, env: self.env, e}
   }
   fn atom(&self, a: AtomID) -> &str { &self.env.lisp_ctx[a].0 }
+
+  fn list(&self, mut start: bool, f: &mut fmt::Formatter) -> fmt::Result {
+    match self.e {
+      LispKind::List(es) => {
+        for e in es {
+          if start {
+            write!(f, "({}", self.to(e))?;
+            start = false
+          } else {
+            write!(f, " {}", self.to(e))?
+          }
+        }
+        if start {write!(f, "()")} else {write!(f, ")")}
+      }
+      LispKind::DottedList(es, r) => {
+        for e in es {
+          if start {
+            write!(f, "({}", self.to(e))?;
+            start = false
+          } else {
+            write!(f, " {}", self.to(e))?
+          }
+        }
+        self.to(r).list(start, f)
+      }
+      e => if start {write!(f, "{}", self.to(e))} else {write!(f, ". {})", self.to(e))}
+    }
+  }
 }
 
 fn alphanumber(n: usize) -> String {
@@ -30,23 +58,16 @@ impl<'a> fmt::Display for LispFormat<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self.e {
       &LispKind::Atom(a) => self.atom(a).fmt(f),
-      LispKind::List(es) => {
-        write!(f, "(")?;
-        let mut it = es.iter();
-        if let Some(e) = it.next() {self.to(e).fmt(f)?}
-        for e in it {write!(f, " {}", self.to(e))?}
-        write!(f, ")")
-      }
-      LispKind::DottedList(es, r) => {
-        write!(f, "(")?;
-        for e in es {write!(f, "{} ", self.to(e))?}
-        write!(f, ". {})", self.to(r))
-      }
-      LispKind::Span(_, e) => self.to(e).fmt(f),
+      LispKind::List(es) if es.is_empty() => "()".fmt(f),
+      LispKind::DottedList(es, r) if es.is_empty() => self.to(r).fmt(f),
+      LispKind::DottedList(es, _) |
+      LispKind::List(es) => self.list(true, f),
+      LispKind::Annot(_, e) => self.to(e).fmt(f),
       LispKind::Number(n) => n.fmt(f),
       LispKind::String(s) => write!(f, "{:?}", s),
       LispKind::UnparsedFormula(s) => write!(f, "${}$", s),
-      LispKind::Bool(b) => b.fmt(f),
+      LispKind::Bool(true) => "#t".fmt(f),
+      LispKind::Bool(false) => "#f".fmt(f),
       LispKind::Syntax(s) => s.fmt(f),
       LispKind::Undef => write!(f, "#undef"),
       LispKind::Proc(Proc::Builtin(p)) => p.fmt(f),
