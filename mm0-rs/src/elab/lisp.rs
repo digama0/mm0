@@ -11,6 +11,7 @@ use crate::parser::ast::{Atom};
 use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap};
 use parser::IR;
+pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
   (enum $name:ident {$($e:ident: $s:expr,)*}) => {
@@ -167,6 +168,30 @@ impl LispKind {
   pub fn goal_type(&self) -> Option<LispVal> {
     self.unwrapped(|e| if let LispKind::Goal(e) = e {Some(e.clone())} else {None})
   }
+
+  pub fn exactly(&self, n: usize) -> bool {
+    self.unwrapped(|e| match e {
+      LispKind::List(es) => n == es.len(),
+      LispKind::DottedList(es, _) if n <= es.len() => false,
+      LispKind::DottedList(es, r) => r.exactly(n - es.len()),
+      _ => false,
+    })
+  }
+  pub fn is_list(&self) -> bool {
+    self.unwrapped(|e| match e {
+      LispKind::List(_) => true,
+      LispKind::DottedList(_, r) => r.is_list(),
+      _ => false,
+    })
+  }
+  pub fn at_least(&self, n: usize) -> bool {
+    self.unwrapped(|e| match e {
+      LispKind::List(es) => return n == es.len(),
+      LispKind::DottedList(es, r) if n <= es.len() => r.is_list(),
+      LispKind::DottedList(es, r) => r.at_least(n - es.len()),
+      _ => false,
+    })
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -303,6 +328,45 @@ impl std::fmt::Display for BuiltinProc {
   }
 }
 
+#[derive(Clone, Debug)]
+pub struct Uncons(LispVal, usize);
+impl Uncons {
+  pub fn from(e: LispVal) -> Uncons { Uncons(e, 0) }
+  pub fn exactly(&self, n: usize) -> bool { self.0.exactly(self.1 + n) }
+  pub fn at_least(&self, n: usize) -> bool { self.0.at_least(self.1 + n) }
+
+  pub fn as_lisp(self) -> LispVal {
+    if self.1 == 0 {return self.0}
+    self.0.unwrapped(|e| match e {
+      LispKind::List(es) if self.1 == es.len() => NIL.clone(),
+      LispKind::List(es) => Arc::new(LispKind::List(es[self.1..].into())),
+      LispKind::DottedList(es, r) if self.1 == es.len() => r.clone(),
+      LispKind::DottedList(es, r) => Arc::new(LispKind::DottedList(es[self.1..].into(), r.clone())),
+      _ => unreachable!()
+    })
+  }
+}
+
+impl Iterator for Uncons {
+  type Item = LispVal;
+  fn next(&mut self) -> Option<LispVal> {
+    loop {
+      match &*self.0 {
+        LispKind::Ref(m) => {let e = m.lock().unwrap().clone(); self.0 = e}
+        LispKind::Annot(_, v) => self.0 = v.clone(),
+        LispKind::List(es) => match es.get(self.1) {
+          None => return None,
+          Some(e) => {self.1 += 1; return Some(e.clone())}
+        },
+        LispKind::DottedList(es, r) => match es.get(self.1) {
+          None => *self = Self::from(r.clone()),
+          Some(e) => {self.1 += 1; return Some(e.clone())}
+        }
+        _ => return None
+      }
+    }
+  }
+}
 
 #[derive(Default)]
 pub struct LispRemapper {

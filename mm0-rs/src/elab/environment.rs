@@ -130,10 +130,10 @@ pub struct Thm {
   pub proof: Option<Proof>,
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub enum StmtTrace {
-  Sort(ArcString),
-  Decl(ArcString),
+  Sort(AtomID),
+  Decl(AtomID),
 }
 
 #[derive(Copy, Clone)]
@@ -197,16 +197,28 @@ pub struct ParserEnv {
   pub coe_prov: HashMap<SortID, SortID>,
 }
 
+#[derive(Clone)]
+pub struct AtomData {
+  pub name: ArcString,
+  pub lisp: Option<(Option<FileSpan>, LispVal)>,
+  pub sort: Option<SortID>,
+  pub decl: Option<DeclKey>,
+}
+
+impl AtomData {
+  fn new(name: ArcString) -> AtomData {
+    AtomData {name, lisp: None, sort: None, decl: None}
+  }
+}
+
 #[derive(Default, Clone)]
 pub struct Environment {
-  pub sort_keys: HashMap<ArcString, SortID>,
   pub sorts: SortVec<Sort>,
   pub pe: ParserEnv,
-  pub decl_keys: HashMap<ArcString, DeclKey>,
   pub terms: TermVec<Term>,
   pub thms: ThmVec<Thm>,
   pub atoms: HashMap<ArcString, AtomID>,
-  pub lisp_ctx: AtomVec<(ArcString, Option<(Option<FileSpan>, LispVal)>)>,
+  pub data: AtomVec<AtomData>,
   pub stmts: Vec<StmtTrace>,
 }
 
@@ -507,12 +519,12 @@ pub struct RedeclarationError {
 }
 
 impl Environment {
-  pub fn term(&self, s: &str) -> Option<TermID> {
-    if let Some(&DeclKey::Term(i)) = self.decl_keys.get(s) { Some(i) } else { None }
+  pub fn term(&self, a: AtomID) -> Option<TermID> {
+    if let Some(DeclKey::Term(i)) = self.data[a].decl { Some(i) } else { None }
   }
 
-  pub fn thm(&self, s: &str) -> Option<ThmID> {
-    if let Some(&DeclKey::Thm(i)) = self.decl_keys.get(s) { Some(i) } else { None }
+  pub fn thm(&self, a: AtomID) -> Option<ThmID> {
+    if let Some(DeclKey::Thm(i)) = self.data[a].decl { Some(i) } else { None }
   }
 }
 
@@ -523,30 +535,31 @@ pub enum AddItemError<A> {
 type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
 
 impl Environment {
-  pub fn add_sort(&mut self, s: ArcString, fsp: FileSpan, sd: Modifiers) -> Result<SortID, AddItemError<SortID>> {
+  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, sd: Modifiers) -> Result<SortID, AddItemError<SortID>> {
     let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    if let Some((_, e)) = self.sort_keys.try_insert(s.clone(), new_id) {
-      let old_id = *e.get();
+    let data = &mut self.data[a];
+    if let Some(old_id) = data.sort {
       let ref sort = self.sorts[old_id];
       if sd == sort.mods { Ok(old_id) }
       else {
         Err(AddItemError::Redeclaration(old_id, RedeclarationError {
-          msg: format!("sort '{}' redeclared", e.key()),
+          msg: format!("sort '{}' redeclared", data.name),
           othermsg: "previously declared here".to_owned(),
           other: sort.span.clone()
         }))
       }
     } else {
-      self.sorts.push(Sort { name: s.clone(), span: fsp, mods: sd });
-      self.stmts.push(StmtTrace::Sort(s));
+      self.sorts.push(Sort { name: data.name.clone(), span: fsp, mods: sd });
+      self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)
     }
   }
 
-  pub fn add_term(&mut self, s: ArcString, new: FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
+  pub fn add_term(&mut self, a: AtomID, new: FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
     let new_id = TermID(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    if let Some((_, e)) = self.decl_keys.try_insert(s.clone(), DeclKey::Term(new_id)) {
-      let (res, sp) = match *e.get() {
+    let data = &mut self.data[a];
+    if let Some(key) = data.decl {
+      let (res, sp) = match key {
         DeclKey::Term(old_id) => {
           let ref sp = self.terms[old_id].span;
           if *sp == new { return Ok(old_id) }
@@ -555,21 +568,22 @@ impl Environment {
         DeclKey::Thm(old_id) => (None, &self.thms[old_id].span)
       };
       Err(AddItemError::Redeclaration(res, RedeclarationError {
-        msg: format!("term '{}' redeclared", e.key()),
+        msg: format!("term '{}' redeclared", data.name),
         othermsg: "previously declared here".to_owned(),
         other: sp.clone()
       }))
     } else {
       self.terms.push(t());
-      self.stmts.push(StmtTrace::Decl(s));
+      self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)
     }
   }
 
-  pub fn add_thm(&mut self, s: ArcString, new: FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
+  pub fn add_thm(&mut self, a: AtomID, new: FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
     let new_id = ThmID(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
-    if let Some((_, e)) = self.decl_keys.try_insert(s.clone(), DeclKey::Thm(new_id)) {
-      let (res, sp) = match *e.get() {
+    let data = &mut self.data[a];
+    if let Some(key) = data.decl {
+      let (res, sp) = match key {
         DeclKey::Thm(old_id) => {
           let ref sp = self.thms[old_id].span;
           if *sp == new { return Ok(old_id) }
@@ -578,13 +592,13 @@ impl Environment {
         DeclKey::Term(old_id) => (None, &self.terms[old_id].span)
       };
       Err(AddItemError::Redeclaration(res, RedeclarationError {
-        msg: format!("theorem '{}' redeclared", e.key()),
+        msg: format!("theorem '{}' redeclared", data.name),
         othermsg: "previously declared here".to_owned(),
         other: sp.clone()
       }))
     } else {
       self.thms.push(t());
-      self.stmts.push(StmtTrace::Decl(s));
+      self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)
     }
   }
@@ -597,29 +611,37 @@ impl Environment {
     match self.atoms.get(s) {
       Some(&a) => a,
       None => {
-        let id = AtomID(self.lisp_ctx.len().try_into().expect("too many atoms"));
+        let id = AtomID(self.data.len().try_into().expect("too many atoms"));
         let s: ArcString = s.into();
         self.atoms.insert(s.clone(), id);
-        self.lisp_ctx.push((s, None));
+        self.data.push(AtomData::new(s));
         id
       }
     }
   }
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
-    let ctx = &mut self.lisp_ctx;
+    let ctx = &mut self.data;
     *self.atoms.entry(s.clone()).or_insert_with(move ||
-      (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push((s, None))).0)
+      (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push(AtomData::new(s))).0)
   }
 
   pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     if self.stmts.is_empty() { return Ok(*self = other.clone()) }
-    let mut remap = Remapper::default();
-    for s in &other.stmts {
+    let lisp_remap = &mut LispRemapper {
+      atom: other.data.iter().map(|d| self.get_atom_arc(d.name.clone())).collect(),
+      lisp: Default::default(),
+    };
+    for (i, d) in other.data.iter().enumerate() {
+      self.data[lisp_remap.atom[AtomID(i as u32)]].lisp =
+        d.lisp.as_ref().map(|(fs, v)| (fs.clone(), v.remap(lisp_remap)))
+    }
+    let remap = &mut Remapper::default();
+    for &s in &other.stmts {
       match s {
-        StmtTrace::Sort(s) => {
-          let i = other.sort_keys[s];
+        StmtTrace::Sort(a) => {
+          let i = other.data[a].sort.unwrap();
           let ref sort = other.sorts[i];
-          let id = match self.add_sort(s.clone(), sort.span.clone(), sort.mods) {
+          let id = match self.add_sort(a.remap(lisp_remap), sort.span.clone(), sort.mods) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
               errors.push(ElabError::with_info(sp, r.msg.into(), vec![
@@ -632,10 +654,10 @@ impl Environment {
           };
           if i != id { remap.sort.insert(i, id); }
         }
-        StmtTrace::Decl(s) => match other.decl_keys[s] {
+        StmtTrace::Decl(a) => match other.data[a].decl.unwrap() {
           DeclKey::Term(i) => {
             let ref o = other.terms[i];
-            let id = match self.add_term(s.clone(), o.span.clone(), || o.remap(&mut remap)) {
+            let id = match self.add_term(a.remap(lisp_remap), o.span.clone(), || o.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![
@@ -650,7 +672,7 @@ impl Environment {
           }
           DeclKey::Thm(i) => {
             let ref o = other.thms[i];
-            let id = match self.add_thm(s.clone(), o.span.clone(), || o.remap(&mut remap)) {
+            let id = match self.add_thm(a.remap(lisp_remap), o.span.clone(), || o.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![
@@ -666,15 +688,7 @@ impl Environment {
         }
       }
     }
-    self.pe.merge(&other.pe, &mut remap, sp, &self.sorts, errors);
-    let mut r = LispRemapper {
-      atom: other.lisp_ctx.iter().map(|(s, _)| self.get_atom_arc(s.clone())).collect(),
-      lisp: Default::default(),
-    };
-    for (i, (_, v)) in other.lisp_ctx.iter().enumerate() {
-      self.lisp_ctx[r.atom[AtomID(i as u32)]].1 =
-        v.as_ref().map(|(fs, v)| (fs.clone(), v.remap(&mut r)))
-    }
+    self.pe.merge(&other.pe, remap, sp, &self.sorts, errors);
     Ok(())
   }
 

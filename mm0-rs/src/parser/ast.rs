@@ -66,16 +66,42 @@ pub enum DeclKind { Term, Axiom, Theorem, Def }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LocalKind { Bound, Reg, Dummy, Anon }
 
+impl LocalKind {
+  pub fn is_bound(self) -> bool {
+    match self {
+      LocalKind::Bound | LocalKind::Dummy => true,
+      LocalKind::Reg | LocalKind::Anon => false,
+    }
+  }
+}
+
 #[derive(Clone)]
 pub struct DepType {
   pub sort: Span,
   pub deps: Vec<Span>,
 }
+
+impl DepType {
+  pub fn span(&self) -> Span {
+    (self.sort.start..self.deps.last().unwrap_or(&self.sort).end).into()
+  }
+}
+
 #[derive(Clone)]
 pub enum Type {
   DepType(DepType),
   Formula(Formula)
 }
+
+impl Type {
+  pub fn span(&self) -> Span {
+    match self {
+      Type::DepType(d) => d.span(),
+      Type::Formula(f) => f.0
+    }
+  }
+}
+
 pub struct Binder {
   pub span: Span,
   pub local: (Span, LocalKind),
@@ -162,7 +188,7 @@ pub struct Decl {
   pub k: DeclKind,
   pub id: Span,
   pub bis: Vec<Binder>,
-  pub ty: Option<Vec<Type>>,
+  pub ty: Option<(Vec<Type>, Type)>,
   pub val: Option<SExpr>,
 }
 

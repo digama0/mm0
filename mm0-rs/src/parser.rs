@@ -208,10 +208,11 @@ impl<'a> Parser<'a> {
     Ok(bis)
   }
 
-  fn arrows(&mut self) -> Result<Vec<Type>> {
-    let mut tys = vec![self.ty()?];
-    while let Some(_) = self.chr(b'>') {tys.push(self.ty()?)}
-    Ok(tys)
+  fn arrows(&mut self) -> Result<(Vec<Type>, Type)> {
+    let mut tys = vec![];
+    let mut ret = self.ty()?;
+    while let Some(_) = self.chr(b'>') {tys.push(mem::replace(&mut ret, self.ty()?))}
+    Ok((tys, ret))
   }
 
   fn lisp_ident(&mut self) -> Result<Span> {
@@ -381,6 +382,7 @@ impl<'a> Parser<'a> {
     let bis = self.binders()?;
     let ty = if self.chr(b':').is_some() {Some(self.arrows()?)} else {None};
     let val = if self.chr(b'=').is_some() {Some(self.sexpr()?)} else {None};
+    if ty.is_none() && val.is_none() {return self.err_str("type or value expected")}
     Ok((self.chr_err(b';')?, Decl {mods, k, bis, id, ty, val}))
   }
 

@@ -13,7 +13,7 @@ impl<'a> LispFormat<'a> {
   fn to(&'a self, e: &'a LispKind) -> LispFormat<'a> {
     LispFormat {source: self.source, env: self.env, e}
   }
-  fn atom(&self, a: AtomID) -> &str { &self.env.lisp_ctx[a].0 }
+  fn atom(&self, a: AtomID) -> &str { &self.env.data[a].name }
 
   fn list(&self, mut start: bool, f: &mut fmt::Formatter) -> fmt::Result {
     match self.e {

@@ -1,6 +1,7 @@
 pub mod environment;
 pub mod lisp;
 pub mod math_parser;
+pub mod local_context;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
 use environment::*;
 use environment::Literal as ELiteral;
 use lisp::{LispVal, LispKind, FALSE};
-pub use environment::Environment;
+pub use {environment::Environment, local_context::LocalContext};
 pub use crate::parser::ErrorLevel;
 use crate::util::*;
 use crate::parser::{*, ast::*, ast::Literal as ALiteral};
@@ -105,30 +106,29 @@ impl ReportMode {
   }
 }
 
-pub struct Elaborator<'a, T: FileServer + ?Sized> {
+pub struct Elaborator<'a, F: FileServer + ?Sized> {
   ast: &'a AST,
-  fs: &'a T,
+  fs: &'a F,
   path: FileRef,
   errors: Vec<ElabError>,
-  toks: HashMap<Span, Option<T::WaitToken>>,
+  toks: HashMap<Span, Option<F::WaitToken>>,
   env: Environment,
   timeout: Option<Duration>,
   cur_timeout: Option<Instant>,
-  mvars: Vec<LispVal>,
-  goals: Vec<LispVal>,
+  lc: LocalContext,
   reporting: ReportMode,
 }
 
-impl<T: FileServer + ?Sized> Deref for Elaborator<'_, T> {
+impl<F: FileServer + ?Sized> Deref for Elaborator<'_, F> {
   type Target = Environment;
   fn deref(&self) -> &Environment { &self.env }
 }
-impl<T: FileServer + ?Sized> DerefMut for Elaborator<'_, T> {
+impl<F: FileServer + ?Sized> DerefMut for Elaborator<'_, F> {
   fn deref_mut(&mut self) -> &mut Environment { &mut self.env }
 }
 
-impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
-  fn new(ast: &'a AST, path: FileRef, fs: &'a T) -> Elaborator<'a, T> {
+impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+  fn new(ast: &'a AST, path: FileRef, fs: &'a F) -> Elaborator<'a, F> {
     Elaborator {
       ast, fs, path,
       errors: Vec::new(),
@@ -136,8 +136,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       env: Environment::default(),
       timeout: Some(Duration::from_secs(5)),
       cur_timeout: None,
-      mvars: Vec::new(),
-      goals: Vec::new(),
+      lc: LocalContext::new(),
       reporting: ReportMode::new(),
     }
   }
@@ -158,14 +157,9 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     }
   }
 
-  fn elab_decl(&mut self, d: &Decl) {
-    match d.k {
-      _ => self.report(ElabError::new_e(d.id, "unimplemented"))
-    }
-  }
-
   fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
-    let term = self.term(self.span(n.id)).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
+    let a = self.env.get_atom(self.ast.span(n.id));
+    let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
     let tk: ArcString = self.span(n.c.trim).into();
     let (rassoc, nargs, lits) = match n.k {
       SimpleNotaKind::Prefix => (true, 1, vec![ELiteral::Var(0, n.prec)]),
@@ -177,7 +171,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
             ELiteral::Var(0, Prec::Prec(l)),
             ELiteral::Const(tk.clone()),
             ELiteral::Var(1, Prec::Prec(r))])
-        } else {Err(ElabError::new_e(n.id, "max prec not allowed for infix"))?},
+        } else { Err(ElabError::new_e(n.id, "max prec not allowed for infix"))? }
     };
     self.check_term_nargs(n.id, term, nargs)?;
     let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc: Some(rassoc), lits };
@@ -190,9 +184,12 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   }
 
   fn elab_coe(&mut self, id: Span, from: Span, to: Span) -> Result<()> {
-    let t = self.term(self.span(id)).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
-    let &s1 = self.sort_keys.get(self.span(from)).ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
-    let &s2 = self.sort_keys.get(self.span(to)).ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
+    let aid = self.env.get_atom(self.ast.span(id));
+    let afrom = self.env.get_atom(self.ast.span(from));
+    let ato = self.env.get_atom(self.ast.span(to));
+    let t = self.term(aid).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
+    let s1 = self.data[afrom].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
+    let s2 = self.data[ato].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
     let fsp = self.fspan(id);
     self.check_term_nargs(id, t, 2)?;
     self.add_coe(s1, s2, fsp, t)
@@ -207,7 +204,8 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   }
 
   fn elab_gen_nota(&mut self, n: &GenNota) -> Result<()> {
-    let term = self.term(self.span(n.id)).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
+    let a = self.env.get_atom(self.ast.span(n.id));
+    let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
     let nargs = n.bis.len();
     self.check_term_nargs(n.id, term, nargs)?;
     let mut vars = HashMap::<&str, (usize, bool)>::new();
@@ -295,13 +293,8 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       vec![(r.decl1, "declared here".into())]))
   }
 
-  fn parse_and_run(&mut self, e: &SExpr) -> Result<LispVal> {
-    let ir = self.parse_lisp(e)?;
-    self.evaluate(e.span, &ir)
-  }
-
   fn parse_and_print(&mut self, e: &SExpr) -> Result<()> {
-    let val = self.parse_and_run(e)?;
+    let val = self.eval_lisp(e)?;
     if val.is_def() {self.print_lisp(e.span, &val)}
     Ok(())
   }
@@ -310,9 +303,9 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
-        let s = ArcString::new(self.span(sp).to_owned());
+        let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        match self.add_sort(s.clone(), fsp, sd) {
+        match self.add_sort(a, fsp, sd) {
           Ok(_) => {}
           Err(AddItemError::Redeclaration(_, r)) =>
             self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())])),
@@ -331,10 +324,10 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
       },
       StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },
       StmtKind::Annot(e, s) => {
-        let v = self.parse_and_run(e)?;
+        let v = self.eval_lisp(e)?;
         self.elab_stmt(s)?;
         let ann = self.get_atom("annotate");
-        let ann = match &self.lisp_ctx[ann].1 {
+        let ann = match &self.data[ann].lisp {
           Some((_, e)) => e.clone(),
           None => Err(ElabError::new_e(e.span, "define 'annotate' before using annotations"))?,
         };

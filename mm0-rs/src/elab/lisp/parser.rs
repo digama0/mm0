@@ -622,7 +622,10 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
 }
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
-  pub fn parse_lisp<'b, 'c>(&'b mut self, e: &'c SExpr) -> Result<IR, ElabError> {
+  pub fn parse_lisp<'b>(&'b mut self, e: &SExpr) -> Result<IR, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr(false, e)
+  }
+  pub fn parse_qexpr<'b>(&'b mut self, e: QExpr) -> Result<IR, ElabError> {
+    LispParser {elab: &mut *self, ctx: LocalCtx::new()}.qexpr(e)
   }
 }
