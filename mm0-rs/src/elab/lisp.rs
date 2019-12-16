@@ -66,6 +66,14 @@ impl std::fmt::Display for Syntax {
   }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum InferTarget {
+  Unknown,
+  Provable,
+  Bound(AtomID),
+  Reg(AtomID),
+}
+
 pub type LispVal = Arc<LispKind>;
 #[derive(Debug)]
 pub enum LispKind {
@@ -82,7 +90,7 @@ pub enum LispKind {
   Proc(Proc),
   AtomMap(HashMap<AtomID, LispVal>),
   Ref(Mutex<LispVal>),
-  MVar(usize, AtomID, bool),
+  MVar(usize, InferTarget),
   Goal(LispVal),
 }
 lazy_static! {
@@ -160,7 +168,7 @@ impl LispKind {
     }
   }
   pub fn is_mvar(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::MVar(_, _, _) = e {true} else {false})
+    self.unwrapped(|e| if let LispKind::MVar(_, _) = e {true} else {false})
   }
   pub fn is_goal(&self) -> bool {
     self.unwrapped(|e| if let LispKind::Goal(_) = e {true} else {false})
@@ -182,6 +190,13 @@ impl LispKind {
       LispKind::List(_) => true,
       LispKind::DottedList(_, r) => r.is_list(),
       _ => false,
+    })
+  }
+  pub fn len(&self) -> usize {
+    self.unwrapped(|e| match e {
+      LispKind::List(es) => es.len(),
+      LispKind::DottedList(es, r) => es.len() + r.len(),
+      _ => 0,
     })
   }
   pub fn at_least(&self, n: usize) -> bool {
@@ -394,7 +409,7 @@ impl Remap<LispRemapper> for LispVal {
       LispKind::Proc(f) => Arc::new(LispKind::Proc(f.remap(r))),
       LispKind::AtomMap(m) => Arc::new(LispKind::AtomMap(m.remap(r))),
       LispKind::Ref(m) => Arc::new(LispKind::Ref(m.remap(r))),
-      &LispKind::MVar(n, s, b) => Arc::new(LispKind::MVar(n, s.remap(r), b)),
+      &LispKind::MVar(n, is) => Arc::new(LispKind::MVar(n, is.remap(r))),
       LispKind::Number(_) |
       LispKind::String(_) |
       LispKind::UnparsedFormula(_) |
@@ -407,6 +422,16 @@ impl Remap<LispRemapper> for LispVal {
   }
 }
 
+impl Remap<LispRemapper> for InferTarget {
+  fn remap(&self, r: &mut LispRemapper) -> Self {
+    match self {
+      InferTarget::Unknown => InferTarget::Unknown,
+      InferTarget::Provable => InferTarget::Provable,
+      InferTarget::Bound(a) => InferTarget::Bound(a.remap(r)),
+      InferTarget::Reg(a) => InferTarget::Reg(a.remap(r)),
+    }
+  }
+}
 impl Remap<LispRemapper> for ProcPos {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {

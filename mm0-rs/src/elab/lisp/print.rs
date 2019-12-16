@@ -60,8 +60,8 @@ impl<'a> fmt::Display for LispFormat<'a> {
       &LispKind::Atom(a) => self.atom(a).fmt(f),
       LispKind::List(es) if es.is_empty() => "()".fmt(f),
       LispKind::DottedList(es, r) if es.is_empty() => self.to(r).fmt(f),
-      LispKind::DottedList(es, _) |
-      LispKind::List(es) => self.list(true, f),
+      LispKind::DottedList(_, _) |
+      LispKind::List(_) => self.list(true, f),
       LispKind::Annot(_, e) => self.to(e).fmt(f),
       LispKind::Number(n) => n.fmt(f),
       LispKind::String(s) => write!(f, "{:?}", s),
@@ -89,7 +89,7 @@ impl<'a> fmt::Display for LispFormat<'a> {
         write!(f, ")")
       }
       LispKind::Ref(m) => self.to(&m.lock().unwrap()).fmt(f),
-      &LispKind::MVar(n, _, _) => write!(f, "?{}", alphanumber(n)),
+      &LispKind::MVar(n, _) => write!(f, "?{}", alphanumber(n)),
       LispKind::Goal(e) => write!(f, "(goal {})", self.to(e)),
     }
   }

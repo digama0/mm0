@@ -55,6 +55,7 @@ vec_index!(AtomVec, AtomID);
 
 #[derive(Clone)]
 pub struct Sort {
+  pub atom: AtomID,
   pub name: ArcString,
   pub span: FileSpan,
   pub mods: Modifiers,
@@ -64,6 +65,15 @@ pub struct Sort {
 pub enum Type {
   Bound(SortID),
   Reg(SortID, u64),
+}
+
+impl Type {
+  pub fn sort(self) -> SortID {
+    match self {
+      Type::Bound(s) => s,
+      Type::Reg(s, _) => s,
+    }
+  }
 }
 
 /// An `ExprNode` is interpreted inside a context containing the `Vec<(String, Type)>`
@@ -89,10 +99,11 @@ pub struct Expr {
 
 #[derive(Clone)]
 pub struct Term {
+  pub atom: AtomID,
   pub span: FileSpan,
   pub vis: Modifiers,
   pub id: Span,
-  pub args: Vec<(String, Type)>,
+  pub args: Vec<(AtomID, Type)>,
   pub ret: Type,
   pub val: Option<Expr>,
 }
@@ -120,6 +131,7 @@ pub struct Proof {
 
 #[derive(Clone)]
 pub struct Thm {
+  pub atom: AtomID,
   pub span: FileSpan,
   pub vis: Modifiers,
   pub id: Span,
@@ -238,6 +250,7 @@ struct Remapper {
   sort: HashMap<SortID, SortID>,
   term: HashMap<TermID, TermID>,
   thm: HashMap<ThmID, ThmID>,
+  atom: HashMap<AtomID, AtomID>,
 }
 
 pub trait Remap<R> {
@@ -251,6 +264,9 @@ impl Remap<Remapper> for TermID {
 }
 impl Remap<Remapper> for ThmID {
   fn remap(&self, r: &mut Remapper) -> Self { *r.thm.get(self).unwrap_or(self) }
+}
+impl Remap<Remapper> for AtomID {
+  fn remap(&self, r: &mut Remapper) -> Self { *r.atom.get(self).unwrap_or(self) }
 }
 impl<R> Remap<R> for String {
   fn remap(&self, _: &mut R) -> Self { self.clone() }
@@ -307,6 +323,7 @@ impl Remap<Remapper> for Expr {
 impl Remap<Remapper> for Term {
   fn remap(&self, r: &mut Remapper) -> Self {
     Term {
+      atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
       id: self.id,
@@ -338,6 +355,7 @@ impl Remap<Remapper> for Proof {
 impl Remap<Remapper> for Thm {
   fn remap(&self, r: &mut Remapper) -> Self {
     Thm {
+      atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
       id: self.id,
@@ -549,7 +567,7 @@ impl Environment {
         }))
       }
     } else {
-      self.sorts.push(Sort { name: data.name.clone(), span: fsp, mods: sd });
+      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)
     }

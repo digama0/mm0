@@ -1,17 +1,16 @@
-use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, hash_map::Entry};
-use super::environment::AtomID;
+use super::environment::{AtomID, Type as EType};
 use crate::parser::ast::{Decl, Binder, Type, DepType, LocalKind};
-use super::{Elaborator, FileServer, ElabError, Result, math_parser::QExpr};
-use super::lisp::{LispVal, LispKind, Uncons};
+use super::*;
+use super::lisp::{LispVal, LispKind, Annot, Uncons, InferTarget};
 use crate::util::*;
 
 #[derive(Debug)]
 pub enum InferSort {
-  KnownBound { dummy: bool, sort: AtomID },
-  KnownReg {sort: AtomID, deps: Vec<AtomID> },
-  Unknown { must_bound: bool, sorts: HashMap<AtomID, LispVal> },
+  KnownBound { dummy: bool, sort: SortID },
+  KnownReg {sort: SortID, deps: Vec<AtomID> },
+  Unknown { must_bound: bool, sorts: HashMap<Option<SortID>, LispVal> },
 }
 
 impl Default for InferSort {
@@ -24,6 +23,13 @@ pub struct LocalContext {
   pub var_order: Vec<(Option<AtomID>, Option<InferSort>)>, // InferSort only populated for anonymous vars
   pub mvars: Vec<LispVal>,
   pub goals: Vec<LispVal>,
+}
+
+fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget) -> LispVal {
+  let n = mvars.len();
+  let e = Arc::new(LispKind::Ref(Mutex::new(Arc::new(LispKind::MVar(n, tgt)))));
+  mvars.push(e.clone());
+  e
 }
 
 impl LocalContext {
@@ -45,15 +51,126 @@ impl LocalContext {
     }
   }
 
-  pub fn new_mvar(&mut self, sort: AtomID, bound: bool) -> LispVal {
-    let n = self.mvars.len();
-    let e = Arc::new(LispKind::Ref(Mutex::new(Arc::new(LispKind::MVar(n, sort, bound)))));
-    self.mvars.push(e.clone());
-    e
+  pub fn new_mvar(&mut self, tgt: InferTarget) -> LispVal {
+    new_mvar(&mut self.mvars, tgt)
   }
 
   fn var(&mut self, x: AtomID) -> &mut InferSort {
     self.vars.entry(x).or_default()
+  }
+}
+
+fn decorate_span(fsp: &Option<FileSpan>, e: LispKind) -> LispVal {
+  if let Some(fsp) = fsp {
+    Arc::new(LispKind::Annot(Annot::Span(fsp.clone()), Arc::new(e)))
+  } else {Arc::new(e)}
+}
+
+struct ElabTerm<'a> {
+  lc: &'a mut LocalContext,
+  env: &'a Environment,
+  fsp: FileSpan,
+}
+
+impl<'a> ElabTerm<'a> {
+  fn try_get_span(&self, e: &LispKind) -> Span {
+    match e.fspan() {
+      Some(fsp) if self.fsp.file == fsp.file && fsp.span.start >= self.fsp.span.start => fsp.span,
+      _ => self.fsp.span,
+    }
+  }
+
+  fn atom(&mut self, e: &LispVal, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
+    match (self.lc.vars.entry(a).or_default(), tgt) {
+      (InferSort::KnownReg {..}, InferTarget::Bound(_)) =>
+        Err(ElabError::new_e(self.try_get_span(e), "expected a bound variable, got regular variable")),
+      (&mut InferSort::KnownBound {sort, ..}, InferTarget::Bound(sa)) => {
+        let s = self.env.data[sa].sort.unwrap();
+        if s == sort {Ok(decorate_span(&e.fspan(), LispKind::Atom(a)))}
+        else {
+          Err(ElabError::new_e(self.try_get_span(e),
+            format!("type error: expected {}, got {}", self.env.sorts[s].name, self.env.sorts[sort].name)))
+        }
+      }
+      (InferSort::Unknown {must_bound, sorts}, tgt) => {
+        let s = match tgt {
+          InferTarget::Bound(sa) => {*must_bound = true; Some(self.env.data[sa].sort.unwrap())}
+          InferTarget::Reg(sa) => Some(self.env.data[sa].sort.unwrap()),
+          _ => None,
+        };
+        let mvars = &mut self.lc.mvars;
+        Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt)).clone())
+      }
+      (&mut InferSort::KnownReg {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
+      (&mut InferSort::KnownBound {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
+    }
+  }
+
+  fn list(&mut self, e: &LispVal,
+    mut it: impl Iterator<Item=LispVal>, tgt: InferTarget) -> Result<LispVal> {
+    let t = it.next().unwrap();
+    let a = t.as_atom().ok_or_else(|| ElabError::new_e(self.try_get_span(&t), "expected an atom"))?;
+    let tid = self.env.term(a).ok_or_else(||
+      ElabError::new_e(self.try_get_span(&t), format!("term '{}' not declared", self.env.data[a].name)))?;
+    let tdata = &self.env.terms[tid];
+    let mut tys = tdata.args.iter();
+    let mut args = vec![decorate_span(&t.fspan(), LispKind::Atom(a))];
+    for arg in it {
+      let tgt = match tys.next().ok_or_else(||
+        ElabError::new_e(self.try_get_span(&e),
+          format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?.1 {
+        EType::Bound(s) => InferTarget::Bound(self.env.sorts[s].atom),
+        EType::Reg(s, _) => InferTarget::Reg(self.env.sorts[s].atom),
+      };
+      args.push(self.expr(&arg, tgt)?);
+    }
+    self.coerce(e, tdata.ret.sort(), LispKind::List(args), tgt)
+  }
+
+  fn coerce(&self, src: &LispVal, from: SortID, res: LispKind, tgt: InferTarget) -> Result<LispVal> {
+    let fsp = src.fspan();
+    let res = decorate_span(&fsp, res);
+    let to = match tgt {
+      InferTarget::Unknown => return Ok(res),
+      InferTarget::Provable if self.env.sorts[from].mods.contains(Modifiers::PROVABLE) => return Ok(res),
+      InferTarget::Provable => *self.env.pe.coe_prov.get(&from).ok_or_else(||
+        ElabError::new_e(self.try_get_span(&src),
+          format!("type error: expected provable sort, got {}", self.env.sorts[from].name)))?,
+      InferTarget::Reg(to) => self.env.data[to].sort.unwrap(),
+      InferTarget::Bound(_) => return Err(ElabError::new_e(
+        self.try_get_span(&src), "expected a variable"))
+    };
+    if from == to {return Ok(res)}
+    if let Some(c) = self.env.pe.coes.get(&from).and_then(|m| m.get(&to)) {
+      fn apply(c: &Coe, f: impl FnOnce(TermID, LispVal) -> LispVal + Copy, e: LispVal) -> LispVal {
+        match c {
+          &Coe::One(_, tid) => f(tid, e),
+          Coe::Trans(c1, _, c2) => apply(c2, f.clone(), apply(c1, f, e)),
+        }
+      }
+      Ok(apply(c, |tid, e| decorate_span(&fsp, LispKind::List(
+        vec![Arc::new(LispKind::Atom(self.env.terms[tid].atom)), e])), res))
+    } else {
+      Err(ElabError::new_e(self.try_get_span(&src),
+        format!("type error: expected {}, got {}", self.env.sorts[to].name, self.env.sorts[from].name)))
+    }
+  }
+
+  fn other(&self, e: &LispVal, _: InferTarget) -> Result<LispVal> {
+    Err(ElabError::new_e(self.try_get_span(e), "Not a valid expression"))
+  }
+
+  fn expr(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
+    e.unwrapped(|r| match r {
+      &LispKind::Atom(a) if self.env.term(a).is_some() =>
+        self.list(e, Some(e.clone()).into_iter(), tgt),
+      &LispKind::Atom(a) => self.atom(e, a, tgt),
+      LispKind::DottedList(es, r) if es.is_empty() => self.expr(r, tgt),
+      LispKind::List(es) if es.len() == 1 => self.expr(&es[0], tgt),
+      LispKind::List(_) | LispKind::DottedList(_, _) if e.at_least(2) =>
+        self.list(e, Uncons::from(e.clone()), tgt),
+      _ => self.other(e, tgt),
+    })
   }
 }
 
@@ -68,7 +185,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     Ok(match ty {
       None => InferBinder::Var(x, InferSort::Unknown {must_bound: lk.is_bound(), sorts: HashMap::new()}),
       Some(&Type::DepType(DepType {sort, ref deps})) => InferBinder::Var(x, {
-        let sort = self.env.get_atom(self.ast.span(sort));
+        let a = self.env.get_atom(self.ast.span(sort));
+        let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(sort, "sort not found"))?;
         if lk.is_bound() {
           if !deps.is_empty() {
             self.report(ElabError::new_e(
@@ -89,51 +207,19 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       }),
       Some(&Type::Formula(f)) => {
         let e = self.parse_formula(f)?;
-        InferBinder::Hyp(x, self.eval_qexpr(e)?)
+        let e = self.eval_qexpr(e)?;
+        let e = self.elaborate_term(f.0, &e, InferTarget::Provable)?;
+        InferBinder::Hyp(x, e)
       },
     })
   }
-}
 
-#[derive(Copy, Clone)]
-enum InferTarget {
-  Unknown,
-  Provable,
-  Bound(AtomID),
-  Reg(AtomID),
-}
-
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
-  fn try_get_span(&self, sp: Span, e: &LispKind) -> Span {
-    match e.fspan() {
-      Some(fsp) if self.path == fsp.file && fsp.span.start >= sp.start => fsp.span,
-      _ => sp,
-    }
-  }
-
-  fn elaborate_atom(&mut self, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
-    unimplemented!()
-  }
-  fn elaborate_term_uncons(&mut self, sp: Span, mut u: Uncons, tgt: InferTarget) -> Result<LispVal> {
-    let t = u.next().unwrap();
-    let a = match t.as_atom() {
-      Some(a) => a,
-      None => return Err(ElabError::new_e(self.try_get_span(sp, &t), "Expected an atom"))
-    };
-    unimplemented!()
-  }
-  fn elaborate_term_other(&self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
-    Err(ElabError::new_e(self.try_get_span(sp, e), "Not a valid expression"))
-  }
   fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
-    match &**e {
-      &LispKind::Atom(a) => self.elaborate_atom(a, tgt),
-      LispKind::DottedList(es, r) if es.is_empty() => self.elaborate_term(sp, r, tgt),
-      LispKind::List(es) if es.len() == 1 => self.elaborate_term(sp, &es[0], tgt),
-      LispKind::List(_) | LispKind::DottedList(_, _) if e.at_least(2) =>
-        self.elaborate_term_uncons(sp, Uncons::from(e.clone()), tgt),
-      _ => self.elaborate_term_other(sp, e, tgt),
-    }
+    ElabTerm {
+      fsp: self.fspan(sp),
+      lc: &mut self.lc,
+      env: &self.env,
+    }.expr(e, tgt)
   }
 
   pub fn elab_decl(&mut self, d: &Decl) {
@@ -164,7 +250,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             self.lc.var_order.push((None, Some(is)));
           }
         }
-        Ok(InferBinder::Hyp(x, f)) => hyps.push((x, f)),
+        Ok(InferBinder::Hyp(x, e)) => hyps.push((x, e)),
       }
     }
     match d.k {

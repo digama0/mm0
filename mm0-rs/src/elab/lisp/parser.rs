@@ -17,7 +17,7 @@ pub enum IR {
   DottedList(Box<[IR]>, Box<IR>),
   App(Span, Span, Box<IR>, Box<[IR]>),
   If(Box<(IR, IR, IR)>),
-  Focus(Box<[IR]>),
+  Focus(Span, Box<[IR]>),
   Def(Option<(Span, AtomID)>, Box<IR>),
   Eval(Box<[IR]>),
   Lambda(Span, ProcSpec, Arc<IR>),
@@ -84,7 +84,7 @@ impl Remap<LispRemapper> for IR {
       IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
       &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
       IR::If(e) => IR::If(e.remap(r)),
-      IR::Focus(e) => IR::Focus(e.remap(r)),
+      IR::Focus(sp, e) => IR::Focus(*sp, e.remap(r)),
       IR::Def(a, e) => IR::Def(a.map(|(sp, a)| (sp, a.remap(r))), e.remap(r)),
       IR::Eval(e) => IR::Eval(e.remap(r)),
       &IR::Lambda(sp, spec, ref e) => IR::Lambda(sp, spec, e.remap(r)),
@@ -589,7 +589,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
               self.expr(false, e)?
             } else { IR::Const(UNDEF.clone()) }
           )))),
-          Err(Syntax::Focus) => Ok(IR::Focus(self.exprs(false, &es[1..])?.into())),
+          Err(Syntax::Focus) => Ok(IR::Focus(es[0].span, self.exprs(false, &es[1..])?.into())),
           Err(Syntax::Let) => self.let_(false, &es[1..]),
           Err(Syntax::Letrec) => self.let_(true, &es[1..]),
           Err(Syntax::Match) if es.len() < 2 =>

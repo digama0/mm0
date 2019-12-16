@@ -559,9 +559,17 @@ make_builtins! { self, sp1, sp2, args,
   SetTimeout: Exact(1) => {/* unimplemented */ UNDEF.clone()},
   IsMVar: Exact(1) => Arc::new(LispKind::Bool(args[0].is_mvar())),
   IsGoal: Exact(1) => Arc::new(LispKind::Bool(args[0].is_goal())),
-  NewMVar: Exact(2) => self.lc.new_mvar(
-    try1!(args[0].as_atom().ok_or("expected an atom")),
-    try1!(args[1].as_bool().ok_or("expected a bool"))),
+  NewMVar: AtLeast(0) => self.lc.new_mvar(
+    if args.is_empty() { InferTarget::Unknown }
+    else if args.len() == 2 {
+      let sort = try1!(args[0].as_atom().ok_or("expected an atom"));
+      if try1!(args[1].as_bool().ok_or("expected a bool")) {
+        InferTarget::Bound(sort)
+      } else {
+        InferTarget::Reg(sort)
+      }
+    } else {try1!(Err("invalid arguments"))}
+  ),
   PrettyPrint: Exact(1) => /* TODO: pretty */
     Arc::new(LispKind::String(ArcString::new(format!("{}", self.printer(&args[0]))))),
   NewGoal: Exact(1) => Arc::new(LispKind::Annot(Annot::Span(self.fspan(sp1)),
@@ -657,7 +665,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           IR::DottedList(ls, e) => State::DottedList(vec![], ls.iter(), e),
           IR::App(sp1, sp2, f, es) => push!(App(*sp1, *sp2, es); Eval(f)),
           IR::If(e) => push!(If(&e.1, &e.2); Eval(&e.0)),
-          IR::Focus(es) => unimplemented!(),
+          &IR::Focus(sp, _) => {self.print(sp, "focus", "unimplemented"); State::Ret(UNDEF.clone())},
           IR::Def(x, val) => push!(Def(x); Eval(val)),
           IR::Eval(es) => {
             let mut it = es.iter();
