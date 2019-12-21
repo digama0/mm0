@@ -60,7 +60,7 @@ pub struct Const {
   pub trim: Span
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DeclKind { Term, Axiom, Theorem, Def }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,7 +104,8 @@ impl Type {
 
 pub struct Binder {
   pub span: Span,
-  pub local: (Span, LocalKind),
+  pub local: Option<Span>,
+  pub kind: LocalKind,
   pub ty: Option<Type>,
 }
 
@@ -188,7 +189,7 @@ pub struct Decl {
   pub k: DeclKind,
   pub id: Span,
   pub bis: Vec<Binder>,
-  pub ty: Option<(Vec<Type>, Type)>,
+  pub ty: Option<Type>,
   pub val: Option<SExpr>,
 }
 

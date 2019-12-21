@@ -85,7 +85,7 @@ impl Type {
 #[derive(Clone)]
 pub enum ExprNode {
   Ref(usize),
-  Dummy(String, SortID),
+  Dummy(AtomID, SortID),
   App(TermID, Vec<ExprNode>),
 }
 
@@ -103,8 +103,8 @@ pub struct Term {
   pub span: FileSpan,
   pub vis: Modifiers,
   pub id: Span,
-  pub args: Vec<(AtomID, Type)>,
-  pub ret: Type,
+  pub args: Vec<(Option<AtomID>, Type)>,
+  pub ret: (SortID, u64),
   pub val: Option<Expr>,
 }
 
@@ -307,7 +307,7 @@ impl Remap<Remapper> for ExprNode {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ExprNode::Ref(i) => ExprNode::Ref(i),
-      ExprNode::Dummy(i, s) => ExprNode::Dummy(i.clone(), s.remap(r)),
+      ExprNode::Dummy(i, s) => ExprNode::Dummy(i.remap(r), s.remap(r)),
       ExprNode::App(t, es) => ExprNode::App(t.remap(r), es.remap(r)),
     }
   }
@@ -328,7 +328,7 @@ impl Remap<Remapper> for Term {
       vis: self.vis,
       id: self.id,
       args: self.args.remap(r),
-      ret: self.ret.remap(r),
+      ret: (self.ret.0.remap(r), self.ret.1),
       val: self.val.remap(r),
     }
   }
@@ -551,6 +551,17 @@ pub enum AddItemError<A> {
   Overflow
 }
 type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
+
+impl<A> AddItemError<A> {
+  pub fn to_elab_error(self, sp: Span) -> ElabError {
+    match self {
+      AddItemError::Redeclaration(_, r) =>
+        ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]),
+      AddItemError::Overflow =>
+        ElabError::new_e(sp, "too many sorts"),
+    }
+  }
+}
 
 impl Environment {
   pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, sd: Modifiers) -> Result<SortID, AddItemError<SortID>> {

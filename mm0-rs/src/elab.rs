@@ -210,12 +210,12 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     self.check_term_nargs(n.id, term, nargs)?;
     let mut vars = HashMap::<&str, (usize, bool)>::new();
     for (i, bi) in n.bis.iter().enumerate() {
-      match bi.local.1 {
-        LocalKind::Dummy => Err(ElabError::new_e(bi.local.0,
+      match bi.kind {
+        LocalKind::Dummy => Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
           "dummies not permitted in notation declarations"))?,
-        LocalKind::Anon => Err(ElabError::new_e(bi.local.0,
+        LocalKind::Anon => Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
           "all variables must be used in notation declaration"))?,
-        _ => { vars.insert(self.ast.span(bi.local.0), (i, false)); }
+        _ => { vars.insert(self.ast.span(bi.local.unwrap_or(bi.span)), (i, false)); }
       }
     }
 
@@ -281,7 +281,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     }
 
     for (_, (i, b)) in vars {
-      if !b { Err(ElabError::new_e(n.bis[i].local.0, "variable not used in notation"))? }
+      if !b { Err(ElabError::new_e(n.bis[i].local.unwrap_or(n.bis[i].span), "variable not used in notation"))? }
     }
     let s: ArcString = self.span(tk.trim).into();
     let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc, lits };
@@ -305,21 +305,15 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        match self.add_sort(a, fsp, sd) {
-          Ok(_) => {}
-          Err(AddItemError::Redeclaration(_, r)) =>
-            self.report(ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())])),
-          Err(AddItemError::Overflow) =>
-            self.report(ElabError::new_e(sp, "too many sorts")),
-        }
+        self.add_sort(a, fsp, sd).map_err(|e| e.to_elab_error(sp))?;
       }
-      StmtKind::Decl(d) => self.elab_decl(d),
+      StmtKind::Decl(d) => self.elab_decl(stmt.span, d)?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
       &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
-      &StmtKind::Import(sp, _) => if let Some(ref tok) = self.toks[&sp] {
+      &StmtKind::Import(sp, _) => if let Some(tok) = &self.toks[&sp] {
         self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)?
       },
       StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },

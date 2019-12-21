@@ -202,8 +202,8 @@ impl<'a> Parser<'a> {
   fn binders(&mut self) -> Result<Vec<Binder>> {
     let mut bis = Vec::new();
     while let Some((span, locals, ty)) = self.binder_group()? {
-      bis.extend(locals.into_iter().map(|local|
-        Binder { span, local, ty: ty.clone() }));
+      bis.extend(locals.into_iter().map(|(x, kind)|
+        Binder { span, local: Some(x), kind, ty: ty.clone() }));
     }
     Ok(bis)
   }
@@ -379,8 +379,13 @@ impl<'a> Parser<'a> {
       return Err(ParseError::new(sp, "invalid modifiers for this keyword".into()))
     }
     let id = self.ident_err()?;
-    let bis = self.binders()?;
-    let ty = if self.chr(b':').is_some() {Some(self.arrows()?)} else {None};
+    let mut bis = self.binders()?;
+    let ty = if self.chr(b':').is_some() {
+      let (bis2, t) = self.arrows()?;
+      bis.extend(bis2.into_iter().map(|ty| Binder {
+        span: ty.span(), local: None, kind: LocalKind::Anon, ty: Some(ty)}));
+      Some(t)
+    } else {None};
     let val = if self.chr(b'=').is_some() {Some(self.sexpr()?)} else {None};
     if ty.is_none() && val.is_none() {return self.err_str("type or value expected")}
     Ok((self.chr_err(b';')?, Decl {mods, k, bis, id, ty, val}))
