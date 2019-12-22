@@ -2,6 +2,7 @@ pub mod environment;
 pub mod lisp;
 pub mod math_parser;
 pub mod local_context;
+pub mod tactic;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;

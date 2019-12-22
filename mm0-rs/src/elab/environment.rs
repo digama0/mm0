@@ -111,21 +111,30 @@ pub struct Term {
 #[derive(Clone)]
 pub enum ProofNode {
   Ref(usize),
+  Dummy(AtomID, SortID),
   Term { term: TermID, args: Vec<ProofNode> },
   Thm {
     thm: ThmID,
     args: Vec<ProofNode>,
-    hyps: Vec<ProofNode>,
-    tgt: Box<ProofNode>,
   },
   Conv { tgt: Box<ProofNode>, proof: Box<ProofNode> },
 }
 
-/// The Proof type stores Proofession dags using a local context of Proofession nodes
-/// and a final Proofession. See `ProofNode` for explanation of the variants.
+impl From<&ExprNode> for ProofNode {
+  fn from(e: &ExprNode) -> ProofNode {
+    match e {
+      &ExprNode::Ref(n) => ProofNode::Ref(n),
+      &ExprNode::Dummy(a, s) => ProofNode::Dummy(a, s),
+      &ExprNode::App(term, ref es) => ProofNode::Term {
+        term, args: es.iter().map(|e| e.into()).collect()
+      }
+    }
+  }
+}
 #[derive(Clone)]
 pub struct Proof {
   pub heap: Vec<ProofNode>,
+  pub hyps: Vec<ProofNode>,
   pub head: ProofNode,
 }
 
@@ -135,11 +144,11 @@ pub struct Thm {
   pub span: FileSpan,
   pub vis: Modifiers,
   pub id: Span,
-  pub args: Vec<(String, Type)>,
+  pub args: Vec<(Option<AtomID>, Type)>,
   pub heap: Vec<ExprNode>,
   pub hyps: Vec<ExprNode>,
   pub ret: ExprNode,
-  pub proof: Option<Proof>,
+  pub proof: Option<Option<Proof>>,
 }
 
 #[derive(Copy, Clone)]
@@ -307,7 +316,7 @@ impl Remap<Remapper> for ExprNode {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ExprNode::Ref(i) => ExprNode::Ref(i),
-      ExprNode::Dummy(i, s) => ExprNode::Dummy(i.remap(r), s.remap(r)),
+      ExprNode::Dummy(a, s) => ExprNode::Dummy(a.remap(r), s.remap(r)),
       ExprNode::App(t, es) => ExprNode::App(t.remap(r), es.remap(r)),
     }
   }
@@ -337,9 +346,9 @@ impl Remap<Remapper> for ProofNode {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ProofNode::Ref(i) => ProofNode::Ref(i),
+      ProofNode::Dummy(a, s) => ProofNode::Dummy(a.remap(r), s.remap(r)),
       ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
-      ProofNode::Thm {thm, args, hyps, tgt} => ProofNode::Thm {
-        thm: thm.remap(r), args: args.remap(r), hyps: hyps.remap(r), tgt: tgt.remap(r) },
+      ProofNode::Thm {thm, args} => ProofNode::Thm { thm: thm.remap(r), args: args.remap(r) },
       ProofNode::Conv {tgt, proof} => ProofNode::Conv { tgt: tgt.remap(r), proof: proof.remap(r) },
     }
   }
@@ -348,6 +357,7 @@ impl Remap<Remapper> for Proof {
   fn remap(&self, r: &mut Remapper) -> Self {
     Proof {
       heap: self.heap.remap(r),
+      hyps: self.hyps.remap(r),
       head: self.head.remap(r),
     }
   }

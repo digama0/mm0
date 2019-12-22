@@ -27,6 +27,9 @@ enum Stack<'a> {
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
+  Refines(Span, std::slice::Iter<'a, IR>),
+  TryRefine(Span),
+  Focus(Vec<LispVal>),
 }
 
 impl Stack<'_> {
@@ -40,6 +43,7 @@ impl Stack<'_> {
 }
 enum State<'a> {
   Eval(&'a IR),
+  Refines(Span, std::slice::Iter<'a, IR>),
   Ret(LispVal),
   List(Span, Vec<LispVal>, std::slice::Iter<'a, IR>),
   DottedList(Vec<LispVal>, std::slice::Iter<'a, IR>, &'a IR),
@@ -195,6 +199,12 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     let sp = e.span;
     let ir = self.parse_qexpr(e)?;
     self.evaluate(sp, &ir)
+  }
+
+  pub fn elab_lisp<'b>(&'b mut self, e: &SExpr) -> Result<LispVal> {
+    let sp = e.span;
+    let ir = self.parse_lisp(e)?;
+    Evaluator::new(self, sp).run(State::Refines(sp, [ir].iter()))
   }
 
   pub fn evaluate<'b>(&'b mut self, sp: Span, ir: &'b IR) -> Result<LispVal> {
@@ -665,7 +675,11 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           IR::DottedList(ls, e) => State::DottedList(vec![], ls.iter(), e),
           IR::App(sp1, sp2, f, es) => push!(App(*sp1, *sp2, es); Eval(f)),
           IR::If(e) => push!(If(&e.1, &e.2); Eval(&e.0)),
-          &IR::Focus(sp, _) => {self.print(sp, "focus", "unimplemented"); State::Ret(UNDEF.clone())},
+          &IR::Focus(sp, ref irs) => {
+            if self.lc.goals.is_empty() {throw!(sp, "no goals")}
+            let gs = self.lc.goals.drain(1..).collect();
+            push!(Focus(gs); Refines(sp, irs.iter()))
+          }
           IR::Def(x, val) => push!(Def(x); Eval(val)),
           IR::Eval(es) => {
             let mut it = es.iter();
@@ -723,6 +737,15 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           Some(Stack::MapProc(sp1, sp2, f, us, mut vec)) => {
             vec.push(ret);
             State::MapProc(sp1, sp2, f, us, vec)
+          }
+          Some(Stack::Refines(sp, it)) => State::Refines(sp, it),
+          Some(Stack::TryRefine(_)) if !ret.is_def() => State::Ret(ret),
+          Some(Stack::TryRefine(sp)) => {self.refine(sp, vec![ret])?; State::Ret(UNDEF.clone())}
+          Some(Stack::Focus(gs)) => {
+            let mut gs1 = mem::replace(&mut self.lc.goals, vec![]);
+            gs1.extend_from_slice(&gs);
+            self.lc.set_goals(gs1);
+            State::Ret(UNDEF.clone())
           }
         },
         State::List(sp, vec, mut it) => match it.next() {
@@ -844,6 +867,10 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
               push!(MapProc(sp1, sp2, f.clone(), us, vec); App(sp1, sp2, f, args, [].iter()))
             }
           }
+        }
+        State::Refines(sp, mut it) => match it.next() {
+          None => State::Ret(UNDEF.clone()),
+          Some(e) => push!(Refines(sp, it), TryRefine(e.span().unwrap_or(sp)); Eval(e))
         }
       }
     }

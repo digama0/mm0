@@ -47,6 +47,17 @@ impl IR {
   fn match_fn_body(sp: Span, i: usize, brs: Box<[Branch]>) -> IR {
     IR::Match(sp, Box::new(IR::Local(i)), brs)
   }
+  pub fn span(&self) -> Option<Span> {
+    match self {
+      &IR::Global(sp, _) |
+      &IR::List(sp, _) |
+      &IR::App(sp, _, _, _) |
+      &IR::Focus(sp, _) |
+      &IR::Lambda(sp, _, _) |
+      &IR::Match(sp, _, _) => Some(sp),
+      _ => None
+    }
+  }
 }
 
 #[derive(Debug)]

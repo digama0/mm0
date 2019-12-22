@@ -26,7 +26,7 @@ impl Modifiers {
       DeclKind::Term => self.is_empty(),
       DeclKind::Axiom => self.is_empty(),
       DeclKind::Def => self == Modifiers::ABSTRACT || self == Modifiers::LOCAL || self.is_empty(),
-      DeclKind::Theorem => self == Modifiers::PUB || self.is_empty(),
+      DeclKind::Thm => self == Modifiers::PUB || self.is_empty(),
     }
   }
   pub fn from_name(s: &str) -> Option<Modifiers> {
@@ -61,7 +61,7 @@ pub struct Const {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum DeclKind { Term, Axiom, Theorem, Def }
+pub enum DeclKind { Term, Axiom, Thm, Def }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LocalKind { Bound, Reg, Dummy, Anon }

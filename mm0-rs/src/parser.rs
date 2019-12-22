@@ -555,7 +555,7 @@ impl<'a> Parser<'a> {
         }
         "term"    => self.decl_stmt(start, m, id, DeclKind::Term),
         "axiom"   => self.decl_stmt(start, m, id, DeclKind::Axiom),
-        "theorem" => self.decl_stmt(start, m, id, DeclKind::Theorem),
+        "theorem" => self.decl_stmt(start, m, id, DeclKind::Thm),
         "def"     => self.decl_stmt(start, m, id, DeclKind::Def),
         "input"   => self.inout_stmt(start, m, id, false),
         "output"  => self.inout_stmt(start, m, id, true),

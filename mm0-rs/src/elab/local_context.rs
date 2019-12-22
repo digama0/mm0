@@ -1,11 +1,12 @@
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::hash::Hash;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
 use super::environment::{AtomID, Type as EType};
-use crate::parser::ast::{Decl, Binder, Type, DepType, LocalKind};
+use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::*;
 use super::lisp::{LispVal, LispKind, Annot, Uncons, InferTarget};
 use crate::util::*;
@@ -315,21 +316,42 @@ impl BuildArgs {
   }
 }
 
-#[derive(PartialEq, Eq, Hash)]
-enum ExprHash {
-  Atom(AtomID),
-  App(AtomID, Vec<usize>),
+struct NodeHasher<'a, F: FileServer + ?Sized> {
+  elab: &'a Elaborator<'a, F>,
+  var_map: HashMap<AtomID, usize>,
+  fsp: FileSpan,
 }
 
-#[derive(Default)]
-struct DedupExpr {
-  map: HashMap<Rc<ExprHash>, usize>,
+impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
+  fn new(elab: &'a Elaborator<'a, F>, sp: Span) -> Self {
+    let mut var_map = HashMap::new();
+    for (i, &(_, a, _)) in elab.lc.var_order.iter().enumerate() {
+      if let Some(a) = a {var_map.insert(a, i);}
+    }
+    NodeHasher { fsp: elab.fspan(sp), var_map, elab }
+  }
+
+  fn err(&self, e: &LispKind, msg: impl Into<BoxError>) -> ElabError {
+    ElabError::new_e(try_get_span(&self.fsp, e), msg)
+  }
+}
+
+trait NodeHash: Hash + Eq + Sized {
+  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>,
+    e: &LispKind, f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self>;
+}
+
+struct Dedup<H: NodeHash> {
+  map: HashMap<Rc<H>, usize>,
   prev: HashMap<*const LispKind, usize>,
-  vec: Vec<(Rc<ExprHash>, bool)>,
+  vec: Vec<(Rc<H>, bool)>,
 }
 
-impl DedupExpr {
-  fn add(&mut self, p: *const LispKind, v: ExprHash) -> usize {
+impl<H: NodeHash> Dedup<H> {
+  fn new() -> Dedup<H> {
+    Dedup {map: HashMap::new(), prev: HashMap::new(), vec: Vec::new() }
+  }
+  fn add(&mut self, p: *const LispKind, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
         let n = self.vec.len();
@@ -347,64 +369,61 @@ impl DedupExpr {
     }
   }
 
-  fn dedup_expr(&mut self, e: &LispVal) -> usize {
-    e.unwrapped(|r| match self.prev.get(&(r as *const _)) {
+  fn dedup<'a, F: FileServer + ?Sized>(&mut self, nh: &NodeHasher<'a, F>, e: &LispVal) -> Result<usize> {
+    e.unwrapped(|r| Ok(match self.prev.get(&(r as *const _)) {
       Some(&n) => n,
-      None => match r {
-        &LispKind::Atom(a) => self.add(r, ExprHash::Atom(a)),
-        LispKind::List(es) if !es.is_empty() => {
-          let e = ExprHash::App(
-            es[0].as_atom().unwrap(),
-            es[1..].iter().map(|e| self.dedup_expr(e)).collect());
-          self.add(r, e)
-        }
-        _ => unreachable!()
-      },
-    })
+      None => {
+        let ns = H::from(nh, r, |e| self.dedup(nh, e))?;
+        self.add(r, ns)
+      }
+    }))
+  }
+
+  fn map_inj<T: NodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
+    let mut d = Dedup {
+      map: HashMap::new(),
+      prev: self.prev.clone(),
+      vec: Vec::with_capacity(self.vec.len())
+    };
+    for (i, &(ref h, b)) in self.vec.iter().enumerate() {
+      let t = Rc::new(f(h));
+      d.map.insert(t.clone(), i);
+      d.vec.push((t, b));
+    }
+    d
   }
 }
 
-struct BuildExpr<'a, F: FileServer + ?Sized> {
-  de: DedupExpr,
-  elab: &'a Elaborator<'a, F>,
-  sp: Span,
+trait Node: Sized {
+  type Hash: NodeHash;
+  const REF: fn(usize) -> Self;
+  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self;
 }
 
-impl<'a, F: FileServer + ?Sized> BuildExpr<'a, F> {
-  fn err(&self, e: impl Into<BoxError>) -> ElabError { ElabError::new_e(self.sp, e) }
-  fn to_expr(self, i: usize) -> Result<Expr> {
-    enum Val {Built(ExprNode), Ref(usize), Done}
-    fn take(e: &mut Val) -> ExprNode {
-      match mem::replace(e, Val::Done) {
-        Val::Built(x) => x,
-        Val::Ref(n) => {*e = Val::Ref(n); ExprNode::Ref(n)}
-        Val::Done => panic!("taking a value twice")
-      }
+enum Val<T: Node> {Built(T), Ref(usize), Done}
+
+impl<T: Node> Val<T> {
+  fn take(&mut self) -> T {
+    match mem::replace(self, Val::Done) {
+      Val::Built(x) => x,
+      Val::Ref(n) => {*self = Val::Ref(n); T::REF(n)}
+      Val::Done => panic!("taking a value twice")
     }
-    let mut ids: Vec<Val> = Vec::with_capacity(self.de.vec.len());
+  }
+}
+
+struct Builder<T: Node> {
+  ids: Vec<Val<T>>,
+  heap: Vec<T>,
+}
+
+impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+  fn to_builder<T: Node>(&self, de: &Dedup<T::Hash>) -> Result<Builder<T>> {
+    let mut ids: Vec<Val<T>> = Vec::with_capacity(de.vec.len());
     let mut heap = Vec::new();
-    let mut hsize = self.elab.lc.var_order.len();
-    let var_map = {
-      let mut m = HashMap::new();
-      for (i, &(_, a, _)) in self.elab.lc.var_order.iter().enumerate() {
-        if let Some(a) = a {m.insert(a, i);}
-      }
-      m
-    };
-    for &(ref e, b) in &self.de.vec {
-      let node = match **e {
-        ExprHash::Atom(a) => match var_map.get(&a) {
-          Some(&i) => ExprNode::Ref(i),
-          None => match self.elab.lc.vars.get(&a) {
-            Some(&InferSort::KnownBound {dummy: true, sort}) => ExprNode::Dummy(a, sort),
-            _ => Err(self.err(format!("variable '{}' not found", self.elab.data[a].name)))?,
-          }
-        },
-        ExprHash::App(a, ref ns) => ExprNode::App(
-          self.elab.term(a).ok_or_else(||
-            self.err(format!("term '{}' not found", self.elab.data[a].name)))?,
-          ns.iter().map(|&i| take(&mut ids[i])).collect()),
-      };
+    let mut hsize = self.lc.var_order.len();
+    for &(ref e, b) in &de.vec {
+      let node = T::from(&e, &mut ids);
       if b {
         ids.push(Val::Ref(hsize));
         heap.push(node);
@@ -413,7 +432,130 @@ impl<'a, F: FileServer + ?Sized> BuildExpr<'a, F> {
         ids.push(Val::Built(node))
       }
     }
-    Ok(Expr {heap, head: take(&mut ids[i])})
+    Ok(Builder {ids, heap})
+  }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum ExprHash {
+  Var(usize),
+  Dummy(AtomID, SortID),
+  App(TermID, Vec<usize>),
+}
+
+impl NodeHash for ExprHash {
+  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
+      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
+    Ok(match e {
+      &LispKind::Atom(a) => match nh.var_map.get(&a) {
+        Some(&i) => ExprHash::Var(i),
+        None => match nh.elab.lc.vars.get(&a) {
+          Some(&InferSort::KnownBound {dummy: true, sort}) => ExprHash::Dummy(a, sort),
+          _ => Err(nh.err(e, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+        }
+      },
+      LispKind::List(es) if !es.is_empty() => {
+        let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
+        let tid = nh.elab.env.term(a).ok_or_else(||
+          nh.err(&es[0], format!("term '{}' not declared", nh.elab.env.data[a].name)))?;
+        let mut ns = Vec::with_capacity(es.len() - 1);
+        for e in &es[1..] { ns.push(f(e)?) }
+        ExprHash::App(tid, ns)
+      }
+      _ => Err(nh.err(e, "bad expression"))?
+    })
+  }
+}
+
+impl Node for ExprNode {
+  type Hash = ExprHash;
+  const REF: fn(usize) -> Self = ExprNode::Ref;
+  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
+    match *e {
+      ExprHash::Var(i) => ExprNode::Ref(i),
+      ExprHash::Dummy(a, s) => ExprNode::Dummy(a, s),
+      ExprHash::App(t, ref ns) => ExprNode::App(t,
+        ns.iter().map(|&i| Val::take(&mut ids[i])).collect()),
+    }
+  }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum ProofHash {
+  Var(usize),
+  Dummy(AtomID, SortID),
+  Term(TermID, Vec<usize>),
+  Thm(ThmID, Vec<usize>),
+  Conv(usize, usize),
+}
+
+impl NodeHash for ProofHash {
+  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
+      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
+    Ok(match e {
+      &LispKind::Atom(a) => match nh.var_map.get(&a) {
+        Some(&i) => ProofHash::Var(i),
+        None => match nh.elab.lc.vars.get(&a) {
+          Some(&InferSort::KnownBound {dummy: true, sort}) => ProofHash::Dummy(a, sort),
+          _ => Err(nh.err(e, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+        }
+      },
+      LispKind::List(es) if !es.is_empty() => {
+        let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
+        let adata = &nh.elab.env.data[a];
+        match adata.decl {
+          Some(DeclKey::Term(tid)) => {
+            let mut ns = Vec::with_capacity(es.len() - 1);
+            for e in &es[1..] { ns.push(f(e)?) }
+            ProofHash::Term(tid, ns)
+          }
+          Some(DeclKey::Thm(tid)) => {
+            let mut ns = Vec::with_capacity(es.len() - 1);
+            for e in &es[1..] { ns.push(f(e)?) }
+            ProofHash::Thm(tid, ns)
+          },
+          None => match &*adata.name {
+            ":conv" => {
+              if es.len() != 3 { Err(nh.err(e, "incorrect :conv format"))? }
+              ProofHash::Conv(f(&es[1])?, f(&es[2])?)
+            }
+            _ => Err(nh.err(&es[0], format!("term/theorem '{}' not declared", adata.name)))?
+          }
+        }
+      }
+      _ => Err(nh.err(e, "bad expression"))?
+    })
+  }
+}
+
+impl Dedup<ExprHash> {
+  fn map_proof(&self) -> Dedup<ProofHash> {
+    self.map_inj(|e| match *e {
+      ExprHash::Var(i) => ProofHash::Var(i),
+      ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
+      ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone()),
+    })
+  }
+}
+
+impl Node for ProofNode {
+  type Hash = ProofHash;
+  const REF: fn(usize) -> Self = ProofNode::Ref;
+  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
+    match *e {
+      ProofHash::Var(i) => ProofNode::Ref(i),
+      ProofHash::Dummy(a, s) => ProofNode::Dummy(a, s),
+      ProofHash::Term(term, ref ns) => ProofNode::Term {
+        term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
+      },
+      ProofHash::Thm(thm, ref ns) => ProofNode::Thm {
+        thm, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
+      },
+      ProofHash::Conv(i, j) => ProofNode::Conv {
+        tgt: Box::new(Val::take(&mut ids[i])),
+        proof: Box::new(Val::take(&mut ids[j]))
+      },
+    }
   }
 }
 
@@ -426,23 +568,23 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<InferSort> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
-    if lk.is_bound() {
+    Ok(if lk.is_bound() {
       if !d.deps.is_empty() {
         self.report(ElabError::new_e(
           d.deps[0].start..d.deps.last().unwrap().end, "dependencies not allowed in curly binders"));
         *error = true;
       }
-      Ok(InferSort::KnownBound {dummy: lk == LocalKind::Dummy, sort})
+      InferSort::KnownBound {dummy: lk == LocalKind::Dummy, sort}
     } else {
-      Ok(InferSort::KnownReg {
+      InferSort::KnownReg {
         sort,
         deps: d.deps.iter().map(|&sp| {
           let y = self.env.get_atom(self.ast.span(sp));
           self.lc.var(y, sp);
           y
         }).collect()
-      })
-    }
+      }
+    })
   }
 
   fn elab_binder(&mut self, error: &mut bool, sp: Option<Span>, lk: LocalKind, ty: Option<&Type>) -> Result<InferBinder> {
@@ -526,13 +668,11 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 
   fn build_expr(&self, sp: Span, e: &LispVal) -> Result<Expr> {
-    let mut be = BuildExpr {
-      de: DedupExpr::default(),
-      elab: self,
-      sp,
-    };
-    let i = be.de.dedup_expr(e);
-    be.to_expr(i)
+    let mut de = Dedup::new();
+    let nh = NodeHasher::new(self, sp);
+    let i = de.dedup(&nh, e)?;
+    let Builder {mut ids, heap} = self.to_builder(&de)?;
+    Ok(Expr {heap, head: ids[i].take()})
   }
 
   pub fn elab_decl(&mut self, sp: Span, d: &Decl) -> Result<()> {
@@ -563,10 +703,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         Ok(InferBinder::Hyp(x, e)) => hyps.push((bi, x, e)),
       }
     }
-    // let ret = match d.ty {
-    //   None => None,
-    //   Some(ref ty) => Some(self.elab_binder(&mut error, None, LocalKind::Anon, Some(ty))?)
-    // };
     let atom = self.env.get_atom(self.ast.span(d.id));
     match d.k {
       DeclKind::Term | DeclKind::Def => {
@@ -591,6 +727,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         };
         if d.k == DeclKind::Term {
           if let Some(v) = &d.val {report!(v.span, "term declarations have no definition")}
+        } else if d.val.is_none() {
+          self.report(ElabError::new_e(sp, "def declaration missing value"));
         }
         for e in self.finalize_vars(false) {report!(e)}
         if error {return Ok(())}
@@ -638,7 +776,63 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         };
         self.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
       }
-      _ => self.report(ElabError::new_e(d.id, "unimplemented"))
+      DeclKind::Axiom | DeclKind::Thm => {
+        let ret = match &d.ty {
+          None => Err(ElabError::new_e(sp, "return type required"))?,
+          Some(Type::DepType(ty)) => Err(ElabError::new_e(ty.sort, "expression expected"))?,
+          &Some(Type::Formula(f)) => {
+            let e = self.parse_formula(f)?;
+            let e = self.eval_qexpr(e)?;
+            self.elaborate_term(f.0, &e, InferTarget::Provable)?
+          }
+        };
+        if d.k == DeclKind::Axiom {
+          if let Some(v) = &d.val {report!(v.span, "axiom declarations have no definition")}
+        } else if d.val.is_none() {
+          self.report(ElabError::new_e(sp, "theorem declaration missing value"));
+        }
+        for e in self.finalize_vars(false) {report!(e)}
+        if error {return Ok(())}
+        let mut args = Vec::new();
+        let mut ba = BuildArgs::default();
+        for &(sp, a, ref is) in &self.lc.var_order {
+          match ba.push_var(&self.lc.vars, a, is) {
+            None => Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?,
+            Some(None) => (),
+            Some(Some(ty)) => args.push((a, ty)),
+          }
+        }
+        let mut de = Dedup::new();
+        let nh = NodeHasher::new(self, sp);
+        let mut is = Vec::new();
+        for (_, _, e) in hyps {is.push(de.dedup(&nh, &e)?)}
+        let ir = de.dedup(&nh, &ret)?;
+        let NodeHasher {var_map, fsp, ..} = nh;
+        let span = fsp.clone();
+        let Builder {mut ids, heap} = self.to_builder(&de)?;
+        let hyps = is.iter().map(|&i| ids[i].take()).collect();
+        let ret = ids[ir].take();
+        let proof = d.val.as_ref().map(|e| {
+          match (|| -> Result<Proof> {
+            let l = self.elab_lisp(e)?;
+            let mut de = de.map_proof();
+            let nh = NodeHasher {var_map, fsp, elab: self};
+            let ip = de.dedup(&nh, &l)?;
+            let Builder {mut ids, heap} = self.to_builder(&de)?;
+            let hyps = is.into_iter().map(|i| ids[i].take()).collect();
+            let head = ids[ip].take();
+            Ok(Proof { heap, hyps, head })
+          })() {
+            Ok(proof) => Some(proof),
+            Err(e) => {self.report(e); None}
+          }
+        });
+        let t = Thm {
+          atom, span, vis: d.mods, id: d.id,
+          args, heap, hyps, ret, proof
+        };
+        self.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+      }
     }
     Ok(())
   }

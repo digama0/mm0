@@ -163,7 +163,7 @@ impl LispKind {
     match self {
       LispKind::Ref(m) => m.lock().unwrap().fspan(),
       LispKind::Annot(Annot::Span(sp), _) => Some(sp.clone()),
-      LispKind::Annot(_, e) => e.fspan(),
+      // LispKind::Annot(_, e) => e.fspan(),
       _ => None
     }
   }
