@@ -1,11 +1,21 @@
-Metamath Zero
-===
+# Metamath Zero
 
 The MM0 project consists of a number of tools and verifiers and a specification centered on the language Metamath Zero.
 
 
-Introduction
----
+## Quick Start
+
+There are a bunch of interrelated projects in this repository. If you want to install something to play with, I recommend `mm0-hs` + `vscode-mm0` to get a decent MM0 IDE.
+
+* `mm0-hs`: Haskell verifier and toolchain, see [`mm0-hs/README.md`](mm0-hs/README.md).
+* `vscode-mm0`: VSCode plugin for MM0/MM1 syntax highlighting, with advanced features enabled via an LSP server (either `mm0-hs` or `mm0-rs`). See [`vscode-mm0/README.md`](vscode-mm0/README.md).
+* `mm0-c`: A bare bones MM0 verifier, intended for formalization. See [`mm0-c/README.md`](mm0-c/README.md).
+* `mm0-rs`: An MM0/MM1 server written in Rust. See [`mm0-rs/README.md`](mm0-rs/README.md).
+* `mm0-lean`: A collection of lean scratch files and minor formalizations. See [`mm0-lean/README.md`](mm0-lean/README.md).
+
+
+
+## Introduction
 
 Metamath Zero is a language for writing specifications and proofs. Its emphasis is on balancing simplicity of verification and human readability of the specification. That is, it should be easy to see what exactly is the meaning of a proven theorem, but at the same time the language is as pared down as possible to minimize the number of complications in potential verifiers.
 
@@ -35,8 +45,7 @@ But then what plays the role of the source text in this analogy? Metamath One is
 
 The MM1 files in the `examples/` directory have been written using the VSCode extension, which uses the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) to communicate to `mm0-hs server` (`mm0-hs` can also communicate to any other LSP-compliant editor), which enables support for syntax highlighting, go-to-definition and hover. Most importantly, it supports live diagnostics (red squiggles on errors), which allows for rapid feedback on proof progress. (The interface is strongly inspired by [`vscode-lean`](https://github.com/leanprover/vscode-lean/).)
 
-What you will find in this repository
----
+## What you will find in this repository
 
 * [`mm0.md`](mm0.md) is an informal specification of the language.
 * The `examples/` directory contains a number of MM0 test files.
@@ -57,5 +66,6 @@ What you will find in this repository
   * `mm0-hs to-lean` translates MM0 into [Lean](leanprover.github.io/) source files compatible with `mm0-lean`. [WIP]
 * `mm0-c` is a verifier written in C that defines the MMB binary proof file format.
   * You can compile the verifier using `gcc main.c -o mm0-c`, and run it with `./mm0-c file.mmb`.
+* `mm0-rs` is a reimplementation of the LSP server for MM1. It can be used as a drop-in replacement for `mm0-hs` in VSCode by adding `"metamath-zero.executablePath": "mm0-rs"`. [WIP]
 * `mm0-lean` contains a tactic framework for writing MM0 proofs using Lean. [WIP]
   * `mm0-lean/x86.lean` is a Lean formalization of the Intel x86 semantics.

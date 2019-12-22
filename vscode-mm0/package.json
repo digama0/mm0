@@ -4,10 +4,17 @@
 	"description": "Language support for Metamath Zero",
 	"author": "Mario Carneiro",
 	"publisher": "digama0",
-	"version": "0.0.1",
-	"repository": {"type": "git", "url": "https://github.com/digama0/mm0"},
-	"engines": {"vscode": "^1.36.0"},
-	"categories": ["Programming Languages"],
+	"version": "1.0.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/digama0/mm0"
+	},
+	"engines": {
+		"vscode": "^1.36.0"
+	},
+	"categories": [
+		"Programming Languages"
+	],
 	"activationEvents": [
 		"onLanguage:metamath-zero"
 	],
@@ -20,15 +27,20 @@
 					"Metamath Zero",
 					"metamath-zero"
 				],
-				"extensions": [".mm0", ".mm1"],
+				"extensions": [
+					".mm0",
+					".mm1"
+				],
 				"configuration": "./language-configuration.json"
 			}
 		],
-		"grammars": [{
-			"language": "metamath-zero",
-			"scopeName": "source.mm0",
-			"path": "./syntaxes/mm0.json"
-		}],
+		"grammars": [
+			{
+				"language": "metamath-zero",
+				"scopeName": "source.mm0",
+				"path": "./syntaxes/mm0.json"
+			}
+		],
 		"configuration": {
 			"type": "object",
 			"title": "Example configuration",
@@ -86,5 +98,10 @@
 		"@types/vscode": "^1.34.0",
 		"tslint": "^5.16.0",
 		"typescript": "^3.5.1"
+	},
+	"__metadata": {
+		"id": "4b788446-2267-4925-ae0c-32a1f373bb11",
+		"publisherDisplayName": "Mario Carneiro",
+		"publisherId": "47d989d0-9b4b-49c4-b6e4-4b9fb46c0ede"
 	}
 }
