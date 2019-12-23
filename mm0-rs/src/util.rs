@@ -23,7 +23,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)] pub struct ArcString(pub Arc<String>);
+#[derive(Clone, Hash, PartialEq, Eq)] pub struct ArcString(pub Arc<String>);
 
 impl Borrow<str> for ArcString {
   fn borrow(&self) -> &str { &*self.0 }
@@ -36,7 +36,10 @@ impl ArcString {
   pub fn new(s: String) -> ArcString { ArcString(Arc::new(s)) }
 }
 impl fmt::Display for ArcString {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
+}
+impl fmt::Debug for ArcString {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
 }
 impl From<&str> for ArcString {
   fn from(s: &str) -> ArcString { ArcString::new(s.to_owned()) }
@@ -60,7 +63,7 @@ impl<T> VecUninit<T> {
   }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
   pub start: usize,
   pub end: usize,
@@ -99,7 +102,13 @@ impl DoubleEndedIterator for Span {
   fn next_back(&mut self) -> Option<usize> { self.deref_mut().next_back() }
 }
 
-#[derive(Clone, Debug)]
+impl fmt::Debug for Span {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}..{}", self.start, self.end)
+  }
+}
+
+#[derive(Clone)]
 pub struct FileRef(Arc<(PathBuf, Url)>);
 impl FileRef {
   pub fn new(buf: PathBuf) -> FileRef {
@@ -121,8 +130,26 @@ impl Hash for FileRef {
   fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+impl fmt::Display for FileRef {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.0 .0.file_name().unwrap_or(self.0 .0.as_os_str()).to_str().unwrap().fmt(f)
+  }
+}
+
+impl fmt::Debug for FileRef {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fmt::Display::fmt(self, f)
+  }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct FileSpan {
   pub file: FileRef,
   pub span: Span,
+}
+
+impl fmt::Debug for FileSpan {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}:{:?}", self.file, self.span)
+  }
 }

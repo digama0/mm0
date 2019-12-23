@@ -1,4 +1,5 @@
 use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::fmt;
 use std::convert::TryInto;
 use std::iter::FromIterator;
 use std::sync::Arc;
@@ -10,13 +11,15 @@ use crate::util::*;
 use super::lisp::{LispVal, LispRemapper};
 pub use crate::parser::ast::{Modifiers, Prec};
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct SortID(pub u8);
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct TermID(pub u32);
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct ThmID(pub u32);
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)] pub struct AtomID(pub u32);
+macro_rules! id_wrapper {
+  ($id:ident: $ty:ty, $vec:ident) => {
+    #[derive(Copy, Clone, Hash, PartialEq, Eq)]
+    pub struct $id(pub $ty);
 
-macro_rules! vec_index {
-  ($vec:ident, $id:ty) => {
+    impl fmt::Debug for $id {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
+    }
+
     #[derive(Clone)]
     pub struct $vec<T>(pub Vec<T>);
 
@@ -48,10 +51,10 @@ macro_rules! vec_index {
   };
 }
 
-vec_index!(SortVec, SortID);
-vec_index!(TermVec, TermID);
-vec_index!(ThmVec, ThmID);
-vec_index!(AtomVec, AtomID);
+id_wrapper!(SortID: u8, SortVec);
+id_wrapper!(TermID: u32, TermVec);
+id_wrapper!(ThmID: u32, ThmVec);
+id_wrapper!(AtomID: u32, AtomVec);
 
 #[derive(Clone)]
 pub struct Sort {
@@ -82,7 +85,7 @@ impl Type {
 ///   * `Ref(n + args.len())` is a reference to heap element `n`
 ///   * `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
 ///   * `App(t, nodes)` is an application of term constructor `t` to subterms
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ExprNode {
   Ref(usize),
   Dummy(AtomID, SortID),
@@ -108,7 +111,7 @@ pub struct Term {
   pub val: Option<Expr>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ProofNode {
   Ref(usize),
   Dummy(AtomID, SortID),
@@ -163,13 +166,13 @@ pub enum DeclKey {
   Thm(ThmID),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Literal {
   Var(usize, Prec),
   Const(ArcString),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NotaInfo {
   pub span: FileSpan,
   pub term: TermID,
@@ -588,6 +591,8 @@ impl Environment {
         }))
       }
     } else {
+      data.sort = Some(new_id);
+      crate::server::log(format!("declaring {}", data.name));
       self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)
@@ -612,6 +617,7 @@ impl Environment {
         other: sp.clone()
       }))
     } else {
+      data.decl = Some(DeclKey::Term(new_id));
       self.terms.push(t());
       self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)
@@ -636,6 +642,7 @@ impl Environment {
         other: sp.clone()
       }))
     } else {
+      data.decl = Some(DeclKey::Thm(new_id));
       self.thms.push(t());
       self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)

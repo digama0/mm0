@@ -344,10 +344,10 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     let mut old = sp.map(|sp| (self.fspan(sp), base));
     let mut info = vec![];
     for s in self.stack.iter().rev() {
-      if let Stack::Ret(_, pos, _, _) = s {
-        let (fsp, x) = match pos {
-          ProcPos::Named(fsp, a) => (fsp, format!("{}()", self.data[*a].name).into()),
-          ProcPos::Unnamed(fsp) => (fsp, "[fn]".into())
+      if let Stack::Ret(fsp, pos, _, _) = s {
+        let x = match pos {
+          ProcPos::Named(_, a) => format!("({})", self.data[*a].name).into(),
+          ProcPos::Unnamed(_) => "[fn]".into(),
         };
         if let Some((sp, base)) = old.take() {
           info.push((sp, base));
@@ -391,7 +391,8 @@ macro_rules! make_builtins {
         macro_rules! try1 {($x:expr) => {{
           match $x {
             Ok(e) => e,
-            Err(s) => return Err($self.err(Some($sp1), s))
+            Err(s) => return Err($self.make_stack_err(
+              Some($sp1), ErrorLevel::Error, format!("({})", f).into(), s))
           }
         }}}
 
@@ -409,18 +410,18 @@ make_builtins! { self, sp1, sp2, args,
   Apply: AtLeast(2) => {
     let proc = args.remove(0);
     let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
-    let mut tail = &*args.pop().unwrap();
-    loop {match tail {
-      LispKind::List(es) => {
-        args.extend_from_slice(&es);
-        return Ok(State::App(sp1, sp, proc, args, [].iter()))
-      }
-      LispKind::DottedList(es, r) => {
-        args.extend_from_slice(&es);
-        tail = r;
-      }
-      _ => try1!(Err("apply: last argument is not a list"))
-    }}
+    fn gather(args: &mut Vec<LispVal>, e: &LispKind) -> bool {
+      e.unwrapped(|e| match e {
+        LispKind::List(es) => {args.extend_from_slice(&es); true}
+        LispKind::DottedList(es, r) => {args.extend_from_slice(&es); gather(args, r)}
+        _ => false
+      })
+    }
+    let tail = args.pop().unwrap();
+    if !gather(&mut args, &tail) {
+      try1!(Err(format!("apply: last argument is not a list: {}", self.printer(&tail))))
+    }
+    return Ok(State::App(sp1, sp, proc, args, [].iter()))
   },
   Add: AtLeast(0) => {
     let mut n: BigInt = 0.into();
@@ -506,7 +507,7 @@ make_builtins! { self, sp1, sp2, args,
   IsProc: Exact(1) => Arc::new(LispKind::Bool(args[0].is_proc())),
   IsDef: Exact(1) => Arc::new(LispKind::Bool(args[0].is_def())),
   IsRef: Exact(1) => Arc::new(LispKind::Bool(args[0].is_ref())),
-  NewRef: AtLeast(0) => Arc::new(LispKind::Ref(Mutex::new(args.get(0).unwrap_or(&*UNDEF).clone()))),
+  NewRef: AtLeast(0) => LispKind::new_ref(args.get(0).unwrap_or(&*UNDEF).clone()),
   GetRef: Exact(1) => try1!(self.as_ref(&args[0], |m| Ok(m.lock().unwrap().clone()))),
   SetRef: Exact(2) => {
     try1!(self.as_ref(&args[0], |m| Ok(*m.lock().unwrap() = args[1].clone())));
@@ -529,7 +530,7 @@ make_builtins! { self, sp1, sp2, args,
       if !u.exactly(0) {try1!(Err("invalid arguments"))}
       if let Some(v) = ret {m.insert(a, v);} else {m.remove(&a);}
     }
-    Arc::new(LispKind::AtomMap(m))
+    LispKind::new_ref(Arc::new(LispKind::AtomMap(m)))
   },
   Lookup: AtLeast(2) => {
     let k = self.as_string_atom(&args[1]);
@@ -582,8 +583,7 @@ make_builtins! { self, sp1, sp2, args,
   ),
   PrettyPrint: Exact(1) => /* TODO: pretty */
     Arc::new(LispKind::String(ArcString::new(format!("{}", self.printer(&args[0]))))),
-  NewGoal: Exact(1) => Arc::new(LispKind::Annot(Annot::Span(self.fspan(sp1)),
-    Arc::new(LispKind::Goal(args.pop().unwrap())))),
+  NewGoal: Exact(1) => LispKind::new_goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
   InferType: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   GetMVars: AtLeast(0) => Arc::new(LispKind::List(self.lc.mvars.clone())),

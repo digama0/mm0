@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::fmt;
 use num::BigUint;
 use crate::lined_string::LinedString;
 use crate::util::{Span, ArcString};
@@ -196,14 +197,18 @@ pub struct Decl {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Prec { Prec(u32), Max }
 
-impl std::fmt::Display for Prec {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for Prec {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       &Prec::Prec(p) => p.fmt(f),
       &Prec::Max => "max".fmt(f)
     }
   }
 }
+impl fmt::Debug for Prec {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { fmt::Display::fmt(self, f) }
+}
+
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
 pub struct SimpleNota {
   pub k: SimpleNotaKind,

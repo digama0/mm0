@@ -4,13 +4,13 @@ use super::{LispKind, Proc, ProcPos};
 
 #[derive(Copy, Clone)]
 pub struct LispFormat<'a> {
-  source: &'a LinedString,
-  env: &'a Environment,
-  e: &'a LispKind
+  pub source: &'a LinedString,
+  pub env: &'a Environment,
+  pub e: &'a LispKind
 }
 
 impl<'a> LispFormat<'a> {
-  fn to(&'a self, e: &'a LispKind) -> LispFormat<'a> {
+  pub fn to(&'a self, e: &'a LispKind) -> LispFormat<'a> {
     LispFormat {source: self.source, env: self.env, e}
   }
   fn atom(&self, a: AtomID) -> &str { &self.env.data[a].name }

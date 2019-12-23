@@ -30,7 +30,7 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     p.ws();
     let expr = p.expr(Prec::Prec(0))?;
     assert!(p.imports.is_empty());
-    for e in p.p.errors { self.report(e.into()) }
+for e in p.p.errors { self.report(e.into()) }
     Ok(expr)
   }
 }
@@ -137,12 +137,12 @@ impl<'a> MathParser<'a> {
   }
 
   fn lhs(&mut self, p: Prec, mut lhs: QExpr) -> Result<QExpr, ParseError> {
-    let (mut tok, end) = self.peek_token();
+    let mut tok_end = self.peek_token();
     loop {
-      let s = if let Some(tk) = tok {self.span(tk)} else {break};
+      let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
       if !self.pe.consts.get(s).map_or(false, |&(_, q)| q >= p) {break}
       let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
-      self.idx = end;
+      self.idx = tok_end.1;
       let mut args = VecUninit::new(info.nargs);
       let start = lhs.span.start;
       if let Literal::Var(i, _) = info.lits[0] {args.set(i, lhs)} else {unreachable!()}
@@ -150,19 +150,18 @@ impl<'a> MathParser<'a> {
       let (i, mut rhs) = if let Some(&Literal::Var(i, q)) = info.lits.last() {
         (i, self.prefix(q)?)
       } else {unreachable!()};
-      tok = self.peek_token().0;
+      tok_end = self.peek_token();
       loop {
-        let s = if let Some(tk) = tok {self.span(tk)} else {break};
+        let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
         let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
         let q = self.pe.consts[s].1;
         if !(if info2.rassoc.unwrap() {q >= p} else {q > p}) {break}
         rhs = self.lhs(q, rhs)?;
-        tok = self.peek_token().0;
+        tok_end = self.peek_token();
       }
       let span = (start..rhs.span.end).into();
       args.set(i, rhs);
-      lhs = QExpr { span, k: QExprKind::App(info.term, unsafe { args.assume_init() })
-      };
+      lhs = QExpr { span, k: QExprKind::App(info.term, unsafe { args.assume_init() }) };
     }
     return Ok(lhs)
   }

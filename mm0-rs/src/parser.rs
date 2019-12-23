@@ -400,15 +400,18 @@ impl<'a> Parser<'a> {
     let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
     for i in trim.rev() {
-      if b" \n".contains(&self.source[i]) {trim.end -= 1}
+      if whitespace(self.source[i]) {trim.end -= 1}
       else {break}
     }
     for i in trim {
-      if b" \n".contains(&self.source[i]) {trim.start += 1}
+      if whitespace(self.source[i]) {trim.start += 1}
       else {break}
     }
-    if trim.any(|i| b" \n".contains(&self.source[i])) {
+    if trim.clone().any(|i| whitespace(self.source[i])) {
       return Err(ParseError::new(trim, "constant contains embedded whitespace".into()))
+    }
+    if trim.start >= trim.end {
+      return Err(ParseError::new(fmla.0, "constant is empty".into()))
     }
     Ok(Const {fmla, trim})
   }

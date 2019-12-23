@@ -145,7 +145,7 @@ impl IR {
   }
   fn list(fsp: FileSpan, cs: Vec<IR>) -> IR {
     match IR::unconst(cs) {
-      Ok(es) => IR::Const(Arc::new(LispKind::Annot(Annot::Span(fsp), Arc::new(LispKind::List(es))))),
+      Ok(es) => IR::Const(LispKind::new_span(fsp, Arc::new(LispKind::List(es)))),
       Err(cs) => IR::List(fsp.span, cs.into())
     }
   }
@@ -421,11 +421,13 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   fn pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
       quote: bool, e: &SExpr) -> Result<Pattern, ElabError> {
     match &e.k {
-      &SExprKind::Atom(a) => Ok(match (quote, self.parse_ident(e.span, a)?) {
-        (true, x) => Pattern::QuoteAtom(x.unwrap_or_else(|| self.get_atom("_"))),
-        (false, None) => Pattern::Skip,
-        (false, Some(x)) => Pattern::Atom(ctx.get_or_push(x)),
-      }),
+      &SExprKind::Atom(a) => Ok(
+        if quote {
+          Pattern::QuoteAtom(self.elab.env.get_atom(self.elab.ast.span_atom(e.span, a)))
+        } else if let Some(x) = self.parse_ident(e.span, a)? {
+          Pattern::Atom(ctx.get_or_push(x))
+        } else {Pattern::Skip}
+      ),
       SExprKind::DottedList(es, e) => Ok(Pattern::DottedList(
         self.patterns(ctx, code, quote, es)?,
         self.pattern(ctx, code, quote, e)?.into())),
@@ -516,7 +518,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
 
   fn expr(&mut self, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
     macro_rules! span {($sp:expr, $e:expr) => {{
-      Arc::new(LispKind::Annot(Annot::Span(self.fspan($sp)), $e))
+      LispKind::new_span(self.fspan($sp), $e)
     }}}
     let mut restore = Some(self.ctx.len());
     let res = match &e.k {

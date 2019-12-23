@@ -201,11 +201,21 @@ impl LispKind {
   }
   pub fn at_least(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
-      LispKind::List(es) => return n == es.len(),
+      LispKind::List(es) => return n <= es.len(),
       LispKind::DottedList(es, r) if n <= es.len() => r.is_list(),
       LispKind::DottedList(es, r) => r.at_least(n - es.len()),
       _ => false,
     })
+  }
+
+  pub fn new_span(fsp: FileSpan, e: LispVal) -> LispVal {
+    Arc::new(LispKind::Annot(Annot::Span(fsp), e))
+  }
+  pub fn new_ref(e: LispVal) -> LispVal {
+    Arc::new(LispKind::Ref(Mutex::new(e)))
+  }
+  pub fn new_goal(fsp: FileSpan, ty: LispVal) -> LispVal {
+    Self::new_span(fsp, Arc::new(LispKind::Goal(ty)))
   }
 }
 

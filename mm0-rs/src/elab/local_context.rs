@@ -32,7 +32,7 @@ pub struct LocalContext {
 
 fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget) -> LispVal {
   let n = mvars.len();
-  let e = Arc::new(LispKind::Ref(Mutex::new(Arc::new(LispKind::MVar(n, tgt)))));
+  let e = LispKind::new_ref(Arc::new(LispKind::MVar(n, tgt)));
   mvars.push(e.clone());
   e
 }
@@ -51,9 +51,7 @@ impl LocalContext {
     self.goals.clear();
     for g in gs {
       if g.is_goal() {
-        self.goals.push(if g.is_ref() {g} else {
-          Arc::new(LispKind::Ref(Mutex::new(g)))
-        })
+        self.goals.push(if g.is_ref() {g} else {LispKind::new_ref(g)})
       }
     }
   }
@@ -69,7 +67,7 @@ impl LocalContext {
 
 fn decorate_span(fsp: &Option<FileSpan>, e: LispKind) -> LispVal {
   if let Some(fsp) = fsp {
-    Arc::new(LispKind::Annot(Annot::Span(fsp.clone()), Arc::new(e)))
+    LispKind::new_span(fsp.clone(), Arc::new(e))
   } else {Arc::new(e)}
 }
 
@@ -148,23 +146,7 @@ impl<'a> ElabTerm<'a> {
         None => Err(self.err(e, "variable not found")),
         Some(&InferSort::KnownBound {sort, ..}) => Ok(sort),
         Some(&InferSort::KnownReg {sort, ..}) => Ok(sort),
-        Some(InferSort::Unknown {sorts, ..}) => Ok({
-          if sorts.len() == 1 {
-            sorts.keys().next().unwrap().ok_or_else(||
-              self.err(e, format!("could not infer type for {}", self.env.data[a].name)))?
-          } else {
-            sorts.keys().find_map(|s| s.filter(|&s| {
-              match self.env.pe.coes.get(&s) {
-                None => sorts.len() == 1,
-                Some(m) => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2 || m.contains_key(&s2))),
-              }
-            })).ok_or_else(|| {
-              self.err(e, format!("could not infer consistent type from {{{}}} for {}",
-                sorts.keys().filter_map(|&k| k).map(|s| &self.env.sorts[s].name).format(", "),
-                self.env.data[a].name))
-            })?
-          }
-        }),
+        Some(InferSort::Unknown {..}) => panic!("finalized vars already"),
       },
       LispKind::List(es) if !es.is_empty() => {
         let a = es[0].as_atom().ok_or_else(|| self.err(&es[0], "expected an atom"))?;
@@ -336,7 +318,7 @@ impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
   }
 }
 
-trait NodeHash: Hash + Eq + Sized {
+trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>,
     e: &LispKind, f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self>;
 }
@@ -371,7 +353,7 @@ impl<H: NodeHash> Dedup<H> {
 
   fn dedup<'a, F: FileServer + ?Sized>(&mut self, nh: &NodeHasher<'a, F>, e: &LispVal) -> Result<usize> {
     e.unwrapped(|r| Ok(match self.prev.get(&(r as *const _)) {
-      Some(&n) => n,
+      Some(&n) => {self.vec[n].1 = true; n}
       None => {
         let ns = H::from(nh, r, |e| self.dedup(nh, e))?;
         self.add(r, ns)
@@ -394,12 +376,13 @@ impl<H: NodeHash> Dedup<H> {
   }
 }
 
-trait Node: Sized {
+trait Node: Sized + std::fmt::Debug {
   type Hash: NodeHash;
   const REF: fn(usize) -> Self;
   fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self;
 }
 
+#[derive(Debug)]
 enum Val<T: Node> {Built(T), Ref(usize), Done}
 
 impl<T: Node> Val<T> {
@@ -436,7 +419,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 enum ExprHash {
   Var(usize),
   Dummy(AtomID, SortID),
@@ -462,7 +445,7 @@ impl NodeHash for ExprHash {
         for e in &es[1..] { ns.push(f(e)?) }
         ExprHash::App(tid, ns)
       }
-      _ => Err(nh.err(e, "bad expression"))?
+      _ => Err(nh.err(e, format!("bad expression {}", nh.elab.printer(e))))?
     })
   }
 }
@@ -480,7 +463,7 @@ impl Node for ExprNode {
   }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 enum ProofHash {
   Var(usize),
   Dummy(AtomID, SortID),
@@ -523,7 +506,7 @@ impl NodeHash for ProofHash {
           }
         }
       }
-      _ => Err(nh.err(e, "bad expression"))?
+      _ => Err(nh.err(e, format!("bad expression {}", nh.elab.printer(e))))?
     })
   }
 }
@@ -632,7 +615,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           let env = &self.env;
           sorts.keys().find_map(|s| s.filter(|&s| {
             match env.pe.coes.get(&s) {
-              None => sorts.len() == 1,
+              None => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2)),
               Some(m) => sorts.keys().all(|s2| s2.map_or(true, |s2| s == s2 || m.contains_key(&s2))),
             }
           })).ok_or_else(|| {
@@ -667,19 +650,11 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     errs
   }
 
-  fn build_expr(&self, sp: Span, e: &LispVal) -> Result<Expr> {
-    let mut de = Dedup::new();
-    let nh = NodeHasher::new(self, sp);
-    let i = de.dedup(&nh, e)?;
-    let Builder {mut ids, heap} = self.to_builder(&de)?;
-    Ok(Expr {heap, head: ids[i].take()})
-  }
-
   pub fn elab_decl(&mut self, sp: Span, d: &Decl) -> Result<()> {
     let mut hyps = Vec::new();
     let mut error = false;
     macro_rules! report {
-      ($e:expr) => {{self.report($e); error = true;}};
+      ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
     for bi in &d.bis {
@@ -749,7 +724,13 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
             let deps = ba.expr_deps(&self.env, &val);
-            let val = self.build_expr(sp, &val)?;
+            let val = {
+              let mut de = Dedup::new();
+              let nh = NodeHasher::new(self, sp);
+              let i = de.dedup(&nh, &val)?;
+              let Builder {mut ids, heap} = self.to_builder(&de)?;
+              Expr {heap, head: ids[i].take()}
+            };
             match ret {
               None => ((s, deps), Some(val)),
               Some((sp, s2, ref deps2)) => {
@@ -777,7 +758,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         self.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
       }
       DeclKind::Axiom | DeclKind::Thm => {
-        let ret = match &d.ty {
+        let eret = match &d.ty {
           None => Err(ElabError::new_e(sp, "return type required"))?,
           Some(Type::DepType(ty)) => Err(ElabError::new_e(ty.sort, "expression expected"))?,
           &Some(Type::Formula(f)) => {
@@ -806,26 +787,30 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         let nh = NodeHasher::new(self, sp);
         let mut is = Vec::new();
         for (_, _, e) in hyps {is.push(de.dedup(&nh, &e)?)}
-        let ir = de.dedup(&nh, &ret)?;
+        let ir = de.dedup(&nh, &eret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
         let span = fsp.clone();
         let Builder {mut ids, heap} = self.to_builder(&de)?;
         let hyps = is.iter().map(|&i| ids[i].take()).collect();
         let ret = ids[ir].take();
         let proof = d.val.as_ref().map(|e| {
-          match (|| -> Result<Proof> {
-            let l = self.elab_lisp(e)?;
+          (|| -> Result<Option<Proof>> {
+            let g = LispKind::new_ref(LispKind::new_goal(self.fspan(e.span), eret));
+            self.lc.goals = vec![g.clone()];
+            self.elab_lisp(e)?;
+            for g in mem::replace(&mut self.lc.goals, vec![]) {
+              report!(try_get_span(&fsp, &g),
+                format!("|- {}", self.printer(&g.goal_type().unwrap())))
+            }
+            if error {return Ok(None)}
             let mut de = de.map_proof();
             let nh = NodeHasher {var_map, fsp, elab: self};
-            let ip = de.dedup(&nh, &l)?;
+            let ip = de.dedup(&nh, &g)?;
             let Builder {mut ids, heap} = self.to_builder(&de)?;
             let hyps = is.into_iter().map(|i| ids[i].take()).collect();
             let head = ids[ip].take();
-            Ok(Proof { heap, hyps, head })
-          })() {
-            Ok(proof) => Some(proof),
-            Err(e) => {self.report(e); None}
-          }
+            Ok(Some(Proof { heap, hyps, head }))
+          })().unwrap_or_else(|e| {self.report(e); None})
         });
         let t = Thm {
           atom, span, vis: d.mods, id: d.id,
@@ -834,6 +819,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         self.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
       }
     }
-    Ok(())
+    Ok(self.lc.clear())
   }
 }

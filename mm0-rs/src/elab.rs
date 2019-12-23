@@ -175,6 +175,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         } else { Err(ElabError::new_e(n.id, "max prec not allowed for infix"))? }
     };
     self.check_term_nargs(n.id, term, nargs)?;
+    self.add_const(n.c.trim, n.prec)?;
     let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc: Some(rassoc), lits };
     match n.k {
       SimpleNotaKind::Prefix => self.pe.add_prefix(tk.clone(), info),
