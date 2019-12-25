@@ -167,8 +167,8 @@ u32 cmd_unpack(u8* cmd) {
 }
 
 // Returns true if a value with type 'from' can be cast to a value of type 'to'.
-// This requires that the sorts be the same, and additionally if 'from' is a
-// name then so is 'to'.
+// This requires that the sorts be the same, and additionally if 'to' is a
+// name then so is 'from'.
 bool sorts_compatible(u64 from, u64 to) {
   u64 diff = from ^ to;
   return (diff & ~TYPE_DEPS_MASK) == 0 ||
