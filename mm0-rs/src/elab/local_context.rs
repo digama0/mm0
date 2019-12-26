@@ -1,20 +1,19 @@
 use std::ops::Deref;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::hash::Hash;
+use std::sync::Arc;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
 use super::environment::{AtomID, Type as EType};
 use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::*;
-use super::lisp::{LispVal, LispKind, Annot, Uncons, InferTarget};
+use super::lisp::{LispVal, LispKind, Uncons, InferTarget};
+use super::proof::*;
 use crate::util::*;
 
 #[derive(Debug)]
 pub enum InferSort {
-  KnownBound { dummy: bool, sort: SortID },
-  KnownReg { sort: SortID, deps: Vec<AtomID> },
+  Bound { dummy: bool, sort: SortID },
+  Reg { sort: SortID, deps: Vec<AtomID> },
   Unknown { src: Span, must_bound: bool, sorts: HashMap<Option<SortID>, LispVal> },
 }
 
@@ -28,6 +27,8 @@ pub struct LocalContext {
   pub var_order: Vec<(Span, Option<AtomID>, Option<InferSort>)>, // InferSort only populated for anonymous vars
   pub mvars: Vec<LispVal>,
   pub goals: Vec<LispVal>,
+  pub proofs: HashMap<AtomID, usize>,
+  pub proof_order: Vec<(AtomID, LispVal, LispVal)>,
 }
 
 fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget) -> LispVal {
@@ -45,6 +46,8 @@ impl LocalContext {
     self.var_order.clear();
     self.mvars.clear();
     self.goals.clear();
+    self.proofs.clear();
+    self.proof_order.clear();
   }
 
   pub fn set_goals(&mut self, gs: impl IntoIterator<Item=LispVal>) {
@@ -63,12 +66,28 @@ impl LocalContext {
   fn var(&mut self, x: AtomID, sp: Span) -> &mut InferSort {
     self.vars.entry(x).or_insert_with(|| InferSort::new(sp))
   }
-}
 
-fn decorate_span(fsp: &Option<FileSpan>, e: LispKind) -> LispVal {
-  if let Some(fsp) = fsp {
-    LispKind::new_span(fsp.clone(), Arc::new(e))
-  } else {Arc::new(e)}
+  pub fn clean_mvars(&mut self) {
+    let mut i = 0;
+    self.mvars.retain(|e| e.as_ref_(|e| {
+      LispKind::unwrapped_mut(e, |e| {
+        if let LispKind::MVar(n, _) = e {*n = i; i += 1; true}
+        else {false}
+      }).unwrap_or_else(|| {
+        match **e {
+          LispKind::MVar(n, ref ty) => {
+            if n != i {*e = LispKind::MVar(i, ty.clone()).decorate_span(&e.fspan())}
+            i += 1; true
+          }
+          _ => false,
+        }
+      })
+    }).unwrap())
+  }
+
+  pub fn get_proof(&self, a: AtomID) -> Option<&(AtomID, LispVal, LispVal)> {
+    self.proofs.get(&a).map(|&i| &self.proof_order[i])
+  }
 }
 
 struct ElabTerm<'a> {
@@ -87,7 +106,7 @@ impl<'a> Deref for ElabTermMut<'a> {
   fn deref(&self) -> &ElabTerm<'a> { unsafe { mem::transmute(self) } }
 }
 
-fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
+pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
   match e.fspan() {
     Some(fsp) if fsp.file == fsp.file && fsp.span.start >= fsp.span.start => fsp.span,
     _ => fsp.span,
@@ -95,15 +114,15 @@ fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
 }
 
 impl Environment {
-  fn apply_coe(&self, fsp: &Option<FileSpan>, c: &Coe, res: LispVal) -> LispVal {
+  pub fn apply_coe(&self, fsp: &Option<FileSpan>, c: &Coe, res: LispVal) -> LispVal {
     fn apply(c: &Coe, f: impl FnOnce(TermID, LispVal) -> LispVal + Clone, e: LispVal) -> LispVal {
       match c {
         &Coe::One(_, tid) => f(tid, e),
         Coe::Trans(c1, _, c2) => apply(c2, f.clone(), apply(c1, f, e)),
       }
     }
-    apply(c, |tid, e| decorate_span(fsp, LispKind::List(
-      vec![Arc::new(LispKind::Atom(self.terms[tid].atom)), e])), res)
+    apply(c, |tid, e| LispKind::List(
+      vec![Arc::new(LispKind::Atom(self.terms[tid].atom)), e]).decorate_span(fsp), res)
   }
 }
 
@@ -118,7 +137,7 @@ impl<'a> ElabTerm<'a> {
 
   fn coerce(&self, src: &LispVal, from: SortID, res: LispKind, tgt: InferTarget) -> Result<LispVal> {
     let fsp = src.fspan();
-    let res = decorate_span(&fsp, res);
+    let res = res.decorate_span(&fsp);
     let to = match tgt {
       InferTarget::Unknown => return Ok(res),
       InferTarget::Provable if self.env.sorts[from].mods.contains(Modifiers::PROVABLE) => return Ok(res),
@@ -144,8 +163,8 @@ impl<'a> ElabTerm<'a> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) => match self.lc.vars.get(&a) {
         None => Err(self.err(e, "variable not found")),
-        Some(&InferSort::KnownBound {sort, ..}) => Ok(sort),
-        Some(&InferSort::KnownReg {sort, ..}) => Ok(sort),
+        Some(&InferSort::Bound {sort, ..}) => Ok(sort),
+        Some(&InferSort::Reg {sort, ..}) => Ok(sort),
         Some(InferSort::Unknown {..}) => panic!("finalized vars already"),
       },
       LispKind::List(es) if !es.is_empty() => {
@@ -166,11 +185,11 @@ impl<'a> ElabTermMut<'a> {
       move || InferSort::new(try_get_span(fsp, e))
     });
     match (is, tgt) {
-      (InferSort::KnownReg {..}, InferTarget::Bound(_)) =>
+      (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.err(e, "expected a bound variable, got regular variable")),
-      (&mut InferSort::KnownBound {sort, ..}, InferTarget::Bound(sa)) => {
+      (&mut InferSort::Bound {sort, ..}, InferTarget::Bound(sa)) => {
         let s = self.env.data[sa].sort.unwrap();
-        if s == sort {Ok(decorate_span(&e.fspan(), LispKind::Atom(a)))}
+        if s == sort {Ok(LispKind::Atom(a).decorate_span(&e.fspan()))}
         else {
           Err(self.err(e,
             format!("type error: expected {}, got {}", self.env.sorts[s].name, self.env.sorts[sort].name)))
@@ -185,8 +204,8 @@ impl<'a> ElabTermMut<'a> {
         let mvars = &mut self.lc.mvars;
         Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt)).clone())
       }
-      (&mut InferSort::KnownReg {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
-      (&mut InferSort::KnownBound {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
+      (&mut InferSort::Reg {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
+      (&mut InferSort::Bound {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
     }
   }
 
@@ -198,7 +217,7 @@ impl<'a> ElabTermMut<'a> {
       self.err(&t, format!("term '{}' not declared", self.env.data[a].name)))?;
     let tdata = &self.env.terms[tid];
     let mut tys = tdata.args.iter();
-    let mut args = vec![decorate_span(&t.fspan(), LispKind::Atom(a))];
+    let mut args = vec![LispKind::Atom(a).decorate_span(&t.fspan())];
     for arg in it {
       let tgt = match tys.next().ok_or_else(||
         self.err(&e,
@@ -249,12 +268,12 @@ impl BuildArgs {
   fn push_var(&mut self, vars: &HashMap<AtomID, InferSort>,
     a: Option<AtomID>, is: &Option<InferSort>) -> Option<Option<EType>> {
     match is.as_ref().unwrap_or_else(|| &vars[&a.unwrap()]) {
-      &InferSort::KnownBound {dummy: false, sort} => {
+      &InferSort::Bound {dummy: false, sort} => {
         self.push_bound(a)?;
         Some(Some(EType::Bound(sort)))
       },
-      &InferSort::KnownBound {dummy: true, ..} => Some(None),
-      &InferSort::KnownReg {sort, ref deps} => {
+      &InferSort::Bound {dummy: true, ..} => Some(None),
+      &InferSort::Reg {sort, ref deps} => {
         let n = self.deps(deps);
         if let Some(a) = a {self.map.insert(a, n);}
         Some(Some(EType::Reg(sort, n)))
@@ -298,250 +317,6 @@ impl BuildArgs {
   }
 }
 
-struct NodeHasher<'a, F: FileServer + ?Sized> {
-  elab: &'a Elaborator<'a, F>,
-  var_map: HashMap<AtomID, usize>,
-  fsp: FileSpan,
-}
-
-impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
-  fn new(elab: &'a Elaborator<'a, F>, sp: Span) -> Self {
-    let mut var_map = HashMap::new();
-    for (i, &(_, a, _)) in elab.lc.var_order.iter().enumerate() {
-      if let Some(a) = a {var_map.insert(a, i);}
-    }
-    NodeHasher { fsp: elab.fspan(sp), var_map, elab }
-  }
-
-  fn err(&self, e: &LispKind, msg: impl Into<BoxError>) -> ElabError {
-    ElabError::new_e(try_get_span(&self.fsp, e), msg)
-  }
-}
-
-trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>,
-    e: &LispKind, f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self>;
-}
-
-struct Dedup<H: NodeHash> {
-  map: HashMap<Rc<H>, usize>,
-  prev: HashMap<*const LispKind, usize>,
-  vec: Vec<(Rc<H>, bool)>,
-}
-
-impl<H: NodeHash> Dedup<H> {
-  fn new() -> Dedup<H> {
-    Dedup {map: HashMap::new(), prev: HashMap::new(), vec: Vec::new() }
-  }
-  fn add(&mut self, p: *const LispKind, v: H) -> usize {
-    match self.map.entry(Rc::new(v)) {
-      Entry::Vacant(e) => {
-        let n = self.vec.len();
-        self.vec.push((e.key().clone(), false));
-        e.insert(n);
-        self.prev.insert(p, n);
-        n
-      }
-      Entry::Occupied(e) => {
-        let &n = e.get();
-        self.vec[n].1 = true;
-        self.prev.insert(p, n);
-        n
-      }
-    }
-  }
-
-  fn dedup<'a, F: FileServer + ?Sized>(&mut self, nh: &NodeHasher<'a, F>, e: &LispVal) -> Result<usize> {
-    e.unwrapped(|r| Ok(match self.prev.get(&(r as *const _)) {
-      Some(&n) => {self.vec[n].1 = true; n}
-      None => {
-        let ns = H::from(nh, r, |e| self.dedup(nh, e))?;
-        self.add(r, ns)
-      }
-    }))
-  }
-
-  fn map_inj<T: NodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
-    let mut d = Dedup {
-      map: HashMap::new(),
-      prev: self.prev.clone(),
-      vec: Vec::with_capacity(self.vec.len())
-    };
-    for (i, &(ref h, b)) in self.vec.iter().enumerate() {
-      let t = Rc::new(f(h));
-      d.map.insert(t.clone(), i);
-      d.vec.push((t, b));
-    }
-    d
-  }
-}
-
-trait Node: Sized + std::fmt::Debug {
-  type Hash: NodeHash;
-  const REF: fn(usize) -> Self;
-  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self;
-}
-
-#[derive(Debug)]
-enum Val<T: Node> {Built(T), Ref(usize), Done}
-
-impl<T: Node> Val<T> {
-  fn take(&mut self) -> T {
-    match mem::replace(self, Val::Done) {
-      Val::Built(x) => x,
-      Val::Ref(n) => {*self = Val::Ref(n); T::REF(n)}
-      Val::Done => panic!("taking a value twice")
-    }
-  }
-}
-
-struct Builder<T: Node> {
-  ids: Vec<Val<T>>,
-  heap: Vec<T>,
-}
-
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
-  fn to_builder<T: Node>(&self, de: &Dedup<T::Hash>) -> Result<Builder<T>> {
-    let mut ids: Vec<Val<T>> = Vec::with_capacity(de.vec.len());
-    let mut heap = Vec::new();
-    let mut hsize = self.lc.var_order.len();
-    for &(ref e, b) in &de.vec {
-      let node = T::from(&e, &mut ids);
-      if b {
-        ids.push(Val::Ref(hsize));
-        heap.push(node);
-        hsize += 1;
-      } else {
-        ids.push(Val::Built(node))
-      }
-    }
-    Ok(Builder {ids, heap})
-  }
-}
-
-#[derive(PartialEq, Eq, Hash, Debug)]
-enum ExprHash {
-  Var(usize),
-  Dummy(AtomID, SortID),
-  App(TermID, Vec<usize>),
-}
-
-impl NodeHash for ExprHash {
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
-      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
-    Ok(match e {
-      &LispKind::Atom(a) => match nh.var_map.get(&a) {
-        Some(&i) => ExprHash::Var(i),
-        None => match nh.elab.lc.vars.get(&a) {
-          Some(&InferSort::KnownBound {dummy: true, sort}) => ExprHash::Dummy(a, sort),
-          _ => Err(nh.err(e, format!("variable '{}' not found", nh.elab.data[a].name)))?,
-        }
-      },
-      LispKind::List(es) if !es.is_empty() => {
-        let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
-        let tid = nh.elab.env.term(a).ok_or_else(||
-          nh.err(&es[0], format!("term '{}' not declared", nh.elab.env.data[a].name)))?;
-        let mut ns = Vec::with_capacity(es.len() - 1);
-        for e in &es[1..] { ns.push(f(e)?) }
-        ExprHash::App(tid, ns)
-      }
-      _ => Err(nh.err(e, format!("bad expression {}", nh.elab.printer(e))))?
-    })
-  }
-}
-
-impl Node for ExprNode {
-  type Hash = ExprHash;
-  const REF: fn(usize) -> Self = ExprNode::Ref;
-  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
-    match *e {
-      ExprHash::Var(i) => ExprNode::Ref(i),
-      ExprHash::Dummy(a, s) => ExprNode::Dummy(a, s),
-      ExprHash::App(t, ref ns) => ExprNode::App(t,
-        ns.iter().map(|&i| Val::take(&mut ids[i])).collect()),
-    }
-  }
-}
-
-#[derive(PartialEq, Eq, Hash, Debug)]
-enum ProofHash {
-  Var(usize),
-  Dummy(AtomID, SortID),
-  Term(TermID, Vec<usize>),
-  Thm(ThmID, Vec<usize>),
-  Conv(usize, usize),
-}
-
-impl NodeHash for ProofHash {
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
-      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
-    Ok(match e {
-      &LispKind::Atom(a) => match nh.var_map.get(&a) {
-        Some(&i) => ProofHash::Var(i),
-        None => match nh.elab.lc.vars.get(&a) {
-          Some(&InferSort::KnownBound {dummy: true, sort}) => ProofHash::Dummy(a, sort),
-          _ => Err(nh.err(e, format!("variable '{}' not found", nh.elab.data[a].name)))?,
-        }
-      },
-      LispKind::List(es) if !es.is_empty() => {
-        let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
-        let adata = &nh.elab.env.data[a];
-        match adata.decl {
-          Some(DeclKey::Term(tid)) => {
-            let mut ns = Vec::with_capacity(es.len() - 1);
-            for e in &es[1..] { ns.push(f(e)?) }
-            ProofHash::Term(tid, ns)
-          }
-          Some(DeclKey::Thm(tid)) => {
-            let mut ns = Vec::with_capacity(es.len() - 1);
-            for e in &es[1..] { ns.push(f(e)?) }
-            ProofHash::Thm(tid, ns)
-          },
-          None => match &*adata.name {
-            ":conv" => {
-              if es.len() != 3 { Err(nh.err(e, "incorrect :conv format"))? }
-              ProofHash::Conv(f(&es[1])?, f(&es[2])?)
-            }
-            _ => Err(nh.err(&es[0], format!("term/theorem '{}' not declared", adata.name)))?
-          }
-        }
-      }
-      _ => Err(nh.err(e, format!("bad expression {}", nh.elab.printer(e))))?
-    })
-  }
-}
-
-impl Dedup<ExprHash> {
-  fn map_proof(&self) -> Dedup<ProofHash> {
-    self.map_inj(|e| match *e {
-      ExprHash::Var(i) => ProofHash::Var(i),
-      ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
-      ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone()),
-    })
-  }
-}
-
-impl Node for ProofNode {
-  type Hash = ProofHash;
-  const REF: fn(usize) -> Self = ProofNode::Ref;
-  fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
-    match *e {
-      ProofHash::Var(i) => ProofNode::Ref(i),
-      ProofHash::Dummy(a, s) => ProofNode::Dummy(a, s),
-      ProofHash::Term(term, ref ns) => ProofNode::Term {
-        term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
-      },
-      ProofHash::Thm(thm, ref ns) => ProofNode::Thm {
-        thm, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
-      },
-      ProofHash::Conv(i, j) => ProofNode::Conv {
-        tgt: Box::new(Val::take(&mut ids[i])),
-        proof: Box::new(Val::take(&mut ids[j]))
-      },
-    }
-  }
-}
-
 enum InferBinder {
   Var(Option<AtomID>, InferSort),
   Hyp(Option<AtomID>, LispVal),
@@ -557,9 +332,9 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           d.deps[0].start..d.deps.last().unwrap().end, "dependencies not allowed in curly binders"));
         *error = true;
       }
-      InferSort::KnownBound {dummy: lk == LocalKind::Dummy, sort}
+      InferSort::Bound {dummy: lk == LocalKind::Dummy, sort}
     } else {
-      InferSort::KnownReg {
+      InferSort::Reg {
         sort,
         deps: d.deps.iter().map(|&sp| {
           let y = self.env.get_atom(self.ast.span(sp));
@@ -637,7 +412,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               } else {unreachable!()}
             }
             newvars.push((src, a));
-            *is = InferSort::KnownBound {dummy, sort}
+            *is = InferSort::Bound {dummy, sort}
           }
           Err(e) => errs.push(e),
         }
@@ -686,7 +461,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           None => None, // Err(ElabError::new_e(d.id, "type required for term declaration"))?,
           Some(Type::Formula(f)) => Err(ElabError::new_e(f.0, "sort expected"))?,
           Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)? {
-            InferSort::KnownReg {sort, deps} => Some((ty.sort, sort, deps)),
+            InferSort::Reg {sort, deps} => Some((ty.sort, sort, deps)),
             _ => unreachable!(),
           },
         };

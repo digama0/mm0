@@ -6,14 +6,27 @@ use crate::elab::ast::{Formula, SExpr};
 use crate::util::*;
 use crate::elab::environment::*;
 
+#[derive(Debug)]
 pub struct QExpr {
   pub span: Span,
   pub k: QExprKind,
 }
+#[derive(Debug)]
 pub enum QExprKind {
   Ident,
   App(TermID, Vec<QExpr>),
   Unquote(SExpr),
+}
+
+impl QExpr {
+  fn offset(&mut self, off: usize) {
+    self.span += off;
+    match &mut self.k {
+      QExprKind::Ident => {}
+      QExprKind::App(_, qs) => for q in qs {q.offset(off)},
+      QExprKind::Unquote(e) => e.offset(off),
+    }
+  }
 }
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
@@ -30,7 +43,25 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
     p.ws();
     let expr = p.expr(Prec::Prec(0))?;
     assert!(p.imports.is_empty());
-for e in p.p.errors { self.report(e.into()) }
+    for e in p.p.errors { self.report(e.into()) }
+    Ok(expr)
+  }
+
+  pub fn parse_formula_str(&mut self, s: &str, off: usize) -> Result<QExpr, ElabError> {
+    let mut p = MathParser {
+      pe: &self.pe,
+      p: Parser {
+        source: s.as_bytes(),
+        errors: vec![],
+        imports: vec![],
+        idx: 0,
+      }
+    };
+    p.ws();
+    let mut expr = p.expr(Prec::Prec(0))?;
+    assert!(p.imports.is_empty());
+    for mut e in p.p.errors { e.pos += off; self.report(e.into()) }
+    expr.offset(off);
     Ok(expr)
   }
 }

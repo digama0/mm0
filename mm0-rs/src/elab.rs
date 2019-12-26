@@ -3,6 +3,7 @@ pub mod lisp;
 pub mod math_parser;
 pub mod local_context;
 pub mod tactic;
+pub mod proof;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -134,7 +135,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       ast, fs, path,
       errors: Vec::new(),
       toks: HashMap::new(),
-      env: Environment::default(),
+      env: Environment::new(),
       timeout: Some(Duration::from_secs(5)),
       cur_timeout: None,
       lc: LocalContext::new(),

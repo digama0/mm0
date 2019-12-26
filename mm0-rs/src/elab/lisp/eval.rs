@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::util::*;
 use crate::parser::ast::SExpr;
 use super::super::{Result, AtomID, FileServer, Elaborator, AtomData,
-  ElabError, ElabErrorKind, ErrorLevel, BoxError};
+  ElabError, ElabErrorKind, ErrorLevel, BoxError, tactic::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
 
@@ -29,6 +29,7 @@ enum Stack<'a> {
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
   Refines(Span, std::slice::Iter<'a, IR>),
   TryRefine(Span),
+  Refine {sp: Span, stack: Vec<RStack>, gv: Vec<LispVal>},
   Focus(Vec<LispVal>),
 }
 
@@ -52,6 +53,7 @@ enum State<'a> {
   Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
+  Refine {sp: Span, stack: Vec<RStack>, state: RState, gv: Vec<LispVal>},
 }
 
 impl LispKind {
@@ -252,12 +254,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     })
   }
 
-  fn as_ref<T>(&self, e: &LispKind, f: impl FnOnce(&Mutex<LispVal>) -> SResult<T>) -> SResult<T> {
-    match e {
-      LispKind::Ref(m) => f(m),
-      LispKind::Annot(_, e) => self.as_ref(e, f),
-      _ => Err(format!("not a ref-cell: {}", self.printer(e)))
-    }
+  fn as_ref<T>(&self, e: &LispKind, f: impl FnOnce(&mut LispVal) -> SResult<T>) -> SResult<T> {
+    e.as_ref_(f).unwrap_or_else(|| Err(format!("not a ref-cell: {}", self.printer(e))))
   }
 
   fn as_map<T>(&self, e: &LispKind, f: impl FnOnce(&HashMap<AtomID, LispVal>) -> SResult<T>) -> SResult<T> {
@@ -508,9 +506,9 @@ make_builtins! { self, sp1, sp2, args,
   IsDef: Exact(1) => Arc::new(LispKind::Bool(args[0].is_def())),
   IsRef: Exact(1) => Arc::new(LispKind::Bool(args[0].is_ref())),
   NewRef: AtLeast(0) => LispKind::new_ref(args.get(0).unwrap_or(&*UNDEF).clone()),
-  GetRef: Exact(1) => try1!(self.as_ref(&args[0], |m| Ok(m.lock().unwrap().clone()))),
+  GetRef: Exact(1) => try1!(self.as_ref(&args[0], |e| Ok(e.clone()))),
   SetRef: Exact(2) => {
-    try1!(self.as_ref(&args[0], |m| Ok(*m.lock().unwrap() = args[1].clone())));
+    try1!(self.as_ref(&args[0], |e| Ok(*e = args[1].clone())));
     UNDEF.clone()
   },
   Async: AtLeast(1) => {
@@ -590,7 +588,13 @@ make_builtins! { self, sp1, sp2, args,
   GetGoals: AtLeast(0) => Arc::new(LispKind::List(self.lc.goals.clone())),
   SetGoals: AtLeast(0) => {self.lc.set_goals(args); UNDEF.clone()},
   ToExpr: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
-  Refine: AtLeast(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  Refine: AtLeast(0) => return Ok(State::Refine {
+    sp: sp1, stack: vec![], gv: vec![],
+    state: RState::Goals {
+      gs: mem::replace(&mut self.lc.goals, vec![]).into_iter(),
+      es: args.into_iter()
+    }
+  }),
   Have: AtLeast(2) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   Stat: Exact(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   GetDecl: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
@@ -740,13 +744,14 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           }
           Some(Stack::Refines(sp, it)) => State::Refines(sp, it),
           Some(Stack::TryRefine(_)) if !ret.is_def() => State::Ret(ret),
-          Some(Stack::TryRefine(sp)) => {self.refine(sp, vec![ret])?; State::Ret(UNDEF.clone())}
+          Some(Stack::TryRefine(sp)) => self.evaluate_builtin(sp, sp, BuiltinProc::Refine, vec![ret])?,
           Some(Stack::Focus(gs)) => {
             let mut gs1 = mem::replace(&mut self.lc.goals, vec![]);
             gs1.extend_from_slice(&gs);
             self.lc.set_goals(gs1);
             State::Ret(UNDEF.clone())
           }
+          Some(Stack::Refine {sp, stack, gv}) => State::Refine {sp, stack, state: RState::Ret(ret), gv},
         },
         State::List(sp, vec, mut it) => match it.next() {
           None => State::Ret(Arc::new(LispKind::Annot(
@@ -871,6 +876,13 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
         State::Refines(sp, mut it) => match it.next() {
           None => State::Ret(UNDEF.clone()),
           Some(e) => push!(Refines(sp, it), TryRefine(e.span().unwrap_or(sp)); Eval(e))
+        },
+        State::Refine {sp, mut stack, state, mut gv} => {
+          match self.run_refine(sp, &mut stack, state, &mut gv)? {
+            RefineResult::Done => State::Ret(UNDEF.clone()),
+            RefineResult::UnparsedFormula(f) => unimplemented!(),
+            RefineResult::RefineExtraArgs(e, es) => unimplemented!(),
+          }
         }
       }
     }

@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::{Deref, DerefMut, Range, Add, AddAssign};
 use std::borrow::Borrow;
 use std::mem::{self, MaybeUninit};
 use std::fmt;
@@ -79,6 +79,17 @@ impl From<usize> for Span {
 
 impl From<Span> for Range<usize> {
   #[inline] fn from(s: Span) -> Self { s.start..s.end }
+}
+
+impl Add<usize> for Span {
+  type Output = Self;
+  fn add(self, i: usize) -> Self {
+    Span {start: self.start + i, end: self.start + i}
+  }
+}
+
+impl AddAssign<usize> for Span {
+  fn add_assign(&mut self, i: usize) { *self = *self + i }
 }
 
 impl Deref for Span {

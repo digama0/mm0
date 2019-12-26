@@ -13,7 +13,7 @@ pub use crate::parser::ast::{Modifiers, Prec};
 
 macro_rules! id_wrapper {
   ($id:ident: $ty:ty, $vec:ident) => {
-    #[derive(Copy, Clone, Hash, PartialEq, Eq)]
+    #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct $id(pub $ty);
 
     impl fmt::Debug for $id {
@@ -77,6 +77,12 @@ impl Type {
       Type::Reg(s, _) => s,
     }
   }
+  pub fn bound(self) -> bool {
+    match self {
+      Type::Bound(_) => true,
+      _ => false,
+    }
+  }
 }
 
 /// An `ExprNode` is interpreted inside a context containing the `Vec<(String, Type)>`
@@ -116,11 +122,10 @@ pub enum ProofNode {
   Ref(usize),
   Dummy(AtomID, SortID),
   Term { term: TermID, args: Vec<ProofNode> },
-  Thm {
-    thm: ThmID,
-    args: Vec<ProofNode>,
-  },
-  Conv { tgt: Box<ProofNode>, proof: Box<ProofNode> },
+  Thm { thm: ThmID, args: Vec<ProofNode> },
+  Conv(Box<(ProofNode, ProofNode, ProofNode)>), // tgt, conv, proof
+  Sym(Box<ProofNode>),
+  Unfold { term: TermID, args: Vec<ProofNode>, res: Box<ProofNode> },
 }
 
 impl From<&ExprNode> for ProofNode {
@@ -235,7 +240,7 @@ impl AtomData {
   }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Environment {
   pub sorts: SortVec<Sort>,
   pub pe: ParserEnv,
@@ -244,6 +249,51 @@ pub struct Environment {
   pub atoms: HashMap<ArcString, AtomID>,
   pub data: AtomVec<AtomData>,
   pub stmts: Vec<StmtTrace>,
+}
+
+macro_rules! make_atoms {
+  {consts $n:expr;} => {};
+  {consts $n:expr; $x:ident $($xs:ident)*} => {
+    pub const $x: AtomID = AtomID($n);
+    make_atoms! {consts AtomID::$x.0+1; $($xs)*}
+  };
+  {$($x:ident: $e:expr,)*} => {
+    impl AtomID {
+      make_atoms! {consts 0; $($x)*}
+    }
+
+    impl Environment {
+      pub fn new() -> Environment {
+        let mut atoms = HashMap::new();
+        let mut data = AtomVec::default();
+        $({
+          let s: ArcString = $e.into();
+          atoms.insert(s.clone(), AtomID::$x);
+          data.push(AtomData::new(s))
+        })*
+        Environment {
+          atoms, data,
+          sorts: Default::default(),
+          pe: Default::default(),
+          terms: Default::default(),
+          thms: Default::default(),
+          stmts: Default::default(),
+        }
+      }
+    }
+  }
+}
+
+make_atoms! {
+  UNDER: "_",
+  BANG: "!",
+  BANG2: "!!",
+  VERB: ":verb",
+  CONV: ":conv",
+  SYM: ":sym",
+  UNFOLD: ":unfold",
+  COLON: ":",
+  QMARK: "?",
 }
 
 #[derive(Default, Clone)]
@@ -352,7 +402,10 @@ impl Remap<Remapper> for ProofNode {
       ProofNode::Dummy(a, s) => ProofNode::Dummy(a.remap(r), s.remap(r)),
       ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
       ProofNode::Thm {thm, args} => ProofNode::Thm { thm: thm.remap(r), args: args.remap(r) },
-      ProofNode::Conv {tgt, proof} => ProofNode::Conv { tgt: tgt.remap(r), proof: proof.remap(r) },
+      ProofNode::Conv(p) => ProofNode::Conv(Box::new((p.0.remap(r), p.1.remap(r), p.2.remap(r)))),
+      ProofNode::Sym(p) => ProofNode::Sym(p.remap(r)),
+      ProofNode::Unfold {term, args, res} => ProofNode::Unfold {
+        term: term.remap(r), args: args.remap(r), res: res.remap(r) },
     }
   }
 }

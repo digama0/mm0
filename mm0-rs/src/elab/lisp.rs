@@ -74,6 +74,21 @@ pub enum InferTarget {
   Reg(AtomID),
 }
 
+impl InferTarget {
+  pub fn sort(self) -> Option<AtomID> {
+    match self {
+      InferTarget::Bound(s) | InferTarget::Reg(s) => Some(s),
+      _ => None
+    }
+  }
+  pub fn bound(self) -> bool {
+    match self {
+      InferTarget::Bound(_) => true,
+      _ => false
+    }
+  }
+}
+
 pub type LispVal = Arc<LispKind>;
 #[derive(Debug)]
 pub enum LispKind {
@@ -104,6 +119,14 @@ impl From<&LispKind> for bool {
   fn from(e: &LispKind) -> bool { e.truthy() }
 }
 impl LispKind {
+  pub fn unwrapped_mut<T>(this: &mut LispVal, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+    Arc::get_mut(this).and_then(|e| match e {
+      LispKind::Ref(m) => Self::unwrapped_mut(&mut m.lock().unwrap(), f),
+      LispKind::Annot(_, v) => Self::unwrapped_mut(v, f),
+      _ => Some(f(e))
+    })
+  }
+
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     match self {
       LispKind::Ref(m) => m.lock().unwrap().unwrapped(f),
@@ -159,6 +182,13 @@ impl LispKind {
       _ => false,
     }
   }
+  pub fn as_ref_<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
+    match self {
+      LispKind::Ref(m) => Some(f(&mut m.lock().unwrap())),
+      LispKind::Annot(_, e) => e.as_ref_(f),
+      _ => None
+    }
+  }
   pub fn fspan(&self) -> Option<FileSpan> {
     match self {
       LispKind::Ref(m) => m.lock().unwrap().fspan(),
@@ -211,6 +241,13 @@ impl LispKind {
   pub fn new_span(fsp: FileSpan, e: LispVal) -> LispVal {
     Arc::new(LispKind::Annot(Annot::Span(fsp), e))
   }
+
+  pub fn decorate_span(self, fsp: &Option<FileSpan>) -> LispVal {
+    if let Some(fsp) = fsp {
+      LispKind::new_span(fsp.clone(), Arc::new(self))
+    } else {Arc::new(self)}
+  }
+
   pub fn new_ref(e: LispVal) -> LispVal {
     Arc::new(LispKind::Ref(Mutex::new(e)))
   }
@@ -369,6 +406,26 @@ impl Uncons {
       LispKind::DottedList(es, r) => Arc::new(LispKind::DottedList(es[self.1..].into(), r.clone())),
       _ => unreachable!()
     })
+  }
+
+  pub fn extend_into(&mut self, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
+    loop {
+      match &*self.0 {
+        LispKind::Ref(m) => {let e = m.lock().unwrap().clone(); self.0 = e}
+        LispKind::Annot(_, v) => self.0 = v.clone(),
+        LispKind::List(es) | LispKind::DottedList(es, _) if self.1 + n <= es.len() => {
+          vec.extend_from_slice(&es[self.1..self.1 + n]);
+          return true
+        },
+        LispKind::List(es) => {vec.extend_from_slice(&es); return false},
+        LispKind::DottedList(es, r) => {
+          vec.extend_from_slice(&es);
+          n -= es.len();
+          *self = Self::from(r.clone())
+        }
+        _ => return false
+      }
+    }
   }
 }
 
