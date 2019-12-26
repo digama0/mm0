@@ -65,7 +65,6 @@ impl<'a> fmt::Display for LispFormat<'a> {
       LispKind::Annot(_, e) => self.to(e).fmt(f),
       LispKind::Number(n) => n.fmt(f),
       LispKind::String(s) => write!(f, "{:?}", s),
-      LispKind::UnparsedFormula(s) => write!(f, "${}$", s),
       LispKind::Bool(true) => "#t".fmt(f),
       LispKind::Bool(false) => "#f".fmt(f),
       LispKind::Syntax(s) => s.fmt(f),
@@ -83,6 +82,7 @@ impl<'a> fmt::Display for LispFormat<'a> {
         write!(f, "#[fn {} at {} {}:{}]", x, fname, r.line + 1, r.character + 1)
       }
       LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#[match cont]"),
+      LispKind::Proc(Proc::RefineCallback(_)) => write!(f, "#[refine]"),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;
         for (a, v) in m {write!(f, " [{} {}]", self.atom(*a), self.to(v))?}

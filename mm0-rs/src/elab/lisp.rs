@@ -4,7 +4,7 @@ pub mod print;
 
 use std::ops::Deref;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, Weak, Mutex, atomic::AtomicBool};
 use std::collections::HashMap;
 use num::BigInt;
 use crate::parser::ast::{Atom};
@@ -98,7 +98,6 @@ pub enum LispKind {
   Annot(Annot, LispVal),
   Number(BigInt),
   String(ArcString),
-  UnparsedFormula(ArcString),
   Bool(bool),
   Syntax(Syntax),
   Undef,
@@ -162,6 +161,9 @@ impl LispKind {
   }
   pub fn is_int(&self) -> bool {
     self.unwrapped(|e| if let LispKind::Number(_) = e {true} else {false})
+  }
+  pub fn as_int<T>(&self, f: impl FnOnce(&BigInt) -> T) -> Option<T> {
+    self.unwrapped(|e| if let LispKind::Number(n) = e {Some(f(n))} else {None})
   }
   pub fn is_proc(&self) -> bool {
     self.unwrapped(|e| if let LispKind::Proc(_) = e {true} else {false})
@@ -285,6 +287,7 @@ pub enum Proc {
     code: Arc<IR>
   },
   MatchCont(Arc<AtomicBool>),
+  RefineCallback(Weak<Mutex<Vec<LispVal>>>),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -308,6 +311,7 @@ impl Proc {
       Proc::Builtin(p) => p.spec(),
       &Proc::Lambda {spec, ..} => spec,
       Proc::MatchCont(_) => ProcSpec::AtLeast(0),
+      Proc::RefineCallback(_) => ProcSpec::AtLeast(1),
     }
   }
 }
@@ -479,7 +483,6 @@ impl Remap<LispRemapper> for LispVal {
       &LispKind::MVar(n, is) => Arc::new(LispKind::MVar(n, is.remap(r))),
       LispKind::Number(_) |
       LispKind::String(_) |
-      LispKind::UnparsedFormula(_) |
       LispKind::Bool(_) |
       LispKind::Syntax(_) |
       LispKind::Undef |
@@ -514,6 +517,7 @@ impl Remap<LispRemapper> for Proc {
       &Proc::Lambda {ref pos, ref env, spec, ref code} =>
         Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
       Proc::MatchCont(_) => Proc::MatchCont(Arc::new(AtomicBool::new(false))),
+      Proc::RefineCallback(_) => Proc::RefineCallback(Weak::new()),
     }
   }
 }

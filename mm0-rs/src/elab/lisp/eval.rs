@@ -1,8 +1,9 @@
 use std::ops::{Deref, DerefMut};
 use std::mem;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::collections::HashMap;
+use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
 use super::super::{Result, AtomID, FileServer, Elaborator, AtomData,
@@ -29,8 +30,9 @@ enum Stack<'a> {
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
   Refines(Span, std::slice::Iter<'a, IR>),
   TryRefine(Span),
-  Refine {sp: Span, stack: Vec<RStack>, gv: Vec<LispVal>},
+  Refine {sp: Span, stack: Vec<RStack>, gv: Arc<Mutex<Vec<LispVal>>>},
   Focus(Vec<LispVal>),
+  Have(Span, AtomID),
 }
 
 impl Stack<'_> {
@@ -53,7 +55,7 @@ enum State<'a> {
   Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
-  Refine {sp: Span, stack: Vec<RStack>, state: RState, gv: Vec<LispVal>},
+  Refine {sp: Span, stack: Vec<RStack>, state: RState, gv: Arc<Mutex<Vec<LispVal>>>},
 }
 
 impl LispKind {
@@ -91,10 +93,10 @@ impl LispKind {
     }
   }
 
-  fn try_unwrap(this: LispVal) -> std::result::Result<LispKind, LispVal> {
+  fn _try_unwrap(this: LispVal) -> std::result::Result<LispKind, LispVal> {
     Arc::try_unwrap(this).and_then(|e| match e {
-      LispKind::Annot(_, e) => Self::try_unwrap(e),
-      LispKind::Ref(m) => Self::try_unwrap(m.into_inner().unwrap()),
+      LispKind::Annot(_, e) => Self::_try_unwrap(e),
+      LispKind::Ref(m) => Self::_try_unwrap(m.into_inner().unwrap()),
       e => Ok(e)
     })
   }
@@ -217,7 +219,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     Evaluator::new(self, sp).run(State::App(sp, sp, f, es, [].iter()))
   }
 
-  pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
+  pub fn _call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
     let a = self.get_atom(p.to_str());
     let val = match &self.data[a].lisp {
       Some((_, e)) => e.clone(),
@@ -270,7 +272,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       LispKind::Ref(m) => self.to_string(&m.lock().unwrap()),
       LispKind::Annot(_, e) => self.to_string(e),
       LispKind::String(s) => s.clone(),
-      LispKind::UnparsedFormula(s) => s.clone(),
       &LispKind::Atom(a) => self.data[a].name.clone(),
       LispKind::Number(n) => ArcString::new(n.to_string()),
       _ => ArcString::new(format!("{}", self.printer(e)))
@@ -565,7 +566,17 @@ make_builtins! { self, sp1, sp2, args,
     }).ok_or("expected a map")));
     UNDEF.clone()
   },
-  SetTimeout: Exact(1) => {/* unimplemented */ UNDEF.clone()},
+  SetTimeout: Exact(1) => {
+    match try1!(args[0].as_int(|n| n.to_u64()).ok_or("expected a number")) {
+      None | Some(0) => {self.timeout = None; self.cur_timeout = None},
+      Some(n) => {
+        let d = Duration::from_millis(n);
+        self.timeout = Some(d);
+        self.cur_timeout = Instant::now().checked_add(d)
+      }
+    }
+    UNDEF.clone()
+  },
   IsMVar: Exact(1) => Arc::new(LispKind::Bool(args[0].is_mvar())),
   IsGoal: Exact(1) => Arc::new(LispKind::Bool(args[0].is_goal())),
   NewMVar: AtLeast(0) => self.lc.new_mvar(
@@ -583,19 +594,36 @@ make_builtins! { self, sp1, sp2, args,
     Arc::new(LispKind::String(ArcString::new(format!("{}", self.printer(&args[0]))))),
   NewGoal: Exact(1) => LispKind::new_goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
-  InferType: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  InferType: Exact(1) => self.infer_type(sp1, &args[0])?,
   GetMVars: AtLeast(0) => Arc::new(LispKind::List(self.lc.mvars.clone())),
   GetGoals: AtLeast(0) => Arc::new(LispKind::List(self.lc.goals.clone())),
   SetGoals: AtLeast(0) => {self.lc.set_goals(args); UNDEF.clone()},
-  ToExpr: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  ToExpr: Exact(1) => return Ok(State::Refine {
+    sp: sp1, stack: vec![], gv: Arc::new(Mutex::new(vec![])),
+    state: RState::RefineExpr {tgt: InferTarget::Unknown, e: args.swap_remove(0)}
+  }),
   Refine: AtLeast(0) => return Ok(State::Refine {
-    sp: sp1, stack: vec![], gv: vec![],
+    sp: sp1, stack: vec![], gv: Arc::new(Mutex::new(vec![])),
     state: RState::Goals {
       gs: mem::replace(&mut self.lc.goals, vec![]).into_iter(),
       es: args.into_iter()
     }
   }),
-  Have: AtLeast(2) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  Have: AtLeast(2) => {
+    let x = try1!(args[0].as_atom().ok_or("expected an atom"));
+    if args.len() > 3 {try1!(Err("invalid arguments"))}
+    let p = args.pop().unwrap();
+    self.stack.push(Stack::Have(sp1, x));
+    let mut stack = vec![];
+    let state = match args.pop() {
+      None => RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown), p},
+      Some(e) => {
+        stack.push(RStack::Typed(p));
+        RState::RefineExpr {tgt: InferTarget::Unknown, e}
+      }
+    };
+    return Ok(State::Refine {sp: sp1, stack, state, gv: Arc::new(Mutex::new(vec![]))})
+  },
   Stat: Exact(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   GetDecl: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   AddDecl: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
@@ -752,6 +780,11 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
             State::Ret(UNDEF.clone())
           }
           Some(Stack::Refine {sp, stack, gv}) => State::Refine {sp, stack, state: RState::Ret(ret), gv},
+          Some(Stack::Have(sp, x)) => {
+            let e = self.infer_type(sp, &ret)?;
+            self.lc.add_proof(x, e, ret);
+            State::Ret(UNDEF.clone())
+          },
         },
         State::List(sp, vec, mut it) => match it.next() {
           None => State::Ret(Arc::new(LispKind::Annot(
@@ -825,6 +858,22 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
                   }
                 }
               }
+              Proc::RefineCallback(gv) => match gv.upgrade() {
+                None => throw!(sp2, "callback has expired"),
+                Some(gv) => {
+                  let p = args.pop().unwrap();
+                  match args.pop() {
+                    None => State::Refine {
+                      sp: sp1, stack: vec![], gv,
+                      state: RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown), p}
+                    },
+                    Some(tgt) if args.is_empty() => State::Refine {
+                      sp: sp1, stack: vec![], gv, state: RState::RefineProof {tgt, p}
+                    },
+                    _ => throw!(sp1, "expected two arguments")
+                  }
+                }
+              }
             })
           })?,
         }
@@ -877,11 +926,20 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           None => State::Ret(UNDEF.clone()),
           Some(e) => push!(Refines(sp, it), TryRefine(e.span().unwrap_or(sp)); Eval(e))
         },
-        State::Refine {sp, mut stack, state, mut gv} => {
-          match self.run_refine(sp, &mut stack, state, &mut gv)? {
-            RefineResult::Done => State::Ret(UNDEF.clone()),
-            RefineResult::UnparsedFormula(f) => unimplemented!(),
-            RefineResult::RefineExtraArgs(e, es) => unimplemented!(),
+        State::Refine {sp, mut stack, state, gv} => {
+          let res = self.run_refine(sp, &mut stack, state, &mut gv.lock().unwrap())?;
+          match res {
+            RefineResult::Ret(e) => State::Ret(e),
+            RefineResult::RefineExtraArgs(e, es) => {
+              let args = vec![
+                Arc::new(LispKind::Proc(Proc::RefineCallback(Arc::downgrade(&gv)))),
+                e, Arc::new(LispKind::List(es))];
+              self.stack.push(Stack::Refine {sp, stack, gv});
+              match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
+                None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
+                Some((_, v)) => State::App(sp, sp, v.clone(), args, [].iter()),
+              }
+            }
           }
         }
       }

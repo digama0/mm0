@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::ArcString;
-use super::super::{AtomID, Span, FileServer, Elaborator, Environment, ElabError};
+use super::super::{AtomID, Span, FileServer, Elaborator, ElabError};
 use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 
@@ -223,13 +223,6 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> Deref for LispParser<'a, 'b, T> {
 }
 impl<'a: 'b, 'b, T: FileServer + ?Sized> DerefMut for LispParser<'a, 'b, T> {
   fn deref_mut(&mut self) -> &mut Elaborator<'a, T> { self.elab }
-}
-
-fn quoted_ident(env: &mut Environment, s: &str, a: Atom) -> LispVal {
-  Arc::new(match Syntax::parse(s, a) {
-    Ok(s) => LispKind::Syntax(s),
-    Err(s) => LispKind::Atom(env.get_atom(s))
-  })
 }
 
 impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
@@ -612,12 +605,12 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
           Err(Syntax::MatchFn) => {
             let i = self.ctx.len();
             self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::Exact(1),
-              Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+              Arc::new(IR::match_fn_body(es[0].span, i, m))))
           }
           Err(Syntax::MatchFns) => {
             let i = self.ctx.len();
             self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
-              Arc::new(IR::Match(es[0].span, Box::new(IR::Local(i)), m))))
+              Arc::new(IR::match_fn_body(es[0].span, i, m))))
           }
         }
       } else {

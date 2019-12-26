@@ -88,6 +88,11 @@ impl LocalContext {
   pub fn get_proof(&self, a: AtomID) -> Option<&(AtomID, LispVal, LispVal)> {
     self.proofs.get(&a).map(|&i| &self.proof_order[i])
   }
+
+  pub fn add_proof(&mut self, a: AtomID, e: LispVal, p: LispVal) {
+    self.proofs.insert(a, self.proof_order.len());
+    self.proof_order.push((a, e, p));
+  }
 }
 
 struct ElabTerm<'a> {

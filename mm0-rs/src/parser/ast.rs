@@ -183,15 +183,6 @@ impl SExpr {
     }
     Self::dotted_list(span, es, dot)
   }
-
-  pub fn offset(&mut self, off: usize) {
-    self.span += off;
-    match &mut self.k {
-      SExprKind::List(es) => for e in es {e.offset(off)},
-      SExprKind::DottedList(es, r) => {for e in es {e.offset(off)}; r.offset(off)}
-      _ => {}
-    }
-  }
 }
 
 pub struct Decl {

@@ -71,7 +71,7 @@ pub enum Type {
 }
 
 impl Type {
-  pub fn sort(self) -> SortID {
+  pub fn _sort(self) -> SortID {
     match self {
       Type::Bound(s) => s,
       Type::Reg(s, _) => s,
@@ -294,6 +294,7 @@ make_atoms! {
   UNFOLD: ":unfold",
   COLON: ":",
   QMARK: "?",
+  REFINE_EXTRA_ARGS: "refine-extra-args",
 }
 
 #[derive(Default, Clone)]

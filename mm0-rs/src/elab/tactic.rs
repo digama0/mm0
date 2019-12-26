@@ -1,5 +1,5 @@
-use std::mem;
 use std::sync::Arc;
+use std::mem;
 use crate::util::*;
 use super::{FileServer, Elaborator, ElabError, Result};
 use super::environment::*;
@@ -14,14 +14,12 @@ enum RefineExpr {
   App(Span, InferMode, AtomID, Uncons),
   Typed(LispVal, LispVal),
   Exact(LispVal),
-  UnparsedFormula(ArcString),
 }
 
 #[derive(Debug)]
 pub enum RStack {
-  Goals {gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
+  Goals {g: LispVal, gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
   Coerce(LispVal),
-  AssignGoal(LispVal),
   Typed(LispVal),
   RefineApp {tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
   RefineExtraArgs {sp: Span, tgt: LispVal, u: Uncons, head: LispVal, args: Vec<LispVal>},
@@ -32,6 +30,7 @@ pub enum RStack {
 
 pub enum RState {
   Goals {gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
+  Finish(LispVal),
   RefineProof {tgt: LispVal, p: LispVal},
   RefineExpr {tgt: InferTarget, e: LispVal},
   RefineApp {tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
@@ -49,8 +48,7 @@ pub enum RefineExtraCont {
 }
 
 pub enum RefineResult {
-  Done,
-  UnparsedFormula(ArcString),
+  Ret(LispVal),
   RefineExtraArgs(LispVal, Vec<LispVal>),
 }
 
@@ -109,7 +107,6 @@ impl LispKind {
             }
           }
         }
-        LispKind::UnparsedFormula(f) => RefineExpr::UnparsedFormula(f.clone()),
         _ => Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error"))?,
       })
     })
@@ -121,7 +118,7 @@ impl LispKind {
     r
   }
 
-  fn infer_type(&mut self, sp: Span, e: &LispVal) -> Result<LispVal> {
+  pub fn infer_type(&mut self, sp: Span, e: &LispVal) -> Result<LispVal> {
     macro_rules! err {
       ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp), &$e), $err)}
     }
@@ -281,16 +278,24 @@ impl LispKind {
     loop {
       active = match active {
         RState::Goals {mut gs, mut es} => match es.next() {
-          None => return Ok(RefineResult::Done),
+          None => {gv.extend(gs); RState::Finish(UNDEF.clone())}
           Some(p) => loop {
             if let Some(g) = gs.next() {
               if let Some(tgt) = g.goal_type() {
-                stack.push(RStack::AssignGoal(g));
+                stack.push(RStack::Goals {g, gs, es});
                 break RState::RefineProof {tgt, p}
               }
-            } else {return Ok(RefineResult::Done)}
+            } else {break RState::Finish(UNDEF.clone())}
           }
         },
+        RState::Finish(ret) => {
+          if !gv.is_empty() {
+            if !self.lc.goals.is_empty() {gv.append(&mut self.lc.goals)}
+            mem::swap(&mut self.lc.goals, gv);
+          }
+          self.lc.clean_mvars();
+          return Ok(RefineResult::Ret(ret))
+        }
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App(sp, _, AtomID::QMARK, _) =>
             RState::Ret(LispKind::new_ref(LispKind::new_goal(self.fspan(sp), tgt))),
@@ -323,15 +328,13 @@ impl LispKind {
             RState::RefineExpr {tgt: InferTarget::Unknown, e}
           }
           RefineExpr::Exact(p) => RState::Coerce {tgt, p},
-          RefineExpr::UnparsedFormula(f) => return Ok(RefineResult::UnparsedFormula(f)),
         },
         RState::Ret(ret) => match stack.pop() {
-          None => return Ok(RefineResult::Done),
-          Some(RStack::Goals {gs, es}) => RState::Goals {gs, es},
-          Some(RStack::AssignGoal(g)) => {
+          None => RState::Finish(ret),
+          Some(RStack::Goals {g, gs, es}) => {
             g.as_ref_(|e| *e = ret).unwrap();
-            RState::Ret(UNDEF.clone())
-          }
+            RState::Goals {gs, es}
+          },
           Some(RStack::Coerce(tgt)) => RState::Coerce {tgt, p: ret},
           Some(RStack::Typed(p)) => RState::RefineProof {tgt: ret, p},
           Some(RStack::RefineApp {tgt, t, u, mut args}) => {
@@ -412,7 +415,6 @@ impl LispKind {
             }
           }
           RefineExpr::Exact(e) => RState::Ret(e),
-          RefineExpr::UnparsedFormula(f) => return Ok(RefineResult::UnparsedFormula(f)),
         },
         RState::RefineApp {tgt: ret, t, mut u, mut args} => 'l: loop { // labeled block, not a loop
           for (_, ty) in &self.env.terms[t].args[args.len() - 1..] {
