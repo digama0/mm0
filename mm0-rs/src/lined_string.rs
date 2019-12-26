@@ -125,7 +125,6 @@ impl LinedString {
         if c1 != c2 {return (out.to_pos(b + start), out)}
       }
     }
-    crate::server::log(format!("{}", out.s));
     (out.end(), out)
   }
 }

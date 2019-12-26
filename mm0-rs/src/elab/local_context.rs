@@ -505,7 +505,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             let s = self.infer_sort(sp, &val)?;
             let deps = ba.expr_deps(&self.env, &val);
             let val = {
-              let mut de = Dedup::new();
+              let mut de = Dedup::new(self.lc.var_order.len());
               let nh = NodeHasher::new(self, sp);
               let i = de.dedup(&nh, &val)?;
               let Builder {mut ids, heap} = self.to_builder(&de)?;
@@ -563,7 +563,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             Some(Some(ty)) => args.push((a, ty)),
           }
         }
-        let mut de = Dedup::new();
+        let mut de = Dedup::new(self.lc.var_order.len());
         let nh = NodeHasher::new(self, sp);
         let mut is = Vec::new();
         for (_, _, e) in hyps {is.push(de.dedup(&nh, &e)?)}

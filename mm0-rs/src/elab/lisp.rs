@@ -431,6 +431,8 @@ impl Uncons {
       }
     }
   }
+
+  pub fn len(&self) -> usize { self.0.len() - self.1 }
 }
 
 impl Iterator for Uncons {

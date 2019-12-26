@@ -29,6 +29,7 @@ impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
 }
 
 pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
+  const VAR: fn(usize) -> Self;
   fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>,
     e: &LispKind, f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self>;
 }
@@ -36,12 +37,17 @@ pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
 pub struct Dedup<H: NodeHash> {
   map: HashMap<Rc<H>, usize>,
   prev: HashMap<*const LispKind, usize>,
-  vec: Vec<(Rc<H>, bool)>,
+  pub vec: Vec<(Rc<H>, bool)>,
 }
 
 impl<H: NodeHash> Dedup<H> {
-  pub fn new() -> Dedup<H> {
-    Dedup {map: HashMap::new(), prev: HashMap::new(), vec: Vec::new() }
+  pub fn new(nargs: usize) -> Dedup<H> {
+    let vec: Vec<_> = (0..nargs).map(|i| (Rc::new(H::VAR(i)), true)).collect();
+    Dedup {
+      map: vec.iter().enumerate().map(|(i, (r, _))| (r.clone(), i)).collect(),
+      prev: HashMap::new(),
+      vec,
+    }
   }
   fn add(&mut self, p: *const LispKind, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
@@ -114,13 +120,11 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   pub fn to_builder<T: Node>(&self, de: &Dedup<T::Hash>) -> Result<Builder<T>> {
     let mut ids: Vec<Val<T>> = Vec::with_capacity(de.vec.len());
     let mut heap = Vec::new();
-    let mut hsize = self.lc.var_order.len();
     for &(ref e, b) in &de.vec {
       let node = T::from(&e, &mut ids);
       if b {
-        ids.push(Val::Ref(hsize));
+        ids.push(Val::Ref(heap.len()));
         heap.push(node);
-        hsize += 1;
       } else {
         ids.push(Val::Built(node))
       }
@@ -137,6 +141,7 @@ pub enum ExprHash {
 }
 
 impl NodeHash for ExprHash {
+  const VAR: fn(usize) -> Self = Self::Var;
   fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
       mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
     Ok(match e {
@@ -185,6 +190,7 @@ pub enum ProofHash {
 }
 
 impl NodeHash for ProofHash {
+  const VAR: fn(usize) -> Self = Self::Var;
   fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
       mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
     Ok(match e {
@@ -272,7 +278,6 @@ impl Node for ProofNode {
 pub struct Subst<'a> {
   lc: &'a mut LocalContext,
   env: &'a Environment,
-  nargs: usize,
   heap: &'a [ExprNode],
   subst: Vec<LispVal>,
 }
@@ -280,8 +285,8 @@ pub struct Subst<'a> {
 impl<'a> Subst<'a> {
   pub fn new(lc: &'a mut LocalContext, env: &'a Environment,
       heap: &'a [ExprNode], mut args: Vec<LispVal>) -> Subst<'a> {
-    args.resize(args.len() + heap.len(), UNDEF.clone());
-    Subst {lc, env, nargs: args.len(), heap, subst: args}
+    args.resize(heap.len(), UNDEF.clone());
+    Subst {lc, env, heap, subst: args}
   }
 
   pub fn subst(&mut self, e: &ExprNode) -> LispVal {
@@ -289,7 +294,7 @@ impl<'a> Subst<'a> {
       ExprNode::Ref(i) => {
         let e = &self.subst[i];
         if e.is_def() {return e.clone()}
-        let e = self.subst(&self.heap[i - self.nargs]);
+        let e = self.subst(&self.heap[i]);
         self.subst[i] = e.clone();
         e
       }

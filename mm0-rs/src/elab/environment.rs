@@ -646,7 +646,6 @@ impl Environment {
       }
     } else {
       data.sort = Some(new_id);
-      crate::server::log(format!("declaring {}", data.name));
       self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)

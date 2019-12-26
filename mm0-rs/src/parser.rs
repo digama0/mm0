@@ -268,10 +268,6 @@ impl<'a> Parser<'a> {
       val = 10u8 * val + (c - b'0');
     }
     if self.idx == start {return self.err_str("expected a number")}
-    if self.idx < start {
-      crate::server::log(format!("WTF: start = {}, idx = {}\n at:{}",
-        start, self.idx, std::str::from_utf8(&self.source[self.idx..]).unwrap()))
-    }
     (Ok(((start..self.idx).into(), val)), self.ws()).0
   }
 

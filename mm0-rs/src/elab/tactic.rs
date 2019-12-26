@@ -25,9 +25,10 @@ pub enum RStack {
   RefineExtraArgs {sp: Span, tgt: LispVal, u: Uncons, head: LispVal, args: Vec<LispVal>},
   RefineBis {sp: Span, tgt: LispVal, im: InferMode, t: ThmID, u: Uncons, args: Vec<LispVal>},
   RefineHyps {sp: Span, tgt: LispVal, t: ThmID, u: Uncons, args: Vec<LispVal>,
-    hyps: std::vec::IntoIter<LispVal>, ret: LispVal},
+    hyps: std::vec::IntoIter<LispVal>, res: RefineHypsResult},
 }
 
+#[derive(Debug)]
 pub enum RState {
   Goals {gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
   Finish(LispVal),
@@ -35,17 +36,16 @@ pub enum RState {
   RefineExpr {tgt: InferTarget, e: LispVal},
   RefineApp {tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
   Ret(LispVal),
-  RefineArgs {sp: Span, v: LispVal, tgt: LispVal, u: Uncons, cont: RefineExtraCont},
+  RefineArgs {sp: Span, v: LispVal, tgt: LispVal, head: LispVal, u: Uncons},
   RefineExtraArgs {sp: Span, tgt: LispVal, u: Uncons, head: LispVal, args: Vec<LispVal>},
   RefineBis {sp: Span, tgt: LispVal, im: InferMode, t: ThmID, u: Uncons, args: Vec<LispVal>},
   RefineHyps {sp: Span, tgt: LispVal, t: ThmID, u: Uncons, args: Vec<LispVal>,
-    hyps: std::vec::IntoIter<LispVal>, ret: LispVal},
+    hyps: std::vec::IntoIter<LispVal>, res: RefineHypsResult},
   Coerce {tgt: LispVal, p: LispVal},
 }
 
-pub enum RefineExtraCont {
-  Ok(LispVal)
-}
+#[derive(Debug)]
+pub enum RefineHypsResult { Ok(LispVal), Extra }
 
 pub enum RefineResult {
   Ret(LispVal),
@@ -64,6 +64,9 @@ impl LispKind {
   }
   fn sym(p: LispVal) -> LispVal {
     Arc::new(LispKind::List(vec![Arc::new(LispKind::Atom(AtomID::SYM)), p]))
+  }
+  fn apply_conv(c: LispVal, tgt: LispVal, p: LispVal) -> LispVal {
+    if c.is_def() {LispKind::conv(tgt, c, p)} else {p}
   }
 }
 
@@ -148,8 +151,7 @@ impl LispKind {
   }
 
   fn coerce_to(&mut self, sp: Span, tgt: LispVal, e: LispVal, p: LispVal) -> Result<LispVal> {
-    let c = self.unify(sp, &tgt, &e)?;
-    Ok(if c.is_def() {LispKind::conv(tgt.clone(), c, p)} else {p})
+    Ok(LispKind::apply_conv(self.unify(sp, &tgt, &e)?, tgt, p))
   }
 
   fn occurs(&mut self, mv: &LispVal, e: &LispVal) -> bool {
@@ -312,8 +314,7 @@ impl LispKind {
             if let Some((_, v, _)) = self.lc.get_proof(a) {
               RState::RefineArgs {
                 sp, v: v.clone(), tgt, u,
-                cont: RefineExtraCont::Ok(LispKind::new_span(
-                  self.fspan(sp), Arc::new(LispKind::Atom(a))))
+                head: LispKind::new_span(self.fspan(sp), Arc::new(LispKind::Atom(a)))
               }
             } else if let Some(DeclKey::Thm(t)) = self.data[a].decl {
               RState::RefineBis {sp, tgt, im, t, args: vec![Arc::new(LispKind::Atom(a))], u}
@@ -345,9 +346,9 @@ impl LispKind {
             args.push(ret);
             RState::RefineBis {sp, tgt, im, t, u, args}
           }
-          Some(RStack::RefineHyps {sp, tgt, t, u, mut args, hyps, ret: e}) => {
+          Some(RStack::RefineHyps {sp, tgt, t, u, mut args, hyps, res}) => {
             args.push(ret);
-            RState::RefineHyps {sp, tgt, t, u, args, hyps, ret: e}
+            RState::RefineHyps {sp, tgt, t, u, args, hyps, res}
           }
           Some(RStack::RefineExtraArgs {sp, tgt, u, head, mut args}) => {
             args.push(ret);
@@ -429,9 +430,9 @@ impl LispKind {
           }
           break RState::Ret(Arc::new(LispKind::List(args)))
         },
-        RState::RefineArgs {sp, v, tgt, u, cont: RefineExtraCont::Ok(head)} if u.exactly(0) =>
+        RState::RefineArgs {sp, v, tgt, head, u} if u.exactly(0) =>
           RState::Ret(self.coerce_to(sp, tgt, v, head)?),
-        RState::RefineArgs {sp, tgt, u, cont: RefineExtraCont::Ok(head), ..} =>
+        RState::RefineArgs {sp, tgt, head, u, ..} =>
           RState::RefineExtraArgs {sp, tgt, u, head, args: vec![]},
         RState::RefineExtraArgs {sp, tgt, mut u, head, args} => match u.next() {
           Some(p) => {
@@ -459,21 +460,32 @@ impl LispKind {
               args.push(self.lc.new_mvar(tgt1))
             }
           }
-          let mut subst = Subst::new(&mut self.lc, &self.env, &tdata.heap, args.clone());
-          let hyps = tdata.hyps.iter().map(|h| subst.subst(h)).collect::<Vec<_>>().into_iter();
+          let mut subst = Subst::new(&mut self.lc, &self.env, &tdata.heap, Vec::from(&args[1..]));
+          let hyps = tdata.hyps.iter().map(|h| subst.subst(h)).collect::<Vec<_>>();
           let ret = subst.subst(&tdata.ret);
-          break RState::RefineHyps {sp, tgt, t, u, args, hyps, ret}
+          break RState::RefineHyps {
+            res: if u.len() <= hyps.len() {
+              RefineHypsResult::Ok(self.unify(sp, &tgt, &ret)?)
+            } else {
+              RefineHypsResult::Extra
+            },
+            sp, tgt, t, u, args, hyps: hyps.into_iter()
+          }
         },
-        RState::RefineHyps {sp, tgt, t, mut u, mut args, mut hyps, ret} => 'l3: loop { // labeled block, not a loop
+        RState::RefineHyps {sp, tgt, t, mut u, mut args, mut hyps, res} => 'l3: loop { // labeled block, not a loop
           while let Some(h) = hyps.next() {
             if let Some(p) = u.next() {
-              stack.push(RStack::RefineHyps {sp, tgt, t, u, args, hyps, ret});
+              stack.push(RStack::RefineHyps {sp, tgt, t, u, args, hyps, res});
               break 'l3 RState::RefineProof {tgt: h, p}
             } else {
               args.push(self.new_goal_gv(gv, sp, h))
             }
           }
-          break RState::Ret(self.coerce_to(sp, tgt, ret, Arc::new(LispKind::List(args)))?)
+          let head = Arc::new(LispKind::List(args));
+          break match res {
+            RefineHypsResult::Ok(c) => RState::Ret(LispKind::apply_conv(c, tgt, head)),
+            RefineHypsResult::Extra => RState::RefineExtraArgs {sp, tgt, u, head, args: vec![]}
+          }
         },
       }
     }
