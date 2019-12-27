@@ -230,7 +230,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     if self.occurs(mv, e) {
       Err("occurs-check failed, can't build infinite assignment".into())
     } else {
-      crate::server::log(format!("{} := {}", self.print(mv), self.print(e)));
       *m.try_lock().unwrap() = e.clone();
       Ok(UNDEF.clone())
     }

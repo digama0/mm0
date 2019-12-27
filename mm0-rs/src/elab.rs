@@ -359,8 +359,6 @@ pub trait FileServer {
         Err(e) => { elab.report(e); elab.toks.insert(sp.clone(), None); }
       }
     }
-
-    crate::server::log(format!("{} statements", ast.stmts.len()));
     for s in ast.stmts.iter() {
       let r = elab.elab_stmt(s);
       elab.catch(r)

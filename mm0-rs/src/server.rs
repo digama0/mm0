@@ -58,6 +58,7 @@ fn nos_id(nos: NumberOrString) -> RequestId {
   }
 }
 
+#[derive(Debug, Clone)]
 enum Job {
   Elaborate {path: FileRef, start: Position},
   DepChange(FileRef)
@@ -70,16 +71,28 @@ impl Job {
       Job::DepChange(path) => path
     }
   }
+  fn merge(&mut self, other: &Job) -> bool {
+    if self.path() != other.path() {return false}
+    match (self, other) {
+      (Job::Elaborate {start, ..}, &Job::Elaborate {start: other, ..}) =>
+        if *start > other {*start = other},
+      (Job::Elaborate {..}, Job::DepChange(_)) => {}
+      (s @ Job::DepChange(_), Job::Elaborate {..}) => *s = other.clone(),
+      (Job::DepChange(_), Job::DepChange(_)) => {}
+    }
+    true
+  }
 }
 
 struct Jobs(Mutex<Option<VecDeque<Job>>>, Condvar);
 
 impl Jobs {
-  fn extend(&self, new: Vec<Job>) {
+  fn extend(&self, mut new: Vec<Job>) {
     if !new.is_empty() {
       let changed = if let Some(jobs) = &mut *self.0.lock().unwrap() {
-        jobs.retain(|job| new.iter().all(|njob| njob.path() != job.path()));
-        jobs.extend(new); true
+        jobs.retain(|job| new.iter_mut().all(|njob| !njob.merge(job)));
+        jobs.extend(new);
+        true
       } else {false};
       if changed { self.1.notify_one() }
     }
@@ -87,11 +100,13 @@ impl Jobs {
 
   fn new_worker(&self, server: ServerRef) -> Result<()> {
     loop {
-      let job = match &mut *self.1.wait(self.0.lock().unwrap()).unwrap() {
-        None => return Ok(()),
-        Some(jobs) => match jobs.pop_front() {
-          None => continue,
-          Some(job) => job,
+      let job = {
+        let mut g = self.0.lock().unwrap();
+        loop {
+          if let Some(jobs) = &mut *g {
+            if let Some(job) = jobs.pop_front() {break job}
+            else {g = self.1.wait(g).unwrap(); continue}
+          } else {return Ok(())}
         }
       };
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {

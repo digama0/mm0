@@ -77,7 +77,6 @@ impl<H: NodeHash> Dedup<H> {
   }
 
   pub fn dedup<'a, F: FileServer + ?Sized>(&mut self, nh: &NodeHasher<'a, F>, e: &LispVal) -> Result<usize> {
-    crate::server::log(format!("dedup<{}> {}", std::any::type_name::<H>(), nh.elab.print(e)));
     e.unwrapped_span(None, |sp, r| Ok(match self.prev.get(&(r as *const _)) {
       Some(&n) => {self.vec[n].1 = true; n}
       None => {
