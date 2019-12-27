@@ -629,7 +629,20 @@ make_builtins! { self, sp1, sp2, args,
     };
     return Ok(State::Refine {sp: sp1, stack, state, gv: Arc::new(Mutex::new(vec![]))})
   },
-  Stat: Exact(0) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  Stat: Exact(0) => {
+    use std::fmt::Write;
+    let mut s = String::new();
+    for (a, e, _) in &self.lc.proof_order {
+      write!(s, "{}: {}\n", self.print(a), self.print(e)).unwrap()
+    }
+    for e in &self.lc.goals {
+      e.unwrapped(|r| if let LispKind::Goal(e) = r {
+        write!(s, "|- {}\n", self.print(e)).unwrap()
+      })
+    }
+    print!(sp1, s);
+    UNDEF.clone()
+  },
   GetDecl: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   AddDecl: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   AddTerm: AtLeast(3) => {print!(sp2, "unimplemented"); UNDEF.clone()},
