@@ -120,17 +120,34 @@ impl From<&LispKind> for bool {
 impl LispKind {
   pub fn unwrapped_mut<T>(this: &mut LispVal, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
     Arc::get_mut(this).and_then(|e| match e {
-      LispKind::Ref(m) => Self::unwrapped_mut(&mut m.lock().unwrap(), f),
+      LispKind::Ref(m) => Self::unwrapped_mut(&mut m.try_lock().unwrap(), f),
       LispKind::Annot(_, v) => Self::unwrapped_mut(v, f),
       _ => Some(f(e))
     })
   }
 
+  pub fn unwrapped_arc(this: &LispVal) -> LispVal {
+    match &**this {
+      LispKind::Ref(m) => Self::unwrapped_arc(&m.try_lock().unwrap()),
+      LispKind::Annot(_, v) => Self::unwrapped_arc(v),
+      _ => this.clone()
+    }
+  }
+
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     match self {
-      LispKind::Ref(m) => m.lock().unwrap().unwrapped(f),
+      LispKind::Ref(m) => m.try_lock().unwrap().unwrapped(f),
       LispKind::Annot(_, v) => v.unwrapped(f),
       _ => f(self)
+    }
+  }
+
+  pub fn unwrapped_span<T>(&self, fsp: Option<&FileSpan>,
+      f: impl FnOnce(Option<&FileSpan>, &Self) -> T) -> T {
+    match self {
+      LispKind::Ref(m) => m.try_lock().unwrap().unwrapped_span(fsp, f),
+      LispKind::Annot(Annot::Span(fsp), v) => v.unwrapped_span(Some(fsp), f),
+      _ => f(fsp, self)
     }
   }
 
@@ -186,14 +203,14 @@ impl LispKind {
   }
   pub fn as_ref_<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
     match self {
-      LispKind::Ref(m) => Some(f(&mut m.lock().unwrap())),
+      LispKind::Ref(m) => Some(f(&mut m.try_lock().unwrap())),
       LispKind::Annot(_, e) => e.as_ref_(f),
       _ => None
     }
   }
   pub fn fspan(&self) -> Option<FileSpan> {
     match self {
-      LispKind::Ref(m) => m.lock().unwrap().fspan(),
+      LispKind::Ref(m) => m.try_lock().unwrap().fspan(),
       LispKind::Annot(Annot::Span(sp), _) => Some(sp.clone()),
       // LispKind::Annot(_, e) => e.fspan(),
       _ => None
@@ -383,6 +400,7 @@ str_enum! {
     AddDecl: "add-decl!",
     AddTerm: "add-term!",
     AddThm: "add-thm!",
+    CheckProofs: "check-proofs",
     SetReporting: "set-reporting",
     RefineExtraArgs: "refine-extra-args",
   }
@@ -415,7 +433,7 @@ impl Uncons {
   pub fn extend_into(&mut self, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
     loop {
       match &*self.0 {
-        LispKind::Ref(m) => {let e = m.lock().unwrap().clone(); self.0 = e}
+        LispKind::Ref(m) => {let e = m.try_lock().unwrap().clone(); self.0 = e}
         LispKind::Annot(_, v) => self.0 = v.clone(),
         LispKind::List(es) | LispKind::DottedList(es, _) if self.1 + n <= es.len() => {
           vec.extend_from_slice(&es[self.1..self.1 + n]);
@@ -440,7 +458,7 @@ impl Iterator for Uncons {
   fn next(&mut self) -> Option<LispVal> {
     loop {
       match &*self.0 {
-        LispKind::Ref(m) => {let e = m.lock().unwrap().clone(); self.0 = e}
+        LispKind::Ref(m) => {let e = m.try_lock().unwrap().clone(); self.0 = e}
         LispKind::Annot(_, v) => self.0 = v.clone(),
         LispKind::List(es) => match es.get(self.1) {
           None => return None,

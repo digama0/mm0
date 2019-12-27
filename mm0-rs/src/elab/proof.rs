@@ -5,7 +5,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use super::environment::AtomID;
 use super::*;
 use super::lisp::{LispVal, LispKind, Uncons, UNDEF, InferTarget};
-use super::local_context::{InferSort, try_get_span};
+use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
 
 pub struct NodeHasher<'a, F: FileServer + ?Sized> {
@@ -24,14 +24,18 @@ impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
   }
 
   fn err(&self, e: &LispKind, msg: impl Into<BoxError>) -> ElabError {
-    ElabError::new_e(try_get_span(&self.fsp, e), msg)
+    self.err_sp(e.fspan().as_ref(), msg)
+  }
+
+  fn err_sp(&self, fsp: Option<&FileSpan>, msg: impl Into<BoxError>) -> ElabError {
+    ElabError::new_e(try_get_span_from(&self.fsp, fsp), msg)
   }
 }
 
 pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   const VAR: fn(usize) -> Self;
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>,
-    e: &LispKind, f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self>;
+  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, fsp: Option<&FileSpan>, r: &LispKind,
+    f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>>;
 }
 
 pub struct Dedup<H: NodeHash> {
@@ -49,30 +53,39 @@ impl<H: NodeHash> Dedup<H> {
       vec,
     }
   }
-  fn add(&mut self, p: *const LispKind, v: H) -> usize {
+
+  pub fn add_direct(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
         let n = self.vec.len();
         self.vec.push((e.key().clone(), false));
         e.insert(n);
-        self.prev.insert(p, n);
         n
       }
       Entry::Occupied(e) => {
         let &n = e.get();
         self.vec[n].1 = true;
-        self.prev.insert(p, n);
         n
       }
     }
   }
 
+  pub fn add(&mut self, p: *const LispKind, v: H) -> usize {
+    let n = self.add_direct(v);
+    self.prev.insert(p, n);
+    n
+  }
+
   pub fn dedup<'a, F: FileServer + ?Sized>(&mut self, nh: &NodeHasher<'a, F>, e: &LispVal) -> Result<usize> {
-    e.unwrapped(|r| Ok(match self.prev.get(&(r as *const _)) {
+    crate::server::log(format!("dedup<{}> {}", std::any::type_name::<H>(), nh.elab.print(e)));
+    e.unwrapped_span(None, |sp, r| Ok(match self.prev.get(&(r as *const _)) {
       Some(&n) => {self.vec[n].1 = true; n}
       None => {
-        let ns = H::from(nh, r, |e| self.dedup(nh, e))?;
-        self.add(r, ns)
+        let n = match H::from(nh, sp, r, |e| self.dedup(nh, e))? {
+          Ok(v) => self.add_direct(v),
+          Err(n) => n,
+        };
+        self.prev.insert(r, n); n
       }
     }))
   }
@@ -142,14 +155,14 @@ pub enum ExprHash {
 
 impl NodeHash for ExprHash {
   const VAR: fn(usize) -> Self = Self::Var;
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
-      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
-    Ok(match e {
+  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, fsp: Option<&FileSpan>, r: &LispKind,
+      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
+    Ok(Ok(match r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Var(i),
         None => match nh.elab.lc.vars.get(&a) {
           Some(&InferSort::Bound {dummy: true, sort}) => ExprHash::Dummy(a, sort),
-          _ => Err(nh.err(e, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.elab.data[a].name)))?,
         }
       },
       LispKind::List(es) if !es.is_empty() => {
@@ -160,8 +173,10 @@ impl NodeHash for ExprHash {
         for e in &es[1..] { ns.push(f(e)?) }
         ExprHash::App(tid, ns)
       }
-      _ => Err(nh.err(e, format!("bad expression {}", nh.elab.printer(e))))?
-    })
+      LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
+        format!("{}: {}", nh.elab.print(r), nh.elab.print(tgt))))?,
+      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.elab.print(r))))?
+    }))
   }
 }
 
@@ -183,6 +198,7 @@ pub enum ProofHash {
   Var(usize),
   Dummy(AtomID, SortID),
   Term(TermID, Vec<usize>),
+  Hyp(usize, usize),
   Thm(ThmID, Vec<usize>),
   Conv(usize, usize, usize),
   Sym(usize),
@@ -191,14 +207,17 @@ pub enum ProofHash {
 
 impl NodeHash for ProofHash {
   const VAR: fn(usize) -> Self = Self::Var;
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, e: &LispKind,
-      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<Self> {
-    Ok(match e {
+  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, fsp: Option<&FileSpan>, r: &LispKind,
+      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
+    Ok(Ok(match r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ProofHash::Var(i),
-        None => match nh.elab.lc.vars.get(&a) {
-          Some(&InferSort::Bound {dummy: true, sort}) => ProofHash::Dummy(a, sort),
-          _ => Err(nh.err(e, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+        None => match nh.elab.lc.get_proof(a) {
+          Some((_, _, p)) => return Ok(Err(f(p)?)),
+          None => match nh.elab.lc.vars.get(&a) {
+            Some(&InferSort::Bound {dummy: true, sort}) => ProofHash::Dummy(a, sort),
+            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+          }
         }
       },
       LispKind::List(es) if !es.is_empty() => {
@@ -217,15 +236,15 @@ impl NodeHash for ProofHash {
           },
           None => match a {
             AtomID::CONV => {
-              if es.len() != 4 { Err(nh.err(e, "incorrect :conv format"))? }
+              if es.len() != 4 { Err(nh.err_sp(fsp, "incorrect :conv format"))? }
               ProofHash::Conv(f(&es[1])?, f(&es[2])?, f(&es[3])?)
             }
             AtomID::SYM => {
-              if es.len() != 2 { Err(nh.err(e, "incorrect :sym format"))? }
+              if es.len() != 2 { Err(nh.err_sp(fsp, "incorrect :sym format"))? }
               ProofHash::Sym(f(&es[1])?)
             }
             AtomID::UNFOLD => {
-              if es.len() != 4 { Err(nh.err(e, "incorrect :unfold format"))? }
+              if es.len() != 4 { Err(nh.err_sp(fsp, "incorrect :unfold format"))? }
               let tid = es[1].as_atom().and_then(|a| nh.elab.term(a))
                 .ok_or_else(|| nh.err(&es[1], "expected a term"))?;
               let mut ns = Vec::new();
@@ -236,8 +255,11 @@ impl NodeHash for ProofHash {
           }
         }
       }
-      _ => Err(nh.err(e, format!("bad expression {}", nh.elab.printer(e))))?
-    })
+      LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
+        format!("{}: {}", nh.elab.print(r), nh.elab.print(tgt))))?,
+      LispKind::Goal(tgt) => Err(nh.err_sp(fsp, format!("|- {}", nh.elab.print(tgt))))?,
+      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.elab.print(r))))?
+    }))
   }
 }
 
@@ -261,6 +283,7 @@ impl Node for ProofNode {
       ProofHash::Term(term, ref ns) => ProofNode::Term {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
       },
+      ProofHash::Hyp(i, e) => ProofNode::Hyp(i, Box::new(Val::take(&mut ids[e]))),
       ProofHash::Thm(thm, ref ns) => ProofNode::Thm {
         thm, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
       },

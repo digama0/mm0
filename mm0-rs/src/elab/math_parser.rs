@@ -70,7 +70,8 @@ impl<'a> MathParser<'a> {
           self.idx += 1;
           return Some((start..(self.idx, self.ws()).0).into())
         }
-        b'$' => return None,
+        b'$' if start == self.idx => return None,
+        b'$' => return Some((start..self.idx).into()),
         b' ' | b'\n' =>
           return Some((start..(self.idx, self.ws()).0).into()),
         _ => self.idx += 1,

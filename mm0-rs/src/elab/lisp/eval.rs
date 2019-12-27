@@ -44,6 +44,7 @@ impl Stack<'_> {
     }
   }
 }
+#[derive(Debug)]
 enum State<'a> {
   Eval(&'a IR),
   Refines(Span, std::slice::Iter<'a, IR>),
@@ -61,7 +62,7 @@ enum State<'a> {
 impl LispKind {
   fn as_ref_mut<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
     match self {
-      LispKind::Ref(m) => Some(f(&mut m.lock().unwrap())),
+      LispKind::Ref(m) => Some(f(&mut m.try_lock().unwrap())),
       LispKind::Annot(_, e) => e.as_ref_mut(f),
       _ => None
     }
@@ -74,7 +75,7 @@ impl LispKind {
         (r, None) => (r, None),
         (r, Some(e)) => (r, Some(LispKind::Annot(sp.clone(), Arc::new(e)))),
       },
-      LispKind::Ref(m) => (Self::as_map_mut(&mut m.lock().unwrap(), f), None),
+      LispKind::Ref(m) => (Self::as_map_mut(&mut m.try_lock().unwrap(), f), None),
       _ => (None, None)
     }
   }
@@ -88,7 +89,7 @@ impl LispKind {
       }
       Some(LispKind::AtomMap(m)) => Some(f(m)),
       Some(LispKind::Annot(_, e)) => Self::as_map_mut(e, f),
-      Some(LispKind::Ref(m)) => Self::as_map_mut(&mut m.lock().unwrap(), f),
+      Some(LispKind::Ref(m)) => Self::as_map_mut(&mut m.try_lock().unwrap(), f),
       _ => None
     }
   }
@@ -110,6 +111,7 @@ enum PatternStack<'a> {
   Binary(bool, bool, LispVal, std::slice::Iter<'a, Pattern>),
 }
 
+#[derive(Debug)]
 enum PatternState<'a> {
   Eval(&'a Pattern, LispVal),
   Ret(bool),
@@ -119,7 +121,7 @@ enum PatternState<'a> {
 
 struct TestPending(Span, usize);
 
-type SResult<T> = std::result::Result<T, String>;
+pub type SResult<T> = std::result::Result<T, String>;
 
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
@@ -190,7 +192,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
 
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   pub fn print_lisp(&mut self, sp: Span, e: &LispVal) {
-    self.report(ElabError::info(sp, format!("{}", self.printer(e))))
+    self.report(ElabError::info(sp, format!("{}", self.print(e))))
   }
 
   pub fn eval_lisp<'b>(&'b mut self, e: &SExpr) -> Result<LispVal> {
@@ -230,7 +232,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
 
   fn as_string(&self, e: &LispVal) -> SResult<ArcString> {
     e.unwrapped(|e| if let LispKind::String(s) = e {Ok(s.clone())} else {
-      Err(format!("expected a string, got {}", self.printer(e)))
+      Err(format!("expected a string, got {}", self.print(e)))
     })
   }
 
@@ -238,7 +240,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     e.unwrapped(|e| match e {
       LispKind::String(s) => Ok(s.clone()),
       &LispKind::Atom(a) => Ok(self.data[a].name.clone()),
-      _ => Err(format!("expected an atom, got {}", self.printer(e)))
+      _ => Err(format!("expected an atom, got {}", self.print(e)))
     })
   }
 
@@ -246,35 +248,35 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     e.unwrapped(|e| match e {
       LispKind::String(s) => Ok(self.get_atom(s)),
       &LispKind::Atom(a) => Ok(a),
-      _ => Err(format!("expected an atom, got {}", self.printer(e)))
+      _ => Err(format!("expected an atom, got {}", self.print(e)))
     })
   }
 
   fn as_int(&self, e: &LispVal) -> SResult<BigInt> {
     e.unwrapped(|e| if let LispKind::Number(n) = e {Ok(n.clone())} else {
-      Err(format!("expected a integer, got {}", self.printer(e)))
+      Err(format!("expected a integer, got {}", self.print(e)))
     })
   }
 
   fn as_ref<T>(&self, e: &LispKind, f: impl FnOnce(&mut LispVal) -> SResult<T>) -> SResult<T> {
-    e.as_ref_(f).unwrap_or_else(|| Err(format!("not a ref-cell: {}", self.printer(e))))
+    e.as_ref_(f).unwrap_or_else(|| Err(format!("not a ref-cell: {}", self.print(e))))
   }
 
   fn as_map<T>(&self, e: &LispKind, f: impl FnOnce(&HashMap<AtomID, LispVal>) -> SResult<T>) -> SResult<T> {
     e.unwrapped(|e| match e {
       LispKind::AtomMap(m) => f(m),
-      _ => Err(format!("not an atom map: {}", self.printer(e)))
+      _ => Err(format!("not an atom map: {}", self.print(e)))
     })
   }
 
   fn to_string(&self, e: &LispKind) -> ArcString {
     match e {
-      LispKind::Ref(m) => self.to_string(&m.lock().unwrap()),
+      LispKind::Ref(m) => self.to_string(&m.try_lock().unwrap()),
       LispKind::Annot(_, e) => self.to_string(e),
       LispKind::String(s) => s.clone(),
       &LispKind::Atom(a) => self.data[a].name.clone(),
       LispKind::Number(n) => ArcString::new(n.to_string()),
-      _ => ArcString::new(format!("{}", self.printer(e)))
+      _ => ArcString::new(format!("{}", self.print(e)))
     }
   }
 
@@ -295,7 +297,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       LispKind::List(es) => Ok(es[0].clone()),
       LispKind::DottedList(es, r) if es.is_empty() => self.head(r),
       LispKind::DottedList(es, _) => Ok(es[0].clone()),
-      _ => Err(format!("expected a list, got {}", self.printer(e)))
+      _ => Err(format!("expected a list, got {}", self.print(e)))
     })
   }
 
@@ -312,7 +314,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       LispKind::DottedList(es, r) if es.is_empty() => self.tail(r),
       LispKind::DottedList(es, r) =>
         Ok(exponential_backoff(es, 1, |v| LispKind::DottedList(v, r.clone()))),
-      _ => Err(format!("expected a list, got {}", self.printer(e)))
+      _ => Err(format!("expected a list, got {}", self.print(e)))
     })
   }
 }
@@ -361,7 +363,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     }
   }
 
-  fn print(&mut self, sp: Span, base: &str, msg: impl Into<BoxError>) {
+  fn info(&mut self, sp: Span, base: &str, msg: impl Into<BoxError>) {
     let msg = self.make_stack_err(Some(sp), ErrorLevel::Info, base.into(), msg);
     self.report(msg)
   }
@@ -385,7 +387,7 @@ macro_rules! make_builtins {
     impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
       fn evaluate_builtin(&mut $self, $sp1: Span, $sp2: Span, f: BuiltinProc, mut $args: Vec<LispVal>) -> Result<State<'b>> {
         macro_rules! print {($sp:expr, $x:expr) => {{
-          let msg = $x; $self.print($sp, f.to_str(), msg)
+          let msg = $x; $self.info($sp, f.to_str(), msg)
         }}}
         macro_rules! try1 {($x:expr) => {{
           match $x {
@@ -404,7 +406,7 @@ macro_rules! make_builtins {
 make_builtins! { self, sp1, sp2, args,
   Display: Exact(1) => {print!(sp1, &*try1!(self.as_string(&args[0]))); UNDEF.clone()},
   Error: Exact(1) => try1!(Err(&*try1!(self.as_string(&args[0])))),
-  Print: Exact(1) => {print!(sp1, format!("{}", self.printer(&args[0]))); UNDEF.clone()},
+  Print: Exact(1) => {print!(sp1, format!("{}", self.print(&args[0]))); UNDEF.clone()},
   Begin: AtLeast(0) => args.last().unwrap_or(&UNDEF).clone(),
   Apply: AtLeast(2) => {
     let proc = args.remove(0);
@@ -418,7 +420,7 @@ make_builtins! { self, sp1, sp2, args,
     }
     let tail = args.pop().unwrap();
     if !gather(&mut args, &tail) {
-      try1!(Err(format!("apply: last argument is not a list: {}", self.printer(&tail))))
+      try1!(Err(format!("apply: last argument is not a list: {}", self.print(&tail))))
     }
     return Ok(State::App(sp1, sp, proc, args, [].iter()))
   },
@@ -591,7 +593,7 @@ make_builtins! { self, sp1, sp2, args,
     } else {try1!(Err("invalid arguments"))}
   ),
   PrettyPrint: Exact(1) => /* TODO: pretty */
-    Arc::new(LispKind::String(ArcString::new(format!("{}", self.printer(&args[0]))))),
+    Arc::new(LispKind::String(ArcString::new(format!("{}", self.print(&args[0]))))),
   NewGoal: Exact(1) => LispKind::new_goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
   InferType: Exact(1) => self.infer_type(sp1, &args[0])?,
@@ -615,7 +617,7 @@ make_builtins! { self, sp1, sp2, args,
     let p = args.pop().unwrap();
     self.stack.push(Stack::Have(sp1, x));
     let mut stack = vec![];
-    let state = match args.pop() {
+    let state = match args.pop().filter(|_| args.len() > 0) {
       None => RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown), p},
       Some(e) => {
         stack.push(RStack::Typed(p));
@@ -646,6 +648,12 @@ make_builtins! { self, sp1, sp2, args,
         }
       } else {try1!(Err("invalid arguments"))}
     }
+    UNDEF.clone()
+  },
+  CheckProofs: Exact(1) => {
+    if let Some(b) = args[0].as_bool() {
+      self.check_proofs = b;
+    } else {try1!(Err("invalid arguments"))}
     UNDEF.clone()
   },
   RefineExtraArgs: AtLeast(2) => {
@@ -927,13 +935,15 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           Some(e) => push!(Refines(sp, it), TryRefine(e.span().unwrap_or(sp)); Eval(e))
         },
         State::Refine {sp, mut stack, state, gv} => {
-          let res = self.run_refine(sp, &mut stack, state, &mut gv.lock().unwrap())?;
+          let res = self.run_refine(sp, &mut stack, state, &mut gv.lock().unwrap())
+            .map_err(|e| self.err(Some(e.pos), e.kind.msg()))?;
           match res {
             RefineResult::Ret(e) => State::Ret(e),
-            RefineResult::RefineExtraArgs(e, es) => {
-              let args = vec![
+            RefineResult::RefineExtraArgs(e, mut es) => {
+              let mut args = vec![
                 Arc::new(LispKind::Proc(Proc::RefineCallback(Arc::downgrade(&gv)))),
-                e, Arc::new(LispKind::List(es))];
+                e];
+              args.append(&mut es);
               self.stack.push(Stack::Refine {sp, stack, gv});
               match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,

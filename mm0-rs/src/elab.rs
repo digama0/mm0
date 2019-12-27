@@ -118,6 +118,7 @@ pub struct Elaborator<'a, F: FileServer + ?Sized> {
   timeout: Option<Duration>,
   cur_timeout: Option<Instant>,
   lc: LocalContext,
+  check_proofs: bool,
   reporting: ReportMode,
 }
 
@@ -139,6 +140,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       timeout: Some(Duration::from_secs(5)),
       cur_timeout: None,
       lc: LocalContext::new(),
+      check_proofs: true,
       reporting: ReportMode::new(),
     }
   }
@@ -358,6 +360,7 @@ pub trait FileServer {
       }
     }
 
+    crate::server::log(format!("{} statements", ast.stmts.len()));
     for s in ast.stmts.iter() {
       let r = elab.elab_stmt(s);
       elab.catch(r)

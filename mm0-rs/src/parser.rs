@@ -605,6 +605,12 @@ impl<'a> Parser<'a> {
           self.imports.push((sp, s.clone()));
           Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
         }
+        "exit" => {
+          self.chr_err(b';')?;
+          self.errors.push(ParseError::new(id,
+            "early exit on 'exit' command".into()));
+          Ok(None)
+        }
         k => {
           self.idx = start;
           Err(ParseError {
@@ -645,6 +651,7 @@ pub fn parse(file: Arc<LinedString>, old: Option<(Position, AST)>) ->
       (ast.errors, ast.imports, start, ast.stmts)
     } else {Default::default()};
   let mut p = Parser {source: file.as_bytes(), errors, imports, idx};
+  p.ws();
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
   (0, AST { errors: p.errors, imports: p.imports, source: file, stmts })
 }

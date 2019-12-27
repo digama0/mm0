@@ -64,7 +64,7 @@ pub struct Const {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DeclKind { Term, Axiom, Thm, Def }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LocalKind { Bound, Reg, Dummy, Anon }
 
 impl LocalKind {
@@ -76,7 +76,7 @@ impl LocalKind {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DepType {
   pub sort: Span,
   pub deps: Vec<Span>,
@@ -88,7 +88,7 @@ impl DepType {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Type {
   DepType(DepType),
   Formula(Formula)
@@ -103,6 +103,7 @@ impl Type {
   }
 }
 
+#[derive(Debug)]
 pub struct Binder {
   pub span: Span,
   pub local: Option<Span>,

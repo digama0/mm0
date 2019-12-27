@@ -64,7 +64,7 @@ pub struct Sort {
   pub mods: Modifiers,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Type {
   Bound(SortID),
   Reg(SortID, u64),
@@ -122,6 +122,7 @@ pub enum ProofNode {
   Ref(usize),
   Dummy(AtomID, SortID),
   Term { term: TermID, args: Vec<ProofNode> },
+  Hyp(usize, Box<ProofNode>),
   Thm { thm: ThmID, args: Vec<ProofNode> },
   Conv(Box<(ProofNode, ProofNode, ProofNode)>), // tgt, conv, proof
   Sym(Box<ProofNode>),
@@ -139,14 +140,14 @@ impl From<&ExprNode> for ProofNode {
     }
   }
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Proof {
   pub heap: Vec<ProofNode>,
   pub hyps: Vec<ProofNode>,
   pub head: ProofNode,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Thm {
   pub atom: AtomID,
   pub span: FileSpan,
@@ -402,6 +403,7 @@ impl Remap<Remapper> for ProofNode {
       &ProofNode::Ref(i) => ProofNode::Ref(i),
       ProofNode::Dummy(a, s) => ProofNode::Dummy(a.remap(r), s.remap(r)),
       ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
+      &ProofNode::Hyp(i, ref e) => ProofNode::Hyp(i, e.remap(r)),
       ProofNode::Thm {thm, args} => ProofNode::Thm { thm: thm.remap(r), args: args.remap(r) },
       ProofNode::Conv(p) => ProofNode::Conv(Box::new((p.0.remap(r), p.1.remap(r), p.2.remap(r)))),
       ProofNode::Sym(p) => ProofNode::Sym(p.remap(r)),

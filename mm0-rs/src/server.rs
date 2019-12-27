@@ -47,6 +47,10 @@ impl From<BoxError> for ServerError {
   fn from(e: BoxError) -> Self { ServerError(e) }
 }
 
+impl From<String> for ServerError {
+  fn from(e: String) -> Self { ServerError(e.into()) }
+}
+
 fn nos_id(nos: NumberOrString) -> RequestId {
   match nos {
     NumberOrString::Number(n) => n.into(),
@@ -90,43 +94,48 @@ impl Jobs {
           Some(job) => job,
         }
       };
-      match job {
-        Job::Elaborate {path, start} => {
-          if let Some(file) = server.vfs.get(&path) {
-            let (old_ast, old_env, old_deps) = match file.parsed.lock().unwrap().take() {
-              None => (None, None, Vec::new()),
-              Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
-              Some(FileCache::Ready{ast, errors, deps, env}) => (Some((start, ast)), Some((errors, env)), deps),
-            };
-            let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
-            let (errors, env, deps) = server.elaborate(path.clone(), &ast,
-              old_env.map(|(errs, e)| (idx, errs, e)));
-            server.send_diagnostics(path.url().clone(),
-              ast.errors.iter().map(|e| e.to_diag(&ast.source))
-                .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
-            server.vfs.update_downstream(&old_deps, &deps, &path);
-            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env: Arc::new(env)});
-            file.cvar.notify_all();
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+        match job {
+          Job::Elaborate {path, start} => {
+            if let Some(file) = server.vfs.get(&path) {
+              let (old_ast, old_env, old_deps) = match file.parsed.lock().unwrap().take() {
+                None => (None, None, Vec::new()),
+                Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
+                Some(FileCache::Ready{ast, errors, deps, env}) => (Some((start, ast)), Some((errors, env)), deps),
+              };
+              let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
+              let (errors, env, deps) = server.elaborate(path.clone(), &ast,
+                old_env.map(|(errs, e)| (idx, errs, e)));
+              server.send_diagnostics(path.url().clone(),
+                ast.errors.iter().map(|e| e.to_diag(&ast.source))
+                  .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
+              server.vfs.update_downstream(&old_deps, &deps, &path);
+              *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env: Arc::new(env)});
+              file.cvar.notify_all();
+            }
+          }
+          Job::DepChange(path) => {
+            if let Some(file) = server.vfs.get(&path) {
+              let ((idx, ast), old_env, old_deps) = match file.parsed.lock().unwrap().take() {
+                None => (parse(file.text.lock().unwrap().1.clone(), None), None, Vec::new()),
+                Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), ast), None, Vec::new()),
+                Some(FileCache::Ready{ast, errors, deps, env}) => ((ast.stmts.len(), ast), Some((errors, env)), deps),
+              };
+              let (errors, env, deps) = server.elaborate(path.clone(), &ast,
+                old_env.map(|(errs, e)| (idx, errs, e)));
+              server.send_diagnostics(path.url().clone(),
+                ast.errors.iter().map(|e| e.to_diag(&ast.source))
+                  .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
+              server.vfs.update_downstream(&old_deps, &deps, &path);
+              *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env: Arc::new(env)});
+              file.cvar.notify_all();
+            }
           }
         }
-        Job::DepChange(path) => {
-          if let Some(file) = server.vfs.get(&path) {
-            let ((idx, ast), old_env, old_deps) = match file.parsed.lock().unwrap().take() {
-              None => (parse(file.text.lock().unwrap().1.clone(), None), None, Vec::new()),
-              Some(FileCache::Dirty(ast)) => ((ast.stmts.len(), ast), None, Vec::new()),
-              Some(FileCache::Ready{ast, errors, deps, env}) => ((ast.stmts.len(), ast), Some((errors, env)), deps),
-            };
-            let (errors, env, deps) = server.elaborate(path.clone(), &ast,
-              old_env.map(|(errs, e)| (idx, errs, e)));
-            server.send_diagnostics(path.url().clone(),
-              ast.errors.iter().map(|e| e.to_diag(&ast.source))
-                .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
-            server.vfs.update_downstream(&old_deps, &deps, &path);
-            *file.parsed.lock().unwrap() = Some(FileCache::Ready {ast, errors, deps, env: Arc::new(env)});
-            file.cvar.notify_all();
-          }
-        }
-      }
+        Ok(())
+      }))
+        .unwrap_or_else(|_| Err("server panic".into()))
+        .unwrap_or_else(|e| server.log(format!("{:?}", e).into()).unwrap())
     }
   }
 
@@ -378,13 +387,13 @@ impl Server {
       params: from_value(conn.initialize(
         to_value(ServerCapabilities {
           text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Incremental)),
-          hover_provider: Some(true),
-          completion_provider: Some(CompletionOptions {
-            resolve_provider: Some(true),
-            ..Default::default()
-          }),
-          definition_provider: Some(true),
-          document_symbol_provider: Some(true),
+          // hover_provider: Some(true),
+          // completion_provider: Some(CompletionOptions {
+          //   resolve_provider: Some(true),
+          //   ..Default::default()
+          // }),
+          // definition_provider: Some(true),
+          // document_symbol_provider: Some(true),
           ..Default::default()
         })?)?)?,
       conn,

@@ -112,8 +112,12 @@ impl<'a> Deref for ElabTermMut<'a> {
 }
 
 pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
-  match e.fspan() {
-    Some(fsp) if fsp.file == fsp.file && fsp.span.start >= fsp.span.start => fsp.span,
+  try_get_span_from(fsp, e.fspan().as_ref())
+}
+
+pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
+  match fsp2 {
+    Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => fsp2.span,
     _ => fsp.span,
   }
 }
@@ -388,7 +392,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     let mut errs = Vec::new();
     let mut newvars = Vec::new();
     for (&a, is) in &mut self.lc.vars {
-      if let InferSort::Unknown {src, ref sorts, ..} = *is {
+      if let InferSort::Unknown {src, must_bound, ref sorts} = *is {
         match if sorts.len() == 1 {
           sorts.keys().next().unwrap().ok_or_else(|| ElabError::new_e(src, "could not infer type"))
         } else {
@@ -417,7 +421,11 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               } else {unreachable!()}
             }
             newvars.push((src, a));
-            *is = InferSort::Bound {dummy, sort}
+            *is = if dummy || must_bound {
+              InferSort::Bound {dummy: true, sort}
+            } else {
+              InferSort::Reg {sort, deps: vec![]}
+            }
           }
           Err(e) => errs.push(e),
         }
@@ -431,17 +439,18 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 
   pub fn elab_decl(&mut self, sp: Span, d: &Decl) -> Result<()> {
-    let mut hyps = Vec::new();
+    let mut ehyps = Vec::new();
     let mut error = false;
     macro_rules! report {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
+    // crate::server::log(format!("elab {}", self.ast.span(d.id)));
     for bi in &d.bis {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
-          if !hyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
+          if !ehyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
           if let Some(x) = x {
             match self.lc.vars.entry(x) {
               Entry::Vacant(e) => {e.insert(is);}
@@ -455,13 +464,13 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             self.lc.var_order.push((bi.local.unwrap_or(bi.span), None, Some(is)));
           }
         }
-        Ok(InferBinder::Hyp(x, e)) => hyps.push((bi, x, e)),
+        Ok(InferBinder::Hyp(x, e)) => ehyps.push((bi, x, e)),
       }
     }
     let atom = self.env.get_atom(self.ast.span(d.id));
     match d.k {
       DeclKind::Term | DeclKind::Def => {
-        for (bi, _, _) in hyps {report!(bi.span, "term/def declarations have no hypotheses")}
+        for (bi, _, _) in ehyps {report!(bi.span, "term/def declarations have no hypotheses")}
         let ret = match &d.ty {
           None => None, // Err(ElabError::new_e(d.id, "type required for term declaration"))?,
           Some(Type::Formula(f)) => Err(ElabError::new_e(f.0, "sort expected"))?,
@@ -485,7 +494,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         } else if d.val.is_none() {
           self.report(ElabError::new_e(sp, "def declaration missing value"));
         }
-        for e in self.finalize_vars(false) {report!(e)}
+        for e in self.finalize_vars(true) {report!(e)}
         if error {return Ok(())}
         let mut args = Vec::new();
         let mut ba = BuildArgs::default();
@@ -564,34 +573,44 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           }
         }
         let mut de = Dedup::new(self.lc.var_order.len());
-        let nh = NodeHasher::new(self, sp);
+        let nh = NodeHasher::new(self, d.id);
         let mut is = Vec::new();
-        for (_, _, e) in hyps {is.push(de.dedup(&nh, &e)?)}
+        for (_, _, e) in &ehyps {is.push(de.dedup(&nh, e)?)}
         let ir = de.dedup(&nh, &eret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
         let span = fsp.clone();
         let Builder {mut ids, heap} = self.to_builder(&de)?;
         let hyps = is.iter().map(|&i| ids[i].take()).collect();
         let ret = ids[ir].take();
-        let proof = d.val.as_ref().map(|e| {
-          (|| -> Result<Option<Proof>> {
-            let g = LispKind::new_ref(LispKind::new_goal(self.fspan(e.span), eret));
-            self.lc.goals = vec![g.clone()];
-            self.elab_lisp(e)?;
-            for g in mem::replace(&mut self.lc.goals, vec![]) {
-              report!(try_get_span(&fsp, &g),
-                format!("|- {}", self.printer(&g.goal_type().unwrap())))
-            }
-            if error {return Ok(None)}
-            let mut de = de.map_proof();
-            let nh = NodeHasher {var_map, fsp, elab: self};
-            let ip = de.dedup(&nh, &g)?;
-            let Builder {mut ids, heap} = self.to_builder(&de)?;
-            let hyps = is.into_iter().map(|i| ids[i].take()).collect();
-            let head = ids[ip].take();
-            Ok(Some(Proof { heap, hyps, head }))
-          })().unwrap_or_else(|e| {self.report(e); None})
-        });
+        let proof = if self.check_proofs {
+          d.val.as_ref().map(|e| {
+            (|| -> Result<Option<Proof>> {
+              let mut de = de.map_proof();
+              let mut is2 = Vec::new();
+              for (i, (_, a, e)) in ehyps.into_iter().enumerate() {
+                if let Some(a) = a {
+                  let p = Arc::new(LispKind::Atom(a));
+                  is2.push(de.add(&*p, ProofHash::Hyp(i, is[i])));
+                  self.lc.add_proof(a, e, p)
+                }
+              }
+              let g = LispKind::new_ref(LispKind::new_goal(self.fspan(e.span), eret));
+              self.lc.goals = vec![g.clone()];
+              self.elab_lisp(e)?;
+              for g in mem::replace(&mut self.lc.goals, vec![]) {
+                report!(try_get_span(&fsp, &g),
+                  format!("|- {}", self.print(&g.goal_type().unwrap())))
+              }
+              if error {return Ok(None)}
+              let nh = NodeHasher {var_map, fsp, elab: self};
+              let ip = de.dedup(&nh, &g)?;
+              let Builder {mut ids, heap} = self.to_builder(&de)?;
+              let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
+              let head = ids[ip].take();
+              Ok(Some(Proof { heap, hyps, head }))
+            })().unwrap_or_else(|e| {self.report(e); None})
+          })
+        } else {None};
         let t = Thm {
           atom, span, vis: d.mods, id: d.id,
           args, heap, hyps, ret, proof
