@@ -493,11 +493,14 @@ make_builtins! { self, sp1, sp2, args,
   Head: Exact(1) => try1!(self.head(&args[0])),
   Tail: Exact(1) => try1!(self.tail(&args[0])),
   Map: AtLeast(1) => {
-    let proc = args[0].clone();
+    let mut it = args.into_iter();
+    let proc = it.next().unwrap();
     let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
-    if args.len() == 1 {return Ok(State::App(sp1, sp, proc, vec![], [].iter()))}
+    if it.as_slice().is_empty() {
+      return Ok(State::App(sp1, sp, proc, vec![], [].iter()))
+    }
     return Ok(State::MapProc(sp1, sp, proc,
-      args.into_iter().map(|e| Uncons::from(e)).collect(), vec![]))
+      it.map(Uncons::from).collect(), vec![]))
   },
   IsBool: Exact(1) => Arc::new(LispKind::Bool(args[0].is_bool())),
   IsAtom: Exact(1) => Arc::new(LispKind::Bool(args[0].is_atom())),

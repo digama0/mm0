@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
 use super::super::{LinedString, FileServer, Environment, Elaborator, TermID, ThmID, SortID};
-use super::{AtomID, LispVal, LispKind, Uncons, InferTarget, Proc, ProcPos};
+use super::{AtomID, LispKind, Uncons, InferTarget, Proc, ProcPos};
 
 #[derive(Copy, Clone)]
 pub struct FormatEnv<'a> {
@@ -28,12 +28,6 @@ impl<'a> Deref for FormatEnv<'a> {
 
 pub trait EnvDisplay {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result;
-}
-
-impl EnvDisplay for LispVal {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
-    self.deref().fmt(fe, f)
-  }
 }
 
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
@@ -159,14 +153,26 @@ impl EnvDisplay for Uncons {
 
 impl<T: EnvDisplay> EnvDisplay for [T] {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
-
     write!(f, "[{}]", self.iter().map(|e| fe.to(e)).format(", "))
+  }
+}
+
+impl EnvDisplay for crate::util::Span {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+    fe.source[*self].fmt(f)
   }
 }
 
 impl<T: EnvDisplay> EnvDisplay for Vec<T> {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
 }
+impl<T: EnvDisplay> EnvDisplay for Box<T> {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+}
+impl<T: EnvDisplay> EnvDisplay for std::sync::Arc<T> {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+}
+
 
 impl EnvDisplay for InferTarget {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {

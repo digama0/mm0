@@ -1,8 +1,9 @@
 use std::sync::Arc;
-use std::fmt;
+use std::fmt::{self, Display};
 use num::BigUint;
 use crate::lined_string::LinedString;
 use crate::util::{Span, ArcString};
+use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use super::ParseError;
 
 bitflags! {
@@ -186,6 +187,35 @@ impl SExpr {
   }
 }
 
+impl EnvDisplay for SExpr {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+    match &self.k {
+      &SExprKind::Atom(a) => fe.source.span_atom(self.span, a).fmt(f),
+      SExprKind::List(es) => {
+        let mut it = es.iter();
+        match it.next() {
+          None => "()".fmt(f),
+          Some(e) => {
+            write!(f, "({}", fe.to(e))?;
+            for e in it {write!(f, " {}", fe.to(e))?}
+            ")".fmt(f)
+          }
+        }
+      }
+      SExprKind::DottedList(es, r) => {
+        "(".fmt(f)?;
+        for e in es {write!(f, "{} ", fe.to(e))?}
+        write!(f, ". {})", fe.to(r))
+      }
+      SExprKind::Number(n) => n.fmt(f),
+      SExprKind::String(s) => write!(f, "{:?}", s),
+      SExprKind::Bool(true) => "#t".fmt(f),
+      SExprKind::Bool(false) => "#f".fmt(f),
+      SExprKind::Formula(s) => fe.source[s.0].fmt(f),
+    }
+  }
+}
+
 pub struct Decl {
   pub mods: Modifiers,
   pub k: DeclKind,
@@ -256,20 +286,20 @@ pub struct AST {
   pub errors: Vec<ParseError>,
 }
 
-impl AST {
-  pub fn span(&self, s: Span) -> &str {
-    unsafe { std::str::from_utf8_unchecked(&self.source.as_bytes()[s.start..s.end]) }
-  }
-
+impl LinedString {
   pub fn span_atom(&self, sp: Span, a: Atom) -> &str {
     match a {
-      Atom::Ident => self.span(sp),
+      Atom::Ident => &self[sp],
       Atom::Quote => "quote",
       Atom::Unquote => "unquote",
       Atom::Nfx => ":nfx",
     }
   }
+}
 
+impl AST {
+  pub fn span(&self, s: Span) -> &str { &self.source[s] }
+  pub fn span_atom(&self, sp: Span, a: Atom) -> &str { self.source.span_atom(sp, a) }
   pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
     match self.stmts.binary_search_by_key(&pos, |stmt| stmt.span.end) {
       Ok(i) => (i+1, pos),

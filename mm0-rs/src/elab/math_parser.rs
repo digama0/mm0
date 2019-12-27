@@ -1,8 +1,10 @@
 use std::ops::{Deref, DerefMut};
 use std::mem;
+use std::fmt::{self, Display};
 use crate::parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
 use crate::elab::{FileServer, Elaborator, ElabError};
 use crate::elab::ast::{Formula, SExpr};
+use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use crate::util::*;
 use crate::elab::environment::*;
 
@@ -16,6 +18,20 @@ pub enum QExprKind {
   Ident,
   App(TermID, Vec<QExpr>),
   Unquote(SExpr),
+}
+
+impl EnvDisplay for QExpr {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+    match &self.k {
+      QExprKind::Ident => fe.source[self.span].fmt(f),
+      QExprKind::App(t, es) => {
+        write!(f, "({}", fe.to(t))?;
+        for e in es {write!(f, " {}", fe.to(e))?}
+        write!(f, ")")
+      }
+      QExprKind::Unquote(e) => write!(f, ",{}", fe.to(e))
+    }
+  }
 }
 
 impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
@@ -143,7 +159,8 @@ impl<'a> MathParser<'a> {
     let mut tok_end = self.peek_token();
     loop {
       let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
-      if !self.pe.consts.get(s).map_or(false, |&(_, q)| q >= p) {break}
+      let p1 = if let Some(&(_, q)) = self.pe.consts.get(s) {q} else {break};
+      if p1 < p {break}
       let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
       self.idx = tok_end.1;
       let mut args = VecUninit::new(info.nargs);
@@ -158,7 +175,7 @@ impl<'a> MathParser<'a> {
         let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
         let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
         let q = self.pe.consts[s].1;
-        if !(if info2.rassoc.unwrap() {q >= p} else {q > p}) {break}
+        if !(if info2.rassoc.unwrap() {q >= p1} else {q > p1}) {break}
         rhs = self.lhs(q, rhs)?;
         tok_end = self.peek_token();
       }
