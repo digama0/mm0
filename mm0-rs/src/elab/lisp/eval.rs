@@ -6,8 +6,10 @@ use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
-use super::super::{Result, AtomID, FileServer, Elaborator, Environment, AtomData, DeclKey,
-  ElabError, ElabErrorKind, ErrorLevel, BoxError, tactic::{RStack, RState, RefineResult}};
+use super::super::{Result, FileServer, Elaborator,
+  AtomID, Environment, AtomData, DeclKey,
+  ElabError, ElabErrorKind, ErrorLevel, BoxError,
+  tactic::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
 
@@ -498,6 +500,13 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     Evaluator {elab, ctx: vec![], file, orig_span, stack: vec![]}
   }
 
+  fn fspan_base(&mut self, sp: Span) -> FileSpan {
+    for s in &self.stack {
+      if let Stack::Ret(fsp, _, _, _) = s {return fsp.clone()}
+    }
+    self.fspan(sp)
+  }
+
   fn make_stack_err(&mut self, sp: Option<Span>, level: ErrorLevel,
       base: BoxError, err: impl Into<BoxError>) -> ElabError {
     let mut old = sp.map(|sp| (self.fspan(sp), base));
@@ -809,9 +818,25 @@ make_builtins! { self, sp1, sp2, args,
     let x = try1!(args[0].as_atom().ok_or("expected an atom"));
     self.get_decl(self.fspan(sp1), x)
   },
-  AddDecl: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
-  AddTerm: AtLeast(3) => {print!(sp2, "unimplemented"); UNDEF.clone()},
-  AddThm: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  AddDecl: AtLeast(4) => {
+    let fsp = self.fspan_base(sp1);
+    match try1!(args[0].as_atom().ok_or("expected an atom")) {
+      AtomID::TERM | AtomID::DEF => self.add_term(fsp, sp1, &args[1..])?,
+      AtomID::AXIOM | AtomID::THM => self.add_thm(fsp, sp1, &args[1..])?,
+      e => try1!(Err(format!("invalid declaration type '{}'", self.print(&e))))
+    }
+    UNDEF.clone()
+  },
+  AddTerm: AtLeast(3) => {
+    let fsp = self.fspan_base(sp1);
+    self.add_term(fsp, sp1, &args)?;
+    UNDEF.clone()
+  },
+  AddThm: AtLeast(4) => {
+    let fsp = self.fspan_base(sp1);
+    self.add_thm(fsp, sp1, &args)?;
+    UNDEF.clone()
+  },
   SetReporting: AtLeast(1) => {
     if args.len() == 1 {
       if let Some(b) = args[0].as_bool() {
@@ -825,7 +850,7 @@ make_builtins! { self, sp1, sp2, args,
           "error" => self.reporting.error = b,
           "warn" => self.reporting.warn = b,
           "info" => self.reporting.info = b,
-          s => try1!(Err(format!("iunknown error level '{}'", s)))
+          s => try1!(Err(format!("unknown error level '{}'", s)))
         }
       } else {try1!(Err("invalid arguments"))}
     }

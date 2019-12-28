@@ -544,7 +544,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           vis: d.mods,
           id: d.id,
         };
-        self.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
       }
       DeclKind::Axiom | DeclKind::Thm => {
         let eret = match &d.ty {
@@ -615,9 +615,73 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           atom, span, vis: d.mods, id: d.id,
           args, heap, hyps, ret, proof
         };
-        self.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
       }
     }
     Ok(self.lc.clear())
+  }
+
+  pub fn add_term(&self, fsp: FileSpan, sp: Span, es: &[LispVal]) -> Result<()> {
+    let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(sp, "expected an atom"))?;
+    if self.data[x].decl.is_some() {
+      Err(ElabError::new_e(sp, format!("duplicate term/def declaration '{}'", self.print(&x))))?
+    }
+    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    let mut args = Vec::new();
+    let mut vars = HashMap::new();
+    let mut bv = 1;
+    for e in Uncons::from(es[1].clone()) {
+      let mut u = Uncons::from(e.clone());
+      if let (Some(ea), Some(es)) = (u.next(), u.next()) {
+        let a = ea.as_atom().ok_or_else(|| ElabError::new_e(sp!(ea), "expected an atom"))?;
+        let a = if a == AtomID::UNDER {None} else {Some(a)};
+        let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
+        let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
+          format!("unknown sort '{}'", self.print(&s))))?;
+        args.push((a, match u.next() {
+          None => {
+            if let Some(a) = a {
+              if bv >= 1 << MAX_BOUND_VARS {
+                Err(ElabError::new_e(sp,
+                  format!("too many bound variables (max {})", MAX_BOUND_VARS)))?
+              }
+              vars.insert(a, bv);
+              bv *= 2;
+            }
+            EType::Bound(s)
+          }
+          Some(vs) => {
+            let mut n = 0;
+            for v in Uncons::from(vs) {
+              let a = v.as_atom().ok_or_else(|| ElabError::new_e(sp!(v), "expected an atom"))?;
+              n |= vars.get(&a).ok_or_else(|| ElabError::new_e(sp!(v),
+                format!("undeclared variable '{}'", self.print(&v))))?;
+            }
+            EType::Reg(s, n)
+          }
+        }))
+      } else {
+        Err(ElabError::new_e(sp!(e),
+          format!("binder syntax error: {}", self.print(&e))))?;
+      }
+    }
+    // let t = Term {
+    //   atom: x,
+    //   span: fsp.clone(),
+    //   id: sp!(es[0]),
+    //   vis, args, ret, val,
+    // };
+    // self.env.add_term(x, fsp, || t).map_err(|e| e.to_elab_error(sp))
+    Ok(())
+  }
+
+  pub fn add_thm(&self, fsp: FileSpan, sp: Span, es: &[LispVal]) -> Result<()> {
+    let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(sp, "expected an atom"))?;
+    if self.data[x].decl.is_some() {
+      Err(ElabError::new_e(sp, format!("duplicate term/def declaration '{}'", self.print(&x))))?
+    }
+    // let t = Thm {};
+    // self.env.add_thm(x, fsp, || t).map_err(|e| e.to_elab_error(sp))
+    Ok(())
   }
 }
