@@ -20,4 +20,7 @@ do {
   (x)                          -- 5
   (def (fact x) (if {x = 0} 1 {x * (fact {x - 1})}))
   (fact 5)                     -- 120
+  ((fn (a) ''a) 1)             -- (quote a)
+  ((fn (a) '',a) 1)            -- (quote 1)
+  ((fn (a) '(,a . ,a)) 1)      -- (1 . 1)
 };

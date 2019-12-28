@@ -575,12 +575,12 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         let mut de = Dedup::new(self.lc.var_order.len());
         let nh = NodeHasher::new(self, d.id);
         let mut is = Vec::new();
-        for (_, _, e) in &ehyps {is.push(de.dedup(&nh, e)?)}
+        for &(_, a, ref e) in &ehyps {is.push((a, de.dedup(&nh, e)?))}
         let ir = de.dedup(&nh, &eret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
         let span = fsp.clone();
         let Builder {mut ids, heap} = self.to_builder(&de)?;
-        let hyps = is.iter().map(|&i| ids[i].take()).collect();
+        let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
         let proof = if self.check_proofs {
           d.val.as_ref().map(|e| {
@@ -590,7 +590,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               for (i, (_, a, e)) in ehyps.into_iter().enumerate() {
                 if let Some(a) = a {
                   let p = Arc::new(LispKind::Atom(a));
-                  is2.push(de.add(&*p, ProofHash::Hyp(i, is[i])));
+                  is2.push(de.add(&*p, ProofHash::Hyp(i, is[i].1)));
                   self.lc.add_proof(a, e, p)
                 }
               }

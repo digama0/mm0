@@ -530,7 +530,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             }
           }
           let mut subst = Subst::new(&mut self.lc, &self.env, &tdata.heap, Vec::from(&args[1..]));
-          let hyps = tdata.hyps.iter().map(|h| subst.subst(h)).collect::<Vec<_>>();
+          let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
           let ret = subst.subst(&tdata.ret);
           break RState::RefineHyps {
             res: if u.len() <= hyps.len() {

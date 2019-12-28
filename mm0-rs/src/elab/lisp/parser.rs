@@ -150,6 +150,7 @@ impl IR {
     }
   }
   fn dotted_list(sp: Span, mut cs: Vec<IR>, c: IR) -> IR {
+    if cs.is_empty() {return c}
     match c {
       IR::Const(e) => match e.deref() {
         LispKind::List(es) => {
@@ -269,7 +270,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   fn exprs(&mut self, quote: bool, es: &[SExpr]) -> Result<Vec<IR>, ElabError> {
     let mut cs = vec![];
     for e in es { cs.push(self.expr(quote, e)?) }
-    Ok(cs.into())
+    Ok(cs)
   }
 
   fn def(&mut self, mut e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomID, Vec<IR>), ElabError> {
@@ -527,7 +528,16 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       },
       SExprKind::DottedList(es, e) => {
         if !quote {Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?}
-        Ok(IR::dotted_list(e.span, self.exprs(true, &es)?.into(), self.expr(true, e)?))
+        let mut cs = vec![];
+        for e in es {
+          if let SExprKind::Atom(a) = es[0].k {
+            if let Ok(Syntax::Unquote) = Syntax::parse(self.ast.span(e.span), a) {
+              Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?
+            }
+          }
+          cs.push(self.expr(quote, e)?)
+        }
+        Ok(IR::dotted_list(e.span, cs, self.expr(true, e)?))
       }
       SExprKind::Number(n) => Ok(IR::Const(Arc::new(LispKind::Number(n.clone().into()))).into()),
       SExprKind::String(s) => Ok(IR::Const(Arc::new(LispKind::String(s.clone()))).into()),
@@ -535,7 +545,19 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       SExprKind::Bool(false) => Ok(IR::Const(FALSE.clone()).into()),
       SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, NIL.clone())).into()),
       SExprKind::List(es) => if quote {
-        Ok(IR::list(self.fspan(e.span), self.exprs(true, &es)?))
+        let mut cs = vec![];
+        let mut it = es.iter();
+        Ok(loop {
+          if let Some(arg) = it.next() {
+            if let SExprKind::Atom(a) = arg.k {
+              if let Ok(Syntax::Unquote) = Syntax::parse(self.ast.span(arg.span), a) {
+                let r = it.next().ok_or_else(||
+                  ElabError::new_e(arg.span, "expected at least one argument"))?;
+                break IR::dotted_list(e.span, cs, self.expr(false, r)?)
+              } else {cs.push(self.expr(true, arg)?)}
+            } else {cs.push(self.expr(true, arg)?)}
+          } else {break IR::list(self.fspan(e.span), cs)}
+        })
       } else if let SExprKind::Atom(a) = es[0].k {
         match self.parse_ident_or_syntax(es[0].span, a) {
           Ok(AtomID::UNDER) => Err(ElabError::new_e(es[0].span, "'_' is not a function"))?,
@@ -603,13 +625,13 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
             self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
           },
           Err(Syntax::MatchFn) => {
-            let i = self.ctx.len();
-            self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::Exact(1),
+            let i = self.ctx.push(AtomID::UNDER);
+            self.match_(&es[1..], |m| IR::Lambda(es[0].span, ProcSpec::Exact(1),
               Arc::new(IR::match_fn_body(es[0].span, i, m))))
           }
           Err(Syntax::MatchFns) => {
-            let i = self.ctx.len();
-            self.match_(&es[2..], |m| IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
+            let i = self.ctx.push(AtomID::UNDER);
+            self.match_(&es[1..], |m| IR::Lambda(es[0].span, ProcSpec::AtLeast(0),
               Arc::new(IR::match_fn_body(es[0].span, i, m))))
           }
         }

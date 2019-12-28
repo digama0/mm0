@@ -11,6 +11,7 @@ axiom ax_mp (ph ps: wff): $ ph -> ps $ > $ ph $ > $ ps $;
 
 -- global definitions
 do {
+  (def (dbg x) (print x) x)
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
   (def last (match-fn [(a) a] [(_ . l) (last l)]))
@@ -277,7 +278,7 @@ infixl an: $/\$ prec 35;
 
 theorem anl: $ a /\ b -> a $ = '(con1 absurd);
 theorem anr: $ a /\ b -> b $ = '(con1 ax_1);
-theorem ian: $ a -> b -> a /\ b $ = '(syl con2 (com12 id));
+theorem ian: $ a -> b -> a /\ b $ = '(con2d (com12 id));
 theorem iand (h1: $ a -> b $) (h2: $ a -> c $): $ a -> b /\ c $ = '(sylc ian h1 h2);
 theorem anld (h: $ a -> b /\ c $): $ a -> b $ = '(syl anl h);
 theorem anrd (h: $ a -> b /\ c $): $ a -> c $ = '(syl anr h);

@@ -66,9 +66,13 @@ impl LispKind {
             write!(f, " {}", fe.to(e))?
           }
         }
-        r.list(0, start, fe, f)
+        if r.exactly(0) {
+          if start {write!(f, "()")} else {write!(f, ")")}
+        } else {
+          r.list(0, start, fe, f)
+        }
       }
-      e => if start {write!(f, "{}", fe.to(e))} else {write!(f, ". {})", fe.to(e))}
+      e => if start {write!(f, "{}", fe.to(e))} else {write!(f, " . {})", fe.to(e))}
     }
   }
 }

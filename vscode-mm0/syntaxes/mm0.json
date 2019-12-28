@@ -149,6 +149,14 @@
 			"end": "\\}\\s*;",
 			"patterns": [{"include": "#lisp-val"}],
 			"name": "meta.statement.mm0"
+		},
+		{
+			"begin": "do",
+			"beginCaptures": {"0": {"name": "keyword.other.command.mm0"}},
+			"end": ";",
+			"endCaptures": {"0": {"name": "punctuation.terminator.statement.mm0"}},
+			"patterns": [{"include": "#lisp-val"}],
+			"name": "meta.statement.mm0"
 		}
 	],
 	"repository": {

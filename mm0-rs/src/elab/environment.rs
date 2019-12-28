@@ -155,7 +155,7 @@ pub struct Thm {
   pub id: Span,
   pub args: Vec<(Option<AtomID>, Type)>,
   pub heap: Vec<ExprNode>,
-  pub hyps: Vec<ExprNode>,
+  pub hyps: Vec<(Option<AtomID>, ExprNode)>,
   pub ret: ExprNode,
   pub proof: Option<Option<Proof>>,
 }
@@ -296,6 +296,14 @@ make_atoms! {
   COLON: ":",
   QMARK: "?",
   REFINE_EXTRA_ARGS: "refine-extra-args",
+  TERM: "term",
+  DEF: "def",
+  AXIOM: "axiom",
+  THM: "theorem",
+  PUB: "pub",
+  ABSTRACT: "abstract",
+  LOCAL: "local",
+  SORRY: ":sorry",
 }
 
 #[derive(Default, Clone)]

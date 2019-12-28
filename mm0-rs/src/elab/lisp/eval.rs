@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
-use super::super::{Result, AtomID, FileServer, Elaborator, AtomData,
+use super::super::{Result, AtomID, FileServer, Elaborator, Environment, AtomData, DeclKey,
   ElabError, ElabErrorKind, ErrorLevel, BoxError, tactic::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
@@ -24,7 +24,7 @@ enum Stack<'a> {
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>),
-  Drop_(usize),
+  Drop(usize),
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
@@ -127,6 +127,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
       mut active: PatternState<'b>) -> std::result::Result<bool, TestPending> {
     loop {
+      // crate::server::log(format!("{:?}", active));
       active = match active {
         PatternState::Eval(p, e) => match p {
           Pattern::Skip => PatternState::Ret(true),
@@ -317,6 +318,163 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       _ => Err(format!("expected a list, got {}", self.print(e)))
     })
   }
+
+  fn get_decl(&self, fsp: FileSpan, x: AtomID) -> LispVal {
+    use super::super::environment::{Type, ExprNode, ProofNode};
+    fn atom(a: AtomID) -> LispVal {Arc::new(LispKind::Atom(a))}
+    fn list(v: Vec<LispVal>) -> LispVal {Arc::new(LispKind::List(v))}
+    fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
+      v.push(if xs == 0 {NIL.clone()} else {
+        let mut i = 1;
+        list(bvs.iter().filter(|_| (xs & i != 0, i *= 2).0).cloned().collect())
+      });
+      v
+    }
+    fn binders(env: &Environment, bis: &[(Option<AtomID>, Type)],
+        heap: &mut Vec<LispVal>, bvs: &mut Vec<LispVal>) -> LispVal {
+      list(bis.iter().map(|(a, t)| list({
+        let a = atom(a.unwrap_or(AtomID::UNDER));
+        heap.push(a.clone());
+        match t {
+          &Type::Bound(s) => {bvs.push(a.clone()); vec![a, atom(env.sorts[s].atom)]}
+          &Type::Reg(s, xs) => deps(&bvs, vec![a, atom(env.sorts[s].atom)], xs)
+        }
+      })).collect())
+    }
+    fn vis(mods: Modifiers) -> LispVal {
+      match mods {
+        Modifiers::PUB => PUB.clone(),
+        Modifiers::ABSTRACT => ABSTRACT.clone(),
+        Modifiers::LOCAL => LOCAL.clone(),
+        Modifiers::NONE => NIL.clone(),
+        _ => unreachable!()
+      }
+    }
+    fn expr_node(env: &Environment, heap: &Vec<LispVal>,
+        ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {
+      match e {
+        &ExprNode::Ref(n) => heap[n].clone(),
+        &ExprNode::Dummy(a, s) => {
+          let a = atom(a);
+          ds.as_mut().unwrap().push(list(vec![a.clone(), atom(env.sorts[s].atom)]));
+          a
+        }
+        &ExprNode::App(t, ref es) => {
+          let mut args = vec![atom(env.terms[t].atom)];
+          args.extend(es.iter().map(|e| expr_node(env, heap, ds, e)));
+          list(args)
+        }
+      }
+    }
+    fn proof_node(env: &Environment, hyps: &[(Option<AtomID>, ExprNode)],
+        heap: &Vec<LispVal>, ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
+      match p {
+        &ProofNode::Ref(n) => heap[n].clone(),
+        &ProofNode::Dummy(a, s) => {
+          let a = atom(a);
+          ds.push(list(vec![a.clone(), atom(env.sorts[s].atom)]));
+          a
+        }
+        &ProofNode::Term {term, args: ref es} => {
+          let mut args = vec![atom(env.terms[term].atom)];
+          args.extend(es.iter().map(|e| proof_node(env, hyps, heap, ds, e)));
+          list(args)
+        }
+        &ProofNode::Hyp(h, _) => atom(hyps[h].0.unwrap_or(AtomID::UNDER)),
+        &ProofNode::Thm {thm, args: ref es} => {
+          let mut args = vec![atom(env.thms[thm].atom)];
+          args.extend(es.iter().map(|e| proof_node(env, hyps, heap, ds, e)));
+          list(args)
+        }
+        ProofNode::Conv(es) => {
+          let (t, c, p) = &**es;
+          list(vec![CONV.clone(),
+            proof_node(env, hyps, heap, ds, t),
+            proof_node(env, hyps, heap, ds, c),
+            proof_node(env, hyps, heap, ds, p),
+          ])
+        }
+        ProofNode::Sym(p) =>
+          list(vec![SYM.clone(), proof_node(env, hyps, heap, ds, &**p)]),
+        &ProofNode::Unfold {term, ref args, ref res} =>
+          list(vec![UNFOLD.clone(),
+            atom(env.terms[term].atom),
+            list(args.iter().map(|e| proof_node(env, hyps, heap, ds, e)).collect()),
+            proof_node(env, hyps, heap, ds, &**res)]),
+      }
+    }
+
+    match self.data[x].decl {
+      None => UNDEF.clone(),
+      Some(DeclKey::Term(t)) => {
+        let tdata = &self.env.terms[t];
+        let mut bvs = Vec::new();
+        let mut heap = Vec::new();
+        let mut args = vec![
+          if tdata.val.is_some() {TERM.clone()} else {DEF.clone()},
+          atom(x),
+          binders(self, &tdata.args, &mut heap, &mut bvs),
+          list(deps(&bvs,
+            vec![atom(self.sorts[tdata.ret.0].atom)], tdata.ret.1))
+        ];
+        if let Some(v) = &tdata.val {
+          args.push(vis(tdata.vis));
+          let mut ds = Vec::new();
+          for e in &v.heap[heap.len()..] {
+            let e = expr_node(self, &heap, &mut Some(&mut ds), e);
+            heap.push(e)
+          }
+          let ret = expr_node(self, &heap, &mut Some(&mut ds), &v.head);
+          args.push(list(ds));
+          args.push(ret);
+        }
+        list(args)
+      }
+      Some(DeclKey::Thm(t)) => {
+        let tdata = &self.thms[t];
+        let mut bvs = Vec::new();
+        let mut heap = Vec::new();
+        let mut args = vec![
+          if tdata.proof.is_some() {THM.clone()} else {AXIOM.clone()},
+          atom(x),
+          binders(self, &tdata.args, &mut heap, &mut bvs),
+          {
+            for e in &tdata.heap[heap.len()..] {
+              let e = expr_node(self, &heap, &mut None, e);
+              heap.push(e)
+            }
+            list(tdata.hyps.iter().map(|(a, e)| list(vec![
+              atom(a.unwrap_or(AtomID::UNDER)),
+              expr_node(self, &heap, &mut None, e)
+            ])).collect())
+          },
+          expr_node(self, &heap, &mut None, &tdata.ret)
+        ];
+        if let Some(v) = &tdata.proof {
+          args.push(vis(tdata.vis));
+          let val = match v {
+            None => atom(AtomID::SORRY),
+            Some(pr) => {
+              let mut ds = Vec::new();
+              for e in &pr.heap[heap.len()..] {
+                let e = proof_node(self, &tdata.hyps, &heap, &mut ds, e);
+                heap.push(e)
+              }
+              let ret = proof_node(self, &tdata.hyps, &heap, &mut ds, &pr.head);
+              list(vec![list(ds), ret])
+            }
+          };
+          args.push(Arc::new(LispKind::Proc(Proc::Lambda {
+            pos: ProcPos::Unnamed(fsp),
+            env: vec![],
+            spec: ProcSpec::AtLeast(0),
+            code: Arc::new(IR::Const(val))
+          })));
+        }
+        list(args)
+      }
+    }
+  }
 }
 
 struct Evaluator<'a, 'b, F: FileServer + ?Sized> {
@@ -488,7 +646,11 @@ make_builtins! { self, sp1, sp2, args,
   Cons: AtLeast(0) => match args.len() {
     0 => NIL.clone(),
     1 => args[0].clone(),
-    _ => {let r = args.pop().unwrap(); Arc::new(LispKind::DottedList(args, r))}
+    _ => {
+      let r = args.pop().unwrap();
+      if r.exactly(0) {Arc::new(LispKind::List(args))}
+      else {Arc::new(LispKind::DottedList(args, r))}
+    }
   },
   Head: Exact(1) => try1!(self.head(&args[0])),
   Tail: Exact(1) => try1!(self.tail(&args[0])),
@@ -643,7 +805,10 @@ make_builtins! { self, sp1, sp2, args,
     print!(sp1, s);
     UNDEF.clone()
   },
-  GetDecl: Exact(1) => {print!(sp2, "unimplemented"); UNDEF.clone()},
+  GetDecl: Exact(1) => {
+    let x = try1!(args[0].as_atom().ok_or("expected an atom"));
+    self.get_decl(self.fspan(sp1), x)
+  },
   AddDecl: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   AddTerm: AtLeast(3) => {print!(sp2, "unimplemented"); UNDEF.clone()},
   AddThm: AtLeast(4) => {print!(sp2, "unimplemented"); UNDEF.clone()},
@@ -710,6 +875,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
       if self.stack.len() >= 1024 {
         return Err(self.err(None, format!("stack overflow: {:#?}", self.ctx)))
       }
+      // crate::server::log(format!("{:?}", active));
       active = match active {
         State::Eval(ir) => match ir {
           &IR::Local(i) => State::Ret(self.ctx[i].clone()),
@@ -772,7 +938,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
               None => if let &Some((sp, a)) = x {
                 self.data[a].lisp = Some((Some(self.fspan(sp)), ret))
               },
-              Some(s) if s.supports_def() => push!(Drop_(self.ctx.len()), s; self.ctx.push(ret)),
+              Some(s) if s.supports_def() => push!(Drop(self.ctx.len()), s; self.ctx.push(ret)),
               Some(s) => self.stack.push(s),
             }
             State::Ret(UNDEF.clone())
@@ -784,7 +950,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
           Some(Stack::TestPattern(sp, e, it, br, pstack, vars)) =>
             State::Pattern(sp, e, it, br, pstack, vars, PatternState::Ret(ret.truthy())),
-          Some(Stack::Drop_(n)) => {self.ctx.truncate(n); State::Ret(ret)}
+          Some(Stack::Drop(n)) => {self.ctx.truncate(n); State::Ret(ret)}
           Some(Stack::Ret(fsp, _, old, _)) => {self.file = fsp.file; self.ctx = old; State::Ret(ret)}
           Some(Stack::MatchCont(_, _, _, valid)) => {
             if let Err(valid) = Arc::try_unwrap(valid) {valid.store(false, Ordering::Relaxed)}
@@ -847,7 +1013,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
                     mem::replace(&mut self.ctx, env.clone()), code.clone()));
                 }
                 self.file = pos.fspan().file.clone();
-                self.stack.push(Stack::Drop_(self.ctx.len()));
+                self.stack.push(Stack::Drop(self.ctx.len()));
                 match spec {
                   ProcSpec::Exact(_) => self.ctx.extend(args),
                   ProcSpec::AtLeast(nargs) => {
@@ -875,7 +1041,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
                         break State::Match(span, expr, it)
                       }
                     }
-                    Some(Stack::Drop_(n)) => {self.ctx.truncate(n);}
+                    Some(Stack::Drop(n)) => {self.ctx.truncate(n);}
                     Some(Stack::Ret(fsp, _, old, _)) => {self.file = fsp.file; self.ctx = old},
                     Some(_) => {}
                     None => throw!(sp2, "continuation has expired")
@@ -902,16 +1068,16 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           })?,
         }
         State::Match(sp, e, mut it) => match it.next() {
-          None => throw!(sp, "match failed"),
+          None => throw!(sp, format!("match failed: {}", self.print(&e))),
           Some(br) =>
             State::Pattern(sp, e.clone(), it, br, vec![], vec![UNDEF.clone(); br.vars].into(),
               PatternState::Eval(&br.pat, e))
         },
         State::Pattern(sp, e, it, br, mut pstack, mut vars, st) => {
           match self.pattern_match(&mut pstack, &mut vars, st) {
-            Err(TestPending(sp, i)) => push!(
+            Err(TestPending(sp2, i)) => push!(
               TestPattern(sp, e.clone(), it, br, pstack, vars);
-              App(sp, sp, self.ctx[i].clone(), vec![e], [].iter())),
+              App(sp2, sp2, self.ctx[i].clone(), vec![e], [].iter())),
             Ok(false) => State::Match(sp, e, it),
             Ok(true) => {
               let start = self.ctx.len();
@@ -921,7 +1087,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
                 self.ctx.push(Arc::new(LispKind::Proc(Proc::MatchCont(valid.clone()))));
                 self.stack.push(Stack::MatchCont(sp, e.clone(), it, valid));
               }
-              self.stack.push(Stack::Drop_(start));
+              self.stack.push(Stack::Drop(start));
               State::Eval(&br.eval)
             },
           }

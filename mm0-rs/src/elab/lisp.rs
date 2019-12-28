@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use num::BigInt;
 use crate::parser::ast::{Atom};
 use crate::util::{ArcString, FileSpan};
-use super::{AtomID, AtomVec, Remap};
+use super::{AtomID, AtomVec, Remap, Modifiers};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -108,10 +108,20 @@ pub enum LispKind {
   Goal(LispVal),
 }
 lazy_static! {
-  pub static ref UNDEF: LispVal = Arc::new(LispKind::Undef);
-  pub static ref TRUE: LispVal = Arc::new(LispKind::Bool(true));
-  pub static ref FALSE: LispVal = Arc::new(LispKind::Bool(false));
-  pub static ref NIL: LispVal = Arc::new(LispKind::List(vec![]));
+  pub static ref UNDEF:    LispVal = Arc::new(LispKind::Undef);
+  pub static ref TRUE:     LispVal = Arc::new(LispKind::Bool(true));
+  pub static ref FALSE:    LispVal = Arc::new(LispKind::Bool(false));
+  pub static ref NIL:      LispVal = Arc::new(LispKind::List(vec![]));
+  pub static ref TERM:     LispVal = Arc::new(LispKind::Atom(AtomID::TERM));
+  pub static ref DEF:      LispVal = Arc::new(LispKind::Atom(AtomID::DEF));
+  pub static ref AXIOM:    LispVal = Arc::new(LispKind::Atom(AtomID::AXIOM));
+  pub static ref THM:      LispVal = Arc::new(LispKind::Atom(AtomID::THM));
+  pub static ref PUB:      LispVal = Arc::new(LispKind::Atom(AtomID::PUB));
+  pub static ref ABSTRACT: LispVal = Arc::new(LispKind::Atom(AtomID::ABSTRACT));
+  pub static ref LOCAL:    LispVal = Arc::new(LispKind::Atom(AtomID::LOCAL));
+  pub static ref CONV:     LispVal = Arc::new(LispKind::Atom(AtomID::CONV));
+  pub static ref SYM:      LispVal = Arc::new(LispKind::Atom(AtomID::SYM));
+  pub static ref UNFOLD:   LispVal = Arc::new(LispKind::Atom(AtomID::UNFOLD));
 }
 
 impl From<&LispKind> for bool {
@@ -229,7 +239,7 @@ impl LispKind {
   pub fn exactly(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(es) => n == es.len(),
-      LispKind::DottedList(es, _) if n <= es.len() => false,
+      LispKind::DottedList(es, _) if n < es.len() => false,
       LispKind::DottedList(es, r) => r.exactly(n - es.len()),
       _ => false,
     })

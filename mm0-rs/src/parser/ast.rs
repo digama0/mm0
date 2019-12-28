@@ -20,6 +20,7 @@ bitflags! {
 }
 
 impl Modifiers {
+  pub const NONE: Modifiers = Self::empty();
   pub fn sort_data() -> Modifiers {
     Modifiers::PURE | Modifiers::STRICT | Modifiers::PROVABLE | Modifiers::FREE
   }
