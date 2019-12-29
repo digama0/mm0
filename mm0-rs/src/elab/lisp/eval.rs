@@ -12,6 +12,7 @@ use super::super::{Result, FileServer, Elaborator,
   tactic::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
+use super::super::local_context::{AwaitingProof, try_get_span};
 
 #[derive(Debug)]
 enum Stack<'a> {
@@ -30,6 +31,7 @@ enum Stack<'a> {
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
+  AddThmProc(FileSpan, Span, AwaitingProof),
   Refines(Span, std::slice::Iter<'a, IR>),
   TryRefine(Span),
   Refine {sp: Span, stack: Vec<RStack>, gv: Arc<Mutex<Vec<LispVal>>>},
@@ -538,6 +540,14 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
   fn err(&mut self, sp: Option<Span>, err: impl Into<BoxError>) -> ElabError {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
+
+  fn add_thm(&mut self, fsp: FileSpan, sp1: Span, args: &[LispVal]) -> Result<State<'b>> {
+    Ok(if let Some((ap, proc)) = self.elab.add_thm(fsp.clone(), sp1, args)? {
+      self.stack.push(Stack::AddThmProc(fsp, sp1, ap));
+      let sp = try_get_span(&self.fspan(sp1), &proc);
+      State::App(sp, sp, proc, vec![], [].iter())
+    } else {State::Ret(UNDEF.clone())})
+  }
 }
 
 macro_rules! make_builtins {
@@ -822,7 +832,7 @@ make_builtins! { self, sp1, sp2, args,
     let fsp = self.fspan_base(sp1);
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
       AtomID::TERM | AtomID::DEF => self.add_term(fsp, sp1, &args[1..])?,
-      AtomID::AXIOM | AtomID::THM => self.add_thm(fsp, sp1, &args[1..])?,
+      AtomID::AXIOM | AtomID::THM => return self.add_thm(fsp, sp1, &args[1..]),
       e => try1!(Err(format!("invalid declaration type '{}'", self.print(&e))))
     }
     UNDEF.clone()
@@ -834,8 +844,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   AddThm: AtLeast(4) => {
     let fsp = self.fspan_base(sp1);
-    self.add_thm(fsp, sp1, &args)?;
-    UNDEF.clone()
+    return self.add_thm(fsp, sp1, &args)
   },
   SetReporting: AtLeast(1) => {
     if args.len() == 1 {
@@ -984,6 +993,10 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           Some(Stack::MapProc(sp1, sp2, f, us, mut vec)) => {
             vec.push(ret);
             State::MapProc(sp1, sp2, f, us, vec)
+          }
+          Some(Stack::AddThmProc(fsp, sp1, AwaitingProof {t, de, lc, var_map, is})) => {
+            self.finish_add_thm(fsp, sp1, t, Some(Some((de, Some(lc), var_map, is, ret))))?;
+            State::Ret(UNDEF.clone())
           }
           Some(Stack::Refines(sp, it)) => State::Refines(sp, it),
           Some(Stack::TryRefine(_)) if !ret.is_def() => State::Ret(ret),

@@ -4,23 +4,24 @@ use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use super::environment::AtomID;
 use super::*;
-use super::lisp::{LispVal, LispKind, Uncons, UNDEF, InferTarget};
+use super::lisp::{LispVal, LispKind, Uncons, UNDEF, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
 
-pub struct NodeHasher<'a, F: FileServer + ?Sized> {
-  pub elab: &'a Elaborator<'a, F>,
+pub struct NodeHasher<'a> {
+  pub lc: &'a LocalContext,
+  pub fe: FormatEnv<'a>,
   pub var_map: HashMap<AtomID, usize>,
   pub fsp: FileSpan,
 }
 
-impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
-  pub fn new(elab: &'a Elaborator<'a, F>, sp: Span) -> Self {
+impl<'a> NodeHasher<'a> {
+  pub fn new(lc: &'a LocalContext, fe: FormatEnv<'a>, fsp: FileSpan) -> Self {
     let mut var_map = HashMap::new();
-    for (i, &(_, a, _)) in elab.lc.var_order.iter().enumerate() {
+    for (i, &(_, a, _)) in lc.var_order.iter().enumerate() {
       if let Some(a) = a {var_map.insert(a, i);}
     }
-    NodeHasher { fsp: elab.fspan(sp), var_map, elab }
+    NodeHasher {lc, fe, var_map, fsp}
   }
 
   fn err(&self, e: &LispKind, msg: impl Into<BoxError>) -> ElabError {
@@ -34,10 +35,11 @@ impl<'a, F: FileServer + ?Sized> NodeHasher<'a, F> {
 
 pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   const VAR: fn(usize) -> Self;
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, fsp: Option<&FileSpan>, r: &LispKind,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispKind,
     f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>>;
 }
 
+#[derive(Debug)]
 pub struct Dedup<H: NodeHash> {
   map: HashMap<Rc<H>, usize>,
   prev: HashMap<*const LispKind, usize>,
@@ -76,7 +78,7 @@ impl<H: NodeHash> Dedup<H> {
     n
   }
 
-  pub fn dedup<'a, F: FileServer + ?Sized>(&mut self, nh: &NodeHasher<'a, F>, e: &LispVal) -> Result<usize> {
+  pub fn dedup(&mut self, nh: &NodeHasher, e: &LispVal) -> Result<usize> {
     e.unwrapped_span(None, |sp, r| Ok(match self.prev.get(&(r as *const _)) {
       Some(&n) => {self.vec[n].1 = true; n}
       None => {
@@ -154,27 +156,27 @@ pub enum ExprHash {
 
 impl NodeHash for ExprHash {
   const VAR: fn(usize) -> Self = Self::Var;
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, fsp: Option<&FileSpan>, r: &LispKind,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispKind,
       mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
     Ok(Ok(match r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Var(i),
-        None => match nh.elab.lc.vars.get(&a) {
+        None => match nh.lc.vars.get(&a) {
           Some(&InferSort::Bound {dummy: true, sort}) => ExprHash::Dummy(a, sort),
-          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
         }
       },
       LispKind::List(es) if !es.is_empty() => {
         let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
-        let tid = nh.elab.env.term(a).ok_or_else(||
-          nh.err(&es[0], format!("term '{}' not declared", nh.elab.env.data[a].name)))?;
+        let tid = nh.fe.term(a).ok_or_else(||
+          nh.err(&es[0], format!("term '{}' not declared", nh.fe.data[a].name)))?;
         let mut ns = Vec::with_capacity(es.len() - 1);
         for e in &es[1..] { ns.push(f(e)?) }
         ExprHash::App(tid, ns)
       }
       LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
-        format!("{}: {}", nh.elab.print(r), nh.elab.print(tgt))))?,
-      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.elab.print(r))))?
+        format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt))))?,
+      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?
     }))
   }
 }
@@ -206,22 +208,22 @@ pub enum ProofHash {
 
 impl NodeHash for ProofHash {
   const VAR: fn(usize) -> Self = Self::Var;
-  fn from<'a, F: FileServer + ?Sized>(nh: &NodeHasher<'a, F>, fsp: Option<&FileSpan>, r: &LispKind,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispKind,
       mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
     Ok(Ok(match r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ProofHash::Var(i),
-        None => match nh.elab.lc.get_proof(a) {
+        None => match nh.lc.get_proof(a) {
           Some((_, _, p)) => return Ok(Err(f(p)?)),
-          None => match nh.elab.lc.vars.get(&a) {
+          None => match nh.lc.vars.get(&a) {
             Some(&InferSort::Bound {dummy: true, sort}) => ProofHash::Dummy(a, sort),
-            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.elab.data[a].name)))?,
+            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
           }
         }
       },
       LispKind::List(es) if !es.is_empty() => {
         let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
-        let adata = &nh.elab.env.data[a];
+        let adata = &nh.fe.data[a];
         match adata.decl {
           Some(DeclKey::Term(tid)) => {
             let mut ns = Vec::with_capacity(es.len() - 1);
@@ -244,7 +246,7 @@ impl NodeHash for ProofHash {
             }
             AtomID::UNFOLD => {
               if es.len() != 4 { Err(nh.err_sp(fsp, "incorrect :unfold format"))? }
-              let tid = es[1].as_atom().and_then(|a| nh.elab.term(a))
+              let tid = es[1].as_atom().and_then(|a| nh.fe.term(a))
                 .ok_or_else(|| nh.err(&es[1], "expected a term"))?;
               let mut ns = Vec::new();
               for e in Uncons::from(es[2].clone()) { ns.push(f(&e)?) }
@@ -255,9 +257,9 @@ impl NodeHash for ProofHash {
         }
       }
       LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
-        format!("{}: {}", nh.elab.print(r), nh.elab.print(tgt))))?,
-      LispKind::Goal(tgt) => Err(nh.err_sp(fsp, format!("|- {}", nh.elab.print(tgt))))?,
-      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.elab.print(r))))?
+        format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt))))?,
+      LispKind::Goal(tgt) => Err(nh.err_sp(fsp, format!("|- {}", nh.fe.to(tgt))))?,
+      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?
     }))
   }
 }
