@@ -67,12 +67,18 @@ impl LocalContext {
     self.vars.entry(x).or_insert_with(|| InferSort::new(sp))
   }
 
-  fn push_var(&mut self, sp: Span, a: Option<AtomID>, is: InferSort) {
+  // Returns true if the variable was already in the binder list
+  fn push_var(&mut self, sp: Span, a: Option<AtomID>, is: InferSort) -> bool {
     if let Some(a) = a {
-      self.vars.insert(a, is);
-      self.var_order.push((sp, Some(a), None))
+      let res = match self.vars.entry(a) {
+        Entry::Vacant(e) => {e.insert(is); false}
+        Entry::Occupied(mut e) => {e.insert(is); true}
+      };
+      self.var_order.push((sp, Some(a), None));
+      res
     } else {
-      self.var_order.push((sp, None, Some(is)))
+      self.var_order.push((sp, None, Some(is)));
+      false
     }
   }
 
@@ -460,17 +466,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
           if !ehyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
-          if let Some(x) = x {
-            match self.lc.vars.entry(x) {
-              Entry::Vacant(e) => {e.insert(is);}
-              Entry::Occupied(mut e) => {
-                e.insert(is);
-                report!(bi.local.unwrap(), "variable occurs twice in binder list");
-              }
-            }
-            self.lc.var_order.push((bi.local.unwrap_or(bi.span), Some(x), None));
-          } else {
-            self.lc.var_order.push((bi.local.unwrap_or(bi.span), None, Some(is)));
+          if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
+            report!(bi.local.unwrap(), "variable occurs twice in binder list");
           }
         }
         Ok(InferBinder::Hyp(x, e)) => ehyps.push((bi, x, e)),
@@ -635,8 +632,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
 pub struct AwaitingProof {
   pub t: Thm,
   pub de: Dedup<ProofHash>,
-  pub lc: LocalContext,
   pub var_map: HashMap<AtomID, usize>,
+  pub lc: LocalContext,
   pub is: Vec<usize>,
 }
 
@@ -771,22 +768,27 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       Err(ElabError::new_e(sp, format!("duplicate axiom/theorem declaration '{}'", self.print(&x))))?
     }
     let mut vars = (HashMap::new(), 1);
-    let (lc, args) = self.binders(&fsp, sp, Uncons::from(es[1].clone()), &mut vars)?;
+    let (mut lc, args) = self.binders(&fsp, sp, Uncons::from(es[1].clone()), &mut vars)?;
+    crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(lc.var_order.len());
-    let nh = NodeHasher::new(&self.lc, self.format_env(), fsp.clone());
+    let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
+    crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
     let mut is = Vec::new();
     for e in Uncons::from(es[2].clone()) {
       let mut u = Uncons::from(e.clone());
       if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
         let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
-        is.push((if x == AtomID::UNDER {None} else {Some(x)}, de.dedup(&nh, &ty)?))
+        let a = if x == AtomID::UNDER {None} else {Some(x)};
+        is.push((a, de.dedup(&nh, &ty)?, ty));
       } else {
         Err(ElabError::new_e(sp!(es[2]), format!("syntax error: {}", self.print(&es[2]))))?
       }
     }
     let ir = de.dedup(&nh, &es[3])?;
     let Builder {mut ids, heap} = self.to_builder(&de)?;
-    let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
+    let hyps = is.iter().map(|&(a, i, _)| {
+      (a, ids[i].take())
+    }).collect();
     let ret = ids[ir].take();
     let mut t = Thm {
       atom: x,
@@ -803,18 +805,20 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       Some(if self.check_proofs {
         let mut de = de.map_proof();
         let mut is2 = Vec::new();
-        for (i, (a, j)) in is.into_iter().enumerate() {
+        let var_map = nh.var_map;
+        for (i, (a, j, ty)) in is.into_iter().enumerate() {
           if let Some(a) = a {
             let p = Arc::new(LispKind::Atom(a));
             is2.push(de.add(&*p, ProofHash::Hyp(i, j)));
+            lc.add_proof(a, ty, p);
           }
         }
         if es[5].is_proc() {
           return Ok(Some((
-            AwaitingProof {t, de, lc, var_map: nh.var_map, is: is2},
+            AwaitingProof {t, de, var_map, lc, is: is2},
             es[5].clone())))
         }
-        Some((de, Some(lc), nh.var_map, is2, es[5].clone()))
+        Some((de, var_map, Some(lc), is2, es[5].clone()))
       } else {None})
     } else {None};
     self.finish_add_thm(fsp, sp, t, res)?;
@@ -822,13 +826,15 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 
   pub fn finish_add_thm(&mut self, fsp: FileSpan, sp: Span, mut t: Thm,
-    res: Option<Option<(Dedup<ProofHash>, Option<LocalContext>, HashMap<AtomID, usize>, Vec<usize>, LispVal)>>) -> Result<()> {
-    t.proof = res.map(|res| res.and_then(|(mut de, lc, var_map, is2, e)| {
+    res: Option<Option<(Dedup<ProofHash>, HashMap<AtomID, usize>, Option<LocalContext>, Vec<usize>, LispVal)>>) -> Result<()> {
+    t.proof = res.map(|res| res.and_then(|(mut de, var_map, lc, is2, e)| {
       (|| -> Result<Option<Proof>> {
+        crate::server::log(format!("lc = {:?}", lc));
         let nh = NodeHasher {
+          var_map,
           lc: lc.as_ref().unwrap_or(&self.lc),
           fe: self.format_env(),
-          var_map, fsp: fsp.clone()
+          fsp: fsp.clone()
         };
         let ip = de.dedup(&nh, &e)?;
         let Builder {mut ids, heap} = self.to_builder(&de)?;

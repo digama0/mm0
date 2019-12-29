@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
 use super::super::{LinedString, FileServer, Environment, Elaborator, TermID, ThmID, SortID};
-use super::{AtomID, LispKind, Uncons, InferTarget, Proc, ProcPos};
+use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
 #[derive(Copy, Clone)]
 pub struct FormatEnv<'a> {
@@ -43,37 +43,21 @@ impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
-impl LispKind {
-  fn list(&self, n: usize, mut start: bool, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
-    match self {
-      LispKind::List(es) => {
-        for e in &es[n..] {
-          if start {
-            write!(f, "({}", fe.to(e))?;
-            start = false
-          } else {
-            write!(f, " {}", fe.to(e))?
-          }
-        }
-        if start {write!(f, "()")} else {write!(f, ")")}
-      }
-      LispKind::DottedList(es, r) => {
-        for e in &es[n..] {
-          if start {
-            write!(f, "({}", fe.to(e))?;
-            start = false
-          } else {
-            write!(f, " {}", fe.to(e))?
-          }
-        }
-        if r.exactly(0) {
-          if start {write!(f, "()")} else {write!(f, ")")}
-        } else {
-          r.list(0, start, fe, f)
-        }
-      }
-      e => if start {write!(f, "{}", fe.to(e))} else {write!(f, " . {})", fe.to(e))}
+fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  for e in init {
+    if start {
+      write!(f, "({}", fe.to(e))?;
+      start = false
+    } else {
+      write!(f, " {}", fe.to(e))?
     }
+  }
+  match e {
+    None => if start {write!(f, "()")} else {write!(f, ")")},
+    Some(LispKind::List(es)) => list(es, None, start, fe, f),
+    Some(LispKind::DottedList(es, r)) => list(es, Some(&r), start, fe, f),
+    Some(e) if e.exactly(0) => if start {write!(f, "()")} else {write!(f, ")")},
+    Some(e) => if start {write!(f, "{}", fe.to(e))} else {write!(f, " . {})", fe.to(e))}
   }
 }
 
@@ -114,8 +98,8 @@ impl EnvDisplay for LispKind {
       LispKind::Atom(a) => a.fmt(fe, f),
       LispKind::List(es) if es.is_empty() => "()".fmt(f),
       LispKind::DottedList(es, r) if es.is_empty() => r.fmt(fe, f),
-      LispKind::DottedList(_, _) |
-      LispKind::List(_) => self.list(0, true, fe, f),
+      LispKind::DottedList(es, r) => list(es, Some(&r), true, fe, f),
+      LispKind::List(es) => list(es, None, true, fe, f),
       LispKind::Annot(_, e) => e.fmt(fe, f),
       LispKind::Number(n) => n.fmt(f),
       LispKind::String(s) => write!(f, "{:?}", s),
@@ -151,7 +135,11 @@ impl EnvDisplay for LispKind {
 
 impl EnvDisplay for Uncons {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
-    self.0.list(self.1, true, fe, f)
+    match self {
+      Uncons::New(e) => e.fmt(fe, f),
+      Uncons::List(es) => list(es, None, true, fe, f),
+      Uncons::DottedList(es, r) => list(es, Some(&r), true, fe, f),
+    }
   }
 }
 

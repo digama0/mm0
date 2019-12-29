@@ -35,7 +35,7 @@ impl<'a> NodeHasher<'a> {
 
 pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   const VAR: fn(usize) -> Self;
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispKind,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
     f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>>;
 }
 
@@ -79,16 +79,28 @@ impl<H: NodeHash> Dedup<H> {
   }
 
   pub fn dedup(&mut self, nh: &NodeHasher, e: &LispVal) -> Result<usize> {
-    e.unwrapped_span(None, |sp, r| Ok(match self.prev.get(&(r as *const _)) {
+    let r = LispKind::unwrapped_arc(e);
+    let p: *const _ = &*r;
+    Ok(match self.prev.get(&p) {
       Some(&n) => {self.vec[n].1 = true; n}
       None => {
-        let n = match H::from(nh, sp, r, |e| self.dedup(nh, e))? {
+        let n = match H::from(nh, e.fspan().as_ref(), &r, |e| self.dedup(nh, e))? {
           Ok(v) => self.add_direct(v),
           Err(n) => n,
         };
-        self.prev.insert(r, n); n
+        self.prev.insert(p, n); n
       }
-    }))
+    })
+    // e.unwrapped_span(None, |sp, r| Ok(match self.prev.get(&(r as *const _)) {
+    //   Some(&n) => {self.vec[n].1 = true; n}
+    //   None => {
+    //     let n = match H::from(nh, sp, r, |e| self.dedup(nh, e))? {
+    //       Ok(v) => self.add_direct(v),
+    //       Err(n) => n,
+    //     };
+    //     self.prev.insert(r, n); n
+    //   }
+    // }))
   }
 
   fn map_inj<T: NodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
@@ -156,27 +168,30 @@ pub enum ExprHash {
 
 impl NodeHash for ExprHash {
   const VAR: fn(usize) -> Self = Self::Var;
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispKind,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
       mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
-    Ok(Ok(match r {
+    Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Var(i),
         None => match nh.lc.vars.get(&a) {
           Some(&InferSort::Bound {dummy: true, sort}) => ExprHash::Dummy(a, sort),
-          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
+          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found\n{:?}", nh.fe.data[a].name, backtrace::Backtrace::new())))?,
         }
       },
-      LispKind::List(es) if !es.is_empty() => {
-        let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
-        let tid = nh.fe.term(a).ok_or_else(||
-          nh.err(&es[0], format!("term '{}' not declared", nh.fe.data[a].name)))?;
-        let mut ns = Vec::with_capacity(es.len() - 1);
-        for e in &es[1..] { ns.push(f(e)?) }
-        ExprHash::App(tid, ns)
-      }
       LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
         format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt))))?,
-      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?
+      _ => {
+        let mut u = Uncons::from(r.clone());
+        let head = u.next().ok_or_else(||
+          nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?;
+        let a = head.as_atom().ok_or_else(|| nh.err(&head, "expected an atom"))?;
+        let tid = nh.fe.term(a).ok_or_else(||
+          nh.err(&head, format!("term '{}' not declared", nh.fe.data[a].name)))?;
+        let mut ns = Vec::new();
+        for e in &mut u { ns.push(f(&e)?) }
+        if !u.exactly(0) {Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?}
+        ExprHash::App(tid, ns)
+      }
     }))
   }
 }
@@ -208,58 +223,65 @@ pub enum ProofHash {
 
 impl NodeHash for ProofHash {
   const VAR: fn(usize) -> Self = Self::Var;
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispKind,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
       mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
-    Ok(Ok(match r {
+    Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ProofHash::Var(i),
         None => match nh.lc.get_proof(a) {
           Some((_, _, p)) => return Ok(Err(f(p)?)),
           None => match nh.lc.vars.get(&a) {
             Some(&InferSort::Bound {dummy: true, sort}) => ProofHash::Dummy(a, sort),
-            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
+            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found {:?}", nh.fe.data[a].name, backtrace::Backtrace::new())))?,
           }
         }
       },
-      LispKind::List(es) if !es.is_empty() => {
-        let a = es[0].as_atom().ok_or_else(|| nh.err(&es[0], "expected an atom"))?;
-        let adata = &nh.fe.data[a];
-        match adata.decl {
-          Some(DeclKey::Term(tid)) => {
-            let mut ns = Vec::with_capacity(es.len() - 1);
-            for e in &es[1..] { ns.push(f(e)?) }
-            ProofHash::Term(tid, ns)
-          }
-          Some(DeclKey::Thm(tid)) => {
-            let mut ns = Vec::with_capacity(es.len() - 1);
-            for e in &es[1..] { ns.push(f(e)?) }
-            ProofHash::Thm(tid, ns)
-          },
-          None => match a {
-            AtomID::CONV => {
-              if es.len() != 4 { Err(nh.err_sp(fsp, "incorrect :conv format"))? }
-              ProofHash::Conv(f(&es[1])?, f(&es[2])?, f(&es[3])?)
-            }
-            AtomID::SYM => {
-              if es.len() != 2 { Err(nh.err_sp(fsp, "incorrect :sym format"))? }
-              ProofHash::Sym(f(&es[1])?)
-            }
-            AtomID::UNFOLD => {
-              if es.len() != 4 { Err(nh.err_sp(fsp, "incorrect :unfold format"))? }
-              let tid = es[1].as_atom().and_then(|a| nh.fe.term(a))
-                .ok_or_else(|| nh.err(&es[1], "expected a term"))?;
-              let mut ns = Vec::new();
-              for e in Uncons::from(es[2].clone()) { ns.push(f(&e)?) }
-              ProofHash::Unfold(tid, ns, f(&es[3])?)
-            }
-            _ => Err(nh.err(&es[0], format!("term/theorem '{}' not declared", adata.name)))?
-          }
-        }
-      }
       LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
         format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt))))?,
       LispKind::Goal(tgt) => Err(nh.err_sp(fsp, format!("|- {}", nh.fe.to(tgt))))?,
-      _ => Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?
+      _ => {
+        let mut u = Uncons::from(r.clone());
+        let head = u.next().ok_or_else(||
+          nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?;
+        let a = head.as_atom().ok_or_else(|| nh.err(&head, "expected an atom"))?;
+        let adata = &nh.fe.data[a];
+        match adata.decl {
+          Some(DeclKey::Term(tid)) => {
+            let mut ns = Vec::new();
+            for e in u { ns.push(f(&e)?) }
+            ProofHash::Term(tid, ns)
+          }
+          Some(DeclKey::Thm(tid)) => {
+            let mut ns = Vec::new();
+            for e in u { ns.push(f(&e)?) }
+            ProofHash::Thm(tid, ns)
+          },
+          None => match a {
+            AtomID::CONV => match (u.next(), u.next(), u.next()) {
+              (Some(tgt), Some(c), Some(p)) if u.exactly(0) =>
+                ProofHash::Conv(f(&tgt)?, f(&c)?, f(&p)?),
+              _ => Err(nh.err_sp(fsp, format!("incorrect :conv format {}", nh.fe.to(r))))?
+            },
+            AtomID::SYM => match u.next() {
+              Some(p) if u.exactly(0) => ProofHash::Sym(f(&p)?),
+              _ => Err(nh.err_sp(fsp, format!("incorrect :sym format {}", nh.fe.to(r))))?
+            },
+            AtomID::UNFOLD => {
+              let (t, es, p) = match (u.next(), u.next(), u.next(), u.next()) {
+                (Some(t), Some(es), Some(p), None) if u.exactly(0) => (t, es, p),
+                (Some(t), Some(es), Some(_), Some(p)) if u.exactly(0) => (t, es, p),
+                _ => Err(nh.err_sp(fsp, format!("incorrect :unfold format {}", nh.fe.to(r))))?
+              };
+              let tid = t.as_atom().and_then(|a| nh.fe.term(a))
+                .ok_or_else(|| nh.err(&t, "expected a term"))?;
+              let mut ns = Vec::new();
+              for e in Uncons::from(es.clone()) { ns.push(f(&e)?) }
+              ProofHash::Unfold(tid, ns, f(&p)?)
+            },
+            _ => Err(nh.err(&head, format!("term/theorem '{}' not declared", adata.name)))?
+          }
+        }
+      }
     }))
   }
 }

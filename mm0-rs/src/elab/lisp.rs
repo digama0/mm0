@@ -7,6 +7,7 @@ use std::hash::Hash;
 use std::sync::{Arc, Weak, Mutex, atomic::AtomicBool};
 use std::collections::HashMap;
 use num::BigInt;
+use owning_ref::OwningRef;
 use crate::parser::ast::{Atom};
 use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap, Modifiers};
@@ -176,16 +177,6 @@ impl LispKind {
   pub fn as_atom(&self) -> Option<AtomID> {
     self.unwrapped(|e| if let &LispKind::Atom(a) = e {Some(a)} else {None})
   }
-  pub fn is_pair(&self) -> bool {
-    self.unwrapped(|e| match e {
-      LispKind::List(es) => !es.is_empty(),
-      LispKind::DottedList(es, r) => !es.is_empty() || r.is_pair(),
-      _ => false,
-    })
-  }
-  pub fn is_null(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::List(es) = e {es.is_empty()} else {false})
-  }
   pub fn is_int(&self) -> bool {
     self.unwrapped(|e| if let LispKind::Number(_) = e {true} else {false})
   }
@@ -282,6 +273,26 @@ impl LispKind {
   }
   pub fn new_goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     Self::new_span(fsp, Arc::new(LispKind::Goal(ty)))
+  }
+
+  pub fn extend_into(mut this: LispVal, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
+    loop {
+      match &*this {
+        LispKind::Ref(m) => {let e = m.try_lock().unwrap().clone(); this = e}
+        LispKind::Annot(_, v) => this = v.clone(),
+        LispKind::List(es) | LispKind::DottedList(es, _) if n <= es.len() => {
+          vec.extend_from_slice(&es[..n]);
+          return true
+        },
+        LispKind::List(es) => {vec.extend_from_slice(&es); return false},
+        LispKind::DottedList(es, r) => {
+          vec.extend_from_slice(&es);
+          n -= es.len();
+          this = r.clone()
+        }
+        _ => return false
+      }
+    }
   }
 }
 
@@ -423,62 +434,91 @@ impl std::fmt::Display for BuiltinProc {
 }
 
 #[derive(Clone, Debug)]
-pub struct Uncons(LispVal, usize);
+pub enum Uncons {
+  New(LispVal),
+  List(OwningRef<LispVal, [LispVal]>),
+  DottedList(OwningRef<LispVal, [LispVal]>, LispVal),
+}
+
 impl Uncons {
-  pub fn from(e: LispVal) -> Uncons { Uncons(e, 0) }
-  pub fn exactly(&self, n: usize) -> bool { self.0.exactly(self.1 + n) }
-  pub fn at_least(&self, n: usize) -> bool { self.0.at_least(self.1 + n) }
-
-  pub fn as_lisp(self) -> LispVal {
-    if self.1 == 0 {return self.0}
-    self.0.unwrapped(|e| match e {
-      LispKind::List(es) if self.1 == es.len() => NIL.clone(),
-      LispKind::List(es) => Arc::new(LispKind::List(es[self.1..].into())),
-      LispKind::DottedList(es, r) if self.1 == es.len() => r.clone(),
-      LispKind::DottedList(es, r) => Arc::new(LispKind::DottedList(es[self.1..].into(), r.clone())),
-      _ => unreachable!()
-    })
+  pub fn from(e: LispVal) -> Uncons { Uncons::New(e) }
+  pub fn exactly(&self, n: usize) -> bool {
+    match self {
+      Uncons::New(e) => e.exactly(n),
+      Uncons::List(es) => es.len() == n,
+      Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(false, |i| r.exactly(i)),
+    }
   }
-
-  pub fn extend_into(&mut self, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
-    loop {
-      match &*self.0 {
-        LispKind::Ref(m) => {let e = m.try_lock().unwrap().clone(); self.0 = e}
-        LispKind::Annot(_, v) => self.0 = v.clone(),
-        LispKind::List(es) | LispKind::DottedList(es, _) if self.1 + n <= es.len() => {
-          vec.extend_from_slice(&es[self.1..self.1 + n]);
-          return true
-        },
-        LispKind::List(es) => {vec.extend_from_slice(&es); return false},
-        LispKind::DottedList(es, r) => {
-          vec.extend_from_slice(&es);
-          n -= es.len();
-          *self = Self::from(r.clone())
-        }
-        _ => return false
-      }
+  pub fn at_least(&self, n: usize) -> bool {
+    n == 0 || match self {
+      Uncons::New(e) => e.at_least(n),
+      Uncons::List(es) => es.len() >= n,
+      Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.at_least(i)),
     }
   }
 
-  pub fn len(&self) -> usize { self.0.len() - self.1 }
+  pub fn as_lisp(self) -> LispVal {
+    match self {
+      Uncons::New(e) => e,
+      Uncons::List(es) if es.is_empty() => NIL.clone(),
+      Uncons::List(es) => Arc::new(LispKind::List((*es).into())),
+      Uncons::DottedList(es, r) if es.is_empty() => r,
+      Uncons::DottedList(es, r) => Arc::new(LispKind::DottedList((*es).into(), r)),
+    }
+  }
+
+  pub fn len(&self) -> usize {
+    match self {
+      Uncons::New(e) => e.len(),
+      Uncons::List(es) => es.len(),
+      Uncons::DottedList(es, r) => es.len() + r.len(),
+    }
+  }
+
+  pub fn extend_into(&mut self, n: usize, vec: &mut Vec<LispVal>) -> bool {
+    match self {
+      Uncons::New(e) => LispKind::extend_into(e.clone(), n, vec),
+      Uncons::List(es) | Uncons::DottedList(es, _) if n <= es.len() =>
+        {vec.extend_from_slice(&es[..n]); true}
+      Uncons::List(es) => {vec.extend_from_slice(&es); false}
+      Uncons::DottedList(es, r) => {
+        vec.extend_from_slice(&es);
+        LispKind::extend_into(r.clone(), n - es.len(), vec)
+      }
+    }
+  }
 }
 
 impl Iterator for Uncons {
   type Item = LispVal;
   fn next(&mut self) -> Option<LispVal> {
-    loop {
-      match &*self.0 {
-        LispKind::Ref(m) => {let e = m.try_lock().unwrap().clone(); self.0 = e}
-        LispKind::Annot(_, v) => self.0 = v.clone(),
-        LispKind::List(es) => match es.get(self.1) {
-          None => return None,
-          Some(e) => {self.1 += 1; return Some(e.clone())}
+    'l: loop {
+      match self {
+        Uncons::New(e) => loop {
+          match &**e {
+            LispKind::Ref(m) => {let e2 = m.try_lock().unwrap().clone(); *e = e2}
+            LispKind::Annot(_, v) => *e = v.clone(),
+            LispKind::List(_) => {
+              *self = Uncons::List(OwningRef::from(e.clone()).map(|e| {
+                if let LispKind::List(es) = e {&**es}
+                else {unsafe {std::hint::unreachable_unchecked()}}
+              }));
+              continue 'l
+            }
+            LispKind::DottedList(_, r) => {
+              *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|e| {
+                if let LispKind::DottedList(es, _) = e {&**es}
+                else {unsafe {std::hint::unreachable_unchecked()}}
+              }), r.clone());
+              continue 'l
+            }
+            _ => return None
+          }
         },
-        LispKind::DottedList(es, r) => match es.get(self.1) {
-          None => *self = Self::from(r.clone()),
-          Some(e) => {self.1 += 1; return Some(e.clone())}
-        }
-        _ => return None
+        Uncons::List(es) if es.is_empty() => return None,
+        Uncons::List(es) => return (Some(es[0].clone()), *es = es.clone().map(|es| &es[1..])).0,
+        Uncons::DottedList(es, r) if es.is_empty() => *self = Uncons::New(r.clone()),
+        Uncons::DottedList(es, _) => return (Some(es[0].clone()), *es = es.clone().map(|es| &es[1..])).0,
       }
     }
   }

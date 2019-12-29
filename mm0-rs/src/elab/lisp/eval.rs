@@ -13,6 +13,7 @@ use super::super::{Result, FileServer, Elaborator,
 use super::*;
 use super::parser::{IR, Branch, Pattern};
 use super::super::local_context::{AwaitingProof, try_get_span};
+use super::print::{FormatEnv, EnvDisplay};
 
 #[derive(Debug)]
 enum Stack<'a> {
@@ -21,6 +22,7 @@ enum Stack<'a> {
   DottedList2(Vec<LispVal>),
   App(Span, Span, &'a [IR]),
   App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
+  AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
   Def(&'a Option<(Span, AtomID)>),
   Eval(std::slice::Iter<'a, IR>),
@@ -39,15 +41,44 @@ enum Stack<'a> {
   Have(Span, AtomID),
 }
 
-impl Stack<'_> {
-  fn supports_def(&self) -> bool {
+impl<'a> EnvDisplay for Stack<'a> {
+  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
-      Stack::App2(_, _, _, _, _) => true,
-      Stack::Eval(_) => true,
-      _ => false,
+      Stack::List(_, es, irs) => write!(f, "(list {}\n  _ {})",
+        fe.to(es), fe.to(irs.as_slice())),
+      &Stack::DottedList(ref es, ref irs, ir) => write!(f, "(cons {}\n  _ {} {})",
+        fe.to(es), fe.to(irs.as_slice()), fe.to(ir)),
+      Stack::DottedList2(es) => write!(f, "(cons {}\n  _)", fe.to(es)),
+      &Stack::App(_, _, irs) => write!(f, "(_ {})", fe.to(irs)),
+      Stack::App2(_, _, e, es, irs) => write!(f, "({} {}\n  _ {})",
+        fe.to(e), fe.to(es), fe.to(irs.as_slice())),
+      Stack::AppHead(_, _, e) => write!(f, "(_ {})", fe.to(e)),
+      &Stack::If(e1, e2) => write!(f, "(if _ {} {})", fe.to(e1), fe.to(e2)),
+      &Stack::Def(a) => write!(f, "(def {} _)", fe.to(&a.map_or(AtomID::UNDER, |a| a.1))),
+      Stack::Eval(es) => write!(f, "(begin\n  _ {})", fe.to(es.as_slice())),
+      Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
+      &Stack::TestPattern(_, ref e, ref bs, br, _, _) => write!(f,
+        "(match {}\n  {}\n  {})\n  ->(? _)",
+        fe.to(e), fe.to(br), fe.to(bs.as_slice())),
+      &Stack::Drop(n) => write!(f, "drop {}", n),
+      Stack::Ret(_, pos, _, _) => match pos {
+        &ProcPos::Named(_, a) => write!(f, "ret {}", fe.to(&a)),
+        ProcPos::Unnamed(_) => write!(f, "ret"),
+      },
+      Stack::MatchCont(_, e, bs, _) => write!(f, "(=> match {}\n  {})",
+        fe.to(e), fe.to(bs.as_slice())),
+      Stack::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{} _",
+        fe.to(e), fe.to(&**us), fe.to(es)),
+      Stack::AddThmProc(_, _, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.t.atom)),
+      Stack::Refines(_, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
+      Stack::TryRefine(_) => write!(f, "(refine? _)"),
+      Stack::Refine {..} => write!(f, "(refine _)"),
+      Stack::Focus(es) => write!(f, "(focus _)\n  ->{}", fe.to(es)),
+      &Stack::Have(_, a) => write!(f, "(have {} _)", fe.to(&a)),
     }
   }
 }
+
 #[derive(Debug)]
 enum State<'a> {
   Eval(&'a IR),
@@ -61,6 +92,30 @@ enum State<'a> {
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
   Refine {sp: Span, stack: Vec<RStack>, state: RState, gv: Arc<Mutex<Vec<LispVal>>>},
+}
+
+impl<'a> EnvDisplay for State<'a> {
+  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    match self {
+      &State::Eval(ir) => write!(f, "-> {}", fe.to(ir)),
+      State::Refines(_, irs) => write!(f, "(refine {})", fe.to(irs.as_slice())),
+      State::Ret(e) => write!(f, "<- {}", fe.to(e)),
+      State::List(_, es, irs) => write!(f, "(list {}\n  {})",
+        fe.to(es), fe.to(irs.as_slice())),
+      &State::DottedList(ref es, ref irs, ir) => write!(f, "(cons {}\n  {} {})",
+        fe.to(es), fe.to(irs.as_slice()), fe.to(ir)),
+      State::App(_, _, e, es, irs) => write!(f, "({} {}\n  {})",
+        fe.to(e), fe.to(es), fe.to(irs.as_slice())),
+      State::Match(_, e, bs) => write!(f, "(match {}\n  {})",
+        fe.to(e), fe.to(bs.as_slice())),
+      &State::Pattern(_, ref e, ref bs, br, _, _, ref st) => write!(f,
+        "(match {}\n  {}\n  {})\n  ->{}",
+        fe.to(e), fe.to(br), fe.to(bs.as_slice()), fe.to(st)),
+      State::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{}",
+        fe.to(e), fe.to(&**us), fe.to(es)),
+      State::Refine {state, ..} => state.fmt(fe, f),
+    }
+  }
 }
 
 impl LispKind {
@@ -123,15 +178,36 @@ enum PatternState<'a> {
   Binary(bool, bool, LispVal, std::slice::Iter<'a, Pattern>),
 }
 
-struct TestPending(Span, usize);
+impl<'a> EnvDisplay for PatternState<'a> {
+  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    match self {
+      &PatternState::Eval(p, ref e) => write!(f, "{} := {}", fe.to(p), fe.to(e)),
+      &PatternState::Ret(e) => write!(f, "<- {}", e),
+      PatternState::List(u, ps, Dot::List(None)) => write!(f, "({}) := {}",
+        fe.to(ps.as_slice()), fe.to(u)),
+      PatternState::List(u, ps, Dot::List(Some(0))) => write!(f, "({} ...) := {}",
+        fe.to(ps.as_slice()), fe.to(u)),
+      PatternState::List(u, ps, Dot::List(Some(n))) => write!(f, "({} __ {}) := {}",
+        fe.to(ps.as_slice()), n, fe.to(u)),
+      &PatternState::List(ref u, ref ps, Dot::DottedList(r)) => write!(f, "({} . {}) := {}",
+        fe.to(ps.as_slice()), fe.to(r), fe.to(u)),
+      PatternState::Binary(false, false, e, ps) => write!(f, "(and {}) := {}", fe.to(ps.as_slice()), fe.to(e)),
+      PatternState::Binary(true, true, e, ps) => write!(f, "(or {}) := {}", fe.to(ps.as_slice()), fe.to(e)),
+      PatternState::Binary(true, false, e, ps) => write!(f, "(not {}) := {}", fe.to(ps.as_slice()), fe.to(e)),
+      PatternState::Binary(false, true, e, ps) => write!(f, "(nor {}) := {}", fe.to(ps.as_slice()), fe.to(e)),
+    }
+  }
+}
+
+struct TestPending<'a>(Span, LispVal, &'a IR);
 
 pub type SResult<T> = std::result::Result<T, String>;
 
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
-      mut active: PatternState<'b>) -> std::result::Result<bool, TestPending> {
+      mut active: PatternState<'b>) -> std::result::Result<bool, TestPending<'b>> {
     loop {
-      // crate::server::log(format!("{:?}", active));
+      // crate::server::log(format!("{}\n", self.print(&active)));
       active = match active {
         PatternState::Eval(p, e) => match p {
           Pattern::Skip => PatternState::Ret(true),
@@ -155,9 +231,9 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           Pattern::And(ps) => PatternState::Binary(false, false, e, ps.iter()),
           Pattern::Or(ps) => PatternState::Binary(true, true, e, ps.iter()),
           Pattern::Not(ps) => PatternState::Binary(true, false, e, ps.iter()),
-          &Pattern::Test(sp, i, ref ps) => {
-            stack.push(PatternStack::Binary(false, false, e, ps.iter()));
-            return Err(TestPending(sp, i))
+          &Pattern::Test(sp, ref ir, ref ps) => {
+            stack.push(PatternStack::Binary(false, false, e.clone(), ps.iter()));
+            return Err(TestPending(sp, e, ir))
           },
         },
         PatternState::Ret(b) => match stack.pop() {
@@ -685,8 +761,8 @@ make_builtins! { self, sp1, sp2, args,
   },
   IsBool: Exact(1) => Arc::new(LispKind::Bool(args[0].is_bool())),
   IsAtom: Exact(1) => Arc::new(LispKind::Bool(args[0].is_atom())),
-  IsPair: Exact(1) => Arc::new(LispKind::Bool(args[0].is_pair())),
-  IsNull: Exact(1) => Arc::new(LispKind::Bool(args[0].is_null())),
+  IsPair: Exact(1) => Arc::new(LispKind::Bool(args[0].at_least(1))),
+  IsNull: Exact(1) => Arc::new(LispKind::Bool(args[0].exactly(0))),
   IsNumber: Exact(1) => Arc::new(LispKind::Bool(args[0].is_int())),
   IsString: Exact(1) => Arc::new(LispKind::Bool(args[0].is_string())),
   IsProc: Exact(1) => Arc::new(LispKind::Bool(args[0].is_proc())),
@@ -901,6 +977,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     }}}
 
     let mut iters: u8 = 0;
+    // let mut stacklen = 0;
     loop {
       iters = iters.wrapping_add(1);
       if iters == 0 && self.cur_timeout.map_or(false, |t| t < Instant::now()) {
@@ -909,7 +986,21 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
       if self.stack.len() >= 1024 {
         return Err(self.err(None, format!("stack overflow: {:#?}", self.ctx)))
       }
-      // crate::server::log(format!("{:?}", active));
+      // {
+      //   if self.stack.len() < stacklen {
+      //     crate::server::log(format!("stack -= {}", stacklen - self.stack.len()));
+      //     stacklen = self.stack.len()
+      //   }
+      //   if self.stack.len() > stacklen {
+      //     for e in &self.stack[stacklen..] {
+      //       crate::server::log(format!("stack += {}", self.print(e)));
+      //     }
+      //     stacklen = self.stack.len()
+      //   } else if let Some(e) = self.stack.last() {
+      //     crate::server::log(format!("stack top = {}", self.print(e)));
+      //   }
+      //   crate::server::log(format!("[{}] {}\n", self.ctx.len(), self.print(&active)));
+      // }
       active = match active {
         State::Eval(ir) => match ir {
           &IR::Local(i) => State::Ret(self.ctx[i].clone()),
@@ -936,7 +1027,10 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
             let gs = self.lc.goals.drain(1..).collect();
             push!(Focus(gs); Refines(sp, irs.iter()))
           }
-          IR::Def(x, val) => push!(Def(x); Eval(val)),
+          &IR::Def(n, ref x, ref val) => {
+            assert!(self.ctx.len() == n);
+            push!(Def(x); Eval(val))
+          }
           IR::Eval(es) => {
             let mut it = es.iter();
             match it.next() {
@@ -944,13 +1038,15 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
               Some(e) => push!(Eval(it); Eval(e)),
             }
           }
-          &IR::Lambda(sp, spec, ref e) =>
+          &IR::Lambda(sp, n, spec, ref e) => {
+            assert!(self.ctx.len() == n);
             State::Ret(Arc::new(LispKind::Proc(Proc::Lambda {
               pos: self.proc_pos(sp),
               env: self.ctx.clone(),
               spec,
               code: e.clone()
-            }))),
+            })))
+          }
           &IR::Match(sp, ref e, ref brs) => push!(Match(sp, brs.iter()); State::Eval(e)),
         },
         State::Ret(ret) => match self.stack.pop() {
@@ -966,17 +1062,25 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           })),
           Some(Stack::App(sp1, sp2, es)) => State::App(sp1, sp2, ret, vec![], es.iter()),
           Some(Stack::App2(sp1, sp2, f, mut vec, it)) => { vec.push(ret); State::App(sp1, sp2, f, vec, it) }
+          Some(Stack::AppHead(sp1, sp2, e)) => State::App(sp1, sp2, ret, vec![e], [].iter()),
           Some(Stack::If(e1, e2)) => State::Eval(if ret.truthy() {e1} else {e2}),
-          Some(Stack::Def(x)) => {
-            match self.stack.pop() {
-              None => if let &Some((sp, a)) = x {
-                self.data[a].lisp = Some((Some(self.fspan(sp)), ret))
+          Some(Stack::Def(x)) => match self.stack.pop() {
+            None => {
+              if let &Some((sp, a)) = x {
+                self.data[a].lisp = Some((Some(self.fspan(sp)), ret));
+              }
+              State::Ret(UNDEF.clone())
+            },
+            Some(s) => match s {
+              Stack::App2(sp1, sp2, f, vec, it) =>
+                push!(Drop(self.ctx.len()); {self.ctx.push(ret); App(sp1, sp2, f, vec, it)}),
+              Stack::Eval(mut it) => match it.next() {
+                None => State::Ret(UNDEF.clone()),
+                Some(e) => push!(Drop(self.ctx.len()), Eval(it); {self.ctx.push(ret); Eval(e)})
               },
-              Some(s) if s.supports_def() => push!(Drop(self.ctx.len()), s; self.ctx.push(ret)),
-              Some(s) => self.stack.push(s),
+              _ => {self.stack.push(s); State::Ret(UNDEF.clone())}
             }
-            State::Ret(UNDEF.clone())
-          }
+          },
           Some(Stack::Eval(mut it)) => match it.next() {
             None => State::Ret(ret),
             Some(e) => push!(Eval(it); Eval(e)),
@@ -994,8 +1098,8 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
             vec.push(ret);
             State::MapProc(sp1, sp2, f, us, vec)
           }
-          Some(Stack::AddThmProc(fsp, sp1, AwaitingProof {t, de, lc, var_map, is})) => {
-            self.finish_add_thm(fsp, sp1, t, Some(Some((de, Some(lc), var_map, is, ret))))?;
+          Some(Stack::AddThmProc(fsp, sp1, AwaitingProof {t, de, var_map, lc, is})) => {
+            self.finish_add_thm(fsp, sp1, t, Some(Some((de, var_map, Some(lc), is, ret))))?;
             State::Ret(UNDEF.clone())
           }
           Some(Stack::Refines(sp, it)) => State::Refines(sp, it),
@@ -1113,9 +1217,11 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
         },
         State::Pattern(sp, e, it, br, mut pstack, mut vars, st) => {
           match self.pattern_match(&mut pstack, &mut vars, st) {
-            Err(TestPending(sp2, i)) => push!(
-              TestPattern(sp, e.clone(), it, br, pstack, vars);
-              App(sp2, sp2, self.ctx[i].clone(), vec![e], [].iter())),
+            Err(TestPending(sp2, e2, ir)) => push!(
+              TestPattern(sp, e, it, br, pstack, vars),
+              AppHead(sp2, sp2, e2),
+              Drop(self.ctx.len());
+              Eval(ir)),
             Ok(false) => State::Match(sp, e, it),
             Ok(true) => {
               let start = self.ctx.len();
