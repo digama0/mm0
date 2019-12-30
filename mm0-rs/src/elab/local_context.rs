@@ -308,7 +308,7 @@ impl BuildArgs {
   }
   fn push_dummies(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>) -> Option<()> {
     for (&a, is) in vars {
-      if let (false, InferSort::Bound {..}) = is {
+      if let (true, InferSort::Bound {..}) = is {
         self.push_bound(Some(a))?
       }
     }
@@ -460,9 +460,9 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               dummy && d2
             } else {
               *is = InferSort::Reg {sort, deps: vec![]};
-              true
+              false
             };
-            if new2 && *new {*new = false; newvars.push((src, a))}
+            if !new2 && *new {*new = false; newvars.push((src, a))}
           }
           Err(e) => errs.push(e),
         }
@@ -482,7 +482,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
-    // crate::server::log(format!("elab {}", self.ast.span(d.id)));
+    // log!("elab {}", self.ast.span(d.id));
     for bi in &d.bis {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
@@ -540,8 +540,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           },
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
-            // crate::server::log(format!("id: {}, vars: {:#?}\norder: {:#?}\nval: {}", // FIXME
-            //   self.print(&atom), self.lc.vars, self.lc.var_order, self.print(&val)));
+            // log!("id: {}, vars: {:#?}\norder: {:#?}\nval: {}", // FIXME
+            //   self.print(&atom), self.lc.vars, self.lc.var_order, self.print(&val));
             if ba.push_dummies(&self.lc.vars).is_none() {
               Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?
             }
@@ -562,7 +562,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
                 }
                 let n = ba.deps(deps2);
                 if deps & !n != 0 {
-                  crate::server::log(format!("{} !!! {:#b} & ! {:#b} = {:#b}", self.print(&atom), deps, n, deps & !n));
                   return Err(ElabError::new_e(sp, format!("variables {{{}}} missing from dependencies",
                     deps2.iter().filter(|&a| deps & !ba.map[a] != 0)
                       .map(|&a| &self.data[a].name).format(", "))))
@@ -599,8 +598,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         if error {return Ok(())}
         let mut args = Vec::new();
         let mut ba = BuildArgs::default();
-        // crate::server::log(format!("id: {}, vars: {:#?}\norder: {:#?}",
-        //   self.print(&atom), self.lc.vars, self.lc.var_order));
         for &(sp, a, ref is) in &self.lc.var_order {
           match ba.push_var(&self.lc.vars, a, is) {
             None => Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?,

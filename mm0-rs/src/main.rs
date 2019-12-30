@@ -5,7 +5,7 @@ extern crate log;
 mod util;
 mod lined_string;
 mod parser;
-mod server;
+#[macro_use] mod server;
 mod elab;
 
 use std::{env, io};

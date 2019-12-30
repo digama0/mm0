@@ -169,6 +169,11 @@ pub fn log(s: String) {
   LOGGER.1.notify_one();
 }
 
+#[allow(unused)]
+macro_rules! log {
+  ($($es:tt)*) => {crate::server::log(format!($($es)*))}
+}
+
 enum FileCache {
   Dirty(AST),
   Ready {
