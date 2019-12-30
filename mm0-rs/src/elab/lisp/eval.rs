@@ -980,13 +980,18 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     // let mut stacklen = 0;
     loop {
       iters = iters.wrapping_add(1);
-      if iters == 0 && self.cur_timeout.map_or(false, |t| t < Instant::now()) {
-        return Err(self.err(None, "timeout"))
+      if iters == 0 {
+        if self.cur_timeout.map_or(false, |t| t < Instant::now()) {
+          return Err(self.err(None, "timeout"))
+        }
+        if self.cancel.load(Ordering::Relaxed) {
+          return Err(self.err(None, "cancelled"))
+        }
       }
       if self.stack.len() >= 1024 {
         return Err(self.err(None, format!("stack overflow: {:#?}", self.ctx)))
       }
-      // {
+      // if self.check_proofs {
       //   if self.stack.len() < stacklen {
       //     crate::server::log(format!("stack -= {}", stacklen - self.stack.len()));
       //     stacklen = self.stack.len()

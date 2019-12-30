@@ -6,7 +6,7 @@ use itertools::Itertools;
 use super::environment::{AtomID, Type as EType};
 use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::*;
-use super::lisp::{LispVal, LispKind, Uncons, InferTarget};
+use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::proof::*;
 use crate::util::*;
 
@@ -114,13 +114,13 @@ impl LocalContext {
 
 struct ElabTerm<'a> {
   lc: &'a LocalContext,
-  env: &'a Environment,
+  fe: FormatEnv<'a>,
   fsp: FileSpan,
 }
 
 struct ElabTermMut<'a> {
   lc: &'a mut LocalContext,
-  env: &'a Environment,
+  fe: FormatEnv<'a>,
   fsp: FileSpan,
 }
 impl<'a> Deref for ElabTermMut<'a> {
@@ -166,18 +166,19 @@ impl<'a> ElabTerm<'a> {
     let res = res.decorate_span(&fsp);
     let to = match tgt {
       InferTarget::Unknown => return Ok(res),
-      InferTarget::Provable if self.env.sorts[from].mods.contains(Modifiers::PROVABLE) => return Ok(res),
-      InferTarget::Provable => *self.env.pe.coe_prov.get(&from).ok_or_else(||
-        self.err(&src, format!("type error: expected provable sort, got {}", self.env.sorts[from].name)))?,
-      InferTarget::Reg(to) => self.env.data[to].sort.unwrap(),
-      InferTarget::Bound(_) => return Err(self.err(&src, "expected a variable"))
+      InferTarget::Provable if self.fe.sorts[from].mods.contains(Modifiers::PROVABLE) => return Ok(res),
+      InferTarget::Provable => *self.fe.pe.coe_prov.get(&from).ok_or_else(||
+        self.err(src, format!("type error: expected provable sort, got {}", self.fe.sorts[from].name)))?,
+      InferTarget::Reg(to) => self.fe.data[to].sort.unwrap(),
+      InferTarget::Bound(_) => return Err(
+        self.err(src, format!("expected a variable, got {}", self.fe.to(src))))
     };
     if from == to {return Ok(res)}
-    if let Some(c) = self.env.pe.coes.get(&from).and_then(|m| m.get(&to)) {
-      Ok(self.env.apply_coe(&fsp, c, res))
+    if let Some(c) = self.fe.pe.coes.get(&from).and_then(|m| m.get(&to)) {
+      Ok(self.fe.apply_coe(&fsp, c, res))
     } else {
       Err(self.err(&src,
-        format!("type error: expected {}, got {}", self.env.sorts[to].name, self.env.sorts[from].name)))
+        format!("type error: expected {}, got {}", self.fe.sorts[to].name, self.fe.sorts[from].name)))
     }
   }
 
@@ -195,9 +196,9 @@ impl<'a> ElabTerm<'a> {
       },
       LispKind::List(es) if !es.is_empty() => {
         let a = es[0].as_atom().ok_or_else(|| self.err(&es[0], "expected an atom"))?;
-        let tid = self.env.term(a).ok_or_else(||
-          self.err(&es[0], format!("term '{}' not declared", self.env.data[a].name)))?;
-        Ok(self.env.terms[tid].ret.0)
+        let tid = self.fe.term(a).ok_or_else(||
+          self.err(&es[0], format!("term '{}' not declared", self.fe.data[a].name)))?;
+        Ok(self.fe.terms[tid].ret.0)
       }
       _ => Err(self.err(e, "invalid expression"))
     })
@@ -214,17 +215,17 @@ impl<'a> ElabTermMut<'a> {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.err(e, "expected a bound variable, got regular variable")),
       (&mut InferSort::Bound {sort, ..}, InferTarget::Bound(sa)) => {
-        let s = self.env.data[sa].sort.unwrap();
+        let s = self.fe.data[sa].sort.unwrap();
         if s == sort {Ok(LispKind::Atom(a).decorate_span(&e.fspan()))}
         else {
           Err(self.err(e,
-            format!("type error: expected {}, got {}", self.env.sorts[s].name, self.env.sorts[sort].name)))
+            format!("type error: expected {}, got {}", self.fe.sorts[s].name, self.fe.sorts[sort].name)))
         }
       }
       (InferSort::Unknown {must_bound, sorts, ..}, tgt) => {
         let s = match tgt {
-          InferTarget::Bound(sa) => {*must_bound = true; Some(self.env.data[sa].sort.unwrap())}
-          InferTarget::Reg(sa) => Some(self.env.data[sa].sort.unwrap()),
+          InferTarget::Bound(sa) => {*must_bound = true; Some(self.fe.data[sa].sort.unwrap())}
+          InferTarget::Reg(sa) => Some(self.fe.data[sa].sort.unwrap()),
           _ => None,
         };
         let mvars = &mut self.lc.mvars;
@@ -239,17 +240,17 @@ impl<'a> ElabTermMut<'a> {
     mut it: impl Iterator<Item=LispVal>, tgt: InferTarget) -> Result<LispVal> {
     let t = it.next().unwrap();
     let a = t.as_atom().ok_or_else(|| self.err(&t, "expected an atom"))?;
-    let tid = self.env.term(a).ok_or_else(||
-      self.err(&t, format!("term '{}' not declared", self.env.data[a].name)))?;
-    let tdata = &self.env.terms[tid];
+    let tid = self.fe.term(a).ok_or_else(||
+      self.err(&t, format!("term '{}' not declared", self.fe.data[a].name)))?;
+    let tdata = &self.fe.env.terms[tid];
     let mut tys = tdata.args.iter();
     let mut args = vec![LispKind::Atom(a).decorate_span(&t.fspan())];
     for arg in it {
       let tgt = match tys.next().ok_or_else(||
         self.err(&e,
           format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?.1 {
-        EType::Bound(s) => InferTarget::Bound(self.env.sorts[s].atom),
-        EType::Reg(s, _) => InferTarget::Reg(self.env.sorts[s].atom),
+        EType::Bound(s) => InferTarget::Bound(self.fe.sorts[s].atom),
+        EType::Reg(s, _) => InferTarget::Reg(self.fe.sorts[s].atom),
       };
       args.push(self.expr(&arg, tgt)?);
     }
@@ -258,7 +259,8 @@ impl<'a> ElabTermMut<'a> {
 
   fn expr(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
     e.unwrapped(|r| match r {
-      &LispKind::Atom(a) if self.env.term(a).is_some() =>
+      &LispKind::Atom(a) if self.lc.vars.contains_key(&a) => self.atom(e, a, tgt),
+      &LispKind::Atom(a) if self.fe.term(a).is_some() =>
         self.list(e, Some(e.clone()).into_iter(), tgt),
       &LispKind::Atom(a) => self.atom(e, a, tgt),
       LispKind::DottedList(es, r) if es.is_empty() => self.expr(r, tgt),
@@ -317,8 +319,7 @@ impl BuildArgs {
 
   fn expr_deps(&self, env: &Environment, e: &LispKind) -> u64 {
     e.unwrapped(|r| match r {
-      &LispKind::Atom(a) => *self.map.get(&a).unwrap_or_else(|| // FIXME
-        panic!("map = {:?}\na = {:?} = {}", self.map, a, env.data[a].name)),
+      &LispKind::Atom(a) => self.map[&a],
       LispKind::List(es) if !es.is_empty() =>
         if let Some(tid) = es[0].as_atom().and_then(|a| env.term(a)) {
           let ref tdef = env.terms[tid];
@@ -408,11 +409,15 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 
   fn to_elab_term(&mut self, sp: Span) -> ElabTerm {
-    ElabTerm {fsp: self.fspan(sp), env: &self.env, lc: &self.lc}
+    ElabTerm {fsp: self.fspan(sp), fe: self.format_env(), lc: &self.lc}
   }
 
   fn to_elab_term_mut(&mut self, sp: Span) -> ElabTermMut {
-    ElabTermMut {fsp: self.fspan(sp), env: &self.env, lc: &mut self.lc}
+    ElabTermMut {
+      fsp: self.fspan(sp),
+      fe: FormatEnv {source: &self.ast.source, env: &self.env},
+      lc: &mut self.lc
+    }
   }
 
   fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
@@ -455,7 +460,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
                 *m.lock().unwrap() = val;
               } else {unreachable!()}
             }
-            let new2 = if dummy || must_bound {
+            let new2 = if (dummy && *new) || must_bound {
               *is = InferSort::Bound {sort};
               dummy && d2
             } else {
@@ -483,6 +488,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
     // log!("elab {}", self.ast.span(d.id));
+    self.lc.clear();
     for bi in &d.bis {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
@@ -522,7 +528,11 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         } else if d.val.is_none() {
           self.report(ElabError::new_e(sp, "def declaration missing value"));
         }
+        // log!("id: {}, vars: {:#?}\norder: {:#?}",
+        //   self.print(&atom), self.lc.vars, self.lc.var_order);
         for e in self.finalize_vars(true) {report!(e)}
+        // log!("id: {}, vars: {:#?}\norder: {:#?}",
+        //   self.print(&atom), self.lc.vars, self.lc.var_order);
         if error {return Ok(())}
         let mut args = Vec::new();
         let mut ba = BuildArgs::default();
@@ -540,7 +550,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           },
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
-            // log!("id: {}, vars: {:#?}\norder: {:#?}\nval: {}", // FIXME
+            // log!("id: {}, vars: {:#?}\norder: {:#?}\nval: {}",
             //   self.print(&atom), self.lc.vars, self.lc.var_order, self.print(&val));
             if ba.push_dummies(&self.lc.vars).is_none() {
               Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?

@@ -6,7 +6,7 @@ pub mod tactic;
 pub mod proof;
 
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Instant, Duration};
 use std::path::PathBuf;
 use std::collections::{HashMap};
@@ -112,6 +112,7 @@ pub struct Elaborator<'a, F: FileServer + ?Sized> {
   ast: &'a AST,
   fs: &'a F,
   path: FileRef,
+  cancel: Arc<AtomicBool>,
   errors: Vec<ElabError>,
   toks: HashMap<Span, Option<F::WaitToken>>,
   env: Environment,
@@ -131,9 +132,9 @@ impl<F: FileServer + ?Sized> DerefMut for Elaborator<'_, F> {
 }
 
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
-  fn new(ast: &'a AST, path: FileRef, fs: &'a F) -> Elaborator<'a, F> {
+  fn new(ast: &'a AST, path: FileRef, cancel: Arc<AtomicBool>, fs: &'a F) -> Elaborator<'a, F> {
     Elaborator {
-      ast, fs, path,
+      ast, fs, path, cancel,
       errors: Vec::new(),
       toks: HashMap::new(),
       env: Environment::new(),
@@ -204,7 +205,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     let s1 = self.data[afrom].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
     let s2 = self.data[ato].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
     let fsp = self.fspan(id);
-    self.check_term_nargs(id, t, 2)?;
+    self.check_term_nargs(id, t, 1)?;
     self.add_coe(s1, s2, fsp, t)
   }
 
@@ -249,7 +250,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     let mut it = n.lits.iter().peekable();
     let (mut lits, mut rassoc, infix, tk, prec) = match it.next() {
       None => Err(ElabError::new_e(n.id, "notation requires at least one literal"))?,
-      Some(&ALiteral::Const(ref c, p)) => (vec![], None, false, c, p),
+      Some(&ALiteral::Const(ref c, p)) => (vec![], Some(true), false, c, p),
       Some(&ALiteral::Var(v)) => match it.next() {
         None => Err(ElabError::new_e(v, "notation requires at least one constant"))?,
         Some(&ALiteral::Var(v)) => Err(ElabError::new_e(v, "notation cannot start with two variables"))?,
@@ -355,9 +356,9 @@ pub trait FileServer {
   fn get_elab(&self, tok: &Self::WaitToken) -> Arc<Environment>;
 
   fn elaborate<'a>(&'a self, path: FileRef, ast: &'a AST,
-      _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>) ->
+      _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>, cancel: Arc<AtomicBool>) ->
       (Vec<ElabError>, Environment, Vec<FileRef>) {
-    let mut elab = Elaborator::new(ast, path, self);
+    let mut elab = Elaborator::new(ast, path, cancel, self);
     let mut deps: Vec<FileRef> = Vec::new();
     for (sp, f) in &ast.imports {
       match elab.path.path().join(f).canonicalize()
@@ -368,6 +369,7 @@ pub trait FileServer {
       }
     }
     for s in ast.stmts.iter() {
+      if elab.cancel.load(Ordering::Relaxed) {break}
       let r = elab.elab_stmt(s);
       elab.catch(r)
     }

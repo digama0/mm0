@@ -84,28 +84,39 @@ impl Job {
   }
 }
 
-struct Jobs(Mutex<Option<VecDeque<Job>>>, Condvar);
+struct Jobs(Mutex<(Option<(Job, Arc<AtomicBool>)>, Option<VecDeque<Job>>)>, Condvar);
 
 impl Jobs {
   fn extend(&self, mut new: Vec<Job>) {
     if !new.is_empty() {
-      let changed = if let Some(jobs) = &mut *self.0.lock().unwrap() {
-        jobs.retain(|job| new.iter_mut().all(|njob| !njob.merge(job)));
-        jobs.extend(new);
-        true
-      } else {false};
+      let changed = {
+        let mut g = self.0.lock().unwrap();
+        if let Some((active, cancel)) = &mut g.0 {
+          if new.iter().any(|njob| njob.path() == active.path()) {
+            cancel.store(true, Ordering::Relaxed);
+          }
+        }
+        if let Some(jobs) = &mut g.1 {
+          jobs.retain(|job| new.iter_mut().all(|njob| !njob.merge(job)));
+          jobs.extend(new);
+          true
+        } else {false}
+      };
       if changed { self.1.notify_one() }
     }
   }
 
   fn new_worker(&self, server: ServerRef) -> Result<()> {
     loop {
-      let job = {
+      let (job, cancel) = {
         let mut g = self.0.lock().unwrap();
         loop {
-          if let Some(jobs) = &mut *g {
-            if let Some(job) = jobs.pop_front() {break job}
-            else {g = self.1.wait(g).unwrap(); continue}
+          if let (active, Some(jobs)) = &mut *g {
+            if let Some(job) = jobs.pop_front() {
+              let cancel = Arc::new(AtomicBool::new(false));
+              *active = Some((job.clone(), cancel.clone()));
+              break (job, cancel)
+            } else {g.0 = None; g = self.1.wait(g).unwrap(); continue}
           } else {return Ok(())}
         }
       };
@@ -120,7 +131,8 @@ impl Jobs {
               };
               let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
               let (errors, env, deps) = server.elaborate(path.clone(), &ast,
-                old_env.map(|(errs, e)| (idx, errs, e)));
+                old_env.map(|(errs, e)| (idx, errs, e)), cancel.clone());
+              if cancel.load(Ordering::Relaxed) {return Ok(())}
               server.send_diagnostics(path.url().clone(),
                 ast.errors.iter().map(|e| e.to_diag(&ast.source))
                   .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
@@ -137,7 +149,8 @@ impl Jobs {
                 Some(FileCache::Ready{ast, errors, deps, env}) => ((ast.stmts.len(), ast), Some((errors, env)), deps),
               };
               let (errors, env, deps) = server.elaborate(path.clone(), &ast,
-                old_env.map(|(errs, e)| (idx, errs, e)));
+                old_env.map(|(errs, e)| (idx, errs, e)), cancel.clone());
+              if cancel.load(Ordering::Relaxed) {return Ok(())}
               server.send_diagnostics(path.url().clone(),
                 ast.errors.iter().map(|e| e.to_diag(&ast.source))
                   .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
@@ -155,7 +168,11 @@ impl Jobs {
   }
 
   fn stop(&self) {
-    self.0.lock().unwrap().take();
+    {
+      let (active, jobs) = &mut *self.0.lock().unwrap();
+      if let Some((_, cancel)) = active {cancel.store(true, Ordering::Relaxed)}
+      jobs.take();
+    }
     self.1.notify_all()
   }
 }
@@ -419,7 +436,7 @@ impl Server {
       conn,
       reqs: Mutex::new(HashMap::new()),
       vfs: VFS(Mutex::new(HashMap::new())),
-      jobs: Jobs(Mutex::new(Some(VecDeque::new())), Condvar::new())
+      jobs: Jobs(Mutex::new((None, Some(VecDeque::new()))), Condvar::new())
     })
   }
 
