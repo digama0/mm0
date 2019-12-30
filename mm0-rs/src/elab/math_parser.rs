@@ -15,7 +15,7 @@ pub struct QExpr {
 }
 #[derive(Debug)]
 pub enum QExprKind {
-  Ident,
+  IdentApp(Span, Vec<QExpr>),
   App(TermID, Vec<QExpr>),
   Unquote(SExpr),
 }
@@ -23,7 +23,12 @@ pub enum QExprKind {
 impl EnvDisplay for QExpr {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
     match &self.k {
-      QExprKind::Ident => fe.source[self.span].fmt(f),
+      &QExprKind::IdentApp(sp, ref es) if es.is_empty() => fe.source[sp].fmt(f),
+      &QExprKind::IdentApp(sp, ref es) => {
+        write!(f, "({}", &fe.source[sp])?;
+        for e in es {write!(f, " {}", fe.to(e))?}
+        write!(f, ")")
+      }
       QExprKind::App(t, es) => {
         write!(f, "({}", fe.to(t))?;
         for e in es {write!(f, " {}", fe.to(e))?}
@@ -53,6 +58,8 @@ impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
   }
 }
 
+const APP_PREC: Prec = Prec::Prec(1024);
+
 struct MathParser<'a> {
   p: Parser<'a>,
   pe: &'a ParserEnv,
@@ -66,7 +73,6 @@ impl<'a> DerefMut for MathParser<'a> {
 }
 
 impl<'a> MathParser<'a> {
-
   fn ws(&mut self) {
     loop {
       match self.cur() {
@@ -133,7 +139,13 @@ impl<'a> MathParser<'a> {
         let e = self.sexpr()?;
         return Ok(QExpr {span: (start..e.span.end).into(), k: QExprKind::Unquote(e) })
       }
-      b'(' => return Ok((self.idx += 1, self.expr(Prec::Prec(0))?, self.chr_err(b')')?).1),
+      b'(' => {
+        self.idx += 1;
+        self.ws();
+        let e = self.expr(Prec::Prec(0))?;
+        self.chr_err(b')')?;
+        return Ok(e)
+      }
       c => c
     };
     let sp = self.token().ok_or_else(|| self.err("expecting expression".into()))?;
@@ -150,7 +162,18 @@ impl<'a> MathParser<'a> {
         }
       }
     } else if ident_start(c) && (sp.start + 1..sp.end).all(|i| ident_rest(self.source[i])) {
-      return Ok(QExpr {span: sp, k: QExprKind::Ident})
+      let mut args = Vec::new();
+      let mut start = self.idx;
+      let mut span = sp;
+      if p <= APP_PREC {
+        while let Ok(e) = self.expr(Prec::Max) {
+          span.end = e.span.end;
+          start = self.idx;
+          args.push(e);
+        }
+      }
+      self.idx = start;
+      return Ok(QExpr {span, k: QExprKind::IdentApp(sp, args)})
     }
     Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))?
   }

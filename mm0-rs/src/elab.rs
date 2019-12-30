@@ -166,18 +166,26 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
     let tk: ArcString = self.span(n.c.trim).into();
     let (rassoc, nargs, lits) = match n.k {
-      SimpleNotaKind::Prefix => (true, 1, vec![ELiteral::Var(0, n.prec)]),
+      SimpleNotaKind::Prefix => {
+        let nargs = self.terms[term].args.len();
+        let mut lits = Vec::with_capacity(nargs);
+        if let Some(m) = nargs.checked_sub(1) {
+          for i in 0..m {lits.push(ELiteral::Var(i, Prec::Max))};
+          lits.push(ELiteral::Var(m, n.prec));
+        }
+        (true, nargs, lits)
+      }
       SimpleNotaKind::Infix {right} =>
         if let Prec::Prec(i) = n.prec {
           let i2 = i.checked_add(1).ok_or_else(|| ElabError::new_e(n.id, "precedence out of range"))?;
           let (l, r) = if right {(i2, i)} else {(i, i2)};
+          self.check_term_nargs(n.id, term, 2)?;
           (right, 2, vec![
             ELiteral::Var(0, Prec::Prec(l)),
             ELiteral::Const(tk.clone()),
             ELiteral::Var(1, Prec::Prec(r))])
         } else { Err(ElabError::new_e(n.id, "max prec not allowed for infix"))? }
     };
-    self.check_term_nargs(n.id, term, nargs)?;
     self.add_const(n.c.trim, n.prec)?;
     let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc: Some(rassoc), lits };
     match n.k {

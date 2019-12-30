@@ -384,8 +384,15 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
 
   fn qexpr(&mut self, e: QExpr) -> Result<IR, ElabError> {
     match e.k {
-      QExprKind::Ident => Ok(IR::Const(Arc::new(LispKind::Atom(
-        self.elab.env.get_atom(self.ast.span(e.span)))))),
+      QExprKind::IdentApp(sp, es) => {
+        let head = IR::Const(Arc::new(LispKind::Atom(
+          self.elab.env.get_atom(self.ast.span(sp)))));
+        if es.is_empty() {Ok(head)} else {
+          let mut cs = vec![head];
+          for e in es { cs.push(self.qexpr(e)?) }
+          Ok(IR::list(self.fspan(e.span), cs))
+        }
+      }
       QExprKind::App(t, es) => {
         let s = self.ast.span(self.terms[t].id);
         let mut cs = vec![IR::Const(Arc::new(LispKind::Atom(self.get_atom(s))))];
@@ -468,10 +475,18 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
 
   fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
     match e.k {
-      QExprKind::Ident => match self.ast.span(e.span) {
-        "_" => Ok(Pattern::Skip),
-        s => Ok(Pattern::QExprAtom(self.elab.env.get_atom(s))),
-      },
+      QExprKind::IdentApp(sp, es) => {
+        let head = match self.ast.span(sp) {
+          "_" => Pattern::Skip,
+          s if es.is_empty() => Pattern::QExprAtom(self.elab.env.get_atom(s)),
+          s => Pattern::QuoteAtom(self.elab.env.get_atom(s)),
+        };
+        if es.is_empty() {Ok(head)} else {
+          let mut cs = vec![head];
+          for e in es { cs.push(self.qexpr_pattern(ctx, code, e)?) }
+          Ok(Pattern::List(cs.into(), None))
+        }
+      }
       QExprKind::App(t, es) => {
         let s = self.ast.span(self.terms[t].id);
         let x = self.get_atom(s);

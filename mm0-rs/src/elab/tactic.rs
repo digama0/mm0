@@ -431,10 +431,10 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           RefineExpr::App(sp, _, a, u) => {
             let empty = u.exactly(0);
             if let Some(is) = if empty {self.lc.vars.get(&a)} else {None} {
-              let (sort, bd) = match is {
-                &InferSort::Bound {sort, ..} => (sort, true),
-                &InferSort::Reg {sort, ..} => (sort, false),
-                &InferSort::Unknown {..} => unreachable!(),
+              let (sort, bd) = match is.1 {
+                InferSort::Bound {sort} => (sort, true),
+                InferSort::Reg {sort, ..} => (sort, false),
+                InferSort::Unknown {..} => unreachable!(),
               };
               let e = Arc::new(LispKind::Atom(a));
               RState::Ret(match tgt {
@@ -470,7 +470,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               RState::RefineApp {tgt, t, u, args: vec![Arc::new(LispKind::Atom(a))]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
-              self.lc.vars.insert(a, InferSort::Bound {dummy: true, sort});
+              self.lc.vars.insert(a, (true, InferSort::Bound {sort}));
               RState::Ret(Arc::new(LispKind::Atom(a)))
             } else {
               Err(ElabError::new_e(sp, format!("unknown term '{}'", self.data[a].name)))?

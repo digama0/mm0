@@ -12,18 +12,20 @@ use crate::util::*;
 
 #[derive(Debug)]
 pub enum InferSort {
-  Bound { dummy: bool, sort: SortID },
+  Bound { sort: SortID },
   Reg { sort: SortID, deps: Vec<AtomID> },
-  Unknown { src: Span, must_bound: bool, sorts: HashMap<Option<SortID>, LispVal> },
+  Unknown { src: Span, must_bound: bool, dummy: bool, sorts: HashMap<Option<SortID>, LispVal> },
 }
 
 impl InferSort {
-  fn new(src: Span) -> InferSort { InferSort::Unknown { src, must_bound: false, sorts: HashMap::new() } }
+  fn new(src: Span) -> InferSort {
+    InferSort::Unknown { src, must_bound: false, dummy: true, sorts: HashMap::new() }
+  }
 }
 
 #[derive(Default, Debug)]
 pub struct LocalContext {
-  pub vars: HashMap<AtomID, InferSort>,
+  pub vars: HashMap<AtomID, (bool, InferSort)>,
   pub var_order: Vec<(Span, Option<AtomID>, Option<InferSort>)>, // InferSort only populated for anonymous vars
   pub mvars: Vec<LispVal>,
   pub goals: Vec<LispVal>,
@@ -63,21 +65,21 @@ impl LocalContext {
     new_mvar(&mut self.mvars, tgt)
   }
 
-  fn var(&mut self, x: AtomID, sp: Span) -> &mut InferSort {
-    self.vars.entry(x).or_insert_with(|| InferSort::new(sp))
+  fn var(&mut self, x: AtomID, sp: Span) -> &mut (bool, InferSort) {
+    self.vars.entry(x).or_insert_with(|| (true, InferSort::new(sp)))
   }
 
   // Returns true if the variable was already in the binder list
-  fn push_var(&mut self, sp: Span, a: Option<AtomID>, is: InferSort) -> bool {
+  fn push_var(&mut self, sp: Span, a: Option<AtomID>, (dummy, is): (bool, InferSort)) -> bool {
     if let Some(a) = a {
       let res = match self.vars.entry(a) {
-        Entry::Vacant(e) => {e.insert(is); false}
-        Entry::Occupied(mut e) => {e.insert(is); true}
+        Entry::Vacant(e) => {e.insert((dummy, is)); false}
+        Entry::Occupied(mut e) => {e.insert((dummy, is)); true}
       };
-      self.var_order.push((sp, Some(a), None));
+      if !dummy {self.var_order.push((sp, Some(a), None))}
       res
     } else {
-      self.var_order.push((sp, None, Some(is)));
+      if !dummy {self.var_order.push((sp, None, Some(is)))}
       false
     }
   }
@@ -187,9 +189,9 @@ impl<'a> ElabTerm<'a> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) => match self.lc.vars.get(&a) {
         None => Err(self.err(e, "variable not found")),
-        Some(&InferSort::Bound {sort, ..}) => Ok(sort),
-        Some(&InferSort::Reg {sort, ..}) => Ok(sort),
-        Some(InferSort::Unknown {..}) => panic!("finalized vars already"),
+        Some(&(_, InferSort::Bound {sort, ..})) => Ok(sort),
+        Some(&(_, InferSort::Reg {sort, ..})) => Ok(sort),
+        Some((_, InferSort::Unknown {..})) => panic!("finalized vars already"),
       },
       LispKind::List(es) if !es.is_empty() => {
         let a = es[0].as_atom().ok_or_else(|| self.err(&es[0], "expected an atom"))?;
@@ -204,10 +206,10 @@ impl<'a> ElabTerm<'a> {
 
 impl<'a> ElabTermMut<'a> {
   fn atom(&mut self, e: &LispVal, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
-    let is = self.lc.vars.entry(a).or_insert_with({
+    let is = &mut self.lc.vars.entry(a).or_insert_with({
       let fsp = &self.fsp;
-      move || InferSort::new(try_get_span(fsp, e))
-    });
+      move || (true, InferSort::new(try_get_span(fsp, e)))
+    }).1;
     match (is, tgt) {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.err(e, "expected a bound variable, got regular variable")),
@@ -283,20 +285,19 @@ impl BuildArgs {
     Some(())
   }
 
-  fn deps(&self, v: &Vec<AtomID>) -> u64 {
+  fn deps(&self, v: &[AtomID]) -> u64 {
     let mut ret = 0;
     for &a in v { ret |= self.map[&a] }
     ret
   }
 
-  fn push_var(&mut self, vars: &HashMap<AtomID, InferSort>,
+  fn push_var(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>,
     a: Option<AtomID>, is: &Option<InferSort>) -> Option<Option<EType>> {
-    match is.as_ref().unwrap_or_else(|| &vars[&a.unwrap()]) {
-      &InferSort::Bound {dummy: false, sort} => {
+    match is.as_ref().unwrap_or_else(|| &vars[&a.unwrap()].1) {
+      &InferSort::Bound {sort} => {
         self.push_bound(a)?;
         Some(Some(EType::Bound(sort)))
       },
-      &InferSort::Bound {dummy: true, ..} => Some(None),
       &InferSort::Reg {sort, ref deps} => {
         let n = self.deps(deps);
         if let Some(a) = a {self.map.insert(a, n);}
@@ -305,10 +306,19 @@ impl BuildArgs {
       InferSort::Unknown {..} => unreachable!(),
     }
   }
+  fn push_dummies(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>) -> Option<()> {
+    for (&a, is) in vars {
+      if let (false, InferSort::Bound {..}) = is {
+        self.push_bound(Some(a))?
+      }
+    }
+    Some(())
+  }
 
   fn expr_deps(&self, env: &Environment, e: &LispKind) -> u64 {
     e.unwrapped(|r| match r {
-      &LispKind::Atom(a) => self.map[&a],
+      &LispKind::Atom(a) => *self.map.get(&a).unwrap_or_else(|| // FIXME
+        panic!("map = {:?}\na = {:?} = {}", self.map, a, env.data[a].name)),
       LispKind::List(es) if !es.is_empty() =>
         if let Some(tid) = es[0].as_atom().and_then(|a| env.term(a)) {
           let ref tdef = env.terms[tid];
@@ -342,12 +352,12 @@ impl BuildArgs {
 }
 
 enum InferBinder {
-  Var(Option<AtomID>, InferSort),
+  Var(Option<AtomID>, (bool, InferSort)),
   Hyp(Option<AtomID>, LispVal),
 }
 
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
-  fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<InferSort> {
+  fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
     Ok(if lk.is_bound() {
@@ -356,27 +366,37 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           d.deps[0].start..d.deps.last().unwrap().end, "dependencies not allowed in curly binders"));
         *error = true;
       }
-      InferSort::Bound {dummy: lk == LocalKind::Dummy, sort}
+      (lk == LocalKind::Dummy, InferSort::Bound {sort})
     } else {
-      InferSort::Reg {
+      (false, InferSort::Reg {
         sort,
         deps: d.deps.iter().map(|&sp| {
           let y = self.env.get_atom(self.ast.span(sp));
-          self.lc.var(y, sp);
+          match self.lc.var(y, sp) {
+            (_, InferSort::Unknown {dummy, must_bound, ..}) =>
+              {*dummy = false; *must_bound = false}
+            (true, InferSort::Bound {..}) => {
+              self.report(ElabError::new_e(sp,
+                "regular variables cannot depend on dummy variables"));
+              *error = true;
+            }
+            _ => {}
+          }
           y
         }).collect()
-      }
+      })
     })
   }
 
   fn elab_binder(&mut self, error: &mut bool, sp: Option<Span>, lk: LocalKind, ty: Option<&Type>) -> Result<InferBinder> {
     let x = if lk == LocalKind::Anon {None} else {sp.map(|sp| self.env.get_atom(self.ast.span(sp)))};
     Ok(match ty {
-      None => InferBinder::Var(x, InferSort::Unknown {
+      None => InferBinder::Var(x, (lk == LocalKind::Dummy, InferSort::Unknown {
         src: sp.unwrap(),
         must_bound: lk.is_bound(),
+        dummy: lk == LocalKind::Dummy,
         sorts: vec![(None, self.lc.new_mvar(InferTarget::Unknown))].into_iter().collect()
-      }),
+      })),
       Some(Type::DepType(d)) => InferBinder::Var(x, self.elab_dep_type(error, lk, d)?),
       Some(&Type::Formula(f)) => {
         let e = self.parse_formula(f)?;
@@ -406,8 +426,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   fn finalize_vars(&mut self, dummy: bool) -> Vec<ElabError> {
     let mut errs = Vec::new();
     let mut newvars = Vec::new();
-    for (&a, is) in &mut self.lc.vars {
-      if let InferSort::Unknown {src, must_bound, ref sorts} = *is {
+    for (&a, (new, is)) in &mut self.lc.vars {
+      if let InferSort::Unknown {src, must_bound, dummy: d2, ref sorts} = *is {
         match if sorts.len() == 1 {
           sorts.keys().next().unwrap().ok_or_else(|| ElabError::new_e(src, "could not infer type"))
         } else {
@@ -435,12 +455,14 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
                 *m.lock().unwrap() = val;
               } else {unreachable!()}
             }
-            newvars.push((src, a));
-            *is = if dummy || must_bound {
-              InferSort::Bound {dummy: true, sort}
+            let new2 = if dummy || must_bound {
+              *is = InferSort::Bound {sort};
+              dummy && d2
             } else {
-              InferSort::Reg {sort, deps: vec![]}
-            }
+              *is = InferSort::Reg {sort, deps: vec![]};
+              true
+            };
+            if new2 && *new {*new = false; newvars.push((src, a))}
           }
           Err(e) => errs.push(e),
         }
@@ -480,7 +502,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         let ret = match &d.ty {
           None => None, // Err(ElabError::new_e(d.id, "type required for term declaration"))?,
           Some(Type::Formula(f)) => Err(ElabError::new_e(f.0, "sort expected"))?,
-          Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)? {
+          Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)?.1 {
             InferSort::Reg {sort, deps} => Some((ty.sort, sort, deps)),
             _ => unreachable!(),
           },
@@ -507,7 +529,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         for &(sp, a, ref is) in &self.lc.var_order {
           match ba.push_var(&self.lc.vars, a, is) {
             None => Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?,
-            Some(None) => (),
+            Some(None) => {}
             Some(Some(ty)) => args.push((a, ty)),
           }
         }
@@ -518,6 +540,11 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           },
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
+            // crate::server::log(format!("id: {}, vars: {:#?}\norder: {:#?}\nval: {}", // FIXME
+            //   self.print(&atom), self.lc.vars, self.lc.var_order, self.print(&val)));
+            if ba.push_dummies(&self.lc.vars).is_none() {
+              Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?
+            }
             let deps = ba.expr_deps(&self.env, &val);
             let val = {
               let mut de = Dedup::new(self.lc.var_order.len());
@@ -535,6 +562,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
                 }
                 let n = ba.deps(deps2);
                 if deps & !n != 0 {
+                  crate::server::log(format!("{} !!! {:#b} & ! {:#b} = {:#b}", self.print(&atom), deps, n, deps & !n));
                   return Err(ElabError::new_e(sp, format!("variables {{{}}} missing from dependencies",
                     deps2.iter().filter(|&a| deps & !ba.map[a] != 0)
                       .map(|&a| &self.data[a].name).format(", "))))
@@ -571,6 +599,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         if error {return Ok(())}
         let mut args = Vec::new();
         let mut ba = BuildArgs::default();
+        // crate::server::log(format!("id: {}, vars: {:#?}\norder: {:#?}",
+        //   self.print(&atom), self.lc.vars, self.lc.var_order));
         for &(sp, a, ref is) in &self.lc.var_order {
           match ba.push_var(&self.lc.vars, a, is) {
             None => Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?,
@@ -674,14 +704,14 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               vars.0.insert(a, vars.1);
               vars.1 *= 2;
             }
-            (InferSort::Bound {dummy: false, sort}, EType::Bound(sort))
+            (InferSort::Bound {sort}, EType::Bound(sort))
           }
           Some(vs) => {
             let (deps, n) = self.deps(fsp, &vars.0, vs)?;
             (InferSort::Reg {sort, deps}, EType::Reg(sort, n))
           }
         };
-        lc.push_var(sp!(ea), a, is);
+        lc.push_var(sp!(ea), a, (false, is));
         args.push((a, ty))
       } else {
         Err(ElabError::new_e(sp!(e),
@@ -741,7 +771,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
           let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
             format!("unknown sort '{}'", self.print(&s))))?;
-          if x != AtomID::UNDER {lc.vars.insert(x, InferSort::Bound {dummy: true, sort});}
+          if x != AtomID::UNDER {lc.vars.insert(x, (true, InferSort::Bound {sort}));}
         } else {Err(ElabError::new_e(sp!(e), "invalid dummy arguments"))?}
       }
       let mut de = Dedup::new(args.len());
@@ -769,10 +799,10 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     }
     let mut vars = (HashMap::new(), 1);
     let (mut lc, args) = self.binders(&fsp, sp, Uncons::from(es[1].clone()), &mut vars)?;
-    crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
+    // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(lc.var_order.len());
     let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
-    crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
+    // crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
     let mut is = Vec::new();
     for e in Uncons::from(es[2].clone()) {
       let mut u = Uncons::from(e.clone());
@@ -829,7 +859,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     res: Option<Option<(Dedup<ProofHash>, HashMap<AtomID, usize>, Option<LocalContext>, Vec<usize>, LispVal)>>) -> Result<()> {
     t.proof = res.map(|res| res.and_then(|(mut de, var_map, lc, is2, e)| {
       (|| -> Result<Option<Proof>> {
-        crate::server::log(format!("lc = {:?}", lc));
         let nh = NodeHasher {
           var_map,
           lc: lc.as_ref().unwrap_or(&self.lc),
