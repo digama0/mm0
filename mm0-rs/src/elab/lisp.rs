@@ -421,6 +421,7 @@ str_enum! {
     AddDecl: "add-decl!",
     AddTerm: "add-term!",
     AddThm: "add-thm!",
+    NewDummy: "dummy!",
     CheckProofs: "check-proofs",
     SetReporting: "set-reporting",
     RefineExtraArgs: "refine-extra-args",

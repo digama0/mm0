@@ -175,7 +175,7 @@ impl NodeHash for ExprHash {
         Some(&i) => ExprHash::Var(i),
         None => match nh.lc.vars.get(&a) {
           Some(&(true, InferSort::Bound {sort})) => ExprHash::Dummy(a, sort),
-          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found\n{:?}", nh.fe.data[a].name, backtrace::Backtrace::new())))?,
+          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
         }
       },
       LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
@@ -232,7 +232,7 @@ impl NodeHash for ProofHash {
           Some((_, _, p)) => return Ok(Err(f(p)?)),
           None => match nh.lc.vars.get(&a) {
             Some(&(true, InferSort::Bound {sort})) => ProofHash::Dummy(a, sort),
-            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found {:?}", nh.fe.data[a].name, backtrace::Backtrace::new())))?,
+            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
           }
         }
       },

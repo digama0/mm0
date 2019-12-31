@@ -26,6 +26,8 @@ do {
   (def (result) (hd (get-goals)))
   (def (later) @ match (get-goals)
     [(g . gs) (apply set-goals @ append gs @ list g)])
+  (def mvar-sort @ match-fn @ (mvar s _) s)
+  (def (report a) (def g (result)) (refine a) (print g))
   (def (atom-map . xs) (get! @ apply atom-map! xs))
   (def (lookup-fn xs) @ let ([m (apply atom-map xs)]) (fn k (apply lookup m k)))
   (def (atom-app . xs) (string->atom (apply string-append (map ->string xs))))
@@ -39,13 +41,15 @@ do {
   (def (get-proof x) @ match (get-decl x)
     [('theorem _ _ _ _ _ pf) (pf)]
     [_ (error "not a theorem")])
-  (def named @ match-fn*
-    [((? atom? d) es) (refine es) (scan (get-mvars) (list d) set!)]
-    [(ds es) (refine es) (scan (get-mvars) ds set!)]
-    [(es) (refine es)
-      (def n (ref! 1))
-      (scan (get-mvars) @ fn (v)
-        (set! v (atom-app "x" n)) (set! n {n + 1}))])
+  (def named
+    (def (assign-mvar m x) (set! m (dummy! x (mvar-sort m))))
+    @ match-fn*
+      [((? atom? d) es) (refine es) (scan (get-mvars) (list d) assign-mvar)]
+      [(ds es) (refine es) (scan (get-mvars) ds assign-mvar)]
+      [(es) (refine es)
+        (def n (ref! 1))
+        (scan (get-mvars) @ fn (v)
+          (assign-mvar v (atom-app "x" n)) (set! n {n + 1}))])
 
   (def eq-for @ lookup-fn '([wff iff] [nat eq] [set eqs]))
   (def nf-for @ lookup-fn '([wff nf] [nat nfn] [set nfs]))
@@ -84,7 +88,7 @@ do {
         (def rete '(im ,G (,(eq-for ret) (,df . ,es1) (,df . ,es2))))
         (match rest
           [() (add-thm! tgt bis hs rete)]
-          [(_ ds v) @ add-thm! tgt bis hs rete () @ fn ()
+          [(_ ds v) @ add-thm! tgt bis hs rete () ds @ fn ()
             (def ds (rmap ds @ match-fn @ (x s) (insert! ctx x (list s)) x))
             @ letrec (
               [preproof (match-fn
@@ -142,7 +146,7 @@ do {
     @ if (not (def? (get-decl tgt))) @ begin
     @ match (eqd-for t) [(? undef?)] @ eqd
     @ match (ded-to-thm eqd) [(? undef?)] @ (bis ret val)
-    (add-thm! tgt bis () ret () val))
+    (add-thm! tgt bis () ret () () val))
 
   (def (make-eqNd-thms df)
     @ match (get-decl df) @ (_ _ bis (ret _) . rest)
@@ -169,7 +173,7 @@ do {
               (,v1 ,v2 . ,es)
               (h . ,pp)) .
              ,(rmap data @ match-fn @ (b t1 t2 h es ps)
-              '(((,v ,s) . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((,(eqidd-for s) G ,v) . ,ps)))))]])
+              '(((,v ,s) . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((,(eqidd-for s) ,G ,v) . ,ps)))))]])
     (def xs @ join @ rmap bis @ match-fn [(and (_ _) e) (list e)] [_ ()])
     @ rmap (match (mk-bis bis) [(_ _ _ _ data) data]) @ match-fn @ (vs t1 t2 h es ps)
       (def xs1 (map hd xs))
@@ -198,11 +202,11 @@ do {
           (set! idx {idx + 1})
           (def tgt (atom-app base idx "d"))
           @ if (not (def? (get-decl tgt))) @ begin
-          (add-thm! tgt bis hs ret () (fn () val))
+          (add-thm! tgt bis hs ret () () val)
           (def tgt2 (atom-app base idx))
           @ if (not (def? (get-decl tgt2))) @ begin
           @ match (ded-to-thm tgt) [(? undef?)] @ (bis2 ret2 val2)
-          (add-thm! tgt2 bis2 () ret2 () val2)]
+          (add-thm! tgt2 bis2 () ret2 () () val2)]
       [_])
 
   (def derive-eq @ match-fn*
@@ -651,7 +655,7 @@ theorem sbeq1 (a b: nat x) (c: wff x): $ a = b -> ([a / x] c <-> [b / x] c) $ =
 '(!! aleqd y @ imeq1d eqeq2);
 theorem sbeq1d (G: wff x) (a b: nat x) (c: wff x) (h: $ G -> a = b $):
   $ G -> ([a / x] c <-> [b / x] c) $ = '(syl sbeq1 h);
-do { ((derive-eq) 'sb) };
+do ((derive-eq) 'sb);
 
 theorem sbeht (a: nat) (b c: wff x) (h: $ F/ x c $):
   $ A. x (x = a -> (b <-> c)) -> ([a / x] b <-> c) $ =
@@ -732,7 +736,7 @@ theorem eleq1d (h: $ G -> a = b $): $ G -> (a e. A <-> b e. A) $ = '(syl eleq1 h
 theorem eleq2d (h: $ G -> A == B $): $ G -> (a e. A <-> a e. B) $ = '(syl eleq2 h);
 @(register-eqd 'el) theorem eleqd (G a b A B) (h1: $ G -> a = b $) (h2: $ G -> A == B $):
   $ G -> (a e. A <-> b e. B) $ = '(bitrd (eleq1d h1) (eleq2d h2));
-do { ((derive-eq) 'eqs) };
+do ((derive-eq) 'eqs);
 
 theorem abeq (p q: wff x): $ A. x (p <-> q) -> {x | p} == {x | q} $ =
 '(!! iald y @ bitr4g elab elab @ ealeh (nfbi nfsb1 nfsb1) (bieqd sbq sbq));
@@ -1625,7 +1629,7 @@ theorem ledivmul1: $ c != 0 -> (a <= b // c <-> c * a <= b) $ =
 theorem ledivmul2: $ c != 0 -> (a <= b // c <-> a * c <= b) $ =
 '(syl6bb (leeq1 mulcom) ledivmul1);
 theorem ltdivmul1: $ b != 0 -> (a // b < c <-> a < b * c) $ =
-'(syl5bb ltnle @ syl6bbr ltnle @ noteqd @ledivmul1);
+'(syl5bb ltnle @ syl6bbr ltnle @ noteqd @ ledivmul1);
 theorem ltdivmul2: $ b != 0 -> (a // b < c <-> a < c * b) $ =
 '(syl6bb (lteq2 mulcom) ltdivmul1);
 

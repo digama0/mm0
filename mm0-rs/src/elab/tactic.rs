@@ -31,7 +31,7 @@ pub enum RStack {
 #[derive(Debug)]
 pub enum RState {
   Goals {gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
-  Finish(LispVal),
+  Finish,
   RefineProof {tgt: LispVal, p: LispVal},
   RefineExpr {tgt: InferTarget, e: LispVal},
   RefineApp {tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
@@ -49,7 +49,7 @@ impl EnvDisplay for RState {
     match self {
       RState::Goals {gs, es} => write!(f,
         "Goals {{gs: {}, es: {}}}", fe.to(gs.as_slice()), fe.to(es.as_slice())),
-      RState::Finish(e) => write!(f, "Finish({})", fe.to(e)),
+      RState::Finish => write!(f, "Finish"),
       RState::RefineProof {tgt, p} => write!(f,
         "RefineProof {{\n  tgt: {},\n  p: {}}}", fe.to(tgt), fe.to(p)),
       RState::RefineExpr {tgt, e} => write!(f,
@@ -209,6 +209,22 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     })
   }
 
+  fn coerce_term(&mut self, sp: Span, tgt: InferTarget, s: SortID, bd: bool, e: LispVal) -> Result<LispVal> {
+    let tgt = match tgt {
+      InferTarget::Unknown => return Ok(e),
+      InferTarget::Provable if self.sorts[s].mods.contains(Modifiers::PROVABLE) => return Ok(e),
+      InferTarget::Provable => *self.pe.coe_prov.get(&s).ok_or_else(||
+        ElabError::new_e(sp, format!("type error: expected provable, got {}", self.print(&s))))?,
+      InferTarget::Bound(_) if !bd => Err(ElabError::new_e(sp, "type error: expected bound var, got regular"))?,
+      InferTarget::Bound(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?,
+      InferTarget::Reg(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?,
+    };
+    if s == tgt {return Ok(e)}
+    let c = self.pe.coes.get(&s).and_then(|m| m.get(&tgt)).ok_or_else(||
+      ElabError::new_e(sp, format!("type error: expected {}, got {}", self.print(&tgt), self.print(&s))))?;
+    Ok(self.apply_coe(&Some(self.fspan(sp)), c, e))
+  }
+
   fn coerce_to(&mut self, sp: Span, tgt: LispVal, e: LispVal, p: LispVal) -> Result<LispVal> {
     Ok(LispKind::apply_conv(self.unify(sp, &tgt, &e)?, tgt, p))
   }
@@ -344,26 +360,26 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   ) -> Result<RefineResult> {
     let fsp = self.fspan(sp);
     loop {
-      // crate::server::log(format!("{}", self.print(&active)));
+      // log!("{}", self.print(&active));
       active = match active {
         RState::Goals {mut gs, mut es} => match es.next() {
-          None => {gv.extend(gs); RState::Finish(UNDEF.clone())}
+          None => {gv.extend(gs); RState::Finish}
           Some(p) => loop {
             if let Some(g) = gs.next() {
               if let Some(tgt) = g.goal_type() {
                 stack.push(RStack::Goals {g, gs, es});
                 break RState::RefineProof {tgt, p}
               }
-            } else {break RState::Finish(UNDEF.clone())}
+            } else {break RState::Finish}
           }
         },
-        RState::Finish(ret) => {
+        RState::Finish => {
           if !gv.is_empty() {
             if !self.lc.goals.is_empty() {gv.append(&mut self.lc.goals)}
             mem::swap(&mut self.lc.goals, gv);
           }
           self.lc.clean_mvars();
-          return Ok(RefineResult::Ret(ret))
+          return Ok(RefineResult::Ret(UNDEF.clone()))
         }
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App(sp, _, AtomID::QMARK, _) =>
@@ -398,7 +414,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           RefineExpr::Exact(p) => RState::Coerce {tgt, p},
         },
         RState::Ret(ret) => match stack.pop() {
-          None => RState::Finish(ret),
+          None => return Ok(RefineResult::Ret(ret)),
           Some(RStack::Goals {g, gs, es}) => {
             g.as_ref_(|e| *e = ret).unwrap();
             RState::Goals {gs, es}
@@ -436,37 +452,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
                 InferSort::Reg {sort, ..} => (sort, false),
                 InferSort::Unknown {..} => unreachable!(),
               };
-              let e = Arc::new(LispKind::Atom(a));
-              RState::Ret(match tgt {
-                InferTarget::Unknown => e,
-                InferTarget::Provable =>
-                  if self.sorts[sort].mods.contains(Modifiers::PROVABLE) {e}
-                  else {
-                    Err(ElabError::new_e(sp, format!(
-                      "type error: expected provable, got {}", self.sorts[sort].name)))?
-                  },
-                InferTarget::Bound(s) => {
-                  if !bd {Err(ElabError::new_e(sp, "type error: expected bound var, got regular"))?}
-                  let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
-                  if s == sort {e} else {
-                    Err(ElabError::new_e(sp, format!(
-                      "type error: expected {}, got {}", self.sorts[s].name, self.sorts[sort].name)))?
-                  }
-                }
-                InferTarget::Reg(s) => {
-                  let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
-                  if s == sort {e}
-                  else if let Some(c) = self.pe.coes.get(&sort).and_then(|m| m.get(&s)) {
-                    self.apply_coe(&Some(self.fspan(sp)), c, e)
-                  } else {
-                    Err(ElabError::new_e(sp, format!(
-                      "type error: expected {}, got {}", self.sorts[s].name, self.sorts[sort].name)))?
-                  }
-                }
-              })
-            } else if let Some(t) = self.term(a) {
-              if tgt.bound() {Err(ElabError::new_e(sp, format!(
-                "type error: expected bound var, got {}", self.print(&e))))?}
+              RState::Ret(self.coerce_term(sp, tgt, sort, bd, Arc::new(LispKind::Atom(a)))?)
+            } else if let Some(t) = if tgt.bound() {None} else {self.term(a)} {
               RState::RefineApp {tgt, t, u, args: vec![Arc::new(LispKind::Atom(a))]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
@@ -487,7 +474,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           RefineExpr::Exact(e) => RState::Ret(e),
         },
         RState::RefineApp {tgt: ret, t, mut u, mut args} => 'l: loop { // labeled block, not a loop
-          for (_, ty) in &self.env.terms[t].args[args.len() - 1..] {
+          let tdata = &self.env.terms[t];
+          for (_, ty) in &tdata.args[args.len() - 1..] {
             let tgt = self.type_target(ty);
             match u.next() {
               Some(e) => {
@@ -497,7 +485,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
               None => args.push(self.lc.new_mvar(tgt))
             }
           }
-          break RState::Ret(Arc::new(LispKind::List(args)))
+          let s = tdata.ret.0;
+          break RState::Ret(self.coerce_term(sp, ret, s, false, Arc::new(LispKind::List(args)))?)
         },
         RState::RefineArgs {sp, v, tgt, head, u} if u.exactly(0) =>
           RState::Ret(self.coerce_to(sp, tgt, v, head)?),
