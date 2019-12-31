@@ -320,7 +320,8 @@ annot = mSpan (symbol "@" >>
   liftA2 (fmap . \v s@(Span o _) -> (Annot v s, snd o)) lispVal spanStmt)
 
 doStmt :: Parser (Maybe (Span Stmt))
-doStmt = mSpan (kw "do" >> commit (braces (Do <$> many lispVal)))
+doStmt = mSpan (kw "do" >> commit (Do <$>
+  (braces (many lispVal) <|> (\x -> [x]) <$> lispVal)))
 
 importStmt :: Parser (Maybe (Span Stmt))
 importStmt = mSpan (kw "import" >> commit (Import <$> lexeme (span strLit)))

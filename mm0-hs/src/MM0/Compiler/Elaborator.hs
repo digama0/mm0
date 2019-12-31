@@ -182,12 +182,15 @@ addDecl rd vis dk rx@(px, _) x bis ret v = do
               return $ DAxiom pbs ((\(_, _, h) -> h) <$> hs) eret
           Just lv -> do
             when mm0 $ reportSpan rx ELWarning "(MM0 mode) theorem proofs not accepted"
-            fork <- forkElabM $ withTimeout px $
-              withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> pbs) $ do
-                forM_ hs $ \((o, _), on, e) -> forM_ on $ \n ->
-                  addSubproof n (sExprToLisp o e) (Atom False o n)
-                elabLisp eret lv
-            return $ DTheorem vis pbs ((\(_, v', h) -> (v', h)) <$> hs) eret fork
+            check <- eCheckProofs <$> get
+            if check then do
+              fork <- forkElabM $ withTimeout px $
+                withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> pbs) $ do
+                  forM_ hs $ \((o, _), on, e) -> forM_ on $ \n ->
+                    addSubproof n (sExprToLisp o e) (Atom False o n)
+                  elabLisp eret lv
+              return $ DTheorem vis pbs ((\(_, v', h) -> (v', h)) <$> hs) eret fork
+            else return $ DTheorem vis pbs ((\(_, v', h) -> (v', h)) <$> hs) eret mzero
       _ -> unimplementedAt px
     checkVarRefs >> return decl
   insertDecl x decl rd rx ("duplicate " <> T.pack (show dk) <> " declaration '" <> x <> "'")
@@ -739,6 +742,12 @@ parsePatt _ (Span _ (ANumber n)) = return $ unRef >=> \case Number n' | n == n' 
 parsePatt _ (Span _ (AString s)) = return $ unRef >=> \case String s' | s == s' -> return id; _ -> mzero
 parsePatt _ (Span _ (ABool b)) = return $ unRef >=> \case Bool b' | b == b' -> return id; _ -> mzero
 parsePatt ctx (Span _ (AList [Span _ (AAtom _ "quote"), e])) = parseQuotePatt ctx e
+parsePatt ctx (Span _ (AList [Span _ (AAtom _ "mvar"), e1, e2])) = liftM2 go (parsePatt ctx e1) (parsePatt ctx e2) where
+  go f g = unRef >=> \case
+    MVar _ o s bd -> liftM2 (flip (.)) (f $ Atom False o s) (g $ Bool bd)
+    _ -> mzero
+parsePatt ctx (Span _ (AList [Span _ (AAtom _ "goal"), e])) = go <$> parsePatt ctx e where
+  go f = unRef >=> \case Goal _ v -> f v; _ -> mzero
 parsePatt ctx (Span _ (AList (Span _ (AAtom _ "and") : es))) = go <$> mapM (parsePatt ctx) es where
   go [] _ = return id
   go (f:fs) v = liftM2 (flip (.)) (f v) (go fs v)
@@ -771,7 +780,7 @@ parseQuotePatt _ (Span _ (AString s)) = return $ unRef >=> \case String s' | s =
 parseQuotePatt _ (Span _ (ABool b))   = return $ unRef >=> \case Bool b' | b == b' -> return id; _ -> mzero
 parseQuotePatt ctx (Span _ (AList [Span _ (AAtom _ "unquote"), e])) = parsePatt ctx e
 parseQuotePatt ctx (Span _ (AList es)) = parseListPatt (parseQuotePatt ctx) es
-parseQuotePatt ctx (Span _ (ADottedList l es r)) = parseDottedListPatt (parsePatt ctx) l es r
+parseQuotePatt ctx (Span _ (ADottedList l es r)) = parseDottedListPatt (parseQuotePatt ctx) l es r
 parseQuotePatt ctx (Span _ (AFormula f)) = parseMath f >>= parseQExprPatt ctx
 
 parseQExprPatt :: LCtx -> QExpr -> ElabM (LispVal -> ElabM (LCtx -> LCtx))
@@ -1103,6 +1112,16 @@ initialBindings = [
       _ -> escapeSpan o "unknown decl kind"),
     ("add-term!", \o es -> Undef <$ lispAddTerm o es),
     ("add-thm!", \o es -> Undef <$ lispAddThm o es),
+    ("dummy!", \o es -> do
+      m <- tcVars <$> getTC
+      (px, x, s) <- case es of
+        [Atom _ px x, Atom _ _ s] -> return (px, x, s)
+        [Atom _ _ s] -> return $ go (1 :: Int) where
+          go n = if H.member x m then (fst o, x, s) else go (n+1) where
+            x = T.pack ('_' : show n)
+        _ -> escapeSpan o "invalid arguments"
+      modifyTC $ \tc -> tc {tcVars = H.insert x (PBound x s, True) m}
+      return $ Atom False px x),
     ("set-reporting", \o -> \case
       [Bool b] -> Undef <$ modifyReportMode (\_ -> ReportMode b b b)
       [Atom _ _ "info", Bool i] ->
@@ -1111,6 +1130,9 @@ initialBindings = [
         Undef <$ modifyReportMode (\(ReportMode i _ e) -> ReportMode i w e)
       [Atom _ _ "error", Bool e] ->
         Undef <$ modifyReportMode (\(ReportMode i w _) -> ReportMode i w e)
+      _ -> escapeSpan o "invalid arguments"),
+    ("check-proofs", \o -> \case
+      [Bool b] -> Undef <$ modify (\env -> env {eCheckProofs = b})
       _ -> escapeSpan o "invalid arguments"),
 
     -- redefinable configuration functions
@@ -1150,17 +1172,24 @@ cleanDummy :: Range -> LispVal -> ElabM (VarName, Sort)
 cleanDummy _ (List [Atom _ _ x, Atom _ _ s]) = return (x, s)
 cleanDummy o _ = escapeSpan o "invalid dummy arguments"
 
+cleanDummies :: Range -> LispVal -> ElabM [(VarName, Sort)]
+cleanDummies o (List ds) = mapM (cleanDummy o) ds
+cleanDummies o (AtomMap m) = mapM go (H.toList m) where
+  go (x, Atom _ _ s) = return (x, s)
+  go _ = escapeSpan o "invalid dummy arguments"
+cleanDummies o _ = escapeSpan o "invalid dummy arguments"
+
 lispTermDecl :: Range -> [LispVal] -> ElabM Decl
 lispTermDecl o [List bis, ret] =
   liftM2 DTerm (mapM (cleanBinder o) bis) (cleanDepType o ret)
-lispTermDecl o [List bis, ret, vis, List ds, val] = do
+lispTermDecl o [List bis, ret, vis, ds, val] = do
   bis' <- mapM (cleanBinder o) bis
   ret' <- cleanDepType o ret
   vis' <- cleanVis o vis
   DDef vis' bis' ret' <$> case val of
     List [] -> return Nothing
     _ -> do
-      ds' <- mapM (cleanDummy o) ds
+      ds' <- cleanDummies o ds
       v' <- cleanTerm o val
       return $ Just (ds', v')
 lispTermDecl o _ = escapeSpan o "invalid term decl arguments"
@@ -1173,11 +1202,14 @@ lispThmDecl o [List bis, List hs, ret, vis, val] = do
   hs' <- mapM (cleanHyp o) hs
   ret' <- cleanTerm o ret
   vis' <- cleanVis o vis
-  case val of
-    Proc f -> fmap (DTheorem vis' bis' hs' ret') $ forkElabM $
-      withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> bis') $
-        f o [] >>= cleanProofD o
-    _ -> DTheorem vis' bis' hs' ret' . return . Just <$> cleanProofD o val
+  check <- eCheckProofs <$> get
+  if check then
+    case val of
+      Proc f -> fmap (DTheorem vis' bis' hs' ret') $ forkElabM $
+        withTC (H.fromList $ (\bi -> (binderName bi, (bi, False))) <$> bis') $
+          f o [] >>= cleanProofD o
+      _ -> DTheorem vis' bis' hs' ret' . return . Just <$> cleanProofD o val
+  else return $ DTheorem vis' bis' hs' ret' mzero
 lispThmDecl o _ = escapeSpan o "invalid theorem decl arguments"
 
 addContext :: Range -> T.Text -> ElabM a -> ElabM a
@@ -1222,55 +1254,16 @@ elabLisp t e@(Span os@(o, _) _) = do
       reportAt o' ELError $ render' $ "|-" <+> doc pp
     _ -> return ()
   unless (V.null gs') mzero
-  cleanProofD os (Ref g)
+  p <- cleanProof os (Ref g)
+  m <- tcVars <$> getTC
+  let go (x, (PBound _ s, True)) = Just (x, s)
+      go _ = Nothing
+  return (mapMaybe go (H.toList m), p)
 
 cleanProofD :: Range -> LispVal -> ElabM ([(VarName, Sort)], Proof)
-cleanProofD o e = addContext o ("while cleaning " <> T.pack (show e)) $ do
-  p <- cleanProof o e
-  m <- execStateT (inferDummiesProof o p) M.empty
-  return (M.toList m, p)
-
-inferDummiesProof :: Range -> Proof -> StateT (M.Map VarName Sort) ElabM ()
-inferDummiesProof _ (PHyp _) = return ()
-inferDummiesProof o (PThm t es ps) = do
-  lift (try (now >>= getThm t)) >>= \case
-    Nothing -> lift $ escapeSpan o $ "could not find theorem " <> t
-    Just (_, bis, _, _) -> zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
-  mapM_ (inferDummiesProof o) ps
-inferDummiesProof o (PConv _ c p) = inferDummiesConv o Nothing c >> inferDummiesProof o p
-inferDummiesProof o (PLet _ p1 p2) = inferDummiesProof o p1 >> inferDummiesProof o p2
-inferDummiesProof _ PSorry = return ()
-
-inferDummiesConv :: Range -> Maybe Sort -> Conv -> StateT (M.Map VarName Sort) ElabM ()
-inferDummiesConv o s (CVar v) = inferDummiesVar o s v
-inferDummiesConv o _ (CApp t cs) = do
-  lift (try (now >>= getTerm t)) >>= \case
-    Nothing -> lift $ escapeSpan o $ "could not find term " <> t
-    Just (_, bis, _, _) -> zipWithM_ (inferDummiesConv o . Just . binderSort) bis cs
-inferDummiesConv o s (CSym c) = inferDummiesConv o s c
-inferDummiesConv o s (CUnfold t es _ c) = do
-  lift (try (now >>= getTerm t)) >>= \case
-    Nothing -> lift $ escapeSpan o $ "could not find term " <> t
-    Just (_, bis, _, _) -> zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
-  inferDummiesConv o s c
-
-inferDummiesExpr :: Range -> Maybe Sort -> SExpr -> StateT (M.Map VarName Sort) ElabM ()
-inferDummiesExpr o s (SVar v) = inferDummiesVar o s v
-inferDummiesExpr o _ (App t es) = do
-  lift (try (now >>= getTerm t)) >>= \case
-    Nothing -> lift $ escapeSpan o $ "could not find term " <> t
-    Just (_, bis, _, _) -> zipWithM_ (inferDummiesExpr o . Just . binderSort) bis es
-
-inferDummiesVar :: Range -> Maybe Sort -> VarName -> StateT (M.Map VarName Sort) ElabM ()
-inferDummiesVar o s v =
-  H.lookup v . tcVars <$> lift getTC >>= \case
-    Just (_, False) -> return ()
-    _ -> case s of
-      Nothing -> lift $ escapeSpan o $ "cannot infer type for " <> v
-      Just s' -> gets (M.lookup v) >>= \case
-        Nothing -> modify (M.insert v s')
-        Just s2 -> unless (s' == s2) $ lift $ escapeSpan o $
-          "inferred two types " <> s' <> ", " <> s2 <> " for " <> v
+cleanProofD o (List [ds, p]) = addContext o ("while cleaning " <> T.pack (show p)) $
+  liftM2 (,) (cleanDummies o ds) (cleanProof o p)
+cleanProofD o _ = escapeSpan o "invalid proof format"
 
 cleanProof :: Range -> LispVal -> ElabM Proof
 cleanProof o (Ref g) = getRef g >>= \case

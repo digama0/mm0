@@ -287,6 +287,8 @@ Some expressions have special behavior when evaluated; these roughly correspond 
     * `(or p1 ... pn)` succeeds if any of the patterns match, and it uses all bindings from the successes. Results are unspecified if the patterns do not all bind the same variables.
     * `(not p1 ... pn)` succeeds if none of the patterns match, and binds nothing.
     * `(? pred p1 ... pn)` succeeds if all of the patterns `p1`, ..., `pn` match, and `(pred v)` evaluates to a truthy value where `v` is the value being matched. `pred` should evaluate to a unary predicate *in the context of the match expression*; bindings from the match are not available when the predicate is evaluated.
+    * `(mvar s bd)` matches a metavariable with sort `s` and boundedness `bd` (see the arguments to `mvar!`); `(mvar)` matches a metavariable with unconstrained target.
+    * `(goal p)` matches a goal with target `p`.
 
 * The `match-fn` and `match-fn*` keywords are similar to `match`, but define functions instead of matching an input argument immediately. `(match-fn clauses)` is equivalent to `(fn (x) (match x clauses))`, and `(match-fn* clauses)` is equivalent to `(fn x (match x clauses))`.
 * `focus` is a tactic that is a syntax form because it does some preprocessing before evaluating its arguments (which is not something a regular function can do). See [Elaboration](#elaboration) for more details.
@@ -461,6 +463,10 @@ MM0-specific builtin functions
 
 * `(set-timeout n)` sets the timeout for running individual theorems and `do` blocks to `n` milliseconds. The default is 5 seconds.
 
+* `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`) error reporting for error type `type`, which can be `'error`, `'info` or `'warn`. (Compilation will still be aborted if there are errors, even if the display is suppressed.) `(set-reporting b)` will set the error reporting to `b` for all error types.
+
+* `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.
+
 * `(mvar? e)` returns `#t` if `e` is an unsolved metavariable value. *Note:* Holes in expressions are *not* represented as raw metavariables, they are ref-cells to metavariables. So to test if a metavariable has not been assigned you can use `(mvar? (get! e))`.
 
 * Similarly, `(goal? e)` returns `#t` if `e` is an unsolved goal expression, and `(goal? (get! e))` checks if a goal reference has not been solved.
@@ -510,11 +516,11 @@ MM0-specific builtin functions
 
   * `('term x bis ret)`, where `x` is the declaration name (same as the input), `bis` is a list of binders, and `ret` is a type. A bound variable binder `{x: set}` is represented as `'[x set]`, and a regular variable `(ph: wff x)` is represented as `'[ph set (x)]`. The third element of the list is always present but possibly empty for regular variables. The return type `ret` similarly has the form `(s xs)` where `s` is the sort and `xs` is the list of dependent variables.
 
-  * `('def x bis ret vis ds val)`. `x`, `bis` and `ret` have the same form as in the `term` case. `vis` is one of  `'local`, `'abstract`, `'pub` or `()`, where the empty list represents the default visibility. `ds` is a list of dummy variables such as `[x set]` in the same format as the binders. `val` is either `()` indicating that a definition has not been provided, or a term s-expression.
+  * `('def x bis ret vis ds val)`. `x`, `bis` and `ret` have the same form as in the `term` case. `vis` is one of  `'local`, `'abstract`, `'pub` or `()`, where the empty list represents the default visibility. `ds` is a list of dummy variables such as `[x set]` in the same format as the binders, or an atom map mapping `x` to `set` and so on. `val` is either `()` indicating that a definition has not been provided, or a term s-expression.
 
   * `('axiom x bis hyps ret)`, where `x` is the declaration name, `bis` are the bound and regular variables, `hyps` is a list of `[h hyp]` pairs where `hyp` is a term s-expression (`h` will always be `_`), and `ret` is also a term s-expression.
 
-  * `('theorem x bis hyps ret vis vtask)`, where `x`, `bis`, `hyps` and `ret` have the same format as in `axiom`, `vis` is the visibility in the same format as in `def`, and `vtask` is a thunk that will return the proof s-expression when called.
+  * `('theorem x bis hyps ret vis vtask)`, where `x`, `bis`, `hyps` and `ret` have the same format as in `axiom`, `vis` is the visibility in the same format as in `def`, and `vtask` is a thunk that will return a list `(ds proof)` where `ds` is the list or atom map of dummy variables, and `proof` is the proof s-expression. `vtask` can also have the form `(ds proof)` itself.
 
 * `(add-decl! decl-data ...)` adds a new declaration, as if a new `def` or `theorem` declaration was created. This does not do any elaboration - all information is expected to be fully elaborated. The input format is the same as the output format of `get-decl`. For example, `(add-decl! 'term 'foo '([_ wff ()]) 'wff)` creates a new term `term foo: wff > wff;`.
 
@@ -522,6 +528,8 @@ MM0-specific builtin functions
   * `(add-term! x bis ret vis ds val)` is the same as `(add-decl! 'def x bis ret vis ds val)`.
   * `(add-thm! x bis hyps ret)` is the same as `(add-decl! 'axiom x bis hyps ret)`.
   * `(add-thm! x bis hyps ret vis vtask)` is the same as `(add-decl! 'theorem x bis hyps ret vis vtask)`.
+
+* `(dummy! x s)` produces a new dummy variable called `x` with sort `s`, and returns `x`; `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
 
 Compilation
 ===

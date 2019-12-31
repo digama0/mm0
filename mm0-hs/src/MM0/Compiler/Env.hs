@@ -318,6 +318,7 @@ data ThmCtx = ThmCtx {
 
 data Env = Env {
   eTimeout :: Int,
+  eCheckProofs :: Bool,
   eReportMode :: ReportMode,
   eLispData :: VD.IOVector LispVal,
   eLispNames :: H.HashMap Ident (Maybe (FilePath, Range, Range), Int),
@@ -331,7 +332,7 @@ data Env = Env {
   eThmCtx :: Maybe ThmCtx }
 
 instance Default Env where
-  def = Env 5000000 def undefined H.empty def H.empty def H.empty def def undefined def
+  def = Env 5000000 True def undefined H.empty def H.empty def H.empty def def undefined def
 
 data ElabFuncs = ElabFuncs {
   efMM0 :: Bool,

@@ -23,4 +23,5 @@ do {
   ((fn (a) ''a) 1)             -- (quote a)
   ((fn (a) '',a) 1)            -- (quote 1)
   ((fn (a) '(,a . ,a)) 1)      -- (1 . 1)
+  (cons (list (def x 2) x) (x))-- ((2) . 5)
 };

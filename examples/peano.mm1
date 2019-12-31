@@ -88,7 +88,7 @@ do {
         (def rete '(im ,G (,(eq-for ret) (,df . ,es1) (,df . ,es2))))
         (match rest
           [() (add-thm! tgt bis hs rete)]
-          [(_ ds v) @ add-thm! tgt bis hs rete () ds @ fn ()
+          [(_ ds v) @ add-thm! tgt bis hs rete () @ fn () @ list ds
             (def ds (rmap ds @ match-fn @ (x s) (insert! ctx x (list s)) x))
             @ letrec (
               [preproof (match-fn
@@ -122,7 +122,7 @@ do {
     @ match (get-decl t) @ (_ _ ((G 'wff ()) . bis) hs ('im _ ret) ...)
     @ if (apply and @ rmap bis @ match-fn [(_ _ ()) #t] [_ #f]) @ begin
     (def rete @ foldr hs ret @ match-fn* [((_ ('im _ h)) r) '(im ,h ,r)])
-    @ list bis rete @ fn ()
+    @ list bis rete @ fn () @ list ()
     @ letrec (
       [(exps l r) @ match r
         [('im e1 e2) (list 'exp l e1 e2 (exps (list 'an l e1) e2))]
@@ -146,7 +146,7 @@ do {
     @ if (not (def? (get-decl tgt))) @ begin
     @ match (eqd-for t) [(? undef?)] @ eqd
     @ match (ded-to-thm eqd) [(? undef?)] @ (bis ret val)
-    (add-thm! tgt bis () ret () () val))
+    (add-thm! tgt bis () ret () val))
 
   (def (make-eqNd-thms df)
     @ match (get-decl df) @ (_ _ bis (ret _) . rest)
@@ -202,11 +202,11 @@ do {
           (set! idx {idx + 1})
           (def tgt (atom-app base idx "d"))
           @ if (not (def? (get-decl tgt))) @ begin
-          (add-thm! tgt bis hs ret () () val)
+          (add-thm! tgt bis hs ret () '(() ,val))
           (def tgt2 (atom-app base idx))
           @ if (not (def? (get-decl tgt2))) @ begin
           @ match (ded-to-thm tgt) [(? undef?)] @ (bis2 ret2 val2)
-          (add-thm! tgt2 bis2 () ret2 () () val2)]
+          (add-thm! tgt2 bis2 () ret2 () val2)]
       [_])
 
   (def derive-eq @ match-fn*
