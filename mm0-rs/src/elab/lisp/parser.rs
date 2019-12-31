@@ -21,7 +21,7 @@ pub enum IR {
   If(Box<(IR, IR, IR)>),
   Focus(Span, Box<[IR]>),
   Def(usize, Option<(Span, AtomID)>, Box<IR>),
-  Eval(Box<[IR]>),
+  Eval(bool, Box<[IR]>),
   Lambda(Span, usize, ProcSpec, Arc<IR>),
   Match(Span, Box<IR>, Box<[Branch]>),
 }
@@ -42,7 +42,8 @@ impl<'a> EnvDisplay for IR {
       IR::Focus(_, es) => write!(f, "(focus {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
       IR::Def(n, a, e) => write!(f, "(def {}:{} {})",
         n, fe.to(&a.map_or(AtomID::UNDER, |a| a.1)), fe.to(e)),
-      IR::Eval(es) => write!(f, "(begin {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      IR::Eval(false, es) => write!(f, "(def _ {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      IR::Eval(true, es) => write!(f, "(begin {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
       IR::Lambda(_, n, sp, e) => {
         write!(f, "(lambda {}:", n)?;
         match sp {
@@ -61,8 +62,8 @@ impl IR {
     let es: Box<[IR]> = es.into();
     match es.len() {
       0 => IR::Const(UNDEF.clone()),
-      1 => es.into_vec().drain(..).next().unwrap(), // why is this so hard
-      _ => IR::Eval(es)
+      1 => es.into_vec().swap_remove(0),
+      _ => IR::Eval(true, es)
     }
   }
 
@@ -171,7 +172,7 @@ impl Remap<LispRemapper> for IR {
       IR::If(e) => IR::If(e.remap(r)),
       IR::Focus(sp, e) => IR::Focus(*sp, e.remap(r)),
       &IR::Def(n, a, ref e) => IR::Def(n, a.map(|(sp, a)| (sp, a.remap(r))), e.remap(r)),
-      IR::Eval(e) => IR::Eval(e.remap(r)),
+      &IR::Eval(b, ref e) => IR::Eval(b, e.remap(r)),
       &IR::Lambda(sp, n, spec, ref e) => IR::Lambda(sp, n, spec, e.remap(r)),
       &IR::Match(sp, ref e, ref br) => IR::Match(sp, e.remap(r), br.remap(r)),
     }
@@ -449,14 +450,14 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let v = self.def_ir(sp, e2, stk)?;
         if x == AtomID::UNDER {
-          cs.push(IR::Eval(v.into()))
+          cs.push(IR::Eval(false, v.into()))
         } else {
           cs.push(IR::Def(self.ctx.push(x), Some((sp, x)), IR::eval(v).into()))
         }
       }
     }
     for e in &es[1..] { cs.push(self.expr(false, e)?) }
-    Ok(IR::Eval(cs.into()))
+    Ok(IR::Eval(true, cs.into()))
   }
 
   fn list_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
@@ -617,7 +618,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
       Ok(f(m))
     } else {
       code.push(f(m));
-      Ok(IR::Eval(code.into()))
+      Ok(IR::Eval(true, code.into()))
     }
   }
 
@@ -689,7 +690,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
             Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
           Err(Syntax::Define) =>
             Ok(match self.def(&es[1], &es[2..])? {
-              (_, AtomID::UNDER, cs) => IR::eval(cs),
+              (_, AtomID::UNDER, cs) => IR::Eval(false, cs.into()),
               (sp, x, cs) => {
                 restore = None;
                 IR::Def(self.ctx.push(x), Some((sp, x)), IR::eval(cs).into())

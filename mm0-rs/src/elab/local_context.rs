@@ -487,6 +487,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
+    // log!("elab {}", self.ast.span(d.id));
     self.lc.clear();
     for bi in &d.bis {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
@@ -667,6 +668,32 @@ pub struct AwaitingProof {
   pub is: Vec<usize>,
 }
 
+
+fn dummies(fe: FormatEnv, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) -> Result<()> {
+  macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+  let mut dummy = |x: AtomID, es: &LispKind| -> Result<()> {
+    let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
+    let sort = fe.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
+      format!("unknown sort '{}'", fe.to(&s))))?;
+    if x != AtomID::UNDER {lc.vars.insert(x, (true, InferSort::Bound {sort}));}
+    Ok(())
+  };
+  e.unwrapped(|r| {
+    if let LispKind::AtomMap(m) = r {
+      for (&a, e) in m {dummy(a, e)?}
+    } else {
+      for e in Uncons::from(e.clone()) {
+        let mut u = Uncons::from(e.clone());
+        if let (Some(ex), Some(es)) = (u.next(), u.next()) {
+          let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
+          dummy(x, &es)?;
+        } else {Err(ElabError::new_e(sp!(e), "invalid dummy arguments"))?}
+      }
+    }
+    Ok(())
+  })
+}
+
 impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   fn deps(&self, fsp: &FileSpan, vars: &HashMap<AtomID, u64>, vs: LispVal) -> Result<(Vec<AtomID>, u64)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
@@ -732,31 +759,6 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     }
   }
 
-  fn dummies(&self, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) -> Result<()> {
-    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    let mut dummy = |x: AtomID, es: &LispKind| -> Result<()> {
-      let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
-      let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
-        format!("unknown sort '{}'", self.print(&s))))?;
-      if x != AtomID::UNDER {lc.vars.insert(x, (true, InferSort::Bound {sort}));}
-      Ok(())
-    };
-    e.unwrapped(|r| {
-      if let LispKind::AtomMap(m) = r {
-        for (&a, e) in m {dummy(a, e)?}
-      } else {
-        for e in Uncons::from(e.clone()) {
-          let mut u = Uncons::from(e.clone());
-          if let (Some(ex), Some(es)) = (u.next(), u.next()) {
-            let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
-            dummy(x, &es)?;
-          } else {Err(ElabError::new_e(sp!(e), "invalid dummy arguments"))?}
-        }
-      }
-      Ok(())
-    })
-  }
-
   pub fn add_term(&mut self, fsp: FileSpan, sp: Span, es: &[LispVal]) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     if es.len() != 3 && es.len() != 6 {Err(ElabError::new_e(sp, "expected 3 or 6 arguments"))?}
@@ -789,7 +791,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       if !vis.allowed_visibility(DeclKind::Def) {
         return Err(ElabError::new_e(sp!(evis), "invalid modifiers for this keyword"))
       }
-      self.dummies(&fsp, &mut lc, &es[4])?;
+      dummies(self.format_env(), &fsp, &mut lc, &es[4])?;
       let mut de = Dedup::new(args.len());
       let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
       let i = de.dedup(&nh, &es[5])?;
@@ -808,7 +810,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
 
   pub fn add_thm(&mut self, fsp: FileSpan, sp: Span, es: &[LispVal]) -> Result<Option<(AwaitingProof, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    if es.len() != 4 && es.len() != 7 {Err(ElabError::new_e(sp, "expected 4 or 7 arguments"))?}
+    if es.len() != 4 && es.len() != 6 {Err(ElabError::new_e(sp, "expected 4 or 6 arguments"))?}
     let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(sp, "expected an atom"))?;
     if self.data[x].decl.is_some() {
       Err(ElabError::new_e(sp, format!("duplicate axiom/theorem declaration '{}'", self.print(&x))))?
@@ -859,13 +861,12 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             lc.add_proof(a, ty, p);
           }
         }
-        self.dummies(&fsp, &mut lc, &es[5])?;
-        if es[6].is_proc() {
+        if es[5].is_proc() {
           return Ok(Some((
             AwaitingProof {t, de, var_map, lc, is: is2},
-            es[6].clone())))
+            es[5].clone())))
         }
-        Some((de, var_map, Some(lc), is2, es[6].clone()))
+        Some((de, var_map, Some(lc), is2, es[5].clone()))
       } else {None})
     } else {None};
     self.finish_add_thm(fsp, sp, t, res)?;
@@ -874,15 +875,19 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
 
   pub fn finish_add_thm(&mut self, fsp: FileSpan, sp: Span, mut t: Thm,
     res: Option<Option<(Dedup<ProofHash>, HashMap<AtomID, usize>, Option<LocalContext>, Vec<usize>, LispVal)>>) -> Result<()> {
-    t.proof = res.map(|res| res.and_then(|(mut de, var_map, lc, is2, e)| {
+    macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
+    t.proof = res.map(|res| res.and_then(|(mut de, var_map, mut lc, is2, e)| {
       (|| -> Result<Option<Proof>> {
-        let nh = NodeHasher {
-          var_map,
-          lc: lc.as_ref().unwrap_or(&self.lc),
-          fe: self.format_env(),
-          fsp: fsp.clone()
+        let mut u = Uncons::from(e.clone());
+        let (ds, pf) = match (u.next(), u.next(), u.exactly(0)) {
+          (Some(ds), Some(pf), true) => (ds, pf),
+          _ => Err(ElabError::new_e(sp!(e), "bad proof format, expected (ds proof)"))?
         };
-        let ip = de.dedup(&nh, &e)?;
+        let lc = lc.as_mut().unwrap_or(&mut self.lc);
+        let fe = FormatEnv {source: &self.ast.source, env: &self.env};
+        dummies(fe, &fsp, lc, &ds)?;
+        let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
+        let ip = de.dedup(&nh, &pf)?;
         let Builder {mut ids, heap} = self.to_builder(&de)?;
         let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
         let head = ids[ip].take();

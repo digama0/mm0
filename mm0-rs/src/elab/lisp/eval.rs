@@ -24,7 +24,7 @@ enum Stack<'a> {
   App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
   AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
-  Def(&'a Option<(Span, AtomID)>),
+  Def(Option<&'a Option<(Span, AtomID)>>),
   Eval(std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
@@ -53,7 +53,8 @@ impl<'a> EnvDisplay for Stack<'a> {
         fe.to(e), fe.to(es), fe.to(irs.as_slice())),
       Stack::AppHead(_, _, e) => write!(f, "(_ {})", fe.to(e)),
       &Stack::If(e1, e2) => write!(f, "(if _ {} {})", fe.to(e1), fe.to(e2)),
-      &Stack::Def(a) => write!(f, "(def {} _)", fe.to(&a.map_or(AtomID::UNDER, |a| a.1))),
+      &Stack::Def(Some(&Some((_, a)))) => write!(f, "(def {} _)", fe.to(&a)),
+      Stack::Def(_) => write!(f, "(def _ _)"),
       Stack::Eval(es) => write!(f, "(begin\n  _ {})", fe.to(es.as_slice())),
       Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
       &Stack::TestPattern(_, ref e, ref bs, br, _, _) => write!(f,
@@ -1001,7 +1002,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
   }
 
   fn proc_pos(&self, sp: Span) -> ProcPos {
-    if let Some(Stack::Def(&Some((sp, x)))) = self.stack.last() {
+    if let Some(Stack::Def(Some(&Some((sp, x))))) = self.stack.last() {
       ProcPos::Named(self.fspan(sp), x)
     } else {
       ProcPos::Unnamed(self.fspan(sp))
@@ -1075,10 +1076,12 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
             push!(Focus(gs); Refines(sp, irs.iter()))
           }
           &IR::Def(n, ref x, ref val) => {
+            if self.ctx.len() != n {log!("!!!")}
             assert!(self.ctx.len() == n);
-            push!(Def(x); Eval(val))
+            push!(Def(Some(x)); Eval(val))
           }
-          IR::Eval(es) => {
+          IR::Eval(keep, es) => {
+            if !keep {self.stack.push(Stack::Def(None))}
             let mut it = es.iter();
             match it.next() {
               None => State::Ret(UNDEF.clone()),
@@ -1111,24 +1114,32 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
           Some(Stack::App2(sp1, sp2, f, mut vec, it)) => { vec.push(ret); State::App(sp1, sp2, f, vec, it) }
           Some(Stack::AppHead(sp1, sp2, e)) => State::App(sp1, sp2, ret, vec![e], [].iter()),
           Some(Stack::If(e1, e2)) => State::Eval(if ret.truthy() {e1} else {e2}),
-          Some(Stack::Def(x)) => match self.stack.pop() {
-            None => {
-              if let &Some((sp, a)) = x {
-                self.data[a].lisp = Some((Some(self.fspan(sp)), ret));
+          Some(Stack::Def(x)) => if let Some(s) = self.stack.pop() {
+            macro_rules! push_ret {($e:expr) => {{
+              if x.is_some() {
+                self.stack.push(Stack::Drop(self.ctx.len()));
+                self.ctx.push(ret);
               }
-              State::Ret(UNDEF.clone())
-            },
-            Some(s) => match s {
-              Stack::App2(sp1, sp2, f, vec, it) =>
-                push!(Drop(self.ctx.len()); {self.ctx.push(ret); App(sp1, sp2, f, vec, it)}),
-              Stack::Eval(mut it) => match it.next() {
-                None => State::Ret(UNDEF.clone()),
-                Some(e) => push!(Drop(self.ctx.len()), Eval(it); {self.ctx.push(ret); Eval(e)})
+              $e
+            }}}
+            match s {
+              Stack::App(sp1, sp2, es) => match es.split_first() {
+                None => State::App(sp1, sp2, UNDEF.clone(), vec![], [].iter()),
+                Some((f, es)) => push_ret!(push!(App(sp1, sp2, es); Eval(f))),
               },
-              Stack::Refines(sp, _, it) =>
-                push!(Drop(self.ctx.len()); {self.ctx.push(ret); Refines(sp, it)}),
+              Stack::App2(sp1, sp2, f, vec, it) => push_ret!(State::App(sp1, sp2, f, vec, it)),
+              Stack::Eval(mut it) => push_ret!(match it.next() {
+                None => State::Ret(UNDEF.clone()),
+                Some(e) => push!(Eval(it); Eval(e))
+              }),
+              Stack::Refines(sp, _, it) => push_ret!(State::Refines(sp, it)),
               _ => {self.stack.push(s); State::Ret(UNDEF.clone())}
             }
+          } else {
+            if let Some(&Some((sp, a))) = x {
+              self.data[a].lisp = Some((Some(self.fspan(sp)), ret));
+            }
+            State::Ret(UNDEF.clone())
           },
           Some(Stack::Eval(mut it)) => match it.next() {
             None => State::Ret(ret),
