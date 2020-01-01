@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::fmt;
 use std::convert::TryInto;
 use std::iter::FromIterator;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
 use std::hash::Hash;
@@ -363,6 +364,9 @@ impl<R, A: Remap<R>> Remap<R> for Vec<A> {
 }
 impl<R, A: Remap<R>> Remap<R> for Box<A> {
   fn remap(&self, r: &mut R) -> Self { Box::new(self.deref().remap(r)) }
+}
+impl<R, A: Remap<R>> Remap<R> for Rc<A> {
+  fn remap(&self, r: &mut R) -> Self { Rc::new(self.deref().remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Arc<A> {
   fn remap(&self, r: &mut R) -> Self { Arc::new(self.deref().remap(r)) }

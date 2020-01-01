@@ -4,7 +4,7 @@ use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use super::environment::AtomID;
 use super::*;
-use super::lisp::{LispVal, LispKind, Uncons, UNDEF, InferTarget, print::FormatEnv};
+use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
 
@@ -79,7 +79,7 @@ impl<H: NodeHash> Dedup<H> {
   }
 
   pub fn dedup(&mut self, nh: &NodeHasher, e: &LispVal) -> Result<usize> {
-    let r = LispKind::unwrapped_arc(e);
+    let r = e.unwrapped_arc();
     let p: *const _ = &*r;
     Ok(match self.prev.get(&p) {
       Some(&n) => {self.vec[n].1 = true; n}
@@ -331,7 +331,7 @@ pub struct Subst<'a> {
 impl<'a> Subst<'a> {
   pub fn new(lc: &'a mut LocalContext, env: &'a Environment,
       heap: &'a [ExprNode], mut args: Vec<LispVal>) -> Subst<'a> {
-    args.resize(heap.len(), UNDEF.clone());
+    args.resize(heap.len(), LispVal::undef());
     Subst {lc, env, heap, subst: args}
   }
 
@@ -346,9 +346,9 @@ impl<'a> Subst<'a> {
       }
       ExprNode::Dummy(_, s) => self.lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom)),
       ExprNode::App(t, ref es) => {
-        let mut args = vec![Arc::new(LispKind::Atom(self.env.terms[t].atom))];
+        let mut args = vec![LispVal::atom(self.env.terms[t].atom)];
         args.extend(es.iter().map(|e| self.subst(e)));
-        Arc::new(LispKind::List(args))
+        LispVal::list(args)
       }
     }
   }

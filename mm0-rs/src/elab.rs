@@ -15,7 +15,7 @@ use futures::channel::oneshot::{Receiver, channel};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
 use environment::*;
 use environment::Literal as ELiteral;
-use lisp::{LispVal, LispKind, FALSE};
+use lisp::LispVal;
 pub use {environment::Environment, local_context::LocalContext};
 pub use crate::parser::ErrorLevel;
 use crate::util::*;
@@ -157,9 +157,9 @@ impl Elaborator {
   fn name_of(&mut self, stmt: &Stmt) -> LispVal {
     match &stmt.k {
       StmtKind::Annot(_, s) => self.name_of(s),
-      StmtKind::Decl(d) => Arc::new(LispKind::Atom(self.env.get_atom(self.ast.span(d.id)))),
-      &StmtKind::Sort(id, _) => Arc::new(LispKind::Atom(self.env.get_atom(self.ast.span(id)))),
-      _ => FALSE.clone(),
+      StmtKind::Decl(d) => LispVal::atom(self.env.get_atom(self.ast.span(d.id))),
+      &StmtKind::Sort(id, _) => LispVal::atom(self.env.get_atom(self.ast.span(id))),
+      _ => LispVal::bool(false),
     }
   }
 

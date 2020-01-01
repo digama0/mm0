@@ -98,10 +98,10 @@ impl Job {
     true
   }
 
-  async fn run<'a>(self, server: ServerRef<'a>, cancel: Arc<AtomicBool>) -> Result<()> {
+  async fn run<'a>(&self, server: ServerRef<'a>, cancel: Arc<AtomicBool>) -> Result<()> {
     match self {
-      Job::Elaborate {path, start} => {
-        if let Some(file) = server.vfs.get(&path) {
+      &Job::Elaborate {ref path, start} => {
+        if let Some(file) = server.vfs.get(path) {
           let (old_ast, old_env, old_deps) = match file.parsed.lock().unwrap().0.take() {
             None => (None, None, Vec::new()),
             Some(FileCache::Dirty(ast)) => (Some((start, ast)), None, Vec::new()),
@@ -109,11 +109,11 @@ impl Job {
           };
           let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), old_ast);
           let ast = Arc::new(ast);
-          server.elaborate(&file, &old_deps, idx, ast.clone(), &path, old_env, cancel).await?;
+          server.elaborate(&file, &old_deps, idx, ast.clone(), path, old_env, cancel).await?;
         }
       }
       Job::DepChange(path) => {
-        if let Some(file) = server.vfs.get(&path) {
+        if let Some(file) = server.vfs.get(path) {
           let (idx, ast, old_env, old_deps) = match file.parsed.lock().unwrap().0.take() {
             None => {
               let (idx, ast) = parse(file.text.lock().unwrap().1.clone(), None);
@@ -122,10 +122,11 @@ impl Job {
             Some(FileCache::Dirty(ast)) => (ast.stmts.len(), ast, None, Vec::new()),
             Some(FileCache::Ready{ast, errors, deps, env}) => (ast.stmts.len(), ast, Some((errors, env)), deps),
           };
-          server.elaborate(&file, &old_deps, idx, ast.clone(), &path, old_env, cancel).await?;
+          server.elaborate(&file, &old_deps, idx, ast.clone(), path, old_env, cancel).await?;
         }
       }
     }
+    log!("run finished {:?}", self);
     Ok(())
   }
 }
@@ -139,7 +140,7 @@ struct Jobs {
 impl Jobs {
   fn extend(&self, mut new: Vec<Job>) {
     if !new.is_empty() {
-      // log!("jobs {:?}", new);
+      log!("jobs {:?}", new);
       let changed = {
         let mut g = self.jobs.lock().unwrap();
         if let Some((active, cancel)) = &mut g.0 {
@@ -163,7 +164,7 @@ impl Jobs {
         let mut g = self.jobs.lock().unwrap();
         loop {
           if let (active, Some(jobs)) = &mut *g {
-            // log!("done {:?}", active.take());
+            log!("done {:?}", active.take());
             if let Some(job) = jobs.pop_front() {
               let cancel = Arc::new(AtomicBool::new(false));
               *active = Some((job.clone(), cancel.clone()));
@@ -173,7 +174,7 @@ impl Jobs {
           } else {return Ok(())}
         }
       };
-      // log!("start {:?}", job);
+      log!("start {:?}", job);
       let s = server.clone();
       self.pool.spawn_ok(async move {
         let server = (*s).as_ref();
@@ -360,13 +361,13 @@ impl ServerRef<'_> {
     let mut deps = Vec::new();
     let elab = Elaborator::new(ast.clone(), path.clone(), cancel.clone());
     let fut = elab.as_fut(old_env.map(|(errs, e)| (idx, errs, e)), |path| {
-      // log!("request {:?}", path);
+      log!("request {:?}", path);
       let (path, val) = match self.vfs.0.lock().unwrap().entry(FileRef::new(path)) {
         Entry::Occupied(e) => (e.key().clone(), e.get().clone()),
         Entry::Vacant(e) => {
           let path = e.key().clone();
           let s = fs::read_to_string(path.path())?;
-          // log!("got ({:?}, {})", path, s.len());
+          log!("got ({:?}, {})", path, s.len());
           let val = e.insert(Arc::new(VirtualFile::new(s))).clone();
           (path, val)
         }
@@ -385,7 +386,7 @@ impl ServerRef<'_> {
       Ok(recv)
     });
     let (errors, env) = fut.await;
-    // log!("elabbed {:?}", path);
+    log!("elabbed {:?}", path);
     if !cancel.load(Ordering::Relaxed) {
       let mut srcs = HashMap::new();
       let mut to_loc = |fsp: &FileSpan| -> Location {

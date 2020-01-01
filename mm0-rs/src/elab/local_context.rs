@@ -1,5 +1,4 @@
 use std::ops::Deref;
-use std::sync::Arc;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
@@ -35,7 +34,7 @@ pub struct LocalContext {
 
 fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget) -> LispVal {
   let n = mvars.len();
-  let e = LispKind::new_ref(Arc::new(LispKind::MVar(n, tgt)));
+  let e = LispVal::new_ref(LispVal::new(LispKind::MVar(n, tgt)));
   mvars.push(e.clone());
   e
 }
@@ -56,7 +55,7 @@ impl LocalContext {
     self.goals.clear();
     for g in gs {
       if g.is_goal() {
-        self.goals.push(if g.is_ref() {g} else {LispKind::new_ref(g)})
+        self.goals.push(if g.is_ref() {g} else {LispVal::new_ref(g)})
       }
     }
   }
@@ -87,7 +86,7 @@ impl LocalContext {
   pub fn clean_mvars(&mut self) {
     let mut i = 0;
     self.mvars.retain(|e| e.as_ref_(|e| {
-      LispKind::unwrapped_mut(e, |e| {
+      e.unwrapped_mut(|e| {
         if let LispKind::MVar(n, _) = e {*n = i; i += 1; true}
         else {false}
       }).unwrap_or_else(|| {
@@ -148,7 +147,7 @@ impl Environment {
       }
     }
     apply(c, |tid, e| LispKind::List(
-      vec![Arc::new(LispKind::Atom(self.terms[tid].atom)), e]).decorate_span(fsp), res)
+      vec![LispVal::atom(self.terms[tid].atom), e]).decorate_span(fsp), res)
   }
 }
 
@@ -449,7 +448,7 @@ impl Elaborator {
         } {
           Ok(sort) => {
             for (s, e) in sorts {
-              let mut val = Arc::new(LispKind::Atom(a));
+              let mut val = LispVal::atom(a);
               if let &Some(s) = s {
                 if s != sort {
                   let fsp = Some(FileSpan {file: self.path.clone(), span: src});
@@ -457,7 +456,7 @@ impl Elaborator {
                 }
               }
               if let LispKind::Ref(m) = &**e {
-                *m.lock().unwrap() = val;
+                *m.get_mut() = val;
               } else {unreachable!()}
             }
             let new2 = if (dummy && *new) || must_bound {
@@ -627,12 +626,12 @@ impl Elaborator {
               let mut is2 = Vec::new();
               for (i, (_, a, e)) in ehyps.into_iter().enumerate() {
                 if let Some(a) = a {
-                  let p = Arc::new(LispKind::Atom(a));
+                  let p = LispVal::atom(a);
                   is2.push(de.add(&*p, ProofHash::Hyp(i, is[i].1)));
                   self.lc.add_proof(a, e, p)
                 }
               }
-              let g = LispKind::new_ref(LispKind::new_goal(self.fspan(e.span), eret));
+              let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), eret));
               self.lc.goals = vec![g.clone()];
               self.elab_lisp(e)?;
               for g in mem::replace(&mut self.lc.goals, vec![]) {
@@ -863,7 +862,7 @@ impl Elaborator {
         let var_map = nh.var_map;
         for (i, (a, j, ty)) in is.into_iter().enumerate() {
           if let Some(a) = a {
-            let p = Arc::new(LispKind::Atom(a));
+            let p = LispVal::atom(a);
             is2.push(de.add(&*p, ProofHash::Hyp(i, j)));
             lc.add_proof(a, ty, p);
           }

@@ -2,12 +2,12 @@ pub mod parser;
 pub mod eval;
 pub mod print;
 
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
-use std::sync::{Arc, Weak, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, Weak, Mutex, RwLock, atomic::AtomicBool};
 use std::collections::HashMap;
 use num::BigInt;
-use owning_ref::OwningRef;
+use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::{Atom};
 use crate::util::{ArcString, FileSpan};
 use super::{AtomID, AtomVec, Remap, Modifiers};
@@ -90,7 +90,9 @@ impl InferTarget {
   }
 }
 
-pub type LispVal = Arc<LispKind>;
+#[derive(Debug, Clone)]
+pub struct LispVal(Arc<LispKind>);
+
 #[derive(Debug)]
 pub enum LispKind {
   Atom(AtomID),
@@ -104,50 +106,88 @@ pub enum LispKind {
   Undef,
   Proc(Proc),
   AtomMap(HashMap<AtomID, LispVal>),
-  Ref(Mutex<LispVal>),
+  Ref(LispRef),
   MVar(usize, InferTarget),
   Goal(LispVal),
 }
-lazy_static! {
-  pub static ref UNDEF:    LispVal = Arc::new(LispKind::Undef);
-  pub static ref TRUE:     LispVal = Arc::new(LispKind::Bool(true));
-  pub static ref FALSE:    LispVal = Arc::new(LispKind::Bool(false));
-  pub static ref NIL:      LispVal = Arc::new(LispKind::List(vec![]));
-  pub static ref TERM:     LispVal = Arc::new(LispKind::Atom(AtomID::TERM));
-  pub static ref DEF:      LispVal = Arc::new(LispKind::Atom(AtomID::DEF));
-  pub static ref AXIOM:    LispVal = Arc::new(LispKind::Atom(AtomID::AXIOM));
-  pub static ref THM:      LispVal = Arc::new(LispKind::Atom(AtomID::THM));
-  pub static ref PUB:      LispVal = Arc::new(LispKind::Atom(AtomID::PUB));
-  pub static ref ABSTRACT: LispVal = Arc::new(LispKind::Atom(AtomID::ABSTRACT));
-  pub static ref LOCAL:    LispVal = Arc::new(LispKind::Atom(AtomID::LOCAL));
-  pub static ref CONV:     LispVal = Arc::new(LispKind::Atom(AtomID::CONV));
-  pub static ref SYM:      LispVal = Arc::new(LispKind::Atom(AtomID::SYM));
-  pub static ref UNFOLD:   LispVal = Arc::new(LispKind::Atom(AtomID::UNFOLD));
-}
 
-impl From<&LispKind> for bool {
-  fn from(e: &LispKind) -> bool { e.truthy() }
-}
-impl LispKind {
-  pub fn unwrapped_mut<T>(this: &mut LispVal, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
-    Arc::get_mut(this).and_then(|e| match e {
-      LispKind::Ref(m) => Self::unwrapped_mut(&mut m.try_lock().unwrap(), f),
+#[derive(Debug)]
+pub struct LispRef(RwLock<LispVal>);
+
+impl LispVal {
+  pub fn new(e: LispKind) -> LispVal { LispVal(Arc::new(e)) }
+  pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
+  pub fn list(es: Vec<LispVal>) -> LispVal { LispVal::new(LispKind::List(es)) }
+  pub fn dotted_list(es: Vec<LispVal>, r: LispVal) -> LispVal { LispVal::new(LispKind::DottedList(es, r)) }
+  pub fn number(n: BigInt) -> LispVal { LispVal::new(LispKind::Number(n)) }
+  pub fn string(s: ArcString) -> LispVal { LispVal::new(LispKind::String(s)) }
+  pub fn syntax(s: Syntax) -> LispVal { LispVal::new(LispKind::Syntax(s)) }
+  pub fn undef() -> LispVal { LispVal::new(LispKind::Undef) }
+  pub fn nil() -> LispVal { LispVal::list(vec![]) }
+  pub fn bool(b: bool) -> LispVal { LispVal::new(LispKind::Bool(b)) }
+  pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
+  pub fn new_ref(e: LispVal) -> LispVal { LispVal::new(LispKind::Ref(LispRef::new(e))) }
+  pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
+    LispVal::new(LispKind::Goal(ty)).span(fsp)
+  }
+
+  pub fn span(self, fsp: FileSpan) -> LispVal {
+    LispVal::new(LispKind::Annot(Annot::Span(fsp), self))
+  }
+
+  pub fn unwrapped_mut<T>(&mut self, f: impl FnOnce(&mut LispKind) -> T) -> Option<T> {
+    Arc::get_mut(&mut self.0).and_then(|e| match e {
+      LispKind::Ref(m) => Self::unwrapped_mut(&mut m.get_mut(), f),
       LispKind::Annot(_, v) => Self::unwrapped_mut(v, f),
       _ => Some(f(e))
     })
   }
 
-  pub fn unwrapped_arc(this: &LispVal) -> LispVal {
-    match &**this {
-      LispKind::Ref(m) => Self::unwrapped_arc(&m.try_lock().unwrap()),
+  pub fn unwrapped_arc(&self) -> LispVal {
+    match &**self {
+      LispKind::Ref(m) => Self::unwrapped_arc(&m.get()),
       LispKind::Annot(_, v) => Self::unwrapped_arc(v),
-      _ => this.clone()
+      _ => self.clone()
     }
   }
 
+  pub fn ptr_eq(&self, e: &Self) -> bool { Arc::ptr_eq(&self.0, &e.0) }
+  pub fn try_unwrap(self) -> Result<LispKind, LispVal> { Arc::try_unwrap(self.0).map_err(LispVal) }
+  pub fn get_mut(&mut self) -> Option<&mut LispKind> { Arc::get_mut(&mut self.0) }
+
+  pub fn try_unwrapped(self) -> Result<LispKind, LispVal> {
+    match Arc::try_unwrap(self.0) {
+      Ok(LispKind::Annot(_, e)) => e.try_unwrapped(),
+      Ok(LispKind::Ref(m)) => m.into_inner().try_unwrapped(),
+      Ok(e) => Ok(e),
+      Err(e) => Err(LispVal(e))
+    }
+  }
+}
+
+impl Deref for LispVal {
+  type Target = LispKind;
+  fn deref(&self) -> &LispKind { &self.0 }
+}
+unsafe impl StableAddress for LispVal {}
+unsafe impl CloneStableAddress for LispVal {}
+
+impl LispRef {
+  pub fn new(e: LispVal) -> LispRef { LispRef(RwLock::new(e)) }
+  pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.read().unwrap() }
+  pub fn get_mut<'a>(&'a self) -> impl DerefMut<Target=LispVal> + 'a { self.0.write().unwrap() }
+  pub fn unref(&self) -> LispVal { self.get().clone() }
+  pub fn into_inner(self) -> LispVal { self.0.into_inner().unwrap() }
+}
+
+impl From<&LispKind> for bool {
+  fn from(e: &LispKind) -> bool { e.truthy() }
+}
+
+impl LispKind {
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     match self {
-      LispKind::Ref(m) => m.try_lock().unwrap().unwrapped(f),
+      LispKind::Ref(m) => m.get().unwrapped(f),
       LispKind::Annot(_, v) => v.unwrapped(f),
       _ => f(self)
     }
@@ -156,7 +196,7 @@ impl LispKind {
   pub fn unwrapped_span<T>(&self, fsp: Option<&FileSpan>,
       f: impl FnOnce(Option<&FileSpan>, &Self) -> T) -> T {
     match self {
-      LispKind::Ref(m) => m.try_lock().unwrap().unwrapped_span(fsp, f),
+      LispKind::Ref(m) => m.get().unwrapped_span(fsp, f),
       LispKind::Annot(Annot::Span(fsp), v) => v.unwrapped_span(Some(fsp), f),
       _ => f(fsp, self)
     }
@@ -204,14 +244,14 @@ impl LispKind {
   }
   pub fn as_ref_<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
     match self {
-      LispKind::Ref(m) => Some(f(&mut m.try_lock().unwrap())),
+      LispKind::Ref(m) => Some(f(&mut m.get_mut())),
       LispKind::Annot(_, e) => e.as_ref_(f),
       _ => None
     }
   }
   pub fn fspan(&self) -> Option<FileSpan> {
     match self {
-      LispKind::Ref(m) => m.try_lock().unwrap().fspan(),
+      LispKind::Ref(m) => m.get().fspan(),
       LispKind::Annot(Annot::Span(sp), _) => Some(sp.clone()),
       // LispKind::Annot(_, e) => e.fspan(),
       _ => None
@@ -258,27 +298,16 @@ impl LispKind {
     })
   }
 
-  pub fn new_span(fsp: FileSpan, e: LispVal) -> LispVal {
-    Arc::new(LispKind::Annot(Annot::Span(fsp), e))
-  }
-
   pub fn decorate_span(self, fsp: &Option<FileSpan>) -> LispVal {
     if let Some(fsp) = fsp {
-      LispKind::new_span(fsp.clone(), Arc::new(self))
-    } else {Arc::new(self)}
-  }
-
-  pub fn new_ref(e: LispVal) -> LispVal {
-    Arc::new(LispKind::Ref(Mutex::new(e)))
-  }
-  pub fn new_goal(fsp: FileSpan, ty: LispVal) -> LispVal {
-    Self::new_span(fsp, Arc::new(LispKind::Goal(ty)))
+      LispVal::new(self).span(fsp.clone())
+    } else {LispVal::new(self)}
   }
 
   pub fn extend_into(mut this: LispVal, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
     loop {
       match &*this {
-        LispKind::Ref(m) => {let e = m.try_lock().unwrap().clone(); this = e}
+        LispKind::Ref(m) => {let e = m.unref(); this = e}
         LispKind::Annot(_, v) => this = v.clone(),
         LispKind::List(es) | LispKind::DottedList(es, _) if n <= es.len() => {
           vec.extend_from_slice(&es[..n]);
@@ -461,10 +490,10 @@ impl Uncons {
   pub fn as_lisp(self) -> LispVal {
     match self {
       Uncons::New(e) => e,
-      Uncons::List(es) if es.is_empty() => NIL.clone(),
-      Uncons::List(es) => Arc::new(LispKind::List((*es).into())),
+      Uncons::List(es) if es.is_empty() => LispVal::nil(),
+      Uncons::List(es) => LispVal::list((*es).into()),
       Uncons::DottedList(es, r) if es.is_empty() => r,
-      Uncons::DottedList(es, r) => Arc::new(LispKind::DottedList((*es).into(), r)),
+      Uncons::DottedList(es, r) => LispVal::dotted_list((*es).into(), r),
     }
   }
 
@@ -497,7 +526,7 @@ impl Iterator for Uncons {
       match self {
         Uncons::New(e) => loop {
           match &**e {
-            LispKind::Ref(m) => {let e2 = m.try_lock().unwrap().clone(); *e = e2}
+            LispKind::Ref(m) => {let e2 = m.unref(); *e = e2}
             LispKind::Annot(_, v) => *e = v.clone(),
             LispKind::List(_) => {
               *self = Uncons::List(OwningRef::from(e.clone()).map(|e| {
@@ -539,25 +568,28 @@ impl<R, K: Clone + Hash + Eq, V: Remap<R>> Remap<R> for HashMap<K, V> {
 impl<R, A: Remap<R>> Remap<R> for Mutex<A> {
   fn remap(&self, r: &mut R) -> Self { Mutex::new(self.lock().unwrap().remap(r)) }
 }
+impl Remap<LispRemapper> for LispRef {
+  fn remap(&self, r: &mut LispRemapper) -> Self { LispRef::new(self.get().remap(r)) }
+}
 impl Remap<LispRemapper> for LispVal {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     let p: *const LispKind = self.deref();
     if let Some(v) = r.lisp.get(&p) {return v.clone()}
     let v = match self.deref() {
-      LispKind::Atom(a) => Arc::new(LispKind::Atom(a.remap(r))),
-      LispKind::List(v) => Arc::new(LispKind::List(v.remap(r))),
-      LispKind::DottedList(v, l) => Arc::new(LispKind::DottedList(v.remap(r), l.remap(r))),
-      LispKind::Annot(sp, m) => Arc::new(LispKind::Annot(sp.clone(), m.remap(r))),
-      LispKind::Proc(f) => Arc::new(LispKind::Proc(f.remap(r))),
-      LispKind::AtomMap(m) => Arc::new(LispKind::AtomMap(m.remap(r))),
-      LispKind::Ref(m) => Arc::new(LispKind::Ref(m.remap(r))),
-      &LispKind::MVar(n, is) => Arc::new(LispKind::MVar(n, is.remap(r))),
+      LispKind::Atom(a) => LispVal::atom(a.remap(r)),
+      LispKind::List(v) => LispVal::list(v.remap(r)),
+      LispKind::DottedList(v, l) => LispVal::dotted_list(v.remap(r), l.remap(r)),
+      LispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
+      LispKind::Proc(f) => LispVal::proc(f.remap(r)),
+      LispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
+      LispKind::Ref(m) => LispVal::new(LispKind::Ref(m.remap(r))),
+      &LispKind::MVar(n, is) => LispVal::new(LispKind::MVar(n, is.remap(r))),
+      LispKind::Goal(e) => LispVal::new(LispKind::Goal(e.remap(r))),
       LispKind::Number(_) |
       LispKind::String(_) |
       LispKind::Bool(_) |
       LispKind::Syntax(_) |
-      LispKind::Undef |
-      LispKind::Goal(_) => self.clone(),
+      LispKind::Undef => self.clone(),
     };
     r.lisp.entry(p).or_insert(v).clone()
   }

@@ -92,6 +92,10 @@ impl EnvDisplay for ThmID {
   }
 }
 
+impl EnvDisplay for LispVal {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(fe, f) }
+}
+
 impl EnvDisplay for LispKind {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
@@ -126,7 +130,7 @@ impl EnvDisplay for LispKind {
         for (a, v) in m {write!(f, " [{} {}]", fe.data[*a].name, fe.to(v))?}
         write!(f, ")")
       }
-      LispKind::Ref(m) => m.try_lock().unwrap().fmt(fe, f),
+      LispKind::Ref(m) => m.get().fmt(fe, f),
       &LispKind::MVar(n, _) => write!(f, "?{}", alphanumber(n)),
       LispKind::Goal(e) => write!(f, "(goal {})", fe.to(e)),
     }
@@ -164,7 +168,9 @@ impl<T: EnvDisplay> EnvDisplay for Box<T> {
 impl<T: EnvDisplay> EnvDisplay for std::sync::Arc<T> {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
 }
-
+impl<T: EnvDisplay> EnvDisplay for std::rc::Rc<T> {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+}
 
 impl EnvDisplay for InferTarget {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {

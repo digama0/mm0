@@ -1,4 +1,3 @@
-use std::sync::{Arc, Mutex};
 use std::mem;
 use crate::util::*;
 use super::{Elaborator, ElabError, Result};
@@ -93,29 +92,26 @@ pub enum RefineResult {
   RefineExtraArgs(LispVal, Vec<LispVal>),
 }
 
-impl LispKind {
-  fn conv(tgt: LispVal, u: LispVal, p: LispVal) -> LispVal {
-    Arc::new(LispKind::List(vec![Arc::new(LispKind::Atom(AtomID::CONV)), tgt, u, p]))
+impl LispVal {
+  fn conv(tgt: Self, u: Self, p: Self) -> Self {
+    Self::list(vec![Self::atom(AtomID::CONV), tgt, u, p])
   }
-  fn unfold(t: AtomID, es: Vec<LispVal>, p: LispVal) -> LispVal {
-    Arc::new(LispKind::List(vec![
-      Arc::new(LispKind::Atom(AtomID::UNFOLD)),
-      Arc::new(LispKind::Atom(t)),
-      Arc::new(LispKind::List(es)), p]))
+  fn unfold(t: AtomID, es: Vec<Self>, p: Self) -> Self {
+    Self::list(vec![Self::atom(AtomID::UNFOLD), Self::atom(t), Self::list(es), p])
   }
-  fn sym(p: LispVal) -> LispVal {
-    Arc::new(LispKind::List(vec![Arc::new(LispKind::Atom(AtomID::SYM)), p]))
+  fn sym(p: Self) -> Self {
+    Self::list(vec![Self::atom(AtomID::SYM), p])
   }
-  fn apply_conv(c: LispVal, tgt: LispVal, p: LispVal) -> LispVal {
-    if c.is_def() {LispKind::conv(tgt, c, p)} else {p}
+  fn apply_conv(c: Self, tgt: Self, p: Self) -> Self {
+    if c.is_def() {Self::conv(tgt, c, p)} else {p}
   }
 
-  fn as_mvar<T>(e: &LispVal, f: impl FnOnce(&LispVal, &Mutex<LispVal>) -> T) -> Option<T> {
-    fn rec<T, F: FnOnce(&LispVal, &Mutex<LispVal>) -> T>(e: &LispVal, f: F) -> std::result::Result<T, Option<F>> {
+  fn as_mvar<T>(&self, f: impl FnOnce(&Self, &LispRef) -> T) -> Option<T> {
+    fn rec<T, F: FnOnce(&LispVal, &LispRef) -> T>(e: &LispVal, f: F) -> std::result::Result<T, Option<F>> {
       match &**e {
         LispKind::Annot(_, e2) => rec(e2, f),
         LispKind::Ref(m) => {
-          let g = m.try_lock().unwrap().clone();
+          let g = m.unref();
           match rec(&g, f) {
             Ok(r) => Ok(r),
             Err(None) => Err(None),
@@ -126,20 +122,20 @@ impl LispKind {
         _ => Err(None)
       }
     }
-    rec(e, f).ok()
+    rec(self, f).ok()
   }
 }
 
 impl Elaborator {
   fn parse_refine(&mut self, fsp: &FileSpan, e: &LispVal) -> Result<RefineExpr> {
-    Ok(match &*LispKind::unwrapped_arc(e) {
+    Ok(match &*e.unwrapped_arc() {
       &LispKind::Atom(a) =>
-        RefineExpr::App(try_get_span(fsp, e), InferMode::Regular, a, Uncons::from(NIL.clone())),
+        RefineExpr::App(try_get_span(fsp, e), InferMode::Regular, a, Uncons::from(LispVal::nil())),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
         let mut u = Uncons::from(e.clone());
         let sp = try_get_span(fsp, e);
         match u.next() {
-          None if e.is_list() => RefineExpr::App(sp, InferMode::Regular, AtomID::UNDER, Uncons::from(NIL.clone())),
+          None if e.is_list() => RefineExpr::App(sp, InferMode::Regular, AtomID::UNDER, Uncons::from(LispVal::nil())),
           None => Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error"))?,
           Some(e) => {
             let a = e.as_atom().ok_or_else(||
@@ -174,7 +170,7 @@ impl Elaborator {
   }
 
   fn new_goal_gv(&self, gv: &mut Vec<LispVal>, sp: Span, ty: LispVal) -> LispVal {
-    let r = LispKind::new_ref(LispKind::new_goal(self.fspan(sp), ty));
+    let r = LispVal::new_ref(LispVal::goal(self.fspan(sp), ty));
     gv.push(r.clone());
     r
   }
@@ -183,7 +179,7 @@ impl Elaborator {
     macro_rules! err {
       ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp), &$e), $err)}
     }
-    Ok(match &*LispKind::unwrapped_arc(e) {
+    Ok(match &*e.unwrapped_arc() {
       &LispKind::Atom(h) => match self.lc.get_proof(h) {
         Some((_, e, _)) => e.clone(),
         None => Err(err!(e, format!("unknown hypothesis '{}'", self.data[h].name)))?
@@ -226,13 +222,13 @@ impl Elaborator {
   }
 
   fn coerce_to(&mut self, sp: Span, tgt: LispVal, e: LispVal, p: LispVal) -> Result<LispVal> {
-    Ok(LispKind::apply_conv(self.unify(sp, &tgt, &e)?, tgt, p))
+    Ok(LispVal::apply_conv(self.unify(sp, &tgt, &e)?, tgt, p))
   }
 
   fn occurs(&mut self, mv: &LispVal, e: &LispVal) -> bool {
     match &**e {
       LispKind::Annot(_, e) => self.occurs(mv, e),
-      LispKind::Ref(m) => Arc::ptr_eq(mv, e) || self.occurs(mv, &m.try_lock().unwrap()),
+      LispKind::Ref(m) => mv.ptr_eq(e) || self.occurs(mv, &m.get()),
       LispKind::List(es) => es.iter().any(|e| self.occurs(mv, e)),
       LispKind::DottedList(es, r) =>
         es.iter().any(|e| self.occurs(mv, e)) && self.occurs(mv, r),
@@ -240,14 +236,14 @@ impl Elaborator {
     }
   }
 
-  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &Mutex<LispVal>, e: &LispVal) -> SResult<LispVal> {
-    let e = &LispKind::as_mvar(e, |e2, _| e2.clone()).unwrap_or_else(|| e.clone());
-    if Arc::ptr_eq(mv, e) {return Ok(UNDEF.clone())}
+  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> SResult<LispVal> {
+    let e = &e.as_mvar(|e2, _| e2.clone()).unwrap_or_else(|| e.clone());
+    if mv.ptr_eq(e) {return Ok(LispVal::undef())}
     if self.occurs(mv, e) {
       Err("occurs-check failed, can't build infinite assignment".into())
     } else {
-      *m.try_lock().unwrap() = e.clone();
-      Ok(UNDEF.clone())
+      *m.get_mut() = e.clone();
+      Ok(LispVal::undef())
     }
   }
 
@@ -263,13 +259,11 @@ impl Elaborator {
   fn unify_core(&mut self, e1: &LispVal, e2: &LispVal) -> SResult<LispVal> {
     // crate::server::log(format!("{} =?= {}", self.print(e1), self.print(e2)));
     // (|| {
-    if Arc::ptr_eq(e1, e2) {return Ok(UNDEF.clone())}
-    if let Some(r) = LispKind::as_mvar(e1, |e1, m|
-      self.assign(false, e1, m, e2)) {return r}
-    if let Some(r) = LispKind::as_mvar(e2, |e2, m|
-      self.assign(true, e2, m, e1)) {return r}
+    if e1.ptr_eq(e2) {return Ok(LispVal::undef())}
+    if let Some(r) = e1.as_mvar(|e1, m| self.assign(false, e1, m, e2)) {return r}
+    if let Some(r) = e2.as_mvar(|e2, m| self.assign(true, e2, m, e1)) {return r}
     match (e1.as_atom(), e2.as_atom()) {
-      (Some(a1), Some(a2)) if a1 == a2 => Ok(UNDEF.clone()),
+      (Some(a1), Some(a2)) if a1 == a2 => Ok(LispVal::undef()),
       (Some(a1), Some(a2)) => Err(format!(
         "variables do not match: {} != {}", self.data[a1].name, self.data[a2].name)),
       (None, None) => {
@@ -290,14 +284,14 @@ impl Elaborator {
           if u1.exactly(0) && u2.exactly(0) {
             let mut has_undef = false;
             if cs[1..].iter().all(|c| !c.is_def() && {has_undef = true; true}) {
-              Ok(UNDEF.clone())
+              Ok(LispVal::undef())
             } else {
               if has_undef {
                 for (c, x) in cs[1..].iter_mut().zip(u3) {
                   if !c.is_def() {*c = x}
                 }
               }
-              Ok(Arc::new(LispKind::List(cs)))
+              Ok(LispVal::list(cs))
             }
           } else {
             Err(format!("bad terms: {}, {}", self.print(e1), self.print(e2)))?
@@ -340,8 +334,8 @@ impl Elaborator {
       let e = Subst::new(&mut self.lc, &self.env, &val.heap, args.clone()).subst(&val.head);
       let u = self.unify1(&e, e2)?;
       if u.is_def() {
-        let u = LispKind::unfold(a, args, u);
-        Ok(if sym {LispKind::sym(u)} else {u})
+        let u = LispVal::unfold(a, args, u);
+        Ok(if sym {LispVal::sym(u)} else {u})
       } else {Ok(u)}
     } else {return Err(format!("not a definition: {}", self.print(&a)))}
   }
@@ -380,11 +374,11 @@ impl Elaborator {
             mem::swap(&mut self.lc.goals, gv);
           }
           self.lc.clean_mvars();
-          return Ok(RefineResult::Ret(UNDEF.clone()))
+          return Ok(RefineResult::Ret(LispVal::undef()))
         }
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App(sp, _, AtomID::QMARK, _) =>
-            RState::Ret(LispKind::new_ref(LispKind::new_goal(self.fspan(sp), tgt))),
+            RState::Ret(LispVal::new_ref(LispVal::goal(self.fspan(sp), tgt))),
           RefineExpr::App(sp, _, AtomID::UNDER, u) => {
             if u.exactly(0) {
               RState::Ret(self.new_goal_gv(gv, sp, tgt))
@@ -398,10 +392,10 @@ impl Elaborator {
             if let Some((_, v, _)) = self.lc.get_proof(a) {
               RState::RefineArgs {
                 sp, v: v.clone(), tgt, u,
-                head: LispKind::new_span(self.fspan(sp), Arc::new(LispKind::Atom(a)))
+                head: LispVal::atom(a).span(self.fspan(sp))
               }
             } else if let Some(DeclKey::Thm(t)) = self.data[a].decl {
-              RState::RefineBis {sp, tgt, im, t, args: vec![Arc::new(LispKind::Atom(a))], u}
+              RState::RefineBis {sp, tgt, im, t, args: vec![LispVal::atom(a)], u}
             } else {
               Err(ElabError::new_e(sp, format!(
                 "unknown theorem/hypothesis '{}'", self.data[a].name)))?
@@ -453,13 +447,13 @@ impl Elaborator {
                 InferSort::Reg {sort, ..} => (sort, false),
                 InferSort::Unknown {..} => unreachable!(),
               };
-              RState::Ret(self.coerce_term(sp, tgt, sort, bd, Arc::new(LispKind::Atom(a)))?)
+              RState::Ret(self.coerce_term(sp, tgt, sort, bd, LispVal::atom(a))?)
             } else if let Some(t) = if tgt.bound() {None} else {self.term(a)} {
-              RState::RefineApp {tgt, t, u, args: vec![Arc::new(LispKind::Atom(a))]}
+              RState::RefineApp {tgt, t, u, args: vec![LispVal::atom(a)]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
               self.lc.vars.insert(a, (true, InferSort::Bound {sort}));
-              RState::Ret(Arc::new(LispKind::Atom(a)))
+              RState::Ret(LispVal::atom(a))
             } else {
               Err(ElabError::new_e(sp, format!("unknown term '{}'", self.data[a].name)))?
             }
@@ -487,7 +481,7 @@ impl Elaborator {
             }
           }
           let s = tdata.ret.0;
-          break RState::Ret(self.coerce_term(sp, ret, s, false, Arc::new(LispKind::List(args)))?)
+          break RState::Ret(self.coerce_term(sp, ret, s, false, LispVal::list(args))?)
         },
         RState::RefineArgs {sp, v, tgt, head, u} if u.exactly(0) =>
           RState::Ret(self.coerce_to(sp, tgt, v, head)?),
@@ -540,9 +534,9 @@ impl Elaborator {
               args.push(self.new_goal_gv(gv, sp, h))
             }
           }
-          let head = Arc::new(LispKind::List(args));
+          let head = LispVal::list(args);
           break match res {
-            RefineHypsResult::Ok(c) => RState::Ret(LispKind::apply_conv(c, tgt, head)),
+            RefineHypsResult::Ok(c) => RState::Ret(LispVal::apply_conv(c, tgt, head)),
             RefineHypsResult::Extra => RState::RefineExtraArgs {sp, tgt, u, head, args: vec![]}
           }
         },
