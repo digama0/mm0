@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
-use super::super::{Result, FileServer, Elaborator,
+use super::super::{Result, Elaborator,
   AtomID, Environment, AtomData, DeclKey,
   ElabError, ElabErrorKind, ErrorLevel, BoxError,
   tactic::{RStack, RState, RefineResult}};
@@ -203,7 +203,7 @@ struct TestPending<'a>(Span, LispVal, &'a IR);
 
 pub type SResult<T> = std::result::Result<T, String>;
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+impl Elaborator {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
       mut active: PatternState<'b>) -> std::result::Result<bool, TestPending<'b>> {
     loop {
@@ -296,7 +296,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+impl Elaborator {
   pub fn print_lisp(&mut self, sp: Span, e: &LispVal) {
     self.report(ElabError::info(sp, format!("{}", self.print(e))))
   }
@@ -582,23 +582,23 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
   }
 }
 
-struct Evaluator<'a, 'b, F: FileServer + ?Sized> {
-  elab: &'b mut Elaborator<'a, F>,
+struct Evaluator<'a> {
+  elab: &'a mut Elaborator,
   ctx: Vec<LispVal>,
   file: FileRef,
   orig_span: Span,
-  stack: Vec<Stack<'b>>,
+  stack: Vec<Stack<'a>>,
 }
-impl<'a, 'b, F: FileServer + ?Sized> Deref for Evaluator<'a, 'b, F> {
-  type Target = Elaborator<'a, F>;
-  fn deref(&self) -> &Elaborator<'a, F> { self.elab }
+impl<'a> Deref for Evaluator<'a> {
+  type Target = Elaborator;
+  fn deref(&self) -> &Elaborator { self.elab }
 }
-impl<'a, 'b, F: FileServer + ?Sized> DerefMut for Evaluator<'a, 'b, F> {
-  fn deref_mut(&mut self) -> &mut Elaborator<'a, F> { self.elab }
+impl<'a> DerefMut for Evaluator<'a> {
+  fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 
-impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
-  fn new(elab: &'b mut Elaborator<'a, F>, orig_span: Span) -> Evaluator<'a, 'b, F> {
+impl<'a> Evaluator<'a> {
+  fn new(elab: &'a mut Elaborator, orig_span: Span) -> Evaluator<'a> {
     let file = elab.path.clone();
     Evaluator {elab, ctx: vec![], file, orig_span, stack: vec![]}
   }
@@ -642,7 +642,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
 
-  fn add_thm(&mut self, fsp: FileSpan, sp1: Span, args: &[LispVal]) -> Result<State<'b>> {
+  fn add_thm(&mut self, fsp: FileSpan, sp1: Span, args: &[LispVal]) -> Result<State<'a>> {
     Ok(if let Some((ap, proc)) = self.elab.add_thm(fsp.clone(), sp1, args)? {
       self.stack.push(Stack::AddThmProc(fsp, sp1, ap));
       let sp = try_get_span(&self.fspan(sp1), &proc);
@@ -662,8 +662,8 @@ macro_rules! make_builtins {
       }
     }
 
-    impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
-      fn evaluate_builtin(&mut $self, $sp1: Span, $sp2: Span, f: BuiltinProc, mut $args: Vec<LispVal>) -> Result<State<'b>> {
+    impl<'a> Evaluator<'a> {
+      fn evaluate_builtin(&mut $self, $sp1: Span, $sp2: Span, f: BuiltinProc, mut $args: Vec<LispVal>) -> Result<State<'a>> {
         macro_rules! print {($sp:expr, $x:expr) => {{
           let msg = $x; $self.info($sp, f.to_str(), msg)
         }}}
@@ -996,7 +996,7 @@ make_builtins! { self, sp1, sp2, args,
   },
 }
 
-impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
+impl<'a> Evaluator<'a> {
   fn fspan(&self, span: Span) -> FileSpan {
     FileSpan {file: self.file.clone(), span}
   }
@@ -1009,7 +1009,7 @@ impl<'a, 'b, F: FileServer + ?Sized> Evaluator<'a, 'b, F> {
     }
   }
 
-  fn run(&mut self, mut active: State<'b>) -> Result<LispVal> {
+  fn run(&mut self, mut active: State<'a>) -> Result<LispVal> {
     macro_rules! throw {($sp:expr, $e:expr) => {{
       let err = $e;
       return Err(self.err(Some($sp), err))

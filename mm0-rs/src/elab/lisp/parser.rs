@@ -5,7 +5,7 @@ use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::ArcString;
-use super::super::{AtomID, Span, FileServer, Elaborator, ElabError};
+use super::super::{AtomID, Span, Elaborator, ElabError};
 use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
@@ -291,16 +291,16 @@ impl LocalCtx {
   }
 }
 
-struct LispParser<'a: 'b, 'b, T: FileServer + ?Sized> {
-  elab: &'b mut Elaborator<'a, T>,
+struct LispParser<'a> {
+  elab: &'a mut Elaborator,
   ctx: LocalCtx,
 }
-impl<'a: 'b, 'b, T: FileServer + ?Sized> Deref for LispParser<'a, 'b, T> {
-  type Target = Elaborator<'a, T>;
-  fn deref(&self) -> &Elaborator<'a, T> { self.elab }
+impl<'a> Deref for LispParser<'a> {
+  type Target = Elaborator;
+  fn deref(&self) -> &Elaborator { self.elab }
 }
-impl<'a: 'b, 'b, T: FileServer + ?Sized> DerefMut for LispParser<'a, 'b, T> {
-  fn deref_mut(&mut self) -> &mut Elaborator<'a, T> { self.elab }
+impl<'a> DerefMut for LispParser<'a> {
+  fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 
 enum Item<'a> {
@@ -308,7 +308,7 @@ enum Item<'a> {
   DottedList(&'a [SExpr], &'a SExpr),
 }
 
-impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
+impl<'a> LispParser<'a> {
   fn def_var<'c>(&mut self, mut e: &'c SExpr) -> Result<(Span, AtomID, Vec<Item<'c>>), ElabError> {
     let mut stack = vec![];
     loop {
@@ -363,11 +363,11 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   }
 }
 
-impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
+impl<'a> LispParser<'a> {
   fn parse_ident_or_syntax(&mut self, sp: Span, a: Atom) -> Result<AtomID, Syntax> {
-    match Syntax::parse(self.ast.span(sp), a) {
+    match Syntax::parse(self.ast.clone().span(sp), a) {
       Ok(s) => Err(s),
-      Err(s) => Ok(self.env.get_atom(s))
+      Err(s) => Ok(self.get_atom(s))
     }
   }
 
@@ -394,7 +394,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
     match e.k {
       QExprKind::IdentApp(sp, es) => {
         let head = IR::Const(Arc::new(LispKind::Atom(
-          self.elab.env.get_atom(self.ast.span(sp)))));
+          self.elab.env.get_atom(self.ast.clone().span(sp)))));
         if es.is_empty() {Ok(head)} else {
           let mut cs = vec![head];
           for e in es { cs.push(self.qexpr(e)?) }
@@ -402,7 +402,8 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
         }
       }
       QExprKind::App(t, es) => {
-        let s = self.ast.span(self.terms[t].id);
+        let ast = self.ast.clone();
+        let s = ast.span(self.terms[t].id);
         let mut cs = vec![IR::Const(Arc::new(LispKind::Atom(self.get_atom(s))))];
         for e in es { cs.push(self.qexpr(e)?) }
         Ok(IR::list(self.fspan(e.span), cs))
@@ -484,7 +485,7 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
     match e.k {
       QExprKind::IdentApp(sp, es) => {
-        let head = match self.ast.span(sp) {
+        let head = match self.ast.clone().span(sp) {
           "_" => Pattern::Skip,
           s if es.is_empty() => Pattern::QExprAtom(self.elab.env.get_atom(s)),
           s => Pattern::QuoteAtom(self.elab.env.get_atom(s)),
@@ -496,7 +497,8 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
         }
       }
       QExprKind::App(t, es) => {
-        let s = self.ast.span(self.terms[t].id);
+        let ast = self.ast.clone();
+        let s = ast.span(self.terms[t].id);
         let x = self.get_atom(s);
         if es.is_empty() {
           Ok(Pattern::QExprAtom(x))
@@ -765,11 +767,11 @@ impl<'a: 'b, 'b, T: FileServer + ?Sized> LispParser<'a, 'b, T> {
   }
 }
 
-impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
-  pub fn parse_lisp<'b>(&'b mut self, e: &SExpr) -> Result<IR, ElabError> {
+impl Elaborator {
+  pub fn parse_lisp(&mut self, e: &SExpr) -> Result<IR, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr(false, e)
   }
-  pub fn parse_qexpr<'b>(&'b mut self, e: QExpr) -> Result<IR, ElabError> {
+  pub fn parse_qexpr(&mut self, e: QExpr) -> Result<IR, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.qexpr(e)
   }
 }

@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::fmt::{self, Display};
 use crate::parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
-use crate::elab::{FileServer, Elaborator, ElabError};
+use crate::elab::{Elaborator, ElabError};
 use crate::elab::ast::{Formula, SExpr};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use crate::util::*;
@@ -39,7 +39,7 @@ impl EnvDisplay for QExpr {
   }
 }
 
-impl<'a, T: FileServer + ?Sized> Elaborator<'a, T> {
+impl Elaborator {
   pub fn parse_formula(&mut self, f: Formula) -> Result<QExpr, ElabError> {
     let mut p = MathParser {
       pe: &self.pe,

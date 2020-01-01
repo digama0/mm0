@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
-use super::super::{LinedString, FileServer, Environment, Elaborator, TermID, ThmID, SortID};
+use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID};
 use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
 #[derive(Copy, Clone)]
@@ -30,11 +30,11 @@ pub trait EnvDisplay {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result;
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
-  pub fn format_env<'b>(&'b self) -> FormatEnv<'b> {
+impl Elaborator {
+  pub fn format_env(&self) -> FormatEnv {
     FormatEnv {source: &self.ast.source, env: self}
   }
-  pub fn print<'b, D: ?Sized>(&'b self, e: &'b D) -> Print<'b, D> {
+  pub fn print<'a, D: ?Sized>(&'a self, e: &'a D) -> Print<'a, D> {
     self.format_env().to(e)
   }
 }

@@ -10,6 +10,8 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Instant, Duration};
 use std::path::PathBuf;
 use std::collections::{HashMap};
+use std::{future::Future, pin::Pin, task::{Context, Poll}};
+use futures::channel::oneshot::{Receiver, channel};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
 use environment::*;
 use environment::Literal as ELiteral;
@@ -108,13 +110,11 @@ impl ReportMode {
   }
 }
 
-pub struct Elaborator<'a, F: FileServer + ?Sized> {
-  ast: &'a AST,
-  fs: &'a F,
+pub struct Elaborator {
+  ast: Arc<AST>,
   path: FileRef,
   cancel: Arc<AtomicBool>,
   errors: Vec<ElabError>,
-  toks: HashMap<Span, Option<F::WaitToken>>,
   env: Environment,
   timeout: Option<Duration>,
   cur_timeout: Option<Instant>,
@@ -123,20 +123,19 @@ pub struct Elaborator<'a, F: FileServer + ?Sized> {
   reporting: ReportMode,
 }
 
-impl<F: FileServer + ?Sized> Deref for Elaborator<'_, F> {
+impl Deref for Elaborator {
   type Target = Environment;
   fn deref(&self) -> &Environment { &self.env }
 }
-impl<F: FileServer + ?Sized> DerefMut for Elaborator<'_, F> {
+impl DerefMut for Elaborator {
   fn deref_mut(&mut self) -> &mut Environment { &mut self.env }
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
-  fn new(ast: &'a AST, path: FileRef, cancel: Arc<AtomicBool>, fs: &'a F) -> Elaborator<'a, F> {
+impl Elaborator {
+  pub fn new(ast: Arc<AST>, path: FileRef, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
-      ast, fs, path, cancel,
+      ast, path, cancel,
       errors: Vec::new(),
-      toks: HashMap::new(),
       env: Environment::new(),
       timeout: Some(Duration::from_secs(5)),
       cur_timeout: None,
@@ -222,6 +221,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
     let nargs = n.bis.len();
     self.check_term_nargs(n.id, term, nargs)?;
+    let ast = self.ast.clone();
     let mut vars = HashMap::<&str, (usize, bool)>::new();
     for (i, bi) in n.bis.iter().enumerate() {
       match bi.kind {
@@ -229,7 +229,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
           "dummies not permitted in notation declarations"))?,
         LocalKind::Anon => Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
           "all variables must be used in notation declaration"))?,
-        _ => { vars.insert(self.ast.span(bi.local.unwrap_or(bi.span)), (i, false)); }
+        _ => { vars.insert(ast.span(bi.local.unwrap_or(bi.span)), (i, false)); }
       }
     }
 
@@ -240,8 +240,8 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
         else {Err(ElabError::new_e(sp, "precedence out of range"))}
       } else {Err(ElabError::new_e(sp, "infix constants cannot have prec max"))}
     }
-    let mut get_var = |elab: &mut Self, sp: Span| -> Result<usize> {
-      let v = vars.get_mut(elab.span(sp))
+    let mut get_var = |sp: Span| -> Result<usize> {
+      let v = vars.get_mut(ast.span(sp))
         .ok_or_else(|| ElabError::new_e(sp, "variable not found"))?;
       v.1 = true;
       Ok(v.0)
@@ -261,7 +261,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             Some((_, r)) => Some(r),
           };
           (vec![
-            ELiteral::Var(get_var(self, v)?, bump(r.unwrap_or(false), c.fmla.0, p)?),
+            ELiteral::Var(get_var(v)?, bump(r.unwrap_or(false), c.fmla.0, p)?),
             ELiteral::Const(self.span(c.trim).into())],
           r, true, c, p)
         }
@@ -289,7 +289,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
             Some(&&ALiteral::Const(ref c, p)) => bump(true, c.fmla.0, p)?,
             Some(ALiteral::Var(_)) => Prec::Max,
           };
-          lits.push(ELiteral::Var(get_var(self, v)?, prec));
+          lits.push(ELiteral::Var(get_var(v)?, prec));
         }
       }
     }
@@ -312,8 +312,15 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
     if val.is_def() {self.print_lisp(e.span, &val)}
     Ok(())
   }
+}
 
-  fn elab_stmt(&mut self, stmt: &Stmt) -> Result<()> {
+enum ElabStmt {
+  Ok,
+  Import(Span),
+}
+
+impl Elaborator {
+  fn elab_stmt(&mut self, stmt: &Stmt) -> Result<ElabStmt> {
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
@@ -327,9 +334,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
       &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
-      &StmtKind::Import(sp, _) => if let Some(tok) = &self.toks[&sp] {
-        self.env.merge(&self.fs.get_elab(tok), sp, &mut self.errors)?
-      },
+      &StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp)),
       StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
@@ -344,35 +349,80 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       },
       _ => Err(ElabError::new_e(stmt.span, "unimplemented"))?
     }
-    Ok(())
+    Ok(ElabStmt::Ok)
   }
-}
 
-pub trait FileServer {
-  type WaitToken: Clone;
-  fn request_elab(&self, path: PathBuf, f: impl Fn(BoxError) -> ElabError) ->
-    Result<(FileRef, Self::WaitToken)>;
+  pub fn as_fut(mut self,
+    _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>,
+    mut mk: impl FnMut(PathBuf) -> std::result::Result<Receiver<Arc<Environment>>, BoxError>
+  ) -> impl Future<Output=(Vec<ElabError>, Environment)> {
 
-  fn get_elab(&self, tok: &Self::WaitToken) -> Arc<Environment>;
+    enum UnfinishedStmt {
+      None,
+      Import(Span, Receiver<Arc<Environment>>),
+    }
 
-  fn elaborate<'a>(&'a self, path: FileRef, ast: &'a AST,
-      _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>, cancel: Arc<AtomicBool>) ->
-      (Vec<ElabError>, Environment, Vec<FileRef>) {
-    let mut elab = Elaborator::new(ast, path, cancel, self);
-    let mut deps: Vec<FileRef> = Vec::new();
-    for (sp, f) in &ast.imports {
-      match elab.path.path().join(f).canonicalize()
-        .map_err(|e| ElabError::new_e(sp.clone(), e))
-        .and_then(|p| self.request_elab(p, |e| ElabError::new_e(sp.clone(), e))) {
-        Ok((buf, tok)) => { deps.push(buf); elab.toks.insert(sp.clone(), Some(tok)); }
-        Err(e) => { elab.report(e); elab.toks.insert(sp.clone(), None); }
+    struct ElabFutureInner {
+      elab: Elaborator,
+      recv: HashMap<Span, Receiver<Arc<Environment>>>,
+      idx: usize,
+      progress: UnfinishedStmt
+    }
+
+    struct ElabFuture(Option<ElabFutureInner>);
+
+    impl Future for ElabFuture {
+      type Output = (Vec<ElabError>, Environment);
+      fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut unsafe { self.get_unchecked_mut() }.0;
+        let ElabFutureInner {elab, recv, idx, progress} =
+          this.as_mut().expect("poll called after Ready");
+        'l: loop {
+          match progress {
+            UnfinishedStmt::None => {},
+            UnfinishedStmt::Import(sp, other) => {
+              if let Ok(env) = ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
+                let r = elab.env.merge(&env, *sp, &mut elab.errors);
+                elab.catch(r);
+              }
+              *idx += 1;
+            }
+          }
+          let ast = elab.ast.clone();
+          while let Some(s) = ast.stmts.get(*idx) {
+            if elab.cancel.load(Ordering::Relaxed) {break}
+            match elab.elab_stmt(s) {
+              Ok(ElabStmt::Ok) => {}
+              Ok(ElabStmt::Import(sp)) => {
+                *progress = UnfinishedStmt::Import(sp, recv.remove(&sp).unwrap());
+                continue 'l
+              }
+              Err(e) => elab.report(e)
+            }
+            *idx += 1;
+          }
+          let elab = this.take().unwrap().elab;
+          return Poll::Ready((elab.errors, elab.env))
+        }
       }
     }
-    for s in ast.stmts.iter() {
-      if elab.cancel.load(Ordering::Relaxed) {break}
-      let r = elab.elab_stmt(s);
-      elab.catch(r)
+
+    let mut recv = HashMap::new();
+    let ast = self.ast.clone();
+    for (sp, f) in &ast.imports {
+      let path = self.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
+      match path.canonicalize()
+        .map_err(|e| ElabError::new_e(sp.clone(), e))
+        .and_then(|p| mk(p).map_err(|e| ElabError::new_e(sp.clone(), e))) {
+        Ok(tok) => { recv.insert(sp.clone(), tok); }
+        Err(e) => { self.report(e); recv.insert(sp.clone(), channel().1); }
+      }
     }
-    (elab.errors, elab.env, deps)
+    ElabFuture(Some(ElabFutureInner {
+      elab: self,
+      recv,
+      idx: 0,
+      progress: UnfinishedStmt::None,
+    }))
   }
 }

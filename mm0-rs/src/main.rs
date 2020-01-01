@@ -1,6 +1,7 @@
 extern crate log;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
+#[macro_use] extern crate futures;
 
 mod util;
 mod lined_string;

@@ -357,7 +357,7 @@ enum InferBinder {
   Hyp(Option<AtomID>, LispVal),
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+impl Elaborator {
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
@@ -487,7 +487,7 @@ impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
-    // log!("elab {}", self.ast.span(d.id));
+    log!("elab {}", self.ast.span(d.id));
     self.lc.clear();
     for bi in &d.bis {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
@@ -694,7 +694,7 @@ fn dummies(fe: FormatEnv, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) ->
   })
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+impl Elaborator {
   fn deps(&self, fsp: &FileSpan, vars: &HashMap<AtomID, u64>, vs: LispVal) -> Result<(Vec<AtomID>, u64)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut n = 0;

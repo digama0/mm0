@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::mem;
 use crate::util::*;
-use super::{FileServer, Elaborator, ElabError, Result};
+use super::{Elaborator, ElabError, Result};
 use super::environment::*;
 use super::lisp::{*, print::{FormatEnv, EnvDisplay}, eval::SResult};
 use super::local_context::{InferSort, try_get_span};
@@ -130,7 +130,7 @@ impl LispKind {
   }
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+impl Elaborator {
   fn parse_refine(&mut self, fsp: &FileSpan, e: &LispVal) -> Result<RefineExpr> {
     Ok(match &*LispKind::unwrapped_arc(e) {
       &LispKind::Atom(a) =>

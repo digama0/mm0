@@ -46,6 +46,7 @@ impl Modifiers {
   }
 }
 
+#[derive(Clone)]
 pub enum Delimiter {
   Both(Box<[u8]>),
   LeftRight(Box<[u8]>, Box<[u8]>),
@@ -105,7 +106,7 @@ impl Type {
   }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Binder {
   pub span: Span,
   pub local: Option<Span>,
@@ -113,14 +114,14 @@ pub struct Binder {
   pub ty: Option<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SExpr {
   pub span: Span,
   pub k: SExprKind,
 }
 #[derive(Copy, Clone, Debug)]
 pub enum Atom { Ident, Quote, Unquote, Nfx }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SExprKind {
   Atom(Atom),
   List(Vec<SExpr>),
@@ -217,6 +218,7 @@ impl EnvDisplay for SExpr {
   }
 }
 
+#[derive(Clone)]
 pub struct Decl {
   pub mods: Modifiers,
   pub k: DeclKind,
@@ -241,7 +243,9 @@ impl fmt::Debug for Prec {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { fmt::Display::fmt(self, f) }
 }
 
+#[derive(Clone)]
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
+#[derive(Clone)]
 pub struct SimpleNota {
   pub k: SimpleNotaKind,
   pub id: Span,
@@ -249,11 +253,13 @@ pub struct SimpleNota {
   pub prec: Prec,
 }
 
+#[derive(Clone)]
 pub enum Literal {
   Const(Const, Prec),
   Var(Span),
 }
 
+#[derive(Clone)]
 pub struct GenNota {
   pub id: Span,
   pub bis: Vec<Binder>,
@@ -262,6 +268,7 @@ pub struct GenNota {
   pub prec: Option<(Prec, bool)>
 }
 
+#[derive(Clone)]
 pub enum StmtKind {
   Sort(Span, Modifiers),
   Decl(Decl),
@@ -275,6 +282,7 @@ pub enum StmtKind {
   Import(Span, String),
 }
 
+#[derive(Clone)]
 pub struct Stmt {
   pub span: Span,
   pub k: StmtKind,

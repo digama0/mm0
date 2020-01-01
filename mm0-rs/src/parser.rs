@@ -33,6 +33,13 @@ pub struct ParseError {
 }
 type Result<T> = std::result::Result<T, ParseError>;
 
+impl Clone for ParseError {
+  fn clone(&self) -> Self {
+    let &ParseError {pos, level, ref msg} = self;
+    ParseError {pos, level, msg: format!("{}", msg).into()}
+  }
+}
+
 impl ParseError {
   pub fn new(pos: impl Into<Span>, msg: BoxError) -> ParseError {
     ParseError { pos: pos.into(), level: ErrorLevel::Error, msg }
@@ -640,15 +647,23 @@ impl<'a> Parser<'a> {
   }
 }
 
-pub fn parse(file: Arc<LinedString>, old: Option<(Position, AST)>) ->
+pub fn parse(file: Arc<LinedString>, old: Option<(Position, Arc<AST>)>) ->
     (usize, AST) {
   let (errors, imports, idx, mut stmts) =
-    if let Some((pos, mut ast)) = old {
+    if let Some((pos, ast)) = old {
       let (ix, start) = ast.last_checkpoint(file.to_idx(pos).unwrap());
-      ast.errors.retain(|e| e.pos.start < start);
-      ast.imports.retain(|e| e.0.start < start);
-      ast.stmts.truncate(ix);
-      (ast.errors, ast.imports, start, ast.stmts)
+      match Arc::try_unwrap(ast) {
+        Ok(mut ast) => {
+          ast.errors.retain(|e| e.pos.start < start);
+          ast.imports.retain(|e| e.0.start < start);
+          ast.stmts.truncate(ix);
+          (ast.errors, ast.imports, start, ast.stmts)
+        }
+        Err(ast) => (
+          ast.errors.iter().filter(|e| e.pos.start < start).cloned().collect(),
+          ast.imports.iter().filter(|e| e.0.start < start).cloned().collect(),
+          start, ast.stmts[..ix].into())
+      }
     } else {Default::default()};
   let mut p = Parser {source: file.as_bytes(), errors, imports, idx};
   p.ws();

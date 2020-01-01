@@ -142,7 +142,7 @@ pub struct Builder<T: Node> {
   pub heap: Vec<T>,
 }
 
-impl<'a, F: FileServer + ?Sized> Elaborator<'a, F> {
+impl Elaborator {
   pub fn to_builder<T: Node>(&self, de: &Dedup<T::Hash>) -> Result<Builder<T>> {
     let mut ids: Vec<Val<T>> = Vec::with_capacity(de.vec.len());
     let mut heap = Vec::new();
