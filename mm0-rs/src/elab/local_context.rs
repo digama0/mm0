@@ -487,7 +487,7 @@ impl Elaborator {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
-    log!("elab {}", self.ast.span(d.id));
+    // log!("elab {}", self.ast.span(d.id));
     self.lc.clear();
     for bi in &d.bis {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
@@ -513,21 +513,21 @@ impl Elaborator {
             _ => unreachable!(),
           },
         };
-        let val = match &d.val {
-          None => None,
-          Some(f) => {
-            let e = self.eval_lisp(f)?;
-            Some((f.span, self.elaborate_term(f.span, &e, match ret {
-              None => InferTarget::Unknown,
-              Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),
-            })?))
-          }
-        };
         if d.k == DeclKind::Term {
           if let Some(v) = &d.val {report!(v.span, "term declarations have no definition")}
         } else if d.val.is_none() {
-          self.report(ElabError::new_e(sp, "def declaration missing value"));
+          self.report(ElabError::warn(d.id, "def declaration missing value"));
         }
+        let val = match &d.val {
+          None => None,
+          Some(f) => (|| -> Result<Option<(Span, LispVal)>> {
+            let e = self.eval_lisp(f)?;
+            Ok(Some((f.span, self.elaborate_term(f.span, &e, match ret {
+              None => InferTarget::Unknown,
+              Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),
+            })?)))
+          })().unwrap_or_else(|e| {self.report(e); None})
+        };
         for e in self.finalize_vars(true) {report!(e)}
         if error {return Ok(())}
         let mut args = Vec::new();
@@ -542,7 +542,8 @@ impl Elaborator {
         let (ret, val) = match val {
           None => match ret {
             None => Err(ElabError::new_e(sp, "expected type or value"))?,
-            Some((_, s, ref deps)) => ((s, ba.deps(deps)), None)
+            Some((_, s, ref deps)) => ((s, ba.deps(deps)),
+              if d.k == DeclKind::Term {None} else {Some(None)})
           },
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
@@ -558,7 +559,7 @@ impl Elaborator {
               Expr {heap, head: ids[i].take()}
             };
             match ret {
-              None => ((s, deps), Some(val)),
+              None => ((s, deps), Some(Some(val))),
               Some((sp, s2, ref deps2)) => {
                 if s != s2 {
                   return Err(ElabError::new_e(sp, format!("type error: expected {}, got {}",
@@ -570,7 +571,7 @@ impl Elaborator {
                     deps2.iter().filter(|&a| deps & !ba.map[a] != 0)
                       .map(|&a| &self.data[a].name).format(", "))))
                 }
-                ((s2, n), Some(val))
+                ((s2, n), Some(Some(val)))
               }
             }
           }
@@ -579,7 +580,7 @@ impl Elaborator {
           atom, args, ret, val,
           span: self.fspan(sp),
           vis: d.mods,
-          id: d.id,
+          _id: d.id,
         };
         self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
       }
@@ -596,7 +597,7 @@ impl Elaborator {
         if d.k == DeclKind::Axiom {
           if let Some(v) = &d.val {report!(v.span, "axiom declarations have no definition")}
         } else if d.val.is_none() {
-          self.report(ElabError::new_e(sp, "theorem declaration missing value"));
+          self.report(ElabError::warn(d.id, "theorem declaration missing value"));
         }
         for e in self.finalize_vars(false) {report!(e)}
         if error {return Ok(())}
@@ -791,17 +792,23 @@ impl Elaborator {
       if !vis.allowed_visibility(DeclKind::Def) {
         return Err(ElabError::new_e(sp!(evis), "invalid modifiers for this keyword"))
       }
-      dummies(self.format_env(), &fsp, &mut lc, &es[4])?;
-      let mut de = Dedup::new(args.len());
-      let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
-      let i = de.dedup(&nh, &es[5])?;
-      let Builder {mut ids, heap} = self.to_builder(&de)?;
-      (vis, Some(Expr {heap, head: ids[i].take()}))
+      (vis, Some((|| -> Result<Option<Expr>> {
+        dummies(self.format_env(), &fsp, &mut lc, &es[4])?;
+        let mut de = Dedup::new(args.len());
+        let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
+        let i = de.dedup(&nh, &es[5])?;
+        let Builder {mut ids, heap} = self.to_builder(&de)?;
+        Ok(Some(Expr {heap, head: ids[i].take()}))
+      })().unwrap_or_else(|e| {
+        self.report(ElabError::new_e(e.pos,
+          format!("while adding {}: {}", self.print(&x), e.kind.msg())));
+        None
+      })))
     } else {(Modifiers::NONE, None)};
     let t = Term {
       atom: x,
       span: fsp.clone(),
-      id: sp!(es[0]),
+      _id: sp!(es[0]),
       vis, args, ret, val,
     };
     self.env.add_term(x, fsp, || t).map_err(|e| e.to_elab_error(sp))?;

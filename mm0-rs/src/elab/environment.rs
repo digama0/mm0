@@ -111,10 +111,16 @@ pub struct Term {
   pub atom: AtomID,
   pub span: FileSpan,
   pub vis: Modifiers,
-  pub id: Span,
+  pub _id: Span,
   pub args: Vec<(Option<AtomID>, Type)>,
   pub ret: (SortID, u64),
-  pub val: Option<Expr>,
+  pub val: Option<Option<Expr>>,
+}
+impl Term {
+  #[allow(unused)]
+  pub fn id(&self) -> FileSpan {
+    FileSpan {file: self.span.file.clone(), span: self._id}
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -398,7 +404,7 @@ impl Remap<Remapper> for Term {
       atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
-      id: self.id,
+      _id: self._id,
       args: self.args.remap(r),
       ret: (self.ret.0.remap(r), self.ret.1),
       val: self.val.remap(r),

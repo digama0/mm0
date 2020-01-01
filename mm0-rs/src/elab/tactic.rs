@@ -334,15 +334,16 @@ impl Elaborator {
     let tdata = &self.env.terms[t];
     let a = tdata.atom;
     let n = tdata.args.len();
-    let val = tdata.val.as_ref().unwrap();
-    let mut args = Vec::with_capacity(n);
-    if !u1.extend_into(n, &mut args) {return Err(format!("bad term: {}", self.print(&u1)))}
-    let e = Subst::new(&mut self.lc, &self.env, &val.heap, args.clone()).subst(&val.head);
-    let u = self.unify1(&e, e2)?;
-    if u.is_def() {
-      let u = LispKind::unfold(a, args, u);
-      Ok(if sym {LispKind::sym(u)} else {u})
-    } else {Ok(u)}
+    if let Some(Some(val)) = &tdata.val {
+      let mut args = Vec::with_capacity(n);
+      if !u1.extend_into(n, &mut args) {return Err(format!("bad term: {}", self.print(&u1)))}
+      let e = Subst::new(&mut self.lc, &self.env, &val.heap, args.clone()).subst(&val.head);
+      let u = self.unify1(&e, e2)?;
+      if u.is_def() {
+        let u = LispKind::unfold(a, args, u);
+        Ok(if sym {LispKind::sym(u)} else {u})
+      } else {Ok(u)}
+    } else {return Err(format!("not a definition: {}", self.print(&a)))}
   }
 
   fn type_target(&self, ty: &Type) -> InferTarget {

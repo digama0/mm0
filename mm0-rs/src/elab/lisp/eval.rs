@@ -522,7 +522,7 @@ impl Elaborator {
           list(deps(&bvs,
             vec![atom(self.sorts[tdata.ret.0].atom)], tdata.ret.1))
         ];
-        if let Some(v) = &tdata.val {
+        if let Some(Some(v)) = &tdata.val {
           args.push(vis(tdata.vis));
           let mut ds = Vec::new();
           for e in &v.heap[heap.len()..] {
@@ -1076,7 +1076,6 @@ impl<'a> Evaluator<'a> {
             push!(Focus(gs); Refines(sp, irs.iter()))
           }
           &IR::Def(n, ref x, ref val) => {
-            if self.ctx.len() != n {log!("!!!")}
             assert!(self.ctx.len() == n);
             push!(Def(Some(x)); Eval(val))
           }

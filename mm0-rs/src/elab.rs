@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::collections::{HashMap};
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use futures::channel::oneshot::{Receiver, channel};
-use lsp_types::{Diagnostic, DiagnosticRelatedInformation};
+use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
 use environment::*;
 use environment::Literal as ELiteral;
 use lisp::{LispVal, LispKind, FALSE};
@@ -33,11 +33,11 @@ impl ElabErrorKind {
     }
   }
 
-  pub fn to_related_info(&self, file: &LinedString) -> Option<Vec<DiagnosticRelatedInformation>> {
+  pub fn to_related_info(&self, mut to_loc: impl FnMut(&FileSpan) -> Location) -> Option<Vec<DiagnosticRelatedInformation>> {
     match self {
       ElabErrorKind::Boxed(_, Some(info)) =>
         Some(info.iter().map(|(fs, e)| DiagnosticRelatedInformation {
-          location: file.to_loc(fs),
+          location: to_loc(fs),
           message: format!("{}", e),
         }).collect()),
       _ => None
@@ -67,19 +67,21 @@ impl ElabError {
   pub fn with_info(pos: impl Into<Span>, msg: BoxError, v: Vec<(FileSpan, BoxError)>) -> ElabError {
     ElabError::new(pos, ElabErrorKind::Boxed(msg, Some(v)))
   }
-
+  pub fn warn(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
+    ElabError { pos: pos.into(), level: ErrorLevel::Warning, kind: ElabErrorKind::Boxed(e.into(), None)}
+  }
   pub fn info(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
     ElabError { pos: pos.into(), level: ErrorLevel::Info, kind: ElabErrorKind::Boxed(e.into(), None)}
   }
 
-  pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
+  pub fn to_diag(&self, file: &LinedString, to_loc: impl FnMut(&FileSpan) -> Location) -> Diagnostic {
     Diagnostic {
       range: file.to_range(self.pos),
       severity: Some(self.level.to_diag_severity()),
       code: None,
       source: Some("mm0-rs".to_owned()),
       message: self.kind.msg(),
-      related_information: self.kind.to_related_info(file),
+      related_information: self.kind.to_related_info(to_loc),
     }
   }
 }

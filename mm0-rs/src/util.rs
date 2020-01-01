@@ -131,6 +131,8 @@ impl FileRef {
   }
   pub fn path(&self) -> &PathBuf { &self.0 .0 }
   pub fn url(&self) -> &Url { &self.0 .1 }
+  pub fn ptr(&self) -> *const (PathBuf, Url) { &*self.0 }
+  pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
 }
 impl PartialEq for FileRef {
   fn eq(&self, other: &Self) -> bool { self.0 == other.0 }

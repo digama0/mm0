@@ -387,16 +387,33 @@ impl ServerRef<'_> {
     let (errors, env) = fut.await;
     // log!("elabbed {:?}", path);
     if !cancel.load(Ordering::Relaxed) {
+      let mut srcs = HashMap::new();
+      let mut to_loc = |fsp: &FileSpan| -> Location {
+        if fsp.file.ptr_eq(path) {
+          &ast.source
+        } else {
+          srcs.entry(fsp.file.ptr()).or_insert_with(||
+            self.vfs.0.lock().unwrap().get(&fsp.file).unwrap()
+              .text.lock().unwrap().1.clone())
+        }.to_loc(fsp)
+      };
       self.send_diagnostics(path.url().clone(),
         ast.errors.iter().map(|e| e.to_diag(&ast.source))
-          .chain(errors.iter().map(|e| e.to_diag(&ast.source))).collect())?;
+          .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc))).collect())?;
       self.vfs.update_downstream(&old_deps, &deps, &path);
       let env = Arc::new(env);
-      let (fc, waiting) = &mut *file.parsed.lock().unwrap();
-      for w in waiting.drain(..) {
-        let _ = w.send(env.clone());
+      {
+        let (fc, waiting) = &mut *file.parsed.lock().unwrap();
+        for w in waiting.drain(..) {
+          let _ = w.send(env.clone());
+        }
+        *fc = Some(FileCache::Ready {ast, errors, deps, env});
       }
-      *fc = Some(FileCache::Ready {ast, errors, deps, env});
+      let mut queue = Vec::new();
+      for dep in file.downstream.lock().unwrap().clone() {
+        self.vfs.dirty(&mut queue, &dep);
+      }
+      self.jobs.extend(queue);
     }
     file.cvar.notify_all();
     Ok(())

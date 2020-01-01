@@ -402,9 +402,8 @@ impl<'a> LispParser<'a> {
         }
       }
       QExprKind::App(t, es) => {
-        let ast = self.ast.clone();
-        let s = ast.span(self.terms[t].id);
-        let mut cs = vec![IR::Const(Arc::new(LispKind::Atom(self.get_atom(s))))];
+        let a = self.terms[t].atom;
+        let mut cs = vec![IR::Const(Arc::new(LispKind::Atom(a)))];
         for e in es { cs.push(self.qexpr(e)?) }
         Ok(IR::list(self.fspan(e.span), cs))
       }
@@ -497,9 +496,7 @@ impl<'a> LispParser<'a> {
         }
       }
       QExprKind::App(t, es) => {
-        let ast = self.ast.clone();
-        let s = ast.span(self.terms[t].id);
-        let x = self.get_atom(s);
+        let x = self.terms[t].atom;
         if es.is_empty() {
           Ok(Pattern::QExprAtom(x))
         } else {
