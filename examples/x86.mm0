@@ -154,7 +154,7 @@ theorem readSIBDisplacementT (mod bbase q base l: nat):
   $ bbase e. Regs /\ readSIBDisplacement mod bbase q base l ->
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ base e. Base /\ l e. List u8 $;
 
-def readSIB (rex mod rm l .b .bs .ix .sc .disp .bbase .index: nat): wff =
+def readSIB (rex mod rm l .b .l2 .bs .ix .sc .disp .bbase .index: nat): wff =
 $ E. b E. l2 E. bs E. ix E. sc E. disp E. bbase E. index (
     splitBits ((3 <> bs) : (3 <> ix) : (2 <> sc) : 0) b /\
     index = rex_reg (REX_X rex) ix /\
@@ -1090,7 +1090,7 @@ $ k e. Config /\ E. l E. rip E. r11 (
   readMemX k (readRIP k) l /\
   decode xastSysCall l /\
   rip = readRIP k +_64 len l /\
-  k2 = setReg (setReg (writeRIP k rip) RCX rip) 11 r11 $;
+  k2 = setReg (setReg (writeRIP k rip) RCX rip) 11 r11) $;
 
 ----------------------------------------
 -- IO semantics

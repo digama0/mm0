@@ -641,7 +641,7 @@ theorem necom: $ a != b -> b != a $ = '(con3 eqcom);
 
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
-notation sb (a x ph) = ($[$:30) a ($/$:0) x ($]$:0) ph;
+notation sb (a x ph) = ($[$:40) a ($/$:0) x ($]$:0) ph;
 
 theorem sbq (a: nat) (b: wff x): $ x = a -> (b <-> [a / x] b) $ =
 '(! ibid _ _ (al y _) (exp @ iald @ exp @ sylc ax_12 (eqtr4d anll anr) anlr)

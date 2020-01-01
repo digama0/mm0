@@ -47,7 +47,7 @@ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation sb (a: nat) {x: nat} (ph: wff x): wff =
-  ($[$:30) a ($/$:0) x ($]$:0) ph;
+  ($[$:40) a ($/$:0) x ($]$:0) ph;
 
 strict sort set;
 term ab {x: nat} (ph: wff x): set;
