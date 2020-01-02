@@ -354,36 +354,39 @@ impl Elaborator {
     Ok(ElabStmt::Ok)
   }
 
-  pub fn as_fut(mut self,
+  pub fn as_fut<T>(mut self,
     _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>,
-    mut mk: impl FnMut(PathBuf) -> std::result::Result<Receiver<Arc<Environment>>, BoxError>
-  ) -> impl Future<Output=(Vec<ElabError>, Environment)> {
+    mut mk: impl FnMut(PathBuf) ->
+      std::result::Result<Receiver<(T, Arc<Environment>)>, BoxError>
+  ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, Environment)> {
 
-    enum UnfinishedStmt {
+    enum UnfinishedStmt<T> {
       None,
-      Import(Span, Receiver<Arc<Environment>>),
+      Import(Span, Receiver<(T, Arc<Environment>)>),
     }
 
-    struct ElabFutureInner {
+    struct ElabFutureInner<T> {
       elab: Elaborator,
-      recv: HashMap<Span, Receiver<Arc<Environment>>>,
+      toks: Vec<T>,
+      recv: HashMap<Span, Receiver<(T, Arc<Environment>)>>,
       idx: usize,
-      progress: UnfinishedStmt
+      progress: UnfinishedStmt<T>
     }
 
-    struct ElabFuture(Option<ElabFutureInner>);
+    struct ElabFuture<T>(Option<ElabFutureInner<T>>);
 
-    impl Future for ElabFuture {
-      type Output = (Vec<ElabError>, Environment);
+    impl<T> Future for ElabFuture<T> {
+      type Output = (Vec<T>, Vec<ElabError>, Environment);
       fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = &mut unsafe { self.get_unchecked_mut() }.0;
-        let ElabFutureInner {elab, recv, idx, progress} =
+        let ElabFutureInner {elab, toks, recv, idx, progress} =
           this.as_mut().expect("poll called after Ready");
         'l: loop {
           match progress {
             UnfinishedStmt::None => {},
             UnfinishedStmt::Import(sp, other) => {
-              if let Ok(env) = ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
+              if let Ok((t, env)) = ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
+                toks.push(t);
                 let r = elab.env.merge(&env, *sp, &mut elab.errors);
                 elab.catch(r);
               }
@@ -396,15 +399,16 @@ impl Elaborator {
             match elab.elab_stmt(s) {
               Ok(ElabStmt::Ok) => {}
               Ok(ElabStmt::Import(sp)) => {
-                *progress = UnfinishedStmt::Import(sp, recv.remove(&sp).unwrap());
+                let recv = recv.remove(&sp).unwrap();
+                *progress = UnfinishedStmt::Import(sp, recv);
                 continue 'l
               }
               Err(e) => elab.report(e)
             }
             *idx += 1;
           }
-          let elab = this.take().unwrap().elab;
-          return Poll::Ready((elab.errors, elab.env))
+          let ElabFutureInner {elab, toks, ..} = this.take().unwrap();
+          return Poll::Ready((toks, elab.errors, elab.env))
         }
       }
     }
@@ -422,6 +426,7 @@ impl Elaborator {
     }
     ElabFuture(Some(ElabFutureInner {
       elab: self,
+      toks: vec![],
       recv,
       idx: 0,
       progress: UnfinishedStmt::None,
