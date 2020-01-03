@@ -165,6 +165,7 @@ pub struct Thm {
 pub enum StmtTrace {
   Sort(AtomID),
   Decl(AtomID),
+  Global(AtomID),
 }
 
 #[derive(Copy, Clone)]
@@ -808,7 +809,8 @@ impl Environment {
             };
             if i != id { remap.thm.insert(i, id); }
           }
-        }
+        },
+        StmtTrace::Global(_) => {}
       }
     }
     self.pe.merge(&other.pe, remap, sp, &self.sorts, errors);

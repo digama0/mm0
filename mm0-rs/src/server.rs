@@ -18,8 +18,8 @@ use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::elab::{ElabError, Elaborator,
-  environment::{ObjectKind, DeclKey, Environment},
-  local_context::InferSort, lisp::print::FormatEnv};
+  environment::{ObjectKind, DeclKey, StmtTrace, Environment},
+  local_context::InferSort, lisp::{LispKind, print::FormatEnv}};
 
 #[derive(Debug)]
 struct ServerError(BoxError);
@@ -384,6 +384,8 @@ impl RequestHandler {
               range: text2.to_range(span),
             }).await)
         },
+      RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc}) =>
+        self.finish(document_symbol(FileRef::from_url(doc.uri)).await),
       _ => self.finish(Ok(()))
     }
   }
@@ -499,6 +501,94 @@ async fn definition<T>(path: FileRef, pos: Position,
   Ok(res)
 }
 
+async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse, ResponseError> {
+  let Server {vfs, ..} = &*SERVER;
+  let file = vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
+  let text = file.text.lock().unwrap().1.clone();
+  let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+  let fe = FormatEnv {source: &text, env: &env};
+  let f = |name: &ArcString, desc, sp, full, kind| DocumentSymbol {
+    name: (*name.0).clone(),
+    detail: Some(desc),
+    kind,
+    deprecated: None,
+    range: text.to_range(full),
+    selection_range: text.to_range(sp),
+    children: None,
+  };
+  let mut res = vec![];
+  for s in &env.stmts {
+    match s {
+      &StmtTrace::Sort(a) => {
+        let ad = &env.data[a];
+        let s = ad.sort.unwrap();
+        let sd = &env.sorts[s];
+        res.push(f(&ad.name, format!("{}", sd), sd.span.span, sd.full, SymbolKind::Class))
+      }
+      &StmtTrace::Decl(a) => {
+        let ad = &env.data[a];
+        match ad.decl.unwrap() {
+          DeclKey::Term(t) => {
+            let td = &env.terms[t];
+            res.push(f(&ad.name, format!("{}", fe.to(td)), td.span.span, td.full,
+              SymbolKind::Constructor))
+          }
+          DeclKey::Thm(t) => {
+            let td = &env.thms[t];
+            res.push(f(&ad.name, format!("{}", fe.to(td)), td.span.span, td.full,
+              SymbolKind::Method))
+          }
+        }
+      }
+      &StmtTrace::Global(a) => {
+        let ad = &env.data[a];
+        if let &Some((Some((ref fsp, full)), ref e)) = &ad.lisp {
+          res.push(f(&ad.name, format!("{}", fe.to(e)), fsp.span, full,
+            match e.unwrapped(|r| Some(match r {
+              LispKind::Atom(_) |
+              LispKind::MVar(_, _) |
+              LispKind::Goal(_) => SymbolKind::Constant,
+              LispKind::List(_) |
+              LispKind::DottedList(_, _) =>
+                if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
+              LispKind::Number(_) => SymbolKind::Number,
+              LispKind::String(_) => SymbolKind::String,
+              LispKind::Bool(_) => SymbolKind::Boolean,
+              LispKind::Syntax(_) => SymbolKind::Event,
+              LispKind::Undef => return None,
+              LispKind::Proc(_) => SymbolKind::Function,
+              LispKind::AtomMap(_) => SymbolKind::Object,
+              LispKind::Annot(_, _) |
+              LispKind::Ref(_) => unreachable!()
+            })) {
+              Some(sk) => sk,
+              None => continue,
+            }));
+        } else {unreachable!()}
+      }
+    }
+  }
+    // Some(match k {
+    //   &ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
+    //   &ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
+    //   &ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
+    //   &ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+    //     Some((_, InferSort::Bound {sort})) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
+    //     Some((_, InferSort::Reg {sort, deps})) => {
+    //       let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
+    //       for &a in deps {s += " "; s += &env.data[a].name}
+    //       s + ")"
+    //     }
+    //     _ => return None,
+    //   }),
+    //   ObjectKind::Global(_) |
+    //   ObjectKind::Import(_) => return None,
+    // })
+  Ok(DocumentSymbolResponse::Nested(res))
+}
+
 struct Server {
   conn: Connection,
   #[allow(unused)]
@@ -521,7 +611,7 @@ impl Server {
           //   ..Default::default()
           // }),
           definition_provider: Some(true),
-          // document_symbol_provider: Some(true),
+          document_symbol_provider: Some(true),
           ..Default::default()
         })?)?)?,
       conn,

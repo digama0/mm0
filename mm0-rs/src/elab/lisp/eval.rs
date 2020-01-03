@@ -7,7 +7,7 @@ use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator,
-  AtomID, Environment, AtomData, DeclKey,
+  AtomID, Environment, AtomData, DeclKey, StmtTrace,
   ElabError, ElabErrorKind, ErrorLevel, BoxError,
   tactic::{RStack, RState, RefineResult}};
 use super::*;
@@ -1131,7 +1131,10 @@ impl<'a> Evaluator<'a> {
             }
           } else {
             if let Some(&Some((sp1, sp2, a))) = x {
-              self.data[a].lisp = Some((Some((self.fspan(sp2), sp1)), ret));
+              let val = Some((Some((self.fspan(sp2), sp1)), ret));
+              if mem::replace(&mut self.data[a].lisp, val).is_none() {
+                self.stmts.push(StmtTrace::Global(a))
+              }
             }
             State::Ret(LispVal::undef())
           },
