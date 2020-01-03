@@ -389,11 +389,11 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
   log!("spans = {:?}", spans);
   let res: Vec<_> = spans.find_pos(idx).into_iter().filter_map(|&(sp, k)| {
     log!("span {:?} {:?}", sp, k);
-    Some((sp, match k {
-      ObjectKind::Sort(s) => format!("{}", &env.sorts[s]),
-      ObjectKind::Term(t) => format!("{}", fe.to(&env.terms[t])),
-      ObjectKind::Thm(t) => format!("{}", fe.to(&env.thms[t])),
-      ObjectKind::Var(x) => match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+    Some(match k {
+      ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
+      ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
+      ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
+      ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound {sort})) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg {sort, deps})) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -401,10 +401,10 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
           s + ")"
         }
         _ => return None,
-      },
+      }),
       ObjectKind::Global(_) |
       ObjectKind::Import => return None,
-    }))
+    })
   }).collect();
   log!("hover {:?} -> {:?}", idx, res);
   if res.is_empty() {return Ok(None)}

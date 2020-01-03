@@ -2,9 +2,10 @@ use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::fmt::{self, Display};
 use crate::parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
-use crate::elab::{Elaborator, ElabError};
+use crate::elab::{Elaborator, ElabError, ObjectKind};
 use crate::elab::ast::{Formula, SExpr};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
+use crate::elab::spans::Spans;
 use crate::util::*;
 use crate::elab::environment::*;
 
@@ -42,13 +43,14 @@ impl EnvDisplay for QExpr {
 impl Elaborator {
   pub fn parse_formula(&mut self, f: Formula) -> Result<QExpr, ElabError> {
     let mut p = MathParser {
-      pe: &self.pe,
+      pe: &self.env.pe,
       p: Parser {
         source: self.ast.source.as_bytes(),
         errors: vec![],
         imports: vec![],
         idx: f.0.start + 1,
-      }
+      },
+      spans: &mut self.spans,
     };
     p.ws();
     let expr = p.expr(Prec::Prec(0))?;
@@ -63,6 +65,7 @@ const APP_PREC: Prec = Prec::Prec(1024);
 struct MathParser<'a> {
   p: Parser<'a>,
   pe: &'a ParserEnv,
+  spans: &'a mut Spans<ObjectKind>,
 }
 impl<'a> Deref for MathParser<'a> {
   type Target = Parser<'a>;
@@ -107,8 +110,8 @@ impl<'a> MathParser<'a> {
     (tk, mem::replace(&mut self.idx, start))
   }
 
-  fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal], mut end: usize) ->
-      Result<usize, ParseError> {
+  fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal],
+      consts: &mut Vec<Span>, mut end: usize) -> Result<usize, ParseError> {
     for lit in lits {
       match lit {
         &Literal::Var(i, q) => {
@@ -121,6 +124,7 @@ impl<'a> MathParser<'a> {
           if self.span(tk) != c.deref() {
             Err(ParseError::new(tk, format!("expecting '{}'", c).into()))?
           }
+          consts.push(tk);
           end = tk.end;
         }
       }
@@ -142,8 +146,8 @@ impl<'a> MathParser<'a> {
       b'(' => {
         self.idx += 1;
         self.ws();
-        let e = self.expr(Prec::Prec(0))?;
-        self.chr_err(b')')?;
+        let mut e = self.expr(Prec::Prec(0))?;
+        e.span = (start..self.chr_err(b')')?).into();
         return Ok(e)
       }
       c => c
@@ -154,9 +158,12 @@ impl<'a> MathParser<'a> {
       if q >= p {
         if let Some(info) = self.pe.prefixes.get(v) {
           let mut args = VecUninit::new(info.nargs);
-          let end = self.literals(&mut args, &info.lits, sp.end)?;
+          let mut consts = vec![sp];
+          let end = self.literals(&mut args, &info.lits, &mut consts, sp.end)?;
+          let span = (start..end).into();
+          for sp in consts {self.spans.insert(sp, ObjectKind::Term(info.term, span));}
           return Ok(QExpr {
-            span: (start..end).into(),
+            span,
             k: QExprKind::App(sp, info.term, unsafe { args.assume_init() })
           })
         }
@@ -190,7 +197,8 @@ impl<'a> MathParser<'a> {
       let mut args = VecUninit::new(info.nargs);
       let start = lhs.span.start;
       if let Literal::Var(i, _) = info.lits[0] {args.set(i, lhs)} else {unreachable!()}
-      self.literals(&mut args, &info.lits[2..info.lits.len()-1], 0)?;
+      let mut consts = vec![tk];
+      self.literals(&mut args, &info.lits[2..info.lits.len()-1], &mut consts, 0)?;
       let (i, mut rhs) = if let Some(&Literal::Var(i, q)) = info.lits.last() {
         (i, self.prefix(q)?)
       } else {unreachable!()};
@@ -205,6 +213,7 @@ impl<'a> MathParser<'a> {
       }
       let span = (start..rhs.span.end).into();
       args.set(i, rhs);
+      for sp in consts {self.spans.insert(sp, ObjectKind::Term(info.term, span));}
       lhs = QExpr { span, k: QExprKind::App(tk, info.term, unsafe { args.assume_init() }) };
     }
     return Ok(lhs)

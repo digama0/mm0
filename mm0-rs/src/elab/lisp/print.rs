@@ -201,7 +201,7 @@ impl Display for Sort {
 fn dep_type(bvs: &[AtomID], ds: u64, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
   let mut i = 1;
   for x in bvs {
-    if ds & i != 0 {write!(f, "{}", fe.to(x))?}
+    if ds & i != 0 {write!(f, " {}", fe.to(x))?}
     i *= 2;
   }
   Ok(())
@@ -216,7 +216,7 @@ fn grouped_binders(bis: &[(Option<AtomID>, Type)], bvs: &mut Vec<AtomID>,
       None => return Ok(()),
       Some((_, ty)) => ty,
     };
-    let (bis1, bis2) = rest.split_at(it.position(|(_, ty2)| ty != ty2).unwrap_or(rest.len()));
+    let (bis1, bis2) = rest.split_at(it.position(|(_, ty2)| ty != ty2).map_or(rest.len(), |x| x + 1));
     match ty {
       &Type::Bound(s) => {
         write!(f, " {{{}: {}}}", bis1.iter().map(|(a, _)| {
@@ -253,7 +253,7 @@ fn expr_node(bis: &[(Option<AtomID>, Type)], heap: &[ExprNode], e: &ExprNode,
   match e {
     &ExprNode::Ref(n) => match bis.get(n) {
       Some(&(a, _)) => write!(f, "{}", fe.to(&a.unwrap_or(AtomID::UNDER))),
-      None => expr_node(bis, heap, &heap[n], fe, f),
+      None => expr_node(bis, &heap[..n], &heap[n], fe, f),
     }
     &ExprNode::Dummy(a, _) => write!(f, "{}", fe.to(&a)),
     ExprNode::App(t, es) if es.is_empty() => write!(f, "{}", fe.to(t)),
@@ -270,11 +270,12 @@ fn expr_node(bis: &[(Option<AtomID>, Type)], heap: &[ExprNode], e: &ExprNode,
 
 impl EnvDisplay for Thm {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "{}{} {}:", self.vis,
+    write!(f, "{}{} {}", self.vis,
       if self.proof.is_some() {"theorem"} else {"axiom"},
       fe.to(&self.atom))?;
     let mut bvs = vec![];
     grouped_binders(&self.args, &mut bvs, fe, f)?;
+    write!(f, ":")?;
     for (_, h) in &self.hyps {
       write!(f, "\n  $ ")?;
       expr_node(&self.args, &self.heap, h, fe, f)?;

@@ -121,6 +121,7 @@ struct ElabTermMut<'a> {
   lc: &'a mut LocalContext,
   fe: FormatEnv<'a>,
   fsp: FileSpan,
+  spans: &'a mut Spans<ObjectKind>,
 }
 impl<'a> Deref for ElabTermMut<'a> {
   type Target = ElabTerm<'a>;
@@ -205,12 +206,20 @@ impl<'a> ElabTerm<'a> {
 }
 
 impl<'a> ElabTermMut<'a> {
+  fn spans_insert(&mut self, e: &LispKind, k: impl FnOnce() -> ObjectKind) {
+    if let Some(fsp) = e.fspan() {
+      if self.fsp.file.ptr_eq(&fsp.file) {
+        self.spans.insert_if(fsp.span, k)
+      }
+    }
+  }
+
   fn atom(&mut self, e: &LispVal, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
     let is = &mut self.lc.vars.entry(a).or_insert_with({
       let fsp = &self.fsp;
       move || (true, InferSort::new(try_get_span(fsp, e)))
     }).1;
-    match (is, tgt) {
+    let res = match (is, tgt) {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.err(e, "expected a bound variable, got regular variable")),
       (&mut InferSort::Bound {sort, ..}, InferTarget::Bound(sa)) => {
@@ -232,7 +241,9 @@ impl<'a> ElabTermMut<'a> {
       }
       (&mut InferSort::Reg {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
       (&mut InferSort::Bound {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
-    }
+    };
+    self.spans_insert(e, || ObjectKind::Var(a));
+    res
   }
 
   fn list(&mut self, e: &LispVal,
@@ -241,13 +252,14 @@ impl<'a> ElabTermMut<'a> {
     let a = t.as_atom().ok_or_else(|| self.err(&t, "expected an atom"))?;
     let tid = self.fe.term(a).ok_or_else(||
       self.err(&t, format!("term '{}' not declared", self.fe.data[a].name)))?;
+    let sp1 = self.try_get_span(e);
+    self.spans_insert(&t, || ObjectKind::Term(tid, sp1));
     let tdata = &self.fe.env.terms[tid];
     let mut tys = tdata.args.iter();
     let mut args = vec![LispKind::Atom(a).decorate_span(&t.fspan())];
     for arg in it {
-      let tgt = match tys.next().ok_or_else(||
-        self.err(&e,
-          format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?.1 {
+      let tgt = match tys.next().ok_or_else(|| ElabError::new_e(sp1,
+        format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?.1 {
         EType::Bound(s) => InferTarget::Bound(self.fe.sorts[s].atom),
         EType::Reg(s, _) => InferTarget::Reg(self.fe.sorts[s].atom),
       };
@@ -423,7 +435,8 @@ impl Elaborator {
     ElabTermMut {
       fsp: self.fspan(sp),
       fe: FormatEnv {source: &self.ast.source, env: &self.env},
-      lc: &mut self.lc
+      lc: &mut self.lc,
+      spans: &mut self.spans,
     }
   }
 
@@ -591,7 +604,7 @@ impl Elaborator {
           _id: d.id,
         };
         let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
-        self.spans.insert(d.id, ObjectKind::Term(tid));
+        self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
       }
       DeclKind::Axiom | DeclKind::Thm => {
         let eret = match &d.ty {

@@ -41,7 +41,7 @@ impl<T> Spans<T> {
     v.push((sp, val));
     &mut v.last_mut().unwrap().1
   }
-  pub fn _insert_if(&mut self, sp: Span, val: impl FnOnce() -> T) {
+  pub fn insert_if(&mut self, sp: Span, val: impl FnOnce() -> T) {
     if sp.start >= self.stmt().start {
       self.insert(sp, val());
     }

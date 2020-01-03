@@ -175,7 +175,7 @@ impl Elaborator {
   fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
     let a = self.env.get_atom(self.ast.span(n.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
-    self.spans.insert(n.id, ObjectKind::Term(term));
+    self.spans.insert(n.id, ObjectKind::Term(term, n.id));
     let tk: ArcString = self.span(n.c.trim).into();
     let (rassoc, nargs, lits) = match n.k {
       SimpleNotaKind::Prefix => {
@@ -216,7 +216,7 @@ impl Elaborator {
     let s1 = self.data[afrom].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
     let s2 = self.data[ato].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
     self.check_term_nargs(id, t, 1)?;
-    self.spans.insert(id, ObjectKind::Term(t));
+    self.spans.insert(id, ObjectKind::Term(t, id));
     self.spans.insert(from, ObjectKind::Sort(s1));
     self.spans.insert(to, ObjectKind::Sort(s2));
     let fsp = self.fspan(id);
@@ -236,7 +236,7 @@ impl Elaborator {
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
     let nargs = n.bis.len();
     self.check_term_nargs(n.id, term, nargs)?;
-    self.spans.insert(n.id, ObjectKind::Term(term));
+    self.spans.insert(n.id, ObjectKind::Term(term, n.id));
     let ast = self.ast.clone();
     let mut vars = HashMap::<&str, (usize, bool)>::new();
     for (i, bi) in n.bis.iter().enumerate() {

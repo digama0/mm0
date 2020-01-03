@@ -100,13 +100,13 @@ pub enum ExprNode {
 
 /// The Expr type stores expression dags using a local context of expression nodes
 /// and a final expression. See `ExprNode` for explanation of the variants.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Expr {
   pub heap: Vec<ExprNode>,
   pub head: ExprNode,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Term {
   pub atom: AtomID,
   pub span: FileSpan,
@@ -250,7 +250,7 @@ impl AtomData {
 #[derive(Copy, Clone, Debug)]
 pub enum ObjectKind {
   Sort(SortID),
-  Term(TermID),
+  Term(TermID, Span),
   Thm(ThmID),
   Var(AtomID),
   Global(AtomID),
