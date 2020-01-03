@@ -5,7 +5,7 @@ use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::ArcString;
-use super::super::{AtomID, Span, Elaborator, ElabError};
+use super::super::{AtomID, Span, Elaborator, ElabError, ObjectKind};
 use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
@@ -394,16 +394,17 @@ impl<'a> LispParser<'a> {
     match e.k {
       QExprKind::IdentApp(sp, es) => {
         let head = IR::Const(LispVal::atom(
-          self.elab.env.get_atom(self.ast.clone().span(sp))));
+          self.elab.env.get_atom(self.ast.clone().span(sp))).span(self.fspan(sp)));
         if es.is_empty() {Ok(head)} else {
           let mut cs = vec![head];
           for e in es { cs.push(self.qexpr(e)?) }
           Ok(IR::list(self.fspan(e.span), cs))
         }
       }
-      QExprKind::App(t, es) => {
+      QExprKind::App(sp, t, es) => {
+        self.spans.insert(sp, ObjectKind::Term(t));
         let a = self.terms[t].atom;
-        let mut cs = vec![IR::Const(LispVal::atom(a))];
+        let mut cs = vec![IR::Const(LispVal::atom(a).span(self.fspan(sp)))];
         for e in es { cs.push(self.qexpr(e)?) }
         Ok(IR::list(self.fspan(e.span), cs))
       }
@@ -495,7 +496,8 @@ impl<'a> LispParser<'a> {
           Ok(Pattern::List(cs.into(), None))
         }
       }
-      QExprKind::App(t, es) => {
+      QExprKind::App(sp, t, es) => {
+        self.spans.insert(sp, ObjectKind::Term(t));
         let x = self.terms[t].atom;
         if es.is_empty() {
           Ok(Pattern::QExprAtom(x))
@@ -621,9 +623,12 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn eval_atom(&self, sp: Span, x: AtomID) -> IR {
+  fn eval_atom(&mut self, sp: Span, x: AtomID) -> IR {
     match self.ctx.get(x) {
-      None => IR::Global(sp, x),
+      None => {
+        self.spans.insert(sp, ObjectKind::Global(x));
+        IR::Global(sp, x)
+      },
       Some(i) => IR::Local(i)
     }
   }

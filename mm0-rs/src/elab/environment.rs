@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::fmt::Write;
 use std::hash::Hash;
 use std::collections::HashMap;
-use super::{ElabError, BoxError};
+use super::{ElabError, BoxError, spans::Spans};
 use crate::util::*;
 use super::lisp::{LispVal, LispRemapper};
 pub use crate::parser::ast::{Modifiers, Prec};
@@ -65,7 +65,7 @@ pub struct Sort {
   pub mods: Modifiers,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Type {
   Bound(SortID),
   Reg(SortID, u64),
@@ -88,8 +88,7 @@ impl Type {
 
 /// An `ExprNode` is interpreted inside a context containing the `Vec<(String, Type)>`
 /// args and the `Vec<ExprNode>` heap.
-///   * `Ref(n)` is variable n, if `n < args.len()`
-///   * `Ref(n + args.len())` is a reference to heap element `n`
+///   * `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
 ///   * `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
 ///   * `App(t, nodes)` is an application of term constructor `t` to subterms
 #[derive(Clone, Debug)]
@@ -248,7 +247,16 @@ impl AtomData {
   }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
+pub enum ObjectKind {
+  Sort(SortID),
+  Term(TermID),
+  Thm(ThmID),
+  Var(AtomID),
+  Global(AtomID),
+  Import,
+}
+
 pub struct Environment {
   pub sorts: SortVec<Sort>,
   pub pe: ParserEnv,
@@ -257,6 +265,7 @@ pub struct Environment {
   pub atoms: HashMap<ArcString, AtomID>,
   pub data: AtomVec<AtomData>,
   pub stmts: Vec<StmtTrace>,
+  pub spans: Vec<Spans<ObjectKind>>,
 }
 
 macro_rules! make_atoms {
@@ -286,6 +295,7 @@ macro_rules! make_atoms {
           terms: Default::default(),
           thms: Default::default(),
           stmts: Default::default(),
+          spans: Default::default(),
         }
       }
     }
@@ -745,7 +755,6 @@ impl Environment {
   }
 
   pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
-    if self.stmts.is_empty() { return Ok(*self = other.clone()) }
     let lisp_remap = &mut LispRemapper {
       atom: other.data.iter().map(|d| self.get_atom_arc(d.name.clone())).collect(),
       lisp: Default::default(),
@@ -816,5 +825,12 @@ impl Environment {
     if t.args.len() == nargs { return Ok(()) }
     Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
       vec![(t.span.clone(), "declared here".into())]))
+  }
+
+  pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
+    match self.spans.binary_search_by_key(&pos, |s| s.stmt().start) {
+      Ok(i) => Some(&self.spans[i]),
+      Err(i) => i.checked_sub(1).map(|j| &self.spans[j]),
+    }
   }
 }

@@ -1,4 +1,5 @@
 pub mod environment;
+pub mod spans;
 pub mod lisp;
 pub mod math_parser;
 pub mod local_context;
@@ -6,16 +7,18 @@ pub mod tactic;
 pub mod proof;
 
 use std::ops::{Deref, DerefMut};
+use std::mem;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Instant, Duration};
 use std::path::PathBuf;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use futures::channel::oneshot::{Receiver, channel};
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
 use environment::*;
 use environment::Literal as ELiteral;
 use lisp::LispVal;
+use spans::Spans;
 pub use {environment::Environment, local_context::LocalContext};
 pub use crate::parser::ErrorLevel;
 use crate::util::*;
@@ -121,6 +124,7 @@ pub struct Elaborator {
   timeout: Option<Duration>,
   cur_timeout: Option<Instant>,
   lc: LocalContext,
+  spans: Spans<ObjectKind>,
   check_proofs: bool,
   reporting: ReportMode,
 }
@@ -142,6 +146,7 @@ impl Elaborator {
       timeout: Some(Duration::from_secs(5)),
       cur_timeout: None,
       lc: LocalContext::new(),
+      spans: Spans::new(),
       check_proofs: true,
       reporting: ReportMode::new(),
     }
@@ -153,6 +158,10 @@ impl Elaborator {
     if self.reporting.active(e.level) {self.errors.push(e)}
   }
   fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
+
+  fn push_spans(&mut self) {
+    self.env.spans.push(mem::replace(&mut self.spans, Spans::new()));
+  }
 
   fn name_of(&mut self, stmt: &Stmt) -> LispVal {
     match &stmt.k {
@@ -166,6 +175,7 @@ impl Elaborator {
   fn elab_simple_nota(&mut self, n: &SimpleNota) -> Result<()> {
     let a = self.env.get_atom(self.ast.span(n.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
+    self.spans.insert(n.id, ObjectKind::Term(term));
     let tk: ArcString = self.span(n.c.trim).into();
     let (rassoc, nargs, lits) = match n.k {
       SimpleNotaKind::Prefix => {
@@ -205,8 +215,11 @@ impl Elaborator {
     let t = self.term(aid).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
     let s1 = self.data[afrom].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
     let s2 = self.data[ato].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
-    let fsp = self.fspan(id);
     self.check_term_nargs(id, t, 1)?;
+    self.spans.insert(id, ObjectKind::Term(t));
+    self.spans.insert(from, ObjectKind::Sort(s1));
+    self.spans.insert(to, ObjectKind::Sort(s2));
+    let fsp = self.fspan(id);
     self.add_coe(s1, s2, fsp, t)
   }
 
@@ -223,6 +236,7 @@ impl Elaborator {
     let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
     let nargs = n.bis.len();
     self.check_term_nargs(n.id, term, nargs)?;
+    self.spans.insert(n.id, ObjectKind::Term(term));
     let ast = self.ast.clone();
     let mut vars = HashMap::<&str, (usize, bool)>::new();
     for (i, bi) in n.bis.iter().enumerate() {
@@ -324,11 +338,13 @@ enum ElabStmt {
 impl Elaborator {
   fn elab_stmt(&mut self, stmt: &Stmt) -> Result<ElabStmt> {
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
+    self.spans.set_stmt(stmt.span);
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        self.add_sort(a, fsp, sd).map_err(|e| e.to_elab_error(sp))?;
+        let id = self.add_sort(a, fsp, sd).map_err(|e| e.to_elab_error(sp))?;
+        self.spans.insert(sp, ObjectKind::Sort(id));
       }
       StmtKind::Decl(d) => self.elab_decl(stmt.span, d)?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
@@ -336,7 +352,10 @@ impl Elaborator {
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
       &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
-      &StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp)),
+      &StmtKind::Import(sp, _) => {
+        self.spans.insert(sp, ObjectKind::Import);
+        return Ok(ElabStmt::Import(sp))
+      }
       StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
@@ -401,10 +420,12 @@ impl Elaborator {
               Ok(ElabStmt::Import(sp)) => {
                 let recv = recv.remove(&sp).unwrap();
                 *progress = UnfinishedStmt::Import(sp, recv);
+                elab.push_spans();
                 continue 'l
               }
               Err(e) => elab.report(e)
             }
+            elab.push_spans();
             *idx += 1;
           }
           let ElabFutureInner {elab, toks, ..} = this.take().unwrap();

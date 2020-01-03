@@ -1,7 +1,8 @@
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
-use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID};
+use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID,
+  Sort, Term, environment::Type, Thm, ExprNode};
 use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
 #[derive(Copy, Clone)]
@@ -74,6 +75,14 @@ fn alphanumber(n: usize) -> String {
 impl EnvDisplay for AtomID {
   fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
     fe.data[*self].name.fmt(f)
+  }
+}
+impl EnvDisplay for Option<AtomID> {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      None => "_".fmt(f),
+      Some(a) => a.fmt(fe, f)
+    }
   }
 }
 impl EnvDisplay for SortID {
@@ -180,5 +189,99 @@ impl EnvDisplay for InferTarget {
       InferTarget::Bound(a) => write!(f, "{{{}}}", fe.to(a)),
       InferTarget::Reg(a) => a.fmt(fe, f),
     }
+  }
+}
+
+impl Display for Sort {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}sort {};", self.mods, self.name)
+  }
+}
+
+fn dep_type(bvs: &[AtomID], ds: u64, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  let mut i = 1;
+  for x in bvs {
+    if ds & i != 0 {write!(f, "{}", fe.to(x))?}
+    i *= 2;
+  }
+  Ok(())
+}
+
+fn grouped_binders(bis: &[(Option<AtomID>, Type)], bvs: &mut Vec<AtomID>,
+    fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  let mut rest = bis;
+  loop {
+    let mut it = rest.iter();
+    let ty = match it.next() {
+      None => return Ok(()),
+      Some((_, ty)) => ty,
+    };
+    let (bis1, bis2) = rest.split_at(it.position(|(_, ty2)| ty != ty2).unwrap_or(rest.len()));
+    match ty {
+      &Type::Bound(s) => {
+        write!(f, " {{{}: {}}}", bis1.iter().map(|(a, _)| {
+          bvs.push(a.unwrap_or(AtomID::UNDER));
+          fe.to(a)
+        }).format(" "), fe.to(&s))?;
+      }
+      &Type::Reg(s, ds) => {
+        write!(f, " ({}: {}", bis1.iter().map(|(a, _)| fe.to(a)).format(" "), fe.to(&s))?;
+        dep_type(bvs, ds, fe, f)?;
+        write!(f, ")")?;
+      }
+    }
+    rest = bis2;
+  }
+}
+
+impl EnvDisplay for Term {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}{} {}", self.vis,
+      if self.val.is_some() {"def"} else {"term"},
+      fe.to(&self.atom))?;
+    let mut bvs = vec![];
+    grouped_binders(&self.args, &mut bvs, fe, f)?;
+    write!(f, ": {}", fe.to(&self.ret.0))?;
+    dep_type(&bvs, self.ret.1, fe, f)?;
+    write!(f, ";")?;
+    Ok(())
+  }
+}
+
+fn expr_node(bis: &[(Option<AtomID>, Type)], heap: &[ExprNode], e: &ExprNode,
+    fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  match e {
+    &ExprNode::Ref(n) => match bis.get(n) {
+      Some(&(a, _)) => write!(f, "{}", fe.to(&a.unwrap_or(AtomID::UNDER))),
+      None => expr_node(bis, heap, &heap[n], fe, f),
+    }
+    &ExprNode::Dummy(a, _) => write!(f, "{}", fe.to(&a)),
+    ExprNode::App(t, es) if es.is_empty() => write!(f, "{}", fe.to(t)),
+    ExprNode::App(t, es) => {
+      write!(f, "({}", fe.to(t))?;
+      for e in es {
+        write!(f, " ")?;
+        expr_node(bis, heap, e, fe, f)?;
+      }
+      write!(f, ")")
+    }
+  }
+}
+
+impl EnvDisplay for Thm {
+  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}{} {}:", self.vis,
+      if self.proof.is_some() {"theorem"} else {"axiom"},
+      fe.to(&self.atom))?;
+    let mut bvs = vec![];
+    grouped_binders(&self.args, &mut bvs, fe, f)?;
+    for (_, h) in &self.hyps {
+      write!(f, "\n  $ ")?;
+      expr_node(&self.args, &self.heap, h, fe, f)?;
+      write!(f, " $ >")?;
+    }
+    write!(f, "\n  $ ")?;
+    expr_node(&self.args, &self.heap, &self.ret, fe, f)?;
+    write!(f, " $;")
   }
 }

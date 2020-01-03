@@ -46,6 +46,19 @@ impl Modifiers {
   }
 }
 
+impl Display for Modifiers {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    if self.contains(Modifiers::PURE) {write!(f, "pure ")?}
+    if self.contains(Modifiers::STRICT) {write!(f, "strict ")?}
+    if self.contains(Modifiers::PROVABLE) {write!(f, "provable ")?}
+    if self.contains(Modifiers::FREE) {write!(f, "free ")?}
+    if self.contains(Modifiers::PUB) {write!(f, "pub ")?}
+    if self.contains(Modifiers::ABSTRACT) {write!(f, "abstract ")?}
+    if self.contains(Modifiers::LOCAL) {write!(f, "local ")?}
+    Ok(())
+  }
+}
+
 #[derive(Clone)]
 pub enum Delimiter {
   Both(Box<[u8]>),

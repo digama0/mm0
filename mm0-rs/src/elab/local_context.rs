@@ -360,6 +360,7 @@ impl Elaborator {
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
+    self.spans.insert(d.sort, ObjectKind::Sort(sort));
     Ok(if lk.is_bound() {
       if !d.deps.is_empty() {
         self.report(ElabError::new_e(
@@ -372,6 +373,7 @@ impl Elaborator {
         sort,
         deps: d.deps.iter().map(|&sp| {
           let y = self.env.get_atom(self.ast.span(sp));
+          self.spans.insert(sp, ObjectKind::Var(y));
           match self.lc.var(y, sp) {
             (_, InferSort::Unknown {dummy, must_bound, ..}) =>
               {*dummy = false; *must_bound = true}
@@ -389,7 +391,13 @@ impl Elaborator {
   }
 
   fn elab_binder(&mut self, error: &mut bool, sp: Option<Span>, lk: LocalKind, ty: Option<&Type>) -> Result<InferBinder> {
-    let x = if lk == LocalKind::Anon {None} else {sp.map(|sp| self.env.get_atom(self.ast.span(sp)))};
+    let x = if lk == LocalKind::Anon {None} else {
+      sp.map(|sp| {
+        let a = self.env.get_atom(self.ast.span(sp));
+        self.spans.insert(sp, ObjectKind::Var(a));
+        a
+      })
+    };
     Ok(match ty {
       None => InferBinder::Var(x, (lk == LocalKind::Dummy, InferSort::Unknown {
         src: sp.unwrap(),
@@ -501,6 +509,7 @@ impl Elaborator {
       }
     }
     let atom = self.env.get_atom(self.ast.span(d.id));
+    self.spans.set_decl(atom);
     match d.k {
       DeclKind::Term | DeclKind::Def => {
         for (bi, _, _) in ehyps {report!(bi.span, "term/def declarations have no hypotheses")}
@@ -581,7 +590,8 @@ impl Elaborator {
           vis: d.mods,
           _id: d.id,
         };
-        self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        self.spans.insert(d.id, ObjectKind::Term(tid));
       }
       DeclKind::Axiom | DeclKind::Thm => {
         let eret = match &d.ty {
@@ -652,10 +662,12 @@ impl Elaborator {
           atom, span, vis: d.mods, id: d.id,
           args, heap, hyps, ret, proof
         };
-        self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        self.spans.insert(d.id, ObjectKind::Thm(tid));
       }
     }
-    Ok(self.lc.clear())
+    self.spans.lc = Some(mem::replace(&mut self.lc, LocalContext::new()));
+    Ok(())
   }
 }
 

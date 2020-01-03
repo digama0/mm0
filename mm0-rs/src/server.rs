@@ -17,7 +17,8 @@ use crossbeam::{channel::{SendError, RecvError}};
 use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
-use crate::elab::{Environment, ElabError, Elaborator};
+use crate::elab::{Environment, ElabError, Elaborator,
+  environment::ObjectKind, local_context::InferSort, lisp::print::FormatEnv};
 
 #[derive(Debug)]
 struct ServerError(BoxError);
@@ -133,9 +134,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let (toks, errors, env) = elab.as_fut(
     old_env.map(|(errs, e)| (idx, errs, e)),
     |path| {
-      let path = FileRef::new(path);
-      log!("request {:?}", path);
-      let path = vfs.get_or_insert(path)?.0;
+      let path = vfs.get_or_insert(FileRef::new(path))?.0;
       let (send, recv) = channel();
       pool.spawn_ok(elaborate_and_send(path.clone(), cancel.clone(), send));
       deps.push(path);
@@ -345,30 +344,75 @@ fn send_diagnostics(uri: Url, diagnostics: Vec<Diagnostic>) -> Result<()> {
 
 type OpenRequests = Mutex<HashMap<RequestId, Arc<AtomicBool>>>;
 
-struct RequestHandler<'a> {
-  reqs: &'a OpenRequests,
+struct RequestHandler {
   id: RequestId,
   #[allow(unused)]
-  cancel: &'a AtomicBool,
+  cancel: Arc<AtomicBool>,
 }
 
-impl RequestHandler<'_> {
-  fn handle(self, req: RequestType) -> Result<()> {
+impl RequestHandler {
+  async fn handle(self, req: RequestType) -> Result<()> {
     match req {
-      _ => {}
+      RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) => {
+        self.finish(hover(FileRef::from_url(doc.uri), position).await)
+      }
+      _ => self.finish(Ok(()))
     }
-
-    self.finish(Ok(()))
   }
 
   fn finish<T: Serialize>(self, resp: result::Result<T, ResponseError>) -> Result<()> {
-    self.reqs.lock().unwrap().remove(&self.id);
-    SERVER.conn.sender.send(Message::Response(match resp {
+    let Server {reqs, conn, ..} = &*SERVER;
+    reqs.lock().unwrap().remove(&self.id);
+    conn.sender.send(Message::Response(match resp {
       Ok(val) => Response { id: self.id, result: Some(to_value(val)?), error: None },
       Err(e) => Response { id: self.id, result: None, error: Some(e) }
     }))?;
     Ok(())
   }
+}
+
+async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, ResponseError> {
+  let Server {vfs, ..} = &*SERVER;
+  macro_rules! or_none {($e:expr)  => {match $e {
+    Some(x) => x,
+    None => return Ok(None)
+  }}}
+  let file = vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
+  let text = file.text.lock().unwrap().1.clone();
+  let idx = or_none!(text.to_idx(pos));
+  log!("hover {:?}", idx);
+  let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+  let fe = FormatEnv {source: &text, env: &env};
+  let spans = or_none!(env.find(idx));
+  log!("spans = {:?}", spans);
+  let res: Vec<_> = spans.find_pos(idx).into_iter().filter_map(|&(sp, k)| {
+    log!("span {:?} {:?}", sp, k);
+    Some((sp, match k {
+      ObjectKind::Sort(s) => format!("{}", &env.sorts[s]),
+      ObjectKind::Term(t) => format!("{}", fe.to(&env.terms[t])),
+      ObjectKind::Thm(t) => format!("{}", fe.to(&env.thms[t])),
+      ObjectKind::Var(x) => match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+        Some((_, InferSort::Bound {sort})) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
+        Some((_, InferSort::Reg {sort, deps})) => {
+          let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
+          for &a in deps {s += " "; s += &env.data[a].name}
+          s + ")"
+        }
+        _ => return None,
+      },
+      ObjectKind::Global(_) |
+      ObjectKind::Import => return None,
+    }))
+  }).collect();
+  log!("hover {:?} -> {:?}", idx, res);
+  if res.is_empty() {return Ok(None)}
+  Ok(Some(Hover {
+    range: Some(text.to_range(res[0].0)),
+    contents: HoverContents::Array(res.into_iter().map(|(_, value)|
+      MarkedString::LanguageString(LanguageString {language: "mm0".into(), value})).collect())
+  }))
 }
 
 struct Server {
@@ -387,7 +431,7 @@ impl Server {
       params: from_value(conn.initialize(
         to_value(ServerCapabilities {
           text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Incremental)),
-          // hover_provider: Some(true),
+          hover_provider: Some(true),
           // completion_provider: Some(CompletionOptions {
           //   resolve_provider: Some(true),
           //   ..Default::default()
@@ -427,8 +471,9 @@ impl Server {
               if let Some((id, req)) = parse_request(req)? {
                 let cancel = Arc::new(AtomicBool::new(false));
                 reqs.lock().unwrap().insert(id.clone(), cancel.clone());
-                s.spawn(move |_|
-                  RequestHandler {reqs, id, cancel: &cancel}.handle(req).unwrap());
+                pool.spawn_ok(async {
+                  RequestHandler {id, cancel}.handle(req).await.unwrap()
+                });
               }
             }
             Message::Response(resp) => {
@@ -485,6 +530,10 @@ impl Server {
       }
     }).expect("other thread panicked")
   }
+}
+
+fn response_err(code: ErrorCode, message: impl Into<String>) -> ResponseError {
+  ResponseError {code: code as i32, message: message.into(), data: None}
 }
 
 pub fn main(mut args: impl Iterator<Item=String>) {

@@ -16,7 +16,7 @@ pub struct QExpr {
 #[derive(Debug)]
 pub enum QExprKind {
   IdentApp(Span, Vec<QExpr>),
-  App(TermID, Vec<QExpr>),
+  App(Span, TermID, Vec<QExpr>),
   Unquote(SExpr),
 }
 
@@ -29,7 +29,7 @@ impl EnvDisplay for QExpr {
         for e in es {write!(f, " {}", fe.to(e))?}
         write!(f, ")")
       }
-      QExprKind::App(t, es) => {
+      QExprKind::App(_, t, es) => {
         write!(f, "({}", fe.to(t))?;
         for e in es {write!(f, " {}", fe.to(e))?}
         write!(f, ")")
@@ -157,7 +157,7 @@ impl<'a> MathParser<'a> {
           let end = self.literals(&mut args, &info.lits, sp.end)?;
           return Ok(QExpr {
             span: (start..end).into(),
-            k: QExprKind::App(info.term, unsafe { args.assume_init() })
+            k: QExprKind::App(sp, info.term, unsafe { args.assume_init() })
           })
         }
       }
@@ -181,7 +181,8 @@ impl<'a> MathParser<'a> {
   fn lhs(&mut self, p: Prec, mut lhs: QExpr) -> Result<QExpr, ParseError> {
     let mut tok_end = self.peek_token();
     loop {
-      let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
+      let tk = if let Some(tk) = tok_end.0 {tk} else {break};
+      let s = self.span(tk);
       let p1 = if let Some(&(_, q)) = self.pe.consts.get(s) {q} else {break};
       if p1 < p {break}
       let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
@@ -204,7 +205,7 @@ impl<'a> MathParser<'a> {
       }
       let span = (start..rhs.span.end).into();
       args.set(i, rhs);
-      lhs = QExpr { span, k: QExprKind::App(info.term, unsafe { args.assume_init() }) };
+      lhs = QExpr { span, k: QExprKind::App(tk, info.term, unsafe { args.assume_init() }) };
     }
     return Ok(lhs)
   }
