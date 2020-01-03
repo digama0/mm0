@@ -12,13 +12,14 @@ use futures::lock::Mutex as FMutex;
 use lsp_server::*;
 use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
+use serde_repr::{Serialize_repr, Deserialize_repr};
 use lsp_types::*;
 use crossbeam::{channel::{SendError, RecvError}};
 use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::elab::{ElabError, Elaborator,
-  environment::{ObjectKind, DeclKey, StmtTrace, Environment},
+  environment::{ObjectKind, DeclKey, AtomData, StmtTrace, Environment},
   local_context::InferSort, lisp::{LispKind, print::FormatEnv}};
 
 #[derive(Debug)]
@@ -311,6 +312,7 @@ impl VFS {
 
 enum RequestType {
   Completion(CompletionParams),
+  CompletionResolve(CompletionItem),
   Hover(TextDocumentPositionParams),
   Definition(TextDocumentPositionParams),
   DocumentSymbol(DocumentSymbolParams),
@@ -323,6 +325,7 @@ fn parse_request(req: Request) -> Result<Option<(RequestId, RequestType)>> {
     "textDocument/hover"          => Ok(Some((id, RequestType::Hover(from_value(params)?)))),
     "textDocument/definition"     => Ok(Some((id, RequestType::Definition(from_value(params)?)))),
     "textDocument/documentSymbol" => Ok(Some((id, RequestType::DocumentSymbol(from_value(params)?)))),
+    "completionItem/resolve"      => Ok(Some((id, RequestType::CompletionResolve(from_value(params)?)))),
     _ => Ok(None)
   }
 }
@@ -368,8 +371,7 @@ impl RequestHandler {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
         self.finish(hover(FileRef::from_url(doc.uri), position).await),
       RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
-        if let Some(true) = SERVER.params.capabilities.text_document
-          .as_ref().and_then(|d| d.definition.as_ref().and_then(|g| g.link_support)) {
+        if SERVER.caps.definition_location_links {
           self.finish(definition(FileRef::from_url(doc.uri), position,
             |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
               origin_selection_range: Some(text.to_range(src)),
@@ -386,7 +388,13 @@ impl RequestHandler {
         },
       RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc}) =>
         self.finish(document_symbol(FileRef::from_url(doc.uri)).await),
-      _ => self.finish(Ok(()))
+      RequestType::Completion(p) => {
+        let doc = p.text_document_position;
+        self.finish(completion(FileRef::from_url(doc.text_document.uri), doc.position).await)
+      }
+      RequestType::CompletionResolve(ci) => {
+        self.finish(completion_resolve(ci).await)
+      }
     }
   }
 
@@ -570,50 +578,130 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
       }
     }
   }
-    // Some(match k {
-    //   &ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
-    //   &ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
-    //   &ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
-    //   &ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
-    //     Some((_, InferSort::Bound {sort})) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
-    //     Some((_, InferSort::Reg {sort, deps})) => {
-    //       let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
-    //       for &a in deps {s += " "; s += &env.data[a].name}
-    //       s + ")"
-    //     }
-    //     _ => return None,
-    //   }),
-    //   ObjectKind::Global(_) |
-    //   ObjectKind::Import(_) => return None,
-    // })
   Ok(DocumentSymbolResponse::Nested(res))
+}
+
+#[derive(Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+enum TraceKind {Sort, Decl, Global}
+
+fn make_completion_item(path: &FileRef, fe: FormatEnv, ad: &AtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
+  use CompletionItemKind::*;
+  macro_rules! done {($desc:expr, $kind:expr) => {
+    Some(CompletionItem {
+      label: (*ad.name.0).clone(),
+      detail: if detail {Some($desc)} else {None},
+      kind: Some($kind),
+      data: Some(to_value((path.url(), tk)).unwrap()),
+      ..Default::default()
+    })
+  }}
+  match tk {
+    TraceKind::Sort => ad.sort.and_then(|s| {
+      let sd = &fe.sorts[s];
+      done!(format!("{}", sd), Class)
+    }),
+    TraceKind::Decl => ad.decl.and_then(|dk| match dk {
+      DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor)}
+      DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
+    }),
+    TraceKind::Global => ad.lisp.as_ref().and_then(|(_, e)| {
+      done!(format!("{}", fe.to(e)), e.unwrapped(|r| match r {
+        LispKind::Atom(_) |
+        LispKind::MVar(_, _) |
+        LispKind::Goal(_) => CompletionItemKind::Constant,
+        LispKind::List(_) |
+        LispKind::DottedList(_, _) |
+        LispKind::Undef |
+        LispKind::Number(_) |
+        LispKind::String(_) |
+        LispKind::Bool(_) |
+        LispKind::AtomMap(_) => CompletionItemKind::Value,
+        LispKind::Syntax(_) => CompletionItemKind::Event,
+        LispKind::Proc(_) => CompletionItemKind::Function,
+        LispKind::Annot(_, _) |
+        LispKind::Ref(_) => unreachable!()
+      }))
+    })
+  }
+}
+
+async fn completion(path: FileRef, _pos: Position) -> result::Result<CompletionResponse, ResponseError> {
+  let Server {vfs, ..} = &*SERVER;
+  let file = vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
+  let text = file.text.lock().unwrap().1.clone();
+  let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+  let fe = FormatEnv {source: &text, env: &env};
+  let mut res = vec![];
+  for ad in &env.data.0 {
+    if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Sort) {res.push(ci)}
+    if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Decl) {res.push(ci)}
+    if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Global) {res.push(ci)}
+  }
+  Ok(CompletionResponse::Array(res))
+}
+
+async fn completion_resolve(ci: CompletionItem) -> result::Result<CompletionItem, ResponseError> {
+  let Server {vfs, ..} = &*SERVER;
+  let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
+  let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
+    response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
+  let path = FileRef::from_url(uri);
+  let file = vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
+  let text = file.text.lock().unwrap().1.clone();
+  let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+  let fe = FormatEnv {source: &text, env: &env};
+  env.atoms.get(&*ci.label).and_then(|&a| make_completion_item(&path, fe, &env.data[a], true, tk))
+    .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
 }
 
 struct Server {
   conn: Connection,
   #[allow(unused)]
   params: InitializeParams,
+  caps: Capabilities,
   reqs: OpenRequests,
   vfs: VFS,
   pool: ThreadPool,
 }
 
+struct Capabilities {
+  definition_location_links: bool,
+}
+
+impl Capabilities {
+  fn new(params: &InitializeParams) -> Capabilities {
+    Capabilities {
+      definition_location_links: params.capabilities.text_document.as_ref()
+        .and_then(|d| d.definition.as_ref())
+        .and_then(|g| g.link_support).unwrap_or(false)
+    }
+  }
+}
+
 impl Server {
   fn new() -> Result<Server> {
     let (conn, _iot) = Connection::stdio();
-    Ok(Server {
-      params: from_value(conn.initialize(
-        to_value(ServerCapabilities {
-          text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Incremental)),
-          hover_provider: Some(true),
-          // completion_provider: Some(CompletionOptions {
-          //   resolve_provider: Some(true),
-          //   ..Default::default()
-          // }),
-          definition_provider: Some(true),
-          document_symbol_provider: Some(true),
+    let params = from_value(conn.initialize(
+      to_value(ServerCapabilities {
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Incremental)),
+        hover_provider: Some(true),
+        completion_provider: Some(CompletionOptions {
+          resolve_provider: Some(true),
           ..Default::default()
-        })?)?)?,
+        }),
+        definition_provider: Some(true),
+        document_symbol_provider: Some(true),
+        ..Default::default()
+      })?
+    )?)?;
+    Ok(Server {
+      caps: Capabilities::new(&params),
+      params,
       conn,
       reqs: Mutex::new(HashMap::new()),
       vfs: VFS(Mutex::new(HashMap::new())),
