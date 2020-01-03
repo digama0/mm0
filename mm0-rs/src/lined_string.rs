@@ -5,7 +5,7 @@ use lsp_types::{TextDocumentContentChangeEvent};
 use crate::util::{Span, FileSpan};
 
 #[derive(Default, Clone)]
-pub struct LinedString { s: String, pub lines: Vec<usize> }
+pub struct LinedString { pub s: String, pub lines: Vec<usize> }
 
 impl Index<Span> for LinedString {
   type Output = str;

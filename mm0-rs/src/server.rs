@@ -1,6 +1,7 @@
 use std::{fs, io};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
+use std::hash::{Hash, Hasher};
 use std::result;
 use std::thread::{ThreadId, self};
 use std::time::Instant;
@@ -78,38 +79,52 @@ macro_rules! log {
 }
 
 async fn elaborate(path: FileRef, start: Option<Position>,
-    cancel: Arc<AtomicBool>) -> Result<(Option<i64>, Arc<Environment>)> {
+    cancel: Arc<AtomicBool>) -> Result<(u64, Arc<Environment>)> {
   let Server {vfs, pool, ..} = &*SERVER;
   let (path, file) = vfs.get_or_insert(path)?;
   let v = file.text.lock().unwrap().0;
   let (old_ast, old_env, old_deps) = {
     let mut g = file.parsed.lock().await;
-    let (res, senders) = match g.take() {
+    let (res, senders) = match &mut *g {
       None => ((None, None, vec![]), vec![]),
-      Some(FileCache::InProgress {version, cancel, mut senders}) => {
+      &mut Some(FileCache::InProgress {version, ref cancel, ref mut senders}) => {
         if v == version {
           let (send, recv) = channel();
           senders.push(send);
-          *g = Some(FileCache::InProgress {version, cancel, senders});
           drop(g);
           return Ok(recv.await.unwrap())
         }
         cancel.store(true, Ordering::SeqCst);
-        ((None, None, vec![]), senders)
+        if let Some(FileCache::InProgress {senders, ..}) = g.take() {
+          ((None, None, vec![]), senders)
+        } else {unsafe {std::hint::unreachable_unchecked()}}
       }
-      Some(FileCache::Ready {version, ast, errors, deps, env, complete}) => {
-        if v == version && complete &&
-          deps.iter().all(|&(v, ref path)| vfs.get(path).map_or(false,
-            |file| file.text.lock().unwrap().0 == v)) {
-          return Ok((version, env.clone()))
-        }
-        ((start.map(|s| (s, ast)), Some((errors, env)), deps), vec![])
+      &mut Some(FileCache::Ready {hash, ref deps, ref env, complete, ..}) => {
+        if complete && (|| -> bool {
+          let hasher = &mut DefaultHasher::new();
+          v.hash(hasher);
+          for path in deps {
+            if let Some(file) = vfs.get(path) {
+              if let Some(g) = file.parsed.try_lock() {
+                if let Some(FileCache::Ready {hash, ..}) = *g {
+                  hash.hash(hasher);
+                } else {return false}
+              } else {return false}
+            } else {return false}
+          }
+          hasher.finish() == hash
+        })() {return Ok((hash, env.clone()))}
+        if let Some(FileCache::Ready {ast, errors, deps, env, ..}) = g.take() {
+          ((start.map(|s| (s, ast)), Some((errors, env)), deps), vec![])
+        } else {unsafe {std::hint::unreachable_unchecked()}}
       }
     };
     *g = Some(FileCache::InProgress {version: v, cancel: cancel.clone(), senders});
     res
   };
   let (version, text) = file.text.lock().unwrap().clone();
+  let mut hasher = DefaultHasher::new();
+  version.hash(&mut hasher);
   let (idx, ast) = parse(text, old_ast);
   let ast = Arc::new(ast);
 
@@ -123,10 +138,11 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       let path = vfs.get_or_insert(path)?.0;
       let (send, recv) = channel();
       pool.spawn_ok(elaborate_and_send(path.clone(), cancel.clone(), send));
-      deps.push((None, path));
+      deps.push(path);
       Ok(recv)
     }).await;
-  for (tok, (p, _)) in toks.into_iter().zip(deps.iter_mut()) {*p = tok}
+  for tok in toks {tok.hash(&mut hasher)}
+  let hash = hasher.finish();
   let env = Arc::new(env);
   log!("elabbed {:?}", path);
   let mut g = file.parsed.lock().await;
@@ -142,22 +158,24 @@ async fn elaborate(path: FileRef, start: Option<Position>,
             .text.lock().unwrap().1.clone())
       }.to_loc(fsp)
     };
-    send_diagnostics(path.url().clone(),
-      ast.errors.iter().map(|e| e.to_diag(&ast.source))
-        .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc))).collect())?;
+    let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
+      .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc))).collect();
+    log!("diagged {:?}, {} errors", path, errs.len());
+    send_diagnostics(path.url().clone(), errs)?;
   }
   vfs.update_downstream(&old_deps, &deps, &path);
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {
     for s in senders {
-      let _ = s.send((version, env.clone()));
+      let _ = s.send((hash, env.clone()));
     }
   }
-  *g = Some(FileCache::Ready {version, ast, errors, deps, env: env.clone(), complete});
+  *g = Some(FileCache::Ready {hash, ast, errors, deps, env: env.clone(), complete});
   drop(g);
-  for path in file.downstream.lock().unwrap().iter() {
-    pool.spawn_ok(dep_change(path.clone()));
+  for d in file.downstream.lock().unwrap().iter() {
+    log!("{:?} affects {:?}", path, d);
+    pool.spawn_ok(dep_change(d.clone()));
   }
-  Ok((version, env))
+  Ok((hash, env))
 }
 
 async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Arc<AtomicBool>) {
@@ -169,7 +187,7 @@ async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Ar
 }
 
 fn elaborate_and_send(path: FileRef,
-  cancel: Arc<AtomicBool>, send: FSender<(Option<i64>, Arc<Environment>)>) ->
+  cancel: Arc<AtomicBool>, send: FSender<(u64, Arc<Environment>)>) ->
   BoxFuture<'static, ()> {
   async {
     if let Ok(env) = elaborate(path, Some(Position::default()), cancel).await {
@@ -186,14 +204,14 @@ enum FileCache {
   InProgress {
     version: Option<i64>,
     cancel: Arc<AtomicBool>,
-    senders: Vec<FSender<(Option<i64>, Arc<Environment>)>>,
+    senders: Vec<FSender<(u64, Arc<Environment>)>>,
   },
   Ready {
-    version: Option<i64>,
+    hash: u64,
     ast: Arc<AST>,
     errors: Vec<ElabError>,
     env: Arc<Environment>,
-    deps: Vec<(Option<i64>, FileRef)>,
+    deps: Vec<FileRef>,
     complete: bool,
   }
 }
@@ -237,18 +255,20 @@ impl VFS {
   }
 
   fn open_virt(&self, path: FileRef, version: i64, text: String) -> Result<Arc<VirtualFile>> {
-    // queue.push(Job::Elaborate {path: path.clone(), start: Position::new(0, 0)});
+    let pool = &SERVER.pool;
     let file = Arc::new(VirtualFile::new(Some(version), text));
-    match self.0.lock().unwrap().entry(path) {
+    let file = match self.0.lock().unwrap().entry(path.clone()) {
       Entry::Occupied(entry) => {
-        let pool = &SERVER.pool;
         for dep in entry.get().downstream.lock().unwrap().iter() {
           pool.spawn_ok(dep_change(dep.clone()));
         }
-        Ok(file)
+        file
       }
-      Entry::Vacant(entry) => Ok(entry.insert(file).clone())
-    }
+      Entry::Vacant(entry) => entry.insert(file).clone()
+    };
+    pool.spawn_ok(elaborate_and_report(path, Some(Position::default()),
+      Arc::new(AtomicBool::new(false))));
+    Ok(file)
   }
 
   fn close(&self, path: &FileRef) {
@@ -262,17 +282,15 @@ impl VFS {
     }
   }
 
-  fn update_downstream(&self,
-      old_deps: &[(Option<i64>, FileRef)],
-      deps: &[(Option<i64>, FileRef)], to: &FileRef) {
-    for (_, from) in old_deps {
-      if !deps.iter().any(|d| d.1 == *from) {
+  fn update_downstream(&self, old_deps: &[FileRef], deps: &[FileRef], to: &FileRef) {
+    for from in old_deps {
+      if !deps.contains(from) {
         let file = self.0.lock().unwrap().get(from).unwrap().clone();
         file.downstream.lock().unwrap().remove(to);
       }
     }
-    for (_, from) in deps {
-      if !old_deps.iter().any(|d| d.1 == *from) {
+    for from in deps {
+      if !old_deps.contains(from) {
         let file = self.0.lock().unwrap().get(from).unwrap().clone();
         file.downstream.lock().unwrap().insert(to.clone());
       }
@@ -428,12 +446,14 @@ impl Server {
                 "textDocument/didOpen" => {
                   let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                   let path = FileRef::from_url(doc.uri);
+                  log!("open {:?}", path);
                   vfs.open_virt(path, doc.version, doc.text)?;
                 }
                 "textDocument/didChange" => {
                   let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
                   if !content_changes.is_empty() {
                     let path = FileRef::from_url(doc.uri);
+                    log!("change {:?}", path);
                     let start = {
                       let file = vfs.get(&path).ok_or("changed nonexistent file")?;
                       let (version, text) = &mut *file.text.lock().unwrap();
@@ -449,6 +469,7 @@ impl Server {
                 "textDocument/didClose" => {
                   let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                   let path = FileRef::from_url(doc.uri);
+                  log!("close {:?}", path);
                   vfs.close(&path);
                 }
                 _ => {}
@@ -472,5 +493,6 @@ pub fn main(mut args: impl Iterator<Item=String>) {
     use {simplelog::*, std::fs::File};
     let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
   }
+  log_message("started".into()).unwrap();
   SERVER.run()
 }
