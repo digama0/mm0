@@ -126,7 +126,7 @@ impl EnvDisplay for LispKind {
         let fname = pos.file.path().file_name().unwrap().to_str().unwrap();
         write!(f, "#[fn at {} {}:{}]", fname, r.line + 1, r.character + 1)
       }
-      &LispKind::Proc(Proc::Lambda {pos: ProcPos::Named(ref pos, a), ..}) => {
+      &LispKind::Proc(Proc::Lambda {pos: ProcPos::Named(ref pos, _, a), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
         let fname = pos.file.path().file_name().unwrap().to_str().unwrap();
         let x = &fe.data[a].name;
@@ -134,6 +134,7 @@ impl EnvDisplay for LispKind {
       }
       LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#[match cont]"),
       LispKind::Proc(Proc::RefineCallback(_)) => write!(f, "#[refine]"),
+      LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#[proof of {}]", fe.to(x)),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;
         for (a, v) in m {write!(f, " [{} {}]", fe.data[*a].name, fe.to(v))?}

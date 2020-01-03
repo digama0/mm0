@@ -17,8 +17,9 @@ use crossbeam::{channel::{SendError, RecvError}};
 use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
-use crate::elab::{Environment, ElabError, Elaborator,
-  environment::ObjectKind, local_context::InferSort, lisp::print::FormatEnv};
+use crate::elab::{ElabError, Elaborator,
+  environment::{ObjectKind, DeclKey, Environment},
+  local_context::InferSort, lisp::print::FormatEnv};
 
 #[derive(Debug)]
 struct ServerError(BoxError);
@@ -134,7 +135,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let (toks, errors, env) = elab.as_fut(
     old_env.map(|(errs, e)| (idx, errs, e)),
     |path| {
-      let path = vfs.get_or_insert(FileRef::new(path))?.0;
+      let path = vfs.get_or_insert(path)?.0;
       let (send, recv) = channel();
       pool.spawn_ok(elaborate_and_send(path.clone(), cancel.clone(), send));
       deps.push(path);
@@ -253,6 +254,10 @@ impl VFS {
     }
   }
 
+  fn source(&self, file: &FileRef) -> Arc<LinedString> {
+    self.0.lock().unwrap().get(&file).unwrap().text.lock().unwrap().1.clone()
+  }
+
   fn open_virt(&self, path: FileRef, version: i64, text: String) -> Result<Arc<VirtualFile>> {
     let pool = &SERVER.pool;
     let file = Arc::new(VirtualFile::new(Some(version), text));
@@ -270,15 +275,22 @@ impl VFS {
     Ok(file)
   }
 
-  fn close(&self, path: &FileRef) {
-    if let Some(file) = self.0.lock().unwrap().remove(path) {
-      if file.text.lock().unwrap().0.is_some() {
+  fn close(&self, path: &FileRef) -> Result<()> {
+    let mut g = self.0.lock().unwrap();
+    if let Entry::Occupied(e) = g.entry(path.clone()) {
+      if e.get().downstream.lock().unwrap().is_empty() {
+        send_diagnostics(path.url().clone(), vec![])?;
+        e.remove();
+      } else if e.get().text.lock().unwrap().0.take().is_some() {
+        let file = e.get().clone();
+        drop(g);
         let pool = &SERVER.pool;
         for dep in file.downstream.lock().unwrap().clone() {
           pool.spawn_ok(dep_change(dep.clone()));
         }
       }
     }
+    Ok(())
   }
 
   fn update_downstream(&self, old_deps: &[FileRef], deps: &[FileRef], to: &FileRef) {
@@ -353,9 +365,25 @@ struct RequestHandler {
 impl RequestHandler {
   async fn handle(self, req: RequestType) -> Result<()> {
     match req {
-      RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) => {
-        self.finish(hover(FileRef::from_url(doc.uri), position).await)
-      }
+      RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
+        self.finish(hover(FileRef::from_url(doc.uri), position).await),
+      RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
+        if let Some(true) = SERVER.params.capabilities.text_document
+          .as_ref().and_then(|d| d.definition.as_ref().and_then(|g| g.link_support)) {
+          self.finish(definition(FileRef::from_url(doc.uri), position,
+            |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
+              origin_selection_range: Some(text.to_range(src)),
+              target_uri: file.url().clone(),
+              target_range: text2.to_range(full),
+              target_selection_range: text2.to_range(span),
+            }).await)
+        } else {
+          self.finish(definition(FileRef::from_url(doc.uri), position,
+            |_, text2, _, &FileSpan {ref file, span}, _| Location {
+              uri: file.url().clone(),
+              range: text2.to_range(span),
+            }).await)
+        },
       _ => self.finish(Ok(()))
     }
   }
@@ -381,19 +409,16 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
     response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
-  log!("hover {:?}", idx);
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
   let fe = FormatEnv {source: &text, env: &env};
   let spans = or_none!(env.find(idx));
-  log!("spans = {:?}", spans);
-  let res: Vec<_> = spans.find_pos(idx).into_iter().filter_map(|&(sp, k)| {
-    log!("span {:?} {:?}", sp, k);
+  let res: Vec<_> = spans.find_pos(idx).into_iter().filter_map(|&(sp, ref k)| {
     Some(match k {
-      ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
-      ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
-      ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
-      ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+      &ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
+      &ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
+      &ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
+      &ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound {sort})) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg {sort, deps})) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -403,16 +428,75 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
         _ => return None,
       }),
       ObjectKind::Global(_) |
-      ObjectKind::Import => return None,
+      ObjectKind::Import(_) => return None,
     })
   }).collect();
-  log!("hover {:?} -> {:?}", idx, res);
   if res.is_empty() {return Ok(None)}
   Ok(Some(Hover {
     range: Some(text.to_range(res[0].0)),
     contents: HoverContents::Array(res.into_iter().map(|(_, value)|
       MarkedString::LanguageString(LanguageString {language: "mm0".into(), value})).collect())
   }))
+}
+
+async fn definition<T>(path: FileRef, pos: Position,
+    f: impl Fn(&LinedString, &LinedString, Span, &FileSpan, Span) -> T) ->
+    result::Result<Vec<T>, ResponseError> {
+  let Server {vfs, ..} = &*SERVER;
+  macro_rules! or_none {($e:expr)  => {match $e {
+    Some(x) => x,
+    None => return Ok(vec![])
+  }}}
+  let file = vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "goto definition nonexistent file"))?;
+  let text = file.text.lock().unwrap().1.clone();
+  let idx = or_none!(text.to_idx(pos));
+  let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+  let spans = or_none!(env.find(idx));
+  let mut res = vec![];
+  for &(sp, ref k) in spans.find_pos(idx) {
+    let g = |fsp: &FileSpan, full|
+      if fsp.file.ptr_eq(&path) {
+        f(&text, &text, sp, fsp, full)
+      } else {
+        f(&text, &vfs.source(&fsp.file), sp, fsp, full)
+      };
+    let sort = |s| {
+      let sd = &env.sorts[s];
+      g(&sd.span, sd.full)
+    };
+    let term = |t| {
+      let td = &env.terms[t];
+      g(&td.span, td.full)
+    };
+    let thm = |t| {
+      let td = &env.thms[t];
+      g(&td.span, td.full)
+    };
+    match k {
+      &ObjectKind::Sort(s) => res.push(sort(s)),
+      &ObjectKind::Term(t, _) => res.push(term(t)),
+      &ObjectKind::Thm(t) => res.push(thm(t)),
+      ObjectKind::Var(_) => {}
+      &ObjectKind::Global(a) => {
+        let ad = &env.data[a];
+        match ad.decl {
+          Some(DeclKey::Term(t)) => res.push(term(t)),
+          Some(DeclKey::Thm(t)) => res.push(thm(t)),
+          None => {}
+        }
+        if let Some(s) = ad.sort {res.push(sort(s))}
+        if let Some((Some((ref fsp, full)), _)) = ad.lisp {
+          res.push(g(&fsp, full))
+        }
+      }
+      ObjectKind::Import(file) => {
+        res.push(g(&FileSpan {file: file.clone(), span: 0.into()}, 0.into()))
+      },
+    }
+  }
+  Ok(res)
 }
 
 struct Server {
@@ -436,7 +520,7 @@ impl Server {
           //   resolve_provider: Some(true),
           //   ..Default::default()
           // }),
-          // definition_provider: Some(true),
+          definition_provider: Some(true),
           // document_symbol_provider: Some(true),
           ..Default::default()
         })?)?)?,
@@ -515,7 +599,7 @@ impl Server {
                   let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                   let path = FileRef::from_url(doc.uri);
                   log!("close {:?}", path);
-                  vfs.close(&path);
+                  vfs.close(&path)?;
                 }
                 _ => {}
               }

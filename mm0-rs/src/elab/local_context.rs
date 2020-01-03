@@ -500,7 +500,7 @@ impl Elaborator {
     errs
   }
 
-  pub fn elab_decl(&mut self, sp: Span, d: &Decl) -> Result<()> {
+  pub fn elab_decl(&mut self, full: Span, d: &Decl) -> Result<()> {
     let mut ehyps = Vec::new();
     let mut error = false;
     macro_rules! report {
@@ -562,7 +562,7 @@ impl Elaborator {
         }
         let (ret, val) = match val {
           None => match ret {
-            None => Err(ElabError::new_e(sp, "expected type or value"))?,
+            None => Err(ElabError::new_e(full, "expected type or value"))?,
             Some((_, s, ref deps)) => ((s, ba.deps(deps)),
               if d.k == DeclKind::Term {None} else {Some(None)})
           },
@@ -599,16 +599,16 @@ impl Elaborator {
         };
         let t = Term {
           atom, args, ret, val,
-          span: self.fspan(sp),
+          span: self.fspan(d.id),
           vis: d.mods,
-          _id: d.id,
+          full,
         };
-        let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(d.id))?;
         self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
       }
       DeclKind::Axiom | DeclKind::Thm => {
         let eret = match &d.ty {
-          None => Err(ElabError::new_e(sp, "return type required"))?,
+          None => Err(ElabError::new_e(full, "return type required"))?,
           Some(Type::DepType(ty)) => Err(ElabError::new_e(ty.sort, "expression expected"))?,
           &Some(Type::Formula(f)) => {
             let e = self.parse_formula(f)?;
@@ -672,10 +672,10 @@ impl Elaborator {
           })
         } else {None};
         let t = Thm {
-          atom, span, vis: d.mods, id: d.id,
+          atom, span, vis: d.mods, full,
           args, heap, hyps, ret, proof
         };
-        let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(sp))?;
+        let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(d.id))?;
         self.spans.insert(d.id, ObjectKind::Thm(tid));
       }
     }
@@ -733,7 +733,7 @@ impl Elaborator {
     Ok((ids, n))
   }
 
-  fn binders(&self, fsp: &FileSpan, sp: Span, u: Uncons, vars: &mut (HashMap<AtomID, u64>, u64)) ->
+  fn binders(&self, fsp: &FileSpan, u: Uncons, vars: &mut (HashMap<AtomID, u64>, u64)) ->
       Result<(LocalContext, Vec<(Option<AtomID>, EType)>)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut lc = LocalContext::new();
@@ -750,7 +750,7 @@ impl Elaborator {
           None => {
             if let Some(a) = a {
               if vars.1 >= 1 << MAX_BOUND_VARS {
-                Err(ElabError::new_e(sp,
+                Err(ElabError::new_e(fsp.span,
                   format!("too many bound variables (max {})", MAX_BOUND_VARS)))?
               }
               vars.0.insert(a, vars.1);
@@ -784,15 +784,16 @@ impl Elaborator {
     }
   }
 
-  pub fn add_term(&mut self, fsp: FileSpan, sp: Span, es: &[LispVal]) -> Result<()> {
+  pub fn add_term(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    if es.len() != 3 && es.len() != 6 {Err(ElabError::new_e(sp, "expected 3 or 6 arguments"))?}
-    let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(sp, "expected an atom"))?;
+    if es.len() != 3 && es.len() != 6 {Err(ElabError::new_e(fsp.span, "expected 3 or 6 arguments"))?}
+    let span = es[0].fspan().unwrap_or(fsp.clone());
+    let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(span.span, "expected an atom"))?;
     if self.data[x].decl.is_some() {
-      Err(ElabError::new_e(sp, format!("duplicate term/def declaration '{}'", self.print(&x))))?
+      Err(ElabError::new_e(fsp.span, format!("duplicate term/def declaration '{}'", self.print(&x))))?
     }
     let mut vars = (HashMap::new(), 1);
-    let (mut lc, args) = self.binders(&fsp, sp, Uncons::from(es[1].clone()), &mut vars)?;
+    let (mut lc, args) = self.binders(&fsp, Uncons::from(es[1].clone()), &mut vars)?;
     let ret = match es[2].as_atom() {
       Some(s) => {
         let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es[2]),
@@ -829,25 +830,22 @@ impl Elaborator {
         None
       })))
     } else {(Modifiers::NONE, None)};
-    let t = Term {
-      atom: x,
-      span: fsp.clone(),
-      _id: sp!(es[0]),
-      vis, args, ret, val,
-    };
-    self.env.add_term(x, fsp, || t).map_err(|e| e.to_elab_error(sp))?;
+    let full = fsp.span;
+    let t = Term {atom: x, span, full, vis, args, ret, val};
+    self.env.add_term(x, fsp, || t).map_err(|e| e.to_elab_error(full))?;
     Ok(())
   }
 
-  pub fn add_thm(&mut self, fsp: FileSpan, sp: Span, es: &[LispVal]) -> Result<Option<(AwaitingProof, LispVal)>> {
+  pub fn add_thm(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<Option<(AwaitingProof, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    if es.len() != 4 && es.len() != 6 {Err(ElabError::new_e(sp, "expected 4 or 6 arguments"))?}
-    let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(sp, "expected an atom"))?;
+    if es.len() != 4 && es.len() != 6 {Err(ElabError::new_e(fsp.span, "expected 4 or 6 arguments"))?}
+    let span = es[0].fspan().unwrap_or(fsp.clone());
+    let x = es[0].as_atom().ok_or_else(|| ElabError::new_e(span.span, "expected an atom"))?;
     if self.data[x].decl.is_some() {
-      Err(ElabError::new_e(sp, format!("duplicate axiom/theorem declaration '{}'", self.print(&x))))?
+      Err(ElabError::new_e(fsp.span, format!("duplicate axiom/theorem declaration '{}'", self.print(&x))))?
     }
     let mut vars = (HashMap::new(), 1);
-    let (mut lc, args) = self.binders(&fsp, sp, Uncons::from(es[1].clone()), &mut vars)?;
+    let (mut lc, args) = self.binders(&fsp, Uncons::from(es[1].clone()), &mut vars)?;
     // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(lc.var_order.len());
     let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
@@ -870,9 +868,7 @@ impl Elaborator {
     }).collect();
     let ret = ids[ir].take();
     let mut t = Thm {
-      atom: x,
-      span: fsp.clone(),
-      id: sp!(es[0]),
+      atom: x, span, full: fsp.span,
       vis: Modifiers::NONE,
       proof: None,
       args, heap, hyps, ret };
@@ -900,11 +896,11 @@ impl Elaborator {
         Some((de, var_map, Some(lc), is2, es[5].clone()))
       } else {None})
     } else {None};
-    self.finish_add_thm(fsp, sp, t, res)?;
+    self.finish_add_thm(fsp, t, res)?;
     Ok(None)
   }
 
-  pub fn finish_add_thm(&mut self, fsp: FileSpan, sp: Span, mut t: Thm,
+  pub fn finish_add_thm(&mut self, fsp: FileSpan, mut t: Thm,
     res: Option<Option<(Dedup<ProofHash>, HashMap<AtomID, usize>, Option<LocalContext>, Vec<usize>, LispVal)>>) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     t.proof = res.map(|res| res.and_then(|(mut de, var_map, mut lc, is2, e)| {
@@ -929,6 +925,7 @@ impl Elaborator {
         None
       })
     }));
+    let sp = fsp.span;
     self.env.add_thm(t.atom, fsp, || t).map_err(|e| e.to_elab_error(sp))?;
     Ok(())
   }

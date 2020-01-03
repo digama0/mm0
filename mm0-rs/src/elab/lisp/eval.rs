@@ -13,6 +13,7 @@ use super::super::{Result, Elaborator,
 use super::*;
 use super::parser::{IR, Branch, Pattern};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
+use super::super::environment::{Type, ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
 #[derive(Debug)]
@@ -24,7 +25,7 @@ enum Stack<'a> {
   App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
   AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
-  Def(Option<&'a Option<(Span, AtomID)>>),
+  Def(Option<&'a Option<(Span, Span, AtomID)>>),
   Eval(std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
@@ -33,7 +34,7 @@ enum Stack<'a> {
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
-  AddThmProc(FileSpan, Span, AwaitingProof),
+  AddThmProc(FileSpan, AwaitingProof),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>, gv: Arc<Mutex<Vec<LispVal>>>},
   Focus(Vec<LispVal>),
@@ -53,7 +54,7 @@ impl<'a> EnvDisplay for Stack<'a> {
         fe.to(e), fe.to(es), fe.to(irs.as_slice())),
       Stack::AppHead(_, _, e) => write!(f, "(_ {})", fe.to(e)),
       &Stack::If(e1, e2) => write!(f, "(if _ {} {})", fe.to(e1), fe.to(e2)),
-      &Stack::Def(Some(&Some((_, a)))) => write!(f, "(def {} _)", fe.to(&a)),
+      &Stack::Def(Some(&Some((_, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
       Stack::Def(_) => write!(f, "(def _ _)"),
       Stack::Eval(es) => write!(f, "(begin\n  _ {})", fe.to(es.as_slice())),
       Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
@@ -62,14 +63,14 @@ impl<'a> EnvDisplay for Stack<'a> {
         fe.to(e), fe.to(br), fe.to(bs.as_slice())),
       &Stack::Drop(n) => write!(f, "drop {}", n),
       Stack::Ret(_, pos, _, _) => match pos {
-        &ProcPos::Named(_, a) => write!(f, "ret {}", fe.to(&a)),
+        &ProcPos::Named(_, _, a) => write!(f, "ret {}", fe.to(&a)),
         ProcPos::Unnamed(_) => write!(f, "ret"),
       },
       Stack::MatchCont(_, e, bs, _) => write!(f, "(=> match {}\n  {})",
         fe.to(e), fe.to(bs.as_slice())),
       Stack::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{} _",
         fe.to(e), fe.to(&**us), fe.to(es)),
-      Stack::AddThmProc(_, _, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.t.atom)),
+      Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.t.atom)),
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
       Stack::Focus(es) => write!(f, "(focus _)\n  ->{}", fe.to(es)),
@@ -420,8 +421,61 @@ impl Elaborator {
     })
   }
 
-  fn get_decl(&self, fsp: FileSpan, x: AtomID) -> LispVal {
-    use super::super::environment::{Type, ExprNode, ProofNode};
+  fn proof_node(&self, hyps: &[(Option<AtomID>, ExprNode)],
+    heap: &[LispVal], ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
+    match p {
+      &ProofNode::Ref(n) => heap[n].clone(),
+      &ProofNode::Dummy(a, s) => {
+        let a = LispVal::atom(a);
+        ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.env.sorts[s].atom)]));
+        a
+      }
+      &ProofNode::Term {term, args: ref es} => {
+        let mut args = vec![LispVal::atom(self.terms[term].atom)];
+        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
+        LispVal::list(args)
+      }
+      &ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomID::UNDER)),
+      &ProofNode::Thm {thm, args: ref es} => {
+        let mut args = vec![LispVal::atom(self.thms[thm].atom)];
+        args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
+        LispVal::list(args)
+      }
+      ProofNode::Conv(es) => {
+        let (t, c, p) = &**es;
+        LispVal::list(vec![LispVal::atom(AtomID::CONV),
+          self.proof_node(hyps, heap, ds, t),
+          self.proof_node(hyps, heap, ds, c),
+          self.proof_node(hyps, heap, ds, p),
+        ])
+      }
+      ProofNode::Sym(p) =>
+        LispVal::list(vec![LispVal::atom(AtomID::SYM), self.proof_node(hyps, heap, ds, &**p)]),
+      &ProofNode::Unfold {term, ref args, ref res} =>
+        LispVal::list(vec![LispVal::atom(AtomID::UNFOLD),
+          LispVal::atom(self.terms[term].atom),
+          LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect()),
+          self.proof_node(hyps, heap, ds, &**res)]),
+    }
+  }
+
+  fn get_proof(&self, t: ThmID, mut heap: Vec<LispVal>) -> LispVal {
+    let tdata = &self.thms[t];
+    match &tdata.proof {
+      Some(Some(pr)) => {
+        let mut ds = Vec::new();
+        for e in &pr.heap[heap.len()..] {
+          let e = self.proof_node(&tdata.hyps, &heap, &mut ds, e);
+          heap.push(e)
+        }
+        let ret = self.proof_node(&tdata.hyps, &heap, &mut ds, &pr.head);
+        LispVal::list(vec![LispVal::list(ds), ret])
+      }
+      _ => LispVal::atom(AtomID::SORRY),
+    }
+  }
+
+  fn get_decl(&self, x: AtomID) -> LispVal {
     fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
       v.push(if xs == 0 {LispVal::nil()} else {
         let mut i = 1;
@@ -464,43 +518,6 @@ impl Elaborator {
           args.extend(es.iter().map(|e| expr_node(env, heap, ds, e)));
           LispVal::list(args)
         }
-      }
-    }
-    fn proof_node(env: &Environment, hyps: &[(Option<AtomID>, ExprNode)],
-        heap: &Vec<LispVal>, ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
-      match p {
-        &ProofNode::Ref(n) => heap[n].clone(),
-        &ProofNode::Dummy(a, s) => {
-          let a = LispVal::atom(a);
-          ds.push(LispVal::list(vec![a.clone(), LispVal::atom(env.sorts[s].atom)]));
-          a
-        }
-        &ProofNode::Term {term, args: ref es} => {
-          let mut args = vec![LispVal::atom(env.terms[term].atom)];
-          args.extend(es.iter().map(|e| proof_node(env, hyps, heap, ds, e)));
-          LispVal::list(args)
-        }
-        &ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomID::UNDER)),
-        &ProofNode::Thm {thm, args: ref es} => {
-          let mut args = vec![LispVal::atom(env.thms[thm].atom)];
-          args.extend(es.iter().map(|e| proof_node(env, hyps, heap, ds, e)));
-          LispVal::list(args)
-        }
-        ProofNode::Conv(es) => {
-          let (t, c, p) = &**es;
-          LispVal::list(vec![LispVal::atom(AtomID::CONV),
-            proof_node(env, hyps, heap, ds, t),
-            proof_node(env, hyps, heap, ds, c),
-            proof_node(env, hyps, heap, ds, p),
-          ])
-        }
-        ProofNode::Sym(p) =>
-          LispVal::list(vec![LispVal::atom(AtomID::SYM), proof_node(env, hyps, heap, ds, &**p)]),
-        &ProofNode::Unfold {term, ref args, ref res} =>
-          LispVal::list(vec![LispVal::atom(AtomID::UNFOLD),
-            LispVal::atom(env.terms[term].atom),
-            LispVal::list(args.iter().map(|e| proof_node(env, hyps, heap, ds, e)).collect()),
-            proof_node(env, hyps, heap, ds, &**res)]),
       }
     }
 
@@ -550,26 +567,9 @@ impl Elaborator {
           },
           expr_node(self, &heap, &mut None, &tdata.ret)
         ];
-        if let Some(v) = &tdata.proof {
+        if tdata.proof.is_some() {
           args.push(vis(tdata.vis));
-          let val = match v {
-            None => LispVal::atom(AtomID::SORRY),
-            Some(pr) => {
-              let mut ds = Vec::new();
-              for e in &pr.heap[heap.len()..] {
-                let e = proof_node(self, &tdata.hyps, &heap, &mut ds, e);
-                heap.push(e)
-              }
-              let ret = proof_node(self, &tdata.hyps, &heap, &mut ds, &pr.head);
-              LispVal::list(vec![LispVal::list(ds), ret])
-            }
-          };
-          args.push(LispVal::proc(Proc::Lambda {
-            pos: ProcPos::Unnamed(fsp),
-            env: vec![],
-            spec: ProcSpec::AtLeast(0),
-            code: Arc::new(IR::Const(val))
-          }));
+          args.push(LispVal::proc(Proc::ProofThunk(x, Mutex::new(Err(heap)))));
         }
         LispVal::list(args)
       }
@@ -612,7 +612,7 @@ impl<'a> Evaluator<'a> {
     for s in self.stack.iter().rev() {
       if let Stack::Ret(fsp, pos, _, _) = s {
         let x = match pos {
-          ProcPos::Named(_, a) => format!("({})", self.data[*a].name).into(),
+          ProcPos::Named(_, _, a) => format!("({})", self.data[*a].name).into(),
           ProcPos::Unnamed(_) => "[fn]".into(),
         };
         if let Some((sp, base)) = old.take() {
@@ -637,10 +637,10 @@ impl<'a> Evaluator<'a> {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
 
-  fn add_thm(&mut self, fsp: FileSpan, sp1: Span, args: &[LispVal]) -> Result<State<'a>> {
-    Ok(if let Some((ap, proc)) = self.elab.add_thm(fsp.clone(), sp1, args)? {
-      self.stack.push(Stack::AddThmProc(fsp, sp1, ap));
-      let sp = try_get_span(&self.fspan(sp1), &proc);
+  fn add_thm(&mut self, fsp: FileSpan, args: &[LispVal]) -> Result<State<'a>> {
+    Ok(if let Some((ap, proc)) = self.elab.add_thm(fsp.clone(), args)? {
+      let sp = try_get_span(&fsp, &proc);
+      self.stack.push(Stack::AddThmProc(fsp, ap));
       State::App(sp, sp, proc, vec![], [].iter())
     } else {State::Ret(LispVal::undef())})
   }
@@ -922,25 +922,25 @@ make_builtins! { self, sp1, sp2, args,
   },
   GetDecl: Exact(1) => {
     let x = try1!(args[0].as_atom().ok_or("expected an atom"));
-    self.get_decl(self.fspan(sp1), x)
+    self.get_decl(x)
   },
   AddDecl: AtLeast(4) => {
     let fsp = self.fspan_base(sp1);
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
-      AtomID::TERM | AtomID::DEF => self.add_term(fsp, sp1, &args[1..])?,
-      AtomID::AXIOM | AtomID::THM => return self.add_thm(fsp, sp1, &args[1..]),
+      AtomID::TERM | AtomID::DEF => self.add_term(fsp, &args[1..])?,
+      AtomID::AXIOM | AtomID::THM => return self.add_thm(fsp, &args[1..]),
       e => try1!(Err(format!("invalid declaration type '{}'", self.print(&e))))
     }
     LispVal::undef()
   },
   AddTerm: AtLeast(3) => {
     let fsp = self.fspan_base(sp1);
-    self.add_term(fsp, sp1, &args)?;
+    self.add_term(fsp, &args)?;
     LispVal::undef()
   },
   AddThm: AtLeast(4) => {
     let fsp = self.fspan_base(sp1);
-    return self.add_thm(fsp, sp1, &args)
+    return self.add_thm(fsp, &args)
   },
   NewDummy: AtLeast(1) => {
     if args.len() > 2 {try1!(Err("expected 1 or 2 armuments"))}
@@ -997,8 +997,8 @@ impl<'a> Evaluator<'a> {
   }
 
   fn proc_pos(&self, sp: Span) -> ProcPos {
-    if let Some(Stack::Def(Some(&Some((sp, x))))) = self.stack.last() {
-      ProcPos::Named(self.fspan(sp), x)
+    if let Some(Stack::Def(Some(&Some((sp1, sp2, x))))) = self.stack.last() {
+      ProcPos::Named(self.fspan(sp2), sp1, x)
     } else {
       ProcPos::Unnamed(self.fspan(sp))
     }
@@ -1130,8 +1130,8 @@ impl<'a> Evaluator<'a> {
               _ => {self.stack.push(s); State::Ret(LispVal::undef())}
             }
           } else {
-            if let Some(&Some((sp, a))) = x {
-              self.data[a].lisp = Some((Some(self.fspan(sp)), ret));
+            if let Some(&Some((sp1, sp2, a))) = x {
+              self.data[a].lisp = Some((Some((self.fspan(sp2), sp1)), ret));
             }
             State::Ret(LispVal::undef())
           },
@@ -1152,8 +1152,8 @@ impl<'a> Evaluator<'a> {
             vec.push(ret);
             State::MapProc(sp1, sp2, f, us, vec)
           }
-          Some(Stack::AddThmProc(fsp, sp1, AwaitingProof {t, de, var_map, lc, is})) => {
-            self.finish_add_thm(fsp, sp1, t, Some(Some((de, var_map, Some(lc), is, ret))))?;
+          Some(Stack::AddThmProc(fsp, AwaitingProof {t, de, var_map, lc, is})) => {
+            self.finish_add_thm(fsp, t, Some(Some((de, var_map, Some(lc), is, ret))))?;
             State::Ret(LispVal::undef())
           }
           Some(Stack::Refines(sp, Some(_), it)) if !ret.is_def() => State::Refines(sp, it),
@@ -1259,6 +1259,19 @@ impl<'a> Evaluator<'a> {
                     },
                     _ => throw!(sp1, "expected two arguments")
                   }
+                }
+              }
+              &Proc::ProofThunk(x, ref m) => {
+                let mut g = m.lock().unwrap();
+                match &*g {
+                  Ok(e) => State::Ret(e.clone()),
+                  Err(_) => if let Some(DeclKey::Thm(t)) = self.data[x].decl {
+                    if let Err(heap) = mem::replace(&mut *g, Ok(LispVal::undef())) {
+                      let e = self.get_proof(t, heap);
+                      *g = Ok(e.clone());
+                      State::Ret(e)
+                    } else {unsafe {std::hint::unreachable_unchecked()}}
+                  } else {unreachable!()}
                 }
               }
             })

@@ -62,6 +62,7 @@ pub struct Sort {
   pub atom: AtomID,
   pub name: ArcString,
   pub span: FileSpan,
+  pub full: Span,
   pub mods: Modifiers,
 }
 
@@ -111,16 +112,10 @@ pub struct Term {
   pub atom: AtomID,
   pub span: FileSpan,
   pub vis: Modifiers,
-  pub _id: Span,
+  pub full: Span,
   pub args: Vec<(Option<AtomID>, Type)>,
   pub ret: (SortID, u64),
   pub val: Option<Option<Expr>>,
-}
-impl Term {
-  #[allow(unused)]
-  pub fn id(&self) -> FileSpan {
-    FileSpan {file: self.span.file.clone(), span: self._id}
-  }
 }
 
 #[derive(Clone, Debug)]
@@ -158,7 +153,7 @@ pub struct Thm {
   pub atom: AtomID,
   pub span: FileSpan,
   pub vis: Modifiers,
-  pub id: Span,
+  pub full: Span,
   pub args: Vec<(Option<AtomID>, Type)>,
   pub heap: Vec<ExprNode>,
   pub hyps: Vec<(Option<AtomID>, ExprNode)>,
@@ -236,7 +231,7 @@ pub struct ParserEnv {
 #[derive(Clone)]
 pub struct AtomData {
   pub name: ArcString,
-  pub lisp: Option<(Option<FileSpan>, LispVal)>,
+  pub lisp: Option<(Option<(FileSpan, Span)>, LispVal)>,
   pub sort: Option<SortID>,
   pub decl: Option<DeclKey>,
 }
@@ -247,14 +242,14 @@ impl AtomData {
   }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum ObjectKind {
   Sort(SortID),
   Term(TermID, Span),
   Thm(ThmID),
   Var(AtomID),
   Global(AtomID),
-  Import,
+  Import(FileRef),
 }
 
 pub struct Environment {
@@ -418,7 +413,7 @@ impl Remap<Remapper> for Term {
       atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
-      _id: self._id,
+      full: self.full,
       args: self.args.remap(r),
       ret: (self.ret.0.remap(r), self.ret.1),
       val: self.val.remap(r),
@@ -455,7 +450,7 @@ impl Remap<Remapper> for Thm {
       atom: self.atom.remap(r),
       span: self.span.clone(),
       vis: self.vis,
-      id: self.id,
+      full: self.full,
       args: self.args.remap(r),
       heap: self.heap.remap(r),
       hyps: self.hyps.remap(r),
@@ -661,7 +656,7 @@ impl<A> AddItemError<A> {
 }
 
 impl Environment {
-  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, sd: Modifiers) -> Result<SortID, AddItemError<SortID>> {
+  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers) -> Result<SortID, AddItemError<SortID>> {
     let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(old_id) = data.sort {
@@ -676,7 +671,7 @@ impl Environment {
       }
     } else {
       data.sort = Some(new_id);
-      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, mods: sd });
+      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)
     }
@@ -769,7 +764,7 @@ impl Environment {
         StmtTrace::Sort(a) => {
           let i = other.data[a].sort.unwrap();
           let ref sort = other.sorts[i];
-          let id = match self.add_sort(a.remap(lisp_remap), sort.span.clone(), sort.mods) {
+          let id = match self.add_sort(a.remap(lisp_remap), sort.span.clone(), sort.full, sort.mods) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
               errors.push(ElabError::with_info(sp, r.msg.into(), vec![

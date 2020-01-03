@@ -343,7 +343,7 @@ impl Elaborator {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        let id = self.add_sort(a, fsp, sd).map_err(|e| e.to_elab_error(sp))?;
+        let id = self.add_sort(a, fsp, stmt.span, sd).map_err(|e| e.to_elab_error(sp))?;
         self.spans.insert(sp, ObjectKind::Sort(id));
       }
       StmtKind::Decl(d) => self.elab_decl(stmt.span, d)?,
@@ -352,10 +352,7 @@ impl Elaborator {
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
       &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
-      &StmtKind::Import(sp, _) => {
-        self.spans.insert(sp, ObjectKind::Import);
-        return Ok(ElabStmt::Import(sp))
-      }
+      &StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp)),
       StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
@@ -375,7 +372,7 @@ impl Elaborator {
 
   pub fn as_fut<T>(mut self,
     _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>,
-    mut mk: impl FnMut(PathBuf) ->
+    mut mk: impl FnMut(FileRef) ->
       std::result::Result<Receiver<(T, Arc<Environment>)>, BoxError>
   ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, Environment)> {
 
@@ -387,7 +384,7 @@ impl Elaborator {
     struct ElabFutureInner<T> {
       elab: Elaborator,
       toks: Vec<T>,
-      recv: HashMap<Span, Receiver<(T, Arc<Environment>)>>,
+      recv: HashMap<Span, (Option<FileRef>, Receiver<(T, Arc<Environment>)>)>,
       idx: usize,
       progress: UnfinishedStmt<T>
     }
@@ -418,7 +415,10 @@ impl Elaborator {
             match elab.elab_stmt(s) {
               Ok(ElabStmt::Ok) => {}
               Ok(ElabStmt::Import(sp)) => {
-                let recv = recv.remove(&sp).unwrap();
+                let (file, recv) = recv.remove(&sp).unwrap();
+                if let Some(file) = file {
+                  elab.spans.insert(sp, ObjectKind::Import(file));
+                }
                 *progress = UnfinishedStmt::Import(sp, recv);
                 elab.push_spans();
                 continue 'l
@@ -438,12 +438,13 @@ impl Elaborator {
     let ast = self.ast.clone();
     for (sp, f) in &ast.imports {
       let path = self.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
-      match path.canonicalize()
-        .map_err(|e| ElabError::new_e(sp.clone(), e))
-        .and_then(|p| mk(p).map_err(|e| ElabError::new_e(sp.clone(), e))) {
-        Ok(tok) => { recv.insert(sp.clone(), tok); }
-        Err(e) => { self.report(e); recv.insert(sp.clone(), channel().1); }
-      }
+      (|| -> Result<_> {
+        let p = path.canonicalize().map_err(|e| ElabError::new_e(sp.clone(), e))?;
+        let r = FileRef::new(p);
+        let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp.clone(), e))?;
+        recv.insert(sp.clone(), (Some(r), tok));
+        Ok(())
+      })().unwrap_or_else(|e| { self.report(e); recv.insert(sp.clone(), (None, channel().1)); });
     }
     ElabFuture(Some(ElabFutureInner {
       elab: self,

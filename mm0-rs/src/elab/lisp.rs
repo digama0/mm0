@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::{Atom};
-use crate::util::{ArcString, FileSpan};
-use super::{AtomID, AtomVec, Remap, Modifiers};
+use crate::util::{ArcString, FileSpan, Span};
+use super::{AtomID, ThmID, AtomVec, Remap, Modifiers};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -332,13 +332,13 @@ pub enum Annot {
 
 #[derive(Clone, Debug)]
 pub enum ProcPos {
-  Named(FileSpan, AtomID),
+  Named(FileSpan, Span, AtomID),
   Unnamed(FileSpan),
 }
 impl ProcPos {
   fn fspan(&self) -> &FileSpan {
     match self {
-      ProcPos::Named(fsp, _) => fsp,
+      ProcPos::Named(fsp, _, _) => fsp,
       ProcPos::Unnamed(fsp) => fsp,
     }
   }
@@ -355,6 +355,7 @@ pub enum Proc {
   },
   MatchCont(Arc<AtomicBool>),
   RefineCallback(Weak<Mutex<Vec<LispVal>>>),
+  ProofThunk(AtomID, Mutex<Result<LispVal, Vec<LispVal>>>),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -379,6 +380,7 @@ impl Proc {
       &Proc::Lambda {spec, ..} => spec,
       Proc::MatchCont(_) => ProcSpec::AtLeast(0),
       Proc::RefineCallback(_) => ProcSpec::AtLeast(1),
+      Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
     }
   }
 }
@@ -608,8 +610,8 @@ impl Remap<LispRemapper> for InferTarget {
 impl Remap<LispRemapper> for ProcPos {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
-      ProcPos::Named(sp, a) => ProcPos::Named(sp.clone(), a.remap(r)),
-      ProcPos::Unnamed(sp) => ProcPos::Unnamed(sp.clone()),
+      ProcPos::Named(fsp, sp, a) => ProcPos::Named(fsp.clone(), *sp, a.remap(r)),
+      ProcPos::Unnamed(fsp) => ProcPos::Unnamed(fsp.clone()),
     }
   }
 }
@@ -621,6 +623,12 @@ impl Remap<LispRemapper> for Proc {
         Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
       Proc::MatchCont(_) => Proc::MatchCont(Arc::new(AtomicBool::new(false))),
       Proc::RefineCallback(_) => Proc::RefineCallback(Weak::new()),
+      Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), Mutex::new(
+        match &*m.lock().unwrap() {
+          Ok(e) => Ok(e.remap(r)),
+          Err(v) => Err(v.remap(r)),
+        }
+      ))
     }
   }
 }
