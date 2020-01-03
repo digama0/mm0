@@ -250,6 +250,8 @@ pub enum ObjectKind {
   Thm(ThmID),
   Var(AtomID),
   Global(AtomID),
+  Expr(LispVal),
+  Proof(LispVal),
   Import(FileRef),
 }
 

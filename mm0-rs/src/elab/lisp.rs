@@ -163,6 +163,26 @@ impl LispVal {
       Err(e) => Err(LispVal(e))
     }
   }
+
+  pub fn extend_into(mut self, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
+    loop {
+      match &*self {
+        LispKind::Ref(m) => {let e = m.unref(); self = e}
+        LispKind::Annot(_, v) => self = v.clone(),
+        LispKind::List(es) | LispKind::DottedList(es, _) if n <= es.len() => {
+          vec.extend_from_slice(&es[..n]);
+          return true
+        },
+        LispKind::List(es) => {vec.extend_from_slice(&es); return false},
+        LispKind::DottedList(es, r) => {
+          vec.extend_from_slice(&es);
+          n -= es.len();
+          self = r.clone()
+        }
+        _ => return false
+      }
+    }
+  }
 }
 
 impl Deref for LispVal {
@@ -302,26 +322,6 @@ impl LispKind {
     if let Some(fsp) = fsp {
       LispVal::new(self).span(fsp.clone())
     } else {LispVal::new(self)}
-  }
-
-  pub fn extend_into(mut this: LispVal, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
-    loop {
-      match &*this {
-        LispKind::Ref(m) => {let e = m.unref(); this = e}
-        LispKind::Annot(_, v) => this = v.clone(),
-        LispKind::List(es) | LispKind::DottedList(es, _) if n <= es.len() => {
-          vec.extend_from_slice(&es[..n]);
-          return true
-        },
-        LispKind::List(es) => {vec.extend_from_slice(&es); return false},
-        LispKind::DottedList(es, r) => {
-          vec.extend_from_slice(&es);
-          n -= es.len();
-          this = r.clone()
-        }
-        _ => return false
-      }
-    }
   }
 }
 
@@ -509,13 +509,13 @@ impl Uncons {
 
   pub fn extend_into(&mut self, n: usize, vec: &mut Vec<LispVal>) -> bool {
     match self {
-      Uncons::New(e) => LispKind::extend_into(e.clone(), n, vec),
+      Uncons::New(e) => e.clone().extend_into(n, vec),
       Uncons::List(es) | Uncons::DottedList(es, _) if n <= es.len() =>
         {vec.extend_from_slice(&es[..n]); true}
       Uncons::List(es) => {vec.extend_from_slice(&es); false}
       Uncons::DottedList(es, r) => {
         vec.extend_from_slice(&es);
-        LispKind::extend_into(r.clone(), n - es.len(), vec)
+        r.clone().extend_into(n - es.len(), vec)
       }
     }
   }

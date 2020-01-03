@@ -322,17 +322,16 @@ impl Node for ProofNode {
 }
 
 pub struct Subst<'a> {
-  lc: &'a mut LocalContext,
   env: &'a Environment,
   heap: &'a [ExprNode],
   subst: Vec<LispVal>,
 }
 
 impl<'a> Subst<'a> {
-  pub fn new(lc: &'a mut LocalContext, env: &'a Environment,
+  pub fn new(env: &'a Environment,
       heap: &'a [ExprNode], mut args: Vec<LispVal>) -> Subst<'a> {
     args.resize(heap.len(), LispVal::undef());
-    Subst {lc, env, heap, subst: args}
+    Subst {env, heap, subst: args}
   }
 
   pub fn subst(&mut self, e: &ExprNode) -> LispVal {
@@ -344,10 +343,28 @@ impl<'a> Subst<'a> {
         self.subst[i] = e.clone();
         e
       }
-      ExprNode::Dummy(_, s) => self.lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom)),
+      ExprNode::Dummy(_, _) => unreachable!(),
       ExprNode::App(t, ref es) => {
         let mut args = vec![LispVal::atom(self.env.terms[t].atom)];
         args.extend(es.iter().map(|e| self.subst(e)));
+        LispVal::list(args)
+      }
+    }
+  }
+
+  pub fn subst_mut(&mut self, lc: &mut LocalContext, e: &ExprNode) -> LispVal {
+    match *e {
+      ExprNode::Ref(i) => {
+        let e = &self.subst[i];
+        if e.is_def() {return e.clone()}
+        let e = self.subst_mut(lc, &self.heap[i]);
+        self.subst[i] = e.clone();
+        e
+      }
+      ExprNode::Dummy(_, s) => lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom)),
+      ExprNode::App(t, ref es) => {
+        let mut args = vec![LispVal::atom(self.env.terms[t].atom)];
+        args.extend(es.iter().map(|e| self.subst_mut(lc, e)));
         LispVal::list(args)
       }
     }

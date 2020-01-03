@@ -20,6 +20,21 @@ impl InferSort {
   fn new(src: Span) -> InferSort {
     InferSort::Unknown { src, must_bound: false, dummy: true, sorts: HashMap::new() }
   }
+  pub fn sort(&self) -> Option<SortID> {
+    match self {
+      &InferSort::Bound {sort} => Some(sort),
+      &InferSort::Reg {sort, ..} => Some(sort),
+      InferSort::Unknown {sorts, ..} => {
+        let mut res = None;
+        for s in sorts.keys() {
+          if let &Some(s) = s {
+            if mem::replace(&mut res, Some(s)).is_some() {return None}
+          }
+        }
+        res
+      }
+    }
+  }
 }
 
 #[derive(Default, Debug)]
@@ -268,6 +283,7 @@ impl<'a> ElabTermMut<'a> {
     self.coerce(e, tdata.ret.0, LispKind::List(args), tgt)
   }
 
+  // TODO: Unify this with RState::RefineExpr
   fn expr(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) if self.lc.vars.contains_key(&a) => self.atom(e, a, tgt),

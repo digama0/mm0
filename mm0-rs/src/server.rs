@@ -20,7 +20,8 @@ use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::elab::{ElabError, Elaborator,
   environment::{ObjectKind, DeclKey, AtomData, StmtTrace, Environment},
-  local_context::InferSort, lisp::{LispKind, print::FormatEnv}};
+  local_context::InferSort, lisp::{LispKind, Uncons, print::FormatEnv},
+  proof::Subst};
 
 #[derive(Debug)]
 struct ServerError(BoxError);
@@ -411,18 +412,18 @@ impl RequestHandler {
 
 async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
-  macro_rules! or_none {($e:expr)  => {match $e {
+  macro_rules! or {($ret:expr, $e:expr)  => {match $e {
     Some(x) => x,
-    None => return Ok(None)
+    None => return $ret
   }}}
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let idx = or_none!(text.to_idx(pos));
+  let idx = or!(Ok(None), text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
   let fe = FormatEnv {source: &text, env: &env};
-  let spans = or_none!(env.find(idx));
+  let spans = or!(Ok(None), env.find(idx));
   let res: Vec<_> = spans.find_pos(idx).into_iter().filter_map(|&(sp, ref k)| {
     Some(match k {
       &ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
@@ -437,6 +438,40 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
         }
         _ => return None,
       }),
+      ObjectKind::Expr(e) => {
+        let head = Uncons::from(e.clone()).next().unwrap_or_else(|| e.clone());
+        let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
+        let a = head.as_atom()?;
+        if let Some(DeclKey::Term(t)) = env.data[a].decl {
+          (sp1, format!("{}", fe.to(&env.terms[t].ret.0)))
+        } else {
+          let s = spans.lc.as_ref()?.vars.get(&a)?.1.sort()?;
+          (sp1, format!("{}", fe.to(&s)))
+        }
+      },
+      ObjectKind::Proof(p) => {
+        let mut u = Uncons::from(p.clone());
+        let head = u.next()?;
+        let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
+        let a = head.as_atom()?;
+        if let Some(DeclKey::Thm(t)) = env.data[a].decl {
+          let td = &env.thms[t];
+          let mut args = vec![];
+          if !u.extend_into(td.args.len(), &mut args) {return None}
+          let mut subst = Subst::new(&env, &td.heap, args);
+          let mut out = String::new();
+          use std::fmt::Write;
+          for (_, h) in &td.hyps {
+            write!(out, "$ {} $ >\n", fe.to(&subst.subst(h))).unwrap();
+          }
+          write!(out, "$ {} $", fe.to(&subst.subst(&td.ret))).unwrap();
+          (sp1, out)
+        } else {
+          let lc = spans.lc.as_ref()?;
+          let (_, e, _) = &lc.proof_order[*lc.proofs.get(&a)?];
+          (sp1, format!("$ {} $", fe.to(e)))
+        }
+      },
       ObjectKind::Global(_) |
       ObjectKind::Import(_) => return None,
     })
@@ -489,6 +524,17 @@ async fn definition<T>(path: FileRef, pos: Position,
       &ObjectKind::Term(t, _) => res.push(term(t)),
       &ObjectKind::Thm(t) => res.push(thm(t)),
       ObjectKind::Var(_) => {}
+      ObjectKind::Expr(e) => {
+        let head = Uncons::from(e.clone()).next().unwrap_or_else(|| e.clone());
+        if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data[a].decl) {
+          res.push(term(t))
+        }
+      },
+      ObjectKind::Proof(p) =>
+        if let Some(DeclKey::Thm(t)) = Uncons::from(p.clone()).next()
+            .and_then(|head| head.as_atom()).and_then(|a| env.data[a].decl) {
+          res.push(thm(t))
+        },
       &ObjectKind::Global(a) => {
         let ad = &env.data[a];
         match ad.decl {
