@@ -254,8 +254,10 @@ impl<'a> Pretty<'a> {
   }
 
   pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
+    let mut doc = self.expr_paren(e, Prec::Prec(0)).doc;
+    if let Doc::Group(doc2) = *doc {doc = doc2}
     self.append_doc(self.alloc(Doc::Text("$ ".into())),
-      self.append_doc(self.alloc(Doc::Nest(2, self.expr_paren(e, Prec::Prec(0)).doc)),
+      self.append_doc(self.alloc(Doc::Nest(2, doc)),
         self.alloc(Doc::Text(" $".into()))))
   }
 
