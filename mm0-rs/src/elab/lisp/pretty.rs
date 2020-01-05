@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 use std::{mem, fmt::{self, Write}};
 use std::borrow::Cow;
-use pretty::{DocAllocator, Doc, Arena};
+use pretty::{DocAllocator, Doc, RefDoc, Arena};
 use itertools::Itertools;
 use super::{LispVal, LispKind, Uncons, print::FormatEnv,
   super::{
@@ -27,7 +27,7 @@ impl<'a> PP<'a> {
       left: env.pe.delims_r.get(*tk.as_bytes().first().unwrap()),
       right: env.pe.delims_l.get(*tk.as_bytes().last().unwrap()),
       small: true,
-      doc: alloc2(alloc, Doc::Text(tk.into())),
+      doc: alloc.alloc(Doc::text(tk)),
     }
   }
 
@@ -36,7 +36,7 @@ impl<'a> PP<'a> {
       left: false,
       right: false,
       small: true,
-      doc: alloc2(alloc, Doc::Text(data.into())),
+      doc: alloc.alloc(Doc::text(data)),
     }
   }
 }
@@ -70,28 +70,9 @@ pub struct Pretty<'a> {
   rparen: PP<'a>,
 }
 
-// TODO: Patch for https://github.com/Marwes/pretty.rs/pull/59
-#[derive(Debug, Copy, Clone)]
-pub struct RefDoc<'a, A>(&'a Doc<'a, RefDoc<'a, A>, A>);
-
-impl<'a, A> Deref for RefDoc<'a, A> {
-  type Target = Doc<'a, RefDoc<'a, A>, A>;
-  fn deref(&self) -> &Self::Target { &self.0 }
-}
-
-impl<'a, A> pretty::DocPtr<'a, A> for RefDoc<'a, A> {
-  type ColumnFn = &'a (dyn Fn(usize) -> Self + 'a);
-  type WidthFn = &'a (dyn Fn(isize) -> Self + 'a);
-}
-
-fn alloc2<'a>(alloc: &'a Arena<'a, ()>, doc: Doc<'a, RefDoc<'a, ()>, ()>) -> RefDoc<'a, ()> {
-  unsafe { mem::transmute(alloc.alloc(mem::transmute(doc))) }
-}
-// End patch
-
 const NIL: RefDoc<'static, ()> = RefDoc(&Doc::Nil);
 const HARDLINE: RefDoc<'static, ()> = RefDoc(&Doc::Line);
-const SPACE: RefDoc<'static, ()> = RefDoc(&Doc::Text(Cow::Borrowed(" ")));
+const SPACE: RefDoc<'static, ()> = RefDoc(&Doc::BorrowedText(" "));
 const LINE: RefDoc<'static, ()> = RefDoc(&Doc::FlatAlt(HARDLINE, SPACE));
 const LINE_: RefDoc<'static, ()> = RefDoc(&Doc::FlatAlt(HARDLINE, NIL));
 const SOFTLINE: RefDoc<'static, ()> = RefDoc(&Doc::Group(LINE));
@@ -122,7 +103,7 @@ impl<'a> Pretty<'a> {
   fn word(&'a self, data: &'a str) -> PP<'a> { PP::word(&self.alloc, data) }
 
   fn alloc(&'a self, doc: Doc<'a, RefDoc<'a, ()>, ()>) -> RefDoc<'a, ()> {
-    alloc2(&self.alloc, doc)
+    self.alloc.alloc(doc)
   }
 
   fn append_doc(&'a self, a: RefDoc<'a, ()>, b: RefDoc<'a, ()>) -> RefDoc<'a, ()> {
@@ -256,8 +237,8 @@ impl<'a> Pretty<'a> {
   pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
     let mut doc = self.expr_paren(e, Prec::Prec(0)).doc;
     if let Doc::Group(doc2) = *doc {doc = doc2}
-    let doc = self.append_doc(self.alloc(Doc::Text("$ ".into())),
-      self.append_doc(doc, self.alloc(Doc::Text(" $".into()))));
+    let doc = self.append_doc(self.alloc(Doc::text("$ ")),
+      self.append_doc(doc, self.alloc(Doc::text(" $"))));
     self.alloc(Doc::Group(doc))
   }
 
@@ -291,7 +272,7 @@ impl<'a> Pretty<'a> {
         let mut u = Uncons::from(e.clone());
         let mut args = vec![];
         let mut doc = if let Some((ad, td)) = self.get_thm_args(&mut u, &mut args) {
-          let doc = self.alloc(Doc::Text((*ad.name).into()));
+          let doc = self.alloc(Doc::BorrowedText(&ad.name));
           let doc = self.app_doc(doc, td.args.iter().zip(args.iter()).map(|((_, ty), e)| {
             match ty {
               Type::Bound(_) => (true, self.pp_lisp(e)),
@@ -302,7 +283,7 @@ impl<'a> Pretty<'a> {
         } else {
           let mut u = Uncons::from(e.clone());
           if let Some(e) = u.next() { self.pp_lisp(&e) }
-          else if u.exactly(0) { return self.alloc(Doc::Text("()".into())) }
+          else if u.exactly(0) { return self.alloc(Doc::text("()")) }
           else { return self.pp_lisp(&u.as_lisp()) }
         };
         for e in &mut u {
@@ -310,13 +291,13 @@ impl<'a> Pretty<'a> {
         }
         if !u.exactly(0) {
           doc = self.append_doc(doc,
-            self.append_doc(self.alloc(Doc::Text(" .".into())),
+            self.append_doc(self.alloc(Doc::text(" .")),
               self.append_doc(Self::line(), self.pp_lisp(&u.as_lisp()))));
         }
         let doc = self.append_doc(self.lparen.doc, self.append_doc(doc, self.rparen.doc));
         self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
       }
-      _ => self.alloc(Doc::Text(format!("{}", self.fe.to(e)).into())),
+      _ => self.alloc(Doc::text(format!("{}", self.fe.to(e)))),
     })
   }
 
@@ -356,7 +337,7 @@ impl<'a> Pretty<'a> {
         }
       }
       doc = self.append_doc(doc, self.append_doc(Self::softline(),
-        self.alloc(Doc::Text(buf.into()))));
+        self.alloc(Doc::text(buf))));
       rest = bis2;
     }
   }
@@ -365,16 +346,16 @@ impl<'a> Pretty<'a> {
     let buf = format!("{}{} {}", t.vis,
       if t.val.is_some() {"def"} else {"term"},
       self.fe.to(&t.atom));
-    let doc = self.alloc(Doc::Text(buf.into()));
+    let doc = self.alloc(Doc::text(buf));
     let mut bvs = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvs);
-    let doc = self.append_doc(doc, self.alloc(Doc::Text(":".into())));
+    let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
     let doc = self.alloc(Doc::Group(doc));
     let mut buf = format!("{}", self.fe.to(&t.ret.0));
     Self::dep_type(&bvs, t.ret.1, self.fe, &mut buf).unwrap();
     buf += ";";
     self.append_doc(doc, self.append_doc(Self::softline(),
-      self.alloc(Doc::Text(buf.into()))))
+      self.alloc(Doc::text(buf))))
   }
 
   pub fn hyps_and_ret(&'a self, mut doc: RefDoc<'a, ()>,
@@ -382,7 +363,7 @@ impl<'a> Pretty<'a> {
     for e in hs {
       doc = self.append_doc(doc,
         self.append_doc(self.expr(&e),
-          self.append_doc(self.alloc(Doc::Text(" >".into())),
+          self.append_doc(self.alloc(Doc::text(" >")),
             Self::line())));
     }
     self.append_doc(doc, self.expr(ret))
@@ -392,10 +373,10 @@ impl<'a> Pretty<'a> {
     let buf = format!("{}{} {}", t.vis,
       if t.proof.is_some() {"theorem"} else {"axiom"},
       self.fe.to(&t.atom));
-    let doc = self.alloc(Doc::Text(buf.into()));
+    let doc = self.alloc(Doc::text(buf));
     let mut bvs = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvs);
-    let doc = self.append_doc(doc, self.alloc(Doc::Text(":".into())));
+    let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
     let doc = self.append_doc(self.alloc(Doc::Group(doc)), Self::line());
     let mut bvs = Vec::new();
     let mut heap = Vec::new();
@@ -407,7 +388,7 @@ impl<'a> Pretty<'a> {
     let doc = self.hyps_and_ret(doc,
       t.hyps.iter().map(|(_, e)| self.fe.expr_node(&heap, &mut None, e)),
       &self.fe.expr_node(&heap, &mut None, &t.ret));
-    let doc = self.append_doc(doc, self.alloc(Doc::Text(";".into())));
+    let doc = self.append_doc(doc, self.alloc(Doc::text(";")));
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
   }
 }
