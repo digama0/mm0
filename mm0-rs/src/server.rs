@@ -20,8 +20,8 @@ use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::elab::{ElabError, Elaborator,
   environment::{ObjectKind, DeclKey, AtomData, StmtTrace, Environment},
-  local_context::InferSort, lisp::{LispKind, Uncons, print::FormatEnv},
-  proof::Subst};
+  local_context::InferSort, proof::Subst,
+  lisp::{LispKind, Uncons, print::FormatEnv, pretty::Pretty}};
 
 #[derive(Debug)]
 struct ServerError(BoxError);
@@ -448,30 +448,34 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
           let s = spans.lc.as_ref()?.vars.get(&a)?.1.sort()?;
           (sp1, format!("{}", fe.to(&s)))
         }
-      },
+      }
       ObjectKind::Proof(p) => {
-        let mut u = Uncons::from(p.clone());
-        let head = u.next()?;
-        let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
-        let a = head.as_atom()?;
-        if let Some(DeclKey::Thm(t)) = env.data[a].decl {
-          let td = &env.thms[t];
-          let mut args = vec![];
-          if !u.extend_into(td.args.len(), &mut args) {return None}
-          let mut subst = Subst::new(&env, &td.heap, args);
+        if let Some(e) = p.as_atom().and_then(|x|
+          spans.lc.as_ref().and_then(|lc|
+            lc.proofs.get(&x).map(|&i| &lc.proof_order[i].1))) {
           let mut out = String::new();
-          use std::fmt::Write;
-          for (_, h) in &td.hyps {
-            write!(out, "$ {} $ >\n", fe.to(&subst.subst(h))).unwrap();
-          }
-          write!(out, "$ {} $", fe.to(&subst.subst(&td.ret))).unwrap();
-          (sp1, out)
+          fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
+            .render_fmt(80, &mut out).unwrap());
+          (sp, out)
         } else {
-          let lc = spans.lc.as_ref()?;
-          let (_, e, _) = &lc.proof_order[*lc.proofs.get(&a)?];
-          (sp1, format!("$ {} $", fe.to(e)))
+          let mut u = Uncons::from(p.clone());
+          let head = u.next()?;
+          let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
+          let a = head.as_atom()?;
+          if let Some(DeclKey::Thm(t)) = env.data[a].decl {
+            let td = &env.thms[t];
+            let mut args = vec![];
+            if !u.extend_into(td.args.len(), &mut args) {return None}
+            let mut subst = Subst::new(&env, &td.heap, args);
+            let mut out = String::new();
+            let ret = subst.subst(&td.ret);
+            fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
+              td.hyps.iter().map(|(_, h)| subst.subst(h)),
+              &ret).render_fmt(80, &mut out).unwrap());
+            (sp1, out)
+          } else {return None}
         }
-      },
+      }
       ObjectKind::Global(_) |
       ObjectKind::Import(_) => return None,
     })

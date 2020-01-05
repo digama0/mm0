@@ -1,6 +1,7 @@
 pub mod parser;
 pub mod eval;
 pub mod print;
+pub mod pretty;
 
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
@@ -507,7 +508,7 @@ impl Uncons {
     }
   }
 
-  pub fn extend_into(&mut self, n: usize, vec: &mut Vec<LispVal>) -> bool {
+  pub fn extend_into(&self, n: usize, vec: &mut Vec<LispVal>) -> bool {
     match self {
       Uncons::New(e) => e.clone().extend_into(n, vec),
       Uncons::List(es) | Uncons::DottedList(es, _) if n <= es.len() =>

@@ -168,7 +168,7 @@ pub enum StmtTrace {
   Global(AtomID),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum DeclKey {
   Term(TermID),
   Thm(ThmID),
@@ -227,6 +227,8 @@ pub struct ParserEnv {
   pub infixes: HashMap<ArcString, NotaInfo>,
   pub coes: HashMap<SortID, HashMap<SortID, Arc<Coe>>>,
   pub coe_prov: HashMap<SortID, SortID>,
+  pub decl_nota: HashMap<TermID,
+    (bool /* has coe */, Vec<(ArcString, bool /* infix vs prefix */)>)>,
 }
 
 #[derive(Clone)]
@@ -516,9 +518,11 @@ impl ParserEnv {
   }
 
   pub fn add_prefix(&mut self, tk: ArcString, n: NotaInfo) -> Result<(), IncompatibleError> {
+    self.decl_nota.entry(n.term).or_default().1.push((tk.clone(), false));
     Self::add_nota_info(&mut self.prefixes, tk, n)
   }
   pub fn add_infix(&mut self, tk: ArcString, n: NotaInfo) -> Result<(), IncompatibleError> {
+    self.decl_nota.entry(n.term).or_default().1.push((tk.clone(), true));
     Self::add_nota_info(&mut self.infixes, tk, n)
   }
 
@@ -583,7 +587,9 @@ impl ParserEnv {
   pub fn add_coe(&mut self, sp: Span, sorts: &SortVec<Sort>,
       s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
     self.add_coe_raw(sp, sorts, s1, s2, fsp, t)?;
-    self.update_provs(sp, sorts)
+    self.update_provs(sp, sorts)?;
+    self.decl_nota.entry(t).or_default().0 = true;
+    Ok(())
   }
 
   fn merge(&mut self, other: &Self, r: &mut Remapper, sp: Span, sorts: &SortVec<Sort>, errors: &mut Vec<ElabError>) {

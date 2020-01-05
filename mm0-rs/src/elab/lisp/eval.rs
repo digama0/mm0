@@ -13,7 +13,7 @@ use super::super::{Result, Elaborator,
 use super::*;
 use super::parser::{IR, Branch, Pattern};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
-use super::super::environment::{Type, ExprNode, ProofNode};
+use super::super::environment::{ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
 #[derive(Debug)]
@@ -476,24 +476,6 @@ impl Elaborator {
   }
 
   fn get_decl(&self, x: AtomID) -> LispVal {
-    fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
-      v.push(if xs == 0 {LispVal::nil()} else {
-        let mut i = 1;
-        LispVal::list(bvs.iter().filter(|_| (xs & i != 0, i *= 2).0).cloned().collect())
-      });
-      v
-    }
-    fn binders(env: &Environment, bis: &[(Option<AtomID>, Type)],
-        heap: &mut Vec<LispVal>, bvs: &mut Vec<LispVal>) -> LispVal {
-      LispVal::list(bis.iter().map(|(a, t)| LispVal::list({
-        let a = LispVal::atom(a.unwrap_or(AtomID::UNDER));
-        heap.push(a.clone());
-        match t {
-          &Type::Bound(s) => {bvs.push(a.clone()); vec![a, LispVal::atom(env.sorts[s].atom)]}
-          &Type::Reg(s, xs) => deps(&bvs, vec![a, LispVal::atom(env.sorts[s].atom)], xs)
-        }
-      })).collect())
-    }
     fn vis(mods: Modifiers) -> LispVal {
       match mods {
         Modifiers::PUB => LispVal::atom(AtomID::PUB),
@@ -501,23 +483,6 @@ impl Elaborator {
         Modifiers::LOCAL => LispVal::atom(AtomID::LOCAL),
         Modifiers::NONE => LispVal::nil(),
         _ => unreachable!()
-      }
-    }
-    fn expr_node(env: &Environment, heap: &Vec<LispVal>,
-        ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {
-      match e {
-        &ExprNode::Ref(n) => heap[n].clone(),
-        &ExprNode::Dummy(a, s) => {
-          let a = LispVal::atom(a);
-          ds.as_mut().unwrap().push(
-            LispVal::list(vec![a.clone(), LispVal::atom(env.sorts[s].atom)]));
-          a
-        }
-        &ExprNode::App(t, ref es) => {
-          let mut args = vec![LispVal::atom(env.terms[t].atom)];
-          args.extend(es.iter().map(|e| expr_node(env, heap, ds, e)));
-          LispVal::list(args)
-        }
       }
     }
 
@@ -530,18 +495,18 @@ impl Elaborator {
         let mut args = vec![
           LispVal::atom(if tdata.val.is_some() {AtomID::TERM} else {AtomID::DEF}),
           LispVal::atom(x),
-          binders(self, &tdata.args, &mut heap, &mut bvs),
-          LispVal::list(deps(&bvs,
+          self.binders(&tdata.args, &mut heap, &mut bvs),
+          LispVal::list(Environment::deps(&bvs,
             vec![LispVal::atom(self.sorts[tdata.ret.0].atom)], tdata.ret.1))
         ];
         if let Some(Some(v)) = &tdata.val {
           args.push(vis(tdata.vis));
           let mut ds = Vec::new();
           for e in &v.heap[heap.len()..] {
-            let e = expr_node(self, &heap, &mut Some(&mut ds), e);
+            let e = self.expr_node(&heap, &mut Some(&mut ds), e);
             heap.push(e)
           }
-          let ret = expr_node(self, &heap, &mut Some(&mut ds), &v.head);
+          let ret = self.expr_node(&heap, &mut Some(&mut ds), &v.head);
           args.push(LispVal::list(ds));
           args.push(ret);
         }
@@ -554,18 +519,18 @@ impl Elaborator {
         let mut args = vec![
           LispVal::atom(if tdata.proof.is_some() {AtomID::THM} else {AtomID::AXIOM}),
           LispVal::atom(x),
-          binders(self, &tdata.args, &mut heap, &mut bvs),
+          self.binders(&tdata.args, &mut heap, &mut bvs),
           {
             for e in &tdata.heap[heap.len()..] {
-              let e = expr_node(self, &heap, &mut None, e);
+              let e = self.expr_node(&heap, &mut None, e);
               heap.push(e)
             }
             LispVal::list(tdata.hyps.iter().map(|(a, e)| LispVal::list(vec![
               LispVal::atom(a.unwrap_or(AtomID::UNDER)),
-              expr_node(self, &heap, &mut None, e)
+              self.expr_node(&heap, &mut None, e)
             ])).collect())
           },
-          expr_node(self, &heap, &mut None, &tdata.ret)
+          self.expr_node(&heap, &mut None, &tdata.ret)
         ];
         if tdata.proof.is_some() {
           args.push(vis(tdata.vis));
@@ -872,8 +837,8 @@ make_builtins! { self, sp1, sp2, args,
       }
     } else {try1!(Err("invalid arguments"))}
   ),
-  PrettyPrint: Exact(1) => /* TODO: pretty */
-    LispVal::string(ArcString::new(format!("{}", self.print(&args[0])))),
+  PrettyPrint: Exact(1) =>
+    LispVal::string(ArcString::new(format!("{}", self.format_env().pp(&args[0], 80)))),
   NewGoal: Exact(1) => LispVal::goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
   InferType: Exact(1) => self.infer_type(sp1, &args[0])?,

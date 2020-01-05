@@ -326,7 +326,7 @@ impl Elaborator {
     // })
   }
 
-  fn unfold(&mut self, sym: bool, t: TermID, mut u1: Uncons, e2: &LispVal) -> SResult<LispVal> {
+  fn unfold(&mut self, sym: bool, t: TermID, u1: Uncons, e2: &LispVal) -> SResult<LispVal> {
     let tdata = &self.env.terms[t];
     let a = tdata.atom;
     let n = tdata.args.len();

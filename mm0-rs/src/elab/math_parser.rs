@@ -60,7 +60,7 @@ impl Elaborator {
   }
 }
 
-const APP_PREC: Prec = Prec::Prec(1024);
+pub const APP_PREC: Prec = Prec::Prec(1024);
 
 struct MathParser<'a> {
   p: Parser<'a>,

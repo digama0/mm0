@@ -2,8 +2,9 @@ use std::rc::Rc;
 use std::hash::Hash;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
-use super::environment::AtomID;
-use super::*;
+use super::environment::{AtomID, Type};
+use super::{LocalContext, ElabError, Result,
+  Elaborator, Environment, SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
@@ -91,16 +92,6 @@ impl<H: NodeHash> Dedup<H> {
         self.prev.insert(p, n); n
       }
     })
-    // e.unwrapped_span(None, |sp, r| Ok(match self.prev.get(&(r as *const _)) {
-    //   Some(&n) => {self.vec[n].1 = true; n}
-    //   None => {
-    //     let n = match H::from(nh, sp, r, |e| self.dedup(nh, e))? {
-    //       Ok(v) => self.add_direct(v),
-    //       Err(n) => n,
-    //     };
-    //     self.prev.insert(r, n); n
-    //   }
-    // }))
   }
 
   fn map_inj<T: NodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
@@ -205,6 +196,46 @@ impl Node for ExprNode {
       ExprHash::Dummy(a, s) => ExprNode::Dummy(a, s),
       ExprHash::App(t, ref ns) => ExprNode::App(t,
         ns.iter().map(|&i| Val::take(&mut ids[i])).collect()),
+    }
+  }
+}
+
+impl Environment {
+  pub fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
+    v.push(if xs == 0 {LispVal::nil()} else {
+      let mut i = 1;
+      LispVal::list(bvs.iter().filter(|_| (xs & i != 0, i *= 2).0).cloned().collect())
+    });
+    v
+  }
+
+  pub fn binders(&self, bis: &[(Option<AtomID>, Type)],
+      heap: &mut Vec<LispVal>, bvs: &mut Vec<LispVal>) -> LispVal {
+    LispVal::list(bis.iter().map(|(a, t)| LispVal::list({
+      let a = LispVal::atom(a.unwrap_or(AtomID::UNDER));
+      heap.push(a.clone());
+      match t {
+        &Type::Bound(s) => {bvs.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
+        &Type::Reg(s, xs) => Self::deps(&bvs, vec![a, LispVal::atom(self.sorts[s].atom)], xs)
+      }
+    })).collect())
+  }
+
+  pub fn expr_node(&self, heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {
+    match e {
+      &ExprNode::Ref(n) => heap[n].clone(),
+      &ExprNode::Dummy(a, s) => {
+        let a = LispVal::atom(a);
+        if let Some(ds) = ds {
+          ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.sorts[s].atom)]));
+        }
+        a
+      }
+      &ExprNode::App(t, ref es) => {
+        let mut args = vec![LispVal::atom(self.terms[t].atom)];
+        args.extend(es.iter().map(|e| self.expr_node(heap, ds, e)));
+        LispVal::list(args)
+      }
     }
   }
 }
