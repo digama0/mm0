@@ -119,19 +119,33 @@ impl fmt::Debug for Span {
   }
 }
 
+lazy_static! {
+  static ref CURRENT_DIR: PathBuf =
+    std::fs::canonicalize(".").expect("failed to find current directory");
+}
+
+fn make_relative(buf: &PathBuf) -> String {
+  pathdiff::diff_paths(buf, &CURRENT_DIR).as_ref().unwrap_or(buf)
+    .to_str().unwrap().to_owned()
+}
+
 #[derive(Clone)]
-pub struct FileRef(Arc<(PathBuf, Url)>);
+pub struct FileRef(Arc<(PathBuf, String, Url)>);
 impl FileRef {
   pub fn new(buf: PathBuf) -> FileRef {
     let u = Url::from_file_path(&buf).expect("bad file path");
-    FileRef(Arc::new((buf, u)))
+    let rel = make_relative(&buf);
+    FileRef(Arc::new((buf, rel, u)))
   }
   pub fn from_url(url: Url) -> FileRef {
-    FileRef(Arc::new((url.to_file_path().expect("bad URL"), url)))
+    let buf = url.to_file_path().expect("bad URL");
+    let rel = make_relative(&buf);
+    FileRef(Arc::new((buf, rel, url)))
   }
   pub fn path(&self) -> &PathBuf { &self.0 .0 }
-  pub fn url(&self) -> &Url { &self.0 .1 }
-  pub fn ptr(&self) -> *const (PathBuf, Url) { &*self.0 }
+  pub fn rel(&self) -> &str { &self.0 .1 }
+  pub fn url(&self) -> &Url { &self.0 .2 }
+  pub fn ptr(&self) -> *const PathBuf { self.path() }
   pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
 }
 impl PartialEq for FileRef {

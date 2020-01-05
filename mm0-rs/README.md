@@ -12,6 +12,13 @@ To compile `mm0-rs`, run
 
 from the `mm0-rs` directory, then copy or symlink the resulting executable file `target/release/mm0-rs` to your system path and/or point `vscode-mm0` to it using the setting
 
-  "metamath-zero.executablePath": "mm0-rs",
+    "metamath-zero.executablePath": "mm0-rs",
 
 in your `settings.json` file.
+
+## Usage
+
+* `mm0-rs server` causes it to send and receive LSP server commands via stdin and stdout. This is not used directly from the CLI but rather is invoked by `vscode-mm0` when it is set up to use `mm0-rs` as a language server.
+  * `mm0-rs server --debug` is run by `vscode-mm0` when the extension itself is run in debugging mode, and this will enable backtraces and logging.
+
+* `mm0-rs compile foo.mm1` will compile an MM1 file, reporting errors to the console. This is essentially the console version of the `server` mode.

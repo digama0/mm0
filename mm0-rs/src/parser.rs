@@ -3,6 +3,7 @@ pub mod ast;
 use std::mem;
 use std::sync::Arc;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
+use annotate_snippets::snippet::AnnotationType;
 use num::BigUint;
 use num::cast::ToPrimitive;
 use crate::util::*;
@@ -22,6 +23,14 @@ impl ErrorLevel {
       ErrorLevel::Info => DiagnosticSeverity::Information,
       ErrorLevel::Warning => DiagnosticSeverity::Warning,
       ErrorLevel::Error => DiagnosticSeverity::Error,
+    }
+  }
+
+  pub fn to_annotation_type(self) -> AnnotationType {
+    match self {
+      ErrorLevel::Info => AnnotationType::Info,
+      ErrorLevel::Warning => AnnotationType::Warning,
+      ErrorLevel::Error => AnnotationType::Error,
     }
   }
 }

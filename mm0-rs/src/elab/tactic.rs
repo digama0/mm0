@@ -404,7 +404,7 @@ impl Elaborator {
             } else if let Some(DeclKey::Thm(t)) = self.data[a].decl {
               RState::RefineBis {sp, sp2, tgt, im, t, args: vec![LispVal::atom(a)], u}
             } else {
-              Err(ElabError::new_e(sp, format!(
+              Err(ElabError::new_e(sp2, format!(
                 "unknown theorem/hypothesis '{}'", self.data[a].name)))?
             }
           }
