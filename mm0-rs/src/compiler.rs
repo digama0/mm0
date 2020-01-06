@@ -13,6 +13,7 @@ use annotate_snippets::{
 use crate::elab::{ElabError, ElabErrorKind, Environment, Elaborator};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
+use crate::export_mmb::Exporter;
 use crate::util::{FileRef, FileSpan, Span};
 
 lazy_static! {
@@ -192,14 +193,6 @@ async fn elaborate(path: FileRef) -> io::Result<Arc<Environment>> {
   Ok(env)
 }
 
-async fn elaborate_and_report(path: FileRef) {
-  if let Err(e) = std::panic::AssertUnwindSafe(elaborate(path))
-      .catch_unwind().await
-      .unwrap_or_else(|_| Err(io::Error::new(io::ErrorKind::Other, "server panic"))) {
-    eprintln!("{:?}", e)
-  }
-}
-
 fn elaborate_and_send(path: FileRef, send: FSender<((), Arc<Environment>)>) ->
   BoxFuture<'static, ()> {
   async {
@@ -211,5 +204,10 @@ fn elaborate_and_send(path: FileRef, send: FSender<((), Arc<Environment>)>) ->
 
 pub fn main(mut args: impl Iterator<Item=String>) -> io::Result<()> {
   let file = args.next().expect("expected a .mm1 file");
-  Ok(block_on(elaborate_and_report(FileRef::new(fs::canonicalize(file)?))))
+  let env = block_on(elaborate(FileRef::new(fs::canonicalize(file)?)))?;
+  if let Some(out) = args.next() {
+    use {fs::File, io::BufWriter};
+    Exporter::new(&env, &mut BufWriter::new(File::create(out)?)).run()?
+  }
+  Ok(())
 }

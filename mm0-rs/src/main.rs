@@ -10,6 +10,7 @@ mod parser;
 mod compiler;
 mod vfs;
 mod elab;
+mod export_mmb;
 
 use std::{env, io};
 

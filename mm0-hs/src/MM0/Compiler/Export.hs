@@ -304,7 +304,7 @@ writeMM0B strip decls (Tables sorts terms thms) = do
     ExportM ()
   writeBis bis f = foldr go f bis 0 H.empty 0 H.empty where
     go (PBound x s) m ln lctx n ctx = do
-      guardError "term has more than 56 bound variables" (ln < 56)
+      guardError "term has more than 55 bound variables" (ln < 55)
       writeU64 (shiftL 1 63 .|. shiftL (fromIntegral $ mIx sorts M.! s) 56 .|. shiftL 1 ln)
       m (ln+1) (H.insert x ln lctx) (n+1) (H.insert x n ctx)
     go (PReg v (DepType s xs)) m ln lctx n ctx = do
@@ -696,6 +696,7 @@ data ProofCmd =
   | PCUnfold
   | PCConvCut
   | PCConvRef Word32
+  | PCConvSave
   deriving (Show)
 
 writeProofCmd :: ProofCmd -> ExportM ()
@@ -713,6 +714,7 @@ writeProofCmd PCCong         = writeU8 0x1A
 writeProofCmd PCUnfold       = writeU8 0x1B
 writeProofCmd PCConvCut      = writeU8 0x1C
 writeProofCmd (PCConvRef n)  = writeCmd 0x1D n
+writeProofCmd PCConvSave     = writeU8 0x1E
 
 -- writeProofCmd' :: ProofCmd -> ExportM ()
 -- writeProofCmd' c = do
