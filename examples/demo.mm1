@@ -1,0 +1,81 @@
+delimiter $ ( ) ! = , $;
+provable sort wff;
+term imp: wff > wff > wff;
+infixr imp: $->$ prec 2;
+
+-- The implicational axioms of intuitionistic logic
+axiom K: $ a -> b -> a $;
+axiom S: $ (a -> b -> c) -> (a -> b) -> (a -> c) $;
+axiom mp: $ a -> b $ > $ a $ > $ b $;
+
+do {
+  (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
+  (def (verb e) (list ':verb e))
+  (def (refine-extra-args refine p . ps) @
+    foldl ps p @ fn (acc p2) @
+      refine @ list 'mp (verb acc) (verb p2))
+};
+
+-- theorem a1i (h: $ b $): $ a -> b $ = '(K h);
+-- theorem mpd (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ = '(S h2 h1);
+-- theorem mpi (h1: $ b $) (h2: $ a -> b -> c $): $ a -> c $ = '(mpd (a1i h1) h2);
+-- theorem id: $ a -> a $ = '(mpd (! K _ a) K);
+
+theorem id: $ a -> a $ =
+'(S K (! K _ a));
+
+
+sort nat;
+term all {x: nat} (P: wff x): wff;
+notation all (x P) = ($!$:4) x P;
+term eq (a b: nat): wff;
+infixl eq: $=$ prec 10;
+
+axiom refl: $ a = a $;
+axiom symm: $ a = b $ > $ b = a $;
+axiom trans: $ a = b $ > $ b = c $ > $ a = c $;
+
+do {
+  {2 + 2}
+};
+
+axiom foo (P Q: wff x): $ !x (P -> Q) -> !x P -> !x Q $;
+
+term _0: nat; prefix _0: $0$ prec max;
+term succ: nat > nat;
+axiom succ_eq: $ a = b $ > $ succ a = succ b $;
+
+def _1 = $ succ 0 $; prefix _1: $1$ prec max;
+def _2 = $ succ 1 $; prefix _2: $2$ prec max;
+def _3 = $ succ 2 $; prefix _3: $3$ prec max;
+def _4 = $ succ 3 $; prefix _4: $4$ prec max;
+
+term add (a b: nat): nat;
+infixl add: $+$ prec 20;
+axiom add_eq: $ a = b $ > $ c = d $ > $ a + c = b + d $;
+
+axiom add_succ: $ a + succ b = succ (a + b) $;
+axiom add_zero: $ a + 0 = a $;
+
+theorem two_plus_two_is_four: $ 2 + 2 = 4 $ =
+(begin
+  (refine 'trans)
+  (refine 'add_succ)
+  (refine 'succ_eq)
+  (refine 'trans)
+  (refine 'add_succ)
+  (refine 'succ_eq)
+  (refine 'add_zero)
+(stat));
+
+theorem two_plus_two_is_four_ALT: $ 2 + 2 = 4 $ =
+(begin
+  (refine '(trans add_succ succ_eq))
+  (refine '(trans add_succ succ_eq))
+  (refine 'add_zero)
+(stat));
+
+theorem two_plus_two_is_four_ALT2: $ 2 + 2 = 4 $ =
+'(trans add_succ @ succ_eq @
+  trans add_succ @ succ_eq @
+  add_zero);
