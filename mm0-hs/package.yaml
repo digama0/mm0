@@ -81,6 +81,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     - -Wall
+    - -O2
 
 tests:
   mm0-hs-test:
