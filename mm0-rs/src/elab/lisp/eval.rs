@@ -875,11 +875,11 @@ make_builtins! { self, sp1, sp2, args,
     use std::fmt::Write;
     let mut s = String::new();
     for (a, e, _) in &self.lc.proof_order {
-      write!(s, "{}: {}\n", self.print(a), self.print(e)).unwrap()
+      write!(s, "{}: {}\n", self.print(a), self.format_env().pp(&e, 80)).unwrap()
     }
     for e in &self.lc.goals {
       e.unwrapped(|r| if let LispKind::Goal(e) = r {
-        write!(s, "|- {}\n", self.print(e)).unwrap()
+        write!(s, "|- {}\n", self.format_env().pp(&e, 80)).unwrap()
       })
     }
     print!(sp1, s);

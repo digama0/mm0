@@ -280,6 +280,10 @@ impl<'a> ElabTermMut<'a> {
       };
       args.push(self.expr(&arg, tgt)?);
     }
+    if tys.next().is_some() {
+      Err(ElabError::new_e(sp1,
+        format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?
+    }
     self.coerce(e, tdata.ret.0, LispKind::List(args), tgt)
   }
 
@@ -675,7 +679,7 @@ impl Elaborator {
               self.elab_lisp(e)?;
               for g in mem::replace(&mut self.lc.goals, vec![]) {
                 report!(try_get_span(&span, &g),
-                  format!("|- {}", self.print(&g.goal_type().unwrap())))
+                  format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)))
               }
               if error {return Ok(None)}
               let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};

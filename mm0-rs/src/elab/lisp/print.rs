@@ -63,13 +63,14 @@ fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv, 
 }
 
 fn alphanumber(n: usize) -> String {
-  let mut out = String::with_capacity(2);
+  let mut out = Vec::with_capacity(2);
   let mut n = n + 1;
   while n != 0 {
-    out.push((b'a' + ((n - 1) % 26) as u8) as char);
+    out.push(b'a' + ((n - 1) % 26) as u8);
     n = (n - 1) / 26;
   }
-  out
+  out.reverse();
+  unsafe { String::from_utf8_unchecked(out) }
 }
 
 impl EnvDisplay for AtomID {

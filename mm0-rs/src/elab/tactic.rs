@@ -254,8 +254,8 @@ impl Elaborator {
   }
 
   fn unify1(&mut self, e1: &LispVal, e2: &LispVal) -> SResult<LispVal> {
-    self.unify_core(e1, e2).map_err(|e| format!(
-      "failed to unify:\n{}\n  =?=\n{}\n{}", self.print(e1), self.print(e2), e))
+    self.unify_core(e1, e2).map_err(|e| self.format_env().pretty(|p|
+      format!("{}\n{}", p.unify_err(e1, e2).pretty(80).to_string(), e)))
   }
 
   fn unify_core(&mut self, e1: &LispVal, e2: &LispVal) -> SResult<LispVal> {

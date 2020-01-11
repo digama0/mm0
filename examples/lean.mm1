@@ -39,6 +39,7 @@ axiom l_pl_S_S: $ u +l a <= v +l b $ > $ u +l (l_S a) <= v +l (l_S b) $;
 axiom l_pl_id: $ u <=l v $ > $ u +l a <= v +l a $;
 axiom l_pl_0_0: $ L0 +l L0 <= u +l a $;
 axiom l_pl_id_0: $ u +l L0 <= u +l a $;
+theorem l_le_refl: $ u <=l u $ = 'l_pl_id_0;
 axiom l_pl_S_left: $ u +l l_S a <= v +l b $ > $ l_S u +l a <= v +l b $;
 axiom l_pl_S_right: $ u +l a <= v +l l_S b $ > $ u +l a <= l_S v +l b $;
 axiom l_pl_max_right_1: $ u +l a <= v +l b $ > $ u +l a <= l_max v w +l b $;
@@ -116,6 +117,11 @@ axiom subst_Pi_alpha (t A e B: expr x y) (A2: expr x y z):
   $ subst: A [z / y] = A2 $ >
   $ subst: (A. z : t, A2) [e / x] = B $ >
   $ subst: (A. y : t, A) [e / x] = B $;
+theorem subst_imp (A B A2 B2 e: expr x)
+  (h1: $ subst: A [e / x] = A2 $)
+  (h2: $ subst: B [e / x] = B2 $):
+  $ subst: (A -> B) [e / x] = (A2 -> B2) $ =
+'(!! subst_Pi _ y h1 h2);
 
 term ty: ctx > expr > expr > prov;
 notation ty (G x t) = G ($|-$:0) x ($:$:1) t: 0 lassoc;
@@ -437,14 +443,6 @@ term choice: level > expr;
 axiom ty_choice: $ nil |- choice u : A. A : Sort u, nonempty u @ A -> A $;
 
 -- ---------------------------
-
-theorem l_le_refl: $ u <=l u $ = 'l_pl_id_0;
-
-theorem subst_imp (A B A2 B2 e: expr x)
-  (h1: $ subst: A [e / x] = A2 $)
-  (h2: $ subst: B [e / x] = B2 $):
-  $ subst: (A -> B) [e / x] = (A2 -> B2) $ =
-'(!! subst_Pi _ y h1 h2);
 
 def nat_spec (t: expr) = $ KS t (K1 (t -> t)) $;
 def nat = $ Ind t Type (nat_spec t) $;

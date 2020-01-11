@@ -54,6 +54,7 @@ impl Elaborator {
     };
     p.ws();
     let expr = p.expr(Prec::Prec(0))?;
+    if let Some(tk) = p.token() {Err(ElabError::new_e(tk, "expected '$'"))?}
     assert!(p.imports.is_empty());
     for e in p.p.errors { self.report(e.into()) }
     Ok(expr)

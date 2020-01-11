@@ -391,6 +391,16 @@ impl<'a> Pretty<'a> {
     let doc = self.append_doc(doc, self.alloc(Doc::text(";")));
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
   }
+
+  pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a, ()> {
+    let doc = self.append_doc(RefDoc(&Doc::BorrowedText("failed to unify:")), Self::line());
+    let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)).doc);
+    let doc = self.append_doc(doc, self.alloc(Doc::Nest(2,
+      self.append_doc(Self::line(), RefDoc(&Doc::BorrowedText("=?="))))));
+    let doc = self.append_doc(doc, Self::line());
+    let doc = self.append_doc(doc, self.expr_paren(e2, Prec::Prec(0)).doc);
+    self.alloc(Doc::Group(doc))
+  }
 }
 
 pub struct PPExpr<'a> {
