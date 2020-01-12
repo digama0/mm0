@@ -8,7 +8,7 @@ use crate::util::*;
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator,
   AtomID, Environment, AtomData, DeclKey, StmtTrace,
-  ElabError, ElabErrorKind, ErrorLevel, BoxError,
+  ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   tactic::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
@@ -475,7 +475,7 @@ impl Elaborator {
     }
   }
 
-  fn get_decl(&self, x: AtomID) -> LispVal {
+  fn get_decl(&mut self, fsp: Option<FileSpan>, x: AtomID) -> LispVal {
     fn vis(mods: Modifiers) -> LispVal {
       match mods {
         Modifiers::PUB => LispVal::atom(AtomID::PUB),
@@ -489,6 +489,9 @@ impl Elaborator {
     match self.data[x].decl {
       None => LispVal::undef(),
       Some(DeclKey::Term(t)) => {
+        if let Some(fsp) = fsp {
+          self.spans.insert_if(fsp.span, || ObjectKind::Term(t, fsp.span));
+        }
         let tdata = &self.env.terms[t];
         let mut bvs = Vec::new();
         let mut heap = Vec::new();
@@ -513,6 +516,9 @@ impl Elaborator {
         LispVal::list(args)
       }
       Some(DeclKey::Thm(t)) => {
+        if let Some(fsp) = fsp {
+          self.spans.insert_if(fsp.span, || ObjectKind::Thm(t));
+        }
         let tdata = &self.thms[t];
         let mut bvs = Vec::new();
         let mut heap = Vec::new();
@@ -887,7 +893,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   GetDecl: Exact(1) => {
     let x = try1!(args[0].as_atom().ok_or("expected an atom"));
-    self.get_decl(x)
+    self.get_decl(args[0].fspan(), x)
   },
   AddDecl: AtLeast(4) => {
     let fsp = self.fspan_base(sp1);

@@ -526,24 +526,6 @@ impl ParserEnv {
     Self::add_nota_info(&mut self.infixes, tk, n)
   }
 
-  fn add_coe1(&mut self, sp: Span, sorts: &SortVec<Sort>, s1: SortID, s2: SortID, c: Arc<Coe>) -> Result<(), ElabError> {
-    if s1 == s2 {
-      let mut err = "coercion cycle detected: ".to_owned();
-      let mut related = Vec::new();
-      c.write_arrows(sorts, &mut err, &mut related, s1, s2).unwrap();
-      return Err(ElabError::with_info(sp, err.into(), related))
-    }
-    if let Some((c, e)) = self.coes.entry(s1).or_default().try_insert(s2, c) {
-      let mut err = "coercion diamond detected: ".to_owned();
-      let mut related = Vec::new();
-      e.get().write_arrows(sorts, &mut err, &mut related, s1, s2).unwrap();
-      err.push_str(";   ");
-      c.write_arrows(sorts, &mut err, &mut related, s1, s2).unwrap();
-      return Err(ElabError::with_info(sp, err.into(), related))
-    }
-    Ok(())
-  }
-
   fn update_provs(&mut self, sp: Span, sorts: &SortVec<Sort>) -> Result<(), ElabError> {
     let mut provs = HashMap::new();
     for (&s1, m) in &self.coes {
@@ -567,6 +549,10 @@ impl ParserEnv {
 
   fn add_coe_raw(&mut self, sp: Span, sorts: &SortVec<Sort>,
       s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
+    match self.coes.get(&s1).and_then(|m| m.get(&s2).map(|c| &**c)) {
+      Some(&Coe::One(ref fsp2, t2)) if fsp2 == &fsp && t == t2 => return Ok(()),
+      _ => {}
+    }
     let c1 = Arc::new(Coe::One(fsp, t));
     let mut todo = Vec::new();
     for (&sl, m) in &self.coes {
@@ -580,7 +566,22 @@ impl ParserEnv {
         todo.push((s1, sr, Arc::new(Coe::Trans(c1.clone(), s2, c.clone()))));
       }
     }
-    for (sl, sr, c) in todo { self.add_coe1(sp, sorts, sl, sr, c)? }
+    for (sl, sr, c) in todo {
+      if sl == sr {
+        let mut err = "coercion cycle detected: ".to_owned();
+        let mut related = Vec::new();
+        c.write_arrows(sorts, &mut err, &mut related, sl, sr).unwrap();
+        return Err(ElabError::with_info(sp, err.into(), related))
+      }
+      if let Some((c, e)) = self.coes.entry(sl).or_default().try_insert(sr, c) {
+        let mut err = "coercion diamond detected: ".to_owned();
+        let mut related = Vec::new();
+        e.get().write_arrows(sorts, &mut err, &mut related, sl, sr).unwrap();
+        err.push_str(";   ");
+        c.write_arrows(sorts, &mut err, &mut related, sl, sr).unwrap();
+        return Err(ElabError::with_info(sp, err.into(), related))
+      }
+    }
     Ok(())
   }
 

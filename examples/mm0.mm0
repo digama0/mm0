@@ -1,6 +1,4 @@
--- We import x86 instead of peano_hex to keep the imports linear
--- import "peano_hex.mm0";
-import "x86.mm0";
+import "peano_hex.mm0";
 
 -- Some additional list operations
 

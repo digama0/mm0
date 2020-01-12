@@ -272,17 +272,18 @@ impl<'a> ElabTermMut<'a> {
     let tdata = &self.fe.env.terms[tid];
     let mut tys = tdata.args.iter();
     let mut args = vec![LispKind::Atom(a).decorate_span(&t.fspan())];
-    for arg in it {
-      let tgt = match tys.next().ok_or_else(|| ElabError::new_e(sp1,
-        format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?.1 {
-        EType::Bound(s) => InferTarget::Bound(self.fe.sorts[s].atom),
-        EType::Reg(s, _) => InferTarget::Reg(self.fe.sorts[s].atom),
+    while let Some(arg) = it.next() {
+      let tgt = match tys.next() {
+        None => return Err(ElabError::new_e(sp1,
+          format!("expected {} arguments, got {}", tdata.args.len(), args.len() + it.count()))),
+        Some(&(_, EType::Bound(s))) => InferTarget::Bound(self.fe.sorts[s].atom),
+        Some(&(_, EType::Reg(s, _))) => InferTarget::Reg(self.fe.sorts[s].atom),
       };
       args.push(self.expr(&arg, tgt)?);
     }
     if tys.next().is_some() {
       Err(ElabError::new_e(sp1,
-        format!("expected {} arguments, got {}", tdata.args.len(), e.len() - 1)))?
+        format!("expected {} arguments, got {}", tdata.args.len(), args.len() - 1)))?
     }
     self.coerce(e, tdata.ret.0, LispKind::List(args), tgt)
   }
@@ -478,6 +479,7 @@ impl Elaborator {
     let mut newvars = Vec::new();
     for (&a, (new, is)) in &mut self.lc.vars {
       if let InferSort::Unknown {src, must_bound, dummy: d2, ref sorts} = *is {
+        if self.mm0_mode {errs.push(ElabError::warn(src, "(MM0 mode) inferred variable type"))}
         match if sorts.len() == 1 {
           sorts.keys().next().unwrap().ok_or_else(|| ElabError::new_e(src, "could not infer type"))
         } else {
@@ -628,8 +630,11 @@ impl Elaborator {
                 let n = ba.deps(deps2);
                 if deps & !n != 0 {
                   return Err(ElabError::new_e(sp, format!("variables {{{}}} missing from dependencies",
-                    deps2.iter().filter(|&a| deps & !ba.map[a] != 0)
-                      .map(|&a| &self.data[a].name).format(", "))))
+                    ba.map.iter().filter_map(|(&a, &i)| {
+                      if let InferSort::Bound {..} = self.lc.vars[&a].1 {
+                        if i & !n != 0 {Some(&self.data[a].name)} else {None}
+                      } else {None}
+                    }).format(", "))))
                 }
                 ((s2, n), Some(Some(val)))
               }
