@@ -263,6 +263,10 @@ typedef struct { u8 cmd; u32 data; } PACKED cmd32;
 // Uses data = 0
 #define CMD_PROOF_CONV_SAVE 0x1E
 
+// Save: Save the top of the stack to the heap, without popping it.
+// Uses data = 0
+#define CMD_PROOF_SAVE 0x1F
+
 // Unify commands are used in definitions and theorem statements.
 // They are consumed when a definition is unfolded, or when a theorem is
 // applied, and interact with both the main stack and a separate unification

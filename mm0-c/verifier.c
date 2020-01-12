@@ -591,6 +591,21 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           ALLOC(((store_conv){e1, e2, EXPR_CONV}), sizeof(store_conv)));
       } break;
 
+      // Save: H; S, s --> H, s; S, s
+      // Save the top of the stack to the heap, without popping it.
+      case CMD_PROOF_SAVE: {
+        u32 s = pop_stack(); g_stack_top++;
+        ENSURE("Can't save proof obligation", (s & STACK_TYPE_MASK) != STACK_TYPE_CO_CONV);
+        if ((s & STACK_TYPE_MASK) == STACK_TYPE_CONV) {
+          u32 e1 = s & STACK_DATA_MASK;
+          u32 e2 = *(g_stack_top-2) & STACK_DATA_MASK;
+          push_heap(STACK_TYPE_EXPR |
+            ALLOC(((store_conv){e1, e2, EXPR_CONV}), sizeof(store_conv)));
+        } else {
+          push_heap(s);
+        }
+      } break;
+
       default: {
         if (mode == Def) {
           ENSURE("unknown opcode in def", false);
