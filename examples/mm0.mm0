@@ -59,112 +59,52 @@ def SApp (f x: nat): nat = $ b1 (f <> x) $;
 -- The environment is composed of declarations, which come in a few types:
 -- A `sort` declaration has an associated `SortData` with the sort modifiers.
 -- Sorts are indexed by SortID and picked out by `getSD`.
--- DSort : SortData -> Decl
-def DSort (sd: nat): nat = $ b0 (b0 (b0 sd)) $;
+-- DSort : Ident -> SortData -> Decl
+def DSort (id sd: nat): nat = $ b0 (b0 (b0 (id <> sd))) $;
 -- A `term` declaration has a list of binders, and a target type (a DepType,
 -- which is a `(SortID, set VarID)` pair).
 -- Terms are indexed by TermID and picked out by `getTerm`.
--- DTerm : Ctx -> DepType -> Decl
-def DTerm (args ret: nat): nat = $ b0 (b0 (b1 (args <> ret))) $;
--- An `axiom` declaration has a list of binders, a list of hypotheses,
--- and a consequent.
--- Axioms are indexed by ThmID and picked out by `getThm`.
--- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
-def DAxiom (args hs ret: nat): nat = $ b0 (b1 (args <> hs <> ret)) $;
+-- DTerm : TermID -> Ctx -> DepType -> Decl
+def DTerm (id args ret: nat): nat = $ b0 (b0 (b1 (id <> args <> ret))) $;
 -- A `def` declaration is the same as a `term` except it also has an optional
 -- definition component which lists the sorts of the dummy variables and the
--- definition's expression. The `sp` field indicates if this definition was
--- present in the specification (as opposed to being added during proof
--- checking).
+-- definition's expression.
 -- Defs are indexed by TermID and picked out by `getTerm`.
--- DDef : Ctx -> DepType -> option (list SortID, SExpr) -> Bool -> Decl
-def DDef (args ret def: nat) (sp: wff): nat =
-  $ b1 (b0 (args <> ret <> def <> nat sp)) $;
+-- DDef : TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Decl
+def DDef (id args ret def: nat): nat =
+  $ b0 (b1 (id <> args <> ret <> def)) $;
+-- An `axiom` declaration has a list of binders, a list of hypotheses,
+-- and a consequent.
+-- Axioms are not indexed, they are simply found by statement.
+-- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
+def DAxiom (args hs ret: nat): nat = $ b1 (b0 (args <> hs <> ret)) $;
 -- A `theorem` declaration is exactly the same structure as an `axiom`, but
 -- the interpretation is different - theorems require proofs, while axioms are
 -- added in the spec.
--- Theorems are indexed by ThmID and picked out by `getThm`.
+-- Theorems are not indexed, they are simply found by statement.
 -- DThm : Ctx -> list SExpr -> SExpr -> Decl
 def DThm (vs hs ret: nat): nat = $ b1 (b1 (vs <> hs <> ret)) $;
 
 -- This function extracts the `SortData` for a sort given by `SortID`.
--- Because all declarations are intermingled in the environment, we must skip
--- past all the other declarations and count the sorts we pass.
--- getSD : Env -> SortID -> option SortData
-def getSD (env n: nat): nat;
-theorem getSD0 (n: nat): $ getSD 0 n = 0 $;
-theorem getSDSort0 (sd e: nat): $ getSD (DSort sd : e) 0 = suc sd $;
-theorem getSDSortS (sd e n: nat): $ getSD (DSort sd : e) (suc n) = getSD e n $;
-theorem getSDTerm (a r e n: nat): $ getSD (DTerm a r : e) n = getSD e n $;
-theorem getSDAxiom (a h r e n: nat): $ getSD (DAxiom a h r : e) n = getSD e n $;
-theorem getSDDef (a r o e n: nat) (sp: wff):
-  $ getSD (DDef a r o sp : e) n = getSD e n $;
-theorem getSDThm (vs hs ret e n: nat):
-  $ getSD (DThm vs hs ret : e) n = getSD e n $;
+-- getSD : Env -> SortID -> SortData -> Bool
+def getSD (env id sd: nat): wff = $ DSort id sd IN env $;
 
--- This function gets the term and definition data for a term. Here we have
--- a complication: The spec and the proof have incompatible numbering schemes
--- (because the proof wants to insert items between the spec's, but the spec
--- doesn't know about the proof). To resolve this, there are two disjoint
--- namespaces for TermIDs. The `b0 n` numbers are used for the spec, and `b1 n`
--- are additional terms added by the proof. The `sp` field indicates whether
--- a definition comes from the spec or the proof.
--- getTerm : Env -> TermID ->
---   option (Ctx, DepType, option (option (list SortID, SExpr)))
-def getTerm (env n: nat): nat;
-theorem getTerm0 (n: nat): $ getTerm 0 n = 0 $;
-theorem getTermSort (sd e n: nat): $ getTerm (DSort sd : e) n = getTerm e n $;
-theorem getTermTerm0 (a r e: nat):
-  $ getTerm (DTerm a r : e) (b0 0) = suc (a <> r <> 0) $;
-theorem getTermTermS0 (a r e n: nat):
-  $ getTerm (DTerm a r : e) (b0 (suc n)) = getTerm e (b0 n) $;
-theorem getTermTermS1 (a r e n: nat):
-  $ getTerm (DTerm a r : e) (b1 n) = getTerm e (b1 n) $;
-theorem getTermAxiom (a h r e n: nat):
-  $ getTerm (DAxiom a h r : e) n = getTerm e n $;
-theorem getTermDef0 (a r o e: nat) (sp: wff):
-  $ sp -> getTerm (DDef a r o sp : e) (b0 0) = suc (a <> r <> suc o) $;
-theorem getTermDefN0 (a r o e: nat) (sp: wff):
-  $ ~sp -> getTerm (DDef a r o sp : e) (b1 0) = suc (a <> r <> suc o) $;
-theorem getTermDefS0 (a r o e n: nat) (sp: wff):
-  $ sp -> getTerm (DDef a r o sp : e) (b0 (suc n)) = getTerm e n $;
-theorem getTermDefNS0 (a r o e n: nat) (sp: wff):
-  $ ~sp -> getTerm (DDef a r o sp : e) (b1 (suc n)) = getTerm e n $;
-theorem getTermDefS1 (a r o e n: nat) (sp: wff):
-  $ sp -> getTerm (DDef a r o sp : e) (b1 n) = getTerm e (b1 n) $;
-theorem getTermDefNS1 (a r o e n: nat) (sp: wff):
-  $ ~sp -> getTerm (DDef a r o sp : e) (b0 n) = getTerm e (b0 n) $;
-theorem getTermThm (vs hs ret e n: nat):
-  $ getTerm (DThm vs hs ret : e) n = getTerm e n $;
+-- This function gets the term and definition data for a term.
+-- getTerm : Env -> TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Bool
+def getTerm (env id a r v: nat): wff;
+theorem getTerm0 (env id a r: nat):
+  $ getTerm env id a r 0 <-> DTerm id a r IN env $;
+theorem getTermS (env id a r o: nat):
+  $ getTerm env id a r (suc o) <-> DDef id a r o IN env $;
 
--- This function extracts the definition information from `getTerm`.
--- getDef : Env -> TermID -> option (list SortID, SExpr)
-def getDef (env n: nat): nat;
-theorem getDef0 (env n: nat): $ getTerm env n = 0 -> getDef env n = 0 $;
-theorem getDefS (env n a r o: nat):
-  $ getTerm env n = suc (a <> r <> o) -> getDef env n = o $;
-
--- This function gets the data for an axiom or theorem by ThmID.
--- getThm : Env -> ThmID -> option (Ctx, list SExpr, SExpr)
-def getThm (env n: nat): nat;
-theorem getThm0 (n: nat): $ getThm 0 n = 0 $;
-theorem getThmSort (sd e n: nat): $ getThm (DSort sd : e) n = getThm e n $;
-theorem getThmTerm (a r e n: nat):
-  $ getThm (DTerm a r : e) n = getThm e n $;
-theorem getThmDef (a r o e n: nat) (sp: wff):
-  $ getThm (DDef a r o sp : e) n = getThm e n $;
-theorem getThmAxiom0 (a h r e: nat):
-  $ getThm (DAxiom a h r : e) 0 = suc (a <> h <> r) $;
-theorem getThmAxiomS (a h r e n: nat):
-  $ getThm (DAxiom a h r : e) (suc n) = getThm e n $;
-theorem getThmThm0 (a h r e: nat):
-  $ getThm (DThm a h r : e) 0 = suc (a <> h <> r) $;
-theorem getThmThmS (a h r e n: nat):
-  $ getThm (DThm a h r : e) (suc n) = getThm e n $;
+-- This function gets the data for an axiom or theorem.
+-- getThm : Env -> Ctx -> list SExpr -> SExpr -> Bool
+def getThm (env a h r: nat): wff =
+$ DAxiom a h r IN env \/ DThm a h r IN env $;
 
 -- Is this ID a valid sort?
 -- isSort : Env -> SortID -> Bool
-def isSort (env s: nat): wff = $ getSD env s != 0 $;
+def isSort (env s .sd: nat): wff = $ E. sd getSD env s sd $;
 
 -- Looks this variable up in the context, and reports whether it represents a
 -- bound variable.
@@ -184,7 +124,7 @@ $ isSort env (fst ty) /\ A. x (x e. snd ty -> isBound ctx x) $;
 def Ctx (env ctx: nat): wff;
 theorem Ctx0 (env: nat): $ Ctx env 0 $;
 theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
-  Ctx env ctx /\ E. sd (getSD env s = suc sd /\ ~ sStrict sd) $;
+  Ctx env ctx /\ E. sd (getSD env s sd /\ ~ sStrict sd) $;
 theorem CtxReg (env ctx s vs: nat): $ Ctx env (ctx |> PReg s vs) <->
   Ctx env ctx /\ DepType env ctx (s <> vs) $;
 
@@ -200,9 +140,9 @@ theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
   E. bi (nth ctx v = suc bi /\ binderSort bi = s) $;
 theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
   $ Expr env ctx (SApp f xs) s <-> E. args E. ret E. o
-    ( getTerm env f = suc (args <> ret <> o) /\
-      all2 x a (ExprBi env ctx x a) xs args /\
-      s = fst ret ) $;
+    (getTerm env f args ret o /\
+     all2 x a (ExprBi env ctx x a) xs args /\
+     s = fst ret) $;
 theorem ExprBiBound (env ctx e s: nat) {v: nat}:
   $ ExprBi env ctx e (PBound s) <->
     E. v (e = SVar v /\ nth ctx v = suc (PBound s)) $;
@@ -214,15 +154,11 @@ theorem ExprBiReg (env ctx e s vs: nat):
 -- axiom/theorem.
 -- ExprProv : Env -> Ctx -> SExpr -> Bool
 def ExprProv (env ctx e .s .sd: nat): wff =
-$ E. s E. sd (Expr env ctx e s /\ getSD env s = suc sd /\ sProvable sd) $;
+$ E. s E. sd (Expr env ctx e s /\ getSD env s sd /\ sProvable sd) $;
 
 -- A helper function to add dummy variables to the context.
 -- appendDummies : Ctx -> list SortID -> Ctx
-def appendDummies (ctx ds: nat): nat;
-theorem appendDummies0 (ctx: nat): $ appendDummies ctx 0 = ctx $;
-theorem appendDummiesS (ctx d ds: nat):
-  $ appendDummies ctx (d : ds) =
-    appendDummies (ctx |> PBound d) ds $;
+def appendDummies (ctx ds .d: nat): nat = $ ctx ++ map (\ d, PBound d) ds $;
 
 -- Does this expression contain any occurrence of the variable `v`? This check
 -- ignores bound variables, "metamath style". We use this stricter check for
@@ -236,6 +172,12 @@ theorem HasVarReg (ctx u v s vs: nat):
 theorem HasVarApp (ctx f es v: nat) {e: nat}:
   $ HasVar ctx (SApp f es) v <-> E. e (e IN es /\ HasVar ctx e v) $;
 
+-- A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
+-- is a regular argument and `(/)` if `a` is a bound argument.
+-- MaybeFreeArgs : Env -> Binder -> VarID -> Bool
+def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
+$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
+
 -- Does this expression contain any _free_ occurrence of the variable `v`?
 -- This is the more complex binder-respecting check. Intuitively, if
 -- `term foo {x y: set} (ph: set x): set y;`, then `foo` binds occurrences of
@@ -246,14 +188,8 @@ theorem HasVarApp (ctx f es v: nat) {e: nat}:
 def Free (env ctx e v: nat): wff;
 theorem FreeVar (env ctx u v: nat):
   $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $;
-
--- A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
--- is a regular argument and `(/)` if `a` is a bound argument.
--- MaybeFreeArgs : Env -> Binder -> VarID -> Bool
-def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
-$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
 theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
-  $ getTerm env f = suc (args <> (r <> rs) <> o) ->
+  $ getTerm env f args (r <> rs) o ->
     (Free env ctx (SApp f es) v <->
       ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
       E. u (u e. rs /\ nth es u = suc (SVar v))) $;
@@ -263,36 +199,37 @@ theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
 -- the argument list is valid, the return type is valid, and the return sort
 -- is not `pure` (because `pure` sorts are not allowed to have term
 -- constructors).
--- TermOk : Env -> Ctx -> DepType -> Bool
-def TermOk (env args ret .sd: nat): wff =
-$ Ctx env args /\ DepType env args ret /\
-  E. sd (getSD env (fst ret) = suc sd /\ ~ sPure sd) $;
+-- TermOk : Env -> TermID -> Ctx -> DepType -> Bool
+def TermOk (env id args ret .a .r .v .sd: nat): wff =
+$ ~E. a E. r E. v getTerm env id a r v /\
+  Ctx env args /\ DepType env args ret /\
+  E. sd (getSD env (fst ret) sd /\ ~ sPure sd) $;
 
 -- Is this a valid definition in the given environment? A definition is valid
 -- if it is a valid term, and the definition typechecks, and all free variables
 -- are declared in the return type. (Note in particular that dummies cannot
 -- appear in the return type dependencies, so this ensures that all dummies are
 -- bound by the definition.)
--- DefOk : Env -> Ctx -> DepType -> Bool
-def DefOk (env args ret ds e .ctx .v .s .sd: nat): wff =
-$ TermOk env args ret /\ [ appendDummies args ds / ctx ]
+-- DefOk : Env -> TermID -> Ctx -> DepType -> Bool
+def DefOk (env id args ret ds e .ctx .v .s .sd: nat): wff =
+$ TermOk env id args ret /\ [ appendDummies args ds / ctx ]
   (Ctx env ctx /\ Expr env ctx e (fst ret) /\
     A. v (Free env ctx e v -> v e. snd ret \/
       E. sd E. s (nth ctx v = suc (PBound s) /\
-        getSD env s = suc sd /\ sFree sd))) $;
+        getSD env s sd /\ sFree sd))) $;
 
 -- Is this a valid declaration in the environment?
 -- Decl : Env -> Decl -> Bool
 def Decl (env d: nat): wff;
-theorem DeclSort (env sd: nat): $ Decl env (DSort sd) $;
-theorem DeclTerm (env args ret: nat):
-  $ Decl env (DTerm args ret) <-> TermOk env args ret $;
+theorem DeclSort (env id sd: nat): $ Decl env (DSort id sd) $;
+theorem DeclTerm (env id args ret: nat):
+  $ Decl env (DTerm id args ret) <-> TermOk env id args ret $;
 theorem DeclAxiom (env args hs ret: nat) {x: nat}:
-  $ Decl env (DAxiom args hs ret) <-> Ctx env args /\
-    all {x | ExprProv env args x} (ret : hs) $;
-theorem DeclDef (env args ret: nat) (sp: wff) {ds e o v: nat}:
-  $ Decl env (DDef args ret o sp) <-> TermOk env args ret /\
-    A. ds A. e (o = suc (ds <> e) -> DefOk env args ret ds e) $;
+  $ Decl env (DAxiom args hs ret) <->
+    Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $;
+theorem DeclDef (env id args ret: nat) {ds e o v: nat}:
+  $ Decl env (DDef id args ret o) <-> TermOk env id args ret /\
+    A. ds A. e (o = suc (ds <> e) -> DefOk env id args ret ds e) $;
 theorem DeclThm (env args hs ret: nat) {x: nat}:
   $ Decl env (DThm args hs ret) <->
     Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $;
@@ -304,104 +241,73 @@ def Env (e: nat): wff;
 theorem Env0: $ Env 0 $;
 theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Decl e s $;
 
+-- `EnvExtend e1 e2` means that environment `e2` is an extension of `e1`,
+-- meaning that all sorts, terms, and axioms are preserved, but abstract defs
+-- may be provided definitions, and new defs and theorems can be added.
+-- EnvExtend : Env -> Env -> Bool
+def EnvExtend (e1 e2: nat): wff;
+theorem EnvExtend0 (e: nat): $ EnvExtend e 0 <-> e = 0 $;
+theorem EnvExtendSort (e1 e2 id sd: nat) {e: nat}:
+  $ EnvExtend e1 (e2 |> DSort id sd) <->
+    E. e (e1 = e |> DSort id sd /\ EnvExtend e e2) $;
+theorem EnvExtendTerm (e1 e2 id a r: nat) {e: nat}:
+  $ EnvExtend e1 (e2 |> DTerm id a r) <->
+    E. e (e1 = e |> DTerm id a r /\ EnvExtend e e2) $;
+theorem EnvExtendAxiom (e1 e2 a h r: nat) {e: nat}:
+  $ EnvExtend e1 (e2 |> DAxiom a h r) <->
+    E. e (e1 = e |> DAxiom a h r /\ EnvExtend e e2) $;
+theorem EnvExtendDef (e1 e2 id a r o: nat) {e o2: nat}:
+  $ EnvExtend e1 (e2 |> DDef id a r o) <->
+    E. e E. o2 ((o != 0 -> o2 = o) /\
+      e1 = e |> DDef id a r o2 /\ EnvExtend e e2) \/
+    EnvExtend e1 e2 $;
+theorem EnvExtendThm (e1 e2 id a h r: nat) {e o2: nat}:
+  $ EnvExtend e1 (e2 |> DThm a h r) <->
+    E. e E. o2 (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
+    EnvExtend e1 e2 $;
+
 ------------------
 -- Verification --
 ------------------
 
--- These are the different kinds of proof steps.
-
--- A StepSort says "proceed to the next declaration in the spec,
--- which is a `sort` declaration".
--- StepSort : ProofCmd
-def StepSort: nat = $ b0 0 $;
-
--- A StepTerm says "proceed to the next declaration in the spec,
--- which is a `term` declaration".
--- StepTerm : ProofCmd
-def StepTerm: nat = $ b0 1 $;
-
--- A StepAxiom says "proceed to the next declaration in the spec,
--- which is an `axiom`".
--- StepAxiom : ProofCmd
-def StepAxiom: nat = $ b0 2 $;
-
--- A ProofDef adds and checks a new declaration. The proof provides the
--- signature and the value of the declaration (not optional this time).
--- If `st` is true then this declaration will be stepped in the spec, i.e.
--- we will check that the spec declared this declaration as well with the
--- same signature.
--- ProofDef : Ctx -> DepType -> list SortID -> SExpr -> Bool -> ProofCmd
-def ProofDef (args ret ds val: nat) (st: wff): nat =
-  $ b1 (b0 (args <> ret <> ds <> val <> nat st)) $;
-
--- A ProofThm adds and checks a new proof. The signature for the theorem is
--- given, followed by `uf: set TermID` which specifies which definitions in
--- the statement to unfold before starting the proof. The unfolding process
--- can produce new dummy variables; these are named after the variables in the
--- context and before the declared dummy variables. The final argument is the
--- proof expression itself.
--- ProofThm : Ctx -> list SExpr -> Sexpr -> set TermID ->
---   list SortID -> VExpr -> Bool -> ProofCmd
-def ProofThm (args hs ret uf ds pf: nat) (st: wff): nat =
-  $ b1 (b1 (args <> hs <> ret <> uf <> ds <> pf <> nat st)) $;
-
-
--- This helper function appends a new copy of the given dummy variable list
--- to the context, and also augments the substitution map with these variables.
--- buildSubst : Ctx -> list SExpr -> list SortID -> (Ctx, list SExpr)
-def buildSubst (ctx es ds: nat): nat;
-theorem buildSubst0 (ctx es: nat): $ buildSubst ctx es 0 = ctx <> es $;
-theorem buildSubstS (ctx es d ds: nat): $ buildSubst ctx es (d : ds) =
-  buildSubst (ctx |> PBound d) (es |> SVar (len ctx)) ds $;
-
 -- This performs simultaneous substitution of the variables in `e` with the
 -- expressions in `sub`.
 -- substExpr : list SExpr -> SExpr => SExpr
-def substExpr (sub: nat): set;
+def substExpr (sub e: nat): nat;
 theorem substExprVar (sub v e: nat):
-  $ nth sub v = suc e -> substExpr sub @ (SVar v) = e $;
-theorem substExprApp {x: nat} (sub f es: nat):
-  $ substExpr sub @ (SApp f es) = SApp f (map (substExpr sub) es) $;
+  $ substExpr sub (SVar v) = nth sub v - 1 $;
+theorem substExprApp (sub f es: nat) {e: nat}:
+  $ substExpr sub (SApp f es) = SApp f (map (\ e, substExpr sub e) es) $;
 
--- These mutually recursive functions perform the unfolding operation on
--- a single expression and a list of expressions, changing the context as more
--- dummy copies are added. Unfolding is performed from the inside out, and
--- definitions are not unfolded more than once, so it runs by structural
--- recursion on the term. (This is a bit verbose because I'm doing state monad
--- stuff without the abstraction.)
--- unfold : Env -> Ctx -> set TermID -> list SExpr -> (Ctx, list SExpr)
-def unfold (env ctx u es: nat): nat;
--- unfold1 : Env -> Ctx -> set TermID -> SExpr -> (Ctx, SExpr)
-def unfold1 (env ctx u e: nat): nat;
-theorem unfold1Var (env ctx u v: nat):
-  $ unfold1 env ctx u (SVar v) = ctx <> SVar v $;
-theorem unfold1AppN (env ctx ctx2 u f es es2: nat):
-  $ (~f e. u \/ getDef env f = 0) ->
-    unfold env ctx u es = ctx2 <> es2 ->
-    unfold1 env ctx u (SApp f es) = ctx2 <> SApp f es2 $;
-theorem unfold1App (env ctx ctx2 ctx3 u f es es2 es3 ud uv: nat):
-  $ f e. u -> getDef env f = suc (ud <> uv) ->
-    unfold env ctx u es = ctx2 <> es2 ->
-    buildSubst ctx2 es2 ud = ctx3 <> es3 ->
-    unfold1 env ctx u (SApp f es) = ctx3 <> substExpr es3 @ uv $;
-theorem unfold0 (env ctx u: nat):
-  $ unfold env ctx u 0 = ctx <> 0 $;
-theorem unfoldS (env ctx ctx2 ctx3 e e2 es es2 u: nat):
-  $ unfold env ctx u e = ctx2 <> e2 ->
-    unfold env ctx2 u es = ctx3 <> es2 ->
-    unfold env ctx u (e : es) = ctx3 <> (e : es2) $;
+-- A CExpr is a convertibility proof.
+-- CRefl e : e = e
+-- CRefl : SExpr -> CExpr
+def CRefl (e: nat): nat = $ b0 (b0 e) $;
+-- If p : e = e' |- CSymm p : e' = e
+-- CSymm : CExpr -> CExpr
+def CSymm (p: nat): nat = $ b0 (b1 p) $;
+-- {p : e = e'} |- CCong f {p} : f {e} = f {e'}
+-- CCong : TermID -> CExpr -> CExpr
+def CCong (f cs: nat): nat = $ b1 (b0 (f <> cs)) $;
+-- If t {x} := {y}. e', then
+-- p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong t {z} p : t {e} = e''
+-- CUnfold : TermID -> CExpr -> CExpr
+def CUnfold (t zs c: nat): nat = $ b1 (b1 (t <> zs <> c)) $;
 
 -- A VExpr is a proof term.
 -- A VHyp is a hypothesis step - a term is asserted from the local context.
 -- Indexing is relative to the list of hypotheses to the theorem.
 -- VHyp : HypID -> VExpr
-def VHyp (n: nat): nat = $ b0 n $;
+def VHyp (n: nat): nat = $ b0 (b0 n) $;
 -- A VThm is a theorem application - a step follows from previous steps by
 -- application of a theorem. The arguments give the theorem to apply, the list
 -- of substitutions of expressions for the variables, and the list of subproofs
 -- for the hypotheses to the theorem.
 -- VThm : ThmID -> list SExpr -> list VExpr -> VExpr
-def VThm (t es ps: nat): nat = $ b1 (t <> es <> ps) $;
+def VThm (a h r es ps: nat): nat = $ b0 (b1 (a <> h <> r <> es <> ps)) $;
+-- c : A = B, p : A |- VConv c p : B
+-- VConv : CExpr -> VExpr -> VExpr
+def VConv (c p: nat): nat = $ b1 (c <> p) $;
 
 -- Given a context, which contains bound variables and regular variables with
 -- dependencies, we can construct a disjoint variable list by making all
@@ -419,6 +325,39 @@ theorem DVReg (ctx s vs u v: nat):
   $ DV (ctx |> PReg s vs) u v <->
     DV ctx u v \/ (isBound ctx u /\ ~ u e. vs /\ v = len ctx) $;
 
+-- Checking a conversion proof c : (e1 : s) = (e2 : s).
+-- VerifyConv : Env -> Ctx -> CExpr -> SExpr -> SExpr -> SortID -> Bool
+def VerifyConv (env ctx c e1 e2 s: nat): wff;
+-- VerifyConvs : Env -> Ctx -> list CExpr -> list SExpr -> list SExpr -> list Binder -> Bool
+def VerifyConvs (env ctx cs es1 es2 bis .n .i .c .e1 .e2 .bi: nat): wff =
+$ E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len bis = n /\
+  A. i A. c A. e1 A. e2 A. bi (nth cs i = suc c ->
+    nth es1 i = suc e1 -> nth es2 i = suc e2 -> nth bis i = suc bi ->
+    ExprBi env ctx e1 bi /\ ExprBi env ctx e2 bi /\
+    VerifyConv env ctx c e1 e2 (binderSort bi))) $;
+theorem VerifyConvRefl (env ctx e e1 e2 s: nat):
+  $ VerifyConv env ctx (CRefl e) e1 e2 s <->
+    Expr env ctx e s /\ e = e1 /\ e = e2 $;
+theorem VerifyConvSymm (env ctx e e1 e2 s: nat):
+  $ VerifyConv env ctx (CSymm e) e1 e2 s <-> VerifyConv env ctx e e2 e1 s $;
+theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}:
+  $ VerifyConv env ctx (CCong f cs) e1 e2 s <->
+    E. args E. ret E. o E. es1 E. es2 (
+      e1 = SApp f es1 /\ e2 = SApp f es2 /\
+      getTerm env f args ret o /\
+      VerifyConvs env ctx cs es1 es2 args /\
+      s = fst ret) $;
+theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
+  {args ret ys val es a y z e i: nat}:
+  $ VerifyConv env ctx (CUnfold f zs c) e1 e2 s <->
+    E. args E. ret E. ys E. val E. es (
+      getTerm env f args ret (suc (ys <> val)) /\
+      e1 = SApp f es /\ s = fst ret /\
+      all2 e a (ExprBi env ctx e a) es args /\
+      all2 y z (nth ctx z = suc (PBound y) /\
+        A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
+      VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $;
+
 -- The main proof checking function. This typechecks a VExpr and determines the
 -- SExpr that it represents. At a hypothesis step, this is just looking up the
 -- nth element in the list, and at a theorem step, we get the theorem data,
@@ -430,65 +369,48 @@ theorem DVReg (ctx s vs u v: nat):
 def VerifyProof (env ctx hs pf ret: nat): wff;
 theorem VerifyProofHyp (env ctx hs n ret: nat):
   $ VerifyProof env ctx hs (VHyp n) ret <-> nth n hs = suc ret $;
-theorem VerifyProofThm (env ctx hs t es ps ret: nat)
-  {hs2 args args2 ret2 u v p h e a e1 e2: nat}:
-  $ VerifyProof env ctx hs (VThm t es ps) ret <-> E. args2 E. hs2 E. ret2
-    (getThm env t = suc (args2 <> hs2 <> ret2) /\
+theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
+  {args e a u v s y e2 p h: nat}:
+  $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
+    (getThm env args2 hs2 ret2 /\
       all2 e a (ExprBi env ctx e a) es args2 /\
-      A. u A. v (DV args2 u v -> A. e1 A. e2
-        (nth es u = suc e1 -> nth es v = suc e2 ->
-          ~ (HasVar ctx e1 u /\ HasVar ctx e2 v))) /\
-      all2 p h (VerifyProof env ctx hs p (substExpr es @ h)) ps hs2 /\
-      substExpr es @ ret2 = ret) $;
-
--- A theorem is valid if it has a good signature, and when you unfold the
--- definitions in the signature, the result can be verified with `VerifyProof`.
--- ProofOk : Env -> Ctx -> list SExpr -> SExpr ->
---   set TermID -> list SortID -> VExpr -> Bool
-def ProofOk (env args hs ret uf ds pf .args2 .hs2 .ret2: nat): wff =
-$ Decl env (DThm args hs ret) /\ E. args2 E. hs2 E. ret2
-  (unfold env args uf (hs |> ret) = args2 <> (hs2 |> ret2) /\
-   VerifyProof env (appendDummies args2 ds) hs2 pf ret2) $;
+      A. u A. v (E. s nth ctx u = suc (PBound s) ->
+        v < len ctx -> ~HasVar ctx (SVar v) u ->
+        A. y A. e2 (nth es u = suc (SVar y) -> nth es v = suc e2 ->
+          ~HasVar ctx e2 y)) /\
+      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
+      substExpr es ret2 = ret) $;
+theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
+  $ VerifyProof env ctx hs (VConv c p) ret <->
+    E. e1 E. s (
+      VerifyConv env ctx c e1 ret s /\
+      VerifyProof env ctx hs p e1) $;
 
 -- The main recursion for the proof judgment on an environment. Here `env` are
 -- the declarations that have already been processed and `e` are the
 -- declarations we are still stepping through. `p` is a proof object whose
 -- existence entails provability of the environment.
--- Proof : Env -> list Decl -> list ProofCmd -> Bool
-def Proof (env e p: nat): wff;
-theorem Proof0 (env e p: nat): $ Proof env e 0 <-> e = 0 $;
-theorem ProofStepSort (env e p: nat) {sd e2: nat}:
-  $ Proof env e (StepSort : p) <-> E. sd E. e2
-    (e = DSort sd : e2 /\ Proof (env |> DSort sd) e2 p) $;
-theorem ProofStepTerm (env e p: nat) {a r e2: nat}:
-  $ Proof env e (StepTerm : p) <-> E. a E. r E. e2
-    (e = DTerm a r : e2 /\ Proof (env |> DTerm a r) e2 p) $;
-theorem ProofStepAxiom (env e p: nat) {a h r e2: nat}:
-  $ Proof env e (StepAxiom : p) <-> E. a E. h E. r E. e2
-    (e = DAxiom a h r : e2 /\
-     Proof (env |> DAxiom a h r) e2 p) $;
-theorem ProofProofDefStep (env e p a r d v: nat) (st: wff) {o e2: nat}:
-  $ st -> (Proof env e (ProofDef a r d v st : p) <->
-      DefOk env a r d v /\ E. o E. e2
-      ((o = 0 \/ o = suc (d <> v)) /\ e = DDef a r o T. : e2 /\
-      Proof (env |> DDef a r (suc (d <> v)) T.) e2 p)) $;
-theorem ProofProofDef (env e p a r d v: nat) (st: wff):
-  $ ~st -> (Proof env e (ProofDef a r d v st : p) <->
-      DefOk env a r d v /\
-      Proof (env |> DDef a r (suc (d <> v)) F.) e p) $;
-theorem ProofProofThmStep (env e p a h r u d q: nat) (st: wff) {e2: nat}:
-  $ st -> (Proof env e (ProofThm a h r u d q st : p) <->
-      ProofOk env a h r u d q /\
-      E. e2 (e = DThm a h r : e2 /\ Proof (env |> DThm a h r) e2 p)) $;
-theorem ProofProofThm (env e p a h r u d q: nat) (st: wff):
-  $ ~st -> (Proof env e (ProofThm a h r u d q st : p) <->
-      ProofOk env a h r u d q /\ Proof (env |> DThm a h r) e p) $;
+-- Proof : Env -> Proof -> Bool
+def Proof (env p: nat): wff;
+theorem Proof0 (p: nat): $ Proof 0 p <-> p = 0 $;
+theorem ProofSort (env id sd p: nat):
+  $ Proof (env |> DSort id sd) p <-> Proof env p $;
+theorem ProofTerm (env id a r p: nat):
+  $ Proof (env |> DTerm id a r) p <-> Proof env p $;
+theorem ProofAxiom (env a h r p: nat):
+  $ Proof (env |> DAxiom a h r) p <-> Proof env p $;
+theorem ProofDef (env id a r o p: nat):
+  $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $;
+theorem ProofThm (env e p a h r .p1 .ds .pf: nat):
+  $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf (
+    p = p1 <> (ds <> pf) /\ Proof env p1 /\
+    VerifyProof env (appendDummies a ds) h pf r) $;
 
--- A specification is provable if it has a proof, which entails
--- providing all the omitted definitions and proving all the theorems in the
+-- A specification is provable if some extension of the specification has a proof.
+-- The extension provides definitions for the providing all the omitted definitions and proving all the theorems in the
 -- file.
 -- ValidEnv : Env -> Bool
-def ValidEnv (env .p: nat): wff = $ E. p Proof 0 env p $;
+def ValidEnv (env .e .p: nat): wff = $ E. e (EnvExtend env e /\ E. p Proof e p) $;
 
 
 -------------
@@ -513,7 +435,7 @@ def _under:  char = $ ch x5 xf $; -- "_" underscore (note: __ is space)
 def _lbrace: char = $ ch x7 xb $; -- "{" left brace / curly bracket
 def _rbrace: char = $ ch x7 xd $; -- "}" right brace / curly bracket
 
--- Don't really need capitals except as a range
+-- ASCII numbers
 def _0: char = $ ch x3 x0 $;
 def _1: char = $ ch x3 x1 $;
 def _2: char = $ ch x3 x2 $;
@@ -799,23 +721,6 @@ $ E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST) $;
 -- AST Navigation --
 --------------------
 
-def getTermMap (ast: nat): nat;
-theorem getTermMap0: $ getTermMap 0 = 0 $;
-theorem getTermMapTerm (ast t: nat):
-  $ getTermMap (ast |> ASTTerm t) =
-    (fst t <> b0 (card (getTermMap ast))) ; getTermMap ast $;
-theorem getTermMapDef (t ast: nat):
-  $ getTermMap (ast |> ASTDef t) =
-    (fst t <> b0 (card (getTermMap ast))) ; getTermMap ast $;
-theorem getTermMapOther {a: nat} (ast s: nat):
-  $ ~(E. a s = ASTTerm a \/ s = ASTDef a) ->
-    getTermMap (ast |> s) = getTermMap ast $;
-
-def lookupTerm (eac t: nat): nat;
-theorem lookupTermS {f: nat} (env ast ctx t s: nat):
-  $ lookupTerm (env <> ast <> ctx) t = suc s <->
-    E. f (t <> f e. getTermMap ast /\ getTerm env f = suc s) $;
-
 def lookupVar (ctx x: nat): nat;
 theorem lookupVar0 (x: nat): $ lookupVar 0 x = 0 $;
 theorem lookupVarEq (bis c x t: nat):
@@ -935,39 +840,36 @@ theorem ptCheckParens (eac p pt e: nat):
     ptCheck eac (suc 0) pt e $;
 theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <->
   E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $;
-theorem ptCheckFunc {f2 td e2 x y: nat} (env ast ctx p f xs e: nat):
+theorem ptCheckFunc (env ast ctx p f xs e: nat) {f2 args r v e2 x y: nat}:
   $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
-    suc (2 ^ 10) <=p p /\ E. f2 E. td E. e2
-    (f <> f2 e. getTermMap ast /\ getTerm env f = suc td /\
-      len xs = len (fst td) /\
+    suc (2 ^ 10) <=p p /\ E. f2 E. args E. r E. v E. e2
+    (getTerm env f args r v /\ len xs = len args /\
       all2 x y (ptCheck (env <> ast <> ctx) 0 x y) xs e2 /\
       e = SApp f2 e2) $;
-theorem ptCheckPfx {l z f2 q es2 e2 x y: nat} (eac p f c xs e: nat):
+theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
-    E. l E. z E. f2 E. q E. es2 E. e2 (xs = l |> z /\
-      f <> f2 e. getTermMap (pi21 eac) /\
+    E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
       all2 x y (ptCheck eac 0 x y) l es2 /\ ptCheck eac q z e2 /\
-      e = SApp f2 (es2 |> e2)) $;
-theorem ptCheckInfix {f2 q e1 e2: nat} (eac p r f c x y e: nat):
+      e = SApp f (es2 |> e2)) $;
+theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
   $ ptCheck eac p (PTInfix r f c x y) e <->
-    E. f2 E. q E. e1 E. e2 (f <> f2 e. getTermMap (pi21 eac) /\
+    E. q E. e1 E. e2 (
       f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
       ptCheck eac (if (r = 0) q (precSuc q)) x e1 /\
       ptCheck eac (if (r = 0) (precSuc q) q) y e2 /\
-      e = SApp f2 (e1 : e2 : 0)) $;
-theorem ptCheckNota {f2 bis ty c q lits es: nat} (eac p f xs e: nat):
+      e = SApp f (e1 : e2 : 0)) $;
+theorem ptCheckNota {bis ty c q lits es: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
-    E. f2 E. bis E. ty E. c E. q E. lits E. es (
-      f <> f2 e. getTermMap (pi21 eac) /\
+    E. bis E. ty E. c E. q E. lits E. es (
       f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
       len xs = len es /\ ptCheckNotaLs eac bis lits xs es q /\
-      e = SApp f2 es) $;
-theorem ptCheckCoe {f2 y e2: nat} (eac p f x e: nat):
+      e = SApp f es) $;
+theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
   $ ptCheck eac p (PTCoe f x) e <->
-    E. f2 E. y E. e2 (f <> f2 e. getTermMap (pi21 eac) /\
+    E. y E. e2 (
       f <> y e. getCoe (pi21 eac) /\ ptCheck eac p x e2 /\
-      e = SApp f2 e2) $;
+      e = SApp f e2) $;
 
 theorem ptCheckNotaLs0 (eac bis xs es q: nat):
   $ ptCheckNotaLs eac bis 0 xs es q $;
@@ -996,16 +898,6 @@ $ {e | E. pt (ptToStr pt = f /\
 -- Here we have to convert a parsed AST into an Env, and also
 -- parse the math strings.
 
-def getSortMap (ast: nat): nat;
-theorem getSortMap0: $ getSortMap 0 = 0 $;
-theorem getSortMapSort (ast sd x: nat):
-  $ getSortMap (ast |> ASTSort (sd <> x)) =
-    (x <> card (getSortMap ast)) ; getSortMap ast $;
-theorem getSortMapOther {a: nat} (ast s: nat):
-  $ ~(E. a s = ASTSort a) -> getSortMap (ast |> s) = getSortMap ast $;
-
-def getSortID (ast x n: nat): wff = $ x <> n e. getSortMap ast $;
-
 def splitDummies (bis: nat): nat;
 theorem splitDummies0: $ splitDummies 0 = 0 $;
 theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
@@ -1025,9 +917,9 @@ theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
 
 def lookupVars (ctx .s .t: nat): set = $ opab s t (lookupVar ctx s = suc t) $;
 
-def elabType (ast ctx s out .t .vs .t2 .vs2: nat): wff =
-$ E. t E. vs E. t2 E. vs2 (s = b0 (t <> vs) /\ out = t2 <> vs2 /\
-    t <> t2 e. getSortMap ast /\ vs2 == lookupVars ctx '' vs) $;
+def elabType (ast ctx s out .t .vs .vs2: nat): wff =
+$ E. t E. vs E. vs2 (s = b0 (t <> vs) /\ out = t <> vs2 /\
+    vs2 == lookupVars ctx '' vs) $;
 
 def elabTermBinder (ast ctx bi s: nat): wff;
 theorem elabTermBinderFmla (ast ctx c x f s: nat):
@@ -1070,14 +962,14 @@ def Elaborate (ast: nat): set;
 theorem Elaborate0: $ Elaborate 0 == sn 0 $;
 theorem ElaborateSort {e: nat} (ast sd x: nat):
   $ Elaborate (ast |> ASTSort (sd <> x)) ==
-    (\ e, e |> DSort sd) '' Elaborate ast $;
+    (\ e, e |> DSort x sd) '' Elaborate ast $;
 theorem ElaborateTerm {e ctx args ret2: nat} (ast x bis ret e2: nat):
   $ e2 e. Elaborate (ast |> ASTTerm (x <> bis <> ret)) <->
     E. e E. ctx E. args E. ret2 (e e. Elaborate ast /\
       splitDummies bis = ctx <> 0 /\
       elabTermBinders ast ctx args /\
       elabType ast ctx ret ret2 /\
-      e2 = e |> DTerm args ret2) $;
+      e2 = e |> DTerm x args ret2) $;
 theorem ElaborateAxiom
   {e ctx hyps hyps2 args ret2: nat} (ast x bis ret e2: nat):
   $ e2 e. Elaborate (ast |> ASTAxiom (x <> bis <> ret)) <->
@@ -1096,7 +988,7 @@ theorem ElaborateDef {e ctx ds ret2 ctx2 args o2: nat} (ast x bis ret o e2: nat)
       checkDummies ds ctx2 /\
       elabTermBinders ast ctx args /\
       elabDefO e ast ctx (fst ret2) ctx2 o o2 /\
-      e2 = e |> DDef args ret2 o2 T.) $;
+      e2 = e |> DDef x args ret2 o2) $;
 theorem ElaborateThm
   {e ctx hyps hyps2 args ret2: nat} (ast x bis ret e2: nat):
   $ e2 e. Elaborate (ast |> ASTThm (x <> bis <> ret)) <->
