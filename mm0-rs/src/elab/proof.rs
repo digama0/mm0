@@ -3,8 +3,8 @@ use std::hash::Hash;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use super::environment::{AtomID, Type};
-use super::{LocalContext, ElabError, Result,
-  Elaborator, Environment, SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey};
+use super::{LocalContext, ElabError, Result, Elaborator, Environment,
+  SortID, TermID, ThmID, Expr, ExprNode, ProofNode, DeclKey};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
@@ -37,7 +37,7 @@ impl<'a> NodeHasher<'a> {
 pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   const VAR: fn(usize) -> Self;
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
-    f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>>;
+    de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>>;
 }
 
 #[derive(Debug)]
@@ -85,7 +85,7 @@ impl<H: NodeHash> Dedup<H> {
     Ok(match self.prev.get(&p) {
       Some(&n) => {self.vec[n].1 = true; n}
       None => {
-        let n = match H::from(nh, e.fspan().as_ref(), &r, |e| self.dedup(nh, e))? {
+        let n = match H::from(nh, e.fspan().as_ref(), &r, self)? {
           Ok(v) => self.add_direct(v),
           Err(n) => n,
         };
@@ -160,7 +160,7 @@ pub enum ExprHash {
 impl NodeHash for ExprHash {
   const VAR: fn(usize) -> Self = Self::Var;
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
-      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
+      de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Var(i),
@@ -179,7 +179,7 @@ impl NodeHash for ExprHash {
         let tid = nh.fe.term(a).ok_or_else(||
           nh.err(&head, format!("term '{}' not declared", nh.fe.data[a].name)))?;
         let mut ns = Vec::new();
-        for e in &mut u { ns.push(f(&e)?) }
+        for e in &mut u { ns.push(de.dedup(nh, &e)?) }
         if !u.exactly(0) {Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?}
         ExprHash::App(tid, ns)
       }
@@ -246,21 +246,62 @@ pub enum ProofHash {
   Dummy(AtomID, SortID),
   Term(TermID, Vec<usize>),
   Hyp(usize, usize),
-  Thm(ThmID, Vec<usize>),
+  Thm(ThmID, Vec<usize>, usize),
   Conv(usize, usize, usize),
+  Refl(usize),
   Sym(usize),
-  Unfold(TermID, Vec<usize>, usize),
+  Cong(TermID, Vec<usize>),
+  Unfold(TermID, Vec<usize>, usize, usize, usize),
+}
+
+impl ProofHash {
+  fn subst(de: &mut Dedup<Self>, env: &Environment,
+    heap: &[ExprNode], nheap: &mut [Option<usize>], e: &ExprNode) -> usize {
+    match *e {
+      ExprNode::Ref(i) => nheap[i].unwrap_or_else(|| {
+        let n = Self::subst(de, env, heap, nheap, &heap[i]);
+        nheap[i] = Some(n);
+        n
+      }),
+      ExprNode::Dummy(_, _) => unreachable!(),
+      ExprNode::App(t, ref es) => {
+        let es2 = es.iter().map(|e| Self::subst(de, env, heap, nheap, e)).collect();
+        de.add_direct(ProofHash::Term(t, es2))
+      }
+    }
+  }
+
+  fn conv(de: &Dedup<Self>, i: usize) -> bool {
+    match *de.vec[i].0 {
+      ProofHash::Var(j) => j < i && Self::conv(de, j),
+      ProofHash::Dummy(_, _) |
+      ProofHash::Term(_, _) |
+      ProofHash::Hyp(_, _) |
+      ProofHash::Thm(_, _, _) |
+      ProofHash::Conv(_, _, _) => false,
+      ProofHash::Refl(_) |
+      ProofHash::Sym(_) |
+      ProofHash::Cong(_, _) |
+      ProofHash::Unfold(_, _, _, _, _) => true,
+    }
+  }
+
+  fn to_conv(i: usize, de: &mut Dedup<Self>) -> usize {
+    if Self::conv(de, i) {i} else {
+      de.add_direct(ProofHash::Refl(i))
+    }
+  }
 }
 
 impl NodeHash for ProofHash {
   const VAR: fn(usize) -> Self = Self::Var;
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
-      mut f: impl FnMut(&LispVal) -> Result<usize>) -> Result<std::result::Result<Self, usize>> {
+      de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ProofHash::Var(i),
         None => match nh.lc.get_proof(a) {
-          Some((_, _, p)) => return Ok(Err(f(p)?)),
+          Some((_, _, p)) => return Ok(Err(de.dedup(nh, p)?)),
           None => match nh.lc.vars.get(&a) {
             Some(&(true, InferSort::Bound {sort})) => ProofHash::Dummy(a, sort),
             _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
@@ -279,22 +320,34 @@ impl NodeHash for ProofHash {
         match adata.decl {
           Some(DeclKey::Term(tid)) => {
             let mut ns = Vec::new();
-            for e in u { ns.push(f(&e)?) }
-            ProofHash::Term(tid, ns)
+            for e in u { ns.push(de.dedup(nh, &e)?) }
+            if ns.iter().any(|&i| Self::conv(de, i)) {
+              for i in &mut ns {*i = Self::to_conv(*i, de)}
+              ProofHash::Cong(tid, ns)
+            } else {
+              ProofHash::Term(tid, ns)
+            }
           }
           Some(DeclKey::Thm(tid)) => {
             let mut ns = Vec::new();
-            for e in u { ns.push(f(&e)?) }
-            ProofHash::Thm(tid, ns)
+            for e in u { ns.push(de.dedup(nh, &e)?) }
+            let td = &nh.fe.thms[tid];
+            let mut heap = vec![None; td.heap.len()];
+            for i in 0..td.args.len() {heap[i] = Some(ns[i])}
+            let rhs = Self::subst(de, &nh.fe, &td.heap, &mut heap, &td.ret);
+            ProofHash::Thm(tid, ns, rhs)
           },
           None => match a {
             AtomID::CONV => match (u.next(), u.next(), u.next()) {
               (Some(tgt), Some(c), Some(p)) if u.exactly(0) =>
-                ProofHash::Conv(f(&tgt)?, f(&c)?, f(&p)?),
+                ProofHash::Conv(
+                  de.dedup(nh, &tgt)?,
+                  Self::to_conv(de.dedup(nh, &c)?, de),
+                  de.dedup(nh, &p)?),
               _ => Err(nh.err_sp(fsp, format!("incorrect :conv format {}", nh.fe.to(r))))?
             },
             AtomID::SYM => match u.next() {
-              Some(p) if u.exactly(0) => ProofHash::Sym(f(&p)?),
+              Some(p) if u.exactly(0) => ProofHash::Sym(Self::to_conv(de.dedup(nh, &p)?, de)),
               _ => Err(nh.err_sp(fsp, format!("incorrect :sym format {}", nh.fe.to(r))))?
             },
             AtomID::UNFOLD => {
@@ -306,8 +359,18 @@ impl NodeHash for ProofHash {
               let tid = t.as_atom().and_then(|a| nh.fe.term(a))
                 .ok_or_else(|| nh.err(&t, "expected a term"))?;
               let mut ns = Vec::new();
-              for e in Uncons::from(es.clone()) { ns.push(f(&e)?) }
-              ProofHash::Unfold(tid, ns, f(&p)?)
+              for e in Uncons::from(es.clone()) { ns.push(de.dedup(nh, &e)?) }
+              let lhs = de.add_direct(ProofHash::Term(tid, ns.clone()));
+              let td = &nh.fe.terms[tid];
+              let rhs = match &td.val {
+                Some(Some(Expr {heap, head})) => {
+                  let mut nheap = vec![None; heap.len()];
+                  for i in 0..td.args.len() {nheap[i] = Some(ns[i])}
+                  Self::subst(de, &nh.fe, heap, &mut nheap, head)
+                }
+                _ => return Err(nh.err(&t, "expected a definition")),
+              };
+              ProofHash::Unfold(tid, ns, lhs, rhs, Self::to_conv(de.dedup(nh, &p)?, de))
             },
             _ => Err(nh.err(&head, format!("term/theorem '{}' not declared", adata.name)))?
           }
@@ -338,15 +401,20 @@ impl Node for ProofNode {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
       },
       ProofHash::Hyp(i, e) => ProofNode::Hyp(i, Box::new(Val::take(&mut ids[e]))),
-      ProofHash::Thm(thm, ref ns) => ProofNode::Thm {
-        thm, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
+      ProofHash::Thm(thm, ref ns, r) => ProofNode::Thm {
+        thm, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect(),
+        res: Box::new(Val::take(&mut ids[r]))
       },
       ProofHash::Conv(i, j, k) => ProofNode::Conv(Box::new((
         Val::take(&mut ids[i]), Val::take(&mut ids[j]), Val::take(&mut ids[k])))),
+      ProofHash::Refl(i) => ProofNode::Refl(Box::new(Val::take(&mut ids[i]))),
       ProofHash::Sym(i) => ProofNode::Sym(Box::new(Val::take(&mut ids[i]))),
-      ProofHash::Unfold(term, ref ns, r) => ProofNode::Unfold {
+      ProofHash::Cong(term, ref ns) => ProofNode::Cong {
+        term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
+      },
+      ProofHash::Unfold(term, ref ns, l, r, c) => ProofNode::Unfold {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect(),
-        res: Box::new(Val::take(&mut ids[r]))
+        res: Box::new((Val::take(&mut ids[l]), Val::take(&mut ids[r]), Val::take(&mut ids[c])))
       },
     }
   }

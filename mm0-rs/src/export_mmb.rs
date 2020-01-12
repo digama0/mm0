@@ -37,6 +37,7 @@ const PROOF_UNFOLD: u8    = 0x1B;
 const PROOF_CONV_CUT: u8  = 0x1C;
 const PROOF_CONV_REF: u8  = 0x1D;
 const PROOF_CONV_SAVE: u8 = 0x1E;
+const PROOF_SAVE: u8      = 0x1F;
 
 const UNIFY_TERM: u8      = 0x30;
 const UNIFY_TERM_SAVE: u8 = 0x31;
@@ -60,6 +61,7 @@ enum ProofCmd {
   ConvCut,
   ConvRef(u32),
   ConvSave,
+  Save,
 }
 
 enum UnifyCmd {
@@ -70,15 +72,15 @@ enum UnifyCmd {
   Hyp,
 }
 
-struct Reorder {
-  map: Box<[Option<u32>]>,
+struct Reorder<T=u32> {
+  map: Box<[Option<T>]>,
   idx: u32,
 }
 
-impl Reorder {
-  fn new(nargs: u32, len: usize) -> Reorder {
-    let mut map: Box<[Option<u32>]> = vec![None; len].into();
-    for i in 0..nargs {map[i as usize] = Some(i)}
+impl<T: Clone> Reorder<T> {
+  fn new(nargs: u32, len: usize, mut f: impl FnMut(u32) -> T) -> Reorder<T> {
+    let mut map: Box<[Option<T>]> = vec![None; len].into();
+    for i in 0..nargs {map[i as usize] = Some(f(i))}
     Reorder {map, idx: nargs}
   }
 }
@@ -195,6 +197,7 @@ impl ProofCmd {
       ProofCmd::ConvCut       => w.write_u8(PROOF_CONV_CUT),
       ProofCmd::ConvRef(n)    => write_cmd(w, PROOF_CONV_REF, n),
       ProofCmd::ConvSave      => w.write_u8(PROOF_CONV_SAVE),
+      ProofCmd::Save          => w.write_u8(PROOF_SAVE),
     }
   }
 }
@@ -318,7 +321,10 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
           save.push(i);
           self.write_expr_unify(heap, reorder, &heap[i], save)
         }
-        Some(n) => Ok(commit!(n)),
+        Some(n) => {
+          UnifyCmd::Ref(n).write_to(self)?;
+          Ok(commit!(n))
+        }
       }
       &ExprNode::Dummy(_, s) => {
         commit!(reorder.idx); reorder.idx += 1;
@@ -339,7 +345,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   fn write_proof(&self, w: &mut impl Write,
     heap: &[ProofNode],
-    reorder: &mut Reorder,
+    reorder: &mut Reorder<(u32, bool)>,
     hyps: &[u32],
     head: &ProofNode,
     save: bool
@@ -348,17 +354,15 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
       &ProofNode::Ref(i) => match reorder.map[i] {
         None => {
           let n = self.write_proof(w, heap, reorder, hyps, &heap[i], true)?;
-          reorder.map[i] = Some(n);
+          reorder.map[i] = Some((n, false));
           n
         }
-        Some(n) => {
-          ProofCmd::Ref(n).write_to(w)?;
-          n
-        }
+        Some((n, false)) => {ProofCmd::Ref(n).write_to(w)?; n}
+        Some((_, true)) => unreachable!()
       }
-      &ProofNode::Dummy(_, _) => unreachable!(),
+      ProofNode::Dummy(_, _) => unreachable!(),
       &ProofNode::Term {term, ref args} => {
-        for e in args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
+        for e in &**args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         if save {
           ProofCmd::TermSave(term).write_to(w)?;
           (reorder.idx, reorder.idx += 1).0
@@ -368,13 +372,71 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         ProofCmd::Ref(hyps[n]).write_to(w)?;
         hyps[n]
       }
-      &ProofNode::Thm {thm, ref args} => {
-        let t = &self.env.thms[thm];
-        let nargs = t.args.len();
-        let ord = &self.thm_reord[thm];
-        unimplemented!()
+      &ProofNode::Thm {thm, ref args, ref res} => {
+        for e in &**args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
+        self.write_proof(w, heap, reorder, hyps, res, false)?;
+        if save {
+          ProofCmd::ThmSave(thm).write_to(w)?;
+          (reorder.idx, reorder.idx += 1).0
+        } else {ProofCmd::Thm(thm).write_to(w)?; 0}
       }
-      _ => unimplemented!()
+      ProofNode::Conv(p) => {
+        let (e1, c, p) = &**p;
+        self.write_proof(w, heap, reorder, hyps, e1, false)?;
+        self.write_proof(w, heap, reorder, hyps, p, false)?;
+        ProofCmd::Conv.write_to(w)?;
+        self.write_conv(w, heap, reorder, hyps, c)?;
+        if save {
+          ProofCmd::Save.write_to(w)?;
+          (reorder.idx, reorder.idx += 1).0
+        } else {0}
+      }
+      ProofNode::Refl(_) |
+      ProofNode::Sym(_) |
+      ProofNode::Cong {..} |
+      ProofNode::Unfold {..} => unreachable!(),
+    })
+  }
+
+  fn write_conv(&self, w: &mut impl Write,
+    heap: &[ProofNode],
+    reorder: &mut Reorder<(u32, bool)>,
+    hyps: &[u32],
+    head: &ProofNode,
+  ) -> io::Result<()> {
+    Ok(match head {
+      &ProofNode::Ref(i) => match reorder.map[i] {
+        None => {
+          ProofCmd::ConvCut.write_to(w)?;
+          self.write_conv(w, heap, reorder, hyps, &heap[i])?;
+          ProofCmd::ConvSave.write_to(w)?;
+          reorder.map[i] = Some((reorder.idx, true));
+          reorder.idx += 1;
+        }
+        Some((_, false)) => unreachable!(),
+        Some((n, true)) => ProofCmd::ConvRef(n).write_to(w)?,
+      }
+      ProofNode::Dummy(_, _) |
+      ProofNode::Term {..} |
+      ProofNode::Hyp(_, _) |
+      ProofNode::Thm {..} |
+      ProofNode::Conv(_) => unreachable!(),
+      ProofNode::Refl(_) => ProofCmd::Refl.write_to(w)?,
+      ProofNode::Sym(c) => {
+        ProofCmd::Sym.write_to(w)?;
+        self.write_conv(w, heap, reorder, hyps, c)?;
+      }
+      ProofNode::Cong {args, ..} => {
+        ProofCmd::Cong.write_to(w)?;
+        for a in &**args {self.write_conv(w, heap, reorder, hyps, a)?}
+      }
+      ProofNode::Unfold {res, ..} => {
+        let (l, r, c) = &**res;
+        self.write_proof(w, heap, reorder, hyps, l, false)?;
+        self.write_proof(w, heap, reorder, hyps, r, false)?;
+        ProofCmd::Unfold.write_to(w)?;
+        self.write_conv(w, heap, reorder, hyps, c)?;
+      }
     })
   }
 
@@ -418,7 +480,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         let Expr {heap, head} = val.as_ref().unwrap_or_else(||
           panic!("def {} missing value", self.env.data[t.atom].name));
         let mut reorder = Reorder::new(
-          t.args.len().try_into().unwrap(), heap.len());
+          t.args.len().try_into().unwrap(), heap.len(), |i| i);
         self.write_expr_unify(heap, &mut reorder, head, &mut vec![])?;
         self.write_u8(0)?;
         self.term_reord.push(Some(reorder));
@@ -434,7 +496,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         self.align_to(8)?.try_into().unwrap());
       self.write_binders(&t.args)?;
       let nargs = t.args.len().try_into().unwrap();
-      let mut reorder = Reorder::new(nargs, t.heap.len());
+      let mut reorder = Reorder::new(nargs, t.heap.len(), |i| i);
       let save = &mut vec![];
       self.write_expr_unify(&t.heap, &mut reorder, &t.ret, save)?;
       for (_, h) in t.hyps.iter().rev() {
@@ -459,7 +521,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
               Some(None) => unreachable!(),
               Some(Some(Expr {heap, head})) => {
                 let mut reorder = Reorder::new(
-                  td.args.len().try_into().unwrap(), heap.len());
+                  td.args.len().try_into().unwrap(), heap.len(), |i| i);
                 write_expr_proof(&mut vec, heap, &mut reorder, head, false)?;
                 vec.write_u8(0)?;
                 let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
@@ -473,7 +535,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
             let cmd = match &td.proof {
               None => {
                 let mut reorder = Reorder::new(
-                  td.args.len().try_into().unwrap(), td.heap.len());
+                  td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
                 for (_, h) in &td.hyps {
                   write_expr_proof(&mut vec, &td.heap, &mut reorder, h, false)?;
                   ProofCmd::Hyp.write_to(&mut vec)?;
@@ -484,7 +546,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
               Some(None) => panic!("proof {} missing", self.env.data[td.atom].name),
               Some(Some(Proof {heap, hyps, head})) => {
                 let mut reorder = Reorder::new(
-                  td.args.len().try_into().unwrap(), heap.len());
+                  td.args.len().try_into().unwrap(), heap.len(), |i| (i, false));
                 let mut ehyps = Vec::with_capacity(hyps.len());
                 for mut h in hyps {
                   while let &ProofNode::Ref(i) = h {h = &heap[i]}

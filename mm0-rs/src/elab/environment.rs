@@ -122,12 +122,15 @@ pub struct Term {
 pub enum ProofNode {
   Ref(usize),
   Dummy(AtomID, SortID),
-  Term { term: TermID, args: Vec<ProofNode> },
+  Term { term: TermID, args: Box<[ProofNode]> },
   Hyp(usize, Box<ProofNode>),
-  Thm { thm: ThmID, args: Vec<ProofNode> },
+  Thm { thm: ThmID, args: Box<[ProofNode]>, res: Box<ProofNode> },
   Conv(Box<(ProofNode, ProofNode, ProofNode)>), // tgt, conv, proof
+  Refl(Box<ProofNode>),
   Sym(Box<ProofNode>),
-  Unfold { term: TermID, args: Vec<ProofNode>, res: Box<ProofNode> },
+  Cong { term: TermID, args: Box<[ProofNode]> },
+  Unfold { term: TermID, args: Box<[ProofNode]>,
+    res: Box<(ProofNode, ProofNode, ProofNode)> }, // lhs, rhs, subproof
 }
 
 impl From<&ExprNode> for ProofNode {
@@ -432,9 +435,12 @@ impl Remap<Remapper> for ProofNode {
       ProofNode::Dummy(a, s) => ProofNode::Dummy(a.remap(r), s.remap(r)),
       ProofNode::Term {term, args} => ProofNode::Term { term: term.remap(r), args: args.remap(r) },
       &ProofNode::Hyp(i, ref e) => ProofNode::Hyp(i, e.remap(r)),
-      ProofNode::Thm {thm, args} => ProofNode::Thm { thm: thm.remap(r), args: args.remap(r) },
+      ProofNode::Thm {thm, args, res} => ProofNode::Thm {
+        thm: thm.remap(r), args: args.remap(r), res: res.remap(r) },
       ProofNode::Conv(p) => ProofNode::Conv(Box::new((p.0.remap(r), p.1.remap(r), p.2.remap(r)))),
+      ProofNode::Refl(p) => ProofNode::Refl(p.remap(r)),
       ProofNode::Sym(p) => ProofNode::Sym(p.remap(r)),
+      ProofNode::Cong {term, args} => ProofNode::Cong { term: term.remap(r), args: args.remap(r) },
       ProofNode::Unfold {term, args, res} => ProofNode::Unfold {
         term: term.remap(r), args: args.remap(r), res: res.remap(r) },
     }
