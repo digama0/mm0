@@ -431,12 +431,17 @@ impl Elaborator {
       })
     };
     Ok(match ty {
-      None => InferBinder::Var(x, (lk == LocalKind::Dummy, InferSort::Unknown {
-        src: sp.unwrap(),
-        must_bound: lk.is_bound(),
-        dummy: lk == LocalKind::Dummy,
-        sorts: vec![(None, self.lc.new_mvar(InferTarget::Unknown))].into_iter().collect()
-      })),
+      None => {
+        if self.mm0_mode {
+          self.report(ElabError::warn(sp.unwrap(), "(MM0 mode) variable missing sort"))
+        }
+        InferBinder::Var(x, (lk == LocalKind::Dummy, InferSort::Unknown {
+          src: sp.unwrap(),
+          must_bound: lk.is_bound(),
+          dummy: lk == LocalKind::Dummy,
+          sorts: vec![(None, self.lc.new_mvar(InferTarget::Unknown))].into_iter().collect()
+        }))
+      },
       Some(Type::DepType(d)) => InferBinder::Var(x, self.elab_dep_type(error, lk, d)?),
       Some(&Type::Formula(f)) => {
         let e = self.parse_formula(f)?;
@@ -527,6 +532,10 @@ impl Elaborator {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
       ($sp:expr, $e:expr) => {report!(ElabError::new_e($sp, $e))};
     }
+    if self.mm0_mode && !d.mods.is_empty() {
+      self.report(ElabError::warn(d.id, "(MM0 mode) decl modifiers not allowed"))
+    }
+
     // log!("elab {}", self.ast.span(d.id));
     self.lc.clear();
     for bi in &d.bis {
@@ -547,7 +556,12 @@ impl Elaborator {
       DeclKind::Term | DeclKind::Def => {
         for (bi, _, _) in ehyps {report!(bi.span, "term/def declarations have no hypotheses")}
         let ret = match &d.ty {
-          None => None, // Err(ElabError::new_e(d.id, "type required for term declaration"))?,
+          None => {
+            if self.mm0_mode {
+              self.report(ElabError::warn(d.id, "(MM0 mode) return type required"))
+            }
+            None
+          }
           Some(Type::Formula(f)) => Err(ElabError::new_e(f.0, "sort expected"))?,
           Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)?.1 {
             InferSort::Reg {sort, deps} => Some((ty.sort, sort, deps)),
@@ -556,12 +570,17 @@ impl Elaborator {
         };
         if d.k == DeclKind::Term {
           if let Some(v) = &d.val {report!(v.span, "term declarations have no definition")}
-        } else if d.val.is_none() {
+        } else if d.val.is_none() && !self.mm0_mode {
           self.report(ElabError::warn(d.id, "def declaration missing value"));
         }
         let val = match &d.val {
           None => None,
           Some(f) => (|| -> Result<Option<(Span, LispVal)>> {
+            if self.mm0_mode {
+              if let SExprKind::Formula(_) = f.k {} else {
+                self.report(ElabError::warn(f.span, "(MM0 mode) expected formula"))
+              }
+            }
             let e = self.eval_lisp(f)?;
             Ok(Some((f.span, self.elaborate_term(f.span, &e, match ret {
               None => InferTarget::Unknown,
@@ -638,8 +657,12 @@ impl Elaborator {
         };
         if d.k == DeclKind::Axiom {
           if let Some(v) = &d.val {report!(v.span, "axiom declarations have no definition")}
-        } else if d.val.is_none() {
-          self.report(ElabError::warn(d.id, "theorem declaration missing value"));
+        } else if let Some(v) = &d.val {
+          if self.mm0_mode {
+            self.report(ElabError::warn(v.span, "(MM0 mode) theorems should not have proofs"))
+          }
+        } else if !self.mm0_mode {
+          self.report(ElabError::warn(d.id, "theorem declaration missing value"))
         }
         for e in self.finalize_vars(false) {report!(e)}
         if error {return Ok(())}

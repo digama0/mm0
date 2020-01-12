@@ -125,6 +125,7 @@ pub struct Elaborator {
   cur_timeout: Option<Instant>,
   lc: LocalContext,
   spans: Spans<ObjectKind>,
+  mm0_mode: bool,
   check_proofs: bool,
   reporting: ReportMode,
 }
@@ -138,7 +139,11 @@ impl DerefMut for Elaborator {
 }
 
 impl Elaborator {
-  pub fn new(ast: Arc<AST>, path: FileRef, cancel: Arc<AtomicBool>) -> Elaborator {
+  pub fn detect_mm0(path: &FileRef) -> bool {
+    path.path().extension().map_or(false, |s| s == "mm0")
+  }
+
+  pub fn new(ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
       ast, path, cancel,
       errors: Vec::new(),
@@ -147,6 +152,7 @@ impl Elaborator {
       cur_timeout: None,
       lc: LocalContext::new(),
       spans: Spans::new(),
+      mm0_mode,
       check_proofs: true,
       reporting: ReportMode::new(),
     }
@@ -353,7 +359,12 @@ impl Elaborator {
       &StmtKind::Coercion {id, from, to} => self.elab_coe(id, from, to)?,
       StmtKind::Notation(n) => self.elab_gen_nota(n)?,
       &StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp)),
-      StmtKind::Do(es) => for e in es { self.parse_and_print(e)? },
+      StmtKind::Do(es) => {
+        if self.mm0_mode {
+          self.report(ElabError::warn(stmt.span, "(MM0 mode) do blocks not allowed"))
+        }
+        for e in es { self.parse_and_print(e)? }
+      }
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
         self.elab_stmt(s)?;

@@ -408,7 +408,12 @@ impl<'a> LispParser<'a> {
         for e in es { cs.push(self.qexpr(e)?) }
         Ok(IR::list(self.fspan(e.span), cs))
       }
-      QExprKind::Unquote(e) => self.expr(false, &e)
+      QExprKind::Unquote(e) => {
+        if self.mm0_mode {
+          self.report(ElabError::warn(e.span, "(MM0 mode) unquotation not allowed"))
+        }
+        self.expr(false, &e)
+      }
     }
   }
 

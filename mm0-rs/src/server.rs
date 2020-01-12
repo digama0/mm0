@@ -118,8 +118,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           }
           hasher.finish() == hash
         })() {return Ok((hash, env.clone()))}
-        if let Some(FileCache::Ready {ast, errors, deps, env, ..}) = g.take() {
-          ((start.map(|s| (s, ast)), Some((errors, env)), deps), vec![])
+        if let Some(FileCache::Ready {ast, source, errors, deps, env, ..}) = g.take() {
+          ((start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
     };
@@ -127,13 +127,16 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     res
   };
   let (version, text) = file.text.lock().unwrap().clone();
+  let old_ast = old_ast.and_then(|(s, old_text, ast)|
+    if Arc::ptr_eq(&text, &old_text) {Some((s, ast))} else {None});
   let mut hasher = DefaultHasher::new();
   version.hash(&mut hasher);
+  let source = text.clone();
   let (idx, ast) = parse(text, old_ast);
   let ast = Arc::new(ast);
 
   let mut deps = Vec::new();
-  let elab = Elaborator::new(ast.clone(), path.clone(), cancel.clone());
+  let elab = Elaborator::new(ast.clone(), path.clone(), Elaborator::detect_mm0(&path), cancel.clone());
   let (toks, errors, env) = elab.as_fut(
     old_env.map(|(errs, e)| (idx, errs, e)),
     |path| {
@@ -171,7 +174,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       let _ = s.send((hash, env.clone()));
     }
   }
-  *g = Some(FileCache::Ready {hash, ast, errors, deps, env: env.clone(), complete});
+  *g = Some(FileCache::Ready {hash, source, ast, errors, deps, env: env.clone(), complete});
   drop(g);
   for d in file.downstream.lock().unwrap().iter() {
     log!("{:?} affects {:?}", path, d);
@@ -210,6 +213,7 @@ enum FileCache {
   },
   Ready {
     hash: u64,
+    source: Arc<LinedString>,
     ast: Arc<AST>,
     errors: Vec<ElabError>,
     env: Arc<Environment>,

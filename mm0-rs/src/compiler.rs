@@ -154,7 +154,7 @@ async fn elaborate(path: FileRef) -> io::Result<Arc<Environment>> {
   }
   let ast = Arc::new(ast);
   let mut deps = Vec::new();
-  let elab = Elaborator::new(ast.clone(), path.clone(), Arc::default());
+  let elab = Elaborator::new(ast.clone(), path.clone(), Elaborator::detect_mm0(&path), Arc::default());
   let (_, errors, env) = elab.as_fut(None,
     |path| {
       let path = VFS_.get_or_insert(path)?.0;
