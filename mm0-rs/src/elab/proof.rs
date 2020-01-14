@@ -258,11 +258,14 @@ impl ProofHash {
   fn subst(de: &mut Dedup<Self>, env: &Environment,
     heap: &[ExprNode], nheap: &mut [Option<usize>], e: &ExprNode) -> usize {
     match *e {
-      ExprNode::Ref(i) => nheap[i].unwrap_or_else(|| {
-        let n = Self::subst(de, env, heap, nheap, &heap[i]);
-        nheap[i] = Some(n);
-        n
-      }),
+      ExprNode::Ref(i) => match nheap[i] {
+        Some(n) => {de.vec[n].1 = true; n}
+        None => {
+          let n = Self::subst(de, env, heap, nheap, &heap[i]);
+          nheap[i] = Some(n);
+          n
+        }
+      },
       ExprNode::Dummy(_, _) => unreachable!(),
       ExprNode::App(t, ref es) => {
         let es2 = es.iter().map(|e| Self::subst(de, env, heap, nheap, e)).collect();

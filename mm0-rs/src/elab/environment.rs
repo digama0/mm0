@@ -171,6 +171,16 @@ pub enum StmtTrace {
   Global(AtomID),
 }
 
+impl StmtTrace {
+  pub fn atom(&self) -> AtomID {
+    match self {
+      &StmtTrace::Sort(a) => a,
+      &StmtTrace::Decl(a) => a,
+      &StmtTrace::Global(a) => a,
+    }
+  }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum DeclKey {
   Term(TermID),

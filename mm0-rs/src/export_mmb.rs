@@ -1,9 +1,12 @@
 use std::convert::TryInto;
-use std::io::{self, Write, Seek};
+use std::mem;
+use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use crate::elab::environment::{
   Environment, Type, Expr, Proof, SortID, TermID, ThmID,
-  TermVec, ThmVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
+  TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
+use crate::util::FileRef;
+use crate::lined_string::LinedString;
 
 enum Value {
   U32(u32),
@@ -85,12 +88,25 @@ impl<T: Clone> Reorder<T> {
   }
 }
 
+struct IndexHeader<'a> {
+  sorts: &'a mut [[u8; 8]],
+  terms: &'a mut [[u8; 8]],
+  thms: &'a mut [[u8; 8]]
+}
+
+impl<'a> IndexHeader<'a> {
+  fn sort(&mut self, i: SortID) -> &mut [u8; 8] { &mut self.sorts[i.0 as usize] }
+  fn term(&mut self, i: TermID) -> &mut [u8; 8] { &mut self.terms[i.0 as usize] }
+  fn thm(&mut self, i: ThmID) -> &mut [u8; 8] { &mut self.thms[i.0 as usize] }
+}
+
 pub struct Exporter<'a, W: Write + Seek + ?Sized> {
+  file: FileRef,
+  source: &'a LinedString,
   env: &'a Environment,
   w: &'a mut W,
   pos: u64,
   term_reord: TermVec<Option<Reorder>>,
-  thm_reord: ThmVec<Reorder>,
   fixups: Vec<(u64, Value)>,
 }
 
@@ -235,11 +251,10 @@ fn write_expr_proof(w: &mut impl Write,
 }
 
 impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
-  pub fn new(env: &'a Environment, w: &'a mut W) -> Self {
+  pub fn new(file: FileRef, source: &'a LinedString, env: &'a Environment, w: &'a mut W) -> Self {
     Self {
       term_reord: TermVec(Vec::with_capacity(env.terms.len())),
-      thm_reord: ThmVec(Vec::with_capacity(env.thms.len())),
-      env, w, pos: 0, fixups: vec![]
+      file, source, env, w, pos: 0, fixups: vec![]
     }
   }
 
@@ -446,7 +461,88 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     LE::write_u32(&mut header[4..], p_thm);
   }
 
-  pub fn run(&mut self) -> io::Result<()> {
+  fn write_index_entry(&mut self, header: &mut IndexHeader, il: u64, ir: u64,
+      (s, cmd): (StmtTrace, u64)) -> io::Result<u64> {
+    let n = self.align_to(8)?;
+    let (sp, ix, k, name) = match s {
+      StmtTrace::Sort(a) => {
+        let ad = &self.env.data[a];
+        let s = ad.sort.unwrap();
+        LE::write_u64(header.sort(s), n);
+        (&self.env.sorts[s].span, s.0 as u32, STMT_SORT, &ad.name)
+      }
+      StmtTrace::Decl(a) => {
+        let ad = &self.env.data[a];
+        match ad.decl.unwrap() {
+          DeclKey::Term(t) => {
+            let td = &self.env.terms[t];
+            LE::write_u64(header.term(t), n);
+            (&td.span, t.0,
+              if td.val.is_none() {STMT_TERM}
+              else if td.vis.contains(Modifiers::LOCAL) {STMT_DEF | STMT_LOCAL}
+              else {STMT_DEF},
+             &ad.name)
+          }
+          DeclKey::Thm(t) => {
+            let td = &self.env.thms[t];
+            LE::write_u64(header.thm(t), n);
+            (&td.span, t.0,
+              if td.proof.is_none() {STMT_AXIOM}
+              else if td.vis.contains(Modifiers::PUB) {STMT_THM}
+              else {STMT_THM | STMT_LOCAL},
+             &ad.name)
+          }
+        }
+      }
+      StmtTrace::Global(_) => unreachable!()
+    };
+
+    let pos = if sp.file.ptr_eq(&self.file) {
+      self.source.to_pos(sp.span.start)
+    } else {Default::default()};
+    self.write_u64(il)?;
+    self.write_u64(ir)?;
+    self.write_u32(pos.line as u32)?;
+    self.write_u32(pos.character as u32)?;
+    self.write_u64(cmd)?;
+    self.write_u32(ix)?;
+    self.write_u8(k)?;
+    self.write_all(name.as_bytes())?;
+    self.write_u8(0)?;
+    Ok(n)
+  }
+
+  fn write_index(&mut self, header: &mut IndexHeader, left: &[(StmtTrace, u64)], map: &[(StmtTrace, u64)]) -> io::Result<u64> {
+    let mut lo = map.len() / 2;
+    let a = match map.get(lo) {
+      None => {
+        let mut n = 0;
+        for &t in left.iter().rev() {
+          n = self.write_index_entry(header, 0, n, t)?
+        }
+        return Ok(n)
+      }
+      Some((k, _)) => k.atom()
+    };
+    let mut hi = lo + 1;
+    loop {
+      match lo.checked_sub(1) {
+        Some(i) if map[i].0.atom() == a => lo = i,
+        _ => break,
+      }
+    }
+    loop {
+      match map.get(hi) {
+        Some(k) if k.0.atom() == a => hi += 1,
+        _ => break,
+      }
+    }
+    let il = self.write_index(header, left, &map[..lo])?;
+    let ir = self.write_index(header, &map[lo+1..hi], &map[hi..])?;
+    self.write_index_entry(header, il, ir, map[lo])
+  }
+
+  pub fn run(&mut self, index: bool) -> io::Result<()> {
     self.write_all("MM0B".as_bytes())?; // magic
     let num_sorts = self.env.sorts.len();
     if num_sorts > 128 {panic!("too many sorts (max 128)")}
@@ -504,74 +600,111 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         self.write_expr_unify(&t.heap, &mut reorder, h, save)?;
       }
       self.write_u8(0)?;
-      self.thm_reord.push(reorder);
     }
     thm_header.commit(self);
 
     p_proof.commit(self);
     let mut vec = vec![];
-    for s in &self.env.stmts {
+    let mut index_map = if index {
+      Vec::with_capacity(self.env.sorts.len() + self.env.terms.len() + self.env.thms.len())
+    } else {vec![]};
+    for &s in &self.env.stmts {
       match s {
-        &StmtTrace::Sort(_) => write_cmd(self, STMT_SORT, 2)?, // this takes 2 bytes
-        &StmtTrace::Decl(a) => match self.env.data[a].decl.unwrap() {
-          DeclKey::Term(t) => {
-            let td = &self.env.terms[t];
-            match &td.val {
-              None => write_cmd(self, STMT_TERM, 2)?, // this takes 2 bytes
-              Some(None) => unreachable!(),
-              Some(Some(Expr {heap, head})) => {
-                let mut reorder = Reorder::new(
-                  td.args.len().try_into().unwrap(), heap.len(), |i| i);
-                write_expr_proof(&mut vec, heap, &mut reorder, head, false)?;
-                vec.write_u8(0)?;
-                let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
-                write_cmd_bytes(self, cmd, &vec)?;
-                vec.clear();
+        StmtTrace::Sort(_) => {
+          if index {index_map.push((s, self.pos))}
+          write_cmd(self, STMT_SORT, 2)? // this takes 2 bytes
+        }
+        StmtTrace::Decl(a) => {
+          if index {index_map.push((s, self.pos))}
+          match self.env.data[a].decl.unwrap() {
+            DeclKey::Term(t) => {
+              let td = &self.env.terms[t];
+              match &td.val {
+                None => write_cmd(self, STMT_TERM, 2)?, // this takes 2 bytes
+                Some(None) => unreachable!(),
+                Some(Some(Expr {heap, head})) => {
+                  let mut reorder = Reorder::new(
+                    td.args.len().try_into().unwrap(), heap.len(), |i| i);
+                  write_expr_proof(&mut vec, heap, &mut reorder, head, false)?;
+                  vec.write_u8(0)?;
+                  let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
+                  write_cmd_bytes(self, cmd, &vec)?;
+                  vec.clear();
+                }
               }
             }
-          }
-          DeclKey::Thm(t) => {
-            let td = &self.env.thms[t];
-            let cmd = match &td.proof {
-              None => {
-                let mut reorder = Reorder::new(
-                  td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
-                for (_, h) in &td.hyps {
-                  write_expr_proof(&mut vec, &td.heap, &mut reorder, h, false)?;
-                  ProofCmd::Hyp.write_to(&mut vec)?;
-                }
-                write_expr_proof(&mut vec, &td.heap, &mut reorder, &td.ret, false)?;
-                STMT_AXIOM
-              }
-              Some(None) => panic!("proof {} missing", self.env.data[td.atom].name),
-              Some(Some(Proof {heap, hyps, head})) => {
-                let mut reorder = Reorder::new(
-                  td.args.len().try_into().unwrap(), heap.len(), |i| (i, false));
-                let mut ehyps = Vec::with_capacity(hyps.len());
-                for mut h in hyps {
-                  while let &ProofNode::Ref(i) = h {h = &heap[i]}
-                  if let ProofNode::Hyp(_, e) = h {
-                    self.write_proof(&mut vec, heap, &mut reorder, &ehyps, e, false)?;
+            DeclKey::Thm(t) => {
+              let td = &self.env.thms[t];
+              let cmd = match &td.proof {
+                None => {
+                  let mut reorder = Reorder::new(
+                    td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
+                  for (_, h) in &td.hyps {
+                    write_expr_proof(&mut vec, &td.heap, &mut reorder, h, false)?;
                     ProofCmd::Hyp.write_to(&mut vec)?;
-                    ehyps.push(reorder.idx);
-                    reorder.idx += 1;
-                  } else {unreachable!()}
+                  }
+                  write_expr_proof(&mut vec, &td.heap, &mut reorder, &td.ret, false)?;
+                  STMT_AXIOM
                 }
-                self.write_proof(&mut vec, &heap, &mut reorder, &ehyps, head, false)?;
-                vec.write_u8(0)?;
-                STMT_THM | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0}
-              }
-            };
-            vec.write_u8(0)?;
-            write_cmd_bytes(self, cmd, &vec)?;
-            vec.clear();
+                Some(None) => panic!("proof {} missing", self.env.data[td.atom].name),
+                Some(Some(Proof {heap, hyps, head})) => {
+                  let mut reorder = Reorder::new(
+                    td.args.len().try_into().unwrap(), heap.len(), |i| (i, false));
+                  let mut ehyps = Vec::with_capacity(hyps.len());
+                  for mut h in hyps {
+                    while let &ProofNode::Ref(i) = h {h = &heap[i]}
+                    if let ProofNode::Hyp(_, e) = h {
+                      self.write_proof(&mut vec, heap, &mut reorder, &ehyps, e, false)?;
+                      ProofCmd::Hyp.write_to(&mut vec)?;
+                      ehyps.push(reorder.idx);
+                      reorder.idx += 1;
+                    } else {unreachable!()}
+                  }
+                  self.write_proof(&mut vec, &heap, &mut reorder, &ehyps, head, false)?;
+                  vec.write_u8(0)?;
+                  STMT_THM | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0}
+                }
+              };
+              vec.write_u8(0)?;
+              write_cmd_bytes(self, cmd, &vec)?;
+              vec.clear();
+            }
           }
-        },
+        }
         StmtTrace::Global(_) => {}
       }
     }
     self.write_u8(0)?;
-    p_index.commit_val(self, 0); // no index
+    if index {
+      self.align_to(8)?; p_index.commit(self);
+      index_map.sort_unstable_by_key(|k| &*self.env.data[k.0.atom()].name);
+      let mut index_header = self.fixup_large(8 * (1 +
+        self.env.sorts.len() + self.env.terms.len() + self.env.thms.len()))?;
+      let (root, header) = index_header.1.split_at_mut(8);
+      let mut header = {
+        let header: &mut [[u8; 8]] = unsafe {mem::transmute(header)};
+        let (sorts, header) = header.split_at_mut(self.env.sorts.len());
+        let (terms, thms) = header.split_at_mut(self.env.terms.len());
+        IndexHeader {sorts, terms, thms}
+      };
+      LE::write_u64(root, self.write_index(&mut header, &[], &index_map)?);
+      index_header.commit(self)
+    } else {
+      self.write_u32(0)?; // padding
+    }
+    Ok(())
+  }
+
+  pub fn finish(self) -> io::Result<()> {
+    let Self {w, fixups, ..} = self;
+    for (pos, f) in fixups {
+      w.seek(SeekFrom::Start(pos))?;
+      match f {
+        Value::U32(n) => w.write_u32::<LE>(n)?,
+        Value::U64(n) => w.write_u64::<LE>(n)?,
+        Value::Box(buf) => w.write_all(&buf)?,
+      }
+    }
     Ok(())
   }
 }

@@ -203,11 +203,15 @@ fn elaborate_and_send(path: FileRef, send: FSender<((), Arc<Environment>)>) ->
 }
 
 pub fn main(mut args: impl Iterator<Item=String>) -> io::Result<()> {
-  let file = args.next().expect("expected a .mm1 file");
-  let env = block_on(elaborate(FileRef::new(fs::canonicalize(file)?)))?;
+  let path = args.next().expect("expected a .mm1 file");
+  let (path, file) = VFS_.get_or_insert(FileRef::new(fs::canonicalize(path)?))?;
+  let env = block_on(elaborate(path.clone()))?;
   if let Some(out) = args.next() {
     use {fs::File, io::BufWriter};
-    Exporter::new(&env, &mut BufWriter::new(File::create(out)?)).run()?
+    let mut w = BufWriter::new(File::create(out)?);
+    let mut ex = Exporter::new(path, &file.text, &env, &mut w);
+    ex.run(true)?;
+    ex.finish()?;
   }
   Ok(())
 }
