@@ -206,6 +206,9 @@ void debug_print_cmd(u8* cmd, u32 data) {
       }
     } break;
 
+    case CMD_PROOF_CONV_SAVE: fprintf(stderr, "%lX: ConvSave", pos); break;
+    case CMD_PROOF_SAVE: fprintf(stderr, "%lX: Save", pos); break;
+
     case CMD_UNIFY_REF: {
       fprintf(stderr, "%lX: URef %d", pos, data);
       if (data < g_uheap_size) {
