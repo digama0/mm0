@@ -423,6 +423,6 @@ impl<'a> FormatEnv<'a> {
 
 impl<'a> fmt::Display for PPExpr<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.fe.pretty(|p| p.expr_paren(self.e, Prec::Max).doc.render_fmt(self.width, f))
+    self.fe.pretty(|p| p.expr_paren(self.e, Prec::Prec(0)).doc.render_fmt(self.width, f))
   }
 }

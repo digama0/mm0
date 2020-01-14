@@ -130,7 +130,7 @@ pub enum ProofNode {
   Sym(Box<ProofNode>),
   Cong { term: TermID, args: Box<[ProofNode]> },
   Unfold { term: TermID, args: Box<[ProofNode]>,
-    res: Box<(ProofNode, ProofNode, ProofNode)> }, // lhs, rhs, subproof
+    res: Box<(ProofNode, ProofNode, ProofNode)> }, // lhs, sub_lhs, subproof
 }
 
 impl From<&ExprNode> for ProofNode {

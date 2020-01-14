@@ -374,7 +374,10 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         }
         Some(n) => {ProofCmd::Ref(n).write_to(w)?; n}
       }
-      ProofNode::Dummy(_, _) => unreachable!(),
+      &ProofNode::Dummy(_, s) => {
+        ProofCmd::Dummy(s).write_to(w)?;
+        (reorder.idx, reorder.idx += 1).0
+      }
       &ProofNode::Term {term, ref args} => {
         for e in &**args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         if save {
@@ -453,9 +456,9 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         for a in &**args {self.write_conv(w, heap, reorder, hyps, a)?}
       }
       ProofNode::Unfold {res, ..} => {
-        let (l, r, c) = &**res;
+        let (l, l2, c) = &**res;
         self.write_proof(w, heap, reorder, hyps, l, false)?;
-        self.write_proof(w, heap, reorder, hyps, r, false)?;
+        self.write_proof(w, heap, reorder, hyps, l2, false)?;
         ProofCmd::Unfold.write_to(w)?;
         self.write_conv(w, heap, reorder, hyps, c)?;
       }

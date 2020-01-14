@@ -4,7 +4,7 @@ use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use super::environment::{AtomID, Type};
 use super::{LocalContext, ElabError, Result, Elaborator, Environment,
-  SortID, TermID, ThmID, Expr, ExprNode, ProofNode, DeclKey};
+  SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
@@ -73,6 +73,11 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
+  pub fn reuse(&mut self, n: usize) -> usize {
+    self.vec[n].1 = true;
+    n
+  }
+
   pub fn add(&mut self, p: *const LispKind, v: H) -> usize {
     let n = self.add_direct(v);
     self.prev.insert(p, n);
@@ -83,7 +88,7 @@ impl<H: NodeHash> Dedup<H> {
     let r = e.unwrapped_arc();
     let p: *const _ = &*r;
     Ok(match self.prev.get(&p) {
-      Some(&n) => {self.vec[n].1 = true; n}
+      Some(&n) => self.reuse(n),
       None => {
         let n = match H::from(nh, e.fspan().as_ref(), &r, self)? {
           Ok(v) => self.add_direct(v),
@@ -154,7 +159,7 @@ impl Elaborator {
 pub enum ExprHash {
   Var(usize),
   Dummy(AtomID, SortID),
-  App(TermID, Vec<usize>),
+  App(TermID, Box<[usize]>),
 }
 
 impl NodeHash for ExprHash {
@@ -181,7 +186,7 @@ impl NodeHash for ExprHash {
         let mut ns = Vec::new();
         for e in &mut u { ns.push(de.dedup(nh, &e)?) }
         if !u.exactly(0) {Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?}
-        ExprHash::App(tid, ns)
+        ExprHash::App(tid, ns.into())
       }
     }))
   }
@@ -244,14 +249,14 @@ impl Environment {
 pub enum ProofHash {
   Var(usize),
   Dummy(AtomID, SortID),
-  Term(TermID, Vec<usize>),
+  Term(TermID, Box<[usize]>),
   Hyp(usize, usize),
-  Thm(ThmID, Vec<usize>, usize),
+  Thm(ThmID, Box<[usize]>, usize),
   Conv(usize, usize, usize),
   Refl(usize),
   Sym(usize),
-  Cong(TermID, Vec<usize>),
-  Unfold(TermID, Vec<usize>, usize, usize, usize),
+  Cong(TermID, Box<[usize]>),
+  Unfold(TermID, Box<[usize]>, usize, usize, usize),
 }
 
 impl ProofHash {
@@ -259,7 +264,7 @@ impl ProofHash {
     heap: &[ExprNode], nheap: &mut [Option<usize>], e: &ExprNode) -> usize {
     match *e {
       ExprNode::Ref(i) => match nheap[i] {
-        Some(n) => {de.vec[n].1 = true; n}
+        Some(n) => de.reuse(n),
         None => {
           let n = Self::subst(de, env, heap, nheap, &heap[i]);
           nheap[i] = Some(n);
@@ -286,6 +291,25 @@ impl ProofHash {
       ProofHash::Sym(_) |
       ProofHash::Cong(_, _) |
       ProofHash::Unfold(_, _, _, _, _) => true,
+    }
+  }
+
+  fn conv_side(de: &mut Dedup<Self>, i: usize, right: bool) -> usize {
+    match *de.vec[i].0.clone() {
+      ProofHash::Var(j) => Self::conv_side(de, j, right),
+      ProofHash::Dummy(_, _) |
+      ProofHash::Term(_, _) |
+      ProofHash::Hyp(_, _) |
+      ProofHash::Thm(_, _, _) |
+      ProofHash::Conv(_, _, _) => unreachable!(),
+      ProofHash::Refl(e) => de.reuse(e),
+      ProofHash::Sym(c) => Self::conv_side(de, c, !right),
+      ProofHash::Cong(t, ref cs) => {
+        let ns = cs.iter().map(|&c| Self::conv_side(de, c, right)).collect::<Vec<_>>();
+        de.add_direct(ProofHash::Term(t, ns.into()))
+      }
+      ProofHash::Unfold(_, _, _, _, c) if right => Self::conv_side(de, c, true),
+      ProofHash::Unfold(_, _, lhs, _, _) => de.reuse(lhs),
     }
   }
 
@@ -326,9 +350,9 @@ impl NodeHash for ProofHash {
             for e in u { ns.push(de.dedup(nh, &e)?) }
             if ns.iter().any(|&i| Self::conv(de, i)) {
               for i in &mut ns {*i = Self::to_conv(*i, de)}
-              ProofHash::Cong(tid, ns)
+              ProofHash::Cong(tid, ns.into())
             } else {
-              ProofHash::Term(tid, ns)
+              ProofHash::Term(tid, ns.into())
             }
           }
           Some(DeclKey::Thm(tid)) => {
@@ -338,7 +362,7 @@ impl NodeHash for ProofHash {
             let mut heap = vec![None; td.heap.len()];
             for i in 0..td.args.len() {heap[i] = Some(ns[i])}
             let rhs = Self::subst(de, &nh.fe, &td.heap, &mut heap, &td.ret);
-            ProofHash::Thm(tid, ns, rhs)
+            ProofHash::Thm(tid, ns.into(), rhs)
           },
           None => match a {
             AtomID::CONV => match (u.next(), u.next(), u.next()) {
@@ -363,17 +387,10 @@ impl NodeHash for ProofHash {
                 .ok_or_else(|| nh.err(&t, "expected a term"))?;
               let mut ns = Vec::new();
               for e in Uncons::from(es.clone()) { ns.push(de.dedup(nh, &e)?) }
-              let lhs = de.add_direct(ProofHash::Term(tid, ns.clone()));
-              let td = &nh.fe.terms[tid];
-              let rhs = match &td.val {
-                Some(Some(Expr {heap, head})) => {
-                  let mut nheap = vec![None; heap.len()];
-                  for i in 0..td.args.len() {nheap[i] = Some(ns[i])}
-                  Self::subst(de, &nh.fe, heap, &mut nheap, head)
-                }
-                _ => return Err(nh.err(&t, "expected a definition")),
-              };
-              ProofHash::Unfold(tid, ns, lhs, rhs, Self::to_conv(de.dedup(nh, &p)?, de))
+              let lhs = de.add_direct(ProofHash::Term(tid, ns.clone().into()));
+              let c = Self::to_conv(de.dedup(nh, &p)?, de);
+              let l2 = Self::conv_side(de, c, false);
+              ProofHash::Unfold(tid, ns.into(), lhs, l2, c)
             },
             _ => Err(nh.err(&head, format!("term/theorem '{}' not declared", adata.name)))?
           }
@@ -388,7 +405,7 @@ impl Dedup<ExprHash> {
     self.map_inj(|e| match *e {
       ExprHash::Var(i) => ProofHash::Var(i),
       ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
-      ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone()),
+      ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone().into()),
     })
   }
 }
@@ -415,9 +432,9 @@ impl Node for ProofNode {
       ProofHash::Cong(term, ref ns) => ProofNode::Cong {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
       },
-      ProofHash::Unfold(term, ref ns, l, r, c) => ProofNode::Unfold {
+      ProofHash::Unfold(term, ref ns, l, m, c) => ProofNode::Unfold {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect(),
-        res: Box::new((Val::take(&mut ids[l]), Val::take(&mut ids[r]), Val::take(&mut ids[c])))
+        res: Box::new((Val::take(&mut ids[l]), Val::take(&mut ids[m]), Val::take(&mut ids[c])))
       },
     }
   }
