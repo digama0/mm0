@@ -39,7 +39,7 @@ do {
   (def (scan . args) (apply rmap args) (let))
   (def (undef? x) (not (def? x)))
   (def (get-proof x) @ match (get-decl x)
-    [('theorem _ _ _ _ _ pf) (pf)]
+    [('theorem _ _ _ _ _ pf) (hd @ tl @ pf)]
     [_ (error "not a theorem")])
   (def named
     (def (assign-mvar m x) (set! m (dummy! x (mvar-sort m))))
@@ -867,12 +867,14 @@ def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [a / x] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
   ($S[$:70) a ($/$:0) x ($]$:0) A;
 
-theorem elsbs (a b: nat) (A: set x): $ b e. S[a / x] A <-> [a / x] b e. A $ =
+theorem elsbs (a: nat x) (b: nat) (A: set x): $ b e. S[a / x] A <-> [a / x] b e. A $ =
 '(bitr (!! elab y) @ sbe @ sbeq2d eleq1);
 theorem sbsq (a: nat) (A: set x): $ x = a -> A == S[a / x] A $ =
 '(!! eqrd y @ syl6bbr elsbs sbq);
+theorem nfsbs1h (a: nat x) (A: set x) (h: $ FN/ x a $): $ FS/ x S[a / x] A $ =
+'(!! nfsri _ y (nfx elsbs @ nfsb1h h));
 theorem nfsbs1 (a: nat) (A: set x): $ FS/ x S[a / x] A $ =
-'(!! nfsri _ y (nfx elsbs nfsb1));
+'(nfsbs1h nfnv);
 theorem nfsbsh (a: nat x) (A: set x y) (h1: $ FN/ x a $) (h2: $ FS/ x A $): $ FS/ x S[a / y] A $ =
 '(!! nfsri _ z @ nfx elsbs @ nfsbh h1 @ nfel2 h2);
 theorem nfsbs (a: nat) (A: set x y) (h: $ FS/ x A $): $ FS/ x S[a / y] A $ = '(nfsbsh nfnv h);
@@ -997,9 +999,9 @@ do { (add-eqd-thm 'sbn) (add-eq-thm 'sbn) };
 theorem sbnq (a: nat) (b: nat x): $ x = a -> b = N[a / x] b $ =
 '(eqcomd @ !! eqtheabd y @ bicomd sbq);
 theorem nfsbn1h (a b: nat x) (h: $ FN/ x a $): $ FN/ x N[a / x] b $ =
-'(nfthe @ !! nfab _ y nfsb1);
+'(nfthe @ !! nfab _ y @ nfsb1h h);
 theorem nfsbn1 (a: nat) (b: nat x): $ FN/ x N[a / x] b $ =
-'(nfthe @ !! nfab _ y nfsb1);
+'(nfsbn1h nfnv);
 theorem nfsbnh (a b: nat x y) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ FN/ x N[a / y] b $ =
 '(nfthe @ !! nfab _ z @ nfsbh h1 @ nfeq2 h2);
 theorem nfsbn (a: nat) (b: nat x y) (h: $ FN/ x b $): $ FN/ x N[a / y] b $ = '(nfsbnh nfnv h);

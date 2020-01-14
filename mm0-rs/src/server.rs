@@ -428,8 +428,9 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
   let fe = FormatEnv {source: &text, env: &env};
   let spans = or!(Ok(None), env.find(idx));
-  let res: Vec<_> = spans.find_pos(idx).into_iter().filter_map(|&(sp, ref k)| {
-    Some(match k {
+  let mut res = vec![];
+  for &(sp, ref k) in spans.find_pos(idx) {
+    if let Some(r) = (|| Some(match k {
       &ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
       &ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
       &ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
@@ -468,6 +469,7 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
           let a = head.as_atom()?;
           if let Some(DeclKey::Thm(t)) = env.data[a].decl {
             let td = &env.thms[t];
+            res.push((sp, format!("{}", fe.to(td))));
             let mut args = vec![];
             if !u.extend_into(td.args.len(), &mut args) {return None}
             let mut subst = Subst::new(&env, &td.heap, args);
@@ -482,13 +484,13 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
       }
       ObjectKind::Global(_) |
       ObjectKind::Import(_) => return None,
-    })
-  }).collect();
+    }))() {res.push(r)}
+  }
   if res.is_empty() {return Ok(None)}
   Ok(Some(Hover {
     range: Some(text.to_range(res[0].0)),
     contents: HoverContents::Array(res.into_iter().map(|(_, value)|
-      MarkedString::LanguageString(LanguageString {language: "mm0".into(), value})).collect())
+      MarkedString::LanguageString(LanguageString {language: "metamath-zero".into(), value})).collect())
   }))
 }
 

@@ -47,9 +47,10 @@ pub struct LocalContext {
   pub proof_order: Vec<(AtomID, LispVal, LispVal)>,
 }
 
-fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget) -> LispVal {
+fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget, sp: Option<FileSpan>) -> LispVal {
   let n = mvars.len();
-  let e = LispVal::new_ref(LispVal::new(LispKind::MVar(n, tgt)));
+  let e = LispVal::new(LispKind::MVar(n, tgt));
+  let e = LispVal::new_ref(if let Some(sp) = sp {e.span(sp)} else {e});
   mvars.push(e.clone());
   e
 }
@@ -75,8 +76,8 @@ impl LocalContext {
     }
   }
 
-  pub fn new_mvar(&mut self, tgt: InferTarget) -> LispVal {
-    new_mvar(&mut self.mvars, tgt)
+  pub fn new_mvar(&mut self, tgt: InferTarget, sp: Option<FileSpan>) -> LispVal {
+    new_mvar(&mut self.mvars, tgt, sp)
   }
 
   fn var(&mut self, x: AtomID, sp: Span) -> &mut (bool, InferSort) {
@@ -245,14 +246,15 @@ impl<'a> ElabTermMut<'a> {
             format!("type error: expected {}, got {}", self.fe.sorts[s].name, self.fe.sorts[sort].name)))
         }
       }
-      (InferSort::Unknown {must_bound, sorts, ..}, tgt) => {
+      (InferSort::Unknown {src, must_bound, sorts, ..}, tgt) => {
         let s = match tgt {
           InferTarget::Bound(sa) => {*must_bound = true; Some(self.fe.data[sa].sort.unwrap())}
           InferTarget::Reg(sa) => Some(self.fe.data[sa].sort.unwrap()),
           _ => None,
         };
         let mvars = &mut self.lc.mvars;
-        Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt)).clone())
+        let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
+        Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt, Some(sp))).clone())
       }
       (&mut InferSort::Reg {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
       (&mut InferSort::Bound {sort, ..}, tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
@@ -326,16 +328,16 @@ impl BuildArgs {
   }
 
   fn push_var(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>,
-    a: Option<AtomID>, is: &Option<InferSort>) -> Option<Option<EType>> {
+    a: Option<AtomID>, is: &Option<InferSort>) -> Option<EType> {
     match is.as_ref().unwrap_or_else(|| &vars[&a.unwrap()].1) {
       &InferSort::Bound {sort} => {
         self.push_bound(a)?;
-        Some(Some(EType::Bound(sort)))
+        Some(EType::Bound(sort))
       },
       &InferSort::Reg {sort, ref deps} => {
         let n = self.deps(deps);
         if let Some(a) = a {self.map.insert(a, n);}
-        Some(Some(EType::Reg(sort, n)))
+        Some(EType::Reg(sort, n))
       }
       InferSort::Unknown {..} => unreachable!(),
     }
@@ -433,14 +435,16 @@ impl Elaborator {
     };
     Ok(match ty {
       None => {
+        let src = sp.unwrap();
+        let fsp = self.fspan(src);
         if self.mm0_mode {
-          self.report(ElabError::warn(sp.unwrap(), "(MM0 mode) variable missing sort"))
+          self.report(ElabError::warn(src, "(MM0 mode) variable missing sort"))
         }
         InferBinder::Var(x, (lk == LocalKind::Dummy, InferSort::Unknown {
-          src: sp.unwrap(),
+          src,
           must_bound: lk.is_bound(),
           dummy: lk == LocalKind::Dummy,
-          sorts: vec![(None, self.lc.new_mvar(InferTarget::Unknown))].into_iter().collect()
+          sorts: vec![(None, self.lc.new_mvar(InferTarget::Unknown, Some(fsp)))].into_iter().collect()
         }))
       },
       Some(Type::DepType(d)) => InferBinder::Var(x, self.elab_dep_type(error, lk, d)?),
@@ -592,14 +596,12 @@ impl Elaborator {
         };
         for e in self.finalize_vars(true) {report!(e)}
         if error {return Ok(())}
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
         for &(sp, a, ref is) in &self.lc.var_order {
-          match ba.push_var(&self.lc.vars, a, is) {
-            None => Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?,
-            Some(None) => {}
-            Some(Some(ty)) => args.push((a, ty)),
-          }
+          let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
+            ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
+          args.push((a, ty));
         }
         let (ret, val) = match val {
           None => match ret {
@@ -614,7 +616,7 @@ impl Elaborator {
             }
             let deps = ba.expr_deps(&self.env, &val);
             let val = {
-              let mut de = Dedup::new(self.lc.var_order.len());
+              let mut de = Dedup::new(&args);
               let nh = NodeHasher::new(&self.lc, self.format_env(), self.fspan(sp));
               let i = de.dedup(&nh, &val)?;
               let Builder {mut ids, heap} = self.to_builder(&de)?;
@@ -671,16 +673,14 @@ impl Elaborator {
         }
         for e in self.finalize_vars(false) {report!(e)}
         if error {return Ok(())}
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(self.lc.var_order.len());
         let mut ba = BuildArgs::default();
         for &(sp, a, ref is) in &self.lc.var_order {
-          match ba.push_var(&self.lc.vars, a, is) {
-            None => Err(ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?,
-            Some(None) => (),
-            Some(Some(ty)) => args.push((a, ty)),
-          }
+          let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
+            ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
+          args.push((a, ty));
         }
-        let mut de = Dedup::new(self.lc.var_order.len());
+        let mut de = Dedup::new(&args);
         let span = self.fspan(d.id);
         let nh = NodeHasher::new(&self.lc, self.format_env(), span.clone());
         let mut is = Vec::new();
@@ -867,7 +867,7 @@ impl Elaborator {
       }
       (vis, Some((|| -> Result<Option<Expr>> {
         dummies(self.format_env(), &fsp, &mut lc, &es[4])?;
-        let mut de = Dedup::new(args.len());
+        let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
         let i = de.dedup(&nh, &es[5])?;
         let Builder {mut ids, heap} = self.to_builder(&de)?;
@@ -895,7 +895,7 @@ impl Elaborator {
     let mut vars = (HashMap::new(), 1);
     let (mut lc, args) = self.binders(&fsp, Uncons::from(es[1].clone()), &mut vars)?;
     // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
-    let mut de = Dedup::new(lc.var_order.len());
+    let mut de = Dedup::new(&args);
     let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
     // crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
     let mut is = Vec::new();

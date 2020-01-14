@@ -834,17 +834,20 @@ make_builtins! { self, sp1, sp2, args,
   },
   IsMVar: Exact(1) => LispVal::bool(args[0].is_mvar()),
   IsGoal: Exact(1) => LispVal::bool(args[0].is_goal()),
-  NewMVar: AtLeast(0) => self.lc.new_mvar(
-    if args.is_empty() { InferTarget::Unknown }
-    else if args.len() == 2 {
-      let sort = try1!(args[0].as_atom().ok_or("expected an atom"));
-      if try1!(args[1].as_bool().ok_or("expected a bool")) {
-        InferTarget::Bound(sort)
-      } else {
-        InferTarget::Reg(sort)
-      }
-    } else {try1!(Err("invalid arguments"))}
-  ),
+  NewMVar: AtLeast(0) => {
+    let fsp = self.fspan(sp1);
+    self.lc.new_mvar(
+      if args.is_empty() { InferTarget::Unknown }
+      else if args.len() == 2 {
+        let sort = try1!(args[0].as_atom().ok_or("expected an atom"));
+        if try1!(args[1].as_bool().ok_or("expected a bool")) {
+          InferTarget::Bound(sort)
+        } else {
+          InferTarget::Reg(sort)
+        }
+      } else {try1!(Err("invalid arguments"))},
+      Some(fsp))
+  },
   PrettyPrint: Exact(1) =>
     LispVal::string(ArcString::new(format!("{}", self.format_env().pp(&args[0], 80)))),
   NewGoal: Exact(1) => LispVal::goal(self.fspan(sp1), args.pop().unwrap()),
@@ -871,7 +874,10 @@ make_builtins! { self, sp1, sp2, args,
     self.stack.push(Stack::Have(sp1, x));
     let mut stack = vec![];
     let state = match args.pop().filter(|_| args.len() > 0) {
-      None => RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown), p},
+      None => {
+        let fsp = self.fspan(sp1);
+        RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown, Some(fsp)), p}
+      }
       Some(e) => {
         stack.push(RStack::Typed(p));
         RState::RefineExpr {tgt: InferTarget::Unknown, e}
@@ -1228,7 +1234,13 @@ impl<'a> Evaluator<'a> {
                   match args.pop() {
                     None => State::Refine {
                       sp: sp1, stack: vec![], gv,
-                      state: RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown), p}
+                      state: RState::RefineProof {
+                        tgt: {
+                          let fsp = self.fspan(sp1);
+                          self.lc.new_mvar(InferTarget::Unknown, Some(fsp))
+                        },
+                        p
+                      }
                     },
                     Some(tgt) if args.is_empty() => State::Refine {
                       sp: sp1, stack: vec![], gv, state: RState::RefineProof {tgt, p}

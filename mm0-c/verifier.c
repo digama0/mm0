@@ -654,8 +654,8 @@ void verify(u8* file, u64 len) {
     g_stmt = stmt;
     u8* next_stmt = stmt + g_data;
     if (!(next_stmt + CMD_MAX_SIZE <= g_end)) {
-      fprintf(stderr, "stmt: %lX, g_data: %X, len: %lX\n",
-        stmt - g_file, g_data, g_end - g_file);
+      // fprintf(stderr, "stmt: %lX, g_data: %X, len: %lX\n",
+      //   stmt - g_file, g_data, g_end - g_file);
       ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
     }
 

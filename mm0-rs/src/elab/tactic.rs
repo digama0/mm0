@@ -20,7 +20,7 @@ pub enum RStack {
   Goals {g: LispVal, gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
   Coerce(LispVal),
   Typed(LispVal),
-  RefineApp {tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
+  RefineApp {sp2: Span, tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
   RefineExtraArgs {sp: Span, tgt: LispVal, u: Uncons, head: LispVal, args: Vec<LispVal>},
   RefineBis {sp: Span, sp2: Span, tgt: LispVal, im: InferMode, t: ThmID, u: Uncons, args: Vec<LispVal>},
   RefineHyps {sp: Span, sp2: Span, tgt: LispVal, t: ThmID, u: Uncons, args: Vec<LispVal>,
@@ -33,7 +33,7 @@ pub enum RState {
   Finish,
   RefineProof {tgt: LispVal, p: LispVal},
   RefineExpr {tgt: InferTarget, e: LispVal},
-  RefineApp {tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
+  RefineApp {sp2: Span, tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
   Ret(LispVal),
   RefineArgs {sp: Span, v: LispVal, tgt: LispVal, head: LispVal, u: Uncons},
   RefineExtraArgs {sp: Span, tgt: LispVal, u: Uncons, head: LispVal, args: Vec<LispVal>},
@@ -53,7 +53,7 @@ impl EnvDisplay for RState {
         "RefineProof {{\n  tgt: {},\n  p: {}}}", fe.to(tgt), fe.to(p)),
       RState::RefineExpr {tgt, e} => write!(f,
         "RefineExpr {{\n  tgt: {},\n  e: {}}}", fe.to(tgt), fe.to(e)),
-      RState::RefineApp {tgt, t, u, args} => write!(f,
+      RState::RefineApp {tgt, t, u, args, ..} => write!(f,
         "RefineApp {{\n  tgt: {},\n  {} {} -> {}}}",
         fe.to(tgt), fe.to(t), fe.to(u), fe.to(args)),
       RState::Ret(e) => write!(f, "Ret({})", fe.to(e)),
@@ -244,7 +244,11 @@ impl Elaborator {
     if self.occurs(mv, e) {
       Err("occurs-check failed, can't build infinite assignment".into())
     } else {
-      *m.get_mut() = e.clone();
+      let mut e = e.clone();
+      if e.fspan().is_none() {
+        if let Some(sp) = m.get().fspan() {e = e.span(sp)}
+      }
+      *m.get_mut() = e;
       Ok(LispVal::undef())
     }
   }
@@ -386,19 +390,19 @@ impl Elaborator {
               self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
               RState::Ret(head)
             } else {
-              let mv = self.lc.new_mvar(InferTarget::Unknown);
+              let mv = self.lc.new_mvar(InferTarget::Unknown, Some(self.fspan(sp2)));
               let head = self.new_goal_gv(gv, sp, mv);
               self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
               RState::RefineExtraArgs {sp, tgt, u, head, args: vec![]}
             }
           }
           RefineExpr::App(sp, sp2, im, a, u) => {
+            let head = LispVal::atom(a).span(self.fspan(sp2));
             if let Some((_, v, _)) = self.lc.get_proof(a) {
-              let head = LispVal::atom(a).span(self.fspan(sp));
               self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
               RState::RefineArgs {sp, v: v.clone(), tgt, u, head}
             } else if let Some(DeclKey::Thm(t)) = self.data[a].decl {
-              RState::RefineBis {sp, sp2, tgt, im, t, args: vec![LispVal::atom(a)], u}
+              RState::RefineBis {sp, sp2, tgt, im, t, args: vec![head], u}
             } else {
               Err(ElabError::new_e(sp2, format!(
                 "unknown theorem/hypothesis '{}'", self.data[a].name)))?
@@ -419,9 +423,9 @@ impl Elaborator {
           }
           Some(RStack::Coerce(tgt)) => RState::Coerce {tgt, p: ret},
           Some(RStack::Typed(p)) => RState::RefineProof {tgt: ret, p},
-          Some(RStack::RefineApp {tgt, t, u, mut args}) => {
+          Some(RStack::RefineApp {sp2, tgt, t, u, mut args}) => {
             args.push(ret);
-            RState::RefineApp {tgt, t, u, args}
+            RState::RefineApp {sp2, tgt, t, u, args}
           }
           Some(RStack::RefineBis {sp, sp2, tgt, im, t, u, mut args}) => {
             args.push(ret);
@@ -442,7 +446,7 @@ impl Elaborator {
         }
         RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e)? {
           RefineExpr::App(_, sp2, _, AtomID::UNDER, _) => {
-            let head = self.lc.new_mvar(tgt);
+            let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2)));
             self.spans.insert_if(sp2, || ObjectKind::Expr(head.clone()));
             RState::Ret(head)
           }
@@ -458,7 +462,7 @@ impl Elaborator {
               };
               RState::Ret(self.coerce_term(sp, tgt, sort, bd, head)?)
             } else if let Some(t) = if tgt.bound() {None} else {self.term(a)} {
-              RState::RefineApp {tgt, t, u, args: vec![head]}
+              RState::RefineApp {sp2, tgt, t, u, args: vec![head]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
               self.lc.vars.insert(a, (true, InferSort::Bound {sort}));
@@ -477,16 +481,16 @@ impl Elaborator {
           }
           RefineExpr::Exact(e) => RState::Ret(e),
         },
-        RState::RefineApp {tgt: ret, t, mut u, mut args} => 'l: loop { // labeled block, not a loop
+        RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => 'l: loop { // labeled block, not a loop
           let tdata = &self.env.terms[t];
           for (_, ty) in &tdata.args[args.len() - 1..] {
             let tgt = self.type_target(ty);
             match u.next() {
               Some(e) => {
-                stack.push(RStack::RefineApp {tgt: ret, t, u, args});
+                stack.push(RStack::RefineApp {sp2, tgt: ret, t, u, args});
                 break 'l RState::RefineExpr {tgt, e}
               }
-              None => args.push(self.lc.new_mvar(tgt))
+              None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2))))
             }
           }
           let s = tdata.ret.0;
@@ -499,7 +503,7 @@ impl Elaborator {
         RState::RefineExtraArgs {sp, tgt, mut u, head, args} => match u.next() {
           Some(p) => {
             stack.push(RStack::RefineExtraArgs {sp, tgt, u, head, args});
-            let mv = self.lc.new_mvar(InferTarget::Unknown);
+            let mv = self.lc.new_mvar(InferTarget::Unknown, Some(self.fspan(sp)));
             RState::RefineProof {tgt: mv, p}
           }
           None => {
@@ -520,7 +524,7 @@ impl Elaborator {
               stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
               break 'l2 RState::RefineExpr {tgt: tgt1, e}
             } else {
-              args.push(self.lc.new_mvar(tgt1))
+              args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2))))
             }
           }
           let mut subst = Subst::new(&self.env, &tdata.heap, Vec::from(&args[1..]));

@@ -38,30 +38,40 @@ pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   const VAR: fn(usize) -> Self;
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
     de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>>;
+  fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64;
 }
 
 #[derive(Debug)]
 pub struct Dedup<H: NodeHash> {
   map: HashMap<Rc<H>, usize>,
   prev: HashMap<*const LispKind, usize>,
-  pub vec: Vec<(Rc<H>, bool)>,
+  pub vec: Vec<(Rc<H>, bool, u64)>,
+  bv: u64,
 }
 
 impl<H: NodeHash> Dedup<H> {
-  pub fn new(nargs: usize) -> Dedup<H> {
-    let vec: Vec<_> = (0..nargs).map(|i| (Rc::new(H::VAR(i)), true)).collect();
+  pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
+    let mut bv = 1;
+    let vec: Vec<_> = args.iter().enumerate()
+      .map(|(i, (_, t))| (Rc::new(H::VAR(i)), true, match t {
+        Type::Bound(_) => (bv, bv *= 2).0,
+        &Type::Reg(_, deps) => deps,
+      })).collect();
     Dedup {
-      map: vec.iter().enumerate().map(|(i, (r, _))| (r.clone(), i)).collect(),
+      map: vec.iter().enumerate().map(|(i, r)| (r.0.clone(), i)).collect(),
       prev: HashMap::new(),
       vec,
+      bv,
     }
   }
 
   pub fn add_direct(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
-        let n = self.vec.len();
-        self.vec.push((e.key().clone(), false));
+        let vec = &mut self.vec;
+        let n = vec.len();
+        let vars = e.key().vars(&mut self.bv, |i| vec[i].2);
+        vec.push((e.key().clone(), false, vars));
         e.insert(n);
         n
       }
@@ -103,12 +113,13 @@ impl<H: NodeHash> Dedup<H> {
     let mut d = Dedup {
       map: HashMap::new(),
       prev: self.prev.clone(),
-      vec: Vec::with_capacity(self.vec.len())
+      vec: Vec::with_capacity(self.vec.len()),
+      bv: self.bv,
     };
-    for (i, &(ref h, b)) in self.vec.iter().enumerate() {
+    for (i, &(ref h, b, v)) in self.vec.iter().enumerate() {
       let t = Rc::new(f(h));
       d.map.insert(t.clone(), i);
-      d.vec.push((t, b));
+      d.vec.push((t, b, v));
     }
     d
   }
@@ -142,7 +153,7 @@ impl Elaborator {
   pub fn to_builder<T: Node>(&self, de: &Dedup<T::Hash>) -> Result<Builder<T>> {
     let mut ids: Vec<Val<T>> = Vec::with_capacity(de.vec.len());
     let mut heap = Vec::new();
-    for &(ref e, b) in &de.vec {
+    for &(ref e, b, _) in &de.vec {
       let node = T::from(&e, &mut ids);
       if b {
         ids.push(Val::Ref(heap.len()));
@@ -189,6 +200,14 @@ impl NodeHash for ExprHash {
         ExprHash::App(tid, ns.into())
       }
     }))
+  }
+
+  fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64 {
+    match self {
+      &Self::Var(n) => deps(n),
+      &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
+      Self::App(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
+    }
   }
 }
 
@@ -360,7 +379,43 @@ impl NodeHash for ProofHash {
             for e in u { ns.push(de.dedup(nh, &e)?) }
             let td = &nh.fe.thms[tid];
             let mut heap = vec![None; td.heap.len()];
-            for i in 0..td.args.len() {heap[i] = Some(ns[i])}
+            let mut bvs: Vec<u64> = vec![];
+            for (i, (_, t)) in td.args.iter().enumerate() {
+              heap[i] = Some(ns[i]);
+              let deps = de.vec[ns[i]].2;
+              let ok = match t {
+                Type::Bound(_) => {
+                  bvs.push(deps);
+                  ns[..i].iter().all(|&j| de.vec[j].2 & deps == 0)
+                }
+                &Type::Reg(_, mut d) =>
+                  bvs.iter().all(|&bv| (d & 1, d /= 2).0 != 0 || bv & deps == 0),
+              };
+              if !ok {
+                let mut dvs = vec![];
+                let mut bvs = vec![];
+                for (i, (_, t)) in td.args.iter().enumerate() {
+                  match t {
+                    Type::Bound(_) => {
+                      bvs.push(i);
+                      dvs.extend((0..i).map(|j| (j, i)));
+                    }
+                    &Type::Reg(_, mut d) =>
+                      dvs.extend(bvs.iter().filter(|_| (d & 1, d /= 2).0 == 0).map(|&j| (j, i)))
+                  }
+                }
+                let mut err = format!("disjoint variable violation at {}", adata.name);
+                let args: Vec<_> = Uncons::from(r.clone()).skip(1).collect();
+                for (i, j) in dvs {
+                  use std::fmt::Write;
+                  write!(err, "\n  ({}, {}) -> ({}, {})",
+                    nh.fe.to(&td.args[i].0.unwrap_or(AtomID::UNDER)),
+                    nh.fe.to(&td.args[j].0.unwrap_or(AtomID::UNDER)),
+                    nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).unwrap();
+                }
+                return Err(nh.err(&head, err))
+              }
+            }
             let rhs = Self::subst(de, &nh.fe, &td.heap, &mut heap, &td.ret);
             ProofHash::Thm(tid, ns.into(), rhs)
           },
@@ -397,6 +452,15 @@ impl NodeHash for ProofHash {
         }
       }
     }))
+  }
+
+  fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64 {
+    match self {
+      &Self::Var(n) => deps(n),
+      &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
+      Self::Term(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
+      _ => 0,
+    }
   }
 }
 
@@ -480,7 +544,7 @@ impl<'a> Subst<'a> {
         self.subst[i] = e.clone();
         e
       }
-      ExprNode::Dummy(_, s) => lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom)),
+      ExprNode::Dummy(_, s) => lc.new_mvar(InferTarget::Bound(self.env.sorts[s].atom), None),
       ExprNode::App(t, ref es) => {
         let mut args = vec![LispVal::atom(self.env.terms[t].atom)];
         args.extend(es.iter().map(|e| self.subst_mut(lc, e)));
