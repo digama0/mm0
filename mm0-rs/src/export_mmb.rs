@@ -360,7 +360,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   fn write_proof(&self, w: &mut impl Write,
     heap: &[ProofNode],
-    reorder: &mut Reorder<(u32, bool)>,
+    reorder: &mut Reorder,
     hyps: &[u32],
     head: &ProofNode,
     save: bool
@@ -369,11 +369,10 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
       &ProofNode::Ref(i) => match reorder.map[i] {
         None => {
           let n = self.write_proof(w, heap, reorder, hyps, &heap[i], true)?;
-          reorder.map[i] = Some((n, false));
+          reorder.map[i] = Some(n);
           n
         }
-        Some((n, false)) => {ProofCmd::Ref(n).write_to(w)?; n}
-        Some((_, true)) => unreachable!()
+        Some(n) => {ProofCmd::Ref(n).write_to(w)?; n}
       }
       ProofNode::Dummy(_, _) => unreachable!(),
       &ProofNode::Term {term, ref args} => {
@@ -388,7 +387,9 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         hyps[n]
       }
       &ProofNode::Thm {thm, ref args, ref res} => {
-        for e in &**args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
+        let (args, hs) = args.split_at(self.env.thms[thm].args.len());
+        for e in hs {self.write_proof(w, heap, reorder, hyps, e, false)?;}
+        for e in args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         self.write_proof(w, heap, reorder, hyps, res, false)?;
         if save {
           ProofCmd::ThmSave(thm).write_to(w)?;
@@ -415,21 +416,27 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   fn write_conv(&self, w: &mut impl Write,
     heap: &[ProofNode],
-    reorder: &mut Reorder<(u32, bool)>,
+    reorder: &mut Reorder,
     hyps: &[u32],
     head: &ProofNode,
   ) -> io::Result<()> {
     Ok(match head {
       &ProofNode::Ref(i) => match reorder.map[i] {
         None => {
-          ProofCmd::ConvCut.write_to(w)?;
-          self.write_conv(w, heap, reorder, hyps, &heap[i])?;
-          ProofCmd::ConvSave.write_to(w)?;
-          reorder.map[i] = Some((reorder.idx, true));
-          reorder.idx += 1;
+          let e = &heap[i];
+          match e {
+            ProofNode::Refl(_) | ProofNode::Ref(_) =>
+              self.write_conv(w, heap, reorder, hyps, e)?,
+            _ => {
+              ProofCmd::ConvCut.write_to(w)?;
+              self.write_conv(w, heap, reorder, hyps, e)?;
+              ProofCmd::ConvSave.write_to(w)?;
+              reorder.map[i] = Some(reorder.idx);
+              reorder.idx += 1;
+            }
+          };
         }
-        Some((_, false)) => unreachable!(),
-        Some((n, true)) => ProofCmd::ConvRef(n).write_to(w)?,
+        Some(n) => ProofCmd::ConvRef(n).write_to(w)?,
       }
       ProofNode::Dummy(_, _) |
       ProofNode::Term {..} |
@@ -479,7 +486,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
             LE::write_u64(header.term(t), n);
             (&td.span, t.0,
               if td.val.is_none() {STMT_TERM}
-              else if td.vis.contains(Modifiers::LOCAL) {STMT_DEF | STMT_LOCAL}
+              else if td.vis == Modifiers::LOCAL {STMT_DEF | STMT_LOCAL}
               else {STMT_DEF},
              &ad.name)
           }
@@ -488,7 +495,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
             LE::write_u64(header.thm(t), n);
             (&td.span, t.0,
               if td.proof.is_none() {STMT_AXIOM}
-              else if td.vis.contains(Modifiers::PUB) {STMT_THM}
+              else if td.vis == Modifiers::PUB {STMT_THM}
               else {STMT_THM | STMT_LOCAL},
              &ad.name)
           }
@@ -649,7 +656,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                 Some(None) => panic!("proof {} missing", self.env.data[td.atom].name),
                 Some(Some(Proof {heap, hyps, head})) => {
                   let mut reorder = Reorder::new(
-                    td.args.len().try_into().unwrap(), heap.len(), |i| (i, false));
+                    td.args.len().try_into().unwrap(), heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());
                   for mut h in hyps {
                     while let &ProofNode::Ref(i) = h {h = &heap[i]}
@@ -661,7 +668,6 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                     } else {unreachable!()}
                   }
                   self.write_proof(&mut vec, &heap, &mut reorder, &ehyps, head, false)?;
-                  vec.write_u8(0)?;
                   STMT_THM | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0}
                 }
               };

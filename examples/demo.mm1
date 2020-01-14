@@ -58,21 +58,21 @@ axiom add_succ: $ a + succ b = succ (a + b) $;
 axiom add_zero: $ a + 0 = a $;
 
 theorem two_plus_two_is_four: $ 2 + 2 = 4 $ =
-(begin
-  (refine 'trans)
-  (refine 'add_succ)
-  (refine 'succ_eq)
-  (refine 'trans)
-  (refine 'add_succ)
-  (refine 'succ_eq)
-  (refine 'add_zero)
+(focus
+  'trans
+  'add_succ
+  'succ_eq
+  'trans
+  'add_succ
+  'succ_eq
+  'add_zero
 (stat));
 
 theorem two_plus_two_is_four_ALT: $ 2 + 2 = 4 $ =
-(begin
-  (refine '(trans add_succ succ_eq))
-  (refine '(trans add_succ succ_eq))
-  (refine 'add_zero)
+(focus
+  '(trans add_succ succ_eq)
+  '(trans add_succ succ_eq)
+  'add_zero
 (stat));
 
 theorem two_plus_two_is_four_ALT2: $ 2 + 2 = 4 $ =

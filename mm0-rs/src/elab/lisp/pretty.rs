@@ -248,7 +248,9 @@ impl<'a> Pretty<'a> {
     let ad = &env.data[a];
     let t = if let Some(DeclKey::Thm(t)) = ad.decl {t} else {None?};
     let td = &env.thms[t];
-    if !u.extend_into(td.args.len(), args) {None?}
+    let n = td.args.len();
+    if !u.extend_into(n, args) {None?}
+    for _ in 0..n {u.next();}
     Some((ad, td))
   }
 
@@ -273,10 +275,10 @@ impl<'a> Pretty<'a> {
         let mut args = vec![];
         let mut doc = if let Some((ad, td)) = self.get_thm_args(&mut u, &mut args) {
           let doc = self.alloc(Doc::BorrowedText(&ad.name));
-          let doc = self.app_doc(doc, td.args.iter().zip(args.iter()).map(|((_, ty), e)| {
+          let doc = self.app_doc(doc, td.args.iter().zip(&args).map(|((_, ty), e)| {
             match ty {
               Type::Bound(_) => (true, self.pp_lisp(e)),
-              Type::Reg(_, _) => (e.small(), self.expr(e)),
+              Type::Reg(_, _) => (e.small(), self.expr_paren(e, Prec::Max).doc),
             }
           }));
           self.alloc(Doc::Group(doc))
@@ -421,6 +423,6 @@ impl<'a> FormatEnv<'a> {
 
 impl<'a> fmt::Display for PPExpr<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.fe.pretty(|p| p.expr(self.e).render_fmt(self.width, f))
+    self.fe.pretty(|p| p.expr_paren(self.e, Prec::Max).doc.render_fmt(self.width, f))
   }
 }

@@ -259,7 +259,7 @@ impl Elaborator {
   }
 
   fn unify_core(&mut self, e1: &LispVal, e2: &LispVal) -> SResult<LispVal> {
-    // crate::server::log(format!("{} =?= {}", self.print(e1), self.print(e2)));
+    // println!("{} =?= {}", self.format_env().pp(e1, 80), self.format_env().pp(e2, 80));
     // (|| {
     if e1.ptr_eq(e2) {return Ok(LispVal::undef())}
     if let Some(r) = e1.as_mvar(|e1, m| self.assign(false, e1, m, e2)) {return r}
@@ -284,16 +284,13 @@ impl Elaborator {
             cs.push(self.unify_core(&x1, &x2)?);
           }
           if u1.exactly(0) && u2.exactly(0) {
-            let mut has_undef = false;
-            if cs[1..].iter().all(|c| !c.is_def() && {has_undef = true; true}) {
-              Ok(LispVal::undef())
-            } else {
-              if has_undef {
-                for (c, x) in cs[1..].iter_mut().zip(u3) {
-                  if !c.is_def() {*c = x}
-                }
+            if cs[1..].iter().any(|c| c.is_def()) {
+              for (c, x) in cs[1..].iter_mut().zip(u3) {
+                if !c.is_def() {*c = x}
               }
               Ok(LispVal::list(cs))
+            } else {
+              Ok(LispVal::undef())
             }
           } else {
             Err(format!("bad terms: {}, {}", self.print(e1), self.print(e2)))?
@@ -321,7 +318,8 @@ impl Elaborator {
         "variable vs term: {} != {}", self.print(e1), self.print(e2))),
     }
     // })().map(|r| {
-    //   crate::server::log(format!("{} =?= {}\n:= {}", self.print(e1), self.print(e2), self.print(&r)));
+    //   let fe = self.format_env();
+    //   println!("{} =?= {}\n:= {}", fe.pp(e1, 80), fe.pp(e2, 80), fe.pp(&r, 80));
     //   r
     // })
   }
@@ -335,10 +333,8 @@ impl Elaborator {
       if !u1.extend_into(n, &mut args) {return Err(format!("bad term: {}", self.print(&u1)))}
       let e = Subst::new(&self.env, &val.heap, args.clone()).subst_mut(&mut self.lc, &val.head);
       let u = self.unify1(&e, e2)?;
-      if u.is_def() {
-        let u = LispVal::unfold(a, args, u);
-        Ok(if sym {LispVal::sym(u)} else {u})
-      } else {Ok(u)}
+      let u = LispVal::unfold(a, args, if u.is_def() {u} else {e});
+      Ok(if sym {LispVal::sym(u)} else {u})
     } else {return Err(format!("not a definition: {}", self.print(&a)))}
   }
 
@@ -357,7 +353,7 @@ impl Elaborator {
   ) -> Result<RefineResult> {
     let fsp = self.fspan(sp);
     loop {
-      // log!("{}", self.print(&active));
+      // println!("{}", self.print(&active));
       active = match active {
         RState::Goals {mut gs, mut es} => match es.next() {
           None => {gv.extend(gs); RState::Finish}
@@ -420,7 +416,7 @@ impl Elaborator {
           Some(RStack::Goals {g, gs, es}) => {
             g.as_ref_(|e| *e = ret).unwrap();
             RState::Goals {gs, es}
-          },
+          }
           Some(RStack::Coerce(tgt)) => RState::Coerce {tgt, p: ret},
           Some(RStack::Typed(p)) => RState::RefineProof {tgt: ret, p},
           Some(RStack::RefineApp {tgt, t, u, mut args}) => {
