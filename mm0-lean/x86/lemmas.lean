@@ -1381,16 +1381,50 @@ begin
 end
 
 theorem config.isIO.determ {k k₁ k₂} :
-  config.isIO k k₁ → config.isIO k k₂ → k₁ = k₂ :=
+  config.isIO k k₁ → config.isIO k k₂ →
+  ∃ k' v₁ v₂,
+    k₁ = config.set_reg k' 11 v₁ ∧
+    k₂ = config.set_reg k' 11 v₂ :=
 begin
-  rintro ⟨l₁, _, m₁, d₁, _, _, ⟨⟩, h₁⟩ ⟨l₂, _, m₂, d₂, _, _, ⟨⟩, h₂⟩,
+  rintro ⟨l₁, _, m₁, d₁, _, _, ⟨⟩, ⟨⟩, k', a₁, q₁, _, ⟨⟨⟩, rfl⟩, h₁⟩
+         ⟨l₂, _, m₂, d₂, _, _, ⟨⟩, ⟨⟩, k'', a₂, q₂, _, ⟨⟨⟩, rfl⟩, h₂⟩,
   cases mem_decode.determ m₁ d₁ m₂ d₂,
-  exact EA.write.determ h₁ h₂
+  cases EA.write.determ a₁ a₂,
+  cases h₁, cases h₂,
+  exact ⟨_, _, _, rfl, rfl⟩
 end
 
-theorem config.step_no_exit {k k₁ r} :
+theorem config.step.no_exit {k k₁ r} :
   config.step k k₁ → ¬ config.exit k r :=
 λ h ⟨k', h', _⟩, config.step_noIO h h'
+
+theorem set_reg_ne {k r r' q} (h : r' ≠ r) :
+  (config.set_reg k r q).regs r' = k.regs r' :=
+if_neg h
+
+theorem config.set_reg_11_exec_exit {k v r} :
+  exec_exit (config.set_reg k 11 v) r ↔ exec_exit k r :=
+begin
+  split; rintro ⟨e⟩; split,
+  { rwa set_reg_ne at e, rintro ⟨⟩ },
+  { rwa set_reg_ne, rintro ⟨⟩ },
+end
+
+theorem config.isIO.determ_exec {k k₁ k₂ r}
+  (h₁ : config.isIO k k₁) (h₂ : config.isIO k k₂) :
+  exec_exit k₁ r ↔ exec_exit k₂ r :=
+begin
+  rcases h₁.determ h₂ with ⟨k', v₁, v₂, rfl, rfl⟩,
+  simp [config.set_reg_11_exec_exit],
+end
+
+theorem exec_io.no_exit {i o k i' o' k' ret r} :
+  exec_io i o k (k.regs RAX) i' o' k' ret → ¬ exec_exit k r :=
+begin
+  rintro h ⟨e⟩, rw e at h,
+  rcases h with ⟨_, _, _, _, e⟩ | ⟨_, _, _, _, _, _, _, e⟩;
+  cases bitvec.reify_eq₂ e,
+end
 
 theorem read_from_fd.io_part {fd i H_dat i'}
   (H : read_from_fd fd i H_dat i') : i' <:+ i :=
@@ -1412,6 +1446,15 @@ theorem exec_io.io_part {k₁ i₁ o₁ k₂ i₂ o₂ call ret}
 begin
   induction H, exact ⟨list.suffix_refl _, list.prefix_refl _⟩,
   exact ⟨exec_read.io_part H_a_2, list.prefix_refl _⟩,
+end
+
+theorem kcfg.step.no_exit {k k' r} :
+  kcfg.step k k' → ¬ config.exit k.k r :=
+begin
+  rintro (⟨_, _, _, _, h⟩ | ⟨_, _, k₁, k₂, _, _, _, _, h₁, h⟩),
+  { exact h.no_exit },
+  { rintro ⟨k₃, h₂, e⟩,
+    exact h.no_exit ((h₁.determ_exec h₂).2 e) },
 end
 
 theorem kcfg.step.io_part {k₁ i₁ o₁ k₂ i₂ o₂}

@@ -829,17 +829,19 @@ inductive exec_read (i : list byte) (k : config)
   k.write_mem (k.regs RSI) dat k' →
   exec_read i' k' ret
 
-inductive exec_io (i o : list byte) (k : config) : qword → list byte → list byte → config → qword → Prop
+inductive exec_io (i o : list byte) (k : config) (rax : qword) : list byte → list byte → config → qword → Prop
 | _open {pathname fd} :
   k.read_cstr (k.regs RDI) pathname →
   let flags := k.regs RSI in
   flags.to_nat ∈ [0, 0x241] → -- O_RDONLY, or O_WRONLY | O_CREAT | O_TRUNC
-  exec_io 2 i o k fd
+  rax = 2 →
+  exec_io i o k fd
 | _read {buf i' k' ret} :
   let fd := k.regs RDI, count := (k.regs RDX).to_nat in
   k.mem.read (k.regs RSI) buf → buf.length = count →
   exec_read i k fd count i' k' ret →
-  exec_io 0 i' o k' ret
+  rax = 0 →
+  exec_io i' o k' ret
 -- TODO: write, fstat, mmap
 
 inductive exec_exit (k : config) : qword → Prop
@@ -868,5 +870,15 @@ def terminates (k : config) (i o : list byte) :=
 
 def succeeds (k : config) (i o : list byte) :=
 ∃ i' k', kcfg.steps ⟨i, [], k⟩ ⟨i', o, k'⟩ ∧ k'.exit 0
+
+inductive hoare_p (Q : kcfg → Prop) : kcfg → Prop
+| zero {{k}} : Q k → hoare_p k
+| step {{k}} : (∃ k', kcfg.step k k') →
+  (∀ k', k.step k' → hoare_p k') → hoare_p k
+| exit (k : kcfg) (ret) :
+  k.k.exit ret → (ret = 0 → Q k) → hoare_p k
+
+def hoare (P : kcfg → Prop) (Q : kcfg → kcfg → Prop) :=
+∀ {{k}}, P k → hoare_p (Q k) k
 
 end x86

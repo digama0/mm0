@@ -155,5 +155,4 @@ inductive assemble (locs : list arg) :
   assemble (rip1 :: labs) rip as l rip' →
   assemble labs rip (asm.block as) l rip'
 
-
 end x86
