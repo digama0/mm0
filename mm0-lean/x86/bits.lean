@@ -189,6 +189,8 @@ structure pstate_result (σ α : Type*) :=
 
 def pstate (σ α : Type*) := σ → pstate_result σ α
 
+instance (σ) : has_coe_to_fun (pstate_result σ unit) := ⟨_, λ r, r.P ()⟩
+
 inductive pstate_pure_P {σ α : Type*} (a : α) (s : σ) : α → σ → Prop
 | mk : pstate_pure_P a s
 

@@ -268,6 +268,25 @@ theorem to_nat_inj {n v₁ v₂}
   (h : @bitvec.to_nat n v₁ = bitvec.to_nat v₂) : v₁ = v₂ :=
 subtype.eq $ bits_to_nat_inj h (v₁.2.trans v₂.2.symm)
 
+theorem sign_iff_neg {n v} : @bitvec.sign n v ↔ bitvec.to_int v < 0 :=
+begin
+  unfold bitvec.to_int, cases sign v; simp,
+  apply sub_lt_zero.2, norm_cast,
+  exact lt_trans (to_nat_lt_pow2 _)
+    (nat.pow_lt_pow_of_lt_right dec_trivial (nat.lt_succ_self _)),
+end
+
+theorem to_int_inj {n v₁ v₂}
+  (h : @bitvec.to_int n v₁ = bitvec.to_int v₂) : v₁ = v₂ :=
+begin
+  have : sign v₁ = sign v₂,
+  { apply bool.coe_bool_iff.1,
+    rw [sign_iff_neg, sign_iff_neg, h] },
+  revert h,
+  unfold bitvec.to_int,
+  rw this, cases sign v₂; simp; exact to_nat_inj
+end
+
 @[class] def reify {n} (v : bitvec n) (l : out_param (list bool)) : Prop :=
 from_bits_fill ff l = v
 
@@ -1464,5 +1483,37 @@ begin
   cases H, exact ⟨list.suffix_refl _, list.prefix_refl _⟩,
   exact exec_io.io_part H_a_1
 end
+
+@[simp] theorem EXTZ_id {n} (w : bitvec n) : EXTZ w = w :=
+begin
+  suffices : ∀ l n, list.length l = n → (@EXTZ_aux l n).to_list = l,
+  { exact subtype.eq (this w.1 _ w.2) },
+  intro l, induction l; intros n e; cases e, {refl},
+  unfold EXTZ_aux, rw [vector.to_list_cons, l_ih _ rfl],
+end
+
+@[simp] theorem EXTS_id {n} (w : bitvec n) : EXTS w = w :=
+begin
+  suffices : ∀ l a n, list.length l = n → (@EXTS_aux l a n).to_list = l,
+  { exact subtype.eq (this w.1 _ _ w.2) },
+  intro l, induction l; intros n a e; cases e, {refl},
+  unfold EXTS_aux, rw [vector.to_list_cons, l_ih _ _ rfl],
+end
+
+theorem EA.read_reg_64 {r k q} :
+  (EA.EA_r r).read k wsize.Sz64 q ↔ q = k.regs r :=
+by simp [EA.read]
+
+theorem EA.readq_reg_64 {r k q} :
+  (EA.EA_r r).readq k wsize.Sz64 q ↔ q = k.regs r :=
+by simp [EA.readq, EA.read_reg_64]
+
+theorem EA.write_reg_64 {r k q k'} :
+  (EA.EA_r r).write k wsize.Sz64 q k' ↔ k' = k.set_reg r q :=
+by split; [{rintro ⟨⟩, refl}, {rintro rfl, constructor}]
+
+theorem EA.writeq_reg_64 {r k q k'} :
+  (EA.EA_r r).writeq k wsize.Sz64 q k' ↔ k' = k.set_reg r q :=
+by simp [EA.writeq, EA.write_reg_64]
 
 end x86
