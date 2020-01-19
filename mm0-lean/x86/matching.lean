@@ -202,6 +202,9 @@ theorem block.read.stable {l v k k'}
   (h₁ : block.read l v k) (ss : places l ⊆ stability k k') :
   block.read l v k' := sorry
 
+def hoare (P : kcfg → Prop) (Q : kcfg → kcfg → Prop) :=
+∀ {{k}}, P k → hoare_p (Q k) k
+
 def mHoareIO (P : sProp) (Q : list byte → list byte → mProp) :=
 hoare (λ k, P k.k)
   (λ k k', ∃ i' o', k.input = i' ++ k'.input ∧ k'.output = k.output ++ o' ∧
@@ -548,24 +551,6 @@ begin
     { simp [-add_comm], rw [← add_assoc, add_right_comm],
       exact h_ih rfl } }
 end
-
-theorem hoare_p.bind {P P' : kcfg → Prop}
-  (H : ∀ {{k}}, P k → hoare_p P' k) {k} : hoare_p P k → hoare_p P' k :=
-begin
-  intro h, induction h,
-  exact H h_a,
-  exact hoare_p.step h_a (λ k', h_ih _),
-  by_cases h_ret = 0,
-  { cases H (h_a_1 h),
-    { exact hoare_p.zero a },
-    { cases a with k' h, cases h.no_exit h_a },
-    { exact hoare_p.exit _ _ a a_1 } },
-  { exact hoare_p.exit _ _ h_a h.elim },
-end
-
-theorem hoare_p.mono {P P' : kcfg → Prop}
-  (H : ∀ {{k}}, P k → P' k) {k} : hoare_p P k → hoare_p P' k :=
-hoare_p.bind (λ k h, hoare_p.zero (H h))
 
 theorem hoare.zero {P : kcfg → Prop} {Q : kcfg → kcfg → Prop}
   (H : ∀ {{k}}, P k → Q k k) : hoare P Q :=

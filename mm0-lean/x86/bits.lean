@@ -1,5 +1,5 @@
 -- import data.bitvec
-import data.vector
+import data.vector order.basic
 
 @[reducible] def bitvec (n : ℕ) := vector bool n
 
@@ -30,9 +30,6 @@ section bitwise
   def or  : bitvec n → bitvec n → bitvec n := map₂ bor
   def xor : bitvec n → bitvec n → bitvec n := map₂ bxor
 
-  def shl (x : bitvec n) (i : ℕ) : bitvec n :=
-  bitvec.cong (by simp) $ (repeat ff (min n i)).append (drop i x)
-
   def from_bits_fill (fill : bool) : list bool → ∀ {n}, bitvec n
   | [] n := repeat fill n
   | (a :: l) 0 := vector.nil
@@ -60,7 +57,7 @@ def sign : ∀ {n} (v : bitvec n), bool
 | (n+1) v := v.nth ⟨n, lt_succ_self _⟩
 
 def to_int {n} (v : bitvec n) : ℤ :=
-cond (sign v) (to_nat v - (2^(n+1) : ℕ) : ℤ) (to_nat v)
+cond (sign v) (to_nat v - (2^n : ℕ) : ℤ) (to_nat v)
 
 section arith
   variable {n : ℕ}
@@ -83,6 +80,10 @@ section arith
   bitvec.of_nat _ (to_nat x * to_nat y)
 
   instance : has_mul (bitvec n)  := ⟨bitvec.mul⟩
+
+  def shl (x : bitvec n) (i : ℕ) : bitvec n :=
+  bitvec.of_nat _ (nat.shiftl (to_nat x) i)
+  -- bitvec.cong (by simp) $ (repeat ff (min n i)).append (drop i x)
 end arith
 
 end bitvec
@@ -229,3 +230,59 @@ pstate.lift $ λ s _ s', s' = f s
 def pstate.any {σ α} : pstate σ α := pstate.assert $ λ _ _, true
 
 def pstate.fail {σ α} : pstate σ α := pstate.assert $ λ _ _, false
+
+def pstate_result.le {σ α} (s1 s2 : pstate_result σ α) : Prop :=
+s2.safe → s1.safe ∧ ∀ a s, s1.P a s → s2.P a s
+
+instance {σ α} : has_le (pstate_result σ α) := ⟨pstate_result.le⟩
+instance {σ α} : preorder (pstate_result σ α) :=
+{ le := pstate_result.le,
+  le_refl := λ a h, ⟨h, λ _ _, id⟩,
+  le_trans := λ a b c h1 h2 h,
+    let ⟨h21, h22⟩ := h2 h, ⟨h11, h12⟩ := h1 h21 in
+    ⟨h11, λ _ _ s, h22 _ _ (h12 _ _ s)⟩ }
+
+instance {σ α} : preorder (pstate σ α) := pi.preorder
+
+theorem pstate.bind_le {σ α β} {m m' : pstate σ α} {f f' : α → pstate σ β}
+  (h1 : m ≤ m') (h2 : ∀ a, f a ≤ f' a) :
+  m >>= f ≤ m' >>= f' :=
+λ _ ⟨h3, h4⟩, begin
+  cases h1 _ h3 with h5 h6,
+  refine ⟨⟨h5, λ a s' h, (h2 a s' $ h4 _ _ $ h6 _ _ h).1⟩, _⟩,
+  rintro a s' ⟨a', s'', h, h8⟩,
+  exact ⟨_, _, h6 _ _ h, (h2 _ _ $ h4 _ _ $ h6 _ _ h).2 _ _ h8⟩
+end
+
+theorem pstate.map_le {σ α β} {m m' : pstate σ α} {f f' : α → pstate σ β}
+  (h1 : m ≤ m') : f <$> m ≤ f <$> m' :=
+λ _ h, ⟨(h1 _ h).1, by rintro b s ⟨a', _, h4⟩; exact
+  ⟨_, _, _, (h1 _ h).2 _ _ h4⟩⟩
+
+theorem pstate.lift_le {σ α} {f f' : σ → α → σ → Prop}
+  (H : ∀ s, (∃ a s', f' s a s') →
+    (∃ a s', f s a s') ∧ ∀ a s', f s a s' → f' s a s') :
+  pstate.lift f ≤ pstate.lift f' :=
+λ _, H _
+
+theorem pstate.assert_le {σ α} {f f' : σ → α → Prop}
+  (H : ∀ s, (∃ a, f' s a) →
+    (∃ a, f s a) ∧ ∀ a, f s a → f' s a) : pstate.assert f ≤ pstate.assert f' :=
+begin
+  apply pstate.lift_le,
+  rintro s ⟨a, _, h, e⟩,
+  rcases H s ⟨_, h⟩ with ⟨⟨a', h'⟩, h2'⟩,
+  exact ⟨⟨_, _, h', e⟩, λ a' s' ⟨h1, h2⟩, ⟨h2' _ h1, h2⟩⟩,
+end
+
+theorem pstate.assert_le_any {σ α} {f : σ → α → Prop}
+  (H : ∀ s, ∃ a, f s a) : pstate.assert f ≤ pstate.any :=
+begin
+  rintro s ⟨a, _, _, rfl⟩,
+  cases H s,
+  refine ⟨⟨_, _, h, rfl⟩, λ a s' ⟨_, e⟩, ⟨⟨⟩, e⟩⟩,
+end
+
+theorem pstate.not_safe_top {σ α} {S' S : pstate σ α}
+  (H : ∀ a, ¬ (S a).safe) : S' ≤ S :=
+λ s h, (H _ h).elim

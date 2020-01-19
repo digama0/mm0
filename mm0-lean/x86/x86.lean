@@ -477,13 +477,12 @@ inductive mem.write : mem → qword → list byte → mem → Prop
   m1.write1 w b m2 → mem.write m2 (w + 1) l m3 → mem.write m1 w (b :: l) m3
 
 inductive EA
-| EA_i : qword → EA
-| EA_r : regnum → EA
-| EA_m : qword → EA
-open EA
+| i : qword → EA
+| r : regnum → EA
+| m : qword → EA
 
 def EA.addr : EA → qword
-| (EA.EA_m a) := a
+| (EA.m a) := a
 | _ := 0
 
 def index_ea (k : config) : option scale_index → qword
@@ -496,29 +495,29 @@ def base.ea (k : config) : base → qword
 | (base.reg r) := k.regs r
 
 def RM.ea (k : config) : RM → EA
-| (RM.reg r) := EA_r r
-| (RM.mem ix b d) := EA_m (index_ea k ix + b.ea k + d)
+| (RM.reg r) := EA.r r
+| (RM.mem ix b d) := EA.m (index_ea k ix + b.ea k + d)
 
 def ea_dest (k : config) : dest_src → EA
 | (Rm_i v _) := v.ea k
 | (Rm_r v _) := v.ea k
-| (R_rm r _) := EA_r r
+| (R_rm r _) := EA.r r
 
 def ea_src (k : config) : dest_src → EA
-| (Rm_i _ v) := EA_i v
-| (Rm_r _ v) := EA_r v
+| (Rm_i _ v) := EA.i v
+| (Rm_r _ v) := EA.r v
 | (R_rm _ v) := v.ea k
 
 def imm_rm.ea (k : config) : imm_rm → EA
 | (imm_rm.rm rm) := rm.ea k
-| (imm_rm.imm q) := EA_i q
+| (imm_rm.imm q) := EA.i q
 
 def EA.read (k : config) : EA → ∀ sz : wsize, bitvec sz.to_nat → Prop
-| (EA_i i) sz b := b = EXTZ i
-| (EA_r r) (Sz8 ff) b := b = EXTZ
+| (EA.i i) sz b := b = EXTZ i
+| (EA.r r) (Sz8 ff) b := b = EXTZ
   (if r.nth 2 then (k.regs (r - 4)).ushr 8 else k.regs r)
-| (EA_r r) sz b := b = EXTZ (k.regs r)
-| (EA_m a) sz b := ∃ l, k.mem.read a l ∧ bits_to_byte (sz.to_nat / 8) b l
+| (EA.r r) sz b := b = EXTZ (k.regs r)
+| (EA.m a) sz b := ∃ l, k.mem.read a l ∧ bits_to_byte (sz.to_nat / 8) b l
 
 def EA.readq (k : config) (ea : EA) (sz : wsize) (q : qword) : Prop :=
 ∃ w, ea.read k sz w ∧ q = EXTZ w
@@ -544,11 +543,11 @@ inductive config.write_mem (k : config) : qword → list byte → config → Pro
 | mk {a l m'} : k.mem.write a l m' → config.write_mem a l {mem := m', ..k}
 
 inductive EA.write (k : config) : EA → ∀ sz : wsize, bitvec sz.to_nat → config → Prop
-| EA_r (r sz v) : EA.write (EA_r r) sz v (config.write_reg k r sz v)
-| EA_m (a) (sz : wsize) (v l k') :
+| r (r sz v) : EA.write (EA.r r) sz v (config.write_reg k r sz v)
+| m {a} {sz : wsize} {v l k'} :
   let n := sz.to_nat / 8 in
   bits_to_byte n v l → k.write_mem a l k' →
-  EA.write (EA_m a) sz v k'
+  EA.write (EA.m a) sz v k'
 
 def EA.writeq (k : config) (ea : EA) (sz : wsize) (q : qword) (k' : config) : Prop :=
 ea.write k sz (EXTZ q) k'
@@ -567,9 +566,9 @@ def dest_src.read' (sz : wsize) (ds : dest_src) : pstate config (EA × qword × 
 pstate.assert $ λ k ⟨ea, d, s⟩, dest_src.read k sz ds ea d s
 
 def EA.call_dest (k : config) : EA → qword → Prop
-| (EA_i i) q := q = k.rip + i
-| (EA_r r) q := q = k.regs r
-| (EA_m a) q := (EA_m a).read k Sz64 q
+| (EA.i i) q := q = k.rip + i
+| (EA.r r) q := q = k.regs r
+| (EA.m a) q := (EA.m a).read k Sz64 q
 
 inductive EA.jump (k : config) : EA → config → Prop
 | mk (ea : EA) (q) : ea.call_dest k q → EA.jump ea {rip := q, ..k}
@@ -661,8 +660,8 @@ def write_unop (sz : wsize) (a : qword) (ea : EA) : unop → pstate config unit
 def pop_aux : pstate config qword :=
 do k ← pstate.get,
   let sp := k.regs RSP,
-  (EA_r RSP).write' Sz64 (sp + 8),
-  (EA_m sp).read' Sz64
+  (EA.r RSP).write' Sz64 (sp + 8),
+  (EA.m sp).read' Sz64
 
 def pop (rm : RM) : pstate config unit :=
 do k ← pstate.get, pop_aux >>= (rm.ea k).write' Sz64
@@ -672,8 +671,8 @@ def pop_rip : pstate config unit := pop_aux >>= write_rip
 def push_aux (w : qword) : pstate config unit :=
 do k ← pstate.get,
   let sp := k.regs RSP - 8,
-  (EA_r RSP).write' Sz64 sp,
-  (EA_m sp).write' Sz64 w
+  (EA.r RSP).write' Sz64 sp,
+  (EA.m sp).write' Sz64 w
 
 def push (i : imm_rm) : pstate config unit :=
 do k ← pstate.get, (i.ea k).read' Sz64 >>= push_aux
@@ -691,27 +690,27 @@ def execute : ast → pstate config unit
   (ea, d, s) ← dest_src.read' sz ds,
   write_binop sz ea d s op
 | (ast.mul sz r) := do
-  eax ← (EA_r RAX).read' sz,
+  eax ← (EA.r RAX).read' sz,
   k ← pstate.get,
   src ← (r.ea k).read' sz,
   match sz with
-  | (Sz8 _) := (EA_r RAX).write' Sz16 (eax * src)
+  | (Sz8 _) := (EA.r RAX).write' Sz16 (eax * src)
   | _ := do
     let hi := bitvec.of_nat sz.to_nat
       ((eax.to_nat * src.to_nat).shiftl sz.to_nat),
-    (EA_r RAX).write' sz (eax * src),
-    (EA_r RDX).write' sz (EXTZ hi)
+    (EA.r RAX).write' sz (eax * src),
+    (EA.r RDX).write' sz (EXTZ hi)
   end,
   erase_flags
 | (ast.div sz r) := do
-  eax ← (EA_r RAX).read' sz,
-  edx ← (EA_r RDX).read' sz,
+  eax ← (EA.r RAX).read' sz,
+  edx ← (EA.r RDX).read' sz,
   let n := edx.to_nat * (2 ^ sz.to_nat) + eax.to_nat,
   k ← pstate.get,
   d ← bitvec.to_nat <$> (r.ea k).read' sz,
   pstate.assert $ λ _ (_:unit), d ≠ 0 ∧ n / d < 2 ^ sz.to_nat,
-  (EA_r RAX).write' sz (bitvec.of_nat _ (n / d)),
-  (EA_r RDX).write' sz (bitvec.of_nat _ (n % d)),
+  (EA.r RAX).write' sz (bitvec.of_nat _ (n / d)),
+  (EA.r RDX).write' sz (bitvec.of_nat _ (n % d)),
   erase_flags
 | (ast.lea sz ds) := do
   k ← pstate.get,
@@ -725,7 +724,7 @@ def execute : ast → pstate config unit
   k ← pstate.get,
   (ea_dest k ds).write' sz2 (EXTZ w)
 | (ast.xchg sz r n) := do
-  let src := EA_r n,
+  let src := EA.r n,
   k ← pstate.get,
   let dst := r.ea k,
   val_src ← src.read' sz,
@@ -733,8 +732,8 @@ def execute : ast → pstate config unit
   src.write' sz val_dst,
   dst.write' sz val_src
 | (ast.cmpxchg sz r n) := do
-  let src := EA_r n,
-  let acc := EA_r RAX,
+  let src := EA.r n,
+  let acc := EA.r RAX,
   k ← pstate.get,
   let dst := r.ea k,
   val_dst ← dst.read' sz,
@@ -744,7 +743,7 @@ def execute : ast → pstate config unit
     src.read' sz >>= dst.write' sz
   else acc.write' sz val_dst
 | (ast.xadd sz r n) := do
-  let src := EA_r n,
+  let src := EA.r n,
   k ← pstate.get,
   let dst := r.ea k,
   val_src ← src.read' sz,
@@ -769,12 +768,12 @@ def execute : ast → pstate config unit
   pstate.lift $ λ k _, (i.ea k).jump k
 | (ast.ret i) := do
   pop_rip,
-  sp ← (EA_r RSP).read' Sz64,
-  (EA_r RSP).write' Sz64 (sp + i)
+  sp ← (EA.r RSP).read' Sz64,
+  (EA.r RSP).write' Sz64 (sp + i)
 | (ast.push i) := push i
 | (ast.pop r) := pop r
 | ast.leave := do
-  (EA_r RBP).read' Sz64 >>= (EA_r RSP).write' Sz64,
+  (EA.r RBP).read' Sz64 >>= (EA.r RSP).write' Sz64,
   pop (RM.reg RBP)
 | ast.clc := write_flags $ λ _ f, {CF := ff, ..f}
 | ast.cmc := write_flags $ λ _ f, {CF := bnot f.CF, ..f}
@@ -798,9 +797,9 @@ inductive config.isIO (k : config) : config → Prop
   ((do
     let rip := k.rip + bitvec.of_nat _ l.length,
     write_rip rip,
-    (EA.EA_r RCX).write' Sz64 rip,
+    (EA.r RCX).write' Sz64 rip,
     r11 ← pstate.any,
-    (EA.EA_r 11).write' Sz64 r11) k).P () k' →
+    (EA.r 11).write' Sz64 r11) k).P () k' →
   config.isIO k'
 
 structure kcfg :=
@@ -877,8 +876,5 @@ inductive hoare_p (Q : kcfg → Prop) : kcfg → Prop
   (∀ k', k.step k' → hoare_p k') → hoare_p k
 | exit (k : kcfg) (ret) :
   k.k.exit ret → (ret = 0 → Q k) → hoare_p k
-
-def hoare (P : kcfg → Prop) (Q : kcfg → kcfg → Prop) :=
-∀ {{k}}, P k → hoare_p (Q k) k
 
 end x86
