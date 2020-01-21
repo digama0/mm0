@@ -66,13 +66,58 @@ namespace fol
 
 def move0 (k n : ℕ) : ℕ := if n = k then 0 else n + 1
 def map_lift (f : ℕ → ℕ) (k n : ℕ) : ℕ := if n < k then n else f (n - k) + k
+def subst_lift {L} (f : ℕ → term L) (k n : ℕ) : term L := if n < k then &n else f (n - k) ↑ k
+
+theorem subst_lift_zero {L} (f : ℕ → term L) : subst_lift f 0 = f :=
+by funext; rw [subst_lift, if_neg (nat.not_lt_zero _), lift_term_zero]; refl
 
 namespace preterm
 
-def map_vars {L} (f : ℕ → ℕ) : ∀ {l}, preterm L l → preterm L l
-| _ &k          := &(f k)
+def subst_all {L} (f : ℕ → term L) : ∀ {l}, preterm L l → preterm L l
+| _ &k          := f k
 | _ (func f)    := func f
-| _ (app t₁ t₂) := app (map_vars t₁) (map_vars t₂)
+| _ (app t₁ t₂) := app (subst_all t₁) (subst_all t₂)
+
+theorem subst_all_subst_all {L} (f : ℕ → term L) (g : ℕ → term L) : ∀ {l} (t : preterm L l),
+  subst_all f (subst_all g t) = subst_all (subst_all f ∘ g) t
+| _ &k          := rfl
+| _ (func f)    := rfl
+| _ (app t₁ t₂) := by rw [subst_all, subst_all, subst_all_subst_all, subst_all_subst_all]; refl
+
+theorem lift_term_at_eq_subst_all {L} (n m) : ∀ {l} (t : preterm L l),
+  t ↑' n # m = subst_all (subst_lift (λ k, &(k+n)) m) t
+| _ &k          := begin
+    unfold subst_all subst_lift lift_term_at,
+    simp only [not_lt.symm], split_ifs, {refl},
+    rw [lift_term, lift_term_at, if_pos (zero_le _), add_right_comm,
+      nat.sub_add_cancel (le_of_not_lt h)],
+  end
+| _ (func f)    := rfl
+| _ (app t₁ t₂) := _root_.congr
+  (congr_arg app (lift_term_at_eq_subst_all t₁)) (lift_term_at_eq_subst_all t₂)
+
+theorem lift_term_eq_subst_all {L} (n) {l} (t : preterm L l) :
+  t ↑ n = subst_all (λ k, &(k+n)) t :=
+by rw [lift_term, lift_term_at_eq_subst_all, subst_lift_zero]
+
+theorem subst_all_subst_lift {L} (f : ℕ → term L) (m n k x) :
+  subst_all (subst_lift (λ (k : ℕ), &(k + m)) k) (subst_lift f n x) =
+    subst_all (subst_lift f (n + m)) (subst_lift (λ (k : ℕ), &(k + m)) k x) :=
+begin
+  unfold subst_lift, split_ifs; simp only [subst_all, lift_term, lift_term_at,
+    zero_le, if_true, if_false, subst_lift, h, h_1],
+  { rw if_pos (lt_of_lt_of_le h (nat.le_add_right _ _)) },
+  { rw if_pos, rwa [add_right_comm,
+      nat.sub_add_cancel (le_of_not_lt h_1), add_lt_add_iff_right] },
+  {  },
+end
+
+theorem lift_at_subst_lift_all {L} (f : ℕ → term L) {l} (t : preterm L l) (n m k) :
+  subst_all (subst_lift f n) t ↑' m # k = subst_all (subst_lift f (n + m)) (t ↑' m # k) :=
+begin
+  rw [lift_term_at_eq_subst_all, subst_all_subst_all, lift_term_at_eq_subst_all, subst_all_subst_all],
+  congr' 1, funext, simp only [(∘), subst_all, subst_all_subst_lift],
+end
 
 end preterm
 
@@ -91,15 +136,63 @@ def preformula.deps {L} : ∀ {n}, preformula L n → deps
 
 namespace preformula
 
-def map_vars {L} (f : ℕ → ℕ) : ∀ {l}, preformula L l → ℕ → preformula L l
-| _ falsum       m := falsum
-| _ (t₁ ≃ t₂)    m := t₁.map_vars (map_lift f m) ≃ t₂.map_vars (map_lift f m)
-| _ (rel R)      m := rel R
-| _ (apprel r t) m := apprel (map_vars r m) (t.map_vars (map_lift f m))
-| _ (f₁ ⟹ f₂)   m := map_vars f₁ m ⟹ map_vars f₂ m
-| _ (∀' f)       m := ∀' map_vars f (m+1)
+def subst_all {L} (f : ℕ → term L) : ∀ {l}, ℕ → preformula L l → preformula L l
+| _ m falsum       := falsum
+| _ m (t₁ ≃ t₂)    := t₁.subst_all (subst_lift f m) ≃ t₂.subst_all (subst_lift f m)
+| _ m (rel R)      := rel R
+| _ m (apprel r t) := apprel (subst_all m r) (t.subst_all (subst_lift f m))
+| _ m (f₁ ⟹ f₂)   := subst_all m f₁ ⟹ subst_all m f₂
+| _ m (∀' f)       := ∀' subst_all (m+1) f
+
+def lower {L} (x : ℕ) {l} (f : preformula L l) : preformula L l :=
+f.subst_all (λ i, &(fol.move0 x i)) 0
+
+theorem lift_at_eq_subst_all {L} : ∀ {l} (f : preformula L l) (n m),
+  f ↑' n # m = subst_all (λ k, &(k+n)) m f
+| _ falsum       n m := rfl
+| _ (t₁ ≃ t₂)    n m := _root_.congr (congr_arg equal
+  (preterm.lift_term_at_eq_subst_all _ _ _)) (preterm.lift_term_at_eq_subst_all _ _ _)
+| _ (rel R)      n m := rfl
+| _ (apprel r t) n m := _root_.congr (congr_arg apprel
+  (lift_at_eq_subst_all _ _ _)) (preterm.lift_term_at_eq_subst_all _ _ _)
+| _ (f₁ ⟹ f₂)   n m := _root_.congr (congr_arg imp
+  (lift_at_eq_subst_all _ _ _)) (lift_at_eq_subst_all _ _ _)
+| _ (∀' f)       n m := congr_arg all (lift_at_eq_subst_all _ _ _)
+
+theorem lift_eq_subst_all {L} (n) {l} (t : preterm L l) :
+  t ↑ n = subst_all (λ k, &(k+n)) t :=
+by rw [lift_term, lift_term_at_eq_subst_all, subst_lift_zero]
+
+theorem lift_at_subst_all {L} (f : ℕ → term L) : ∀ {l} (t : preformula L l) (n m k),
+  t.subst_all f n ↑' m # k = (t ↑' m # k).subst_all f (n + m)
+| _ falsum       n m k := rfl
+| _ (t₁ ≃ t₂)    n m k := _root_.congr (congr_arg equal
+  (preterm.lift_at_subst_lift_all _ _ _ _ _)) (preterm.lift_at_subst_lift_all _ _ _ _ _)
+| _ (rel R)      n m k := rfl
+| _ (apprel r t) n m k := _root_.congr (congr_arg apprel
+  (lift_at_subst_all _ _ _ _)) (preterm.lift_at_subst_lift_all _ _ _ _ _)
+| _ (f₁ ⟹ f₂)   n m k := _root_.congr (congr_arg imp
+  (lift_at_subst_all _ _ _ _)) (lift_at_subst_all _ _ _ _)
+| _ (∀' f)       n m k := congr_arg all (by rw add_right_comm; apply lift_at_subst_all)
 
 end preformula
+
+namespace prf
+
+def subst_all {L} (f : ℕ → term L) {Γ} {A : formula L} {n}
+  (p : Γ ⊢ A) : preformula.subst_all f n '' Γ ⊢ preformula.subst_all f n A :=
+begin
+  induction p generalizing n,
+  { exact axm (set.mem_image_of_mem _ p_h) },
+  { apply impI, rw ← set.image_insert_eq, apply p_ih },
+  { exact impE _ p_ih_h₁ p_ih_h₂ },
+  { have := p_ih, rw set.image_insert_eq at this, exact falsumE this },
+  { apply allI, convert @p_ih (n+1) using 1,
+    rw [← set.image_comp, ← set.image_comp],
+    congr' 1, funext,  },
+end
+
+end prf
 
 def ax_1 {L} {Γ : set (formula L)} {A B : formula L} : Γ ⊢ A ⟹ (B ⟹ A) :=
 impI $ impI axm2
@@ -112,6 +205,10 @@ def ax_3 {L} {Γ : set (formula L)} {A B : formula L} :
   Γ ⊢ (∼A ⟹ ∼B) ⟹ (B ⟹ A) :=
 impI $ impI $ falsumE $ impE _ (impE _ (weakening1 axm2) axm1) axm2
 
+def ax_gen {L} {Γ : set (formula L)} {A : formula L} {x} (h : Γ ⊢ A) :
+  Γ ⊢ ∀' A.lower x :=
+_
+
 end fol
 
 def mm0_value.deps : ∀ {s}, mm0_value s → deps
@@ -122,28 +219,24 @@ def mm0_value.deps : ∀ {s}, mm0_value s → deps
 inductive mm0_context.value_empty (bv : list ℕ) : list ℕ → Type 1
 | refl : mm0_context.value_empty bv
 
-def mm0_context.value' : ∀ {n}, mm0_context n → Type 1
+def mm0_context.value : ∀ {n}, mm0_context n → Type 1
 | _ mm0_context.empty := punit
-| _ (mm0_context.lvar c) := mm0_context.value' c × ℕ
-| _ (mm0_context.rvar d s h c) := mm0_context.value' c × mm0_value s
+| _ (mm0_context.lvar c) := mm0_context.value c × ℕ
+| _ (mm0_context.rvar d s h c) := mm0_context.value c × mm0_value s
 
-def mm0_context.value_bv : ∀ {n c}, @mm0_context.value' n c → list ℕ → list ℕ
+def mm0_context.value_bv : ∀ {n c}, @mm0_context.value n c → list ℕ → list ℕ
 | _ mm0_context.empty _ r := r
 | _ (@mm0_context.lvar n c) v r := mm0_context.value_bv v.1 (v.2 :: r)
 | _ (mm0_context.rvar d s h c) v r := mm0_context.value_bv v.1 r
 
-def mm0_context.value_ok (bv : list ℕ) : ∀ {n} c, @mm0_context.value' n c → bool
+def mm0_context.value.ok_aux (bv : list ℕ) : ∀ {n c}, @mm0_context.value n c → bool
 | _ mm0_context.empty _ := true
-| _ (mm0_context.lvar c) v := mm0_context.value_ok c v.1
+| _ (mm0_context.lvar c) v := v.1.ok_aux
 | _ (mm0_context.rvar d s h c) v :=
-  v.2.deps.disjoint (deps.filter_out d bv) && mm0_context.value_ok c v.1
+  v.2.deps.disjoint (deps.filter_out d bv) && v.1.ok_aux
 
-def mm0_context.value_bv_ok {n} (c) (v : @mm0_context.value' n c) : bool :=
-let bv := mm0_context.value_bv v ([]) in
-bv.nodup && mm0_context.value_ok bv c v
-
-def mm0_context.value {n} (c : mm0_context n) : Type 1 :=
-{v : @mm0_context.value' n c | mm0_context.value_bv_ok c v}
+def mm0_context.value.ok {n c} (v : @mm0_context.value n c) : bool :=
+let bv := mm0_context.value_bv v ([]) in bv.nodup && v.ok_aux bv
 
 inductive mm0_prim_term : Type
 | wtru : mm0_prim_term
@@ -152,6 +245,7 @@ inductive mm0_prim_term : Type
 | wal : mm0_prim_term
 | wceq : mm0_prim_term
 | wcel : mm0_prim_term
+| cv : mm0_prim_term
 | cab : mm0_prim_term
 
 def mm0_prim_term.tgt : mm0_prim_term → mm0_sort
@@ -161,6 +255,7 @@ def mm0_prim_term.tgt : mm0_prim_term → mm0_sort
 | mm0_prim_term.wal := mm0_sort.wff
 | mm0_prim_term.wceq := mm0_sort.wff
 | mm0_prim_term.wcel := mm0_sort.wff
+| mm0_prim_term.cv := mm0_sort.Class
 | mm0_prim_term.cab := mm0_sort.Class
 
 def mm0_prim_term.args : ∀ t : mm0_prim_term, Σ n, mm0_context n
@@ -183,20 +278,22 @@ def mm0_prim_term.args : ∀ t : mm0_prim_term, Σ n, mm0_context n
     mm0_context.rvar ([]) mm0_sort.Class rfl $
     mm0_context.rvar ([]) mm0_sort.Class rfl $
     mm0_context.empty⟩
+| mm0_prim_term.cv := ⟨0,
+    mm0_context.rvar ([]) mm0_sort.set rfl $
+    mm0_context.empty⟩
 | mm0_prim_term.cab := ⟨1,
     mm0_context.rvar ([tt]) mm0_sort.wff rfl $
     mm0_context.lvar $ mm0_context.empty⟩
 
-def mm0_prim_term.value' : ∀ (t : mm0_prim_term), t.args.2.value' → mm0_value t.tgt
+def mm0_prim_term.value : ∀ (t : mm0_prim_term), t.args.2.value → mm0_value t.tgt
 | mm0_prim_term.wtru _ := ⊤
 | mm0_prim_term.wi ⟨⟨_, f₁⟩, f₂⟩ := f₁ ⟹ f₂
 | mm0_prim_term.wn ⟨_, f⟩ := ∼f
-| mm0_prim_term.wal ⟨⟨_, x⟩, f⟩ := ∀' f.map_vars (fol.move0 x) 0
+| mm0_prim_term.wal ⟨⟨_, x⟩, f⟩ := ∀' f.lower x
 | mm0_prim_term.wceq ⟨⟨_, e₁⟩, e₂⟩ := ∀' (e₁ ⇔ e₂)
-| mm0_prim_term.wcel ⟨⟨_, A⟩, B⟩ := ∃' (∀' (&1 ∈' &0 ⇔ A ↑ 1) ⊓ B)
-| mm0_prim_term.cab ⟨⟨_, x⟩, f⟩ := f.map_vars (fol.move0 x) 0
-
-def mm0_prim_term.value (t : mm0_prim_term) (v : t.args.2.value) : mm0_value t.tgt := t.value' v.1
+| mm0_prim_term.wcel ⟨⟨_, A⟩, B⟩ := ∃' (∀' (&0 ∈' &1 ⇔ A ↑' 1 # 1) ⊓ B)
+| mm0_prim_term.cv ⟨_, ⟨x⟩⟩ := &0 ∈' &x.succ
+| mm0_prim_term.cab ⟨⟨_, x⟩, f⟩ := f.lower x
 
 inductive mm0_preterm : ∀ {γ} (Γ : mm0_context γ) {m}, mm0_context m → mm0_sort → Type
 | lvar {γ Γ} (i) : i < γ → @mm0_preterm γ Γ _ mm0_context.empty mm0_sort.set
@@ -220,24 +317,21 @@ def mm0_preterm.weak_deps : ∀ {γ Γ m c s}, @mm0_preterm γ Γ m c s → deps
 | _ _ _ _ _ (@mm0_preterm.rapp _ _ _ _ _ _ _ _ f t) := f.weak_deps.union t.weak_deps
 | _ _ _ _ _ (@mm0_preterm.defn _ _ _ _ _ t) := ([])
 
-def mm0_context.value'.lnth_rev : ∀ {n} {c : mm0_context n} (i : ℕ), c.value' → ℕ
+def mm0_context.value.lnth_rev : ∀ {n} {c : mm0_context n} (i : ℕ), c.value → ℕ
 | _ mm0_context.empty i _ := 0
 | _ (mm0_context.lvar c) 0 v := v.2
 | _ (mm0_context.lvar c) (n+1) v := v.1.lnth_rev n
 | _ (mm0_context.rvar d s h c) n v := v.1.lnth_rev n
 
-def mm0_context.value'.lnth {n} {c : mm0_context n} (i : ℕ) (v : c.value') : ℕ :=
+def mm0_context.value.lnth {n} {c : mm0_context n} (i : ℕ) (v : c.value) : ℕ :=
 v.lnth_rev (n - i.succ)
-
-def mm0_lvar.value {n} {c : mm0_context n} (i : ℕ) (v : c.value) : ℕ :=
-mm0_context.value'.lnth i v.1
 
 def mm0_ovalue : option mm0_sort → Type 1
 | none := punit
 | (some s) := mm0_value s
 
-def mm0_context.value'.rnth_rev :
-  ∀ {n} {c : mm0_context n}, c.value' → ∀ i, mm0_ovalue (c.sort_rev i)
+def mm0_context.value.rnth_rev :
+  ∀ {n} {c : mm0_context n}, c.value → ∀ i, mm0_ovalue (c.sort_rev i)
 | _ mm0_context.empty _ i := ⟨⟩
 | _ (mm0_context.lvar c) v i := v.1.rnth_rev i
 | _ (mm0_context.rvar d s h c) v 0 := v.2
@@ -253,30 +347,27 @@ begin
   exact h
 end
 
-def mm0_context.value'.rnth {n} {c : mm0_context n} (v : c.value')
+def mm0_context.value.rnth {n} {c : mm0_context n} (v : c.value)
   {i s} (h : mm0_context.sort c i = some s) : mm0_value s :=
 begin
   have := v.rnth_rev (c.rsize - i.succ),
   rwa c.sort_rev_eq h at this
 end
 
-def mm0_preterm.value' : ∀ {γ} {Γ : mm0_context γ} (V : Γ.value')
-  {m c s}, @mm0_preterm _ Γ m c s → c.value' → mm0_value s
+def mm0_preterm.value : ∀ {γ} {Γ : mm0_context γ} (V : Γ.value)
+  {m c s}, @mm0_preterm _ Γ m c s → c.value → mm0_value s
 | _ _ V _ _ _ (@mm0_preterm.lvar _ _ i h) v := ⟨V.lnth i⟩
 | _ _ V _ _ s (@mm0_preterm.rvar _ _ i _ h) v := V.rnth h
-| _ _ V _ _ s (@mm0_preterm.prim _ _ t) v := mm0_prim_term.value' _ v
+| _ _ V _ _ s (@mm0_preterm.prim _ _ t) v := mm0_prim_term.value _ v
 | _ _ V m c s (@mm0_preterm.lapp _ _ n c' _ i f t) v :=
-  mm0_preterm.value' V f $ by exact (v, V.lnth i)
+  mm0_preterm.value V f $ by exact (v, V.lnth i)
 | _ _ V m c s (@mm0_preterm.rapp _ _ n d' s' h c' _ f t) v :=
-  mm0_preterm.value' V f $ by exact (v, mm0_preterm.value' V t $ by split)
+  mm0_preterm.value V f $ by exact (v, mm0_preterm.value V t $ by split)
 | _ _ V m c s (@mm0_preterm.defn _ _ _ _ _ t) v :=
-  mm0_preterm.value' v t $ by split
-
-def mm0_preterm.value {γ} {Γ : mm0_context γ} (V : Γ.value)
-  {m c s} (t : @mm0_preterm _ Γ m c s) (v : c.value) : mm0_value s := t.value' V.1 v.1
+  mm0_preterm.value v t $ by split
 
 def mm0_term.value {γ} {Γ : mm0_context γ} (V : Γ.value)
-  {s} (t : mm0_term Γ s) : mm0_value s := mm0_preterm.value V t ⟨⟨⟩, rfl⟩
+  {s} (t : mm0_term Γ s) : mm0_value s := mm0_preterm.value V t $ by split
 
 section
 open tactic
@@ -299,13 +390,15 @@ meta def ref_apply (r : ref expr) (n : name) : tactic unit := do
   write_ref r m'
 
 meta def tactic.mk_term : expr → pexpr → tactic unit
-| m (expr.pi x bi b t) := do
+| m (expr.pi x@(name.mk_string v name.anonymous) bi b t) := do
   if is_forall_domain b then do
-    m1 ← mk_mvar,
-    m2 ← mk_mvar,
-    to_expr ```(((mm0_preterm.prim mm0_prim_term.wal).rapp %%m2).lapp %%m1) >>= unify m,
-    tactic.mk_term m1 (expr.local_const x x bi ``(ℕ)),
-    tactic.mk_term m2 $ (expr.lam x bi b t).subst (expr.local_const x x bi ``(ℕ))
+    m' ← mk_mvar,
+    let i := v.mk_iterator.next.next_to_string.to_nat,
+    e ← mk_mvar,
+    to_expr ```(((mm0_preterm.prim mm0_prim_term.wal).rapp %%m').lapp %%(reflect i) %%e) >>= unify m,
+    et ← infer_type e,
+    to_expr ```(dec_trivial : %%et) >>= unify e,
+    tactic.mk_term m' $ (expr.lam x bi b t).subst (expr.local_const x x bi ``(ℕ))
   else do
     m1 ← mk_mvar,
     m2 ← mk_mvar,
@@ -322,23 +415,30 @@ meta def tactic.mk_term : expr → pexpr → tactic unit
   else if v.front = 'x' then do
     let i := v.mk_iterator.next.next_to_string.to_nat,
     e ← mk_mvar,
-    to_expr ```(mm0_preterm.rvar %%(reflect i) %%e) >>= unify m,
-    to_expr ```(rfl) >>= unify e
-    -- using_new_ref m $ λ r, do
-    --   ref_apply r `mm0_preterm.lvar,
-    --   iterate_exactly i $ do
-    --     repeat $ ref_apply r `mm0_lvar.rtail,
-    --     ref_apply r `mm0_lvar.ltail,
-    --   repeat $ ref_apply r `mm0_lvar.rtail,
-    --   m ← read_ref r,
-    --   to_expr ```(mm0_lvar.head) >>= unify m
+    to_expr ```(mm0_preterm.lvar %%(reflect i) %%e) >>= unify m,
+    t ← infer_type e,
+    to_expr ```(dec_trivial : %%t) >>= unify e
   else fail v
 | m e@(expr.app e1 e2) := match expr.erase_annotations e1 with
   | (expr.const `not ([])) := do
     m' ← mk_mvar,
     to_expr ```((mm0_preterm.prim mm0_prim_term.wn).rapp %%m') tt ff >>= unify m,
     tactic.mk_term m' e2
-  | e1' := trace e1'.to_raw_fmt >> failed
+  | (expr.const `coe _) := do
+    m' ← mk_mvar,
+    to_expr ```((mm0_preterm.prim mm0_prim_term.cv).rapp %%m') tt ff >>= unify m,
+    tactic.mk_term m' e2
+  | (expr.app e1' e2') := match expr.erase_annotations e1' with
+    | (expr.const `eq _) := do
+      m1 ← mk_mvar,
+      m2 ← mk_mvar,
+      to_expr ```(((mm0_preterm.prim mm0_prim_term.wceq).rapp %%m2).rapp %%m1) tt ff >>= unify m,
+      tactic.mk_term m1 e2',
+      tactic.mk_term m2 e2
+    | (expr.app e1' e2') := trace e1'.to_raw_fmt >> failed
+    | _ := trace e.to_raw_fmt >> failed
+    end
+  | _ := trace e.to_raw_fmt >> failed
   end
 | m e := match expr.is_annotation e with
   | some (_, e') := tactic.mk_term m e'
@@ -356,8 +456,8 @@ inductive mm0_stmt {γ} (Γ : mm0_context γ) : Type
 | conv {s} : mm0_term Γ s → mm0_term Γ s → mm0_stmt
 
 def mm0_stmt.value {γ} {Γ : mm0_context γ} : mm0_stmt Γ → Type 1
-| (mm0_stmt.proof t) := Π V, fol.Theory.fst zfc.ZFC ⊢ t.value V
-| (mm0_stmt.conv t₁ t₂) := Π V, plift $ t₁.value V = t₂.value V
+| (mm0_stmt.proof t) := Π V : Γ.value, V.ok → fol.Theory.fst zfc.ZFC ⊢ t.value V
+| (mm0_stmt.conv t₁ t₂) := Π V : Γ.value, V.ok → plift (t₁.value V = t₂.value V)
 
 def mm0_thm.value {γ} {Γ : mm0_context γ} :
   list (mm0_term Γ mm0_sort.wff) → mm0_term Γ mm0_sort.wff → Type 1
@@ -418,7 +518,7 @@ def mm0_subst.apply : ∀ {γ Γ δ Δ} (σ : @mm0_subst γ Γ δ Δ),
 | γ Γ δ Δ σ _ _ _ (mm0_preterm.defn t) := mm0_preterm.defn t
 
 inductive mm0_axiom : Type
-| ax_1 | ax_2 | ax_3 | ax_mp
+| ax_1 | ax_2 | ax_3 | ax_mp | ax_gen | ax_4 | ax_5 | ax_6
 
 def mm0_axiom.args : ∀ t : mm0_axiom, Σ n, mm0_context n
 | mm0_axiom.ax_1 := ⟨0,
@@ -438,30 +538,42 @@ def mm0_axiom.args : ∀ t : mm0_axiom, Σ n, mm0_context n
     mm0_context.rvar ([]) mm0_sort.wff rfl $
     mm0_context.rvar ([]) mm0_sort.wff rfl $
     mm0_context.empty⟩
+| mm0_axiom.ax_gen := ⟨1,
+    mm0_context.rvar ([tt]) mm0_sort.wff rfl $
+    mm0_context.lvar mm0_context.empty⟩
+| mm0_axiom.ax_4 := ⟨1,
+    mm0_context.rvar ([tt]) mm0_sort.wff rfl $
+    mm0_context.rvar ([tt]) mm0_sort.wff rfl $
+    mm0_context.lvar mm0_context.empty⟩
+| mm0_axiom.ax_5 := ⟨1,
+    mm0_context.rvar ([]) mm0_sort.wff rfl $
+    mm0_context.lvar mm0_context.empty⟩
+| mm0_axiom.ax_6 := ⟨1,
+    mm0_context.rvar ([]) mm0_sort.set rfl $
+    mm0_context.lvar $ mm0_context.empty⟩
 
-def mm0_axiom.hyps : ∀ t : mm0_axiom, list (mm0_term t.args.2 mm0_sort.wff)
-| mm0_axiom.ax_1 := []
-| mm0_axiom.ax_2 := []
-| mm0_axiom.ax_3 := []
-| mm0_axiom.ax_mp := [by mk_term v0, by mk_term v0 → v1]
+def mm0_axiom.ty : ∀ t : mm0_axiom, list (mm0_term t.args.2 mm0_sort.wff) × mm0_term t.args.2 mm0_sort.wff
+| mm0_axiom.ax_1 := ([], by mk_term v0 → v1 → v0)
+| mm0_axiom.ax_2 := ([], by mk_term (v0 → v1 → v2) → (v0 → v1) → v0 → v2)
+| mm0_axiom.ax_3 := ([], by mk_term (¬ v0 → ¬ v1) → v1 → v0)
+| mm0_axiom.ax_mp := ([by mk_term v0, by mk_term v0 → v1], by mk_term v1)
+| mm0_axiom.ax_gen := ([by mk_term v0], by mk_term ∀ x0, v0)
+| mm0_axiom.ax_4 := ([], by mk_term (∀ x0, v0 → v1) → (∀ x0, v0) → ∀ x0, v1)
+| mm0_axiom.ax_5 := ([], by mk_term v0 → ∀ x0, v0)
+| mm0_axiom.ax_6 := ([], by mk_term ¬ ∀ x0, ¬ ↑x0 = ↑v0)
 
-def mm0_axiom.conc : ∀ t : mm0_axiom, mm0_term t.args.2 mm0_sort.wff
-| mm0_axiom.ax_1 := by mk_term v0 → v1 → v0
-| mm0_axiom.ax_2 := by mk_term (v0 → v1 → v2) → (v0 → v1) → v0 → v2
-| mm0_axiom.ax_3 := by mk_term (¬ v0 → ¬ v1) → v1 → v0
-| mm0_axiom.ax_mp := by mk_term v1
-
-def mm0_axiom.sound : ∀ t : mm0_axiom, mm0_thm.value t.hyps t.conc
-| mm0_axiom.ax_1 := λ V, fol.ax_1
-| mm0_axiom.ax_2 := λ V, fol.ax_2
-| mm0_axiom.ax_3 := λ V, fol.ax_3
-| mm0_axiom.ax_mp := λ h₁ h₂ V, fol.prf.impE _ (h₂ V) (h₁ V)
+def mm0_axiom.sound : ∀ t : mm0_axiom, mm0_thm.value t.ty.1 t.ty.2
+| mm0_axiom.ax_1 := λ V _, fol.ax_1
+| mm0_axiom.ax_2 := λ V _, fol.ax_2
+| mm0_axiom.ax_3 := λ V _, fol.ax_3
+| mm0_axiom.ax_mp := λ h₁ h₂ V ok, fol.prf.impE _ (h₂ V ok) (h₁ V ok)
+| mm0_axiom.ax_gen := λ h V ok, fol.prf.allI (by rw fol.lift_Theory_irrel; exact h _ _)
 
 inductive mm0_preproof {γ Γ}
   (hyps : list (@mm0_term γ Γ mm0_sort.wff)) :
   list (mm0_term Γ mm0_sort.wff) → mm0_term Γ mm0_sort.wff → Type
 | Axiom (A : mm0_axiom) (σ : mm0_subst Γ A.args.2) :
-  mm0_preproof (A.hyps.map σ.apply) (σ.apply A.conc)
+  mm0_preproof (A.ty.1.map σ.apply) (σ.apply A.ty.2)
 | app {h hs p} : mm0_preproof (h :: hs) p → mm0_preproof ([]) h → mm0_preproof hs p
 | hyp (i h) : mm0_preproof ([]) (hyps.nth_le i h)
 

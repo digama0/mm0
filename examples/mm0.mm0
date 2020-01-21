@@ -57,7 +57,7 @@ def SApp (f x: nat): nat = $ b1 (f <> x) $;
 -- The environment is composed of declarations, which come in a few types:
 -- A `sort` declaration has an associated `SortData` with the sort modifiers.
 -- Sorts are indexed by SortID and picked out by `getSD`.
--- DSort : Ident -> SortData -> Decl
+-- DSort : SortID -> SortData -> Decl
 def DSort (id sd: nat): nat = $ b0 (b0 (b0 (id <> sd))) $;
 -- A `term` declaration has a list of binders, and a target type (a DepType,
 -- which is a `(SortID, set VarID)` pair).
@@ -89,11 +89,8 @@ def getSD (env id sd: nat): wff = $ DSort id sd IN env $;
 
 -- This function gets the term and definition data for a term.
 -- getTerm : Env -> TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Bool
-def getTerm (env id a r v: nat): wff;
-theorem getTerm0 (env id a r: nat):
-  $ getTerm env id a r 0 <-> DTerm id a r IN env $;
-theorem getTermS (env id a r o: nat):
-  $ getTerm env id a r (suc o) <-> DDef id a r o IN env $;
+def getTerm (env id a r v: nat): wff =
+$ v = 0 /\ DTerm id a r IN env \/ DDef id a r v IN env $;
 
 -- This function gets the data for an axiom or theorem.
 -- getThm : Env -> Ctx -> list SExpr -> SExpr -> Bool
@@ -172,7 +169,7 @@ theorem HasVarApp (ctx f es v: nat) {e: nat}:
 
 -- A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
 -- is a regular argument and `(/)` if `a` is a bound argument.
--- MaybeFreeArgs : Env -> Binder -> VarID -> Bool
+-- MaybeFreeArgs : list SExpr -> Binder -> VarID -> Bool
 def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
 $ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
 
@@ -399,10 +396,11 @@ theorem ProofAxiom (env a h r p: nat):
   $ Proof (env |> DAxiom a h r) p <-> Proof env p $;
 theorem ProofDef (env id a r o p: nat):
   $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $;
-theorem ProofThm (env e p a h r .p1 .ds .pf: nat):
-  $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf (
+theorem ProofThm (env e p a h r .p1 .ds .pf .ctx: nat):
+  $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf E. ctx (
     p = p1 <> (ds <> pf) /\ Proof env p1 /\
-    VerifyProof env (appendDummies a ds) h pf r) $;
+    ctx = appendDummies a ds /\ Ctx env ctx /\
+    VerifyProof env ctx h pf r) $;
 
 -- A specification is provable if some extension of the specification has a proof.
 -- The extension provides definitions for the providing all the omitted definitions and proving all the theorems in the
