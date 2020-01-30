@@ -690,8 +690,8 @@ impl Elaborator {
         let Builder {mut ids, heap} = self.to_builder(&de)?;
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
-        let proof = if self.check_proofs {
-          d.val.as_ref().map(|e| {
+        let proof = d.val.as_ref().map(|e| {
+          if self.check_proofs {
             (|| -> Result<Option<Proof>> {
               let mut de = de.map_proof();
               let mut is2 = Vec::new();
@@ -717,8 +717,8 @@ impl Elaborator {
               let head = ids[ip].take();
               Ok(Some(Proof { heap, hyps, head }))
             })().unwrap_or_else(|e| {self.report(e); None})
-          })
-        } else {None};
+          } else {None}
+        });
         let t = Thm {
           atom, span, vis: d.mods, full,
           args, heap, hyps, ret, proof

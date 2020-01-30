@@ -13,6 +13,7 @@ enum RefineExpr {
   App(Span, Span, InferMode, AtomID, Uncons),
   Typed(LispVal, LispVal),
   Exact(LispVal),
+  Proc,
 }
 
 #[derive(Debug)]
@@ -41,6 +42,7 @@ pub enum RState {
   RefineHyps {sp: Span, sp2: Span, tgt: LispVal, t: ThmID, u: Uncons, args: Vec<LispVal>,
     hyps: std::vec::IntoIter<LispVal>, res: RefineHypsResult},
   Coerce {tgt: LispVal, p: LispVal},
+  Proc {tgt: LispVal, p: LispVal},
 }
 
 impl EnvDisplay for RState {
@@ -71,6 +73,8 @@ impl EnvDisplay for RState {
         fe.to(tgt), fe.to(t), fe.to(u), fe.to(args), fe.to(hyps.as_slice()), fe.to(res)),
       RState::Coerce {tgt, p} => write!(f,
         "Coerce {{\n  tgt: {},\n  p: {}}}", fe.to(tgt), fe.to(p)),
+      RState::Proc {tgt, p} => write!(f,
+        "Proc {{\n  tgt: {},\n  p: {}}}", fe.to(tgt), fe.to(p)),
     }
   }
 }
@@ -90,6 +94,7 @@ impl EnvDisplay for RefineHypsResult {
 pub enum RefineResult {
   Ret(LispVal),
   RefineExtraArgs(LispVal, Vec<LispVal>),
+  Proc(LispVal, LispVal),
 }
 
 impl LispVal {
@@ -167,6 +172,7 @@ impl Elaborator {
           }
         }
       }
+      LispKind::Proc(_) => RefineExpr::Proc,
       _ => Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error"))?,
     })
   }
@@ -357,7 +363,9 @@ impl Elaborator {
   ) -> Result<RefineResult> {
     let fsp = self.fspan(sp);
     loop {
-      // println!("{}", self.print(&active));
+      // if self.check_proofs {
+      //   println!("{}", self.print(&active));
+      // }
       active = match active {
         RState::Goals {mut gs, mut es} => match es.next() {
           None => {gv.extend(gs); RState::Finish}
@@ -414,6 +422,7 @@ impl Elaborator {
             RState::RefineExpr {tgt: InferTarget::Unknown, e}
           }
           RefineExpr::Exact(p) => RState::Coerce {tgt, p},
+          RefineExpr::Proc => RState::Proc {tgt, p},
         },
         RState::Ret(ret) => match stack.pop() {
           None => return Ok(RefineResult::Ret(ret)),
@@ -480,6 +489,7 @@ impl Elaborator {
             }
           }
           RefineExpr::Exact(e) => RState::Ret(e),
+          RefineExpr::Proc => RState::Ret(e),
         },
         RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => 'l: loop { // labeled block, not a loop
           let tdata = &self.env.terms[t];
@@ -555,6 +565,7 @@ impl Elaborator {
             RefineHypsResult::Extra => RState::RefineExtraArgs {sp, tgt, u, head, args: vec![]}
           }
         },
+        RState::Proc {tgt, p} => return Ok(RefineResult::Proc(tgt, p)),
       }
     }
   }

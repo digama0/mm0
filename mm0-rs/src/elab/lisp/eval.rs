@@ -1317,7 +1317,7 @@ impl<'a> Evaluator<'a> {
           Some(e) => push!(Refines(sp, Some(e.span().unwrap_or(sp)), it); Eval(e))
         },
         State::Refine {sp, mut stack, state, gv} => {
-          let res = self.run_refine(sp, &mut stack, state, &mut gv.lock().unwrap())
+          let res = self.elab.run_refine(self.orig_span, &mut stack, state, &mut gv.lock().unwrap())
             .map_err(|e| self.err(Some(e.pos), e.kind.msg()))?;
           match res {
             RefineResult::Ret(e) => State::Ret(e),
@@ -1331,6 +1331,12 @@ impl<'a> Evaluator<'a> {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
                 Some((_, v)) => State::App(sp, sp, v.clone(), args, [].iter()),
               }
+            }
+            RefineResult::Proc(tgt, proc) => {
+              let args = vec![
+                LispVal::proc(Proc::RefineCallback(Arc::downgrade(&gv))),
+                tgt];
+              push!(Refine {sp, stack, gv}; App(sp, sp, proc, args, [].iter()))
             }
           }
         }
