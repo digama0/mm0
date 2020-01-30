@@ -1,0 +1,1095 @@
+import "peano_hex.mm1";
+
+-- Some additional list operations
+
+-- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
+@_ def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
+$ len l1 = len l2 /\ A. n A. x A. y
+  (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
+
+-- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
+@_ def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
+$ len l1 = len l2 /\ E. n E. x E. y
+  (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
+
+-- map : (A -> B) -> list A -> list B
+@_ def map (F: set) (l: nat): nat =
+$ lrec 0 (\\ a, \\ z, \ ih, F @ a : ih) l $;
+pub theorem map0 (F: set): $ map F 0 = 0 $ = (named 'lrec0);
+pub theorem mapS (F: set) (a l: nat):
+  $ map F (a : l) = F @ a : map F l $ =
+(named '(! eqtr _ $ _ @ (_ <> _ <> map F l) $ _ lrecS @
+  appslame @ appslamed @ applamed @ conseqd (appeq2d anll) anr));
+
+theorem mapeqg (F: set) (a l: nat):
+  $ all {x | F @ x = G @ x} l -> map F l = map G l $ =
+(named @ let ([h '(imeqd alleq2 @ eqeqd mapeq2 mapeq2)])
+  '(listind ,h ,h ,h ,h
+    (a1i @ eqtr4 map0 map0)
+    (rsyl (imim1i @ sylbi allS anr) @ a2i @ rsyl (sylbi allS anl) @ exp @
+      eqtr4g mapS mapS @ conseqd (sylib (elabe @ eqeqd appeq2 appeq2) anl) anr)));
+
+-- ljoin : list (list A) -> list A
+@_ def ljoin (L: nat): nat = $ lrec 0 (\\ a, \\ z, \ ih, a ++ ih) L $;
+pub theorem ljoin0: $ ljoin 0 = 0 $ = (named 'lrec0);
+pub theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $ =
+(named '(! eqtr _ $ _ @ (_ <> _ <> ljoin L) $ _ lrecS @
+  appslame @ appslamed @ applamed @ appendeqd anll anr));
+
+@_ local def rlrec (z: nat) (S: set) (n: nat): nat =
+$ lrec z (\\ a, \\ l, \ ih, S @ (a <> rev l <> ih)) (rev n) $;
+theorem rlrec0: $ rlrec z S 0 = z $ = (named '(eqtr (lreceq3 rev0) lrec0));
+theorem rlrecS: $ rlrec z S (l |> a) = S @ (a <> l <> rlrec z S l) $ =
+(named '(eqtr (lreceq3 revsnoc) @ ! eqtr _ $ _ @ (a <> _ <> rlrec z S l) $ _ lrecS @
+  appslame @ appslamed @ applamed @
+  appeq2d @ preqd anll @ preqd (syl6eq revrev @ reveqd anlr) anr));
+
+-- The sort modifiers 'pure', 'strict', 'provable', 'free'
+-- sPure : SortData -> Bool
+@_ def sPure     (n: nat): wff = $ true (pi11 n) $;
+-- sStrict : SortData -> Bool
+@_ def sStrict   (n: nat): wff = $ true (pi12 n) $;
+-- sProvable : SortData -> Bool
+@_ def sProvable (n: nat): wff = $ true (pi21 n) $;
+-- sFree : SortData -> Bool
+@_ def sFree     (n: nat): wff = $ true (pi22 n) $;
+
+-- A binder is either a bound variable with sort s, or a regular variable
+-- with sort s and dependencies vs.
+-- PBound : SortID -> Binder
+@_ def PBound (s: nat): nat = $ b0 s $;
+-- PReg : SortID -> set VarID -> Binder
+@_ def PReg (s vs: nat): nat = $ b1 (s <> vs) $;
+
+-- Get the sort of a binder.
+-- binderSort : Binder -> SortID
+@_ def binderSort (x: nat): nat =
+$ case (\ n, n) (\ n, fst n) @ x $;
+pub theorem binderSortBound (s: nat): $ binderSort (PBound s) = s $ =
+(named '(eqtr casel @ applame id));
+pub theorem binderSortReg (s vs: nat): $ binderSort (PReg s vs) = s $ =
+(named '(eqtr caser @ applame @ syl6eq fstpr fsteq));
+
+-- An s-expression, representing the terms and formulas. It can be either a
+-- variable (v is a VarID) or an application of the term with TermID `f`
+-- to arguments `x` (a list of s-expressions).
+-- SVar : VarID -> SExpr
+@_ def SVar (v: nat): nat = $ b0 v $;
+-- SApp : TermID -> list SExpr -> SExpr
+@_ def SApp (f x: nat): nat = $ b1 (f <> x) $;
+
+-- The environment is composed of declarations, which come in a few types:
+-- A `sort` declaration has an associated `SortData` with the sort modifiers.
+-- Sorts are indexed by SortID and picked out by `getSD`.
+-- DSort : SortID -> SortData -> Decl
+@_ def DSort (id sd: nat): nat = $ b0 (b0 (b0 (id <> sd))) $;
+-- A `term` declaration has a list of binders, and a target type (a DepType,
+-- which is a `(SortID, set VarID)` pair).
+-- Terms are indexed by TermID and picked out by `getTerm`.
+-- DTerm : TermID -> Ctx -> DepType -> Decl
+@_ def DTerm (id args ret: nat): nat = $ b0 (b0 (b1 (id <> args <> ret))) $;
+-- A `def` declaration is the same as a `term` except it also has an optional
+-- definition component which lists the sorts of the dummy variables and the
+-- definition's expression.
+-- Defs are indexed by TermID and picked out by `getTerm`.
+-- DDef : TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Decl
+@_ def DDef (id args ret def: nat): nat =
+  $ b0 (b1 (id <> args <> ret <> def)) $;
+-- An `axiom` declaration has a list of binders, a list of hypotheses,
+-- and a consequent.
+-- Axioms are not indexed, they are simply found by statement.
+-- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
+@_ def DAxiom (args hs ret: nat): nat = $ b1 (b0 (args <> hs <> ret)) $;
+-- A `theorem` declaration is exactly the same structure as an `axiom`, but
+-- the interpretation is different - theorems require proofs, while axioms are
+-- added in the spec.
+-- Theorems are not indexed, they are simply found by statement.
+-- DThm : Ctx -> list SExpr -> SExpr -> Decl
+@_ def DThm (vs hs ret: nat): nat = $ b1 (b1 (vs <> hs <> ret)) $;
+
+-- This function extracts the `SortData` for a sort given by `SortID`.
+-- getSD : Env -> SortID -> SortData -> Bool
+@_ def getSD (env id sd: nat): wff = $ DSort id sd IN env $;
+
+-- This function gets the term and definition data for a term.
+-- getTerm : Env -> TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Bool
+@_ def getTerm (env id a r v: nat): wff =
+$ v = 0 /\ DTerm id a r IN env \/ DDef id a r v IN env $;
+
+-- This function gets the data for an axiom or theorem.
+-- getThm : Env -> Ctx -> list SExpr -> SExpr -> Bool
+@_ def getThm (env a h r: nat): wff =
+$ DAxiom a h r IN env \/ DThm a h r IN env $;
+
+-- Is this ID a valid sort?
+-- isSort : Env -> SortID -> Bool
+@_ def isSort (env s .sd: nat): wff = $ E. sd getSD env s sd $;
+
+-- Looks this variable up in the context, and reports whether it represents a
+-- bound variable.
+-- isBound : Ctx -> VarID -> Bool
+@_ def isBound (ctx x .s: nat): wff = $ E. s nth ctx x = suc (PBound s) $;
+
+-- Checks if this a well formed dependent type in the context. A DepType is a
+-- pair (SortID, set VarID) giving the sort and the variable dependencies.
+-- DepType : Env -> Ctx -> DepType -> Bool
+@_ def DepType (env ctx ty .x: nat): wff =
+$ isSort env (fst ty) /\ A. x (x e. snd ty -> isBound ctx x) $;
+
+@_ local def Ctx_aux (env ctx: nat): nat =
+$ rlrec 1 (\\ bi, \\ ctx2, \ ih, ih * nat (bi e. Sum
+    {s | E. sd (getSD env s sd /\ ~ sStrict sd)}
+    {svs | DepType env ctx2 svs})) ctx $;
+theorem Ctx_aux0 (env: nat): $ Ctx_aux env 0 = 1 $ = (named 'rlrec0);
+theorem Ctx_auxS (env: nat): $ Ctx_aux env (ctx |> bi) = Ctx_aux env ctx *
+  nat (bi e. Sum
+    {s | E. sd (getSD env s sd /\ ~ sStrict sd)}
+    {svs | DepType env ctx svs}) $ =
+(named '(! eqtr _ $ _ @ (_ <> _ <> Ctx_aux env ctx) $ _ rlrecS @
+  appslame @ appslamed @ applamed @ muleqd anr @
+  nateqd @ eleqd anll @ Sumeq2d @ abeqd @ DepTypeeq2d anlr));
+
+-- Checks if this a well formed context. A context can be extended with a bound
+-- variable binder if the sort of the binder is not `strict`.
+-- Note `Ctx = list Binder`.
+-- Ctx : Env -> Ctx -> Bool
+@_ def Ctx (env ctx: nat): wff = $ true (Ctx_aux env ctx) $;
+pub theorem Ctx0 (env: nat): $ Ctx env 0 $ = '(mpbir (trueeq Ctx_aux0) true1);
+pub theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
+  Ctx env ctx /\ E. sd (getSD env s sd /\ ~ sStrict sd) $ =
+(named '(bitr (trueeq Ctx_auxS) @ bitr truemul @ aneq2i @
+  bitr truenat @ bitr Suml @ elabe @ exeqd @ aneq1d getSDeq2));
+pub theorem CtxReg (env ctx s vs: nat): $ Ctx env (ctx |> PReg s vs) <->
+  Ctx env ctx /\ DepType env ctx (s <> vs) $ =
+(named '(bitr (trueeq Ctx_auxS) @ bitr truemul @ aneq2i @
+  bitr truenat @ bitr Sumr @ elabe DepTypeeq3));
+
+@_ local def SExprRec (V F: set): set =
+$ \ e, srec (\ ih, case V (\\ f, \ x, F @ (f <> x <> map ih x)) @ size (Dom ih)) e $;
+
+theorem SExprRec_val (V F: set) (v: nat): $ SExprRec V F @ e =
+  case V (\\ f, \ x, F @ (f <> x <> map (SExprRec V F |` upto e) x)) @ e $ =
+(named '(eqtr (applame sreceq2) @
+  ! eqtr _ $ _ @ (lower (SExprRec V F |` _)) $ _ srecval @
+  applame @ appeqd
+    (caseeq2d @ slameqd @ lameqd @ appeq2d @ preq2d @
+      preq2d @ mapeq1d @ bi2 @ eqlower2 @ finlam finns)
+    sreclem));
+
+theorem SExprRec_Var (V F: set) (v: nat): $ SExprRec V F @ (SVar v) = V @ v $ =
+(named '(eqtr SExprRec_val casel));
+theorem SExprRec_App (V F: set) (f es: nat):
+  $ SExprRec V F @ (SApp f es) = F @ (f <> es <> map (SExprRec V F) es) $ =
+(named '(eqtr SExprRec_val @ eqtr caser @
+  appslame @ applamed @ appeq2d @ preqd anl @ preqd anr @ syl6eq
+    (mapeqg @ mpbir allal @ !! ax_gen e @ syl resapp @ sylibr elupto @
+      lelttrd (letrd (syl ltle lmemlt) (a1i leprid2)) (a1i b1ltid))
+    (mapeq2d anr)));
+
+theorem SExpr_indd {x f es} (n) (px: wff x) (pv: wff v) (pe: wff f es)
+  (hv: $ x = SVar v -> (px <-> pv) $)
+  (he: $ x = SApp f es -> (px <-> pe) $)
+  (hn: $ x = n -> (px <-> pn) $)
+  (h1: $ G -> pv $) (h2: $ G /\ all {x | px} es -> pe $): $ G -> pn $ =
+'(sylib (sbe hn) @ !! indstr z w sbeq1 sbeq1 @ mpi b0orb1 @ eorda
+  (mpbird (sbeq1d anr) @ anwll @ syl (eale (syl5bbr (sbe hv) sbeq1)) (iald h1))
+  (mpi ax_6 @ eexda @ mpi ax_6 @ eexda @
+    mpbird (sbeq1d @ eqtr4d anllr @ b1eqd @ syl6eq fstsnd @ preqd anlr anr) @
+    sylibr (sbe he) @ mpd
+      (mpbird (alleq2d anr) @ anw3l @ anwr @
+        sylibr (alleq1 cbvabs) @ sylibr allal @ alimi @ imim1i @
+        syl (mpi (letr sndleid divleid) ltletr) lmemlt)
+      (anw4l @ exp h2)));
+
+@_ local def ExprBi_aux (env ctx e ih: nat): set = $ Sum
+  {s | E. v (e = SVar v /\ nth ctx v = suc (PBound s))}
+  {svs | ih = suc (fst svs)} $;
+
+@_ local def Expr_aux (env ctx: nat): set =
+$ SExprRec
+  (\ v, theo {s | E. bi (nth ctx v = suc bi /\ binderSort bi = s)})
+  (\\ f, \\ xs, \ ih, theo {s | E. args E. ret E. o
+    (getTerm env f args ret o /\
+     all2 x a (a e. ExprBi_aux env ctx x ih) xs args /\
+     s = fst ret)}) $;
+
+-- These mutually recursive functions check if an expression `e` is well-typed
+-- with sort `s`, and that `e` is well-typed and valid for entry into a binder
+-- `bi`. The main difference is that for an expression to be valid for a
+-- BV binder, the expression must itself be a bound variable.
+-- Expr : Env -> Ctx -> SExpr -> SortID -> Bool
+@_ def Expr (env ctx e s: nat): wff = $ Expr_aux env ctx @ e = suc s $;
+-- ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool
+@_ def ExprBi (env ctx e bi: nat): wff =
+$ bi e. ExprBi_aux env ctx e (Expr_aux env ctx @ e) $;
+
+pub theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
+  E. bi (nth ctx v = suc bi /\ binderSort bi = s) $;
+pub theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
+  $ Expr env ctx (SApp f xs) s <-> E. args E. ret E. o
+    (getTerm env f args ret o /\
+     all2 x a (ExprBi env ctx x a) xs args /\
+     s = fst ret) $;
+pub theorem ExprBiBound (env ctx e s: nat) {v: nat}:
+  $ ExprBi env ctx e (PBound s) <->
+    E. v (e = SVar v /\ nth ctx v = suc (PBound s)) $;
+pub theorem ExprBiReg (env ctx e s vs: nat):
+  $ ExprBi env ctx e (PReg s vs) <-> Expr env ctx e s $;
+
+-- Is this a type correct expression of provable type? This is used to
+-- typecheck expressions appearing in hypotheses and conclusions of
+-- axiom/pub theorem.
+-- ExprProv : Env -> Ctx -> SExpr -> Bool
+@_ def ExprProv (env ctx e .s .sd: nat): wff =
+$ E. s E. sd (Expr env ctx e s /\ getSD env s sd /\ sProvable sd) $;
+
+-- A helper function to add dummy variables to the context.
+-- appendDummies : Ctx -> list SortID -> Ctx
+@_ def appendDummies (ctx ds .d: nat): nat = $ ctx ++ map (\ d, PBound d) ds $;
+
+-- Does this expression contain any occurrence of the variable `v`? This check
+-- ignores bound variables, "metamath style". We use this stricter check for
+-- verifying pub theorem applications.
+-- HasVar : Ctx -> SExpr -> VarID -> Bool
+@_ def HasVar (ctx e v: nat): wff;
+pub theorem HasVarBound (ctx u v s: nat):
+  $ nth ctx u = suc (PBound s) -> (HasVar ctx (SVar u) v <-> u = v) $;
+pub theorem HasVarReg (ctx u v s vs: nat):
+  $ nth ctx u = suc (PReg s vs) -> (HasVar ctx (SVar u) v <-> v e. vs) $;
+pub theorem HasVarApp (ctx f es v: nat) {e: nat}:
+  $ HasVar ctx (SApp f es) v <-> E. e (e IN es /\ HasVar ctx e v) $;
+
+-- A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
+-- is a regular argument and `(/)` if `a` is a bound argument.
+-- MaybeFreeArgs : list SExpr -> Binder -> VarID -> Bool
+@_ def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
+$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
+
+-- Does this expression contain any _free_ occurrence of the variable `v`?
+-- This is the more complex binder-respecting check. Intuitively, if
+-- `term foo {x y: set} (ph: set x): set y;`, then `foo` binds occurrences of
+-- `x` in `ph`, and adds a dependency on `y` regardless. We might write this
+-- as `FV(foo x y ph) = (FV(ph) \ {x}) u {y}`, but the definition below is
+-- for arbitrary binding structures.
+-- Free : Env -> Ctx -> SExpr -> VarID -> Bool
+@_ def Free (env ctx e v: nat): wff;
+pub theorem FreeVar (env ctx u v: nat):
+  $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $;
+pub theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
+  $ getTerm env f args (r <> rs) o ->
+    (Free env ctx (SApp f es) v <->
+      ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
+      E. u (u e. rs /\ nth es u = suc (SVar v))) $;
+
+
+-- Is this a valid term in the given environment? A term is valid if
+-- the argument list is valid, the return type is valid, and the return sort
+-- is not `pure` (because `pure` sorts are not allowed to have term
+-- constructors).
+-- TermOk : Env -> TermID -> Ctx -> DepType -> Bool
+@_ def TermOk (env id args ret .a .r .v .sd: nat): wff =
+$ ~E. a E. r E. v getTerm env id a r v /\
+  Ctx env args /\ DepType env args ret /\
+  E. sd (getSD env (fst ret) sd /\ ~ sPure sd) $;
+
+-- Is this a valid definition in the given environment? A definition is valid
+-- if it is a valid term, and the definition typechecks, and all free variables
+-- are declared in the return type. (Note in particular that dummies cannot
+-- appear in the return type dependencies, so this ensures that all dummies are
+-- bound by the definition.)
+-- DefOk : Env -> TermID -> Ctx -> DepType -> Bool
+@_ def DefOk (env id args ret ds e .ctx .v .s .sd: nat): wff =
+$ TermOk env id args ret /\ [ appendDummies args ds / ctx ]
+  (Ctx env ctx /\ Expr env ctx e (fst ret) /\
+    A. v (Free env ctx e v -> v e. snd ret \/
+      E. sd E. s (nth ctx v = suc (PBound s) /\
+        getSD env s sd /\ sFree sd))) $;
+
+-- Is this a valid declaration in the environment?
+-- Decl : Env -> Decl -> Bool
+@_ def Decl (env d: nat): wff;
+pub theorem DeclSort (env id sd: nat): $ Decl env (DSort id sd) $;
+pub theorem DeclTerm (env id args ret: nat):
+  $ Decl env (DTerm id args ret) <-> TermOk env id args ret $;
+pub theorem DeclAxiom (env args hs ret: nat) {x: nat}:
+  $ Decl env (DAxiom args hs ret) <->
+    Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $;
+pub theorem DeclDef (env id args ret: nat) {ds e o v: nat}:
+  $ Decl env (DDef id args ret o) <-> TermOk env id args ret /\
+    A. ds A. e (o = suc (ds <> e) -> DefOk env id args ret ds e) $;
+pub theorem DeclThm (env args hs ret: nat) {x: nat}:
+  $ Decl env (DThm args hs ret) <->
+    Ctx env args /\ all {x | ExprProv env args x} (ret : hs) $;
+
+-- This defines a valid mm0 specification. These are well formed ASTs for which
+-- we can assign a provability predicate.
+-- Env : Env -> Bool
+@_ def Env (e: nat): wff;
+pub theorem Env0: $ Env 0 $;
+pub theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Decl e s $;
+
+-- `EnvExtend e1 e2` means that environment `e2` is an extension of `e1`,
+-- meaning that all sorts, terms, and axioms are preserved, but abstract defs
+-- may be provided definitions, and new defs and pub theorems can be added.
+-- EnvExtend : Env -> Env -> Bool
+@_ def EnvExtend (e1 e2: nat): wff;
+pub theorem EnvExtend0 (e: nat): $ EnvExtend e 0 <-> e = 0 $;
+pub theorem EnvExtendSort (e1 e2 id sd: nat) {e: nat}:
+  $ EnvExtend e1 (e2 |> DSort id sd) <->
+    E. e (e1 = e |> DSort id sd /\ EnvExtend e e2) $;
+pub theorem EnvExtendTerm (e1 e2 id a r: nat) {e: nat}:
+  $ EnvExtend e1 (e2 |> DTerm id a r) <->
+    E. e (e1 = e |> DTerm id a r /\ EnvExtend e e2) $;
+pub theorem EnvExtendAxiom (e1 e2 a h r: nat) {e: nat}:
+  $ EnvExtend e1 (e2 |> DAxiom a h r) <->
+    E. e (e1 = e |> DAxiom a h r /\ EnvExtend e e2) $;
+pub theorem EnvExtendDef (e1 e2 id a r o: nat) {e o2: nat}:
+  $ EnvExtend e1 (e2 |> DDef id a r o) <->
+    E. e E. o2 ((o != 0 -> o2 = o) /\
+      e1 = e |> DDef id a r o2 /\ EnvExtend e e2) \/
+    EnvExtend e1 e2 $;
+pub theorem EnvExtendThm (e1 e2 id a h r: nat) {e o2: nat}:
+  $ EnvExtend e1 (e2 |> DThm a h r) <->
+    E. e E. o2 (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
+    EnvExtend e1 e2 $;
+
+------------------
+-- Verification --
+------------------
+
+-- This performs simultaneous substitution of the variables in `e` with the
+-- expressions in `sub`.
+-- substExpr : list SExpr -> SExpr => SExpr
+@_ def substExpr (sub e: nat): nat;
+pub theorem substExprVar (sub v e: nat):
+  $ substExpr sub (SVar v) = nth sub v - 1 $;
+pub theorem substExprApp (sub f es: nat) {e: nat}:
+  $ substExpr sub (SApp f es) = SApp f (map (\ e, substExpr sub e) es) $;
+
+-- A CExpr is a convertibility proof.
+-- CRefl e : e = e
+-- CRefl : SExpr -> CExpr
+@_ def CRefl (e: nat): nat = $ b0 (b0 e) $;
+-- If p : e = e' |- CSymm p : e' = e
+-- CSymm : CExpr -> CExpr
+@_ def CSymm (p: nat): nat = $ b0 (b1 p) $;
+-- {p : e = e'} |- CCong f {p} : f {e} = f {e'}
+-- CCong : TermID -> CExpr -> CExpr
+@_ def CCong (f cs: nat): nat = $ b1 (b0 (f <> cs)) $;
+-- If t {x} := {y}. e', then
+-- p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong t {z} p : t {e} = e''
+-- CUnfold : TermID -> CExpr -> CExpr
+@_ def CUnfold (t zs c: nat): nat = $ b1 (b1 (t <> zs <> c)) $;
+
+-- A VExpr is a proof term.
+-- A VHyp is a hypothesis step - a term is asserted from the local context.
+-- Indexing is relative to the list of hypotheses to the pub theorem.
+-- VHyp : HypID -> VExpr
+@_ def VHyp (n: nat): nat = $ b0 (b0 n) $;
+-- A VThm is a pub theorem application - a step follows from previous steps by
+-- application of a pub theorem. The arguments give the pub theorem to apply, the list
+-- of substitutions of expressions for the variables, and the list of subproofs
+-- for the hypotheses to the pub theorem.
+-- VThm : ThmID -> list SExpr -> list VExpr -> VExpr
+@_ def VThm (a h r es ps: nat): nat = $ b0 (b1 (a <> h <> r <> es <> ps)) $;
+-- c : A = B, p : A |- VConv c p : B
+-- VConv : CExpr -> VExpr -> VExpr
+@_ def VConv (c p: nat): nat = $ b1 (c <> p) $;
+
+-- Given a context, which contains bound variables and regular variables with
+-- dependencies, we can construct a disjoint variable list by making all
+-- bound variables distinct from each other, and all regular variables disjoint
+-- from all previous bound variables, except those that are present in the
+-- type dependencies to the variable. This function expresses the list as a
+-- predicate.
+-- DV : Ctx -> VarID -> VarID -> Bool
+@_ def DV (ctx u v: nat): wff;
+pub theorem DV0 (u v: nat): $ ~ DV 0 u v $;
+pub theorem DVBound (ctx s u v: nat):
+  $ DV (ctx |> PBound s) u v <->
+    DV ctx u v \/ (isBound ctx u /\ v = len ctx) $;
+pub theorem DVReg (ctx s vs u v: nat):
+  $ DV (ctx |> PReg s vs) u v <->
+    DV ctx u v \/ (isBound ctx u /\ ~ u e. vs /\ v = len ctx) $;
+
+-- Checking a conversion proof c : (e1 : s) = (e2 : s).
+-- VerifyConv : Env -> Ctx -> CExpr -> SExpr -> SExpr -> SortID -> Bool
+@_ def VerifyConv (env ctx c e1 e2 s: nat): wff;
+-- VerifyConvs : Env -> Ctx -> list CExpr -> list SExpr -> list SExpr -> list Binder -> Bool
+@_ def VerifyConvs (env ctx cs es1 es2 bis .n .i .c .e1 .e2 .bi: nat): wff =
+$ E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len bis = n /\
+  A. i A. c A. e1 A. e2 A. bi (nth cs i = suc c ->
+    nth es1 i = suc e1 -> nth es2 i = suc e2 -> nth bis i = suc bi ->
+    ExprBi env ctx e1 bi /\ ExprBi env ctx e2 bi /\
+    VerifyConv env ctx c e1 e2 (binderSort bi))) $;
+pub theorem VerifyConvRefl (env ctx e e1 e2 s: nat):
+  $ VerifyConv env ctx (CRefl e) e1 e2 s <->
+    Expr env ctx e s /\ e = e1 /\ e = e2 $;
+pub theorem VerifyConvSymm (env ctx e e1 e2 s: nat):
+  $ VerifyConv env ctx (CSymm e) e1 e2 s <-> VerifyConv env ctx e e2 e1 s $;
+pub theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}:
+  $ VerifyConv env ctx (CCong f cs) e1 e2 s <->
+    E. args E. ret E. o E. es1 E. es2 (
+      e1 = SApp f es1 /\ e2 = SApp f es2 /\
+      getTerm env f args ret o /\
+      VerifyConvs env ctx cs es1 es2 args /\
+      s = fst ret) $;
+pub theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
+  {args ret ys val es a y z e i: nat}:
+  $ VerifyConv env ctx (CUnfold f zs c) e1 e2 s <->
+    E. args E. ret E. ys E. val E. es (
+      getTerm env f args ret (suc (ys <> val)) /\
+      e1 = SApp f es /\ s = fst ret /\
+      all2 e a (ExprBi env ctx e a) es args /\
+      all2 y z (nth ctx z = suc (PBound y) /\
+        A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
+      VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $;
+
+-- The main proof checking function. This typechecks a VExpr and determines the
+-- SExpr that it represents. At a hypothesis step, this is just looking up the
+-- nth element in the list, and at a pub theorem step, we get the pub theorem data,
+-- check that all the substituting expressions match the binders they are going
+-- in for, check that all the disjoint variable conditions of the pub theorem
+-- are honored by the substitution, and then check recursively that the
+-- subproofs are okay and the return is what it should be.
+-- VerifyProof : Env -> Ctx -> list SExpr -> VExpr -> SExpr -> Bool
+@_ def VerifyProof (env ctx hs pf ret: nat): wff;
+pub theorem VerifyProofHyp (env ctx hs n ret: nat):
+  $ VerifyProof env ctx hs (VHyp n) ret <-> nth n hs = suc ret $;
+pub theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
+  {args e a u v s y e2 p h: nat}:
+  $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
+    (getThm env args2 hs2 ret2 /\
+      all2 e a (ExprBi env ctx e a) es args2 /\
+      A. u A. v (E. s nth ctx u = suc (PBound s) ->
+        v < len ctx -> ~HasVar ctx (SVar v) u ->
+        A. y A. e2 (nth es u = suc (SVar y) -> nth es v = suc e2 ->
+          ~HasVar ctx e2 y)) /\
+      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
+      substExpr es ret2 = ret) $;
+pub theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
+  $ VerifyProof env ctx hs (VConv c p) ret <->
+    E. e1 E. s (
+      VerifyConv env ctx c e1 ret s /\
+      VerifyProof env ctx hs p e1) $;
+
+-- The main recursion for the proof judgment on an environment. Here `env` are
+-- the declarations that have already been processed and `e` are the
+-- declarations we are still stepping through. `p` is a proof object whose
+-- existence entails provability of the environment.
+-- Proof : Env -> Proof -> Bool
+@_ def Proof (env p: nat): wff;
+pub theorem Proof0 (p: nat): $ Proof 0 p <-> p = 0 $;
+pub theorem ProofSort (env id sd p: nat):
+  $ Proof (env |> DSort id sd) p <-> Proof env p $;
+pub theorem ProofTerm (env id a r p: nat):
+  $ Proof (env |> DTerm id a r) p <-> Proof env p $;
+pub theorem ProofAxiom (env a h r p: nat):
+  $ Proof (env |> DAxiom a h r) p <-> Proof env p $;
+pub theorem ProofDef (env id a r o p: nat):
+  $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $;
+pub theorem ProofThm (env e p a h r .p1 .ds .pf .ctx: nat):
+  $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf E. ctx (
+    p = p1 <> (ds <> pf) /\ Proof env p1 /\
+    ctx = appendDummies a ds /\ Ctx env ctx /\
+    VerifyProof env ctx h pf r) $;
+
+-- A specification is provable if some extension of the specification has a proof.
+-- The extension provides definitions for the providing all the omitted definitions and proving all the pub theorems in the
+-- file.
+-- ValidEnv : Env -> Bool
+@_ def ValidEnv (env .e .p: nat): wff = $ E. e (EnvExtend env e /\ E. p Proof e p) $;
+
+
+-------------
+-- Parsing --
+-------------
+
+-- Definition of ASCII, or at least the part of it we need
+@_ def _nl:     char = $ ch x0 xa $; -- "\n" newline character
+@_ def _cr:     char = $ ch x0 xd $; -- "\r" carriage return
+@_ def __:      char = $ ch x2 x0 $; -- " " space
+@_ def _dollar: char = $ ch x2 x4 $; -- "$" dollar sign
+@_ def _lparen: char = $ ch x2 x8 $; -- "(" left parenthesis
+@_ def _rparen: char = $ ch x2 x9 $; -- ")" right parenthesis
+@_ def _ast:    char = $ ch x2 xa $; -- "*" asterisk / multiplication symbol
+@_ def _hyphen: char = $ ch x2 xd $; -- "-" hyphen / minus sign
+@_ def _dot:    char = $ ch x2 xe $; -- "." dot / period / full stop
+@_ def _colon:  char = $ ch x3 xa $; -- ":" colon
+@_ def _semi:   char = $ ch x3 xb $; -- ";" semicolon
+@_ def _equal:  char = $ ch x3 xd $; -- "=" equal sign
+@_ def _gt:     char = $ ch x3 xe $; -- ">" greater than, right arrow
+@_ def _under:  char = $ ch x5 xf $; -- "_" underscore (note: __ is space)
+@_ def _lbrace: char = $ ch x7 xb $; -- "{" left brace / curly bracket
+@_ def _rbrace: char = $ ch x7 xd $; -- "}" right brace / curly bracket
+
+-- ASCII numbers
+@_ def _0: char = $ ch x3 x0 $;
+@_ def _1: char = $ ch x3 x1 $;
+@_ def _2: char = $ ch x3 x2 $;
+@_ def _3: char = $ ch x3 x3 $;
+@_ def _4: char = $ ch x3 x4 $;
+@_ def _5: char = $ ch x3 x5 $;
+@_ def _6: char = $ ch x3 x6 $;
+@_ def _7: char = $ ch x3 x7 $;
+@_ def _8: char = $ ch x3 x8 $;
+@_ def _9: char = $ ch x3 x9 $;
+
+-- Don't really need capitals except as a range
+@_ def _A: char = $ ch x4 x1 $;
+@_ def _Z: char = $ ch x5 xa $;
+
+-- Most of the lowercase alphabet, used in keywords
+@_ def _a: char = $ ch x6 x1 $;
+@_ def _b: char = $ ch x6 x2 $;
+@_ def _c: char = $ ch x6 x3 $;
+@_ def _d: char = $ ch x6 x4 $;
+@_ def _e: char = $ ch x6 x5 $;
+@_ def _f: char = $ ch x6 x6 $;
+@_ def _h: char = $ ch x6 x8 $;
+@_ def _i: char = $ ch x6 x9 $;
+@_ def _l: char = $ ch x6 xc $;
+@_ def _m: char = $ ch x6 xd $;
+@_ def _n: char = $ ch x6 xe $;
+@_ def _o: char = $ ch x6 xf $;
+@_ def _p: char = $ ch x7 x0 $;
+@_ def _r: char = $ ch x7 x2 $;
+@_ def _s: char = $ ch x7 x3 $;
+@_ def _t: char = $ ch x7 x4 $;
+@_ def _u: char = $ ch x7 x5 $;
+@_ def _v: char = $ ch x7 x6 $;
+@_ def _x: char = $ ch x7 x8 $;
+@_ def _z: char = $ ch x7 xa $;
+
+-- Now we define the lexer:
+
+@_ def prefix (s t .x: nat): wff = $ E. x s ++ x = t $;
+
+@_ def maxPrefix (A: set) (s: nat): nat;
+pub theorem maxPrefix0 {x: nat} (A: set) (s: nat):
+  $ ~ (E. x (prefix x s /\ x e. A)) -> maxPrefix A s = 0 $;
+pub theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
+  $ E. x (prefix x s /\ x e. A) ->
+    E. x E. t (x ++ t = s /\ x e. A /\
+          A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+          maxPrefix A s = suc (x <> t)) $;
+
+@_ def regexStar (R: set) (.s .t .L .x .y: nat): set =
+$ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;
+@_ def regexApp (R S: set) (.z .a .b .x .y: nat): set =
+$ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
+    z = (x ++ y) <> (a <> b))} $;
+infixr regexApp: $<+>$ prec 75;
+@_ def regexPlus (R: set) (.x: nat): set =
+$ regexStar R i^i {x | snd x != 0} $;
+@_ def regexOpt (R: set) (.s .t .y: nat): set =
+$ sn 0 u. opab s t (E. y (s <> y e. R /\ t = suc y)) $;
+
+-- The set of whitespace characters
+-- white : set char
+@_ def white: nat = $ __ ; sn _nl $;
+
+@_ def regexLineComment (.x .y: nat): set =
+$ (\ x, _hyphen : _hyphen : x ++ _nl : 0) '' {x | all {y | y != _nl} x} $;
+
+@_ def whitespace (.c: nat): set =
+$ ((\ c, c : 0) '' white) u. regexLineComment $;
+
+@_ def regexMath (.x .y: nat): set =
+$ (\ x, _dollar : x ++ _dollar : 0) '' {x | all {y | y != _dollar} x} $;
+
+@_ def IdentStart (.c: nat): set =
+$ {c | (_a <= c /\ c <= _z) \/ (_A <= c /\ c <= _Z) \/ c = _under} $;
+
+@_ def digits (.c: nat): set = $ {c | _0 <= c /\ c <= _9} $;
+
+@_ def IdentRest (.c: nat): set = $ IdentStart u. digits $;
+
+@_ def regexIdent (.s .x .y .t: nat): set =
+$ {s | E. x E. t (s = x : t /\ x e. IdentStart /\ all IdentRest t)} $;
+
+@_ def isNumber (.s .x .y .t: nat): set =
+$ sn _0 u. {s | E. x E. t (s = x : t /\
+  _1 <= x /\ x <= _9 /\ all digits t)} $;
+
+@_ def symbols: nat =
+$ _ast ; _dot ; _colon ; _semi ; _lparen ; _rparen ;
+  _gt ; _lbrace ; _rbrace ; sn _equal $;
+
+@_ def TK (s: nat): nat = $ b0 s $;
+@_ def MATH (s: nat): nat = $ b1 s $;
+
+@_ def Tokenize (s: nat): set;
+pub theorem Tokenize0: $ Tokenize 0 == sn 0 $;
+pub theorem TokenizeWS (s x: nat):
+  $ s e. whitespace -> Tokenize (s ++ x) == Tokenize x $;
+pub theorem TokenizeIdent {t: nat} (s x r: nat):
+  $ maxPrefix regexIdent s = suc (x <> r) ->
+    Tokenize s == (\ t, TK x : t) '' Tokenize r $;
+pub theorem TokenizeNumber {t: nat} (s x r: nat):
+  $ maxPrefix isNumber s = suc (x <> r) ->
+    Tokenize s == (\ t, TK x : t) '' Tokenize r $;
+pub theorem TokenizeSymbol {t: nat} (c x: nat):
+  $ c e. symbols -> Tokenize (c : x) == (\ t, TK (c : 0) : t) '' Tokenize x $;
+pub theorem TokenizeMath {t: nat} (s x: nat):
+  $ s e. regexMath -> Tokenize (s ++ x) == (\ t, MATH s : t) '' Tokenize x $;
+
+
+-- Now the parser:
+
+@_ def regexMap (F R: set): set = $ cnv F o. R $;
+infixr regexMap: $<@>$ prec 100;
+
+@_ def regexAppL (R S: set) (.x: nat): set = $ (\ x, fst x) <@> (R <+> S) $;
+infixl regexAppL: $<+$ prec 77;
+
+@_ def regexAppR (R S: set) (.x: nat): set = $ (\ x, snd x) <@> (R <+> S) $;
+infixr regexAppR: $+>$ prec 76;
+
+def parseTk (tk: string): set = $ sn (TK tk <> 0) $;
+def parseOptTk (tk: string): set = $ regexOpt (parseTk tk) $;
+def parseCh (c: char): set = $ parseTk (s1 c) $;
+
+@_ def _pure: string = $ _p ': _u ': _r ': _e ': s0 $;
+@_ def _strict: string = $ _s ': _t ': _r ': _i ': _c ': _t ': s0 $;
+@_ def _provable: string = $ _p ': _r ': _o ': _v ': _a ': _b ': _l ': _e ': s0 $;
+@_ def _free: string = $ _f ': _r ': _e ': _e ': s0 $;
+
+@_ def parseSortData: set =
+$ (parseOptTk _pure <+> parseOptTk _strict) <+>
+  (parseOptTk _provable <+> parseOptTk _free) $;
+
+@_ def parseIdent_ (.s: nat): set = $ (\ s, TK s <> s) '' regexIdent $;
+@_ def parseIdent (.x: nat): set = $ parseIdent_ i^i {x | snd x != s1 _under} $;
+
+@_ def ASTSort (x: nat): nat = $ b0 (b0 (b0 x)) $;
+@_ def ASTTerm (x: nat): nat = $ b0 (b0 (b1 x)) $;
+@_ def ASTAxiom (x: nat): nat = $ b0 (b1 (b0 x)) $;
+@_ def ASTDef (x: nat): nat = $ b0 (b1 (b1 x)) $;
+@_ def ASTThm (x: nat): nat = $ b1 (b0 (b0 x)) $;
+@_ def ASTIO (out x: nat): nat = $ b1 (b0 (b1 (out <> x))) $;
+@_ def ASTNota (x: nat): nat = $ b1 (b1 x) $;
+
+@_ def _sort: string = $ _s ': _o ': _r ': _t ': s0 $;
+@_ def parseSort (.x: nat): set = $ (\ x, ASTSort x) <@>
+  (parseSortData <+> parseTk _sort +> parseIdent <+ parseCh _semi) $;
+
+@_ def parseType (.x: nat): set = $ (\ x, b0 x) <@>
+  (parseIdent <+> regexStar parseIdent) $;
+@_ def parseFmla (.s: nat): set = $ Ran (\ s, MATH s <> b1 s) $;
+@_ def parseTypeFmla: set = $ parseType u. parseFmla $;
+
+@_ def parseDummyId (.x: nat): set =
+$ (\ x, b0 x) <@> parseIdent_ u.
+  (\ x, b1 x) <@> (parseCh _dot +> parseIdent) $;
+
+-- This throws all binders into a common parsed representation.
+-- {x: set}     goes to    (0, b0 "x", b0 ("set", []))
+-- (x: set)     goes to    (1, b0 "x", b0 ("set", []))
+-- (x: set y)   goes to    (1, b0 "x", b0 ("set", ["y"]))
+-- (x: $foo$)   goes to    (1, b0 "x", b1 "foo")
+-- (_: $foo$)   goes to    (1, b0 "_", b1 "foo")
+-- (.x: set)    goes to    (1, b1 "x", b0 ("set", []))
+
+@_ def parseCurlyBinder (.x .z: nat): set =
+$ (\ z, map (\ x, 0 <> x <> snd z) (fst z)) <@>
+  (parseCh _lbrace +> regexStar parseDummyId <+>
+    parseCh _colon +> parseTypeFmla <+ parseCh _rbrace) $;
+@_ def parseRegBinder (.x .z: nat): set =
+$ (\ z, map (\ x, 1 <> x <> snd z) (fst z)) <@>
+  (parseCh _lparen +> regexStar parseDummyId <+>
+    parseCh _colon +> parseTypeFmla <+ parseCh _rparen) $;
+@_ def parseBinder (.x .y: nat): set = $ parseCurlyBinder u. parseRegBinder $;
+
+@_ def parseBinders (.x .z: nat): set =
+$ (\ x, ljoin x) <@> regexStar parseBinder $;
+
+@_ def parseArrows: set =
+$ regexStar (parseTypeFmla <+ parseCh _gt) <+> parseTypeFmla $;
+
+@_ def parseBindersAndArrows (.x .z: nat): set =
+$ (\ x, (fst x ++ map (\ z, (1 <> b0 (s1 _under) <> z)) (pi21 x)) <> pi22 x) <@>
+  (parseBinders <+> parseCh _colon +> parseArrows) $;
+
+def parseSimple (tk: string): set =
+$ parseTk tk +> parseIdent <+> parseBindersAndArrows <+ parseCh _semi $;
+
+@_ def _term: string = $ _t ': _e ': _r ': _m ': s0 $;
+@_ def parseTerm (.x: nat): set = $ (\ x, ASTTerm x) <@> parseSimple _term $;
+
+@_ def _axiom: string = $ _a ': _x ': _i ': _o ': _m ': s0 $;
+@_ def parseAxiom (.x: nat): set = $ (\ x, ASTAxiom x) <@> parseSimple _axiom $;
+
+@_ def _theorem: string = $ _t ': _h ': _e ': _o ': _r ': _e ': _m ': s0 $;
+@_ def parseThm (.x: nat): set = $ (\ x, ASTThm x) <@> parseSimple _theorem $;
+
+@_ def _def: string = $ _d ': _e ': _f ': s0 $;
+@_ def parseDef (.x: nat): set = $ (\ x, ASTDef x) <@>
+  (parseTk _theorem +> parseIdent <+> parseBinders <+>
+    parseCh _colon +> parseType <+>
+    regexOpt (parseCh _equal +> parseFmla) <+ parseCh _semi) $;
+
+@_ def NotaDelim (x: nat): nat = $ b0 (b0 x) $;
+@_ def NotaInfix (x y: nat): nat = $ b0 (b1 (b0 (x <> y))) $;
+@_ def NotaPfx (x: nat): nat = $ b0 (b1 (b1 x)) $;
+@_ def NotaCoe (x: nat): nat = $ b1 (b0 x) $;
+@_ def NotaGen (x: nat): nat = $ b1 (b1 x) $;
+
+@_ def _delimiter: string =
+$ _d ': _e ': _l ': _i ': _m ': _i ': _t ': _e ': _r ': s0 $;
+@_ def parseDelim (.x: nat): set = $ (\ x, NotaDelim x) <@>
+  (parseTk _delimiter +> parseFmla <+ parseCh _semi) $;
+
+@_ def stoi (x: nat): nat;
+pub theorem stoi0: $ stoi 0 = 0 $;
+pub theorem stoiS (s x: nat): $ stoi (s |> x) = stoi s * 10 + (x - _0) $;
+
+@_ def parseNumber (.s: nat): set = $ (\ s, TK s <> stoi s) '' isNumber $;
+
+@_ def _max: string = $ _m ': _a ': _x ': s0 $;
+@_ def parsePrec (.x: nat): set = $ parseTk _max u. (\ x, suc x) <@> parseNumber $;
+
+@_ def _prec: string = $ _p ': _r ': _e ': _c ': s0 $;
+def parseSimpleNota (tk: string): set =
+$ parseTk tk +> parseIdent <+> parseCh _colon +> parseFmla <+>
+    parseTk _prec +> parsePrec <+ parseCh _semi $;
+
+@_ def _infixl: string = $ _i ': _n ': _f ': _i ': _x ': _l ': s0 $;
+@_ def _infixr: string = $ _i ': _n ': _f ': _i ': _x ': _r ': s0 $;
+@_ def _prefix: string = $ _p ': _r ': _e ': _f ': _i ': _x ': s0 $;
+@_ def parseInfixl (.x: nat): set = $ (\ x, NotaInfix 0 x) <@> parseSimpleNota _infixl $;
+@_ def parseInfixr (.x: nat): set = $ (\ x, NotaInfix 1 x) <@> parseSimpleNota _infixr $;
+@_ def parsePfx (.x: nat): set = $ (\ x, NotaPfx x) <@> parseSimpleNota _prefix $;
+
+@_ def _coercion: string = $ _c ': _o ': _e ': _r ': _c ': _i ': _o ': _n ': s0 $;
+@_ def parseCoe (.x: nat): set = $ (\ x, NotaCoe x) <@>
+  (parseTk _coercion +> parseIdent <+>
+   parseCh _colon +> parseIdent <+>
+   parseCh _gt +> parseIdent <+> parseCh _semi) $;
+
+@_ def parseLiteral (.x: nat): set =
+$ ((\ x, b0 x) <@> (parseCh _lparen +> parseFmla <+>
+    parseCh _colon +> parsePrec <+ parseCh _rparen)) u.
+  ((\ x, b1 x) <@> parseIdent) $;
+
+@_ def _notation: string = $ _n ': _o ': _t ': _a ': _t ': _i ': _o ': _n ': s0 $;
+@_ def parseGenNota (.x: nat): set = $ (\ x, NotaCoe x) <@>
+  (parseTk _notation +> parseIdent <+>
+   parseBinders <+> parseCh _colon +> parseType <+>
+   parseCh _equal +> regexPlus parseLiteral <+ parseCh _semi) $;
+
+@_ def parseNota (.x: nat): set = $ (\ x, ASTNota x) <@>
+  (parseDelim u. parseInfixl u. parseInfixr u. parsePfx u.
+    parseCoe u. parseGenNota) $;
+
+@_ def _input: string = $ _i ': _n ': _p ': _u ': _t ': s0 $;
+@_ def _output: string = $ _o ': _u ': _t ': _p ': _u ': _t ': s0 $;
+
+@_ def inputKinds: nat = $0$;
+@_ def outputKinds: nat = $0$;
+
+def parseIO1 (tk: string) (k .x .s: nat): set =
+$ parseTk tk +> (parseIdent i^i {x | snd x e. k}) <+>
+  parseCh _colon +>
+    regexStar (((\ s, TK s) <@> parseIdent) u. Ran (\ s, MATH s <> MATH s))
+    <+ parseCh _semi $;
+
+@_ def parseIO (.x: nat): set =
+$ ((\ x, ASTIO 0 x) <@> parseIO1 _input inputKinds) u.
+  ((\ x, ASTIO 1 x) <@> parseIO1 _output outputKinds) $;
+
+@_ def parseAST: set =
+$ regexStar (parseSort u. parseTerm u. parseAxiom u.
+    parseThm u. parseDef u. parseNota u. parseIO) $;
+
+@_ def parse (s ast .tks: nat): wff =
+$ E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST) $;
+
+--------------------
+-- AST Navigation --
+--------------------
+
+@_ def lookupVar (ctx x: nat): nat;
+pub theorem lookupVar0 (x: nat): $ lookupVar 0 x = 0 $;
+pub theorem lookupVarEq (bis c x t: nat):
+  $ lookupVar (bis |> (c <> x <> t)) x = suc (len bis) $;
+pub theorem lookupVarNe (bis c x y t: nat): $ y != x ->
+  lookupVar (bis |> (c <> x <> t)) y = lookupVar bis y $;
+
+------------------
+-- Math Parsing --
+------------------
+
+@_ def nonemptyNonwhite (.s .c: nat): set =
+$ {s | s != 0 /\ all {c | ~c e. white} s} $;
+
+@_ def simpleTokenize (s: nat): nat;
+pub theorem simpleTokenize0: $ simpleTokenize 0 = 0 $;
+pub theorem simpleTokenizeWS (c s: nat):
+  $ c e. white -> simpleTokenize (c : s) = simpleTokenize s $;
+pub theorem simpleTokenizeTk (s x r: nat):
+  $ maxPrefix nonemptyNonwhite s = suc (x <> r) ->
+    simpleTokenize s = x : simpleTokenize r $;
+
+@_ def getDelimiters (ast: nat): nat;
+pub theorem getDelimiters0: $ getDelimiters 0 = 0 $;
+pub theorem getDelimitersDelim (ast d: nat):
+  $ getDelimiters (ast |> ASTNota (NotaDelim (b1 d))) ==
+    getDelimiters ast u. lmems (simpleTokenize d) $;
+pub theorem getDelimitersOther {d: nat} (ast t: nat):
+  $ ~(E. d t = ASTNota (NotaDelim (b1 d))) ->
+    getDelimiters (ast |> t) = getDelimiters ast $;
+
+@_ def delimitersOk (ast .x .y: nat): wff =
+$ A. x A. y (x e. getDelimiters ast -> y e. getDelimiters ast ->
+  prefix x y -> x = y) $;
+
+@_ def tokenizeFmla (ast f: nat): nat;
+pub theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $;
+pub theorem tokenizeFmlaWS (ast c s: nat):
+  $ c e. white -> tokenizeFmla ast (c : s) = tokenizeFmla ast s $;
+pub theorem tokenizeFmlaDelim (ast x s t: nat):
+  $ delimitersOk ast -> x e. getDelimiters ast -> s e. nonemptyNonwhite ->
+    tokenizeFmla ast (s ++ x ++ t) =
+    tokenizeFmla ast s ++ x : tokenizeFmla ast t $;
+pub theorem tokenizeFmlaNoDelim {l x r: nat} (ast s s1 t: nat):
+  $ delimitersOk ast -> maxPrefix nonemptyNonwhite s = suc (s1 <> t) ->
+    ~(E. l E. x E. r (x e. getDelimiters ast /\ s1 = l ++ x ++ r)) ->
+    tokenizeFmla ast s = s1 : tokenizeFmla ast t $;
+
+@_ def getPfx (ast: nat): nat;
+pub theorem getPfxEl {fmla: nat} (ast x c p: nat):
+  $ x <> c <> p e. getPfx ast <-> E. fmla
+    (ASTNota (NotaPfx (x <> b1 fmla <> p)) IN ast /\
+     simpleTokenize fmla = c : 0) $;
+
+@_ def getInfix (ast r: nat): nat;
+pub theorem getInfixEl {fmla: nat} (ast r x c p: nat):
+  $ x <> c <> p e. getInfix ast r <-> E. fmla
+    (ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
+     simpleTokenize fmla = c : 0) $;
+
+@_ def getNota (ast: nat): nat;
+pub theorem getNotaEl (ast x y: nat):
+  $ x <> y e. getNota ast <-> ASTNota (NotaGen (x <> y)) IN ast $;
+
+@_ def getCoe (ast: nat): nat;
+pub theorem getCoeEl (ast x y: nat):
+  $ x <> y e. getCoe ast <-> ASTNota (NotaCoe (x <> y)) IN ast $;
+
+@_ def precle (m n: nat): wff; infixl precle: $<=p$ prec 50;
+pub theorem precle02 (n: nat): $ n <=p 0 $;
+pub theorem precle01 (m: nat): $ ~ 0 <=p suc m $;
+pub theorem precleS (m n: nat): $ suc m <=p suc n <-> m <= n $;
+
+@_ def precSuc (n: nat): nat;
+pub theorem precSuc0: $ precSuc 0 = 0 $;
+pub theorem precSucS (n: nat): $ precSuc (suc n) = suc (suc n) $;
+
+@_ def litsPrec (lits q: nat): nat;
+pub theorem litsPrec0 (q: nat): $ litsPrec 0 q = q $;
+pub theorem litsPrecC (c p lits q: nat):
+  $ litsPrec (b0 (c <> p) : lits) q = precSuc p $;
+pub theorem litsPrecV (v lits q: nat):
+  $ litsPrec (b1 v : lits) q = 0 $;
+
+-- This is a more precise version of SExpr that allows reconstructing an
+-- exact token string from a parse proof
+@_ def PTParens (x: nat): nat = $ b0 (b0 (b0 x)) $;
+@_ def PTVar (v: nat): nat = $ b0 (b0 (b1 v)) $;
+@_ def PTFunc (f x: nat): nat = $ b0 (b1 (f <> x)) $;
+@_ def PTPfx (f c x: nat): nat = $ b1 (b0 (b0 (f <> c <> x))) $;
+@_ def PTNota (f x: nat): nat = $ b1 (b0 (b1 (f <> x))) $;
+@_ def PTInfix (r f c x y: nat): nat =
+  $ b1 (b1 (b0 (r <> f <> c <> (x : y : 0)))) $;
+@_ def PTCoe (f x: nat): nat = $ b1 (b1 (b1 (f <> x))) $;
+
+@_ def ptToStr (pt: nat): nat;
+pub theorem ptToStrParens {s: nat} (e: nat):
+  $ ptToStr (PTParens e) = s1 _lparen : ptToStr e ++ s1 _rparen : 0 $;
+pub theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $;
+pub theorem ptToStrFunc {s: nat} (f x: nat): $ ptToStr (PTFunc f x) =
+  f : ljoin (map (\ s, ptToStr s) x) $;
+pub theorem ptToStrPfx {s: nat} (f c x: nat): $ ptToStr (PTPfx f c x) =
+  c : ljoin (map (\ s, ptToStr s) x) $;
+pub theorem ptToStrInfix (r f c x y: nat):
+  $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $;
+pub theorem ptToStrNota {y: nat} (f x: nat):
+  $ ptToStr (PTNota f x) =
+    ljoin (map (case (\ y, y : 0) (\ y, ptToStr y)) x) $;
+pub theorem ptToStrCoe {y: nat} (f x: nat):
+  $ ptToStr (PTCoe f x) = ptToStr x $;
+
+@_ def ptCheck (eac p pt e: nat): wff;
+@_ def ptCheckNotaLs (eac bis pts xs es p: nat): wff;
+
+pub theorem ptCheckParens (eac p pt e: nat):
+  $ ptCheck eac p (PTParens pt) e <->
+    ptCheck eac (suc 0) pt e $;
+pub theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <->
+  E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $;
+pub theorem ptCheckFunc (env ast ctx p f xs e: nat) {f2 args r v e2 x y: nat}:
+  $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
+    suc (2 ^ 10) <=p p /\ E. f2 E. args E. r E. v E. e2
+    (getTerm env f args r v /\ len xs = len args /\
+      all2 x y (ptCheck (env <> ast <> ctx) 0 x y) xs e2 /\
+      e = SApp f2 e2) $;
+pub theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
+  $ ptCheck eac p (PTPfx f c xs) e <->
+    E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
+      f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
+      all2 x y (ptCheck eac 0 x y) l es2 /\ ptCheck eac q z e2 /\
+      e = SApp f (es2 |> e2)) $;
+pub theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
+  $ ptCheck eac p (PTInfix r f c x y) e <->
+    E. q E. e1 E. e2 (
+      f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
+      ptCheck eac (if (r = 0) q (precSuc q)) x e1 /\
+      ptCheck eac (if (r = 0) (precSuc q) q) y e2 /\
+      e = SApp f (e1 : e2 : 0)) $;
+pub theorem ptCheckNota {bis ty c q lits es: nat} (eac p f xs e: nat):
+  $ ptCheck eac p (PTNota f xs) e <->
+    E. bis E. ty E. c E. q E. lits E. es (
+      f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
+      len xs = len es /\ ptCheckNotaLs eac bis lits xs es q /\
+      e = SApp f es) $;
+pub theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
+  $ ptCheck eac p (PTCoe f x) e <->
+    E. y E. e2 (
+      f <> y e. getCoe (pi21 eac) /\ ptCheck eac p x e2 /\
+      e = SApp f e2) $;
+
+pub theorem ptCheckNotaLs0 (eac bis xs es q: nat):
+  $ ptCheckNotaLs eac bis 0 xs es q $;
+pub theorem ptCheckNotaLsC (eac bis c p lits xs es q: nat):
+  $ ptCheckNotaLs eac bis (b1 (c <> p) : lits) xs es q <->
+    ptCheckNotaLs eac bis lits xs es q $;
+pub theorem ptCheckNotaLsV {n x e: nat} (eac bis v lits xs es q: nat):
+  $ ptCheckNotaLs eac bis (b0 v : lits) xs es q <->
+    E. n E. x E. e (lookupVar bis v = suc n /\
+      nth xs n = suc x /\ nth es n = suc e /\
+      ptCheck eac (litsPrec lits q) x e /\
+      ptCheckNotaLs eac bis lits xs es q) $;
+
+@_ def parseExpr (eac args f s .e .pt: nat): set =
+$ {e | E. pt (ptToStr pt = f /\
+  ptCheck eac 0 pt e /\ Expr (fst eac) args e s)} $;
+
+@_ def parseExprProv (eac args f .e .pt: nat): set =
+$ {e | E. pt (ptToStr pt = f /\
+  ptCheck eac 0 pt e /\ ExprProv (fst eac) args e)} $;
+
+-----------------
+-- Elaboration --
+-----------------
+
+-- Here we have to convert a parsed AST into an Env, and also
+-- parse the math strings.
+
+@_ def splitDummies (bis: nat): nat;
+pub theorem splitDummies0: $ splitDummies 0 = 0 $;
+pub theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
+  splitDummies bis = bis1 <> bis2 ->
+  splitDummies (bis |> (c <> b0 x <> t)) =
+    (bis1 |> (c <> x <> t)) <> bis2 $;
+pub theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
+  splitDummies bis = bis1 <> bis2 ->
+  splitDummies (bis |> (c <> b1 x <> t)) = bis1 <> (bis2 |> (x <> t)) $;
+
+@_ def checkDummies (ds bis: nat): wff;
+pub theorem checkDummies0 (bis: nat): $ checkDummies 0 bis <-> bis = 0 $;
+pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
+  $ checkDummies ((x <> t) : ds) bis <-> E. t2 E. bis2 (
+      t = b0 (t2 <> 0) /\ checkDummies ds bis2 /\
+      bis = (0 <> x <> t) : bis2) $;
+
+@_ def lookupVars (ctx .s .t: nat): set = $ opab s t (lookupVar ctx s = suc t) $;
+
+@_ def elabType (ast ctx s out .t .vs .vs2: nat): wff =
+$ E. t E. vs E. vs2 (s = b0 (t <> vs) /\ out = t <> vs2 /\
+    vs2 == lookupVars ctx '' vs) $;
+
+@_ def elabTermBinder (ast ctx bi s: nat): wff;
+pub theorem elabTermBinderFmla (ast ctx c x f s: nat):
+  $ ~ elabTermBinder ast ctx (c <> x <> b1 f) s $;
+pub theorem elabTermBinderBound {t2: nat} (ast ctx bi x t s: nat):
+  $ elabTermBinder ast ctx (0 <> x <> b0 t) s <->
+    E. t2 (elabType ast ctx t (t2 <> 0) /\ s = PBound t2) $;
+pub theorem elabTermBinderReg {t2 vs2: nat} (ast ctx bi x t s: nat):
+  $ elabTermBinder ast ctx (1 <> x <> b0 t) s <->
+    E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2) $;
+
+@_ def elabTermBinders (ast ctx ctx2: nat): wff;
+pub theorem elabTermBinders0 (ast ctx2: nat):
+  $ elabTermBinders ast 0 ctx2 <-> ctx2 = 0 $;
+pub theorem elabTermBindersS {ctx2 bi2: nat} (ast ctx bi ctx3: nat):
+  $ elabTermBinders ast (ctx |> bi) ctx3 <->
+    E. ctx2 (elabTermBinders ast ctx ctx2 /\
+      elabTermBinder ast ctx bi bi2 /\ ctx3 = ctx2 |> bi2) $;
+
+@_ def elabFmla (env ast ctx args f e s .f2: nat): wff =
+$ E. f2 (f = b1 f2 /\ parseExpr (env <> ast <> ctx) args f2 s == sn e) $;
+
+@_ def elabFmlaProv (env ast ctx args f e .f2: nat): wff =
+$ E. f2 (f = b1 f2 /\ parseExprProv (env <> ast <> ctx) args f2 == sn e) $;
+
+@_ def elabHyps (env ast ctx args hyps hyps2 .hyp .hyp2 .x .f: nat): wff =
+$ all2 hyp hyp2 (E. x E. f (hyp = 1 <> b0 x <> f /\
+    elabFmlaProv env ast ctx args f hyp2)) hyps hyps2 $;
+
+@_ def elabDefO (env ast ctx s ds o o2: nat): wff;
+pub theorem elabDefO0 (env ast ctx s ds o2: nat):
+  $ elabDefO env ast ctx s ds 0 o2 <-> ds = 0 /\ o2 = 0 $;
+pub theorem elabDefOS {args2 e: nat} (env ast ctx s ds f o2: nat):
+  $ elabDefO env ast ctx s ds (suc f) o2 <-> E. args2 E. e (
+      elabTermBinders ast (ctx ++ ds) args2 /\
+      elabFmla env ast (ctx ++ ds) args2 f e s /\
+      o2 = suc (ds <> e)) $;
+
+@_ def Elaborate (ast: nat): set;
+pub theorem Elaborate0: $ Elaborate 0 == sn 0 $;
+pub theorem ElaborateSort {e: nat} (ast sd x: nat):
+  $ Elaborate (ast |> ASTSort (sd <> x)) ==
+    (\ e, e |> DSort x sd) '' Elaborate ast $;
+pub theorem ElaborateTerm {e ctx args ret2: nat} (ast x bis ret e2: nat):
+  $ e2 e. Elaborate (ast |> ASTTerm (x <> bis <> ret)) <->
+    E. e E. ctx E. args E. ret2 (e e. Elaborate ast /\
+      splitDummies bis = ctx <> 0 /\
+      elabTermBinders ast ctx args /\
+      elabType ast ctx ret ret2 /\
+      e2 = e |> DTerm x args ret2) $;
+pub theorem ElaborateAxiom
+  {e ctx hyps hyps2 args ret2: nat} (ast x bis ret e2: nat):
+  $ e2 e. Elaborate (ast |> ASTAxiom (x <> bis <> ret)) <->
+    E. e E. ctx E. hyps E. hyps2 E. args E. ret2 (e e. Elaborate ast /\
+      splitDummies bis = (ctx ++ hyps) <> 0 /\
+      elabTermBinders ast ctx args /\
+      elabHyps e ast ctx args hyps hyps2 /\
+      elabFmlaProv e ast ctx args ret ret2 /\
+      e2 = e |> DAxiom args hyps2 ret2) $;
+pub theorem ElaborateDef {e ctx ds ret2 ctx2 args o2: nat} (ast x bis ret o e2: nat):
+  $ e2 e. Elaborate (ast |> ASTDef (x <> bis <> ret <> o)) <->
+    E. e E. ctx E. ds E. ret2 E. ctx2 E. args E. o2 (
+      e e. Elaborate ast /\
+      splitDummies bis = ctx <> ds /\
+      elabType ast ctx ret ret2 /\
+      checkDummies ds ctx2 /\
+      elabTermBinders ast ctx args /\
+      elabDefO e ast ctx (fst ret2) ctx2 o o2 /\
+      e2 = e |> DDef x args ret2 o2) $;
+pub theorem ElaborateThm
+  {e ctx hyps hyps2 args ret2: nat} (ast x bis ret e2: nat):
+  $ e2 e. Elaborate (ast |> ASTThm (x <> bis <> ret)) <->
+    E. e E. ctx E. hyps E. hyps2 E. args E. ret2 (e e. Elaborate ast /\
+      splitDummies bis = (ctx ++ hyps) <> 0 /\
+      elabTermBinders ast ctx args /\
+      elabHyps e ast ctx args hyps hyps2 /\
+      elabFmlaProv e ast ctx args ret ret2 /\
+      e2 = e |> DThm args hyps2 ret2) $;
+pub theorem ElaborateNota (ast n: nat):
+  $ Elaborate (ast |> ASTNota n) == Elaborate ast $;
+pub theorem ElaborateIO (ast out n: nat):
+  $ Elaborate (ast |> ASTIO out n) == Elaborate ast $;
+
+@_ def Valid (s .ast .e: nat): wff =
+$ E. ast E. e (parse s ast /\ e e. Elaborate ast /\ ValidEnv e) $;

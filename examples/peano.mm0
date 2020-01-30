@@ -266,13 +266,13 @@ theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $;
 def lrec (z: nat) (S: set) (n: nat): nat;
 theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $;
 theorem lrecS (z: nat) (S: set) (a b: nat):
-  $ lrec z S (a : b) = S @ (a <> lrec z S b) $;
+  $ lrec z S (a : b) = S @ (a <> b <> lrec z S b) $;
 
 def lmems (l: nat): nat;
 theorem lmems0: $ lmems 0 = 0 $;
 theorem lmemsS (a l: nat): $ lmems (a : l) = a ; lmems l $;
 
-def in (a l: nat): wff = $ a e. lmems l $; infixl in: $IN$ prec 50;
+def lmem (a l: nat): wff = $ a e. lmems l $; infixl lmem: $IN$ prec 50;
 
 def all (A: set) (l: nat): wff = $ lmems l C_ A $;
 
