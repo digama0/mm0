@@ -102,7 +102,7 @@ An `axiom` and a `theorem` appear exactly the same in the specification file, al
        (formula-type-binder)* ':' formula-arrow-type ';'
     formula-type-binder ::= '{' (identifier)* ':' type '}'
                          |  '(' (identifier_)* ':' (type | formula) ')'
-    formula-arrow-type ::= formula | (type | formula) '>' arrow-type
+    formula-arrow-type ::= formula | (type | formula) '>' formula-arrow-type
     formula ::= math-string
 
 Definitions
