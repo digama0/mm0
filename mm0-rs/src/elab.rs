@@ -342,17 +342,17 @@ enum ElabStmt {
 }
 
 impl Elaborator {
-  fn elab_stmt(&mut self, stmt: &Stmt) -> Result<ElabStmt> {
+  fn elab_stmt(&mut self, stmt: &Stmt, span: Span) -> Result<ElabStmt> {
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
-    self.spans.set_stmt(stmt.span);
+    self.spans.set_stmt(span);
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        let id = self.add_sort(a, fsp, stmt.span, sd).map_err(|e| e.to_elab_error(sp))?;
+        let id = self.add_sort(a, fsp, span, sd).map_err(|e| e.to_elab_error(sp))?;
         self.spans.insert(sp, ObjectKind::Sort(id));
       }
-      StmtKind::Decl(d) => self.elab_decl(stmt.span, d)?,
+      StmtKind::Decl(d) => self.elab_decl(span, d)?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
@@ -361,13 +361,13 @@ impl Elaborator {
       &StmtKind::Import(sp, _) => return Ok(ElabStmt::Import(sp)),
       StmtKind::Do(es) => {
         if self.mm0_mode {
-          self.report(ElabError::warn(stmt.span, "(MM0 mode) do blocks not allowed"))
+          self.report(ElabError::warn(span, "(MM0 mode) do blocks not allowed"))
         }
         for e in es { self.parse_and_print(e)? }
       }
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
-        self.elab_stmt(s)?;
+        self.elab_stmt(s, span)?;
         let ann = self.get_atom("annotate");
         let ann = match &self.data[ann].lisp {
           Some((_, e)) => e.clone(),
@@ -376,7 +376,7 @@ impl Elaborator {
         let args = vec![v, self.name_of(s)];
         self.call_func(e.span, ann, args)?;
       },
-      _ => Err(ElabError::new_e(stmt.span, "unimplemented"))?
+      _ => Err(ElabError::new_e(span, "unimplemented"))?
     }
     Ok(ElabStmt::Ok)
   }
@@ -423,7 +423,7 @@ impl Elaborator {
           let ast = elab.ast.clone();
           while let Some(s) = ast.stmts.get(*idx) {
             if elab.cancel.load(Ordering::Relaxed) {break}
-            match elab.elab_stmt(s) {
+            match elab.elab_stmt(s, s.span) {
               Ok(ElabStmt::Ok) => {}
               Ok(ElabStmt::Import(sp)) => {
                 let (file, recv) = recv.remove(&sp).unwrap();

@@ -407,11 +407,13 @@ impl NodeHash for ProofHash {
                 let mut err = format!("disjoint variable violation at {}", adata.name);
                 let args: Vec<_> = Uncons::from(r.clone()).skip(1).collect();
                 for (i, j) in dvs {
-                  use std::fmt::Write;
-                  write!(err, "\n  ({}, {}) -> ({}, {})",
-                    nh.fe.to(&td.args[i].0.unwrap_or(AtomID::UNDER)),
-                    nh.fe.to(&td.args[j].0.unwrap_or(AtomID::UNDER)),
-                    nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).unwrap();
+                  if de.vec[ns[i]].2 & de.vec[ns[j]].2 != 0 {
+                    use std::fmt::Write;
+                    write!(err, "\n  ({}, {}) -> ({}, {})",
+                      nh.fe.to(&td.args[i].0.unwrap_or(AtomID::UNDER)),
+                      nh.fe.to(&td.args[j].0.unwrap_or(AtomID::UNDER)),
+                      nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).unwrap();
+                  }
                 }
                 return Err(nh.err(&head, err))
               }
