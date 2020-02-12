@@ -1,4 +1,3 @@
-use std::mem;
 use crate::util::*;
 use super::{Elaborator, ElabError, Result};
 use super::environment::*;
@@ -19,6 +18,7 @@ enum RefineExpr {
 #[derive(Debug)]
 pub enum RStack {
   Goals {g: LispVal, gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
+  DeferGoals(Vec<LispVal>),
   Coerce(LispVal),
   Typed(LispVal),
   RefineApp {sp2: Span, tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
@@ -31,7 +31,6 @@ pub enum RStack {
 #[derive(Debug)]
 pub enum RState {
   Goals {gs: std::vec::IntoIter<LispVal>, es: std::vec::IntoIter<LispVal>},
-  Finish,
   RefineProof {tgt: LispVal, p: LispVal},
   RefineExpr {tgt: InferTarget, e: LispVal},
   RefineApp {sp2: Span, tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
@@ -50,7 +49,6 @@ impl EnvDisplay for RState {
     match self {
       RState::Goals {gs, es} => write!(f,
         "Goals {{gs: {}, es: {}}}", fe.to(gs.as_slice()), fe.to(es.as_slice())),
-      RState::Finish => write!(f, "Finish"),
       RState::RefineProof {tgt, p} => write!(f,
         "RefineProof {{\n  tgt: {},\n  p: {}}}", fe.to(tgt), fe.to(p)),
       RState::RefineExpr {tgt, e} => write!(f,
@@ -177,9 +175,9 @@ impl Elaborator {
     })
   }
 
-  fn new_goal_gv(&self, gv: &mut Vec<LispVal>, sp: Span, ty: LispVal) -> LispVal {
+  fn new_goal(&mut self, sp: Span, ty: LispVal) -> LispVal {
     let r = LispVal::new_ref(LispVal::goal(self.fspan(sp), ty));
-    gv.push(r.clone());
+    self.lc.goals.push(r.clone());
     r
   }
 
@@ -358,8 +356,7 @@ impl Elaborator {
   pub fn run_refine(&mut self,
     sp: Span,
     stack: &mut Vec<RStack>,
-    mut active: RState,
-    gv: &mut Vec<LispVal>
+    mut active: RState
   ) -> Result<RefineResult> {
     let fsp = self.fspan(sp);
     loop {
@@ -368,24 +365,16 @@ impl Elaborator {
       // }
       active = match active {
         RState::Goals {mut gs, mut es} => match es.next() {
-          None => {gv.extend(gs); RState::Finish}
+          None => {self.lc.goals.extend(gs); RState::Ret(LispVal::undef())}
           Some(p) => loop {
             if let Some(g) = gs.next() {
               if let Some(tgt) = g.goal_type() {
                 stack.push(RStack::Goals {g, gs, es});
                 break RState::RefineProof {tgt, p}
               }
-            } else {break RState::Finish}
+            } else {break RState::Ret(LispVal::undef())}
           }
         },
-        RState::Finish => {
-          if !gv.is_empty() {
-            if !self.lc.goals.is_empty() {gv.append(&mut self.lc.goals)}
-            mem::swap(&mut self.lc.goals, gv);
-          }
-          self.lc.clean_mvars();
-          return Ok(RefineResult::Ret(LispVal::undef()))
-        }
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App(sp, sp2, _, AtomID::QMARK, _) => {
             let head = LispVal::new_ref(LispVal::goal(self.fspan(sp), tgt));
@@ -394,12 +383,12 @@ impl Elaborator {
           }
           RefineExpr::App(sp, sp2, _, AtomID::UNDER, u) => {
             if u.exactly(0) {
-              let head = self.new_goal_gv(gv, sp, tgt);
+              let head = self.new_goal(sp, tgt);
               self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
               RState::Ret(head)
             } else {
               let mv = self.lc.new_mvar(InferTarget::Unknown, Some(self.fspan(sp2)));
-              let head = self.new_goal_gv(gv, sp, mv);
+              let head = self.new_goal(sp, mv);
               self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
               RState::RefineExtraArgs {sp, tgt, u, head, args: vec![]}
             }
@@ -426,6 +415,10 @@ impl Elaborator {
         },
         RState::Ret(ret) => match stack.pop() {
           None => return Ok(RefineResult::Ret(ret)),
+          Some(RStack::DeferGoals(mut gs)) => {
+            self.lc.goals.append(&mut gs);
+            RState::Ret(ret)
+          }
           Some(RStack::Goals {g, gs, es}) => {
             g.as_ref_(|e| *e = ret).unwrap();
             RState::Goals {gs, es}
@@ -555,7 +548,7 @@ impl Elaborator {
               stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
               break 'l3 RState::RefineProof {tgt: h, p}
             } else {
-              args.push(self.new_goal_gv(gv, sp, h))
+              args.push(self.new_goal(sp, h))
             }
           }
           let head = LispVal::list(args);

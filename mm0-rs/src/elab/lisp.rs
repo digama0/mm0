@@ -5,7 +5,7 @@ pub mod pretty;
 
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
-use std::sync::{Arc, Weak, Mutex, RwLock, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool};
 use std::collections::HashMap;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
@@ -355,7 +355,7 @@ pub enum Proc {
     code: Arc<IR>
   },
   MatchCont(Arc<AtomicBool>),
-  RefineCallback(Weak<Mutex<Vec<LispVal>>>),
+  RefineCallback,
   ProofThunk(AtomID, Mutex<Result<LispVal, Vec<LispVal>>>),
 }
 
@@ -380,7 +380,7 @@ impl Proc {
       Proc::Builtin(p) => p.spec(),
       &Proc::Lambda {spec, ..} => spec,
       Proc::MatchCont(_) => ProcSpec::AtLeast(0),
-      Proc::RefineCallback(_) => ProcSpec::AtLeast(1),
+      Proc::RefineCallback => ProcSpec::AtLeast(1),
       Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
     }
   }
@@ -623,7 +623,7 @@ impl Remap<LispRemapper> for Proc {
       &Proc::Lambda {ref pos, ref env, spec, ref code} =>
         Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
       Proc::MatchCont(_) => Proc::MatchCont(Arc::new(AtomicBool::new(false))),
-      Proc::RefineCallback(_) => Proc::RefineCallback(Weak::new()),
+      Proc::RefineCallback => Proc::RefineCallback,
       Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), Mutex::new(
         match &*m.lock().unwrap() {
           Ok(e) => Ok(e.remap(r)),

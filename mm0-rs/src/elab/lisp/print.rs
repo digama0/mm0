@@ -134,7 +134,7 @@ impl EnvDisplay for LispKind {
         write!(f, "#[fn {} at {} {}:{}]", x, fname, r.line + 1, r.character + 1)
       }
       LispKind::Proc(Proc::MatchCont(_)) => write!(f, "#[match cont]"),
-      LispKind::Proc(Proc::RefineCallback(_)) => write!(f, "#[refine]"),
+      LispKind::Proc(Proc::RefineCallback) => write!(f, "#[refine]"),
       LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#[proof of {}]", fe.to(x)),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;

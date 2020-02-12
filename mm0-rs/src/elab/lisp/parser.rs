@@ -650,7 +650,7 @@ impl<'a> LispParser<'a> {
         )))
       } else {
         Ok(match self.parse_ident(e.span, a)? {
-          AtomID::UNDER => IR::Const(LispVal::atom(AtomID::UNDER)),
+          AtomID::UNDER => IR::Const(span!(e.span, LispVal::atom(AtomID::UNDER))),
           x => self.eval_atom(e.span, x),
         })
       },

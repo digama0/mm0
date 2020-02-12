@@ -36,7 +36,7 @@ enum Stack<'a> {
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
   AddThmProc(FileSpan, AwaitingProof),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
-  Refine {sp: Span, stack: Vec<RStack>, gv: Arc<Mutex<Vec<LispVal>>>},
+  Refine {sp: Span, stack: Vec<RStack>},
   Focus(Vec<LispVal>),
   Have(Span, AtomID),
 }
@@ -91,7 +91,7 @@ enum State<'a> {
   Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
-  Refine {sp: Span, stack: Vec<RStack>, state: RState, gv: Arc<Mutex<Vec<LispVal>>>},
+  Refine {sp: Span, stack: Vec<RStack>, state: RState},
 }
 
 impl<'a> EnvDisplay for State<'a> {
@@ -857,11 +857,11 @@ make_builtins! { self, sp1, sp2, args,
   GetGoals: AtLeast(0) => LispVal::list(self.lc.goals.clone()),
   SetGoals: AtLeast(0) => {self.lc.set_goals(args); LispVal::undef()},
   ToExpr: Exact(1) => return Ok(State::Refine {
-    sp: sp1, stack: vec![], gv: Arc::new(Mutex::new(vec![])),
+    sp: sp1, stack: vec![RStack::DeferGoals(mem::replace(&mut self.lc.goals, vec![]))],
     state: RState::RefineExpr {tgt: InferTarget::Unknown, e: args.swap_remove(0)}
   }),
   Refine: AtLeast(0) => return Ok(State::Refine {
-    sp: sp1, stack: vec![], gv: Arc::new(Mutex::new(vec![])),
+    sp: sp1, stack: vec![],
     state: RState::Goals {
       gs: mem::replace(&mut self.lc.goals, vec![]).into_iter(),
       es: args.into_iter()
@@ -872,7 +872,7 @@ make_builtins! { self, sp1, sp2, args,
     if args.len() > 3 {try1!(Err("invalid arguments"))}
     let p = args.pop().unwrap();
     self.stack.push(Stack::Have(sp1, x));
-    let mut stack = vec![];
+    let mut stack = vec![RStack::DeferGoals(mem::replace(&mut self.lc.goals, vec![]))];
     let state = match args.pop().filter(|_| args.len() > 0) {
       None => {
         let fsp = self.fspan(sp1);
@@ -883,7 +883,7 @@ make_builtins! { self, sp1, sp2, args,
         RState::RefineExpr {tgt: InferTarget::Unknown, e}
       }
     };
-    return Ok(State::Refine {sp: sp1, stack, state, gv: Arc::new(Mutex::new(vec![]))})
+    return Ok(State::Refine {sp: sp1, stack, state})
   },
   Stat: Exact(0) => {
     use std::fmt::Write;
@@ -1150,7 +1150,8 @@ impl<'a> Evaluator<'a> {
             self.lc.set_goals(gs1);
             State::Ret(LispVal::undef())
           }
-          Some(Stack::Refine {sp, stack, gv}) => State::Refine {sp, stack, state: RState::Ret(ret), gv},
+          Some(Stack::Refine {sp, stack}) =>
+            State::Refine {sp, stack, state: RState::Ret(ret)},
           Some(Stack::Have(sp, x)) => {
             let e = self.infer_type(sp, &ret)?;
             self.lc.add_proof(x, e, ret);
@@ -1227,28 +1228,23 @@ impl<'a> Evaluator<'a> {
                   }
                 }
               }
-              Proc::RefineCallback(gv) => match gv.upgrade() {
-                None => throw!(sp2, "callback has expired"),
-                Some(gv) => {
+              Proc::RefineCallback => State::Refine {
+                sp: sp1, stack: vec![],
+                state: {
                   let p = args.pop().unwrap();
                   match args.pop() {
-                    None => State::Refine {
-                      sp: sp1, stack: vec![], gv,
-                      state: RState::RefineProof {
-                        tgt: {
-                          let fsp = self.fspan(sp1);
-                          self.lc.new_mvar(InferTarget::Unknown, Some(fsp))
-                        },
-                        p
-                      }
+                    None => RState::RefineProof {
+                      tgt: {
+                        let fsp = self.fspan(sp1);
+                        self.lc.new_mvar(InferTarget::Unknown, Some(fsp))
+                      },
+                      p
                     },
-                    Some(tgt) if args.is_empty() => State::Refine {
-                      sp: sp1, stack: vec![], gv, state: RState::RefineProof {tgt, p}
-                    },
+                    Some(tgt) if args.is_empty() => RState::RefineProof {tgt, p},
                     _ => throw!(sp1, "expected two arguments")
                   }
                 }
-              }
+              },
               &Proc::ProofThunk(x, ref m) => {
                 let mut g = m.lock().unwrap();
                 match &*g {
@@ -1316,17 +1312,17 @@ impl<'a> Evaluator<'a> {
           None => State::Ret(LispVal::undef()),
           Some(e) => push!(Refines(sp, Some(e.span().unwrap_or(sp)), it); Eval(e))
         },
-        State::Refine {sp, mut stack, state, gv} => {
-          let res = self.elab.run_refine(self.orig_span, &mut stack, state, &mut gv.lock().unwrap())
+        State::Refine {sp, mut stack, state} => {
+          let res = self.elab.run_refine(self.orig_span, &mut stack, state)
             .map_err(|e| self.err(Some(e.pos), e.kind.msg()))?;
           match res {
-            RefineResult::Ret(e) => State::Ret(e),
+            RefineResult::Ret(e) => {self.lc.clean_mvars(); State::Ret(e)}
             RefineResult::RefineExtraArgs(e, mut es) => {
               let mut args = vec![
-                LispVal::proc(Proc::RefineCallback(Arc::downgrade(&gv))),
+                LispVal::proc(Proc::RefineCallback),
                 e];
               args.append(&mut es);
-              self.stack.push(Stack::Refine {sp, stack, gv});
+              self.stack.push(Stack::Refine {sp, stack});
               match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
                 Some((_, v)) => State::App(sp, sp, v.clone(), args, [].iter()),
@@ -1334,9 +1330,9 @@ impl<'a> Evaluator<'a> {
             }
             RefineResult::Proc(tgt, proc) => {
               let args = vec![
-                LispVal::proc(Proc::RefineCallback(Arc::downgrade(&gv))),
+                LispVal::proc(Proc::RefineCallback),
                 tgt];
-              push!(Refine {sp, stack, gv}; App(sp, sp, proc, args, [].iter()))
+              push!(Refine {sp, stack}; App(sp, sp, proc, args, [].iter()))
             }
           }
         }
