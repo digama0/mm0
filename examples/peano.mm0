@@ -304,3 +304,14 @@ theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $;
 
 def sublistAt (n l l2 .l1 .l3: nat): wff =
 $ E. l1 E. l3 (l = l1 ++ l2 ++ l3 /\ len l1 = n) $;
+
+-- map : (A -> B) -> list A -> list B
+def map (F: set) (l: nat): nat;
+theorem map0 (F: set): $ map F 0 = 0 $;
+theorem mapS (F: set) (a l: nat):
+  $ map F (a : l) = F @ a : map F l $;
+
+-- ljoin : list (list A) -> list A
+def ljoin (L: nat): nat;
+theorem ljoin0: $ ljoin 0 = 0 $;
+theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;

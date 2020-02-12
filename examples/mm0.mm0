@@ -5,23 +5,12 @@ import "peano_hex.mm0";
 -- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ A. n A. x A. y
-  (nth l1 n = suc x -> nth l2 n = suc y -> ph) $;
+  (nth n l1 = suc x -> nth n l2 = suc y -> ph) $;
 
 -- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ E. n E. x E. y
   (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
-
--- map : (A -> B) -> list A -> list B
-def map (F: set) (l: nat): nat;
-theorem map0 (F: set): $ map F 0 = 0 $;
-theorem mapS (F: set) (a l: nat):
-  $ map F (a : l) = F @ a : map F l $;
-
--- ljoin : list (list A) -> list A
-def ljoin (L: nat): nat;
-theorem ljoin0: $ ljoin 0 = 0 $;
-theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
 
 -- The sort modifiers 'pure', 'strict', 'provable', 'free'
 -- sPure : SortData -> Bool
@@ -104,7 +93,7 @@ def isSort (env s .sd: nat): wff = $ E. sd getSD env s sd $;
 -- Looks this variable up in the context, and reports whether it represents a
 -- bound variable.
 -- isBound : Ctx -> VarID -> Bool
-def isBound (ctx x .s: nat): wff = $ E. s nth ctx x = suc (PBound s) $;
+def isBound (ctx x .s: nat): wff = $ E. s nth x ctx = suc (PBound s) $;
 
 -- Checks if this a well formed dependent type in the context. A DepType is a
 -- pair (SortID, set VarID) giving the sort and the variable dependencies.
@@ -132,7 +121,7 @@ def Expr (env ctx e s: nat): wff;
 -- ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool
 def ExprBi (env ctx e bi: nat): wff;
 theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
-  E. bi (nth ctx v = suc bi /\ binderSort bi = s) $;
+  E. bi (nth v ctx = suc bi /\ binderSort bi = s) $;
 theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
   $ Expr env ctx (SApp f xs) s <-> E. args E. ret E. o
     (getTerm env f args ret o /\
@@ -140,7 +129,7 @@ theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
      s = fst ret) $;
 theorem ExprBiBound (env ctx e s: nat) {v: nat}:
   $ ExprBi env ctx e (PBound s) <->
-    E. v (e = SVar v /\ nth ctx v = suc (PBound s)) $;
+    E. v (e = SVar v /\ nth v ctx = suc (PBound s)) $;
 theorem ExprBiReg (env ctx e s vs: nat):
   $ ExprBi env ctx e (PReg s vs) <-> Expr env ctx e s $;
 
@@ -161,9 +150,9 @@ def appendDummies (ctx ds .d: nat): nat = $ ctx ++ map (\ d, PBound d) ds $;
 -- HasVar : Ctx -> SExpr -> VarID -> Bool
 def HasVar (ctx e v: nat): wff;
 theorem HasVarBound (ctx u v s: nat):
-  $ nth ctx u = suc (PBound s) -> (HasVar ctx (SVar u) v <-> u = v) $;
+  $ nth u ctx = suc (PBound s) -> (HasVar ctx (SVar u) v <-> u = v) $;
 theorem HasVarReg (ctx u v s vs: nat):
-  $ nth ctx u = suc (PReg s vs) -> (HasVar ctx (SVar u) v <-> v e. vs) $;
+  $ nth u ctx = suc (PReg s vs) -> (HasVar ctx (SVar u) v <-> v e. vs) $;
 theorem HasVarApp (ctx f es v: nat) {e: nat}:
   $ HasVar ctx (SApp f es) v <-> E. e (e IN es /\ HasVar ctx e v) $;
 
@@ -171,7 +160,7 @@ theorem HasVarApp (ctx f es v: nat) {e: nat}:
 -- is a regular argument and `(/)` if `a` is a bound argument.
 -- MaybeFreeArgs : list SExpr -> Binder -> VarID -> Bool
 def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
-$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
+$ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth u es = suc (SVar v)))) $;
 
 -- Does this expression contain any _free_ occurrence of the variable `v`?
 -- This is the more complex binder-respecting check. Intuitively, if
@@ -183,11 +172,11 @@ $ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth es u = suc (SVar v)))) $;
 def Free (env ctx e v: nat): wff;
 theorem FreeVar (env ctx u v: nat):
   $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $;
-theorem FreeApp (env ctx f es args r rs o v: nat) {n e a u: nat}:
-  $ getTerm env f args (r <> rs) o ->
-    (Free env ctx (SApp f es) v <->
-      ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
-      E. u (u e. rs /\ nth es u = suc (SVar v))) $;
+theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
+  $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
+    (getTerm env f args (r <> rs) o /\
+      (ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
+        E. u (u e. rs /\ nth u es = suc (SVar v)))) $;
 
 
 -- Is this a valid term in the given environment? A term is valid if
@@ -210,7 +199,7 @@ def DefOk (env id args ret ds e .ctx .v .s .sd: nat): wff =
 $ TermOk env id args ret /\ [ appendDummies args ds / ctx ]
   (Ctx env ctx /\ Expr env ctx e (fst ret) /\
     A. v (Free env ctx e v -> v e. snd ret \/
-      E. sd E. s (nth ctx v = suc (PBound s) /\
+      E. sd E. s (nth v ctx = suc (PBound s) /\
         getSD env s sd /\ sFree sd))) $;
 
 -- Is this a valid declaration in the environment?
@@ -253,12 +242,12 @@ theorem EnvExtendAxiom (e1 e2 a h r: nat) {e: nat}:
     E. e (e1 = e |> DAxiom a h r /\ EnvExtend e e2) $;
 theorem EnvExtendDef (e1 e2 id a r o: nat) {e o2: nat}:
   $ EnvExtend e1 (e2 |> DDef id a r o) <->
-    E. e E. o2 ((o != 0 -> o2 = o) /\
+    E. e E. o2 ((o2 != 0 -> o2 = o) /\
       e1 = e |> DDef id a r o2 /\ EnvExtend e e2) \/
     EnvExtend e1 e2 $;
-theorem EnvExtendThm (e1 e2 id a h r: nat) {e o2: nat}:
+theorem EnvExtendThm (e1 e2 id a h r: nat) {e: nat}:
   $ EnvExtend e1 (e2 |> DThm a h r) <->
-    E. e E. o2 (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
+    E. e (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
     EnvExtend e1 e2 $;
 
 ------------------
@@ -270,7 +259,7 @@ theorem EnvExtendThm (e1 e2 id a h r: nat) {e o2: nat}:
 -- substExpr : list SExpr -> SExpr => SExpr
 def substExpr (sub e: nat): nat;
 theorem substExprVar (sub v e: nat):
-  $ substExpr sub (SVar v) = nth sub v - 1 $;
+  $ substExpr sub (SVar v) = nth v sub - 1 $;
 theorem substExprApp (sub f es: nat) {e: nat}:
   $ substExpr sub (SApp f es) = SApp f (map (\ e, substExpr sub e) es) $;
 
@@ -326,8 +315,8 @@ def VerifyConv (env ctx c e1 e2 s: nat): wff;
 -- VerifyConvs : Env -> Ctx -> list CExpr -> list SExpr -> list SExpr -> list Binder -> Bool
 def VerifyConvs (env ctx cs es1 es2 bis .n .i .c .e1 .e2 .bi: nat): wff =
 $ E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len bis = n /\
-  A. i A. c A. e1 A. e2 A. bi (nth cs i = suc c ->
-    nth es1 i = suc e1 -> nth es2 i = suc e2 -> nth bis i = suc bi ->
+  A. i A. c A. e1 A. e2 A. bi (nth i cs = suc c ->
+    nth i es1 = suc e1 -> nth i es2 = suc e2 -> nth i bis = suc bi ->
     ExprBi env ctx e1 bi /\ ExprBi env ctx e2 bi /\
     VerifyConv env ctx c e1 e2 (binderSort bi))) $;
 theorem VerifyConvRefl (env ctx e e1 e2 s: nat):
@@ -349,7 +338,7 @@ theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
       getTerm env f args ret (suc (ys <> val)) /\
       e1 = SApp f es /\ s = fst ret /\
       all2 e a (ExprBi env ctx e a) es args /\
-      all2 y z (nth ctx z = suc (PBound y) /\
+      all2 y z (nth z ctx = suc (PBound y) /\
         A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
       VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $;
 
@@ -369,9 +358,9 @@ theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
     (getThm env args2 hs2 ret2 /\
       all2 e a (ExprBi env ctx e a) es args2 /\
-      A. u A. v (E. s nth ctx u = suc (PBound s) ->
+      A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
-        A. y A. e2 (nth es u = suc (SVar y) -> nth es v = suc e2 ->
+        A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
       all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
       substExpr es ret2 = ret) $;
@@ -875,7 +864,7 @@ theorem ptCheckNotaLsC (eac bis c p lits xs es q: nat):
 theorem ptCheckNotaLsV {n x e: nat} (eac bis v lits xs es q: nat):
   $ ptCheckNotaLs eac bis (b0 v : lits) xs es q <->
     E. n E. x E. e (lookupVar bis v = suc n /\
-      nth xs n = suc x /\ nth es n = suc e /\
+      nth n xs = suc x /\ nth n es = suc e /\
       ptCheck eac (litsPrec lits q) x e /\
       ptCheckNotaLs eac bis lits xs es q) $;
 
