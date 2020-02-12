@@ -65,7 +65,7 @@ impl LispKind {
 pub struct Pretty<'a> {
   fe: FormatEnv<'a>,
   alloc: &'a Arena<'a, ()>,
-  hash: RefCell<HashMap<*const LispKind, (Prec, PP<'a>)>>,
+  hash: RefCell<HashMap<*const LispKind, (LispVal, (Prec, PP<'a>))>>,
   lparen: PP<'a>,
   rparen: PP<'a>,
 }
@@ -199,7 +199,7 @@ impl<'a> Pretty<'a> {
 
   fn pp_expr(&'a self, e: &LispVal) -> (Prec, PP<'a>) {
     let p: *const LispKind = e.deref();
-    if let Some(v) = self.hash.borrow().get(&p) {return v.clone()}
+    if let Some(v) = self.hash.borrow().get(&p) {return v.1.clone()}
     let v = (|| Some({
       let env = self.fe.env;
       let (ad, t, args) = self.get_term_args(e)?;
@@ -231,7 +231,7 @@ impl<'a> Pretty<'a> {
       left: false, right: false, small: e.small(),
       doc: self.pp_lisp(e)
     }));
-    self.hash.borrow_mut().entry(p).or_insert(v).clone()
+    self.hash.borrow_mut().entry(p).or_insert_with(|| (e.clone(), v)).1.clone()
   }
 
   pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
