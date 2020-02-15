@@ -267,6 +267,10 @@ impl<'a> ElabTermMut<'a> {
     mut it: impl Iterator<Item=LispVal>, tgt: InferTarget) -> Result<LispVal> {
     let t = it.next().unwrap();
     let a = t.as_atom().ok_or_else(|| self.err(&t, "expected an atom"))?;
+    if self.lc.vars.contains_key(&a) {
+      return Err(self.err(&t,
+        format!("term '{}' is shadowed by a local variable", self.fe.data[a].name)))?
+    }
     let tid = self.fe.term(a).ok_or_else(||
       self.err(&t, format!("term '{}' not declared", self.fe.data[a].name)))?;
     let sp1 = self.try_get_span(e);

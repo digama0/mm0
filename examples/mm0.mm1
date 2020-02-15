@@ -681,11 +681,11 @@ pub theorem EnvExtendThm (e1 e2 id a h r: nat) {e o2: nat}:
 -- This performs simultaneous substitution of the variables in `e` with the
 -- expressions in `sub`.
 -- substExpr : list SExpr -> SExpr => SExpr
-@_ def substExpr (sub e: nat): nat;
-pub theorem substExprVar (sub v e: nat):
-  $ substExpr sub (SVar v) = nth v sub - 1 $;
-pub theorem substExprApp (sub f es: nat) {e: nat}:
-  $ substExpr sub (SApp f es) = SApp f (map (\ e, substExpr sub e) es) $;
+@_ def substExpr (subst e: nat): nat;
+pub theorem substExprVar (subst v e: nat):
+  $ substExpr subst (SVar v) = nth v subst - 1 $;
+pub theorem substExprApp (subst f es: nat) {e: nat}:
+  $ substExpr subst (SApp f es) = SApp f (map (\ e, substExpr subst e) es) $;
 
 -- A CExpr is a convertibility proof.
 -- CRefl e : e = e
