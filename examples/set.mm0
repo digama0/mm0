@@ -73,7 +73,7 @@ axiom ax_ac {x y: set} (a: set) {z w: set}:
 strict sort class;
 term cab {x: set} (ph: wff x): class;
 term welc (a: set) (A: class): wff; infixl welc: $ec.$ prec 50;
-notation cab {x: set} (ph: wff x): class = (${$:0) x ($|$:0) ph ($}$:0);
+notation cab {x: set} (ph: wff x): class = (${$:max) x ($|$:0) ph ($}$:0);
 
 axiom ax_8b (a b: set) (A: class): $ a =s b -> a ec. A -> b ec. A $;
 

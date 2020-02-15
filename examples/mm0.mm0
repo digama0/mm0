@@ -385,7 +385,7 @@ theorem ProofAxiom (env a h r p: nat):
   $ Proof (env |> DAxiom a h r) p <-> Proof env p $;
 theorem ProofDef (env id a r o p: nat):
   $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $;
-theorem ProofThm (env e p a h r .p1 .ds .pf .ctx: nat):
+theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
   $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf E. ctx (
     p = p1 <> (ds <> pf) /\ Proof env p1 /\
     ctx = appendDummies a ds /\ Ctx env ctx /\

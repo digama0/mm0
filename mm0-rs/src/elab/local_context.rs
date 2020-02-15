@@ -653,6 +653,13 @@ impl Elaborator {
         self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
       }
       DeclKind::Axiom | DeclKind::Thm => {
+        if d.val.is_none() {
+          for bi in &d.bis {
+            if let LocalKind::Dummy = bi.kind {
+              self.report(ElabError::warn(bi.local.unwrap_or(bi.span), "useless dummy variable"))
+            }
+          }
+        }
         let eret = match &d.ty {
           None => Err(ElabError::new_e(full, "return type required"))?,
           Some(Type::DepType(ty)) => Err(ElabError::new_e(ty.sort, "expression expected"))?,

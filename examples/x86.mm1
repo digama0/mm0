@@ -113,7 +113,7 @@ pub theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n 
     sylib ltadd2 @ sylib elupto anlr)
   (mpbird (eleq1d @ anwr ifneg) @ anwl @ imp Bitsle));
 
-do {(set-reporting 'warn #f)};
+do (set-reporting 'warn #f);
 pub theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
 
 -- get lower bits of a number
@@ -1385,7 +1385,7 @@ $ E. f E. m (f e. Flags /\ m e. Memory /\
     k = entry <> lower ((\ r, 0) |` Regs) <> f <> m) $;
 pub theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
-do {(set-reporting #t)};
+do (set-reporting #t);
 
 @_ def allocStack (k k2 .sp .stack .argc .x .arg .cstr .str: nat): wff =
 $ E. sp E. stack E. argc (
