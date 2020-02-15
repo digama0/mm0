@@ -8,6 +8,7 @@ mod lined_string;
 mod parser;
 #[macro_use] mod server;
 mod compiler;
+mod joiner;
 mod vfs;
 mod elab;
 mod export_mmb;
@@ -19,6 +20,7 @@ fn main() -> io::Result<()> {
   match args.next().expect("expected a subcommand").as_str() {
     "server" => Ok(server::main(args)),
     "compile" => Ok(compiler::main(args)?),
-    _ => panic!("incorrect subcommand, expected {server}")
+    "join" => Ok(joiner::main(args)?),
+    _ => panic!("incorrect subcommand, expected {server, compile, join}")
   }
 }
