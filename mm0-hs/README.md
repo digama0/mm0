@@ -2,6 +2,8 @@
 
 This is a Haskell reference implementation of the Metamath Zero specification. See [mm0.md](/mm0.md) for the main specification.
 
+To compile, install [Haskell `stack`](https://haskellstack.org/), then go to the `mm0-hs` directory and run `stack setup`, then use `stack build` to build the program and `stack exec -- mm0-hs [args..]` to run it, or `stack install` to move it to a global location in your PATH, so that `mm0-hs [args..]` works from any directory (which in particular is what the `vscode-mm0` extension expects, if you don't tell it otherwise).
+
 To run the program you can use the following:
 
 * `mm0-hs verify MM0-file [MMU-FILE]`:
