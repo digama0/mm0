@@ -57,7 +57,7 @@ The following words appear in the syntax with special meanings:
     axiom coercion def delimiter free infixl infixr input max notation
     output prec prefix provable pure sort strict term theorem
 
-However, they are not really "keywords" because the grammar never permits these words to appear where an identifier can also appear. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
+However, they are not really "keywords" because due to the structure of the grammar, whenever these words are used with their special meanings, an identifier would not be valid at that position. So they are lexed simply as identifiers, and it is permissible to declare a variable, sort, or theorem with one of these keywords as its name.
 
 Grammar for the `.mm0` file format
 ===
