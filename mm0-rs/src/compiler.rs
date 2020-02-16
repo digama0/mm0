@@ -13,7 +13,7 @@ use annotate_snippets::{
 use crate::elab::{ElabError, ElabErrorKind, Environment, Elaborator};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
-use crate::export_mmb::Exporter;
+use crate::export_mmb;
 use crate::util::{FileRef, FileSpan, Span};
 
 lazy_static! {
@@ -207,11 +207,16 @@ pub fn main(mut args: impl Iterator<Item=String>) -> io::Result<()> {
   let (path, file) = VFS_.get_or_insert(FileRef::new(fs::canonicalize(path)?))?;
   let env = block_on(elaborate(path.clone()))?;
   if let Some(out) = args.next() {
+    let bin = !out.ends_with(".mmu");
     use {fs::File, io::BufWriter};
     let mut w = BufWriter::new(File::create(out)?);
-    let mut ex = Exporter::new(path, &file.text, &env, &mut w);
-    ex.run(true)?;
-    ex.finish()?;
+    if bin {
+      let mut ex = export_mmb::Exporter::new(path, &file.text, &env, &mut w);
+      ex.run(true)?;
+      ex.finish()?;
+    } else {
+      env.export_mmu(&mut w)?;
+    }
   }
   Ok(())
 }

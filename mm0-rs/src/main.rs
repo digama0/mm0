@@ -12,6 +12,7 @@ mod joiner;
 mod vfs;
 mod elab;
 mod export_mmb;
+mod export_mmu;
 
 use std::{env, io};
 
