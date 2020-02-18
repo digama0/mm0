@@ -147,6 +147,10 @@ impl FileRef {
   pub fn url(&self) -> &Url { &self.0 .2 }
   pub fn ptr(&self) -> *const PathBuf { self.path() }
   pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
+
+  pub fn has_extension(&self, ext: &str) -> bool {
+    self.path().extension().map_or(false, |s| s == ext)
+  }
 }
 impl PartialEq for FileRef {
   fn eq(&self, other: &Self) -> bool { self.0 == other.0 }

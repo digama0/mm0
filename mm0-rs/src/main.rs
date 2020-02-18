@@ -11,8 +11,8 @@ mod compiler;
 mod joiner;
 mod vfs;
 mod elab;
-mod export_mmb;
-mod export_mmu;
+mod mmb { pub mod export; }
+mod mmu { pub mod import; pub mod export; }
 
 use std::{env, io};
 

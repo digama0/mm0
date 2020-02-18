@@ -542,6 +542,8 @@ impl Elaborator {
         ];
         if tdata.proof.is_some() {
           args.push(vis(tdata.vis));
+          heap.truncate(tdata.args.len());
+          heap.shrink_to_fit();
           args.push(LispVal::proc(Proc::ProofThunk(x, Mutex::new(Err(heap)))));
         }
         LispVal::list(args)

@@ -560,7 +560,7 @@ impl Iterator for Uncons {
 #[derive(Default)]
 pub struct LispRemapper {
   pub atom: AtomVec<AtomID>,
-  pub lisp: HashMap<*const LispKind, LispVal>,
+  pub lisp: HashMap<*const LispKind, (LispVal, LispVal)>,
 }
 impl Remap<LispRemapper> for AtomID {
   fn remap(&self, r: &mut LispRemapper) -> Self { *r.atom.get(*self).unwrap_or(self) }
@@ -577,7 +577,7 @@ impl Remap<LispRemapper> for LispRef {
 impl Remap<LispRemapper> for LispVal {
   fn remap(&self, r: &mut LispRemapper) -> Self {
     let p: *const LispKind = self.deref();
-    if let Some(v) = r.lisp.get(&p) {return v.clone()}
+    if let Some(v) = r.lisp.get(&p) {return v.1.clone()}
     let v = match self.deref() {
       LispKind::Atom(a) => LispVal::atom(a.remap(r)),
       LispKind::List(v) => LispVal::list(v.remap(r)),
@@ -594,7 +594,7 @@ impl Remap<LispRemapper> for LispVal {
       LispKind::Syntax(_) |
       LispKind::Undef => self.clone(),
     };
-    r.lisp.entry(p).or_insert(v).clone()
+    r.lisp.entry(p).or_insert_with(|| (self.clone(), v)).1.clone()
   }
 }
 

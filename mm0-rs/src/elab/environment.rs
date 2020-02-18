@@ -323,6 +323,7 @@ make_atoms! {
   CONV: ":conv",
   SYM: ":sym",
   UNFOLD: ":unfold",
+  LET: ":let",
   COLON: ":",
   QMARK: "?",
   REFINE_EXTRA_ARGS: "refine-extra-args",

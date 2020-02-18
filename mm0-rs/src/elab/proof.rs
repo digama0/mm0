@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use super::environment::{AtomID, Type};
-use super::{LocalContext, ElabError, Result, Elaborator, Environment,
+use super::{LocalContext, ElabError, Result, Environment,
   SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
@@ -36,20 +36,23 @@ impl<'a> NodeHasher<'a> {
 
 pub trait NodeHash: Hash + Eq + Sized + std::fmt::Debug {
   const VAR: fn(usize) -> Self;
+}
+
+pub trait LispNodeHash: NodeHash {
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
     de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>>;
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64;
 }
 
 #[derive(Debug)]
-pub struct Dedup<H: NodeHash> {
+pub struct Dedup<H: LispNodeHash> {
   map: HashMap<Rc<H>, usize>,
-  prev: HashMap<*const LispKind, usize>,
+  prev: HashMap<*const LispKind, (LispVal, usize)>,
   pub vec: Vec<(Rc<H>, bool, u64)>,
   bv: u64,
 }
 
-impl<H: NodeHash> Dedup<H> {
+impl<H: LispNodeHash> Dedup<H> {
   pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
     let mut bv = 1;
     let vec: Vec<_> = args.iter().enumerate()
@@ -65,7 +68,51 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
-  pub fn add_direct(&mut self, v: H) -> usize {
+  pub fn add(&mut self, p: LispVal, v: H) -> usize {
+    let n = self.add_direct(v);
+    self.prev.insert(&*p, (p, n));
+    n
+  }
+
+  pub fn dedup(&mut self, nh: &NodeHasher, e: &LispVal) -> Result<usize> {
+    let r = e.unwrapped_arc();
+    let p: *const _ = &*r;
+    Ok(match self.prev.get(&p) {
+      Some(&(_, n)) => self.reuse(n),
+      None => {
+        let n = match H::from(nh, e.fspan().as_ref(), &r, self)? {
+          Ok(v) => self.add_direct(v),
+          Err(n) => n,
+        };
+        self.prev.insert(p, (r, n)); n
+      }
+    })
+  }
+
+  fn map_inj<T: LispNodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
+    let mut d = Dedup {
+      map: HashMap::new(),
+      prev: self.prev.clone(),
+      vec: Vec::with_capacity(self.vec.len()),
+      bv: self.bv,
+    };
+    for (i, &(ref h, b, v)) in self.vec.iter().enumerate() {
+      let t = Rc::new(f(h));
+      d.map.insert(t.clone(), i);
+      d.vec.push((t, b, v));
+    }
+    d
+  }
+}
+
+pub trait IDedup<H> {
+  fn add_direct(&mut self, v: H) -> usize;
+  fn reuse(&mut self, n: usize) -> usize;
+  fn get(&self, n: usize) -> &Rc<H>;
+}
+
+impl<H: LispNodeHash> IDedup<H> for Dedup<H> {
+  fn add_direct(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
         let vec = &mut self.vec;
@@ -83,46 +130,31 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
-  pub fn reuse(&mut self, n: usize) -> usize {
+  fn reuse(&mut self, n: usize) -> usize {
     self.vec[n].1 = true;
     n
   }
 
-  pub fn add(&mut self, p: *const LispKind, v: H) -> usize {
-    let n = self.add_direct(v);
-    self.prev.insert(p, n);
-    n
-  }
+  fn get(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
+}
 
-  pub fn dedup(&mut self, nh: &NodeHasher, e: &LispVal) -> Result<usize> {
-    let r = e.unwrapped_arc();
-    let p: *const _ = &*r;
-    Ok(match self.prev.get(&p) {
-      Some(&n) => self.reuse(n),
-      None => {
-        let n = match H::from(nh, e.fspan().as_ref(), &r, self)? {
-          Ok(v) => self.add_direct(v),
-          Err(n) => n,
-        };
-        self.prev.insert(p, n); n
-      }
-    })
-  }
+pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool, u64)>);
 
-  fn map_inj<T: NodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
-    let mut d = Dedup {
-      map: HashMap::new(),
-      prev: self.prev.clone(),
-      vec: Vec::with_capacity(self.vec.len()),
-      bv: self.bv,
-    };
-    for (i, &(ref h, b, v)) in self.vec.iter().enumerate() {
-      let t = Rc::new(f(h));
-      d.map.insert(t.clone(), i);
-      d.vec.push((t, b, v));
-    }
-    d
+impl<'a, H: LispNodeHash> Iterator for DedupIter<'a, H> {
+  type Item = (&'a H, bool);
+  fn next(&mut self) -> Option<(&'a H, bool)> {
+    self.0.next().map(|&(ref e, b, _)| (&**e, b))
   }
+}
+
+impl<'a, H: LispNodeHash> ExactSizeIterator for DedupIter<'a, H> {
+  fn len(&self) -> usize { self.0.len() }
+}
+
+impl<'a, H: LispNodeHash> IntoIterator for &'a Dedup<H> {
+  type Item = (&'a H, bool);
+  type IntoIter = DedupIter<'a, H>;
+  fn into_iter(self) -> DedupIter<'a, H> { DedupIter(self.vec.iter()) }
 }
 
 pub trait Node: Sized + std::fmt::Debug {
@@ -149,12 +181,17 @@ pub struct Builder<T: Node> {
   pub heap: Vec<T>,
 }
 
-impl Elaborator {
-  pub fn to_builder<T: Node>(&self, de: &Dedup<T::Hash>) -> Result<Builder<T>> {
-    let mut ids: Vec<Val<T>> = Vec::with_capacity(de.vec.len());
+impl<T: Node> Builder<T> {
+  pub fn from<'a, D>(de: D) -> Builder<T> where
+    T::Hash: 'a,
+    D: IntoIterator<Item=(&'a T::Hash, bool)>,
+    D::IntoIter: ExactSizeIterator
+  {
+    let it = de.into_iter();
+    let mut ids: Vec<Val<T>> = Vec::with_capacity(it.len());
     let mut heap = Vec::new();
-    for &(ref e, b, _) in &de.vec {
-      let node = T::from(&e, &mut ids);
+    for (e, b) in it {
+      let node = T::from(e, &mut ids);
       if b {
         ids.push(Val::Ref(heap.len()));
         heap.push(node);
@@ -162,7 +199,7 @@ impl Elaborator {
         ids.push(Val::Built(node))
       }
     }
-    Ok(Builder {ids, heap})
+    Builder {ids, heap}
   }
 }
 
@@ -175,6 +212,9 @@ pub enum ExprHash {
 
 impl NodeHash for ExprHash {
   const VAR: fn(usize) -> Self = Self::Var;
+}
+
+impl LispNodeHash for ExprHash {
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>> {
     Ok(Ok(match &**r {
@@ -264,7 +304,7 @@ impl Environment {
   }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ProofHash {
   Var(usize),
   Dummy(AtomID, SortID),
@@ -279,7 +319,7 @@ pub enum ProofHash {
 }
 
 impl ProofHash {
-  fn subst(de: &mut Dedup<Self>, env: &Environment,
+  pub fn subst(de: &mut impl IDedup<Self>, env: &Environment,
     heap: &[ExprNode], nheap: &mut [Option<usize>], e: &ExprNode) -> usize {
     match *e {
       ExprNode::Ref(i) => match nheap[i] {
@@ -298,8 +338,8 @@ impl ProofHash {
     }
   }
 
-  fn conv(de: &Dedup<Self>, i: usize) -> bool {
-    match *de.vec[i].0 {
+  pub fn conv(de: &impl IDedup<Self>, i: usize) -> bool {
+    match **de.get(i) {
       ProofHash::Var(j) => j < i && Self::conv(de, j),
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
@@ -313,8 +353,8 @@ impl ProofHash {
     }
   }
 
-  fn conv_side(de: &mut Dedup<Self>, i: usize, right: bool) -> usize {
-    match *de.vec[i].0.clone() {
+  pub fn conv_side(de: &mut impl IDedup<Self>, i: usize, right: bool) -> usize {
+    match *de.get(i).clone() {
       ProofHash::Var(j) => Self::conv_side(de, j, right),
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
@@ -332,7 +372,7 @@ impl ProofHash {
     }
   }
 
-  fn to_conv(i: usize, de: &mut Dedup<Self>) -> usize {
+  pub fn to_conv(i: usize, de: &mut impl IDedup<Self>) -> usize {
     if Self::conv(de, i) {i} else {
       de.add_direct(ProofHash::Refl(i))
     }
@@ -341,6 +381,9 @@ impl ProofHash {
 
 impl NodeHash for ProofHash {
   const VAR: fn(usize) -> Self = Self::Var;
+}
+
+impl LispNodeHash for ProofHash {
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<std::result::Result<Self, usize>> {
     Ok(Ok(match &**r {
@@ -466,13 +509,19 @@ impl NodeHash for ProofHash {
   }
 }
 
-impl Dedup<ExprHash> {
-  pub fn map_proof(&self) -> Dedup<ProofHash> {
-    self.map_inj(|e| match *e {
+impl ExprHash {
+  pub fn to_proof(&self) -> ProofHash {
+    match *self {
       ExprHash::Var(i) => ProofHash::Var(i),
       ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
       ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone().into()),
-    })
+    }
+  }
+}
+
+impl Dedup<ExprHash> {
+  pub fn map_proof(&self) -> Dedup<ProofHash> {
+    self.map_inj(ExprHash::to_proof)
   }
 }
 

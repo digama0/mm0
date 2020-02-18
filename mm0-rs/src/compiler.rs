@@ -13,7 +13,8 @@ use annotate_snippets::{
 use crate::elab::{ElabError, ElabErrorKind, Environment, Elaborator};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
-use crate::export_mmb;
+use crate::mmu::import::elab as mmu_elab;
+use crate::mmb::export::Exporter as MMBExporter;
 use crate::util::{FileRef, FileSpan, Span};
 
 lazy_static! {
@@ -143,31 +144,38 @@ async fn elaborate(path: FileRef) -> io::Result<Arc<Environment>> {
     }
   }
   let text = file.text.clone();
-  let (_, ast) = parse(text, None);
-  if !ast.errors.is_empty() {
-    let dlf = DisplayListFormatter::new(true, false);
-    for e in &ast.errors {
-      let mut dl = DisplayList::from(e.to_snippet(&path, &ast.source));
-      patch(&mut dl);
-      println!("{}", dlf.format(&dl));
+  let (errors, env) = if path.has_extension("mmb") {
+    unimplemented!()
+  } else if path.has_extension("mmu") {
+    mmu_elab(path.clone(), &text)
+  } else {
+    let (_, ast) = parse(text, None);
+    if !ast.errors.is_empty() {
+      let dlf = DisplayListFormatter::new(true, false);
+      for e in &ast.errors {
+        let mut dl = DisplayList::from(e.to_snippet(&path, &ast.source));
+        patch(&mut dl);
+        println!("{}", dlf.format(&dl));
+      }
     }
-  }
-  let ast = Arc::new(ast);
-  let mut deps = Vec::new();
-  let elab = Elaborator::new(ast.clone(), path.clone(), Elaborator::detect_mm0(&path), Arc::default());
-  let (_, errors, env) = elab.as_fut(None,
-    |path| {
-      let path = VFS_.get_or_insert(path)?.0;
-      let (send, recv) = channel();
-      POOL.spawn_ok(elaborate_and_send(path.clone(), send));
-      deps.push(path);
-      Ok(recv)
-    }).await;
+    let ast = Arc::new(ast);
+    let mut deps = Vec::new();
+    let elab = Elaborator::new(ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default());
+    let (_, errors, env) = elab.as_fut(None,
+      |path| {
+        let path = VFS_.get_or_insert(path)?.0;
+        let (send, recv) = channel();
+        POOL.spawn_ok(elaborate_and_send(path.clone(), send));
+        deps.push(path);
+        Ok(recv)
+      }).await;
+    (errors, env)
+  };
   if !errors.is_empty() {
     let mut srcs = HashMap::new();
     let mut to_range = |fsp: &FileSpan| -> Range {
       if fsp.file.ptr_eq(&path) {
-        &ast.source
+        &file.text
       } else {
         srcs.entry(fsp.file.ptr()).or_insert_with(||
           VFS_.0.lock().unwrap().get(&fsp.file).unwrap().text.clone())
@@ -176,7 +184,7 @@ async fn elaborate(path: FileRef) -> io::Result<Arc<Environment>> {
     let dlf = DisplayListFormatter::new(true, false);
     for e in &errors {
       let mut dl = DisplayList::from(
-        e.to_snippet(&path, &ast.source, &mut to_range));
+        e.to_snippet(&path, &file.text, &mut to_range));
       patch(&mut dl);
       println!("{}\n", dlf.format(&dl));
     }
@@ -211,7 +219,7 @@ pub fn main(mut args: impl Iterator<Item=String>) -> io::Result<()> {
     use {fs::File, io::BufWriter};
     let mut w = BufWriter::new(File::create(out)?);
     if bin {
-      let mut ex = export_mmb::Exporter::new(path, &file.text, &env, &mut w);
+      let mut ex = MMBExporter::new(path, &file.text, &env, &mut w);
       ex.run(true)?;
       ex.finish()?;
     } else {

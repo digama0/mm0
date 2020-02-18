@@ -139,10 +139,6 @@ impl DerefMut for Elaborator {
 }
 
 impl Elaborator {
-  pub fn detect_mm0(path: &FileRef) -> bool {
-    path.path().extension().map_or(false, |s| s == "mm0")
-  }
-
   pub fn new(ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
       ast, path, cancel,

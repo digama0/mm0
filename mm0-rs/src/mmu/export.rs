@@ -1,5 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::io::{self, Write};
+use std::mem;
 use crate::elab::environment::{
   Environment, Type, Expr, Proof, AtomID, SortID,
   ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
@@ -50,13 +51,13 @@ impl Environment {
   }
 
   fn write_expr_node(&self,
-    dummies: &mut BTreeMap<AtomID, SortID>,
+    dummies: &mut HashMap<AtomID, SortID>,
     heap: &[Vec<u8>],
     head: &ExprNode,
   ) -> Vec<u8> {
     fn f(
       env: &Environment, w: &mut Vec<u8>,
-      dummies: &mut BTreeMap<AtomID, SortID>,
+      dummies: &mut HashMap<AtomID, SortID>,
       heap: &[Vec<u8>],
       head: &ExprNode) {
       match head {
@@ -81,97 +82,98 @@ impl Environment {
   }
 
   fn write_proof_node(&self,
-    dummies: &mut BTreeMap<AtomID, SortID>,
+    dummies: &mut HashMap<AtomID, SortID>,
     hyps: &[(Option<AtomID>, ExprNode)],
-    heap: &[Vec<u8>],
+    heap: &[(Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))],
     head: &ProofNode,
-    indent: &mut Vec<u8>,
-  ) -> Vec<u8> {
+    indent: usize,
+  ) -> (Vec<(usize, Vec<u8>)>, (usize, Vec<u8>)) {
+    fn line(w: &mut (Vec<(usize, Vec<u8>)>, usize), l: &mut Vec<u8>, indent: usize) {
+      w.0.push((mem::replace(&mut w.1, indent), mem::replace(l, vec![])));
+    }
     fn f(
-      env: &Environment, w: &mut Vec<u8>,
-      dummies: &mut BTreeMap<AtomID, SortID>,
+      env: &Environment,
+      w: &mut (Vec<(usize, Vec<u8>)>, usize), l: &mut Vec<u8>,
+      dummies: &mut HashMap<AtomID, SortID>,
       hyps: &[(Option<AtomID>, ExprNode)],
-      heap: &[Vec<u8>],
+      heap: &[(Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))],
       head: &ProofNode,
-      indent: &mut Vec<u8>) {
+      indent: usize) {
       match head {
-        &ProofNode::Ref(i) => w.extend_from_slice(&heap[i]),
+        &ProofNode::Ref(i) => {
+          let (ref w2, (n, ref l2)) = heap[i];
+          for &(n, ref l2) in w2 {
+            w.0.push((indent + n, l2.clone()));
+          }
+          w.1 = indent + n;
+          l.extend_from_slice(l2);
+        }
         &ProofNode::Dummy(a, s) => {
           assert!(dummies.insert(a, s).map_or(true, |s2| s == s2));
-          w.extend_from_slice(env.data[a].name.as_bytes());
+          l.extend_from_slice(env.data[a].name.as_bytes());
         }
-        &ProofNode::Hyp(i, _) => {
-          w.extend_from_slice(env.data[hyps[i].0.unwrap()].name.as_bytes());
-        }
+        &ProofNode::Hyp(i, _) =>
+          l.extend_from_slice(env.data[hyps[i].0.unwrap()].name.as_bytes()),
         &ProofNode::Term {term, ref args} => {
-          write!(w, "({}", env.data[env.terms[term].atom].name).unwrap();
+          let td = &env.terms[term];
+          write!(l, "({}", env.data[td.atom].name).unwrap();
+          assert!(td.args.len() == args.len());
           for e in &**args {
-            w.push(b' ');
-            f(env, w, dummies, hyps, heap, e, indent);
+            l.push(b' ');
+            f(env, w, l, dummies, hyps, heap, e, indent);
           }
-          w.push(b')');
+          l.push(b')');
         }
         &ProofNode::Thm {thm, ref args, ..} => {
           let td = &env.thms[thm];
           let nargs = td.args.len();
-          write!(w, "({} ", env.data[td.atom].name).unwrap();
-          list(w, args[..nargs].iter(), |w, e|
-            Ok(f(env, w, dummies, hyps, heap, e, indent))).unwrap();
-          let len = indent.len();
-          indent.extend_from_slice(b"  ");
+          write!(l, "({} ", env.data[td.atom].name).unwrap();
+          list(l, args[..nargs].iter(), |l, e|
+            Ok(f(env, w, l, dummies, hyps, heap, e, indent))).unwrap();
           for e in &args[nargs..] {
-            w.push(b'\n'); w.extend_from_slice(&indent);
-            f(env, w, dummies, hyps, heap, e, indent);
+            line(w, l, indent + 1);
+            f(env, w, l, dummies, hyps, heap, e, indent + 1);
           }
-          w.push(b')');
-          indent.truncate(len);
+          l.push(b')');
         }
         ProofNode::Conv(args) => {
           let (e, c, p) = &**args;
-          w.extend_from_slice(b"(:conv ");
-          f(env, w, dummies, hyps, heap, e, indent);
-          let len = indent.len();
-          indent.extend_from_slice(b"  ");
-          w.push(b'\n'); w.extend_from_slice(&indent);
-          f(env, w, dummies, hyps, heap, c, indent);
-          w.push(b'\n'); w.extend_from_slice(&indent);
-          f(env, w, dummies, hyps, heap, p, indent);
-          w.push(b')');
-          indent.truncate(len);
+          l.extend_from_slice(b"(:conv ");
+          f(env, w, l, dummies, hyps, heap, e, indent);
+          line(w, l, indent + 1);
+          f(env, w, l, dummies, hyps, heap, c, indent + 1);
+          line(w, l, indent + 1);
+          f(env, w, l, dummies, hyps, heap, p, indent + 1);
+          l.push(b')');
         }
-        ProofNode::Refl(e) => f(env, w, dummies, hyps, heap, e, indent),
+        ProofNode::Refl(e) => f(env, w, l, dummies, hyps, heap, e, indent),
         ProofNode::Sym(c) => {
-          w.extend_from_slice(b"(:sym ");
-          f(env, w, dummies, hyps, heap, c, indent);
-          w.push(b')');
+          l.extend_from_slice(b"(:sym ");
+          f(env, w, l, dummies, hyps, heap, c, indent);
+          l.push(b')');
         }
         &ProofNode::Cong {term, ref args} => {
-          write!(w, "({}", env.data[env.terms[term].atom].name).unwrap();
-          let len = indent.len();
-          indent.extend_from_slice(b"  ");
+          write!(l, "({}", env.data[env.terms[term].atom].name).unwrap();
           for e in &**args {
-            w.push(b'\n'); w.extend_from_slice(&indent);
-            f(env, w, dummies, hyps, heap, e, indent);
+            line(w, l, indent + 1);
+            f(env, w, l, dummies, hyps, heap, e, indent + 1);
           }
-          w.push(b')');
-          indent.truncate(len);
+          l.push(b')');
         }
         &ProofNode::Unfold {term, ref args, ref res} => {
-          write!(w, "(:unfold {} ", env.data[env.terms[term].atom].name).unwrap();
-          list(w, args.iter(), |w, e|
-            Ok(f(env, w, dummies, hyps, heap, e, indent))).unwrap();
-          let len = indent.len();
-          indent.extend_from_slice(b"  ");
-          w.push(b'\n'); w.extend_from_slice(&indent);
-          f(env, w, dummies, hyps, heap, &res.2, indent);
-          w.push(b')');
-          indent.truncate(len);
+          write!(l, "(:unfold {} ", env.data[env.terms[term].atom].name).unwrap();
+          list(l, args.iter(), |l, e|
+            Ok(f(env, w, l, dummies, hyps, heap, e, indent))).unwrap();
+          line(w, l, indent + 1);
+          f(env, w, l, dummies, hyps, heap, &res.2, indent + 1);
+          l.push(b')');
         }
       }
     }
-    let mut ret = Vec::new();
-    f(&self, &mut ret, dummies, hyps, heap, head, indent);
-    ret
+    let mut w = (vec![], indent);
+    let mut l = vec![];
+    f(&self, &mut w, &mut l, dummies, hyps, heap, head, indent);
+    (w.0, (w.1, l))
   }
 
   pub fn export_mmu(&self, w: &mut impl Write) -> io::Result<()> {
@@ -200,7 +202,7 @@ impl Environment {
               self.write_deps(w, &bvs, td.ret.1)?;
               write!(w, ")")?;
               if let Some(Some(Expr {heap, head})) = &td.val {
-                let mut dummies = BTreeMap::new();
+                let mut dummies = HashMap::new();
                 let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
                   a.map_or(vec![], |a| Vec::from(self.data[a].name.as_bytes()))).collect();
                 for e in &heap[td.args.len()..] {
@@ -208,10 +210,12 @@ impl Environment {
                   strs.push(c);
                 }
                 let ret = self.write_expr_node(&mut dummies, &strs, head);
-                write!(w, " ")?;
+                write!(w, "\n")?;
+                let mut dummies = dummies.into_iter().collect::<Vec<_>>();
+                dummies.sort_by_key(|&(a, _)| &*self.data[a].name);
                 list(w, dummies.into_iter(), |w, (a, s)|
                   write!(w, "({} {})", self.data[a].name, self.sorts[s].name))?;
-                write!(w, " ")?;
+                write!(w, "\n")?;
                 w.write_all(&ret)?;
               }
               write!(w, ")\n\n")?;
@@ -222,7 +226,7 @@ impl Environment {
                 if td.vis == Modifiers::PUB || td.proof.is_none() {""} else {"local "},
                 if let Some(_) = td.proof {"theorem"} else {"axiom"}, ad.name)?;
               self.write_binders(w, &td.args)?;
-              let mut dummies = BTreeMap::new();
+              let mut dummies = HashMap::new();
               let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
                 a.map_or(vec![], |a| Vec::from(self.data[a].name.as_bytes()))).collect();
               for e in &td.heap[td.args.len()..] {
@@ -233,7 +237,7 @@ impl Environment {
                 let mut it = td.hyps.iter();
                 match it.next() {
                   None => write!(w, " ()")?,
-                  Some((h, e)) => {
+                  Some((h, e)) => if td.proof.is_some() {
                     write!(w, "\n  (({} ", h.map_or("_", |a| &self.data[a].name))?;
                     w.write_all(&self.write_expr_node(&mut dummies, &strs, e))?;
                     write!(w, ")")?;
@@ -241,6 +245,14 @@ impl Environment {
                       write!(w, "\n   ({} ", h.map_or("_", |a| &self.data[a].name))?;
                       w.write_all(&self.write_expr_node(&mut dummies, &strs, e))?;
                       write!(w, ")")?;
+                    }
+                    write!(w, ")")?;
+                  } else {
+                    write!(w, "\n  (")?;
+                    w.write_all(&self.write_expr_node(&mut dummies, &strs, e))?;
+                    for (_, e) in it {
+                      write!(w, "\n   ")?;
+                      w.write_all(&self.write_expr_node(&mut dummies, &strs, e))?;
                     }
                     write!(w, ")")?;
                   }
@@ -264,26 +276,41 @@ impl Environment {
                   }
                   let mut lets_start = vec![];
                   let mut lets_end = vec![];
-                  let mut indent = vec![];
+                  let mut strs: Vec<_> = strs.into_iter().take(td.args.len())
+                    .map(|v| (vec![], (0, v))).collect();
+                  fn write_lines(w: &mut impl Write,
+                      (mut ls, nv): (Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))) -> io::Result<()> {
+                    ls.push(nv);
+                    let mut first = true;
+                    for (n, v) in ls {
+                      if !mem::replace(&mut first, false) {
+                        w.write_all(b"\n")?;
+                        w.write_all(&vec![b' '; 2 * n])?
+                      }
+                      w.write_all(&v)?;
+                    }
+                    Ok(())
+                  }
                   for e in &heap[strs.len()..] {
-                    let mut c = self.write_proof_node(&mut dummies, &td.hyps, &strs, e, &mut indent);
+                    let mut c = self.write_proof_node(&mut dummies, &td.hyps, &strs, e, 0);
                     if is_nonatomic_proof(e) {
                       write!(lets_start, "(:let H{} ", idx).unwrap();
-                      lets_start.append(&mut c);
+                      write_lines(&mut lets_start, c).unwrap();
                       lets_start.push(b'\n');
                       lets_end.push(b')');
-                      c = format!("H{}", idx).into_bytes();
+                      c = (vec![], (0, format!("H{}", idx).into_bytes()));
                       idx += 1
                     }
                     strs.push(c);
                   }
-                  let pf = self.write_proof_node(&mut dummies, &td.hyps, &strs, head, &mut indent);
-
+                  let pf = self.write_proof_node(&mut dummies, &td.hyps, &strs, head, 0);
+                  let mut dummies = dummies.into_iter().collect::<Vec<_>>();
+                  dummies.sort_by_key(|&(a, _)| &*self.data[a].name);
                   list(w, dummies.into_iter(), |w, (a, s)|
                     write!(w, "({} {})", self.data[a].name, self.sorts[s].name))?;
                   write!(w, "\n")?;
                   w.write_all(&lets_start)?;
-                  w.write_all(&pf)?;
+                  write_lines(w, pf)?;
                   w.write_all(&lets_end)?;
                 }
               }

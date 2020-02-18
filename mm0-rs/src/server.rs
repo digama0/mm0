@@ -18,6 +18,7 @@ use crossbeam::{channel::{SendError, RecvError}};
 use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
+use crate::mmu::import::elab as mmu_elab;
 use crate::elab::{ElabError, Elaborator,
   environment::{ObjectKind, DeclKey, AtomData, StmtTrace, Environment},
   local_context::InferSort, proof::Subst,
@@ -136,16 +137,23 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let ast = Arc::new(ast);
 
   let mut deps = Vec::new();
-  let elab = Elaborator::new(ast.clone(), path.clone(), Elaborator::detect_mm0(&path), cancel.clone());
-  let (toks, errors, env) = elab.as_fut(
-    old_env.map(|(errs, e)| (idx, errs, e)),
-    |path| {
-      let path = vfs.get_or_insert(path)?.0;
-      let (send, recv) = channel();
-      pool.spawn_ok(elaborate_and_send(path.clone(), cancel.clone(), send));
-      deps.push(path);
-      Ok(recv)
-    }).await;
+  let elab = Elaborator::new(ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone());
+  let (toks, errors, env) = if path.has_extension("mmb") {
+    unimplemented!()
+  } else if path.has_extension("mmu") {
+    let (errors, env) = mmu_elab(path.clone(), &ast.source);
+    (vec![], errors, env)
+  } else {
+    elab.as_fut(
+      old_env.map(|(errs, e)| (idx, errs, e)),
+      |path| {
+        let path = vfs.get_or_insert(path)?.0;
+        let (send, recv) = channel();
+        pool.spawn_ok(elaborate_and_send(path.clone(), cancel.clone(), send));
+        deps.push(path);
+        Ok(recv)
+      }).await
+  };
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();
   let env = Arc::new(env);
