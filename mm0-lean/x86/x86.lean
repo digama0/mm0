@@ -194,7 +194,7 @@ def cond_code.mk : bool → basic_cond → cond_code
 
 inductive cond_code.bits : cond_code → bitvec 4 → Prop
 | mk (v : bitvec 4) (b c code) :
-  split_bits v.to_nat [⟨3, c⟩, ⟨1, S b⟩] →
+  split_bits v.to_nat [⟨1, S b⟩, ⟨3, c⟩] →
   basic_cond.bits code c →
   cond_code.bits (cond_code.mk b code) v
 

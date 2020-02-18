@@ -1,5 +1,7 @@
 import x86.x86 data.list.basic data.zmod.basic
 
+theorem bool.coe_bool_iff : ∀ {a b : bool}, (a ↔ b) ↔ a = b := dec_trivial
+
 namespace bitvec
 
 theorem of_nat_zero (n) : bitvec.of_nat n 0 = 0 :=
@@ -515,13 +517,13 @@ begin
 end
 
 def cond_code.from_bits (b0 b1 b2 b3 : bool) : option cond_code :=
-option.map (cond_code.mk b3) (basic_cond.from_bits b0 b1 b2)
+option.map (cond_code.mk b0) (basic_cond.from_bits b1 b2 b3)
 
 theorem cond_code.bits_eq {b0 b1 b2 b3 e c} :
   cond_code.bits c ⟨[b0, b1, b2, b3], e⟩ → cond_code.from_bits b0 b1 b2 b3 = some c :=
 begin
   rintro ⟨⟩,
-  rcases split_bits_ok a_a with ⟨h₁, ⟨⟩, _⟩,
+  rcases split_bits_ok a_a with ⟨⟨⟩, h₁, _⟩,
   cases subtype.eq h₁,
   rw [cond_code.from_bits, basic_cond.bits_eq a_a_1], refl
 end

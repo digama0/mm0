@@ -347,8 +347,8 @@ pub theorem immRM_immT (i: nat): $ i e. RM -> immRM_imm i e. ImmRM $;
 
 @_ def Cond: set = $ Option (Bits 4) $;
 @_ def condAlways: nat = $ 0 $;
-@_ def condPos (c: nat): nat = $ suc c $;
-@_ def condNeg (c: nat): nat = $ suc (c + 8) $;
+@_ def condPos (c: nat): nat = $ suc (b0 c) $;
+@_ def condNeg (c: nat): nat = $ suc (b1 c) $;
 pub theorem condAlwaysT: $ condAlways e. Cond $;
 pub theorem condPosT (c: nat): $ c e. BCond -> condPos c e. Cond $;
 pub theorem condNegT (c: nat): $ c e. BCond -> condNeg c e. Cond $;

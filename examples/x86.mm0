@@ -275,8 +275,8 @@ def bcondNG: nat = $ 7 $;
 
 def Cond: set = $ Option (Bits 4) $;
 def condAlways: nat = $ 0 $;
-def condPos (c: nat): nat = $ suc c $;
-def condNeg (c: nat): nat = $ suc (c + 8) $;
+def condPos (c: nat): nat = $ suc (b0 c) $;
+def condNeg (c: nat): nat = $ suc (b1 c) $;
 theorem condAlwaysT: $ condAlways e. Cond $;
 theorem condPosT (c: nat): $ c e. BCond -> condPos c e. Cond $;
 theorem condNegT (c: nat): $ c e. BCond -> condNeg c e. Cond $;
