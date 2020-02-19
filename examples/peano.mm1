@@ -45,6 +45,7 @@ do {
   (def (get-proof x) @ match (get-decl x)
     [('theorem _ _ _ _ _ pf) (hd @ tl @ pf)]
     [_ (error "not a theorem")])
+  (def (pp-proof x) (display @ pp @ get-proof x))
   (def named
     (def (assign-mvar m x) (set! m (dummy! x (mvar-sort m))))
     @ match-fn*
@@ -3757,8 +3758,8 @@ pub theorem repeat0 (a: nat): $ repeat a 0 = 0 $ =  (named 'rec0);
 pub theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $ =
 '(eqtr recS @ ! applame (repeat a n) _ x _ conseq2);
 
-@_ def sublistAt (n l l2 .l1 .l3: nat): wff =
-$ E. l1 E. l3 (l = l1 ++ l2 ++ l3 /\ len l1 = n) $;
+@_ def sublistAt (n L1 L2: nat): wff =
+$ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
 
 @_ local def grecaux1 (K: set) (x z n: nat): nat =
 $ recn z (\\ u, \ i, K @ ((x - suc u) <> i)) n $;
@@ -3879,7 +3880,8 @@ $ grec 0 (\\ _1, \ x, suc x) (\\ _2, \\ i, \ ih, F @ i : ih) n k $;
 theorem lfnaux0: $ lfnaux F k 0 = 0 $ = (named 'grec0);
 theorem lfnauxS: $ lfnaux F k (suc n) = F @ k : lfnaux F (suc k) n $ =
 (named '(eqtr grecS @
-  eqtr (appeq2 @ preq2 @ preq2 @ lfnauxeq2 @ appslame @ applamed @ suceqd anr) @
+  eqtr (appeq2 @ preq2 @ preq2
+    {(greceq5 @ appslame @ applamed @ suceqd anr) : $ _ = lfnaux _ _ _ $}) @
   appslame @ appslamed @ applamed @ conseqd (appeq2d anlr) anr));
 
 theorem lfnauxshift:

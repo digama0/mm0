@@ -302,8 +302,8 @@ def repeat (a n: nat): nat;
 theorem repeat0 (a: nat): $ repeat a 0 = 0 $;
 theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $;
 
-def sublistAt (n l l2 .l1 .l3: nat): wff =
-$ E. l1 E. l3 (l = l1 ++ l2 ++ l3 /\ len l1 = n) $;
+def sublistAt (n L1 L2 .l .r: nat): wff =
+$ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
 
 -- map : (A -> B) -> list A -> list B
 def map (F: set) (l: nat): nat;
