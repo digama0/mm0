@@ -410,6 +410,8 @@ impl<'a> Importer<'a> {
           self.open_err()?;
           let mut ns = vec![];
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Expr)?)}
+          self.open_err()?;
+          while self.close().is_none() {self.ident_err()?;} // ignore dummies
           let c = self.conv(de, vars, proofs)?;
           self.close_err()?;
           let lhs = de.add(ProofHash::Term(tid, ns.clone().into()));

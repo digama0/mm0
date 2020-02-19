@@ -25,6 +25,25 @@ fn is_nonatomic_proof(e: &ProofNode) -> bool {
   }
 }
 
+fn build_unfold_map<'a>(env: &Environment, m: &mut HashMap<AtomID, &'a ProofNode>, checked: &mut [bool],
+  heap: &[ExprNode], head: &ExprNode, theap: &'a [ProofNode], mut tgt: &'a ProofNode) {
+  match head {
+    &ExprNode::Ref(i) => if !mem::replace(&mut checked[i], true) {
+      build_unfold_map(env, m, checked, heap, &heap[i], theap, tgt)
+    },
+    &ExprNode::Dummy(a, _) => {m.insert(a, tgt);}
+    &ExprNode::App(t, ref es) => {
+      while let &ProofNode::Ref(j) = tgt {tgt = &theap[j]}
+      if let &ProofNode::Term {term: t2, args: ref es2} = tgt {
+        assert!(t == t2 && es.len() == es2.len());
+        for (e1, e2) in es.iter().zip(&**es2) {
+          build_unfold_map(env, m, checked, heap, e1, theap, e2)
+        }
+      } else {assert!(false)}
+    }
+  }
+}
+
 impl Environment {
   fn write_deps(&self, w: &mut impl Write, bvs: &[Option<AtomID>], mut vs: u64) -> io::Result<()> {
     list(w, bvs.iter().filter(|_| (vs & 1 != 0, vs /= 2).0),
@@ -84,96 +103,122 @@ impl Environment {
   fn write_proof_node(&self,
     dummies: &mut HashMap<AtomID, SortID>,
     hyps: &[(Option<AtomID>, ExprNode)],
-    heap: &[(Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))],
+    heap: &[ProofNode],
+    lines: &[(Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))],
     head: &ProofNode,
     indent: usize,
   ) -> (Vec<(usize, Vec<u8>)>, (usize, Vec<u8>)) {
-    fn line(w: &mut (Vec<(usize, Vec<u8>)>, usize), l: &mut Vec<u8>, indent: usize) {
-      w.0.push((mem::replace(&mut w.1, indent), mem::replace(l, vec![])));
+    struct State<'a> {
+      env: &'a Environment,
+      w: Vec<(usize, Vec<u8>)>, i: usize, l: Vec<u8>,
+      dummies: &'a mut HashMap<AtomID, SortID>,
+      hyps: &'a [(Option<AtomID>, ExprNode)],
+      heap: &'a [ProofNode],
+      lines: &'a [(Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))],
     }
-    fn f(
-      env: &Environment,
-      w: &mut (Vec<(usize, Vec<u8>)>, usize), l: &mut Vec<u8>,
-      dummies: &mut HashMap<AtomID, SortID>,
-      hyps: &[(Option<AtomID>, ExprNode)],
-      heap: &[(Vec<(usize, Vec<u8>)>, (usize, Vec<u8>))],
-      head: &ProofNode,
-      indent: usize) {
-      match head {
-        &ProofNode::Ref(i) => {
-          let (ref w2, (n, ref l2)) = heap[i];
-          for &(n, ref l2) in w2 {
-            w.0.push((indent + n, l2.clone()));
+    impl<'a> Write for State<'a> {
+      fn write(&mut self, buf: &[u8]) -> io::Result<usize> {self.l.write(buf)}
+      fn flush(&mut self) -> io::Result<()> {self.l.flush()}
+    }
+    impl<'a> State<'a> {
+      fn line(&mut self, indent: usize) {
+        let l = mem::replace(&mut self.l, vec![]);
+        self.w.push((mem::replace(&mut self.i, indent), l));
+      }
+
+      fn go(&mut self, e: &ProofNode, indent: usize) {
+        match e {
+          &ProofNode::Ref(i) => {
+            let (ref w2, (n, ref l2)) = self.lines[i];
+            if w2.is_empty() {
+              self.l.extend_from_slice(l2);
+            } else {
+              self.l.extend_from_slice(&w2[0].1);
+              self.w.push((
+                mem::replace(&mut self.i, indent + n),
+                mem::replace(&mut self.l, l2.clone())));
+              for &(n, ref l2) in &w2[1..] {
+                self.w.push((indent + n, l2.clone()));
+              }
+            }
           }
-          w.1 = indent + n;
-          l.extend_from_slice(l2);
-        }
-        &ProofNode::Dummy(a, s) => {
-          assert!(dummies.insert(a, s).map_or(true, |s2| s == s2));
-          l.extend_from_slice(env.data[a].name.as_bytes());
-        }
-        &ProofNode::Hyp(i, _) =>
-          l.extend_from_slice(env.data[hyps[i].0.unwrap()].name.as_bytes()),
-        &ProofNode::Term {term, ref args} => {
-          let td = &env.terms[term];
-          write!(l, "({}", env.data[td.atom].name).unwrap();
-          assert!(td.args.len() == args.len());
-          for e in &**args {
-            l.push(b' ');
-            f(env, w, l, dummies, hyps, heap, e, indent);
+          &ProofNode::Dummy(a, s) => {
+            assert!(self.dummies.insert(a, s).map_or(true, |s2| s == s2));
+            self.l.extend_from_slice(self.env.data[a].name.as_bytes());
           }
-          l.push(b')');
-        }
-        &ProofNode::Thm {thm, ref args, ..} => {
-          let td = &env.thms[thm];
-          let nargs = td.args.len();
-          write!(l, "({} ", env.data[td.atom].name).unwrap();
-          list(l, args[..nargs].iter(), |l, e|
-            Ok(f(env, w, l, dummies, hyps, heap, e, indent))).unwrap();
-          for e in &args[nargs..] {
-            line(w, l, indent + 1);
-            f(env, w, l, dummies, hyps, heap, e, indent + 1);
+          &ProofNode::Hyp(i, _) =>
+            self.l.extend_from_slice(self.env.data[self.hyps[i].0.unwrap()].name.as_bytes()),
+          &ProofNode::Term {term, ref args} => {
+            let td = &self.env.terms[term];
+            write!(self, "({}", self.env.data[td.atom].name).unwrap();
+            assert!(td.args.len() == args.len());
+            for e in &**args {
+              self.l.push(b' ');
+              self.go(e, indent);
+            }
+            self.l.push(b')');
           }
-          l.push(b')');
-        }
-        ProofNode::Conv(args) => {
-          let (e, c, p) = &**args;
-          l.extend_from_slice(b"(:conv ");
-          f(env, w, l, dummies, hyps, heap, e, indent);
-          line(w, l, indent + 1);
-          f(env, w, l, dummies, hyps, heap, c, indent + 1);
-          line(w, l, indent + 1);
-          f(env, w, l, dummies, hyps, heap, p, indent + 1);
-          l.push(b')');
-        }
-        ProofNode::Refl(e) => f(env, w, l, dummies, hyps, heap, e, indent),
-        ProofNode::Sym(c) => {
-          l.extend_from_slice(b"(:sym ");
-          f(env, w, l, dummies, hyps, heap, c, indent);
-          l.push(b')');
-        }
-        &ProofNode::Cong {term, ref args} => {
-          write!(l, "({}", env.data[env.terms[term].atom].name).unwrap();
-          for e in &**args {
-            line(w, l, indent + 1);
-            f(env, w, l, dummies, hyps, heap, e, indent + 1);
+          &ProofNode::Thm {thm, ref args, ..} => {
+            let td = &self.env.thms[thm];
+            let nargs = td.args.len();
+            write!(self, "({} ", self.env.data[td.atom].name).unwrap();
+            list(self, args[..nargs].iter(), |this, e|
+              Ok(this.go(e, indent))).unwrap();
+            for e in &args[nargs..] {
+              self.line(indent + 1);
+              self.go(e, indent + 1);
+            }
+            self.l.push(b')');
           }
-          l.push(b')');
-        }
-        &ProofNode::Unfold {term, ref args, ref res} => {
-          write!(l, "(:unfold {} ", env.data[env.terms[term].atom].name).unwrap();
-          list(l, args.iter(), |l, e|
-            Ok(f(env, w, l, dummies, hyps, heap, e, indent))).unwrap();
-          line(w, l, indent + 1);
-          f(env, w, l, dummies, hyps, heap, &res.2, indent + 1);
-          l.push(b')');
+          ProofNode::Conv(args) => {
+            let (e, c, p) = &**args;
+            self.l.extend_from_slice(b"(:conv ");
+            self.go(e, indent);
+            self.line(indent + 1);
+            self.go(c, indent + 1);
+            self.line(indent + 1);
+            self.go(p, indent + 1);
+            self.l.push(b')');
+          }
+          ProofNode::Refl(e) => self.go(e, indent),
+          ProofNode::Sym(c) => {
+            self.l.extend_from_slice(b"(:sym ");
+            self.go(c, indent);
+            self.l.push(b')');
+          }
+          &ProofNode::Cong {term, ref args} => {
+            write!(self, "({}", self.env.data[self.env.terms[term].atom].name).unwrap();
+            for e in &**args {
+              self.line(indent + 1);
+              self.go(e, indent + 1);
+            }
+            self.l.push(b')');
+          }
+          &ProofNode::Unfold {term, ref args, ref res} => {
+            let (_, sub_lhs, c) = &**res;
+            let td = &self.env.terms[term];
+            write!(self, "(:unfold {} ", self.env.data[td.atom].name).unwrap();
+            list(self, args.iter(), |this, e| Ok(this.go(e, indent))).unwrap();
+            let mut m = HashMap::new();
+            if let Some(Some(Expr {heap: eheap, head})) = &td.val {
+              build_unfold_map(&self.env, &mut m, &mut vec![false; eheap.len()],
+                eheap, head, self.heap, sub_lhs)
+            }
+            self.l.push(b' ');
+            let mut ds = m.into_iter().collect::<Vec<_>>();
+            ds.sort_by_key(|&(a, _)| &*self.env.data[a].name);
+            list(self, ds.into_iter(), |this, (_, e)| Ok(this.go(e, indent))).unwrap();
+            self.line(indent + 1);
+            self.go(c, indent + 1);
+            self.l.push(b')');
+          }
         }
       }
     }
-    let mut w = (vec![], indent);
-    let mut l = vec![];
-    f(&self, &mut w, &mut l, dummies, hyps, heap, head, indent);
-    (w.0, (w.1, l))
+
+    let mut s = State {env: self, w: vec![], i: indent, l: vec![], dummies, hyps, heap, lines};
+    s.go(head, indent);
+    (s.w, (s.i, s.l))
   }
 
   pub fn export_mmu(&self, w: &mut impl Write) -> io::Result<()> {
@@ -292,7 +337,7 @@ impl Environment {
                     Ok(())
                   }
                   for e in &heap[strs.len()..] {
-                    let mut c = self.write_proof_node(&mut dummies, &td.hyps, &strs, e, 0);
+                    let mut c = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, e, 0);
                     if is_nonatomic_proof(e) {
                       write!(lets_start, "(:let H{} ", idx).unwrap();
                       write_lines(&mut lets_start, c).unwrap();
@@ -303,7 +348,7 @@ impl Environment {
                     }
                     strs.push(c);
                   }
-                  let pf = self.write_proof_node(&mut dummies, &td.hyps, &strs, head, 0);
+                  let pf = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, head, 0);
                   let mut dummies = dummies.into_iter().collect::<Vec<_>>();
                   dummies.sort_by_key(|&(a, _)| &*self.data[a].name);
                   list(w, dummies.into_iter(), |w, (a, s)|

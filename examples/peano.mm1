@@ -27,6 +27,7 @@ do {
   (def (verb e) (list ':verb e))
   (def (exact e) (refine (verb e)))
   (def (result) (hd (get-goals)))
+  (def (inspect-result f) (def g (result)) (refine (f)) (display @ pp g))
   (def (later) @ match (get-goals)
     [(g . gs) (apply set-goals @ append gs @ list g)])
   (def mvar-sort @ match-fn @ (mvar s _) s)

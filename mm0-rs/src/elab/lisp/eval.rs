@@ -457,7 +457,7 @@ impl Elaborator {
         LispVal::list(vec![LispVal::atom(AtomID::UNFOLD),
           LispVal::atom(self.terms[term].atom),
           LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect()),
-          self.proof_node(hyps, heap, ds, &res.1)]),
+          self.proof_node(hyps, heap, ds, &res.2)]),
     }
   }
 
