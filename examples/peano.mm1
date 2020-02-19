@@ -954,7 +954,7 @@ theorem sbsed (a: nat) (A: set x) (B: set)
 theorem sbsid (a: set x): $ S[x / x] A == A $ =
 '(!! eqri y @ bitr elsbs sbid);
 
-@_ def eu {x: nat} (p: wff x): wff = $ E. y A. x (p <-> x = y) $;
+@_ local def eu {x: nat} (p: wff x): wff = $ E. y A. x (p <-> x = y) $;
 
 term d0: nat; prefix d0: $0$ prec max;
 term suc (n: nat): nat;
@@ -2284,7 +2284,7 @@ theorem sndelrn: $ p e. A -> snd p e. Ran A $ = '(sylbir (eleq1 fstsnd) prelrn);
 $ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
 infixr comp: $o.$ prec 90;
 
-@_ local def res (A B: set): set = $ A i^i Xp B _V $;
+@_ def res (A B: set): set = $ A i^i Xp B _V $;
 infixl res: $|`$ prec 55;
 
 theorem nfres (A B: set x) (h1: $ FS/ x A $) (h2: $ FS/ x B $): $ FS/ x A |` B $ =
@@ -3466,7 +3466,7 @@ theorem sreclem2 (a b: nat x):
   (appeq1d @ sylibr (eqlower2 @ finlam finns) anl)
   (syl resapp @ sylibr elupto anr));
 
-pub theorem srecval: $ srec S n = S @ lower ((\ i, srec S i) |` upto n) $ =
+pub theorem srecval {i} (S n): $ srec S n = S @ lower ((\ i, srec S i) |` upto n) $ =
 '(eqtr4 srecval2 @ appeq2 @ eqtr (lowereq srecres) lowerns);
 
 @_ local def srecpaux (A n) (.f: nat): nat =

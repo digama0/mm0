@@ -5468,7 +5468,7 @@
       (elsbs (x x y A)))
     (sbid (x (el y A))))))
 
-(def eu ((x nat) (p wff (x))) (wff ())
+(local def eu ((x nat) (p wff (x))) (wff ())
 ((y nat))
 (ex y (al x (iff p (eq x y)))))
 
@@ -14586,7 +14586,7 @@
 (coeq2d ((eqs G1 G2) F G1 G2)
   (id ((eqs G1 G2)))))
 
-(local def res ((A set ()) (B set ())) (set ())
+(def res ((A set ()) (B set ())) (set ())
 ()
 (Inter A (Xp B (Univ))))
 
@@ -24054,7 +24054,7 @@
           (elupto (b n))
           (anr ((eq f (lower (res (lam x a) (ns (upto n))))) (lt b n)))))))))
 
-(theorem srecval ((S set ()) (i nat) (n nat ())) ()
+(theorem srecval ((i nat) (S set ()) (n nat ())) ()
   (eq (srec S n) (app S (lower (res (lam i (srec S i)) (ns (upto n))))))
 ()
 (ax_mp ((eq (app S (lower (res (lam i (srec S i)) (ns (upto n))))) (app S (srecaux S n))) (eq (srec S n) (app S (lower (res (lam i (srec S i)) (ns (upto n)))))))
@@ -24201,7 +24201,7 @@
   (ax_mp ((eq (app (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) (lower (res (lam x1 (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) x1)) (ns (upto n))))) (nat (el (pr n (sep (upto n) (ab i (srecp A i)))) A))) (eq (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) n) (nat (el (pr n (sep (upto n) (ab i (srecp A i)))) A))))
     (ax_mp ((eq (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) n) (app (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) (lower (res (lam x1 (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) x1)) (ns (upto n)))))) (im (eq (app (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) (lower (res (lam x1 (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) x1)) (ns (upto n))))) (nat (el (pr n (sep (upto n) (ab i (srecp A i)))) A))) (eq (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) n) (nat (el (pr n (sep (upto n) (ab i (srecp A i)))) A)))))
       (eqtr ((srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) n) (app (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) (lower (res (lam x1 (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) x1)) (ns (upto n))))) (nat (el (pr n (sep (upto n) (ab i (srecp A i)))) A))))
-      (srecval ((lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) x1 n)))
+      (srecval (x1 (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) n)))
     (:conv (eq (app (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) (lower (res (lam x1 (srec (lam f (nat (el (pr (size (Dom (ns f))) (lower (ab x (true (app (ns f) x))))) A))) x1)) (ns (upto n))))) (nat (el (pr n (sep (upto n) (ab i (srecp A i)))) A)))
       (eq
         (app
@@ -24347,7 +24347,7 @@
   (ax_mp ((eq (app (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) (lower (res (lam i (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) i)) (ns (upto n))))) (add (app (res (lam i (card i)) (ns (upto n))) (div n (d2))) (mod n (d2)))) (eq (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) n) (add (app (res (lam i (card i)) (ns (upto n))) (div n (d2))) (mod n (d2)))))
     (ax_mp ((eq (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) n) (app (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) (lower (res (lam i (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) i)) (ns (upto n)))))) (im (eq (app (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) (lower (res (lam i (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) i)) (ns (upto n))))) (add (app (res (lam i (card i)) (ns (upto n))) (div n (d2))) (mod n (d2)))) (eq (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) n) (add (app (res (lam i (card i)) (ns (upto n))) (div n (d2))) (mod n (d2))))))
       (eqtr ((srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) n) (app (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) (lower (res (lam i (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) i)) (ns (upto n))))) (add (app (res (lam i (card i)) (ns (upto n))) (div n (d2))) (mod n (d2)))))
-      (srecval ((lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) i n)))
+      (srecval (i (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) n)))
     (:conv (eq (app (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) (lower (res (lam i (srec (lam f (add (app (ns f) (div (size (Dom (ns f))) (d2))) (mod (size (Dom (ns f))) (d2)))) i)) (ns (upto n))))) (add (app (res (lam i (card i)) (ns (upto n))) (div n (d2))) (mod n (d2))))
       (eq
         (app
@@ -24781,7 +24781,7 @@
   (ax_mp ((eq (app (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) (lower (res (lam x (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) x)) (ns (upto n))))) (if (eq n (d0)) z (app S (pr (fst (sub n (d1))) (pr (snd (sub n (d1))) (lrec z S (snd (sub n (d1))))))))) (eq (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) n) (if (eq n (d0)) z (app S (pr (fst (sub n (d1))) (pr (snd (sub n (d1))) (lrec z S (snd (sub n (d1))))))))))
     (ax_mp ((eq (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) n) (app (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) (lower (res (lam x (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) x)) (ns (upto n)))))) (im (eq (app (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) (lower (res (lam x (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) x)) (ns (upto n))))) (if (eq n (d0)) z (app S (pr (fst (sub n (d1))) (pr (snd (sub n (d1))) (lrec z S (snd (sub n (d1))))))))) (eq (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) n) (if (eq n (d0)) z (app S (pr (fst (sub n (d1))) (pr (snd (sub n (d1))) (lrec z S (snd (sub n (d1)))))))))))
       (eqtr ((srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) n) (app (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) (lower (res (lam x (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) x)) (ns (upto n))))) (if (eq n (d0)) z (app S (pr (fst (sub n (d1))) (pr (snd (sub n (d1))) (lrec z S (snd (sub n (d1))))))))))
-      (srecval ((lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) x n)))
+      (srecval (x (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) n)))
     (:conv (eq (app (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) (lower (res (lam x (srec (lam f (sbn (size (Dom (ns f))) i (if (eq i (d0)) z (app S (pr (fst (sub i (d1))) (pr (snd (sub i (d1))) (app (ns f) (snd (sub i (d1)))))))))) x)) (ns (upto n))))) (if (eq n (d0)) z (app S (pr (fst (sub n (d1))) (pr (snd (sub n (d1))) (lrec z S (snd (sub n (d1)))))))))
       (eq
         (app

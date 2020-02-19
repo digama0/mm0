@@ -8,18 +8,18 @@ axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
 axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax_mp (ph ps: wff): $ ph -> ps $ > $ ph $ > $ ps $;
 
-def iff (ph ps: wff): wff = $ ~((ph -> ps) -> ~(ps -> ph)) $;
-infixl iff: $<->$ prec 20;
-
-def an (ph ps: wff): wff = $ ~(ph -> ~ps) $;
+def an (a b: wff): wff = $ ~(a -> ~b) $;
 infixl an: $/\$ prec 35;
 
-def or (ph ps: wff): wff = $ ~ph -> ps $;
+def iff (a b: wff): wff = $ (a -> b) /\ (b -> a) $;
+infixl iff: $<->$ prec 20;
+
+def or (a b: wff): wff = $ ~a -> b $;
 infixl or: $\/$ prec 30;
 
-def ifp (ph a b: wff): wff;
-theorem ifptrue (ph a b: wff): $ ph -> (ifp ph a b <-> a) $;
-theorem ifpfalse (ph a b: wff): $ ~ph -> (ifp ph a b <-> b) $;
+def ifp (p a b: wff): wff;
+theorem ifppos (p a b: wff): $ p -> (ifp p a b <-> a) $;
+theorem ifpneg (p a b: wff): $ ~p -> (ifp p a b <-> b) $;
 
 term wtru: wff; prefix wtru: $T.$ prec max;
 axiom tru: $ T. $;
@@ -50,11 +50,11 @@ notation sb (a: nat) {x: nat} (ph: wff x): wff =
   ($[$:40) a ($/$:0) x ($]$:0) ph;
 
 strict sort set;
-term ab {x: nat} (ph: wff x): set;
-notation ab {x: nat} (ph: wff x): set = (${$:max) x ($|$:0) ph ($}$:0);
-term el: nat > set > wff; infixl el: $e.$ prec 50;
-axiom elab (a: nat) {x: nat} (ph: wff x):
-  $ a e. {x | ph} <-> [ a / x ] ph $;
+term ab {x: nat} (p: wff x): set;
+notation ab {x: nat} (p: wff x): set = (${$:max) x ($|$:0) p ($}$:0);
+term el (a: nat) (A: set): wff; infixl el: $e.$ prec 50;
+axiom elab (a: nat) {x: nat} (p: wff x):
+  $ a e. {x | p} <-> [ a / x ] p $;
 axiom ax_8 (a b: nat) (A: set): $ a = b -> a e. A -> b e. A $;
 
 def eqs (A B: set) {.x: nat}: wff = $ A. x (x e. A <-> x e. B) $;
@@ -69,14 +69,14 @@ infixl Inter: $i^i$ prec 70;
 def Union (A B: set) (.x: nat): set = $ {x | x e. A \/ x e. B} $;
 infixl Union: $u.$ prec 65;
 
-def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $V$ prec max;
+def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $_V$ prec max;
 
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
   ($S[$:70) a ($/$:0) x ($]$:0) A;
 
 term d0: nat; prefix d0: $0$ prec max;
-term suc: nat > nat;
+term suc (n: nat): nat;
 
 def d1:  nat = $suc 0$; prefix d1:  $1$  prec max;
 def d2:  nat = $suc 1$; prefix d2:  $2$  prec max;
@@ -94,7 +94,7 @@ axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
 axiom peano5 {x: nat} (ph: wff x):
   $ [ 0 / x ] ph -> A. x (ph -> [ suc x / x ] ph) -> A. x ph $;
 
-term the: set > nat;
+term the (A: set): nat;
 axiom theid {x: nat} (A: set) (a: nat): $ A == {x | x = a} -> the A = a $;
 axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
 
@@ -102,8 +102,8 @@ def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the {y | [ a / x ] y = b} $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
   ($N[$:70) a ($/$:0) x ($]$:0) b;
 
-term add: nat > nat > nat; infixl add: $+$ prec 65;
-term mul: nat > nat > nat; infixl mul: $*$ prec 70;
+term add (a b: nat): nat; infixl add: $+$ prec 65;
+term mul (a b: nat): nat; infixl mul: $*$ prec 70;
 
 axiom addeq (a b c d: nat): $ a = b -> c = d -> a + c = b + d $;
 axiom muleq (a b c d: nat): $ a = b -> c = d -> a * c = b * d $;
@@ -123,13 +123,13 @@ infixl lt: $<$ prec 50;
 
 def finite (A: set) (.n .x: nat): wff = $ E. n A. x (x e. A -> x < n) $;
 
-def if (ph: wff) (a b: nat): nat;
-theorem ifpos (ph: wff) (a b: nat): $ ph -> if ph a b = a $;
-theorem ifneg (ph: wff) (a b: nat): $ ~ph -> if ph a b = b $;
+def if (p: wff) (a b: nat): nat;
+theorem ifpos (p: wff) (a b: nat): $ p -> if p a b = a $;
+theorem ifneg (p: wff) (a b: nat): $ ~p -> if p a b = b $;
 
 def true (n: nat): wff = $ n != 0 $;
 def bool (n: nat): wff = $ n < 2 $;
-def nat (ph: wff): nat = $ if ph 1 0 $;
+def nat (p: wff): nat = $ if p 1 0 $;
 
 def min (a b: nat): nat = $ if (a < b) a b $;
 def max (a b: nat): nat = $ if (a < b) b a $;
@@ -138,7 +138,7 @@ def div (a b: nat): nat; infixl div: $//$ prec 70;
 def mod (a b: nat): nat; infixl mod: $%$ prec 70;
 theorem div0 (a: nat): $ a // 0 = 0 $;
 theorem divmod (a b: nat): $ b * (a // b) + a % b = a $;
-theorem modlt (a b: nat): $ b != 0 -> a % b < a $;
+theorem modlt (a b: nat): $ b != 0 -> a % b < b $;
 
 def dvd (a b .c: nat): wff = $ E. c c * a = b $;
 
@@ -166,10 +166,10 @@ def pi222 (n: nat): nat = $ snd (pi22 n) $;
 def isfun (A: set) (.a .b .b2: nat): wff =
 $ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
 
-def opab {x y .z: nat} (ph: wff x y): set =
-$ {z | E. x E. y (z = x <> y /\ ph)} $;
+def opab {x y .z: nat} (p: wff x y): set =
+$ {z | E. x E. y (z = x <> y /\ p)} $;
 
-def Xp (A B: set) (.x .y .z: nat): set = $ opab x y (x e. A /\ y e. B) $;
+def Xp (A B: set) (.x .y: nat): set = $ opab x y (x e. A /\ y e. B) $;
 
 def Dom (A: set) (.x .y: nat): set = $ {x | E. y x <> y e. A} $;
 def Ran (A: set) (.x .y: nat): set = $ {y | E. x x <> y e. A} $;
@@ -183,7 +183,7 @@ def comp (F G: set) (.x .y .z: nat): set =
 $ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
 infixr comp: $o.$ prec 90;
 
-def res (A B: set): set = $ A i^i Xp B V $;
+def res (A B: set): set = $ A i^i Xp B _V $;
 infixl res: $|`$ prec 55;
 
 def lam {x .p: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
