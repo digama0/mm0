@@ -235,10 +235,11 @@ verifyProof g ctx = verifyProof' where
     fromJustError ("subproof " ++ show h ++ " not found") (heap M.!? h)
   verifyProof' heap (PThm t es ps) = do
     VThmData args hs ret <- fromJustError "theorem not found" (vThms g M.!? t)
-    subst <- verifyArgs args es
+    subst <- withContext (T.pack "step " <> t) $ verifyArgs [] args es
     hs' <- mapM (verifyProof' heap) ps
-    guardError "substitution to hypothesis does not match theorem" $
-      (substExpr subst <$> hs) == hs'
+    withContext (T.pack "step " <> t) $
+      guardError "substitution to hypothesis does not match theorem" $
+        (substExpr subst <$> hs) == hs'
     return (substExpr subst ret)
   verifyProof' heap (PConv e1 c p) = do
     (e1', e2', _, _) <- verifyConv c
@@ -251,27 +252,31 @@ verifyProof g ctx = verifyProof' where
     verifyProof' (M.insert h e1 heap) p2
   verifyProof' _ PSorry = throwError "? found in proof"
 
-  verifyArgs :: [PBinder] -> [SExpr] -> Either String (M.Map VarName SExpr)
-  verifyArgs = go [] where
-    go :: [(VarName, (SExpr, Bool, S.Set VarName))] ->
-      [PBinder] -> [SExpr] -> Either String (M.Map VarName SExpr)
-    go subst [] [] = return $ M.fromList (mapSnd fst3 <$> subst)
-    go subst (bi : bs) (e : es) = do
-      (s, b, vs) <- typecheckExpr (vTerms g) ctx e
-      guardError "type mismatch" (binderSort bi == s)
-      case bi of
-        PBound _ _ -> do
-          guardError "non-bound variable in BV slot" b
+  verifyArgs' :: Bool -> [(VarName, (SExpr, Bool, S.Set VarName))] ->
+    [PBinder] -> [SExpr] -> Either String [(VarName, (SExpr, Bool, S.Set VarName))]
+  verifyArgs' _ subst [] [] = return subst
+  verifyArgs' dv subst (bi : bs) (e : es) = do
+    (s, b, vs) <- typecheckExpr (vTerms g) ctx e
+    guardError "type mismatch" (binderSort bi == s)
+    case bi of
+      PBound _ _ -> do
+        guardError "non-bound variable in BV slot" b
+        when dv $
           guardError ("disjoint variable violation: " ++ show vs ++
             " / " ++ show (map (thd3 . snd) subst)) $
             all (\v -> all (S.notMember v . thd3 . snd) subst) vs
-        PReg _ (DepType _ vs') ->
-          forM_ subst $ \(v', (_, b', vs1)) -> when b' $
-            guardError
-              ("disjoint variable violation: " ++ show vs1 ++ " / " ++ show vs) $
-              elem v' vs' || all (`S.notMember` vs) vs1
-      go ((binderName bi, (e, binderBound bi, vs)) : subst) bs es
-    go _ _ _ = throwError "argument number mismatch"
+      PReg _ (DepType _ vs') -> when dv $
+        forM_ subst $ \(v', (_, b', vs1)) -> when b' $
+          guardError
+            ("disjoint variable violation: " ++ show vs1 ++ " / " ++ show vs) $
+            elem v' vs' || all (`S.notMember` vs) vs1
+    verifyArgs' dv ((binderName bi, (e, binderBound bi, vs)) : subst) bs es
+  verifyArgs' _ _ _ _ = throwError "argument number mismatch"
+
+  verifyArgs :: [(VarName, (SExpr, Bool, S.Set VarName))] ->
+    [PBinder] -> [SExpr] -> Either String (M.Map VarName SExpr)
+  verifyArgs l bis es =
+    verifyArgs' True l bis es <&> \subst -> M.fromList (mapSnd fst3 <$> subst)
 
   verifyConv :: Conv -> Either String (SExpr, SExpr, Sort, Bool)
   verifyConv (CVar v) = do
@@ -287,8 +292,10 @@ verifyProof g ctx = verifyProof' where
     VTermData args _ defn <-
       fromJustError ("unknown term in proof: " ++ show t) (vTerms g M.!? t)
     (ds, val) <- fromJustError ("not a definition: " ++ show t) defn
-    guardError "argument number mismatch" $ length args == length es
-    subst <- verifyArgs (args ++ (uncurry PBound <$> ds)) (es ++ (SVar <$> vs))
+    subst <- withContext (T.pack "unfold " <> t) $ do
+      guardError "argument number mismatch" $ length args == length es
+      subst1 <- verifyArgs' False [] args es
+      verifyArgs subst1 (uncurry PBound <$> ds) (SVar <$> vs)
     (e1, e2, s, b) <- verifyConv c
     guardError "conversion proof mismatch" $ e1 == substExpr subst val
     return (App t es, e2, s, b)
