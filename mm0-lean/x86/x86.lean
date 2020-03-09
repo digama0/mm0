@@ -121,7 +121,7 @@ def read_imm : wsize → qword → list byte → Prop
 | (Sz8 _) := read_imm8
 | Sz16 := read_imm16
 | Sz32 := read_imm32
-| Sz64 := λ _ _, false
+| Sz64 := read_imm32
 
 def read_full_imm : wsize → qword → list byte → Prop
 | (Sz8 _) := read_imm8

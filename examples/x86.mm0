@@ -215,7 +215,7 @@ theorem readFullImmT (sz q l: nat):
   $ sz e. WSize /\ readFullImm sz q l -> q e. u64 /\ l e. List u8 $;
 
 def readImm (sz q l: nat): wff =
-$ readFullImm sz q l /\ wsizeBytes sz < 8 $;
+$ readImmN (min (wsizeBits sz) 32) q l $;
 theorem readImmT (sz q l: nat):
   $ sz e. WSize /\ readImm sz q l -> q e. u64 /\ l e. List u8 $;
 
