@@ -218,9 +218,9 @@ pub theorem readDisplacementT (mod q l: nat):
   $ readDisplacement mod q l ->
     mod e. Bits 2 /\ mod != 3 /\ q e. u64 /\ l e. List u8 $;
 
-@_ def readSIBDisplacement (mod bbase q base l .b: nat): wff =
+@_ def readSIBDisplacement (mod bbase q base l .w: nat): wff =
 $ ifp (bbase = RBP /\ mod = 0)
-    (E. b (b e. u8 /\ q = sExtq 8 b /\ base = 0 /\ l = b : 0))
+    (E. w (w e. u32 /\ q = sExtq 32 w /\ base = 0 /\ l = u32Bytes w))
     (readDisplacement mod q l /\ base = base_reg bbase) $;
 pub theorem readSIBDisplacementT (mod bbase q base l: nat):
   $ bbase e. Regs /\ readSIBDisplacement mod bbase q base l ->

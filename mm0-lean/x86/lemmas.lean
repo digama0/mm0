@@ -562,8 +562,9 @@ theorem read_sib_displacement.determ_aux {mod bbase w1 w2 Base1 Base2 l l'}
   (h₂ : read_sib_displacement mod bbase w2 Base2 (l ++ l')) : (w1, Base1, l') = (w2, Base2, []) :=
 begin
   rw read_sib_displacement at h₁ h₂, split_ifs at h₁ h₂,
-  { rcases h₁ with ⟨b, rfl, rfl, rfl⟩,
-    rcases h₂ with ⟨_, rfl, rfl, ⟨⟩⟩, refl },
+  { rcases h₁ with ⟨w, rfl, rfl, h1⟩,
+    rcases h₂ with ⟨_, rfl, rfl, h2⟩,
+    cases bits_to_byte.determ_l_aux h1 h2, refl },
   { rcases h₁ with ⟨h1, rfl⟩,
     rcases h₂ with ⟨h2, rfl⟩,
     cases read_displacement.determ_aux h1 h2, refl },
@@ -754,7 +755,7 @@ theorem read_imm.determ_aux : ∀ {sz w1 w2 l l'},
 | (wsize.Sz8 _) _ _ _ _ := read_imm8.determ_aux
 | wsize.Sz16 _ _ _ _ := read_imm16.determ_aux
 | wsize.Sz32 _ _ _ _ := read_imm32.determ_aux
-| wsize.Sz64 _ _ _ _ := false.elim
+| wsize.Sz64 _ _ _ _ := read_imm32.determ_aux
 
 theorem read_full_imm.determ_aux : ∀ {sz w1 w2 l l'},
   read_full_imm sz w1 l → read_full_imm sz w2 (l ++ l') → (w1, l') = (w2, [])

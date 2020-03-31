@@ -47,11 +47,11 @@ inductive read_displacement : Mod → qword → list byte → Prop
 | disp8 (b : byte) : read_displacement 1 (EXTS b) [b]
 | disp32 (w : word) (l) : w.to_list_byte l → read_displacement 2 (EXTS w) l
 
-def read_sib_displacement (mod : Mod) (bbase : regnum) (w : qword)
+def read_sib_displacement (mod : Mod) (bbase : regnum) (q : qword)
   (Base : base) (l : list byte) : Prop :=
 if bbase = RBP ∧ mod = 0 then
-  ∃ b, w = EXTS b ∧ Base = base.none ∧ l = [b]
-else read_displacement mod w l ∧ Base = base.reg bbase
+  ∃ w : word, q = EXTS w ∧ Base = base.none ∧ w.to_list_byte l
+else read_displacement mod q l ∧ Base = base.reg bbase
 
 inductive read_SIB (rex : REX) (mod : Mod) : RM → list byte → Prop
 | mk (b : byte) (bs ix SS) (disp bbase' l) :
