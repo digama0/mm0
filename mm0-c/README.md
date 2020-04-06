@@ -10,8 +10,6 @@ It is run as:
 
 The specification of an MM0 verifier says that it takes an MM0 file on standard input, and returns `0` only if all the theorems described in the MM0 file are provable. The `.mmb` file is not described in the specification, and is viewed as a side-input, but it contains the actual proofs, and the verifier is responsible for checking that they are in fact proofs of the given theorems.
 
-Currently, `mm0-c` is incomplete: It correctly checks `.mmb` files, which are self contained, but it ignores standard in right now, and does not ensure that the theorems that it proves match the theorems in the specification.
-
 ## Compilation
 
 * It compiles with `gcc main.c -o mm0-c`
@@ -25,6 +23,8 @@ The code contains `#ifdef` commands using symbols that are intended to be passed
 * `-D BARE` will remove all references to `printf`, so that only syscalls remain. In the default mode, when an error is encountered it goes into a verbose mode to backtrace the error, but in `BARE` mode it has only one bit of output - the exit code is `0` on successful verification and nonzero otherwise.
 
 * `-D HIGHWATER` will report statistics on how much of the system limits were used in the current verification. This is useful for setting limits (see Limits).
+
+* `-D NO_PARSER` disables the parser, the part of the program that reads the `.mm0` file coming from standard in. Without this, it can still check `.mmb` proofs for internal correctness, but the statements of proven theorems are not reported, so this leaves open the possibility that the `.mmb` file is correctly proving a triviality rather than the target theorem.
 
 ## Limits
 
