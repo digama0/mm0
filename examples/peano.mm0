@@ -1,7 +1,7 @@
 delimiter $ ( ) ~ { } , $;
 strict provable sort wff;
 term im (ph ps: wff): wff; infixr im: $->$ prec 25;
-term not (ph: wff): wff; prefix not: $~$ prec 40;
+term not (ph: wff): wff; prefix not: $~$ prec 41;
 
 axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
 axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
@@ -9,7 +9,7 @@ axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
 axiom ax_mp (ph ps: wff): $ ph -> ps $ > $ ph $ > $ ps $;
 
 def an (a b: wff): wff = $ ~(a -> ~b) $;
-infixl an: $/\$ prec 35;
+infixl an: $/\$ prec 34;
 
 def iff (a b: wff): wff = $ (a -> b) /\ (b -> a) $;
 infixl iff: $<->$ prec 20;
@@ -26,10 +26,10 @@ axiom tru: $ T. $;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 sort nat;
-term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 40;
+term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 41;
 
 def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
-prefix ex: $E.$ prec 40;
+prefix ex: $E.$ prec 41;
 
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
@@ -47,7 +47,7 @@ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
 notation sb (a: nat) {x: nat} (ph: wff x): wff =
-  ($[$:40) a ($/$:0) x ($]$:0) ph;
+  ($[$:41) a ($/$:0) x ($]$:0) ph;
 
 strict sort set;
 term ab {x: nat} (p: wff x): set;
@@ -73,7 +73,7 @@ def Univ (.x: nat): set = $ {x | T.} $; prefix Univ: $_V$ prec max;
 
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [ a / x ] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
-  ($S[$:70) a ($/$:0) x ($]$:0) A;
+  ($S[$:99) a ($/$:0) x ($]$:0) A;
 
 term d0: nat; prefix d0: $0$ prec max;
 term suc (n: nat): nat;
@@ -100,9 +100,9 @@ axiom the0 {x y: nat} (A: set): $ ~E. y A == {x | x = y} -> the A = 0 $;
 
 def sbn (a: nat) {x .y: nat} (b: nat x): nat = $ the {y | [ a / x ] y = b} $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
-  ($N[$:70) a ($/$:0) x ($]$:0) b;
+  ($N[$:99) a ($/$:0) x ($]$:0) b;
 
-term add (a b: nat): nat; infixl add: $+$ prec 65;
+term add (a b: nat): nat; infixl add: $+$ prec 64;
 term mul (a b: nat): nat; infixl mul: $*$ prec 70;
 
 axiom addeq (a b c d: nat): $ a = b -> c = d -> a + c = b + d $;
@@ -113,7 +113,7 @@ axiom mul0 (a: nat): $ a * 0 = 0 $;
 axiom mulS (a b: nat): $ a * suc b = a * b + a $;
 
 def sub (a b: nat) {.x: nat}: nat = $ the {x | b + x = a} $;
-infixl sub: $-$ prec 65;
+infixl sub: $-$ prec 64;
 
 def le (a b .x: nat): wff = $ E. x a + x = b $;
 infixl le: $<=$ prec 50;
@@ -147,7 +147,7 @@ def b1 (n: nat): nat = $ suc (b0 n) $;
 def odd (n: nat): wff = $ n % 2 = 1 $;
 
 def pr (a b: nat): nat = $ (a + b) * suc (a + b) // 2 + b $;
-infixr pr: $<>$ prec 54;
+infixr pr: $<>$ prec 55;
 def fst (a: nat): nat;
 def snd (a: nat): nat;
 
@@ -181,13 +181,13 @@ def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
 
 def comp (F G: set) (.x .y .z: nat): set =
 $ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
-infixr comp: $o.$ prec 90;
+infixr comp: $o.$ prec 91;
 
 def res (A B: set): set = $ A i^i Xp B _V $;
-infixl res: $|`$ prec 55;
+infixl res: $|`$ prec 54;
 
 def lam {x .p: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
-notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
+notation lam {x: nat} (a: nat x): set = ($\$:53) x ($,$:0) a;
 
 def app (F: set) (x .y: nat): nat = $ the {y | x <> y e. F} $;
 infixl app: $@$ prec 200;
@@ -206,7 +206,7 @@ theorem rec0 (z: nat) (S: set): $ rec z S 0 = z $;
 theorem recS (z: nat) (S: set) (n: nat):
   $ rec z S (suc n) = S @ rec z S n $;
 
-def pow (a b: nat): nat; infixr pow: $^$ prec 80;
+def pow (a b: nat): nat; infixr pow: $^$ prec 81;
 theorem pow0 (a: nat): $ a ^ 0 = 1 $;
 theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;
 
@@ -225,7 +225,7 @@ theorem eqlower (A: set): $ finite A <-> A == lower A $;
 def sn (a: nat): nat;
 theorem elsn (a b: nat): $ a e. sn b <-> a = b $;
 
-def ins (a b: nat): nat; infixr ins: $;$ prec 84;
+def ins (a b: nat): nat; infixr ins: $;$ prec 85;
 theorem elins (a b c: nat): $ a e. ins b c <-> a = b \/ a e. c $;
 
 def upto (n: nat): nat = $ 2 ^ n - 1 $;
@@ -237,7 +237,7 @@ def Option (A: set) (.n: nat): set = $ {n | n = 0 \/ n - 1 e. A} $;
 def Power (A: set) (.x: nat): set = $ {x | x C_ A} $;
 def power (a: nat): nat = $ lower (Power a) $;
 
-def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
+def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 91;
 
 def sep (n: nat) (A: set): nat;
 theorem elsep (n: nat) (A: set) (a: nat):
@@ -284,11 +284,11 @@ theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
 
 def Array (A: set) (n .l: nat): set = $ {l | l e. List A /\ len l = n} $;
 
-def append (l1 l2: nat): nat; infixl append: $++$ prec 85;
+def append (l1 l2: nat): nat; infixl append: $++$ prec 84;
 theorem append0 (a: nat): $ 0 ++ a = a $;
 theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $;
 
-def snoc (l a: nat): nat; infixl snoc: $|>$ prec 85;
+def snoc (l a: nat): nat; infixl snoc: $|>$ prec 84;
 theorem snoc0 (a: nat): $ 0 |> a = a : 0 $;
 theorem snocS (a b c: nat): $ (a : b) |> c = a : (b |> c) $;
 theorem snoclt (a b: nat): $ a < a |> b $;

@@ -2,7 +2,7 @@ delimiter $ ( [ { ~ $
           $ } ] ) , $;
 strict provable sort wff;
 term im (ph ps: wff): wff; infixr im: $->$ prec 25;
-term not (ph: wff): wff; prefix not: $~$ prec 40;
+term not (ph: wff): wff; prefix not: $~$ prec 41;
 
 axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
 axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
@@ -286,7 +286,7 @@ theorem eimd (h1: $ a -> b $) (h2: $ a -> c -> d $): $ a -> (b -> c) -> d $ =
 '(syld (rsyl h1 @ com12 id) h2);
 
 def an (a b: wff): wff = $ ~(a -> ~b) $;
-infixl an: $/\$ prec 35;
+infixl an: $/\$ prec 34;
 
 theorem anl: $ a /\ b -> a $ = '(con1 absurd);
 theorem anr: $ a /\ b -> b $ = '(con1 ax_1);
@@ -511,10 +511,10 @@ theorem notfal: $ ~F. $ = '(notnot1 tru);
 theorem efal: $ F. -> a $ = '(absurd notfal);
 
 sort nat;
-term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 40;
+term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 41;
 
 def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
-prefix ex: $E.$ prec 40;
+prefix ex: $E.$ prec 41;
 
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
@@ -688,7 +688,7 @@ theorem necom: $ a != b -> b != a $ = '(con3 eqcom);
 
 def sb (a: nat) {x .y: nat} (ph: wff x): wff =
   $ A. y (y = a -> A. x (x = y -> ph)) $;
-notation sb (a x ph) = ($[$:40) a ($/$:0) x ($]$:0) ph;
+notation sb (a x ph) = ($[$:41) a ($/$:0) x ($]$:0) ph;
 
 theorem sbq (a: nat) (b: wff x): $ x = a -> (b <-> [a / x] b) $ =
 '(! ibid _ _ (al y _) (exp @ iald @ exp @ sylc ax_12 (eqtr4d anll anr) anlr)
@@ -919,7 +919,7 @@ theorem ssab2 (p: wff x): $ A. x (x e. A -> p) <-> A C_ {x | p} $ =
 
 def sbs (a: nat) {x .y: nat} (A: set x): set = $ {y | [a / x] y e. A} $;
 notation sbs (a: nat) {x: nat} (A: set x): set =
-  ($S[$:70) a ($/$:0) x ($]$:0) A;
+  ($S[$:99) a ($/$:0) x ($]$:0) A;
 
 theorem elsbs (a: nat x) (b: nat) (A: set x): $ b e. S[a / x] A <-> [a / x] b e. A $ =
 '(bitr (!! elab y) @ sbe @ sbeq2d eleq1);
@@ -1103,7 +1103,7 @@ theorem subsntheo: $ subsn A -> (theo A = suc a <-> a e. A) $ =
 
 def sbn (a: nat) {x: nat} (b: nat x): nat = $ the {y | [a / x] y = b} $;
 notation sbn (a: nat) {x: nat} (b: nat x): nat =
-  ($N[$:70) a ($/$:0) x ($]$:0) b;
+  ($N[$:99) a ($/$:0) x ($]$:0) b;
 do { (add-eqd-thm 'sbn) (add-eq-thm 'sbn) };
 
 theorem sbnq (a: nat) (b: nat x): $ x = a -> b = N[a / x] b $ =
@@ -1142,7 +1142,7 @@ theorem nfnlem2 {y z} (c: nat y z) (a b d: nat x) (e: $ y = a /\ z = b -> c = d 
 
 theorem nfsuc (a: nat x) (h: $ FN/ x a $): $ FN/ x suc a $ = '(!! nfnlem _ y suceq h);
 
-term add (a b: nat): nat; infixl add: $+$ prec 65;
+term add (a b: nat): nat; infixl add: $+$ prec 64;
 term mul (a b: nat): nat; infixl mul: $*$ prec 70;
 
 axiom addeq (a b c d: nat): $ a = b -> c = d -> a + c = b + d $;
@@ -1257,7 +1257,7 @@ theorem mul32: $ (a * b) * c = (a * c) * b $ =
 '(eqtr mulass (eqtr4 (muleq2 mulcom) mulass));
 
 @_ def sub (a b: nat): nat = $ the {x | b + x = a} $;
-infixl sub: $-$ prec 65;
+infixl sub: $-$ prec 64;
 
 theorem eqsub2: $ a + b = c -> c - a = b $ =
 '(!! eqthed x @ syl5bb (!! elabe y @ eqeq1d addeq2) (syl6bb addcan2 @ bicomd eqeq2));
@@ -2018,7 +2018,7 @@ theorem oddS: $ odd (suc n) <-> ~odd n $ =
 theorem odd1: $ odd 1 $ = '(mpbir oddS odd0);
 
 @_ def pr (a b: nat): nat = $ (a + b) * suc (a + b) // 2 + b $;
-infixr pr: $<>$ prec 54;
+infixr pr: $<>$ prec 55;
 
 theorem nfpr (a b: nat x) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ FN/ x a <> b $ =
 '(!! nfnlem2 _ y z (preqd anl anr) h1 h2);
@@ -2283,10 +2283,10 @@ theorem sndelrn: $ p e. A -> snd p e. Ran A $ = '(sylbir (eleq1 fstsnd) prelrn);
 
 @(derive-eq 'co) def comp (F G: set): set =
 $ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
-infixr comp: $o.$ prec 90;
+infixr comp: $o.$ prec 91;
 
 @_ def res (A B: set): set = $ A i^i Xp B _V $;
-infixl res: $|`$ prec 55;
+infixl res: $|`$ prec 54;
 
 theorem nfres (A B: set x) (h1: $ FS/ x A $) (h2: $ FS/ x B $): $ FS/ x A |` B $ =
 '(nfin h1 @ nfxp h2 nfsv);
@@ -2303,7 +2303,7 @@ theorem dmres: $ Dom (F |` A) == Dom F i^i A $ =
   bitr elin @ bitr4 (aneq1i eldm) exan2);
 
 @_ def lam {x: nat} (a: nat x): set = $ {p | E. x p = x <> a} $;
-notation lam {x: nat} (a: nat x): set = ($\$:30) x ($,$:0) a;
+notation lam {x: nat} (a: nat x): set = ($\$:53) x ($,$:0) a;
 
 theorem ellam (a: nat x): $ p e. (\ x, a) <-> E. x p = x <> a $ =
 '(!! elabe q @ exeqd eqeq1);
@@ -2493,7 +2493,7 @@ theorem subsnfin: $ subsn A -> finite A $ =
   iald @ exp @ subsni anl anr @ anwr leastel));
 
 @_ local def znsub (m n) = $ if (m < n) (b1 (n - suc m)) (b0 (m - n)) $;
-infixl znsub: $-ZN$ prec 65;
+infixl znsub: $-ZN$ prec 64;
 
 @_ local def zfst (n) = $ case (\ mpos, mpos) (\ mneg, 0) @ n $;
 @_ local def zsnd (n) = $ case (\ mpos, 0) (\ mneg, suc mneg) @ n $;
@@ -2560,7 +2560,7 @@ theorem zsndznsub: $ zsnd (m -ZN n) = n - m $ =
 '(eqtr3 zfstneg @ eqtr (zfsteq znegzn) zfstznsub);
 
 @_ local def zadd (m n) = $ (zfst m + zfst n) -ZN (zsnd m + zsnd n) $;
-infixl zadd: $+Z$ prec 65;
+infixl zadd: $+Z$ prec 64;
 
 theorem zaddzn: $ (a -ZN c) +Z (b -ZN d) = (a + b) -ZN (c + d) $ =
 '(mpbir zneqb @ eqtr add4 @
@@ -3022,7 +3022,7 @@ theorem recnS: $ recn z S (suc n) = S @ (n <> recn z S n) $ =
   eqtr3 fstsnd @ preq1 recnauxfst);
 
 @_ abstract def pow (a b: nat): nat = $ rec 1 (\ n, a * n) b $;
-infixr pow: $^$ prec 80;
+infixr pow: $^$ prec 81;
 
 pub theorem pow0: $ a ^ 0 = 1 $ = '(! rec0 _ (lam n _));
 pub theorem powS: $ a ^ suc b = a * a ^ b $ =
@@ -3229,7 +3229,7 @@ pub theorem elsn (a b: nat): $ a e. sn b <-> a = b $ = 'elpow2;
 theorem snss: $ sn a C_ A <-> a e. A $ =
 '(bitr (!! aleqi x @ imeq1i elsn) @ aleqe eleq1);
 @_ abstract def ins (a b: nat): nat = $ lower {x | x = a \/ x e. b} $;
-infixr ins: $;$ prec 84;
+infixr ins: $;$ prec 85;
 pub theorem elins (a b c: nat): $ a e. b ; c <-> a = b \/ a e. c $ =
 '(bitr (ellower @ finss (mpbi ssab @
     ax_gen @ eor (mpbiri lemax1 leeq1) @
@@ -3349,7 +3349,7 @@ theorem powerfin: $ finite A -> finite (Power A) $ =
 theorem elpower (a b: nat): $ a e. power b <-> a C_ b $ =
 '(bitr (ellower @ powerfin finns) elPower);
 
-@_ def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 90;
+@_ def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 91;
 
 theorem consne0: $ a : b != 0 $ = 'peano1;
 theorem ltconsid1: $ a < a : b $ = '(mpbi leltsuc leprid1);
@@ -3656,7 +3656,7 @@ theorem elArrayS: $ a e. A -> b e. Array A n -> (a : b) e. Array A (suc n) $ =
   syl5eq lenS @ suceqd @ anwr elArraylen);
 
 @_ abstract def append (l1 l2: nat): nat = $ lrec l2 (\\ x, \\ z, \ y, x : y) l1 $;
-infixl append: $++$ prec 85;
+infixl append: $++$ prec 84;
 pub theorem append0 (a: nat): $ 0 ++ a = a $ = (named 'lrec0);
 pub theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $ =
 '(eqtr lrecS @ ! appslame _ $ _ <> append b $ _ x _ @
@@ -3671,7 +3671,7 @@ theorem appendass (a: nat): $ l1 ++ l2 ++ l3 = l1 ++ (l2 ++ l3) $ =
   '(syl5eq (appendeq1 appendS) @ syl5eq appendS @ syl6eqr appendS conseq2));
 
 @_ abstract def snoc (l a: nat): nat = $ l ++ (a : 0) $;
-infixl snoc: $|>$ prec 85;
+infixl snoc: $|>$ prec 84;
 pub theorem snoc0 (a: nat): $ 0 |> a = a : 0 $ = 'append0;
 pub theorem snocS (a b c: nat): $ (a : b) |> c = a : (b |> c) $ = 'appendS;
 pub theorem snoclt (a b: nat): $ a < a |> b $ =
