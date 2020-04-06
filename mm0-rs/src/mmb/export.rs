@@ -671,7 +671,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                     } else {unreachable!()}
                   }
                   self.write_proof(&mut vec, &heap, &mut reorder, &ehyps, head, false)?;
-                  STMT_THM | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0}
+                  STMT_THM | if td.vis == Modifiers::PUB {0} else {STMT_LOCAL}
                 }
               };
               vec.write_u8(0)?;

@@ -7,7 +7,7 @@
 #else
 #include <sys/mman.h>
 #endif
-#include "verifier.c"
+#include "parser.c"
 
 #define ERR_ARGS 1
 #define ERR_READ 2
@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
 
   // struct timespec start_time;
   // clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_time);
+  init_parser();
   verify(result, len);
   // struct timespec end_time;
   // clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_time);

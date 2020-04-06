@@ -16,7 +16,7 @@ void debug_print_expr(u32 n, bool type) {
 
     case EXPR_TERM: {
       store_term* t = (store_term*)p;
-      index* ix = lookup_term(t->termid);
+      index_entry* ix = lookup_term(t->termid);
       if (ix) fprintf(stderr, "(%s", ix->value);
       else fprintf(stderr, "(t%d", t->termid);
       for (int i = 0; i < t->num_args; i++) {
@@ -35,12 +35,40 @@ void debug_print_expr(u32 n, bool type) {
 
     default: fprintf(stderr, "?"); break;
   }
-  index* ix;
+  index_entry* ix;
   if (type && (ix = lookup_sort((p->type >> 56) & 0x7F))) {
     fprintf(stderr, ":%s", ix->value);
   }
   if (type && bound) fprintf(stderr, "}");
 }
+
+#ifdef NO_PARSER
+void debug_print_parse_expr(u32 n) {}
+#else
+void debug_print_parse_expr(u32 n) {
+  if (n % 4 != 0) {fprintf(stderr, "unaligned expr"); return;}
+  if (n >= g_store_size) {fprintf(stderr, "expr out of range"); return;}
+  switch (g_store[n]) {
+    case EXPR_VAR: {
+      fprintf(stderr, "v%d", ((parse_var*)&g_store[n])->var);
+    } break;
+
+    case EXPR_TERM: {
+      parse_term* t = (parse_term*)&g_store[n];
+      index_entry* ix = lookup_term(t->termid);
+      if (ix) fprintf(stderr, "(%s", ix->value);
+      else fprintf(stderr, "(t%d", t->termid);
+      for (int i = 0; i < t->num_args; i++) {
+        fprintf(stderr, " ");
+        debug_print_parse_expr(t->args[i]);
+      }
+      fprintf(stderr, ")");
+    } break;
+
+    default: fprintf(stderr, "?"); break;
+  }
+}
+#endif
 
 u32 debug_stackel_size(u32* p) {
   switch (*p & STACK_TYPE_MASK) {
@@ -77,24 +105,31 @@ void debug_print_stackel(u32* p) {
 }
 
 void debug_print_stack() {
-  fprintf(stderr, "stack:\n");
-  for (u32* p = g_stack_top - 1; p >= g_stack; p -= debug_stackel_size(p)) {
-    debug_print_stackel(p);
-    fprintf(stderr, "\n");
+  if (!g_parsing) {
+    fprintf(stderr, "stack:\n");
+    for (u32* p = g_stack_top - 1; p >= g_stack; p -= debug_stackel_size(p)) {
+      debug_print_stackel(p);
+      fprintf(stderr, "\n");
+    }
   }
 }
 
 void debug_print_heap() {
-  fprintf(stderr, "heap:\n");
-  for (int i = 0; i < g_heap_size; i++) {
-    fprintf(stderr, "%d: ", i); debug_print_stackel(&g_heap[i]); fprintf(stderr, "\n");
+  if (!g_parsing) {
+    fprintf(stderr, "heap:\n");
+    for (int i = 0; i < g_heap_size; i++) {
+      fprintf(stderr, "%d: ", i); debug_print_stackel(&g_heap[i]); fprintf(stderr, "\n");
+    }
   }
 }
 
 void debug_print_ustack() {
   fprintf(stderr, "ustack:\n");
   for (u32* p = g_ustack_top - 1; p >= g_ustack; p--) {
-    debug_print_expr(*p, true);
+    if (g_parsing)
+      debug_print_parse_expr(*p);
+    else
+      debug_print_expr(*p, true);
     fprintf(stderr, "\n");
   }
 }
@@ -103,7 +138,10 @@ void debug_print_uheap() {
   fprintf(stderr, "uheap:\n");
   for (int i = 0; i < g_uheap_size; i++) {
     fprintf(stderr, "%d: ", i);
-    debug_print_expr(g_uheap[i], true);
+    if (g_parsing)
+      debug_print_parse_expr(g_uheap[i]);
+    else
+      debug_print_expr(g_uheap[i], true);
     fprintf(stderr, "\n");
   }
 }
@@ -165,7 +203,7 @@ void debug_print_cmd(u8* cmd, u32 data) {
     case CMD_PROOF_TERM:
     case CMD_PROOF_TERM_SAVE: {
       fprintf(stderr, "%lX: Term %d", pos, data);
-      index* ix;
+      index_entry* ix;
       if (data < g_num_terms && (ix = lookup_term(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
@@ -174,7 +212,7 @@ void debug_print_cmd(u8* cmd, u32 data) {
 
     case CMD_PROOF_DUMMY: {
       fprintf(stderr, "%lX: Dummy %d", pos, data);
-      index* ix;
+      index_entry* ix;
       if (data < g_num_sorts && (ix = lookup_sort(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
@@ -183,7 +221,7 @@ void debug_print_cmd(u8* cmd, u32 data) {
     case CMD_PROOF_THM:
     case CMD_PROOF_THM_SAVE: {
       fprintf(stderr, "%lX: Thm %d", pos, data);
-      index* ix;
+      index_entry* ix;
       if (data < g_num_thms && (ix = lookup_thm(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
@@ -213,14 +251,17 @@ void debug_print_cmd(u8* cmd, u32 data) {
       fprintf(stderr, "%lX: URef %d", pos, data);
       if (data < g_uheap_size) {
         fprintf(stderr, "  // = ");
-        debug_print_expr(g_uheap[data], true);
+        if (g_parsing)
+          debug_print_parse_expr(g_uheap[data]);
+        else
+          debug_print_expr(g_uheap[data], true);
       }
     } break;
 
     case CMD_UNIFY_TERM:
     case CMD_UNIFY_TERM_SAVE: {
       fprintf(stderr, "%lX: UTerm %d", pos, data);
-      index* ix;
+      index_entry* ix;
       if (data < g_num_terms && (ix = lookup_term(data))) {
         fprintf(stderr, "  // = %s", ix->value);
       }
@@ -259,5 +300,7 @@ void debug_print_cmds(u8* cmd, u8* stop) {
     cmd += sz;
   }
 }
+
+void debug_print_input();
 
 #endif

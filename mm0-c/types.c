@@ -9,6 +9,22 @@ typedef uint64_t u64;
 #define PACKED __attribute__((packed))
 #define UNREACHABLE() __builtin_unreachable()
 
+// This is called by the ENSURE macro on failure. The verifier is optimized
+// for the non-failure case, and keeps very little nonessential information
+// about what is going on, so this function is responsible for reconstructing
+// the command that failed, loading the index so that the names of terms
+// and theorems can be found, and printing the surrounding information.
+//
+// err: a static error message
+// e: the nonzero return code (default -1)
+void fail(char* err, int e);
+
+#define EENSURE(err, e, cond) \
+  if (__builtin_expect(!(cond), 0)) { \
+    fail(err, e); \
+  }
+#define ENSURE(err, cond) EENSURE(err, -1, cond)
+
 // Each sort has one byte associated to it, which
 // contains flags for the sort modifiers.
 // The high four bits are unused.
@@ -123,7 +139,7 @@ typedef struct {
   u32 ix;                    // Index of the object in the relevant table
   u8 kind;                   // sort, term, thm, var
   char value[];              // zero-terminated char* buffer
-} PACKED index;
+} PACKED index_entry;
 
 // A command is a variable length instruction that forms the bulk of the proof
 // file. The commands are processed by a stack machine.
@@ -171,6 +187,8 @@ typedef struct {
 
 // is CMD_STMT_THM or CMD_STMT_LOCAL_THM
 #define IS_CMD_STMT_THM(opcode) (((opcode) & 0x37) == CMD_STMT_THM)
+
+#define IS_CMD_STMT_LOCAL(opcode) (((opcode) & 0x08) != 0)
 
 // All commands are byte aligned, and have a forward reference to the
 // next command to allow for quick scanning skipping proofs.

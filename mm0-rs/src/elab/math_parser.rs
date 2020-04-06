@@ -203,14 +203,13 @@ impl<'a> MathParser<'a> {
       let (i, mut rhs) = if let Some(&Literal::Var(i, q)) = info.lits.last() {
         (i, self.prefix(q)?)
       } else {unreachable!()};
-      tok_end = self.peek_token();
       loop {
+        tok_end = self.peek_token();
         let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
         let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
         let q = self.pe.consts[s].1;
         if !(if info2.rassoc.unwrap() {q >= p1} else {q > p1}) {break}
         rhs = self.lhs(q, rhs)?;
-        tok_end = self.peek_token();
       }
       let span = (start..rhs.span.end).into();
       args.set(i, rhs);
