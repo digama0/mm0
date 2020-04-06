@@ -1,12 +1,12 @@
 module MM0.FrontEnd.ParserEnv (Token,
   PLiteral(..),
   ParserEnv(..),
-  PrefixInfo(..),
-  InfixInfo(..),
+  NotaInfo(..),
   addNotation, recalcCoeProv, tokenize, getCoe, getCoeProv) where
 
 import Control.Monad.Except
 import Control.Monad.Trans.State
+import Control.Applicative ((<|>))
 import Data.List
 import Data.List.Split
 import Data.Maybe
@@ -20,14 +20,16 @@ import MM0.Util
 
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
-data PrefixInfo = PrefixInfo Ident [PLiteral] deriving (Show)
-data InfixInfo = InfixInfo Ident Bool deriving (Show)
+data NotaInfo = NotaInfo {
+  niTerm :: TermName,
+  niLits :: (Maybe (Int, Prec), [PLiteral]),
+  niRAssoc :: Maybe Bool } deriving (Show)
 type Coe = SExpr -> SExpr
 
 data ParserEnv = ParserEnv {
   delims :: S.Set Char,
-  prefixes :: M.Map Token PrefixInfo,
-  infixes :: M.Map Token InfixInfo,
+  prefixes :: M.Map Token NotaInfo,
+  infixes :: M.Map Token NotaInfo,
   prec :: M.Map Token Prec,
   coes :: M.Map Ident (M.Map Ident Coe),
   coeProv :: M.Map Ident Ident }
@@ -70,13 +72,13 @@ insertPrec tk p e = do
     (maybe True (p ==) (prec e M.!? tk))
   return (e {prec = M.insert tk p (prec e)})
 
-insertPrefixInfo :: Token -> PrefixInfo -> ParserEnv -> Either String ParserEnv
+insertPrefixInfo :: Token -> NotaInfo -> ParserEnv -> Either String ParserEnv
 insertPrefixInfo tk ti e = do
   guardError ("invalid token '" ++ T.unpack tk ++ "'") (checkToken e tk)
   ts <- insertNew ("token '" ++ T.unpack tk ++ "' already declared") tk ti (prefixes e)
   return (e {prefixes = ts})
 
-insertInfixInfo :: Token -> InfixInfo -> ParserEnv -> Either String ParserEnv
+insertInfixInfo :: Token -> NotaInfo -> ParserEnv -> Either String ParserEnv
 insertInfixInfo tk ti e = do
   guardError ("invalid token '" ++ T.unpack tk ++ "'") (checkToken e tk)
   ts <- insertNew ("token '" ++ T.unpack tk ++ "' already declared") tk ti (infixes e)
@@ -92,29 +94,57 @@ matchBinders bs2 r' (bs1, r) = go bs1 bs2 where
     b == b' && ty == ty' && go bs bs'
   go _ _ = False
 
-processLits :: [Binder] -> [Literal] -> StateT ParserEnv (Either String) (Token, [PLiteral])
-processLits bis (NConst c p : lits') = liftM2 (,) (processConst c p) (go lits') where
+processLits :: TermName -> [Binder] -> [Literal] -> Maybe (Prec, Bool) ->
+  StateT ParserEnv (Either String) (Bool, Token, NotaInfo)
+processLits x bis = \lits prec1 -> do
+  (llit, lits', rassoc, inf, tk, prec) <- lift $ case lits of
+    [] -> throwError "notation requires at least one literal"
+    NConst c p : lits1 -> return (Nothing, lits1, Just True, False, c, p)
+    [NVar _] -> throwError "notation requires at least one constant"
+    NVar _ : NVar _ : _ -> throwError "notation cannot start with two variables"
+    NVar v : NConst c p : lits1 -> do
+      r <- case prec1 of
+        Nothing -> return Nothing
+        Just (q, _) | q /= p -> throwError "notation precedence must match first constant"
+        Just (_, r) -> return (Just r)
+      n <- findVar v
+      q <- bump (fromMaybe False r) p
+      return (Just (n, q), lits1, r, True, c, p)
+  tk' <- processConst tk prec
+  let
+    go :: [Literal] -> Maybe Bool -> StateT ParserEnv (Either String) ([PLiteral], Maybe Bool)
+    go [] r = return ([], r)
+    go (NConst c p : lits) r = do
+      tk <- processConst c p
+      go lits r <&> \(l, r') -> (PConst tk : l, r')
+    go (NVar v : lits) r = do
+      (q, r2) <- lift $ case lits of
+        [] -> do
+          r2 <- fromJustError "general infix notation requires explicit associativity" $
+            (r <|> (snd <$> prec1))
+          (,Just r2) <$> bump (not r2) prec
+        (NConst _ q : _) -> (,r) <$> bump True q
+        (NVar _ : _) -> return (maxBound, r)
+      n <- lift $ findVar v
+      go lits r2 <&> \(l, r') -> (PVar n q : l, r')
+  (plits, r') <- go lits' rassoc
+  return (inf, tk', NotaInfo x (llit, plits) r')
+  where
+
   processConst :: Const -> Prec -> StateT ParserEnv (Either String) Token
   processConst c' p' = StateT $ \e -> do
     tk <- tokenize1 e c'
     e' <- insertPrec tk p' e
     return (tk, e')
-  go :: [Literal] -> StateT ParserEnv (Either String) [PLiteral]
-  go [] = return []
-  go (NConst c' q : lits) = liftM2 (:) (PConst <$> processConst c' q) (go lits)
-  go (NVar v : lits) = do
-    q <- case lits of
-      [] -> return p
-      (NConst _ q : _) -> do
-        guardError "notation infix prec max not allowed" (q < maxBound)
-        return (q + 1)
-      (NVar _ : _) -> return maxBound
-    n <- lift $ findVar v
-    (PVar n q :) <$> go lits
+
   findVar :: Ident -> Either String Int
   findVar v = fromJustError "notation variable not found" $
     findIndex (\(Binder l _) -> localName l == Just v) bis
-processLits _ _ = throwError "notation must begin with a constant"
+
+bump :: Bool -> Prec -> Either String Prec
+bump False p = return p
+bump True p | p < maxBound = return (p + 1)
+bump True _ = throwError "notation infix prec max not allowed"
 
 getCoe :: Ident -> Ident -> ParserEnv -> Maybe Coe
 getCoe s1 s2 _ | s1 == s2 = Just id
@@ -175,19 +205,20 @@ addNotation (Prefix x s p) env e = do
   n <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getArity env x)
   tk <- tokenize1 e s
   e' <- insertPrec tk p e
-  insertPrefixInfo tk (PrefixInfo x (mkLiterals n p 0)) e'
+  insertPrefixInfo tk (NotaInfo x (Nothing, mkLiterals n p 0) (Just True)) e'
 addNotation (Infix r x s p) env e = do
   n <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getArity env x)
   guardError ("'" ++ T.unpack x ++ "' must be a binary operator") (n == 2)
-  guardError "infix prec max not allowed" (p < maxBound)
   tk <- tokenize1 e s
   e' <- insertPrec tk p e
-  insertInfixInfo tk (InfixInfo x r) e'
-addNotation (NNotation x bi ty lits) env e = do
+  q1 <- bump r p
+  q2 <- bump (not r) p
+  insertInfixInfo tk (NotaInfo x (Just (0, q1), [PVar 1 q2]) (Just r)) e'
+addNotation (NNotation x bi ty lits p) env e = do
   ty' <- fromJustError ("term " ++ T.unpack x ++ " not declared") (getTerm env x)
   guardError ("notation declaration for '" ++ T.unpack x ++ "' must match term") (matchBinders bi ty ty')
-  ((tk, ti), e') <- runStateT (processLits bi lits) e
-  insertPrefixInfo tk (PrefixInfo x ti) e'
+  ((inf, tk, ti), e') <- runStateT (processLits x bi lits p) e
+  (if inf then insertInfixInfo else insertPrefixInfo) tk ti e'
 addNotation (Coercion x s1 s2) env e = do
   fromJustError ("term " ++ T.unpack x ++ " not declared") (getTerm env x) >>= \case
     ([PReg _ (DepType s1' [])], DepType s2' []) | s1 == s1' && s2 == s2' ->

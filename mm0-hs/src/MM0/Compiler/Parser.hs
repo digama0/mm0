@@ -308,11 +308,13 @@ notation = delimNota <|> fixNota <|> coeNota <|> genNota where
 
   genNota :: Parser (Maybe (Notation, Offset))
   genNota = kw "notation" >> commit
-    (liftM5 NNotation getOffset ident binders
-      (optional (symbol ":" *> ptype))
+    (NNotation <$> getOffset <*> ident <*> binders <*>
+      (optional (symbol ":" *> ptype)) <*>
       (symbol "=" *> some (atPos $
         parens (liftA2 NConst constant (symbol ":" *> prec)) <|>
-        (NVar <$> ident))))
+        (NVar <$> ident))) <*>
+      (optional (symbol ":" *> ((,) <$> prec <*>
+        (False <$ kw "lassoc" <|> True <$ kw "rassoc")))))
 
 inout :: Parser (Maybe (Inout, Offset))
 inout = do

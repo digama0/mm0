@@ -239,8 +239,7 @@ incCounter (Just s) (SeqCounter c n) = do
 
 data PLiteral = PConst Token | PVar Int Prec deriving (Show)
 
-data PrefixInfo = PrefixInfo Location Token [PLiteral] deriving (Show)
-data InfixInfo = InfixInfo Location Token Bool deriving (Show)
+data NotaInfo = NotaInfo Location Token (Maybe (Int, Prec), [PLiteral]) (Maybe Bool) deriving (Show)
 data Coe1 = Coe1 Location TermName
 data Coe = Coe Coe1 | Coes Coe Sort Coe
 
@@ -270,8 +269,8 @@ isRightDelim w = testBit w 1
 
 data ParserEnv = ParserEnv {
   pDelims :: Delims,
-  pPrefixes :: H.HashMap Token PrefixInfo,
-  pInfixes :: H.HashMap Token InfixInfo,
+  pPrefixes :: H.HashMap Token NotaInfo,
+  pInfixes :: H.HashMap Token NotaInfo,
   pPrec :: H.HashMap Token (Location, Prec),
   pCoes :: M.Map Sort (M.Map Sort Coe),
   pCoeProv :: H.HashMap Sort Sort }
@@ -536,9 +535,9 @@ getThm v s = gets (lookupThm v) >>= \case
 
 getDeclNotaOffset :: DeclNota -> ElabM Location
 getDeclNotaOffset (NPrefix tk) =
-  gets ((\(PrefixInfo o _ _) -> o) . (H.! tk) . pPrefixes . ePE)
+  gets ((\(NotaInfo o _ _ _) -> o) . (H.! tk) . pPrefixes . ePE)
 getDeclNotaOffset (NInfix tk) =
-  gets ((\(InfixInfo o _ _) -> o) . (H.! tk) . pInfixes . ePE)
+  gets ((\(NotaInfo o _ _ _) -> o) . (H.! tk) . pInfixes . ePE)
 getDeclNotaOffset (NCoe s1 s2) =
   gets ((M.! s2) . (M.! s1) . pCoes . ePE) >>= \case
     Coe (Coe1 o _) -> return o

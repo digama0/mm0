@@ -4,6 +4,7 @@ module MM0.Compiler.MathParser (parseMath, QExpr(..)) where
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Reader
+import Data.Maybe
 import qualified Data.HashMap.Strict as H
 import qualified Data.IntMap as I
 import qualified Data.Text as T
@@ -93,6 +94,17 @@ parseLiterals = go I.empty where
     e <- parseExpr p
     go (I.insert n e m) lits
 
+parseLiterals' :: Int -> QExpr -> [PLiteral] ->
+  MathParser (I.IntMap QExpr, Int, QExpr)
+parseLiterals' n1 lhs ll = go (I.singleton n1 lhs) ll where
+  go :: I.IntMap QExpr -> [PLiteral] -> MathParser (I.IntMap QExpr, Int, QExpr)
+  go _ [] = error "bad literals"
+  go m [PVar n p] = (m,n,) <$> parsePrefix p
+  go m (PConst t : lits) = tk t >> go m lits
+  go m (PVar n p : lits) = do
+    e <- parseExpr p
+    go (I.insert n e m) lits
+
 isIdent :: T.Text -> Bool
 isIdent t = case T.uncons t of
   Nothing -> False
@@ -105,7 +117,7 @@ parsePrefix p =
   try (do {
     Span o@(o1, _) v <- token1;
     ((do
-      PrefixInfo _ x lits <- tryAt o1 (checkPrec p True v >>
+      NotaInfo _ x (_, lits) _ <- tryAt o1 (checkPrec p True v >>
         asks (H.lookup v . pPrefixes) >>= fromMaybeM)
       QApp (Span o x) <$> parseLiterals lits)
       <?> ("prefix >= " ++ show p)) <|>
@@ -124,10 +136,13 @@ getLhs p lhs =
   ((do
     Span o v <- lookAhead token1
     q <- checkPrec p True v
-    InfixInfo _ x _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
+    NotaInfo _ x (llit, lits) _ <- asks (H.lookup v . pInfixes) >>= fromMaybeM
+    let (i, _) = fromJust llit
     _ <- token1
-    rhs <- parsePrefix p >>= getRhs q
-    getLhs p (QApp (Span o x) [lhs, rhs]))
+    (m, n, e) <- parseLiterals' i lhs lits
+    rhs <- getRhs q e
+    let args = I.elems (I.insert n rhs m)
+    getLhs p (QApp (Span o x) args))
     <?> ("infix >= " ++ show p)) <|>
   return lhs
 
@@ -135,7 +150,7 @@ getRhs :: Prec -> QExpr -> MathParser QExpr
 getRhs p rhs =
   (do
     Span _ v <- lookAhead token1
-    InfixInfo _ _ r <- asks (H.lookup v . pInfixes) >>= fromMaybeM
+    NotaInfo _ _ _ (Just r) <- asks (H.lookup v . pInfixes) >>= fromMaybeM
     (do q <- checkPrec p r v
         getLhs q rhs >>= getRhs p)
       <?> ("infix " ++ (if r then ">= " else "> ") ++ show p)) <|>

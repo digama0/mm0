@@ -19,7 +19,7 @@ data Notation =
   | Prefix Ident Const Prec
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
-  | NNotation Ident [Binder] DepType [Literal]
+  | NNotation Ident [Binder] DepType [Literal] (Maybe (Prec, Bool))
 
 data Literal = NConst Const Prec | NVar Ident
 
@@ -132,9 +132,13 @@ instance Show Notation where
   showsPrec _ (Infix right x s prec) = ("infix" ++) .
     (((if right then 'r' else 'l') : ' ' : T.unpack x) ++) .
     (": " ++) . shows s . (" prec " ++) . shows prec . (';' :)
-  showsPrec _ (NNotation x bis ty lits) = ("notation " ++) . (T.unpack x ++) .
+  showsPrec _ (NNotation x bis ty lits p) = ("notation " ++) . (T.unpack x ++) .
     showsGroupedBinders bis . (": " ++) . shows ty . (" =" ++) .
-    flip (foldr (\lit -> (' ' :) . shows lit)) lits
+    flip (foldr (\lit -> (' ' :) . shows lit)) lits .
+    case p of
+      Nothing -> (';' :)
+      Just (q, False) -> (": " ++) . shows q . (" lassoc;" ++)
+      Just (q, True) -> (": " ++) . shows q . (" rassoc;" ++)
   showsPrec _ (Coercion x s1 s2) = \r -> "coercion " ++ T.unpack x ++
     ": " ++ T.unpack s1 ++ " > " ++ T.unpack s2 ++ ';' : r
 

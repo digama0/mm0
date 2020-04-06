@@ -2,6 +2,7 @@
 module MM0.Compiler.Elaborator (elaborate, elabLoad,
   ErrorLevel(..), ElabError(..), ElabConfig(..), toElabError) where
 
+import Control.Applicative ((<|>))
 import Control.Monad.State
 import Control.Monad.RWS.Strict
 import Control.Monad.Trans.Maybe
@@ -46,7 +47,7 @@ elabStmt (Span rd@(pos, _) s) = resuming $ withTimeout pos $ case s of
   Notation (Delimiter ls (Just rs)) -> lift $ addDelimiters ls rs
   Notation (Prefix px x tk prec) -> addPrefix (textToRange px x) x tk prec
   Notation (Infix r px x tk prec) -> addInfix r (textToRange px x) x tk prec
-  Notation (NNotation px x bis _ lits) -> addNotation (textToRange px x) x bis lits
+  Notation (NNotation px x bis _ lits p) -> addNotation (textToRange px x) x bis lits p
   Notation (Coercion px x s1 s2) -> addCoercion (textToRange px x) x s1 s2
   Do lvs -> do
     ifMM0 $ reportAt pos ELWarning "(MM0 mode) do block not supported"
@@ -238,8 +239,9 @@ addPrefix rx@(px, _) x c@(Const o tk) prec = do
     fromJustAt px ("term '" <> x <> "' not declared")
   insertPrec c prec
   fp <- asks efName
-  insertPrefixInfo c $
-    PrefixInfo (fp, textToRange o tk) x (mkLiterals (length bis) prec 0)
+  insertPrefixInfo c $ NotaInfo (fp, textToRange o tk) x
+    (Nothing, mkLiterals (length bis) prec 0)
+    (case bis of [] -> Nothing; _ -> Just True)
   addDeclNota rx x no (NPrefix tk)
 
 addInfix :: Bool -> Range -> T.Text -> Const -> Prec -> ElabM ()
@@ -249,19 +251,59 @@ addInfix r rx@(px, _) x c@(Const o tk) prec = do
     fromJustAt px ("term '" <> x <> "' not declared")
   guardAt px ("'" <> x <> "' must be a binary operator") (length bis == 2)
   insertPrec c prec
-  insertInfixInfo c (InfixInfo (fp, textToRange o tk) x r)
+  p1 <- bump r px prec
+  p2 <- bump (not r) px prec
+  insertInfixInfo c (NotaInfo (fp, textToRange o tk) x
+    (Just (0, p1), [PVar 1 p2]) (Just r))
   addDeclNota rx x no (NInfix tk)
 
-addNotation :: Range -> T.Text -> [Binder] -> [AtPos Literal] -> ElabM ()
-addNotation rx@(px, _) x bis = \lits -> do
+bump :: Bool -> Offset -> Prec -> ElabM Prec
+bump False _ p = return p
+bump True _ (Prec p) | p < maxBound = return (Prec (p + 1))
+bump True o _ = escapeAt o "notation infix prec max not allowed"
+
+addNotation :: Range -> T.Text -> [Binder] -> [AtPos Literal] -> Maybe (Prec, Bool) -> ElabM ()
+addNotation rx@(px, _) x bis = \lits prec1 -> do
   fp <- asks efName
   (_, bis', _, no) <- try (now >>= getTerm x) >>=
     fromJustAt px ("term '" <> x <> "' not declared")
   unless (length bis == length bis') $
     escapeAt px ("term '" <> x <> "' has " <> T.pack (show (length bis')) <>
       " arguments, expected " <> T.pack (show (length bis)))
-  (c@(Const o tk), ti) <- processLits lits
-  insertPrefixInfo c (PrefixInfo (fp, textToRange o tk) x ti)
+  (llit, lits', rassoc, inf, c@(Const o tk), prec) <- case lits of
+    [] -> escapeAt px "notation requires at least one literal"
+    AtPos _ (NConst c p) : lits1 -> return (Nothing, lits1, Just True, False, c, p)
+    [AtPos o (NVar _)] -> escapeAt o "notation requires at least one constant"
+    AtPos _ (NVar _) : AtPos o (NVar _) : _ ->
+      escapeAt o "notation cannot start with two variables"
+    AtPos ov (NVar v) : AtPos o (NConst c p) : lits1 -> do
+      r <- case prec1 of
+        Nothing -> return Nothing
+        Just (q, _) | q /= p -> escapeAt o "notation precedence must match first constant"
+        Just (_, r) -> return (Just r)
+      n <- fromJustAt ov "notation variable not found" (H.lookup v binderMap)
+      q <- bump (fromMaybe False r) o p
+      return (Just (n, q), lits1, r, True, c, p)
+  insertPrec c prec
+  let
+    go :: [AtPos Literal] -> StateT (Maybe Bool) ElabM [PLiteral]
+    go [] = return []
+    go (AtPos _ (NConst c'@(Const _ tk') q) : lits'') =
+      lift (insertPrec c' q) >> (PConst tk' :) <$> go lits''
+    go (AtPos o' (NVar v) : lits'') = do
+      q <- case lits'' of
+        [] -> StateT $ \r -> do
+          r2 <- fromJustAt px
+            "general infix notation requires explicit associativity"
+            (r <|> (snd <$> prec1))
+          (,Just r2) <$> bump (not r2) o prec
+        (AtPos o'' (NConst _ q) : _) -> lift $ bump True o'' q
+        (AtPos _ (NVar _) : _) -> return PrecMax
+      n <- lift $ fromJustAt o' "notation variable not found" (H.lookup v binderMap)
+      (PVar n q :) <$> go lits''
+  (ti, r') <- runStateT (go lits') rassoc
+  (if inf then insertInfixInfo else insertPrefixInfo)
+    c (NotaInfo (fp, textToRange o tk) x (llit, ti) r')
   addDeclNota rx x no (NPrefix tk)
   where
 
@@ -270,26 +312,6 @@ addNotation rx@(px, _) x bis = \lits -> do
     go [] _ m = m
     go (Binder _ l _ : bs) n m =
       go bs (n+1) $ maybe m (\v -> H.insert v n m) (localName l)
-
-  processLits :: [AtPos Literal] -> ElabM (Const, [PLiteral])
-  processLits (AtPos _ (NConst c p) : lits') =
-      insertPrec c p >> (,) c <$> go lits' where
-    go :: [AtPos Literal] -> ElabM [PLiteral]
-    go [] = return []
-    go (AtPos _ (NConst c'@(Const _ tk) q) : lits) =
-      insertPrec c' q >> (PConst tk :) <$> go lits
-    go (AtPos o (NVar v) : lits) = do
-      q <- case lits of
-        [] -> return p
-        (AtPos _ (NConst _ (Prec q)) : _)
-          | q < maxBound -> return (Prec (q + 1))
-        (AtPos o' (NConst _ _) : _) ->
-          escapeAt o' "notation infix prec max not allowed"
-        (AtPos _ (NVar _) : _) -> return PrecMax
-      n <- fromJustAt o "notation variable not found" (H.lookup v binderMap)
-      (PVar n q :) <$> go lits
-  processLits (AtPos o _ : _) = escapeAt o "notation must begin with a constant"
-  processLits [] = error "empty notation"
 
 addCoercion :: Range -> T.Text -> Sort -> Sort -> ElabM ()
 addCoercion rx@(px, _) x s1 s2 = do
@@ -321,20 +343,20 @@ checkToken (Const o tk) = do
     (T.all (not . (`testBit` 1) . delimVal delims) (T.tail tk) &&
      T.all (not . (`testBit` 0) . delimVal delims) (T.init tk))
 
-insertPrefixInfo :: Const -> PrefixInfo -> ElabM ()
+insertPrefixInfo :: Const -> NotaInfo -> ElabM ()
 insertPrefixInfo c@(Const o tk) ti = do
   checkToken c
   env <- get
   ins <- checkNew ELError (textToRange o tk) ("token '" <> tk <> "' already declared")
-    (\(PrefixInfo i _ _) -> i) tk (pPrefixes (ePE env))
+    (\(NotaInfo i _ _ _) -> i) tk (pPrefixes (ePE env))
   lift $ modifyPE $ \e -> e {pPrefixes = ins ti}
 
-insertInfixInfo :: Const -> InfixInfo -> ElabM ()
+insertInfixInfo :: Const -> NotaInfo -> ElabM ()
 insertInfixInfo c@(Const o tk) ti = do
   checkToken c
   env <- get
   ins <- checkNew ELError (textToRange o tk) ("token '" <> tk <> "' already declared")
-    (\(InfixInfo i _ _) -> i) tk (pInfixes (ePE env))
+    (\(NotaInfo i _ _ _) -> i) tk (pInfixes (ePE env))
   lift $ modifyPE $ \e -> e {pInfixes = ins ti}
 
 app1 :: TermName -> SExpr -> SExpr

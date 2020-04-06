@@ -78,7 +78,7 @@ toSpans env = \st -> runST $ do
     stmt (Notation (Prefix o t _ _)) = push o t PITerm
     stmt (Notation (Infix _ o t _ _)) = push o t PITerm
     stmt (Notation (Coercion o t _ _)) = push o t PITerm
-    stmt (Notation (NNotation o t bis ty lits)) = push o t PITerm >>
+    stmt (Notation (NNotation o t bis ty lits _)) = push o t PITerm >>
       withBinders bis (mapM_ typ ty >> mapM_ atLit lits)
     stmt (Inout (Input _ vals)) = mapM_ (atLisp False) vals
     stmt (Inout (Output _ vals)) = mapM_ (atLisp False) vals

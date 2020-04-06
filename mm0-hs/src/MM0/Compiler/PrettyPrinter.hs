@@ -100,15 +100,13 @@ ppExpr1 cyc env = \v ->
       [e] -> ppExpr2 ctx tgt e
       _ -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 ctx PrecMax) es
     Just (_, _, _, _, Just (NPrefix tk)) -> do
-      let PrefixInfo _ _ lits = pPrefixes (ePE env) H.! tk
+      let NotaInfo _ _ (_, lits) _ = pPrefixes (ePE env) H.! tk
       let (_, p) = pPrec (ePE env) H.! tk
       parenBelow p tgt <$> ppPfx ctx tk lits es
-    Just (_, _, _, _, Just (NInfix tk)) -> case es of
-      [e1, e2] -> do
-        let InfixInfo _ _ r = pInfixes (ePE env) H.! tk
-        let (_, p) = pPrec (ePE env) H.! tk
-        parenBelow p tgt <$> ppInfix r ctx p t (token tk) e1 e2
-      _ -> ppApp tgt ("?" <> t <> "?") <$> mapM (ppExpr2 ctx PrecMax) es
+    Just (_, _, _, _, Just (NInfix tk)) -> do
+      let NotaInfo _ _ lits _ = pInfixes (ePE env) H.! tk
+      let (_, p) = pPrec (ePE env) H.! tk
+      parenBelow p tgt <$> ppInfix ctx p tk lits es
   ppExpr2 _ _ _ = return $ word "???"
 
   parenBelow :: Prec -> Prec -> PP -> PP
@@ -141,28 +139,29 @@ ppExpr1 cyc env = \v ->
       e' <- ppExpr2 ctx p (vec V.! n)
       go (e <<>> e') lits'
 
-  ppInfix :: Bool -> Maybe [TVar LispVal] -> Prec -> TermName ->
-    PP -> LispVal -> LispVal -> IO PP
-  ppInfix _ _ PrecMax _ _ = error "impossible"
-  ppInfix r ctx (Prec p) t tk = \e1 e2 ->
-    dmap (group . nest 2) <$> (if r then ppInfixr else ppInfixl) e1 e2
+  ppInfix :: Maybe [TVar LispVal] -> Prec -> Token ->
+    (Maybe (Int, Prec), [PLiteral]) -> [LispVal] -> IO PP
+  ppInfix ctx _ tk (Nothing, lits) = ppPfx ctx tk lits
+  ppInfix ctx p tk (Just (n1, q1), lits) = \es -> do
+    let vec = V.fromList es
+        go e [] = return e
+        go e (PConst c : lits') = go (e <<>> token c) lits'
+        go e [PVar n2 q2] = surround' line e <$> ppInfixRec q2 (vec V.! n2)
+        go e (PVar n2 q2 : lits') = do
+          e' <- ppExpr2 ctx q2 (vec V.! n2)
+          go (e <<>> e') lits'
+    e <- ppInfixRec q1 (vec V.! n1)
+    dmap (group . nest 2) <$> go (surround' softline e (token tk)) lits
     where
 
-    ppInfixl :: LispVal -> LispVal -> IO PP
-    ppInfixl e1 e2 = do
-      pp1 <- case e1 of
-        List [Atom _ _ t', e11, e12] | t == t' -> ppInfixl e11 e12
-        _ -> dmap group <$> ppExpr2 ctx (Prec p) e1
-      pp2 <- dmap group <$> ppExpr2 ctx (Prec (p+1)) e2
-      return $ surround' softline pp1 $ surround' line tk pp2
-
-    ppInfixr :: LispVal -> LispVal -> IO PP
-    ppInfixr e1 e2 = do
-      pp1 <- dmap group <$> ppExpr2 ctx (Prec (p+1)) e1
-      pp2 <- case e2 of
-        List [Atom _ _ t', e21, e22] | t == t' -> ppInfixr e21 e22
-        _ -> dmap group <$> ppExpr2 ctx (Prec p) e2
-      return $ surround' softline pp1 $ surround' line tk pp2
+    ppInfixRec :: Prec -> LispVal -> IO PP
+    ppInfixRec q e@(List (Atom _ _ t : es')) | p == q =
+      case lookupTerm t env of
+        Just (_, _, _, _, Just (NInfix tk')) ->
+          let NotaInfo _ _ lits' _ = pInfixes (ePE env) H.! tk' in
+          ppInfix ctx p tk' lits' es'
+        _ -> dmap group <$> ppExpr2 ctx p e
+    ppInfixRec _ e = dmap group <$> ppExpr2 ctx p e
 
 ppMVar :: Int -> Sort -> Bool -> PP
 ppMVar n s bd =

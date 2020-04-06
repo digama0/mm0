@@ -21,14 +21,14 @@ parseError s = do
   throwError ("math parse error: " ++ s ++ "; at \"" ++
     concatMap ((++ " ") . T.unpack) (take 5 tks) ++ "...\"")
 
-parseFormulaWith :: ((SExpr, Ident) -> ParserM SExpr) -> Formula -> LocalCtxM SExpr
+parseFormulaWith :: ((SExpr, Sort) -> ParserM SExpr) -> Formula -> LocalCtxM SExpr
 parseFormulaWith m (Formula fmla) = do
   pe <- readPE
   runStateT (parseExpr 0 >>= m) (tokenize pe fmla) >>= \case
     (sexp, []) -> return sexp
     _ -> throwError "math parse error: expected '$'"
 
-parseFormula :: Ident -> Formula -> LocalCtxM SExpr
+parseFormula :: Sort -> Formula -> LocalCtxM SExpr
 parseFormula s = parseFormulaWith (coerce s)
 
 parseFormulaProv :: Formula -> LocalCtxM SExpr
@@ -47,12 +47,12 @@ tkCond p yes no = tkMatch (\t -> if p t then Just () else Nothing) (\_ _ -> yes)
 tk :: Token -> ParserM ()
 tk t = tkCond (== t) (return ()) (parseError ("expected '" ++ T.unpack t ++ "'"))
 
-parseVar :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
+parseVar :: ParserM (SExpr, Sort) -> ParserM (SExpr, Sort)
 parseVar no = do
   ctx <- ask
   tkMatch (lookupLocal ctx) (\v (DepType s _) -> return (SVar v, s)) no
 
-parseLiteral :: ParserM (SExpr, Ident) -> ParserM (SExpr, Ident)
+parseLiteral :: ParserM (SExpr, Sort) -> ParserM (SExpr, Sort)
 parseLiteral no =
   tkCond (== "(") (parseExpr 0 <* tk ")") (parseVar no)
 
@@ -61,21 +61,21 @@ checkPrec e p v m = do
   q <- prec e M.!? v
   if q >= p then m else Nothing
 
-coerce :: Ident -> (SExpr, Ident) -> ParserM SExpr
+coerce :: Sort -> (SExpr, Sort) -> ParserM SExpr
 coerce s2 (sexp, s1) = do
   pe <- lift readPE
   c <- fromJustError ("type error, expected " ++ T.unpack s2 ++
     ", got " ++ show sexp ++ ": " ++ T.unpack s1) (getCoe s1 s2 pe)
   return (c sexp)
 
-coerceProv :: (SExpr, Ident) -> ParserM (SExpr, Ident)
+coerceProv :: (SExpr, Sort) -> ParserM (SExpr, Sort)
 coerceProv (sexp, s) = do
   pe <- lift readPE
   (s2, c) <- fromJustError ("type error, expected provable sort, got " ++
     show sexp ++ ": " ++ T.unpack s) (getCoeProv s pe)
   return (c sexp, s2)
 
-parseLiterals :: [Ident] -> [PLiteral] -> ParserM [SExpr]
+parseLiterals :: [Sort] -> [PLiteral] -> ParserM [SExpr]
 parseLiterals ls = go I.empty where
   go :: I.IntMap SExpr -> [PLiteral] -> ParserM [SExpr]
   go m [] = return (I.elems m)
@@ -84,15 +84,29 @@ parseLiterals ls = go I.empty where
     e <- parseExpr p >>= coerce (ls !! n)
     go (I.insert n e m) lits
 
+parseLiterals' :: Int -> (SExpr, Sort) -> [Sort] -> [PLiteral] ->
+  ParserM (I.IntMap SExpr, Int, (SExpr, Sort))
+parseLiterals' n1 lhs ls ll = do
+  lhs' <- coerce (ls !! n1) lhs
+  go (I.singleton n1 lhs') ll
+  where
+  go :: I.IntMap SExpr -> [PLiteral] -> ParserM (I.IntMap SExpr, Int, (SExpr, Sort))
+  go m [] = throwError "bad literals"
+  go m [PVar n p] = (m,n,) <$> parsePrefix p
+  go m (PConst t : lits) = tk t >> go m lits
+  go m (PVar n p : lits) = do
+    e <- parseExpr p >>= coerce (ls !! n)
+    go (I.insert n e m) lits
+
 appPrec :: Int
 appPrec = 1024
 
-parsePrefix :: Prec -> ParserM (SExpr, Ident)
+parsePrefix :: Prec -> ParserM (SExpr, Sort)
 parsePrefix p = parseLiteral $ do
   pe <- lift readPE
   env <- lift readEnv
   tkMatch (\v -> checkPrec pe p v (prefixes pe M.!? v))
-    (\_ (PrefixInfo x lits) -> do
+    (\_ (NotaInfo x (_, lits) _) -> do
       let (bs, r) = fromJust (getTerm env x)
       let bss = dSort . binderType <$> bs
       ss <- parseLiterals bss lits
@@ -106,31 +120,32 @@ parsePrefix p = parseLiteral $ do
         return (App x ss, dSort r)) $
     parseError "expected variable or prefix or term s-expr"
 
-getLhs :: Prec -> (SExpr, Ident) -> ParserM (SExpr, Ident)
+getLhs :: Prec -> (SExpr, Sort) -> ParserM (SExpr, Sort)
 getLhs p lhs = do
   pe <- lift readPE
   env <- lift readEnv
   tkMatch (\v -> do
       q <- prec pe M.!? v
       if q >= p then (,) q <$> infixes pe M.!? v else Nothing)
-    (\_ (q, InfixInfo x _) -> do
-      rhs <- parsePrefix p >>= getRhs q
+    (\_ (q, NotaInfo x (llit, lits) _) -> do
+      let (i, _) = fromJust llit
       let (bs, r) = fromJust (getTerm env x)
-      let [s1, s2] = dSort . binderType <$> bs
-      lhs' <- coerce s1 lhs
-      rhs' <- coerce s2 rhs
-      getLhs p (App x [lhs', rhs'], dSort r))
+      let bss = dSort . binderType <$> bs
+      (m, n, e) <- parseLiterals' i lhs bss lits
+      rhs <- getRhs q e >>= coerce (bss !! n)
+      let args = I.elems (I.insert n rhs m)
+      getLhs p (App x args, dSort r))
     (return lhs)
 
-getRhs :: Prec -> (SExpr, Ident) -> ParserM (SExpr, Ident)
+getRhs :: Prec -> (SExpr, Sort) -> ParserM (SExpr, Sort)
 getRhs p rhs = do
   pe <- lift readPE
   tkMatch (\v -> do
       q <- prec pe M.!? v
-      InfixInfo x r <- infixes pe M.!? v
+      NotaInfo x _ (Just r) <- infixes pe M.!? v
       if (if r then q >= p else q > p) then Just (q, x) else Nothing)
     (\v (q, _) -> modify (v:) >> getLhs q rhs >>= getRhs p)
     (return rhs)
 
-parseExpr :: Prec -> ParserM (SExpr, Ident)
+parseExpr :: Prec -> ParserM (SExpr, Sort)
 parseExpr p = parsePrefix p >>= getLhs p

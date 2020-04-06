@@ -16,6 +16,7 @@ import qualified Data.Text as T
 %error {parseError}
 
 %token
+  assoc     {TokAssoc $$}
   axiom     {TokAxiom}
   coercion  {TokCoercion}
   def       {TokDef}
@@ -62,6 +63,7 @@ Statement : SortStmt {$1}
           | InoutStmt {Inout $1}
 
 Ident : ident {T.pack $1}
+      | assoc {T.pack (if $1 then "rassoc" else "lassoc")}
       | axiom {T.pack "axiom"}
       | coercion {T.pack "coercion"}
       | def {T.pack "def"}
@@ -115,8 +117,9 @@ Constant : formula {Const $1}
 Precedence : number {% parseInt $1} | max {maxBound}
 
 CoercionStmt : coercion Ident ':' Ident '>' Ident ';' {Coercion $2 $4 $6}
-GenNotationStmt : notation Ident binders(Ident_, TType) ':' Type '=' list1(Literal) ';'
-                  {NNotation $2 $3 $5 $7}
+GenNotationStmt : notation Ident binders(Ident_, TType) ':' Type '=' list1(Literal) OptPrec ';'
+                  {NNotation $2 $3 $5 $7 $8}
+OptPrec : ':' Precedence assoc ';' {Just ($2, $3)} | {Nothing}
 Literal : '(' Constant ':' Precedence ')' {NConst $2 $4} | Ident {NVar $1}
 
 InoutStmt : InputStmt {$1} | OutputStmt {$1}

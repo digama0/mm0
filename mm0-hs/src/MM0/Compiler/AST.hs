@@ -57,7 +57,7 @@ data Notation =
   | Prefix Offset T.Text Const Prec
   | Infix Bool Offset T.Text Const Prec
   | Coercion Offset T.Text T.Text T.Text
-  | NNotation Offset T.Text [Binder] (Maybe Type) [AtPos Literal]
+  | NNotation Offset T.Text [Binder] (Maybe Type) [AtPos Literal] (Maybe (Prec, Bool))
 
 data Literal = NConst Const Prec | NVar T.Text
 

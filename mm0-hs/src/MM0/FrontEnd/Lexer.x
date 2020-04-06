@@ -28,6 +28,7 @@ tokens :-
   infixl    {\_ -> TokInfix False}
   infixr    {\_ -> TokInfix True}
   input     {\_ -> TokInput}
+  lassoc    {\_ -> TokAssoc False}
   max       {\_ -> TokMax}
   notation  {\_ -> TokNotation}
   output    {\_ -> TokOutput}
@@ -35,6 +36,7 @@ tokens :-
   prefix    {\_ -> TokPrefix}
   provable  {\_ -> TokProvable}
   pure      {\_ -> TokPure}
+  rassoc    {\_ -> TokAssoc True}
   sort      {\_ -> TokSort}
   strict    {\_ -> TokStrict}
   term      {\_ -> TokTerm}
@@ -57,7 +59,8 @@ tokens :-
 
 {
 data Token =
-    TokAxiom
+    TokAssoc Bool
+  | TokAxiom
   | TokCoercion
   | TokDef
   | TokDelimiter
