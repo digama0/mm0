@@ -37,7 +37,7 @@ enum Stack<'a> {
   AddThmProc(FileSpan, AwaitingProof),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>},
-  Focus(Vec<LispVal>),
+  Focus(Span, Vec<LispVal>),
   Have(Span, AtomID),
 }
 
@@ -73,7 +73,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.t.atom)),
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
-      Stack::Focus(es) => write!(f, "(focus _)\n  ->{}", fe.to(es)),
+      Stack::Focus(_, es) => write!(f, "(focus _)\n  ->{}", fe.to(es)),
       &Stack::Have(_, a) => write!(f, "(have {} _)", fe.to(&a)),
     }
   }
@@ -392,6 +392,20 @@ impl Elaborator {
       last = new;
     }
     Ok(true)
+  }
+
+  fn stat(&self) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    for (a, e, _) in &self.lc.proof_order {
+      write!(s, "{}: {}\n", self.print(a), self.format_env().pp(&e, 80)).unwrap()
+    }
+    for e in &self.lc.goals {
+      e.unwrapped(|r| if let LispKind::Goal(e) = r {
+        write!(s, "|- {}\n", self.format_env().pp(&e, 80)).unwrap()
+      })
+    }
+    s
   }
 
   fn head(&self, e: &LispKind) -> SResult<LispVal> {
@@ -887,20 +901,7 @@ make_builtins! { self, sp1, sp2, args,
     };
     return Ok(State::Refine {sp: sp1, stack, state})
   },
-  Stat: Exact(0) => {
-    use std::fmt::Write;
-    let mut s = String::new();
-    for (a, e, _) in &self.lc.proof_order {
-      write!(s, "{}: {}\n", self.print(a), self.format_env().pp(&e, 80)).unwrap()
-    }
-    for e in &self.lc.goals {
-      e.unwrapped(|r| if let LispKind::Goal(e) = r {
-        write!(s, "|- {}\n", self.format_env().pp(&e, 80)).unwrap()
-      })
-    }
-    print!(sp1, s);
-    LispVal::undef()
-  },
+  Stat: Exact(0) => {print!(sp1, self.stat()); LispVal::undef()},
   GetDecl: Exact(1) => {
     let x = try1!(args[0].as_atom().ok_or("expected an atom"));
     self.get_decl(args[0].fspan(), x)
@@ -1049,7 +1050,7 @@ impl<'a> Evaluator<'a> {
           &IR::Focus(sp, ref irs) => {
             if self.lc.goals.is_empty() {throw!(sp, "no goals")}
             let gs = self.lc.goals.drain(1..).collect();
-            push!(Focus(gs); Refines(sp, irs.iter()))
+            push!(Focus(sp, gs); Refines(sp, irs.iter()))
           }
           &IR::Def(n, ref x, ref val) => {
             assert!(self.ctx.len() == n);
@@ -1146,10 +1147,18 @@ impl<'a> Evaluator<'a> {
             self.evaluate_builtin(esp, esp, BuiltinProc::Refine, vec![ret])?
           }
           Some(Stack::Refines(sp, None, it)) => State::Refines(sp, it),
-          Some(Stack::Focus(gs)) => {
-            let mut gs1 = mem::replace(&mut self.lc.goals, vec![]);
-            gs1.extend_from_slice(&gs);
-            self.lc.set_goals(gs1);
+          Some(Stack::Focus(sp, gs)) => {
+            if !self.lc.goals.is_empty() {
+              let stat = self.stat();
+              let span = self.fspan(sp);
+              for g in mem::replace(&mut self.lc.goals, vec![]) {
+                let err = ElabError::new_e(try_get_span(&span, &g),
+                  format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)));
+                self.report(err)
+              }
+              throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
+            }
+            self.lc.set_goals(gs);
             State::Ret(LispVal::undef())
           }
           Some(Stack::Refine {sp, stack}) =>

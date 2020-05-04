@@ -638,7 +638,7 @@ impl Elaborator {
                   return Err(ElabError::new_e(sp, format!("variables {{{}}} missing from dependencies",
                     ba.map.iter().filter_map(|(&a, &i)| {
                       if let InferSort::Bound {..} = self.lc.vars[&a].1 {
-                        if i & !n != 0 {Some(&self.data[a].name)} else {None}
+                        if i & deps & !n != 0 {Some(&self.data[a].name)} else {None}
                       } else {None}
                     }).format(", "))))
                 }
