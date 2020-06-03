@@ -53,18 +53,18 @@ def DSort (id sd: nat): nat = $ b0 (b0 (b0 (id <> sd))) $;
 -- Terms are indexed by TermID and picked out by `getTerm`.
 -- DTerm : TermID -> Ctx -> DepType -> Decl
 def DTerm (id args ret: nat): nat = $ b0 (b0 (b1 (id <> args <> ret))) $;
+-- An `axiom` declaration has a list of binders, a list of hypotheses,
+-- and a consequent.
+-- Axioms are not indexed, they are simply found by statement.
+-- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
+def DAxiom (args hs ret: nat): nat = $ b0 (b1 (args <> hs <> ret)) $;
 -- A `def` declaration is the same as a `term` except it also has an optional
 -- definition component which lists the sorts of the dummy variables and the
 -- definition's expression.
 -- Defs are indexed by TermID and picked out by `getTerm`.
 -- DDef : TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Decl
 def DDef (id args ret def: nat): nat =
-  $ b0 (b1 (id <> args <> ret <> def)) $;
--- An `axiom` declaration has a list of binders, a list of hypotheses,
--- and a consequent.
--- Axioms are not indexed, they are simply found by statement.
--- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
-def DAxiom (args hs ret: nat): nat = $ b1 (b0 (args <> hs <> ret)) $;
+  $ b1 (b0 (id <> args <> ret <> def)) $;
 -- A `theorem` declaration is exactly the same structure as an `axiom`, but
 -- the interpretation is different - theorems require proofs, while axioms are
 -- added in the spec.
@@ -271,12 +271,12 @@ def CRefl (e: nat): nat = $ b0 (b0 e) $;
 -- CSymm : CExpr -> CExpr
 def CSymm (p: nat): nat = $ b0 (b1 p) $;
 -- {p : e = e'} |- CCong f {p} : f {e} = f {e'}
--- CCong : TermID -> CExpr -> CExpr
+-- CCong : TermID -> list CExpr -> CExpr
 def CCong (f cs: nat): nat = $ b1 (b0 (f <> cs)) $;
--- If t {x} := {y}. e', then
--- p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong t {z} p : t {e} = e''
--- CUnfold : TermID -> CExpr -> CExpr
-def CUnfold (t zs c: nat): nat = $ b1 (b1 (t <> zs <> c)) $;
+-- If f {x} := {y}. e', then
+-- p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong f {z} p : f {e} = e''
+-- CUnfold : TermID -> list VarID -> CExpr -> CExpr
+def CUnfold (f es zs c: nat): nat = $ b1 (b1 (f <> es <> zs <> c)) $;
 
 -- A VExpr is a proof term.
 -- A VHyp is a hypothesis step - a term is asserted from the local context.
@@ -293,22 +293,6 @@ def VThm (a h r es ps: nat): nat = $ b0 (b1 (a <> h <> r <> es <> ps)) $;
 -- VConv : CExpr -> VExpr -> VExpr
 def VConv (c p: nat): nat = $ b1 (c <> p) $;
 
--- Given a context, which contains bound variables and regular variables with
--- dependencies, we can construct a disjoint variable list by making all
--- bound variables distinct from each other, and all regular variables disjoint
--- from all previous bound variables, except those that are present in the
--- type dependencies to the variable. This function expresses the list as a
--- predicate.
--- DV : Ctx -> VarID -> VarID -> Bool
-def DV (ctx u v: nat): wff;
-theorem DV0 (u v: nat): $ ~ DV 0 u v $;
-theorem DVBound (ctx s u v: nat):
-  $ DV (ctx |> PBound s) u v <->
-    DV ctx u v \/ (isBound ctx u /\ v = len ctx) $;
-theorem DVReg (ctx s vs u v: nat):
-  $ DV (ctx |> PReg s vs) u v <->
-    DV ctx u v \/ (isBound ctx u /\ ~ u e. vs /\ v = len ctx) $;
-
 -- Checking a conversion proof c : (e1 : s) = (e2 : s).
 -- VerifyConv : Env -> Ctx -> CExpr -> SExpr -> SExpr -> SortID -> Bool
 def VerifyConv (env ctx c e1 e2 s: nat): wff;
@@ -322,8 +306,8 @@ $ E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len bis = n /\
 theorem VerifyConvRefl (env ctx e e1 e2 s: nat):
   $ VerifyConv env ctx (CRefl e) e1 e2 s <->
     Expr env ctx e s /\ e = e1 /\ e = e2 $;
-theorem VerifyConvSymm (env ctx e e1 e2 s: nat):
-  $ VerifyConv env ctx (CSymm e) e1 e2 s <-> VerifyConv env ctx e e2 e1 s $;
+theorem VerifyConvSymm (env ctx c e1 e2 s: nat):
+  $ VerifyConv env ctx (CSymm c) e1 e2 s <-> VerifyConv env ctx c e2 e1 s $;
 theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}:
   $ VerifyConv env ctx (CCong f cs) e1 e2 s <->
     E. args E. ret E. o E. es1 E. es2 (
@@ -333,8 +317,8 @@ theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}:
       s = fst ret) $;
 theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
   {args ret ys val es a y z e i: nat}:
-  $ VerifyConv env ctx (CUnfold f zs c) e1 e2 s <->
-    E. args E. ret E. ys E. val E. es (
+  $ VerifyConv env ctx (CUnfold f es zs c) e1 e2 s <->
+    E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys <> val)) /\
       e1 = SApp f es /\ s = fst ret /\
       all2 e a (ExprBi env ctx e a) es args /\
@@ -387,7 +371,7 @@ theorem ProofDef (env id a r o p: nat):
   $ Proof (env |> DDef id a r o) p <-> Proof env p /\ o != 0 $;
 theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
   $ Proof (env |> DThm a h r) p <-> E. p1 E. ds E. pf E. ctx (
-    p = p1 <> (ds <> pf) /\ Proof env p1 /\
+    p = p1 <> ds <> pf /\ Proof env p1 /\
     ctx = appendDummies a ds /\ Ctx env ctx /\
     VerifyProof env ctx h pf r) $;
 

@@ -237,6 +237,8 @@ def Option (A: set) (.n: nat): set = $ {n | n = 0 \/ n - 1 e. A} $;
 def Power (A: set) (.x: nat): set = $ {x | x C_ A} $;
 def power (a: nat): nat = $ lower (Power a) $;
 
+def sUnion (A: set) (.x .y: nat): set = $ {x | E. y (x e. y /\ y e. A)} $;
+
 def cons (a b: nat): nat = $ suc (a <> b) $; infixr cons: $:$ prec 91;
 
 def sep (n: nat) (A: set): nat;
