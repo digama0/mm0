@@ -38,7 +38,7 @@ enum Stack<'a> {
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>},
   Focus(Span, Vec<LispVal>),
-  Have(Span, AtomID),
+  Have(Span, LispVal),
 }
 
 impl<'a> EnvDisplay for Stack<'a> {
@@ -74,7 +74,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
       Stack::Focus(_, es) => write!(f, "(focus _)\n  ->{}", fe.to(es)),
-      &Stack::Have(_, a) => write!(f, "(have {} _)", fe.to(&a)),
+      Stack::Have(_, a) => write!(f, "(have {} _)", fe.to(a)),
     }
   }
 }
@@ -884,17 +884,19 @@ make_builtins! { self, sp1, sp2, args,
     }
   }),
   Have: AtLeast(2) => {
-    let x = try1!(args[0].as_atom().ok_or("expected an atom"));
     if args.len() > 3 {try1!(Err("invalid arguments"))}
-    let p = args.pop().unwrap();
-    self.stack.push(Stack::Have(sp1, x));
+    let mut args = args.drain(..);
+    let xarg = args.next().unwrap();
+    try1!(xarg.as_atom().ok_or("expected an atom"));
+    let xsp = try_get_span(&self.fspan(sp1), &xarg);
+    self.stack.push(Stack::Have(sp1, xarg));
     let mut stack = vec![RStack::DeferGoals(mem::replace(&mut self.lc.goals, vec![]))];
-    let state = match args.pop().filter(|_| args.len() > 0) {
-      None => {
-        let fsp = self.fspan(sp1);
+    let state = match (args.next().unwrap(), args.next()) {
+      (p, None) => {
+        let fsp = self.fspan(xsp);
         RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown, Some(fsp)), p}
       }
-      Some(e) => {
+      (e, Some(p)) => {
         stack.push(RStack::Typed(p));
         RState::RefineExpr {tgt: InferTarget::Unknown, e}
       }
@@ -1165,7 +1167,11 @@ impl<'a> Evaluator<'a> {
             State::Refine {sp, stack, state: RState::Ret(ret)},
           Some(Stack::Have(sp, x)) => {
             let e = self.infer_type(sp, &ret)?;
-            self.lc.add_proof(x, e, ret);
+            let span = try_get_span(&self.fspan(sp), &x);
+            self.lc.add_proof(x.as_atom().unwrap(), e, ret.clone());
+            if span != sp {
+              self.spans.insert_if(span, || ObjectKind::Proof(x));
+            }
             State::Ret(LispVal::undef())
           },
         },
