@@ -42,6 +42,10 @@ do {
   (def (rmap . args) (apply map (split-last args)))
   (def (scan . args) (apply rmap args) (let))
   (def (undef? x) (not (def? x)))
+  (def (swap) (match (get-goals) ((x y) (set-goals y x))))
+  (def suffices @ match-fn*
+    [(h) (have h _) (swap)]
+    [xs (apply have xs) (swap)])
   (def (get-proof x) @ match (get-decl x)
     [('theorem _ _ _ _ _ pf) (hd @ tl @ pf)]
     [_ (error "not a theorem")])
@@ -738,6 +742,8 @@ theorem sbid (a: wff x): $ [x / x] a <-> a $ =
   (iald @ com12 @ bi1d @ syl6bb dfsb2 @ syl sbq eqcom));
 theorem sbth (a: nat x) (p: wff x) (h: $ p $): $ [a / x] p $ =
 '(!! ax_gen y @ a1i @ ax_gen @ a1i h);
+theorem sbthd (p: wff x) (h: $ G /\ x = a -> p $): $ G -> [a / x] p $ =
+'(mpbiri tru @ sbed @ syl (mpi tru bith) h);
 theorem sbeth (p: wff x) (e: $ x = a -> (p <-> q) $) (h: $ p $): $ q $ =
 '(mpbi (sbe e) @ sbth h);
 theorem sbethh (p q: wff x) (h: $ F/ x q $)
@@ -1114,6 +1120,9 @@ theorem eqsubsnd {x} (h: $ G -> x e. A -> x = a $): $ G -> subsn A $ =
 theorem eqsubsnabd (p: wff x) (h: $ G -> p -> x = a $): $ G -> subsn {x | p} $ =
 '(sylc subsnss (sylib ssab @ iald h) @ a1i subsnsn);
 
+theorem subsnthe: $ subsn A -> a e. A -> the A = a $ =
+(named '(exp @ eqthed @ ibida (subsni anll anr anlr) @ mpbird (eleq1d anr) anlr));
+
 theorem subsntheo: $ subsn A -> (theo A = suc a <-> a e. A) $ =
 '(syl5bbr theoid @ ibid
   (a1i @ mpbiri (mpbir (!! elabe x eqeq1) eqid) eleq2)
@@ -1397,6 +1406,11 @@ theorem subltid: $ 0 < a /\ 0 < b -> a - b < a $ =
   (sylibr ltadd1 @ mpbird (anwr @ lteq1d @ syl6eqr add0 npcan) @ sylib ltadd2 anlr)
   (mpbird (anwr @ lteq1d nlesubeq0) anll));
 
+theorem lesub1i: $ a <= b -> a - c <= b - c $ =
+'(cases
+  (exp @ sylibr leadd1 @ mpbird (leeqd (anwl npcan) (syl npcan (imp letr))) anr)
+  (a1d @ mpbiri le01 (leeq1d nlesubeq0)));
+
 theorem leloe: $ a <= b <-> a < b \/ a = b $ =
 '(ibii (!! eex x @ casesd
     (exp (orrd (syl5eqr add0 (eqtr3d (anwr addeq2) anl))))
@@ -1440,6 +1454,18 @@ theorem lesubeq0: $ a <= b <-> a - b = 0 $ =
   eqtr3d (syl npcan @ anwr leorle) (syl6eq add01 @ anwl addeq1));
 
 theorem subpos: $ a < b <-> 0 < b - a $ = '(bitr ltnle @ bitr4 (noteq lesubeq0) lt01);
+
+theorem lesubadd2: $ a - b <= c <-> a <= b + c $ =
+'(ibii
+  (eor (a1d @ mpi leaddid1 letr) (bi1d @ syl5bb leadd2 @ leeq1d pncan3) leorle)
+  (sylib (leeq2 pncan2) lesub1i));
+
+theorem lesubadd: $ a - b <= c <-> a <= c + b $ = '(bitr lesubadd2 (leeq2 addcom));
+
+theorem ltaddsub: $ a + b < c <-> a < c - b $ =
+'(bitr4 ltnle @ bitr ltnle @ noteqi lesubadd);
+
+theorem ltaddsub2: $ a + b < c <-> b < c - a $ = '(bitr (lteq1 addcom) ltaddsub);
 
 theorem mulsub: $ a * (b - c) = a * b - a * c $ =
 '(eor
@@ -3486,6 +3512,8 @@ theorem excons: $ a != 0 <-> E. x E. y a = x : y $ =
   (eex @ eex @ mpbiri consne0 neeq1));
 
 theorem consinj: $ a : c = b : d <-> a = b /\ c = d $ = '(bitr peano2 prth);
+theorem conscan1: $ a : c = b : c <-> a = b $ = '(bitr consinj @ bian2 eqid);
+theorem conscan2: $ a : b = a : c <-> b = c $ = '(bitr consinj @ bian1 eqid);
 theorem consfst: $ fst ((a : b) - 1) = a $ = '(eqtr (fsteq sucsub1) fstpr);
 theorem conssnd: $ snd ((a : b) - 1) = b $ = '(eqtr (sndeq sucsub1) sndpr);
 
@@ -3801,13 +3829,23 @@ pub theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $ =
 '(eqtr lrecS @ ! appslame _ $ _ <> append b $ _ x _ @
   !! appslamed z @ !! applamed y @ conseqd anll anr);
 
-theorem append02 (a: nat): $ a ++ 0 = a $ =
+theorem append02: $ a ++ 0 = a $ =
 (named @ mk-ind '(listind) '(eqeqd appendeq1 id) 'append0 '(syl5eq appendS conseq2));
 
-theorem appendass (a: nat): $ l1 ++ l2 ++ l3 = l1 ++ (l2 ++ l3) $ =
+theorem appendass: $ l1 ++ l2 ++ l3 = l1 ++ (l2 ++ l3) $ =
 (named @ mk-ind '(listind) '(eqeqd (appendeq1d appendeq1) appendeq1)
   '(eqtr4 (appendeq1 append0) append0)
   '(syl5eq (appendeq1 appendS) @ syl5eq appendS @ syl6eqr appendS conseq2));
+
+theorem appendlen: $ len (l1 ++ l2) = len l1 + len l2 $ =
+(named @ mk-ind '(listind) '(eqeqd (leneqd appendeq1) (addeq1d leneq))
+  '(eqtr4 (leneq append0) @ eqtr (addeq1 len0) add01)
+  '(syl5eq (eqtr (leneq appendS) lenS) @ syl6eqr (eqtr (addeq1 lenS) addS1) suceq));
+
+theorem appendcan1: $ a ++ b = a ++ c <-> b = c $ =
+(named @ mk-ind '(listind) '(bieq1d @ eqeqd appendeq1 appendeq1)
+  '(eqeq append0 append0)
+  '(syl5bb (bitr (eqeq appendS appendS) conscan2) id));
 
 @_ abstract def snoc (l a: nat): nat = $ l ++ (a : 0) $;
 infixl snoc: $|>$ prec 84;
@@ -3880,6 +3918,9 @@ pub theorem nthS (n a l: nat): $ nth (suc n) (a : l) = nth n l $ =
 theorem nthne0: $ nth n l != 0 <-> n < len l $ =
 '(ibii (con1 ifneg) @ syl sucne0 ifpos);
 
+theorem ntheq0: $ nth n l = 0 <-> len l <= n $ =
+'(bicom @ bitr lenlt @ con1b nthne0);
+
 theorem lmemnth: $ a IN l <-> E. n nth n l = suc a $ =
 (named @ mk-ind '(listind) '(bieqd lmemeq2 @ exeqd @ eqeq1d ntheq2)
   '(binth lmem0 @ nexi @ necom @ mpbir (neeq2 nth0) peano1)
@@ -3894,6 +3935,26 @@ theorem allnth: $ all A l <-> A. n A. x (nth n l = suc x -> x e. A) $ =
 
 theorem nthlmem: $ nth n l = suc a -> a IN l $ =
 (named '(sylibr lmemnth @ iexe @ eqeq1d ntheq1));
+
+theorem appendnth1: $ i < len l1 -> nth i (l1 ++ l2) = nth i l1 $ =
+(named @ focus
+  (def h '(imeqd lteq1 @ eqeqd ntheq1 ntheq1))
+  '(eale ,h _)
+  (mk-ind '(listind) '(aleqd @ imeqd (lteq2d leneq) (eqeqd (ntheq2d appendeq1) ntheq2))
+    '(ax_gen @ sylbi (lteq2 len0) @ absurd lt02)
+    '(sylbi (cbval ,h) @ iald @ casesd _ _))
+  '(a1i @ a1d @ syl5eq (ntheq2 appendS) @ eqtr4d ntheq1 @ syl6eq (eqtr4 nthZ nthZ) ntheq1)
+  '(syl5bi exsuc @ sylibr eexb @ alimi @ com12 @ bi2d @
+    imeqd (syl5bb (lteq2 lenS) @ syl6bbr ltsuc lteq1) @
+    eqeqd (syl5eq (ntheq2 appendS) @ syl6eq nthS ntheq1) (syl6eq nthS ntheq1)));
+
+theorem appendnth2_: $ nth (len l1 + i) (l1 ++ l2) = nth i l2 $ =
+(named @ mk-ind '(listind) '(eqeq1d @ ntheqd (addeq1d leneq) appendeq1)
+  '(ntheq (eqtr (addeq1 len0) add01) append0)
+  '(syl5eq (eqtr (ntheq (eqtr (addeq1 lenS) addS1) appendS) nthS) id));
+
+theorem appendnth2: $ len l1 <= i -> nth i (l1 ++ l2) = nth (i - len l1) l2 $ =
+'(syl6eq appendnth2_ @ ntheq1d @ eqcomd pncan3);
 
 @_ abstract def repeat (a n: nat): nat = $ rec 0 (\ x, a : x) n $;
 pub theorem repeat0 (a: nat): $ repeat a 0 = 0 $ =  (named 'rec0);
@@ -3979,6 +4040,9 @@ theorem exsnoc: $ l != 0 <-> E. l2 E. a l = l2 |> a $ =
   bitr (exeqi @ bitr (eqeq2 @ eqtr3 revrev (reveq revS)) revinj) @
   ibii (eex @ iexe @ eqeq2d snoceq1)
     (eex @ iexe @ eqeq2d @ snoceq1d @ syl6eq revrev reveq)));
+
+theorem appendcan2: $ a ++ c = b ++ c <-> a = b $ =
+'(bitr3 revinj @ bitr (eqeq revappend revappend) @ bitr appendcan1 revinj);
 
 -- map : (A -> B) -> list A -> list B
 @_ def map (F: set) (l: nat): nat =
@@ -4117,6 +4181,10 @@ theorem nthext2d {i}
       (imp @ con1d @ syl5bi nthne0 @ bi1d @ lteq2d h2)))
   '(eqtr3g lfnnth lfnnth @ lfneqd (lameqd @ subeq1d h) (eqtr4d h1 h2)));
 
+theorem nthext2 {i} (h1: $ len l1 = n $) (h2: $ len l2 = n $)
+  (h3: $ i < n -> nth i l1 = nth i l2 $): $ l1 = l2 $ =
+'(trud @ nthext2d (a1i h1) (a1i h2) (anwr h3));
+
 theorem nthext: $ l1 = l2 <-> A. n nth n l1 = nth n l2 $ =
 (named @ focus
   '(ibii (iald ntheq2) @ nthext2d _ eqidd @ anwl @ eale @ eqeqd ntheq1 ntheq1)
@@ -4141,13 +4209,73 @@ theorem zip01: $ zip 0 l = 0 $ = '(mpbi leneq0 @ eqtr ziplen @ eqtr (mineq1 len0
 theorem zip02: $ zip l 0 = 0 $ = '(mpbi leneq0 @ eqtr ziplen @ eqtr (mineq2 len0) @ eqmin2 le01);
 theorem zipS: $ zip (a : l1) (b : l2) = (a <> b) : zip l1 l2 $ =
 (focus
-  '(trud @ !! nthext2d n
-    (a1i @ eqtr ziplen @ eqtr4 (mineq lenS lenS) minS)
-    (a1i @ eqtr lenS @ suceq ziplen)
-    (anwr ,(mk-ind '(!! ind m n)
+  '(!! nthext2 n
+    (eqtr ziplen @ eqtr4 (mineq lenS lenS) minS)
+    (eqtr lenS @ suceq ziplen)
+    ,(mk-ind '(!! ind m n)
       '(imeqd lteq1 @ eqeqd ntheq1 ntheq1)
       '(a1i @ eqtr4 (trud @ zipnth (a1i nthZ) (a1i nthZ)) nthZ)
-      '(a1i @ sylbir ltsuc @ syl6eqr nthS @ sylbi ltmin _))))
+      '(a1i @ sylbir ltsuc @ syl6eqr nthS @ sylbi ltmin _)))
   (have 'h1 '(eqcomd @ syl sub1can @ sylibr nthne0 anl))
   (have 'h2 '(eqcomd @ syl sub1can @ sylibr nthne0 anr))
   '(eqtr4d (zipnth (syl5eq nthS h1) (syl5eq nthS h2)) (zipnth h1 h2)));
+
+@_ local def take (l n: nat): nat =
+$ lfn (\ i, nth i l - 1) (min (len l) n) $;
+
+@_ local def drop (l n: nat): nat =
+$ lfn (\ i, nth (i + n) l - 1) (len l - n) $;
+
+theorem takelen: $ len (take l n) = min (len l) n $ = (named 'lenlfn);
+theorem droplen: $ len (drop l n) = len l - n $ = (named 'lenlfn);
+
+theorem takenth: $ i < n -> nth i (take l n) = nth i l $ =
+'(mpi leorlt @ eorda
+  (eqtr4d
+    (sylibr ntheq0 @ anwr @ letr @ mpbir (leeq1 takelen) minle1)
+    (sylibr ntheq0 anr))
+  (eqtrd (rsyl ancom @ sylbir ltmin nthlfn) @
+    eqtrd (suceqd @ !! applamed x @ subeq1d @ ntheq1d anr) @
+    syl sub1can @ sylibr nthne0 anr));
+
+theorem takenth0: $ n <= i -> nth i (take l n) = 0 $ =
+'(sylibr ntheq0 @ letr @ mpbir (leeq1 takelen) minle2);
+
+theorem dropnth: $ nth i (drop l n) = nth (i + n) l $ =
+'(eor
+  (eqtr4d (sylibr ntheq0 @ sylibr (leeq1 droplen) @ bi2i lesubadd) (bi2i ntheq0))
+  (eqtrd (sylbi ltaddsub nthlfn) @
+    eqtrd (suceqd @ !! applamed x @ subeq1d @ ntheq1d @ addeq1d anr) @
+    sylbir nthne0 sub1can)
+  leorlt);
+
+theorem takedrop: $ take l n ++ drop l n = l $ =
+'(!! nthext2 i (eqtr appendlen @ eqtr (addeq takelen droplen) minaddsub) eqid @
+  mpi ltorle @ eorda
+    (eqtrd (sylbir (bitr (lteq2 takelen) ltmin) appendnth1) @ anwr takenth)
+    (eqtrd (syl appendnth2 @ anwr @ letr @ mpbir (leeq1 takelen) minle2) @
+      syl5eq dropnth @ ntheq1d @
+      eqtrd (addeq1d @ subeq2d @ syl5eq takelen @ syl eqmin2 @ letrd anr @ anwl ltle) @
+      anwr npcan));
+
+theorem take0: $ take l 0 = 0 $ =
+'(mpbi leneq0 @ eqtr takelen @ mpbi le02 minle2);
+
+theorem drop0: $ drop l 0 = l $ =
+'(eqtr3 append0 @ eqtr3 (appendeq1 take0) takedrop);
+
+theorem dropall: $ len l <= n -> drop l n = 0 $ =
+'(sylib leneq0 @ syl5eq droplen @ bi1i lesubeq0);
+
+theorem takeall: $ len l <= n -> take l n = l $ =
+'(syl5eqr append02 @ syl6eq takedrop @ appendeq2d @ eqcomd dropall);
+
+theorem takemin: $ take l (min (len l) n) = take l n $ =
+'(eor (takeeq2d eqmin2)
+  (eqtr4d (takeeq2d eqmin1) @ syl6eqr (takeall leid) takeall) leorle);
+
+theorem takeappend1: $ n <= len l1 -> take (l1 ++ l2) n = take l1 n $ =
+(named '(nthext2d
+  (syl5eq takelen @ syl eqmin2 @ mpi (mpbir (leeq2 appendlen) leaddid1) letr)
+  (syl5eq takelen @ eqmin2)
+  (eqtr4d (anwr takenth) @ eqtr4d (anwr takenth) @ syl appendnth1 @ impcom ltletr)));

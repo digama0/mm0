@@ -452,8 +452,8 @@ theorem maxPrefix0 {x: nat} (A: set) (s: nat):
 theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
   $ E. x (prefix x s /\ x e. A) ->
     E. x E. t (x ++ t = s /\ x e. A /\
-          A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
-          maxPrefix A s = suc (x <> t)) $;
+      A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+      maxPrefix A s = suc (x <> t)) $;
 
 def regexStar (R: set) (.s .t .L .x .y: nat): set =
 $ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;

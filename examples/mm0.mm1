@@ -1017,8 +1017,7 @@ pub theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}
   '(bitr (elneq2 VerifyConv_aux_Cong) @ bitr (ellower _) @
     elsabe @ elsabed @ elabed @ exeqd @ exeqd @ exeqd @ exeqd @ exeqd @
     aneqd (aneq1d @ aneq1d @ aneqd (eqeq1d anll) (eqeq1d anlr)) (eqeq1d anr))
-  (have 'h $ _ -> _ -> e1 < SApp env n /\ e2 < SApp env n /\ s < env $ '_)
-  (match (get-goals) ((x y) (set-goals y x)))
+  (suffices 'h $ _ -> _ -> e1 < SApp env n /\ e2 < SApp env n /\ s < env $ '_)
   (focus
     '(ax_mp (eex _) VerifyConvs_fin)
     '(sabfin (eexsabd @ eelabd @ syl6ibr elupto @ syl6 anll h) (a1i finns) @ anwl @
@@ -1340,14 +1339,93 @@ pub theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
 
 @_ def prefix (s t .x: nat): wff = $ E. x s ++ x = t $;
 
-@_ def maxPrefix (A: set) (s: nat): nat;
+theorem takeprefix: $ prefix (take l n) l $ = '(!! iexe l2 (eqeq1d appendeq2) takedrop);
+
+theorem prefix_eq_take: $ prefix l1 l2 <-> l1 = take l2 (len l1) $ =
+(named @ focus
+  '(ibii (!! eex r @ syl5eqr _ takeeq1) (mpbiri takeprefix prefixeq1))
+  '(eqtrd takeappend1 takeall leid));
+
+theorem prefix_len: $ prefix l1 l2 -> len l1 <= len l2 $ =
+'(sylbi prefix_eq_take @ mpbiri minle1 @ leeq1d @ syl6eq takelen @ leneq);
+
+theorem prefix_0: $ prefix 0 l $ = '(!! iexe r (eqeq1d appendeq2) append0);
+theorem prefix_id: $ prefix l l $ = '(!! iexe r (eqeq1d appendeq2) append02);
+theorem prefix_tr: $ prefix l1 l2 -> prefix l2 l3 -> prefix l1 l3 $ =
+'(!! eex r1 @ !! eexda r2 @ !! iexde r3 @ eqtrd (appendeq2d anr) @
+  syl5eqr appendass @ eqtrd (appendeq1d anll) anlr);
+
+@_ def maxPrefix (A: set) (s: nat): nat =
+$ the {z | E. x E. t (x ++ t = s /\ x e. A /\
+    A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+    z = suc (x <> t))} $;
+
 pub theorem maxPrefix0 {x: nat} (A: set) (s: nat):
-  $ ~ (E. x (prefix x s /\ x e. A)) -> maxPrefix A s = 0 $;
+  $ ~ (E. x (prefix x s /\ x e. A)) -> maxPrefix A s = 0 $ =
+(named '(eqthe0abd @ syl absurd @ con3 @ eximi @ eex @
+  anwl @ anwl @ anim1 @ iexe @ eqeq1d appendeq2));
+
 pub theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
   $ E. x (prefix x s /\ x e. A) ->
     E. x E. t (x ++ t = s /\ x e. A /\
-          A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
-          maxPrefix A s = suc (x <> t)) $;
+      A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+      maxPrefix A s = suc (x <> t)) $ =
+(named @ focus
+  (have 'h1 $ subsn {z | E. x E. t (x ++ t = s /\ x e. A /\
+    A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+    z = suc (x <> t))} $ _)
+  (def h '(elabe @ exeqd @ exeqd @ aneq2d eqeq1))
+  (focus
+    '(ax_gen @ ax_gen @ sylbi ,h @ syl5bi (bitr ,h _) @ eex @ eex @ eexd @ eexd @ exp _)
+    (focus '(cbvex @ cbvexd @
+      aneqd (aneqd (aneqd (eqeq1d @ imp appendeq) @ eleq1d anl) @
+      aleqd @ imeqd (aneq1d @ aneq1d @ prefixeq1d anl) (eqeq2d anl)) @
+      eqeq2d @ suceqd @ imp preq))
+    (suffices 'h2 $ _ -> x = w $ _)
+    '(eqtr4d anlr @ eqtr4d anrr @ suceqd @ preqd h2 @
+      sylib appendcan1 @ eqtr4d an4l @ eqtrd (appendeq1d h2) (anwr an3l))
+    (def (lem hl hr) @ focus
+      '(sylc (eale @ imeqd (aneqd (aneqd prefixeq2 prefixeq1) eleq1) eqeq1) (syl anlr ,hr) @
+        iand (iand _ (syl (anw3l @ iexe @ eqeq1d appendeq2) ,hl)) (syl anllr ,hl))
+      '(sylibr prefix_eq_take @
+        eqtrd (sylib prefix_eq_take @ syl (anw3l @ iexe @ eqeq1d appendeq2) ,hr) @
+        eqtr3d (takeeq1d @ syl an3l ,hl) (anwr takeappend1)))
+    '(mpi leorle @ eorda _ @ eqcomd _)
+    (lem 'anll 'anlr)
+    (lem 'anlr 'anll))
+  '(! rsyl _ $ E. n (n <= len s /\ take s n e. A /\ A. y (prefix y s -> y e. A -> len y <= n)) $)
+  (focus
+    (def h2 '(elabe @ aleqd @ imeq2d leeq2))
+    (def N $ least {i | A. m (take s m e. A -> min (len s) m <= i)} $)
+    '(syl (! iexe _ ,N _ _ @
+        aneqd (aneqd leeq1 @ eleq1d takeeq2) (aleqd @ imeq2d @ imeq2d leeq2)) _)
+    (have 'h3 $ len s e. {i | A. m (take s m e. A -> min (len s) m <= i)} $
+      '(mpbir ,h2 @ ax_gen @ a1i minle1))
+    (have 'h4 $ _ -> y = take s (len y) $ '(sylib prefix_eq_take anlr))
+    (def hal '(imeqd (eleq1d takeeq2) (leeq1d mineq2)))
+    (have 'h5 $ A. m2 (take s m2 e. A -> min (len s) m2 <= ,N) $
+      '(mpbi ,h2 @ mpbi (eleq2 @ cbvab @ syl5bb (cbval ,hal) @ aleqd @ imeq2d leeq2) @ leastel h3))
+    (def h5 '(eale ,hal h5))
+    '(eex @ iand (iand (a1i @ leastle h3) _) @ iald @ exp @ exp @
+      mpbid (leeq1d @ syl5eqr takelen @ leneqd @ eqcomd h4) @
+      syl ,h5 @ mpbid (eleq1d h4) anr)
+    (have 'h6 $ _ -> x = take s (len x) $ '(sylib prefix_eq_take anll))
+    (have 'h7 $ _ -> take s (len x) e. A $ '(mpbid (eleq1d h6) anlr))
+    '(casesd
+      (exp @ mpbird (eleq1d @ takeeq2d @ eqtr4d anr @ eqtrd (leneqd h6) @ syl5eq takelen @
+        sylib le02 @ mpbid (leeq2d anr) @ syl ,h5 h7) h7)
+      (syl5bi exsuc @ !! eexda j @ mpbird (eleq1d @ takeeq2d anr) @ mpi ltirr @ con1d @
+        exp @ mpbid (leeq1d anlr) @ syl leastle @
+        sylibr ,h2 @ sylibr (cbval ,hal) @ iald @ exp @ sylibr leltsuc @ sylibr ltlene @
+        iand (mpbid (leeq2d anllr) @ anwr @ eal h5) @
+        mpd anlr @ con3d @ syl5ibrcom (eleq1d @ syl6eq takemin @ takeeq2d eqcom) anr)))
+  '(eex @ sylib ,h @ syl (mpbird (eleq1d (subsnthe h1)) id) @ sylibr ,h @ iexde @ iexde @
+    iand (iand (iand (syl6eq takedrop @ appendeqd anlr anr) @ mpbird (eleq1d anlr) an3lr) @
+      sylc _ (iand an4l anlr) anllr) (eqcomd @ suceqd @ preqd anlr anr))
+  '(alimd @ syl5bir impexp @ com23 @ impd @ impd @ exp @ expd @ com23 @ a2d @
+    exp @ exp @ eqtrd (sylib prefix_eq_take @ anld anlr) @ eqtr4d (takeeq2d @ leasymd anr _) an3lr)
+  '(mpbid (leeq1d @ eqtrd (leneqd an3lr) @ syl5eq takelen @ syl eqmin2 an4l) @
+    syl prefix_len anllr));
 
 @_ def regexStar (R: set) (.s .t .L .x .y: nat): set =
 $ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;
