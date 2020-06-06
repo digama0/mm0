@@ -135,7 +135,8 @@ struct ElabTerm<'a> {
 
 struct ElabTermMut<'a> {
   lc: &'a mut LocalContext,
-  fe: FormatEnv<'a>,
+  src: &'a LinedString,
+  env: &'a mut Environment,
   fsp: FileSpan,
   spans: &'a mut Spans<ObjectKind>,
 }
@@ -231,6 +232,15 @@ impl<'a> ElabTermMut<'a> {
   }
 
   fn atom(&mut self, e: &LispVal, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
+    macro_rules! fe {() => {FormatEnv {source: self.src, env: self.env}}}
+    let a = if a == AtomID::UNDER {
+      let mut n = 1;
+      loop {
+        let a = self.env.get_atom(&format!("_{}", n));
+        if !self.lc.vars.contains_key(&a) {break a}
+        n += 1;
+      }
+    } else {a};
     let is = &mut self.lc.vars.entry(a).or_insert_with({
       let fsp = &self.fsp;
       move || (true, InferSort::new(try_get_span(fsp, e)))
@@ -243,13 +253,13 @@ impl<'a> ElabTermMut<'a> {
         if s == sort {Ok(LispKind::Atom(a).decorate_span(&e.fspan()))}
         else {
           Err(self.err(e,
-            format!("type error: expected {}, got {}", self.fe.sorts[s].name, self.fe.sorts[sort].name)))
+            format!("type error: expected {}, got {}", fe!().sorts[s].name, self.fe.sorts[sort].name)))
         }
       }
       (InferSort::Unknown {src, must_bound, sorts, ..}, tgt) => {
         let s = match tgt {
-          InferTarget::Bound(sa) => {*must_bound = true; Some(self.fe.data[sa].sort.unwrap())}
-          InferTarget::Reg(sa) => Some(self.fe.data[sa].sort.unwrap()),
+          InferTarget::Bound(sa) => {*must_bound = true; Some(fe!().data[sa].sort.unwrap())}
+          InferTarget::Reg(sa) => Some(fe!().data[sa].sort.unwrap()),
           _ => None,
         };
         let mvars = &mut self.lc.mvars;
@@ -468,7 +478,8 @@ impl Elaborator {
   fn to_elab_term_mut(&mut self, sp: Span) -> ElabTermMut {
     ElabTermMut {
       fsp: self.fspan(sp),
-      fe: FormatEnv {source: &self.ast.source, env: &self.env},
+      src: &self.ast.source,
+      env: &mut self.env,
       lc: &mut self.lc,
       spans: &mut self.spans,
     }
