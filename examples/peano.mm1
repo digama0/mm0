@@ -555,6 +555,7 @@ theorem eqeq2d (h: $ G -> b = c $): $ G -> (a = b <-> a = c) $ = '(syl eqeq2 h);
 theorem eqeq: $ a = b -> c = d -> (a = c <-> b = d) $ = '(exp (eqeqd anl anr));
 theorem eqtr3d (h1: $ G -> b = a $) (h2: $ G -> b = c $): $ G -> a = c $ = '(sylc eqtr3 h1 h2);
 theorem eqidd: $ G -> a = a $ = '(a1i eqid);
+theorem eqcomi (h: $ a = b $): $ b = a $ = '(eqcom h);
 theorem eqcomd (h: $ G -> a = b $): $ G -> b = a $ = '(syl eqcom h);
 theorem eqtrd (h1: $ G -> a = b $) (h2: $ G -> b = c $): $ G -> a = c $ = '(sylc eqtr h1 h2);
 theorem eqtr4d (h1: $ G -> a = b $) (h2: $ G -> c = b $): $ G -> a = c $ = '(sylc eqtr4 h1 h2);
@@ -3495,7 +3496,7 @@ theorem xabfin (B: set x) (h: $ G -> finite A $) (h2: $ G /\ x e. A -> finite B 
     iexe (eqeq2d @ preqd id @ lowereqd @ sbseq1d id) eqid)
   (sylc xpfin h @ syl finuni @ syl finlamima h)));
 
-theorem sabfin (B: set x) (h: $ G -> y e. B -> x e. A $)
+theorem sabfin {x y} (B: set x) (h: $ G -> y e. B -> x e. A $)
   (hA: $ G -> finite A $) (hB: $ G /\ x e. A -> finite B $): $ G -> finite (S\ x, B) $ =
 '(mpbird (fineqd @ sabxab h) (xabfin hA hB));
 

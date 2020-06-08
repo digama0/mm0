@@ -129,6 +129,9 @@ impl LispVal {
   }
 }
 
+#[derive(Debug)]
+enum AssignError { Cyclic, BoundVar }
+
 impl Elaborator {
   fn parse_refine(&mut self, fsp: &FileSpan, e: &LispVal) -> Result<RefineExpr> {
     Ok(match &*e.unwrapped_arc() {
@@ -242,18 +245,28 @@ impl Elaborator {
     }
   }
 
-  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> SResult<LispVal> {
+  fn assign(&mut self, _sym: bool, mv: &LispVal, m: &LispRef, e: &LispVal) -> std::result::Result<(), AssignError> {
     let e = &e.as_mvar(|e2, _| e2.clone()).unwrap_or_else(|| e.clone());
-    if mv.ptr_eq(e) {return Ok(LispVal::undef())}
+    if mv.ptr_eq(e) {return Ok(())}
     if self.occurs(mv, e) {
-      Err("occurs-check failed, can't build infinite assignment".into())
+      Err(AssignError::Cyclic)
     } else {
+      if let Some(InferTarget::Bound(_)) = mv.mvar_target() {
+        if !e.unwrapped(|r| match r {
+          LispKind::Atom(a) => match self.lc.vars.get(&a) {
+            Some((_, InferSort::Bound {..})) => true,
+            _ => false
+          },
+          LispKind::MVar(_, is) => is.bound(),
+          _ => false,
+        }) {return Err(AssignError::BoundVar)}
+      }
       let mut e = e.clone();
       if e.fspan().is_none() {
         if let Some(sp) = m.get().fspan() {e = e.span(sp)}
       }
       *m.get_mut() = e;
-      Ok(LispVal::undef())
+      Ok(())
     }
   }
 
@@ -270,8 +283,22 @@ impl Elaborator {
     // println!("{} =?= {}", self.format_env().pp(e1, 80), self.format_env().pp(e2, 80));
     // (|| {
     if e1.ptr_eq(e2) {return Ok(LispVal::undef())}
-    if let Some(r) = e1.as_mvar(|e1, m| self.assign(false, e1, m, e2)) {return r}
-    if let Some(r) = e2.as_mvar(|e2, m| self.assign(true, e2, m, e1)) {return r}
+    match e1.as_mvar(|e1, m| self.assign(false, e1, m, e2)) {
+      Some(Ok(())) => return Ok(LispVal::undef()),
+      Some(Err(AssignError::Cyclic)) =>
+        return Err("occurs-check failed, can't build infinite assignment".into()),
+      r1 => match (r1, e2.as_mvar(|e2, m| self.assign(true, e2, m, e1))) {
+        (_, Some(Ok(()))) => return Ok(LispVal::undef()),
+        (_, Some(Err(AssignError::Cyclic))) =>
+          return Err("occurs-check failed, can't build infinite assignment".into()),
+        (Some(Err(AssignError::BoundVar)), None) =>
+          return Err(format!("type error: expected bound var, got {}", self.print(e2))),
+        (None, Some(Err(AssignError::BoundVar))) =>
+          return Err(format!("type error: expected bound var, got {}", self.print(e1))),
+        (None, None) => {},
+        _ => unreachable!()
+      }
+    }
     match (e1.as_atom(), e2.as_atom()) {
       (Some(a1), Some(a2)) if a1 == a2 => Ok(LispVal::undef()),
       (Some(a1), Some(a2)) => Err(format!(

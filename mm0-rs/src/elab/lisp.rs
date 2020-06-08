@@ -281,6 +281,9 @@ impl LispKind {
   pub fn is_mvar(&self) -> bool {
     self.unwrapped(|e| if let LispKind::MVar(_, _) = e {true} else {false})
   }
+  pub fn mvar_target(&self) -> Option<InferTarget> {
+    self.unwrapped(|e| if let &LispKind::MVar(_, is) = e {Some(is)} else {None})
+  }
   pub fn is_goal(&self) -> bool {
     self.unwrapped(|e| if let LispKind::Goal(_) = e {true} else {false})
   }
