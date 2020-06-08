@@ -36,6 +36,10 @@ impl<W: Write> Joiner<W> {
         start = s.span.end;
       }
     }
+    write!(self.w, "{}\n-- {} --\n{0}\n",
+      // Safety: '-' is utf8
+      unsafe { String::from_utf8_unchecked(vec![b'-'; path.rel().len() + 6]) },
+      path.rel())?;
     self.w.write_all(&src.as_bytes()[start..])?;
     self.stack.pop();
     Ok(())
