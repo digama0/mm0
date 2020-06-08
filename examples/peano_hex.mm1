@@ -14,10 +14,10 @@ term ch: hex > hex > char;
 strict free sort string;
 term s0: string;
 term s1: char > string;
-term sadd: string > string > string; infixr sadd: $'+$ prec 50;
+term sadd: string > string > string; infixr sadd: $'+$ prec 51;
 
 def scons (c: char) (s: string): string = $ s1 c '+ s $;
-infixr scons: $':$ prec 51;
+infixr scons: $':$ prec 53;
 
 -- Peano translation functions. The sorts `hex`, `char`, `string`
 -- are closed classes, but we can embed them in `nat` as lists
@@ -42,8 +42,14 @@ axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
 axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
 axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
 
+-- This allows us to prove facts about hex digits by case analysis.
+-- It is not provable from the above axioms because the fact that the "hex"
+-- sort has only the given 16 constructors is only observable from outside the theory.
+axiom h2nlt (h: hex): $ h < 16 $;
+
 term c2n: char > nat; coercion c2n: char > nat;
 axiom c2nch (h1 h2: hex): $ ch h1 h2 = h1 * 16 + h2 $;
+axiom c2nlt (c: char): $ c < 16 * 16 $;
 
 term s2n: string > nat; coercion s2n: string > nat;
 axiom s2ns0: $ s0 = 0 $;

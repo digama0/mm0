@@ -14,10 +14,10 @@ term ch: hex > hex > char;
 strict free sort string;
 term s0: string;
 term s1: char > string;
-term sadd: string > string > string; infixr sadd: $'+$ prec 50;
+term sadd: string > string > string; infixr sadd: $'+$ prec 51;
 
 def scons (c: char) (s: string): string = $ s1 c '+ s $;
-infixr scons: $':$ prec 51;
+infixr scons: $':$ prec 53;
 
 -- Peano translation functions. The sorts `hex`, `char`, `string`
 -- are closed classes, but we can embed them in `nat` as lists
