@@ -706,7 +706,12 @@ impl Elaborator {
         let span = self.fspan(d.id);
         let nh = NodeHasher::new(&self.lc, self.format_env(), span.clone());
         let mut is = Vec::new();
-        for &(_, a, ref e) in &ehyps {is.push((a, de.dedup(&nh, e)?))}
+        for &(bi, a, ref e) in &ehyps {
+          if a.map_or(false, |a| self.lc.vars.contains_key(&a)) {
+            Err(ElabError::new_e(bi.span, "hypothesis shadows local variable"))?
+          }
+          is.push((a, de.dedup(&nh, e)?))
+        }
         let ir = de.dedup(&nh, &eret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
         let Builder {mut ids, heap} = Builder::from(&de);
