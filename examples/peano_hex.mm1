@@ -62,9 +62,74 @@ infixl hex: $:x$ prec 120;
 theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
 
 do {
+  (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
+    (if {n < 8}
+      (if {n < 4}
+        (match n [0 v0] [1 v1] [2 v2] [3 v3])
+        (match n [4 v4] [5 v5] [6 v6] [7 v7]))
+      (if {n < 12}
+        (match n [8 v8] [9 v9] [10 va] [11 vb])
+        (match n [12 vc] [13 vd] [14 ve] [15 vf]))))
+  (def hexstrings (map ->string '(0 1 2 3 4 5 6 7 8 9 a b c d e f)))
+  (def (on-hexstrings f) (apply map-16 (map f hexstrings)))
+  (def hexstring @ on-hexstrings @ fn (s) s)
+  (def hexdigit @ on-hexstrings @ fn (s) (atom-app 'x s))
+  (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
   (def (->hex n)
-    @ if {n >= 16} (list 'hex (->hex {n // 16}) (->hex {n % 16}))
-    @ if {n < 10} (atom-app 'x n)
-    @ match n [10 'xa] [11 'xb] [12 'xc] [13 'xd] [14 'xe] [15 'xf])
+    (if {n >= 16} (list 'hex (->hex {n // 16}) (hexdigit {n % 16}))
+      '(h2n ,(hexdigit n))))
   (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
+  (def hexdigit->number
+    (def m
+      @ letrec ([(f n) @ if {n < 16} '((,(hexdigit n) ,n) . ,(f {n + 1})) ()])
+      (apply atom-map (f 0)))
+    (fn (x) (lookup m x)))
+  (def hex->number @ match-fn
+    ['(c2n ,e) (hex->number e)]
+    ['(ch ,e1 ,e2) {{(hex->number e1) * 16} + (hex->number e2)}]
+    ['(hex ,e1 ,e2) {{(hex->number e1) * 16} + (hex->number e2)}]
+    [e (hexdigit->number e)])
+  (def nz-hexnat? @ match-fn
+    ['()])
+};
+
+-- Defines e.g. theorem deca: $ 10 = xa $; for all n < 16, accessible as (decn 10)
+do {
+  (def (dn n) (atom-app 'd @ ->string n))
+  (def decn @ on-hexstrings @ fn (n)
+    @ let ([xn (atom-app 'x n)] [i (hex->number xn)]
+           [dn '(,(dn i))] [xn '(h2n (,xn))] [name (atom-app 'dec n)])
+    (add-thm! name () () '(eq ,dn ,xn) () @ fn ()
+      '(() (eqcomi ,xn ,dn (,(h2nn i)))))
+    name)
+};
+
+-- Defines e.g. theorem decsuca: $ suc xa = xb $; for all n < 15, accessible as (decsucn 10)
+theorem decsuc_lem (h1: $ h2n a = d $) (h2: $ h2n b = suc d $): $ suc a = b $ = '(eqtr4 (suceq h1) h2);
+do {
+  (def decsucn @ on-hexstrings @ fn (s)
+    @ let ([xi (atom-app 'x s)] [i (hex->number xi)])
+    @ if {i < 15}
+    @ let ([j {i + 1}] [xi '(,xi)] [xj '(,(hexdigit j))] [name (atom-app 'decsuc s)])
+    (add-thm! name () () '(eq (suc (h2n ,xi)) (h2n ,xj)) () @ fn ()
+      @ let ([di '(,(dn i))] [sdi '(suc ,di)])
+      '(() (decsuc_lem ,xi ,xj ,di (,(h2nn i))
+        (:conv (eq (h2n ,xj) ,sdi) (eq (h2n ,xj) (:sym (:unfold ,(dn j) () ,sdi))) (,(h2nn j))))))
+    name)
+};
+
+-- Defines e.g. theorem declt4a: $ x4 < xa $; for all a < b <= 15, accessible as (decltn 4 10)
+theorem declt_lem (a b: hex) (h: $ suc a = b $): $ a < b $ = '(mpbi (lteq2 h) ltsucid);
+do {
+  (def (decltn m n) @ if {m < n} (atom-app 'declt (hexstring m) (hexstring n)))
+  (begin
+    (def (f a b g)
+      @ let ([xa (hexdigit a)] [xb (hexdigit b)] [name (decltn a b)])
+      (add-thm! name () () '(lt (h2n (,xa)) (h2n (,xb))) () g)
+      name)
+    (for 0 15 @ fn (a) (def b {a + 1}) @ f a b @ fn ()
+      '(() (declt_lem (,(hexdigit a)) (,(hexdigit b)) (,(decsucn a)))))
+    (for 0 14 @ fn (a) @ for {a + 1} 15 @ fn (b) (def c {b + 1}) @ f a c @ fn ()
+      (def (h a) '(h2n (,(hexdigit a))))
+      '(() (lttri ,(h a) ,(h b) ,(h c) (,(decltn a b)) (,(decltn b c))))))
 };
