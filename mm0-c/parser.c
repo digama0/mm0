@@ -441,13 +441,14 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
     }
   }
 
-  do {
+  while (true) {
     if (CUR() == '$') {
       do {cursor++;} while (is_ws(CUR()));
       ENSURE("hypotheses are only allowed in axioms/theorems", kind == KW_THEOREM);
       u32 e = coerce(expr(0), PROV);
       ENSURE("expecting '$'", ch('$'));
       p_hyps = ALLOC(((parse_expr_list){e, p_hyps}), sizeof(parse_expr_list));
+      if (!ch('>')) break;
     } else {
       trie x = lookup_ident(gt_sorts);
       ENSURE("expecting sort", x->data);
@@ -461,13 +462,12 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       }
       if (ch('>')) {
         ENSURE("variable type does not match theorem", type == args[arg_idx++]);
-        continue;
       } else {
         ENSURE("return type does not match theorem", type == ret);
         break;
       }
     }
-  } while (ch('>'));
+  }
   ENSURE("incorrect number of arguments", arg_idx == num_args);
   for (u16 i = 0; i < num_args; i++)
     g_uheap[i] = g_var_nodes[i].var;
