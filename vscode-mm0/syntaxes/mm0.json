@@ -165,12 +165,12 @@
 				"begin": "--\\|",
 				"beginCaptures": {"0": {"name": "punctuation.definition.comment.mm0"}},
 				"end": "$",
-				"contentName": "comment.special.mm0"
+				"name": "comment.special.mm0"
 			}, {
 				"begin": "--",
 				"beginCaptures": {"0": {"name": "punctuation.definition.comment.mm0"}},
 				"end": "$",
-				"contentName": "comment.line.double-dash.mm0"
+				"name": "comment.line.double-dash.mm0"
 			}]
 		},
 		"math-string": {
