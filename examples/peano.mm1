@@ -15,6 +15,8 @@ do {
   (def (dbg x) (print x) x)
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
+  (def (range a b) (if {a = b} () (cons a (range {a + 1} b))))
+  (def (for a b f) (if {a = b} (let) (begin (f a) (for {a + 1} b f))))
   (def last (match-fn [(a) a] [(_ . l) (last l)]))
   (def split-last @ match-fn
     [(and (_) l) l]
@@ -1375,6 +1377,7 @@ theorem lelttr: $ a <= b -> b < c -> a < c $ = '(sylbi lesuc letr);
 theorem lelttrd (h1: $ G -> a <= b $) (h2: $ G -> b < c $): $ G -> a < c $ = '(sylc lelttr h1 h2);
 
 theorem lttr: $ a < b -> b < c -> a < c $ = '(syl lelttr ltle);
+theorem lttri (h1: $ a < b $) (h2: $ b < c $): $ a < c $ = '(lttr h1 h2);
 theorem lttrd (h1: $ G -> a < b $) (h2: $ G -> b < c $): $ G -> a < c $ = '(sylc lttr h1 h2);
 
 theorem ltsucid: $ a < suc a $ = 'leid;
