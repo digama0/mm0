@@ -560,6 +560,7 @@ theorem eqidd: $ G -> a = a $ = '(a1i eqid);
 theorem eqcomi (h: $ a = b $): $ b = a $ = '(eqcom h);
 theorem eqcomd (h: $ G -> a = b $): $ G -> b = a $ = '(syl eqcom h);
 theorem eqtrd (h1: $ G -> a = b $) (h2: $ G -> b = c $): $ G -> a = c $ = '(sylc eqtr h1 h2);
+theorem eqtr4i (h1: $ a = b $) (h2: $ c = b $): $ a = c $ = '(eqtr4 h1 h2);
 theorem eqtr4d (h1: $ G -> a = b $) (h2: $ G -> c = b $): $ G -> a = c $ = '(sylc eqtr4 h1 h2);
 theorem syl5eq (h1: $ a = b $) (h2: $ G -> b = c $): $ G -> a = c $ = '(eqtrd (a1i h1) h2);
 theorem syl5eqr (h1: $ b = a $) (h2: $ G -> b = c $): $ G -> a = c $ = '(eqtr3d (a1i h1) h2);
@@ -1371,6 +1372,7 @@ theorem ltletr: $ a < b -> b <= c -> a < c $ = 'letr;
 theorem ltletrd (h1: $ G -> a < b $) (h2: $ G -> b <= c $): $ G -> a < c $ = '(letrd h1 h2);
 
 theorem ltle: $ a < b -> a <= b $ = '(letrd (a1i lesucid) id);
+theorem ltlei (h: $ a < b $): $ a <= b $ = '(ltle h);
 theorem ltled (h: $ G -> a < b $): $ G -> a <= b $ = '(syl ltle h);
 
 theorem lelttr: $ a <= b -> b < c -> a < c $ = '(sylbi lesuc letr);
