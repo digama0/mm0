@@ -1,6 +1,8 @@
 Metamath One (The MM0 Compiler)
 ===
 
+> *Warning:* Although the MM1 language description in this file remains valid, `mm0-hs server` has been deprecated in favor of the rust version `mm0-rs server`.
+
 The `mm0-hs` program comes with a compiler for assembling `.mm0` specs and their associated `.mmu` proof files. The source files for the compiler have `.mm1` extension, and the syntax extends the [`.mm0` file format](../mm0.md).
 
 The key new capability of MM1 over MM0 is the inclusion of a Turing-complete programming language over MM0, a lisp dialect similar to [Scheme](https://schemers.org/). Proofs of theorems are given as s-expressions, which may be constructed by lisp programs, also known as "tactics" in this context.
