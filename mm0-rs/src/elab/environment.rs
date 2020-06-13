@@ -780,6 +780,7 @@ impl Environment {
     let lisp_remap = &mut LispRemapper {
       atom: other.data.iter().map(|d| self.get_atom_arc(d.name.clone())).collect(),
       lisp: Default::default(),
+      refs: Default::default(),
     };
     for (i, d) in other.data.iter().enumerate() {
       self.data[lisp_remap.atom[AtomID(i as u32)]].lisp =

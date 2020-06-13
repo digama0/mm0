@@ -6,7 +6,7 @@ pub mod pretty;
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool};
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::{Atom};
@@ -564,6 +564,7 @@ impl Iterator for Uncons {
 pub struct LispRemapper {
   pub atom: AtomVec<AtomID>,
   pub lisp: HashMap<*const LispKind, (LispVal, LispVal)>,
+  pub refs: HashMap<*const LispKind, LispVal>,
 }
 impl Remap<LispRemapper> for AtomID {
   fn remap(&self, r: &mut LispRemapper) -> Self { *r.atom.get(*self).unwrap_or(self) }
@@ -573,9 +574,6 @@ impl<R, K: Clone + Hash + Eq, V: Remap<R>> Remap<R> for HashMap<K, V> {
 }
 impl<R, A: Remap<R>> Remap<R> for Mutex<A> {
   fn remap(&self, r: &mut R) -> Self { Mutex::new(self.lock().unwrap().remap(r)) }
-}
-impl Remap<LispRemapper> for LispRef {
-  fn remap(&self, r: &mut LispRemapper) -> Self { LispRef::new(self.get().remap(r)) }
 }
 impl Remap<LispRemapper> for LispVal {
   fn remap(&self, r: &mut LispRemapper) -> Self {
@@ -588,7 +586,21 @@ impl Remap<LispRemapper> for LispVal {
       LispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
       LispKind::Proc(f) => LispVal::proc(f.remap(r)),
       LispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
-      LispKind::Ref(m) => LispVal::new(LispKind::Ref(m.remap(r))),
+      LispKind::Ref(m) => if Arc::strong_count(&self.0) > 1 {
+        match r.refs.entry(p) {
+          Entry::Occupied(e) => e.get().clone(),
+          Entry::Vacant(e) => {
+            let w = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
+            e.insert(w.clone());
+            let e2 = m.get().remap(r);
+            w.as_ref_(|v| *v = e2).unwrap();
+            r.refs.remove(&p);
+            w
+          }
+        }
+      } else {
+        LispVal::new(LispKind::Ref(LispRef::new(m.get().remap(r))))
+      },
       &LispKind::MVar(n, is) => LispVal::new(LispKind::MVar(n, is.remap(r))),
       LispKind::Goal(e) => LispVal::new(LispKind::Goal(e.remap(r))),
       LispKind::Number(_) |
