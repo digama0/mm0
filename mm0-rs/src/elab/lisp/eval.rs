@@ -1347,11 +1347,10 @@ impl<'a> Evaluator<'a> {
             .map_err(|e| self.err(Some(e.pos), e.kind.msg()))?;
           match res {
             RefineResult::Ret(e) => {self.lc.clean_mvars(); State::Ret(e)}
-            RefineResult::RefineExtraArgs(e, mut es) => {
-              let mut args = vec![
-                LispVal::proc(Proc::RefineCallback),
-                e];
-              args.append(&mut es);
+            RefineResult::RefineExtraArgs(tgt, e, u) => {
+              let mut args = vec![LispVal::proc(Proc::RefineCallback), tgt.clone(), e];
+              for e in u {args.push(e)}
+              stack.push(RStack::CoerceTo(tgt));
               self.stack.push(Stack::Refine {sp, stack});
               match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
@@ -1359,9 +1358,7 @@ impl<'a> Evaluator<'a> {
               }
             }
             RefineResult::Proc(tgt, proc) => {
-              let args = vec![
-                LispVal::proc(Proc::RefineCallback),
-                tgt];
+              let args = vec![LispVal::proc(Proc::RefineCallback), tgt];
               push!(Refine {sp, stack}; App(sp, sp, proc, args, [].iter()))
             }
           }

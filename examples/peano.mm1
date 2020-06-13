@@ -234,9 +234,8 @@ do {
 -- configuration
 do {
   (set-timeout 500)
-  (def (refine-extra-args refine p . ps) @
-    foldl ps p @ fn (acc p2) @
-      refine @ list 'ax_mp (verb acc) (verb p2))
+  (def (refine-extra-args refine tgt e . ps)
+    @ refine '{,(foldl ps (verb e) @ fn (acc p2) '(ax_mp ,acc ,p2)) : ,(verb tgt)})
   (def default-annotate (derive-eq))
   (def (annotate e s) @ match e ['_ (default-annotate s)] [_ (e s)])
 };
@@ -3637,7 +3636,7 @@ $ srec (\ f, nat (size (Dom f) <> lower {x | true (f @ x)} e. A)) n $;
 
 theorem srecpauxval:
   $ srecpaux A n = nat (n <> sep (upto n) {i | srecp A i} e. A) $ =
-(named '(eqtr srecval @
+(named '(eqtr {srecval : $ _ = _ @ lower ((\ i, srecpaux A i) |` _) $} @
   eqtr4 (!! applame f @ nateqd @ eleq1d @ preqd sreclem
     (lowereqd @ !! abeqd x @ trueeqd @ appeq1d @
       bi2 @ eqlower2 @ finlam finns)) @
@@ -3718,12 +3717,12 @@ theorem lrecval: $ lrec z S n =
   if (n = 0) z (S @ (fst (n - 1) <> snd (n - 1) <> lrec z S (snd (n - 1)))) $ =
 (focus
   (have 'h '(eqtrd anr @ anwl sreclem))
-  (named 'x '(eqtr srecval @
+  '(eqtr {srecval : $ _ = _ @ lower ((\ x, lrec z S x) |` _) $} @
     !! applame f @ !! sbned i @ eqtrd (ifeq1d @ eqeq1d h) @
     syla ifeq3a @ appeq2d @
     preqd (anwl @ fsteqd @ subeq1d h) @ preqd (anwl @ sndeqd @ subeq1d h) @
     eqtrd (appeq2d @ anwl @ sndeqd @ subeq1d h) @ syl6eq (sbne lreceq3) @
-    sylc sreclem2 anll @ mpbii ltconsid2 @ lteq2d @ anwr consfstsnd)));
+    sylc sreclem2 anll @ mpbii ltconsid2 @ lteq2d @ anwr consfstsnd));
 
 pub theorem lrec0 (z: nat) (S: set): $ lrec z S 0 = z $ = '(eqtr lrecval @ ifpos eqid);
 pub theorem lrecS (z: nat) (S: set) (a b: nat):
