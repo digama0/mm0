@@ -418,6 +418,7 @@ str_enum! {
     Cons: "cons",
     Head: "hd",
     Tail: "tl",
+    Nth: "nth",
     Map: "map",
     IsBool: "bool?",
     IsAtom: "atom?",

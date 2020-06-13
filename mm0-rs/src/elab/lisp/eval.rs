@@ -435,6 +435,17 @@ impl Elaborator {
     })
   }
 
+  fn nth(&self, e: &LispKind, i: usize) -> SResult<LispVal> {
+    e.unwrapped(|e| match e {
+      LispKind::List(es) => Ok(es.get(i).cloned().unwrap_or_else(|| LispVal::undef())),
+      LispKind::DottedList(es, r) => match es.get(i) {
+        Some(e) => Ok(e.clone()),
+        None => self.nth(r, i - es.len()),
+      },
+      _ => Err(format!("expected a list, got {}", self.print(e)))
+    })
+  }
+
   fn proof_node(&self, hyps: &[(Option<AtomID>, ExprNode)],
     heap: &[LispVal], ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
     match p {
@@ -758,6 +769,8 @@ make_builtins! { self, sp1, sp2, args,
   },
   Head: Exact(1) => try1!(self.head(&args[0])),
   Tail: Exact(1) => try1!(self.tail(&args[0])),
+  Nth: Exact(2) => try1!(self.nth(&args[1],
+    try1!(args[0].as_int(|n| n.to_usize().unwrap_or(usize::MAX)).ok_or("expected a number")))),
   Map: AtLeast(1) => {
     let mut it = args.into_iter();
     let proc = it.next().unwrap();

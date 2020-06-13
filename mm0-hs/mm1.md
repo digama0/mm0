@@ -362,6 +362,7 @@ At the beginning of execution, the global context contains a number of primitive
 * `(def? e)` is true if the argument is not `#<undef>`.
 * `(hd e)` returns the head of the list, or left element of the cons expression. It is known as `car` in most lisps.
 * `(tl e)` returns the tail of the list, or right element of the cons expression. It is known as `cdr` in most lisps.
+* `(nth n e)` returns the `n`th element of the list, or `#<undef>` if out of range. It fails if the input is not a list.
 * `(ref? e)` is true if the argument is a ref-cell.
 * `(ref! e)` constructs a new ref-cell containing the value `e`.\
   `(ref!)` constructs a new ref-cell containing `#<undef>`.
