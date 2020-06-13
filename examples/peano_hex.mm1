@@ -346,30 +346,31 @@ theorem mul_x20 (h1: $ a * b = d $) (h2: $ a * c = e $): $ a * b :x c = d :x e $
 '(mul_x2x h1 (eqtr4 h2 hex01) addx02);
 do {
   -- Raw multiplication theorem generator: given a, b in normal form, returns (c p) where p: |- a * b = c
-  (def mkmul
-    @ letrec ([core @ match-fn*
+  (def mkmul @ letrec (
+    [mkmul-nz @ match-fn*
       [('(h2n (x1)) a) '(,a (mulx11 ,a))]
       [(a '(h2n (x1))) '(,a (mulx12 ,a))]
-      [(a ('hex b '(x0))) @ match (core a b) @ (c p) '((hex ,c (x0)) (mul_b2 ,a ,b ,c ,p))]
-      [(('hex a '(x0)) b) @ match (core a b) @ (c p) '((hex ,c (x0)) (mul_b1 ,a ,b ,c ,p))]
+      [(a ('hex b '(x0))) @ match (mkmul-nz a b) @ (c p) '((hex ,c (x0)) (mul_b2 ,a ,b ,c ,p))]
+      [(('hex a '(x0)) b) @ match (mkmul-nz a b) @ (c p) '((hex ,c (x0)) (mul_b1 ,a ,b ,c ,p))]
       [(a ('hex b c))
-        @ match (core a b) @ (d p1)
-        @ match (core a '(h2n ,c))
+        @ match (mkmul-nz a b) @ (d p1)
+        @ match (mkmul a '(h2n ,c))
         [(('hex e f) p2) @ match (mkadd d e) @ (g p3)
           '((hex ,g ,f) (mul_x2x ,a ,b ,c ,d ,e ,f ,g ,p1 ,p2 ,p3))]
         [(('h2n e) p2) '((hex ,d ,e) (mul_x20 ,a ,b ,c ,d ,e ,p1 ,p2))]]
       [(('hex a b) c)
-        @ match (core a c) @ (d p1)
-        @ match (core '(h2n ,b) c)
+        @ match (mkmul-nz a c) @ (d p1)
+        @ match (mkmul '(h2n ,b) c)
         [(('hex e f) p2) @ match (mkadd d e) @ (g p3)
           '((hex ,g ,f) (mul_x1x ,a ,b ,c ,d ,e ,f ,g ,p1 ,p2 ,p3))]
         [(('h2n e) p2) '((hex ,d ,e) (mul_x10 ,a ,b ,c ,d ,e ,p1 ,p2))]]
       [(('h2n (a)) ('h2n (b))) @ match (decaddn (hexdigit->number b) (hexdigit->number d)) @ (c p)
-        '(,c (,p))]])
-    @ match-fn*
-    ['((h2n (x0)) ,a) '((h2n (x0)) (mulx01 ,a))]
-    ['(,a (h2n (x0))) '((h2n (x0)) (mulx02 ,a))]
-    ['(,e1 ,e2) (core e1 e2)])
+        '(,c (,p))]]
+    [mkmul @ match-fn*
+      [('(h2n (x0)) a) '((h2n (x0)) (mulx01 ,a))]
+      [(a '(h2n (x0))) '((h2n (x0)) (mulx02 ,a))]
+      [(e1 e2) (mkmul-nz e1 e2)]])
+    mkmul)
 
   -- Multiplication tactic: usable in refine scripts when the target is $ a * b = ?c $,
   -- producing a proof and unifying ?c
@@ -425,6 +426,7 @@ do {
         (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @ match (mkmul a2 b2) @ (c pc)
           '(,c (muleql ,a ,a2 ,b ,b2 ,c ,pa ,pb ,pc)))
         (mkmul a b))
+    (ins 'c2n mktohex)
     (ins 'ch @ fn (a b) @ match a
       ['(x0) '((h2n ,b) (c2nh2n ,b))]
       [_ '((hex (h2n ,a) ,b) (c2nhex ,a ,b))])
@@ -444,13 +446,13 @@ do {
   (def (mkcmp e) @ match e
     [('lt a b) (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
-        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @
-          '(,c (leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(lt a2 b2)))))
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
+          '(leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(lt ,a2 ,b2))))
         (mkcmphex e)]
     [('le a b) (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
-        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @
-          '(,c (leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(le a2 b2)))))
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
+          '(leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(le ,a2 ,b2))))
         (mkcmphex e)]
     [('eq a b) @ match (mktohex b)
       [(b2 pb) @ match (mktohex a)
@@ -460,5 +462,8 @@ do {
 
   -- Normalize numeric expressions. Proves theorems like $ 123 * 321 = 39483 $,
   -- used as a refine script.
-  (def (norm_num refine t) @ refine '(:verb ,(mkcmp t)))
+  (def (norm_num refine t) @ match t
+    [('eq a (? mvar?)) @ match (try-conv a @ mktohex a) @ (b p)
+      @ refine '{(:verb ,p) : $ ,a = ,b $}]
+    [_ @ refine '(:verb ,(mkcmp t))])
 };

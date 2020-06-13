@@ -490,7 +490,7 @@ def regexIdent (.s .x .y .t: nat): set =
 $ {s | E. x E. t (s = x : t /\ x e. IdentStart /\ all IdentRest t)} $;
 
 def isNumber (.s .x .y .t: nat): set =
-$ sn _0 u. {s | E. x E. t (s = x : t /\
+$ sn (_0 : 0) u. {s | E. x E. t (s = x : t /\
   _1 <= x /\ x <= _9 /\ all digits t)} $;
 
 def symbols: nat =

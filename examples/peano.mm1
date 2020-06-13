@@ -499,10 +499,14 @@ theorem andi: $ a /\ (b \/ c) <-> a /\ b \/ a /\ c $ =
 '(ibii (imp @ orimd ian ian) @ eor (anim2 orl) (anim2 orr));
 theorem andir: $ (a \/ b) /\ c <-> a /\ c \/ b /\ c $ =
 '(bitr ancomb @ bitr andi @ oreqi ancomb ancomb);
-theorem biim1: $ a -> (a -> b <-> b) $ = '(ibid (com12 id) (a1i ax_1));
-theorem biim2: $ ~b -> (a -> b <-> ~a) $ = '(ibid (com12 con3) (a1i absurd));
-theorem bior1: $ ~a -> (a \/ b <-> b) $ = 'biim1;
-theorem bior2: $ ~b -> (a \/ b <-> a) $ = '(syl5bb orcomb bior1);
+theorem biim1a: $ (~a -> b) -> (a -> b <-> b) $ = '(ibid (exp @ casesd anr anl) (a1i ax_1));
+theorem biim2a: $ (b -> ~a) -> (a -> b <-> ~a) $ = '(ibid (exp @ syl inot @ imp imim2) (a1i absurd));
+theorem bior1a: $ (a -> b) -> (a \/ b <-> b) $ = '(sylbi (imeq1i notnot) biim1a);
+theorem bior2a: $ (b -> a) -> (a \/ b <-> a) $ = '(syl5bb orcomb bior1a);
+theorem biim1: $ a -> (a -> b <-> b) $ = '(syl biim1a absurdr);
+theorem biim2: $ ~b -> (a -> b <-> ~a) $ = '(syl biim2a absurd);
+theorem bior1: $ ~a -> (a \/ b <-> b) $ = '(syl bior1a absurd);
+theorem bior2: $ ~b -> (a \/ b <-> a) $ = '(syl bior2a absurd);
 theorem em: $ p \/ ~p $ = 'id;
 
 @_ abstract def ifp (p a b: wff): wff = $ p /\ a \/ ~p /\ b $;
@@ -3772,6 +3776,8 @@ theorem lmemlt: $ a IN l -> a < l $ =
 theorem all0 (A: set): $ all A 0 $ = '(!! ax_gen x @ absurd lmem0);
 theorem allS (A: set) (a b: nat): $ all A (a : b) <-> a e. A /\ all A b $ =
 '(bitr (sseq1 @ nseq @ lmemsS) insss);
+
+theorem all1 (A: set) (a: nat): $ all A (a : 0) <-> a e. A $ = '(bitr allS @ bian2 all0);
 
 theorem allal2: $ all A l <-> A. x (x IN l -> x e. A) $ = 'biid;
 theorem allal (p: wff x): $ all {x | p} l <-> A. x (x IN l -> p) $ = '(bicom ssab2);
