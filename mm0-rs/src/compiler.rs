@@ -8,8 +8,8 @@ use futures::lock::Mutex as FMutex;
 use lsp_types::{Position, Range};
 use annotate_snippets::{
   snippet::{Snippet, Annotation, AnnotationType, SourceAnnotation, Slice},
-  display_list::DisplayList,
-  formatter::DisplayListFormatter};
+  display_list::{DisplayList, FormatOptions}};
+use typed_arena::Arena;
 use crate::elab::{ElabError, ElabErrorKind, Environment, Elaborator};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
@@ -59,15 +59,16 @@ impl VFS {
 }
 
 impl ElabErrorKind {
-  pub fn to_footer(&self, mut to_range: impl FnMut(&FileSpan) -> Range) -> Vec<Annotation> {
+  pub fn to_footer<'a>(&self, arena: &'a Arena<String>,
+      mut to_range: impl FnMut(&FileSpan) -> Range) -> Vec<Annotation<'a>> {
     match self {
       ElabErrorKind::Boxed(_, Some(info)) =>
         info.iter().map(|(fs, e)| Annotation {
           id: None,
           label: {
             let start = to_range(fs).start;
-            Some(format!("{}:{}:{}: {}", fs.file.rel().to_owned(),
-              start.line + 1, start.character + 1, e))
+            Some(arena.alloc(format!("{}:{}:{}: {}", fs.file.rel(),
+              start.line + 1, start.character + 1, e)))
           },
           annotation_type: AnnotationType::Note,
         }).collect(),
@@ -76,8 +77,8 @@ impl ElabErrorKind {
   }
 }
 
-fn make_snippet(path: &FileRef, file: &LinedString, pos: Span,
-    msg: String, level: ErrorLevel, footer: Vec<Annotation>) -> Snippet {
+fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
+    msg: &'a str, level: ErrorLevel, footer: Vec<Annotation<'a>>) -> Snippet<'a> {
   let annotation_type = level.to_annotation_type();
   let Range {start, end} = file.to_range(pos);
   let start2 = pos.start - start.character as usize;
@@ -90,41 +91,34 @@ fn make_snippet(path: &FileRef, file: &LinedString, pos: Span,
       annotation_type,
     }),
     slices: vec![Slice {
-      source: file[(start2..end2).into()].to_owned(),
+      source: &file[(start2..end2).into()],
       line_start: start.line as usize + 1,
-      origin: Some(path.rel().to_owned()),
+      origin: Some(path.rel()),
       fold: end.line - start.line >= 5,
       annotations: vec![SourceAnnotation {
         range: (pos.start - start2, pos.end - start2),
-        label: String::new(),
+        label: "",
         annotation_type,
       }],
     }],
     footer,
+    opt: FormatOptions { color: true, anonymized_line_numbers: false }
   }
 }
 
 impl ElabError {
-  fn to_snippet(&self, path: &FileRef, file: &LinedString,
-      to_range: impl FnMut(&FileSpan) -> Range) -> Snippet {
-    make_snippet(path, file, self.pos, self.kind.msg(), self.level,
-      self.kind.to_footer(to_range))
+  fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
+      to_range: impl FnMut(&FileSpan) -> Range,
+      f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+    f(make_snippet(path, file, self.pos, &self.kind.msg(), self.level,
+      self.kind.to_footer(&Arena::new(), to_range)))
   }
 }
 
 impl ParseError {
-  fn to_snippet(&self, path: &FileRef, file: &LinedString) -> Snippet {
-    make_snippet(path, file, self.pos, format!("{}", self.msg), self.level, vec![])
-  }
-}
-
-// Patch for https://github.com/rust-lang/annotate-snippets-rs/issues/17
-fn patch(dl: &mut DisplayList) {
-  use annotate_snippets::display_list::{DisplayLine, DisplayRawLine};
-  for l in &mut dl.body {
-    if let DisplayLine::Raw(DisplayRawLine::Origin {pos: Some(p), ..}) = l {
-      p.1 += 1;
-    }
+  fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
+    f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+    f(make_snippet(path, file, self.pos, &format!("{}", self.msg), self.level, vec![]))
   }
 }
 
@@ -151,11 +145,9 @@ async fn elaborate(path: FileRef) -> io::Result<Arc<Environment>> {
   } else {
     let (_, ast) = parse(text, None);
     if !ast.errors.is_empty() {
-      let dlf = DisplayListFormatter::new(true, false);
       for e in &ast.errors {
-        let mut dl = DisplayList::from(e.to_snippet(&path, &ast.source));
-        patch(&mut dl);
-        println!("{}", dlf.format(&dl));
+        e.to_snippet(&path, &ast.source,
+          |s| println!("{}", DisplayList::from(s).to_string()))
       }
     }
     let ast = Arc::new(ast);
@@ -181,12 +173,9 @@ async fn elaborate(path: FileRef) -> io::Result<Arc<Environment>> {
           VFS_.0.lock().unwrap().get(&fsp.file).unwrap().text.clone())
       }.to_range(fsp.span)
     };
-    let dlf = DisplayListFormatter::new(true, false);
     for e in &errors {
-      let mut dl = DisplayList::from(
-        e.to_snippet(&path, &file.text, &mut to_range));
-      patch(&mut dl);
-      println!("{}\n", dlf.format(&dl));
+      e.to_snippet(&path, &file.text, &mut to_range,
+        |s| println!("{}\n", DisplayList::from(s).to_string()))
     }
   }
   let env = Arc::new(env);
