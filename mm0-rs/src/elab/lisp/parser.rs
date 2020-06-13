@@ -729,15 +729,16 @@ impl<'a> LispParser<'a> {
           Err(Syntax::Unquote) if es.len() < 2 =>
             Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
           Err(Syntax::Unquote) => self.expr(false, &es[1]),
-          Err(Syntax::If) if es.len() < 3 =>
-            Err(ElabError::new_e(es[0].span, "expected at least two arguments"))?,
-          Err(Syntax::If) => Ok(IR::If(Box::new((
+          Err(Syntax::If) if 3 <= es.len() && es.len() <= 4 => Ok(IR::If(Box::new((
             self.expr(false, &es[1])?,
             self.expr(false, &es[2])?,
             if let Some(e) = es.get(3) {
+              self.ctx.restore(restore.unwrap());
               self.expr(false, e)?
             } else { IR::Const(LispVal::undef()) }
           )))),
+          Err(Syntax::If) =>
+            Err(ElabError::new_e(es[0].span, "expected two or three arguments"))?,
           Err(Syntax::Focus) => Ok(IR::Focus(es[0].span, self.exprs(false, &es[1..])?.into())),
           Err(Syntax::Let) => self.let_(false, &es[1..]),
           Err(Syntax::Letrec) => self.let_(true, &es[1..]),
