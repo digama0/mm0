@@ -586,20 +586,15 @@ impl Remap<LispRemapper> for LispVal {
       LispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
       LispKind::Proc(f) => LispVal::proc(f.remap(r)),
       LispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
-      LispKind::Ref(m) => if Arc::strong_count(&self.0) > 1 {
-        match r.refs.entry(p) {
-          Entry::Occupied(e) => e.get().clone(),
-          Entry::Vacant(e) => {
-            let w = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
-            e.insert(w.clone());
-            let e2 = m.get().remap(r);
-            w.as_ref_(|v| *v = e2).unwrap();
-            r.refs.remove(&p);
-            w
-          }
+      LispKind::Ref(m) => match r.refs.entry(p) {
+        Entry::Occupied(e) => e.get().clone(),
+        Entry::Vacant(e) => {
+          let w = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
+          e.insert(w.clone());
+          w.as_ref_(|v| *v = m.get().remap(r)).unwrap();
+          r.refs.remove(&p);
+          w
         }
-      } else {
-        LispVal::new(LispKind::Ref(LispRef::new(m.get().remap(r))))
       },
       &LispKind::MVar(n, is) => LispVal::new(LispKind::MVar(n, is.remap(r))),
       LispKind::Goal(e) => LispVal::new(LispKind::Goal(e.remap(r))),
