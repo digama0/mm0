@@ -455,12 +455,16 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
         let head = Uncons::from(e.clone()).next().unwrap_or_else(|| e.clone());
         let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
         let a = head.as_atom()?;
-        if let Some(DeclKey::Term(t)) = env.data[a].decl {
-          (sp1, format!("{}", fe.to(&env.terms[t].ret.0)))
+        let s = if let Some(DeclKey::Term(t)) = env.data[a].decl {
+          env.terms[t].ret.0
         } else {
-          let s = spans.lc.as_ref()?.vars.get(&a)?.1.sort()?;
-          (sp1, format!("{}", fe.to(&s)))
-        }
+          spans.lc.as_ref()?.vars.get(&a)?.1.sort()?
+        };
+        let mut out = String::new();
+        fe.pretty(|p| p.expr(e).render_fmt(80, &mut out).unwrap());
+        use std::fmt::Write;
+        write!(out, ": {}", fe.to(&s)).unwrap();
+        (sp1, out)
       }
       ObjectKind::Proof(p) => {
         if let Some(e) = p.as_atom().and_then(|x|
