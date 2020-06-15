@@ -600,6 +600,8 @@ theorem exeqi (a b: wff x) (h: $ a <-> b $):
   $ E. x a <-> E. x b $ = '(exeq @ ax_gen h);
 theorem iex (a: wff x): $ a -> E. x a $ =
 '(!! eex y (rsyl eqcom @ syl6 (mpi ax_6 exim) ax_12) ax_6);
+theorem alanex (a b: wff x): $ A. x a /\ E. x b -> E. x (a /\ b) $ = '(imp @ syl exim @ alimi ian);
+theorem exanal (a b: wff x): $ E. x a /\ A. x b -> E. x (a /\ b) $ = '(impcom @ syl exim @ alimi @ com12 ian);
 theorem alnex (a: wff x): $ A. x ~a <-> ~(E. x a) $ = 'notnot;
 theorem ngen (a: wff x) (h: $ ~a $): $ ~E. x a $ = '(notnot1 (ax_gen h));
 theorem alex (a: wff x): $ A. x a <-> ~(E. x ~a) $ =
@@ -1169,6 +1171,8 @@ theorem sbned (a: nat) (b: nat x) (c: nat)
   (e: $ G /\ x = a -> b = c $): $ G -> N[a / x] b = c $ = '(syl sbnet @ iald @ exp e);
 theorem sbneq1 (a b c: nat x): $ a = b -> N[a / x] c = N[b / x] c $ =
 '(theeqd @ !! abeqd y sbeq1);
+theorem sbneq1d (G: wff x) (a b c: nat x)
+  (h: $ G -> a = b $): $ G -> N[a / x] c = N[b / x] c $ = '(syl sbneq1 h);
 theorem sbnid (a: nat x): $ N[x / x] a = a $ = '(trud @ !! eqtheabd y @ a1i sbid);
 
 theorem nfnlem {y} (b: nat y) (a c: nat x)
@@ -3792,6 +3796,8 @@ pub theorem lmemsS (a l: nat): $ lmems (a : l) = a ; lmems l $ =
 
 theorem lmem0: $ ~ a IN 0 $ = '(mtbir (elneq2 lmems0) el02);
 theorem lmemS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $ = '(bitr (elneq2 lmemsS) elins);
+
+theorem lmemconsid: $ a IN (a : l) $ = '(mpbir lmemS (orl eqid));
 
 theorem lmemlt: $ a IN l -> a < l $ =
 (named @ mk-ind '(listind) '(imeqd lmemeq2 lteq2) '(absurd lmem0)

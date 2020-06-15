@@ -1491,6 +1491,11 @@ theorem maxPrefixSi3 (h1: $ G -> maxPrefix A s = suc (x <> t) $)
 (named '(sylc (eale @ imeqd (aneqd prefixeq1 eleq1) prefixeq1)
   (anrd @ syl maxPrefixSilem h1) @ iand h2 h3));
 
+theorem maxPrefix_eqS (h1: $ G -> prefix a s $) (h2: $ G -> a e. A $):
+  $ G -> E. x E. t maxPrefix A s = suc (x <> t) $ =
+(named '(syl (eximi @ eximi anr) @ syl maxPrefixS @
+  syl (iexe @ aneqd prefixeq1 eleq1) (iand h1 h2)));
+
 theorem maxPrefix_prefix: $ maxPrefix A s = suc (x <> t) -> prefix x s $ =
 (named '(syl (iexe @ eqeq1d appendeq2) maxPrefixSi1));
 
@@ -1498,10 +1503,8 @@ theorem maxPrefix_asymm {y} (h: $ x e. A /\ y e. A /\ prefix x y -> x = y $):
   $ maxPrefix A s = suc (x <> t) <-> x ++ t = s /\ x e. A $ =
 (named @ focus
   '(ibii (iand maxPrefixSi1 maxPrefixSi2) @
-    mpd (syl maxPrefixS @ iexde @ iand
-      (iexde @ eqtrd (appendeqd anlr anr) an3l)
-      (mpbird (eleq1d anr) anlr)) @
-    eexd @ eexd @ syl5 anr @ exp @ eqtr4d anr @ suceqd _)
+    mpd (maxPrefix_eqS (iexde @ eqtrd (appendeq2d anr) anll) anr) @
+    eexd @ eexd @ exp @ eqtr4d anr @ suceqd _)
   (suffices 'h2)
   '(preqd h2 @ sylib appendcan1 @ eqtr3d (appendeq1d h2) @ eqtr4d anll (anwr maxPrefixSi1))
   '(syl h @ iand (iand anlr @ anwr maxPrefixSi2) @
@@ -1999,9 +2002,11 @@ $ _d ': _e ': _l ': _i ': _m ': _i ': _t ': _e ': _r ': s0 $;
 @_ def parseDelim (.x: nat): set = $ (\ x, NotaDelim x) <@>
   (parseTk _delimiter +> parseFmla <+ parseCh _semi) $;
 
-@_ def stoi (x: nat): nat;
-pub theorem stoi0: $ stoi 0 = 0 $;
-pub theorem stoiS (s x: nat): $ stoi (s |> x) = stoi s * 10 + (x - _0) $;
+@_ def stoi (x: nat): nat = $ rlrec 0 (\\ s, \\ i, \ ih, ih * 10 + (i - _0)) x $;
+pub theorem stoi0: $ stoi 0 = 0 $ = (named 'rlrec0);
+pub theorem stoiS (s x: nat): $ stoi (s |> x) = stoi s * 10 + (x - _0) $ =
+(named '(eqtr {rlrecS : $ _ = _ @ (_ <> _ <> stoi _) $} @
+  appslame @ appslamed @ applamed @ addeqd (muleq1d anr) (subeq1d anlr)));
 
 @_ def parseNumber (.s: nat): set = $ (\ s, TK s <> stoi s) '' isNumber $;
 
@@ -2068,12 +2073,23 @@ $ E. tks (Tokenize s = suc tks /\ tks <> ast e. parseAST) $;
 -- AST Navigation --
 --------------------
 
-@_ def lookupVar (ctx x: nat): nat;
-pub theorem lookupVar0 (x: nat): $ lookupVar 0 x = 0 $;
+@_ def lookupVar (ctx x: nat): nat =
+$ rlrec 0 (\\ bis, \\ p, \ ih, N[fst (snd p) / y] if (x = y) (suc (len bis)) ih) ctx $;
+
+pub theorem lookupVar0 (x: nat): $ lookupVar 0 x = 0 $ = (named 'rlrec0);
+
+theorem lookupVarS:
+  $ lookupVar (bis |> (c <> x <> t)) y =
+    if (y = x) (suc (len bis)) (lookupVar bis y) $ =
+(named '(eqtr {rlrecS : $ _ = _ @ (_ <> _ <> lookupVar _ _) $} @
+  appslame @ appslamed @ applamed @ sbned @
+  ifeqd (eqeq2d @ eqtrd anr @ syl6eq fstpr @ fsteqd @ syl6eq sndpr @ sndeqd anllr)
+    (suceqd @ leneqd an3l) anlr));
+
 pub theorem lookupVarEq (bis c x t: nat):
-  $ lookupVar (bis |> (c <> x <> t)) x = suc (len bis) $;
+  $ lookupVar (bis |> (c <> x <> t)) x = suc (len bis) $ = '(eqtr lookupVarS @ ifpos eqid);
 pub theorem lookupVarNe (bis c x y t: nat): $ y != x ->
-  lookupVar (bis |> (c <> x <> t)) y = lookupVar bis y $;
+  lookupVar (bis |> (c <> x <> t)) y = lookupVar bis y $ = '(syl5eq lookupVarS ifneg);
 
 ------------------
 -- Math Parsing --
@@ -2082,26 +2098,120 @@ pub theorem lookupVarNe (bis c x y t: nat): $ y != x ->
 @_ def nonemptyNonwhite (.s .c: nat): set =
 $ {s | s != 0 /\ all {c | ~c e. white} s} $;
 
-@_ def simpleTokenize (s: nat): nat;
-pub theorem simpleTokenize0: $ simpleTokenize 0 = 0 $;
+theorem el_nonemptyNonwhite: $ s e. nonemptyNonwhite <-> s != 0 /\ all {c | ~c e. white} s $ =
+(named '(elabe @ aneqd neeq1 alleq2));
+
+@_ def simpleTokenize {.s1} (s: nat): nat =
+$ srec (\ f,
+    lrec 0 (\\ c, \\ s1, \ _ih,
+      if (c e. white) (f @ s1) (
+        N[maxPrefix nonemptyNonwhite (c : s1) - 1 / p]
+        (fst p : f @ snd p)))
+    (size (Dom f))) s $;
+
+theorem simpleTokenize_val: $ simpleTokenize s =
+  lrec 0 (\\ c, \\ t, \ _ih,
+      if (c e. white) (((\ r, simpleTokenize r) |` ns (upto s)) @ t) (
+        N[maxPrefix nonemptyNonwhite (c : t) - 1 / p]
+        (fst p : ((\ r, simpleTokenize r) |` ns (upto s)) @ snd p))) s $ =
+(named @ focus
+  '(eqtr {srecval : $ _ = _ @ lower ((\ r, simpleTokenize r) |` _) $} @
+    applame @ lreceqd eqidd (slameqd @ slameqd @ lameqd _) sreclem)
+  (have 'h '(bi2 @ eqlower2 @ finlam finns))
+  '(ifeqd biidd (appeq1d h) @ sbneq2d @ conseq2d @ appeq1d h));
+
+pub theorem simpleTokenize0: $ simpleTokenize 0 = 0 $ = (named '(eqtr simpleTokenize_val lrec0));
+
+theorem simpleTokenize_S: $ s = c : t -> simpleTokenize s =
+  if (c e. white) (simpleTokenize t) (
+    N[maxPrefix nonemptyNonwhite s - 1 / p]
+    (fst p : ((\ r, simpleTokenize r) |` ns (upto s)) @ snd p)) $ =
+(named '(syl5eq simpleTokenize_val @ eqtrd lreceq3 @ syl5eq lrecS @
+  sbeth (imeq2d @ eqeq1d @ appeq2d @ preq2d preq2) @
+  appslamed @ appslamed @ applamed @ anwl @
+  ifeqd (eleq1d anlr)
+    (eqtrd (syl resapp @ sylibr elupto @ mpbiri ltconsid2 (lteqd anr anll)) @
+      syl5eq (applame simpleTokenizeeq) (simpleTokenizeeqd anr))
+    (sbneq1d @ subeq1d @ maxPrefixeq2d @ eqtr4d (conseqd anlr anr) anll)));
+
 pub theorem simpleTokenizeWS (c s: nat):
-  $ c e. white -> simpleTokenize (c : s) = simpleTokenize s $;
+  $ c e. white -> simpleTokenize (c : s) = simpleTokenize s $ =
+(named '(syl5eq (simpleTokenize_S eqid) ifpos));
+
 pub theorem simpleTokenizeTk (s x r: nat):
   $ maxPrefix nonemptyNonwhite s = suc (x <> r) ->
-    simpleTokenize s = x : simpleTokenize r $;
+    simpleTokenize s = x : simpleTokenize r $ =
+(named @ focus
+  (have 'h '(sylib el_nonemptyNonwhite maxPrefixSi2))
+  (have 'h2 '(anwl maxPrefixSi1))
+  '(mpd (sylib excons @ anld h) @ eexd @ eexda @
+    eqtrd (syl simpleTokenize_S @ eqtr3d h2 @ syl6eq appendS @ appendeq1d anr) @
+    eqtrd (syl ifneg @ sylib (elabe @ noteqd eleq1) @
+      syl (mpi lmemconsid elall) @ mpbid (alleq2d anr) (anrd @ anwl h)) @
+    eqtrd (sbneq1d @ syl6eq sucsub1 @ subeq1d anl) @
+    sbned @ conseqd (syl6eq fstpr @ fsteqd anr) @
+    eqtrd (appeq2d @ syl6eq sndpr @ sndeqd anr) @ anwl @
+    syl6eq (applame simpleTokenizeeq) @ syl resapp @
+    sylibr elupto @ mpbid (lteq2d h2) @ sylib ltappendid2 @ anwl @ anld h));
 
-@_ def getDelimiters (ast: nat): nat;
-pub theorem getDelimiters0: $ getDelimiters 0 = 0 $;
+theorem simpleTokenize_nonemptyNonwhite: $ all nonemptyNonwhite (simpleTokenize s) $ =
+(named @ focus
+  (def h '(alleq2d simpleTokenizeeq))
+  '(!! indstr x y ,h ,h (anwr @ cases _ _) tru)
+  '(a1d @ mpbiri all0 @ alleq2d @ syl6eq simpleTokenize0 simpleTokenizeeq)
+  '(sylbi excons @ eex @ eex @ casesda _ _)
+  '(ealde @ eimd (mpbiri ltconsid2 @ lteqd anr anll) @
+    bi2d @ alleq2d @ mpbird (eqeqd (simpleTokenizeeqd anll) (simpleTokenizeeqd anr)) @
+    syl simpleTokenizeWS anlr)
+  (have 'h1 '(mpbiri (mpbir prefix_S @ ian eqid prefix_0) (prefixeq2d anl)))
+  (have 'h2
+    '(sylibr el_nonemptyNonwhite @ iand (a1i consne0) @
+      sylibr all1 @ sylibr (elabe @ noteqd eleq1) anr))
+  '(rsyl (maxPrefix_eqS h1 h2) @
+    eex @ exp @ rsyl exanal @ eex @ imp @
+    eimd (mpbid (lteq2d maxPrefixSi1) @
+      sylib ltappendid2 @ anld @ sylib el_nonemptyNonwhite maxPrefixSi2) @
+    bi2d @ bitrd (alleq2d simpleTokenizeTk) @ syl5bb allS @ syl bian1 maxPrefixSi2));
+
+@_ def getDelimiters (ast: nat): nat =
+$ rlrec 0 (\\ a, \\ t, \ ih,
+    if (E. d t = ASTNota (NotaDelim (b1 d)))
+      (lower (ih u. lmems (simpleTokenize (t // 2 // 2 // 2 // 2 // 2))))
+      ih) ast $;
+
+pub theorem getDelimiters0: $ getDelimiters 0 = 0 $ = (named 'rlrec0);
+
+theorem getDelimitersS: $ t // 2 // 2 // 2 // 2 // 2 = d ->
+  getDelimiters (ast |> t) =
+  if (E. i t = ASTNota (NotaDelim (b1 i)))
+    (lower (getDelimiters ast u. lmems (simpleTokenize d)))
+    (getDelimiters ast) $ =
+(named '(syl5eq {rlrecS : $ _ = _ @ (_ <> _ <> getDelimiters _) $} @
+  appslamed @ appslamed @ applamed @
+  ifeqd (exeqd @ eqeq1d anlr)
+    (lowereqd @ uneqd (nseqd anr) @ nseqd @ lmemseqd @ simpleTokenizeeqd @
+      eqtrd (diveq1d @ diveq1d @ diveq1d @ diveq1d @ diveq1d anlr) an3l)
+    anr));
+
 pub theorem getDelimitersDelim (ast d: nat):
   $ getDelimiters (ast |> ASTNota (NotaDelim (b1 d))) ==
-    getDelimiters ast u. lmems (simpleTokenize d) $;
+    getDelimiters ast u. lmems (simpleTokenize d) $ =
+(named '(mpbir (eqlower2 @ unfin finns finns) @
+  eqtr (getDelimitersS ,(foldr '(b1div2 b0div2 b0div2 b1div2) 'b1div2
+    (fn (x th) '(eqtr (diveq1 ,th) ,x)))) @
+  ifpos @ iexe (eqeq2d @ ASTNotaeqd @ NotaDelimeqd b1eq) eqid));
+
 pub theorem getDelimitersOther {d: nat} (ast t: nat):
   $ ~(E. d t = ASTNota (NotaDelim (b1 d))) ->
-    getDelimiters (ast |> t) = getDelimiters ast $;
+    getDelimiters (ast |> t) = getDelimiters ast $ =
+'(syl5eq (getDelimitersS eqid) ifneg);
 
 @_ def delimitersOk (ast .x .y: nat): wff =
 $ A. x A. y (x e. getDelimiters ast -> y e. getDelimiters ast ->
   prefix x y -> x = y) $;
+
+@_ local def delimiterFree (ast: nat): set =
+$ {s | ~(E. l E. x E. r (x e. getDelimiters ast /\ s = l ++ x ++ r))} $;
 
 @_ def tokenizeFmla (ast f: nat): nat;
 pub theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $;
