@@ -629,7 +629,9 @@ def NotaGen (x: nat): nat = $ b1 (b1 x) $;
 def _delimiter: string =
 $ _d ': _e ': _l ': _i ': _m ': _i ': _t ': _e ': _r ': s0 $;
 def parseDelim (.x: nat): set = $ (\ x, NotaDelim x) <@>
-  (parseTk _delimiter +> parseFmla <+ parseCh _semi) $;
+  (parseTk _delimiter +>
+    (((\ x, x <> x) <@> parseFmla) u.
+     (parseFmla <+> parseFmla)) <+ parseCh _semi) $;
 
 def stoi (x: nat): nat;
 theorem stoi0: $ stoi 0 = 0 $;
@@ -723,30 +725,39 @@ theorem simpleTokenizeTk (s x r: nat):
     simpleTokenize s = x : simpleTokenize r $;
 
 def getDelimiters (ast: nat): nat;
-theorem getDelimiters0: $ getDelimiters 0 = 0 $;
-theorem getDelimitersDelim (ast d: nat):
-  $ getDelimiters (ast |> ASTNota (NotaDelim (b1 d))) ==
-    getDelimiters ast u. lmems (simpleTokenize d) $;
-theorem getDelimitersOther {d: nat} (ast t: nat):
-  $ ~(E. d t = ASTNota (NotaDelim (b1 d))) ->
+theorem getDelimiters0: $ getDelimiters 0 = 0 <> 0 $;
+theorem getDelimitersDelim (ast a b l r: nat):
+  $ getDelimiters ast = a <> b ->
+    getDelimiters (ast |> ASTNota (NotaDelim (b1 l <> b1 r))) =
+      lower (a u. lmems (simpleTokenize l)) <>
+      lower (b u. lmems (simpleTokenize r)) $;
+theorem getDelimitersOther {l r: nat} (ast t: nat):
+  $ ~(E. l E. r t = ASTNota (NotaDelim (b1 l <> b1 r))) ->
     getDelimiters (ast |> t) = getDelimiters ast $;
 
-def delimitersOk (ast .x .y: nat): wff =
-$ A. x A. y (x e. getDelimiters ast -> y e. getDelimiters ast ->
-  prefix x y -> x = y) $;
+def delimitersOk (A: set) (.x .y: nat): wff =
+$ A. x (x e. A -> len x = 1) $;
 
 def tokenizeFmla (ast f: nat): nat;
 theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $;
-theorem tokenizeFmlaWS (ast c s: nat):
-  $ c e. white -> tokenizeFmla ast (c : s) = tokenizeFmla ast s $;
-theorem tokenizeFmlaDelim (ast x s t: nat):
-  $ delimitersOk ast -> x e. getDelimiters ast -> s e. nonemptyNonwhite ->
+theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
+  tokenizeFmla ast (s ++ c : t) = tokenizeFmla ast s ++ tokenizeFmla ast t $;
+theorem tokenizeFmlaLDelim (ast x s t: nat):
+  $ x e. fst (getDelimiters ast) ->
     tokenizeFmla ast (s ++ x ++ t) =
-    tokenizeFmla ast s ++ x : tokenizeFmla ast t $;
-theorem tokenizeFmlaNoDelim {l x r: nat} (ast s s1 t: nat):
-  $ delimitersOk ast -> maxPrefix nonemptyNonwhite s = suc (s1 <> t) ->
-    ~(E. l E. x E. r (x e. getDelimiters ast /\ s1 = l ++ x ++ r)) ->
-    tokenizeFmla ast s = s1 : tokenizeFmla ast t $;
+    tokenizeFmla ast (s ++ x) ++ tokenizeFmla ast t $;
+theorem tokenizeFmlaRDelim (ast x s t: nat):
+  $ x e. snd (getDelimiters ast) ->
+    tokenizeFmla ast (s ++ x ++ t) =
+    tokenizeFmla ast s ++ tokenizeFmla ast (x ++ t) $;
+
+theorem tokenizeFmlaJoin (ast x s t: nat):
+  $ s e. nonemptyNonwhite -> ljoin (tokenizeFmla ast s) = s $;
+
+theorem tokenizeFmlaMinimal {l r: nat} (ast s a x y b: nat):
+  $ tokenizeFmla ast s = a ++ x : y : b ->
+    E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
+    E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
 
 def getPfx (ast: nat): nat;
 theorem getPfxEl {fmla: nat} (ast x c p: nat):
