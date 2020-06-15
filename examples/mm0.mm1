@@ -944,7 +944,7 @@ theorem VerifyConvs_fin: $ E. n A. es1 A. es2 A. bis
       syl lmemlt @ syl lmemmapi @ anwl nthlmem)))
   (lem 'an3lr 'anllr 'leprid1 (fn (x)
     '(syl6 ax_1 @ com23 @ exp @ com23 @ exp @ alimd @ imim2d @
-      an32s @ imp @ com23 @ syl6ibr eexb ,x)))
+      anrasss @ imp @ com23 @ syl6ibr eexb ,x)))
   (lem 'anllr 'anlr '(lepr2tr leprid1) (fn (x)
     '(syl6ibr eexb @ alimd @ imim2d @ syl6 ax_1 @ com23 @ exp ,x))));
 
@@ -1246,7 +1246,7 @@ theorem el_Proof_aux: $ p < bd -> (p e. Proof_aux bd env <-> Proof env p) $ =
       ($DThm a h r$ => (syl5bi (cbval @ imeqd lteq1 @ bieqd eleq1 eleq1) @
         exp @ iald @ exp @ mpbird (bieqd ,h3 ,h3) @
         aneqd (sylc bith (lelttrd (sylibr leltsuc anr) an3lr) anr) @
-        syl exeq @ an32s @ imp @ alimd @ exp @
+        syl exeq @ anrasss @ imp @ alimd @ exp @
         exeqd @ exeqd @ exeqd @ aneq1d @ aneq1d @ aneq1d @ syl aneq2a @
         imp @ imim1d @ exp @ lelttrd (mpbiri leprid1 (leeq2d anr)) anlr))}})));
 
@@ -1336,23 +1336,31 @@ pub theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
 @_ def _z: char = $ ch x7 xa $;
 
 do (begin
-  (def (mkth m a b)
+  (def (mkth-pr m a b f)
     (def t '(,m (c2n (,a)) (c2n (,b))))
     (add-thm! (atom-app a "_" m b) () () t () @ fn ()
       (def g (ref! (goal t)))
-      (set-goals g)
-      (refine '{,norm_num : (,m (c2n (ch _ _)) (c2n (ch _ _)))})
-      '(() ,g)))
-  (def a (ref!))
-  (scan '(_dot _0 _9 _colon _gt _A _Z _under _a _z _lbrace _rbrace) @ fn (b)
-    (if (def? a) (mkth 'lt a b))
-    (set! a b))
+      (set-goals g) (refine (f)) '(() ,g)))
+  (def (mkth m a b)
+    (mkth-pr m a b @ fn () '{,norm_num : (,m (c2n (ch _ _)) (c2n (ch _ _)))}))
+  (let ([a (ref!)]) @
+    scan '(_nl _dot _0 _9 _colon _gt _A _Z _under _a _z _lbrace _rbrace) @ fn (b)
+      (if (def? a) (mkth 'lt a b))
+      (set! a b))
   (mkth 'le '_0 '_1)
+  (mkth 'lt '_dollar '_hyphen)
+  (mkth 'lt '_dollar '_0)
   (scan '((_nl _cr __ _dollar _lparen _rparen _ast _hyphen _dot)
           (_colon _semi _equal _gt)) @ fn (s)
     @ match s @ (a . l) @ match (split-last s) @ (r . m)
     (scan l @ fn (b) (mkth 'le a b))
-    (scan l @ fn (a) (mkth 'le a r))));
+    (scan l @ fn (a) (mkth 'le a r)))
+  (scan
+    '((_dollar _0 _9) (_9 _colon _gt) (_9 _gt _A) (_0 _9 _A) (_dollar _9 _A)
+      (_Z _under _a) (_Z _a _z) (_A _Z _under) (_A _Z _a)
+      (_under _a _z) (_9 _A _Z) (_9 _Z _z) (_dollar _9 _z))
+    @ match-fn @ (a b c)
+    @ mkth-pr 'lt a c @ fn () '(lttr ,(atom-app a "_lt" b) ,(atom-app b "_lt" c))));
 
 -- Now we define the lexer:
 
@@ -1368,15 +1376,38 @@ theorem prefix_eq_take: $ prefix l1 l2 <-> l1 = take l2 (len l1) $ =
 theorem prefix_len: $ prefix l1 l2 -> len l1 <= len l2 $ =
 '(sylbi prefix_eq_take @ mpbiri minle1 @ leeq1d @ syl6eq takelen @ leneq);
 
+theorem prefix_asymm: $ len l2 <= len l1 -> prefix l1 l2 -> l1 = l2 $ =
+'(syl5bi prefix_eq_take @ bi1d @ eqeq2d takeall);
+
 theorem prefix_0: $ prefix 0 l $ = '(!! iexe r (eqeq1d appendeq2) append0);
 theorem prefix_id: $ prefix l l $ = '(!! iexe r (eqeq1d appendeq2) append02);
 theorem prefix_tr: $ prefix l1 l2 -> prefix l2 l3 -> prefix l1 l3 $ =
 '(!! eex r1 @ !! eexda r2 @ !! iexde r3 @ eqtrd (appendeq2d anr) @
   syl5eqr appendass @ eqtrd (appendeq1d anll) anlr);
 
+theorem prefix_02: $ prefix l 0 <-> l = 0 $ =
+(named '(bitr (exeqi @ bitr appendeq0 ancomb) @ exeqe biidd));
+
+theorem prefix_S1: $ prefix (x : l1) l2 <-> E. l3 (prefix l1 l3 /\ l2 = x : l3) $ =
+(named '(bitr4 (exeqi @
+    bitr3 (exeqe @ syl6bb eqcomb @ eqeq2d @ syl6eqr appendS conseq2) @
+    exeqi @ aneq1i eqcomb) @
+  bitr3 (exeqi exan2) excomb));
+
+theorem prefix_append1: $ prefix (l ++ l1) (l ++ l2) <-> prefix l1 l2 $ =
+'(!! exeqi x @ bitr (eqeq1 appendass) appendcan1);
+
+theorem prefix_S: $ prefix (x : l1) (y : l2) <-> x = y /\ prefix l1 l2 $ =
+(named '(bitr4 prefix_S1 @ bitr3 (exeqe @ syl5bb ancomb @ aneq2d prefixeq2) @
+  exeqi @ bitr anlass @ aneq2i @ bitr4 ancomb @ bitr eqcomb consinj));
+
+theorem prefix_nth: $ prefix l1 l2 -> nth n l1 = suc x -> nth n l2 = suc x $ =
+'(sylbi prefix_eq_take @ exp @
+  eqtr3d (syl takenth @ anwr @ sylib nthne0 sucne0) @ eqtr3d (ntheq2d anl) anr);
+
 @_ def maxPrefix (A: set) (s: nat): nat =
 $ the {z | E. x E. t (x ++ t = s /\ x e. A /\
-    A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+    A. y (prefix y s /\ y e. A -> prefix y x) /\
     z = suc (x <> t))} $;
 
 pub theorem maxPrefix0 {x: nat} (A: set) (s: nat):
@@ -1386,32 +1417,29 @@ pub theorem maxPrefix0 {x: nat} (A: set) (s: nat):
 
 theorem maxPrefix_subsn: $ subsn {z |
   E. x E. t (x ++ t = s /\ x e. A /\
-    A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+    A. y (prefix y s /\ y e. A -> prefix y x) /\
     z = suc (x <> t))} $ =
 (named @ focus
   (def h '(elabe @ exeqd @ exeqd @ aneq2d eqeq1))
   '(ax_gen @ ax_gen @ sylbi ,h @ syl5bi (bitr ,h _) @ eex @ eex @ eexd @ eexd @ exp _)
   (focus '(cbvex @ cbvexd @
     aneqd (aneqd (aneqd (eqeq1d @ imp appendeq) @ eleq1d anl) @
-    aleqd @ imeqd (aneq1d @ aneq1d @ prefixeq1d anl) (eqeq2d anl)) @
+    aleqd @ imeq2d @ prefixeq2d anl) @
     eqeq2d @ suceqd @ imp preq))
   (suffices 'h2 $ _ -> x = w $ _)
   '(eqtr4d anlr @ eqtr4d anrr @ suceqd @ preqd h2 @
     sylib appendcan1 @ eqtr4d an4l @ eqtrd (appendeq1d h2) (anwr an3l))
-  (def (lem hl hr) @ focus
-    '(sylc (eale @ imeqd (aneqd (aneqd prefixeq2 prefixeq1) eleq1) eqeq1) (syl anlr ,hr) @
-      iand (iand _ (syl (anw3l @ iexe @ eqeq1d appendeq2) ,hl)) (syl anllr ,hl))
-    '(sylibr prefix_eq_take @
-      eqtrd (sylib prefix_eq_take @ syl (anw3l @ iexe @ eqeq1d appendeq2) ,hr) @
-      eqtr3d (takeeq1d @ syl an3l ,hl) (anwr takeappend1)))
-  '(mpi leorle @ eorda _ @ eqcomd _)
-  (lem 'anll 'anlr)
-  (lem 'anlr 'anll));
+  (def (lem hl hr)
+    '(sylc (eale @ imeqd (aneqd prefixeq1 eleq1) prefixeq1) (syl anlr ,hl) @
+      iand (syl (anw3l @ iexe @ eqeq1d appendeq2) ,hr) (syl anllr ,hr)))
+  '(sylc prefix_asymm (syl prefix_len _) _)
+  (lem 'anl 'anr)
+  (lem 'anr 'anl));
 
 pub theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
   $ E. x (prefix x s /\ x e. A) ->
     E. x E. t (x ++ t = s /\ x e. A /\
-      A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+      A. y (prefix y s /\ y e. A -> prefix y x) /\
       maxPrefix A s = suc (x <> t)) $ =
 (named @ focus
   '(! rsyl _ $ E. n (n <= len s /\ take s n e. A /\ A. y (prefix y s -> y e. A -> len y <= n)) $)
@@ -1444,27 +1472,40 @@ pub theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
   '(eex @ sylib ,h @ syl (mpbird (eleq1d (subsnthe maxPrefix_subsn)) id) @ sylibr ,h @ iexde @ iexde @
     iand (iand (iand (syl6eq takedrop @ appendeqd anlr anr) @ mpbird (eleq1d anlr) an3lr) @
       sylc _ (iand an4l anlr) anllr) (eqcomd @ suceqd @ preqd anlr anr))
-  '(alimd @ syl5bir impexp @ com23 @ impd @ impd @ exp @ expd @ com23 @ a2d @
-    exp @ exp @ eqtrd (sylib prefix_eq_take @ anld anlr) @ eqtr4d (takeeq2d @ leasymd anr _) an3lr)
-  '(mpbid (leeq1d @ eqtrd (leneqd an3lr) @ syl5eq takelen @ syl eqmin2 an4l) @
-    syl prefix_len anllr));
+  '(alimd @ syl5bir impexp @ a2d @ exp @ exp @ sylibr prefix_eq_take @
+    eqtrd (sylib prefix_eq_take @ anld anlr) @ syl5eqr (takeeq1 takedrop) @
+    eqtr4d (syl takeappend1 @ mpbird (leeq2d @ syl5eq takelen @ syl eqmin2 an3l) anr) @
+    takeeq1d anllr));
 
 theorem maxPrefixSilem: $ maxPrefix A s = suc (x <> t) ->
-  x ++ t = s /\ x e. A /\ A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) $ =
+  x ++ t = s /\ x e. A /\ A. y (prefix y s /\ y e. A -> prefix y x) $ =
 (named '(mpd (syl maxPrefixS @ rsyl sucne0 @ con1 maxPrefix0) @
   eexd @ eexd @ impd @ com23 @ exp @ rsyl (sylib prth @ sylib peano2 @ eqtr3d anl anr) @
   bi2d @ aneqd (aneqd (eqeq1d @ imp appendeq) (eleq1d anl)) @
-  anwl @ aleqd @ imeqd (aneq1d @ aneq1d @ prefixeq1) eqeq2));
+  anwl @ aleqd @ imeq2d prefixeq2));
 
 theorem maxPrefixSi1: $ maxPrefix A s = suc (x <> t) -> x ++ t = s $ = (named '(anld @ anld maxPrefixSilem));
 theorem maxPrefixSi2: $ maxPrefix A s = suc (x <> t) -> x e. A $ = (named '(anrd @ anld maxPrefixSilem));
 theorem maxPrefixSi3 (h1: $ G -> maxPrefix A s = suc (x <> t) $)
-  (h2: $ G -> prefix x y $) (h3: $ G -> prefix y s $) (h4: $ G -> y e. A $): $ G -> y = x $ =
-(named '(sylc (eale @ imeqd (aneqd (aneqd prefixeq2 prefixeq1) eleq1) eqeq1)
-  (anrd @ syl maxPrefixSilem h1) @ iand (iand h2 h3) h4));
+  (h2: $ G -> prefix y s $) (h3: $ G -> y e. A $): $ G -> prefix y x $ =
+(named '(sylc (eale @ imeqd (aneqd prefixeq1 eleq1) prefixeq1)
+  (anrd @ syl maxPrefixSilem h1) @ iand h2 h3));
 
 theorem maxPrefix_prefix: $ maxPrefix A s = suc (x <> t) -> prefix x s $ =
 (named '(syl (iexe @ eqeq1d appendeq2) maxPrefixSi1));
+
+theorem maxPrefix_asymm {y} (h: $ x e. A /\ y e. A /\ prefix x y -> x = y $):
+  $ maxPrefix A s = suc (x <> t) <-> x ++ t = s /\ x e. A $ =
+(named @ focus
+  '(ibii (iand maxPrefixSi1 maxPrefixSi2) @
+    mpd (syl maxPrefixS @ iexde @ iand
+      (iexde @ eqtrd (appendeqd anlr anr) an3l)
+      (mpbird (eleq1d anr) anlr)) @
+    eexd @ eexd @ syl5 anr @ exp @ eqtr4d anr @ suceqd _)
+  (suffices 'h2)
+  '(preqd h2 @ sylib appendcan1 @ eqtr3d (appendeq1d h2) @ eqtr4d anll (anwr maxPrefixSi1))
+  '(syl h @ iand (iand anlr @ anwr maxPrefixSi2) @
+    maxPrefixSi3 anr (anwll @ iexe @ eqeq1d appendeq2) anlr));
 
 @_ def regexStar (R: set) (.s .t .L .x .y: nat): set =
 $ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;
@@ -1481,17 +1522,130 @@ $ sn 0 u. opab s t (E. y (s <> y e. R /\ t = suc y)) $;
 -- white : set char
 @_ def white: nat = $ __ ; sn _nl $;
 
+theorem el_white: $ c e. white <-> c = __ \/ c = _nl $ = '(bitr elins @ oreq2i elsn);
+
+theorem white_lt_dollar: $ c e. white -> c < _dollar $ =
+(focus (def h '(mpbiri {_ : $ch < ch$} lteq1))
+  '(sylbi el_white @ eor ,h ,h) norm_num norm_num);
+
+theorem white_lt_hyphen: $ c e. white -> c < _hyphen $ =
+'(rsyl white_lt_dollar @ mpi (ltle _dollar_lt_hyphen) ltletr);
+
 @_ def regexLineComment (.x .y: nat): set =
 $ (\ x, _hyphen : _hyphen : x ++ _nl : 0) '' {x | all {y | y != _nl} x} $;
+
+theorem el_regexLineComment: $ s e. regexLineComment <->
+  E. x (all {y | y != _nl} x /\ s = _hyphen : _hyphen : (x ++ _nl : 0)) $ =
+'(bitr ellamimaab @ exeqi @ aneq2i @ eqeq2 @ eqtr appendS @ conseq2 appendS);
+
+theorem regexLineComment_n0: $ s e. regexLineComment -> s != 0 $ =
+(named '(sylbi el_regexLineComment @ eex @ anwr sucne0));
+
+theorem regexLineComment_hd: $ (x : t) e. regexLineComment -> x = _hyphen /\ t != 0 $ =
+(named '(sylbi el_regexLineComment @ eex @ anwr @ sylbi consinj @ anim2 sucne0));
+
+theorem regex_asymm_lem
+  (hA: $ A == (\ x, l ++ x ++ c : 0) '' {x | all {y | y != c} x} $)
+  (hs: $ G -> s e. A $) (ht: $ G -> t e. A $) (h: $ G -> prefix s t $): $ G -> s = t $ =
+(focus
+  (def (f x) '(sylib ellamimaab @ sylib (eleq2 hA) ,x))
+  '(mpd h @ syl prefix_asymm @ mpd ,(f 'hs) @ eexda @
+    mpd (sylibr _ ,(f '(anwl ht))) @ eexda _)
+  '(!! cbvex z _ (aneqd alleq2 @ eqeq2d @ appendeq1d appendeq2))
+  (def (f x) '(syl6eq (addeq1 appendlen) @ syl6eq appendlen @ leneqd ,x))
+  '(mpbird (leeqd ,(f 'anrr) ,(f '(anrd anlr))) @ sylib leadd1 @ sylib leadd2 @
+    sylibr lenlt @ mpi eqid @ con2d @
+    exp @ sylib (elabe neeq1) @ sylc elall (anld anlr) @
+    syl nthlmem @ eqtr3d (syl appendnth1 anr) @
+    syl (mpi (eqtr (appendnth2 leid) @ eqtr (ntheq1 subid) nthZ) prefix_nth) @ anwl _)
+  (def (f x) '(syl6eq appendass ,x))
+  '(sylib prefix_append1 @ mpbid (prefixeqd ,(f '(anrd anlr)) ,(f 'anrr)) (anwll h)));
+
+theorem regexLineComment_asymm (hs: $ G -> s e. regexLineComment $) (ht: $ G -> t e. regexLineComment $)
+  (h: $ G -> prefix s t $): $ G -> s = t $ =
+(named @ focus
+  '(regex_asymm_lem _ hs ht h)
+  '(imaeq1 @ lameqi @ appendeq1 @ eqcomi @ eqtr appendS @ conseq2 append1));
 
 @_ def whitespace (.c: nat): set =
 $ ((\ c, c : 0) '' white) u. regexLineComment $;
 
+theorem el_whitespace: $ s e. whitespace <->
+  (E. c (c e. white /\ s = c : 0)) \/ s e. regexLineComment $ = '(bitr elun @ oreq1i ellamima);
+
+theorem whitespace_n0: $ s e. whitespace -> s != 0 $ =
+'(sylbi el_whitespace @ eor (!! eex x @ anwr sucne0) regexLineComment_n0);
+
+theorem whitespace_hd: $ (x : t) e. whitespace -> x e. white \/ x = _hyphen $ =
+(named '(sylbi el_whitespace @ orim
+  (eex @ impcom @ bi2d @ sylbi consinj @ anwl eleq1)
+  (anld regexLineComment_hd)));
+
+theorem whitespace_lt_0: $ (x : t) e. whitespace -> x < _0 $ =
+(focus
+  '(rsyl whitespace_hd @ eor (sylbi el_white @ eor _ _) _)
+  (def (p) @ focus '(mpbiri {_ : $ch < ch$} lteq1) norm_num)
+  (p) (p) (p));
+
+theorem whitespace_hd_RLC: $ (x : t) e. whitespace -> x = _hyphen -> (x : t) e. regexLineComment $ =
+(named '(syl5 (con2 @ eex @ syl ltne @ syl white_lt_hyphen @
+    impcom @ bi2d @ eleq1d @ sylbi consinj anl) @
+  bi1 el_whitespace));
+
+theorem whitespace_hd_white: $ (x : t) e. whitespace -> x != _hyphen -> x e. white /\ t = 0 $ =
+'(sylbi el_whitespace @ eor
+  (a1d @ !! eex y @ imp @ syl5bi consinj @ anim1d @ com12 @ bi2d eleq1)
+  (syl absurdr @ anld regexLineComment_hd));
+
+theorem whitespace_asymm (hs: $ G -> s e. whitespace $) (ht: $ G -> t e. whitespace $)
+  (h: $ G -> prefix s t $): $ G -> s = t $ =
+(named @ focus
+  '(mpd (sylib excons @ syl whitespace_n0 hs) @ eexd @ eexda @ casesda _ _)
+  (focus
+    '(regexLineComment_asymm
+      (mpbird (eleq1d anlr) @ sylc whitespace_hd_RLC (mpbid (eleq1d anlr) @ anwll hs) anr)
+      (mpd (sylib prefix_S1 @ mpbid (prefixeq1d anlr) (anwll h)) @ eexda @ mpbird (eleq1d anrr) @
+        sylc whitespace_hd_RLC (mpbid (eleq1d anrr) (anw3l ht)) anlr)
+      (anwll h)))
+  (focus
+    '(eqtr4d (eqtrd anlr @ conseq2d @ anrd @
+        sylc whitespace_hd_white (mpbid (eleq1d anlr) (anwll hs)) anr) @
+      mpd (sylib prefix_S1 @ mpbid (prefixeq1d anlr) @ anwll h) @
+      eexda @ eqtrd anrr @ conseq2d @ anrd @
+      sylc whitespace_hd_white (mpbid (eleq1d anrr) (anw3l ht)) anlr)));
+
+theorem whitespace_maxPrefix: $ s e. whitespace <-> maxPrefix whitespace (s ++ t) = suc (s <> t) $ =
+(named '(bitr4 (bicom @ bian1 eqid) (maxPrefix_asymm @ whitespace_asymm anll anlr anr)));
+
 @_ def regexMath (.x .y: nat): set =
 $ (\ x, _dollar : x ++ _dollar : 0) '' {x | all {y | y != _dollar} x} $;
 
+theorem el_regexMath: $ s e. regexMath <->
+  E. x (all {y | y != _dollar} x /\ s = _dollar : x ++ _dollar : 0) $ = 'ellamimaab;
+
+theorem regexMath_n0: $ s e. regexMath -> s != 0 $ =
+(named '(sylbi el_regexMath @ eex @ anwr @ sylbi (eqeq2 appendS) sucne0));
+
+theorem regexMath_asymm (hs: $ G -> s e. regexMath $) (ht: $ G -> t e. regexMath $)
+  (h: $ G -> prefix s t $): $ G -> s = t $ =
+(named @ focus '(regex_asymm_lem _ hs ht h) '(imaeq1 @ lameqi @ appendeq1 @ eqcomi append1));
+
+theorem regexMath_hd: $ (x : t) e. regexMath -> x = _dollar $ =
+(named '(sylbi el_regexMath @ eex @ anwr @ sylbi (eqeq2 appendS) @ sylbi consinj anl));
+
+theorem regexMath_maxPrefix: $ s e. regexMath <-> maxPrefix regexMath (s ++ t) = suc (s <> t) $ =
+(named '(bitr4 (bicom @ bian1 eqid) (maxPrefix_asymm @ regexMath_asymm anll anlr anr)));
+
 @_ def IdentStart (.c: nat): set =
 $ {c | (_a <= c /\ c <= _z) \/ (_A <= c /\ c <= _Z) \/ c = _under} $;
+
+theorem el_IdentStart: $ c e. IdentStart <-> (_a <= c /\ c <= _z) \/ (_A <= c /\ c <= _Z) \/ c = _under $ =
+(named '(elabe @ oreqd (oreqd (aneqd leeq2 leeq1) (aneqd leeq2 leeq1)) eqeq1));
+
+theorem IdentStart_bound: $ c e. IdentStart -> _A <= c /\ c <= _z $ =
+'(sylbi el_IdentStart @ eor
+  (eor (anim1 @ letr @ ltle _A_lt_a) (anim2 @ mpi (ltle _Z_lt_z) letr))
+  (mpbiri (ian (ltle _A_lt_under) (ltle _under_lt_z)) (aneqd leeq2 leeq1)));
 
 @_ def digits (.c: nat): set = $ {c | _0 <= c /\ c <= _9} $;
 
@@ -1502,8 +1656,28 @@ theorem digits9: $ _9 e. digits $ = '(mpbir eldigits @ ian (ltle _0_lt_9) leid);
 
 @_ def IdentRest (.c: nat): set = $ IdentStart u. digits $;
 
+theorem IdentRest_bound: $ c e. IdentRest -> _0 <= c /\ c <= _z $ =
+'(sylbi elun @ eor
+  (rsyl IdentStart_bound @ anim1 @ letr @ ltle _0_lt_A)
+  (sylbi eldigits @ anim2 @ mpi (ltle _9_lt_z) letr));
+
 @_ def regexIdent (.s .x .y .t: nat): set =
 $ {s | E. x E. t (s = x : t /\ x e. IdentStart /\ all IdentRest t)} $;
+
+theorem el_regexIdent: $ s e. regexIdent <->
+  E. x E. t (s = x : t /\ x e. IdentStart /\ all IdentRest t) $ =
+(named '(elabe @ exeqd @ exeqd @ aneq1d @ aneq1d eqeq1));
+
+theorem regexIdent_n0: $ s e. regexIdent -> s != 0 $ =
+(named '(sylbi el_regexIdent @ eex @ eex @ rsyl anll sucne0));
+
+theorem regexIdent_cons: $ (x : t) e. regexIdent <-> x e. IdentStart /\ all IdentRest t $ =
+(named '(bitr el_regexIdent @ bitr (exeqi @ bitr (exeqi @
+    bitr anass @ bitr (aneq1i @ bitr eqcomb consinj) anass) exan1) @
+  exeqe @ syl6bb (exeqe @ aneq2d alleq2) (exeqd @ aneq2d @ aneq1d eleq1)));
+
+theorem regexIdent_bound: $ (x : t) e. regexIdent -> _A <= x /\ x <= _z $ =
+'(sylbi regexIdent_cons @ anwl IdentStart_bound);
 
 @_ def isNumber (.s .x .y .t: nat): set =
 $ sn (_0 : 0) u. {s | E. x E. t (s = x : t /\
@@ -1538,23 +1712,187 @@ theorem symbols_bound: $ c e. symbols -> _dollar < c /\ c < _0 \/ _9 < c /\ c < 
     (f @ fn (x) @ refine '(sylbi elins @ eor ,x _)))
   (d2 @ fn (x) (refine '(sylbi elsn ,x))));
 
+theorem symbols_bound2: $ c e. symbols -> _dollar < c /\ (c < _0 \/ _9 < c) /\ (c < _A \/ _z < c) $ =
+'(rsyl symbols_bound @ iand (iand
+  (eor (eor anl @ anwl @ lttr _dollar_lt_9) (lttr _dollar_lt_z))
+  (eor (orim anr anl) (orrd @ lttr _9_lt_z)))
+  (orim1 @ eor (anwr @ mpi _0_lt_A lttr) anr));
+
+theorem symbols_ne_hyphen: $ c e. symbols -> c != _hyphen $ =
+(focus
+  (def (f) @ focus '(mpbiri {_ : $ch != ch$} neeq1) norm_num)
+  (for 0 9 @ fn (_) (refine '(sylbi elins @ eor _ _)) (f))
+  '(sylbi elsn _) (f));
+
 @_ def TK (s: nat): nat = $ b0 s $;
 @_ def MATH (s: nat): nat = $ b1 s $;
 
-@_ def Tokenize (s: nat): set;
-pub theorem Tokenize0: $ Tokenize 0 == sn 0 $;
+@_ local def Tokenize_aux (G s A F n): nat =
+$ if (maxPrefix A s = 0) n
+    (obind (G @ snd (maxPrefix A s - 1)) (\ t,
+      suc (F @ (fst (maxPrefix A s - 1) <> t)))) $;
+
+theorem Tokenize_aux_0: $ maxPrefix A s = 0 -> Tokenize_aux G s A F n = n $ = (named 'ifpos);
+
+theorem Tokenize_aux_n0 (a: nat x) {y} (h: $ y e. A -> y != 0 $):
+  $ f = lower ((\ x, a) |` upto s) ->
+    Tokenize_aux f s A F n = Tokenize_aux (\ x, a) s A F n $ =
+(named @ focus
+  '(casesda (anwr @ eqtr4d Tokenize_aux_0 Tokenize_aux_0) @
+    eqtr4d (syl ifneg anr) @ eqtr4d (syl ifneg anr) @
+    obindeq1d @ eqtrd (appeq1d @ sylibr (eqlower2 @ finlam finns) anl) _)
+  (have 'h2 $ _ -> maxPrefix A s = suc _ $ '(eqcomd @ anwr consfstsnd))
+  '(syl resapp @ sylibr elupto @ mpbid (lteq2d @ syl maxPrefixSi1 h2) @
+    sylib ltappendid2 @ syl (sbeth (imeqd eleq1 neeq1) h) @ syl maxPrefixSi2 h2));
+
+@_ def Tokenize {.s1} (s: nat): nat =
+$ srec (\ f, N[size (Dom f) / s1]
+    if (s1 = 0) 1 (
+    Tokenize_aux f s1 whitespace (\\ x, \ t, t) (
+    Tokenize_aux f s1 regexIdent (\\ x, \ t, TK x : t) (
+    Tokenize_aux f s1 isNumber (\\ x, \ t, TK x : t) (
+    Tokenize_aux f s1 ((\ c, c : 0) '' symbols) (\\ x, \ t, TK x : t) (
+    Tokenize_aux f s1 regexMath (\\ x, \ t, MATH x : t) (
+    0))))))) s $;
+
+theorem symbols_cons: $ (x : b) e. ((\ c, c : 0) '' A) <-> x e. A /\ b = 0 $ =
+'(bitr ellamima @ bitr (exeqi @ bitr (aneq2i @
+    bitr consinj @ aneq1i eqcomb) anlass) @ exeqe @ aneq1d eleq1);
+
+theorem symbols_n0: $ x e. ((\ c, c : 0) '' A) -> x != 0 $ = '(sylbi ellamima @ eex @ anwr sucne0);
+
+theorem symbols_asymm:
+  $ x e. ((\ c, c : 0) '' A) /\ y e. ((\ c, c : 0) '' A) /\ prefix x y -> x = y $ =
+(named '(imp @ imp @ sylbi ellamima @
+  syl5bi (bitr ellamima @ cbvex @ aneqd eleq1 @ eqeq2d conseq1) @
+  eex @ eexda @ mpbiri (sylbi prefix_S @ conseq1d anl) @
+  imeqd (prefixeqd anlr anrr) (eqeqd anlr anrr)));
+
+theorem symbols_maxPrefix: $ x e. A <-> maxPrefix ((\ c, c : 0) '' A) (x : t) = suc (x : 0 <> t) $ =
+(named '(bitr2 (maxPrefix_asymm symbols_asymm) @
+  bitr (bian1 append1) @ bitr symbols_cons @ bian2 eqid));
+
+theorem Tokenize_val: $ Tokenize s = if (s = 0) 1 (
+    Tokenize_aux (\ r, Tokenize r) s whitespace (\\ x, \ t, t) (
+    Tokenize_aux (\ r, Tokenize r) s regexIdent (\\ x, \ t, TK x : t) (
+    Tokenize_aux (\ r, Tokenize r) s isNumber (\\ x, \ t, TK x : t) (
+    Tokenize_aux (\ r, Tokenize r) s ((\ c, c : 0) '' symbols) (\\ x, \ t, TK x : t) (
+    Tokenize_aux (\ r, Tokenize r) s regexMath (\\ x, \ t, MATH x : t) (
+    0)))))) $ =
+(named @ focus
+  '(! eqtr _ $ _ @ lower ((\ r, Tokenize r) |` _) $ _ srecval @ applame @ sbned _)
+  (have 'h '(eqtrd anr (anwl sreclem)))
+  '(ifeqd (eqeq1d h) eqidd ,(foldr
+    '(whitespace_n0 regexIdent_n0 isNumber_n0 symbols_n0 regexMath_n0)
+    'eqidd
+    (fn (x acc) '(eqtrd (Tokenize_auxeq2d h) @
+      eqtrd (anwl @ !! Tokenize_aux_n0 _ y ,x) @ Tokenize_auxeq5d ,acc)))));
+
+theorem Tokenize_aux_S (v1 n: nat x1 t1 r1) (v: nat t) (h: $ x1 = x /\ t1 = t -> v1 = v $):
+  $ maxPrefix A s = suc (x <> r) ->
+    Tokenize_aux (\ r1, Tokenize r1) s A (\\ x1, \ t1, v1) n = obind (Tokenize r) (\ t, suc v) $ =
+'(eqtrd (syl ifneg sucne0) @ obindeqd
+  (applamed @ Tokenizeeqd @ eqtrd anr @ syl6eq sndpr @ sndeqd @ syl6eq sucsub1 @ subeq1d anl)
+  (lameqd @ suceqd @ syl6eq (appslame @ applamed h) @
+   appeq2d @ preq1d @ syl6eq fstpr @ fsteqd @ syl6eq sucsub1 subeq1));
+
+pub theorem Tokenize0: $ Tokenize 0 = suc 0 $ = (named '(eqtr Tokenize_val @ ifpos eqid));
+
+theorem Tokenize_n0_lem (h: $ x e. A -> x != 0 $): $ maxPrefix A s = suc (x <> r) -> s != 0 $ =
+'(mtd (rsyl maxPrefixSi2 h) @ mpbii anl @ imeq1d @ syl5bbr appendeq0 @ eqeq1d maxPrefixSi1);
+
 pub theorem TokenizeWS (s x: nat):
-  $ s e. whitespace -> Tokenize (s ++ x) == Tokenize x $;
+  $ s e. whitespace -> Tokenize (s ++ x) = Tokenize x $ =
+(named '(sylbi whitespace_maxPrefix @ syl5eq Tokenize_val @
+  eqtrd (syl ifneg @ Tokenize_n0_lem whitespace_n0) @
+  syl6eq obindS2 @ Tokenize_aux_S anr));
+
+theorem Tokenize_ne_lem {a b c y} (p: wff a b c)
+  (hA: $ x e. A -> x != 0 $) (hB: $ y e. B -> y != 0 $)
+  (h1: $ (a : b) e. A -> p $) (h2: $ (a : c) e. B -> ~p $):
+  $ maxPrefix A s = suc (x <> r) -> maxPrefix B s = 0 $ =
+(named @ focus
+  '(mpd (sylib excons @ syl hA maxPrefixSi2) @ eexd @ eexda @ syl contra @
+    syl5bi excons @ eexd @ eexda @
+    mpd (anwr @ sylib excons @ syl hB maxPrefixSi2) @ eexd @ eexda @ sylc absurd
+    (syl h2 @ mpbid (eleq1d _) @ syl maxPrefixSi2 anlr)
+    (syl h1 @ mpbid (eleq1d anllr) @ syl maxPrefixSi2 an3l))
+  '(eqtr4d anr @ conseq1d @ anld @ sylib consinj @
+    syl5eqr appendS @ eqtr3d (appendeq1d anllr) @ eqtr4d (anw3l maxPrefixSi1) @
+    syl5eqr appendS @ eqtr3d (appendeq1d anr) @ rsyl anlr maxPrefixSi1));
+
 pub theorem TokenizeIdent {t: nat} (s x r: nat):
   $ maxPrefix regexIdent s = suc (x <> r) ->
-    Tokenize s == (\ t, TK x : t) '' Tokenize r $;
+    Tokenize s = obind (Tokenize r) (\ t, suc (TK x : t)) $ =
+(named '(syl5eq Tokenize_val @
+  eqtrd (syl ifneg @ Tokenize_n0_lem regexIdent_n0) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem regexIdent_n0 whitespace_n0
+    (anld regexIdent_bound) (sylib ltnle @ syl (mpi _0_lt_A lttr) whitespace_lt_0)) @
+  Tokenize_aux_S @ conseqd (TKeqd anl) anr));
+
 pub theorem TokenizeNumber {t: nat} (s x r: nat):
   $ maxPrefix isNumber s = suc (x <> r) ->
-    Tokenize s == (\ t, TK x : t) '' Tokenize r $;
+    Tokenize s = obind (Tokenize r) (\ t, suc (TK x : t)) $ =
+(named '(syl5eq Tokenize_val @
+  eqtrd (syl ifneg @ Tokenize_n0_lem isNumber_n0) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem isNumber_n0 whitespace_n0
+    (anld isNumber_hd) (sylib ltnle @ rsyl whitespace_hd @ eor
+      (rsyl white_lt_dollar @ mpi _dollar_lt_0 lttr)
+      (mpbiri (lelttr _hyphen_le_dot _dot_lt_0) lteq1))) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem isNumber_n0 regexIdent_n0
+    (anrd isNumber_hd) (sylib ltnle @ syl (ltletr _9_lt_A) @ anld regexIdent_bound)) @
+  Tokenize_aux_S @ conseqd (TKeqd anl) anr));
+
 pub theorem TokenizeSymbol {t: nat} (c x: nat):
-  $ c e. symbols -> Tokenize (c : x) == (\ t, TK (c : 0) : t) '' Tokenize x $;
+  $ c e. symbols -> Tokenize (c : x) =
+    obind (Tokenize x) (\ t, suc (TK (c : 0) : t)) $ =
+(named @ focus
+  (have 'n0 '(a1i consne0))
+  (have 'bd '(sylbi symbols_cons anl))
+  (have 'bd2 '(syl symbols_bound2 bd))
+  '(syl5eq Tokenize_val @ syl5eq (ifneg consne0) @ sylbi symbols_maxPrefix @
+    eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem n0 whitespace_n0 bd @
+      rsyl whitespace_hd @ eor
+        (syl (con3 @ anld @ anld symbols_bound2) @ syl ltnlt @ white_lt_dollar)
+        (con2 symbols_ne_hyphen)) @
+    eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem n0 regexIdent_n0 (anrd bd2) @
+      sylibr notor @ sylib (aneq lenlt lenlt) regexIdent_bound) @
+    eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem n0 isNumber_n0 (anrd @ anld bd2) @
+      sylibr notor @ sylib (aneq lenlt lenlt) isNumber_hd) @
+    Tokenize_aux_S @ conseqd (TKeqd anl) anr));
+
 pub theorem TokenizeMath {t: nat} (s x: nat):
-  $ s e. regexMath -> Tokenize (s ++ x) == (\ t, MATH s : t) '' Tokenize x $;
+  $ s e. regexMath -> Tokenize (s ++ x) =
+    obind (Tokenize x) (\ t, suc (MATH s : t)) $ =
+(named '(sylbi regexMath_maxPrefix @ syl5eq Tokenize_val @
+  eqtrd (syl ifneg @ Tokenize_n0_lem regexMath_n0) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem regexMath_n0 whitespace_n0 regexMath_hd @
+    rsyl whitespace_hd @ eor (syl ltne white_lt_dollar) (mpbiri (ltner _dollar_lt_hyphen) neeq1)) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem regexMath_n0 regexIdent_n0 regexMath_hd @
+    rsyl regexIdent_bound @ anwl @ syl ltner @ ltletr _dollar_lt_A) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem regexMath_n0 isNumber_n0 regexMath_hd @
+    rsyl isNumber_hd @ anwl @ syl ltner @ ltletr _dollar_lt_0) @
+  eqtrd (syl Tokenize_aux_0 @ Tokenize_ne_lem regexMath_n0 symbols_n0 regexMath_hd @
+    sylbi symbols_cons @ anwl @ rsyl symbols_bound2 @ anwll ltner) @
+  Tokenize_aux_S @ conseqd (MATHeqd anl) anr));
+
+pub theorem TokenizeElse {x: nat} (s: nat):
+  $ s != 0 ->
+    ~(E. x (x e. whitespace /\ prefix x s)) ->
+    maxPrefix regexIdent s = 0 ->
+    maxPrefix isNumber s = 0 ->
+    ~(E. x (x e. symbols /\ prefix (x : 0) s)) ->
+    ~(E. x (x e. regexMath /\ prefix x s)) ->
+    Tokenize s = 0 $ =
+(named @ focus
+  '(exp @ exp @ exp @ exp @ exp _)
+  '(syl5eq Tokenize_val @ eqtrd (syl ifneg an5l) @
+    eqtrd (syl Tokenize_aux_0 @ syl (sylbi (noteq @ exeqi ancomb) maxPrefix0) an4lr) @
+    eqtrd (syl Tokenize_aux_0 an3lr) @
+    eqtrd (syl Tokenize_aux_0 anllr) @
+    eqtrd (syl Tokenize_aux_0 @ syl (syl maxPrefix0 @
+      con3 @ eex @ imp @ syl5bi ellamima @ eximd @ anim2d @ com12 @ bi1d prefixeq1) anlr) @
+    syl Tokenize_aux_0 @ syl (sylbi (noteq @ exeqi ancomb) maxPrefix0) anr));
 
 -- Now the parser:
 
@@ -1724,7 +2062,7 @@ $ regexStar (parseSort u. parseTerm u. parseAxiom u.
     parseThm u. parseDef u. parseNota u. parseIO) $;
 
 @_ def parse (s ast .tks: nat): wff =
-$ E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST) $;
+$ E. tks (Tokenize s = suc tks /\ tks <> ast e. parseAST) $;
 
 --------------------
 -- AST Navigation --

@@ -452,7 +452,7 @@ theorem maxPrefix0 {x: nat} (A: set) (s: nat):
 theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
   $ E. x (prefix x s /\ x e. A) ->
     E. x E. t (x ++ t = s /\ x e. A /\
-      A. y (prefix x y /\ prefix y s /\ y e. A -> y = x) /\
+      A. y (prefix y s /\ y e. A -> prefix y x) /\
       maxPrefix A s = suc (x <> t)) $;
 
 def regexStar (R: set) (.s .t .L .x .y: nat): set =
@@ -500,20 +500,30 @@ $ _ast ; _dot ; _colon ; _semi ; _lparen ; _rparen ;
 def TK (s: nat): nat = $ b0 s $;
 def MATH (s: nat): nat = $ b1 s $;
 
-def Tokenize (s: nat): set;
-theorem Tokenize0: $ Tokenize 0 == sn 0 $;
+def Tokenize (s: nat): nat;
+theorem Tokenize0: $ Tokenize 0 = suc 0 $;
 theorem TokenizeWS (s x: nat):
-  $ s e. whitespace -> Tokenize (s ++ x) == Tokenize x $;
+  $ s e. whitespace -> Tokenize (s ++ x) = Tokenize x $;
 theorem TokenizeIdent {t: nat} (s x r: nat):
   $ maxPrefix regexIdent s = suc (x <> r) ->
-    Tokenize s == (\ t, TK x : t) '' Tokenize r $;
+    Tokenize s = obind (Tokenize r) (\ t, suc (TK x : t)) $;
 theorem TokenizeNumber {t: nat} (s x r: nat):
   $ maxPrefix isNumber s = suc (x <> r) ->
-    Tokenize s == (\ t, TK x : t) '' Tokenize r $;
+    Tokenize s = obind (Tokenize r) (\ t, suc (TK x : t)) $;
 theorem TokenizeSymbol {t: nat} (c x: nat):
-  $ c e. symbols -> Tokenize (c : x) == (\ t, TK (c : 0) : t) '' Tokenize x $;
+  $ c e. symbols -> Tokenize (c : x) =
+    obind (Tokenize x) (\ t, suc (TK (c : 0) : t)) $;
 theorem TokenizeMath {t: nat} (s x: nat):
-  $ s e. regexMath -> Tokenize (s ++ x) == (\ t, MATH s : t) '' Tokenize x $;
+  $ s e. regexMath -> Tokenize (s ++ x) =
+    obind (Tokenize x) (\ t, suc (MATH s : t)) $;
+theorem TokenizeElse {x: nat} (s: nat):
+  $ s != 0 ->
+    ~(E. x (x e. whitespace /\ prefix x s)) ->
+    maxPrefix regexIdent s = 0 ->
+    maxPrefix isNumber s = 0 ->
+    ~(E. x (x e. symbols /\ prefix (x : 0) s)) ->
+    ~(E. x (x e. regexMath /\ prefix x s)) ->
+    Tokenize s = 0 $;
 
 
 -- Now the parser:
@@ -684,7 +694,7 @@ $ regexStar (parseSort u. parseTerm u. parseAxiom u.
     parseThm u. parseDef u. parseNota u. parseIO) $;
 
 def parse (s ast .tks: nat): wff =
-$ E. tks (tks e. Tokenize s /\ tks <> ast e. parseAST) $;
+$ E. tks (Tokenize s = suc tks /\ tks <> ast e. parseAST) $;
 
 --------------------
 -- AST Navigation --

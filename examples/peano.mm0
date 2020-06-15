@@ -206,6 +206,10 @@ theorem rec0 (z: nat) (S: set): $ rec z S 0 = z $;
 theorem recS (z: nat) (S: set) (n: nat):
   $ rec z S (suc n) = S @ rec z S n $;
 
+def obind (a: nat) (F: set): nat;
+theorem obind0 (F: set): $ obind 0 F = 0 $;
+theorem obindS (n: nat) (F: set): $ obind (suc n) F = F @ n $;
+
 def pow (a b: nat): nat; infixr pow: $^$ prec 81;
 theorem pow0 (a: nat): $ a ^ 0 = 1 $;
 theorem powS (a b: nat): $ a ^ suc b = a * a ^ b $;

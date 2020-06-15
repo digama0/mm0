@@ -210,7 +210,8 @@ do {
   -- Comparison theorem generator: given a goal $ a < b $ or $ a <= b $, produces a proof
   (def mkcmphex @ match-fn
     [('lt a b) @ match (mkcmp2 a b) @ '(< ,p) p]
-    [('le a b) @ match (mkcmp2 a b) ['(< ,p) '(ltlei ,a ,b ,p)] ['= '(leid ,a)]])
+    [('le a b) @ match (mkcmp2 a b) ['(< ,p) '(ltlei ,a ,b ,p)] ['= '(leid ,a)]]
+    [('ne a b) @ match (mkcmp2 a b) ['(< ,p) '(ltne ,a ,b ,p)] ['(> ,p) '(ltner ,b ,a ,p)]])
 
   -- Comparison tactic: usable in refine scripts when the target is $ a < b $ or $ a <= b $,
   -- producing a proof
@@ -388,6 +389,7 @@ theorem hexeql (ha: $ a = a2 $): $ a :x b = a2 :x b $ = '(hexeq1 ha);
 theorem hexeql0 (ha: $ a = x0 $): $ a :x b = b $ = '(eqtr (hexeql ha) hex01);
 theorem lteql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 < b2 $): $ a < b $ = '(mpbir (lteq ha hb) h);
 theorem leeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 <= b2 $): $ a <= b $ = '(mpbir (leeq ha hb) h);
+theorem neeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 != b2 $): $ a != b $ = '(mpbir (neeq ha hb) h);
 theorem eqeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 = b2 $): $ a = b $ = '(mpbir (eqeq ha hb) h);
 do {
   (def tohex-map (atom-map!))
@@ -453,6 +455,11 @@ do {
       @ if {(def? pa) or (def? pb)}
         (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
           '(leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(le ,a2 ,b2))))
+        (mkcmphex e)]
+    [('ne a b) (def pa (mktohex a)) (def pb (mktohex b))
+      @ if {(def? pa) or (def? pb)}
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
+          '(neeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(ne ,a2 ,b2))))
         (mkcmphex e)]
     [('eq a b) @ match (mktohex b)
       [(b2 pb) @ match (mktohex a)
