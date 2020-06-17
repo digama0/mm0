@@ -628,12 +628,28 @@ def PROT_EXEC: nat = $ 4 $;
 
 def Memory: set = $ Arrow u64 (Xp Prot u8) $;
 
-def Config: set = $ Xp u64 (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
-theorem finiteConfig: $ finite Config $;
+def Exception: set = $ upto 2 $;
+def exSysCall: nat = $ 0 $; -- represents the 'syscall' function
+def exGPF: nat = $ 1 $; -- general protection fault, issued on invalid read/write
 
-def readRIP (k: nat): nat = $ fst k $;
+-- data Config = {
+--   ex: Option Exception,   -- nonnull if we are going to do IO on the next step
+--   rip: u64,               -- the intruction pointer
+--   regs: Regs -> u64,      -- the 16 general purpose registers
+--   flags: Flags,           -- the flags CF, ZF, SF, OF
+--   mem: u64 -> Prot * u8 } -- the virtual memory
+def Config: set = $ Xp (Xp (Option Exception) u64) (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
+theorem finiteConfig: $ finite Config $;
+def mkCfg (ex rip regs flags mem: nat): nat = $ (ex <> rip) <> regs <> flags <> mem $;
+theorem mkCfgT (ex rip regs flags mem: nat):
+  $ ex e. Option Exception /\ rip e. u64 /\ regs e. Arrow Regs u64 /\ flags e. Flags /\ mem e. Memory ->
+    mkCfg ex rip regs flags mem e. Config $;
+
+def readException (k: nat): nat = $ pi11 k $;
+def readRIP (k: nat): nat = $ pi12 k $;
 def readReg (k r: nat): nat = $ pi21 k @ r $;
 def readFlags (k: nat): nat = $ pi221 k $;
+def getMemory (k: nat): nat = $ pi222 k $;
 def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
 def readMemory1 (ps m a b .prot: nat): wff =
@@ -650,53 +666,39 @@ theorem readMemoryT (ps m a l: nat):
   $ ps e. Prot /\ m e. Memory /\ a e. u64 /\
     readMemory ps m a l -> l e. List u8 $;
 
-def readMem (k a l: nat): wff = $ readMemory PROT_READ (pi222 k) a l $;
+def readMem (k a l: nat): wff = $ readMemory PROT_READ (getMemory k) a l $;
 theorem readMemT (k a l: nat):
   $ k e. Config /\ a e. u64 /\ readMem k a l -> l e. List u8 $;
 
 def readMemX (k a l: nat): wff =
-$ readMemory (PROT_READ + PROT_EXEC) (pi222 k) a l $;
+$ readMemory (PROT_READ + PROT_EXEC) (getMemory k) a l $;
 theorem readMemXT (k a l: nat):
   $ k e. Config /\ a e. u64 /\ readMemX k a l -> l e. List u8 $;
 
-def writeMemory1 (m a b m2 .prot .b2: nat): wff =
-$ E. prot E. b2 (PROT_READ + PROT_WRITE C_ prot /\
-  m @ a = prot <> b2 /\ m2 == write m a (prot <> b)) $;
+def writeMemory1 (m a b m2 e .prot .b2: nat): wff =
+$ E. prot E. b2 (m @ a = prot <> b2 /\
+  ifp (PROT_READ + PROT_WRITE C_ prot)
+    (m2 == write m a (prot <> b) /\ e = 0)
+    (m2 == m /\ e = suc exGPF)) $;
 
-def writeMemory (m a l m2: nat): wff;
-theorem writeMemory0 (m a l m2: nat): $ writeMemory m a l m2 <-> m2 = m $;
-theorem writeMemoryS {m2: nat} (m a b l m3: nat):
-  $ writeMemory m a (b : l) m3 <->
-    E. m2 (writeMemory1 m a b m2 /\ writeMemory m2 (a +_64 1) l m3) $;
-theorem writeMemoryT (m a l m2: nat):
+def writeMemory (m a l m2 e: nat): wff;
+theorem writeMemory0 (m a l m2 e: nat): $ writeMemory m a l m2 e <-> m2 = m /\ e = 0 $;
+theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
+  $ writeMemory m a (b : l) m3 e <->
+    E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
+    ifp (e1 = 0)
+      (writeMemory m2 (a +_64 1) l m3 e)
+      (m3 == m2 /\ e = e1)) $;
+theorem writeMemoryT (m a l m2 e: nat):
   $ m e. Memory /\ a e. u64 /\ l e. List u8 /\
-    writeMemory m a l m2 -> m2 e. Memory $;
+    writeMemory m a l m2 e -> m2 e. Memory /\ e e. Option Exception $;
 
-def writeMem (k a l k2 .ip .r .f .m .m2: nat): wff =
-$ E. ip E. r E. f E. m E. m2 (writeMemory m a l m2 /\
-  k = ip <> r <> f <> m /\ k2 = ip <> r <> f <> m2) $;
+def writeMem (k a l k2 .ip .r .f .m .m2 .e: nat): wff =
+$ E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\
+  k = mkCfg 0 ip r f m /\ k2 = mkCfg e ip r f m2) $;
 theorem writeMemT (k a l k2: nat):
   $ k e. Config /\ a e. u64 /\ l e. List u8 /\
     writeMem k a l k2 -> k2 e. Config $;
-
-def mapMemory1 (prot m a b m2: nat): wff =
-$ ~ PROT_READ e. fst (m @ a) /\ m2 == write m a (prot <> b) $;
-
-def mapMemory (prot m a l m2: nat): wff;
-theorem mapMemory0 (prot m a l m2: nat): $ mapMemory prot m a l m2 <-> m2 = m $;
-theorem mapMemoryS {m2: nat} (prot m a b l m3: nat):
-  $ mapMemory prot m a (b : l) m3 <->
-    E. m2 (mapMemory1 prot m a b m2 /\ mapMemory prot m2 (a +_64 1) l m3) $;
-theorem mapMemoryT (prot m a l m2: nat):
-  $ prot e. Prot /\ m e. Memory /\ a e. u64 /\ l e. List u8 /\
-    mapMemory prot m a l m2 -> m2 e. Memory $;
-
-def mapMem (prot k a l k2 .ip .r .f .m .m2: nat): wff =
-$ E. ip E. r E. f E. m E. m2 (mapMemory prot m a l m2 /\
-  k = ip <> r <> f <> m /\ k2 = ip <> r <> f <> m2) $;
-theorem mapMemT (prot k a l k2: nat):
-  $ prot e. Prot /\ k e. Config /\ a e. u64 /\ l e. List u8 /\
-    mapMem prot k a l k2 -> k2 e. Config $;
 
 def EA: set = $ Sum Regs (Xp Bool u64) $;
 def EA_i (q: nat): nat = $ b1 (0 <> q) $;
@@ -771,9 +773,13 @@ theorem readEAT (k sz ea v: nat): $ k e. Config /\ ea e. EA /\ sz e. WSize /\
 
 def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
 
+def setException (k e: nat): nat;
+theorem setExceptionVal (ex ip rs f m e: nat):
+  $ setException (mkCfg ex ip rs f m) e = mkCfg e ip rs f m $;
+
 def setReg (k r q: nat): nat;
-theorem setRegVal (ip rs f m r q: nat):
-  $ setReg (ip <> rs <> f <> m) r q = ip <> lower (write rs r q) <> f <> m $;
+theorem setRegVal (ex ip rs f m r q: nat):
+  $ setReg (mkCfg ex ip rs f m) r q = mkCfg ex ip (lower (write rs r q)) f m $;
 theorem setRegT (k r q: nat):
   $ k e. Config /\ r e. Regs /\ q e. u64 -> setReg k r q e. Config $;
 
@@ -807,8 +813,8 @@ theorem writeEAT (k sz ea v k2: nat):
     writeEA k sz ea v k2 -> k2 e. Config $;
 
 def writeRIP (k q: nat): nat;
-theorem writeRIPVal (ip rs f m q: nat):
-  $ writeRIP (ip <> rs <> f <> m) q = q <> rs <> f <> m $;
+theorem writeRIPVal (ex ip rs f m q: nat):
+  $ writeRIP (mkCfg ex ip rs f m) q = mkCfg ex q rs f m $;
 theorem writeRIPT (k q: nat):
   $ k e. Config /\ q e. u64 -> writeRIP k q e. Config $;
 
@@ -834,13 +840,13 @@ $ k e. Config /\ readUnpackFlags k c z s o ->
   bool c /\ bool z /\ bool s /\ bool o $;
 
 def writeFlags (k f: nat): nat;
-theorem writeFlagsVal (ip rs f m f2: nat):
-  $ writeFlags (ip <> rs <> f <> m) f2 = ip <> rs <> f2 <> m $;
+theorem writeFlagsVal (ex ip rs f m f2: nat):
+  $ writeFlags (mkCfg ex ip rs f m) f2 = mkCfg ex ip rs f2 m $;
 
 def setCZSO (k: nat) (c z s o : wff): nat;
-theorem setCZSOVal (ip rs f m : nat) (c z s o: wff):
-  $ setCZSO (ip <> rs <> f <> m) c z s o =
-    ip <> rs <> setOF (setSF (setZF (setCF f c) z) s) o <> m $;
+theorem setCZSOVal (ex ip rs f m : nat) (c z s o: wff):
+  $ setCZSO (mkCfg ex ip rs f m) c z s o =
+    mkCfg ex ip rs (setOF (setSF (setZF (setCF f c) z) s) o) m $;
 
 def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
@@ -850,9 +856,9 @@ $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;
 def writeSFZF (k sz w : nat): nat =
 $ writeResultFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
 
-def eraseFlags (k k2 .ip .rs .f .f2 .m: nat): wff =
-$ E. ip E. rs E. f E. f2 E. m (f2 e. Flags /\
-    k = ip <> rs <> f <> m /\ k2 = ip <> rs <> f2 <> m) $;
+def eraseFlags (k k2 .e .ip .rs .f .f2 .m: nat): wff =
+$ E. e E. ip E. rs E. f E. f2 E. m (f2 e. Flags /\
+    k = mkCfg e ip rs f m /\ k2 = mkCfg e ip rs f2 m) $;
 theorem eraseFlagsT (k k2: nat):
   $ k e. Config /\ eraseFlags k k2 -> k2 e. Config $;
 
@@ -1064,8 +1070,9 @@ theorem execXASTSTC (k k2: nat):
 theorem execXASTCMC (k k2: nat):
   $ execXAST k xastCMC k2 <->
     k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
-theorem execXASTSysCall (k n k2: nat):
-  $ ~ execXAST k xastSysCall k2 $; -- not handled here
+theorem execXASTSysCall {r11: nat} (k n k2: nat):
+  $ execXAST k xastSysCall k2 <-> E. r11 (
+    k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $;
 
 theorem execXASTT (k ast k2: nat):
   $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
@@ -1075,29 +1082,43 @@ theorem execXASTT (k ast k2: nat):
 -- next states may exist in the case of undefined/nondeterministic behavior,
 -- and no next states means the state is either invalid or an IO call.
 def step (k k2 .l .ast: nat): wff =
-$ k e. Config /\ E. l E. ast (
+$ k e. Config /\ readException k = 0 /\ E. l E. ast (
   readMemX k (readRIP k) l /\
   decode ast l /\
   execXAST (writeRIP k (readRIP k +_64 len l)) ast k2) $;
 theorem stepT (k k2: nat): $ step k k2 -> k e. Config /\ k2 e. Config $;
 
--- This is a valid terminating state - the state immediately before calling
--- a system call (we model the x86-64 SYSCALL instruction instead of INT).
--- Here k2 is the state that the kernel sees, with RCX and RIP set to
--- the point after the call.
-def isIO (k k2 .l .rip .r11: nat): wff =
-$ k e. Config /\ E. l E. rip E. r11 (
-  readMemX k (readRIP k) l /\
-  decode xastSysCall l /\
-  rip = readRIP k +_64 len l /\
-  k2 = setReg (setReg (writeRIP k rip) RCX rip) 11 r11) $;
-
 ----------------------------------------
 -- IO semantics
 ----------------------------------------
 
+def PageMapping (M .m .a .p .v: nat): set =
+$ {m | m e. Arrow u64 (Option Prot) /\
+  A. a A. p (a <> suc p e. m -> E. v M @ a = p <> v)} $;
+
 -- Now we model enough of the Linux kernel to interpret a few IO system calls.
-def KernelState: set = $ Xp (Xp (List u8) (List u8)) Config $;
+def KernelState {.k: nat}: set =
+$ Xp (Xp (List u8) (List u8)) (X\ k e. Config, PageMapping (getMemory k)) $;
+def mkKS (i o k m: nat): nat = $ (i <> o) <> k <> m $;
+theorem mkKST (i o k m: nat):
+  $ i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) ->
+    mkKS i o k m e. KernelState $;
+
+def ksCfg (k: nat): nat = $ pi21 k $;
+theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $;
+def ksMapping (k: nat): nat = $ pi22 k $;
+theorem ksMappingT (k: nat):
+  $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $;
+
+def writeMapping (ks m2 k2 ks2 .i .o .k .m: nat): wff =
+$ m2 e. PageMapping k2 /\ E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
+theorem writeMappingT (ks m k ks2: nat):
+  $ ks e. KernelState /\ k e. Config /\ writeMapping ks k m ks2 -> ks2 e. KernelState $;
+
+def writeCfg (ks k2 ks2: nat): wff =
+$ writeMapping ks k2 (ksMapping ks) ks2 $;
+theorem writeCfgT (ks k ks2: nat):
+  $ ks e. KernelState /\ k e. Config /\ writeCfg ks k ks2 -> ks2 e. KernelState $;
 
 def stdin: nat = $ 0 $;
 def stdout: nat = $ 1 $;
@@ -1162,35 +1183,61 @@ $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
     stat e. Stat /\ stat2 e. Stat /\
     ret e. u32 /\ writeMem k (readReg k RSI) stat2 k2) $;
 
+def mapMemory1 (prot m a b: nat): nat =
+$ lower (write (fst m) a (prot <> b)) <> lower (write (snd m) a (suc prot)) $;
+
+def mapMemory (prot m a l: nat): nat;
+theorem mapMemory0 (prot m a: nat): $ mapMemory prot m a 0 = m $;
+theorem mapMemoryS (prot m a b l: nat):
+  $ mapMemory prot m a (b : l) =
+    mapMemory prot (mapMemory1 prot m a b) (a +_64 1) l $;
+theorem mapMemoryT {x: nat} (prot m a l m2: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ l e. List u8 /\
+    mapMemory prot m a l e. X\ x e. Memory, PageMapping x $;
+
+def mapMem (prot k km a l k2 km2 .e .ip .r .f .m .m2: nat): wff =
+$ E. e E. ip E. r E. f E. m E. m2 (
+  k = mkCfg e ip r f m /\
+  mapMemory prot (m <> km) a l = m2 <> km2 /\
+  k2 = mkCfg e ip r f m2) $;
+theorem mapMemT (prot k km a l k2 km2: nat):
+  $ prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
+    mapMem prot k km a l k2 km2 ->
+    k2 e. Config /\ km2 e. PageMapping (getMemory k2) $;
+
 def sys_mmap: nat = $ 9 $;
 def MAP_PRIVATE: nat = $ 2 $;
 def MAP_ANONYMOUS: nat = $ 32 $;
 def MAP_FAILED: nat = $ bitsNeg 64 1 $;
-def execMMap (k k2 ret .len .prot .flags .fd .off .buf: nat): wff =
+def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
 $ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
     readReg k RDI = 0 /\ len = readReg k RSI /\
     prot = readReg k RDX /\ flags = readReg k 10 /\
     fd = readReg k 8 /\ off = readReg k 9 /\
     flags = MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS /\
     prot e. Prot /\ off = 0 /\ ret e. u64 /\
-    ifp (ret = MAP_FAILED) (k2 = k)
+    ifp (ret = MAP_FAILED) (k2 = k /\ m2 = m)
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
-        mapMem prot k ret buf k2))) $;
+        A. i (i < len -> m @ (ret +_64 i) = 0) /\
+        mapMem prot k m ret buf k2 m2))) $;
 
-def execIO (i o k0 i2 o2 k3 .k .k2 .ret: nat): wff =
-$ E. k E. k2 E. ret (isIO k0 k /\ k3 = setReg k2 RAX ret /\ (
-    execOpen k ret /\ i2 = i /\ o2 = o /\ k2 = k \/
-    execRead i k i2 k2 ret /\ o2 = o \/
-    execWrite o k o2 ret /\ i2 = i /\ k2 = k \/
-    execFStat k k2 ret /\ i2 = i /\ o2 = o \/
-    execMMap k k2 ret /\ i2 = i /\ o2 = o)) $;
-theorem execIOT (i o k i2 o2 k2: nat):
-  $ i e. List u8 /\ o e. List u8 /\ k e. Config /\ execIO i o k i2 o2 k2 ->
-    i2 e. List u8 /\ o2 e. List u8 /\ k2 e. Config $;
+def execIO (ks ks2 .i .o .k .m .ret .k2 .k3 .i2 .o2 .m2: nat): wff =
+$ E. i E. o E. k E. m E. ret (ks = mkKS i o k m /\ readException k = suc exSysCall /\
+  E. k2 E. k3 (k3 = setException (setReg k2 RAX ret) 0 /\ (
+    execOpen k ret /\ k2 = k /\ ks = mkKS i o k3 m \/
+    E. i2 (execRead i k i2 k2 ret /\ ks2 = mkKS i2 o k3 m) \/
+    E. o2 (execWrite o k o2 ret /\ k2 = k /\ ks2 = mkKS i o2 k3 m) \/
+    execFStat k k2 ret /\ ks2 = mkKS i o k3 m \/
+    E. m2 (execMMap k m k2 m2 ret /\ ks2 = mkKS i o k3 m2)))) $;
+theorem execIOT (k k2: nat): $ k e. KernelState /\ execIO k k2 -> k2 e. KernelState $;
 
 def sys_exit: nat = $ ch x3 xc $;
+-- We consider protection faults as a valid way to exit with a nonzero exit code
+-- (usually 0xD or 0xE but often reported as 0x8D and 0x8E by shells).
 def execExit (k ret: nat): wff =
-$ readReg k RAX = sys_exit /\ ret e. u32 /\ ret = readReg k RDI $;
+$ ret e. u32 /\ (
+  readException k = suc exGPF /\ ret != 0 \/
+  readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = readReg k RDI) $;
 
 -- This is the composite step relation for the extended state.
 -- This mixes regular steps of the machine with IO steps where
@@ -1198,11 +1245,10 @@ $ readReg k RAX = sys_exit /\ ret e. u32 /\ ret = readReg k RDI $;
 -- the behavior. (We could avoid this, but if we go any lower level than
 -- this we won't be able to run the result as a normal program - we will have
 -- to replace the bootloader and so on to make a single program OS.)
-def ksStep (ks ks2: nat): wff;
-theorem ksStepVal (i o k i2 o2 k2: nat):
-  $ ksStep ((i <> o) <> k) ((i2 <> o2) <> k2) <->
-    ((i <> o) <> k) e. KernelState /\
-    ((i2 = i /\ o2 = o /\ step k k2) \/ execIO i o k i2 o2 k2) $;
+def ksStep (ks ks2 .k2: nat): wff =
+$ ks e. KernelState /\ (
+    E. k2 (step (ksCfg ks) k2 /\ writeCfg ks k2 ks2) \/
+    execIO ks ks2) $;
 theorem ksStepT (ks ks2: nat):
   $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
 
@@ -1222,17 +1268,17 @@ def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
 -- necessary, the program always reaches the exit point and returns a value,
 -- and moreover, if it returns 0, then it has consumed the entire input and
 -- returned `o`. (Nondeterminism is not permitted to affect the output `o`.)
-def alwaysTerminates (k i o .ks .k2 .i2 .o2 .ret: nat): wff =
-$ A. ks (ksReachable ((i <> 0) <> k) ks ->
-    E. k2 E. i2 E. o2 E. ret (ksReachable ks ((i2 <> o2) <> k2) /\
+def alwaysTerminates (k i o .ks .k2 .i2 .o2 .m2 .ret: nat): wff =
+$ A. ks (ksReachable (mkKS i 0 (fst k) (snd k)) ks ->
+    E. k2 E. i2 E. o2 E. m2 E. ret (ksReachable ks (mkKS i2 o2 k2 m2) /\
       execExit k2 ret /\ (ret = 0 -> i2 = 0 /\ o2 = o))) $;
 
 -- `succeeds k i o` asserts that starting from initial configuration k,
 -- given `i` on standard input, the program reaches the exit point and returns
 -- success (exit code 0), and puts `o` on standard out.
-def succeeds (k i o .i2 .k2: nat): wff =
-$ E. i2 E. k2 (
-    ksReachable ((i <> 0) <> k) ((i2 <> o) <> k2) /\
+def succeeds (k i o .i2 .k2 .m2: nat): wff =
+$ E. i2 E. k2 E. m2 (
+    ksReachable (mkKS i 0 (fst k) (snd k)) (mkKS i2 o k2 m2) /\
     execExit k2 0) $;
 
 ----------------------------------------
@@ -1310,23 +1356,25 @@ $ E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
 
 def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
-    k = entry <> lower ((\ r, 0) |` Regs) <> f <> m) $;
+    k = mkCfg 0 entry (lower ((\ r, 0) |` Regs)) f m) $;
 theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
 
-def allocStack (k k2 .sp .stack .argc .x .arg .cstr .str: nat): wff =
-$ E. sp E. stack E. argc (
-    sp + len stack e. u64 /\
-    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) sp stack k2 /\
+def allocStack (k m k3 km3 .sp .stack .argc .k2 .km2 .x .arg .cstr .str: nat): wff =
+$ E. sp E. stack E. argc E. k2 E. km2 (
+    sp + len stack + 2 ^ 12 e. u64 /\
+    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m sp stack k2 km2 /\
+    mapMem 0 k2 km2 (sp + len stack) (repeat 0 (2 ^ 12)) k3 km3 /\
     argc e. u64 /\ sublistAt 0 stack (u64Bytes argc) /\
     A. x (x < argc -> E. arg E. cstr (
-      sublistAt (4 * x) stack (u64Bytes (sp + arg)) /\
+      sublistAt (8 * suc x) stack (u64Bytes (sp + arg)) /\
       sublistAt arg stack cstr /\ E. str toCStr str cstr))) $;
 
 -- This defines the initial state set up from a basic ELF file (only one
 -- program segment, no sections).
-def initialConfig (elf k .entry .prot .off .seg .k0 .k1: nat): wff =
-$ E. entry E. prot E. off E. seg E. k0 E. k1 (
+def initialConfig (elf kkm .entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
+$ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
     elf = entry <> prot <> off <> seg /\
-    blankConfig entry k0 /\ allocStack k0 k1 /\
-    mapMem prot k1 off seg k) $;
+    blankConfig entry k0 /\ allocStack k0 (lower ((\ a, 0) |` u64)) k1 km1 /\
+    mapMem prot k1 km1 off seg k2 km2 /\
+    kkm = k2 <> km2) $;
