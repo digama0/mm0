@@ -66,7 +66,6 @@ void fail(char* err, int e) {
 u64 g_next_bv;
 // scratch space
 u64 g_deps[256];
-u32 g_data;
 
 // Push a stack element to the main stack.
 #define push_stack(val) { \
@@ -129,35 +128,22 @@ static inline u32 as_type(u32 val, u32 type) {
   UPDATE_HIGHWATER(g_uheap_size, g_uheap_highwater) \
 }
 
+typedef struct {u32 sz; u32 data;} cmd_unpack_result;
 // Unpack a command opcode. The cmd pointer is pointing at a byte
 // which has the length of the data field encoded in its high bits.
-// This function fills the g_data global variable with the parsed data field,
-// returns the size of the whole command (data + opcode).
-u32 cmd_unpack(u8* cmd) {
+// This function returns the parsed data field,
+// and the size of the whole command (data + opcode).
+cmd_unpack_result cmd_unpack(u8* cmd) {
   ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
   switch (CMD_DATA(*cmd)) {
-    case CMD_DATA_0: {
-      g_data = 0;
-      return sizeof(cmd0);
-    } break;
-
-    case CMD_DATA_8: {
-      cmd8* p = (cmd8*)cmd;
-      g_data = p->data;
-      return sizeof(cmd8);
-    } break;
-
-    case CMD_DATA_16: {
-      cmd16* p = (cmd16*)cmd;
-      g_data = p->data;
-      return sizeof(cmd16);
-    } break;
-
-    case CMD_DATA_32: {
-      cmd32* p = (cmd32*)cmd;
-      g_data = p->data;
-      return sizeof(cmd32);
-    } break;
+    case CMD_DATA_0:
+      return ((cmd_unpack_result){sizeof(cmd0), 0});
+    case CMD_DATA_8:
+      return ((cmd_unpack_result){sizeof(cmd8), ((cmd8*)cmd)->data});
+    case CMD_DATA_16:
+      return ((cmd_unpack_result){sizeof(cmd16), ((cmd16*)cmd)->data});
+    case CMD_DATA_32:
+      return ((cmd_unpack_result){sizeof(cmd32), ((cmd32*)cmd)->data});
   }
   UNREACHABLE();
 }
@@ -216,11 +202,13 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
   // u8* last_cmd = cmd;
   while (true) {
     g_cmd = cmd;
-    u32 sz = cmd_unpack(cmd); // sets g_data
+    cmd_unpack_result r = cmd_unpack(cmd);
+    u32 sz = r.sz;
+    u32 data = r.data;
     // debug_print_ustack();
     // debug_print_uheap();
     ENSURE("command out of range", cmd + CMD_MAX_SIZE <= g_end);
-    // fprintf(stderr, "\n"); debug_print_cmd(cmd, g_data);
+    // fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
 
     switch (*cmd & 0x3F) {
       // End: the end of the command stream.
@@ -235,8 +223,8 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
       // Get the i-th element from the unify heap (the substitution), and match it against
       // the head of the unify stack.
       case CMD_UNIFY_REF: {
-        ENSURE("bad ref step", g_data < g_uheap_size);
-        ENSURE("unify failure at ref", g_uheap[g_data] == pop_ustack());
+        ENSURE("bad ref step", data < g_uheap_size);
+        ENSURE("unify failure at ref", g_uheap[data] == pop_ustack());
       } break;
 
       // UTerm t: S, (t e1 ... en) --> S, en, ..., e1
@@ -253,7 +241,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
       case CMD_UNIFY_TERM_SAVE: {
         u32 p = pop_ustack();
         store_term* e = get_term(p);
-        ENSURE("unify failure at term", e->termid == g_data);
+        ENSURE("unify failure at term", e->termid == data);
         ENSURE("unify stack overflow",
           &g_ustack_top[e->num_args] <= &g_ustack[UNIFY_STACK_SIZE]);
         for (int i = e->num_args - 1; i >= 0; i--) {
@@ -273,7 +261,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         u32 p = pop_ustack();
         store_var* e = get_var(p);
         u64 type = e->type;
-        ENSURE("unify failure at dummy", (type >> 56) == (0x80 | g_data));
+        ENSURE("unify failure at dummy", (type >> 56) == (0x80 | data));
         type &= TYPE_DEPS_MASK;
         for (int i = 0; i < g_uheap_size; i++) {
           ENSURE("dummy disjoint variable violation",
@@ -337,10 +325,12 @@ u8* run_proof(proof_mode mode, u8* cmd) {
   while (true) {
     g_cmd = cmd;
     g_cmd_start = cmd_start;
-    u32 sz = cmd_unpack(cmd); // sets g_data
+    cmd_unpack_result r = cmd_unpack(cmd);
+    u32 sz = r.sz;
+    u32 data = r.data;
     // debug_print_stack();
     // debug_print_heap();
-    // fprintf(stderr, "\n"); debug_print_cmd(cmd, g_data);
+    // fprintf(stderr, "\n"); debug_print_cmd(cmd, data);
 
     switch (*cmd & 0x3F) {
       // End: the end of the command stream.
@@ -352,19 +342,19 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // Ref i: H; S --> H; S, Hi
       // Get the i-th heap element and push it on the stack.
       case CMD_PROOF_REF: {
-        ENSURE("bad ref step", g_data < g_heap_size);
-        push_stack(g_heap[g_data]);
+        ENSURE("bad ref step", data < g_heap_size);
+        push_stack(g_heap[data]);
       } break;
 
       // Dummy s: H; S --> H, x; S, x    alloc(x:s)
       // Allocate a new variable x of sort s, and push it to the stack and the heap.
       case CMD_PROOF_DUMMY: {
-        ENSURE("bad dummy sort", g_data < g_num_sorts);
+        ENSURE("bad dummy sort", data < g_num_sorts);
         ENSURE("dummy variable in strict sort",
-          (g_sorts[g_data] & SORT_STRICT) == 0);
+          (g_sorts[data] & SORT_STRICT) == 0);
         ENSURE("too many bound variables, please rewrite the verifier",
           (g_next_bv >> 56) == 0);
-        u64 type = TYPE_BOUND_MASK | ((u64)g_data << 56) | g_next_bv;
+        u64 type = TYPE_BOUND_MASK | ((u64)data << 56) | g_next_bv;
         g_next_bv *= 2;
         u32 e = STACK_TYPE_EXPR |
           ALLOC(((store_var){type, EXPR_VAR, (u16)g_heap_size}), sizeof(store_var));
@@ -385,15 +375,15 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // When Save is used, the new term is also saved to the heap.
       case CMD_PROOF_TERM:
       case CMD_PROOF_TERM_SAVE: {
-        ENSURE("term out of range", g_data < g_num_terms);
-        term* t = &g_terms[g_data];
+        ENSURE("term out of range", data < g_num_terms);
+        term* t = &g_terms[data];
         u64* targs = (u64*)&g_file[t->p_args];
         ENSURE("stack underflow", g_stack_top >= &g_stack[t->num_args]);
         g_stack_top -= t->num_args;
         // alloc g_deps;
         u8 bound = 0;
         u64 accum = (u64)(t->sort & 0x7F) << 56;
-        u32 p = ALLOC(((store_term){0, EXPR_TERM, t->num_args, g_data}),
+        u32 p = ALLOC(((store_term){0, EXPR_TERM, t->num_args, data}),
           sizeof(store_term) + 4 * t->num_args);
         store_term* result = get_term(p);
         for (u16 i = 0; i < t->num_args; i++) {
@@ -439,8 +429,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       case CMD_PROOF_THM:
       case CMD_PROOF_THM_SAVE: {
         ENSURE("invalid opcode in def", mode != Def);
-        ENSURE("theorem out of range", g_data < g_num_thms);
-        thm* t = &g_thms[g_data];
+        ENSURE("theorem out of range", data < g_num_thms);
+        thm* t = &g_thms[data];
         u64* targs = (u64*)&g_file[t->p_args];
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("stack underflow", g_stack_top >= &g_stack[t->num_args]);
@@ -571,8 +561,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // Pop a convertibility obligation e1 =?= e2, where e1 = e2 is
       // i-th on the heap.
       case CMD_PROOF_CONV_REF: {
-        ENSURE("bad ConvRef step", g_data < g_heap_size);
-        store_conv* c = get_conv(as_type(g_heap[g_data], STACK_TYPE_CONV));
+        ENSURE("bad ConvRef step", data < g_heap_size);
+        store_conv* c = get_conv(as_type(g_heap[data], STACK_TYPE_CONV));
         u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
         ENSURE("ConvRef unify error", c->e1 == e1 && c->e2 == e2);
@@ -632,6 +622,7 @@ void verify(u8* file, u64 len) {
   ENSURE("Not a MM0B file", p->magic == MM0B_MAGIC);
   ENSURE("Wrong version", p->version == MM0B_VERSION);
   ENSURE("Too many sorts", p->num_sorts <= MAX_SORTS);
+  ENSURE("header not long enough", len >= sizeof(header) + p->num_sorts);
   ENSURE("Term table out of range",
     len >= p->p_terms + p->num_terms * sizeof(term));
   ENSURE("Theorem table out of range",
@@ -648,12 +639,14 @@ void verify(u8* file, u64 len) {
   // do nothing, verify the next element in the term or theorem table, or
   // read a proof from the stream and verify against the term or theorem table.
   while (*stmt != CMD_END) {
-    u32 sz = cmd_unpack(stmt);
+    cmd_unpack_result r = cmd_unpack(stmt);
+    u32 sz = r.sz;
+    u32 data = r.data;
     g_stmt = stmt;
-    u8* next_stmt = stmt + g_data;
+    u8* next_stmt = stmt + data;
     if (!(next_stmt + CMD_MAX_SIZE <= g_end)) {
-      // fprintf(stderr, "stmt: %lX, g_data: %X, len: %lX\n",
-      //   stmt - g_file, g_data, g_end - g_file);
+      // fprintf(stderr, "stmt: %lX, data: %X, len: %lX\n",
+      //   stmt - g_file, data, g_end - g_file);
       ENSURE("proof command out of range", next_stmt + CMD_MAX_SIZE <= g_end);
     }
     u8 stmt_type = *stmt & 0x3F;
@@ -661,7 +654,7 @@ void verify(u8* file, u64 len) {
       // A sort command has no data in the proof stream. It simply bumps the
       // sort counter (after checking that a sort is available in the table).
       case CMD_STMT_SORT: {
-        ENSURE("Next statement incorrect", g_data == sz);
+        ENSURE("Next statement incorrect", data == sz);
         ENSURE("Step sort overflow", g_num_sorts < p->num_sorts);
         parse_until(CMD_STMT_SORT);
         g_num_sorts++;
@@ -705,7 +698,7 @@ void verify(u8* file, u64 len) {
             push_uheap(g_heap[i]);
           run_unify(UDef, ucmd, val);
         } else {
-          ENSURE("Next statement incorrect", g_data == sz);
+          ENSURE("Next statement incorrect", data == sz);
         }
         if (!IS_CMD_STMT_LOCAL(stmt_type)) parse_until(CMD_STMT_DEF);
         g_num_terms++;

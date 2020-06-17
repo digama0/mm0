@@ -514,7 +514,9 @@ void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
   // u8* last_cmd = cmd;
   while (true) {
     g_cmd = cmd;
-    u32 sz = cmd_unpack(cmd); // sets g_data
+    cmd_unpack_result r = cmd_unpack(cmd);
+    u32 sz = r.sz;
+    u32 data = r.data;
     // debug_print_ustack();
     // debug_print_uheap();
     switch (*cmd & 0x3F) {
@@ -525,7 +527,7 @@ void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
       } return;
 
       case CMD_UNIFY_REF: {
-        deep_eq(g_uheap[g_data], *(--g_ustack_top));
+        deep_eq(g_uheap[data], *(--g_ustack_top));
       } break;
 
       case CMD_UNIFY_TERM:
@@ -533,7 +535,7 @@ void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
         u32 p = *(--g_ustack_top);
         parse_term* e = (parse_term*)&g_store[p];
         ENSURE("store type error", e->tag == EXPR_TERM);
-        ENSURE("unify failure at term", e->termid == g_data);
+        ENSURE("unify failure at term", e->termid == data);
         ENSURE("unify stack overflow",
           &g_ustack_top[e->num_args] <= &g_ustack[UNIFY_STACK_SIZE]);
         for (int i = e->num_args - 1; i >= 0; i--) {
@@ -550,7 +552,7 @@ void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
         ENSURE("store type error", e->tag == EXPR_VAR);
         ENSURE("expected a dummy", e->var >= num_vars);
         ENSURE("unify failure at dummy",
-          g_data == g_var_sorts[e->var]);
+          data == g_var_sorts[e->var]);
         push_uheap(p);
       } break;
 
