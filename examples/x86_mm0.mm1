@@ -32,19 +32,21 @@ prefix Ex: $EX$ prec 41;
 
 do {
   -- This is just a scratchpad for now, some thoughts on MMC syntax and primitives.
+  (def {a ^ b} (if {b <= 1} (match b [0 1] [1 a]) @ begin
+    (def c {b // 2}) {{a ^ c} * {a ^ {b - c}}}))
   ((fn _) '(
     (typedef Stat (array u8 80))
     (intrinsic sys_fstat {fd : u32} {buf : (&mut Stat)} : u32)
     (intrinsic sys_open
-      {fname : (& cstr)}
+      {fname : (& CStr)}
       {flags : $ O_RDONLY ; sn (O_WRONLY + O_CREAT + O_TRUNC) $} :
       u32)
     (intrinsic sys_mmap {pos : (sn 0)} {len : u64} {prot : Prot}
       {flags : $ sn (MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS) $}
       {fd : u64} {off : (sn 0)} :
       {ret : u64}
-      {h : {{ret = MAP_FAILED} or {{ret :> (own (array u8 len))} and
-        {{fd = (bitsNeg 32 1)} -> (all (sn 0) (* x))}}}})
+      {h : {{ret = MAP_FAILED} or (Sigma {h2 : {ret :> (own (array u8 len))}}
+        {{fd = (bitsNeg 32 1)} -> (all (sn 0) (* (<: h2)))})}})
 
     (proc
       (main
@@ -58,11 +60,11 @@ do {
       (assert {0 <= (sys_fstat fd (&mut buf))})
       {(ptr h) := (sys_mmap 0 len PROT_READ {MAP_FILE bor MAP_PRIVATE})}
       {{ptr : (own (array u8 len))} :=
-        (cast ptr (entail h (assert {ptr != MAP_FAILED})
+        (pun ptr (entail h (assert {ptr != MAP_FAILED})
           -- proof of
           -- ptr :> (sn MAP_FAILED \/ (ptr :> (own (array u8 len)) /\ (fd = bitsNeg 32 1 -> all (sn 0) (* ptr)))) /\
           -- ptr != MAP_FAILED
-          -- |- (ptr :> (own (array u8 len)) /\ (fd = bitsNeg 32 1 -> all (sn 0) (* ptr))
+          -- |- (ptr :> (own (array u8 len))
           _))}
       (return 0 (verify len ptr)))
 
@@ -106,19 +108,19 @@ do {
         {len : u64}
         {file : (& (array u8 len))}
         (ghost {input : Input})
-        (uses g_file g_end g_num_sorts g_sorts
+        (mut g_file g_end g_num_sorts g_sorts
           g_num_terms g_terms g_num_thms g_thms) :
         $ Valid input $)
       {g_file := file}
-      {g_end := {file + len}}
+      {{g_end : u64} := (cast {file + len} (assert {{file + len} < ,{2 ^ 64}}))}
       {{p : (& Header0)} :=
-        (cast file (using (assert {(sizeof Header0) <= len})))}
+        (pun file (using (assert {(sizeof Header0) <= len})))}
       (assert {(p . magic) = MM0B_MAGIC})
       (assert {(p . version) = MM0B_VERSION})
       {nsorts := (p . num_sorts)}
       {h2 := (assert {nsorts <= MAX_SORTS})}
       {g_num_sorts := 0}
-      {g_sorts := (slice (& (array u8 nsorts)) {file + (sizeof Header)}
+      {g_sorts ::= (slice (& (array u8 nsorts)) {file + (sizeof Header)}
         (assert {{(sizeof Header) + nsorts} <= len}))}
       {g_num_terms := 0}
       {p_terms := (p . p_terms)} {nterms := (p . num_terms)}
@@ -135,8 +137,8 @@ do {
       (while {(index stmt 0 (entail remainder_bd _)) != CMD_END}
         (variant remainder)
         (invariant
-          (reads g_file g_end g_sorts g_terms g_thms)
-          (r/w g_num_sorts g_num_terms g_num_thms remainder remainder_bd)
+          (read g_file g_end g_sorts g_terms g_thms)
+          (mut g_num_sorts g_num_terms g_num_thms remainder remainder_bd)
           {h_sorts : {{g_num_sorts <= nsorts} and {g_sorts :> (& (array Sort g_num_sorts))}}}
           {h_terms : {{g_num_terms <= nterms} and {g_terms :> (& (array Term g_num_terms))}}}
           {h_thms : {{g_num_thms <= nthms} and {g_thms :> (& (array Thm g_num_thms))}}}
@@ -145,20 +147,25 @@ do {
           {ext : (EnvExtends env env2)}
           {repr : (Represents env2 (* (<: h_sorts)) (* (<: h_terms)) (* (<: h_thms)))})
 
-        {((w sz data) h_unpack) := (func-eq (cmd_unpack stmt))}
+        {h_unpack := {(w sz data) := (cmd_unpack stmt)}}
         (ghost {remainder2 := {remainder - data}})
         {next_stmt_bd := (assert {{stmt + data + 5} <= g_end})}
         {next_stmt := (slice (& (array u8 remainder2)) {stmt + data}
           (entail next_stmt_bd suff _))}
 
         (switch w
-          {0 => (begin
+          {CMD_STMT_SORT => (begin
             (assert {data = sz})
             {h := (assert {g_num_sorts < nsorts})}
             {(h_sorts repr2) :=
               (parse_until CMD_STMT_SORT h (&mut env env2 ext) repr)}
             {(g_num_sorts _) := (succ_lt g_num_sorts h)}
-            {h_sorts := (cast h_sorts _)})})
+            {h_sorts := (pun h_sorts _)})}
+
+          {{CMD_STMT_DEF or CMD_STMT_LOCAL_DEF} => (begin
+
+            )}
+            )
 
         (continue
           {remainder := remainder2}
@@ -167,7 +174,7 @@ do {
           {suff := (entail suff _)}
           (variant (entail h_unpack remainder2
             -- proof of
-            -- cmd_unpack (* stmt) = w <> sz <> data,
+            -- w <> sz <> data = cmd_unpack (* stmt),
             -- remainder2 = remainder - data |- remainder2 < remainder
             _))))
       (assert {g_num_sorts = nsorts})
