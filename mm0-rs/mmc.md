@@ -10,7 +10,7 @@ MMC is currently written in arguments to the MMC compiler, which has an interfac
 
 A *type* is a separating proposition over machine states. That is, it is a true-or-false statement that applies to portions of the machine state (registers and memory). This is a very low level view, but it has the advantage that because it is so general, users can define types of arbitrary complexity, containing invariants and ownership semantics. Types also contain a size and an alignment, although for the x86 instantiation of MMC all types have alignment 1. Here are some basic types:
 
-    bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 | (own T) | (array T n)
+    () | bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 | (own T) | (array T n)
 
 The first few represent signed and unsigned integers of various widths. The `(own T)` type is an owned pointer to a type. The `(array T n)` type is a contiguous sequence of `n` elements of type `T`. (The type is not stored anywhere in memory, it is a parameter of the type.) Types can depend on values, which is often known as dependent typing, however unlike most dependent type theories very little "computation" is done inside types, and instead a `(pun)` must be used to re-type a term given a proof that it has a type. (This is not like a C cast that can be used to reinterpret a type - the value must satisfy all invariants of the target type to be eligible for `pun`.)
 
@@ -57,14 +57,14 @@ Most functions on natural numbers work in MMC, but all of them return unbounded 
 * If `x,y: nat` then `{x + y}: nat`. Similarly if `x` and `y` have types `u8-64` then `{x + y}: nat`. If `x` and `y` have types `i8-64` or `int` then `{x + y}: int`.
 * If `x,y` have any integral types then `{x - y}: int`
 * The promotion rules for `{x * y}: nat/int` are the same as `{x + y}`
-* The promotion rules for `{x // y}: nat/int` are also the same as `{x + y}`. Division by zero is defined and returns 0, but one can also use `{x // (y h)}` where `h: $ y != 0 $` to skip the check.
+* The promotion rules for `{x // y}: nat/int` and `{x % y}: nat/int` are also the same as `{x + y}`. Division by zero is defined and returns 0, and `{x % 0} = x`, but one can also use `{x // (y h)}` and `{x % (y h)}` where `h: $ y != 0 $` to skip the check.
 * If `x,y: nat` then `{x ^ y}: nat`. Prefer `{x * {2 ^ n}}` and `{x // {2 ^ n}}` to left and right shift if the intent is to do numeric operations. The actual bitshift operators truncate, as mentioned below.
 
 Bitwise operations and logical shifts on fixed width unsigned integers do nothing to the types.
 
-* If `x,y: uN` then `{x band y}, {x bor y}, {x bxor y}, (~ x): uN`
+* If `x,y: uN` then `{x band y}, {x bor y}, {x bxor y}, (bnot x): uN`
 * If `x,y: nat` then `{x band y}, {x bor y}, {x bxor y}: nat`
-* If `x,y: int` then `{x band y}, {x bor y}, {x bxor y}, (~ x): int`
+* If `x,y: int` then `{x band y}, {x bor y}, {x bxor y}, (bnot x): int`
 * Signed values are promoted to `int` for bitwise ops
 
 In most cases where unintended `nat` promotion has occurred a `cast` will bring the value back in range, although if the proof cannot be performed automatically the user must provide it. Alternatively `as` can be used to turn a `nat`/`int` into a `uN` or `sN` by reducing modulo `2^N`.
@@ -216,23 +216,349 @@ For type punning and reconstituting values of complex types that have been strip
 
 * If `h: $ x :> Y $` and `Y` has the same `sizeof` as `X`. (The evidence that `x :> X` is dropped.)
 * It has the same effect as `(trunc x)` if `X` and `Y` are numeric types with the same `sizeof`.
-* If `X = (& T)` or `(own T)` and `Y = (& U)` and `h` proves `sizeof U <= sizeof T` and `(* x) <: U` if the latter is not trivial.
+* If `X = (& T)` or `(own T)` and `Y = (& U)`, or `X = (own T)` and `Y = (own U)` and `h` proves `sizeof U <= sizeof T` and `(* x) <: U` if the latter is not trivial.
+
+### Slicing
+
+A related operation to casting is slicing, the extraction of a subsequence of an array. If `x: (& (array T n))`, then `(slice (& (array T a)) {x + b} h): (& (array T a))` if `h` is a proof that `b + a <= n`. Computationally this corresponds to simply `x + b * sizeof T`, in the manner of C pointer arithmetic. The addition is syntactically part of the operator, but it can also be omitted when `b = 0`, in which case the slice has the same behavior as `(pun x h)`.
+
+The `slice` operator can also be used to perform simultaneous punning: if `x: (& (array T n))`, then `(slice (& U) {x + b} h): (& U)` provided that `h` is a proof of ` b * sizeof T + sizeof U <= n * sizeof T` and `(* x) <: U` if the latter is not trivial.
+
+### Assertions
+
+The `(assert p)` function will assert the truth of any boolean predicate `p`, by terminating the program with an error code if the predicate fails to hold. Syntactically `p` can be any separating proposition, including quantifiers and nondecidable expressions; the compiler will attempt to compile these on a best effort basis. Generally it should be expected to work only when `p` is a boolean expression using fixed size temporaries. It cannot be used to manufacture resources, so you can't prove that `x :> (own T)` using assertions, although if `x : (own (array u8 (sizeof T)))` and `T` represents some predicate over simple data then you may be able to `assert` that `(* x) :> T` and then `pun` `x` to type `(own T)`.
+
+    {{x : u64} := 1}
+    {{y : u64} := 2}
+    {h := (assert {x < y})}
+    -- x: u64, y: u64, h: $ x < y $
+
+Note that this example contains runtime overhead for the testing of the predicate `x < y`, but we can obtain a proof that it is true without the test and eliminate the overhead:
+
+    {hx := {{x : u64} := 1}}
+    {hy := {{y : u64} := 2}}
+    -- x: u64, hx: $ x = 1 $, y: u64, hy: $ y = 2 $
+    {{h : $ x < y $} := (entail hx hy (proof...))}
+    -- x: u64, y: u64, hx: $ x = 1 $, hy: $ y = 2 $, h: $ x < y $
+
+This demonstrates how we can trade extra proof work for runtime overhead. (The compiler may well eliminate the test in the first case as well because it has a theorem prover of its own in the form of constant propagation.)
+
+## Control structures
+
+Control structures are mechanisms for changing the flow of control in a program: conditional branches, function calls, and loops.
+
+### Blocks
+
+Not really a control structure, but necessary for organizing function bodies, `(begin s1 s2 ... sn)` is a sequential block of statements, similar to the use of `{` `}` in C. It can also be used in an expression context, where it acts as a scoped block of statements followed by a value:
+
+    {h := {{y : u8} := 0}}
+    {{x : u8} := (begin
+      {h := {{y : u8} := 1}}
+      -- y: u8, h: $ y = 1 $
+      {y + 1})}
+    -- y: u8, h: $ y = 0 $, x: u8
+
+Note that `y` and `h` were shadowed in the block but are visible outside the block with their original values.
+
+Alternatively, the `mut` keyword can be used at the start of a block to indicate that variables from the outer context should be assigned by the block. In functional style, this is equivalent to passing the marked variables as multiple return values of the block and then performing a shadowing binding in the outer context.
+
+    {h := {{y : u8} := 0}}
+    {{x : u8} := (begin (mut y)
+      {h := {{y : u8} := 1}}
+      -- y: u8, h: $ y = 1 $
+      {y + 1})}
+    -- x: u8, y: u8
+
+We have lost both hypotheses in this example because the first one is obsolete and the second one was dropped at the end of the block. If we export both:
+
+    {h := {{y : u8} := 0}}
+    {{x : u8} := (begin (mut y h)
+      {h := {{y : u8} := 1}}
+      -- y: u8, h: $ y = 1 $
+      {y + 1})}
+    -- x: u8, y: u8, h: $ y = 1 $
+
+Now we can see that `y` is in fact `1` at the end of the block, and this will be compiled to a re-assignment to the storage location of `y`.
+
+### Conditional statements
+
+The construct `(if p t f)` functions as both the `if` statement and `?` ... `:` operator of C. `t` and `f` must be single expressions, so `(begin ...)` should be used for multiple statements.
+
+    {res := (if {x < 1}
+      (begin
+        {{x : u8} := 1}
+        (f x))
+      (begin
+        {{x : u8} := 2}
+        (g x)))}
+
+The form `(if {h : p} t f)` binds `h` to a proof of `p` in the body of `t` and to `~ p` in the body of `f`. The types of the branches must be the same. (It may be necessary to finish a block with `()` to ensure nothing is returned if the `if` is operating at statement level.) As with `begin`, any let bindings in the body of the branches must be marked with `mut` in order to affect the outer value of the variable.
+
+### Labels and goto
+
+The most general form of control flow is a `goto`, and Metamath C does not run from them. In fact, we will see that labels are actually very similar to mutually recursive functions, and because we pass around correctness witnesses it is easy to locally reason about them. The hardest part is termination checking, which is a global property.
+
+`begin`s can be labeled with a name, at which point they become callable by name using `goto`. Calls to a label are always tail calls, and return `F.` to the caller (indicating that control flow does not proceed past the call). They can either take parameters like a function call, or implicitly receive arguments using `mut`.
+
+    (begin
+      {{x : u8} := 1}
+
+      ((begin f (mut x))
+        {x := {x + 1}}
+        (g))
+
+      ((begin g (mut x))
+        {x := {x + 1}}
+        (f)))
+
+This definition would not work as written, because `g` and `f` call each other infinitely. (Also the addition would overflow.) Instead we can terminate when the value overflows:
+
+    (begin
+      {{x : u8} := 1}
+
+      ((begin f (mut x))
+        (if {h : $ x + 1 < 256 $}
+          (begin (mut x)
+            {x := (cast {x + 1} h)}
+            (f))
+          (return))))
+
+This will still not be accepted because we need to provide a *variant*, a value that counts down in recursive calls (or up to some bound). We use the notation `(variant foo)` to denote a downward counting variant and `(variant foo < bound)` or `(variant foo <= bound)` for a variant that counts up to `bound`. We must prove in recursive calls that the variant has indeed increased/decreased, again using the keyword `variant`:
+
+
+    (begin
+      {{x : u8} := 1}
+
+      ((begin f (mut x) (variant x < 256))
+        (if {h : $ x + 1 < 256 $}
+          (begin (mut x)
+            (ghost {x_old := x})
+            {x := (cast {x + 1} h)}
+            (f (variant {... : $ x_old < x $} h)))
+          (return))))
+
+For examples such as this it is often convenient to assign `x` in the function call instead, since we need to talk about both old and new values in the variant. So rather than use `(mut x)` we can pass it in:
+
+    ((begin f {{x : u8} := 1} (variant x < 256))
+      (if {h : $ x + 1 < 256 $}
+        (f (cast {x + 1} h)
+          (variant {... : $ x < x + 1 $} h))
+        (return)))
+
+Keep in mind that a labeled begin will always be compiled to a label in a function, so even though it looks like a function it does not have its own stack frame, so only tail recursion is possible. Besides `(f)` which will jump to the label `f`, one can also `(break f)` which will jump to the end of the `((begin f) ...)` block. If control reaches the end of a labeled begin, `(break f)` is automatically called.
+
+A group of labels that mutually call each other must all share the same `variant`. For advanced uses, different `variant`s can be used to perform nested loops, but these must be structured hierarchically: the compiler ensures that variants decrease in lexicographic order and reject cycles in the graph of variant uses.
+
+### While loops
+
+The example in the previous section is actually a while loop in disguise, and because this is a common structuring pattern we provide syntax for this. `(while p t)` evaluates `t` until `p` becomes false. As with labels, `while` requires a variant, which can count up or down. The body `t` ends with a `(continue)` (the equivalent of `(f)` in the labeled begin example) by default, but this may not suffice if a proof of variance needs to be provided (which is almost always the case). So usually an MMC while loop will end with a `(continue)` containing all the data for the next iteration of the loop.
+
+The arguments to a while loop can be provided through the `(invariant)` command, which is otherwise similar to the argument list of a labeled `begin`. So the example at the end of the previous section can be represented as a while loop like so:
+
+    (while {h : $ x + 1 < 256 $}
+      (variant x < 256)
+      (invariant {{x : u8} := 1})
+
+      (continue (cast {x + 1} h)
+        (variant {... : $ x < x + 1 $} h)))
+    (return)
+
+As with `if` statements, `h` can be used on the condition to obtain a proof that the condition is true inside the loop and false outside it (although in this case `h` is not available after the loop because `x` is scoped to the while loop itself). If we scope `x` outside the loop, we obtain:
+
+    {{x : u8} := 1}
+    (while {h : $ x + 1 < 256 $}
+      (variant x < 256)
+      (invariant (mut x))
+
+      (continue (cast {x + 1} h)
+        (variant {... : $ x < x + 1 $} h)))
+    -- x: u8, h: $ ~ x + 1 < 256 $
+    (return)
+
+While loops can also be labeled using `((while f) p t)`, in which case you can use `(break f)` and `(continue f)` to target a loop in a deeper scope; the unlabeled `(break)` and `(continue)` break to the nearest enclosing loop.
+
+### Unreachable
+
+The `(unreachable h)` command takes a proof of false and cancels the current code path. This can be used to eliminate unnecessary branches. The following code produces no output:
+
+    (if {h : $ 2 + 2 = 5 $}
+      (unreachable (entail h <proof of 2 + 2 != 5>)))
+
+This is especially useful for exhaustiveness checking in switches, see below.
+
+### Switches
+
+The `(switch x {a1 => b1} ... {an => bn})` command executes `bi` for the first `i` for which `x = ai`. The `ai` should be numeric constants (pattern matching on enums and the like are future work). In a pattern, one can use `{a or b}` to pattern match on multiple constants, `{x with p}` to evaluate a predicate, and `{h : x}` to capture the assertion that `x` matches the given pattern in `h` (and the assertion that `x` doesn't match the pattern in `h` in all subsequent branches). For example:
+
+    (switch {2 + 2}
+      {{h : 4} =>
+        -- h: 2 + 2 = 4 here
+        "all is well"}
+      {_ => (unreachable (entail h (proof of $ 2+2 != 4 -> F. $)))})
+
+    (switch x
+      {{h : {x with (is_groovy x)}} => "x is groovy"}
+      {{h2 : {1 or 2}} =>
+        -- h: $ ~ is_groovy x $, h2: $ x = 1 \/ x = 2 $
+        "x is not groovy but it is 1 or 2"}
+      {_ =>
+        -- h: $ ~ is_groovy x $, h2: $ ~ (x = 1 \/ x = 2) $
+        "what is this???"})
+
+### For loops
+
+The special case of bounded `for` loops is especially helpful for verified programming because it eliminates the need to prove variance, as well as prove that the loop counter does not go out of bounds. The syntax is `(for {x : T} in {a .. b} t)`, where annotating `a` and `b` as in `{h : a}` obtains proofs that `x <= a` and `x < b`, respectively. Like a while loop, the `invariant` command can be used to indicate properties that hold through the loop. For example:
+
+    (for {x : u8} in {0 .. 256} (f x))
+
+This would be difficult to express in C, because a naive attempt to implement this using `for (unsigned char x = 0; x < 256; x++)` would loop forever. MMC knows how to use the overflow flag to implement this loop. A similar loop over `0 .. 257` is impossible to implement because the last iteration of the loop has `256` in a `u8` which is impossible, and the compiler will give an error.
 
 <!--
-## MMC syntax
+### Map and reduce
 
-    program ::= decl*
-
-As MMC is written as a DSL in Lisp, we don't have to worry about lexing here. The BNF grammars given in this file use quoted atoms like `'typedef` to indicate a keyword, and unquoted atoms like `ident` to indicate nonterminals.
-## Declarations
-
-    decl ::= typedef-decl | const-decl | global-decl | intrinsic-decl | func-decl | proc-decl
-
-These are top level declaration items, such as one would find at the top level of a C file. The MMC compiler can either be called with a full program, or it can typecheck one function at a time. The latter allows for interspersing MM1 theorems with MMC function definitions. These functions are not compiled separately (in C terminology, they are all in one "translation unit") but typechecking can proceed to completion in such blocks, and the semi-compiled functions are stored internally until the program is complete, at which point they can be compiled down to a block of machine code and a proof of correctness.
-
-### Typedef
-
-    typedef-decl ::= ('typedef ident type) | ('typedef (ident ident*) type)
-
-This defines a new type or type family to be equal to an expression. A type is
+Another special case of interest for verified programming is a special case of the `for` loop involving parallel access to one or more arrays (to read or write). It is convenient to have this built in because the invariant of the underlying for loop is unpleasant.
 -->
+
+## Structured types
+
+Structures are declared using the syntax `(struct Foo f1 ... fn)`. This creates a new type `Foo` such that `sizeof Foo` is the sum of the sizes of the `fi`.
+
+    (struct Foo
+      {bar : u8} {_ : u8}
+      {baz : u16}
+      {big_field : u64})
+
+*Structs are packed by default.* The programmer is responsible for adding padding bytes as necessary, but the compiler will prove that the struct is aligned if necessary.
+
+Fields can be dependent (and can reference each other in any order), and can contain ghost variables and hypotheses:
+
+    (struct Foo
+      {arr : (array u8 len)}
+      (ghost {len : nat}))
+
+Fields can be referred to by `(x . field)`, and struct literals are written using the `mk` keyword, as `((mk Foo) arr len)`, or `(mk arr len)` when `Foo` can be inferred.
+
+Structs can also have parameters:
+
+    (struct (Foo A {n : nat})
+      {arr : (array A {2 * n})})
+
+They can also depend on global variables:
+
+    (global {n : u64})
+    (struct Foo
+      {arr : (array u64 {2 * n})})
+
+This is just the same as a parameterized class but the global parameter is implicit. If the global changes, it may be necessary to refer to old versions of the type. Parameters can be made explicit using `(! Foo n)`, and then `(! Foo n_old)` refers to the old version of the type.
+
+Anonymous or "padding" bits can be represented using fields named `_`. In the mathematical model, a struct is encoded as a (right associated) iterated pair of all non-anonymous fields of the struct. This implies that two structs that differ in padding bits are considered to be equal.
+
+### Tuples
+
+The tuple type is `(list A1 ... An)`. This is the same as a struct except that the elements are referred to by `(p . 0)`, `(p . 1)`, .. `(p . n-1)`, and the constructor is called `(list a b c)`.
+
+Tuples and structs can be destructured in an assignment using `(a b c) := ...`.
+
+### Singleton type
+
+The singleton type is `(sn {a : T})`, and denotes the type of values of type `T` that are equal to `a`. This may appear to be a waste of space because we know in advance what a variable of this type contains, but it can be used as a component in larger type definitions.
+
+### Unions
+
+The typing predicate of a union is the disjunction of all typing predicates of the elements. That is, `x :> (union A B C)` is equivalent to `x :> A \/ x :> B \/ x :> C`. The empty union is the never type or "void" type (but not `C`'s `void`!). The `void` type in MMC has no elements, and one can pass it to `(unreachable)` just like a proof of false.
+
+MMC does not have union declarations like `C`, and you cannot use field access with unions. One might wonder how a union type can be used at all, but the key is to note that the individual types in a union can be dependent on some other piece of data in the program. Many functional programming languages contain a discriminated union type, but here we can build it as a union type:
+
+    (enum A B) = (union (list (sn {0 : u8}) A) (list (sn {1 : u8}) B))
+
+To use a value of a union type, one must prove that the value is one of the disjuncts, and then one can use `pun` to reconstitute the value as the resulting type.
+
+### Arrays
+
+We have already seen the `(array T n)` type in several examples. Unlike C, `(array T n)` is not a pointer and does not decay to one; the type represents the bits of an array directly. Because `array` is a large type, it is usually passed around behind a pointer type.
+
+* The function `(index a i h)` is the equivalent of `C`'s `a[i]`; it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)` if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that `i` is in the bounds of the array.
+
+* The function `(slice (& (array T n)) {a + i} h)` has already been discussed in the [slicing](#slicing) section. It is also possible to write this as `(& (slice (array T n) (* {a + i}) h))`, using `slice` with a non-pointer type to construct the place and then getting its address. This is only a stylistic difference.
+
+### Typedefs
+
+The command `(typedef foo bar)` defines a type in terms of another type. Just like in structs, types can have parameters, as in `(typedef (foo A {n : T}) (union (sn {n : T}) (bar A A)))`.
+
+### Raw types
+
+The low level interface for creating new types is the function `(mmc-new-type '(T args) size_of 'T_def)`. This is not part of the MMC language, it is a tactic that runs in the MM1 language and acts as a plugin for the compiler. It takes a function `size_of` that will compute the `sizeof T` theorem for the new type `T`, and `T_def` which is a separating proposition defining the typehood predicate `x :> T`.
+
+## Proofs
+
+The underlying proof system is a model of separation logic instantiated on the target architecture (x86 for the present). The advantage of this is that it is possible to prove theorems and build programs at any level of abstraction. (Inline assembly syntax is TBD but can certainly be supported in the framework.) Proofs can be written directly inline in the MM1 language, or they can be proven as `theorem` commands at the top level of the enclosing MM1 file and referenced in the MMC program. The main tool that MMC adds to the MM1 proof architecture is the `entail` command: `(entail h1 h2 .. hn p)` produces a proof of a separating proposition `$ Q $` given `hi : $ Pi $` and assuming `p` is a proof of the entailment `P1 * ... * Pn |- Q`. If everything is independent of the heap, then it can be a proof of `P1 /\ ... /\ Pn -> Q` instead.
+
+## Functions and procedures
+
+The `proc` command declares a new top level procedure, and `func` declares a new function. These commands have the same syntax: `(proc/func (foo params : returns) body)` declares a function `foo` which takes a list of arguments `params`, and returns a list of values `returns`. Each element of `returns` can be either `T` or `{val : T}` where `T` is a type; the names of named returns can be used in the types of other returns. Both parameters and returns can be marked as ghost using `(ghost {x : T})`; hypotheses are always treated as ghost.
+
+To call a function or procedures, we write `(foo a b c)`, and we can assign the result(s) to a value using `x := (foo a b c)` or `(x y z) := (foo a b c)`.
+
+Inside a function body, the `(return a b c)` function is used to return a value. As an escape directive, it returns `F.` so that we can prove that any code after a `return` is dead.
+
+Functions and procedures in global scope can be forward referenced, but only within a single call to the MMC compiler. If compilation is done in stages then functions must be declared before use, like in C. This is done by writing `(proc/func (foo params : returns))` with no `body` component.
+
+The difference between `func` and `proc` is that a `func` is a *pure* function, in the mathematical sense. In previous sections we have indicated how language features like mutation are modelled functionally using parameters that are passed in a "local state monad", and the MMC compiler will generate a function in the logic that represents the behavior of the imperative program, without changing the generated code at all. The equality capture operation `h := {x := e}` only works when `e` is a pure expression, which includes function calls but not procedure calls. Almost everything in MMC has a pure functional equivalent; the main source of impurity is IO (and other `proc`s).
+
+Because functions can be forward declared and forward referenced, they can be mutually recursive. If the call graph is not acyclic, then, similarly to labeled blocks, they must be annotated with a `(variant x)` or `(variant x < bound)` directive, which goes at the beginning of the function before any statements. The variables `x` and `bound` must be passed between all functions in the cycle, and `bound` must remain fixed while `x` decreases/increases on each call (depending on the orientation of the variant).
+
+## Input and output
+
+The underlying axiomatization includes not only the x86 architecture but also (a very small POSIX compliant subset of) the linux kernel interface, accessible from user mode programs using the `syscall` instruction. The behavior of these calls are axiomatized, and the result is a compiler intrinsic for each system call. For example:
+
+    (intrinsic sys_mmap {pos : (sn 0)} {len : u64} {prot : Prot}
+      {flags : (sn $ MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS $)}
+      {fd : u64} {off : (sn 0)} :
+      (union (sn {MAP_FAILED : u64})
+        (list {ret : (own (array u8 len))}
+          $ fd = bitsNeg 32 1 -> all (sn 0) ,'(* ret) $)))
+
+In words, this function, an axiomatization of the `mmap` system call, accepts 6 arguments `pos len prot flags fd off`, where `pos` must be 0, `len` can be any `u64`, `prot` must be a `Prot` (which is a type defined by the interface, basically a 3 bit field or a `u8` less than `8`), `flags` must be the value `MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS`, which is to say, it must be `MAP_PRIVATE + MAP_ANONYMOUS` if `fd` is `-1` and `MAP_PRIVATE` otherwise, `fd` must be a `u64`, and `off` must be `0`. It returns a union type, either the singleton `MAP_FAILED` (which is the 64 bit constant `-1`) or an owned pointer to an array of `u8`'s of length `len`, with the property that if the value `fd` passed in is `-1` then the array is cleared.
+
+This can be used for either memory allocation (with fd = -1) or for memory mapping a file (when fd is the file descriptor for an open file). This is clearly an underspecification, as many of the parameters are being fixed to certain values; this is done to keep the OS model simple. It is interesting future work to try to extend the model to cover more of the OS, or else cover the hardware interface for a simpler "bare metal" environment.
+
+## Usage
+
+As has been mentioned, MMC exists as a DSL inside the MM1 proof assistant. The compiler itself is implemented as a plugin to the `mm0-rs` executable, which is the proof assistant. For example:
+
+    import "compiler.mm1";
+    do {
+      (mmc-add '(
+        (proc (adder {x : u32} {y : u32} : {ret : (sn {{x + y} : u64})})
+          (cast {(cast {x + y} (assert {{x + y} < {2 ^ 64}})) : u64}))
+      ))
+
+      (mmc-add '(
+        (proc (main : $ 2 + 2 = 4 $)
+          {(four h) := (adder 2 2)}
+          -- h: $ 2 + 2 = four $
+          {h2 := (assert {four = 4})}
+          -- h: $ 2 + 2 = four $, h2: $ four = 4 $
+          (return (entail h h2 eqtr)))
+      ))
+
+      (mmc-finish 'Adder)
+      (export-string 'Adder "adder")
+    };
+
+Here we are using the incremental compilation feature to typecheck the `adder` procedure separately from `main`. We could end the `do` block between the two parts of the program if we wanted to prove a theorem manually for use in `main`. The `mmc-finish` function takes all functions that have been passed to `mmc-add` (which are already typechecked) and completes the linking and assembly process to produce a complete program. This results in the following MM1 definitions:
+
+    def Adder: string := ...;
+    theorem Adder_basicElf: $ basicElf Adder $;
+    theorem Adder_terminates (k s: nat):
+      $ initialConfig Adder k -> alwaysTerminates k s 0 $;
+    theorem Adder_valid (k s: nat):
+      $ initialConfig Adder k /\ succeeds k s 0 -> 2 + 2 = 4 $;
+
+The definition, `Adder`, is a large string literal like `ch x7 xf ': ch x4 x5 ': ch x4 xc ': ch x4 x6 ': ...` that encodes a binary string inside the logic. The theorem `Adder_basicElf` asserts that the `Adder` string parses as an ELF file (so it is safe to load). `Adder_terminates` asserts that if the OS has set up the program at an initial state `k` where the ELF is loaded into memory as directed, then the program always terminates on any input `s` (waiting on stdin), and produces no output. (This is because our signature for `main` lacks the `input` and `output` arguments.) The final theorem `Adder_valid` asserts that if the OS sets the program up at initial state `k` and the program terminates successfully with error code 0, then `2 + 2 = 4`. This final statement comes from the return type of `main`.
+
+Finally, we run the `export-string` function giving it the `Adder` logic string, and it will parse the string into an actual binary string and spit it out to a file, here `"adder"`. But we're not done yet! We've proved that if the program terminates successfully then `2 + 2 = 4`, but until we actually *run* the program this is a useless fact. The exact same proof above would have worked with `5` in place of `4`. But if we `chmod +x` it and run it, and observe that it didn't crash (don't forget to check the error code!), then we can celebrate: the computer has been made to prove `2 + 2 = 4` by execution.
+
+The framework does not prove "liveness" properties (e.g. `initialConfig Adder k -> succeeds k s 0`). We have striven for model correctness, and the fact is that a program running on x86 on Linux can be interrupted (and possibly not resumed) at any time due to interrupts. Beyond this, one can always pull the power. While it is possible to state theorems about crash-resistant programs, this requires much more detailed modeling of non-volatile memory, much of which is not even visible to a userland program.
+
+Strictly speaking, even the termination theorem is unnecessary, because an essential part of the proof is running the program and observing success, so if the program is nonterminating then we will not observe success in any case. Future work will add a "partial mode" to the MMC compiler so that it proves partial correctness theorems instead of total correctness (and then we can drop the `variant` annotations).
