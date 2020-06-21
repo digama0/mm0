@@ -44,9 +44,9 @@ do {
     (intrinsic sys_mmap {pos : (sn 0)} {len : u64} {prot : Prot}
       {flags : $ sn (MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS) $}
       {fd : u64} {off : (sn 0)} :
-      {ret : u64}
-      {h : {{ret = MAP_FAILED} or (Sigma {h2 : {ret :> (own (array u8 len))}}
-        {{fd = (bitsNeg 32 1)} -> (all (sn 0) (* (<: h2)))})}})
+      {ret : (union (sn {MAP_FAILED : u64})
+        (list {ret : (own (array u8 len))}
+          $ fd = bitsNeg 32 1 -> all (sn 0) ,'(* ret) $))})
 
     (proc
       (main
@@ -54,15 +54,17 @@ do {
         {args : (array string argc)}
         (ghost {input : Input}) :
         (ghost {output : Output})
-        {_ : $ output = 0 /\ Valid input $})
+        $ output = 0 /\ Valid input $)
       (assert {0 <= (sys_open (index args 1 (assert {argc > 1})) O_RDONLY)})
       (var {buf : Stat})
       (assert {0 <= (sys_fstat fd (&mut buf))})
-      {(ptr h) := (sys_mmap 0 len PROT_READ {MAP_FILE bor MAP_PRIVATE})}
+      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ {MAP_FILE bor MAP_PRIVATE}))}
       {{ptr : (own (array u8 len))} :=
         (pun ptr (entail h (assert {ptr != MAP_FAILED})
           -- proof of
-          -- ptr :> (sn MAP_FAILED \/ (ptr :> (own (array u8 len)) /\ (fd = bitsNeg 32 1 -> all (sn 0) (* ptr)))) /\
+          -- ptr :> (union (sn {MAP_FAILED : u64})
+          --   (list {ret : (own (array u8 len))}
+          --     $ fd = bitsNeg 32 1 -> all (sn 0) (* ret) $)) /\
           -- ptr != MAP_FAILED
           -- |- (ptr :> (own (array u8 len))
           _))}
@@ -163,9 +165,10 @@ do {
             {h_sorts := (pun h_sorts _)})}
 
           {{CMD_STMT_DEF or CMD_STMT_LOCAL_DEF} => (begin
-
+              _ -- this marks unfinished code, the compiler will give an error
+                -- and provide the current type context
             )}
-            )
+        )
 
         (continue
           {remainder := remainder2}
