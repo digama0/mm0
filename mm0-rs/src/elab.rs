@@ -120,7 +120,7 @@ pub struct Elaborator {
   path: FileRef,
   cancel: Arc<AtomicBool>,
   errors: Vec<ElabError>,
-  env: Environment,
+  pub env: Environment,
   timeout: Option<Duration>,
   cur_timeout: Option<Instant>,
   lc: LocalContext,
@@ -155,7 +155,7 @@ impl Elaborator {
   }
 
   fn span(&self, s: Span) -> &str { self.ast.span(s) }
-  fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
+  pub fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
   fn report(&mut self, e: ElabError) {
     if self.reporting.active(e.level) {self.errors.push(e)}
   }

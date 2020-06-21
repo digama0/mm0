@@ -986,6 +986,8 @@ make_builtins! { self, sp1, sp2, args,
     if args.len() > 2 {try1!(Err("too many arguments"))}
     args.into_iter().nth(1).unwrap()
   },
+  MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
+    Mutex::new(crate::mmc::compiler::Compiler::new(self)))),
 }
 
 impl<'a> Evaluator<'a> {
@@ -1289,6 +1291,7 @@ impl<'a> Evaluator<'a> {
                   } else {unreachable!()}
                 }
               }
+              Proc::MMCCompiler(c) => State::Ret(c.lock().unwrap().call(self, sp1, args)?)
             })
           })?,
         }

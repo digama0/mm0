@@ -1,0 +1,15 @@
+import "x86.mm1";
+
+do {
+  (def mmc-compiler (ref! (mmc-init)))
+  (def mmc-reset
+    (def c mmc-compiler)
+    (fn () (set! c (mmc-init))))
+  (def mmc-add
+    (def c mmc-compiler)
+    (fn xs (apply c '+ xs)))
+  (def mmc-finish
+    (def c mmc-compiler)
+    (fn xs (apply c 'finish xs)))
+  (def mmc-compiler)
+};

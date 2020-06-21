@@ -360,6 +360,7 @@ pub enum Proc {
   MatchCont(Arc<AtomicBool>),
   RefineCallback,
   ProofThunk(AtomID, Mutex<Result<LispVal, Vec<LispVal>>>),
+  MMCCompiler(Mutex<crate::mmc::compiler::Compiler>) // TODO: use extern instead
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -385,6 +386,7 @@ impl Proc {
       Proc::MatchCont(_) => ProcSpec::AtLeast(0),
       Proc::RefineCallback => ProcSpec::AtLeast(1),
       Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
+      Proc::MMCCompiler(_) => ProcSpec::AtLeast(1),
     }
   }
 }
@@ -461,6 +463,7 @@ str_enum! {
     CheckProofs: "check-proofs",
     SetReporting: "set-reporting",
     RefineExtraArgs: "refine-extra-args",
+    MMCInit: "mmc-init",
   }
 }
 
@@ -640,7 +643,8 @@ impl Remap<LispRemapper> for Proc {
           Ok(e) => Ok(e.remap(r)),
           Err(v) => Err(v.remap(r)),
         }
-      ))
+      )),
+      Proc::MMCCompiler(c) => Proc::MMCCompiler(c.remap(r)),
     }
   }
 }
