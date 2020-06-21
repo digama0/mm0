@@ -143,7 +143,7 @@ S-expressions
     subsequent ::= [a-z] | [A-Z] | [0-9] | [!%&*/:<=>?^_~+-.@]
     list ::= '(' list-inner ')' | '[' list-inner ']'
     list-inner ::= (sexpr)* | (sexpr)+ '.' sexpr
-    number ::= [0-9]+
+    number ::= [0-9]+ | 0[xX][0-9a-fA-F]+
     string ::= '"' (char)* '"'
     char ::= <any character other than " and \ > | '\"' | '\\' | '\n' | '\r'
     bool ::= '#t' | '#f'

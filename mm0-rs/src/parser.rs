@@ -274,16 +274,45 @@ impl<'a> Parser<'a> {
       "unclosed string literal".into()))
   }
 
-  fn number(&mut self) -> Result<(Span, BigUint)> {
-    let start = self.idx;
-    let mut val: BigUint = 0u8.into();
+  fn decimal(&mut self, mut val: BigUint) -> BigUint {
     while self.idx < self.source.len() {
       let c = self.cur();
       if !(b'0' <= c && c <= b'9') {break}
       self.idx += 1;
       val = 10u8 * val + (c - b'0');
     }
-    if self.idx == start {return self.err_str("expected a number")}
+    val
+  }
+
+  fn number(&mut self) -> Result<(Span, BigUint)> {
+    let start = self.idx;
+    let mut val: BigUint = 0u8.into();
+    if self.cur() == b'0' {
+      self.idx += 1;
+      match self.cur() {
+        b'x' | b'X' => {
+          self.idx += 1;
+          while self.idx < self.source.len() {
+            let c = self.cur();
+            if b'0' <= c && c <= b'9' {
+              self.idx += 1;
+              val = 16u8 * val + (c - b'0');
+            } else if b'A' <= c && c <= b'F' {
+              self.idx += 1;
+              val = 16u8 * val + (c - (b'A' - 10));
+            } else if b'a' <= c && c <= b'f' {
+              self.idx += 1;
+              val = 16u8 * val + (c - (b'a' - 10));
+            } else {break}
+          }
+          if self.idx == start + 2 {return self.err_str("expected a number")}
+        }
+        _ => val = self.decimal(val)
+      }
+    } else {
+      val = self.decimal(val);
+      if self.idx == start {return self.err_str("expected a number")}
+    }
     (Ok(((start..self.idx).into(), val)), self.ws()).0
   }
 
