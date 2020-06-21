@@ -1128,8 +1128,9 @@ impl<'a> Evaluator<'a> {
             }
           } else {
             if let Some(&Some((sp1, sp2, a))) = x {
-              let val = Some((Some((self.fspan(sp2), sp1)), ret));
-              if mem::replace(&mut self.data[a].lisp, val).is_none() {
+              let def = ret.is_def();
+              let val = if def {Some((Some((self.fspan(sp2), sp1)), ret))} else {None};
+              if mem::replace(&mut self.data[a].lisp, val).is_none() && def {
                 self.stmts.push(StmtTrace::Global(a))
               }
             }
