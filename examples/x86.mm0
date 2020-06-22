@@ -12,7 +12,7 @@ def bitOr (a b: nat): nat;
 theorem bitOrEq (a b: nat): $ bitOr a b == a u. b $;
 
 def bitDif (a b: nat): nat;
-theorem bitDif_mem (a b i: nat): $ i e. bitDif a b <-> (i e. a /\ ~i e. b) $;
+theorem bitDifEq (a b: nat): $ bitDif a b == a i^i Compl b $;
 
 def bitXor (a b: nat): nat;
 theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) $;
