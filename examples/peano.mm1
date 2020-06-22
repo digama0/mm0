@@ -310,12 +310,14 @@ theorem anrr: $ a /\ (b /\ c) -> c $ = '(anwr anr);
 theorem anwll (h: $ a -> d $): $ a /\ b /\ c -> d $ = '(anwl (anwl h));
 theorem anw3l (h: $ a -> e $): $ a /\ b /\ c /\ d -> e $ = '(anwll (anwl h));
 theorem anw4l (h: $ a -> f $): $ a /\ b /\ c /\ d /\ e -> f $ = '(anw3l (anwl h));
-theorem an3l: $ a /\ b /\ c /\ d -> a $ = '(anwll anl);
 theorem anllr: $ a /\ b /\ c /\ d -> b $ = '(anwll anr);
-theorem an4l: $ a /\ b /\ c /\ d /\ e -> a $ = '(anwl an3l); -- TODO: automate these
+theorem an3l: $ a /\ b /\ c /\ d -> a $ = '(anwll anl);
 theorem an3lr: $ a /\ b /\ c /\ d /\ e -> b $ = '(anwl anllr);
-theorem an5l: $ a /\ b /\ c /\ d /\ e /\ f -> a $ = '(anwl an4l);
+theorem an4l: $ a /\ b /\ c /\ d /\ e -> a $ = '(anwl an3l); -- TODO: automate these
 theorem an4lr: $ a /\ b /\ c /\ d /\ e /\ f -> b $ = '(anwl an3lr);
+theorem an5l: $ a /\ b /\ c /\ d /\ e /\ f -> a $ = '(anwl an4l);
+theorem an5lr: $ a /\ b /\ c /\ d /\ e /\ f /\ g -> b $ = '(anwl an4lr);
+theorem an6lr: $ a /\ b /\ c /\ d /\ e /\ f /\ g /\ h -> b $ = '(anwl an5lr);
 theorem imp (h: $ a -> b -> c $): $ a /\ b -> c $ = '(sylc h anl anr);
 theorem exp (h: $ a /\ b -> c $): $ a -> b -> c $ = '(syl6 h ian);
 theorem impcom (h: $ a -> b -> c $): $ b /\ a -> c $ = '(imp (com12 h));
@@ -447,6 +449,7 @@ theorem anlass: $ a /\ (b /\ c) <-> b /\ (a /\ c) $ =
 '(bitr3 anass @ bitr (aneq1i ancomb) anass);
 theorem anrass: $ a /\ b /\ c <-> a /\ c /\ b $ =
 '(bitr anass @ bitr4 (aneq2i ancomb) anass);
+theorem anidm: $ a /\ a <-> a $ = '(ibii anl (iand id id));
 theorem rbida (h1: $ a /\ c -> b $) (h2: $ a /\ d -> b $)
   (h: $ a /\ b -> (c <-> d) $): $ a -> (c <-> d) $ =
 '(bitr3d (syla bian2a h1) @ bitrd (syla aneq1a h) (syla bian2a h2));
@@ -493,6 +496,8 @@ theorem orcom: $ a \/ b -> b \/ a $ = 'con1;
 theorem orcomb: $ a \/ b <-> b \/ a $ = '(ibii orcom orcom);
 theorem or12: $ a \/ (b \/ c) <-> b \/ (a \/ c) $ = '(bitr3 impexp @ bitr (imeq1i ancomb) impexp);
 theorem orass: $ a \/ b \/ c <-> a \/ (b \/ c) $ = '(bitr orcomb @ bitr or12 (oreq2 orcomb));
+theorem or4: $ (a \/ b) \/ (c \/ d) <-> (a \/ c) \/ (b \/ d) $ = '(bitr4 orass @ bitr4 orass @ oreq2 or12);
+theorem oridm: $ a \/ a <-> a $ = '(ibii (eor id id) orl);
 theorem notan2: $ ~(a /\ b) <-> a -> ~b $ = '(bicom notnot);
 theorem notan: $ ~(a /\ b) <-> (~a \/ ~b) $ = '(bitr notan2 (imeq1i notnot));
 theorem notor: $ ~(a \/ b) <-> (~a /\ ~b) $ = '(con1b (bitr4 notan (oreqi notnot notnot)));
@@ -2273,7 +2278,7 @@ theorem isfss: $ A C_ B -> isfun B -> isfun A $ =
 '(exp @ !! iald a @ !! iald b @ !! iald c @ exp @ exp @
   isfd anllr (sseld an3l anlr) (sseld an3l anr));
 
-@_ local def sab {x: nat} (A: set x): set =
+@_ def sab {x: nat} (A: set x): set =
 $ {z | snd z e. S[fst z / x] A} $;
 notation sab {x: nat} (A: set x): set = ($S\$:100) x ($,$:0) A;
 
@@ -2303,7 +2308,7 @@ theorem eexsabd {z} (y: nat x z) (A: set x) (h: $ G -> z e. A -> p $):
   sbethh (nfim nfv @ nfim (nfel2 nfsbs1) nfv) (imeq2d @ imeq1d @ eleq2d sbsq) h);
 
 -- Indexed disjoint union, a restricted version of S\
-@_ local def xab {x: nat} (A: set) (B: set x): set =
+@_ def xab {x: nat} (A: set) (B: set x): set =
 $ {z | fst z e. A /\ snd z e. S[fst z / x] B} $;
 notation xab {x: nat} (A: set) (B: set x): set =
   ($X\$:100) x ($e.$:50) A ($,$:0) B;

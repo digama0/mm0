@@ -104,6 +104,28 @@ theorem rlrecS: $ rlrec z S (l |> a) = S @ (l <> a <> rlrec z S l) $ =
   appslame @ appslamed @ applamed @
   appeq2d @ preqd (syl6eq revrev @ reveqd anlr) @ preqd anll anr));
 
+theorem rlistindd {x l a} (n) (px: wff x) (p0 pn: wff) (pl: wff l) (ps: wff a l)
+  (h0: $ x = 0 -> (px <-> p0) $)
+  (hl: $ x = l -> (px <-> pl) $)
+  (hs: $ x = l |> a -> (px <-> ps) $)
+  (hn: $ x = n -> (px <-> pn) $)
+  (h1: $ G -> p0 $) (h2: $ G /\ pl -> ps $): $ G -> pn $ =
+'(!! indstr z w sbeq1 (syl6bb (sbe hn) sbeq1) @ casesda
+  (mpbird (sbeq1d anr) @ anwll @ sylibr (sbe h0) h1)
+  (mpd (sylib exsnoc anr) @ eexd @ eexd @ anwl @ exp @
+    mpbird (syl6bb (sbe hs) @ sbeq1d anr) @
+    mpd (mpd (mpbiri snoclt @ lteq2d anr) @
+      rsyl anlr @ eale @ imeqd lteq1 @ syl6bb (sbe hl) sbeq1) @
+    anwll @ exp h2));
+
+theorem rlistind {x l a} (n) (px: wff x) (p0 pn: wff) (pl: wff l) (ps: wff a l)
+  (h0: $ x = 0 -> (px <-> p0) $)
+  (hl: $ x = l -> (px <-> pl) $)
+  (hs: $ x = l |> a -> (px <-> ps) $)
+  (hn: $ x = n -> (px <-> pn) $)
+  (h1: $ p0 $) (h2: $ pl -> ps $): $ pn $ =
+'(trud @ rlistindd h0 hl hs hn (a1i h1) (anwr h2));
+
 -- The sort modifiers 'pure', 'strict', 'provable', 'free'
 -- sPure : SortData -> Bool
 @_ def sPure     (n: nat): wff = $ true (pi11 n) $;
@@ -2217,33 +2239,214 @@ pub theorem getDelimitersOther {l r: nat} (ast t: nat):
     getDelimiters (ast |> t) = getDelimiters ast $ =
 '(syl5eq (getDelimitersS eqid eqid eqid @ eqcom fstsnd) ifneg);
 
+theorem getDelimiters_nonemptyNonwhite {l r: nat} (ast t: nat):
+  $ x e. fst (getDelimiters ast) \/ x e. snd (getDelimiters ast) ->
+    x e. nonemptyNonwhite $ =
+(named @ mk-ind '(rlistind) '(imeq1d @ oreqd
+    (elneq2d @ fsteqd getDelimiterseq)
+    (elneq2d @ sndeqd getDelimiterseq))
+  '(sylbi (oreq
+        (elneq2 @ eqtr (fsteq getDelimiters0) fstpr)
+        (elneq2 @ eqtr (sndeq getDelimiters0) sndpr))
+      (sylbi oridm @ absurd nel0))
+  (def h '(bitr (ellower @ unfin finns finns) elun))
+  (def h2 '(elall simpleTokenize_nonemptyNonwhite))
+  '(casesd
+    (eexd @ eexd @ syl5ibrcom
+      (imeq1d @
+        rsyl (syl6eq (getDelimitersDelim @ eqcom fstsnd) @ getDelimiterseqd snoceq2) @
+        oreqd (elneq2d @ syl6eq fstpr fsteq) (elneq2d @ syl6eq sndpr sndeq)) @
+      syl5bi (oreq ,h ,h) @ syl5bi or4 @ eord id @ a1i @ eor ,h2 ,h2)
+    (com12 @ bi2d @ imeq1d @ rsyl getDelimitersOther @
+      oreqd (elneq2d fsteq) (elneq2d sndeq))));
+
 @_ def delimitersOk (A: set) (.x .y: nat): wff =
 $ A. x (x e. A -> len x = 1) $;
 
 @_ local def delimiterFree (ast: nat): set =
 $ {s | ~(E. l E. x E. r (x e. getDelimiters ast /\ s = l ++ x ++ r))} $;
 
-@_ def tokenizeFmla (ast f: nat): nat;
+@_ def tokenizeFmla (ast f: nat): nat =
+$ lrec 0 (\\ x, \\ xs, \ ih,
+    if (x e. white) ih (
+      if (x : 0 e. fst (getDelimiters ast) \/
+          A. y A. r (xs = y : r -> y e. white \/ y : 0 e. snd (getDelimiters ast)))
+        ((x : 0) : ih)
+        ((x : fst (ih - 1)) : snd (ih - 1))))
+  f $;
 
-pub theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $;
-pub theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
-  tokenizeFmla ast (s ++ c : t) = tokenizeFmla ast s ++ tokenizeFmla ast t $;
-pub theorem tokenizeFmlaLDelim (ast x s t: nat):
-  $ x e. fst (getDelimiters ast) ->
-    tokenizeFmla ast (s ++ x ++ t) =
-    tokenizeFmla ast (s ++ x) ++ tokenizeFmla ast t $;
-pub theorem tokenizeFmlaRDelim (ast x s t: nat):
-  $ x e. snd (getDelimiters ast) ->
-    tokenizeFmla ast (s ++ x ++ t) =
-    tokenizeFmla ast s ++ tokenizeFmla ast (x ++ t) $;
+pub theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $ = (named 'lrec0);
 
-pub theorem tokenizeFmlaJoin (ast x s t: nat):
-  $ s e. nonemptyNonwhite -> ljoin (tokenizeFmla ast s) = s $;
+theorem tokenizeFmlaS: $ tokenizeFmla ast xs = ih ->
+  tokenizeFmla ast (x : xs) = if (x e. white) ih (
+    if (x : 0 e. fst (getDelimiters ast) \/
+        A. y A. r (xs = y : r -> y e. white \/ y : 0 e. snd (getDelimiters ast)))
+      ((x : 0) : ih)
+      ((x : fst (ih - 1)) : snd (ih - 1))) $ =
+(named @ focus
+  '(syl5eq lrecS @ syl6eq _ @ appeq2d @ preq2d preq2)
+  '(appslame @ appslamed @ applamed @ ifeqd (eleq1d anll) anr @
+    ifeqd (oreqd (eleq1d @ conseq1d anll) (aleqd @ aleqd @ imeq1d @ eqeq1d anlr))
+      (conseqd (conseq1d anll) anr)
+      (conseqd (conseqd anll @ fsteqd @ subeq1d anr) (sndeqd @ subeq1d anr))));
 
-pub theorem tokenizeFmlaMinimal {l r: nat} (ast s a x y b: nat):
-  $ tokenizeFmla ast s = a ++ x : y : b ->
-    E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
-    E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
+theorem tokenizeFmlaS_n0: $ ~x e. white -> tokenizeFmla ast (x : xs) != 0 $ =
+(named @ focus
+  (def (f x) '(mpbiri consne0 @ neeq1d ,x))
+  '(mpbiri (cases ,(f 'ifpos) ,(f 'ifneg)) @ neeq1d @ syl5eq (tokenizeFmlaS eqid) ifneg));
+
+pub theorem tokenizeFmlaWhite: $ x e. white -> tokenizeFmla ast (x : xs) = tokenizeFmla ast xs $ =
+(named '(syl5eq (tokenizeFmlaS eqid) ifpos));
+
+pub theorem tokenizeFmla1: $ ~x e. white -> tokenizeFmla ast (x : 0) = (x : 0) : 0 $ =
+(named '(syl5eq (tokenizeFmlaS tokenizeFmla0) @
+  syl6eq (ifpos @ orr @ ax_gen @ ax_gen @ absurd @ necom consne0) ifneg));
+
+theorem tokenizeFmlaSS: $ tokenizeFmla ast (y : xs) = ih -> ~x e. white ->
+  tokenizeFmla ast (x : y : xs) =
+  if (x : 0 e. fst (getDelimiters ast) \/ y e. white \/ y : 0 e. snd (getDelimiters ast))
+    ((x : 0) : ih)
+    ((x : fst (ih - 1)) : snd (ih - 1)) $ =
+(named @ focus
+  '(exp @ eqtrd (anwl tokenizeFmlaS) @ syl6eqr _ @ anwr ifneg)
+  '(ifeq1 @ bitr4 orass @ oreq2 @ bitr3 _ @ aleqe @ oreqd eleq1 (eleq1d conseq1))
+  '(aleqi @ bitr3 (aleqe biidd) @ aleqi @ bitr3 impexp @ imeq1i @ bitr ancomb @ bitr3 consinj eqcomb));
+
+theorem tokenizeFmla_nonemptyNonwhite_lem: $ all nonemptyNonwhite l /\ ~x e. white ->
+   all nonemptyNonwhite ((x : 0) : 0) /\ all nonemptyNonwhite ((x : fst (l - 1)) : snd (l - 1)) $ =
+(named @ focus
+  (def h '(elabe @ noteqd eleq1))
+  (def (f x y z) '(sylibr allS @ iand (sylibr el_nonemptyNonwhite @
+    iand (a1i consne0) @ sylibr allS @ iand (sylibr ,h ,x) ,y) ,z))
+  '(mpd ,(f 'anr '(a1i all0) '(a1i all0)) @ exp @ iand anr @
+    casesd (exp @ mpbird (alleq2d @ conseqd
+      (conseq2d @ syl6eq fst0 @ fsteqd @ syl6eq sub01 @ subeq1d anr) @
+      syl6eq snd0 @ sndeqd @ syl6eq sub01 @ subeq1d anr) anlr) @
+    syl5bi excons @ eexd @ eexda _)
+  (have 'h2 '(sylib allS @ mpbid (alleq2d anr) an3l))
+    ,(f 'anllr
+      '(mpbird (alleq2d @ syl6eq fstpr @ fsteqd @ syl6eq sucsub1 @ subeq1d anr) @ anrd @
+        sylib el_nonemptyNonwhite @ anld h2)
+      '(mpbird (alleq2d @ syl6eq sndpr @ sndeqd @ syl6eq sucsub1 @ subeq1d anr) @ anrd h2)));
+
+theorem tokenizeFmla_nonemptyNonwhite: $ all nonemptyNonwhite (tokenizeFmla ast xs) $ =
+(named @ focus
+  (mk-ind '(listind) '(alleq2d tokenizeFmlaeq2) '(mpbir (alleq2 tokenizeFmla0) all0) _)
+  (def h '(mpbir (elabe neeq1) consne0))
+  (def h2 '(bitr el_nonemptyNonwhite @
+    bitr (bian1 consne0) @ bitr all1 @ elabe @ noteqd eleq1))
+  '(casesd (com12 @ bi2d @ alleq2d @ syl5eq (tokenizeFmlaS eqid) ifpos) @ exp _)
+  (have 'h '(tokenizeFmla_nonemptyNonwhite_lem))
+  '(casesd
+    (exp @ mpbird (alleq2d @ eqtrd (tokenizeFmlaeq2d @ conseq2d anr) (syl tokenizeFmla1 anlr)) @
+      anwl @ anld h)
+    (syl5bi excons @ eexd @ eexda @
+      mpbird (alleq2d @ eqtrd (tokenizeFmlaeq2d @ conseq2d anr) (rsyl anlr @ tokenizeFmlaSS eqid)) @
+      casesda
+        (mpbird (alleq2d @ anwr ifpos) @ anwl @ sylibr allS @ iand (sylib all1 @ anwl @ anld h) @
+          mpbid (alleq2d @ tokenizeFmlaeq2d anr) anll)
+        (mpbird (alleq2d @ anwr ifneg) @ syl (anrd tokenizeFmla_nonemptyNonwhite_lem) @
+          iand (mpbid (alleq2d @ tokenizeFmlaeq2d anlr) an3l) anllr))));
+
+theorem tokenizeFmla_hd:
+  $ tokenizeFmla ast (x : xs) = l : r2 -> (~x e. white <-> E. r l = x : r) $ =
+(named @ focus
+  (have 'h '(sylib el_nonemptyNonwhite @ syl (elall tokenizeFmla_nonemptyNonwhite) @
+    mpbiri lmemconsid @ lmemeq2))
+  '(ibid _ _)
+  (focus
+    '(exp @ mpd (sylib excons @ anld @ anwl h) @ eexd @ eximd @ exp @ eqtrd anr @ conseq1d @
+      syl _ @ eqtr3d (syl5eq (tokenizeFmlaS eqid) (rsyl anlr ifneg)) @
+        eqtrd anll @ conseq1d anr)
+    (def (h x) '(anld @ sylib consinj @ anld @ sylib consinj @ eqtr3d anl @ anwr ,x))
+    '(casesda ,(h 'ifpos) ,(h 'ifneg)))
+  (focus
+    '(eexda @ sylib (elabe @ noteqd eleq1) @ syl (mpi lmemconsid elall) @
+      mpbid (alleq2d anr) @ anrd @ anwl h)));
+
+theorem tokenizeFmla_hd2:
+  $ ~x e. white -> E. l E. r2 tokenizeFmla ast (x : xs) = (x : l) : r2 $ =
+(named '(mpd (sylib excons tokenizeFmlaS_n0) @ syl6 excom @ eexd @ eximd @ exp @
+  mpd (mpbid (anwr tokenizeFmla_hd) anl) @ eximd @ exp @ eqtrd anlr @ conseq1d anr));
+
+pub theorem tokenizeFmlaSLDelim (ast x xs: nat):
+  $ x : 0 e. fst (getDelimiters ast) ->
+    tokenizeFmla ast (x : xs) = (x : 0) : tokenizeFmla ast xs $ =
+(named '(syl5eq (tokenizeFmlaS eqid) @
+  eqtrd (syl ifneg @ rsyl orl @ rsyl getDelimiters_nonemptyNonwhite @
+    sylbi el_nonemptyNonwhite @ anwr @ sylib (elabe @ noteqd eleq1) @ mpi lmemconsid elall) @
+  syl ifpos orl));
+
+theorem tokenizeFmlaS_RDelim_lem
+  (h1: $ G -> ~x e. white $) (h2: $ G -> y e. white \/ y : 0 e. snd (getDelimiters ast) $):
+  $ G -> tokenizeFmla ast (x : y : xs) = (x : 0) : tokenizeFmla ast (y : xs) $ =
+(named '(syl5eq (tokenizeFmlaS eqid) @ eqtrd (syl ifneg h1) @ syl ifpos @ orrd @
+  iald @ iald @ syl5bi consinj @ exp @
+  mpbid (rsyl anrl @ oreqd eleq1 (eleq1d conseq1)) @ anwl h2));
+
+pub theorem tokenizeFmlaSRDelim (ast x y xs: nat):
+  $ ~x e. white /\ y : 0 e. snd (getDelimiters ast) ->
+    tokenizeFmla ast (x : y : xs) = (x : 0) : tokenizeFmla ast (y : xs) $ =
+'(tokenizeFmlaS_RDelim_lem anl @ orrd anr);
+
+theorem tokenizeFmlaS_Else
+  (h1: $ G -> ~x e. white $)
+  (h2: $ G -> tokenizeFmla ast (y : xs) = (y : r) : r2 $)
+  (h3: $ G -> ~x : 0 e. fst (getDelimiters ast) $)
+  (h4: $ G -> ~y : 0 e. snd (getDelimiters ast) $):
+  $ G -> tokenizeFmla ast (x : y : xs) = (x : y : r) : r2 $ =
+(named '(eqtrd (sylc tokenizeFmlaSS h2 h1) @
+  syl6eq (conseq (conseq2 @ eqtr (fsteq sucsub1) fstpr) (eqtr (sndeq sucsub1) sndpr)) @
+  syl ifneg @ sylibr notor @ iand (sylibr notor @ iand h3 @
+    mpbiri (iexe (eqeq2d conseq2) eqid) (syl tokenizeFmla_hd h2)) h4));
+
+theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
+  tokenizeFmla ast (s ++ c : t) = tokenizeFmla ast s ++ tokenizeFmla ast t $ =
+(named @ focus
+  (mk-ind '(listindd) '(eqeqd (tokenizeFmlaeq2d appendeq1) (appendeq1d tokenizeFmlaeq2))
+    '(sylibr (eqeq (tokenizeFmlaeq2 append0)
+      (eqtr (appendeq1 tokenizeFmla0) append0)) tokenizeFmlaWhite) _)
+  '(syl5eq (tokenizeFmlaeq2 appendS) @
+    casesda (eqtr4d (anwr tokenizeFmlaWhite) @
+      eqtr4d (anwr @ appendeq1d tokenizeFmlaWhite) anlr) @
+    casesda (eqtr4d (anwr tokenizeFmlaSLDelim) @
+      eqtr4d (anwr @ appendeq1d tokenizeFmlaSLDelim) @ syl6eqr appendS @ conseq2d anllr) @
+    casesda (eqtr4d (tokenizeFmlaeq2d @ conseq2d @ syl6eq append0 @ appendeq1d anr) @
+      eqtr4d (appendeq1d @ eqtrd (tokenizeFmlaeq2d @ conseq2d anr) @ syl tokenizeFmla1 anllr) @
+      syl6eqr append1 @ eqtrd (tokenizeFmlaS_RDelim_lem anllr @ orld an4l) @
+      conseq2d @ syl tokenizeFmlaWhite an4l) _)
+  '(imp @ syl5bi excons @ eexd @ eexda @
+    eqtr4d (tokenizeFmlaeq2d @ conseq2d @ syl6eq appendS @ appendeq1d anr) @
+    eqtr4d (appendeq1d @ tokenizeFmlaeq2d @ conseq2d anr) @
+    casesda (eqtr4d (tokenizeFmlaS_RDelim_lem an3lr anr) @
+      eqtr4d (appendeq1d @ tokenizeFmlaS_RDelim_lem an3lr anr) @
+      syl6eqr appendS @ conseq2d @
+      eqtr3d (tokenizeFmlaeq2d @ syl6eq appendS @ appendeq1d anlr) @
+      eqtrd an4lr @ appendeq1d @ tokenizeFmlaeq2d anlr) @
+    mpd (syl tokenizeFmla_hd2 an3lr) @ eexd @ eexda @
+    mpd (syl tokenizeFmla_hd2 @ rsyl anlr @ con3 orl) @ eexd @ eexda @
+    eqtr4d (tokenizeFmlaS_Else an5lr _ an4lr @ rsyl anllr @ con3 orr) @
+    syl6eq appendS @ appendeq1d @ tokenizeFmlaS_Else an5lr anr an4lr @ rsyl anllr @ con3 orr)
+  '(eqtr3d (tokenizeFmlaeq2d @ syl6eq appendS @ appendeq1d an3lr) @
+    eqtrd an6lr @ syl6eq appendS @ appendeq1d @
+    eqtrd (tokenizeFmlaeq2d an3lr) anr));
+
+-- pub theorem tokenizeFmlaLDelim (ast x s t: nat):
+--   $ x e. fst (getDelimiters ast) ->
+--     tokenizeFmla ast (s ++ x ++ t) =
+--     tokenizeFmla ast (s ++ x) ++ tokenizeFmla ast t $;
+-- pub theorem tokenizeFmlaRDelim (ast x s t: nat):
+--   $ x e. snd (getDelimiters ast) ->
+--     tokenizeFmla ast (s ++ x ++ t) =
+--     tokenizeFmla ast s ++ tokenizeFmla ast (x ++ t) $;
+
+-- pub theorem tokenizeFmlaJoin (ast x s t: nat):
+--   $ s e. nonemptyNonwhite -> ljoin (tokenizeFmla ast s) = s $;
+
+-- pub theorem tokenizeFmlaMinimal {l r: nat} (ast s a x y b: nat):
+--   $ tokenizeFmla ast s = a ++ x : y : b ->
+--     E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
+--     E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
 
 @_ def getPfx (ast: nat): nat;
 pub theorem getPfxEl {fmla: nat} (ast x c p: nat):

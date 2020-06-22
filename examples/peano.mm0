@@ -166,6 +166,16 @@ def pi222 (n: nat): nat = $ snd (pi22 n) $;
 def isfun (A: set) (.a .b .b2: nat): wff =
 $ A. a A. b A. b2 (a <> b e. A -> a <> b2 e. A -> b = b2) $;
 
+def sab {x .z: nat} (A: set x): set =
+$ {z | snd z e. S[ fst z / x ] A} $;
+notation sab {x: nat} (A: set x): set = ($S\$:100) x ($,$:0) A;
+
+-- Indexed disjoint union, a restricted version of S\
+def xab {x .z: nat} (A: set) (B: set x): set =
+$ {z | fst z e. A /\ snd z e. S[ fst z / x ] B} $;
+notation xab {x: nat} (A: set) (B: set x): set =
+  ($X\$:100) x ($e.$:50) A ($,$:0) B;
+
 def opab {x y .z: nat} (p: wff x y): set =
 $ {z | E. x E. y (z = x <> y /\ p)} $;
 

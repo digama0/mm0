@@ -740,24 +740,42 @@ $ A. x (x e. A -> len x = 1) $;
 
 def tokenizeFmla (ast f: nat): nat;
 theorem tokenizeFmla0 (ast: nat): $ tokenizeFmla ast 0 = 0 $;
-theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
-  tokenizeFmla ast (s ++ c : t) = tokenizeFmla ast s ++ tokenizeFmla ast t $;
-theorem tokenizeFmlaLDelim (ast x s t: nat):
-  $ x e. fst (getDelimiters ast) ->
-    tokenizeFmla ast (s ++ x ++ t) =
-    tokenizeFmla ast (s ++ x) ++ tokenizeFmla ast t $;
-theorem tokenizeFmlaRDelim (ast x s t: nat):
-  $ x e. snd (getDelimiters ast) ->
-    tokenizeFmla ast (s ++ x ++ t) =
-    tokenizeFmla ast s ++ tokenizeFmla ast (x ++ t) $;
+theorem tokenizeFmlaWhite (ast x xs: nat): $ x e. white ->
+  tokenizeFmla ast (x : xs) = tokenizeFmla ast xs $;
+theorem tokenizeFmla1 (ast x: nat): $ ~x e. white ->
+  tokenizeFmla ast (x : 0) = (x : 0) : 0 $;
+theorem tokenizeFmlaSLDelim (ast x xs: nat):
+  $ x : 0 e. fst (getDelimiters ast) ->
+    tokenizeFmla ast (x : xs) = (x : 0) : tokenizeFmla ast xs $;
+theorem tokenizeFmlaSRDelim (ast x y xs: nat):
+  $ ~x e. white /\ y : 0 e. snd (getDelimiters ast) ->
+    tokenizeFmla ast (x : y : xs) = (x : 0) : tokenizeFmla ast (y : xs) $;
+theorem tokenizeFmlaSElse (ast x y xs r r2: nat):
+  $ ~x e. white /\
+    tokenizeFmla ast (y : xs) = (y : r) : r2 /\
+    ~x : 0 e. fst (getDelimiters ast) /\
+    ~y : 0 e. snd (getDelimiters ast) ->
+    tokenizeFmla ast (x : y : xs) = (x : y : r) : r2 $;
 
-theorem tokenizeFmlaJoin (ast x s t: nat):
-  $ s e. nonemptyNonwhite -> ljoin (tokenizeFmla ast s) = s $;
+-- the below non-free recursive definition is harder to work with so
+-- we will stick to the obvious one unless we need these theorems
 
-theorem tokenizeFmlaMinimal {l r: nat} (ast s a x y b: nat):
-  $ tokenizeFmla ast s = a ++ x : y : b ->
-    E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
-    E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
+-- theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
+--   tokenizeFmla ast (s ++ c : t) = tokenizeFmla ast s ++ tokenizeFmla ast t $;
+-- theorem tokenizeFmlaLDelim (ast x s t: nat):
+--   $ x e. fst (getDelimiters ast) ->
+--     tokenizeFmla ast (s ++ x ++ t) =
+--     tokenizeFmla ast (s ++ x) ++ tokenizeFmla ast t $;
+-- theorem tokenizeFmlaRDelim (ast x s t: nat):
+--   $ x e. snd (getDelimiters ast) ->
+--     tokenizeFmla ast (s ++ x ++ t) =
+--     tokenizeFmla ast s ++ tokenizeFmla ast (x ++ t) $;
+-- theorem tokenizeFmlaJoin (ast x s t: nat):
+--   $ s e. nonemptyNonwhite -> ljoin (tokenizeFmla ast s) = s $;
+-- theorem tokenizeFmlaMinimal {l r: nat} (ast s a x y b: nat):
+--   $ tokenizeFmla ast s = a ++ x : y : b ->
+--     E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
+--     E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
 
 def getPfx (ast: nat): nat;
 theorem getPfxEl {fmla: nat} (ast x c p: nat):
