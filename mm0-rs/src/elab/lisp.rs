@@ -360,7 +360,7 @@ pub enum Proc {
   MatchCont(Arc<AtomicBool>),
   RefineCallback,
   ProofThunk(AtomID, Mutex<Result<LispVal, Vec<LispVal>>>),
-  MMCCompiler(Mutex<crate::mmc::compiler::Compiler>) // TODO: use extern instead
+  MMCCompiler(Mutex<crate::mmc::Compiler>) // TODO: use extern instead
 }
 
 #[derive(Copy, Clone, Debug)]

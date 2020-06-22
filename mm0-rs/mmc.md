@@ -12,7 +12,7 @@ A *type* is a separating proposition over machine states. That is, it is a true-
 
     () | bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 | (own T) | (array T n)
 
-The first few represent signed and unsigned integers of various widths. The `(own T)` type is an owned pointer to a type. The `(array T n)` type is a contiguous sequence of `n` elements of type `T`. (The type is not stored anywhere in memory, it is a parameter of the type.) Types can depend on values, which is often known as dependent typing, however unlike most dependent type theories very little "computation" is done inside types, and instead a `(pun)` must be used to re-type a term given a proof that it has a type. (This is not like a C cast that can be used to reinterpret a type - the value must satisfy all invariants of the target type to be eligible for `pun`.)
+The first few represent signed and unsigned integers of various widths. The `(own T)` type is an owned pointer to a type. The `(array T n)` type is a contiguous sequence of `n` elements of type `T`. (The value `n` is not stored anywhere in memory, it is a parameter of the type.) Types can depend on values, which is often known as dependent typing, however unlike most dependent type theories very little "computation" is done inside types, and instead a `(pun)` must be used to re-type a term given a proof that it has a type. (This is not like a C cast that can be used to reinterpret a type - the value must satisfy all invariants of the target type to be eligible for `pun`.)
 
 There are two other pointer types, inspired by Rust semantics:
 

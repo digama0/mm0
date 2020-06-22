@@ -987,7 +987,7 @@ make_builtins! { self, sp1, sp2, args,
     args.into_iter().nth(1).unwrap()
   },
   MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
-    Mutex::new(crate::mmc::compiler::Compiler::new(self)))),
+    Mutex::new(crate::mmc::Compiler::new(self)))),
 }
 
 impl<'a> Evaluator<'a> {
@@ -1291,7 +1291,10 @@ impl<'a> Evaluator<'a> {
                   } else {unreachable!()}
                 }
               }
-              Proc::MMCCompiler(c) => State::Ret(c.lock().unwrap().call(self, sp1, args)?)
+              Proc::MMCCompiler(c) => {
+                let fsp = self.fspan(sp1);
+                State::Ret(c.lock().unwrap().call(self, fsp, args)?)
+              }
             })
           })?,
         }

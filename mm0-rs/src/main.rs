@@ -13,7 +13,7 @@ mod vfs;
 mod elab;
 mod mmb { pub mod export; }
 mod mmu { pub mod import; pub mod export; }
-mod mmc { pub mod compiler; }
+mod mmc;
 
 use std::{env, io};
 
