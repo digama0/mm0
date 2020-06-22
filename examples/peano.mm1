@@ -557,6 +557,7 @@ theorem eqtr3: $ b = a -> b = c -> a = c $ = 'ax_7;
 theorem eqid: $ a = a $ = '(!! eex x (imidm ax_7) ax_6);
 theorem eqcom: $ a = b -> b = a $ = '(mpi eqid ax_7);
 theorem eqtr: $ a = b -> b = c -> a = c $ = '(syl ax_7 eqcom);
+theorem eqtr2: $ a = b -> b = c -> c = a $ = '(syl6 eqcom eqtr);
 theorem eqtr4: $ a = b -> c = b -> a = c $ = '(syl5 eqcom eqtr);
 theorem eqcomb: $ a = b <-> b = a $ = '(ibii eqcom eqcom);
 theorem eqeq1: $ a = b -> (a = c <-> b = c) $ = '(ibid eqtr3 eqtr);
@@ -566,6 +567,7 @@ theorem eqeq2d (h: $ G -> b = c $): $ G -> (a = b <-> a = c) $ = '(syl eqeq2 h);
 @(register-eqd 'eq) theorem eqeqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
   $ G -> (a = c <-> b = d) $ = '(bitrd (eqeq1d h1) (eqeq2d h2));
 theorem eqeq: $ a = b -> c = d -> (a = c <-> b = d) $ = '(exp (eqeqd anl anr));
+theorem eqtr2d (h1: $ G -> a = b $) (h2: $ G -> b = c $): $ G -> c = a $ = '(sylc eqtr2 h1 h2);
 theorem eqtr3d (h1: $ G -> b = a $) (h2: $ G -> b = c $): $ G -> a = c $ = '(sylc eqtr3 h1 h2);
 theorem eqidd: $ G -> a = a $ = '(a1i eqid);
 theorem eqcomi (h: $ a = b $): $ b = a $ = '(eqcom h);
@@ -677,6 +679,9 @@ theorem iexdeh (a: nat) (G b: wff x) (h: $ F/ x G $)
   (e: $ G /\ x = a -> b $): $ G -> E. x b $ = '(mpi ax_6 (syl exim @ ialdh h (exp e)));
 theorem iexde (G) (a: nat) (b: wff x)
   (e: $ G /\ x = a -> b $): $ G -> E. x b $ = '(iexdeh nfv e);
+theorem iexdde (G b) (a: nat) (c: wff x)
+  (e: $ G /\ x = a -> b -> c $): $ G -> b -> E. x c $ =
+'(exp @ iexde @ imp @ imp @ com23 @ exp e);
 theorem iexe (a: nat) (b: wff x) (c: wff)
   (e: $ x = a -> (b <-> c) $): $ c -> E. x b $ = '(iexde @ mpbird (anwr e) anl);
 theorem ealdeh (a: nat) (G b c: wff x) (h1: $ F/ x G $) (h2: $ F/ x c $)
@@ -3820,6 +3825,8 @@ theorem allal2: $ all A l <-> A. x (x IN l -> x e. A) $ = 'biid;
 theorem allal (p: wff x): $ all {x | p} l <-> A. x (x IN l -> p) $ = '(bicom ssab2);
 
 theorem elall: $ all A l -> x IN l -> x e. A $ = (named '(eale @ imeqd eleq1 eleq1));
+
+theorem ssall: $ A C_ B -> all A l -> all B l $ = (named '(alimd @ imim2d ssel));
 
 @_ def List (A: set) (.n: nat): set = $ {n | all A n} $;
 

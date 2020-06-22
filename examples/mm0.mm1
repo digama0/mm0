@@ -2178,13 +2178,18 @@ pub theorem simpleTokenizeTk (s x r: nat):
     syl6eq (applame simpleTokenizeeq) @ syl resapp @
     sylibr elupto @ mpbid (lteq2d h2) @ sylib ltappendid2 @ anwl @ anld h));
 
-theorem simpleTokenize_nonemptyNonwhite: $ all nonemptyNonwhite (simpleTokenize s) $ =
+theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = a ++ x ++ b} (simpleTokenize s) $ =
 (named @ focus
-  (def h '(alleq2d simpleTokenizeeq))
-  '(!! indstr x y ,h ,h (anwr @ cases _ _) tru)
+  (def h '(alleqd (abeqd @ aneq2d @ exeqd @ exeqd eqeq1) simpleTokenizeeq))
+  '(!! indstr y z ,h ,h (anwr @ cases _ _) tru)
   '(a1d @ mpbiri all0 @ alleq2d @ syl6eq simpleTokenize0 simpleTokenizeeq)
   '(sylbi excons @ eex @ eex @ casesda _ _)
   '(ealde @ eimd (mpbiri ltconsid2 @ lteqd anr anll) @
+    syld (syl ssall @ sylib ssab @ iald @ anim2d @
+      syl5bi (cbvex @ exeqd @ eqeq2d @ appendeq1d appendeq1) @
+      eexd @ iexdde @ eximd @ exp @ eqtr4d an4l @
+      eqtr4d (syl6eq appendS @ appendeq1d @ syl6eq appendS @ appendeq1d anlr) @
+      conseq2d @ eqtr3d anllr anr) @
     bi2d @ alleq2d @ mpbird (eqeqd (simpleTokenizeeqd anll) (simpleTokenizeeqd anr)) @
     syl simpleTokenizeWS anlr)
   (have 'h1 '(mpbiri (mpbir prefix_S @ ian eqid prefix_0) (prefixeq2d anl)))
@@ -2195,7 +2200,23 @@ theorem simpleTokenize_nonemptyNonwhite: $ all nonemptyNonwhite (simpleTokenize 
     eex @ exp @ rsyl exanal @ eex @ imp @
     eimd (mpbid (lteq2d maxPrefixSi1) @
       sylib ltappendid2 @ anld @ sylib el_nonemptyNonwhite maxPrefixSi2) @
-    bi2d @ bitrd (alleq2d simpleTokenizeTk) @ syl5bb allS @ syl bian1 maxPrefixSi2));
+    syld (syl ssall @ sylib ssab @ iald @ anim2d @
+      syl5bi (cbvex @ exeqd @ eqeq2d @ appendeq1d appendeq1) @
+      eexd @ iexdde @ eximd @ exp @ eqtr3d (anwll maxPrefixSi1) @
+      eqtr4d (appendeq2d anr) @ syl6eq appendass @ appendeq1d @
+      syl6eq appendass @ appendeq1d anlr) @
+    bi2d @ bitrd (alleq2d simpleTokenizeTk) @ syl5bb allS @ syl bian1 @
+    sylibr (elabe @ aneqd eleq1 @ exeqd @ exeqd @ eqeq2d @ appendeq1d appendeq2) @
+    iand maxPrefixSi2 @ iexde @ iexde @
+    eqtr2d (appendeqd (syl6eq append0 @ appendeq1d anlr) anr) @ anwll maxPrefixSi1));
+
+theorem simpleTokenize_nonemptyNonwhite: $ all nonemptyNonwhite (simpleTokenize s) $ =
+(named '(ssall (mpbi ssab1 @ ax_gen anl) simpleTokenize_infix));
+
+theorem simpleTokenize_le: $ c IN simpleTokenize s -> c <= s $ =
+(named '(rsyl (elall simpleTokenize_infix) @
+  sylbi (elabe @ aneqd eleq1 @ exeqd @ exeqd @ eqeq2d @ appendeq1d @ appendeq2) @
+  anwr @ eex @ eex @ mpbiri (letr leappendid2 leappendid1) leeq2));
 
 @_ def getDelimiters (ast: nat): nat =
 $ rlrec 0 (\\ a, \\ t, \ ih,
@@ -2448,41 +2469,90 @@ theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
 --     E. l E. r (r e. fst (getDelimiters ast) /\ x = l ++ r) \/
 --     E. l E. r (l e. snd (getDelimiters ast) /\ y = l ++ r) $;
 
-@_ def getPfx (ast: nat): nat;
+@_ def getPfx (ast: nat): nat =
+$ lower (S\ x, S\ c, {p | E. fmla (
+    ASTNota (NotaPfx (x <> b1 fmla <> p)) IN ast /\
+    simpleTokenize fmla = c : 0)}) $;
 pub theorem getPfxEl {fmla: nat} (ast x c p: nat):
-  $ x <> c <> p e. getPfx ast <-> E. fmla
-    (ASTNota (NotaPfx (x <> b1 fmla <> p)) IN ast /\
-     simpleTokenize fmla = c : 0) $;
+  $ x <> c <> p e. getPfx ast <-> E. fmla (
+    ASTNota (NotaPfx (x <> b1 fmla <> p)) IN ast /\
+    simpleTokenize fmla = c : 0) $ =
+(named @ focus
+  '(bitr (ellower @ trud _) @ elsabe @ elsabed @ elabed @
+    exeqd @ aneqd
+      (lmemeq1d @ ASTNotaeqd @ NotaPfxeqd @ preqd anll @ preq2d anr)
+      (eqeq2d @ conseq1d anlr))
+  (have 'h $ ASTNota (NotaPfx _) IN ast /\ _ -> _ $
+    '(rsyl (syl lmemlt anl) @ lelttr @ leb1tr @ leb1tr @ leb0tr @ leb1tr b1leid))
+  '(sabfin (eexsabd @ eelabd @ a1i @ eex @ sylibr elupto @ rsyl h @ lelttr leprid1) (a1i finns) @
+    sabfin (eelabd @ a1i @ sylibr ellamima @ eximi @ iand
+      (sylibr elupto @ rsyl h @ lelttr @ lepr2tr @ lepr1tr b1leid)
+      (eqcomd @ syl6eq fstpr @ fsteqd @ syl6eq sucsub1 @ subeq1d anr)) (a1i @ finlamima finns) @
+    a1i @ finss (mpbi ssab1 @ ax_gen @ eex @ sylibr elupto @ rsyl h @ lelttr @ lepr2tr leprid2) @
+    finns));
 
-@_ def getInfix (ast r: nat): nat;
+@_ def getInfix (ast r: nat): nat =
+$ lower (S\ x, S\ c, {p | E. fmla (
+    ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
+    simpleTokenize fmla = c : 0)}) $;
 pub theorem getInfixEl {fmla: nat} (ast r x c p: nat):
   $ x <> c <> p e. getInfix ast r <-> E. fmla
     (ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
-     simpleTokenize fmla = c : 0) $;
+     simpleTokenize fmla = c : 0) $ =
+(named @ focus
+  '(bitr (ellower @ trud _) @ elsabe @ elsabed @ elabed @
+    exeqd @ aneqd
+      (lmemeq1d @ ASTNotaeqd @ NotaInfixeq2d @ preqd anll @ preq2d anr)
+      (eqeq2d @ conseq1d anlr))
+  (have 'h $ ASTNota (NotaInfix _) IN ast /\ _ -> _ $
+    '(rsyl (syl lmemlt anl) @ lelttr @ leb1tr @ leb1tr @ leb0tr @ leb1tr b0leid))
+  '(sabfin (eexsabd @ eelabd @ a1i @ eex @ sylibr elupto @ rsyl h @ lelttr @ lepr2tr leprid1) (a1i finns) @
+    sabfin (eelabd @ a1i @ sylibr ellamima @ eximi @ iand
+      (sylibr elupto @ rsyl h @ lelttr @ lepr2tr @ lepr2tr @ lepr1tr b1leid)
+      (eqcomd @ syl6eq fstpr @ fsteqd @ syl6eq sucsub1 @ subeq1d anr)) (a1i @ finlamima finns) @
+    a1i @ finss (mpbi ssab1 @ ax_gen @ eex @ sylibr elupto @ rsyl h @ lelttr @ lepr2tr @ lepr2tr leprid2) @
+    finns));
 
-@_ def getNota (ast: nat): nat;
+@_ def getNota (ast: nat): nat = $ lower {z | ASTNota (NotaGen z) IN ast} $;
 pub theorem getNotaEl (ast x y: nat):
-  $ x <> y e. getNota ast <-> ASTNota (NotaGen (x <> y)) IN ast $;
+  $ x <> y e. getNota ast <-> ASTNota (NotaGen (x <> y)) IN ast $ =
+(named @ focus
+  '(bitr (ellower @ finss _ finns) @ elabe @ lmemeq1d @ ASTNotaeqd NotaGeneq)
+  '(mpbi ssab1 @ ax_gen @ sylibr elupto @ rsyl lmemlt @ lelttr @
+    leb1tr @ leb1tr @ leb1tr b1leid));
 
-@_ def getCoe (ast: nat): nat;
+@_ def getCoe (ast: nat): nat = $ lower {z | ASTNota (NotaCoe z) IN ast} $;
 pub theorem getCoeEl (ast x y: nat):
-  $ x <> y e. getCoe ast <-> ASTNota (NotaCoe (x <> y)) IN ast $;
+  $ x <> y e. getCoe ast <-> ASTNota (NotaCoe (x <> y)) IN ast $ =
+(named @ focus
+  '(bitr (ellower @ finss _ finns) @ elabe @ lmemeq1d @ ASTNotaeqd NotaCoeeq)
+  '(mpbi ssab1 @ ax_gen @ sylibr elupto @ rsyl lmemlt @ lelttr @
+    leb1tr @ leb1tr @ leb1tr b0leid));
 
-@_ def precle (m n: nat): wff; infixl precle: $<=p$ prec 50;
-pub theorem precle02 (n: nat): $ n <=p 0 $;
-pub theorem precle01 (m: nat): $ ~ 0 <=p suc m $;
-pub theorem precleS (m n: nat): $ suc m <=p suc n <-> m <= n $;
+@_ def precle (m n: nat): wff = $ n = 0 \/ (m != 0 /\ m - 1 <= n - 1) $;
+infixl precle: $<=p$ prec 50;
+pub theorem precle02 (n: nat): $ n <=p 0 $ = '(orl eqid);
+pub theorem precle01 (m: nat): $ ~ 0 <=p suc m $ =
+'(mpbir notor @ ian peano1 @ con2 anl eqid);
+pub theorem precleS (m n: nat): $ suc m <=p suc n <-> m <= n $ =
+'(bitr (bior1 peano1) @ bitr (bian1 peano1) @ leeq sucsub1 sucsub1);
 
-@_ def precSuc (n: nat): nat;
-pub theorem precSuc0: $ precSuc 0 = 0 $;
-pub theorem precSucS (n: nat): $ precSuc (suc n) = suc (suc n) $;
+@_ def precSuc (n: nat): nat = $ if (n = 0) 0 (suc n) $;
+pub theorem precSuc0: $ precSuc 0 = 0 $ = '(ifpos eqid);
+pub theorem precSucS (n: nat): $ precSuc (suc n) = suc (suc n) $ = '(ifneg peano1);
 
-@_ def litsPrec (lits q: nat): nat;
-pub theorem litsPrec0 (q: nat): $ litsPrec 0 q = q $;
+@_ def litsPrec (lits q: nat): nat =
+$ if (lits = 0) q (case (\\ c, \ p, precSuc p) (\ v, 0) @ (fst (lits - 1))) $;
+pub theorem litsPrec0 (q: nat): $ litsPrec 0 q = q $ = (named '(ifpos eqid));
+theorem litsPrecS:
+  $ litsPrec (z : lits) q = case (\\ c, \ p, precSuc p) (\ v, 0) @ z $ =
+(named '(eqtr (ifneg peano1) @ appeq2 @ eqtr (fsteq sucsub1) fstpr));
 pub theorem litsPrecC (c p lits q: nat):
-  $ litsPrec (b0 (c <> p) : lits) q = precSuc p $;
+  $ litsPrec (b0 (c <> p) : lits) q = precSuc p $ =
+(named '(eqtr litsPrecS @ eqtr casel @ appslame @ applamed @ precSuceqd anr));
 pub theorem litsPrecV (v lits q: nat):
-  $ litsPrec (b1 v : lits) q = 0 $;
+  $ litsPrec (b1 v : lits) q = 0 $ =
+(named '(eqtr litsPrecS @ eqtr caser @ applame eqidd));
 
 -- This is a more precise version of SExpr that allows reconstructing an
 -- exact token string from a parse proof
