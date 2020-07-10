@@ -12,7 +12,7 @@ let client: LanguageClient;
 
 function startClient() {
 	let config = workspace.getConfiguration('metamath-zero');
-	let mm0Path: string = config.get('executablePath') || 'mm0-hs';
+	let mm0Path: string = config.get('executablePath') || 'mm0-rs';
 
 	// If the extension is launched in debug mode then the debug server options are used
 	// Otherwise the run options are used

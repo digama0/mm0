@@ -1,6 +1,6 @@
 # Metamath Zero
 
-This extension provides support for the verification and specification language [Metamath Zero](http://github.com/digama0/mm0). Syntax highlighting is available out of the box, and if [`mm0-hs`](http://github.com/digama0/mm0/tree/master/mm0-hs) is installed, it will use the `mm0-hs server` LSP server to provide additional features.
+This extension provides support for the verification and specification language [Metamath Zero](http://github.com/digama0/mm0). Syntax highlighting is available out of the box, and if [`mm0-rs`](http://github.com/digama0/mm0/tree/master/mm0-rs) is installed, it will use the `mm0-rs server` LSP server to provide additional features.
 
 ## Installation
 
@@ -10,7 +10,13 @@ To install from source, run `npm run compile` from the `vscode-mm0` directory, t
 
 ## Requirements
 
-Requires [`mm0-hs`](http://github.com/digama0/mm0/tree/master/mm0-hs) (or alternatively [`mm0-rs`](https://github.com/digama0/mm0/blob/master/mm0-rs)), which can be built and installed using:
+Requires [`mm0-rs`](http://github.com/digama0/mm0/tree/master/mm0-rs) or alternatively [`mm0-hs`](https://github.com/digama0/mm0/blob/master/mm0-hs). `mm0-rs` can be built using
+
+    cargo build --release
+
+producing an executable in `target/release/mm0-rs` that can be symlinked or copied to your PATH.
+
+`mm0-hs` can be built and installed using:
 
     stack build mm0-hs
     stack install
