@@ -6,7 +6,7 @@ This extension provides support for the verification and specification language 
 
 The extension is available on the VSCode marketplace, under the code `digama0.metamath-zero`.
 
-To install from source, run `npm run compile` from the `vscode-mm0` directory, then copy or symlink the directory to `~/.vscode/extensions/vscode-mm0/`.
+To install from source, run `npm install` and then `npm run compile` from the `vscode-mm0` directory, then copy or symlink the directory to `~/.vscode/extensions/vscode-mm0/`.
 
 ## Requirements
 
