@@ -313,12 +313,21 @@ impl LispKind {
       _ => 0,
     })
   }
-  pub fn at_least(&self, n: usize) -> bool {
+
+  pub fn list_at_least(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(es) => return n <= es.len(),
       LispKind::DottedList(es, r) if n <= es.len() => r.is_list(),
-      LispKind::DottedList(es, r) => r.at_least(n - es.len()),
+      LispKind::DottedList(es, r) => r.list_at_least(n - es.len()),
       _ => false,
+    })
+  }
+  pub fn at_least(&self, n: usize) -> bool {
+    self.unwrapped(|e| match e {
+      LispKind::List(es) => return n <= es.len(),
+      LispKind::DottedList(es, _) if n <= es.len() => true,
+      LispKind::DottedList(es, r) => r.at_least(n - es.len()),
+      _ => n == 0,
     })
   }
 
@@ -494,6 +503,13 @@ impl Uncons {
       Uncons::New(e) => e.at_least(n),
       Uncons::List(es) => es.len() >= n,
       Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.at_least(i)),
+    }
+  }
+  pub fn list_at_least(&self, n: usize) -> bool {
+    n == 0 || match self {
+      Uncons::New(e) => e.list_at_least(n),
+      Uncons::List(es) => es.len() >= n,
+      Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.list_at_least(i)),
     }
   }
 

@@ -313,7 +313,7 @@ impl<'a> ElabTermMut<'a> {
       &LispKind::Atom(a) => self.atom(e, a, tgt),
       LispKind::DottedList(es, r) if es.is_empty() => self.expr(r, tgt),
       LispKind::List(es) if es.len() == 1 => self.expr(&es[0], tgt),
-      LispKind::List(_) | LispKind::DottedList(_, _) if e.at_least(2) =>
+      LispKind::List(_) | LispKind::DottedList(_, _) if e.list_at_least(2) =>
         self.list(e, Uncons::from(e.clone()), tgt),
       _ => self.other(e, tgt),
     })

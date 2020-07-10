@@ -270,7 +270,7 @@ impl Elaborator {
         PatternState::List(mut u, mut it, dot) => match it.next() {
           None => match dot {
             Dot::List(None) => PatternState::Ret(u.exactly(0)),
-            Dot::List(Some(n)) => PatternState::Ret(u.at_least(n)),
+            Dot::List(Some(n)) => PatternState::Ret(u.list_at_least(n)),
             Dot::DottedList(p) => PatternState::Eval(p, u.as_lisp()),
           }
           Some(p) => match u.next() {
