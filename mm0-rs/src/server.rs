@@ -37,10 +37,6 @@ impl From<ProtocolError> for ServerError {
   fn from(e: ProtocolError) -> Self { ServerError(Box::new(e)) }
 }
 
-impl From<RecvError> for ServerError {
-  fn from(e: RecvError) -> Self { ServerError(Box::new(e)) }
-}
-
 impl<T: Send + Sync + 'static> From<SendError<T>> for ServerError {
   fn from(e: SendError<T>) -> Self { ServerError(Box::new(e)) }
 }
@@ -793,8 +789,9 @@ impl Server {
       loop {
         match (|| -> Result<bool> {
           let Server {conn, reqs, vfs, pool, ..} = &*SERVER;
-          match conn.receiver.recv()? {
-            Message::Request(req) => {
+          match conn.receiver.recv() {
+            Err(RecvError) => return Ok(true),
+            Ok(Message::Request(req)) => {
               if conn.handle_shutdown(&req)? {
                 return Ok(true)
               }
@@ -806,11 +803,11 @@ impl Server {
                 });
               }
             }
-            Message::Response(resp) => {
+            Ok(Message::Response(resp)) => {
               reqs.lock().unwrap().get(&resp.id).ok_or_else(|| "response to unknown request")?
                 .store(true, Ordering::Relaxed);
             }
-            Message::Notification(notif) => {
+            Ok(Message::Notification(notif)) => {
               match notif.method.as_str() {
                 "$/cancelRequest" => {
                   let CancelParams {id} = from_value(notif.params)?;
