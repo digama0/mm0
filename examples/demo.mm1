@@ -11,9 +11,8 @@ axiom mp: $ a -> b $ > $ a $ > $ b $;
 do {
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (verb e) (list ':verb e))
-  (def (refine-extra-args refine p . ps) @
-    foldl ps p @ fn (acc p2) @
-      refine @ list 'mp (verb acc) (verb p2))
+  (def (refine-extra-args refine tgt e . ps)
+   @ refine '{,(foldl ps (verb e) @ fn (acc p2) '(mp ,acc ,p2)) : ,(verb tgt)})
 };
 
 -- theorem a1i (h: $ b $): $ a -> b $ = '(K h);
