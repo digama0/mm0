@@ -169,7 +169,26 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     };
     let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
       .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc))).collect();
-    log!("diagged {:?}, {} errors", path, errs.len());
+
+    let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
+
+    for err in &errs {
+      match err.severity {
+        None => continue,
+        Some(DiagnosticSeverity::Error) => n_errs += 1,
+        Some(DiagnosticSeverity::Warning) => n_warns += 1,
+        Some(DiagnosticSeverity::Information) => n_infos += 1,
+        Some(DiagnosticSeverity::Hint) => n_hints += 1,
+      }
+    }
+
+    use std::fmt::Write;
+    let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);        
+    if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap(); }
+    if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap(); }
+    if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap(); }
+
+    log(log_msg);
     send_diagnostics(path.url().clone(), errs)?;
   }
   vfs.update_downstream(&old_deps, &deps, &path);
