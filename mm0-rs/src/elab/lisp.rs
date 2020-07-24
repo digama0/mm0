@@ -17,7 +17,7 @@ pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
   (enum $name:ident {$($e:ident: $s:expr,)*}) => {
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub enum $name { $($e),* }
     impl $name {
       pub fn from_str(s: &str) -> Option<$name> {
@@ -193,6 +193,13 @@ impl Deref for LispVal {
 unsafe impl StableAddress for LispVal {}
 unsafe impl CloneStableAddress for LispVal {}
 
+impl PartialEq<LispVal> for LispVal {
+  fn eq(&self, other: &LispVal) -> bool {
+    self.ptr_eq(other) || **self == **other
+  }
+}
+impl Eq for LispVal {}
+
 impl LispRef {
   pub fn new(e: LispVal) -> LispRef { LispRef(RwLock::new(e)) }
   pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.read().unwrap() }
@@ -200,6 +207,11 @@ impl LispRef {
   pub fn unref(&self) -> LispVal { self.get().clone() }
   pub fn into_inner(self) -> LispVal { self.0.into_inner().unwrap() }
 }
+
+impl PartialEq<LispRef> for LispRef {
+  fn eq(&self, other: &LispRef) -> bool { *self.get() == *other.get() }
+}
+impl Eq for LispRef {}
 
 impl From<&LispKind> for bool {
   fn from(e: &LispKind) -> bool { e.truthy() }
@@ -336,7 +348,48 @@ impl LispKind {
       LispVal::new(self).span(fsp.clone())
     } else {LispVal::new(self)}
   }
+
+  fn eq_list<'a>(&self, mut it: impl Iterator<Item=&'a LispVal>) -> bool {
+    self.unwrapped(|e| match e {
+      LispKind::List(b) => it.eq(b.iter()),
+      LispKind::DottedList(b, c) =>
+        b.iter().all(|e| it.next() == Some(e)) && c.eq_list(it),
+      _ => false
+    })
+  }
 }
+
+impl PartialEq<LispKind> for LispKind {
+  fn eq(&self, other: &LispKind) -> bool {
+    self.unwrapped(|s| other.unwrapped(|o| match (s, o) {
+      (&LispKind::Atom(a), &LispKind::Atom(b)) => a == b,
+      (LispKind::Number(a), LispKind::Number(b)) => a == b,
+      (LispKind::String(a), LispKind::String(b)) => a == b,
+      (LispKind::Bool(a), LispKind::Bool(b)) => a == b,
+      (LispKind::Syntax(a), LispKind::Syntax(b)) => a == b,
+      (LispKind::Undef, LispKind::Undef) => true,
+      (LispKind::List(a), LispKind::List(b)) => a == b,
+      (LispKind::List(a), _) => other.eq_list(a.iter()),
+      (_, LispKind::List(b)) => self.eq_list(b.iter()),
+      (LispKind::DottedList(a, b), LispKind::DottedList(c, d)) => {
+        let mut it1 = a.iter();
+        let mut it2 = c.iter();
+        loop {
+          match (it1.next(), it2.next()) {
+            (None, None) => break b == d,
+            (Some(e1), Some(e2)) => if e1 != e2 {break false},
+            (Some(e), None) =>
+              break d.eq_list(Some(e).into_iter().chain(it1)),
+            (None, Some(e)) =>
+              break b.eq_list(Some(e).into_iter().chain(it2)),
+          }
+        }
+      }
+      _ => false // Goal, Proc, MVar, AtomMap all have only reference equality
+    }))
+  }
+}
+impl Eq for LispKind {}
 
 #[derive(Clone, Debug)]
 pub enum Annot {
@@ -419,6 +472,7 @@ str_enum! {
     Gt: ">",
     Ge: ">=",
     Eq: "=",
+    Equal: "==",
     ToString: "->string",
     StringToAtom: "string->atom",
     StringAppend: "string-append",

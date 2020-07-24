@@ -330,6 +330,17 @@ At the beginning of execution, the global context contains a number of primitive
 * `(- a b)` computes the subtraction `a - b`. `(- a b c)` is `a - b - c`, `(- a)` is `-a`, and `(-)` is an error.
 * `(< a b)` is true if `a` is less than `b`. `(< a b c)` is true if `a < b` and `b < c`. `(< a)` is true and `(<)` is an error.
 * Similarly, `<=`, `>=`, `>` and `=` perform analogous iterated comparisons. There is no not-equal operator.
+
+* `==`, distinct from `=`, is sometimes called `equal?` in other lisps, and performs recursive equality comparison.
+
+  * Pointer-equal data always compare as equal.
+  * Strings, atoms, `#t`, `#f`, `#undef` all perform structural comparison as expected (`#t` is equal to `#t` but not equal to `#undef` or `"#t"` or `'#t`).
+  * Two pairs are equal if their components are equal.
+  * Procedures (both builtins and `fn` declarations), `atom-map`s, `goal`s and `mvar`s have no structural equality; they compare equal only if they are pointer-equal.
+  * Indirections are ignored; `(ref! 1)` is equal to `1`.
+  * The comparison routine performs no cycle detection so equality on cyclic data structures can loop.
+  * Like the numeric equality operator `=`, `==` can be used on more than two arguments, in which case it will compare all elements to the first.
+
 * `(->string e)` converts an expression to a string. Numbers are converted in the usual way, strings, atoms and formulas (which are all containers for strings) get the underlying string, and other expressions are pretty printed using the same method as `print`.
 
       (->string 42)     -- "42"

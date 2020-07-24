@@ -744,6 +744,10 @@ make_builtins! { self, sp1, sp2, args,
   Gt: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a > b, &args))),
   Ge: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a >= b, &args))),
   Eq: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a == b, &args))),
+  Equal: AtLeast(1) => {
+    let (e1, args) = args.split_first().unwrap();
+    LispVal::bool(args.iter().all(|e2| e1 == e2))
+  },
   ToString: Exact(1) => LispVal::string(self.to_string(&args[0])),
   StringToAtom: Exact(1) => {
     let s = try1!(self.as_string(&args[0]));
