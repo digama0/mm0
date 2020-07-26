@@ -106,7 +106,9 @@ Notations
     notation-literal ::= prec-constant | identifier
     prec-constant ::= '(' constant ':' precedence-lvl ')'
 
-Notations in MM1 are unchanged from [MM0](../mm0.md#notations).
+MM1 delimiter statements can include either one or two math-strings. If a statement has two math strings, the items in the first are added to the environment as left delimiters, and the items in the second are added as right delimiters. An example of this style can be seen in `/examples/peano.mm1`. If a statement has only one math string, its items are treated as both left and right delimiters, as in `/examples/demo.mm1`.
+
+Beyond that, notations in MM1 are unchanged from [MM0](../mm0.md#notations).
 
 The `input` and `output` commands
 ---
