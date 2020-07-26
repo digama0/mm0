@@ -482,15 +482,15 @@ impl<'a> Parser<'a> {
     Ok((self.chr_err(b';')?, SimpleNota {k, id, c, prec}))
   }
 
-  fn nota_modifiers(&mut self, m: Modifiers, sp: Span) {
+  fn modifiers_empty(&mut self, m: Modifiers, sp: Span, msg : &'static str) {
     if !m.is_empty() {
       self.push_err(Err(ParseError::new(sp,
-        "notation commands do not take modifiers".into())));
+        msg.into())));
     }
   }
 
   fn simple_nota_stmt(&mut self, start: usize, m: Modifiers, sp: Span, k: SimpleNotaKind) -> Result<Option<Stmt>> {
-    self.nota_modifiers(m, sp);
+    self.modifiers_empty(m, sp, "notation commands do not take modifiers");
     let (end, n) = self.simple_nota(k)?;
     Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::SimpleNota(n)}))
   }
@@ -607,7 +607,7 @@ impl<'a> Parser<'a> {
         "infixl"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: false}),
         "infixr"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: true}),
         "coercion" => {
-          self.nota_modifiers(m, id);
+          self.modifiers_empty(m, id, "notation commands do not take modifiers");
           let id = self.ident_err()?;
           self.chr_err(b':')?;
           let from = self.ident_err()?;
@@ -617,7 +617,7 @@ impl<'a> Parser<'a> {
           Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Coercion {id, from, to}}))
         }
         "notation" => {
-          self.nota_modifiers(m, id);
+          self.modifiers_empty(m, id, "notation commands do not take modifiers");
           let id = self.ident_err()?;
           let bis = self.binders()?;
           let ty = if self.chr(b':').is_some() {Some(self.ty()?)} else {None};
@@ -637,6 +637,7 @@ impl<'a> Parser<'a> {
             GenNota {id, bis, ty, lits, prec})}))
         }
         "do" => {
+          self.modifiers_empty(m, id, "do blocks do not take modifiers");
           let mut es = Vec::new();
           if self.chr(b'{').is_some() {
             while self.chr(b'}').is_none() {es.push(self.sexpr()?)}
@@ -645,12 +646,14 @@ impl<'a> Parser<'a> {
           Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Do(es)}))
         }
         "import" => {
+          self.modifiers_empty(m, id, "import statements do not take modifiers");
           let (sp, s) = self.string()?;
           let span = (start..self.chr_err(b';')?).into();
           self.imports.push((sp, s.clone()));
           Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
         }
         "exit" => {
+          self.modifiers_empty(m, id, "exit does not take modifiers");
           self.chr_err(b';')?;
           self.errors.push(ParseError::new(id,
             "early exit on 'exit' command".into()));
