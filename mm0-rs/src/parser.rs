@@ -71,12 +71,56 @@ pub struct Parser<'a> {
   pub errors: Vec<ParseError>,
   pub imports: Vec<(Span, String)>,
   pub idx: usize,
+  pub restart_pos: Option<usize>,
 }
 
 pub fn ident_start(c: u8) -> bool { b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' || c == b'_' }
 pub fn ident_rest(c: u8) -> bool { ident_start(c) || b'0' <= c && c <= b'9' }
 pub fn lisp_ident(c: u8) -> bool { ident_rest(c) || b"!%&*/:<=>?^~+-.@".contains(&c) }
 pub fn whitespace(c: u8) -> bool { c == b' ' || c == b'\n' }
+
+enum CommandKeyword {
+  Sort,
+  Delimiter,
+  Term,
+  Axiom,
+  Theorem,
+  Def,
+  Input,
+  Output,
+  Prefix,
+  Infixl,
+  Infixr,
+  Coercion,
+  Notation,
+  Do,
+  Import,
+  Exit
+}
+
+impl CommandKeyword {
+  fn parse(s: &str) -> Option<CommandKeyword> {
+    match s {
+      "sort"      => Some(CommandKeyword::Sort),
+      "delimiter" => Some(CommandKeyword::Delimiter),
+      "term"      => Some(CommandKeyword::Term),
+      "axiom"     => Some(CommandKeyword::Axiom),
+      "theorem"   => Some(CommandKeyword::Theorem),
+      "def"       => Some(CommandKeyword::Def),
+      "input"     => Some(CommandKeyword::Input),
+      "output"    => Some(CommandKeyword::Output),
+      "prefix"    => Some(CommandKeyword::Prefix),
+      "infixl"    => Some(CommandKeyword::Infixl),
+      "infixr"    => Some(CommandKeyword::Infixr),
+      "coercion"  => Some(CommandKeyword::Coercion),
+      "notation"  => Some(CommandKeyword::Notation),
+      "do"        => Some(CommandKeyword::Do),
+      "import"    => Some(CommandKeyword::Import),
+      "exit"      => Some(CommandKeyword::Exit),
+      _           => None,
+    }
+  }
+}
 
 impl<'a> Parser<'a> {
   pub fn cur(&self) -> u8 { self.source[self.idx] }
@@ -130,7 +174,12 @@ impl<'a> Parser<'a> {
     loop {
       self.idx += 1;
       if !self.cur_opt().map_or(false, ident_rest) {
-        return (Some((start..self.idx).into()), self.ws()).0
+        let sp = (start..self.idx).into();
+        if self.restart_pos.is_none() && CommandKeyword::parse(self.span(sp)).is_some() {
+          self.restart_pos = Some(start);
+        }
+        self.ws();
+        break Some(sp)
       }
     }
   }
@@ -173,6 +222,7 @@ impl<'a> Parser<'a> {
         Some(id) => match Modifiers::from_name(self.span(id)) {
           None => return (modifiers, Some(id)),
           Some(m) => {
+            if self.restart_pos.is_none() { self.restart_pos = Some(id.start) }
             if modifiers.intersects(m) { self.push_err(self.err_str("double modifier")) }
             modifiers |= m;
           }
@@ -396,6 +446,7 @@ impl<'a> Parser<'a> {
         match (self.span(span), span.start -= 1).0 {
           "t" => Ok(SExpr {span, k: SExprKind::Bool(true)}),
           "f" => Ok(SExpr {span, k: SExprKind::Bool(false)}),
+          "undef" => Ok(SExpr {span, k: SExprKind::Undef}),
           k => Err(ParseError {
             pos: span,
             level: ErrorLevel::Error,
@@ -560,6 +611,7 @@ impl<'a> Parser<'a> {
 
   fn stmt(&mut self) -> Result<Option<Stmt>> {
     let start = self.idx;
+    self.restart_pos = None;
     if self.chr(b'@').is_some() {
       let e = self.sexpr()?;
       let s = self.stmt()?.ok_or_else(||
@@ -574,98 +626,102 @@ impl<'a> Parser<'a> {
         if m.is_empty() {Ok(None)}
         else {self.err_str("expected command keyword")}
       }
-      (mut m, Some(id)) => match self.span(id) {
-        "sort" => {
-          if !Modifiers::sort_data().contains(m) {
-            self.push_err(self.err_str("sorts do not take visibility modifiers"));
-            m &= Modifiers::sort_data();
+      (mut m, Some(id)) => {
+        let k = self.span(id);
+        self.restart_pos = None;
+        match CommandKeyword::parse(k) {
+          Some(CommandKeyword::Sort) => {
+            if !Modifiers::sort_data().contains(m) {
+              self.push_err(self.err_str("sorts do not take visibility modifiers"));
+              m &= Modifiers::sort_data();
+            }
+            let id = self.ident_err()?;
+            let end = self.chr_err(b';')?;
+            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Sort(id, m)}))
           }
-          let id = self.ident_err()?;
-          let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Sort(id, m)}))
-        }
-        "delimiter" => {
-          if !m.is_empty() {
-            self.push_err(self.err_str("'delimiter' does not take modifiers"));
+          Some(CommandKeyword::Delimiter) => {
+            if !m.is_empty() {
+              self.push_err(self.err_str("'delimiter' does not take modifiers"));
+            }
+            let f1 = self.formula()?.ok_or_else(|| self.err("expected formula".into()))?;
+            let cs1 = self.delim_chars(f1);
+            let delim = match self.formula()? {
+              None => Delimiter::Both(cs1),
+              Some(f2) => Delimiter::LeftRight(cs1, self.delim_chars(f2)),
+            };
+            let end = self.chr_err(b';')?;
+            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Delimiter(delim)}))
           }
-          let f1 = self.formula()?.ok_or_else(|| self.err("expected formula".into()))?;
-          let cs1 = self.delim_chars(f1);
-          let delim = match self.formula()? {
-            None => Delimiter::Both(cs1),
-            Some(f2) => Delimiter::LeftRight(cs1, self.delim_chars(f2)),
-          };
-          let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Delimiter(delim)}))
-        }
-        "term"    => self.decl_stmt(start, m, id, DeclKind::Term),
-        "axiom"   => self.decl_stmt(start, m, id, DeclKind::Axiom),
-        "theorem" => self.decl_stmt(start, m, id, DeclKind::Thm),
-        "def"     => self.decl_stmt(start, m, id, DeclKind::Def),
-        "input"   => self.inout_stmt(start, m, id, false),
-        "output"  => self.inout_stmt(start, m, id, true),
-        "prefix"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Prefix),
-        "infixl"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: false}),
-        "infixr"  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: true}),
-        "coercion" => {
-          self.modifiers_empty(m, id, "notation commands do not take modifiers");
-          let id = self.ident_err()?;
-          self.chr_err(b':')?;
-          let from = self.ident_err()?;
-          self.chr_err(b'>')?;
-          let to = self.ident_err()?;
-          let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Coercion {id, from, to}}))
-        }
-        "notation" => {
-          self.modifiers_empty(m, id, "notation commands do not take modifiers");
-          let id = self.ident_err()?;
-          let bis = self.binders()?;
-          let ty = if self.chr(b':').is_some() {Some(self.ty()?)} else {None};
-          self.chr_err(b'=')?;
-          let lits = self.literals()?;
-          let prec = if self.chr(b':').is_some() {
-            let prec = self.prec()?;
-            let r = self.ident_().and_then(|s| match self.span(s) {
-              "lassoc" => Some(false),
-              "rassoc" => Some(true),
-              _ => None
-            }).ok_or_else(|| self.err("expected 'lassoc' or 'rassoc'".into()))?;
-            Some((prec, r))
-          } else {None};
-          let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Notation(
-            GenNota {id, bis, ty, lits, prec})}))
-        }
-        "do" => {
-          self.modifiers_empty(m, id, "do blocks do not take modifiers");
-          let mut es = Vec::new();
-          if self.chr(b'{').is_some() {
-            while self.chr(b'}').is_none() {es.push(self.sexpr()?)}
-          } else {es.push(self.sexpr()?)}
-          let end = self.chr_err(b';')?;
-          Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Do(es)}))
-        }
-        "import" => {
-          self.modifiers_empty(m, id, "import statements do not take modifiers");
-          let (sp, s) = self.string()?;
-          let span = (start..self.chr_err(b';')?).into();
-          self.imports.push((sp, s.clone()));
-          Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
-        }
-        "exit" => {
-          self.modifiers_empty(m, id, "exit does not take modifiers");
-          self.chr_err(b';')?;
-          self.errors.push(ParseError::new(id,
-            "early exit on 'exit' command".into()));
-          Ok(None)
-        }
-        k => {
-          self.idx = start;
-          Err(ParseError {
-            pos: id,
-            level: ErrorLevel::Error,
-            msg: format!("unknown command '{}'", k.clone()).into()
-          })
+          Some(CommandKeyword::Term)    => self.decl_stmt(start, m, id, DeclKind::Term),
+          Some(CommandKeyword::Axiom)   => self.decl_stmt(start, m, id, DeclKind::Axiom),
+          Some(CommandKeyword::Theorem) => self.decl_stmt(start, m, id, DeclKind::Thm),
+          Some(CommandKeyword::Def)     => self.decl_stmt(start, m, id, DeclKind::Def),
+          Some(CommandKeyword::Input)   => self.inout_stmt(start, m, id, false),
+          Some(CommandKeyword::Output)  => self.inout_stmt(start, m, id, true),
+          Some(CommandKeyword::Prefix)  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Prefix),
+          Some(CommandKeyword::Infixl)  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: false}),
+          Some(CommandKeyword::Infixr)  => self.simple_nota_stmt(start, m, id, SimpleNotaKind::Infix {right: true}),
+          Some(CommandKeyword::Coercion) => {
+            self.modifiers_empty(m, id, "notation commands do not take modifiers");
+            let id = self.ident_err()?;
+            self.chr_err(b':')?;
+            let from = self.ident_err()?;
+            self.chr_err(b'>')?;
+            let to = self.ident_err()?;
+            let end = self.chr_err(b';')?;
+            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Coercion {id, from, to}}))
+          }
+          Some(CommandKeyword::Notation) => {
+            self.modifiers_empty(m, id, "notation commands do not take modifiers");
+            let id = self.ident_err()?;
+            let bis = self.binders()?;
+            let ty = if self.chr(b':').is_some() {Some(self.ty()?)} else {None};
+            self.chr_err(b'=')?;
+            let lits = self.literals()?;
+            let prec = if self.chr(b':').is_some() {
+              let prec = self.prec()?;
+              let r = self.ident_().and_then(|s| match self.span(s) {
+                "lassoc" => Some(false),
+                "rassoc" => Some(true),
+                _ => None
+              }).ok_or_else(|| self.err("expected 'lassoc' or 'rassoc'".into()))?;
+              Some((prec, r))
+            } else {None};
+            let end = self.chr_err(b';')?;
+            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Notation(
+              GenNota {id, bis, ty, lits, prec})}))
+          }
+          Some(CommandKeyword::Do) => {
+            self.modifiers_empty(m, id, "do blocks do not take modifiers");
+            let mut es = Vec::new();
+            if self.chr(b'{').is_some() {
+              while self.chr(b'}').is_none() {es.push(self.sexpr()?)}
+            } else {es.push(self.sexpr()?)}
+            let end = self.chr_err(b';')?;
+            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Do(es)}))
+          }
+          Some(CommandKeyword::Import) => {
+            self.modifiers_empty(m, id, "import statements do not take modifiers");
+            let (sp, s) = self.string()?;
+            let span = (start..self.chr_err(b';')?).into();
+            self.imports.push((sp, s.clone()));
+            Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
+          }
+          Some(CommandKeyword::Exit) => {
+            self.modifiers_empty(m, id, "exit does not take modifiers");
+            self.chr_err(b';')?;
+            self.errors.push(ParseError::new(id,
+              "early exit on 'exit' command".into()));
+            Ok(None)
+          }
+          None => {
+            self.idx = start;
+            Err(ParseError {
+              pos: id,
+              level: ErrorLevel::Error,
+              msg: format!("unknown command '{}'", k).into()
+            })
+          }
         }
       }
     }
@@ -673,9 +729,25 @@ impl<'a> Parser<'a> {
 
   fn stmt_recover(&mut self) -> Option<Stmt> {
     loop {
+      let start = self.idx;
       match self.stmt() {
         Ok(d) => return d,
         Err(e) => {
+          while let Some(restart) = self.restart_pos {
+            self.idx = restart;
+            if let Ok(d) = self.stmt() {
+              let idx = mem::replace(&mut self.idx, start);
+              let src = self.source;
+              self.source = &src[..restart];
+              match self.stmt() {
+                Ok(_) => panic!("expected a parse error"),
+                Err(e) => self.errors.push(e)
+              }
+              self.source = src;
+              self.idx = idx;
+              return d
+            }
+          }
           self.errors.push(e);
           while self.idx < self.source.len() {
             let c = self.cur();
@@ -706,7 +778,7 @@ pub fn parse(file: Arc<LinedString>, old: Option<(Position, Arc<AST>)>) ->
           start, ast.stmts[..ix].into())
       }
     } else {Default::default()};
-  let mut p = Parser {source: file.as_bytes(), errors, imports, idx};
+  let mut p = Parser {source: file.as_bytes(), errors, imports, idx, restart_pos: None};
   p.ws();
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
   (0, AST { errors: p.errors, imports: p.imports, source: file, stmts })

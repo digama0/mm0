@@ -49,6 +49,7 @@ impl Elaborator {
         errors: vec![],
         imports: vec![],
         idx: f.0.start + 1,
+        restart_pos: Some(0), // skip command checks
       },
       spans: &mut self.spans,
     };
