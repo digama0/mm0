@@ -43,11 +43,11 @@
 		],
 		"configuration": {
 			"type": "object",
-			"title": "Example configuration",
+			"title": "Metamath Zero",
 			"properties": {
 				"metamath-zero.executablePath": {
 					"type": "string",
-					"default": "mm0-hs",
+					"default": "mm0-rs",
 					"description": "Path to the MM0 server."
 				},
 				"metamath-zero.maxNumberOfProblems": {
