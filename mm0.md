@@ -137,7 +137,7 @@ As an additional check, `notation` requires its variables be annotated with type
                    |  simple-notation-stmt
                    |  coercion-stmt
                    |  gen-notation-stmt
-    delimiter-stmt ::= 'delimiter' math-string ';'
+    delimiter-stmt ::= 'delimiter' math-string math-string? ';'
     simple-notation-stmt ::= ('infixl' | 'infixr' | 'prefix') identifier ':'
       constant 'prec' precedence-lvl ';'
     constant ::= math-string
@@ -195,7 +195,14 @@ Verifiers are allowed but not required to support out of order notation declarat
     term wi (ph ps: wff): wff;
     infix wi: $->$ prec 25;
 
-Tokenization is somewhat simpler than primary lexical analysis. We can partition the string into substrings such that the beginning and end of every delimiter substring or whitespace sequence is a split point, and interpret each substring in the partition as a token, discarding the whitespace. For example, if the delimiters are `(`, `)` and `**`, then `a**b(***{}) c` tokenizes as `'a', '**', 'b', '(', '**', '*{}', ')', 'c'`. It is illegal to write a string with an ambiguous tokenization. (Verifiers may choose to check this on a per-string basis, or use single-character delimiters or other restrictions to ensure that this property holds.)
+Tokenization is somewhat simpler than primary lexical analysis, and is primarily influenced by the `delimiter` command. A `delimiter` command has the form
+
+    delimiter $ both $;
+    delimiter $ left $ $ right $;
+
+where `both`, `left`, `right` are space separated lists of non-whitespace characters to be declared as left delimiters, right delimiters, or both. Delimiters can only be one character long (although this restriction may be lifted in the future).
+
+Given a math string, we first split the string on whitespace characters, and then further split the string *after* every left delimiter and *before* every right delimiter. All unsplit nonempty non-whitespace substrings in the result become the tokens. For example, if `(` is a left delimiter, `)` is a right delimiter, and `*` is both, then `a*b(**{}) c` tokenizes as `'a', '*', 'b(', '*', '*', '{}', ')', 'c'`.
 
     math-string ::= (math-lexeme | math-whitespace)*
     math-whitespace ::= whitechar+

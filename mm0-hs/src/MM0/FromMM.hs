@@ -132,7 +132,7 @@ runTransM m db dbf st = do
 
 _makeAST :: MMDatabase -> DBFilter -> Either String (A.AST, [K.Stmt])
 _makeAST db dbf = trDecls (mDecls db)
-  (A.Notation (A.Delimiter $ A.Const $ T.pack " ( ) ") :) id def where
+  (A.Notation (A.Delimiter (A.Const $ T.pack " ( ") (Just $ A.Const $ T.pack " ) ")) :) id def where
   trDecls :: Q.Seq Decl -> (A.AST -> A.AST) -> ([K.Stmt] -> [K.Stmt]) ->
     TransState -> Either String (A.AST, [K.Stmt])
   trDecls Q.Empty f g _ = return (f [], g [])
@@ -143,7 +143,7 @@ _makeAST db dbf = trDecls (mDecls db)
 
 printAST :: MMDatabase -> DBFilter -> (A.Stmt -> IO ()) -> (K.Stmt -> IO ()) -> IO ()
 printAST db dbf mm0 mmu = do
-  mm0 (A.Notation $ A.Delimiter $ A.Const $ T.pack " ( ) ")
+  mm0 (A.Notation $ A.Delimiter (A.Const $ T.pack " ( ") (Just $ A.Const $ T.pack " ) "))
   trDecls (mDecls db) def
   where
   trDecls :: Q.Seq Decl -> TransState -> IO ()

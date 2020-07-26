@@ -15,7 +15,7 @@ data Stmt =
   | Inout Inout
 
 data Notation =
-    Delimiter Const
+    Delimiter Const (Maybe Const)
   | Prefix Ident Const Prec
   | Infix Bool Ident Const Prec
   | Coercion Ident Ident Ident
@@ -126,7 +126,8 @@ instance Show Stmt where
   showsPrec _ (Inout io) r = shows io r
 
 instance Show Notation where
-  showsPrec _ (Delimiter ds) = ("delimiter " ++) . shows ds . (';' :)
+  showsPrec _ (Delimiter ds Nothing) = ("delimiter " ++) . shows ds . (';' :)
+  showsPrec _ (Delimiter ls (Just rs)) = ("delimiter " ++) . shows ls . (' ' :) . shows rs . (';' :)
   showsPrec _ (Prefix x s prec) = ("prefix " ++) . (T.unpack x ++) .
     (": " ++) . shows s . (" prec " ++) . shows prec . (';' :)
   showsPrec _ (Infix right x s prec) = ("infix" ++) .

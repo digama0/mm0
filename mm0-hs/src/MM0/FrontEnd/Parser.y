@@ -110,7 +110,8 @@ NotationStmt : DelimiterStmt {$1}
              | CoercionStmt {$1}
              | GenNotationStmt {$1}
 
-DelimiterStmt : delimiter Constant ';' {Delimiter $2}
+DelimiterStmt : delimiter Constant ';' {Delimiter $2 Nothing}
+              | delimiter Constant Constant ';' {Delimiter $2 (Just $3)}
 SimpleNotationStmt : NotationKind Ident ':' Constant prec Precedence ';' {$1 $2 $4 $6}
 NotationKind : prefix {Prefix} | infix {Infix $1}
 Constant : formula {Const $1}

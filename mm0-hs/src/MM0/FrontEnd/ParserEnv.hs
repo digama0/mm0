@@ -27,7 +27,8 @@ data NotaInfo = NotaInfo {
 type Coe = SExpr -> SExpr
 
 data ParserEnv = ParserEnv {
-  delims :: S.Set Char,
+  ldelims :: S.Set Char,
+  rdelims :: S.Set Char,
   prefixes :: M.Map Token NotaInfo,
   infixes :: M.Map Token NotaInfo,
   prec :: M.Map Token Prec,
@@ -35,18 +36,20 @@ data ParserEnv = ParserEnv {
   coeProv :: M.Map Ident Ident }
 
 instance Default ParserEnv where
-  def = ParserEnv def def def def def def
+  def = ParserEnv def def def def def def def
 
 tokenize :: ParserEnv -> T.Text -> [Token]
 tokenize pe cnst = concatMap go (splitOneOf " \n" (T.unpack cnst)) where
-  ds = delims pe
+  ls = ldelims pe
+  rs = rdelims pe
   go :: String -> [Token]
   go [] = []
   go (c:s) = go1 c s id
   go1 :: Char -> String -> (String -> String) -> [Token]
-  go1 c s f | S.member c ds = case f [] of
+  go1 c s f | S.member c rs = case f [] of
     [] -> T.singleton c : go s
-    s1 -> T.pack s1 : T.singleton c : go s
+    s1 -> T.pack s1 : go1 c s id
+  go1 c s f | S.member c ls = T.pack (f [c]) : go s
   go1 c [] f = [T.pack $ f [c]]
   go1 c (c':s) f = go1 c' s (f . (c:))
 
@@ -57,9 +60,9 @@ tokenize1 env (Const cnst) = case tokenize env cnst of
 
 checkToken :: ParserEnv -> Token -> Bool
 checkToken e tk =
-  if T.length tk == 1 then
-      T.head tk `notElem` (" \n"::String)
-  else T.all (\c -> c `S.notMember` delims e && c `notElem` (" \n"::String)) tk
+  T.all (\c -> c `notElem` (" \n"::String)) tk &&
+  T.all (\c -> c `S.notMember` ldelims e) (T.init tk) &&
+  T.all (\c -> c `S.notMember` rdelims e) (T.tail tk)
 
 mkLiterals :: Int -> Prec -> Int -> [PLiteral]
 mkLiterals 0 _ _ = []
@@ -193,9 +196,15 @@ recalcCoeProv env e = do
     else r
 
 addNotation :: Notation -> Environment -> ParserEnv -> Either String ParserEnv
-addNotation (Delimiter (Const s')) _ e = do
-  ds' <- go (splitOneOf " \t\r\n" (T.unpack s')) (delims e)
-  return (e {delims = ds'}) where
+addNotation (Delimiter (Const s1) o) _ e = do
+  ds1 <- go l1 (ldelims e)
+  ds2 <- go l2 (rdelims e)
+  return (e {ldelims = ds1, rdelims = ds2})
+  where
+    l1 = splitOneOf " \t\r\n" (T.unpack s1)
+    l2 = case o of
+      Nothing -> l1
+      Just (Const s2) -> splitOneOf " \t\r\n" (T.unpack s2)
     go :: [String] -> S.Set Char -> Either String (S.Set Char)
     go [] s = return s
     go ([]:ds) s = go ds s
