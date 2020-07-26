@@ -403,7 +403,7 @@ do {
   (def (to_hex refine t) @ match t @ $ ,a = ,_ $
     @ match (mktohex a)
     [(b p) @ refine '{(:verb ,p) : $ ,a = ,b $}]
-    [(? undef?) @ refine 'eqid])
+    [#undef @ refine 'eqid])
 
   (def (try-conv a p) @ if (def? p) p '(,a (eqid ,a)))
   (let ([(ins a f) (insert! tohex-map a f)])
@@ -415,7 +415,7 @@ do {
           (mkadc a b)]
       [a @ match (mktohex a)
         [(a2 pa) @ match (mksuc a2) @ (b pb) '(,b (adceql ,a ,a2 ,b ,pa ,pb))]
-        [_ (mksuc a b)]])
+        [#undef (mksuc a b)]])
     (ins 'add @ fn (a b)
       (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
@@ -438,7 +438,7 @@ do {
         [(a2 p) @ match a2
           ['(x0) '((h2n ,b) (hexeql0 ,a ,b ,p))]
           [_ '((hex ,a2 ,b) (hexeql ,a ,a2 ,b ,p))]
-        [_]]])
+        [#undef]]])
     (ins 'h2n @ fn (_))
     (for 0 15 @ fn (n) @
       ins (dn n) @ fn () @ '((,(hexdigit n)) (,(decn n))))
@@ -464,8 +464,8 @@ do {
     [('eq a b) @ match (mktohex b)
       [(b2 pb) @ match (mktohex a)
         [(a2 pa) @ match {a2 = b2} @ #t '(eqtr4i ,a ,a2 ,b ,pa ,pb)]
-        [_ '(eqcomi ,b ,a ,pb)]]
-      [_ (try-conv (mktohex a))]])
+        [#undef '(eqcomi ,b ,a ,pb)]]
+      [#undef (try-conv (mktohex a))]])
 
   -- Normalize numeric expressions. Proves theorems like $ 123 * 321 = 39483 $,
   -- used as a refine script.

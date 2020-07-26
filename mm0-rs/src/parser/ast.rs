@@ -142,6 +142,7 @@ pub enum SExprKind {
   Number(BigUint),
   String(ArcString),
   Bool(bool),
+  Undef,
   Formula(Formula),
 }
 
@@ -226,6 +227,7 @@ impl EnvDisplay for SExpr {
       SExprKind::String(s) => write!(f, "{:?}", s),
       SExprKind::Bool(true) => "#t".fmt(f),
       SExprKind::Bool(false) => "#f".fmt(f),
+      SExprKind::Undef => "#undef".fmt(f),
       SExprKind::Formula(s) => fe.source[s.0].fmt(f),
     }
   }

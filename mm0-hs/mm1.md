@@ -215,11 +215,11 @@ There are a few ways that lists can be evaluated, so we name them here:
 
   At the location of the `1` and after the body of the `(list)` expression `x` is no longer valid.
 
-* A `begin`-list is a sequence of expressions that are all evaluated, but only the last expression in the list is returned. As with argument lists, `(def)` creates a local definition that scopes over the remainder of the block. An empty sequence is also valid and produces the special value `#<undef>`.
+* A `begin`-list is a sequence of expressions that are all evaluated, but only the last expression in the list is returned. As with argument lists, `(def)` creates a local definition that scopes over the remainder of the block. An empty sequence is also valid and produces the special value `#undef`.
 
 In addition to the expressions that have s-expression counterparts, there are some other runtime values that have no explicit representation:
 
-* `#<undef>` is a special value that is produced by many expressions that "return nothing", such as `set!`. In a `do` block, the default behavior is to evaluate each expression and print the result, unless the result is `#<undef>` in which case nothing is printed.
+* `#undef` is a special value that is produced by many expressions that "return nothing", such as `set!`. In a `do` block, the default behavior is to evaluate each expression and print the result, unless the result is `#undef` in which case nothing is printed.
 * A syntax form is bound to a syntax value; for example `def` itself evaluates to a syntax value "def". This is what triggers macro-like treatment of the other arguments rather than eager evaluation.
 * A `#<closure>` or procedure is a value that can be applied to arguments to produce a result. `fn` can be used to produce closures.
 * A `ref` is a mutable wrapper around a value. Unlike Scheme, not all s-expressions are mutable; `set!` only works on refs and they must be created explicitly.
@@ -234,12 +234,15 @@ Some expressions have special behavior when evaluated; these roughly correspond 
   * `(def (x a b c) exprs)` is equivalent to `(def x (fn (a b c) exprs))`.
   * `(def (x a b . c) exprs)` is equivalent to `(def x (fn (a b . c) exprs))`.
   * `(def (x . a) exprs)` is equivalent to `(def x (fn a exprs))`.
+  * `(def x)` is equivalent to `(def x #undef)`, because the empty `begin`-list yields `#undef`.
 
   A definition `(def x foo)` at the top level is equivalent to an assignment `(set! x foo)`, if `x` is already assigned. That is, the global environment acts as if it consists of mutable references, so global variables are not lexically scoped. For example, this is valid even though `bar` is a forward reference:
 
       (def (foo) bar)
       (def bar 5)
       (foo)          -- 5
+
+  Setting a global variable to `#undef` has the effect of "undefining" it, that is, unbinding it from the environment, so that subsequent references to `x` will give an unbound identifier error unless it is redefined.
 
 * `fn` declares a closure, a value that can be applied to a list of values to obtain a result. The first argument determines how the incoming argument list is bound to values:
   * `(fn (a b c) exprs)` requires that the list has length exactly 3, and the values are bound to `a`, `b` and `c` respectively.
@@ -269,7 +272,7 @@ Some expressions have special behavior when evaluated; these roughly correspond 
 
 * `quote` evaluates its argument in "quotation mode", in which syntax expressions evaluate to the corresponding s-expression values. It has the special syntax `'expr` which is the same as `(quote expr)`. So while `x` evaluates to the value that `x` refers to in the local or global context, `'x` evaluates to the atom `x`.
   * The only expression that does not evaluate to itself in quotation mode is `(unquote e)`, with syntax `,e`, which evaluates `e` in the usual way and returns the result.
-* `if` evaluates a conditional expression. `(if cond e1 e2)` evaluates `cond`, and if `cond` is truthy then it evaluates and returns `e1`, otherwise it returns `e2`. An expression is truthy if it is not `#f` - all other values, including `#<undef>`, `()`, `""`, and `0` are considered as "true".
+* `if` evaluates a conditional expression. `(if cond e1 e2)` evaluates `cond`, and if `cond` is truthy then it evaluates and returns `e1`, otherwise it returns `e2`. An expression is truthy if it is not `#f` - all other values, including `#undef`, `()`, `""`, and `0` are considered as "true".
 
 * `match` performs pattern matching on an expression. It is based on the [Chicken Scheme implementation](https://wiki.call-cc.org/man/3/Pattern%20matching). For example, `(match '(1 (2) 3) [(x (y) z) expr])` will bind `x` to `1`, `y` to `2`, and `z` to `3` in the body of `expr`.
   * The syntax is `(match e clauses)` where `clauses` is a list of clauses. Each clause is tried in order, and the result of the body of the match is the first successful clause.
@@ -316,10 +319,10 @@ At the beginning of execution, the global context contains a number of primitive
       (print '(1 2 . 3))      -- (1 2 . 3)
       (print '$ foo $)        -- $ foo $
       (print print)           -- #<closure>
-      (print (begin))         -- #<undef>
+      (print (begin))         -- #undef
       (print (ref! 5))        -- 5
 
-* `begin` returns its last argument, or `#<undef>` if it is given no arguments. In Scheme this is a syntax form, but in MM1 all functions have the same evaluation semantics as `begin`, so the only interesting thing this function does is ignore its other arguments.
+* `begin` returns its last argument, or `#undef` if it is given no arguments. In Scheme this is a syntax form, but in MM1 all functions have the same evaluation semantics as `begin`, so the only interesting thing this function does is ignore its other arguments.
 
 * `(apply f a b '(c d))` evaluates to the result of `(f a b c d)`. That is, the first argument should be a closure and the last argument should be a list, and it applies the closure to the list, with any in between arguments added to the head of the list. `(apply)` is an error, and if `f` is a syntax form then this is also an error, i.e. `(apply def (x 5))` does not work.
 
@@ -370,19 +373,19 @@ At the beginning of execution, the global context contains a number of primitive
 * `(atom? e)` is true if the argument is an atom (also known as a symbol), `'x`.
 * `(number? e)` is true if the argument is an integer.
 * `(fn? e)` is true if the argument is a procedure.
-* `(def? e)` is true if the argument is not `#<undef>`.
+* `(def? e)` is true if the argument is not `#undef`.
 * `(hd e)` returns the head of the list, or left element of the cons expression. It is known as `car` in most lisps.
 * `(tl e)` returns the tail of the list, or right element of the cons expression. It is known as `cdr` in most lisps.
-* `(nth n e)` returns the `n`th element of the list, or `#<undef>` if out of range. It fails if the input is not a list.
+* `(nth n e)` returns the `n`th element of the list, or `#undef` if out of range. It fails if the input is not a list.
 * `(ref? e)` is true if the argument is a ref-cell.
 * `(ref! e)` constructs a new ref-cell containing the value `e`.\
-  `(ref!)` constructs a new ref-cell containing `#<undef>`.
+  `(ref!)` constructs a new ref-cell containing `#undef`.
 * `(get! r)` dereferences the ref-cell `r` to get the value.
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
 * `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
-* `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#<undef>` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
-* `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#<undef>`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
+* `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
+* `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#undef`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
 * `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`. `(insert m k)` returns `k` erased from `m`.
 
 See [MM0-specific builtin functions](#MM0-specific-builtin-functions) for more functions that have to do with interaction between the lisp and MM0 environments.
@@ -400,7 +403,7 @@ Each statement effects some change to the global environment:
   * Type inference is used to infer any missing binders or binder types. This uses only the information available from the statement of the theorem.
   * Definitions have their values evaluated right away.
   * For theorems, the proof is evaluated asynchronously.
-* The annotation expression itself is evaluated before the enclosed statement, but the function `(annotate e s)` is called after `s` has been added to the environment. (Any statement can be annotated, but declarations that do not have names pass `#<undef>` to the `annotate` function.)
+* The annotation expression itself is evaluated before the enclosed statement, but the function `(annotate e s)` is called after `s` has been added to the environment. (Any statement can be annotated, but declarations that do not have names pass `#undef` to the `annotate` function.)
 
 The fact that `theorem` proofs are evaluated asynchronously has some consequences. In particular the theorem is elaborated in a copy of the global environment, so its ability to affect the environment is limited, for example it cannot add new theorems to the environment. However, mutable ref-cells still allow for communication between threads. For example, this program will return a number nondeterministically:
 
@@ -470,7 +473,7 @@ The main workhorse tactic is `(refine)`, which gets some helpful syntax sugar to
 * The expression `(:verb e)` accepts an expression `e`, and elaborates to `e` "verbatim". That is, no additional analysis is performed on `e`, and it follows the syntax of complete expressions, not pre-expressions. This is helpful for "unquotation" in tactic programming.
 * A *quoted* formula `$ foo $` evaluates the formula `$ foo $` in the current formula context, in an empty lisp local context (if unquotation is used). This is needed because refine pre-expressions are usually written inside `quote`, so formulas end up quoted as well unless you use `,$ foo $`. Since evaluating a formula yields a pre-expression, these can be passed straight to `refine`.
 
-In order to make it easy to specify proofs from pre-expressions, if the lisp expression `e` given as the value of a theorem evaluates to something other than `#<undef>`, then it is silently replaced with `(refine e)`, which will elaborate the pre-expression and apply it to the single open goal.
+In order to make it easy to specify proofs from pre-expressions, if the lisp expression `e` given as the value of a theorem evaluates to something other than `#undef`, then it is silently replaced with `(refine e)`, which will elaborate the pre-expression and apply it to the single open goal.
 
 MM0-specific builtin functions
 ---

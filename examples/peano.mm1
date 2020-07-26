@@ -16,7 +16,7 @@ do {
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
   (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
   (def (range a b) (if {a = b} () (cons a (range {a + 1} b))))
-  (def (for a b f) (if {a = b} (let) (begin (f a) (for {a + 1} b f))))
+  (def (for a b f) (if {a = b} #undef (begin (f a) (for {a + 1} b f))))
   (def last (match-fn [(a) a] [(_ . l) (last l)]))
   (def split-last @ match-fn
     [(and (_) l) l]
@@ -42,7 +42,7 @@ do {
     [(n xs) (if (null? xs) (repeat () n) (apply map list xs))])
   (def (join xs) (apply append xs))
   (def (rmap . args) (apply map (split-last args)))
-  (def (scan . args) (apply rmap args) (let))
+  (def (scan . args) (apply rmap args) #undef)
   (def (undef? x) (not (def? x)))
   (def (swap) (match (get-goals) ((x y) (set-goals y x))))
   (def suffices @ match-fn*
@@ -80,7 +80,7 @@ do {
   (def (add-eqd-thm df . args)
     (def tgt (get-tgt-args args df "eqd"))
     @ match (get-decl df)
-      [(? undef?) (error (string-append "declaration '" (->string df) "' not found"))]
+      [#undef (error (string-append "declaration '" (->string df) "' not found"))]
       [(_ _ () ...)]
       [(_ _ bis (ret _) . rest)
         (def G @ if (apply or (map (match-fn [('G ...) #t] [_ #f]) bis)) '_G '_G)
@@ -117,9 +117,9 @@ do {
                           '(() (,e1 ,e2) (,p) ,e1 ,e2)]]) @ (xs ts ps es1 es2)
                   @ if isrefl (list ret) @ begin
                   @ match (eqd-for t)
-                    [(? def? eqd) '((,t . ,es1) (,t . ,es2) ,ret
-                      (,eqd ,G . ,(append (join xs) (join ts) (join ps))))]
-                    [_ (error @ string-append "equality theorem not found for " (->string t))]])]
+                    [#undef (error @ string-append "equality theorem not found for " (->string t))]
+                    [eqd '((,t . ,es1) (,t . ,es2) ,ret
+                      (,eqd ,G . ,(append (join xs) (join ts) (join ps))))]])]
               [(mk-proof e) (match (preproof e)
                 [(s) '(,e ,e (,(eqidd-for s) ,G ,e))]
                 [(e1 e2 s p) (list e1 e2 p)])])
@@ -154,9 +154,9 @@ do {
   -- for any definition foo.
   (def (add-eq-thm t . args)
     (def tgt (get-tgt-args args t "eq"))
-    @ if (not (def? (get-decl tgt))) @ begin
-    @ match (eqd-for t) [(? undef?)] @ eqd
-    @ match (ded-to-thm eqd) [(? undef?)] @ (bis ret val)
+    @ if (undef? (get-decl tgt)) @ begin
+    @ match (eqd-for t) [#undef] @ eqd
+    @ match (ded-to-thm eqd) [#undef] @ (bis ret val)
     (add-thm! tgt bis () ret () val))
 
   (def (make-eqNd-thms df)
@@ -194,8 +194,8 @@ do {
         '((h ,h))
         '(im ,G (,(eq-for ret) (,df . ,t1) (,df . ,t2)))
         (match (eqd-for df)
-          [(? def? eqd) '(,eqd ,G . ,(append xs1 es ps))]
-          [_ (error @ string-append "equality theorem not found for " (->string df))]))
+          [#undef (error @ string-append "equality theorem not found for " (->string df))]
+          [eqd '(,eqd ,G . ,(append xs1 es ps))]))
 
   -- This program adds *eqNd and *eqN theorems corresponding to the definition
   -- foo, of the form
@@ -212,11 +212,11 @@ do {
         @ scan thms @ match-fn @ (bis hs ret val)
           (set! idx {idx + 1})
           (def tgt (atom-app base idx "d"))
-          @ if (not (def? (get-decl tgt))) @ begin
+          @ if (undef? (get-decl tgt)) @ begin
           (add-thm! tgt bis hs ret () '(() ,val))
           (def tgt2 (atom-app base idx))
-          @ if (not (def? (get-decl tgt2))) @ begin
-          @ match (ded-to-thm tgt) [(? undef?)] @ (bis2 ret2 val2)
+          @ if (undef? (get-decl tgt2)) @ begin
+          @ match (ded-to-thm tgt) [#undef] @ (bis2 ret2 val2)
           (add-thm! tgt2 bis2 () ret2 () val2)]
       [_])
 

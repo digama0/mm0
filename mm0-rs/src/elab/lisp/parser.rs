@@ -118,6 +118,7 @@ pub enum Pattern {
   QuoteAtom(AtomID),
   String(ArcString),
   Bool(bool),
+  Undef,
   Number(BigInt),
   MVar(Option<Box<(Pattern, Pattern)>>),
   Goal(Box<Pattern>),
@@ -139,6 +140,7 @@ impl<'a> EnvDisplay for Pattern {
       Pattern::String(s) => write!(f, "{:?}", s),
       Pattern::Bool(true) => write!(f, "#t"),
       Pattern::Bool(false) => write!(f, "#f"),
+      Pattern::Undef => write!(f, "#undef"),
       Pattern::Number(n) => write!(f, "{}", n),
       Pattern::MVar(None) => write!(f, "(mvar)"),
       Pattern::MVar(Some(p)) => write!(f, "(mvar {} {})", fe.to(&p.0), fe.to(&p.1)),
@@ -199,6 +201,7 @@ impl Remap<LispRemapper> for Pattern {
       Pattern::QuoteAtom(a) => Pattern::QuoteAtom(a.remap(r)),
       Pattern::String(s) => Pattern::String(s.clone()),
       &Pattern::Bool(b) => Pattern::Bool(b),
+      Pattern::Undef => Pattern::Undef,
       Pattern::Number(i) => Pattern::Number(i.clone()),
       Pattern::MVar(p) => Pattern::MVar(p.remap(r)),
       Pattern::Goal(p) => Pattern::Goal(p.remap(r)),
@@ -541,6 +544,7 @@ impl<'a> LispParser<'a> {
       SExprKind::Number(n) => Ok(Pattern::Number(n.clone().into())),
       SExprKind::String(s) => Ok(Pattern::String(s.clone())),
       &SExprKind::Bool(b) => Ok(Pattern::Bool(b)),
+      SExprKind::Undef => Ok(Pattern::Undef),
       SExprKind::List(es) if es.is_empty() => Ok(Pattern::List(Box::new([]), None)),
       SExprKind::List(es) =>
         if quote {
@@ -670,6 +674,7 @@ impl<'a> LispParser<'a> {
       SExprKind::Number(n) => Ok(IR::Const(LispVal::number(n.clone().into())).into()),
       SExprKind::String(s) => Ok(IR::Const(LispVal::string(s.clone())).into()),
       &SExprKind::Bool(b) => Ok(IR::Const(LispVal::bool(b)).into()),
+      SExprKind::Undef => Ok(IR::Const(LispVal::undef()).into()),
       SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, LispVal::nil())).into()),
       SExprKind::List(es) => if quote {
         let mut cs = vec![];

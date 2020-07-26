@@ -210,13 +210,14 @@ impl Elaborator {
           Pattern::Skip => PatternState::Ret(true),
           &Pattern::Atom(i) => {ctx[i] = e; PatternState::Ret(true)}
           &Pattern::QuoteAtom(a) => PatternState::Ret(e.unwrapped(|e|
-            match e {&LispKind::Atom(a2) => a == a2, _ => false})),
+            if let &LispKind::Atom(a2) = e {a == a2} else {false})),
           Pattern::String(s) => PatternState::Ret(e.unwrapped(|e|
-            match e {LispKind::String(s2) => s == s2, _ => false})),
+            if let LispKind::String(s2) = e {s == s2} else {false})),
           &Pattern::Bool(b) => PatternState::Ret(e.unwrapped(|e|
-            match e {&LispKind::Bool(b2) => b == b2, _ => false})),
+            if let &LispKind::Bool(b2) = e {b == b2} else {false})),
+          Pattern::Undef => PatternState::Ret(e.unwrapped(|e| *e == LispKind::Undef)),
           Pattern::Number(i) => PatternState::Ret(e.unwrapped(|e|
-            match e {LispKind::Number(i2) => i == i2, _ => false})),
+            if let LispKind::Number(i2) = e {i == i2} else {false})),
           Pattern::MVar(p) => e.unwrapped(|e| match e {
             LispKind::MVar(_, is) => match (p, is) {
               (None, InferTarget::Unknown) => PatternState::Ret(true),
@@ -241,8 +242,8 @@ impl Elaborator {
           }),
           &Pattern::QExprAtom(a) => PatternState::Ret(e.unwrapped(|e| match e {
             &LispKind::Atom(a2) => a == a2,
-            LispKind::List(es) if es.len() == 1 => es[0].unwrapped(|e|
-              match e {&LispKind::Atom(a2) => a == a2, _ => false}),
+            LispKind::List(es) if es.len() == 1 =>
+              es[0].unwrapped(|e| if let &LispKind::Atom(a2) = e {a == a2} else {false}),
             _ => false
           })),
           Pattern::DottedList(ps, r) => PatternState::List(Uncons::from(e), ps.iter(), Dot::DottedList(r)),
@@ -257,7 +258,7 @@ impl Elaborator {
         },
         PatternState::Ret(b) => match stack.pop() {
           None => return Ok(b),
-          Some(PatternStack::Bool(_, _)) if !b => PatternState::Ret(b),
+          Some(PatternStack::Bool(_, _)) if !b => PatternState::Ret(false),
           Some(PatternStack::Bool(p, e)) =>
             PatternState::Eval(p, LispVal::bool(e)),
           Some(PatternStack::List(u, it, r)) =>

@@ -276,7 +276,7 @@
 				},
 				{"include": "#math-string"},
 				{"match": "[0-9]+", "name": "constant.numeric.mm0.lisp"},
-				{"match": "#[tf](?!\\w)", "name": "constant.language.mm0.lisp"},
+				{"match": "#(t|f|undef)(?!\\w)", "name": "constant.language.mm0.lisp"},
 				{"include": "#string"},
 				{
 					"begin": "('+)\\(",
