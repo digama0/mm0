@@ -81,6 +81,9 @@ pub fn whitespace(c: u8) -> bool { c == b' ' || c == b'\n' }
 impl<'a> Parser<'a> {
   pub fn cur(&self) -> u8 { self.source[self.idx] }
   pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  pub fn starts_with(&self, needle : &[u8]) -> bool {
+    self.source.get(self.idx..).map(|sub| sub.starts_with(needle)).unwrap_or(false)
+  }
 
   pub fn err(&self, msg: BoxError) -> ParseError {
     ParseError::new(self.idx..self.idx, msg)
@@ -670,11 +673,24 @@ impl<'a> Parser<'a> {
 
   fn stmt_recover(&mut self) -> Option<Stmt> {
     loop {
+      let start = self.idx;
       match self.stmt() {
         Ok(d) => return d,
         Err(e) => {
           self.errors.push(e);
+          // After initially getting a return value of `Err(e)` from
+          // `stmt`, reset the parser's index to the position it was at prior
+          // to the `stmt` call, then skip the first non-whitespace group
+          // and any trailing whitespace.
+          self.idx = start;
+          while !whitespace(self.cur()) {
+            self.idx += 1;
+          }
+          
           while self.idx < self.source.len() {
+            if self.starts_with(b"do{") || self.starts_with(b"do {") { break };
+            //if self.starts_with(b"axiom") { break }; 
+            // ...
             let c = self.cur();
             self.idx += 1;
             if c == b';' {self.ws(); break}
