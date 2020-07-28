@@ -1,3 +1,5 @@
+//! Utilities, mainly path manipulation with some newtype definitions.
+
 use std::ops::{Deref, DerefMut, Range, Add, AddAssign};
 use std::borrow::Borrow;
 use std::mem::{self, MaybeUninit};
@@ -9,11 +11,13 @@ use std::hash::{Hash, Hasher, BuildHasher};
 use std::collections::{HashMap, hash_map::{Entry, OccupiedEntry}};
 use lsp_types::Url;
 
+/// Newtype for `Box<dyn Error + Send + Sync>`
 pub type BoxError = Box<dyn Error + Send + Sync>;
 
 pub trait HashMapExt<K, V> {
   fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<K, V>)>;
 }
+
 impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<K, V>)> {
     match self.entry(k) {
@@ -23,6 +27,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   }
 }
 
+/// Newtype for an Arc String.
 #[derive(Clone, Hash, PartialEq, Eq)] pub struct ArcString(pub Arc<String>);
 
 impl Borrow<str> for ArcString {
@@ -45,6 +50,10 @@ impl From<&str> for ArcString {
   fn from(s: &str) -> ArcString { ArcString::new(s.to_owned()) }
 }
 
+/// A way to initialize a `Vec<T>`  by first constructing the array (giving the length),
+/// initializing the elements in some order, and then using the unsafe function
+/// [`assume_init`] to assert that every element of the array has been initialized and
+/// transmute the `VecUninit<T>` into a `Vec<T>`.
 pub struct VecUninit<T>(Vec<MaybeUninit<T>>);
 
 impl<T> VecUninit<T> {
@@ -63,6 +72,7 @@ impl<T> VecUninit<T> {
   }
 }
 
+/// Points to a specific region of a source file by identifying the region's start and end points.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
   pub start: usize,
@@ -120,15 +130,29 @@ impl fmt::Debug for Span {
 }
 
 lazy_static! {
+  /// A PathBuf created by lazy_static! pointing to a canonicalized "."
   static ref CURRENT_DIR: PathBuf =
     std::fs::canonicalize(".").expect("failed to find current directory");
 }
 
+/// Given a PathBuf 'buf', constructs a relative path from [`CURRENT_DIR`] 
+/// to buf, returning it as a String.
+///
+/// Example : If CURRENT_DIR is /home/johndoe/mm0, and buf is 
+/// /home/johndoe/Documents/ahoy.mm1 will return "../Documents/ahoy.mm1"
+///
+/// [`CURRENT_DIR`]: struct.CURRENT_DIR.html
 fn make_relative(buf: &PathBuf) -> String {
   pathdiff::diff_paths(buf, &CURRENT_DIR).as_ref().unwrap_or(buf)
     .to_str().unwrap().to_owned()
 }
 
+/// A reference to a file. It wraps an `Arc` so it can be cloned thread-safely.
+/// A `FileRef` can be constructed either from a `PathBuf` or a (`file://`) [`Url`],
+/// and provides (precomputed) access to these views using `path()` and `url()`,
+/// as well as `rel()` to get the relative path from CURRENT_DIR.
+///
+/// [`Url`]: ../lined_string/struct.Url.html
 #[derive(Clone)]
 pub struct FileRef(Arc<(PathBuf, String, Url)>);
 impl FileRef {
@@ -173,6 +197,9 @@ impl fmt::Debug for FileRef {
   }
 }
 
+/// A span paired with a [`FileRef`]
+///
+/// [`FileRef`]: struct.FileRef.html
 #[derive(Clone, PartialEq, Eq)]
 pub struct FileSpan {
   pub file: FileRef,
