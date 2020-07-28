@@ -50,7 +50,10 @@ impl From<&str> for ArcString {
   fn from(s: &str) -> ArcString { ArcString::new(s.to_owned()) }
 }
 
-/// Newtype for `Vec<MaybeUninit<T>>`
+/// A way to initialize a `Vec<T>`  by first constructing the array (giving the length),
+/// initializing the elements in some order, and then using the unsafe function
+/// [`assume_init`] to assert that every element of the array has been initialized and
+/// transmute the `VecUninit<T>` into a `Vec<T>`.
 pub struct VecUninit<T>(Vec<MaybeUninit<T>>);
 
 impl<T> VecUninit<T> {
@@ -144,7 +147,10 @@ fn make_relative(buf: &PathBuf) -> String {
     .to_str().unwrap().to_owned()
 }
 
-/// Arc 3-tuple of a filepath, relative path from CURRENT_DIR, and [`Url`]
+/// A reference to a file. It wraps an `Arc` so it can be cloned thread-safely.
+/// A `FileRef` can be constructed either from a `PathBuf` or a (`file://`) [`Url`],
+/// and provides (precomputed) access to these views using `path()` and `url()`,
+/// as well as `rel()` to get the relative path from CURRENT_DIR.
 ///
 /// [`Url`]: ../lined_string/struct.Url.html
 #[derive(Clone)]

@@ -86,13 +86,18 @@ pub enum Delimiter {
 }
 
 /// A dollar-delimited formula : $ .. $.
+/// `f.0` is the span of the entire formula including the delimiters, and
+/// `f.inner()` is the span of the interior (excluding `$` but including any inner whitespace).
 #[derive(Copy, Clone, Debug)]
 pub struct Formula(pub Span);
 impl Formula {
   pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
 }
 
-/// Information about consants can be found in the [`notation grammar`].
+/// A constant literal, used in `notation` commands. `fmla` is the underlying formula,
+/// and `trim` is the span with whitespace trimmed (which should contain
+/// no embedded whitespace)
+/// Information about constants can be found in the [`notation grammar`].
 ///
 /// [`notation grammar`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#notations
 #[derive(Clone)]
@@ -151,8 +156,11 @@ impl Type {
   }
 }
 
-/// A list of variables with a type or formula annotation. 
-/// Examples of binders are (ph ps : wff) and {x y .z : set}.
+/// A list of variables with a type or formula annotation.
+/// A binder exists in a binder group such as `(ph ps : wff)` or `{x y .z : set}`,
+/// and `bi.span` is the span of the enclosing binder group.
+/// In an arrow sequence like `wff > ...`, equivalent to `(_ : wff)`, the
+/// binder group's span is `wff` and the anonymous local name has no span.
 /// Detailed information about binder syntax can be found in the [`declaration grammar`].
 ///
 /// [`declaration grammar`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#declarations
@@ -171,7 +179,10 @@ pub struct SExpr {
   pub k: SExprKind,
 }
 
-/// Lisp atoms. 
+/// Lisp atoms. The `Ident` atom indicates that the atom text is the span,
+/// and the `Quote`, `Unquote` and `Nfx` atoms have data `quote`, `unquote`
+/// and `:nfx` respectively, but the span does not contain this text because
+/// these atoms are created implicitly via keywords like `'`.
 #[derive(Copy, Clone, Debug)]
 pub enum Atom { Ident, Quote, Unquote, Nfx }
 

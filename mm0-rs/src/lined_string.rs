@@ -25,6 +25,9 @@ pub struct LinedString { pub s: String, pub unicode: bool, pub lines: Vec<usize>
 
 /// Allows [`LinedString`] to be indexed with a [`Span`], since [`Span`] is essentially a range.
 ///
+/// # Safety
+/// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the `Span` used in the index
+/// was generated from the file that is being indexed.
 /// [`LinedString`]: struct.LinedString.html
 /// [`Span`]: ../utils/struct.Span.html
 impl Index<Span> for LinedString {
@@ -34,6 +37,7 @@ impl Index<Span> for LinedString {
   }
 }
 
+/// Calculates the largest index `n` (on a UTF8 boundary) such that `s[..n]` is at most `chs` UTF-16 codepoints.
 /// Used in [`LinedString::lsp_to_idx`] to account for additional character offset introduced by unicode.
 ///
 /// [`LinedString::lsp_to_idx`]: struct.LinedString.html#method.lsp_to_idx
@@ -85,13 +89,14 @@ impl LinedString {
   pub fn num_lines(&self) -> u64 { self.lines.len() as u64 }
   pub fn end(&self) -> Position { self.to_pos(self.s.len()) }
 
-  /// See the docs on [`to_idx`] for more info on why this is how it is.
-  /// `start` is where we need to skip to in the string `s` to account for the
-  /// line offset, and `chs` is the character position we need to move after
-  /// skipping by the line offset. 
+  /// Calculates the byte index of the position `chs` UTF-16 code units after
+  /// byte index `start` in the string.
   /// If there's no unicode, we can just use (start + idx).
   /// In the presence of unicode, use the helper function [`lsp_to_idx`] to account
   /// for any additional character offset.
+  ///
+  /// # Safety
+  /// `start` must be a valid index in the string.
   ///
   /// [`to_idx`]: struct.LinedString.html#method.to_idx
   /// [`lsp_to_idx`]: fn.lsp_to_idx.html
