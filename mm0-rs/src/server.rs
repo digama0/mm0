@@ -1,4 +1,9 @@
+//! Implements the bridge between mm0-rs and an editor via an lsp [`Connection`]
+//!
+//! [`Connection`]: ../../lsp-server/struct.Connection.html
+
 use std::{fs, io};
+
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};

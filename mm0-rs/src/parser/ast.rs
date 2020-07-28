@@ -1,3 +1,17 @@
+
+//! Implements mm0/mm1 file AST components
+//!
+//! An [`AST`] is the result of parsing an mm0/mm1 file. The core of the AST is a 
+//! `Vec<Stmt>`, where a [`Stmt`] holds both the element's "data" as a [`StmtKind`], 
+//!  and the element's [`Span`].
+//! The actual [`AST`] type also contains data about the source file, any imports, and
+//! any errors encountered during parsing.
+//!
+//! [`AST`]: struct.AST.html
+//! [`Stmt`]: struct.Stmt.html
+//! [`StmtKind`]: enum.StmtKind.html
+//! [`Span`]: ../util/struct.Span.html
+
 use std::sync::Arc;
 use std::fmt::{self, Display};
 use num::BigUint;
@@ -7,6 +21,7 @@ use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use super::ParseError;
 
 bitflags! {
+  /// Visibility and sort modifiers for Sort statements and Declarations.
   pub struct Modifiers: u8 {
     const PURE = 1;
     const STRICT = 2;
@@ -59,27 +74,40 @@ impl Display for Modifiers {
   }
 }
 
+/// User-supplied delimiter characters. 
+///
+/// A delimiter-stmt with only one math string is parsed
+/// as `Delimiter::Both(..)`, and the contents are put in the environment as both left and right
+/// delimiters. delimiter-stmts with two math strings are parsed as `LeftRight::(s1, s2)`.
 #[derive(Clone)]
 pub enum Delimiter {
   Both(Box<[u8]>),
   LeftRight(Box<[u8]>, Box<[u8]>),
 }
 
+/// A dollar-delimited formula : $ .. $.
 #[derive(Copy, Clone, Debug)]
 pub struct Formula(pub Span);
 impl Formula {
   pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
 }
 
+/// Information about consants can be found in the [`notation grammar`].
+///
+/// [`notation grammar`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#notations
 #[derive(Clone)]
 pub struct Const {
   pub fmla: Formula,
   pub trim: Span
 }
 
+/// Declarations; term, axiom, theorem, def. Part of a [`Decl`]
+///
+/// [`Decl`]: struct.Decl.html
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DeclKind { Term, Axiom, Thm, Def }
 
+/// Bound |-> {x}, Reg |-> (x), Dummy |-> (.x), Anon |-> (_)
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LocalKind { Bound, Reg, Dummy, Anon }
 
@@ -92,6 +120,7 @@ impl LocalKind {
   }
 }
 
+/// A type with zero or more dependencies. IE wff in (ph : wff), or wff x y in (ph : wff x y)
 #[derive(Clone, Debug)]
 pub struct DepType {
   pub sort: Span,
@@ -104,6 +133,9 @@ impl DepType {
   }
 }
 
+/// Types can either be a [`DepType`] or a dollar-delimited formula.
+///
+/// [`DepType`]: struct.DepType.html
 #[derive(Clone, Debug)]
 pub enum Type {
   DepType(DepType),
@@ -119,6 +151,11 @@ impl Type {
   }
 }
 
+/// A list of variables with a type or formula annotation. 
+/// Examples of binders are (ph ps : wff) and {x y .z : set}.
+/// Detailed information about binder syntax can be found in the [`declaration grammar`].
+///
+/// [`declaration grammar`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#declarations
 #[derive(Clone, Debug)]
 pub struct Binder {
   pub span: Span,
@@ -127,13 +164,22 @@ pub struct Binder {
   pub ty: Option<Type>,
 }
 
+/// A lisp S-Expression as a Span and SExprKind
 #[derive(Clone, Debug)]
 pub struct SExpr {
   pub span: Span,
   pub k: SExprKind,
 }
+
+/// Lisp atoms. 
 #[derive(Copy, Clone, Debug)]
 pub enum Atom { Ident, Quote, Unquote, Nfx }
+
+/// The data portion of an S-Expression.
+///
+/// Notable additions over a normal Lisp are Formula, which are just in-line formulas,
+/// and DottedList, which provides some (slightly confusing at first but actually really nice)
+/// syntax sugar for defs and functions, which you can read about in the `mm1.md` file's `syntax forms` section.
 #[derive(Clone, Debug)]
 pub enum SExprKind {
   Atom(Atom),
@@ -233,6 +279,9 @@ impl EnvDisplay for SExpr {
   }
 }
 
+/// Holds a Declaration as a [`DeclKind`] with some extra data.
+///
+/// [`DeclKind`]: enum.DeclKind.html
 #[derive(Clone)]
 pub struct Decl {
   pub mods: Modifiers,
@@ -258,8 +307,14 @@ impl fmt::Debug for Prec {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { fmt::Display::fmt(self, f) }
 }
 
+
 #[derive(Clone)]
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
+
+/// Represents a notation item declared with the prefix, infixl, or infixr keywords. Notation
+/// declared with the 'notation' keyword is represented by [`GenNota`]
+///
+/// [`GenNota`]: struct.GenNota.html
 #[derive(Clone)]
 pub struct SimpleNota {
   pub k: SimpleNotaKind,
@@ -274,6 +329,10 @@ pub enum Literal {
   Var(Span),
 }
 
+/// Represents a notation item declared with the 'notation' keyword. Notation declared with
+/// the prefix, infixl, and infixr keywords are represented by [`SimpleNota`].
+///
+/// [`SimpleNota`]: struct.SimpleNota.html
 #[derive(Clone)]
 pub struct GenNota {
   pub id: Span,
@@ -297,12 +356,17 @@ pub enum StmtKind {
   Import(Span, String),
 }
 
+/// The elements of a parsed AST. StmtKind is the "data", with span providing
+/// information about the item's location in the source file.
 #[derive(Clone)]
 pub struct Stmt {
   pub span: Span,
   pub k: StmtKind,
 }
 
+/// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.
+///
+/// [`Stmt`]: struct.Stmt.html
 pub struct AST {
   pub source: Arc<LinedString>,
   pub imports: Vec<(Span, String)>,

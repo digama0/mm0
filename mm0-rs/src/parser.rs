@@ -1,3 +1,16 @@
+//! Front-facing parser for mm0-rs; responsible for actually parsing mm0/mm1 files into an AST.
+//!
+//! In accordance with the grammar's description of mm0/mm1 files as a sequence of 
+//! statements, the parser's entry point [`parse`] will attempt to construct an AST
+//! from some input by calling [`stmt_recover`], which loops over [`stmt`] 
+//! while attempting to recover from any parse errors. The actual [`Parser`]
+//! struct is fairly standard; it holds the source as a byte slice, keeping track of the current
+//! character as a usize among other things.
+//!
+//! [`Parser`]: struct.Parser.html
+//! [`stmt`]: struct.Parser.html#method.stmt
+//! [`stmt_recover`]: struct.Parser.html#method.stmt_recover
+//! [`parse`]: fn.parse.html
 pub mod ast;
 
 use std::mem;
@@ -11,6 +24,13 @@ use crate::lined_string::*;
 pub use ast::AST;
 use ast::*;
 
+/// Determines how the error is displayed in an editor.
+///
+/// Corresponds to the lsp-type crate's [`DiagnosticSeverity`] enum, and is convertible using
+/// [`to_diag_severity`]. 
+///
+/// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
+/// [`to_diag_severity`]: enum.ErrorLevel.html#method.to_diag_severity
 #[derive(Copy, Clone, Debug)]
 pub enum ErrorLevel {
   Info,
@@ -35,11 +55,17 @@ impl ErrorLevel {
   }
 }
 
+/// Error type; extends an error message with the offending [`Span`], and an [`ErrorLevel`]
+///
+/// [`Span`]: ../util/struct.Span.html
+/// [`ErrorLevel`]: enum.ErrorLevel.html
 pub struct ParseError {
   pub pos: Span,
   pub level: ErrorLevel,
   pub msg: BoxError,
 }
+
+/// Newtype for std::result::Result<T, ParseError>
 type Result<T> = std::result::Result<T, ParseError>;
 
 impl Clone for ParseError {
@@ -66,6 +92,10 @@ impl ParseError {
   }
 }
 
+/// Implements parser functions as associated methods.
+///
+/// restart_pos is used to try and proactively recover from parse errors so that small
+/// errors don't cause a domino effect and invalidate large regions of code.
 pub struct Parser<'a> {
   pub source: &'a [u8],
   pub errors: Vec<ParseError>,
@@ -74,11 +104,19 @@ pub struct Parser<'a> {
   pub restart_pos: Option<usize>,
 }
 
+/// return true iff a given character is an acceptable ident starter.
 pub fn ident_start(c: u8) -> bool { b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' || c == b'_' }
+
+/// return true iff a given character is an acceptable ident character.
 pub fn ident_rest(c: u8) -> bool { ident_start(c) || b'0' <= c && c <= b'9' }
+
+/// return true iff a given character is an acceptable lisp ident.
 pub fn lisp_ident(c: u8) -> bool { ident_rest(c) || b"!%&*/:<=>?^~+-.@".contains(&c) }
+
+/// return true iff a given character is a space or newline character.
 pub fn whitespace(c: u8) -> bool { c == b' ' || c == b'\n' }
 
+/// Convenience enum for identifying keywords.
 enum CommandKeyword {
   Sort,
   Delimiter,
@@ -123,13 +161,17 @@ impl CommandKeyword {
 }
 
 impl<'a> Parser<'a> {
+  /// Get the character at the parser's index. Does not advance.
   pub fn cur(&self) -> u8 { self.source[self.idx] }
+  /// Attempt to get the character at the parser's index. Does not advance.
   pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
 
+  /// Decorate an error with the span (self.idx..self.idx)
   pub fn err(&self, msg: BoxError) -> ParseError {
     ParseError::new(self.idx..self.idx, msg)
   }
 
+  /// Create a parser error from a string.
   pub fn err_str<T>(&self, msg: &'static str) -> Result<T> {
     Err(self.err(msg.into()))
   }
@@ -138,12 +180,15 @@ impl<'a> Parser<'a> {
     r.unwrap_or_else(|e| self.errors.push(e))
   }
 
+  /// Advance the parser past a region of whitespace AND skip past
+  /// line comments (`--` style comments)
   fn ws(&mut self) {
     while self.idx < self.source.len() {
       let c = self.cur();
       if whitespace(c) {self.idx += 1; continue}
       if c == b'-' && self.source.get(self.idx + 1) == Some(&b'-') {
         self.idx += 1;
+        // End the comment skip when you find a line break.
         while self.idx < self.source.len() {
           let c = self.cur();
           self.idx += 1;
@@ -153,20 +198,32 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// Get the string slice corresponding to a region of the parser's source
+  /// by passing a span.
   pub fn span(&self, s: Span) -> &'a str {
     unsafe { std::str::from_utf8_unchecked(&self.source[s.start..s.end]) }
   }
 
+  /// Attempt to parse a specific character `c` at the current parser index.
+  /// On failure, returns `None` and does not advance.
+  /// On success, advances one character and skips any trailing whitespace.
   fn chr(&mut self, c: u8) -> Option<usize> {
+    // If out of input, None
     if self.cur_opt()? != c {return None}
     self.idx += 1;
     (Some(self.idx), self.ws()).0
   }
 
+  /// Attempt to parse a given character, returning an error on failure.
+  /// On failure, does not advance.
+  /// On success, advances one character and skips any trailing whitespace.
   pub fn chr_err(&mut self, c: u8) -> Result<usize> {
     self.chr(c).ok_or_else(|| self.err(format!("expecting '{}'", c as char).into()))
   }
 
+  /// Try to parse an `ident` item with underscores.
+  /// On failure, does not advance.
+  /// On success, advances past the parsed item and any trailing whitespace.
   fn ident_(&mut self) -> Option<Span> {
     let c = self.cur_opt()?;
     if !ident_start(c) {return None}
@@ -184,10 +241,16 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// Attempt to parse an ident with no underscores.
+  /// If the underlying ident_ parser fails, the Parser is not advanced.
+  /// If the underlying ident_ parser succeeds, but the ident has an underscore,
+  /// Parser advances past the ident and any trailing whitespace.
+  /// On success, advances past the ident and any trailing whitespace.
   fn ident(&mut self) -> Option<Span> {
     self.ident_().filter(|&s| self.span(s) != "_")
   }
 
+  /// Attempt to parse an ident with underscores, returning an error on failure.
   fn ident_err_(&mut self) -> Result<Span> {
     self.ident_().ok_or_else(|| self.err("expecting identifier".into()))
   }
@@ -196,6 +259,9 @@ impl<'a> Parser<'a> {
     self.ident().ok_or_else(|| self.err("expecting identifier".into()))
   }
 
+  /// Attempt to parse a `$ .. $` delimited formula. 
+  /// On success, advances the parser past the formula and any trailing whitespace.
+  /// On failure, does not advance the parser.
   fn formula(&mut self) -> Result<Option<Formula>> {
     if self.cur_opt() != Some(b'$') {return Ok(None)}
     let start = self.idx;
@@ -214,6 +280,7 @@ impl<'a> Parser<'a> {
       "unclosed formula literal".into()))
   }
 
+  /// Try to parse visibility and sort modifiers.
   fn modifiers(&mut self) -> (Modifiers, Option<Span>) {
     let mut modifiers = Modifiers::empty();
     loop {
@@ -231,6 +298,9 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// Try to parse a DepType or FormulaType.
+  /// Examples are the part after the colon in either (_ : $ some formula $)
+  /// or (_ : wff x), where (_ : wff) may or may not have dependencies. 
   fn ty(&mut self) -> Result<Type> {
     if let Some(fmla) = self.formula()? {
       Ok(Type::Formula(fmla))
@@ -292,6 +362,10 @@ impl<'a> Parser<'a> {
     (Ok((start..self.idx).into()), self.ws()).0
   }
 
+  /// Try to parse a string literal by looking for the prefix
+  /// ` \" `. Returns Ok((Span, String)) if it finds a closing with ` \" `
+  /// without before the file runs out, and without encountering a bad escape 
+  /// sequence. Does not advance to parser on failure.
   fn string(&mut self) -> Result<(Span, String)> {
     let start = self.idx;
     if self.cur_opt() != Some(b'\"') {return self.err_str("expected an string literal")}
@@ -324,6 +398,7 @@ impl<'a> Parser<'a> {
       "unclosed string literal".into()))
   }
 
+  /// Attempts to parse a decimal character, making it the 1's place of some `val : BigUint` sink.
   fn decimal(&mut self, mut val: BigUint) -> BigUint {
     while self.idx < self.source.len() {
       let c = self.cur();
@@ -334,6 +409,10 @@ impl<'a> Parser<'a> {
     val
   }
 
+  /// More elaborate parser for numbers; allows for both leading `0` characters
+  /// either as `0x<num>` (or `0X<num>`) which is parsed as a hex digit, or as `0<num>` in which
+  /// case the leading `0` is ignored. Defers to `decimal()` for parsing regular numbers.
+  /// Does not advance the parser index on failure.
   fn number(&mut self) -> Result<(Span, BigUint)> {
     let start = self.idx;
     let mut val: BigUint = 0u8.into();
@@ -609,6 +688,8 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// Try to parse a statement. Parsing essentially amounts to looping over this
+  /// while handling errors.
   fn stmt(&mut self) -> Result<Option<Stmt>> {
     let start = self.idx;
     self.restart_pos = None;
@@ -727,6 +808,7 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// Try to parse a sequence of [`Stmt`] items while recovering from errors.
   fn stmt_recover(&mut self) -> Option<Stmt> {
     loop {
       let start = self.idx;
@@ -760,6 +842,9 @@ impl<'a> Parser<'a> {
   }
 }
 
+/// Main entry-point. Creates a [`Parser`] and parses a passed file.
+///
+/// [`Parser`]: struct.Parser.html
 pub fn parse(file: Arc<LinedString>, old: Option<(Position, Arc<AST>)>) ->
     (usize, AST) {
   let (errors, imports, idx, mut stmts) =
