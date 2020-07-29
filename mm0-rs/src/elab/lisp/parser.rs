@@ -596,7 +596,7 @@ impl<'a> LispParser<'a> {
       _ => Err(ElabError::new_e(e.span, "match: improper syntax"))?
     };
     let mut cont = AtomID::UNDER;
-    if let Some(e2) = es.get(1) {
+    if let Some(e2) = es.get(0) {
       if let SExprKind::List(v) = &e2.k {
         if let &[SExpr {span, k: SExprKind::Atom(a)}, ref x] = v.deref() {
           if let "=>" = self.ast.span_atom(span, a) {
