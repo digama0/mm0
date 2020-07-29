@@ -12,4 +12,7 @@ do {
     (def c mmc-compiler)
     (fn xs (apply c 'finish xs)))
   (def mmc-compiler)
+  (def (mmc-compile x . xs)
+    (apply mmc-add xs)
+    (mmc-finish x))
 };

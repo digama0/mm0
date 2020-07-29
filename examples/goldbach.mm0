@@ -1,0 +1,64 @@
+delimiter $ ( [ ~ , $  $ ) ] $;
+
+-- Propositional logic
+strict provable sort wff;
+term im: wff > wff > wff; infixr im: $->$ prec 25;
+term not: wff > wff; prefix not: $~$ prec 41;
+
+axiom ax_1 (ph ps: wff): $ ph -> ps -> ph $;
+axiom ax_2 (ph ps ch: wff): $ (ph -> ps -> ch) -> (ph -> ps) -> ph -> ch $;
+axiom ax_3 (ph ps: wff): $ (~ph -> ~ps) -> ps -> ph $;
+axiom ax_mp (ph ps: wff): $ ph -> ps $ > $ ph $ > $ ps $;
+
+def an (a b: wff): wff = $ ~(a -> ~b) $; infixl an: $/\$ prec 34;
+def iff (a b: wff): wff = $ (a -> b) /\ (b -> a) $; infixl iff: $<->$ prec 20;
+def or (a b: wff): wff = $ ~a -> b $; infixl or: $\/$ prec 30;
+
+-- Predicate logic (on nat)
+sort nat;
+term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 41;
+
+def ex {x: nat} (ph: wff x): wff = $ ~(A. x ~ph) $;
+prefix ex: $E.$ prec 41;
+
+term eq (a b: nat): wff; infixl eq: $=$ prec 50;
+
+axiom ax_gen {x: nat} (ph: wff x): $ ph $ > $ A. x ph $;
+axiom ax_4 {x: nat} (ph ps: wff x): $ A. x (ph -> ps) -> A. x ph -> A. x ps $;
+axiom ax_5 {x: nat} (ph: wff): $ ph -> A. x ph $;
+axiom ax_6 (a: nat) {x: nat}: $ E. x x = a $;
+axiom ax_7 (a b c: nat): $ a = b -> a = c -> b = c $;
+axiom ax_10 {x: nat} (ph: wff x): $ ~ A. x ph -> A. x ~ A. x ph $;
+axiom ax_11 {x y: nat} (ph: wff x y): $ A. x A. y ph -> A. y A. x ph $;
+axiom ax_12 {x: nat} (a: nat) (ph: wff x): $ x = a -> ph -> A. x (x = a -> ph) $;
+
+def sb (a: nat) {x .y: nat} (ph: wff x): wff = $ A. y (y = a -> A. x (x = y -> ph)) $;
+notation sb (a: nat) {x: nat} (ph: wff x): wff = ($[$:41) a ($/$:0) x ($]$:0) ph;
+
+-- Peano's axioms
+term d0: nat; prefix d0: $0$ prec max;
+term suc (n: nat): nat;
+axiom peano1 (a: nat): $ ~ suc a = 0 $;
+axiom peano2 (a b: nat): $ suc a = suc b <-> a = b $;
+axiom peano5 {x: nat} (P: wff x): $ [0 / x] P -> A. x (P -> [suc x / x] P) -> A. x P $;
+
+term add: nat > nat > nat; infixl add: $+$ prec 64;
+term mul: nat > nat > nat; infixl mul: $*$ prec 70;
+
+axiom addeq (a b c d: nat): $ a = b -> c = d -> a + c = b + d $;
+axiom muleq (a b c d: nat): $ a = b -> c = d -> a * c = b * d $;
+axiom add0 (a: nat): $ a + 0 = a $;
+axiom addS (a b: nat): $ a + suc b = suc (a + b) $;
+axiom mul0 (a: nat): $ a * 0 = 0 $;
+axiom mulS (a b: nat): $ a * suc b = a * b + a $;
+
+-- Definitions and theorems
+def d1: nat = $suc 0$; prefix d1: $1$ prec max;
+def d2: nat = $suc 1$; prefix d2: $2$ prec max;
+def le (a b .x: nat): wff = $ E. x a + x = b $; infixl le: $<=$ prec 50;
+def lt (a b: nat): wff = $ suc a <= b $; infixl lt: $<$ prec 50;
+def dvd (a b .c: nat): wff = $ E. c c * a = b $; infixl dvd: $|$ prec 50;
+def prime (p .x: nat): wff = $ 1 < p /\ A. x (x | p -> x = 1 \/ x = p) $;
+
+theorem goldbach (n: nat) {p q: nat}:
+  $ 2 < n /\ 2 | n -> E. p E. q (prime p /\ prime q /\ n = p + q) $;
