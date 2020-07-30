@@ -890,6 +890,8 @@ make_builtins! { self, sp1, sp2, args,
   GetMVars: AtLeast(0) => LispVal::list(self.lc.mvars.clone()),
   GetGoals: AtLeast(0) => LispVal::list(self.lc.goals.clone()),
   SetGoals: AtLeast(0) => {self.lc.set_goals(args); LispVal::undef()},
+  LocalCtx: Exact(0) =>
+    LispVal::list(self.lc.proof_order.iter().map(|a| LispVal::atom(a.0)).collect()),
   ToExpr: Exact(1) => return Ok(State::Refine {
     sp: sp1, stack: vec![RStack::DeferGoals(mem::replace(&mut self.lc.goals, vec![]))],
     state: RState::RefineExpr {tgt: InferTarget::Unknown, e: args.swap_remove(0)}
@@ -1135,7 +1137,7 @@ impl<'a> Evaluator<'a> {
             }
           } else {
             if let Some(&Some((sp1, sp2, a))) = x {
-              let def = ret.is_def();
+              let def = ret.is_def() || ret.is_ref();
               let val = if def {Some((Some((self.fspan(sp2), sp1)), ret))} else {None};
               if mem::replace(&mut self.data[a].lisp, val).is_none() && def {
                 self.stmts.push(StmtTrace::Global(a))

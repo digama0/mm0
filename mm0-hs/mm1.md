@@ -519,6 +519,8 @@ MM0-specific builtin functions
 
 * `(set-goals g1 g2 g3)` sets the goal list to `(g1 g2 g3)`, replacing the current goal list. If any of the provided goals are already assigned they are removed from the list.
 
+* `(local-ctx)` returns the list of hypothesis names (`(infer-type)` can be used to get the type of the hypotheses).
+
 * `(to-expr e)` elaborates a term pre-expression into an expression, producing metavariables for `_` placeholders in the expression.
 
 * `(refine p)` elaborates a proof pre-expression into a proof, and unifies its type against the first goal.\

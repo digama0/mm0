@@ -514,6 +514,7 @@ str_enum! {
     GetMVars: "get-mvars",
     GetGoals: "get-goals",
     SetGoals: "set-goals",
+    LocalCtx: "local-ctx",
     ToExpr: "to-expr",
     Refine: "refine",
     Have: "have",
