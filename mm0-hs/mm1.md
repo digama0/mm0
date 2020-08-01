@@ -136,7 +136,7 @@ This command executes some lisp code at the top level, meaning that any definiti
 S-expressions
 ---
 
-    sexpr ::= atom | list | number | string | bool | formula
+    sexpr ::= atom | list | number | string | bool | '#undef' | formula
             | ['] sexpr | ',' sexpr
     atom ::= initial (subsequent)* | '+' | '-' | '...' | '->' (subsequent)*
     initial ::=    [a-z] | [A-Z] |         [!%&*/:<=>?^_~]
@@ -382,6 +382,7 @@ At the beginning of execution, the global context contains a number of primitive
   `(ref!)` constructs a new ref-cell containing `#undef`.
 * `(get! r)` dereferences the ref-cell `r` to get the value.
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
+* `(copy-span from to)` makes a copy of `to` with its position information copied from `from`. (This can be used for improved error reporting, but otherwise has no effect on program semantics.)
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
 * `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
 * `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.

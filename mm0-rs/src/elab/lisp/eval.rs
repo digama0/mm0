@@ -801,6 +801,13 @@ make_builtins! { self, sp1, sp2, args,
     try1!(self.as_ref(&args[0], |e| Ok(*e = args[1].clone())));
     LispVal::undef()
   },
+  CopySpan: Exact(2) => {
+    let mut it = args.drain(..);
+    match (it.next().unwrap().fspan(), it.next().unwrap()) {
+      (Some(sp), e) => e.replace_span(sp),
+      (None, e) => e
+    }
+  },
   Async: AtLeast(1) => {
     let proc = args.remove(0);
     let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);

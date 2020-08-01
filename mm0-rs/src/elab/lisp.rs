@@ -136,6 +136,13 @@ impl LispVal {
     LispVal::new(LispKind::Annot(Annot::Span(fsp), self))
   }
 
+  pub fn replace_span(&self, fsp: FileSpan) -> LispVal {
+    match &**self {
+      LispKind::Annot(sp, v) => v.replace_span(fsp),
+      _ => self.clone().span(fsp)
+    }
+  }
+
   pub fn unwrapped_mut<T>(&mut self, f: impl FnOnce(&mut LispKind) -> T) -> Option<T> {
     Arc::get_mut(&mut self.0).and_then(|e| match e {
       LispKind::Ref(m) => Self::unwrapped_mut(&mut m.get_mut(), f),
@@ -497,6 +504,7 @@ str_enum! {
     NewRef: "ref!",
     GetRef: "get!",
     SetRef: "set!",
+    CopySpan: "copy-span",
     Async: "async",
     IsAtomMap: "atom-map?",
     NewAtomMap: "atom-map!",
