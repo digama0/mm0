@@ -9,7 +9,6 @@ mod parser;
 #[macro_use] mod server;
 mod compiler;
 mod joiner;
-mod vfs;
 mod elab;
 mod mmb { pub mod export; }
 mod mmu { pub mod import; pub mod export; }
