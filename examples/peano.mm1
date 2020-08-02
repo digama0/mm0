@@ -813,6 +813,171 @@ theorem cbvexd (G) (p: wff x) (q: wff y)
   (h: $ G /\ x = y -> (p <-> q) $): $ G -> (E. x p <-> E. y q) $ =
 '(bitrd (a1i cbvexs) (exeqd @ syl sbet @ iald @ exp h));
 
+-- FOL mode: a natural deduction language that compiles to MM0 peano axioms
+do {
+  (def folmode-context (ref!))
+
+  -- (folmode) initializes the FOL goal state from the MM0 goal state.
+  -- For example, if the initial state is
+  --   h1: G -> a
+  --   h2: G -> b
+  --   |- G /\ c -> a /\ b
+  -- then the generated FOL state will be
+  --   h1: a
+  --   h2: b
+  --   _h0: c
+  --   |- a /\ b
+  --
+  -- The context is populated with all the MM0 hypotheses, as well as all
+  -- antecedents of the goal implication, except for a leftmost variable called
+  -- G or _G. The antecedents can be named using arguments to (folmode); for
+  -- example (folmode 'hc _) produces
+  --   h1: a
+  --   h2: b
+  --   hc: c
+  --   |- a /\ b
+  -- instead.
+  --
+  -- The last argument to folmode is a refine script that is passed to (folrefine).
+  (def (folmode . vs)
+    @ match (match (split-last vs) [() (#undef)] [r r]) @ (r . vs)
+    (set! folmode-context
+      (def vs (ref! vs))
+      @ rmap (get-goals) @ fn (g)
+      (def t (goal-type g))
+      @ match (match t [('im G R) (list G R)] [_ (list #undef t)]) @ (G rhs)
+      (def hs1 (rmap (local-ctx) @ fn (h)
+        (def t (infer-type h))
+        @ if (undef? G) '(,h (,t ,h))
+        @ match t
+          [('im L R) (=> break)
+            @ letrec ([upgrade @ match-fn
+              [(? (fn (G) {L == G})) h]
+              [('an G1 D) '(anwl ,G1 ,D ,R ,(upgrade G1))]
+              [_ (break)]])
+            '(,h (,R ,(upgrade G)))]
+          [_ '(,h (,t (a1i ,G ,t ,h)))]))
+      (def hs
+        @ if (undef? G) hs1
+        @ letrec ([add-locals @ match-fn*
+          [(('an G D) left)
+            (def hsG (add-locals G left))
+            (def hsD (add-locals D #f))
+            @ fn (f hs)
+            @ hsG (fn (v a p) (f v a '(anwl ,G ,D ,a ,p)))
+            @ hsD (fn (v a p) (f v a '(anwr ,G ,D ,a ,p))) hs]
+          [((or 'G '_G) #t) @ fn (f hs) (append hs1 hs)]
+          [(a _)
+            (def v @ match vs
+              [(v . vs2) (set! vs vs2) v]
+              [_
+                (def n @ if (number? vs) vs 0)
+                (set! vs {n + 1})
+                (atom-app "_h" n)])
+            @ fn (f hs) '(,(f v a '(id ,a)) . ,hs)]])
+        ((add-locals G #t) (fn (v a p) '(,v (,a ,p))) ()))
+      (list G (apply atom-map! hs) (rev @ map hd hs) rhs g))
+    (set-close-fn folmode-end)
+    (folrefine r))
+
+  -- (folmode-pp-goal g) converts the FOL goal g to a string.
+  (def folmode-pp-goal @ match-fn @ (G hm hs t g)
+    (def ss @ foldr hs "" @ fn (v acc)
+      @ match (lookup hm v)
+      [(e _) (string-append acc (->string v) ": " (pp e) "\n")]
+      [#undef acc])
+    (string-append ss "|- " (pp t) "\n"))
+
+  -- (folstat-str) returns the FOL goals as a string, or #undef if there are no goals.
+  (def (folstat-str)
+    @ match (apply append @ map (fn (g) (list "\n" (folmode-pp-goal g))) folmode-context)
+    [()]
+    [(_ . gs) @ apply string-append gs])
+
+  -- (folstat) is the analogue of (stat) for the FOL goal state.
+  (def (folstat)
+    (def s (folstat-str))
+    (if (def? s) (display s)))
+
+  -- Resets the MM0 goals using the FOL goals.
+  (def (folmode-reset-goals)
+    (apply set-goals @ map (fn (g) (nth 4 g)) folmode-context))
+
+  -- Closer for the FOL mode - prints all the FOL goals that have not been closed
+  -- (and suppresses MM0 goal printing).
+  (def (folmode-end)
+    (scan folmode-context @ fn (g)
+      (error-at (nth 4 g) @ folmode-pp-goal g))
+    @ if (not (null? folmode-context)) @ begin
+    (error @ string-append "not all goals are solved\n" (folstat-str)))
+
+  -- (folrefine) runs a refine script in FOL mode. This is similar to (refine) but
+  -- includes operations for manipulating the context using lambda-calculus
+  -- inspired proof terms.
+  --
+  -- * If `h` is in the context, then `h` applies it to solve the goal.
+  -- * A `_` in the term generates a new subgoal.
+  -- * `(ian p1 p2 ... pn)` proves |- a1 /\ a2 /\ ... /\ an if pi proves |- ai.
+  -- * `(iim x1 ... xn p)` proves |- a1 -> a2 -> ... -> an -> b if
+  --   p is a proof of x1: a1, x2: a2, ..., xn: an |- b .
+  -- * `(:base p)` provides `p` as an MM0 refine script.
+  -- * `(p p1 ... pn)` proves `b` if `p: a1 -> a2 -> ... -> an -> b` and pi: ai.
+  (def (folrefine . rs)
+    (def newgs (ref! ()))
+    (def (push . a) @ set! newgs @ cons a @ get! newgs)
+    (def (im2 G e) @ if (def? G) '(im ,G ,e) e)
+    @ letrec ([((folref G hm hs p) refine tgt)
+      (def (im e) (im2 G e))
+      (def rhs (match tgt [('im _ e) e] [_ tgt]))
+      (def (app sp p ps)
+        @ match (lookup hm p)
+          [(t pr)
+            (def mp (if (def? G) 'mpd 'ax_mp))
+            @ copy-span sp @ foldl ps
+              (copy-span p '{(:verb ,pr) : (:verb ,(im t))})
+              (fn (acc p2) (list mp acc (folref G hm hs p2)))]
+          [#undef (error-at p "unimplemented") (copy-span p '?)])
+      (def out @ match p
+        [('ian p1 . ps)
+          (def ian (if (def? G) 'iand 'ian))
+          @ foldl ps (folref G hm hs p1) @ fn (acc p2)
+          @ copy-span p (list ian acc (folref G hm hs p2))]
+        [('iim . ps)
+          @ letrec ([(iim G hm hs ps rhs) @ match ps
+            [(p) (folref G hm hs p)]
+            [(x . ps2)
+              @ match (match rhs
+                [('im D rhs2) (list D rhs2)]
+                [_ (list (copy-span x (mvar! 'wff #f)) (mvar! 'wff #f))])
+                @ (D rhs2)
+              (def G2 @ if (def? G) '(an ,G ,D) D)
+              (def hm2 @ apply atom-map! @ rmap (rev hs) @ if (def? G)
+                (fn (h) @ match (lookup hm h) [(R pr) '(,h (,R (anwl ,G ,D ,R ,pr)))])
+                (fn (h) @ match (lookup hm h) [(R pr) '(,h (,R (a1i ,D ,R ,pr)))]))
+              (def hs2 @ match x ['_ hs] @ _
+                (insert! hm2 x @ list D @ if (def? G) '(anr ,G ,D) '(id ,D))
+                (cons x hs))
+              '{(exp ,(iim G2 hm2 hs2 ps2 rhs2)) : ,(im2 G '(im ,D ,rhs2))}]
+            [_ (error-at p "expected > 1 argument") (copy-span p '?)]])
+          (iim G hm hs ps rhs)]
+        [(or '_ ('_))
+          (def g (goal! p tgt))
+          (push G hm hs rhs g)
+          '(:verb ,g)]
+        [(? atom?) (app p p ())]
+        [(':base p) p]
+        [((? atom? p1) . ps) (app p p1 ps)])
+      (refine tgt out)])
+    (def oldgs (ref! @ get! folmode-context))
+    (apply refine @ rmap rs @ match-fn
+      [#undef]
+      [e @ match oldgs
+        [((G hm hs _ _) . gs) (set! oldgs gs) (folref G hm hs e)]
+        [_ (error "no more goals")]])
+    (set! folmode-context @ append (rev newgs) oldgs)
+    (folmode-reset-goals))
+};
+
 strict sort set;
 term ab {x: nat} (p: wff x): set;
 notation ab {x: nat} (p: wff x): set = (${$:max) x ($|$:0) p ($}$:0);
