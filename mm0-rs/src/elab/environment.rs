@@ -335,6 +335,9 @@ make_atoms! {
   ABSTRACT: "abstract",
   LOCAL: "local",
   SORRY: ":sorry",
+  ERROR: "error",
+  WARN: "warn",
+  INFO: "info",
 }
 
 #[derive(Default, Clone)]

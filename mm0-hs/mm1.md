@@ -382,12 +382,14 @@ At the beginning of execution, the global context contains a number of primitive
   `(ref!)` constructs a new ref-cell containing `#undef`.
 * `(get! r)` dereferences the ref-cell `r` to get the value.
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
-* `(copy-span from to)` makes a copy of `to` with its position information copied from `from`. (This can be used for improved error reporting, but otherwise has no effect on program semantics.)
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
 * `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
 * `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
 * `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#undef`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
 * `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`. `(insert m k)` returns `k` erased from `m`.
+
+* `(copy-span from to)` makes a copy of `to` with its position information copied from `from`. (This can be used for improved error reporting, but otherwise has no effect on program semantics.)
+* `(stack-span n)` gets the span from `n` calls up the stack (where `0` is the currently executing function). Returns `#undef` tagged with the target span, which can then be copied to a term using `(copy-span)`. (Useful for targeted error reporting in scripts.)
 
 See [MM0-specific builtin functions](#MM0-specific-builtin-functions) for more functions that have to do with interaction between the lisp and MM0 environments.
 
@@ -519,6 +521,8 @@ MM0-specific builtin functions
 * `(get-goals)` returns the current goal list, a list of references to goals. Some goals may already have been assigned.
 
 * `(set-goals g1 g2 g3)` sets the goal list to `(g1 g2 g3)`, replacing the current goal list. If any of the provided goals are already assigned they are removed from the list.
+
+* `(set-close-fn f)` sets the "closer" for the current proof to `f`. It will be called with no arguments at the end of a `focus` block, and is responsible for reporting all unfinished goals. Passing `#undef` instead of a function will reset it to the default closer.
 
 * `(local-ctx)` returns the list of hypothesis names (`(infer-type)` can be used to get the type of the hypotheses).
 

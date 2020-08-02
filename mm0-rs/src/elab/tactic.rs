@@ -21,7 +21,7 @@ pub enum RStack {
   DeferGoals(Vec<LispVal>),
   Coerce {tgt: LispVal, u: LispVal},
   CoerceTo(LispVal),
-  TypedAt {tgt: LispVal, p: LispVal},
+  TypedAt {sp: Span, tgt: LispVal, p: LispVal},
   Typed(LispVal),
   RefineApp {sp2: Span, tgt: InferTarget, t: TermID, u: Uncons, args: Vec<LispVal>},
   RefineBis {sp: Span, sp2: Span, tgt: LispVal, im: InferMode, t: ThmID, u: Uncons, args: Vec<LispVal>},
@@ -426,8 +426,8 @@ impl Elaborator {
                 "unknown theorem/hypothesis '{}'", self.data[a].name)))?
             }
           }
-          RefineExpr::Typed(e, p) => {
-            stack.push(RStack::TypedAt {tgt, p});
+          RefineExpr::Typed(e, q) => {
+            stack.push(RStack::TypedAt {sp: try_get_span(&fsp, &p), tgt, p: q});
             RState::RefineExpr {tgt: InferTarget::Unknown, e}
           }
           RefineExpr::Exact(p) => {
@@ -448,10 +448,11 @@ impl Elaborator {
           }
           Some(RStack::Coerce {tgt, u}) => RState::Ret(LispVal::apply_conv(u, tgt, ret)),
           Some(RStack::CoerceTo(tgt)) => {
+            let sp = try_get_span(&fsp, &ret);
             let e = self.infer_type(sp, &ret)?;
             RState::Ret(self.coerce_to(sp, tgt, e, ret)?)
           }
-          Some(RStack::TypedAt {tgt, p}) => {
+          Some(RStack::TypedAt {sp, tgt, p}) => {
             stack.push(RStack::Coerce {u: self.unify(sp, &tgt, &ret)?, tgt});
             RState::RefineProof {tgt: ret, p}
           }

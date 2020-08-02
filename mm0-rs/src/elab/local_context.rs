@@ -45,6 +45,7 @@ pub struct LocalContext {
   pub goals: Vec<LispVal>,
   pub proofs: HashMap<AtomID, usize>,
   pub proof_order: Vec<(AtomID, LispVal, LispVal)>,
+  pub closer: LispVal,
 }
 
 fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget, sp: Option<FileSpan>) -> LispVal {
@@ -56,7 +57,7 @@ fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget, sp: Option<FileSpan>) ->
 }
 
 impl LocalContext {
-  pub fn new() -> LocalContext { Self::default() }
+  pub fn new() -> LocalContext { Default::default() }
 
   pub fn clear(&mut self) {
     self.vars.clear();
@@ -65,6 +66,7 @@ impl LocalContext {
     self.goals.clear();
     self.proofs.clear();
     self.proof_order.clear();
+    self.closer = LispVal::undef();
   }
 
   pub fn set_goals(&mut self, gs: impl IntoIterator<Item=LispVal>) {
@@ -720,7 +722,7 @@ impl Elaborator {
         let proof = d.val.as_ref().map(|e| {
           if self.check_proofs {
             (|| -> Result<Option<Proof>> {
-              let mut de = de.map_proof();
+              let mut de: Dedup<ProofHash> = de.map_proof();
               let mut is2 = Vec::new();
               for (i, (_, a, e)) in ehyps.into_iter().enumerate() {
                 if let Some(a) = a {

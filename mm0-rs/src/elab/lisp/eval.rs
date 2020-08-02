@@ -37,7 +37,7 @@ enum Stack<'a> {
   AddThmProc(FileSpan, AwaitingProof),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>},
-  Focus(Span, Vec<LispVal>),
+  Focus(Span, bool, Vec<LispVal>),
   Have(Span, LispVal),
 }
 
@@ -73,7 +73,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.t.atom)),
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
-      Stack::Focus(_, es) => write!(f, "(focus _)\n  ->{}", fe.to(es)),
+      &Stack::Focus(_, cl, ref es) => write!(f, "(focus {} _)\n  ->{}", cl, fe.to(es)),
       Stack::Have(_, a) => write!(f, "(have {} _)", fe.to(a)),
     }
   }
@@ -340,14 +340,6 @@ impl Elaborator {
     })
   }
 
-  fn as_atom_string(&self, e: &LispVal) -> SResult<ArcString> {
-    e.unwrapped(|e| match e {
-      LispKind::String(s) => Ok(s.clone()),
-      &LispKind::Atom(a) => Ok(self.data[a].name.clone()),
-      _ => Err(format!("expected an atom, got {}", self.print(e)))
-    })
-  }
-
   fn as_string_atom(&mut self, e: &LispVal) -> SResult<AtomID> {
     e.unwrapped(|e| match e {
       LispKind::String(s) => Ok(self.get_atom(s)),
@@ -606,9 +598,9 @@ impl<'a> Evaluator<'a> {
     self.fspan(sp)
   }
 
-  fn make_stack_err(&mut self, sp: Option<Span>, level: ErrorLevel,
+  fn make_stack_err(&mut self, sp: Option<(Span, bool)>, level: ErrorLevel,
       base: BoxError, err: impl Into<BoxError>) -> ElabError {
-    let mut old = sp.map(|sp| (self.fspan(sp), base));
+    let mut old = sp.map(|(sp, good)| (self.fspan(sp), good, base));
     let mut info = vec![];
     for s in self.stack.iter().rev() {
       if let Stack::Ret(fsp, pos, _, _) = s {
@@ -616,25 +608,40 @@ impl<'a> Evaluator<'a> {
           ProcPos::Named(_, _, a) => format!("({})", self.data[*a].name).into(),
           ProcPos::Unnamed(_) => "[fn]".into(),
         };
-        if let Some((sp, base)) = old.take() {
-          info.push((sp, base));
+        if let Some((sp, good, base)) = old.take() {
+          let (sp, osp) = if good {(sp, fsp.clone())} else {(fsp.clone(), sp)};
+          info.push((osp, base));
+          old = Some((sp, good, x));
+        } else {
+          old = Some((fsp.clone(), false, x));
         }
-        old = Some((fsp.clone(), x))
       }
     }
     ElabError {
-      pos: old.map_or(self.orig_span, |(sp, _)| sp.span),
+      pos: old.map_or(self.orig_span, |(sp, _, _)| sp.span),
       level,
       kind: ElabErrorKind::Boxed(err.into(), Some(info))
     }
   }
 
-  fn info(&mut self, sp: Span, base: &str, msg: impl Into<BoxError>) {
-    let msg = self.make_stack_err(Some(sp), ErrorLevel::Info, base.into(), msg);
+  fn stack_span(&self, mut n: usize) -> Option<FileSpan> {
+    for s in self.stack.iter().rev() {
+      if let Stack::Ret(fsp, _, _, _) = s {
+        match n.checked_sub(1) {
+          None => return Some(fsp.clone()),
+          Some(i) => n = i
+        }
+      }
+    }
+    None
+  }
+
+  fn info(&mut self, sp: Span, good: bool, base: &str, msg: impl Into<BoxError>) {
+    let msg = self.make_stack_err(Some((sp, good)), ErrorLevel::Info, base.into(), msg);
     self.report(msg)
   }
 
-  fn err(&mut self, sp: Option<Span>, err: impl Into<BoxError>) -> ElabError {
+  fn err(&mut self, sp: Option<(Span, bool)>, err: impl Into<BoxError>) -> ElabError {
     self.make_stack_err(sp, ErrorLevel::Error, "error occurred here".into(), err)
   }
 
@@ -661,13 +668,13 @@ macro_rules! make_builtins {
     impl<'a> Evaluator<'a> {
       fn evaluate_builtin(&mut $self, $sp1: Span, $sp2: Span, f: BuiltinProc, mut $args: Vec<LispVal>) -> Result<State<'a>> {
         macro_rules! print {($sp:expr, $x:expr) => {{
-          let msg = $x; $self.info($sp, f.to_str(), msg)
+          let msg = $x; $self.info($sp, false, f.to_str(), msg)
         }}}
         macro_rules! try1 {($x:expr) => {{
           match $x {
             Ok(e) => e,
             Err(s) => return Err($self.make_stack_err(
-              Some($sp1), ErrorLevel::Error, format!("({})", f).into(), s))
+              Some(($sp1, false)), ErrorLevel::Error, format!("({})", f).into(), s))
           }
         }}}
 
@@ -681,6 +688,25 @@ make_builtins! { self, sp1, sp2, args,
   Display: Exact(1) => {print!(sp1, &*try1!(self.as_string(&args[0]))); LispVal::undef()},
   Error: Exact(1) => try1!(Err(&*try1!(self.as_string(&args[0])))),
   Print: Exact(1) => {print!(sp1, format!("{}", self.print(&args[0]))); LispVal::undef()},
+  ReportAt: Exact(3) => {
+    let level = match args[0].as_atom() {
+      Some(AtomID::ERROR) => ErrorLevel::Error,
+      Some(AtomID::WARN) => ErrorLevel::Warning,
+      Some(AtomID::INFO) =>  ErrorLevel::Info,
+      _ => try1!(Err("expected 'error, 'warn, or 'info"))
+    };
+    let FileSpan {file, span} = try1!(args[1].fspan().ok_or("expected a span"));
+    if file == self.file {
+      let s = (*try1!(self.as_string(&args[2]))).into();
+      let msg = if let Some(true) = args[1].as_bool() {
+        self.make_stack_err(Some((span, true)), level, "(report-at)".into(), s)
+      } else {
+        ElabError { pos: span, level, kind: ElabErrorKind::Boxed(s, None) }
+      };
+      self.report(msg);
+    }
+    LispVal::undef()
+  },
   Begin: AtLeast(0) => args.last().cloned().unwrap_or_else(LispVal::undef),
   Apply: AtLeast(2) => {
     let proc = args.remove(0);
@@ -808,6 +834,13 @@ make_builtins! { self, sp1, sp2, args,
       (None, e) => e
     }
   },
+  StackSpan: Exact(1) => {
+    let n = try1!(args[0].as_int(|n| n.to_usize().unwrap_or(usize::MAX)).ok_or("expected a number"));
+    match self.stack_span(n) {
+      Some(sp) => LispVal::undef().span(sp),
+      None => LispVal::undef()
+    }
+  },
   Async: AtLeast(1) => {
     let proc = args.remove(0);
     let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
@@ -897,6 +930,12 @@ make_builtins! { self, sp1, sp2, args,
   GetMVars: AtLeast(0) => LispVal::list(self.lc.mvars.clone()),
   GetGoals: AtLeast(0) => LispVal::list(self.lc.goals.clone()),
   SetGoals: AtLeast(0) => {self.lc.set_goals(args); LispVal::undef()},
+  SetCloseFn: AtLeast(0) => {
+    let e = args.drain(..).next().unwrap_or_default();
+    if e.is_def() && !e.is_proc() {try1!(Err("expected a procedure"))}
+    self.lc.closer = e;
+    LispVal::undef()
+  },
   LocalCtx: Exact(0) =>
     LispVal::list(self.lc.proof_order.iter().map(|a| LispVal::atom(a.0)).collect()),
   ToExpr: Exact(1) => return Ok(State::Refine {
@@ -980,11 +1019,11 @@ make_builtins! { self, sp1, sp2, args,
       } else {try1!(Err("invalid arguments"))}
     } else {
       if let Some(b) = args[1].as_bool() {
-        match try1!(self.as_atom_string(&args[0])).deref() {
-          "error" => self.reporting.error = b,
-          "warn" => self.reporting.warn = b,
-          "info" => self.reporting.info = b,
-          s => try1!(Err(format!("unknown error level '{}'", s)))
+        match try1!(args[0].as_atom().ok_or("expected an atom")) {
+          AtomID::ERROR => self.reporting.error = b,
+          AtomID::WARN => self.reporting.warn = b,
+          AtomID::INFO => self.reporting.info = b,
+          s => try1!(Err(format!("unknown error level '{}'", self.print(&s))))
         }
       } else {try1!(Err("invalid arguments"))}
     }
@@ -1020,7 +1059,7 @@ impl<'a> Evaluator<'a> {
   fn run(&mut self, mut active: State<'a>) -> Result<LispVal> {
     macro_rules! throw {($sp:expr, $e:expr) => {{
       let err = $e;
-      return Err(self.err(Some($sp), err))
+      return Err(self.err(Some(($sp, false)), err))
     }}}
     macro_rules! push {($($e:expr),*; $ret:expr) => {{
       $(self.stack.push({ #[allow(unused_imports)] use Stack::*; $e });)*
@@ -1044,18 +1083,18 @@ impl<'a> Evaluator<'a> {
       }
       // if self.check_proofs {
       //   if self.stack.len() < stacklen {
-      //     log!("stack -= {}", stacklen - self.stack.len());
+      //     println!("stack -= {}", stacklen - self.stack.len());
       //     stacklen = self.stack.len()
       //   }
       //   if self.stack.len() > stacklen {
       //     for e in &self.stack[stacklen..] {
-      //       log!("stack += {}", self.print(e));
+      //       println!("stack += {}", self.print(e));
       //     }
       //     stacklen = self.stack.len()
       //   } else if let Some(e) = self.stack.last() {
-      //     log!("stack top = {}", self.print(e));
+      //     println!("stack top = {}", self.print(e));
       //   }
-      //   log!("[{}] {}\n", self.ctx.len(), self.print(&active));
+      //   println!("[{}] {}\n", self.ctx.len(), self.print(&active));
       // }
       active = match active {
         State::Eval(ir) => match ir {
@@ -1081,7 +1120,7 @@ impl<'a> Evaluator<'a> {
           &IR::Focus(sp, ref irs) => {
             if self.lc.goals.is_empty() {throw!(sp, "no goals")}
             let gs = self.lc.goals.drain(1..).collect();
-            push!(Focus(sp, gs); Refines(sp, irs.iter()))
+            push!(Focus(sp, true, gs); Refines(sp, irs.iter()))
           }
           &IR::Def(n, ref x, ref val) => {
             assert!(self.ctx.len() == n);
@@ -1179,20 +1218,24 @@ impl<'a> Evaluator<'a> {
             self.evaluate_builtin(esp, esp, BuiltinProc::Refine, vec![ret])?
           }
           Some(Stack::Refines(sp, None, it)) => State::Refines(sp, it),
-          Some(Stack::Focus(sp, gs)) => {
-            if !self.lc.goals.is_empty() {
-              let stat = self.stat();
-              let span = self.fspan(sp);
-              for g in mem::replace(&mut self.lc.goals, vec![]) {
-                let err = ElabError::new_e(try_get_span(&span, &g),
-                  format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)));
-                self.report(err)
+          Some(Stack::Focus(sp, close, gs)) => loop { // labeled block, not a loop
+            if close {
+              if self.lc.closer.is_def() {
+                break push!(Focus(sp, false, gs); App(sp, sp, self.lc.closer.clone(), vec![], [].iter()))
+              } else if !self.lc.goals.is_empty() {
+                let stat = self.stat();
+                let span = self.fspan(sp);
+                for g in mem::replace(&mut self.lc.goals, vec![]) {
+                  let err = ElabError::new_e(try_get_span(&span, &g),
+                    format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)));
+                  self.report(err)
+                }
+                throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
               }
-              throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
             }
             self.lc.set_goals(gs);
-            State::Ret(LispVal::undef())
-          }
+            break State::Ret(LispVal::undef())
+          },
           Some(Stack::Refine {sp, stack}) =>
             State::Refine {sp, stack, state: RState::Ret(ret)},
           Some(Stack::Have(sp, x)) => {
@@ -1282,7 +1325,7 @@ impl<'a> Evaluator<'a> {
                   match args.pop() {
                     None => RState::RefineProof {
                       tgt: {
-                        let fsp = self.fspan(sp1);
+                        let fsp = p.fspan().unwrap_or_else(|| self.fspan(sp1));
                         self.lc.new_mvar(InferTarget::Unknown, Some(fsp))
                       },
                       p
@@ -1365,7 +1408,7 @@ impl<'a> Evaluator<'a> {
         },
         State::Refine {sp, mut stack, state} => {
           let res = self.elab.run_refine(self.orig_span, &mut stack, state)
-            .map_err(|e| self.err(Some(e.pos), e.kind.msg()))?;
+            .map_err(|e| self.err(Some((e.pos, true)), e.kind.msg()))?;
           match res {
             RefineResult::Ret(e) => {self.lc.clean_mvars(); State::Ret(e)}
             RefineResult::RefineExtraArgs(tgt, e, u) => {

@@ -20,13 +20,15 @@ do {
   (def last (match-fn [(a) a] [(_ . l) (last l)]))
   (def split-last @ match-fn
     [(and (_) l) l]
-    [(a . l) @ match (split-last l) @ (r . l2) '(,r ,a . ,l2)])
+    [(a . l) @ match (split-last l) @ (r . l2) '(,r ,a . ,l2)]
+    [() ()])
   (def (append . ls) @ foldr ls () @ fn (l l2) @ foldr l l2 cons)
   (def (rev l) @ foldl l () (fn (l a) (cons a l)))
   (def (len l) @ foldl l 0 (fn (n _) {n + 1}))
+  (def (filter l p) @ foldl l () @ fn (x l2) @ if (p x) (cons x l2) l2)
   (def (repeat a n) (if {n = 0} () (cons a (repeat a {n - 1}))))
   (def (iterate n f a) (if {n = 0} a (f (iterate {n - 1} f a))))
-  (def (verb e) (list ':verb e))
+  (def (verb e) (copy-span e (list ':verb e)))
   (def (exact e) (refine (verb e)))
   (def (result) (hd (get-goals)))
   (def (inspect-result f) (def g (result)) (refine (f)) (display @ pp g))
@@ -44,6 +46,11 @@ do {
   (def (rmap . args) (apply map (split-last args)))
   (def (scan . args) (apply rmap args) #undef)
   (def (undef? x) (not (def? x)))
+  (def (error-at sp msg) (report-at 'error sp msg))
+  (def (info-at sp msg) (report-at 'info sp msg))
+  (def goal! @ match-fn*
+    [(ty) (ref! (goal ty))]
+    [(pos ty) (ref! (copy-span pos (goal ty)))])
   (def (swap) (match (get-goals) ((x y) (set-goals y x))))
   (def suffices @ match-fn*
     [(h) (have h _) (swap)]
@@ -235,7 +242,7 @@ do {
 do {
   (set-timeout 500)
   (def (refine-extra-args refine tgt e . ps)
-    @ refine '{,(foldl ps (verb e) @ fn (acc p2) '(ax_mp ,acc ,p2)) : ,(verb tgt)})
+    @ refine tgt (foldl ps (verb e) @ fn (acc p2) @ copy-span e '(ax_mp ,acc ,p2)))
   (def default-annotate (derive-eq))
   (def (annotate e s) @ match e ['_ (default-annotate s)] [_ (e s)])
 };

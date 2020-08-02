@@ -91,7 +91,7 @@ impl InferTarget {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct LispVal(Arc<LispKind>);
 
 #[derive(Debug)]
@@ -138,7 +138,7 @@ impl LispVal {
 
   pub fn replace_span(&self, fsp: FileSpan) -> LispVal {
     match &**self {
-      LispKind::Annot(sp, v) => v.replace_span(fsp),
+      LispKind::Annot(_, v) => v.replace_span(fsp),
       _ => self.clone().span(fsp)
     }
   }
@@ -366,6 +366,10 @@ impl LispKind {
   }
 }
 
+impl Default for LispKind {
+  fn default() -> Self { Self::Undef }
+}
+
 impl PartialEq<LispKind> for LispKind {
   fn eq(&self, other: &LispKind) -> bool {
     self.unwrapped(|s| other.unwrapped(|o| match (s, o) {
@@ -465,6 +469,7 @@ str_enum! {
     Display: "display",
     Error: "error",
     Print: "print",
+    ReportAt: "report-at",
     Begin: "begin",
     Apply: "apply",
     Add: "+",
@@ -505,6 +510,7 @@ str_enum! {
     GetRef: "get!",
     SetRef: "set!",
     CopySpan: "copy-span",
+    StackSpan: "stack-span",
     Async: "async",
     IsAtomMap: "atom-map?",
     NewAtomMap: "atom-map!",
@@ -522,6 +528,7 @@ str_enum! {
     GetMVars: "get-mvars",
     GetGoals: "get-goals",
     SetGoals: "set-goals",
+    SetCloseFn: "set-close-fn",
     LocalCtx: "local-ctx",
     ToExpr: "to-expr",
     Refine: "refine",
