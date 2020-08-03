@@ -1,8 +1,8 @@
 
 //! Implements mm0/mm1 file AST components
 //!
-//! An [`AST`] is the result of parsing an mm0/mm1 file. The core of the AST is a 
-//! `Vec<Stmt>`, where a [`Stmt`] holds both the element's "data" as a [`StmtKind`], 
+//! An [`AST`] is the result of parsing an mm0/mm1 file. The core of the AST is a
+//! `Vec<Stmt>`, where a [`Stmt`] holds both the element's "data" as a [`StmtKind`],
 //!  and the element's [`Span`].
 //! The actual [`AST`] type also contains data about the source file, any imports, and
 //! any errors encountered during parsing.
@@ -74,7 +74,7 @@ impl Display for Modifiers {
   }
 }
 
-/// User-supplied delimiter characters. 
+/// User-supplied delimiter characters.
 ///
 /// A delimiter-stmt with only one math string is parsed
 /// as `Delimiter::Both(..)`, and the contents are put in the environment as both left and right
@@ -97,9 +97,9 @@ impl Formula {
 /// A constant literal, used in `notation` commands. `fmla` is the underlying formula,
 /// and `trim` is the span with whitespace trimmed (which should contain
 /// no embedded whitespace)
-/// Information about constants can be found in the [`notation grammar`].
+/// Information about constants can be found in the [notation grammar].
 ///
-/// [`notation grammar`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#notations
+/// [notation grammar]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#notations
 #[derive(Clone)]
 pub struct Const {
   pub fmla: Formula,
@@ -161,9 +161,9 @@ impl Type {
 /// and `bi.span` is the span of the enclosing binder group.
 /// In an arrow sequence like `wff > ...`, equivalent to `(_ : wff)`, the
 /// binder group's span is `wff` and the anonymous local name has no span.
-/// Detailed information about binder syntax can be found in the [`declaration grammar`].
+/// Detailed information about binder syntax can be found in the [declaration grammar].
 ///
-/// [`declaration grammar`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#declarations
+/// [declaration grammar]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#declarations
 #[derive(Clone, Debug)]
 pub struct Binder {
   pub span: Span,
@@ -190,7 +190,10 @@ pub enum Atom { Ident, Quote, Unquote, Nfx }
 ///
 /// Notable additions over a normal Lisp are Formula, which are just in-line formulas,
 /// and DottedList, which provides some (slightly confusing at first but actually really nice)
-/// syntax sugar for defs and functions, which you can read about in the `mm1.md` file's `syntax forms` section.
+/// syntax sugar for defs and functions, which you can read about in the `mm1.md` file's
+/// [syntax forms] section.
+///
+/// [syntax forms]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#syntax-forms
 #[derive(Clone, Debug)]
 pub enum SExprKind {
   Atom(Atom),
@@ -204,7 +207,7 @@ pub enum SExprKind {
 }
 
 // separated from curly_list for testing
-pub fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool, nfx: impl FnOnce() -> T) {
+fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool, nfx: impl FnOnce() -> T) {
   let n = es.len();
   if n > 2 {
     let valid_curly = no_dot && n % 2 != 0 && {

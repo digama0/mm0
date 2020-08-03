@@ -1,8 +1,8 @@
 //! Front-facing parser for mm0-rs; responsible for actually parsing mm0/mm1 files into an AST.
 //!
-//! In accordance with the grammar's description of mm0/mm1 files as a sequence of 
+//! In accordance with the grammar's description of mm0/mm1 files as a sequence of
 //! statements, the parser's entry point [`parse`] will attempt to construct an AST
-//! from some input by calling [`stmt_recover`], which loops over [`stmt`] 
+//! from some input by calling [`stmt_recover`], which loops over [`stmt`]
 //! while attempting to recover from any parse errors. The actual [`Parser`]
 //! struct is fairly standard; it holds the source as a byte slice, keeping track of the current
 //! character as a usize among other things.
@@ -27,17 +27,23 @@ use ast::*;
 /// Determines how the error is displayed in an editor.
 ///
 /// Corresponds to the lsp-type crate's [`DiagnosticSeverity`] enum, and is convertible using
-/// [`to_diag_severity`]. 
+/// [`to_diag_severity`].
 ///
 /// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
 /// [`to_diag_severity`]: enum.ErrorLevel.html#method.to_diag_severity
 #[derive(Copy, Clone, Debug)]
 pub enum ErrorLevel {
+  /// Error level for informational messages, such as the result of `(display)`.
   Info,
+  /// Error level for warnings, such as an unfinished proof.
   Warning,
+  /// Error level for errors (which may or may not be fatal).
   Error,
 }
 impl ErrorLevel {
+  /// Convert an `ErrorLevel` to the LSP [`DiagnosticSeverity`] type.
+  ///
+  /// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
   pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
       ErrorLevel::Info => DiagnosticSeverity::Information,
@@ -46,6 +52,9 @@ impl ErrorLevel {
     }
   }
 
+  /// Convert an `ErrorLevel` to [`AnnotationType`], used by the CLI compiler.
+  ///
+  /// [`AnnotationType`]: ../../annotate_snippets/snippet/enum.AnnotationType.html
   pub fn to_annotation_type(self) -> AnnotationType {
     match self {
       ErrorLevel::Info => AnnotationType::Info,
@@ -264,7 +273,7 @@ impl<'a> Parser<'a> {
     self.ident().ok_or_else(|| self.err("expecting identifier".into()))
   }
 
-  /// Attempt to parse a `$ .. $` delimited formula. 
+  /// Attempt to parse a `$ .. $` delimited formula.
   /// On success, advances the parser past the formula and any trailing whitespace.
   /// On failure, does not advance the parser.
   fn formula(&mut self) -> Result<Option<Formula>> {
@@ -305,7 +314,7 @@ impl<'a> Parser<'a> {
 
   /// Try to parse a DepType or FormulaType.
   /// Examples are the part after the colon in either (_ : $ some formula $)
-  /// or (_ : wff x), where (_ : wff) may or may not have dependencies. 
+  /// or (_ : wff x), where (_ : wff) may or may not have dependencies.
   fn ty(&mut self) -> Result<Type> {
     if let Some(fmla) = self.formula()? {
       Ok(Type::Formula(fmla))

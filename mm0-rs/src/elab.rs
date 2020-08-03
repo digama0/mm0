@@ -1,3 +1,14 @@
+//! The elaborator - the MM1 execution and proof engine.
+//!
+//! Elaboration is the process of executing all the scripts in an MM1 file in order to
+//! obtain a completed proof object (an [`Environment`]) for everything in the file.
+//! The [`Elaborator`] struct contains the working data for elaboration, and it is discarded
+//! once the file is completed. Elaborators are not shared between files, and
+//! [`Environment`]s are copied on import.
+//!
+//! [`Environment`]: environment/struct.Environment.html
+//! [`Elaborator`]: struct.Elaborator.html
+
 pub mod environment;
 pub mod spans;
 pub mod lisp;
@@ -25,17 +36,37 @@ use crate::util::*;
 use crate::parser::{*, ast::*, ast::Literal as ALiteral};
 use crate::lined_string::*;
 
+/// An error payload.
 #[derive(Debug)]
 pub enum ElabErrorKind {
+  /// A boxed error. The main [`BoxError`] is the error message,
+  /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
+  /// related to the error, along with short descriptions.
+  ///
+  /// [`BoxError`]: type.BoxError.html
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
 }
 impl ElabErrorKind {
+  /// Converts the error message to a `String`.
   pub fn msg(&self) -> String {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
     }
   }
 
+  /// Converts the error's related info to the LSP version, a list of
+  /// [`DiagnosticRelatedInformation`].
+  ///
+  /// # Parameters
+  ///
+  /// - `to_loc`: A function to convert the `FileSpan` locations into the LSP [`Location`]
+  ///   type. (This is basically [`LinedString::to_loc`] but can't be done locally because
+  ///   it requires the [`LinedString`] for the file to convert the index to line/col.)
+  ///
+  /// [`DiagnosticRelatedInformation`]: ../../lsp_types/struct.DiagnosticRelatedInformation.html
+  /// [`Location`]: ../../lsp_types/struct.Location.html
+  /// [`LinedString`]: ../lined_string/struct.LinedString.html
+  /// [`LinedString::to_loc`]: ../lined_string/struct.LinedString.html#method.to_loc
   pub fn to_related_info(&self, mut to_loc: impl FnMut(&FileSpan) -> Location) -> Option<Vec<DiagnosticRelatedInformation>> {
     match self {
       ElabErrorKind::Boxed(_, Some(info)) =>
@@ -52,31 +83,58 @@ impl From<BoxError> for ElabErrorKind {
   fn from(e: BoxError) -> ElabErrorKind { ElabErrorKind::Boxed(e, None) }
 }
 
+/// The main error type for the elaborator. Each error has a location (which must be in
+/// the currently elaborating file), an error level, a message, and an optional list of
+/// related locations (possibly in other files) along with short messages.
 #[derive(Debug)]
 pub struct ElabError {
+  /// The location of the error in the current file.
   pub pos: Span,
+  /// The severity of the error or message
   pub level: ErrorLevel,
+  /// The type of error (currently there is only [`ElabErrorKind::Boxed`])
+  ///
+  /// [`ElabErrorKind::Boxed`]: enum.ElabErrorKind.html#variant.Boxed
   pub kind: ElabErrorKind,
 }
 pub type Result<T> = std::result::Result<T, ElabError>;
 
 impl ElabError {
+
+  /// Make an elaboration error from a position and an [`ElabErrorKind`].
+  ///
+  /// [`ElabErrorKind`]: enum.ElabErrorKind.html
   pub fn new(pos: impl Into<Span>, kind: ElabErrorKind) -> ElabError {
     ElabError { pos: pos.into(), level: ErrorLevel::Error, kind }
   }
+
+  /// Make an elaboration error from a position and anything that can be converted to a [`BoxError`].
+  ///
+  /// [`BoxError`]: type.BoxError.html
   pub fn new_e(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
     ElabError::new(pos, ElabErrorKind::Boxed(e.into(), None))
   }
+
+  /// Make an elaboration error from a position, a message, and a list of related info
   pub fn with_info(pos: impl Into<Span>, msg: BoxError, v: Vec<(FileSpan, BoxError)>) -> ElabError {
     ElabError::new(pos, ElabErrorKind::Boxed(msg, Some(v)))
   }
+
+  /// Make an elaboration warning from a position and a message.
   pub fn warn(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
     ElabError { pos: pos.into(), level: ErrorLevel::Warning, kind: ElabErrorKind::Boxed(e.into(), None)}
   }
+
+  /// Make an info message at a position
   pub fn info(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
     ElabError { pos: pos.into(), level: ErrorLevel::Info, kind: ElabErrorKind::Boxed(e.into(), None)}
   }
 
+  /// Convert an `ElabError` into the LSP [`Diagnostic`] type.
+  /// Uses `file` to convert the error position to a range, and uses `to_loc` to convert
+  /// the positions in other files for the related info.
+  ///
+  /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
   pub fn to_diag(&self, file: &LinedString, to_loc: impl FnMut(&FileSpan) -> Location) -> Diagnostic {
     Diagnostic {
       range: file.to_range(self.pos),
@@ -95,9 +153,15 @@ impl From<ParseError> for ElabError {
   }
 }
 
+/// Records the current reporting setting. A report that is suppressed by the reporting mode
+/// will not appear in the error list / as a diagnostic, but a fatal error will still prevent
+/// proof export.
 struct ReportMode {
+  /// Do we report on errors?
   error: bool,
+  /// Do we report on warnings?
   warn: bool,
+  /// Do we report on info messages?
   info: bool,
 }
 
@@ -115,18 +179,36 @@ impl ReportMode {
   }
 }
 
+/// The `Elaborator` struct contains the working data for elaboration, and is the
+/// main interface to MM1 operations (along with [`Evaluator`], which a lisp
+/// execution context).
+///
+/// [`Evaluator`]: lisp/eval/struct.Evaluator.html
 pub struct Elaborator {
+  /// The parsed abstract syntax tree for the file
   ast: Arc<AST>,
+  /// The location and name of the currently elaborating file
   path: FileRef,
+  /// A flag that will be flipped from another thread to signal that this elaboration
+  /// should be abandoned
   cancel: Arc<AtomicBool>,
+  /// The accumulated list of errors
   errors: Vec<ElabError>,
+  /// The permanent data of the elaborator: the completed proofs and lisp definitions
   pub env: Environment,
+  /// The maximum time spent on one lisp evaluation (default 5 seconds)
   timeout: Option<Duration>,
+  /// The time at which the current lisp evaluation will be aborted
   cur_timeout: Option<Instant>,
+  /// The current proof context
   lc: LocalContext,
+  /// Information attached to spans, used for hover queries
   spans: Spans<ObjectKind>,
+  /// True if we are currently elaborating an MM0 file
   mm0_mode: bool,
+  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
   check_proofs: bool,
+  /// The current reporting mode, whether we will report each severity of error
   reporting: ReportMode,
 }
 
@@ -139,6 +221,20 @@ impl DerefMut for Elaborator {
 }
 
 impl Elaborator {
+  /// Creates a new `Elaborator` from a parsed [`AST`].
+  ///
+  /// # Parameters
+  ///
+  /// - `ast`: The [`AST`] of the parsed MM1/MM0 file (as created by [`parser::parse`])
+  /// - `path`: The location of the file being elaborated.
+  /// - `mm0_mode`: True if this file is being elaborated in MM0 mode. In MM0 mode,
+  ///   the `do` command is disabled, type inference is disabled, modifiers are treated
+  ///   differently, and proofs of `theorem` are not allowed.
+  /// - `cancel`: An atomic flag that can be flipped in another thread in order to cancel
+  ///   the elaboration before completion.
+  ///
+  /// [`AST`]: ../parser/ast/struct.AST.html
+  /// [`parser::parse`]: ../parser/fn.parse.html
   pub fn new(ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
       ast, path, cancel,
@@ -155,7 +251,13 @@ impl Elaborator {
   }
 
   fn span(&self, s: Span) -> &str { self.ast.span(s) }
+
+  /// Converts a [`Span`] in the current elaboration file to a [`FileSpan`].
+  ///
+  /// [`Span`]: ../util/struct.Span.html
+  /// [`FileSpan`]: ../util/struct.FileSpan.html
   pub fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
+
   fn report(&mut self, e: ElabError) {
     if self.reporting.active(e.level) {self.errors.push(e)}
   }
@@ -338,6 +440,15 @@ enum ElabStmt {
 }
 
 impl Elaborator {
+  /// Elaborates a single statement.
+  ///
+  /// # Returns
+  ///
+  /// - `Ok(Ok)`: The statement was successfully elaborated
+  /// - `Ok(Import(sp))`: The statement is an import statement, so we need to yield
+  ///   to the VFS to get the file this statement is referring to.
+  /// - `Err(e)`: A fatal error occurred in parsing the statement.
+  ///   This can just be pushed to the error list.
   fn elab_stmt(&mut self, stmt: &Stmt, span: Span) -> Result<ElabStmt> {
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
     self.spans.set_stmt(span);
@@ -377,6 +488,36 @@ impl Elaborator {
     Ok(ElabStmt::Ok)
   }
 
+  /// Creates a future to poll for the completed environment, given an import resolver.
+  ///
+  /// # Parameters
+  ///
+  /// - `_old`: The last successful parse of the same file, used for incremental elaboration.
+  ///   A value of `Some((idx, errs, env))` means that the new file first differs from the
+  ///   old one at `idx`, and the last parse produced environment `env` with errors `errs`.
+  ///
+  /// - `mk`: A function which is called when an `import` is encountered, with the [`FileRef`] of
+  ///   the file being imported. It sets up a channel and passes the [`Receiver`] end here,
+  ///   to transfer an [`Environment`] containing the elaborated theorems, as well as any
+  ///   extra data `T`, which is collected and passed through the function.
+  ///
+  /// # Returns
+  ///
+  /// A [`Future`] which returns `(toks, errs, env)` with
+  ///
+  /// - `toks`: The accumulated `T` values passed from `mk` (in the order that `import` statements
+  ///   appeared in the file)
+  /// - `errs`: The elaboration errors found
+  /// - `env`: The final environment
+  ///
+  /// If elaboration of an individual statement fails, the error is pushed and then elaboration
+  /// continues at the next statement, so the overall elaboration process cannot fail and an
+  /// environment is always produced.
+  ///
+  /// [`FileRef`]: ../util/struct.FileRef.html
+  /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
+  /// [`Environment`]: environment/struct.Environment.html
+  /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
   pub fn as_fut<T>(mut self,
     _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>,
     mut mk: impl FnMut(FileRef) ->
