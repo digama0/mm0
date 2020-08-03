@@ -1,6 +1,6 @@
 //! Implements the bridge between mm0-rs and an editor via an lsp [`Connection`]
 //!
-//! [`Connection`]: ../../lsp-server/struct.Connection.html
+//! [`Connection`]: ../lsp_server/struct.Connection.html
 
 use std::{fs, io};
 

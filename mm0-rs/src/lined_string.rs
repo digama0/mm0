@@ -6,7 +6,7 @@
 //!
 //! [`LinedString::apply_changes`]: struct.LinedString.html#method.apply_changes
 //! [`LinedString`]: struct.LinedString.html
-//! [`Position`]: ../../lsp-types/struct.Position.html
+//! [`Position`]: ../../lsp_types/struct.Position.html
 
 use std::mem;
 use std::ops::{Deref, Index};
@@ -66,7 +66,7 @@ impl LinedString {
 
   /// Turn a character index into an LSP [`Position`]
   ///
-  /// [`Position`]: ../../lsp-types/struct.Position.html
+  /// [`Position`]: ../../lsp_types/struct.Position.html
   pub fn to_pos(&self, idx: usize) -> Position {
     let (pos, line) = match self.lines.binary_search(&idx) {
       Ok(n) => (idx, n+1),
@@ -111,7 +111,7 @@ impl LinedString {
   /// so lines[0] points to the start of line 1, lines[1] points to the start of line 2, etc.
   /// with the start of line 0 just being s.0.
   ///
-  /// [`Position`]: ../../lsp-types/struct.Position.html
+  /// [`Position`]: ../../lsp_types/struct.Position.html
   pub fn to_idx(&self, pos: Position) -> Option<usize> {
     match pos.line.checked_sub(1) {
       None => Some(self.lsp_to_idx(0, pos.character as usize)),
@@ -134,7 +134,7 @@ impl LinedString {
   /// until it reaches some [`Position`]. Return the portion of the passed string slice
   /// that was not added to the LinedString
   ///
-  /// [`Position`]: ../../lsp-types/struct.Position.html
+  /// [`Position`]: ../../lsp_types/struct.Position.html
   pub fn extend_until<'a>(&mut self, unicode: bool, s: &'a str, pos: Position) -> &'a str {
     self.unicode |= unicode;
     let end = self.end();
@@ -171,7 +171,7 @@ impl LinedString {
   /// Does nothing if the LinedString's contents were already less than or equal 
   /// in length to the [`Position`]'s index.
   ///
-  /// [`Position`]: ../../lsp-types/struct.Position.html
+  /// [`Position`]: ../../lsp_types/struct.Position.html
    pub fn truncate(&mut self, pos: Position) {
     if let Some(idx) = self.to_idx(pos) {
       if idx < self.s.len() {
@@ -184,7 +184,7 @@ impl LinedString {
   /// Does a bunch of string juggling to actually realize the contents of an iterator
   /// containing a sequence of [`TextDocumentContentChangeEvent`] messages.
   ///
-  /// [`TextDocumentContentChangeEvent`]: lsp_types/struct.TextDocumentContentChangeEvent.html
+  /// [`TextDocumentContentChangeEvent`]: ../../lsp_types/struct.TextDocumentContentChangeEvent.html
   pub fn apply_changes(&self, changes: impl Iterator<Item=TextDocumentContentChangeEvent>) ->
       (Position, LinedString) {
     let mut old: LinedString;

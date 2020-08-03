@@ -117,6 +117,7 @@ pub enum DeclKind { Term, Axiom, Thm, Def }
 pub enum LocalKind { Bound, Reg, Dummy, Anon }
 
 impl LocalKind {
+  /// Return true iff self is a LocalKind::Bound or LocalKind::Dummy
   pub fn is_bound(self) -> bool {
     match self {
       LocalKind::Bound | LocalKind::Dummy => true,
