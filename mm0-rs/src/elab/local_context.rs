@@ -408,6 +408,12 @@ enum InferBinder {
 }
 
 impl Elaborator {
+  /// Elaborate a binder's [DepType] with a given [LocalKind]. Enforces the requirements that (1) 
+  /// bound and dummy variables do not have dependencies, (2) regular variables do not depend
+  /// on dummy variables. The bool in the result's pair indicates whether the variable is a dummy variable.
+  ///
+  /// [DepType]: ../parser/ast/struct.DepType.html 
+  /// [LocalKind]: ../parser/ast/enum.LocalKind.html
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
@@ -415,7 +421,7 @@ impl Elaborator {
     Ok(if lk.is_bound() {
       if !d.deps.is_empty() {
         self.report(ElabError::new_e(
-          d.deps[0].start..d.deps.last().unwrap().end, "dependencies not allowed in curly binders"));
+          d.deps[0].start..d.deps.last().unwrap().end, "dependencies not allowed in curly binders or dummy variables"));
         *error = true;
       }
       (lk == LocalKind::Dummy, InferSort::Bound {sort})
