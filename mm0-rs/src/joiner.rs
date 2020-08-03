@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use clap::ArgMatches;
 use crate::util::FileRef;
 use crate::lined_string::LinedString;
 use crate::parser::{parse, ast::StmtKind};
@@ -46,8 +47,8 @@ impl<W: Write> Joiner<W> {
   }
 }
 
-pub fn main(mut args: impl Iterator<Item=String>) -> io::Result<()> {
-  let path = args.next().expect("expected a .mm0 file");
+pub fn main(args: &ArgMatches) -> io::Result<()> {
+  let path = args.value_of("INPUT").unwrap();
   Joiner {
     stack: vec![],
     done: HashSet::new(),

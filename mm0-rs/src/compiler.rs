@@ -21,6 +21,7 @@ use annotate_snippets::{
   snippet::{Snippet, Annotation, AnnotationType, SourceAnnotation, Slice},
   display_list::{DisplayList, FormatOptions}};
 use typed_arena::Arena;
+use clap::ArgMatches;
 use crate::elab::{ElabError, ElabErrorKind, Environment, Elaborator};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
@@ -325,17 +326,17 @@ fn elaborate_and_send(path: FileRef, send: FSender<((), Arc<Environment>)>) ->
 ///
 /// # Arguments
 ///
-/// `mm0-rs compile in.mm1 out.mmb`, where:
+/// `mm0-rs compile <in.mm1> [out.mmb]`, where:
 ///
 /// - `in.mm1` is the MM1 (or MM0) file to elaborate
 /// - `out.mmb` (or `out.mmu`) is the MMB file to generate, if the elaboration is
 ///   successful. The file extension is used to determine if we are outputting
-///   binary.
-pub fn main(mut args: impl Iterator<Item=String>) -> io::Result<()> {
-  let path = args.next().expect("expected a .mm1 file");
+///   binary. If this argument is omitted, the input is only elaborated.
+pub fn main(args: &ArgMatches) -> io::Result<()> {
+  let path = args.value_of("INPUT").unwrap();
   let (path, file) = VFS_.get_or_insert(FileRef::new(fs::canonicalize(path)?))?;
   let env = block_on(elaborate(path.clone()))?;
-  if let Some(out) = args.next() {
+  if let Some(out) = args.value_of("OUTPUT") {
     let bin = !out.ends_with(".mmu");
     use {fs::File, io::BufWriter};
     let mut w = BufWriter::new(File::create(out)?);

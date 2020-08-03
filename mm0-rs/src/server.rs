@@ -3,7 +3,6 @@
 //! [`Connection`]: ../../lsp_server/struct.Connection.html
 
 use std::{fs, io};
-
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
@@ -20,6 +19,7 @@ use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 use lsp_types::*;
 use crossbeam::{channel::{SendError, RecvError}};
+use clap::ArgMatches;
 use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
@@ -887,8 +887,8 @@ fn response_err(code: ErrorCode, message: impl Into<String>) -> ResponseError {
   ResponseError {code: code as i32, message: message.into(), data: None}
 }
 
-pub fn main(mut args: impl Iterator<Item=String>) {
-  if args.next().map_or(false, |s| s == "--debug") {
+pub fn main(args: &ArgMatches) {
+  if args.is_present("debug") {
     std::env::set_var("RUST_BACKTRACE", "1");
     use {simplelog::*, std::fs::File};
     let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
