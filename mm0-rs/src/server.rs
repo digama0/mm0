@@ -1,6 +1,6 @@
 //! Implements the bridge between mm0-rs and an editor via an lsp [`Connection`]
 //!
-//! [`Connection`]: ../lsp_server/struct.Connection.html
+//! [`Connection`]: ../../lsp_server/struct.Connection.html
 
 use std::{fs, io};
 
@@ -188,7 +188,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     }
 
     use std::fmt::Write;
-    let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);        
+    let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
     if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap(); }
     if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap(); }
     if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap(); }

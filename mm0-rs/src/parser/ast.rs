@@ -85,7 +85,7 @@ pub enum Delimiter {
   LeftRight(Box<[u8]>, Box<[u8]>),
 }
 
-/// A dollar-delimited formula : $ .. $.
+/// A dollar-delimited formula: $ .. $.
 /// `f.0` is the span of the entire formula including the delimiters, and
 /// `f.inner()` is the span of the interior (excluding `$` but including any inner whitespace).
 #[derive(Copy, Clone, Debug)]
@@ -112,12 +112,36 @@ pub struct Const {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DeclKind { Term, Axiom, Thm, Def }
 
-/// Bound |-> {x}, Reg |-> (x), Dummy |-> (.x), Anon |-> (_)
+/// The "kind" of a binder, denoted using braces vs parentheses on the binder,
+/// as well as the prefix dot on dummies.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum LocalKind { Bound, Reg, Dummy, Anon }
+pub enum LocalKind {
+  /// A bound variable like `{x: s}` denotes a variable that can be bound under quantifiers,
+  /// or a first order variable. Bound variables cannot have dependencies.
+  Bound,
+  /// A regular variable, or second order variable, like `(ph: s)` or `(ph: s x y)`,
+  /// denotes a variable that can be directly substituted for an expression.
+  /// Regular variables cannot be bound under quantifiers, but can depend on previous
+  /// bound variables (but not dummy variables).
+  Reg,
+  /// A dummy variable is denoted `(.x: s)` or `{.x: s}` (the enclosing binder type is
+  /// ignored), and denotes a bound variable that is used only in the definition/proof ot
+  /// the `def`/`theorem`.
+  Dummy,
+  /// An anonymous variable is denoted `(_: s)` or `{_: s}`, and is a regular variable
+  /// (the enclosing binder is ignored). Anonymous variables cannot be referred to in the
+  /// statement or proof. Binders declared using arrow syntax like `term foo: nat > nat;`
+  /// are equivalent to `term foo (_: nat): nat;` and also declare anonymous variables.
+  Anon
+}
 
 impl LocalKind {
-  /// Return true iff self is a LocalKind::Bound or LocalKind::Dummy
+  /// Return true iff self is a bound variable, either [`Bound`]
+  /// for inputs to the function, or [`Dummy`] for variables local to the
+  /// def/proof.
+  ///
+  /// [`Bound`]: ast/enum.LocalKind.html#variant.Bound
+  /// [`Dummy`]: ast/enum.LocalKind.html#variant.Dummy
   pub fn is_bound(self) -> bool {
     match self {
       LocalKind::Bound | LocalKind::Dummy => true,
@@ -126,10 +150,12 @@ impl LocalKind {
   }
 }
 
-/// A type with zero or more dependencies. IE wff in (ph : wff), or wff x y in (ph : wff x y)
+/// A type with zero or more dependencies. IE `wff` in `(ph: wff)`, or `wff x y` in `(ph: wff x y)`
 #[derive(Clone, Debug)]
 pub struct DepType {
+  /// The span of the sort part. That is, `"wff"` in `wff x y`.
   pub sort: Span,
+  /// The span of the list of dependencies. That is, `["x", "y"]` in `wff x y`.
   pub deps: Vec<Span>,
 }
 
@@ -158,56 +184,123 @@ impl Type {
 }
 
 /// A list of variables with a type or formula annotation.
-/// A binder exists in a binder group such as `(ph ps : wff)` or `{x y .z : set}`,
+/// A binder exists in a binder group such as `(ph ps: wff)` or `{x y .z: set}`,
 /// and `bi.span` is the span of the enclosing binder group.
-/// In an arrow sequence like `wff > ...`, equivalent to `(_ : wff)`, the
-/// binder group's span is `wff` and the anonymous local name has no span.
 /// Detailed information about binder syntax can be found in the [declaration grammar].
 ///
 /// [declaration grammar]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#declarations
 #[derive(Clone, Debug)]
 pub struct Binder {
+  /// The span of the enclosing binder group. For example both `ph` and `ps` have
+  /// span `"(ph ps: wff)"` for  `(ph ps: wff)`. In an arrow sequence like `wff x > nat`,
+  /// the span is `"wff x"` for the implicit `(_: wff x)` binder.
   pub span: Span,
+  /// The span of the local avariable, for example `"ph"` in `(ph ps: wff)` and `"x"` in `{.x: nat}`.
+  /// It is `None` for anonymous binders declared using arrow notation.
   pub local: Option<Span>,
+  /// The kind of binder being declared. See [`LocalKind`] for information on the different
+  /// binder kinds.
+  ///
+  /// [`LocalKind`]: enum.LocalKind.html
   pub kind: LocalKind,
+  /// The type of the binder, a [`DepType`] for variables and a [`Formula`] for hypotheses.
+  /// The type is `None` for variables that are being type-inferred (not valid in MM0 mode).
+  ///
+  /// [`DepType`]: struct.DepType.html
+  /// [`Formula`]: struct.Formula.html
   pub ty: Option<Type>,
 }
 
-/// A lisp S-Expression as a Span and SExprKind
+/// A lisp s-expression. See [`SExprKind`] for the different kinds of s-expression.
+///
+/// [`SExprKind`]: enum.SExprKind.html
 #[derive(Clone, Debug)]
 pub struct SExpr {
   pub span: Span,
   pub k: SExprKind,
 }
 
-/// Lisp atoms. The `Ident` atom indicates that the atom text is the span,
+/// Lisp atom kind.
+///
+/// The `Ident` atom indicates that the atom text is the span,
 /// and the `Quote`, `Unquote` and `Nfx` atoms have data `quote`, `unquote`
 /// and `:nfx` respectively, but the span does not contain this text because
 /// these atoms are created implicitly via keywords like `'`.
 #[derive(Copy, Clone, Debug)]
 pub enum Atom { Ident, Quote, Unquote, Nfx }
 
-/// The data portion of an S-Expression.
+/// The data portion of an s-expression.
 ///
-/// Notable additions over a normal Lisp are Formula, which are just in-line formulas,
-/// and DottedList, which provides some (slightly confusing at first but actually really nice)
-/// syntax sugar for defs and functions, which you can read about in the `mm1.md` file's
-/// [syntax forms] section.
+/// Notable additions over normal lisp/scheme are
+/// `Formula`, for MM0 formulas, and the notations `{x op y}` for `(op x y)` and
+/// `(f x @ g @ h y)` for `(f x (g (h y)))` (not represented in this data structure
+/// because the transformation applies during parsing).
+/// See also the [syntax forms] section of `mm1.md` for more information on MM1 lisp syntax.
 ///
 /// [syntax forms]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#syntax-forms
 #[derive(Clone, Debug)]
 pub enum SExprKind {
+  /// An atom, an unquoted string of identifier characters like `foo`. These are usually
+  /// interpreted as variable accesses or variable declarations, unless they appear inside
+  /// a quoted context, in which case they evaluate to themselves as a [`LispKind::Atom`].
+  ///
+  /// [`LispKind::Atom`]: ../../elab/lisp/enum.LispKind.html#variant.Atom
   Atom(Atom),
+  /// A proper list, like `(a b c)`. This is normally interpreted as a function application,
+  /// unless the head of the list is a [`Syntax`], in which case it has special semantics.
+  /// The empty list `()` evaluates to itself, and when quoted a list evaluates to a
+  /// [`LispKind::List`] of its contents.
+  ///
+  /// [`Syntax`]: ../../elab/lisp/enum.Syntax.html
+  /// [`LispKind::List`]: ../../elab/lisp/enum.LispKind.html#variant.List
   List(Vec<SExpr>),
+  /// A dotted list, like `(a b c . d)`. (The dot must appear at the second to last
+  /// position as in the example, but there may be one or more subexpressions before the
+  /// dot.) Normally, a dotted list means
+  ///
+  /// [`Syntax`]: ../../elab/lisp/enum.Syntax.html
+  /// [`LispKind::List`]: ../../elab/lisp/enum.LispKind.html#variant.List
   DottedList(Vec<SExpr>, Box<SExpr>),
+  /// An unsigned number literal like `12345` or `0xdeadbeef`. These parse into bignums;
+  /// there is no fixed size integer type in MM1 lisp.
   Number(BigUint),
+  /// A string literal like `"foo"`. Supports `\\`, `\n`, `\r`, and `\"` string escapes.
   String(ArcString),
+  /// A boolean literal, `#t` or `#f`.
   Bool(bool),
+  /// An undef literal `#undef`. (This is used as the return value of functions that don't
+  /// return anything).
   Undef,
+  /// An MM0 formula literal like `$ 2 + 2 $`. In both normal and quoted mode, this is parsed
+  /// according to the current math parser. Formula literals can contain antiquotations
+  /// to splice in lisp expressions.
   Formula(Formula),
 }
 
-// separated from curly_list for testing
+/// Performs "curly transformation", turning `{x op y op z}` into `(op x y z)`.
+///
+/// A curly list is valid if
+/// - it is a proper list, and
+/// - it has at most two elements (in which case it is transformed to itself), or
+/// - it has an odd number of elements and the elements at all odd numbered positions compare equal.
+///   (in which case the element at position 1 is moved to the front, and the later
+///   copies of it are removed).
+///
+/// Invalid curly lists like `{x op y op2 z}` are converted to `(:nfx x op y op2 z)`.
+///
+/// # Parameters
+///
+/// - `es`: The list of elements to transform, such as `[x, op, y, op, z]`
+/// - `no_dot`: True if this is a proper list. A dotted list like `{x op y . z}` is not a
+///   valid curly list, and is transformed to `(:nfx x op y . z)`.
+/// - `eq`: An equality comparator for elements of the list.
+/// - `nfx`: A constructor for the `:nfx` atom, in case this is not a valid curly list.
+///
+/// # Returns
+///
+/// Returns nothing, but modifies the input `es` to reorder the elements so that the
+/// operation at odd positions comes first and the elements at even positions come later,
+/// for example `[x, op, y, op, z]` becomes `[op, x, y, z]`.
 fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool, nfx: impl FnOnce() -> T) {
   let n = es.len();
   if n > 2 {
@@ -299,16 +392,32 @@ impl EnvDisplay for SExpr {
 /// [`DeclKind`]: enum.DeclKind.html
 #[derive(Clone)]
 pub struct Decl {
+  /// The declaration modifiers: [`abstract`] or [`local`] for `def`,
+  /// and [`pub`] for `theorem`.
   pub mods: Modifiers,
+  /// The declaration kind: `axiom`, `term`, `def`, `theorem`.
   pub k: DeclKind,
+  /// The span of the identifier being defined (the `foo` in `def foo ...`).
   pub id: Span,
+  /// The list of binders
   pub bis: Vec<Binder>,
+  /// The return type, or `None` for type-inferred (not valid in MM0 mode).
   pub ty: Option<Type>,
+  /// The definition of the `def`, or the proof of the `theorem`, as an
+  /// s-expression.
   pub val: Option<SExpr>,
 }
 
+/// A precedence literal, such as `123` or `max`. These are used in notations like
+/// `notation add = ($+$:23)` or `infix add: $+$ prec 23;`.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Prec { Prec(u32), Max }
+pub enum Prec {
+  /// A finite precedence, an unsigned integer like `23`.
+  Prec(u32),
+  /// The maximum precedence, the precedence class containing atomic literals
+  /// and parentheses.
+  Max
+}
 
 impl fmt::Display for Prec {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -323,6 +432,8 @@ impl fmt::Debug for Prec {
 }
 
 
+/// A simple notation, one of `prefix`, `infixl`, and `infixr` (which have the same
+/// grammar after the initial keyword).
 #[derive(Clone)]
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
 
@@ -332,42 +443,95 @@ pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
 /// [`GenNota`]: struct.GenNota.html
 #[derive(Clone)]
 pub struct SimpleNota {
+  /// The initial notation keyword, one of `prefix`, `infixl`, or `infixr`.
   pub k: SimpleNotaKind,
+  /// The span of the identifier, the `"foo"` in `infix foo: $++$ prec 25;`.
   pub id: Span,
+  /// The constant, the `$++$` in `infix foo: $++$ prec 25;`.
   pub c: Const,
+  /// The notation precedence level, the `25` in `infix foo: $++$ prec 25;`.
   pub prec: Prec,
 }
 
+/// A literal in a notation, either a constant with associated precedence, or a variable.
+///
+/// For example in `notation ab {x} (ph) = (${$:max) x ($|$:50) ph ($}$:0);` there
+/// are 5 notation literals, `(${$:0)`, `x`, `($|$:50)`, `ph`, `($}$:0)`.
 #[derive(Clone)]
 pub enum Literal {
+  /// A constant with a precedence, such as `($|$:50)`.
   Const(Const, Prec),
+  /// A variable denoting a place for a subexpression, such as `x`.
   Var(Span),
 }
 
-/// Represents a notation item declared with the 'notation' keyword. Notation declared with
-/// the prefix, infixl, and infixr keywords are represented by [`SimpleNota`].
+/// Represents a notation item declared with the `notation` keyword. Notation declared with
+/// the `prefix`, `infixl`, and `infixr` keywords are represented by [`SimpleNota`].
 ///
 /// [`SimpleNota`]: struct.SimpleNota.html
 #[derive(Clone)]
 pub struct GenNota {
+  /// The span of the identifier, the `foo` in `notation foo ...`.
   pub id: Span,
+  /// The binder list. The `notation` command mimics the `def` syntax, so it accepts
+  /// binders in the same way, but these are only used in order to name the parameters
+  /// for use in [`Literal::Var`].
+  ///
+  /// [`Literal::Var`]: enum.Literal.html#variant.Var
   pub bis: Vec<Binder>,
+  /// The return type. This is included for consistency with `def` but is unused.
   pub ty: Option<Type>,
+  /// The list of notation literals.
   pub lits: Vec<Literal>,
+  /// The optional notation precedence, needed for generalized infix notations like
+  /// `x +[G] y`. This is the `50 lassoc` `notation ... = ... : 50 lassoc;`.
+  /// If provided, it is `Some((prec, right))` where `prec` is the precedence
+  /// and `right` is true if it is right associative.
   pub prec: Option<(Prec, bool)>
 }
 
+/// A statement in the file. Every statement ends with a `;`, and an MM0/MM1 file
+/// is a list of statements.
 #[derive(Clone)]
 pub enum StmtKind {
+  /// A sort delaration like `pure sort foo;`.
   Sort(Span, Modifiers),
+  /// A delaration of an `axiom`, `term`, `def`, or `theorem`.
   Decl(Decl),
+  /// A `delimiter` delaration.
   Delimiter(Delimiter),
+  /// A `prefix`, `infixl` or `infixr` delaration.
   SimpleNota(SimpleNota),
-  Coercion { id: Span, from: Span, to: Span },
+  /// A `coercion` declaration.
+  Coercion {
+    /// The name of the declaration, the `foo` in `coercion foo: s > t;`.
+    id: Span,
+    /// The source sort of the coercion, the `s` in `coercion foo: s > t;`.
+    from: Span,
+    /// The target sort of the coercion, the `t` in `coercion foo: s > t;`.
+    to: Span
+  },
+  /// A `notation` declaration.
   Notation(GenNota),
-  Inout { out: bool, k: Span, hs: Vec<SExpr> },
+  /// An `input` or `output` declaration, such as `output string: foo bar $ baz $;`.
+  /// (These are parsed but not otherwise currently supported in MM1.)
+  Inout {
+    /// True if this is an `output` declaration.
+    out: bool,
+    /// The span for the output kind, `"string"` in `output string: ...`
+    k: Span,
+    /// The list of expressions to output
+    hs: Vec<SExpr>
+  },
+  /// An annotation on another statement, like `@(foo) sort bar;`. The
+  /// annotation is a lisp s-expression.
   Annot(SExpr, Box<Stmt>),
+  /// A `do` block like `do { (print 1) };`. This allows the evaluation of lisp
+  /// code, and definitions made in a `do` block populate the global context.
   Do(Vec<SExpr>),
+  /// An `import` statement like `import "file.mm1";`. The span gives
+  /// the string literal `"file.mm1"`, and the string is the result of parsing
+  /// (after interpreting string escapes).
   Import(Span, String),
 }
 
@@ -383,6 +547,11 @@ pub struct Stmt {
 ///
 /// [`Stmt`]: struct.Stmt.html
 pub struct AST {
+  /// The source [`LinedString`] for the file. This is needed in order to interpret all the
+  /// [`Span`]s in the AST.
+  ///
+  /// [`LinedString`]: ../../lined_string/struct.LinedString.html
+  /// [`Span`]: ../../util/struct.Span.html
   pub source: Arc<LinedString>,
   pub imports: Vec<(Span, String)>,
   pub stmts: Vec<Stmt>,
@@ -390,6 +559,12 @@ pub struct AST {
 }
 
 impl LinedString {
+  /// Given an [`Atom`] and associated `Span`, such as those associated with
+  /// [`SExprKind::Atom`], construct a string slice with the string contents
+  /// of the atom.
+  ///
+  /// [`Atom`]: ../parser/ast/enum.Atom.html
+  /// [`SExprKind::Atom`]: ../parser/ast/enum.SExprKind.html#variant.Atom
   pub fn span_atom(&self, sp: Span, a: Atom) -> &str {
     match a {
       Atom::Ident => &self[sp],
@@ -401,8 +576,17 @@ impl LinedString {
 }
 
 impl AST {
+  /// Return the string corresponding to a span in this AST's source.
   pub fn span(&self, s: Span) -> &str { &self.source[s] }
+  /// Return the string corresponding to an atom.
   pub fn span_atom(&self, sp: Span, a: Atom) -> &str { self.source.span_atom(sp, a) }
+  /// Given a character index in the file, return `(idx, out)` where
+  /// `idx` is the smallest index of a statement which does not end before the
+  /// target position, and `out` is the character index of the end of `stmt[idx-1]`.
+  ///
+  /// (In other words, `out <= pos` is maximal such that `out` is the end of
+  /// statement `idx-1`. This is a lower bound on the statements that are unaffected
+  /// by a change at position `pos`.)
   pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
     match self.stmts.binary_search_by_key(&pos, |stmt| stmt.span.end) {
       Ok(i) => (i+1, pos),
