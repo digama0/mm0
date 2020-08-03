@@ -10,7 +10,7 @@
 //! [`AST`]: struct.AST.html
 //! [`Stmt`]: struct.Stmt.html
 //! [`StmtKind`]: enum.StmtKind.html
-//! [`Span`]: ../util/struct.Span.html
+//! [`Span`]: ../../util/struct.Span.html
 
 use std::sync::Arc;
 use std::fmt::{self, Display};
@@ -140,8 +140,8 @@ impl LocalKind {
   /// for inputs to the function, or [`Dummy`] for variables local to the
   /// def/proof.
   ///
-  /// [`Bound`]: ast/enum.LocalKind.html#variant.Bound
-  /// [`Dummy`]: ast/enum.LocalKind.html#variant.Dummy
+  /// [`Bound`]: enum.LocalKind.html#variant.Bound
+  /// [`Dummy`]: enum.LocalKind.html#variant.Dummy
   pub fn is_bound(self) -> bool {
     match self {
       LocalKind::Bound | LocalKind::Dummy => true,

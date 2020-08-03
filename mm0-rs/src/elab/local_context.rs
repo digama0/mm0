@@ -408,12 +408,12 @@ enum InferBinder {
 }
 
 impl Elaborator {
-  /// Elaborate a binder's [DepType] with a given [LocalKind]. Enforces the requirements that (1) 
+  /// Elaborate a binder's [`DepType`] with a given [`LocalKind`]. Enforces the requirements that (1)
   /// bound and dummy variables do not have dependencies, (2) regular variables do not depend
   /// on dummy variables. The bool in the result's pair indicates whether the variable is a dummy variable.
   ///
-  /// [DepType]: ../parser/ast/struct.DepType.html 
-  /// [LocalKind]: ../parser/ast/enum.LocalKind.html
+  /// [`DepType`]: ../parser/ast/struct.DepType.html
+  /// [`LocalKind`]: ../parser/ast/enum.LocalKind.html
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;

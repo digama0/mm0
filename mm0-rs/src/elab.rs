@@ -43,7 +43,7 @@ pub enum ElabErrorKind {
   /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
   /// related to the error, along with short descriptions.
   ///
-  /// [`BoxError`]: type.BoxError.html
+  /// [`BoxError`]: ../util/type.BoxError.html
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
 }
 impl ElabErrorKind {
@@ -110,7 +110,7 @@ impl ElabError {
 
   /// Make an elaboration error from a position and anything that can be converted to a [`BoxError`].
   ///
-  /// [`BoxError`]: type.BoxError.html
+  /// [`BoxError`]: ../util/type.BoxError.html
   pub fn new_e(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
     ElabError::new(pos, ElabErrorKind::Boxed(e.into(), None))
   }
