@@ -1,5 +1,6 @@
 use std::mem;
-use std::collections::hash_map::HashMap;
+use std::sync::Arc;
+use std::collections::HashMap;
 use num::BigInt;
 use crate::util::{Span, FileSpan};
 use crate::elab::{
@@ -9,11 +10,24 @@ use crate::elab::{
   local_context::try_get_span};
 
 pub struct Arg {
-  name: Option<(FileSpan, AtomID)>,
-  ghost: bool,
-  ty: LispVal,
+  pub name: Option<(FileSpan, AtomID)>,
+  pub ghost: bool,
+  pub ty: LispVal,
 }
 
+impl PartialEq<Arg> for Arg {
+  fn eq(&self, other: &Arg) -> bool {
+    let b = match (&self.name, &other.name) {
+      (None, None) => true,
+      (&Some((_, a)), &Some((_, b))) => a == b,
+      _ => false
+    };
+    b && self.ghost == other.ghost && self.ty == other.ty
+  }
+}
+impl Eq for Arg {}
+
+#[derive(PartialEq, Eq)]
 pub enum VariantType {
   Down,
   UpLt(LispVal),
@@ -22,19 +36,19 @@ pub enum VariantType {
 pub type Variant = Option<(LispVal, VariantType)>;
 
 pub struct Invariant {
-  name: AtomID,
-  ghost: bool,
-  ty: Option<LispVal>,
-  val: Option<Expr>,
+  pub name: AtomID,
+  pub ghost: bool,
+  pub ty: Option<LispVal>,
+  pub val: Option<Expr>,
 }
 
 pub struct Block {
-  muts: Box<[AtomID]>,
-  stmts: Box<[Expr]>
+  pub muts: Box<[AtomID]>,
+  pub stmts: Box<[Expr]>
 }
 
 pub enum TuplePattern {
-  Name(AtomID),
+  Name(AtomID, Option<FileSpan>),
   Typed(Box<TuplePattern>, LispVal),
   Tuple(Box<[TuplePattern]>),
 }
@@ -62,31 +76,45 @@ pub enum Expr {
   Hole(FileSpan),
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum ProcKind { Func, Proc, ProcDecl, Intrinsic }
 pub struct Proc {
-  pure: bool,
-  intrinsic: bool,
-  name: AtomID,
-  args: Box<[Arg]>,
-  rets: Box<[Arg]>,
-  variant: Variant,
-  body: Block,
+  pub kind: ProcKind,
+  pub name: AtomID,
+  pub span: Option<FileSpan>,
+  pub args: Box<[Arg]>,
+  pub rets: Box<[Arg]>,
+  pub variant: Variant,
+  pub body: Block,
+}
+
+impl Proc {
+  pub fn eq_decl(&self, other: &Proc) -> bool {
+    self.name == other.name &&
+    self.args == other.args &&
+    self.rets == other.rets &&
+    self.variant == other.variant &&
+    self.body.muts == other.body.muts
+  }
 }
 
 pub struct Field {
-  name: AtomID,
-  ghost: bool,
-  ty: LispVal,
+  pub name: AtomID,
+  pub ghost: bool,
+  pub ty: LispVal,
 }
 
 pub enum AST {
-  Proc(Proc),
+  Proc(Arc<Proc>),
   Global {lhs: TuplePattern, rhs: Option<Box<Expr>>},
   Const {lhs: TuplePattern, rhs: Box<Expr>},
-  Typedef(AtomID, Box<[Arg]>, LispVal),
-  Struct(AtomID, Box<[Arg]>, Box<[Field]>),
+  Typedef(AtomID, Option<FileSpan>, Box<[Arg]>, LispVal),
+  Struct(AtomID, Option<FileSpan>, Box<[Arg]>, Box<[Field]>),
 }
 
-
+impl AST {
+  pub fn proc(p: Proc) -> AST { AST::Proc(Arc::new(p)) }
+}
 macro_rules! make_keywords {
   {$($x:ident: $e:expr,)*} => {
     #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -104,20 +132,8 @@ macro_rules! make_keywords {
 
 make_keywords! {
   Add: "+",
-  And: "and",
-  Assert: "assert",
-  Array: "array",
   Arrow: "=>",
-  BAnd: "band",
   Begin: "begin",
-  Bool: "bool",
-  BNot: "bnot",
-  BOr: "bor",
-  BXor: "bxor",
-  I8: "i8",
-  I16: "i16",
-  I32: "i32",
-  I64: "i64",
   Colon: ":",
   ColonEq: ":=",
   Const: "const",
@@ -126,32 +142,17 @@ make_keywords! {
   Finish: "finish",
   Ghost: "ghost",
   Global: "global",
-  Index: "index",
   Intrinsic: "intrinsic",
   Invariant: "invariant",
   If: "if",
   Le: "<=",
-  List: "list",
   Lt: "<",
   Mut: "mut",
-  Not: "not",
   Or: "or",
-  Own: "own",
   Proc: "proc",
-  Pun: "pun",
-  Ref: "&",
-  RefMut: "&mut",
-  Slice: "slice",
   Struct: "struct",
   Switch: "switch",
   Typedef: "typedef",
-  TypeofBang: "typeof!",
-  Typeof: "typeof",
-  U8: "u8",
-  U16: "u16",
-  U32: "u32",
-  U64: "u64",
-  Union: "union",
   Variant: "variant",
   While: "while",
   With: "with",
@@ -225,7 +226,7 @@ impl<'a> Parser<'a> {
 
   fn parse_tuple_pattern(&self, e: LispVal) -> Result<TuplePattern> {
     Ok(match &*e.unwrapped_arc() {
-      &LispKind::Atom(a) => TuplePattern::Name(a),
+      &LispKind::Atom(a) => TuplePattern::Name(a, e.fspan()),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
         if let Some((Keyword::Colon, mut u)) = self.head_keyword(&e) {
           if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.exactly(0)) {
@@ -286,10 +287,10 @@ impl<'a> Parser<'a> {
 
   fn parse_invariant_decl(&self, ghost: bool, e: LispVal) -> Result<Invariant> {
     match self.parse_decl(e.clone())? {
-      (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(name) = *v {
+      (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(name, _) = *v {
         return Ok(Invariant {name, ghost, ty: Some(ty), val: val.map(|v| *v)})
       },
-      (TuplePattern::Name(name), val) =>
+      (TuplePattern::Name(name, _), val) =>
         return Ok(Invariant {name, ghost, ty: None, val: val.map(|v| *v)}),
       _ => {}
     }
@@ -462,7 +463,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_proc(&self, pure: bool, intrinsic: bool, mut u: Uncons) -> Result<Proc> {
+  fn parse_proc(&self, mut kind: ProcKind, mut u: Uncons) -> Result<Proc> {
     let e = match u.next() {
       None => return Err(ElabError::new_e(self.try_get_span(&u.as_lisp()), "func/proc: syntax error")),
       Some(e) => e,
@@ -470,8 +471,8 @@ impl<'a> Parser<'a> {
     let mut muts = vec![];
     let mut args = vec![];
     let mut rets = vec![];
-    let name = match &*e.unwrapped_arc() {
-      &LispKind::Atom(a) => a,
+    let (name, span) = match &*e.unwrapped_arc() {
+      &LispKind::Atom(a) => (a, e.fspan()),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
         let mut u = Uncons::from(e.clone());
         let e = u.next().ok_or_else(||
@@ -483,42 +484,45 @@ impl<'a> Parser<'a> {
           self.parse_arg(e, &mut args, Some(&mut muts))?
         }
         while let Some(e) = u.next() { self.parse_arg(e, &mut rets, None)? }
-        name
+        (name, e.fspan())
       },
       _ => Err(ElabError::new_e(self.try_get_span(&e), "func/proc: syntax error"))?
     };
     let mut body = vec![];
     Ok(Proc {
-      pure, intrinsic, name,
+      name, span,
       args: args.into_boxed_slice(),
       rets: rets.into_boxed_slice(),
       variant: if let Some(e) = u.next() {
-        if intrinsic {
-          Err(ElabError::new_e(self.try_get_span(&e), "intrinsic: unexpected body"))?
+        match kind {
+          ProcKind::Intrinsic => Err(ElabError::new_e(self.try_get_span(&e), "intrinsic: unexpected body"))?,
+          ProcKind::ProcDecl => kind = ProcKind::Proc,
+          _ => {}
         }
         let v = self.parse_variant(&e);
         if v.is_none() {body.push(self.parse_expr(e)?)}
         for e in u {body.push(self.parse_expr(e)?)}
         v
       } else {None},
+      kind,
       body: Block {muts: muts.into(), stmts: body.into_boxed_slice()}
     })
   }
 
-  fn parse_name_and_args(&self, e: LispVal) -> Result<(AtomID, Vec<Arg>)> {
+  fn parse_name_and_args(&self, e: LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<Arg>)> {
     let mut args = vec![];
-    let name = match &*e.unwrapped_arc() {
-      &LispKind::Atom(a) => a,
+    let (name, sp) = match &*e.unwrapped_arc() {
+      &LispKind::Atom(a) => (a, e.fspan()),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
         let mut u = Uncons::from(e.clone());
-        let a = u.next().and_then(|e| e.as_atom()).ok_or_else(||
-          ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?;
+        let e = u.next().ok_or_else(|| ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?;
+        let a = e.as_atom().ok_or_else(|| ElabError::new_e(self.try_get_span(&e), "typedef: expected an atom"))?;
         for e in u { self.parse_arg(e, &mut args, None)? }
-        a
+        (a, e.fspan())
       },
       _ => Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?
     };
-    Ok((name, args))
+    Ok((name, sp, args))
   }
 
   fn parse_field(&self, ghost: bool, e: LispVal) -> Result<Field> {
@@ -533,14 +537,13 @@ impl<'a> Parser<'a> {
     }
   }
 
-  pub fn parse_ast(&self, e: &LispVal) -> Result<Vec<AST>> {
+  pub fn parse_ast(&self, ast: &mut Vec<AST>, e: &LispVal) -> Result<()> {
     let mut u = Uncons::from(e.clone());
-    let mut ast = vec![];
     while let Some(e) = u.next() {
       match self.head_keyword(&e) {
-        Some((Keyword::Proc, u)) => ast.push(AST::Proc(self.parse_proc(false, false, u)?)),
-        Some((Keyword::Func, u)) => ast.push(AST::Proc(self.parse_proc(true, false, u)?)),
-        Some((Keyword::Intrinsic, u)) => ast.push(AST::Proc(self.parse_proc(false, true, u)?)),
+        Some((Keyword::Proc, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::ProcDecl, u)?)),
+        Some((Keyword::Func, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Func, u)?)),
+        Some((Keyword::Intrinsic, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Intrinsic, u)?)),
         Some((Keyword::Global, u)) => for e in u {
           let (lhs, rhs) = self.parse_decl(e)?;
           ast.push(AST::Global {lhs, rhs})
@@ -554,15 +557,15 @@ impl<'a> Parser<'a> {
         },
         Some((Keyword::Typedef, mut u)) =>
           if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.exactly(0)) {
-            let (name, args) = self.parse_name_and_args(e)?;
-            ast.push(AST::Typedef(name, args.into_boxed_slice(), ty));
+            let (name, sp, args) = self.parse_name_and_args(e)?;
+            ast.push(AST::Typedef(name, sp, args.into_boxed_slice(), ty));
           } else {
             Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?
           },
         Some((Keyword::Struct, mut u)) => {
           let e = u.next().ok_or_else(||
             ElabError::new_e(self.try_get_span(&e), "struct: expecting name"))?;
-          let (name, args) = self.parse_name_and_args(e)?;
+          let (name, sp, args) = self.parse_name_and_args(e)?;
           let mut fields = vec![];
           for e in u {
             if let Some((Keyword::Ghost, u)) = self.head_keyword(&e) {
@@ -570,7 +573,7 @@ impl<'a> Parser<'a> {
             }
             fields.push(self.parse_field(false, e)?);
           }
-          ast.push(AST::Struct(name, args.into_boxed_slice(), fields.into_boxed_slice()));
+          ast.push(AST::Struct(name, sp, args.into_boxed_slice(), fields.into_boxed_slice()));
         }
         _ => Err(ElabError::new_e(self.try_get_span(&e), "MMC: unknown top level item"))?
       }
@@ -578,6 +581,6 @@ impl<'a> Parser<'a> {
     if !u.exactly(0) {
       Err(ElabError::new_e(self.try_get_span(&e), "MMC: syntax error"))?
     }
-    Ok(ast)
+    Ok(())
   }
 }

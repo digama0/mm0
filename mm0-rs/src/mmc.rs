@@ -7,24 +7,35 @@
 //!
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
 pub mod parser;
+pub mod predef;
+pub mod nameck;
 
-use std::mem;
 use std::collections::hash_map::HashMap;
-use num::BigInt;
-use crate::util::{Span, FileSpan};
+use crate::util::FileSpan;
 use crate::elab::{
   Result, Elaborator, ElabError,
-  environment::{AtomID, Environment, Remap},
-  lisp::{LispKind, LispVal, Uncons, LispRemapper},
-  local_context::try_get_span};
-use parser::{Keyword, Parser, AST};
+  environment::{AtomID, Remap},
+  lisp::{LispVal, LispRemapper}};
+use parser::{Keyword, Parser};
+use nameck::Entity;
+use predef::PredefMap;
 
 impl<R> Remap<R> for Keyword {
   fn remap(&self, _: &mut R) -> Self { *self }
 }
 
+impl<R> Remap<R> for Entity {
+  fn remap(&self, _: &mut R) -> Self { self.clone() }
+}
+
+impl<R, A: Remap<R>> Remap<R> for PredefMap<A> {
+  fn remap(&self, r: &mut R) -> Self { self.map(|x| x.remap(r)) }
+}
+
 pub struct Compiler {
   keywords: HashMap<AtomID, Keyword>,
+  names: HashMap<AtomID, Entity>,
+  predef: PredefMap<AtomID>,
 }
 
 impl std::fmt::Debug for Compiler {
@@ -35,20 +46,33 @@ impl std::fmt::Debug for Compiler {
 
 impl Remap<LispRemapper> for Compiler {
   fn remap(&self, r: &mut LispRemapper) -> Self {
-    Compiler { keywords: self.keywords.remap(r) }
+    Compiler {
+      keywords: self.keywords.remap(r),
+      names: self.names.remap(r),
+      predef: self.predef.remap(r),
+    }
   }
 }
 
 impl Compiler {
   pub fn new(e: &mut Elaborator) -> Compiler {
-    Compiler {keywords: e.env.make_keywords()}
+    Compiler {
+      keywords: e.env.make_keywords(),
+      names: Compiler::make_names(&mut e.env),
+      predef: PredefMap::new(|s| e.env.get_atom(s)),
+    }
   }
 
   pub fn add(&mut self, elab: &mut Elaborator, fsp: FileSpan, it: impl Iterator<Item=LispVal>) -> Result<()> {
-    let mut p = Parser {elab, kw: &self.keywords, fsp};
+    let mut p = Parser {elab, kw: &self.keywords, fsp: fsp.clone()};
+    let mut ast = vec![];
     for e in it {
       if let Some(fsp) = e.fspan() {p.fsp = fsp}
-      let _ast = p.parse_ast(&e)?;
+      p.parse_ast(&mut ast, &e)?;
+    }
+    let fsp = p.fsp;
+    for a in &ast {
+      self.nameck(&fsp, a)?;
     }
     Ok(())
   }
