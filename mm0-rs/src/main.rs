@@ -10,7 +10,17 @@ mod parser;
 mod compiler;
 mod joiner;
 mod elab;
+/// Import and export functionality for MMB binary proof format
+///
+/// See [`mm0-c/verifier.c`] for information on the MMB format.
+///
+/// [`mm0-c/verifier.c`]: https://github.com/digama0/mm0/blob/master/mm0-c/verifier.c
 mod mmb { pub mod export; }
+/// Import and export functionality for MMU ascii proof format
+///
+/// See [The `.mmu` file format] for information on the MMU format.
+///
+/// [The `.mmu` file format]: https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#the-mmu-file-format
 mod mmu { pub mod import; pub mod export; }
 mod mmc;
 
@@ -34,7 +44,8 @@ fn main() -> std::io::Result<()> {
       (@arg OUTPUT: "Sets the output file (.mmb or .mmu)"))
     (@subcommand join =>
       (about: "Join MM1/MM0 files with imports by concatenation")
-      (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")))
+      (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
+      (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted")))
     .get_matches();
 
   match m.subcommand() {

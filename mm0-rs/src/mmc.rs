@@ -1,5 +1,11 @@
 // This module may become a plugin in the future, but for now let's avoid the complexity
 // of dynamic loading.
+
+//! Compiler tactic for the metamath C language.
+//!
+//! See [`mmc.md`] for information on the MMC format.
+//!
+//! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
 pub mod parser;
 
 use std::mem;

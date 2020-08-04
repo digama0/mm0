@@ -351,16 +351,15 @@ enum RequestType {
   DocumentSymbol(DocumentSymbolParams),
 }
 
-fn parse_request(req: Request) -> Result<Option<(RequestId, RequestType)>> {
-  let Request {id, method, params} = req;
-  match method.as_str() {
-    "textDocument/completion"     => Ok(Some((id, RequestType::Completion(from_value(params)?)))),
-    "textDocument/hover"          => Ok(Some((id, RequestType::Hover(from_value(params)?)))),
-    "textDocument/definition"     => Ok(Some((id, RequestType::Definition(from_value(params)?)))),
-    "textDocument/documentSymbol" => Ok(Some((id, RequestType::DocumentSymbol(from_value(params)?)))),
-    "completionItem/resolve"      => Ok(Some((id, RequestType::CompletionResolve(from_value(params)?)))),
-    _ => Ok(None)
-  }
+fn parse_request(Request {id, method, params}: Request) -> Result<Option<(RequestId, RequestType)>> {
+  Ok(match method.as_str() {
+    "textDocument/completion"     => Some((id, RequestType::Completion(from_value(params)?))),
+    "textDocument/hover"          => Some((id, RequestType::Hover(from_value(params)?))),
+    "textDocument/definition"     => Some((id, RequestType::Definition(from_value(params)?))),
+    "textDocument/documentSymbol" => Some((id, RequestType::DocumentSymbol(from_value(params)?))),
+    "completionItem/resolve"      => Some((id, RequestType::CompletionResolve(from_value(params)?))),
+    _ => None
+  })
 }
 
 fn send_message<T: Into<Message>>(t: T) -> Result<()> {
@@ -887,6 +886,20 @@ fn response_err(code: ErrorCode, message: impl Into<String>) -> ResponseError {
   ResponseError {code: code as i32, message: message.into(), data: None}
 }
 
+/// Main entry point for `mm0-rs server` subcommand.
+///
+/// This function is not intended for interactive use, but instead sets up an [LSP] connection
+/// using stdin and stdout. This allows for extensions such as [`vscode-mm0`] to use `mm0-rs`
+/// as a language server.
+///
+/// # Arguments
+///
+/// `mm0-rs server [--debug]`, where:
+///
+/// - `-d`, `--debug`: enables debugging output to `lsp.log`
+///
+/// [LSP]: https://microsoft.github.io/language-server-protocol/
+/// [`vscode-mm0`]: https://github.com/digama0/mm0/tree/master/vscode-mm0
 pub fn main(args: &ArgMatches) {
   if args.is_present("debug") {
     std::env::set_var("RUST_BACKTRACE", "1");

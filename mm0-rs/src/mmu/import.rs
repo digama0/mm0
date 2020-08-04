@@ -1,3 +1,4 @@
+//! MMU importer, which produces an `Environment` object from an `.mmu` file.
 use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use crate::elab::{ElabError, Result,
