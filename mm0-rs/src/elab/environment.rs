@@ -431,6 +431,9 @@ pub struct AtomData {
   /// is `Some((span, full))` where `span` is the name of the definition and `full` is the
   /// entire definition body, or `None`.
   pub lisp: Option<(Option<(FileSpan, Span)>, LispVal)>,
+  /// For global lisp definitions that have been deleted, we retain the location of the
+  /// "undefinition" for go-to-definition queries.
+  pub graveyard: Option<Box<(FileSpan, Span)>>,
   /// The sort with this name, if one exists.
   pub sort: Option<SortID>,
   /// The term or theorem with this name, if one exists.
@@ -439,7 +442,7 @@ pub struct AtomData {
 
 impl AtomData {
   fn new(name: ArcString) -> AtomData {
-    AtomData {name, lisp: None, sort: None, decl: None}
+    AtomData {name, lisp: None, graveyard: None, sort: None, decl: None}
   }
 }
 
@@ -448,15 +451,20 @@ impl AtomData {
 /// [`Spans`]: ../spans/struct.Spans.html
 #[derive(Clone, Debug)]
 pub enum ObjectKind {
-  /// This is a sort; hovering yields `sort foo;` and go-to-definition works
+  /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
+  /// This sort must actually exist in the `Environment` if is constructed
   Sort(SortID),
-  /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works
+  /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
+  /// This term must actually exist in the `Environment` if is constructed
   Term(TermID, Span),
   /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works
+  /// This theorem must actually exist in the `Environment` if is constructed
   Thm(ThmID),
   /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder
+  /// This should be a variable in the statement.
   Var(AtomID),
-  /// This is a global lisp definition; hovering yields the lisp definition line and go-to-definition works
+  /// This is a global lisp definition; hovering yields the lisp definition line and go-to-definition works.
+  /// Either `lisp` or `graveyard` for the atom must be non-`None` if this is constructed
   Global(AtomID),
   /// This is an expression; hovering shows the type and go-to-definition goes to the head term definition
   Expr(LispVal),
@@ -1024,8 +1032,11 @@ impl Environment {
       refs: Default::default(),
     };
     for (i, d) in other.data.iter().enumerate() {
-      self.data[lisp_remap.atom[AtomID(i as u32)]].lisp =
-        d.lisp.as_ref().map(|(fs, v)| (fs.clone(), v.remap(lisp_remap)))
+      let data = &self.data[lisp_remap.atom[AtomID(i as u32)]];
+      data.lisp = d.lisp.as_ref().map(|(fs, v)| (fs.clone(), v.remap(lisp_remap)));
+      if data.lisp.is_none() {
+        data.graveyard = d.graveyard.clone();
+      }
     }
     let remap = &mut Remapper::default();
     for &s in &other.stmts {

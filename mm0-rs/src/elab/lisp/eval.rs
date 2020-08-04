@@ -1183,10 +1183,13 @@ impl<'a> Evaluator<'a> {
             }
           } else {
             if let Some(&Some((sp1, sp2, a))) = x {
-              let def = ret.is_def() || ret.is_ref();
-              let val = if def {Some((Some((self.fspan(sp2), sp1)), ret))} else {None};
-              if mem::replace(&mut self.data[a].lisp, val).is_none() && def {
-                self.stmts.push(StmtTrace::Global(a))
+              let loc = (self.fspan(sp2), sp1);
+              if ret.is_def() || ret.is_ref() {
+                if mem::replace(&mut self.data[a].lisp, Some((Some(loc), ret))).is_none() {
+                  self.stmts.push(StmtTrace::Global(a))
+                }
+              } else if mem::replace(&mut self.data[a].lisp, None).is_some() {
+                self.data[a].graveyard = Some(Box::new(loc));
               }
             }
             State::Ret(LispVal::undef())

@@ -586,6 +586,8 @@ async fn definition<T>(path: FileRef, pos: Position,
         if let Some(s) = ad.sort {res.push(sort(s))}
         if let Some((Some((ref fsp, full)), _)) = ad.lisp {
           res.push(g(&fsp, full))
+        } else if let Some(sp) = &ad.graveyard {
+          res.push(g(&sp.0, sp.1))
         }
       }
       ObjectKind::Import(file) => {
@@ -661,7 +663,7 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
               Some(sk) => sk,
               None => continue,
             }));
-        } else {unreachable!()}
+        }
       }
     }
   }
