@@ -1032,7 +1032,7 @@ impl Environment {
       refs: Default::default(),
     };
     for (i, d) in other.data.iter().enumerate() {
-      let data = &self.data[lisp_remap.atom[AtomID(i as u32)]];
+      let data = &mut self.data[lisp_remap.atom[AtomID(i as u32)]];
       data.lisp = d.lisp.as_ref().map(|(fs, v)| (fs.clone(), v.remap(lisp_remap)));
       if data.lisp.is_none() {
         data.graveyard = d.graveyard.clone();
