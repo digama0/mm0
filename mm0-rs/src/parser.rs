@@ -723,8 +723,12 @@ impl<'a> Parser<'a> {
     }
     match self.modifiers() {
       (m, None) => {
-        if m.is_empty() {Ok(None)}
-        else {self.err_str("expected command keyword")}
+        if m.is_empty() && self.idx == self.source.len() {
+          Ok(None)
+        } else {
+          self.restart_pos = None;
+          self.err_str("expected command keyword")
+        }
       }
       (mut m, Some(id)) => {
         let k = self.span(id);
