@@ -70,6 +70,10 @@ pub struct Pretty<'a> {
   rparen: PP<'a>,
 }
 
+impl fmt::Debug for Pretty<'_> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Pretty") }
+}
+
 const NIL: RefDoc<'static, ()> = RefDoc(&Doc::Nil);
 const HARDLINE: RefDoc<'static, ()> = RefDoc(&Doc::Line);
 const SPACE: RefDoc<'static, ()> = RefDoc(&Doc::BorrowedText(" "));
@@ -303,7 +307,7 @@ impl<'a> Pretty<'a> {
     })
   }
 
-  fn dep_type(bvs: &[AtomID], ds: u64, fe: FormatEnv, f: &mut impl fmt::Write) -> fmt::Result {
+  fn dep_type(bvs: &[AtomID], ds: u64, fe: FormatEnv<'_>, f: &mut impl fmt::Write) -> fmt::Result {
     let mut i = 1;
     for x in bvs {
       if ds & i != 0 {write!(f, " {}", fe.to(x))?}
@@ -405,6 +409,7 @@ impl<'a> Pretty<'a> {
   }
 }
 
+#[derive(Debug)]
 pub struct PPExpr<'a> {
   fe: FormatEnv<'a>,
   e: &'a LispVal,
@@ -422,7 +427,7 @@ impl<'a> FormatEnv<'a> {
 }
 
 impl<'a> fmt::Display for PPExpr<'a> {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.fe.pretty(|p| p.expr_paren(self.e, Prec::Prec(0)).doc.render_fmt(self.width, f))
   }
 }

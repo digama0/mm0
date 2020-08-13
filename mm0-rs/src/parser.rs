@@ -68,6 +68,7 @@ impl ErrorLevel {
 ///
 /// [`Span`]: ../util/struct.Span.html
 /// [`ErrorLevel`]: enum.ErrorLevel.html
+#[derive(Debug)]
 pub struct ParseError {
   pub pos: Span,
   pub level: ErrorLevel,
@@ -111,6 +112,7 @@ impl ParseError {
 ///   after the keyword that begins the currently parsing statement. In the event of a fatal
 ///   parse error when parsing a statement, this is used as the place to restart parsing,
 ///   otherwise parsing restarts after the `;` that terminates every statement.
+#[derive(Debug)]
 pub struct Parser<'a> {
   pub source: &'a [u8],
   pub errors: Vec<ParseError>,
@@ -732,7 +734,6 @@ impl<'a> Parser<'a> {
       }
       (mut m, Some(id)) => {
         let k = self.span(id);
-        self.restart_pos = None;
         match CommandKeyword::parse(k) {
           Some(CommandKeyword::Sort) => {
             if !Modifiers::sort_data().contains(m) {
@@ -854,10 +855,17 @@ impl<'a> Parser<'a> {
             }
           }
           self.errors.push(e);
+          let mut last_ws = false;
           while self.idx < self.source.len() {
             let c = self.cur();
+            if !mem::replace(&mut last_ws, whitespace(c)) {
+              if c == b';' {self.ws(); break}
+              if self.ident_().is_some() {
+                self.ws();
+                if self.restart_pos.is_some() {break}
+              }
+            }
             self.idx += 1;
-            if c == b';' {self.ws(); break}
           }
         }
       }

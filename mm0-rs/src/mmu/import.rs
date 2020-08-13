@@ -9,6 +9,7 @@ use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
 use crate::lined_string::LinedString;
 
+#[derive(Debug)]
 pub struct Importer<'a> {
   file: FileRef,
   source: &'a [u8],
@@ -187,6 +188,7 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
   fn get(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
 }
 
+#[derive(Debug)]
 pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool)>);
 
 impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {

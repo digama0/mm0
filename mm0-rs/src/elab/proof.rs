@@ -9,6 +9,7 @@ use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::*;
 
+#[derive(Debug)]
 pub struct NodeHasher<'a> {
   pub lc: &'a LocalContext,
   pub fe: FormatEnv<'a>,
@@ -74,7 +75,7 @@ impl<H: LispNodeHash> Dedup<H> {
     n
   }
 
-  pub fn dedup(&mut self, nh: &NodeHasher, e: &LispVal) -> Result<usize> {
+  pub fn dedup(&mut self, nh: &NodeHasher<'_>, e: &LispVal) -> Result<usize> {
     let r = e.unwrapped_arc();
     let p: *const _ = &*r;
     Ok(match self.prev.get(&p) {
@@ -138,6 +139,7 @@ impl<H: LispNodeHash> IDedup<H> for Dedup<H> {
   fn get(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
 }
 
+#[derive(Debug)]
 pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool, u64)>);
 
 impl<'a, H: LispNodeHash> Iterator for DedupIter<'a, H> {
@@ -176,6 +178,7 @@ impl<T: Node> Val<T> {
   }
 }
 
+#[derive(Debug)]
 pub struct Builder<T: Node> {
   pub ids: Vec<Val<T>>,
   pub heap: Vec<T>,
@@ -555,6 +558,7 @@ impl Node for ProofNode {
   }
 }
 
+#[derive(Debug)]
 pub struct Subst<'a> {
   env: &'a Environment,
   heap: &'a [ExprNode],

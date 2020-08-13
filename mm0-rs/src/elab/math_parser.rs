@@ -22,7 +22,7 @@ pub enum QExprKind {
 }
 
 impl EnvDisplay for QExpr {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
       &QExprKind::IdentApp(sp, ref es) if es.is_empty() => fe.source[sp].fmt(f),
       &QExprKind::IdentApp(sp, ref es) => {

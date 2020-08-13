@@ -14,12 +14,14 @@ use lsp_types::Url;
 /// Newtype for `Box<dyn Error + Send + Sync>`
 pub type BoxError = Box<dyn Error + Send + Sync>;
 
+/// Extension trait for `try_insert`.
 pub trait HashMapExt<K, V> {
-  fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<K, V>)>;
+  /// Like `insert`, but if the insertion
+  fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)>;
 }
 
 impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
-  fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<K, V>)> {
+  fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)> {
     match self.entry(k) {
       Entry::Vacant(e) => { e.insert(v); None }
       Entry::Occupied(e) => Some((v, e))
@@ -41,10 +43,10 @@ impl ArcString {
   pub fn new(s: String) -> ArcString { ArcString(Arc::new(s)) }
 }
 impl fmt::Display for ArcString {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
 }
 impl fmt::Debug for ArcString {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
 }
 impl From<&str> for ArcString {
   fn from(s: &str) -> ArcString { ArcString::new(s.to_owned()) }
@@ -54,6 +56,7 @@ impl From<&str> for ArcString {
 /// initializing the elements in some order, and then using the unsafe function
 /// [`assume_init`] to assert that every element of the array has been initialized and
 /// transmute the `VecUninit<T>` into a `Vec<T>`.
+#[derive(Debug)]
 pub struct VecUninit<T>(Vec<MaybeUninit<T>>);
 
 impl<T> VecUninit<T> {
@@ -124,7 +127,7 @@ impl DoubleEndedIterator for Span {
 }
 
 impl fmt::Debug for Span {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}..{}", self.start, self.end)
   }
 }
@@ -135,10 +138,10 @@ lazy_static! {
     std::fs::canonicalize(".").expect("failed to find current directory");
 }
 
-/// Given a PathBuf 'buf', constructs a relative path from [`CURRENT_DIR`] 
+/// Given a PathBuf 'buf', constructs a relative path from [`CURRENT_DIR`]
 /// to buf, returning it as a String.
 ///
-/// Example : If CURRENT_DIR is /home/johndoe/mm0, and buf is 
+/// Example : If CURRENT_DIR is /home/johndoe/mm0, and buf is
 /// /home/johndoe/Documents/ahoy.mm1 will return "../Documents/ahoy.mm1"
 ///
 /// [`CURRENT_DIR`]: struct.CURRENT_DIR.html
@@ -186,13 +189,13 @@ impl Hash for FileRef {
 }
 
 impl fmt::Display for FileRef {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.0 .0.file_name().unwrap_or(self.0 .0.as_os_str()).to_str().unwrap().fmt(f)
   }
 }
 
 impl fmt::Debug for FileRef {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fmt::Display::fmt(self, f)
   }
 }
@@ -207,7 +210,7 @@ pub struct FileSpan {
 }
 
 impl fmt::Debug for FileSpan {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}:{:?}", self.file, self.span)
   }
 }

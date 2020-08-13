@@ -27,7 +27,7 @@ pub enum IR {
 }
 
 impl<'a> EnvDisplay for IR {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       &IR::Local(i) => write!(f, "x{}", i),
       &IR::Global(_, a) => a.fmt(fe, f),
@@ -102,7 +102,7 @@ pub struct Branch {
 }
 
 impl<'a> EnvDisplay for Branch {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if self.cont {
       write!(f, "[{} (=> _) {}]", fe.to(&self.pat), fe.to(&self.eval))
     } else {
@@ -132,7 +132,7 @@ pub enum Pattern {
 }
 
 impl<'a> EnvDisplay for Pattern {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       &Pattern::Skip => write!(f, "_"),
       &Pattern::Atom(i) => write!(f, "x{}", i),
@@ -327,7 +327,7 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn def_ir(&mut self, sp: Span, es: &[SExpr], stack: Vec<Item>) -> Result<Vec<IR>, ElabError> {
+  fn def_ir(&mut self, sp: Span, es: &[SExpr], stack: Vec<Item<'_>>) -> Result<Vec<IR>, ElabError> {
     for e in stack.iter().rev() {
       match e {
         Item::List(xs) => {

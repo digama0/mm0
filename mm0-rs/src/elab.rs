@@ -156,6 +156,7 @@ impl From<ParseError> for ElabError {
 /// Records the current reporting setting. A report that is suppressed by the reporting mode
 /// will not appear in the error list / as a diagnostic, but a fatal error will still prevent
 /// proof export.
+#[derive(Debug)]
 struct ReportMode {
   /// Do we report on errors?
   error: bool,
@@ -184,6 +185,7 @@ impl ReportMode {
 /// execution context).
 ///
 /// [`Evaluator`]: lisp/eval/struct.Evaluator.html
+#[derive(Debug)]
 pub struct Elaborator {
   /// The parsed abstract syntax tree for the file
   ast: Arc<AST>,
@@ -541,7 +543,7 @@ impl Elaborator {
 
     impl<T> Future for ElabFuture<T> {
       type Output = (Vec<T>, Vec<ElabError>, Environment);
-      fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+      fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = &mut unsafe { self.get_unchecked_mut() }.0;
         let ElabFutureInner {elab, toks, recv, idx, progress} =
           this.as_mut().expect("poll called after Ready");

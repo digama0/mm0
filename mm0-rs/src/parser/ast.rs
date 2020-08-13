@@ -62,7 +62,7 @@ impl Modifiers {
 }
 
 impl Display for Modifiers {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     if self.contains(Modifiers::PURE) {write!(f, "pure ")?}
     if self.contains(Modifiers::STRICT) {write!(f, "strict ")?}
     if self.contains(Modifiers::PROVABLE) {write!(f, "provable ")?}
@@ -79,7 +79,7 @@ impl Display for Modifiers {
 /// A delimiter-stmt with only one math string is parsed
 /// as `Delimiter::Both(..)`, and the contents are put in the environment as both left and right
 /// delimiters. delimiter-stmts with two math strings are parsed as `LeftRight::(s1, s2)`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Delimiter {
   Both(Box<[u8]>),
   LeftRight(Box<[u8]>, Box<[u8]>),
@@ -100,7 +100,7 @@ impl Formula {
 /// Information about constants can be found in the [notation grammar].
 ///
 /// [notation grammar]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#notations
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Const {
   pub fmla: Formula,
   pub trim: Span
@@ -109,7 +109,7 @@ pub struct Const {
 /// Declarations; term, axiom, theorem, def. Part of a [`Decl`]
 ///
 /// [`Decl`]: struct.Decl.html
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DeclKind { Term, Axiom, Thm, Def }
 
 /// The "kind" of a binder, denoted using braces vs parentheses on the binder,
@@ -358,7 +358,7 @@ impl SExpr {
 }
 
 impl EnvDisplay for SExpr {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
       &SExprKind::Atom(a) => fe.source.span_atom(self.span, a).fmt(f),
       SExprKind::List(es) => {
@@ -390,7 +390,7 @@ impl EnvDisplay for SExpr {
 /// Holds a Declaration as a [`DeclKind`] with some extra data.
 ///
 /// [`DeclKind`]: enum.DeclKind.html
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Decl {
   /// The declaration modifiers: [`abstract`] or [`local`] for `def`,
   /// and [`pub`] for `theorem`.
@@ -420,7 +420,7 @@ pub enum Prec {
 }
 
 impl fmt::Display for Prec {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       &Prec::Prec(p) => p.fmt(f),
       &Prec::Max => "max".fmt(f)
@@ -428,20 +428,20 @@ impl fmt::Display for Prec {
   }
 }
 impl fmt::Debug for Prec {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { fmt::Display::fmt(self, f) }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
 }
 
 
 /// A simple notation, one of `prefix`, `infixl`, and `infixr` (which have the same
 /// grammar after the initial keyword).
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum SimpleNotaKind { Prefix, Infix {right: bool} }
 
 /// Represents a notation item declared with the prefix, infixl, or infixr keywords. Notation
 /// declared with the 'notation' keyword is represented by [`GenNota`]
 ///
 /// [`GenNota`]: struct.GenNota.html
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SimpleNota {
   /// The initial notation keyword, one of `prefix`, `infixl`, or `infixr`.
   pub k: SimpleNotaKind,
@@ -457,7 +457,7 @@ pub struct SimpleNota {
 ///
 /// For example in `notation ab {x} (ph) = (${$:max) x ($|$:50) ph ($}$:0);` there
 /// are 5 notation literals, `(${$:0)`, `x`, `($|$:50)`, `ph`, `($}$:0)`.
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Literal {
   /// A constant with a precedence, such as `($|$:50)`.
   Const(Const, Prec),
@@ -469,7 +469,7 @@ pub enum Literal {
 /// the `prefix`, `infixl`, and `infixr` keywords are represented by [`SimpleNota`].
 ///
 /// [`SimpleNota`]: struct.SimpleNota.html
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GenNota {
   /// The span of the identifier, the `foo` in `notation foo ...`.
   pub id: Span,
@@ -492,7 +492,7 @@ pub struct GenNota {
 
 /// A statement in the file. Every statement ends with a `;`, and an MM0/MM1 file
 /// is a list of statements.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum StmtKind {
   /// A sort delaration like `pure sort foo;`.
   Sort(Span, Modifiers),
@@ -537,7 +537,7 @@ pub enum StmtKind {
 
 /// The elements of a parsed AST. StmtKind is the "data", with span providing
 /// information about the item's location in the source file.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Stmt {
   pub span: Span,
   pub k: StmtKind,
@@ -546,6 +546,7 @@ pub struct Stmt {
 /// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.
 ///
 /// [`Stmt`]: struct.Stmt.html
+#[derive(Debug)]
 pub struct AST {
   /// The source [`LinedString`] for the file. This is needed in order to interpret all the
   /// [`Span`]s in the AST.

@@ -1,4 +1,30 @@
-extern crate log;
+//! MM0 toolchain. See [`mm0-rs/README.md`] for overall documentation.
+//!
+//! ```
+//! USAGE:
+//! mm0-rs <SUBCOMMAND>
+//!
+//! FLAGS:
+//!     -h, --help       Prints help information
+//!     -V, --version    Prints version information
+//!
+//! SUBCOMMANDS:
+//!     compile    Compile MM1 files into MMB
+//!     help       Prints this message or the help of the given subcommand(s)
+//!     join       Join MM1/MM0 files with imports by concatenation
+//!     server     MM1 LSP server
+//! ```
+//!
+//! [`mm0-rs/README.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/README.md
+
+#![warn(bare_trait_objects)]
+#![warn(elided_lifetimes_in_paths)]
+#![warn(missing_copy_implementations)]
+#![warn(missing_debug_implementations)]
+#![warn(future_incompatible)]
+#![warn(rust_2018_idioms)]
+#![warn(missing_docs)]
+
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;

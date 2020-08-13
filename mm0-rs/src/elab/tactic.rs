@@ -5,7 +5,7 @@ use super::lisp::{*, print::{FormatEnv, EnvDisplay}, eval::SResult};
 use super::local_context::{InferSort, try_get_span};
 use super::proof::Subst;
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum InferMode { Regular, Explicit, BoundOnly }
 
 enum RefineExpr {
@@ -44,7 +44,7 @@ pub enum RState {
 }
 
 impl EnvDisplay for RState {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       RState::Goals {gs, es} => write!(f,
         "Goals {{gs: {}, es: {}}}", fe.to(gs.as_slice()), fe.to(es.as_slice())),
@@ -75,7 +75,7 @@ impl EnvDisplay for RState {
 pub enum RefineHypsResult { Ok(LispVal), Extra }
 
 impl EnvDisplay for RefineHypsResult {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       RefineHypsResult::Ok(e) => write!(f, "Ok({})", fe.to(e)),
       RefineHypsResult::Extra => write!(f, "Extra"),
@@ -83,6 +83,7 @@ impl EnvDisplay for RefineHypsResult {
   }
 }
 
+#[derive(Debug)]
 pub enum RefineResult {
   Ret(LispVal),
   RefineExtraArgs(LispVal, LispVal, Uncons),

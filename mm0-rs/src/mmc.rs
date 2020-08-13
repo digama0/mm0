@@ -9,6 +9,7 @@
 pub mod parser;
 pub mod predef;
 pub mod nameck;
+pub mod typeck;
 
 use std::collections::hash_map::HashMap;
 use crate::util::FileSpan;
@@ -39,7 +40,7 @@ pub struct Compiler {
 }
 
 impl std::fmt::Debug for Compiler {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "#<mmc-compiler>")
   }
 }
@@ -71,9 +72,8 @@ impl Compiler {
       p.parse_ast(&mut ast, &e)?;
     }
     let fsp = p.fsp;
-    for a in &ast {
-      self.nameck(&fsp, a)?;
-    }
+    for a in &ast { self.nameck(&fsp, a)? }
+    self.typeck(&fsp, &ast)?;
     Ok(())
   }
 

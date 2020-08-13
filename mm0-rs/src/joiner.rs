@@ -86,7 +86,7 @@ impl<W: Write> Joiner<W> {
 /// - `out.mm0` is the output location, or stdin if omitted.
 ///
 /// [module documentation]: index.html
-pub fn main(args: &ArgMatches) -> io::Result<()> {
+pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").unwrap();
   let file = FileRef::new(fs::canonicalize(path)?);
   match args.value_of("OUTPUT") {

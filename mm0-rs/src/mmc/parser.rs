@@ -9,6 +9,7 @@ use crate::elab::{
   lisp::{LispKind, LispVal, Uncons},
   local_context::try_get_span};
 
+#[derive(Debug)]
 pub struct Arg {
   pub name: Option<(FileSpan, AtomID)>,
   pub ghost: bool,
@@ -27,7 +28,7 @@ impl PartialEq<Arg> for Arg {
 }
 impl Eq for Arg {}
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum VariantType {
   Down,
   UpLt(LispVal),
@@ -35,6 +36,7 @@ pub enum VariantType {
 }
 pub type Variant = Option<(LispVal, VariantType)>;
 
+#[derive(Debug)]
 pub struct Invariant {
   pub name: AtomID,
   pub ghost: bool,
@@ -42,17 +44,20 @@ pub struct Invariant {
   pub val: Option<Expr>,
 }
 
+#[derive(Debug)]
 pub struct Block {
   pub muts: Box<[AtomID]>,
   pub stmts: Box<[Expr]>
 }
 
+#[derive(Debug)]
 pub enum TuplePattern {
   Name(AtomID, Option<FileSpan>),
   Typed(Box<TuplePattern>, LispVal),
   Tuple(Box<[TuplePattern]>),
 }
 
+#[derive(Debug)]
 pub enum Pattern {
   VarOrConst(AtomID),
   Number(BigInt),
@@ -61,6 +66,7 @@ pub enum Pattern {
   Or(Box<[Pattern]>),
 }
 
+#[derive(Debug)]
 pub enum Expr {
   Nil,
   Var(AtomID),
@@ -76,8 +82,9 @@ pub enum Expr {
   Hole(FileSpan),
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ProcKind { Func, Proc, ProcDecl, Intrinsic }
+#[derive(Debug)]
 pub struct Proc {
   pub kind: ProcKind,
   pub name: AtomID,
@@ -98,12 +105,14 @@ impl Proc {
   }
 }
 
+#[derive(Debug)]
 pub struct Field {
   pub name: AtomID,
   pub ghost: bool,
   pub ty: LispVal,
 }
 
+#[derive(Debug)]
 pub enum AST {
   Proc(Arc<Proc>),
   Global {lhs: TuplePattern, rhs: Option<Box<Expr>>},
@@ -158,6 +167,7 @@ make_keywords! {
   With: "with",
 }
 
+#[derive(Debug)]
 pub struct Parser<'a> {
   pub elab: &'a mut Elaborator,
   pub kw: &'a HashMap<AtomID, Keyword>,

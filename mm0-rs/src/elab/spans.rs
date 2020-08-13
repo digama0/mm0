@@ -13,7 +13,7 @@ pub struct Spans<T> {
 
 use std::fmt;
 impl<T: fmt::Debug> fmt::Debug for Spans<T> {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{{ stmt: {:?},\n  data: {:?} }}", self.stmt(), self.data)
   }
 }

@@ -28,11 +28,11 @@ macro_rules! id_wrapper {
     pub struct $id(pub $ty);
 
     impl fmt::Debug for $id {
-      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
+      fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
     }
 
     /// A vector wrapper with a strongly typed index interface.
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct $vec<T>(pub Vec<T>);
 
     #[allow(dead_code)]
@@ -69,7 +69,7 @@ id_wrapper!(ThmID: u32, ThmVec);
 id_wrapper!(AtomID: u32, AtomVec);
 
 /// The information associated to a defined `Sort`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Sort {
   /// The sort's name, as an atom.
   pub atom: AtomID,
@@ -95,7 +95,7 @@ pub struct Sort {
 /// The type of a variable in the binder list of an `axiom`/`term`/`def`/`theorem`.
 /// The variables themselves are not named because their names are derived from their
 /// positions in the binder list (i.e. `{v0 : s} (v1 : t v0) (v2 : t)`)
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Type {
   /// A bound variable `{x : s}`, where `s` is the provided `SortID`.
   Bound(SortID),
@@ -298,7 +298,7 @@ pub struct Thm {
 ///
 /// [`Term`]: struct.Term.html
 /// [`Thm`]: struct.Thm.html
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum StmtTrace {
   Sort(AtomID),
   Decl(AtomID),
@@ -361,7 +361,7 @@ pub struct NotaInfo {
 
 /// A coercion between two sorts. These are interpreted in a context `c: s1 -> s2` where `s1` and
 /// `s2` are known.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Coe {
   /// This asserts `t` is a unary term constructor from `s1` to `s2`.
   One(FileSpan, TermID),
@@ -393,7 +393,7 @@ impl Coe {
 }
 
 /// The (non-logical) data used by the dynamic parser to interpret formulas.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct ParserEnv {
   /// A bitset of all left delimiters.
   pub delims_l: Delims,
@@ -423,7 +423,7 @@ pub struct ParserEnv {
 }
 
 /// The data associated to an atom.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AtomData {
   /// The string form of the atom.
   pub name: ArcString,
@@ -476,6 +476,7 @@ pub enum ObjectKind {
 }
 
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
+#[derive(Debug)]
 pub struct Environment {
   /// The sort map, which is a vector because sort names are allocated in order.
   pub sorts: SortVec<Sort>,
@@ -555,7 +556,7 @@ make_atoms! {
 }
 
 /// An implementation of a map `u8 -> bool` using a 32 byte array as a bitset.
-#[derive(Default, Clone)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct Delims([u8; 32]);
 
 impl Delims {
@@ -734,6 +735,7 @@ impl Remap<Remapper> for Coe {
 
 /// Several operations have an "incompatibility error" result, involving a conflict between
 /// two definitions. This keeps just the locations of those definitions.
+#[derive(Debug)]
 pub struct IncompatibleError {
   /// The first declaration in the conflict.
   pub decl1: FileSpan,
@@ -887,6 +889,7 @@ impl ParserEnv {
 /// A specialized version of [`IncompatibleError`] for name reuse errors.
 ///
 /// [`IncompatibleError`]: struct.IncompatibleError.html
+#[derive(Debug)]
 pub struct RedeclarationError {
   /// The error message
   pub msg: String,
@@ -909,6 +912,7 @@ impl Environment {
 /// Adding an item (sort, term, theorem, atom) can result in a redeclaration error,
 /// or an overflow error (especially for sorts, which can only have 128 due to the
 /// MMB format). The redeclaration case allows returning a value `A`.
+#[derive(Debug)]
 pub enum AddItemError<A> {
   /// The declaration overlaps with some previous declaration
   Redeclaration(A, RedeclarationError),

@@ -63,7 +63,7 @@ impl Syntax {
 }
 
 impl std::fmt::Display for Syntax {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.to_str().fmt(f)
   }
 }
@@ -547,7 +547,7 @@ str_enum! {
 }
 
 impl std::fmt::Display for BuiltinProc {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.to_str().fmt(f)
   }
 }
@@ -650,7 +650,7 @@ impl Iterator for Uncons {
   }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LispRemapper {
   pub atom: AtomVec<AtomID>,
   pub lisp: HashMap<*const LispKind, (LispVal, LispVal)>,

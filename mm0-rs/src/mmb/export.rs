@@ -9,6 +9,7 @@ use crate::elab::environment::{
 use crate::util::FileRef;
 use crate::lined_string::LinedString;
 
+#[derive(Debug)]
 enum Value {
   U32(u32),
   U64(u64),
@@ -49,6 +50,7 @@ const UNIFY_REF: u8       = 0x32;
 const UNIFY_DUMMY: u8     = 0x33;
 const UNIFY_HYP: u8       = 0x36;
 
+#[derive(Debug)]
 enum ProofCmd {
   Term(TermID),
   TermSave(TermID),
@@ -68,6 +70,7 @@ enum ProofCmd {
   Save,
 }
 
+#[derive(Debug)]
 enum UnifyCmd {
   Term(TermID),
   TermSave(TermID),
@@ -76,6 +79,7 @@ enum UnifyCmd {
   Hyp,
 }
 
+#[derive(Debug)]
 struct Reorder<T=u32> {
   map: Box<[Option<T>]>,
   idx: u32,
@@ -101,6 +105,7 @@ impl<'a> IndexHeader<'a> {
   fn thm(&mut self, i: ThmID) -> &mut [u8; 8] { &mut self.thms[i.0 as usize] }
 }
 
+#[derive(Debug)]
 pub struct Exporter<'a, W: Write + Seek + ?Sized> {
   file: FileRef,
   source: &'a LinedString,
@@ -472,7 +477,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     LE::write_u32(&mut header[4..], p_thm);
   }
 
-  fn write_index_entry(&mut self, header: &mut IndexHeader, il: u64, ir: u64,
+  fn write_index_entry(&mut self, header: &mut IndexHeader<'_>, il: u64, ir: u64,
       (s, cmd): (StmtTrace, u64)) -> io::Result<u64> {
     let n = self.align_to(8)?;
     let (sp, ix, k, name) = match s {
@@ -523,7 +528,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     Ok(n)
   }
 
-  fn write_index(&mut self, header: &mut IndexHeader, left: &[(StmtTrace, u64)], map: &[(StmtTrace, u64)]) -> io::Result<u64> {
+  fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(StmtTrace, u64)], map: &[(StmtTrace, u64)]) -> io::Result<u64> {
     let mut lo = map.len() / 2;
     let a = match map.get(lo) {
       None => {

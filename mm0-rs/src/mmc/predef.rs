@@ -8,6 +8,7 @@ macro_rules! make_predef {
   {map $n:expr; $(($m:expr, $x:ident, $e:expr))*;} => {
     #[derive(Copy, Clone, Debug)] enum Predef { $(#[allow(unused)] $x,)* }
 
+    #[derive(Debug)]
     pub struct PredefMap<A>([A; Predef::COUNT]);
 
     impl Predef {

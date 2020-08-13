@@ -479,11 +479,11 @@ impl Elaborator {
     })
   }
 
-  fn to_elab_term(&mut self, sp: Span) -> ElabTerm {
+  fn to_elab_term(&mut self, sp: Span) -> ElabTerm<'_> {
     ElabTerm {fsp: self.fspan(sp), fe: self.format_env(), lc: &self.lc}
   }
 
-  fn to_elab_term_mut(&mut self, sp: Span) -> ElabTermMut {
+  fn to_elab_term_mut(&mut self, sp: Span) -> ElabTermMut<'_> {
     ElabTermMut {
       fsp: self.fspan(sp),
       src: &self.ast.source,
@@ -777,7 +777,7 @@ pub struct AwaitingProof {
 }
 
 
-fn dummies(fe: FormatEnv, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) -> Result<()> {
+fn dummies(fe: FormatEnv<'_>, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) -> Result<()> {
   macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
   let mut dummy = |x: AtomID, es: &LispKind| -> Result<()> {
     let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;

@@ -332,7 +332,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<((), Arc<Environment>)>) ->
 /// - `out.mmb` (or `out.mmu`) is the MMB file to generate, if the elaboration is
 ///   successful. The file extension is used to determine if we are outputting
 ///   binary. If this argument is omitted, the input is only elaborated.
-pub fn main(args: &ArgMatches) -> io::Result<()> {
+pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").unwrap();
   let (path, file) = VFS_.get_or_insert(FileRef::new(fs::canonicalize(path)?))?;
   let env = block_on(elaborate(path.clone()))?;

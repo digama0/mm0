@@ -674,7 +674,7 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
 #[repr(u8)]
 enum TraceKind {Sort, Decl, Global}
 
-fn make_completion_item(path: &FileRef, fe: FormatEnv, ad: &AtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
+fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &AtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
   use CompletionItemKind::*;
   macro_rules! done {($desc:expr, $kind:expr) => {
     Some(CompletionItem {
@@ -902,7 +902,7 @@ fn response_err(code: ErrorCode, message: impl Into<String>) -> ResponseError {
 ///
 /// [LSP]: https://microsoft.github.io/language-server-protocol/
 /// [`vscode-mm0`]: https://github.com/digama0/mm0/tree/master/vscode-mm0
-pub fn main(args: &ArgMatches) {
+pub fn main(args: &ArgMatches<'_>) {
   if args.is_present("debug") {
     std::env::set_var("RUST_BACKTRACE", "1");
     use {simplelog::*, std::fs::File};

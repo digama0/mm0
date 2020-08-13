@@ -5,12 +5,13 @@ use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID,
   Sort, Term, Thm};
 use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct FormatEnv<'a> {
   pub source: &'a LinedString,
   pub env: &'a Environment,
 }
 
+#[derive(Debug)]
 pub struct Print<'a, D: ?Sized> {
   pub fe: FormatEnv<'a>,
   pub e: &'a D,
@@ -28,11 +29,11 @@ impl<'a> Deref for FormatEnv<'a> {
 }
 
 pub trait EnvDisplay {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result;
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 impl Elaborator {
-  pub fn format_env(&self) -> FormatEnv {
+  pub fn format_env(&self) -> FormatEnv<'_> {
     FormatEnv {source: &self.ast.source, env: self}
   }
   pub fn print<'a, D: ?Sized>(&'a self, e: &'a D) -> Print<'a, D> {
@@ -41,10 +42,10 @@ impl Elaborator {
 }
 
 impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.e.fmt(self.fe, f) }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
-fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
   for e in init {
     if start {
       write!(f, "({}", fe.to(e))?;
@@ -74,12 +75,12 @@ fn alphanumber(n: usize) -> String {
 }
 
 impl EnvDisplay for AtomID {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.data[*self].name.fmt(f)
   }
 }
 impl EnvDisplay for Option<AtomID> {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       None => "_".fmt(f),
       Some(a) => a.fmt(fe, f)
@@ -87,27 +88,27 @@ impl EnvDisplay for Option<AtomID> {
   }
 }
 impl EnvDisplay for SortID {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.sorts[*self].atom.fmt(fe, f)
   }
 }
 impl EnvDisplay for TermID {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.terms[*self].atom.fmt(fe, f)
   }
 }
 impl EnvDisplay for ThmID {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.thms[*self].atom.fmt(fe, f)
   }
 }
 
 impl EnvDisplay for LispVal {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(fe, f) }
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(fe, f) }
 }
 
 impl EnvDisplay for LispKind {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       LispKind::Atom(a) => a.fmt(fe, f),
       LispKind::List(es) if es.is_empty() => "()".fmt(f),
@@ -150,7 +151,7 @@ impl EnvDisplay for LispKind {
 }
 
 impl EnvDisplay for Uncons {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Uncons::New(e) => e.fmt(fe, f),
       Uncons::List(es) => list(es, None, true, fe, f),
@@ -160,32 +161,32 @@ impl EnvDisplay for Uncons {
 }
 
 impl<T: EnvDisplay> EnvDisplay for [T] {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "[{}]", self.iter().map(|e| fe.to(e)).format(", "))
   }
 }
 
 impl EnvDisplay for crate::util::Span {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.source[*self].fmt(f)
   }
 }
 
 impl<T: EnvDisplay> EnvDisplay for Vec<T> {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.deref().fmt(fe, f) }
 }
 impl<T: EnvDisplay> EnvDisplay for Box<T> {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.deref().fmt(fe, f) }
 }
 impl<T: EnvDisplay> EnvDisplay for std::sync::Arc<T> {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.deref().fmt(fe, f) }
 }
 impl<T: EnvDisplay> EnvDisplay for std::rc::Rc<T> {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result { self.deref().fmt(fe, f) }
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.deref().fmt(fe, f) }
 }
 
 impl EnvDisplay for InferTarget {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       InferTarget::Unknown => "?".fmt(f),
       InferTarget::Provable => "provable".fmt(f),
@@ -196,19 +197,19 @@ impl EnvDisplay for InferTarget {
 }
 
 impl Display for Sort {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}sort {};", self.mods, self.name)
   }
 }
 
 impl EnvDisplay for Term {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.pretty(|p| p.term(self).render_fmt(80, f))
   }
 }
 
 impl EnvDisplay for Thm {
-  fn fmt(&self, fe: FormatEnv, f: &mut fmt::Formatter) -> fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.pretty(|p| p.thm(self).render_fmt(80, f))
   }
 }

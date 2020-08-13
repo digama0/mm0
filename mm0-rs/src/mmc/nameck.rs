@@ -5,8 +5,8 @@ use crate::elab::{
   Result, ElabError,
   local_context::try_get_span_from,
   environment::{AtomID, Environment}};
+use crate::util::FileSpan;
 use super::{Compiler, parser::{AST, Proc, ProcKind, TuplePattern}};
-use crate::util::{FileSpan};
 
 macro_rules! make_prims {
   {$name:ident: $($x:ident: $e:expr,)*} => {
@@ -55,27 +55,27 @@ make_prims! { PrimType:
   Union: "union",
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Type {
   Prim(PrimType),
   Unchecked,
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum ProcTC { Unchecked }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Operator {
   Prim(PrimProc),
   Proc(Arc<Proc>, ProcTC),
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum GlobalTC {
   Unchecked,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Entity {
   Type(Type),
   Op(Operator),
@@ -107,23 +107,21 @@ impl Compiler {
         let sp = try_get_span_from(fsp, p.span.as_ref());
         match self.names.entry(p.name) {
           Entry::Vacant(e) => {e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTC::Unchecked)));}
-          Entry::Occupied(mut e) => {
-            match e.get() {
-              Entity::Op(Operator::Proc(p1, _)) => {
-                if !p.eq_decl(p1) {
-                  Err(ElabError::with_info(sp, "declaration mismatch".into(),
-                    p1.span.iter().map(|fsp| (fsp.clone(), "previously declared here".into())).collect()))?
-                }
-                match (p1.kind, p.kind) {
-                  (_, ProcKind::ProcDecl) => {}
-                  (ProcKind::ProcDecl, _) => {
-                    e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTC::Unchecked)));
-                  }
-                  _ => Err(ElabError::new_e(sp, "name already in use"))?
-                }
+          Entry::Occupied(mut e) => match e.get() {
+            Entity::Op(Operator::Proc(p1, _)) => {
+              if !p.eq_decl(p1) {
+                Err(ElabError::with_info(sp, "declaration mismatch".into(),
+                  p1.span.iter().map(|fsp| (fsp.clone(), "previously declared here".into())).collect()))?
               }
-              _ => Err(ElabError::new_e(sp, "name already in use"))?
+              match (p1.kind, p.kind) {
+                (_, ProcKind::ProcDecl) => {}
+                (ProcKind::ProcDecl, _) => {
+                  e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTC::Unchecked)));
+                }
+                _ => Err(ElabError::new_e(sp, "name already in use"))?
+              }
             }
+            _ => Err(ElabError::new_e(sp, "name already in use"))?
           }
         }
       }

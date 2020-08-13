@@ -42,7 +42,7 @@ enum Stack<'a> {
 }
 
 impl<'a> EnvDisplay for Stack<'a> {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Stack::List(_, es, irs) => write!(f, "(list {}\n  _ {})",
         fe.to(es), fe.to(irs.as_slice())),
@@ -95,7 +95,7 @@ enum State<'a> {
 }
 
 impl<'a> EnvDisplay for State<'a> {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       &State::Eval(ir) => write!(f, "-> {}", fe.to(ir)),
       State::Refines(_, irs) => write!(f, "(refine {})", fe.to(irs.as_slice())),
@@ -176,7 +176,7 @@ enum PatternState<'a> {
 }
 
 impl<'a> EnvDisplay for PatternState<'a> {
-  fn fmt(&self, fe: FormatEnv, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       &PatternState::Eval(p, ref e) => write!(f, "{} := {}", fe.to(p), fe.to(e)),
       &PatternState::Ret(e) => write!(f, "<- {}", e),
