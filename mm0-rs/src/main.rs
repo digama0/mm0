@@ -19,36 +19,38 @@
 
 #![warn(bare_trait_objects)]
 #![warn(elided_lifetimes_in_paths)]
-#![warn(missing_copy_implementations)]
-#![warn(missing_debug_implementations)]
-#![warn(future_incompatible)]
-#![warn(rust_2018_idioms)]
-#![warn(missing_docs)]
+#![warn(missing_copy_implementations, missing_debug_implementations)]
+#![warn(future_incompatible, rust_2018_idioms)]
+#![warn(trivial_casts, trivial_numeric_casts)]
+#![warn(variant_size_differences)]
+#![warn(unreachable_pub)]
+#![warn(unused)]
+// #![warn(missing_docs)]
 
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
 
-mod util;
-mod lined_string;
-mod parser;
-#[macro_use] mod server;
-mod compiler;
-mod joiner;
-mod elab;
+pub mod util;
+pub mod lined_string;
+pub mod parser;
+#[macro_use] pub mod server;
+pub mod compiler;
+pub mod joiner;
+pub mod elab;
 /// Import and export functionality for MMB binary proof format
 ///
 /// See [`mm0-c/verifier.c`] for information on the MMB format.
 ///
 /// [`mm0-c/verifier.c`]: https://github.com/digama0/mm0/blob/master/mm0-c/verifier.c
-mod mmb { pub mod export; }
+pub mod mmb { pub mod export; }
 /// Import and export functionality for MMU ascii proof format
 ///
 /// See [The `.mmu` file format] for information on the MMU format.
 ///
 /// [The `.mmu` file format]: https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#the-mmu-file-format
-mod mmu { pub mod import; pub mod export; }
-mod mmc;
+pub mod mmu { pub mod import; pub mod export; }
+pub mod mmc;
 
 use clap::clap_app;
 

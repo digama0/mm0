@@ -402,6 +402,7 @@ impl BuildArgs {
   }
 }
 
+#[allow(variant_size_differences)]
 enum InferBinder {
   Var(Option<AtomID>, (bool, InferSort)),
   Hyp(Option<AtomID>, LispVal),

@@ -34,7 +34,10 @@ impl<T> Spans<T> {
   pub fn insert(&mut self, sp: Span, val: T) -> &mut T {
     let v = self.data.entry(sp.start).or_default();
     for (sp1, k) in &mut *v {
-      if sp == *sp1 {return unsafe {&mut *(k as *mut T)}}
+      if sp == *sp1 {
+        let k: *mut T = k;
+        return unsafe { &mut *k }
+      }
     }
     // the unsafe above is needed because NLL support is not all there,
     // and this looks like a double borrow of `*v`

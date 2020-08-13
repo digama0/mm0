@@ -8,6 +8,7 @@ use super::proof::Subst;
 #[derive(Copy, Clone, Debug)]
 pub enum InferMode { Regular, Explicit, BoundOnly }
 
+#[allow(variant_size_differences)]
 enum RefineExpr {
   App(Span, Span, InferMode, AtomID, Uncons),
   Typed(LispVal, LispVal),
@@ -84,6 +85,7 @@ impl EnvDisplay for RefineHypsResult {
 }
 
 #[derive(Debug)]
+#[allow(variant_size_differences)]
 pub enum RefineResult {
   Ret(LispVal),
   RefineExtraArgs(LispVal, LispVal, Uncons),

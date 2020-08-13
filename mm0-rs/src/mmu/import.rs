@@ -116,6 +116,7 @@ impl<'a> Importer<'a> {
   }
 }
 
+#[allow(variant_size_differences)]
 enum VarKind {
   Var(usize),
   Dummy(SortID),

@@ -65,6 +65,7 @@ pub enum Type {
 pub enum ProcTC { Unchecked }
 
 #[derive(Clone, Debug)]
+#[allow(variant_size_differences)]
 pub enum Operator {
   Prim(PrimProc),
   Proc(Arc<Proc>, ProcTC),
@@ -76,6 +77,7 @@ pub enum GlobalTC {
 }
 
 #[derive(Clone, Debug)]
+#[allow(variant_size_differences)]
 pub enum Entity {
   Type(Type),
   Op(Operator),

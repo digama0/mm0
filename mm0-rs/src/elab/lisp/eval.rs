@@ -34,7 +34,7 @@ enum Stack<'a> {
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
-  AddThmProc(FileSpan, AwaitingProof),
+  AddThmProc(FileSpan, Box<AwaitingProof>),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>},
   Focus(Span, bool, Vec<LispVal>),
@@ -648,7 +648,7 @@ impl<'a> Evaluator<'a> {
   fn add_thm(&mut self, fsp: FileSpan, args: &[LispVal]) -> Result<State<'a>> {
     Ok(if let Some((ap, proc)) = self.elab.add_thm(fsp.clone(), args)? {
       let sp = try_get_span(&fsp, &proc);
-      self.stack.push(Stack::AddThmProc(fsp, ap));
+      self.stack.push(Stack::AddThmProc(fsp, Box::new(ap)));
       State::App(sp, sp, proc, vec![], [].iter())
     } else {State::Ret(LispVal::undef())})
   }
@@ -1211,7 +1211,8 @@ impl<'a> Evaluator<'a> {
             vec.push(ret);
             State::MapProc(sp1, sp2, f, us, vec)
           }
-          Some(Stack::AddThmProc(fsp, AwaitingProof {t, de, var_map, lc, is})) => {
+          Some(Stack::AddThmProc(fsp, ap)) => {
+            let AwaitingProof {t, de, var_map, lc, is} = *ap;
             self.finish_add_thm(fsp, t, Some(Some((de, var_map, Some(lc), is, ret))))?;
             State::Ret(LispVal::undef())
           }
@@ -1302,7 +1303,8 @@ impl<'a> Evaluator<'a> {
                 // ir (which is borrowed from f). We solve the problem by storing an Arc of
                 // the IR inside the Ret instruction above, so that it won't get deallocated
                 // while in use. Rust doesn't reason about other owners of an Arc though, so...
-                State::Eval(unsafe {&*(&**code as *const IR)})
+                let code: *const IR = &**code;
+                State::Eval(unsafe { &*code })
               },
               Proc::MatchCont(valid) => {
                 if !valid.load(Ordering::Relaxed) {throw!(sp2, "continuation has expired")}

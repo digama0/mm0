@@ -96,6 +96,7 @@ pub struct Sort {
 /// The variables themselves are not named because their names are derived from their
 /// positions in the binder list (i.e. `{v0 : s} (v1 : t v0) (v2 : t)`)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[allow(variant_size_differences)]
 pub enum Type {
   /// A bound variable `{x : s}`, where `s` is the provided `SortID`.
   Bound(SortID),
