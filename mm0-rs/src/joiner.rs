@@ -53,9 +53,9 @@ impl<W: Write> Joiner<W> {
     let mut start = 0;
     for s in &ast.stmts {
       if let StmtKind::Import(_, f) = &s.k {
-        let r = FileRef::new(path.path().parent()
+        let r: FileRef = path.path().parent()
           .map_or_else(|| PathBuf::from(f), |p| p.join(f))
-          .canonicalize()?);
+          .canonicalize()?.into();
         self.w.write_all(&src.as_bytes()[start..s.span.start])?;
         if self.done.insert(r.clone()) {
           self.write(r)?;
@@ -88,7 +88,7 @@ impl<W: Write> Joiner<W> {
 /// [module documentation]: index.html
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").unwrap();
-  let file = FileRef::new(fs::canonicalize(path)?);
+  let file = fs::canonicalize(path)?.into();
   match args.value_of("OUTPUT") {
     None => Joiner::new(io::stdout()).write(file),
     Some(out) => Joiner::new(fs::File::create(out)?).write(file),

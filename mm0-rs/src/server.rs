@@ -401,10 +401,10 @@ impl RequestHandler {
   async fn handle(self, req: RequestType) -> Result<()> {
     match req {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
-        self.finish(hover(FileRef::from_url(doc.uri), position).await),
+        self.finish(hover(doc.uri.into(), position).await),
       RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
         if SERVER.caps.definition_location_links {
-          self.finish(definition(FileRef::from_url(doc.uri), position,
+          self.finish(definition(doc.uri.into(), position,
             |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
               origin_selection_range: Some(text.to_range(src)),
               target_uri: file.url().clone(),
@@ -412,17 +412,17 @@ impl RequestHandler {
               target_selection_range: text2.to_range(span),
             }).await)
         } else {
-          self.finish(definition(FileRef::from_url(doc.uri), position,
+          self.finish(definition(doc.uri.into(), position,
             |_, text2, _, &FileSpan {ref file, span}, _| Location {
               uri: file.url().clone(),
               range: text2.to_range(span),
             }).await)
         },
       RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc}) =>
-        self.finish(document_symbol(FileRef::from_url(doc.uri)).await),
+        self.finish(document_symbol(doc.uri.into()).await),
       RequestType::Completion(p) => {
         let doc = p.text_document_position;
-        self.finish(completion(FileRef::from_url(doc.text_document.uri), doc.position).await)
+        self.finish(completion(doc.text_document.uri.into(), doc.position).await)
       }
       RequestType::CompletionResolve(ci) => {
         self.finish(completion_resolve(ci).await)
@@ -737,7 +737,7 @@ async fn completion_resolve(ci: CompletionItem) -> result::Result<CompletionItem
   let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
     response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
-  let path = FileRef::from_url(uri);
+  let path = uri.into();
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
@@ -842,14 +842,14 @@ impl Server {
                 }
                 "textDocument/didOpen" => {
                   let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
-                  let path = FileRef::from_url(doc.uri);
+                  let path = doc.uri.into();
                   log!("open {:?}", path);
                   vfs.open_virt(path, doc.version, doc.text)?;
                 }
                 "textDocument/didChange" => {
                   let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
                   if !content_changes.is_empty() {
-                    let path = FileRef::from_url(doc.uri);
+                    let path = doc.uri.into();
                     log!("change {:?}", path);
                     let start = {
                       let file = vfs.get(&path).ok_or("changed nonexistent file")?;
@@ -865,7 +865,7 @@ impl Server {
                 }
                 "textDocument/didClose" => {
                   let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
-                  let path = FileRef::from_url(doc.uri);
+                  let path = doc.uri.into();
                   log!("close {:?}", path);
                   vfs.close(&path)?;
                 }

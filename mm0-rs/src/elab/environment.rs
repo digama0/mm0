@@ -37,7 +37,9 @@ macro_rules! id_wrapper {
 
     #[allow(dead_code)]
     impl<T> $vec<T> {
+      /// Get a reference to the element at the given index.
       pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
+      /// Get a mutable reference to the element at the given index.
       pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
     }
     impl<T> Default for $vec<T> {
@@ -200,7 +202,10 @@ pub enum ProofNode {
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomID, SortID),
   /// `Term {term, args}` is an application of term constructor `term` to subterms
-  Term { term: TermID, args: Box<[ProofNode]> },
+  Term {
+    /** the term constructor */ term: TermID,
+    /** the subterms */ args: Box<[ProofNode]>,
+  },
   /// `Hyp(i, e)` is hypothesis `i` (`hyps[i]` will be a reference to element),
   /// which is a proof of `|- e`.
   Hyp(usize, Box<ProofNode>),
@@ -209,7 +214,11 @@ pub enum ProofNode {
   /// substitution, followed by the hypothesis subproofs, and it is required that `res`
   /// and the subproofs be the result of substitution of the theorem conclusion and hypotheses
   /// under the substitution.
-  Thm { thm: ThmID, args: Box<[ProofNode]>, res: Box<ProofNode> },
+  Thm {
+    /** the theorem to apply */ thm: ThmID,
+    /** the substitution, and the subproofs */ args: Box<[ProofNode]>,
+    /** the substituted conclusion */ res: Box<ProofNode>,
+  },
   /// `Conv(tgt, conv, proof)` is a proof of `|- tgt` if `proof: src` and `conv: tgt = src`.
   Conv(Box<(ProofNode, ProofNode, ProofNode)>),
   /// `Refl(e): e = e`
@@ -217,11 +226,23 @@ pub enum ProofNode {
   /// `Refl(p): e2 = e1` if `p: e1 = e2`
   Sym(Box<ProofNode>),
   /// `Cong {term, args}: term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
-  Cong { term: TermID, args: Box<[ProofNode]> },
+  Cong {
+    /** the term constructor */ term: TermID,
+    /** the conversion proofs for the arguments */ args: Box<[ProofNode]>,
+  },
   /// `Unfold {term, args, res: (lhs, sub_lhs, p)}` is a proof of `lhs = rhs` if
   /// `lhs` is `term args` and `term` is a definition and `sub_lhs` is the result of
   /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
-  Unfold { term: TermID, args: Box<[ProofNode]>, res: Box<(ProofNode, ProofNode, ProofNode)> },
+  Unfold {
+    /// the definition to unfold
+    term: TermID,
+    /// the (non-dummy) parameters to the term
+    args: Box<[ProofNode]>,
+    /// - `lhs`: the term applied to the arguments, the same as `Term(term, args)`
+    /// - `sub_lhs`: the result of unfolding the definition (for some choice of dummy names)
+    /// - `p`: the proof that `sub_lhs = rhs`
+    res: Box<(ProofNode, ProofNode, ProofNode)>,
+  },
 }
 
 impl From<&ExprNode> for ProofNode {

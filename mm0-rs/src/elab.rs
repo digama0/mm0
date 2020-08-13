@@ -97,6 +97,8 @@ pub struct ElabError {
   /// [`ElabErrorKind::Boxed`]: enum.ElabErrorKind.html#variant.Boxed
   pub kind: ElabErrorKind,
 }
+
+/// The main result type used by functions in the elaborator.
 pub type Result<T> = std::result::Result<T, ElabError>;
 
 impl ElabError {
@@ -589,8 +591,7 @@ impl Elaborator {
     for (sp, f) in &ast.imports {
       let path = self.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
       (|| -> Result<_> {
-        let p = path.canonicalize().map_err(|e| ElabError::new_e(sp.clone(), e))?;
-        let r = FileRef::new(p);
+        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp.clone(), e))?.into();
         let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp.clone(), e))?;
         recv.insert(sp.clone(), (Some(r), tok));
         Ok(())

@@ -25,8 +25,8 @@ pub struct QExpr {
 }
 #[derive(Debug)]
 pub enum QExprKind {
-  IdentApp(Span, Vec<QExpr>),
-  App(Span, TermID, Vec<QExpr>),
+  IdentApp(Span, Box<[QExpr]>),
+  App(Span, TermID, Box<[QExpr]>),
   Unquote(SExpr),
 }
 
@@ -36,12 +36,12 @@ impl EnvDisplay for QExpr {
       &QExprKind::IdentApp(sp, ref es) if es.is_empty() => fe.source[sp].fmt(f),
       &QExprKind::IdentApp(sp, ref es) => {
         write!(f, "({}", &fe.source[sp])?;
-        for e in es {write!(f, " {}", fe.to(e))?}
+        for e in &**es {write!(f, " {}", fe.to(e))?}
         write!(f, ")")
       }
       QExprKind::App(_, t, es) => {
         write!(f, "({}", fe.to(t))?;
-        for e in es {write!(f, " {}", fe.to(e))?}
+        for e in &**es {write!(f, " {}", fe.to(e))?}
         write!(f, ")")
       }
       QExprKind::Unquote(e) => write!(f, ",{}", fe.to(e))
@@ -121,7 +121,7 @@ impl<'a> MathParser<'a> {
     (tk, mem::replace(&mut self.idx, start))
   }
 
-  fn literals(&mut self, res: &mut VecUninit<QExpr>, lits: &[Literal],
+  fn literals(&mut self, res: &mut SliceUninit<QExpr>, lits: &[Literal],
       consts: &mut Vec<Span>, mut end: usize) -> Result<usize, ParseError> {
     for lit in lits {
       match lit {
@@ -168,7 +168,7 @@ impl<'a> MathParser<'a> {
     if let Some(&(_, q)) = self.pe.consts.get(v) {
       if q >= p {
         if let Some(info) = self.pe.prefixes.get(v) {
-          let mut args = VecUninit::new(info.nargs);
+          let mut args = SliceUninit::new(info.nargs);
           let mut consts = vec![sp];
           let end = self.literals(&mut args, &info.lits, &mut consts, sp.end)?;
           let span = (start..end).into();
@@ -191,7 +191,7 @@ impl<'a> MathParser<'a> {
         }
       }
       self.idx = start;
-      return Ok(QExpr {span, k: QExprKind::IdentApp(sp, args)})
+      return Ok(QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())})
     }
     Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))?
   }
@@ -205,7 +205,7 @@ impl<'a> MathParser<'a> {
       if p1 < p {break}
       let info = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
       self.idx = tok_end.1;
-      let mut args = VecUninit::new(info.nargs);
+      let mut args = SliceUninit::new(info.nargs);
       let start = lhs.span.start;
       if let Literal::Var(i, _) = info.lits[0] {args.set(i, lhs)} else {unreachable!()}
       let mut consts = vec![tk];

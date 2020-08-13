@@ -405,14 +405,14 @@ impl<'a> LispParser<'a> {
           self.elab.env.get_atom(self.ast.clone().span(sp))).span(self.fspan(sp)));
         if es.is_empty() {Ok(head)} else {
           let mut cs = vec![head];
-          for e in es { cs.push(self.qexpr(e)?) }
+          for e in es.into_vec() { cs.push(self.qexpr(e)?) }
           Ok(IR::list(self.fspan(e.span), cs))
         }
       }
       QExprKind::App(sp, t, es) => {
         let a = self.terms[t].atom;
         let mut cs = vec![IR::Const(LispVal::atom(a).span(self.fspan(sp)))];
-        for e in es { cs.push(self.qexpr(e)?) }
+        for e in es.into_vec() { cs.push(self.qexpr(e)?) }
         Ok(IR::list(self.fspan(e.span), cs))
       }
       QExprKind::Unquote(e) => {
@@ -504,7 +504,7 @@ impl<'a> LispParser<'a> {
         };
         if es.is_empty() {Ok(head)} else {
           let mut cs = vec![head];
-          for e in es { cs.push(self.qexpr_pattern(ctx, code, e)?) }
+          for e in es.into_vec() { cs.push(self.qexpr_pattern(ctx, code, e)?) }
           Ok(Pattern::List(cs.into(), None))
         }
       }
@@ -514,7 +514,7 @@ impl<'a> LispParser<'a> {
           Ok(Pattern::QExprAtom(x))
         } else {
           let mut cs = vec![Pattern::QExprAtom(x)];
-          for e in es { cs.push(self.qexpr_pattern(ctx, code, e)?) }
+          for e in es.into_vec() { cs.push(self.qexpr_pattern(ctx, code, e)?) }
           Ok(Pattern::List(cs.into(), None))
         }
       }

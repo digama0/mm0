@@ -334,7 +334,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<((), Arc<Environment>)>) ->
 ///   binary. If this argument is omitted, the input is only elaborated.
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").unwrap();
-  let (path, file) = VFS_.get_or_insert(FileRef::new(fs::canonicalize(path)?))?;
+  let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
   let env = block_on(elaborate(path.clone()))?;
   if let Some(out) = args.value_of("OUTPUT") {
     let bin = !out.ends_with(".mmu");

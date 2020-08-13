@@ -29,7 +29,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   }
 }
 
-/// Newtype for an Arc String.
+/// Newtype for an `Arc<String>`, so that we can implement `From<&str>`.
 #[derive(Clone, Hash, PartialEq, Eq)] pub struct ArcString(pub Arc<String>);
 
 impl Borrow<str> for ArcString {
@@ -40,6 +40,7 @@ impl Deref for ArcString {
   fn deref(&self) -> &str { &*self.0 }
 }
 impl ArcString {
+  /// Constructs a new `ArcString`.
   pub fn new(s: String) -> ArcString { ArcString(Arc::new(s)) }
 }
 impl fmt::Display for ArcString {
@@ -52,33 +53,44 @@ impl From<&str> for ArcString {
   fn from(s: &str) -> ArcString { ArcString::new(s.to_owned()) }
 }
 
-/// A way to initialize a `Vec<T>`  by first constructing the array (giving the length),
+/// A way to initialize a `Box<[T]>` by first constructing the array (giving the length),
 /// initializing the elements in some order, and then using the unsafe function
 /// [`assume_init`] to assert that every element of the array has been initialized and
-/// transmute the `VecUninit<T>` into a `Vec<T>`.
+/// transmute the `SliceUninit<T>` into a `Box<[T]>`.
+///
+/// [`assume_init`]: struct.SliceUninit.html#method.assume_init
 #[derive(Debug)]
-pub struct VecUninit<T>(Vec<MaybeUninit<T>>);
+pub struct SliceUninit<T>(Box<[MaybeUninit<T>]>);
 
-impl<T> VecUninit<T> {
+impl<T> SliceUninit<T> {
+  /// Create a new uninitialized slice of length `size`.
   pub fn new(size: usize) -> Self {
     let mut res = Vec::with_capacity(size);
+    // safety: the newly constructed elements have type MaybeUninit<T>
+    // so it's fine to not initialize them
     unsafe { res.set_len(size) };
-    VecUninit(res)
+    SliceUninit(res.into_boxed_slice())
   }
 
-  pub fn set(&mut self, i: usize, val: T) {
-    self.0[i] = MaybeUninit::new(val);
-  }
+  /// Assign the value `val` to location `i` of the slice. Warning: this does not
+  /// call the destructor for `T` on the previous value, so this should be used only
+  /// once per location unless `T` has no `Drop` impl.
+  pub fn set(&mut self, i: usize, val: T) { self.0[i] = MaybeUninit::new(val) }
 
-  pub unsafe fn assume_init(self) -> Vec<T> {
-    mem::transmute(self.0)
-  }
+  /// Finalizes the construction, returning an initialized `Box<[T]>`.
+  ///
+  /// # Safety
+  ///
+  /// This causes undefined behavior if the content is not fully initialized.
+  pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
+  /// The byte index of the beginning of the span (inclusive).
   pub start: usize,
+  /// The byte index of the end of the span (exclusive).
   pub end: usize,
 }
 
@@ -158,23 +170,36 @@ fn make_relative(buf: &PathBuf) -> String {
 /// [`Url`]: ../lined_string/struct.Url.html
 #[derive(Clone)]
 pub struct FileRef(Arc<(PathBuf, String, Url)>);
-impl FileRef {
-  pub fn new(buf: PathBuf) -> FileRef {
+
+impl From<PathBuf> for FileRef {
+  fn from(buf: PathBuf) -> FileRef {
     let u = Url::from_file_path(&buf).expect("bad file path");
     let rel = make_relative(&buf);
     FileRef(Arc::new((buf, rel, u)))
   }
-  pub fn from_url(url: Url) -> FileRef {
+}
+
+impl From<Url> for FileRef {
+  fn from(url: Url) -> FileRef {
     let buf = url.to_file_path().expect("bad URL");
     let rel = make_relative(&buf);
     FileRef(Arc::new((buf, rel, url)))
   }
+}
+
+impl FileRef {
+  /// Convert this `FileRef` to a `PathBuf`, for use with OS file actions.
   pub fn path(&self) -> &PathBuf { &self.0 .0 }
+  /// Convert this `FileRef` to a relative path (as a `&str`).
   pub fn rel(&self) -> &str { &self.0 .1 }
+  /// Convert this `FileRef` to a `file:://` URL, for use with LSP.
   pub fn url(&self) -> &Url { &self.0 .2 }
+  /// Get a pointer to this allocation, for use in hashing.
   pub fn ptr(&self) -> *const PathBuf { self.path() }
+  /// Compare this with `other` for pointer equality.
   pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
 
+  /// Returns true if this file has the provided extension.
   pub fn has_extension(&self, ext: &str) -> bool {
     self.path().extension().map_or(false, |s| s == ext)
   }
@@ -205,7 +230,9 @@ impl fmt::Debug for FileRef {
 /// [`FileRef`]: struct.FileRef.html
 #[derive(Clone, PartialEq, Eq)]
 pub struct FileSpan {
+  /// The file in which this span occured.
   pub file: FileRef,
+  /// The span (as byte indexes into the file source text).
   pub span: Span,
 }
 
