@@ -1,3 +1,7 @@
+//! The lisp parser, which takes (already parsed) s-exprs and puts them into an
+//! intermediate representation suitable for interpretation (doing as many
+//! static checks as we can beforehand).
+
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::collections::HashMap;

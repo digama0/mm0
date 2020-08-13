@@ -1,3 +1,23 @@
+//! Basic printer for lisp terms.
+//!
+//! This is essentially an implementation of [`Display`] for lisp terms,
+//! but we can't do this literally because a [`Display`] implementation doesn't
+//! get side information besides the [`Formatter`], while we need the source text
+//! and the environment, packaged as the [`FormatEnv`] struct.
+//!
+//! The main trait for [`Display`] modulo [`FormatEnv`] is [`EnvDisplay`]. It is
+//! possible to use a `EnvDisplay` object in a macro like [`format!`] or [`write!`]
+//! using [`FormatEnv::to`], or [`Elaborator::print`].
+//!
+//! [`Display`]: https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html
+//! [`Formatter`]: https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html
+//! [`FormatEnv`]: struct.FormatEnv.html
+//! [`EnvDisplay`]: trait.EnvDisplay.html
+//! [`format!`]: https://doc.rust-lang.org/std/macro.format.html
+//! [`write!`]: https://doc.rust-lang.org/std/macro.write.html
+//! [`FormatEnv::to`]: struct.FormatEnv.html#method.to
+//! [`Elaborator::print`]: ../struct.Elaborator.html#method.print
+
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;

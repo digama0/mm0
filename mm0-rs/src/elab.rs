@@ -14,7 +14,7 @@ pub mod spans;
 pub mod lisp;
 pub mod math_parser;
 pub mod local_context;
-pub mod tactic;
+pub mod refine;
 pub mod proof;
 
 use std::ops::{Deref, DerefMut};

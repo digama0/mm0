@@ -1,3 +1,10 @@
+//! The `(refine)` tactic, which is called by default when you give a pure proof term.
+//!
+//! The `(refine)` tactic is passed a lisp s-expr datum, and the interpretation of this
+//! s-expr has a grammar of its own, described in [`mm1.md`].
+//!
+//! [`mm1.md`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#pre-expressions
+
 use crate::util::*;
 use super::{Elaborator, ElabError, Result};
 use super::environment::*;

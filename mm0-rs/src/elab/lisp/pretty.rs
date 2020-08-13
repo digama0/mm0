@@ -1,3 +1,11 @@
+//! Pretty printer for math formulas and lisp terms.
+//!
+//! The main interface is the [`FormatEnv::pretty`] function, which provides a
+//! [`Pretty`] arena on which various methods exist to print different kinds of object.
+//!
+//! [`FormatEnv::pretty`]: ../print/struct.FormatEnv.html#method.pretty
+//! [`Pretty`]: struct.Pretty.html
+
 use std::ops::Deref;
 use std::collections::HashMap;
 use std::cell::RefCell;
@@ -17,6 +25,10 @@ struct PP<'a> {
   right: bool,
   small: bool,
   doc: RefDoc<'a, ()>,
+}
+
+impl<'a> From<PP<'a>> for RefDoc<'a, ()> {
+  fn from(doc: PP<'a>) -> RefDoc<'a, ()> { doc.doc }
 }
 
 impl<'a> PP<'a> {
@@ -110,12 +122,12 @@ impl<'a> Pretty<'a> {
     self.alloc.alloc(doc)
   }
 
-  fn append_doc(&'a self, a: RefDoc<'a, ()>, b: RefDoc<'a, ()>) -> RefDoc<'a, ()> {
-    self.alloc(Doc::Append(a, b))
+  fn append_doc(&'a self, a: impl Into<RefDoc<'a, ()>>, b: impl Into<RefDoc<'a, ()>>) -> RefDoc<'a, ()> {
+    self.alloc(Doc::Append(a.into(), b.into()))
   }
 
   fn append_with(&'a self, a: PP<'a>, sp: RefDoc<'a, ()>, b: PP<'a>) -> PP<'a> {
-    let doc = self.append_doc(self.append_doc(a.doc, sp), b.doc);
+    let doc = self.append_doc(self.append_doc(a, sp), b);
     PP {left: a.left, right: b.right, small: false, doc}
   }
 
@@ -124,13 +136,11 @@ impl<'a> Pretty<'a> {
     self.append_with(a, sp, b)
   }
 
-  fn group(&'a self, a: PP<'a>) -> PP<'a> {
-    let PP {left, right, small, doc} = a;
+  fn group(&'a self, PP {left, right, small, doc}: PP<'a>) -> PP<'a> {
     PP {left, right, small, doc: self.alloc(Doc::Group(doc))}
   }
 
-  fn nest(&'a self, i: isize, a: PP<'a>) -> PP<'a> {
-    let PP {left, right, small, doc} = a;
+  fn nest(&'a self, i: isize, PP {left, right, small, doc}: PP<'a>) -> PP<'a> {
     PP {left, right, small, doc: self.alloc(Doc::Nest(i, doc))}
   }
 
@@ -300,7 +310,7 @@ impl<'a> Pretty<'a> {
             self.append_doc(self.alloc(Doc::text(" .")),
               self.append_doc(Self::line(), self.pp_lisp(&u.as_lisp()))));
         }
-        let doc = self.append_doc(self.lparen.doc, self.append_doc(doc, self.rparen.doc));
+        let doc = self.append_doc(self.lparen, self.append_doc(doc, self.rparen));
         self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
       }
       _ => self.alloc(Doc::text(format!("{}", self.fe.to(e)))),
@@ -400,11 +410,11 @@ impl<'a> Pretty<'a> {
 
   pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a, ()> {
     let doc = self.append_doc(RefDoc(&Doc::BorrowedText("failed to unify:")), Self::line());
-    let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)).doc);
+    let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)));
     let doc = self.append_doc(doc, self.alloc(Doc::Nest(2,
       self.append_doc(Self::line(), RefDoc(&Doc::BorrowedText("=?="))))));
     let doc = self.append_doc(doc, Self::line());
-    let doc = self.append_doc(doc, self.expr_paren(e2, Prec::Prec(0)).doc);
+    let doc = self.append_doc(doc, self.expr_paren(e2, Prec::Prec(0)));
     self.alloc(Doc::Group(doc))
   }
 }

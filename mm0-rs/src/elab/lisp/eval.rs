@@ -1,3 +1,11 @@
+//! The lisp evaluator, where most functions are implemented.
+//!
+//! We use an explicit call stack for evaluating lisp [`IR`], so that we can give useful
+//! stack traces, as well as having a uniform location to be able to check for interrupts
+//! and timeout.
+//!
+//! [`IR`]: ../parser/enum.IR.html
+
 use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::time::{Instant, Duration};
@@ -9,7 +17,7 @@ use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator,
   AtomID, Environment, AtomData, DeclKey, StmtTrace,
   ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
-  tactic::{RStack, RState, RefineResult}};
+  refine::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};

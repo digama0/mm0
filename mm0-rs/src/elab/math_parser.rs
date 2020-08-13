@@ -1,3 +1,12 @@
+//! Secondary / dynamic parser for MM0 math formulas.
+//!
+//! The main grammar of MM0 math parsing is described in [`mm0.md`],
+//! but MM1 also includes antiquotations `,e` for splicing evaluated lisp
+//! expressions into math formulas. These can also be used for capturing
+//! subterms when a math formula is used as a pattern in a `match` statement.
+//!
+//! [`mm0.md`]: https://github.com/digama0/mm0/blob/master/mm0.md#secondary-parsing
+
 use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::fmt::{self, Display};

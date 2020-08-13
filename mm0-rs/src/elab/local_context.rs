@@ -1,3 +1,6 @@
+//! The local context, as well as the implementation of elaboration and
+//! type inference for top level terms and declarations.
+
 use std::ops::Deref;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};

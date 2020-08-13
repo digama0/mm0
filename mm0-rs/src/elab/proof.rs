@@ -1,3 +1,8 @@
+//! The proof compacter, which takes an elaborated lisp proof s-expr and produces
+//! a [`Proof`] object that will be stored in the environment.
+//!
+//! [`Proof`]: ../environment/struct.Proof.html
+
 use std::rc::Rc;
 use std::hash::Hash;
 use std::mem;

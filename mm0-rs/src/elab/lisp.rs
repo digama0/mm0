@@ -1,3 +1,9 @@
+//! Implementation of the Scheme-like metaprogramming language of MM1.
+//!
+//! See [`mm1.md`] for a description of the MM1 metaprogramming language.
+//!
+//! [`mm1.md`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#evaluation
+
 pub mod parser;
 pub mod eval;
 pub mod print;
