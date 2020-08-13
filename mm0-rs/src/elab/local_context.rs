@@ -741,7 +741,7 @@ impl Elaborator {
               let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), eret));
               self.lc.goals = vec![g.clone()];
               self.elab_lisp(e)?;
-              for g in mem::replace(&mut self.lc.goals, vec![]) {
+              for g in mem::take(&mut self.lc.goals) {
                 report!(try_get_span(&span, &g),
                   format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)))
               }
@@ -763,7 +763,7 @@ impl Elaborator {
         self.spans.insert(d.id, ObjectKind::Thm(tid));
       }
     }
-    self.spans.lc = Some(mem::replace(&mut self.lc, LocalContext::new()));
+    self.spans.lc = Some(mem::take(&mut self.lc));
     Ok(())
   }
 }

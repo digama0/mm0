@@ -123,7 +123,7 @@ impl Environment {
     }
     impl<'a> State<'a> {
       fn line(&mut self, indent: usize) {
-        let l = mem::replace(&mut self.l, vec![]);
+        let l = mem::take(&mut self.l);
         self.w.push((mem::replace(&mut self.i, indent), l));
       }
 

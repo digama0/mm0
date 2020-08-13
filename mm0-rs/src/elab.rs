@@ -266,7 +266,7 @@ impl Elaborator {
   fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
 
   fn push_spans(&mut self) {
-    self.env.spans.push(mem::replace(&mut self.spans, Spans::new()));
+    self.env.spans.push(mem::take(&mut self.spans));
   }
 
   fn name_of(&mut self, stmt: &Stmt) -> LispVal {

@@ -939,13 +939,13 @@ make_builtins! { self, sp1, sp2, args,
   LocalCtx: Exact(0) =>
     LispVal::list(self.lc.proof_order.iter().map(|a| LispVal::atom(a.0)).collect()),
   ToExpr: Exact(1) => return Ok(State::Refine {
-    sp: sp1, stack: vec![RStack::DeferGoals(mem::replace(&mut self.lc.goals, vec![]))],
+    sp: sp1, stack: vec![RStack::DeferGoals(mem::take(&mut self.lc.goals))],
     state: RState::RefineExpr {tgt: InferTarget::Unknown, e: args.swap_remove(0)}
   }),
   Refine: AtLeast(0) => return Ok(State::Refine {
     sp: sp1, stack: vec![],
     state: RState::Goals {
-      gs: mem::replace(&mut self.lc.goals, vec![]).into_iter(),
+      gs: mem::take(&mut self.lc.goals).into_iter(),
       es: args.into_iter()
     }
   }),
@@ -956,7 +956,7 @@ make_builtins! { self, sp1, sp2, args,
     try1!(xarg.as_atom().ok_or("expected an atom"));
     let xsp = try_get_span(&self.fspan(sp1), &xarg);
     self.stack.push(Stack::Have(sp1, xarg));
-    let mut stack = vec![RStack::DeferGoals(mem::replace(&mut self.lc.goals, vec![]))];
+    let mut stack = vec![RStack::DeferGoals(mem::take(&mut self.lc.goals))];
     let state = match (args.next().unwrap(), args.next()) {
       (p, None) => {
         let fsp = self.fspan(xsp);
@@ -1188,7 +1188,7 @@ impl<'a> Evaluator<'a> {
                 if mem::replace(&mut self.data[a].lisp, Some((Some(loc), ret))).is_none() {
                   self.stmts.push(StmtTrace::Global(a))
                 }
-              } else if mem::replace(&mut self.data[a].lisp, None).is_some() {
+              } else if mem::take(&mut self.data[a].lisp).is_some() {
                 self.data[a].graveyard = Some(Box::new(loc));
               }
             }
@@ -1229,7 +1229,7 @@ impl<'a> Evaluator<'a> {
               } else if !self.lc.goals.is_empty() {
                 let stat = self.stat();
                 let span = self.fspan(sp);
-                for g in mem::replace(&mut self.lc.goals, vec![]) {
+                for g in mem::take(&mut self.lc.goals) {
                   let err = ElabError::new_e(try_get_span(&span, &g),
                     format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)));
                   self.report(err)

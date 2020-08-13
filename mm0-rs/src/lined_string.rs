@@ -1,7 +1,7 @@
 //! Embellished String which carries additional data useful for interacting with language server messages.
 //!
 //! The [`LinedString::apply_changes`] function is used to realize changes made to a string once those
-//! changes are received by mm0-rs from a language server. [`LinedString`] Implements associated 
+//! changes are received by mm0-rs from a language server. [`LinedString`] Implements associated
 //! methods allowing it to be used nicely with the [`Position`] type specified by the language server protocol.
 //!
 //! [`LinedString::apply_changes`]: struct.LinedString.html#method.apply_changes
@@ -19,7 +19,7 @@ use crate::util::{Span, FileSpan};
 /// Also contains a boolean indicating whether the string has any unicode characters.
 /// Unicode is currently unsupported, but this allows the lexer to gracefully handle
 /// errors arising from the presence of unicode characters in input.
-/// The indices stored in `lines` are the successors of any newline characters. 
+/// The indices stored in `lines` are the successors of any newline characters.
 #[derive(Default, Clone, Debug)]
 pub struct LinedString { pub s: String, pub unicode: bool, pub lines: Vec<usize> }
 
@@ -53,7 +53,7 @@ fn lsp_to_idx(s: &str, mut chs: usize) -> usize {
 impl LinedString {
   /// Calculate and store information about the positions of any newline
   /// characters in the string, and set 'unicode' to true if the string contains unicode.
-  /// The data in 'lines' is actually the positions of the characters immediately after 
+  /// The data in 'lines' is actually the positions of the characters immediately after
   /// the line break (so \n.pos + 1).
   fn get_lines(unicode: &mut bool, s: &str) -> Vec<usize> {
     let mut lines = vec![];
@@ -168,7 +168,7 @@ impl LinedString {
 
   /// Truncate a LinedString's contents so that it's equal to the character position
   /// indicated by some lsp [`Position`], discarding any unneeded newline data.
-  /// Does nothing if the LinedString's contents were already less than or equal 
+  /// Does nothing if the LinedString's contents were already less than or equal
   /// in length to the [`Position`]'s index.
   ///
   /// [`Position`]: ../../lsp_types/struct.Position.html
@@ -196,7 +196,7 @@ impl LinedString {
         if first_change.map_or(true, |c| start < c) { first_change = Some(start) }
         if out.end() > start {
           out.extend(uncopied);
-          old = mem::replace(&mut out, LinedString::default());
+          old = mem::take(&mut out);
           uncopied = &old;
         }
         uncopied = out.extend_until(self.unicode, uncopied, end);
