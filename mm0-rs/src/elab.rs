@@ -436,10 +436,10 @@ impl Elaborator {
   }
 }
 
-enum ElabStmt {
-  Ok,
-  Import(Span),
-}
+/// The result type of [`Elaborator::elab_stmt`].
+///
+/// [`Elaborator::elab_stmt`]: struct.Elaborator.html#method.elab_stmt
+enum ElabStmt { Ok, Import(Span) }
 
 impl Elaborator {
   /// Elaborates a single statement.
