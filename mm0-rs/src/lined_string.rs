@@ -21,7 +21,7 @@ use crate::util::{Span, FileSpan};
 /// errors arising from the presence of unicode characters in input.
 /// The indices stored in `lines` are the successors of any newline characters.
 #[derive(Default, Clone, Debug)]
-pub struct LinedString { pub s: String, pub unicode: bool, pub lines: Vec<usize> }
+pub struct LinedString { s: String, unicode: bool, lines: Vec<usize> }
 
 /// Allows [`LinedString`] to be indexed with a [`Span`], since [`Span`] is essentially a range.
 ///
@@ -64,7 +64,7 @@ impl LinedString {
     lines
   }
 
-  /// Turn a character index into an LSP [`Position`]
+  /// Turn a byte index into an LSP [`Position`]
   ///
   /// [`Position`]: ../../lsp_types/struct.Position.html
   pub fn to_pos(&self, idx: usize) -> Position {
@@ -78,15 +78,26 @@ impl LinedString {
       } else { idx - pos } as u64)
   }
 
+  /// Turn a `Span` into an LSP [`Range`].
+  ///
+  /// [`Range`]: ../../lsp_types/struct.Range.html
   pub fn to_range(&self, s: Span) -> lsp_types::Range {
     lsp_types::Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
   }
 
+  /// Turn a `FileSpan` into an LSP [`Location`].
+  ///
+  /// [`Location`]: ../../lsp_types/struct.Location.html
   pub fn to_loc(&self, fs: &FileSpan) -> lsp_types::Location {
     lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}
   }
 
+  /// Get the total number of lines in the file (as a `u64` for LSP compatibility).
   pub fn num_lines(&self) -> u64 { self.lines.len() as u64 }
+
+  /// Get the [`Position`] (line and UTF-16 code unit offset) of the end of the file.
+  ///
+  /// [`Position`]: ../../lsp_types/struct.Position.html
   pub fn end(&self) -> Position { self.to_pos(self.s.len()) }
 
   /// Calculates the byte index of the position `chs` UTF-16 code units after
@@ -106,7 +117,7 @@ impl LinedString {
     } else {chs}
   }
 
-  /// Turn an lsp [`Position`] into a usize index. [`Position`] is already zero-based,
+  /// Turn an LSP [`Position`] into a usize index. [`Position`] is already zero-based,
   /// but LinedString.lines stores (1 + position) of the actual linebreak characters,
   /// so lines[0] points to the start of line 1, lines[1] points to the start of line 2, etc.
   /// with the start of line 0 just being s.0.
