@@ -74,7 +74,7 @@ lazy_static! {
   static ref SERVER: Server = Server::new().expect("Initialization failed");
 }
 #[allow(unused)]
-pub fn log(s: String) {
+pub(crate) fn log(s: String) {
   LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), s));
   LOGGER.1.notify_one();
 }

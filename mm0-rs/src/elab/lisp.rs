@@ -432,13 +432,13 @@ pub enum Proc {
   Builtin(BuiltinProc),
   Lambda {
     pos: ProcPos,
-    env: Vec<LispVal>,
+    env: Box<[LispVal]>,
     spec: ProcSpec,
     code: Arc<IR>
   },
   MatchCont(Arc<AtomicBool>),
   RefineCallback,
-  ProofThunk(AtomID, Mutex<Result<LispVal, Vec<LispVal>>>),
+  ProofThunk(AtomID, Mutex<Result<LispVal, Box<[LispVal]>>>),
   MMCCompiler(Mutex<crate::mmc::Compiler>) // TODO: use extern instead
 }
 

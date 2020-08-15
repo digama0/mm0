@@ -113,9 +113,9 @@ impl Display for Modifiers {
 /// delimiters. delimiter-stmts with two math strings are parsed as `LeftRight::(s1, s2)`.
 #[derive(Clone, Debug)]
 pub enum Delimiter {
-  /// A delimiter command `delimiter $ ( , + $;` becomes `Both([r'(', r',', r'+'])`.
+  /// A delimiter command `delimiter $ ( , + $;` becomes `Both([b'(', b',', b'+'])`.
   Both(Box<[u8]>),
-  /// A delimiter command `delimiter $ ( , $ $ ) , $;` becomes `LeftRight([r'(', r','], [r')', r','])`.
+  /// A delimiter command `delimiter $ ( , $ $ ) , $;` becomes `LeftRight([b'(', b','], [b')', b','])`.
   LeftRight(Box<[u8]>, Box<[u8]>),
 }
 

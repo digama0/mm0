@@ -569,8 +569,7 @@ impl Elaborator {
         if tdata.proof.is_some() {
           args.push(vis(tdata.vis));
           heap.truncate(tdata.args.len());
-          heap.shrink_to_fit();
-          args.push(LispVal::proc(Proc::ProofThunk(x, Mutex::new(Err(heap)))));
+          args.push(LispVal::proc(Proc::ProofThunk(x, Mutex::new(Err(heap.into())))));
         }
         LispVal::list(args)
       }
@@ -1146,7 +1145,7 @@ impl<'a> Evaluator<'a> {
             assert!(self.ctx.len() == n);
             State::Ret(LispVal::proc(Proc::Lambda {
               pos: self.proc_pos(sp),
-              env: self.ctx.clone(),
+              env: self.ctx.clone().into(),
               spec,
               code: e.clone()
             }))
@@ -1287,12 +1286,12 @@ impl<'a> Evaluator<'a> {
               Proc::Lambda {pos, env, code, ..} => {
                 if let Some(Stack::Ret(_, _, _, _)) = self.stack.last() { // tail call
                   if let Some(Stack::Ret(fsp, _, old, _)) = self.stack.pop() {
-                    self.ctx = env.clone();
+                    self.ctx = (**env).into();
                     self.stack.push(Stack::Ret(fsp, pos.clone(), old, code.clone()));
                   } else {unsafe {std::hint::unreachable_unchecked()}}
                 } else {
                   self.stack.push(Stack::Ret(self.fspan(sp1), pos.clone(),
-                    mem::replace(&mut self.ctx, env.clone()), code.clone()));
+                    mem::replace(&mut self.ctx, (**env).into()), code.clone()));
                 }
                 self.file = pos.fspan().file.clone();
                 self.stack.push(Stack::Drop(self.ctx.len()));
@@ -1354,7 +1353,7 @@ impl<'a> Evaluator<'a> {
                   Ok(e) => State::Ret(e.clone()),
                   Err(_) => if let Some(DeclKey::Thm(t)) = self.data[x].decl {
                     if let Err(heap) = mem::replace(&mut *g, Ok(LispVal::undef())) {
-                      let e = self.get_proof(t, heap);
+                      let e = self.get_proof(t, heap.into());
                       *g = Ok(e.clone());
                       State::Ret(e)
                     } else {unsafe {std::hint::unreachable_unchecked()}}
