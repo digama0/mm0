@@ -70,8 +70,12 @@ impl ErrorLevel {
 /// [`ErrorLevel`]: enum.ErrorLevel.html
 #[derive(Debug)]
 pub struct ParseError {
+  /// The location of the error (possibly zero-length,
+  /// possibly enclosing an identifier or other object)
   pub pos: Span,
+  /// The severity of the error
   pub level: ErrorLevel,
+  /// The error message
   pub msg: BoxError,
 }
 
@@ -86,10 +90,16 @@ impl Clone for ParseError {
 }
 
 impl ParseError {
+  /// Construct a parse error at [`Error`] severity from a position and a message
+  ///
+  /// [`Error`]: enum.ErrorLevel.html#variant.Error
   pub fn new(pos: impl Into<Span>, msg: BoxError) -> ParseError {
     ParseError { pos: pos.into(), level: ErrorLevel::Error, msg }
   }
 
+  /// Convert a parse error to an LSP [`Diagnostic`] object.
+  ///
+  /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
   pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
       range: file.to_range(self.pos),
@@ -103,21 +113,20 @@ impl ParseError {
 }
 
 /// Implements parser functions as associated methods.
-///
-/// * `source`: The input file as a byte slice
-/// * `errors`: The set of accumulated (non-fatal) parse errors
-/// * `imports`: The span and contents of all `import` statements spotted thus far
-/// * `idx`: The current parser position in the string
-/// * `restart_pos`: The beginning of the first word that looks like a command keyword
-///   after the keyword that begins the currently parsing statement. In the event of a fatal
-///   parse error when parsing a statement, this is used as the place to restart parsing,
-///   otherwise parsing restarts after the `;` that terminates every statement.
 #[derive(Debug)]
 pub struct Parser<'a> {
+  /// The input file as a byte slice
   pub source: &'a [u8],
+  /// The set of accumulated (non-fatal) parse errors
   pub errors: Vec<ParseError>,
+  /// The span and contents of all `import` statements spotted thus far
   pub imports: Vec<(Span, String)>,
+  /// The current parser position in the string
   pub idx: usize,
+  /// The beginning of the first word that looks like a command keyword
+  /// after the keyword that begins the currently parsing statement. In the event of a fatal
+  /// parse error when parsing a statement, this is used as the place to restart parsing,
+  /// otherwise parsing restarts after the `;` that terminates every statement.
   pub restart_pos: Option<usize>,
 }
 
@@ -303,8 +312,8 @@ impl<'a> Parser<'a> {
       match self.ident_() {
         None => return (modifiers, None),
         Some(id) => match Modifiers::from_name(self.span(id)) {
-          None => return (modifiers, Some(id)),
-          Some(m) => {
+          Modifiers::NONE => return (modifiers, Some(id)),
+          m => {
             if self.restart_pos.is_none() { self.restart_pos = Some(id.start) }
             if modifiers.intersects(m) { self.push_err(self.err_str("double modifier")) }
             modifiers |= m;
@@ -466,12 +475,13 @@ impl<'a> Parser<'a> {
     (Ok(((start..self.idx).into(), val)), self.ws()).0
   }
 
-  pub fn is_atom(&self, e: &SExpr, s: &str) -> bool {
+  fn is_atom(&self, e: &SExpr, s: &str) -> bool {
     if let SExpr {span, k: SExprKind::Atom(Atom::Ident)} = e {
       self.span(*span) == s
     } else {false}
   }
 
+  /// Parse an `SExpr`.
   pub fn sexpr(&mut self) -> Result<SExpr> {
     let e = self.sexpr_dot()?;
     if self.is_atom(&e, ".") {
