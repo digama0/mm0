@@ -806,11 +806,15 @@ pub struct IncompatibleError {
 }
 
 impl ParserEnv {
+  /// Add the characters in `ls` to the left delimiter set,
+  /// and the characters in `rs` to the right delimiter set.
   pub fn add_delimiters(&mut self, ls: &[u8], rs: &[u8]) {
     for &c in ls { self.delims_l.set(c) }
     for &c in rs { self.delims_r.set(c) }
   }
 
+  /// Add a constant to the parser, at the given precedence. This function will fail
+  /// if the constant has already been previously added at a different precedence.
   pub fn add_const(&mut self, tk: ArcString, sp: FileSpan, p: Prec) -> Result<(), IncompatibleError> {
     if let Some((_, e)) = self.consts.try_insert(tk, (sp.clone(), p)) {
       if e.get().1 == p { return Ok(()) }
@@ -818,6 +822,15 @@ impl ParserEnv {
     } else { Ok(()) }
   }
 
+  /// Set the associativity of precedence level `p` to `r`.
+  ///
+  /// In order to prevent ambiguity, all operators at a single precedence level must have
+  /// the same associativity. Most precedence levels have no associativity, but when we
+  /// add an `infixl` operator at precedence `p`, we call `add_prec_assoc(p, _, false)`
+  /// to record that no `infixr` operators can be added to precedence `p` in the future.
+  ///
+  /// This function will fail if `p` has previously been associated with the opposite
+  /// associativity.
   pub fn add_prec_assoc(&mut self, p: u32, sp: FileSpan, r: bool) -> Result<(), IncompatibleError> {
     if let Some((_, e)) = self.prec_assoc.try_insert(p, (sp.clone(), r)) {
       if e.get().1 == r { return Ok(()) }
@@ -833,10 +846,13 @@ impl ParserEnv {
     } else { Ok(()) }
   }
 
+  /// Add a `prefix` declaration to the dynamic parser.
   pub fn add_prefix(&mut self, tk: ArcString, n: NotaInfo) -> Result<(), IncompatibleError> {
     self.decl_nota.entry(n.term).or_default().1.push((tk.clone(), false));
     Self::add_nota_info(&mut self.prefixes, tk, n)
   }
+
+  /// Add an `infixl/r` declaration to the dynamic parser.
   pub fn add_infix(&mut self, tk: ArcString, n: NotaInfo) -> Result<(), IncompatibleError> {
     self.decl_nota.entry(n.term).or_default().1.push((tk.clone(), true));
     Self::add_nota_info(&mut self.infixes, tk, n)
@@ -901,6 +917,9 @@ impl ParserEnv {
     Ok(())
   }
 
+  /// Add a `coercion t: s1 > s2;` declaration to the parser.
+  ///
+  /// This function can fail if the updated coercion graph contains a diamond or cycle.
   pub fn add_coe(&mut self, sp: Span, sorts: &SortVec<Sort>,
       s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
     self.add_coe_raw(sp, sorts, s1, s2, fsp, t)?;
@@ -909,6 +928,7 @@ impl ParserEnv {
     Ok(())
   }
 
+  /// Merge environment `other` into this environment.
   fn merge(&mut self, other: &Self, r: &mut Remapper, sp: Span, sorts: &SortVec<Sort>, errors: &mut Vec<ElabError>) {
     self.delims_l.merge(&other.delims_l);
     self.delims_r.merge(&other.delims_r);
@@ -962,10 +982,14 @@ pub struct RedeclarationError {
 }
 
 impl Environment {
+  /// Convert an `AtomID` into the corresponding `TermID`,
+  /// if this atom denotes a declared term or def.
   pub fn term(&self, a: AtomID) -> Option<TermID> {
     if let Some(DeclKey::Term(i)) = self.data[a].decl { Some(i) } else { None }
   }
 
+  /// Convert an `AtomID` into the corresponding `ThmID`,
+  /// if this atom denotes a declared axiom or theorem.
   pub fn thm(&self, a: AtomID) -> Option<ThmID> {
     if let Some(DeclKey::Thm(i)) = self.data[a].decl { Some(i) } else { None }
   }
@@ -987,6 +1011,7 @@ pub enum AddItemError<A> {
 type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
 
 impl<A> AddItemError<A> {
+  /// Convert this error into an `ElabError` at the provided location.
   pub fn to_elab_error(self, sp: Span) -> ElabError {
     match self {
       AddItemError::Redeclaration(_, r) =>
@@ -998,7 +1023,10 @@ impl<A> AddItemError<A> {
 }
 
 impl Environment {
-  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers) -> Result<SortID, AddItemError<SortID>> {
+  /// Add a sort declaration to the environment. Returns an error if the sort is redeclared,
+  /// or if we hit the maximum number of sorts.
+  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers) ->
+      Result<SortID, AddItemError<SortID>> {
     let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(old_id) = data.sort {
@@ -1019,6 +1047,8 @@ impl Environment {
     }
   }
 
+  /// Add a term declaration to the environment. The `Term` is behind a thunk because
+  /// we check for redeclaration before inspecting the term data itself.
   pub fn add_term(&mut self, a: AtomID, new: FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
     let new_id = TermID(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
@@ -1044,6 +1074,8 @@ impl Environment {
     }
   }
 
+  /// Add a theorem declaration to the environment. The `Thm` is behind a thunk because
+  /// we check for redeclaration before inspecting the theorem data itself.
   pub fn add_thm(&mut self, a: AtomID, new: FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
     let new_id = ThmID(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
@@ -1069,10 +1101,14 @@ impl Environment {
     }
   }
 
+  /// Add a coercion declaration to the environment.
   pub fn add_coe(&mut self, s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
     self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
   }
 
+  /// Convert a string to an `AtomID`. This mutates the environment because we maintain
+  /// the list of all allocated atoms, and two calls with the same `&str` input
+  /// will yield the same `AtomID`.
   pub fn get_atom(&mut self, s: &str) -> AtomID {
     match self.atoms.get(s) {
       Some(&a) => a,
@@ -1085,12 +1121,19 @@ impl Environment {
       }
     }
   }
+
+  /// Convert an `ArcString` to an `AtomID`. This version of [`get_atom`] avoids the string clone
+  /// in the case that the atom is new.
+  ///
+  /// [`get_atom`]: struct.Environment.html#method.get_atom
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
     let ctx = &mut self.data;
     *self.atoms.entry(s.clone()).or_insert_with(move ||
       (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push(AtomData::new(s))).0)
   }
 
+  /// Merge `other` into this environment. This merges definitions with the same name and type,
+  /// and relabels lisp objects with the new `AtomID` mapping.
   pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     let lisp_remap = &mut LispRemapper {
       atom: other.data.iter().map(|d| self.get_atom_arc(d.name.clone())).collect(),
@@ -1162,17 +1205,20 @@ impl Environment {
     Ok(())
   }
 
-  pub fn check_term_nargs(&self, sp: Span, term: TermID, nargs: usize) -> Result<(), ElabError> {
+  /// Return an error if the term has the wrong number of arguments, based on its declaration.
+  pub(crate) fn check_term_nargs(&self, sp: Span, term: TermID, nargs: usize) -> Result<(), ElabError> {
     let ref t = self.terms[term];
     if t.args.len() == nargs { return Ok(()) }
     Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
       vec![(t.span.clone(), "declared here".into())]))
   }
 
+  /// Get the `Spans` object corrsponding to the statement that contains the given position,
+  /// if one exists.
   pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
     match self.spans.binary_search_by_key(&pos, |s| s.stmt().start) {
       Ok(i) => Some(&self.spans[i]),
       Err(i) => i.checked_sub(1).map(|j| &self.spans[j]),
-    }
+    }.filter(|&s| pos < s.stmt().end)
   }
 }
