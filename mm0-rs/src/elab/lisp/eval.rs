@@ -206,6 +206,8 @@ impl<'a> EnvDisplay for PatternState<'a> {
 
 struct TestPending<'a>(Span, LispVal, &'a IR);
 
+/// A `Result` type alias for string errors, used by functions that
+/// work without an elaboration context.
 pub type SResult<T> = std::result::Result<T, String>;
 
 impl Elaborator {
@@ -303,37 +305,44 @@ impl Elaborator {
 }
 
 impl Elaborator {
+  /// Render a lisp expression using the basic printer, and print it to the front end.
   pub fn print_lisp(&mut self, sp: Span, e: &LispVal) {
     self.report(ElabError::info(sp, format!("{}", self.print(e))))
   }
 
+  /// Parse and evaluate a lisp expression. This is the main entry point.
   pub fn eval_lisp<'b>(&'b mut self, e: &SExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_lisp(e)?;
     self.evaluate(sp, &ir)
   }
 
+  /// Parse and evaluate a math formula.
   pub fn eval_qexpr<'b>(&'b mut self, e: QExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_qexpr(e)?;
     self.evaluate(sp, &ir)
   }
 
+  /// Parse and evaluate a lisp expression being used as a proof. Essentially the same
+  /// as evaluating `(refine e)` where `e` is the input expression.
   pub fn elab_lisp<'b>(&'b mut self, e: &SExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_lisp(e)?;
     Evaluator::new(self, sp).run(State::Refines(sp, [ir].iter()))
   }
 
+  /// Evaluate a compiled lisp expression.
   pub fn evaluate<'b>(&'b mut self, sp: Span, ir: &'b IR) -> Result<LispVal> {
     Evaluator::new(self, sp).run(State::Eval(ir))
   }
 
+  /// Shorthand to call a lisp function from the top level.
   pub fn call_func(&mut self, sp: Span, f: LispVal, es: Vec<LispVal>) -> Result<LispVal> {
     Evaluator::new(self, sp).run(State::App(sp, sp, f, es, [].iter()))
   }
 
-  pub fn _call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
+  pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
     let a = self.get_atom(p.to_str());
     let val = match &self.data[a].lisp {
       Some((_, e)) => e.clone(),
