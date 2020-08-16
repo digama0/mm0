@@ -14,19 +14,56 @@ use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
 
+/// The intermediate representation for "compiled" lisp functions.
+/// We will do interpretation/evaluation directly on this data structure.
 #[derive(Debug)]
 pub enum IR {
+  /// Access variable number `n` in the context
   Local(usize),
+  /// Access a global declaration named `a`
   Global(Span, AtomID),
+  /// Return a `LispVal` literally
   Const(LispVal),
+  /// The `(list)` function: evaluate the list of arguments,
+  /// and then create a list from the results.
   List(Span, Box<[IR]>),
+  /// The `(cons)` function: evaluate the list of arguments, then the last argument,
+  /// and then create a dotted list from the results.
   DottedList(Box<[IR]>, Box<IR>),
+  /// Function application: evaluate the first argument to produce a procedure,
+  /// evaluate the list of arguments, then call the procedure with the list of results.
   App(Span, Span, Box<IR>, Box<[IR]>),
+  /// The `(if c t f)` syntax form: evaluate the condition `c`, and if the result is
+  /// truthy evaluate `t`, else evaluate `f`, and return the result.
   If(Box<(IR, IR, IR)>),
+  /// The `(focus es)` syntax form. This should be a regular function, but it does some
+  /// preparation work before it starts executing the list of arguments.
   Focus(Span, Box<[IR]>),
+  /// The `(def x e)` syntax form. Call the argument, and extend the context with the result.
+  /// The `usize` argument indicates the number of the variable that was just declared,
+  /// but it is only there for sanity checking - there is only one valid value for this field.
+  /// The argument `(sp1, sp2, a)` has `sp1` as the full span of the `(def)` and `sp2` as
+  /// the span of the variable `a`.
+  ///
+  /// (Some definitions are added by the compiler and have no source text.)
   Def(usize, Option<(Span, Span, AtomID)>, Box<IR>),
+  /// * `keep = true`: The `(begin es)` syntax form.
+  ///   Evaluate the list of arguments, and return the last one.
+  ///   (However, unlike the `begin` in surface syntax, this one does not create a scope
+  ///   at the top level, it is really just a sequence of evaluations. `(def)`'s inside
+  ///   the list will count as global bindings.)
+  ///
+  ///   Most places in the surface syntax that allow begin-lists, like `(def x foo bar)`,
+  ///   elaborate to essentially `Def(x, Eval(false, [foo, bar]))`.
+  ///
+  /// * `keep = false`: The `(def _ es)` syntax form.
+  ///   Evaluate the list of arguments, and return `#undef`. Unlike `(def x es)`,
+  ///   this does not extend the context, i.e. it does not bind any variables.
   Eval(bool, Box<[IR]>),
+  /// The `(fn xs e)` syntax form. Create a closure from the current context, and return
+  /// it, using the provided `ProcSpec` and code. It can later be called by the `App` instruction.
   Lambda(Span, usize, ProcSpec, Arc<IR>),
+  /// The `(match e bs)` syntax form. Evaluate `e`, and then match it against the branches.
   Match(Span, Box<IR>, Box<[Branch]>),
 }
 
@@ -84,6 +121,8 @@ impl IR {
   fn match_fn_body(sp: Span, i: usize, brs: Box<[Branch]>) -> IR {
     IR::Match(sp, Box::new(IR::Local(i)), brs)
   }
+
+  /// The span of a code segment.
   pub fn span(&self) -> Option<Span> {
     match self {
       &IR::Global(sp, _) |
@@ -97,11 +136,25 @@ impl IR {
   }
 }
 
+/// A single match branch. Branches can look like:
+///
+/// * `[pat eval]`: Matches the input against the pattern, binding variables that are used in `eval`.
+/// * `[pat (=> cont) eval]`: same thing, but `cont` is bound to a delimited continuation
+///   that can be used to jump to the next case (essentially indicating that the branch fails to
+///   apply even after the pattern succeeds).
 #[derive(Debug)]
 pub struct Branch {
+  /// The number of variables in the pattern. The context for `eval` is extended by this many variables
+  /// regardless of the input at runtime. For example the pattern `(or ('foo a _) ('bar _ b))` will
+  /// always bind variables `a` and `b` (so `vars = 2` here), and the one that is not matched in a
+  /// given case will be `#undef`.
   pub vars: usize,
+  /// True if the branch includes `(=> cont)`, in which case the context will be extended by the
+  /// branch failure continuation.
   pub cont: bool,
+  /// The pattern to match against.
   pub pat: Pattern,
+  /// The expression to evaluate with the result of the match.
   pub eval: Box<IR>,
 }
 
@@ -115,23 +168,55 @@ impl<'a> EnvDisplay for Branch {
   }
 }
 
+/// A pattern, used in `match`. Patterns match against an input expression, and bind
+/// a compile-time known set of variables that can be referred to in the branch expression.
+/// Patterns are matched from left to right; later patterns will clobber the
+/// bindings of earlier patterns if variable names are reused.
 #[derive(Debug)]
 pub enum Pattern {
+  /// The `_` pattern. Matches anything, binds nothing.
   Skip,
+  /// The `x` pattern. Matches anything, binds the variable `x`.
+  /// The number here is the index of the variable that will be bound.
   Atom(usize),
+  /// The `'foo` pattern. Matches the literal atom `foo`, binds nothing.
   QuoteAtom(AtomID),
+  /// The `"foo"` pattern. Matches the literal string `"foo"`, binds nothing.
   String(ArcString),
+  /// The `#t` or `#f` pattern. Matches a boolean value, binds nothing.
   Bool(bool),
+  /// The `#undef` pattern. Matches `#undef`, binds nothing.
   Undef,
+  /// The `123` pattern. Matches the number `123`, binds nothing.
   Number(BigInt),
+  /// The `(mvar)` or `(mvar bd s)` pattern. `(mvar)` matches metavars with unknown type,
+  /// `(mvar bd s)` matches a metavar with known type, matching the boundedness and sort
+  /// against patterns `bd` ans `s`.
   MVar(Option<Box<(Pattern, Pattern)>>),
+  /// The `(goal p)` pattern. Matches a goal with type matched against `p`.
   Goal(Box<Pattern>),
+  /// The `(p1 p2 ... pn . p)` pattern. Matches an `n`-fold cons cell,
+  /// or a list of length at least `n`, matching the parts against the `p`'s.
   DottedList(Box<[Pattern]>, Box<Pattern>),
+  /// * With `dot = None`: The `(p1 p2 ... pn)` pattern.
+  ///   Matches a list of length `n`, matching the elements against `p1, ..., pn`.
+  /// * With `dot = Some(k)`: The `(p1 p2 ... pn __ k)` pattern.
+  ///   Matches a proper list of length at least `n + k`,
+  ///   matching the first `n` elements against `p1, ..., pn`.
   List(Box<[Pattern]>, Option<usize>),
+  /// The `(and ps)` pattern. Matches the input against each `p` in turn, succeeding
+  /// if all patterns match.
   And(Box<[Pattern]>),
+  /// The `(or ps)` pattern. Matches the input against each `p`, succeeding if any pattern matches.
   Or(Box<[Pattern]>),
+  /// The `(not ps)` pattern. Matches the input against each `p`,
+  /// succeeding if none of the patterns match. Binds nothing.
   Not(Box<[Pattern]>),
+  /// The `(? f ps)` pattern. The expression `f` is evaluated in the context of the `match`,
+  /// resulting in a procedure, and then `(f e)` is called, where `e` is the input.
+  /// If this function returns truthy, then it acts like `(and ps)`, otherwise the pattern fails.
   Test(Span, Box<IR>, Box<[Pattern]>),
+  /// The `$foo$` pattern. This is equivalent to `(or 'foo ('foo))`.
   QExprAtom(AtomID),
 }
 
@@ -781,9 +866,14 @@ impl<'a> LispParser<'a> {
 }
 
 impl Elaborator {
+  /// Parse a lisp `SExpr` from the surface syntax into an `IR` object suitable for evaluation.
   pub fn parse_lisp(&mut self, e: &SExpr) -> Result<IR, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr(false, e)
   }
+
+  /// Parse a `QExpr`, the result of parsing a math formula,
+  /// into an `IR` object suitable for evaluation. (Usually this will be a `IR::Const`,
+  /// but `QExpr`'s can contain antiquotations which require evaluation.)
   pub fn parse_qexpr(&mut self, e: QExpr) -> Result<IR, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.qexpr(e)
   }

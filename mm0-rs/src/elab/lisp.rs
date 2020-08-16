@@ -281,6 +281,13 @@ impl LispKind {
   pub fn is_def(&self) -> bool {
     self.unwrapped(|e| if let LispKind::Undef = e {false} else {true})
   }
+  pub fn is_def_strict(&self) -> bool {
+    match self {
+      LispKind::Undef => false,
+      LispKind::Annot(_, v) => v.is_def_strict(),
+      _ => true,
+    }
+  }
   pub fn is_ref(&self) -> bool {
     match self {
       LispKind::Ref(_) => true,

@@ -1150,7 +1150,7 @@ impl<'a> Evaluator<'a> {
               code: e.clone()
             }))
           }
-          &IR::Match(sp, ref e, ref brs) => push!(Match(sp, brs.iter()); State::Eval(e)),
+          &IR::Match(sp, ref e, ref brs) => push!(Match(sp, brs.iter()); Eval(e)),
         },
         State::Ret(ret) => match self.stack.pop() {
           None => return Ok(ret),
@@ -1191,7 +1191,7 @@ impl<'a> Evaluator<'a> {
           } else {
             if let Some(&Some((sp1, sp2, a))) = x {
               let loc = (self.fspan(sp2), sp1);
-              if ret.is_def() || ret.is_ref() {
+              if ret.is_def_strict() {
                 if mem::replace(&mut self.data[a].lisp, Some((Some(loc), ret))).is_none() {
                   self.stmts.push(StmtTrace::Global(a))
                 }
