@@ -342,6 +342,9 @@ impl Elaborator {
     Evaluator::new(self, sp).run(State::App(sp, sp, f, es, [].iter()))
   }
 
+  /// Call an overridable lisp function. This uses the name of a builtin procedure `foo`
+  /// and calls `(foo)` using the usual name resolution, meaning that if the user redefines
+  /// `foo` then that function will be called instead of the builtin.
   pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
     let a = self.get_atom(p.to_str());
     let val = match &self.data[a].lisp {
@@ -674,6 +677,7 @@ macro_rules! make_builtins {
   ($self:ident, $sp1:ident, $sp2:ident, $args:ident,
       $($e:ident: $ty:ident($n:expr) => $res:expr,)*) => {
     impl BuiltinProc {
+      /// Get the argument specification for a builtin.
       pub fn spec(self) -> ProcSpec {
         match self {
           $(BuiltinProc::$e => ProcSpec::$ty($n)),*

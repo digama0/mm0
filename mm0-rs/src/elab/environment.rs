@@ -503,7 +503,15 @@ pub enum ObjectKind {
 }
 
 impl ObjectKind {
+  /// Create an `ObjectKind` for an `Expr`.
+  /// # Safety
+  /// Because this function calls `FrozenLispVal::new`,
+  /// the resulting object must not be examined before the elaborator is frozen.
   pub fn expr(e: LispVal) -> ObjectKind { ObjectKind::Expr(unsafe {FrozenLispVal::new(e)}) }
+  /// Create an `ObjectKind` for a `Proof`.
+  /// # Safety
+  /// Because this function calls `FrozenLispVal::new`,
+  /// the resulting object must not be examined before the elaborator is frozen.
   pub fn proof(e: LispVal) -> ObjectKind { ObjectKind::Proof(unsafe {FrozenLispVal::new(e)}) }
 }
 
@@ -655,6 +663,7 @@ struct Remapper {
 /// A trait for types that can be remapped. This is like `Clone` except it uses a `&mut R` as
 /// auxiliary state.
 pub trait Remap<R>: Sized {
+  /// The type that is constructed as a result of the remap, usually `Self`.
   type Target;
   /// Create a copy of `self`, using `r` as auxiliary state.
   fn remap(&self, r: &mut R) -> Self::Target;

@@ -74,6 +74,8 @@ impl LispKind {
   }
 }
 
+/// A state object for constructing pretty printing nodes `PP<'a>`.
+/// All pretty printing nodes will be tied to the lifetime of the struct.
 pub struct Pretty<'a> {
   fe: FormatEnv<'a>,
   alloc: &'a Arena<'a, ()>,
@@ -99,6 +101,7 @@ fn covariant<'a>(from: RefDoc<'static, ()>) -> RefDoc<'a, ()> {
 }
 
 impl<'a> Pretty<'a> {
+  /// The empty string `""` as a `RefDoc`.
   pub fn nil() -> RefDoc<'a, ()> {covariant(NIL)}
   // fn hardline() -> RefDoc<'a, ()> {covariant(HARDLINE)}
   // fn space() -> RefDoc<'a, ()> {covariant(SPACE)}
@@ -248,6 +251,7 @@ impl<'a> Pretty<'a> {
     self.hash.borrow_mut().entry(p).or_insert_with(|| (e.clone(), v)).1.clone()
   }
 
+  /// Pretty-prints a math formula surrounded by `$` delimiters, as in `$ 2 + 2 = 4 $`.
   pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
     let mut doc = self.expr_paren(e, Prec::Prec(0)).doc;
     if let Doc::Group(doc2) = *doc {doc = doc2}
@@ -282,6 +286,7 @@ impl<'a> Pretty<'a> {
     head
   }
 
+  /// Pretty-prints a lisp expression.
   pub fn pp_lisp(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
     e.unwrapped(|r| match r {
       LispKind::List(_) | LispKind::DottedList(_, _) => {
@@ -358,6 +363,8 @@ impl<'a> Pretty<'a> {
     }
   }
 
+  /// Pretty-prints a `term` or `def` declaration, for example
+  /// `def foo (x y: nat): nat = $ x + y $;`.
   pub fn term(&'a self, t: &Term) -> RefDoc<'a, ()> {
     let buf = format!("{}{} {}", t.vis,
       if t.val.is_some() {"def"} else {"term"},
@@ -374,6 +381,8 @@ impl<'a> Pretty<'a> {
       self.alloc(Doc::text(buf))))
   }
 
+  /// Pretty-prints the hypotheses and return of an `axiom` or `theorem`, for example
+  /// `$ a $ > $ a -> b $ > $ b $`. This is appended to the input `doc` on the right.
   pub fn hyps_and_ret(&'a self, mut doc: RefDoc<'a, ()>,
       hs: impl Iterator<Item=LispVal>, ret: &LispVal) -> RefDoc<'a, ()> {
     for e in hs {
@@ -385,6 +394,9 @@ impl<'a> Pretty<'a> {
     self.append_doc(doc, self.expr(ret))
   }
 
+  /// Pretty-prints an `axiom` or `theorem` declaration, for example
+  /// `theorem mp (a b: wff): $ a $ > $ a -> b $ > $ b $;`.
+  /// The proof of the theorem is omitted.
   pub fn thm(&'a self, t: &Thm) -> RefDoc<'a, ()> {
     let buf = format!("{}{} {}", t.vis,
       if t.proof.is_some() {"theorem"} else {"axiom"},
@@ -408,6 +420,7 @@ impl<'a> Pretty<'a> {
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
   }
 
+  /// Pretty-prints a unification error, as `failed to unify: e1 =?= e2`.
   pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a, ()> {
     let doc = self.append_doc(RefDoc(&Doc::BorrowedText("failed to unify:")), Self::line());
     let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)));
@@ -419,6 +432,7 @@ impl<'a> Pretty<'a> {
   }
 }
 
+/// A struct that can be used to display a `LispVal` representing a math expression.
 #[derive(Debug)]
 pub struct PPExpr<'a> {
   fe: FormatEnv<'a>,
@@ -427,10 +441,13 @@ pub struct PPExpr<'a> {
 }
 
 impl<'a> FormatEnv<'a> {
+  /// Construct a `Pretty<'a>` object, and use it within the scope of the input function `f`.
   pub fn pretty<T>(self, f: impl for<'b> FnOnce(&'b Pretty<'b>) -> T) -> T {
     f(&Pretty::new(self, &Arena::new()))
   }
 
+  /// Pretty-print an expression at the given display width. The returned struct implements
+  /// `Display` and can be used to print to a writer.
   pub fn pp(self, e: &'a LispVal, width: usize) -> PPExpr<'a> {
     PPExpr {fe: self, e, width}
   }

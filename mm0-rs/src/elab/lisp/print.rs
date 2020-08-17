@@ -25,19 +25,39 @@ use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID,
   Sort, Term, Thm};
 use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
+/// The side information required to print an object in the environment.
 #[derive(Copy, Clone, Debug)]
 pub struct FormatEnv<'a> {
+  /// The source text, used to resolve line/col information for procedure printing.
   pub source: &'a LinedString,
+  /// The environment, used to resolve atom names.
   pub env: &'a Environment,
 }
 
+/// A trait for displaying data given access to the environment.
+pub trait EnvDisplay {
+  /// Print formatted output to the given formatter. The signature is exactly the same
+  /// as [`Display::fmt`] except it has an extra argument for the environment.
+  ///
+  /// [`Display::fmt`]: https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html#tymethod.fmt
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
+
+/// The result of [`FormatEnv::to`], a struct that implements [`Display`] if the
+/// argument implements [`EnvDisplay`].
+///
+/// [`FormatEnv::to`]: struct.FormatEnv.html#method.to
+/// [`Display`]: https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html
+/// [`EnvDisplay`]: trait.EnvDisplay.html
 #[derive(Debug)]
 pub struct Print<'a, D: ?Sized> {
-  pub fe: FormatEnv<'a>,
-  pub e: &'a D,
+  fe: FormatEnv<'a>,
+  e: &'a D,
 }
 
 impl<'a> FormatEnv<'a> {
+  /// Given a `FormatEnv`, convert an `impl EnvDisplay` into an `impl Display`.
+  /// This can be used in macros like `println!("{}", fe.to(e))` to print objects.
   pub fn to<D: ?Sized>(self, e: &'a D) -> Print<'a, D> {
     Print {fe: self, e}
   }
@@ -48,14 +68,13 @@ impl<'a> Deref for FormatEnv<'a> {
   fn deref(&self) -> &Environment {self.env}
 }
 
-pub trait EnvDisplay {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
-}
-
 impl Elaborator {
+  /// Build a `FormatEnv` from the current environment.
   pub fn format_env(&self) -> FormatEnv<'_> {
     FormatEnv {source: &self.ast.source, env: self}
   }
+  /// Convert an `impl EnvDisplay` into an `impl Display` in the current environment.
+  /// This can be used in macros like `println!("{}", elab.print(e))` to print objects.
   pub fn print<'a, D: ?Sized>(&'a self, e: &'a D) -> Print<'a, D> {
     self.format_env().to(e)
   }

@@ -24,9 +24,10 @@ use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
-  (enum $name:ident {$($e:ident: $s:expr,)*}) => {
+  ($(#[$doc:meta])* enum $name:ident {$($(#[$doc2:meta])* $e:ident: $s:expr,)*}) => {
+    $(#[$doc])*
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub enum $name { $($e),* }
+    pub enum $name { $($(#[$doc2])* $e),* }
     impl $name {
       pub fn from_str(s: &str) -> Option<$name> {
         match s {
@@ -44,22 +45,38 @@ macro_rules! str_enum {
 }
 
 str_enum! {
+  /// The `Syntax` type represents atom-like objects that are considered keywords
+  /// of the language, and have special interpretations.
   enum Syntax {
+    /// `def`, aka `defun` or `define` in other lisps: used to define new local or global variables
     Define: "def",
+    /// `fn`, aka `lambda` in other lisps: defines a closure or anonymous procedure
     Lambda: "fn",
+    /// `quote` or `'e`, aka `quasiquote` in other lisps: reinterprets most sexprs as themselves
+    /// rather than as function and variable references.
     Quote: "quote",
+    /// `unquote` or `,e`: splices an evaluated expression into a quotation
     Unquote: "unquote",
+    /// `if`: conditional expressions
     If: "if",
+    /// `focus`: a tactic that focuses on the main goal, calls a sequence of `refine` calls,
+    /// and then closes the goal.
     Focus: "focus",
+    /// `let`, aka `let*` in other lisps: define a sequence of variable declarations.
     Let: "let",
+    /// `letrec`: define a set of mutually recursive variable declarations.
     Letrec: "letrec",
+    /// `match`: perform pattern matching on an s-expression.
     Match: "match",
+    /// `match-fn`: a lambda taking one argument that pattern matches on its argument.
     MatchFn: "match-fn",
+    /// `match-fn*`: a lambda taking any number of arguments that pattern matches on the list of arguments.
     MatchFns: "match-fn*",
   }
 }
 
 impl Syntax {
+  /// Parse a string and atom type pair into a `Syntax`.
   pub fn parse(s: &str, a: Atom) -> Result<Syntax, &str> {
     match a {
       Atom::Ident => Self::from_str(s).ok_or(s),
@@ -102,9 +119,16 @@ impl InferTarget {
 #[derive(Default, Debug, Clone)]
 pub struct LispVal(Rc<LispKind>);
 
+/// This macro is used to define the [`LispKind`] type, as well as the
+/// [`FrozenLispKind`] type, to ensure that they have the same representation
+/// and can be safely transmuted.
+///
+/// [`LispKind`]: enum.LispKind.html
+/// [`FrozenLispKind`]: ../frozen/enum.FrozenLispKind.html
 #[macro_export]
 macro_rules! __mk_lisp_kind {
-  ($kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
+  ($(#[$doc:meta])* $kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
+    $(#[$doc])*
     #[derive(Debug)]
     pub enum $kind {
       Atom(AtomID),
@@ -124,7 +148,12 @@ macro_rules! __mk_lisp_kind {
     }
   }
 }
-__mk_lisp_kind! {LispKind, LispVal, LispRef, Proc}
+__mk_lisp_kind! {
+  LispKind,
+  LispVal,
+  LispRef,
+  Proc
+}
 
 #[derive(Debug)]
 pub struct LispRef(RefCell<LispVal>);
