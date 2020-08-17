@@ -170,7 +170,7 @@ impl Environment {
       }
     }
     apply(c, |tid, e| LispKind::List(
-      vec![LispVal::atom(self.terms[tid].atom), e]).decorate_span(fsp), res)
+      vec![LispVal::atom(self.terms[tid].atom), e].into()).decorate_span(fsp), res)
   }
 }
 
@@ -306,7 +306,7 @@ impl<'a> ElabTermMut<'a> {
       Err(ElabError::new_e(sp1,
         format!("expected {} arguments, got {}", tdata.args.len(), args.len() - 1)))?
     }
-    self.coerce(e, tdata.ret.0, LispKind::List(args), tgt)
+    self.coerce(e, tdata.ret.0, LispKind::List(args.into()), tgt)
   }
 
   // TODO: Unify this with RState::RefineExpr

@@ -276,7 +276,7 @@ impl Environment {
   pub fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
     v.push(if xs == 0 {LispVal::nil()} else {
       let mut i = 1;
-      LispVal::list(bvs.iter().filter(|_| (xs & i != 0, i *= 2).0).cloned().collect())
+      LispVal::list(bvs.iter().filter(|_| (xs & i != 0, i *= 2).0).cloned().collect::<Vec<_>>())
     });
     v
   }
@@ -290,7 +290,7 @@ impl Environment {
         &Type::Bound(s) => {bvs.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
         &Type::Reg(s, xs) => Self::deps(&bvs, vec![a, LispVal::atom(self.sorts[s].atom)], xs)
       }
-    })).collect())
+    })).collect::<Vec<_>>())
   }
 
   pub fn expr_node(&self, heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {

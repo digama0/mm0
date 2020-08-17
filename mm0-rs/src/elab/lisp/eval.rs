@@ -435,7 +435,7 @@ impl Elaborator {
     fn exponential_backoff(es: &[LispVal], i: usize, r: impl FnOnce(Vec<LispVal>) -> LispVal) -> LispVal {
       let j = 2 * i;
       if j >= es.len() { r(es[i..].into()) }
-      else { LispVal::dotted_list(es[i..j].into(), exponential_backoff(es, j, r)) }
+      else { LispVal::dotted_list(es[i..j].to_vec(), exponential_backoff(es, j, r)) }
     }
     e.unwrapped(|e| match e {
       LispKind::List(es) if es.is_empty() => Err("evaluating 'tl ()'".into()),
@@ -494,7 +494,7 @@ impl Elaborator {
       &ProofNode::Unfold {term, ref args, ref res} =>
         LispVal::list(vec![LispVal::atom(AtomID::UNFOLD),
           LispVal::atom(self.terms[term].atom),
-          LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect()),
+          LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect::<Vec<_>>()),
           self.proof_node(hyps, heap, ds, &res.2)]),
     }
   }
@@ -574,7 +574,7 @@ impl Elaborator {
             LispVal::list(tdata.hyps.iter().map(|(a, e)| LispVal::list(vec![
               LispVal::atom(a.unwrap_or(AtomID::UNDER)),
               self.expr_node(&heap, &mut None, e)
-            ])).collect())
+            ])).collect::<Vec<_>>())
           },
           self.expr_node(&heap, &mut None, &tdata.ret)
         ];
@@ -815,7 +815,7 @@ make_builtins! { self, sp1, sp2, args,
     _ => {
       let r = args.pop().unwrap();
       if r.exactly(0) {LispVal::list(args)}
-      else {LispVal::new(LispKind::DottedList(args, r))}
+      else {LispVal::dotted_list(args, r)}
     }
   },
   Head: Exact(1) => try1!(self.head(&args[0])),
@@ -957,7 +957,7 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::undef()
   },
   LocalCtx: Exact(0) =>
-    LispVal::list(self.lc.proof_order.iter().map(|a| LispVal::atom(a.0)).collect()),
+    LispVal::list(self.lc.proof_order.iter().map(|a| LispVal::atom(a.0)).collect::<Vec<_>>()),
   ToExpr: Exact(1) => return Ok(State::Refine {
     sp: sp1, stack: vec![RStack::DeferGoals(mem::take(&mut self.lc.goals))],
     state: RState::RefineExpr {tgt: InferTarget::Unknown, e: args.swap_remove(0)}
@@ -1171,8 +1171,8 @@ impl<'a> Evaluator<'a> {
           Some(Stack::DottedList(mut vec, it, e)) => { vec.push(ret); State::DottedList(vec, it, e) }
           Some(Stack::DottedList2(vec)) if vec.is_empty() => State::Ret(ret),
           Some(Stack::DottedList2(mut vec)) => State::Ret(match ret.try_unwrap() {
-            Ok(LispKind::List(es)) => { vec.extend(es); LispVal::list(vec) }
-            Ok(LispKind::DottedList(es, e)) => { vec.extend(es); LispVal::dotted_list(vec, e) }
+            Ok(LispKind::List(es)) => { vec.extend::<Vec<_>>(es.into()); LispVal::list(vec) }
+            Ok(LispKind::DottedList(es, e)) => { vec.extend::<Vec<_>>(es.into()); LispVal::dotted_list(vec, e) }
             Ok(e) => LispVal::dotted_list(vec, LispVal::new(e)),
             Err(ret) => LispVal::dotted_list(vec, ret),
           }),

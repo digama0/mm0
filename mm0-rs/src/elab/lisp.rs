@@ -134,6 +134,8 @@ macro_rules! __mk_lisp_kind {
       Atom(AtomID),
       List(Vec<$val>),
       DottedList(Vec<$val>, $val),
+      List(Box<[$val]>),
+      DottedList(Box<[$val]>, $val),
       Annot(Annot, $val),
       Number(BigInt),
       String(ArcString),
@@ -161,8 +163,10 @@ pub struct LispRef(RefCell<LispVal>);
 impl LispVal {
   pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
   pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
-  pub fn list(es: Vec<LispVal>) -> LispVal { LispVal::new(LispKind::List(es)) }
-  pub fn dotted_list(es: Vec<LispVal>, r: LispVal) -> LispVal { LispVal::new(LispKind::DottedList(es, r)) }
+  pub fn list(es: impl Into<Box<[LispVal]>>) -> LispVal { LispVal::new(LispKind::List(es.into())) }
+  pub fn dotted_list(es: impl Into<Box<[LispVal]>>, r: LispVal) -> LispVal {
+    LispVal::new(LispKind::DottedList(es.into(), r))
+  }
   pub fn number(n: BigInt) -> LispVal { LispVal::new(LispKind::Number(n)) }
   pub fn string(s: ArcString) -> LispVal { LispVal::new(LispKind::String(s)) }
   pub fn syntax(s: Syntax) -> LispVal { LispVal::new(LispKind::Syntax(s)) }
@@ -640,9 +644,9 @@ impl Uncons {
     match self {
       Uncons::New(e) => e,
       Uncons::List(es) if es.is_empty() => LispVal::nil(),
-      Uncons::List(es) => LispVal::list((*es).into()),
+      Uncons::List(es) => LispVal::list(es.to_vec()),
       Uncons::DottedList(es, r) if es.is_empty() => r,
-      Uncons::DottedList(es, r) => LispVal::dotted_list((*es).into(), r),
+      Uncons::DottedList(es, r) => LispVal::dotted_list(es.to_vec(), r),
     }
   }
 
