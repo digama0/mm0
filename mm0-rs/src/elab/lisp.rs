@@ -11,13 +11,15 @@ pub mod pretty;
 
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
-use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool};
-use std::collections::{HashMap, hash_map::Entry};
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::collections::HashMap;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
-use crate::parser::ast::{Atom};
+use crate::parser::ast::Atom;
 use crate::util::{ArcString, FileSpan, Span};
-use super::{AtomID, ThmID, AtomVec, Remap, Modifiers};
+use super::{AtomID, ThmID, AtomVec, Remap, Modifiers, frozen::FrozenLispKind};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -98,31 +100,37 @@ impl InferTarget {
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct LispVal(Arc<LispKind>);
+pub struct LispVal(Rc<LispKind>);
 
-#[derive(Debug)]
-pub enum LispKind {
-  Atom(AtomID),
-  List(Vec<LispVal>),
-  DottedList(Vec<LispVal>, LispVal),
-  Annot(Annot, LispVal),
-  Number(BigInt),
-  String(ArcString),
-  Bool(bool),
-  Syntax(Syntax),
-  Undef,
-  Proc(Proc),
-  AtomMap(HashMap<AtomID, LispVal>),
-  Ref(LispRef),
-  MVar(usize, InferTarget),
-  Goal(LispVal),
+#[macro_export]
+macro_rules! __mk_lisp_kind {
+  ($kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
+    #[derive(Debug)]
+    pub enum $kind {
+      Atom(AtomID),
+      List(Vec<$val>),
+      DottedList(Vec<$val>, $val),
+      Annot(Annot, $val),
+      Number(BigInt),
+      String(ArcString),
+      Bool(bool),
+      Syntax(Syntax),
+      Undef,
+      Proc($proc),
+      AtomMap(HashMap<AtomID, $val>),
+      Ref($ref_),
+      MVar(usize, InferTarget),
+      Goal($val),
+    }
+  }
 }
+__mk_lisp_kind! {LispKind, LispVal, LispRef, Proc}
 
 #[derive(Debug)]
-pub struct LispRef(RwLock<LispVal>);
+pub struct LispRef(RefCell<LispVal>);
 
 impl LispVal {
-  pub fn new(e: LispKind) -> LispVal { LispVal(Arc::new(e)) }
+  pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
   pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
   pub fn list(es: Vec<LispVal>) -> LispVal { LispVal::new(LispKind::List(es)) }
   pub fn dotted_list(es: Vec<LispVal>, r: LispVal) -> LispVal { LispVal::new(LispKind::DottedList(es, r)) }
@@ -150,7 +158,7 @@ impl LispVal {
   }
 
   pub fn unwrapped_mut<T>(&mut self, f: impl FnOnce(&mut LispKind) -> T) -> Option<T> {
-    Arc::get_mut(&mut self.0).and_then(|e| match e {
+    Rc::get_mut(&mut self.0).and_then(|e| match e {
       LispKind::Ref(m) => Self::unwrapped_mut(&mut m.get_mut(), f),
       LispKind::Annot(_, v) => Self::unwrapped_mut(v, f),
       _ => Some(f(e))
@@ -165,12 +173,12 @@ impl LispVal {
     }
   }
 
-  pub fn ptr_eq(&self, e: &Self) -> bool { Arc::ptr_eq(&self.0, &e.0) }
-  pub fn try_unwrap(self) -> Result<LispKind, LispVal> { Arc::try_unwrap(self.0).map_err(LispVal) }
-  pub fn get_mut(&mut self) -> Option<&mut LispKind> { Arc::get_mut(&mut self.0) }
+  pub fn ptr_eq(&self, e: &Self) -> bool { Rc::ptr_eq(&self.0, &e.0) }
+  pub fn try_unwrap(self) -> Result<LispKind, LispVal> { Rc::try_unwrap(self.0).map_err(LispVal) }
+  pub fn get_mut(&mut self) -> Option<&mut LispKind> { Rc::get_mut(&mut self.0) }
 
   pub fn try_unwrapped(self) -> Result<LispKind, LispVal> {
-    match Arc::try_unwrap(self.0) {
+    match Rc::try_unwrap(self.0) {
       Ok(LispKind::Annot(_, e)) => e.try_unwrapped(),
       Ok(LispKind::Ref(m)) => m.into_inner().try_unwrapped(),
       Ok(e) => Ok(e),
@@ -214,11 +222,14 @@ impl PartialEq<LispVal> for LispVal {
 impl Eq for LispVal {}
 
 impl LispRef {
-  pub fn new(e: LispVal) -> LispRef { LispRef(RwLock::new(e)) }
-  pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.read().unwrap() }
-  pub fn get_mut<'a>(&'a self) -> impl DerefMut<Target=LispVal> + 'a { self.0.write().unwrap() }
+  pub fn new(e: LispVal) -> LispRef { LispRef(RefCell::new(e)) }
+  pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.borrow() }
+  pub fn get_mut<'a>(&'a self) -> impl DerefMut<Target=LispVal> + 'a { self.0.borrow_mut() }
   pub fn unref(&self) -> LispVal { self.get().clone() }
-  pub fn into_inner(self) -> LispVal { self.0.into_inner().unwrap() }
+  pub fn into_inner(self) -> LispVal { self.0.into_inner() }
+  pub unsafe fn get_unsafe(&self) -> &LispVal {
+    self.0.try_borrow_unguarded().unwrap()
+  }
 }
 
 impl PartialEq<LispRef> for LispRef {
@@ -445,8 +456,8 @@ pub enum Proc {
   },
   MatchCont(Arc<AtomicBool>),
   RefineCallback,
-  ProofThunk(AtomID, Mutex<Result<LispVal, Box<[LispVal]>>>),
-  MMCCompiler(Mutex<crate::mmc::Compiler>) // TODO: use extern instead
+  ProofThunk(AtomID, RefCell<Result<LispVal, Box<[LispVal]>>>),
+  MMCCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -666,52 +677,32 @@ impl Iterator for Uncons {
 #[derive(Default, Debug)]
 pub struct LispRemapper {
   pub atom: AtomVec<AtomID>,
-  pub lisp: HashMap<*const LispKind, (LispVal, LispVal)>,
-  pub refs: HashMap<*const LispKind, LispVal>,
+  pub lisp: HashMap<*const FrozenLispKind, LispVal>,
+  pub refs: HashMap<*const FrozenLispKind, LispVal>,
 }
 impl Remap<LispRemapper> for AtomID {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self { *r.atom.get(*self).unwrap_or(self) }
 }
 impl<R, K: Clone + Hash + Eq, V: Remap<R>> Remap<R> for HashMap<K, V> {
-  fn remap(&self, r: &mut R) -> Self { self.iter().map(|(k, v)| (k.clone(), v.remap(r))).collect() }
+  type Target = HashMap<K, V::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { self.iter().map(|(k, v)| (k.clone(), v.remap(r))).collect() }
+}
+impl<R, A: Remap<R>> Remap<R> for RefCell<A> {
+  type Target = RefCell<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { RefCell::new(self.borrow().remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Mutex<A> {
-  fn remap(&self, r: &mut R) -> Self { Mutex::new(self.lock().unwrap().remap(r)) }
+  type Target = Mutex<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { Mutex::new(self.lock().unwrap().remap(r)) }
 }
 impl Remap<LispRemapper> for LispVal {
-  fn remap(&self, r: &mut LispRemapper) -> Self {
-    let p: *const LispKind = self.deref();
-    if let Some(v) = r.lisp.get(&p) {return v.1.clone()}
-    let v = match self.deref() {
-      LispKind::Atom(a) => LispVal::atom(a.remap(r)),
-      LispKind::List(v) => LispVal::list(v.remap(r)),
-      LispKind::DottedList(v, l) => LispVal::dotted_list(v.remap(r), l.remap(r)),
-      LispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
-      LispKind::Proc(f) => LispVal::proc(f.remap(r)),
-      LispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
-      LispKind::Ref(m) => match r.refs.entry(p) {
-        Entry::Occupied(e) => e.get().clone(),
-        Entry::Vacant(e) => {
-          let w = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
-          e.insert(w.clone());
-          w.as_ref_(|v| *v = m.get().remap(r)).unwrap();
-          r.refs.remove(&p);
-          w
-        }
-      },
-      &LispKind::MVar(n, is) => LispVal::new(LispKind::MVar(n, is.remap(r))),
-      LispKind::Goal(e) => LispVal::new(LispKind::Goal(e.remap(r))),
-      LispKind::Number(_) |
-      LispKind::String(_) |
-      LispKind::Bool(_) |
-      LispKind::Syntax(_) |
-      LispKind::Undef => self.clone(),
-    };
-    r.lisp.entry(p).or_insert_with(|| (self.clone(), v)).1.clone()
-  }
+  type Target = Self;
+  fn remap(&self, r: &mut LispRemapper) -> Self { self.freeze().remap(r) }
 }
 
 impl Remap<LispRemapper> for InferTarget {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
       InferTarget::Unknown => InferTarget::Unknown,
@@ -722,6 +713,7 @@ impl Remap<LispRemapper> for InferTarget {
   }
 }
 impl Remap<LispRemapper> for ProcPos {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
       ProcPos::Named(fsp, sp, a) => ProcPos::Named(fsp.clone(), *sp, a.remap(r)),
@@ -729,21 +721,8 @@ impl Remap<LispRemapper> for ProcPos {
     }
   }
 }
+
 impl Remap<LispRemapper> for Proc {
-  fn remap(&self, r: &mut LispRemapper) -> Self {
-    match self {
-      &Proc::Builtin(p) => Proc::Builtin(p),
-      &Proc::Lambda {ref pos, ref env, spec, ref code} =>
-        Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
-      Proc::MatchCont(_) => Proc::MatchCont(Arc::new(AtomicBool::new(false))),
-      Proc::RefineCallback => Proc::RefineCallback,
-      Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), Mutex::new(
-        match &*m.lock().unwrap() {
-          Ok(e) => Ok(e.remap(r)),
-          Err(v) => Err(v.remap(r)),
-        }
-      )),
-      Proc::MMCCompiler(c) => Proc::MMCCompiler(c.remap(r)),
-    }
-  }
+  type Target = Self;
+  fn remap(&self, r: &mut LispRemapper) -> Self { self.freeze().remap(r) }
 }

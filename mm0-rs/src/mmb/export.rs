@@ -4,8 +4,9 @@ use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use crate::elab::environment::{
-  Environment, Type, Expr, Proof, SortID, TermID, ThmID,
+  Type, Expr, Proof, SortID, TermID, ThmID,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
+use crate::elab::FrozenEnv;
 use crate::util::FileRef;
 use crate::lined_string::LinedString;
 
@@ -109,7 +110,7 @@ impl<'a> IndexHeader<'a> {
 pub struct Exporter<'a, W: Write + Seek + ?Sized> {
   file: FileRef,
   source: &'a LinedString,
-  env: &'a Environment,
+  env: &'a FrozenEnv,
   w: &'a mut W,
   pos: u64,
   term_reord: TermVec<Option<Reorder>>,
@@ -257,9 +258,9 @@ fn write_expr_proof(w: &mut impl Write,
 }
 
 impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
-  pub fn new(file: FileRef, source: &'a LinedString, env: &'a Environment, w: &'a mut W) -> Self {
+  pub fn new(file: FileRef, source: &'a LinedString, env: &'a FrozenEnv, w: &'a mut W) -> Self {
     Self {
-      term_reord: TermVec(Vec::with_capacity(env.terms.len())),
+      term_reord: TermVec(Vec::with_capacity(env.terms().len())),
       file, source, env, w, pos: 0, fixups: vec![]
     }
   }
@@ -396,7 +397,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         hyps[n]
       }
       &ProofNode::Thm {thm, ref args, ref res} => {
-        let (args, hs) = args.split_at(self.env.thms[thm].args.len());
+        let (args, hs) = args.split_at(self.env.thm(thm).args.len());
         for e in hs {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         for e in args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         self.write_proof(w, heap, reorder, hyps, res, false)?;
@@ -482,31 +483,31 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     let n = self.align_to(8)?;
     let (sp, ix, k, name) = match s {
       StmtTrace::Sort(a) => {
-        let ad = &self.env.data[a];
-        let s = ad.sort.unwrap();
+        let ad = &self.env.data()[a];
+        let s = ad.sort().unwrap();
         LE::write_u64(header.sort(s), n);
-        (&self.env.sorts[s].span, s.0 as u32, STMT_SORT, &ad.name)
+        (&self.env.sort(s).span, s.0 as u32, STMT_SORT, ad.name())
       }
       StmtTrace::Decl(a) => {
-        let ad = &self.env.data[a];
-        match ad.decl.unwrap() {
+        let ad = &self.env.data()[a];
+        match ad.decl().unwrap() {
           DeclKey::Term(t) => {
-            let td = &self.env.terms[t];
+            let td = self.env.term(t);
             LE::write_u64(header.term(t), n);
             (&td.span, t.0,
               if td.val.is_none() {STMT_TERM}
               else if td.vis == Modifiers::LOCAL {STMT_DEF | STMT_LOCAL}
               else {STMT_DEF},
-             &ad.name)
+             ad.name())
           }
           DeclKey::Thm(t) => {
-            let td = &self.env.thms[t];
+            let td = self.env.thm(t);
             LE::write_u64(header.thm(t), n);
             (&td.span, t.0,
               if td.proof.is_none() {STMT_AXIOM}
               else if td.vis == Modifiers::PUB {STMT_THM}
               else {STMT_THM | STMT_LOCAL},
-             &ad.name)
+             ad.name())
           }
         }
       }
@@ -560,27 +561,27 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   pub fn run(&mut self, index: bool) -> io::Result<()> {
     self.write_all("MM0B".as_bytes())?; // magic
-    let num_sorts = self.env.sorts.len();
+    let num_sorts = self.env.sorts().len();
     if num_sorts > 128 {panic!("too many sorts (max 128)")}
     self.write_u32(
       1 | // version
       ((num_sorts as u32) << 8) // num_sorts
     )?; // two bytes reserved
-    self.write_u32(self.env.terms.len().try_into().unwrap())?; // num_terms
-    self.write_u32(self.env.thms.len().try_into().unwrap())?; // num_thms
+    self.write_u32(self.env.terms().len().try_into().unwrap())?; // num_terms
+    self.write_u32(self.env.thms().len().try_into().unwrap())?; // num_thms
     let p_terms = self.fixup32()?;
     let p_thms = self.fixup32()?;
     let p_proof = self.fixup64()?;
     let p_index = self.fixup64()?;
     self.write_all( // sort data
-      &self.env.sorts.0.iter().map(|s| {
+      &self.env.sorts().iter().map(|s| {
         // 1 = PURE, 2 = STRICT, 4 = PROVABLE, 8 = FREE
         s.mods.bits()
       }).collect::<Vec<u8>>())?;
 
     self.align_to(8)?; p_terms.commit(self);
-    let mut term_header = self.fixup_large(self.env.terms.len() * 8)?;
-    for (head, t) in term_header.1.chunks_exact_mut(8).zip(&self.env.terms.0) {
+    let mut term_header = self.fixup_large(self.env.terms().len() * 8)?;
+    for (head, t) in term_header.1.chunks_exact_mut(8).zip(&self.env.terms().0) {
       Self::write_term_header(head,
         t.args.len().try_into().expect("term has more than 65536 args"),
         t.ret.0,
@@ -590,7 +591,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
       self.write_sort_deps(false, t.ret.0, t.ret.1)?;
       if let Some(val) = &t.val {
         let Expr {heap, head} = val.as_ref().unwrap_or_else(||
-          panic!("def {} missing value", self.env.data[t.atom].name));
+          panic!("def {} missing value", self.env.data()[t.atom].name()));
         let mut reorder = Reorder::new(
           t.args.len().try_into().unwrap(), heap.len(), |i| i);
         self.write_expr_unify(heap, &mut reorder, head, &mut vec![])?;
@@ -601,8 +602,8 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     term_header.commit(self);
 
     self.align_to(8)?; p_thms.commit(self);
-    let mut thm_header = self.fixup_large(self.env.thms.len() * 8)?;
-    for (head, t) in thm_header.1.chunks_exact_mut(8).zip(&self.env.thms.0) {
+    let mut thm_header = self.fixup_large(self.env.thms().len() * 8)?;
+    for (head, t) in thm_header.1.chunks_exact_mut(8).zip(&self.env.thms().0) {
       Self::write_thm_header(head,
         t.args.len().try_into().expect("theorem has more than 65536 args"),
         self.align_to(8)?.try_into().unwrap());
@@ -622,9 +623,9 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     p_proof.commit(self);
     let mut vec = vec![];
     let mut index_map = if index {
-      Vec::with_capacity(self.env.sorts.len() + self.env.terms.len() + self.env.thms.len())
+      Vec::with_capacity(self.env.sorts().len() + self.env.terms().len() + self.env.thms().len())
     } else {vec![]};
-    for &s in &self.env.stmts {
+    for &s in self.env.stmts() {
       match s {
         StmtTrace::Sort(_) => {
           if index {index_map.push((s, self.pos))}
@@ -632,9 +633,9 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         }
         StmtTrace::Decl(a) => {
           if index {index_map.push((s, self.pos))}
-          match self.env.data[a].decl.unwrap() {
+          match self.env.data()[a].decl().unwrap() {
             DeclKey::Term(t) => {
-              let td = &self.env.terms[t];
+              let td = self.env.term(t);
               match &td.val {
                 None => write_cmd(self, STMT_TERM, 2)?, // this takes 2 bytes
                 Some(None) => unreachable!(),
@@ -650,7 +651,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
               }
             }
             DeclKey::Thm(t) => {
-              let td = &self.env.thms[t];
+              let td = self.env.thm(t);
               let cmd = match &td.proof {
                 None => {
                   let mut reorder = Reorder::new(
@@ -662,7 +663,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                   write_expr_proof(&mut vec, &td.heap, &mut reorder, &td.ret, false)?;
                   STMT_AXIOM
                 }
-                Some(None) => panic!("proof {} missing", self.env.data[td.atom].name),
+                Some(None) => panic!("proof {} missing", self.env.data()[td.atom].name()),
                 Some(Some(Proof {heap, hyps, head})) => {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
@@ -692,14 +693,14 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     self.write_u8(0)?;
     if index {
       self.align_to(8)?; p_index.commit(self);
-      index_map.sort_unstable_by_key(|k| &*self.env.data[k.0.atom()].name);
+      index_map.sort_unstable_by_key(|k| &**self.env.data()[k.0.atom()].name());
       let mut index_header = self.fixup_large(8 * (1 +
-        self.env.sorts.len() + self.env.terms.len() + self.env.thms.len()))?;
+        self.env.sorts().len() + self.env.terms().len() + self.env.thms().len()))?;
       let (root, header) = index_header.1.split_at_mut(8);
       let mut header = {
         let header: &mut [[u8; 8]] = unsafe {mem::transmute(header)};
-        let (sorts, header) = header.split_at_mut(self.env.sorts.len());
-        let (terms, thms) = header.split_at_mut(self.env.terms.len());
+        let (sorts, header) = header.split_at_mut(self.env.sorts().len());
+        let (terms, thms) = header.split_at_mut(self.env.terms().len());
         IndexHeader {sorts, terms, thms}
       };
       LE::write_u64(root, self.write_index(&mut header, &[], &index_map)?);

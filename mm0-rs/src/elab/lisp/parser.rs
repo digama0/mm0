@@ -252,11 +252,12 @@ impl<'a> EnvDisplay for Pattern {
 }
 
 impl Remap<LispRemapper> for IR {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
       &IR::Local(i) => IR::Local(i),
       &IR::Global(sp, a) => IR::Global(sp, a.remap(r)),
-      IR::Const(v) => IR::Const(v.remap(r)),
+      IR::Const(v) => IR::Const(v.freeze().remap(r)),
       IR::List(sp, v) => IR::List(*sp, v.remap(r)),
       IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
       &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
@@ -272,6 +273,7 @@ impl Remap<LispRemapper> for IR {
 }
 
 impl Remap<LispRemapper> for Branch {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self {
     Self {
       vars: self.vars,
@@ -283,6 +285,7 @@ impl Remap<LispRemapper> for Branch {
 }
 
 impl Remap<LispRemapper> for Pattern {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self {
     match self {
       Pattern::Skip => Pattern::Skip,

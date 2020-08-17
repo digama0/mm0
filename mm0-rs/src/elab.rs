@@ -12,6 +12,7 @@
 pub mod environment;
 pub mod spans;
 pub mod lisp;
+#[macro_use] mod frozen;
 pub mod math_parser;
 pub mod local_context;
 pub mod refine;
@@ -32,6 +33,7 @@ use lisp::LispVal;
 use spans::Spans;
 pub use {environment::Environment, local_context::LocalContext};
 pub use crate::parser::ErrorLevel;
+pub use frozen::{FrozenEnv, FrozenLispKind, FrozenLispVal, FrozenAtomData};
 use crate::util::*;
 use crate::parser::{*, ast::*, ast::Literal as ALiteral};
 use crate::lined_string::*;
@@ -491,6 +493,17 @@ impl Elaborator {
     }
     Ok(ElabStmt::Ok)
   }
+}
+
+#[derive(Debug)]
+pub struct FrozenElaborator(Elaborator);
+unsafe impl Send for FrozenElaborator {}
+
+impl FrozenElaborator {
+  /// Creates a new `FrozenElaborator` from a parsed [`AST`].
+  pub fn new(ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>) -> FrozenElaborator {
+    FrozenElaborator(Elaborator::new(ast, path, mm0_mode, cancel))
+  }
 
   /// Creates a future to poll for the completed environment, given an import resolver.
   ///
@@ -522,21 +535,21 @@ impl Elaborator {
   /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
   /// [`Environment`]: environment/struct.Environment.html
   /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
-  pub fn as_fut<T>(mut self,
-    _old: Option<(usize, Vec<ElabError>, Arc<Environment>)>,
+  pub fn as_fut<T>(self,
+    _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
     mut mk: impl FnMut(FileRef) ->
-      std::result::Result<Receiver<(T, Arc<Environment>)>, BoxError>
-  ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, Environment)> {
+      std::result::Result<Receiver<(T, FrozenEnv)>, BoxError>
+  ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, FrozenEnv)> {
 
     enum UnfinishedStmt<T> {
       None,
-      Import(Span, Receiver<(T, Arc<Environment>)>),
+      Import(Span, Receiver<(T, FrozenEnv)>),
     }
 
     struct ElabFutureInner<T> {
-      elab: Elaborator,
+      elab: FrozenElaborator,
       toks: Vec<T>,
-      recv: HashMap<Span, (Option<FileRef>, Receiver<(T, Arc<Environment>)>)>,
+      recv: HashMap<Span, (Option<FileRef>, Receiver<(T, FrozenEnv)>)>,
       idx: usize,
       progress: UnfinishedStmt<T>
     }
@@ -544,10 +557,10 @@ impl Elaborator {
     struct ElabFuture<T>(Option<ElabFutureInner<T>>);
 
     impl<T> Future for ElabFuture<T> {
-      type Output = (Vec<T>, Vec<ElabError>, Environment);
+      type Output = (Vec<T>, Vec<ElabError>, FrozenEnv);
       fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = &mut unsafe { self.get_unchecked_mut() }.0;
-        let ElabFutureInner {elab, toks, recv, idx, progress} =
+        let ElabFutureInner {elab: FrozenElaborator(elab), toks, recv, idx, progress} =
           this.as_mut().expect("poll called after Ready");
         'l: loop {
           match progress {
@@ -580,25 +593,26 @@ impl Elaborator {
             elab.push_spans();
             *idx += 1;
           }
-          let ElabFutureInner {elab, toks, ..} = this.take().unwrap();
-          return Poll::Ready((toks, elab.errors, elab.env))
+          let ElabFutureInner {elab: FrozenElaborator(elab), toks, ..} = this.take().unwrap();
+          return Poll::Ready((toks, elab.errors, FrozenEnv::new(elab.env)))
         }
       }
     }
 
     let mut recv = HashMap::new();
-    let ast = self.ast.clone();
+    let FrozenElaborator(mut elab) = self;
+    let ast = elab.ast.clone();
     for (sp, f) in &ast.imports {
-      let path = self.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
+      let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
       (|| -> Result<_> {
         let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp.clone(), e))?.into();
         let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp.clone(), e))?;
         recv.insert(sp.clone(), (Some(r), tok));
         Ok(())
-      })().unwrap_or_else(|e| { self.report(e); recv.insert(sp.clone(), (None, channel().1)); });
+      })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp.clone(), (None, channel().1)); });
     }
     ElabFuture(Some(ElabFutureInner {
-      elab: self,
+      elab: FrozenElaborator(elab),
       toks: vec![],
       recv,
       idx: 0,

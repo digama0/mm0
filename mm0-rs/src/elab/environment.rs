@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::fmt::Write;
 use std::hash::Hash;
 use std::collections::HashMap;
-use super::{ElabError, BoxError, spans::Spans};
+use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
 use crate::util::*;
 use super::lisp::{LispVal, LispRemapper};
 pub use crate::parser::ast::{Modifiers, Prec};
@@ -476,7 +476,7 @@ impl AtomData {
 /// The different kind of objects that can appear in a [`Spans`].
 ///
 /// [`Spans`]: ../spans/struct.Spans.html
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum ObjectKind {
   /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
   /// This sort must actually exist in the `Environment` if is constructed
@@ -494,12 +494,17 @@ pub enum ObjectKind {
   /// Either `lisp` or `graveyard` for the atom must be non-`None` if this is constructed
   Global(AtomID),
   /// This is an expression; hovering shows the type and go-to-definition goes to the head term definition
-  Expr(LispVal),
+  Expr(FrozenLispVal),
   /// This is a proof; hovering shows the intermediate statement
   /// and go-to-definition goes to the head theorem definition
-  Proof(LispVal),
+  Proof(FrozenLispVal),
   /// This is an import; hovering does nothing and go-to-definition goes to the file
   Import(FileRef),
+}
+
+impl ObjectKind {
+  pub fn expr(e: LispVal) -> ObjectKind { ObjectKind::Expr(unsafe {FrozenLispVal::new(e)}) }
+  pub fn proof(e: LispVal) -> ObjectKind { ObjectKind::Proof(unsafe {FrozenLispVal::new(e)}) }
 }
 
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
@@ -649,53 +654,69 @@ struct Remapper {
 
 /// A trait for types that can be remapped. This is like `Clone` except it uses a `&mut R` as
 /// auxiliary state.
-pub trait Remap<R> {
+pub trait Remap<R>: Sized {
+  type Target;
   /// Create a copy of `self`, using `r` as auxiliary state.
-  fn remap(&self, r: &mut R) -> Self;
+  fn remap(&self, r: &mut R) -> Self::Target;
 }
 impl Remap<Remapper> for SortID {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { *r.sort.get(self).unwrap_or(self) }
 }
 impl Remap<Remapper> for TermID {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { *r.term.get(self).unwrap_or(self) }
 }
 impl Remap<Remapper> for ThmID {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { *r.thm.get(self).unwrap_or(self) }
 }
 impl Remap<Remapper> for AtomID {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { *r.atom.get(self).unwrap_or(self) }
 }
 impl<R> Remap<R> for String {
+  type Target = Self;
   fn remap(&self, _: &mut R) -> Self { self.clone() }
 }
 impl<R, A: Remap<R>, B: Remap<R>> Remap<R> for (A, B) {
-  fn remap(&self, r: &mut R) -> Self { (self.0.remap(r), self.1.remap(r)) }
+  type Target = (A::Target, B::Target);
+  fn remap(&self, r: &mut R) -> Self::Target { (self.0.remap(r), self.1.remap(r)) }
 }
 impl<R, A: Remap<R>, B: Remap<R>, C: Remap<R>> Remap<R> for (A, B, C) {
-  fn remap(&self, r: &mut R) -> Self { (self.0.remap(r), self.1.remap(r), self.2.remap(r)) }
+  type Target = (A::Target, B::Target, C::Target);
+  fn remap(&self, r: &mut R) -> Self::Target { (self.0.remap(r), self.1.remap(r), self.2.remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Option<A> {
-  fn remap(&self, r: &mut R) -> Self { self.as_ref().map(|x| x.remap(r)) }
+  type Target = Option<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { self.as_ref().map(|x| x.remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Vec<A> {
-  fn remap(&self, r: &mut R) -> Self { self.iter().map(|x| x.remap(r)).collect() }
+  type Target = Vec<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { self.iter().map(|x| x.remap(r)).collect() }
 }
 impl<R, A: Remap<R>> Remap<R> for Box<A> {
-  fn remap(&self, r: &mut R) -> Self { Box::new(self.deref().remap(r)) }
+  type Target = Box<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { Box::new(self.deref().remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Rc<A> {
-  fn remap(&self, r: &mut R) -> Self { Rc::new(self.deref().remap(r)) }
+  type Target = Rc<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { Rc::new(self.deref().remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Arc<A> {
-  fn remap(&self, r: &mut R) -> Self { Arc::new(self.deref().remap(r)) }
+  type Target = Arc<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { Arc::new(self.deref().remap(r)) }
 }
 impl<R, A: Remap<R>> Remap<R> for Box<[A]> {
-  fn remap(&self, r: &mut R) -> Self { self.iter().map(|v| v.remap(r)).collect() }
+  type Target = Box<[A::Target]>;
+  fn remap(&self, r: &mut R) -> Self::Target { self.iter().map(|v| v.remap(r)).collect() }
 }
 impl<R, A: Remap<R>> Remap<R> for Arc<[A]> {
-  fn remap(&self, r: &mut R) -> Self { self.iter().map(|v| v.remap(r)).collect() }
+  type Target = Arc<[A::Target]>;
+  fn remap(&self, r: &mut R) -> Self::Target { self.iter().map(|v| v.remap(r)).collect() }
 }
 impl Remap<Remapper> for Type {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       Type::Bound(s) => Type::Bound(s.remap(r)),
@@ -704,6 +725,7 @@ impl Remap<Remapper> for Type {
   }
 }
 impl Remap<Remapper> for ExprNode {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ExprNode::Ref(i) => ExprNode::Ref(i),
@@ -713,6 +735,7 @@ impl Remap<Remapper> for ExprNode {
   }
 }
 impl Remap<Remapper> for Expr {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Expr {
       heap: self.heap.remap(r),
@@ -721,6 +744,7 @@ impl Remap<Remapper> for Expr {
   }
 }
 impl Remap<Remapper> for Term {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Term {
       atom: self.atom.remap(r),
@@ -734,6 +758,7 @@ impl Remap<Remapper> for Term {
   }
 }
 impl Remap<Remapper> for ProofNode {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &ProofNode::Ref(i) => ProofNode::Ref(i),
@@ -752,6 +777,7 @@ impl Remap<Remapper> for ProofNode {
   }
 }
 impl Remap<Remapper> for Proof {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Proof {
       heap: self.heap.remap(r),
@@ -761,6 +787,7 @@ impl Remap<Remapper> for Proof {
   }
 }
 impl Remap<Remapper> for Thm {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Thm {
       atom: self.atom.remap(r),
@@ -776,6 +803,7 @@ impl Remap<Remapper> for Thm {
   }
 }
 impl Remap<Remapper> for NotaInfo {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     NotaInfo {
       span: self.span.clone(),
@@ -787,6 +815,7 @@ impl Remap<Remapper> for NotaInfo {
   }
 }
 impl Remap<Remapper> for Coe {
+  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       Coe::One(sp, t) => Coe::One(sp.clone(), t.remap(r)),
@@ -1134,25 +1163,25 @@ impl Environment {
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,
   /// and relabels lisp objects with the new `AtomID` mapping.
-  pub fn merge(&mut self, other: &Self, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
+  pub fn merge(&mut self, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     let lisp_remap = &mut LispRemapper {
-      atom: other.data.iter().map(|d| self.get_atom_arc(d.name.clone())).collect(),
+      atom: other.data().iter().map(|d| self.get_atom_arc(d.name().clone())).collect(),
       lisp: Default::default(),
       refs: Default::default(),
     };
-    for (i, d) in other.data.iter().enumerate() {
+    for (i, d) in other.data().iter().enumerate() {
       let data = &mut self.data[lisp_remap.atom[AtomID(i as u32)]];
-      data.lisp = d.lisp.as_ref().map(|(fs, v)| (fs.clone(), v.remap(lisp_remap)));
+      data.lisp = d.lisp().as_ref().map(|(fs, v)| (fs.clone(), v.remap(lisp_remap)));
       if data.lisp.is_none() {
-        data.graveyard = d.graveyard.clone();
+        data.graveyard = d.graveyard().clone();
       }
     }
     let remap = &mut Remapper::default();
-    for &s in &other.stmts {
+    for &s in other.stmts() {
       match s {
         StmtTrace::Sort(a) => {
-          let i = other.data[a].sort.unwrap();
-          let ref sort = other.sorts[i];
+          let i = other.data()[a].sort().unwrap();
+          let sort = other.sort(i);
           let id = match self.add_sort(a.remap(lisp_remap), sort.span.clone(), sort.full, sort.mods) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
@@ -1166,9 +1195,9 @@ impl Environment {
           };
           if i != id { remap.sort.insert(i, id); }
         }
-        StmtTrace::Decl(a) => match other.data[a].decl.unwrap() {
+        StmtTrace::Decl(a) => match other.data()[a].decl().unwrap() {
           DeclKey::Term(i) => {
-            let ref o = other.terms[i];
+            let o = other.term(i);
             let id = match self.add_term(a.remap(lisp_remap), o.span.clone(), || o.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
@@ -1183,7 +1212,7 @@ impl Environment {
             if i != id { remap.term.insert(i, id); }
           }
           DeclKey::Thm(i) => {
-            let ref o = other.thms[i];
+            let o = other.thm(i);
             let id = match self.add_thm(a.remap(lisp_remap), o.span.clone(), || o.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
@@ -1201,7 +1230,7 @@ impl Environment {
         StmtTrace::Global(_) => {}
       }
     }
-    self.pe.merge(&other.pe, remap, sp, &self.sorts, errors);
+    self.pe.merge(other.pe(), remap, sp, &self.sorts, errors);
     Ok(())
   }
 

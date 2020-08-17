@@ -578,7 +578,7 @@ impl Elaborator {
         if tdata.proof.is_some() {
           args.push(vis(tdata.vis));
           heap.truncate(tdata.args.len());
-          args.push(LispVal::proc(Proc::ProofThunk(x, Mutex::new(Err(heap.into())))));
+          args.push(LispVal::proc(Proc::ProofThunk(x, RefCell::new(Err(heap.into())))));
         }
         LispVal::list(args)
       }
@@ -1056,7 +1056,7 @@ make_builtins! { self, sp1, sp2, args,
     args.into_iter().nth(1).unwrap()
   },
   MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
-    Mutex::new(crate::mmc::Compiler::new(self)))),
+    RefCell::new(crate::mmc::Compiler::new(self)))),
 }
 
 impl<'a> Evaluator<'a> {
@@ -1263,7 +1263,7 @@ impl<'a> Evaluator<'a> {
             let span = try_get_span(&self.fspan(sp), &x);
             self.lc.add_proof(x.as_atom().unwrap(), e, ret.clone());
             if span != sp {
-              self.spans.insert_if(span, || ObjectKind::Proof(x));
+              self.spans.insert_if(span, || ObjectKind::proof(x));
             }
             State::Ret(LispVal::undef())
           },
@@ -1357,7 +1357,7 @@ impl<'a> Evaluator<'a> {
                 }
               },
               &Proc::ProofThunk(x, ref m) => {
-                let mut g = m.lock().unwrap();
+                let mut g = m.borrow_mut();
                 match &*g {
                   Ok(e) => State::Ret(e.clone()),
                   Err(_) => if let Some(DeclKey::Thm(t)) = self.data[x].decl {
@@ -1371,7 +1371,7 @@ impl<'a> Evaluator<'a> {
               }
               Proc::MMCCompiler(c) => {
                 let fsp = self.fspan(sp1);
-                State::Ret(c.lock().unwrap().call(self, fsp, args)?)
+                State::Ret(c.borrow_mut().call(self, fsp, args)?)
               }
             })
           })?,

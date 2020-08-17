@@ -24,10 +24,11 @@ use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::mmu::import::elab as mmu_elab;
-use crate::elab::{ElabError, Elaborator,
-  environment::{ObjectKind, DeclKey, AtomData, StmtTrace, Environment},
+use crate::elab::{ElabError, FrozenElaborator, FrozenEnv,
+  environment::{ObjectKind, DeclKey, StmtTrace},
+  FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
-  lisp::{LispKind, Uncons, print::FormatEnv, pretty::Pretty}};
+  lisp::{print::FormatEnv, pretty::Pretty}};
 
 #[derive(Debug)]
 struct ServerError(BoxError);
@@ -85,7 +86,7 @@ macro_rules! log {
 }
 
 async fn elaborate(path: FileRef, start: Option<Position>,
-    cancel: Arc<AtomicBool>) -> Result<(u64, Arc<Environment>)> {
+    cancel: Arc<AtomicBool>) -> Result<(u64, FrozenEnv)> {
   let Server {vfs, pool, ..} = &*SERVER;
   let (path, file) = vfs.get_or_insert(path)?;
   let v = file.text.lock().unwrap().0;
@@ -138,13 +139,14 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let ast = Arc::new(ast);
 
   let mut deps = Vec::new();
-  let elab = Elaborator::new(ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone());
   let (toks, errors, env) = if path.has_extension("mmb") {
     unimplemented!()
   } else if path.has_extension("mmu") {
     let (errors, env) = mmu_elab(path.clone(), &ast.source);
-    (vec![], errors, env)
+    (vec![], errors, FrozenEnv::new(env))
   } else {
+    let elab = FrozenElaborator::new(
+      ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone());
     elab.as_fut(
       old_env.map(|(errs, e)| (idx, errs, e)),
       |path| {
@@ -157,7 +159,6 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   };
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();
-  let env = Arc::new(env);
   log!("elabbed {:?}", path);
   let mut g = file.parsed.lock().await;
   let complete = !cancel.load(Ordering::SeqCst);
@@ -220,7 +221,7 @@ async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Ar
 }
 
 fn elaborate_and_send(path: FileRef,
-  cancel: Arc<AtomicBool>, send: FSender<(u64, Arc<Environment>)>) ->
+  cancel: Arc<AtomicBool>, send: FSender<(u64, FrozenEnv)>) ->
   BoxFuture<'static, ()> {
   async {
     if let Ok(env) = elaborate(path, Some(Position::default()), cancel).await {
@@ -237,14 +238,14 @@ enum FileCache {
   InProgress {
     version: Option<i64>,
     cancel: Arc<AtomicBool>,
-    senders: Vec<FSender<(u64, Arc<Environment>)>>,
+    senders: Vec<FSender<(u64, FrozenEnv)>>,
   },
   Ready {
     hash: u64,
     source: Arc<LinedString>,
     ast: Arc<AST>,
     errors: Vec<ElabError>,
-    env: Arc<Environment>,
+    env: FrozenEnv,
     deps: Vec<FileRef>,
     complete: bool,
   }
@@ -453,7 +454,8 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
   let idx = or!(Ok(None), text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = FormatEnv {source: &text, env: &env};
+  let env = unsafe { env.thaw() };
+  let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), env.find(idx));
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
@@ -471,7 +473,7 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
         _ => return None,
       }),
       ObjectKind::Expr(e) => {
-        let head = Uncons::from(e.clone()).next().unwrap_or_else(|| e.clone());
+        let head = e.uncons().next().unwrap_or(e);
         let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
         let a = head.as_atom()?;
         let s = if let Some(DeclKey::Term(t)) = env.data[a].decl {
@@ -480,7 +482,7 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
           spans.lc.as_ref()?.vars.get(&a)?.1.sort()?
         };
         let mut out = String::new();
-        fe.pretty(|p| p.expr(e).render_fmt(80, &mut out).unwrap());
+        fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).unwrap());
         use std::fmt::Write;
         write!(out, ": {}", fe.to(&s)).unwrap();
         (sp1, out)
@@ -494,7 +496,7 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
             .render_fmt(80, &mut out).unwrap());
           (sp, out)
         } else {
-          let mut u = Uncons::from(p.clone());
+          let mut u = p.uncons();
           let head = u.next()?;
           let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
           let a = head.as_atom()?;
@@ -502,7 +504,9 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
             let td = &env.thms[t];
             res.push((sp, format!("{}", fe.to(td))));
             let mut args = vec![];
-            if !u.extend_into(td.args.len(), &mut args) {return None}
+            for _ in 0..td.args.len() {
+              args.push(unsafe {u.next()?.thaw()}.clone());
+            }
             let mut subst = Subst::new(&env, &td.heap, args);
             let mut out = String::new();
             let ret = subst.subst(&td.ret);
@@ -549,15 +553,15 @@ async fn definition<T>(path: FileRef, pos: Position,
         f(&text, &vfs.source(&fsp.file), sp, fsp, full)
       };
     let sort = |s| {
-      let sd = &env.sorts[s];
+      let sd = env.sort(s);
       g(&sd.span, sd.full)
     };
     let term = |t| {
-      let td = &env.terms[t];
+      let td = env.term(t);
       g(&td.span, td.full)
     };
     let thm = |t| {
-      let td = &env.thms[t];
+      let td = env.thm(t);
       g(&td.span, td.full)
     };
     match k {
@@ -566,27 +570,27 @@ async fn definition<T>(path: FileRef, pos: Position,
       &ObjectKind::Thm(t) => res.push(thm(t)),
       ObjectKind::Var(_) => {}
       ObjectKind::Expr(e) => {
-        let head = Uncons::from(e.clone()).next().unwrap_or_else(|| e.clone());
-        if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data[a].decl) {
+        let head = e.uncons().next().unwrap_or(e);
+        if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data()[a].decl()) {
           res.push(term(t))
         }
       },
       ObjectKind::Proof(p) =>
-        if let Some(DeclKey::Thm(t)) = Uncons::from(p.clone()).next()
-            .and_then(|head| head.as_atom()).and_then(|a| env.data[a].decl) {
+        if let Some(DeclKey::Thm(t)) = p.uncons().next()
+            .and_then(|head| head.as_atom()).and_then(|a| env.data()[a].decl()) {
           res.push(thm(t))
         },
       &ObjectKind::Global(a) => {
-        let ad = &env.data[a];
-        match ad.decl {
+        let ad = &env.data()[a];
+        match ad.decl() {
           Some(DeclKey::Term(t)) => res.push(term(t)),
           Some(DeclKey::Thm(t)) => res.push(thm(t)),
           None => {}
         }
-        if let Some(s) = ad.sort {res.push(sort(s))}
-        if let Some((Some((ref fsp, full)), _)) = ad.lisp {
+        if let Some(s) = ad.sort() {res.push(sort(s))}
+        if let Some((Some((ref fsp, full)), _)) = *ad.lisp() {
           res.push(g(&fsp, full))
-        } else if let Some(sp) = &ad.graveyard {
+        } else if let Some(sp) = ad.graveyard() {
           res.push(g(&sp.0, sp.1))
         }
       }
@@ -605,7 +609,7 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = FormatEnv {source: &text, env: &env};
+  let fe = env.format_env(&text);
   let f = |name: &ArcString, desc, sp, full, kind| DocumentSymbol {
     name: (*name.0).clone(),
     detail: Some(desc),
@@ -616,50 +620,53 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
     children: None,
   };
   let mut res = vec![];
-  for s in &env.stmts {
+  for s in env.stmts() {
     match s {
       &StmtTrace::Sort(a) => {
-        let ad = &env.data[a];
-        let s = ad.sort.unwrap();
-        let sd = &env.sorts[s];
-        res.push(f(&ad.name, format!("{}", sd), sd.span.span, sd.full, SymbolKind::Class))
+        let ad = &env.data()[a];
+        let s = ad.sort().unwrap();
+        let sd = env.sort(s);
+        res.push(f(ad.name(), format!("{}", sd), sd.span.span, sd.full, SymbolKind::Class))
       }
       &StmtTrace::Decl(a) => {
-        let ad = &env.data[a];
-        match ad.decl.unwrap() {
+        let ad = &env.data()[a];
+        match ad.decl().unwrap() {
           DeclKey::Term(t) => {
-            let td = &env.terms[t];
-            res.push(f(&ad.name, format!("{}", fe.to(td)), td.span.span, td.full,
+            let td = env.term(t);
+            res.push(f(ad.name(), format!("{}", fe.to(td)), td.span.span, td.full,
               SymbolKind::Constructor))
           }
           DeclKey::Thm(t) => {
-            let td = &env.thms[t];
-            res.push(f(&ad.name, format!("{}", fe.to(td)), td.span.span, td.full,
+            let td = env.thm(t);
+            res.push(f(ad.name(), format!("{}", fe.to(td)), td.span.span, td.full,
               SymbolKind::Method))
           }
         }
       }
       &StmtTrace::Global(a) => {
-        let ad = &env.data[a];
-        if let &Some((Some((ref fsp, full)), ref e)) = &ad.lisp {
-          res.push(f(&ad.name, format!("{}", fe.to(e)), fsp.span, full,
-            match e.unwrapped(|r| Some(match r {
-              LispKind::Atom(_) |
-              LispKind::MVar(_, _) |
-              LispKind::Goal(_) => SymbolKind::Constant,
-              LispKind::List(_) |
-              LispKind::DottedList(_, _) =>
-                if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
-              LispKind::Number(_) => SymbolKind::Number,
-              LispKind::String(_) => SymbolKind::String,
-              LispKind::Bool(_) => SymbolKind::Boolean,
-              LispKind::Syntax(_) => SymbolKind::Event,
-              LispKind::Undef => return None,
-              LispKind::Proc(_) => SymbolKind::Function,
-              LispKind::AtomMap(_) => SymbolKind::Object,
-              LispKind::Annot(_, _) |
-              LispKind::Ref(_) => unreachable!()
-            })) {
+        let ad = &env.data()[a];
+        if let &Some((Some((ref fsp, full)), ref e)) = ad.lisp() {
+          res.push(f(ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), fsp.span, full,
+            match (|| Some({
+              let r = &**e.unwrap();
+              match r {
+                FrozenLispKind::Atom(_) |
+                FrozenLispKind::MVar(_, _) |
+                FrozenLispKind::Goal(_) => SymbolKind::Constant,
+                FrozenLispKind::List(_) |
+                FrozenLispKind::DottedList(_, _) =>
+                  if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
+                FrozenLispKind::Number(_) => SymbolKind::Number,
+                FrozenLispKind::String(_) => SymbolKind::String,
+                FrozenLispKind::Bool(_) => SymbolKind::Boolean,
+                FrozenLispKind::Syntax(_) => SymbolKind::Event,
+                FrozenLispKind::Undef => return None,
+                FrozenLispKind::Proc(_) => SymbolKind::Function,
+                FrozenLispKind::AtomMap(_) => SymbolKind::Object,
+                FrozenLispKind::Annot(_, _) |
+                FrozenLispKind::Ref(_) => unreachable!()
+              }
+            }))() {
               Some(sk) => sk,
               None => continue,
             }));
@@ -674,11 +681,11 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
 #[repr(u8)]
 enum TraceKind {Sort, Decl, Global}
 
-fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &AtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
+fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
   use CompletionItemKind::*;
   macro_rules! done {($desc:expr, $kind:expr) => {
     Some(CompletionItem {
-      label: (*ad.name.0).clone(),
+      label: (*ad.name().0).clone(),
       detail: if detail {Some($desc)} else {None},
       kind: Some($kind),
       data: Some(to_value((path.url(), tk)).unwrap()),
@@ -686,31 +693,31 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &AtomData, detail
     })
   }}
   match tk {
-    TraceKind::Sort => ad.sort.and_then(|s| {
+    TraceKind::Sort => ad.sort().and_then(|s| {
       let sd = &fe.sorts[s];
       done!(format!("{}", sd), Class)
     }),
-    TraceKind::Decl => ad.decl.and_then(|dk| match dk {
+    TraceKind::Decl => ad.decl().and_then(|dk| match dk {
       DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor)}
       DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
     }),
-    TraceKind::Global => ad.lisp.as_ref().and_then(|(_, e)| {
-      done!(format!("{}", fe.to(e)), e.unwrapped(|r| match r {
-        LispKind::Atom(_) |
-        LispKind::MVar(_, _) |
-        LispKind::Goal(_) => CompletionItemKind::Constant,
-        LispKind::List(_) |
-        LispKind::DottedList(_, _) |
-        LispKind::Undef |
-        LispKind::Number(_) |
-        LispKind::String(_) |
-        LispKind::Bool(_) |
-        LispKind::AtomMap(_) => CompletionItemKind::Value,
-        LispKind::Syntax(_) => CompletionItemKind::Event,
-        LispKind::Proc(_) => CompletionItemKind::Function,
-        LispKind::Annot(_, _) |
-        LispKind::Ref(_) => unreachable!()
-      }))
+    TraceKind::Global => ad.lisp().as_ref().and_then(|(_, e)| {
+      done!(format!("{}", fe.to(unsafe {e.thaw()})), match **e.unwrap() {
+        FrozenLispKind::Atom(_) |
+        FrozenLispKind::MVar(_, _) |
+        FrozenLispKind::Goal(_) => CompletionItemKind::Constant,
+        FrozenLispKind::List(_) |
+        FrozenLispKind::DottedList(_, _) |
+        FrozenLispKind::Undef |
+        FrozenLispKind::Number(_) |
+        FrozenLispKind::String(_) |
+        FrozenLispKind::Bool(_) |
+        FrozenLispKind::AtomMap(_) => CompletionItemKind::Value,
+        FrozenLispKind::Syntax(_) => CompletionItemKind::Event,
+        FrozenLispKind::Proc(_) => CompletionItemKind::Function,
+        FrozenLispKind::Annot(_, _) |
+        FrozenLispKind::Ref(_) => unreachable!()
+      })
     })
   }
 }
@@ -722,9 +729,9 @@ async fn completion(path: FileRef, _pos: Position) -> result::Result<CompletionR
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = FormatEnv {source: &text, env: &env};
+  let fe = env.format_env(&text);
   let mut res = vec![];
-  for ad in &env.data.0 {
+  for ad in env.data().iter() {
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Sort) {res.push(ci)}
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Decl) {res.push(ci)}
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Global) {res.push(ci)}
@@ -743,8 +750,8 @@ async fn completion_resolve(ci: CompletionItem) -> result::Result<CompletionItem
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = FormatEnv {source: &text, env: &env};
-  env.atoms.get(&*ci.label).and_then(|&a| make_completion_item(&path, fe, &env.data[a], true, tk))
+  let fe = env.format_env(&text);
+  env.get_atom(&*ci.label).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
 }
 

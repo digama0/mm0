@@ -22,15 +22,18 @@ use nameck::Entity;
 use predef::PredefMap;
 
 impl<R> Remap<R> for Keyword {
+  type Target = Self;
   fn remap(&self, _: &mut R) -> Self { *self }
 }
 
 impl<R> Remap<R> for Entity {
+  type Target = Self;
   fn remap(&self, _: &mut R) -> Self { self.clone() }
 }
 
 impl<R, A: Remap<R>> Remap<R> for PredefMap<A> {
-  fn remap(&self, r: &mut R) -> Self { self.map(|x| x.remap(r)) }
+  type Target = PredefMap<A::Target>;
+  fn remap(&self, r: &mut R) -> Self::Target { self.map(|x| x.remap(r)) }
 }
 
 pub struct Compiler {
@@ -46,6 +49,7 @@ impl std::fmt::Debug for Compiler {
 }
 
 impl Remap<LispRemapper> for Compiler {
+  type Target = Self;
   fn remap(&self, r: &mut LispRemapper) -> Self {
     Compiler {
       keywords: self.keywords.remap(r),

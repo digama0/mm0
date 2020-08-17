@@ -409,25 +409,25 @@ impl Elaborator {
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App(sp, sp2, _, AtomID::QMARK, _) => {
             let head = LispVal::new_ref(LispVal::goal(self.fspan(sp), tgt));
-            self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
+            self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
             RState::Ret(head)
           }
           RefineExpr::App(sp, sp2, _, AtomID::UNDER, u) => {
             if u.exactly(0) {
               let head = self.new_goal(sp, tgt);
-              self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
+              self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
               RState::Ret(head)
             } else {
               let mv = self.lc.new_mvar(InferTarget::Unknown, Some(self.fspan(sp2)));
               let head = self.new_goal(sp, mv);
-              self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
+              self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
               return Ok(RefineResult::RefineExtraArgs(tgt, head, u))
             }
           }
           RefineExpr::App(sp, sp2, im, a, u) => {
             let head = LispVal::atom(a).span(self.fspan(sp2));
             if let Some((_, v, _)) = self.lc.get_proof(a) {
-              self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
+              self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
               RState::RefineArgs {sp, v: v.clone(), tgt, u, head}
             } else if let Some(DeclKey::Thm(t)) = self.data[a].decl {
               RState::RefineBis {sp, sp2, tgt, im, t, args: vec![head], u}
@@ -483,13 +483,13 @@ impl Elaborator {
         RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e)? {
           RefineExpr::App(_, sp2, _, AtomID::UNDER, _) => {
             let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2)));
-            self.spans.insert_if(sp2, || ObjectKind::Expr(head.clone()));
+            self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
             RState::Ret(head)
           }
           RefineExpr::App(sp, sp2, _, a, u) => {
             let empty = u.exactly(0);
             let head = LispVal::atom(a);
-            self.spans.insert_if(sp2, || ObjectKind::Expr(head.clone()));
+            self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
             if let Some(is) = if empty {self.lc.vars.get(&a)} else {None} {
               let (sort, bd) = match is.1 {
                 InferSort::Bound {sort} => (sort, true),
@@ -575,7 +575,7 @@ impl Elaborator {
             }
           }
           let head = LispVal::list(args);
-          self.spans.insert_if(sp2, || ObjectKind::Proof(head.clone()));
+          self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
           break match res {
             RefineHypsResult::Ok(c) => RState::Ret(LispVal::apply_conv(c, tgt, head)),
             RefineHypsResult::Extra =>
