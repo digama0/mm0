@@ -310,7 +310,7 @@ impl Remap<LispRemapper> for Pattern {
 
 impl IR {
   fn unconst(cs: Vec<IR>) -> Result<Vec<LispVal>, Vec<IR>> {
-    if cs.iter().all(|c| if let IR::Const(_) = c {true} else {false}) {
+    if cs.iter().all(|c| matches!(c, IR::Const(_))) {
       Ok(cs.into_iter().map(|c|
         if let IR::Const(v) = c {v}
         else {unsafe {std::hint::unreachable_unchecked()}}).collect())
@@ -365,11 +365,11 @@ impl LocalCtx {
   }
   fn push(&mut self, x: AtomID) -> usize {
     let old = self.ctx.len();
-    if x != AtomID::UNDER { self.names.entry(x).or_insert(vec![]).push(old) }
+    if x != AtomID::UNDER { self.names.entry(x).or_insert_with(Vec::new).push(old) }
     self.ctx.push(x);
     old
   }
-  fn push_list(&mut self, xs: &Vec<AtomID>) -> usize {
+  fn push_list(&mut self, xs: &[AtomID]) -> usize {
     let old = self.ctx.len();
     for &x in xs { self.push(x); }
     old
@@ -404,17 +404,19 @@ enum Item<'a> {
   DottedList(&'a [SExpr], &'a SExpr),
 }
 
+type Var<'a> = (Span, AtomID, Vec<Item<'a>>);
+
 impl<'a> LispParser<'a> {
-  fn def_var<'c>(&mut self, mut e: &'c SExpr) -> Result<(Span, AtomID, Vec<Item<'c>>), ElabError> {
+  fn def_var<'c>(&mut self, mut e: &'c SExpr) -> Result<Var<'c>, ElabError> {
     let mut stack = vec![];
     loop {
       match &e.k {
-        &SExprKind::Atom(a) => break Ok((e.span, self.parse_ident(e.span, a)?, stack)),
+        &SExprKind::Atom(a) => break Ok((e.span, self.parse_atom(e.span, a)?, stack)),
         SExprKind::List(xs) if !xs.is_empty() =>
           {stack.push(Item::List(&xs[1..])); e = &xs[0]}
         SExprKind::DottedList(xs, y) if !xs.is_empty() =>
           {stack.push(Item::DottedList(&xs[1..], y)); e = &xs[0]}
-        _ => Err(ElabError::new_e(e.span, "def: invalid spec"))?
+        _ => return Err(ElabError::new_e(e.span, "def: invalid spec"))
       }
     }
   }
@@ -423,13 +425,13 @@ impl<'a> LispParser<'a> {
     for e in stack.iter().rev() {
       match e {
         Item::List(xs) => {
-          let xs = self.to_idents(xs)?;
+          let xs = self.parse_idents(xs)?;
           self.ctx.push_list(&xs);
         }
         Item::DottedList(xs, y) => {
-          let xs = self.to_idents(xs)?;
+          let xs = self.parse_idents(xs)?;
           self.ctx.push_list(&xs);
-          let y = self.to_ident(y)?;
+          let y = self.parse_ident(y)?;
           self.ctx.push(y);
         }
       }
@@ -467,22 +469,22 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn parse_ident(&mut self, sp: Span, a: Atom) -> Result<AtomID, ElabError> {
+  fn parse_atom(&mut self, sp: Span, a: Atom) -> Result<AtomID, ElabError> {
     self.parse_ident_or_syntax(sp, a).map_err(|_|
       ElabError::new_e(sp, "keyword in invalid position"))
   }
 
-  fn to_ident(&mut self, e: &SExpr) -> Result<AtomID, ElabError> {
+  fn parse_ident(&mut self, e: &SExpr) -> Result<AtomID, ElabError> {
     if let SExprKind::Atom(a) = e.k {
-      self.parse_ident(e.span, a)
+      self.parse_atom(e.span, a)
     } else {
       Err(ElabError::new_e(e.span, "expected an identifier"))
     }
   }
 
-  fn to_idents(&mut self, es: &[SExpr]) -> Result<Vec<AtomID>, ElabError> {
+  fn parse_idents(&mut self, es: &[SExpr]) -> Result<Vec<AtomID>, ElabError> {
     let mut xs = vec![];
-    for e in es {xs.push(self.to_ident(e)?)}
+    for e in es {xs.push(self.parse_ident(e)?)}
     Ok(xs)
   }
 
@@ -518,7 +520,7 @@ impl<'a> LispParser<'a> {
     Ok(cs)
   }
 
-  fn let_var<'c>(&mut self, e: &'c SExpr) -> Result<((Span, AtomID, Vec<Item<'c>>), &'c [SExpr]), ElabError> {
+  fn let_var<'c>(&mut self, e: &'c SExpr) -> Result<(Var<'c>, &'c [SExpr]), ElabError> {
     match &e.k {
       SExprKind::List(es) if !es.is_empty() => Ok((self.def_var(&es[0])?, &es[1..])),
       _ => Err(ElabError::new_e(e.span, "let: invalid spec"))
@@ -526,9 +528,10 @@ impl<'a> LispParser<'a> {
   }
 
   fn let_(&mut self, rec: bool, es: &[SExpr]) -> Result<IR, ElabError> {
-    if es.is_empty() {return Ok(IR::Const(LispVal::undef()).into())}
-    let ls = if let SExprKind::List(ls) = &es[0].k {ls}
-      else {Err(ElabError::new_e(es[0].span, "let: invalid spec"))?};
+    if es.is_empty() {return Ok(IR::Const(LispVal::undef()))}
+    let ls = if let SExprKind::List(ls) = &es[0].k {ls} else {
+      return Err(ElabError::new_e(es[0].span, "let: invalid spec"))
+    };
     let mut cs = vec![];
     if rec {
       let mut ds = Vec::with_capacity(ls.len());
@@ -625,7 +628,7 @@ impl<'a> LispParser<'a> {
         if quote {
           Pattern::QuoteAtom(self.elab.env.get_atom(self.elab.ast.span_atom(e.span, a)))
         } else {
-          let x = self.parse_ident(e.span, a)?;
+          let x = self.parse_atom(e.span, a)?;
           if x == AtomID::UNDER {Pattern::Skip}
           else {Pattern::Atom(ctx.get_or_push(x))}
         }
@@ -640,37 +643,36 @@ impl<'a> LispParser<'a> {
       SExprKind::List(es) if es.is_empty() => Ok(Pattern::List(Box::new([]), None)),
       SExprKind::List(es) =>
         if quote {
-          if let &[SExpr {span, k: SExprKind::Atom(a)}, ref e] = es.deref() {
+          if let [SExpr {span, k: SExprKind::Atom(a)}, ref e] = **es {
             if self.ast.span_atom(span, a) == "unquote" {
               self.pattern(ctx, code, false, e)
             } else {self.list_pattern(ctx, code, quote, es)}
           } else {self.list_pattern(ctx, code, quote, es)}
         } else if let SExprKind::Atom(a) = es[0].k {
           match self.ast.span_atom(es[0].span, a) {
-            "quote" if es.len() != 2 =>
-              Err(ElabError::new_e(es[0].span, "expected one argument"))?,
+            "quote" if es.len() != 2 => Err(ElabError::new_e(es[0].span, "expected one argument")),
             "quote" => self.pattern(ctx, code, true, &es[1]),
             "mvar" => match es.len() {
               1 => Ok(Pattern::MVar(None)),
-              3 => Ok(Pattern::MVar(Some(Box::new((
-                self.pattern(ctx, code, quote, &es[1])?,
-                self.pattern(ctx, code, quote, &es[2])?))))),
-              _ => Err(ElabError::new_e(es[0].span, "expected zero or two arguments"))?,
+              3 => {
+                let bd = self.pattern(ctx, code, quote, &es[1])?;
+                let s = self.pattern(ctx, code, quote, &es[2])?;
+                Ok(Pattern::MVar(Some(Box::new((bd, s)))))
+              }
+              _ => Err(ElabError::new_e(es[0].span, "expected zero or two arguments")),
             },
-            "goal" if es.len() != 2 =>
-              Err(ElabError::new_e(es[0].span, "expected one argument"))?,
+            "goal" if es.len() != 2 => Err(ElabError::new_e(es[0].span, "expected one argument")),
             "goal" => Ok(Pattern::Goal(Box::new(self.pattern(ctx, code, quote, &es[1])?))),
             "and" => Ok(Pattern::And(self.patterns(ctx, code, quote, &es[1..])?)),
             "or" => Ok(Pattern::Or(self.patterns(ctx, code, quote, &es[1..])?)),
             "not" => Ok(Pattern::Not(self.patterns(ctx, code, quote, &es[1..])?)),
-            "?" if es.len() < 2 =>
-              Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+            "?" if es.len() < 2 => Err(ElabError::new_e(es[0].span, "expected at least one argument")),
             "?" => {
               let p = self.ctx.len();
               let ir = self.expr(false, &es[1])?;
               self.ctx.restore(p);
-              Ok(Pattern::Test(es[1].span, Box::new(ir),
-                self.patterns(ctx, code, quote, &es[2..])?))
+              let rest = self.patterns(ctx, code, quote, &es[2..])?;
+              Ok(Pattern::Test(es[1].span, Box::new(ir), rest))
             },
             _ => self.list_pattern(ctx, code, quote, es)
           }
@@ -685,14 +687,14 @@ impl<'a> LispParser<'a> {
   fn branch(&mut self, code: &mut Vec<IR>, e: &SExpr) -> Result<Branch, ElabError> {
     let (e, mut es) = match &e.k {
       SExprKind::List(es) if !es.is_empty() => (&es[0], &es[1..]),
-      _ => Err(ElabError::new_e(e.span, "match: improper syntax"))?
+      _ => return Err(ElabError::new_e(e.span, "match: improper syntax"))
     };
     let mut cont = AtomID::UNDER;
     if let Some(e2) = es.get(0) {
       if let SExprKind::List(v) = &e2.k {
-        if let &[SExpr {span, k: SExprKind::Atom(a)}, ref x] = v.deref() {
+        if let [SExpr {span, k: SExprKind::Atom(a)}, ref x] = **v {
           if let "=>" = self.ast.span_atom(span, a) {
-            cont = self.to_ident(x)?;
+            cont = self.parse_ident(x)?;
             es = &es[1..];
           }
         }
@@ -745,29 +747,31 @@ impl<'a> LispParser<'a> {
           }
         )))
       } else {
-        Ok(match self.parse_ident(e.span, a)? {
+        Ok(match self.parse_atom(e.span, a)? {
           AtomID::UNDER => IR::Const(span!(e.span, LispVal::atom(AtomID::UNDER))),
           x => self.eval_atom(e.span, x),
         })
       },
       SExprKind::DottedList(es, e) => {
-        if !quote {Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?}
+        if !quote {
+          return Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))
+        }
         let mut cs = vec![];
         for e in es {
           if let SExprKind::Atom(a) = es[0].k {
             if let Ok(Syntax::Unquote) = Syntax::parse(self.ast.span(e.span), a) {
-              Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))?
+              return Err(ElabError::new_e(e.span, "cannot evaluate an improper list"))
             }
           }
           cs.push(self.expr(quote, e)?)
         }
         Ok(IR::dotted_list(e.span, cs, self.expr(true, e)?))
       }
-      SExprKind::Number(n) => Ok(IR::Const(LispVal::number(n.clone().into())).into()),
-      SExprKind::String(s) => Ok(IR::Const(LispVal::string(s.clone())).into()),
-      &SExprKind::Bool(b) => Ok(IR::Const(LispVal::bool(b)).into()),
-      SExprKind::Undef => Ok(IR::Const(LispVal::undef()).into()),
-      SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, LispVal::nil())).into()),
+      SExprKind::Number(n) => Ok(IR::Const(LispVal::number(n.clone().into()))),
+      SExprKind::String(s) => Ok(IR::Const(LispVal::string(s.clone()))),
+      &SExprKind::Bool(b) => Ok(IR::Const(LispVal::bool(b))),
+      SExprKind::Undef => Ok(IR::Const(LispVal::undef())),
+      SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, LispVal::nil()))),
       SExprKind::List(es) => if quote {
         let mut cs = vec![];
         let mut it = es.iter();
@@ -784,12 +788,12 @@ impl<'a> LispParser<'a> {
         })
       } else if let SExprKind::Atom(a) = es[0].k {
         match self.parse_ident_or_syntax(es[0].span, a) {
-          Ok(AtomID::UNDER) => Err(ElabError::new_e(es[0].span, "'_' is not a function"))?,
+          Ok(AtomID::UNDER) => return Err(ElabError::new_e(es[0].span, "'_' is not a function")),
           Ok(x) =>
             Ok(IR::App(e.span, es[0].span,
               Box::new(self.eval_atom(es[0].span, x)), self.exprs(false, &es[1..])?.into())),
-          Err(Syntax::Define) if es.len() < 2 =>
-            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Define) if es.len() < 2 => return Err(
+            ElabError::new_e(es[0].span, "expected at least one argument")),
           Err(Syntax::Define) =>
             Ok(match self.def(&es[1], &es[2..])? {
               (_, AtomID::UNDER, cs) => IR::Eval(false, cs.into()),
@@ -798,33 +802,33 @@ impl<'a> LispParser<'a> {
                 IR::Def(self.ctx.push(x), Some((e.span, sp, x)), IR::eval(cs).into())
               }
             }),
-          Err(Syntax::Lambda) if es.len() < 2 =>
-            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Lambda) if es.len() < 2 => return Err(
+            ElabError::new_e(es[0].span, "expected at least one argument")),
           Err(Syntax::Lambda) => match &es[1].k {
             SExprKind::List(xs) => {
-              let xs = self.to_idents(xs)?;
+              let xs = self.parse_idents(xs)?;
               Ok(IR::Lambda(es[0].span, self.ctx.push_list(&xs), ProcSpec::Exact(xs.len()),
                 IR::eval(self.exprs(false, &es[2..])?).into()))
             }
             SExprKind::DottedList(xs, y) => {
-              let xs = self.to_idents(xs)?;
-              let y = self.to_ident(y)?;
+              let xs = self.parse_idents(xs)?;
+              let y = self.parse_ident(y)?;
               let n = self.ctx.push_list(&xs);
               self.ctx.push(y);
               Ok(IR::Lambda(es[0].span, n, ProcSpec::AtLeast(xs.len()),
                 IR::eval(self.exprs(false, &es[2..])?).into()))
             }
             _ => {
-              let x = self.to_ident(&es[1])?;
+              let x = self.parse_ident(&es[1])?;
               Ok(IR::Lambda(es[0].span, self.ctx.push(x), ProcSpec::AtLeast(0),
                 IR::eval(self.exprs(false, &es[2..])?).into()))
             }
           },
-          Err(Syntax::Quote) if es.len() < 2 =>
-            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Quote) if es.len() < 2 => return Err(
+            ElabError::new_e(es[0].span, "expected at least one argument")),
           Err(Syntax::Quote) => self.expr(true, &es[1]),
-          Err(Syntax::Unquote) if es.len() < 2 =>
-            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Unquote) if es.len() < 2 => return Err(
+            ElabError::new_e(es[0].span, "expected at least one argument")),
           Err(Syntax::Unquote) => self.expr(false, &es[1]),
           Err(Syntax::If) if 3 <= es.len() && es.len() <= 4 => Ok(IR::If(Box::new((
             self.expr(false, &es[1])?,
@@ -834,13 +838,13 @@ impl<'a> LispParser<'a> {
               self.expr(false, e)?
             } else { IR::Const(LispVal::undef()) }
           )))),
-          Err(Syntax::If) =>
-            Err(ElabError::new_e(es[0].span, "expected two or three arguments"))?,
+          Err(Syntax::If) => return Err(
+            ElabError::new_e(es[0].span, "expected two or three arguments")),
           Err(Syntax::Focus) => Ok(IR::Focus(es[0].span, self.exprs(false, &es[1..])?.into())),
           Err(Syntax::Let) => self.let_(false, &es[1..]),
           Err(Syntax::Letrec) => self.let_(true, &es[1..]),
-          Err(Syntax::Match) if es.len() < 2 =>
-            Err(ElabError::new_e(es[0].span, "expected at least one argument"))?,
+          Err(Syntax::Match) if es.len() < 2 => return Err(
+            ElabError::new_e(es[0].span, "expected at least one argument")),
           Err(Syntax::Match) => {
             let e = self.expr(false, &es[1])?;
             self.ctx.restore(restore.unwrap());

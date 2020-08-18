@@ -1,6 +1,5 @@
 //! MMB exporter, which produces `.mmb` binary proof files from an `Environment` object.
 use std::convert::TryInto;
-use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use crate::elab::environment::{
@@ -231,23 +230,20 @@ fn write_expr_proof(w: &mut impl Write,
   head: &ExprNode,
   save: bool
 ) -> io::Result<u32> {
-  Ok(match head {
-    &ExprNode::Ref(i) => match reorder.map[i] {
+  Ok(match *head {
+    ExprNode::Ref(i) => match reorder.map[i] {
       None => {
         let n = write_expr_proof(w, heap, reorder, &heap[i], true)?;
         reorder.map[i] = Some(n);
         n
       }
-      Some(n) => {
-        ProofCmd::Ref(n.try_into().unwrap()).write_to(w)?;
-        n
-      }
+      Some(n) => {ProofCmd::Ref(n).write_to(w)?; n}
     }
-    &ExprNode::Dummy(_, s) => {
+    ExprNode::Dummy(_, s) => {
       ProofCmd::Dummy(s).write_to(w)?;
       (reorder.idx, reorder.idx += 1).0
     }
-    &ExprNode::App(t, ref es) => {
+    ExprNode::App(t, ref es) => {
       for e in es {write_expr_proof(w, heap, reorder, e, false)?;}
       if save {
         ProofCmd::TermSave(t).write_to(w)?;
@@ -287,14 +283,14 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   fn fixup_large(&mut self, size: usize) -> io::Result<FixupLarge> {
     let f = FixupLarge(self.pos, vec![0; size].into());
-    self.write(&f.1)?;
+    self.write_all(&f.1)?;
     Ok(f)
   }
 
   #[inline]
   fn align_to(&mut self, n: u8) -> io::Result<u64> {
     let i = n.wrapping_sub(self.pos as u8) & (n - 1);
-    self.write(&vec![0; i as usize])?;
+    self.write_all(&vec![0; i as usize])?;
     Ok(self.pos)
   }
 
@@ -316,13 +312,13 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
   fn write_binders<T>(&mut self, args: &[(T, Type)]) -> io::Result<()> {
     let mut bv = 1;
     for (_, ty) in args {
-      match ty {
-        &Type::Bound(s) => {
+      match *ty {
+        Type::Bound(s) => {
           if bv >= (1 << 55) {panic!("more than 55 bound variables")}
           self.write_sort_deps(true, s, bv)?;
           bv *= 2;
         }
-        &Type::Reg(s, deps) => self.write_sort_deps(false, s, deps)?,
+        Type::Reg(s, deps) => self.write_sort_deps(false, s, deps)?,
       }
     }
     Ok(())
@@ -337,32 +333,34 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     macro_rules! commit {($n:expr) => {
       for i in save.drain(..) {reorder.map[i] = Some($n)}
     }}
-    match head {
-      &ExprNode::Ref(i) => match reorder.map[i] {
+    match *head {
+      ExprNode::Ref(i) => match reorder.map[i] {
         None => {
           save.push(i);
-          self.write_expr_unify(heap, reorder, &heap[i], save)
+          self.write_expr_unify(heap, reorder, &heap[i], save)?
         }
         Some(n) => {
           UnifyCmd::Ref(n).write_to(self)?;
-          Ok(commit!(n))
+          commit!(n)
         }
       }
-      &ExprNode::Dummy(_, s) => {
+      ExprNode::Dummy(_, s) => {
         commit!(reorder.idx); reorder.idx += 1;
-        UnifyCmd::Dummy(s).write_to(self)
+        UnifyCmd::Dummy(s).write_to(self)?
       }
-      &ExprNode::App(t, ref es) => {
+      ExprNode::App(t, ref es) => {
         if save.is_empty() {
-          UnifyCmd::Term(t).write_to(self)?;
+          UnifyCmd::Term(t).write_to(self)?
         } else {
           commit!(reorder.idx); reorder.idx += 1;
-          UnifyCmd::TermSave(t).write_to(self)?;
+          UnifyCmd::TermSave(t).write_to(self)?
         }
-        for e in es {self.write_expr_unify(heap, reorder, e, save)?}
-        Ok(())
+        for e in es {
+          self.write_expr_unify(heap, reorder, e, save)?
+        }
       }
     }
+    Ok(())
   }
 
   fn write_proof(&self, w: &mut impl Write,
@@ -430,7 +428,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     hyps: &[u32],
     head: &ProofNode,
   ) -> io::Result<()> {
-    Ok(match head {
+    match head {
       &ProofNode::Ref(i) => match reorder.map[i] {
         None => {
           let e = &heap[i];
@@ -469,7 +467,8 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         ProofCmd::Unfold.write_to(w)?;
         self.write_conv(w, heap, reorder, hyps, c)?;
       }
-    })
+    }
+    Ok(())
   }
 
   #[inline]
@@ -560,7 +559,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
   }
 
   pub fn run(&mut self, index: bool) -> io::Result<()> {
-    self.write_all("MM0B".as_bytes())?; // magic
+    self.write_all(b"MM0B")?; // magic
     let num_sorts = self.env.sorts().len();
     if num_sorts > 128 {panic!("too many sorts (max 128)")}
     self.write_u32(
@@ -669,7 +668,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());
                   for mut h in hyps {
-                    while let &ProofNode::Ref(i) = h {h = &heap[i]}
+                    while let ProofNode::Ref(i) = *h {h = &heap[i]}
                     if let ProofNode::Hyp(_, e) = h {
                       self.write_proof(&mut vec, heap, &mut reorder, &ehyps, e, false)?;
                       ProofCmd::Hyp.write_to(&mut vec)?;
@@ -698,7 +697,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         self.env.sorts().len() + self.env.terms().len() + self.env.thms().len()))?;
       let (root, header) = index_header.1.split_at_mut(8);
       let mut header = {
-        let header: &mut [[u8; 8]] = unsafe {mem::transmute(header)};
+        let header = unsafe { &mut *(header as *mut [u8] as *mut [[u8; 8]]) };
         let (sorts, header) = header.split_at_mut(self.env.sorts().len());
         let (terms, thms) = header.split_at_mut(self.env.terms().len());
         IndexHeader {sorts, terms, thms}

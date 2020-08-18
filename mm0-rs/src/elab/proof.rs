@@ -63,7 +63,7 @@ impl<H: LispNodeHash> Dedup<H> {
     let mut bv = 1;
     let vec: Vec<_> = args.iter().enumerate()
       .map(|(i, (_, t))| (Rc::new(H::VAR(i)), true, match t {
-        Type::Bound(_) => (bv, bv *= 2).0,
+        Type::Bound(_) => { let v = bv; bv *= 2; v }
         &Type::Reg(_, deps) => deps,
       })).collect();
     Dedup {
@@ -230,11 +230,11 @@ impl LispNodeHash for ExprHash {
         Some(&i) => ExprHash::Var(i),
         None => match nh.lc.vars.get(&a) {
           Some(&(true, InferSort::Bound {sort})) => ExprHash::Dummy(a, sort),
-          _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
+          _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
         }
       },
-      LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
-        format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt))))?,
+      LispKind::MVar(_, tgt) => return Err(nh.err_sp(fsp,
+        format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt)))),
       _ => {
         let mut u = Uncons::from(r.clone());
         let head = u.next().ok_or_else(||
@@ -244,7 +244,9 @@ impl LispNodeHash for ExprHash {
           nh.err(&head, format!("term '{}' not declared", nh.fe.data[a].name)))?;
         let mut ns = Vec::new();
         for e in &mut u { ns.push(de.dedup(nh, &e)?) }
-        if !u.exactly(0) {Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))?}
+        if !u.exactly(0) {
+          return Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))
+        }
         ExprHash::App(tid, ns.into())
       }
     }))
@@ -274,10 +276,15 @@ impl Node for ExprNode {
 
 impl Environment {
   pub fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
-    v.push(if xs == 0 {LispVal::nil()} else {
-      let mut i = 1;
-      LispVal::list(bvs.iter().filter(|_| (xs & i != 0, i *= 2).0).cloned().collect::<Vec<_>>())
-    });
+    let e = if xs == 0 {
+      LispVal::nil()
+    } else {
+      let mut next_bv = 1;
+      LispVal::list(bvs.iter()
+        .filter(|_| { let bv = next_bv; next_bv *= 2; xs & bv != 0 })
+        .cloned().collect::<Vec<_>>())
+    };
+    v.push(e);
     v
   }
 
@@ -286,24 +293,24 @@ impl Environment {
     LispVal::list(bis.iter().map(|(a, t)| LispVal::list({
       let a = LispVal::atom(a.unwrap_or(AtomID::UNDER));
       heap.push(a.clone());
-      match t {
-        &Type::Bound(s) => {bvs.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
-        &Type::Reg(s, xs) => Self::deps(&bvs, vec![a, LispVal::atom(self.sorts[s].atom)], xs)
+      match *t {
+        Type::Bound(s) => {bvs.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
+        Type::Reg(s, xs) => Self::deps(&bvs, vec![a, LispVal::atom(self.sorts[s].atom)], xs)
       }
     })).collect::<Vec<_>>())
   }
 
   pub fn expr_node(&self, heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {
-    match e {
-      &ExprNode::Ref(n) => heap[n].clone(),
-      &ExprNode::Dummy(a, s) => {
+    match *e {
+      ExprNode::Ref(n) => heap[n].clone(),
+      ExprNode::Dummy(a, s) => {
         let a = LispVal::atom(a);
         if let Some(ds) = ds {
           ds.push(LispVal::list(vec![a.clone(), LispVal::atom(self.sorts[s].atom)]));
         }
         a
       }
-      &ExprNode::App(t, ref es) => {
+      ExprNode::App(t, ref es) => {
         let mut args = vec![LispVal::atom(self.terms[t].atom)];
         args.extend(es.iter().map(|e| self.expr_node(heap, ds, e)));
         LispVal::list(args)
@@ -346,9 +353,9 @@ impl ProofHash {
     }
   }
 
-  pub fn conv(de: &impl IDedup<Self>, i: usize) -> bool {
+  pub fn is_conv(de: &impl IDedup<Self>, i: usize) -> bool {
     match **de.get(i) {
-      ProofHash::Var(j) => j < i && Self::conv(de, j),
+      ProofHash::Var(j) => j < i && Self::is_conv(de, j),
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
       ProofHash::Hyp(_, _) |
@@ -380,8 +387,9 @@ impl ProofHash {
     }
   }
 
-  pub fn to_conv(i: usize, de: &mut impl IDedup<Self>) -> usize {
-    if Self::conv(de, i) {i} else {
+  #[allow(clippy::wrong_self_convention)]
+  pub fn as_conv(i: usize, de: &mut impl IDedup<Self>) -> usize {
+    if Self::is_conv(de, i) {i} else {
       de.add_direct(ProofHash::Refl(i))
     }
   }
@@ -401,13 +409,13 @@ impl LispNodeHash for ProofHash {
           Some((_, _, p)) => return Ok(Err(de.dedup(nh, p)?)),
           None => match nh.lc.vars.get(&a) {
             Some(&(true, InferSort::Bound {sort})) => ProofHash::Dummy(a, sort),
-            _ => Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name)))?,
+            _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
           }
         }
       },
-      LispKind::MVar(_, tgt) => Err(nh.err_sp(fsp,
-        format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt))))?,
-      LispKind::Goal(tgt) => Err(nh.err_sp(fsp, format!("|- {}", nh.fe.to(tgt))))?,
+      LispKind::MVar(_, tgt) => return Err(nh.err_sp(fsp,
+        format!("{}: {}", nh.fe.to(r), nh.fe.to(tgt)))),
+      LispKind::Goal(tgt) => return Err(nh.err_sp(fsp, format!("|- {}", nh.fe.to(tgt)))),
       _ => {
         let mut u = Uncons::from(r.clone());
         let head = u.next().ok_or_else(||
@@ -418,8 +426,8 @@ impl LispNodeHash for ProofHash {
           Some(DeclKey::Term(tid)) => {
             let mut ns = Vec::new();
             for e in u { ns.push(de.dedup(nh, &e)?) }
-            if ns.iter().any(|&i| Self::conv(de, i)) {
-              for i in &mut ns {*i = Self::to_conv(*i, de)}
+            if ns.iter().any(|&i| Self::is_conv(de, i)) {
+              for i in &mut ns {*i = Self::as_conv(*i, de)}
               ProofHash::Cong(tid, ns.into())
             } else {
               ProofHash::Term(tid, ns.into())
@@ -439,8 +447,11 @@ impl LispNodeHash for ProofHash {
                   bvs.push(deps);
                   ns[..i].iter().all(|&j| de.vec[j].2 & deps == 0)
                 }
-                &Type::Reg(_, mut d) =>
-                  bvs.iter().all(|&bv| (d & 1, d /= 2).0 != 0 || bv & deps == 0),
+                &Type::Reg(_, mut d) => bvs.iter().all(|&bv| {
+                  let old = d;
+                  d /= 2;
+                  old & 1 != 0 || bv & deps == 0
+                }),
               };
               if !ok {
                 let mut dvs = vec![];
@@ -452,7 +463,9 @@ impl LispNodeHash for ProofHash {
                       dvs.extend((0..i).map(|j| (j, i)));
                     }
                     &Type::Reg(_, mut d) =>
-                      dvs.extend(bvs.iter().filter(|_| (d & 1, d /= 2).0 == 0).map(|&j| (j, i)))
+                      dvs.extend(bvs.iter()
+                        .filter(|_| { let old = d; d /= 2; old & 1 == 0 })
+                        .map(|&j| (j, i)))
                   }
                 }
                 let mut err = format!("disjoint variable violation at {}", adata.name);
@@ -474,33 +487,33 @@ impl LispNodeHash for ProofHash {
           },
           None => match a {
             AtomID::CONV => match (u.next(), u.next(), u.next()) {
-              (Some(tgt), Some(c), Some(p)) if u.exactly(0) =>
+              (Some(tgt), Some(conv), Some(prf)) if u.exactly(0) =>
                 ProofHash::Conv(
                   de.dedup(nh, &tgt)?,
-                  Self::to_conv(de.dedup(nh, &c)?, de),
-                  de.dedup(nh, &p)?),
-              _ => Err(nh.err_sp(fsp, format!("incorrect :conv format {}", nh.fe.to(r))))?
+                  Self::as_conv(de.dedup(nh, &conv)?, de),
+                  de.dedup(nh, &prf)?),
+              _ => return Err(nh.err_sp(fsp, format!("incorrect :conv format {}", nh.fe.to(r))))
             },
             AtomID::SYM => match u.next() {
-              Some(p) if u.exactly(0) => ProofHash::Sym(Self::to_conv(de.dedup(nh, &p)?, de)),
-              _ => Err(nh.err_sp(fsp, format!("incorrect :sym format {}", nh.fe.to(r))))?
+              Some(p) if u.exactly(0) => ProofHash::Sym(Self::as_conv(de.dedup(nh, &p)?, de)),
+              _ => return Err(nh.err_sp(fsp, format!("incorrect :sym format {}", nh.fe.to(r))))
             },
             AtomID::UNFOLD => {
-              let (t, es, p) = match (u.next(), u.next(), u.next(), u.next()) {
-                (Some(t), Some(es), Some(p), None) if u.exactly(0) => (t, es, p),
-                (Some(t), Some(es), Some(_), Some(p)) if u.exactly(0) => (t, es, p),
-                _ => Err(nh.err_sp(fsp, format!("incorrect :unfold format {}", nh.fe.to(r))))?
+              let (ty, es, prf) = match (u.next(), u.next(), u.next(), u.next()) {
+                (Some(ty), Some(es), Some(prf), None) if u.exactly(0) => (ty, es, prf),
+                (Some(ty), Some(es), Some(_), Some(prf)) if u.exactly(0) => (ty, es, prf),
+                _ => return Err(nh.err_sp(fsp, format!("incorrect :unfold format {}", nh.fe.to(r))))
               };
-              let tid = t.as_atom().and_then(|a| nh.fe.term(a))
-                .ok_or_else(|| nh.err(&t, "expected a term"))?;
+              let tid = ty.as_atom().and_then(|a| nh.fe.term(a))
+                .ok_or_else(|| nh.err(&ty, "expected a term"))?;
               let mut ns = Vec::new();
-              for e in Uncons::from(es.clone()) { ns.push(de.dedup(nh, &e)?) }
+              for e in Uncons::from(es) { ns.push(de.dedup(nh, &e)?) }
               let lhs = de.add_direct(ProofHash::Term(tid, ns.clone().into()));
-              let c = Self::to_conv(de.dedup(nh, &p)?, de);
+              let c = Self::as_conv(de.dedup(nh, &prf)?, de);
               let l2 = Self::conv_side(de, c, false);
               ProofHash::Unfold(tid, ns.into(), lhs, l2, c)
             },
-            _ => Err(nh.err(&head, format!("term/theorem '{}' not declared", adata.name)))?
+            _ => return Err(nh.err(&head, format!("term/theorem '{}' not declared", adata.name)))
           }
         }
       }
@@ -522,7 +535,7 @@ impl ExprHash {
     match *self {
       ExprHash::Var(i) => ProofHash::Var(i),
       ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
-      ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone().into()),
+      ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone()),
     }
   }
 }

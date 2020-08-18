@@ -117,12 +117,12 @@ impl LispVal {
     fn rec<T, F: FnOnce(&LispVal, &LispRef) -> T>(e: &LispVal, f: F) -> std::result::Result<T, Option<F>> {
       match &**e {
         LispKind::Annot(_, e2) => rec(e2, f),
-        LispKind::Ref(m) => {
-          let g = m.unref();
-          match rec(&g, f) {
+        LispKind::Ref(mutex) => {
+          let guard = mutex.unref();
+          match rec(&guard, f) {
             Ok(r) => Ok(r),
             Err(None) => Err(None),
-            Err(Some(f)) => Ok(f(e, m))
+            Err(Some(f)) => Ok(f(e, mutex))
           }
         }
         LispKind::MVar(_, _) => Err(Some(f)),
@@ -148,7 +148,7 @@ impl Elaborator {
         let sp = try_get_span(fsp, e);
         match u.next() {
           None if e.is_list() => RefineExpr::App(sp, sp, InferMode::Regular, AtomID::UNDER, Uncons::from(LispVal::nil())),
-          None => Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error"))?,
+          None => return Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error")),
           Some(e) => {
             let a = e.as_atom().ok_or_else(||
               ElabError::new_e(try_get_span(fsp, &e), "refine: expected an atom"))?;
@@ -162,12 +162,12 @@ impl Elaborator {
               AtomID::VERB => if let (Some(e), true) = (u.next(), u.exactly(0)) {
                 return Ok(RefineExpr::Exact(e))
               } else {
-                Err(ElabError::new_e(try_get_span(fsp, &e), "verb: expected one argument"))?
+                return Err(ElabError::new_e(try_get_span(fsp, &e), "verb: expected one argument"))
               },
               AtomID::COLON => if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.exactly(0)) {
                 return Ok(RefineExpr::Typed(ty, e))
               } else {
-                Err(ElabError::new_e(try_get_span(fsp, &e), "':' expected two arguments"))?
+                return Err(ElabError::new_e(try_get_span(fsp, &e), "':' expected two arguments"))
               },
               _ => (InferMode::Regular, e)
             };
@@ -178,7 +178,7 @@ impl Elaborator {
         }
       }
       LispKind::Proc(_) => RefineExpr::Proc,
-      _ => Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error"))?,
+      _ => return Err(ElabError::new_e(try_get_span(fsp, &e), "refine: syntax error")),
     })
   }
 
@@ -195,7 +195,7 @@ impl Elaborator {
     Ok(match &*e.unwrapped_arc() {
       &LispKind::Atom(h) => match self.lc.get_proof(h) {
         Some((_, e, _)) => e.clone(),
-        None => Err(err!(e, format!("unknown hypothesis '{}'", self.data[h].name)))?
+        None => return Err(err!(e, format!("unknown hypothesis '{}'", self.data[h].name)))
       },
       LispKind::List(_) | LispKind::DottedList(_, _) => {
         let mut u = Uncons::from(e.clone());
@@ -203,18 +203,18 @@ impl Elaborator {
         match head.as_atom().ok_or_else(|| err!(head, "expected an atom"))? {
           AtomID::CONV => u.next().ok_or_else(|| err!(e, "bad :conv"))?,
           a => {
-            let t = self.thm(a).ok_or_else(||
+            let tid = self.thm(a).ok_or_else(||
               err!(head, format!("unknown theorem '{}'", self.data[a].name)))?;
-            let tdata = &self.env.thms[t];
-            let n = tdata.args.len();
-            let mut args = Vec::with_capacity(n);
-            if !u.extend_into(n, &mut args) {return Err(err!(e, "not enough arguments"))}
+            let tdata = &self.env.thms[tid];
+            let num_args = tdata.args.len();
+            let mut args = Vec::with_capacity(num_args);
+            if !u.extend_into(num_args, &mut args) {return Err(err!(e, "not enough arguments"))}
             Subst::new(&self.env, &tdata.heap, args).subst(&tdata.ret)
           }
         }
       }
       LispKind::Goal(e) => e.clone(),
-      _ => Err(err!(e, format!("not a proof: {}", self.print(e))))?
+      _ => return Err(err!(e, format!("not a proof: {}", self.print(e))))
     })
   }
 
@@ -224,7 +224,7 @@ impl Elaborator {
       InferTarget::Provable if self.sorts[s].mods.contains(Modifiers::PROVABLE) => return Ok(e),
       InferTarget::Provable => *self.pe.coe_prov.get(&s).ok_or_else(||
         ElabError::new_e(sp, format!("type error: expected provable, got {}", self.print(&s))))?,
-      InferTarget::Bound(_) if !bd => Err(ElabError::new_e(sp, "type error: expected bound var, got regular"))?,
+      InferTarget::Bound(_) if !bd => return Err(ElabError::new_e(sp, "type error: expected bound var, got regular")),
       InferTarget::Bound(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?,
       InferTarget::Reg(tgt) => self.data[tgt].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?,
     };
@@ -257,10 +257,7 @@ impl Elaborator {
     } else {
       if let Some(InferTarget::Bound(_)) = mv.mvar_target() {
         if !e.unwrapped(|r| match r {
-          LispKind::Atom(a) => match self.lc.vars.get(&a) {
-            Some((_, InferSort::Bound {..})) => true,
-            _ => false
-          },
+          LispKind::Atom(a) => matches!(self.lc.vars.get(&a), Some((_, InferSort::Bound {..}))),
           LispKind::MVar(_, is) => is.bound(),
           _ => false,
         }) {return Err(AssignError::BoundVar)}
@@ -317,7 +314,7 @@ impl Elaborator {
         let at2 = u2.next().and_then(|a| a.as_atom()).ok_or_else(||
           format!("bad term: {}", self.print(e2)))?;
         if at1 == at2 {
-          let mut cs = vec![et1.clone()];
+          let mut cs = vec![et1];
           let u3 = u1.clone();
           while let (Some(x1), Some(x2)) = (u1.next(), u2.next()) {
             cs.push(self.unify_core(&x1, &x2)?);
@@ -332,7 +329,7 @@ impl Elaborator {
               Ok(LispVal::undef())
             }
           } else {
-            Err(format!("bad terms: {}, {}", self.print(e1), self.print(e2)))?
+            Err(format!("bad terms: {}, {}", self.print(e1), self.print(e2)))
           }
         } else {
           let t1 = self.term(at1).ok_or_else(||
@@ -363,27 +360,33 @@ impl Elaborator {
     // })
   }
 
-  fn unfold(&mut self, sym: bool, t: TermID, u1: Uncons, e2: &LispVal) -> SResult<LispVal> {
-    let tdata = &self.env.terms[t];
+  fn unfold(&mut self, sym: bool, tid: TermID, u1: Uncons, e2: &LispVal) -> SResult<LispVal> {
+    let tdata = &self.env.terms[tid];
     let a = tdata.atom;
-    let n = tdata.args.len();
+    let nargs = tdata.args.len();
     if let Some(Some(val)) = &tdata.val {
-      let mut args = Vec::with_capacity(n);
-      if !u1.extend_into(n, &mut args) {return Err(format!("bad term: {}", self.print(&u1)))}
-      let e = Subst::new(&self.env, &val.heap, args.clone()).subst_mut(&mut self.lc, &val.head);
-      let u = self.unify1(&e, e2)?;
-      let u = LispVal::unfold(a, args, if u.is_def() {u} else {e});
-      Ok(if sym {LispVal::sym(u)} else {u})
-    } else {return Err(format!("not a definition: {}", self.print(&a)))}
-  }
-
-  fn type_target(&self, ty: &Type) -> InferTarget {
-    match ty {
-      &Type::Bound(s) => InferTarget::Bound(self.sorts[s].atom),
-      &Type::Reg(s, _) => InferTarget::Reg(self.sorts[s].atom),
+      let mut args = Vec::with_capacity(nargs);
+      if !u1.extend_into(nargs, &mut args) {
+        return Err(format!("bad term: {}", self.print(&u1)))
+      }
+      let e1_unfolded = Subst::new(&self.env, &val.heap, args.clone())
+        .subst_mut(&mut self.lc, &val.head);
+      let conv = self.unify1(&e1_unfolded, e2)?;
+      let conv = LispVal::unfold(a, args, if conv.is_def() {conv} else {e1_unfolded});
+      Ok(if sym {LispVal::sym(conv)} else {conv})
+    } else {
+      Err(format!("not a definition: {}", self.print(&a)))
     }
   }
 
+  fn type_target(&self, ty: &Type) -> InferTarget {
+    match *ty {
+      Type::Bound(s) => InferTarget::Bound(self.sorts[s].atom),
+      Type::Reg(s, _) => InferTarget::Reg(self.sorts[s].atom),
+    }
+  }
+
+  #[allow(clippy::never_loop)]
   pub fn run_refine(&mut self,
     sp: Span,
     stack: &mut Vec<RStack>,
@@ -432,8 +435,8 @@ impl Elaborator {
             } else if let Some(DeclKey::Thm(t)) = self.data[a].decl {
               RState::RefineBis {sp, sp2, tgt, im, t, args: vec![head], u}
             } else {
-              Err(ElabError::new_e(sp2, format!(
-                "unknown theorem/hypothesis '{}'", self.data[a].name)))?
+              return Err(ElabError::new_e(sp2, format!(
+                "unknown theorem/hypothesis '{}'", self.data[a].name)))
             }
           }
           RefineExpr::Typed(e, q) => {
@@ -504,7 +507,7 @@ impl Elaborator {
               self.lc.vars.insert(a, (true, InferSort::Bound {sort}));
               RState::Ret(head)
             } else {
-              Err(ElabError::new_e(sp, format!("unknown term '{}'", self.data[a].name)))?
+              return Err(ElabError::new_e(sp, format!("unknown term '{}'", self.data[a].name)))
             }
           }
           RefineExpr::Typed(s, e) => {
@@ -518,70 +521,76 @@ impl Elaborator {
           RefineExpr::Exact(e) => RState::Ret(e),
           RefineExpr::Proc => RState::Ret(e),
         },
-        RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => 'l: loop { // labeled block, not a loop
-          let tdata = &self.env.terms[t];
-          for (_, ty) in &tdata.args[args.len() - 1..] {
-            let tgt = self.type_target(ty);
-            match u.next() {
-              Some(e) => {
-                stack.push(RStack::RefineApp {sp2, tgt: ret, t, u, args});
-                break 'l RState::RefineExpr {tgt, e}
+        RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => {
+         'l: loop { // labeled block, not a loop. See rust#48594
+            let tdata = &self.env.terms[t];
+            for (_, ty) in &tdata.args[args.len() - 1..] {
+              let tgt = self.type_target(ty);
+              match u.next() {
+                Some(e) => {
+                  stack.push(RStack::RefineApp {sp2, tgt: ret, t, u, args});
+                  break 'l RState::RefineExpr {tgt, e}
+                }
+                None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2))))
               }
-              None => args.push(self.lc.new_mvar(tgt, Some(self.fspan(sp2))))
             }
+            let s = tdata.ret.0;
+            break RState::Ret(self.coerce_term(sp, ret, s, false, LispVal::list(args))?)
           }
-          let s = tdata.ret.0;
-          break RState::Ret(self.coerce_term(sp, ret, s, false, LispVal::list(args))?)
-        },
+        }
         RState::RefineArgs {sp, v, tgt, head, u} if u.exactly(0) =>
           RState::Ret(self.coerce_to(sp, tgt, v, head)?),
         RState::RefineArgs {tgt, head, u, ..} =>
           return Ok(RefineResult::RefineExtraArgs(tgt, head, u)),
-        RState::RefineBis {sp, sp2, tgt, im, t, mut u, mut args} => 'l2: loop { // labeled block, not a loop
-          let tdata = &self.env.thms[t];
-          for (_, ty) in &tdata.args[args.len() - 1..] {
-            let tgt1 = self.type_target(ty);
-            let explicit = match im {
-              InferMode::Regular => false,
-              InferMode::Explicit => true,
-              InferMode::BoundOnly => ty.bound(),
-            };
-            if let Some(e) = if explicit {u.next()} else {None} {
-              stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
-              break 'l2 RState::RefineExpr {tgt: tgt1, e}
-            } else {
-              args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2))))
+        RState::RefineBis {sp, sp2, tgt, im, t, mut u, mut args} => {
+          'l2: loop { // labeled block, not a loop. See rust#48594
+            let tdata = &self.env.thms[t];
+            for (_, ty) in &tdata.args[args.len() - 1..] {
+              let tgt1 = self.type_target(ty);
+              let explicit = match im {
+                InferMode::Regular => false,
+                InferMode::Explicit => true,
+                InferMode::BoundOnly => ty.bound(),
+              };
+              if let Some(e) = if explicit {u.next()} else {None} {
+                stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
+                break 'l2 RState::RefineExpr {tgt: tgt1, e}
+              } else {
+                args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2))))
+              }
+            }
+            let mut subst = Subst::new(&self.env, &tdata.heap, Vec::from(&args[1..]));
+            let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
+            let ret = subst.subst(&tdata.ret);
+            break RState::RefineHyps {
+              res: if u.len() <= hyps.len() {
+                RefineHypsResult::Ok(self.unify(sp, &tgt, &ret)?)
+              } else {
+                RefineHypsResult::Extra
+              },
+              sp, sp2, tgt, t, u, args, hyps: hyps.into_iter()
             }
           }
-          let mut subst = Subst::new(&self.env, &tdata.heap, Vec::from(&args[1..]));
-          let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
-          let ret = subst.subst(&tdata.ret);
-          break RState::RefineHyps {
-            res: if u.len() <= hyps.len() {
-              RefineHypsResult::Ok(self.unify(sp, &tgt, &ret)?)
-            } else {
-              RefineHypsResult::Extra
-            },
-            sp, sp2, tgt, t, u, args, hyps: hyps.into_iter()
-          }
-        },
-        RState::RefineHyps {sp, sp2, tgt, t, mut u, mut args, mut hyps, res} => 'l3: loop { // labeled block, not a loop
-          while let Some(h) = hyps.next() {
-            if let Some(p) = u.next() {
-              stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
-              break 'l3 RState::RefineProof {tgt: h, p}
-            } else {
-              args.push(self.new_goal(sp, h))
+        }
+        RState::RefineHyps {sp, sp2, tgt, t, mut u, mut args, mut hyps, res} => {
+          'l3: loop { // labeled block, not a loop. See rust#48594
+            while let Some(h) = hyps.next() {
+              if let Some(p) = u.next() {
+                stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
+                break 'l3 RState::RefineProof {tgt: h, p}
+              } else {
+                args.push(self.new_goal(sp, h))
+              }
+            }
+            let head = LispVal::list(args);
+            self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
+            break match res {
+              RefineHypsResult::Ok(c) => RState::Ret(LispVal::apply_conv(c, tgt, head)),
+              RefineHypsResult::Extra =>
+                return Ok(RefineResult::RefineExtraArgs(tgt, head, u)),
             }
           }
-          let head = LispVal::list(args);
-          self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
-          break match res {
-            RefineHypsResult::Ok(c) => RState::Ret(LispVal::apply_conv(c, tgt, head)),
-            RefineHypsResult::Extra =>
-              return Ok(RefineResult::RefineExtraArgs(tgt, head, u)),
-          }
-        },
+        }
         RState::Proc {tgt, p} => return Ok(RefineResult::Proc(tgt, p)),
       }
     }

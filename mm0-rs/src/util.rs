@@ -14,9 +14,21 @@ use lsp_types::Url;
 /// Newtype for `Box<dyn Error + Send + Sync>`
 pub type BoxError = Box<dyn Error + Send + Sync>;
 
+/// Extension trait for `cloned_box`.
+pub trait SliceExt<T> {
+  /// Clones a slice into a boxed slice.
+  fn cloned_box(&self) -> Box<[T]> where T: Clone;
+}
+
+impl<T> SliceExt<T> for [T] {
+  fn cloned_box(&self) -> Box<[T]> where T: Clone { self.to_vec().into() }
+}
+
 /// Extension trait for `try_insert`.
 pub trait HashMapExt<K, V> {
-  /// Like `insert`, but if the insertion
+  /// Like `insert`, but if the insertion fails then it returns the value
+  /// that it attempted to insert, as well as an `OccupiedEntry` containing
+  /// the other value that was found.
   fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)>;
 }
 
@@ -120,13 +132,13 @@ impl AddAssign<usize> for Span {
 impl Deref for Span {
   type Target = Range<usize>;
   fn deref(&self) -> &Range<usize> {
-    unsafe { mem::transmute(self) }
+    unsafe { &*(self as *const Span as *const Range<usize>) }
   }
 }
 
 impl DerefMut for Span {
   fn deref_mut(&mut self) -> &mut Range<usize> {
-    unsafe { mem::transmute(self) }
+    unsafe { &mut *(self as *mut Span as *mut Range<usize>) }
   }
 }
 
@@ -215,7 +227,7 @@ impl Hash for FileRef {
 
 impl fmt::Display for FileRef {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    self.0 .0.file_name().unwrap_or(self.0 .0.as_os_str()).to_str().unwrap().fmt(f)
+    self.0 .0.file_name().unwrap_or_else(|| self.0 .0.as_os_str()).to_str().unwrap().fmt(f)
   }
 }
 

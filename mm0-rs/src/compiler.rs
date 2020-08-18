@@ -269,7 +269,7 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     let mut deps = Vec::new();
     let elab = FrozenElaborator::new(
       ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default());
-    let (_, errors, env) = elab.as_fut(None, |path| {
+    let (_, errors, env) = elab.elaborate(None, |path| {
       let path = VFS_.get_or_insert(path)?.0;
       let (send, recv) = channel();
       POOL.spawn_ok(elaborate_and_send(path.clone(), send));

@@ -515,7 +515,7 @@ impl fmt::Display for Prec {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       &Prec::Prec(p) => p.fmt(f),
-      &Prec::Max => "max".fmt(f)
+      Prec::Max => "max".fmt(f)
     }
   }
 }

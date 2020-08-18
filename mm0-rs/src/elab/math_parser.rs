@@ -64,7 +64,9 @@ impl Elaborator {
     };
     p.ws();
     let expr = p.expr(Prec::Prec(0))?;
-    if let Some(tk) = p.token() {Err(ElabError::new_e(tk, "expected '$'"))?}
+    if let Some(tk) = p.token() {
+      return Err(ElabError::new_e(tk, "expected '$'"))
+    }
     assert!(p.imports.is_empty());
     for e in p.p.errors { self.report(e.into()) }
     Ok(expr)
@@ -124,16 +126,16 @@ impl<'a> MathParser<'a> {
   fn literals(&mut self, res: &mut SliceUninit<QExpr>, lits: &[Literal],
       consts: &mut Vec<Span>, mut end: usize) -> Result<usize, ParseError> {
     for lit in lits {
-      match lit {
-        &Literal::Var(i, q) => {
+      match *lit {
+        Literal::Var(i, q) => {
           let e = self.expr(q)?;
           end = e.span.end;
           res.set(i, e);
         },
-        &Literal::Const(ref c) => {
+        Literal::Const(ref c) => {
           let tk = self.token().ok_or_else(|| self.err(format!("expecting '{}'", c).into()))?;
           if self.span(tk) != c.deref() {
-            Err(ParseError::new(tk, format!("expecting '{}'", c).into()))?
+            return Err(ParseError::new(tk, format!("expecting '{}'", c).into()))
           }
           consts.push(tk);
           end = tk.end;
@@ -193,13 +195,12 @@ impl<'a> MathParser<'a> {
       self.idx = start;
       return Ok(QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())})
     }
-    Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))?
+    Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))
   }
 
   fn lhs(&mut self, p: Prec, mut lhs: QExpr) -> Result<QExpr, ParseError> {
     let mut tok_end = self.peek_token();
-    loop {
-      let tk = if let Some(tk) = tok_end.0 {tk} else {break};
+    while let Some(tk) = tok_end.0 {
       let s = self.span(tk);
       let p1 = if let Some(&(_, q)) = self.pe.consts.get(s) {q} else {break};
       if p1 < p {break}
@@ -226,7 +227,7 @@ impl<'a> MathParser<'a> {
       for sp in consts {self.spans.insert(sp, ObjectKind::Term(info.term, span));}
       lhs = QExpr { span, k: QExprKind::App(tk, info.term, unsafe { args.assume_init() }) };
     }
-    return Ok(lhs)
+    Ok(lhs)
   }
 
   fn expr(&mut self, p: Prec) -> Result<QExpr, ParseError> {

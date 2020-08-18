@@ -59,7 +59,7 @@ impl<W: Write> Joiner<W> {
         self.w.write_all(&src.as_bytes()[start..s.span.start])?;
         if self.done.insert(r.clone()) {
           self.write(r)?;
-          self.w.write(&[b'\n'])?;
+          self.w.write_all(&[b'\n'])?;
         }
         start = s.span.end;
       }

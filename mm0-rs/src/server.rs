@@ -70,10 +70,13 @@ fn nos_id(nos: NumberOrString) -> RequestId {
   }
 }
 
+type LogMessage = (Instant, ThreadId, String);
+
 lazy_static! {
-  static ref LOGGER: (Mutex<Vec<(Instant, ThreadId, String)>>, Condvar) = Default::default();
+  static ref LOGGER: (Mutex<Vec<LogMessage>>, Condvar) = Default::default();
   static ref SERVER: Server = Server::new().expect("Initialization failed");
 }
+
 #[allow(unused)]
 pub(crate) fn log(s: String) {
   LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), s));
@@ -107,20 +110,23 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
       &mut Some(FileCache::Ready {hash, ref deps, ref env, complete, ..}) => {
-        if complete && (|| -> bool {
+        if complete {
           let hasher = &mut DefaultHasher::new();
           v.hash(hasher);
-          for path in deps {
-            if let Some(file) = vfs.get(path) {
-              if let Some(g) = file.parsed.try_lock() {
-                if let Some(FileCache::Ready {hash, ..}) = *g {
-                  hash.hash(hasher);
+          let matches = (|| -> bool {
+            for path in deps {
+              if let Some(file) = vfs.get(path) {
+                if let Some(g) = file.parsed.try_lock() {
+                  if let Some(FileCache::Ready {hash, ..}) = *g {
+                    hash.hash(hasher);
+                  } else {return false}
                 } else {return false}
               } else {return false}
-            } else {return false}
-          }
-          hasher.finish() == hash
-        })() {return Ok((hash, env.clone()))}
+            }
+            hasher.finish() == hash
+          })();
+          if matches { return Ok((hash, env.clone())) }
+        }
         if let Some(FileCache::Ready {ast, source, errors, deps, env, ..}) = g.take() {
           ((start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
         } else {unsafe {std::hint::unreachable_unchecked()}}
@@ -147,7 +153,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   } else {
     let elab = FrozenElaborator::new(
       ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone());
-    elab.as_fut(
+    elab.elaborate(
       old_env.map(|(errs, e)| (idx, errs, e)),
       |path| {
         let path = vfs.get_or_insert(path)?.0;
@@ -216,7 +222,7 @@ async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Ar
   if let Err(e) = std::panic::AssertUnwindSafe(elaborate(path, start, cancel))
       .catch_unwind().await
       .unwrap_or_else(|_| Err("server panic".into())) {
-    log_message(format!("{:?}", e).into()).unwrap();
+    log_message(format!("{:?}", e)).unwrap();
   }
 }
 
@@ -346,7 +352,7 @@ impl VFS {
 
 enum RequestType {
   Completion(CompletionParams),
-  CompletionResolve(CompletionItem),
+  CompletionResolve(Box<CompletionItem>),
   Hover(TextDocumentPositionParams),
   Definition(TextDocumentPositionParams),
   DocumentSymbol(DocumentSymbolParams),
@@ -426,7 +432,7 @@ impl RequestHandler {
         self.finish(completion(doc.text_document.uri.into(), doc.position).await)
       }
       RequestType::CompletionResolve(ci) => {
-        self.finish(completion_resolve(ci).await)
+        self.finish(completion_resolve(*ci).await)
       }
     }
   }
@@ -621,14 +627,14 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
   };
   let mut res = vec![];
   for s in env.stmts() {
-    match s {
-      &StmtTrace::Sort(a) => {
+    match *s {
+      StmtTrace::Sort(a) => {
         let ad = &env.data()[a];
         let s = ad.sort().unwrap();
         let sd = env.sort(s);
         res.push(f(ad.name(), format!("{}", sd), sd.span.span, sd.full, SymbolKind::Class))
       }
-      &StmtTrace::Decl(a) => {
+      StmtTrace::Decl(a) => {
         let ad = &env.data()[a];
         match ad.decl().unwrap() {
           DeclKey::Term(t) => {
@@ -643,9 +649,9 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
           }
         }
       }
-      &StmtTrace::Global(a) => {
+      StmtTrace::Global(a) => {
         let ad = &env.data()[a];
-        if let &Some((Some((ref fsp, full)), ref e)) = ad.lisp() {
+        if let Some((Some((ref fsp, full)), ref e)) = *ad.lisp() {
           res.push(f(ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), fsp.span, full,
             match (|| Some({
               let r = &**e.unwrap();
@@ -684,24 +690,24 @@ enum TraceKind {Sort, Decl, Global}
 fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
   use CompletionItemKind::*;
   macro_rules! done {($desc:expr, $kind:expr) => {
-    Some(CompletionItem {
+    CompletionItem {
       label: (*ad.name().0).clone(),
       detail: if detail {Some($desc)} else {None},
       kind: Some($kind),
       data: Some(to_value((path.url(), tk)).unwrap()),
       ..Default::default()
-    })
+    }
   }}
   match tk {
-    TraceKind::Sort => ad.sort().and_then(|s| {
+    TraceKind::Sort => ad.sort().map(|s| {
       let sd = &fe.sorts[s];
       done!(format!("{}", sd), Class)
     }),
-    TraceKind::Decl => ad.decl().and_then(|dk| match dk {
+    TraceKind::Decl => ad.decl().map(|dk| match dk {
       DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor)}
       DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
     }),
-    TraceKind::Global => ad.lisp().as_ref().and_then(|(_, e)| {
+    TraceKind::Global => ad.lisp().as_ref().map(|(_, e)| {
       done!(format!("{}", fe.to(unsafe {e.thaw()})), match **e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |
@@ -861,7 +867,7 @@ impl Server {
                     let start = {
                       let file = vfs.get(&path).ok_or("changed nonexistent file")?;
                       let (version, text) = &mut *file.text.lock().unwrap();
-                      *version = Some(doc.version.unwrap_or_else(|| (count, count += 1).0));
+                      *version = Some(doc.version.unwrap_or_else(|| {let c = count; count += 1; c}));
                       let (start, s) = text.apply_changes(content_changes.into_iter());
                       *text = Arc::new(s);
                       start

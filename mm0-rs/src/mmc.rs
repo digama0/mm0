@@ -69,7 +69,7 @@ impl Compiler {
   }
 
   pub fn add(&mut self, elab: &mut Elaborator, fsp: FileSpan, it: impl Iterator<Item=LispVal>) -> Result<()> {
-    let mut p = Parser {elab, kw: &self.keywords, fsp: fsp.clone()};
+    let mut p = Parser {elab, kw: &self.keywords, fsp};
     let mut ast = vec![];
     for e in it {
       if let Some(fsp) = e.fspan() {p.fsp = fsp}
@@ -103,7 +103,7 @@ impl Compiler {
         Ok(LispVal::undef())
       }
       _ => Err(ElabError::new_e(fsp.span,
-        format!("mmc-compiler: unknown subcommand '{}'", elab.print(&e))))?
+        format!("mmc-compiler: unknown subcommand '{}'", elab.print(&e))))
     }
   }
 }

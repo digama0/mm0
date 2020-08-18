@@ -1,4 +1,3 @@
-use std::mem;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::sync::{Arc, atomic::AtomicBool};
@@ -20,6 +19,11 @@ unsafe impl Sync for FrozenEnv {}
 
 impl FrozenEnv {
   pub fn new(env: Environment) -> Self { Self(Arc::new(env)) }
+
+  /// Convert a `&FrozenEnv` into an `&Environment`.
+  /// # Safety
+  /// The reference derived here is only usable for reading, so in particular
+  /// `Rc::clone()` should be avoided because it could race with other readers.
   pub unsafe fn thaw(&self) -> &Environment { &self.0 }
 
   pub fn format_env<'a>(&'a self, source: &'a LinedString) -> FormatEnv<'a> {
@@ -31,7 +35,7 @@ impl FrozenEnv {
   }
 
   pub fn data(&self) -> &AtomVec<FrozenAtomData> {
-    unsafe { mem::transmute::<&AtomVec<AtomData>, &AtomVec<FrozenAtomData>>(&self.thaw().data) }
+    unsafe { &*(&self.thaw().data as *const AtomVec<AtomData> as *const _) }
   }
 
   pub fn sorts(&self) -> &SortVec<Sort> { &unsafe { self.thaw() }.sorts }
@@ -53,7 +57,7 @@ impl FrozenAtomData {
   pub fn sort(&self) -> Option<SortID> { self.0.sort }
   pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   pub fn lisp(&self) -> &Option<(Option<(FileSpan, Span)>, FrozenLispVal)> {
-    unsafe { mem::transmute::<&Option<(Option<(FileSpan, Span)>, LispVal)>, _>(&self.0.lisp) }
+    unsafe { &*(&self.0.lisp as *const Option<(_, LispVal)> as *const _) }
   }
   pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
 }
@@ -70,23 +74,40 @@ pub struct FrozenProc(Proc);
 __mk_lisp_kind! {FrozenLispKind, FrozenLispVal, FrozenLispRef, FrozenProc}
 
 impl LispKind {
-  pub fn freeze(&self) -> &FrozenLispKind { unsafe { mem::transmute(self) } }
+  pub fn freeze(&self) -> &FrozenLispKind {
+    unsafe { &*(self as *const LispKind as *const _) }
+  }
 }
 
 impl LispVal {
-  pub fn freeze(&self) -> &FrozenLispVal { unsafe { mem::transmute(self) } }
+  pub fn freeze(&self) -> &FrozenLispVal {
+    unsafe { &*(self as *const LispVal as *const _) }
+  }
 }
 
 impl LispRef {
-  pub fn freeze(&self) -> &FrozenLispRef { unsafe { mem::transmute(self) } }
+  pub fn freeze(&self) -> &FrozenLispRef {
+    unsafe { &*(self as *const LispRef as *const _) }
+  }
 }
 
 impl Proc {
-  pub fn freeze(&self) -> &FrozenProc { unsafe { mem::transmute(self) } }
+  pub fn freeze(&self) -> &FrozenProc {
+    unsafe { &*(self as *const Proc as *const _) }
+  }
 }
 
 impl FrozenLispVal {
+  /// Freeze a `LispVal`, creating a new `FrozenLispVal`.
+  /// # Safety
+  /// The functions on the resulting `FrozenLispVal` should not be called
+  /// until the value is frozen (meaning that all internal mutability stops).
   pub unsafe fn new(e: LispVal) -> Self { Self(e) }
+
+  /// Convert a `&FrozenLispVal` into an `&LispVal`.
+  /// # Safety
+  /// The reference derived here is only usable for reading, so in particular
+  /// `Rc::clone()` should be avoided because it could race with other readers.
   pub unsafe fn thaw(&self) -> &LispVal { &self.0 }
 
   pub fn uncons(&self) -> FrozenUncons<'_> { FrozenUncons::New(self) }
@@ -110,7 +131,7 @@ impl FrozenLispKind {
   }
 
   pub fn as_atom(&self) -> Option<AtomID> {
-    if let &FrozenLispKind::Atom(a) = self.unwrap() {Some(a)} else {None}
+    if let FrozenLispKind::Atom(a) = *self.unwrap() {Some(a)} else {None}
   }
 
   pub fn is_list(&self) -> bool {
@@ -138,8 +159,8 @@ impl Deref for FrozenLispVal {
 impl Remap<LispRemapper> for FrozenLispVal {
   type Target = LispVal;
   fn remap(&self, r: &mut LispRemapper) -> LispVal {
-    let p: *const FrozenLispKind = self.deref();
-    if let Some(v) = r.lisp.get(&p) {return v.clone()}
+    let ptr: *const FrozenLispKind = self.deref();
+    if let Some(v) = r.lisp.get(&ptr) {return v.clone()}
     let v = match self.deref() {
       FrozenLispKind::Atom(a) => LispVal::atom(a.remap(r)),
       FrozenLispKind::List(v) => LispVal::list(v.remap(r)),
@@ -147,14 +168,14 @@ impl Remap<LispRemapper> for FrozenLispVal {
       FrozenLispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
       FrozenLispKind::Proc(f) => LispVal::proc(f.remap(r)),
       FrozenLispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
-      FrozenLispKind::Ref(m) => match r.refs.entry(p) {
+      FrozenLispKind::Ref(m) => match r.refs.entry(ptr) {
         Entry::Occupied(e) => e.get().clone(),
         Entry::Vacant(e) => {
-          let w = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
-          e.insert(w.clone());
-          w.as_ref_(|v| *v = m.remap(r)).unwrap();
-          r.refs.remove(&p);
-          w
+          let ref_ = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
+          e.insert(ref_.clone());
+          ref_.as_ref_(|val| *val = m.remap(r)).unwrap();
+          r.refs.remove(&ptr);
+          ref_
         }
       },
       &FrozenLispKind::MVar(n, is) => LispVal::new(LispKind::MVar(n, is.remap(r))),
@@ -165,7 +186,7 @@ impl Remap<LispRemapper> for FrozenLispVal {
       &FrozenLispKind::Syntax(s) => LispVal::syntax(s),
       FrozenLispKind::Undef => LispVal::undef(),
     };
-    r.lisp.entry(p).or_insert(v).clone()
+    r.lisp.entry(ptr).or_insert(v).clone()
   }
 }
 
@@ -190,6 +211,10 @@ impl Remap<LispRemapper> for FrozenProc {
 }
 
 impl FrozenLispRef {
+  /// Convert a `&FrozenLispRef` into an `&LispRef`.
+  /// # Safety
+  /// The reference derived here is only usable for reading, so in particular
+  /// `Rc::clone()` should be avoided because it could race with other readers.
   pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
 }
 

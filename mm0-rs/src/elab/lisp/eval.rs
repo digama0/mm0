@@ -20,7 +20,7 @@ use super::super::{Result, Elaborator,
   refine::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
-use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
+use super::super::local_context::{InferSort, AwaitingProof, ThmVal, try_get_span};
 use super::super::environment::{ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
@@ -220,11 +220,11 @@ impl Elaborator {
           Pattern::Skip => PatternState::Ret(true),
           &Pattern::Atom(i) => {ctx[i] = e; PatternState::Ret(true)}
           &Pattern::QuoteAtom(a) => PatternState::Ret(e.unwrapped(|e|
-            if let &LispKind::Atom(a2) = e {a == a2} else {false})),
+            if let LispKind::Atom(a2) = *e {a == a2} else {false})),
           Pattern::String(s) => PatternState::Ret(e.unwrapped(|e|
             if let LispKind::String(s2) = e {s == s2} else {false})),
           &Pattern::Bool(b) => PatternState::Ret(e.unwrapped(|e|
-            if let &LispKind::Bool(b2) = e {b == b2} else {false})),
+            if let LispKind::Bool(b2) = *e {b == b2} else {false})),
           Pattern::Undef => PatternState::Ret(e.unwrapped(|e| *e == LispKind::Undef)),
           Pattern::Number(i) => PatternState::Ret(e.unwrapped(|e|
             if let LispKind::Number(i2) = e {i == i2} else {false})),
@@ -253,7 +253,7 @@ impl Elaborator {
           &Pattern::QExprAtom(a) => PatternState::Ret(e.unwrapped(|e| match e {
             &LispKind::Atom(a2) => a == a2,
             LispKind::List(es) if es.len() == 1 =>
-              es[0].unwrapped(|e| if let &LispKind::Atom(a2) = e {a == a2} else {false}),
+              es[0].unwrapped(|e| if let LispKind::Atom(a2) = *e {a == a2} else {false}),
             _ => false
           })),
           Pattern::DottedList(ps, r) => PatternState::List(Uncons::from(e), ps.iter(), Dot::DottedList(r)),
@@ -282,7 +282,7 @@ impl Elaborator {
           None => match dot {
             Dot::List(None) => PatternState::Ret(u.exactly(0)),
             Dot::List(Some(n)) => PatternState::Ret(u.list_at_least(n)),
-            Dot::DottedList(p) => PatternState::Eval(p, u.as_lisp()),
+            Dot::DottedList(p) => PatternState::Eval(p, u.into()),
           }
           Some(p) => match u.next() {
             None => PatternState::Ret(false),
@@ -311,14 +311,14 @@ impl Elaborator {
   }
 
   /// Parse and evaluate a lisp expression. This is the main entry point.
-  pub fn eval_lisp<'b>(&'b mut self, e: &SExpr) -> Result<LispVal> {
+  pub fn eval_lisp(&mut self, e: &SExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_lisp(e)?;
     self.evaluate(sp, &ir)
   }
 
   /// Parse and evaluate a math formula.
-  pub fn eval_qexpr<'b>(&'b mut self, e: QExpr) -> Result<LispVal> {
+  pub fn eval_qexpr(&mut self, e: QExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_qexpr(e)?;
     self.evaluate(sp, &ir)
@@ -326,7 +326,7 @@ impl Elaborator {
 
   /// Parse and evaluate a lisp expression being used as a proof. Essentially the same
   /// as evaluating `(refine e)` where `e` is the input expression.
-  pub fn elab_lisp<'b>(&'b mut self, e: &SExpr) -> Result<LispVal> {
+  pub fn elab_lisp(&mut self, e: &SExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_lisp(e)?;
     Evaluator::new(self, sp).run(State::Refines(sp, [ir].iter()))
@@ -399,7 +399,7 @@ impl Elaborator {
   fn int_bool_binop(&self, mut f: impl FnMut(&BigInt, &BigInt) -> bool, args: &[LispVal]) -> SResult<bool> {
     let mut it = args.iter();
     let mut last = self.as_int(it.next().unwrap())?;
-    while let Some(v) = it.next() {
+    for v in it {
       let new = self.as_int(v)?;
       if !f(&last, &new) {return Ok(false)}
       last = new;
@@ -411,11 +411,11 @@ impl Elaborator {
     use std::fmt::Write;
     let mut s = String::new();
     for (a, e, _) in &self.lc.proof_order {
-      write!(s, "{}: {}\n", self.print(a), self.format_env().pp(&e, 80)).unwrap()
+      writeln!(s, "{}: {}", self.print(a), self.format_env().pp(&e, 80)).unwrap()
     }
     for e in &self.lc.goals {
       e.unwrapped(|r| if let LispKind::Goal(e) = r {
-        write!(s, "|- {}\n", self.format_env().pp(&e, 80)).unwrap()
+        writeln!(s, "|- {}", self.format_env().pp(&e, 80)).unwrap()
       })
     }
     s
@@ -435,7 +435,7 @@ impl Elaborator {
     fn exponential_backoff(es: &[LispVal], i: usize, r: impl FnOnce(Vec<LispVal>) -> LispVal) -> LispVal {
       let j = 2 * i;
       if j >= es.len() { r(es[i..].into()) }
-      else { LispVal::dotted_list(es[i..j].to_vec(), exponential_backoff(es, j, r)) }
+      else { LispVal::dotted_list(es[i..j].cloned_box(), exponential_backoff(es, j, r)) }
     }
     e.unwrapped(|e| match e {
       LispKind::List(es) if es.is_empty() => Err("evaluating 'tl ()'".into()),
@@ -450,7 +450,7 @@ impl Elaborator {
 
   fn nth(&self, e: &LispKind, i: usize) -> SResult<LispVal> {
     e.unwrapped(|e| match e {
-      LispKind::List(es) => Ok(es.get(i).cloned().unwrap_or_else(|| LispVal::undef())),
+      LispKind::List(es) => Ok(es.get(i).cloned().unwrap_or_else(LispVal::undef)),
       LispKind::DottedList(es, r) => match es.get(i) {
         Some(e) => Ok(e.clone()),
         None => self.nth(r, i - es.len()),
@@ -756,33 +756,33 @@ make_builtins! { self, sp1, sp2, args,
   },
   Max: AtLeast(1) => {
     let mut it = args.into_iter();
-    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap())).clone();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it { n = n.max(try1!(self.as_int(&e)).clone()) }
     LispVal::number(n)
   },
   Min: AtLeast(1) => {
     let mut it = args.into_iter();
-    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap())).clone();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it { n = n.min(try1!(self.as_int(&e)).clone()) }
     LispVal::number(n)
   },
   Sub: AtLeast(1) => if args.len() == 1 {
-    LispVal::number(-try1!(self.as_int(&args[0])).clone())
+    LispVal::number(-try1!(self.as_int(&args[0])))
   } else {
     let mut it = args.into_iter();
-    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap())).clone();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it { n -= try1!(self.as_int(&e)) }
     LispVal::number(n)
   },
   Div: AtLeast(1) => {
     let mut it = args.into_iter();
-    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap())).clone();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it { n /= try1!(self.as_int(&e)) }
     LispVal::number(n)
   },
   Mod: AtLeast(1) => {
     let mut it = args.into_iter();
-    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap())).clone();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it { n %= try1!(self.as_int(&e)) }
     LispVal::number(n)
   },
@@ -844,7 +844,7 @@ make_builtins! { self, sp1, sp2, args,
   NewRef: AtLeast(0) => LispVal::new_ref(args.get(0).cloned().unwrap_or_else(LispVal::undef)),
   GetRef: Exact(1) => try1!(self.as_ref(&args[0], |e| Ok(e.clone()))),
   SetRef: Exact(2) => {
-    try1!(self.as_ref(&args[0], |e| Ok(*e = args[1].clone())));
+    try1!(self.as_ref(&args[0], |e| {*e = args[1].clone(); Ok(())}));
     LispVal::undef()
   },
   CopySpan: Exact(2) => {
@@ -895,10 +895,11 @@ make_builtins! { self, sp1, sp2, args,
     try1!(try1!(args[0].as_ref_mut(|r| {
       r.as_map_mut(|m| -> SResult<_> {
         let k = self.as_string_atom(&args[1])?;
-        Ok(match args.get(2) {
+        match args.get(2) {
           Some(v) => {m.insert(k, v.clone());}
           None => {m.remove(&k);}
-        })
+        }
+        Ok(())
       })
     }).unwrap_or(None).ok_or("expected a mutable map")));
     LispVal::undef()
@@ -908,10 +909,11 @@ make_builtins! { self, sp1, sp2, args,
     let mut m = it.next().unwrap();
     let k = self.as_string_atom(&it.next().unwrap());
     try1!(try1!(m.as_map_mut(|m| -> SResult<_> {
-      Ok(match it.next() {
-        Some(v) => {m.insert(k?, v.clone());}
+      match it.next() {
+        Some(v) => {m.insert(k?, v);}
         None => {m.remove(&k?);}
-      })
+      }
+      Ok(())
     }).ok_or("expected a map")));
     LispVal::undef()
   },
@@ -1037,16 +1039,14 @@ make_builtins! { self, sp1, sp2, args,
         self.reporting.warn = b;
         self.reporting.info = b;
       } else {try1!(Err("invalid arguments"))}
-    } else {
-      if let Some(b) = args[1].as_bool() {
-        match try1!(args[0].as_atom().ok_or("expected an atom")) {
-          AtomID::ERROR => self.reporting.error = b,
-          AtomID::WARN => self.reporting.warn = b,
-          AtomID::INFO => self.reporting.info = b,
-          s => try1!(Err(format!("unknown error level '{}'", self.print(&s))))
-        }
-      } else {try1!(Err("invalid arguments"))}
-    }
+    } else if let Some(b) = args[1].as_bool() {
+      match try1!(args[0].as_atom().ok_or("expected an atom")) {
+        AtomID::ERROR => self.reporting.error = b,
+        AtomID::WARN => self.reporting.warn = b,
+        AtomID::INFO => self.reporting.info = b,
+        s => try1!(Err(format!("unknown error level '{}'", self.print(&s))))
+      }
+    } else {try1!(Err("invalid arguments"))}
     LispVal::undef()
   },
   CheckProofs: Exact(1) => {
@@ -1076,6 +1076,7 @@ impl<'a> Evaluator<'a> {
     }
   }
 
+  #[allow(clippy::never_loop)]
   fn run(&mut self, mut active: State<'a>) -> Result<LispVal> {
     macro_rules! throw {($sp:expr, $e:expr) => {{
       let err = $e;
@@ -1121,8 +1122,8 @@ impl<'a> Evaluator<'a> {
           &IR::Local(i) => State::Ret(self.ctx[i].clone()),
           &IR::Global(sp, a) => State::Ret(match &self.data[a] {
             AtomData {name, lisp: None, ..} => match BuiltinProc::from_str(name) {
-              None => throw!(sp, format!("Reference to unbound variable '{}'", name)),
-              Some(p) => {
+              Err(_) => throw!(sp, format!("Reference to unbound variable '{}'", name)),
+              Ok(p) => {
                 let s = name.clone();
                 let a = self.get_atom(&s);
                 let ret = LispVal::proc(Proc::Builtin(p));
@@ -1233,7 +1234,8 @@ impl<'a> Evaluator<'a> {
           }
           Some(Stack::AddThmProc(fsp, ap)) => {
             let AwaitingProof {t, de, var_map, lc, is} = *ap;
-            self.finish_add_thm(fsp, t, Some(Some((de, var_map, Some(lc), is, ret))))?;
+            self.finish_add_thm(fsp, t,
+              Some(Some(ThmVal {de, var_map, lc: Some(lc), is, proof: ret})))?;
             State::Ret(LispVal::undef())
           }
           Some(Stack::Refines(sp, Some(_), it)) if !ret.is_def() => State::Refines(sp, it),
@@ -1242,7 +1244,7 @@ impl<'a> Evaluator<'a> {
             self.evaluate_builtin(esp, esp, BuiltinProc::Refine, vec![ret])?
           }
           Some(Stack::Refines(sp, None, it)) => State::Refines(sp, it),
-          Some(Stack::Focus(sp, close, gs)) => loop { // labeled block, not a loop
+          Some(Stack::Focus(sp, close, gs)) => loop { // labeled block, not a loop. See rust#48594
             if close {
               if self.lc.closer.is_def() {
                 break push!(Focus(sp, false, gs); App(sp, sp, self.lc.closer.clone(), vec![], [].iter()))
@@ -1280,22 +1282,22 @@ impl<'a> Evaluator<'a> {
           None => push!(DottedList2(vec); Eval(r)),
           Some(e) => push!(DottedList(vec, it, r); Eval(e)),
         },
-        State::App(sp1, sp2, f, mut args, mut it) => match it.next() {
-          Some(e) => push!(App2(sp1, sp2, f, args, it); Eval(e)),
-          None => f.unwrapped(|f| {
-            let f = match f {
+        State::App(sp1, sp2, func, mut args, mut it) => match it.next() {
+          Some(e) => push!(App2(sp1, sp2, func, args, it); Eval(e)),
+          None => func.unwrapped(|func| {
+            let func = match func {
               LispKind::Proc(f) => f,
               _ => throw!(sp1, "not a function, cannot apply")
             };
-            let spec = f.spec();
+            let spec = func.spec();
             if !spec.valid(args.len()) {
               match spec {
                 ProcSpec::Exact(n) => throw!(sp1, format!("expected {} argument(s)", n)),
                 ProcSpec::AtLeast(n) => throw!(sp1, format!("expected at least {} argument(s)", n)),
               }
             }
-            Ok(match f {
-              &Proc::Builtin(f) => self.evaluate_builtin(sp1, sp2, f, args)?,
+            Ok(match func {
+              &Proc::Builtin(func) => self.evaluate_builtin(sp1, sp2, func, args)?,
               Proc::Lambda {pos, env, code, ..} => {
                 if let Some(Stack::Ret(_, _, _, _)) = self.stack.last() { // tail call
                   if let Some(Stack::Ret(fsp, _, old, _)) = self.stack.pop() {

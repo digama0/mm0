@@ -306,7 +306,9 @@ impl Elaborator {
             ELiteral::Var(0, Prec::Prec(l)),
             ELiteral::Const(tk.clone()),
             ELiteral::Var(1, Prec::Prec(r))])
-        } else { Err(ElabError::new_e(n.id, "max prec not allowed for infix"))? }
+        } else {
+          return Err(ElabError::new_e(n.id, "max prec not allowed for infix"))
+        }
     };
     self.add_const(n.c.trim, n.prec)?;
     let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc: Some(rassoc), lits };
@@ -341,21 +343,21 @@ impl Elaborator {
       vec![(r.decl1, "declared here".into())]))
   }
 
-  fn elab_gen_nota(&mut self, n: &GenNota) -> Result<()> {
-    let a = self.env.get_atom(self.ast.span(n.id));
-    let term = self.term(a).ok_or_else(|| ElabError::new_e(n.id, "term not declared"))?;
-    let nargs = n.bis.len();
-    self.check_term_nargs(n.id, term, nargs)?;
-    self.spans.insert(n.id, ObjectKind::Term(term, n.id));
+  fn elab_gen_nota(&mut self, nota: &GenNota) -> Result<()> {
+    let a = self.env.get_atom(self.ast.span(nota.id));
+    let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id, "term not declared"))?;
+    let nargs = nota.bis.len();
+    self.check_term_nargs(nota.id, term, nargs)?;
+    self.spans.insert(nota.id, ObjectKind::Term(term, nota.id));
     let ast = self.ast.clone();
     let mut vars = HashMap::<&str, (usize, bool)>::new();
-    for (i, bi) in n.bis.iter().enumerate() {
+    for (idx, bi) in nota.bis.iter().enumerate() {
       match bi.kind {
-        LocalKind::Dummy => Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
-          "dummies not permitted in notation declarations"))?,
-        LocalKind::Anon => Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
-          "all variables must be used in notation declaration"))?,
-        _ => { vars.insert(ast.span(bi.local.unwrap_or(bi.span)), (i, false)); }
+        LocalKind::Dummy => return Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
+          "dummies not permitted in notation declarations")),
+        LocalKind::Anon => return Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
+          "all variables must be used in notation declaration")),
+        _ => { vars.insert(ast.span(bi.local.unwrap_or(bi.span)), (idx, false)); }
       }
     }
 
@@ -373,62 +375,71 @@ impl Elaborator {
       Ok(v.0)
     };
 
-    let mut it = n.lits.iter().peekable();
+    let mut it = nota.lits.iter().peekable();
     let (mut lits, mut rassoc, infix, tk, prec) = match it.next() {
-      None => Err(ElabError::new_e(n.id, "notation requires at least one literal"))?,
-      Some(&ALiteral::Const(ref c, p)) => (vec![], Some(true), false, c, p),
-      Some(&ALiteral::Var(v)) => match it.next() {
-        None => Err(ElabError::new_e(v, "notation requires at least one constant"))?,
-        Some(&ALiteral::Var(v)) => Err(ElabError::new_e(v, "notation cannot start with two variables"))?,
-        Some(&ALiteral::Const(ref c, p)) => {
-          let r = match n.prec {
+      None => return Err(ElabError::new_e(nota.id,
+        "notation requires at least one literal")),
+      Some(&ALiteral::Const(ref cnst, prec)) => (vec![], Some(true), false, cnst, prec),
+      Some(&ALiteral::Var(var)) => match it.next() {
+        None => return Err(ElabError::new_e(var,
+          "notation requires at least one constant")),
+        Some(&ALiteral::Var(var)) => return Err(ElabError::new_e(var,
+          "notation cannot start with two variables")),
+        Some(&ALiteral::Const(ref cnst, prec)) => {
+          let rassoc = match nota.prec {
             None => None,
-            Some((q, _)) if q != p => Err(ElabError::new_e(c.fmla.0, "notation precedence must match first constant"))?,
-            Some((_, r)) => Some(r),
+            Some((q, _)) if q != prec => return Err(ElabError::new_e(cnst.fmla.0,
+              "notation precedence must match first constant")),
+            Some((_, rassoc)) => Some(rassoc),
           };
-          (vec![
-            ELiteral::Var(get_var(v)?, bump(r.unwrap_or(false), c.fmla.0, p)?),
-            ELiteral::Const(self.span(c.trim).into())],
-          r, true, c, p)
+          let lits = vec![
+            ELiteral::Var(get_var(var)?, bump(rassoc.unwrap_or(false), cnst.fmla.0, prec)?),
+            ELiteral::Const(self.span(cnst.trim).into())];
+          (lits, rassoc, true, cnst, prec)
         }
       }
     };
 
     self.add_const(tk.trim, prec)?;
     while let Some(lit) = it.next() {
-      match lit {
-        &ALiteral::Const(ref c, p) => {
-          lits.push(ELiteral::Const(self.span(c.trim).into()));
-          self.add_const(c.trim, p)?;
+      match *lit {
+        ALiteral::Const(ref cnst, prec) => {
+          lits.push(ELiteral::Const(self.span(cnst.trim).into()));
+          self.add_const(cnst.trim, prec)?;
         }
-        &ALiteral::Var(v) => {
+        ALiteral::Var(var) => {
           let prec = match it.peek() {
             None => {
-              let r = if let Some(r) = rassoc {r} else {
-                if let Some((_, r)) = n.prec {r} else {
-                  Err(ElabError::new_e(n.id, "general infix notation requires explicit associativity"))?
-                }
-              };
+              let r: bool =
+                if let Some(r) = rassoc {r}
+                else if let Some((_, r)) = nota.prec {r}
+                else {
+                  return Err(ElabError::new_e(nota.id,
+                    "general infix notation requires explicit associativity"))
+                };
               rassoc = Some(r);
               bump(!r, tk.fmla.0, prec)?
             }
-            Some(&&ALiteral::Const(ref c, p)) => bump(true, c.fmla.0, p)?,
+            Some(&&ALiteral::Const(ref cnst, prec)) => bump(true, cnst.fmla.0, prec)?,
             Some(ALiteral::Var(_)) => Prec::Max,
           };
-          lits.push(ELiteral::Var(get_var(v)?, prec));
+          lits.push(ELiteral::Var(get_var(var)?, prec));
         }
       }
     }
 
     for (_, (i, b)) in vars {
-      if !b { Err(ElabError::new_e(n.bis[i].local.unwrap_or(n.bis[i].span), "variable not used in notation"))? }
+      if !b {
+        return Err(ElabError::new_e(nota.bis[i].local.unwrap_or(nota.bis[i].span),
+          "variable not used in notation"))
+      }
     }
     let s: ArcString = self.span(tk.trim).into();
-    let info = NotaInfo { span: self.fspan(n.id), term, nargs, rassoc, lits };
+    let info = NotaInfo { span: self.fspan(nota.id), term, nargs, rassoc, lits };
     match infix {
       false => self.pe.add_prefix(s.clone(), info),
       true => self.pe.add_infix(s.clone(), info),
-    }.map_err(|r| ElabError::with_info(n.id,
+    }.map_err(|r| ElabError::with_info(nota.id,
       format!("constant '{}' already declared", s).into(),
       vec![(r.decl1, "declared here".into())]))
   }
@@ -462,7 +473,7 @@ impl Elaborator {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        let id = self.add_sort(a, fsp, span, sd).map_err(|e| e.to_elab_error(sp))?;
+        let id = self.add_sort(a, fsp, span, sd).map_err(|e| e.into_elab_error(sp))?;
         self.spans.insert(sp, ObjectKind::Sort(id));
       }
       StmtKind::Decl(d) => self.elab_decl(span, d)?,
@@ -484,12 +495,12 @@ impl Elaborator {
         let ann = self.get_atom("annotate");
         let ann = match &self.data[ann].lisp {
           Some((_, e)) => e.clone(),
-          None => Err(ElabError::new_e(e.span, "define 'annotate' before using annotations"))?,
+          None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };
         let args = vec![v, self.name_of(s)];
         self.call_func(e.span, ann, args)?;
       },
-      _ => Err(ElabError::new_e(span, "unimplemented"))?
+      _ => return Err(ElabError::new_e(span, "unimplemented"))
     }
     Ok(ElabStmt::Ok)
   }
@@ -535,11 +546,13 @@ impl FrozenElaborator {
   /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
   /// [`Environment`]: environment/struct.Environment.html
   /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
-  pub fn as_fut<T>(self,
+  pub fn elaborate<T>(self,
     _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
     mut mk: impl FnMut(FileRef) ->
       std::result::Result<Receiver<(T, FrozenEnv)>, BoxError>
   ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, FrozenEnv)> {
+
+    type ImportMap<D> = HashMap<Span, (Option<FileRef>, D)>;
 
     enum UnfinishedStmt<T> {
       None,
@@ -549,7 +562,7 @@ impl FrozenElaborator {
     struct ElabFutureInner<T> {
       elab: FrozenElaborator,
       toks: Vec<T>,
-      recv: HashMap<Span, (Option<FileRef>, Receiver<(T, FrozenEnv)>)>,
+      recv: ImportMap<Receiver<(T, FrozenEnv)>>,
       idx: usize,
       progress: UnfinishedStmt<T>
     }
@@ -602,14 +615,14 @@ impl FrozenElaborator {
     let mut recv = HashMap::new();
     let FrozenElaborator(mut elab) = self;
     let ast = elab.ast.clone();
-    for (sp, f) in &ast.imports {
+    for &(sp, ref f) in &ast.imports {
       let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
       (|| -> Result<_> {
-        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp.clone(), e))?.into();
-        let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp.clone(), e))?;
-        recv.insert(sp.clone(), (Some(r), tok));
+        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
+        let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
+        recv.insert(sp, (Some(r), tok));
         Ok(())
-      })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp.clone(), (None, channel().1)); });
+      })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp, (None, channel().1)); });
     }
     ElabFuture(Some(ElabFutureInner {
       elab: FrozenElaborator(elab),

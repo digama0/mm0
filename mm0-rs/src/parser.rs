@@ -186,6 +186,8 @@ impl CommandKeyword {
   }
 }
 
+type BinderGroup = (Span, Vec<(Span, LocalKind)>, Option<Type>);
+
 impl<'a> Parser<'a> {
   /// Get the character at the parser's index. Does not advance.
   pub fn cur(&self) -> u8 { self.source[self.idx] }
@@ -337,8 +339,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn binder_group(&mut self) ->
-      Result<Option<(Span, Vec<(Span, LocalKind)>, Option<Type>)>> {
+  fn binder_group(&mut self) -> Result<Option<BinderGroup>> {
     let start = self.idx;
     let curly = self.chr(b'{').is_some();
     if !curly && self.chr(b'(').is_none() {return Ok(None)}
@@ -355,7 +356,7 @@ impl<'a> Parser<'a> {
         locals.push((x, k))
       } else {break}
     }
-    let ty = if let Some(_) = self.chr(b':') {Some(self.ty()?)} else {None};
+    let ty = if self.chr(b':').is_some() {Some(self.ty()?)} else {None};
     let end = self.chr_err(if curly {b'}'} else {b')'})?;
     Ok(Some(((start..end).into(), locals, ty)))
   }
@@ -364,7 +365,7 @@ impl<'a> Parser<'a> {
     let mut bis = Vec::new();
     while let Some((span, locals, ty)) = self.binder_group()? {
       bis.extend(locals.into_iter().map(|(x, kind)|
-        Binder { span, local: Some(x), kind, ty: ty.clone() }));
+        Binder { span, local: Some(x), kind, ty: ty.clone() }))
     }
     Ok(bis)
   }
@@ -372,7 +373,9 @@ impl<'a> Parser<'a> {
   fn arrows(&mut self) -> Result<(Vec<Type>, Type)> {
     let mut tys = vec![];
     let mut ret = self.ty()?;
-    while let Some(_) = self.chr(b'>') {tys.push(mem::replace(&mut ret, self.ty()?))}
+    while self.chr(b'>').is_some() {
+      tys.push(mem::replace(&mut ret, self.ty()?))
+    }
     Ok((tys, ret))
   }
 
@@ -560,7 +563,7 @@ impl<'a> Parser<'a> {
           k => Err(ParseError {
             pos: span,
             level: ErrorLevel::Error,
-            msg: format!("unknown keyword '{}'", k.clone()).into()
+            msg: format!("unknown keyword '{}'", k).into()
           })
         }
       }

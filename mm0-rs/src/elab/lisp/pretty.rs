@@ -74,12 +74,14 @@ impl LispKind {
   }
 }
 
+type PrettyCache<'a> = (LispVal, (Prec, PP<'a>));
+
 /// A state object for constructing pretty printing nodes `PP<'a>`.
 /// All pretty printing nodes will be tied to the lifetime of the struct.
 pub struct Pretty<'a> {
   fe: FormatEnv<'a>,
   alloc: &'a Arena<'a, ()>,
-  hash: RefCell<HashMap<*const LispKind, (LispVal, (Prec, PP<'a>))>>,
+  hash: RefCell<HashMap<*const LispKind, PrettyCache<'a>>>,
   lparen: PP<'a>,
   rparen: PP<'a>,
 }
@@ -216,7 +218,7 @@ impl<'a> Pretty<'a> {
 
   fn pp_expr(&'a self, e: &LispVal) -> (Prec, PP<'a>) {
     let p: *const LispKind = e.deref();
-    if let Some(v) = self.hash.borrow().get(&p) {return v.1.clone()}
+    if let Some(v) = self.hash.borrow().get(&p) {return v.1}
     let v = (|| Some({
       let env = self.fe.env;
       let (ad, t, args) = self.get_term_args(e)?;
@@ -248,7 +250,7 @@ impl<'a> Pretty<'a> {
       left: false, right: false, small: e.small(),
       doc: self.pp_lisp(e)
     }));
-    self.hash.borrow_mut().entry(p).or_insert_with(|| (e.clone(), v)).1.clone()
+    self.hash.borrow_mut().entry(p).or_insert_with(|| (e.clone(), v)).1
   }
 
   /// Pretty-prints a math formula surrounded by `$` delimiters, as in `$ 2 + 2 = 4 $`.
@@ -305,7 +307,7 @@ impl<'a> Pretty<'a> {
           let mut u = Uncons::from(e.clone());
           if let Some(e) = u.next() { self.pp_lisp(&e) }
           else if u.exactly(0) { return self.alloc(Doc::text("()")) }
-          else { return self.pp_lisp(&u.as_lisp()) }
+          else { return self.pp_lisp(&u.into()) }
         };
         for e in &mut u {
           doc = self.append_doc(doc, self.append_doc(Self::line(), self.pp_lisp(&e)));
@@ -313,7 +315,7 @@ impl<'a> Pretty<'a> {
         if !u.exactly(0) {
           doc = self.append_doc(doc,
             self.append_doc(self.alloc(Doc::text(" .")),
-              self.append_doc(Self::line(), self.pp_lisp(&u.as_lisp()))));
+              self.append_doc(Self::line(), self.pp_lisp(&u.into()))));
         }
         let doc = self.append_doc(self.lparen, self.append_doc(doc, self.rparen));
         self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
@@ -342,14 +344,14 @@ impl<'a> Pretty<'a> {
       };
       let (bis1, bis2) = rest.split_at(it.position(|(_, ty2)| ty != ty2).map_or(rest.len(), |x| x + 1));
       let mut buf = String::new();
-      match ty {
-        &Type::Bound(s) => {
+      match *ty {
+        Type::Bound(s) => {
           write!(buf, "{{{}: {}}}", bis1.iter().map(|(a, _)| {
             bvs.push(a.unwrap_or(AtomID::UNDER));
             self.fe.to(a)
           }).format(" "), self.fe.to(&s)).unwrap();
         }
-        &Type::Reg(s, ds) => {
+        Type::Reg(s, ds) => {
           write!(buf, "({}: {}",
             bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "),
             self.fe.to(&s)).unwrap();

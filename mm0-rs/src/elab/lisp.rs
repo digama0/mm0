@@ -15,27 +15,36 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use std::collections::HashMap;
+use std::str::FromStr;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
-use crate::util::{ArcString, FileSpan, Span};
+use crate::util::{ArcString, FileSpan, Span, SliceExt};
 use super::{AtomID, ThmID, AtomVec, Remap, Modifiers, frozen::FrozenLispKind};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
-  ($(#[$doc:meta])* enum $name:ident {$($(#[$doc2:meta])* $e:ident: $s:expr,)*}) => {
+  ($(#[$doc:meta])* enum $name:ident $($rest:tt)*) => {
+    str_enum!{inner concat!("Convert a `", stringify!($name), "` to a string.");
+      $(#[$doc])* enum $name $($rest)*}
+  };
+  (inner $to_str:expr;
+      $(#[$doc:meta])* enum $name:ident {$($(#[$doc2:meta])* $e:ident: $s:expr,)*}) => {
     $(#[$doc])*
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub enum $name { $($(#[$doc2])* $e),* }
-    impl $name {
-      pub fn from_str(s: &str) -> Option<$name> {
+    impl FromStr for $name {
+      type Err = ();
+      fn from_str(s: &str) -> Result<Self, ()> {
         match s {
-          $($s => Some($name::$e),)*
-          _ => None
+          $($s => Ok(Self::$e),)*
+          _ => Err(())
         }
       }
-      pub fn to_str(self) -> &'static str {
+    }
+    impl $name {
+      #[doc=$to_str] pub fn to_str(self) -> &'static str {
         match self {
           $($name::$e => $s),*
         }
@@ -79,7 +88,7 @@ impl Syntax {
   /// Parse a string and atom type pair into a `Syntax`.
   pub fn parse(s: &str, a: Atom) -> Result<Syntax, &str> {
     match a {
-      Atom::Ident => Self::from_str(s).ok_or(s),
+      Atom::Ident => s.parse().map_err(|_| s),
       Atom::Quote => Ok(Syntax::Quote),
       Atom::Unquote => Ok(Syntax::Unquote),
       Atom::Nfx => Err(":nfx"),
@@ -93,29 +102,45 @@ impl std::fmt::Display for Syntax {
   }
 }
 
+/// The type of a metavariable. This encodes the different types of context
+/// in which a term is requested.
 #[derive(Copy, Clone, Debug)]
 pub enum InferTarget {
+  /// This is a term that has no context. This can be created by
+  /// `(have 'h _)`, for example: the type of the proof term `_` is unconstrained.
   Unknown,
+  /// This is a term that should be in some provable sort. For example in
+  /// `theorem foo: $ _ $;`  we know that the hole `_` represents a term that
+  /// is of provable sort, but we don't know which, unless there is only one
+  /// provable sort.
   Provable,
+  /// This is a bound variable of sort `s`. For example, if
+  /// `term all {x: var}: wff x > wff;`, in `all _ p` the `_` has type `var`
+  /// and must be a variable name.
   Bound(AtomID),
+  /// This is a metavariable for an expression of sort `s`. For example, if
+  /// `term all {x: var}: wff x > wff;`, in `all x _` the `_` has type `wff`
+  /// and can be any expression of that sort.
   Reg(AtomID),
 }
 
 impl InferTarget {
+  /// The target sort of a metavariable. Returns `None` if the sort is unknown.
   pub fn sort(self) -> Option<AtomID> {
     match self {
       InferTarget::Bound(s) | InferTarget::Reg(s) => Some(s),
       _ => None
     }
   }
-  pub fn bound(self) -> bool {
-    match self {
-      InferTarget::Bound(_) => true,
-      _ => false
-    }
-  }
+  /// Returns true if the metavariable must be a bound variable.
+  pub fn bound(self) -> bool { matches!(self, InferTarget::Bound(_)) }
 }
 
+/// A lisp value. These are the "values" that are passed around by lisp code.
+/// See [`LispKind`] for the list of different types of lisp object. This is
+/// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
+///
+/// [`LispKind`]: enum.LispKind.html
 #[derive(Default, Debug, Clone)]
 pub struct LispVal(Rc<LispKind>);
 
@@ -131,26 +156,54 @@ macro_rules! __mk_lisp_kind {
     $(#[$doc])*
     #[derive(Debug)]
     pub enum $kind {
+      /// An atom like `'foo`. Atoms are internally represented as small integers,
+      /// so equality comparison on atoms is fast.
       Atom(AtomID),
-      List(Vec<$val>),
-      DottedList(Vec<$val>, $val),
+      /// A list of values. In lisp, this is semantically an iterated cons,
+      /// `(a b c d) = (a . (b . (c . (d . ()))))`, and we don't provide any
+      /// functions that distinguish these, but because lists are so common
+      /// in lisp code we use arrays for this.
       List(Box<[$val]>),
+      /// An improper or dotted list of values, `(a b c . d) = (a . (b . (c . d)))`.
+      /// As with `List`, we chunk several cons cells into one array. We do not make
+      /// any guarantee that lists and dotted lists are stored in canonical form, so
+      /// all functions that deal with lists should check that `(a b . (c d . (e f g)))`
+      /// is treated the same as `(a b c d e f g)`.
       DottedList(Box<[$val]>, $val),
+      /// Annotates a lisp value with some information that should be invisible to the
+      /// front end. Currently we primarily use it for associating file locations to
+      /// lisp objects, so that client code can give targeted error messages.
       Annot(Annot, $val),
+      /// A number like `123`. These use bignum arithmetic so that client code
+      /// doesn't have to worry about overflow.
       Number(BigInt),
+      /// An immutable string like `"foo"`.
       String(ArcString),
+      /// A boolean value, `#t` or `#f`.
       Bool(bool),
+      /// An atom that represents a specific syntax keyword like `'def`.
       Syntax(Syntax),
+      /// The `#undef` value.
       Undef,
+      /// A procedure that can be called, either built in or a user lambda.
       Proc($proc),
+      /// A map from atoms to values. This can be used as a mutable map if it is behind a `Ref`.
       AtomMap(HashMap<AtomID, $val>),
+      /// A mutable reference. This is the only way to have mutable values in
+      /// client code.
       Ref($ref_),
+      /// A metavariable. The `usize` gives the index of the metavariable in the
+      /// local context, and the `InferTarget` is the expected type of the expression
+      /// that should replace this metavariable.
       MVar(usize, InferTarget),
+      /// A proof metavariable, also known as a goal. The argument is the expected
+      /// theorem statement.
       Goal($val),
     }
   }
 }
 __mk_lisp_kind! {
+  /// The underlying enum of types of lisp data.
   LispKind,
   LispVal,
   LispRef,
@@ -260,7 +313,14 @@ impl LispRef {
   pub fn get_mut<'a>(&'a self) -> impl DerefMut<Target=LispVal> + 'a { self.0.borrow_mut() }
   pub fn unref(&self) -> LispVal { self.get().clone() }
   pub fn into_inner(self) -> LispVal { self.0.into_inner() }
-  pub unsafe fn get_unsafe(&self) -> &LispVal {
+
+  /// Get the value of this reference without changing the reference count.
+  /// # Safety
+  /// This function should not be used unless the value is frozen
+  /// (in which case you should use [`FrozenLispRef::deref`] instead).
+  ///
+  /// [`FrozenLispRef::deref`]: ../frozen/struct.FrozenLispRef.html
+  pub(crate) unsafe fn get_unsafe(&self) -> &LispVal {
     self.0.try_borrow_unguarded().unwrap()
   }
 }
@@ -293,37 +353,37 @@ impl LispKind {
   }
 
   pub fn truthy(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Bool(false) = e {false} else {true})
+    self.unwrapped(|e| !matches!(e, LispKind::Bool(false)))
   }
   pub fn is_bool(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Bool(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::Bool(_)))
   }
   pub fn as_bool(&self) -> Option<bool> {
-    self.unwrapped(|e| if let &LispKind::Bool(b) = e {Some(b)} else {None})
+    self.unwrapped(|e| if let LispKind::Bool(b) = *e {Some(b)} else {None})
   }
   pub fn is_atom(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Atom(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::Atom(_)))
   }
   pub fn as_atom(&self) -> Option<AtomID> {
-    self.unwrapped(|e| if let &LispKind::Atom(a) = e {Some(a)} else {None})
+    self.unwrapped(|e| if let LispKind::Atom(a) = *e {Some(a)} else {None})
   }
   pub fn is_int(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Number(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::Number(_)))
   }
   pub fn as_int<T>(&self, f: impl FnOnce(&BigInt) -> T) -> Option<T> {
     self.unwrapped(|e| if let LispKind::Number(n) = e {Some(f(n))} else {None})
   }
   pub fn is_proc(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Proc(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::Proc(_)))
   }
   pub fn is_string(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::String(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::String(_)))
   }
   pub fn is_map(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::AtomMap(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::AtomMap(_)))
   }
   pub fn is_def(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Undef = e {false} else {true})
+    self.unwrapped(|e| !matches!(e, LispKind::Undef))
   }
   pub fn is_def_strict(&self) -> bool {
     match self {
@@ -355,13 +415,13 @@ impl LispKind {
     }
   }
   pub fn is_mvar(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::MVar(_, _) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::MVar(_, _)))
   }
   pub fn mvar_target(&self) -> Option<InferTarget> {
-    self.unwrapped(|e| if let &LispKind::MVar(_, is) = e {Some(is)} else {None})
+    self.unwrapped(|e| if let LispKind::MVar(_, is) = *e {Some(is)} else {None})
   }
   pub fn is_goal(&self) -> bool {
-    self.unwrapped(|e| if let LispKind::Goal(_) = e {true} else {false})
+    self.unwrapped(|e| matches!(e, LispKind::Goal(_)))
   }
   pub fn goal_type(&self) -> Option<LispVal> {
     self.unwrapped(|e| if let LispKind::Goal(e) = e {Some(e.clone())} else {None})
@@ -375,6 +435,10 @@ impl LispKind {
       _ => false,
     })
   }
+
+  pub fn is_nil(&self) -> bool { self.exactly(0) }
+  pub fn is_empty(&self) -> bool { self.exactly(0) }
+
   pub fn is_list(&self) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(_) => true,
@@ -382,6 +446,7 @@ impl LispKind {
       _ => false,
     })
   }
+
   pub fn len(&self) -> usize {
     self.unwrapped(|e| match e {
       LispKind::List(es) => es.len(),
@@ -392,7 +457,7 @@ impl LispKind {
 
   pub fn list_at_least(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
-      LispKind::List(es) => return n <= es.len(),
+      LispKind::List(es) => n <= es.len(),
       LispKind::DottedList(es, r) if n <= es.len() => r.is_list(),
       LispKind::DottedList(es, r) => r.list_at_least(n - es.len()),
       _ => false,
@@ -400,7 +465,7 @@ impl LispKind {
   }
   pub fn at_least(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
-      LispKind::List(es) => return n <= es.len(),
+      LispKind::List(es) => n <= es.len(),
       LispKind::DottedList(es, _) if n <= es.len() => true,
       LispKind::DottedList(es, r) => r.at_least(n - es.len()),
       _ => n == 0,
@@ -439,17 +504,15 @@ impl PartialEq<LispKind> for LispKind {
       (LispKind::List(a), LispKind::List(b)) => a == b,
       (LispKind::List(a), _) => other.eq_list(a.iter()),
       (_, LispKind::List(b)) => self.eq_list(b.iter()),
-      (LispKind::DottedList(a, b), LispKind::DottedList(c, d)) => {
-        let mut it1 = a.iter();
-        let mut it2 = c.iter();
+      (LispKind::DottedList(es1, r1), LispKind::DottedList(es2, r2)) => {
+        let mut it1 = es1.iter();
+        let mut it2 = es2.iter();
         loop {
           match (it1.next(), it2.next()) {
-            (None, None) => break b == d,
+            (None, None) => break r1 == r2,
             (Some(e1), Some(e2)) => if e1 != e2 {break false},
-            (Some(e), None) =>
-              break d.eq_list(Some(e).into_iter().chain(it1)),
-            (None, Some(e)) =>
-              break b.eq_list(Some(e).into_iter().chain(it2)),
+            (Some(e), None) => break r2.eq_list(Some(e).into_iter().chain(it1)),
+            (None, Some(e)) => break r1.eq_list(Some(e).into_iter().chain(it2)),
           }
         }
       }
@@ -625,6 +688,9 @@ impl Uncons {
       Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(false, |i| r.exactly(i)),
     }
   }
+
+  pub fn is_empty(&self) -> bool { self.exactly(0) }
+
   pub fn at_least(&self, n: usize) -> bool {
     n == 0 || match self {
       Uncons::New(e) => e.at_least(n),
@@ -632,21 +698,12 @@ impl Uncons {
       Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.at_least(i)),
     }
   }
+
   pub fn list_at_least(&self, n: usize) -> bool {
     n == 0 || match self {
       Uncons::New(e) => e.list_at_least(n),
       Uncons::List(es) => es.len() >= n,
       Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(true, |i| r.list_at_least(i)),
-    }
-  }
-
-  pub fn as_lisp(self) -> LispVal {
-    match self {
-      Uncons::New(e) => e,
-      Uncons::List(es) if es.is_empty() => LispVal::nil(),
-      Uncons::List(es) => LispVal::list(es.to_vec()),
-      Uncons::DottedList(es, r) if es.is_empty() => r,
-      Uncons::DottedList(es, r) => LispVal::dotted_list(es.to_vec(), r),
     }
   }
 
@@ -668,6 +725,18 @@ impl Uncons {
         vec.extend_from_slice(&es);
         r.clone().extend_into(n - es.len(), vec)
       }
+    }
+  }
+}
+
+impl From<Uncons> for LispVal {
+  fn from(u: Uncons) -> LispVal {
+    match u {
+      Uncons::New(e) => e,
+      Uncons::List(es) if es.is_empty() => LispVal::nil(),
+      Uncons::List(es) => LispVal::list(es.cloned_box()),
+      Uncons::DottedList(es, r) if es.is_empty() => r,
+      Uncons::DottedList(es, r) => LispVal::dotted_list(es.cloned_box(), r),
     }
   }
 }

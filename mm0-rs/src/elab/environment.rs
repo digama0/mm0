@@ -124,12 +124,7 @@ impl Type {
     }
   }
   /// True if the type is a bound variable.
-  pub fn bound(self) -> bool {
-    match self {
-      Type::Bound(_) => true,
-      _ => false,
-    }
-  }
+  pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
 }
 
 /// An `ExprNode` is interpreted inside a context containing the `Vec<Type>`
@@ -247,10 +242,10 @@ pub enum ProofNode {
 
 impl From<&ExprNode> for ProofNode {
   fn from(e: &ExprNode) -> ProofNode {
-    match e {
-      &ExprNode::Ref(n) => ProofNode::Ref(n),
-      &ExprNode::Dummy(a, s) => ProofNode::Dummy(a, s),
-      &ExprNode::App(term, ref es) => ProofNode::Term {
+    match *e {
+      ExprNode::Ref(n) => ProofNode::Ref(n),
+      ExprNode::Dummy(a, s) => ProofNode::Dummy(a, s),
+      ExprNode::App(term, ref es) => ProofNode::Term {
         term, args: es.iter().map(|e| e.into()).collect()
       }
     }
@@ -333,10 +328,10 @@ pub enum StmtTrace {
 impl StmtTrace {
   /// The name of a sort, term, or lisp def in the global list.
   pub fn atom(&self) -> AtomID {
-    match self {
-      &StmtTrace::Sort(a) => a,
-      &StmtTrace::Decl(a) => a,
-      &StmtTrace::Global(a) => a,
+    match *self {
+      StmtTrace::Sort(a) => a,
+      StmtTrace::Decl(a) => a,
+      StmtTrace::Global(a) => a,
     }
   }
 }
@@ -878,7 +873,7 @@ impl ParserEnv {
   }
 
   fn add_nota_info(m: &mut HashMap<ArcString, NotaInfo>, tk: ArcString, n: NotaInfo) -> Result<(), IncompatibleError> {
-    if let Some((n, e)) = m.try_insert(tk.clone(), n) {
+    if let Some((n, e)) = m.try_insert(tk, n) {
       if e.get().span == n.span { return Ok(()) }
       Err(IncompatibleError { decl1: e.get().span.clone(), decl2: n.span })
     } else { Ok(()) }
@@ -899,7 +894,7 @@ impl ParserEnv {
   fn update_provs(&mut self, sp: Span, sorts: &SortVec<Sort>) -> Result<(), ElabError> {
     let mut provs = HashMap::new();
     for (&s1, m) in &self.coes {
-      for (&s2, _) in m {
+      for &s2 in m.keys() {
         if sorts[s2].mods.contains(Modifiers::PROVABLE) {
           if let Some(s2_) = provs.insert(s1, s2) {
             let mut err = "coercion diamond to provable detected:\n".to_owned();
@@ -996,7 +991,7 @@ impl ParserEnv {
     }
     for (&s1, m) in &other.coes {
       for (&s2, coe) in m {
-        if let &Coe::One(ref fsp, t) = coe.deref() {
+        if let Coe::One(ref fsp, t) = **coe {
           self.add_coe_raw(sp, sorts, s1, s2, fsp.clone(), t.remap(r))
             .unwrap_or_else(|r| errors.push(r))
         }
@@ -1017,6 +1012,10 @@ pub struct RedeclarationError {
   pub othermsg: String,
   /// The location of the earlier definition
   pub other: FileSpan
+}
+
+impl Default for Environment {
+  fn default() -> Self { Self::new() }
 }
 
 impl Environment {
@@ -1050,7 +1049,7 @@ type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
 
 impl<A> AddItemError<A> {
   /// Convert this error into an `ElabError` at the provided location.
-  pub fn to_elab_error(self, sp: Span) -> ElabError {
+  pub fn into_elab_error(self, sp: Span) -> ElabError {
     match self {
       AddItemError::Redeclaration(_, r) =>
         ElabError::with_info(sp, r.msg.into(), vec![(r.other, r.othermsg.into())]),
@@ -1068,7 +1067,7 @@ impl Environment {
     let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(old_id) = data.sort {
-      let ref sort = self.sorts[old_id];
+      let sort = &self.sorts[old_id];
       if sd == sort.mods { Ok(old_id) }
       else {
         Err(AddItemError::Redeclaration(old_id, RedeclarationError {
@@ -1093,7 +1092,7 @@ impl Environment {
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Term(old_id) => {
-          let ref sp = self.terms[old_id].span;
+          let sp = &self.terms[old_id].span;
           if *sp == new { return Ok(old_id) }
           (Some(old_id), sp)
         }
@@ -1120,7 +1119,7 @@ impl Environment {
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Thm(old_id) => {
-          let ref sp = self.thms[old_id].span;
+          let sp = &self.thms[old_id].span;
           if *sp == new { return Ok(old_id) }
           (Some(old_id), sp)
         }
@@ -1200,40 +1199,40 @@ impl Environment {
               ]));
               id
             }
-            Err(AddItemError::Overflow) => Err(ElabError::new_e(sp, "too many sorts"))?
+            Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many sorts"))
           };
           if i != id { remap.sort.insert(i, id); }
         }
         StmtTrace::Decl(a) => match other.data()[a].decl().unwrap() {
-          DeclKey::Term(i) => {
-            let o = other.term(i);
-            let id = match self.add_term(a.remap(lisp_remap), o.span.clone(), || o.remap(remap)) {
+          DeclKey::Term(tid) => {
+            let otd: &Term = other.term(tid);
+            let id = match self.add_term(a.remap(lisp_remap), otd.span.clone(), || otd.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![
-                  (o.span.clone(), r.othermsg.clone().into()),
+                  (otd.span.clone(), r.othermsg.clone().into()),
                   (r.other, r.othermsg.into())
                 ]);
-                match id { None => Err(e)?, Some(id) => {errors.push(e); id} }
+                match id { None => return Err(e), Some(id) => {errors.push(e); id} }
               }
-              Err(AddItemError::Overflow) => Err(ElabError::new_e(sp, "too many terms"))?
+              Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many terms"))
             };
-            if i != id { remap.term.insert(i, id); }
+            if tid != id { remap.term.insert(tid, id); }
           }
-          DeclKey::Thm(i) => {
-            let o = other.thm(i);
-            let id = match self.add_thm(a.remap(lisp_remap), o.span.clone(), || o.remap(remap)) {
+          DeclKey::Thm(tid) => {
+            let otd: &Thm = other.thm(tid);
+            let id = match self.add_thm(a.remap(lisp_remap), otd.span.clone(), || otd.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![
-                  (o.span.clone(), r.othermsg.clone().into()),
+                  (otd.span.clone(), r.othermsg.clone().into()),
                   (r.other, r.othermsg.into())
                 ]);
-                match id { None => Err(e)?, Some(id) => {errors.push(e); id} }
+                match id { None => return Err(e), Some(id) => {errors.push(e); id} }
               }
-              Err(AddItemError::Overflow) => Err(ElabError::new_e(sp, "too many theorems"))?
+              Err(AddItemError::Overflow) => return Err(ElabError::new_e(sp, "too many theorems"))
             };
-            if i != id { remap.thm.insert(i, id); }
+            if tid != id { remap.thm.insert(tid, id); }
           }
         },
         StmtTrace::Global(_) => {}
@@ -1245,10 +1244,10 @@ impl Environment {
 
   /// Return an error if the term has the wrong number of arguments, based on its declaration.
   pub(crate) fn check_term_nargs(&self, sp: Span, term: TermID, nargs: usize) -> Result<(), ElabError> {
-    let ref t = self.terms[term];
-    if t.args.len() == nargs { return Ok(()) }
+    let td = &self.terms[term];
+    if td.args.len() == nargs { return Ok(()) }
     Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
-      vec![(t.span.clone(), "declared here".into())]))
+      vec![(td.span.clone(), "declared here".into())]))
   }
 
   /// Get the `Spans` object corrsponding to the statement that contains the given position,

@@ -108,7 +108,7 @@ impl<'a> Importer<'a> {
       let s = self.ident_atom_err()?;
       let s = self.env.data[s].sort.ok_or_else(|| self.err("expecting sort".into()))?;
       if vars.insert(x, VarKind::Dummy(s)).is_some() {
-        Err(ElabError::new_e(xsp, "duplicate variable"))?
+        return Err(ElabError::new_e(xsp, "duplicate variable"))
       }
       self.close_err()?;
     }
@@ -231,7 +231,7 @@ impl<'a> Importer<'a> {
           let end = self.close_err()?;
           let a = self.env.get_atom(self.span(x));
           self.env.add_sort(a, self.fspan(x), (start..end).into(), mods)
-            .map_err(|e| e.to_elab_error(x))?;
+            .map_err(|e| e.into_elab_error(x))?;
         }
         Some("term") => self.decl(start, DeclKind::Term)?,
         Some("axiom") => self.decl(start, DeclKind::Axiom)?,
@@ -240,12 +240,14 @@ impl<'a> Importer<'a> {
         Some("local") => match self.ident_str() {
           Some("def") => self.decl(start, DeclKind::LocalDef)?,
           Some("theorem") => self.decl(start, DeclKind::LocalTheorem)?,
-          _ => Err(self.err("expecting 'def' or 'theorem'".into()))?
+          _ => return Err(self.err("expecting 'def' or 'theorem'".into()))
         }
-        _ => Err(self.err("expecting command keyword".into()))?
+        _ => return Err(self.err("expecting command keyword".into()))
       }
     }
-    if self.idx != self.source.len() {Err(self.err("expected '(' or EOF".into()))?}
+    if self.idx != self.source.len() {
+      return Err(self.err("expected '(' or EOF".into()))
+    }
     Ok(())
   }
 
@@ -269,8 +271,8 @@ impl<'a> Importer<'a> {
         .ok_or_else(|| self.err("expecting sort".into()))?;
       if self.close().is_some() {
         if next_bv >= 1 << MAX_BOUND_VARS {
-          Err(ElabError::new_e(ysp,
-            format!("too many bound variables (max {})", MAX_BOUND_VARS)))?
+          return Err(ElabError::new_e(ysp,
+            format!("too many bound variables (max {})", MAX_BOUND_VARS)))
         }
         if y != AtomID::UNDER {bvs.insert(y, next_bv);}
         next_bv *= 2;
@@ -308,7 +310,7 @@ impl<'a> Importer<'a> {
           ret: (ret, deps),
           val,
         };
-        self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(span))?;
+        self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
       }
       DeclKind::Axiom | DeclKind::Theorem | DeclKind::LocalTheorem => {
         let mut de = Dedup::new(&args);
@@ -358,7 +360,7 @@ impl<'a> Importer<'a> {
           full: (start..end).into(),
           args, heap, hyps, ret, proof
         };
-        self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.to_elab_error(span))?;
+        self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
       }
     }
     Ok(())
@@ -373,9 +375,9 @@ impl<'a> Importer<'a> {
       ExprHash::App(t, args.into_boxed_slice())
     } else {
       let a = self.ident_atom_err()?;
-      match vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
-        &VarKind::Var(i) => ExprHash::Var(i),
-        &VarKind::Dummy(s) => ExprHash::Dummy(a, s),
+      match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
+        VarKind::Var(i) => ExprHash::Var(i),
+        VarKind::Dummy(s) => ExprHash::Dummy(a, s),
       }
     };
     Ok(de.add(e))
@@ -385,7 +387,7 @@ impl<'a> Importer<'a> {
     vars: &HashMap<AtomID, VarKind>,
     proofs: &mut HashMap<AtomID, usize>,
   ) -> Result<usize> {
-    self.proof(de, vars, proofs, Expecting::Conv).map(|i| ProofHash::to_conv(i, de))
+    self.proof(de, vars, proofs, Expecting::Conv).map(|i| ProofHash::as_conv(i, de))
   }
 
   fn proof(&mut self, de: &mut Dedup<ProofHash>,
@@ -396,7 +398,9 @@ impl<'a> Importer<'a> {
     let e = if self.open().is_some() {
       match self.ident_atom_err()? {
         AtomID::CONV => {
-          if ty != Expecting::Proof {Err(self.err(":conv in invalid position".into()))?}
+          if ty != Expecting::Proof {
+            return Err(self.err(":conv in invalid position".into()))
+          }
           (ProofHash::Conv(
             self.proof(de, vars, proofs, Expecting::Expr)?,
             self.conv(de, vars, proofs)?,
@@ -404,11 +408,15 @@ impl<'a> Importer<'a> {
           self.close_err()?).0
         }
         AtomID::SYM => {
-          if ty != Expecting::Conv {Err(self.err(":sym in invalid position".into()))?}
+          if ty != Expecting::Conv {
+            return Err(self.err(":sym in invalid position".into()))
+          }
           (ProofHash::Sym(self.conv(de, vars, proofs)?), self.close_err()?).0
         }
         AtomID::UNFOLD => {
-          if ty != Expecting::Conv {Err(self.err(":unfold in invalid position".into()))?}
+          if ty != Expecting::Conv {
+            return Err(self.err(":unfold in invalid position".into()))
+          }
           let t = self.ident_atom_err()?;
           let tid = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;
           self.open_err()?;
@@ -423,7 +431,9 @@ impl<'a> Importer<'a> {
           ProofHash::Unfold(tid, ns.into(), lhs, l2, c)
         }
         AtomID::LET => {
-          if ty != Expecting::Proof {Err(self.err(":let in invalid position".into()))?}
+          if ty != Expecting::Proof {
+            return Err(self.err(":let in invalid position".into()))
+          }
           let h = self.ident_atom_err()?;
           let p1 = self.proof(de, vars, proofs, Expecting::Proof)?;
           let old = proofs.insert(h, p1);
@@ -441,7 +451,7 @@ impl<'a> Importer<'a> {
           let mut ns = Vec::with_capacity(nargs);
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Expr)?)}
           if ns.len() != nargs {
-            Err(self.err("incorrect number of term arguments".into()))?
+            return Err(self.err("incorrect number of term arguments".into()))
           }
           for (i, &n) in ns.iter().enumerate() { heap[i] = Some(n) }
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Proof)?)}
@@ -452,8 +462,8 @@ impl<'a> Importer<'a> {
           let tid = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;
           let mut ns = vec![];
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ty)?)}
-          if ns.iter().any(|&i| ProofHash::conv(de, i)) {
-            for i in &mut ns {*i = ProofHash::to_conv(*i, de)}
+          if ns.iter().any(|&i| ProofHash::is_conv(de, i)) {
+            for i in &mut ns {*i = ProofHash::as_conv(*i, de)}
             ProofHash::Cong(tid, ns.into())
           } else {
             ProofHash::Term(tid, ns.into())
@@ -465,9 +475,9 @@ impl<'a> Importer<'a> {
       if let Expecting::Proof = ty {
         return Ok(de.reuse(*proofs.get(&a).ok_or_else(|| self.err("unknown subproof".into()))?))
       }
-      match vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
-        &VarKind::Var(i) => ProofHash::Var(i),
-        &VarKind::Dummy(s) => ProofHash::Dummy(a, s),
+      match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
+        VarKind::Var(i) => ProofHash::Var(i),
+        VarKind::Dummy(s) => ProofHash::Dummy(a, s),
       }
     };
     Ok(de.add(e))

@@ -21,7 +21,7 @@
 #![warn(elided_lifetimes_in_paths)]
 #![warn(missing_copy_implementations, missing_debug_implementations)]
 #![warn(future_incompatible, rust_2018_idioms)]
-#![warn(trivial_casts, trivial_numeric_casts)]
+#![warn(trivial_numeric_casts)]
 #![warn(variant_size_differences)]
 #![warn(unreachable_pub)]
 #![warn(unused)]
@@ -77,9 +77,10 @@ fn main() -> std::io::Result<()> {
     .get_matches();
 
   match m.subcommand() {
-    ("server", Some(m)) => Ok(server::main(m)),
-    ("compile", Some(m)) => Ok(compiler::main(m)?),
-    ("join", Some(m)) => Ok(joiner::main(m)?),
+    ("server", Some(m)) => server::main(m),
+    ("compile", Some(m)) => compiler::main(m)?,
+    ("join", Some(m)) => joiner::main(m)?,
     _ => unreachable!()
   }
+  Ok(())
 }

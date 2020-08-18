@@ -216,13 +216,13 @@ impl<'a> Parser<'a> {
           };
           Ok(Arg { ghost, name, ty })
         }
-        _ => Err(ElabError::new_e(self.try_get_span(&e), "syntax error in function arg"))?
+        _ => Err(ElabError::new_e(self.try_get_span(&e), "syntax error in function arg"))
       }
     } else {Ok(Arg { ghost, name: None, ty: e })}
   }
 
   fn parse_arg(&self, e: LispVal, args: &mut Vec<Arg>, muts: Option<&mut Vec<AtomID>>) -> Result<()> {
-    Ok(match (self.head_keyword(&e), muts) {
+    match (self.head_keyword(&e), muts) {
       (Some((Keyword::Ghost, u)), _) => for e in u {
         args.push(self.parse_arg1(e, true)?)
       }
@@ -231,7 +231,8 @@ impl<'a> Parser<'a> {
           ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?)
       }
       _ => args.push(self.parse_arg1(e, false)?)
-    })
+    }
+    Ok(())
   }
 
   fn parse_tuple_pattern(&self, e: LispVal) -> Result<TuplePattern> {
@@ -242,14 +243,14 @@ impl<'a> Parser<'a> {
           if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.exactly(0)) {
             return Ok(TuplePattern::Typed(Box::new(self.parse_tuple_pattern(e)?), ty))
           }
-          Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))?
+          return Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))
         }
         let mut args = vec![];
         for e in Uncons::from(e) {args.push(self.parse_tuple_pattern(e)?)}
         TuplePattern::Tuple(args.into_boxed_slice())
       }
-      _ => Err(ElabError::new_e(self.try_get_span(&e),
-        format!("tuple pattern syntax error: {}", self.elab.print(&e))))?
+      _ => return Err(ElabError::new_e(self.try_get_span(&e),
+        format!("tuple pattern syntax error: {}", self.elab.print(&e))))
     })
   }
 
@@ -263,7 +264,7 @@ impl<'a> Parser<'a> {
               ElabError::new_e(self.try_get_span(&h), "expecting hypothesis name"))?;
             Pattern::Hyped(h, Box::new(self.parse_pattern(p)?))
           } else {
-            Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))?
+            return Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))
           },
         Some((Keyword::Or, u)) => {
           let mut args = vec![];
@@ -274,12 +275,12 @@ impl<'a> Parser<'a> {
           if let (Some(p), Some(g), true) = (u.next(), u.next(), u.exactly(0)) {
             Pattern::With(Box::new((self.parse_pattern(p)?, self.parse_expr(g)?)))
           } else {
-            Err(ElabError::new_e(self.try_get_span(&e), "'with' syntax error"))?
+            return Err(ElabError::new_e(self.try_get_span(&e), "'with' syntax error"))
           },
-        _ => Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))?
+        _ => return Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))
       }
       LispKind::Number(n) => Pattern::Number(n.clone()),
-      _ => Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))?
+      _ => return Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))
     })
   }
 
@@ -317,7 +318,7 @@ impl<'a> Parser<'a> {
             let (lhs, rhs) = self.parse_decl(e)?;
             Expr::Let {ghost: true, lhs, rhs}
           } else {
-            Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))?
+            return Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))
           },
         Some((Keyword::Colon, _)) |
         Some((Keyword::ColonEq, _)) => {
@@ -325,15 +326,15 @@ impl<'a> Parser<'a> {
           Expr::Let {ghost: false, lhs, rhs}
         }
         Some((Keyword::If, mut u)) =>
-          if let (Some(c), Some(t)) = (u.next(), u.next()) {
-            let (c, t) = (self.parse_expr(c)?, self.parse_expr(t)?);
-            Expr::If(Box::new((c, t, match u.next() {
-              Some(f) if u.exactly(0) => self.parse_expr(f)?,
+          if let (Some(cond), Some(tru)) = (u.next(), u.next()) {
+            let (cond, tru) = (self.parse_expr(cond)?, self.parse_expr(tru)?);
+            Expr::If(Box::new((cond, tru, match u.next() {
+              Some(fal) if u.exactly(0) => self.parse_expr(fal)?,
               None => Expr::Nil,
-              _ => Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error"))?,
+              _ => return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error")),
             })))
           } else {
-            Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error"))?
+            return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error"))
           },
         Some((Keyword::Switch, mut u)) => {
           let c = self.parse_expr(u.next().ok_or_else(||
@@ -344,10 +345,10 @@ impl<'a> Parser<'a> {
               if let (Some(p), Some(e), true) = (u.next(), u.next(), u.exactly(0)) {
                 branches.push((self.parse_pattern(p)?, self.parse_expr(e)?));
               } else {
-                Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))?
+                return Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))
               }
             } else {
-              Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))?
+              return Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))
             }
           }
           Expr::Switch(Box::new(c), branches.into_boxed_slice())
@@ -359,7 +360,7 @@ impl<'a> Parser<'a> {
             if let (Some(h), Some(c), true) = (u.next().and_then(|a| a.as_atom()), u.next(), u.exactly(0)) {
               (Some(h), c)
             } else {
-              Err(ElabError::new_e(self.try_get_span(&e), "while: bad pattern"))?
+              return Err(ElabError::new_e(self.try_get_span(&e), "while: bad pattern"))
             }
           } else {(None, c)};
           let c = self.parse_expr(c)?;
@@ -370,7 +371,7 @@ impl<'a> Parser<'a> {
           while let Some(e) = u.next() {
             if let Some(v) = self.parse_variant(&e) {
               if mem::replace(&mut var, Some(v)).is_some() {
-                Err(ElabError::new_e(self.try_get_span(&e), "while: two variants"))?
+                return Err(ElabError::new_e(self.try_get_span(&e), "while: two variants"))
               }
             } else if let Some((Keyword::Invariant, u)) = self.head_keyword(&e) {
               for e in u {
@@ -437,7 +438,7 @@ impl<'a> Parser<'a> {
                 for e in u1 {
                   if let Some(v) = self.parse_variant(&e) {
                     if mem::replace(&mut variant, Some(v)).is_some() {
-                      Err(ElabError::new_e(self.try_get_span(&e), "label: two variants"))?
+                      return Err(ElabError::new_e(self.try_get_span(&e), "label: two variants"))
                     }
                   } else {
                     self.parse_arg(e, &mut args, Some(&mut muts))?
@@ -456,7 +457,7 @@ impl<'a> Parser<'a> {
                 for e in u {
                   if let Some(v) = self.parse_variant(&e) {
                     if mem::replace(&mut variant, Some(v)).is_some() {
-                      Err(ElabError::new_e(self.try_get_span(&e), "call: two variants"))?
+                      return Err(ElabError::new_e(self.try_get_span(&e), "call: two variants"))
                     }
                   } else {
                     args.push(self.parse_expr(e)?)
@@ -469,13 +470,13 @@ impl<'a> Parser<'a> {
         }
       },
       LispKind::Number(n) => Expr::Number(n.clone()),
-      _ => Err(ElabError::new_e(self.try_get_span(&e), "unknown expression"))?
+      _ => return Err(ElabError::new_e(self.try_get_span(&e), "unknown expression"))
     })
   }
 
   fn parse_proc(&self, mut kind: ProcKind, mut u: Uncons) -> Result<Proc> {
     let e = match u.next() {
-      None => return Err(ElabError::new_e(self.try_get_span(&u.as_lisp()), "func/proc: syntax error")),
+      None => return Err(ElabError::new_e(self.try_get_span(&u.into()), "func/proc: syntax error")),
       Some(e) => e,
     };
     let mut muts = vec![];
@@ -493,27 +494,29 @@ impl<'a> Parser<'a> {
           if let Some(AtomID::COLON) = e.as_atom() { break }
           self.parse_arg(e, &mut args, Some(&mut muts))?
         }
-        while let Some(e) = u.next() { self.parse_arg(e, &mut rets, None)? }
+        for e in u { self.parse_arg(e, &mut rets, None)? }
         (name, e.fspan())
-      },
-      _ => Err(ElabError::new_e(self.try_get_span(&e), "func/proc: syntax error"))?
+      }
+      _ => return Err(ElabError::new_e(self.try_get_span(&e), "func/proc: syntax error"))
     };
     let mut body = vec![];
+    let variant = if let Some(e) = u.next() {
+      match kind {
+        ProcKind::Intrinsic => return Err(
+          ElabError::new_e(self.try_get_span(&e), "intrinsic: unexpected body")),
+        ProcKind::ProcDecl => kind = ProcKind::Proc,
+        _ => {}
+      }
+      let v = self.parse_variant(&e);
+      if v.is_none() {body.push(self.parse_expr(e)?)}
+      for e in u {body.push(self.parse_expr(e)?)}
+      v
+    } else {None};
     Ok(Proc {
       name, span,
       args: args.into_boxed_slice(),
       rets: rets.into_boxed_slice(),
-      variant: if let Some(e) = u.next() {
-        match kind {
-          ProcKind::Intrinsic => Err(ElabError::new_e(self.try_get_span(&e), "intrinsic: unexpected body"))?,
-          ProcKind::ProcDecl => kind = ProcKind::Proc,
-          _ => {}
-        }
-        let v = self.parse_variant(&e);
-        if v.is_none() {body.push(self.parse_expr(e)?)}
-        for e in u {body.push(self.parse_expr(e)?)}
-        v
-      } else {None},
+      variant,
       kind,
       body: Block {muts: muts.into(), stmts: body.into_boxed_slice()}
     })
@@ -530,7 +533,7 @@ impl<'a> Parser<'a> {
         for e in u { self.parse_arg(e, &mut args, None)? }
         (a, e.fspan())
       },
-      _ => Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?
+      _ => return Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))
     };
     Ok((name, sp, args))
   }
@@ -540,10 +543,10 @@ impl<'a> Parser<'a> {
       if let (Some(name), Some(ty), true) = (u.next().and_then(|e| e.as_atom()), u.next(), u.exactly(0)) {
         Ok(Field {ghost, name, ty})
       } else {
-        Err(ElabError::new_e(self.try_get_span(&e), "struct: syntax error"))?
+        Err(ElabError::new_e(self.try_get_span(&e), "struct: syntax error"))
       }
     } else {
-      Err(ElabError::new_e(self.try_get_span(&e), "struct: syntax error"))?
+      Err(ElabError::new_e(self.try_get_span(&e), "struct: syntax error"))
     }
   }
 
@@ -562,7 +565,7 @@ impl<'a> Parser<'a> {
           if let (lhs, Some(rhs)) = self.parse_decl(e.clone())? {
             ast.push(AST::Const {lhs, rhs})
           } else {
-            Err(ElabError::new_e(self.try_get_span(&e), "const: definition is required"))?
+            return Err(ElabError::new_e(self.try_get_span(&e), "const: definition is required"))
           }
         },
         Some((Keyword::Typedef, mut u)) =>
@@ -570,7 +573,7 @@ impl<'a> Parser<'a> {
             let (name, sp, args) = self.parse_name_and_args(e)?;
             ast.push(AST::Typedef(name, sp, args.into_boxed_slice(), ty));
           } else {
-            Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?
+            return Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))
           },
         Some((Keyword::Struct, mut u)) => {
           let e = u.next().ok_or_else(||
@@ -585,11 +588,11 @@ impl<'a> Parser<'a> {
           }
           ast.push(AST::Struct(name, sp, args.into_boxed_slice(), fields.into_boxed_slice()));
         }
-        _ => Err(ElabError::new_e(self.try_get_span(&e), "MMC: unknown top level item"))?
+        _ => return Err(ElabError::new_e(self.try_get_span(&e), "MMC: unknown top level item"))
       }
     }
     if !u.exactly(0) {
-      Err(ElabError::new_e(self.try_get_span(&e), "MMC: syntax error"))?
+      return Err(ElabError::new_e(self.try_get_span(&e), "MMC: syntax error"))
     }
     Ok(())
   }
