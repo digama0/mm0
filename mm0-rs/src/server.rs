@@ -615,7 +615,7 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = env.format_env(&text);
+  let fe = unsafe { env.format_env(&text) };
   let f = |name: &ArcString, desc, sp, full, kind| DocumentSymbol {
     name: (*name.0).clone(),
     detail: Some(desc),
@@ -735,7 +735,7 @@ async fn completion(path: FileRef, _pos: Position) -> result::Result<CompletionR
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = env.format_env(&text);
+  let fe = unsafe { env.format_env(&text) };
   let mut res = vec![];
   for ad in env.data().iter() {
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Sort) {res.push(ci)}
@@ -756,7 +756,7 @@ async fn completion_resolve(ci: CompletionItem) -> result::Result<CompletionItem
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
-  let fe = env.format_env(&text);
+  let fe = unsafe { env.format_env(&text) };
   env.get_atom(&*ci.label).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
 }

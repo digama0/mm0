@@ -257,7 +257,7 @@ impl Remap<LispRemapper> for IR {
     match self {
       &IR::Local(i) => IR::Local(i),
       &IR::Global(sp, a) => IR::Global(sp, a.remap(r)),
-      IR::Const(v) => IR::Const(v.freeze().remap(r)),
+      IR::Const(v) => IR::Const(unsafe { v.freeze() }.remap(r)),
       IR::List(sp, v) => IR::List(*sp, v.remap(r)),
       IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
       &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),

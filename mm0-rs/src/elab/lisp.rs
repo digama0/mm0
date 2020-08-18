@@ -1216,7 +1216,7 @@ impl<R, A: Remap<R>> Remap<R> for Mutex<A> {
 }
 impl Remap<LispRemapper> for LispVal {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self { self.freeze().remap(r) }
+  fn remap(&self, r: &mut LispRemapper) -> Self { unsafe { self.freeze() }.remap(r) }
 }
 
 impl Remap<LispRemapper> for InferTarget {
@@ -1242,5 +1242,5 @@ impl Remap<LispRemapper> for ProcPos {
 
 impl Remap<LispRemapper> for Proc {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self { self.freeze().remap(r) }
+  fn remap(&self, r: &mut LispRemapper) -> Self { unsafe { self.freeze() }.remap(r) }
 }
