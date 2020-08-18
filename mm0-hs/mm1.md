@@ -331,6 +331,8 @@ At the beginning of execution, the global context contains a number of primitive
 * `(max a b c)` computes the maximum of the (integer) arguments. `(max)` is an error.
 * `(min a b c)` computes the minimum of the (integer) arguments. `(min)` is an error.
 * `(- a b)` computes the subtraction `a - b`. `(- a b c)` is `a - b - c`, `(- a)` is `-a`, and `(-)` is an error.
+* `{a // b}` computes the integer (flooring) division. More arguments associate to the left.
+* `{a % b}` computes the integer modulus. More arguments associate to the left.
 * `(< a b)` is true if `a` is less than `b`. `(< a b c)` is true if `a < b` and `b < c`. `(< a)` is true and `(<)` is an error.
 * Similarly, `<=`, `>=`, `>` and `=` perform analogous iterated comparisons. There is no not-equal operator.
 
@@ -358,6 +360,10 @@ At the beginning of execution, the global context contains a number of primitive
       (string->atom "foo")         -- foo
       (string->atom "foo$bar baz") -- foo$bar baz
 
+* `(string-append s1 s2 s3)` stringifies and appends all the inputs.
+
+      (string-append "foo" 'bar 42) -- "foobar42"
+
 * `(not e1 e2 e3)` returns `#f` if any argument is truthy, and `#t` otherwise. It is not short-circuiting.
 * `(and e1 e2 e3)` returns `#t` if every argument is truthy, and `#f` otherwise. It is not short-circuiting.
 * `(or e1 e2 e3)` returns `#t` if any argument is truthy, and `#f` otherwise. It is not short-circuiting.
@@ -377,6 +383,7 @@ At the beginning of execution, the global context contains a number of primitive
 * `(hd e)` returns the head of the list, or left element of the cons expression. It is known as `car` in most lisps.
 * `(tl e)` returns the tail of the list, or right element of the cons expression. It is known as `cdr` in most lisps.
 * `(nth n e)` returns the `n`th element of the list, or `#undef` if out of range. It fails if the input is not a list.
+* `(map f '(a1 a2) '(b1 b2))` constructs the list `(list (f a1 b1) (f a2 b2))`, calling `f` on the heads of all the arguments, then the second elements and so on. All lists must be the same length.
 * `(ref? e)` is true if the argument is a ref-cell.
 * `(ref! e)` constructs a new ref-cell containing the value `e`.\
   `(ref!)` constructs a new ref-cell containing `#undef`.
@@ -384,12 +391,14 @@ At the beginning of execution, the global context contains a number of primitive
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
 * `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
+* `(atom-map? m)` is true if the argument is an atom map.
 * `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
 * `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#undef`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
 * `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`. `(insert m k)` returns `k` erased from `m`.
 
 * `(copy-span from to)` makes a copy of `to` with its position information copied from `from`. (This can be used for improved error reporting, but otherwise has no effect on program semantics.)
 * `(stack-span n)` gets the span from `n` calls up the stack (where `0` is the currently executing function). Returns `#undef` tagged with the target span, which can then be copied to a term using `(copy-span)`. (Useful for targeted error reporting in scripts.)
+* `(report-at sp type msg)` will report the message `msg` at a position derived from the value `sp` (one can use `copy-span` to pass a value with the right span here), with error type `type`, which can be `'error`, `'info` or `'warn`. If `sp` is `#t`, then it will also display a stack trace.
 
 See [MM0-specific builtin functions](#MM0-specific-builtin-functions) for more functions that have to do with interaction between the lisp and MM0 environments.
 
@@ -517,6 +526,8 @@ MM0-specific builtin functions
       (goal? (goal $foo$))                -- (foo)
 
 * `(infer-type p)` gets the statement proven by the proof `p`. This does not perform full typechecking on `p`.
+
+* `(get-mvars)` returns the current list of active metavariables.
 
 * `(get-goals)` returns the current goal list, a list of references to goals. Some goals may already have been assigned.
 

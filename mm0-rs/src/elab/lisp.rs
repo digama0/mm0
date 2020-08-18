@@ -12,8 +12,8 @@ pub mod pretty;
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
 use std::rc::Rc;
-use std::cell::RefCell;
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::cell::{Cell, RefCell};
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::str::FromStr;
 use num::BigInt;
@@ -210,32 +210,49 @@ __mk_lisp_kind! {
   Proc
 }
 
+/// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
 #[derive(Debug)]
 pub struct LispRef(RefCell<LispVal>);
 
 impl LispVal {
+  /// Make a `LispVal` from the inner enum type `LispKind`.
   pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
+  /// Construct a `LispVal` for an atom.
   pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
+  /// Construct a `LispVal` for a list.
   pub fn list(es: impl Into<Box<[LispVal]>>) -> LispVal { LispVal::new(LispKind::List(es.into())) }
+  /// Construct a `LispVal` for an improper list.
   pub fn dotted_list(es: impl Into<Box<[LispVal]>>, r: LispVal) -> LispVal {
     LispVal::new(LispKind::DottedList(es.into(), r))
   }
+  /// Construct a `LispVal` for an improper list.
   pub fn number(n: BigInt) -> LispVal { LispVal::new(LispKind::Number(n)) }
+  /// Construct a `LispVal` for a string.
   pub fn string(s: ArcString) -> LispVal { LispVal::new(LispKind::String(s)) }
+  /// Construct a `LispVal` for a syntax element.
   pub fn syntax(s: Syntax) -> LispVal { LispVal::new(LispKind::Syntax(s)) }
+  /// Construct a `LispVal` for `#undef`.
   pub fn undef() -> LispVal { LispVal::new(LispKind::Undef) }
+  /// Construct a `LispVal` for `()`.
   pub fn nil() -> LispVal { LispVal::list(vec![]) }
+  /// Construct a `LispVal` for a boolean.
   pub fn bool(b: bool) -> LispVal { LispVal::new(LispKind::Bool(b)) }
+  /// Construct a `LispVal` for a procedure.
   pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
+  /// Construct a `LispVal` for a mutable reference.
   pub fn new_ref(e: LispVal) -> LispVal { LispVal::new(LispKind::Ref(LispRef::new(e))) }
+  /// Construct a `LispVal` for a goal.
   pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     LispVal::new(LispKind::Goal(ty)).span(fsp)
   }
 
+  /// Annotate this object with a file span.
   pub fn span(self, fsp: FileSpan) -> LispVal {
     LispVal::new(LispKind::Annot(Annot::Span(fsp), self))
   }
 
+  /// Make a copy of this object with the given span,
+  /// replacing the existing one if it has one.
   pub fn replace_span(&self, fsp: FileSpan) -> LispVal {
     match &**self {
       LispKind::Annot(_, v) => v.replace_span(fsp),
@@ -243,6 +260,9 @@ impl LispVal {
     }
   }
 
+  /// Get a mutable reference to the inner `LispKind`, if possible, returning
+  /// `None` if the value is shared and calling `f` with the inner reference if
+  /// there is only one owner.
   pub fn unwrapped_mut<T>(&mut self, f: impl FnOnce(&mut LispKind) -> T) -> Option<T> {
     Rc::get_mut(&mut self.0).and_then(|e| match e {
       LispKind::Ref(m) => Self::unwrapped_mut(&mut m.get_mut(), f),
@@ -251,6 +271,7 @@ impl LispVal {
     })
   }
 
+  /// Traverse past any `Annot` and `Ref` nodes, and return a clone of the inner data.
   pub fn unwrapped_arc(&self) -> LispVal {
     match &**self {
       LispKind::Ref(m) => Self::unwrapped_arc(&m.get()),
@@ -259,10 +280,17 @@ impl LispVal {
     }
   }
 
+  /// Returns true if this is a clone of `e`.
   pub fn ptr_eq(&self, e: &Self) -> bool { Rc::ptr_eq(&self.0, &e.0) }
+  /// Try to get at the inner data, if this value is not shared,
+  /// otherwise return self.
   pub fn try_unwrap(self) -> Result<LispKind, LispVal> { Rc::try_unwrap(self.0).map_err(LispVal) }
+  /// Try to get a mutable reference to the inner data, if this value is not shared.
   pub fn get_mut(&mut self) -> Option<&mut LispKind> { Rc::get_mut(&mut self.0) }
 
+  /// Try to get a mutable reference to the inner data,
+  /// unwrapping any `Annot` and `Ref` nodes, if this value is not shared.
+  /// Otherwise returns the innermost shared unwrapped value.
   pub fn try_unwrapped(self) -> Result<LispKind, LispVal> {
     match Rc::try_unwrap(self.0) {
       Ok(LispKind::Annot(_, e)) => e.try_unwrapped(),
@@ -272,6 +300,9 @@ impl LispVal {
     }
   }
 
+  /// If this is a list or improper list of length at least `n`, extends
+  /// `vec` with the first `n` values in the list and returns true,
+  /// otherwise it extends `vec` with as many values as are present and returns false.
   pub fn extend_into(mut self, mut n: usize, vec: &mut Vec<LispVal>) -> bool {
     loop {
       match &*self {
@@ -308,10 +339,15 @@ impl PartialEq<LispVal> for LispVal {
 impl Eq for LispVal {}
 
 impl LispRef {
+  /// Creates a new `LispRef` initialized with value `e`.
   pub fn new(e: LispVal) -> LispRef { LispRef(RefCell::new(e)) }
+  /// Get a reference to the stored value.
   pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.borrow() }
+  /// Get a mutable reference to the stored value.
   pub fn get_mut<'a>(&'a self) -> impl DerefMut<Target=LispVal> + 'a { self.0.borrow_mut() }
+  /// Get a clone of the stored value.
   pub fn unref(&self) -> LispVal { self.get().clone() }
+  /// Consume the reference, yielding the stored value.
   pub fn into_inner(self) -> LispVal { self.0.into_inner() }
 
   /// Get the value of this reference without changing the reference count.
@@ -335,6 +371,12 @@ impl From<&LispKind> for bool {
 }
 
 impl LispKind {
+  /// Unwrap `Ref` and `Annot` nodes, which are ignored by most
+  /// lisp primitives, and run `f` with a reference to the inner value.
+  /// (We can't directly return the value because the lifetime is too short.)
+  /// See also [`LispVal::unwrapped_arc`], which returns a clone of the inner value.
+  ///
+  /// [`LispVal::unwrapped_arc`]: struct.LispVal.html#method.unwrapped_arc
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     match self {
       LispKind::Ref(m) => m.get().unwrapped(f),
@@ -343,6 +385,9 @@ impl LispKind {
     }
   }
 
+  /// Unwrap `Ref` and `Annot` nodes, collecting a span if one is found along the way,
+  /// and run `f` with a reference to the inner value and the span.
+  /// `fsp` is used as the default value if no span was found.
   pub fn unwrapped_span<T>(&self, fsp: Option<&FileSpan>,
       f: impl FnOnce(Option<&FileSpan>, &Self) -> T) -> T {
     match self {
@@ -352,39 +397,52 @@ impl LispKind {
     }
   }
 
+  /// Returns true if this value is to be treated as true in `if` statements.
+  /// Everything is truthy except `#f` and references to `#f`.
   pub fn truthy(&self) -> bool {
     self.unwrapped(|e| !matches!(e, LispKind::Bool(false)))
   }
+  /// Returns true if this value is a boolean.
   pub fn is_bool(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::Bool(_)))
   }
+  /// Get the boolean value that this value stores, if applicable.
   pub fn as_bool(&self) -> Option<bool> {
     self.unwrapped(|e| if let LispKind::Bool(b) = *e {Some(b)} else {None})
   }
+  /// Returns true if this value is an atom.
   pub fn is_atom(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::Atom(_)))
   }
+  /// Get the atom that this value stores, if applicable.
   pub fn as_atom(&self) -> Option<AtomID> {
     self.unwrapped(|e| if let LispKind::Atom(a) = *e {Some(a)} else {None})
   }
+  /// Returns true if this value is a number.
   pub fn is_int(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::Number(_)))
   }
+  /// Get the number that this value stores, if applicable.
   pub fn as_int<T>(&self, f: impl FnOnce(&BigInt) -> T) -> Option<T> {
     self.unwrapped(|e| if let LispKind::Number(n) = e {Some(f(n))} else {None})
   }
+  /// Returns true if this value is a procedure.
   pub fn is_proc(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::Proc(_)))
   }
+  /// Returns true if this value is a string.
   pub fn is_string(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::String(_)))
   }
+  /// Returns true if this value is an atom map.
   pub fn is_map(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::AtomMap(_)))
   }
+  /// Returns true if this value is not `#undef` or a reference to `#undef`.
   pub fn is_def(&self) -> bool {
     self.unwrapped(|e| !matches!(e, LispKind::Undef))
   }
+  /// Returns true if this value is not `#undef`.
   pub fn is_def_strict(&self) -> bool {
     match self {
       LispKind::Undef => false,
@@ -392,6 +450,8 @@ impl LispKind {
       _ => true,
     }
   }
+  /// Returns true if this value is a mutable reference.
+  /// (This function, unlike most, does not auto-deref references.)
   pub fn is_ref(&self) -> bool {
     match self {
       LispKind::Ref(_) => true,
@@ -399,6 +459,7 @@ impl LispKind {
       _ => false,
     }
   }
+  /// Get a mutable reference to the value stored by the reference, if it is one.
   pub fn as_ref_<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
     match self {
       LispKind::Ref(m) => Some(f(&mut m.get_mut())),
@@ -406,6 +467,7 @@ impl LispKind {
       _ => None
     }
   }
+  /// Get a file span annotation associated to a lisp value, if possible.
   pub fn fspan(&self) -> Option<FileSpan> {
     match self {
       LispKind::Ref(m) => m.get().fspan(),
@@ -414,19 +476,24 @@ impl LispKind {
       _ => None
     }
   }
+  /// Returns true if this value is a metavariable.
   pub fn is_mvar(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::MVar(_, _)))
   }
+  /// Get the metavariable's target type, if applicable.
   pub fn mvar_target(&self) -> Option<InferTarget> {
     self.unwrapped(|e| if let LispKind::MVar(_, is) = *e {Some(is)} else {None})
   }
+  /// Returns true if this value is a goal.
   pub fn is_goal(&self) -> bool {
     self.unwrapped(|e| matches!(e, LispKind::Goal(_)))
   }
+  /// Get the goal's target statement, if applicable.
   pub fn goal_type(&self) -> Option<LispVal> {
     self.unwrapped(|e| if let LispKind::Goal(e) = e {Some(e.clone())} else {None})
   }
 
+  /// Returns true if this is a proper list of length `n`.
   pub fn exactly(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(es) => n == es.len(),
@@ -436,9 +503,12 @@ impl LispKind {
     })
   }
 
+  /// Returns true if this is `()`.
   pub fn is_nil(&self) -> bool { self.exactly(0) }
+  /// Returns true if this is `()`.
   pub fn is_empty(&self) -> bool { self.exactly(0) }
 
+  /// Returns true if this is a proper list.
   pub fn is_list(&self) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(_) => true,
@@ -447,6 +517,8 @@ impl LispKind {
     })
   }
 
+  /// Gets the length of the list-like prefix of this value,
+  /// i.e. the number of cons-cells along the right spine before reaching something else.
   pub fn len(&self) -> usize {
     self.unwrapped(|e| match e {
       LispKind::List(es) => es.len(),
@@ -455,6 +527,7 @@ impl LispKind {
     })
   }
 
+  /// Returns true if this is a proper list of length at least `n`.
   pub fn list_at_least(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(es) => n <= es.len(),
@@ -463,6 +536,8 @@ impl LispKind {
       _ => false,
     })
   }
+
+  /// Returns true if this is a proper or improper list of length at least `n`.
   pub fn at_least(&self, n: usize) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(es) => n <= es.len(),
@@ -472,12 +547,15 @@ impl LispKind {
     })
   }
 
+  /// Puts a span on this value, if `fsp` is not `None`.
   pub fn decorate_span(self, fsp: &Option<FileSpan>) -> LispVal {
     if let Some(fsp) = fsp {
       LispVal::new(self).span(fsp.clone())
     } else {LispVal::new(self)}
   }
 
+  /// Checks if self is a proper list whose elements are equal to
+  /// those yielded by the provided iterator.
   fn eq_list<'a>(&self, mut it: impl Iterator<Item=&'a LispVal>) -> bool {
     self.unwrapped(|e| match e {
       LispKind::List(b) => it.eq(b.iter()),
@@ -522,17 +600,35 @@ impl PartialEq<LispKind> for LispKind {
 }
 impl Eq for LispKind {}
 
+/// An annotation, which is a tag placed on lisp values that is ignored by all
+/// the basic functions.
 #[derive(Clone, Debug)]
 pub enum Annot {
+  /// A span annotation marks an expression with a span from the input file.
+  /// The parser will place these on all expressions it produces, and they are
+  /// used to guide error reporting, but they can also be transferred to other
+  /// expressions in client code using [`(copy-span)`].
+  ///
+  /// [`(copy-span)`]: enum.BuiltinProc.html#variant.CopySpan
   Span(FileSpan),
 }
 
+/// The location information for a procedure.
 #[derive(Clone, Debug)]
 pub enum ProcPos {
+  /// A named procedure is created by `(def (foo x) ...)` or
+  /// `(def foo (fn (x) ...))`. The file span is the definition block
+  /// that created it, while the span is just the span of the name
+  /// of the function, in this case `foo` (in the same file).
   Named(FileSpan, Span, AtomID),
+  /// An unnamed procedure is a lambda like `(fn (x) ...)` that is not
+  /// immediately bound to a name. It is associated only with its span
+  /// in the file.
   Unnamed(FileSpan),
 }
+
 impl ProcPos {
+  /// Get the file span for a procedure.
   fn fspan(&self) -> &FileSpan {
     match self {
       ProcPos::Named(fsp, _, _) => fsp,
@@ -541,28 +637,74 @@ impl ProcPos {
   }
 }
 
+/// A callable procedure. There are several sources of procedures,
+/// all of which are interactable only via function calls `(f)` and
+/// printing (which shows only basic information about the procedure).
 #[derive(Debug)]
 pub enum Proc {
+  /// A built-in procedure (see [`BuiltinProc`] for the full list).
+  /// Initially, a reference to a lisp global with a builtin procedure's name
+  /// will return one of these objects, but the user can shadow builtins
+  /// with global definitions of their own.
   Builtin(BuiltinProc),
+  /// A lambda, created by `fn`, `match-fn`, `match-fn*` or `def`.
   Lambda {
+    /// The procedure's position information
     pos: ProcPos,
+    /// The local environment, that was captured at the time of the lambda's
+    /// creation. This allows `fn`'s to be closures and not just named functions.
     env: Box<[LispVal]>,
+    /// The procedure's specification, a poor man's function signature.
+    /// As the language is untyped, the only real information we have here
+    /// is how many arguments are expected.
     spec: ProcSpec,
+    /// The code of the procedure.
     code: Arc<IR>
   },
-  MatchCont(Arc<AtomicBool>),
+  /// A match continuation, which is passed to client code in the variable `k`
+  /// of `(match e [pat (=> k) code])`. It is a *delimited* continuation, which means
+  /// that it is only valid while inside the scope of `code`, but it is a regular
+  /// value and can be passed around, so the `Rc<Cell<bool>>` is a validity marker
+  /// that is used both to identify which continuation is being jumped to, in case
+  /// multiple are in scope, as well as to determine if we are still in the dynamic
+  /// extent of `code`.
+  MatchCont(Rc<Cell<bool>>),
+  /// A callback used by `refine` when it finds a procedure in a refine script.
+  /// The callback acts like `refine` as well, but it orders generated subgoals with
+  /// respect to an outer invocation of `refine`. This callback also only works
+  /// inside a limited extent, but unlike `MatchCont`, there cannot be multiple
+  /// refine callbacks simultaneously in flight - a call to the refine callback
+  /// binds to the nearest enclosing `refine` call.
   RefineCallback,
+  /// A delayed proof, generated by a call to `get-decl`, which returns a lisp
+  /// data structure reflecting the requested definition, but delays the proof
+  /// unless forced by calling this thunk. The unevaluated form of the thunk
+  /// stores `Err(args)`, where `args` is the list of variables, while the
+  /// evaluated form stores `Ok(proof)`.
   ProofThunk(AtomID, RefCell<Result<LispVal, Box<[LispVal]>>>),
+  /// The compiler object, which can be called as a procedure and stores its own
+  /// internal state here. See [`Compiler::call`].
+  ///
+  /// [`Compiler::call`]: ../../mmc/struct.Compiler.html#method.call
   MMCCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
 }
 
+/// A procedure specification, which defines the number of arguments expected
+/// by the call. Individual procedures may have additional rules on top of
+/// this for validity, but every procedure must declare its specification
+/// in [`Proc::spec`].
+///
+/// [`Proc::spec`]: enum.Proc.html#method.spec
 #[derive(Copy, Clone, Debug)]
 pub enum ProcSpec {
+  /// This function must be called with exactly `n` arguments.
   Exact(usize),
+  /// This function must be called with at least `n` arguments.
   AtLeast(usize),
 }
 
 impl ProcSpec {
+  /// Returns true if `i` is a valid number of arguments given this spec.
   pub fn valid(self, i: usize) -> bool {
     match self {
       ProcSpec::Exact(n) => i == n,
@@ -572,6 +714,7 @@ impl ProcSpec {
 }
 
 impl Proc {
+  /// Returns the specification (number of expected arguments) for a procedure.
   pub fn spec(&self) -> ProcSpec {
     match self {
       Proc::Builtin(p) => p.spec(),
@@ -585,83 +728,308 @@ impl Proc {
 }
 
 str_enum! {
+  /// The set of built in procedures. These each have names that can be shadowed
+  /// but not overridden by global names in the environment.
   enum BuiltinProc {
+    /// `display` takes a string and prints it. In the interactive editor mode,
+    /// this appears as an info diagnostic over the word "`display`".
+    /// ```
+    /// (display "hello world")         -- hello world
+    /// (display 42)                    -- error, expected string
+    /// ```
     Display: "display",
+    /// `error` takes a string and throws an error with the given string as the message.
     Error: "error",
+    /// `print` takes an arbitrary expression and pretty-prints it.
     Print: "print",
+    /// `(report-at sp type msg)` will report the message `msg` at a position
+    /// derived from the value `sp` (one can use `copy-span` to pass a value with the
+    /// right span here), with error type `type`, which can be `'error`, `'info` or
+    /// `'warn`. If `sp` is `#t`, then it will also display a stack trace.
     ReportAt: "report-at",
+    /// `begin` returns its last argument, or `#undef` if it is given no arguments.
+    /// In Scheme this is a syntax form, but in MM1 all functions have the same
+    /// evaluation semantics as `begin`, so the only interesting thing this function
+    /// does is ignore its other arguments.
     Begin: "begin",
+    /// `(apply f a b '(c d))` evaluates to the result of `(f a b c d)`. That is, the
+    /// first argument should be a closure and the last argument should be a list, and
+    /// it applies the closure to the list, with any in between arguments added to the
+    /// head of the list. `(apply)` is an error, and if `f` is a syntax form then this
+    /// is also an error, i.e. `(apply def (x 5))` does not work.
     Apply: "apply",
+    /// `(+ a b c)` computes the sum of the (integer) arguments. `(+)` is zero and `(+ a)` is `a`.
     Add: "+",
+    /// `(* a b c)` computes the product of the (integer) arguments. `(*)` is one and `(* a)` is `a`.
     Mul: "*",
+    /// `(max a b c)` computes the maximum of the (integer) arguments. `(max)` is an error.
     Max: "max",
+    /// `(min a b c)` computes the minimum of the (integer) arguments. `(min)` is an error.
     Min: "min",
+    /// `(- a b)` computes the subtraction `a - b`. `(- a b c)` is `a - b - c`,
+    /// `(- a)` is `-a`, and `(-)` is an error.
     Sub: "-",
+    /// {a // b}` computes the integer (flooring) division. More arguments associate to the left.
     Div: "//",
+    /// `{a % b}` computes the integer modulus. More arguments associate to the left.
     Mod: "%",
+    /// `{a < b}` is true if `a` is less than `b`. `(< a b c)` means `a < b` and `b < c`.
     Lt: "<",
+    /// `{a <= b}` is true if `a` is less or equal to `b`. `(<= a b c)` means `a <= b` and `b <= c`.
     Le: "<=",
+    /// `{a > b}` is true if `a` is greater than `b`. `(> a b c)` means `a > b` and `b > c`.
     Gt: ">",
+    /// `{a >= b}` is true if `a` is greater or equal to `b`. `(>= a b c)` means `a >= b` and `b >= c`.
     Ge: ">=",
+    /// `{a = b}` is true if `a` and `b` are equal numbers. `(= a b c)` means `a = b` and `b = c`.
     Eq: "=",
+    /// `==`, distinct from `=`, is sometimes called `equal?` in other lisps, and performs
+    /// recursive equality comparison.
+    ///
+    /// * Pointer-equal data always compare as equal.
+    /// * Strings, atoms, `#t`, `#f`, `#undef` all perform structural comparison as expected
+    ///   (`#t` is equal to `#t` but not equal to `#undef` or `"#t"` or `'#t`).
+    /// * Two pairs are equal if their components are equal.
+    /// * Procedures (both builtins and `fn` declarations), `atom-map`s, `goal`s and `mvar`s
+    ///   have no structural equality; they compare equal only if they are pointer-equal.
+    /// * Indirections are ignored; `(ref! 1)` is equal to `1`.
+    /// * The comparison routine performs no cycle detection so equality on cyclic data structures can loop.
+    /// * Like the numeric equality operator `=`, `==` can be used on more than two arguments,
+    ///   in which case it will compare all elements to the first.
     Equal: "==",
+    /// `(->string e)` converts an expression to a string. Numbers are converted in the usual
+    /// way, strings, atoms and formulas (which are all containers for strings) get the underlying
+    /// string, and other expressions are pretty printed using the same method as `print`.
+    /// ```
+    /// (->string 42)     -- "42"
+    /// (->string (- 42)) -- "-42"
+    /// (->string "foo")  -- "foo"
+    /// (->string 'foo)   -- "foo"
+    /// (->string $foo$)  -- "foo"
+    /// (->string '(1 . 2))  -- "(1 . 2)"
+    /// ```
     ToString: "->string",
+    /// `(string->atom s)` converts a string to an atom. This can be used to create atoms that
+    /// violate the concrete syntax, for example if they have embedded spaces.
+    /// ```
+    /// (string->atom "foo")         -- foo
+    /// (string->atom "foo$bar baz") -- foo$bar baz
+    /// ```
     StringToAtom: "string->atom",
+    /// `(string-append s1 s2 s3)` stringifies and appends all the inputs.
+    /// ```
+    /// (string-append "foo" 'bar 42) -- "foobar42"
+    /// ```
     StringAppend: "string-append",
+    /// `(not e1 e2 e3)` returns `#f` if any argument is truthy, and `#t` otherwise.
+    /// It is not short-circuiting.
     Not: "not",
+    /// `(and e1 e2 e3)` returns `#t` if every argument is truthy, and `#f` otherwise.
+    /// It is not short-circuiting.
     And: "and",
+    /// `(or e1 e2 e3)` returns `#t` if any argument is truthy, and `#f` otherwise.
+    /// It is not short-circuiting.
     Or: "or",
+    /// `(list e1 e2 e3)` returns the list `(e1 e2 e3)`. It differs from `quote`
+    /// in that it evaluates its arguments.
     List: "list",
+    /// `(cons e1 e2)` returns `(e1 . e2)`. With more or less arguments:
+    /// * `(cons)` returns the empty list.
+    /// * `(cons e1)` returns `e1`.
+    /// * `(cons e1 e2 e3)` returns `(e1 e2 . e3)`.
     Cons: "cons",
+    /// `(hd e)` returns the head of the list, or left element of the cons expression.
+    /// It is known as `car` in most lisps.
     Head: "hd",
+    /// `(tl e)` returns the tail of the list, or right element of the cons expression.
+    /// It is known as `cdr` in most lisps.
     Tail: "tl",
+    /// `(nth n e)` returns the `n`th element of the list, or `#undef` if out of range.
+    /// It fails if the input is not a list.
     Nth: "nth",
+    /// `(map f '(a1 a2) '(b1 b2))` constructs the list `(list (f a1 b1) (f a2 b2))`,
+    /// calling `f` on the heads of all the arguments, then the second elements and so on.
+    /// All lists must be the same length.
     Map: "map",
+    /// `(bool? e)` is true if the argument is a boolean, `#t` or `#f`.
     IsBool: "bool?",
+    /// `(atom? e)` is true if the argument is an atom (also known as a symbol), `'x`.
     IsAtom: "atom?",
+    /// `(pair? e)` is true if its argument is a cons of something, that is,
+    /// a nonempty list or improper list.
     IsPair: "pair?",
+    /// `(null? e)` is true if its argument is `()`.
     IsNull: "null?",
+    /// `(number? e)` is true if the argument is an integer.
     IsNumber: "number?",
+    /// `(string? e)` is true if its argument is a string (not a formula or atom).
     IsString: "string?",
+    /// `(fn? e)` is true if the argument is a procedure.
     IsProc: "fn?",
+    /// `(def? e)` is true if the argument is not `#undef`.
     IsDef: "def?",
+    /// `(ref? e)` is true if the argument is a ref-cell.
     IsRef: "ref?",
+    /// * `(ref! e)` constructs a new ref-cell containing the value `e`.
+    /// * `(ref!)` constructs a new ref-cell containing `#undef`.
     NewRef: "ref!",
+    /// `(get! r)` dereferences the ref-cell `r` to get the value.
     GetRef: "get!",
+    /// `(set! r v)` sets the value of the ref-cell `r` to `v`.
     SetRef: "set!",
+    /// `(copy-span from to)` makes a copy of `to` with its position information copied from `from`.
+    /// (This can be used for improved error reporting, but
+    /// otherwise has no effect on program semantics.)
     CopySpan: "copy-span",
+    ///  `(stack-span n)` gets the span from `n` calls up the stack (where `0` is
+    /// the currently executing function). Returns `#undef` tagged with the target span,
+    /// which can then be copied to a term using `(copy-span)`.
+    /// (Useful for targeted error reporting in scripts.)
     StackSpan: "stack-span",
+    /// `(async f args)` evaluates `(f args)` on another thread, and returns a
+    /// procedure that will join on the thread to wait for the result.
     Async: "async",
+    /// `(atom-map? m)` is true if the argument is an atom map.
     IsAtomMap: "atom-map?",
+    /// `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
     NewAtomMap: "atom-map!",
+    /// * `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present.
+    /// * `(lookup m k v)` will return `v` instead if the key is not present,
+    ///   unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
     Lookup: "lookup",
+    /// * `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`,
+    ///   and returns `#undef`.
+    /// * `(insert! m k)` "undefines" the value at key `k` in `m`, that is,
+    ///   it erases whatever is there.
     Insert: "insert!",
+    /// * `(insert m k v)` returns an immutable map based on the immutable map `m`,
+    ///   with the value `v` inserted at key `k`.
+    /// * `(insert m k)` returns `k` erased from `m`.
     InsertNew: "insert",
+    /// `(set-timeout n)` sets the timeout for running individual theorems and
+    /// `do` blocks to `n` milliseconds. The default is 5 seconds.
     SetTimeout: "set-timeout",
+    /// `(mvar? e)` returns `#t` if `e` is an unsolved metavariable value.
+    /// *Note:* Holes in expressions are *not* represented as raw metavariables,
+    /// they are ref-cells to metavariables. So to test if a metavariable has not
+    /// been assigned you can use `(mvar? (get! e))`.
     IsMVar: "mvar?",
+    /// Similarly, `(goal? e)` returns `#t` if `e` is an unsolved goal expression,
+    /// and `(goal? (get! e))` checks if a goal reference has not been solved.
     IsGoal: "goal?",
+    /// `(mvar! s bd)` creates a new metavariable ref-cell with sort `s` and
+    /// boundedness `bd` and adds it to the list of open metavariables. To emphasize:
+    /// ```
+    /// (mvar? (mvar! "foo" #t))            -- #f
+    /// (ref? (mvar! "foo" #t))             -- #t
+    /// (mvar? (get! (mvar! "foo" #t)))     -- #t
+    /// ```
     NewMVar: "mvar!",
+    /// `(pp e)` pretty-prints a (fully elaborated) term expression using declared
+    /// math notations. It relies on the theorem context to typecheck the formulas
+    /// and provide context, and will fall back on the generic lisp printer
+    /// for things it doesn't understand.
     PrettyPrint: "pp",
+    /// `(goal e)` creates a new goal value given a statement expression.
+    /// It will need to be wrapped with a `ref!` to be used with `set-goals`.
     NewGoal: "goal",
+    /// `(goal-type g)` gets the statement of a goal (wrapped by any number of refs).
     GoalType: "goal-type",
+    /// `(infer-type p)` gets the statement proven by the proof `p`.
+    /// This does not perform full typechecking on `p`.
     InferType: "infer-type",
+    /// `(get-mvars)` returns the current list of active metavariables.
     GetMVars: "get-mvars",
+    /// `(get-goals)` returns the current goal list, a list of references to goals.
+    /// Some goals may already have been assigned.
     GetGoals: "get-goals",
+    /// `(set-goals g1 g2 g3)` sets the goal list to `(g1 g2 g3)`, replacing
+    /// the current goal list. If any of the provided goals are already assigned
+    /// they are removed from the list.
     SetGoals: "set-goals",
+    /// `(set-close-fn f)` sets the "closer" for the current proof to `f`.
+    /// It will be called with no arguments at the end of a `focus` block, and is
+    /// responsible for reporting all unfinished goals. Passing `#undef` instead of
+    /// a function will reset it to the default closer.
     SetCloseFn: "set-close-fn",
+    /// `(local-ctx)` returns the list of hypothesis names (`(infer-type)`
+    /// can be used to get the type of the hypotheses).
     LocalCtx: "local-ctx",
+    ///`(to-expr e)` elaborates a term pre-expression into an expression,
+    /// producing metavariables for `_` placeholders in the expression.
     ToExpr: "to-expr",
+    /// * `(refine p)` elaborates a proof pre-expression into a proof, and unifies
+    ///   its type against the first goal.
+    /// * `(refine p1 p2 p3)` applies three proof pre-expressions to the first
+    ///   three goals. If there are fewer than three goals the remaining proofs are ignored.
     Refine: "refine",
+    /// * `(have h p)` elaborates the proof pre-expression `p` to a proof, infers
+    ///   the type `e` of the proof, and adds `e` to the list of proven subproofs,
+    ///   after which `h` may be referred to like any other theorem hypothesis.
+    /// * `(have h e p)` is the same except that `p` is elaborated with `e` as the expected type.
     Have: "have",
+    /// `(stat)` prints the current proof state, which consists of a list of
+    /// subproofs, a list of goals, and a list of metavariables accompanied by their sorts.
     Stat: "stat",
+    /// `(get-decl x)` returns the declaration information associated to declaration `x`.
+    /// The result has one of the following forms:
+    ///
+    /// * `('term x bis ret)`, where `x` is the declaration name (same as the input),
+    ///   `bis` is a list of binders, and `ret` is a type. A bound variable binder
+    ///    `{x: set}` is represented as `'[x set]`, and a regular variable `(ph: wff x)`
+    ///    is represented as `'[ph set (x)]`. The third element of the list is always present
+    ///    but possibly empty for regular variables. The return type `ret` similarly has the
+    ///    form `(s xs)` where `s` is the sort and `xs` is the list of dependent variables.
+    ///
+    /// * `('def x bis ret vis ds val)`. `x`, `bis` and `ret` have the same form as in the
+    ///    `term` case. `vis` is one of  `'local`, `'abstract`, `'pub` or `()`, where the empty
+    ///    list represents the default visibility. `ds` is a list of dummy variables such as
+    ///    `[x set]` in the same format as the binders, or an atom map mapping `x` to `set`
+    ///    and so on. `val` is either `()` indicating that a definition has not been provided,
+    ///    or a term s-expression.
+    ///
+    /// * `('axiom x bis hyps ret)`, where `x` is the declaration name, `bis` are the bound
+    ///    and regular variables, `hyps` is a list of `[h hyp]` pairs where `hyp` is a term
+    ///    s-expression (`h` will always be `_`), and `ret` is also a term s-expression.
+    ///
+    /// * `('theorem x bis hyps ret vis vtask)`, where `x`, `bis`, `hyps` and `ret` have the
+    ///    same format as in `axiom`, `vis` is the visibility in the same format as in `def`,
+    ///    and `vtask` is a thunk that will return a list `(ds proof)` where `ds` is the list
+    ///    or atom map of dummy variables, and `proof` is the proof s-expression. `vtask`
+    ///    can also have the form `(ds proof)` itself.
     GetDecl: "get-decl",
+    /// `(add-decl! decl-data ...)` adds a new declaration, as if a new `def` or `theorem`
+    /// declaration was created. This does not do any elaboration - all information is
+    /// expected to be fully elaborated. The input format is the same as the output format
+    /// of `get-decl`. For example, `(add-decl! 'term 'foo '([_ wff ()]) 'wff)` creates a
+    /// new term `term foo: wff > wff;`.
     AddDecl: "add-decl!",
+    /// * `(add-term! x bis ret)` is the same as `(add-decl! 'term x bis ret)`.
+    /// * `(add-term! x bis ret vis ds val)` is the same as `(add-decl! 'def x bis ret vis ds val)`.
     AddTerm: "add-term!",
+    /// * `(add-thm! x bis hyps ret)` is the same as `(add-decl! 'axiom x bis hyps ret)`.
+    /// * `(add-thm! x bis hyps ret vis vtask)` is the same as
+    ///   `(add-decl! 'theorem x bis hyps ret vis vtask)`.
     AddThm: "add-thm!",
+    /// * `(dummy! x s)` produces a new dummy variable called `x` with sort `s`, and returns `x`;
+    /// * `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
     NewDummy: "dummy!",
+    /// `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.
     CheckProofs: "check-proofs",
+    /// * `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`)
+    ///   error reporting for error type `type`, which can be `'error`, `'info` or `'warn`.
+    ///   (Compilation will still be aborted if there are errors, even if the
+    ///   display is suppressed.)
+    /// * `(set-reporting b)` will set the error reporting to `b` for all error types.
     SetReporting: "set-reporting",
+    /// `refine-extra-args` can be called directly, but it simply returns an error. It is called
+    /// by `refine` when elaborating a term with too many arguments, and is expected to be
+    /// overridden by user code to provide a more useful behavior.
     RefineExtraArgs: "refine-extra-args",
+    /// `(mmc-init)` returns a new compiler object, which is itself a procedure that can
+    /// be called to compile MMC functions. See [`Compiler::call`].
+    ///
+    /// [`Compiler::call`]: ../../mmc/struct.Compiler.html#method.call
     MMCInit: "mmc-init",
   }
 }

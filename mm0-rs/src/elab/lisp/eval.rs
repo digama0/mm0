@@ -40,7 +40,7 @@ enum Stack<'a> {
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>),
   Drop(usize),
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
-  MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Arc<AtomicBool>),
+  MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Rc<Cell<bool>>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
   AddThmProc(FileSpan, Box<AwaitingProof>),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
@@ -1225,7 +1225,7 @@ impl<'a> Evaluator<'a> {
           Some(Stack::Drop(n)) => {self.ctx.truncate(n); State::Ret(ret)}
           Some(Stack::Ret(fsp, _, old, _)) => {self.file = fsp.file; self.ctx = old; State::Ret(ret)}
           Some(Stack::MatchCont(_, _, _, valid)) => {
-            if let Err(valid) = Arc::try_unwrap(valid) {valid.store(false, Ordering::Relaxed)}
+            if let Err(valid) = Rc::try_unwrap(valid) {valid.set(false)}
             State::Ret(ret)
           }
           Some(Stack::MapProc(sp1, sp2, f, us, mut vec)) => {
@@ -1329,12 +1329,12 @@ impl<'a> Evaluator<'a> {
                 State::Eval(unsafe { &*code })
               },
               Proc::MatchCont(valid) => {
-                if !valid.load(Ordering::Relaxed) {throw!(sp2, "continuation has expired")}
+                if !valid.get() {throw!(sp2, "continuation has expired")}
                 loop {
                   match self.stack.pop() {
                     Some(Stack::MatchCont(span, expr, it, a)) => {
-                      a.store(false, Ordering::Relaxed);
-                      if Arc::ptr_eq(&a, &valid) {
+                      a.set(false);
+                      if Rc::ptr_eq(&a, &valid) {
                         break State::Match(span, expr, it)
                       }
                     }
@@ -1400,7 +1400,7 @@ impl<'a> Evaluator<'a> {
               let start = self.ctx.len();
               self.ctx.extend_from_slice(&vars);
               if br.cont {
-                let valid = Arc::new(AtomicBool::new(true));
+                let valid = Rc::new(Cell::new(true));
                 self.ctx.push(LispVal::proc(Proc::MatchCont(valid.clone())));
                 self.stack.push(Stack::MatchCont(sp, e.clone(), it, valid));
               }

@@ -1,6 +1,7 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::Deref;
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
+use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
 use super::{Spans, ObjectKind, Remap,
@@ -197,7 +198,7 @@ impl Remap<LispRemapper> for FrozenProc {
       &Proc::Builtin(p) => Proc::Builtin(p),
       &Proc::Lambda {ref pos, ref env, spec, ref code} =>
         Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
-      Proc::MatchCont(_) => Proc::MatchCont(Arc::new(AtomicBool::new(false))),
+      Proc::MatchCont(_) => Proc::MatchCont(Rc::new(Cell::new(false))),
       Proc::RefineCallback => Proc::RefineCallback,
       Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), RefCell::new(
         match &*unsafe { m.try_borrow_unguarded() }.unwrap() {
