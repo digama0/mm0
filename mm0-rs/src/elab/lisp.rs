@@ -20,7 +20,8 @@ use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
 use crate::util::{ArcString, FileSpan, Span, SliceExt};
-use super::{AtomID, ThmID, AtomVec, Remap, Modifiers, frozen::FrozenLispKind};
+use super::{AtomID, ThmID, AtomVec, Remap, Modifiers,
+  frozen::{FrozenLispKind, FrozenLispRef}};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -1040,15 +1041,26 @@ impl std::fmt::Display for BuiltinProc {
   }
 }
 
+/// An iterator over lisp values, for dealing with lists. Semantically this is
+/// the same as a `LispVal`, but in order to decrease allocations this allows
+/// holding on to incomplete subparts of the arrays used in `LispKind::List`
+/// and `LispKind::DottedList`.
 #[derive(Clone, Debug)]
 pub enum Uncons {
+  /// The initial state, pointing to a lisp value.
   New(LispVal),
+  /// A reference to a sub-slice of a `LispKind::List`.
   List(OwningRef<LispVal, [LispVal]>),
+  /// A reference to a sub-slice of a `LispKind::DottedList`.
   DottedList(OwningRef<LispVal, [LispVal]>, LispVal),
 }
 
+impl From<LispVal> for Uncons {
+  fn from(e: LispVal) -> Uncons { Uncons::New(e) }
+}
+
 impl Uncons {
-  pub fn from(e: LispVal) -> Uncons { Uncons::New(e) }
+  /// Returns true if this is a proper list of length `n`.
   pub fn exactly(&self, n: usize) -> bool {
     match self {
       Uncons::New(e) => e.exactly(n),
@@ -1057,8 +1069,10 @@ impl Uncons {
     }
   }
 
+  /// Returns true if this is `()`.
   pub fn is_empty(&self) -> bool { self.exactly(0) }
 
+  /// Returns true if this is a proper or improper list of length at least `n`.
   pub fn at_least(&self, n: usize) -> bool {
     n == 0 || match self {
       Uncons::New(e) => e.at_least(n),
@@ -1067,6 +1081,7 @@ impl Uncons {
     }
   }
 
+  /// Returns true if this is a proper list of length at least `n`.
   pub fn list_at_least(&self, n: usize) -> bool {
     n == 0 || match self {
       Uncons::New(e) => e.list_at_least(n),
@@ -1075,6 +1090,8 @@ impl Uncons {
     }
   }
 
+  /// Gets the length of the list-like prefix of this value,
+  /// i.e. the number of cons-cells along the right spine before reaching something else.
   pub fn len(&self) -> usize {
     match self {
       Uncons::New(e) => e.len(),
@@ -1083,6 +1100,9 @@ impl Uncons {
     }
   }
 
+  /// If this is a list or improper list of length at least `n`, extends
+  /// `vec` with the first `n` values in the list and returns true,
+  /// otherwise it extends `vec` with as many values as are present and returns false.
   pub fn extend_into(&self, n: usize, vec: &mut Vec<LispVal>) -> bool {
     match self {
       Uncons::New(e) => e.clone().extend_into(n, vec),
@@ -1142,13 +1162,41 @@ impl Iterator for Uncons {
       }
     }
   }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    match self {
+      Uncons::New(_) => (0, None),
+      Uncons::List(es) => {let n = es.len(); (n, Some(n))}
+      Uncons::DottedList(es, _) => (es.len(), None)
+    }
+  }
+
+  fn count(self) -> usize { self.len() }
 }
 
+/// A `LispRemapper` is the context required to copy a foreign lisp environment into
+/// the current environment. This is used to implement [`Environment::merge`],
+/// used for `import` commands.
+///
+/// [`Environment::merge`]: ../environment/struct.Environment.html#method.merge
 #[derive(Default, Debug)]
-pub struct LispRemapper {
-  pub atom: AtomVec<AtomID>,
-  pub lisp: HashMap<*const FrozenLispKind, LispVal>,
-  pub refs: HashMap<*const FrozenLispKind, LispVal>,
+pub(crate) struct LispRemapper {
+  /// A mapping of foreign atoms into local atom IDs
+  pub(crate) atom: AtomVec<AtomID>,
+  /// A mapping of foreign `FrozenLispVal`s into local `LispVal`s.
+  /// It uses a pointer to the underlying allocation as an identifier so that
+  /// we don't remap the same lisp values many times.
+  pub(crate) lisp: HashMap<*const FrozenLispKind, LispVal>,
+  /// A stack of references that are currently being constructed. It is stored
+  /// as a hashmap, indexed on the source lisp ref-cell, for fast lookup.
+  ///
+  /// When a `Ref` is remapped, we initially create a `(ref! #undef)` and put it
+  /// in `refs` (if it is not already present), then we remap the contents of
+  /// the ref, and finally we assign the result to the ref we created and
+  /// remove the newly assigned ref-cell from `refs`. That way, a mutable cell
+  /// is remapped to another mutable cell, but we can detect cycles and correctly
+  /// remap them into cycles.
+  pub(crate) refs: HashMap<*const FrozenLispRef, LispVal>,
 }
 impl Remap<LispRemapper> for AtomID {
   type Target = Self;

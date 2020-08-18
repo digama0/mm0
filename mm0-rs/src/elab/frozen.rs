@@ -169,13 +169,13 @@ impl Remap<LispRemapper> for FrozenLispVal {
       FrozenLispKind::Annot(sp, m) => LispVal::new(LispKind::Annot(sp.clone(), m.remap(r))),
       FrozenLispKind::Proc(f) => LispVal::proc(f.remap(r)),
       FrozenLispKind::AtomMap(m) => LispVal::new(LispKind::AtomMap(m.remap(r))),
-      FrozenLispKind::Ref(m) => match r.refs.entry(ptr) {
+      FrozenLispKind::Ref(m) => match r.refs.entry(m as *const _) {
         Entry::Occupied(e) => e.get().clone(),
         Entry::Vacant(e) => {
           let ref_ = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
           e.insert(ref_.clone());
           ref_.as_ref_(|val| *val = m.remap(r)).unwrap();
-          r.refs.remove(&ptr);
+          r.refs.remove(&(m as *const _));
           ref_
         }
       },

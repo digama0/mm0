@@ -539,9 +539,9 @@ impl Elaborator {
           LispVal::atom(if tdata.val.is_some() {AtomID::TERM} else {AtomID::DEF}),
           LispVal::atom(x),
           self.binders(&tdata.args, &mut heap, &mut bvs),
-          LispVal::list(Environment::deps(&bvs,
-            vec![LispVal::atom(self.sorts[tdata.ret.0].atom)], tdata.ret.1))
-        ];
+          LispVal::list(vec![
+            LispVal::atom(self.sorts[tdata.ret.0].atom),
+            Environment::deps(&bvs, tdata.ret.1)])];
         if let Some(Some(v)) = &tdata.val {
           args.push(vis(tdata.vis));
           let mut ds = Vec::new();

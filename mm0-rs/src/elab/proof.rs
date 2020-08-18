@@ -275,17 +275,16 @@ impl Node for ExprNode {
 }
 
 impl Environment {
-  pub fn deps(bvs: &[LispVal], mut v: Vec<LispVal>, xs: u64) -> Vec<LispVal> {
-    let e = if xs == 0 {
-      LispVal::nil()
-    } else {
-      let mut next_bv = 1;
-      LispVal::list(bvs.iter()
-        .filter(|_| { let bv = next_bv; next_bv *= 2; xs & bv != 0 })
-        .cloned().collect::<Vec<_>>())
-    };
-    v.push(e);
-    v
+  pub fn deps(bvs: &[LispVal], xs: u64) -> LispVal {
+    let mut deps = vec![];
+    if xs != 0 {
+      let mut bv = 1;
+      for e in bvs {
+        if xs & bv != 0 { deps.push(e.clone()) }
+        bv *= 2;
+      }
+    }
+    LispVal::list(deps)
   }
 
   pub fn binders(&self, bis: &[(Option<AtomID>, Type)],
@@ -295,7 +294,7 @@ impl Environment {
       heap.push(a.clone());
       match *t {
         Type::Bound(s) => {bvs.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
-        Type::Reg(s, xs) => Self::deps(&bvs, vec![a, LispVal::atom(self.sorts[s].atom)], xs)
+        Type::Reg(s, xs) => vec![a, LispVal::atom(self.sorts[s].atom), Self::deps(&bvs, xs)]
       }
     })).collect::<Vec<_>>())
   }
