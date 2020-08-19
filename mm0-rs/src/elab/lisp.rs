@@ -734,7 +734,7 @@ str_enum! {
   enum BuiltinProc {
     /// `display` takes a string and prints it. In the interactive editor mode,
     /// this appears as an info diagnostic over the word "`display`".
-    /// ```
+    /// ```text
     /// (display "hello world")         -- hello world
     /// (display 42)                    -- error, expected string
     /// ```
@@ -801,7 +801,7 @@ str_enum! {
     /// `(->string e)` converts an expression to a string. Numbers are converted in the usual
     /// way, strings, atoms and formulas (which are all containers for strings) get the underlying
     /// string, and other expressions are pretty printed using the same method as `print`.
-    /// ```
+    /// ```text
     /// (->string 42)     -- "42"
     /// (->string (- 42)) -- "-42"
     /// (->string "foo")  -- "foo"
@@ -812,13 +812,13 @@ str_enum! {
     ToString: "->string",
     /// `(string->atom s)` converts a string to an atom. This can be used to create atoms that
     /// violate the concrete syntax, for example if they have embedded spaces.
-    /// ```
+    /// ```text
     /// (string->atom "foo")         -- foo
     /// (string->atom "foo$bar baz") -- foo$bar baz
     /// ```
     StringToAtom: "string->atom",
     /// `(string-append s1 s2 s3)` stringifies and appends all the inputs.
-    /// ```
+    /// ```text
     /// (string-append "foo" 'bar 42) -- "foobar42"
     /// ```
     StringAppend: "string-append",
@@ -920,7 +920,7 @@ str_enum! {
     IsGoal: "goal?",
     /// `(mvar! s bd)` creates a new metavariable ref-cell with sort `s` and
     /// boundedness `bd` and adds it to the list of open metavariables. To emphasize:
-    /// ```
+    /// ```text
     /// (mvar? (mvar! "foo" #t))            -- #f
     /// (ref? (mvar! "foo" #t))             -- #t
     /// (mvar? (get! (mvar! "foo" #t)))     -- #t

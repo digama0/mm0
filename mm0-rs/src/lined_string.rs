@@ -119,7 +119,7 @@ impl LinedString {
 
   /// Turn an LSP [`Position`] into a usize index. [`Position`] is already zero-based,
   /// but LinedString.lines stores (1 + position) of the actual linebreak characters,
-  /// so lines[0] points to the start of line 1, lines[1] points to the start of line 2, etc.
+  /// so `lines[0]` points to the start of line 1, `lines[1]` points to the start of line 2, etc.
   /// with the start of line 0 just being s.0.
   ///
   /// [`Position`]: ../../lsp_types/struct.Position.html

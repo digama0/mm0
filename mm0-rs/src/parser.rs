@@ -269,7 +269,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  /// Attempt to parse an `ident`. This is the same as [`ident_()`], except that `_` is not accepted.
+  /// Attempt to parse an `ident`. This is the same as [`ident_`], except that `_` is not accepted.
   /// On success, advances past the ident and any trailing whitespace.
   ///
   /// [`ident_`]: struct.Parser.html#method.ident_
@@ -335,7 +335,7 @@ impl<'a> Parser<'a> {
       let sort = self.ident_err()?;
       let mut deps = Vec::new();
       while let Some(x) = self.ident() {deps.push(x)}
-      Ok(Type::DepType(DepType {sort, deps}))
+      Ok(Type::DepType(DepType {sort, deps: deps.into()}))
     }
   }
 

@@ -1029,7 +1029,7 @@ make_builtins! { self, sp1, sp2, args,
       Some(s) => (try1!(args[0].as_atom().ok_or("expected an atom")), s)
     };
     let sort = try1!(s.as_atom().and_then(|s| self.data[s].sort).ok_or("expected a sort"));
-    self.lc.vars.insert(x, (true, InferSort::Bound {sort}));
+    self.lc.vars.insert(x, (true, InferSort::Bound(sort)));
     LispVal::atom(x)
   },
   SetReporting: AtLeast(1) => {

@@ -229,7 +229,7 @@ impl LispNodeHash for ExprHash {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Var(i),
         None => match nh.lc.vars.get(&a) {
-          Some(&(true, InferSort::Bound {sort})) => ExprHash::Dummy(a, sort),
+          Some(&(true, InferSort::Bound(sort))) => ExprHash::Dummy(a, sort),
           _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
         }
       },
@@ -407,7 +407,7 @@ impl LispNodeHash for ProofHash {
         None => match nh.lc.get_proof(a) {
           Some((_, _, p)) => return Ok(Err(de.dedup(nh, p)?)),
           None => match nh.lc.vars.get(&a) {
-            Some(&(true, InferSort::Bound {sort})) => ProofHash::Dummy(a, sort),
+            Some(&(true, InferSort::Bound(sort))) => ProofHash::Dummy(a, sort),
             _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
           }
         }

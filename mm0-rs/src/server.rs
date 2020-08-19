@@ -470,10 +470,10 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
       &ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
       &ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
       &ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
-        Some((_, InferSort::Bound {sort})) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
-        Some((_, InferSort::Reg {sort, deps})) => {
+        Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
+        Some((_, InferSort::Reg(sort, deps))) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
-          for &a in deps {s += " "; s += &env.data[a].name}
+          for &a in &**deps {s += " "; s += &env.data[a].name}
           s + ")"
         }
         _ => return None,

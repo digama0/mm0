@@ -495,8 +495,8 @@ impl Elaborator {
             self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
             if let Some(is) = if empty {self.lc.vars.get(&a)} else {None} {
               let (sort, bd) = match is.1 {
-                InferSort::Bound {sort} => (sort, true),
-                InferSort::Reg {sort, ..} => (sort, false),
+                InferSort::Bound(sort) => (sort, true),
+                InferSort::Reg(sort, _) => (sort, false),
                 InferSort::Unknown {..} => unreachable!(),
               };
               RState::Ret(self.coerce_term(sp, tgt, sort, bd, head)?)
@@ -504,7 +504,7 @@ impl Elaborator {
               RState::RefineApp {sp2, tgt, t, u, args: vec![head]}
             } else if let Some(s) = tgt.sort().filter(|_| empty) {
               let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp, "bad sort"))?;
-              self.lc.vars.insert(a, (true, InferSort::Bound {sort}));
+              self.lc.vars.insert(a, (true, InferSort::Bound(sort)));
               RState::Ret(head)
             } else {
               return Err(ElabError::new_e(sp, format!("unknown term '{}'", self.data[a].name)))

@@ -1,6 +1,6 @@
 //! The [`Environment`] contains all elaborated proof data, as well as the lisp global context.
 //!
-//! [`Environment`]: struct.Environment.html
+//! [`Environment`]: environment/struct.Environment.html
 
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::{concat, stringify};
@@ -1162,7 +1162,7 @@ impl Environment {
   /// Convert an `ArcString` to an `AtomID`. This version of [`get_atom`] avoids the string clone
   /// in the case that the atom is new.
   ///
-  /// [`get_atom`]: struct.Environment.html#method.get_atom
+  /// [`get_atom`]: environment/struct.Environment.html#method.get_atom
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
     let ctx = &mut self.data;
     *self.atoms.entry(s.clone()).or_insert_with(move ||

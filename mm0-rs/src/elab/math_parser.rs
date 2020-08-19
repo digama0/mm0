@@ -18,15 +18,39 @@ use crate::elab::spans::Spans;
 use crate::util::*;
 use crate::elab::environment::*;
 
+/// A parsed math expression (quoted expression). This is like [`SExpr`] but it
+/// has a much simpler grammar.
+///
+/// [`SExpr`]: ../../parser/ast/struct.SExpr.html
 #[derive(Debug)]
 pub struct QExpr {
+  /// The span of the expression.
   pub span: Span,
+  /// The kind of expression, together with its associated data.
   pub k: QExprKind,
 }
 #[derive(Debug)]
+/// A math expression like `$ 2 + foo (x <> y) z $` is parsed by the math parser
+/// into a representation such as `'(add (two (foo (pair x y) z)))`, and these
+/// are mostly interchangeable. The `QExpr` type is slightly different from
+/// `SExpr` because we cannot immediately resolve some aspects like whether a
+/// bare name like `x` refers to a local variable or a constant or term
+/// constructor.
 pub enum QExprKind {
+  /// An identifier or n-ary application `foo`. (We can't tell at this stage
+  /// of processing whether it is a hypothesis or a constant term, which have
+  /// elaborated representations `foo` and `(foo)` respectively.) This
+  /// is created by basic prefix applications like `foo a b c`
+  /// where `foo` isn't a notation.
   IdentApp(Span, Box<[QExpr]>),
+  /// An application of a known term to the appropriate number of arguments.
+  /// This is created by notations like `x + y` - since we resolve `+` to
+  /// the `add` term constructor, we know that it is a term constructor and
+  /// we have ensured it has the right number of arguments.
   App(Span, TermID, Box<[QExpr]>),
+  /// An unquotation `,e`. Here `e` can be any lisp expression, and its
+  /// interpretation depends on whether the formula is being evaluated or
+  /// is being used as a pattern.
   Unquote(SExpr),
 }
 
@@ -50,6 +74,10 @@ impl EnvDisplay for QExpr {
 }
 
 impl Elaborator {
+  /// Parse a [`Formula`] object into a [`QExpr`].
+  ///
+  /// [`Formula`]: ../parser/ast/struct.Formula.html
+  /// [`QExpr`]: math_parser/struct.QExpr.html
   pub fn parse_formula(&mut self, f: Formula) -> Result<QExpr, ElabError> {
     let mut p = MathParser {
       pe: &self.env.pe,
@@ -73,6 +101,9 @@ impl Elaborator {
   }
 }
 
+/// The precedence of application, `1024`. This determines whether
+/// `f x + y` is interpreted as `f (x + y)` or `(f x) + y`,
+/// by comparing the precedence of `+` to `APP_PREC`.
 pub const APP_PREC: Prec = Prec::Prec(1024);
 
 struct MathParser<'a> {

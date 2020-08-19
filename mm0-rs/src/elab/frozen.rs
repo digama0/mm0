@@ -120,20 +120,20 @@ impl FrozenAtomData {
   pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
 }
 
-/// A wrapper around a [`LispVal`](../environment/struct.LispVal.html) that is frozen.
+/// A wrapper around a [`LispVal`](../lisp/struct.LispVal.html) that is frozen.
 #[derive(Debug)]
 pub struct FrozenLispVal(LispVal);
 
-/// A wrapper around a [`LispRef`](../environment/struct.LispRef.html) that is frozen.
+/// A wrapper around a [`LispRef`](../lisp/struct.LispRef.html) that is frozen.
 #[derive(Debug)]
 pub struct FrozenLispRef(LispRef);
 
-/// A wrapper around a [`Proc`](../environment/struct.Proc.html) that is frozen.
+/// A wrapper around a [`Proc`](../lisp/struct.Proc.html) that is frozen.
 #[derive(Debug)]
 pub struct FrozenProc(Proc);
 
 __mk_lisp_kind! {
-  /// A wrapper around a [`LispKind`](../environment/struct.LispKind.html) that is frozen.
+  /// A wrapper around a [`LispKind`](../lisp/struct.LispKind.html) that is frozen.
   FrozenLispKind, FrozenLispVal, FrozenLispRef, FrozenProc
 }
 

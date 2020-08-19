@@ -236,6 +236,7 @@ impl ParseError {
 /// [`AST`]: ../parser/ast/struct.AST.html
 /// [`Elaborator::as_fut`]: ../elab/struct.Elaborator.html#method.as_fut
 /// [`elaborate_and_send`]: fn.elaborate_and_send.html
+/// [`POOL`]: struct.POOL.html
 async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
   let (path, file) = VFS_.get_or_insert(path)?;
   {

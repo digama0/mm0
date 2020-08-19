@@ -202,7 +202,7 @@ pub struct DepType {
   /// The span of the sort part. That is, `"wff"` in `wff x y`.
   pub sort: Span,
   /// The span of the list of dependencies. That is, `["x", "y"]` in `wff x y`.
-  pub deps: Vec<Span>,
+  pub deps: Box<[Span]>,
 }
 
 impl DepType {
@@ -486,6 +486,9 @@ impl EnvDisplay for SExpr {
 pub struct Decl {
   /// The declaration modifiers: [`abstract`] or [`local`] for `def`,
   /// and [`pub`] for `theorem`.
+  /// [`abstract`]: struct.Modifiers.html#associatedconstant.ABSTRACT
+  /// [`local`]: struct.Modifiers.html#associatedconstant.LOCAL
+  /// [`pub`]: struct.Modifiers.html#associatedconstant.PUB
   pub mods: Modifiers,
   /// The declaration kind: `axiom`, `term`, `def`, `theorem`.
   pub k: DeclKind,
