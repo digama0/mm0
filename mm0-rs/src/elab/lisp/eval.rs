@@ -20,7 +20,7 @@ use super::super::{Result, Elaborator,
   refine::{RStack, RState, RefineResult}};
 use super::*;
 use super::parser::{IR, Branch, Pattern};
-use super::super::local_context::{InferSort, AwaitingProof, ThmVal, try_get_span};
+use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
 use super::super::environment::{ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
@@ -78,7 +78,7 @@ impl<'a> EnvDisplay for Stack<'a> {
         fe.to(e), fe.to(bs.as_slice())),
       Stack::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{} _",
         fe.to(e), fe.to(&**us), fe.to(es)),
-      Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.t.atom)),
+      Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.atom())),
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
       &Stack::Focus(_, cl, ref es) => write!(f, "(focus {} _)\n  ->{}", cl, fe.to(es)),
@@ -665,11 +665,14 @@ impl<'a> Evaluator<'a> {
   }
 
   fn add_thm(&mut self, fsp: FileSpan, args: &[LispVal]) -> Result<State<'a>> {
-    Ok(if let Some((ap, proc)) = self.elab.add_thm(fsp.clone(), args)? {
-      let sp = try_get_span(&fsp, &proc);
-      self.stack.push(Stack::AddThmProc(fsp, Box::new(ap)));
-      State::App(sp, sp, proc, vec![], [].iter())
-    } else {State::Ret(LispVal::undef())})
+    Ok(match self.elab.add_thm(fsp.clone(), args)? {
+      Ok(()) => State::Ret(LispVal::undef()),
+      Err((ap, proc)) => {
+        let sp = try_get_span(&fsp, &proc);
+        self.stack.push(Stack::AddThmProc(fsp, Box::new(ap)));
+        State::App(sp, sp, proc, vec![], [].iter())
+      }
+    })
   }
 }
 
@@ -1233,9 +1236,7 @@ impl<'a> Evaluator<'a> {
             State::MapProc(sp1, sp2, f, us, vec)
           }
           Some(Stack::AddThmProc(fsp, ap)) => {
-            let AwaitingProof {t, de, var_map, lc, is} = *ap;
-            self.finish_add_thm(fsp, t,
-              Some(Some(ThmVal {de, var_map, lc: Some(lc), is, proof: ret})))?;
+            ap.finish(self, fsp, ret)?;
             State::Ret(LispVal::undef())
           }
           Some(Stack::Refines(sp, Some(_), it)) if !ret.is_def() => State::Refines(sp, it),
