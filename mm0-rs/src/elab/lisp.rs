@@ -1060,6 +1060,9 @@ impl From<LispVal> for Uncons {
 }
 
 impl Uncons {
+  /// Create an empty `Uncons`.
+  pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
+
   /// Returns true if this is a proper list of length `n`.
   pub fn exactly(&self, n: usize) -> bool {
     match self {
