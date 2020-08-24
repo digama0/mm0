@@ -728,7 +728,7 @@ impl Elaborator {
               let mut de = Dedup::new(&args);
               let nh = NodeHasher::new(&self.lc, self.format_env(), self.fspan(sp));
               let i = de.dedup(&nh, &val)?;
-              let Builder {mut ids, heap} = Builder::from(&de);
+              let (mut ids, heap) = build(&de);
               Expr {heap, head: ids[i].take()}
             };
             match ret {
@@ -808,7 +808,7 @@ impl Elaborator {
         }
         let ir = de.dedup(&nh, &eret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
-        let Builder {mut ids, heap} = Builder::from(&de);
+        let (mut ids, heap) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
         let proof = d.val.as_ref().map(|e| {
@@ -833,7 +833,7 @@ impl Elaborator {
               if error {return Ok(None)}
               let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
               let ip = de.dedup(&nh, &g)?;
-              let Builder {mut ids, heap} = Builder::from(&de);
+              let (mut ids, heap) = build(&de);
               let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
               let head = ids[ip].take();
               Ok(Some(Proof {heap, hyps, head}))
@@ -1029,7 +1029,7 @@ impl Elaborator {
         let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
         let i = de.dedup(&nh, val)?;
-        let Builder {mut ids, heap} = Builder::from(&de);
+        let (mut ids, heap) = build(&de);
         Ok(Some(Expr {heap, head: ids[i].take()}))
       })().unwrap_or_else(|e| {
         self.report(ElabError::new_e(e.pos,
@@ -1083,7 +1083,7 @@ impl Elaborator {
       }
     }
     let ir = de.dedup(&nh, ret)?;
-    let Builder {mut ids, heap} = Builder::from(&de);
+    let (mut ids, heap) = build(&de);
     let hyps = is.iter().map(|&(a, i, _)| {
       (a, ids[i].take())
     }).collect();
@@ -1132,7 +1132,7 @@ impl Elaborator {
         dummies(fe, &fsp, lc, &ds)?;
         let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
         let ip = de.dedup(&nh, &pf)?;
-        let Builder {mut ids, heap} = Builder::from(&de);
+        let (mut ids, heap) = build(&de);
         let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
         let head = ids[ip].take();
         Ok(Some(Proof {heap, hyps, head}))

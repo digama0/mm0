@@ -4,7 +4,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use crate::elab::{ElabError, Result,
   local_context::MAX_BOUND_VARS,
   environment::{Term, Thm, AtomID, SortID, Environment, Modifiers, Type, Expr, Proof},
-  proof::{IDedup, NodeHash, ExprHash, ProofHash, Builder}};
+  proof::{IDedup, NodeHash, ExprHash, ProofHash, build}};
 use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
 use crate::lined_string::LinedString;
@@ -140,7 +140,7 @@ pub struct Dedup<H: NodeHash> {
 
 impl<H: NodeHash> Dedup<H> {
   pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
-    let vec: Vec<_> = (0..args.len()).map(|i| (Rc::new(H::VAR(i)), true)).collect();
+    let vec: Vec<_> = (0..args.len()).map(|i| (Rc::new(H::REF(i)), true)).collect();
     Dedup {
       map: vec.iter().enumerate().map(|(i, r)| (r.0.clone(), i)).collect(),
       vec,
@@ -178,6 +178,11 @@ impl<H: NodeHash> Dedup<H> {
   }
 }
 
+impl<H: NodeHash> std::ops::Index<usize> for Dedup<H> {
+  type Output = Rc<H>;
+  fn index(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
+}
+
 impl<H: NodeHash> IDedup<H> for Dedup<H> {
   fn add_direct(&mut self, v: H) -> usize { self.add(v) }
 
@@ -185,8 +190,6 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
     self.vec[n].1 = true;
     n
   }
-
-  fn get(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
 }
 
 #[derive(Debug)]
@@ -297,7 +300,7 @@ impl<'a> Importer<'a> {
           self.dummies(&mut vars)?;
           let mut de = Dedup::new(&args);
           let i = self.expr(&mut de, &vars)?;
-          let Builder {mut ids, heap} = Builder::from(&de);
+          let (mut ids, heap) = build(&de);
           Some(Some(Expr {heap, head: ids[i].take()}))
         };
         let end = self.close_err()?;
@@ -329,7 +332,7 @@ impl<'a> Importer<'a> {
           }
         }
         let ir = self.expr(&mut de, &vars)?;
-        let Builder {mut ids, heap} = Builder::from(&de);
+        let (mut ids, heap) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
         let proof = if let DeclKind::Axiom = dk {
@@ -347,7 +350,7 @@ impl<'a> Importer<'a> {
             }
           }
           let ip = self.proof(&mut de, &vars, &mut proofs, Expecting::Proof)?;
-          let Builder {mut ids, heap} = Builder::from(&de);
+          let (mut ids, heap) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
           let head = ids[ip].take();
           Some(Some(Proof {heap, hyps, head}))
@@ -376,7 +379,7 @@ impl<'a> Importer<'a> {
     } else {
       let a = self.ident_atom_err()?;
       match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
-        VarKind::Var(i) => ExprHash::Var(i),
+        VarKind::Var(i) => ExprHash::Ref(i),
         VarKind::Dummy(s) => ExprHash::Dummy(a, s),
       }
     };
@@ -387,7 +390,7 @@ impl<'a> Importer<'a> {
     vars: &HashMap<AtomID, VarKind>,
     proofs: &mut HashMap<AtomID, usize>,
   ) -> Result<usize> {
-    self.proof(de, vars, proofs, Expecting::Conv).map(|i| ProofHash::as_conv(i, de))
+    self.proof(de, vars, proofs, Expecting::Conv).map(|i| ProofHash::as_conv(de, i))
   }
 
   fn proof(&mut self, de: &mut Dedup<ProofHash>,
@@ -456,14 +459,14 @@ impl<'a> Importer<'a> {
           for (i, &n) in ns.iter().enumerate() { heap[i] = Some(n) }
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Proof)?)}
           let td = &self.env.thms[t];
-          let rhs = ProofHash::subst(de, &self.env, &td.heap, &mut heap, &td.ret);
+          let rhs = ProofHash::subst(de, &td.heap, &mut heap, &td.ret);
           ProofHash::Thm(t, ns.into(), rhs)
         } else {
           let tid = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;
           let mut ns = vec![];
           while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ty)?)}
           if ns.iter().any(|&i| ProofHash::is_conv(de, i)) {
-            for i in &mut ns {*i = ProofHash::as_conv(*i, de)}
+            for i in &mut ns {*i = ProofHash::as_conv(de, *i)}
             ProofHash::Cong(tid, ns.into())
           } else {
             ProofHash::Term(tid, ns.into())
@@ -476,7 +479,7 @@ impl<'a> Importer<'a> {
         return Ok(de.reuse(*proofs.get(&a).ok_or_else(|| self.err("unknown subproof".into()))?))
       }
       match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
-        VarKind::Var(i) => ProofHash::Var(i),
+        VarKind::Var(i) => ProofHash::Ref(i),
         VarKind::Dummy(s) => ProofHash::Dummy(a, s),
       }
     };
