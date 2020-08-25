@@ -23,6 +23,8 @@ use super::ParseError;
 bitflags! {
   /// Visibility and sort modifiers for Sort statements and Declarations.
   pub struct Modifiers: u8 {
+    // Note: These particular values are important because they are used in the MMB format.
+
     /// The `pure` sort modifier, used to indicate that
     /// term constructors can not target this sort.
     const PURE = 1;

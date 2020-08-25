@@ -24,7 +24,7 @@ use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::mmu::import::elab as mmu_elab;
-use crate::elab::{ElabError, FrozenElaborator, FrozenEnv,
+use crate::elab::{ElabError, elaborate as elab_elaborate, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
@@ -151,9 +151,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     let (errors, env) = mmu_elab(path.clone(), &ast.source);
     (vec![], errors, FrozenEnv::new(env))
   } else {
-    let elab = FrozenElaborator::new(
-      ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone());
-    elab.elaborate(
+    elab_elaborate(
+      ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
       |path| {
         let path = vfs.get_or_insert(path)?.0;

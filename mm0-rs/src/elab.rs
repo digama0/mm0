@@ -20,6 +20,7 @@ pub mod proof;
 
 use std::ops::{Deref, DerefMut};
 use std::mem;
+use std::result::Result as StdResult;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Instant, Duration};
 use std::path::PathBuf;
@@ -101,7 +102,7 @@ pub struct ElabError {
 }
 
 /// The main result type used by functions in the elaborator.
-pub type Result<T> = std::result::Result<T, ElabError>;
+pub type Result<T> = StdResult<T, ElabError>;
 
 impl ElabError {
 
@@ -506,130 +507,125 @@ impl Elaborator {
   }
 }
 
-#[derive(Debug)]
-pub struct FrozenElaborator(Elaborator);
-unsafe impl Send for FrozenElaborator {}
+/// Creates a future to poll for the completed environment, given an import resolver.
+///
+/// # Parameters
+///
+/// - `ast`, `path`, `mm0_mode`, `cancel`: Used to construct the inner `Elaborator`
+///   (see [`Elaborator::new`]).
+///
+/// - `_old`: The last successful parse of the same file, used for incremental elaboration.
+///   A value of `Some((idx, errs, env))` means that the new file first differs from the
+///   old one at `idx`, and the last parse produced environment `env` with errors `errs`.
+///
+/// - `mk`: A function which is called when an `import` is encountered, with the [`FileRef`] of
+///   the file being imported. It sets up a channel and passes the [`Receiver`] end here,
+///   to transfer an [`Environment`] containing the elaborated theorems, as well as any
+///   extra data `T`, which is collected and passed through the function.
+///
+/// # Returns
+///
+/// A [`Future`] which returns `(toks, errs, env)` with
+///
+/// - `toks`: The accumulated `T` values passed from `mk` (in the order that `import` statements
+///   appeared in the file)
+/// - `errs`: The elaboration errors found
+/// - `env`: The final environment
+///
+/// If elaboration of an individual statement fails, the error is pushed and then elaboration
+/// continues at the next statement, so the overall elaboration process cannot fail and an
+/// environment is always produced.
+///
+/// [`Elaborator::new`]: struct.Elaborator.html#method.new
+/// [`FileRef`]: ../util/struct.FileRef.html
+/// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
+/// [`Environment`]: environment/struct.Environment.html
+/// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
+pub fn elaborate<T>(
+  ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>,
+  _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
+  mut mk: impl FnMut(FileRef) -> StdResult<Receiver<(T, FrozenEnv)>, BoxError>
+) -> impl Future<Output=(Vec<T>, Vec<ElabError>, FrozenEnv)> {
 
-impl FrozenElaborator {
-  /// Creates a new `FrozenElaborator` from a parsed [`AST`].
-  pub fn new(ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>) -> FrozenElaborator {
-    FrozenElaborator(Elaborator::new(ast, path, mm0_mode, cancel))
+  type ImportMap<D> = HashMap<Span, (Option<FileRef>, D)>;
+  #[derive(Debug)]
+  struct FrozenElaborator(Elaborator);
+  unsafe impl Send for FrozenElaborator {}
+
+  enum UnfinishedStmt<T> {
+    None,
+    Import(Span, Receiver<(T, FrozenEnv)>),
   }
 
-  /// Creates a future to poll for the completed environment, given an import resolver.
-  ///
-  /// # Parameters
-  ///
-  /// - `_old`: The last successful parse of the same file, used for incremental elaboration.
-  ///   A value of `Some((idx, errs, env))` means that the new file first differs from the
-  ///   old one at `idx`, and the last parse produced environment `env` with errors `errs`.
-  ///
-  /// - `mk`: A function which is called when an `import` is encountered, with the [`FileRef`] of
-  ///   the file being imported. It sets up a channel and passes the [`Receiver`] end here,
-  ///   to transfer an [`Environment`] containing the elaborated theorems, as well as any
-  ///   extra data `T`, which is collected and passed through the function.
-  ///
-  /// # Returns
-  ///
-  /// A [`Future`] which returns `(toks, errs, env)` with
-  ///
-  /// - `toks`: The accumulated `T` values passed from `mk` (in the order that `import` statements
-  ///   appeared in the file)
-  /// - `errs`: The elaboration errors found
-  /// - `env`: The final environment
-  ///
-  /// If elaboration of an individual statement fails, the error is pushed and then elaboration
-  /// continues at the next statement, so the overall elaboration process cannot fail and an
-  /// environment is always produced.
-  ///
-  /// [`FileRef`]: ../util/struct.FileRef.html
-  /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
-  /// [`Environment`]: environment/struct.Environment.html
-  /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
-  pub fn elaborate<T>(self,
-    _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
-    mut mk: impl FnMut(FileRef) ->
-      std::result::Result<Receiver<(T, FrozenEnv)>, BoxError>
-  ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, FrozenEnv)> {
+  struct ElabFutureInner<T> {
+    elab: FrozenElaborator,
+    toks: Vec<T>,
+    recv: ImportMap<Receiver<(T, FrozenEnv)>>,
+    idx: usize,
+    progress: UnfinishedStmt<T>
+  }
 
-    type ImportMap<D> = HashMap<Span, (Option<FileRef>, D)>;
+  struct ElabFuture<T>(Option<ElabFutureInner<T>>);
 
-    enum UnfinishedStmt<T> {
-      None,
-      Import(Span, Receiver<(T, FrozenEnv)>),
-    }
-
-    struct ElabFutureInner<T> {
-      elab: FrozenElaborator,
-      toks: Vec<T>,
-      recv: ImportMap<Receiver<(T, FrozenEnv)>>,
-      idx: usize,
-      progress: UnfinishedStmt<T>
-    }
-
-    struct ElabFuture<T>(Option<ElabFutureInner<T>>);
-
-    impl<T> Future for ElabFuture<T> {
-      type Output = (Vec<T>, Vec<ElabError>, FrozenEnv);
-      fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = &mut unsafe { self.get_unchecked_mut() }.0;
-        let ElabFutureInner {elab: FrozenElaborator(elab), toks, recv, idx, progress} =
-          this.as_mut().expect("poll called after Ready");
-        'l: loop {
-          match progress {
-            UnfinishedStmt::None => {},
-            UnfinishedStmt::Import(sp, other) => {
-              if let Ok((t, env)) = ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
-                toks.push(t);
-                let r = elab.env.merge(&env, *sp, &mut elab.errors);
-                elab.catch(r);
-              }
-              *idx += 1;
+  impl<T> Future for ElabFuture<T> {
+    type Output = (Vec<T>, Vec<ElabError>, FrozenEnv);
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+      let this = &mut unsafe { self.get_unchecked_mut() }.0;
+      let ElabFutureInner {elab: FrozenElaborator(elab), toks, recv, idx, progress} =
+        this.as_mut().expect("poll called after Ready");
+      'l: loop {
+        match progress {
+          UnfinishedStmt::None => {},
+          UnfinishedStmt::Import(sp, other) => {
+            if let Ok((t, env)) = ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
+              toks.push(t);
+              let r = elab.env.merge(&env, *sp, &mut elab.errors);
+              elab.catch(r);
             }
-          }
-          let ast = elab.ast.clone();
-          while let Some(s) = ast.stmts.get(*idx) {
-            if elab.cancel.load(Ordering::Relaxed) {break}
-            match elab.elab_stmt(s, s.span) {
-              Ok(ElabStmt::Ok) => {}
-              Ok(ElabStmt::Import(sp)) => {
-                let (file, recv) = recv.remove(&sp).unwrap();
-                if let Some(file) = file {
-                  elab.spans.insert(sp, ObjectKind::Import(file));
-                }
-                *progress = UnfinishedStmt::Import(sp, recv);
-                elab.push_spans();
-                continue 'l
-              }
-              Err(e) => elab.report(e)
-            }
-            elab.push_spans();
             *idx += 1;
           }
-          let ElabFutureInner {elab: FrozenElaborator(elab), toks, ..} = this.take().unwrap();
-          return Poll::Ready((toks, elab.errors, FrozenEnv::new(elab.env)))
         }
+        let ast = elab.ast.clone();
+        while let Some(s) = ast.stmts.get(*idx) {
+          if elab.cancel.load(Ordering::Relaxed) {break}
+          match elab.elab_stmt(s, s.span) {
+            Ok(ElabStmt::Ok) => {}
+            Ok(ElabStmt::Import(sp)) => {
+              let (file, recv) = recv.remove(&sp).unwrap();
+              if let Some(file) = file {
+                elab.spans.insert(sp, ObjectKind::Import(file));
+              }
+              *progress = UnfinishedStmt::Import(sp, recv);
+              elab.push_spans();
+              continue 'l
+            }
+            Err(e) => elab.report(e)
+          }
+          elab.push_spans();
+          *idx += 1;
+        }
+        let ElabFutureInner {elab: FrozenElaborator(elab), toks, ..} = this.take().unwrap();
+        return Poll::Ready((toks, elab.errors, FrozenEnv::new(elab.env)))
       }
     }
-
-    let mut recv = HashMap::new();
-    let FrozenElaborator(mut elab) = self;
-    let ast = elab.ast.clone();
-    for &(sp, ref f) in &ast.imports {
-      let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
-      (|| -> Result<_> {
-        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
-        let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
-        recv.insert(sp, (Some(r), tok));
-        Ok(())
-      })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp, (None, channel().1)); });
-    }
-    ElabFuture(Some(ElabFutureInner {
-      elab: FrozenElaborator(elab),
-      toks: vec![],
-      recv,
-      idx: 0,
-      progress: UnfinishedStmt::None,
-    }))
   }
+
+  let mut recv = HashMap::new();
+  let mut elab = Elaborator::new(ast.clone(), path, mm0_mode, cancel);
+  for &(sp, ref f) in &ast.imports {
+    let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
+    (|| -> Result<_> {
+      let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
+      let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
+      recv.insert(sp, (Some(r), tok));
+      Ok(())
+    })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp, (None, channel().1)); });
+  }
+  ElabFuture(Some(ElabFutureInner {
+    elab: FrozenElaborator(elab),
+    toks: vec![],
+    recv,
+    idx: 0,
+    progress: UnfinishedStmt::None,
+  }))
 }

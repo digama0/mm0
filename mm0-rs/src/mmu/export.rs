@@ -224,7 +224,8 @@ impl FrozenEnv {
     (s.w, (s.i, s.l))
   }
 
-  pub fn export_mmu(&self, w: &mut impl Write) -> io::Result<()> {
+  pub fn export_mmu(&self, mut w: impl Write) -> io::Result<()> {
+    let w = &mut w;
     for &s in self.stmts() {
       match s {
         StmtTrace::Sort(a) => {

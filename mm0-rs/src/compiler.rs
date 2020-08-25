@@ -22,7 +22,7 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use typed_arena::Arena;
 use clap::ArgMatches;
-use crate::elab::{ElabError, ElabErrorKind, FrozenElaborator, FrozenEnv};
+use crate::elab::{ElabError, ElabErrorKind, elaborate as elab_elaborate, FrozenEnv};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmu::import::elab as mmu_elab;
@@ -268,15 +268,16 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     }
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
-    let elab = FrozenElaborator::new(
-      ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default());
-    let (_, errors, env) = elab.elaborate(None, |path| {
-      let path = VFS_.get_or_insert(path)?.0;
-      let (send, recv) = channel();
-      POOL.spawn_ok(elaborate_and_send(path.clone(), send));
-      deps.push(path);
-      Ok(recv)
-    }).await;
+    let (_, errors, env) = elab_elaborate(
+      ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default(),
+      None,
+      |path| {
+        let path = VFS_.get_or_insert(path)?.0;
+        let (send, recv) = channel();
+        POOL.spawn_ok(elaborate_and_send(path.clone(), send));
+        deps.push(path);
+        Ok(recv)
+      }).await;
     (errors, env)
   };
   if !errors.is_empty() {
@@ -339,15 +340,14 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
   let env = block_on(elaborate(path.clone()))?;
   if let Some(out) = args.value_of("OUTPUT") {
-    let bin = !out.ends_with(".mmu");
     use {fs::File, io::BufWriter};
-    let mut w = BufWriter::new(File::create(out)?);
-    if bin {
-      let mut ex = MMBExporter::new(path, &file.text, &env, &mut w);
+    let w = BufWriter::new(File::create(out)?);
+    if out.ends_with(".mmu") {
+      env.export_mmu(w)?;
+    } else {
+      let mut ex = MMBExporter::new(path, &file.text, &env, w);
       ex.run(true)?;
       ex.finish()?;
-    } else {
-      env.export_mmu(&mut w)?;
     }
   }
   Ok(())

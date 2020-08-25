@@ -240,6 +240,19 @@ pub enum ProofNode {
   },
 }
 
+impl ProofNode {
+  /// Strip excess `Ref` nodes from a `ProofNode`.
+  pub fn deref<'a>(&'a self, heap: &'a [ProofNode]) -> &'a Self {
+    let mut e = self;
+    loop {
+      match *e {
+        ProofNode::Ref(i) if i < heap.len() => e = &heap[i],
+        _ => return e
+      }
+    }
+  }
+}
+
 impl From<&ExprNode> for ProofNode {
   fn from(e: &ExprNode) -> ProofNode {
     match *e {
@@ -251,6 +264,7 @@ impl From<&ExprNode> for ProofNode {
     }
   }
 }
+
 /// The `Proof` type stores proof term dags using a local context of proof nodes
 /// and a final proof. See [`ProofNode`] for explanation of the variants.
 ///

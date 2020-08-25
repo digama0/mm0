@@ -1,5 +1,6 @@
 //! MMB exporter, which produces `.mmb` binary proof files from an `Environment` object.
 use std::convert::TryInto;
+use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use crate::elab::environment::{
@@ -9,46 +10,81 @@ use crate::elab::FrozenEnv;
 use crate::util::FileRef;
 use crate::lined_string::LinedString;
 
-#[derive(Debug)]
-enum Value {
-  U32(u32),
-  U64(u64),
-  Box(Box<[u8]>),
+/// Constants used in the MMB specification.
+pub mod cmd {
+  /// `MM0B_MAGIC = "MM0B"`: Magic number signalling the MM0B format is in use.
+  pub const MM0B_MAGIC: [u8; 4] = *b"MM0B";
+  /// `MM0B_VERSION = 1`, maximum supported MMB version
+  pub const MM0B_VERSION: u8 = 1;
+
+  /// `DATA_8 = 0x40`, used as a command mask for an 8 bit data field
+  pub const DATA_8: u8  = 0x40;
+  /// `DATA_16 = 0x80`, used as a command mask for a 16 bit data field
+  pub const DATA_16: u8 = 0x80;
+  /// `DATA_32 = 0xC0`, used as a command mask for a 32 bit data field
+  pub const DATA_32: u8 = 0xC0;
+
+  /// `STMT_SORT = 0x04`, starts a `sort` declaration
+  pub const STMT_SORT: u8  = 0x04;
+  /// `STMT_AXIOM = 0x02`, starts an `axiom` declaration
+  pub const STMT_AXIOM: u8 = 0x02;
+  /// `STMT_TERM = 0x05`, starts a `term` declaration
+  pub const STMT_TERM: u8  = 0x05;
+  /// `STMT_DEF = 0x05`, starts a `def` declaration. (This is the same as
+  /// `STMT_TERM` because the actual indication of whether this is a
+  /// def is in the term header)
+  pub const STMT_DEF: u8   = 0x05;
+  /// `STMT_THM = 0x06`, starts a `theorem` declaration
+  pub const STMT_THM: u8   = 0x06;
+  /// `STMT_LOCAL = 0x08`, starts a `local` declaration
+  /// (a bit mask to be combined with `STMT_THM` or `STMT_DEF`)
+  pub const STMT_LOCAL: u8 = 0x08;
+
+  /// `PROOF_TERM = 0x10`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_TERM: u8      = 0x10;
+  /// `PROOF_TERM_SAVE = 0x11`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_TERM_SAVE: u8 = 0x11;
+  /// `PROOF_REF = 0x12`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_REF: u8       = 0x12;
+  /// `PROOF_DUMMY = 0x13`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_DUMMY: u8     = 0x13;
+  /// `PROOF_THM = 0x14`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_THM: u8       = 0x14;
+  /// `PROOF_THM_SAVE = 0x15`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_THM_SAVE: u8  = 0x15;
+  /// `PROOF_HYP = 0x16`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_HYP: u8       = 0x16;
+  /// `PROOF_CONV = 0x17`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_CONV: u8      = 0x17;
+  /// `PROOF_REFL = 0x18`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_REFL: u8      = 0x18;
+  /// `PROOF_SYMM = 0x19`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_SYMM: u8      = 0x19;
+  /// `PROOF_CONG = 0x1A`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_CONG: u8      = 0x1A;
+  /// `PROOF_UNFOLD = 0x1B`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_UNFOLD: u8    = 0x1B;
+  /// `PROOF_CONV_CUT = 0x1C`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_CONV_CUT: u8  = 0x1C;
+  /// `PROOF_CONV_REF = 0x1D`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_CONV_REF: u8  = 0x1D;
+  /// `PROOF_CONV_SAVE = 0x1E`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_CONV_SAVE: u8 = 0x1E;
+  /// `PROOF_SAVE = 0x1F`: See [`ProofCmd`](../enum.ProofCmd.html).
+  pub const PROOF_SAVE: u8      = 0x1F;
+
+  /// `UNIFY_TERM = 0x30`: See [`UnifyCmd`](../enum.UnifyCmd.html).
+  pub const UNIFY_TERM: u8      = 0x30;
+  /// `UNIFY_TERM_SAVE = 0x31`: See [`UnifyCmd`](../enum.UnifyCmd.html).
+  pub const UNIFY_TERM_SAVE: u8 = 0x31;
+  /// `UNIFY_REF = 0x32`: See [`UnifyCmd`](../enum.UnifyCmd.html).
+  pub const UNIFY_REF: u8       = 0x32;
+  /// `UNIFY_DUMMY = 0x33`: See [`UnifyCmd`](../enum.UnifyCmd.html).
+  pub const UNIFY_DUMMY: u8     = 0x33;
+  /// `UNIFY_HYP = 0x36`: See [`UnifyCmd`](../enum.UnifyCmd.html).
+  pub const UNIFY_HYP: u8       = 0x36;
 }
-
-const DATA_8: u8  = 0x40;
-const DATA_16: u8 = 0x80;
-const DATA_32: u8 = 0xC0;
-
-const STMT_SORT: u8  = 0x04;
-const STMT_AXIOM: u8 = 0x02;
-const STMT_TERM: u8  = 0x05;
-const STMT_DEF: u8   = 0x05;
-const STMT_THM: u8   = 0x06;
-const STMT_LOCAL: u8 = 0x08;
-
-const PROOF_TERM: u8      = 0x10;
-const PROOF_TERM_SAVE: u8 = 0x11;
-const PROOF_REF: u8       = 0x12;
-const PROOF_DUMMY: u8     = 0x13;
-const PROOF_THM: u8       = 0x14;
-const PROOF_THM_SAVE: u8  = 0x15;
-const PROOF_HYP: u8       = 0x16;
-const PROOF_CONV: u8      = 0x17;
-const PROOF_REFL: u8      = 0x18;
-const PROOF_SYMM: u8      = 0x19;
-const PROOF_CONG: u8      = 0x1A;
-const PROOF_UNFOLD: u8    = 0x1B;
-const PROOF_CONV_CUT: u8  = 0x1C;
-const PROOF_CONV_REF: u8  = 0x1D;
-const PROOF_CONV_SAVE: u8 = 0x1E;
-const PROOF_SAVE: u8      = 0x1F;
-
-const UNIFY_TERM: u8      = 0x30;
-const UNIFY_TERM_SAVE: u8 = 0x31;
-const UNIFY_REF: u8       = 0x32;
-const UNIFY_DUMMY: u8     = 0x33;
-const UNIFY_HYP: u8       = 0x36;
+use cmd::*;
 
 #[derive(Debug)]
 enum ProofCmd {
@@ -85,9 +121,13 @@ struct Reorder<T=u32> {
   idx: u32,
 }
 
-impl<T: Clone> Reorder<T> {
+impl<T> Reorder<T> {
   fn new(nargs: u32, len: usize, mut f: impl FnMut(u32) -> T) -> Reorder<T> {
-    let mut map: Box<[Option<T>]> = vec![None; len].into();
+    assert!(nargs as usize <= len);
+    let mut map = Vec::with_capacity(len);
+    map.extend((0..nargs).map(|i| Some(f(i))));
+    map.resize_with(len, Default::default);
+    let mut map: Box<[Option<T>]> = map.into();
     for i in 0..nargs {map[i as usize] = Some(f(i))}
     Reorder {map, idx: nargs}
   }
@@ -105,63 +145,132 @@ impl<'a> IndexHeader<'a> {
   fn thm(&mut self, i: ThmID) -> &mut [u8; 8] { &mut self.thms[i.0 as usize] }
 }
 
+/// The main exporter structure. This keeps track of the underlying writer,
+/// as well as tracking values that are written out of order.
 #[derive(Debug)]
-pub struct Exporter<'a, W: Write + Seek + ?Sized> {
+pub struct Exporter<'a, W: Write + Seek> {
+  /// The name of the input file. This is only used in the debugging data.
   file: FileRef,
+  /// The source text of the input file. This is only used in the debugging data.
   source: &'a LinedString,
+  /// The input environment.
   env: &'a FrozenEnv,
-  w: &'a mut W,
+  /// The underlying writer, which must support `Seek` because we write some parts
+  /// of the file out of order. The [`BigBuffer`] wrapper can be used to equip a
+  /// writer that doesn't support it with a `Seek` implementation.
+  ///
+  /// [`BigBuffer`]: struct.BigBuffer.html
+  w: W,
+  /// The current byte position of the writer.
   pos: u64,
+  /// The calculated reorder maps for terms encountered so far (see [`Reorder`]).
+  ///
+  /// [`Reorder`]: struct.Reorder.html
   term_reord: TermVec<Option<Reorder>>,
+  /// A list of "fixups", which are writes that have to occur in places other
+  /// than the current writer location. We buffer these to avoid too many seeks
+  /// of the underlying writer.
   fixups: Vec<(u64, Value)>,
 }
 
+/// A chunk of data that needs to be written out of order.
+#[derive(Debug)]
+enum Value {
+  /// A (little endian) 32 bit value
+  U32(u32),
+  /// A (little endian) 64 bit value
+  U64(u64),
+  /// An arbitrary length byte slice. (We could store everything like this but
+  /// the `U32` and `U64` cases are common and this avoids some allocation.)
+  Box(Box<[u8]>),
+}
+
+/// A type for a 32 bit fixup, representing a promise to write 32 bits at the stored
+/// location. It is generated by [`fixup32`](struct.Exporter.html#method.fixup32) method,
+/// and it is marked `#[must_use]` because it should be consumed by
+/// [`commit`](struct.Fixup32.html#method.commit), which requires fulfilling the promise.
 #[must_use] struct Fixup32(u64);
+
+/// A type for a 64 bit fixup, representing a promise to write 64 bits at the stored
+/// location. It is generated by [`fixup64`](struct.Exporter.html#method.fixup64) method,
+/// and it is marked `#[must_use]` because it should be consumed by
+/// [`commit`](struct.Fixup64.html#method.commit), which requires fulfilling the promise.
 #[must_use] struct Fixup64(u64);
+
+/// A type for an arbitrary size fixup, representing a promise to write some number of bytes
+/// bits at the given location. It is generated by
+/// [`fixup_large`](struct.Exporter.html#method.fixup_large) method,
+/// and it is marked `#[must_use]` because it should be consumed by
+/// [`commit`](struct.FixupLarge.html#method.commit), which requires fulfilling the promise.
 #[must_use] struct FixupLarge(u64, Box<[u8]>);
 
 impl Fixup32 {
-  fn commit_val<'a, W: Write + Seek + ?Sized>(self, e: &mut Exporter<'a, W>, val: u32) {
+  /// Write `val` to this fixup, closing it.
+  fn commit_val<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>, val: u32) {
     e.fixups.push((self.0, Value::U32(val)))
   }
-  fn commit<'a, W: Write + Seek + ?Sized>(self, e: &mut Exporter<'a, W>) {
+  /// Write the current position of the exporter to this fixup, closing it.
+  fn commit<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>) {
     let val = e.pos.try_into().unwrap();
     self.commit_val(e, val)
   }
 }
 
 impl Fixup64 {
-  fn commit_val<'a, W: Write + Seek + ?Sized>(self, e: &mut Exporter<'a, W>, val: u64) {
+  /// Write `val` to this fixup, closing it.
+  fn commit_val<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>, val: u64) {
     e.fixups.push((self.0, Value::U64(val)))
   }
-  fn commit<'a, W: Write + Seek + ?Sized>(self, e: &mut Exporter<'a, W>) {
+  /// Write the current position of the exporter to this fixup, closing it.
+  fn commit<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>) {
     let val = e.pos;
     self.commit_val(e, val)
   }
+  /// Drop the value, which has the effect of writing 0 to the original fixup.
+  #[inline] fn cancel(self) {}
+}
+
+impl std::ops::Deref for FixupLarge {
+  type Target = [u8];
+  fn deref(&self) -> &[u8] { &self.1 }
+}
+impl std::ops::DerefMut for FixupLarge {
+  fn deref_mut(&mut self) -> &mut [u8] { &mut self.1 }
 }
 
 impl FixupLarge {
-  fn commit<'a, W: Write + Seek + ?Sized>(self, e: &mut Exporter<'a, W>) {
+  /// Assume that the construction of the fixup is complete, and write the stored value.
+  fn commit<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>) {
     e.fixups.push((self.0, Value::Box(self.1)))
   }
 }
 
-impl<'a, W: Write + Seek + ?Sized> Write for Exporter<'a, W> {
+impl<'a, W: Write + Seek> Write for Exporter<'a, W> {
   fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
     self.write_all(buf)?;
     Ok(buf.len())
   }
   fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
     self.pos += buf.len() as u64;
-    self.w.write_all(buf)?;
-    Ok(())
+    self.w.write_all(buf)
   }
-  fn flush(&mut self) -> io::Result<()> {self.w.flush()}
+  fn flush(&mut self) -> io::Result<()> { self.w.flush() }
 }
 
+/// Encode the command `cmd` (one of the `STMT_*`, `PROOF_*` or `UNIFY_*` commands
+/// in this module, which are all 6 bit numbers) with the given `data` field
+/// according to the following scheme:
+///
+///   * `cmd | 0x00` for `data = 0`
+///   * `cmd | 0x40, data:u8` for 8 bit `data`
+///   * `cmd | 0x80, data:u16` for 16 bit `data`
+///   * `cmd | 0xC0, data:u32` for 32 bit `data`
+///
+/// where we select the shortest available encoding given the value of `data`.
 fn write_cmd(w: &mut impl Write, cmd: u8, data: u32) -> io::Result<()> {
-  if data == 0 {w.write_u8(cmd)}
-  else if let Ok(data) = data.try_into() {
+  if data == 0 {
+    w.write_u8(cmd)
+  } else if let Ok(data) = data.try_into() {
     w.write_u8(cmd | DATA_8)?;
     w.write_u8(data)
   } else if let Ok(data) = data.try_into() {
@@ -173,24 +282,32 @@ fn write_cmd(w: &mut impl Write, cmd: u8, data: u32) -> io::Result<()> {
   }
 }
 
-fn write_cmd_bytes(w: &mut impl Write, cmd: u8, vec: &[u8]) -> io::Result<()> {
-  if let Ok(data) = (vec.len() + 2).try_into() {
+/// This is like [`write_cmd`](fn.write_cmd.html), but it is followed by
+/// the byte array `buf`, and the initial `data` field is the length of the entire
+/// expression (the initial command byte, the `data` field, and the buffer).
+/// This can't be expressed with `write_cmd` directly because of the circular
+/// dependency where the value of `data` determines the size of the initial command,
+/// which affects the value of `data`.
+fn write_cmd_bytes(w: &mut impl Write, cmd: u8, buf: &[u8]) -> io::Result<()> {
+  if let Ok(data) = (buf.len() + 2).try_into() {
     w.write_u8(cmd | DATA_8)?;
     w.write_u8(data)?;
-    w.write_all(vec)
-  } else if let Ok(data) = (vec.len() + 3).try_into() {
+    w.write_all(buf)
+  } else if let Ok(data) = (buf.len() + 3).try_into() {
     w.write_u8(cmd | DATA_16)?;
     w.write_u16::<LE>(data)?;
-    w.write_all(vec)
+    w.write_all(buf)
   } else {
     w.write_u8(cmd | DATA_32)?;
-    w.write_u32::<LE>((vec.len() + 5).try_into().unwrap())?;
-    w.write_all(vec)
+    w.write_u32::<LE>((buf.len() + 5).try_into().unwrap())?;
+    w.write_all(buf)
   }
 }
 
 impl UnifyCmd {
-  fn write_to(self, w: &mut impl Write) -> io::Result<()> {
+  /// Serialize a `UnifyCmd` to the given writer. Uses the `UNIFY_*` commands in
+  /// [`mmb::export::cmd`](cmd/index.html).
+  #[inline] fn write_to(self, w: &mut impl Write) -> io::Result<()> {
     match self {
       UnifyCmd::Term(tid)     => write_cmd(w, UNIFY_TERM, tid.0),
       UnifyCmd::TermSave(tid) => write_cmd(w, UNIFY_TERM_SAVE, tid.0),
@@ -202,7 +319,9 @@ impl UnifyCmd {
 }
 
 impl ProofCmd {
-  fn write_to(self, w: &mut impl Write) -> io::Result<()> {
+  /// Serialize a `ProofCmd` to the given writer. Uses the `PROOF_*` commands in
+  /// [`mmb::export::cmd`](cmd/index.html).
+  #[inline] fn write_to(self, w: &mut impl Write) -> io::Result<()> {
     match self {
       ProofCmd::Term(tid)     => write_cmd(w, PROOF_TERM, tid.0),
       ProofCmd::TermSave(tid) => write_cmd(w, PROOF_TERM_SAVE, tid.0),
@@ -253,8 +372,44 @@ fn write_expr_proof(w: &mut impl Write,
   })
 }
 
-impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
-  pub fn new(file: FileRef, source: &'a LinedString, env: &'a FrozenEnv, w: &'a mut W) -> Self {
+/// A wrapper around a writer that implements `Write + Seek` by internally buffering
+/// all writes, writing to the underlying writer only once on `Drop`.
+#[derive(Debug)]
+pub struct BigBuffer<W: Write> {
+  buffer: io::Cursor<Vec<u8>>,
+  w: W,
+}
+
+impl<W: Write> BigBuffer<W> {
+  /// Creates a new buffer given an underlying writer.
+  pub fn new(w: W) -> Self { Self {buffer: Default::default(), w} }
+  /// Flushes the buffer to the underlying writer, consuming the result.
+  /// (The `Drop` implementation will also do this, but this allows us
+  /// to catch IO errors.)
+  pub fn finish(mut self) -> io::Result<()> {
+    self.w.write_all(&mem::take(self.buffer.get_mut()))
+  }
+}
+
+impl<W: Write> Write for BigBuffer<W> {
+  fn write(&mut self, buf: &[u8]) -> io::Result<usize> { self.buffer.write(buf) }
+  fn flush(&mut self) -> io::Result<()> { self.buffer.flush() }
+}
+
+impl<W: Write> Seek for BigBuffer<W> {
+  fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> { self.buffer.seek(pos) }
+}
+
+impl<W: Write> Drop for BigBuffer<W> {
+  fn drop(&mut self) {
+    self.w.write_all(self.buffer.get_ref()).unwrap()
+  }
+}
+
+impl<'a, W: Write + Seek> Exporter<'a, W> {
+  /// Construct a new `Exporter` from an input file `file` with text `source`,
+  /// a source environment containing proved theorems, and output writer `w`.
+  pub fn new(file: FileRef, source: &'a LinedString, env: &'a FrozenEnv, w: W) -> Self {
     Self {
       term_reord: TermVec(Vec::with_capacity(env.terms().len())),
       file, source, env, w, pos: 0, fixups: vec![]
@@ -283,7 +438,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   fn fixup_large(&mut self, size: usize) -> io::Result<FixupLarge> {
     let f = FixupLarge(self.pos, vec![0; size].into());
-    self.write_all(&f.1)?;
+    self.write_all(&f)?;
     Ok(f)
   }
 
@@ -296,10 +451,7 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
 
   #[inline]
   fn write_sort_deps(&mut self, bound: bool, sort: SortID, deps: u64) -> io::Result<()> {
-    self.write_u64(
-      if bound {1} else {0} << 63 |
-      (sort.0 as u64) << 56 |
-      deps)
+    self.write_u64((bound as u64) << 63 | (sort.0 as u64) << 56 | deps)
   }
 
   #[inline]
@@ -558,29 +710,32 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     self.write_index_entry(header, il, ir, map[lo])
   }
 
+  /// Perform the actual export. If `index` is true, also output the
+  /// (optional) debugging table to the file.
+  ///
+  /// This does not finalize all writes. [`finish`] should be called after this
+  /// to write the outstanding fixups.
   pub fn run(&mut self, index: bool) -> io::Result<()> {
-    self.write_all(b"MM0B")?; // magic
+    self.write_all(&MM0B_MAGIC)?; // magic
     let num_sorts = self.env.sorts().len();
-    if num_sorts > 128 {panic!("too many sorts (max 128)")}
-    self.write_u32(
-      1 | // version
-      ((num_sorts as u32) << 8) // num_sorts
-    )?; // two bytes reserved
-    self.write_u32(self.env.terms().len().try_into().unwrap())?; // num_terms
-    self.write_u32(self.env.thms().len().try_into().unwrap())?; // num_thms
+    assert!(num_sorts <= 128, "too many sorts (max 128)");
+    self.write_all(&[MM0B_VERSION, num_sorts as u8, 0, 0])?; // two bytes reserved
+    let num_terms = self.env.terms().len();
+    self.write_u32(num_terms.try_into().unwrap())?; // num_terms
+    let num_thms = self.env.thms().len();
+    self.write_u32(num_thms.try_into().unwrap())?; // num_thms
     let p_terms = self.fixup32()?;
     let p_thms = self.fixup32()?;
     let p_proof = self.fixup64()?;
     let p_index = self.fixup64()?;
-    self.write_all( // sort data
-      &self.env.sorts().iter().map(|s| {
-        // 1 = PURE, 2 = STRICT, 4 = PROVABLE, 8 = FREE
-        s.mods.bits()
-      }).collect::<Vec<u8>>())?;
 
+    // sort data
+    self.write_all(&self.env.sorts().iter().map(|s| s.mods.bits()).collect::<Vec<u8>>())?;
+
+    // term header
     self.align_to(8)?; p_terms.commit(self);
-    let mut term_header = self.fixup_large(self.env.terms().len() * 8)?;
-    for (head, t) in term_header.1.chunks_exact_mut(8).zip(&self.env.terms().0) {
+    let mut term_header = self.fixup_large(num_terms * 8)?;
+    for (head, t) in term_header.chunks_exact_mut(8).zip(&self.env.terms().0) {
       Self::write_term_header(head,
         t.args.len().try_into().expect("term has more than 65536 args"),
         t.ret.0,
@@ -588,21 +743,23 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         self.align_to(8)?.try_into().unwrap());
       self.write_binders(&t.args)?;
       self.write_sort_deps(false, t.ret.0, t.ret.1)?;
-      if let Some(val) = &t.val {
+      let reorder = if let Some(val) = &t.val {
         let Expr {heap, head} = val.as_ref().unwrap_or_else(||
           panic!("def {} missing value", self.env.data()[t.atom].name()));
         let mut reorder = Reorder::new(
           t.args.len().try_into().unwrap(), heap.len(), |i| i);
         self.write_expr_unify(heap, &mut reorder, head, &mut vec![])?;
         self.write_u8(0)?;
-        self.term_reord.push(Some(reorder));
-      } else { self.term_reord.push(None) }
+        Some(reorder)
+      } else { None };
+      self.term_reord.push(reorder)
     }
     term_header.commit(self);
 
+    // theorem header
     self.align_to(8)?; p_thms.commit(self);
-    let mut thm_header = self.fixup_large(self.env.thms().len() * 8)?;
-    for (head, t) in thm_header.1.chunks_exact_mut(8).zip(&self.env.thms().0) {
+    let mut thm_header = self.fixup_large(num_thms * 8)?;
+    for (head, t) in thm_header.chunks_exact_mut(8).zip(&self.env.thms().0) {
       Self::write_thm_header(head,
         t.args.len().try_into().expect("theorem has more than 65536 args"),
         self.align_to(8)?.try_into().unwrap());
@@ -619,16 +776,15 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
     }
     thm_header.commit(self);
 
+    // main body (proofs of theorems)
     p_proof.commit(self);
-    let mut vec = vec![];
-    let mut index_map = if index {
-      Vec::with_capacity(self.env.sorts().len() + self.env.terms().len() + self.env.thms().len())
-    } else {vec![]};
+    let vec = &mut vec![];
+    let mut index_map = Vec::with_capacity(if index {num_sorts + num_terms + num_thms} else {0});
     for &s in self.env.stmts() {
       match s {
         StmtTrace::Sort(_) => {
           if index {index_map.push((s, self.pos))}
-          write_cmd(self, STMT_SORT, 2)? // this takes 2 bytes
+          write_cmd_bytes(self, STMT_SORT, &[])?
         }
         StmtTrace::Decl(a) => {
           if index {index_map.push((s, self.pos))}
@@ -636,15 +792,15 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
             DeclKey::Term(t) => {
               let td = self.env.term(t);
               match &td.val {
-                None => write_cmd(self, STMT_TERM, 2)?, // this takes 2 bytes
-                Some(None) => unreachable!(),
+                None => write_cmd_bytes(self, STMT_TERM, &[])?,
+                Some(None) => panic!("def {} missing definition", self.env.data()[td.atom].name()),
                 Some(Some(Expr {heap, head})) => {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
-                  write_expr_proof(&mut vec, heap, &mut reorder, head, false)?;
+                  write_expr_proof(vec, heap, &mut reorder, head, false)?;
                   vec.write_u8(0)?;
                   let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
-                  write_cmd_bytes(self, cmd, &vec)?;
+                  write_cmd_bytes(self, cmd, vec)?;
                   vec.clear();
                 }
               }
@@ -656,10 +812,10 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
                   for (_, h) in &td.hyps {
-                    write_expr_proof(&mut vec, &td.heap, &mut reorder, h, false)?;
-                    ProofCmd::Hyp.write_to(&mut vec)?;
+                    write_expr_proof(vec, &td.heap, &mut reorder, h, false)?;
+                    ProofCmd::Hyp.write_to(vec)?;
                   }
-                  write_expr_proof(&mut vec, &td.heap, &mut reorder, &td.ret, false)?;
+                  write_expr_proof(vec, &td.heap, &mut reorder, &td.ret, false)?;
                   STMT_AXIOM
                 }
                 Some(None) => panic!("proof {} missing", self.env.data()[td.atom].name()),
@@ -667,21 +823,22 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());
-                  for mut h in hyps {
-                    while let ProofNode::Ref(i) = *h {h = &heap[i]}
-                    if let ProofNode::Hyp(_, e) = h {
-                      self.write_proof(&mut vec, heap, &mut reorder, &ehyps, e, false)?;
-                      ProofCmd::Hyp.write_to(&mut vec)?;
-                      ehyps.push(reorder.idx);
-                      reorder.idx += 1;
-                    } else {unreachable!()}
+                  for h in hyps {
+                    let e = match h.deref(heap) {
+                      ProofNode::Hyp(_, ref e) => &**e,
+                      _ => unreachable!()
+                    };
+                    self.write_proof(vec, heap, &mut reorder, &ehyps, e, false)?;
+                    ProofCmd::Hyp.write_to(vec)?;
+                    ehyps.push(reorder.idx);
+                    reorder.idx += 1;
                   }
-                  self.write_proof(&mut vec, &heap, &mut reorder, &ehyps, head, false)?;
+                  self.write_proof(vec, &heap, &mut reorder, &ehyps, head, false)?;
                   STMT_THM | if td.vis == Modifiers::PUB {0} else {STMT_LOCAL}
                 }
               };
               vec.write_u8(0)?;
-              write_cmd_bytes(self, cmd, &vec)?;
+              write_cmd_bytes(self, cmd, vec)?;
               vec.clear();
             }
           }
@@ -690,28 +847,32 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
       }
     }
     self.write_u8(0)?;
+
+    // debugging index
     if index {
       self.align_to(8)?; p_index.commit(self);
       index_map.sort_unstable_by_key(|k| &**self.env.data()[k.0.atom()].name());
-      let mut index_header = self.fixup_large(8 * (1 +
-        self.env.sorts().len() + self.env.terms().len() + self.env.thms().len()))?;
-      let (root, header) = index_header.1.split_at_mut(8);
-      let mut header = {
-        let header = unsafe { &mut *(header as *mut [u8] as *mut [[u8; 8]]) };
-        let (sorts, header) = header.split_at_mut(self.env.sorts().len());
-        let (terms, thms) = header.split_at_mut(self.env.terms().len());
-        IndexHeader {sorts, terms, thms}
+      let size = 1 + num_sorts + num_terms + num_thms;
+      let mut index_header = self.fixup_large(8 * size)?;
+      // Safety: index_header points to a Box<[u8; 8*size]>, and we reinterpret it as [[u8; 8]; size]
+      let header = unsafe {
+        std::slice::from_raw_parts_mut(index_header.as_mut_ptr() as *mut [u8; 8], size)
       };
-      LE::write_u64(root, self.write_index(&mut header, &[], &index_map)?);
+      let (root, header) = header.split_first_mut().unwrap();
+      let (sorts, header) = header.split_at_mut(num_sorts);
+      let (terms, thms) = header.split_at_mut(num_terms);
+      LE::write_u64(root, self.write_index(&mut IndexHeader {sorts, terms, thms}, &[], &index_map)?);
       index_header.commit(self)
     } else {
+      p_index.cancel();
       self.write_u32(0)?; // padding
     }
     Ok(())
   }
 
+  /// Finalize the outstanding fixups, and flush the writer. Consumes self since we're done.
   pub fn finish(self) -> io::Result<()> {
-    let Self {w, fixups, ..} = self;
+    let Self {mut w, fixups, ..} = self;
     for (pos, f) in fixups {
       w.seek(SeekFrom::Start(pos))?;
       match f {
@@ -720,6 +881,6 @@ impl<'a, W: Write + Seek + ?Sized> Exporter<'a, W> {
         Value::Box(buf) => w.write_all(&buf)?,
       }
     }
-    Ok(())
+    w.flush()
   }
 }
