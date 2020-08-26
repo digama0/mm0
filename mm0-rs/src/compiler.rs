@@ -256,8 +256,8 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
   let (errors, env) = if path.has_extension("mmb") {
     unimplemented!()
   } else if path.has_extension("mmu") {
-    let (errors, env) = mmu_elab(path.clone(), &text);
-    (errors, FrozenEnv::new(env))
+    let (error, env) = mmu_elab(path.clone(), text.as_bytes());
+    (if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
     let (_, ast) = parse(text, None);
     if !ast.errors.is_empty() {

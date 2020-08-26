@@ -148,8 +148,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let (toks, errors, env) = if path.has_extension("mmb") {
     unimplemented!()
   } else if path.has_extension("mmu") {
-    let (errors, env) = mmu_elab(path.clone(), &ast.source);
-    (vec![], errors, FrozenEnv::new(env))
+    let (error, env) = mmu_elab(path.clone(), ast.source.as_bytes());
+    (vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
     elab_elaborate(
       ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone(),
@@ -178,29 +178,26 @@ async fn elaborate(path: FileRef, start: Option<Position>,
             .text.lock().unwrap().1.clone())
       }.to_loc(fsp)
     };
-    let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
-      .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc))).collect();
 
     let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
-
-    for err in &errs {
-      match err.severity {
-        None => continue,
+    let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
+      .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc)))
+      .inspect(|err| match err.severity {
+        None => {}
         Some(DiagnosticSeverity::Error) => n_errs += 1,
         Some(DiagnosticSeverity::Warning) => n_warns += 1,
         Some(DiagnosticSeverity::Information) => n_infos += 1,
         Some(DiagnosticSeverity::Hint) => n_hints += 1,
-      }
-    }
+      }).collect();
+
+    send_diagnostics(path.url().clone(), errs)?;
 
     use std::fmt::Write;
     let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-    if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap(); }
-    if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap(); }
-    if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap(); }
-
+    if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
+    if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
+    if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
     log(log_msg);
-    send_diagnostics(path.url().clone(), errs)?;
   }
   vfs.update_downstream(&old_deps, &deps, &path);
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {

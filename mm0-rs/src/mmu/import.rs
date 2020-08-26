@@ -7,14 +7,17 @@ use crate::elab::{ElabError, Result,
   proof::{IDedup, NodeHash, ExprHash, ProofHash, build}};
 use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
-use crate::lined_string::LinedString;
 
+/// The importer, which reads the input `.mmu` file and builds an `Environment`.
 #[derive(Debug)]
 pub struct Importer<'a> {
+  /// The input file name
   file: FileRef,
+  /// The input source text (as a byte slice)
   source: &'a [u8],
-  errors: Vec<ElabError>,
+  /// The position in the input
   idx: usize,
+  /// The environment under construction
   env: Environment,
 }
 
@@ -75,11 +78,11 @@ impl<'a> Importer<'a> {
     (Some(self.idx), self.ws()).0
   }
 
-  pub fn err(&self, msg: BoxError) -> ElabError {
+  fn err(&self, msg: BoxError) -> ElabError {
     ElabError::new_e(self.idx..self.idx, msg)
   }
 
-  pub fn chr_err(&mut self, c: u8) -> Result<usize> {
+  fn chr_err(&mut self, c: u8) -> Result<usize> {
     self.chr(c).ok_or_else(|| ElabError::new_e(self.idx..self.idx+1,
       format!("expecting '{}'", c as char)))
   }
@@ -133,13 +136,13 @@ enum DeclKind {
 }
 
 #[derive(Debug)]
-pub struct Dedup<H: NodeHash> {
+struct Dedup<H: NodeHash> {
   map: HashMap<Rc<H>, usize>,
   vec: Vec<(Rc<H>, bool)>,
 }
 
 impl<H: NodeHash> Dedup<H> {
-  pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
+  fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
     let vec: Vec<_> = (0..args.len()).map(|i| (Rc::new(H::REF(i)), true)).collect();
     Dedup {
       map: vec.iter().enumerate().map(|(i, r)| (r.0.clone(), i)).collect(),
@@ -147,7 +150,7 @@ impl<H: NodeHash> Dedup<H> {
     }
   }
 
-  pub fn add(&mut self, v: H) -> usize {
+  fn add(&mut self, v: H) -> usize {
     match self.map.entry(Rc::new(v)) {
       Entry::Vacant(e) => {
         let vec = &mut self.vec;
@@ -193,7 +196,7 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
 }
 
 #[derive(Debug)]
-pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool)>);
+struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool)>);
 
 impl<'a, H: NodeHash> Iterator for DedupIter<'a, H> {
   type Item = (&'a H, bool);
@@ -213,7 +216,7 @@ impl<'a, H: NodeHash> IntoIterator for &'a Dedup<H> {
 }
 
 impl Dedup<ExprHash> {
-  pub fn map_proof(&self) -> Dedup<ProofHash> {
+  fn map_proof(&self) -> Dedup<ProofHash> {
     self.map_inj(ExprHash::to_proof)
   }
 }
@@ -490,14 +493,8 @@ impl<'a> Importer<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Expecting { Proof, Conv, Expr }
 
-pub fn elab(file: FileRef, text: &LinedString) -> (Vec<ElabError>, Environment) {
-  let mut p = Importer {
-    file,
-    source: &text.as_bytes(),
-    errors: vec![],
-    idx: 0,
-    env: Environment::new(),
-  };
-  if let Err(e) = p.run() {p.errors.push(e)}
-  (p.errors, p.env)
+/// Construct an `Environment` from an `mmu` file.
+pub fn elab(file: FileRef, source: &[u8]) -> (Result<()>, Environment) {
+  let mut p = Importer { file, source, idx: 0, env: Environment::new() };
+  (p.run(), p.env)
 }
