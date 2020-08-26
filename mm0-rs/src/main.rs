@@ -25,7 +25,7 @@
 #![warn(variant_size_differences)]
 #![warn(unreachable_pub)]
 #![warn(unused)]
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
