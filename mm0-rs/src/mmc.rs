@@ -36,9 +36,16 @@ impl<R, A: Remap<R>> Remap<R> for PredefMap<A> {
   fn remap(&self, r: &mut R) -> Self::Target { self.map(|x| x.remap(r)) }
 }
 
+/// The MMC compiler, which contains local state for the functions that have been
+/// loaded and typechecked thus far.
 pub struct Compiler {
+  /// The map of atoms for MMC keywords. (This depends on the environment because
+  /// it gets remapped per file.)
   keywords: HashMap<AtomID, Keyword>,
+  /// The map of atoms for defined entities (operations and types).
   names: HashMap<AtomID, Entity>,
+  /// The map from `Predef` to atoms, used for constructing proofs and referencing
+  /// compiler lemmas.
   predef: PredefMap<AtomID>,
 }
 
@@ -60,16 +67,22 @@ impl Remap<LispRemapper> for Compiler {
 }
 
 impl Compiler {
+  /// Create a new `Compiler` object. This mutates the elaborator because
+  /// it needs to allocate atoms for MMC keywords.
   pub fn new(e: &mut Elaborator) -> Compiler {
     Compiler {
       keywords: e.env.make_keywords(),
       names: Compiler::make_names(&mut e.env),
-      predef: PredefMap::new(|s| e.env.get_atom(s)),
+      predef: PredefMap::new(|_, s| e.env.get_atom(s)),
     }
   }
 
+  /// Add the given MMC text (as a list of lisp literals) to the compiler state,
+  /// performing typehecking but not code generation. This can be called multiple
+  /// times to add multiple functions, but each lisp literal is already a list of
+  /// top level items that are typechecked as a unit.
   pub fn add(&mut self, elab: &mut Elaborator, fsp: FileSpan, it: impl Iterator<Item=LispVal>) -> Result<()> {
-    let mut p = Parser {elab, kw: &self.keywords, fsp};
+    let mut p = Parser {fe: elab.format_env(), kw: &self.keywords, fsp};
     let mut ast = vec![];
     for e in it {
       if let Some(fsp) = e.fspan() {p.fsp = fsp}
@@ -81,10 +94,13 @@ impl Compiler {
     Ok(())
   }
 
+  /// Once we are done adding functions, this function performs final linking to produce an executable.
   pub fn finish(&mut self, _elab: &mut Elaborator, _fsp: &FileSpan, _a1: AtomID, _a2: AtomID) -> Result<()> {
     Ok(())
   }
 
+  /// Main entry point to the compiler. Does basic parsing and forwards to
+  /// [`add`](struct.Compiler.html#method.add) and [`finish`](struct.Compiler.html#method.finish).
   pub fn call(&mut self, elab: &mut Elaborator, fsp: FileSpan, args: Vec<LispVal>) -> Result<LispVal> {
     let mut it = args.into_iter();
     let e = it.next().unwrap();

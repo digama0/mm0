@@ -220,9 +220,11 @@ For type punning and reconstituting values of complex types that have been strip
 
 ### Slicing
 
-A related operation to casting is slicing, the extraction of a subsequence of an array. If `x: (& (array T n))`, then `(slice (& (array T a)) {x + b} h): (& (array T a))` if `h` is a proof that `b + a <= n`. Computationally this corresponds to simply `x + b * sizeof T`, in the manner of C pointer arithmetic. The addition is syntactically part of the operator, but it can also be omitted when `b = 0`, in which case the slice has the same behavior as `(pun x h)`.
+A related operation to casting is slicing, the extraction of a subsequence of an array. If `x: (& (array T n))`, then `(slice {x + b} h): (& (array T a))` if `h` is a proof that `b + a <= n`. Computationally this corresponds to simply `x + b * sizeof T`, in the manner of C pointer arithmetic. The addition is syntactically part of the operator, but it can also be omitted when `b = 0`, in which case the slice has the same behavior as `(pun x h)`.
 
-The `slice` operator can also be used to perform simultaneous punning: if `x: (& (array T n))`, then `(slice (& U) {x + b} h): (& U)` provided that `h` is a proof of ` b * sizeof T + sizeof U <= n * sizeof T` and `(* x) <: U` if the latter is not trivial.
+The `slice` operator can also be used to perform simultaneous punning: if `x: (& (array T n))`, then `(slice {x + b} h): (& U)` provided that `h` is a proof of ` b * sizeof T + sizeof U <= n * sizeof T` and `(* x) <: U` if the latter is not trivial.
+
+The `slice` operator uses the expected type in order to infer the type of `h`, so a type ascription will usually be necessary.
 
 ### Assertions
 
@@ -479,7 +481,7 @@ We have already seen the `(array T n)` type in several examples. Unlike C, `(arr
 
 * The function `(index a i h)` is the equivalent of `C`'s `a[i]`; it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)` if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that `i` is in the bounds of the array.
 
-* The function `(slice (& (array T n)) {a + i} h)` has already been discussed in the [slicing](#slicing) section. It is also possible to write this as `(& (slice (array T n) (* {a + i}) h))`, using `slice` with a non-pointer type to construct the place and then getting its address. This is only a stylistic difference.
+* The function `{(slice {a + i} h) : (& (array T n))}` has already been discussed in the [slicing](#slicing) section. It is also possible to write this as `(& {(slice (* {a + i}) h) : (array T n)})`, using `slice` with a non-pointer type to construct the place and then getting its address. This is only a stylistic difference.
 
 ### Typedefs
 
