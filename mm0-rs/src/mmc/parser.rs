@@ -13,7 +13,7 @@ use crate::elab::{Result, ElabError,
 #[derive(Debug)]
 pub struct Arg {
   /// The name of the argument, if not `_`.
-  pub name: Option<(FileSpan, AtomID)>,
+  pub name: Option<(AtomID, FileSpan)>,
   /// True if the argument is a ghost variable (computationally irrelevant).
   pub ghost: bool,
   /// The (unparsed) type of the argument.
@@ -24,7 +24,7 @@ impl PartialEq<Arg> for Arg {
   fn eq(&self, other: &Arg) -> bool {
     let b = match (&self.name, &other.name) {
       (None, None) => true,
-      (&Some((_, a)), &Some((_, b))) => a == b,
+      (&Some((a, _)), &Some((b, _))) => a == b,
       _ => false
     };
     b && self.ghost == other.ghost && self.ty == other.ty
@@ -316,6 +316,7 @@ make_keywords! {
   Mut: "mut",
   Or: "or",
   Proc: "proc",
+  Star: "*",
   Struct: "struct",
   Switch: "switch",
   Typedef: "typedef",
@@ -358,41 +359,44 @@ impl<'a> Parser<'a> {
     if let Some((Keyword::Variant, mut u)) = self.head_keyword(e) {
       Some((u.next()?, match u.next() {
         None => VariantType::Down,
-        Some(e) => match *self.kw.get(&e.as_atom()?)? {
-          Keyword::Lt => VariantType::UpLt(u.next()?),
-          Keyword::Le => VariantType::UpLe(u.next()?),
-          _ => None?
+        Some(e) => match self.kw.get(&e.as_atom()?) {
+          Some(Keyword::Lt) => VariantType::UpLt(u.next()?),
+          Some(Keyword::Le) => VariantType::UpLe(u.next()?),
+          _ => return None
         }
       }))
     } else {None}
   }
 
-  fn parse_arg1(&self, e: LispVal, ghost: bool) -> Result<Arg> {
+  fn parse_arg1(&self, e: LispVal, ghost: bool, name_required: bool) -> Result<Arg> {
+    let name = |e: &LispVal| -> Result<_> {
+      let a = e.as_atom().ok_or_else(||
+        ElabError::new_e(self.try_get_span(&e), "argument syntax error: expecting identifier"))?;
+      Ok(if a == AtomID::UNDER { None } else { Some((a, self.try_get_fspan(&e))) })
+    };
     if let Some((AtomID::COLON, mut u)) = head_atom(&e) {
       match (u.next(), u.next(), u.is_empty()) {
-        (Some(ea), Some(ty), true) => {
-          let a = ea.as_atom().ok_or_else(||
-            ElabError::new_e(self.try_get_span(&ea), "argument syntax error: expecting function name"))?;
-          let name = if a == AtomID::UNDER {None} else {
-            Some((self.try_get_fspan(&ea), a))
-          };
-          Ok(Arg { ghost, name, ty })
-        }
+        (Some(ea), Some(ty), true) => Ok(Arg { ghost, name: name(&ea)?, ty }),
         _ => Err(ElabError::new_e(self.try_get_span(&e), "syntax error in function arg"))
       }
-    } else {Ok(Arg { ghost, name: None, ty: e })}
+    } else if name_required {
+      Ok(Arg { ghost, name: name(&e)?, ty: LispVal::atom(AtomID::UNDER) })
+    } else {
+      Ok(Arg { ghost, name: None, ty: e })
+    }
   }
 
-  fn parse_arg(&self, e: LispVal, args: &mut Vec<Arg>, muts: Option<&mut Vec<AtomID>>) -> Result<()> {
+  fn parse_arg(&self, e: LispVal, name_required: bool,
+      args: &mut Vec<Arg>, muts: Option<&mut Vec<AtomID>>) -> Result<()> {
     match (self.head_keyword(&e), muts) {
       (Some((Keyword::Ghost, u)), _) => for e in u {
-        args.push(self.parse_arg1(e, true)?)
+        args.push(self.parse_arg1(e, true, name_required)?)
       }
       (Some((Keyword::Mut, u)), Some(muts)) => for e in u {
         muts.push(e.as_atom().ok_or_else(||
           ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?)
       }
-      _ => args.push(self.parse_arg1(e, false)?)
+      _ => args.push(self.parse_arg1(e, false, name_required)?)
     }
     Ok(())
   }
@@ -615,7 +619,7 @@ impl<'a> Parser<'a> {
                       return Err(ElabError::new_e(self.try_get_span(&e), "label: two variants"))
                     }
                   } else {
-                    self.parse_arg(e, &mut args, Some(&mut muts))?
+                    self.parse_arg(e, true, &mut args, Some(&mut muts))?
                   }
                 }
                 let mut body = vec![];
@@ -668,9 +672,9 @@ impl<'a> Parser<'a> {
           ElabError::new_e(self.try_get_span(&e), "func/proc syntax error: expecting an atom"))?;
         while let Some(e) = u.next() {
           if let Some(AtomID::COLON) = e.as_atom() { break }
-          self.parse_arg(e, &mut args, Some(&mut muts))?
+          self.parse_arg(e, true, &mut args, Some(&mut muts))?
         }
-        for e in u { self.parse_arg(e, &mut rets, None)? }
+        for e in u { self.parse_arg(e, false, &mut rets, None)? }
         (name, e.fspan())
       }
       _ => return Err(ElabError::new_e(self.try_get_span(&e), "func/proc: syntax error"))
@@ -698,7 +702,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_name_and_args(&self, e: LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<Arg>)> {
+  fn parse_name_and_tyargs(&self, e: LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<Arg>)> {
     let mut args = vec![];
     let (name, sp) = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => (a, e.fspan()),
@@ -706,7 +710,7 @@ impl<'a> Parser<'a> {
         let mut u = Uncons::from(e.clone());
         let e = u.next().ok_or_else(|| ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?;
         let a = e.as_atom().ok_or_else(|| ElabError::new_e(self.try_get_span(&e), "typedef: expected an atom"))?;
-        for e in u { self.parse_arg(e, &mut args, None)? }
+        for e in u { args.push(self.parse_arg1(e, false, true)?) }
         (a, e.fspan())
       },
       _ => return Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))
@@ -747,7 +751,7 @@ impl<'a> Parser<'a> {
         },
         Some((Keyword::Typedef, mut u)) =>
           if let (Some(e), Some(val), true) = (u.next(), u.next(), u.is_empty()) {
-            let (name, span, args) = self.parse_name_and_args(e)?;
+            let (name, span, args) = self.parse_name_and_tyargs(e)?;
             ast.push(AST::Typedef {name, span, args: args.into(), val});
           } else {
             return Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))
@@ -755,7 +759,7 @@ impl<'a> Parser<'a> {
         Some((Keyword::Struct, mut u)) => {
           let e = u.next().ok_or_else(||
             ElabError::new_e(self.try_get_span(&e), "struct: expecting name"))?;
-          let (name, span, args) = self.parse_name_and_args(e)?;
+          let (name, span, args) = self.parse_name_and_tyargs(e)?;
           let mut fields = vec![];
           for e in u {
             if let Some((Keyword::Ghost, u)) = self.head_keyword(&e) {
