@@ -61,6 +61,7 @@ impl<'a> FormatEnv<'a> {
   pub fn to<D: ?Sized>(self, e: &'a D) -> Print<'a, D> {
     Print {fe: self, e}
   }
+
 }
 
 impl<'a> Deref for FormatEnv<'a> {

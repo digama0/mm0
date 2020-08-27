@@ -14,7 +14,7 @@ macro_rules! make_predef {
 
     /// A map from `Predef` to `A`, implemented as an array.
     #[derive(Debug)]
-    pub struct PredefMap<A>([A; Predef::COUNT]);
+    pub struct PredefMap<A>(pub [A; Predef::COUNT]);
 
     impl Predef {
       const COUNT: usize = $n;

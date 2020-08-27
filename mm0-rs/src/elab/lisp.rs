@@ -8,6 +8,7 @@ pub mod parser;
 pub mod eval;
 pub mod print;
 pub mod pretty;
+pub mod debug;
 
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;

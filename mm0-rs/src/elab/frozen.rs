@@ -122,15 +122,15 @@ impl FrozenAtomData {
 
 /// A wrapper around a [`LispVal`](../lisp/struct.LispVal.html) that is frozen.
 #[derive(Debug)]
-pub struct FrozenLispVal(LispVal);
+pub struct FrozenLispVal(pub LispVal);
 
 /// A wrapper around a [`LispRef`](../lisp/struct.LispRef.html) that is frozen.
 #[derive(Debug)]
-pub struct FrozenLispRef(LispRef);
+pub struct FrozenLispRef(pub LispRef);
 
 /// A wrapper around a [`Proc`](../lisp/struct.Proc.html) that is frozen.
 #[derive(Debug)]
-pub struct FrozenProc(Proc);
+pub struct FrozenProc(pub Proc);
 
 __mk_lisp_kind! {
   /// A wrapper around a [`LispKind`](../lisp/struct.LispKind.html) that is frozen.

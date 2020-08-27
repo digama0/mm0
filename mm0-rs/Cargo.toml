@@ -32,3 +32,4 @@ serde_repr = "0.1.5"
 lsp-types = "0.61.0"
 lsp-server = "0.3.0"
 annotate-snippets = { version = "0.8.0", features = ["color"] }
+shoebill = { git = "https://github.com/ammkrn/shoebill" }
