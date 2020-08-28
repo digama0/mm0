@@ -20,7 +20,7 @@ use crate::elab::{
 use parser::{Keyword, Parser};
 use nameck::Entity;
 use predef::PredefMap;
-use typeck::TypeCheck;
+use typeck::TypeChecker;
 
 impl<R> Remap<R> for Keyword {
   type Target = Self;
@@ -95,7 +95,8 @@ impl Compiler {
     }
     let fsp = p.fsp;
     for a in &ast { self.nameck(&fsp, a)? }
-    TypeCheck {mmc: self, elab, fsp}.typeck(&ast)?;
+    let mut tc = TypeChecker::new(self, elab, fsp);
+    for item in ast { tc.typeck(&item)? }
     Ok(())
   }
 

@@ -36,14 +36,14 @@ make_prims! {
     /// rest of the function is not evaluated).
     Assert: "assert",
     /// `(band e1 ... en)` returns the bitwise `AND` of the arguments.
-    BAnd: "band",
+    BitAnd: "band",
     /// `(bnot e1 ... en)` returns the bitwise `NOR` of the arguments,
     /// usually used in the unary case as `NOT`
-    BNot: "bnot",
+    BitNot: "bnot",
     /// `(bor e1 ... en)` returns the bitwise `OR` of the arguments.
-    BOr: "bor",
+    BitOr: "bor",
     /// `(bxor e1 ... en)` returns the bitwise `XOR` of the arguments.
-    BXor: "bxor",
+    BitXor: "bxor",
     /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
     /// it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)`
     /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
