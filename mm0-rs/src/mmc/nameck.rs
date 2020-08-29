@@ -29,6 +29,8 @@ macro_rules! make_prims {
 make_prims! {
   /// The primitive procedures.
   enum PrimProc {
+    /// `{x + y}` returns the integer sum of the arguments
+    Add: "+",
     /// `(and x1 ... xn)` returns the boolean `AND` of the arguments
     And: "and",
     /// `(assert p)` evaluates `p` and if it is false, crashes the program with an error.
@@ -44,6 +46,8 @@ make_prims! {
     BitOr: "bor",
     /// `(bxor e1 ... en)` returns the bitwise `XOR` of the arguments.
     BitXor: "bxor",
+    /// `{x == y}` returns true if `x` is equal to `y`
+    Eq: "==",
     /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
     /// it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)`
     /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
@@ -51,12 +55,20 @@ make_prims! {
     Index: "index",
     /// `(list e1 ... en)` returns a tuple of the arguments.
     List: "list",
+    /// `{x * y}` returns the integer product of the arguments
+    Mul: "*",
+    /// `{x != y}` returns true if `x` is not equal to `y`
+    Ne: "!=",
     /// `(not x1 ... xn)` returns the boolean `NOR` of the arguments,
     /// usually used in the unary case as `NOT`
     Not: "not",
     /// `(or x1 ... xn)` returns the boolean `OR` of the arguments
     Or: "or",
-    /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
+    /// `{x <= y}` returns true if `x` is less than or equal to `y`
+    Le: "<=",
+    /// `{x < y}` returns true if `x` is less than `y`
+    Lt: "<",
+      /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
     Pun: "pun",
     /// If `x: (& (array T n))`, then `(slice {x + b} h): (& (array T a))` if
     /// `h` is a proof that `b + a <= n`. Computationally this corresponds to

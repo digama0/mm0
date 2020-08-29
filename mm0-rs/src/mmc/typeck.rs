@@ -1,5 +1,5 @@
 //! MMC type checking pass.
-use std::collections::{HashMap, HashSet};
+use std::{rc::Rc, collections::{HashMap, HashSet}};
 use crate::elab::{Result, Elaborator, Environment, ElabError,
   environment::{AtomID, AtomData},
   lisp::{Uncons, LispVal, LispKind}, local_context::{try_get_span_from, try_get_span}};
@@ -29,7 +29,9 @@ enum Size {
 /// (Elaborated) unary operations.
 #[derive(Copy, Clone, Debug)]
 enum Unop {
-  /// Bitwise negation. For fixed size this is the operation `2^n - x - 1`, and
+  /// Logical (boolean) NOT
+  Not,
+  /// Bitwise NOT. For fixed size this is the operation `2^n - x - 1`, and
   /// for infinite size this is `-x - 1`. Note that signed NOT
   BitNot(Size),
 }
@@ -37,21 +39,35 @@ enum Unop {
 /// (Elaborated) binary operations.
 #[derive(Copy, Clone, Debug)]
 enum Binop {
+  /// Integer addition
+  Add,
+  /// Integer multiplication
+  Mul,
   /// Logical (boolean) AND
   And,
+  /// Logical (boolean) OR
+  Or,
   /// Bitwise AND, for signed or unsigned integers of any size
   BitAnd,
   /// Bitwise OR, for signed or unsigned integers of any size
   BitOr,
   /// Bitwise XOR, for signed or unsigned integers of any size
   BitXor,
+  /// Less than, for signed or unsigned integers of any size
+  Lt,
+  /// Less than or equal, for signed or unsigned integers of any size
+  Le,
+  /// Equal, for signed or unsigned integers of any size
+  Eq,
+  /// Not equal, for signed or unsigned integers of any size
+  Ne,
 }
 
 /// A proof expression, or "hypothesis".
 #[derive(Debug)]
 enum ProofExpr {
   /// An assertion expression `(assert p): p`.
-  _Assert(Box<PureExpr>),
+  Assert(Box<PureExpr>),
 }
 
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
@@ -59,7 +75,7 @@ enum ProofExpr {
 #[derive(Debug)]
 enum PureExpr {
   /// A variable.
-  _Var(usize),
+  Var(usize),
   /// An integer or natural number.
   Int(BigInt),
   /// The unit value `()`.
@@ -67,66 +83,96 @@ enum PureExpr {
   /// A boolean literal.
   Bool(bool),
   /// A unary operation.
-  Unop(Unop, Box<PureExpr>),
+  Unop(Unop, Rc<PureExpr>),
   /// A binary operation.
-  Binop(Binop, Box<(PureExpr, PureExpr)>),
-  /// An owned index operation `(index a i h): (own T)` where `a: (own (array T n))`,
+  Binop(Binop, Rc<PureExpr>, Rc<PureExpr>),
+  /// A tuple constructor.
+  Tuple(Box<[PureExpr]>),
+  /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
-  _OwnIndex(Box<(PureExpr, PureExpr, ProofExpr)>),
-  /// An index operation `(index a i h): (& T)` where `a: (& (array T n))`,
-  /// `i: nat`, and `h: i < n`.
-  _Index(Box<(PureExpr, PureExpr, ProofExpr)>),
+  Index(Box<PureExpr>, Rc<PureExpr>, Box<ProofExpr>),
+  /// An deref operation `(* x): T` where `x: (own T)`.
+  DerefOwn(Box<PureExpr>),
+  /// An deref operation `(* x): T` where `x: (& T)`.
+  Deref(Box<PureExpr>),
+  /// An deref operation `(* x): T` where `x: (&mut T)`.
+  DerefMut(Box<PureExpr>),
 }
 
 #[derive(Debug)]
 enum Type {
-    /// A type variable.
-    Var(usize),
-    /// `()` is the type with one element; `sizeof () = 0`.
-    Unit,
-    /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
-    Bool,
-    /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
-    Int(Size),
-    /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
-    UInt(Size),
-    /// The type `(array T n)` is an array of `n` elements of type `T`;
-    /// `sizeof (array T n) = sizeof T * n`.
-    Array(Box<(Type, PureExpr)>),
-    /// `(own T)` is a type of owned pointers. The typehood predicate is
-    /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
-    Own(Box<Type>),
-    /// `(& T)` is a type of borrowed pointers. This type is treated specially;
-    /// the `x |-> v` assumption is stored separately from regular types, and
-    /// `(* x)` is treated as sugar for `v`.
-    Ref(Box<Type>),
-    /// `(&mut T)` is a type of mutable pointers. This is also treated specially;
-    /// it is sugar for `(mut {x : (own T)})`, which is to say `x` has
-    /// type `own T` in the function but must also be passed back out of the
-    /// function.
-    RefMut(Box<Type>),
-    /// `(list A B C)` is a tuple type with elements `A, B, C`;
-    /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
-    List(Box<[Type]>),
-    /// `(inter A B C)` is an intersection type of `A, B, C`;
-    /// `sizeof (inter A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-    /// the typehood predicate is `x :> (inter A B C)` iff
-    /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
-    /// not separating conjunction.)
-    Inter(Box<[Type]>),
-    /// `(union A B C)` is an undiscriminated anonymous union of types `A, B, C`.
-    /// `sizeof (union A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-    /// the typehood predicate is `x :> (union A B C)` iff
-    /// `x :> A \/ x :> B \/ x :> C`.
-    Union(Box<[Type]>),
-    /// A user-defined type-former.
-    _User(AtomID, Box<[Type]>, Box<[PureExpr]>),
+  /// A type variable.
+  Var(usize),
+  /// `()` is the type with one element; `sizeof () = 0`.
+  Unit,
+  /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
+  Bool,
+  /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
+  Int(Size),
+  /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
+  UInt(Size),
+  /// The type `(array T n)` is an array of `n` elements of type `T`;
+  /// `sizeof (array T n) = sizeof T * n`.
+  Array(Box<Type>, Rc<PureExpr>),
+  /// `(own T)` is a type of owned pointers. The typehood predicate is
+  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
+  Own(Box<Type>),
+  /// `(& T)` is a type of borrowed pointers. This type is treated specially;
+  /// the `x |-> v` assumption is stored separately from regular types, and
+  /// `(* x)` is treated as sugar for `v`.
+  Ref(Box<Type>),
+  /// `(&mut T)` is a type of mutable pointers. This is also treated specially;
+  /// it is sugar for `(mut {x : (own T)})`, which is to say `x` has
+  /// type `own T` in the function but must also be passed back out of the
+  /// function.
+  RefMut(Box<Type>),
+  /// `(list A B C)` is a tuple type with elements `A, B, C`;
+  /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
+  List(Box<[Type]>),
+  /// `(inter A B C)` is an intersection type of `A, B, C`;
+  /// `sizeof (inter A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+  /// the typehood predicate is `x :> (inter A B C)` iff
+  /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
+  /// not separating conjunction.)
+  Inter(Box<[Type]>),
+  /// `(union A B C)` is an undiscriminated anonymous union of types `A, B, C`.
+  /// `sizeof (union A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+  /// the typehood predicate is `x :> (union A B C)` iff
+  /// `x :> A \/ x :> B \/ x :> C`.
+  Union(Box<[Type]>),
+  /// A user-defined type-former.
+  _User(AtomID, Box<[Type]>, Box<[PureExpr]>),
 }
 
-#[derive(Debug)]
+enum InferType<'a> {
+  Int,
+  Unit,
+  Bool,
+  Star,
+  Unknown,
+  Own(&'a Type),
+  Ref(&'a Type),
+  RefMut(&'a Type),
+  Ty(&'a Type),
+  Prop(&'a Prop),
+  List(Box<[InferType<'a>]>),
+}
+
+impl<'a> InferType<'a> {
+  fn ty(ty: &'a Type) -> Self {
+    match ty {
+      Type::Own(ty) => Self::Own(ty),
+      Type::Ref(ty) => Self::Ref(ty),
+      Type::RefMut(ty) => Self::RefMut(ty),
+      ty => Self::Ty(ty),
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
 enum Prop {
   /// An (executable) boolean expression, interpreted as a pure proposition
-  _Pure(Box<PureExpr>),
+  Pure(Rc<PureExpr>),
 }
 
 #[derive(Debug)]
@@ -215,109 +261,55 @@ impl<'a> TypeChecker<'a> {
     get_fresh_name(&mut self.elab, s, |a, ad| used_names.contains(&a) || ad.decl.is_some())
   }
 
-  fn parse_lassoc1_expr(&mut self,
-    arg1: &LispVal,
-    args: &[LispVal],
-    binop: Binop,
-    tgt: Option<&Type>,
-  ) -> Result<PureExpr> {
-    let mut e = self.parse_pure_expr(arg1, tgt)?;
-    for arg in args {
-      e = PureExpr::Binop(binop, Box::new((e, self.parse_pure_expr(arg, tgt)?)))
-    }
-    Ok(e)
-  }
-
-  fn parse_lassoc_expr(&mut self,
-    args: &[LispVal],
-    f0: impl FnOnce() -> Result<PureExpr>,
-    f1: impl FnOnce(PureExpr) -> Result<PureExpr>,
-    binop: Binop,
-    tgt: Option<&Type>,
-  ) -> Result<PureExpr> {
-    if let Some((arg1, args)) = args.split_first() {
-      f1(self.parse_lassoc1_expr(arg1, args, binop, tgt)?)
-    } else {f0()}
-  }
-
-  fn parse_pure_expr(&mut self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr> {
-    let mut u = Uncons::New(e.clone());
-    let (head, args) = match u.next() {
-      None if u.is_empty() => return Ok(PureExpr::Unit),
-      None => (u.into(), vec![]),
-      Some(head) => (head, u.collect()),
-    };
-    macro_rules! err {($e:expr) => { Err(ElabError::new_e(self.try_get_span(&head), $e)) }}
-    macro_rules! check_tgt {($ty:pat, $s:expr) => {
-      if !tgt.map_or(true, |tgt| matches!(tgt, $ty)) {
-        return err!(concat!("type error, expected ", $s))
-      }
-    }}
-    macro_rules! get_int_tgt {() => {
-      match tgt {
-        None => &Type::Int(Size::Inf),
-        Some(ty@Type::Int(_)) => ty,
-        Some(ty@Type::UInt(_)) => ty,
-        Some(_) => return err!("type error, expected an integer"),
-      }
-    }}
-    if let Some(name) = head.as_atom() {
-      if name == AtomID::UNDER { return err!("expecting a type") }
-      match self.mmc.names.get(&name) {
-        Some(Entity::Const(GlobalTC::Unchecked)) => err!("forward referencing constants is not allowed"),
-        Some(Entity::Op(Operator::Prim(prim))) => match (prim, &*args) {
-          (PrimProc::And, args) => {
-            check_tgt!(Type::Bool, "a bool");
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(true)), Ok, Binop::And, Some(&Type::Bool))
-          }
-          (PrimProc::Assert, _) => err!("type error, expected a pure expr"),
-          (PrimProc::BitAnd, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())), Ok, Binop::BitAnd, Some(get_int_tgt!())),
-          (PrimProc::BitNot, args) => {
-            let (sz, ty) = match tgt {
-              None => (Size::Inf, &Type::Int(Size::Inf)),
-              Some(ty) => match ty {
-                Type::Int(_) => (Size::Inf, ty),
-                &Type::UInt(sz) => (sz, ty),
-                _ => return err!("type error, expected an integer"),
-              }
-            };
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())),
-              |e| Ok(PureExpr::Unop(Unop::BitNot(sz), Box::new(e))), Binop::BitOr, Some(ty))
-          }
-          (PrimProc::BitOr, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitOr, Some(get_int_tgt!())),
-          (PrimProc::BitXor, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
-          (PrimProc::Index, args) => {
-            let (a, i, h) = match args {
-              [a, i] => (a, i, None),
-              [a, i, h] => (a, i, Some(h)),
-              _ => return err!("expected 2 or 3 arguments"),
-            };
-            self.todo((a, i, h, args))?
-          }
-          (PrimProc::List, args) => self.todo(args)?,
-          (PrimProc::Not, args) => self.todo(args)?,
-          (PrimProc::Or, args) => self.todo(args)?,
-          (PrimProc::Pun, args) => self.todo(args)?,
-          (PrimProc::Slice, args) => self.todo(args)?,
-          (PrimProc::TypeofBang, args) => self.todo(args)?,
-          (PrimProc::Typeof, args) => self.todo(args)?,
-        }
-        Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ElabError::new_e(
-          self.try_get_span(&head), "forward referencing a procedure")),
-        _ => return Err(ElabError::new_e(self.try_get_span(&head), "expected a function/operation"))
-      }
-    } else {
-      if !args.is_empty() {
-        return Err(ElabError::new_e(self.try_get_span(e), "unexpected arguments"))
-      }
-      head.unwrapped(|e| match *e {
-        LispKind::Number(ref n) => Ok(PureExpr::Int(n.clone())),
-        LispKind::Bool(b) => Ok(PureExpr::Bool(b)),
-        _ => Err(ElabError::new_e(self.try_get_span(&head), "unexpected expression")),
-      })
+  fn infer_type(&'a self, e: &'a PureExpr) -> InferType<'a> {
+    match e {
+      &PureExpr::Var(i) => match &self.context[i].ty {
+        GType::Unknown => InferType::Unknown,
+        GType::Ty(ty) => InferType::ty(ty),
+        GType::Star => InferType::Star,
+        GType::_Prop(p) => InferType::Prop(p),
+      },
+      PureExpr::Unit => InferType::Unit,
+      PureExpr::Bool(_) |
+      PureExpr::Unop(Unop::Not, _) |
+      PureExpr::Binop(Binop::And, _, _) |
+      PureExpr::Binop(Binop::Or, _, _) |
+      PureExpr::Binop(Binop::Lt, _, _) |
+      PureExpr::Binop(Binop::Le, _, _) |
+      PureExpr::Binop(Binop::Eq, _, _) |
+      PureExpr::Binop(Binop::Ne, _, _) => InferType::Bool,
+      PureExpr::Int(_) |
+      PureExpr::Unop(Unop::BitNot(_), _) |
+      PureExpr::Binop(Binop::Add, _, _) |
+      PureExpr::Binop(Binop::Mul, _, _) |
+      PureExpr::Binop(Binop::BitAnd, _, _) |
+      PureExpr::Binop(Binop::BitOr, _, _) |
+      PureExpr::Binop(Binop::BitXor, _, _) => InferType::Int,
+      PureExpr::Index(a, _, _) => match self.infer_type(a) {
+        InferType::Ty(Type::Array(ty, _)) => InferType::Ty(ty),
+        InferType::Unknown => InferType::Unknown,
+        _ => unreachable!(),
+      },
+      PureExpr::Tuple(es) => InferType::List(
+        es.iter().map(|e| self.infer_type(e)).collect::<Vec<_>>().into()),
+      PureExpr::DerefOwn(e) => match self.infer_type(e) {
+        InferType::Ty(Type::Own(ty)) => InferType::Ty(ty),
+        InferType::Own(ty) => InferType::Ty(ty),
+        InferType::Unknown => InferType::Unknown,
+        _ => unreachable!(),
+      },
+      PureExpr::Deref(e) => match self.infer_type(e) {
+        InferType::Ty(Type::Ref(ty)) => InferType::Ty(ty),
+        InferType::Ref(ty) => InferType::Ty(ty),
+        InferType::Unknown => InferType::Unknown,
+        _ => unreachable!(),
+      },
+      PureExpr::DerefMut(e) => match self.infer_type(e) {
+        InferType::Ty(Type::RefMut(ty)) => InferType::Ty(ty),
+        InferType::RefMut(ty) => InferType::Ty(ty),
+        InferType::Unknown => InferType::Unknown,
+        _ => unreachable!(),
+      },
     }
   }
 
@@ -340,8 +332,9 @@ impl<'a> TypeChecker<'a> {
     }
     match self.mmc.names.get(&name) {
       Some(&Entity::Type(NType::Prim(prim))) => match (prim, &*args) {
-        (PrimType::Array, [ty, n]) => Ok(Type::Array(Box::new(
-          (self.parse_ty(ty)?, self.parse_pure_expr(n, Some(&Type::UInt(Size::Inf)))?)))),
+        (PrimType::Array, [ty, n]) => Ok(Type::Array(
+          Box::new(self.parse_ty(ty)?),
+          Rc::new(self.parse_pure_expr(n, Some(&Type::UInt(Size::Inf)))?))),
         (PrimType::Bool, []) => Ok(Type::Bool),
         (PrimType::I8, []) => Ok(Type::Int(Size::S8)),
         (PrimType::I16, []) => Ok(Type::Int(Size::S16)),
@@ -367,6 +360,197 @@ impl<'a> TypeChecker<'a> {
         _ => Err(ElabError::new_e(self.try_get_span(&head), "undeclared variable"))
       }
     }
+  }
+
+  fn parse_lassoc1_expr(&mut self,
+    arg1: &LispVal,
+    args: &[LispVal],
+    binop: Binop,
+    tgt: Option<&Type>,
+  ) -> Result<PureExpr> {
+    let mut e = self.parse_pure_expr(arg1, tgt)?;
+    for arg in args {
+      e = PureExpr::Binop(binop, Rc::new(e), Rc::new(self.parse_pure_expr(arg, tgt)?))
+    }
+    Ok(e)
+  }
+
+  fn parse_lassoc_expr(&mut self,
+    args: &[LispVal],
+    f0: impl FnOnce() -> Result<PureExpr>,
+    f1: impl FnOnce(PureExpr) -> Result<PureExpr>,
+    binop: Binop,
+    tgt: Option<&Type>,
+  ) -> Result<PureExpr> {
+    if let Some((arg1, args)) = args.split_first() {
+      f1(self.parse_lassoc1_expr(arg1, args, binop, tgt)?)
+    } else {f0()}
+  }
+
+  fn parse_ineq(&mut self, args: &[LispVal], binop: Binop) -> Result<PureExpr> {
+    if let Some((arg1, args)) = args.split_first() {
+      let arg1 = self.parse_pure_expr(arg1, Some(&Type::Int(Size::Inf)))?;
+      if let Some((arg2, args)) = args.split_first() {
+        let mut arg2 = Rc::new(self.parse_pure_expr(arg2, Some(&Type::Int(Size::Inf)))?);
+        let mut e = PureExpr::Binop(binop, Rc::new(arg1), arg2.clone());
+        for arg3 in args {
+          let arg3 = Rc::new(self.parse_pure_expr(arg3, Some(&Type::Int(Size::Inf)))?);
+          e = PureExpr::Binop(Binop::And, Rc::new(e), Rc::new(PureExpr::Binop(binop, arg2, arg3.clone())));
+          arg2 = arg3;
+        }
+        Ok(e)
+      } else { Ok(arg1) }
+    } else { Ok(PureExpr::Bool(true)) }
+  }
+
+  fn parse_pure_expr(&mut self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr> {
+    let mut u = Uncons::New(e.clone());
+    let (head, args) = match u.next() {
+      None if u.is_empty() => return Ok(PureExpr::Unit),
+      None => (u.into(), vec![]),
+      Some(head) => (head, u.collect()),
+    };
+    macro_rules! err {($($e:expr),*) => {
+      Err(ElabError::new_e(self.try_get_span(&head), format!($($e),*)))
+    }}
+    macro_rules! check_tgt {($ty:pat, $s:expr) => {
+      if !tgt.map_or(true, |tgt| matches!(tgt, $ty)) {
+        return err!(concat!("type error, expected ", $s))
+      }
+    }}
+    macro_rules! get_int_tgt {() => {
+      match tgt {
+        None => &Type::Int(Size::Inf),
+        Some(ty@Type::Int(_)) => ty,
+        Some(ty@Type::UInt(_)) => ty,
+        Some(_) => return err!("type error, expected an integer"),
+      }
+    }}
+    if let Some(name) = head.as_atom() {
+      if name == AtomID::UNDER { return err!("expecting a type") }
+      match self.mmc.names.get(&name) {
+        Some(Entity::Const(GlobalTC::Unchecked)) => err!("forward referencing constants is not allowed"),
+        Some(Entity::Op(Operator::Prim(prim))) => match (prim, &*args) {
+          (PrimProc::Add, args) =>
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::Add, Some(get_int_tgt!())),
+          (PrimProc::And, args) => {
+            check_tgt!(Type::Bool, "a bool");
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(true)), Ok, Binop::And, Some(&Type::Bool))
+          }
+          (PrimProc::Assert, _) => err!("type error, expected a pure expr"),
+          (PrimProc::BitAnd, args) =>
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())), Ok, Binop::BitAnd, Some(get_int_tgt!())),
+          (PrimProc::BitNot, args) => {
+            let (sz, ty) = match tgt {
+              None => (Size::Inf, &Type::Int(Size::Inf)),
+              Some(ty) => match ty {
+                Type::Int(_) => (Size::Inf, ty),
+                &Type::UInt(sz) => (sz, ty),
+                _ => return err!("type error, expected an integer"),
+              }
+            };
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())),
+              |e| Ok(PureExpr::Unop(Unop::BitNot(sz), Rc::new(e))), Binop::BitOr, Some(ty))
+          }
+          (PrimProc::BitOr, args) =>
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitOr, Some(get_int_tgt!())),
+          (PrimProc::BitXor, args) =>
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
+          (PrimProc::Index, args) => {
+            let (a, i, h) = match args {
+              [a, i] => (a, i, None),
+              [a, i, h] => (a, i, Some(h)),
+              _ => return err!("expected 2 or 3 arguments"),
+            };
+            let mut a = self.parse_pure_expr(a, None)?;
+            let i = Rc::new(self.parse_pure_expr(i, Some(&Type::UInt(Size::Inf)))?);
+            let mut aty = self.infer_type(&a);
+            enum AutoDeref { Own, Ref, Mut }
+            let mut derefs = vec![];
+            let n = loop {
+              match aty {
+                InferType::Own(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Own); }
+                InferType::Ref(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Ref); }
+                InferType::RefMut(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Mut); }
+                InferType::Ty(Type::Array(_, n)) => break n.clone(),
+                _ => return err!("type error, expcted an array"),
+              }
+            };
+            for s in derefs {
+              a = match s {
+                AutoDeref::Own => PureExpr::DerefOwn(Box::new(a)),
+                AutoDeref::Ref => PureExpr::Deref(Box::new(a)),
+                AutoDeref::Mut => PureExpr::DerefMut(Box::new(a)),
+              }
+            }
+            let prop = PureExpr::Binop(Binop::Lt, i.clone(), n.clone());
+            let h = match h {
+              Some(h) => self.parse_proof(h, Some(Prop::Pure(Rc::new(prop))))?,
+              None => ProofExpr::Assert(Box::new(prop)),
+            };
+            Ok(PureExpr::Index(Box::new(a), i, Box::new(h)))
+          }
+          (PrimProc::List, args) => {
+            let mut vec = Vec::with_capacity(args.len());
+            match tgt {
+              None => for e in args { vec.push(self.parse_pure_expr(e, None)?) }
+              Some(Type::List(ts)) if ts.len() == args.len() =>
+                for (e, ty) in (&*args).iter().zip(&**ts) {
+                  vec.push(self.parse_pure_expr(e, Some(ty))?)
+                },
+                Some(ty) => return err!("type error, expected {:?}", ty),
+            }
+            Ok(PureExpr::Tuple(vec.into()))
+          }
+          (PrimProc::Mul, args) =>
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(1.into())), Ok, Binop::Mul, Some(get_int_tgt!())),
+          (PrimProc::Not, args) => {
+            check_tgt!(Type::Bool, "a bool");
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(true)),
+              |e| Ok(PureExpr::Unop(Unop::Not, Rc::new(e))), Binop::Or, Some(&Type::Bool))
+          }
+          (PrimProc::Or, args) => {
+            check_tgt!(Type::Bool, "a bool");
+            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(false)), Ok, Binop::Or, Some(&Type::Bool))
+          }
+          (PrimProc::Le, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Le) }
+          (PrimProc::Lt, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Lt) }
+          (PrimProc::Eq, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Eq) }
+          (PrimProc::Ne, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Ne) }
+          (PrimProc::Pun, _) |
+          (PrimProc::Slice, _) |
+          (PrimProc::TypeofBang, _) |
+          (PrimProc::Typeof, _) =>
+            return Err(ElabError::new_e(self.try_get_span(&head), "not a pure operation")),
+        }
+        Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ElabError::new_e(
+          self.try_get_span(&head), "forward referencing a procedure")),
+        Some(_) => return Err(ElabError::new_e(self.try_get_span(&head), "expected a function/operation")),
+        None => match self.user_locals.get(&name) {
+          Some(&i) => match &self.context[i].ty {
+            GType::Ty(_ty) => match tgt {
+              None => Ok(PureExpr::Var(i)),
+              Some(_tgt) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
+            },
+            _ => return Err(ElabError::new_e(self.try_get_span(&head), "expected a regular variable")),
+          },
+          _ => Err(ElabError::new_e(self.try_get_span(&head), "undeclared variable"))
+        }
+      }
+    } else {
+      if !args.is_empty() {
+        return Err(ElabError::new_e(self.try_get_span(e), "unexpected arguments"))
+      }
+      head.unwrapped(|e| match *e {
+        LispKind::Number(ref n) => Ok(PureExpr::Int(n.clone())),
+        LispKind::Bool(b) => Ok(PureExpr::Bool(b)),
+        _ => Err(ElabError::new_e(self.try_get_span(&head), "unexpected expression")),
+      })
+    }
+  }
+
+  fn parse_proof(&mut self, e: &LispVal, tgt: Option<Prop>) -> Result<ProofExpr> {
+    self.todo((e, tgt))
   }
 
   /// Performs type checking of the input AST.
