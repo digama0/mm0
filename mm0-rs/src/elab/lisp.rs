@@ -323,6 +323,14 @@ impl LispVal {
       }
     }
   }
+
+  fn head(&self) -> Option<LispVal> {
+    self.unwrapped(|e| match e {
+      LispKind::List(es) => es.first().cloned(),
+      LispKind::DottedList(es, r) => es.first().cloned().or_else(|| r.head()),
+      _ => None
+    })
+  }
 }
 
 impl Deref for LispVal {
@@ -1100,6 +1108,17 @@ impl Uncons {
       Uncons::New(e) => e.len(),
       Uncons::List(es) => es.len(),
       Uncons::DottedList(es, r) => es.len() + r.len(),
+    }
+  }
+
+  /// This is the same as `next()`, but it does not advance the iterator.
+  /// (This could almost be a `Peekable` implementation, but the reference
+  /// may not be derived from `self`, so it has to clone the value.)
+  pub fn head(&self) -> Option<LispVal> {
+    match self {
+      Uncons::New(e) => e.head(),
+      Uncons::List(es) => es.first().cloned(),
+      Uncons::DottedList(es, r) => es.first().cloned().or_else(|| r.head()),
     }
   }
 

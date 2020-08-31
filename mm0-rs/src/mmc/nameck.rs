@@ -1,13 +1,13 @@
 //! MMC name resolution pass.
 use std::sync::Arc;
 use std::collections::{HashMap, hash_map::Entry};
-use std::result::Result as StdResult;
+use std::{rc::Rc, result::Result as StdResult};
 use crate::elab::{
   Result, ElabError,
   local_context::try_get_span_from,
   environment::{AtomID, Environment}};
 use crate::util::FileSpan;
-use super::{Compiler, parser::{AST, Proc, ProcKind, TuplePattern}};
+use super::{Compiler, parser::{AST, Proc, ProcKind, TuplePattern}, typeck};
 
 macro_rules! make_prims {
   {$($(#[$attr0:meta])* enum $name:ident { $($(#[$attr:meta])* $x:ident: $e:expr,)* })* } => {
@@ -15,6 +15,16 @@ macro_rules! make_prims {
       $(#[$attr0])*
       #[derive(Debug, PartialEq, Eq, Copy, Clone)]
       pub enum $name { $($(#[$attr])* $x),* }
+
+      impl ::std::str::FromStr for $name {
+        type Err = ();
+        fn from_str(s: &str) -> ::std::result::Result<Self, ()> {
+          match s {
+            $($e => Ok(Self::$x),)*
+            _ => Err(())
+          }
+        }
+      }
 
       impl $name {
         /// Evaluate a function on all elements of the type, with their names.
@@ -135,15 +145,29 @@ make_prims! {
     /// `x :> A \/ x :> B \/ x :> C`.
     Union: "union",
   }
+
+  /// Intrinsic functions, which are like `PrimProc` but are typechecked like regular
+  /// function calls.
+  enum Intrinsic {
+    /// Intrinsic for the [`fstat`](https://man7.org/linux/man-pages/man2/fstat.2.html) system call.
+    FStat: "sys_fstat",
+    /// Intrinsic for the [`open`](https://man7.org/linux/man-pages/man2/open.2.html) system call.
+    Open: "sys_open",
+    /// Intrinsic for the [`mmap`](https://man7.org/linux/man-pages/man2/mmap.2.html) system call.
+    MMap: "sys_mmap",
+  }
 }
 
 /// An entity representing a type.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
+#[allow(variant_size_differences)]
 pub enum Type {
   /// A primitive type.
   Prim(PrimType),
   /// A user type that has not yet been typechecked.
   Unchecked,
+  /// A user type that has not yet been typechecked.
+  Checked(Option<FileSpan>, AtomID, Rc<typeck::Type>),
 }
 
 /// The typechecking status of a procedure.
@@ -151,6 +175,8 @@ pub enum Type {
 pub enum ProcTC {
   /// We have determined that this is a procedure but we have not yet examined the body.
   Unchecked,
+  /// This is a compiler intrinsic function.
+  Intrinsic(Intrinsic),
 }
 
 /// A function / procedure / builtin operator, which is called with function call style.

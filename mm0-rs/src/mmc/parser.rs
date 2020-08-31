@@ -1,8 +1,6 @@
 //! The MMC parser, which takes lisp literals and maps them to MMC AST.
-use std::mem;
 use std::sync::Arc;
 use std::collections::HashMap;
-use num::BigInt;
 use crate::util::{Span, FileSpan};
 use crate::elab::{Result, ElabError,
   environment::{AtomID, Environment},
@@ -60,7 +58,7 @@ pub struct Invariant {
   /// The type of the variable, or none for inferred.
   pub ty: Option<LispVal>,
   /// The initial value of the variable.
-  pub val: Option<Expr>,
+  pub val: Option<LispVal>,
 }
 
 /// A block is a local scope. Like functions, this requires explicit importing
@@ -71,7 +69,7 @@ pub struct Block {
   /// in external scope that are not in this list are treated as read only.
   pub muts: Box<[AtomID]>,
   /// The statements of the block.
-  pub stmts: Box<[Expr]>
+  pub stmts: Uncons
 }
 
 /// A tuple pattern, which destructures the results of assignments from functions with
@@ -86,90 +84,90 @@ pub enum TuplePattern {
   Tuple(Box<[TuplePattern]>),
 }
 
-/// A pattern, the left side of a switch statement.
-#[derive(Debug)]
-pub enum Pattern {
-  /// A variable binding, unless this is the name of a constant in which case
-  /// it is a constant value.
-  VarOrConst(AtomID),
-  /// A numeric literal.
-  Number(BigInt),
-  /// A hypothesis pattern, which binds the first argument to a proof that the
-  /// scrutinee satisfies the pattern argument.
-  Hyped(AtomID, Box<Pattern>),
-  /// A pattern guard: Matches the inner pattern, and then if the expression returns
-  /// true, this is also considered to match.
-  With(Box<(Pattern, Expr)>),
-  /// A disjunction of patterns.
-  Or(Box<[Pattern]>),
-}
+// /// A pattern, the left side of a switch statement.
+// #[derive(Debug)]
+// pub enum Pattern {
+//   /// A variable binding, unless this is the name of a constant in which case
+//   /// it is a constant value.
+//   VarOrConst(AtomID),
+//   /// A numeric literal.
+//   Number(BigInt),
+//   /// A hypothesis pattern, which binds the first argument to a proof that the
+//   /// scrutinee satisfies the pattern argument.
+//   Hyped(AtomID, Box<Pattern>),
+//   /// A pattern guard: Matches the inner pattern, and then if the expression returns
+//   /// true, this is also considered to match.
+//   With(Box<(Pattern, LispVal)>),
+//   /// A disjunction of patterns.
+//   Or(Box<[Pattern]>),
+// }
 
-/// An expression or statement. A block is a list of expressions.
-#[derive(Debug)]
-pub enum Expr {
-  /// A `()` literal.
-  Nil,
-  /// A variable reference.
-  Var(AtomID),
-  /// A number literal.
-  Number(BigInt),
-  /// A let binding.
-  Let {
-    /// True if the `rhs` expression should not be evaluated,
-    /// and all variables in the declaration should be considered ghost.
-    ghost: bool,
-    /// A tuple pattern, containing variable bindings.
-    lhs: TuplePattern,
-    /// The expression to evaluate, or `None` for uninitialized.
-    rhs: Option<Box<Expr>>,
-  },
-  /// A function call (or something that looks like one at parse time).
-  Call {
-    /// The function to call.
-    f: AtomID,
-    /// The function arguments.
-    args: Box<[Expr]>,
-    /// The variant, if needed.
-    variant: Option<Variant>,
-  },
-  /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
-  /// `P1, ..., Pn` and is a hypothesis of type `Q`.
-  Entail(LispVal, Box<[Expr]>),
-  /// A block scope.
-  Block(Block),
-  /// A label, which looks exactly like a local function but has no independent stack frame.
-  /// They are called like regular functions but can only appear in tail position.
-  Label {
-    /// The name of the label
-    name: AtomID,
-    /// The arguments of the label
-    args: Box<[Arg]>,
-    /// The variant, for recursive calls
-    variant: Option<Variant>,
-    /// The code that is executed when you jump to the label
-    body: Block,
-  },
-  /// An if-then-else expression (at either block or statement level). The initial atom names
-  /// a hypothesis that the expression is true in one branch and false in the other.
-  If(Box<(Option<AtomID>, Expr, Expr, Expr)>),
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Switch(Box<Expr>, Box<[(Pattern, Expr)]>),
-  /// A while loop.
-  While {
-    /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<AtomID>,
-    /// The loop condition.
-    cond: Box<Expr>,
-    /// The variant, which must decrease on every round around the loop.
-    var: Option<Variant>,
-    /// The invariants, which must be supplied on every round around the loop.
-    invar: Box<[Invariant]>,
-    /// The body of the loop.
-    body: Block,
-  },
-  /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
-  Hole(FileSpan),
-}
+// /// An expression or statement. A block is a list of expressions.
+// #[derive(Debug)]
+// pub enum Expr {
+//   /// A `()` literal.
+//   Nil,
+//   /// A variable reference.
+//   Var(AtomID),
+//   /// A number literal.
+//   Number(BigInt),
+//   /// A let binding.
+//   Let {
+//     /// True if the `rhs` expression should not be evaluated,
+//     /// and all variables in the declaration should be considered ghost.
+//     ghost: bool,
+//     /// A tuple pattern, containing variable bindings.
+//     lhs: TuplePattern,
+//     /// The expression to evaluate, or `None` for uninitialized.
+//     rhs: Option<Box<Expr>>,
+//   },
+//   /// A function call (or something that looks like one at parse time).
+//   Call {
+//     /// The function to call.
+//     f: AtomID,
+//     /// The function arguments.
+//     args: Box<[Expr]>,
+//     /// The variant, if needed.
+//     variant: Option<Variant>,
+//   },
+//   /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
+//   /// `P1, ..., Pn` and is a hypothesis of type `Q`.
+//   Entail(LispVal, Box<[Expr]>),
+//   /// A block scope.
+//   Block(Block),
+//   /// A label, which looks exactly like a local function but has no independent stack frame.
+//   /// They are called like regular functions but can only appear in tail position.
+//   Label {
+//     /// The name of the label
+//     name: AtomID,
+//     /// The arguments of the label
+//     args: Box<[Arg]>,
+//     /// The variant, for recursive calls
+//     variant: Option<Variant>,
+//     /// The code that is executed when you jump to the label
+//     body: Block,
+//   },
+//   /// An if-then-else expression (at either block or statement level). The initial atom names
+//   /// a hypothesis that the expression is true in one branch and false in the other.
+//   If(Box<(Option<AtomID>, Expr, Expr, Expr)>),
+//   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
+//   Switch(Box<Expr>, Box<[(Pattern, Expr)]>),
+//   /// A while loop.
+//   While {
+//     /// A hypothesis that the condition is true in the loop and false after it.
+//     hyp: Option<AtomID>,
+//     /// The loop condition.
+//     cond: Box<Expr>,
+//     /// The variant, which must decrease on every round around the loop.
+//     var: Option<Variant>,
+//     /// The invariants, which must be supplied on every round around the loop.
+//     invar: Box<[Invariant]>,
+//     /// The body of the loop.
+//     body: Block,
+//   },
+//   /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
+//   Hole(FileSpan),
+// }
 
 /// A procedure kind, which defines the different kinds of function-like declarations.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -238,14 +236,14 @@ pub enum AST {
     /// The variable(s) being declared
     lhs: TuplePattern,
     /// The value of the declaration
-    rhs: Option<Box<Expr>>,
+    rhs: Option<LispVal>,
   },
   /// A constant declaration.
   Const {
     /// The constant(s) being declared
     lhs: TuplePattern,
     /// The value of the declaration
-    rhs: Box<Expr>,
+    rhs: LispVal,
   },
   /// A type definition.
   Typedef {
@@ -420,40 +418,40 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_pattern(&self, e: LispVal) -> Result<Pattern> {
-    Ok(match &*e.unwrapped_arc() {
-      &LispKind::Atom(a) => Pattern::VarOrConst(a),
-      LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
-        Some((Keyword::Colon, mut u)) =>
-          if let (Some(h), Some(p), true) = (u.next(), u.next(), u.is_empty()) {
-            let h = h.as_atom().ok_or_else(||
-              ElabError::new_e(self.try_get_span(&h), "expecting hypothesis name"))?;
-            Pattern::Hyped(h, Box::new(self.parse_pattern(p)?))
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))
-          },
-        Some((Keyword::Or, u)) => {
-          let mut args = vec![];
-          for e in u {args.push(self.parse_pattern(e)?)}
-          Pattern::Or(args.into_boxed_slice())
-        }
-        Some((Keyword::With, mut u)) =>
-          if let (Some(p), Some(g), true) = (u.next(), u.next(), u.is_empty()) {
-            Pattern::With(Box::new((self.parse_pattern(p)?, self.parse_expr(g)?)))
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "'with' syntax error"))
-          },
-        _ => return Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))
-      }
-      LispKind::Number(n) => Pattern::Number(n.clone()),
-      _ => return Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))
-    })
-  }
+  // fn parse_pattern(&self, e: LispVal) -> Result<Pattern> {
+  //   Ok(match &*e.unwrapped_arc() {
+  //     &LispKind::Atom(a) => Pattern::VarOrConst(a),
+  //     LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
+  //       Some((Keyword::Colon, mut u)) =>
+  //         if let (Some(h), Some(p), true) = (u.next(), u.next(), u.is_empty()) {
+  //           let h = h.as_atom().ok_or_else(||
+  //             ElabError::new_e(self.try_get_span(&h), "expecting hypothesis name"))?;
+  //           Pattern::Hyped(h, Box::new(self.parse_pattern(p)?))
+  //         } else {
+  //           return Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))
+  //         },
+  //       Some((Keyword::Or, u)) => {
+  //         let mut args = vec![];
+  //         for e in u {args.push(self.parse_pattern(e)?)}
+  //         Pattern::Or(args.into_boxed_slice())
+  //       }
+  //       Some((Keyword::With, mut u)) =>
+  //         if let (Some(p), Some(g), true) = (u.next(), u.next(), u.is_empty()) {
+  //           Pattern::With(Box::new((self.parse_pattern(p)?, g)))
+  //         } else {
+  //           return Err(ElabError::new_e(self.try_get_span(&e), "'with' syntax error"))
+  //         },
+  //       _ => return Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))
+  //     }
+  //     LispKind::Number(n) => Pattern::Number(n.clone()),
+  //     _ => return Err(ElabError::new_e(self.try_get_span(&e), "pattern syntax error"))
+  //   })
+  // }
 
-  fn parse_decl(&self, e: LispVal) -> Result<(TuplePattern, Option<Box<Expr>>)> {
+  fn parse_decl(&self, e: LispVal) -> Result<(TuplePattern, Option<LispVal>)> {
     if let Some((Keyword::ColonEq, mut u)) = self.head_keyword(&e) {
       if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
-        Ok((self.parse_tuple_pattern(lhs)?, Some(Box::new(self.parse_expr(rhs)?))))
+        Ok((self.parse_tuple_pattern(lhs)?, Some(rhs)))
       } else {
         Err(ElabError::new_e(self.try_get_span(&e), "decl: syntax error"))
       }
@@ -462,197 +460,187 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn parse_invariant_decl(&self, ghost: bool, e: LispVal) -> Result<Invariant> {
-    match self.parse_decl(e.clone())? {
-      (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(name, _) = *v {
-        return Ok(Invariant {name, ghost, ty: Some(ty), val: val.map(|v| *v)})
-      },
-      (TuplePattern::Name(name, _), val) =>
-        return Ok(Invariant {name, ghost, ty: None, val: val.map(|v| *v)}),
-      _ => {}
-    }
-    Err(ElabError::new_e(self.try_get_span(&e), "while: unexpected invariant"))
-  }
+  // fn parse_invariant_decl(&self, ghost: bool, e: LispVal) -> Result<Invariant> {
+  //   match self.parse_decl(e.clone())? {
+  //     (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(name, _) = *v {
+  //       return Ok(Invariant {name, ghost, ty: Some(ty), val})
+  //     },
+  //     (TuplePattern::Name(name, _), val) =>
+  //       return Ok(Invariant {name, ghost, ty: None, val}),
+  //     _ => {}
+  //   }
+  //   Err(ElabError::new_e(self.try_get_span(&e), "while: unexpected invariant"))
+  // }
 
-  fn parse_expr(&self, e: LispVal) -> Result<Expr> {
-    Ok(match &*e.unwrapped_arc() {
-      &LispKind::Atom(AtomID::UNDER) => Expr::Hole(self.try_get_fspan(&e)),
-      &LispKind::Atom(a) => Expr::Var(a),
-      LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
-        Some((Keyword::Ghost, mut u)) =>
-          if let (Some(e), true) = (u.next(), u.is_empty()) {
-            let (lhs, rhs) = self.parse_decl(e)?;
-            Expr::Let {ghost: true, lhs, rhs}
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))
-          },
-        Some((Keyword::Colon, _)) |
-        Some((Keyword::ColonEq, _)) => {
-          let (lhs, rhs) = self.parse_decl(e)?;
-          Expr::Let {ghost: false, lhs, rhs}
-        }
-        Some((Keyword::If, mut u)) =>
-          if let (Some(cond), Some(tru)) = (u.next(), u.next()) {
-            let (hyp, cond) = match self.head_keyword(&cond) {
-              Some((Keyword::Colon, mut u)) =>
-                if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
-                  let h = h.as_atom().ok_or_else(||
-                    ElabError::new_e(self.try_get_span(&h), "expecting hypothesis name"))?;
-                  (if h == AtomID::UNDER {None} else {Some(h)}, cond)
-                } else {
-                  return Err(ElabError::new_e(self.try_get_span(&cond), "':' syntax error"))
-                },
-              _ => (None, cond),
-            };
-            let (cond, tru) = (self.parse_expr(cond)?, self.parse_expr(tru)?);
-            let fal = match u.next() {
-              Some(fal) if u.is_empty() => self.parse_expr(fal)?,
-              None => Expr::Nil,
-              _ => return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error")),
-            };
-            Expr::If(Box::new((hyp, cond, tru, fal)))
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error"))
-          },
-        Some((Keyword::Switch, mut u)) => {
-          let c = self.parse_expr(u.next().ok_or_else(||
-            ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))?)?;
-          let mut branches = vec![];
-          for e in u {
-            if let Some((Keyword::Arrow, mut u)) = self.head_keyword(&e) {
-              if let (Some(p), Some(e), true) = (u.next(), u.next(), u.is_empty()) {
-                branches.push((self.parse_pattern(p)?, self.parse_expr(e)?));
-              } else {
-                return Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))
-              }
-            } else {
-              return Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))
-            }
-          }
-          Expr::Switch(Box::new(c), branches.into_boxed_slice())
-        }
-        Some((Keyword::While, mut u)) => {
-          let c = u.next().ok_or_else(||
-            ElabError::new_e(self.try_get_span(&e), "while: syntax error"))?;
-          let (hyp, c) = if let Some((Keyword::Invariant, mut u)) = self.head_keyword(&c) {
-            if let (Some(h), Some(c), true) = (u.next().and_then(|a| a.as_atom()), u.next(), u.is_empty()) {
-              (Some(h), c)
-            } else {
-              return Err(ElabError::new_e(self.try_get_span(&e), "while: bad pattern"))
-            }
-          } else {(None, c)};
-          let c = self.parse_expr(c)?;
-          let mut invar = vec![];
-          let mut muts = vec![];
-          let mut var = None;
-          let mut body = vec![];
-          while let Some(e) = u.next() {
-            if let Some(v) = self.parse_variant(&e) {
-              if mem::replace(&mut var, Some(v)).is_some() {
-                return Err(ElabError::new_e(self.try_get_span(&e), "while: two variants"))
-              }
-            } else if let Some((Keyword::Invariant, u)) = self.head_keyword(&e) {
-              for e in u {
-                match self.head_keyword(&e) {
-                  Some((Keyword::Mut, u)) => for e in u {
-                    muts.push(e.as_atom().ok_or_else(||
-                      ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?)
-                  },
-                  Some((Keyword::Ghost, u)) => for e in u {
-                    invar.push(self.parse_invariant_decl(true, e)?)
-                  },
-                  _ => invar.push(self.parse_invariant_decl(false, e)?),
-                }
-              }
-            } else {
-              body.push(self.parse_expr(e)?);
-              break
-            }
-          }
-          for e in u {body.push(self.parse_expr(e)?)}
-          Expr::While {
-            hyp, cond: Box::new(c), var,
-            invar: invar.into_boxed_slice(),
-            body: Block { muts: muts.into(), stmts: body.into_boxed_slice() }
-          }
-        }
-        Some((Keyword::Begin, mut u)) => {
-          let mut muts = vec![];
-          let mut body = vec![];
-          while let Some(e) = u.next() {
-            if let Some((Keyword::Mut, u)) = self.head_keyword(&e) {
-              for e in u {
-                muts.push(e.as_atom().ok_or_else(||
-                  ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?)
-              }
-            } else {
-              body.push(self.parse_expr(e)?);
-              break
-            }
-          }
-          for e in u {body.push(self.parse_expr(e)?)}
-          Expr::Block(Block {muts: muts.into(), stmts: body.into_boxed_slice()})
-        }
-        Some((Keyword::Entail, mut u)) => {
-          let mut last = u.next().ok_or_else(||
-            ElabError::new_e(self.try_get_span(&e), "entail: expected proof"))?;
-          let mut args = vec![];
-          for e in u {
-            args.push(self.parse_expr(mem::replace(&mut last, e))?)
-          }
-          Expr::Entail(last, args.into_boxed_slice())
-        }
-        _ => {
-          let mut u = Uncons::from(e);
-          match u.next() {
-            None => Expr::Nil,
-            Some(e) => match self.head_keyword(&e) {
-              Some((Keyword::Begin, mut u1)) => {
-                let name = u1.next().and_then(|e| e.as_atom()).ok_or_else(||
-                  ElabError::new_e(self.try_get_span(&e), "label: expected label name"))?;
-                let mut args = vec![];
-                let mut muts = vec![];
-                let mut variant = None;
-                for e in u1 {
-                  if let Some(v) = self.parse_variant(&e) {
-                    if mem::replace(&mut variant, Some(v)).is_some() {
-                      return Err(ElabError::new_e(self.try_get_span(&e), "label: two variants"))
-                    }
-                  } else {
-                    self.parse_arg(e, true, &mut args, Some(&mut muts))?
-                  }
-                }
-                let mut body = vec![];
-                for e in u {body.push(self.parse_expr(e)?)}
-                Expr::Label {
-                  name, args: args.into(), variant,
-                  body: Block {muts: muts.into(), stmts: body.into_boxed_slice()}
-                }
-              }
-              _ => {
-                let f = e.as_atom().ok_or_else(||
-                  ElabError::new_e(self.try_get_span(&e), "only variables can be called like functions"))?;
-                let mut args = vec![];
-                let mut variant = None;
-                for e in u {
-                  if let Some(v) = self.parse_variant(&e) {
-                    if mem::replace(&mut variant, Some(v)).is_some() {
-                      return Err(ElabError::new_e(self.try_get_span(&e), "call: two variants"))
-                    }
-                  } else {
-                    args.push(self.parse_expr(e)?)
-                  }
-                }
-                Expr::Call {f, args: args.into(), variant}
-              }
-            }
-          }
-        }
-      },
-      LispKind::Number(n) => Expr::Number(n.clone()),
-      _ => return Err(ElabError::new_e(self.try_get_span(&e), "unknown expression"))
-    })
-  }
+  // fn parse_expr(&self, e: LispVal) -> Result<Expr> {
+  //   Ok(match &*e.unwrapped_arc() {
+  //     &LispKind::Atom(AtomID::UNDER) => Expr::Hole(self.try_get_fspan(&e)),
+  //     &LispKind::Atom(a) => Expr::Var(a),
+  //     LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
+  //       Some((Keyword::Ghost, mut u)) =>
+  //         if let (Some(e), true) = (u.next(), u.is_empty()) {
+  //           let (lhs, rhs) = self.parse_decl(e)?;
+  //           Expr::Let {ghost: true, lhs, rhs}
+  //         } else {
+  //           return Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))
+  //         },
+  //       Some((Keyword::Colon, _)) |
+  //       Some((Keyword::ColonEq, _)) => {
+  //         let (lhs, rhs) = self.parse_decl(e)?;
+  //         Expr::Let {ghost: false, lhs, rhs}
+  //       }
+  //       Some((Keyword::If, mut u)) =>
+  //         if let (Some(cond), Some(tru)) = (u.next(), u.next()) {
+  //           let (hyp, cond) = match self.head_keyword(&cond) {
+  //             Some((Keyword::Colon, mut u)) =>
+  //               if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
+  //                 let h = h.as_atom().ok_or_else(||
+  //                   ElabError::new_e(self.try_get_span(&h), "expecting hypothesis name"))?;
+  //                 (if h == AtomID::UNDER {None} else {Some(h)}, cond)
+  //               } else {
+  //                 return Err(ElabError::new_e(self.try_get_span(&cond), "':' syntax error"))
+  //               },
+  //             _ => (None, cond),
+  //           };
+  //           let (cond, tru) = (self.parse_expr(cond)?, self.parse_expr(tru)?);
+  //           let fal = match u.next() {
+  //             Some(fal) if u.is_empty() => self.parse_expr(fal)?,
+  //             None => Expr::Nil,
+  //             _ => return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error")),
+  //           };
+  //           Expr::If(Box::new((hyp, cond, tru, fal)))
+  //         } else {
+  //           return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error"))
+  //         },
+  //       Some((Keyword::Switch, mut u)) => {
+  //         let c = self.parse_expr(u.next().ok_or_else(||
+  //           ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))?)?;
+  //         let mut branches = vec![];
+  //         for e in u {
+  //           if let Some((Keyword::Arrow, mut u)) = self.head_keyword(&e) {
+  //             if let (Some(p), Some(e), true) = (u.next(), u.next(), u.is_empty()) {
+  //               branches.push((self.parse_pattern(p)?, self.parse_expr(e)?));
+  //             } else {
+  //               return Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))
+  //             }
+  //           } else {
+  //             return Err(ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))
+  //           }
+  //         }
+  //         Expr::Switch(Box::new(c), branches.into_boxed_slice())
+  //       }
+  //       Some((Keyword::While, mut u)) => {
+  //         let c = u.next().ok_or_else(||
+  //           ElabError::new_e(self.try_get_span(&e), "while: syntax error"))?;
+  //         let (hyp, c) = if let Some((Keyword::Invariant, mut u)) = self.head_keyword(&c) {
+  //           if let (Some(h), Some(c), true) = (u.next().and_then(|a| a.as_atom()), u.next(), u.is_empty()) {
+  //             (Some(h), c)
+  //           } else {
+  //             return Err(ElabError::new_e(self.try_get_span(&e), "while: bad pattern"))
+  //           }
+  //         } else {(None, c)};
+  //         let c = self.parse_expr(c)?;
+  //         let mut invar = vec![];
+  //         let mut muts = vec![];
+  //         let mut var = None;
+  //         while let Some(e) = u.head() {
+  //           if let Some(v) = self.parse_variant(&e) {
+  //             if mem::replace(&mut var, Some(v)).is_some() {
+  //               return Err(ElabError::new_e(self.try_get_span(&e), "while: two variants"))
+  //             }
+  //           } else if let Some((Keyword::Invariant, u)) = self.head_keyword(&e) {
+  //             for e in u {
+  //               match self.head_keyword(&e) {
+  //                 Some((Keyword::Mut, u)) => for e in u {
+  //                   muts.push(e.as_atom().ok_or_else(||
+  //                     ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?)
+  //                 },
+  //                 Some((Keyword::Ghost, u)) => for e in u {
+  //                   invar.push(self.parse_invariant_decl(true, e)?)
+  //                 },
+  //                 _ => invar.push(self.parse_invariant_decl(false, e)?),
+  //               }
+  //             }
+  //           } else {break}
+  //           u.next();
+  //         }
+  //         Expr::While {
+  //           hyp, cond: Box::new(c), var,
+  //           invar: invar.into_boxed_slice(),
+  //           body: Block { muts: muts.into(), stmts: u }
+  //         }
+  //       }
+  //       Some((Keyword::Begin, mut u)) => {
+  //         let mut muts = vec![];
+  //         while let Some(e) = u.head() {
+  //           if let Some((Keyword::Mut, u)) = self.head_keyword(&e) {
+  //             for e in u {
+  //               muts.push(e.as_atom().ok_or_else(||
+  //                 ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?)
+  //             }
+  //           } else {break}
+  //           u.next();
+  //         }
+  //         Expr::Block(Block {muts: muts.into(), stmts: u})
+  //       }
+  //       Some((Keyword::Entail, mut u)) => {
+  //         let mut last = u.next().ok_or_else(||
+  //           ElabError::new_e(self.try_get_span(&e), "entail: expected proof"))?;
+  //         let mut args = vec![];
+  //         for e in u {
+  //           args.push(self.parse_expr(mem::replace(&mut last, e))?)
+  //         }
+  //         Expr::Entail(last, args.into_boxed_slice())
+  //       }
+  //       _ => {
+  //         let mut u = Uncons::from(e);
+  //         match u.next() {
+  //           None => Expr::Nil,
+  //           Some(e) => match self.head_keyword(&e) {
+  //             Some((Keyword::Begin, mut u1)) => {
+  //               let name = u1.next().and_then(|e| e.as_atom()).ok_or_else(||
+  //                 ElabError::new_e(self.try_get_span(&e), "label: expected label name"))?;
+  //               let mut args = vec![];
+  //               let mut muts = vec![];
+  //               let mut variant = None;
+  //               for e in u1 {
+  //                 if let Some(v) = self.parse_variant(&e) {
+  //                   if mem::replace(&mut variant, Some(v)).is_some() {
+  //                     return Err(ElabError::new_e(self.try_get_span(&e), "label: two variants"))
+  //                   }
+  //                 } else {
+  //                   self.parse_arg(e, true, &mut args, Some(&mut muts))?
+  //                 }
+  //               }
+  //               Expr::Label {
+  //                 name, args: args.into(), variant,
+  //                 body: Block {muts: muts.into(), stmts: u}
+  //               }
+  //             }
+  //             _ => {
+  //               let f = e.as_atom().ok_or_else(||
+  //                 ElabError::new_e(self.try_get_span(&e), "only variables can be called like functions"))?;
+  //               let mut args = vec![];
+  //               let mut variant = None;
+  //               for e in u {
+  //                 if let Some(v) = self.parse_variant(&e) {
+  //                   if mem::replace(&mut variant, Some(v)).is_some() {
+  //                     return Err(ElabError::new_e(self.try_get_span(&e), "call: two variants"))
+  //                   }
+  //                 } else {
+  //                   args.push(self.parse_expr(e)?)
+  //                 }
+  //               }
+  //               Expr::Call {f, args: args.into(), variant}
+  //             }
+  //           }
+  //         }
+  //       }
+  //     },
+  //     LispKind::Number(n) => Expr::Number(n.clone()),
+  //     _ => return Err(ElabError::new_e(self.try_get_span(&e), "unknown expression"))
+  //   })
+  // }
 
   fn parse_proc(&self, mut kind: ProcKind, mut u: Uncons) -> Result<Proc> {
     let e = match u.next() {
@@ -679,18 +667,14 @@ impl<'a> Parser<'a> {
       }
       _ => return Err(ElabError::new_e(self.try_get_span(&e), "func/proc: syntax error"))
     };
-    let mut body = vec![];
-    let variant = if let Some(e) = u.next() {
+    let variant = if let Some(e) = u.head() {
       match kind {
         ProcKind::Intrinsic => return Err(
           ElabError::new_e(self.try_get_span(&e), "intrinsic: unexpected body")),
         ProcKind::ProcDecl => kind = ProcKind::Proc,
         _ => {}
       }
-      let v = self.parse_variant(&e);
-      if v.is_none() {body.push(self.parse_expr(e)?)}
-      for e in u {body.push(self.parse_expr(e)?)}
-      v
+      self.parse_variant(&e)
     } else {None};
     Ok(Proc {
       name, span,
@@ -698,7 +682,7 @@ impl<'a> Parser<'a> {
       rets: rets.into_boxed_slice(),
       variant,
       kind,
-      body: Block {muts: muts.into(), stmts: body.into_boxed_slice()}
+      body: Block {muts: muts.into(), stmts: u}
     })
   }
 

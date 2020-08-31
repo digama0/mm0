@@ -1,16 +1,20 @@
 //! MMC type checking pass.
-use std::{rc::Rc, collections::{HashMap, HashSet}};
-use crate::elab::{Result, Elaborator, Environment, ElabError,
+use std::rc::Rc;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use std::mem;
+use itertools::Itertools;
+use num::BigInt;
+use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
   environment::{AtomID, AtomData},
   lisp::{Uncons, LispVal, LispKind}, local_context::{try_get_span_from, try_get_span}};
-use crate::util::{Span, FileSpan};
-use super::{parser::{Proc, AST, Keyword}, Compiler,
-  nameck::{Type as NType, PrimType, PrimProc, Entity, GlobalTC, Operator, ProcTC}};
-use num::BigInt;
+use crate::util::{Span, FileSpan, BoxError};
+use super::{parser::{Proc, AST, Keyword, ProcKind, Arg}, Compiler,
+  nameck::{Type as NType, PrimType, PrimProc, Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
 
 /// Possible sizes for integer operations and types.
 #[derive(Copy, Clone, Debug)]
-enum Size {
+pub enum Size {
   /// 8 bits, or 1 byte. Used for `u8` and `i8`.
   S8,
   /// 16 bits, or 2 bytes. Used for `u16` and `i16`.
@@ -28,7 +32,7 @@ enum Size {
 
 /// (Elaborated) unary operations.
 #[derive(Copy, Clone, Debug)]
-enum Unop {
+pub enum Unop {
   /// Logical (boolean) NOT
   Not,
   /// Bitwise NOT. For fixed size this is the operation `2^n - x - 1`, and
@@ -38,7 +42,7 @@ enum Unop {
 
 /// (Elaborated) binary operations.
 #[derive(Copy, Clone, Debug)]
-enum Binop {
+pub enum Binop {
   /// Integer addition
   Add,
   /// Integer multiplication
@@ -65,7 +69,7 @@ enum Binop {
 
 /// A proof expression, or "hypothesis".
 #[derive(Debug)]
-enum ProofExpr {
+pub enum ProofExpr {
   /// An assertion expression `(assert p): p`.
   Assert(Box<PureExpr>),
 }
@@ -73,7 +77,7 @@ enum ProofExpr {
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
 /// but most expressions operate on the type of (signed unbounded) integers.
 #[derive(Debug)]
-enum PureExpr {
+pub enum PureExpr {
   /// A variable.
   Var(usize),
   /// An integer or natural number.
@@ -99,8 +103,9 @@ enum PureExpr {
   DerefMut(Box<PureExpr>),
 }
 
+/// A type, which classifies regular variables (not type variables, not hypotheses).
 #[derive(Debug)]
-enum Type {
+pub enum Type {
   /// A type variable.
   Var(usize),
   /// `()` is the type with one element; `sizeof () = 0`.
@@ -149,7 +154,6 @@ enum InferType<'a> {
   Unit,
   Bool,
   Star,
-  Unknown,
   Own(&'a Type),
   Ref(&'a Type),
   RefMut(&'a Type),
@@ -182,10 +186,10 @@ enum GType {
   Star,
   /// A regular variable, of unknown type
   Unknown,
-  /// A regular variable, of the given type
-  Ty(Type),
+  /// A regular variable, of the given type; the bool is true if this is ghost
+  Ty(bool, Type),
   /// A hypothesis, which proves the given separating proposition
-  _Prop(Prop),
+  Prop(Prop),
 }
 
 #[derive(Debug)]
@@ -213,6 +217,26 @@ pub struct TypeChecker<'a> {
   user_locals: HashMap<AtomID, usize>,
   /// Maps internal indexes for variables in scope to their variable record.
   context: Vec<Variable>,
+}
+
+#[allow(variant_size_differences)]
+enum ParseErr {
+  UnknownVar(usize),
+  ElabErr(ElabError),
+}
+
+impl From<usize> for ParseErr {
+  fn from(u: usize) -> Self { Self::UnknownVar(u) }
+}
+
+impl From<ElabError> for ParseErr {
+  fn from(u: ElabError) -> Self { Self::ElabErr(u) }
+}
+
+impl ParseErr {
+  fn new_e(pos: impl Into<Span>, e: impl Into<BoxError>) -> ParseErr {
+    ElabError::new_e(pos, e).into()
+  }
 }
 
 fn get_fresh_name(env: &mut Environment, mut base: String, mut bad: impl FnMut(AtomID, &AtomData) -> bool) -> AtomID {
@@ -243,7 +267,7 @@ impl<'a> TypeChecker<'a> {
     }
   }
 
-  fn todo<T, U>(&mut self, _: U) -> Result<T> { Err(ElabError::new_e(self.fsp.span, "unimplemented")) }
+  fn todo<T, U>(&self, _: U) -> EResult<T> { Err(ElabError::new_e(self.fsp.span, "unimplemented")) }
 
   fn try_get_span(&self, e: &LispVal) -> Span {
     try_get_span(&self.fsp, &e)
@@ -261,13 +285,13 @@ impl<'a> TypeChecker<'a> {
     get_fresh_name(&mut self.elab, s, |a, ad| used_names.contains(&a) || ad.decl.is_some())
   }
 
-  fn infer_type(&'a self, e: &'a PureExpr) -> InferType<'a> {
-    match e {
+  fn infer_type(&'a self, e: &'a PureExpr) -> Result<InferType<'a>, usize> {
+    Ok(match e {
       &PureExpr::Var(i) => match &self.context[i].ty {
-        GType::Unknown => InferType::Unknown,
-        GType::Ty(ty) => InferType::ty(ty),
+        GType::Unknown => return Err(i),
+        GType::Ty(_, ty) => InferType::ty(ty),
         GType::Star => InferType::Star,
-        GType::_Prop(p) => InferType::Prop(p),
+        GType::Prop(p) => InferType::Prop(p),
       },
       PureExpr::Unit => InferType::Unit,
       PureExpr::Bool(_) |
@@ -285,35 +309,43 @@ impl<'a> TypeChecker<'a> {
       PureExpr::Binop(Binop::BitAnd, _, _) |
       PureExpr::Binop(Binop::BitOr, _, _) |
       PureExpr::Binop(Binop::BitXor, _, _) => InferType::Int,
-      PureExpr::Index(a, _, _) => match self.infer_type(a) {
+      PureExpr::Index(a, _, _) => match self.infer_type(a)? {
         InferType::Ty(Type::Array(ty, _)) => InferType::Ty(ty),
-        InferType::Unknown => InferType::Unknown,
         _ => unreachable!(),
       },
       PureExpr::Tuple(es) => InferType::List(
-        es.iter().map(|e| self.infer_type(e)).collect::<Vec<_>>().into()),
-      PureExpr::DerefOwn(e) => match self.infer_type(e) {
+        es.iter().map(|e| self.infer_type(e)).collect::<Result<Vec<_>, usize>>()?.into()),
+      PureExpr::DerefOwn(e) => match self.infer_type(e)? {
         InferType::Ty(Type::Own(ty)) => InferType::Ty(ty),
         InferType::Own(ty) => InferType::Ty(ty),
-        InferType::Unknown => InferType::Unknown,
         _ => unreachable!(),
       },
-      PureExpr::Deref(e) => match self.infer_type(e) {
+      PureExpr::Deref(e) => match self.infer_type(e)? {
         InferType::Ty(Type::Ref(ty)) => InferType::Ty(ty),
         InferType::Ref(ty) => InferType::Ty(ty),
-        InferType::Unknown => InferType::Unknown,
         _ => unreachable!(),
       },
-      PureExpr::DerefMut(e) => match self.infer_type(e) {
+      PureExpr::DerefMut(e) => match self.infer_type(e)? {
         InferType::Ty(Type::RefMut(ty)) => InferType::Ty(ty),
         InferType::RefMut(ty) => InferType::Ty(ty),
-        InferType::Unknown => InferType::Unknown,
         _ => unreachable!(),
       },
-    }
+    })
   }
 
-  fn parse_ty(&mut self, e: &LispVal) -> Result<Type> {
+  fn probably_a_type(&self, e: &LispVal) -> bool {
+    let mut u = Uncons::New(e.clone());
+    let head = match u.next() {
+      None if u.is_empty() => return true,
+      None => u.into(),
+      Some(head) => head,
+    };
+    let name = if let Some(name) = head.as_atom() {name} else {return false};
+    if name == AtomID::UNDER { return false }
+    matches!(self.mmc.names.get(&name), Some(Entity::Type(_)))
+  }
+
+  fn parse_ty(&self, e: &LispVal) -> Result<Type, ParseErr> {
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() => return Ok(Type::Unit),
@@ -350,24 +382,24 @@ impl<'a> TypeChecker<'a> {
         (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.parse_ty(ty)?))),
         (PrimType::Ref, [ty]) => Ok(Type::Ref(Box::new(self.parse_ty(ty)?))),
         (PrimType::RefMut, [ty]) => Ok(Type::RefMut(Box::new(self.parse_ty(ty)?))),
-        _ => Err(ElabError::new_e(self.try_get_span(&e), "unexpected number of arguments"))
+        _ => Err(ParseErr::new_e(self.try_get_span(&e), "unexpected number of arguments"))
       }
       Some(Entity::Type(NType::Unchecked)) => Err(
-        ElabError::new_e(self.try_get_span(&head), "forward type references are not allowed")),
-      Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a type")),
+        ParseErr::new_e(self.try_get_span(&head), "forward type references are not allowed")),
+      Some(_) => Err(ParseErr::new_e(self.try_get_span(&head), "expected a type")),
       None => match self.user_locals.get(&name) {
         Some(&i) if matches!(self.context[i].ty, GType::Star) => Ok(Type::Var(i)),
-        _ => Err(ElabError::new_e(self.try_get_span(&head), "undeclared variable"))
+        _ => Err(ParseErr::new_e(self.try_get_span(&head), "undeclared variable"))
       }
     }
   }
 
-  fn parse_lassoc1_expr(&mut self,
+  fn parse_lassoc1_expr(&self,
     arg1: &LispVal,
     args: &[LispVal],
     binop: Binop,
     tgt: Option<&Type>,
-  ) -> Result<PureExpr> {
+  ) -> Result<PureExpr, ParseErr> {
     let mut e = self.parse_pure_expr(arg1, tgt)?;
     for arg in args {
       e = PureExpr::Binop(binop, Rc::new(e), Rc::new(self.parse_pure_expr(arg, tgt)?))
@@ -375,19 +407,19 @@ impl<'a> TypeChecker<'a> {
     Ok(e)
   }
 
-  fn parse_lassoc_expr(&mut self,
+  fn parse_lassoc_expr(&self,
     args: &[LispVal],
-    f0: impl FnOnce() -> Result<PureExpr>,
-    f1: impl FnOnce(PureExpr) -> Result<PureExpr>,
+    f0: impl FnOnce() -> Result<PureExpr, ParseErr>,
+    f1: impl FnOnce(PureExpr) -> Result<PureExpr, ParseErr>,
     binop: Binop,
     tgt: Option<&Type>,
-  ) -> Result<PureExpr> {
+  ) -> Result<PureExpr, ParseErr> {
     if let Some((arg1, args)) = args.split_first() {
       f1(self.parse_lassoc1_expr(arg1, args, binop, tgt)?)
     } else {f0()}
   }
 
-  fn parse_ineq(&mut self, args: &[LispVal], binop: Binop) -> Result<PureExpr> {
+  fn parse_ineq(&self, args: &[LispVal], binop: Binop) -> Result<PureExpr, ParseErr> {
     if let Some((arg1, args)) = args.split_first() {
       let arg1 = self.parse_pure_expr(arg1, Some(&Type::Int(Size::Inf)))?;
       if let Some((arg2, args)) = args.split_first() {
@@ -403,7 +435,7 @@ impl<'a> TypeChecker<'a> {
     } else { Ok(PureExpr::Bool(true)) }
   }
 
-  fn parse_pure_expr(&mut self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr> {
+  fn parse_pure_expr(&self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr, ParseErr> {
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() => return Ok(PureExpr::Unit),
@@ -411,7 +443,7 @@ impl<'a> TypeChecker<'a> {
       Some(head) => (head, u.collect()),
     };
     macro_rules! err {($($e:expr),*) => {
-      Err(ElabError::new_e(self.try_get_span(&head), format!($($e),*)))
+      Err(ParseErr::new_e(self.try_get_span(&head), format!($($e),*)))
     }}
     macro_rules! check_tgt {($ty:pat, $s:expr) => {
       if !tgt.map_or(true, |tgt| matches!(tgt, $ty)) {
@@ -464,7 +496,7 @@ impl<'a> TypeChecker<'a> {
             };
             let mut a = self.parse_pure_expr(a, None)?;
             let i = Rc::new(self.parse_pure_expr(i, Some(&Type::UInt(Size::Inf)))?);
-            let mut aty = self.infer_type(&a);
+            let mut aty = self.infer_type(&a)?;
             enum AutoDeref { Own, Ref, Mut }
             let mut derefs = vec![];
             let n = loop {
@@ -521,78 +553,136 @@ impl<'a> TypeChecker<'a> {
           (PrimProc::Slice, _) |
           (PrimProc::TypeofBang, _) |
           (PrimProc::Typeof, _) =>
-            return Err(ElabError::new_e(self.try_get_span(&head), "not a pure operation")),
+            return Err(ParseErr::new_e(self.try_get_span(&head), "not a pure operation")),
         }
-        Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ElabError::new_e(
+        Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ParseErr::new_e(
           self.try_get_span(&head), "forward referencing a procedure")),
-        Some(_) => return Err(ElabError::new_e(self.try_get_span(&head), "expected a function/operation")),
+        Some(_) => return Err(ParseErr::new_e(self.try_get_span(&head), "expected a function/operation")),
         None => match self.user_locals.get(&name) {
           Some(&i) => match &self.context[i].ty {
-            GType::Ty(_ty) => match tgt {
+            GType::Ty(_, _ty) => match tgt {
               None => Ok(PureExpr::Var(i)),
               Some(_tgt) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },
-            _ => return Err(ElabError::new_e(self.try_get_span(&head), "expected a regular variable")),
+            _ => return Err(ParseErr::new_e(self.try_get_span(&head), "expected a regular variable")),
           },
-          _ => Err(ElabError::new_e(self.try_get_span(&head), "undeclared variable"))
+          _ => Err(ParseErr::new_e(self.try_get_span(&head), "undeclared variable"))
         }
       }
     } else {
       if !args.is_empty() {
-        return Err(ElabError::new_e(self.try_get_span(e), "unexpected arguments"))
+        return Err(ParseErr::new_e(self.try_get_span(e), "unexpected arguments"))
       }
       head.unwrapped(|e| match *e {
         LispKind::Number(ref n) => Ok(PureExpr::Int(n.clone())),
         LispKind::Bool(b) => Ok(PureExpr::Bool(b)),
-        _ => Err(ElabError::new_e(self.try_get_span(&head), "unexpected expression")),
+        _ => Err(ParseErr::new_e(self.try_get_span(&head), "unexpected expression")),
       })
     }
   }
 
-  fn parse_proof(&mut self, e: &LispVal, tgt: Option<Prop>) -> Result<ProofExpr> {
+  fn parse_prop(&self, e: &LispVal) -> Result<Prop, ParseErr> {
+    self.parse_pure_expr(e, Some(&Type::Bool)).map(|e| Prop::Pure(Rc::new(e)))
+  }
+
+  fn parse_proof(&self, e: &LispVal, tgt: Option<Prop>) -> EResult<ProofExpr> {
     self.todo((e, tgt))
   }
 
+  fn add_args_to_context(&mut self, args: &[Arg], tyvar_allowed: bool, hyp_allowed: bool) -> EResult<()> {
+    self.context.reserve(args.len());
+    let mut todo = vec![];
+    for (i, arg) in args.iter().enumerate() {
+      let user = match arg.name {
+        Some((a, ref fsp)) if a != AtomID::UNDER => {
+          if self.user_locals.insert(a, i).is_some() {
+            return Err(ElabError::new_e(
+              try_get_span_from(&self.fsp, Some(fsp)), "variable declared twice"))
+          }
+          a
+        }
+        _ => AtomID::UNDER
+      };
+      let decl = self.get_fresh_local(user);
+      self.used_names.insert(decl);
+      let is_ty = tyvar_allowed && arg.ty.as_atom().map_or(false, |a| a == AtomID::UNDER ||
+        matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
+      self.context.push(Variable {user, decl, ty: if is_ty {GType::Star} else {GType::Unknown}});
+      if !is_ty {todo.push(i)}
+    }
+    let mut n = todo.len();
+    while n != 0 {
+      for i in mem::take(&mut todo) {
+        let ty = &args[i].ty;
+        let ty = if !hyp_allowed || self.probably_a_type(ty) {
+          self.parse_ty(&args[i].ty).map(|ty| GType::Ty(args[i].ghost, ty))
+        } else {
+          self.parse_prop(&args[i].ty).map(GType::Prop)
+        };
+        match ty {
+          Ok(ty) => self.context[i].ty = ty,
+          Err(ParseErr::UnknownVar(_)) => {todo.push(i)},
+          Err(ParseErr::ElabErr(e)) => return Err(e),
+        }
+      }
+      if n >= mem::replace(&mut n, todo.len()) {
+        return Err(ElabError::new_e(
+          try_get_span_from(&self.fsp, Some(&args[todo[0]].name.as_ref().unwrap().1)),
+          format!("circular typing dependency in {{{}}}", todo.into_iter()
+            .map(|i| &self.elab.data[args[i].name.as_ref().unwrap().0].name)
+            .format(", "))))
+      }
+    }
+    Ok(())
+  }
+
   /// Performs type checking of the input AST.
-  pub fn typeck(&mut self, item: &AST) -> Result<()> {
+  pub fn typeck(&mut self, item: &AST) -> EResult<()> {
     self.used_names.clear();
     self.user_locals.clear();
     self.context.clear();
     match item {
-      AST::Proc(proc) => {
-        let Proc {kind, name, ref span, ref args, ref rets, ref variant, ref body} = **proc;
-        self.todo((kind, name, span, args, rets, variant, body))?
+      AST::Proc(proc) => match proc.kind {
+        ProcKind::Func =>
+          return Err(ElabError::new_e(
+            try_get_span_from(&self.fsp, proc.span.as_ref()), "func is not implemented, use proc")),
+        ProcKind::ProcDecl => {}
+        ProcKind::Intrinsic => {
+          let intrinsic = Intrinsic::from_str(&self.elab.data[proc.name].name)
+            .map_err(|_| ElabError::new_e(
+              try_get_span_from(&self.fsp, proc.span.as_ref()), "unknown intrinsic"))?;
+          // TODO: check intrinsic signature is correct?
+          match self.mmc.names.get_mut(&proc.name) {
+            Some(Entity::Op(Operator::Proc(_, tc @ ProcTC::Unchecked))) =>
+              *tc = ProcTC::Intrinsic(intrinsic),
+            _ => unreachable!()
+          }
+        }
+        ProcKind::Proc => {
+          let Proc {kind, name, ref span, ref args, ref rets, ref variant, ref body} = **proc;
+          self.add_args_to_context(args, false, true)?;
+          self.add_args_to_context(rets, false, true)?;
+          let rets = self.context.drain(args.len()..).collect::<Vec<_>>();
+          if let Some((e, _)) = variant {
+            return Err(ElabError::new_e(self.try_get_span(e), "proc variants are not implemented"))
+          }
+          // println!("{:?}", proc);
+          self.todo((kind, name, span, rets, body))?;
+          return Err(ElabError::new_e(
+            try_get_span_from(&self.fsp, proc.span.as_ref()), "unimplemented"))
+        }
       }
       AST::Global {lhs, rhs} => self.todo((lhs, rhs))?,
       AST::Const {lhs, rhs} => self.todo((lhs, rhs))?,
       &AST::Typedef {name, ref span, ref args, ref val} => {
-        self.context.reserve(args.len());
-        for (i, arg) in args.iter().enumerate() {
-          assert!(!arg.ghost);
-          let user = match arg.name {
-            Some((a, ref fsp)) if a != AtomID::UNDER => {
-              if self.user_locals.insert(a, i).is_some() {
-                return Err(ElabError::new_e(
-                  try_get_span_from(&self.fsp, Some(fsp)), "variable declared twice"))
-              }
-              a
-            }
-            _ => AtomID::UNDER
-          };
-          let decl = self.get_fresh_local(user);
-          self.used_names.insert(decl);
-          let is_ty = arg.ty.as_atom().map_or(false, |a| a == AtomID::UNDER ||
-            matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
-          self.context.push(Variable {user, decl, ty: if is_ty {GType::Star} else {GType::Unknown}})
-        }
-        for (i, arg) in args.iter().enumerate() {
-          if matches!(self.context[i].ty, GType::Unknown) {
-            self.context[i].ty = GType::Ty(self.parse_ty(&arg.ty)?)
-          }
-        }
-        let val = self.parse_ty(val)?;
+        self.add_args_to_context(args, true, false)?;
+        let val = self.parse_ty(val).map_err(|e|
+          if let ParseErr::ElabErr(e) = e {e} else {unreachable!()})?;
         let dname = self.get_fresh_decl(name);
-        self.todo((span, dname, val))?
+        // TODO: write def dname := val
+        if let Entity::Type(ty @ NType::Unchecked) = self.mmc.names.get_mut(&name).unwrap() {
+          *ty = NType::Checked(span.clone(), dname, Rc::new(val))
+        } else {unreachable!()}
       },
       AST::Struct {name, span, args, fields} => self.todo((name, span, args, fields))?,
     }

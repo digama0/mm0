@@ -421,11 +421,11 @@ impl Elaborator {
     s
   }
 
-  fn head(&self, e: &LispKind) -> SResult<LispVal> {
+  fn head_err(&self, e: &LispKind) -> SResult<LispVal> {
     e.unwrapped(|e| match e {
       LispKind::List(es) if es.is_empty() => Err("evaluating 'hd ()'".into()),
       LispKind::List(es) => Ok(es[0].clone()),
-      LispKind::DottedList(es, r) if es.is_empty() => self.head(r),
+      LispKind::DottedList(es, r) if es.is_empty() => self.head_err(r),
       LispKind::DottedList(es, _) => Ok(es[0].clone()),
       _ => Err(format!("expected a list, got {}", self.print(e)))
     })
@@ -821,7 +821,7 @@ make_builtins! { self, sp1, sp2, args,
       else {LispVal::dotted_list(args, r)}
     }
   },
-  Head: Exact(1) => try1!(self.head(&args[0])),
+  Head: Exact(1) => try1!(self.head_err(&args[0])),
   Tail: Exact(1) => try1!(self.tail(&args[0])),
   Nth: Exact(2) => try1!(self.nth(&args[1],
     try1!(args[0].as_int(|n| n.to_usize().unwrap_or(usize::MAX)).ok_or("expected a number")))),
