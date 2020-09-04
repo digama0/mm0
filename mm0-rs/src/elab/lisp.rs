@@ -1053,7 +1053,7 @@ impl std::fmt::Display for BuiltinProc {
 /// the same as a `LispVal`, but in order to decrease allocations this allows
 /// holding on to incomplete subparts of the arrays used in `LispKind::List`
 /// and `LispKind::DottedList`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Uncons {
   /// The initial state, pointing to a lisp value.
   New(LispVal),
@@ -1077,6 +1077,17 @@ impl Uncons {
       Uncons::New(e) => e.exactly(n),
       Uncons::List(es) => es.len() == n,
       Uncons::DottedList(es, r) => n.checked_sub(es.len()).map_or(false, |i| r.exactly(i)),
+    }
+  }
+
+  /// Convert an `Uncons` back into a `LispVal`.
+  pub fn as_lisp(&self) -> LispVal {
+    match self {
+      Uncons::New(e) => e.clone(),
+      Uncons::List(es) if es.is_empty() => LispVal::nil(),
+      Uncons::List(es) => LispVal::list(es.cloned_box()),
+      Uncons::DottedList(es, r) if es.is_empty() => r.clone(),
+      Uncons::DottedList(es, r) => LispVal::dotted_list(es.cloned_box(), r.clone()),
     }
   }
 
@@ -1149,6 +1160,10 @@ impl From<Uncons> for LispVal {
       Uncons::DottedList(es, r) => LispVal::dotted_list(es.cloned_box(), r),
     }
   }
+}
+
+impl Clone for Uncons {
+  fn clone(&self) -> Self { Uncons::New(self.as_lisp()) }
 }
 
 impl Iterator for Uncons {

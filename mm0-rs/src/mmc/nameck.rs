@@ -7,7 +7,7 @@ use crate::elab::{
   local_context::try_get_span_from,
   environment::{AtomID, Environment}};
 use crate::util::FileSpan;
-use super::{Compiler, parser::{AST, Proc, ProcKind, TuplePattern}, typeck};
+use super::{Compiler, types::{self, AST, Proc, ProcKind, TuplePattern}};
 
 macro_rules! make_prims {
   {$($(#[$attr0:meta])* enum $name:ident { $($(#[$attr:meta])* $x:ident: $e:expr,)* })* } => {
@@ -166,8 +166,9 @@ pub enum Type {
   Prim(PrimType),
   /// A user type that has not yet been typechecked.
   Unchecked,
-  /// A user type that has not yet been typechecked.
-  Checked(Option<FileSpan>, AtomID, Rc<typeck::Type>),
+  /// A user type that has been typechecked, with the original span,
+  /// the (internal) declaration name, and the compiled `Type` object.
+  Checked(Option<FileSpan>, AtomID, Rc<types::Type>),
 }
 
 /// The typechecking status of a procedure.
@@ -190,10 +191,13 @@ pub enum Operator {
 }
 
 /// The typechecking status of a global variable.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum GlobalTC {
   /// We know this is a global or const but have not typechecked the body.
   Unchecked,
+  /// A user type that has been typechecked, with the original span,
+  /// the (internal) declaration name, and the compiled value expression.
+  Checked(Option<FileSpan>, AtomID, Option<Rc<types::Expr>>),
 }
 
 /// An operator, function, or type. These all live in one namespace so user types and

@@ -6,6 +6,7 @@
 //! See [`mmc.md`] for information on the MMC format.
 //!
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
+pub mod types;
 pub mod parser;
 pub mod predef;
 pub mod nameck;
@@ -17,10 +18,7 @@ use crate::elab::{
   Result, Elaborator, ElabError,
   environment::{AtomID, Remap},
   lisp::{LispVal, LispRemapper}};
-use parser::{Keyword, Parser};
-use nameck::Entity;
-use predef::PredefMap;
-use typeck::TypeChecker;
+use {types::Keyword, parser::Parser, nameck::Entity, predef::PredefMap, typeck::TypeChecker};
 
 impl<R> Remap<R> for Keyword {
   type Target = Self;

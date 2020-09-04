@@ -4,150 +4,12 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::mem;
 use itertools::Itertools;
-use num::BigInt;
 use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
   environment::{AtomID, AtomData},
   lisp::{Uncons, LispVal, LispKind}, local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan, BoxError};
-use super::{parser::{Proc, AST, Keyword, ProcKind, Arg}, Compiler,
+use super::{Compiler, types::*, parser::head_keyword,
   nameck::{Type as NType, PrimType, PrimProc, Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
-
-/// Possible sizes for integer operations and types.
-#[derive(Copy, Clone, Debug)]
-pub enum Size {
-  /// 8 bits, or 1 byte. Used for `u8` and `i8`.
-  S8,
-  /// 16 bits, or 2 bytes. Used for `u16` and `i16`.
-  S16,
-  /// 32 bits, or 4 bytes. Used for `u32` and `i32`.
-  S32,
-  /// 64 bits, or 8 bytes. Used for `u64` and `i64`.
-  S64,
-  /// Unbounded size. Used for `nat` and `int`. (These types are only legal for
-  /// ghost variables, but they are also used to indicate "correct to an unbounded model"
-  /// for operations like `Unop::BitNot` when it makes sense. We do not actually support
-  /// bignum compilation.)
-  Inf,
-}
-
-/// (Elaborated) unary operations.
-#[derive(Copy, Clone, Debug)]
-pub enum Unop {
-  /// Logical (boolean) NOT
-  Not,
-  /// Bitwise NOT. For fixed size this is the operation `2^n - x - 1`, and
-  /// for infinite size this is `-x - 1`. Note that signed NOT
-  BitNot(Size),
-}
-
-/// (Elaborated) binary operations.
-#[derive(Copy, Clone, Debug)]
-pub enum Binop {
-  /// Integer addition
-  Add,
-  /// Integer multiplication
-  Mul,
-  /// Logical (boolean) AND
-  And,
-  /// Logical (boolean) OR
-  Or,
-  /// Bitwise AND, for signed or unsigned integers of any size
-  BitAnd,
-  /// Bitwise OR, for signed or unsigned integers of any size
-  BitOr,
-  /// Bitwise XOR, for signed or unsigned integers of any size
-  BitXor,
-  /// Less than, for signed or unsigned integers of any size
-  Lt,
-  /// Less than or equal, for signed or unsigned integers of any size
-  Le,
-  /// Equal, for signed or unsigned integers of any size
-  Eq,
-  /// Not equal, for signed or unsigned integers of any size
-  Ne,
-}
-
-/// A proof expression, or "hypothesis".
-#[derive(Debug)]
-pub enum ProofExpr {
-  /// An assertion expression `(assert p): p`.
-  Assert(Box<PureExpr>),
-}
-
-/// Pure expressions in an abstract domain. The interpretation depends on the type,
-/// but most expressions operate on the type of (signed unbounded) integers.
-#[derive(Debug)]
-pub enum PureExpr {
-  /// A variable.
-  Var(usize),
-  /// An integer or natural number.
-  Int(BigInt),
-  /// The unit value `()`.
-  Unit,
-  /// A boolean literal.
-  Bool(bool),
-  /// A unary operation.
-  Unop(Unop, Rc<PureExpr>),
-  /// A binary operation.
-  Binop(Binop, Rc<PureExpr>, Rc<PureExpr>),
-  /// A tuple constructor.
-  Tuple(Box<[PureExpr]>),
-  /// An index operation `(index a i h): T` where `a: (array T n)`,
-  /// `i: nat`, and `h: i < n`.
-  Index(Box<PureExpr>, Rc<PureExpr>, Box<ProofExpr>),
-  /// An deref operation `(* x): T` where `x: (own T)`.
-  DerefOwn(Box<PureExpr>),
-  /// An deref operation `(* x): T` where `x: (& T)`.
-  Deref(Box<PureExpr>),
-  /// An deref operation `(* x): T` where `x: (&mut T)`.
-  DerefMut(Box<PureExpr>),
-}
-
-/// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug)]
-pub enum Type {
-  /// A type variable.
-  Var(usize),
-  /// `()` is the type with one element; `sizeof () = 0`.
-  Unit,
-  /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
-  Bool,
-  /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
-  Int(Size),
-  /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
-  UInt(Size),
-  /// The type `(array T n)` is an array of `n` elements of type `T`;
-  /// `sizeof (array T n) = sizeof T * n`.
-  Array(Box<Type>, Rc<PureExpr>),
-  /// `(own T)` is a type of owned pointers. The typehood predicate is
-  /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
-  Own(Box<Type>),
-  /// `(& T)` is a type of borrowed pointers. This type is treated specially;
-  /// the `x |-> v` assumption is stored separately from regular types, and
-  /// `(* x)` is treated as sugar for `v`.
-  Ref(Box<Type>),
-  /// `(&mut T)` is a type of mutable pointers. This is also treated specially;
-  /// it is sugar for `(mut {x : (own T)})`, which is to say `x` has
-  /// type `own T` in the function but must also be passed back out of the
-  /// function.
-  RefMut(Box<Type>),
-  /// `(list A B C)` is a tuple type with elements `A, B, C`;
-  /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
-  List(Box<[Type]>),
-  /// `(inter A B C)` is an intersection type of `A, B, C`;
-  /// `sizeof (inter A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-  /// the typehood predicate is `x :> (inter A B C)` iff
-  /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
-  /// not separating conjunction.)
-  Inter(Box<[Type]>),
-  /// `(union A B C)` is an undiscriminated anonymous union of types `A, B, C`.
-  /// `sizeof (union A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-  /// the typehood predicate is `x :> (union A B C)` iff
-  /// `x :> A \/ x :> B \/ x :> C`.
-  Union(Box<[Type]>),
-  /// A user-defined type-former.
-  _User(AtomID, Box<[Type]>, Box<[PureExpr]>),
-}
 
 enum InferType<'a> {
   Int,
@@ -173,21 +35,35 @@ impl<'a> InferType<'a> {
   }
 }
 
-#[derive(Clone, Debug)]
-enum Prop {
-  /// An (executable) boolean expression, interpreted as a pure proposition
-  Pure(Rc<PureExpr>),
+/// Like rust, types can either be `Copy` or non-`Copy`.
+/// Unlike rust, non-copy types can still be used after they are moved
+/// away, but their type changes to the `Moved` version of the type,
+/// which represents the "copy core" of the type, essentially an integral
+/// type of the same size as `sizeof(T)`.
+#[derive(Debug)]
+enum CopyType {
+  /// This type is `Copy`, so the moved version of the type is the
+  /// same as the regular version.
+  _Copy,
+  /// This type is not `Copy`, and the moved version of the type is
+  /// given here.
+  _Moved(Type),
 }
 
+/// The (permanent) type of a variable in the context, mixing together type variables,
+/// regular variables and
 #[derive(Debug)]
 #[allow(variant_size_differences)]
 enum GType {
   /// A type variable, of kind `*`
   Star,
-  /// A regular variable, of unknown type
+  /// A regular variable, of unknown type. These only exist while elaborating
+  /// function arguments, since variables may not be listed in dependency order.
   Unknown,
-  /// A regular variable, of the given type; the bool is true if this is ghost
-  Ty(bool, Type),
+  /// A regular variable, of the given type; the bool is true if this is ghost.
+  /// The `CopyType` keeps track of the "moved away" version of the type; it
+  /// is calculated lazily the first time the variable is re-used.
+  Ty(bool, Type, Option<Box<CopyType>>),
   /// A hypothesis, which proves the given separating proposition
   Prop(Prop),
 }
@@ -202,6 +78,15 @@ struct Variable {
   ty: GType,
 }
 
+#[derive(Debug)]
+enum VariableState {
+  Owned,
+  Copy,
+  _Moved,
+}
+#[derive(Debug)]
+struct TypeState(Vec<VariableState>);
+
 /// The type checker temporary.
 #[derive(Debug)]
 pub struct TypeChecker<'a> {
@@ -213,20 +98,22 @@ pub struct TypeChecker<'a> {
   fsp: FileSpan,
   /// The set of names that have been allocated in the declaration we are constructing.
   used_names: HashSet<AtomID>,
-  /// Maps names from the MMC source in scope to their internal indexes.
-  user_locals: HashMap<AtomID, usize>,
+  /// Maps names from the MMC source in scope to their internal names.
+  user_locals: HashMap<AtomID, AtomID>,
+  /// The set of globals that are mutable in the current context (and their mapping to internal names).
+  mut_globals: HashMap<AtomID, AtomID>,
   /// Maps internal indexes for variables in scope to their variable record.
   context: Vec<Variable>,
 }
 
 #[allow(variant_size_differences)]
 enum ParseErr {
-  UnknownVar(usize),
+  UnknownVar(AtomID),
   ElabErr(ElabError),
 }
 
-impl From<usize> for ParseErr {
-  fn from(u: usize) -> Self { Self::UnknownVar(u) }
+impl From<AtomID> for ParseErr {
+  fn from(u: AtomID) -> Self { Self::UnknownVar(u) }
 }
 
 impl From<ElabError> for ParseErr {
@@ -256,6 +143,12 @@ fn get_fresh_name(env: &mut Environment, mut base: String, mut bad: impl FnMut(A
   unreachable!()
 }
 
+impl Compiler {
+  fn _head_keyword(&self, e: &LispVal) -> Option<(Keyword, Uncons)> {
+    head_keyword(&self.keywords, e)
+  }
+}
+
 impl<'a> TypeChecker<'a> {
   /// Constructs a new `TypeChecker`, which can be used to typecheck many `AST` items
   /// via [`typeck`](struct.TypeChecker.html#method.typeck) and will reuse its internal buffers.
@@ -263,8 +156,18 @@ impl<'a> TypeChecker<'a> {
     Self {mmc, elab, fsp,
       used_names: HashSet::new(),
       user_locals: HashMap::new(),
+      mut_globals: HashMap::new(),
       context: Vec::new(),
     }
+  }
+
+  fn new_type_state(&self) -> TypeState {
+    TypeState(self.context.iter().map(|v| match &v.ty {
+      GType::Star => VariableState::Copy,
+      GType::Unknown => unreachable!(),
+      GType::Ty(_, _, Some(b)) if matches!(**b, CopyType::_Copy) => VariableState::Copy,
+      _ => VariableState::Owned,
+    }).collect())
   }
 
   fn todo<T, U>(&self, _: U) -> EResult<T> { Err(ElabError::new_e(self.fsp.span, "unimplemented")) }
@@ -285,11 +188,15 @@ impl<'a> TypeChecker<'a> {
     get_fresh_name(&mut self.elab, s, |a, ad| used_names.contains(&a) || ad.decl.is_some())
   }
 
-  fn infer_type(&'a self, e: &'a PureExpr) -> Result<InferType<'a>, usize> {
+  fn find(&self, a: AtomID) -> Option<&Variable> {
+    self.context.iter().find(|&v| v.decl == a)
+  }
+
+  fn infer_type(&'a self, e: &'a PureExpr) -> Result<InferType<'a>, AtomID> {
     Ok(match e {
-      &PureExpr::Var(i) => match &self.context[i].ty {
+      &PureExpr::Var(i) => match &self.find(i).unwrap().ty {
         GType::Unknown => return Err(i),
-        GType::Ty(_, ty) => InferType::ty(ty),
+        GType::Ty(_, ty, _) => InferType::ty(ty),
         GType::Star => InferType::Star,
         GType::Prop(p) => InferType::Prop(p),
       },
@@ -314,7 +221,7 @@ impl<'a> TypeChecker<'a> {
         _ => unreachable!(),
       },
       PureExpr::Tuple(es) => InferType::List(
-        es.iter().map(|e| self.infer_type(e)).collect::<Result<Vec<_>, usize>>()?.into()),
+        es.iter().map(|e| self.infer_type(e)).collect::<Result<Vec<_>, _>>()?.into()),
       PureExpr::DerefOwn(e) => match self.infer_type(e)? {
         InferType::Ty(Type::Own(ty)) => InferType::Ty(ty),
         InferType::Own(ty) => InferType::Ty(ty),
@@ -345,16 +252,16 @@ impl<'a> TypeChecker<'a> {
     matches!(self.mmc.names.get(&name), Some(Entity::Type(_)))
   }
 
-  fn parse_ty(&self, e: &LispVal) -> Result<Type, ParseErr> {
+  fn check_ty(&self, e: &LispVal) -> Result<Type, ParseErr> {
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() => return Ok(Type::Unit),
       None => (u.into(), vec![]),
       Some(head) => (head, u.collect()),
     };
-    macro_rules! parse_tys {($args:expr) => {{
+    macro_rules! check_tys {($args:expr) => {{
       let mut tys = Vec::with_capacity($args.len());
-      for e in $args { tys.push(self.parse_ty(e)?) }
+      for e in $args { tys.push(self.check_ty(e)?) }
       tys.into()
     }}}
     let name = head.as_atom().ok_or_else(||
@@ -365,8 +272,8 @@ impl<'a> TypeChecker<'a> {
     match self.mmc.names.get(&name) {
       Some(&Entity::Type(NType::Prim(prim))) => match (prim, &*args) {
         (PrimType::Array, [ty, n]) => Ok(Type::Array(
-          Box::new(self.parse_ty(ty)?),
-          Rc::new(self.parse_pure_expr(n, Some(&Type::UInt(Size::Inf)))?))),
+          Box::new(self.check_ty(ty)?),
+          Rc::new(self.check_pure_expr(n, Some(&Type::UInt(Size::Inf)))?))),
         (PrimType::Bool, []) => Ok(Type::Bool),
         (PrimType::I8, []) => Ok(Type::Int(Size::S8)),
         (PrimType::I16, []) => Ok(Type::Int(Size::S16)),
@@ -376,38 +283,38 @@ impl<'a> TypeChecker<'a> {
         (PrimType::U16, []) => Ok(Type::UInt(Size::S16)),
         (PrimType::U32, []) => Ok(Type::UInt(Size::S32)),
         (PrimType::U64, []) => Ok(Type::UInt(Size::S64)),
-        (PrimType::List, args) => Ok(Type::List(parse_tys!(args))),
-        (PrimType::Inter, args) => Ok(Type::Inter(parse_tys!(args))),
-        (PrimType::Union, args) => Ok(Type::Union(parse_tys!(args))),
-        (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.parse_ty(ty)?))),
-        (PrimType::Ref, [ty]) => Ok(Type::Ref(Box::new(self.parse_ty(ty)?))),
-        (PrimType::RefMut, [ty]) => Ok(Type::RefMut(Box::new(self.parse_ty(ty)?))),
+        (PrimType::List, args) => Ok(Type::List(check_tys!(args))),
+        (PrimType::Inter, args) => Ok(Type::Inter(check_tys!(args))),
+        (PrimType::Union, args) => Ok(Type::Union(check_tys!(args))),
+        (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.check_ty(ty)?))),
+        (PrimType::Ref, [ty]) => Ok(Type::Ref(Box::new(self.check_ty(ty)?))),
+        (PrimType::RefMut, [ty]) => Ok(Type::RefMut(Box::new(self.check_ty(ty)?))),
         _ => Err(ParseErr::new_e(self.try_get_span(&e), "unexpected number of arguments"))
       }
       Some(Entity::Type(NType::Unchecked)) => Err(
         ParseErr::new_e(self.try_get_span(&head), "forward type references are not allowed")),
       Some(_) => Err(ParseErr::new_e(self.try_get_span(&head), "expected a type")),
       None => match self.user_locals.get(&name) {
-        Some(&i) if matches!(self.context[i].ty, GType::Star) => Ok(Type::Var(i)),
+        Some(&i) if matches!(self.find(i), Some(Variable {ty: GType::Star, ..})) => Ok(Type::Var(i)),
         _ => Err(ParseErr::new_e(self.try_get_span(&head), "undeclared variable"))
       }
     }
   }
 
-  fn parse_lassoc1_expr(&self,
+  fn check_lassoc1_expr(&self,
     arg1: &LispVal,
     args: &[LispVal],
     binop: Binop,
     tgt: Option<&Type>,
   ) -> Result<PureExpr, ParseErr> {
-    let mut e = self.parse_pure_expr(arg1, tgt)?;
+    let mut e = self.check_pure_expr(arg1, tgt)?;
     for arg in args {
-      e = PureExpr::Binop(binop, Rc::new(e), Rc::new(self.parse_pure_expr(arg, tgt)?))
+      e = PureExpr::Binop(binop, Rc::new(e), Rc::new(self.check_pure_expr(arg, tgt)?))
     }
     Ok(e)
   }
 
-  fn parse_lassoc_expr(&self,
+  fn check_lassoc_expr(&self,
     args: &[LispVal],
     f0: impl FnOnce() -> Result<PureExpr, ParseErr>,
     f1: impl FnOnce(PureExpr) -> Result<PureExpr, ParseErr>,
@@ -415,18 +322,18 @@ impl<'a> TypeChecker<'a> {
     tgt: Option<&Type>,
   ) -> Result<PureExpr, ParseErr> {
     if let Some((arg1, args)) = args.split_first() {
-      f1(self.parse_lassoc1_expr(arg1, args, binop, tgt)?)
+      f1(self.check_lassoc1_expr(arg1, args, binop, tgt)?)
     } else {f0()}
   }
 
-  fn parse_ineq(&self, args: &[LispVal], binop: Binop) -> Result<PureExpr, ParseErr> {
+  fn check_ineq(&self, args: &[LispVal], binop: Binop) -> Result<PureExpr, ParseErr> {
     if let Some((arg1, args)) = args.split_first() {
-      let arg1 = self.parse_pure_expr(arg1, Some(&Type::Int(Size::Inf)))?;
+      let arg1 = self.check_pure_expr(arg1, Some(&Type::Int(Size::Inf)))?;
       if let Some((arg2, args)) = args.split_first() {
-        let mut arg2 = Rc::new(self.parse_pure_expr(arg2, Some(&Type::Int(Size::Inf)))?);
+        let mut arg2 = Rc::new(self.check_pure_expr(arg2, Some(&Type::Int(Size::Inf)))?);
         let mut e = PureExpr::Binop(binop, Rc::new(arg1), arg2.clone());
         for arg3 in args {
-          let arg3 = Rc::new(self.parse_pure_expr(arg3, Some(&Type::Int(Size::Inf)))?);
+          let arg3 = Rc::new(self.check_pure_expr(arg3, Some(&Type::Int(Size::Inf)))?);
           e = PureExpr::Binop(Binop::And, Rc::new(e), Rc::new(PureExpr::Binop(binop, arg2, arg3.clone())));
           arg2 = arg3;
         }
@@ -435,7 +342,7 @@ impl<'a> TypeChecker<'a> {
     } else { Ok(PureExpr::Bool(true)) }
   }
 
-  fn parse_pure_expr(&self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr, ParseErr> {
+  fn check_pure_expr(&self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr, ParseErr> {
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() => return Ok(PureExpr::Unit),
@@ -464,14 +371,14 @@ impl<'a> TypeChecker<'a> {
         Some(Entity::Const(GlobalTC::Unchecked)) => err!("forward referencing constants is not allowed"),
         Some(Entity::Op(Operator::Prim(prim))) => match (prim, &*args) {
           (PrimProc::Add, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::Add, Some(get_int_tgt!())),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::Add, Some(get_int_tgt!())),
           (PrimProc::And, args) => {
             check_tgt!(Type::Bool, "a bool");
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(true)), Ok, Binop::And, Some(&Type::Bool))
+            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(true)), Ok, Binop::And, Some(&Type::Bool))
           }
           (PrimProc::Assert, _) => err!("type error, expected a pure expr"),
           (PrimProc::BitAnd, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())), Ok, Binop::BitAnd, Some(get_int_tgt!())),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())), Ok, Binop::BitAnd, Some(get_int_tgt!())),
           (PrimProc::BitNot, args) => {
             let (sz, ty) = match tgt {
               None => (Size::Inf, &Type::Int(Size::Inf)),
@@ -481,21 +388,21 @@ impl<'a> TypeChecker<'a> {
                 _ => return err!("type error, expected an integer"),
               }
             };
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())),
               |e| Ok(PureExpr::Unop(Unop::BitNot(sz), Rc::new(e))), Binop::BitOr, Some(ty))
           }
           (PrimProc::BitOr, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitOr, Some(get_int_tgt!())),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitOr, Some(get_int_tgt!())),
           (PrimProc::BitXor, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
           (PrimProc::Index, args) => {
             let (a, i, h) = match args {
               [a, i] => (a, i, None),
               [a, i, h] => (a, i, Some(h)),
               _ => return err!("expected 2 or 3 arguments"),
             };
-            let mut a = self.parse_pure_expr(a, None)?;
-            let i = Rc::new(self.parse_pure_expr(i, Some(&Type::UInt(Size::Inf)))?);
+            let mut a = self.check_pure_expr(a, None)?;
+            let i = Rc::new(self.check_pure_expr(i, Some(&Type::UInt(Size::Inf)))?);
             let mut aty = self.infer_type(&a)?;
             enum AutoDeref { Own, Ref, Mut }
             let mut derefs = vec![];
@@ -517,7 +424,7 @@ impl<'a> TypeChecker<'a> {
             }
             let prop = PureExpr::Binop(Binop::Lt, i.clone(), n.clone());
             let h = match h {
-              Some(h) => self.parse_proof(h, Some(Prop::Pure(Rc::new(prop))))?,
+              Some(h) => self.check_proof(h, Some(Prop::Pure(Rc::new(prop))))?,
               None => ProofExpr::Assert(Box::new(prop)),
             };
             Ok(PureExpr::Index(Box::new(a), i, Box::new(h)))
@@ -525,30 +432,30 @@ impl<'a> TypeChecker<'a> {
           (PrimProc::List, args) => {
             let mut vec = Vec::with_capacity(args.len());
             match tgt {
-              None => for e in args { vec.push(self.parse_pure_expr(e, None)?) }
+              None => for e in args { vec.push(self.check_pure_expr(e, None)?) }
               Some(Type::List(ts)) if ts.len() == args.len() =>
                 for (e, ty) in (&*args).iter().zip(&**ts) {
-                  vec.push(self.parse_pure_expr(e, Some(ty))?)
+                  vec.push(self.check_pure_expr(e, Some(ty))?)
                 },
                 Some(ty) => return err!("type error, expected {:?}", ty),
             }
             Ok(PureExpr::Tuple(vec.into()))
           }
           (PrimProc::Mul, args) =>
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Int(1.into())), Ok, Binop::Mul, Some(get_int_tgt!())),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Int(1.into())), Ok, Binop::Mul, Some(get_int_tgt!())),
           (PrimProc::Not, args) => {
             check_tgt!(Type::Bool, "a bool");
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(true)),
+            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(true)),
               |e| Ok(PureExpr::Unop(Unop::Not, Rc::new(e))), Binop::Or, Some(&Type::Bool))
           }
           (PrimProc::Or, args) => {
             check_tgt!(Type::Bool, "a bool");
-            self.parse_lassoc_expr(args, || Ok(PureExpr::Bool(false)), Ok, Binop::Or, Some(&Type::Bool))
+            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(false)), Ok, Binop::Or, Some(&Type::Bool))
           }
-          (PrimProc::Le, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Le) }
-          (PrimProc::Lt, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Lt) }
-          (PrimProc::Eq, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Eq) }
-          (PrimProc::Ne, args) => { check_tgt!(Type::Bool, "a bool"); self.parse_ineq(args, Binop::Ne) }
+          (PrimProc::Le, args) => { check_tgt!(Type::Bool, "a bool"); self.check_ineq(args, Binop::Le) }
+          (PrimProc::Lt, args) => { check_tgt!(Type::Bool, "a bool"); self.check_ineq(args, Binop::Lt) }
+          (PrimProc::Eq, args) => { check_tgt!(Type::Bool, "a bool"); self.check_ineq(args, Binop::Eq) }
+          (PrimProc::Ne, args) => { check_tgt!(Type::Bool, "a bool"); self.check_ineq(args, Binop::Ne) }
           (PrimProc::Pun, _) |
           (PrimProc::Slice, _) |
           (PrimProc::TypeofBang, _) |
@@ -559,8 +466,8 @@ impl<'a> TypeChecker<'a> {
           self.try_get_span(&head), "forward referencing a procedure")),
         Some(_) => return Err(ParseErr::new_e(self.try_get_span(&head), "expected a function/operation")),
         None => match self.user_locals.get(&name) {
-          Some(&i) => match &self.context[i].ty {
-            GType::Ty(_, _ty) => match tgt {
+          Some(&i) => match &self.find(i) {
+            Some(Variable {ty: GType::Ty(_, _ty, _), ..}) => match tgt {
               None => Ok(PureExpr::Var(i)),
               Some(_tgt) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },
@@ -581,29 +488,26 @@ impl<'a> TypeChecker<'a> {
     }
   }
 
-  fn parse_prop(&self, e: &LispVal) -> Result<Prop, ParseErr> {
-    self.parse_pure_expr(e, Some(&Type::Bool)).map(|e| Prop::Pure(Rc::new(e)))
+  fn check_prop(&self, e: &LispVal) -> Result<Prop, ParseErr> {
+    self.check_pure_expr(e, Some(&Type::Bool)).map(|e| Prop::Pure(Rc::new(e)))
   }
 
-  fn parse_proof(&self, e: &LispVal, tgt: Option<Prop>) -> EResult<ProofExpr> {
+  fn check_proof(&self, e: &LispVal, tgt: Option<Prop>) -> EResult<ProofExpr> {
     self.todo((e, tgt))
   }
 
+  /// Add a list of arguments to the context, where the arguments' types can refer to each other
+  /// (provided they can be typed without cyclic dependency).
   fn add_args_to_context(&mut self, args: &[Arg], tyvar_allowed: bool, hyp_allowed: bool) -> EResult<()> {
     self.context.reserve(args.len());
     let mut todo = vec![];
     for (i, arg) in args.iter().enumerate() {
-      let user = match arg.name {
-        Some((a, ref fsp)) if a != AtomID::UNDER => {
-          if self.user_locals.insert(a, i).is_some() {
-            return Err(ElabError::new_e(
-              try_get_span_from(&self.fsp, Some(fsp)), "variable declared twice"))
-          }
-          a
-        }
-        _ => AtomID::UNDER
-      };
+      let user = if let Some((a, _)) = arg.name {a} else {AtomID::UNDER};
       let decl = self.get_fresh_local(user);
+      if user != AtomID::UNDER && self.user_locals.insert(user, decl).is_some() {
+        return Err(ElabError::new_e(
+          try_get_span_from(&self.fsp, Some(&arg.name.as_ref().unwrap().1)), "variable declared twice"))
+      }
       self.used_names.insert(decl);
       let is_ty = tyvar_allowed && arg.ty.as_atom().map_or(false, |a| a == AtomID::UNDER ||
         matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
@@ -615,9 +519,9 @@ impl<'a> TypeChecker<'a> {
       for i in mem::take(&mut todo) {
         let ty = &args[i].ty;
         let ty = if !hyp_allowed || self.probably_a_type(ty) {
-          self.parse_ty(&args[i].ty).map(|ty| GType::Ty(args[i].ghost, ty))
+          self.check_ty(&args[i].ty).map(|ty| GType::Ty(args[i].ghost, ty, None))
         } else {
-          self.parse_prop(&args[i].ty).map(GType::Prop)
+          self.check_prop(&args[i].ty).map(GType::Prop)
         };
         match ty {
           Ok(ty) => self.context[i].ty = ty,
@@ -636,11 +540,26 @@ impl<'a> TypeChecker<'a> {
     Ok(())
   }
 
+  fn check_expr(&mut self, ts: &mut TypeState, e: LispVal, tgt: Option<&Type>) -> EResult<Expr> {
+    self.todo((ts, e, tgt))
+  }
+
+  fn check_stmts(&mut self, ts: &mut TypeState, u: Uncons, tgt: Option<&Type>) -> EResult<Box<[Expr]>> {
+    Ok(match u.len().checked_sub(1) {
+      None if tgt.map_or(true, |tgt| matches!(tgt, Type::Unit)) => Box::new([]),
+      None => return Err(ElabError::new_e(self.try_get_span(&u.as_lisp()), "expected a value, got empty block")),
+      Some(n) => u.enumerate()
+        .map(|(i, e)| self.check_expr(ts, e, if i == n {tgt} else {None}))
+        .collect::<EResult<Vec<_>>>()?.into()
+    })
+  }
+
   /// Performs type checking of the input AST.
   pub fn typeck(&mut self, item: &AST) -> EResult<()> {
     self.used_names.clear();
     self.user_locals.clear();
     self.context.clear();
+    self.mut_globals.clear();
     match item {
       AST::Proc(proc) => match proc.kind {
         ProcKind::Func =>
@@ -659,15 +578,29 @@ impl<'a> TypeChecker<'a> {
           }
         }
         ProcKind::Proc => {
-          let Proc {kind, name, ref span, ref args, ref rets, ref variant, ref body} = **proc;
-          self.add_args_to_context(args, false, true)?;
-          self.add_args_to_context(rets, false, true)?;
-          let rets = self.context.drain(args.len()..).collect::<Vec<_>>();
-          if let Some((e, _)) = variant {
+          // let Proc {kind, name,
+          //   ref span, ref args, ref rets, ref variant,
+          //   body: Body {ref muts, ref stmts}} = **proc;
+          self.add_args_to_context(&proc.args, false, true)?;
+          self.add_args_to_context(&proc.rets, false, true)?;
+          let rets = self.context.drain(proc.args.len()..).collect::<Vec<_>>();
+          if let Some((e, _)) = &proc.variant {
             return Err(ElabError::new_e(self.try_get_span(e), "proc variants are not implemented"))
           }
+          for &(a, ref fsp) in &*proc.body.muts {
+            match self.mmc.names.get(&a) {
+              Some(Entity::Global(GlobalTC::Unchecked)) =>
+                return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
+                  "forward referencing globals is supported")),
+              Some(&Entity::Global(GlobalTC::Checked(_, decl, _))) => {self.mut_globals.insert(a, decl);}
+              _ => return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
+                "unknown global")),
+            }
+          }
+          let mut ts = self.new_type_state();
+          let body = self.check_stmts(&mut ts, proc.body.stmts.clone(), None);
           // println!("{:?}", proc);
-          self.todo((kind, name, span, rets, body))?;
+          self.todo((rets, body))?;
           return Err(ElabError::new_e(
             try_get_span_from(&self.fsp, proc.span.as_ref()), "unimplemented"))
         }
@@ -676,7 +609,7 @@ impl<'a> TypeChecker<'a> {
       AST::Const {lhs, rhs} => self.todo((lhs, rhs))?,
       &AST::Typedef {name, ref span, ref args, ref val} => {
         self.add_args_to_context(args, true, false)?;
-        let val = self.parse_ty(val).map_err(|e|
+        let val = self.check_ty(val).map_err(|e|
           if let ParseErr::ElabErr(e) = e {e} else {unreachable!()})?;
         let dname = self.get_fresh_decl(name);
         // TODO: write def dname := val
