@@ -148,6 +148,7 @@ impl ElabError {
       source: Some("mm0-rs".to_owned()),
       message: self.kind.msg(),
       related_information: self.kind.to_related_info(to_loc),
+      tags: None,
     }
   }
 }

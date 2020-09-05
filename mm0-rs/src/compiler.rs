@@ -179,7 +179,7 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
       }],
     }],
     footer,
-    opt: FormatOptions { color: true, anonymized_line_numbers: false }
+    opt: FormatOptions { color: true, anonymized_line_numbers: false, margin: None }
   }
 }
 

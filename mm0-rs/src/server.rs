@@ -190,7 +190,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         Some(DiagnosticSeverity::Hint) => n_hints += 1,
       }).collect();
 
-    send_diagnostics(path.url().clone(), errs)?;
+    send_diagnostics(path.url().clone(), version, errs)?;
 
     use std::fmt::Write;
     let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
@@ -319,7 +319,7 @@ impl VFS {
     let mut g = self.0.lock().unwrap();
     if let Entry::Occupied(e) = g.entry(path.clone()) {
       if e.get().downstream.lock().unwrap().is_empty() {
-        send_diagnostics(path.url().clone(), vec![])?;
+        send_diagnostics(path.url().clone(), None, vec![])?;
         e.remove();
       } else if e.get().text.lock().unwrap().0.take().is_some() {
         let file = e.get().clone();
@@ -388,10 +388,10 @@ fn log_message(message: String) -> Result<()> {
   })
 }
 
-fn send_diagnostics(uri: Url, diagnostics: Vec<Diagnostic>) -> Result<()> {
+fn send_diagnostics(uri: Url, version: Option<i64>, diagnostics: Vec<Diagnostic>) -> Result<()> {
   send_message(Notification {
     method: "textDocument/publishDiagnostics".to_owned(),
-    params: to_value(PublishDiagnosticsParams {uri, diagnostics})?
+    params: to_value(PublishDiagnosticsParams {uri, version, diagnostics})?
   })
 }
 
@@ -424,7 +424,7 @@ impl RequestHandler {
               range: text2.to_range(span),
             }).await)
         },
-      RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc}) =>
+      RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc, ..}) =>
         self.finish(document_symbol(doc.uri.into()).await),
       RequestType::Completion(p) => {
         let doc = p.text_document_position;
@@ -607,6 +607,7 @@ async fn definition<T>(path: FileRef, pos: Position,
   Ok(res)
 }
 
+#[allow(deprecated)] // workaround rust#60681
 async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   let file = vfs.get(&path).ok_or_else(||
@@ -619,7 +620,7 @@ async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse
     name: (*name.0).clone(),
     detail: Some(desc),
     kind,
-    deprecated: None,
+    #[allow(deprecated)] deprecated: None,
     range: text.to_range(full),
     selection_range: text.to_range(sp),
     children: None,
@@ -790,7 +791,7 @@ impl Server {
     let params = from_value(conn.initialize(
       to_value(ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Incremental)),
-        hover_provider: Some(true),
+        hover_provider: Some(true.into()),
         completion_provider: Some(CompletionOptions {
           resolve_provider: Some(true),
           ..Default::default()

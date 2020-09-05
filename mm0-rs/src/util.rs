@@ -172,7 +172,7 @@ lazy_static! {
 ///
 /// [`CURRENT_DIR`]: struct.CURRENT_DIR.html
 fn make_relative(buf: &PathBuf) -> String {
-  pathdiff::diff_paths(buf, &CURRENT_DIR).as_ref().unwrap_or(buf)
+  pathdiff::diff_paths(buf, &*CURRENT_DIR).as_ref().unwrap_or(buf)
     .to_str().unwrap().to_owned()
 }
 

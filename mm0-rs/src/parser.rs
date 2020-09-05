@@ -108,6 +108,7 @@ impl ParseError {
       source: Some("mm0-rs".to_owned()),
       message: format!("{}", self.msg),
       related_information: None,
+      tags: None,
     }
   }
 }
