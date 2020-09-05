@@ -26,13 +26,14 @@ macro_rules! id_wrapper {
     #[doc=$svec]
     #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct $id(pub $ty);
+    $crate::deep_size_0!($id);
 
     impl fmt::Debug for $id {
       fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
     }
 
     /// A vector wrapper with a strongly typed index interface.
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, DeepSizeOf)]
     pub struct $vec<T>(pub Vec<T>);
 
     #[allow(dead_code)]
@@ -71,7 +72,7 @@ id_wrapper!(ThmID: u32, ThmVec);
 id_wrapper!(AtomID: u32, AtomVec);
 
 /// The information associated to a defined `Sort`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Sort {
   /// The sort's name, as an atom.
   pub atom: AtomID,
@@ -114,6 +115,7 @@ pub enum Type {
   /// in this list.
   Reg(SortID, u64),
 }
+crate::deep_size_0!(Type);
 
 impl Type {
   /// The sort of a type.
@@ -129,7 +131,7 @@ impl Type {
 
 /// An `ExprNode` is interpreted inside a context containing the `Vec<Type>`
 /// args and the `Vec<ExprNode>` heap.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum ExprNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
   Ref(usize),
@@ -143,7 +145,7 @@ pub enum ExprNode {
 /// and a final expression. See [`ExprNode`] for explanation of the variants.
 ///
 /// [`ExprNode`]: enum.ExprNode.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Expr {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
@@ -153,7 +155,7 @@ pub struct Expr {
 }
 
 /// The data associated to a `term` or `def` declaration.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Term {
   /// The name of the term, as an atom.
   pub atom: AtomID,
@@ -189,7 +191,7 @@ pub struct Term {
 /// more constructors, so a `ProofNode` can represent an expr, a proof, or a conversion,
 /// and the typing determines which. A `ProofNode` is interpreted in a context of
 /// variables `Vec<Type>`, and a heap `Vec<ProofNode>`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum ProofNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
   /// This could be an expr, proof, or conv depending on what is referenced.
@@ -269,7 +271,7 @@ impl From<&ExprNode> for ProofNode {
 /// and a final proof. See [`ProofNode`] for explanation of the variants.
 ///
 /// [`ProofNode`]: enum.ProofNode.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
@@ -284,7 +286,7 @@ pub struct Proof {
 }
 
 /// The data associated to an `axiom` or `theorem` declaration.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Thm {
   /// The name of the theorem, as an atom.
   pub atom: AtomID,
@@ -338,6 +340,7 @@ pub enum StmtTrace {
   /// A global lisp declaration in a `do` block, i.e. `do { (def foo 1) };`
   Global(AtomID),
 }
+crate::deep_size_0!(StmtTrace);
 
 impl StmtTrace {
   /// The name of a sort, term, or lisp def in the global list.
@@ -363,10 +366,11 @@ pub enum DeclKey {
   /// An axiom or theorem, with its ID
   Thm(ThmID),
 }
+crate::deep_size_0!(DeclKey);
 
 /// A `Literal` is an element in a processed `notation` declaration. It is either a
 /// constant symbol, or a variable with associated parse precedence.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Literal {
   /// `Var(i, p)` means that we should parse at precedence `p` at this position,
   /// and the resulting expression should be inserted as the `i`th subexpression of
@@ -377,7 +381,7 @@ pub enum Literal {
 }
 
 /// The data associated to a `notation`, `infixl`, `infixr`, or `prefix` declaration.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct NotaInfo {
   /// The span around the name of the term. This is the `"foo"` in `notation foo ...;`
   pub span: FileSpan,
@@ -397,7 +401,7 @@ pub struct NotaInfo {
 
 /// A coercion between two sorts. These are interpreted in a context `c: s1 -> s2` where `s1` and
 /// `s2` are known.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Coe {
   /// This asserts `t` is a unary term constructor from `s1` to `s2`.
   One(FileSpan, TermID),
@@ -429,7 +433,7 @@ impl Coe {
 }
 
 /// The (non-logical) data used by the dynamic parser to interpret formulas.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, DeepSizeOf)]
 pub struct ParserEnv {
   /// A bitset of all left delimiters.
   pub delims_l: Delims,
@@ -459,7 +463,7 @@ pub struct ParserEnv {
 }
 
 /// The data associated to an atom.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct AtomData {
   /// The string form of the atom.
   pub name: ArcString,
@@ -485,7 +489,7 @@ impl AtomData {
 /// The different kind of objects that can appear in a [`Spans`].
 ///
 /// [`Spans`]: ../spans/struct.Spans.html
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum ObjectKind {
   /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
   /// This sort must actually exist in the `Environment` if is constructed
@@ -525,7 +529,7 @@ impl ObjectKind {
 }
 
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Environment {
   /// The sort map, which is a vector because sort names are allocated in order.
   pub sorts: SortVec<Sort>,
@@ -642,6 +646,7 @@ make_atoms! {
 /// An implementation of a map `u8 -> bool` using a 32 byte array as a bitset.
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Delims([u8; 32]);
+crate::deep_size_0!(Delims);
 
 impl Delims {
   /// Returns `self[i]`

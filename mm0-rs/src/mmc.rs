@@ -37,6 +37,7 @@ impl<R, A: Remap<R>> Remap<R> for PredefMap<A> {
 
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
+#[derive(DeepSizeOf)]
 pub struct Compiler {
   /// The map of atoms for MMC keywords. (This depends on the environment because
   /// it gets remapped per file.)

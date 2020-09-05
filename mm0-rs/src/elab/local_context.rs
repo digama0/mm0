@@ -18,7 +18,7 @@ use crate::util::*;
 /// but is known to be bound, `y` is not declared at all but known to be a bound non-dummy,
 /// and `z` is not declared and must be a bound dummy of type `var` (assuming
 /// that `all` has type `var` for its first argument).
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum InferSort {
   /// This is a declared bound variable with the given sort.
   Bound(SortID),
@@ -68,7 +68,7 @@ impl InferSort {
 
 /// The local context is the collection of proof-local data. This is manipulated
 /// by lisp tactics in order to keep track of the proof state and eventually produce a proof.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, DeepSizeOf)]
 pub struct LocalContext {
   /// The collection of local variables. The key is the name of the variable, and the
   /// value is `(dummy, is)` where `dummy` is true if this is a dummy variable

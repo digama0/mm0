@@ -30,7 +30,9 @@
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
+#[macro_use] extern crate deepsize_derive;
 
+mod deepsize;
 pub mod util;
 pub mod lined_string;
 pub mod parser;

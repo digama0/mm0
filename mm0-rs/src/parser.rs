@@ -31,7 +31,7 @@ use ast::*;
 ///
 /// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
 /// [`to_diag_severity`]: enum.ErrorLevel.html#method.to_diag_severity
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum ErrorLevel {
   /// Error level for informational messages, such as the result of `(display)`.
   Info,
@@ -68,7 +68,7 @@ impl ErrorLevel {
 ///
 /// [`Span`]: ../util/struct.Span.html
 /// [`ErrorLevel`]: enum.ErrorLevel.html
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct ParseError {
   /// The location of the error (possibly zero-length,
   /// possibly enclosing an identifier or other object)

@@ -70,7 +70,7 @@ fn nos_id(nos: NumberOrString) -> RequestId {
   }
 }
 
-type LogMessage = (Instant, ThreadId, String);
+type LogMessage = (Instant, ThreadId, usize, String);
 
 lazy_static! {
   static ref LOGGER: (Mutex<Vec<LogMessage>>, Condvar) = Default::default();
@@ -79,7 +79,7 @@ lazy_static! {
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {
-  LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), s));
+  LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), get_memory_usage(), s));
   LOGGER.1.notify_one();
 }
 
@@ -236,6 +236,7 @@ fn dep_change(path: FileRef) -> BoxFuture<'static, ()> {
   elaborate_and_report(path, None, Arc::new(AtomicBool::new(false))).boxed()
 }
 
+#[derive(DeepSizeOf)]
 enum FileCache {
   InProgress {
     version: Option<i64>,
@@ -253,6 +254,7 @@ enum FileCache {
   }
 }
 
+#[derive(DeepSizeOf)]
 struct VirtualFile {
   /// File data, saved (true) or unsaved (false)
   text: Mutex<(Option<i64>, Arc<LinedString>)>,
@@ -272,6 +274,7 @@ impl VirtualFile {
   }
 }
 
+#[derive(DeepSizeOf)]
 struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
 impl VFS {
@@ -812,9 +815,9 @@ impl Server {
       s.spawn(move |_| {
         let mut now = Instant::now();
         loop {
-          for (i, id, s) in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
+          for (i, id, mem, s) in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
             let d = i.saturating_duration_since(now).as_millis();
-            log_message(format!("[{:?}: {:?}ms] {}", id, d, s)).unwrap();
+            log_message(format!("[{:?}: {:?}ms, {}k] {}", id, d, mem/1024, s)).unwrap();
             now = i;
           }
         }

@@ -16,7 +16,7 @@ use super::print::{FormatEnv, EnvDisplay};
 
 /// The intermediate representation for "compiled" lisp functions.
 /// We will do interpretation/evaluation directly on this data structure.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum IR {
   /// Access variable number `n` in the context
   Local(usize),
@@ -142,7 +142,7 @@ impl IR {
 /// * `[pat (=> cont) eval]`: same thing, but `cont` is bound to a delimited continuation
 ///   that can be used to jump to the next case (essentially indicating that the branch fails to
 ///   apply even after the pattern succeeds).
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Branch {
   /// The number of variables in the pattern. The context for `eval` is extended by this many variables
   /// regardless of the input at runtime. For example the pattern `(or ('foo a _) ('bar _ b))` will
@@ -172,7 +172,7 @@ impl<'a> EnvDisplay for Branch {
 /// a compile-time known set of variables that can be referred to in the branch expression.
 /// Patterns are matched from left to right; later patterns will clobber the
 /// bindings of earlier patterns if variable names are reused.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum Pattern {
   /// The `_` pattern. Matches anything, binds nothing.
   Skip,

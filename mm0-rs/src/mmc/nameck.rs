@@ -15,6 +15,7 @@ macro_rules! make_prims {
       $(#[$attr0])*
       #[derive(Debug, PartialEq, Eq, Copy, Clone)]
       pub enum $name { $($(#[$attr])* $x),* }
+      $crate::deep_size_0!($name);
 
       impl ::std::str::FromStr for $name {
         type Err = ();
@@ -159,7 +160,7 @@ make_prims! {
 }
 
 /// An entity representing a type.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Type {
   /// A primitive type.
@@ -172,7 +173,7 @@ pub enum Type {
 }
 
 /// The typechecking status of a procedure.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum ProcTC {
   /// We have determined that this is a procedure but we have not yet examined the body.
   Unchecked,
@@ -181,7 +182,7 @@ pub enum ProcTC {
 }
 
 /// A function / procedure / builtin operator, which is called with function call style.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Operator {
   /// A primitive procedure.
@@ -191,7 +192,7 @@ pub enum Operator {
 }
 
 /// The typechecking status of a global variable.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum GlobalTC {
   /// We know this is a global or const but have not typechecked the body.
   Unchecked,
@@ -202,7 +203,7 @@ pub enum GlobalTC {
 
 /// An operator, function, or type. These all live in one namespace so user types and
 // functions cannot name-overlap.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Entity {
   /// A named type.

@@ -42,7 +42,8 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
 }
 
 /// Newtype for an `Arc<String>`, so that we can implement `From<&str>`.
-#[derive(Clone, Hash, PartialEq, Eq)] pub struct ArcString(pub Arc<String>);
+#[derive(Clone, Hash, PartialEq, Eq, DeepSizeOf)]
+pub struct ArcString(pub Arc<String>);
 
 impl Borrow<str> for ArcString {
   fn borrow(&self) -> &str { &*self.0 }
@@ -105,6 +106,7 @@ pub struct Span {
   /// The byte index of the end of the span (exclusive).
   pub end: usize,
 }
+crate::deep_size_0!(Span);
 
 impl From<Range<usize>> for Span {
   #[inline] fn from(r: Range<usize>) -> Self { Span {start: r.start, end: r.end} }
@@ -180,7 +182,7 @@ fn make_relative(buf: &PathBuf) -> String {
 /// as well as `rel()` to get the relative path from CURRENT_DIR.
 ///
 /// [`Url`]: ../lined_string/struct.Url.html
-#[derive(Clone)]
+#[derive(Clone, DeepSizeOf)]
 pub struct FileRef(Arc<(PathBuf, String, Url)>);
 
 impl From<PathBuf> for FileRef {
@@ -240,7 +242,7 @@ impl fmt::Debug for FileRef {
 /// A span paired with a [`FileRef`]
 ///
 /// [`FileRef`]: struct.FileRef.html
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, DeepSizeOf)]
 pub struct FileSpan {
   /// The file in which this span occured.
   pub file: FileRef,
@@ -252,4 +254,20 @@ impl fmt::Debug for FileSpan {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}:{:?}", self.file, self.span)
   }
+}
+
+/// Try to get memory usage (resident set size) in bytes using the `getrusage()` function from libc.
+fn get_memory_rusage() -> usize {
+  let usage = unsafe {
+    let mut usage = MaybeUninit::uninit();
+    assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);
+    usage.assume_init()
+  };
+  usage.ru_isrss as usize * 1024
+}
+
+/// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
+/// Falls back on `getrusage()` if procfs doesn't exist.
+pub(crate) fn get_memory_usage() -> usize {
+  procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
 }

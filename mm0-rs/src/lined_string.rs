@@ -11,7 +11,7 @@
 use std::mem;
 use std::ops::{Deref, Index};
 pub use lsp_types::{Position, Url};
-use lsp_types::{TextDocumentContentChangeEvent};
+use lsp_types::TextDocumentContentChangeEvent;
 use crate::util::{Span, FileSpan};
 
 /// Wrapper around std's String which stores data about the positions of any newline characters.
@@ -20,7 +20,7 @@ use crate::util::{Span, FileSpan};
 /// Unicode is currently unsupported, but this allows the lexer to gracefully handle
 /// errors arising from the presence of unicode characters in input.
 /// The indices stored in `lines` are the successors of any newline characters.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, DeepSizeOf, Debug)]
 pub struct LinedString { s: String, unicode: bool, lines: Vec<usize> }
 
 /// Allows [`LinedString`] to be indexed with a [`Span`], since [`Span`] is essentially a range.

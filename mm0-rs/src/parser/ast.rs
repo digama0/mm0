@@ -54,6 +54,7 @@ bitflags! {
     const LOCAL = 64;
   }
 }
+crate::deep_size_0!(Modifiers);
 
 impl Modifiers {
   /// The null modifier set. Modifiers are represented as bitfields, so this is the same as `0`.
@@ -108,12 +109,13 @@ impl Display for Modifiers {
   }
 }
 
+
 /// User-supplied delimiter characters.
 ///
 /// A delimiter-stmt with only one math string is parsed
 /// as `Delimiter::Both(..)`, and the contents are put in the environment as both left and right
 /// delimiters. delimiter-stmts with two math strings are parsed as `LeftRight::(s1, s2)`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Delimiter {
   /// A delimiter command `delimiter $ ( , + $;` becomes `Both([b'(', b',', b'+'])`.
   Both(Box<[u8]>),
@@ -126,6 +128,8 @@ pub enum Delimiter {
 /// `f.inner()` is the span of the interior (excluding `$` but including any inner whitespace).
 #[derive(Copy, Clone, Debug)]
 pub struct Formula(pub Span);
+crate::deep_size_0!(Formula);
+
 impl Formula {
   /// Get the span of the interior of the formula (excluding `$` but including any inner whitespace).
   pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
@@ -143,6 +147,7 @@ pub struct Const {
   /// (which should itself contain no embedded whitespace)
   pub trim: Span,
 }
+crate::deep_size_0!(Const);
 
 /// Declarations; term, axiom, theorem, def. Part of a [`Decl`]
 ///
@@ -159,6 +164,7 @@ pub enum DeclKind {
   /// A definition (definition optional in MM0, required in MM1)
   Def,
 }
+crate::deep_size_0!(DeclKind);
 
 /// The "kind" of a binder, denoted using braces vs parentheses on the binder,
 /// as well as the prefix dot on dummies.
@@ -182,6 +188,7 @@ pub enum LocalKind {
   /// are equivalent to `term foo (_: nat): nat;` and also declare anonymous variables.
   Anon,
 }
+crate::deep_size_0!(LocalKind);
 
 impl LocalKind {
   /// Return true iff self is a bound variable, either [`Bound`]
@@ -199,7 +206,7 @@ impl LocalKind {
 }
 
 /// A type with zero or more dependencies. IE `wff` in `(ph: wff)`, or `wff x y` in `(ph: wff x y)`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct DepType {
   /// The span of the sort part. That is, `"wff"` in `wff x y`.
   pub sort: Span,
@@ -218,7 +225,7 @@ impl DepType {
 /// Types can either be a [`DepType`] or a dollar-delimited formula.
 ///
 /// [`DepType`]: struct.DepType.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Type {
   /// A bound or regular variable has a type that is a sort name
   /// with possible dependencies like `foo x y`.
@@ -243,7 +250,7 @@ impl Type {
 /// Detailed information about binder syntax can be found in the [declaration grammar].
 ///
 /// [declaration grammar]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#declarations
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Binder {
   /// The span of the enclosing binder group. For example both `ph` and `ps` have
   /// span `"(ph ps: wff)"` for  `(ph ps: wff)`. In an arrow sequence like `wff x > nat`,
@@ -268,7 +275,7 @@ pub struct Binder {
 /// A lisp s-expression. See [`SExprKind`] for the different kinds of s-expression.
 ///
 /// [`SExprKind`]: enum.SExprKind.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct SExpr {
   /// The span enclosing the entire expression. For expressions using `@`
   /// like `(f @ g x)` (which is parsed as `(f (g x))`), the `(g x)` expression
@@ -301,6 +308,7 @@ pub enum Atom {
   /// [`curly_transform`]: fn.curly_transform.html
   Nfx,
 }
+crate::deep_size_0!(Atom);
 
 /// The data portion of an s-expression.
 ///
@@ -311,7 +319,7 @@ pub enum Atom {
 /// See also the [syntax forms] section of `mm1.md` for more information on MM1 lisp syntax.
 ///
 /// [syntax forms]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#syntax-forms
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum SExprKind {
   /// An atom, an unquoted string of identifier characters like `foo`. These are usually
   /// interpreted as variable accesses or variable declarations, unless they appear inside
@@ -484,7 +492,7 @@ impl EnvDisplay for SExpr {
 /// Holds a Declaration as a [`DeclKind`] with some extra data.
 ///
 /// [`DeclKind`]: enum.DeclKind.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Decl {
   /// The declaration modifiers: [`abstract`] or [`local`] for `def`,
   /// and [`pub`] for `theorem`.
@@ -515,6 +523,7 @@ pub enum Prec {
   /// and parentheses.
   Max,
 }
+crate::deep_size_0!(Prec);
 
 impl fmt::Display for Prec {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -531,7 +540,7 @@ impl fmt::Debug for Prec {
 
 /// A simple notation, one of `prefix`, `infixl`, and `infixr` (which have the same
 /// grammar after the initial keyword).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum SimpleNotaKind {
   /// The `prefix` keyword
   Prefix,
@@ -543,7 +552,7 @@ pub enum SimpleNotaKind {
 /// declared with the 'notation' keyword is represented by [`GenNota`]
 ///
 /// [`GenNota`]: struct.GenNota.html
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub struct SimpleNota {
   /// The initial notation keyword, one of `prefix`, `infixl`, or `infixr`.
   pub k: SimpleNotaKind,
@@ -559,7 +568,7 @@ pub struct SimpleNota {
 ///
 /// For example in `notation ab {x} (ph) = (${$:max) x ($|$:50) ph ($}$:0);` there
 /// are 5 notation literals, `(${$:0)`, `x`, `($|$:50)`, `ph`, `($}$:0)`.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum Literal {
   /// A constant with a precedence, such as `($|$:50)`.
   Const(Const, Prec),
@@ -571,7 +580,7 @@ pub enum Literal {
 /// the `prefix`, `infixl`, and `infixr` keywords are represented by [`SimpleNota`].
 ///
 /// [`SimpleNota`]: struct.SimpleNota.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct GenNota {
   /// The span of the identifier, the `foo` in `notation foo ...`.
   pub id: Span,
@@ -594,7 +603,7 @@ pub struct GenNota {
 
 /// A statement in the file. Every statement ends with a `;`, and an MM0/MM1 file
 /// is a list of statements.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum StmtKind {
   /// A sort delaration like `pure sort foo;`.
   Sort(Span, Modifiers),
@@ -639,7 +648,7 @@ pub enum StmtKind {
 
 /// The elements of a parsed AST. StmtKind is the "data", with span providing
 /// information about the item's location in the source file.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Stmt {
   /// The span of the statement, from the beginning of the first keyword to
   /// the semicolon terminator (inclusive).
@@ -651,7 +660,7 @@ pub struct Stmt {
 /// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.
 ///
 /// [`Stmt`]: struct.Stmt.html
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct AST {
   /// The source [`LinedString`] for the file. This is needed in order to interpret all the
   /// [`Span`]s in the AST.

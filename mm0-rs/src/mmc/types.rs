@@ -7,7 +7,7 @@ use crate::elab::{environment::{AtomID, Environment},
   lisp::{LispVal, Uncons}};
 
 /// An argument to a function.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Arg {
   /// The name of the argument, if not `_`.
   pub name: Option<(AtomID, FileSpan)>,
@@ -30,7 +30,7 @@ impl PartialEq<Arg> for Arg {
 impl Eq for Arg {}
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, DeepSizeOf)]
 pub enum VariantType {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -48,7 +48,7 @@ pub type Variant = (LispVal, VariantType);
 
 /// An invariant is a local variable in a loop, that is passed as an argument
 /// on recursive calls.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Invariant {
   /// The variable name.
   pub name: AtomID,
@@ -62,7 +62,7 @@ pub struct Invariant {
 
 /// A block is a local scope. Like functions, this requires explicit importing
 /// of variables from external scope if they will be mutated after the block.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Block {
   /// The list of variables that will be updated by the block. Variables
   /// in external scope that are not in this list are treated as read only.
@@ -73,7 +73,7 @@ pub struct Block {
 
 /// A tuple pattern, which destructures the results of assignments from functions with
 /// mutiple return values, as well as explicit tuple values and structs.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum TuplePattern {
   /// A variable binding, or `_` for an ignored binding.
   Name(AtomID, Option<FileSpan>),
@@ -84,7 +84,7 @@ pub enum TuplePattern {
 }
 
 /// A pattern, the left side of a switch statement.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum Pattern {
   /// A variable binding, unless this is the name of a constant in which case
   /// it is a constant value.
@@ -102,7 +102,7 @@ pub enum Pattern {
 }
 
 /// An expression or statement. A block is a list of expressions.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum Expr {
   /// A `()` literal.
   Nil,
@@ -182,9 +182,10 @@ pub enum ProcKind {
   /// called until they are declared using an `intrinsic` declaration.
   Intrinsic,
 }
+crate::deep_size_0!(ProcKind);
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Proc {
   /// The type of declaration: `func`, `proc`, `proc` with no body, or `intrinsic`.
   pub kind: ProcKind,
@@ -215,7 +216,7 @@ impl Proc {
 }
 
 /// A field of a struct.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct Field {
   /// The name of the field.
   pub name: AtomID,
@@ -226,7 +227,7 @@ pub struct Field {
 }
 
 /// A top level program item. (A program AST is a list of program items.)
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum AST {
   /// A procedure, behind an Arc so it can be cheaply copied.
   Proc(Arc<Proc>),
@@ -281,6 +282,7 @@ macro_rules! make_keywords {
     /// The type of MMC keywords, which are atoms with a special role in the MMC parser.
     #[derive(Debug, PartialEq, Eq, Copy, Clone)]
     pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
+    crate::deep_size_0!(Keyword);
 
     impl Environment {
       /// Make the initial MMC keyword map in the given environment.
@@ -339,6 +341,7 @@ pub enum Size {
   /// bignum compilation.)
   Inf,
 }
+crate::deep_size_0!(Size);
 
 /// (Elaborated) unary operations.
 #[derive(Copy, Clone, Debug)]
@@ -349,6 +352,7 @@ pub enum Unop {
   /// for infinite size this is `-x - 1`. Note that signed NOT
   BitNot(Size),
 }
+crate::deep_size_0!(Unop);
 
 /// (Elaborated) binary operations.
 #[derive(Copy, Clone, Debug)]
@@ -376,9 +380,10 @@ pub enum Binop {
   /// Not equal, for signed or unsigned integers of any size
   Ne,
 }
+crate::deep_size_0!(Binop);
 
 /// A proof expression, or "hypothesis".
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum ProofExpr {
   /// An assertion expression `(assert p): p`.
   Assert(Box<PureExpr>),
@@ -386,7 +391,7 @@ pub enum ProofExpr {
 
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
 /// but most expressions operate on the type of (signed unbounded) integers.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum PureExpr {
   /// A variable.
   Var(AtomID),
@@ -414,7 +419,7 @@ pub enum PureExpr {
 }
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum Type {
   /// A type variable.
   Var(AtomID),
@@ -465,7 +470,7 @@ pub enum Type {
 }
 
 /// A separating proposition, which classifies hypotheses / proof terms.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Prop {
   /// An (executable) boolean expression, interpreted as a pure proposition
   Pure(Rc<PureExpr>),

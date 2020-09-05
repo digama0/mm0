@@ -48,7 +48,7 @@ use crate::{lined_string::LinedString, __mk_lisp_kind};
 
 /// A "frozen" environment, which is a thread-safe read only
 /// wrapper around `Environment`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct FrozenEnv(Arc<Environment>);
 unsafe impl Send for FrozenEnv {}
 unsafe impl Sync for FrozenEnv {}
@@ -102,7 +102,7 @@ impl FrozenEnv {
 }
 
 /// A wrapper around an [`AtomData`](../environment/struct.AtomData.html) that is frozen.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct FrozenAtomData(AtomData);
 
 impl FrozenAtomData {
@@ -121,15 +121,15 @@ impl FrozenAtomData {
 }
 
 /// A wrapper around a [`LispVal`](../lisp/struct.LispVal.html) that is frozen.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct FrozenLispVal(LispVal);
 
 /// A wrapper around a [`LispRef`](../lisp/struct.LispRef.html) that is frozen.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct FrozenLispRef(LispRef);
 
 /// A wrapper around a [`Proc`](../lisp/struct.Proc.html) that is frozen.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct FrozenProc(Proc);
 
 __mk_lisp_kind! {

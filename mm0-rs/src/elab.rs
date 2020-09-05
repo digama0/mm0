@@ -40,7 +40,7 @@ use crate::parser::{*, ast::*, ast::Literal as ALiteral};
 use crate::lined_string::*;
 
 /// An error payload.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum ElabErrorKind {
   /// A boxed error. The main [`BoxError`] is the error message,
   /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
@@ -89,7 +89,7 @@ impl From<BoxError> for ElabErrorKind {
 /// The main error type for the elaborator. Each error has a location (which must be in
 /// the currently elaborating file), an error level, a message, and an optional list of
 /// related locations (possibly in other files) along with short messages.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct ElabError {
   /// The location of the error in the current file.
   pub pos: Span,

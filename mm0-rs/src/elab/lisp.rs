@@ -35,6 +35,8 @@ macro_rules! str_enum {
     $(#[$doc])*
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub enum $name { $($(#[$doc2])* $e),* }
+    crate::deep_size_0!($name);
+
     impl FromStr for $name {
       type Err = ();
       fn from_str(s: &str) -> Result<Self, ()> {
@@ -124,6 +126,7 @@ pub enum InferTarget {
   /// and can be any expression of that sort.
   Reg(AtomID),
 }
+crate::deep_size_0!(InferTarget);
 
 impl InferTarget {
   /// The target sort of a metavariable. Returns `None` if the sort is unknown.
@@ -142,7 +145,7 @@ impl InferTarget {
 /// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
 ///
 /// [`LispKind`]: enum.LispKind.html
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, DeepSizeOf)]
 pub struct LispVal(Rc<LispKind>);
 
 /// This macro is used to define the [`LispKind`] type, as well as the
@@ -155,7 +158,7 @@ pub struct LispVal(Rc<LispKind>);
 macro_rules! __mk_lisp_kind {
   ($(#[$doc:meta])* $kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
     $(#[$doc])*
-    #[derive(Debug)]
+    #[derive(Debug, DeepSizeOf)]
     pub enum $kind {
       /// An atom like `'foo`. Atoms are internally represented as small integers,
       /// so equality comparison on atoms is fast.
@@ -212,7 +215,7 @@ __mk_lisp_kind! {
 }
 
 /// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct LispRef(RefCell<LispVal>);
 
 impl LispVal {
@@ -611,7 +614,7 @@ impl Eq for LispKind {}
 
 /// An annotation, which is a tag placed on lisp values that is ignored by all
 /// the basic functions.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Annot {
   /// A span annotation marks an expression with a span from the input file.
   /// The parser will place these on all expressions it produces, and they are
@@ -623,7 +626,7 @@ pub enum Annot {
 }
 
 /// The location information for a procedure.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum ProcPos {
   /// A named procedure is created by `(def (foo x) ...)` or
   /// `(def foo (fn (x) ...))`. The file span is the definition block
@@ -649,7 +652,7 @@ impl ProcPos {
 /// A callable procedure. There are several sources of procedures,
 /// all of which are interactable only via function calls `(f)` and
 /// printing (which shows only basic information about the procedure).
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum Proc {
   /// A built-in procedure (see [`BuiltinProc`] for the full list).
   /// Initially, a reference to a lisp global with a builtin procedure's name
@@ -711,6 +714,7 @@ pub enum ProcSpec {
   /// This function must be called with at least `n` arguments.
   AtLeast(usize),
 }
+crate::deep_size_0!(ProcSpec);
 
 impl ProcSpec {
   /// Returns true if `i` is a valid number of arguments given this spec.
@@ -1053,7 +1057,7 @@ impl std::fmt::Display for BuiltinProc {
 /// the same as a `LispVal`, but in order to decrease allocations this allows
 /// holding on to incomplete subparts of the arrays used in `LispKind::List`
 /// and `LispKind::DottedList`.
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub enum Uncons {
   /// The initial state, pointing to a lisp value.
   New(LispVal),

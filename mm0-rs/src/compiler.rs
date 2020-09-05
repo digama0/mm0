@@ -27,7 +27,7 @@ use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MMBExporter;
-use crate::util::{FileRef, FileSpan, Span};
+use crate::util::{FileRef, FileSpan, Span, get_memory_usage};
 
 lazy_static! {
   /// The thread pool (used for running MM1 files in parallel, when possible)
@@ -41,6 +41,7 @@ lazy_static! {
 /// parse.
 ///
 /// [`Environment`]: ../elab/environment/struct.Environment.html
+#[derive(DeepSizeOf)]
 enum FileCache {
   /// This file is currently being worked on on another thread. The list
   /// contains tasks that are waiting to be sent the completed [`Environment`];
@@ -59,6 +60,7 @@ enum FileCache {
 
 /// A file that has been loaded from disk, along with the
 /// parsed representation of the file (which may be in progress on another thread).
+#[derive(DeepSizeOf)]
 struct VirtualFile {
     /// The file's text as a [`LinedString`].
     ///
@@ -84,6 +86,7 @@ impl VirtualFile {
 /// The virtual file system (a singleton accessed through the global variable [`VFS_`]).
 ///
 /// [`VFS_`]: struct.VFS_.html
+#[derive(DeepSizeOf)]
 struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
 impl VFS {
@@ -268,6 +271,7 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     }
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
+    println!("elab {}, memory = {}M", path, get_memory_usage() >> 20);
     let (_, errors, env) = elab_elaborate(
       ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default(),
       None,
@@ -280,6 +284,7 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
       }).await;
     (errors, env)
   };
+  println!("elabbed {}, memory = {}M", path, get_memory_usage() >> 20);
   if !errors.is_empty() {
     let mut srcs = HashMap::new();
     let mut to_range = |fsp: &FileSpan| -> Range {
