@@ -317,7 +317,6 @@ impl<'a> Parser<'a> {
         Some(id) => match Modifiers::from_name(self.span(id)) {
           Modifiers::NONE => return (modifiers, Some(id)),
           m => {
-            if self.restart_pos.is_none() { self.restart_pos = Some(id.start) }
             if modifiers.intersects(m) { self.push_err(self.err_str("double modifier")) }
             modifiers |= m;
           }
@@ -727,7 +726,6 @@ impl<'a> Parser<'a> {
   /// while handling errors.
   fn stmt(&mut self) -> Result<Option<Stmt>> {
     let start = self.idx;
-    self.restart_pos = None;
     if self.chr(b'@').is_some() {
       let e = self.sexpr()?;
       let s = self.stmt()?.ok_or_else(||
@@ -737,12 +735,13 @@ impl<'a> Parser<'a> {
         k: StmtKind::Annot(e, Box::new(s))
       }))
     }
-    match self.modifiers() {
+    let m = self.modifiers();
+    self.restart_pos = None;
+    match m {
       (m, None) => {
         if m.is_empty() && self.idx == self.source.len() {
           Ok(None)
         } else {
-          self.restart_pos = None;
           self.err_str("expected command keyword")
         }
       }
@@ -850,11 +849,13 @@ impl<'a> Parser<'a> {
   fn stmt_recover(&mut self) -> Option<Stmt> {
     loop {
       let start = self.idx;
+      self.restart_pos = None;
       match self.stmt() {
         Ok(d) => return d,
         Err(e) => {
           while let Some(restart) = self.restart_pos {
             self.idx = restart;
+            self.restart_pos = None;
             if let Ok(d) = self.stmt() {
               let idx = mem::replace(&mut self.idx, start);
               let src = self.source;
@@ -873,7 +874,7 @@ impl<'a> Parser<'a> {
           while self.idx < self.source.len() {
             let c = self.cur();
             if !mem::replace(&mut last_ws, whitespace(c)) {
-              if c == b';' {self.ws(); break}
+              if c == b';' {self.idx += 1; self.ws(); break}
               if self.ident_().is_some() {
                 self.ws();
                 if self.restart_pos.is_some() {break}
