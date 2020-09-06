@@ -265,9 +265,9 @@ impl<'a> TypeChecker<'a> {
       tys.into()
     }}}
     let name = head.as_atom().ok_or_else(||
-      ElabError::new_e(self.try_get_span(&head), "expected an atom"))?;
+      ParseErr::new_e(self.try_get_span(&head), "expected an atom"))?;
     if name == AtomID::UNDER {
-      return Err(ElabError::new_e(self.try_get_span(&head), "expecting a type"))?;
+      return Err(ParseErr::new_e(self.try_get_span(&head), "expecting a type"));
     }
     match self.mmc.names.get(&name) {
       Some(&Entity::Type(NType::Prim(prim))) => match (prim, &*args) {
@@ -396,38 +396,38 @@ impl<'a> TypeChecker<'a> {
           (PrimProc::BitXor, args) =>
             self.check_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
           (PrimProc::Index, args) => {
-            let (a, i, h) = match args {
-              [a, i] => (a, i, None),
-              [a, i, h] => (a, i, Some(h)),
+            let (arr, idx, pf) = match args {
+              [arr, idx] => (arr, idx, None),
+              [arr, idx, pf] => (arr, idx, Some(pf)),
               _ => return err!("expected 2 or 3 arguments"),
             };
-            let mut a = self.check_pure_expr(a, None)?;
-            let i = Rc::new(self.check_pure_expr(i, Some(&Type::UInt(Size::Inf)))?);
-            let mut aty = self.infer_type(&a)?;
+            let mut arr = self.check_pure_expr(arr, None)?;
+            let idx = Rc::new(self.check_pure_expr(idx, Some(&Type::UInt(Size::Inf)))?);
+            let mut aty = self.infer_type(&arr)?;
             enum AutoDeref { Own, Ref, Mut }
             let mut derefs = vec![];
-            let n = loop {
+            let len = loop {
               match aty {
                 InferType::Own(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Own); }
                 InferType::Ref(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Ref); }
                 InferType::RefMut(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Mut); }
-                InferType::Ty(Type::Array(_, n)) => break n.clone(),
+                InferType::Ty(Type::Array(_, len)) => break len.clone(),
                 _ => return err!("type error, expcted an array"),
               }
             };
             for s in derefs {
-              a = match s {
-                AutoDeref::Own => PureExpr::DerefOwn(Box::new(a)),
-                AutoDeref::Ref => PureExpr::Deref(Box::new(a)),
-                AutoDeref::Mut => PureExpr::DerefMut(Box::new(a)),
+              arr = match s {
+                AutoDeref::Own => PureExpr::DerefOwn(Box::new(arr)),
+                AutoDeref::Ref => PureExpr::Deref(Box::new(arr)),
+                AutoDeref::Mut => PureExpr::DerefMut(Box::new(arr)),
               }
             }
-            let prop = PureExpr::Binop(Binop::Lt, i.clone(), n.clone());
-            let h = match h {
-              Some(h) => self.check_proof(h, Some(Prop::Pure(Rc::new(prop))))?,
+            let prop = PureExpr::Binop(Binop::Lt, idx.clone(), len);
+            let pf = match pf {
+              Some(pf) => self.check_proof(pf, Some(Prop::Pure(Rc::new(prop))))?,
               None => ProofExpr::Assert(Box::new(prop)),
             };
-            Ok(PureExpr::Index(Box::new(a), i, Box::new(h)))
+            Ok(PureExpr::Index(Box::new(arr), idx, Box::new(pf)))
           }
           (PrimProc::List, args) => {
             let mut vec = Vec::with_capacity(args.len());
@@ -460,18 +460,18 @@ impl<'a> TypeChecker<'a> {
           (PrimProc::Slice, _) |
           (PrimProc::TypeofBang, _) |
           (PrimProc::Typeof, _) =>
-            return Err(ParseErr::new_e(self.try_get_span(&head), "not a pure operation")),
+            Err(ParseErr::new_e(self.try_get_span(&head), "not a pure operation")),
         }
         Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ParseErr::new_e(
           self.try_get_span(&head), "forward referencing a procedure")),
-        Some(_) => return Err(ParseErr::new_e(self.try_get_span(&head), "expected a function/operation")),
+        Some(_) => Err(ParseErr::new_e(self.try_get_span(&head), "expected a function/operation")),
         None => match self.user_locals.get(&name) {
           Some(&i) => match &self.find(i) {
             Some(Variable {ty: GType::Ty(_, _ty, _), ..}) => match tgt {
               None => Ok(PureExpr::Var(i)),
               Some(_tgt) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },
-            _ => return Err(ParseErr::new_e(self.try_get_span(&head), "expected a regular variable")),
+            _ => Err(ParseErr::new_e(self.try_get_span(&head), "expected a regular variable")),
           },
           _ => Err(ParseErr::new_e(self.try_get_span(&head), "undeclared variable"))
         }
