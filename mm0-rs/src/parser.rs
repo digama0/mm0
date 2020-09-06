@@ -878,6 +878,7 @@ impl<'a> Parser<'a> {
               if self.ident_().is_some() {
                 self.ws();
                 if self.restart_pos.is_some() {break}
+                continue
               }
             }
             self.idx += 1;
