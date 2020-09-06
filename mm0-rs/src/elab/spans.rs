@@ -36,6 +36,13 @@ pub struct Spans<T> {
   data: BTreeMap<usize, Vec<(Span, T)>>,
 }
 
+impl<'a, T> IntoIterator for &'a Spans<T> {
+  type Item = &'a (Span, T);
+  type IntoIter = std::iter::Flatten<
+    std::collections::btree_map::Values<'a, usize, Vec<(Span, T)>>>;
+  fn into_iter(self) -> Self::IntoIter { self.data.values().flatten() }
+}
+
 use std::fmt;
 impl<T: fmt::Debug> fmt::Debug for Spans<T> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -146,10 +153,19 @@ impl<T> Spans<T> {
   }
 
   /// Returns an iterator over all data elements in spans that overlap the target
-  /// position. (Spans are considered as closed below, open above,
-  /// i.e. `start <= pos < end`, for this purpose.)
+  /// position. (Spans are considered as closed,
+  /// i.e. `start <= pos <= end`, for this purpose.)
   pub fn find_pos(&self, pos: usize) -> impl Iterator<Item=&(Span, T)> {
     self.data.range(..=pos).rev().next().into_iter()
-      .flat_map(move |(_, v)| v.iter().filter(move |x| pos < x.0.end))
+      .flat_map(move |(_, v)| v.iter().filter(move |x| pos <= x.0.end))
+  }
+
+  /// Get the `Spans` object corrsponding to the statement that contains the given position,
+  /// if one exists.
+  pub fn find(spans: &[Self], pos: usize) -> Option<&Self> {
+    match spans.binary_search_by_key(&pos, |s| s.stmt().start) {
+      Ok(i) => Some(&spans[i]),
+      Err(i) => i.checked_sub(1).map(|j| &spans[j]),
+    }.filter(|&s| pos < s.stmt().end)
   }
 }

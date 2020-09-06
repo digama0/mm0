@@ -70,10 +70,13 @@ impl FrozenEnv {
     FormatEnv {source, env: self.thaw()}
   }
 
+  /// Get the list of `Spans` in the environment.
+  pub fn spans(&self) -> &[Spans<ObjectKind>] { &unsafe { self.thaw() }.spans }
+
   /// Get the `Spans` object corrsponding to the statement that contains the given position,
   /// if one exists.
   pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
-    unsafe { self.thaw() }.find(pos)
+    Spans::find(self.spans(), pos)
   }
 
   /// Accessor for [`Environment::data`](../environment/struct.Environment.html#structfield.data)

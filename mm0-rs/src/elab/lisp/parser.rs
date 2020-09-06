@@ -457,6 +457,9 @@ impl<'a> LispParser<'a> {
   fn def(&mut self, e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomID, Vec<IR>), ElabError> {
     let (sp, x, stack) = self.def_var(e)?;
     let ir = self.def_ir(sp, es, stack)?;
+    if self.ctx.len() == 0 {
+      self.spans.insert(sp, ObjectKind::Global(x));
+    }
     Ok((sp, x, ir))
   }
 }

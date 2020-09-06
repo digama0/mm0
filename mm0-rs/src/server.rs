@@ -6,7 +6,7 @@ use std::{fs, io};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
 use std::collections::{HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
-use std::result;
+use std::result::Result as StdResult;
 use std::thread::{ThreadId, self};
 use std::time::Instant;
 use futures::{FutureExt, future::BoxFuture};
@@ -25,10 +25,10 @@ use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::mmu::import::elab as mmu_elab;
 use crate::elab::{ElabError, elaborate as elab_elaborate, FrozenEnv,
-  environment::{ObjectKind, DeclKey, StmtTrace},
+  environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
-  lisp::{print::FormatEnv, pretty::Pretty}};
+  lisp::{print::FormatEnv, pretty::Pretty}, spans::Spans};
 
 // Disabled because vscode doesn't handle them properly
 const USE_LOCATION_LINKS: bool = false;
@@ -36,7 +36,7 @@ const USE_LOCATION_LINKS: bool = false;
 #[derive(Debug)]
 struct ServerError(BoxError);
 
-type Result<T> = result::Result<T, ServerError>;
+type Result<T> = StdResult<T, ServerError>;
 
 impl From<serde_json::Error> for ServerError {
   fn from(e: serde_json::error::Error) -> Self { ServerError(Box::new(e)) }
@@ -358,15 +358,19 @@ enum RequestType {
   Hover(TextDocumentPositionParams),
   Definition(TextDocumentPositionParams),
   DocumentSymbol(DocumentSymbolParams),
+  References(ReferenceParams),
+  DocumentHighlight(DocumentHighlightParams),
 }
 
 fn parse_request(Request {id, method, params}: Request) -> Result<Option<(RequestId, RequestType)>> {
   Ok(match method.as_str() {
-    "textDocument/completion"     => Some((id, RequestType::Completion(from_value(params)?))),
-    "textDocument/hover"          => Some((id, RequestType::Hover(from_value(params)?))),
-    "textDocument/definition"     => Some((id, RequestType::Definition(from_value(params)?))),
-    "textDocument/documentSymbol" => Some((id, RequestType::DocumentSymbol(from_value(params)?))),
-    "completionItem/resolve"      => Some((id, RequestType::CompletionResolve(from_value(params)?))),
+    "textDocument/completion"        => Some((id, RequestType::Completion(from_value(params)?))),
+    "completionItem/resolve"         => Some((id, RequestType::CompletionResolve(from_value(params)?))),
+    "textDocument/hover"             => Some((id, RequestType::Hover(from_value(params)?))),
+    "textDocument/definition"        => Some((id, RequestType::Definition(from_value(params)?))),
+    "textDocument/documentSymbol"    => Some((id, RequestType::DocumentSymbol(from_value(params)?))),
+    "textDocument/references"        => Some((id, RequestType::References(from_value(params)?))),
+    "textDocument/documentHighlight" => Some((id, RequestType::DocumentHighlight(from_value(params)?))),
     _ => None
   })
 }
@@ -442,13 +446,22 @@ impl RequestHandler {
         let doc = p.text_document_position;
         self.finish(completion(doc.text_document.uri.into(), doc.position).await)
       }
-      RequestType::CompletionResolve(ci) => {
-        self.finish(completion_resolve(*ci).await)
+      RequestType::CompletionResolve(ci) =>
+        self.finish(completion_resolve(*ci).await),
+      RequestType::References(ReferenceParams {text_document_position: doc, context, ..}) => {
+        let file: FileRef = doc.text_document.uri.into();
+        self.finish(references(file.clone(), doc.position, context.include_declaration,
+          |range| Location { uri: file.url().clone(), range }).await)
+      }
+      RequestType::DocumentHighlight(DocumentHighlightParams {text_document_position_params: doc, ..}) => {
+        let file: FileRef = doc.text_document.uri.into();
+        self.finish(references(file.clone(), doc.position, true,
+          |range| DocumentHighlight { range, kind: None }).await)
       }
     }
   }
 
-  fn finish<T: Serialize>(self, resp: result::Result<T, ResponseError>) -> Result<()> {
+  fn finish<T: Serialize>(self, resp: StdResult<T, ResponseError>) -> Result<()> {
     let Server {reqs, conn, ..} = &*SERVER;
     reqs.lock().unwrap().remove(&self.id);
     conn.sender.send(Message::Response(match resp {
@@ -459,7 +472,7 @@ impl RequestHandler {
   }
 }
 
-async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, ResponseError> {
+async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   macro_rules! or {($ret:expr, $e:expr)  => {match $e {
     Some(x) => x,
@@ -473,7 +486,7 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
-  let spans = or!(Ok(None), env.find(idx));
+  let spans = or!(Ok(None), Spans::find(&env.spans, idx));
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     if let Some(r) = (|| Some(match k {
@@ -548,7 +561,7 @@ async fn hover(path: FileRef, pos: Position) -> result::Result<Option<Hover>, Re
 
 async fn definition<T>(path: FileRef, pos: Position,
     f: impl Fn(&LinedString, &LinedString, Span, &FileSpan, Span) -> T) ->
-    result::Result<Vec<T>, ResponseError> {
+    StdResult<Vec<T>, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
@@ -620,7 +633,7 @@ async fn definition<T>(path: FileRef, pos: Position,
 }
 
 #[allow(deprecated)] // workaround rust#60681
-async fn document_symbol(path: FileRef) -> result::Result<DocumentSymbolResponse, ResponseError> {
+async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
@@ -740,7 +753,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   }
 }
 
-async fn completion(path: FileRef, _pos: Position) -> result::Result<CompletionResponse, ResponseError> {
+async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionResponse, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
@@ -757,7 +770,7 @@ async fn completion(path: FileRef, _pos: Position) -> result::Result<CompletionR
   Ok(CompletionResponse::Array(res))
 }
 
-async fn completion_resolve(ci: CompletionItem) -> result::Result<CompletionItem, ResponseError> {
+async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
@@ -771,6 +784,77 @@ async fn completion_resolve(ci: CompletionItem) -> result::Result<CompletionItem
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(&*ci.label).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
+}
+
+async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl Fn(Range) -> T) -> StdResult<Vec<T>, ResponseError> {
+  let Server {vfs, ..} = &*SERVER;
+  macro_rules! or_none {($e:expr)  => {match $e {
+    Some(x) => x,
+    None => return Ok(vec![])
+  }}}
+  let file = vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
+  let text = file.text.lock().unwrap().1.clone();
+  let idx = or_none!(text.to_idx(pos));
+  let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+  let spans = or_none!(env.find(idx));
+  #[derive(Copy, Clone, PartialEq, Eq)]
+  enum Key {
+    Var(AtomID),
+    Sort(SortID),
+    Term(TermID),
+    Thm(ThmID),
+    Global(AtomID),
+  }
+  let to_key = |k: &ObjectKind| match *k {
+    ObjectKind::Expr(ref e) => {
+      let a = e.uncons().next().unwrap_or(e).as_atom()?;
+      if let Some(DeclKey::Term(t)) = env.data()[a].decl() {
+        Some(Key::Term(t))
+      } else {
+        Some(Key::Var(a))
+      }
+    }
+    ObjectKind::Proof(ref p) => {
+      let a = p.uncons().next().unwrap_or(p).as_atom()?;
+      if let Some(DeclKey::Thm(t)) = env.data()[a].decl() {
+        Some(Key::Thm(t))
+      } else {
+        Some(Key::Var(a))
+      }
+    }
+    ObjectKind::Import(_) => None,
+    ObjectKind::Var(a) => Some(Key::Var(a)),
+    ObjectKind::Sort(a) => Some(Key::Sort(a)),
+    ObjectKind::Term(a, _) => Some(Key::Term(a)),
+    ObjectKind::Thm(a) => Some(Key::Thm(a)),
+    ObjectKind::Global(a) => Some(Key::Global(a)),
+  };
+
+  let mut res = vec![];
+  for &(sp, ref k) in spans.find_pos(idx) {
+    let key = match to_key(k) {Some(k) => k, _ => continue};
+    let mut cont = |&(sp2, ref k2)| {
+      let eq = match *k2 {
+        ObjectKind::Expr(_) if !matches!(key, Key::Term(_) | Key::Var(_)) => false,
+        ObjectKind::Proof(_) if !matches!(key, Key::Thm(_) | Key::Var(_)) => false,
+        _ => Some(key) == to_key(k2),
+      };
+      if eq && (include_self || sp != sp2) {
+        let sp2 = if let ObjectKind::Term(_, sp2) = *k2 {sp2} else {sp2};
+        res.push(f(text.to_range(sp2)))
+      }
+    };
+    if let Key::Var(_) = key {
+      spans.into_iter().for_each(&mut cont);
+    } else {
+      for spans2 in env.spans() {
+        spans2.into_iter().for_each(&mut cont);
+      }
+    }
+  }
+  Ok(res)
 }
 
 struct Server {
@@ -839,6 +923,8 @@ impl Server {
         }),
         definition_provider: Some(true),
         document_symbol_provider: Some(true),
+        references_provider: Some(true),
+        document_highlight_provider: Some(true),
         ..Default::default()
       })?
     )?)?;

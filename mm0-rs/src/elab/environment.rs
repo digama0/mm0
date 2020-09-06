@@ -1268,13 +1268,4 @@ impl Environment {
     Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
       vec![(td.span.clone(), "declared here".into())]))
   }
-
-  /// Get the `Spans` object corrsponding to the statement that contains the given position,
-  /// if one exists.
-  pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
-    match self.spans.binary_search_by_key(&pos, |s| s.stmt().start) {
-      Ok(i) => Some(&self.spans[i]),
-      Err(i) => i.checked_sub(1).map(|j| &self.spans[j]),
-    }.filter(|&s| pos < s.stmt().end)
-  }
 }
