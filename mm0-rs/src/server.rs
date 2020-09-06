@@ -30,6 +30,9 @@ use crate::elab::{ElabError, elaborate as elab_elaborate, FrozenEnv,
   local_context::InferSort, proof::Subst,
   lisp::{print::FormatEnv, pretty::Pretty}};
 
+// Disabled because vscode doesn't handle them properly
+const USE_LOCATION_LINKS: bool = false;
+
 #[derive(Debug)]
 struct ServerError(BoxError);
 
@@ -381,6 +384,15 @@ fn show_message(typ: MessageType, message: String) -> Result<()> {
 }
 
 #[allow(unused)]
+fn register_capability(id: String, registrations: Vec<Registration>) -> Result<()> {
+  send_message(Request {
+    id: id.into(),
+    method: "client/registerCapability".to_owned(),
+    params: to_value(RegistrationParams {registrations})?
+  })
+}
+
+#[allow(unused)]
 fn log_message(message: String) -> Result<()> {
   send_message(Notification {
     method: "window/logMessage".to_owned(),
@@ -409,7 +421,7 @@ impl RequestHandler {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
         self.finish(hover(doc.uri.into(), position).await),
       RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
-        if SERVER.caps.definition_location_links {
+        if USE_LOCATION_LINKS && matches!(SERVER.caps.lock().unwrap().definition_location_links, Some(true)) {
           self.finish(definition(doc.uri.into(), position,
             |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
               origin_selection_range: Some(text.to_range(src)),
@@ -440,7 +452,7 @@ impl RequestHandler {
     let Server {reqs, conn, ..} = &*SERVER;
     reqs.lock().unwrap().remove(&self.id);
     conn.sender.send(Message::Response(match resp {
-      Ok(val) => Response { id: self.id, result: Some(to_value(val)?), error: None },
+      Ok(val) => Response { id: self.id, result: Some(to_value(val).unwrap()), error: None },
       Err(e) => Response { id: self.id, result: None, error: Some(e) }
     }))?;
     Ok(())
@@ -765,22 +777,51 @@ struct Server {
   conn: Connection,
   #[allow(unused)]
   params: InitializeParams,
-  caps: Capabilities,
+  caps: Mutex<Capabilities>,
   reqs: OpenRequests,
   vfs: VFS,
   pool: ThreadPool,
 }
 
 struct Capabilities {
-  definition_location_links: bool,
+  reg_id: Option<RequestId>,
+  definition_location_links: Option<bool>,
 }
 
 impl Capabilities {
   fn new(params: &InitializeParams) -> Capabilities {
-    Capabilities {
-      definition_location_links: params.capabilities.text_document.as_ref()
-        .and_then(|d| d.definition.as_ref())
-        .and_then(|g| g.link_support).unwrap_or(false)
+    let dll = match params.capabilities.text_document.as_ref()
+      .and_then(|d| d.definition.as_ref()) {
+      Some(&GotoCapability {link_support: Some(b), ..}) => Some(b),
+      Some(GotoCapability {dynamic_registration: Some(true), ..}) => None,
+      _ => Some(false)
+    };
+    Capabilities { reg_id: None, definition_location_links: dll }
+  }
+
+  fn register(&mut self) -> Result<()> {
+    assert!(self.reg_id.is_none());
+    let mut regs = vec![];
+    if self.definition_location_links.is_none() {
+      regs.push(Registration {
+        id: String::new(),
+        method: "textDocument/definition".into(),
+        register_options: None
+      })
+    }
+    if !regs.is_empty() {
+      register_capability("regs".into(), regs)?;
+      self.reg_id = Some(String::from("regs").into());
+    }
+    Ok(())
+  }
+
+  fn finish_register(&mut self, resp: Response) {
+    assert!(self.reg_id.take().is_some());
+    match resp {
+      Response {result: None, error: None, ..} =>
+        self.definition_location_links = Some(true),
+      _ => self.definition_location_links = Some(false)
     }
   }
 }
@@ -802,7 +843,7 @@ impl Server {
       })?
     )?)?;
     Ok(Server {
-      caps: Capabilities::new(&params),
+      caps: Mutex::new(Capabilities::new(&params)),
       params,
       conn,
       reqs: Mutex::new(HashMap::new()),
@@ -823,10 +864,11 @@ impl Server {
           }
         }
       });
+      let _ = self.caps.lock().unwrap().register();
       let mut count: i64 = 1;
       loop {
         match (|| -> Result<bool> {
-          let Server {conn, reqs, vfs, pool, ..} = &*SERVER;
+          let Server {conn, caps, reqs, vfs, pool, ..} = &*SERVER;
           match conn.receiver.recv() {
             Err(RecvError) => return Ok(true),
             Ok(Message::Request(req)) => {
@@ -842,8 +884,12 @@ impl Server {
               }
             }
             Ok(Message::Response(resp)) => {
-              reqs.lock().unwrap().get(&resp.id).ok_or_else(|| "response to unknown request")?
-                .store(true, Ordering::Relaxed);
+              let mut caps = caps.lock().unwrap();
+              if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
+                caps.finish_register(resp);
+              } else {
+                log!("response to unknown request {}", resp.id)
+              }
             }
             Ok(Message::Notification(notif)) => {
               match notif.method.as_str() {
