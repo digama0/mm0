@@ -255,7 +255,13 @@
 		"lisp-val": {
 			"patterns": [
 				{"include": "#comment"},
-				{"match": "@", "name": "keyword.operator.mm0.lisp"},
+				{
+					"match": "(@)(\\s+([\\w!%&*+\\-./:<=>?@^_~]+)?)",
+					"captures": {
+						"1": {"name": "keyword.operator.mm0.lisp"},
+						"3": {"name": "entity.name.function.mm0.lisp"}
+					}
+				},
 				{
 					"begin": "\\(\\s*(if|def|fn|let|letrec|match(-fn\\*?)?|focus)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},
@@ -279,8 +285,10 @@
 				{"match": "#(t|f|undef)(?!\\w)", "name": "constant.language.mm0.lisp"},
 				{"include": "#string"},
 				{
-					"begin": "('+)\\(",
-					"beginCaptures": {"1": {"name": "string.quoted.other.mm0.lisp"}},
+					"begin": "('+)\\(\\s*([\\w!%&*+\\-./:<=>?@^_~]+)?",
+					"beginCaptures": {
+						"1": {"name": "string.quoted.other.mm0.lisp"},
+						"2": {"name": "entity.name.function.quoted.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
 				},
