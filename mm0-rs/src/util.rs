@@ -268,6 +268,12 @@ fn get_memory_rusage() -> usize {
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on `getrusage()` if procfs doesn't exist.
+#[cfg(target_os = "linux")]
 pub(crate) fn get_memory_usage() -> usize {
   procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn get_memory_usage() -> usize {
+  get_memory_rusage()
 }
