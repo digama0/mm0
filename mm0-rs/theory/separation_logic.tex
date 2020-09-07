@@ -1,0 +1,121 @@
+\documentclass[acmsmall,nonacm]{acmart}
+
+\bibliographystyle{ACM-Reference-Format}
+\citestyle{acmauthoryear}
+
+\RequirePackage{tikz}
+\RequirePackage{scalerel}
+\RequirePackage{xparse}
+
+\usetikzlibrary{shapes}
+\usetikzlibrary{arrows}
+\usetikzlibrary{calc}
+\usetikzlibrary{arrows.meta}
+
+
+
+%% Invariants and Ghost ownership
+% PDS: Was 0pt inner, 2pt outer.
+% \boxedassert [tikzoptions] contents [name]
+\tikzstyle{boxedassert_border} = [sharp corners,line width=0.2pt]
+\NewDocumentCommand \boxedassert {O{} m o}{%
+	\tikz[baseline=(m.base)]{
+		%	  \node[rectangle, draw,inner sep=0.8pt,anchor=base,#1] (m) {${#2}\mathstrut$};
+		\node[rectangle,inner sep=0.8pt,outer sep=0.2pt,anchor=base] (m) {${\,#2\,}\mathstrut$};
+		\draw[#1,boxedassert_border] ($(m.south west) + (0,0.65pt)$) rectangle ($(m.north east) + (0, 0.7pt)$);
+	}\IfNoValueF{#3}{^{\,#3}}%
+}
+\DeclareMathOperator*{\Sep}{\scalerel*{\ast}{\sum}}
+\newcommand*{\ghost}[1]{\boxedassert[densely dashed]{#1}}
+\newcommand*{\N}{\mathbb{N}}
+\newcommand*{\Z}{\mathbb{Z}}
+\newcommand{\wand}{\mathrel{-\!\!\ast}}
+
+
+\begin{document}
+
+\title{Metamath C technical appendix}
+
+%% Author with single affiliation.
+\author{Mario Carneiro}
+\affiliation{
+  \institution{Carnegie Mellon University}
+}
+
+% \begin{abstract}
+% Text of abstract \ldots.
+% \end{abstract}
+
+\maketitle
+
+
+\section{Introduction}
+
+This is an informal development of the theory behind the Metamath C language: the syntax and separation logic, as well as the lowering map to x86. For now, this is just a set of notes for the actual compiler. (Informal is a relative word, of course, and this is quite formally precise from a mathematician's point of view. But it is not mechanized.)
+
+\section{Syntax}
+
+The syntax of MMC programs, after type inference, is given by the following (incomplete) grammar:
+
+\begin{align*}
+  \alpha,x,h\in \mathrm{Ident} ::={}& \mathrm{identifiers}\\
+  s \in \mathrm{Size} ::={}& 8\mid 16\mid 32\mid 64\mid \infty&&\mbox{integer bit size}\\
+  t \in \mathrm{TuplePattern} ::={}& x\mid \ghost{x}&&\mbox{variable, ghost variable}\\
+    \mid{}&t:\tau \mid \langle \overline{t}\rangle&&\mbox{type ascription, tuple}\\
+  \tau\in\mathrm{Type} ::={}& \alpha&&\mbox{type variable reference}\\
+    \mid{}&\mathbf{0}\mid \mathbf{1}\mid \mathsf{bool}&&\mbox{void, unit, booleans}\\
+    \mid{}&\N_s\mid \Z_s&&\mbox{unsigned and signed integers of different sizes}\\
+    \mid{}&\tau[pe]&&\mbox{arrays of known length}\\
+    \mid{}&\mathsf{own}\;\tau\mid \&\tau\mid \&^\mathbf{mut}\tau&&\mbox{owned, borrowed, mutable pointers}\\
+    \mid{}&\bigcap\overline{\tau} \mid \bigcup \overline{\tau}&&\mbox{intersection type, (undiscriminated) union type}\\
+    \mid{}&\Sep\overline{\tau} \mid \sum\overline{R}&&\mbox{tuple type, structure (dependent tuple) type}\\
+    \mid{}&S(\overline{\tau},\overline{pe})&&\mbox{user-defined type}\\
+    \mid{}&\dots\\
+  A\in\mathrm{Prop} ::={}& e&&\mbox{assert that a boolean value is true}\\
+    \mid{}&\top\mid \bot\mid \mathsf{emp}&&\mbox{true, false, empty heap}\\
+    \mid{}&\forall x:\tau,\;A\mid \exists x:\tau,\;A&&\mbox{universal, existential quantification}\\
+    \mid{}&A_1\to A_2\mid \neg A&&\mbox{implication, negation}\\
+    \mid{}&A_1\land A_2\mid A_1\lor A_2&&\mbox{conjunction, disjunction}\\
+    \mid{}&A_1\ast A_2\mid A_1 \wand A_2&&\mbox{separating conjunction and implication}\\
+    \mid{}&\dots\\
+  R \in \mathrm{Arg} ::={}& x:\tau\mid \ghost{x}:\tau\mid h:A&&\mbox{regular/ghost/proof argument}\\
+\end{align*}
+\begin{align*}
+  pe\in \mathrm{PExpr} ::={}&\mbox{(the first half of Expr below)}&&\mbox{pure expressions}\\
+  e \in \mathrm{Expr} ::={}& x&&\mbox{variable reference}\\
+    \mid{}&e_1 \land e_2\mid e_1 \lor e_2\mid \neg e&&\mbox{logical AND, OR, NOT}\\
+    \mid{}&e_1 \mathbin\texttt{\&} e_2\mid e_1 \mathbin\texttt{|} e_2\mid \texttt{!}_s\; e&&\mbox{bitwise AND, OR, NOT}\\
+    \mid{}&e_1 + e_2\mid e_1 * e_2\mid -e&&\mbox{addition, multiplication, negation}\\
+    \mid{}&e_1 < e_2\mid e_1 \le e_2\mid e_1 = e_2&&\mbox{equalities and inequalities}\\
+    \mid{}&\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3&&\mbox{conditionals}\\
+    \mid{}&\langle\overline{e}\rangle&&\mbox{tuple}\\
+    \mid{}&f(\overline{e})&&\mbox{(pure) function call}\\[2mm]
+    \mid{}&\mathsf{let}\ h^? := t := e_1\;\mathsf{in}\; e_2 &&\mbox{assignment to a regular variable}\\
+    \mid{}& \mathsf{let}\ t := p\;\mathsf{in}\; e&&\mbox{assignment to a hypothesis}\\
+    \mid{}&\mathsf{mut}\;x\;\mathsf{in}\;e&&\mbox{mutation capture}\\
+    \mid{}&F(\overline{e})&&\mbox{procedure call}\\
+    \mid{}&\mathsf{unreachable}\;p&&\mbox{unreachable statement}\\
+    \mid{}&\mathsf{return}\; \overline{e}&&\mbox{procedure return}\\
+    \mid{}&\mathsf{let\;rec}\;\overline{\ell(\overline{x}):=e}\;\mathsf{in}\;e&&\mbox{local mutual tail recursion}\\
+    \mid{}&\mathsf{goto}\;\ell(\overline{e})&&\mbox{local tail call}\\
+    \mid{}&\dots\\
+  p \in \mathrm{Proof} ::={}&\mathsf{entail}\;\overline{p}\;q&&\mbox{entailment proof}\\
+    \mid{}&\mathsf{assert}\;pe&&\mbox{assertion}\\
+    \mid{}&\dots\\
+  q \in \mathrm{RawProof} ::={}&\dots&&\mbox{MM0 proofs}\\
+  it \in \mathrm{Item} ::={}&\mathsf{type}\;S(\overline{\alpha}, \overline{R}):=\tau&&\mbox{type declaration}\\
+    \mid{}&\mathsf{const}\;t:=e&&\mbox{constant declaration}\\
+    \mid{}&\mathsf{global}\;t:=e^?&&\mbox{global variable declaration}\\
+    \mid{}&\mathsf{func}\;f(\overline{R}):\overline{R}:=e&&\mbox{function declaration}\\
+    \mid{}&\mathsf{proc}\;f(\overline{R}):\overline{R}:=e&&\mbox{procedure declaration}\\
+\end{align*}
+
+Missing elements of the grammar include:
+\begin{itemize}
+  \item Switch statements, which are desugared to if statements.
+  \item Raw MM0 formulas can be lifted to the `Prop' type.
+  \item Raw MM0 values can be lifted into $\N_\infty$ and $\Z_\infty$.
+  \item There are more operations for indexing and slicing array references, as well as assigning to parts of an array.
+\end{itemize}
+
+\end{document}

@@ -10,4 +10,8 @@ out.*
 *.log
 *.exe
 *.s
-a.out
+*.fls
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.aux
