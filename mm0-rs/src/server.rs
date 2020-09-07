@@ -18,13 +18,13 @@ use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 use lsp_types::*;
-use crossbeam::{channel::{SendError, RecvError}};
+use crossbeam::channel::{SendError, RecvError};
 use clap::ArgMatches;
 use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::mmu::import::elab as mmu_elab;
-use crate::elab::{ElabError, elaborate as elab_elaborate, FrozenEnv,
+use crate::elab::{ElabError, self, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
@@ -154,7 +154,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     let (error, env) = mmu_elab(path.clone(), ast.source.as_bytes());
     (vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
-    elab_elaborate(
+    elab::elaborate(
       ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
       |path| {
@@ -877,7 +877,7 @@ impl Capabilities {
     let dll = match params.capabilities.text_document.as_ref()
       .and_then(|d| d.definition.as_ref()) {
       Some(&GotoCapability {link_support: Some(b), ..}) => Some(b),
-      Some(GotoCapability {dynamic_registration: Some(true), ..}) => None,
+      Some(GotoCapability {dynamic_registration: Some(true), ..}) => Some(true),
       _ => Some(false)
     };
     Capabilities { reg_id: None, definition_location_links: dll }
@@ -886,7 +886,7 @@ impl Capabilities {
   fn register(&mut self) -> Result<()> {
     assert!(self.reg_id.is_none());
     let mut regs = vec![];
-    if self.definition_location_links.is_none() {
+    if USE_LOCATION_LINKS && self.definition_location_links.is_none() {
       regs.push(Registration {
         id: String::new(),
         method: "textDocument/definition".into(),

@@ -22,7 +22,7 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use typed_arena::Arena;
 use clap::ArgMatches;
-use crate::elab::{ElabError, ElabErrorKind, elaborate as elab_elaborate, FrozenEnv};
+use crate::elab::{self, ElabError, ElabErrorKind, FrozenEnv};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmu::import::elab as mmu_elab;
@@ -272,7 +272,7 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
     println!("elab {}, memory = {}M", path, get_memory_usage() >> 20);
-    let (_, errors, env) = elab_elaborate(
+    let (_, errors, env) = elab::elaborate(
       ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default(),
       None,
       |path| {
