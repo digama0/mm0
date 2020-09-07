@@ -35,26 +35,31 @@ do {
   (def {a ^ b} (if {b <= 1} (match b [0 1] [1 a]) @ begin
     (def c {b // 2}) {{a ^ c} * {a ^ {b - c}}}))
   (mmc-add '(
+    (struct CStr
+      {(ghost len) : nat}
+      {buf : (array u8 {len + 1})}
+      {eq0 : $ A. i (i <= n -> (index buf i = 0 <-> i = n)) $})
+
     (typedef Stat (array u8 80))
     (intrinsic (sys_fstat {fd : u32} {buf : (&mut Stat)} : u32))
     (intrinsic (sys_open
       {fname : (& CStr)}
       {flags : $ O_RDONLY ; sn (O_WRONLY + O_CREAT + O_TRUNC) $} :
       u32))
-    (intrinsic (sys_mmap {pos : (sn 0)} {len : u64} {prot : Prot}
-      {flags : $ sn (MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS) $}
-      {fd : u64} {off : (sn 0)} :
-      {ret : (union (sn {MAP_FAILED : u64})
+    (intrinsic (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : Prot}
+      {flags : (sn {$ MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS $ : u64})}
+      {fd : u64} {off : (sn {0 : u64})} :
+      {ret : (or (sn {MAP_FAILED : u64})
         (list {ret : (own (array u8 len))}
           $ fd = bitsNeg 32 1 -> all (sn 0) ,'(* ret) $))}))
 
     (proc (main
         {argc : u32}
-        {args : (array string argc)}
-        (ghost {input : Input}) :
-        (ghost {output : Output})
+        {args : (& (array (& CStr) argc))}
+        {(ghost input) : Input} :
+        {(ghost output) : Output}
         $ output = 0 /\ Valid input $)
-      (assert {0 <= (sys_open (index args 1 (assert {argc > 1})) O_RDONLY)})
+      (assert {0 <= (sys_open (index args 1) O_RDONLY)})
       {buf : Stat}
       (assert {0 <= (sys_fstat fd (&mut buf))})
       {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ {MAP_FILE bor MAP_PRIVATE}))}
@@ -67,7 +72,7 @@ do {
           -- ptr != MAP_FAILED
           -- |- (ptr :> (own (array u8 len))
           _))}
-      (return 0 (verify len ptr)))
+      (return 0 (ian rfl (verify len ptr))))
 
     (global {g_file : u64})
     (global {g_end : u64})
@@ -106,12 +111,12 @@ do {
     (proc (verify
         {len : u64}
         {file : (& (array u8 len))}
-        (ghost {input : Input})
+        {(ghost input) : Input}
         (mut g_file g_end g_num_sorts g_sorts
           g_num_terms g_terms g_num_thms g_thms) :
         $ Valid input $)
       {g_file := file}
-      {{g_end : u64} := (cast {file + len} (assert {{file + len} < ,{2 ^ 64}}))}
+      {{g_end : u64} := (cast {file + len})}
       {{p : (& Header0)} :=
         (pun file (using (assert {(sizeof Header0) <= len})))}
       (assert {(p . magic) = MM0B_MAGIC})
@@ -119,19 +124,16 @@ do {
       {nsorts := (p . num_sorts)}
       {h2 := (assert {nsorts <= MAX_SORTS})}
       {g_num_sorts := 0}
-      {g_sorts := (slice (& (array u8 nsorts)) {file + (sizeof Header)}
-        (assert {{(sizeof Header) + nsorts} <= len}))}
+      {{g_sorts : (& (array u8 nsorts))} := (slice {file + (sizeof Header)})}
       {g_num_terms := 0}
       {p_terms := (p . p_terms)} {nterms := (p . num_terms)}
-      {g_terms := (slice (& (array Term0 nterms)) {file + p_terms}
-        (assert {{p_terms + {nterms * (sizeof Term0)}} <= len}))}
+      {{g_terms : (& (array Term0 nterms))} := (slice {file + p_terms})}
       {p_thms := (p . p_thms)} {nthms := (p . num_thms)}
-      {g_thms := (slice (& (array Thm0 nthms)) {file + p_thms}
-        (assert {{p_thms + {nthms * (sizeof Thm0)}} <= len}))}
-      (ghost {remainder := {len - (p . p_proof)}})
+      {{g_thms : (& (array Thm0 nthms))} := (slice {file + p_thms})}
+      {(ghost remainder) := {len - (p . p_proof)}}
       {h := (assert {{(p . p_proof) + 5} <= len})}
       {{remainder_bd : {5 <= remainder}} := (entail h _)}
-      {stmt := (slice (& (array u8 remainder)) {file + (p . p_proof)} (entail h _))}
+      {{stmt : (& (array u8 remainder))} := (slice {file + (p . p_proof)} (entail h _))}
 
       (while {(index stmt 0 (entail remainder_bd _)) != CMD_END}
         (variant remainder)
@@ -141,14 +143,14 @@ do {
           {h_terms : {{g_num_terms <= nterms} and {g_terms :> (& (array Term g_num_terms))}}}
           {h_thms : {{g_num_thms <= nthms} and {g_thms :> (& (array Thm g_num_thms))}}}
           {suff : {{stmt + remainder} = g_end}}
-          (ghost {env : Env} {env2 : Env})
+          {(ghost env) : Env} {(ghost env2) : Env}
           {ext : (EnvExtends env env2)}
           {repr : (Represents env2 (* (<: h_sorts)) (* (<: h_terms)) (* (<: h_thms)))})
 
         {h_unpack := {(w sz data) := (cmd_unpack stmt)}}
-        (ghost {remainder2 := {remainder - data}})
+        {(ghost remainder2) := {remainder - data}}
         {next_stmt_bd := (assert {{stmt + data + 5} <= g_end})}
-        {next_stmt := (slice (& (array u8 remainder2)) {stmt + data}
+        {{next_stmt : (& (array u8 remainder2))} := (slice {stmt + data}
           (entail next_stmt_bd suff _))}
 
         (switch w

@@ -8,7 +8,7 @@ MMC is currently written in arguments to the MMC compiler, which has an interfac
 
 ## Types
 
-A *type* is a separating proposition over machine states. That is, it is a true-or-false statement that applies to portions of the machine state (registers and memory). This is a very low level view, but it has the advantage that because it is so general, users can define types of arbitrary complexity, containing invariants and ownership semantics. Types also contain a size and an alignment, although for the x86 instantiation of MMC all types have alignment 1. Here are some basic types:
+A *type* is a function that maps values to separating propositions over machine states. That is, it is a true-or-false statement that applies to portions of the machine state (registers and memory). This is a very low level view, but it has the advantage that because it is so general, users can define types of arbitrary complexity, containing invariants and ownership semantics. Types also contain a size and an alignment, although for the x86 instantiation of MMC all types have alignment 1. Here are some basic types:
 
     () | bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 | (own T) | (array T n)
 
@@ -106,33 +106,38 @@ The semantics of assignments here is like that in functional programming languag
 However, this causes a problem with hypotheses:
 
     {h1 := {{x : u8} := 2}} -- x: u8, h1: $ x = 2 $
-    {h2 := {{x : u8} := 3}} -- x: u8, h1: $ x = 2 $, h2: $ x = 3 $   (wrong!)
+    {h2 := {{x : u8} := 3}} -- x: u8, (x*: ghost u8), h1: $ x* = 2 $, h2: $ x = 3 $
 
-Here the name conflict has caused us to derive an apparent contradiction. To resolve this, `h1` is removed from the context at the point of the re-assignment. (In other words this is a sub-structural type system.)
+The variable `x*` shown for the type of `h1` is used in printing to refer to a shadowed variable named `x`. The variable `x*: ghost u8` is in the state but hidden by default. It cannot be typed directly in the program. (We will discuss `ghost` variables in the next section.) Instead, we can add a `with` clause to the assignment to rename the old version of the variable:
+
+    {h1 := {{x : u8} := 2}}
+    {h2 := ({{x : u8} := {3 + x}} with {x -> old_x})}
+    -- old_x: u8, x: u8, h1: $ old_x = 2 $, h2: $ x = 3 + old_x $
 
     {h1 := {{x : u8} := 2}} -- x: u8, h1: $ x = 2 $
-    {h2 := {{x : u8} := 3}} -- x: u8, h2: $ x = 3 $
+    {h2 := ({{x : u8} := {3 + x}} with {new_x <- x})}
+    -- x: u8, new_x: u8, h1: $ x = 2 $, h2: $ new_x = 3 + x $
 
-This also means that an assignment like `x := x + 2` cannot be saved as an equation, because the RHS is already out of date after execution of the assignment. To resolve this, we use ghost variables.
+The `with` modifier on an assignment allows it to simultaneously rename some variables in the state, which is especially useful for self-assignments like `{x := {x + 1}}`. Note that neither the old or new value of `x` is considered ghost in this situation because they can both be referred to later as a result of the rename. It is also possible to use `x -> (ghost old_x)` to ensure that the old value of `x` is marked ghost, so that it can be compiled to a reassignment instead of a copy.
 
 ### Ghost variables
 
 An assignment
 
-    (ghost {x := 2})
-    -- here (ghost) x: nat
+    {(ghost x) := 2}
+    -- here x: ghost nat
 
 is like a regular assignment except that the introduced variable does not exist at run time. The compiler tracks usage of ghost variables to ensure that they do not enter the data flow, but they can be used to perform computations that are needed for the proof but not for the program. They can be used in types (like the `n` in `array T n`) as well as in loop variants and invariants. They can also have infinite types like `nat`, unlike regular variables. We can use them to store old values of variables:
 
 
     {h := {{x : u8} := 1}}
     -- x: u8, h: $ x = 1 $
-    {h2 := (ghost {old_x := x})}
-    -- x: u8, h: $ x = 1 $, old_x: u8, h2: $ old_x = x $
+    {h2 := {(ghost old_x) := x}}
+    -- x: u8, h: $ x = 1 $, old_x: ghost u8, h2: $ old_x = x $
     {h3 := (entail h2 h eqtr)}
-    -- x: u8, h: $ x = 1 $, old_x: u8, h2: $ old_x = x $, h3: $ old_x = 1 $
+    -- x: u8, old_x: ghost u8, h2: $ old_x = x $, h3: $ old_x = 1 $
     {h4 := {{x : u8} := {(reflect x (eqcom h2)) + 2}}}
-    -- x: u8, h3: $ old_x = 1 $, h4: $ x = old_x + 2 $
+    -- x: u8, old_x: ghost u8, h3: $ old_x = 1 $, h4: $ x = old_x + 2 $
 
 We will discuss the `entail` function later, and the `eqtr` and `eqcom` functions are proofs in the ambient logic of PA. The `reflect` function allows us to have an expression whose computational realization is `x` and whose proof realization is `old_x`, so that `h4` is not discarded before it can be used. A simpler version of the above would be
 
@@ -141,11 +146,16 @@ We will discuss the `entail` function later, and the `eqtr` and `eqcom` function
     {h2 := {{x : u8} := {(reflect x h) + 2}}}
     -- x: u8, h2: $ x = 1 + 2 $
 
-where we have skipped the definition of `old_x` by threading the known previous value of `x`.
+where we have skipped the definition of `old_x` by threading the known previous value of `x`, and as seen in the previous section we can also use a `with` clause to perform the renaming directly:
+
+    {h := {{x : u8} := 1}}
+    -- x: u8, h: $ x = 1 $
+    {h2 := ({{x : u8} := {x + 2}} with {x -> old_x})}
+    -- x: u8, old_x: u8, h2: $ x = old_x + 2 $
 
 ### Tuples
 
-Some functions return a list of values, which are destructured at the caller:
+Some functions return a list of values, which are destructured at the call site:
 
     (proc (foo {x : u8} {y : u8} : {a : u8} {b : u8} {h : $ a = b $}))
 
@@ -191,7 +201,7 @@ Here we have stripped the variable `x` of its rich type `(own (array u8 4))`, pr
 
 In the second example we do a proof in separation logic that `x :> (own (array u8 4)) |- x :> (own (array u8 2))`, and use it to reconstitute `x` at a different type than its original one.
 
-It is worth reiterating that all of the above operations are no-ops in the computational semantics. `pun` and `typeof!` are identify functions and `entail` is a proof-only notion, so the only thing that is in the emitted binary is the call to `malloc` on the first line.
+It is worth reiterating that all of the above operations are no-ops in the computational semantics. `pun` and `typeof!` are identity functions and `entail` is a proof-only notion, so the only thing that is in the emitted binary is the call to `malloc` on the first line.
 
 ### Casting, type punning and truncation
 
@@ -284,23 +294,27 @@ Now we can see that `y` is in fact `1` at the end of the block, and this will be
 
 ### Conditional statements
 
-The construct `(if p t f)` functions as both the `if` statement and `?` ... `:` operator of C. `t` and `f` must be single expressions, so `(begin ...)` should be used for multiple statements.
+The construct `(if p [t...] else [f...])` functions as both the `if` statement and `?` ... `:` operator of C. `[t...]` and `[f...]` are lists of statements, and the `else` keyword is optional. (The use of `[]` here is purely conventional, to remind us that this is a list of statements, not an application. `()` can be used as well.)
 
-    {res := (if {x < 1}
-      (begin
-        {{x : u8} := 1}
-        (f x))
-      (begin
-        {{x : u8} := 2}
-        (g x)))}
+    {res := (if {x < 1} [
+      {{x : u8} := 1}
+      (f x)
+    ] else [
+      {{x : u8} := 2}
+      (g x)
+    ])}
 
-The form `(if {h : p} t f)` binds `h` to a proof of `p` in the body of `t` and to `~ p` in the body of `f`. The types of the branches must be the same. (It may be necessary to finish a block with `()` to ensure nothing is returned if the `if` is operating at statement level.) As with `begin`, any let bindings in the body of the branches must be marked with `mut` in order to affect the outer value of the variable.
+The form `(if {h : p} [t...] else [f...])` binds `h` to a proof of `p` in the body of `t` and to `~ p` in the body of `f`. The types of the branches must be the same. (It may be necessary to finish a block with `()` to ensure nothing is returned if the `if` is operating at statement level.) As with `begin`, any let bindings in the body of the branches must be marked with `mut` in order to affect the outer value of the variable.
+
+If statements can be chained with C-like `else if` syntax: `(if p [e1...] else if q [e2...] else [e3...])`.
+
+Like blocks, `if` statements can have a `mut` clause, which goes after the initial condition as in `(if p (muts xs) t else f)`. The effect of this `mut` scopes over all branches of the if-statement.
 
 ### Labels and goto
 
 The most general form of control flow is a `goto`, and Metamath C does not run from them. In fact, we will see that labels are actually very similar to mutually recursive functions, and because we pass around correctness witnesses it is easy to locally reason about them. The hardest part is termination checking, which is a global property.
 
-`begin`s can be labeled with a name, at which point they become callable by name using `goto`. Calls to a label are always tail calls, and return `F.` to the caller (indicating that control flow does not proceed past the call). They can either take parameters like a function call, or implicitly receive arguments using `mut`.
+`begin`s can be labeled with a name, at which point they become callable by name using `goto`. Calls to a label are always tail calls, and return any type `T` to the caller (indicating that control flow does not proceed past the call). They can either take parameters like a function call, or implicitly receive arguments using `mut`.
 
     (begin
       {{x : u8} := 1}
@@ -319,11 +333,12 @@ This definition would not work as written, because `g` and `f` call each other i
       {{x : u8} := 1}
 
       ((begin f (mut x))
-        (if {h : $ x + 1 < 256 $}
-          (begin (mut x)
-            {x := (cast {x + 1} h)}
-            (f))
-          (return))))
+        (if {h : $ x + 1 < 256 $} (mut x) [
+          {x := (cast {x + 1} h)}
+          (f)
+        ] else [
+          (return)
+        ]))
 
 This will still not be accepted because we need to provide a *variant*, a value that counts down in recursive calls (or up to some bound). We use the notation `(variant foo)` to denote a downward counting variant and `(variant foo < bound)` or `(variant foo <= bound)` for a variant that counts up to `bound`. We must prove in recursive calls that the variant has indeed increased/decreased, again using the keyword `variant`:
 
@@ -332,20 +347,21 @@ This will still not be accepted because we need to provide a *variant*, a value 
       {{x : u8} := 1}
 
       ((begin f (mut x) (variant x < 256))
-        (if {h : $ x + 1 < 256 $}
-          (begin (mut x)
-            (ghost {x_old := x})
-            {x := (cast {x + 1} h)}
-            (f (variant {... : $ x_old < x $} h)))
-          (return))))
+        (if {h : $ x + 1 < 256 $} (mut x) [
+          (ghost {x_old := x})
+          {x := (cast {x + 1} h)}
+          (f (variant {... : $ x_old < x $} h))
+        ] else [
+          (return)
+        ])))
 
 For examples such as this it is often convenient to assign `x` in the function call instead, since we need to talk about both old and new values in the variant. So rather than use `(mut x)` we can pass it in:
 
     ((begin f {{x : u8} := 1} (variant x < 256))
       (if {h : $ x + 1 < 256 $}
-        (f (cast {x + 1} h)
-          (variant {... : $ x < x + 1 $} h))
-        (return)))
+        [(f (cast {x + 1} h)
+          (variant {... : $ x < x + 1 $} h))]
+        [(return)]))
 
 Keep in mind that a labeled begin will always be compiled to a label in a function, so even though it looks like a function it does not have its own stack frame, so only tail recursion is possible. Besides `(f)` which will jump to the label `f`, one can also `(break f)` which will jump to the end of the `((begin f) ...)` block. If control reaches the end of a labeled begin, `(break f)` is automatically called.
 
@@ -436,7 +452,7 @@ Fields can be dependent (and can reference each other in any order), and can con
 
     (struct Foo
       {arr : (array u8 len)}
-      (ghost {len : nat}))
+      {(ghost len) : nat})
 
 Fields can be referred to by `(x . field)`, and struct literals are written using the `mk` keyword, as `((mk Foo) arr len)`, or `(mk arr len)` when `Foo` can be inferred.
 
@@ -463,15 +479,15 @@ Tuples and structs can be destructured in an assignment using `(a b c) := ...`.
 
 ### Singleton type
 
-The singleton type is `(sn {a : T})`, and denotes the type of values of type `T` that are equal to `a`. This may appear to be a waste of space because we know in advance what a variable of this type contains, but it can be used as a component in larger type definitions.
+The singleton type is `(sn {a : T})`, and denotes the type of values of type `T` that are equal to `a`. This may appear to be a waste of space because we know in advance what a variable of this type contains, but it can be used as a component in larger type definitions. Additionally, this type can be computationally relevant even if `a` is not, which allows us to compute with ghost data.
 
 ### Unions
 
-The typing predicate of a union is the disjunction of all typing predicates of the elements. That is, `x :> (union A B C)` is equivalent to `x :> A \/ x :> B \/ x :> C`. The empty union is the never type or "void" type (but not `C`'s `void`!). The `void` type in MMC has no elements, and one can pass it to `(unreachable)` just like a proof of false.
+The typing predicate of a union is the disjunction of all typing predicates of the elements. That is, `x :> (or A B C)` is equivalent to `x :> A \/ x :> B \/ x :> C`. The empty union is the never type or "void" type (but not `C`'s `void`!). The `void` type in MMC has no elements, and one can pass it to `(unreachable)` just like a proof of false.
 
 MMC does not have union declarations like `C`, and you cannot use field access with unions. One might wonder how a union type can be used at all, but the key is to note that the individual types in a union can be dependent on some other piece of data in the program. Many functional programming languages contain a discriminated union type, but here we can build it as a union type:
 
-    (enum A B) = (union (list (sn {0 : u8}) A) (list (sn {1 : u8}) B))
+    (enum A B) = (or (list (sn {0 : u8}) A) (list (sn {1 : u8}) B))
 
 To use a value of a union type, one must prove that the value is one of the disjuncts, and then one can use `pun` to reconstitute the value as the resulting type.
 
@@ -479,8 +495,7 @@ To use a value of a union type, one must prove that the value is one of the disj
 
 We have already seen the `(array T n)` type in several examples. Unlike C, `(array T n)` is not a pointer and does not decay to one; the type represents the bits of an array directly. Because `array` is a large type, it is usually passed around behind a pointer type.
 
-* The function `(index a i h)` is the equivalent of `C`'s `a[i]`; it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)` if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that `i` is in the bounds of the array.
-
+* The function `(index a i h)` is the equivalent of `C`'s `a[i]`; it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)` if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that `i` is in the bounds of the array. The variant `(index a i)` supplies `(assert {i < n})` for the proof, making this a bounds-checked access.
 * The function `{(slice {a + i} h) : (& (array T n))}` has already been discussed in the [slicing](#slicing) section. It is also possible to write this as `(& {(slice (* {a + i}) h) : (array T n)})`, using `slice` with a non-pointer type to construct the place and then getting its address. This is only a stylistic difference.
 
 ### Typedefs

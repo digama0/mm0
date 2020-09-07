@@ -38,9 +38,6 @@ pub enum Expr {
   Number(BigInt),
   /// A let binding.
   Let {
-    /// True if the `rhs` expression should not be evaluated,
-    /// and all variables in the declaration should be considered ghost.
-    ghost: bool,
     /// A tuple pattern, containing variable bindings.
     lhs: TuplePattern,
     /// The expression to evaluate, or `None` for uninitialized.
@@ -66,7 +63,7 @@ pub enum Expr {
     /// The name of the label
     name: AtomID,
     /// The arguments of the label
-    args: Box<[Arg]>,
+    args: Box<[TuplePattern]>,
     /// The variant, for recursive calls
     variant: Option<Variant>,
     /// The code that is executed when you jump to the label
@@ -74,7 +71,15 @@ pub enum Expr {
   },
   /// An if-then-else expression (at either block or statement level). The initial atom names
   /// a hypothesis that the expression is true in one branch and false in the other.
-  If(Option<AtomID>, LispVal, LispVal, LispVal),
+  If {
+    /// The list of variables that will be updated by each sub-block. Variables
+    /// in external scope that are not in this list are treated as read only.
+    muts: Box<[(AtomID, Option<FileSpan>)]>,
+    /// The list of `(h,C,T)` triples in `if {h1 : C1} T1 if {h2 : C2} T2 else E`.
+    branches: Box<[(Option<AtomID>, LispVal, LispVal)]>,
+    /// The else case, the `E` in `if {h1 : C1} T1 if {h2 : C2} T2 else E`.
+    els: LispVal
+  },
   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   Switch(LispVal, Box<[(Pattern, LispVal)]>),
   /// A while loop.
@@ -141,56 +146,67 @@ impl<'a> Parser<'a> {
     } else {None}
   }
 
-  fn parse_arg1(&self, e: LispVal, ghost: bool, name_required: bool) -> Result<Arg> {
-    let name = |e: &LispVal| -> Result<_> {
+  fn parse_arg1(&self, e: LispVal, name_required: bool) -> Result<TuplePattern> {
+    if let Some((AtomID::COLON, _)) = head_atom(&e) {
+      self.parse_tuple_pattern(false, e)
+    } else if name_required {
       let a = e.as_atom().ok_or_else(||
         ElabError::new_e(self.try_get_span(&e), "argument syntax error: expecting identifier"))?;
-      Ok(if a == AtomID::UNDER { None } else { Some((a, self.try_get_fspan(&e))) })
-    };
-    if let Some((AtomID::COLON, mut u)) = head_atom(&e) {
-      match (u.next(), u.next(), u.is_empty()) {
-        (Some(ea), Some(ty), true) => Ok(Arg { ghost, name: name(&ea)?, ty }),
-        _ => Err(ElabError::new_e(self.try_get_span(&e), "syntax error in function arg"))
-      }
-    } else if name_required {
-      Ok(Arg { ghost, name: name(&e)?, ty: LispVal::atom(AtomID::UNDER) })
+      Ok(TuplePattern::Name(a == AtomID::UNDER, a,
+        if a == AtomID::UNDER { None } else { Some(self.try_get_fspan(&e)) }))
     } else {
-      Ok(Arg { ghost, name: None, ty: e })
+      Ok(TuplePattern::Typed(Box::new(TuplePattern::UNDER), e))
     }
   }
 
   fn parse_arg(&self, e: LispVal, name_required: bool,
-      args: &mut Vec<Arg>, muts: Option<&mut Vec<(AtomID, Option<FileSpan>)>>) -> Result<()> {
+    args: &mut Vec<TuplePattern>,
+    muts: Option<&mut Vec<(AtomID, Option<FileSpan>)>>
+  ) -> Result<()> {
     match (self.head_keyword(&e), muts) {
-      (Some((Keyword::Ghost, u)), _) => for e in u {
-        args.push(self.parse_arg1(e, true, name_required)?)
-      }
+      // (Some((Keyword::Ghost, u)), _) => for e in u {
+      //   args.push(self.parse_arg1(e, true, name_required)?)
+      // }
       (Some((Keyword::Mut, u)), Some(muts)) => for e in u {
         let a = e.as_atom().ok_or_else(||
           ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?;
         muts.push((a, e.fspan()))
       }
-      _ => args.push(self.parse_arg1(e, false, name_required)?)
+      _ => args.push(self.parse_arg1(e, name_required)?)
     }
     Ok(())
   }
 
-  fn parse_tuple_pattern(&self, e: LispVal) -> Result<TuplePattern> {
-    Ok(match &*e.unwrapped_arc() {
-      &LispKind::Atom(a) => TuplePattern::Name(a, e.fspan()),
-      LispKind::List(_) | LispKind::DottedList(_, _) => {
-        if let Some((Keyword::Colon, mut u)) = self.head_keyword(&e) {
-          if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
-            return Ok(TuplePattern::Typed(Box::new(self.parse_tuple_pattern(e)?), ty))
-          }
+  fn parse_tuple_pattern(&self, ghost: bool, e: LispVal) -> Result<TuplePattern> {
+    if let Some(a) = e.as_atom() {
+      return Ok(TuplePattern::Name(ghost || a == AtomID::UNDER, a, e.fspan()))
+    }
+    if !e.is_list() {
+      return Err(ElabError::new_e(self.try_get_span(&e),
+        format!("tuple pattern syntax error: {}", self.fe.to(&e))))
+    }
+    Ok(match self.head_keyword(&e) {
+      Some((Keyword::Colon, mut u)) => {
+        if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
+          TuplePattern::Typed(Box::new(self.parse_tuple_pattern(ghost, e)?), ty)
+        } else {
           return Err(ElabError::new_e(self.try_get_span(&e), "':' syntax error"))
         }
+      }
+      Some((Keyword::Ghost, u)) => {
         let mut args = vec![];
-        for e in Uncons::from(e) {args.push(self.parse_tuple_pattern(e)?)}
+        for e in u {args.push(self.parse_tuple_pattern(true, e)?)}
+        if args.len() == 1 {
+          args.drain(..).next().unwrap()
+        } else {
+          TuplePattern::Tuple(args.into_boxed_slice())
+        }
+      }
+      _ => {
+        let mut args = vec![];
+        for e in Uncons::from(e) {args.push(self.parse_tuple_pattern(ghost, e)?)}
         TuplePattern::Tuple(args.into_boxed_slice())
       }
-      _ => return Err(ElabError::new_e(self.try_get_span(&e),
-        format!("tuple pattern syntax error: {}", self.fe.to(&e))))
     })
   }
 
@@ -227,21 +243,21 @@ impl<'a> Parser<'a> {
   fn parse_decl(&self, e: LispVal) -> Result<(TuplePattern, Option<LispVal>)> {
     if let Some((Keyword::ColonEq, mut u)) = self.head_keyword(&e) {
       if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
-        Ok((self.parse_tuple_pattern(lhs)?, Some(rhs)))
+        Ok((self.parse_tuple_pattern(false, lhs)?, Some(rhs)))
       } else {
         Err(ElabError::new_e(self.try_get_span(&e), "decl: syntax error"))
       }
     } else {
-      Ok((self.parse_tuple_pattern(e)?, None))
+      Ok((self.parse_tuple_pattern(false, e)?, None))
     }
   }
 
-  fn parse_invariant_decl(&self, ghost: bool, e: LispVal) -> Result<Invariant> {
+  fn parse_invariant_decl(&self, e: LispVal) -> Result<Invariant> {
     match self.parse_decl(e.clone())? {
-      (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(name, _) = *v {
+      (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(ghost, name, _) = *v {
         return Ok(Invariant {name, ghost, ty: Some(ty), val})
       },
-      (TuplePattern::Name(name, _), val) =>
+      (TuplePattern::Name(ghost, name, _), val) =>
         return Ok(Invariant {name, ghost, ty: None, val}),
       _ => {}
     }
@@ -255,20 +271,32 @@ impl<'a> Parser<'a> {
       &LispKind::Atom(AtomID::UNDER) => Expr::Hole(self.try_get_fspan(&e)),
       &LispKind::Atom(a) => Expr::Var(a),
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
-        Some((Keyword::Ghost, mut u)) =>
-          if let (Some(e), true) = (u.next(), u.is_empty()) {
-            let (lhs, rhs) = self.parse_decl(e)?;
-            Expr::Let {ghost: true, lhs, rhs}
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))
-          },
+        // Some((Keyword::Ghost, mut u)) =>
+        //   if let (Some(e), true) = (u.next(), u.is_empty()) {
+        //     let (lhs, rhs) = self.parse_decl(e)?;
+        //     Expr::Let {ghost: true, lhs, rhs}
+        //   } else {
+        //     return Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))
+        //   },
         Some((Keyword::Colon, _)) |
         Some((Keyword::ColonEq, _)) => {
           let (lhs, rhs) = self.parse_decl(e)?;
-          Expr::Let {ghost: false, lhs, rhs}
+          Expr::Let {lhs, rhs}
         }
-        Some((Keyword::If, mut u)) =>
-          if let (Some(cond), Some(tru)) = (u.next(), u.next()) {
+        Some((Keyword::If, mut u)) => {
+          let err = || ElabError::new_e(self.try_get_span(&e), "if: syntax error");
+          let mut cond = u.next().ok_or_else(err)?;
+          let mut tru = u.next().ok_or_else(err)?;
+          let mut muts = vec![];
+          if let Some((Keyword::Mut, u2)) = self.head_keyword(&tru) {
+            for e in u2 {
+              muts.push((e.as_atom().ok_or_else(||
+                ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?, e.fspan()))
+            }
+            tru = u.next().ok_or_else(err)?
+          }
+          let mut branches = vec![];
+          let mut push = |cond, tru| {
             let (hyp, cond) = match self.head_keyword(&cond) {
               Some((Keyword::Colon, mut u)) =>
                 if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
@@ -280,15 +308,23 @@ impl<'a> Parser<'a> {
                 },
               _ => (None, cond),
             };
-            let fal = match u.next() {
-              Some(fal) if u.is_empty() => fal,
-              None if u.is_empty() => u.as_lisp(),
-              _ => return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error")),
-            };
-            Expr::If(hyp, cond, tru, fal)
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "if: syntax error"))
-          },
+            branches.push((hyp, cond, tru));
+            Ok(())
+          };
+          let mut els;
+          loop {
+            els = u.next();
+            if let Some(Keyword::Else) = els.as_ref().and_then(|e| self.kw.get(&e.as_atom()?)) {
+              els = u.next()
+            }
+            if let Some(Keyword::If) = els.as_ref().and_then(|e| self.kw.get(&e.as_atom()?)) {
+              push(mem::replace(&mut cond, u.next().ok_or_else(err)?),
+                mem::replace(&mut tru, u.next().ok_or_else(err)?))?;
+            } else {break}
+          }
+          push(cond, tru)?;
+          Expr::If {muts: muts.into(), branches: branches.into(), els: els.unwrap_or_else(LispVal::nil)}
+        }
         Some((Keyword::Switch, mut u)) => {
           let c =  u.next().ok_or_else(||
             ElabError::new_e(self.try_get_span(&e), "switch: syntax error"))?;
@@ -331,10 +367,7 @@ impl<'a> Parser<'a> {
                     muts.push((e.as_atom().ok_or_else(||
                       ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?, e.fspan()))
                   },
-                  Some((Keyword::Ghost, u)) => for e in u {
-                    invar.push(self.parse_invariant_decl(true, e)?)
-                  },
-                  _ => invar.push(self.parse_invariant_decl(false, e)?),
+                  _ => invar.push(self.parse_invariant_decl(e)?),
                 }
               }
             } else {break}
@@ -462,7 +495,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_name_and_tyargs(&self, e: LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<Arg>)> {
+  fn parse_name_and_tyargs(&self, e: LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<TuplePattern>)> {
     let mut args = vec![];
     let (name, sp) = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => (a, e.fspan()),
@@ -470,24 +503,12 @@ impl<'a> Parser<'a> {
         let mut u = Uncons::from(e.clone());
         let e = u.next().ok_or_else(|| ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))?;
         let a = e.as_atom().ok_or_else(|| ElabError::new_e(self.try_get_span(&e), "typedef: expected an atom"))?;
-        for e in u { args.push(self.parse_arg1(e, false, true)?) }
+        for e in u { args.push(self.parse_arg1(e, true)?) }
         (a, e.fspan())
       },
       _ => return Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))
     };
     Ok((name, sp, args))
-  }
-
-  fn parse_field(&self, ghost: bool, e: LispVal) -> Result<Field> {
-    if let Some((Keyword::Colon, mut u)) = self.head_keyword(&e) {
-      if let (Some(name), Some(ty), true) = (u.next().and_then(|e| e.as_atom()), u.next(), u.is_empty()) {
-        Ok(Field {ghost, name, ty})
-      } else {
-        Err(ElabError::new_e(self.try_get_span(&e), "struct: syntax error"))
-      }
-    } else {
-      Err(ElabError::new_e(self.try_get_span(&e), "struct: syntax error"))
-    }
   }
 
   /// Parses the input lisp literal `e` into a list of top level items and appends them to `ast`.
@@ -521,12 +542,7 @@ impl<'a> Parser<'a> {
             ElabError::new_e(self.try_get_span(&e), "struct: expecting name"))?;
           let (name, span, args) = self.parse_name_and_tyargs(e)?;
           let mut fields = vec![];
-          for e in u {
-            if let Some((Keyword::Ghost, u)) = self.head_keyword(&e) {
-              for e in u {fields.push(self.parse_field(true, e)?)}
-            }
-            fields.push(self.parse_field(false, e)?);
-          }
+          for e in u { fields.push(self.parse_arg1(e, false)?) }
           ast.push(AST::Struct {name, span, args: args.into(), fields: fields.into()});
         }
         _ => return Err(ElabError::new_e(self.try_get_span(&e), "MMC: unknown top level item"))

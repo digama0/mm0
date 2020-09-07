@@ -6,28 +6,28 @@ use crate::util::FileSpan;
 use crate::elab::{environment::{AtomID, Environment},
   lisp::{LispVal, Uncons}};
 
-/// An argument to a function.
-#[derive(Debug, DeepSizeOf)]
-pub struct Arg {
-  /// The name of the argument, if not `_`.
-  pub name: Option<(AtomID, FileSpan)>,
-  /// True if the argument is a ghost variable (computationally irrelevant).
-  pub ghost: bool,
-  /// The (unparsed) type of the argument.
-  pub ty: LispVal,
-}
+// /// An argument to a function.
+// #[derive(Debug, DeepSizeOf)]
+// pub struct Arg {
+//   /// The name of the argument, if not `_`.
+//   pub name: Option<(AtomID, FileSpan)>,
+//   /// True if the argument is a ghost variable (computationally irrelevant).
+//   pub ghost: bool,
+//   /// The (unparsed) type of the argument.
+//   pub ty: LispVal,
+// }
 
-impl PartialEq<Arg> for Arg {
-  fn eq(&self, other: &Arg) -> bool {
-    let b = match (&self.name, &other.name) {
-      (None, None) => true,
-      (&Some((a, _)), &Some((b, _))) => a == b,
-      _ => false
-    };
-    b && self.ghost == other.ghost && self.ty == other.ty
-  }
-}
-impl Eq for Arg {}
+// impl PartialEq<Arg> for Arg {
+//   fn eq(&self, other: &Arg) -> bool {
+//     let b = match (&self.name, &other.name) {
+//       (None, None) => true,
+//       (&Some((a, _)), &Some((b, _))) => a == b,
+//       _ => false
+//     };
+//     b && self.ghost == other.ghost && self.ty == other.ty
+//   }
+// }
+// impl Eq for Arg {}
 
 /// The type of variant, or well founded order that recursions decrease.
 #[derive(PartialEq, Eq, Debug, DeepSizeOf)]
@@ -75,13 +75,67 @@ pub struct Block {
 /// mutiple return values, as well as explicit tuple values and structs.
 #[derive(Debug, DeepSizeOf)]
 pub enum TuplePattern {
-  /// A variable binding, or `_` for an ignored binding.
-  Name(AtomID, Option<FileSpan>),
+  /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
+  /// is ghost.
+  Name(bool, AtomID, Option<FileSpan>),
   /// A type ascription. The type is unparsed.
   Typed(Box<TuplePattern>, LispVal),
   /// A tuple, with the given arguments.
   Tuple(Box<[TuplePattern]>),
 }
+
+impl TuplePattern {
+  /// The `_` tuple pattern. This is marked as ghost because it can't be referred to so
+  /// it is always safe to make irrelevant.
+  pub const UNDER: TuplePattern = TuplePattern::Name(true, AtomID::UNDER, None);
+
+  /// The name of a variable binding (or `_` for a tuple pattern)
+  pub fn name(&self) -> AtomID {
+    match self {
+      &TuplePattern::Name(_, a, _) => a,
+      TuplePattern::Typed(p, _) => p.name(),
+      _ => AtomID::UNDER
+    }
+  }
+
+  /// The span of a variable binding (or `None` for a tuple pattern).
+  pub fn fspan(&self) -> Option<&FileSpan> {
+    match self {
+      TuplePattern::Name(_, _, fsp) => fsp.as_ref(),
+      TuplePattern::Typed(p, _) => p.fspan(),
+      _ => None
+    }
+  }
+
+  /// True if all the bindings in this pattern are ghost.
+  pub fn ghost(&self) -> bool {
+    match self {
+      &TuplePattern::Name(g, _, _) => g,
+      TuplePattern::Typed(p, _) => p.ghost(),
+      TuplePattern::Tuple(ps) => ps.iter().all(|p| p.ghost()),
+    }
+  }
+
+  /// The type of this binding, or `_` if there is no explicit type.
+  pub fn ty(&self) -> LispVal {
+    match self {
+      TuplePattern::Typed(_, ty) => ty.clone(),
+      _ => LispVal::atom(AtomID::UNDER)
+    }
+  }
+}
+
+impl PartialEq<TuplePattern> for TuplePattern {
+  fn eq(&self, other: &TuplePattern) -> bool {
+    match (self, other) {
+      (TuplePattern::Name(g1, a1, _), TuplePattern::Name(g2, a2, _)) => g1 == g2 && a1 == a2,
+      (TuplePattern::Typed(p1, ty1), TuplePattern::Typed(p2, ty2)) => p1 == p2 && ty1 == ty2,
+      (TuplePattern::Tuple(ps1), TuplePattern::Tuple(ps2)) => ps1 == ps2,
+      _ => false
+    }
+  }
+}
+impl Eq for TuplePattern {}
 
 /// A pattern, the left side of a switch statement.
 #[derive(Debug, DeepSizeOf)]
@@ -140,7 +194,7 @@ pub enum Expr {
     /// The name of the label
     name: AtomID,
     /// The arguments of the label
-    args: Box<[Arg]>,
+    args: Box<[TuplePattern]>,
     /// The variant, for recursive calls
     variant: Option<Variant>,
     /// The code that is executed when you jump to the label
@@ -194,9 +248,9 @@ pub struct Proc {
   /// The span of the procedure name.
   pub span: Option<FileSpan>,
   /// The arguments of the procedure.
-  pub args: Box<[Arg]>,
+  pub args: Box<[TuplePattern]>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: Box<[Arg]>,
+  pub rets: Box<[TuplePattern]>,
   /// The variant, used for recursive functions.
   pub variant: Option<Variant>,
   /// The body of the procedure.
@@ -252,7 +306,7 @@ pub enum AST {
     /// The span of the name
     span: Option<FileSpan>,
     /// The arguments of the type declaration, for a parametric type
-    args: Box<[Arg]>,
+    args: Box<[TuplePattern]>,
     /// The value of the declaration (another type)
     val: LispVal,
   },
@@ -263,9 +317,9 @@ pub enum AST {
     /// The span of the name
     span: Option<FileSpan>,
     /// The parameters of the type
-    args: Box<[Arg]>,
+    args: Box<[TuplePattern]>,
     /// The fields of the structure
-    fields: Box<[Field]>,
+    fields: Box<[TuplePattern]>,
   },
 }
 
@@ -302,6 +356,7 @@ make_keywords! {
   Colon: ":",
   ColonEq: ":=",
   Const: "const",
+  Else: "else",
   Entail: "entail",
   Func: "func",
   Finish: "finish",
@@ -416,6 +471,8 @@ pub enum PureExpr {
   Deref(Box<PureExpr>),
   /// An deref operation `(* x): T` where `x: (&mut T)`.
   DerefMut(Box<PureExpr>),
+  /// A ghost expression.
+  Ghost(Rc<PureExpr>),
 }
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
@@ -454,17 +511,21 @@ pub enum Type {
   /// themselves refer to `x, y, z`.
   /// `sizeof (Sigma {x : A} {_ : B x}) = sizeof A + max_x (sizeof (B x))`.
   Sigma(Box<[Type]>),
-  /// `(inter A B C)` is an intersection type of `A, B, C`;
-  /// `sizeof (inter A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-  /// the typehood predicate is `x :> (inter A B C)` iff
+  /// `(and A B C)` is an intersection type of `A, B, C`;
+  /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+  /// the typehood predicate is `x :> (and A B C)` iff
   /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
   /// not separating conjunction.)
-  Inter(Box<[Type]>),
-  /// `(union A B C)` is an undiscriminated anonymous union of types `A, B, C`.
-  /// `sizeof (union A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-  /// the typehood predicate is `x :> (union A B C)` iff
+  And(Box<[Type]>),
+  /// `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
+  /// `sizeof (or A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+  /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
-  Union(Box<[Type]>),
+  Or(Box<[Type]>),
+  /// `(ghost A)` is a compoutationally irrelevant version of `A`, which means
+  /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
+  /// is the same as `()`. `sizeof (ghost A) = 0`.
+  Ghost(Box<Type>),
   /// A user-defined type-former.
   _User(AtomID, Box<[Type]>, Box<[PureExpr]>),
 }

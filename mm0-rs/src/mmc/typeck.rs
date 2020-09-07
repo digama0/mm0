@@ -9,7 +9,7 @@ use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
   lisp::{Uncons, LispVal, LispKind}, local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan, BoxError};
 use super::{Compiler, types::*, parser::head_keyword,
-  nameck::{Type as NType, PrimType, PrimProc, Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
+  nameck::{Type as NType, PrimType, PrimOpType, PrimProc, Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
 
 enum InferType<'a> {
   Int,
@@ -237,19 +237,29 @@ impl<'a> TypeChecker<'a> {
         InferType::RefMut(ty) => InferType::Ty(ty),
         _ => unreachable!(),
       },
+      PureExpr::Ghost(e) => self.infer_type(e)?
     })
   }
 
   fn probably_a_type(&self, e: &LispVal) -> bool {
     let mut u = Uncons::New(e.clone());
-    let head = match u.next() {
+    let (head, u) = match u.next() {
       None if u.is_empty() => return true,
-      None => u.into(),
-      Some(head) => head,
+      None => (u.into(), None),
+      Some(head) => (head, Some(u)),
     };
     let name = if let Some(name) = head.as_atom() {name} else {return false};
     if name == AtomID::UNDER { return false }
-    matches!(self.mmc.names.get(&name), Some(Entity::Type(_)))
+    match self.mmc.names.get(&name) {
+      Some(Entity::Type(_)) => true,
+      Some(Entity::OpType(prim)) => match prim {
+        PrimOpType::List |
+        PrimOpType::Ghost => true,
+        PrimOpType::And |
+        PrimOpType::Or => u.and_then(|mut u| u.next()).map_or(true, |e| self.probably_a_type(&e)),
+      },
+      _ => false
+    }
   }
 
   fn check_ty(&self, e: &LispVal) -> Result<Type, ParseErr> {
@@ -283,12 +293,16 @@ impl<'a> TypeChecker<'a> {
         (PrimType::U16, []) => Ok(Type::UInt(Size::S16)),
         (PrimType::U32, []) => Ok(Type::UInt(Size::S32)),
         (PrimType::U64, []) => Ok(Type::UInt(Size::S64)),
-        (PrimType::List, args) => Ok(Type::List(check_tys!(args))),
-        (PrimType::Inter, args) => Ok(Type::Inter(check_tys!(args))),
-        (PrimType::Union, args) => Ok(Type::Union(check_tys!(args))),
         (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.check_ty(ty)?))),
         (PrimType::Ref, [ty]) => Ok(Type::Ref(Box::new(self.check_ty(ty)?))),
         (PrimType::RefMut, [ty]) => Ok(Type::RefMut(Box::new(self.check_ty(ty)?))),
+        _ => Err(ParseErr::new_e(self.try_get_span(&e), "unexpected number of arguments"))
+      }
+      Some(&Entity::OpType(prim)) => match (prim, &*args) {
+        (PrimOpType::List, args) => Ok(Type::List(check_tys!(args))),
+        (PrimOpType::And, args) => Ok(Type::And(check_tys!(args))),
+        (PrimOpType::Or, args) => Ok(Type::Or(check_tys!(args))),
+        (PrimOpType::Ghost, [ty]) => Ok(Type::Ghost(Box::new(self.check_ty(ty)?))),
         _ => Err(ParseErr::new_e(self.try_get_span(&e), "unexpected number of arguments"))
       }
       Some(Entity::Type(NType::Unchecked)) => Err(
@@ -296,7 +310,8 @@ impl<'a> TypeChecker<'a> {
       Some(_) => Err(ParseErr::new_e(self.try_get_span(&head), "expected a type")),
       None => match self.user_locals.get(&name) {
         Some(&i) if matches!(self.find(i), Some(Variable {ty: GType::Star, ..})) => Ok(Type::Var(i)),
-        _ => Err(ParseErr::new_e(self.try_get_span(&head), "undeclared variable"))
+        _ => Err(ParseErr::new_e(self.try_get_span(&e),
+          format!("undeclared type {}", self.elab.print(&head))))
       }
     }
   }
@@ -342,6 +357,20 @@ impl<'a> TypeChecker<'a> {
     } else { Ok(PureExpr::Bool(true)) }
   }
 
+  fn check_pure_expr_list(&self, args: &[LispVal], tgt: Option<&Type>,
+      err: impl FnOnce(String) -> ParseErr) -> Result<PureExpr, ParseErr> {
+    let mut vec = Vec::with_capacity(args.len());
+    match tgt {
+      None => for e in args { vec.push(self.check_pure_expr(e, None)?) }
+      Some(Type::List(ts)) if ts.len() == args.len() =>
+        for (e, ty) in (&*args).iter().zip(&**ts) {
+          vec.push(self.check_pure_expr(e, Some(ty))?)
+        },
+      Some(ty) => return Err(err(format!("type error, expected {:?}", ty))),
+    }
+    Ok(PureExpr::Tuple(vec.into()))
+  }
+
   fn check_pure_expr(&self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr, ParseErr> {
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
@@ -372,10 +401,6 @@ impl<'a> TypeChecker<'a> {
         Some(Entity::Op(Operator::Prim(prim))) => match (prim, &*args) {
           (PrimProc::Add, args) =>
             self.check_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::Add, Some(get_int_tgt!())),
-          (PrimProc::And, args) => {
-            check_tgt!(Type::Bool, "a bool");
-            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(true)), Ok, Binop::And, Some(&Type::Bool))
-          }
           (PrimProc::Assert, _) => err!("type error, expected a pure expr"),
           (PrimProc::BitAnd, args) =>
             self.check_lassoc_expr(args, || Ok(PureExpr::Int((-1).into())), Ok, Binop::BitAnd, Some(get_int_tgt!())),
@@ -429,28 +454,12 @@ impl<'a> TypeChecker<'a> {
             };
             Ok(PureExpr::Index(Box::new(arr), idx, Box::new(pf)))
           }
-          (PrimProc::List, args) => {
-            let mut vec = Vec::with_capacity(args.len());
-            match tgt {
-              None => for e in args { vec.push(self.check_pure_expr(e, None)?) }
-              Some(Type::List(ts)) if ts.len() == args.len() =>
-                for (e, ty) in (&*args).iter().zip(&**ts) {
-                  vec.push(self.check_pure_expr(e, Some(ty))?)
-                },
-                Some(ty) => return err!("type error, expected {:?}", ty),
-            }
-            Ok(PureExpr::Tuple(vec.into()))
-          }
           (PrimProc::Mul, args) =>
             self.check_lassoc_expr(args, || Ok(PureExpr::Int(1.into())), Ok, Binop::Mul, Some(get_int_tgt!())),
           (PrimProc::Not, args) => {
             check_tgt!(Type::Bool, "a bool");
             self.check_lassoc_expr(args, || Ok(PureExpr::Bool(true)),
               |e| Ok(PureExpr::Unop(Unop::Not, Rc::new(e))), Binop::Or, Some(&Type::Bool))
-          }
-          (PrimProc::Or, args) => {
-            check_tgt!(Type::Bool, "a bool");
-            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(false)), Ok, Binop::Or, Some(&Type::Bool))
           }
           (PrimProc::Le, args) => { check_tgt!(Type::Bool, "a bool"); self.check_ineq(args, Binop::Le) }
           (PrimProc::Lt, args) => { check_tgt!(Type::Bool, "a bool"); self.check_ineq(args, Binop::Lt) }
@@ -461,6 +470,24 @@ impl<'a> TypeChecker<'a> {
           (PrimProc::TypeofBang, _) |
           (PrimProc::Typeof, _) =>
             Err(ParseErr::new_e(self.try_get_span(&head), "not a pure operation")),
+        }
+        Some(Entity::OpType(prim)) => match (prim, &*args) {
+          (PrimOpType::And, args) => {
+            check_tgt!(Type::Bool, "a bool");
+            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(true)), Ok, Binop::And, Some(&Type::Bool))
+          }
+          (PrimOpType::List, args) => self.check_pure_expr_list(args, tgt, |err| ParseErr::new_e(self.try_get_span(&head), err)),
+          (PrimOpType::Or, args) => {
+            check_tgt!(Type::Bool, "a bool");
+            self.check_lassoc_expr(args, || Ok(PureExpr::Bool(false)), Ok, Binop::Or, Some(&Type::Bool))
+          }
+          (PrimOpType::Ghost, args) => Ok(PureExpr::Ghost(Rc::new({
+            if let [e] = args {
+              self.check_pure_expr(e, tgt)?
+            } else {
+              self.check_pure_expr_list(args, tgt, |err| ParseErr::new_e(self.try_get_span(&head), err))?
+            }
+          })))
         }
         Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ParseErr::new_e(
           self.try_get_span(&head), "forward referencing a procedure")),
@@ -498,18 +525,23 @@ impl<'a> TypeChecker<'a> {
 
   /// Add a list of arguments to the context, where the arguments' types can refer to each other
   /// (provided they can be typed without cyclic dependency).
-  fn add_args_to_context(&mut self, args: &[Arg], tyvar_allowed: bool, hyp_allowed: bool) -> EResult<()> {
+  fn add_args_to_context(&mut self, args: &[TuplePattern], tyvar_allowed: bool, hyp_allowed: bool) -> EResult<()> {
     self.context.reserve(args.len());
     let mut todo = vec![];
     for (i, arg) in args.iter().enumerate() {
-      let user = if let Some((a, _)) = arg.name {a} else {AtomID::UNDER};
+      match arg {
+        TuplePattern::Name(_, _, _) => {}
+        TuplePattern::Typed(b, _) if matches!(**b, TuplePattern::Name(_, _, _)) => {}
+        _ => return Err(ElabError::new_e(self.fsp.span,
+          "tuple patterns in argument position are not implemented")),
+      }
+      let user = arg.name();
       let decl = self.get_fresh_local(user);
       if user != AtomID::UNDER && self.user_locals.insert(user, decl).is_some() {
-        return Err(ElabError::new_e(
-          try_get_span_from(&self.fsp, Some(&arg.name.as_ref().unwrap().1)), "variable declared twice"))
+        return Err(ElabError::new_e(try_get_span_from(&self.fsp, arg.fspan()), "variable declared twice"))
       }
       self.used_names.insert(decl);
-      let is_ty = tyvar_allowed && arg.ty.as_atom().map_or(false, |a| a == AtomID::UNDER ||
+      let is_ty = tyvar_allowed && arg.ty().as_atom().map_or(false, |a| a == AtomID::UNDER ||
         matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
       self.context.push(Variable {user, decl, ty: if is_ty {GType::Star} else {GType::Unknown}});
       if !is_ty {todo.push(i)}
@@ -517,23 +549,23 @@ impl<'a> TypeChecker<'a> {
     let mut n = todo.len();
     while n != 0 {
       for i in mem::take(&mut todo) {
-        let ty = &args[i].ty;
-        let ty = if !hyp_allowed || self.probably_a_type(ty) {
-          self.check_ty(&args[i].ty).map(|ty| GType::Ty(args[i].ghost, ty, None))
+        let ty = args[i].ty();
+        let ty = if !hyp_allowed || self.probably_a_type(&ty) {
+          self.check_ty(&ty).map(|ty| GType::Ty(args[i].ghost(), ty, None))
         } else {
-          self.check_prop(&args[i].ty).map(GType::Prop)
+          self.check_prop(&ty).map(GType::Prop)
         };
         match ty {
           Ok(ty) => self.context[i].ty = ty,
-          Err(ParseErr::UnknownVar(_)) => {todo.push(i)},
+          Err(ParseErr::UnknownVar(_)) => {todo.push(i)}
           Err(ParseErr::ElabErr(e)) => return Err(e),
         }
       }
       if n >= mem::replace(&mut n, todo.len()) {
         return Err(ElabError::new_e(
-          try_get_span_from(&self.fsp, Some(&args[todo[0]].name.as_ref().unwrap().1)),
+          try_get_span_from(&self.fsp, args[todo[0]].fspan()),
           format!("circular typing dependency in {{{}}}", todo.into_iter()
-            .map(|i| &self.elab.data[args[i].name.as_ref().unwrap().0].name)
+            .map(|i| &self.elab.data[args[i].name()].name)
             .format(", "))))
       }
     }

@@ -42,8 +42,6 @@ make_prims! {
   enum PrimProc {
     /// `{x + y}` returns the integer sum of the arguments
     Add: "+",
-    /// `(and x1 ... xn)` returns the boolean `AND` of the arguments
-    And: "and",
     /// `(assert p)` evaluates `p` and if it is false, crashes the program with an error.
     /// It returns a proof that `p` is true (because if `p` is false then the
     /// rest of the function is not evaluated).
@@ -64,8 +62,6 @@ make_prims! {
     /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
     /// `i` is in the bounds of the array.
     Index: "index",
-    /// `(list e1 ... en)` returns a tuple of the arguments.
-    List: "list",
     /// `{x * y}` returns the integer product of the arguments
     Mul: "*",
     /// `{x != y}` returns true if `x` is not equal to `y`
@@ -73,8 +69,6 @@ make_prims! {
     /// `(not x1 ... xn)` returns the boolean `NOR` of the arguments,
     /// usually used in the unary case as `NOT`
     Not: "not",
-    /// `(or x1 ... xn)` returns the boolean `OR` of the arguments
-    Or: "or",
     /// `{x <= y}` returns true if `x` is less than or equal to `y`
     Le: "<=",
     /// `{x < y}` returns true if `x` is less than `y`
@@ -111,15 +105,6 @@ make_prims! {
     I32: "i32",
     /// `i64` is the type of 64 bit signed integers; `sizeof i64 = 8`.
     I64: "i64",
-    /// `(inter A B C)` is an intersection type of `A, B, C`;
-    /// `sizeof (inter A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-    /// the typehood predicate is `x :> (inter A B C)` iff
-    /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
-    /// not separating conjunction.)
-    Inter: "inter",
-    /// `(list A B C)` is a tuple type with elements `A, B, C`;
-    /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
-    List: "list",
     /// `(own T)` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
@@ -140,11 +125,36 @@ make_prims! {
     U32: "u32",
     /// `u64` is the type of 64 bit unsigned integers; `sizeof u64 = 8`.
     U64: "u64",
-    /// `(union A B C)` is an undiscriminated anonymous union of types `A, B, C`.
-    /// `sizeof (union A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-    /// the typehood predicate is `x :> (union A B C)` iff
+  }
+
+  /// A primitive that can be used as both an operation and a type.
+  enum PrimOpType {
+    /// As a type, `(list A B C)` is a tuple type with elements `A, B, C`;
+    /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
+    ///
+    /// As an operator, `(list e1 ... en)` returns a tuple of the arguments.
+    List: "list",
+    /// As a type, `(and A B C)` is an intersection type of `A, B, C`;
+    /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+    /// the typehood predicate is `x :> (inter A B C)` iff
+    /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
+    /// not separating conjunction.)
+    ///
+    /// As an operator, `(and x1 ... xn)` returns the boolean `AND` of the arguments.
+    And: "and",
+    /// As a type, `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
+    /// `sizeof (or A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+    /// the typehood predicate is `x :> (or A B C)` iff
     /// `x :> A \/ x :> B \/ x :> C`.
-    Union: "union",
+    ///
+    /// As an operator, `(or x1 ... xn)` returns the boolean `OR` of the arguments.
+    Or: "or",
+    /// As a type, `(ghost A)` is a compoutationally irrelevant version of `A`, which means
+    /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
+    /// is the same as `()`. `sizeof (ghost A) = 0`.
+    ///
+    /// As an operator, `(ghost x)` returns the same thing as `x` but in the type `(ghost A)`.
+    Ghost: "ghost",
   }
 
   /// Intrinsic functions, which are like `PrimProc` but are typechecked like regular
@@ -210,6 +220,9 @@ pub enum Entity {
   Type(Type),
   /// A named operator/procedure/function.
   Op(Operator),
+  /// A primitive that is both a type and an operator.
+  /// (User declarations must be one or the other.)
+  OpType(PrimOpType),
   /// A named global variable.
   Global(GlobalTC),
   /// A named constant.
@@ -217,9 +230,9 @@ pub enum Entity {
 }
 
 impl TuplePattern {
-  fn on_names<E>(&self, f: &mut impl FnMut(AtomID, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
+  fn on_names<E>(&self, f: &mut impl FnMut(bool, AtomID, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
     match self {
-      &TuplePattern::Name(n, ref sp) => if n != AtomID::UNDER { f(n, sp)? },
+      &TuplePattern::Name(ghost, n, ref sp) => if n != AtomID::UNDER { f(ghost, n, sp)? },
       TuplePattern::Typed(p, _) => p.on_names(f)?,
       TuplePattern::Tuple(ps) => for p in &**ps { p.on_names(f)? }
     }
@@ -263,13 +276,13 @@ impl Compiler {
           }
         }
       }
-      AST::Global {lhs, ..} => lhs.on_names(&mut |a, sp| -> Result<()> {
+      AST::Global {lhs, ..} => lhs.on_names(&mut |_, a, sp| -> Result<()> {
         if self.names.insert(a, Entity::Global(GlobalTC::Unchecked)).is_some() {
           return Err(ElabError::new_e(try_get_span_from(fsp, sp.as_ref()), "name already in use"))
         }
         Ok(())
       })?,
-      AST::Const {lhs, ..} => lhs.on_names(&mut |a, sp| -> Result<()> {
+      AST::Const {lhs, ..} => lhs.on_names(&mut |_, a, sp| -> Result<()> {
         if self.names.insert(a, Entity::Const(GlobalTC::Unchecked)).is_some() {
           return Err(ElabError::new_e(try_get_span_from(fsp, sp.as_ref()), "name already in use"))
         }
