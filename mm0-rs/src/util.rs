@@ -263,7 +263,7 @@ fn get_memory_rusage() -> usize {
     assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);
     usage.assume_init()
   };
-  usage.ru_isrss as usize * 1024
+  usage.ru_maxrss as usize * 1024
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
@@ -273,6 +273,8 @@ pub(crate) fn get_memory_usage() -> usize {
   procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
 }
 
+/// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
+/// Falls back on `getrusage()` if procfs doesn't exist.
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn get_memory_usage() -> usize {
   get_memory_rusage()
