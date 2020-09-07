@@ -506,11 +506,14 @@ pub enum Type {
   /// `(list A B C)` is a tuple type with elements `A, B, C`;
   /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
   List(Box<[Type]>),
-  /// `(Sigma {x : A} {y : B} {z : C})` is the dependent version of `list`;
+  /// `(struct {x : A} {y : B} {z : C})` is the dependent version of `list`;
   /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
   /// themselves refer to `x, y, z`.
-  /// `sizeof (Sigma {x : A} {_ : B x}) = sizeof A + max_x (sizeof (B x))`.
-  Sigma(Box<[Type]>),
+  /// `sizeof (struct {x : A} {_ : B x}) = sizeof A + max_x (sizeof (B x))`.
+  ///
+  /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
+  /// `(typedef foo (struct {x : A} {y : B}))`.
+  Struct(Box<[Type]>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -526,13 +529,24 @@ pub enum Type {
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
   Ghost(Box<Type>),
+  /// A propositional type, used for hypotheses.
+  Prop(Box<Prop>),
   /// A user-defined type-former.
   _User(AtomID, Box<[Type]>, Box<[PureExpr]>),
+}
+
+impl Type {
+  /// Create a ghost node if the boolean is true.
+  pub fn ghost_if(ghost: bool, this: Type) -> Type {
+    if ghost { Type::Ghost(Box::new(this)) } else { this }
+  }
 }
 
 /// A separating proposition, which classifies hypotheses / proof terms.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Prop {
+  /// An unresolved metavariable.
+  MVar(usize),
   /// An (executable) boolean expression, interpreted as a pure proposition
   Pure(Rc<PureExpr>),
 }

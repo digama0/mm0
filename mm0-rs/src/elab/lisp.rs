@@ -1201,15 +1201,14 @@ impl Iterator for Uncons {
                   // Safety: The lifetime of this value is tied to the original
                   // `e` (or clones made via `temp`), while the provided value
                   // `_` is a clone of it, which has the same lifetime.
-                  // We can't use `as` cast via pointer because these are non-primitive
-                  unsafe {std::mem::transmute::<&[LispVal], &[LispVal]>(&**es)}
+                  unsafe { &*(&**es as *const _) }
                 ));
                 continue 'l
               }
               LispKind::DottedList(es, r) => {
                 *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|_|
                   // Safety: same as above
-                  unsafe {std::mem::transmute::<&[LispVal], &[LispVal]>(&**es)}
+                  unsafe { &*(&**es as *const _) }
                 ), r.clone());
                 continue 'l
               }

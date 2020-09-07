@@ -38,10 +38,12 @@ macro_rules! make_prims {
 }
 
 make_prims! {
-  /// The primitive procedures.
-  enum PrimProc {
+  /// The primitive operations.
+  enum PrimOp {
     /// `{x + y}` returns the integer sum of the arguments
     Add: "+",
+    /// `(and x1 ... xn)` returns the boolean `AND` of the arguments.
+    And: "and",
     /// `(assert p)` evaluates `p` and if it is false, crashes the program with an error.
     /// It returns a proof that `p` is true (because if `p` is false then the
     /// rest of the function is not evaluated).
@@ -57,6 +59,8 @@ make_prims! {
     BitXor: "bxor",
     /// `{x == y}` returns true if `x` is equal to `y`
     Eq: "==",
+    /// `(ghost x)` returns the same thing as `x` but in the type `(ghost A)`.
+    Ghost: "ghost",
     /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
     /// it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)`
     /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
@@ -69,8 +73,12 @@ make_prims! {
     /// `(not x1 ... xn)` returns the boolean `NOR` of the arguments,
     /// usually used in the unary case as `NOT`
     Not: "not",
+    /// `(or x1 ... xn)` returns the boolean `OR` of the arguments.
+    Or: "or",
     /// `{x <= y}` returns true if `x` is less than or equal to `y`
     Le: "<=",
+    /// `(list e1 ... en)` returns a tuple of the arguments.
+    List: "list",
     /// `{x < y}` returns true if `x` is less than `y`
     Lt: "<",
       /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
@@ -92,11 +100,21 @@ make_prims! {
 
   /// The primitive types.
   enum PrimType {
+    /// `(and A B C)` is an intersection type of `A, B, C`;
+    /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+    /// the typehood predicate is `x :> (inter A B C)` iff
+    /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
+    /// not separating conjunction.)
+    And: "and",
     /// The type `(array T n)` is an array of `n` elements of type `T`;
     /// `sizeof (array T n) = sizeof T * n`.
     Array: "array",
     /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
     Bool: "bool",
+    /// `(ghost A)` is a compoutationally irrelevant version of `A`, which means
+    /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
+    /// is the same as `()`. `sizeof (ghost A) = 0`.
+    Ghost: "ghost",
     /// `i8` is the type of 8 bit signed integers; `sizeof i8 = 1`.
     I8: "i8",
     /// `i16` is the type of 16 bit signed integers; `sizeof i16 = 2`.
@@ -105,6 +123,18 @@ make_prims! {
     I32: "i32",
     /// `i64` is the type of 64 bit signed integers; `sizeof i64 = 8`.
     I64: "i64",
+    /// `int` is the type of unbounded signed integers; `sizeof int = inf`.
+    Int: "int",
+    /// `(list A B C)` is a tuple type with elements `A, B, C`;
+    /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
+    List: "list",
+    /// `nat` is the type of unbounded unsigned integers; `sizeof nat = inf`.
+    Nat: "nat",
+    /// `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
+    /// `sizeof (or A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+    /// the typehood predicate is `x :> (or A B C)` iff
+    /// `x :> A \/ x :> B \/ x :> C`.
+    Or: "or",
     /// `(own T)` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
@@ -127,34 +157,22 @@ make_prims! {
     U64: "u64",
   }
 
-  /// A primitive that can be used as both an operation and a type.
-  enum PrimOpType {
-    /// As a type, `(list A B C)` is a tuple type with elements `A, B, C`;
-    /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
-    ///
-    /// As an operator, `(list e1 ... en)` returns a tuple of the arguments.
-    List: "list",
-    /// As a type, `(and A B C)` is an intersection type of `A, B, C`;
-    /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-    /// the typehood predicate is `x :> (inter A B C)` iff
-    /// `x :> A /\ x :> B /\ x :> C`. (Note that this is regular conjunction,
-    /// not separating conjunction.)
-    ///
-    /// As an operator, `(and x1 ... xn)` returns the boolean `AND` of the arguments.
-    And: "and",
-    /// As a type, `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
-    /// `sizeof (or A B C) = max (sizeof A, sizeof B, sizeof C)`, and
-    /// the typehood predicate is `x :> (or A B C)` iff
-    /// `x :> A \/ x :> B \/ x :> C`.
-    ///
-    /// As an operator, `(or x1 ... xn)` returns the boolean `OR` of the arguments.
+  /// A primitive propositional connective.
+  enum PrimProp {
+    /// `A. {x : A} p` or `(al {x : A} p)` is universal quantification over a type.
+    All: "al",
+    /// `E. {x : A} p` or `(ex {x : A} p)` is existential quantification over a type.
+    Ex: "ex",
+    /// `p /\ q` is the (non-separating) conjunction.
+    And: "an",
+    /// `p \/ q` is disjunction.
     Or: "or",
-    /// As a type, `(ghost A)` is a compoutationally irrelevant version of `A`, which means
-    /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
-    /// is the same as `()`. `sizeof (ghost A) = 0`.
-    ///
-    /// As an operator, `(ghost x)` returns the same thing as `x` but in the type `(ghost A)`.
-    Ghost: "ghost",
+    /// `p -> q` is (regular) implication.
+    Imp: "im",
+    /// `p * q` is separating conjunction.
+    Star: "*",
+    /// `p -* q` is separating implication.
+    Wand: "-*",
   }
 
   /// Intrinsic functions, which are like `PrimProc` but are typechecked like regular
@@ -173,8 +191,6 @@ make_prims! {
 #[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Type {
-  /// A primitive type.
-  Prim(PrimType),
   /// A user type that has not yet been typechecked.
   Unchecked,
   /// A user type that has been typechecked, with the original span,
@@ -195,8 +211,6 @@ pub enum ProcTC {
 #[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Operator {
-  /// A primitive procedure.
-  Prim(PrimProc),
   /// A user procedure, with a link to the procedure definition and the typechecking status.
   Proc(Arc<Proc>, ProcTC),
 }
@@ -211,18 +225,29 @@ pub enum GlobalTC {
   Checked(Option<FileSpan>, AtomID, Option<Rc<types::Expr>>),
 }
 
+/// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Prim {
+  /// The primitive type record, if applicable.
+  pub ty: Option<PrimType>,
+  /// The primitive operation record, if applicable.
+  pub op: Option<PrimOp>,
+  /// The primitive proposition record, if applicable.
+  pub prop: Option<PrimProp>
+}
+crate::deep_size_0!(Prim);
+
 /// An operator, function, or type. These all live in one namespace so user types and
 // functions cannot name-overlap.
 #[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Entity {
+  /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
+  Prim(Prim),
   /// A named type.
   Type(Type),
   /// A named operator/procedure/function.
   Op(Operator),
-  /// A primitive that is both a type and an operator.
-  /// (User declarations must be one or the other.)
-  OpType(PrimOpType),
   /// A named global variable.
   Global(GlobalTC),
   /// A named constant.
@@ -244,8 +269,13 @@ impl Compiler {
   /// Construct the initial list of primitive entities.
   pub fn make_names(env: &mut Environment) -> HashMap<AtomID, Entity> {
     let mut names = HashMap::new();
-    PrimType::scan(|p, s| {names.insert(env.get_atom(s), Entity::Type(Type::Prim(p)));});
-    PrimProc::scan(|p, s| {names.insert(env.get_atom(s), Entity::Op(Operator::Prim(p)));});
+    fn get(names: &mut HashMap<AtomID, Entity>, a: AtomID) -> &mut Prim {
+      let e = names.entry(a).or_insert_with(|| Entity::Prim(Prim::default()));
+      if let Entity::Prim(p) = e {p} else {unreachable!()}
+    }
+    PrimType::scan(|p, s| get(&mut names, env.get_atom(s)).ty = Some(p));
+    PrimOp::scan(|p, s| get(&mut names, env.get_atom(s)).op = Some(p));
+    PrimProp::scan(|p, s| get(&mut names, env.get_atom(s)).prop = Some(p));
     names
   }
 
