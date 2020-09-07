@@ -1084,14 +1084,32 @@ impl Uncons {
     }
   }
 
+  /// Reconstruct a file span for an `Uncons`. Note that this may not be a well formed
+  /// substring, for example in `(a b c)` after the first iteration the span will refer
+  /// to `b c)` and at the last iteration the span will cover only `)`.
+  pub fn fspan(&self) -> Option<FileSpan> {
+    match self {
+      Uncons::New(e) => e.fspan(),
+      Uncons::DottedList(es, r) if es.is_empty() => r.fspan(),
+      Uncons::List(es) |
+      Uncons::DottedList(es, _) => es.as_owner().fspan().map(|mut fsp| {
+        fsp.span.start = match es.last().and_then(|e| e.fspan()) {
+          Some(fsp2) => fsp2.span.start,
+          None => fsp.span.end.saturating_sub(1),
+        };
+        fsp
+      })
+    }
+  }
+
   /// Convert an `Uncons` back into a `LispVal`.
   pub fn as_lisp(&self) -> LispVal {
     match self {
       Uncons::New(e) => e.clone(),
-      Uncons::List(es) if es.is_empty() => LispVal::nil(),
-      Uncons::List(es) => LispVal::list(es.cloned_box()),
+      Uncons::List(es) => LispKind::List(es.cloned_box()).decorate_span(&self.fspan()),
       Uncons::DottedList(es, r) if es.is_empty() => r.clone(),
-      Uncons::DottedList(es, r) => LispVal::dotted_list(es.cloned_box(), r.clone()),
+      Uncons::DottedList(es, r) =>
+        LispKind::DottedList(es.cloned_box(), r.clone()).decorate_span(&self.fspan())
     }
   }
 
@@ -1155,15 +1173,7 @@ impl Uncons {
 }
 
 impl From<Uncons> for LispVal {
-  fn from(u: Uncons) -> LispVal {
-    match u {
-      Uncons::New(e) => e,
-      Uncons::List(es) if es.is_empty() => LispVal::nil(),
-      Uncons::List(es) => LispVal::list(es.cloned_box()),
-      Uncons::DottedList(es, r) if es.is_empty() => r,
-      Uncons::DottedList(es, r) => LispVal::dotted_list(es.cloned_box(), r),
-    }
-  }
+  fn from(u: Uncons) -> LispVal { u.as_lisp() }
 }
 
 impl Clone for Uncons {
@@ -1175,31 +1185,38 @@ impl Iterator for Uncons {
   fn next(&mut self) -> Option<LispVal> {
     'l: loop {
       match self {
-        Uncons::New(e) => loop {
-          match &**e {
-            LispKind::Ref(m) => {let e2 = m.unref(); *e = e2}
-            LispKind::Annot(_, v) => *e = v.clone(),
-            LispKind::List(_) => {
-              *self = Uncons::List(OwningRef::from(e.clone()).map(|e| {
-                if let LispKind::List(es) = e {&**es}
-                else {unsafe {std::hint::unreachable_unchecked()}}
-              }));
-              continue 'l
-            }
-            LispKind::DottedList(_, r) => {
-              *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|e| {
-                if let LispKind::DottedList(es, _) = e {&**es}
-                else {unsafe {std::hint::unreachable_unchecked()}}
-              }), r.clone());
-              continue 'l
-            }
-            _ => return None
-          }
-        },
         Uncons::List(es) if es.is_empty() => return None,
         Uncons::List(es) => return (Some(es[0].clone()), *es = es.clone().map(|es| &es[1..])).0,
         Uncons::DottedList(es, r) if es.is_empty() => *self = Uncons::New(r.clone()),
         Uncons::DottedList(es, _) => return (Some(es[0].clone()), *es = es.clone().map(|es| &es[1..])).0,
+        Uncons::New(e) => {
+          let mut temp: LispVal;
+          let mut inner: &LispVal = e;
+          loop {
+            match &**inner {
+              LispKind::Ref(m) => {temp = m.unref(); inner = &temp}
+              LispKind::Annot(_, v) => inner = v,
+              LispKind::List(es) => {
+                *self = Uncons::List(OwningRef::from(e.clone()).map(|_|
+                  // Safety: The lifetime of this value is tied to the original
+                  // `e` (or clones made via `temp`), while the provided value
+                  // `_` is a clone of it, which has the same lifetime.
+                  // We can't use `as` cast via pointer because these are non-primitive
+                  unsafe {std::mem::transmute::<&[LispVal], &[LispVal]>(&**es)}
+                ));
+                continue 'l
+              }
+              LispKind::DottedList(es, r) => {
+                *self = Uncons::DottedList(OwningRef::from(e.clone()).map(|_|
+                  // Safety: same as above
+                  unsafe {std::mem::transmute::<&[LispVal], &[LispVal]>(&**es)}
+                ), r.clone());
+                continue 'l
+              }
+              _ => return None
+            }
+          }
+        }
       }
     }
   }
