@@ -6,6 +6,7 @@
 
 pub mod parser;
 pub mod eval;
+pub mod debug;
 pub mod print;
 pub mod pretty;
 
