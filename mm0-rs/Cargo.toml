@@ -34,6 +34,8 @@ lsp-server = "0.3.4"
 annotate-snippets = { version = "0.9.0", features = ["color"] }
 libc = "0.2.76"
 deepsize_derive = { path = "components/deepsize_derive" }
+shoebill = "0.1.*"
+debug_derive = { path = "components/debug_derive" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = "0.4.2"
