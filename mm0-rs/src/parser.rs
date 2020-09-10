@@ -15,7 +15,6 @@ pub mod ast;
 
 use std::mem;
 use std::sync::Arc;
-use lsp_types::{Diagnostic, DiagnosticSeverity};
 use annotate_snippets::snippet::AnnotationType;
 use num::BigUint;
 use num::cast::ToPrimitive;
@@ -23,6 +22,9 @@ use crate::util::*;
 use crate::lined_string::*;
 pub use ast::AST;
 use ast::*;
+
+#[cfg(feature = "server")]
+use lsp_types::{Diagnostic, DiagnosticSeverity};
 
 /// Determines how the error is displayed in an editor.
 ///
@@ -44,6 +46,7 @@ impl ErrorLevel {
   /// Convert an `ErrorLevel` to the LSP [`DiagnosticSeverity`] type.
   ///
   /// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
+  #[cfg(feature = "server")]
   pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
       ErrorLevel::Info => DiagnosticSeverity::Information,
@@ -100,6 +103,7 @@ impl ParseError {
   /// Convert a parse error to an LSP [`Diagnostic`] object.
   ///
   /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
+  #[cfg(feature = "server")]
   pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
       range: file.to_range(self.pos),

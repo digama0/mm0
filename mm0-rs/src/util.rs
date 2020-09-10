@@ -1,6 +1,6 @@
 //! Utilities, mainly path manipulation with some newtype definitions.
 
-use std::ops::{Deref, DerefMut, Range, Add, AddAssign};
+use std::ops::{Deref, DerefMut, Add, AddAssign};
 use std::borrow::Borrow;
 use std::mem::{self, MaybeUninit};
 use std::fmt;
@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::hash::{Hash, Hasher, BuildHasher};
 use std::collections::{HashMap, hash_map::{Entry, OccupiedEntry}};
-use lsp_types::Url;
 
 /// Newtype for `Box<dyn Error + Send + Sync>`
 pub type BoxError = Box<dyn Error + Send + Sync>;
@@ -108,15 +107,15 @@ pub struct Span {
 }
 crate::deep_size_0!(Span);
 
-impl From<Range<usize>> for Span {
-  #[inline] fn from(r: Range<usize>) -> Self { Span {start: r.start, end: r.end} }
+impl From<std::ops::Range<usize>> for Span {
+  #[inline] fn from(r: std::ops::Range<usize>) -> Self { Span {start: r.start, end: r.end} }
 }
 
 impl From<usize> for Span {
   #[inline] fn from(n: usize) -> Self { Span {start: n, end: n} }
 }
 
-impl From<Span> for Range<usize> {
+impl From<Span> for std::ops::Range<usize> {
   #[inline] fn from(s: Span) -> Self { s.start..s.end }
 }
 
@@ -132,15 +131,15 @@ impl AddAssign<usize> for Span {
 }
 
 impl Deref for Span {
-  type Target = Range<usize>;
-  fn deref(&self) -> &Range<usize> {
-    unsafe { &*(self as *const Span as *const Range<usize>) }
+  type Target = std::ops::Range<usize>;
+  fn deref(&self) -> &std::ops::Range<usize> {
+    unsafe { &*(self as *const Span as *const std::ops::Range<usize>) }
   }
 }
 
 impl DerefMut for Span {
-  fn deref_mut(&mut self) -> &mut Range<usize> {
-    unsafe { &mut *(self as *mut Span as *mut Range<usize>) }
+  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> {
+    unsafe { &mut *(self as *mut Span as *mut std::ops::Range<usize>) }
   }
 }
 
@@ -156,6 +155,31 @@ impl fmt::Debug for Span {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}..{}", self.start, self.end)
   }
+}
+
+#[cfg(feature = "server")]
+pub use lsp_types::{Position, Range};
+
+#[cfg(not(feature = "server"))]
+/// Position in a text document expressed as zero-based line and character offset.
+/// A position is between two characters like an 'insert' cursor in a editor.
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Default)]
+pub struct Position {
+    /// Line position in a document (zero-based).
+    pub line: u64,
+    /// Character offset on a line in a document (zero-based).
+    pub character: u64,
+}
+
+#[cfg(not(feature = "server"))]
+/// A range in a text document expressed as (zero-based) start and end positions.
+/// A range is comparable to a selection in an editor. Therefore the end position is exclusive.
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Default)]
+pub struct Range {
+    /// The range's start position.
+    pub start: Position,
+    /// The range's end position.
+    pub end: Position,
 }
 
 lazy_static! {
@@ -176,6 +200,14 @@ fn make_relative(buf: &PathBuf) -> String {
     .to_str().unwrap().to_owned()
 }
 
+#[derive(DeepSizeOf)]
+struct FileRefInner {
+  path: PathBuf,
+  rel: String,
+  #[cfg(feature = "server")]
+  url: lsp_types::Url
+}
+
 /// A reference to a file. It wraps an `Arc` so it can be cloned thread-safely.
 /// A `FileRef` can be constructed either from a `PathBuf` or a (`file://`) [`Url`],
 /// and provides (precomputed) access to these views using `path()` and `url()`,
@@ -183,31 +215,36 @@ fn make_relative(buf: &PathBuf) -> String {
 ///
 /// [`Url`]: ../lined_string/struct.Url.html
 #[derive(Clone, DeepSizeOf)]
-pub struct FileRef(Arc<(PathBuf, String, Url)>);
+pub struct FileRef(Arc<FileRefInner>);
 
 impl From<PathBuf> for FileRef {
-  fn from(buf: PathBuf) -> FileRef {
-    let u = Url::from_file_path(&buf).expect("bad file path");
-    let rel = make_relative(&buf);
-    FileRef(Arc::new((buf, rel, u)))
+  fn from(path: PathBuf) -> FileRef {
+    FileRef(Arc::new(FileRefInner {
+      rel: make_relative(&path),
+      #[cfg(feature = "server")]
+      url: lsp_types::Url::from_file_path(&path).expect("bad file path"),
+      path,
+    }))
   }
 }
 
-impl From<Url> for FileRef {
-  fn from(url: Url) -> FileRef {
-    let buf = url.to_file_path().expect("bad URL");
-    let rel = make_relative(&buf);
-    FileRef(Arc::new((buf, rel, url)))
+#[cfg(feature = "server")]
+impl From<lsp_types::Url> for FileRef {
+  fn from(url: lsp_types::Url) -> FileRef {
+    let path = url.to_file_path().expect("bad URL");
+    let rel = make_relative(&path);
+    FileRef(Arc::new(FileRefInner {path, rel, url}))
   }
 }
 
 impl FileRef {
   /// Convert this `FileRef` to a `PathBuf`, for use with OS file actions.
-  pub fn path(&self) -> &PathBuf { &self.0 .0 }
+  pub fn path(&self) -> &PathBuf { &self.0.path }
   /// Convert this `FileRef` to a relative path (as a `&str`).
-  pub fn rel(&self) -> &str { &self.0 .1 }
+  pub fn rel(&self) -> &str { &self.0.rel }
   /// Convert this `FileRef` to a `file:://` URL, for use with LSP.
-  pub fn url(&self) -> &Url { &self.0 .2 }
+  #[cfg(feature = "server")]
+  pub fn url(&self) -> &lsp_types::Url { &self.0.url }
   /// Get a pointer to this allocation, for use in hashing.
   pub fn ptr(&self) -> *const PathBuf { self.path() }
   /// Compare this with `other` for pointer equality.
@@ -219,17 +256,18 @@ impl FileRef {
   }
 }
 impl PartialEq for FileRef {
-  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+  fn eq(&self, other: &Self) -> bool { self.0.rel == other.0.rel }
 }
 impl Eq for FileRef {}
 
 impl Hash for FileRef {
-  fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
+  fn hash<H: Hasher>(&self, state: &mut H) { self.0.rel.hash(state) }
 }
 
 impl fmt::Display for FileRef {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    self.0 .0.file_name().unwrap_or_else(|| self.0 .0.as_os_str()).to_str().unwrap().fmt(f)
+    self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str())
+      .to_str().unwrap().fmt(f)
   }
 }
 
@@ -257,6 +295,7 @@ impl fmt::Debug for FileSpan {
 }
 
 /// Try to get memory usage (resident set size) in bytes using the `getrusage()` function from libc.
+#[cfg(feature = "memory")]
 fn get_memory_rusage() -> usize {
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
@@ -268,14 +307,19 @@ fn get_memory_rusage() -> usize {
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on `getrusage()` if procfs doesn't exist.
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "memory", target_os = "linux"))]
 pub(crate) fn get_memory_usage() -> usize {
   procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on `getrusage()` if procfs doesn't exist.
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(feature = "memory", not(target_os = "linux")))]
 pub(crate) fn get_memory_usage() -> usize {
   get_memory_rusage()
 }
+
+/// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
+/// Falls back on `getrusage()` if procfs doesn't exist.
+#[cfg(not(feature = "memory"))]
+pub(crate) fn get_memory_usage() -> usize { 0 }

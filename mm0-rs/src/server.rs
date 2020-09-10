@@ -945,7 +945,12 @@ impl Server {
         loop {
           for (i, id, mem, s) in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
             let d = i.saturating_duration_since(now).as_millis();
-            log_message(format!("[{:?}: {:?}ms, {}k] {}", id, d, mem/1024, s)).unwrap();
+            let msg = if mem == 0 {
+              format!("[{:?}: {:?}ms] {}", id, d, s)
+            } else {
+              format!("[{:?}: {:?}ms, {}k] {}", id, d, mem/1024, s)
+            };
+            log_message(msg).unwrap();
             now = i;
           }
         }

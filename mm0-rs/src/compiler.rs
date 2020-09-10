@@ -16,7 +16,6 @@ use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::{ThreadPool, block_on};
 use futures::lock::Mutex as FMutex;
-use lsp_types::{Position, Range};
 use annotate_snippets::{
   snippet::{Snippet, Annotation, AnnotationType, SourceAnnotation, Slice},
   display_list::{DisplayList, FormatOptions}};
@@ -27,7 +26,7 @@ use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MMBExporter;
-use crate::util::{FileRef, FileSpan, Span, get_memory_usage};
+use crate::util::{FileRef, FileSpan, Span, Position, Range, get_memory_usage};
 
 lazy_static! {
   /// The thread pool (used for running MM1 files in parallel, when possible)

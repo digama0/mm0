@@ -14,6 +14,10 @@ use syn::{
 
 #[proc_macro_derive(DeepSizeOf)]
 pub fn derive_deep_size(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    if !cfg!(feature = "nodummy") {
+        return proc_macro::TokenStream::new();
+    }
+
     // Parse the input tokens into a syntax tree.
     let input = parse_macro_input!(input as DeriveInput);
 

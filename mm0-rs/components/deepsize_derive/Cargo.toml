@@ -23,6 +23,10 @@ categories = ["development-tools::profiling", "memory-management"]
 license = "MIT"
 repository = "https://github.com/Aeledfyr/deepsize/"
 
+[features]
+default = ["nodummy"]
+nodummy = []
+
 [lib]
 proc-macro = true
 [dependencies.proc-macro2]

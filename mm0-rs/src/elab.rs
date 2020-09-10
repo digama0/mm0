@@ -27,7 +27,6 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use futures::channel::oneshot::{Receiver, channel};
-use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
 use environment::*;
 use environment::Literal as ELiteral;
 use lisp::LispVal;
@@ -38,6 +37,9 @@ pub use frozen::{FrozenEnv, FrozenLispKind, FrozenLispVal, FrozenAtomData};
 use crate::util::*;
 use crate::parser::{*, ast::*, ast::Literal as ALiteral};
 use crate::lined_string::*;
+
+#[cfg(feature = "server")]
+use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
 
 /// An error payload.
 #[derive(Debug, DeepSizeOf)]
@@ -70,6 +72,7 @@ impl ElabErrorKind {
   /// [`Location`]: ../../lsp_types/struct.Location.html
   /// [`LinedString`]: ../lined_string/struct.LinedString.html
   /// [`LinedString::to_loc`]: ../lined_string/struct.LinedString.html#method.to_loc
+  #[cfg(feature = "server")]
   pub fn to_related_info(&self, mut to_loc: impl FnMut(&FileSpan) -> Location) -> Option<Vec<DiagnosticRelatedInformation>> {
     match self {
       ElabErrorKind::Boxed(_, Some(info)) =>
@@ -140,6 +143,7 @@ impl ElabError {
   /// the positions in other files for the related info.
   ///
   /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
+  #[cfg(feature = "server")]
   pub fn to_diag(&self, file: &LinedString, to_loc: impl FnMut(&FileSpan) -> Location) -> Diagnostic {
     Diagnostic {
       range: file.to_range(self.pos),

@@ -8,11 +8,8 @@
 //! [`LinedString`]: struct.LinedString.html
 //! [`Position`]: ../../lsp_types/struct.Position.html
 
-use std::mem;
 use std::ops::{Deref, Index};
-pub use lsp_types::{Position, Url};
-use lsp_types::TextDocumentContentChangeEvent;
-use crate::util::{Span, FileSpan};
+use crate::util::{Span, Position, Range};
 
 /// Wrapper around std's String which stores data about the positions of any newline characters.
 ///
@@ -72,23 +69,26 @@ impl LinedString {
       Ok(n) => (idx, n+1),
       Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n)
     };
-    Position::new(line as u64,
-      if self.unicode {
+    Position {
+      line: line as u64,
+      character: if self.unicode {
         self[(pos..idx).into()].chars().map(char::len_utf16).sum()
-      } else { idx - pos } as u64)
+      } else { idx - pos } as u64
+    }
   }
 
   /// Turn a `Span` into an LSP [`Range`].
   ///
   /// [`Range`]: ../../lsp_types/struct.Range.html
-  pub fn to_range(&self, s: Span) -> lsp_types::Range {
-    lsp_types::Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
+  pub fn to_range(&self, s: Span) -> Range {
+    Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
   }
 
   /// Turn a `FileSpan` into an LSP [`Location`].
   ///
   /// [`Location`]: ../../lsp_types/struct.Location.html
-  pub fn to_loc(&self, fs: &FileSpan) -> lsp_types::Location {
+  #[cfg(feature = "server")]
+  pub fn to_loc(&self, fs: &crate::util::FileSpan) -> lsp_types::Location {
     lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}
   }
 
@@ -196,25 +196,26 @@ impl LinedString {
   /// containing a sequence of [`TextDocumentContentChangeEvent`] messages.
   ///
   /// [`TextDocumentContentChangeEvent`]: ../../lsp_types/struct.TextDocumentContentChangeEvent.html
-  pub fn apply_changes(&self, changes: impl Iterator<Item=TextDocumentContentChangeEvent>) ->
+  #[cfg(feature = "server")]
+  pub fn apply_changes(&self, changes: impl Iterator<Item=lsp_types::TextDocumentContentChangeEvent>) ->
       (Position, LinedString) {
     let mut old: LinedString;
     let mut out = LinedString::default();
     let mut uncopied: &str = &self.s;
     let mut first_change = None;
-      for TextDocumentContentChangeEvent {range, text: change, ..} in changes {
-      if let Some(lsp_types::Range {start, end}) = range {
+    for e in changes {
+      if let Some(Range {start, end}) = e.range {
         if first_change.map_or(true, |c| start < c) { first_change = Some(start) }
         if out.end() > start {
           out.extend(uncopied);
-          old = mem::take(&mut out);
+          old = std::mem::take(&mut out);
           uncopied = &old;
         }
         uncopied = out.extend_until(self.unicode, uncopied, end);
         out.truncate(start);
-        out.extend(&change);
+        out.extend(&e.text);
       } else {
-        out = change.into();
+        out = e.text.into();
         first_change = Some(Position::default());
         uncopied = "";
       }

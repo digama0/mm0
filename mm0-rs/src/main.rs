@@ -36,6 +36,7 @@ mod deepsize;
 pub mod util;
 pub mod lined_string;
 pub mod parser;
+#[cfg(feature = "server")]
 #[macro_use] pub mod server;
 pub mod compiler;
 pub mod joiner;
@@ -57,7 +58,7 @@ pub mod mmc;
 use clap::clap_app;
 
 fn main() -> std::io::Result<()> {
-  let m = clap_app!(mm0_rs =>
+  let app = clap_app!(mm0_rs =>
     (name: "mm0-rs")
     (version: "0.1")
     (author: "Mario Carneiro <mcarneir@andrew.cmu.edu>")
@@ -65,9 +66,6 @@ fn main() -> std::io::Result<()> {
     (@setting InferSubcommands)
     (@setting SubcommandRequiredElseHelp)
     (@setting VersionlessSubcommands)
-    (@subcommand server =>
-      (about: "MM1 LSP server")
-      (@arg debug: -d --debug "Enable debug logging"))
     (@subcommand compile =>
       (about: "Compile MM1 files into MMB")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
@@ -75,13 +73,21 @@ fn main() -> std::io::Result<()> {
     (@subcommand join =>
       (about: "Join MM1/MM0 files with imports by concatenation")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
-      (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted")))
-    .get_matches();
+      (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted")));
+
+  #[cfg(feature = "server")]
+  let app = clap_app!(@app (app)
+    (@subcommand server =>
+      (about: "MM1 LSP server")
+      (@arg debug: -d --debug "Enable debug logging")));
+
+  let m = app.get_matches();
 
   match m.subcommand() {
-    ("server", Some(m)) => server::main(m),
     ("compile", Some(m)) => compiler::main(m)?,
     ("join", Some(m)) => joiner::main(m)?,
+    #[cfg(feature = "server")]
+    ("server", Some(m)) => server::main(m),
     _ => unreachable!()
   }
   Ok(())
