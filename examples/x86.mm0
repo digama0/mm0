@@ -75,13 +75,13 @@ def bvSize (bs: nat): nat;
 theorem bvSize0 (n: nat): $ bvSize 0 = 0 $;
 theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
 
-def isBitvecs (k bs: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
+def isBitvecs (bs k: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
 
 def ofBits (n: nat): nat;
-theorem ofBits0 (n: nat): $ ofBits 0 = 0 $;
+theorem ofBits0: $ ofBits 0 = 0 $;
 theorem ofBitsS (k bs n: nat):
   $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $;
-theorem ofBitsT (bs: nat): $ bs e. List Bitvec /\ ofBits 0 e. Bits 0 $;
+theorem ofBits0T: $ ofBits 0 e. Bits 0 $;
 theorem ofBitsST (k bs n m: nat):
   $ bs e. Bits k /\ ofBits n e. Bits m ->
     ofBits ((k <> bs) : n) e. Bits (k + m) $;

@@ -132,6 +132,10 @@ theorem Bits_eq_power: $ Bits n = power (upto n) $ = '(eqcom powerupto);
 
 theorem elBits: $ a e. Bits n <-> a C_ upto n $ =
 '(bitr (elneq2 Bits_eq_power) elpower);
+theorem elBits2: $ a e. Bits n <-> a < 2 ^ n $ = 'elupto;
+
+theorem elBits0: $ a e. Bits 0 <-> a = 0 $ = '(bitr elBits2 @ bitr (lteq2 pow0) lt12);
+theorem elBits01: $ 0 e. Bits n $ = '(mpbir elBits ss01);
 
 theorem bitAndT1: $ a e. Bits n -> bitAnd a b e. Bits n $ =
 '(sylbi elBits @ sylibr elBits @ sylibr (sseq1 bitAndEq) @ sstr inss1);
@@ -142,9 +146,13 @@ theorem bitOrT: $ a e. Bits n /\ b e. Bits n <-> bitOr a b e. Bits n $ =
 theorem bitDifT: $ a e. Bits n -> bitDif a b e. Bits n $ =
 '(sylbi elBits @ sylibr elBits @ sylibr (sseq1 bitDifEq) @ sstr inss1);
 
+theorem shladdT: $ a e. Bits n /\ c e. Bits b -> shl a b + c e. Bits (n + b) $ =
+(named '(sylibr elBits2 @ ltletrd (sylib ltadd2 @ sylib elBits2 anr) @
+  sylib (leeq mulS1 @ eqcom powadd) @ syl lemul1a @
+  sylib elBits2 anl));
+
 theorem shlT: $ a e. Bits n -> shl a b e. Bits (n + b) $ =
-(named '(sylibr elBits @ sylbi elBits @ iald @ syl5bi elshl @ exp @ sylibr elupto @
-  mpbid (lteq1d @ syl npcan anrl) @ sylib ltadd1 @ sylib elupto @ sylc ssel anl anrr));
+'(sylib (eleq1 add0) @ mpi elBits01 @ exp shladdT);
 theorem shlT2: $ a e. Bits n -> n + b <= c -> shl a b e. Bits c $ =
 '(rsyl shlT @ com12 @ syl ssel Bitsss);
 theorem shrT: $ a e. Bits (n + b) -> shr a b e. Bits n $ =
@@ -250,31 +258,56 @@ pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $ 
 @_ def bitsSar (k a b: nat): nat =
 $ nat (bitsMSB k a) * (upto k - upto (k - b)) + shr a b $;
 pub theorem bitsSarT (k a b: nat):
-  $ a e. Bits k /\ b <= k -> bitsSar k a b e. Bits k $;
+  $ a e. Bits k /\ b <= k -> bitsSar k a b e. Bits k $ =
+'(sylibr elBits2 @
+  sylibr (lteq2 @ eqtr3 uptoadd1 @
+    eqtr3 (addeq1 @ npcan @ mpbi leupto subleid) @ eqtr addass @ addeq2 uptoadd1) @
+  leltaddd (a1i @ mpbi (leeq2 mul11) (lemul1a natle1)) @
+  sylib elBits2 @ syl shrT @ mpbird (elneq2d @ Bitseqd @ anwr npcan) anl);
 
 @_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
 @_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 
 @_ def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
+theorem elBitvec: $ n <> bs e. Bitvec <-> bs < 2 ^ n $ =
+(named '(elabe @ lteqd (syl6eq sndpr sndeq) @ poweq2d @ syl6eq fstpr fsteq));
+theorem elBitvec2: $ n <> bs e. Bitvec <-> bs e. Bits n $ = '(bitr4 elBitvec elBits2);
 
-@_ abstract def bvSize (bs: nat): nat;
-pub theorem bvSize0 (n: nat): $ bvSize 0 = 0 $;
-pub theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
+@_ abstract def bvSize (bs: nat): nat = $ lrec 0 (\\ p, \\ z, \ ih, fst p + ih) bs $;
+pub theorem bvSize0 (n: nat): $ bvSize 0 = 0 $ = (named 'lrec0);
+pub theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $ =
+(named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> bvSize n) $} @ appslame @
+  appslamed @ applamed @ addeqd (syl6eq fstpr @ fsteqd anll) anr));
 
-@_ def isBitvecs (k bs: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
+@_ def isBitvecs (bs k: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
 
-@_ abstract def ofBits (n: nat): nat;
-pub theorem ofBits0 (n: nat): $ ofBits 0 = 0 $;
+@_ abstract def ofBits (n: nat): nat = $ lrec 0 (\\ p, \\ z, \ ih, snd p + shl ih (fst p)) n $;
+pub theorem ofBits0: $ ofBits 0 = 0 $ = (named 'lrec0);
 pub theorem ofBitsS (k bs n: nat):
-  $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $;
-pub theorem ofBitsT (bs: nat): $ bs e. List Bitvec /\ ofBits 0 e. Bits 0 $;
+  $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $ =
+(named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> ofBits n) $} @ appslame @
+  appslamed @ applamed @ addeqd (syl6eq sndpr @ fsteqd anll) @
+  shleqd anr (syl6eq fstpr @ fsteqd anll)));
+pub theorem ofBits0T (bs: nat): $ ofBits 0 e. Bits 0 $ = '(mpbir elBits0 ofBits0);
 pub theorem ofBitsST (k bs n m: nat):
   $ bs e. Bits k /\ ofBits n e. Bits m ->
-    ofBits ((k <> bs) : n) e. Bits (k + m) $;
+    ofBits ((k <> bs) : n) e. Bits (k + m) $ =
+'(sylibr (eleq1 @ eqtr ofBitsS addcom) @ sylib (elneq2 @ Bitseq addcom) @
+  rsyl ancom shladdT);
+theorem ofBitsT (bs: nat):
+  $ bs e. List Bitvec -> ofBits bs e. Bits (bvSize bs) $ =
+(named '(sylbi elList ,(mk-ind '(listind)
+  '(imeqd alleq2 @ elneqd ofBitseq @ Bitseqd bvSizeeq)
+  '(a1i @ mpbir (eleq1 ofBits0) elBits01)
+  '(syl5bi allS @ impd @ com12 @ imim2d @ exp @
+    sylibr (elneq2 @ Bitseq @ eqtr3 (bvSizeeq @ conseq1 fstsnd) bvSizeS) @
+    sylib (eleq1 @ ofBitseq @ conseq1 fstsnd) @
+    sylbi (aneq1i @ bitr3 (eleq1 fstsnd) elBitvec2) ofBitsST))));
 
 @_ def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
 pub theorem splitBitsT (bs n k: nat):
-  $ isBitvecs bs k /\ splitBits bs n -> n e. Bits k $;
+  $ isBitvecs bs k /\ splitBits bs n -> n e. Bits k $ =
+'(mpbid (elneqd anrr @ Bitseqd anlr) (anwll ofBitsT));
 
 ----------------------------------------
 -- x86-64 machine code decoding

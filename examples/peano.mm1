@@ -1625,6 +1625,11 @@ theorem ltadd2: $ b < c <-> a + b < a + c $ = '(bitr ltadd1 (lteq addcom addcom)
 theorem ltsuc: $ a < b <-> suc a < suc b $ = '(bitr ltadd1 (lteq add12 add12));
 theorem leltsuc: $ a <= b <-> a < suc b $ = 'lesuc;
 
+theorem leltaddd (h1: $ G -> a <= b $) (h2: $ G -> c < d $): $ G -> a + c < b + d $ =
+'(lelttrd (sylib leadd1 h1) (sylib ltadd2 h2));
+theorem ltleaddd (h1: $ G -> a < b $) (h2: $ G -> c <= d $): $ G -> a + c < b + d $ =
+'(ltletrd (sylib ltadd1 h1) (sylib leadd2 h2));
+
 theorem ltirr: $ ~ a < a $ = '(mtbi (bitr ltadd1 @ lteq add01 add01) lt02);
 theorem ltne: $ a < b -> a != b $ = '(mpi ltirr @ con3d @ com12 @ bi1d lteq1);
 theorem ltner: $ a < b -> b != a $ = '(syl necom ltne);
@@ -1825,6 +1830,8 @@ theorem bool1: $ bool 1 $ = 'd1lt2;
 theorem bool01: $ bool n <-> n = 0 \/ n = 1 $ =
 '(bitr3 leltsuc (bitr leloe (oreq1i lt12)));
 
+theorem boolle1: $ bool n <-> n <= 1 $ = '(bicom leltsuc);
+
 theorem lebool: $ a <= b -> bool b -> bool a $ = 'lelttr;
 
 theorem letrueb: $ bool a -> (a <= b <-> (true a -> true b)) $ =
@@ -1847,6 +1854,8 @@ theorem nattrue: $ bool n -> nat (true n) = n $ =
 
 theorem natle: $ (p -> q) <-> nat p <= nat q $ =
 '(bicom @ bitr (letrueb boolnat) (imeqi truenat truenat));
+
+theorem natle1: $ nat p <= 1 $ = '(mpbi boolle1 boolnat);
 
 theorem nattruele: $ nat (true n) <= n $ =
 '(eor id (syl eqle @ syl nattrue @ mpi boolnat lebool) leorle);
@@ -3457,6 +3466,14 @@ theorem powdvd: $ b <= c -> a ^ b || a ^ c $ =
 '(mpbii dvdmul1 @ dvdeq2d @ syl5eqr powadd @ poweq2d npcan);
 theorem lepow2a: $ a != 0 -> b <= c -> a ^ b <= a ^ c $ =
 '(exp @ dvdle (anwl powne0) (anwr powdvd));
+theorem ltpow2: $ 1 < a -> (b < c <-> a ^ b < a ^ c) $ =
+'(ibida
+  (mpbid (lteqd (a1i mul11) @ syl5eqr powadd @ poweq2d @ syl npcan @ anwr ltle) @
+    mpbid (syl ltmul1 @ syl powpos @ anwl @ lttr d0lt1) @
+    lelttrd (sylib subpos anr) @ anwl powltid2)
+  (imp @ sylibr (imeqi ltnle ltnle) @ con3d @ syl lepow2a @ sylib lt01 @ lttr d0lt1));
+theorem lepow2: $ 1 < a -> (b <= c <-> a ^ b <= a ^ c) $ =
+'(syl5bb lenlt @ syl6bbr lenlt @ noteqd ltpow2);
 
 @_ def shl (a n: nat): nat = $ a * 2 ^ n $;
 @_ def shr (a n: nat): nat = $ a // 2 ^ n $;
@@ -3701,6 +3718,9 @@ theorem uptoss: $ upto a C_ upto b <-> a <= b $ =
 '(ibii
   (mpi ltirr @ con1d (syl5bir ltnle @ sylib (imeqi elupto elupto) ssel))
   (!! iald x @ sylibr (imeqi elupto elupto) @ com12 ltletr));
+
+theorem leupto: $ a <= b <-> upto a <= upto b $ =
+'(bitr4 (lepow2 d1lt2) @ bitr leadd1 @ leeq uptoadd1 uptoadd1);
 
 theorem dffin2: $ finite A <-> E. n A C_ upto n $ =
 '(exeqi @ !! aleqi x @ imeq2i @ bicom elupto);
