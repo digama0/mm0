@@ -92,7 +92,7 @@ macro_rules! log {
 }
 
 async fn elaborate(path: FileRef, start: Option<Position>,
-    cancel: Arc<AtomicBool>) -> Result<(u64, FrozenEnv)> {
+    cancel: Arc<AtomicBool>) -> Result<Option<(u64, FrozenEnv)>> {
   let Server {vfs, pool, ..} = &*SERVER;
   let (path, file) = vfs.get_or_insert(path)?;
   let v = file.text.lock().unwrap().0;
@@ -105,31 +105,29 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           let (send, recv) = channel();
           senders.push(send);
           drop(g);
-          return Ok(recv.await.unwrap())
+          return Ok(recv.await.ok())
         }
         cancel.store(true, Ordering::SeqCst);
         if let Some(FileCache::InProgress {senders, ..}) = g.take() {
           ((None, None, vec![]), senders)
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
-      &mut Some(FileCache::Ready {hash, ref deps, ref env, complete, ..}) => {
-        if complete {
-          let hasher = &mut DefaultHasher::new();
-          v.hash(hasher);
-          let matches = (|| -> bool {
-            for path in deps {
-              if let Some(file) = vfs.get(path) {
-                if let Some(g) = file.parsed.try_lock() {
-                  if let Some(FileCache::Ready {hash, ..}) = *g {
-                    hash.hash(hasher);
-                  } else {return false}
+      &mut Some(FileCache::Ready {hash, ref deps, ref env, ..}) => {
+        let hasher = &mut DefaultHasher::new();
+        v.hash(hasher);
+        let matches = (|| -> bool {
+          for path in deps {
+            if let Some(file) = vfs.get(path) {
+              if let Some(g) = file.parsed.try_lock() {
+                if let Some(FileCache::Ready {hash, ..}) = *g {
+                  hash.hash(hasher);
                 } else {return false}
               } else {return false}
-            }
-            hasher.finish() == hash
-          })();
-          if matches { return Ok((hash, env.clone())) }
-        }
+            } else {return false}
+          }
+          hasher.finish() == hash
+        })();
+        if matches { return Ok(Some((hash, env.clone()))) }
         if let Some(FileCache::Ready {ast, source, errors, deps, env, ..}) = g.take() {
           ((start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
         } else {unsafe {std::hint::unreachable_unchecked()}}
@@ -160,7 +158,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       |path| {
         let path = vfs.get_or_insert(path)?.0;
         let (send, recv) = channel();
-        pool.spawn_ok(elaborate_and_send(path.clone(), cancel.clone(), send));
+        pool.spawn_ok(elaborate_and_send(path.clone(), Default::default(), send));
         deps.push(path);
         Ok(recv)
       }).await
@@ -169,52 +167,51 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let hash = hasher.finish();
   log!("elabbed {:?}", path);
   let mut g = file.parsed.lock().await;
-  let complete = !cancel.load(Ordering::SeqCst);
-  if complete {
-    let mut srcs = HashMap::new();
-    let mut to_loc = |fsp: &FileSpan| -> Location {
-      if fsp.file.ptr_eq(&path) {
-        &ast.source
-      } else {
-        srcs.entry(fsp.file.ptr()).or_insert_with(||
-          vfs.0.lock().unwrap().get(&fsp.file).unwrap()
-            .text.lock().unwrap().1.clone())
-      }.to_loc(fsp)
-    };
+  if cancel.load(Ordering::SeqCst) { return Ok(None) }
+  let mut srcs = HashMap::new();
+  let mut to_loc = |fsp: &FileSpan| -> Location {
+    if fsp.file.ptr_eq(&path) {
+      &ast.source
+    } else {
+      srcs.entry(fsp.file.ptr()).or_insert_with(||
+        vfs.0.lock().unwrap().get(&fsp.file).unwrap()
+          .text.lock().unwrap().1.clone())
+    }.to_loc(fsp)
+  };
 
-    let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
-    let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
-      .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc)))
-      .inspect(|err| match err.severity {
-        None => {}
-        Some(DiagnosticSeverity::Error) => n_errs += 1,
-        Some(DiagnosticSeverity::Warning) => n_warns += 1,
-        Some(DiagnosticSeverity::Information) => n_infos += 1,
-        Some(DiagnosticSeverity::Hint) => n_hints += 1,
-      }).collect();
+  let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
+  let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
+    .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc)))
+    .inspect(|err| match err.severity {
+      None => {}
+      Some(DiagnosticSeverity::Error) => n_errs += 1,
+      Some(DiagnosticSeverity::Warning) => n_warns += 1,
+      Some(DiagnosticSeverity::Information) => n_infos += 1,
+      Some(DiagnosticSeverity::Hint) => n_hints += 1,
+    }).collect();
 
-    send_diagnostics(path.url().clone(), version, errs)?;
+  send_diagnostics(path.url().clone(), version, errs)?;
 
-    use std::fmt::Write;
-    let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-    if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
-    if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
-    if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
-    log(log_msg);
-  }
+  use std::fmt::Write;
+  let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
+  if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
+  if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
+  if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
+  log(log_msg);
+
   vfs.update_downstream(&old_deps, &deps, &path);
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {
     for s in senders {
       let _ = s.send((hash, env.clone()));
     }
   }
-  *g = Some(FileCache::Ready {hash, source, ast, errors, deps, env: env.clone(), complete});
+  *g = Some(FileCache::Ready {hash, source, ast, errors, deps, env: env.clone()});
   drop(g);
   for d in file.downstream.lock().unwrap().iter() {
     log!("{:?} affects {:?}", path, d);
     pool.spawn_ok(dep_change(d.clone()));
   }
-  Ok((hash, env))
+  Ok(Some((hash, env)))
 }
 
 async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Arc<AtomicBool>) {
@@ -229,14 +226,14 @@ fn elaborate_and_send(path: FileRef,
   cancel: Arc<AtomicBool>, send: FSender<(u64, FrozenEnv)>) ->
   BoxFuture<'static, ()> {
   async {
-    if let Ok(env) = elaborate(path, Some(Position::default()), cancel).await {
+    if let Ok(Some(env)) = elaborate(path, Some(Position::default()), cancel).await {
       let _ = send.send(env);
     }
   }.boxed()
 }
 
 fn dep_change(path: FileRef) -> BoxFuture<'static, ()> {
-  elaborate_and_report(path, None, Arc::new(AtomicBool::new(false))).boxed()
+  elaborate_and_report(path, None, Default::default()).boxed()
 }
 
 #[derive(DeepSizeOf)]
@@ -253,7 +250,6 @@ enum FileCache {
     errors: Vec<ElabError>,
     env: FrozenEnv,
     deps: Vec<FileRef>,
-    complete: bool,
   }
 }
 
@@ -483,7 +479,8 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
   let text = file.text.lock().unwrap().1.clone();
   let idx = or!(Ok(None), text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
@@ -572,7 +569,8 @@ async fn definition<T>(path: FileRef, pos: Position,
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let spans = or_none!(env.find(idx));
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
@@ -639,7 +637,8 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
   let f = |name: &ArcString, desc, sp, full, kind| DocumentSymbol {
     name: (*name.0).clone(),
@@ -759,7 +758,8 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
   let mut res = vec![];
   for ad in env.data().iter() {
@@ -780,7 +780,8 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(&*ci.label).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
@@ -797,7 +798,8 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?.1;
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let spans = or_none!(env.find(idx));
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {
