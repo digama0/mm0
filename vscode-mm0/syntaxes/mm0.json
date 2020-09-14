@@ -256,6 +256,20 @@
 			"patterns": [
 				{"include": "#comment"},
 				{
+					"match": "(@)\\s+(if|def|fn|let|letrec|match(-fn\\*?)?|focus)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"captures": {
+						"1": {"name": "keyword.operator.mm0.lisp"},
+						"2": {"name": "keyword.other.command.mm0.lisp"}
+					}
+				},
+				{
+					"match": "(@)\\s+(\\+|\\*|\\-|<=?|>=?|=|->string|string-(>atom|append)|display|error|print|begin|apply|min|max|not|or|list|cons|hd|tl|lookup|insert|async|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|to-expr|refine|stat|have|get-decl|(pair|null|int|bool|atom|string|fn|number|ref|atom-map|def|goal|mvar)\\?|(ref|get|set|atom-map|insert|mvar|add-(decl|term|thm))\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"captures": {
+						"1": {"name": "keyword.operator.mm0.lisp"},
+						"2": {"name": "support.function.mm0.lisp"}
+					}
+				},
+				{
 					"match": "(@)(\\s+([\\w!%&*+\\-./:<=>?@^_~]+)?)",
 					"captures": {
 						"1": {"name": "keyword.operator.mm0.lisp"},
