@@ -116,8 +116,8 @@ theorem REX_RT (r: nat): $ bool (REX_R r) $;
 theorem REX_XT (r: nat): $ bool (REX_X r) $;
 theorem REX_BT (r: nat): $ bool (REX_B r) $;
 
-def rex_reg (r b: nat): nat = $ r + shl b 3 $;
-theorem rex_regT (r b: nat): $ r e. Bits 3 /\ bool b -> rex_reg r b e. Regs $;
+def rex_reg (b r: nat): nat = $ shl b 3 + r $;
+theorem rex_regT (b r: nat): $ bool b /\ r e. Bits 3 -> rex_reg b r e. Regs $;
 
 def Base: set = $ Option (Option Regs) $;
 def base_RIP: nat = $ suc 0 $;
@@ -200,8 +200,7 @@ $ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
 theorem readImmNT (k q l: nat):
   $ k <= 64 /\ readImmN k q l -> q e. u64 /\ l e. List u8 $;
 
-def WSize (.n: nat): set = $ lower (
-  Xp (8 ; 16 ; 32 ; sn 64) Bool i^i {n | fst n = 8 \/ snd n = 0}) $;
+def WSize (.n: nat): set = $ Xp (8 ; 16 ; 32 ; sn 64) Bool i^i {n | fst n = 8 \/ snd n = 0} $;
 def wsizeBits (sz: nat): nat = $ fst sz $;
 def wsizeBytes (sz: nat): nat = $ wsizeBits sz // 8 $;
 def wSz8 (have_rex: wff): nat = $ 8 <> nat have_rex $;
@@ -238,7 +237,7 @@ def ImmRM: set = $ Sum RM u64 $;
 def immRM_rm (rm: nat): nat = $ b0 rm $;
 def immRM_imm (i: nat): nat = $ b1 i $;
 theorem immRM_rmT (rm: nat): $ rm e. RM -> immRM_rm rm e. ImmRM $;
-theorem immRM_immT (i: nat): $ i e. RM -> immRM_imm i e. ImmRM $;
+theorem immRM_immT (i: nat): $ i e. u64 -> immRM_imm i e. ImmRM $;
 
 def Unop: nat = $ upto 4 $;
 def unopInc: nat = $ 0 $;

@@ -365,7 +365,7 @@ do {
         [(('hex e f) p2) @ match (mkadd d e) @ (g p3)
           '((hex ,g ,f) (mul_x1x ,a ,b ,c ,d ,e ,f ,g ,p1 ,p2 ,p3))]
         [(('h2n e) p2) '((hex ,d ,e) (mul_x10 ,a ,b ,c ,d ,e ,p1 ,p2))]]
-      [(('h2n (a)) ('h2n (b))) @ match (decaddn (hexdigit->number b) (hexdigit->number d)) @ (c p)
+      [(('h2n (a)) ('h2n (b))) @ match (decmuln (hexdigit->number a) (hexdigit->number b)) @ (c p)
         '(,c (,p))]]
     [mkmul @ match-fn*
       [('(h2n (x0)) a) '((h2n (x0)) (mulx01 ,a))]
@@ -397,13 +397,13 @@ do {
   -- Given a numeric expression using +, *, suc, :x, ..., it will be evaluated to a (hexadecimal)
   -- numeric literal.
   (def (mktohex e) @ match e @ ((? atom? t) . es)
-    (apply (lookup tohex-map t @ fn () @ error "not numeric") es))
+    (apply (lookup tohex-map t @ fn () @ error @ string-append "not numeric: " (->string t)) es))
 
   -- Numeric evaluation as a refine script.
   (def (to_hex refine t) @ match t @ $ ,a = ,_ $
     @ match (mktohex a)
-    [(b p) @ refine '{(:verb ,p) : $ ,a = ,b $}]
-    [#undef @ refine 'eqid])
+    [(b p) @ refine t '{(:verb ,p) : $ ,a = ,b $}]
+    [#undef @ refine t 'eqid])
 
   (def (try-conv a p) @ if (def? p) p '(,a (eqid ,a)))
   (let ([(ins a f) (insert! tohex-map a f)])
@@ -441,15 +441,15 @@ do {
         [#undef]]])
     (ins 'h2n @ fn (_))
     (for 0 15 @ fn (n) @
-      ins (dn n) @ fn () @ '((,(hexdigit n)) (,(decn n))))
-    (ins 'd16 @ fn () '((hex (h2n (x1)) (x0)) (dec10))))
+      ins (dn n) @ fn () '((h2n (,(hexdigit n))) (,(decn n))))
+    (ins 'd16 @ fn () '((hex (h2n (x1)) (x0)) (h2n10))))
 
   -- Comparison theorem generator: prove a given (in)equality goal (< <= or =)
   (def (mkcmp e) @ match e
     [('lt a b) (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
         (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
-          '(leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(lt ,a2 ,b2))))
+          '(lteql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(lt ,a2 ,b2))))
         (mkcmphex e)]
     [('le a b) (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
@@ -463,7 +463,9 @@ do {
         (mkcmphex e)]
     [('eq a b) @ match (mktohex b)
       [(b2 pb) @ match (mktohex a)
-        [(a2 pa) @ match {a2 = b2} @ #t '(eqtr4i ,a ,a2 ,b ,pa ,pb)]
+        [(a2 pa) @ match {a2 == b2}
+          [#t '(eqtr4i ,a ,a2 ,b ,pa ,pb)]
+          [_ @ error @ string-append "not equal? " (->string a2) " =?= " (->string b2)]]
         [#undef '(eqcomi ,b ,a ,pb)]]
       [#undef (try-conv (mktohex a))]])
 
@@ -471,6 +473,13 @@ do {
   -- used as a refine script.
   (def (norm_num refine t) @ match t
     [('eq a (? mvar?)) @ match (try-conv a @ mktohex a) @ (b p)
-      @ refine '{(:verb ,p) : $ ,a = ,b $}]
-    [_ @ refine '(:verb ,(mkcmp t))])
+      @ refine t '{(:verb ,p) : $ ,a = ,b $}]
+    [_ @ refine t '(:verb ,(mkcmp t))])
 };
+
+theorem d2mul2: $ 2 * 2 = 4 $ = norm_num;
+theorem pow22lem (h1: $ 2 * a = b $) (h2: $ 2 ^ a = c $): $ 2 ^ b = c * c $ =
+'(eqtr3 (poweq2 @ eqtr mulcom h1) @ eqtr powmul @ eqtr (poweq1 h2) pow22);
+theorem d2pow2: $ 2 ^ 2 = 4 $ = '(eqtr pow22 d2mul2);
+theorem d2mul4: $ 2 * 4 = 8 $ = norm_num;
+theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);

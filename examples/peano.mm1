@@ -840,7 +840,7 @@ do {
   --
   -- The last argument to folmode is a refine script that is passed to (folrefine).
   (def (folmode . vs)
-    @ match (match (split-last vs) [() (#undef)] [r r]) @ (r . vs)
+    @ match (match (split-last vs) [() '(#undef)] [r r]) @ (r . vs)
     (set! folmode-context
       (def vs (ref! vs))
       @ rmap (get-goals) @ fn (g)
@@ -1812,6 +1812,14 @@ theorem ifeq2a: $ (p -> a = b) -> if p a c = if p b c $ =
 '(casesd (imim2i ifeq2) (a1i @ eqtr4d ifneg ifneg));
 theorem ifeq3a: $ (~p -> b = c) -> if p a b = if p a c $ =
 '(casesd (a1i @ eqtr4d ifpos ifpos) (imim2i ifeq3));
+
+theorem ifbothd
+  (ea: $ if p a b = a -> (q <-> qa) $)
+  (eb: $ if p a b = b -> (q <-> qb) $)
+  (h1: $ G /\ p -> qa $) (h2: $ G /\ ~p -> qb $): $ G -> q $ =
+'(casesda (mpbird (syl ea @ anwr ifpos) h1) (mpbird (syl eb @ anwr ifneg) h2));
+
+theorem ifT: $ a e. A /\ b e. A -> if p a b e. A $ = '(ifbothd eleq1 eleq1 anll anlr);
 
 @_ def true (n: nat): wff = $ n != 0 $;
 @_ def bool (n: nat): wff = $ n < 2 $;
@@ -3425,6 +3433,7 @@ pub theorem powS: $ a ^ suc b = a * a ^ b $ =
 '(eqtr recS @ ! applame $ a ^ b $ _ n _ muleq2);
 theorem powS2: $ a ^ suc b = a ^ b * a $ = '(eqtr powS mulcom);
 theorem pow12: $ a ^ 1 = a $ = '(eqtr powS @ eqtr (muleq2 pow0) mul12);
+theorem pow22: $ a ^ 2 = a * a $ = '(eqtr powS @ muleq2 pow12);
 
 theorem pow11: $ 1 ^ b = 1 $ =
 (mk-ind '(!! ind x y) '(eqeq1d poweq2)
@@ -3741,7 +3750,7 @@ theorem sizeupto: $ size (upto n) = n $ =
 
 def Bool: nat = $ 0 ; sn 1 $;
 
-theorem elbool: $ n e. Bool <-> bool n $ =
+theorem elBool: $ n e. Bool <-> bool n $ =
 '(bitr elins @ bitr4 (oreq2i elsn) bool01);
 
 theorem boolfin: $ finite Bool $ = '(mpbir (fineq @ !! eqab2i n elbool) ltfin);
@@ -4094,6 +4103,7 @@ theorem elList: $ l e. List A <-> all A l $ = '(!! elabe n alleq2);
 theorem elList0: $ 0 e. List A $ = '(mpbir elList all0);
 theorem elListS: $ (a : b) e. List A <-> a e. A /\ b e. List A $ =
 '(bitr elList @ bitr4 allS @ aneq2i elList);
+theorem elList1: $ (a : 0) e. List A <-> a e. A $ = '(bitr elListS @ bian2 elList0);
 
 @_ abstract def len (l: nat): nat = $ lrec 0 (\\ x, \\ z, \ y, suc y) l $;
 pub theorem len0: $ len 0 = 0 $ = (named 'lrec0);
