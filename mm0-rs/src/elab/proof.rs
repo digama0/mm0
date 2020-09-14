@@ -97,7 +97,7 @@ pub struct Dedup<H: NodeHash> {
   /// a reference to the object in the map to ensure that it is not deallocated.
   /// (There is no safety problem here, but if the object gets deallocated and
   /// another takes its place, we can get a false positive hit in the map.)
-  prev: HashMap<*const LispKind, (LispVal, usize)>,
+  prev: HashMap<*const LispKind, Option<(LispVal, usize)>>,
   /// The list of allocated objects. At each index, we store `(hash, shared, deps)` where
   /// `hash` is the hash object, `shared` is true if this object has more than one
   /// reference, and `deps` is the dependencies of this expression
@@ -133,7 +133,7 @@ impl<H: NodeHash> Dedup<H> {
   /// into the `Dedup`, returning the allocated index.
   pub fn add(&mut self, p: LispVal, v: H) -> usize {
     let n = self.add_direct(v);
-    self.prev.insert(&*p, (p, n));
+    self.prev.insert(&*p, Some((p, n)));
     n
   }
 
@@ -142,14 +142,18 @@ impl<H: NodeHash> Dedup<H> {
   pub fn dedup(&mut self, nh: &NodeHasher<'_>, e: &LispVal) -> Result<usize> {
     let r = e.unwrapped_arc();
     let p: *const _ = &*r;
-    Ok(match self.prev.get(&p) {
-      Some(&(_, n)) => self.reuse(n),
-      None => {
+    Ok(match self.prev.entry(p) {
+      Entry::Occupied(o) => match o.get() {
+        &Some((_, n)) => self.reuse(n),
+        None => return Err(nh.err_sp(e.fspan().as_ref(), "cyclic proof")),
+      },
+      Entry::Vacant(v) => {
+        v.insert(None);
         let n = match H::from(nh, e.fspan().as_ref(), &r, self)? {
           Ok(v) => self.add_direct(v),
           Err(n) => n,
         };
-        self.prev.insert(p, (r, n)); n
+        self.prev.insert(p, Some((r, n))); n
       }
     })
   }

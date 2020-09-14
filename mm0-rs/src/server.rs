@@ -478,7 +478,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
     response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or!(Ok(None), text.to_idx(pos));
-  let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
+  let env = elaborate(path, Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let env = unsafe { env.thaw() };
@@ -568,7 +568,7 @@ async fn definition<T>(path: FileRef, pos: Position,
     response_err(ErrorCode::InvalidRequest, "goto definition nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
-  let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let spans = or_none!(env.find(idx));
@@ -636,7 +636,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
+  let env = elaborate(path, Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
@@ -757,7 +757,7 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
@@ -779,7 +779,7 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Arc::new(AtomicBool::from(false)))
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
@@ -797,7 +797,7 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
     response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
-  let env = elaborate(path, Some(Position::default()), Arc::new(AtomicBool::from(false)))
+  let env = elaborate(path, Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let spans = or_none!(env.find(idx));
