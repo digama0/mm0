@@ -49,9 +49,9 @@ do {
     (intrinsic (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : Prot}
       {flags : (sn {$ MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS $ : u64})}
       {fd : u64} {off : (sn {0 : u64})} :
-      {ret : (or (sn {MAP_FAILED : u64})
-        (list {ret : (own (array u8 len))}
-          $ fd = bitsNeg 32 1 -> all (sn 0) ,'(* ret) $))}))
+      {ret : (or
+        (sn {MAP_FAILED : u64})
+        (own (Sigma {ret : (array u8 len)} $ fd = bitsNeg 32 1 -> all (sn 0) ret $)))}))
 
     (proc (main
         {argc : u32}
@@ -61,14 +61,13 @@ do {
         $ output = 0 /\ Valid input $)
       (assert {0 <= (sys_open (index args 1) O_RDONLY)})
       {buf : Stat}
-      (assert {0 <= (sys_fstat fd (&mut buf))})
+      (assert {0 <= (sys_fstat fd (& buf))})
       {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ {MAP_FILE bor MAP_PRIVATE}))}
       {{ptr : (own (array u8 len))} :=
         (pun ptr (entail h (assert {ptr != MAP_FAILED})
           -- proof of
           -- ptr :> (union (sn {MAP_FAILED : u64})
-          --   (list {ret : (own (array u8 len))}
-          --     $ fd = bitsNeg 32 1 -> all (sn 0) (* ret) $)) /\
+          --   (own (Sigma {ret : (array u8 len)} $ fd = bitsNeg 32 1 -> all (sn 0) ret $))) /\
           -- ptr != MAP_FAILED
           -- |- (ptr :> (own (array u8 len))
           _))}
@@ -139,13 +138,16 @@ do {
         (variant remainder)
         (invariant
           (mut g_num_sorts g_num_terms g_num_thms remainder remainder_bd)
-          {h_sorts : {{g_num_sorts <= nsorts} and {g_sorts :> (& (array Sort g_num_sorts))}}}
-          {h_terms : {{g_num_terms <= nterms} and {g_terms :> (& (array Term g_num_terms))}}}
-          {h_thms : {{g_num_thms <= nthms} and {g_thms :> (& (array Thm g_num_thms))}}}
+          {(ref a_sorts) : (array Sort g_num_sorts)}
+          {h_sorts : {{g_num_sorts <= nsorts} and {g_sorts => a_sorts}}}
+          {(ref a_terms) : (array Term g_num_terms)}
+          {h_terms : {{g_num_terms <= nterms} and {g_terms => a_terms}}}
+          {(ref a_thms) : (array Thm g_num_thms)}
+          {h_thms : {{g_num_thms <= nthms} and {g_thms => a_thms}}}
           {suff : {{stmt + remainder} = g_end}}
           {(ghost env) : Env} {(ghost env2) : Env}
           {ext : (EnvExtends env env2)}
-          {repr : (Represents env2 (* (<: h_sorts)) (* (<: h_terms)) (* (<: h_thms)))})
+          {repr : (Represents env2 a_sorts a_terms a_thms)})
 
         {h_unpack := {(w sz data) := (cmd_unpack stmt)}}
         {(ghost remainder2) := {remainder - data}}
