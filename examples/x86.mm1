@@ -185,23 +185,21 @@ theorem mod_el_Bits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0)
 theorem mod_el_u8: $ a % 256 e. u8 $ = 'mod_el_Bits;
 
 @_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
-  lower ((\ i, (i % 256) : a @ (i // 256)) |` upto (suc n))) k $;
+  \. i e. upto (suc n), (i % 256) : a @ (i // 256)) k $;
 
 theorem toBytesAux0: $ toBytesAux 0 n = 0 $ = (named 'rec0);
 theorem toBytesAux0_app: $ toBytesAux 0 n @ i = 0 $ =
 '(eqtr (appeq1 @ nseq toBytesAux0) app01);
 
-theorem toBytesAuxS: $ toBytesAux (suc k) n ==
-  (\ i, (i % 256) : toBytesAux k n @ (i // 256)) |` upto (suc n) $ =
-'(mpbir (eqlower2 @ finlam finns) @
-  ! eqtr _ $ _ @ toBytesAux k n $ _ recS @
+theorem toBytesAuxS: $ toBytesAux (suc k) n =
+  \. i e. upto (suc n), (i % 256) : toBytesAux k n @ (i // 256) $ =
+'(eqtr {recS : $ _ = _ @ toBytesAux k n $} @
   !! applame a @ lowereqd @ reseq1d @ lameqd @ conseq2d @ appeq1d nseq);
 
 theorem toBytesAuxS_app: $ a <= n ->
   toBytesAux (suc k) n @ a = (a % 256) : toBytesAux k n @ (a // 256) $ =
-'(syl5eq (appeq1 toBytesAuxS) @
-  syl6eq (!! applame x @ conseqd modeq1 @ appeq2d diveq1) @
-  sylbi leltsuc @ sylbir elupto resapp);
+'(syl5eq (appeq1 @ nseq toBytesAuxS) @
+  sylbi leltsuc @ sylbir elupto @ !! apprlame x @ conseqd modeq1 @ appeq2d diveq1);
 
 -- little endian encoding
 @_ abstract def toBytes (k n: nat): nat = $ toBytesAux k n @ n $;
@@ -229,14 +227,12 @@ pub theorem toBytesS (k n: nat):
 '(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
 
 pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
-'(!! eale x (eleq1d toByteseq2) @
-  !! ind y z
-    (aleqd @ eleqd toByteseq1 Arrayeq2) (aleqd @ eleqd toByteseq1 Arrayeq2)
-    (aleqd @ eleqd toByteseq1 Arrayeq2) (aleqd @ eleqd toByteseq1 Arrayeq2)
-    (ax_gen @ mpbir (eleq1 toBytes0) elArray0)
-    (sylbi (!! cbval _ y @ eleq1d toByteseq2) @ iald @
-      sylibr (eleq1 toBytesS) @ syl (sylibr elArrayS @ ian mod_el_u8) @
-      eale @ eleq1d toByteseq2));
+'(!! eale x (eleq1d toByteseq2) ,(mk-ind '(!! ind y z)
+  '(aleqd @ eleqd toByteseq1 Arrayeq2)
+  '(ax_gen @ mpbir (eleq1 toBytes0) elArray0)
+  '(sylbi (!! cbval _ y @ eleq1d toByteseq2) @ iald @
+    sylibr (eleq1 toBytesS) @ syl (sylibr elArrayS @ ian mod_el_u8) @
+    eale @ eleq1d toByteseq2)));
 
 @_ def u16Bytes (n: nat): nat = $ toBytes 2 n $;
 @_ def u32Bytes (n: nat): nat = $ toBytes 4 n $;
@@ -381,19 +377,17 @@ pub theorem rex_regT (b r: nat): $ bool b /\ r e. Bits 3 -> rex_reg b r e. Regs 
 @_ def base_reg (r: nat): nat = $ suc (suc r) $;
 pub theorem base0T: $ 0 e. Base $ = 'opt0;
 pub theorem base_RIPT: $ base_RIP e. Base $ = '(mpbi optS opt0);
-pub theorem base_regT (r: nat): $ r e. Regs -> base_reg r e. Base $ =
-'(bi1 @ bitr optS optS);
+pub theorem base_regT (r: nat): $ r e. Regs -> base_reg r e. Base $ = '(optSd @ optSd id);
 
 @_ def ScaleIndex: set = $ Xp (Bits 2) Regs $;
 
 @_ def RM: set = $ Sum Regs (Xp (Option ScaleIndex) (Xp Base u64)) $;
 @_ def RM_reg (r: nat): nat = $ b0 r $;
 @_ def RM_mem (si base q: nat): nat = $ b1 (si <> base <> q) $;
-pub theorem RM_regT (r: nat): $ r e. Regs -> RM_reg r e. RM $ = '(bi2 Suml);
+pub theorem RM_regT (r: nat): $ r e. Regs -> RM_reg r e. RM $ = '(Sumld id);
 pub theorem RM_memT (si base q: nat):
   $ si e. Option ScaleIndex /\ base e. Base /\ q e. u64 ->
-    RM_mem si base q e. RM $ =
-'(bi2 @ bitr Sumr @ bitr4 prelxp @ bitr4 anass @ aneq2i prelxp);
+    RM_mem si base q e. RM $ = '(Sumrd @ xpTd anll @ xpTd anlr anr);
 
 @_ def RM_isMem (rm: nat): wff = $ odd rm $;
 
@@ -457,8 +451,8 @@ pub theorem readSIBT (rex mod rm l: nat):
     mpbird (eleq1d anr) @ sylibr elListS @
     iand (anw4l @ splitBitsTi ,bvSizeSi) @ anrd H)
   '(mpbird (eleq1d anlr) @ syl RM_memT @ iand (iand _ _) _)
-  '(sylan ifT (a1i opt0) @ sylib optS @ sylibr prelxp @
-    iand (sylib elBitvec2 @ anld sb3) @
+  '(sylan ifT (a1i opt0) @ optSd @
+    xpTd (sylib elBitvec2 @ anld sb3) @
     mpbird (eleq1d an3lr) @ sylan rex_regT (a1i REX_XT) @
     sylib elBitvec2 @ anld sb2)
   '(rsyl H anlr)
@@ -672,7 +666,7 @@ $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
 @_ def xastBinop (binop sz rm: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> rm)))) $;
 @_ def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
 @_ def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
-@_ def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b0 (sz <> ds)))) $;
+@_ def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> ds)))) $;
 
 @_ def XASTData: set =
 $ Sum (Xp WSize (Sum (Xp Bool (Xp DestSrc WSize)) (Xp (upto 3) (Xp RM Regs))))
@@ -708,48 +702,74 @@ $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
 
 -- some typechecking sanity checks
 pub theorem xastUnopT (unop sz rm: nat):
-  $ unop e. Unop /\ sz e. WSize /\ rm e. RM -> xastUnop unop sz rm e. XAST $;
-pub theorem xastBinopT (bop sz rm: nat):
-  $ bop e. Binop /\ sz e. WSize /\ rm e. RM -> xastBinop bop sz rm e. XAST $;
+  $ unop e. Unop /\ sz e. WSize /\ rm e. RM -> xastUnop unop sz rm e. XAST $ =
+'(Sumld @ Sumld @ Sumld @ Sumld @ xpTd anll @ xpTd anlr anr);
+pub theorem xastBinopT (bop sz ds: nat):
+  $ bop e. Binop /\ sz e. WSize /\ ds e. DestSrc -> xastBinop bop sz ds e. XAST $ =
+'(Sumld @ Sumld @ Sumld @ Sumrd @ xpTd anll @ xpTd anlr anr);
 pub theorem xastMulT (sz rm: nat):
-  $ sz e. WSize /\ rm e. RM -> xastMul sz rm e. XAST $;
+  $ sz e. WSize /\ rm e. RM -> xastMul sz rm e. XAST $ =
+'(Sumld @ Sumld @ Sumrd @ Sumld @ xpTd Bool0d @ xpTd anl anr);
 pub theorem xastDivT (sz rm: nat):
-  $ sz e. WSize /\ rm e. RM -> xastDiv sz rm e. XAST $;
+  $ sz e. WSize /\ rm e. RM -> xastDiv sz rm e. XAST $ =
+'(Sumld @ Sumld @ Sumrd @ Sumld @ xpTd Bool1d @ xpTd anl anr);
 pub theorem xastLeaT (sz ds: nat):
-  $ sz e. WSize /\ ds e. DestSrc -> xastLea sz ds e. XAST $;
+  $ sz e. WSize /\ ds e. DestSrc -> xastLea sz ds e. XAST $ =
+'(Sumld @ Sumld @ Sumrd @ Sumrd @ xpTd anl anr);
 
 pub theorem xastMovXT (b sz ds sz2: nat):
   $ bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize ->
-    xastMovX b sz ds sz2 e. XAST $;
+    xastMovX b sz ds sz2 e. XAST $ =
+'(Sumld @ Sumrd @ Sumld @ xpTd anllr @ Sumld @ xpTd (sylibr elBool an3l) @ xpTd anlr anr);
 pub theorem xastXchgT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXchg sz rm rn e. XAST $;
+  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXchg sz rm rn e. XAST $ =
+'(Sumld @ Sumrd @ Sumld @ xpTd anll @ Sumrd @ xpTd (a1i @ mpbir elupto ,norm_num) @ xpTd anlr anr);
 pub theorem xastCmpXchgT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastCmpXchg sz rm rn e. XAST $;
+  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastCmpXchg sz rm rn e. XAST $ =
+'(Sumld @ Sumrd @ Sumld @ xpTd anll @ Sumrd @ xpTd (a1i @ mpbir elupto ,norm_num) @ xpTd anlr anr);
 pub theorem xastXaddT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXadd sz rm rn e. XAST $;
+  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXadd sz rm rn e. XAST $ =
+'(Sumld @ Sumrd @ Sumld @ xpTd anll @ Sumrd @ xpTd (a1i @ mpbir elupto ,norm_num) @ xpTd anlr anr);
 pub theorem xastCMovT (c sz ds: nat):
-  $ c e. Cond /\ sz e. WSize /\ ds e. DestSrc -> xastCMov c sz ds e. XAST $;
-pub theorem xastSetCCT (c b ds: nat):
-  $ c e. Cond /\ bool b /\ ds e. DestSrc -> xastSetCC c b ds e. XAST $;
+  $ c e. Cond /\ sz e. WSize /\ ds e. DestSrc -> xastCMov c sz ds e. XAST $ =
+'(Sumld @ Sumrd @ Sumrd @ xpTd anll @ Sumld @ xpTd anlr anr);
+pub theorem xastSetCCT (c b rm: nat):
+  $ c e. Cond /\ bool b /\ rm e. RM -> xastSetCC c b rm e. XAST $ =
+'(Sumld @ Sumrd @ Sumrd @ xpTd anll @ Sumrd @ xpTd (sylibr elBool anlr) anr);
 pub theorem xastMovSXT (sz ds sz2: nat):
-  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovSX sz ds sz2 e. XAST $;
+  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovSX sz ds sz2 e. XAST $ =
+'(sylbir (aneq1i @ aneq1i @ bian1 bool1) xastMovXT);
 pub theorem xastMovZXT (sz ds sz2: nat):
-  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovZX sz ds sz2 e. XAST $;
+  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovZX sz ds sz2 e. XAST $ =
+'(sylbir (aneq1i @ aneq1i @ bian1 bool0) xastMovXT);
 pub theorem xastMovT (sz ds: nat):
-  $ sz e. WSize /\ ds e. DestSrc -> xastMov sz ds e. XAST $;
+  $ sz e. WSize /\ ds e. DestSrc -> xastMov sz ds e. XAST $ =
+'(sylbir (aneq1i @ bian1 condAlwaysT) xastCMovT);
+-- '(Sumld @ Sumrd @ Sumld @ Sumld @ xpTd anll @ xpTd anlr anr);
 
-pub theorem xastJumpT (rm: nat): $ rm e. RM -> xastJump rm e. XAST $;
-pub theorem xastJCCT (c q: nat): $ c e. Cond /\ q e. u64 -> xastJCC c q e. XAST $;
-pub theorem xastCallT (irm: nat): $ irm e. ImmRM -> xastCall irm e. XAST $;
-pub theorem xastRetT (q: nat): $ q e. u64 -> xastRet q e. XAST $;
-pub theorem xastPushT (irm: nat): $ irm e. ImmRM -> xastPush irm e. XAST $;
-pub theorem xastPopT (rm: nat): $ rm e. RM -> xastPop rm e. XAST $;
-pub theorem xastLeaveT: $ xastLeave e. XAST $;
+pub theorem xastJumpT (rm: nat): $ rm e. RM -> xastJump rm e. XAST $ =
+'(Sumrd @ Sumld @ Sumld @ Sumld @ Sumld id);
+pub theorem xastJCCT (c q: nat): $ c e. Cond /\ q e. u64 -> xastJCC c q e. XAST $ =
+'(Sumrd @ Sumld @ Sumld @ Sumld @ Sumrd @ xpTd anl anr);
+pub theorem xastCallT (irm: nat): $ irm e. ImmRM -> xastCall irm e. XAST $ =
+'(Sumrd @ Sumld @ Sumld @ Sumrd @ Sumld id);
+pub theorem xastRetT (q: nat): $ q e. u64 -> xastRet q e. XAST $ =
+'(Sumrd @ Sumld @ Sumld @ Sumrd @ Sumrd id);
+pub theorem xastPushT (irm: nat): $ irm e. ImmRM -> xastPush irm e. XAST $ =
+'(Sumrd @ Sumld @ Sumrd @ optSd @ Sumld id);
+pub theorem xastPopT (rm: nat): $ rm e. RM -> xastPop rm e. XAST $ =
+'(Sumrd @ Sumld @ Sumrd @ optSd @ Sumrd id);
+pub theorem xastLeaveT: $ xastLeave e. XAST $ =
+'(trud @ Sumrd @ Sumld @ Sumrd opt0d);
 
-pub theorem xastCMCT: $ xastCMC e. XAST $;
-pub theorem xastCLCT: $ xastCLC e. XAST $;
-pub theorem xastSTCT: $ xastSTC e. XAST $;
-pub theorem xastSysCallT: $ xastSysCall e. XAST $;
+pub theorem xastCMCT: $ xastCMC e. XAST $ =
+'(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
+pub theorem xastCLCT: $ xastCLC e. XAST $ =
+'(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
+pub theorem xastSTCT: $ xastSTC e. XAST $ =
+'(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
+pub theorem xastSysCallT: $ xastSysCall e. XAST $ =
+'(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
 
 @_ def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4 <> c) : (4 <> 4) : 0) b /\
@@ -991,30 +1011,53 @@ $ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
 @_ def unpackFlags (f c z s o: nat): wff =
 $ c = nat (CF f) /\ z = nat (ZF f) /\ s = nat (SF f) /\ o = nat (OF f) $;
 
-@_ abstract def readBCond (f c: nat): wff;
-pub theorem readBCondO (f: nat): $ readBCond f bcondO <-> OF f $;
-pub theorem readBCondB (f: nat): $ readBCond f bcondB <-> CF f $;
-pub theorem readBCondE (f: nat): $ readBCond f bcondE <-> ZF f $;
-pub theorem readBCondNA (f: nat): $ readBCond f bcondNA <-> CF f \/ ZF f $;
-pub theorem readBCondS (f: nat): $ readBCond f bcondS <-> SF f $;
-pub theorem readBCondL (f: nat): $ readBCond f bcondL <-> ~(SF f <-> OF f) $;
-pub theorem readBCondNG (f: nat): $ readBCond f bcondNG <-> ZF f \/ ~(SF f <-> OF f) $;
+@_ abstract def readBCond (f c: nat): wff =
+$ ifp (c < 4)
+    (ifp (c < 2) (ifp (c = bcondO) (OF f) (CF f)) (c = bcondNA /\ CF f \/ ZF f))
+    (ifp (c = bcondS) (SF f) (c = bcondNG /\ ZF f \/ ~(SF f <-> OF f))) $;
+pub theorem readBCondO (f: nat): $ readBCond f bcondO <-> OF f $ =
+'(bitr (ifppos d0lt4) @ bitr (ifppos d0lt2) (ifppos eqid));
+pub theorem readBCondB (f: nat): $ readBCond f bcondB <-> CF f $ =
+'(bitr (ifppos d1lt4) @ bitr (ifppos d1lt2) (ifpneg d1ne0));
+pub theorem readBCondE (f: nat): $ readBCond f bcondE <-> ZF f $ =
+'(bitr (ifppos d2lt4) @ bitr (ifpneg ltirr) (bior1 @ mt anl (ltne d2lt3)));
+pub theorem readBCondNA (f: nat): $ readBCond f bcondNA <-> CF f \/ ZF f $ =
+'(bitr (ifppos d3lt4) @ bitr (ifpneg @ ltnlt d2lt3) (oreq1i @ bian1 eqid));
+pub theorem readBCondS (f: nat): $ readBCond f bcondS <-> SF f $ =
+'(bitr (ifpneg ltirr) (ifppos eqid));
+pub theorem readBCondL (f: nat): $ readBCond f bcondL <-> ~(SF f <-> OF f) $ =
+'(bitr (ifpneg @ ltnlt d4lt6) @ bitr (ifpneg @ ltner d4lt6) (bior1 @ mt anl @ ltne d6lt7));
+pub theorem readBCondNG (f: nat): $ readBCond f bcondNG <-> ZF f \/ ~(SF f <-> OF f) $ =
+'(bitr (ifpneg @ ltnlt d4lt7) @ bitr (ifpneg @ ltner d4lt7) (oreq1i @ bian1 eqid));
 
-@_ abstract def readCondF (f c: nat): wff;
-pub theorem readCondFAlways (f: nat): $ readCondF f condAlways $;
-pub theorem readCondFPos (f c: nat): $ readCondF f (condPos c) <-> readBCond f c $;
-pub theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f c $;
+@_ abstract def readCondF (f c: nat): wff =
+$ c e. Option (Sum {x | readBCond f x} {x | ~readBCond f x}) $;
+pub theorem readCondFAlways (f: nat): $ readCondF f condAlways $ = (named 'opt0);
+pub theorem readCondFPos (f c: nat): $ readCondF f (condPos c) <-> readBCond f c $ =
+(named '(bitr3 optS @ bitr Suml @ elabe readBCondeq2));
+pub theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f c $ =
+(named '(bitr3 optS @ bitr Sumr @ elabe @ noteqd readBCondeq2));
 
 @_ def Prot: set = $ Bits 3 $;
+pub theorem finiteProt: $ finite Prot $ = 'finns;
 @_ def PROT_READ: nat = $ 1 $;
 @_ def PROT_WRITE: nat = $ 2 $;
 @_ def PROT_EXEC: nat = $ 4 $;
+pub theorem PROT_READT: $ PROT_READ e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) d1lt8);
+pub theorem PROT_WRITET: $ PROT_WRITE e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) d2lt8);
+pub theorem PROT_EXECT: $ PROT_EXEC e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) d4lt8);
+theorem Prot_ss: $ a C_ b -> b e. Prot -> a e. Prot $ = '(sylibr (imeqi elBits elBits) sstr);
 
 @_ def Memory: set = $ Arrow u64 (Xp Prot u8) $;
+pub theorem finiteMemory: $ finite Memory $ = '(Arrowfin finns @ xpfin finiteProt finns);
+theorem elMemoryT: $ m e. Memory /\ x e. u64 -> m @ x e. Xp Prot u8 $ = 'appT;
 
 @_ def Exception: set = $ upto 2 $;
+pub theorem finiteException: $ finite Exception $ = 'finns;
 @_ def exSysCall: nat = $ 0 $; -- represents the 'syscall' function
 @_ def exGPF: nat = $ 1 $; -- general protection fault, issued on invalid read/write
+pub theorem exSysCallT: $ exSysCall e. Exception $ = '(mpbir elupto d0lt2);
+pub theorem exGPFT: $ exGPF e. Exception $ = '(mpbir elupto d1lt2);
 
 -- data Config = {
 --   ex: Option Exception,   -- nonnull if we are going to do IO on the next step
@@ -1023,11 +1066,14 @@ pub theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f 
 --   flags: Flags,           -- the flags CF, ZF, SF, OF
 --   mem: u64 -> Prot * u8 } -- the virtual memory
 @_ def Config: set = $ Xp (Xp (Option Exception) u64) (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
-pub theorem finiteConfig: $ finite Config $;
+pub theorem finiteConfig: $ finite Config $ =
+'(xpfin (xpfin (optfin finiteException) finns) @
+  xpfin (Arrowfin finns finns) @ xpfin finns finiteMemory);
 @_ def mkCfg (ex rip regs flags mem: nat): nat = $ (ex <> rip) <> regs <> flags <> mem $;
 pub theorem mkCfgT (ex rip regs flags mem: nat):
   $ ex e. Option Exception /\ rip e. u64 /\ regs e. Arrow Regs u64 /\ flags e. Flags /\ mem e. Memory ->
-    mkCfg ex rip regs flags mem e. Config $;
+    mkCfg ex rip regs flags mem e. Config $ =
+'(xpTd (xpTd an4l an3lr) @ xpTd anllr @ xpTd anlr anr);
 
 @_ def readException (k: nat): nat = $ pi11 k $;
 @_ def readRIP (k: nat): nat = $ pi12 k $;
@@ -1036,37 +1082,104 @@ pub theorem mkCfgT (ex rip regs flags mem: nat):
 @_ def getMemory (k: nat): nat = $ pi222 k $;
 @_ def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
-@_ def readMemory1 (ps m a b .prot: nat): wff =
-$ E. prot (m @ a = prot <> b /\ ps C_ prot) $;
-pub theorem readMemory1T (ps m a b: nat):
-  $ ps e. Prot /\ m e. Memory /\ a e. u64 /\ readMemory1 ps m a b -> b e. u8 $;
+pub theorem readExceptionT (k: nat): $ k e. Config -> readException k e. Option Exception $ =
+'(syl xpfst xpfst);
+pub theorem readRIPT (k r: nat): $ k e. Config -> readRIP k e. u64 $ =
+'(syl xpsnd xpfst);
+pub theorem readRegT (k r: nat): $ k e. Config /\ r e. Regs -> readReg k r e. u64 $ =
+'(syl appT @ anim1 @ syl xpfst xpsnd);
+pub theorem readFlagsT (k: nat): $ k e. Config -> readFlags k e. Flags $ =
+'(syl xpfst @ syl xpsnd xpsnd);
+pub theorem getMemoryT (k: nat): $ k e. Config -> getMemory k e. Memory $ =
+'(syl xpsnd @ syl xpsnd xpsnd);
 
-@_ abstract def readMemory (ps m a l: nat): wff;
-pub theorem readMemory0 (ps m a: nat): $ readMemory ps m a 0 $;
+@_ def readMemory1 (ps m a b .prot: nat): wff =
+$ m e. Memory /\ a e. u64 /\ E. prot (m @ a = prot <> b /\ ps C_ prot) $;
+pub theorem readMemory1T (ps m a b: nat):
+  $ readMemory1 ps m a b -> ps e. Prot /\ m e. Memory /\ a e. u64 /\ b e. u8 $ =
+(named @ focus
+  (have 'h '(sylib prelxp @ mpbid (eleq1d anrl) @ anwl elMemoryT))
+  '(imp @ eexda @ iand (iand (iand (sylc Prot_ss anrr @ anld h) anll) anlr) (anrd h)));
+
+@_ local def readMemory_aux (ps m l: nat): nat =
+$ lrec u64 (\\ b, \\ z, \ ih, sep u64 {a | readMemory1 ps m a b /\ a +_64 1 e. ih}) l $;
+
+@_ abstract def readMemory (ps m a l: nat): wff =
+$ ps e. Prot /\ m e. Memory /\ a e. readMemory_aux ps m l $;
+pub theorem readMemory0 (ps m a: nat):
+  $ readMemory ps m a 0 <-> ps e. Prot /\ m e. Memory /\ a e. u64 $ =
+(named '(aneq2i @ elneq2 lrec0));
 pub theorem readMemoryS (ps m a b l: nat):
   $ readMemory ps m a (b : l) <->
-    readMemory1 ps m a b /\ readMemory ps m (a +_64 1) l $;
+    readMemory1 ps m a b /\ readMemory ps m (a +_64 1) l $ =
+(named @ focus
+  '(bitr (aneq2i @ bitr (elneq2 _) _) anlass)
+  '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> readMemory_aux) $} @
+    appslame @ appslamed @ applamed @
+    sepeq2d @ abeqd @ aneqd (readMemory1eq4d anll) (elneq2d anr))
+  '(bitr elsep @ bitr (aneq2i @ elabe @ aneqd readMemory1eq3 @ eleq1d add64eq1) @
+    bian1a @ anwl @ rsyl readMemory1T anlr));
 pub theorem readMemoryT (ps m a l: nat):
-  $ ps e. Prot /\ m e. Memory /\ a e. u64 /\
-    readMemory ps m a l -> l e. List u8 $;
+  $ readMemory ps m a l -> ps e. Prot /\ m e. Memory /\ a e. u64 /\ l e. List u8 $ =
+(named @ let ([h '(imeqd readMemoryeq3 @ aneq1d eleq1)])
+'(sylibr anass @ iand anl @ eale ,h ,(mk-ind '(listind)
+  '(aleqd @ imeqd readMemoryeq4 @ aneq2d eleq1)
+  '(ax_gen @ iand (sylbi readMemory0 anr) @ a1i elList0)
+  '(sylbi (cbval ,h) @ iald @ syl5bi readMemoryS @
+    rsyl (eale ,h) @ impd @ com12 @ imim2d @
+    rsyl readMemory1T @ exp @ iand anllr @ sylibr elListS @ iand anlr anrr))));
 
-@_ def readMem (k a l: nat): wff = $ readMemory PROT_READ (getMemory k) a l $;
+@_ def readMem (k a l: nat): wff = $ k e. Config /\ readMemory PROT_READ (getMemory k) a l $;
 pub theorem readMemT (k a l: nat):
-  $ k e. Config /\ a e. u64 /\ readMem k a l -> l e. List u8 $;
+  $ readMem k a l -> k e. Config /\ a e. u64 /\ l e. List u8 $ =
+'(imp @ syl5 readMemoryT @ anim1d @ anim1d ax_1);
 
 @_ def readMemX (k a l: nat): wff =
-$ readMemory (PROT_READ + PROT_EXEC) (getMemory k) a l $;
+$ k e. Config /\ readMemory (PROT_READ + PROT_EXEC) (getMemory k) a l $;
 pub theorem readMemXT (k a l: nat):
-  $ k e. Config /\ a e. u64 /\ readMemX k a l -> l e. List u8 $;
+  $ readMemX k a l -> k e. Config /\ a e. u64 /\ l e. List u8 $ =
+'(imp @ syl5 readMemoryT @ anim1d @ anim1d ax_1);
 
 @_ def writeMemory1 (m a b m2 e .prot .b2: nat): wff =
-$ E. prot E. b2 (m @ a = prot <> b2 /\
+$ m e. Memory /\ a e. u64 /\ b e. u8 /\
+  E. prot E. b2 (m @ a = prot <> b2 /\
   ifp (PROT_READ + PROT_WRITE C_ prot)
     (m2 == write m a (prot <> b) /\ e = 0)
     (m2 == m /\ e = suc exGPF)) $;
+pub theorem writeMemory1T (m a b m2 e: nat):
+  $ writeMemory1 m a b m2 e ->
+    m e. Memory /\ a e. u64 /\ b e. u8 /\
+    m2 e. Memory /\ e e. Option Exception $ =
+(named '(sylibr anass @ anim2a @ eexd @ eexd @ impd @ exp @ eorda
+  (iand
+    (writeArrow an4l an3lr
+      (xpTd (anwl @ anld @ sylib prelxp @ mpbid (eleq1d anr) @ anwll elMemoryT) anllr)
+      (anwr @ eqscomd anrl))
+    (mpbiri opt0 (eleq1d @ anwr anrr)))
+  (iand
+    (mpbird (eleq1d @ sylib nsinj @ anwr anrl) an4l)
+    (mpbird (eleq1d @ anwr anrr) @ optSd @ a1i exGPFT))));
 
-@_ abstract def writeMemory (m a l m2 e: nat): wff;
-pub theorem writeMemory0 (m a l m2 e: nat): $ writeMemory m a l m2 e <-> m2 = m /\ e = 0 $;
+@_ local def writeMemory_aux (l: nat): nat =
+$ lrec
+  (\. m e. lower Memory, \. a e. u64, sn (m <> 0))
+  (\\ b, \\ z, \ ih, \. m e. lower Memory, \. a e. u64,
+    lower (S\ m3, {e |
+      E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
+      ifp (e1 = 0)
+        (m3 <> e e. ih @ m2 @ (a +_64 1))
+        (m3 == m2 /\ e = e1))}))
+  l $;
+
+@_ abstract def writeMemory (m a l m2 e: nat): wff =
+$ m e. Memory /\ a e. u64 /\ m2 <> e e. writeMemory_aux l @ m @ a $;
+pub theorem writeMemory0 (m a m2 e: nat):
+  $ m e. Memory /\ a e. u64 ->
+    (writeMemory m a 0 m2 e <-> m2 = m /\ e = 0) $ =
+(named '(bitrd bian1 @ syl6bb prth @ syl6bb elsn @ elneq2d @
+  mpi {lrec0 : $ writeMemory_aux 0 = _ $} @
+  apprlamed1 (sylibr (ellower finiteMemory) anl) @
+  apprlamed2 anlr @ sneqd @ preq1d anlr));
 pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
   $ writeMemory m a (b : l) m3 e <->
     E. m2 E. e1 (writeMemory1 m a b m2 e1 /\

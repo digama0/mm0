@@ -1760,7 +1760,7 @@ $ if (maxPrefix A s = 0) n
 theorem Tokenize_aux_0: $ maxPrefix A s = 0 -> Tokenize_aux G s A F n = n $ = (named 'ifpos);
 
 theorem Tokenize_aux_n0 (a: nat x) {y} (h: $ y e. A -> y != 0 $):
-  $ f = lower ((\ x, a) |` upto s) ->
+  $ f = \. x e. upto s, a ->
     Tokenize_aux f s A F n = Tokenize_aux (\ x, a) s A F n $ =
 (named @ focus
   '(casesda (anwr @ eqtr4d Tokenize_aux_0 Tokenize_aux_0) @
@@ -1805,7 +1805,7 @@ theorem Tokenize_val: $ Tokenize s = if (s = 0) 1 (
     Tokenize_aux (\ r, Tokenize r) s regexMath (\\ x, \ t, MATH x : t) (
     0)))))) $ =
 (named @ focus
-  '(! eqtr _ $ _ @ lower ((\ r, Tokenize r) |` _) $ _ srecval @ applame @ sbned _)
+  '(eqtr {srecval : $ _ = _ @ rlam r _ (Tokenize r) $} @ applame @ sbned _)
   (have 'h '(eqtrd anr (anwl sreclem)))
   '(ifeqd (eqeq1d h) eqidd ,(foldr
     '(whitespace_n0 regexIdent_n0 isNumber_n0 symbols_n0 regexMath_n0)
@@ -2135,27 +2135,26 @@ $ srec (\ f,
 
 theorem simpleTokenize_val: $ simpleTokenize s =
   lrec 0 (\\ c, \\ t, \ _ih,
-      if (c e. white) (((\ r, simpleTokenize r) |` ns (upto s)) @ t) (
+      if (c e. white) ((\. r e. upto s, simpleTokenize r) @ t) (
         N[maxPrefix nonemptyNonwhite (c : t) - 1 / p]
-        (fst p : ((\ r, simpleTokenize r) |` ns (upto s)) @ snd p))) s $ =
+        (fst p : (\. r e. upto s, simpleTokenize r) @ snd p))) s $ =
 (named @ focus
-  '(eqtr {srecval : $ _ = _ @ lower ((\ r, simpleTokenize r) |` _) $} @
+  '(eqtr {srecval : $ _ = _ @ rlam r _ (simpleTokenize r) $} @
     applame @ lreceqd eqidd (slameqd @ slameqd @ lameqd _) sreclem)
-  (have 'h '(bi2 @ eqlower2 @ finlam finns))
-  '(ifeqd biidd (appeq1d h) @ sbneq2d @ conseq2d @ appeq1d h));
+  '(ifeqd biidd (appeq1d nseq) @ sbneq2d @ conseq2d @ appeq1d nseq));
 
 pub theorem simpleTokenize0: $ simpleTokenize 0 = 0 $ = (named '(eqtr simpleTokenize_val lrec0));
 
 theorem simpleTokenize_S: $ s = c : t -> simpleTokenize s =
   if (c e. white) (simpleTokenize t) (
     N[maxPrefix nonemptyNonwhite s - 1 / p]
-    (fst p : ((\ r, simpleTokenize r) |` ns (upto s)) @ snd p)) $ =
+    (fst p : (\. r e. upto s, simpleTokenize r) @ snd p)) $ =
 (named '(syl5eq simpleTokenize_val @ eqtrd lreceq3 @ syl5eq lrecS @
   sbeth (imeq2d @ eqeq1d @ appeq2d @ preq2d preq2) @
   appslamed @ appslamed @ applamed @ anwl @
   ifeqd (eleq1d anlr)
-    (eqtrd (syl resapp @ sylibr elupto @ mpbiri ltconsid2 (lteqd anr anll)) @
-      syl5eq (applame simpleTokenizeeq) (simpleTokenizeeqd anr))
+    (apprlamed (simpleTokenizeeqd @ eqtrd anr anlr) @
+      sylibr elupto @ mpbiri ltconsid2 (lteqd anr anll))
     (sbneq1d @ subeq1d @ maxPrefixeq2d @ eqtr4d (conseqd anlr anr) anll)));
 
 pub theorem simpleTokenizeWS (c s: nat):
@@ -2175,7 +2174,7 @@ pub theorem simpleTokenizeTk (s x r: nat):
     eqtrd (sbneq1d @ syl6eq sucsub1 @ subeq1d anl) @
     sbned @ conseqd (syl6eq fstpr @ fsteqd anr) @
     eqtrd (appeq2d @ syl6eq sndpr @ sndeqd anr) @ anwl @
-    syl6eq (applame simpleTokenizeeq) @ syl resapp @
+    syl (apprlame simpleTokenizeeq) @
     sylibr elupto @ mpbid (lteq2d h2) @ sylib ltappendid2 @ anwl @ anld h));
 
 theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = a ++ x ++ b} (simpleTokenize s) $ =

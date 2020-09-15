@@ -285,9 +285,9 @@ $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
     (Sum (Xp Bool (Xp WSize RM)) (Xp WSize DestSrc)) $;
 def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
 def xastBinop (binop sz rm: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> rm)))) $;
-def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
+def xastMul (sz ds: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> ds)))) $;
 def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
-def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b0 (sz <> ds)))) $;
+def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> ds)))) $;
 
 def XASTData: set =
 $ Sum (Xp WSize (Sum (Xp Bool (Xp DestSrc WSize)) (Xp (upto 3) (Xp RM Regs))))
@@ -324,8 +324,8 @@ def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
 -- some typechecking sanity checks
 theorem xastUnopT (unop sz rm: nat):
   $ unop e. Unop /\ sz e. WSize /\ rm e. RM -> xastUnop unop sz rm e. XAST $;
-theorem xastBinopT (bop sz rm: nat):
-  $ bop e. Binop /\ sz e. WSize /\ rm e. RM -> xastBinop bop sz rm e. XAST $;
+theorem xastBinopT (bop sz ds: nat):
+  $ bop e. Binop /\ sz e. WSize /\ ds e. DestSrc -> xastBinop bop sz ds e. XAST $;
 theorem xastMulT (sz rm: nat):
   $ sz e. WSize /\ rm e. RM -> xastMul sz rm e. XAST $;
 theorem xastDivT (sz rm: nat):
@@ -344,8 +344,8 @@ theorem xastXaddT (sz rm rn: nat):
   $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXadd sz rm rn e. XAST $;
 theorem xastCMovT (c sz ds: nat):
   $ c e. Cond /\ sz e. WSize /\ ds e. DestSrc -> xastCMov c sz ds e. XAST $;
-theorem xastSetCCT (c b ds: nat):
-  $ c e. Cond /\ bool b /\ ds e. DestSrc -> xastSetCC c b ds e. XAST $;
+theorem xastSetCCT (c b rm: nat):
+  $ c e. Cond /\ bool b /\ rm e. RM -> xastSetCC c b rm e. XAST $;
 theorem xastMovSXT (sz ds sz2: nat):
   $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovSX sz ds sz2 e. XAST $;
 theorem xastMovZXT (sz ds sz2: nat):
@@ -621,15 +621,23 @@ theorem readCondFPos (f c: nat): $ readCondF f (condPos c) <-> readBCond f c $;
 theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f c $;
 
 def Prot: set = $ Bits 3 $;
+theorem finiteProt: $ finite Prot $;
 def PROT_READ: nat = $ 1 $;
 def PROT_WRITE: nat = $ 2 $;
 def PROT_EXEC: nat = $ 4 $;
+theorem PROT_READT: $ PROT_READ e. Prot $;
+theorem PROT_WRITET: $ PROT_WRITE e. Prot $;
+theorem PROT_EXECT: $ PROT_EXEC e. Prot $;
 
 def Memory: set = $ Arrow u64 (Xp Prot u8) $;
+theorem finiteMemory: $ finite Memory $;
 
 def Exception: set = $ upto 2 $;
+theorem finiteException: $ finite Exception $;
 def exSysCall: nat = $ 0 $; -- represents the 'syscall' function
 def exGPF: nat = $ 1 $; -- general protection fault, issued on invalid read/write
+theorem exSysCallT: $ exSysCall e. Exception $;
+theorem exGPFT: $ exGPF e. Exception $;
 
 -- data Config = {
 --   ex: Option Exception,   -- nonnull if we are going to do IO on the next step
@@ -651,37 +659,50 @@ def readFlags (k: nat): nat = $ pi221 k $;
 def getMemory (k: nat): nat = $ pi222 k $;
 def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
+theorem readExceptionT (k: nat): $ k e. Config -> readException k e. Option Exception $;
+theorem readRIPT (k r: nat): $ k e. Config -> readRIP k e. u64 $;
+theorem readRegT (k r: nat): $ k e. Config /\ r e. Regs -> readReg k r e. u64 $;
+theorem readFlagsT (k: nat): $ k e. Config -> readFlags k e. Flags $;
+theorem getMemoryT (k: nat): $ k e. Config -> getMemory k e. Memory $;
+
 def readMemory1 (ps m a b .prot: nat): wff =
-$ E. prot (m @ a = prot <> b /\ ps C_ prot) $;
+$ m e. Memory /\ a e. u64 /\ E. prot (m @ a = prot <> b /\ ps C_ prot) $;
 theorem readMemory1T (ps m a b: nat):
-  $ ps e. Prot /\ m e. Memory /\ a e. u64 /\ readMemory1 ps m a b -> b e. u8 $;
+  $ readMemory1 ps m a b -> ps e. Prot /\ m e. Memory /\ a e. u64 /\ b e. u8 $;
 
 def readMemory (ps m a l: nat): wff;
-theorem readMemory0 (ps m a: nat): $ readMemory ps m a 0 $;
+theorem readMemory0 (ps m a: nat):
+  $ readMemory ps m a 0 <-> ps e. Prot /\ m e. Memory /\ a e. u64 $;
 theorem readMemoryS (ps m a b l: nat):
   $ readMemory ps m a (b : l) <->
     readMemory1 ps m a b /\ readMemory ps m (a +_64 1) l $;
 theorem readMemoryT (ps m a l: nat):
-  $ ps e. Prot /\ m e. Memory /\ a e. u64 /\
-    readMemory ps m a l -> l e. List u8 $;
+  $ readMemory ps m a l -> ps e. Prot /\ m e. Memory /\ a e. u64 /\ l e. List u8 $;
 
-def readMem (k a l: nat): wff = $ readMemory PROT_READ (getMemory k) a l $;
+def readMem (k a l: nat): wff = $ k e. Config /\ readMemory PROT_READ (getMemory k) a l $;
 theorem readMemT (k a l: nat):
-  $ k e. Config /\ a e. u64 /\ readMem k a l -> l e. List u8 $;
+  $ readMem k a l -> k e. Config /\ a e. u64 /\ l e. List u8 $;
 
 def readMemX (k a l: nat): wff =
-$ readMemory (PROT_READ + PROT_EXEC) (getMemory k) a l $;
+$ k e. Config /\ readMemory (PROT_READ + PROT_EXEC) (getMemory k) a l $;
 theorem readMemXT (k a l: nat):
-  $ k e. Config /\ a e. u64 /\ readMemX k a l -> l e. List u8 $;
+  $ readMemX k a l -> k e. Config /\ a e. u64 /\ l e. List u8 $;
 
 def writeMemory1 (m a b m2 e .prot .b2: nat): wff =
-$ E. prot E. b2 (m @ a = prot <> b2 /\
+$ m e. Memory /\ a e. u64 /\ b e. u8 /\
+  E. prot E. b2 (m @ a = prot <> b2 /\
   ifp (PROT_READ + PROT_WRITE C_ prot)
     (m2 == write m a (prot <> b) /\ e = 0)
     (m2 == m /\ e = suc exGPF)) $;
+theorem writeMemory1T (m a b m2 e: nat):
+  $ writeMemory1 m a b m2 e ->
+    m e. Memory /\ a e. u64 /\ b e. u8 /\
+    m2 e. Memory /\ e e. Option Exception $;
 
 def writeMemory (m a l m2 e: nat): wff;
-theorem writeMemory0 (m a l m2 e: nat): $ writeMemory m a l m2 e <-> m2 = m /\ e = 0 $;
+theorem writeMemory0 (m a m2 e: nat):
+  $ m e. Memory /\ a e. u64 ->
+    (writeMemory m a 0 m2 e <-> m2 = m /\ e = 0) $;
 theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
   $ writeMemory m a (b : l) m3 e <->
     E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
@@ -689,8 +710,9 @@ theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
       (writeMemory m2 (a +_64 1) l m3 e)
       (m3 == m2 /\ e = e1)) $;
 theorem writeMemoryT (m a l m2 e: nat):
-  $ m e. Memory /\ a e. u64 /\ l e. List u8 /\
-    writeMemory m a l m2 e -> m2 e. Memory /\ e e. Option Exception $;
+  $ writeMemory m a l m2 e ->
+    m e. Memory /\ a e. u64 /\ l e. List u8 /\
+    m2 e. Memory /\ e e. Option Exception $;
 
 def writeMem (k a l k2 .ip .r .f .m .m2 .e: nat): wff =
 $ E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\
