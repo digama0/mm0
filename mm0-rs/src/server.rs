@@ -182,6 +182,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
   let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
     .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc)))
+    .filter(|e| !e.message.is_empty())
     .inspect(|err| match err.severity {
       None => {}
       Some(DiagnosticSeverity::Error) => n_errs += 1,
