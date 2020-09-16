@@ -189,7 +189,7 @@ theorem mod_el_u8: $ a % 256 e. u8 $ = 'mod_el_Bits;
 
 theorem toBytesAux0: $ toBytesAux 0 n = 0 $ = (named 'rec0);
 theorem toBytesAux0_app: $ toBytesAux 0 n @ i = 0 $ =
-'(eqtr (appeq1 @ nseq toBytesAux0) app01);
+'(eqtr (appneq1 toBytesAux0) app01);
 
 theorem toBytesAuxS: $ toBytesAux (suc k) n =
   \. i e. upto (suc n), (i % 256) : toBytesAux k n @ (i // 256) $ =
@@ -198,7 +198,7 @@ theorem toBytesAuxS: $ toBytesAux (suc k) n =
 
 theorem toBytesAuxS_app: $ a <= n ->
   toBytesAux (suc k) n @ a = (a % 256) : toBytesAux k n @ (a // 256) $ =
-'(syl5eq (appeq1 @ nseq toBytesAuxS) @
+'(syl5eq (appneq1 toBytesAuxS) @
   sylbi leltsuc @ sylbir elupto @ !! apprlame x @ conseqd modeq1 @ appeq2d diveq1);
 
 -- little endian encoding
@@ -209,7 +209,7 @@ pub theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
 theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
 (focus
   (def e '(aleqd @ imeq2d @ imeq2d @
-    eqeqd (appeq1d @ nseqd toBytesAuxeq1) (appeq1d @ nseqd toBytesAuxeq1)))
+    eqeqd (appneq1d toBytesAuxeq1) (appneq1d toBytesAuxeq1)))
   (def e2 '(imeqd leeq1 @ imeqd leeq1 @ eqeqd appeq2 appeq2))
   '(!! eale x ,e2
     (!! ind y z ,e ,e ,e ,e
@@ -272,8 +272,13 @@ pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $ 
 '(bitr elbitDif @ aneq1i elupto);
 
 @_ def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
+theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $ = 'chopT;
+
 @_ def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
+theorem bitsNegT (k n: nat): $ bitsNeg k n e. Bits k $ = 'bitsAddT;
+
 @_ def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
+theorem bitsSubT (k a b: nat): $ bitsSub k a b e. Bits k $ = 'bitsAddT;
 
 @_ def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
 @_ def bitsSar (k a b: nat): nat =
@@ -287,7 +292,9 @@ pub theorem bitsSarT (k a b: nat):
   sylib elBits2 @ syl shrT @ mpbird (elneq2d @ Bitseqd @ anwr npcan) anl);
 
 @_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
+theorem add64T (a b: nat): $ a +_64 b e. u64 $ = 'bitsAddT;
 @_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
+theorem sub64T (a b: nat): $ a -_64 b e. u64 $ = 'bitsSubT;
 
 @_ def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 theorem elBitvec: $ n <> bs e. Bitvec <-> bs < 2 ^ n $ =
@@ -1168,27 +1175,57 @@ $ lrec
       E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
       ifp (e1 = 0)
         (m3 <> e e. ih @ m2 @ (a +_64 1))
-        (m3 == m2 /\ e = e1))}))
+        (m3 = m2 /\ e = e1))}))
   l $;
 
+theorem writeMemory_auxT: $ m e. Memory /\ a e. u64 /\ l e. List u8 ->
+  writeMemory_aux l @ m @ a C_ Xp Memory (Option Exception) $;
+
 @_ abstract def writeMemory (m a l m2 e: nat): wff =
-$ m e. Memory /\ a e. u64 /\ m2 <> e e. writeMemory_aux l @ m @ a $;
+$ m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 <> e e. writeMemory_aux l @ m @ a $;
 pub theorem writeMemory0 (m a m2 e: nat):
   $ m e. Memory /\ a e. u64 ->
     (writeMemory m a 0 m2 e <-> m2 = m /\ e = 0) $ =
-(named '(bitrd bian1 @ syl6bb prth @ syl6bb elsn @ elneq2d @
+(named '(bitrd (syl bian1 @ mpi elList0 ian) @
+  syl6bb prth @ syl6bb elsn @ elneq2d @
   mpi {lrec0 : $ writeMemory_aux 0 = _ $} @
   apprlamed1 (sylibr (ellower finiteMemory) anl) @
   apprlamed2 anlr @ sneqd @ preq1d anlr));
 pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
-  $ writeMemory m a (b : l) m3 e <->
-    E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
-    ifp (e1 = 0)
-      (writeMemory m2 (a +_64 1) l m3 e)
-      (m3 == m2 /\ e = e1)) $;
+  $ m e. Memory /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
+    (writeMemory m a (b : l) m3 e <->
+      E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
+      ifp (e1 = 0)
+        (writeMemory m2 (a +_64 1) l m3 e)
+        (m3 = m2 /\ e = e1))) $ =
+(named @ focus
+  '(bitrd (sylbir (bitr4 (aneq2i elListS) anass) bian1) @ bitrd (elneq2d @ mpd _ _) _)
+  (focus '(syl5eq {lrecS : $ writeMemory_aux (b : l) = _ @ (_ <> _ <> writeMemory_aux l) $} @
+    appslamed @ appslamed @ applamed @ rlameq2d @ rlameq2d @ lowereqd @ sabeqd @
+    abeqd @ exeqd @ exeqd @ bitrd (aneq1d @ writeMemory1eq3d anllr) @
+    syl aneq2a @ exp @ ifpeq2d @ elneq2d @ appneq1d @ appneq1d anlr))
+  (focus '(apprlamed1 (sylibr (ellower finiteMemory) an3l) @
+    apprlamed2 an3lr @ lowereqd @ sabeqd @ abeqd @ exeqd @ exeqd @
+    aneqd (writeMemory1eqd anlr anr eqidd eqidd eqidd) @
+    ifpeq2d @ elneq2d @ appeq2d @ add64eq1d anr))
+  (focus '(bitrd (syl ellower _) _)
+    (focus
+      (suffices 'h)
+      '(sabfin (eelabd @ syl6 anl h) (a1i finiteMemory) @ anwl @
+        syl (mpi (optfin finiteException) finss) @ sylib ssab1 @ iald @ syl6 anr h)
+      '(eexd @ eexd @ impd @ exp @ eord
+        (syl6ib prelxp @ syl5 anr @ syl ssel @ syl writeMemory_auxT @
+          iand (iand (anwr @ rsyl writeMemory1T anlr) @ a1i add64T) anlr)
+        (syl5ibrcom (aneqd (eleq1d anrl) (eleq1d anrr)) @
+          anwr @ rsyl writeMemory1T @ anim1 anr)))
+    (focus '(elsabed @ elabed @ exeqd @ exeqd @ syl aneq2a @ exp @ ifpeqd biidd
+      (bitr4d (eleq1d @ preqd anllr anlr) @ syl bian1 @
+        iand (iand (anwr @ rsyl writeMemory1T anlr) @ a1i add64T) an3lr)
+      (aneqd (eqeq1d anllr) (eqeq1d anlr))))));
 pub theorem writeMemoryT (m a l m2 e: nat):
-  $ m e. Memory /\ a e. u64 /\ l e. List u8 /\
-    writeMemory m a l m2 e -> m2 e. Memory /\ e e. Option Exception $;
+  $ writeMemory m a l m2 e ->
+    m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 e. Memory /\ e e. Option Exception $ =
+'(sylibr anass @ anim2a @ syl6ib prelxp @ syl ssel writeMemory_auxT);
 
 @_ def writeMem (k a l k2 .ip .r .f .m .m2 .e: nat): wff =
 $ E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\

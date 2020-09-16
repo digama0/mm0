@@ -2141,7 +2141,7 @@ theorem simpleTokenize_val: $ simpleTokenize s =
 (named @ focus
   '(eqtr {srecval : $ _ = _ @ rlam r _ (simpleTokenize r) $} @
     applame @ lreceqd eqidd (slameqd @ slameqd @ lameqd _) sreclem)
-  '(ifeqd biidd (appeq1d nseq) @ sbneq2d @ conseq2d @ appeq1d nseq));
+  '(ifeqd biidd appneq1 @ sbneq2d @ conseq2d appneq1));
 
 pub theorem simpleTokenize0: $ simpleTokenize 0 = 0 $ = (named '(eqtr simpleTokenize_val lrec0));
 

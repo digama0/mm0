@@ -57,8 +57,13 @@ def bitsNot (k n: nat): nat = $ bitDif (upto k) n $;
 theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $;
 
 def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
+theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $;
+
 def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
+theorem bitsNegT (k n: nat): $ bitsNeg k n e. Bits k $;
+
 def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
+theorem bitsSubT (k a b: nat): $ bitsSub k a b e. Bits k $;
 
 def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
 def bitsSar (k a b: nat): nat =
@@ -67,7 +72,9 @@ theorem bitsSarT (k a b: nat):
   $ a e. Bits k /\ b <= k -> bitsSar k a b e. Bits k $;
 
 def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
+theorem add64T (a b: nat): $ a +_64 b e. u64 $;
 def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
+theorem sub64T (a b: nat): $ a -_64 b e. u64 $;
 
 def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 
@@ -704,11 +711,12 @@ theorem writeMemory0 (m a m2 e: nat):
   $ m e. Memory /\ a e. u64 ->
     (writeMemory m a 0 m2 e <-> m2 = m /\ e = 0) $;
 theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
-  $ writeMemory m a (b : l) m3 e <->
+  $ m e. Memory /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
+    (writeMemory m a (b : l) m3 e <->
     E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
     ifp (e1 = 0)
       (writeMemory m2 (a +_64 1) l m3 e)
-      (m3 == m2 /\ e = e1)) $;
+      (m3 = m2 /\ e = e1))) $;
 theorem writeMemoryT (m a l m2 e: nat):
   $ writeMemory m a l m2 e ->
     m e. Memory /\ a e. u64 /\ l e. List u8 /\

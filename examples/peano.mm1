@@ -2816,6 +2816,13 @@ theorem applame (a: nat x) (e: $ x = b -> a = c $):
   $ (\ x, a) @ b = c $ = '(eqtr applams @ sbne e);
 theorem applamed (a: nat x) (e: $ G /\ x = b -> a = c $):
   $ G -> (\ x, a) @ b = c $ = '(syl5eq applams @ sbned e);
+theorem applamed1 (a: nat x) (e: $ G /\ x = b -> F @ b = a -> P $):
+  $ G -> F == \ x, a -> P $ =
+'(mpi ax_6 @ eexdh nfv (nfim (nfeqs nfsv nflam1) nfv) @
+  exp @ syld (syl5ibrcom (eqeq1d appeq1) @ syl6eq applam @ eqcomd @ appeq2d anr) e);
+theorem applamed2 (a: nat x)
+  (e: $ G /\ x = b -> a = c $): $ G -> F == \ x, a -> F @ b = c $ =
+'(applamed1 @ bi1d @ eqeq2d e);
 
 theorem lamapp: $ isfun F -> (\ x, F @ x) |` Dom F == F $ =
 '(!! eqrd2 y z @ syl5bb prelres @ ibid
@@ -3542,6 +3549,8 @@ theorem elneqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
   $ G -> (a e. ns c <-> b e. ns d) $ = '(eleqd h1 @ nseqd h2);
 theorem elneq2d (h: $ G -> b = c $): $ G -> (a e. ns b <-> a e. ns c) $ = '(elneqd eqidd h);
 theorem elneq2: $ b = c -> (a e. ns b <-> a e. ns c) $ = '(elneq2d id);
+theorem appneq1d (h: $ G -> f = g $): $ G -> f @ x = g @ x $ = '(appeq1d @ nseqd h);
+theorem appneq1: $ f = g -> f @ x = g @ x $ = '(appneq1d id);
 theorem nfns (a: nat x) (h: $ FN/ x a $): $ FS/ x ns a $ = (named '(nfslem nseq h));
 
 theorem el01: $ 0 e. ns a <-> odd a $ = '(bitr elnel @ oddeq shr02);
@@ -3945,11 +3954,11 @@ theorem apprlamed (b: nat x) (e: $ G /\ x = c -> b = d $) (h: $ G -> c e. a $):
 theorem apprlamed1 (b: nat x) (h: $ G -> c e. a $) (e: $ G /\ x = c -> f @ c = b -> P $):
   $ G -> f = \. x e. a, b -> P $ =
 '(mpi ax_6 @ eexdh nfv (nfim (nfeq2 @ nfrlam1 nfnv) nfv) @
-  exp @ syld (syl5ibrcom (eqeq1d @ appeq1d nseq) @
+  exp @ syld (syl5ibrcom (eqeq1d appneq1) @
     eqtr3d (appeq2d anr) (syl apprlam @ mpbird (eleq1d anr) @ anwl h)) e);
-theorem apprlamed2 (b: nat x) (h: $ G -> c e. a $)
+theorem apprlamed2 (f b: nat x) (h: $ G -> c e. a $)
   (e: $ G /\ x = c -> b = d $): $ G -> f = \. x e. a, b -> f @ c = d $ =
-'(apprlamed1 h @ bi1d @ eqeq2d e);
+'(syl5ibrcom (eqeq1d appneq1) @ apprlamed e h);
 theorem apprlam0 (b c: nat x): $ ~c e. a -> (\. x e. a, b) @ c = 0 $ =
 '(sylbir (noteq @ eleq2 dmrlam) ndmapp);
 theorem rlamrcl (b c: nat x): $ d e. (\. x e. a, b) @ c -> c e. a $ =
@@ -4035,11 +4044,11 @@ theorem srecauxisf: $ isfun (srecaux S n) $ =
 
 theorem srecauxapp: $ a < n -> srecaux S n @ a = srec S a $ =
 (mk-ind '(!! ind x y)
-  '(imeqd lteq2 (eqeq1d @ appeq1d @ nseqd @ srecauxeq2))
+  '(imeqd lteq2 (eqeq1d @ appneq1d @ srecauxeq2))
   '(absurd lt02)
   '(syl5bir leltsuc @ syl5bi leloe @ eord
     (a2i @ bi2d @ eqeq1d @ syl5eq (appeq1 @ srecauxS) (syl writeNe ltne))
-    (a1i @ appeq1d @ nseqd @ srecauxeq2d @ suceqd eqcom)));
+    (a1i @ appneq1d @ srecauxeq2d @ suceqd eqcom)));
 
 theorem srecval2: $ srec S n = S @ srecaux S n $ =
 '(eqtr3 (srecauxapp ltsucid) @ eqtr (appeq1 srecauxS) writeEq);
@@ -4345,7 +4354,7 @@ theorem listfn0: $ listfn 0 = 0 $ = (named 'lrec0);
 theorem listfnS2: $ listfn (a : l) =
   \. i e. upto (suc (size (Dom (listfn l)))), if (i = 0) a (listfn l @ (i - 1)) $ =
 '(eqtr lrecS @ ! appslame _ $ _ <> listfn l $ _ x _ @ !! appslamed z @ !! applamed y @
-  lowereqd @ reseqd (lameqd @ ifeqd biidd anll @ appeq1d @ nseqd anr)
+  lowereqd @ reseqd (lameqd @ ifeqd biidd anll @ appneq1d anr)
    (nseqd @ uptoeqd @ suceqd @ sizeeqd @ dmeqd @ nseqd anr));
 
 theorem dmlistfn: $ Dom (listfn l) == upto (len l) $ =
@@ -4366,7 +4375,7 @@ theorem listfnS: $ listfn (a : l) =
 
 theorem listfnSval: $ n < suc (len l) ->
   listfn (a : l) @ n = if (n = 0) a (listfn l @ (n - 1)) $ =
-'(syl5eq (appeq1 @ nseq @ !! listfnS i) @
+'(syl5eq (appneq1 @ !! listfnS i) @
   sylbir elupto @ apprlame @ ifeqd eqeq1 eqidd @ appeq2d subeq1);
 
 theorem listfnS0: $ listfn (a : l) @ 0 = a $ = '(eqtr (listfnSval lt01S) (ifpos eqid));
