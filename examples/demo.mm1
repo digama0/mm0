@@ -8,21 +8,30 @@ axiom K: $ a -> b -> a $;
 axiom S: $ (a -> b -> c) -> (a -> b) -> (a -> c) $;
 axiom mp: $ a -> b $ > $ a $ > $ b $;
 
+-- Some basic metafunctions borrowed from peano.mm1
 do {
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
-  (def (verb e) (list ':verb e))
   (def (refine-extra-args refine tgt e . ps)
-   @ refine '{,(foldl ps (verb e) @ fn (acc p2) '(mp ,acc ,p2)) : ,(verb tgt)})
+    (refine tgt (foldl ps '(:verb ,e) @ fn (acc p2) '(mp ,acc ,p2))))
 };
 
--- theorem a1i (h: $ b $): $ a -> b $ = '(K h);
--- theorem mpd (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ = '(S h2 h1);
--- theorem mpi (h1: $ b $) (h2: $ a -> b -> c $): $ a -> c $ = '(mpd (a1i h1) h2);
--- theorem id: $ a -> a $ = '(mpd (! K _ a) K);
+theorem a1i (h: $ b $): $ a -> b $ = '(K h);
+theorem mpd (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ = '(S h2 h1);
+theorem mpi (h1: $ b $) (h2: $ a -> b -> c $): $ a -> c $ = '(mpd (a1i h1) h2);
+theorem id: $ a -> a $ = '(mpd (! K _ a) K);
 
-theorem id: $ a -> a $ =
+theorem id2: $ a -> a $ =
 '(S K (! K _ a));
 
+do {
+  (def mvar-sort @ match-fn @ (mvar s _) s)
+  (def (named e)
+    (refine e)
+    (map (fn (v) (set! v @ dummy! (mvar-sort v))) (get-mvars)))
+};
+
+theorem id3: $ a -> a $ =
+(named '(S K K));
 
 sort nat;
 term all {x: nat} (P: wff x): wff;
