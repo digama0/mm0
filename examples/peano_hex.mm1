@@ -489,6 +489,7 @@ theorem d4lt6: $ 4 < 6 $ = norm_num;
 theorem d4lt7: $ 4 < 7 $ = norm_num;
 theorem d4lt8: $ 4 < 8 $ = norm_num;
 theorem d6lt7: $ 6 < 7 $ = norm_num;
+theorem d8lt16: $ 8 < 16 $ = norm_num;
 theorem d2mul2: $ 2 * 2 = 4 $ = norm_num;
 theorem pow22lem (h1: $ 2 * a = b $) (h2: $ 2 ^ a = c $): $ 2 ^ b = c * c $ =
 '(eqtr3 (poweq2 @ eqtr mulcom h1) @ eqtr powmul @ eqtr (poweq1 h2) pow22);

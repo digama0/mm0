@@ -2431,11 +2431,13 @@ theorem expr: $ E. x E. y a = x <> y $ =
       eqtrd (anw3l suceq) @ syl5eqr addS @ addeqd
       (diveq1d @ muleqd h @ suceqd h) (eqcomd anr))));
 
-theorem splitpr1 {x y} (h: $ G -> a = x <> y -> p $): $ G -> p $ =
+theorem splitpr {x y} (h: $ G -> a = x <> y -> p $): $ G -> p $ =
 '(mpi expr @ eexd @ eexd h);
 
-theorem splitpr2 (h: $ G -> a = x <> y <> z -> p $):
-  $ G -> yz = y <> z -> a = x <> yz -> p $ =
+theorem splitpr1 (h: $ G -> a = x <> y -> p $): $ G -> b = x -> a = b <> y -> p $ =
+'(exp @ exp @ sylc h anll @ eqtrd anr @ preq1d anlr);
+
+theorem splitpr2 (h: $ G -> a = x <> y -> p $): $ G -> b = y -> a = x <> b -> p $ =
 '(exp @ exp @ sylc h anll @ eqtrd anr @ preq2d anlr);
 
 theorem splitopt (h0: $ G -> a = 0 -> p $) (h1: $ G -> a = suc (a - 1) -> p $): $ G -> p $ =
@@ -2448,7 +2450,7 @@ do {
   -- Proves $ G -> a = a1 <> ... <> an -> p $ > $ G -> p $ (where n >= 1)
   (def (splitpr n h)
     @ if {n = 1} (list 'eqerd h) @
-    iterate {n - 2} (fn (x) '(! splitpr1 _ _ _ _ ,(dummy! 'nat) ,x)) @ list 'splitpr1 @
+    iterate {n - 2} (fn (x) '(! splitpr _ _ _ _ ,(dummy! 'nat) ,x)) @ list 'splitpr @
     iterate {n - 2} (fn (x) '(splitpr2 ,x)) h)
 
   -- Performs a case analysis on sums of products.
@@ -2471,6 +2473,9 @@ do {
       [(h) '(exp ,h)]
       [(e h) '{(exp ,h) : $ _ -> _ = ,e -> _ $}])
     @ letrec
+      -- Here (f g): $ G -> p $ assuming g is such that
+      -- (g h): $ G -> x2 = F x3 -> x1 = G x2 -> a = H x1 -> p $ given
+      -- h: $ G -> a = H (G (F x3)) -> p $
       ([(f hs g) @ match hs
         [{hs0 '+ hs1} @ list 'splitb
           (f hs0 @ fn (x) '(splitb0 ,(g x)))
@@ -3455,11 +3460,15 @@ theorem recnS: $ recn z S (suc n) = S @ (n <> recn z S n) $ =
 '(eqtr (sndeq recnauxS2) @ eqtr sndpr @ appeq2 @
   eqtr3 fstsnd @ preq1 recnauxfst);
 
-@_ abstract def obind (a: nat) (F: set): nat = $ recn 0 (\ n, F @ fst n) a $;
-pub theorem obind0 (F: set): $ obind 0 F = 0 $ = (named 'recn0);
-pub theorem obindS (n: nat) (F: set): $ obind (suc n) F = F @ n $ =
-'(! eqtr _ $ _ @ (_ <> obind _ _) $ _ recnS @
+@_ local def ocase (z: nat) (S: set) (n: nat): nat = $ recn z (\ i, S @ fst i) n $;
+theorem ocase0: $ ocase z S 0 = z $ = (named 'recn0);
+theorem ocaseS: $ ocase z S (suc n) = S @ n $ =
+'(! eqtr _ $ _ @ (_ <> ocase _ _ _) $ _ recnS @
   !! applame x @ appeq2d @ syl6eq fstpr fsteq);
+
+@_ abstract def obind (a: nat) (F: set): nat = $ ocase 0 F a $;
+pub theorem obind0 (F: set): $ obind 0 F = 0 $ = 'ocase0;
+pub theorem obindS (n: nat) (F: set): $ obind (suc n) F = F @ n $ = 'ocaseS;
 
 theorem obindS2: $ obind n (\ x, suc x) = n $ =
 (named '(cases (mpbiri obind0 @ eqeqd obindeq1 id) @ sylbi exsuc @ eex @
@@ -3810,16 +3819,16 @@ theorem elopt: $ a e. Option A <-> a = 0 \/ a - 1 e. A $ =
 '(!! elabe n @ oreqd eqeq1 (eleq1d subeq1));
 
 theorem opt0: $ 0 e. Option A $ = '(mpbir elopt (orl eqid));
-theorem optS: $ a e. A <-> suc a e. Option A $ =
-'(bicom @ bitr elopt @ bitr (bior1 peano1) @ eleq1 @ sucsub1);
+theorem optS: $ suc a e. Option A <-> a e. A $ =
+'(bitr elopt @ bitr (bior1 peano1) @ eleq1 @ sucsub1);
 theorem opt0d: $ G -> 0 e. Option A $ = '(a1i opt0);
-theorem optSd (h: $ G -> a e. A $): $ G -> suc a e. Option A $ = '(sylib optS h);
+theorem optSd (h: $ G -> a e. A $): $ G -> suc a e. Option A $ = '(sylibr optS h);
 
 theorem optfin: $ finite A -> finite (Option A) $ =
 '(!! eex n @ !! iexde m @ !! iald x @ casesda
   (a1d @ imp @ syl5ibrcom lteq1 @ anwr @ mpbiri lt01S lteq2)
   (mpbird (imeqd (eleq1d (eqcomd @ anwr sub1can)) (lteqd (eqcomd @ anwr sub1can) anlr)) @
-    sylib (imeqi optS ltsuc) @ anwll @ !! eale y @ imeqd eleq1 lteq1));
+    sylib (imeqi (bicom optS) ltsuc) @ anwll @ !! eale y @ imeqd eleq1 lteq1));
 
 @_ def Power (A: set): set = $ {x | ns x C_ A} $;
 

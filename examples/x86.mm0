@@ -138,10 +138,10 @@ def ScaleIndex: set = $ Xp (Bits 2) Regs $;
 def RM: set = $ Sum Regs (Xp (Option ScaleIndex) (Xp Base u64)) $;
 def RM_reg (r: nat): nat = $ b0 r $;
 def RM_mem (si base q: nat): nat = $ b1 (si <> base <> q) $;
-theorem RM_regT (r: nat): $ r e. Regs -> RM_reg r e. RM $;
+theorem RM_regT (r: nat): $ RM_reg r e. RM <-> r e. Regs $;
 theorem RM_memT (si base q: nat):
-  $ si e. Option ScaleIndex /\ base e. Base /\ q e. u64 ->
-    RM_mem si base q e. RM $;
+  $ RM_mem si base q e. RM <->
+    si e. Option ScaleIndex /\ base e. Base /\ q e. u64 $;
 
 def RM_isMem (rm: nat): wff = $ odd rm $;
 
@@ -236,15 +236,15 @@ def DestSrc: set = $ Sum (Xp RM (Sum u64 Regs)) (Xp Regs RM) $;
 def Rm_i (rm i: nat): nat = $ b0 (rm <> b0 i) $;
 def Rm_r (rm r: nat): nat = $ b0 (rm <> b1 r) $;
 def R_rm (r rm: nat): nat = $ b1 (r <> rm) $;
-theorem Rm_iT (rm i: nat): $ rm e. RM /\ i e. u64 -> Rm_i rm i e. DestSrc $;
-theorem Rm_rT (rm r: nat): $ rm e. RM /\ r e. Regs -> Rm_r rm r e. DestSrc $;
-theorem R_rmT (r rm: nat): $ r e. Regs /\ rm e. RM -> R_rm r rm e. DestSrc $;
+theorem Rm_iT (rm i: nat): $ Rm_i rm i e. DestSrc <-> rm e. RM /\ i e. u64 $;
+theorem Rm_rT (rm r: nat): $ Rm_r rm r e. DestSrc <-> rm e. RM /\ r e. Regs $;
+theorem R_rmT (r rm: nat): $ R_rm r rm e. DestSrc <-> r e. Regs /\ rm e. RM $;
 
 def ImmRM: set = $ Sum RM u64 $;
 def immRM_rm (rm: nat): nat = $ b0 rm $;
 def immRM_imm (i: nat): nat = $ b1 i $;
-theorem immRM_rmT (rm: nat): $ rm e. RM -> immRM_rm rm e. ImmRM $;
-theorem immRM_immT (i: nat): $ i e. u64 -> immRM_imm i e. ImmRM $;
+theorem immRM_rmT (rm: nat): $ immRM_rm rm e. ImmRM <-> rm e. RM $;
+theorem immRM_immT (i: nat): $ immRM_imm i e. ImmRM <-> i e. u64 $;
 
 def Unop: nat = $ upto 4 $;
 def unopInc: nat = $ 0 $;
@@ -609,9 +609,15 @@ def setCF (f: nat) (p: wff): nat = $ bitsUpdate 0 1 (nat p) f $;
 def setZF (f: nat) (p: wff): nat = $ bitsUpdate 6 1 (nat p) f $;
 def setSF (f: nat) (p: wff): nat = $ bitsUpdate 7 1 (nat p) f $;
 def setOF (f: nat) (p: wff): nat = $ bitsUpdate 11 1 (nat p) f $;
+theorem setCF_T (f: nat) (p: wff): $ f e. Flags -> setCF f p e. Flags $;
+theorem setZF_T (f: nat) (p: wff): $ f e. Flags -> setZF f p e. Flags $;
+theorem setSF_T (f: nat) (p: wff): $ f e. Flags -> setSF f p e. Flags $;
+theorem setOF_T (f: nat) (p: wff): $ f e. Flags -> setOF f p e. Flags $;
 
 def unpackFlags (f c z s o: nat): wff =
 $ c = nat (CF f) /\ z = nat (ZF f) /\ s = nat (SF f) /\ o = nat (OF f) $;
+theorem unpackFlagsT (f c z s o: nat):
+  $ unpackFlags f c z s o -> bool c /\ bool z /\ bool s /\ bool o $;
 
 def readBCond (f c: nat): wff;
 theorem readBCondO (f: nat): $ readBCond f bcondO <-> OF f $;
@@ -632,9 +638,9 @@ theorem finiteProt: $ finite Prot $;
 def PROT_READ: nat = $ 1 $;
 def PROT_WRITE: nat = $ 2 $;
 def PROT_EXEC: nat = $ 4 $;
-theorem PROT_READT: $ PROT_READ e. Prot $;
-theorem PROT_WRITET: $ PROT_WRITE e. Prot $;
-theorem PROT_EXECT: $ PROT_EXEC e. Prot $;
+theorem PROT_READ_T: $ PROT_READ e. Prot $;
+theorem PROT_WRITE_T: $ PROT_WRITE e. Prot $;
+theorem PROT_EXEC_T: $ PROT_EXEC e. Prot $;
 
 def Memory: set = $ Arrow u64 (Xp Prot u8) $;
 theorem finiteMemory: $ finite Memory $;
@@ -730,10 +736,10 @@ $ k e. Config /\ a e. u64 /\ l e. List u8 /\
 theorem writeMemT (k a l k2: nat):
   $ writeMem k a l k2 -> k e. Config /\ a e. u64 /\ l e. List u8 /\ k2 e. Config $;
 
-def EA: set = $ Sum Regs (Xp Bool u64) $;
-def EA_i (q: nat): nat = $ b1 (0 <> q) $;
-def EA_r (r: nat): nat = $ b0 r $;
-def EA_m (q: nat): nat = $ b1 (1 <> q) $;
+def EA: set = $ Sum u64 (Sum Regs u64) $;
+def EA_i (q: nat): nat = $ b0 q $;
+def EA_r (r: nat): nat = $ b1 (b0 r) $;
+def EA_m (q: nat): nat = $ b1 (b1 q) $;
 theorem EA_iT (q: nat): $ EA_i q e. EA <-> q e. u64 $;
 theorem EA_rT (r: nat): $ EA_r r e. EA <-> r e. Regs $;
 theorem EA_mT (q: nat): $ EA_m q e. EA <-> q e. u64 $;
@@ -793,15 +799,21 @@ theorem readRegSzT (k sz r: nat):
 
 def readEA (k sz ea v: nat): wff;
 theorem readEA_i (k q sz v: nat):
-  $ readEA k sz (EA_i q) v <-> v = chop (wsizeBits sz) q $;
+  $ k e. Config /\ q e. u64 /\ sz e. WSize ->
+    (readEA k sz (EA_i q) v <-> v = chop (wsizeBits sz) q) $;
 theorem readEA_r (k sz r v: nat):
-  $ readEA k sz (EA_r r) v <-> v = readRegSz k sz r $;
-theorem readEA_m {l: nat} (k a sz v: nat): $ readEA k sz (EA_m a) v <->
-  v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v) $;
-theorem readEAT (k sz ea v: nat): $ k e. Config /\ ea e. EA /\ sz e. WSize /\
-  readEA k sz ea v -> v e. Bits (wsizeBits sz) $;
+  $ k e. Config /\ r e. Regs /\ sz e. WSize ->
+    (readEA k sz (EA_r r) v <-> v = readRegSz k sz r) $;
+theorem readEA_m (k a sz v: nat):
+  $ k e. Config /\ a e. u64 /\ sz e. WSize ->
+    (readEA k sz (EA_m a) v <->
+      v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v)) $;
+theorem readEAT (k sz ea v: nat): $ readEA k sz ea v ->
+  k e. Config /\ ea e. EA /\ sz e. WSize /\ v e. Bits (wsizeBits sz) $;
 
 def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
+theorem readEA64T (k sz ea v: nat): $ readEA64 k sz v ->
+  k e. Config /\ sz e. WSize /\ v e. Bits (wsizeBits sz) $;
 
 def setException (k e: nat): nat;
 theorem setExceptionVal (ex ip rs f m e: nat):
@@ -828,86 +840,110 @@ theorem writeRegT (k sz r v: nat): $ k e. Config /\ sz e. WSize /\
 def writeEASz (k sz ea v k2: nat): wff;
 theorem writeEASz_i (k sz i v k2: nat): $ ~ writeEASz k sz (EA_i i) v k2 $;
 theorem writeEASz_r (k sz r v k2: nat):
-  $ writeEASz k sz (EA_r r) v k2 <-> k2 = writeReg k sz r v $;
+  $ k e. Config /\ sz e. WSize /\ r e. Regs /\ v e. Bits (wsizeBits sz) ->
+    (writeEASz k sz (EA_r r) v k2 <-> k2 = writeReg k sz r v) $;
 theorem writeEASz_m {l: nat} (k sz a v k2: nat):
-  $ writeEASz k sz (EA_m a) v k2 <->
-    writeMem k a (toBytes (wsizeBits sz) v) k2 $;
+  $ k e. Config /\ sz e. WSize /\ a e. u64 /\ v e. Bits (wsizeBits sz) ->
+    (writeEASz k sz (EA_m a) v k2 <->
+     writeMem k a (toBytes (wsizeBits sz) v) k2) $;
 theorem writeEASzT (k sz ea v k2: nat):
-  $ k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
-    writeEASz k sz ea v k2 -> k2 e. Config $;
+  $ writeEASz k sz ea v k2 ->
+    k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
+    k2 e. Config $;
 
 def writeEA (k sz ea v k2: nat): wff =
-$ writeEASz k sz ea (chop (wsizeBits sz) v) k2 $;
-theorem writeEAT (k sz ea v k2: nat):
-  $ k e. Config /\ sz e. WSize /\ ea e. EA /\
-    writeEA k sz ea v k2 -> k2 e. Config $;
+$ v e. u64 /\ writeEASz k sz ea (chop (wsizeBits sz) v) k2 $;
+theorem writeEA_T (k sz ea v k2: nat):
+  $ writeEA k sz ea v k2 ->
+    k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. u64 /\
+    k2 e. Config $;
 
 def writeRIP (k q: nat): nat;
 theorem writeRIPVal (ex ip rs f m q: nat):
   $ writeRIP (mkCfg ex ip rs f m) q = mkCfg ex q rs f m $;
-theorem writeRIPT (k q: nat):
+theorem writeRIP_T (k q: nat):
   $ k e. Config /\ q e. u64 -> writeRIP k q e. Config $;
 
 def EA_callDest (k ea v: nat): wff;
 theorem EA_callDest_i (k i v: nat):
-  $ EA_callDest k (EA_i i) v <-> v = readRIP k +_64 i $;
+  $ k e. Config /\ i e. u64 ->
+    (EA_callDest k (EA_i i) v <-> v = readRIP k +_64 i) $;
 theorem EA_callDest_r (k r v: nat):
-  $ EA_callDest k (EA_r r) v <-> v = readReg k r $;
+  $ k e. Config /\ r e. Regs ->
+    (EA_callDest k (EA_r r) v <-> v = readReg k r) $;
 theorem EA_callDest_m (k a v: nat):
-  $ EA_callDest k (EA_m a) v <-> v e. u64 /\ readMem k a (u64Bytes v) $;
+  $ k e. Config /\ a e. u64 ->
+    (EA_callDest k (EA_m a) v <-> v e. u64 /\ readMem k a (u64Bytes v)) $;
 theorem EA_callDestT (k ea v: nat):
-  $ k e. Config /\ ea e. EA /\ EA_callDest k ea v -> v e. u64 $;
+  $ EA_callDest k ea v -> k e. Config /\ ea e. EA /\ v e. u64 $;
 
 def EA_jump (k ea k2 .v: nat): wff =
 $ E. v (EA_callDest k ea v /\ k2 = writeRIP k v) $;
 theorem EA_jumpT (k ea k2: nat):
-  $ k e. Config /\ ea e. EA /\ EA_jump k ea k2 -> k2 e. Config $;
+  $ EA_jump k ea k2 -> k e. Config /\ ea e. EA /\ k2 e. Config $;
 
 def readUnpackFlags (k c z s o: nat): wff =
-$ unpackFlags (readFlags k) c z s o $;
+$ k e. Config /\ unpackFlags (readFlags k) c z s o $;
 theorem readUnpackFlagsT (k c z s o: nat):
-$ k e. Config /\ readUnpackFlags k c z s o ->
-  bool c /\ bool z /\ bool s /\ bool o $;
+$ readUnpackFlags k c z s o ->
+  k e. Config /\ bool c /\ bool z /\ bool s /\ bool o $;
 
 def writeFlags (k f: nat): nat;
 theorem writeFlagsVal (ex ip rs f m f2: nat):
   $ writeFlags (mkCfg ex ip rs f m) f2 = mkCfg ex ip rs f2 m $;
+theorem writeFlagsT (k f: nat):
+  $ k e. Config /\ f e. Flags -> writeFlags k f e. Config $;
 
 def setCZSO (k: nat) (c z s o : wff): nat;
 theorem setCZSOVal (ex ip rs f m : nat) (c z s o: wff):
   $ setCZSO (mkCfg ex ip rs f m) c z s o =
     mkCfg ex ip rs (setOF (setSF (setZF (setCF f c) z) s) o) m $;
+theorem setCZSO_T (k: nat) (c z s o : wff):
+  $ k e. Config -> setCZSO k c z s o e. Config $;
 
 def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
 def writeResultFlags (k sz w : nat) (c o : wff): nat =
 $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;
+theorem writeResultFlagsT (k sz w : nat) (c o : wff):
+  $ k e. Config /\ sz e. WSize /\ w e. Bits (wsizeBits sz) ->
+    writeResultFlags k sz w c o e. Config $;
 
 def writeSFZF (k sz w : nat): nat =
 $ writeResultFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
+theorem writeSFZF_T (k sz w : nat):
+  $ k e. Config /\ sz e. WSize /\ w e. Bits (wsizeBits sz) ->
+    writeSFZF k sz w e. Config $;
 
 def eraseFlags (k k2 .e .ip .rs .f .f2 .m: nat): wff =
-$ E. e E. ip E. rs E. f E. f2 E. m (f2 e. Flags /\
-    k = mkCfg e ip rs f m /\ k2 = mkCfg e ip rs f2 m) $;
+$ k e. Config /\ E. f2 (f2 e. Flags /\ k2 = writeFlags k f2) $;
 theorem eraseFlagsT (k k2: nat):
-  $ k e. Config /\ eraseFlags k k2 -> k2 e. Config $;
+  $ eraseFlags k k2 -> k e. Config /\ k2 e. Config $;
 
 def addCarry (sz a b w c o: nat): wff =
-$ w = a +_64 b /\ c = nat (2 ^ wsizeBits sz <= a + b) /\
+$ sz e. WSize /\ a e. u64 /\ b e. u64 /\
+  w = a +_64 b /\ c = nat (2 ^ wsizeBits sz <= a + b) /\
   o = nat (MSB sz a <-> MSB sz b /\ ~(MSB sz (a +_64 b) <-> MSB sz a)) $;
 theorem addCarryT (sz a b w c o: nat):
-  $ sz e. WSize /\ a e. u64 /\ b e. u64 /\ addCarry sz a b w c o ->
+  $ addCarry sz a b w c o ->
+    sz e. WSize /\ a e. u64 /\ b e. u64 /\
     w e. u64 /\ bool c /\ bool o $;
 
 def subBorrow (sz a b w c o: nat): wff =
-$ w = a -_64 b /\ c = nat (a < b) /\
+$ sz e. WSize /\ a e. u64 /\ b e. u64 /\
+  w = a -_64 b /\ c = nat (a < b) /\
   o = nat (~(MSB sz a <-> MSB sz b) /\ ~(MSB sz (a -_64 b) <-> MSB sz a)) $;
 theorem subBorrowT (sz a b w c o: nat):
-  $ sz e. WSize /\ a e. u64 /\ b e. u64 /\ subBorrow sz a b w c o ->
+  $ subBorrow sz a b w c o ->
+    sz e. WSize /\ a e. u64 /\ b e. u64 /\
     w e. u64 /\ bool c /\ bool o $;
 
 def writeCFOFResult (k sz ea w : nat) (c o : wff) (k2: nat): wff =
-$ writeEA (writeResultFlags k sz w c o) sz ea w k2 $;
+$ k e. Config /\ writeEA (writeResultFlags k sz w c o) sz ea w k2 $;
+theorem writeCFOFResultT (k sz ea w : nat) (c o : wff) (k2: nat):
+  $ writeCFOFResult k sz ea w c o k2 ->
+    k e. Config /\ sz e. WSize /\ ea e. EA /\ w e. Bits (wsizeBits sz) /\
+    k2 e. Config $;
 
 def maskShift (sz w: nat): nat = $ chop (if (wsizeBits sz = 64) 6 5) w $;
 
