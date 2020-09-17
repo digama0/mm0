@@ -1078,9 +1078,10 @@ pub theorem finiteConfig: $ finite Config $ =
   xpfin (Arrowfin finns finns) @ xpfin finns finiteMemory);
 @_ def mkCfg (ex rip regs flags mem: nat): nat = $ (ex <> rip) <> regs <> flags <> mem $;
 pub theorem mkCfgT (ex rip regs flags mem: nat):
-  $ ex e. Option Exception /\ rip e. u64 /\ regs e. Arrow Regs u64 /\ flags e. Flags /\ mem e. Memory ->
-    mkCfg ex rip regs flags mem e. Config $ =
-'(xpTd (xpTd an4l an3lr) @ xpTd anllr @ xpTd anlr anr);
+  $ mkCfg ex rip regs flags mem e. Config <->
+    ex e. Option Exception /\ rip e. u64 /\ regs e. Arrow Regs u64 /\
+    flags e. Flags /\ mem e. Memory $ =
+'(bitr prelxp @ bitr4 (bitr4 (aneq prelxp @ bitr prelxp @ aneq2i prelxp) anass) anass);
 
 @_ def readException (k: nat): nat = $ pi11 k $;
 @_ def readRIP (k: nat): nat = $ pi12 k $;
@@ -1171,18 +1172,16 @@ pub theorem writeMemory1T (m a b m2 e: nat):
 $ lrec
   (\. m e. lower Memory, \. a e. u64, sn (m <> 0))
   (\\ b, \\ z, \ ih, \. m e. lower Memory, \. a e. u64,
-    lower (S\ m3, {e |
+    sep (lower (Xp Memory (Option Exception))) (S\ m3, {e |
       E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
       ifp (e1 = 0)
         (m3 <> e e. ih @ m2 @ (a +_64 1))
         (m3 = m2 /\ e = e1))}))
   l $;
 
-theorem writeMemory_auxT: $ m e. Memory /\ a e. u64 /\ l e. List u8 ->
-  writeMemory_aux l @ m @ a C_ Xp Memory (Option Exception) $;
-
 @_ abstract def writeMemory (m a l m2 e: nat): wff =
 $ m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 <> e e. writeMemory_aux l @ m @ a $;
+
 pub theorem writeMemory0 (m a m2 e: nat):
   $ m e. Memory /\ a e. u64 ->
     (writeMemory m a 0 m2 e <-> m2 = m /\ e = 0) $ =
@@ -1191,9 +1190,11 @@ pub theorem writeMemory0 (m a m2 e: nat):
   mpi {lrec0 : $ writeMemory_aux 0 = _ $} @
   apprlamed1 (sylibr (ellower finiteMemory) anl) @
   apprlamed2 anlr @ sneqd @ preq1d anlr));
-pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
+
+theorem writeMemoryS1 {m2 e1: nat} (m a b l m3 e: nat):
   $ m e. Memory /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
     (writeMemory m a (b : l) m3 e <->
+      m3 e. Memory /\ e e. Option Exception /\
       E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
       ifp (e1 = 0)
         (writeMemory m2 (a +_64 1) l m3 e)
@@ -1201,56 +1202,82 @@ pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
 (named @ focus
   '(bitrd (sylbir (bitr4 (aneq2i elListS) anass) bian1) @ bitrd (elneq2d @ mpd _ _) _)
   (focus '(syl5eq {lrecS : $ writeMemory_aux (b : l) = _ @ (_ <> _ <> writeMemory_aux l) $} @
-    appslamed @ appslamed @ applamed @ rlameq2d @ rlameq2d @ lowereqd @ sabeqd @
+    appslamed @ appslamed @ applamed @ rlameq2d @ rlameq2d @ sepeq2d @ sabeqd @
     abeqd @ exeqd @ exeqd @ bitrd (aneq1d @ writeMemory1eq3d anllr) @
     syl aneq2a @ exp @ ifpeq2d @ elneq2d @ appneq1d @ appneq1d anlr))
   (focus '(apprlamed1 (sylibr (ellower finiteMemory) an3l) @
-    apprlamed2 an3lr @ lowereqd @ sabeqd @ abeqd @ exeqd @ exeqd @
+    apprlamed2 an3lr @ sepeq2d @ sabeqd @ abeqd @ exeqd @ exeqd @
     aneqd (writeMemory1eqd anlr anr eqidd eqidd eqidd) @
     ifpeq2d @ elneq2d @ appeq2d @ add64eq1d anr))
-  (focus '(bitrd (syl ellower _) _)
-    (focus
-      (suffices 'h)
-      '(sabfin (eelabd @ syl6 anl h) (a1i finiteMemory) @ anwl @
-        syl (mpi (optfin finiteException) finss) @ sylib ssab1 @ iald @ syl6 anr h)
-      '(eexd @ eexd @ impd @ exp @ eord
-        (syl6ib prelxp @ syl5 anr @ syl ssel @ syl writeMemory_auxT @
-          iand (iand (anwr @ rsyl writeMemory1T anlr) @ a1i add64T) anlr)
-        (syl5ibrcom (aneqd (eleq1d anrl) (eleq1d anrr)) @
-          anwr @ rsyl writeMemory1T @ anim1 anr)))
-    (focus '(elsabed @ elabed @ exeqd @ exeqd @ syl aneq2a @ exp @ ifpeqd biidd
+  (focus '(syl5bb elsep @
+    aneqd (a1i @ bitr (ellower @ xpfin finiteMemory @ optfin finiteException) prelxp) @
+    elsabed @ elabed @ exeqd @ exeqd @ syl aneq2a @ exp @ ifpeqd biidd
       (bitr4d (eleq1d @ preqd anllr anlr) @ syl bian1 @
         iand (iand (anwr @ rsyl writeMemory1T anlr) @ a1i add64T) an3lr)
-      (aneqd (eqeq1d anllr) (eqeq1d anlr))))));
+      (aneqd (eqeq1d anllr) (eqeq1d anlr)))));
+
+theorem writeMemoryT_aux (m a l m2 e: nat):
+  $ writeMemory m a l m2 e -> m e. Memory /\ a e. u64 /\ l e. List u8 /\ (m2 e. Memory /\ e e. Option Exception) $ =
+(named '(mpand anl @ iand anr @ impcom @ casesda
+  (syld (bi1d @ bitrd (writeMemoryeq3d anr) @ anwll writeMemory0) @
+    syl5ibrcom (aneqd (eleq1d anl) (eleq1d anr)) @ iand an3l opt0d)
+  (syl6 anl @ bi1d @ bitr3d (writeMemoryeq3d @ anwr consfstsnd) @
+    sylan (sylbir anass writeMemoryS1) anll @ sylib elListS @
+    mpbird (eleq1d @ anwr consfstsnd) anlr)));
+
+pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
+  $ m e. Memory /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
+    (writeMemory m a (b : l) m3 e <->
+      E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
+      ifp (e1 = 0)
+        (writeMemory m2 (a +_64 1) l m3 e)
+        (m3 = m2 /\ e = e1))) $ =
+'(bitrd writeMemoryS1 @ syl bian1a @ eexd @ eexd @ impd @ exp @ eord
+  (exp @ rsyl anrr @ anrd writeMemoryT_aux)
+  (syl5 anr @ syl5ibrcom (aneqd (eleq1d anl) (eleq1d anr)) @
+    anwr @ rsyl writeMemory1T @ anim1 anr));
+
 pub theorem writeMemoryT (m a l m2 e: nat):
   $ writeMemory m a l m2 e ->
     m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 e. Memory /\ e e. Option Exception $ =
-'(sylibr anass @ anim2a @ syl6ib prelxp @ syl ssel writeMemory_auxT);
+'(sylibr anass writeMemoryT_aux);
 
 @_ def writeMem (k a l k2 .ip .r .f .m .m2 .e: nat): wff =
-$ E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\
+$ k e. Config /\ a e. u64 /\ l e. List u8 /\
+  E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\
   k = mkCfg 0 ip r f m /\ k2 = mkCfg e ip r f m2) $;
 pub theorem writeMemT (k a l k2: nat):
-  $ k e. Config /\ a e. u64 /\ l e. List u8 /\
-    writeMem k a l k2 -> k2 e. Config $;
+  $ writeMem k a l k2 -> k e. Config /\ a e. u64 /\ l e. List u8 /\ k2 e. Config $ =
+(named '(anim2a @ eexd @ eexd @ eexd @ eexd @ eexd @ eexda @
+  mpbird (eleq1d anrr) @ sylan
+    (sylibr mkCfgT @ iand (iand (iand (iand anrr an4lr) an3lr) anllr) (anwr anlr))
+    (sylib mkCfgT @ mpbid (eleq1d @ anwr anlr) an3l)
+    (anwr @ anwll writeMemoryT)));
 
 @_ def EA: set = $ Sum Regs (Xp Bool u64) $;
 @_ def EA_i (q: nat): nat = $ b1 (0 <> q) $;
 @_ def EA_r (r: nat): nat = $ b0 r $;
 @_ def EA_m (q: nat): nat = $ b1 (1 <> q) $;
-pub theorem EA_iT (q: nat): $ q e. u64 -> EA_i q e. EA $;
-pub theorem EA_rT (r: nat): $ r e. Regs -> EA_r r e. EA $;
-pub theorem EA_mT (q: nat): $ q e. u64 -> EA_m q e. EA $;
+pub theorem EA_iT (q: nat): $ EA_i q e. EA <-> q e. u64 $ = '(bitr Sumr @ bitr prelxp @ bian1 Bool0);
+pub theorem EA_rT (r: nat): $ EA_r r e. EA <-> r e. Regs $ = 'Suml;
+pub theorem EA_mT (q: nat): $ EA_m q e. EA <-> q e. u64 $ = '(bitr Sumr @ bitr prelxp @ bian1 Bool1);
 
-@_ abstract def EA_addr (ea: nat): nat;
-pub theorem EA_addrm (a: nat): $ EA_addr (EA_m a) = a $;
-pub theorem EA_addr0 {a: nat} (ea: nat): $ ~(E. a ea = EA_m a) -> EA_addr ea = 0 $;
-pub theorem EA_addrT (ea: nat): $ ea e. EA -> EA_addr ea e. u64 $;
+@_ abstract def EA_addr (ea: nat): nat = $ if (E. a ea = EA_m a) (snd (ea // 2)) 0 $;
+pub theorem EA_addrm (a: nat): $ EA_addr (EA_m a) = a $ =
+(named '(eqtr (ifpos @ iexe (eqeq2d EA_meq) eqid) @ eqtr (sndeq b1div2) sndpr));
+pub theorem EA_addr0 {a: nat} (ea: nat): $ ~(E. a ea = EA_m a) -> EA_addr ea = 0 $ = 'ifneg;
+pub theorem EA_addrT (ea: nat): $ ea e. EA -> EA_addr ea e. u64 $ =
+(named '(casesd
+  (eexda @ mpbird (eleq1d @ syl6eq EA_addrm @ EA_addreqd anr) @
+    sylib EA_mT @ impcom @ bi1d eleq1)
+  (a1i @ mpbiri elBits01 @ eleq1d EA_addr0)));
 
-@_ abstract def readIndex (k si: nat): nat;
-pub theorem readIndex0 (k: nat): $ readIndex k 0 = 0 $;
+@_ abstract def readIndex (k si: nat): nat =
+$ obind si (\\ sc, \ r, chop 64 (shl (readReg k r) sc)) $;
+pub theorem readIndex0 (k: nat): $ readIndex k 0 = 0 $ = (named 'obind0);
 pub theorem readIndexS (k sc r: nat):
-  $ readIndex k (suc (sc <> r)) = chop 64 (shl (readReg k r) sc) $;
+  $ readIndex k (suc (sc <> r)) = chop 64 (shl (readReg k r) sc) $ =
+(named '(eqtr obindS @ appslame @ applamed @ chopeq2d @ shleqd (readRegeq2d anr) anl));
 pub theorem readIndexT (k si: nat):
   $ k e. Config /\ si e. Option ScaleIndex -> readIndex k si e. u64 $;
 

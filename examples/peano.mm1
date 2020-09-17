@@ -2328,11 +2328,6 @@ theorem splitb0 (h: $ G -> a = b0 c -> p $): $ G -> b = c -> a = b0 b -> p $ =
 theorem splitb1 (h: $ G -> a = b1 c -> p $): $ G -> b = c -> a = b1 b -> p $ =
 '(exp @ exp @ sylc h anll @ eqtrd anr @ b1eqd anlr);
 
--- Proves $ G /\ a = a1 <> ... <> an -> p $ > $ G -> p $ (where n >= 2)
-do (def (splitpr n h) @
-  iterate {n - 2} (fn (x) '(! splitpr1 _ _ _ _ ,(dummy! 'nat) ,x)) @ list 'splitpr1 @
-  iterate {n - 2} (fn (x) '(splitpr2 ,x)) '(exp ,h));
-
 theorem odd0: $ ~ odd 0 $ = '(mtbir (eqeq1 mod01) (mt eqcom d1ne0));
 theorem oddS: $ odd (suc n) <-> ~odd n $ =
 '(bitr odddvd @ noteq @ bitr4 d2dvdS odddvd);
@@ -2443,6 +2438,12 @@ theorem splitpr2 (h: $ G -> a = x <> y <> z -> p $):
   $ G -> yz = y <> z -> a = x <> yz -> p $ =
 '(exp @ exp @ sylc h anll @ eqtrd anr @ preq2d anlr);
 
+theorem splitopt (h0: $ G -> a = 0 -> p $) (h1: $ G -> a = suc (a - 1) -> p $): $ G -> p $ =
+'(casesd h0 @ syl5 (eqcomd sub1can) h1);
+
+theorem splitoptS (h: $ G -> a = suc c -> p $): $ G -> b = c -> a = suc b -> p $ =
+'(exp @ exp @ sylc h anll @ eqtrd anr @ suceqd anlr);
+
 do {
   -- Proves $ G -> a = a1 <> ... <> an -> p $ > $ G -> p $ (where n >= 1)
   (def (splitpr n h)
@@ -2459,18 +2460,29 @@ do {
   --   * `pr3 : G /\ ?a = b1 (b1 (?z1 <> ?z2)) -> p`
   -- The alternative form `n as e => p` provides an expression `e` for each branch
   -- in place of e.g. `b1 (b0 (a <> b <> c))`.
+  --
+  -- Using `o` in place of `+` allows for splitting along optionals or casing on natural numbers, e.g.
+  -- `(split-sop '{($0$ => pr1) o ($1$ => pr2) o ($suc (a : b)$ => pr3)})` which expects
+  --   * `pr1 : G /\ ?a = 0 -> p`
+  --   * `pr2 : G /\ ?a = 1 -> p`
+  --   * `pr3 : G /\ ?a = suc (a : b) -> p`
   (def (split-sop hs)
+    (def base @ match-fn*
+      [(h) '(exp ,h)]
+      [(e h) '{(exp ,h) : $ _ -> _ = ,e -> _ $}])
     @ letrec
       ([(f hs g) @ match hs
         [{hs0 '+ hs1} @ list 'splitb
           (f hs0 @ fn (x) '(splitb0 ,(g x)))
           (f hs1 @ fn (x) '(splitb1 ,(g x)))]
-        [((? number? n) '=> h) (splitpr n (g '(exp ,h)))]
-        [((? number? n) 'as e '=> h)
-          (splitpr n (g '{(exp ,h) : $ _ -> _ = ,e -> _ $}))]
-        [((and e (...)) '=> h)
-          (splitpr {(len e) - 1} (g '{(exp ,h) : $ _ -> _ = ,e -> _ $}))]])
-      (f hs id))
+        [('o (e '=> h) hs1 . hsS) @ list 'splitopt
+          (g (base e h))
+          (f (cons 'o hs1 hsS) @ fn (x) '(splitoptS ,(g x)))]
+        [('o hs) (f hs g)]
+        [((? number? n) '=> h) (splitpr n (g (base h)))]
+        [((? number? n) 'as e '=> h) (splitpr n (g (base e h)))]
+        [((and e (...)) '=> h) (splitpr {(len e) - 1} (g (base e h)))]])
+    (f hs id))
 };
 
 pub theorem fstpr (a b: nat): $ fst (a <> b) = a $ =

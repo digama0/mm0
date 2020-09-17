@@ -656,8 +656,9 @@ def Config: set = $ Xp (Xp (Option Exception) u64) (Xp (Arrow Regs u64) (Xp Flag
 theorem finiteConfig: $ finite Config $;
 def mkCfg (ex rip regs flags mem: nat): nat = $ (ex <> rip) <> regs <> flags <> mem $;
 theorem mkCfgT (ex rip regs flags mem: nat):
-  $ ex e. Option Exception /\ rip e. u64 /\ regs e. Arrow Regs u64 /\ flags e. Flags /\ mem e. Memory ->
-    mkCfg ex rip regs flags mem e. Config $;
+  $ mkCfg ex rip regs flags mem e. Config <->
+    ex e. Option Exception /\ rip e. u64 /\ regs e. Arrow Regs u64 /\
+    flags e. Flags /\ mem e. Memory $;
 
 def readException (k: nat): nat = $ pi11 k $;
 def readRIP (k: nat): nat = $ pi12 k $;
@@ -723,19 +724,19 @@ theorem writeMemoryT (m a l m2 e: nat):
     m2 e. Memory /\ e e. Option Exception $;
 
 def writeMem (k a l k2 .ip .r .f .m .m2 .e: nat): wff =
-$ E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\
+$ k e. Config /\ a e. u64 /\ l e. List u8 /\
+  E. ip E. r E. f E. m E. m2 E. e (writeMemory m a l m2 e /\
   k = mkCfg 0 ip r f m /\ k2 = mkCfg e ip r f m2) $;
 theorem writeMemT (k a l k2: nat):
-  $ k e. Config /\ a e. u64 /\ l e. List u8 /\
-    writeMem k a l k2 -> k2 e. Config $;
+  $ writeMem k a l k2 -> k e. Config /\ a e. u64 /\ l e. List u8 /\ k2 e. Config $;
 
 def EA: set = $ Sum Regs (Xp Bool u64) $;
 def EA_i (q: nat): nat = $ b1 (0 <> q) $;
 def EA_r (r: nat): nat = $ b0 r $;
 def EA_m (q: nat): nat = $ b1 (1 <> q) $;
-theorem EA_iT (q: nat): $ q e. u64 -> EA_i q e. EA $;
-theorem EA_rT (r: nat): $ r e. Regs -> EA_r r e. EA $;
-theorem EA_mT (q: nat): $ q e. u64 -> EA_m q e. EA $;
+theorem EA_iT (q: nat): $ EA_i q e. EA <-> q e. u64 $;
+theorem EA_rT (r: nat): $ EA_r r e. EA <-> r e. Regs $;
+theorem EA_mT (q: nat): $ EA_m q e. EA <-> q e. u64 $;
 
 def EA_addr (ea: nat): nat;
 theorem EA_addrm (a: nat): $ EA_addr (EA_m a) = a $;
