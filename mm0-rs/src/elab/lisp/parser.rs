@@ -565,24 +565,72 @@ impl<'a> LispParser<'a> {
   }
 
   fn list_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
-      quote: bool, es: &[SExpr]) -> Result<Pattern, ElabError> {
-    let (en, es1) = es.split_last().unwrap();
-    let (es, n) = match &en.k {
-      &SExprKind::Atom(Atom::Ident) => match self.span(en.span) {
-        "..." | "___" => (es1, Some(0)),
-        _ => (es, None),
+      quote: bool, mut es: &[SExpr]) -> Result<Pattern, ElabError> {
+    let mut pfx = vec![];
+    let pat = loop {
+      match es {
+        [] => return Ok(Pattern::List(pfx.into(), None)),
+        &[SExpr {span, k: SExprKind::Atom(a)}, ref e] if quote =>
+          if self.ast.span_atom(span, a) == "unquote" {
+            break self.pattern(ctx, code, false, e)?
+          },
+        _ if quote => {},
+        [head, args @ ..] => if let SExprKind::Atom(a) = head.k {
+          match self.ast.span_atom(head.span, a) {
+            "quote" => match args {
+              [e] => break self.pattern(ctx, code, true, e)?,
+              _ => return Err(ElabError::new_e(head.span, "expected one argument")),
+            },
+            "mvar" => match args {
+              [] => break Pattern::MVar(None),
+              [bd, s] => {
+                let bd = self.pattern(ctx, code, quote, bd)?;
+                let s = self.pattern(ctx, code, quote, s)?;
+                break Pattern::MVar(Some(Box::new((bd, s))))
+              }
+              _ => return Err(ElabError::new_e(head.span, "expected zero or two arguments")),
+            },
+            "goal" => match args {
+              [e] => break Pattern::Goal(Box::new(self.pattern(ctx, code, quote, e)?)),
+              _ => return Err(ElabError::new_e(head.span, "expected one argument")),
+            },
+            "and" => break Pattern::And(self.patterns(ctx, code, quote, args)?),
+            "or" => break Pattern::Or(self.patterns(ctx, code, quote, args)?),
+            "not" => break Pattern::Not(self.patterns(ctx, code, quote, args)?),
+            "?" => match args {
+              [test, rest @ ..] => {
+                let p = self.ctx.len();
+                let ir = self.expr(false, test)?;
+                self.ctx.restore(p);
+                let rest = self.patterns(ctx, code, quote, rest)?;
+                break Pattern::Test(test.span, Box::new(ir), rest)
+              },
+              _ => return Err(ElabError::new_e(head.span, "expected at least one argument")),
+            }
+            "cons" => match args {
+              [] => return Err(ElabError::new_e(head.span, "expected at least one argument")),
+              [es @ .., e] => break Pattern::DottedList(
+                self.patterns(ctx, code, quote, es)?,
+                self.pattern(ctx, code, quote, e)?.into())
+            },
+            "___" | "..." => match args {
+              [] => return Ok(Pattern::List(pfx.into(), Some(0))),
+              _ => return Err(ElabError::new_e(head.span, "expected nothing after '...'")),
+            },
+            "__" => match args {
+              &[SExpr {span, k: SExprKind::Number(ref n)}] =>
+                return Ok(Pattern::List(pfx.into(), Some(n.to_usize().ok_or_else(||
+                  ElabError::new_e(span, "number out of range"))?))),
+              _ => return Err(ElabError::new_e(head.span, "expected number after '__'")),
+            },
+            _ => {}
+          }
+        }
       }
-      SExprKind::Number(n) => {
-        if let Some((SExpr {span, k: SExprKind::Atom(Atom::Ident)}, es2)) = es1.split_last() {
-          if let "__" = self.span(*span) {
-            (es2, Some(n.to_usize().ok_or_else(||
-              ElabError::new_e(en.span, "number out of range"))?))
-          } else {(es, None)}
-        } else {(es, None)}
-      }
-      _ => (es, None)
+      pfx.push(self.pattern(ctx, code, quote, &es[0])?);
+      es = &es[1..];
     };
-    Ok(Pattern::List(self.patterns(ctx, code, quote, es)?, n))
+    Ok(if pfx.is_empty() {pat} else {Pattern::DottedList(pfx.into(), pat.into())})
   }
 
   fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
@@ -640,43 +688,7 @@ impl<'a> LispParser<'a> {
       SExprKind::String(s) => Ok(Pattern::String(s.clone())),
       &SExprKind::Bool(b) => Ok(Pattern::Bool(b)),
       SExprKind::Undef => Ok(Pattern::Undef),
-      SExprKind::List(es) if es.is_empty() => Ok(Pattern::List(Box::new([]), None)),
-      SExprKind::List(es) =>
-        if quote {
-          if let [SExpr {span, k: SExprKind::Atom(a)}, ref e] = **es {
-            if self.ast.span_atom(span, a) == "unquote" {
-              self.pattern(ctx, code, false, e)
-            } else {self.list_pattern(ctx, code, quote, es)}
-          } else {self.list_pattern(ctx, code, quote, es)}
-        } else if let SExprKind::Atom(a) = es[0].k {
-          match self.ast.span_atom(es[0].span, a) {
-            "quote" if es.len() != 2 => Err(ElabError::new_e(es[0].span, "expected one argument")),
-            "quote" => self.pattern(ctx, code, true, &es[1]),
-            "mvar" => match es.len() {
-              1 => Ok(Pattern::MVar(None)),
-              3 => {
-                let bd = self.pattern(ctx, code, quote, &es[1])?;
-                let s = self.pattern(ctx, code, quote, &es[2])?;
-                Ok(Pattern::MVar(Some(Box::new((bd, s)))))
-              }
-              _ => Err(ElabError::new_e(es[0].span, "expected zero or two arguments")),
-            },
-            "goal" if es.len() != 2 => Err(ElabError::new_e(es[0].span, "expected one argument")),
-            "goal" => Ok(Pattern::Goal(Box::new(self.pattern(ctx, code, quote, &es[1])?))),
-            "and" => Ok(Pattern::And(self.patterns(ctx, code, quote, &es[1..])?)),
-            "or" => Ok(Pattern::Or(self.patterns(ctx, code, quote, &es[1..])?)),
-            "not" => Ok(Pattern::Not(self.patterns(ctx, code, quote, &es[1..])?)),
-            "?" if es.len() < 2 => Err(ElabError::new_e(es[0].span, "expected at least one argument")),
-            "?" => {
-              let p = self.ctx.len();
-              let ir = self.expr(false, &es[1])?;
-              self.ctx.restore(p);
-              let rest = self.patterns(ctx, code, quote, &es[2..])?;
-              Ok(Pattern::Test(es[1].span, Box::new(ir), rest))
-            },
-            _ => self.list_pattern(ctx, code, quote, es)
-          }
-        } else {self.list_pattern(ctx, code, quote, es)},
+      SExprKind::List(es) => self.list_pattern(ctx, code, quote, es),
       &SExprKind::Formula(f) => {
         let q = self.parse_formula(f)?;
         self.qexpr_pattern(ctx, code, q)

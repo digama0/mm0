@@ -214,7 +214,7 @@ impl Elaborator {
   fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
       mut active: PatternState<'b>) -> std::result::Result<bool, TestPending<'b>> {
     loop {
-      // crate::server::log(format!("{}\n", self.print(&active)));
+      // println!("{}\n", self.print(&active));
       active = match active {
         PatternState::Eval(p, e) => match p {
           Pattern::Skip => PatternState::Ret(true),
@@ -314,6 +314,7 @@ impl Elaborator {
   pub fn eval_lisp(&mut self, e: &SExpr) -> Result<LispVal> {
     let sp = e.span;
     let ir = self.parse_lisp(e)?;
+    // println!("{}", self.print(&ir));
     self.evaluate(sp, &ir)
   }
 
