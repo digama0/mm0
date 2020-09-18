@@ -102,14 +102,14 @@ theorem splitBitsT (bs n k: nat):
 ----------------------------------------
 
 def Regs: nat = $ Bits 4 $;
-def RAX: nat = $ 0 $; theorem RAXT: $ RAX e. Regs $;
-def RCX: nat = $ 1 $; theorem RCXT: $ RCX e. Regs $;
-def RDX: nat = $ 2 $; theorem RDXT: $ RDX e. Regs $;
-def RBX: nat = $ 3 $; theorem RBXT: $ RBX e. Regs $;
-def RSP: nat = $ 4 $; theorem RSPT: $ RSP e. Regs $;
-def RBP: nat = $ 5 $; theorem RBPT: $ RBP e. Regs $;
-def RSI: nat = $ 6 $; theorem RSIT: $ RSI e. Regs $;
-def RDI: nat = $ 7 $; theorem RDIT: $ RDI e. Regs $;
+def RAX: nat = $ 0 $; theorem RAX_T: $ RAX e. Regs $;
+def RCX: nat = $ 1 $; theorem RCX_T: $ RCX e. Regs $;
+def RDX: nat = $ 2 $; theorem RDX_T: $ RDX e. Regs $;
+def RBX: nat = $ 3 $; theorem RBX_T: $ RBX e. Regs $;
+def RSP: nat = $ 4 $; theorem RSP_T: $ RSP e. Regs $;
+def RBP: nat = $ 5 $; theorem RBP_T: $ RBP e. Regs $;
+def RSI: nat = $ 6 $; theorem RSI_T: $ RSI e. Regs $;
+def RDI: nat = $ 7 $; theorem RDI_T: $ RDI e. Regs $;
 
 def REX: set = $ Option (Bits 4) $;
 def REX_val (r: nat): nat = $ r - 1 $;
@@ -118,10 +118,10 @@ def REX_R (r: nat): nat = $ bit (REX_val r) 2 $;
 def REX_X (r: nat): nat = $ bit (REX_val r) 1 $;
 def REX_B (r: nat): nat = $ bit (REX_val r) 0 $;
 theorem REX_valT (r: nat): $ r e. REX -> REX_val r e. Bits 4 $;
-theorem REX_WT (r: nat): $ bool (REX_W r) $;
-theorem REX_RT (r: nat): $ bool (REX_R r) $;
-theorem REX_XT (r: nat): $ bool (REX_X r) $;
-theorem REX_BT (r: nat): $ bool (REX_B r) $;
+theorem REX_W_T (r: nat): $ bool (REX_W r) $;
+theorem REX_R_T (r: nat): $ bool (REX_R r) $;
+theorem REX_X_T (r: nat): $ bool (REX_X r) $;
+theorem REX_B_T (r: nat): $ bool (REX_B r) $;
 
 def rex_reg (b r: nat): nat = $ shl b 3 + r $;
 theorem rex_regT (b r: nat): $ bool b /\ r e. Bits 3 -> rex_reg b r e. Regs $;
@@ -130,7 +130,7 @@ def Base: set = $ Option (Option Regs) $;
 def base_RIP: nat = $ suc 0 $;
 def base_reg (r: nat): nat = $ suc (suc r) $;
 theorem base0T: $ 0 e. Base $;
-theorem base_RIPT: $ base_RIP e. Base $;
+theorem base_RIP_T: $ base_RIP e. Base $;
 theorem base_regT (r: nat): $ r e. Regs -> base_reg r e. Base $;
 
 def ScaleIndex: set = $ Xp (Bits 2) Regs $;
@@ -168,7 +168,7 @@ $ E. b E. l2 E. bs E. ix E. sc E. disp E. bbase E. index (
     readSIBDisplacement mod (rex_reg (REX_B rex) bs) disp bbase l2 /\
     rm = RM_mem (if (index = RSP) 0 (suc (sc <> index))) bbase disp /\
     l = b : l2) $;
-theorem readSIBT (rex mod rm l: nat):
+theorem readSIB_T (rex mod rm l: nat):
   $ readSIB rex mod rm l ->
     mod e. Bits 2 /\ mod != 3 /\ rm e. RM /\ l e. List u8 $;
 
@@ -187,12 +187,12 @@ $ E. b E. rm2 E. opc E. mod (
           ifp (rm2 = 4) (readSIB rex mod rm l2)
             (E. disp (readDisplacement mod disp l2 /\
               rm = RM_mem 0 (base_reg (rex_reg (REX_B rex) rm2)) disp)))))) $;
-theorem readModRMT (rex rn rm l: nat):
+theorem readModRM_T (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $;
 
 def readOpcodeModRM (rex v rm l .rn: nat): wff =
 $ E. rn (readModRM rex rn rm l /\ v = chop 3 rn) $;
-theorem readOpcodeModRMT (rex v rm l: nat):
+theorem readOpcodeModRM_T (rex v rm l: nat):
   $ readOpcodeModRM rex v rm l -> v e. Bits 3 /\ rm e. RM /\ l e. List u8 $;
 
 def readPrefixes (rex l .b .rex2: nat): wff =
@@ -204,7 +204,7 @@ theorem readPrefixesT (rex l: nat):
 
 def readImmN (k q l .w: nat): wff =
 $ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
-theorem readImmNT (k q l: nat):
+theorem readImmN_T (k q l: nat):
   $ k <= 64 /\ readImmN k q l -> q e. u64 /\ l e. List u8 $;
 
 def WSize (.n: nat): set = $ Xp (8 ; 16 ; 32 ; sn 64) Bool i^i {n | fst n = 8 \/ snd n = 0} $;
@@ -674,7 +674,7 @@ def getMemory (k: nat): nat = $ pi222 k $;
 def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
 
 theorem readExceptionT (k: nat): $ k e. Config -> readException k e. Option Exception $;
-theorem readRIPT (k r: nat): $ k e. Config -> readRIP k e. u64 $;
+theorem readRIP_T (k r: nat): $ k e. Config -> readRIP k e. u64 $;
 theorem readRegT (k r: nat): $ k e. Config /\ r e. Regs -> readReg k r e. u64 $;
 theorem readFlagsT (k: nat): $ k e. Config -> readFlags k e. Flags $;
 theorem getMemoryT (k: nat): $ k e. Config -> getMemory k e. Memory $;
@@ -767,27 +767,27 @@ def RM_EA (k rm: nat): nat;
 theorem RM_EAreg (k r: nat): $ RM_EA k (RM_reg r) = EA_r r $;
 theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
   EA_m (readIndex k si +_64 readBase k base +_64 q) $;
-theorem RM_EAT (k rm: nat):
+theorem RM_EA_T (k rm: nat):
   $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $;
 
 def destEA (k ds: nat): nat;
 theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $;
 theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $;
 theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $;
-theorem destEAT (k ds: nat):
+theorem destEA_T (k ds: nat):
   $ k e. Config /\ ds e. DestSrc -> destEA k ds e. EA $;
 
 def srcEA (k ds: nat): nat;
 theorem srcEAm_i (k v q: nat): $ srcEA k (Rm_i v q) = EA_i q $;
 theorem srcEAm_r (k v r: nat): $ srcEA k (Rm_r v r) = EA_r r $;
 theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $;
-theorem srcEAT (k ds: nat):
+theorem srcEA_T (k ds: nat):
   $ k e. Config /\ ds e. DestSrc -> srcEA k ds e. EA $;
 
 def immRM_EA (k irm: nat): nat;
 theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $;
 theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $;
-theorem immRM_EAT (k irm: nat):
+theorem immRM_EA_T (k irm: nat):
   $ k e. Config /\ irm e. ImmRM -> immRM_EA k irm e. EA $;
 
 def readRegSz (k sz r: nat): nat =
@@ -808,12 +808,12 @@ theorem readEA_m (k a sz v: nat):
   $ k e. Config /\ a e. u64 /\ sz e. WSize ->
     (readEA k sz (EA_m a) v <->
       v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v)) $;
-theorem readEAT (k sz ea v: nat): $ readEA k sz ea v ->
+theorem readEA_T (k sz ea v: nat): $ readEA k sz ea v ->
   k e. Config /\ ea e. EA /\ sz e. WSize /\ v e. Bits (wsizeBits sz) $;
 
-def readEA64 (k ea v: nat): wff = $ readEA k ea wSz64 v $;
-theorem readEA64T (k sz ea v: nat): $ readEA64 k sz v ->
-  k e. Config /\ sz e. WSize /\ v e. Bits (wsizeBits sz) $;
+def readEA64 (k ea v: nat): wff = $ readEA k wSz64 ea v $;
+theorem readEA64T (k ea v: nat): $ readEA64 k ea v ->
+  k e. Config /\ ea e. EA /\ v e. u64 $;
 
 def setException (k e: nat): nat;
 theorem setExceptionVal (ex ip rs f m e: nat):
@@ -906,13 +906,13 @@ def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 def writeResultFlags (k sz w : nat) (c o : wff): nat =
 $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;
 theorem writeResultFlagsT (k sz w : nat) (c o : wff):
-  $ k e. Config /\ sz e. WSize /\ w e. Bits (wsizeBits sz) ->
+  $ k e. Config /\ sz e. WSize /\ w e. u64 ->
     writeResultFlags k sz w c o e. Config $;
 
 def writeSFZF (k sz w : nat): nat =
 $ writeResultFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
 theorem writeSFZF_T (k sz w : nat):
-  $ k e. Config /\ sz e. WSize /\ w e. Bits (wsizeBits sz) ->
+  $ k e. Config /\ sz e. WSize /\ w e. u64 ->
     writeSFZF k sz w e. Config $;
 
 def eraseFlags (k k2 .e .ip .rs .f .f2 .m: nat): wff =
@@ -942,7 +942,7 @@ def writeCFOFResult (k sz ea w : nat) (c o : wff) (k2: nat): wff =
 $ k e. Config /\ writeEA (writeResultFlags k sz w c o) sz ea w k2 $;
 theorem writeCFOFResultT (k sz ea w : nat) (c o : wff) (k2: nat):
   $ writeCFOFResult k sz ea w c o k2 ->
-    k e. Config /\ sz e. WSize /\ ea e. EA /\ w e. Bits (wsizeBits sz) /\
+    k e. Config /\ sz e. WSize /\ ea e. EA /\ w e. u64 /\
     k2 e. Config $;
 
 def maskShift (sz w: nat): nat = $ chop (if (wsizeBits sz = 64) 6 5) w $;
@@ -989,8 +989,8 @@ theorem writeBinopRor (k sz ea a b k2: nat): $ ~ writeBinop k binopRor sz ea a b
 theorem writeBinopRcl (k sz ea a b k2: nat): $ ~ writeBinop k binopRcl sz ea a b k2 $;
 theorem writeBinopRcr (k sz ea a b k2: nat): $ ~ writeBinop k binopRcr sz ea a b k2 $;
 theorem writeBinopT (k op sz ea a b k2: nat):
-  $ k e. Config /\ sz e. WSize /\ a e. u64 /\ b e. u64 /\
-    ea e. EA /\ writeBinop k op sz ea a b k2 -> op e. Binop /\ k2 e. Config $;
+  $ k e. Config /\ op e. Binop /\ sz e. WSize /\ a e. u64 /\ b e. u64 /\
+    ea e. EA /\ writeBinop k op sz ea a b k2 -> k2 e. Config $;
 
 def writeUnop (k op sz ea a k2: nat): wff;
 theorem writeUnopInc {w c o: nat} (k sz ea a k2: nat):
@@ -1006,39 +1006,43 @@ theorem writeUnopNot (k sz ea a k2: nat):
     writeEA k sz ea (bitsNot (wsizeBits sz) a) k2 $;
 theorem writeUnopNeg {b: nat} (k sz ea a k2: nat):
   $ writeUnop k unopNeg sz ea a k2 <->
-    [ bitsNeg (wsizeBits sz) a / b ]
-    writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ ~MSB sz b) k2 $;
+    E. b (b = bitsNeg (wsizeBits sz) a /\
+      writeCFOFResult k sz ea b (a != 0) (MSB sz a /\ ~MSB sz b) k2) $;
+theorem writeUnopT (k op sz ea a k2: nat):
+  $ k e. Config /\ op e. Unop /\ sz e. WSize /\ a e. u64 /\
+    ea e. EA /\ writeUnop k op sz ea a k2 -> k2 e. Config $;
 
 def popAux (k q k2: nat): wff =
 $ readEA64 k (EA_m (readReg k RSP)) q /\
   k2 = setReg k RSP (readReg k RSP +_64 8) $;
 theorem popAuxT (k q k2: nat):
-  $ k e. Config /\ popAux k q k2 -> q e. u64 /\ k2 e. Config $;
+  $ popAux k q k2 -> k e. Config /\ q e. u64 /\ k2 e. Config $;
 
 def popWrite (k rm k3 .q .k2: nat): wff =
-$ E. k2 E. q (popAux k q k2 /\ writeEA k2 (RM_EA k2 rm) wSz64 q k3) $;
+$ rm e. RM /\ E. k2 E. q (popAux k q k2 /\ writeEA k2 wSz64 (RM_EA k2 rm) q k3) $;
 theorem popWriteT (k rm k2: nat):
-  $ k e. Config /\ rm e. RM /\ popWrite k rm k2 -> k2 e. Config $;
+  $ popWrite k rm k2 -> k e. Config /\ rm e. RM /\ k2 e. Config $;
 
 def popRIP (k k3 .q .k2: nat): wff =
 $ E. k2 E. q (popAux k q k2 /\ k3 = writeRIP k2 q) $;
-theorem popRIPT (k rm k2: nat):
-  $ k e. Config /\ popRIP k k2 -> k2 e. Config $;
+theorem popRIP_T (k rm k2: nat):
+  $ popRIP k k2 -> k e. Config /\ k2 e. Config $;
 
 def pushAux (k q k2 .sp: nat): wff =
-$ E. sp (sp = readReg k RSP -_64 8 /\
+$ k e. Config /\
+  E. sp (sp = readReg k RSP -_64 8 /\
     writeEA (setReg k RSP sp) (EA_m sp) wSz64 q k2) $;
 theorem pushAuxT (k q k2: nat):
-  $ k e. Config /\ q e. u64 /\ pushAux k q k2 -> k2 e. Config $;
+  $ pushAux k q k2 -> k e. Config /\ q e. u64 /\ k2 e. Config $;
 
 def pushImmRM (k irm k2 .q: nat): wff =
-$ E. q (readEA64 k (immRM_EA k irm) q /\ pushAux k q k2) $;
-theorem pushImmRMT (k irm k2: nat):
-  $ k e. Config /\ irm e. ImmRM /\ pushImmRM k irm k2 -> k2 e. Config $;
+$ irm e. ImmRM /\ E. q (readEA64 k (immRM_EA k irm) q /\ pushAux k q k2) $;
+theorem pushImmRM_T (k irm k2: nat):
+  $ pushImmRM k irm k2 -> k e. Config /\ irm e. ImmRM /\ k2 e. Config $;
 
 def pushRIP (k k2 .q: nat): wff = $ pushAux k (readRIP k) k2 $;
-theorem pushRIPT (k irm k2: nat):
-  $ k e. Config /\ pushRIP k k2 -> k2 e. Config $;
+theorem pushRIP_T (k irm k2: nat):
+  $ pushRIP k k2 -> k e. Config /\ k2 e. Config $;
 
 def divModSz (sz a b d m: nat): wff =
 $ b != 0 /\ d e. Bits (wsizeBits sz) /\ d = a // b /\ m = a % b $;

@@ -311,6 +311,14 @@ do {
     [$ suc (,a + ,b) = ,_ $ @ match (mkadc a b) @ (c p) @ refine '{(:verb ,p) : $ suc (,a + ,b) = ,c $}])
 };
 
+theorem decb0 (h: $ a + a = b $): $ b0 a = b $ = 'h;
+theorem decb1 (h: $ suc (a + a) = b $): $ b1 a = b $ = 'h;
+do {
+  -- Theorem generator for b0 and b1
+  (def (mkb0 a) @ match (mkadd a a) @ (b p) '(,b (decb0 ,a ,b ,p)))
+  (def (mkb1 a) @ match (mkadc a a) @ (b p) '(,b (decb1 ,a ,b ,p)))
+};
+
 theorem decmul_lem (h1: $ a * b = d $) (h2: $ suc b = c $) (h3: $ d + a = e $): $ a * c = e $ =
 '(eqtr3 (muleq2 h2) @ eqtr mulS @ eqtr (addeq1 h1) h3);
 do {
@@ -391,11 +399,15 @@ theorem lteql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 < b2 $): $ a < b $ = '(
 theorem leeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 <= b2 $): $ a <= b $ = '(mpbir (leeq ha hb) h);
 theorem neeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 != b2 $): $ a != b $ = '(mpbir (neeq ha hb) h);
 theorem eqeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 = b2 $): $ a = b $ = '(mpbir (eqeq ha hb) h);
+theorem b0eql (ha: $ a = a2 $) (h: $ b0 a2 = b $): $ b0 a = b $ = '(eqtr (b0eq ha) h);
+theorem b1eql (ha: $ a = a2 $) (h: $ b1 a2 = b $): $ b1 a = b $ = '(eqtr (b1eq ha) h);
 do {
   (def tohex-map (atom-map!))
   -- Core numeric evaluation function, extensible using `tohex-map`.
   -- Given a numeric expression using +, *, suc, :x, ..., it will be evaluated to a (hexadecimal)
   -- numeric literal.
+  -- It will either return a pair (e2 p) where `p: e = e2`,
+  -- or `#undef` meaning that `e` is already normalized
   (def (mktohex e) @ match e @ ((? atom? t) . es)
     (apply (lookup tohex-map t @ fn () @ error @ string-append "not numeric: " (->string t)) es))
 
@@ -415,7 +427,7 @@ do {
           (mkadc a b)]
       [a @ match (mktohex a)
         [(a2 pa) @ match (mksuc a2) @ (b pb) '(,b (adceql ,a ,a2 ,b ,pa ,pb))]
-        [#undef (mksuc a b)]])
+        [#undef (mksuc a)]])
     (ins 'add @ fn (a b)
       (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
@@ -428,6 +440,12 @@ do {
         (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @ match (mkmul a2 b2) @ (c pc)
           '(,c (muleql ,a ,a2 ,b ,b2 ,c ,pa ,pb ,pc)))
         (mkmul a b))
+    (ins 'b0 @ fn (a) @ match (mktohex a)
+      [(a2 pa) @ match (mkb0 a2) @ (b pb) '(,b (b0eql ,a ,a2 ,b ,pa ,pb))]
+      [#undef (mkb0 a)])
+    (ins 'b1 @ fn (a) @ match (mktohex a)
+      [(a2 pa) @ match (mkb1 a2) @ (b pb) '(,b (b0eql ,a ,a2 ,b ,pa ,pb))]
+      [#undef (mkb1 a)])
     (ins 'c2n mktohex)
     (ins 'ch @ fn (a b) @ match a
       ['(x0) '((h2n ,b) (c2nh2n ,b))]
@@ -440,7 +458,7 @@ do {
           [_ '((hex ,a2 ,b) (hexeql ,a ,a2 ,b ,p))]
         [#undef]]])
     (ins 'h2n @ fn (_))
-    (for 0 15 @ fn (n) @
+    (for 0 16 @ fn (n) @
       ins (dn n) @ fn () '((h2n (,(hexdigit n))) (,(decn n))))
     (ins 'd16 @ fn () '((hex (h2n (x1)) (x0)) (h2n10))))
 
@@ -497,3 +515,12 @@ theorem d2pow2: $ 2 ^ 2 = 4 $ = '(eqtr pow22 d2mul2);
 theorem d2mul4: $ 2 * 4 = 8 $ = norm_num;
 theorem d2pow3: $ 2 ^ 3 = 8 $ = '(eqtr powS @ eqtr (muleq2 d2pow2) d2mul4);
 theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
+
+do {
+  -- Defines e.g. theorem d5half: $ 5 = b1 2 $; for all n <= 16
+  (def (decnhalf n) (atom-app 'd n 'half))
+  (for 0 16 @ fn (a)
+    (def b {a // 2})
+    (def stmt '(eq (,(dn a)) (,(if {{b * 2} = a} 'b0 'b1) (,(dn b)))))
+    (add-thm! (decnhalf a) () () stmt () @ fn () '(() ,(mkcmp stmt))))
+};

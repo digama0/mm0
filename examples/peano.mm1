@@ -324,6 +324,7 @@ theorem an4l: $ a /\ b /\ c /\ d /\ e -> a $ = '(anwl an3l); -- TODO: automate t
 theorem an4lr: $ a /\ b /\ c /\ d /\ e /\ f -> b $ = '(anwl an3lr);
 theorem an5l: $ a /\ b /\ c /\ d /\ e /\ f -> a $ = '(anwl an4l);
 theorem an5lr: $ a /\ b /\ c /\ d /\ e /\ f /\ g -> b $ = '(anwl an4lr);
+theorem an6l: $ a /\ b /\ c /\ d /\ e /\ f /\ g -> a $ = '(anwl an5l);
 theorem an6lr: $ a /\ b /\ c /\ d /\ e /\ f /\ g /\ h -> b $ = '(anwl an5lr);
 theorem imp (h: $ a -> b -> c $): $ a /\ b -> c $ = '(sylc h anl anr);
 theorem exp (h: $ a /\ b -> c $): $ a -> b -> c $ = '(syl6 h ian);
@@ -553,6 +554,8 @@ def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 theorem trud (h: $ T. -> a $): $ a $ = '(h tru);
 theorem notfal: $ ~F. $ = '(notnot1 tru);
 theorem efal: $ F. -> a $ = '(absurd notfal);
+theorem eqfal: $ (a <-> F.) <-> ~a $ =
+'(ibii (mpi notfal @ con3d bi1) @ ibid absurd @ a1i efal);
 
 sort nat;
 term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 41;
