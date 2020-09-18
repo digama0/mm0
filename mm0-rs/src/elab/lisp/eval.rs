@@ -34,7 +34,7 @@ enum Stack<'a> {
   AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
   Def(Option<&'a Option<(Span, Span, AtomID)>>),
-  Eval(std::slice::Iter<'a, IR>),
+  Eval(&'a IR, std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>),
@@ -64,7 +64,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       &Stack::If(e1, e2) => write!(f, "(if _ {} {})", fe.to(e1), fe.to(e2)),
       &Stack::Def(Some(&Some((_, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
       Stack::Def(_) => write!(f, "(def _ _)"),
-      Stack::Eval(es) => write!(f, "(begin\n  _ {})", fe.to(es.as_slice())),
+      &Stack::Eval(ir, ref es) => write!(f, "(begin\n  _ {} {})", fe.to(ir), fe.to(es.as_slice())),
       Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
       &Stack::TestPattern(_, ref e, ref bs, br, _, _) => write!(f,
         "(match {}\n  {}\n  {})\n  ->(? _)",
@@ -1155,7 +1155,10 @@ impl<'a> Evaluator<'a> {
             let mut it = es.iter();
             match it.next() {
               None => State::Ret(LispVal::undef()),
-              Some(e) => push!(Eval(it); Eval(e)),
+              Some(e1) => match it.next() {
+                None => State::Eval(e1),
+                Some(e2) => push!(Eval(e2, it); Eval(e1)),
+              }
             }
           }
           &IR::Lambda(sp, n, spec, ref e) => {
@@ -1198,9 +1201,9 @@ impl<'a> Evaluator<'a> {
                 Some((f, es)) => push_ret!(push!(App(sp1, sp2, es); Eval(f))),
               },
               Stack::App2(sp1, sp2, f, vec, it) => push_ret!(State::App(sp1, sp2, f, vec, it)),
-              Stack::Eval(mut it) => push_ret!(match it.next() {
-                None => State::Ret(LispVal::undef()),
-                Some(e) => push!(Eval(it); Eval(e))
+              Stack::Eval(e, mut it) => push_ret!(match it.next() {
+                None => State::Eval(e),
+                Some(e2) => push!(Eval(e2, it); Eval(e))
               }),
               Stack::Refines(sp, _, it) => push_ret!(State::Refines(sp, it)),
               _ => {self.stack.push(s); State::Ret(LispVal::undef())}
@@ -1218,9 +1221,9 @@ impl<'a> Evaluator<'a> {
             }
             State::Ret(LispVal::undef())
           },
-          Some(Stack::Eval(mut it)) => match it.next() {
-            None => State::Ret(ret),
-            Some(e) => push!(Eval(it); Eval(e)),
+          Some(Stack::Eval(e, mut it)) => match it.next() {
+            None => State::Eval(e),
+            Some(e2) => push!(Eval(e2, it); Eval(e)),
           },
           Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
           Some(Stack::TestPattern(sp, e, it, br, pstack, vars)) =>
@@ -1300,8 +1303,19 @@ impl<'a> Evaluator<'a> {
             Ok(match func {
               &Proc::Builtin(func) => self.evaluate_builtin(sp1, sp2, func, args)?,
               Proc::Lambda {pos, env, code, ..} => {
-                if let Some(Stack::Ret(_, _, _, _)) = self.stack.last() { // tail call
-                  if let Some(Stack::Ret(fsp, _, old, _)) = self.stack.pop() {
+                let tail_call = (|| {
+                  for (i, s) in self.stack.iter().enumerate().rev() {
+                    match s {
+                      Stack::Ret(_, _, _, _) => return Some(i),
+                      Stack::Drop(_) => {}
+                      _ => break
+                    }
+                  }
+                  None
+                })();
+                if let Some(i) = tail_call { // tail call
+                  let s = self.stack.drain(i..).next();
+                  if let Some(Stack::Ret(fsp, _, old, _)) = s {
                     self.ctx = (**env).into();
                     self.stack.push(Stack::Ret(fsp, pos.clone(), old, code.clone()));
                   } else {unsafe {std::hint::unreachable_unchecked()}}

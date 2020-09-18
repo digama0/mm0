@@ -31,6 +31,7 @@
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
 #[macro_use] extern crate deepsize_derive;
+#[macro_use] extern crate debug_derive;
 
 mod deepsize;
 pub mod util;

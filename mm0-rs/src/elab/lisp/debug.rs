@@ -4,7 +4,7 @@
 //! with the `{:?}` format specifier as in the following example:
 //!```
 //! // let fe = FormatEnv { source: &text, env };
-//! // let thm : Thm = /* some theorem */;
+//! // let thm: Thm = /* some theorem */;
 //! // println!("{:?}", fe.to(&thm));
 //!```
 //!
@@ -20,7 +20,7 @@ use super::{print::FormatEnv, super::environment::{AtomID, SortID, TermID, ThmID
 pub trait EnvDebug {
   /// Get the actual debug representation. It's highly unlikely you'll
   /// need to call this outside of another EnvDebug implementation.
-  fn env_dbg<'a>(&self, fe : FormatEnv<'a>, p : &mut Printer<'a>) -> DocPtr<'a>;
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a>;
 }
 
 
@@ -30,7 +30,7 @@ macro_rules! env_debug {
   ( $($xs:ty),+ ) => {
     $(
       impl EnvDebug for $xs {
-        fn env_dbg<'__a>(&self, _ : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+        fn env_dbg<'__a>(&self, _: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
           format!("{:#?}", self).alloc(p)
         }
       }
@@ -45,7 +45,7 @@ macro_rules! env_debug_seq {
   ( $( ($($id:ident),+) -> $T:ty )+ ) => {
     $(
       impl<$($id: EnvDebug),+> EnvDebug for $T {
-        fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+        fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
           let mut ron = RonSequence::new();
           for elem in self.iter() {
             ron.add_field(elem.env_dbg(fe, p));
@@ -64,7 +64,7 @@ macro_rules! env_debug_map {
   ( $( ($($id:ident),+) -> $T:ty )+ ) => {
     $(
       impl<$($id: EnvDebug),+> EnvDebug for $T {
-        fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+        fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
           let mut ron = RonStruct::new();
           for (k, v) in self.iter() {
             ron.add_field(k.env_dbg(fe, p), v.env_dbg(fe, p));
@@ -82,7 +82,7 @@ macro_rules! env_debug_as_ref {
   ( $( ($($id:ident),+) -> $T:ty )+ ) => {
     $(
       impl<$($id: EnvDebug),+> EnvDebug for $T {
-        fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+        fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
           self.as_ref().env_dbg(fe, p)
         }
       }
@@ -95,8 +95,8 @@ macro_rules! env_debug_as_ref {
 macro_rules! dbg_arrays {
   ($($N:literal)+) => {
     $(
-      impl<A : EnvDebug> EnvDebug for [A; $N] {
-        fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+      impl<A: EnvDebug> EnvDebug for [A; $N] {
+        fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
           self.as_ref().env_dbg(fe, p)
         }
       }
@@ -108,8 +108,8 @@ macro_rules! dbg_arrays {
 macro_rules! dbg_tuples {
   ($( { $( ($idx:tt) -> $T:ident)+ } )+) => {
     $(
-       impl<$($T : EnvDebug),+> EnvDebug for ($($T),+) {
-         fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+       impl<$($T: EnvDebug),+> EnvDebug for ($($T),+) {
+         fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
            let mut ron = RonTuple::new();
            $(ron.add_field(self.$idx.env_dbg(fe, p));)+
            ron.to_doc(p)
@@ -124,7 +124,7 @@ macro_rules! env_debug_id {
   ( $(($x:ident, $loc:ident))+ ) => {
     $(
       impl EnvDebug for $x {
-        fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+        fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
           let mut ron = RonTuple::new();
           ron.add_name(stringify!($x));
           match self {
@@ -143,11 +143,11 @@ macro_rules! env_debug_id {
 
 
 // Instances for a few common types that require some sort of special behavior to display nicely.
-impl<A : EnvDebug> EnvDebug for std::cell::RefCell<A> {
+impl<A: EnvDebug> EnvDebug for std::cell::RefCell<A> {
   fn env_dbg<'a>(
     &self,
-    fe : FormatEnv<'a>,
-    p : &mut Printer<'a>,
+    fe: FormatEnv<'a>,
+    p: &mut Printer<'a>,
   ) -> DocPtr<'a> {
     match self.try_borrow() {
       Ok(x) => x.env_dbg(fe, p),
@@ -156,8 +156,8 @@ impl<A : EnvDebug> EnvDebug for std::cell::RefCell<A> {
   }
 }
 
-impl<A : EnvDebug, E : EnvDebug> EnvDebug for Result<A, E> {
-  fn env_dbg<'a>(&self, fe : FormatEnv<'a>, p : &mut Printer<'a>) -> DocPtr<'a> {
+impl<A: EnvDebug, E: EnvDebug> EnvDebug for Result<A, E> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
     let ron = RonResult::new(
       self.as_ref().map(|x| x.env_dbg(fe, p)).map_err(|e| e.env_dbg(fe, p))
     );
@@ -165,21 +165,27 @@ impl<A : EnvDebug, E : EnvDebug> EnvDebug for Result<A, E> {
   }
 }
 
-impl<A : EnvDebug> EnvDebug for Option<A> {
-  fn env_dbg<'a>(&self, fe : FormatEnv<'a>, p : &mut Printer<'a>) -> DocPtr<'a> {
+impl<A: EnvDebug> EnvDebug for Option<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
     let inner = self.as_ref().map(|a| a.env_dbg(fe, p));
     RonOption::new(inner).to_doc(p)
   }
 }
 
-impl<A : EnvDebug> EnvDebug for std::sync::Arc<A> {
-  fn env_dbg<'a>(&self, fe : FormatEnv<'a>, p : &mut Printer<'a>) -> DocPtr<'a> {
+impl<A: EnvDebug + Copy> EnvDebug for std::cell::Cell<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
+    self.get().env_dbg(fe, p)
+  }
+}
+
+impl<A: EnvDebug> EnvDebug for std::sync::Arc<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
     std::sync::Arc::as_ref(self).env_dbg(fe, p)
   }
 }
 
-impl<A : EnvDebug> EnvDebug for std::rc::Rc<A> {
-  fn env_dbg<'a>(&self, fe : FormatEnv<'a>, p : &mut Printer<'a>) -> DocPtr<'a> {
+impl<A: EnvDebug> EnvDebug for std::rc::Rc<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
     std::rc::Rc::as_ref(self).env_dbg(fe, p)
   }
 }
@@ -187,7 +193,7 @@ impl<A : EnvDebug> EnvDebug for std::rc::Rc<A> {
 // Needs a separate implementation since it doesn't have
 // an `atom` field, and the others don't have `name` field.
 impl EnvDebug for AtomID {
-  fn env_dbg<'__a>(&self, fe : FormatEnv<'__a>, p : &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
+  fn env_dbg<'__a>(&self, fe: FormatEnv<'__a>, p: &mut Printer<'__a>) -> shoebill::DocPtr<'__a> {
     let mut ron = RonTuple::new();
     ron.add_name("AtomID");
     match self {
@@ -216,6 +222,7 @@ env_debug! {
   String,
   std::path::PathBuf,
   std::sync::atomic::AtomicBool,
+  num::BigInt,
   crate::util::ArcString,
   crate::elab::lisp::Syntax,
   crate::mmc::types::Keyword,
@@ -223,6 +230,7 @@ env_debug! {
   crate::mmc::nameck::GlobalTC,
   crate::mmc::nameck::PrimType,
   crate::mmc::nameck::ProcTC,
+  crate::mmc::Compiler,
   crate::elab::lisp::BuiltinProc,
   crate::elab::lisp::ProcSpec,
   crate::parser::ast::Prec,

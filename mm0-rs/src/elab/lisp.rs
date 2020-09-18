@@ -72,6 +72,8 @@ str_enum! {
     Unquote: "unquote",
     /// `if`: conditional expressions
     If: "if",
+    /// `begin`: a sequence of expressions
+    Begin: "begin",
     /// `focus`: a tactic that focuses on the main goal, calls a sequence of `refine` calls,
     /// and then closes the goal.
     Focus: "focus",
@@ -108,7 +110,7 @@ impl std::fmt::Display for Syntax {
 
 /// The type of a metavariable. This encodes the different types of context
 /// in which a term is requested.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, EnvDebug)]
 pub enum InferTarget {
   /// This is a term that has no context. This can be created by
   /// `(have 'h _)`, for example: the type of the proof term `_` is unconstrained.
@@ -146,7 +148,7 @@ impl InferTarget {
 /// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
 ///
 /// [`LispKind`]: enum.LispKind.html
-#[derive(Default, Debug, Clone, DeepSizeOf)]
+#[derive(Default, Debug, EnvDebug, Clone, DeepSizeOf)]
 pub struct LispVal(Rc<LispKind>);
 
 /// This macro is used to define the [`LispKind`] type, as well as the
@@ -209,6 +211,7 @@ macro_rules! __mk_lisp_kind {
 }
 __mk_lisp_kind! {
   /// The underlying enum of types of lisp data.
+  #[derive(EnvDebug)]
   LispKind,
   LispVal,
   LispRef,
@@ -216,7 +219,7 @@ __mk_lisp_kind! {
 }
 
 /// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf)]
 pub struct LispRef(RefCell<LispVal>);
 
 impl LispVal {
@@ -615,7 +618,7 @@ impl Eq for LispKind {}
 
 /// An annotation, which is a tag placed on lisp values that is ignored by all
 /// the basic functions.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
 pub enum Annot {
   /// A span annotation marks an expression with a span from the input file.
   /// The parser will place these on all expressions it produces, and they are
@@ -627,7 +630,7 @@ pub enum Annot {
 }
 
 /// The location information for a procedure.
-#[derive(Clone, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
 pub enum ProcPos {
   /// A named procedure is created by `(def (foo x) ...)` or
   /// `(def foo (fn (x) ...))`. The file span is the definition block
@@ -653,7 +656,7 @@ impl ProcPos {
 /// A callable procedure. There are several sources of procedures,
 /// all of which are interactable only via function calls `(f)` and
 /// printing (which shows only basic information about the procedure).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf)]
 pub enum Proc {
   /// A built-in procedure (see [`BuiltinProc`] for the full list).
   /// Initially, a reference to a lisp global with a builtin procedure's name

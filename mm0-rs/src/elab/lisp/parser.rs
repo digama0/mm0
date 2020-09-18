@@ -16,7 +16,7 @@ use super::print::{FormatEnv, EnvDisplay};
 
 /// The intermediate representation for "compiled" lisp functions.
 /// We will do interpretation/evaluation directly on this data structure.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf)]
 pub enum IR {
   /// Access variable number `n` in the context
   Local(usize),
@@ -49,12 +49,9 @@ pub enum IR {
   Def(usize, Option<(Span, Span, AtomID)>, Box<IR>),
   /// * `keep = true`: The `(begin es)` syntax form.
   ///   Evaluate the list of arguments, and return the last one.
-  ///   (However, unlike the `begin` in surface syntax, this one does not create a scope
-  ///   at the top level, it is really just a sequence of evaluations. `(def)`'s inside
-  ///   the list will count as global bindings.)
   ///
   ///   Most places in the surface syntax that allow begin-lists, like `(def x foo bar)`,
-  ///   elaborate to essentially `Def(x, Eval(false, [foo, bar]))`.
+  ///   elaborate to essentially `Def(x, Eval(false, true, [foo, bar]))`.
   ///
   /// * `keep = false`: The `(def _ es)` syntax form.
   ///   Evaluate the list of arguments, and return `#undef`. Unlike `(def x es)`,
@@ -142,7 +139,7 @@ impl IR {
 /// * `[pat (=> cont) eval]`: same thing, but `cont` is bound to a delimited continuation
 ///   that can be used to jump to the next case (essentially indicating that the branch fails to
 ///   apply even after the pattern succeeds).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf)]
 pub struct Branch {
   /// The number of variables in the pattern. The context for `eval` is extended by this many variables
   /// regardless of the input at runtime. For example the pattern `(or ('foo a _) ('bar _ b))` will
@@ -172,7 +169,7 @@ impl<'a> EnvDisplay for Branch {
 /// a compile-time known set of variables that can be referred to in the branch expression.
 /// Patterns are matched from left to right; later patterns will clobber the
 /// bindings of earlier patterns if variable names are reused.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf)]
 pub enum Pattern {
   /// The `_` pattern. Matches anything, binds nothing.
   Skip,
@@ -795,6 +792,7 @@ impl<'a> LispParser<'a> {
           Ok(x) =>
             Ok(IR::App(e.span, es[0].span,
               Box::new(self.eval_atom(es[0].span, x)), self.exprs(false, &es[1..])?.into())),
+          Err(Syntax::Begin) => Ok(IR::Eval(true, self.exprs(false, &es[1..])?.into())),
           Err(Syntax::Define) if es.len() < 2 => return Err(
             ElabError::new_e(es[0].span, "expected at least one argument")),
           Err(Syntax::Define) =>
