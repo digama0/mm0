@@ -497,6 +497,7 @@ do {
 
 theorem d0lt3: $ 0 < 3 $ = norm_num;
 theorem d0lt4: $ 0 < 4 $ = norm_num;
+theorem d1lt3: $ 1 < 3 $ = norm_num;
 theorem d1lt4: $ 1 < 4 $ = norm_num;
 theorem d1lt8: $ 1 < 8 $ = norm_num;
 theorem d2lt3: $ 2 < 3 $ = norm_num;

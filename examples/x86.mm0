@@ -292,7 +292,7 @@ $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
     (Sum (Xp Bool (Xp WSize RM)) (Xp WSize DestSrc)) $;
 def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
 def xastBinop (binop sz rm: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> rm)))) $;
-def xastMul (sz ds: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> ds)))) $;
+def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
 def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
 def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> ds)))) $;
 
@@ -316,9 +316,9 @@ def xastJump (rm: nat): nat = $ b1 (b0 (b0 (b0 (b0 rm)))) $;
 def xastJCC (c q: nat): nat = $ b1 (b0 (b0 (b0 (b1 (c <> q))))) $;
 def xastCall (irm: nat): nat = $ b1 (b0 (b0 (b1 (b0 irm)))) $;
 def xastRet (q: nat): nat = $ b1 (b0 (b0 (b1 (b1 q)))) $;
+def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
 def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
-def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 
 def XASTMisc: set = $ upto 4 $;
 def xastCMC: nat = $ b1 (b1 0) $;
@@ -330,43 +330,43 @@ def XAST: set = $ Sum (Sum XASTArith XASTData) (Sum XASTFlow XASTMisc) $;
 
 -- some typechecking sanity checks
 theorem xastUnopT (unop sz rm: nat):
-  $ unop e. Unop /\ sz e. WSize /\ rm e. RM -> xastUnop unop sz rm e. XAST $;
+  $ xastUnop unop sz rm e. XAST <-> unop e. Unop /\ sz e. WSize /\ rm e. RM $;
 theorem xastBinopT (bop sz ds: nat):
-  $ bop e. Binop /\ sz e. WSize /\ ds e. DestSrc -> xastBinop bop sz ds e. XAST $;
+  $ xastBinop bop sz ds e. XAST <-> bop e. Binop /\ sz e. WSize /\ ds e. DestSrc $;
 theorem xastMulT (sz rm: nat):
-  $ sz e. WSize /\ rm e. RM -> xastMul sz rm e. XAST $;
+  $ xastMul sz rm e. XAST <-> sz e. WSize /\ rm e. RM $;
 theorem xastDivT (sz rm: nat):
-  $ sz e. WSize /\ rm e. RM -> xastDiv sz rm e. XAST $;
+  $ xastDiv sz rm e. XAST <-> sz e. WSize /\ rm e. RM $;
 theorem xastLeaT (sz ds: nat):
-  $ sz e. WSize /\ ds e. DestSrc -> xastLea sz ds e. XAST $;
+  $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
 theorem xastMovXT (b sz ds sz2: nat):
-  $ bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize ->
-    xastMovX b sz ds sz2 e. XAST $;
+  $ xastMovX b sz ds sz2 e. XAST <->
+    bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastXchgT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXchg sz rm rn e. XAST $;
+  $ xastXchg sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $;
 theorem xastCmpXchgT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastCmpXchg sz rm rn e. XAST $;
+  $ xastCmpXchg sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $;
 theorem xastXaddT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXadd sz rm rn e. XAST $;
+  $ xastXadd sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $;
 theorem xastCMovT (c sz ds: nat):
-  $ c e. Cond /\ sz e. WSize /\ ds e. DestSrc -> xastCMov c sz ds e. XAST $;
+  $ xastCMov c sz ds e. XAST <-> c e. Cond /\ sz e. WSize /\ ds e. DestSrc $;
 theorem xastSetCCT (c b rm: nat):
-  $ c e. Cond /\ bool b /\ rm e. RM -> xastSetCC c b rm e. XAST $;
+  $ xastSetCC c b rm e. XAST <-> c e. Cond /\ bool b /\ rm e. RM $;
 theorem xastMovSXT (sz ds sz2: nat):
-  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovSX sz ds sz2 e. XAST $;
+  $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastMovZXT (sz ds sz2: nat):
-  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovZX sz ds sz2 e. XAST $;
+  $ xastMovZX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastMovT (sz ds: nat):
-  $ sz e. WSize /\ ds e. DestSrc -> xastMov sz ds e. XAST $;
+  $ xastMov sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
-theorem xastJumpT (rm: nat): $ rm e. RM -> xastJump rm e. XAST $;
-theorem xastJCCT (c q: nat): $ c e. Cond /\ q e. u64 -> xastJCC c q e. XAST $;
-theorem xastCallT (irm: nat): $ irm e. ImmRM -> xastCall irm e. XAST $;
-theorem xastRetT (q: nat): $ q e. u64 -> xastRet q e. XAST $;
-theorem xastPushT (irm: nat): $ irm e. ImmRM -> xastPush irm e. XAST $;
-theorem xastPopT (rm: nat): $ rm e. RM -> xastPop rm e. XAST $;
+theorem xastJumpT (rm: nat): $ xastJump rm e. XAST <-> rm e. RM $;
+theorem xastJCCT (c q: nat): $ xastJCC c q e. XAST <-> c e. Cond /\ q e. u64 $;
+theorem xastCallT (irm: nat): $ xastCall irm e. XAST <-> irm e. ImmRM $;
+theorem xastRetT (q: nat): $ xastRet q e. XAST <-> q e. u64 $;
 theorem xastLeaveT: $ xastLeave e. XAST $;
+theorem xastPushT (irm: nat): $ xastPush irm e. XAST <-> irm e. ImmRM $;
+theorem xastPopT (rm: nat): $ xastPop rm e. XAST <-> rm e. RM $;
 
 theorem xastCMCT: $ xastCMC e. XAST $;
 theorem xastCLCT: $ xastCLC e. XAST $;
@@ -1120,19 +1120,19 @@ theorem execXASTJump {v: nat} (k rm k2: nat):
 theorem execXASTJCC (k c q k2: nat):
   $ execXAST k (xastJCC c q) k2 <->
     k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $;
-theorem execXASTCall {k2: nat} (k irm k3: nat):
-  $ execXAST k (xastCall irm) k3 <-> E. k2 (
-    pushRIP k k2 /\ EA_jump k2 (immRM_EA k irm) k2) $;
-theorem execXASTRet {k2: nat} (k q k3: nat):
-  $ execXAST k (xastRet q) k3 <-> E. k2 (
-    popRIP k k2 /\ k3 = setReg k RSP (readReg k RSP +_64 q)) $;
+theorem execXASTCall {k3: nat} (k irm k2: nat):
+  $ execXAST k (xastCall irm) k3 <-> E. k3 (
+    pushRIP k k3 /\ EA_jump k3 (immRM_EA k irm) k2) $;
+theorem execXASTRet {k3: nat} (k q k2: nat):
+  $ execXAST k (xastRet q) k2 <-> E. k3 (
+    popRIP k k3 /\ k2 = setReg k3 RSP (readReg k3 RSP +_64 q)) $;
+theorem execXASTLeave (k k2: nat):
+  $ execXAST k xastLeave k2 <->
+    popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
 theorem execXASTPush (k irm k2: nat):
   $ execXAST k (xastPush irm) k2 <-> pushImmRM k irm k2 $;
 theorem execXASTPop (k rm k2: nat):
   $ execXAST k (xastPop rm) k2 <-> popWrite k rm k2 $;
-theorem execXASTLeave (k k2: nat):
-  $ execXAST k xastLeave k2 <->
-    popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
 theorem execXASTCLC (k k2: nat):
   $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
 theorem execXASTSTC (k k2: nat):

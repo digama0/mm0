@@ -3469,6 +3469,12 @@ theorem ocaseS: $ ocase z S (suc n) = S @ n $ =
 '(! eqtr _ $ _ @ (_ <> ocase _ _ _) $ _ recnS @
   !! applame x @ appeq2d @ syl6eq fstpr fsteq);
 
+@_ local def ocasep (z: wff) (S: set): set = $ {n | ifp (n = 0) z (n - 1 e. S)} $;
+theorem ocasep0: $ 0 e. ocasep z S <-> z $ = (named '(elabe ifppos));
+theorem ocasepS: $ suc n e. ocasep z S <-> n e. S $ =
+(named '(elabe @ syl6bb (eleq1 sucsub1) @
+  syl6bb (ifpneg peano1) @ ifpeqd eqeq1 biidd (eleq1d subeq1)));
+
 @_ abstract def obind (a: nat) (F: set): nat = $ ocase 0 F a $;
 pub theorem obind0 (F: set): $ obind 0 F = 0 $ = 'ocase0;
 pub theorem obindS (n: nat) (F: set): $ obind (suc n) F = F @ n $ = 'ocaseS;

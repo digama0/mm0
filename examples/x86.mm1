@@ -698,9 +698,9 @@ $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
 @_ def xastJCC (c q: nat): nat = $ b1 (b0 (b0 (b0 (b1 (c <> q))))) $;
 @_ def xastCall (irm: nat): nat = $ b1 (b0 (b0 (b1 (b0 irm)))) $;
 @_ def xastRet (q: nat): nat = $ b1 (b0 (b0 (b1 (b1 q)))) $;
+@_ def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 @_ def xastPush (irm: nat): nat = $ b1 (b0 (b1 (suc (b0 irm)))) $;
 @_ def xastPop (rm: nat): nat = $ b1 (b0 (b1 (suc (b1 rm)))) $;
-@_ def xastLeave: nat = $ b1 (b0 (b1 0)) $;
 
 @_ def XASTMisc: set = $ upto 4 $;
 @_ def xastCMC: nat = $ b1 (b1 0) $;
@@ -712,65 +712,77 @@ $ Sum (Sum (Sum RM (Xp Cond u64)) (Sum ImmRM u64)) (Option (Sum ImmRM RM)) $;
 
 -- some typechecking sanity checks
 pub theorem xastUnopT (unop sz rm: nat):
-  $ unop e. Unop /\ sz e. WSize /\ rm e. RM -> xastUnop unop sz rm e. XAST $ =
-'(Sumld @ Sumld @ Sumld @ Sumld @ xpTd anll @ xpTd anlr anr);
+  $ xastUnop unop sz rm e. XAST <-> unop e. Unop /\ sz e. WSize /\ rm e. RM $ =
+'(bitr Suml @ bitr Suml @ bitr Suml @ bitr Suml @ bitr4 prelxp @ bitr4 anass @ aneq2i prelxp);
 pub theorem xastBinopT (bop sz ds: nat):
-  $ bop e. Binop /\ sz e. WSize /\ ds e. DestSrc -> xastBinop bop sz ds e. XAST $ =
-'(Sumld @ Sumld @ Sumld @ Sumrd @ xpTd anll @ xpTd anlr anr);
+  $ xastBinop bop sz ds e. XAST <-> bop e. Binop /\ sz e. WSize /\ ds e. DestSrc $ =
+'(bitr Suml @ bitr Suml @ bitr Suml @ bitr Sumr @ bitr4 prelxp @ bitr4 anass @ aneq2i prelxp);
 pub theorem xastMulT (sz rm: nat):
-  $ sz e. WSize /\ rm e. RM -> xastMul sz rm e. XAST $ =
-'(Sumld @ Sumld @ Sumrd @ Sumld @ xpTd Bool0d @ xpTd anl anr);
+  $ xastMul sz rm e. XAST <-> sz e. WSize /\ rm e. RM $ =
+'(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool0) prelxp);
 pub theorem xastDivT (sz rm: nat):
-  $ sz e. WSize /\ rm e. RM -> xastDiv sz rm e. XAST $ =
-'(Sumld @ Sumld @ Sumrd @ Sumld @ xpTd Bool1d @ xpTd anl anr);
-pub theorem xastLea_T (sz ds: nat):
-  $ sz e. WSize /\ ds e. DestSrc -> xastLea sz ds e. XAST $ =
-'(Sumld @ Sumld @ Sumrd @ Sumrd @ xpTd anl anr);
+  $ xastDiv sz rm e. XAST <-> sz e. WSize /\ rm e. RM $ =
+'(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool1) prelxp);
+pub theorem xastLeaT (sz ds: nat):
+  $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $ =
+'(bitr Suml @ bitr Suml @ bitr Sumr @ bitr Sumr prelxp);
 
 pub theorem xastMovXT (b sz ds sz2: nat):
-  $ bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize ->
-    xastMovX b sz ds sz2 e. XAST $ =
-'(Sumld @ Sumrd @ Sumld @ xpTd anllr @ Sumld @ xpTd (sylibr elBool an3l) @ xpTd anlr anr);
+  $ xastMovX b sz ds sz2 e. XAST <->
+    bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr anass @ bitr anass @ bitr4 anlass @ aneq2i @ bitr Suml @
+  bitr prelxp @ aneq elBool prelxp);
 pub theorem xastXchgT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXchg sz rm rn e. XAST $ =
-'(Sumld @ Sumrd @ Sumld @ xpTd anll @ Sumrd @ xpTd (a1i @ mpbir elupto ,norm_num) @ xpTd anlr anr);
+  $ xastXchg sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Sumr @
+  bitr prelxp @ bitr (bian1 @ mpbir elupto d0lt3) prelxp);
 pub theorem xastCmpXchgT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastCmpXchg sz rm rn e. XAST $ =
-'(Sumld @ Sumrd @ Sumld @ xpTd anll @ Sumrd @ xpTd (a1i @ mpbir elupto ,norm_num) @ xpTd anlr anr);
+  $ xastCmpXchg sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Sumr @
+  bitr prelxp @ bitr (bian1 @ mpbir elupto d1lt3) prelxp);
 pub theorem xastXaddT (sz rm rn: nat):
-  $ sz e. WSize /\ rm e. RM /\ rn e. Regs -> xastXadd sz rm rn e. XAST $ =
-'(Sumld @ Sumrd @ Sumld @ xpTd anll @ Sumrd @ xpTd (a1i @ mpbir elupto ,norm_num) @ xpTd anlr anr);
+  $ xastXadd sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Sumr @
+  bitr prelxp @ bitr (bian1 @ mpbir elupto d2lt3) prelxp);
 pub theorem xastCMovT (c sz ds: nat):
-  $ c e. Cond /\ sz e. WSize /\ ds e. DestSrc -> xastCMov c sz ds e. XAST $ =
-'(Sumld @ Sumrd @ Sumrd @ xpTd anll @ Sumld @ xpTd anlr anr);
+  $ xastCMov c sz ds e. XAST <-> c e. Cond /\ sz e. WSize /\ ds e. DestSrc $ =
+'(bitr Suml @ bitr Sumr @ bitr Sumr @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Suml prelxp);
 pub theorem xastSetCCT (c b rm: nat):
-  $ c e. Cond /\ bool b /\ rm e. RM -> xastSetCC c b rm e. XAST $ =
-'(Sumld @ Sumrd @ Sumrd @ xpTd anll @ Sumrd @ xpTd (sylibr elBool anlr) anr);
+  $ xastSetCC c b rm e. XAST <-> c e. Cond /\ bool b /\ rm e. RM $ =
+'(bitr Suml @ bitr Sumr @ bitr Sumr @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Sumr @ bitr prelxp @ aneq1i elBool);
 pub theorem xastMovSXT (sz ds sz2: nat):
-  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovSX sz ds sz2 e. XAST $ =
-'(sylbir (aneq1i @ aneq1i @ bian1 bool1) xastMovXT);
+  $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool1) prelxp);
 pub theorem xastMovZXT (sz ds sz2: nat):
-  $ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize -> xastMovZX sz ds sz2 e. XAST $ =
-'(sylbir (aneq1i @ aneq1i @ bian1 bool0) xastMovXT);
+  $ xastMovZX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool0) prelxp);
 pub theorem xastMovT (sz ds: nat):
-  $ sz e. WSize /\ ds e. DestSrc -> xastMov sz ds e. XAST $ =
-'(sylbir (aneq1i @ bian1 condAlwaysT) xastCMovT);
--- '(Sumld @ Sumrd @ Sumld @ Sumld @ xpTd anll @ xpTd anlr anr);
+  $ xastMov sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $ =
+'(bitr Suml @ bitr Sumr @ bitr Sumr @ bitr prelxp @
+  bitr (bian1 condAlwaysT) @ bitr Suml prelxp);
 
-pub theorem xastJumpT (rm: nat): $ rm e. RM -> xastJump rm e. XAST $ =
-'(Sumrd @ Sumld @ Sumld @ Sumld @ Sumld id);
-pub theorem xastJCCT (c q: nat): $ c e. Cond /\ q e. u64 -> xastJCC c q e. XAST $ =
-'(Sumrd @ Sumld @ Sumld @ Sumld @ Sumrd @ xpTd anl anr);
-pub theorem xastCallT (irm: nat): $ irm e. ImmRM -> xastCall irm e. XAST $ =
-'(Sumrd @ Sumld @ Sumld @ Sumrd @ Sumld id);
-pub theorem xastRetT (q: nat): $ q e. u64 -> xastRet q e. XAST $ =
-'(Sumrd @ Sumld @ Sumld @ Sumrd @ Sumrd id);
-pub theorem xastPushT (irm: nat): $ irm e. ImmRM -> xastPush irm e. XAST $ =
-'(Sumrd @ Sumld @ Sumrd @ optSd @ Sumld id);
-pub theorem xastPopT (rm: nat): $ rm e. RM -> xastPop rm e. XAST $ =
-'(Sumrd @ Sumld @ Sumrd @ optSd @ Sumrd id);
+pub theorem xastJumpT (rm: nat): $ xastJump rm e. XAST <-> rm e. RM $ =
+'(bitr Sumr @ bitr Suml @ bitr Suml @ bitr Suml Suml);
+pub theorem xastJCCT (c q: nat): $ xastJCC c q e. XAST <-> c e. Cond /\ q e. u64 $ =
+'(bitr Sumr @ bitr Suml @ bitr Suml @ bitr Suml @ bitr Sumr prelxp);
+pub theorem xastCallT (irm: nat): $ xastCall irm e. XAST <-> irm e. ImmRM $ =
+'(bitr Sumr @ bitr Suml @ bitr Suml @ bitr Sumr Suml);
+pub theorem xastRetT (q: nat): $ xastRet q e. XAST <-> q e. u64 $ =
+'(bitr Sumr @ bitr Suml @ bitr Suml @ bitr Sumr Sumr);
 pub theorem xastLeaveT: $ xastLeave e. XAST $ =
 '(trud @ Sumrd @ Sumld @ Sumrd opt0d);
+pub theorem xastPushT (irm: nat): $ xastPush irm e. XAST <-> irm e. ImmRM $ =
+'(bitr Sumr @ bitr Suml @ bitr Sumr @ bitr optS Suml);
+pub theorem xastPopT (rm: nat): $ xastPop rm e. XAST <-> rm e. RM $ =
+'(bitr Sumr @ bitr Suml @ bitr Sumr @ bitr optS Sumr);
 
 pub theorem xastCMCT: $ xastCMC e. XAST $ =
 '(trud @ Sumrd @ Sumrd @ a1i @ mpbir elupto ,norm_num);
@@ -1799,6 +1811,161 @@ pub theorem pushRIP_T (k irm k2: nat):
 @_ def divModSz (sz a b d m: nat): wff =
 $ b != 0 /\ d e. Bits (wsizeBits sz) /\ d = a // b /\ m = a % b $;
 
+do {
+  (def execXAST_clauses
+    -- XASTArith
+    '{{{{((op sz rm) => (Unop q)
+          $ E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2) $)
+       + ((op sz rm) => (Binop d s)
+          $ E. d E. s (
+            readEA k sz (destEA k ds) d /\
+            readEA k sz (srcEA k ds) s /\
+            writeBinop k op sz (destEA k ds) d s k2) $)}
+      + {(<> =>
+        {(#f => (sz rm) => (Mul n src res lo hi)
+          $ E. n E. src E. res (
+            n = wsizeBits sz /\
+            readEA k sz (RM_EA k rm) src /\
+            res = readRegSz k sz RAX * src /\
+            ifp (n = 8)
+              (k2 = writeReg k wSz16 RAX res)
+              (E. lo E. hi (
+                splitBits ((n <> lo) : (n <> hi) : 0) res /\
+                k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $)
+       + (#t => (sz rm) => (Div n a b d m)
+          $ E. n E. a E. b E. d E. m (
+            n = wsizeBits sz /\
+            readEA k sz (RM_EA k rm) b /\
+            divModSz sz a b d m /\
+            ifp (n = 8)
+              (a = readRegSz k wSz16 RAX /\
+                eraseFlags (writeReg k sz RAX (shl m 8 + d)) k2)
+              (splitBits ((n <> readRegSz k sz RAX) :
+                          (n <> readRegSz k sz RDX) : 0) a /\
+                eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $)})
+       + ((sz ds) => (Lea)
+          $ writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $)}}
+
+    -- XASTData
+     + {(<> => sz =>
+       {(<> =>
+        {(#f => (ds sz2) => (MovSX src)
+          $ E. src (readEA k sz (srcEA k ds) src /\
+            writeEA k sz2 (destEA k ds) (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $)
+       + (#t => (ds sz2) => (MovZX src)
+          $ E. src (readEA k sz (srcEA k ds) src /\
+            writeEA k sz2 (destEA k ds) src k2) $)})
+     + (<> =>
+        {(0 => (rm rn) => (Xchg v)
+          $ E. v (readEA k sz (RM_EA k rm) v /\
+            writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $)
+       + (1 => (rm rn) => (CmpXchg src acc dst k2)
+          $ E. src E. acc E. dst E. k2 (
+            acc = readRegSz k sz RAX /\
+            readEA k sz (RM_EA k rm) dst /\
+            writeBinop k binopCmp sz (EA_r r) acc dst k2 /\
+            ifp (acc = dst)
+              (writeEA k2 sz (RM_EA k rm) (readRegSz k sz r) k3)
+              (writeEA k2 sz (EA_r RAX) dst k3)) $)
+       + (2 => (rm rn) => (Xadd v)
+          $ E. v (readEA k sz (RM_EA k rm) v /\
+            writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $)})})
+    + (<> => c =>
+        {((sz ds) => (CMov v)
+          $ ifp (readCond k c)
+            (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
+            (k2 = k) $)
+       + ((b ds) => (SetCC v)
+          $ writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $)})}}
+
+    -- XASTFlow
+   + {{{{(rm => (Jump v)
+          $ E. v (readEA k wSz64 (RM_EA k rm) v /\ k2 = writeRIP k v) $)
+       + ((c q) => (JCC)
+          $ k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $)}
+      + {(irm => (Call k3)
+          $ E. k3 (pushRIP k k3 /\ EA_jump k3 (immRM_EA k irm) k2) $)
+       + (q => (Ret k3)
+          $ E. k3 (popRIP k k3 /\ k2 = setReg k3 RSP (readReg k3 RSP +_64 q)) $)}}
+      + {(0 => (Leave)
+          $ popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $)
+      > {(irm => (Push) $ pushImmRM k irm k2 $)
+       + (rm => (Pop)   $ popWrite k rm k2 $)}}}
+
+    -- XASTMisc
+      + {(0 => (CLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
+       + (1 => (STC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
+       + (2 => (CMC) $ k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))) $)
+       + (3 => (SysCall)
+          $ E. r11 (k2 = setException
+              (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $)}}})
+
+  -- TODO: figure out why this match fails
+  -- (match '(foo . 0) [('foo . (and 0))])
+
+  -- (def execAST_def
+  --   @ letrec (
+  --     [(set hs next) '(ab . ,(case hs next))]
+  --     [(case hs next) (print hs) @ match hs
+  --       [{(0 => . es1) > (and es2 (_ => . _))}
+  --         (print 'opt)
+  --         (def x (dummy! 'nat))
+  --         @ list x $ ,x e. ocasep ,(done next es1) ,(set es2 next) $]
+  --       [('+ . (and es ((0 => . _) . _)))
+  --         (print 'fin)
+  --         @ letrec ([f @ match-fn
+  --           [((_ => . es)) $ {,(dummy! 'nat) | ,(done next es)} $]
+  --           [((_ => . es) . es2) $ ocasep ,(done next es) ,(f es2) $]])
+  --         (def x (dummy! 'nat))
+  --         @ list x $ ,x e. ,(f es) $]
+  --       [{(#f => . es1) + (#t => . es2)}
+  --         (print 'bool)
+  --         (def x (dummy! 'nat))
+  --         @ list x $ ifp (true ,x) ,(done next es2) ,(done next es1) $]
+  --       [{es1 '+ es2}
+  --         (print 'sum)
+  --         (def x (dummy! 'nat))
+  --         @ list x $ ,x e. Sum ,(set es1 next) ,(set es2 next) $]
+  --       [('<> => . es)
+  --         (print 'tuple)
+  --         (def z (mvar! 'nat #t))
+  --         @ match (case es (cons z next)) @ (y e)
+  --         (def x (dummy! 'nat))
+  --         @ list x $ ,x e. S\ ,y, {,z | ,e} $]
+  --       [((? atom? y) => . es)
+  --         (print 'atom)
+  --         @ list y (done next es)]
+  --       [((and ls (...)) => . es)
+  --         (print 'list)
+  --         @ letrec ([f @ match-fn
+  --           [((? atom? y)) $ {,y | ,(done next es)} $]
+  --           [((? atom? y) . ls) $ S\ ,y, ,(f ls) $]])
+  --         (def x (dummy! 'nat))
+  --         @ list x $ ,x e. ,(f ls) $]
+  --       [(es) (case es next)]]
+  --     [done @ match-fn*
+  --       [(() ((name . dummies) e)) e]
+  --       [((z . next) es) @ match (case es next) [(x e) (set! z x) e]]])
+  --   @ case execXAST_clauses ())
+
+  -- (def execAST_case
+  --   @ letrec (
+  --     [(cases hs cont ctx) @ match hs
+  --       [{(0 => . es) > (e => . es)}
+  --         '(split-opt
+  --           ,(cont es @ fn (x) '(opt0 ,(ctx x)))
+  --           ,(cases '(,e => . ,es) cont @ fn (x) '(optS ,(ctx x))))]
+  --       [(+ . (and es ((0 => _) ...)))
+  --         (foldr es  '(split-opt
+
+  --         ]]
+  --     [(continue es g) @ match es
+  --       [((? atom? x) => . es)
+
+  --         ]])
+  --   _)
+};
+
 @_ abstract def execXAST (k ast k2: nat): wff;
 pub theorem execXASTUnop {q: nat} (k op sz rm k2: nat):
   $ execXAST k (xastUnop op sz rm) k2 <-> E. q (
@@ -1878,13 +2045,13 @@ pub theorem execXASTCall {k2: nat} (k irm k3: nat):
 pub theorem execXASTRet {k2: nat} (k q k3: nat):
   $ execXAST k (xastRet q) k3 <-> E. k2 (
     popRIP k k2 /\ k3 = setReg k RSP (readReg k RSP +_64 q)) $;
+pub theorem execXASTLeave (k k2: nat):
+  $ execXAST k xastLeave k2 <->
+    popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
 pub theorem execXASTPush (k irm k2: nat):
   $ execXAST k (xastPush irm) k2 <-> pushImmRM k irm k2 $;
 pub theorem execXASTPop (k rm k2: nat):
   $ execXAST k (xastPop rm) k2 <-> popWrite k rm k2 $;
-pub theorem execXASTLeave (k k2: nat):
-  $ execXAST k xastLeave k2 <->
-    popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
 pub theorem execXASTCLC (k k2: nat):
   $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
 pub theorem execXASTSTC (k k2: nat):
