@@ -229,8 +229,7 @@ pub theorem toBytesS (k n: nat):
 '(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
 
 pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
-'(!! eale x (eleq1d toByteseq2) ,(mk-ind '(!! ind y z)
-  '(aleqd @ eleqd toByteseq1 Arrayeq2)
+'(!! eale x (eleq1d toByteseq2) ,(induct '(!! ind y z) 'k
   '(ax_gen @ mpbir (eleq1 toBytes0) elArray0)
   '(sylbi (!! cbval _ y @ eleq1d toByteseq2) @ iald @
     sylibr (eleq1 toBytesS) @ syl (sylibr elArrayS @ ian mod_el_u8) @
@@ -332,8 +331,7 @@ pub theorem ofBitsST (k bs n m: nat):
   rsyl ancom shladdT);
 theorem ofBitsT (bs: nat):
   $ bs e. List Bitvec -> ofBits bs e. Bits (bvSize bs) $ =
-(named '(sylbi elList ,(mk-ind '(listind)
-  '(imeqd alleq2 @ elneqd ofBitseq @ Bitseqd bvSizeeq)
+(named '(sylbi elList ,(induct '(listind) 'bs
   '(a1i @ mpbir (eleq1 ofBits0) elBits01)
   '(syl5bi allS @ impd @ com12 @ imim2d @ exp @
     sylibr (elneq2 @ Bitseq @ eqtr3 (bvSizeeq @ conseq1 fstsnd) bvSizeS) @
@@ -1171,8 +1169,7 @@ pub theorem readMemoryS (ps m a b l: nat):
 pub theorem readMemoryT (ps m a l: nat):
   $ readMemory ps m a l -> ps e. Prot /\ m e. Memory /\ a e. u64 /\ l e. List u8 $ =
 (named @ let ([h '(imeqd readMemoryeq3 @ aneq1d eleq1)])
-'(sylibr anass @ iand anl @ eale ,h ,(mk-ind '(listind)
-  '(aleqd @ imeqd readMemoryeq4 @ aneq2d eleq1)
+'(sylibr anass @ iand anl @ eale ,h ,(induct '(listind) 'l
   '(ax_gen @ iand (sylbi readMemory0 anr) @ a1i elList0)
   '(sylbi (cbval ,h) @ iald @ syl5bi readMemoryS @
     rsyl (eale ,h) @ impd @ com12 @ imim2d @
