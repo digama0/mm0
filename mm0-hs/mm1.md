@@ -292,7 +292,7 @@ Some expressions have special behavior when evaluated; these roughly correspond 
     * `(or p1 ... pn)` succeeds if any of the patterns match, and it uses all bindings from the successes. Results are unspecified if the patterns do not all bind the same variables.
     * `(not p1 ... pn)` succeeds if none of the patterns match, and binds nothing.
     * `(? pred p1 ... pn)` succeeds if all of the patterns `p1`, ..., `pn` match, and `(pred v)` evaluates to a truthy value where `v` is the value being matched. `pred` should evaluate to a unary predicate *in the context of the match expression*; bindings from the match are not available when the predicate is evaluated.
-    * `(mvar s bd)` matches a metavariable with sort `s` and boundedness `bd` (see the arguments to `mvar!`); `(mvar)` matches a metavariable with unconstrained target.
+    * `(mvar s bd)` matches a metavariable with sort `s` and boundedness `bd` (see the arguments to `mvar!`); `(mvar)` matches a metavariable with unconstrained target. `(mvar ...)` with literal `...` will match either kind of metavariable.
     * `(goal p)` matches a goal with target `p`.
 
 * The `match-fn` and `match-fn*` keywords are similar to `match`, but define functions instead of matching an input argument immediately. `(match-fn clauses)` is equivalent to `(fn (x) (match x clauses))`, and `(match-fn* clauses)` is equivalent to `(fn x (match x clauses))`.

@@ -19,7 +19,7 @@ use super::super::{Result, Elaborator,
   ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   refine::{RStack, RState, RefineResult}};
 use super::*;
-use super::parser::{IR, Branch, Pattern};
+use super::parser::{IR, Branch, Pattern, MVarPattern};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
 use super::super::environment::{ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
@@ -230,16 +230,17 @@ impl Elaborator {
             if let LispKind::Number(i2) = e {i == i2} else {false})),
           Pattern::MVar(p) => e.unwrapped(|e| match e {
             LispKind::MVar(_, is) => match (p, is) {
-              (None, InferTarget::Unknown) => PatternState::Ret(true),
-              (None, InferTarget::Provable) => PatternState::Ret(true),
-              (None, _) => PatternState::Ret(false),
-              (Some(_), InferTarget::Unknown) => PatternState::Ret(false),
-              (Some(_), InferTarget::Provable) => PatternState::Ret(false),
-              (Some(p), &InferTarget::Bound(s)) => {
+              (MVarPattern::Any, _) => PatternState::Ret(true),
+              (MVarPattern::Unknown, InferTarget::Unknown) => PatternState::Ret(true),
+              (MVarPattern::Unknown, InferTarget::Provable) => PatternState::Ret(true),
+              (MVarPattern::Unknown, _) => PatternState::Ret(false),
+              (MVarPattern::Simple(_), InferTarget::Unknown) => PatternState::Ret(false),
+              (MVarPattern::Simple(_), InferTarget::Provable) => PatternState::Ret(false),
+              (MVarPattern::Simple(p), &InferTarget::Bound(s)) => {
                 stack.push(PatternStack::Bool(&p.1, true));
                 PatternState::Eval(&p.0, LispVal::atom(s))
               }
-              (Some(p), &InferTarget::Reg(s)) => {
+              (MVarPattern::Simple(p), &InferTarget::Reg(s)) => {
                 stack.push(PatternStack::Bool(&p.1, false));
                 PatternState::Eval(&p.0, LispVal::atom(s))
               }

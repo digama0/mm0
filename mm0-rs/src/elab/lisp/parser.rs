@@ -189,7 +189,7 @@ pub enum Pattern {
   /// The `(mvar)` or `(mvar bd s)` pattern. `(mvar)` matches metavars with unknown type,
   /// `(mvar bd s)` matches a metavar with known type, matching the boundedness and sort
   /// against patterns `bd` ans `s`.
-  MVar(Option<Box<(Pattern, Pattern)>>),
+  MVar(MVarPattern),
   /// The `(goal p)` pattern. Matches a goal with type matched against `p`.
   Goal(Box<Pattern>),
   /// The `(p1 p2 ... pn . p)` pattern. Matches an `n`-fold cons cell,
@@ -217,6 +217,18 @@ pub enum Pattern {
   QExprAtom(AtomID),
 }
 
+/// The `(mvar)` patterns, which match a metavariable of different kinds.
+#[derive(Debug, EnvDebug, DeepSizeOf)]
+pub enum MVarPattern {
+  /// The `(mvar)` pattern, which matches metavars with unknown type.
+  Unknown,
+  /// The `(mvar ...)` pattern, which matches metavars with any type.
+  Any,
+  /// The `(mvar bd s)` pattern, which matches a metavar with known type,
+  /// matching the boundedness and sort against patterns `bd` ans `s`.
+  Simple(Box<(Pattern, Pattern)>)
+}
+
 impl<'a> EnvDisplay for Pattern {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -228,8 +240,9 @@ impl<'a> EnvDisplay for Pattern {
       Pattern::Bool(false) => write!(f, "#f"),
       Pattern::Undef => write!(f, "#undef"),
       Pattern::Number(n) => write!(f, "{}", n),
-      Pattern::MVar(None) => write!(f, "(mvar)"),
-      Pattern::MVar(Some(p)) => write!(f, "(mvar {} {})", fe.to(&p.0), fe.to(&p.1)),
+      Pattern::MVar(MVarPattern::Unknown) => write!(f, "(mvar)"),
+      Pattern::MVar(MVarPattern::Any) => write!(f, "(mvar ...)"),
+      Pattern::MVar(MVarPattern::Simple(p)) => write!(f, "(mvar {} {})", fe.to(&p.0), fe.to(&p.1)),
       Pattern::Goal(p) => write!(f, "(goal {})", fe.to(p)),
       Pattern::DottedList(es, r) => write!(f, "({} . {})",
         es.iter().map(|ir| fe.to(ir)).format(" "), fe.to(r)),
@@ -301,6 +314,17 @@ impl Remap<LispRemapper> for Pattern {
       Pattern::Not(es) => Pattern::Not(es.remap(r)),
       &Pattern::Test(sp, ref ir, ref es) => Pattern::Test(sp, ir.remap(r), es.remap(r)),
       Pattern::QExprAtom(a) => Pattern::QExprAtom(a.remap(r)),
+    }
+  }
+}
+
+impl Remap<LispRemapper> for MVarPattern {
+  type Target = Self;
+  fn remap(&self, r: &mut LispRemapper) -> Self {
+    match self {
+      MVarPattern::Unknown => MVarPattern::Unknown,
+      MVarPattern::Any => MVarPattern::Any,
+      MVarPattern::Simple(p) => MVarPattern::Simple(p.remap(r)),
     }
   }
 }
@@ -582,11 +606,14 @@ impl<'a> LispParser<'a> {
               _ => return Err(ElabError::new_e(head.span, "expected one argument")),
             },
             "mvar" => match args {
-              [] => break Pattern::MVar(None),
+              [] => break Pattern::MVar(MVarPattern::Unknown),
+              &[SExpr {span, k: SExprKind::Atom(a)}]
+                if matches!(self.ast.span_atom(span, a), "___" | "...") =>
+                break Pattern::MVar(MVarPattern::Any),
               [bd, s] => {
                 let bd = self.pattern(ctx, code, quote, bd)?;
                 let s = self.pattern(ctx, code, quote, s)?;
-                break Pattern::MVar(Some(Box::new((bd, s))))
+                break Pattern::MVar(MVarPattern::Simple(Box::new((bd, s))))
               }
               _ => return Err(ElabError::new_e(head.span, "expected zero or two arguments")),
             },
