@@ -527,6 +527,8 @@ MM0-specific builtin functions
 
 * `(infer-type p)` gets the statement proven by the proof `p`. This does not perform full typechecking on `p`.
 
+* `(infer-sort t)` returns the sort of the term `t`, or `#undef` if it is a metavariable with unknown sort.
+
 * `(get-mvars)` returns the current list of active metavariables.
 
 * `(get-goals)` returns the current goal list, a list of references to goals. Some goals may already have been assigned.

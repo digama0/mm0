@@ -955,6 +955,8 @@ str_enum! {
     /// `(infer-type p)` gets the statement proven by the proof `p`.
     /// This does not perform full typechecking on `p`.
     InferType: "infer-type",
+    /// `(infer-sort e)` returns the sort and boundedness of the expression.
+    InferSort: "infer-sort",
     /// `(get-mvars)` returns the current list of active metavariables.
     GetMVars: "get-mvars",
     /// `(get-goals)` returns the current goal list, a list of references to goals.

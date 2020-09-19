@@ -431,6 +431,32 @@ impl Elaborator {
     r
   }
 
+  /// Get the sort of the term `e` (with only minimal type-checking).
+  pub fn infer_target(&self, sp: Span, e: &LispVal) -> Result<InferTarget> {
+    macro_rules! err {
+      ($e:expr, $err:expr) => {ElabError::new_e(try_get_span(&self.fspan(sp), &$e), $err)}
+    }
+    Ok(match *e.unwrapped_arc() {
+      LispKind::Atom(x) => match self.lc.vars.get(&x) {
+        Some(&(_, InferSort::Bound(s))) => InferTarget::Bound(self.sorts[s].atom),
+        Some(&(_, InferSort::Reg(s, _))) => InferTarget::Reg(self.sorts[s].atom),
+        Some(&(_, InferSort::Unknown {..})) => InferTarget::Unknown,
+        None => return Err(err!(e, format!("unknown variable '{}'", self.data[x].name)))
+      },
+      LispKind::List(_) | LispKind::DottedList(_, _) => {
+        let mut u = Uncons::from(e.clone());
+        let head = u.next().ok_or_else(|| err!(e, "not a term"))?;
+        let a = head.as_atom().ok_or_else(|| err!(head, "expected an atom"))?;
+        let tid = self.term(a).ok_or_else(||
+          err!(head, format!("unknown term '{}'", self.data[a].name)))?;
+        let sort = self.env.terms[tid].ret.0;
+        InferTarget::Reg(self.sorts[sort].atom)
+      }
+      LispKind::MVar(_, it) => it,
+      _ => return Err(err!(e, format!("not a proof: {}", self.print(e))))
+    })
+  }
+
   /// Get the type of the proof `e` (with only minimal type-checking).
   pub fn infer_type(&self, sp: Span, e: &LispVal) -> Result<LispVal> {
     macro_rules! err {
