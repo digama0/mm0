@@ -4329,6 +4329,8 @@ theorem elList: $ l e. List A <-> all A l $ = '(!! elabe n alleq2);
 theorem elList0: $ 0 e. List A $ = '(mpbir elList all0);
 theorem elListS: $ (a : b) e. List A <-> a e. A /\ b e. List A $ =
 '(bitr elList @ bitr4 allS @ aneq2i elList);
+theorem elListHd (h: $ G -> (a : b) e. List A $): $ G -> a e. A $ = '(anld @ sylib elListS h);
+theorem elListTl (h: $ G -> (a : b) e. List A $): $ G -> b e. List A $ = '(anrd @ sylib elListS h);
 theorem elList1: $ (a : 0) e. List A <-> a e. A $ = '(bitr elListS @ bian2 elList0);
 
 @_ abstract def len (l: nat): nat = $ lrec 0 (\\ x, \\ z, \ y, suc y) l $;
@@ -4425,6 +4427,13 @@ theorem ltappendid2: $ b != 0 <-> a < b ++ a $ =
 
 theorem appendeq0: $ a ++ b = 0 <-> a = 0 /\ b = 0 $ =
 '(bitr3 leneq0 @ bitr (eqeq1 appendlen) @ bitr addeq0 @ aneq leneq0 leneq0);
+
+theorem allappend: $ all A (a ++ b) <-> all A a /\ all A b $ =
+(named @ induct '(listind) 'a '(bitr4 (alleq2 append0) @ bian1 all0)
+  '(bitr4g (alleq2 appendS) (aneq1i allS) @ bitr4g allS anass (aneq2d id)));
+
+theorem appendT: $ a ++ b e. List A <-> a e. List A /\ b e. List A $ =
+'(bitr4 elList @ bitr4 (aneq elList elList) allappend);
 
 @_ abstract def snoc (l a: nat): nat = $ l ++ (a : 0) $;
 infixl snoc: $|>$ prec 84;

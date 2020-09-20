@@ -227,10 +227,10 @@ theorem readImmT (sz q l: nat):
 
 def opSize (have_rex: wff) (w v: nat): nat =
 $ if (true v) (if (true w) wSz64 wSz32) (wSz8 have_rex) $;
-theorem opSizeT (have_rex: wff) (w v: nat):
-  $ bool v /\ bool w -> opSize have_rex w v e. WSize $;
+theorem opSizeT (have_rex: wff) (w v: nat): $ opSize have_rex w v e. WSize $;
 
 def opSizeW (rex v: nat): nat = $ opSize (rex != 0) (REX_W rex) v $;
+theorem opSizeW_T (rex v: nat): $ opSizeW rex v e. WSize $;
 
 def DestSrc: set = $ Sum (Xp RM (Sum u64 Regs)) (Xp Regs RM) $;
 def Rm_i (rm i: nat): nat = $ b0 (rm <> b0 i) $;
@@ -340,7 +340,7 @@ theorem xastDivT (sz rm: nat):
 theorem xastLeaT (sz ds: nat):
   $ xastLea sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
-theorem xastMovXT (b sz ds sz2: nat):
+theorem xastMovX_T (b sz ds sz2: nat):
   $ xastMovX b sz ds sz2 e. XAST <->
     bool b /\ sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastXchgT (sz rm rn: nat):
@@ -351,57 +351,77 @@ theorem xastXaddT (sz rm rn: nat):
   $ xastXadd sz rm rn e. XAST <-> sz e. WSize /\ rm e. RM /\ rn e. Regs $;
 theorem xastCMovT (c sz ds: nat):
   $ xastCMov c sz ds e. XAST <-> c e. Cond /\ sz e. WSize /\ ds e. DestSrc $;
-theorem xastSetCCT (c b rm: nat):
+theorem xastSetCC_T (c b rm: nat):
   $ xastSetCC c b rm e. XAST <-> c e. Cond /\ bool b /\ rm e. RM $;
-theorem xastMovZXT (sz ds sz2: nat):
+theorem xastMovZX_T (sz ds sz2: nat):
   $ xastMovZX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
-theorem xastMovSXT (sz ds sz2: nat):
+theorem xastMovSX_T (sz ds sz2: nat):
   $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastMovT (sz ds: nat):
   $ xastMov sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
 theorem xastJumpT (rm: nat): $ xastJump rm e. XAST <-> rm e. RM $;
-theorem xastJCCT (c q: nat): $ xastJCC c q e. XAST <-> c e. Cond /\ q e. u64 $;
+theorem xastJCC_T (c q: nat): $ xastJCC c q e. XAST <-> c e. Cond /\ q e. u64 $;
 theorem xastCallT (irm: nat): $ xastCall irm e. XAST <-> irm e. ImmRM $;
 theorem xastRetT (q: nat): $ xastRet q e. XAST <-> q e. u64 $;
 theorem xastLeaveT: $ xastLeave e. XAST $;
 theorem xastPushT (irm: nat): $ xastPush irm e. XAST <-> irm e. ImmRM $;
 theorem xastPopT (rm: nat): $ xastPop rm e. XAST <-> rm e. RM $;
 
-theorem xastCMCT: $ xastCMC e. XAST $;
-theorem xastCLCT: $ xastCLC e. XAST $;
-theorem xastSTCT: $ xastSTC e. XAST $;
+theorem xastCMC_T: $ xastCMC e. XAST $;
+theorem xastCLC_T: $ xastCLC e. XAST $;
+theorem xastSTC_T: $ xastSTC e. XAST $;
 theorem xastSysCallT: $ xastSysCall e. XAST $;
 
 def decodeTwoCMov (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4 <> c) : (4 <> 4) : 0) b /\
     readModRM rex reg r l /\
     ast = xastCMov (suc c) (opSize T. (REX_W rex) 1) (R_rm reg r)) $;
+theorem decodeTwoCMovT (rex ast b l: nat):
+  $ decodeTwoCMov rex ast b l -> ast e. XAST $;
+
 def decodeTwoJCC (rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4 <> c) : (4 <> 8) : 0) b /\
     readImmN 32 imm l /\
     ast = xastJCC (suc c) imm) $;
+theorem decodeTwoJCC_T (rex ast b l: nat):
+  $ decodeTwoJCC rex ast b l -> ast e. XAST $;
+
 def decodeTwoSetCC (rex ast b l .c .reg .r: nat): wff =
 $ E. c E. reg E. r (splitBits ((4 <> c) : (4 <> 9) : 0) b /\
     readModRM rex reg r l /\
     ast = xastSetCC (suc c) (nat (rex != 0)) r) $;
+theorem decodeTwoSetCC_T (rex ast b l: nat):
+  $ decodeTwoSetCC rex ast b l -> ast e. XAST $;
+
 def decodeTwoCmpXchg (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (splitBits ((1 <> v) : (3 <> 0) : (4 <> 11) : 0) b /\
     readModRM rex reg r l /\
     ast = xastCmpXchg (opSizeW rex v) r reg) $;
+theorem decodeTwoCmpXchgT (rex ast b l: nat):
+  $ decodeTwoCmpXchg rex ast b l -> ast e. XAST $;
+
 def decodeTwoMovX (rex ast b l .v .s .reg .r: nat): wff =
 $ E. v E. s E. reg E. r (
     splitBits ((1 <> v) : (2 <> 3) : (1 <> s) : (4 <> 11) : 0) b /\
     readModRM rex reg r l /\
     ast = xastMovX s (if (bool v) wSz16 (wSz8 (rex != 0)))
       (R_rm reg r) (opSizeW rex 1)) $;
+theorem decodeTwoMovX_T (rex ast b l: nat):
+  $ decodeTwoMovX rex ast b l -> ast e. XAST $;
+
 def decodeTwoXadd (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readModRM rex reg r l /\
     ast = xastXadd (opSizeW rex v) r reg) $;
+theorem decodeTwoXaddT (rex ast b l: nat):
+  $ decodeTwoXadd rex ast b l -> ast e. XAST $;
+
 def decodeTwoSysCall (rex ast b l .v .reg .r: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
+theorem decodeTwoSysCallT (rex ast b l: nat):
+  $ decodeTwoSysCall rex ast b l -> ast e. XAST $;
 
 def decodeTwo (rex ast b l .b2 .l2: nat): wff =
 $ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ (
@@ -409,6 +429,8 @@ $ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ (
     decodeTwoSetCC rex ast b2 l2 \/ decodeTwoCmpXchg rex ast b2 l2 \/
     decodeTwoMovX rex ast b2 l2 \/ decodeTwoXadd rex ast b2 l2 \/
     decodeTwoSysCall rex ast b2 l2)) $;
+theorem decodeTwoT (rex ast b l: nat):
+  $ decodeTwo rex ast b l -> ast e. XAST $;
 
 def decodeBinopReg (rex ast b l .v .d .opc .reg .r: nat): wff =
 $ E. v E. d E. opc E. reg E. r (
@@ -416,12 +438,16 @@ $ E. v E. d E. opc E. reg E. r (
     readModRM rex reg r l /\
     ast = xastBinop opc (opSizeW rex v)
       (if (true d) (R_rm reg r) (Rm_r r reg))) $;
+theorem decodeBinopRegT (rex ast b l: nat):
+  $ decodeBinopReg rex ast b l -> ast e. XAST $;
 
 def decodeBinopRAX (rex ast b l .v .opc .imm .sz: nat): wff =
 $ E. v E. opc E. imm (
     splitBits ((1 <> v) : (2 <> 2) : (3 <> opc) : (2 <> 0) : 0) b /\
     readImm (opSizeW rex v) imm l /\
     ast = xastBinop opc (opSizeW rex v) (Rm_i (RM_reg RAX) imm)) $;
+theorem decodeBinopRAX_T (rex ast b l: nat):
+  $ decodeBinopRAX rex ast b l -> ast e. XAST $;
 
 def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2 .sz: nat): wff =
 $ E. v E. opc E. r E. l1 E. imm E. l2 (l = l1 ++ l2 /\
@@ -429,48 +455,64 @@ $ E. v E. opc E. r E. l1 E. imm E. l2 (l = l1 ++ l2 /\
     readOpcodeModRM rex opc r l1 /\
     readImm (opSizeW rex v) imm l2 /\
     ast = xastBinop opc (opSizeW rex v) (Rm_i r imm)) $;
+theorem decodeBinopImmT (rex ast b l: nat):
+  $ decodeBinopImm rex ast b l -> ast e. XAST $;
 
 def decodeBinopImm8 (rex ast b l .opc .r .l1 .imm .l2: nat): wff =
 $ E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\ b = ch x8 x3 /\
     readOpcodeModRM rex opc r l1 /\
     readImmN 8 imm l2 /\
     ast = xastBinop opc (opSizeW rex 1) (Rm_i r imm)) $;
+theorem decodeBinopImm8T (rex ast b l: nat):
+  $ decodeBinopImm8 rex ast b l -> ast e. XAST $;
 
 def decodeBinopHi (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
 $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 12) : 0) b /\
     readOpcodeModRM rex opc r l1 /\ opc != 6 /\
     readImmN 8 imm l2 /\
-    ast = xastBinop (rex_reg opc 1)
+    ast = xastBinop (rex_reg 1 opc)
       (opSizeW rex v) (Rm_i r imm)) $;
+theorem decodeBinopHiT (rex ast b l: nat):
+  $ decodeBinopHi rex ast b l -> ast e. XAST $;
 
 def decodeBinopHiReg (rex ast b l .v .x .opc .r: nat): wff =
 $ E. v E. x E. opc E. r (
     splitBits ((1 <> v) : (1 <> x) : (2 <> 0) : (4 <> 13) : 0) b /\
     readOpcodeModRM rex opc r l /\ opc != 6 /\
-    ast = xastBinop (rex_reg opc 1) (opSizeW rex v)
+    ast = xastBinop (rex_reg 1 opc) (opSizeW rex v)
       (if (true x) (Rm_r r RCX) (Rm_i r 1))) $;
+theorem decodeBinopHiRegT (rex ast b l: nat):
+  $ decodeBinopHiReg rex ast b l -> ast e. XAST $;
 
 def decodeBinop (rex ast b l: nat): wff =
 $ decodeBinopReg rex ast b l \/ decodeBinopRAX rex ast b l \/
   decodeBinopImm rex ast b l \/ decodeBinopImm8 rex ast b l \/
   decodeBinopHi rex ast b l \/ decodeBinopHiReg rex ast b l $;
+theorem decodeBinopT (rex ast b l: nat):
+  $ decodeBinop rex ast b l -> ast e. XAST $;
 
 def decodeMovSX (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (l = ch x6 x3 /\
     readModRM rex reg r l /\ ast = xastMovSX wSz32 (R_rm reg r) wSz64) $;
+theorem decodeMovSX_T (rex ast b l: nat):
+  $ decodeMovSX rex ast b l -> ast e. XAST $;
 
 def decodeMovReg (rex ast b l .v .d .reg .r: nat): wff =
 $ E. v E. d E. reg E. r (l = ch x6 x3 /\
     splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
     ast = xastMov (opSizeW rex v) (if (true d) (R_rm reg r) (Rm_r r reg))) $;
+theorem decodeMovRegT (rex ast b l: nat):
+  $ decodeMovReg rex ast b l -> ast e. XAST $;
 
 def decodeMov64 (rex ast b l .r .v .imm: nat): wff =
 $ E. r E. v E. imm (l = ch x6 x3 /\
     splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) b /\
     readFullImm (opSizeW rex v) imm l /\
-    ast = xastMov (opSizeW rex v) (Rm_i (RM_reg (rex_reg r (REX_B rex))) imm)) $;
+    ast = xastMov (opSizeW rex v) (Rm_i (RM_reg (rex_reg (REX_B rex) r)) imm)) $;
+theorem decodeMov64T (rex ast b l: nat):
+  $ decodeMov64 rex ast b l -> ast e. XAST $;
 
 def decodeMovImm (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =
 $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
@@ -478,10 +520,14 @@ $ E. v E. opc E. r E. imm E. l1 E. l2 (l = l1 ++ l2 /\
     readOpcodeModRM rex opc r l1 /\
     readImm (opSizeW rex v) imm l2 /\
     ast = xastMov (opSizeW rex v) (Rm_i r imm)) $;
+theorem decodeMovImmT (rex ast b l: nat):
+  $ decodeMovImm rex ast b l -> ast e. XAST $;
 
 def decodeMov (rex ast b l: nat): wff =
 $ decodeMovSX rex ast b l \/ decodeMovReg rex ast b l \/
   decodeMov64 rex ast b l \/ decodeMovImm rex ast b l $;
+theorem decodeMovT (rex ast b l: nat):
+  $ decodeMov rex ast b l -> ast e. XAST $;
 
 def decodePush (rex ast b l .x .imm .r: nat): wff =
 $ (E. x E. imm (
@@ -490,40 +536,56 @@ $ (E. x E. imm (
     ast = xastPush (immRM_imm imm))) \/
   (l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 0) : (4 <> 5) : 0) b /\
-    ast = xastPush (immRM_rm (rex_reg (REX_B rex) r)))) $;
+    ast = xastPush (immRM_rm (RM_reg (rex_reg (REX_B rex) r))))) $;
+theorem decodePushT (rex ast b l: nat):
+  $ decodePush rex ast b l -> ast e. XAST $;
 
 def decodePop (rex ast b l .v .reg .r: nat): wff =
 $ (l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
     ast = xastPop (RM_reg (rex_reg (REX_B rex) r)))) \/
   (E. r (b = ch x8 xf /\ readOpcodeModRM rex 0 r l /\ ast = xastPop r)) $;
+theorem decodePopT (rex ast b l: nat):
+  $ decodePop rex ast b l -> ast e. XAST $;
 
 def decodeJump (rex ast b l .x .imm: nat): wff =
 $ E. x E. imm (
     splitBits ((1 <> 1) : (1 <> x) : (2 <> 2) : (4 <> 14) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
     ast = xastJCC condAlways imm) $;
+theorem decodeJumpT (rex ast b l: nat):
+  $ decodeJump rex ast b l -> ast e. XAST $;
 
 def decodeJCC8 (rex ast b l .c .imm: nat): wff =
 $ E. c E. imm (splitBits ((4 <> c) : (4 <> 7) : 0) b /\
     readImmN 8 imm l /\ ast = xastJCC (suc c) imm) $;
+theorem decodeJCC8T (rex ast b l: nat):
+  $ decodeJCC8 rex ast b l -> ast e. XAST $;
 
 def decodeCall (rex ast b l .imm: nat): wff =
 $ E. imm (b = ch xe x8 /\
     readImmN 32 imm l /\ ast = xastCall (immRM_imm imm)) $;
+theorem decodeCallT (rex ast b l: nat):
+  $ decodeCall rex ast b l -> ast e. XAST $;
 
 def decodeRet (rex ast b l .v .imm: nat): wff =
 $ E. v E. imm (
     splitBits ((1 <> v) : (3 <> 1) : (4 <> 12) : 0) b /\
     ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) /\
     ast = xastRet imm) $;
+theorem decodeRetT (rex ast b l: nat):
+  $ decodeRet rex ast b l -> ast e. XAST $;
 
 def decodeLeave (rex ast b l: nat): wff =
 $ b = ch xc x9 /\ l = 0 /\ ast = xastLeave $;
+theorem decodeLeaveT (rex ast b l: nat):
+  $ decodeLeave rex ast b l -> ast e. XAST $;
 
 def decodeFlow (rex ast b l: nat): wff =
 $ decodeJump rex ast b l \/ decodeJCC8 rex ast b l \/
   decodeCall rex ast b l \/ decodeRet rex ast b l \/ decodeLeave rex ast b l $;
+theorem decodeFlowT (rex ast b l: nat):
+  $ decodeFlow rex ast b l -> ast e. XAST $;
 
 def decodeXchg (rex ast b l .v .reg .r: nat): wff =
 $ (E. v E. reg E. r (
@@ -533,17 +595,23 @@ $ (E. v E. reg E. r (
   (l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 0) : (4 <> 9) : 0) b /\
     ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r))) $;
+theorem decodeXchgT (rex ast b l: nat):
+  $ decodeXchg rex ast b l -> ast e. XAST $;
 
 def decodeLea (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (b = ch x8 xd /\
     readModRM rex reg r l /\ RM_isMem r /\
     ast = xastLea (opSize T. (REX_W rex) 1) (R_rm reg r)) $;
+theorem decodeLeaT (rex ast b l: nat):
+  $ decodeLea rex ast b l -> ast e. XAST $;
 
 def decodeTest (rex ast b l .v .reg .r: nat): wff =
 $ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
     ast = xastBinop binopTst (opSizeW rex 1) (Rm_r r reg)) $;
+theorem decodeTestT (rex ast b l: nat):
+  $ decodeTest rex ast b l -> ast e. XAST $;
 
 def decodeTestRAX (rex ast b l .v .imm .sz: nat): wff =
 $ E. v E. imm E. sz (
@@ -551,16 +619,22 @@ $ E. v E. imm E. sz (
     sz = opSize T. (REX_W rex) v /\
     readImm sz imm l /\
     ast = xastBinop binopTst sz (Rm_i (RM_reg RAX) imm)) $;
+theorem decodeTestRAX_T (rex ast b l: nat):
+  $ decodeTestRAX rex ast b l -> ast e. XAST $;
 
 def decodeFlag (rex ast b l: nat): wff =
 $ (b = ch xf x5 /\ l = 0 /\ ast = xastCMC) \/
   (b = ch xf x8 /\ l = 0 /\ ast = xastCLC) \/
   (b = ch xf x9 /\ l = 0 /\ ast = xastSTC) $;
+theorem decodeFlagT (rex ast b l: nat):
+  $ decodeFlag rex ast b l -> ast e. XAST $;
 
 def decodeMisc (rex ast b l: nat): wff =
 $ decodeXchg rex ast b l \/ decodeLea rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
   decodeFlag rex ast b l $;
+theorem decodeMiscT (rex ast b l: nat):
+  $ decodeMisc rex ast b l -> ast e. XAST $;
 
 def decodeHiAux (v sz r hi n ast l .imm: nat): wff =
 $ ifp (true hi)
@@ -578,22 +652,31 @@ $ ifp (true hi)
         n = 3 /\ ast = xastUnop unopNeg sz r \/
         n = 4 /\ ast = xastMul sz r \/
         n = 6 /\ ast = xastDiv sz r))) $;
+theorem decodeHiAuxT (v sz r hi n ast l: nat):
+  $ sz e. WSize /\ r e. RM /\ n e. Bits 3 /\ l e. List u8 /\
+    decodeHiAux v sz r hi n ast l -> ast e. XAST $;
 
 def decodeHi (rex ast b l .v .x .opc .r .l1 .l2: nat): wff =
 $ E. v E. x E. opc E. r E. l1 E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (2 <> 3) : (1 <> x) : (4 <> 15) : 0) b /\
     readOpcodeModRM rex opc r l1 /\
     decodeHiAux v (opSizeW rex v) r x opc ast l2) $;
+theorem decodeHiT (rex ast b l: nat):
+  $ decodeHi rex ast b l -> ast e. XAST $;
 
 def decodeAux (rex ast b l: nat): wff =
 $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
   decodePush rex ast b l \/ decodePop rex ast b l \/
   decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
   decodeHi rex ast b l $;
+theorem decodeAuxT (rex ast b l: nat):
+  $ decodeAux rex ast b l -> ast e. XAST $;
 
 def decode (ast l .rex .l1 .opc .l2: nat): wff =
 $ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
     readPrefixes rex l1 /\ decodeAux rex ast opc l2) $;
+theorem decodeT (ast l: nat):
+  $ decode ast l -> ast e. XAST $;
 
 ----------------------------------------
 -- Dynamic semantics
@@ -699,7 +782,7 @@ theorem readMemT (k a l: nat):
 
 def readMemX (k a l: nat): wff =
 $ k e. Config /\ readMemory (PROT_READ + PROT_EXEC) (getMemory k) a l $;
-theorem readMemXT (k a l: nat):
+theorem readMemX_T (k a l: nat):
   $ readMemX k a l -> k e. Config /\ a e. u64 /\ l e. List u8 $;
 
 def writeMemory1 (m a b m2 e .prot .b2: nat): wff =
