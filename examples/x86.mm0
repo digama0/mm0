@@ -818,6 +818,8 @@ theorem readEA64T (k ea v: nat): $ readEA64 k ea v ->
 def setException (k e: nat): nat;
 theorem setExceptionVal (ex ip rs f m e: nat):
   $ setException (mkCfg ex ip rs f m) e = mkCfg e ip rs f m $;
+theorem setExceptionT (k e: nat):
+  $ k e. Config /\ e e. Option Exception -> setException k e e. Config $;
 
 def setReg (k r q: nat): nat;
 theorem setRegVal (ex ip rs f m r q: nat):
@@ -1141,10 +1143,10 @@ theorem execXASTCLC (k k2: nat):
 theorem execXASTSTC (k k2: nat):
   $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
 theorem execXASTSysCall {r11: nat} (k n k2: nat):
-  $ execXAST k xastSysCall k2 <-> E. r11 (
-    k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $;
+  $ execXAST k xastSysCall k2 <-> E. r11 (r11 e. u64 /\
+    k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $;
 
-theorem execXASTT (k ast k2: nat):
+theorem execXAST_T (k ast k2: nat):
   $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
 
 -- This is the step relation for the x86 semantic model, excluding IO.

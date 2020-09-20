@@ -164,6 +164,9 @@ theorem bitOrT: $ a e. Bits n /\ b e. Bits n <-> bitOr a b e. Bits n $ =
 theorem bitDifT: $ a e. Bits n -> bitDif a b e. Bits n $ =
 '(sylbi elBits @ sylibr elBits @ sylibr (sseq1 bitDifEq) @ sstr inss1);
 
+theorem mulBitsT: $ a e. Bits m /\ b e. Bits n -> a * b e. Bits (m + n) $ =
+'(sylibr elBits2 @ sylibr (lteq2 powadd) @ ltmuld (sylib elBits2 anl) (sylib elBits2 anr));
+
 theorem shladdT: $ a e. Bits n /\ c e. Bits b -> shl a b + c e. Bits (n + b) $ =
 (named '(sylibr elBits2 @ ltletrd (sylib ltadd2 @ sylib elBits2 anr) @
   sylib (leeq mulS1 @ eqcom powadd) @ syl lemul1a @
@@ -360,6 +363,7 @@ theorem Regs_lem (h: $ a < 16 $): $ a e. Regs $ = '(mpbir elBits2 @ mpbir (lteq2
 @_ def RBP: nat = $ 5 $; pub theorem RBP_T: $ RBP e. Regs $ = '(! Regs_lem $5$ ,norm_num);
 @_ def RSI: nat = $ 6 $; pub theorem RSI_T: $ RSI e. Regs $ = '(! Regs_lem $6$ ,norm_num);
 @_ def RDI: nat = $ 7 $; pub theorem RDI_T: $ RDI e. Regs $ = '(! Regs_lem $7$ ,norm_num);
+theorem R11_T: $ 11 e. Regs $ = '(Regs_lem ,norm_num);
 
 @_ def REX: set = $ Option (Bits 4) $;
 @_ def REX_val (r: nat): nat = $ r - 1 $;
@@ -649,6 +653,7 @@ pub theorem immRM_immT (i: nat): $ immRM_imm i e. ImmRM <-> i e. u64 $ = 'Sumr;
 @_ def binopShr: nat = $ 13 $;
 @_ def binopTst: nat = $ 14 $;
 @_ def binopSar: nat = $ 15 $;
+theorem binopAddT: $ binopAdd e. Binop $ = 'elBits01;
 
 @_ def BCond: nat = $ Bits 3 $;
 @_ def bcondO:  nat = $ 0 $;
@@ -1411,9 +1416,10 @@ pub theorem immRM_EA_T (k irm: nat): $ k e. Config /\ irm e. ImmRM -> immRM_EA k
 @_ def readRegSz (k sz r: nat): nat =
 $ chop (wsizeBits sz)
     (if (sz = wSz8 F. /\ 2 e. r) (shr (readReg k (r - 4)) 8) (readReg k r)) $;
+theorem readRegSzT2: $ readRegSz k sz r e. Bits (wsizeBits sz) $ = 'chopT;
 pub theorem readRegSzT (k sz r: nat):
   $ k e. Config /\ sz e. WSize /\ r e. Regs ->
-    readRegSz k sz r e. Bits (wsizeBits sz) $ = '(a1i chopT);
+    readRegSz k sz r e. Bits (wsizeBits sz) $ = '(a1i readRegSzT2);
 
 @_ abstract def readEA (k sz ea v: nat): wff =
 $ k e. Config /\ ea e. EA /\ sz e. WSize /\
@@ -1447,15 +1453,25 @@ pub theorem readEA_T (k sz ea v: nat): $ readEA k sz ea v ->
    {($EA_r r$ => ,(f 'readEA_r 'EA_rT '(mpbiri chopT @ eleq1d anr))) +
     ($EA_m a$ => ,(f 'readEA_m 'EA_mT 'anrl))}})));
 
+theorem readEA_T64 (k sz ea v: nat): $ readEA k sz ea v ->
+  k e. Config /\ ea e. EA /\ sz e. WSize /\ v e. u64 $ =
+'(rsyl readEA_T @ anim2a @ anwr @ syl ssel @ syl Bitsss wsizeBitsle64);
+
 @_ def readEA64 (k ea v: nat): wff = $ readEA k wSz64 ea v $;
 pub theorem readEA64T (k ea v: nat): $ readEA64 k ea v ->
   k e. Config /\ ea e. EA /\ v e. u64 $ =
-'(rsyl readEA_T @ anim anl @ bi1i @ elneq2 @ Bitseq wSz64Bits);
+'(rsyl readEA_T64 @ anim1 anl);
 
 @_ def setException (k e: nat): nat = $ (e <> readRIP k) <> snd k $;
 pub theorem setExceptionVal (ex ip rs f m e: nat):
   $ setException (mkCfg ex ip rs f m) e = mkCfg e ip rs f m $ =
 '(preq (preq2 readRIP_mk) sndpr);
+pub theorem setExceptionT (k e: nat):
+  $ k e. Config /\ e e. Option Exception -> setException k e e. Config $ =
+(named '(mpi mkCfg_ex @ eexd @ eexd @ eexd @ eexd @ eexda @
+  mpbird (eleq1d @ syl6eq setExceptionVal @ setExceptioneq1d anr) @ sylibr mkCfgT @
+  mpd (mpbid (syl6bb mkCfgT @ eleq1d anr) anll) @
+  anim1d @ anim1d @ anim1d @ anim1d @ a1d anlr));
 
 @_ abstract def setReg (k r q: nat): nat =
 $ (\\ a, \\ rs, \ m, a <> lower (write rs r q) <> m) @ k $;
@@ -1588,9 +1604,9 @@ pub theorem EA_callDestT (k ea v: nat):
 @_ def EA_jump (k ea k2 .v: nat): wff =
 $ E. v (EA_callDest k ea v /\ k2 = writeRIP k v) $;
 pub theorem EA_jumpT (k ea k2: nat):
-  $ k e. Config /\ ea e. EA /\ EA_jump k ea k2 -> k2 e. Config $ =
-(named '(imp @ eexda @ mpbird (eleq1d anrr) @
-  sylan writeRIP_T anll @ anrd @ syl EA_callDestT anrl));
+  $ EA_jump k ea k2 -> k e. Config /\ ea e. EA /\ k2 e. Config $ =
+'(!! eex v @ mpand (anwl EA_callDestT) @ iand anrl @
+  mpbird (eleq1d anlr) @ anwr @ syl writeRIP_T @ anim1 anl);
 
 @_ def readUnpackFlags (k c z s o: nat): wff =
 $ k e. Config /\ unpackFlags (readFlags k) c z s o $;
@@ -1894,8 +1910,8 @@ do {
        + (1 => (CLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
        + (2 => (STC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
        + (3 => (SysCall r11)
-          $ E. r11 (k2 = setException
-              (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $)}}})
+          $ E. r11 (r11 e. u64 /\
+            k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $)}}})
 
   (def (mk-cases-def clauses)
     @ letrec (
@@ -1928,26 +1944,26 @@ do {
     @ mk 0 clauses ())
 
   (def (mk-cases-eqns clauses done) @ letrec (
-    [((then-bitr th ctx) x) @ ctx '(syl5bb ,th ,x)]
+    [((then th ctx) x) @ ctx '(syl5bb ,th ,x)]
     [(mk vars hs next ctx)
       @ match hs
       ['{(0 => . ,es1) > ,es2}
-        (next vars es1 (then-bitr 'ocasep0 ctx))
-        (mk vars es2 next (then-bitr 'ocasepS ctx))]
+        (next vars es1 (then 'ocasep0 ctx))
+        (mk vars es2 next (then 'ocasepS ctx))]
       [('+ . (and es '((0 => . ,_) . ,_)))
         @ letrec ([f @ match-fn*
           [(((_ '=> . es)) ctx)
             (next vars es @ fn (x) @ ctx '(elabed @ anwl ,x))]
           [(((_ '=> . es) . es2) ctx)
-            (next vars es (then-bitr 'ocasep0 ctx))
-            (f es2 (then-bitr 'ocasepS ctx))]])
+            (next vars es (then 'ocasep0 ctx))
+            (f es2 (then 'ocasepS ctx))]])
         (f es ctx)]
       ['{(#f => . ,es1) + (#t => . ,es2)}
-        (next vars es1 (then-bitr 'ocasep0 ctx))
+        (next vars es1 (then 'ocasep0 ctx))
         (next vars es2 @ fn (x) @ ctx '(syl5bb ocasepS @ elabed @ anwl ,x))]
       [{es1 '+ es2}
-        (mk vars es1 next (then-bitr 'Suml ctx))
-        (mk vars es2 next (then-bitr 'Sumr ctx))]
+        (mk vars es1 next (then 'Suml ctx))
+        (mk vars es2 next (then 'Sumr ctx))]
       ['(<> => . ,es)
         @ mk vars es
           (fn (vars2 es2 ctx2)
@@ -1985,8 +2001,149 @@ do (mk-cases-eqns execXAST_clauses @ match-fn* @ (rvars ((name . dummies) stmt) 
   (add-tac-thm! thname bis () stmt 'pub @ fn ()
     (named '(trud ,(ctx ,eqtac)))));
 
-pub theorem execXASTT (k ast k2: nat):
-  $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
+theorem splitSum
+  (h0: $ G /\ a // 2 e. A -> a = b0 (a // 2) -> p $)
+  (h1: $ G /\ a // 2 e. B -> a = b1 (a // 2) -> p $):
+  $ G /\ a e. Sum A B -> p $ =
+(let ([(f l h) '(com12 @ syld (anim2d @ bi1d @ syl6bb ,l eleq1) @ com12 ,h)])
+  '(splitb ,(f 'Suml 'h0) ,(f 'Sumr 'h1)));
+
+theorem splitEq {x} (h: $ G /\ x e. A -> a = x -> p $): $ G /\ a e. A -> p $ =
+'(sbeth (imeqd (aneq2d eleq1) @ syl biim1 eqcom) h);
+
+theorem splitXp1 (h: $ G /\ fst a e. A -> snd a e. B -> p $): $ G /\ a e. Xp A B -> p $ =
+'(imp @ syl5bi elxp @ impd @ exp h);
+
+theorem splitXp2 (h: $ G -> a = b <> c -> p $): $ G -> snd a = c -> fst a = b -> p $ =
+'(com23 @ expd @ syl5bir prth @ syl5bi (eqeq1 fstsnd) h);
+
+theorem splitXpE {x} (h: $ G /\ x e. A /\ snd a e. B -> fst a = x -> p $): $ G /\ a e. Xp A B -> p $ =
+'(splitXp1 @ splitEq @ com23 @ exp h);
+
+theorem splitOpt
+  (h0: $ G -> a = 0 -> p $)
+  (h1: $ G /\ a - 1 e. A -> a = suc (a - 1) -> p $):
+  $ G /\ a e. Option A -> p $ =
+'(splitopt (anwl h0) @ com12 @ syld (anim2d @ bi1d @ syl6bb optS eleq1) @ com12 h1);
+
+theorem splitupto
+  (h0: $ G -> a = 0 -> p $)
+  (h1: $ G /\ a - 1 e. upto n -> a = suc (a - 1) -> p $):
+  $ G /\ a e. upto (suc n) -> p $ =
+'(sylbir (aneq2i @ eleq2 optupto) @ splitOpt h0 h1);
+
+theorem splitupto0: $ G /\ a e. upto 0 -> p $ =
+'(syl (absurd lt02) @ sylib elupto anr);
+
+theorem splitupto1 (h0: $ G -> a = 0 -> p $): $ G /\ a e. upto 1 -> p $ =
+'(splitupto h0 splitupto0);
+
+theorem splitBool (h0: $ G -> a = 0 -> p $) (h1: $ G -> a = 1 -> p $): $ G /\ a e. Bool -> p $ =
+'(imp @ syl5bi elBool @ syl5bi bool01 @ eord h0 h1);
+
+do (def (mk-cases-split clauses next)
+  (def ((then th ctx) x) '(,th ,(ctx x)))
+  @ letrec ([(mk hs next ctx) @ match hs
+    ['{(0 => . ,es1) > ,es2}
+      '(splitOpt ,(ctx @ next es1) ,(mk es2 next @ then 'splitoptS ctx))]
+    [('+ . (and es '((0 => . ,_) . ,_)))
+      @ letrec ([f @ match-fn*
+        [(((_ => . es)) ctx) '(splitupto1 ,(ctx @ next es))]
+        [(((_ => . es) . es2) ctx)
+          '(splitupto ,(ctx @ next es) ,(f es2 @ then 'splitoptS ctx))]])
+      (f es ctx)]
+    ['{(#f => . ,es1) + (#t => . ,es2)}
+      '(splitBool ,(ctx @ next es1) ,(ctx @ next es2))]
+    [{es1 '+ es2}
+      '(splitSum ,(mk es1 next @ then 'splitb0 ctx) ,(mk es2 next @ then 'splitb1 ctx))]
+    ['(<> => . ,es)
+      (def (next2 es2)
+        '(com23 @ exp ,(mk es2 next @ then 'splitXp2 ctx)))
+      '(splitXp1 ,(mk es next2 id))]
+    [((? atom? y) '=> . es) '(!! splitEq ,y ,(ctx @ next es))]
+    [((and ls (...)) '=> . es)
+      @ letrec ([f @ match-fn*
+        [(((? atom? y)) ctx) '(!! splitEq ,y ,(ctx @ next es))]
+        [(((? atom? y) . ls) ctx)
+          '(!! splitXpE ,y ,(f ls @ then 'splitXp2 ctx))]])
+      (f ls ctx)]
+    [(es) (mk es next ctx)]])
+  @ mk clauses next id);
+
+pub theorem execXAST_T (k ast k2: nat):
+  $ k e. Config /\ ast e. XAST /\ execXAST k ast k2 -> k2 e. Config $ =
+(named @ focus
+  '(imp ,(mk-cases-split execXAST_clauses
+    @ match-fn @ ((name . _) _)
+    '(syl5ibrcom (imeq1d @ syl6bb ,(atom-app 'execXAST name) execXASTeq2) _)))
+  (focus -- Unop
+    '(eexda @ sylan writeUnopT _ anrr)
+    '(sylibr anass @ iand anll (rsyl anrl @ rsyl readEA_T64 @ iand anr anllr)))
+  (focus -- Binop
+    '(eexd @ eexda @ sylan writeBinopT _ anrr)
+    '(iand _ @ sylan destEA_T an4l anlr)
+    '(iand _ @ anwr @ rsyl anlr @ anrd readEA_T64)
+    '(iand _ @ anwr @ anwll @ anrd readEA_T64)
+    '(iand an3l @ anllr))
+  (focus -- Mul
+    '(eexd @ eexd @ eexd @ impd @ exp @ eord _ _)
+    (focus
+      '(exp @ mpbird (eleq1d anrr) @
+        sylan writeRegT (iand (iand an4l @ a1i wSz16T) @ a1i RAX_T) @
+        mpbird (elneqd (rsyl anlr anr) @ Bitseqd _) @
+        sylan mulBitsT (sylan readRegSzT an3l @ a1i RAX_T) @
+        rsyl anlr @ rsyl anlr @ anrd readEA_T)
+      (have 'h1 '(eqtr3d anrl @ rsyl anlr anll))
+      '(syl5eq wSz16Bits @ syl5eqr d8add8 @ addeqd h1 h1))
+    (focus
+      '(syl5 anr @ eexd @ eexda @ mpbird (eleq1d anrr) _)
+      (have 'h2 '(Bitseqd @ rsyl anlr anll))
+      (have 'h3 '(sylib elListS @ rsyl anrl anl))
+      '(sylan writeRegT (iand (iand _ an3lr) @ a1i RDX_T) @
+        mpbid (elneq2d h2) @ sylib elBitvec2 @ anld @
+        sylib elListS @ anrd h3)
+      '(sylan writeRegT (iand an3l @ a1i RAX_T) @
+        mpbid (elneq2d h2) @ sylib elBitvec2 @ anld h3)))
+  (focus -- Div
+    (def h '(rsyl anrr @ anrd eraseFlagsT))
+    '(a1i @ eex @ eex @ eex @ eex @ eex @ anwr @ eor ,h ,h))
+  (focus '(a1i @ anrd writeEA_T)) -- Lea
+  (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- MovZX
+  (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- MovSX
+  (focus '(a1i @ eex @ anwr @ anrd writeEA_T)) -- Xchg
+  (focus -- CmpXchg
+    (def h '(rsyl anrr @ anrd writeEASzT))
+    '(a1i @ eex @ eex @ eex @ eex @ anwr @ eor ,h ,h))
+  (focus -- Xadd
+    '(eexd @ exp @ sylan writeBinopT _ anrr)
+    '(iand _ @ rsyl anrl @ syl anllr readEA_T64)
+    '(iand _ @ rsyl anrl @ anrd readEA_T64)
+    '(iand _ @ mpi readRegSzT2 @ syl ssel @ syl Bitsss @ syl wsizeBitsle64 an3lr)
+    '(iand (iand an4l @ a1i binopAddT) @ an3lr))
+  (focus 'eord -- CMov
+    '(a1i @ anwr @ eex @ anwr @ anrd writeEA_T)
+    '(exp @ mpbird (eleq1d anrr) an4l))
+  (focus '(a1i @ anrd writeEA_T)) -- SetCC
+  (focus -- Jump
+    '(eexda @ mpbird (eleq1d anrr) @
+      sylan writeRIP_T anll @ rsyl anrl @ anrd readEA_T64))
+  (focus -- JCC
+    '(syl5ibrcom eleq1 @ sylan ifT (sylan writeRIP_T anll @ a1i add64T) anll))
+  (focus '(a1i @ eex @ anwr @ anrd EA_jumpT)) -- Call
+  (focus -- Ret
+    '(a1i @ eex @ imp @ syl5ibrcom eleq1 @
+      sylan setRegT (iand (anrd popRIP_T) @ a1i RSP_T) (a1i add64T)))
+  (focus '(a1i @ anrd popWriteT)) -- Leave
+  (focus '(a1i @ anrd pushImmRM_T)) -- Push
+  (focus '(a1i @ anrd popWriteT)) -- Pop
+  (focus '(syl5ibrcom eleq1 @ sylan writeFlagsT id @ syl setCF_T readFlagsT)) -- CMC
+  (focus '(syl5ibrcom eleq1 @ sylan writeFlagsT id @ syl setCF_T readFlagsT)) -- CLC
+  (focus '(syl5ibrcom eleq1 @ sylan writeFlagsT id @ syl setCF_T readFlagsT)) -- STC
+  (focus -- SysCall
+    '(eexda @ mpbird (eleq1d anrr) _)
+    '(sylan setExceptionT _ @ a1i @ mpbir optS exSysCallT)
+    '(sylan setRegT (iand _ @ a1i R11_T) anrl)
+    '(sylan setRegT (anim2 @ a1i RCX_T) @ anwl readRIP_T)));
 
 -- This is the step relation for the x86 semantic model, excluding IO.
 -- `step k k2` means that k2 is a possible next state after k. Multiple

@@ -55,7 +55,7 @@ do {
   (def goal! @ match-fn*
     [(ty) (ref! (goal ty))]
     [(pos ty) (ref! (copy-span pos (goal ty)))])
-  (def (swap) (match (get-goals) ((x y) (set-goals y x))))
+  (def (swap) @ match (get-goals) [(x . y) (apply set-goals @ append y @ list x)])
   (def suffices @ match-fn*
     [(h) (have h _) (swap)]
     [xs (apply have xs) (swap)])
@@ -1826,6 +1826,8 @@ theorem lemul1: $ 0 < c -> (a <= b <-> a * c <= b * c) $ =
 '(sylibr (bieq lenlt lenlt) (noteqd ltmul1));
 theorem lemul2: $ 0 < a -> (b <= c <-> a * b <= a * c) $ =
 '(syl6bb (leeq mulcom mulcom) lemul1);
+theorem ltmuld (h1: $ G -> a < b $) (h2: $ G -> c < d $): $ G -> a * c < b * d $ =
+'(lelttrd (syl lemul1a @ syl ltle h1) @ mpbid (syl ltmul2 @ syl (lelttr le01) h1) h2);
 
 theorem mulcan1: $ c != 0 -> (a * c = b * c <-> a = b) $ =
 '(ibid (sylbir lt01 @ exp (leasymd
@@ -3898,6 +3900,9 @@ theorem optfin: $ finite A -> finite (Option A) $ =
   (a1d @ imp @ syl5ibrcom lteq1 @ anwr @ mpbiri lt01S lteq2)
   (mpbird (imeqd (eleq1d (eqcomd @ anwr sub1can)) (lteqd (eqcomd @ anwr sub1can) anlr)) @
     sylib (imeqi (bicom optS) ltsuc) @ anwll @ !! eale y @ imeqd eleq1 lteq1));
+
+theorem optns: $ Option n == b1 n $ = '(!! ax_gen x @ bitr4 elopt elb1);
+theorem optupto: $ Option (upto n) == upto (suc n) $ = '(eqstr4 optns @ nseq uptoS);
 
 @_ def Power (A: set): set = $ {x | ns x C_ A} $;
 
