@@ -26,6 +26,7 @@ use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID,
 use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
 /// The side information required to print an object in the environment.
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct FormatEnv<'a> {
   /// The source text, used to resolve line/col information for procedure printing.
@@ -83,11 +84,11 @@ impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
-// The function body here is slightly more complicated since we need to 
+// The function body here is slightly more complicated since we need to
 // negotiate with a pretty printer before first.
 /// items implementing EnvDebug can be put in formatters using `{:?}`
 impl<'a, D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'a, D> {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { 
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let mut printer = shoebill::Printer::new();
     let d = self.e.env_dbg(self.fe, &mut printer);
     write!(f, "{}", d.render(80, &printer))

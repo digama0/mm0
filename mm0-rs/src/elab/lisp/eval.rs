@@ -953,8 +953,8 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::string(ArcString::new(format!("{}", self.format_env().pp(&args[0], 80)))),
   NewGoal: Exact(1) => LispVal::goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
-  InferType: Exact(1) => self.infer_type(sp1, &args[0])?,
-  InferSort: Exact(1) => match self.infer_target(sp1, &args[0])? {
+  InferType: Exact(1) => try1!(self.infer_type(sp1, &args[0]).map_err(|e| e.kind.msg())),
+  InferSort: Exact(1) => match try1!(self.infer_target(sp1, &args[0]).map_err(|e| e.kind.msg())) {
     InferTarget::Bound(s) | InferTarget::Reg(s) => LispVal::atom(s),
     InferTarget::Unknown | InferTarget::Provable => LispVal::undef(),
   },

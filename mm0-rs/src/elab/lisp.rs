@@ -331,7 +331,8 @@ impl LispVal {
     }
   }
 
-  fn head(&self) -> Option<LispVal> {
+  /// Get the head of the cons cell, if it is one.
+  pub fn head(&self) -> Option<LispVal> {
     self.unwrapped(|e| match e {
       LispKind::List(es) => es.first().cloned(),
       LispKind::DottedList(es, r) => es.first().cloned().or_else(|| r.head()),

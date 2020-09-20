@@ -73,6 +73,15 @@ do {
         (scan (get-mvars) @ fn (v)
           (assign-mvar v (atom-app "x" n)) (set! n {n + 1}))])
 
+  (def ((tac-thm stmt f))
+    @ match (get-goals) @ (g)
+    (def res (f))
+    (if (def? res) (refine res))
+    (match (get-goals) [()])
+    '(() ,g))
+  (def (add-tac-thm! x bis hyps ret vis f)
+    (add-thm! x bis hyps ret vis (tac-thm ret f)))
+
   (def eq-for @ lookup-fn '([wff iff] [nat eq] [set eqs]))
   (def eq-sort @ lookup-fn '([iff wff] [eq nat] [eqs set]))
   (def nf-for @ lookup-fn '([wff nf] [nat nfn] [set nfs]))

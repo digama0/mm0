@@ -18,7 +18,7 @@ use crate::util::*;
 /// but is known to be bound, `y` is not declared at all but known to be a bound non-dummy,
 /// and `z` is not declared and must be a bound dummy of type `var` (assuming
 /// that `all` has type `var` for its first argument).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Debug, EnvDebug, DeepSizeOf)]
 pub enum InferSort {
   /// This is a declared bound variable with the given sort.
   Bound(SortID),
@@ -68,7 +68,7 @@ impl InferSort {
 
 /// The local context is the collection of proof-local data. This is manipulated
 /// by lisp tactics in order to keep track of the proof state and eventually produce a proof.
-#[derive(Default, Debug, DeepSizeOf)]
+#[derive(Default, Debug, EnvDebug, DeepSizeOf)]
 pub struct LocalContext {
   /// The collection of local variables. The key is the name of the variable, and the
   /// value is `(dummy, is)` where `dummy` is true if this is a dummy variable
@@ -291,7 +291,7 @@ impl<'a> ElabTerm<'a> {
   }
 
   fn other(&self, e: &LispVal, _: InferTarget) -> Result<LispVal> {
-    Err(self.err(e, "Not a valid expression"))
+    Err(self.err(e, format!("Not a valid expression: {}", self.fe.to(e))))
   }
 
   fn infer_sort(&self, e: &LispKind) -> Result<SortID> {
@@ -314,12 +314,12 @@ impl<'a> ElabTerm<'a> {
 }
 
 impl<'a> ElabTermMut<'a> {
-  fn new(elab: &'a mut Elaborator, sp: Span) -> Self {
+  fn new(elab: &'a mut Elaborator, lc: Option<&'a mut LocalContext>, sp: Span) -> Self {
     ElabTermMut {
       fsp: elab.fspan(sp),
       src: &elab.ast.source,
       env: &mut elab.env,
-      lc: &mut elab.lc,
+      lc: lc.unwrap_or(&mut elab.lc),
       spans: &mut elab.spans,
     }
   }
@@ -412,10 +412,11 @@ impl<'a> ElabTermMut<'a> {
       &LispKind::Atom(a) if self.fe.term(a).is_some() =>
         self.list(e, Some(e.clone()).into_iter(), tgt),
       &LispKind::Atom(a) => self.atom(e, a, tgt),
-      LispKind::DottedList(es, r) if es.is_empty() => self.expr(r, tgt),
-      LispKind::List(es) if es.len() == 1 => self.expr(&es[0], tgt),
-      LispKind::List(_) | LispKind::DottedList(_, _) if e.list_at_least(2) =>
-        self.list(e, Uncons::from(e.clone()), tgt),
+      LispKind::List(_) | LispKind::DottedList(_, _) if e.is_list() => match e.len() {
+        0 => self.other(e, tgt),
+        1 => self.expr(&e.head().unwrap(), tgt),
+        _ => self.list(e, Uncons::from(e.clone()), tgt),
+      },
       _ => self.other(e, tgt),
     })
   }
@@ -572,14 +573,14 @@ impl Elaborator {
       Some(&Type::Formula(f)) => {
         let e = self.parse_formula(f)?;
         let e = self.eval_qexpr(e)?;
-        let e = self.elaborate_term(f.0, &e, InferTarget::Provable)?;
+        let e = self.elaborate_term(None, f.0, &e, InferTarget::Provable)?;
         InferBinder::Hyp(x, e)
       },
     })
   }
 
-  fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
-    ElabTermMut::new(self, sp).expr(e, tgt)
+  fn elaborate_term(&mut self, lc: Option<&mut LocalContext>, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
+    ElabTermMut::new(self, lc, sp).expr(e, tgt)
   }
 
   fn infer_sort(&self, sp: Span, e: &LispKind) -> Result<SortID> {
@@ -697,7 +698,7 @@ impl Elaborator {
               }
             }
             let e = self.eval_lisp(f)?;
-            Ok(Some((f.span, self.elaborate_term(f.span, &e, match ret {
+            Ok(Some((f.span, self.elaborate_term(None, f.span, &e, match ret {
               None => InferTarget::Unknown,
               Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),
             })?)))
@@ -775,7 +776,7 @@ impl Elaborator {
           &Some(Type::Formula(f)) => {
             let e = self.parse_formula(f)?;
             let e = self.eval_qexpr(e)?;
-            self.elaborate_term(f.0, &e, InferTarget::Provable)?
+            self.elaborate_term(None, f.0, &e, InferTarget::Provable)?
           }
         };
         if d.k == DeclKind::Axiom {
@@ -877,7 +878,8 @@ impl AwaitingProof {
   /// Once the user closure completes, we can call this function to consume the suspended
   /// computation and finish adding the theorem.
   pub fn finish(self, elab: &mut Elaborator, fsp: FileSpan, proof: LispVal) -> Result<()> {
-    let AwaitingProof {thm, de, var_map, lc, is} = self;
+    let AwaitingProof {thm, de, var_map, mut lc, is} = self;
+    mem::swap(&mut elab.lc, &mut lc);
     elab.finish_add_thm(fsp, thm, Some(Some(ThmVal {de, var_map, lc: Some(lc), is, proof})))
   }
 }
@@ -1067,22 +1069,28 @@ impl Elaborator {
     }
     let mut vars = (HashMap::new(), 1);
     let (mut lc, args) = self.binders(&fsp, Uncons::from(bis.clone()), &mut vars)?;
-    // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
-    let mut de = Dedup::new(&args);
-    let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
-    // crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
     let mut is = Vec::new();
     for e in Uncons::from(hyps.clone()) {
       let mut u = Uncons::from(e.clone());
       if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
         let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
         let a = if x == AtomID::UNDER {None} else {Some(x)};
-        is.push((a, de.dedup(&nh, &ty)?, ty));
+        let ty = self.elaborate_term(Some(&mut lc), sp!(ty), &ty, InferTarget::Provable)?;
+        is.push((a, ty));
       } else {
         return Err(ElabError::new_e(sp!(hyps), format!("syntax error: {}", self.print(hyps))))
       }
     }
-    let ir = de.dedup(&nh, ret)?;
+    let eret = self.elaborate_term(Some(&mut lc), sp!(ret), ret, InferTarget::Provable)?;
+    for e in self.finalize_vars(true) { return Err(e) }
+    // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
+    let mut de = Dedup::new(&args);
+    let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
+    // crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
+    let is = is.into_iter().map(|(a, ty)| {
+      Ok((a, de.dedup(&nh, &ty)?, ty))
+    }).collect::<Result<Vec<_>>>()?;
+    let ir = de.dedup(&nh, &eret)?;
     let (mut ids, heap) = build(&de);
     let hyps = is.iter().map(|&(a, i, _)| {
       (a, ids[i].take())
@@ -1107,11 +1115,12 @@ impl Elaborator {
           lc.add_proof(a, ty, p.clone());
           Some(de.add(p, ProofHash::Hyp(i, j)))
         }).collect();
-        let lc = Box::new(lc);
         if proof.is_proc() {
+          lc.set_goals(Some(LispVal::goal(fsp, eret)).into_iter());
+          let lc = Box::new(mem::replace(&mut self.lc, lc));
           return Ok(Err((AwaitingProof {thm, de, var_map, lc, is}, proof)))
         }
-        Some(ThmVal {de, var_map, lc: Some(lc), is, proof})
+        Some(ThmVal {de, var_map, lc: Some(Box::new(lc)), is, proof})
       } else {None})
     } else {None};
     self.finish_add_thm(fsp, thm, res)?;
