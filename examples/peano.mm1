@@ -538,6 +538,7 @@ theorem anlass: $ a /\ (b /\ c) <-> b /\ (a /\ c) $ =
 '(bitr3 anass @ bitr (aneq1i ancomb) anass);
 theorem anrass: $ a /\ b /\ c <-> a /\ c /\ b $ =
 '(bitr anass @ bitr4 (aneq2i ancomb) anass);
+theorem anroti (h: $ a -> b /\ d $): $ a /\ c -> b /\ c /\ d $ = '(sylib anrass @ anim1 h);
 theorem anidm: $ a /\ a <-> a $ = '(ibii anl (iand id id));
 theorem rbida (h1: $ a /\ c -> b $) (h2: $ a /\ d -> b $)
   (h: $ a /\ b -> (c <-> d) $): $ a -> (c <-> d) $ =

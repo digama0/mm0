@@ -353,10 +353,10 @@ theorem xastCMovT (c sz ds: nat):
   $ xastCMov c sz ds e. XAST <-> c e. Cond /\ sz e. WSize /\ ds e. DestSrc $;
 theorem xastSetCCT (c b rm: nat):
   $ xastSetCC c b rm e. XAST <-> c e. Cond /\ bool b /\ rm e. RM $;
-theorem xastMovSXT (sz ds sz2: nat):
-  $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastMovZXT (sz ds sz2: nat):
   $ xastMovZX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
+theorem xastMovSXT (sz ds sz2: nat):
+  $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $;
 theorem xastMovT (sz ds: nat):
   $ xastMov sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $;
 
@@ -1081,27 +1081,27 @@ theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
 theorem execXASTLea (k sz ds k2: nat):
   $ execXAST k (xastLea sz ds) k2 <->
     writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $;
+theorem execXASTMovZX {src: nat} (k sz ds sz2 k2: nat):
+  $ execXAST k (xastMovZX sz ds sz2) k2 <-> E. src (
+      readEA k sz (srcEA k ds) src /\
+      writeEA k sz2 (destEA k ds) src k2) $;
 theorem execXASTMovSX {src: nat} (k sz ds sz2 k2: nat):
   $ execXAST k (xastMovSX sz ds sz2) k2 <-> E. src (
       readEA k sz (srcEA k ds) src /\
       writeEA k sz2 (destEA k ds)
         (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $;
-theorem execXASTMovZX {src: nat} (k sz ds sz2 k2: nat):
-  $ execXAST k (xastMovZX sz ds sz2) k2 <-> E. src (
-      readEA k sz (srcEA k ds) src /\
-      writeEA k sz2 (destEA k ds) src k2) $;
 theorem execXASTXchg {v: nat} (k sz rm r k2: nat):
   $ execXAST k (xastXchg sz rm r) k2 <-> E. v (
       readEA k sz (RM_EA k rm) v /\
       writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $;
-theorem execXASTCmpXchg {src acc dst k2: nat} (k sz rm r k3: nat):
-  $ execXAST k (xastCmpXchg sz rm r) k3 <-> E. src E. acc E. dst E. k2 (
+theorem execXASTCmpXchg {src acc dst ki: nat} (k sz rm r k2: nat):
+  $ execXAST k (xastCmpXchg sz rm r) k2 <-> E. src E. acc E. dst E. ki (
       acc = readRegSz k sz RAX /\
       readEA k sz (RM_EA k rm) dst /\
-      writeBinop k binopCmp sz (EA_r r) acc dst k2 /\
+      writeBinop k binopCmp sz (EA_r r) acc dst ki /\
       ifp (acc = dst)
-        (writeEA k2 sz (RM_EA k rm) (readRegSz k sz r) k3)
-        (writeEA k2 sz (EA_r RAX) dst k3)) $;
+        (writeEA ki sz (RM_EA k rm) (readRegSz k sz r) k2)
+        (writeEA ki sz (EA_r RAX) dst k2)) $;
 theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
   $ execXAST k (xastXadd sz rm r) k2 <-> E. v (
       readEA k sz (RM_EA k rm) v /\
@@ -1120,12 +1120,12 @@ theorem execXASTJump {v: nat} (k rm k2: nat):
 theorem execXASTJCC (k c q k2: nat):
   $ execXAST k (xastJCC c q) k2 <->
     k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $;
-theorem execXASTCall {k3: nat} (k irm k2: nat):
-  $ execXAST k (xastCall irm) k3 <-> E. k3 (
-    pushRIP k k3 /\ EA_jump k3 (immRM_EA k irm) k2) $;
-theorem execXASTRet {k3: nat} (k q k2: nat):
-  $ execXAST k (xastRet q) k2 <-> E. k3 (
-    popRIP k k3 /\ k2 = setReg k3 RSP (readReg k3 RSP +_64 q)) $;
+theorem execXASTCall {ki: nat} (k irm k2: nat):
+  $ execXAST k (xastCall irm) ki <-> E. ki (
+    pushRIP k ki /\ EA_jump ki (immRM_EA k irm) k2) $;
+theorem execXASTRet {ki: nat} (k q k2: nat):
+  $ execXAST k (xastRet q) k2 <-> E. ki (
+    popRIP k ki /\ k2 = setReg ki RSP (readReg ki RSP +_64 q)) $;
 theorem execXASTLeave (k k2: nat):
   $ execXAST k xastLeave k2 <->
     popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
@@ -1133,13 +1133,13 @@ theorem execXASTPush (k irm k2: nat):
   $ execXAST k (xastPush irm) k2 <-> pushImmRM k irm k2 $;
 theorem execXASTPop (k rm k2: nat):
   $ execXAST k (xastPop rm) k2 <-> popWrite k rm k2 $;
+theorem execXASTCMC (k k2: nat):
+  $ execXAST k xastCMC k2 <->
+    k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
 theorem execXASTCLC (k k2: nat):
   $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
 theorem execXASTSTC (k k2: nat):
   $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
-theorem execXASTCMC (k k2: nat):
-  $ execXAST k xastCMC k2 <->
-    k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
 theorem execXASTSysCall {r11: nat} (k n k2: nat):
   $ execXAST k xastSysCall k2 <-> E. r11 (
     k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $;

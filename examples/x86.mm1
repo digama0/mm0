@@ -754,14 +754,14 @@ pub theorem xastSetCCT (c b rm: nat):
   $ xastSetCC c b rm e. XAST <-> c e. Cond /\ bool b /\ rm e. RM $ =
 '(bitr Suml @ bitr Sumr @ bitr Sumr @ bitr4 prelxp @
   bitr4 anass @ aneq2i @ bitr Sumr @ bitr prelxp @ aneq1i elBool);
-pub theorem xastMovSXT (sz ds sz2: nat):
-  $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $ =
-'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
-  bitr4 anass @ aneq2i @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool1) prelxp);
 pub theorem xastMovZXT (sz ds sz2: nat):
   $ xastMovZX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $ =
 '(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
   bitr4 anass @ aneq2i @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool0) prelxp);
+pub theorem xastMovSXT (sz ds sz2: nat):
+  $ xastMovSX sz ds sz2 e. XAST <-> sz e. WSize /\ ds e. DestSrc /\ sz2 e. WSize $ =
+'(bitr Suml @ bitr Sumr @ bitr Suml @ bitr4 prelxp @
+  bitr4 anass @ aneq2i @ bitr Suml @ bitr prelxp @ bitr (bian1 Bool1) prelxp);
 pub theorem xastMovT (sz ds: nat):
   $ xastMov sz ds e. XAST <-> sz e. WSize /\ ds e. DestSrc $ =
 '(bitr Suml @ bitr Sumr @ bitr Sumr @ bitr prelxp @
@@ -1813,7 +1813,7 @@ do {
     -- XASTArith
     '{{{{((op sz rm) => (Unop q)
           $ E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2) $)
-       + ((op sz rm) => (Binop d s)
+       + ((op sz ds) => (Binop d s)
           $ E. d E. s (
             readEA k sz (destEA k ds) d /\
             readEA k sz (srcEA k ds) s /\
@@ -1846,25 +1846,25 @@ do {
     -- XASTData
      + {(<> => sz =>
        {(<> =>
-        {(#f => (ds sz2) => (MovSX src)
+        {(#f => (ds sz2) => (MovZX src)
           $ E. src (readEA k sz (srcEA k ds) src /\
-            writeEA k sz2 (destEA k ds) (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $)
-       + (#t => (ds sz2) => (MovZX src)
+            writeEA k sz2 (destEA k ds) src k2) $)
+       + (#t => (ds sz2) => (MovSX src)
           $ E. src (readEA k sz (srcEA k ds) src /\
-            writeEA k sz2 (destEA k ds) src k2) $)})
+            writeEA k sz2 (destEA k ds) (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $)})
      + (<> =>
-        {(0 => (rm rn) => (Xchg v)
+        {(0 => (rm r) => (Xchg v)
           $ E. v (readEA k sz (RM_EA k rm) v /\
             writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $)
-       + (1 => (rm rn) => (CmpXchg src acc dst k2)
-          $ E. src E. acc E. dst E. k2 (
+       + (1 => (rm r) => (CmpXchg src acc dst ki)
+          $ E. src E. acc E. dst E. ki (
             acc = readRegSz k sz RAX /\
             readEA k sz (RM_EA k rm) dst /\
-            writeBinop k binopCmp sz (EA_r r) acc dst k2 /\
+            writeBinop k binopCmp sz (EA_r r) acc dst ki /\
             ifp (acc = dst)
-              (writeEA k2 sz (RM_EA k rm) (readRegSz k sz r) k3)
-              (writeEA k2 sz (EA_r RAX) dst k3)) $)
-       + (2 => (rm rn) => (Xadd v)
+              (writeEA ki sz (RM_EA k rm) (readRegSz k sz r) k2)
+              (writeEA ki sz (EA_r RAX) dst k2)) $)
+       + (2 => (rm r) => (Xadd v)
           $ E. v (readEA k sz (RM_EA k rm) v /\
             writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $)})})
     + (<> => c =>
@@ -1872,7 +1872,7 @@ do {
           $ ifp (readCond k c)
             (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
             (k2 = k) $)
-       + ((b ds) => (SetCC v)
+       + ((b rm) => (SetCC v)
           $ writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $)})}}
 
     -- XASTFlow
@@ -1880,185 +1880,110 @@ do {
           $ E. v (readEA k wSz64 (RM_EA k rm) v /\ k2 = writeRIP k v) $)
        + ((c q) => (JCC)
           $ k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $)}
-      + {(irm => (Call k3)
-          $ E. k3 (pushRIP k k3 /\ EA_jump k3 (immRM_EA k irm) k2) $)
-       + (q => (Ret k3)
-          $ E. k3 (popRIP k k3 /\ k2 = setReg k3 RSP (readReg k3 RSP +_64 q)) $)}}
+      + {(irm => (Call ki)
+          $ E. ki (pushRIP k ki /\ EA_jump ki (immRM_EA k irm) k2) $)
+       + (q => (Ret ki)
+          $ E. ki (popRIP k ki /\ k2 = setReg ki RSP (readReg ki RSP +_64 q)) $)}}
       + {(0 => (Leave)
           $ popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $)
       > {(irm => (Push) $ pushImmRM k irm k2 $)
        + (rm => (Pop)   $ popWrite k rm k2 $)}}}
 
     -- XASTMisc
-      + {(0 => (CLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
-       + (1 => (STC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
-       + (2 => (CMC) $ k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))) $)
-       + (3 => (SysCall)
+      + {(0 => (CMC) $ k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))) $)
+       + (1 => (CLC) $ k2 = writeFlags k (setCF (readFlags k) F.) $)
+       + (2 => (STC) $ k2 = writeFlags k (setCF (readFlags k) T.) $)
+       + (3 => (SysCall r11)
           $ E. r11 (k2 = setException
               (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $)}}})
 
-  -- TODO: figure out why this match fails
-  -- (match '(foo . 0) [('foo . (and 0))])
+  (def (mk-cases-def clauses)
+    @ letrec (
+      [(var n) (atom-app '_ n)]
+      [(mk n hs next) @ match hs
+        ['{(0 => . ,es1) > ,es2}
+          $ ocasep ,(done n next es1) ,(mk n es2 next) $]
+        [('+ . (and es '((0 => . ,_) . ,_)))
+          @ letrec ([f @ match-fn
+            [((_ => . es)) $ {,(var n) | ,(done {n + 1} next es)} $]
+            [((_ => . es) . es2) $ ocasep ,(done n next es) ,(f es2) $]])
+          (f es)]
+        ['{(#f => . ,es1) + (#t => . ,es2)}
+          $ ocasep ,(done n next es1) {,(var n) | ,(done {n + 1} next es2)} $]
+        [{es1 '+ es2} $ Sum ,(mk n es1 next) ,(mk n es2 next) $]
+        ['(<> => . ,es)
+          (def y (var n))
+          (def z (var {n + 1}))
+          $ S\ ,y, {,z | ,y e. ,(mk {n + 2} es (cons z next))} $]
+        [((? atom? y) '=> . es) $ {,y | ,(done n next es)} $]
+        [((and ls (...)) '=> . es)
+          @ letrec ([f @ match-fn
+            [((? atom? y)) $ {,y | ,(done n next es)} $]
+            [((? atom? y) . ls) $ S\ ,y, ,(f ls) $]])
+          (f ls)]
+        [(es) (mk n es next)]]
+      [done @ match-fn*
+        [(n () ((name . dummies) e)) e]
+        [(n (z . next) es) $ ,z e. ,(mk n es next) $]])
+    @ mk 0 clauses ())
 
-  -- (def execAST_def
-  --   @ letrec (
-  --     [(set hs next) '(ab . ,(case hs next))]
-  --     [(case hs next) (print hs) @ match hs
-  --       [{(0 => . es1) > (and es2 (_ => . _))}
-  --         (print 'opt)
-  --         (def x (dummy! 'nat))
-  --         @ list x $ ,x e. ocasep ,(done next es1) ,(set es2 next) $]
-  --       [('+ . (and es ((0 => . _) . _)))
-  --         (print 'fin)
-  --         @ letrec ([f @ match-fn
-  --           [((_ => . es)) $ {,(dummy! 'nat) | ,(done next es)} $]
-  --           [((_ => . es) . es2) $ ocasep ,(done next es) ,(f es2) $]])
-  --         (def x (dummy! 'nat))
-  --         @ list x $ ,x e. ,(f es) $]
-  --       [{(#f => . es1) + (#t => . es2)}
-  --         (print 'bool)
-  --         (def x (dummy! 'nat))
-  --         @ list x $ ifp (true ,x) ,(done next es2) ,(done next es1) $]
-  --       [{es1 '+ es2}
-  --         (print 'sum)
-  --         (def x (dummy! 'nat))
-  --         @ list x $ ,x e. Sum ,(set es1 next) ,(set es2 next) $]
-  --       [('<> => . es)
-  --         (print 'tuple)
-  --         (def z (mvar! 'nat #t))
-  --         @ match (case es (cons z next)) @ (y e)
-  --         (def x (dummy! 'nat))
-  --         @ list x $ ,x e. S\ ,y, {,z | ,e} $]
-  --       [((? atom? y) => . es)
-  --         (print 'atom)
-  --         @ list y (done next es)]
-  --       [((and ls (...)) => . es)
-  --         (print 'list)
-  --         @ letrec ([f @ match-fn
-  --           [((? atom? y)) $ {,y | ,(done next es)} $]
-  --           [((? atom? y) . ls) $ S\ ,y, ,(f ls) $]])
-  --         (def x (dummy! 'nat))
-  --         @ list x $ ,x e. ,(f ls) $]
-  --       [(es) (case es next)]]
-  --     [done @ match-fn*
-  --       [(() ((name . dummies) e)) e]
-  --       [((z . next) es) @ match (case es next) [(x e) (set! z x) e]]])
-  --   @ case execXAST_clauses ())
-
-  -- (def execAST_case
-  --   @ letrec (
-  --     [(cases hs cont ctx) @ match hs
-  --       [{(0 => . es) > (e => . es)}
-  --         '(split-opt
-  --           ,(cont es @ fn (x) '(opt0 ,(ctx x)))
-  --           ,(cases '(,e => . ,es) cont @ fn (x) '(optS ,(ctx x))))]
-  --       [(+ . (and es ((0 => _) ...)))
-  --         (foldr es  '(split-opt
-
-  --         ]]
-  --     [(continue es g) @ match es
-  --       [((? atom? x) => . es)
-
-  --         ]])
-  --   _)
+  (def (mk-cases-eqns clauses done) @ letrec (
+    [((then-bitr th ctx) x) @ ctx '(syl5bb ,th ,x)]
+    [(mk vars hs next ctx)
+      @ match hs
+      ['{(0 => . ,es1) > ,es2}
+        (next vars es1 (then-bitr 'ocasep0 ctx))
+        (mk vars es2 next (then-bitr 'ocasepS ctx))]
+      [('+ . (and es '((0 => . ,_) . ,_)))
+        @ letrec ([f @ match-fn*
+          [(((_ '=> . es)) ctx)
+            (next vars es @ fn (x) @ ctx '(elabed @ anwl ,x))]
+          [(((_ '=> . es) . es2) ctx)
+            (next vars es (then-bitr 'ocasep0 ctx))
+            (f es2 (then-bitr 'ocasepS ctx))]])
+        (f es ctx)]
+      ['{(#f => . ,es1) + (#t => . ,es2)}
+        (next vars es1 (then-bitr 'ocasep0 ctx))
+        (next vars es2 @ fn (x) @ ctx '(syl5bb ocasepS @ elabed @ anwl ,x))]
+      [{es1 '+ es2}
+        (mk vars es1 next (then-bitr 'Suml ctx))
+        (mk vars es2 next (then-bitr 'Sumr ctx))]
+      ['(<> => . ,es)
+        @ mk vars es
+          (fn (vars2 es2 ctx2)
+            @ mk vars2 es2 next
+            (fn (x) @ ctx
+              (def rot @ iterate {(len vars2) - (len vars)}
+                (fn (x) '(anroti ,x)) '(anim1 anl))
+              '(elsabed @ elabed @ bitrd (eleq1d anlr)
+                ,(ctx2 '(rsyl ,rot @ bitrd (eleq1d anr) @ anwl ,x)))))
+          id]
+      [((? atom? y) '=> . es)
+        (def z (dummy! 'nat))
+        (next (cons y vars) es @ fn (x) @ ctx '(!! elabed ,z ,x))]
+      [((and ls (...)) '=> . es)
+        @ letrec ([f @ match-fn*
+          [(vars ((? atom? y)) ctx)
+            (def z (dummy! 'nat))
+            (next (cons y vars) es @ fn (x) @ ctx '(!! elabed ,z ,x))]
+          [(vars ((? atom? y) . ls) ctx)
+            (def z (dummy! 'nat))
+            (f (cons y vars) ls @ fn (x) @ ctx '(!! elsabed ,z ,x))]])
+        (f vars ls ctx)]
+      [(es) (mk vars es next ctx)]])
+    (mk () clauses done id))
 };
 
-@_ abstract def execXAST (k ast k2: nat): wff;
-pub theorem execXASTUnop {q: nat} (k op sz rm k2: nat):
-  $ execXAST k (xastUnop op sz rm) k2 <-> E. q (
-      readEA k sz (RM_EA k rm) q /\
-      writeUnop k op sz (RM_EA k rm) q k2) $;
-pub theorem execXASTBinop {d s: nat} (k op sz ds k2: nat):
-  $ execXAST k (xastBinop op sz ds) k2 <-> E. d E. s (
-      readEA k sz (destEA k ds) d /\
-      readEA k sz (srcEA k ds) s /\
-      writeBinop k op sz (destEA k ds) d s k2) $;
-pub theorem execXASTMul {n src res lo hi: nat} (k sz rm k2: nat):
-  $ execXAST k (xastMul sz rm) k2 <-> E. n E. src E. res (
-      n = wsizeBits sz /\
-      readEA k sz (RM_EA k rm) src /\
-      res = readRegSz k sz RAX * src /\
-      ifp (n = 8)
-        (k2 = writeReg k wSz16 RAX res)
-        (E. lo E. hi (
-          splitBits ((n <> lo) : (n <> hi) : 0) res /\
-          k2 = writeReg (writeReg k sz RAX lo) sz RDX hi))) $;
-pub theorem execXASTDiv {n a b d m: nat} (k sz rm k2: nat):
-  $ execXAST k (xastDiv sz rm) k2 <-> E. n E. a E. b E. d E. m (
-      n = wsizeBits sz /\
-      readEA k sz (RM_EA k rm) b /\
-      divModSz sz a b d m /\
-      ifp (n = 8)
-        (a = readRegSz k wSz16 RAX /\
-          eraseFlags (writeReg k sz RAX (shl m 8 + d)) k2)
-        (splitBits ((n <> readRegSz k sz RAX) :
-                    (n <> readRegSz k sz RDX) : 0) a /\
-          eraseFlags (writeReg (writeReg k sz RAX d) sz RDX m) k2)) $;
-pub theorem execXASTLea (k sz ds k2: nat):
-  $ execXAST k (xastLea sz ds) k2 <->
-    writeEA k sz (destEA k ds) (EA_addr (srcEA k ds)) k2 $;
-pub theorem execXASTMovSX {src: nat} (k sz ds sz2 k2: nat):
-  $ execXAST k (xastMovSX sz ds sz2) k2 <-> E. src (
-      readEA k sz (srcEA k ds) src /\
-      writeEA k sz2 (destEA k ds)
-        (sExt (wsizeBits sz) (wsizeBits sz2) src) k2) $;
-pub theorem execXASTMovZX {src: nat} (k sz ds sz2 k2: nat):
-  $ execXAST k (xastMovZX sz ds sz2) k2 <-> E. src (
-      readEA k sz (srcEA k ds) src /\
-      writeEA k sz2 (destEA k ds) src k2) $;
-pub theorem execXASTXchg {v: nat} (k sz rm r k2: nat):
-  $ execXAST k (xastXchg sz rm r) k2 <-> E. v (
-      readEA k sz (RM_EA k rm) v /\
-      writeEA (writeReg k sz r v) sz (RM_EA k rm) (readRegSz k sz r) k2) $;
-pub theorem execXASTCmpXchg {src acc dst k2: nat} (k sz rm r k3: nat):
-  $ execXAST k (xastCmpXchg sz rm r) k3 <-> E. src E. acc E. dst E. k2 (
-      acc = readRegSz k sz RAX /\
-      readEA k sz (RM_EA k rm) dst /\
-      writeBinop k binopCmp sz (EA_r r) acc dst k2 /\
-      ifp (acc = dst)
-        (writeEA k2 sz (RM_EA k rm) (readRegSz k sz r) k3)
-        (writeEA k2 sz (EA_r RAX) dst k3)) $;
-pub theorem execXASTXadd {v: nat} (k sz rm r k2: nat):
-  $ execXAST k (xastXadd sz rm r) k2 <-> E. v (
-      readEA k sz (RM_EA k rm) v /\
-      writeBinop k binopAdd sz (RM_EA k rm) (readRegSz k sz r) v k2) $;
-pub theorem execXASTCMov {v: nat} (k c sz ds k2: nat):
-  $ execXAST k (xastCMov c sz ds) k2 <->
-      ifp (readCond k c)
-        (E. v (readEA k sz (srcEA k ds) v /\ writeEA k sz (destEA k ds) v k2))
-        (k2 = k) $;
-pub theorem execXASTSetCC {v: nat} (k c b rm k2: nat):
-  $ execXAST k (xastSetCC c b rm) k2 <->
-    writeEA k (wSz8 (true b)) (RM_EA k rm) (nat (readCond k c)) k2 $;
-pub theorem execXASTJump {v: nat} (k rm k2: nat):
-  $ execXAST k (xastJump rm) k2 <-> E. v (
-      readEA k wSz64 (RM_EA k rm) v /\ k2 = writeRIP k v) $;
-pub theorem execXASTJCC (k c q k2: nat):
-  $ execXAST k (xastJCC c q) k2 <->
-    k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $;
-pub theorem execXASTCall {k2: nat} (k irm k3: nat):
-  $ execXAST k (xastCall irm) k3 <-> E. k2 (
-    pushRIP k k2 /\ EA_jump k2 (immRM_EA k irm) k2) $;
-pub theorem execXASTRet {k2: nat} (k q k3: nat):
-  $ execXAST k (xastRet q) k3 <-> E. k2 (
-    popRIP k k2 /\ k3 = setReg k RSP (readReg k RSP +_64 q)) $;
-pub theorem execXASTLeave (k k2: nat):
-  $ execXAST k xastLeave k2 <->
-    popWrite (setReg k RSP (readReg k RBP)) (RM_reg RBP) k2 $;
-pub theorem execXASTPush (k irm k2: nat):
-  $ execXAST k (xastPush irm) k2 <-> pushImmRM k irm k2 $;
-pub theorem execXASTPop (k rm k2: nat):
-  $ execXAST k (xastPop rm) k2 <-> popWrite k rm k2 $;
-pub theorem execXASTCLC (k k2: nat):
-  $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
-pub theorem execXASTSTC (k k2: nat):
-  $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
-pub theorem execXASTCMC (k k2: nat):
-  $ execXAST k xastCMC k2 <->
-    k2 = writeFlags k (setCF (readFlags k) (~ (CF (readFlags k)))) $;
-pub theorem execXASTSysCall {r11: nat} (k n k2: nat):
-  $ execXAST k xastSysCall k2 <-> E. r11 (
-    k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) exSysCall) $;
+@_ abstract def execXAST {.res} (k ast k2: nat): wff = $ ast e. ,(mk-cases-def execXAST_clauses) $;
+
+do (mk-cases-eqns execXAST_clauses @ match-fn* @ (rvars ((name . dummies) stmt) ctx)
+  (def vars (rev rvars))
+  (def thname (atom-app 'execXAST name))
+  (def bis @ append (map (fn (x) '(,x nat)) dummies)
+    '((k nat ())) (map (fn (x) '(,x nat ())) vars) '((k2 nat ())))
+  (def stmt $ execXAST k ,'(,(atom-app 'xast name) . ,vars) k2 <-> ,stmt $)
+  (add-tac-thm! thname bis () stmt 'pub @ fn ()
+    (named '(trud ,(ctx ,eqtac)))));
 
 pub theorem execXASTT (k ast k2: nat):
   $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
@@ -2276,7 +2201,7 @@ $ E. i2 E. k2 E. m2 (
 @_ def ELF_DATA_2LSB: nat = $ 1 $;
 @_ def ELF_VERSION: nat = $ 1 $;
 @_ def ELF_IDENT: nat =
-$ ELF_MAGIC ++ ELF_CLASS_64 : ELF_DATA_2LSB : ELF_VERSION : repea_t 0 9 $;
+$ ELF_MAGIC ++ ELF_CLASS_64 : ELF_DATA_2LSB : ELF_VERSION : repeat 0 9 $;
 pub theorem ELF_IDENT_T: $ ELF_IDENT e. Array u8 16 $;
 
 @_ def ET_EXEC: nat = $ u16Bytes 2 $;
@@ -2338,7 +2263,7 @@ $ E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
     sublistAt phoff file ph /\
     pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
     sublistAt off file seg /\
-    elf = entry <> prot <> off <> (seg ++ repea_t 0 (memsz - len seg))) $;
+    elf = entry <> prot <> off <> (seg ++ repeat 0 (memsz - len seg))) $;
 
 @_ def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
@@ -2351,7 +2276,7 @@ do (set-reporting #t);
 $ E. sp E. stack E. argc E. k2 E. km2 (
     sp + len stack + 2 ^ 12 e. u64 /\
     mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m sp stack k2 km2 /\
-    mapMem 0 k2 km2 (sp + len stack) (repea_t 0 (2 ^ 12)) k3 km3 /\
+    mapMem 0 k2 km2 (sp + len stack) (repeat 0 (2 ^ 12)) k3 km3 /\
     argc e. u64 /\ sublistAt 0 stack (u64Bytes argc) /\
     A. x (x < argc -> E. arg E. cstr (
       sublistAt (8 * suc x) stack (u64Bytes (sp + arg)) /\
