@@ -103,7 +103,7 @@ do {
   (def (eqtac-ctx ltr hyps)
     @ foldr hyps () @ fn (h ls)
       @ match (match (infer-type h) [('im _ R) R] [R R])
-        [('eq L R) '([,(if ltr L R) ,h] ,ls)]
+        [('eq L R) '([,(if ltr L R) ,h] . ,ls)]
         [_ ls])
   (def (eqtac-core ltr ctx t)
     @ match t @ (eq L R)
@@ -2686,6 +2686,10 @@ theorem elxabe (B: set x) (h: $ x = a -> (b e. B <-> p) $):
   $ a <> b e. X\ x e. A, B <-> a e. A /\ p $ =
 '(trud @ elxabed @ anwr h);
 
+theorem elxabe2 (B: set x) (h: $ x = fst a -> (snd a e. B <-> p) $):
+  $ a e. X\ x e. A, B <-> fst a e. A /\ p $ =
+'(bitr3 (eleq1 fstsnd) @ elxabe h);
+
 theorem xabssd (B C: set x) (h: $ G /\ x e. A -> B C_ C $):
   $ G -> X\ x e. A, B C_ X\ x e. A, C $ =
 (named '(sylib ssab @ iald @ syl anim2a @ exp @ syl ssel @
@@ -4447,6 +4451,9 @@ pub theorem snoclt (a b: nat): $ a < a |> b $ =
 theorem appendsnoc: $ l1 ++ (l2 |> b) = l1 ++ l2 |> b $ = (named '(eqcom appendass));
 
 theorem conssnoc: $ a : (l |> b) = a : l |> b $ = '(eqcom appendS);
+
+theorem snocT: $ a |> b e. List A <-> a e. List A /\ b e. A $ =
+'(bitr appendT @ aneq2i elList1);
 
 @_ local def listfn (l .f: nat): nat = $ lrec 0 (\\ a, \\ z, \ f,
   \. i e. upto (suc (size (Dom f))), if (i = 0) a (f @ (i - 1))) l $;

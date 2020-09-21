@@ -1759,12 +1759,14 @@ pub theorem setExceptionT (k e: nat):
   mpd (mpbid (syl6bb mkCfgT @ eleq1d anr) anll) @
   anim1d @ anim1d @ anim1d @ anim1d @ a1d anlr));
 
+theorem setExceptionMem: $ getMemory (setException k e) = getMemory k $ =
+'(sndeq @ sndeq sndpr);
+
 @_ abstract def setReg (k r q: nat): nat =
-$ (\\ a, \\ rs, \ m, a <> lower (write rs r q) <> m) @ k $;
+$ fst k <> lower (write (pi21 k) r q) <> pi22 k $;
 pub theorem setRegVal (ex ip rs f m r q: nat):
   $ setReg (mkCfg ex ip rs f m) r q = mkCfg ex ip (lower (write rs r q)) f m $ =
-(named '(appslame @ appslamed @ applamed @
-  preqd anll @ preqd (lowereqd @ writeeq1d @ nseqd anlr) anr));
+'(preq fstpr @ preq (lowereq @ writeeq1 @ nseq pi21pr) pi22pr);
 pub theorem setRegT (k r q: nat):
   $ k e. Config /\ r e. Regs /\ q e. u64 -> setReg k r q e. Config $ =
 (named '(mpi mkCfg_ex @ eexd @ eexd @ eexd @ eexd @ eexda @
@@ -1772,6 +1774,9 @@ pub theorem setRegT (k r q: nat):
   mpd (mpbid (syl6bb mkCfgT @ eleq1d anr) an3l) @
   anim1d @ anim1d @ anim2d @ exp @
   writeArrow anr an3lr anllr @ a1i @ mpbi eqlower @ writefin finns));
+
+theorem setRegMem: $ getMemory (setReg k r q) = getMemory k $ =
+'(sndeq pi22pr);
 
 @_ abstract def writeReg (k sz r v: nat): nat =
 $ if (wsizeBits sz = 8)
@@ -2451,41 +2456,61 @@ pub theorem stepT (k k2: nat): $ step k k2 -> k e. Config /\ k2 e. Config $ =
 @_ def PageMapping (M .m .a .p .v: nat): set =
 $ {m | m e. Arrow u64 (Option Prot) /\
   A. a A. p (a <> suc p e. m -> E. v M @ a = p <> v)} $;
+theorem elPageMapping:
+  $ m e. PageMapping M <-> m e. Arrow u64 (Option Prot) /\
+    A. a A. p (a <> suc p e. m -> E. v M @ a = p <> v) $ =
+'(!! elabe x ,eqtac);
+theorem PageMappingss: $ PageMapping M C_ Arrow u64 (Option Prot) $ =
+(named '(ax_gen @ sylbi elPageMapping anl));
+theorem finPageMapping: $ finite (PageMapping M) $ =
+'(finss PageMappingss @ Arrowfin finns @ optfin finiteProt);
 
 -- Now we model enough of the Linux kernel to interpret a few IO system calls@_ .
 def KernelState {.k: nat}: set =
 $ Xp (Xp (List u8) (List u8)) (X\ k e. Config, PageMapping (getMemory k)) $;
 @_ def mkKS (i o k m: nat): nat = $ (i <> o) <> k <> m $;
 pub theorem mkKST (i o k m: nat):
-  $ i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) ->
-    mkKS i o k m e. KernelState $;
+  $ mkKS i o k m e. KernelState <->
+    i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) $ =
+'(bitr prelxp @ bitr4 (aneq prelxp @ !! elxabe x ,eqtac) anass);
 
 @_ def ksCfg (k: nat): nat = $ pi21 k $;
-pub theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $;
+pub theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $ =
+'(sylbir (bitr3 mkKST @ eleq1 @ eqtr (preq fstsnd fstsnd) fstsnd) anlr);
 @_ def ksMapping (k: nat): nat = $ pi22 k $;
 pub theorem ksMappingT (k: nat):
-  $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $;
+  $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $ =
+'(sylbir (bitr3 mkKST @ eleq1 @ eqtr (preq fstsnd fstsnd) fstsnd) anr);
 
-@_ def writeMapping (ks m2 k2 ks2 .i .o .k .m: nat): wff =
-$ m2 e. PageMapping k2 /\ E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
+@_ def writeMapping (ks k2 m2 ks2 .i .o .k .m: nat): wff =
+$ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
+  E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
 pub theorem writeMappingT (ks m k ks2: nat):
-  $ ks e. KernelState /\ k e. Config /\ writeMapping ks k m ks2 -> ks2 e. KernelState $;
+  $ writeMapping ks k m ks2 ->
+    ks e. KernelState /\ k e. Config /\
+    m e. PageMapping (getMemory k) /\ ks2 e. KernelState $ =
+(named '(anim2a @ eexd @ eexd @ eexd @ eexda @ mpbird (eleq1d anrr) @
+  sylibr mkKST @ mpand (sylib mkKST @ mpbid (eleq1d anrl) an3l) @
+  iand (iand (anwr anll) an3lr) anllr));
 
 @_ def writeCfg (ks k2 ks2: nat): wff =
 $ writeMapping ks k2 (ksMapping ks) ks2 $;
 pub theorem writeCfgT (ks k ks2: nat):
-  $ ks e. KernelState /\ k e. Config /\ writeCfg ks k ks2 -> ks2 e. KernelState $;
+  $ writeCfg ks k ks2 -> ks e. KernelState /\ k e. Config /\ ks2 e. KernelState $ =
+'(rsyl writeMappingT @ anim1 anl);
 
 @_ def stdin: nat = $ 0 $;
 @_ def stdout: nat = $ 1 $;
 
 @_ def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
 pub theorem toCStrT (s l: nat):
-  $ s e. List u8 /\ toCStr s l -> l e. List u8 $;
+  $ toCStr s l -> (s e. List u8 <-> l e. List u8) $ =
+(named '(anwr @ bicomd @ syl6bb (bitr snocT @ bian2 elBits01) eleq1));
 
 @_ def readCStr (k a s .l: nat): wff = $ E. l (toCStr s l /\ readMem k a l) $;
 pub theorem readCStrT (k a s: nat):
-  $ k e. Config /\ a e. u64 /\ readCStr k a s -> s e. List u8 $;
+  $ readCStr k a s -> k e. Config /\ a e. u64 /\ s e. List u8 $ =
+(named '(eex @ imp @ syl5 readMemT @ bi2d @ aneq2d toCStrT));
 
 @_ def O_RDONLY: nat = $ 0 $;
 @_ def O_WRONLY: nat = $ 1 $;
@@ -2494,11 +2519,15 @@ pub theorem readCStrT (k a s: nat):
 
 @_ def sys_open: nat = $ 2 $;
 @_ def execOpen (k ret .filename .flags: nat): wff =
-$ readReg k RAX = sys_open /\ E. filename E. flags (
+$ k e. Config /\ readReg k RAX = sys_open /\
+  E. filename E. flags (
     readCStr k (readReg k RDI) filename /\
     flags = readReg k RSI /\ readReg k RDX = 0 /\
     (flags = O_RDONLY \/ flags = O_WRONLY + O_CREA_T + O_TRUNC) /\
     ret e. u32) $;
+pub theorem execOpenT (k ret: nat):
+  $ execOpen k ret -> k e. Config /\ ret e. u64 $ =
+(named '(anim anl @ eex @ eex @ anwr @ ssel @ Bitsss d32le64));
 
 -- we only track progress through stdin
 @_ def readFromFD (fd l l1 l2: nat): wff =
@@ -2508,14 +2537,28 @@ $ ifp (fd = stdin)
 
 @_ def sys_read: nat = $ 0 $;
 @_ def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
-$ readReg k RAX = sys_read /\ E. fd E. buf E. count (
-    readReg k RDI = fd /\
+$ l e. List u8 /\ readReg k RAX = sys_read /\
+  E. fd E. buf E. count (readReg k RDI = fd /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     count = readReg k RDX /\
     ifp (MSB 32 ret)
       (l2 = l /\ k2 = k)
       (ret <= count /\ E. l1 (readFromFD fd l l1 l2 /\
         writeMem k (readReg k RSI) l1 k2))) $;
+theorem execReadT2 (l k l2 k2 ret: nat):
+  $ execRead l k l2 k2 ret ->
+    l e. List u8 /\ k e. Config /\
+    l2 e. List u8 /\ k2 e. Config /\ ret e. u64 /\
+    PageMapping (getMemory k) C_ PageMapping (getMemory k2) $;
+pub theorem execReadT (l k l2 k2 ret: nat):
+  $ execRead l k l2 k2 ret ->
+    l e. List u8 /\ k e. Config /\
+    l2 e. List u8 /\ k2 e. Config /\ ret e. u64 $ =
+'(anld execReadT2);
+pub theorem execReadPM (l k l2 k2 ret: nat):
+  $ execRead l k l2 k2 ret ->
+    PageMapping (getMemory k) C_ PageMapping (getMemory k2) $ =
+'(anrd execReadT2);
 
 -- we only track printing to stdout
 @_ def writeToFD (fd l l1 l2: nat): wff =
@@ -2523,12 +2566,17 @@ $ l2 = if (fd = stdout) (l ++ l1) l $;
 
 @_ def sys_write: nat = $ 1 $;
 @_ def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
-$ readReg k RAX = sys_write /\ E. fd E. buf E. count (
+$ l e. List u8 /\ readReg k RAX = sys_write /\
+  E. fd E. buf E. count (
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     ifp (MSB 32 ret) (l2 = l)
       (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
+pub theorem execWriteT (l k l2 ret: nat):
+  $ execWrite l k l2 ret ->
+    l e. List u8 /\ k e. Config /\
+    l2 e. List u8 /\ ret e. u64 $;
 
 @_ def Stat: set = $ Array u8 (8 * 10) $;
 @_ def sys_fstat: nat = $ 5 $;
@@ -2538,35 +2586,105 @@ $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
     readMem k (readReg k RSI) stat /\
     stat e. Stat /\ stat2 e. Stat /\
     ret e. u32 /\ writeMem k (readReg k RSI) stat2 k2) $;
+theorem execFStatT2 (k k2 ret: nat):
+  $ execFStat k k2 ret -> k2 e. Config /\ ret e. u64 /\
+    PageMapping (getMemory k) C_ PageMapping (getMemory k2) $;
+pub theorem execFStatT (k k2 ret: nat):
+  $ execFStat k k2 ret -> k2 e. Config /\ ret e. u64 $ =
+'(anld execFStatT2);
+pub theorem execFStatPM (k k2 ret: nat):
+  $ execFStat k k2 ret ->
+    PageMapping (getMemory k) C_ PageMapping (getMemory k2) $ =
+'(anrd execFStatT2);
 
 @_ def mapMemory1 (prot m a b: nat): nat =
 $ lower (write (fst m) a (prot <> b)) <> lower (write (snd m) a (suc prot)) $;
+pub theorem mapMemory1T {x: nat} (prot m a b: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ b e. u8 ->
+    mapMemory1 prot m a b e. X\ x e. Memory, PageMapping x $ =
+(named '(rsyl (anroti @ anroti id) @ imp @
+  sylibr (imeqi (elxabe2 ,eqtac) (elxabe ,eqtac)) @
+  sylibr (imeqi (aneq2i elPageMapping) (aneq2i elPageMapping)) @
+  exp @ iand (writeArrow anrl anllr (xpTd an3l anlr) @
+    a1i @ mpbi eqlower @ writefin finns) @
+  iand (writeArrow (anwr anrl) anllr (sylibr optS an3l) @
+    a1i @ mpbi eqlower @ writefin finns) @
+  sylbir anass @ sylbir anass @ imp @ alimd @ alimd @
+  syl6ibr (imeq1i @ bitr (ellower @ writefin finns) elwrite) @
+  com23 @ eorda
+    (a1d @ iexde @ syl5eqr (appeq1 @ mpbi eqlower @ writefin finns) @
+      eqtr4d (syl6eq writeEq @ appeq2d @ anld anlr) @
+      preqd (sylib peano2 @ anrd anlr) anr)
+    (eimd anrr @ bi2d @ exeqd @ eqeq1d @
+      syl5eqr (appeq1 @ mpbi eqlower @ writefin finns) @
+      syl writeNe anrl)));
 
-@_ abstract def mapMemory (prot m a l: nat): nat;
-pub theorem mapMemory0 (prot m a: nat): $ mapMemory prot m a 0 = m $;
-pub theorem mapMemoryS (prot m a b l: nat):
-  $ mapMemory prot m a (b : l) =
-    mapMemory prot (mapMemory1 prot m a b) (a +_64 1) l $;
-pub theorem mapMemoryT {x: nat} (prot m a l m2: nat):
-  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ l e. List u8 /\
-    mapMemory prot m a l e. X\ x e. Memory, PageMapping x $;
+@_ local def mapMemory_aux (prot l: nat): nat =
+$ lrec
+  (\. m e. lower (X\ x e. Memory, PageMapping x), \. a e. u64, m)
+  (\\ b, \\ z, \ ih,
+    \. m e. lower (X\ x e. Memory, PageMapping x), \. a e. u64,
+    ih @ mapMemory1 prot m a b @ (a +_64 1))
+  l $;
+
+theorem finMPageMapping: $ finite (X\ x e. Memory, PageMapping x) $ =
+'(trud @ xabfin (a1i finiteMemory) @ a1i finPageMapping);
+
+@_ abstract def mapMemory (prot m a l: nat): nat = $ mapMemory_aux prot l @ m @ a $;
+pub theorem mapMemory0 {x: nat} (prot m a: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 ->
+    mapMemory prot m a 0 = m $ =
+(named '(mpi {lrec0 : $ mapMemory_aux _ _ = _ $} @
+  apprlamed1 (sylibr (ellower finMPageMapping) anlr) @ apprlamed2 anlr anlr));
+
+pub theorem mapMemoryS {x: nat} (prot m a b l: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
+    mapMemory prot m a (b : l) =
+    mapMemory prot (mapMemory1 prot m a b) (a +_64 1) l $ =
+'(mpi (eqtr {lrecS : $ mapMemory_aux _ _ = _ @ (_ <> _ <> mapMemory_aux _ _) $} @
+  !! appslame y @ !! appslamed z @ !! applamed w ,eqtac) @
+  !! apprlamed1 n (sylibr (ellower finMPageMapping) an3lr) @
+  !! apprlamed2 c an3lr ,eqtac);
+pub theorem mapMemoryT {x: nat} (prot m a l: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ l e. List u8 ->
+    mapMemory prot m a l e. X\ x e. Memory, PageMapping x $ =
+(named '(ax_mp (!! eale m3 ,(eqtac-gen 'm)) @ ax_mp (!! eale a2 ,(eqtac-gen 'a))
+  ,(induct '(listind) 'l
+    '(ax_gen @ ax_gen @ anwl @ mpbird (eleq1d mapMemory0) anlr)
+    '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
+      com12 @ sylbi (bitr4 (aneq2i elListS) anass) @
+      !! ealde m4 @ !! ealde a3 @ syld (bi1d ,eqtac) @ anwll @
+      eimd (iand (iand (iand an4l @ anwl mapMemory1T) @ a1i add64T) anr) @
+      bi2d @ eleq1d mapMemoryS))));
 
 @_ def mapMem (prot k km a l k2 km2 .e .ip .r .f .m .m2: nat): wff =
-$ E. e E. ip E. r E. f E. m E. m2 (
+$ prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
+  E. e E. ip E. r E. f E. m E. m2 (
   k = mkCfg e ip r f m /\
   mapMemory prot (m <> km) a l = m2 <> km2 /\
   k2 = mkCfg e ip r f m2) $;
 pub theorem mapMemT (prot k km a l k2 km2: nat):
-  $ prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
-    mapMem prot k km a l k2 km2 ->
-    k2 e. Config /\ km2 e. PageMapping (getMemory k2) $;
+  $ mapMem prot k km a l k2 km2 ->
+    prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
+    k2 e. Config /\ km2 e. PageMapping (getMemory k2) $ =
+(named @ focus
+  '(sylibr anass @ anim2a @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @
+    com12 @ mpbird ,eqtac @ rsyl anlr @ expcom _)
+  (have 'h '(sylib mkCfgT an4lr))
+  (def pm '(eleq2 @ PageMappingeq getMemory_mk))
+  (suffices 'h2)
+  '(iand (sylibr mkCfgT @ iand (anld h) @ anld h2) @ sylibr ,pm @ anrd h2)
+  '(sylib (elxabe ,(eqtac-gen 'm2)) @ mpbid (eleq1d anr) @
+    sylan mapMemoryT (iand (iand an5l _) anllr) anlr)
+  '(sylibr (elxabe ,eqtac) @ iand (anrd h) @ sylib ,pm an3lr));
 
 @_ def sys_mmap: nat = $ 9 $;
 @_ def MAP_PRIVATE: nat = $ 2 $;
 @_ def MAP_ANONYMOUS: nat = $ 32 $;
 @_ def MAP_FAILED: nat = $ bitsNeg 64 1 $;
 @_ def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
-$ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
+$ k e. Config /\ m e. PageMapping (getMemory k) /\
+  readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
     readReg k RDI = 0 /\ len = readReg k RSI /\
     prot = readReg k RDX /\ flags = readReg k 10 /\
     fd = readReg k 8 /\ off = readReg k 9 /\
@@ -2576,16 +2694,57 @@ $ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
         A. i (i < len -> m @ (ret +_64 i) = 0) /\
         mapMem prot k m ret buf k2 m2))) $;
+pub theorem execMMapT (k m k2 m2 ret: nat):
+  $ execMMap k m k2 m2 ret ->
+    k e. Config /\ m e. PageMapping (getMemory k) /\
+    k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\ ret e. u64 $;
 
 @_ def execIO (ks ks2 .i .o .k .m .ret .k2 .k3 .i2 .o2 .m2: nat): wff =
 $ E. i E. o E. k E. m E. ret (ks = mkKS i o k m /\ readException k = suc exSysCall /\
   E. k2 E. k3 (k3 = setException (setReg k2 RAX ret) 0 /\ (
-    execOpen k ret /\ k2 = k /\ ks = mkKS i o k3 m \/
+    execOpen k ret /\ k2 = k /\ ks2 = mkKS i o k3 m \/
     E. i2 (execRead i k i2 k2 ret /\ ks2 = mkKS i2 o k3 m) \/
     E. o2 (execWrite o k o2 ret /\ k2 = k /\ ks2 = mkKS i o2 k3 m) \/
     execFStat k k2 ret /\ ks2 = mkKS i o k3 m \/
     E. m2 (execMMap k m k2 m2 ret /\ ks2 = mkKS i o k3 m2)))) $;
-pub theorem execIOT (k k2: nat): $ k e. KernelState /\ execIO k k2 -> k2 e. KernelState $;
+pub theorem execIO_T (ks ks2: nat):
+  $ ks e. KernelState /\ execIO ks ks2 -> ks2 e. KernelState $ =
+(named @ focus
+  '(imp @ !! eexd i @ eexd @ eexd @ eexd @ eexd @ impd @ expcom @ eexd @ eexd @
+    impd @ exp _)
+  (have 'he $ _ -> k2 e. Config /\ ret e. u64 -> k3 e. Config $
+    '(exp @ mpbird (eleq1d anlr) @ anwr @
+      sylan setExceptionT (syl setRegT @ anim1 @ mpi RAX_T ian) @ a1i opt0))
+  (have 'hs '(sylib mkKST @ mpbid (eleq1d an3l) anlr))
+  (def (f a b c io d e)
+    '(,a @ mpbird (eleq1d anrr) @ sylibr mkKST @ mpand (anwr ,b) @
+      iand (iand ,io @ mpd (iand ,d @ anwr ,c) @ anwll he) @
+      mpbird (eleq2d @ PageMappingeqd @
+        syl6eq setRegMem @ syl6eq setExceptionMem @
+        getMemoryeqd anllr) ,e))
+  '(eord (eord (eord (eord _ _) _) _) _)
+  -- Open
+  (f 'exp '(anwll execOpenT) 'anr '(anwll @ rsyl hs anll)
+    '(mpbird (eleq1d @ rsyl anlr anlr) anrl)
+    '(mpbird (eleq2d @ PageMappingeqd @ getMemoryeqd @ rsyl anlr anlr) @
+      anwll @ anrd hs))
+  -- Read
+  (f 'eexda '(anwl execReadT2) 'anlr
+    '(iand (anwr an3lr) @ anwll @ rsyl hs anllr)
+    '(anwr anllr)
+    '(sseld anrr @ anwll @ anrd hs))
+  -- Write
+  (f 'eexda '(anwll execWriteT) 'anr
+    '(iand (anwll @ rsyl hs an3l) @ anwr anlr)
+    '(mpbird (eleq1d @ rsyl anlr anlr) @ anwr anllr)
+    '(mpbird (eleq2d @ PageMappingeqd @ getMemoryeqd @ rsyl anlr anlr) @
+      anwll @ anrd hs))
+  -- FStat
+  (f 'exp '(anwl execFStatT2) 'anlr '(anwll @ rsyl hs anll)
+    '(anwr anll) '(sseld anrr @ anwll @ anrd hs))
+  -- MMap
+  (f 'eexda '(anwl execMMapT) 'anr '(anwll @ rsyl hs anll)
+    '(anwr anllr) '(anwr anlr)));
 
 @_ def sys_exit: nat = $ ch x3 xc $;
 -- We consider protection faults as a valid way to exit with a nonzero exit code
@@ -2606,7 +2765,8 @@ $ ks e. KernelState /\ (
     E. k2 (step (ksCfg ks) k2 /\ writeCfg ks k2 ks2) \/
     execIO ks ks2) $;
 pub theorem ksStepT (ks ks2: nat):
-  $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
+  $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $ =
+(named '(anim2a @ eord (a1i @ eex @ anrd @ anwr writeCfgT) @ exp execIO_T));
 
 @_ abstract def ksPath (ks l ks2: nat): wff;
 pub theorem ksPath0 (ks l ks2: nat):

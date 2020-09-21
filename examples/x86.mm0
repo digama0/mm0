@@ -1265,26 +1265,28 @@ def ksMapping (k: nat): nat = $ pi22 k $;
 theorem ksMappingT (k: nat):
   $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $;
 
-def writeMapping (ks m2 k2 ks2 .i .o .k .m: nat): wff =
-$ m2 e. PageMapping k2 /\ E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
+def writeMapping (ks k2 m2 ks2 .i .o .k .m: nat): wff =
+$ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
+  E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
 theorem writeMappingT (ks m k ks2: nat):
-  $ ks e. KernelState /\ k e. Config /\ writeMapping ks k m ks2 -> ks2 e. KernelState $;
+  $ writeMapping ks k m ks2 ->
+    ks e. KernelState /\ k e. Config /\ m e. PageMapping k /\ ks2 e. KernelState $;
 
 def writeCfg (ks k2 ks2: nat): wff =
 $ writeMapping ks k2 (ksMapping ks) ks2 $;
 theorem writeCfgT (ks k ks2: nat):
-  $ ks e. KernelState /\ k e. Config /\ writeCfg ks k ks2 -> ks2 e. KernelState $;
+  $ writeCfg ks k ks2 -> ks e. KernelState /\ k e. Config /\ ks2 e. KernelState $;
 
 def stdin: nat = $ 0 $;
 def stdout: nat = $ 1 $;
 
 def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
 theorem toCStrT (s l: nat):
-  $ s e. List u8 /\ toCStr s l -> l e. List u8 $;
+  $ toCStr s l -> (s e. List u8 <-> l e. List u8) $;
 
 def readCStr (k a s .l: nat): wff = $ E. l (toCStr s l /\ readMem k a l) $;
 theorem readCStrT (k a s: nat):
-  $ k e. Config /\ a e. u64 /\ readCStr k a s -> s e. List u8 $;
+  $ readCStr k a s -> k e. Config /\ a e. u64 /\ s e. List u8 $;
 
 def O_RDONLY: nat = $ 0 $;
 def O_WRONLY: nat = $ 1 $;
@@ -1298,6 +1300,8 @@ $ readReg k RAX = sys_open /\ E. filename E. flags (
     flags = readReg k RSI /\ readReg k RDX = 0 /\
     (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
     ret e. u32) $;
+theorem execOpenT (k ret: nat):
+  $ execOpen k ret -> k e. Config /\ ret e. u64 $;
 
 -- we only track progress through stdin
 def readFromFD (fd l l1 l2: nat): wff =
@@ -1307,14 +1311,21 @@ $ ifp (fd = stdin)
 
 def sys_read: nat = $ 0 $;
 def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
-$ readReg k RAX = sys_read /\ E. fd E. buf E. count (
-    readReg k RDI = fd /\
+$ l e. List u8 /\ readReg k RAX = sys_read /\
+  E. fd E. buf E. count (readReg k RDI = fd /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     count = readReg k RDX /\
     ifp (MSB 32 ret)
       (l2 = l /\ k2 = k)
       (ret <= count /\ E. l1 (readFromFD fd l l1 l2 /\
         writeMem k (readReg k RSI) l1 k2))) $;
+theorem execReadT (l k l2 k2 ret: nat):
+  $ execRead l k l2 k2 ret ->
+    l e. List u8 /\ k e. Config /\
+    l2 e. List u8 /\ k2 e. Config /\ ret e. u64 $;
+theorem execReadPM (l k l2 k2 ret: nat):
+  $ execRead l k l2 k2 ret ->
+    PageMapping (getMemory k) C_ PageMapping (getMemory k2) $;
 
 -- we only track printing to stdout
 def writeToFD (fd l l1 l2: nat): wff =
@@ -1322,12 +1333,17 @@ $ l2 = if (fd = stdout) (l ++ l1) l $;
 
 def sys_write: nat = $ 1 $;
 def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
-$ readReg k RAX = sys_write /\ E. fd E. buf E. count (
+$ l e. List u8 /\ readReg k RAX = sys_write /\
+  E. fd E. buf E. count (
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     ifp (MSB 32 ret) (l2 = l)
       (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
+theorem execWriteT (l k l2 ret: nat):
+  $ execWrite l k l2 ret ->
+    l e. List u8 /\ k e. Config /\
+    l2 e. List u8 /\ ret e. u64 $;
 
 def Stat: set = $ Array u8 (8 * 10) $;
 def sys_fstat: nat = $ 5 $;
@@ -1340,24 +1356,31 @@ $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
 
 def mapMemory1 (prot m a b: nat): nat =
 $ lower (write (fst m) a (prot <> b)) <> lower (write (snd m) a (suc prot)) $;
+theorem mapMemory1T {x: nat} (prot m a b: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ b e. u8 ->
+    mapMemory1 prot m a b e. X\ x e. Memory, PageMapping x $;
 
 def mapMemory (prot m a l: nat): nat;
-theorem mapMemory0 (prot m a: nat): $ mapMemory prot m a 0 = m $;
-theorem mapMemoryS (prot m a b l: nat):
-  $ mapMemory prot m a (b : l) =
+theorem mapMemory0 {x: nat} (prot m a: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 ->
+    mapMemory prot m a 0 = m $;
+theorem mapMemoryS {x: nat} (prot m a b l: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
+    mapMemory prot m a (b : l) =
     mapMemory prot (mapMemory1 prot m a b) (a +_64 1) l $;
-theorem mapMemoryT {x: nat} (prot m a l m2: nat):
-  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ l e. List u8 /\
+theorem mapMemoryT {x: nat} (prot m a l: nat):
+  $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ l e. List u8 ->
     mapMemory prot m a l e. X\ x e. Memory, PageMapping x $;
 
 def mapMem (prot k km a l k2 km2 .e .ip .r .f .m .m2: nat): wff =
-$ E. e E. ip E. r E. f E. m E. m2 (
+$ prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
+  E. e E. ip E. r E. f E. m E. m2 (
   k = mkCfg e ip r f m /\
   mapMemory prot (m <> km) a l = m2 <> km2 /\
   k2 = mkCfg e ip r f m2) $;
 theorem mapMemT (prot k km a l k2 km2: nat):
-  $ prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
-    mapMem prot k km a l k2 km2 ->
+  $ mapMem prot k km a l k2 km2 ->
+    prot e. Prot /\ k e. Config /\ km e. PageMapping (getMemory k) /\ a e. u64 /\ l e. List u8 /\
     k2 e. Config /\ km2 e. PageMapping (getMemory k2) $;
 
 def sys_mmap: nat = $ 9 $;
@@ -1365,7 +1388,8 @@ def MAP_PRIVATE: nat = $ 2 $;
 def MAP_ANONYMOUS: nat = $ 32 $;
 def MAP_FAILED: nat = $ bitsNeg 64 1 $;
 def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
-$ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
+$ k e. Config /\ m e. PageMapping (getMemory k) /\
+  readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
     readReg k RDI = 0 /\ len = readReg k RSI /\
     prot = readReg k RDX /\ flags = readReg k 10 /\
     fd = readReg k 8 /\ off = readReg k 9 /\
@@ -1375,16 +1399,21 @@ $ readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
         A. i (i < len -> m @ (ret +_64 i) = 0) /\
         mapMem prot k m ret buf k2 m2))) $;
+theorem execMMapT (k m k2 m2 ret: nat):
+  $ execMMap k m k2 m2 ret ->
+    k e. Config /\ m e. PageMapping (getMemory k) /\
+    k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\ ret e. u64 $;
 
 def execIO (ks ks2 .i .o .k .m .ret .k2 .k3 .i2 .o2 .m2: nat): wff =
 $ E. i E. o E. k E. m E. ret (ks = mkKS i o k m /\ readException k = suc exSysCall /\
   E. k2 E. k3 (k3 = setException (setReg k2 RAX ret) 0 /\ (
-    execOpen k ret /\ k2 = k /\ ks = mkKS i o k3 m \/
+    execOpen k ret /\ k2 = k /\ ks2 = mkKS i o k3 m \/
     E. i2 (execRead i k i2 k2 ret /\ ks2 = mkKS i2 o k3 m) \/
     E. o2 (execWrite o k o2 ret /\ k2 = k /\ ks2 = mkKS i o2 k3 m) \/
     execFStat k k2 ret /\ ks2 = mkKS i o k3 m \/
     E. m2 (execMMap k m k2 m2 ret /\ ks2 = mkKS i o k3 m2)))) $;
-theorem execIOT (k k2: nat): $ k e. KernelState /\ execIO k k2 -> k2 e. KernelState $;
+theorem execIO_T (ks ks2: nat):
+  $ ks e. KernelState /\ execIO ks ks2 -> ks2 e. KernelState $;
 
 def sys_exit: nat = $ ch x3 xc $;
 -- We consider protection faults as a valid way to exit with a nonzero exit code
