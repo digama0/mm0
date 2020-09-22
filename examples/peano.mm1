@@ -538,7 +538,11 @@ theorem anlass: $ a /\ (b /\ c) <-> b /\ (a /\ c) $ =
 '(bitr3 anass @ bitr (aneq1i ancomb) anass);
 theorem anrass: $ a /\ b /\ c <-> a /\ c /\ b $ =
 '(bitr anass @ bitr4 (aneq2i ancomb) anass);
+theorem an4: $ (a /\ b) /\ (c /\ d) <-> (a /\ c) /\ (b /\ d) $ =
+'(bitr4 anass @ bitr4 anass @ aneq2i anlass);
 theorem anroti (h: $ a -> b /\ d $): $ a /\ c -> b /\ c /\ d $ = '(sylib anrass @ anim1 h);
+theorem anrotri (h: $ b /\ d -> a $): $ b /\ c /\ d -> a /\ c $ = '(sylbi anrass @ anim1 h);
+theorem anassi (h: $ a <-> b /\ c $): $ a /\ d <-> b /\ (c /\ d) $ = '(bitr (aneq1i h) anass);
 theorem anidm: $ a /\ a <-> a $ = '(ibii anl (iand id id));
 theorem rbida (h1: $ a /\ c -> b $) (h2: $ a /\ d -> b $)
   (h: $ a /\ b -> (c <-> d) $): $ a -> (c <-> d) $ =
@@ -1118,9 +1122,15 @@ theorem elabe (a: nat) (p: wff x) (q: wff)
 theorem elabed (a: nat) (p: wff x) (q: wff)
   (e: $ G /\ x = a -> (p <-> q) $): $ G -> (a e. {x | p} <-> q) $ =
 '(syl5bb elab2 @ sbed e);
+theorem ssabed (a: nat) (p: wff x) (q: wff)
+  (h: $ G /\ x = a -> p -> q $): $ G -> a e. {x | p} -> q $ =
+'(syl5bi elab2 @ mpi ax_6 @ eexdh nfv (nfim nfsb1 nfv) @ exp @ syld (bi2d @ anwr sbq) h);
 theorem eelabd (a: nat x) (p: wff x) (q: wff)
   (h: $ G -> p -> q $): $ G -> a e. {x | p} -> q $ =
-(named '(syl5 (sylibr (cbvexh nfv nfsb1 sbq) @ iexe @ syl6bbr elab2 sbeq1) (eexd h)));
+'(syl5 (iexe eleq1) @ !! eexd y @ ssabed @ anwl h);
+theorem ssabeled (a: nat) (p: wff x) (q: wff)
+  (h: $ G /\ x = a -> p -> q /\ x e. A $): $ G -> a e. {x | p} -> q /\ a e. A $ =
+'(ssabed @ syld h @ bi1d @ aneq2d @ eleq1d anr);
 theorem abid (p: wff x): $ x e. {x | p} <-> p $ = '(bitr elab2 sbid);
 theorem abid2: $ {x | x e. A} == A $ = '(!! eqri y @ elabe eleq1);
 
@@ -2749,6 +2759,16 @@ theorem xpfin: $ finite A -> finite B -> finite (Xp A B) $ =
 theorem xabconst: $ X\ x e. A, B == Xp A B $ =
 (named '(eqri2 @ bitr4 (elxab eqsidd) prelxp));
 
+theorem sabssxped (B: set x)
+  (h: $ G /\ x = fst a -> snd a e. B -> p /\ x e. A /\ snd a e. C $):
+  $ G -> a e. S\ x, B -> p /\ a e. Xp A C $ =
+'(syl5bir (bitr3 elsabs @ eleq1 fstsnd) @ syl6ibr (aneq2i elxp) @
+  mpi ax_6 @ eexdh nfv (nfim (nfel2 nfsbs1) nfv) @ exp @
+  mpbid (anwr @ imeqd (eleq2d sbsq) @ syl6bb anass @ aneq1d @ aneq2d eleq1) h);
+theorem sabssxpe (B: set x) (h: $ x = fst a -> snd a e. B -> x e. A /\ snd a e. C $):
+  $ a e. S\ x, B -> a e. Xp A C $ =
+'(trud @ syl6 anr @ sabssxped @ anwr @ syl6 (anim1 @ trud ian) h);
+
 @(derive-eq 'dm) def Dom (A: set): set = $ {x | E. y x <> y e. A} $;
 @(derive-eq 'rn) def Ran (A: set): set = $ {y | E. x x <> y e. A} $;
 @(derive-eq 'ima) def Im (F A: set): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
@@ -4001,7 +4021,7 @@ theorem Arrowfin: $ finite A -> finite B -> finite (Arrow A B) $ =
 theorem appT: $ f e. Arrow A B /\ x e. A -> f @ x e. B $ =
 '(sseld (anwl Arrowrn) @ sylc appelrn (anwl Arrowisf) @ imp @ bi2d @ eleq2d Arrowdm);
 
-@_ local def rlam {x: nat} (a: nat) (v: nat x): nat = $ lower ((\ x, v) |` a) $;
+@_ def rlam {x: nat} (a: nat) (v: nat x): nat = $ lower ((\ x, v) |` a) $;
 notation rlam {x: nat} (a: nat) (v: nat x): set = ($\.$:53) x ($e.$:50) a ($,$:0) v;
 
 theorem rlameq1 (a b c: nat x): $ a = b -> \. x e. a, c = \. x e. b, c $ =
@@ -4439,6 +4459,10 @@ theorem allappend: $ all A (a ++ b) <-> all A a /\ all A b $ =
 theorem appendT: $ a ++ b e. List A <-> a e. List A /\ b e. List A $ =
 '(bitr4 elList @ bitr4 (aneq elList elList) allappend);
 
+theorem appendArray: $ a e. Array A m -> b e. Array A n -> a ++ b e. Array A (m + n) $ =
+'(exp @ sylbi (aneq elArray elArray) @ sylbi an4 @ sylibr elArray @
+  anim (bi2 appendT) @ syl5eq appendlen @ imp addeq);
+
 @_ abstract def snoc (l a: nat): nat = $ l ++ (a : 0) $;
 infixl snoc: $|>$ prec 84;
 pub theorem snoc0 (a: nat): $ 0 |> a = a : 0 $ = 'append0;
@@ -4551,8 +4575,24 @@ pub theorem repeat0 (a: nat): $ repeat a 0 = 0 $ =  (named 'rec0);
 pub theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $ =
 '(eqtr recS @ ! applame (repeat a n) _ x _ conseq2);
 
+theorem repeatlen: $ len (repeat a n) = n $ =
+(named @ induct '(ind) 'n '(eqtr (leneq repeat0) len0)
+  '(syl5eq (leneq repeatS) @ syl5eq lenS suceq));
+
+theorem repeatT: $ a e. A -> repeat a n e. List A $ =
+(named @ induct '(indd) 'n
+  '(a1i @ mpbir (eleq1 repeat0) elList0)
+  '(bi2 @ bitr (eleq1 repeatS) elListS));
+
+theorem repeatArray: $ a e. A -> repeat a n e. Array A n $ =
+'(sylibr elArray @ iand repeatT @ a1i repeatlen);
+
 @_ def sublistAt (n L1 L2: nat): wff =
 $ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
+
+theorem sublistAtT: $ sublistAt n L1 L2 -> L1 e. List A -> L2 e. List A $ =
+(named '(eex @ eex @ exp @ anrd @ sylib appendT @ anld @ sylib appendT @
+  mpbid (eleq1d anll) anr));
 
 @_ local def grecaux1 (K: set) (x z n: nat): nat =
 $ recn z (\\ u, \ i, K @ ((x - suc u) <> i)) n $;

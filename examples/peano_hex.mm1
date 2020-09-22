@@ -455,8 +455,8 @@ do {
       [_ @ match (mktohex a)
         [(a2 p) @ match a2
           ['(x0) '((h2n ,b) (hexeql0 ,a ,b ,p))]
-          [_ '((hex ,a2 ,b) (hexeql ,a ,a2 ,b ,p))]
-        [#undef]]])
+          [_ '((hex ,a2 ,b) (hexeql ,a ,a2 ,b ,p))]]
+        [#undef]])
     (ins 'h2n @ fn (_))
     (for 0 16 @ fn (n) @
       ins (dn n) @ fn () '((h2n (,(hexdigit n))) (,(decn n))))
@@ -515,8 +515,12 @@ theorem pow22lem (h1: $ 2 * a = b $) (h2: $ 2 ^ a = c $): $ 2 ^ b = c * c $ =
 '(eqtr3 (poweq2 @ eqtr mulcom h1) @ eqtr powmul @ eqtr (poweq1 h2) pow22);
 theorem d2pow2: $ 2 ^ 2 = 4 $ = '(eqtr pow22 d2mul2);
 theorem d2mul4: $ 2 * 4 = 8 $ = norm_num;
+theorem d4add4: $ 4 + 4 = 8 $ = '(eqtr3 mul21 d2mul4);
 theorem d2pow3: $ 2 ^ 3 = 8 $ = '(eqtr powS @ eqtr (muleq2 d2pow2) d2mul4);
 theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
+theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
+'(eqtr3 (poweq2 d4add4) @ eqtr powadd @ muleq d2pow4 d2pow4);
+theorem d2pow8x: $ 2 ^ 8 = x1 :x x0 :x x0 $ = '(eqtr d2pow8 ,to_hex);
 
 do {
   -- Defines e.g. theorem d5half: $ 5 = b1 2 $; for all n <= 16

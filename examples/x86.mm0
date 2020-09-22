@@ -1280,6 +1280,9 @@ theorem writeCfgT (ks k ks2: nat):
 def stdin: nat = $ 0 $;
 def stdout: nat = $ 1 $;
 
+def isIOError (n: nat): wff = $ n e. u64 /\ bitsNeg 64 (2 ^ 12) < n $;
+theorem isIOErrorT (n: nat): $ isIOError n -> n e. u64 $;
+
 def toCStr (s l .c: nat): wff = $ all {c | c != 0} s /\ l = s |> 0 $;
 theorem toCStrT (s l: nat):
   $ toCStr s l -> (s e. List u8 <-> l e. List u8) $;
@@ -1299,15 +1302,16 @@ $ readReg k RAX = sys_open /\ E. filename E. flags (
     readCStr k (readReg k RDI) filename /\
     flags = readReg k RSI /\ readReg k RDX = 0 /\
     (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
-    ret e. u32) $;
+    ret e. u64) $;
 theorem execOpenT (k ret: nat):
   $ execOpen k ret -> k e. Config /\ ret e. u64 $;
 
 -- we only track progress through stdin
 def readFromFD (fd l l1 l2: nat): wff =
-$ ifp (fd = stdin)
-    (l = l1 ++ l2 /\ (l1 = 0 -> l2 = 0))
-    (l = l2 /\ l1 e. List u8) $;
+$ l1 e. List u8 /\ l2 e. List u8 /\
+  ifp (fd = stdin) (l = l1 ++ l2 /\ (l1 = 0 -> l2 = 0)) (l = l2) $;
+theorem readFromFD_T (fd l l1 l2: nat):
+  $ readFromFD fd l l1 l2 -> l e. List u8 /\ l1 e. List u8 /\ l2 e. List u8 $;
 
 def sys_read: nat = $ 0 $;
 def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
@@ -1315,7 +1319,7 @@ $ l e. List u8 /\ readReg k RAX = sys_read /\
   E. fd E. buf E. count (readReg k RDI = fd /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
     count = readReg k RDX /\
-    ifp (MSB 32 ret)
+    ifp (isIOError ret)
       (l2 = l /\ k2 = k)
       (ret <= count /\ E. l1 (readFromFD fd l l1 l2 /\
         writeMem k (readReg k RSI) l1 k2))) $;
@@ -1329,7 +1333,10 @@ theorem execReadPM (l k l2 k2 ret: nat):
 
 -- we only track printing to stdout
 def writeToFD (fd l l1 l2: nat): wff =
-$ l2 = if (fd = stdout) (l ++ l1) l $;
+$ l e. List u8 /\ l1 e. List u8 /\
+  l2 = if (fd = stdout) (l ++ l1) l $;
+theorem writeToFD_T (fd l l1 l2: nat):
+  $ writeToFD fd l l1 l2 -> l e. List u8 /\ l1 e. List u8 /\ l2 e. List u8 $;
 
 def sys_write: nat = $ 1 $;
 def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
@@ -1337,7 +1344,7 @@ $ l e. List u8 /\ readReg k RAX = sys_write /\
   E. fd E. buf E. count (
     fd = readReg k RDI /\ count = readReg k RDX /\
     readMem k (readReg k RSI) buf /\ buf e. Array u8 count /\
-    ifp (MSB 32 ret) (l2 = l)
+    ifp (isIOError ret) (l2 = l)
       (ret <= count /\ E. l1 (writeToFD fd l l1 l2 /\
         readMem k (readReg k RSI) l1))) $;
 theorem execWriteT (l k l2 ret: nat):
@@ -1352,7 +1359,7 @@ $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
     fd = readReg k RDI /\ fd e. u32 /\
     readMem k (readReg k RSI) stat /\
     stat e. Stat /\ stat2 e. Stat /\
-    ret e. u32 /\ writeMem k (readReg k RSI) stat2 k2) $;
+    ret e. u64 /\ writeMem k (readReg k RSI) stat2 k2) $;
 
 def mapMemory1 (prot m a b: nat): nat =
 $ lower (write (fst m) a (prot <> b)) <> lower (write (snd m) a (suc prot)) $;
@@ -1386,7 +1393,6 @@ theorem mapMemT (prot k km a l k2 km2: nat):
 def sys_mmap: nat = $ 9 $;
 def MAP_PRIVATE: nat = $ 2 $;
 def MAP_ANONYMOUS: nat = $ 32 $;
-def MAP_FAILED: nat = $ bitsNeg 64 1 $;
 def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
 $ k e. Config /\ m e. PageMapping (getMemory k) /\
   readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
@@ -1395,7 +1401,7 @@ $ k e. Config /\ m e. PageMapping (getMemory k) /\
     fd = readReg k 8 /\ off = readReg k 9 /\
     flags = MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS /\
     prot e. Prot /\ off = 0 /\ ret e. u64 /\
-    ifp (ret = MAP_FAILED) (k2 = k /\ m2 = m)
+    ifp (isIOError ret) (k2 = k /\ m2 = m)
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
         A. i (i < len -> m @ (ret +_64 i) = 0) /\
         mapMem prot k m ret buf k2 m2))) $;
@@ -1419,9 +1425,11 @@ def sys_exit: nat = $ ch x3 xc $;
 -- We consider protection faults as a valid way to exit with a nonzero exit code
 -- (usually 0xD or 0xE but often reported as 0x8D and 0x8E by shells).
 def execExit (k ret: nat): wff =
-$ ret e. u32 /\ (
-  readException k = suc exGPF /\ ret != 0 \/
-  readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = readReg k RDI) $;
+$ k e. Config /\ ret e. u32 /\ (
+    readException k = suc exGPF /\ ret != 0 \/
+    readException k = suc exSysCall /\ readReg k RAX = sys_exit /\ ret = readReg k RDI) $;
+theorem execExitT (k ret: nat):
+  $ execExit k ret -> k e. Config /\ ret e. u32 $;
 
 -- This is the composite step relation for the extended state.
 -- This mixes regular steps of the machine with IO steps where
@@ -1519,33 +1527,41 @@ theorem pHeaderT (l type prot off vaddr filesz memsz: nat):
     vaddr e. u64 /\ filesz e. u64 /\ memsz e. u64 $;
 
 def basicElfEH (file entry phoff .eh: nat): wff =
-$ E. eh (sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0) $;
+$ file e. List u8 /\
+  E. eh (sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0) $;
+theorem basicElfEH_T (file entry phoff: nat):
+  $ basicElfEH file entry phoff ->
+    file e. List u8 /\ entry e. u64 /\ phoff e. u64 $;
 
 def BasicElf (.f .entry .prot .off .seg: nat): set =
-$ {f | E. entry E. prot E. off E. seg (
+$ S\ entry, S\ prot, S\ off, {seg |
     entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
-    f = entry <> prot <> off <> seg /\
-    off <= entry /\ entry < off + len seg)} $;
+    off <= entry /\ entry < off + len seg} $;
+theorem BasicElfT: $ BasicElf C_ Xp u64 (Xp Prot (Xp u64 (List u8))) $;
 
 -- This defines a basic ELF file (only one program segment, no sections)
 -- and extracts the program segment and its protection and location.
 def basicElf (file elf .entry .prot .vaddr
   .eh .ph .phoff .off .seg .memsz: nat): wff =
-$ E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
+$ file e. List u8 /\
+  E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
     sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0 /\
     sublistAt phoff file ph /\
     pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
     sublistAt off file seg /\
+    off + memsz e. u64 /\ off <= entry /\ entry < off + memsz /\
     elf = entry <> prot <> off <> (seg ++ repeat 0 (memsz - len seg))) $;
+theorem basicElfT (file elf: nat):
+  $ basicElf file elf -> file e. List u8 /\ elf e. BasicElf $;
 
 def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
-    k = mkCfg 0 entry (lower ((\ r, 0) |` Regs)) f m) $;
+    k = mkCfg 0 entry (\. r e. Regs, 0) f m) $;
 theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
 
 def allocStack (k m k3 km3 .sp .stack .argc .k2 .km2 .x .arg .cstr .str: nat): wff =
-$ E. sp E. stack E. argc E. k2 E. km2 (
+$ k e. Config /\ E. sp E. stack E. argc E. k2 E. km2 (
     sp + len stack + 2 ^ 12 e. u64 /\
     mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m sp stack k2 km2 /\
     mapMem 0 k2 km2 (sp + len stack) (repeat 0 (2 ^ 12)) k3 km3 /\
@@ -1553,12 +1569,19 @@ $ E. sp E. stack E. argc E. k2 E. km2 (
     A. x (x < argc -> E. arg E. cstr (
       sublistAt (8 * suc x) stack (u64Bytes (sp + arg)) /\
       sublistAt arg stack cstr /\ E. str toCStr str cstr))) $;
+theorem allocStackT (k m k3 km3: nat):
+  $ allocStack k m k3 km3 ->
+    k e. Config /\ m e. PageMapping (getMemory k) /\
+    k3 e. Config /\ km3 e. PageMapping (getMemory k3) $;
 
 -- This defines the initial state set up from a basic ELF file (only one
 -- program segment, no sections).
 def initialConfig (elf kkm .entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
 $ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
     elf = entry <> prot <> off <> seg /\
-    blankConfig entry k0 /\ allocStack k0 (lower ((\ a, 0) |` u64)) k1 km1 /\
+    blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
     kkm = k2 <> km2) $;
+theorem initialConfigT (elf k km: nat):
+  $ initialConfig elf (k <> km) ->
+    k e. Config /\ km e. PageMapping (getMemory k) $;
