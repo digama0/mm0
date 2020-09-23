@@ -168,9 +168,9 @@ do {
         (def ctx (atom-map!))
         @ match (map join @ transpose 4 @ rmap bis @ match-fn
           [(and (x s) e) (insert! ctx x (list s)) '((,e) () (,x) (,x))]
-          [(v s vs) @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)] [hv (atom-app 'h v)])
+          [(v s vs) @ let ([v1 (atom-app '_ v 1)] [v2 (atom-app '_ v 2)] [hv (atom-app '_h v)])
             (insert! ctx v (list v1 v2 s hv))
-            '(() ((,v ,s ,(atom-app v 1) ,(atom-app v 2) ,(atom-app 'h v)))
+            '(() ((,v ,s ,(atom-app '_ v 1) ,(atom-app '_ v 2) ,(atom-app '_h v)))
               (,v1) (,v2))]) @ (xs vs es1 es2)
         (def xs1 (map hd xs))
         (def bis '((,G wff ()) . ,(append xs @ join @ rmap vs
@@ -4022,7 +4022,7 @@ theorem appT: $ f e. Arrow A B /\ x e. A -> f @ x e. B $ =
 '(sseld (anwl Arrowrn) @ sylc appelrn (anwl Arrowisf) @ imp @ bi2d @ eleq2d Arrowdm);
 
 @_ def rlam {x: nat} (a: nat) (v: nat x): nat = $ lower ((\ x, v) |` a) $;
-notation rlam {x: nat} (a: nat) (v: nat x): set = ($\.$:53) x ($e.$:50) a ($,$:0) v;
+notation rlam {x: nat} (a: nat) (v: nat x): nat = ($\.$:53) x ($e.$:50) a ($,$:0) v;
 
 theorem rlameq1 (a b c: nat x): $ a = b -> \. x e. a, c = \. x e. b, c $ =
 '(lowereqd @ reseq2d nseq);

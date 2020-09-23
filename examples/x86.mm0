@@ -29,7 +29,7 @@ def u64: nat = $ Bits 64 $;
 
 -- little endian encoding
 def toBytes (k n: nat): nat;
-theorem toBytes0 (k n: nat): $ toBytes 0 n = 0 $;
+theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $;
 theorem toBytesS (k n: nat):
   $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $;
 theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
@@ -131,7 +131,7 @@ def base_RIP: nat = $ suc 0 $;
 def base_reg (r: nat): nat = $ suc (suc r) $;
 theorem base0T: $ 0 e. Base $;
 theorem base_RIP_T: $ base_RIP e. Base $;
-theorem base_regT (r: nat): $ r e. Regs -> base_reg r e. Base $;
+theorem base_regT (r: nat): $ base_reg r e. Base <-> r e. Regs $;
 
 def ScaleIndex: set = $ Xp (Bits 2) Regs $;
 
@@ -653,7 +653,7 @@ $ ifp (true hi)
         n = 4 /\ ast = xastMul sz r \/
         n = 6 /\ ast = xastDiv sz r))) $;
 theorem decodeHiAuxT (v sz r hi n ast l: nat):
-  $ sz e. WSize /\ r e. RM /\ n e. Bits 3 /\ l e. List u8 /\
+  $ sz e. WSize /\ r e. RM /\
     decodeHiAux v sz r hi n ast l -> ast e. XAST $;
 
 def decodeHi (rex ast b l .v .x .opc .r .l1 .l2: nat): wff =
@@ -1206,7 +1206,7 @@ theorem execXASTJCC (k c q k2: nat):
   $ execXAST k (xastJCC c q) k2 <->
     k2 = if (readCond k c) (writeRIP k (readRIP k +_64 q)) k $;
 theorem execXASTCall {ki: nat} (k irm k2: nat):
-  $ execXAST k (xastCall irm) ki <-> E. ki (
+  $ execXAST k (xastCall irm) k2 <-> E. ki (
     pushRIP k ki /\ EA_jump ki (immRM_EA k irm) k2) $;
 theorem execXASTRet {ki: nat} (k q k2: nat):
   $ execXAST k (xastRet q) k2 <-> E. ki (
@@ -1225,12 +1225,12 @@ theorem execXASTCLC (k k2: nat):
   $ execXAST k xastCLC k2 <-> k2 = writeFlags k (setCF (readFlags k) F.) $;
 theorem execXASTSTC (k k2: nat):
   $ execXAST k xastSTC k2 <-> k2 = writeFlags k (setCF (readFlags k) T.) $;
-theorem execXASTSysCall {r11: nat} (k n k2: nat):
+theorem execXASTSysCall {r11: nat} (k k2: nat):
   $ execXAST k xastSysCall k2 <-> E. r11 (r11 e. u64 /\
     k2 = setException (setReg (setReg k RCX (readRIP k)) 11 r11) (suc exSysCall)) $;
 
 theorem execXAST_T (k ast k2: nat):
-  $ k e. Config /\ execXAST k ast k2 -> ast e. XAST /\ k2 e. Config $;
+  $ k e. Config /\ ast e. XAST /\ execXAST k ast k2 -> k2 e. Config $;
 
 -- This is the step relation for the x86 semantic model, excluding IO.
 -- `step k k2` means that k2 is a possible next state after k. Multiple
@@ -1255,9 +1255,9 @@ $ {m | m e. Arrow u64 (Option Prot) /\
 def KernelState {.k: nat}: set =
 $ Xp (Xp (List u8) (List u8)) (X\ k e. Config, PageMapping (getMemory k)) $;
 def mkKS (i o k m: nat): nat = $ (i <> o) <> k <> m $;
-theorem mkKST (i o k m: nat):
-  $ i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) ->
-    mkKS i o k m e. KernelState $;
+theorem mkKS_T (i o k m: nat):
+  $ mkKS i o k m e. KernelState <->
+    i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) $;
 
 def ksCfg (k: nat): nat = $ pi21 k $;
 theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $;
@@ -1270,7 +1270,8 @@ $ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
   E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
 theorem writeMappingT (ks m k ks2: nat):
   $ writeMapping ks k m ks2 ->
-    ks e. KernelState /\ k e. Config /\ m e. PageMapping k /\ ks2 e. KernelState $;
+    ks e. KernelState /\ k e. Config /\
+    m e. PageMapping (getMemory k) /\ ks2 e. KernelState $;
 
 def writeCfg (ks k2 ks2: nat): wff =
 $ writeMapping ks k2 (ksMapping ks) ks2 $;
@@ -1298,7 +1299,8 @@ def O_TRUNC: nat = $ shl 1 9 $;
 
 def sys_open: nat = $ 2 $;
 def execOpen (k ret .filename .flags: nat): wff =
-$ readReg k RAX = sys_open /\ E. filename E. flags (
+$ k e. Config /\ readReg k RAX = sys_open /\
+  E. filename E. flags (
     readCStr k (readReg k RDI) filename /\
     flags = readReg k RSI /\ readReg k RDX = 0 /\
     (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
@@ -1360,6 +1362,11 @@ $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
     readMem k (readReg k RSI) stat /\
     stat e. Stat /\ stat2 e. Stat /\
     ret e. u64 /\ writeMem k (readReg k RSI) stat2 k2) $;
+theorem execFStatT (k k2 ret: nat):
+  $ execFStat k k2 ret -> k2 e. Config /\ ret e. u64 $;
+theorem execFStatPM (k k2 ret: nat):
+  $ execFStat k k2 ret ->
+    PageMapping (getMemory k) C_ PageMapping (getMemory k2) $;
 
 def mapMemory1 (prot m a b: nat): nat =
 $ lower (write (fst m) a (prot <> b)) <> lower (write (snd m) a (suc prot)) $;

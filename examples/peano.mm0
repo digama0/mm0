@@ -265,7 +265,7 @@ def Arrow (A B: set) (.f: nat): set =
 $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
 
 def rlam {x: nat} (a: nat) (v: nat x): nat = $ lower ((\ x, v) |` a) $;
-notation rlam {x: nat} (a: nat) (v: nat x): set = ($\.$:53) x ($e.$:50) a ($,$:0) v;
+notation rlam {x: nat} (a: nat) (v: nat x): nat = ($\.$:53) x ($e.$:50) a ($,$:0) v;
 
 def write (F: set) (a b .x .y: nat): set =
   $ opab x y (ifp (x = a) (y = b) (x <> y e. F)) $;
@@ -274,7 +274,7 @@ theorem writeNe (F: set) (a b x: nat): $ x != a -> write F a b @ x = F @ x $;
 
 def srec (S: set) (n: nat): nat;
 theorem srecval {i: nat} (S: set) (n: nat):
-  $ srec S n = S @ lower ((\ i, srec S i) |` upto n) $;
+  $ srec S n = S @ (\. i e. upto n, srec S i) $;
 
 def srecp (A: set) (n: nat): wff;
 theorem srecpval {i: nat} (A: set) (n: nat):

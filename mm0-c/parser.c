@@ -510,10 +510,10 @@ void deep_eq(u32 e1, u32 e2) {
 void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
   g_ustack_top = &g_ustack[1];
   g_ustack[0] = tgt;
-  g_cmd_start = cmd;
+  g_ucmd_start = cmd;
   // u8* last_cmd = cmd;
   while (true) {
-    g_cmd = cmd;
+    g_ucmd = cmd;
     cmd_unpack_result r = cmd_unpack(cmd);
     u32 sz = r.sz;
     u32 data = r.data;
@@ -524,6 +524,7 @@ void check_expr(u16 num_vars, u8* cmd, u32 tgt, u32 hyps) {
       // The unify stack should be empty at this point
       case CMD_END: {
         ENSURE("unfinished hypothesis stack", hyps == -1);
+        g_ucmd_start = 0;
       } return;
 
       case CMD_UNIFY_REF: {

@@ -6,6 +6,8 @@ extern void _exit(int exitcode);
 u8* g_stmt;
 u8* g_cmd_start;
 u8* g_cmd;
+u8* g_ucmd_start;
+u8* g_ucmd;
 
 // This is called by the ENSURE macro on failure. The verifier is optimized
 // for the non-failure case, and keeps very little nonessential information
@@ -18,9 +20,14 @@ u8* g_cmd;
 void fail(char* err, int e) {
 #ifndef BARE
   if (g_stmt) {
-    fprintf(stderr, "stmt: %lX, cmd: ", (u8*)g_stmt - g_file);
+    fprintf(stderr, "stmt: %lX\ncmd: ", (u8*)g_stmt - g_file);
     u32 data; debug_cmd_unpack(g_cmd, &data);
     debug_print_cmd(g_cmd, data);
+    if (g_ucmd_start) {
+      fprintf(stderr, "ucmd: ");
+      debug_cmd_unpack(g_ucmd, &data);
+      debug_print_cmd(g_ucmd, data);
+    }
     fprintf(stderr, "\n");
     index_entry* ix = lookup_stmt(g_stmt);
     if (ix) {
@@ -33,8 +40,16 @@ void fail(char* err, int e) {
   debug_print_cmds(g_cmd_start, g_cmd);
   fprintf(stderr, "\n");
   debug_print_stack();
+  fprintf(stderr, "\n");
   debug_print_heap();
-  debug_print_ustack();
+  if (g_ucmd_start) {
+    fprintf(stderr, "\nunify cmds:\n");
+    debug_print_cmds(g_ucmd_start, g_ucmd);
+    fprintf(stderr, "\n");
+    debug_print_ustack();
+    fprintf(stderr, "\n");
+    debug_print_uheap();
+  }
 #endif
   exit(e);
 }
@@ -198,10 +213,10 @@ typedef enum { UDef, UThm, UThmEnd } unify_mode;
 void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
   g_ustack_top = &g_ustack[1];
   g_ustack[0] = tgt;
-  g_cmd_start = cmd;
+  g_ucmd_start = cmd;
   // u8* last_cmd = cmd;
   while (true) {
-    g_cmd = cmd;
+    g_ucmd = cmd;
     cmd_unpack_result r = cmd_unpack(cmd);
     u32 sz = r.sz;
     u32 data = r.data;
@@ -217,6 +232,7 @@ void run_unify(unify_mode mode, u8* cmd, u32 tgt) {
         if (mode == UThmEnd)
           ENSURE("unfinished hypothesis stack", g_hstack_top == g_hstack);
         ENSURE("unfinished unify stack", g_ustack_top == g_ustack);
+        g_ucmd_start = 0;
       } return;
 
       // URef i: H; S, Hi --> H; S

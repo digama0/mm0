@@ -83,7 +83,7 @@ theorem mulx01: $ x0 * a = x0 $ = '(eqtr (muleq1 h2n0) @ eqtr4 mul01 h2n0);
 theorem mulx02: $ a * x0 = x0 $ = '(eqtr (muleq2 h2n0) @ eqtr4 mul0 h2n0);
 theorem mulx11: $ x1 * a = a $ = '(eqtr (muleq1 h2n1) mul11);
 theorem mulx12: $ a * x1 = a $ = '(eqtr (muleq2 h2n1) mul12);
-theorem h2n10: $ x1 :x x0 = 16 $ = '(eqtr hex02 mulx11);
+theorem h2n10: $ 16 = x1 :x x0 $ = '(eqtr2 hex02 mulx11);
 do {
   (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
     (if {n < 8}
@@ -426,7 +426,7 @@ do {
             '(,c (adceql ,a ,a2 ,b ,b2 ,c ,pa ,pb ,pc)))
           (mkadc a b)]
       [a @ match (mktohex a)
-        [(a2 pa) @ match (mksuc a2) @ (b pb) '(,b (adceql ,a ,a2 ,b ,pa ,pb))]
+        [(a2 pa) @ match (mksuc a2) @ (b pb) '(,b (suceql ,a ,a2 ,b ,pa ,pb))]
         [#undef (mksuc a)]])
     (ins 'add @ fn (a b)
       (def pa (mktohex a)) (def pb (mktohex b))
@@ -444,7 +444,7 @@ do {
       [(a2 pa) @ match (mkb0 a2) @ (b pb) '(,b (b0eql ,a ,a2 ,b ,pa ,pb))]
       [#undef (mkb0 a)])
     (ins 'b1 @ fn (a) @ match (mktohex a)
-      [(a2 pa) @ match (mkb1 a2) @ (b pb) '(,b (b0eql ,a ,a2 ,b ,pa ,pb))]
+      [(a2 pa) @ match (mkb1 a2) @ (b pb) '(,b (b1eql ,a ,a2 ,b ,pa ,pb))]
       [#undef (mkb1 a)])
     (ins 'c2n mktohex)
     (ins 'ch @ fn (a b) @ match a

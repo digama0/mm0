@@ -14,6 +14,6 @@ mm0-c peano_hex.mmb < peano_hex_join.mm0
 # mm0-rs compile mm0.mm1 mm0.mmb
 # mm0-c mm0.mmb < mm0_join.mm0
 
-# mm0-rs join x86.mm0 > x86_join.mm0
-# mm0-rs compile x86.mm1 x86.mmb
-# mm0-c x86.mmb < x86_join.mm0
+mm0-rs join x86.mm0 > x86_join.mm0
+mm0-rs compile x86.mm1 x86.mmb
+mm0-c x86.mmb < x86_join.mm0

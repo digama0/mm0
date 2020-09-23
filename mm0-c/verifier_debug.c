@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void debug_print_expr(u32 n, bool type) {
+void debug_print_expr(u32 n, u32 max, bool type) {
   if (n % 4 != 0) {fprintf(stderr, "unaligned expr"); return;}
-  if (n >= g_store_size) {fprintf(stderr, "expr out of range"); return;}
+  if (n >= max) {fprintf(stderr, "expr out of range"); return;}
   store_expr* p = (store_expr*)&g_store[n];
   bool bound = (p->type & TYPE_BOUND_MASK) != 0;
   if (type && bound) fprintf(stderr, "{");
@@ -21,16 +21,16 @@ void debug_print_expr(u32 n, bool type) {
       else fprintf(stderr, "(t%d", t->termid);
       for (int i = 0; i < t->num_args; i++) {
         fprintf(stderr, " ");
-        debug_print_expr(t->args[i], false);
+        debug_print_expr(t->args[i], n, false);
       }
       fprintf(stderr, ")");
     } break;
 
     case EXPR_CONV: {
       store_conv* c = (store_conv*)p;
-      debug_print_expr(c->e1, false);
+      debug_print_expr(c->e1, n, false);
       fprintf(stderr, " = ");
-      debug_print_expr(c->e2, false);
+      debug_print_expr(c->e2, n, false);
     } break;
 
     default: fprintf(stderr, "?"); break;
@@ -84,21 +84,21 @@ void debug_print_stackel(u32* p) {
   switch (*p & STACK_TYPE_MASK) {
     case STACK_TYPE_EXPR: {
       fprintf(stderr, "expr ");
-      debug_print_expr(*p & STACK_DATA_MASK, true);
+      debug_print_expr(*p & STACK_DATA_MASK, g_store_size, true);
     } break;
     case STACK_TYPE_PROOF: {
       fprintf(stderr, "proof ");
-      debug_print_expr(*p & STACK_DATA_MASK, true);
+      debug_print_expr(*p & STACK_DATA_MASK, g_store_size, true);
     } break;
     case STACK_TYPE_CONV: {
-      debug_print_expr(*p & STACK_DATA_MASK, false);
+      debug_print_expr(*p & STACK_DATA_MASK, g_store_size, false);
       fprintf(stderr, " = ");
-      debug_print_expr(*(p-1) & STACK_DATA_MASK, true);
+      debug_print_expr(*(p-1) & STACK_DATA_MASK, g_store_size, true);
     } break;
     case STACK_TYPE_CO_CONV: {
-      debug_print_expr(*p & STACK_DATA_MASK, false);
+      debug_print_expr(*p & STACK_DATA_MASK, g_store_size, false);
       fprintf(stderr, " =?= ");
-      debug_print_expr(*(p-1) & STACK_DATA_MASK, true);
+      debug_print_expr(*(p-1) & STACK_DATA_MASK, g_store_size, true);
     } break;
     default: UNREACHABLE();
   }
@@ -124,24 +124,24 @@ void debug_print_heap() {
 }
 
 void debug_print_ustack() {
-  fprintf(stderr, "ustack:\n");
+  fprintf(stderr, "unify stack:\n");
   for (u32* p = g_ustack_top - 1; p >= g_ustack; p--) {
     if (g_parsing)
       debug_print_parse_expr(*p);
     else
-      debug_print_expr(*p, true);
+      debug_print_expr(*p, g_store_size, true);
     fprintf(stderr, "\n");
   }
 }
 
 void debug_print_uheap() {
-  fprintf(stderr, "uheap:\n");
+  fprintf(stderr, "unify heap:\n");
   for (int i = 0; i < g_uheap_size; i++) {
     fprintf(stderr, "%d: ", i);
     if (g_parsing)
       debug_print_parse_expr(g_uheap[i]);
     else
-      debug_print_expr(g_uheap[i], true);
+      debug_print_expr(g_uheap[i], g_store_size, true);
     fprintf(stderr, "\n");
   }
 }
@@ -254,7 +254,7 @@ void debug_print_cmd(u8* cmd, u32 data) {
         if (g_parsing)
           debug_print_parse_expr(g_uheap[data]);
         else
-          debug_print_expr(g_uheap[data], true);
+          debug_print_expr(g_uheap[data], g_store_size, true);
       }
     } break;
 
