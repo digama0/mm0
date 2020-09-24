@@ -13,6 +13,12 @@ theorem all2eq2 {x y} (ph: wff x y): $ l11 = l12 ->
 theorem all2eq3 {x y} (ph: wff x y): $ l21 = l22 ->
   (all2 x y ph l1 l21 <-> all2 x y ph l1 l22) $ = '(all2eq3d id);
 
+theorem all2eq1g {x y} (ph1 ph2: wff x y):
+  $ A. x A. y (x IN l1 /\ y IN l2 -> (ph1 <-> ph2)) ->
+    (all2 x y ph1 l1 l2 <-> all2 x y ph2 l1 l2) $ =
+'(aneq2d @ !! aleqd n @ syl aleq @ alimi @ syl aleq @ alimi @
+  syl imeq2a @ syl6 imeq2a @ expd @ imim1i @ anim nthlmem nthlmem);
+
 theorem all2len {x y} (ph: wff x y): $ all2 x y ph l1 l2 -> len l1 = len l2 $ =
 (named 'anl);
 
@@ -58,6 +64,27 @@ theorem all2S1 {x y} (ph: wff x y): $ all2 x y ph (a : l1) l2 <->
     mpbii peano1 @ neeq1d @ syl5eqr lenS all2len) @
   bitr3 exan2 @ exeqi @ bitr3 exan2 @ exeqi @
   bitr4 (aneq2a @ syl6bb all2S all2eq3) anass);
+
+theorem all2im1 {x y} (ph1 ph2: wff x y):
+  $ A. x A. y (ph1 -> ph2) -> all2 x y ph1 l1 l2 -> all2 x y ph2 l1 l2 $ =
+'(anim2d @ !! alimd n @ al2imi @ al2imi @ imim2d imim2);
+theorem all2im1i {x y} (ph1 ph2: wff x y) (h: $ ph1 -> ph2 $):
+  $ all2 x y ph1 l1 l2 -> all2 x y ph2 l1 l2 $ =
+'(all2im1 @ ax_gen @ ax_gen h);
+theorem all2im1d {x y} (ph1 ph2: wff x y) (h: $ G -> ph1 -> ph2 $):
+  $ G -> all2 x y ph1 l1 l2 -> all2 x y ph2 l1 l2 $ =
+'(syl all2im1 @ iald @ iald h);
+
+theorem all2com {x y} (ph: wff x y):
+  $ all2 x y ph l1 l2 <-> all2 y x ph l2 l1 $ =
+'(aneq eqcomb @ !! aleqi n @ bitr alcomb @ aleqi @ aleqi com12b);
+
+theorem all2all1: $ all2 x y (x e. A) l1 l2 -> all A l1 $ =
+'(sylibr allnth @ imp @ !! alimd n @ alimd @ syl5bi alim1 @ a2d @ exp @
+  syl5bir eexb @ syl (com12 id) @ sylib exsuc @ sylibr nthne0 @
+  mpbid (lteq2d anl) @ anwr @ sylib nthne0 sucne0);
+
+theorem all2all2: $ all2 x y (y e. A) l1 l2 -> all A l2 $ = '(sylbi all2com all2all1);
 
 -- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
 @_ def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
@@ -195,9 +222,9 @@ theorem indd_aux (G p: wff x) (e: $ x = b -> (p <-> q) $)
 '(mpbird (syl6bb (sbe e) @ anwr sbeq1) h);
 
 theorem SExpr_indd {x f es} (n) (px: wff x) (pv: wff v) (pe: wff f es)
+  (hn: $ x = n -> (px <-> pn) $)
   (hv: $ x = SVar v -> (px <-> pv) $)
   (he: $ x = SApp f es -> (px <-> pe) $)
-  (hn: $ x = n -> (px <-> pn) $)
   (h1: $ G -> pv $) (h2: $ G /\ all {x | px} es -> pe $): $ G -> pn $ =
 (focus
   '(sylib (sbe hn) @ !! indstr z w sbeq1 sbeq1 _)
@@ -809,12 +836,12 @@ theorem indd_aux2 (G p: wff x) (e: $ x = c -> (p <-> q) $)
 
 theorem CExpr_indd {x f e c es zs cs} (n)
   (px: wff x) (pi: wff c) (pr: wff e) (ps: wff c) (pc: wff f cs) (pu: wff f es zs c)
+  (hn: $ x = n -> (px <-> pn) $)
   (hr: $ x = CRefl e -> (px <-> pr) $)
   (hs: $ x = CSymm c -> (px <-> ps) $)
   (hc: $ x = CCong f cs -> (px <-> pc) $)
   (hu: $ x = CUnfold f es zs c -> (px <-> pu) $)
   (hi: $ x = c -> (px <-> pi) $)
-  (hn: $ x = n -> (px <-> pn) $)
   (h1: $ G -> pr $)
   (h2: $ G /\ pi -> ps $)
   (h3: $ G /\ all {x | px} cs -> pc $)
@@ -887,11 +914,11 @@ theorem VExprRec_VConv:
 
 theorem VExpr_indd {x n a h r es ps c p} (q)
   (px: wff x) (pi: wff p) (ph: wff n) (pt: wff a h r es ps) (pc: wff c p)
+  (hn: $ x = q -> (px <-> pq) $)
   (hr: $ x = VHyp n -> (px <-> ph) $)
   (hs: $ x = VThm a h r es ps -> (px <-> pt) $)
   (hc: $ x = VConv c p -> (px <-> pc) $)
   (hi: $ x = p -> (px <-> pi) $)
-  (hn: $ x = q -> (px <-> pq) $)
   (h1: $ G -> ph $)
   (h2: $ G /\ all {x | px} ps -> pt $)
   (h3: $ G /\ pi -> pc $): $ G -> pq $ =
@@ -2013,7 +2040,7 @@ $ parseTk tk +> parseIdent <+> parseBindersAndArrows <+ parseCh _semi $;
     regexOpt (parseCh _equal +> parseFmla) <+ parseCh _semi) $;
 
 @_ def NotaDelim (x: nat): nat = $ b0 (b0 x) $;
-@_ def NotaInfix (x y: nat): nat = $ b0 (b1 (b0 (x <> y))) $;
+@_ def NotaInfix (r: wff) (x: nat): nat = $ b0 (b1 (b0 (nat r <> x))) $;
 @_ def NotaPfx (x: nat): nat = $ b0 (b1 (b1 x)) $;
 @_ def NotaCoe (x: nat): nat = $ b1 (b0 x) $;
 @_ def NotaGen (x: nat): nat = $ b1 (b1 x) $;
@@ -2044,8 +2071,8 @@ $ parseTk tk +> parseIdent <+> parseCh _colon +> parseFmla <+>
 @_ def _infixl: string = $ _i ': _n ': _f ': _i ': _x ': _l ': s0 $;
 @_ def _infixr: string = $ _i ': _n ': _f ': _i ': _x ': _r ': s0 $;
 @_ def _prefix: string = $ _p ': _r ': _e ': _f ': _i ': _x ': s0 $;
-@_ def parseInfixl (.x: nat): set = $ (\ x, NotaInfix 0 x) <@> parseSimpleNota _infixl $;
-@_ def parseInfixr (.x: nat): set = $ (\ x, NotaInfix 1 x) <@> parseSimpleNota _infixr $;
+@_ def parseInfixl (.x: nat): set = $ (\ x, NotaInfix F. x) <@> parseSimpleNota _infixl $;
+@_ def parseInfixr (.x: nat): set = $ (\ x, NotaInfix T. x) <@> parseSimpleNota _infixr $;
 @_ def parsePfx (.x: nat): set = $ (\ x, NotaPfx x) <@> parseSimpleNota _prefix $;
 
 @_ def _coercion: string = $ _c ': _o ': _e ': _r ': _c ': _i ': _o ': _n ': s0 $;
@@ -2487,11 +2514,11 @@ pub theorem getPfxEl {fmla: nat} (ast x c p: nat):
     a1i @ finss (mpbi ssab1 @ ax_gen @ eex @ sylibr elupto @ rsyl h @ lelttr @ lepr2tr leprid2) @
     finns));
 
-@_ def getInfix (ast r: nat): nat =
+@_ def getInfix (ast: nat) (r: wff): nat =
 $ lower (S\ x, S\ c, {p | E. fmla (
     ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
     simpleTokenize fmla = c : 0)}) $;
-pub theorem getInfixEl {fmla: nat} (ast r x c p: nat):
+pub theorem getInfixEl {fmla: nat} (ast x c p: nat) (r: wff):
   $ x <> c <> p e. getInfix ast r <-> E. fmla
     (ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
      simpleTokenize fmla = c : 0) $ =
@@ -2552,81 +2579,426 @@ pub theorem litsPrecV (v lits q: nat):
 
 -- This is a more precise version of SExpr that allows reconstructing an
 -- exact token string from a parse proof
-@_ def PTParens (x: nat): nat = $ b0 (b0 (b0 x)) $;
-@_ def PTVar (v: nat): nat = $ b0 (b0 (b1 v)) $;
+@_ def PTVar (v: nat): nat = $ b0 (b0 (b0 v)) $;
+@_ def PTParens (x: nat): nat = $ b0 (b0 (b1 x)) $;
 @_ def PTFunc (f x: nat): nat = $ b0 (b1 (f <> x)) $;
 @_ def PTPfx (f c x: nat): nat = $ b1 (b0 (b0 (f <> c <> x))) $;
 @_ def PTNota (f x: nat): nat = $ b1 (b0 (b1 (f <> x))) $;
-@_ def PTInfix (r f c x y: nat): nat =
-  $ b1 (b1 (b0 (r <> f <> c <> (x : y : 0)))) $;
+@_ def PTInfix (r f c x y: nat): nat = $ b1 (b1 (b0 (r <> f <> c <> x <> y))) $;
 @_ def PTCoe (f x: nat): nat = $ b1 (b1 (b1 (f <> x))) $;
 
-@_ def ptToStr (pt: nat): nat;
+theorem PTParens_ltid: $ e < PTParens e $ = '(ltb0tr @ ltb0tr b1ltid);
+theorem PTFunc_ltid: $ e IN es -> e < PTFunc f es $ =
+'(rsyl lmemlt @ mpi (ltb0tr @ ltb1tr leprid2) lttr);
+theorem PTPfx_ltid: $ e IN es -> e < PTPfx f c es $ =
+'(rsyl lmemlt @ mpi (ltb1tr @ leb0tr @ leb0tr @ lepr2tr leprid2) lttr);
+theorem PTNota_ltid: $ b1 e IN ls -> e < PTNota f ls $ =
+'(rsyl lmemlt @ rsyl (lttr b1ltid) @ mpi (ltb1tr @ leb0tr @ leb1tr leprid2) lttr);
+theorem PTInfix_ltid1: $ x < PTInfix r f c x y $ =
+'(ltb1tr @ leb1tr @ leb0tr @ lepr2tr @ lepr2tr @ lepr2tr leprid1);
+theorem PTInfix_ltid2: $ y < PTInfix r f c x y $ =
+'(ltb1tr @ leb1tr @ leb0tr @ lepr2tr @ lepr2tr @ lepr2tr leprid2);
+theorem PTCoe_ltid: $ x < PTCoe f x $ = '(ltb1tr @ leb1tr @ leb1tr leprid2);
+
+@_ def ptToStr (pt: nat): nat =
+$ srec (\ ih, case
+    (case
+      (case
+        (\ v, v : 0)
+        (\ e, s1 _lparen : ih @ e ++ s1 _rparen : 0))
+      (\\ f, \ x, f : ljoin (map ih x)))
+    (case
+      (case
+        (\\ f, \\ c, \ x, c : ljoin (map ih x))
+        (\\ f, \ x, ljoin (map (case (\ y, y : 0) ih) x)))
+      (case
+        (\\ r, \\ f, \\ c, \\ x, \ y, ih @ x ++ c : ih @ y)
+        (\\ f, \ x, ih @ x)))
+  @ size (Dom ih)) pt $;
+
+theorem ptToStr_val:
+  $ ptToStr ei = case
+    (case
+      (case
+        (\ v, v : 0)
+        (\ e, s1 _lparen : (\. e2 e. upto ei, ptToStr e2) @ e ++ s1 _rparen : 0))
+      (\\ f, \ x, f : ljoin (map (\. e2 e. upto ei, ptToStr e2) x)))
+    (case
+      (case
+        (\\ f, \\ c, \ x, c : ljoin (map (\. e2 e. upto ei, ptToStr e2) x))
+        (\\ f, \ x, ljoin (map (case (\ y, y : 0) (\. e2 e. upto ei, ptToStr e2)) x)))
+      (case
+        (\\ r, \\ f, \\ c, \\ x, \ y,
+          (\. e2 e. upto ei, ptToStr e2) @ x ++ c : (\. e2 e. upto ei, ptToStr e2) @ y)
+        (\\ f, \ x, (\. e2 e. upto ei, ptToStr e2) @ x)))
+  @ ei $ =
+'(eqtr {srecval : $ _ = _ @ rlam _ _ (ptToStr _) $} @ !! applame a @ appeqd ,eqtac sreclem);
+
+pub theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $ =
+(named '(eqtr ptToStr_val @ eqtr casel @ eqtr casel @ eqtr casel @ applame conseq1));
+
 pub theorem ptToStrParens {s: nat} (e: nat):
-  $ ptToStr (PTParens e) = s1 _lparen : ptToStr e ++ s1 _rparen : 0 $;
-pub theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $;
+  $ ptToStr (PTParens e) = s1 _lparen : ptToStr e ++ s1 _rparen : 0 $ =
+(named '(eqtr ptToStr_val @ eqtr casel @ eqtr casel @ eqtr caser @
+  !! applame x @ appendeq1d @ conseq2d @ !! apprlamed y (ptToStreqd @ eqtrd anr anl) @
+  mpbiri (mpbir elupto PTParens_ltid) eleq1));
+
 pub theorem ptToStrFunc {s: nat} (f x: nat): $ ptToStr (PTFunc f x) =
-  f : ljoin (map (\ s, ptToStr s) x) $;
+  f : ljoin (map (\ s, ptToStr s) x) $ =
+(named '(eqtr ptToStr_val @ eqtr casel @ eqtr caser @
+  !! appslame f1 @ !! applamed c1 @ eqtrd ,eqtac @
+  conseq2d @ ljoineqd @ syl mapeqg @ sylibr allal @ iald @ exp @
+  eqtr4d (!! apprlamed z ,eqtac @ anwr @ sylibr elupto PTFunc_ltid) (applamed ,eqtac)));
+
 pub theorem ptToStrPfx {s: nat} (f c x: nat): $ ptToStr (PTPfx f c x) =
-  c : ljoin (map (\ s, ptToStr s) x) $;
-pub theorem ptToStrInfix (r f c x y: nat):
-  $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $;
+  c : ljoin (map (\ s, ptToStr s) x) $ =
+(named '(eqtr ptToStr_val @ eqtr caser @ eqtr casel @ eqtr casel @
+  !! appslame _1 @ !! appslamed _2 @ !! applamed _3 @ eqtrd ,eqtac @
+  conseq2d @ ljoineqd @ syl mapeqg @ sylibr allal @ iald @ exp @
+  eqtr4d (!! apprlamed z ,eqtac @ anwr @ sylibr elupto PTPfx_ltid) (applamed ,eqtac)));
+
 pub theorem ptToStrNota {y: nat} (f x: nat):
-  $ ptToStr (PTNota f x) =
-    ljoin (map (case (\ y, y : 0) (\ y, ptToStr y)) x) $;
+  $ ptToStr (PTNota f x) = ljoin (map (case (\ y, y : 0) (\ y, ptToStr y)) x) $ =
+(named '(eqtr ptToStr_val @ eqtr caser @ eqtr casel @ eqtr caser @
+  !! appslame _1 @ !! applamed _2 @ eqtrd ,eqtac @
+  ljoineqd @ syl mapeqg @ sylibr allal @ !! iald e @ exp
+  ,(split-sop '{
+    (1 => {(mpbiri (eqtr4 casel casel) ,eqtac) : $ _ /\ e = _ -> _$}) +
+    (1 => (mpbird ,eqtac @ eqtr4g caser caser @
+      eqtr4d (!! apprlamed z ,eqtac @ sylibr elupto @ syl PTNota_ltid @ mpbid (lmemeq1d anr) anlr)
+        (applamed ,eqtac)))})));
+
+pub theorem ptToStrInfix (r f c x y: nat):
+  $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $ =
+(named '(eqtr ptToStr_val @ eqtr caser @ eqtr caser @ eqtr casel @
+  !! appslame _1 @ !! appslamed _2 @ !! appslamed _3 @ !! appslamed _4 @
+  !! applamed _5 @ eqtrd ,eqtac @
+  appendeqd (!! apprlamed _6 ,eqtac @ a1i @ mpbir elupto PTInfix_ltid1) @
+  conseq2d (!! apprlamed _6 ,eqtac @ a1i @ mpbir elupto PTInfix_ltid2)));
+
 pub theorem ptToStrCoe {y: nat} (f x: nat):
-  $ ptToStr (PTCoe f x) = ptToStr x $;
+  $ ptToStr (PTCoe f x) = ptToStr x $ =
+(named '(eqtr ptToStr_val @ eqtr caser @ eqtr caser @ eqtr caser @
+  !! appslame _1 @ !! applamed _2 @ !! apprlamed _3 (ptToStreqd @ eqtrd anr anlr) @
+  mpbiri (mpbir elupto PTCoe_ltid) (eleq1d anr)));
 
-@_ def ptCheck (eac p pt e: nat): wff;
-@_ def ptCheckNotaLs (eac bis pts xs es p: nat): wff;
+@_ def ptCheckNotaLs_aux (eac bis lits: nat) (IH: set) (xs es p: nat): wff =
+$ all2 lits1 x (lits1 e. S\ lit, {lr | lit e. Sum
+    {c | x = b0 (fst c)}
+    {v | E. y E. n E. e (x = b1 y /\
+      lookupVar bis v = suc n /\ nth n es = suc e /\
+      e e. IH @ y @ litsPrec lr p)}
+  }) (nztails lits) xs $;
 
-pub theorem ptCheckParens (eac p pt e: nat):
-  $ ptCheck eac p (PTParens pt) e <->
-    ptCheck eac (suc 0) pt e $;
+theorem ptCheckNotaLs_aux_0:
+  $ ptCheckNotaLs_aux eac bis 0 IH xs es p <-> xs = 0 $ =
+(named '(bitr (all2eq2 nztails0) all201));
+theorem ptCheckNotaLs_aux_S:
+  $ ptCheckNotaLs_aux eac bis (lit : lits) IH xs es p <-> E. x E. xs2 (
+    xs = x : xs2 /\ lit e. Sum
+      {c | x = b0 (fst c)}
+      {v | E. y E. n E. e (x = b1 y /\
+        lookupVar bis v = suc n /\ nth n es = suc e /\
+        e e. IH @ y @ litsPrec lits p)} /\
+    ptCheckNotaLs_aux eac bis lits IH xs2 es p) $ =
+(named '(bitr (all2eq2 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
+  aneq1i @ aneq2i @ !! sbe _1 @ !! sbed _2 @ bitrd ,eqtac @ a1i @
+  !! elsabe _3 @ !! elabed _4 ,eqtac));
+
+theorem ptCheckNotaLs_aux_fin_lem:
+  $ ptCheckNotaLs_aux eac bis lits (ns ih) xs es p ->
+    b1 v IN lits -> lookupVar bis v = suc n ->
+    nth n es = suc e -> e < ih $ =
+(named @ focus
+  '(ax_mp (eale ,(eqtac-gen 'xs))
+    ,(induct '(listind) 'lits '(ax_gen @ a1i @ absurd lmem0) _))
+  '(sylbi (cbval ,eqtac) @ iald @
+    syl5bi ptCheckNotaLs_aux_S @ eexd @ sylibr eexb @ alimi @
+    exp @ syl5bi lmemS @ eorda _ @ imp @ imp @ imim1i anr)
+  '(rsyl (mpbird (eleq1d anr) @ rsyl anlr anlr) @
+    sylbi Sumr @ sylbi (!! elabe v1 ,eqtac) @
+    eex @ eex @ eex @ exp @ exp @
+    syl (rsyl ellt @ mpi (letr appleid1 appleid1) ltletr) @
+    mpbird (eleq1d @ sylib peano2 @ eqtr3d anr _) anllr)
+  '(eqtrd (ntheq1d @ sylib peano2 @ eqtr3d anlr an4lr) an3lr));
+
+@_ def ptCheck_aux1 (eac: nat) (ih: set) (p pt e: nat): wff =
+$ pt e. Sum
+    (Sum
+      (Sum
+        {v | E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n)}
+        {x | e e. ih @ x @ suc 0})
+      (S\ f, {xs |
+        suc (2 ^ 10) <=p p /\ E. args E. ret E. v E. e2
+        (getTerm (fst eac) f args ret v /\ len xs = len args /\
+          all2 x y (y e. ih @ x @ 0) xs e2 /\
+          e = SApp f e2)}))
+    (Sum
+      (Sum
+        (S\ f, S\ c, {xs |
+          E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
+            f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
+            all2 x y (y e. ih @ x @ 0) l es2 /\ e2 e. ih @ z @ q /\
+            e = SApp f (es2 |> e2))})
+        (S\ f, {xs |
+          E. bis E. ty E. c E. q E. lits E. es (
+            f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
+            len bis = len es /\
+            A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
+            ptCheckNotaLs_aux eac bis lits ih xs es q /\
+            e = SApp f es)}))
+      (Sum
+        (S\ r, S\ f, S\ c, S\ x, {y |
+          E. q E. e1 E. e2 (
+            f <> c <> q e. getInfix (pi21 eac) (true r) /\ q <=p p /\
+            e1 e. ih @ x @ if (true r) (precSuc q) q /\
+            e2 e. ih @ y @ if (true r) q (precSuc q) /\
+            e = SApp f (e1 : e2 : 0))})
+        (S\ f, {x |
+          E. y E. e2 (
+            f <> y e. getCoe (pi21 eac) /\ e2 e. ih @ x @ p /\
+            e = SApp f e2)}))) $;
+
+theorem ptCheck_aux_Var: $ ptCheck_aux1 eac ih p (PTVar v) e <->
+  E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $ =
+(named '(bitr Suml @ bitr Suml @ bitr Suml @ !! elabe _1 ,eqtac));
+theorem ptCheck_aux_Parens: $ ptCheck_aux1 eac ih p (PTParens pt) e <->
+  e e. ih @ pt @ suc 0 $ =
+(named '(bitr Suml @ bitr Suml @ bitr Sumr @ !! elabe _1 ,eqtac));
+theorem ptCheck_aux_Func: $ ptCheck_aux1 eac ih p (PTFunc f xs) e <->
+  suc (2 ^ 10) <=p p /\ E. args E. ret E. v E. e2
+  (getTerm (fst eac) f args ret v /\ len xs = len args /\
+    all2 x y (y e. ih @ x @ 0) xs e2 /\
+    e = SApp f e2) $ =
+(named '(bitr Suml @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
+theorem ptCheck_aux_Pfx: $ ptCheck_aux1 eac ih p (PTPfx f c xs) e <->
+  E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
+    f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
+    all2 x y (y e. ih @ x @ 0) l es2 /\ e2 e. ih @ z @ q /\
+    e = SApp f (es2 |> e2)) $ =
+(named '(bitr Sumr @ bitr Suml @ bitr Suml @
+  !! elsabe _1 @ !! elsabed _2 @ !! elabed _3 ,eqtac));
+theorem ptCheck_aux_Nota: $ ptCheck_aux1 eac ih p (PTNota f xs) e <->
+  E. bis E. ty E. c E. q E. lits E. es (
+    f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
+    len bis = len es /\
+    A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
+    ptCheckNotaLs_aux eac bis lits ih xs es q /\
+    e = SApp f es) $ =
+(named '(bitr Sumr @ bitr Suml @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
+theorem ptCheck_aux_Infix: $ ptCheck_aux1 eac ih p (PTInfix r f c x y) e <->
+  E. q E. e1 E. e2 (
+    f <> c <> q e. getInfix (pi21 eac) (true r) /\ q <=p p /\
+    e1 e. ih @ x @ if (true r) (precSuc q) q /\
+    e2 e. ih @ y @ if (true r) q (precSuc q) /\
+    e = SApp f (e1 : e2 : 0)) $ =
+(named '(bitr Sumr @ bitr Sumr @ bitr Suml @
+  !! elsabe _1 @ !! elsabed _2 @ !! elsabed _3 @
+  !! elsabed _4 @ !! elabed _5 ,eqtac));
+theorem ptCheck_aux_Coe: $ ptCheck_aux1 eac ih p (PTCoe f x) e <->
+  E. y E. e2 (
+    f <> y e. getCoe (pi21 eac) /\ e2 e. ih @ x @ p /\
+    e = SApp f e2) $ =
+(named '(bitr Sumr @ bitr Sumr @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
+
+theorem getPfx_precle: $ f <> c <> p e. getPfx (pi21 eac) -> p <= suc eac $ =
+'(sylbi getPfxEl @ !! eex x @ anwl @
+  letrd (a1i @ leb1tr @ leb1tr @ leb0tr @ leb1tr @ leb1tr @ lepr2tr leprid2) @
+  letrd (syl ltle lmemlt) @ a1i @ letr fstleid @ letr sndleid lesucid);
+theorem getNota_precle:
+  $ f <> bis <> ty <> lits e. getNota (pi21 eac) -> bis <> ty <> lits <= eac $ =
+'(sylbi getNotaEl @
+  letrd (a1i @ leb1tr @ leb1tr @ leb1tr @ leb1tr leprid2) @
+  letrd (syl ltle lmemlt) @ a1i @ letr fstleid sndleid);
+theorem getInfix_precle:
+  $ f <> c <> p e. getInfix (pi21 eac) r -> p <= eac $ =
+'(sylbi getInfixEl @ !! eex x @ anwl @
+  letrd (a1i @ leb1tr @ leb1tr @ leb0tr @ leb1tr @ leb0tr @ lepr2tr @ lepr2tr leprid2) @
+  letrd (syl ltle lmemlt) @ a1i @ letr fstleid sndleid);
+
+theorem ptCheck_aux1_fin: $ finite {e | ptCheck_aux1 eac (ns ih) p pt e} $ =
+(named @ focus
+  (def (g0 x) '(finss (mpbi ssab @ ax_gen ,x) ltfin))
+  (def (g1 n x) @ iterate n (fn (x) '(eex ,x))
+    '(mpbird (lteq1d anr) @ sylib b1lt @ sylib ltpr2 @ anwl ,x))
+  (def (g2 x) '(syl ellt @ sylibr (ellower @ Arrayfin finns) ,x))
+  (def (g3 x) @ g2 '(sylibr elArray ,x))
+  (def h1 '(rsyl ellt @ mpi (letr appleid1 appleid1) ltletr))
+  '(trud ,(split-sop 'pt
+    (fn (x y) '(syl5ibrcom (fineqd @ abeqd @ syl6bb ,x ptCheck_aux1eq4) @ a1i ,y))
+    '{{{($PTVar v$ => ptCheck_aux_Var (mpbi (fineq _) finns))
+      + ($PTParens x$ => ptCheck_aux_Parens (mpbir (fineq abid2) finns))}
+      + ($PTFunc f xs$ => ptCheck_aux_Func ,(g0 '(anwr ,(g1 4 @ g3 _))))}
+      + {{($PTPfx f c xs$ => ptCheck_aux_Pfx ,(g0 @ g1 5 @ g3 _))
+      + ($PTNota f xs$ => ptCheck_aux_Nota ,(g0 @ g1 6 _))}
+      + {($PTInfix r f c x y$ => ptCheck_aux_Infix ,(g0 @ g1 3 @ g2 _))
+      + ($PTCoe f x$ => ptCheck_aux_Coe ,(g0 @ g1 2 '(anwr ,h1)))}}}))
+  (def h2 '(sylibr elupto ,h1))
+  (focus -- PTVar v
+    '(eqab2i @ bitr elobind @ exeqi @ aneq2i @
+      bitr (elneq2 @ applame @ sneqd SVareq) elsn))
+  (focus -- PTFunc f xs
+    '(iand (anwr _) @ eqcomd anrl)
+    '(sylibr elList @ syl all2all2 @ all2im1i ,h2))
+  (focus -- PTPfx f c xs
+    '(iand (sylibr snocT @ iand (rsyl anlr _) (anwr ,h2)) @
+      eqtr2d (leneqd an4l) @ eqtr4g snoclen snoclen @ suceqd @ anld anlr)
+    '(sylibr elList @ syl all2all2 @ all2im1i ,h2))
+  (focus -- PTNota f xs
+    '(syl (lelttr leprid2) @ syl ellt @
+      sylibr (ellower @ xabfin id (a1i @ Arrayfin finns) finns) @
+      sylibr (elxabe @ eleq2d Arrayeq2) @ iand _ @
+      sylibr elArray @ iand _ @ eqcomd anllr)
+    '(sylibr elupto @ syl (lelttr lenleid) @ rsyl an3l @
+      rsyl getNota_precle @ sylib leltsuc @ letr leprid1)
+    '(sylibr elList @ sylibr allnth @ sylib alcomb @ iald @
+      sylbi anrass @ imp @ alimd @ com23 @ exp @
+      eimd (anwr @ sylib nthne0 sucne0) @ eexda _)
+    '(mpd (rsyl anllr ptCheckNotaLs_aux_fin_lem) @
+      syl5bir impexp @ eimd anr @ eimd anlr @ a1i @ bi2i elupto))
+  (focus -- PTInfix r f c x y
+    '(sylibr elArrayS @ iand (rsyl anlr ,h2) (sylibr elArray1 @ anwr ,h2))));
+
+@_ def ptCheck_aux (eac pt: nat): nat =
+$ srec (\ ih, \. p e. upto (eac + 2), lower {e | ptCheck_aux1 eac ih p (size (Dom ih)) e}) pt $;
+
+@_ def ptCheck (eac p pt e: nat): wff =
+$ ptCheck_aux1 eac (\. pt1 e. upto pt, ptCheck_aux eac pt1) p pt e $;
+@_ def ptCheckNotaLs (eac bis lits xs es p .pt1: nat): wff =
+$ ptCheckNotaLs_aux eac bis lits (\ pt1, ptCheck_aux eac pt1) xs es p $;
+
+theorem ptCheck_aux_val:
+  $ ptCheck_aux eac pt = \. p e. upto (eac + 2), lower {e | ptCheck eac p pt e} $ =
+'(eqtr {srecval : $ _ = _ @ (\. pt1 e. upto pt, ptCheck_aux eac pt1) $} @
+  !! applame ih @ rlameq2d @ lowereqd @ abeqd @ bitrd (ptCheck_aux1eq4d sreclem) ,eqtac);
+
+theorem ptCheck_fin: $ finite {e | ptCheck eac p pt e} $ = (named 'ptCheck_aux1_fin);
+theorem ptCheck_val: $ p <= suc eac -> (e e. ptCheck_aux eac pt @ p <-> ptCheck eac p pt e) $ =
+(named '(syl6bb (bitr (ellower ptCheck_fin) @ elabe ptCheckeq4) @
+  elneq2d @ syl5eq (appneq1 ptCheck_aux_val) @
+  !! apprlamed p1 ,eqtac @ bi2i @ bitr elupto @ bitr4 (lteq2 add22) leltsuc));
+
+theorem ptCheck_lem: $ p <= suc eac -> pt < pt1 ->
+  (e e. (\. z e. upto pt1, ptCheck_aux eac z) @ pt @ p <-> ptCheck eac p pt e) $ =
+'(exp @ bitrd
+  (elneq2d @ appneq1d @ apprlamed (ptCheck_auxeq2d anr) @ sylibr elupto anr)
+  (anwl ptCheck_val));
+
+theorem ptCheckNotaLs_lem: $ all (Sum Univ t) xs ->
+  (ptCheckNotaLs_aux eac bis lits (\. pt e. t, ptCheck_aux eac pt) xs es q <->
+  ptCheckNotaLs eac bis lits xs es q) $ =
+(named @ focus
+  '(ax_mp (eale ,(eqtac-gen 'xs)) ,(induct '(listind) 'lits _ _))
+  '(ax_gen @ a1i @ bitr4 ptCheckNotaLs_aux_0 ptCheckNotaLs_aux_0)
+  '(sylbi (cbval ,eqtac) @ iald @
+    syl6ibr (bieq ptCheckNotaLs_aux_S ptCheckNotaLs_aux_S) @
+    expcom @ exeqd @ syl exeq @ imp @ alimd @ expcom @
+    bitr4g anass anass @ syl aneq2a @ imp @ com23 @
+    syl5ibrcom (imeq1d @ syl6bb allS alleq2) @
+    syl6 (imp aneq) @ anim @ eleq2d @ Sumeq2d @ abeqd @
+    exeqd @ exeqd @ exeqd @ syl aneq2a @ syl5 anll @
+    com12 @ syl6 _ @ bi1d eleq1)
+  '(sylbi Sumr @ elneq2d @ appneq1d @ eqtr4d apprlams @ a1i applams));
+
 pub theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <->
-  E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $;
+  E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $ = (named 'ptCheck_aux_Var);
+pub theorem ptCheckParens (eac p pt e: nat):
+  $ ptCheck eac p (PTParens pt) e <-> ptCheck eac (suc 0) pt e $ =
+(named '(bitr ptCheck_aux_Parens @ ptCheck_lem (mpbi lesuc le01) PTParens_ltid));
 pub theorem ptCheckFunc (env ast ctx p f xs e: nat) {f2 args r v e2 x y: nat}:
   $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
-    suc (2 ^ 10) <=p p /\ E. f2 E. args E. r E. v E. e2
+    suc (2 ^ 10) <=p p /\ E. args E. r E. v E. e2
     (getTerm env f args r v /\ len xs = len args /\
       all2 x y (ptCheck (env <> ast <> ctx) 0 x y) xs e2 /\
-      e = SApp f2 e2) $;
+      e = SApp f e2) $ =
+(named '(bitr ptCheck_aux_Func @ aneq2i @ exeqi @ exeqi @ exeqi @ exeqi @
+  aneq1i @ aneq (aneq1i @ getTermeq1 fstpr) @
+  all2eq1g @ ax_gen @ ax_gen @ anwl @ syl (ptCheck_lem le01) PTFunc_ltid));
 pub theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
     E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
       all2 x y (ptCheck eac 0 x y) l es2 /\ ptCheck eac q z e2 /\
-      e = SApp f (es2 |> e2)) $;
-pub theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
-  $ ptCheck eac p (PTInfix r f c x y) e <->
-    E. q E. e1 E. e2 (
-      f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
-      ptCheck eac (if (r = 0) q (precSuc q)) x e1 /\
-      ptCheck eac (if (r = 0) (precSuc q) q) y e2 /\
-      e = SApp f (e1 : e2 : 0)) $;
+      e = SApp f (es2 |> e2)) $ =
+(named '(bitr ptCheck_aux_Pfx @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
+  rbid an4l an4l @ aneq1d @ aneqd
+  (aneq2d @ syl all2eq1g @ iald @ iald @ exp @
+    syl (ptCheck_lem le01) @ syl PTPfx_ltid @ mpbird (lmemeq2d anll) @
+    sylibr lmemsnoc @ orld anrl)
+  (sylc ptCheck_lem (anwr getPfx_precle) @
+    syl PTPfx_ltid @ mpbiri lmemsnocid @ lmemeq2d anl)));
 pub theorem ptCheckNota {bis ty c q lits es: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
     E. bis E. ty E. c E. q E. lits E. es (
       f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
-      len xs = len es /\ ptCheckNotaLs eac bis lits xs es q /\
-      e = SApp f es) $;
+      len bis = len es /\
+      A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
+      ptCheckNotaLs eac bis lits xs es q /\
+      e = SApp f es) $ =
+(named @ focus
+  '(bitr ptCheck_aux_Nota @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
+    aneq1i @ aneq2a @ a1i @ ptCheckNotaLs_lem @
+    mpbir allal2 @ !! ax_gen a @ trud _)
+  (split-sop 'a (fn (x y) '(a1i @ mpbiri (sylibr ,x ,y) ,eqtac))
+    '{(1 => Suml (a1i elv)) + (1 => Sumr (sylibr elupto PTNota_ltid))}));
+pub theorem ptCheckInfix {q e1 e2: nat} (eac p f c x y e: nat) (r: wff):
+  $ ptCheck eac p (PTInfix (nat r) f c x y) e <->
+    E. q E. e1 E. e2 (
+      f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
+      ptCheck eac (if r (precSuc q) q) x e1 /\
+      ptCheck eac (if r q (precSuc q)) y e2 /\
+      e = SApp f (e1 : e2 : 0)) $ =
+(named @ focus
+  '(bitr ptCheck_aux_Infix @ exeqi @ exeqi @ exeqi @ aneq1i @ bitr _ _)
+  (focus '(_ @ ! truenat r) eqtac)
+  (focus
+    (have 'h1 '(mpi lesucid letr))
+    (have 'h2 '(ifbothd leeq1 leeq1 (a1i le01) @ sylib lesuc anl))
+    (def (f x y z) '(syl (mpi ,z ptCheck_lem) (ifbothd leeq1 leeq1 (anwl ,x) (anwl ,y))))
+    '(rbid an3l an3l @ rsyl getInfix_precle @
+      aneqd (aneq2d ,(f 'h2 'h1 'PTInfix_ltid1)) ,(f 'h1 'h2 'PTInfix_ltid2))));
 pub theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
-  $ ptCheck eac p (PTCoe f x) e <->
+  $ p <= eac ->
+    (ptCheck eac p (PTCoe f x) e <->
     E. y E. e2 (
       f <> y e. getCoe (pi21 eac) /\ ptCheck eac p x e2 /\
-      e = SApp f e2) $;
+      e = SApp f e2)) $ =
+(named @ focus
+  '(syl5bb ptCheck_aux_Coe @ exeqd @ exeqd @ aneq1d @ aneq2d @
+    syl (mpi PTCoe_ltid ptCheck_lem) @ mpi lesucid letr));
 
-pub theorem ptCheckNotaLs0 (eac bis xs es q: nat):
-  $ ptCheckNotaLs eac bis 0 xs es q $;
-pub theorem ptCheckNotaLsC (eac bis c p lits xs es q: nat):
-  $ ptCheckNotaLs eac bis (b1 (c <> p) : lits) xs es q <->
-    ptCheckNotaLs eac bis lits xs es q $;
-pub theorem ptCheckNotaLsV {n x e: nat} (eac bis v lits xs es q: nat):
-  $ ptCheckNotaLs eac bis (b0 v : lits) xs es q <->
-    E. n E. x E. e (lookupVar bis v = suc n /\
-      nth n xs = suc x /\ nth n es = suc e /\
+theorem ptCheckNotaLs0 (eac bis xs es q: nat):
+  $ ptCheckNotaLs eac bis 0 xs es q <-> xs = 0 $ =
+(named 'ptCheckNotaLs_aux_0);
+theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
+  $ ptCheckNotaLs eac bis (b0 (c <> p) : lits) xs es q <->
+    E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $ =
+(named @ focus
+  '(bitr ptCheckNotaLs_aux_S @ bitr _ @ exeqe @ exeqd @ aneq1d @ eqeq2d conseq1)
+  '(exeqi @ bitr (exeqi @ bitr (aneq1i @ bitr _ ancomb) anass) exan1)
+  '(aneq2i @ bitr Suml @ elabe @ eqeq2d @ b0eqd @ syl6eq fstpr fsteq));
+
+theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
+  $ litsPrec lits q <= suc eac ->
+    (ptCheckNotaLs eac bis (b1 v : lits) xs es q <->
+    E. n E. x E. xs2 E. e (xs = b1 x : xs2 /\
+      lookupVar bis v = suc n /\ nth n es = suc e /\
       ptCheck eac (litsPrec lits q) x e /\
-      ptCheckNotaLs eac bis lits xs es q) $;
+      ptCheckNotaLs eac bis lits xs2 es q)) $ =
+(named @ focus
+  '(syl5bb ptCheckNotaLs_aux_S @ syl6bb excomb @
+    syl6bb (exeqi @ exeqe @ exeqd @ exeqd @ syl5bbr exan1 @ exeqd @
+      syl5bbr anass @ aneq1d @ syl5bbr anass @ aneq1d @ syl5bbr anass @ aneq1d @
+      aneq1d @ eqeq2d conseq1) @
+    syl6bb excomb @ exeqd @ syl6bbr (exeqi @ bitr4 (aneq2i excomb) exan1) @
+    syl6bb excomb @ exeqd @ syl6bbr (exeqi @ bitr4 (aneq2i exan1) anlass) @
+    syl6bbr exan1 @ syl5bb anass @ aneq2d @
+    syl5bb (aneq1i @ bitr Sumr @ !! elabe v1 ,eqtac) @
+    syl5bbr exan2 @ exeqd @ syl6bb exan1 @
+    syl5bbr exan2 @ exeqd @ syl5bbr exan2 @ syl6bb exan1 @ exeqd @
+    syl6bb anass @ aneq1d @ syl6bb anass @ aneqd (a1i anass) @
+    syl5bb (elneq2 @ appneq1 @ applame ptCheck_auxeq2) @
+    ptCheck_val));
 
 @_ def parseExpr (eac args f s .e .pt: nat): set =
 $ {e | E. pt (ptToStr pt = f /\

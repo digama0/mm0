@@ -1637,10 +1637,10 @@ pub theorem readIndexS (k sc r: nat):
 (named '(eqtr obindS @ appslame @ applamed @ chopeq2d @ shleqd (readRegeq2d anr) anl));
 pub theorem readIndexT (k si: nat):
   $ k e. Config /\ si e. Option ScaleIndex -> readIndex k si e. u64 $ =
-(split-sop
-  (def (f h1 h2) '(mpbiri ,h2 @ eleq1d @ syl6eq ,h1 @ readIndexeq2d anr))
-  '{($0$ => ,(f 'readIndex0 'elBits01)) o
-    (2 as $suc (sc <> r)$ => ,(f 'readIndexS 'chopT))});
+(split-sop 'si
+  (fn (h1 h2) '(syl5ibrcom (eleq1d @ syl6eq ,h1 @ readIndexeq2) @ a1i ,h2))
+  '{($0$ => readIndex0 elBits01) o
+    (2 as $suc (sc <> r)$ => readIndexS chopT)});
 
 @_ abstract def readBase (k b: nat): nat =
 $ obind b (\ n, ocase (readRIP k) (\ r, readReg k r) n) $;
@@ -1651,12 +1651,12 @@ pub theorem readBaseReg (k r: nat): $ readBase k (base_reg r) = readReg k r $ =
 (named '(eqtr obindS @ applame @ syl6eq (eqtr ocaseS @ applame @ readRegeq2) ocaseeq3));
 pub theorem readBaseT (k b: nat):
   $ k e. Config /\ b e. Base -> readBase k b e. u64 $ =
-(named @ split-sop
-  (def (f h1 h2) '(mpbird (eleq1d @ syl6eq ,h1 @ readBaseeq2d anr) ,h2))
-  '{($0$ => ,(f 'readBase0 '(a1i elBits01))) o
-    ($base_RIP$ => ,(f 'readBaseRIP '(anwll readRIP_T))) o
-    ($base_reg r$ => ,(f 'readBaseReg
-      '(sylan readRegT anll @ sylib base_regT @ mpbid (eleq1d anr) anlr)))});
+(named @ split-sop 'b
+  (fn (h1 h2) '(exp @ mpbird (eleq1d @ syl6eq ,h1 @ readBaseeq2d anr) ,h2))
+  '{($0$ => readBase0 (a1i elBits01)) o
+    ($base_RIP$ => readBaseRIP (anwll readRIP_T)) o
+    ($base_reg r$ => readBaseReg
+      (sylan readRegT anll @ sylib base_regT @ mpbid (eleq1d anr) anlr))});
 
 @_ abstract def RM_EA (k rm: nat): nat =
 $ case
@@ -1671,11 +1671,11 @@ pub theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
   add64eqd (add64eqd (readIndexeq2d anll) (readBaseeq2d anlr)) anr));
 pub theorem RM_EA_T (k rm: nat):
   $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $ =
-(named @ split-sop
-  (def (f h1 h2) '(mpbird (eleq1d @ syl6eq ,h1 @ RM_EAeq2d anr) ,h2))
-  '{($RM_reg r$ => ,(f 'RM_EAreg
-      '(sylibr EA_rT @ sylib RM_regT @ mpbid (eleq1d anr) anlr))) +
-    ($RM_mem si base q$ => ,(f 'RM_EAmem '(a1i @ mpbir EA_mT add64T)))});
+(named @ split-sop _
+  (fn (h1 h2) '(exp @ mpbird (eleq1d @ syl6eq ,h1 @ RM_EAeq2d anr) ,h2))
+  '{($RM_reg r$ => RM_EAreg
+      (sylibr EA_rT @ sylib RM_regT @ mpbid (eleq1d anr) anlr)) +
+    ($RM_mem si base q$ => RM_EAmem (a1i @ mpbir EA_mT add64T))});
 
 @_ local def destsrcEA (k ds: nat): nat =
 $ case (\\ v, case
@@ -1866,7 +1866,7 @@ pub theorem writeEASzT (k sz ea v k2: nat):
   $ writeEASz k sz ea v k2 ->
     k e. Config /\ sz e. WSize /\ ea e. EA /\ v e. Bits (wsizeBits sz) /\
     k2 e. Config $ =
-(named '(mpand anl @ iand anr @ impcom ,(split-sop
+(named '(mpand anl @ iand anr @ impcom ,(split-sop 'ea
   (def (f h1 h2 h3) '(syld (bi1d @ writeEASzeq3d anr) @
     rsyl (impcom @ bi1d @ aneq1d @ aneq2d @ syl6bb ,h2 eleq1) @
     syld (bi1d ,h1) @ exp ,h3))
@@ -1912,13 +1912,13 @@ pub theorem EA_callDest_m (k a v: nat):
   syl5bb Sumr @ syl5bb Sumr @ elabed @ aneq2d @ readMemeq2d anr));
 pub theorem EA_callDestT (k ea v: nat):
   $ EA_callDest k ea v -> k e. Config /\ ea e. EA /\ v e. u64 $ =
-(named '(mpand anl @ iand anr @ impcom ,(split-sop
-  (def (f h1 h2 h3) '(syld (bi1d @ EA_callDesteq2d anr) @
+(named '(mpand anl @ iand anr @ impcom ,(split-sop 'ea
+  (fn (h1 h2 h3) '(exp @ syld (bi1d @ EA_callDesteq2d anr) @
     rsyl (impcom @ bi1d @ aneq2d @ syl6bb ,h2 eleq1) @
     syld (bi1d ,h1) @ exp ,h3))
-  '{($EA_i i$ => ,(f 'EA_callDest_i 'EA_iT '(mpbiri add64T @ eleq1d anr))) +
-   {($EA_r r$ => ,(f 'EA_callDest_r 'EA_rT '(mpbird (eleq1d anr) @ anwl readRegT))) +
-    ($EA_m a$ => ,(f 'EA_callDest_m 'EA_mT 'anrl))}})));
+  '{($EA_i i$ => EA_callDest_i EA_iT (mpbiri add64T @ eleq1d anr)) +
+   {($EA_r r$ => EA_callDest_r EA_rT (mpbird (eleq1d anr) @ anwl readRegT)) +
+    ($EA_m a$ => EA_callDest_m EA_mT anrl)}})));
 
 @_ def EA_jump (k ea k2 .v: nat): wff =
 $ E. v (EA_callDest k ea v /\ k2 = writeRIP k v) $;

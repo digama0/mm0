@@ -561,6 +561,7 @@ theorem impexp: $ (a /\ b -> c) <-> (a -> b -> c) $ =
 '(ibii (exp @ exp @ mpd (anim1 anr) anll) (exp @ mpd anrr @ mpd anrl anl));
 theorem impd (h: $ a -> b -> c -> d $): $ a -> b /\ c -> d $ = '(sylibr impexp h);
 theorem expd (h: $ a -> b /\ c -> d $): $ a -> b -> c -> d $ = '(sylib impexp h);
+theorem com12b: $ (a -> b -> c) <-> (b -> a -> c) $ = '(ibii (com23 id) (com23 id));
 
 @_ def or (a b: wff): wff = $ ~a -> b $;
 infixl or: $\/$ prec 30;
@@ -1545,6 +1546,7 @@ theorem addSass: $ suc a + b = a + suc b $ = '(eqtr4 addS1 addS2);
 
 theorem add12: $ a + 1 = suc a $ = '(eqtr addS (suceq add0));
 theorem add11: $ 1 + a = suc a $ = '(eqtr addS1 (suceq add01));
+theorem add22: $ a + 2 = suc (suc a) $ = '(eqtr addS (suceq add12));
 
 theorem addcom: $ a + b = b + a $ =
 '(! ind x y _ $ a + x = x + a $ _ _ _ _
@@ -2559,10 +2561,10 @@ do {
   --   * `pr1 : G /\ ?a = 0 -> p`
   --   * `pr2 : G /\ ?a = 1 -> p`
   --   * `pr3 : G /\ ?a = suc (a : b) -> p`
-  (def (split-sop hs)
-    (def base @ match-fn*
-      [(h) '(exp ,h)]
-      [(e h) '{(exp ,h) : $ _ -> _ = ,e -> _ $}])
+  (def (split-sop . hs)
+    @ match (match hs [(hs) '(_ ,hs)] [e e]) @ (lhs . hs)
+    @ match (match hs [(hs) '(,(fn (x) '(exp ,x)) ,hs)] [e e]) @ (f hs)
+    (def (base e h) '{,(apply f h) : $ _ -> ,lhs = ,e -> _ $})
     @ letrec
       -- Here (f g): $ G -> p $ assuming g is such that
       -- (g h): $ G -> x2 = F x3 -> x1 = G x2 -> a = H x1 -> p $ given
@@ -2571,13 +2573,13 @@ do {
         [{hs0 '+ hs1} @ list 'splitb
           (f hs0 @ fn (x) '(splitb0 ,(g x)))
           (f hs1 @ fn (x) '(splitb1 ,(g x)))]
-        [('o (e '=> h) hs1 . hsS) @ list 'splitopt
+        [('o (e '=> . h) hs1 . hsS) @ list 'splitopt
           (g (base e h))
           (f (cons 'o hs1 hsS) @ fn (x) '(splitoptS ,(g x)))]
         [('o hs) (f hs g)]
-        [((? number? n) '=> h) (splitpr n (g (base h)))]
-        [((? number? n) 'as e '=> h) (splitpr n (g (base e h)))]
-        [((and e (...)) '=> h) (splitpr {(len e) - 1} (g (base e h)))]])
+        [((? number? n) '=> . h) (splitpr n (g (base _ h)))]
+        [((? number? n) 'as e '=> . h) (splitpr n (g (base e h)))]
+        [((and e (...)) '=> . h) (splitpr {(len e) - 1} (g (base e h)))]])
     (f hs id))
 };
 
@@ -3754,6 +3756,20 @@ theorem sseq0: $ A C_ B -> B == 0 -> A == 0 $ = '(syl6ib ss02 @ com12 @ bi1d sse
 theorem isf0: $ isfun 0 $ = '(!! ax_gen x @ !! ax_gen y @ !! ax_gen z @ absurd el02);
 theorem app01: $ 0 @ a = 0 $ = '(ndmapp @ mtbir (eleq2 dm0) el02);
 
+theorem appleid1: $ f @ x <= f $ =
+(named @ focus
+  '(cases (eex @ mpbird (leeq1d theid) _) @ mpbiri le01 @ leeq1d the0)
+  '(rsyl (mpbiri (mpbir (elabe eqeq1) eqid) eleq2) @
+    sylbi (elabe @ eleq1d preq2) @ rsyl ellt @ rsyl ltle @ letr leprid2));
+
+theorem elobind: $ x e. obind n F <-> E. y (n = suc y /\ x e. F @ y) $ =
+(named '(cases
+  (mpbiri (binth nel0 @ nexi @ mt (anwl eqcom) peano1) @
+    bieqd (elneq2d @ syl6eq obind0 obindeq1) @ exeqd @ aneq1d eqeq1)
+  (sylbi exsuc @ eex @ mpbiri (bicom @ exeqe @ elneq2d appeq2) @
+    bieqd (elneq2d @ syl6eq obindS obindeq1) @
+    exeqd @ aneq1d @ syl6bb eqcomb @ syl6bb peano2 eqeq1)));
+
 theorem el12: $ a e. 1 <-> a = 0 $ =
 '(ibii (sylib lt12 ellt) (mpbiri (mpbir el01 odd1) eleq1));
 
@@ -4323,7 +4339,8 @@ pub theorem lmemsS (a l: nat): $ lmems (a : l) = a ; lmems l $ =
 @_ def lmem (a l: nat): wff = $ a e. lmems l $; infixl lmem: $IN$ prec 50;
 
 theorem lmem0: $ ~ a IN 0 $ = '(mtbir (elneq2 lmems0) el02);
-theorem lmemS (a b l: nat): $ a IN (b : l) <-> a = b \/ a IN l $ = '(bitr (elneq2 lmemsS) elins);
+theorem lmemS: $ a IN (b : l) <-> a = b \/ a IN l $ = '(bitr (elneq2 lmemsS) elins);
+theorem lmem1: $ a IN (b : 0) <-> a = b $ = '(bitr lmemS @ bior2 lmem0);
 
 theorem lmemconsid: $ a IN (a : l) $ = '(mpbir lmemS (orl eqid));
 
@@ -4387,6 +4404,8 @@ theorem elArray0: $ 0 e. Array A 0 $ = '(mpbir elArray02 eqid);
 theorem elArrayS: $ (a : b) e. Array A (suc n) <-> a e. A /\ b e. Array A n $ =
 '(bitr elArray @ bitr (aneq elListS @ bitr (eqeq1 lenS) peano2) @
   bitr4 anass (aneq2i elArray));
+theorem elArray1: $ (a : 0) e. Array A 1 <-> a e. A $ =
+'(bitr elArrayS @ bian2 elArray0);
 theorem elArraySne0: $ l e. Array A (suc n) -> l != 0 $ =
 '(sylbi elArray @ anwr @ sylib (noteq leneq0) sucne0);
 theorem elArrayS2: $ l e. Array A (suc n) <-> E. a E. b (a e. A /\ b e. Array A n /\ l = a : b) $ =
@@ -4452,9 +4471,13 @@ theorem ltappendid2: $ b != 0 <-> a < b ++ a $ =
 theorem appendeq0: $ a ++ b = 0 <-> a = 0 /\ b = 0 $ =
 '(bitr3 leneq0 @ bitr (eqeq1 appendlen) @ bitr addeq0 @ aneq leneq0 leneq0);
 
+theorem lmemappend: $ x IN a ++ b <-> x IN a \/ x IN b $ =
+(named @ induct '(listind) 'a '(bitr4 (lmemeq2 append0) @ bior1 lmem0)
+  '(bitr4g (lmemeq2 appendS) (oreq1i lmemS) @ bitr4g lmemS orass (oreq2d id)));
+
 theorem allappend: $ all A (a ++ b) <-> all A a /\ all A b $ =
-(named @ induct '(listind) 'a '(bitr4 (alleq2 append0) @ bian1 all0)
-  '(bitr4g (alleq2 appendS) (aneq1i allS) @ bitr4g allS anass (aneq2d id)));
+'(bitr4 allal2 @ bitr4 (aneq allal2 allal2) @
+  bitr (aleqi @ bitr (imeq1i lmemappend) imor) @ !! alan x);
 
 theorem appendT: $ a ++ b e. List A <-> a e. List A /\ b e. List A $ =
 '(bitr4 elList @ bitr4 (aneq elList elList) allappend);
@@ -4472,9 +4495,13 @@ pub theorem snoclt (a b: nat): $ a < a |> b $ =
   '(mpbir (lteq2 snoc0) @ mpbir lt01 consne0)
   '(bi1i @ bitr4 ltcons2 @ lteq2 snocS));
 
+theorem lesnoc2: $ b <= c <-> a |> b <= a |> c $ = '(bitr lecons1 leappend2);
 theorem appendsnoc: $ l1 ++ (l2 |> b) = l1 ++ l2 |> b $ = (named '(eqcom appendass));
-
 theorem conssnoc: $ a : (l |> b) = a : l |> b $ = '(eqcom appendS);
+theorem snoclen: $ len (a |> b) = suc (len a) $ = '(eqtr appendlen @ eqtr (addeq2 len1) add12);
+theorem lmemsnoc: $ x IN a |> b <-> x IN a \/ x = b $ = '(bitr lmemappend @ oreq2i lmem1);
+theorem lmemsnocid: $ a IN (l |> a) $ = '(mpbir lmemsnoc (orr eqid));
+theorem allsnoc: $ all A (a |> b) <-> all A a /\ b e. A $ = '(bitr allappend @ aneq2i all1);
 
 theorem snocT: $ a |> b e. List A <-> a e. List A /\ b e. A $ =
 '(bitr appendT @ aneq2i elList1);
@@ -4720,6 +4747,12 @@ pub theorem ljoin0: $ ljoin 0 = 0 $ = (named 'lrec0);
 pub theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $ =
 (named '(! eqtr _ $ _ @ (_ <> _ <> ljoin L) $ _ lrecS @
   appslame @ appslamed @ applamed @ appendeqd anll anr));
+
+@_ local def nztails (L: nat): nat = $ lrec 0 (\\ a, \\ z, \ ih, (a <> z) : ih) L $;
+theorem nztails0: $ nztails 0 = 0 $ = (named 'lrec0);
+theorem nztailsS (l L: nat): $ nztails (l : L) = (l <> L) : nztails L $ =
+(named '(! eqtr _ $ _ @ (_ <> _ <> nztails L) $ _ lrecS @
+  appslame @ appslamed @ applamed @ conseqd (preqd anll anlr) anr));
 
 @_ local def lfnaux (F: set) (k n: nat): nat =
 $ grec 0 (\\ _1, \ x, suc x) (\\ _2, \\ i, \ ih, F @ i : ih) n k $;

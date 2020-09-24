@@ -841,7 +841,7 @@ theorem ptToStrCoe {y: nat} (f x: nat):
   $ ptToStr (PTCoe f x) = ptToStr x $;
 
 def ptCheck (eac p pt e: nat): wff;
-def ptCheckNotaLs (eac bis pts xs es p: nat): wff;
+def ptCheckNotaLs (eac bis lits xs es p: nat): wff;
 
 theorem ptCheckParens (eac p pt e: nat):
   $ ptCheck eac p (PTParens pt) e <->
@@ -867,29 +867,32 @@ theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
       ptCheck eac (if (r = 0) q (precSuc q)) x e1 /\
       ptCheck eac (if (r = 0) (precSuc q) q) y e2 /\
       e = SApp f (e1 : e2 : 0)) $;
-theorem ptCheckNota {bis ty c q lits es: nat} (eac p f xs e: nat):
+theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
     E. bis E. ty E. c E. q E. lits E. es (
       f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
-      len xs = len es /\ ptCheckNotaLs eac bis lits xs es q /\
+      len bis = len es /\
+      A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
+      ptCheckNotaLs eac bis lits xs es q /\
       e = SApp f es) $;
 theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
-  $ ptCheck eac p (PTCoe f x) e <->
+  $ p <= eac ->
+    (ptCheck eac p (PTCoe f x) e <->
     E. y E. e2 (
       f <> y e. getCoe (pi21 eac) /\ ptCheck eac p x e2 /\
-      e = SApp f e2) $;
+      e = SApp f e2)) $;
 
 theorem ptCheckNotaLs0 (eac bis xs es q: nat):
-  $ ptCheckNotaLs eac bis 0 xs es q $;
-theorem ptCheckNotaLsC (eac bis c p lits xs es q: nat):
-  $ ptCheckNotaLs eac bis (b1 (c <> p) : lits) xs es q <->
-    ptCheckNotaLs eac bis lits xs es q $;
-theorem ptCheckNotaLsV {n x e: nat} (eac bis v lits xs es q: nat):
-  $ ptCheckNotaLs eac bis (b0 v : lits) xs es q <->
-    E. n E. x E. e (lookupVar bis v = suc n /\
-      nth n xs = suc x /\ nth n es = suc e /\
+  $ ptCheckNotaLs eac bis 0 xs es q <-> xs = 0 $;
+theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
+  $ ptCheckNotaLs eac bis (b0 (c <> p) : lits) xs es q <->
+    E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $;
+theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
+  $ ptCheckNotaLs eac bis (b1 v : lits) xs es q <->
+    E. n E. x E. xs2 E. e (xs = b1 x : xs2 /\
+      lookupVar bis v = suc n /\ nth n es = suc e /\
       ptCheck eac (litsPrec lits q) x e /\
-      ptCheckNotaLs eac bis lits xs es q) $;
+      ptCheckNotaLs eac bis lits xs2 es q) $;
 
 def parseExpr (eac args f s .e .pt: nat): set =
 $ {e | E. pt (ptToStr pt = f /\
