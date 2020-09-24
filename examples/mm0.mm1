@@ -3125,27 +3125,118 @@ $ E. f2 (f = b1 f2 /\ parseExprProv (env <> ast <> ctx) args f2 == sn e) $;
 $ all2 hyp hyp2 (E. x E. f (hyp = 1 <> b0 x <> f /\
     elabFmlaProv env ast ctx args f hyp2)) hyps hyps2 $;
 
-@_ def elabDefO (env ast ctx s ds o o2: nat): wff;
+@_ def elabDefO (env ast ctx s ds o o2: nat): wff =
+$ o e. ocasep (ds = 0 /\ o2 = 0) {f | E. args2 E. e (
+      elabTermBinders ast (ctx ++ ds) args2 /\
+      elabFmla env ast (ctx ++ ds) args2 f e s /\
+      o2 = suc (ds <> e))} $;
 pub theorem elabDefO0 (env ast ctx s ds o2: nat):
-  $ elabDefO env ast ctx s ds 0 o2 <-> ds = 0 /\ o2 = 0 $;
+  $ elabDefO env ast ctx s ds 0 o2 <-> ds = 0 /\ o2 = 0 $ = (named 'ocasep0);
 pub theorem elabDefOS {args2 e: nat} (env ast ctx s ds f o2: nat):
   $ elabDefO env ast ctx s ds (suc f) o2 <-> E. args2 E. e (
       elabTermBinders ast (ctx ++ ds) args2 /\
       elabFmla env ast (ctx ++ ds) args2 f e s /\
-      o2 = suc (ds <> e)) $;
+      o2 = suc (ds <> e)) $ =
+(named '(bitr ocasepS @ !! elabe f1 ,eqtac));
 
-@_ def Elaborate (ast: nat): set;
-pub theorem Elaborate0: $ Elaborate 0 == sn 0 $;
+@_ def Elaborate_aux (aste: nat): wff =
+$ srecp (S\ aste1, {ih | aste1 e. S\ e2, {ast2 | ifp (ast2 = 0) (e2 = 0) (
+    E. ast E. d (ast2 = ast |> d /\ d e. Sum
+      (Sum
+        (Sum
+          (S\ sd, {x | E. e (e <> ast e. ih /\ e2 = e |> DSort x sd)})
+          (S\ x, S\ bis, {ret |
+            E. e E. ctx E. args E. ret2 (e <> ast e. ih /\
+              splitDummies bis = ctx <> 0 /\
+              elabTermBinders ast ctx args /\
+              elabType ast ctx ret ret2 /\
+              e2 = e |> DTerm x args ret2)}))
+        (Sum
+          (S\ x, S\ bis, {ret |
+            E. e E. ctx E. hyps E. hyps2 E. args E. ret2 (e <> ast e. ih /\
+              splitDummies bis = (ctx ++ hyps) <> 0 /\
+              elabTermBinders ast ctx args /\
+              elabHyps e ast ctx args hyps hyps2 /\
+              elabFmlaProv e ast ctx args ret ret2 /\
+              e2 = e |> DAxiom args hyps2 ret2)})
+          (S\ x, S\ bis, S\ ret, {o |
+            E. e E. ctx E. ds E. ret2 E. ctx2 E. args E. o2 (
+              e <> ast e. ih /\
+              splitDummies bis = ctx <> ds /\
+              elabType ast ctx ret ret2 /\
+              checkDummies ds ctx2 /\
+              elabTermBinders ast ctx args /\
+              elabDefO e ast ctx (fst ret2) ctx2 o o2 /\
+              e2 = e |> DDef x args ret2 o2)})))
+      (Sum
+        (Sum
+          (S\ x, S\ bis, {ret |
+            E. e E. ctx E. hyps E. hyps2 E. args E. ret2 (e <> ast e. ih /\
+              splitDummies bis = (ctx ++ hyps) <> 0 /\
+              elabTermBinders ast ctx args /\
+              elabHyps e ast ctx args hyps hyps2 /\
+              elabFmlaProv e ast ctx args ret ret2 /\
+              e2 = e |> DThm args hyps2 ret2)})
+          0)
+        {n | e2 <> ast e. ih}))
+  )}}) aste $;
+
+theorem Elaborate_aux_val {ih}
+  (p: wff args bis ctx ctx2 ds e hyps hyps2 i n o o2 ret ret2 sd x)
+  (h: $ ih = sep (upto (e2 <> ast2)) {i | Elaborate_aux i} ->
+    (,(foldr '(2 2 2 2 2 1 6) (get-decl 'Elaborate_aux) nth) <-> p) $):
+  $ Elaborate_aux (e2 <> ast2) <-> p $ =
+'(bitr {srecpval : $ _ <-> _ <> sep _ {i | Elaborate_aux i} e. _ $} @
+  !! elsabe aste1 @ bitrd ,eqtac @ a1i @ elabe @
+  syl5bb (!! elsabe _1 @ !! elabed _2 ,eqtac) h);
+
+theorem Elaborate_auxS {ih}
+  (p: wff args bis ctx ctx2 ds e hyps hyps2 i n o o2 ret ret2 sd x)
+  (h: $ ih = sep (upto (e2 <> ast |> d)) {i | Elaborate_aux i} ->
+    (,(foldr '(2 2 2 3 1 2 1 0 3) (get-decl 'Elaborate_aux_val) nth) <-> p) $):
+  $ Elaborate_aux (e2 <> (ast |> d)) <-> p $ =
+(named '(Elaborate_aux_val @ syl5bb (ifpneg snocne0) @
+  syl5bb (bitr (exeqi @
+      bitr (exeqi @ bitr (aneq1i @ bitr eqcomb snocinj) anass) @
+      bitr exan1 @ aneq2i @ exeqe eleq1) @
+    !! exeqe ast1 ,eqtac) h));
+
+@_ def Elaborate (ast: nat): set = $ {e | Elaborate_aux (e <> ast)} $;
+
+theorem elElaborate: $ e e. Elaborate ast <-> Elaborate_aux (e <> ast) $ =
+(named '(!! elabe x ,eqtac));
+
+theorem Elaborate_aux_lem: $ e2 = e |> s \/ e = e2 ->
+  (e <> ast e. sep (upto (e2 <> ast |> d)) {i | Elaborate_aux i} <->
+   e e. Elaborate ast) $ =
+'(rsyl (eor (mpbiri (ltle snoclt) leeq2) eqle) @
+  syl5bb elsep @ syl6bbr elElaborate @ syl6bb (elabe Elaborate_auxeq) @
+  syl bian1 @ sylibr elupto @ lelttrd (bi1i lepr1) @ a1i @ mpbi ltpr2 snoclt);
+
+pub theorem Elaborate0: $ Elaborate 0 == sn 0 $ =
+(named '(eqab1i @ Elaborate_aux_val @ a1i @ bitr4 (ifppos eqid) elsn));
+
 pub theorem ElaborateSort {e: nat} (ast sd x: nat):
   $ Elaborate (ast |> ASTSort (sd <> x)) ==
-    (\ e, e |> DSort x sd) '' Elaborate ast $;
+    (\ e, e |> DSort x sd) '' Elaborate ast $ =
+(named @ focus
+  '(eqab1i @ Elaborate_auxS @ syl5bb Suml @ syl5bb Suml @ syl5bb Suml {_ : $ih = _ -> _$})
+  '(!! elsabed _1 @ !! elabed _2 @ syl6bbr ellamima @ syl6bb _ ,eqtac)
+  '(exeqi @ aneq1a @ syl Elaborate_aux_lem orl));
+
 pub theorem ElaborateTerm {e ctx args ret2: nat} (ast x bis ret e2: nat):
   $ e2 e. Elaborate (ast |> ASTTerm (x <> bis <> ret)) <->
     E. e E. ctx E. args E. ret2 (e e. Elaborate ast /\
       splitDummies bis = ctx <> 0 /\
       elabTermBinders ast ctx args /\
       elabType ast ctx ret ret2 /\
-      e2 = e |> DTerm x args ret2) $;
+      e2 = e |> DTerm x args ret2) $ =
+(named @ focus
+  '(bitr elElaborate @ Elaborate_auxS @ syl5bb Suml @ syl5bb Suml @ syl5bb Sumr {_ : $ih = _ -> _$})
+  '(!! elsabed _1 @ !! elsabed _2 @ !! elabed _3 @ syl6bb _ ,eqtac)
+  '(exeqi @ exeqi @ exeqi @ exeqi @
+    aneq1a @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
+
 pub theorem ElaborateAxiom
   {e ctx hyps hyps2 args ret2: nat} (ast x bis ret e2: nat):
   $ e2 e. Elaborate (ast |> ASTAxiom (x <> bis <> ret)) <->
@@ -3154,7 +3245,13 @@ pub theorem ElaborateAxiom
       elabTermBinders ast ctx args /\
       elabHyps e ast ctx args hyps hyps2 /\
       elabFmlaProv e ast ctx args ret ret2 /\
-      e2 = e |> DAxiom args hyps2 ret2) $;
+      e2 = e |> DAxiom args hyps2 ret2) $ =
+(named @ focus
+  '(bitr elElaborate @ Elaborate_auxS @ syl5bb Suml @ syl5bb Sumr @ syl5bb Suml {_ : $ih = _ -> _$})
+  '(!! elsabed _1 @ !! elsabed _2 @ !! elabed _3 @ syl6bb _ ,eqtac)
+  '(exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
+    aneq1a @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
+
 pub theorem ElaborateDef {e ctx ds ret2 ctx2 args o2: nat} (ast x bis ret o e2: nat):
   $ e2 e. Elaborate (ast |> ASTDef (x <> bis <> ret <> o)) <->
     E. e E. ctx E. ds E. ret2 E. ctx2 E. args E. o2 (
@@ -3164,7 +3261,13 @@ pub theorem ElaborateDef {e ctx ds ret2 ctx2 args o2: nat} (ast x bis ret o e2: 
       checkDummies ds ctx2 /\
       elabTermBinders ast ctx args /\
       elabDefO e ast ctx (fst ret2) ctx2 o o2 /\
-      e2 = e |> DDef x args ret2 o2) $;
+      e2 = e |> DDef x args ret2 o2) $ =
+(named @ focus
+  '(bitr elElaborate @ Elaborate_auxS @ syl5bb Suml @ syl5bb Sumr @ syl5bb Sumr {_ : $ih = _ -> _$})
+  '(!! elsabed _1 @ !! elsabed _2 @ !! elsabed _3 @ !! elabed _4 @ syl6bb _ ,eqtac)
+  '(exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
+    aneq1a @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
+
 pub theorem ElaborateThm
   {e ctx hyps hyps2 args ret2: nat} (ast x bis ret e2: nat):
   $ e2 e. Elaborate (ast |> ASTThm (x <> bis <> ret)) <->
@@ -3173,11 +3276,23 @@ pub theorem ElaborateThm
       elabTermBinders ast ctx args /\
       elabHyps e ast ctx args hyps hyps2 /\
       elabFmlaProv e ast ctx args ret ret2 /\
-      e2 = e |> DThm args hyps2 ret2) $;
-pub theorem ElaborateNota (ast n: nat):
-  $ Elaborate (ast |> ASTNota n) == Elaborate ast $;
+      e2 = e |> DThm args hyps2 ret2) $ =
+(named @ focus
+  '(bitr elElaborate @ Elaborate_auxS @ syl5bb Sumr @ syl5bb Suml @ syl5bb Suml {_ : $ih = _ -> _$})
+  '(!! elsabed _1 @ !! elsabed _2 @ !! elabed _3 @ syl6bb _ ,eqtac)
+  '(exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
+    aneq1a @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
+
 pub theorem ElaborateIO (ast out n: nat):
-  $ Elaborate (ast |> ASTIO out n) == Elaborate ast $;
+  $ Elaborate (ast |> ASTIO out n) == 0 $ =
+(named '(eqab1i @ Elaborate_auxS @ a1i @ bitr Sumr @ bitr Suml @ bitr Sumr @ binth nel0 nel0));
+
+pub theorem ElaborateNota (ast n: nat):
+  $ Elaborate (ast |> ASTNota n) == Elaborate ast $ =
+(named @ focus
+  '(eqab1i @ Elaborate_auxS @ syl5bb Sumr @ syl5bb Sumr {_ : $ih = _ -> _$})
+  '(!! elabed _1 @ syl6bb _ ,eqtac)
+  '(Elaborate_aux_lem @ orr eqid));
 
 @_ def Valid (s .ast .e: nat): wff =
 $ E. ast E. e (parse s ast /\ e e. Elaborate ast /\ ValidEnv e) $;
