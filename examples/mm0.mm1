@@ -2600,7 +2600,7 @@ theorem PTInfix_ltid2: $ y < PTInfix r f c x y $ =
 '(ltb1tr @ leb1tr @ leb0tr @ lepr2tr @ lepr2tr @ lepr2tr leprid2);
 theorem PTCoe_ltid: $ x < PTCoe f x $ = '(ltb1tr @ leb1tr @ leb1tr leprid2);
 
-@_ def ptToStr (pt: nat): nat =
+@_ abstract def ptToStr (pt: nat): nat =
 $ srec (\ ih, case
     (case
       (case
@@ -2682,7 +2682,7 @@ pub theorem ptToStrCoe {y: nat} (f x: nat):
   !! appslame _1 @ !! applamed _2 @ !! apprlamed _3 (ptToStreqd @ eqtrd anr anlr) @
   mpbiri (mpbir elupto PTCoe_ltid) (eleq1d anr)));
 
-@_ def ptCheckNotaLs_aux (eac bis lits: nat) (IH: set) (xs es p: nat): wff =
+@_ local def ptCheckNotaLs_aux (eac bis lits: nat) (IH: set) (xs es p: nat): wff =
 $ all2 lits1 x (lits1 e. S\ lit, {lr | lit e. Sum
     {c | x = b0 (fst c)}
     {v | E. y E. n E. e (x = b1 y /\
@@ -2722,7 +2722,7 @@ theorem ptCheckNotaLs_aux_fin_lem:
     mpbird (eleq1d @ sylib peano2 @ eqtr3d anr _) anllr)
   '(eqtrd (ntheq1d @ sylib peano2 @ eqtr3d anlr an4lr) an3lr));
 
-@_ def ptCheck_aux1 (eac: nat) (ih: set) (p pt e: nat): wff =
+@_ local def ptCheck_aux1 (eac: nat) (ih: set) (p pt e: nat): wff =
 $ pt e. Sum
     (Sum
       (Sum
@@ -2859,12 +2859,12 @@ theorem ptCheck_aux1_fin: $ finite {e | ptCheck_aux1 eac (ns ih) p pt e} $ =
   (focus -- PTInfix r f c x y
     '(sylibr elArrayS @ iand (rsyl anlr ,h2) (sylibr elArray1 @ anwr ,h2))));
 
-@_ def ptCheck_aux (eac pt: nat): nat =
+@_ local def ptCheck_aux (eac pt: nat): nat =
 $ srec (\ ih, \. p e. upto (eac + 2), lower {e | ptCheck_aux1 eac ih p (size (Dom ih)) e}) pt $;
 
-@_ def ptCheck (eac p pt e: nat): wff =
+@_ abstract def ptCheck (eac p pt e: nat): wff =
 $ ptCheck_aux1 eac (\. pt1 e. upto pt, ptCheck_aux eac pt1) p pt e $;
-@_ def ptCheckNotaLs (eac bis lits xs es p .pt1: nat): wff =
+@_ abstract def ptCheckNotaLs (eac bis lits xs es p .pt1: nat): wff =
 $ ptCheckNotaLs_aux eac bis lits (\ pt1, ptCheck_aux eac pt1) xs es p $;
 
 theorem ptCheck_aux_val:
@@ -3015,22 +3015,49 @@ $ {e | E. pt (ptToStr pt = f /\
 -- Here we have to convert a parsed AST into an Env, and also
 -- parse the math strings.
 
-@_ def splitDummies (bis: nat): nat;
-pub theorem splitDummies0: $ splitDummies 0 = 0 $;
+@_ abstract def splitDummies (bis: nat): nat =
+$ rlrec 0 (\\ l, \\ a, \\ bis1, \ bis2,
+    (\\ c, \\ b, \ t, case
+      (\ x, (bis1 |> (c <> x <> t)) <> bis2)
+      (\ x, bis1 <> (bis2 |> (x <> t)))
+    @ b)
+  @ a) bis $;
+
+pub theorem splitDummies0: $ splitDummies 0 = 0 $ = (named 'rlrec0);
 pub theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
   splitDummies bis = bis1 <> bis2 ->
   splitDummies (bis |> (c <> b0 x <> t)) =
-    (bis1 |> (c <> x <> t)) <> bis2 $;
+    (bis1 |> (c <> x <> t)) <> bis2 $ =
+'(syl5eq rlrecS @ eqtrd (appeq2d @ preq2d preq2) @ a1i @
+  eqtr (!! appslame l @ !! appslamed a @ !! appslamed _1 @ !! applamed _2 ,eqtac) @
+  eqtr (!! appslame c1 @ !! appslamed b1 @ !! applamed t1 ,eqtac) @
+  eqtr casel @ !! applame _3 ,eqtac);
 pub theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
   splitDummies bis = bis1 <> bis2 ->
-  splitDummies (bis |> (c <> b1 x <> t)) = bis1 <> (bis2 |> (x <> t)) $;
+  splitDummies (bis |> (c <> b1 x <> t)) = bis1 <> (bis2 |> (x <> t)) $ =
+'(syl5eq rlrecS @ eqtrd (appeq2d @ preq2d preq2) @ a1i @
+  eqtr (!! appslame l @ !! appslamed a @ !! appslamed _1 @ !! applamed _2 ,eqtac) @
+  eqtr (!! appslame c1 @ !! appslamed b1 @ !! applamed t1 ,eqtac) @
+  eqtr caser @ !! applame _3 ,eqtac);
 
-@_ def checkDummies (ds bis: nat): wff;
-pub theorem checkDummies0 (bis: nat): $ checkDummies 0 bis <-> bis = 0 $;
+@_ abstract def checkDummies (ds bis: nat): wff =
+$ all2 d bi (d e. S\ x, {t |
+    E. t2 (t = b0 (t2 <> 0) /\ bi = (0 <> x <> t))
+  }) ds bis $;
+pub theorem checkDummies0 (bis: nat): $ checkDummies 0 bis <-> bis = 0 $ = (named 'all201);
 pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
   $ checkDummies ((x <> t) : ds) bis <-> E. t2 E. bis2 (
       t = b0 (t2 <> 0) /\ checkDummies ds bis2 /\
-      bis = (0 <> x <> t) : bis2) $;
+      bis = (0 <> x <> t) : bis2) $ =
+(named @ focus
+  '(bitr4 all2S1 @
+    bitr3 (exeqe @ exeqd @ exeqd @ aneq2d @ eqeq2d conseq1) @ exeqi @
+    bitr (aneq2i excomb) @ bitr3 exan1 @ exeqi @
+    bitr (aneq2i exan2) @ bitr3 anass @ bitr4 ancomb @ bitr4 anass @ aneq2i @
+    bitr4 (aneq2i exan2) @ bitr (aneq1i _) anass)
+  '(bitr (!! sbe d @ !! sbed bi ,eqtac) @
+    bitr (!! elsabe _1 @ !! elabed _2 ,eqtac) @
+    bitr exan2 ancomb));
 
 @_ def lookupVars (ctx .s .t: nat): set = $ opab s t (lookupVar ctx s = suc t) $;
 
@@ -3038,23 +3065,55 @@ pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
 $ E. t E. vs E. vs2 (s = b0 (t <> vs) /\ out = t <> vs2 /\
     vs2 == lookupVars ctx '' vs) $;
 
-@_ def elabTermBinder (ast ctx bi s: nat): wff;
+@_ abstract def elabTermBinder (ast ctx bi s: nat): wff =
+$ bi e. S\ c, S\ x, Sum {t | ifp (true c)
+    (E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2))
+    (E. t2 (elabType ast ctx t (t2 <> 0) /\ s = PBound t2))} 0 $;
 pub theorem elabTermBinderFmla (ast ctx c x f s: nat):
-  $ ~ elabTermBinder ast ctx (c <> x <> b1 f) s $;
+  $ ~ elabTermBinder ast ctx (c <> x <> b1 f) s $ =
+(named '(mtbir (!! elsabe _1 @ !! elsabed _2 @ syl5bb Sumr ,eqtac) nel0));
 pub theorem elabTermBinderBound {t2: nat} (ast ctx bi x t s: nat):
   $ elabTermBinder ast ctx (0 <> x <> b0 t) s <->
-    E. t2 (elabType ast ctx t (t2 <> 0) /\ s = PBound t2) $;
+    E. t2 (elabType ast ctx t (t2 <> 0) /\ s = PBound t2) $ =
+(named '(bitr (!! elsabe _1 @ !! elsabed _2 @ syl5bb Suml @ !! elabed _3 ,eqtac) @ ifpneg true0));
 pub theorem elabTermBinderReg {t2 vs2: nat} (ast ctx bi x t s: nat):
   $ elabTermBinder ast ctx (1 <> x <> b0 t) s <->
-    E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2) $;
+    E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2) $ =
+(named '(bitr (!! elsabe _1 @ !! elsabed _2 @ syl5bb Suml @ !! elabed _3 ,eqtac) @ ifppos true1));
 
-@_ def elabTermBinders (ast ctx ctx2: nat): wff;
+@_ def elabTermBinders_aux (ast n: nat): wff =
+$ srecp (S\ x, {ih | x e. S\ lc, {rc |
+    ifp (lc = 0) (rc = 0) (E. lc1 E. lb (lc = lc1 |> lb /\
+      E. rc1 E. rb (lc1 <> rc1 e. ih /\
+        elabTermBinder ast lc1 lb rb /\
+        rc = rc1 |> rb)))}}) n $;
+
+@_ def elabTermBinders (ast ctx ctx2: nat): wff =
+$ elabTermBinders_aux ast (ctx <> ctx2) $;
+theorem elabTermBinders_val: $ elabTermBinders ast ctx ctx3 <->
+  ifp (ctx = 0) (ctx3 = 0) (E. ctx1 E. bi (ctx = ctx1 |> bi /\
+    E. ctx2 E. bi2 (elabTermBinders ast ctx1 ctx2 /\
+      elabTermBinder ast ctx1 bi bi2 /\
+      ctx3 = ctx2 |> bi2))) $ =
+'(bitr {srecpval : $ _ <-> _ <> sep _ {_ | elabTermBinders_aux _ _} e. _ $} @
+  bitr (!! elsabe _1 @ !! elabed _2 ,eqtac) @
+  bitr (!! elsabe _3 @ !! elabed _4 ,eqtac) @
+  ifpeq3 @ exeqi @ exeqi @ aneq2a @ exeqd @ exeqd @ syl aneq1a @ exp @
+  aneq1d @ syl5bb elsep @ syl6bb (!! elabe _5 elabTermBinders_auxeq2) @
+  syl bian1 @ sylibr elupto @ lttrd
+    (anwl @ sylib ltpr1 @ mpbiri snoclt lteq2)
+    (anwr @ sylib ltpr2 @ mpbiri snoclt lteq2));
 pub theorem elabTermBinders0 (ast ctx2: nat):
-  $ elabTermBinders ast 0 ctx2 <-> ctx2 = 0 $;
+  $ elabTermBinders ast 0 ctx2 <-> ctx2 = 0 $ =
+(named '(bitr elabTermBinders_val @ ifppos eqid));
 pub theorem elabTermBindersS {ctx2 bi2: nat} (ast ctx bi ctx3: nat):
   $ elabTermBinders ast (ctx |> bi) ctx3 <->
-    E. ctx2 (elabTermBinders ast ctx ctx2 /\
-      elabTermBinder ast ctx bi bi2 /\ ctx3 = ctx2 |> bi2) $;
+    E. ctx2 E. bi2 (elabTermBinders ast ctx ctx2 /\
+      elabTermBinder ast ctx bi bi2 /\ ctx3 = ctx2 |> bi2) $ =
+(named '(bitr elabTermBinders_val @ bitr (ifpneg snocne0) @
+  bitr (exeqi @ bitr (exeqi @ bitr (aneq1i @ bitr eqcomb snocinj) anass) @
+    bitr exan1 @ aneq2i @ !! exeqe _1 ,eqtac) @
+  !! exeqe _2 ,eqtac));
 
 @_ def elabFmla (env ast ctx args f e s .f2: nat): wff =
 $ E. f2 (f = b1 f2 /\ parseExpr (env <> ast <> ctx) args f2 s == sn e) $;

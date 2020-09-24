@@ -888,11 +888,12 @@ theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
   $ ptCheckNotaLs eac bis (b0 (c <> p) : lits) xs es q <->
     E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $;
 theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
-  $ ptCheckNotaLs eac bis (b1 v : lits) xs es q <->
+  $ litsPrec lits q <= suc eac ->
+    (ptCheckNotaLs eac bis (b1 v : lits) xs es q <->
     E. n E. x E. xs2 E. e (xs = b1 x : xs2 /\
       lookupVar bis v = suc n /\ nth n es = suc e /\
       ptCheck eac (litsPrec lits q) x e /\
-      ptCheckNotaLs eac bis lits xs2 es q) $;
+      ptCheckNotaLs eac bis lits xs2 es q)) $;
 
 def parseExpr (eac args f s .e .pt: nat): set =
 $ {e | E. pt (ptToStr pt = f /\

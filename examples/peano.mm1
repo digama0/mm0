@@ -4502,6 +4502,7 @@ theorem snoclen: $ len (a |> b) = suc (len a) $ = '(eqtr appendlen @ eqtr (addeq
 theorem lmemsnoc: $ x IN a |> b <-> x IN a \/ x = b $ = '(bitr lmemappend @ oreq2i lmem1);
 theorem lmemsnocid: $ a IN (l |> a) $ = '(mpbir lmemsnoc (orr eqid));
 theorem allsnoc: $ all A (a |> b) <-> all A a /\ b e. A $ = '(bitr allappend @ aneq2i all1);
+theorem snocne0: $ a |> b != 0 $ = '(mt (syl6eq len0 leneq) @ sucne0 snoclen);
 
 theorem snocT: $ a |> b e. List A <-> a e. List A /\ b e. A $ =
 '(bitr appendT @ aneq2i elList1);
@@ -4697,6 +4698,10 @@ theorem exsnoc: $ l != 0 <-> E. l2 E. a l = l2 |> a $ =
   bitr (exeqi @ bitr (eqeq2 @ eqtr3 revrev (reveq revS)) revinj) @
   ibii (eex @ iexe @ eqeq2d snoceq1)
     (eex @ iexe @ eqeq2d @ snoceq1d @ syl6eq revrev reveq)));
+
+theorem snocinj: $ l1 |> a = l2 |> b <-> l1 = l2 /\ a = b $ =
+'(bitr3 (eqeq (eqtr revS @ snoceq1 revrev) (eqtr revS @ snoceq1 revrev)) @
+  bitr revinj @ bitr consinj @ bitr ancomb @ aneq1i revinj);
 
 theorem appendcan2: $ a ++ c = b ++ c <-> a = b $ =
 '(bitr3 revinj @ bitr (eqeq revappend revappend) @ bitr appendcan1 revinj);
