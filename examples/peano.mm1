@@ -168,9 +168,9 @@ do {
         (def ctx (atom-map!))
         @ match (map join @ transpose 4 @ rmap bis @ match-fn
           [(and (x s) e) (insert! ctx x (list s)) '((,e) () (,x) (,x))]
-          [(v s vs) @ let ([v1 (atom-app '_ v 1)] [v2 (atom-app '_ v 2)] [hv (atom-app '_h v)])
+          [(v s vs) @ let ([v1 (atom-app '_ v 1)] [v2 (atom-app '_ v 2)] [hv (atom-app '_ v 'h)])
             (insert! ctx v (list v1 v2 s hv))
-            '(() ((,v ,s ,(atom-app '_ v 1) ,(atom-app '_ v 2) ,(atom-app '_h v)))
+            '(() ((,v ,s ,v1 ,v2 ,hv))
               (,v1) (,v2))]) @ (xs vs es1 es2)
         (def xs1 (map hd xs))
         (def bis '((,G wff ()) . ,(append xs @ join @ rmap vs
@@ -241,7 +241,7 @@ do {
 
   (def (make-eqNd-thms df)
     @ match (get-decl df) @ (_ _ bis (ret _) . rest)
-    (def G @ if (apply or (map (match-fn [('G ...) #t] [_ #f]) bis)) '_G 'G)
+    (def G '_G) (def h0 '_h)
     @ letrec (
       [mk-bis @ match-fn
         [() '(() () () () ())]
@@ -252,7 +252,7 @@ do {
               '(,b (,x . ,t1) (,x . ,t2) ,h ,es ,ps)]))]
         [((v s _) . bis)
           @ match (mk-bis bis) @ (pes vs es pp data)
-          @ let ([v1 (atom-app v 1)] [v2 (atom-app v 2)])
+          @ let ([v1 (atom-app '_ v 1)] [v2 (atom-app '_ v 2)])
           '((,v . ,pes)
             ((,v ,s) . ,vs)
             (,v ,v . ,es)
@@ -262,7 +262,7 @@ do {
               (,v2 . ,pes)
               (im ,G (,(eq-for s) ,v1 ,v2))
               (,v1 ,v2 . ,es)
-              (h . ,pp)) .
+              (,h0 . ,pp)) .
              ,(rmap data @ match-fn @ (b t1 t2 h es ps)
               '(((,v ,s) . ,b) (,v . ,t1) (,v . ,t2) ,h (,v ,v . ,es) ((,(eqidd-for s) ,G ,v) . ,ps)))))]])
     (def xs @ join @ rmap bis @ match-fn [(and (_ _) e) (list e)] [_ ()])
@@ -271,7 +271,7 @@ do {
       (def vs+ (rmap vs @ match-fn @ (v s) '(,v ,s ,xs1)))
       @ list
         '((,G wff ()) . ,(append xs vs+))
-        '((h ,h))
+        '((,h0 ,h))
         '(im ,G (,(eq-for ret) (,df . ,t1) (,df . ,t2)))
         (match (eqd-for df)
           [#undef (error @ string-append "equality theorem not found for " (->string df))]
@@ -1740,6 +1740,8 @@ theorem ltleaddd (h1: $ G -> a < b $) (h2: $ G -> c <= d $): $ G -> a + c < b + 
 theorem ltirr: $ ~ a < a $ = '(mtbi (bitr ltadd1 @ lteq add01 add01) lt02);
 theorem ltne: $ a < b -> a != b $ = '(mpi ltirr @ con3d @ com12 @ bi1d lteq1);
 theorem ltner: $ a < b -> b != a $ = '(syl necom ltne);
+theorem ltnei (h: $ a < b $): $ a != b $ = '(ltne h);
+theorem ltneri (h: $ a < b $): $ b != a $ = '(ltner h);
 
 theorem d0lt1: $ 0 < 1 $ = 'lt01S;
 theorem d0lt2: $ 0 < 2 $ = 'lt01S;

@@ -211,7 +211,7 @@ do {
   (def mkcmphex @ match-fn
     [('lt a b) @ match (mkcmp2 a b) @ '(< ,p) p]
     [('le a b) @ match (mkcmp2 a b) ['(< ,p) '(ltlei ,a ,b ,p)] ['= '(leid ,a)]]
-    [('ne a b) @ match (mkcmp2 a b) ['(< ,p) '(ltne ,a ,b ,p)] ['(> ,p) '(ltner ,b ,a ,p)]])
+    [('ne a b) @ match (mkcmp2 a b) ['(< ,p) '(ltnei ,a ,b ,p)] ['(> ,p) '(ltneri ,b ,a ,p)]])
 
   -- Comparison tactic: usable in refine scripts when the target is $ a < b $ or $ a <= b $,
   -- producing a proof

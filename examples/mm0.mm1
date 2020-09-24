@@ -305,7 +305,7 @@ $ DAxiom a h r IN env \/ DThm a h r IN env $;
 -- Looks this variable up in the context, and reports whether it represents a
 -- bound variable.
 -- isBound : Ctx -> VarID -> Bool
-@_ def isBound (ctx x .s: nat): wff = $ E. s nth ctx x = suc (PBound s) $;
+@_ def isBound (ctx x .s: nat): wff = $ E. s nth x ctx = suc (PBound s) $;
 
 -- Checks if this a well formed dependent type in the context. A DepType is a
 -- pair (SortID, set VarID) giving the sort and the variable dependencies.
@@ -507,15 +507,17 @@ $ SExprRec
 -- for arbitrary binding structures.
 -- Free : Env -> Ctx -> SExpr -> VarID -> Bool
 @_ def Free (env ctx e v: nat): wff = $ true (Free_aux env ctx v @ e) $;
-pub theorem FreeVar: $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $ =
+pub theorem FreeVar (env ctx u v: nat):
+  $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $ =
 (named '(bitr
   (trueeq @ eqtr SExprRec_Var @ applame @ nateqd @ HasVareq2d SVareq)
   truenat));
 
-pub theorem FreeApp: $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
-  (getTerm env f args (r <> rs) o /\
-    (ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
-      E. u (u e. rs /\ nth u es = suc (SVar v)))) $ =
+pub theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
+  $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
+    (getTerm env f args (r <> rs) o /\
+      (ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
+        E. u (u e. rs /\ nth u es = suc (SVar v)))) $ =
 (named @ focus
   '(bitr (trueeq _) truenat)
   '(eqtr {SExprRec_App : $ _ = _ @ (_ <> _ <> map (Free_aux env ctx v) _) $} _)
@@ -730,7 +732,7 @@ pub theorem EnvExtendDef (e1 e2 id a r o: nat) {e o2: nat}:
   '(sylib b1le @ sylib b0le @ sylib lepr2 @ sylib lepr2 @ sylib lepr2 _)
   '(eor (mpbiri le01 leeq1) eqle));
 
-pub theorem EnvExtendThm (e1 e2 id a h r: nat) {e o2: nat}:
+pub theorem EnvExtendThm (e1 e2 id a h r: nat) {e: nat}:
   $ EnvExtend e1 (e2 |> DThm a h r) <->
     E. e (e1 = e |> DThm a h r /\ EnvExtend e e2) \/
     EnvExtend e1 e2 $ =
@@ -2040,7 +2042,7 @@ $ parseTk tk +> parseIdent <+> parseBindersAndArrows <+ parseCh _semi $;
     regexOpt (parseCh _equal +> parseFmla) <+ parseCh _semi) $;
 
 @_ def NotaDelim (x: nat): nat = $ b0 (b0 x) $;
-@_ def NotaInfix (r: wff) (x: nat): nat = $ b0 (b1 (b0 (nat r <> x))) $;
+@_ def NotaInfix (x y: nat): nat = $ b0 (b1 (b0 (x <> y))) $;
 @_ def NotaPfx (x: nat): nat = $ b0 (b1 (b1 x)) $;
 @_ def NotaCoe (x: nat): nat = $ b1 (b0 x) $;
 @_ def NotaGen (x: nat): nat = $ b1 (b1 x) $;
@@ -2071,8 +2073,8 @@ $ parseTk tk +> parseIdent <+> parseCh _colon +> parseFmla <+>
 @_ def _infixl: string = $ _i ': _n ': _f ': _i ': _x ': _l ': s0 $;
 @_ def _infixr: string = $ _i ': _n ': _f ': _i ': _x ': _r ': s0 $;
 @_ def _prefix: string = $ _p ': _r ': _e ': _f ': _i ': _x ': s0 $;
-@_ def parseInfixl (.x: nat): set = $ (\ x, NotaInfix F. x) <@> parseSimpleNota _infixl $;
-@_ def parseInfixr (.x: nat): set = $ (\ x, NotaInfix T. x) <@> parseSimpleNota _infixr $;
+@_ def parseInfixl (.x: nat): set = $ (\ x, NotaInfix 0 x) <@> parseSimpleNota _infixl $;
+@_ def parseInfixr (.x: nat): set = $ (\ x, NotaInfix 1 x) <@> parseSimpleNota _infixr $;
 @_ def parsePfx (.x: nat): set = $ (\ x, NotaPfx x) <@> parseSimpleNota _prefix $;
 
 @_ def _coercion: string = $ _c ': _o ': _e ': _r ': _c ': _i ': _o ': _n ': s0 $;
@@ -2444,6 +2446,14 @@ theorem tokenizeFmlaS_Else
   syl ifneg @ sylibr notor @ iand (sylibr notor @ iand h3 @
     mpbiri (iexe (eqeq2d conseq2) eqid) (syl tokenizeFmla_hd h2)) h4));
 
+pub theorem tokenizeFmlaSElse (ast x y xs r r2: nat):
+  $ ~x e. white /\
+    tokenizeFmla ast (y : xs) = (y : r) : r2 /\
+    ~x : 0 e. fst (getDelimiters ast) /\
+    ~y : 0 e. snd (getDelimiters ast) ->
+    tokenizeFmla ast (x : y : xs) = (x : y : r) : r2 $ =
+'(tokenizeFmlaS_Else an3l anllr anlr anr);
+
 theorem tokenizeFmlaWS (ast s c t: nat): $ c e. white ->
   tokenizeFmla ast (s ++ c : t) = tokenizeFmla ast s ++ tokenizeFmla ast t $ =
 (named @ focus
@@ -2514,11 +2524,11 @@ pub theorem getPfxEl {fmla: nat} (ast x c p: nat):
     a1i @ finss (mpbi ssab1 @ ax_gen @ eex @ sylibr elupto @ rsyl h @ lelttr @ lepr2tr leprid2) @
     finns));
 
-@_ def getInfix (ast: nat) (r: wff): nat =
+@_ def getInfix (ast r: nat): nat =
 $ lower (S\ x, S\ c, {p | E. fmla (
     ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
     simpleTokenize fmla = c : 0)}) $;
-pub theorem getInfixEl {fmla: nat} (ast x c p: nat) (r: wff):
+pub theorem getInfixEl {fmla: nat} (ast r x c p: nat):
   $ x <> c <> p e. getInfix ast r <-> E. fmla
     (ASTNota (NotaInfix r (x <> b1 fmla <> p)) IN ast /\
      simpleTokenize fmla = c : 0) $ =
@@ -2750,7 +2760,7 @@ $ pt e. Sum
       (Sum
         (S\ r, S\ f, S\ c, S\ x, {y |
           E. q E. e1 E. e2 (
-            f <> c <> q e. getInfix (pi21 eac) (true r) /\ q <=p p /\
+            f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
             e1 e. ih @ x @ if (true r) (precSuc q) q /\
             e2 e. ih @ y @ if (true r) q (precSuc q) /\
             e = SApp f (e1 : e2 : 0))})
@@ -2788,7 +2798,7 @@ theorem ptCheck_aux_Nota: $ ptCheck_aux1 eac ih p (PTNota f xs) e <->
 (named '(bitr Sumr @ bitr Suml @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
 theorem ptCheck_aux_Infix: $ ptCheck_aux1 eac ih p (PTInfix r f c x y) e <->
   E. q E. e1 E. e2 (
-    f <> c <> q e. getInfix (pi21 eac) (true r) /\ q <=p p /\
+    f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
     e1 e. ih @ x @ if (true r) (precSuc q) q /\
     e2 e. ih @ y @ if (true r) q (precSuc q) /\
     e = SApp f (e1 : e2 : 0)) $ =
@@ -2905,7 +2915,7 @@ pub theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <-
 pub theorem ptCheckParens (eac p pt e: nat):
   $ ptCheck eac p (PTParens pt) e <-> ptCheck eac (suc 0) pt e $ =
 (named '(bitr ptCheck_aux_Parens @ ptCheck_lem (mpbi lesuc le01) PTParens_ltid));
-pub theorem ptCheckFunc (env ast ctx p f xs e: nat) {f2 args r v e2 x y: nat}:
+pub theorem ptCheckFunc (env ast ctx p f xs e: nat) {args r v e2 x y: nat}:
   $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
     suc (2 ^ 10) <=p p /\ E. args E. r E. v E. e2
     (getTerm env f args r v /\ len xs = len args /\
@@ -2927,7 +2937,7 @@ pub theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
     sylibr lmemsnoc @ orld anrl)
   (sylc ptCheck_lem (anwr getPfx_precle) @
     syl PTPfx_ltid @ mpbiri lmemsnocid @ lmemeq2d anl)));
-pub theorem ptCheckNota {bis ty c q lits es: nat} (eac p f xs e: nat):
+pub theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
     E. bis E. ty E. c E. q E. lits E. es (
       f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
@@ -2941,22 +2951,20 @@ pub theorem ptCheckNota {bis ty c q lits es: nat} (eac p f xs e: nat):
     mpbir allal2 @ !! ax_gen a @ trud _)
   (split-sop 'a (fn (x y) '(a1i @ mpbiri (sylibr ,x ,y) ,eqtac))
     '{(1 => Suml (a1i elv)) + (1 => Sumr (sylibr elupto PTNota_ltid))}));
-pub theorem ptCheckInfix {q e1 e2: nat} (eac p f c x y e: nat) (r: wff):
-  $ ptCheck eac p (PTInfix (nat r) f c x y) e <->
+pub theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
+  $ ptCheck eac p (PTInfix r f c x y) e <->
     E. q E. e1 E. e2 (
       f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
-      ptCheck eac (if r (precSuc q) q) x e1 /\
-      ptCheck eac (if r q (precSuc q)) y e2 /\
+      ptCheck eac (if (true r) (precSuc q) q) x e1 /\
+      ptCheck eac (if (true r) q (precSuc q)) y e2 /\
       e = SApp f (e1 : e2 : 0)) $ =
 (named @ focus
-  '(bitr ptCheck_aux_Infix @ exeqi @ exeqi @ exeqi @ aneq1i @ bitr _ _)
-  (focus '(_ @ ! truenat r) eqtac)
-  (focus
-    (have 'h1 '(mpi lesucid letr))
-    (have 'h2 '(ifbothd leeq1 leeq1 (a1i le01) @ sylib lesuc anl))
-    (def (f x y z) '(syl (mpi ,z ptCheck_lem) (ifbothd leeq1 leeq1 (anwl ,x) (anwl ,y))))
-    '(rbid an3l an3l @ rsyl getInfix_precle @
-      aneqd (aneq2d ,(f 'h2 'h1 'PTInfix_ltid1)) ,(f 'h1 'h2 'PTInfix_ltid2))));
+  '(bitr ptCheck_aux_Infix @ exeqi @ exeqi @ exeqi @ aneq1i _)
+  (have 'h1 '(mpi lesucid letr))
+  (have 'h2 '(ifbothd leeq1 leeq1 (a1i le01) @ sylib lesuc anl))
+  (def (f x y z) '(syl (mpi ,z ptCheck_lem) (ifbothd leeq1 leeq1 (anwl ,x) (anwl ,y))))
+  '(rbid an3l an3l @ rsyl getInfix_precle @
+    aneqd (aneq2d ,(f 'h2 'h1 'PTInfix_ltid1)) ,(f 'h1 'h2 'PTInfix_ltid2)));
 pub theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
   $ p <= eac ->
     (ptCheck eac p (PTCoe f x) e <->
@@ -2967,10 +2975,10 @@ pub theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
   '(syl5bb ptCheck_aux_Coe @ exeqd @ exeqd @ aneq1d @ aneq2d @
     syl (mpi PTCoe_ltid ptCheck_lem) @ mpi lesucid letr));
 
-theorem ptCheckNotaLs0 (eac bis xs es q: nat):
+pub theorem ptCheckNotaLs0 (eac bis xs es q: nat):
   $ ptCheckNotaLs eac bis 0 xs es q <-> xs = 0 $ =
 (named 'ptCheckNotaLs_aux_0);
-theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
+pub theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
   $ ptCheckNotaLs eac bis (b0 (c <> p) : lits) xs es q <->
     E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $ =
 (named @ focus
@@ -2978,7 +2986,7 @@ theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
   '(exeqi @ bitr (exeqi @ bitr (aneq1i @ bitr _ ancomb) anass) exan1)
   '(aneq2i @ bitr Suml @ elabe @ eqeq2d @ b0eqd @ syl6eq fstpr fsteq));
 
-theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
+pub theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
   $ litsPrec lits q <= suc eac ->
     (ptCheckNotaLs eac bis (b1 v : lits) xs es q <->
     E. n E. x E. xs2 E. e (xs = b1 x : xs2 /\
@@ -3081,7 +3089,7 @@ pub theorem elabTermBinderReg {t2 vs2: nat} (ast ctx bi x t s: nat):
     E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2) $ =
 (named '(bitr (!! elsabe _1 @ !! elsabed _2 @ syl5bb Suml @ !! elabed _3 ,eqtac) @ ifppos true1));
 
-@_ def elabTermBinders_aux (ast n: nat): wff =
+@_ local def elabTermBinders_aux (ast n: nat): wff =
 $ srecp (S\ x, {ih | x e. S\ lc, {rc |
     ifp (lc = 0) (rc = 0) (E. lc1 E. lb (lc = lc1 |> lb /\
       E. rc1 E. rb (lc1 <> rc1 e. ih /\
@@ -3139,7 +3147,7 @@ pub theorem elabDefOS {args2 e: nat} (env ast ctx s ds f o2: nat):
       o2 = suc (ds <> e)) $ =
 (named '(bitr ocasepS @ !! elabe f1 ,eqtac));
 
-@_ def Elaborate_aux (aste: nat): wff =
+@_ local def Elaborate_aux (aste: nat): wff =
 $ srecp (S\ aste1, {ih | aste1 e. S\ e2, {ast2 | ifp (ast2 = 0) (e2 = 0) (
     E. ast E. d (ast2 = ast |> d /\ d e. Sum
       (Sum

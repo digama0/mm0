@@ -10,7 +10,7 @@ $ len l1 = len l2 /\ A. n A. x A. y
 -- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
 def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ E. n E. x E. y
-  (nth l1 n = suc x /\ nth l2 n = suc y /\ ph) $;
+  (nth n l1 = suc x /\ nth n l2 = suc y /\ ph) $;
 
 -- The sort modifiers 'pure', 'strict', 'provable', 'free'
 -- sPure : SortData -> Bool
@@ -815,58 +815,50 @@ theorem litsPrecV (v lits q: nat):
 
 -- This is a more precise version of SExpr that allows reconstructing an
 -- exact token string from a parse proof
-def PTParens (x: nat): nat = $ b0 (b0 (b0 x)) $;
-def PTVar (v: nat): nat = $ b0 (b0 (b1 v)) $;
+def PTVar (v: nat): nat = $ b0 (b0 (b0 v)) $;
+def PTParens (x: nat): nat = $ b0 (b0 (b1 x)) $;
 def PTFunc (f x: nat): nat = $ b0 (b1 (f <> x)) $;
 def PTPfx (f c x: nat): nat = $ b1 (b0 (b0 (f <> c <> x))) $;
 def PTNota (f x: nat): nat = $ b1 (b0 (b1 (f <> x))) $;
-def PTInfix (r f c x y: nat): nat =
-  $ b1 (b1 (b0 (r <> f <> c <> (x : y : 0)))) $;
+def PTInfix (r f c x y: nat): nat = $ b1 (b1 (b0 (r <> f <> c <> x <> y))) $;
 def PTCoe (f x: nat): nat = $ b1 (b1 (b1 (f <> x))) $;
 
 def ptToStr (pt: nat): nat;
+theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $;
 theorem ptToStrParens {s: nat} (e: nat):
   $ ptToStr (PTParens e) = s1 _lparen : ptToStr e ++ s1 _rparen : 0 $;
-theorem ptToStrVar (v: nat): $ ptToStr (PTVar v) = v : 0 $;
 theorem ptToStrFunc {s: nat} (f x: nat): $ ptToStr (PTFunc f x) =
   f : ljoin (map (\ s, ptToStr s) x) $;
 theorem ptToStrPfx {s: nat} (f c x: nat): $ ptToStr (PTPfx f c x) =
   c : ljoin (map (\ s, ptToStr s) x) $;
-theorem ptToStrInfix (r f c x y: nat):
-  $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $;
 theorem ptToStrNota {y: nat} (f x: nat):
   $ ptToStr (PTNota f x) =
     ljoin (map (case (\ y, y : 0) (\ y, ptToStr y)) x) $;
+theorem ptToStrInfix (r f c x y: nat):
+  $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $;
 theorem ptToStrCoe {y: nat} (f x: nat):
   $ ptToStr (PTCoe f x) = ptToStr x $;
 
 def ptCheck (eac p pt e: nat): wff;
 def ptCheckNotaLs (eac bis lits xs es p: nat): wff;
 
+theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <->
+  E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $;
 theorem ptCheckParens (eac p pt e: nat):
   $ ptCheck eac p (PTParens pt) e <->
     ptCheck eac (suc 0) pt e $;
-theorem ptCheckVar {n: nat} (eac p v e: nat): $ ptCheck eac p (PTVar v) e <->
-  E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $;
-theorem ptCheckFunc (env ast ctx p f xs e: nat) {f2 args r v e2 x y: nat}:
+theorem ptCheckFunc (env ast ctx p f xs e: nat) {args r v e2 x y: nat}:
   $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
-    suc (2 ^ 10) <=p p /\ E. f2 E. args E. r E. v E. e2
+    suc (2 ^ 10) <=p p /\ E. args E. r E. v E. e2
     (getTerm env f args r v /\ len xs = len args /\
       all2 x y (ptCheck (env <> ast <> ctx) 0 x y) xs e2 /\
-      e = SApp f2 e2) $;
+      e = SApp f e2) $;
 theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
     E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
       all2 x y (ptCheck eac 0 x y) l es2 /\ ptCheck eac q z e2 /\
       e = SApp f (es2 |> e2)) $;
-theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
-  $ ptCheck eac p (PTInfix r f c x y) e <->
-    E. q E. e1 E. e2 (
-      f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
-      ptCheck eac (if (r = 0) q (precSuc q)) x e1 /\
-      ptCheck eac (if (r = 0) (precSuc q) q) y e2 /\
-      e = SApp f (e1 : e2 : 0)) $;
 theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
     E. bis E. ty E. c E. q E. lits E. es (
@@ -875,6 +867,13 @@ theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
       A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
       ptCheckNotaLs eac bis lits xs es q /\
       e = SApp f es) $;
+theorem ptCheckInfix {q e1 e2: nat} (eac p r f c x y e: nat):
+  $ ptCheck eac p (PTInfix r f c x y) e <->
+    E. q E. e1 E. e2 (
+      f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
+      ptCheck eac (if (true r) (precSuc q) q) x e1 /\
+      ptCheck eac (if (true r) q (precSuc q)) y e2 /\
+      e = SApp f (e1 : e2 : 0)) $;
 theorem ptCheckCoe {y e2: nat} (eac p f x e: nat):
   $ p <= eac ->
     (ptCheck eac p (PTCoe f x) e <->
@@ -948,7 +947,7 @@ theorem elabTermBinders0 (ast ctx2: nat):
   $ elabTermBinders ast 0 ctx2 <-> ctx2 = 0 $;
 theorem elabTermBindersS {ctx2 bi2: nat} (ast ctx bi ctx3: nat):
   $ elabTermBinders ast (ctx |> bi) ctx3 <->
-    E. ctx2 (elabTermBinders ast ctx ctx2 /\
+    E. ctx2 E. bi2 (elabTermBinders ast ctx ctx2 /\
       elabTermBinder ast ctx bi bi2 /\ ctx3 = ctx2 |> bi2) $;
 
 def elabFmla (env ast ctx args f e s .f2: nat): wff =
@@ -1010,10 +1009,10 @@ theorem ElaborateThm
       elabHyps e ast ctx args hyps hyps2 /\
       elabFmlaProv e ast ctx args ret ret2 /\
       e2 = e |> DThm args hyps2 ret2) $;
+theorem ElaborateIO (ast out n: nat):
+  $ Elaborate (ast |> ASTIO out n) == 0 $;
 theorem ElaborateNota (ast n: nat):
   $ Elaborate (ast |> ASTNota n) == Elaborate ast $;
-theorem ElaborateIO (ast out n: nat):
-  $ Elaborate (ast |> ASTIO out n) == Elaborate ast $;
 
 def Valid (s .ast .e: nat): wff =
 $ E. ast E. e (parse s ast /\ e e. Elaborate ast /\ ValidEnv e) $;
