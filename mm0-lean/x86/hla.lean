@@ -571,7 +571,7 @@ begin
     rintro ⟨⟨_, _, h2, rfl⟩, R⟩,
     rcases R _ _ ⟨h2, rfl⟩ with ⟨⟨_, _, h3, rfl⟩, R⟩,
     rcases R _ _ ⟨h3, rfl⟩ with ⟨⟨_, _, h4, rfl⟩, R⟩,
-    refine ⟨⟨⟨_, _, ⟨_⟩⟩, _⟩, _⟩,
+    refine ⟨⟨⟨_, _, ⟨⟩⟩, _⟩, _⟩,
     { rintro _ _ ⟨⟩,
       have A := h1.ea h2,
       have B := A.readq h3,
@@ -610,7 +610,7 @@ begin
     have A3 := (h1.ea A1).readq A2,
     refine ⟨⟨⟨_, _, h2, rfl⟩, _⟩, _⟩,
     { rintro _ _ ⟨B1, rfl⟩, cases h2.determ B1,
-      refine ⟨⟨_, _, ⟨_⟩⟩, _⟩, rintro _ _ ⟨⟩,
+      refine ⟨⟨_, _, ⟨⟩⟩, _⟩, rintro _ _ ⟨⟩,
       refine ⟨⟨_, _, ⟨A3, rfl⟩⟩, _⟩,
       rintro _ _ ⟨B2, rfl⟩, cases A3.determ B2,
       exact R _ _ ⟨h3, rfl⟩ },
@@ -622,13 +622,13 @@ begin
     rintro ⟨⟨rax, _, h2, rfl⟩, R⟩,
     rcases R _ _ ⟨h2, rfl⟩ with ⟨⟨rdx, _, h3, rfl⟩, R⟩,
     rcases R _ _ ⟨h3, rfl⟩ with ⟨⟨src, _, h4, rfl⟩, R⟩,
-    rcases R _ _ ⟨_, _, _, h4, rfl⟩ with ⟨⟨_, _, h5, rfl⟩, R⟩,
+    rcases R _ _ ⟨_, _, h4, rfl⟩ with ⟨⟨_, _, h5, rfl⟩, R⟩,
     rcases id h4 with ⟨_, A1, A2⟩,
     have A3 := (h1.ea A1).readq A2,
     refine ⟨⟨⟨_, _, h2, rfl⟩, _⟩, _⟩,
     { rintro _ _ ⟨B1, rfl⟩, cases h2.determ B1,
       refine ⟨⟨_, _, ⟨h3, rfl⟩⟩, _⟩, rintro _ _ ⟨B2, rfl⟩, cases h3.determ B2,
-      refine ⟨⟨_, _, ⟨_⟩⟩, _⟩, rintro _ _ ⟨⟩,
+      refine ⟨⟨_, _, ⟨⟩⟩, _⟩, rintro _ _ ⟨⟩,
       refine ⟨⟨_, _, ⟨A3, rfl⟩⟩, _⟩, rintro _ _ ⟨_, _, B3, rfl⟩, cases A3.determ B3,
       refine ⟨⟨⟨⟩, _, ⟨h5, rfl⟩⟩, _⟩, rintro _ _ ⟨B4, rfl⟩,
       exact R ⟨⟩ _ ⟨h5, rfl⟩ },
@@ -636,7 +636,7 @@ begin
         _, _, ⟨_, _, B3, rfl⟩, ⟨⟩, _, ⟨B4, rfl⟩, B5⟩,
       cases h2.determ B1, cases h3.determ B2, cases A3.determ B3,
       exact ⟨_, _, ⟨h2, rfl⟩, _, _, ⟨h3, rfl⟩,
-        _, _, ⟨_, _, _, h4, rfl⟩, ⟨⟩, _, ⟨h5, rfl⟩, B5⟩ } },
+        _, _, ⟨_, _, h4, rfl⟩, ⟨⟩, _, ⟨h5, rfl⟩, B5⟩ } },
   case hla.asm1.lea : sz d s {
     rcases ha with ⟨ds, h1, rfl⟩,
     rintro ⟨⟨ea, _, h2, rfl⟩, R⟩,
@@ -644,7 +644,7 @@ begin
     rcases R _ _ ⟨h3, rfl⟩ with ⟨⟨⟩, _, dst, h4, h5⟩,
     cases (h1.src h2).determ h3,
     have A1 := h1.dest h4,
-    refine ⟨⟨⟨_, _, ⟨_⟩⟩, _⟩, _⟩,
+    refine ⟨⟨⟨_, _, ⟨⟩⟩, _⟩, _⟩,
     { rintro _ _ ⟨⟩, exact ⟨⟨⟩, _, A1.writeq h5⟩ },
     { rintro _ _ ⟨_, _, ⟨⟩, B1⟩,
       cases (A1.writeq h5).determ B1,
@@ -659,7 +659,7 @@ begin
     have A6 := (h1.dest A3).writeq A4,
     refine ⟨⟨⟨_, _, A5, rfl⟩, _⟩, _⟩,
     { rintro _ _ ⟨B1, rfl⟩, cases A5.determ B1,
-      refine ⟨⟨_, _, ⟨_⟩⟩, _⟩, rintro _ _ ⟨⟩,
+      refine ⟨⟨_, _, ⟨⟩⟩, _⟩, rintro _ _ ⟨⟩,
       refine ⟨⟨⟩, _, A6⟩ },
     { rintro _ _ ⟨_, _, ⟨B1, rfl⟩, _, _, ⟨⟩, B2⟩,
       cases A5.determ B1, cases A6.determ B2,
@@ -876,9 +876,9 @@ begin
   repeat {sorry}
 end
 
-theorem terminator.exec_ok {H labs rip t v}
-  (ha : terminator.pred t H labs rip v) {k k'} :
-  execute a' k k' ↔ a.exec k k' :=
+-- theorem terminator.exec_ok {H labs rip t v}
+--   (ha : terminator.pred t H labs rip v) {k k'} :
+--   execute a' k k' ↔ a.exec k k' :=
 
 theorem code_pred.cons_ok {a b H k labs}
   (h : (code_pred.cons a b).ok H k labs) : a.ok H k labs := sorry
@@ -925,6 +925,7 @@ theorem hla_ok.fail {α} {p : config → α → Prop} :
   hla_ok (@pstate.fail _ α) :=
 hla_ok.assert
 
+/-
 theorem hla_ok_mem_read {H : hla} {k k' : config}
   (h1 : ∀ p q v, k.mem.read' p q v →
     ∃ v', list.length v' = v.length ∧ k'.mem.read' p q v') :
@@ -965,5 +966,6 @@ begin
   rcases code_pred.cons_ok hb with ⟨l, ⟨a', h1, h2⟩, h3⟩,
   sorry
 end
+-/
 
 end hla

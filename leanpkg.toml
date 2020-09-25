@@ -1,0 +1,8 @@
+[package]
+name = "mm0-lean"
+version = "0.1"
+lean_version = "leanprover-community/lean:3.20.0"
+path = "mm0-lean"
+
+[dependencies]
+mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "5eedf3275e3a61d272105a306609a26416051a62"}

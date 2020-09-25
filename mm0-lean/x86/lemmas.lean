@@ -1,7 +1,5 @@
 import x86.x86 data.list.basic data.zmod.basic
 
-theorem bool.coe_bool_iff : ∀ {a b : bool}, (a ↔ b) ↔ a = b := dec_trivial
-
 namespace bitvec
 
 theorem of_nat_zero (n) : bitvec.of_nat n 0 = 0 :=
@@ -14,7 +12,7 @@ theorem from_bits_fill_eq : ∀ {n b l} (e : list.length l = n),
   from_bits_fill b l = ⟨l, e⟩
 | 0     b []       e := rfl
 | (n+1) b (a :: l) e :=
-  by rw [from_bits_fill, from_bits_fill_eq (nat.succ_inj e)]; refl
+  by rw [from_bits_fill, from_bits_fill_eq (nat.succ.inj e)]; refl
 
 theorem bits_to_nat_zero (n) : bits_to_nat (list.repeat ff n) = 0 :=
 by simp [bits_to_nat]; induction n; simp *
@@ -88,13 +86,14 @@ begin
   exact nat.mod_lt _ (nat.pow_pos dec_trivial _),
 end
 
-def pow2 (n : ℕ) : ℕ+ := ⟨2^n, nat.pow_pos dec_trivial _⟩
+local attribute [instance]
+def pow2_pos (n : ℕ) : fact (0 < 2^n) := nat.pow_pos dec_trivial _
 
-def to_zmod {n} (v : bitvec n) : zmod (pow2 n) := bitvec.to_nat v
-def of_zmod {n} (i : zmod (pow2 n)) : bitvec n := bitvec.of_nat _ i.1
+def to_zmod {n} (v : bitvec n) : zmod (2^n) := bitvec.to_nat v
+def of_zmod {n} (i : zmod (2^n)) : bitvec n := bitvec.of_nat _ i.val
 
-theorem to_zmod_of_zmod {n} (i : zmod (pow2 n)) : to_zmod (of_zmod i) = i :=
-((zmod.eq_iff_modeq_nat' _).2
+theorem to_zmod_of_zmod {n} (i : zmod (2^n)) : to_zmod (of_zmod i) = i :=
+((zmod.eq_iff_modeq_nat _).2
   (by convert nat.modeq.mod_modeq _ _; apply to_nat_of_nat)).trans (zmod.cast_val _)
 
 theorem of_zmod_to_zmod {n} (v : bitvec n) : of_zmod (to_zmod v) = v :=
@@ -124,9 +123,10 @@ by rw [← to_zmod_zero, of_zmod_to_zmod]
 theorem of_zmod_one (n) : (of_zmod 1 : bitvec n) = 1 :=
 begin
   cases n, {refl},
-  change bitvec.of_nat _ (1 % 2 ^ _) = _,
-  rw [nat.mod_eq_of_lt, of_nat_one],
-  exact @nat.pow_lt_pow_of_lt_right _ dec_trivial 0 _ (nat.succ_pos _)
+  change bitvec.of_nat _ (_) = _,
+  haveI : fact (1 < 2 ^ n.succ) :=
+    @nat.pow_lt_pow_of_lt_right _ dec_trivial 0 _ (nat.succ_pos _),
+  rw [zmod.val_one, of_nat_one],
 end
 
 theorem to_zmod_one (n) : to_zmod (1 : bitvec n) = 1 :=
@@ -145,18 +145,18 @@ show to_zmod (bitvec.of_nat _ _) = _,
 begin
   rw [of_nat_eq_of_zmod, to_zmod_of_zmod, eq_neg_iff_add_eq_zero, to_zmod,
     ← nat.cast_add, nat.sub_add_cancel (le_of_lt (to_nat_lt_pow2 _))],
-  exact zmod.cast_self_eq_zero,
+  exact zmod.cast_self _,
 end
 
-theorem of_zmod_add {n} (a b : zmod (pow2 n)) : of_zmod (a + b) = of_zmod a + of_zmod b :=
+theorem of_zmod_add {n} (a b : zmod (2^n)) : of_zmod (a + b) = of_zmod a + of_zmod b :=
 by conv_lhs {rw [← to_zmod_of_zmod a, ← to_zmod_of_zmod b]};
    rw [← to_zmod_add, of_zmod_to_zmod]
 
-theorem of_zmod_mul {n} (a b : zmod (pow2 n)) : of_zmod (a * b) = of_zmod a * of_zmod b :=
+theorem of_zmod_mul {n} (a b : zmod (2^n)) : of_zmod (a * b) = of_zmod a * of_zmod b :=
 by conv_lhs {rw [← to_zmod_of_zmod a, ← to_zmod_of_zmod b]};
    rw [← to_zmod_mul, of_zmod_to_zmod]
 
-theorem of_zmod_neg {n} (a : zmod (pow2 n)) : of_zmod (-a) = -of_zmod a :=
+theorem of_zmod_neg {n} (a : zmod (2^n)) : of_zmod (-a) = -of_zmod a :=
 by conv_lhs {rw [← to_zmod_of_zmod a]}; rw [← to_zmod_neg, of_zmod_to_zmod]
 
 instance (n : ℕ) : add_comm_semigroup (bitvec n) :=
@@ -281,7 +281,7 @@ theorem bits_to_nat_inj : ∀ {l₁ l₂},
 | (a :: l₁) (b :: l₂) e e' := begin
   rw [bits_to_nat_cons, bits_to_nat_cons] at e,
   rw [← nat.bodd_bit a (bits_to_nat l₁), e, nat.bodd_bit,
-    @bits_to_nat_inj l₁ l₂ _ (nat.succ_inj e')],
+    @bits_to_nat_inj l₁ l₂ _ (nat.succ.inj e')],
   rw [← nat.div2_bit a (bits_to_nat l₁), e, nat.div2_bit]
 end
 
@@ -299,8 +299,7 @@ end
 theorem sign_iff_neg {n v} : @bitvec.sign n v ↔ bitvec.to_int v < 0 :=
 begin
   unfold bitvec.to_int, cases sign v; simp,
-  apply sub_lt_zero.2, norm_cast,
-  exact to_nat_lt_pow2 _
+  norm_cast, exact to_nat_lt_pow2 _
 end
 
 theorem to_int_inj {n v₁ v₂}
@@ -383,13 +382,13 @@ begin
     generalize e₃ : l.split_at i = p, cases p with l₁ l₂,
     dsimp [split_bits_spec],
     induction i with i generalizing l' l₁ l₂ e₂ l n; cases l'; injection e₂,
-    { cases h_2, cases e₃, exact ⟨rfl, s_ih _ e₁ h_2_a⟩ },
-    { generalize_hyp e₄ : (⟨l'_hd :: l'_tl, e₂⟩ : bitvec _) = f at h_2,
-      cases h_2, cases h_2_bs with _ pr, injection e₄, cases h_3,
+    { rintro ⟨⟩, cases e₃, exact ⟨rfl, s_ih _ e₁ a_a⟩ },
+    { generalize e₄ : (⟨l'_hd :: l'_tl, e₂⟩ : bitvec _) = f,
+      rintro ⟨⟩, cases a_bs with _ pr, injection e₄, cases h_2,
       generalize e₅ : l.tail.split_at i = p, cases p with l₁' l₂',
       have : bitvec.bits_to_nat l.tail = nat.div2 n,
       { subst e₁, cases l, refl, exact (nat.div2_bit _ _).symm },
-      rcases i_ih _ _ _ h_1 _ this e₅ h_2_a with ⟨e₆, h'⟩,
+      rcases i_ih _ _ _ h_1 _ this e₅ a_a with ⟨e₆, h'⟩,
       replace e₆ : bitvec.from_bits_fill ff l₁' = ⟨l'_tl, pr⟩ := subtype.eq e₆,
       cases l,
       { cases e₃,
@@ -441,7 +440,7 @@ theorem bits_to_byte.determ_l_aux {n m w1 w2 l l'} :
 | ⟨e₁, h₁⟩ ⟨e₂, h₂⟩ := begin
   simp, suffices, refine ⟨_, this⟩, swap,
   { apply list.length_eq_zero.1,
-    apply @eq_of_add_eq_add_left _ _ l.length,
+    apply @add_left_cancel _ _ l.length,
     rw [add_zero, ← list.length_append, e₁, e₂] },
   clear bits_to_byte.determ_l_aux, subst this,
   rw list.append_nil at h₂,
@@ -450,7 +449,7 @@ end
 
 theorem bits_to_byte.determ {n m w l1 l2} :
   @bits_to_byte n m w l1 → @bits_to_byte n m w l2 → l1 = l2
-| ⟨e₁, h₁⟩ ⟨e₂, h₂⟩ := list.injective_map_iff.2
+| ⟨e₁, h₁⟩ ⟨e₂, h₂⟩ := list.map_injective_iff.2
   (by rintro x y ⟨⟩; refl)
   (split_bits.determ h₁ h₂
     (by rw [list.map_map, list.map_map, (_ : _∘_ = _),
@@ -1565,7 +1564,7 @@ by simp [EA.writeq, EA.write_reg_64]
 theorem mem.set.read'_exists {p m q w b v}
   (h1 : mem.read' p m q v) : ∃ v', mem.read' p (m.set w b) q v' :=
 begin
-  induction h1, {exact ⟨_, mem.read'.nil _ _ _⟩},
+  induction h1, {exact ⟨_, mem.read'.nil _⟩},
   cases h1_ih with v1 ih,
   rcases h1_a with ⟨_, rfl, h1⟩,
   exact ⟨_, mem.read'.cons ⟨_, rfl, h1⟩ ih⟩,

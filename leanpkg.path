@@ -1,4 +1,3 @@
 builtin_path
-path mm0-lean
-path ../../lean/mathlib/src
-path ../../lean/flypitch/src
+path _target/deps/mathlib/src
+path ./mm0-lean

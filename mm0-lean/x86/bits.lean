@@ -1,5 +1,5 @@
 -- import data.bitvec
-import data.vector order.basic
+import data.vector order.basic algebra.group_power
 
 @[reducible] def bitvec (n : ℕ) := vector bool n
 
@@ -193,7 +193,7 @@ def pstate (σ α : Type*) := σ → pstate_result σ α
 instance (σ) : has_coe_to_fun (pstate_result σ unit) := ⟨_, λ r, r.P ()⟩
 
 inductive pstate_pure_P {σ α : Type*} (a : α) (s : σ) : α → σ → Prop
-| mk : pstate_pure_P a s
+| mk {} : pstate_pure_P a s
 
 inductive pstate_map_P {σ α β} (f : α → β) (x : pstate_result σ α) : β → σ → Prop
 | mk (a s') : x.P a s' → pstate_map_P (f a) s'
@@ -205,9 +205,9 @@ def pstate_bind_P {σ α β} (x : pstate σ α) (f : α → pstate σ β) (s : �
 ∃ a s1, (x s).P a s1 ∧ (f a s1).P b s'
 
 instance {σ} : monad (pstate σ) :=
-{ pure := λ α a s, ⟨true, pstate_pure_P a s, λ _, ⟨_, _, ⟨a, s⟩⟩⟩,
+{ pure := λ α a s, ⟨true, pstate_pure_P a s, λ _, ⟨_, _, ⟨⟩⟩⟩,
   map := λ α β f x s, ⟨(x s).1, pstate_map_P f (x s), λ h,
-    let ⟨a, s', h⟩ := (x s).good h in ⟨_, _, ⟨_, _, _, h⟩⟩⟩,
+    let ⟨a, s', h⟩ := (x s).good h in ⟨_, _, ⟨_, _, h⟩⟩⟩,
   bind := λ α β x f s, ⟨pstate_bind_safe x f s, pstate_bind_P x f s,
     λ ⟨h₁, h₂⟩, let ⟨a, s1, hx⟩ := (x s).good h₁,
       ⟨b, s2, hf⟩ := (f a s1).good (h₂ a s1 hx) in
@@ -257,7 +257,7 @@ end
 theorem pstate.map_le {σ α β} {m m' : pstate σ α} {f f' : α → pstate σ β}
   (h1 : m ≤ m') : f <$> m ≤ f <$> m' :=
 λ _ h, ⟨(h1 _ h).1, by rintro b s ⟨a', _, h4⟩; exact
-  ⟨_, _, _, (h1 _ h).2 _ _ h4⟩⟩
+  ⟨_, _, (h1 _ h).2 _ _ h4⟩⟩
 
 theorem pstate.lift_le {σ α} {f f' : σ → α → σ → Prop}
   (H : ∀ s, (∃ a s', f' s a s') →

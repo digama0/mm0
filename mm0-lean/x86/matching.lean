@@ -87,7 +87,7 @@ def mProp := config → config → Prop
 def mProp.exterior (P : mProp) : set place :=
 {p | ∀ k k', P k k' → place.stable k k' p}
 
-def mProp.dom (P : mProp) : set place := -P.exterior
+def mProp.dom (P : mProp) : set place := (P.exterior)ᶜ
 
 def stable_at (D : set place) : mProp := λ k k', D ⊆ stability k k'
 
@@ -115,7 +115,6 @@ def mProp.imp (P Q : mProp) : mProp :=
 def slift (p : Prop) : sProp := λ _, p
 def mlift (p : Prop) : mProp := λ _ _, p
 
-open lattice
 instance lattice.complete_lattice.sProp : complete_lattice sProp :=
 pi.complete_lattice
 
@@ -658,8 +657,8 @@ mHoareIO.step
     generalize_hyp ei : i₁ ++ i = i' at h',
     generalize_hyp eo : o ++ o₁ = o' at h',
     cases h',
-    { cases (@list.append_right_inj _ _ [] i).1 ei,
-      cases (@list.append_left_inj _ _ [] o).1 (by simpa using eo),
+    { cases (@list.append_left_inj _ _ [] i).1 ei,
+      cases (@list.append_right_inj _ _ [] o).1 (by simpa using eo),
       exact ⟨(H₂ h h'_a).1,
         λ i₂ o₂ k₃ h'', ⟨(H₂ h h'_a).2 h''.1, h''.2⟩⟩ },
     { cases H₁ h with k₂ h',
@@ -815,6 +814,7 @@ expr.to_hoare $ λ b, hstmt.hoare _ _
 def comp_exit (Q₁ Q₂ : exit_kind → mProp) (e : exit_kind) : mProp :=
 mProp.ex $ λ e₁, exit_kind.cases_on e₁ ((Q₁ e₁).comp (Q₂ e)) $ λ _, (Q₁ e₁).with (e₁ = e)
 
+/-
 theorem stmt.seq.hoare {A s₁ s₂}
   {P₁ P₂ : sProp} {Q₁ Q₂ : exit_kind → mProp}
   (H₁ : stmt.hoare A P₁ s₁ Q₁)
@@ -847,14 +847,15 @@ stmt.hoare_iff.2 begin
 
     } },
 end
+-/
 
 ----------------------------------------
 -- Assembly
 ----------------------------------------
 
-theorem var.asm {α} {i : name α} {A D rip bl}
-  (h : bl ∈ locals_ctx.get Γ i) : var i bl A D rip [] :=
-⟨h, rfl⟩
+-- theorem var.asm {α} {i : name α} {A D rip bl}
+--   (h : bl ∈ locals_ctx.get Γ i) : var i bl A D rip [] :=
+-- ⟨h, rfl⟩
 
 theorem ret.asm {α A D rip bl} : ret α bl bl A D rip [] :=
 ⟨rfl, rfl⟩

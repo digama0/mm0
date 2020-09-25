@@ -85,7 +85,6 @@ def emp : sProp := heap.sn ∅
 
 def lift (p : Prop) : sProp := λ _, p
 
-open lattice
 instance lattice.complete_lattice.sProp : complete_lattice sProp :=
 pi.complete_lattice
 
@@ -159,13 +158,6 @@ theorem block.readW_le_read : ∀ {b v},
 | (block.mem a sz) v := λ s ⟨h₁, h₂⟩,
   ⟨sProp.mem_block.mono perm.le_add_left _ h₁, h₂⟩
 | (block.const l) v := by rintro _ ⟨⟩
-
-inductive hoare_p (Q : kcfg → Prop) : kcfg → Prop
-| zero {{k}} : Q k → hoare_p k
-| step {{k}} : (∃ k', kcfg.step k k') →
-  (∀ k', k.step k' → hoare_p k') → hoare_p k
-| exit (k : kcfg) (ret) :
-  k.k.exit ret → (ret = 0 → Q k) → hoare_p k
 
 def hoare (P : kcfg → Prop) (Q : kcfg → Prop) :=
 ∀ {{k}}, P k → hoare_p Q k
@@ -414,6 +406,7 @@ stmt.ex $ λ b, stmt.with (block.size b = sz) $ decl_block b s
 def init {α} (e : expr α) (s : name α → stmt) : stmt :=
 e.bindS $ λ b, decl_block b s
 
+/-
 def binop_expr {α β γ} [type α] [type β] [type γ]
   (f : α → β → γ) (e₁ : expr α) (e₂ : expr β) : expr γ :=
 e₁.bind $ λ b₁, e₂.bind $ λ b₂ b, stmt.all $ λ x, stmt.all $ λ y,
@@ -558,5 +551,6 @@ end⟩
 
 theorem hstmt.asm {n} (P : sProp) (Q : sProp) : (@hstmt n P Q).asm :=
 sorry
+-/
 
 end x86
