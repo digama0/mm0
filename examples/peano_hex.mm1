@@ -126,6 +126,11 @@ do {
 };
 
 do {
+  (def (to-expr-fallback _ t) @ match t
+    [(? number?) (->hex t)])
+};
+
+do {
   -- Defines e.g. theorem deca: $ 10 = xa $; for all n < 16, accessible as (decn 10)
   (def (dn n) (atom-app 'd @ ->string n))
   (def decn @ on-hexstrings @ fn (n)

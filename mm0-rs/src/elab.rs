@@ -498,8 +498,7 @@ impl Elaborator {
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
         self.elab_stmt(s, span)?;
-        let ann = self.get_atom("annotate");
-        let ann = match &self.data[ann].lisp {
+        let ann = match &self.data[AtomID::ANNOTATE].lisp {
           Some((_, e)) => e.clone(),
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };

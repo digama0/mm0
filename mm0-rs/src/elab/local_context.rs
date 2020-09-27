@@ -209,18 +209,16 @@ struct ElabTerm<'a> {
 
 #[repr(C)]
 struct ElabTermMut<'a> {
-  lc: &'a mut LocalContext,
-  src: &'a LinedString,
-  env: &'a mut Environment,
+  elab: &'a mut Elaborator,
   fsp: FileSpan,
-  spans: &'a mut Spans<ObjectKind>,
 }
 
 impl<'a> Deref for ElabTermMut<'a> {
-  type Target = ElabTerm<'a>;
-  fn deref(&self) -> &ElabTerm<'a> {
-    unsafe { &*(self as *const _ as *const _) }
-  }
+  type Target = Elaborator;
+  fn deref(&self) -> &Elaborator { self.elab }
+}
+impl<'a> DerefMut for ElabTermMut<'a> {
+  fn deref_mut(&mut self) -> &mut Elaborator { self.elab }
 }
 
 /// Get the span from the lisp value `e`, but only if it lies inside the
@@ -257,8 +255,12 @@ impl Environment {
 }
 
 impl<'a> ElabTerm<'a> {
+  fn from_fsp(fsp: FileSpan, elab: &'a Elaborator) -> Self {
+    ElabTerm {fsp, fe: elab.format_env(), lc: &elab.lc}
+  }
+
   fn new(elab: &'a Elaborator, sp: Span) -> Self {
-    ElabTerm {fsp: elab.fspan(sp), fe: elab.format_env(), lc: &elab.lc}
+    Self::from_fsp(elab.fspan(sp), elab)
   }
 
   fn try_get_span(&self, e: &LispKind) -> Span {
@@ -269,9 +271,9 @@ impl<'a> ElabTerm<'a> {
     ElabError::new_e(self.try_get_span(e), msg)
   }
 
-  fn coerce(&self, src: &LispVal, from: SortID, res: LispKind, tgt: InferTarget) -> Result<LispVal> {
+  fn coerce(&self, src: &LispVal, from: SortID, res: LispVal, tgt: InferTarget) -> Result<LispVal> {
     let fsp = src.fspan();
-    let res = res.decorate_span(&fsp);
+    let res = match &fsp { None => res, Some(fsp) => res.replace_span(fsp.clone()) };
     let to = match tgt {
       InferTarget::Unknown => return Ok(res),
       InferTarget::Provable if self.fe.sorts[from].mods.contains(Modifiers::PROVABLE) => return Ok(res),
@@ -288,10 +290,6 @@ impl<'a> ElabTerm<'a> {
       Err(self.err(&src,
         format!("type error: expected {}, got {}", self.fe.sorts[to].name, self.fe.sorts[from].name)))
     }
-  }
-
-  fn other(&self, e: &LispVal, _: InferTarget) -> Result<LispVal> {
-    Err(self.err(e, format!("Not a valid expression: {}", self.fe.to(e))))
   }
 
   fn infer_sort(&self, e: &LispKind) -> Result<SortID> {
@@ -314,26 +312,23 @@ impl<'a> ElabTerm<'a> {
 }
 
 impl<'a> ElabTermMut<'a> {
-  fn new(elab: &'a mut Elaborator, lc: Option<&'a mut LocalContext>, sp: Span) -> Self {
-    ElabTermMut {
-      fsp: elab.fspan(sp),
-      src: &elab.ast.source,
-      env: &mut elab.env,
-      lc: lc.unwrap_or(&mut elab.lc),
-      spans: &mut elab.spans,
-    }
+  fn new(elab: &'a mut Elaborator, sp: Span) -> Self {
+    ElabTermMut { fsp: elab.fspan(sp), elab }
+  }
+
+  fn as_ref(&self) -> ElabTerm<'_> {
+    ElabTerm::from_fsp(self.fsp.clone(), self.elab)
   }
 
   fn spans_insert(&mut self, e: &LispKind, k: impl FnOnce() -> ObjectKind) {
     if let Some(fsp) = e.fspan() {
       if self.fsp.file.ptr_eq(&fsp.file) {
-        self.spans.insert_if(fsp.span, k)
+        self.elab.spans.insert_if(fsp.span, k)
       }
     }
   }
 
   fn atom(&mut self, e: &LispVal, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
-    macro_rules! fe {() => {FormatEnv {source: self.src, env: self.env}}}
     let a = if a == AtomID::UNDER {
       let mut n = 1;
       loop {
@@ -342,33 +337,33 @@ impl<'a> ElabTermMut<'a> {
         n += 1;
       }
     } else {a};
-    let is = &mut self.lc.vars.entry(a).or_insert_with({
+    let is = &mut self.elab.lc.vars.entry(a).or_insert_with({
       let fsp = &self.fsp;
       move || (true, InferSort::new(try_get_span(fsp, e)))
     }).1;
     let res = match (is, tgt) {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
-        Err(self.err(e, "expected a bound variable, got regular variable")),
+        Err(self.as_ref().err(e, "expected a bound variable, got regular variable")),
       (&mut InferSort::Bound(sort), InferTarget::Bound(sa)) => {
-        let s = self.fe.data[sa].sort.unwrap();
+        let s = self.env.data[sa].sort.unwrap();
         if s == sort {Ok(LispKind::Atom(a).decorate_span(&e.fspan()))}
         else {
-          Err(self.err(e,
-            format!("type error: expected {}, got {}", fe!().sorts[s].name, self.fe.sorts[sort].name)))
+          Err(self.as_ref().err(e,
+            format!("type error: expected {}, got {}", self.env.sorts[s].name, self.env.sorts[sort].name)))
         }
       }
       (InferSort::Unknown {src, must_bound, sorts, ..}, tgt) => {
         let s = match tgt {
-          InferTarget::Bound(sa) => {*must_bound = true; Some(fe!().data[sa].sort.unwrap())}
-          InferTarget::Reg(sa) => Some(fe!().data[sa].sort.unwrap()),
+          InferTarget::Bound(sa) => {*must_bound = true; Some(self.elab.env.data[sa].sort.unwrap())}
+          InferTarget::Reg(sa) => Some(self.elab.env.data[sa].sort.unwrap()),
           _ => None,
         };
-        let mvars = &mut self.lc.mvars;
+        let mvars = &mut self.elab.lc.mvars;
         let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
         Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt, Some(sp))).clone())
       }
-      (&mut InferSort::Reg(sort, _), tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
-      (&mut InferSort::Bound(sort), tgt) => self.coerce(e, sort, LispKind::Atom(a), tgt),
+      (&mut InferSort::Reg(sort, _), tgt) => self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
+      (&mut InferSort::Bound(sort), tgt) => self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
     };
     self.spans_insert(e, || ObjectKind::Var(a));
     res
@@ -377,39 +372,54 @@ impl<'a> ElabTermMut<'a> {
   fn list(&mut self, e: &LispVal,
     mut it: impl Iterator<Item=LispVal>, tgt: InferTarget) -> Result<LispVal> {
     let t = it.next().unwrap();
-    let a = t.as_atom().ok_or_else(|| self.err(&t, "expected an atom"))?;
+    let a = t.as_atom().ok_or_else(|| self.as_ref().err(&t, "expected an atom"))?;
     if self.lc.vars.contains_key(&a) {
-      return Err(self.err(&t,
-        format!("term '{}' is shadowed by a local variable", self.fe.data[a].name)))
+      return Err(self.as_ref().err(&t,
+        format!("term '{}' is shadowed by a local variable", self.env.data[a].name)))
     }
-    let tid = self.fe.term(a).ok_or_else(||
-      self.err(&t, format!("term '{}' not declared", self.fe.data[a].name)))?;
-    let sp1 = self.try_get_span(e);
+    let tid = self.env.term(a).ok_or_else(||
+      self.as_ref().err(&t, format!("term '{}' not declared", self.env.data[a].name)))?;
+    let sp1 = self.as_ref().try_get_span(e);
     self.spans_insert(&t, || ObjectKind::Term(tid, sp1));
-    let tdata = &self.fe.env.terms[tid];
-    let mut tys = tdata.args.iter();
+    let tdata = &self.env.terms[tid];
+    let nargs = tdata.args.len();
+    let ret = tdata.ret.0;
+    let mut arg_it = 0..nargs;
+    macro_rules! next_ty {() => {arg_it.next().map(|i| &self.env.terms[tid].args[i])}}
     let mut args = vec![LispKind::Atom(a).decorate_span(&t.fspan())];
     while let Some(arg) = it.next() {
-      let tgt = match tys.next() {
+      let tgt = match next_ty!() {
         None => return Err(ElabError::new_e(sp1,
-          format!("expected {} arguments, got {}", tdata.args.len(), args.len() + it.count()))),
-        Some(&(_, EType::Bound(s))) => InferTarget::Bound(self.fe.sorts[s].atom),
-        Some(&(_, EType::Reg(s, _))) => InferTarget::Reg(self.fe.sorts[s].atom),
+          format!("expected {} arguments, got {}", nargs, args.len() + it.count()))),
+        Some(&(_, EType::Bound(s))) => InferTarget::Bound(self.env.sorts[s].atom),
+        Some(&(_, EType::Reg(s, _))) => InferTarget::Reg(self.env.sorts[s].atom),
       };
       args.push(self.expr(&arg, tgt)?);
     }
-    if tys.next().is_some() {
+    if next_ty!().is_some() {
       return Err(ElabError::new_e(sp1,
-        format!("expected {} arguments, got {}", tdata.args.len(), args.len() - 1)))
+        format!("expected {} arguments, got {}", nargs, args.len() - 1)))
     }
-    self.coerce(e, tdata.ret.0, LispKind::List(args.into()), tgt)
+    self.as_ref().coerce(e, ret, LispVal::list(args), tgt)
+  }
+
+  fn other(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
+    let proc = match &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
+      Some((_, e)) => e.clone(),
+      None => return Err(self.as_ref().err(e, format!("Not a valid expression: {}", self.print(e))))
+    };
+    let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
+    let sp = self.as_ref().try_get_span(e);
+    let res = self.call_func(sp, proc, args)?;
+    let et = self.as_ref();
+    et.coerce(e, et.infer_sort(&res)?, res, tgt)
   }
 
   // TODO: Unify this with RState::RefineExpr
   fn expr(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) if self.lc.vars.contains_key(&a) => self.atom(e, a, tgt),
-      &LispKind::Atom(a) if self.fe.term(a).is_some() =>
+      &LispKind::Atom(a) if self.env.term(a).is_some() =>
         self.list(e, Some(e.clone()).into_iter(), tgt),
       &LispKind::Atom(a) => self.atom(e, a, tgt),
       LispKind::List(_) | LispKind::DottedList(_, _) if e.is_list() => match e.len() {
@@ -573,14 +583,14 @@ impl Elaborator {
       Some(&Type::Formula(f)) => {
         let e = self.parse_formula(f)?;
         let e = self.eval_qexpr(e)?;
-        let e = self.elaborate_term(None, f.0, &e, InferTarget::Provable)?;
+        let e = self.elaborate_term(f.0, &e, InferTarget::Provable)?;
         InferBinder::Hyp(x, e)
       },
     })
   }
 
-  fn elaborate_term(&mut self, lc: Option<&mut LocalContext>, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
-    ElabTermMut::new(self, lc, sp).expr(e, tgt)
+  fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
+    ElabTermMut::new(self, sp).expr(e, tgt)
   }
 
   fn infer_sort(&self, sp: Span, e: &LispKind) -> Result<SortID> {
@@ -698,7 +708,7 @@ impl Elaborator {
               }
             }
             let e = self.eval_lisp(f)?;
-            Ok(Some((f.span, self.elaborate_term(None, f.span, &e, match ret {
+            Ok(Some((f.span, self.elaborate_term(f.span, &e, match ret {
               None => InferTarget::Unknown,
               Some((_, s, _)) => InferTarget::Reg(self.sorts[s].atom),
             })?)))
@@ -776,7 +786,7 @@ impl Elaborator {
           &Some(Type::Formula(f)) => {
             let e = self.parse_formula(f)?;
             let e = self.eval_qexpr(e)?;
-            self.elaborate_term(None, f.0, &e, InferTarget::Provable)?
+            self.elaborate_term(f.0, &e, InferTarget::Provable)?
           }
         };
         if d.k == DeclKind::Axiom {
@@ -1070,18 +1080,23 @@ impl Elaborator {
     let mut vars = (HashMap::new(), 1);
     let (mut lc, args) = self.binders(&fsp, Uncons::from(bis.clone()), &mut vars)?;
     let mut is = Vec::new();
-    for e in Uncons::from(hyps.clone()) {
-      let mut u = Uncons::from(e.clone());
-      if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
-        let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
-        let a = if x == AtomID::UNDER {None} else {Some(x)};
-        let ty = self.elaborate_term(Some(&mut lc), sp!(ty), &ty, InferTarget::Provable)?;
-        is.push((a, ty));
-      } else {
-        return Err(ElabError::new_e(sp!(hyps), format!("syntax error: {}", self.print(hyps))))
+    mem::swap(&mut self.lc, &mut lc);
+    let eret = (|| -> Result<_> {
+      for e in Uncons::from(hyps.clone()) {
+        let mut u = Uncons::from(e.clone());
+        if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
+          let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
+          let a = if x == AtomID::UNDER {None} else {Some(x)};
+          let ty = self.elaborate_term(sp!(ty), &ty, InferTarget::Provable)?;
+          is.push((a, ty));
+        } else {
+          return Err(ElabError::new_e(sp!(hyps), format!("syntax error: {}", self.print(hyps))))
+        }
       }
-    }
-    let eret = self.elaborate_term(Some(&mut lc), sp!(ret), ret, InferTarget::Provable)?;
+      self.elaborate_term(sp!(ret), ret, InferTarget::Provable)
+    })();
+    mem::swap(&mut self.lc, &mut lc);
+    let eret = eret?;
     for e in self.finalize_vars(true) { return Err(e) }
     // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(&args);

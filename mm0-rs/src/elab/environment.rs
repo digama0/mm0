@@ -616,9 +616,6 @@ make_atoms! {
   COLON: ":",
   /// In refine, `?` is a proof by "sorry" (stubbing the proof without immediate error)
   QMARK: "?",
-  /// The `refine-extra-args` function is a callback used when an application in refine
-  /// uses too many arguments.
-  REFINE_EXTRA_ARGS: "refine-extra-args",
   /// `term` is an atom used by `add-decl` to add a term/def declaration
   TERM: "term",
   /// `def` is an atom used by `add-decl` to add a term/def declaration
@@ -641,6 +638,14 @@ make_atoms! {
   WARN: "warn",
   /// `info` is an error level recognized by `set-reporting`
   INFO: "info",
+  /// The `annotate` function is a callback used to define what happens when an annotation like
+  /// `@foo def bar = ...` is used.
+  ANNOTATE: "annotate",
+  /// The `refine-extra-args` function is a callback used when an application in refine
+  /// uses too many arguments.
+  REFINE_EXTRA_ARGS: "refine-extra-args",
+  /// `to-expr-fallback` is called when elaborating a term that is not otherwise recognized
+  TO_EXPR_FALLBACK: "to-expr-fallback",
 }
 
 /// An implementation of a map `u8 -> bool` using a 32 byte array as a bitset.
