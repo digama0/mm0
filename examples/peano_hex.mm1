@@ -55,6 +55,10 @@ term s2n: string > nat; coercion s2n: string > nat;
 axiom s2ns0: $ s0 = 0 $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;
 axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
+
+theorem s2nscons: $ c ': s = c : s $ =
+'(eqtr s2nsadd @ eqtr (appendeq1 s2ns1) append1);
 
 local def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
 infixl hex: $:x$ prec 120;
@@ -69,7 +73,8 @@ theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
 
 theorem suc_xf: $ suc xf = 16 $ = '(suceq h2nf);
 
-theorem hex01: $ x0 :x a = a $ = '(eqtr (addeq1 @ eqtr (muleq1 h2n0) mul01) add01);
+theorem hex01_: $ 0 :x a = a $ = '(eqtr (addeq1 mul01) add01);
+theorem hex01: $ x0 :x a = a $ = '(eqtr (hexeq1 h2n0) hex01_);
 theorem hex02: $ n :x x0 = n * 16 $ = '(eqtr (addeq2 h2n0) add0);
 theorem hex10: $ x1 :x x0 = 16 $ = '(eqtr hex02 @ eqtr (muleq1 h2n1) mul11);
 
@@ -200,7 +205,7 @@ do {
     [(('h2n (a)) ('hex b (c))) @ match (mkcmp2 '(h2n (x0)) b)
       [('< p) '(< (declt0x (,a) ,b (,c) ,p))]]
     [(('hex a (b)) ('h2n (c))) @ match (mkcmp2 '(h2n (x0)) a)
-      [('> p) '(> (declt0x (,c) ,a (,b) ,p))]]
+      [('< p) '(> (declt0x (,c) ,a (,b) ,p))]]
     [(('h2n (a)) ('h2n (b)))
       @ let ([ai (hexdigit->number a)] [bi (hexdigit->number b)])
       @ if {ai < bi} '(< (,(decltn ai bi)))
@@ -479,13 +484,16 @@ do {
         (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
           '(neeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(ne ,a2 ,b2))))
         (mkcmphex e)]
-    [('eq a b) @ match (mktohex b)
-      [(b2 pb) @ match (mktohex a)
-        [(a2 pa) @ match {a2 == b2}
-          [#t '(eqtr4i ,a ,a2 ,b ,pa ,pb)]
-          [_ @ error @ string-append "not equal? " (->string a2) " =?= " (->string b2)]]
-        [#undef '(eqcomi ,b ,a ,pb)]]
-      [#undef (try-conv (mktohex a))]])
+    [('eq a b) (def pa (mktohex a)) (def pb (mktohex b))
+      (def a2 (if (def? pa) (hd pa) a))
+      (def b2 (if (def? pb) (hd pb) b))
+      @ if {a2 == b2}
+      (match (list pa pb)
+        [((_ pa) (_ pb)) '(eqtr4i ,a ,a2 ,b ,pa ,pb)]
+        [((_ pa) #undef) pa]
+        [(#undef (_ pb)) '(eqcomi ,b ,a ,pb)]
+        [(#undef #undef) '(eqid ,a)])
+      (error @ string-append "not equal? " (->string a2) " =?= " (->string b2))])
 
   -- Normalize numeric expressions. Proves theorems like $ 123 * 321 = 39483 $,
   -- used as a refine script.
@@ -510,6 +518,7 @@ theorem d4lt8: $ 4 < 8 $ = norm_num;
 theorem d6lt7: $ 6 < 7 $ = norm_num;
 theorem d8lt16: $ 8 < 16 $ = norm_num;
 theorem d8add8: $ 8 + 8 = 16 $ = norm_num;
+theorem d16ne0: $ 16 != 0 $ = norm_num;
 theorem d2mul2: $ 2 * 2 = 4 $ = norm_num;
 theorem pow22lem (h1: $ 2 * a = b $) (h2: $ 2 ^ a = c $): $ 2 ^ b = c * c $ =
 '(eqtr3 (poweq2 @ eqtr mulcom h1) @ eqtr powmul @ eqtr (poweq1 h2) pow22);
@@ -521,6 +530,18 @@ theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
 theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
 '(eqtr3 (poweq2 d4add4) @ eqtr powadd @ muleq d2pow4 d2pow4);
 theorem d2pow8x: $ 2 ^ 8 = x1 :x x0 :x x0 $ = '(eqtr d2pow8 ,to_hex);
+
+theorem xltmul16 (h: $ a < b $): $ a :x x < b * 16 $ =
+'(ltletr (mpbi ltadd2 h2nlt) @ mpbi (leeq1 mulS1) @ lemul1a h);
+theorem xlt16pow1: $ h2n x < 16 ^ suc k $ =
+'(ltletr h2nlt @ mpbi (leeq1 pow12) @ lepow2a d16ne0 le11S);
+theorem xlt16powS (h: $ a < 16 ^ k $): $ a :x x < 16 ^ suc k $ =
+'(mpbir (lteq2 powS2) @ xltmul16 h);
+
+theorem x16powS (h: $ 16 ^ k = a $): $ 16 ^ suc k = a :x x0 $ =
+'(eqtr powS2 @ eqtr4 (muleq1 h) hex02);
+theorem x2powS (h: $ a = 2 ^ k $): $ a :x x0 = 2 ^ (k + 4) $ =
+'(eqtr hex02 @ eqtr4 (muleq1 h) @ eqtr powadd (muleq2 d2pow4));
 
 do {
   -- Defines e.g. theorem d5half: $ 5 = b1 2 $; for all n <= 16

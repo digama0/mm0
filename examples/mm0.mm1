@@ -1604,21 +1604,20 @@ theorem regex_asymm_lem
   (def (f x) '(sylib ellamimaab @ sylib (eleq2 hA) ,x))
   '(mpd h @ syl prefix_asymm @ mpd ,(f 'hs) @ eexda @
     mpd (sylibr _ ,(f '(anwl ht))) @ eexda _)
-  '(!! cbvex z _ (aneqd alleq2 @ eqeq2d @ appendeq1d appendeq2))
-  (def (f x) '(syl6eq (addeq1 appendlen) @ syl6eq appendlen @ leneqd ,x))
-  '(mpbird (leeqd ,(f 'anrr) ,(f '(anrd anlr))) @ sylib leadd1 @ sylib leadd2 @
+  '(!! cbvex z _ (aneqd alleq2 @ eqeq2d @ appendeq2d appendeq1))
+  (def (f x) '(syl6eq (addeq2 appendlen) @ syl6eq appendlen @ leneqd ,x))
+  '(mpbird (leeqd ,(f 'anrr) ,(f '(anrd anlr))) @ sylib leadd2 @ sylib leadd1 @
     sylibr lenlt @ mpi eqid @ con2d @
     exp @ sylib (elabe neeq1) @ sylc elall (anld anlr) @
     syl nthlmem @ eqtr3d (syl appendnth1 anr) @
     syl (mpi (eqtr (appendnth2 leid) @ eqtr (ntheq1 subid) nthZ) prefix_nth) @ anwl _)
-  (def (f x) '(syl6eq appendass ,x))
-  '(sylib prefix_append1 @ mpbid (prefixeqd ,(f '(anrd anlr)) ,(f 'anrr)) (anwll h)));
+  '(sylib prefix_append1 @ mpbid (prefixeqd (anrd anlr) anrr) (anwll h)));
 
 theorem regexLineComment_asymm (hs: $ G -> s e. regexLineComment $) (ht: $ G -> t e. regexLineComment $)
   (h: $ G -> prefix s t $): $ G -> s = t $ =
 (named @ focus
   '(regex_asymm_lem _ hs ht h)
-  '(imaeq1 @ lameqi @ appendeq1 @ eqcomi @ eqtr appendS @ conseq2 append1));
+  '(imaeq1 @ lameqi @ eqtr3 (appendeq1 @ eqtr appendS @ conseq2 append1) appendass));
 
 @_ def whitespace (.c: nat): set =
 $ ((\ c, c : 0) '' white) u. regexLineComment $;
@@ -1681,7 +1680,8 @@ theorem regexMath_n0: $ s e. regexMath -> s != 0 $ =
 
 theorem regexMath_asymm (hs: $ G -> s e. regexMath $) (ht: $ G -> t e. regexMath $)
   (h: $ G -> prefix s t $): $ G -> s = t $ =
-(named @ focus '(regex_asymm_lem _ hs ht h) '(imaeq1 @ lameqi @ appendeq1 @ eqcomi append1));
+(named @ focus '(regex_asymm_lem _ hs ht h)
+  '(imaeq1 @ lameqi @ eqtr3 (appendeq1 append1) appendass));
 
 theorem regexMath_hd: $ (x : t) e. regexMath -> x = _dollar $ =
 (named '(sylbi el_regexMath @ eex @ anwr @ sylbi (eqeq2 appendS) @ sylbi consinj anl));
@@ -2213,9 +2213,9 @@ theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = 
   '(sylbi excons @ eex @ eex @ casesda _ _)
   '(ealde @ eimd (mpbiri ltconsid2 @ lteqd anr anll) @
     syld (syl ssall @ sylib ssab @ iald @ anim2d @
-      syl5bi (cbvex @ exeqd @ eqeq2d @ appendeq1d appendeq1) @
+      syl5bi (cbvex @ exeqd @ eqeq2d appendeq1) @
       eexd @ iexdde @ eximd @ exp @ eqtr4d an4l @
-      eqtr4d (syl6eq appendS @ appendeq1d @ syl6eq appendS @ appendeq1d anlr) @
+      eqtr4d (syl6eq appendS @ appendeq1d anlr) @
       conseq2d @ eqtr3d anllr anr) @
     bi2d @ alleq2d @ mpbird (eqeqd (simpleTokenizeeqd anll) (simpleTokenizeeqd anr)) @
     syl simpleTokenizeWS anlr)
@@ -2228,22 +2228,22 @@ theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = 
     eimd (mpbid (lteq2d maxPrefixSi1) @
       sylib ltappendid2 @ anld @ sylib el_nonemptyNonwhite maxPrefixSi2) @
     syld (syl ssall @ sylib ssab @ iald @ anim2d @
-      syl5bi (cbvex @ exeqd @ eqeq2d @ appendeq1d appendeq1) @
+      syl5bi (cbvex @ exeqd @ eqeq2d appendeq1) @
       eexd @ iexdde @ eximd @ exp @ eqtr3d (anwll maxPrefixSi1) @
-      eqtr4d (appendeq2d anr) @ syl6eq appendass @ appendeq1d @
-      syl6eq appendass @ appendeq1d anlr) @
+      eqtr4d (appendeq2d anr) @ syl6eq appendass @ appendeq1d anlr) @
     bi2d @ bitrd (alleq2d simpleTokenizeTk) @ syl5bb allS @ syl bian1 @
-    sylibr (elabe @ aneqd eleq1 @ exeqd @ exeqd @ eqeq2d @ appendeq1d appendeq2) @
+    sylibr (elabe @ aneqd eleq1 @ exeqd @ exeqd @ eqeq2d @ appendeq2d appendeq1) @
     iand maxPrefixSi2 @ iexde @ iexde @
-    eqtr2d (appendeqd (syl6eq append0 @ appendeq1d anlr) anr) @ anwll maxPrefixSi1));
+    eqtr2d (syl5eqr appendass @ appendeqd (syl6eq append0 @ appendeq1d anlr) anr) @
+    anwll maxPrefixSi1));
 
 theorem simpleTokenize_nonemptyNonwhite: $ all nonemptyNonwhite (simpleTokenize s) $ =
 (named '(ssall (mpbi ssab1 @ ax_gen anl) simpleTokenize_infix));
 
 theorem simpleTokenize_le: $ c IN simpleTokenize s -> c <= s $ =
 (named '(rsyl (elall simpleTokenize_infix) @
-  sylbi (elabe @ aneqd eleq1 @ exeqd @ exeqd @ eqeq2d @ appendeq1d @ appendeq2) @
-  anwr @ eex @ eex @ mpbiri (letr leappendid2 leappendid1) leeq2));
+  sylbi (elabe @ aneqd eleq1 @ exeqd @ exeqd @ eqeq2d @ appendeq2d appendeq1) @
+  anwr @ eex @ eex @ mpbiri (letr leappendid1 leappendid2) leeq2));
 
 @_ def getDelimiters (ast: nat): nat =
 $ rlrec 0 (\\ a, \\ t, \ ih,

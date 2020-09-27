@@ -99,11 +99,19 @@ pub theorem bitDifEq (a b: nat): $ bitDif a b == a i^i Compl b $ =
 theorem elbitDif (a b i: nat): $ i e. bitDif a b <-> (i e. a /\ ~i e. b) $ =
 '(bitr (eleq2 bitDifEq) @ bitr elin @ aneq2i elcpl);
 
-theorem bitDif01 (a: nat): $ bitDif 0 a = 0 $ = '(axext @ eqstr bitDifEq in01);
-theorem bitDif02 (a: nat): $ bitDif a 0 = a $ = '(axext @ eqstr bitDifEq @ eqstr (ineq2 cpl0) inv2);
-theorem bitDifid (a: nat): $ bitDif a a = 0 $ = '(axext @ eqstr bitDifEq incpl);
-theorem bitDifeq0 (a: nat): $ bitDif a b = 0 <-> a C_ b $ =
+theorem bitDif01: $ bitDif 0 a = 0 $ = '(axext @ eqstr bitDifEq in01);
+theorem bitDif02: $ bitDif a 0 = a $ = '(axext @ eqstr bitDifEq @ eqstr (ineq2 cpl0) inv2);
+theorem bitDifid: $ bitDif a a = 0 $ = '(axext @ eqstr bitDifEq incpl);
+theorem bitDifeq0: $ bitDif a b = 0 <-> a C_ b $ =
 '(bitr3 nsinj @ bitr (eqseq1 bitDifEq) incpleq0);
+
+theorem bitDifadd: $ b C_ a -> bitDif a b + b = a $ =
+'(syl5eqr (bitOr_eq_add @ mpbir ineq0 @ mpbir (sseq1 bitDifEq) inss2) @
+  sylib nsinj @ !! alimi x @ syl5bb elbitOr @ syl5bb (oreq1 elbitDif) @
+  syl5bb ordir @ syl5bb (bian2 emr) bior2a);
+
+theorem bitDifsub: $ b C_ a -> bitDif a b = a - b $ =
+'(syl5eqr pncan @ subeq1d bitDifadd);
 
 @_ abstract def bitXor (a b: nat): nat = $ lower {n | ~(n e. a <-> n e. b)} $;
 pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) $ =
@@ -124,11 +132,25 @@ theorem dec32: $ 32 = x2 :x x0 $ = '(eqtr3 d2mul16 ,to_hex);
 do (insert! tohex-map 'd32 @ fn () '((hex (h2n (x2)) (x0)) (dec32)));
 theorem d32ne0: $ 32 != 0 $ = 'pow2ne0;
 theorem d64ne0: $ 64 != 0 $ = 'pow2ne0;
+theorem d256ne0: $ 256 != 0 $ = 'pow2ne0;
 theorem dec64: $ 64 = x4 :x x0 $ = '(eqtr3 d2mul32 ,to_hex);
 theorem dec256: $ 256 = x1 :x x0 :x x0 $ = '(eqtr3 d16mul16 ,to_hex);
 do (insert! tohex-map 'd64 @ fn () '((hex (h2n (x4)) (x0)) (dec64)));
 do (insert! tohex-map 'd256 @ fn () '((hex (hex (h2n (x1)) (x0)) (x0)) (dec256)));
 
+theorem c2nlt256 (c: char): $ c < 256 $ = '(mpbi (lteq2 d16mul16) c2nlt);
+theorem c2nlt256pow (c: char): $ c < 256 ^ suc k $ =
+'(ltletr c2nlt256 @ mpbi (leeq1 pow12) @ lepow2a d256ne0 le11S);
+
+theorem xlt256pow1 (x: hex): $ x :x y < 256 ^ suc k $ =
+'(mpbi (lteq1 c2nhex) c2nlt256pow);
+theorem xlt256pow0 (x: hex): $ x < 256 ^ suc k $ =
+'(mpbi (lteq1 hex01) xlt256pow1);
+theorem xlt256powS (h: $ a < 256 ^ k $): $ a :x x :x y < 256 ^ suc k $ =
+'(mpbir (lteq2 @ eqtr4 powS2 @ eqtr mulass @ muleq2 d16mul16) @
+  xltmul16 @ xltmul16 h);
+
+theorem d8le32: $ 8 <= 32 $ = norm_num;
 theorem d8le64: $ 8 <= 64 $ = norm_num;
 theorem d16lt32: $ 16 < 32 $ = norm_num;
 theorem d16lt64: $ 16 < 64 $ = norm_num;
@@ -147,6 +169,9 @@ theorem Bits_eq_power: $ Bits n = power (upto n) $ = '(eqcom powerupto);
 theorem elBits: $ a e. Bits n <-> a C_ upto n $ =
 '(bitr (elneq2 Bits_eq_power) elpower);
 theorem elBits2: $ a e. Bits n <-> a < 2 ^ n $ = 'elupto;
+
+theorem elBits8mul: $ n e. Bits (8 * k) <-> n < 256 ^ k $ =
+'(bitr elBits2 @ lteq2 powmul);
 
 theorem Bitsle1: $ v <= w -> w e. Bits n -> v e. Bits n $ =
 '(sylibr (imeqi elBits2 elBits2) lelttr);
@@ -196,15 +221,37 @@ theorem mod_el_Bits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0)
 @_ def u64: nat = $ Bits 64 $;
 
 theorem u32ss64: $ u32 C_ u64 $ = '(Bitsss d32le64);
+theorem u16ss64: $ u16 C_ u64 $ = '(Bitsss d16le64);
+theorem u8ss32: $ u8 C_ u32 $ = '(Bitsss d8le32);
+theorem u8ss64: $ u8 C_ u64 $ = '(Bitsss d8le64);
+theorem u8ss16: $ u8 C_ u16 $ = '(Bitsss @ ltle d8lt16);
 
-theorem c2nu8 (c: char): $ c e. u8 $ =
-'(mpbir elBits2 @ mpbir (lteq2 d2pow8) c2nlt);
+theorem elu8: $ n e. u8 <-> n < 16 * 16 $ = '(bitr elBits2 @ lteq2 d2pow8);
+theorem elu8_2: $ n e. u8 <-> n < 256 $ = '(bitr elu8 @ lteq2 d16mul16);
+theorem elu8_3: $ n e. u8 <-> n < 256 ^ 1 $ = '(bitr4 elu8_2 @ lteq2 pow12);
+theorem c2nT (c: char): $ c e. u8 $ = '(mpbir elu8 c2nlt);
 theorem elu8_lem (h: $ n < x1 :x x0 :x x0 $): $ n e. u8 $ =
 '(mpbir elBits2 @ mpbir (lteq2 d2pow8x) h);
 theorem d1elu8: $ 1 e. u8 $ = '(elu8_lem ,norm_num);
 theorem d2elu8: $ 2 e. u8 $ = '(elu8_lem ,norm_num);
 
 theorem mod_el_u8: $ a % 256 e. u8 $ = 'mod_el_Bits;
+
+theorem elu16: $ n e. u16 <-> n < 256 ^ 2 $ =
+'(bitr (elneq2 @ Bitseq {,norm_num : $ 16 = 8 * 2 $}) elBits8mul);
+theorem elu32: $ n e. u32 <-> n < 256 ^ 4 $ =
+'(bitr (elneq2 @ Bitseq {,norm_num : $ 32 = 8 * 4 $}) elBits8mul);
+theorem elu64: $ n e. u64 <-> n < 256 ^ 8 $ =
+'(bitr (elneq2 @ Bitseq {,norm_num : $ 64 = 8 * 8 $}) elBits8mul);
+
+theorem hex_divmod256:
+  $ (a :x b :x c) // 256 = a /\ (a :x b :x c) % 256 = b :x c $ =
+'(trud @ eqdivmod (a1i @ mpbi elu8_2 @ mpbi (eleq1 c2nch) c2nT) @
+  a1i @ eqtr3 addass @ addeq1 @
+  eqtr4 (addeq1 @ eqtr4 mulcom @ eqtr mulass @ muleq2 d16mul16) addmul);
+
+theorem s2nT (s: string): $ s e. List u8 $ =
+'(mpbir elList @ mpbir (alleq1 @ !! eqab2i n elu8) s2nlt);
 
 @_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
   \. i e. upto (suc n), (i % 256) : a @ (i // 256)) k $;
@@ -247,6 +294,12 @@ theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
 pub theorem toBytesS (k n: nat):
   $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $ =
 '(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
+
+theorem toBytes02: $ toBytes k 0 = repeat 0 k $ =
+(named @ induct '(ind) 'k
+  '(eqtr4 toBytes0 repeat0)
+  '(syl5eq toBytesS @ syl5eq (conseq mod01 @ toByteseq2 div01) @
+    syl6eqr repeatS conseq2));
 
 pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
 '(!! eale x (eleq1d toByteseq2) ,(induct '(!! ind y z) 'k
@@ -1643,12 +1696,12 @@ pub theorem readIndexT (k si: nat):
     (2 as $suc (sc <> r)$ => readIndexS chopT)});
 
 @_ abstract def readBase (k b: nat): nat =
-$ obind b (\ n, ocase (readRIP k) (\ r, readReg k r) n) $;
+$ obind b (ocase (readRIP k) (\ r, readReg k r)) $;
 pub theorem readBase0 (k: nat): $ readBase k 0 = 0 $ = (named 'obind0);
 pub theorem readBaseRIP (k: nat): $ readBase k base_RIP = readRIP k $ =
-(named '(eqtr obindS @ applame @ syl6eq ocase0 ocaseeq3));
+(named '(eqtr obindS ocase0));
 pub theorem readBaseReg (k r: nat): $ readBase k (base_reg r) = readReg k r $ =
-(named '(eqtr obindS @ applame @ syl6eq (eqtr ocaseS @ applame @ readRegeq2) ocaseeq3));
+(named '(eqtr obindS @ eqtr ocaseS @ applame readRegeq2));
 pub theorem readBaseT (k b: nat):
   $ k e. Config /\ b e. Base -> readBase k b e. u64 $ =
 (named @ split-sop 'b
@@ -2940,7 +2993,7 @@ theorem appendArrayi (h1: $ a e. Array A m $) (h2: $ b e. Array A n $):
 
 @_ def ELF_MAGIC: nat = $ ch x7 xf : ch x4 x5 : ch x4 xc : ch x4 x6 : 0 $;
 theorem ELF_MAGIC_T: $ ELF_MAGIC e. Array u8 4 $ =
-(iterate 4 (fn (x) '(elArraySi c2nu8 ,x)) 'elArray0);
+(iterate 4 (fn (x) '(elArraySi c2nT ,x)) 'elArray0);
 
 @_ def ELF_CLASS_64: nat = $ 2 $;
 theorem ELF_CLASS_64_T: $ ELF_CLASS_64 e. u8 $ = 'd2elu8;
@@ -2960,9 +3013,9 @@ pub theorem ELF_IDENT_T: $ ELF_IDENT e. Array u8 16 $ =
 @_ def EM_X86_64: nat = $ u16Bytes (ch x3 xe) $;
 @_ def E_VERSION: nat = $ u32Bytes 1 $;
 @_ def E_FLAGS: nat = $ u32Bytes 0 $;
-@_ def EH_SIZE: nat = $ u16Bytes 64 $;
-@_ def PH_SIZE: nat = $ u16Bytes (ch x3 x8) $;
-@_ def SH_SIZE: nat = $ u16Bytes 64 $;
+@_ def EH_SIZE: nat = $ 64 $;
+@_ def PH_SIZE: nat = $ ch x3 x8 $;
+@_ def SH_SIZE: nat = $ 64 $;
 -- This checks the ELF header assuming x86 architecture.
 @_ def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
 $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
@@ -2971,43 +3024,47 @@ $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
   E. shstrndx (shstrndx e. u16 /\
     l = ELF_IDENT ++ ET_EXEC ++ EM_X86_64 ++ E_VERSION ++
         u64Bytes entry ++ u64Bytes phoff ++ u64Bytes shoff ++
-        E_FLAGS ++ EH_SIZE ++ PH_SIZE ++ u16Bytes phnum ++
-        SH_SIZE ++ u16Bytes shnum ++ u16Bytes shstrndx) $;
+        E_FLAGS ++ u16Bytes EH_SIZE ++ u16Bytes PH_SIZE ++ u16Bytes phnum ++
+        u16Bytes SH_SIZE ++ u16Bytes shnum ++ u16Bytes shstrndx) $;
 pub theorem elfHeaderT (l entry phoff shoff phnum shnum: nat):
   $ elfHeader l entry phoff shoff phnum shnum ->
-    l e. List u8 /\ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
+    l e. Array u8 EH_SIZE /\ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
     phnum e. u16 /\ shnum e. u16 $ =
 (named @ focus
   '(imp @ anwl @ rsyl (anim1 anl) @ eexd @ impd @ exp @ syl5 (mpbiri _ eleq1) @
     anwl @ exp @ anrotri @ anrotri @ anrotri @ anrotri ancom)
-  (def A 'u16BytesList) (def B 'u32BytesList) (def C 'u64BytesList)
-  (foldl '(,A ,A ,B ,C ,C ,C ,B ,A ,A ,A ,A ,A ,A) '(elArrayList ELF_IDENT_T)
-    @ fn (a b) '(mpbir appendT @ ian ,a ,b)));
+  (def A 'u16BytesT) (def B 'u32BytesT) (def C 'u64BytesT)
+  '(mpbir (eleq2 @ Arrayeq2 {_ : $ 64 = _ $})
+    ,(foldr '(ELF_IDENT_T ,A ,A ,B ,C ,C ,C ,B ,A ,A ,A ,A ,A) A
+      @ fn (a b) '(appendArrayi ,a ,b)))
+  norm_num);
 
 -- sadly the protection flag bits for ELF are different than the memory page
 -- protection flags: R=4, W=2, X=1 for ELF; R=1, W=2, X=4 for the syscall
 @_ def protToFlags (prot: nat): nat =
-$ consBit (PROT_EXEC e. prot) (
-    consBit (PROT_WRITE e. prot) (nat (PROT_READ e. prot))) $;
+$ consBit (PROT_EXEC C_ prot) (
+    consBit (PROT_WRITE C_ prot) (nat (PROT_READ C_ prot))) $;
 
 @_ def PT_LOAD: nat = $ 1 $;
 @_ def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
 $ type e. u32 /\ prot e. Prot /\ off e. u64 /\ vaddr e. u64 /\
   filesz e. u64 /\ memsz e. u64 /\ filesz <= memsz /\
-  E. i (i < 64 /\ dvd (2 ^ i) vaddr /\ dvd (2 ^ i) off /\
+  E. i (i < 64 /\ dvd (2 ^ i) (bitsSub 64 vaddr off) /\
     l = u32Bytes type ++ u32Bytes (protToFlags prot) ++
         u64Bytes off ++ u64Bytes vaddr ++ u64Bytes 0 ++
         u64Bytes filesz ++ u64Bytes memsz ++ u64Bytes (2 ^ i)) $;
 pub theorem pHeaderT (l type prot off vaddr filesz memsz: nat):
   $ pHeader l type prot off vaddr filesz memsz ->
-    l e. List u8 /\ type e. u32 /\ prot e. Prot /\ off e. u64 /\
+    l e. Array u8 PH_SIZE /\ type e. u32 /\ prot e. Prot /\ off e. u64 /\
     vaddr e. u64 /\ filesz e. u64 /\ memsz e. u64 $ =
 (named @ focus
   '(imp @ anwl @ eexd @ syl5 anr @ syl5 (mpbiri _ eleq1) @
     exp @ anrotri @ anrotri @ anrotri @ anrotri @ anrotri ancom)
-  (def B 'u32BytesList) (def C 'u64BytesList)
-  (foldl '(,B ,C ,C ,C ,C ,C ,C) B
-    @ fn (a b) '(mpbir appendT @ ian ,a ,b)));
+  (def B 'u32BytesT) (def C 'u64BytesT)
+  '(mpbir (eleq2 @ Arrayeq2 {_ : $ ch _ _ = _ $})
+    ,(foldr '(,B ,B ,C ,C ,C ,C ,C) C
+      @ fn (a b) '(appendArrayi ,a ,b)))
+  norm_num);
 
 @_ def basicElfEH (file entry phoff .eh: nat): wff =
 $ file e. List u8 /\
@@ -3040,8 +3097,8 @@ $ file e. List u8 /\
     sublistAt phoff file ph /\
     pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
     sublistAt off file seg /\
-    off + memsz e. u64 /\ off <= entry /\ entry < off + memsz /\
-    elf = entry <> prot <> off <> (seg ++ repeat 0 (memsz - len seg))) $;
+    vaddr + memsz e. u64 /\ vaddr <= entry /\ entry < vaddr + memsz /\
+    elf = entry <> prot <> vaddr <> (seg ++ repeat 0 (memsz - len seg))) $;
 pub theorem basicElfT (file elf: nat):
   $ basicElf file elf -> file e. List u8 /\ elf e. BasicElf $ =
 (named @ focus

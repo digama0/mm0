@@ -305,7 +305,7 @@ theorem lenS (a b: nat): $ len (a : b) = suc (len b) $;
 
 def Array (A: set) (n .l: nat): set = $ {l | l e. List A /\ len l = n} $;
 
-def append (l1 l2: nat): nat; infixl append: $++$ prec 84;
+def append (l1 l2: nat): nat; infixr append: $++$ prec 85;
 theorem append0 (a: nat): $ 0 ++ a = a $;
 theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $;
 

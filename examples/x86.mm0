@@ -1496,9 +1496,9 @@ def ET_EXEC: nat = $ u16Bytes 2 $;
 def EM_X86_64: nat = $ u16Bytes (ch x3 xe) $;
 def E_VERSION: nat = $ u32Bytes 1 $;
 def E_FLAGS: nat = $ u32Bytes 0 $;
-def EH_SIZE: nat = $ u16Bytes 64 $;
-def PH_SIZE: nat = $ u16Bytes (ch x3 x8) $;
-def SH_SIZE: nat = $ u16Bytes 64 $;
+def EH_SIZE: nat = $ 64 $;
+def PH_SIZE: nat = $ ch x3 x8 $;
+def SH_SIZE: nat = $ 64 $;
 -- This checks the ELF header assuming x86 architecture.
 def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
 $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
@@ -1507,30 +1507,30 @@ $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
   E. shstrndx (shstrndx e. u16 /\
     l = ELF_IDENT ++ ET_EXEC ++ EM_X86_64 ++ E_VERSION ++
         u64Bytes entry ++ u64Bytes phoff ++ u64Bytes shoff ++
-        E_FLAGS ++ EH_SIZE ++ PH_SIZE ++ u16Bytes phnum ++
-        SH_SIZE ++ u16Bytes shnum ++ u16Bytes shstrndx) $;
+        E_FLAGS ++ u16Bytes EH_SIZE ++ u16Bytes PH_SIZE ++ u16Bytes phnum ++
+        u16Bytes SH_SIZE ++ u16Bytes shnum ++ u16Bytes shstrndx) $;
 theorem elfHeaderT (l entry phoff shoff phnum shnum: nat):
   $ elfHeader l entry phoff shoff phnum shnum ->
-    l e. List u8 /\ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
+    l e. Array u8 EH_SIZE /\ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
     phnum e. u16 /\ shnum e. u16 $;
 
 -- sadly the protection flag bits for ELF are different than the memory page
 -- protection flags: R=4, W=2, X=1 for ELF; R=1, W=2, X=4 for the syscall
 def protToFlags (prot: nat): nat =
-$ consBit (PROT_EXEC e. prot) (
-    consBit (PROT_WRITE e. prot) (nat (PROT_READ e. prot))) $;
+$ consBit (PROT_EXEC C_ prot) (
+    consBit (PROT_WRITE C_ prot) (nat (PROT_READ C_ prot))) $;
 
 def PT_LOAD: nat = $ 1 $;
 def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
 $ type e. u32 /\ prot e. Prot /\ off e. u64 /\ vaddr e. u64 /\
   filesz e. u64 /\ memsz e. u64 /\ filesz <= memsz /\
-  E. i (i < 64 /\ dvd (2 ^ i) vaddr /\ dvd (2 ^ i) off /\
+  E. i (i < 64 /\ dvd (2 ^ i) (bitsSub 64 vaddr off) /\
     l = u32Bytes type ++ u32Bytes (protToFlags prot) ++
         u64Bytes off ++ u64Bytes vaddr ++ u64Bytes 0 ++
         u64Bytes filesz ++ u64Bytes memsz ++ u64Bytes (2 ^ i)) $;
 theorem pHeaderT (l type prot off vaddr filesz memsz: nat):
   $ pHeader l type prot off vaddr filesz memsz ->
-    l e. List u8 /\ type e. u32 /\ prot e. Prot /\ off e. u64 /\
+    l e. Array u8 PH_SIZE /\ type e. u32 /\ prot e. Prot /\ off e. u64 /\
     vaddr e. u64 /\ filesz e. u64 /\ memsz e. u64 $;
 
 def basicElfEH (file entry phoff .eh: nat): wff =
@@ -1556,8 +1556,8 @@ $ file e. List u8 /\
     sublistAt phoff file ph /\
     pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
     sublistAt off file seg /\
-    off + memsz e. u64 /\ off <= entry /\ entry < off + memsz /\
-    elf = entry <> prot <> off <> (seg ++ repeat 0 (memsz - len seg))) $;
+    vaddr + memsz e. u64 /\ vaddr <= entry /\ entry < vaddr + memsz /\
+    elf = entry <> prot <> vaddr <> (seg ++ repeat 0 (memsz - len seg))) $;
 theorem basicElfT (file elf: nat):
   $ basicElf file elf -> file e. List u8 /\ elf e. BasicElf $;
 

@@ -618,6 +618,7 @@ theorem biim2: $ ~b -> (a -> b <-> ~a) $ = '(syl biim2a absurd);
 theorem bior1: $ ~a -> (a \/ b <-> b) $ = '(syl bior1a absurd);
 theorem bior2: $ ~b -> (a \/ b <-> a) $ = '(syl bior2a absurd);
 theorem em: $ p \/ ~p $ = 'id;
+theorem emr: $ ~p \/ p $ = '(orcom em);
 
 @_ abstract def ifp (p a b: wff): wff = $ p /\ a \/ ~p /\ b $;
 
@@ -1726,6 +1727,7 @@ theorem ltsucid: $ a < suc a $ = 'leid;
 theorem lt01: $ 0 < a <-> a != 0 $ = 'le11;
 theorem lt02: $ ~ a < 0 $ = '(con3 (bi1 le02) peano1);
 theorem lt01S: $ 0 < suc a $ = '(mpbir lt01 peano1);
+theorem le11S: $ 1 <= suc a $ = 'lt01S;
 
 theorem ltadd1: $ a < b <-> a + c < b + c $ = '(bitr leadd1 (leeq1 addS1));
 theorem ltadd2: $ b < c <-> a + b < a + c $ = '(bitr ltadd1 (lteq addcom addcom));
@@ -2145,6 +2147,11 @@ theorem mulmod1: $ b * a % b = 0 $ =
   (anrd @ eqdivmod (bi2 lt01) (a1i add0)));
 theorem mulmod2: $ a * b % b = 0 $ =
 '(eqtr (modeqd id eqidd mulcom) mulmod1);
+
+theorem divlteq0: $ a < b -> a // b = 0 $ =
+'(anld @ eqdivmod id @ a1i @ eqtr (addeq1 mul02) add01);
+theorem modltid: $ a < b -> a % b = a $ =
+'(anrd @ eqdivmod id @ a1i @ eqtr (addeq1 mul02) add01);
 
 theorem lediv1: $ a <= b -> a // c <= b // c $ =
 '(casesda (mpbiri le01 @ leeq1d @ syl6eq div0 (anwr diveq2))
@@ -3564,11 +3571,13 @@ theorem recnS: $ recn z S (suc n) = S @ (n <> recn z S n) $ =
 '(eqtr (sndeq recnauxS2) @ eqtr sndpr @ appeq2 @
   eqtr3 fstsnd @ preq1 recnauxfst);
 
-@_ local def ocase (z: nat) (S: set) (n: nat): nat = $ recn z (\ i, S @ fst i) n $;
-theorem ocase0: $ ocase z S 0 = z $ = (named 'recn0);
-theorem ocaseS: $ ocase z S (suc n) = S @ n $ =
-'(! eqtr _ $ _ @ (_ <> ocase _ _ _) $ _ recnS @
-  !! applame x @ appeq2d @ syl6eq fstpr fsteq);
+@_ local def ocase (z: nat) (S: set): set = $ \ n, recn z (\ i, S @ fst i) n $;
+theorem ocaseval: $ ocase z S @ n = recn z (\ i, S @ fst i) n $ =
+(named '(applame recneq3));
+theorem ocase0: $ ocase z S @ 0 = z $ = (named '(eqtr ocaseval recn0));
+theorem ocaseS: $ ocase z S @ suc n = S @ n $ =
+'(eqtr ocaseval @ eqtr recnS @ eqtr3 (appeq2 @ preq2 ocaseval) @
+  !! applame i @ appeq2d @ syl6eq fstpr fsteq);
 
 @_ local def ocasep (z: wff) (S: set): set = $ {n | ifp (n = 0) z (n - 1 e. S)} $;
 theorem ocasep0: $ 0 e. ocasep z S <-> z $ = (named '(elabe ifppos));
@@ -3576,7 +3585,7 @@ theorem ocasepS: $ suc n e. ocasep z S <-> n e. S $ =
 (named '(elabe @ syl6bb (eleq1 sucsub1) @
   syl6bb (ifpneg peano1) @ ifpeqd eqeq1 biidd (eleq1d subeq1)));
 
-@_ abstract def obind (a: nat) (F: set): nat = $ ocase 0 F a $;
+@_ abstract def obind (a: nat) (F: set): nat = $ ocase 0 F @ a $;
 pub theorem obind0 (F: set): $ obind 0 F = 0 $ = 'ocase0;
 pub theorem obindS (n: nat) (F: set): $ obind (suc n) F = F @ n $ = 'ocaseS;
 
@@ -4422,7 +4431,7 @@ theorem Arrayfin: $ finite A -> finite (Array A n) $ =
     syl ellt @ mpbird (anwl ellower) @ sylibr prelxp anrl));
 
 @_ abstract def append (l1 l2: nat): nat = $ lrec l2 (\\ x, \\ z, \ y, x : y) l1 $;
-infixl append: $++$ prec 84;
+infixr append: $++$ prec 85;
 pub theorem append0 (a: nat): $ 0 ++ a = a $ = (named 'lrec0);
 pub theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $ =
 '(eqtr lrecS @ ! appslame _ $ _ <> append b $ _ x _ @
@@ -4433,7 +4442,7 @@ theorem append1: $ a : 0 ++ l = a : l $ = '(eqtr appendS @ conseq2 append0);
 theorem append02: $ a ++ 0 = a $ =
 (named @ induct '(listind) 'a 'append0 '(syl5eq appendS conseq2));
 
-theorem appendass: $ l1 ++ l2 ++ l3 = l1 ++ (l2 ++ l3) $ =
+theorem appendass: $ (l1 ++ l2) ++ l3 = l1 ++ (l2 ++ l3) $ =
 (named @ induct '(listind) 'l1
   '(eqtr4 (appendeq1 append0) append0)
   '(syl5eq (appendeq1 appendS) @ syl5eq appendS @ syl6eqr appendS conseq2));
@@ -4604,10 +4613,18 @@ theorem appendnth2: $ len l1 <= i -> nth i (l1 ++ l2) = nth (i - len l1) l2 $ =
 pub theorem repeat0 (a: nat): $ repeat a 0 = 0 $ =  (named 'rec0);
 pub theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $ =
 '(eqtr recS @ ! applame (repeat a n) _ x _ conseq2);
+theorem repeat1: $ repeat a 1 = a : 0 $ =
+'(eqtr repeatS @ conseq2 repeat0);
 
 theorem repeatlen: $ len (repeat a n) = n $ =
 (named @ induct '(ind) 'n '(eqtr (leneq repeat0) len0)
   '(syl5eq (leneq repeatS) @ syl5eq lenS suceq));
+
+theorem repeatadd: $ repeat a (m + n) = repeat a m ++ repeat a n $ =
+(named @ induct '(ind) 'm
+  '(eqtr4 (repeateq2 add01) @ eqtr (appendeq1 repeat0) append0)
+  '(eqtr4g (repeateq2 addS1) (appendeq1 repeatS) @
+    eqtr4g repeatS appendS conseq2));
 
 theorem repeatT: $ a e. A -> repeat a n e. List A $ =
 (named @ induct '(indd) 'n
@@ -4621,7 +4638,7 @@ theorem repeatArray: $ a e. A -> repeat a n e. Array A n $ =
 $ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
 
 theorem sublistAtT: $ sublistAt n L1 L2 -> L1 e. List A -> L2 e. List A $ =
-(named '(eex @ eex @ exp @ anrd @ sylib appendT @ anld @ sylib appendT @
+(named '(eex @ eex @ exp @ anld @ sylib appendT @ anrd @ sylib appendT @
   mpbid (eleq1d anll) anr));
 
 @_ local def grecaux1 (K: set) (x z n: nat): nat =

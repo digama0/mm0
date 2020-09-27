@@ -55,3 +55,4 @@ term s2n: string > nat; coercion s2n: string > nat;
 axiom s2ns0: $ s0 = 0 $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;
 axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
