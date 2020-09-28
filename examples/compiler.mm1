@@ -19,9 +19,9 @@ theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $):
 theorem saddS: $ c ': s '+ t = c ': (s '+ t) $ =
 '(eqtr4 (s2n_A s2nscons eqid) @ s2n_SAE s2nsadd);
 
-def _x00: char = $ ch x0 x0 $;
-def _x01: char = $ ch x0 x1 $;
-def _x02: char = $ ch x0 x2 $;
+def _x00: char = 0;
+def _x01: char = 1;
+def _x02: char = 2;
 def _x00x2: string = $ _x00 ': _x00 ': s0 $;
 def _x00x4: string = $ _x00x2 '+ _x00x2 $;
 def _x00x8: string = $ _x00x4 '+ _x00x4 $;
@@ -38,7 +38,7 @@ theorem _x00x8_eq: $ _x00x8 = repeat 0 8 $ =
 '(eqtr (s2n_RA _x00x4_eq _x00x4_eq) @ repeateq2 ,norm_num);
 
 def ELF_IDENT_s: string =
-$ ch x7 xf ': ch x4 x5 ': ch x4 xc ': ch x4 x6 ':
+$ ,0x7f ': ,"E" ': ,"L" ': ,"F" ':
   _x02 ': _x01 ': _x01 ': _x00 ': _x00x8 $;
 
 theorem ELF_IDENT_eq: $ ELF_IDENT_s = ELF_IDENT $ =
@@ -66,12 +66,12 @@ theorem _ch64_eq (h: $ c = a $): $ _ch64 c = u64Bytes a $ =
   repeateq2 ,norm_num);
 
 -- 0x400000 as u64, the hard coded entry point
-def MMC_entry_s (c: char): string = $ c ': _x00 ': ch x4 x0 ': _x00 ': _x00x4 $;
-def MMC_entry (x y): nat = $ x4 :x x0 :x x0 :x x0 :x x :x y $;
+def load_start_s (c: char): string = $ c ': _x00 ': ,0x40 ': _x00 ': _x00x4 $;
+def load_start (x y): nat = $ ,0x4000 :x x :x y $;
 
-theorem MMC_entry_eq2: $ MMC_entry x0 x0 + x :x y = MMC_entry x y $ =
+theorem load_start_eq2: $ load_start x0 x0 + x :x y = load_start x y $ =
 '(add_xx0 (add_x00 addx01) addx01);
-theorem MMC_entry_pow2: $ MMC_entry x0 x0 = 2 ^ (x1 :x x6) $ =
+theorem load_start_pow2: $ load_start x0 x0 = 2 ^ ,22 $ =
 '(eqtr (x2powS @ x2powS @ x2powS @ x2powS @ x2powS @ eqtr2 d2pow2 dec4) @
   poweq2 ,norm_num);
 
@@ -81,40 +81,41 @@ theorem s2n_toBytesS (h2: $ s = toBytes k a $):
   conseq (eqtr4 (anr hex_divmod256) c2nch) @
   toByteseq2 @ anl hex_divmod256);
 
-theorem MMC_entry_T: $ MMC_entry x y e. u64 $ =
+theorem load_start_T: $ load_start x y e. u64 $ =
 '(ssel u32ss64 @ mpbir elu32 @ xlt256powS @ xlt256powS xlt256pow1);
-theorem MMC_entry_eq: $ MMC_entry_s (ch x y) = u64Bytes (MMC_entry x y) $ =
+theorem load_start_eq: $ load_start_s (ch x y) = u64Bytes (load_start x y) $ =
 (focus
   '(s2n_toBytesS @ s2n_toBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
   '(s2n_toBytesS @ eqtr4 (s2n_RS _x00_eq _x00x4_eq) toBytes02));
 
-def ELF_header_s: string =
-$ ELF_IDENT_s '+ _ch16 _x02 '+ _ch16 (ch x3 xe) '+ _ch32 _x01 '+
-  MMC_entry_s (ch x7 x8) '+ _ch64 (ch x4 x0) '+ _x00x8 '+
-  _x00x4 '+ _ch16 (ch x4 x0) '+ _ch16 (ch x3 x8) '+ _ch16 _x01 '+
-  _ch16 (ch x4 x0) '+ _x00x4 $;
+def ELF_header_s (e: string): string =
+$ ELF_IDENT_s '+ _ch16 _x02 '+ _ch16 ,0x3e '+ _ch32 _x01 '+
+  e '+ _ch64 ,64 '+ _x00x8 '+
+  _x00x4 '+ _ch16 ,64 '+ _ch16 ,0x38 '+ _ch16 _x01 '+
+  _ch16 ,64 '+ _x00x4 $;
 
 theorem bitsNeg_16_1: $ bitsNeg 16 1 = xf :x xf :x xf :x xf $;
-theorem ELF_header_ok: $ elfHeader ELF_header_s (MMC_entry x7 x8) 64 0 1 0 $ =
+theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
+  $ elfHeader (ELF_header_s e) entry 64 0 1 0 $ =
 (focus
   (for 0 7 @ fn (_) (refine '(ian _ _)))
   (def h0 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow0))
   (def h1 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow1))
   (def h2 '(mpbir (lteq2 bitsNeg_16_1) ,norm_num))
-  (refine 'MMC_entry_T '(ssel u8ss64 ,h1) 'elBits01
-    '(ssel u8ss16 ,h0) h2 'elBits01 h2)
+  (refine 'he2 '(ssel u8ss64 ,h1) 'elBits01
+    '(ssel u8ss16 ,h0) h2 'elBits01 h2) (swap)
   '(ax_mp (!! iexe _1 ,eqtac) @ ian elBits01 _)
   '(s2n_A ELF_IDENT_eq @ s2n_A (_ch16_eq _x02_eq) @
     s2n_A (_ch16_eq eqid) @ s2n_A (_ch32_eq _x01_eq) @
-    s2n_A MMC_entry_eq @ s2n_A (_ch64_eq ,norm_num) @
+    s2n_A he @ s2n_A (_ch64_eq ,norm_num) @
     s2n_A (eqtr4 _x00x8_eq toBytes02) @ s2n_A (eqtr4 _x00x4_eq toBytes02) @
     s2n_A (! _ch16_eq $64$ _ ,norm_num) @ s2n_A (_ch16_eq eqid) @
     s2n_A (_ch16_eq _x01_eq) @ s2n_A (! _ch16_eq $64$ _ ,norm_num) @
     s2n_A (eqtr4 _x00x2_eq toBytes02) (eqtr4 _x00x2_eq toBytes02)));
 
-def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ch x2 x0 ': _x00 ': _x00x4 $;
-def PAGE_SIZE: nat = $ 2 ^ (x1 :x x5) $;
-theorem PAGE_SIZE_val: $ PAGE_SIZE = x2 :x x0 :x x0 :x x0 :x x0 :x x0 $ =
+def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ,0x20 ': _x00 ': _x00x4 $;
+def PAGE_SIZE: nat = $ 2 ^ ,21 $;
+theorem PAGE_SIZE_val: $ PAGE_SIZE = ,0x200000 $ =
 '(eqtr2 (x2powS @ x2powS @ x2powS @ x2powS @ x2powS @ eqtr2 pow12 dec2) @
   poweq2 ,norm_num);
 theorem PAGE_SIZE_eq: $ PAGE_SIZE_s = u64Bytes PAGE_SIZE $ =
@@ -124,8 +125,8 @@ theorem PAGE_SIZE_eq: $ PAGE_SIZE_s = u64Bytes PAGE_SIZE $ =
   '(s2n_toBytesS @ eqtr4 (s2n_RS _x00_eq _x00x4_eq) toBytes02));
 
 def basic_pHeader_s (filesz memsz: string): string =
-$ _ch32 _x01 '+ _ch32 (ch x0 x7) '+
-  _ch64 (ch x7 x8) '+ MMC_entry_s (ch x7 x8) '+ _x00x8 '+
+$ _ch32 _x01 '+ _ch32 ,7 '+
+  _ch64 ,0x78 '+ load_start_s ,0x78 '+ _x00x8 '+
   filesz '+ memsz '+ PAGE_SIZE_s $;
 
 def PROT_RWX = $ 7 $;
@@ -151,31 +152,31 @@ theorem basic_pHeader_ok
   (hle: $ filesz <= memsz $)
   (hms2: $ memsz e. u64 $):
   $ pHeader (basic_pHeader_s fs ms) PT_LOAD PROT_RWX
-      (ch x7 x8) (MMC_entry x7 x8) filesz memsz $ =
+      (ch x7 x8) (load_start x7 x8) filesz memsz $ =
 (focus
   (for 0 7 @ fn (_) (refine '(ian _ _)))
   (def h0 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow0))
   (def h1 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow1))
   (refine '(ssel u8ss32 {,h0 : $ 1 e. _ $}) 'PROT_RWX_T
-    '(ssel u8ss64 ,h1) 'MMC_entry_T '(Bitsle1 hle hms2) 'hms2 'hle)
-  (have 'hM '(eqtr3 MMC_entry_eq2 @ addeq MMC_entry_pow2 @ eqcom c2nhex))
+    '(ssel u8ss64 ,h1) 'load_start_T '(Bitsle1 hle hms2) 'hms2 'hle)
+  (have 'hM '(eqtr3 load_start_eq2 @ addeq load_start_pow2 @ eqcom c2nhex))
   '(ax_mp (!! iexe _1 ,eqtac) @ ian
     (ian _ @ mpbir (dvdeq2 @
-      eqtr (bitsSub_eq_sub (mpbir (leeq2 hM) leaddid2) MMC_entry_T) @
+      eqtr (bitsSub_eq_sub (mpbir (leeq2 hM) leaddid2) load_start_T) @
       eqtr (subeq1 hM) pncan) @ powdvd _)
     (s2n_A (_ch32_eq _x01_eq) @
       s2n_A (_ch32_eq @ eqcom @ eqtr PROT_RWX_flags ,norm_num) @
-      s2n_A (_ch64_eq eqid) @ s2n_A MMC_entry_eq @
+      s2n_A (_ch64_eq eqid) @ s2n_A load_start_eq @
       s2n_A (eqtr4 _x00x8_eq toBytes02) @
       s2n_A hfs @ s2n_A hms PAGE_SIZE_eq))
   norm_num
   norm_num);
 
-def ELF_lit (fs ms c: string): string =
-$ ELF_header_s '+ basic_pHeader_s fs ms '+ c $;
+def ELF_lit (e fs ms c: string): string =
+$ ELF_header_s e '+ basic_pHeader_s fs ms '+ c $;
 
-def ELF_parse (bss content: nat): nat =
-$ MMC_entry x7 x8 <> PROT_RWX <> MMC_entry x7 x8 <> content ++ repeat 0 bss $;
+def ELF_parse (entry bss content: nat): nat =
+$ entry <> PROT_RWX <> load_start x7 x8 <> content ++ repeat 0 bss $;
 
 theorem sublistAt_left: $ sublistAt n L1 L2 -> sublistAt n (L1 ++ l) L2 $ =
 (named '(eximi @ eex @ !! iexde x @
@@ -190,25 +191,28 @@ theorem sublistAt_id: $ sublistAt 0 L L $ =
   mpbiri (ian (eqtr2 append0 append02) len0) ,eqtac));
 
 theorem basicElf_ok
+  (he: $ e = u64Bytes entry $)
   (hfs: $ fs = u64Bytes filesz $)
   (hms: $ ms = u64Bytes memsz $)
   (hc: $ c = content $)
   (hbss: $ filesz + bss = memsz $)
   (hlen: $ len content = filesz $)
-  (hpos: $ 0 < memsz $)
-  (hms2: $ MMC_entry x7 x8 + memsz e. u64 $):
-  $ basicElf (ELF_lit fs ms c) (ELF_parse bss content) $ =
+  (hend: $ load_start x7 x8 + memsz = end $)
+  (he1: $ load_start x7 x8 <= entry $)
+  (he2: $ entry < end $)
+  (hbd: $ end e. u64 $):
+  $ basicElf (ELF_lit e fs ms c) (ELF_parse entry bss content) $ =
 (focus
   '(ian s2nT @ trud ,(iterate 9 (fn (x) '(!! iexde ,(dummy! 'nat) ,x))
     '(mpbiri _ ,eqtac)))
   (have 'h1 '(eqtr s2nsadd @ appendeq2 s2nsadd))
-  (have 'ehok 'ELF_header_ok)
+  (have 'ehok '(ELF_header_ok he @ Bitsle1 (ltle he2) hbd))
   (have 'hl1 '(elArraylen @ an5l @ elfHeaderT ehok))
   (have 'phok '(basic_pHeader_ok
     (eqtr4 hfs @ u64Byteseq hlen)
     (eqtr4 hms @ u64Byteseq hbss)
     (mpbir (leeq1 hlen) leaddid1)
-    (mpbir (eleq1 hbss) @ Bitsle1 leaddid2 hms2)))
+    (mpbir (eleq1 hbss) @ Bitsle1 (mpbi (leeq2 hend) leaddid2) hbd))) (swap)
   (have 'hl2 '(elArraylen @ an6l @ pHeaderT phok))
   (for 0 8 @ fn (_) (refine '(ian _ _)))
   (focus
@@ -222,11 +226,47 @@ theorem basicElf_ok
     '(mpbir (sublistAteq (eqtr2 (addeq hl1 @ eqtr add02 hl2)
         {,norm_num : $ 64 + ch x3 x8 = ch x7 x8 $}) h1 (eqcom hc)) @
       sublistAt_right @ sublistAt_right sublistAt_id))
-  (focus '(mpbir (eleq1 @ addeq2 hbss) hms2))
-  (focus 'leid)
-  (focus '(mpbi (lteq add02 @ addeq2 @ eqcom hbss) @ mpbi ltadd2 hpos))
+  (focus '(mpbir (eleq1 @ eqtr (addeq2 hbss) hend) hbd))
+  (focus 'he1)
+  (focus '(mpbir (lteq2 @ eqtr (addeq2 hbss) hend) @ he2))
   (focus '(preq2 @ preq2 @ preq2 @ appendeq2 @
     repeateq2 @ eqtr2 (subeq2 hlen) pncan2)));
+
+def X86P_Input = $ b0 0 $;
+def X86P_Output = $ b0 1 $;
+def X86P_RIP = $ b0 2 $;
+def X86P_Flags = $ b0 3 $;
+def X86P_Virtual (n: nat) = $ b0 (n + 4) $;
+def X86P_Reg (n: nat) = $ b1 (b0 n) $;
+def X86P_Mem (n: nat) = $ b1 (b1 n) $;
+
+def read_place (ks: nat): set =
+$ case
+    (ocase (pi11 ks)
+      (ocase (pi12 ks)
+        (ocase (readRIP (ksCfg ks))
+          (ocase (readFlags (ksCfg ks))
+            0))))
+    (case
+      (\ r, readReg (ksCfg ks) r)
+      (\ a, getMemory (ksCfg ks) @ a <> ksMapping ks @ a)) $;
+
+def heap_sat (h ks: nat): wff =
+$ A. p A. x (p <> x e. h -> read_place ks @ p = x) $;
+
+def heap_join (h1 h2: nat): nat =
+$ if (Dom h1 i^i Dom h2 == 0) (lower (h1 u. h2)) 0 $;
+
+def s_and (P Q: set): set = $ Union P Q $;
+
+def s_sep (P Q: set): set =
+$ {h | E. h1 E. h2 (h1 e. P /\ h2 e. Q /\ heap_join h1 h2 = suc h)} $;
+
+def s_wand (P Q: set): set =
+$ {h2 | A. h1 A. h (h1 e. P -> heap_join h1 h2 = suc h -> h e. Q)} $;
+
+def x86_sat (P: set) (ks: nat): wff =
+$ A. p A. x (p <> x e. P -> read_place ks @ p = x) $;
 
 do {
   (def mmc-compiler (ref! (mmc-init)))

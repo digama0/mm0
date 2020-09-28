@@ -364,6 +364,26 @@ At the beginning of execution, the global context contains a number of primitive
 
       (string-append "foo" 'bar 42) -- "foobar42"
 
+* `(string-len s)` returns the length of the string (number of bytes).
+
+      (string-len "foo") -- 3
+
+* `(string-nth n s)` returns the character code of the nth byte (zero-indexed) in the string.
+
+      (string-nth 1 "bar") -- 97, ascii 'a'
+
+* `(substr start end s)` returns a newly allocated substring `s[start..end]`, the substring starting at `start` (inclusive) and ending at `end` (exclusive), where `0 <= start <= end <= (string-len s)`.
+
+      (substr 6 11 "hello world!") -- "world"
+
+* `(string->list s)` converts a string to a list of character codes.
+
+      (string->list "bar") -- (98 97 114)
+
+* `(list->string s)` constructs a string from a list of character codes.
+
+      (list->string '(98 97 114)) -- "bar"
+
 * `(not e1 e2 e3)` returns `#f` if any argument is truthy, and `#t` otherwise. It is not short-circuiting.
 * `(and e1 e2 e3)` returns `#t` if every argument is truthy, and `#f` otherwise. It is not short-circuiting.
 * `(or e1 e2 e3)` returns `#t` if any argument is truthy, and `#f` otherwise. It is not short-circuiting.
@@ -484,6 +504,7 @@ The main workhorse tactic is `(refine)`, which gets some helpful syntax sugar to
 * The expression `(!! foo x1 p1 p2)` is similar, except it only accepts values for the bound variables, not the regular variables. (This variant is useful because all dummy variables must be named but unification will not invent names for dummy variables unless they are written somewhere.)
 * The expression `(:verb e)` accepts an expression `e`, and elaborates to `e` "verbatim". That is, no additional analysis is performed on `e`, and it follows the syntax of complete expressions, not pre-expressions. This is helpful for "unquotation" in tactic programming.
 * A *quoted* formula `$ foo $` evaluates the formula `$ foo $` in the current formula context, in an empty lisp local context (if unquotation is used). This is needed because refine pre-expressions are usually written inside `quote`, so formulas end up quoted as well unless you use `,$ foo $`. Since evaluating a formula yields a pre-expression, these can be passed straight to `refine`.
+* Any other lisp value, that is not one of the above categories such as strings and numbers, will normally be an error, but if the global variable `to-expr-fallback` is defined, then it will be called as `(to-expr-fallback s e)` where e is the value that appeared in an expression position and `s` is the expected sort, and it is expected to produce the term that will be used instead.
 
 In order to make it easy to specify proofs from pre-expressions, if the lisp expression `e` given as the value of a theorem evaluates to something other than `#undef`, then it is silently replaced with `(refine e)`, which will elaborate the pre-expression and apply it to the single open goal.
 

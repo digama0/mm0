@@ -839,6 +839,33 @@ str_enum! {
     /// (string-append "foo" 'bar 42) -- "foobar42"
     /// ```
     StringAppend: "string-append",
+    /// `(string-len s)` returns the length of the string (number of bytes).
+    /// ```text
+    /// (string-len "foo") -- 3
+    /// ```
+    StringLen: "string-len",
+    /// `(string-nth n s)` returns the character code of the nth byte (zero-indexed) in the string.
+    /// ```text
+    /// (string-nth 1 "bar") -- 97, ascii 'a'
+    /// ```
+    StringNth: "string-nth",
+    /// `(substr start end s)` returns a newly allocated substring `s[start..end]`, the substring
+    /// starting at `start` (inclusive) and ending at `end` (exclusive), where
+    /// `0 <= start <= end <= (string-len s)`.
+    /// ```text
+    /// (substr 6 11 "hello world!") -- "world"
+    /// ```
+    Substr: "substr",
+    /// `(string->list s)` converts a string to a list of character codes.
+    /// ```text
+    /// (string->list "bar") -- (98 97 114)
+    /// ```
+    StringToList: "string->list",
+    /// `(list->string s)` constructs a string from a list of character codes.
+    /// ```text
+    /// (list->string '(98 97 114)) -- "bar"
+    /// ```
+    ListToString: "list->string",
     /// `(not e1 e2 e3)` returns `#f` if any argument is truthy, and `#t` otherwise.
     /// It is not short-circuiting.
     Not: "not",

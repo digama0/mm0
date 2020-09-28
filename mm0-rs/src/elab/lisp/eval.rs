@@ -370,10 +370,14 @@ impl Elaborator {
     })
   }
 
-  fn as_int(&self, e: &LispVal) -> SResult<BigInt> {
-    e.unwrapped(|e| if let LispKind::Number(n) = e {Ok(n.clone())} else {
+  fn with_int<T>(&self, e: &LispVal, f: impl FnOnce(&BigInt) -> SResult<T>) -> SResult<T> {
+    e.unwrapped(|e| if let LispKind::Number(n) = e {f(n)} else {
       Err(format!("expected a integer, got {}", self.print(e)))
     })
+  }
+
+  fn as_int(&self, e: &LispVal) -> SResult<BigInt> {
+    self.with_int(e, |n| Ok(n.clone()))
   }
 
   fn as_ref<T>(&self, e: &LispKind, f: impl FnOnce(&mut LispVal) -> SResult<T>) -> SResult<T> {
@@ -808,6 +812,53 @@ make_builtins! { self, sp1, sp2, args,
   StringAppend: AtLeast(0) => {
     let mut out = String::new();
     for e in args { out.push_str(&try1!(self.as_string(&e))) }
+    LispVal::string(ArcString::new(out))
+  },
+  StringLen: Exact(1) => LispVal::number(try1!(self.as_string(&args[0])).len().into()),
+  StringNth: Exact(2) => {
+    use std::convert::TryInto;
+    let i: usize = try1!(self.with_int(&args[0],
+      |n| n.try_into().map_err(|_| format!("index out of range: {}", n))));
+    let s = try1!(self.as_string(&args[1]));
+    let c = *try1!(s.as_bytes().get(i).ok_or_else(||
+      format!("index out of range: index {}, length {}", i, s.len())));
+    LispVal::number(c.into())
+  },
+  Substr: Exact(3) => {
+    use std::convert::TryInto;
+    let start: usize = try1!(self.with_int(&args[0],
+      |n| n.try_into().map_err(|_| format!("index out of range: start {}", n))));
+    let end: usize = try1!(self.with_int(&args[1],
+      |n| n.try_into().map_err(|_| format!("index out of range: end {}", n))));
+    if start > end { try1!(Err(format!("start {} > end {}", start, end))) }
+    let s = try1!(self.as_string(&args[2]));
+    if end > s.len() { try1!(Err(format!("index out of range: end {}, length {}", end, s.len()))) }
+    let bytes = s.as_bytes()[start..end].into();
+    // SAFETY: This is abusing String to be a non-UTF8 byte vector.
+    // This can probably blow up somewhere. TODO: Lie less
+    let out = unsafe { String::from_utf8_unchecked(bytes) };
+    LispVal::string(ArcString::new(out))
+  },
+  StringToList: Exact(1) => {
+    let s = try1!(self.as_string(&args[0]));
+    LispVal::list(s.as_bytes().iter()
+      .map(|&c| LispVal::number(c.into()))
+      .collect::<Vec<_>>())
+  },
+  ListToString: Exact(1) => {
+    use std::convert::TryInto;
+    let mut u = Uncons::New(args[0].clone());
+    let mut bytes: Vec<u8> = Vec::with_capacity(u.len());
+    while let Some(e) = u.next() {
+      bytes.push(try1!(self.with_int(&e,
+        |n| n.try_into().map_err(|_| format!("character out of range: {}", n)))));
+    }
+    if !u.is_empty() {
+      try1!(Err(format!("list->string: not a list: {}", self.print(&args[0]))))
+    }
+    // SAFETY: This is abusing String to be a non-UTF8 byte vector.
+    // This can probably blow up somewhere. TODO: Lie less
+    let out = unsafe { String::from_utf8_unchecked(bytes) };
     LispVal::string(ArcString::new(out))
   },
   Not: AtLeast(0) => LispVal::bool(!args.iter().any(|e| e.truthy())),

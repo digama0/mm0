@@ -1330,60 +1330,60 @@ pub theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
 -------------
 
 -- Definition of ASCII, or at least the part of it we need
-@_ def _nl:     char = $ ch x0 xa $; -- "\n" newline character
-@_ def _cr:     char = $ ch x0 xd $; -- "\r" carriage return
-@_ def __:      char = $ ch x2 x0 $; -- " " space
-@_ def _dollar: char = $ ch x2 x4 $; -- "$" dollar sign
-@_ def _lparen: char = $ ch x2 x8 $; -- "(" left parenthesis
-@_ def _rparen: char = $ ch x2 x9 $; -- ")" right parenthesis
-@_ def _ast:    char = $ ch x2 xa $; -- "*" asterisk / multiplication symbol
-@_ def _hyphen: char = $ ch x2 xd $; -- "-" hyphen / minus sign
-@_ def _dot:    char = $ ch x2 xe $; -- "." dot / period / full stop
-@_ def _colon:  char = $ ch x3 xa $; -- ":" colon
-@_ def _semi:   char = $ ch x3 xb $; -- ";" semicolon
-@_ def _equal:  char = $ ch x3 xd $; -- "=" equal sign
-@_ def _gt:     char = $ ch x3 xe $; -- ">" greater than, right arrow
-@_ def _under:  char = $ ch x5 xf $; -- "_" underscore (note: __ is space)
-@_ def _lbrace: char = $ ch x7 xb $; -- "{" left brace / curly bracket
-@_ def _rbrace: char = $ ch x7 xd $; -- "}" right brace / curly bracket
+@_ def _nl:     char = "\n"; -- "\n" newline character
+@_ def _cr:     char = "\r"; -- "\r" carriage return
+@_ def __:      char = " ";  -- " " space
+@_ def _dollar: char = "$";  -- "$" dollar sign
+@_ def _lparen: char = "(";  -- "(" left parenthesis
+@_ def _rparen: char = ")";  -- ")" right parenthesis
+@_ def _ast:    char = "*";  -- "*" asterisk / multiplication symbol
+@_ def _hyphen: char = "-";  -- "-" hyphen / minus sign
+@_ def _dot:    char = ".";  -- "." dot / period / full stop
+@_ def _colon:  char = ":";  -- ":" colon
+@_ def _semi:   char = ";";  -- ";" semicolon
+@_ def _equal:  char = "=";  -- "=" equal sign
+@_ def _gt:     char = ">";  -- ">" greater than, right arrow
+@_ def _under:  char = "_";  -- "_" underscore (note: __ is space)
+@_ def _lbrace: char = "{";  -- "{" left brace / curly bracket
+@_ def _rbrace: char = "}";  -- "}" right brace / curly bracket
 
 -- ASCII numbers
-@_ def _0: char = $ ch x3 x0 $;
-@_ def _1: char = $ ch x3 x1 $;
-@_ def _2: char = $ ch x3 x2 $;
-@_ def _3: char = $ ch x3 x3 $;
-@_ def _4: char = $ ch x3 x4 $;
-@_ def _5: char = $ ch x3 x5 $;
-@_ def _6: char = $ ch x3 x6 $;
-@_ def _7: char = $ ch x3 x7 $;
-@_ def _8: char = $ ch x3 x8 $;
-@_ def _9: char = $ ch x3 x9 $;
+@_ def _0: char = "0";
+@_ def _1: char = "1";
+@_ def _2: char = "2";
+@_ def _3: char = "3";
+@_ def _4: char = "4";
+@_ def _5: char = "5";
+@_ def _6: char = "6";
+@_ def _7: char = "7";
+@_ def _8: char = "8";
+@_ def _9: char = "9";
 
 -- Don't really need capitals except as a range
-@_ def _A: char = $ ch x4 x1 $;
-@_ def _Z: char = $ ch x5 xa $;
+@_ def _A: char = "A";
+@_ def _Z: char = "Z";
 
 -- Most of the lowercase alphabet, used in keywords
-@_ def _a: char = $ ch x6 x1 $;
-@_ def _b: char = $ ch x6 x2 $;
-@_ def _c: char = $ ch x6 x3 $;
-@_ def _d: char = $ ch x6 x4 $;
-@_ def _e: char = $ ch x6 x5 $;
-@_ def _f: char = $ ch x6 x6 $;
-@_ def _h: char = $ ch x6 x8 $;
-@_ def _i: char = $ ch x6 x9 $;
-@_ def _l: char = $ ch x6 xc $;
-@_ def _m: char = $ ch x6 xd $;
-@_ def _n: char = $ ch x6 xe $;
-@_ def _o: char = $ ch x6 xf $;
-@_ def _p: char = $ ch x7 x0 $;
-@_ def _r: char = $ ch x7 x2 $;
-@_ def _s: char = $ ch x7 x3 $;
-@_ def _t: char = $ ch x7 x4 $;
-@_ def _u: char = $ ch x7 x5 $;
-@_ def _v: char = $ ch x7 x6 $;
-@_ def _x: char = $ ch x7 x8 $;
-@_ def _z: char = $ ch x7 xa $;
+@_ def _a: char = "a";
+@_ def _b: char = "b";
+@_ def _c: char = "c";
+@_ def _d: char = "d";
+@_ def _e: char = "e";
+@_ def _f: char = "f";
+@_ def _h: char = "h";
+@_ def _i: char = "i";
+@_ def _l: char = "l";
+@_ def _m: char = "m";
+@_ def _n: char = "n";
+@_ def _o: char = "o";
+@_ def _p: char = "p";
+@_ def _r: char = "r";
+@_ def _s: char = "s";
+@_ def _t: char = "t";
+@_ def _u: char = "u";
+@_ def _v: char = "v";
+@_ def _x: char = "x";
+@_ def _z: char = "z";
 
 do (begin
   (def (mkth-pr m a b f)

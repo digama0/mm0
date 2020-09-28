@@ -117,17 +117,33 @@ do {
     [('ch e1 e2) {{(hex->number e1) * 16} + (hex->number e2)}]
     [('hex e1 e2) {{(hex->number e1) * 16} + (hex->number e2)}]
     [e (hexdigit->number e)])
-  -- (def hexdigit? @ match-fn
+  (def (number->ch n) '(ch (,(hexdigit {n // 16})) (,(hexdigit {n % 16}))))
   (def nz-hexnat? @ match-fn
     [('hex e _) (nz-hexnat? e)]
     [('h2n (e)) (def n (hexdigit->number e)) @ if (def? n) {n > 0} #f]
     [_ #f])
   (def hexnat? @ match-fn ['(h2n (x0)) #t] [e (nz-hexnat? e)])
+  (def (string->hex s)
+    (def n (string-len s))
+    @ letrec (
+      [(f i) @ if {i < n}
+        '(scons ,(number->ch @ string-nth i s) ,(f {i + 1}))
+        '(s0)])
+    (f 0))
 };
 
 do {
-  (def (to-expr-fallback _ t) @ match t
-    [(? number?) (->hex t)])
+  -- This allows us to use $ ,0x1234 $ and $ ,"hello" $ to splice
+  -- numbers and strings into theorem statements.
+  (def (to-expr-fallback s t) @ match t
+    [(? number?) @ match s
+      ['hex '(,(hexdigit t))]
+      ['char (number->ch t)]
+      [_ (->hex t)]]
+    [(? string?) @ match s
+      ['nat '(s2n ,(string->hex t))]
+      ['char (number->ch @ string-nth 0 t)]
+      [_ (string->hex t)]])
 };
 
 do {

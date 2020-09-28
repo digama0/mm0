@@ -740,13 +740,13 @@ impl Elaborator {
           }
           RefineExpr::Proc => RState::Proc {tgt, p},
         },
-        RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e)? {
-          RefineExpr::App {sp2, head: AtomID::UNDER, ..} => {
+        RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e) {
+          Ok(RefineExpr::App {sp2, head: AtomID::UNDER, ..}) => {
             let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2)));
             self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
             RState::Ret(head)
           }
-          RefineExpr::App {sp, sp2, head: a, u, ..} => {
+          Ok(RefineExpr::App {sp, sp2, head: a, u, ..}) => {
             let empty = u.is_empty();
             let head = LispVal::atom(a);
             self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
@@ -767,7 +767,7 @@ impl Elaborator {
               return Err(ElabError::new_e(sp, format!("unknown term '{}'", self.data[a].name)))
             }
           }
-          RefineExpr::Typed {ty: s, e} => {
+          Ok(RefineExpr::Typed {ty: s, e}) => {
             let s = s.as_atom().filter(|&s| self.data[s].sort.is_some())
               .ok_or_else(|| ElabError::new_e(sp, "expected a sort"))?;
             RState::RefineExpr {
@@ -775,8 +775,18 @@ impl Elaborator {
               tgt: if tgt.bound() {InferTarget::Bound(s)} else {InferTarget::Reg(s)}
             }
           }
-          RefineExpr::Exact(e) => RState::Ret(e),
-          RefineExpr::Proc => RState::Ret(e),
+          Ok(RefineExpr::Exact(e)) => RState::Ret(e),
+          Ok(RefineExpr::Proc) => RState::Ret(e),
+          Err(err) => (|| -> Result<_> {
+            if let Some((_, proc)) = &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
+              let proc = proc.clone();
+              let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
+              if let Ok(res) = self.call_func(sp, proc, args) {
+                return Ok(RState::Ret(res))
+              }
+            }
+            Err(err)
+          })()?
         },
         RState::RefineApp {sp2, tgt: ret, t, mut u, mut args} => {
          'l: loop { // labeled block, not a loop. See rust#48594
