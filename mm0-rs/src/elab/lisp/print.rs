@@ -168,7 +168,20 @@ impl EnvDisplay for LispKind {
       LispKind::List(es) => list(es, None, true, fe, f),
       LispKind::Annot(_, e) => e.fmt(fe, f),
       LispKind::Number(n) => n.fmt(f),
-      LispKind::String(s) => write!(f, "{:?}", s),
+      LispKind::String(s) => {
+        write!(f, "\"")?;
+        for &c in s.as_bytes() {
+          match c {
+            b'\\' => write!(f, "\\\\")?,
+            b'n' => write!(f, "\\n")?,
+            b'r' => write!(f, "\\r")?,
+            b'\"' => write!(f, "\\\"")?,
+            0x20..=0x7e => write!(f, "{}", c as char)?,
+            _ => write!(f, "\\x{:02x}", c)?,
+          }
+        }
+        write!(f, "\"")
+      }
       LispKind::Bool(true) => "#t".fmt(f),
       LispKind::Bool(false) => "#f".fmt(f),
       LispKind::Syntax(s) => s.fmt(f),
