@@ -371,6 +371,7 @@ theorem assembles_finish
   eqtac);
 
 do {
+  -- (mk-asm1 x s) returns a pair (y p) where p: $ assemble1 s x y $
   (def (mk-asm1 x s) @ match s
     [('scons c s)
       @ match (mksuc x) @ (y p)
@@ -378,6 +379,40 @@ do {
       '(,z (assemble1_S ,c ,s ,x ,y ,z ,p ,p2))]
     ['(s0) '(,x (assemble1_0 ,x))])
 
+  -- (assemble base main bss vis xs) assembles an ELF file, producing the file
+  -- and a correctness theorem. `base` is the base name for all declarations,
+  -- `main` is the name of the main function, `bss` is the number of bytes in the
+  -- zeroed section, `vis` is the target visibility of the main theorems
+  -- (either () or pub), and `xs` is the list of functions and data elements to
+  -- assemble.
+  --
+  -- The xs argument is a list, where the arguments can have the form:
+  -- * (func ,name ,data) where `name` is the name of the function and data
+  --   is a list of assembly instructions (right now just bytes)
+  -- * (data ,name ,str) where `name` is the name of the data element
+  --   and `str` is a string literal with the target bytes
+  --
+  -- The result of the program is a number of new definitions starting with `base`.
+  --
+  -- * def `base`_`name`: string;
+  --   - This defines the strings in xs, the individual items that were declared
+  --     with their given names
+  -- * theorem `base`_`name`_asm: $ assemble1 base_name start end $;
+  --   - The proof that base_name assembles from `start` to `end`
+  -- * def `base`_content: string;
+  --   - This is the "content" part of the ELF file, after the header. It is the
+  --     concatenation of all the items
+  -- * theorem `base`_assembled:
+  --     $ len content = n /\ (/\_i assembled content name_i x_i x_i+1) $;
+  --   - The result of assembly, which asserts the total length of the content
+  --     as well as a conjunction asserting that every name_i assembles to its
+  --     final location.
+  -- * (pub) def `base`: string;
+  --   - This is the complete ELF file string, with visibility `vis`.
+  -- * (pub) def `base`_Elf: nat;
+  --   - The parsed ELF, with visibility `vis`.
+  -- * (pub) def `base`_basicElf: $ basicElf base base_Elf $;
+  --   - The proof that `base` is an ELF file that parses to `base_Elf`.
   (def (assemble base main bss vis xs)
     (def pfx (atom-app base _))
     (def idx (ref! 0))
@@ -456,10 +491,10 @@ do {
         ,(verb @ nth 1 @ mkadd filesz_x bss_x)
         (anli ,asmd)
         ,(verb end_p)
-        (assembled_func_bound _)
-        ,(verb @ to_elu 64 end_x))
-      '(anri ,(iterate {(len xs) - 1 - entry_idx}
-        (fn (x) '(anli ,x)) '(anri ,asmd)))))
+        (assembled_func_bound @ anri
+          ,(iterate {(len xs) - 1 - entry_idx}
+            (fn (x) '(anli ,x)) '(anri ,asmd)))
+        ,(verb @ to_elu 64 end_x))))
 };
 
 def X86P_Input = $ b0 0 $;
