@@ -59,6 +59,8 @@ axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
 
 theorem s2nscons: $ c ': s = c : s $ =
 '(eqtr s2nsadd @ eqtr (appendeq1 s2ns1) append1);
+theorem s2nscons0: $ c ': s0 = s1 c $ =
+'(eqtr s2nsadd @ eqtr (appendeq2 s2ns0) append02);
 
 local def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
 infixl hex: $:x$ prec 120;
@@ -114,8 +116,9 @@ do {
     (fn (x) (lookup m x)))
   (def hex->number @ match-fn
     [('c2n e) (hex->number e)]
-    [('ch e1 e2) {{(hex->number e1) * 16} + (hex->number e2)}]
-    [('hex e1 e2) {{(hex->number e1) * 16} + (hex->number e2)}]
+    [('h2n (e)) (hexdigit->number e)]
+    [('ch (e1) (e2)) {{(hexdigit->number e1) * 16} + (hexdigit->number e2)}]
+    [('hex e1 (e2)) {{(hex->number e1) * 16} + (hexdigit->number e2)}]
     [e (hexdigit->number e)])
   (def (number->ch n) '(ch (,(hexdigit {n // 16})) (,(hexdigit {n % 16}))))
   (def nz-hexnat? @ match-fn
@@ -180,7 +183,7 @@ do {
   (def mksuc @ match-fn
     ['(hex ,a (,b)) @ match b
       ['xf @ match (mksuc a) @ (b p)
-        '((hex (,b) (x0)) (decsucxf ,a (,b) ,p))]
+        '((hex ,b (x0)) (decsucxf ,a ,b ,p))]
       [_ (def i (hexdigit->number b)) (def c (hexdigit {i + 1}))
         '((hex ,a (,c)) (decsucx ,a (,b) (,c) (,(decsucn i))))]]
     ['(h2n (,a)) (def i (hexdigit->number a))
@@ -325,9 +328,9 @@ do {
     [(('h2n (a)) ('hex b (c))) @ match (decadcn (hexdigit->number a) (hexdigit->number c))
       [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (adc_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
       [(('h2n d) p) '((hex ,b ,d) (adc_0x0 (,a) ,b (,c) ,d (,p)))]]
-    [(('h2n (a)) ('hex b (c))) @ match (decadcn (hexdigit->number a) (hexdigit->number c))
-      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (adc_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
-      [(('h2n d) p) '((hex ,d ,e) (adc_x00 ,a (,b) (,c) ,d (,p)))]]
+    [(('hex a (b)) ('h2n (c))) @ match (decadcn (hexdigit->number b) (hexdigit->number c))
+      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (adc_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
+      [(('h2n d) p) '((hex ,a ,d) (adc_x00 ,a (,b) (,c) ,d (,p)))]]
     [(('h2n (a)) ('h2n (b))) @ match (decadcn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
 
   -- Addition tactic: usable in refine scripts when the target is $ a + b = ?c $ (or $ suc (a + b) = ?c $),
@@ -550,7 +553,7 @@ theorem d2pow3: $ 2 ^ 3 = 8 $ = '(eqtr powS @ eqtr (muleq2 d2pow2) d2mul4);
 theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
 theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
 '(eqtr3 (poweq2 d4add4) @ eqtr powadd @ muleq d2pow4 d2pow4);
-theorem d2pow8x: $ 2 ^ 8 = x1 :x x0 :x x0 $ = '(eqtr d2pow8 ,to_hex);
+theorem d2pow8x: $ 2 ^ 8 = ,256 $ = '(eqtr d2pow8 ,to_hex);
 
 theorem xltmul16 (h: $ a < b $): $ a :x x < b * 16 $ =
 '(ltletr (mpbi ltadd2 h2nlt) @ mpbi (leeq1 mulS1) @ lemul1a h);

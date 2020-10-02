@@ -117,7 +117,9 @@ do {
             (def subterms @ apply atom-map! @ map list args es)
             (def isrefl (ref! #t))
             (def subproofs @ rmap hs @ match-fn @ (h ('im _ (eq arg _)))
-              @ or_refl isrefl @ lookup subterms arg)
+              @ if (atom? arg)
+                (or_refl isrefl @ lookup subterms arg)
+                (eqidd-for (infer-sort A)))
             @ if isrefl #undef (cons eqd subproofs)]
           [e #undef]]
         [res res]]
@@ -376,6 +378,8 @@ infixl an: $/\$ prec 34;
 
 theorem anl: $ a /\ b -> a $ = '(con1 absurd);
 theorem anr: $ a /\ b -> b $ = '(con1 ax_1);
+theorem anli (h: $ a /\ b $): $ a $ = '(anl h);
+theorem anri (h: $ a /\ b $): $ b $ = '(anr h);
 theorem ian: $ a -> b -> a /\ b $ = '(con2d (com12 id));
 theorem iand (h1: $ a -> b $) (h2: $ a -> c $): $ a -> b /\ c $ = '(sylc ian h1 h2);
 theorem anld (h: $ a -> b /\ c $): $ a -> b $ = '(syl anl h);
@@ -4634,13 +4638,6 @@ theorem repeatT: $ a e. A -> repeat a n e. List A $ =
 theorem repeatArray: $ a e. A -> repeat a n e. Array A n $ =
 '(sylibr elArray @ iand repeatT @ a1i repeatlen);
 
-@_ def sublistAt (n L1 L2: nat): wff =
-$ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
-
-theorem sublistAtT: $ sublistAt n L1 L2 -> L1 e. List A -> L2 e. List A $ =
-(named '(eex @ eex @ exp @ anld @ sylib appendT @ anrd @ sylib appendT @
-  mpbid (eleq1d anll) anr));
-
 @_ local def grecaux1 (K: set) (x z n: nat): nat =
 $ recn z (\\ u, \ i, K @ ((x - suc u) <> i)) n $;
 
@@ -4960,3 +4957,51 @@ theorem takeappend1: $ n <= len l1 -> take (l1 ++ l2) n = take l1 n $ =
   (syl5eq takelen @ syl eqmin2 @ mpi (mpbir (leeq2 appendlen) leaddid1) letr)
   (syl5eq takelen @ eqmin2)
   (eqtr4d (anwr takenth) @ eqtr4d (anwr takenth) @ syl appendnth1 @ impcom ltletr)));
+
+theorem appendinj1: $ len l1 = len r1 -> (l1 ++ l2 = r1 ++ r2 <-> l1 = r1 /\ l2 = r2) $ =
+(focus
+  (suffices 'h)
+  '(ibida (iand h @ sylib appendcan1 @ eqtr4d anr @ appendeq1d h) @ appendeqd anrl anrr)
+  (def h2 '(eqtr (takeappend1 leid) (takeall leid)))
+  '(sylib (eqeq ,h2 ,h2) @ takeeqd anr anl));
+
+theorem appendinj2: $ len l2 = len r2 -> (l1 ++ l2 = r1 ++ r2 <-> l1 = r1 /\ l2 = r2) $ =
+'(ibida (mpbid (syl appendinj1 @ sylib addcan1 @
+    eqtrd (eqtr3g appendlen appendlen @ leneqd anr) @
+    addeq2d @ eqcomd anl) anr) @
+  appendeqd anrl anrr);
+
+@_ def sublistAt (n L1 L2: nat): wff =
+$ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
+
+theorem sublistAtT: $ sublistAt n L1 L2 -> L1 e. List A -> L2 e. List A $ =
+(named '(eex @ eex @ exp @ anld @ sylib appendT @ anrd @ sylib appendT @
+  mpbid (eleq1d anll) anr));
+
+theorem sublistAt_append:
+  $ sublistAt n l (l1 ++ l2) <-> sublistAt n l l1 /\ sublistAt (n + len l1) l l2 $ =
+(focus
+  '(bitr3 (!! exeqi a @ bitr3 (aneq2i excomb) @ bitr3 exan1 @ !! exeqi b _) exan2)
+  '(bitr (aneq1i exan2) @ bitr anrass @ aneq1a @ syl5bbr exan2 @
+    syl6bb (exeqe @ eqeq2d @ appendeq2d @ syl6eqr appendass appendeq2) @ !! exeqd b2 @
+    bitrd (syl aneq2a @ exp _) @ syl6bb ancomb @ aneq2d bian2)
+  '(syl6bb (exeqe @ aneq2d @ syl6bb addcan1 @ eqeq1d @ syl6eq appendlen leneq) @
+    !! exeqd a1 @ syl6bb (aneq1i eqcomb) @ syl6bb anass @
+    syl aneq1a @ exp @ bitrd (eqeq1d @ syl6eqr appendass anlr) @
+    syl appendinj1 @ syl5eq appendlen @ eqtr4d (addeq1d anll) anr));
+
+theorem sublistAt_len_le: $ sublistAt n L1 L2 -> n + len L2 <= len L1 $ =
+(named '(eex @ eex @ mpbii (mpbir (leeq2 appendlen) leaddid1) @
+  syl5bb leadd2 @ leeqd (addeq1d anr) @ syl5eqr appendlen @ leneqd @ eqcomd anl));
+
+theorem sublistAt_left: $ sublistAt n L1 L2 -> sublistAt n (L1 ++ l) L2 $ =
+(named '(eximi @ eex @ !! iexde x @
+  iand (mpbiri (eqtr appendass @ appendeq2 appendass) ,eqtac) anlr));
+
+theorem sublistAt_right: $ sublistAt n L1 L2 -> sublistAt (len l + n) (l ++ L1) L2 $ =
+'(!! eex x @ !! iexde r @ impcom @ !! eximd y @
+  mpbiri (anim (syl6eqr appendass appendeq2) (syl5eq appendlen addeq2)) ,eqtac);
+
+theorem sublistAt_id: $ sublistAt 0 L L $ =
+(named '(trud @ !! iexde x @ !! iexde y @
+  mpbiri (ian (eqtr2 append0 append02) len0) ,eqtac));

@@ -128,13 +128,13 @@ pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) 
 theorem d2mul16: $ 2 * 16 = 32 $ = '(eqtr2 powS @ muleq2 d2pow4);
 theorem d2mul32: $ 2 * 32 = 64 $ = '(eqcom powS);
 theorem d16mul16: $ 16 * 16 = 256 $ = '(eqcom @ pow22lem d2mul4 d2pow4);
-theorem dec32: $ 32 = x2 :x x0 $ = '(eqtr3 d2mul16 ,to_hex);
+theorem dec32: $ 32 = ,32 $ = '(eqtr3 d2mul16 ,to_hex);
 do (insert! tohex-map 'd32 @ fn () '((hex (h2n (x2)) (x0)) (dec32)));
 theorem d32ne0: $ 32 != 0 $ = 'pow2ne0;
 theorem d64ne0: $ 64 != 0 $ = 'pow2ne0;
 theorem d256ne0: $ 256 != 0 $ = 'pow2ne0;
-theorem dec64: $ 64 = x4 :x x0 $ = '(eqtr3 d2mul32 ,to_hex);
-theorem dec256: $ 256 = x1 :x x0 :x x0 $ = '(eqtr3 d16mul16 ,to_hex);
+theorem dec64: $ 64 = ,64 $ = '(eqtr3 d2mul32 ,to_hex);
+theorem dec256: $ 256 = ,256 $ = '(eqtr3 d16mul16 ,to_hex);
 do (insert! tohex-map 'd64 @ fn () '((hex (h2n (x4)) (x0)) (dec64)));
 do (insert! tohex-map 'd256 @ fn () '((hex (hex (h2n (x1)) (x0)) (x0)) (dec256)));
 
@@ -230,7 +230,7 @@ theorem elu8: $ n e. u8 <-> n < 16 * 16 $ = '(bitr elBits2 @ lteq2 d2pow8);
 theorem elu8_2: $ n e. u8 <-> n < 256 $ = '(bitr elu8 @ lteq2 d16mul16);
 theorem elu8_3: $ n e. u8 <-> n < 256 ^ 1 $ = '(bitr4 elu8_2 @ lteq2 pow12);
 theorem c2nT (c: char): $ c e. u8 $ = '(mpbir elu8 c2nlt);
-theorem elu8_lem (h: $ n < x1 :x x0 :x x0 $): $ n e. u8 $ =
+theorem elu8_lem (h: $ n < ,256 $): $ n e. u8 $ =
 '(mpbir elBits2 @ mpbir (lteq2 d2pow8x) h);
 theorem d1elu8: $ 1 e. u8 $ = '(elu8_lem ,norm_num);
 theorem d2elu8: $ 2 e. u8 $ = '(elu8_lem ,norm_num);

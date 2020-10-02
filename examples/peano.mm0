@@ -323,9 +323,6 @@ def repeat (a n: nat): nat;
 theorem repeat0 (a: nat): $ repeat a 0 = 0 $;
 theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $;
 
-def sublistAt (n L1 L2 .l .r: nat): wff =
-$ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
-
 -- map : (A -> B) -> list A -> list B
 def map (F: set) (l: nat): nat;
 theorem map0 (F: set): $ map F 0 = 0 $;
@@ -336,3 +333,6 @@ theorem mapS (F: set) (a l: nat):
 def ljoin (L: nat): nat;
 theorem ljoin0: $ ljoin 0 = 0 $;
 theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
+
+def sublistAt (n L1 L2 .l .r: nat): wff =
+$ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
