@@ -173,8 +173,8 @@ impl EnvDisplay for LispKind {
         for &c in s.as_bytes() {
           match c {
             b'\\' => write!(f, "\\\\")?,
-            b'n' => write!(f, "\\n")?,
-            b'r' => write!(f, "\\r")?,
+            b'\n' => write!(f, "\\n")?,
+            b'\r' => write!(f, "\\r")?,
             b'\"' => write!(f, "\\\"")?,
             0x20..=0x7e => write!(f, "{}", c as char)?,
             _ => write!(f, "\\x{:02x}", c)?,
