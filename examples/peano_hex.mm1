@@ -554,6 +554,10 @@ theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
 theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
 '(eqtr3 (poweq2 d4add4) @ eqtr powadd @ muleq d2pow4 d2pow4);
 theorem d2pow8x: $ 2 ^ 8 = ,256 $ = '(eqtr d2pow8 ,to_hex);
+theorem d2pow16x: $ 2 ^ 16 = ,0x10000 $ =
+'(eqtr3 (poweq2 d8add8) @ eqtr powadd @ eqtr (muleq d2pow8 d2pow8) ,norm_num);
+theorem upto16: $ upto 16 = ,0xffff $ =
+'(mpbi peano2 @ eqtr sucupto @ eqtr4 d2pow16x ,norm_num);
 
 theorem xltmul16 (h: $ a < b $): $ a :x x < b * 16 $ =
 '(ltletr (mpbi ltadd2 h2nlt) @ mpbi (leeq1 mulS1) @ lemul1a h);

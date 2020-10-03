@@ -168,14 +168,13 @@ $ ELF_IDENT_s '+ _ch16 _x02 '+ _ch16 ,0x3e '+ _ch32 _x01 '+
   _x00x4 '+ _ch16 ,64 '+ _ch16 ,0x38 '+ _ch16 _x01 '+
   _ch16 ,64 '+ _x00x4 $;
 
-theorem bitsNeg_16_1: $ bitsNeg 16 1 = ,0xffff $;
 theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
   $ elfHeader (ELF_header_s e) entry 64 0 1 0 $ =
 (focus
   (for 0 7 @ fn (_) (refine '(ian _ _)))
   (def h0 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow0))
   (def h1 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow1))
-  (def h2 '(mpbir (lteq2 bitsNeg_16_1) ,norm_num))
+  (def h2 '(mpbir (lteq2 @ eqtr bitsNeg1 upto16) ,norm_num))
   (refine 'he2 '(ssel u8ss64 ,h1) 'elBits01
     '(ssel u8ss16 ,h0) h2 'elBits01 h2) (swap)
   '(ax_mp (!! iexe _1 ,eqtac) @ ian elBits01 _)
@@ -217,8 +216,6 @@ theorem PROT_RWX_flags: $ protToFlags PROT_RWX = 7 $ =
   '(eqtr (ifpos PROT_RWX_X) @ eqtr4 (b1eq _) d7half)
   '(eqtr (ifpos PROT_RWX_W) @ eqtr4 (b1eq _) d3half)
   '(ifpos PROT_RWX_R));
-
-theorem bitsSub_eq_sub: $ b <= a -> a e. Bits k -> bitsSub k a b = a - b $;
 
 theorem basic_pHeader_ok
   (hfs: $ fs = u64Bytes filesz $)

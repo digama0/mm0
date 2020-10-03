@@ -174,12 +174,19 @@ theorem elBits: $ a e. Bits n <-> a C_ upto n $ =
 '(bitr (elneq2 Bits_eq_power) elpower);
 theorem elBits2: $ a e. Bits n <-> a < 2 ^ n $ = 'elupto;
 
+theorem uptoT: $ upto n e. Bits n $ = '(mpbir elBits ssid);
+
 theorem elBits8mul: $ n e. Bits (8 * k) <-> n < 256 ^ k $ =
 '(bitr elBits2 @ lteq2 powmul);
 
 theorem Bitsle1: $ v <= w -> w e. Bits n -> v e. Bits n $ =
 '(sylibr (imeqi elBits2 elBits2) lelttr);
 
+theorem Bits_mod: $ a e. Bits n -> a % 2 ^ n = a $ = '(sylbi elBits2 modlteq);
+theorem Bits_eqm: $ a e. Bits n /\ b e. Bits n -> (mod(2 ^ n): a = b <-> a = b) $ =
+'(eqeqd (anwl Bits_mod) (anwr Bits_mod));
+theorem Bits_zeqm: $ a e. Bits n /\ b e. Bits n -> (modZ(2 ^ n): b0 a = b0 b <-> a = b) $ =
+'(syl5bb zeqmeqm Bits_eqm);
 theorem elBits0: $ a e. Bits 0 <-> a = 0 $ = '(bitr elBits2 @ bitr (lteq2 pow0) lt12);
 theorem elBits01: $ 0 e. Bits n $ = '(mpbir elBits ss01);
 theorem elBits1: $ a e. Bits 1 <-> bool a $ = '(bitr elBits2 @ lteq2 pow12);
@@ -344,6 +351,7 @@ theorem el_chop: $ a e. chop k n <-> a < k /\ a e. n $ = 'elmodpow2;
 theorem bitAnd_upto: $ bitAnd (upto k) a = chop k a $ =
 '(axext @ !! ax_gen x @ bitr4 elbitAnd @ bitr4 el_chop @ aneq1i elupto);
 
+theorem Bits_chop: $ a e. Bits k -> chop k a = a $ = 'Bits_mod;
 theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
 
 theorem eqm_chopd (h: $ G -> mod(2 ^ k): a = b $):
@@ -355,6 +363,7 @@ theorem zeqm_chopd (h: $ G -> modZ(2 ^ k): b0 a = b $):
 @_ local def chopZ (k n: nat): nat = $ n %Z 2 ^ k $;
 theorem chopZT (k n: nat): $ chopZ k n e. Bits k $ = 'chopT;
 
+theorem chopZ_b0: $ chopZ k (b0 a) = chop k a $ = 'zmodb0;
 theorem zeqm_chopZ: $ modZ(2 ^ k): b0 (chopZ k a) = a $ = '(zeqmmod pow2ne0);
 theorem zeqm_chopZd (h: $ G -> modZ(2 ^ k): a = b $):
   $ G -> modZ(2 ^ k): b0 (chopZ k a) = b $ = '(syl (zeqmtr zeqm_chopZ) h);
@@ -377,6 +386,7 @@ theorem bitsNot_chop: $ bitsNot k (chop k n) = bitsNot k n $ =
 
 theorem bitsNot_add: $ n e. Bits k -> bitsNot k n + n = upto k $ = '(sylbi elBits bitDifadd);
 theorem bitsNot_sub: $ n e. Bits k -> bitsNot k n = upto k - n $ = '(sylbi elBits bitDifsub);
+theorem bitsNot0: $ bitsNot k 0 = upto k $ = '(eqtr (bitsNot_sub elBits01) sub02);
 
 theorem zeqm_bitsNot: $ modZ(2 ^ k): b0 (bitsNot k n) = -uZ b0 (suc n) $ =
 '(zeqmtr
@@ -417,6 +427,11 @@ theorem zeqm_bitsNegd
 theorem zeqm_bitsNeg: $ modZ(2 ^ k): b0 (bitsNeg k n) = -uZ b0 n $ =
 '(trud @ zeqm_bitsNegd @ a1i zeqmid);
 
+theorem bitsNeg1: $ bitsNeg k 1 = upto k $ =
+'(mpbi (Bits_zeqm @ ian bitsNegT uptoT) @
+  zeqmtr zeqm_bitsNeg @ zeqmcom @ mpbi zeqmsub @
+  mpbir (zeqmeq2 @ eqtr zsubneg2 @ eqtr zaddb0 @ b0eq uptoadd1) zeqmid0);
+
 @_ def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
 pub theorem bitsSubT (k a b: nat): $ bitsSub k a b e. Bits k $ = 'bitsAddT;
 
@@ -428,6 +443,10 @@ theorem zeqm_bitsSub2: $ modZ(2 ^ k): b0 (bitsSub k a b) = b0 a -Z b0 b $ =
 '(trud @ zeqm_bitsSubd (a1i zeqmid) (a1i zeqmid));
 theorem zeqm_bitsSub: $ modZ(2 ^ k): b0 (bitsSub k a b) = a -ZN b $ =
 '(mpbi (zeqmeq3 zsubb0) zeqm_bitsSub2);
+
+theorem bitsSub_eq_sub: $ b <= a -> a e. Bits k -> bitsSub k a b = a - b $ =
+'(exp @ mpbid (sylan Bits_zeqm (a1i bitsSubT) @ anwr @ Bitsle1 subleid) @
+  mpbii zeqm_bitsSub @ zeqmeq3d @ anwl znsubpos);
 
 @_ def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
 @_ def bitsSar (k a b: nat): nat =
