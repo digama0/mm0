@@ -105,6 +105,10 @@ theorem bitDifid: $ bitDif a a = 0 $ = '(axext @ eqstr bitDifEq incpl);
 theorem bitDifeq0: $ bitDif a b = 0 <-> a C_ b $ =
 '(bitr3 nsinj @ bitr (eqseq1 bitDifEq) incpleq0);
 
+theorem bitDifAnd: $ bitDif a (bitAnd a b) = bitDif a b $ =
+'(axext @ !! ax_gen x @ bitr4 elbitDif @ bitr4 elbitDif @
+  aneq2a @ noteqd @ syl5bb elbitAnd bian1);
+
 theorem bitDifadd: $ b C_ a -> bitDif a b + b = a $ =
 '(syl5eqr (bitOr_eq_add @ mpbir ineq0 @ mpbir (sseq1 bitDifEq) inss2) @
   sylib nsinj @ !! alimi x @ syl5bb elbitOr @ syl5bb (oreq1 elbitDif) @
@@ -335,6 +339,26 @@ pub theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $ = 
 @_ def chop (k n: nat): nat = $ n % 2 ^ k $;
 pub theorem chopT (k n: nat): $ chop k n e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
+theorem el_chop: $ a e. chop k n <-> a < k /\ a e. n $ = 'elmodpow2;
+
+theorem bitAnd_upto: $ bitAnd (upto k) a = chop k a $ =
+'(axext @ !! ax_gen x @ bitr4 elbitAnd @ bitr4 el_chop @ aneq1i elupto);
+
+theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
+
+theorem eqm_chopd (h: $ G -> mod(2 ^ k): a = b $):
+  $ G -> mod(2 ^ k): chop k a = b $ = '(syl (eqmtr eqm_chop) h);
+theorem zeqm_chopd (h: $ G -> modZ(2 ^ k): b0 a = b $):
+  $ G -> modZ(2 ^ k): b0 (chop k a) = b $ =
+'(syl (zeqmtr @ mpbir zeqmeqm eqm_chop) h);
+
+@_ local def chopZ (k n: nat): nat = $ n %Z 2 ^ k $;
+theorem chopZT (k n: nat): $ chopZ k n e. Bits k $ = 'chopT;
+
+theorem zeqm_chopZ: $ modZ(2 ^ k): b0 (chopZ k a) = a $ = '(zeqmmod pow2ne0);
+theorem zeqm_chopZd (h: $ G -> modZ(2 ^ k): a = b $):
+  $ G -> modZ(2 ^ k): b0 (chopZ k a) = b $ = '(syl (zeqmtr zeqm_chopZ) h);
+
 -- write a e. Bits m to bits k thru k+m-1 of n
 @_ def bitsUpdate (k m a n: nat): nat = $ bitDif n (shl (upto m) k) + shl a k $;
 pub theorem bitsUpdateT (k m l a n: nat):
@@ -348,14 +372,62 @@ pub theorem bitsUpdateT (k m l a n: nat):
 pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $ =
 '(bitr elbitDif @ aneq1i elupto);
 
+theorem bitsNot_chop: $ bitsNot k (chop k n) = bitsNot k n $ =
+'(eqtr3 (bitsNoteq2 bitAnd_upto) bitDifAnd);
+
+theorem bitsNot_add: $ n e. Bits k -> bitsNot k n + n = upto k $ = '(sylbi elBits bitDifadd);
+theorem bitsNot_sub: $ n e. Bits k -> bitsNot k n = upto k - n $ = '(sylbi elBits bitDifsub);
+
+theorem zeqm_bitsNot: $ modZ(2 ^ k): b0 (bitsNot k n) = -uZ b0 (suc n) $ =
+'(zeqmtr
+  (mpbi zeqmsub @ mpbir (zeqmeq2 @ eqtr zsubneg2 @ eqtr zaddb0 @
+    b0eq @ eqtr addS @ eqtr (suceq @ eqtr3 (addeq1 bitsNot_chop) @ bitsNot_add chopT) @
+    sucupto) zeqmid0)
+  (mpbir zeqmneg @ mpbir zeqmeqm @ mpbir eqmsuc eqm_chop));
+
+theorem zeqm_bitsNotd
+  (h1: $ G -> modZ(2 ^ k): b0 a = x $):
+  $ G -> modZ(2 ^ k): b0 (bitsNot k a) = -uZ (x +Z b0 1) $ =
+'(syl (zeqmtr zeqm_bitsNot) @ sylibr zeqmneg @
+  sylib (zeqmeq2 @ eqtr zaddb0 @ b0eq add12) @ zeqmadd1d h1);
+
 @_ def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
 pub theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $ = 'chopT;
+
+theorem eqm_bitsAdd: $ mod(2 ^ k): bitsAdd k a b = a + b $ = 'eqm_chop;
+theorem zeqm_bitsAdd: $ modZ(2 ^ k): b0 (bitsAdd k a b) = b0 a +Z b0 b $ =
+'(mpbir (zeqmeq3 zaddb0) @ mpbir zeqmeqm eqm_bitsAdd);
+theorem eqm_bitsAddd
+  (h1: $ G -> mod(2 ^ k): a = x $) (h2: $ G -> mod(2 ^ k): b = y $):
+  $ G -> mod(2 ^ k): bitsAdd k a b = x + y $ =
+'(syl (eqmtr eqm_bitsAdd) @ eqmaddd h1 h2);
+theorem zeqm_bitsAddd
+  (h1: $ G -> modZ(2 ^ k): b0 a = x $) (h2: $ G -> modZ(2 ^ k): b0 b = y $):
+  $ G -> modZ(2 ^ k): b0 (bitsAdd k a b) = x +Z y $ =
+'(syl (zeqmtr zeqm_bitsAdd) @ zeqmaddd h1 h2);
 
 @_ def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
 pub theorem bitsNegT (k n: nat): $ bitsNeg k n e. Bits k $ = 'bitsAddT;
 
+theorem zeqm_bitsNegd
+  (h1: $ G -> modZ(2 ^ k): b0 a = x $):
+  $ G -> modZ(2 ^ k): b0 (bitsNeg k a) = -uZ x $ =
+'(sylib (zeqmeq3 @ eqtr (zaddeq1 znegadd) znpcan) @
+  zeqm_bitsAddd (zeqm_bitsNotd h1) (a1i zeqmid));
+theorem zeqm_bitsNeg: $ modZ(2 ^ k): b0 (bitsNeg k n) = -uZ b0 n $ =
+'(trud @ zeqm_bitsNegd @ a1i zeqmid);
+
 @_ def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
 pub theorem bitsSubT (k a b: nat): $ bitsSub k a b e. Bits k $ = 'bitsAddT;
+
+theorem zeqm_bitsSubd
+  (h1: $ G -> modZ(2 ^ k): b0 a = x $) (h2: $ G -> modZ(2 ^ k): b0 b = y $):
+  $ G -> modZ(2 ^ k): b0 (bitsSub k a b) = x -Z y $ =
+'(zeqm_bitsAddd h1 @ zeqm_bitsNegd h2);
+theorem zeqm_bitsSub2: $ modZ(2 ^ k): b0 (bitsSub k a b) = b0 a -Z b0 b $ =
+'(trud @ zeqm_bitsSubd (a1i zeqmid) (a1i zeqmid));
+theorem zeqm_bitsSub: $ modZ(2 ^ k): b0 (bitsSub k a b) = a -ZN b $ =
+'(mpbi (zeqmeq3 zsubb0) zeqm_bitsSub2);
 
 @_ def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
 @_ def bitsSar (k a b: nat): nat =

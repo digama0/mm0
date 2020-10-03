@@ -370,11 +370,11 @@ do {
 };
 
 theorem mul_b1 (h: $ a * b = c $): $ a :x x0 * b = c :x x0 $ =
-'(eqtr (muleq1 hex02) @ eqtr mul32 @ eqtr4 (muleq1 h) hex02);
+'(eqtr (muleq1 hex02) @ eqtr mulrass @ eqtr4 (muleq1 h) hex02);
 theorem mul_b2 (h: $ a * b = c $): $ a * b :x x0 = c :x x0 $ =
 '(eqtr (muleq2 hex02) @ eqtr3 mulass @ eqtr4 (muleq1 h) hex02);
 theorem mul_x1x (h1: $ a * c = d $) (h2: $ b * c = e :x f $) (h3: $ d + e = g $): $ a :x b * c = g :x f $ =
-'(eqtr addmul @ eqtr (addeq (eqtr mul32 @ muleq1 h1) h2) @ eqtr3 addass @
+'(eqtr addmul @ eqtr (addeq (eqtr mulrass @ muleq1 h1) h2) @ eqtr3 addass @
   addeq1 @ eqtr3 addmul @ muleq1 h3);
 theorem mul_x10 (h1: $ a * c = d $) (h2: $ b * c = e $): $ a :x b * c = d :x e $ =
 '(mul_x1x h1 (eqtr4 h2 hex01) addx02);

@@ -71,7 +71,7 @@ do {
           -- ptr != MAP_FAILED
           -- |- (ptr :> (own (array u8 len))
           _))}
-      (return 0 (ian rfl (verify len ptr))))
+      (return 0 (ian rfl (verify len ptr input))))
 
     (global {g_file : u64})
     (global {g_end : u64})
