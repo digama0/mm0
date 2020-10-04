@@ -1259,15 +1259,19 @@ theorem mkKS_T (i o k m: nat):
   $ mkKS i o k m e. KernelState <->
     i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) $;
 
+def ksIn (k: nat): nat = $ pi11 k $;
+def ksOut (k: nat): nat = $ pi12 k $;
 def ksCfg (k: nat): nat = $ pi21 k $;
-theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $;
 def ksMapping (k: nat): nat = $ pi22 k $;
+theorem ksInT (k: nat): $ k e. KernelState -> ksIn k e. List u8 $;
+theorem ksOutT (k: nat): $ k e. KernelState -> ksOut k e. List u8 $;
+theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $;
 theorem ksMappingT (k: nat):
   $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $;
 
 def writeMapping (ks k2 m2 ks2 .i .o .k .m: nat): wff =
 $ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
-  E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
+  ks2 = mkKS (ksIn ks) (ksOut ks) k2 m2 $;
 theorem writeMappingT (ks m k ks2: nat):
   $ writeMapping ks k m ks2 ->
     ks e. KernelState /\ k e. Config /\
@@ -1451,34 +1455,43 @@ $ ks e. KernelState /\ (
 theorem ksStepT (ks ks2: nat):
   $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
 
-def ksPath (ks l ks2: nat): wff;
-theorem ksPath0 (ks l ks2: nat):
-  $ ksPath ks 0 ks2 <-> ks e. KernelState /\ ks2 = ks $;
-theorem ksPathS (ks ks2 l ks3: nat):
-  $ ksPath ks (ks2 : l) ks3 <-> ksStep ks ks2 /\ ksPath ks2 l ks3 $;
-theorem ksPathT (ks l ks2: nat):
-  $ ksPath ks l ks2 ->
-    ks e. KernelState /\ all KernelState l /\ ks2 e. KernelState $;
+def ksReachable (ks ks2: nat): wff;
+theorem ksReachable0 (ks: nat): $ ks e. KernelState -> ksReachable ks ks $;
+theorem ksReachableS (ks ks2 ks3: nat):
+  $ ksStep ks ks2 -> ksReachable ks2 ks3 -> ksReachable ks ks3 $;
+theorem ksReachableInd {ks1 ks2: nat} (ks ks3: nat) (A: set):
+  $ ks e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks1 e. A -> ks2 e. A) /\
+    ksReachable ks ks3 -> ks3 e. A $;
+theorem ksReachableT (ks ks2: nat):
+  $ ksReachable ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
 
-def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
-
--- `alwaysTerminates k i o` asserts that starting from initial configuration k,
--- given `i` on standard input, with the ability to read more files as
+-- `terminates_ensuring k P` asserts that starting from initial configuration k
+-- containing the value on input, with the ability to read more files as
 -- necessary, the program always reaches the exit point and returns a value,
--- and moreover, if it returns 0, then it has consumed the entire input and
--- returned `o`. (Nondeterminism is not permitted to affect the output `o`.)
-def alwaysTerminates (k i o .ks .k2 .i2 .o2 .m2 .ret: nat): wff =
-$ A. ks (ksReachable (mkKS i 0 (fst k) (snd k)) ks ->
-    E. k2 E. i2 E. o2 E. m2 E. ret (ksReachable ks (mkKS i2 o2 k2 m2) /\
-      execExit k2 ret /\ (ret = 0 -> i2 = 0 /\ o2 = o))) $;
+-- and moreover, if it returns 0, then the relation `P` holds of the final
+-- input and output.
+def terminates_ensuring (k .k2 .k3 .exit_code: nat) (P: set): wff =
+$ k e. KernelState /\
+  A. k2 (ksReachable k k2 ->
+    E. k3 E. exit_code (ksReachable k2 k3 /\
+      execExit (ksCfg k3) exit_code /\
+      (exit_code = 0 -> ksIn k3 <> ksOut k3 e. P))) $;
+theorem terminates_ensuringT (k: nat) (P: set):
+  $ terminates_ensuring k P -> k e. KernelState $;
 
 -- `succeeds k i o` asserts that starting from initial configuration k,
--- given `i` on standard input, the program reaches the exit point and returns
--- success (exit code 0), and puts `o` on standard out.
-def succeeds (k i o .i2 .k2 .m2: nat): wff =
-$ E. i2 E. k2 E. m2 (
-    ksReachable (mkKS i 0 (fst k) (snd k)) (mkKS i2 o k2 m2) /\
-    execExit k2 0) $;
+-- the program reaches the exit point and returns success (exit code 0), and
+-- puts `o` on standard out and leaves i on standard in.
+def succeeds (k i o .k2: nat): wff =
+$ E. k2 (ksReachable k k2 /\
+  ksIn k2 = i /\ ksOut k2 = o /\ execExit (ksCfg k2) 0) $;
+theorem succeedsT (k i o: nat):
+  $ succeeds k i o -> k e. KernelState /\ i e. List u8 /\ o e. List u8 $;
+
+-- The basic relation between `terminates_ensuring k P` and `succeeds k i o`:
+-- together they imply that the property `P` is satisfied.
+theorem terminates_ensuring_succeeds (k i o: nat) (P: set):
+  $ terminates_ensuring k P /\ succeeds k i o -> i <> o e. P $;
 
 ----------------------------------------
 -- ELF file format and the initial state
@@ -1540,26 +1553,33 @@ theorem basicElfEH_T (file entry phoff: nat):
   $ basicElfEH file entry phoff ->
     file e. List u8 /\ entry e. u64 /\ phoff e. u64 $;
 
-def BasicElf (.f .entry .prot .off .seg: nat): set =
-$ S\ entry, S\ prot, S\ off, {seg |
-    entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
-    off <= entry /\ entry < off + len seg} $;
-theorem BasicElfT: $ BasicElf C_ Xp u64 (Xp Prot (Xp u64 (List u8))) $;
+def basicElf (entry prot off seg .f: nat): wff =
+$ entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
+  off <= entry /\ entry < off + len seg $;
+theorem BasicElfT (entry prot off seg: nat):
+  $ basicElf entry prot off seg ->
+    entry e. u64 /\ prot e. Prot /\ off e. u64 /\ seg e. List u8 $;
 
 -- This defines a basic ELF file (only one program segment, no sections)
 -- and extracts the program segment and its protection and location.
-def basicElf (file elf .entry .prot .vaddr
-  .eh .ph .phoff .off .seg .memsz: nat): wff =
+def parseBasicElf (file entry prot vaddr seg: nat)
+  (.off .eh .ph .phoff .fseg .memsz: nat): wff =
 $ file e. List u8 /\
-  E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
+  E. eh E. ph E. phoff E. off E. fseg E. memsz (
     sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0 /\
     sublistAt phoff file ph /\
-    pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
-    sublistAt off file seg /\
+    pHeader ph PT_LOAD prot off vaddr (len fseg) memsz /\
+    sublistAt off file fseg /\
     vaddr + memsz e. u64 /\ vaddr <= entry /\ entry < vaddr + memsz /\
-    elf = entry <> prot <> vaddr <> (seg ++ repeat 0 (memsz - len seg))) $;
-theorem basicElfT (file elf: nat):
-  $ basicElf file elf -> file e. List u8 /\ elf e. BasicElf $;
+    seg = fseg ++ repeat 0 (memsz - len fseg)) $;
+theorem parseBasicElfT (file entry prot vaddr seg: nat):
+  $ parseBasicElf file entry prot vaddr seg -> file e. List u8 /\
+    basicElf entry prot vaddr seg $;
+
+-- `isBasicElf elf` means that `elf` is a string that satisfies the
+-- ELF specification.
+def isBasicElf (elf: string) (.entry .prot .off .seg: nat): wff =
+$ E. entry E. prot E. off E. seg parseBasicElf elf entry prot off seg $;
 
 def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
@@ -1583,12 +1603,13 @@ theorem allocStackT (k m k3 km3: nat):
 
 -- This defines the initial state set up from a basic ELF file (only one
 -- program segment, no sections).
-def initialConfig (elf kkm .entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
-$ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
-    elf = entry <> prot <> off <> seg /\
+def initialConfig (elf: string) (i ks: nat)
+  (.entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
+$ i e. List u8 /\
+  E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
+    parseBasicElf elf entry prot off seg /\
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
-    kkm = k2 <> km2) $;
-theorem initialConfigT (elf k km: nat):
-  $ initialConfig elf (k <> km) ->
-    k e. Config /\ km e. PageMapping (getMemory k) $;
+    ks = mkKS i 0 k2 km2) $;
+theorem initialConfigT (elf: string) (i ks: nat):
+  $ initialConfig elf i ks -> i e. List u8 /\ ks e. KernelState $;

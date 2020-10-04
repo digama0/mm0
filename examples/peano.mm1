@@ -2781,6 +2781,13 @@ theorem xpsnd: $ a e. Xp A B -> snd a e. B $ = '(sylbi elxp anr);
 theorem xpTd (h1: $ G -> a e. A $) (h2: $ G -> b e. B $): $ G -> a <> b e. Xp A B $ =
 '(sylibr prelxp @ iand h1 h2);
 
+theorem xppi11: $ a e. Xp (Xp A B) C -> pi11 a e. A $ = '(rsyl xpfst xpfst);
+theorem xppi12: $ a e. Xp (Xp A B) C -> pi12 a e. B $ = '(rsyl xpfst xpsnd);
+theorem xppi21: $ a e. Xp A (Xp B C) -> pi21 a e. B $ = '(rsyl xpsnd xpfst);
+theorem xppi22: $ a e. Xp A (Xp B C) -> pi22 a e. C $ = '(rsyl xpsnd xpsnd);
+theorem xppi221: $ a e. Xp A (Xp B (Xp C D)) -> pi221 a e. C $ = '(rsyl xppi22 xpfst);
+theorem xppi222: $ a e. Xp A (Xp B (Xp C D)) -> pi222 a e. D $ = '(rsyl xppi22 xpsnd);
+
 theorem xpfin: $ finite A -> finite B -> finite (Xp A B) $ =
 '(!! eex m @ !! eexda n @ syl (!! iexe z @ aleqd @ imeq2d lteq2) @
   !! iald p @ syl5bi elxp @ syl6

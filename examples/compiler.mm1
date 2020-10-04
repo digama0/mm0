@@ -249,6 +249,13 @@ $ ELF_header_s e '+ basic_pHeader_s fs ms '+ c $;
 local def ELF_parse (entry bss: nat) (c: string): nat =
 $ entry <> PROT_RWX <> text_start <> c ++ repeat 0 bss $;
 
+def ELF_lit_ok (elf: string) (entry bss: nat) (c: string) =
+$ parseBasicElf elf entry PROT_RWX text_start (c ++ repeat 0 bss) $;
+
+theorem ELF_lit_ok_isBasicElf (s entry bss c)
+  (h: $ ELF_lit_ok s entry bss c $): $ isBasicElf s $ =
+'(trud ,(iterate 4 (fn (x) '(!! iexde ,(dummy! 'nat) ,x)) '(mpbiri h ,eqtac)));
+
 theorem basicElf_ok
   (he: $ e = u64Bytes entry $)
   (hfs: $ fs = u64Bytes filesz $)
@@ -258,9 +265,9 @@ theorem basicElf_ok
   (hend: $ ,0x400078 + memsz = end $)
   (hea: $ text_start <= entry /\ entry < text_start + len c $)
   (hbd: $ end e. u64 $):
-  $ basicElf (ELF_lit e fs ms c) (ELF_parse entry bss c) $ =
+  $ ELF_lit_ok (ELF_lit e fs ms c) entry bss c $ =
 (focus
-  '(ian s2nT @ trud ,(iterate 9 (fn (x) '(!! iexde ,(dummy! 'nat) ,x))
+  '(ian s2nT @ trud ,(iterate 6 (fn (x) '(!! iexde ,(dummy! 'nat) ,x))
     '(mpbiri _ ,eqtac)))
   (have 'h1 '(eqtr s2nsadd @ appendeq2 s2nsadd))
   (have 'he2 $ entry < end $
@@ -289,8 +296,7 @@ theorem basicElf_ok
   (focus '(mpbir (eleq1 @ eqtr (addeq2 hbss) hend) hbd))
   (focus '(anl hea))
   (focus '(mpbir (lteq2 @ eqtr (addeq2 hbss) hend) he2))
-  (focus '(preq2 @ preq2 @ preq2 @ appendeq2 @
-    repeateq2 @ eqtr2 (subeq2 hlen) pncan2)));
+  (focus '(appendeq2 @ repeateq2 @ eqtr2 (subeq2 hlen) pncan2)));
 
 ---------------
 -- Assembler --
@@ -406,10 +412,10 @@ do {
   --     final location.
   -- * (pub) def `base`: string;
   --   - This is the complete ELF file string, with visibility `vis`.
-  -- * (pub) def `base`_Elf: nat;
-  --   - The parsed ELF, with visibility `vis`.
-  -- * (pub) def `base`_basicElf: $ basicElf base base_Elf $;
-  --   - The proof that `base` is an ELF file that parses to `base_Elf`.
+  -- * theorem `base`_parseElf: $ ELF_lit_ok base entry bss base_content $;
+  --   - The proof that `base` is an ELF file that parses to `base_content`.
+  -- * (pub) def `base`_basicElf: $ isBasicElf base $;
+  --   - The proof that `base` is an ELF file.
   (def (assemble base main bss vis xs)
     (def pfx (atom-app base _))
     (def idx (ref! 0))
@@ -474,13 +480,10 @@ do {
     (add-term! base () '(string ()) () vis
       '(ELF_lit ,entry_s ,filesz_s ,memsz_s (,content)))
 
-    (def elf (atom-app pfx 'Elf))
-    (add-term! elf () '(nat ()) () vis
-      '(ELF_parse ,entry_x ,bss_x (,content)))
-
     @ match (mkadd start_x memsz_x) @ (end_x end_p)
-    (add-tac-thm! (atom-app pfx 'basicElf) () ()
-      '(basicElf (s2n (,base)) (,elf)) vis @ fn () @ focus
+    (def parseElf (atom-app pfx 'parseElf))
+    (add-tac-thm! parseElf () ()
+      '(ELF_lit_ok (,base) ,entry_x ,bss_x (,content)) () @ fn () @ focus
       '(basicElf_ok
         ,(verb entry_p)
         ,(verb filesz_p)
@@ -491,7 +494,12 @@ do {
         (assembled_func_bound @ anri
           ,(iterate {(len xs) - 1 - entry_idx}
             (fn (x) '(anli ,x)) '(anri ,asmd)))
-        ,(verb @ to_elu 64 end_x))))
+        ,(verb @ to_elu 64 end_x)))
+
+    (add-thm! (atom-app pfx 'basicElf) () ()
+      '(isBasicElf (,base)) vis
+      '(() (ELF_lit_ok_isBasicElf (,base) ,entry_x ,bss_x (,content)
+        (,parseElf)))))
 };
 
 def X86P_Input = $ b0 0 $;
@@ -529,6 +537,9 @@ $ {h2 | A. h1 A. h (h1 e. P -> heap_join h1 h2 = suc h -> h e. Q)} $;
 
 def x86_sat (P: set) (ks: nat): wff =
 $ A. p A. x (p <> x e. P -> read_place ks @ p = x) $;
+
+def prog_ok (elf: string) (i: nat) (P: set): wff =
+$ A. k (initialConfig elf i k -> terminates_ensuring k P) $;
 
 do {
   (def mmc-compiler (ref! (mmc-init)))

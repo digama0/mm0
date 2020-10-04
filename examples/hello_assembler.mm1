@@ -15,6 +15,6 @@ do {
     (string data "Hello, world!\n")
   ))
 
-  -- pub theorem hello_basicElf: $ basicElf (s2n (hello)) (hello_Elf) $;
+  -- pub theorem hello_basicElf: $ isBasicElf (hello) $;
   (get-decl 'hello_basicElf)
 };

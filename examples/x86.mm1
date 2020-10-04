@@ -1567,16 +1567,11 @@ theorem mkCfg_ex: $ E. e E. i E. rs E. f E. m k = mkCfg e i rs f m $ =
 @_ def readFlags (k: nat): nat = $ pi221 k $;
 @_ def getMemory (k: nat): nat = $ pi222 k $;
 @_ def readCond (k c: nat): wff = $ readCondF (readFlags k) c $;
-theorem readException_mk: $ readException (mkCfg e i r f m) = e $ =
-'(eqtr (fsteq fstpr) fstpr);
-theorem readRIP_mk: $ readRIP (mkCfg e i r f m) = i $ =
-'(eqtr (sndeq fstpr) sndpr);
-theorem readReg_mk: $ readReg (mkCfg e i r f m) a = r @ a $ =
-'(appneq1 @ eqtr (fsteq sndpr) fstpr);
-theorem readFlags_mk: $ readFlags (mkCfg e i r f m) = f $ =
-'(eqtr (fsteq @ eqtr (sndeq sndpr) sndpr) fstpr);
-theorem getMemory_mk: $ getMemory (mkCfg e i r f m) = m $ =
-'(eqtr (sndeq @ eqtr (sndeq sndpr) sndpr) sndpr);
+theorem readException_mk: $ readException (mkCfg e i r f m) = e $ = 'pi11pr;
+theorem readRIP_mk: $ readRIP (mkCfg e i r f m) = i $ = 'pi12pr;
+theorem readReg_mk: $ readReg (mkCfg e i r f m) a = r @ a $ = '(appneq1 pi21pr);
+theorem readFlags_mk: $ readFlags (mkCfg e i r f m) = f $ = 'pi221pr;
+theorem getMemory_mk: $ getMemory (mkCfg e i r f m) = m $ = 'pi222pr;
 
 pub theorem readExceptionT (k: nat): $ k e. Config -> readException k e. Option Exception $ =
 '(syl xpfst xpfst);
@@ -2680,24 +2675,36 @@ pub theorem mkKS_T (i o k m: nat):
     i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) $ =
 '(bitr prelxp @ bitr4 (aneq prelxp @ !! elxabe x ,eqtac) anass);
 
+theorem mkKS_ex: $ E. i E. o E. k E. m ks = mkKS i o k m $ =
+'(trud @ iexde @ iexde @ iexde @ iexde @
+  eqcomd @ syl6eq fstsnd @ preqd (syl6eq fstsnd @ preqd an3lr anllr) @
+  syl6eq fstsnd @ preqd anlr anr);
+
+@_ def ksIn (k: nat): nat = $ pi11 k $;
+@_ def ksOut (k: nat): nat = $ pi12 k $;
 @_ def ksCfg (k: nat): nat = $ pi21 k $;
+@_ def ksMapping (k: nat): nat = $ pi22 k $;
+pub theorem ksInT (k: nat): $ k e. KernelState -> ksIn k e. List u8 $ = (named 'xppi11);
+pub theorem ksOutT (k: nat): $ k e. KernelState -> ksOut k e. List u8 $ = (named 'xppi12);
 pub theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $ =
 '(sylbir (bitr3 mkKS_T @ eleq1 @ eqtr (preq fstsnd fstsnd) fstsnd) anlr);
-@_ def ksMapping (k: nat): nat = $ pi22 k $;
 pub theorem ksMappingT (k: nat):
   $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $ =
 '(sylbir (bitr3 mkKS_T @ eleq1 @ eqtr (preq fstsnd fstsnd) fstsnd) anr);
 
+theorem ksIn_mk: $ ksIn (mkKS i o k m) = i $ = 'pi11pr;
+theorem ksOut_mk: $ ksOut (mkKS i o k m) = o $ = 'pi12pr;
+theorem ksCfg_mk: $ ksCfg (mkKS i o k m) = k $ = 'pi21pr;
+theorem ksMapping_mk: $ ksMapping (mkKS i o k m) = m $ = 'pi22pr;
+
 @_ def writeMapping (ks k2 m2 ks2 .i .o .k .m: nat): wff =
 $ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
-  E. i E. o E. k E. m (ks = mkKS i o k m /\ ks2 = mkKS i o k2 m2) $;
+  ks2 = mkKS (ksIn ks) (ksOut ks) k2 m2 $;
 pub theorem writeMappingT (ks m k ks2: nat):
   $ writeMapping ks k m ks2 ->
     ks e. KernelState /\ k e. Config /\
     m e. PageMapping (getMemory k) /\ ks2 e. KernelState $ =
-(named '(anim2a @ eexd @ eexd @ eexd @ eexda @ mpbird (eleq1d anrr) @
-  sylibr mkKS_T @ mpand (sylib mkKS_T @ mpbid (eleq1d anrl) an3l) @
-  iand (iand (anwr anll) an3lr) anllr));
+(named '(anim2a @ syl5ibrcom eleq1 @ sylibr mkKS_T @ anim1 @ anim1 @ iand ksInT ksOutT));
 
 @_ def writeCfg (ks k2 ks2: nat): wff =
 $ writeMapping ks k2 (ksMapping ks) ks2 $;
@@ -3001,6 +3008,12 @@ $ k e. Config /\ ret e. u32 /\ (
 pub theorem execExitT (k ret: nat):
   $ execExit k ret -> k e. Config /\ ret e. u32 $ = 'anl;
 
+theorem execExit_determ (k ret: nat):
+  $ execExit k ret /\ execExit k 0 -> ret = 0 $ =
+'(impcom @ anwr @ eor (anwr @ absurdr eqid) @
+  syl5 anr @ eorda (syl (absurd d1ne0) @ sylib peano2 @ eqtr3d anrl an3l) @
+  eqtr4d anrr anlr);
+
 -- This is the composite step relation for the extended state.
 -- This mixes regular steps of the machine with IO steps where
 -- we hand control to the (POSIX-compliant) Linux kernel and axiomatize
@@ -3014,6 +3027,8 @@ $ ks e. KernelState /\ (
 pub theorem ksStepT (ks ks2: nat):
   $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $ =
 (named '(anim2a @ eord (a1i @ eex @ anrd @ anwr writeCfgT) @ exp execIO_T));
+
+theorem ksStep_no_exit: $ ksStep ks ks2 -> ~execExit (ksCfg ks) ret $;
 
 @_ local def ksPath_aux (ksl ks2: nat): wff =
 $ srecp (S\ i, {ih |
@@ -3031,19 +3046,19 @@ $ ksPath_aux (ks1 <> l) ks2 <->
   (have 'h2 $ _ -> snd x = _ $ '(syl6eq sndpr @ sndeqd anl))
   (eqtac-with #t 'h1 'h2));
 
-@_ abstract def ksPath (ks l ks2: nat): wff =
+@_ local def ksPath (ks l ks2: nat): wff =
 $ ks2 e. KernelState /\ ksPath_aux (ks <> l) ks2 $;
-pub theorem ksPath0 (ks l ks2: nat):
+theorem ksPath0 (ks ks2: nat):
   $ ksPath ks 0 ks2 <-> ks e. KernelState /\ ks2 = ks $ =
 (named '(bitr (aneq2i @ bitr ksPath_aux_val ocasep0) @ aneq1a eleq1));
-pub theorem ksPathS (ks ks2 l ks3: nat):
+theorem ksPathS (ks ks2 l ks3: nat):
   $ ksPath ks (ks2 : l) ks3 <-> ksStep ks ks2 /\ ksPath ks2 l ks3 $ =
 (focus
   '(bitr (aneq2i @ bitr ksPath_aux_val @ bitr ocasepS _) anlass)
   '(!! elsabe x @ !! elabed y @ bitrd ,eqtac @ aneq2d @
     syl5bb elsep @ syl5bb (bian1 @ mpbir elupto @ ltpr2tr ltsucid) @
     !! elabed z ,eqtac));
-pub theorem ksPathT (ks l ks2: nat):
+theorem ksPathT (ks l ks2: nat):
   $ ksPath ks l ks2 ->
     ks e. KernelState /\ all KernelState l /\ ks2 e. KernelState $ =
 (named '(ax_mp (eale ,(eqtac-gen 'ks)) ,(induct '(listind) 'l
@@ -3052,25 +3067,83 @@ pub theorem ksPathT (ks l ks2: nat):
     syl5 (!! eale x ,eqtac) @ eimd anr @
     anim1d @ exp @ iand (anwll @ anld ksStepT) @ sylibr allS anr))));
 
-@_ def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
+@_ abstract def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
+pub theorem ksReachable0: $ ks e. KernelState -> ksReachable ks ks $ =
+'(syl (!! iexe l ,eqtac) @ sylibr ksPath0 @ mpi eqid ian);
+pub theorem ksReachableS:
+  $ ksStep ks ks2 -> ksReachable ks2 ks3 -> ksReachable ks ks3 $ =
+(named '(eexda @ sylbir ksPathS @ !! iexe l ,eqtac));
+pub theorem ksReachableInd {ks1 ks2: nat} (ks: nat) (A: set):
+  $ ks e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks1 e. A -> ks2 e. A) /\
+    ksReachable ks ks3 -> ks3 e. A $ =
+(named '(imp @ !! eexd l @ impcom @ syl (!! eale k ,(eqtac-gen 'ks))
+  ,(induct '(listindd) 'l
+    '(a1i @ ax_gen @ syl5ibrcom (sylbi ksPath0 @ eleq1d anr) id)
+    '(sylibr (cbval ,eqtac) @ impcom @ alimd @
+      rsyl (eale ,eqtac) @ syl5 (com23 @ eale ,eqtac) @
+      exp @ exp @ syl5bi ksPathS @ exp @ mpd anrr @
+      mpd (mpd anrl @ mpd anlr anllr) an3l))));
 
--- `alwaysTerminates k i o` asserts that starting from initial configuration k,
--- given `i` on standard input, with the ability to read more files as
+theorem ksReachableInd_rev {ks1 ks2: nat} (ks: nat) (A: set):
+  $ ksr e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks2 e. A -> ks1 e. A) /\
+    ksReachable ks ksr -> ks e. A $ =
+'(mpd anll @ sylib (elabe ,(eqtac-gen 'ksr)) @
+  sylan ksReachableInd (rsyl anlr @
+    syl (ian @ mpbir (elabe ,eqtac) id) @ alimi @ alimi @ imim2i @
+    sylibr (imeqi (elabe ,eqtac) (elabe ,eqtac)) imim1) anr);
+
+pub theorem ksReachableT (ks ks2: nat):
+  $ ksReachable ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $ =
+'(!! eex l @ rsyl ksPathT @ anim1 anl);
+
+theorem ksReachable_exit:
+  $ execExit (ksCfg ks) ret -> ksReachable ks ks2 -> ks2 = ks $ =
+(named '(exp @ sylib elsn @ syl ksReachableInd @ anim1 @
+  iand (sylibr elsn eqidd) @ iald @ iald @ com23 @
+  syl5ibrcom (imeq1d @ sylbi elsn ksStepeq1) @
+  com12 @ syl absurd ksStep_no_exit));
+
+-- `terminates_ensuring k P` asserts that starting from initial configuration k
+-- containing the value on input, with the ability to read more files as
 -- necessary, the program always reaches the exit point and returns a value,
--- and moreover, if it returns 0, then it has consumed the entire input and
--- returned `o`. (Nondeterminism is not permitted to affect the output `o`.)
-@_ def alwaysTerminates (k i o .ks .k2 .i2 .o2 .m2 .ret: nat): wff =
-$ A. ks (ksReachable (mkKS i 0 (fst k) (snd k)) ks ->
-    E. k2 E. i2 E. o2 E. m2 E. ret (ksReachable ks (mkKS i2 o2 k2 m2) /\
-      execExit k2 ret /\ (ret = 0 -> i2 = 0 /\ o2 = o))) $;
+-- and moreover, if it returns 0, then the relation `P` holds of the final
+-- input and output.
+@_ def terminates_ensuring (k .k2 .k3 .exit_code: nat) (P: set): wff =
+$ k e. KernelState /\
+  A. k2 (ksReachable k k2 ->
+    E. k3 E. exit_code (ksReachable k2 k3 /\
+      execExit (ksCfg k3) exit_code /\
+      (exit_code = 0 -> ksIn k3 <> ksOut k3 e. P))) $;
+pub theorem terminates_ensuringT (k: nat) (P: set):
+  $ terminates_ensuring k P -> k e. KernelState $ = (named 'anl);
+
+theorem terminates_ensuring_mono:
+  $ P C_ Q -> terminates_ensuring ks P -> terminates_ensuring ks Q $ =
+(named '(anim2d @ alimd @ imim2d @ eximd @ eximd @ anim2d @ imim2d ssel));
 
 -- `succeeds k i o` asserts that starting from initial configuration k,
--- given `i` on standard input, the program reaches the exit point and returns
--- success (exit code 0), and puts `o` on standard out.
-@_ def succeeds (k i o .i2 .k2 .m2: nat): wff =
-$ E. i2 E. k2 E. m2 (
-    ksReachable (mkKS i 0 (fst k) (snd k)) (mkKS i2 o k2 m2) /\
-    execExit k2 0) $;
+-- the program reaches the exit point and returns success (exit code 0), and
+-- puts `o` on standard out and leaves i on standard in.
+@_ def succeeds (k i o .k2: nat): wff =
+$ E. k2 (ksReachable k k2 /\
+  ksIn k2 = i /\ ksOut k2 = o /\ execExit (ksCfg k2) 0) $;
+pub theorem succeedsT (k i o: nat):
+  $ succeeds k i o -> k e. KernelState /\ i e. List u8 /\ o e. List u8 $ =
+(named '(eex @ anwl @ mpand (anwll ksReachableT) @
+  iand (iand anrl @ mpbid (eleq1d anllr) @ rsyl anrr ksInT) @
+  mpbid (eleq1d anlr) @ rsyl anrr ksOutT));
+
+-- The basic relation between `terminates_ensuring k P` and `succeeds k i o`:
+-- together they imply that the property `P` is satisfied.
+pub theorem terminates_ensuring_succeeds (k i o: nat) (P: set):
+  $ terminates_ensuring k P /\ succeeds k i o -> i <> o e. P $ =
+(named @ focus
+  (have 'h '(sylc ksReachable_exit anllr (anwr anll)))
+  '(imp @ sylibr eexb @ imp @ alimd @ com23 @ expcom @ eimd an4l @
+    eexd @ eexda @ mpbid (eleq1d @
+      preqd (eqtrd (ksOuteqd h) an4lr) (eqtrd (ksOuteqd h) an3lr)) @
+    mpd (sylan execExit_determ
+      (mpbid (execExiteq1d @ ksCfgeqd h) @ anwr anlr) anllr) anrr));
 
 ----------------------------------------
 -- ELF file format and the initial state
@@ -3165,37 +3238,32 @@ pub theorem basicElfEH_T (file entry phoff: nat):
     file e. List u8 /\ entry e. u64 /\ phoff e. u64 $ =
 (named '(sylibr anass @ anim2 @ eex @ anwr @ rsyl elfHeaderT @ iand an4lr an3lr));
 
-@_ def BasicElf (.f .entry .prot .off .seg: nat): set =
-$ S\ entry, S\ prot, S\ off, {seg |
-    entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
-    off <= entry /\ entry < off + len seg} $;
-pub theorem BasicElfT: $ BasicElf C_ Xp u64 (Xp Prot (Xp u64 (List u8))) $ =
-(named '(ax_gen @ sabssxpe @ sabssxped @ sabssxped @ ssabeled @ a1i @
-  anwl @ iand (iand an3l @ sylc Bitsle1 anr an4l) anllr));
-
-theorem elBasicElf: $ entry <> prot <> off <> seg e. BasicElf <->
-  entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
-  off <= entry /\ entry < off + len seg $ =
-'(!! elsabe a @ !! elsabed b @ !! elsabed c @ !! elabed d ,eqtac);
+@_ def basicElf (entry prot off seg .f: nat): wff =
+$ entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
+  off <= entry /\ entry < off + len seg $;
+pub theorem BasicElfT (entry prot off seg: nat):
+  $ basicElf entry prot off seg ->
+    entry e. u64 /\ prot e. Prot /\ off e. u64 /\ seg e. List u8 $ =
+(named '(iand (iand an4l @ sylc Bitsle1 anlr an5l) an3lr));
 
 -- This defines a basic ELF file (only one program segment, no sections)
 -- and extracts the program segment and its protection and location.
-@_ def basicElf (file elf .entry .prot .vaddr
-  .eh .ph .phoff .off .seg .memsz: nat): wff =
+@_ def parseBasicElf (file entry prot vaddr seg: nat)
+  (.off .eh .ph .phoff .fseg .memsz: nat): wff =
 $ file e. List u8 /\
-  E. eh E. ph E. entry E. prot E. vaddr E. phoff E. off E. seg E. memsz (
+  E. eh E. ph E. phoff E. off E. fseg E. memsz (
     sublistAt 0 file eh /\ elfHeader eh entry phoff 0 1 0 /\
     sublistAt phoff file ph /\
-    pHeader ph PT_LOAD prot off vaddr (len seg) memsz /\
-    sublistAt off file seg /\
+    pHeader ph PT_LOAD prot off vaddr (len fseg) memsz /\
+    sublistAt off file fseg /\
     vaddr + memsz e. u64 /\ vaddr <= entry /\ entry < vaddr + memsz /\
-    elf = entry <> prot <> vaddr <> (seg ++ repeat 0 (memsz - len seg))) $;
-pub theorem basicElfT (file elf: nat):
-  $ basicElf file elf -> file e. List u8 /\ elf e. BasicElf $ =
+    seg = fseg ++ repeat 0 (memsz - len fseg)) $;
+pub theorem parseBasicElfT (file entry prot vaddr seg: nat):
+  $ parseBasicElf file entry prot vaddr seg -> file e. List u8 /\
+    basicElf entry prot vaddr seg $ =
 (named @ focus
-  '(anim2a @ !! eexd eh @ !! eexd ph @ !! eexd entry @ !! eexd prot @
-    !! eexd vaddr @ !! eexd phoff @ !! eexd off @ !! eexd seg @ !! eexd memsz @
-    impd @ exp @ syl5ibrcom eleq1 @ sylibr elBasicElf @
+  '(anim2a @ !! eexd eh @ !! eexd ph @ !! eexd phoff @ !! eexd off @
+    !! eexd fseg @ !! eexd memsz @ impd @ exp @ syl5ibrcom basicElfeq4 @
     sylbi (aneq2i @ anassi anass) @ rsyl ancom _)
   (have 'h1 '(rsyl an5lr elfHeaderT))
   (have 'h2 '(rsyl an3lr pHeaderT))
@@ -3208,6 +3276,11 @@ pub theorem basicElfT (file elf: nat):
   (focus '(mpbird (eleq1d @ addeq2d h3) @ rsyl anlr anll))
   (focus '(rsyl anlr anlr))
   (focus '(mpbird (lteq2d @ addeq2d h3) @ rsyl anlr anr)));
+
+-- `isBasicElf elf` means that `elf` is a string that satisfies the
+-- ELF specification.
+@_ def isBasicElf (elf: string) (.entry .prot .off .seg: nat): wff =
+$ E. entry E. prot E. off E. seg parseBasicElf elf entry prot off seg $;
 
 @_ def blankConfig (entry k .f .m .r: nat): wff =
 $ E. f E. m (f e. Flags /\ m e. Memory /\
@@ -3238,14 +3311,16 @@ pub theorem allocStackT (k m k3 km3: nat):
 
 -- This defines the initial state set up from a basic ELF file (only one
 -- program segment, no sections).
-@_ def initialConfig (elf kkm .entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
-$ E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
-    elf = entry <> prot <> off <> seg /\
+def initialConfig (elf: string) (i ks: nat)
+  (.entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
+$ i e. List u8 /\
+  E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
+    parseBasicElf elf entry prot off seg /\
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
-    kkm = k2 <> km2) $;
-pub theorem initialConfigT (elf k km: nat):
-  $ initialConfig elf (k <> km) ->
-    k e. Config /\ km e. PageMapping (getMemory k) $ =
-(named '(eex @ eex @ eex @ eex @ eex @ eex @ eex @ eex @ eex @
-  imp @ syl5ibrcom (sylbi prth ,eqtac) @ anwr @ rsyl mapMemT @ anim1 anr));
+    ks = mkKS i 0 k2 km2) $;
+theorem initialConfigT (elf: string) (i ks: nat):
+  $ initialConfig elf i ks -> i e. List u8 /\ ks e. KernelState $ =
+(named '(anim2a @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @
+  impd @ exp @ syl5ibrcom ,eqtac @ sylibr mkKS_T @ sylibr anass @
+  anim (mpi elList0 ian) @ anwr @ rsyl mapMemT @ anim1 anr));
