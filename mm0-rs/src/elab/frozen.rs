@@ -37,11 +37,11 @@ use std::sync::Arc;
 use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
-use super::{Spans, ObjectKind, Remap,
+use super::{Spans, ObjectKind, Remap, Remapper,
   environment::{Environment, ParserEnv,
     AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace,
     SortID, TermID, ThmID, AtomID, Sort, Term, Thm, AtomData},
-  lisp::{LispVal, LispKind, LispRef, LispRemapper,
+  lisp::{LispVal, LispKind, LispRef,
     InferTarget, Proc, Annot, Syntax, print::FormatEnv}};
 use crate::util::{ArcString, FileSpan, Span};
 use crate::{lined_string::LinedString, __mk_lisp_kind};
@@ -290,9 +290,9 @@ impl Deref for FrozenLispVal {
   fn deref(&self) -> &FrozenLispKind { unsafe { self.thaw().deref().freeze() } }
 }
 
-impl Remap<LispRemapper> for FrozenLispVal {
+impl Remap for FrozenLispVal {
   type Target = LispVal;
-  fn remap(&self, r: &mut LispRemapper) -> LispVal {
+  fn remap(&self, r: &mut Remapper) -> LispVal {
     let ptr: *const FrozenLispKind = self.deref();
     if let Some(v) = r.lisp.get(&ptr) {return v.clone()}
     let v = match self.deref() {
@@ -324,9 +324,9 @@ impl Remap<LispRemapper> for FrozenLispVal {
   }
 }
 
-impl Remap<LispRemapper> for FrozenProc {
+impl Remap for FrozenProc {
   type Target = Proc;
-  fn remap(&self, r: &mut LispRemapper) -> Proc {
+  fn remap(&self, r: &mut Remapper) -> Proc {
     match &self.0 {
       &Proc::Builtin(p) => Proc::Builtin(p),
       &Proc::Lambda {ref pos, ref env, spec, ref code} =>

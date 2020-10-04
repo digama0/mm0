@@ -16,23 +16,23 @@ use std::collections::hash_map::HashMap;
 use crate::util::FileSpan;
 use crate::elab::{
   Result, Elaborator, ElabError,
-  environment::{AtomID, Remap},
-  lisp::{LispVal, LispRemapper}};
+  environment::{AtomID, Remap, Remapper},
+  lisp::LispVal};
 use {types::Keyword, parser::Parser, nameck::Entity, predef::PredefMap, typeck::TypeChecker};
 
-impl<R> Remap<R> for Keyword {
+impl Remap for Keyword {
   type Target = Self;
-  fn remap(&self, _: &mut R) -> Self { *self }
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
-impl<R> Remap<R> for Entity {
+impl Remap for Entity {
   type Target = Self;
-  fn remap(&self, _: &mut R) -> Self { self.clone() }
+  fn remap(&self, _: &mut Remapper) -> Self { self.clone() }
 }
 
-impl<R, A: Remap<R>> Remap<R> for PredefMap<A> {
+impl<A: Remap> Remap for PredefMap<A> {
   type Target = PredefMap<A::Target>;
-  fn remap(&self, r: &mut R) -> Self::Target { self.map(|x| x.remap(r)) }
+  fn remap(&self, r: &mut Remapper) -> Self::Target { self.map(|x| x.remap(r)) }
 }
 
 /// The MMC compiler, which contains local state for the functions that have been
@@ -57,9 +57,9 @@ impl std::fmt::Debug for Compiler {
   }
 }
 
-impl Remap<LispRemapper> for Compiler {
+impl Remap for Compiler {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     Compiler {
       keywords: self.keywords.remap(r),
       names: self.names.remap(r),

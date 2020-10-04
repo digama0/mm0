@@ -261,9 +261,9 @@ impl<'a> EnvDisplay for Pattern {
   }
 }
 
-impl Remap<LispRemapper> for IR {
+impl Remap for IR {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       &IR::Local(i) => IR::Local(i),
       &IR::Global(sp, a) => IR::Global(sp, a.remap(r)),
@@ -282,9 +282,9 @@ impl Remap<LispRemapper> for IR {
   }
 }
 
-impl Remap<LispRemapper> for Branch {
+impl Remap for Branch {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     Self {
       vars: self.vars,
       cont: self.cont,
@@ -294,9 +294,9 @@ impl Remap<LispRemapper> for Branch {
   }
 }
 
-impl Remap<LispRemapper> for Pattern {
+impl Remap for Pattern {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       Pattern::Skip => Pattern::Skip,
       &Pattern::Atom(i) => Pattern::Atom(i),
@@ -318,9 +318,9 @@ impl Remap<LispRemapper> for Pattern {
   }
 }
 
-impl Remap<LispRemapper> for MVarPattern {
+impl Remap for MVarPattern {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       MVarPattern::Unknown => MVarPattern::Unknown,
       MVarPattern::Any => MVarPattern::Any,

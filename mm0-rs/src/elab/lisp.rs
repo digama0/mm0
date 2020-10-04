@@ -21,8 +21,7 @@ use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
 use crate::util::{ArcString, FileSpan, Span, SliceExt};
-use super::{AtomID, ThmID, AtomVec, Remap, Modifiers,
-  frozen::{FrozenLispKind, FrozenLispRef}};
+use super::{AtomID, ThmID, Remap, Remapper, Modifiers};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -1265,54 +1264,26 @@ impl Iterator for Uncons {
   fn count(self) -> usize { self.len() }
 }
 
-/// A `LispRemapper` is the context required to copy a foreign lisp environment into
-/// the current environment. This is used to implement [`Environment::merge`],
-/// used for `import` commands.
-///
-/// [`Environment::merge`]: ../environment/struct.Environment.html#method.merge
-#[derive(Default, Debug)]
-pub(crate) struct LispRemapper {
-  /// A mapping of foreign atoms into local atom IDs
-  pub(crate) atom: AtomVec<AtomID>,
-  /// A mapping of foreign `FrozenLispVal`s into local `LispVal`s.
-  /// It uses a pointer to the underlying allocation as an identifier so that
-  /// we don't remap the same lisp values many times.
-  pub(crate) lisp: HashMap<*const FrozenLispKind, LispVal>,
-  /// A stack of references that are currently being constructed. It is stored
-  /// as a hashmap, indexed on the source lisp ref-cell, for fast lookup.
-  ///
-  /// When a `Ref` is remapped, we initially create a `(ref! #undef)` and put it
-  /// in `refs` (if it is not already present), then we remap the contents of
-  /// the ref, and finally we assign the result to the ref we created and
-  /// remove the newly assigned ref-cell from `refs`. That way, a mutable cell
-  /// is remapped to another mutable cell, but we can detect cycles and correctly
-  /// remap them into cycles.
-  pub(crate) refs: HashMap<*const FrozenLispRef, LispVal>,
-}
-impl Remap<LispRemapper> for AtomID {
-  type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self { *r.atom.get(*self).unwrap_or(self) }
-}
-impl<R, K: Clone + Hash + Eq, V: Remap<R>> Remap<R> for HashMap<K, V> {
+impl<K: Clone + Hash + Eq, V: Remap> Remap for HashMap<K, V> {
   type Target = HashMap<K, V::Target>;
-  fn remap(&self, r: &mut R) -> Self::Target { self.iter().map(|(k, v)| (k.clone(), v.remap(r))).collect() }
+  fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|(k, v)| (k.clone(), v.remap(r))).collect() }
 }
-impl<R, A: Remap<R>> Remap<R> for RefCell<A> {
+impl<A: Remap> Remap for RefCell<A> {
   type Target = RefCell<A::Target>;
-  fn remap(&self, r: &mut R) -> Self::Target { RefCell::new(self.borrow().remap(r)) }
+  fn remap(&self, r: &mut Remapper) -> Self::Target { RefCell::new(self.borrow().remap(r)) }
 }
-impl<R, A: Remap<R>> Remap<R> for Mutex<A> {
+impl<A: Remap> Remap for Mutex<A> {
   type Target = Mutex<A::Target>;
-  fn remap(&self, r: &mut R) -> Self::Target { Mutex::new(self.lock().unwrap().remap(r)) }
+  fn remap(&self, r: &mut Remapper) -> Self::Target { Mutex::new(self.lock().unwrap().remap(r)) }
 }
-impl Remap<LispRemapper> for LispVal {
+impl Remap for LispVal {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self { unsafe { self.freeze() }.remap(r) }
+  fn remap(&self, r: &mut Remapper) -> Self { unsafe { self.freeze() }.remap(r) }
 }
 
-impl Remap<LispRemapper> for InferTarget {
+impl Remap for InferTarget {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       InferTarget::Unknown => InferTarget::Unknown,
       InferTarget::Provable => InferTarget::Provable,
@@ -1321,9 +1292,9 @@ impl Remap<LispRemapper> for InferTarget {
     }
   }
 }
-impl Remap<LispRemapper> for ProcPos {
+impl Remap for ProcPos {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       ProcPos::Named(fsp, sp, a) => ProcPos::Named(fsp.clone(), *sp, a.remap(r)),
       ProcPos::Unnamed(fsp) => ProcPos::Unnamed(fsp.clone()),
@@ -1331,7 +1302,7 @@ impl Remap<LispRemapper> for ProcPos {
   }
 }
 
-impl Remap<LispRemapper> for Proc {
+impl Remap for Proc {
   type Target = Self;
-  fn remap(&self, r: &mut LispRemapper) -> Self { unsafe { self.freeze() }.remap(r) }
+  fn remap(&self, r: &mut Remapper) -> Self { unsafe { self.freeze() }.remap(r) }
 }
