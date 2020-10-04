@@ -272,7 +272,9 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     let mut deps = Vec::new();
     println!("elab {}, memory = {}M", path, get_memory_usage() >> 20);
     let (_, errors, env) = elab::elaborate(
-      ast.clone(), path.clone(), path.has_extension("mm0"), Arc::default(),
+      ast.clone(), path.clone(), path.has_extension("mm0"),
+      crate::get_check_proofs(),
+      Arc::default(),
       None,
       |path| {
         let path = VFS_.get_or_insert(path)?.0;

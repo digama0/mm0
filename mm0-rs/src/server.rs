@@ -153,7 +153,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     (vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
     elab::elaborate(
-      ast.clone(), path.clone(), path.has_extension("mm0"), cancel.clone(),
+      ast.clone(), path.clone(), path.has_extension("mm0"),
+      crate::get_check_proofs(), cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
       |path| {
         let path = vfs.get_or_insert(path)?.0;

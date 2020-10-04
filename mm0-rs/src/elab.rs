@@ -242,12 +242,15 @@ impl Elaborator {
   /// - `mm0_mode`: True if this file is being elaborated in MM0 mode. In MM0 mode,
   ///   the `do` command is disabled, type inference is disabled, modifiers are treated
   ///   differently, and proofs of `theorem` are not allowed.
+  /// - `check_proofs`: The initial setting of the `check_proofs` state at the top of each
+  ///   file, which can be changed later using the `(check-proofs)` lisp command.
   /// - `cancel`: An atomic flag that can be flipped in another thread in order to cancel
   ///   the elaboration before completion.
   ///
   /// [`AST`]: ../parser/ast/struct.AST.html
   /// [`parser::parse`]: ../parser/fn.parse.html
-  pub fn new(ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>) -> Elaborator {
+  pub fn new(ast: Arc<AST>, path: FileRef,
+      mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
       ast, path, cancel,
       errors: Vec::new(),
@@ -257,7 +260,7 @@ impl Elaborator {
       lc: LocalContext::new(),
       spans: Spans::new(),
       mm0_mode,
-      check_proofs: true,
+      check_proofs,
       reporting: ReportMode::new(),
     }
   }
@@ -515,7 +518,7 @@ impl Elaborator {
 ///
 /// # Parameters
 ///
-/// - `ast`, `path`, `mm0_mode`, `cancel`: Used to construct the inner `Elaborator`
+/// - `ast`, `path`, `mm0_mode`, `check_proofs`, `cancel`: Used to construct the inner `Elaborator`
 ///   (see [`Elaborator::new`]).
 ///
 /// - `_old`: The last successful parse of the same file, used for incremental elaboration.
@@ -546,7 +549,7 @@ impl Elaborator {
 /// [`Environment`]: environment/struct.Environment.html
 /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
 pub fn elaborate<T>(
-  ast: Arc<AST>, path: FileRef, mm0_mode: bool, cancel: Arc<AtomicBool>,
+  ast: Arc<AST>, path: FileRef, mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
   _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
   mut mk: impl FnMut(FileRef) -> StdResult<Receiver<(T, FrozenEnv)>, BoxError>
 ) -> impl Future<Output=(Vec<T>, Vec<ElabError>, FrozenEnv)> {
@@ -615,7 +618,7 @@ pub fn elaborate<T>(
   }
 
   let mut recv = HashMap::new();
-  let mut elab = Elaborator::new(ast.clone(), path, mm0_mode, cancel);
+  let mut elab = Elaborator::new(ast.clone(), path, mm0_mode, check_proofs, cancel);
   for &(sp, ref f) in &ast.imports {
     let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
     (|| -> Result<_> {

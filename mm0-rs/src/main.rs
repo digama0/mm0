@@ -56,7 +56,11 @@ pub mod mmb { pub mod export; }
 pub mod mmu { pub mod import; pub mod export; }
 pub mod mmc;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use clap::clap_app;
+
+static CHECK_PROOFS: AtomicBool = AtomicBool::new(true);
+pub(crate) fn get_check_proofs() -> bool { CHECK_PROOFS.load(Ordering::Relaxed) }
 
 fn main() -> std::io::Result<()> {
   let app = clap_app!(mm0_rs =>
@@ -69,10 +73,12 @@ fn main() -> std::io::Result<()> {
     (@setting VersionlessSubcommands)
     (@subcommand compile =>
       (about: "Compile MM1 files into MMB")
+      (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output file (.mmb or .mmu)"))
     (@subcommand join =>
       (about: "Join MM1/MM0 files with imports by concatenation")
+      (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted")));
 
@@ -85,10 +91,16 @@ fn main() -> std::io::Result<()> {
   let m = app.get_matches();
 
   match m.subcommand() {
-    ("compile", Some(m)) => compiler::main(m)?,
+    ("compile", Some(m)) => {
+      if m.is_present("no_proofs") { CHECK_PROOFS.store(false, Ordering::Relaxed) }
+      compiler::main(m)?
+    }
     ("join", Some(m)) => joiner::main(m)?,
     #[cfg(feature = "server")]
-    ("server", Some(m)) => server::main(m),
+    ("server", Some(m)) => {
+      if m.is_present("no_proofs") { CHECK_PROOFS.store(false, Ordering::Relaxed) }
+      server::main(m)
+    }
     _ => unreachable!()
   }
   Ok(())
