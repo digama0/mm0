@@ -17,6 +17,7 @@ pub mod math_parser;
 pub mod local_context;
 pub mod refine;
 pub mod proof;
+pub mod inout;
 
 use std::ops::{Deref, DerefMut};
 use std::mem;
@@ -31,12 +32,13 @@ use environment::*;
 use environment::Literal as ELiteral;
 use lisp::LispVal;
 use spans::Spans;
+use inout::InoutHandlers;
 pub use {environment::Environment, local_context::LocalContext};
 pub use crate::parser::ErrorLevel;
 pub use frozen::{FrozenEnv, FrozenLispKind, FrozenLispVal, FrozenAtomData};
 use crate::util::*;
 use crate::parser::{*, ast::*, ast::Literal as ALiteral};
-use crate::lined_string::*;
+use crate::lined_string::LinedString;
 
 #[cfg(feature = "server")]
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
@@ -222,6 +224,8 @@ pub struct Elaborator {
   check_proofs: bool,
   /// The current reporting mode, whether we will report each severity of error
   reporting: ReportMode,
+  /// The handlers for different kinds of input and output.
+  inout: InoutHandlers,
 }
 
 impl Deref for Elaborator {
@@ -261,6 +265,7 @@ impl Elaborator {
       spans: Spans::new(),
       mm0_mode,
       check_proofs,
+      inout: InoutHandlers::default(),
       reporting: ReportMode::new(),
     }
   }
@@ -508,7 +513,8 @@ impl Elaborator {
         let args = vec![v, self.name_of(s)];
         self.call_func(e.span, ann, args)?;
       },
-      _ => return Err(ElabError::new_e(span, "unimplemented"))
+      &StmtKind::Inout {out: true, k, ref hs} => self.elab_output(span, k, hs)?,
+      &StmtKind::Inout {out: false, k, ref hs} => self.elab_input(span, k, hs)?,
     }
     Ok(ElabStmt::Ok)
   }

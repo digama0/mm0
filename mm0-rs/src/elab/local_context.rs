@@ -10,8 +10,8 @@ use super::environment::{AtomID, Type as EType};
 use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::*;
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
-use super::proof::*;
-use crate::util::*;
+use super::proof::{NodeHasher, ProofHash, build, Dedup};
+use crate::util::{Span, FileSpan, BoxError};
 
 /// The infer status of a variable in a declaration. For example in
 /// `def foo {x} (ph: wff x y): wff = $ all z ph $;`, `x` has no declared type
@@ -589,11 +589,13 @@ impl Elaborator {
     })
   }
 
-  fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
+  /// Elaborate a term used in a theorem statement.
+  pub fn elaborate_term(&mut self, sp: Span, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
     ElabTermMut::new(self, sp).expr(e, tgt)
   }
 
-  fn infer_sort(&self, sp: Span, e: &LispKind) -> Result<SortID> {
+  /// Get the sort of an expression, assuming it is well typed.
+  pub fn infer_sort(&self, sp: Span, e: &LispKind) -> Result<SortID> {
     ElabTerm::new(self, sp).infer_sort(e)
   }
 

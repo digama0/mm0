@@ -332,7 +332,7 @@ pub struct Thm {
 ///
 /// [`Term`]: struct.Term.html
 /// [`Thm`]: struct.Thm.html
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum StmtTrace {
   /// A `sort foo;` declaration
   Sort(AtomID),
@@ -340,18 +340,8 @@ pub enum StmtTrace {
   Decl(AtomID),
   /// A global lisp declaration in a `do` block, i.e. `do { (def foo 1) };`
   Global(AtomID),
-}
-crate::deep_size_0!(StmtTrace);
-
-impl StmtTrace {
-  /// The name of a sort, term, or lisp def in the global list.
-  pub fn atom(&self) -> AtomID {
-    match *self {
-      StmtTrace::Sort(a) => a,
-      StmtTrace::Decl(a) => a,
-      StmtTrace::Global(a) => a,
-    }
-  }
+  /// An `output string` directive.
+  OutputString(LispVal)
 }
 
 /// A declaration is either a [`Term`] or a [`Thm`]. This is done because in MM1
@@ -1226,8 +1216,8 @@ impl Environment {
         data.graveyard = d.graveyard().clone();
       }
     }
-    for &s in other.stmts() {
-      match s {
+    for s in other.stmts() {
+      match *s {
         StmtTrace::Sort(a) => {
           let i = other.data()[a].sort().unwrap();
           let sort = other.sort(i);
@@ -1280,6 +1270,7 @@ impl Environment {
           }
         },
         StmtTrace::Global(_) => {}
+        StmtTrace::OutputString(ref e) => self.stmts.push(StmtTrace::OutputString(e.remap(remap))),
       }
     }
     self.pe.merge(other.pe(), remap, sp, &self.sorts, errors);

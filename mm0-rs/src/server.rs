@@ -704,6 +704,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
             }));
         }
       }
+      StmtTrace::OutputString(_) => {}
     }
   }
   Ok(DocumentSymbolResponse::Nested(res))

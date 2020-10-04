@@ -4,7 +4,7 @@ use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use crate::elab::environment::{
-  Type, Expr, Proof, SortID, TermID, ThmID,
+  Type, Expr, Proof, SortID, TermID, ThmID, AtomID,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
 use crate::util::FileRef;
@@ -630,39 +630,35 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
   }
 
   fn write_index_entry(&mut self, header: &mut IndexHeader<'_>, il: u64, ir: u64,
-      (s, cmd): (StmtTrace, u64)) -> io::Result<u64> {
+      (sort, a, cmd): (bool, AtomID, u64)) -> io::Result<u64> {
     let n = self.align_to(8)?;
-    let (sp, ix, k, name) = match s {
-      StmtTrace::Sort(a) => {
-        let ad = &self.env.data()[a];
-        let s = ad.sort().unwrap();
-        LE::write_u64(header.sort(s), n);
-        (&self.env.sort(s).span, s.0 as u32, STMT_SORT, ad.name())
-      }
-      StmtTrace::Decl(a) => {
-        let ad = &self.env.data()[a];
-        match ad.decl().unwrap() {
-          DeclKey::Term(t) => {
-            let td = self.env.term(t);
-            LE::write_u64(header.term(t), n);
-            (&td.span, t.0,
-              if td.val.is_none() {STMT_TERM}
-              else if td.vis == Modifiers::LOCAL {STMT_DEF | STMT_LOCAL}
-              else {STMT_DEF},
-             ad.name())
-          }
-          DeclKey::Thm(t) => {
-            let td = self.env.thm(t);
-            LE::write_u64(header.thm(t), n);
-            (&td.span, t.0,
-              if td.proof.is_none() {STMT_AXIOM}
-              else if td.vis == Modifiers::PUB {STMT_THM}
-              else {STMT_THM | STMT_LOCAL},
-             ad.name())
-          }
+    let (sp, ix, k, name) = if sort {
+      let ad = &self.env.data()[a];
+      let s = ad.sort().unwrap();
+      LE::write_u64(header.sort(s), n);
+      (&self.env.sort(s).span, s.0 as u32, STMT_SORT, ad.name())
+    } else {
+      let ad = &self.env.data()[a];
+      match ad.decl().unwrap() {
+        DeclKey::Term(t) => {
+          let td = self.env.term(t);
+          LE::write_u64(header.term(t), n);
+          (&td.span, t.0,
+            if td.val.is_none() {STMT_TERM}
+            else if td.vis == Modifiers::LOCAL {STMT_DEF | STMT_LOCAL}
+            else {STMT_DEF},
+            ad.name())
+        }
+        DeclKey::Thm(t) => {
+          let td = self.env.thm(t);
+          LE::write_u64(header.thm(t), n);
+          (&td.span, t.0,
+            if td.proof.is_none() {STMT_AXIOM}
+            else if td.vis == Modifiers::PUB {STMT_THM}
+            else {STMT_THM | STMT_LOCAL},
+            ad.name())
         }
       }
-      StmtTrace::Global(_) => unreachable!()
     };
 
     let pos = if sp.file.ptr_eq(&self.file) {
@@ -680,7 +676,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     Ok(n)
   }
 
-  fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(StmtTrace, u64)], map: &[(StmtTrace, u64)]) -> io::Result<u64> {
+  fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(bool, AtomID, u64)], map: &[(bool, AtomID, u64)]) -> io::Result<u64> {
     let mut lo = map.len() / 2;
     let a = match map.get(lo) {
       None => {
@@ -690,18 +686,18 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         }
         return Ok(n)
       }
-      Some((k, _)) => k.atom()
+      Some(&(_, a, _)) => a
     };
     let mut hi = lo + 1;
     loop {
       match lo.checked_sub(1) {
-        Some(i) if map[i].0.atom() == a => lo = i,
+        Some(i) if map[i].1 == a => lo = i,
         _ => break,
       }
     }
     loop {
       match map.get(hi) {
-        Some(k) if k.0.atom() == a => hi += 1,
+        Some(k) if k.1 == a => hi += 1,
         _ => break,
       }
     }
@@ -780,14 +776,14 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     p_proof.commit(self);
     let vec = &mut vec![];
     let mut index_map = Vec::with_capacity(if index {num_sorts + num_terms + num_thms} else {0});
-    for &s in self.env.stmts() {
-      match s {
-        StmtTrace::Sort(_) => {
-          if index {index_map.push((s, self.pos))}
+    for s in self.env.stmts() {
+      match *s {
+        StmtTrace::Sort(a) => {
+          if index {index_map.push((true, a, self.pos))}
           write_cmd_bytes(self, STMT_SORT, &[])?
         }
         StmtTrace::Decl(a) => {
-          if index {index_map.push((s, self.pos))}
+          if index {index_map.push((false, a, self.pos))}
           match self.env.data()[a].decl().unwrap() {
             DeclKey::Term(t) => {
               let td = self.env.term(t);
@@ -843,7 +839,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
             }
           }
         }
-        StmtTrace::Global(_) => {}
+        StmtTrace::Global(_) |
+        StmtTrace::OutputString(_) => {}
       }
     }
     self.write_u8(0)?;
@@ -851,7 +848,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     // debugging index
     if index {
       self.align_to(8)?; p_index.commit(self);
-      index_map.sort_unstable_by_key(|k| &**self.env.data()[k.0.atom()].name());
+      index_map.sort_unstable_by_key(|k| &**self.env.data()[k.1].name());
       let size = 1 + num_sorts + num_terms + num_thms;
       let mut index_header = self.fixup_large(8 * size)?;
       // Safety: index_header points to a Box<[u8; 8*size]>, and we reinterpret it as [[u8; 8]; size]
