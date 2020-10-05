@@ -109,6 +109,15 @@ impl VFS {
   }
 }
 
+fn mk_to_range() -> impl FnMut(&FileSpan) -> Range {
+  let mut srcs = HashMap::new();
+  move |fsp: &FileSpan| -> Range {
+    srcs.entry(fsp.file.ptr()).or_insert_with(||
+      VFS_.0.lock().unwrap().get(&fsp.file).unwrap().text.clone())
+      .to_range(fsp.span)
+  }
+}
+
 impl ElabErrorKind {
   /// Convert the payload of an elaboration error to the footer data
   /// of a [`Snippet`].
@@ -287,15 +296,7 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
   };
   println!("elabbed {}, memory = {}M", path, get_memory_usage() >> 20);
   if !errors.is_empty() {
-    let mut srcs = HashMap::new();
-    let mut to_range = |fsp: &FileSpan| -> Range {
-      if fsp.file.ptr_eq(&path) {
-        &file.text
-      } else {
-        srcs.entry(fsp.file.ptr()).or_insert_with(||
-          VFS_.0.lock().unwrap().get(&fsp.file).unwrap().text.clone())
-      }.to_range(fsp.span)
-    };
+    let mut to_range = mk_to_range();
     for e in &errors {
       e.to_snippet(&path, &file.text, &mut to_range,
         |s| println!("{}\n", DisplayList::from(s).to_string()))
@@ -345,6 +346,18 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").unwrap();
   let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
   let env = block_on(elaborate(path.clone()))?;
+  if let Some(s) = args.value_of_os("output") {
+    if let Err((fsp, e)) =
+      if s == "-" { env.run_output(io::stdout()) }
+      else { env.run_output(fs::File::create(s)?) }
+    {
+      let e = ElabError::new_e(fsp.span, e);
+      let file = VFS_.get_or_insert(fsp.file.clone())?.1;
+      e.to_snippet(&fsp.file, &file.text, &mut mk_to_range(),
+        |s| println!("{}\n", DisplayList::from(s).to_string()));
+      std::process::abort();
+    }
+  }
   if let Some(out) = args.value_of("OUTPUT") {
     use {fs::File, io::BufWriter};
     let w = BufWriter::new(File::create(out)?);

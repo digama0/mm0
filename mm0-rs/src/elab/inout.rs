@@ -1,8 +1,12 @@
 //! Support for the `input` and `output` commands.
 
-use super::environment::{DeclKey, SortID, TermID, Type, Expr, ExprNode, StmtTrace};
-use super::{ElabError, Elaborator, Span, HashMap, Result, SExpr,
-  lisp::{InferTarget, LispVal}};
+use std::io;
+use super::proof::{Dedup, NodeHasher, build};
+use super::environment::{DeclKey, SortID, TermID, Type, Expr, ExprNode,
+  OutputString, StmtTrace, Environment};
+use super::{ElabError, Elaborator, Span, HashMap, Result as EResult, SExpr,
+  lisp::InferTarget, FrozenEnv};
+use crate::util::{FileSpan, BoxError};
 
 /// The elaboration data used by input/output commands. This caches precomputed
 /// evaluations of `output string` commands.
@@ -19,10 +23,8 @@ enum InoutStringType {
   SCons,
   Ch,
   Hex(u8),
-  #[allow(unused)]
-  Str(Box<[u8]>),
-  #[allow(unused)]
-  Gen(usize, Box<[StringSeg]>),
+  // Str(Box<[u8]>),
+  // Gen(usize, Box<[StringSeg]>),
 }
 
 #[derive(Clone, Debug, EnvDebug, PartialEq, Eq)]
@@ -41,7 +43,7 @@ struct StringSegBuilder {
 }
 
 impl StringSegBuilder {
-  fn make(f: impl FnOnce(&mut StringSegBuilder) -> Result<()>) -> Result<Box<[StringSeg]>> {
+  fn make<E>(f: impl FnOnce(&mut StringSegBuilder) -> Result<(), E>) -> Result<Box<[StringSeg]>, E> {
     let mut out = StringSegBuilder::default();
     f(&mut out)?;
     out.flush();
@@ -85,28 +87,28 @@ struct Sorts {
   chr: SortID,
 }
 
-impl Elaborator {
-  fn check_sort(&self, sp: Span, s: &str) -> Result<SortID> {
+impl Environment {
+  fn check_sort(&self, s: &str) -> Result<SortID, String> {
     self.atoms.get(s).and_then(|&a| self.data[a].sort)
-      .ok_or_else(|| ElabError::new_e(sp, format!("sort '{}' not found", s)))
+      .ok_or_else(|| format!("sort '{}' not found", s))
   }
-  fn new_sorts(&self, sp: Span) -> Result<Sorts> {
+  fn new_sorts(&self) -> Result<Sorts, String> {
     Ok(Sorts {
-      str: self.check_sort(sp, "string")?,
-      hex: self.check_sort(sp, "hex")?,
-      chr: self.check_sort(sp, "char")?,
+      str: self.check_sort("string")?,
+      hex: self.check_sort("hex")?,
+      chr: self.check_sort("char")?,
     })
   }
 
-  fn check_term<'a>(&'a mut self, sp: Span, s: &str,
-      args: &[SortID], ret: SortID, def: bool) -> Result<TermID> {
+  fn check_term<'a>(&'a self, s: &str,
+      args: &[SortID], ret: SortID, def: bool) -> Result<TermID, String> {
     let t = self.atoms.get(s)
       .and_then(|&a| if let Some(DeclKey::Term(t)) = self.data[a].decl {Some(t)} else {None})
-      .ok_or_else(|| ElabError::new_e(sp, format!("term '{}' not found", s)))?;
+      .ok_or_else(|| format!("term '{}' not found", s))?;
     let td = &self.terms[t];
     match (def, &td.val) {
-      (false, Some(_)) => return Err(ElabError::new_e(sp, format!("def '{}' should be a term", s)))?,
-      (true, None) => return Err(ElabError::new_e(sp, format!("term '{}' should be a def", s)))?,
+      (false, Some(_)) => return Err(format!("def '{}' should be a term", s)),
+      (true, None) => return Err(format!("term '{}' should be a def", s)),
       _ => {}
     }
     let ok = td.ret == (ret, 0) &&
@@ -119,19 +121,19 @@ impl Elaborator {
         write!(s, "{} > ", self.data[self.sorts[i].atom].name).unwrap();
       }
       write!(s, "{}", self.data[self.sorts[ret].atom].name).unwrap();
-      return Err(ElabError::new_e(sp, s))
+      return Err(s)
     }
     Ok(t)
   }
 
-  fn process_node<T>(&self, sp: Span, s: Sorts,
+  fn process_node<T>(&self,
     terms: &HashMap<TermID, InoutStringType>,
     args: &[(T, Type)], e: &ExprNode,
     heap: &[Box<[StringSeg]>],
     out: &mut StringSegBuilder,
-  ) -> Result<()> {
+  ) -> Result<(), String> {
     match e {
-      ExprNode::Dummy(_, _) => return Err(ElabError::new_e(sp, "dummy not permitted")),
+      ExprNode::Dummy(_, _) => return Err("dummy not permitted".into()),
       &ExprNode::Ref(i) => match i.checked_sub(args.len()) {
         None => {
           if let (_, Type::Reg(s, 0)) = args[i] {
@@ -143,19 +145,19 @@ impl Elaborator {
       &ExprNode::App(t, ref ns) => match terms.get(&t) {
         Some(InoutStringType::S0) => {}
         Some(InoutStringType::S1) =>
-          self.process_node(sp, s, terms, args, &ns[0], heap, out)?,
+          self.process_node(terms, args, &ns[0], heap, out)?,
         Some(InoutStringType::SAdd) |
         Some(InoutStringType::SCons) |
         Some(InoutStringType::Ch) => {
-          self.process_node(sp, s, terms, args, &ns[0], heap, out)?;
-          self.process_node(sp, s, terms, args, &ns[1], heap, out)?;
+          self.process_node(terms, args, &ns[0], heap, out)?;
+          self.process_node(terms, args, &ns[1], heap, out)?;
         }
         Some(&InoutStringType::Hex(h)) => {out.push_hex(h);}
-        Some(InoutStringType::Str(s)) => {out.push_str(s);}
+        // Some(InoutStringType::Str(s)) => {out.push_str(s);}
         _ => {
           let args = ns.iter().map(|n| StringSegBuilder::make(|arg|
-              self.process_node(sp, s, terms, args, n, heap, arg)))
-            .collect::<Result<Vec<_>>>()?.into_boxed_slice();
+              self.process_node(terms, args, n, heap, arg)))
+            .collect::<Result<Vec<_>, _>>()?.into_boxed_slice();
           out.push_seg(StringSeg::Term(t, args));
         }
       }
@@ -163,56 +165,61 @@ impl Elaborator {
     Ok(())
   }
 
-  fn process_def(&self, sp: Span, s: Sorts,
+  fn process_def(&self,
       terms: &HashMap<TermID, InoutStringType>,
-      t: TermID) -> Result<Box<[StringSeg]>> {
+      t: TermID, name: &str) -> Result<Box<[StringSeg]>, String> {
     let td = &self.terms[t];
     if let Some(Some(Expr {heap, head})) = &td.val {
       let mut refs = Vec::with_capacity(heap.len() - td.args.len());
       for e in &heap[td.args.len()..] {
         let res = StringSegBuilder::make(|out|
-          self.process_node(sp, s, terms, &td.args, e, &refs, out))?;
+          self.process_node(terms, &td.args, e, &refs, out))?;
         refs.push(res);
       }
       StringSegBuilder::make(|out|
-        self.process_node(sp, s, terms, &td.args, head, &refs, out))
+        self.process_node(terms, &td.args, head, &refs, out))
     } else {
-      Err(ElabError::new_e(sp, format!("term '{}' should be a def", self.print(&t))))
+      Err(format!("term '{}' should be a def", name))
     }
   }
 
-  fn init_string_handler(&mut self, sp: Span) -> Result<()> {
-    if self.inout.string.is_some() {return Ok(())}
-    let s = self.new_sorts(sp)?;
+  fn new_string_handler(&self) -> Result<(Sorts, HashMap<TermID, InoutStringType>), String> {
+    let s = self.new_sorts()?;
     let mut map = HashMap::new();
     use InoutStringType::*;
-    map.insert(self.check_term(sp, "s0", &[], s.str, false)?, S0);
-    map.insert(self.check_term(sp, "s1", &[s.chr], s.str, false)?, S1);
-    map.insert(self.check_term(sp, "sadd", &[s.str, s.str], s.str, false)?, SAdd);
-    map.insert(self.check_term(sp, "ch", &[s.hex, s.hex], s.chr, false)?, Ch);
+    map.insert(self.check_term("s0", &[], s.str, false)?, S0);
+    map.insert(self.check_term("s1", &[s.chr], s.str, false)?, S1);
+    map.insert(self.check_term("sadd", &[s.str, s.str], s.str, false)?, SAdd);
+    map.insert(self.check_term("ch", &[s.hex, s.hex], s.chr, false)?, Ch);
     for i in 0..16 {
-      map.insert(self.check_term(sp, &format!("x{:x}", i), &[], s.hex, false)?, Hex(i));
+      map.insert(self.check_term(&format!("x{:x}", i), &[], s.hex, false)?, Hex(i));
     }
-    if let Ok(t) = self.check_term(sp, "scons", &[s.chr, s.str], s.str, true) {
-      if let Ok(ss) = self.process_def(sp, s, &map, t) {
-        if &*ss == &[StringSeg::Var(s.chr, 0), StringSeg::Var(s.str, 1)] {
+    if let Ok(t) = self.check_term("scons", &[s.chr, s.str], s.str, true) {
+      if let Ok(ss) = self.process_def(&map, t, "scons") {
+        if *ss == [StringSeg::Var(s.chr, 0), StringSeg::Var(s.str, 1)] {
           map.insert(t, SCons);
         }
       }
     }
-    self.inout.string = Some((s, map));
-    Ok(())
+    Ok((s, map))
   }
+}
 
-  fn get_string_handler(&mut self, sp: Span) -> Result<(Sorts, &mut HashMap<TermID, InoutStringType>)> {
-    self.init_string_handler(sp)?;
+impl Elaborator {
+  fn get_string_handler(&mut self, sp: Span) -> EResult<(Sorts, &mut HashMap<TermID, InoutStringType>)> {
+    if self.inout.string.is_none() {
+      let (s, map) = self.env.new_string_handler().map_err(|e| ElabError::new_e(sp, e))?;
+      self.inout.string = Some((s, map));
+    }
     if let Some((s, map)) = &mut self.inout.string {Ok((*s, map))}
     else {unsafe {std::hint::unreachable_unchecked()}}
   }
 
-  fn elab_output_string(&mut self, sp: Span, hs: &[SExpr]) -> Result<()> {
+  fn elab_output_string(&mut self, sp: Span, hs: &[SExpr]) -> EResult<()> {
     let (sorts, _) = self.get_string_handler(sp)?;
-    let mut args = Vec::with_capacity(hs.len());
+    let fsp = self.fspan(sp);
+    let mut de = Dedup::new(&[]);
+    let mut es = Vec::with_capacity(hs.len());
     for f in hs {
       let e = self.eval_lisp(f)?;
       let val = self.elaborate_term(f.span, &e,
@@ -222,28 +229,168 @@ impl Elaborator {
         return Err(ElabError::new_e(sp, format!("type error: expected string, got {}",
           self.env.sorts[s].name)))
       }
-      args.push(val);
+      es.push(val);
     }
-    let fsp = self.fspan(sp);
-    self.stmts.push(StmtTrace::OutputString(LispVal::list(args).span(fsp)));
+    let nh = NodeHasher::new(&self.lc, self.format_env(), fsp.clone());
+    let is = es.into_iter().map(|val| de.dedup(&nh, &val)).collect::<EResult<Vec<_>>>()?;
+    let (mut ids, heap) = build(&de);
+    let exprs = is.into_iter().map(|i| ids[i].take()).collect();
+    self.stmts.push(StmtTrace::OutputString(
+      Box::new(OutputString {span: fsp, heap, exprs})));
     Ok(())
   }
 
   /// Elaborate an `output` command. Note that in server mode, this does not actually run
   /// the operation of printing a string to standard out, as this would be disruptive.
   /// It is triggered only in "compile" mode, and by manual selection in server mode.
-  pub fn elab_output(&mut self, sp: Span, kind: Span, hs: &[SExpr]) -> Result<()> {
+  pub fn elab_output(&mut self, sp: Span, kind: Span, hs: &[SExpr]) -> EResult<()> {
     match self.span(kind) {
       "string" => self.elab_output_string(sp, hs),
-      _ => return Err(ElabError::new_e(kind, "unsupported output kind")),
+      _ => Err(ElabError::new_e(kind, "unsupported output kind")),
     }
   }
 
   /// Elaborate an `input` command. This is not implemented, as it needs to work with the
   /// final MM0 file, which is not available. More design work is needed.
-  pub fn elab_input(&mut self, _: Span, kind: Span, _: &[SExpr]) -> Result<()> {
-    match self.span(kind) {
-      _ => return Err(ElabError::new_e(kind, "unsupported input kind")),
+  pub fn elab_input(&mut self, _: Span, kind: Span, _: &[SExpr]) -> EResult<()> {
+    Err(ElabError::new_e(kind, "unsupported input kind"))
+  }
+}
+
+/// The error type returned by `run_output`.
+#[derive(Debug)]
+pub enum OutputError {
+  /// The underlying writer throwed an IO error
+  IOError(io::Error),
+  /// There was a logical error preventing the output to be written
+  String(String),
+}
+
+impl From<io::Error> for OutputError {
+  fn from(e: io::Error) -> Self { Self::IOError(e) }
+}
+impl From<&str> for OutputError {
+  fn from(e: &str) -> Self { Self::String(e.into()) }
+}
+
+impl Into<BoxError> for OutputError {
+  fn into(self) -> BoxError {
+    match self {
+      OutputError::IOError(e) => e.into(),
+      OutputError::String(s) => s.into(),
     }
+  }
+}
+
+#[derive(Default)]
+struct StringWriter<W> {
+  w: W,
+  hex: Option<u8>,
+}
+
+#[allow(variant_size_differences)]
+enum StringPart {
+  Hex(u8),
+  Str(Vec<u8>)
+}
+
+impl<W: io::Write> StringWriter<W> {
+  fn write_hex(&mut self, h: u8) -> Result<(), OutputError> {
+    match self.hex.take() {
+      None => self.hex = Some(h),
+      Some(hi) => self.w.write_all(&[hi << 4 | h])?
+    }
+    Ok(())
+  }
+  fn write_str(&mut self, buf: &[u8]) -> Result<(), OutputError> {
+    Ok(self.w.write_all(buf)?)
+  }
+  fn write_part(&mut self, s: &StringPart) -> Result<(), OutputError> {
+    match s {
+      &StringPart::Hex(h) => self.write_hex(h),
+      StringPart::Str(s) => self.write_str(s),
+    }
+  }
+}
+
+impl From<StringWriter<Vec<u8>>> for StringPart {
+  fn from(s: StringWriter<Vec<u8>>) -> Self {
+    match s.hex {
+      None => StringPart::Str(s.w),
+      Some(h) => StringPart::Hex(h),
+    }
+  }
+}
+
+impl FrozenEnv {
+  fn write_node<W: io::Write>(&self,
+    terms: &HashMap<TermID, InoutStringType>,
+    heap: &[StringPart],
+    e: &ExprNode,
+    w: &mut StringWriter<W>,
+  ) -> Result<(), OutputError> {
+    match e {
+      ExprNode::Dummy(_, _) => Err("Found dummy variable in string definition".into()),
+      &ExprNode::Ref(i) => w.write_part(&heap[i]),
+      &ExprNode::App(t, ref ns) => match terms.get(&t) {
+        Some(InoutStringType::S0) => Ok(()),
+        Some(InoutStringType::S1) =>
+          self.write_node(terms, heap, &ns[0], w),
+        Some(InoutStringType::SAdd) |
+        Some(InoutStringType::SCons) |
+        Some(InoutStringType::Ch) => {
+          self.write_node(terms, heap, &ns[0], w)?;
+          self.write_node(terms, heap, &ns[1], w)
+        }
+        Some(&InoutStringType::Hex(h)) => w.write_hex(h),
+        _ => if let Some(Some(expr)) = &self.term(t).val {
+          let mut args: Vec<StringPart> = Vec::with_capacity(heap.len());
+          for e in &**ns {
+            let mut w = StringWriter::default();
+            self.write_node(terms, heap, e, &mut w)?;
+            args.push(w.into());
+          }
+          for e in &expr.heap[ns.len()..] {
+            let mut w = StringWriter::default();
+            self.write_node(terms, &args, e, &mut w)?;
+            args.push(w.into());
+          }
+          self.write_node(terms, &args, &expr.head, w)
+        } else {
+          Err("Unknown definition".into())
+        }
+      }
+    }
+  }
+
+  /// Run all the `output` directives in the environment,
+  /// writing output to the provided writer.
+  pub fn run_output(&self, w: impl io::Write) -> Result<(), (FileSpan, OutputError)> {
+    let mut handler = None;
+    let mut w = StringWriter {w, hex: None};
+    for s in self.stmts() {
+      if let StmtTrace::OutputString(os) = s {
+        let OutputString {span, heap, exprs} = &**os;
+        (|| -> Result<(), OutputError> {
+          let terms = {
+            handler = Some(unsafe {self.thaw()}.new_string_handler()
+              .map_err(OutputError::String)?);
+            if let Some((_, t)) = &handler {t}
+            else {unsafe {std::hint::unreachable_unchecked()}}
+          };
+          let mut args = Vec::with_capacity(heap.len());
+          for e in &**heap {
+            let mut w = StringWriter::default();
+            self.write_node(terms, &args, e, &mut w)?;
+            args.push(w.into());
+          }
+          for e in &**exprs {
+            self.write_node(terms, &args, e, &mut w)?;
+          }
+          Ok(())
+        })().map_err(|e| (span.clone(), e))?;
+      }
+    }
+    Ok(())
   }
 }

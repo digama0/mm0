@@ -766,7 +766,7 @@ impl Elaborator {
           }
         };
         let t = Term {
-          atom, args, ret, val,
+          atom, args: args.into(), ret, val,
           span: self.fspan(d.id),
           vis: d.mods,
           full,
@@ -855,7 +855,7 @@ impl Elaborator {
         });
         let t = Thm {
           atom, span, vis: d.mods, full,
-          args, heap, hyps, ret, proof
+          args: args.into(), heap, hyps, ret, proof
         };
         let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
         self.spans.insert(d.id, ObjectKind::Thm(tid));
@@ -949,7 +949,7 @@ impl Elaborator {
   }
 
   fn binders(&self, fsp: &FileSpan, u: Uncons, (varmap, next_bv): &mut (HashMap<AtomID, u64>, u64)) ->
-      Result<(LocalContext, Vec<Binder>)> {
+      Result<(LocalContext, Box<[Binder]>)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut lc = LocalContext::new();
     let mut args = Vec::new();
@@ -985,7 +985,7 @@ impl Elaborator {
           format!("binder syntax error: {}", self.print(&e))))
       }
     }
-    Ok((lc, args))
+    Ok((lc, args.into()))
   }
 
   fn visibility(&self, fsp: &FileSpan, e: &LispVal) -> Result<Modifiers> {
@@ -1099,7 +1099,7 @@ impl Elaborator {
     })();
     mem::swap(&mut self.lc, &mut lc);
     let eret = eret?;
-    for e in self.finalize_vars(true) { return Err(e) }
+    if let Some(e) = self.finalize_vars(true).into_iter().next() { return Err(e) }
     // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(&args);
     let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());

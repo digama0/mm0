@@ -91,7 +91,7 @@ impl FrozenEnv {
         }
         ExprNode::App(t, ref es) => {
           write!(w, "({}", env.data()[env.term(t).atom].name()).unwrap();
-          for e in es {
+          for e in &**es {
             w.push(b' ');
             f(env, w, dummies, heap, e);
           }

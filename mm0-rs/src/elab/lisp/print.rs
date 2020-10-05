@@ -159,6 +159,7 @@ impl EnvDisplay for LispVal {
 }
 
 impl EnvDisplay for LispKind {
+  #[allow(clippy::match_overlapping_arm)]
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       LispKind::Atom(a) => a.fmt(fe, f),

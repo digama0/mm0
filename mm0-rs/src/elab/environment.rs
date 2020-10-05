@@ -139,7 +139,7 @@ pub enum ExprNode {
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomID, SortID),
   /// `App(t, nodes)` is an application of term constructor `t` to subterms
-  App(TermID, Vec<ExprNode>),
+  App(TermID, Box<[ExprNode]>),
 }
 
 /// The `Expr` type stores expression dags using a local context of expression nodes
@@ -150,7 +150,7 @@ pub enum ExprNode {
 pub struct Expr {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
-  pub heap: Vec<ExprNode>,
+  pub heap: Box<[ExprNode]>,
   /// The target expression.
   pub head: ExprNode,
 }
@@ -174,7 +174,7 @@ pub struct Term {
   /// The list of argument binders. The names of the variables are not used except for
   /// pretty printing and conversion back to s-exprs. (A `None` variable is represented
   /// as `_` and cannot be referred to.)
-  pub args: Vec<(Option<AtomID>, Type)>,
+  pub args: Box<[(Option<AtomID>, Type)]>,
   /// The return sort and dependencies of the term constructor. See [`Type::Reg`] for
   /// the interpretation of the dependencies.
   ///
@@ -276,12 +276,12 @@ impl From<&ExprNode> for ProofNode {
 pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
-  pub heap: Vec<ProofNode>,
+  pub heap: Box<[ProofNode]>,
   /// The hypotheses, where `hyps[i]` points to `Hyp(i, e)`. Because these terms
   /// are deduplicated with everything else, the `Hyp` itself will probably be
   /// on the heap (unless it is never used), and then a `Ref` will be stored
   /// in the `hyps` array.
-  pub hyps: Vec<ProofNode>,
+  pub hyps: Box<[ProofNode]>,
   /// The target proof term.
   pub head: ProofNode,
 }
@@ -304,12 +304,12 @@ pub struct Thm {
   /// The list of argument binders. The names of the variables are not used except for
   /// pretty printing and conversion back to s-exprs. (A `None` variable is represented
   /// as `_` and cannot be referred to.)
-  pub args: Vec<(Option<AtomID>, Type)>,
+  pub args: Box<[(Option<AtomID>, Type)]>,
   /// The heap used as the context for the `hyps` and `ret`.
-  pub heap: Vec<ExprNode>,
+  pub heap: Box<[ExprNode]>,
   /// The expressions for the hypotheses (and their names, which are not used except
   /// in pretty printing and conversion back to s-exprs).
-  pub hyps: Vec<(Option<AtomID>, ExprNode)>,
+  pub hyps: Box<[(Option<AtomID>, ExprNode)]>,
   /// The expression for the conclusion of the theorem.
   pub ret: ExprNode,
   /// The proof of the theorem:
@@ -327,6 +327,18 @@ pub struct Thm {
   pub proof: Option<Option<Proof>>,
 }
 
+/// An `output string` directive, which is anonymous and hence stored directly
+/// in the [`StmtTrace`] list.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub struct OutputString {
+  /// The span of the full statement.
+  pub span: FileSpan,
+  /// The heap of expressions used in the `exprs`.
+  pub heap: Box<[ExprNode]>,
+  /// The expressions to output.
+  pub exprs: Box<[ExprNode]>,
+}
+
 /// A global order on sorts, declarations ([`Term`] and [`Thm`]), and lisp
 /// global definitions based on declaration order.
 ///
@@ -341,7 +353,7 @@ pub enum StmtTrace {
   /// A global lisp declaration in a `do` block, i.e. `do { (def foo 1) };`
   Global(AtomID),
   /// An `output string` directive.
-  OutputString(LispVal)
+  OutputString(Box<OutputString>)
 }
 
 /// A declaration is either a [`Term`] or a [`Thm`]. This is done because in MM1
@@ -791,6 +803,16 @@ impl Remap for Term {
       args: self.args.remap(r),
       ret: (self.ret.0.remap(r), self.ret.1),
       val: self.val.remap(r),
+    }
+  }
+}
+impl Remap for OutputString {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    OutputString {
+      span: self.span.clone(),
+      heap: self.heap.remap(r),
+      exprs: self.exprs.remap(r),
     }
   }
 }

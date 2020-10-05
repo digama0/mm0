@@ -312,7 +312,7 @@ impl<'a> Importer<'a> {
           span: self.fspan(span),
           vis: if let DeclKind::LocalDef = dk {Modifiers::LOCAL} else {Modifiers::empty()},
           full: (start..end).into(),
-          args,
+          args: args.into(),
           ret: (ret, deps),
           val,
         };
@@ -364,7 +364,7 @@ impl<'a> Importer<'a> {
           span: self.fspan(span),
           vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
-          args, heap, hyps, ret, proof
+          args: args.into(), heap, hyps, ret, proof
         };
         self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
       }

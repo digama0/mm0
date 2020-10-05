@@ -644,8 +644,8 @@ impl<'a> LispParser<'a> {
               [] => return Ok(Pattern::List(pfx.into(), Some(0))),
               _ => return Err(ElabError::new_e(head.span, "expected nothing after '...'")),
             },
-            "__" => match args {
-              &[SExpr {span, k: SExprKind::Number(ref n)}] =>
+            "__" => match *args {
+              [SExpr {span, k: SExprKind::Number(ref n)}] =>
                 return Ok(Pattern::List(pfx.into(), Some(n.to_usize().ok_or_else(||
                   ElabError::new_e(span, "number out of range"))?))),
               _ => return Err(ElabError::new_e(head.span, "expected number after '__'")),

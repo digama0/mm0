@@ -140,20 +140,20 @@ impl<H: NodeHash> Dedup<H> {
   /// Insert a new hash object `v`, originating from lisp object `p`,
   /// into the `Dedup`, returning the allocated index.
   pub fn dedup(&mut self, nh: &NodeHasher<'_>, e: &LispVal) -> Result<usize> {
-    let r = e.unwrapped_arc();
-    let p: *const _ = &*r;
-    Ok(match self.prev.entry(p) {
+    let arc = e.unwrapped_arc();
+    let ptr: *const _ = &*arc;
+    Ok(match self.prev.entry(ptr) {
       Entry::Occupied(o) => match o.get() {
         &Some((_, n)) => self.reuse(n),
         None => return Err(nh.err_sp(e.fspan().as_ref(), "cyclic proof")),
       },
       Entry::Vacant(v) => {
         v.insert(None);
-        let n = match H::from(nh, e.fspan().as_ref(), &r, self)? {
+        let n = match H::from(nh, e.fspan().as_ref(), &arc, self)? {
           Ok(v) => self.add_direct(v),
           Err(n) => n,
         };
-        self.prev.insert(p, Some((r, n))); n
+        self.prev.insert(ptr, Some((arc, n))); n
       }
     })
   }
@@ -311,7 +311,7 @@ impl<T: Node> Val<T> {
 /// the `heap` with `Ref` nodes in the `ids`.
 ///
 /// [`Dedup`]: struct.Dedup.html
-pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Vec<T>)
+pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Box<[T]>)
 where
   T::Hash: 'a,
   D: IntoIterator<Item=(&'a T::Hash, bool)>,
@@ -329,7 +329,7 @@ where
       ids.push(Val::Built(node))
     }
   }
-  (ids.into(), heap)
+  (ids.into(), heap.into())
 }
 
 /// The `NodeHash` version of [`ExprNode`]. It has the same structure except that

@@ -363,7 +363,7 @@ fn write_expr_proof(w: &mut impl Write,
       (reorder.idx, reorder.idx += 1).0
     }
     ExprNode::App(t, ref es) => {
-      for e in es {write_expr_proof(w, heap, reorder, e, false)?;}
+      for e in &**es {write_expr_proof(w, heap, reorder, e, false)?;}
       if save {
         ProofCmd::TermSave(t).write_to(w)?;
         (reorder.idx, reorder.idx += 1).0
@@ -507,7 +507,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
           commit!(reorder.idx); reorder.idx += 1;
           UnifyCmd::TermSave(t).write_to(self)?
         }
-        for e in es {
+        for e in &**es {
           self.write_expr_unify(heap, reorder, e, save)?
         }
       }
@@ -807,7 +807,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                 None => {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
-                  for (_, h) in &td.hyps {
+                  for (_, h) in &*td.hyps {
                     write_expr_proof(vec, &td.heap, &mut reorder, h, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
                   }
@@ -819,7 +819,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());
-                  for h in hyps {
+                  for h in &**hyps {
                     let e = match h.deref(heap) {
                       ProofNode::Hyp(_, ref e) => &**e,
                       _ => unreachable!()
