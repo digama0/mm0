@@ -4,7 +4,7 @@ do {
   (assemble 'hello 'main 0 'pub '(
     (func main (
       (0xba 0x0e 0x00 0x00 0x00)
-      (0xb9 0x22 0x10 0x40 0x00)
+      (0xb9 0x9a 0x00 0x40 0x00)
       (0xbb 0x01 0x00 0x00 0x00)
       (0xb8 0x04 0x00 0x00 0x00)
       (0xcd 0x80)
@@ -18,3 +18,9 @@ do {
   -- pub theorem hello_basicElf: $ isBasicElf (hello) $;
   (get-decl 'hello_basicElf)
 };
+
+theorem hello_terminates:
+  $ initialConfig hello i k -> terminates_ensuring k (S\ i2, {o |
+      i2 = i /\ o = ,"Hello, World!"}) $;
+
+output string: $ hello $;

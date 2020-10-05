@@ -3279,7 +3279,7 @@ pub theorem parseBasicElfT (file entry prot vaddr seg: nat):
 
 -- `isBasicElf elf` means that `elf` is a string that satisfies the
 -- ELF specification.
-@_ def isBasicElf (elf: string) (.entry .prot .off .seg: nat): wff =
+def isBasicElf (elf: string) (.entry .prot .off .seg: nat): wff =
 $ E. entry E. prot E. off E. seg parseBasicElf elf entry prot off seg $;
 
 @_ def blankConfig (entry k .f .m .r: nat): wff =
