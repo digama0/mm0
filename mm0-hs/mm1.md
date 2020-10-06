@@ -589,6 +589,8 @@ MM0-specific builtin functions
 
 * `(dummy! x s)` produces a new dummy variable called `x` with sort `s`, and returns `x`; `(dummy! s)` automatically gives the variable a name like `_123` that is guaranteed to be unused.
 
+* `(eval-string s1 ... sn)` will elaborate expressions `s1` ... `sn` as type `string`, assuming the string preamble has been set up (see the spec for [`output string`](https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#string-io)), returning a string containing the result of evaluating the string expressions. This has exactly the same effect as `output string: s1 ... sn;`, except the string is returned to the caller instead of output by the verifier.
+
 Compilation
 ===
 

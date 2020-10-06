@@ -1127,6 +1127,12 @@ make_builtins! { self, sp1, sp2, args,
     if args.len() > 2 {try1!(Err("too many arguments"))}
     args.into_iter().nth(1).unwrap()
   },
+  EvalString: AtLeast(0) => {
+    let fsp = self.fspan(sp1);
+    let bytes = self.eval_string(fsp, &args)?;
+    let out = unsafe { String::from_utf8_unchecked(bytes) };
+    LispVal::string(ArcString::new(out))
+  },
   MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
     RefCell::new(crate::mmc::Compiler::new(self)))),
 }

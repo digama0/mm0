@@ -1072,6 +1072,11 @@ str_enum! {
     /// by `refine` when elaborating a term with too many arguments, and is expected to be
     /// overridden by user code to provide a more useful behavior.
     RefineExtraArgs: "refine-extra-args",
+    /// `(eval-string e1 e2 ...)` takes as input zero or more expressions which are elaborated
+    /// as type `string`, and then evaluates them to an actual lisp string. This has the same
+    /// effect as the top level command `output string: e1 e2 ...;` but this command is only
+    /// triggered on a compile, while `eval-string` works also in server mode.
+    EvalString: "eval-string",
     /// `(mmc-init)` returns a new compiler object, which is itself a procedure that can
     /// be called to compile MMC functions. See [`Compiler::call`].
     ///
