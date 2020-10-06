@@ -1,6 +1,8 @@
 //! A utility for recursively measuring the size of an object
 //!
-//! This is an adaptation of the [`deepsize`](https://docs.rs/deepsize) crate.
+//! This is an adaptation of the [`deepsize`](https://docs.rs/deepsize) crate,
+//! Copyright (c) 2019 Aeledfyr, which is MIT licensed (see the LICENSE file
+//! in this directory).
 
 use std::mem::{size_of, size_of_val};
 use std::sync::Arc;
