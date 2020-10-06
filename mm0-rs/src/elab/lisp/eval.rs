@@ -714,8 +714,15 @@ macro_rules! make_builtins {
 }
 
 make_builtins! { self, sp1, sp2, args,
-  Display: Exact(1) => {print!(sp1, &*try1!(self.as_string(&args[0]))); LispVal::undef()},
-  Error: Exact(1) => try1!(Err(&*try1!(self.as_string(&args[0])))),
+  Display: Exact(1) => {
+    let s = try1!(self.as_string(&args[0]));
+    print!(sp1, String::from_utf8_lossy(s.as_bytes()));
+    LispVal::undef()
+  },
+  Error: Exact(1) => {
+    let s = try1!(self.as_string(&args[0]));
+    try1!(Err(String::from_utf8_lossy(s.as_bytes())))
+  },
   Print: Exact(1) => {print!(sp1, format!("{}", self.print(&args[0]))); LispVal::undef()},
   ReportAt: Exact(3) => {
     let level = match args[0].as_atom() {
@@ -726,7 +733,8 @@ make_builtins! { self, sp1, sp2, args,
     };
     let FileSpan {file, span} = try1!(args[1].fspan().ok_or("expected a span"));
     if file == self.file {
-      let s = (*try1!(self.as_string(&args[2]))).into();
+      let s = try1!(self.as_string(&args[2]));
+      let s = String::from_utf8_lossy(s.as_bytes()).into();
       let msg = if let Some(true) = args[1].as_bool() {
         self.make_stack_err(Some((span, true)), level, "(report-at)".into(), s)
       } else {
