@@ -79,7 +79,7 @@ theorem sub64T (a b: nat): $ a -_64 b e. u64 $;
 def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 
 def bvSize (bs: nat): nat;
-theorem bvSize0 (n: nat): $ bvSize 0 = 0 $;
+theorem bvSize0: $ bvSize 0 = 0 $;
 theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
 
 def isBitvecs (bs k: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
@@ -668,7 +668,7 @@ def decodeAux (rex ast b l: nat): wff =
 $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
   decodePush rex ast b l \/ decodePop rex ast b l \/
   decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
-  decodeHi rex ast b l $;
+  decodeHi rex ast b l \/ decodeTwo rex ast b l $;
 theorem decodeAuxT (rex ast b l: nat):
   $ decodeAux rex ast b l -> ast e. XAST $;
 

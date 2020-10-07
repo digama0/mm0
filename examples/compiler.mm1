@@ -302,6 +302,87 @@ theorem basicElf_ok
 -- Assembler --
 ---------------
 
+theorem splitBits14i (a: hex): $ splitBits ((4 <> a) : 0) a $ = '(splitBits1i h2nT);
+theorem splitBits14ie (x: hex) (h: $ a = x $): $ splitBits ((4 <> a) : 0) x $ =
+'(mpbir (splitBitseq1 @ conseq1 @ preq2 h) splitBits14i);
+theorem splitBitsS4i (h: $ splitBits bs n $): $ splitBits ((4 <> a) : bs) (n :x a) $ =
+'(mpbir splitBitsS4 @ ax_mp (!! iexe _1 ,eqtac) @ iani eqid h);
+
+theorem splitBitsA4i
+  (he: $ bs1 ++ bs2 = bs $)
+  (hs: $ bvSize bs1 = 4 $)
+  (h1: $ splitBits bs1 a $)
+  (h2: $ splitBits bs2 n $):
+  $ splitBits bs (n :x a) $ =
+'(mpbi (splitBitseq1 he) @ splitBitsA hs h1 @ splitBitsS4i h2);
+
+theorem splitBitsA4ic
+  (he: $ bs1 ++ bs2 = bs $)
+  (hs: $ bvSize bs1 = 4 $)
+  (h1: $ splitBits bs1 b $)
+  (h2: $ splitBits bs2 a $):
+  $ splitBits bs (ch a b) $ =
+'(mpbir (splitBitseq2 c2nch) @ splitBitsA4i he hs h1 h2);
+
+theorem appendSi (h: $ a ++ b = c $): $ x : a ++ b = x : c $ = '(eqtr appendS @ conseq2 h);
+
+theorem decodeI
+  (h1: $ readPrefixes rex l1 $)
+  (h2: $ decodeAux rex ast opc l2 $)
+  (he: $ l1 ++ opc : l2 = l $):
+  $ decode ast l $ =
+'(trud @ !! iexde _1 @ !! iexde _2 @ !! iexde _3 @ !! iexde _4 @
+  mpbiri (iani (iani (eqcom he) h1) h2) ,eqtac);
+
+theorem decode0I (h: $ decodeAux 0 ast opc s $): $ decode ast (opc ': s) $ =
+(named '(decodeI (orl @ ian eqid eqid) h @ eqtr4 append0 s2nscons));
+
+theorem decode1I
+  (h: $ decodeAux (suc rex) ast opc s $):
+  $ decode ast (ch x4 rex ': opc ': s) $ =
+(named '(decodeI (orr @ trud @ !! iexde _1 @ !! iexde _2 @
+  mpbiri (ian (ian (splitBitsS4i @ splitBits14ie dec4) eqid) eqid) ,eqtac) h @
+  eqtr4 append1 @ eqtr s2nscons @ conseq c2nhex s2nscons));
+
+theorem decodeAux_s1
+  (h: $ decodeAux rex ast opc (c ': s0) $):
+  $ decodeAux rex ast opc (s1 c) $ = '(mpbi (decodeAuxeq4 s2nscons0) h);
+
+theorem decodeBinopI (h: $ decodeBinop rex ast b l $): $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orl @ orl h);
+theorem decodeMovI   (h: $ decodeMov rex ast b l $):   $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orl @ orr h);
+theorem decodePushI  (h: $ decodePush rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orr h);
+theorem decodePopI   (h: $ decodePop rex ast b l $):   $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orr h);
+theorem decodeFlowI  (h: $ decodeFlow rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orr h);
+theorem decodeMiscI  (h: $ decodeMisc rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orr h);
+theorem decodeHiI    (h: $ decodeHi rex ast b l $):    $ decodeAux rex ast b l $ = '(orl @ orr h);
+
+theorem decodeMovRegI (h: $ decodeMovReg rex ast b l $): $ decodeAux rex ast b l $ =
+'(decodeMovI @ orl @ orl @ orr h);
+
+theorem decodeMovImmI
+  (h1: $ splitBits ((1 <> v) : (3 <> 3) : 0) a $)
+  (he: $ opSizeW rex v = sz $)
+  (h2: $ readOpcodeModRM rex opc r l1 $)
+  (h3: $ readImm sz imm l2 $):
+  $ decodeAux rex (xastMov sz (Rm_i r imm)) (ch xc a) (l1 '+ l2) $ =
+(focus
+  '(decodeMovI @ orr @ trud ,(iterate 6 (fn (x) '(!! iexde ,(dummy! 'nat) ,x))
+    '(mpbiri (iani (iani (iani (iani s2nsadd _) h2) _) _) ,eqtac)))
+  '(splitBitsA4ic (appendSi append1) ,bvSizeSi h1 @ splitBits14ie decc)
+  '(mpbir (readImmeq1 he) h3)
+  '(eqcom @ xastMoveq1 he));
+
+theorem decodeTwoI (h: $ ,(foldr '(2 2 2 2 6) (get-decl 'decodeTwo) nth) $):
+  $ decodeAux rex ast (ch x0 xf) (b2 ': l2) $ =
+'(orr @ iani eqid @ trud @ !! iexde _1 @ !! iexde _2 @ mpbiri (iani s2nscons h) ,eqtac);
+
+theorem decodeSysCallI: $ decodeAux rex xastSysCall (ch x0 xf) (s1 (ch x0 x5)) $ =
+'(decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);
+
+------------
+-- Linker --
+------------
+
 def assembled (c s: string) (start end: nat): wff =
 $ end = start + len s /\ E. n (start = text_start + n /\ sublistAt n c s) $;
 
@@ -502,15 +583,15 @@ do {
         (,parseElf)))))
 };
 
-def X86P_Input = $ b0 0 $;
-def X86P_Output = $ b0 1 $;
-def X86P_RIP = $ b0 2 $;
-def X86P_Flags = $ b0 3 $;
-def X86P_Virtual (n: nat) = $ b0 (n + 4) $;
-def X86P_Reg (n: nat) = $ b1 (b0 n) $;
-def X86P_Mem (n: nat) = $ b1 (b1 n) $;
+@_ def X86P_Input = $ b0 0 $;
+@_ def X86P_Output = $ b0 1 $;
+@_ def X86P_RIP = $ b0 2 $;
+@_ def X86P_Flags = $ b0 3 $;
+@_ def X86P_Virtual (n: nat) = $ b0 (n + 4) $;
+@_ def X86P_Reg (n: nat) = $ b1 (b0 n) $;
+@_ def X86P_Mem (n: nat) = $ b1 (b1 n) $;
 
-def read_place (ks: nat): set =
+@_ def read_place (ks: nat): set =
 $ case
     (ocase (pi11 ks)
       (ocase (pi12 ks)
@@ -521,21 +602,21 @@ $ case
       (\ r, readReg (ksCfg ks) r)
       (\ a, getMemory (ksCfg ks) @ a <> ksMapping ks @ a)) $;
 
-def heap_sat (h ks: nat): wff =
+@_ def heap_sat (h ks: nat): wff =
 $ A. p A. x (p <> x e. h -> read_place ks @ p = x) $;
 
-def heap_join (h1 h2: nat): nat =
+@_ def heap_join (h1 h2: nat): nat =
 $ if (Dom h1 i^i Dom h2 == 0) (lower (h1 u. h2)) 0 $;
 
-def s_and (P Q: set): set = $ Union P Q $;
+@_ def s_and (P Q: set): set = $ Union P Q $;
 
-def s_sep (P Q: set): set =
+@_ def s_sep (P Q: set): set =
 $ {h | E. h1 E. h2 (h1 e. P /\ h2 e. Q /\ heap_join h1 h2 = suc h)} $;
 
-def s_wand (P Q: set): set =
+@_ def s_wand (P Q: set): set =
 $ {h2 | A. h1 A. h (h1 e. P -> heap_join h1 h2 = suc h -> h e. Q)} $;
 
-def x86_sat (P: set) (ks: nat): wff =
+@_ def x86_sat (P: set) (ks: nat): wff =
 $ A. p A. x (p <> x e. P -> read_place ks @ p = x) $;
 
 def prog_ok (elf: string) (i: nat) (P: set): wff =

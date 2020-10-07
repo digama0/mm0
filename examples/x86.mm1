@@ -226,6 +226,9 @@ theorem b0Bits: $ a e. Bits n -> b0 a e. Bits (suc n) $ =
 
 theorem mod_el_Bits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
+theorem h2nT (h: hex): $ h e. Bits 4 $ =
+'(mpbir elBits2 @ mpbir (lteq2 d2pow4) h2nlt);
+
 @_ def u8: nat = $ Bits 8 $;
 @_ def u16: nat = $ Bits 16 $;
 @_ def u32: nat = $ Bits 32 $;
@@ -470,10 +473,17 @@ theorem elBitvec: $ n <> bs e. Bitvec <-> bs < 2 ^ n $ =
 theorem elBitvec2: $ n <> bs e. Bitvec <-> bs e. Bits n $ = '(bitr4 elBitvec elBits2);
 
 @_ abstract def bvSize (bs: nat): nat = $ lrec 0 (\\ p, \\ z, \ ih, fst p + ih) bs $;
-pub theorem bvSize0 (n: nat): $ bvSize 0 = 0 $ = (named 'lrec0);
+pub theorem bvSize0: $ bvSize 0 = 0 $ = (named 'lrec0);
 pub theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $ =
 (named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> bvSize n) $} @ appslame @
   appslamed @ applamed @ addeqd (syl6eq fstpr @ fsteqd anll) anr));
+
+theorem bvSizeA: $ bvSize (bs1 ++ bs2) = bvSize bs1 + bvSize bs2 $ =
+(induct '(!! listind x a b) 'bs1
+  '(eqtr4 (bvSizeeq append0) @ eqtr (addeq1 bvSize0) add01)
+  '(syl5eqr (bvSizeeq @ eqtr4 (conseq1 fstsnd) appendS) @
+    syl6eq (addeq1 @ eqtr3 bvSizeS @ bvSizeeq @ conseq1 fstsnd) @
+    syl5eq bvSizeS @ syl6eqr addass addeq2));
 
 do (def (bvSizeSi refine t)
   @ refine t @ match t
@@ -505,6 +515,17 @@ theorem ofBitsT (bs: nat):
     sylib (eleq1 @ ofBitseq @ conseq1 fstsnd) @
     sylbi (aneq1i @ bitr3 (eleq1 fstsnd) elBitvec2) ofBitsST))));
 
+theorem ofBitsA: $ ofBits (bs1 ++ bs2) = ofBits bs1 + shl (ofBits bs2) (bvSize bs1) $ =
+(induct '(!! listind x a b) 'bs1
+  '(eqtr4 (ofBitseq append0) @ eqtr (addeq1 ofBits0) @
+    eqtr add01 @ eqtr (shleq2 bvSize0) shl02)
+  '(syl5eqr (ofBitseq @ eqtr4 (conseq1 fstsnd) appendS) @
+    syl6eq (addeq (eqtr3 ofBitsS @ ofBitseq @ conseq1 fstsnd) @
+      shleq2 @ eqtr3 bvSizeS @ bvSizeeq @ conseq1 fstsnd) @
+    syl5eq ofBitsS @ syl6eqr addass @ addeq2d @
+    syl6eq (eqtr addmul @ addeq2 @ eqtr mulass @
+      muleq2 @ eqtr4 mulcom powadd) shleq1));
+
 @_ def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
 pub theorem splitBitsT (bs n k: nat):
   $ isBitvecs bs k /\ splitBits bs n -> n e. Bits k $ =
@@ -512,6 +533,35 @@ pub theorem splitBitsT (bs n k: nat):
 
 theorem splitBitsTi (h: $ bvSize bs = k $): $ splitBits bs n -> n e. Bits k $ =
 '(sylan splitBitsT (iand anl @ a1i h) id);
+
+theorem splitBits0: $ splitBits 0 n <-> n = 0 $ =
+'(bitr (bian1 elList0) @ bitr eqcomb @ eqeq2 ofBits0);
+
+theorem splitBitsS: $ splitBits ((k <> a) : bs) n <->
+  a e. Bits k /\ E. m (n = a + shl m k /\ splitBits bs m) $ =
+'(bitr (aneq1i elListS) @ bitr anass @ bitr (aneq1i elBitvec2) @ aneq2i @
+  bitr3 (exeqe @ syl5bb ancomb @ aneq2d @
+    syl6bb (bitr4 eqcomb @ eqeq1 ofBitsS) @ eqeq2d @ addeq2d shleq1) @
+  exeqi @ bitr anlass @ aneq2i @ bitr ancomb @ aneq2i eqcomb);
+
+theorem splitBits1: $ splitBits ((k <> a) : 0) n <-> a e. Bits k /\ n = a $ =
+(named '(bitr splitBitsS @ aneq2i @
+  bitr3 (exeqi @ bitr3 (aneq1i splitBits0) ancomb) @
+  exeqe @ eqeq2d @ syl6eq add02 @ addeq2d @ syl6eq shl01 shleq1));
+
+theorem splitBits1i: $ a e. Bits k -> splitBits ((k <> a) : 0) a $ =
+'(sylibr splitBits1 @ mpi eqid ian);
+
+theorem splitBitsS4: $ splitBits ((4 <> a) : bs) n <->
+  E. m (n = m :x a /\ splitBits bs m) $ =
+'(bitr splitBitsS @ bitr (bian1 h2nT) @ exeqi @ aneq1i @ eqeq2 @
+  eqtr addcom @ addeq1 @ muleq2 d2pow4);
+
+theorem splitBitsA
+  : $ bvSize bs1 = k -> splitBits bs1 a -> splitBits ((k <> a) : bs2) n ->
+  splitBits (bs1 ++ bs2) n $ =
+'(exp @ exp @ iand (sylibr appendT @ iand (anld anlr) @ anrd @ sylib elListS anrl) @
+  eqtrd (eqtr4g ofBitsA ofBitsS @ addeqd (anrd anlr) @ shleq2d anll) anrr);
 
 ----------------------------------------
 -- x86-64 machine code decoding
@@ -1448,12 +1498,12 @@ pub theorem decodeHiT (rex ast b l: nat):
 $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
   decodePush rex ast b l \/ decodePop rex ast b l \/
   decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
-  decodeHi rex ast b l $;
+  decodeHi rex ast b l \/ decodeTwo rex ast b l $;
 pub theorem decodeAuxT (rex ast b l: nat):
   $ decodeAux rex ast b l -> ast e. XAST $ =
 (focus
   (def (f x) (atom-app 'decode x 'T))
-  (foldl '(Mov Push Pop Flow Misc Hi) (f 'Binop)
+  (foldl '(Mov Push Pop Flow Misc Hi Two) (f 'Binop)
     @ fn (x y) '(eor ,x ,(f y))));
 
 @_ def decode (ast l .rex .l1 .opc .l2: nat): wff =
@@ -3028,7 +3078,22 @@ pub theorem ksStepT (ks ks2: nat):
   $ ksStep ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $ =
 (named '(anim2a @ eord (a1i @ eex @ anrd @ anwr writeCfgT) @ exp execIO_T));
 
-theorem ksStep_no_exit: $ ksStep ks ks2 -> ~execExit (ksCfg ks) ret $;
+theorem ksStep_no_exit: $ ksStep ks ks2 -> ~execExit (ksCfg ks) ret $ =
+(named @ focus
+  '(anwr @ eor
+    (eex @ anwl @ rsyl anlr @ con2 @ anwr @ eor (anwl sucne0) (anwll sucne0))
+    (eex @ eex @ eex @ eex @ eex _))
+  '(mpbird (noteqd @ execExiteq1d @ syl6eq ksCfg_mk @ ksCfgeqd anll) @
+    syl inot @ syl5 anr @ eorda
+    (syl (absurd d1ne0) @ sylib peano2 @ eqtr3d anrl @ anwl anlr)
+    (imp @ syl5 anlr @ syl absurd @ anwr @ eex @ eex @ anwr _))
+  (def (f x) '(mpi {,norm_num : $ ,x != ch x3 xc $} @ con3d eqtr3))
+  '(eor (eor (eor (eor
+    (rsyl an3lr ,(f $2$))
+    (eex @ rsyl anllr ,(f $0$)))
+    (eex @ rsyl an3lr ,(f $1$)))
+    (anwll ,(f $5$)))
+    (eex @ rsyl anllr ,(f $9$))));
 
 @_ local def ksPath_aux (ksl ks2: nat): wff =
 $ srecp (S\ i, {ih |
