@@ -40,8 +40,6 @@ prefix Ex: $EX$ prec 41;
 
 do {
   -- This is just a scratchpad for now, some thoughts on MMC syntax and primitives.
-  (def {a ^ b} (if {b <= 1} (match b [0 1] [1 a]) @ begin
-    (def c {b // 2}) {{a ^ c} * {a ^ {b - c}}}))
   (mmc-add '(
     (struct CStr
       {(ghost len) : nat}

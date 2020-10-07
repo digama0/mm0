@@ -11,6 +11,7 @@ use std::mem;
 use std::time::{Instant, Duration};
 use std::sync::atomic::Ordering;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
@@ -771,6 +772,21 @@ make_builtins! { self, sp1, sp2, args,
     for e in args { n *= try1!(self.as_int(&e)) }
     LispVal::number(n)
   },
+  Pow: AtLeast(0) => {
+    let mut it = args.into_iter().rev();
+    match it.next() {
+      None => LispVal::number(1.into()),
+      Some(b) => {
+        let mut n = try1!(self.as_int(&b));
+        for e in it {
+          let exp: u32 = try1!(n.try_into().map_err(|_| "exponent out of range"));
+          let base = try1!(self.as_int(&e));
+          n = if base == 2.into() { BigInt::from(1) << exp } else { BigInt::pow(&base, exp) };
+        }
+        LispVal::number(n)
+      }
+    }
+  },
   Max: AtLeast(1) => {
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
@@ -808,6 +824,66 @@ make_builtins! { self, sp1, sp2, args,
   Gt: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a > b, &args))),
   Ge: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a >= b, &args))),
   Eq: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a == b, &args))),
+  Shl: AtLeast(1) => {
+    let mut it = args.into_iter();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
+    for e in it {
+      try1!(self.with_int(&e, |e| Ok(match e.sign() {
+        num::bigint::Sign::Minus => {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n >>= &i
+        }
+        _ =>  {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n <<= &i
+        }
+      })))
+    }
+    LispVal::number(n)
+  },
+  Shr: AtLeast(1) => {
+    let mut it = args.into_iter();
+    let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
+    for e in it {
+      try1!(self.with_int(&e, |e| Ok(match e.sign() {
+        num::bigint::Sign::Minus => {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n <<= &i
+        }
+        _ =>  {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n >>= &i
+        }
+      })))
+    }
+    LispVal::number(n)
+  },
+  BAnd: AtLeast(0) => {
+    let mut n: BigInt = (-1).into();
+    for e in args { n &= try1!(self.as_int(&e)) }
+    LispVal::number(n)
+  },
+  BOr: AtLeast(0) => {
+    let mut n: BigInt = 0.into();
+    for e in args { n |= try1!(self.as_int(&e)) }
+    LispVal::number(n)
+  },
+  BXor: AtLeast(0) => {
+    let mut n: BigInt = 0.into();
+    for e in args { n ^= try1!(self.as_int(&e)) }
+    LispVal::number(n)
+  },
+  BNot: AtLeast(0) => {
+    let n = match &*args {
+      [e] => try1!(self.as_int(e)),
+      _ => {
+        let mut n: BigInt = (-1).into();
+        for e in args { n &= try1!(self.as_int(&e)) }
+        n
+      }
+    };
+    LispVal::number(!n)
+  },
   Equal: AtLeast(1) => {
     let (e1, args) = args.split_first().unwrap();
     LispVal::bool(args.iter().all(|e2| e1 == e2))
@@ -824,7 +900,6 @@ make_builtins! { self, sp1, sp2, args,
   },
   StringLen: Exact(1) => LispVal::number(try1!(self.as_string(&args[0])).len().into()),
   StringNth: Exact(2) => {
-    use std::convert::TryInto;
     let i: usize = try1!(self.with_int(&args[0],
       |n| n.try_into().map_err(|_| format!("index out of range: {}", n))));
     let s = try1!(self.as_string(&args[1]));
@@ -833,7 +908,6 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::number(c.into())
   },
   Substr: Exact(3) => {
-    use std::convert::TryInto;
     let start: usize = try1!(self.with_int(&args[0],
       |n| n.try_into().map_err(|_| format!("index out of range: start {}", n))));
     let end: usize = try1!(self.with_int(&args[1],
@@ -854,7 +928,6 @@ make_builtins! { self, sp1, sp2, args,
       .collect::<Vec<_>>())
   },
   ListToString: Exact(1) => {
-    use std::convert::TryInto;
     let mut u = Uncons::New(args[0].clone());
     let mut bytes: Vec<u8> = Vec::with_capacity(u.len());
     while let Some(e) = u.next() {

@@ -779,6 +779,9 @@ str_enum! {
     Add: "+",
     /// `(* a b c)` computes the product of the (integer) arguments. `(*)` is one and `(* a)` is `a`.
     Mul: "*",
+    /// `{a ^ b}` computes `a` to the power of `b`. It gives an error if `b` is negative.
+    /// Additional arguments are right associative.
+    Pow: "^",
     /// `(max a b c)` computes the maximum of the (integer) arguments. `(max)` is an error.
     Max: "max",
     /// `(min a b c)` computes the minimum of the (integer) arguments. `(min)` is an error.
@@ -800,6 +803,22 @@ str_enum! {
     Ge: ">=",
     /// `{a = b}` is true if `a` and `b` are equal numbers. `(= a b c)` means `a = b` and `b = c`.
     Eq: "=",
+    /// `{a shl b}` performs a left shift `a << b`, equivalent to `a * 2 ^ b`.
+    /// Negative `b` causes a right shift. Additional arguments are left associative;
+    /// `3 << -1 << 1 = 2`.
+    Shl: "shl",
+    /// `{a shr b}` performs a right shift `a >> b`, equivalent to `a // 2 ^ b`.
+    /// Negative `b` causes a left shift. Additional arguments are left associative;
+    /// `3 >> 1 >> -1 = 2`.
+    Shr: "shr",
+    /// `{a band b band ...}` performs a bitwise AND of the arguments.
+    BAnd: "band",
+    /// `{a bor b bor ...}` performs a bitwise OR of the arguments.
+    BOr: "bor",
+    /// `{a bxor b bxor ...}` performs a bitwise XOR of the arguments.
+    BXor: "bxor",
+    /// `(bnot a)` performs a bitwise NOT of the argument; additional arguments act like NAND.
+    BNot: "bnot",
     /// `==`, distinct from `=`, is sometimes called `equal?` in other lisps, and performs
     /// recursive equality comparison.
     ///
