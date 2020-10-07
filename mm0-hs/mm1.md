@@ -521,6 +521,8 @@ MM0-specific builtin functions
 
 * `(set-timeout n)` sets the timeout for running individual theorems and `do` blocks to `n` milliseconds. The default is 5 seconds.
 
+* `(set-stack-limit n)` sets the maximum number of stack frames used during evaluation of theorems and `do` blocks to `n`. The default is 1024.
+
 * `(set-reporting type b)` turns on (`b = #t`) or off (`b = #f`) error reporting for error type `type`, which can be `'error`, `'info` or `'warn`. (Compilation will still be aborted if there are errors, even if the display is suppressed.) `(set-reporting b)` will set the error reporting to `b` for all error types.
 
 * `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.

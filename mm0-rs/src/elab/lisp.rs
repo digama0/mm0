@@ -972,6 +972,9 @@ str_enum! {
     /// `(set-timeout n)` sets the timeout for running individual theorems and
     /// `do` blocks to `n` milliseconds. The default is 5 seconds.
     SetTimeout: "set-timeout",
+    /// `(set-stack-limit n)` sets the maximum number of stack frames used during
+    /// evaluation of theorems and `do` blocks to `n`. The default is 1024.
+    SetStackLimit: "set-stack-limit",
     /// `(mvar? e)` returns `#t` if `e` is an unsolved metavariable value.
     /// *Note:* Holes in expressions are *not* represented as raw metavariables,
     /// they are ref-cells to metavariables. So to test if a metavariable has not

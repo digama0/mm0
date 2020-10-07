@@ -1065,6 +1065,12 @@ make_builtins! { self, sp1, sp2, args,
     }
     LispVal::undef()
   },
+  SetStackLimit: Exact(1) => {
+    self.stack_limit =
+      try1!(args[0].as_int(|n| n.to_usize()).ok_or("expected a number"))
+        .unwrap_or(usize::MAX);
+    LispVal::undef()
+  },
   IsMVar: Exact(1) => LispVal::bool(args[0].is_mvar()),
   IsGoal: Exact(1) => LispVal::bool(args[0].is_goal()),
   NewMVar: AtLeast(0) => {
@@ -1246,8 +1252,8 @@ impl<'a> Evaluator<'a> {
           return Err(self.err(None, "cancelled"))
         }
       }
-      if self.stack.len() >= 1024 {
-        return Err(self.err(None, format!("stack overflow: {:#?}", self.ctx)))
+      if self.stack.len() >= self.stack_limit {
+        return Err(self.err(None, "stack overflow"))
       }
       // if self.check_proofs {
       //   if self.stack.len() < stacklen {

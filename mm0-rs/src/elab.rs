@@ -214,6 +214,8 @@ pub struct Elaborator {
   timeout: Option<Duration>,
   /// The time at which the current lisp evaluation will be aborted
   cur_timeout: Option<Instant>,
+  /// The maximum number of permitted stack frames during elaboration
+  stack_limit: usize,
   /// The current proof context
   lc: LocalContext,
   /// Information attached to spans, used for hover queries
@@ -261,6 +263,7 @@ impl Elaborator {
       env: Environment::new(),
       timeout: Some(Duration::from_secs(5)),
       cur_timeout: None,
+      stack_limit: 1024,
       lc: LocalContext::new(),
       spans: Spans::new(),
       mm0_mode,
