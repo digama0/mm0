@@ -328,6 +328,7 @@ At the beginning of execution, the global context contains a number of primitive
 
 * `(+ a b c)` computes the sum of the (integer) arguments. `(+)` is zero and `(+ a)` is `a`.
 * `(* a b c)` computes the product of the (integer) arguments. `(*)` is one and `(* a)` is `a`.
+* `{a ^ b}` computes `a` to the power of `b`. It gives an error if `b` is negative. Additional arguments are right associative.
 * `(max a b c)` computes the maximum of the (integer) arguments. `(max)` is an error.
 * `(min a b c)` computes the minimum of the (integer) arguments. `(min)` is an error.
 * `(- a b)` computes the subtraction `a - b`. `(- a b c)` is `a - b - c`, `(- a)` is `-a`, and `(-)` is an error.
@@ -335,6 +336,13 @@ At the beginning of execution, the global context contains a number of primitive
 * `{a % b}` computes the integer modulus. More arguments associate to the left.
 * `(< a b)` is true if `a` is less than `b`. `(< a b c)` is true if `a < b` and `b < c`. `(< a)` is true and `(<)` is an error.
 * Similarly, `<=`, `>=`, `>` and `=` perform analogous iterated comparisons. There is no not-equal operator.
+
+* `{a shl b}` performs a left shift `a << b`, equivalent to `a * 2 ^ b`. Negative `b` causes a right shift. Additional arguments are left associative; `3 << -1 << 1 = 2`.
+* `{a shr b}` performs a right shift `a >> b`, equivalent to `a // 2 ^ b`. Negative `b` causes a left shift. Additional arguments are left associative; `3 >> 1 >> -1 = 2`.
+* `{a band b band ...}` performs a bitwise AND of the arguments.
+* `{a bor b bor ...}` performs a bitwise OR of the arguments.
+* `{a bxor b bxor ...}` performs a bitwise XOR of the arguments.
+* `(bnot a)` performs a bitwise NOT of the argument; additional arguments act like NAND.
 
 * `==`, distinct from `=`, is sometimes called `equal?` in other lisps, and performs recursive equality comparison.
 
