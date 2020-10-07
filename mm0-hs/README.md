@@ -10,7 +10,7 @@ To run the program you can use the following:
 
   This verifies the given `.mm0` specification file, and checks the proof file if given. It prints `spec checked` if the `.mm0` file is well formed and typechecks, and if the `.mmu` file is also provided then it prints `verified` if the specification is proven, followed by all the result of all `output` statements.
 
-The MM0 spec leaves many parts of the language implementation defined, and most of the specification is optional. This implementation has the following behavior:
+The MM0 spec leaves many parts of the language implementation-defined, and most of the specification is optional. This implementation has the following behavior:
 
 * All the primary commands are supported: `sort, term, axiom, def, theorem, delimiter, notation, infixl/r, prefix, coercion, input, output`.
 * All sort modifiers are supported.
