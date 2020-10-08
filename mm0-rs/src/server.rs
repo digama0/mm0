@@ -9,6 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::result::Result as StdResult;
 use std::thread::{ThreadId, self};
 use std::time::Instant;
+use std::str::FromStr;
 use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::ThreadPool;
@@ -28,7 +29,8 @@ use crate::elab::{ElabError, self, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
-  lisp::{print::FormatEnv, pretty::Pretty}, spans::Spans};
+  lisp::{print::FormatEnv, pretty::Pretty, LispKind, Proc, BuiltinProc},
+  spans::Spans};
 
 // Disabled because vscode doesn't handle them properly
 const USE_LOCATION_LINKS: bool = false;
@@ -486,13 +488,15 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
-  let mut res = vec![];
+  enum HoverType { Doc, MM0 }
+  use HoverType::*;
+  let mut res: Vec<(Span, HoverType, String)> = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     if let Some(r) = (|| Some(match k {
-      &ObjectKind::Sort(s) => (sp, format!("{}", &env.sorts[s])),
-      &ObjectKind::Term(t, sp1) => (sp1, format!("{}", fe.to(&env.terms[t]))),
-      &ObjectKind::Thm(t) => (sp, format!("{}", fe.to(&env.thms[t]))),
-      &ObjectKind::Var(x) => (sp, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+      &ObjectKind::Sort(s) => (sp, MM0, format!("{}", &env.sorts[s])),
+      &ObjectKind::Term(t, sp1) => (sp1, MM0, format!("{}", fe.to(&env.terms[t]))),
+      &ObjectKind::Thm(t) => (sp, MM0, format!("{}", fe.to(&env.thms[t]))),
+      &ObjectKind::Var(x) => (sp, MM0, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg(sort, deps))) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -514,7 +518,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
         fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).unwrap());
         use std::fmt::Write;
         write!(out, ": {}", fe.to(&s)).unwrap();
-        (sp1, out)
+        (sp1, MM0, out)
       }
       ObjectKind::Proof(p) => {
         if let Some(e) = p.as_atom().and_then(|x|
@@ -523,7 +527,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           let mut out = String::new();
           fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
             .render_fmt(80, &mut out).unwrap());
-          (sp, out)
+          (sp, MM0, out)
         } else {
           let mut u = p.uncons();
           let head = u.next()?;
@@ -531,7 +535,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           let a = head.as_atom()?;
           if let Some(DeclKey::Thm(t)) = env.data[a].decl {
             let td = &env.thms[t];
-            res.push((sp, format!("{}", fe.to(td))));
+            res.push((sp, MM0, format!("{}", fe.to(td))));
             let mut args = vec![];
             for _ in 0..td.args.len() {
               args.push(unsafe {u.next()?.thaw()}.clone());
@@ -542,19 +546,33 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
             fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
               td.hyps.iter().map(|(_, h)| subst.subst(h)),
               &ret).render_fmt(80, &mut out).unwrap());
-            (sp1, out)
+            (sp1, MM0, out)
           } else {return None}
         }
       }
-      ObjectKind::Global(_) |
+      // Note: Uncomment this to turn on lisp syntax documentation.
+      // &ObjectKind::Syntax(stx) => (sp, Doc, stx.doc().into()),
+      ObjectKind::Syntax(_) => return None,
+      &ObjectKind::Global(a) => {
+        let bp = env.data[a].lisp.as_ref()?.1.unwrapped(|e| match e {
+          &LispKind::Proc(Proc::Builtin(p)) => Some(p),
+          _ => None
+        })?;
+        (sp, Doc, bp.doc().into())
+      }
       ObjectKind::Import(_) => return None,
     }))() {res.push(r)}
   }
   if res.is_empty() {return Ok(None)}
   Ok(Some(Hover {
     range: Some(text.to_range(res[0].0)),
-    contents: HoverContents::Array(res.into_iter().map(|(_, value)|
-      MarkedString::LanguageString(LanguageString {language: "metamath-zero".into(), value})).collect())
+    contents: HoverContents::Array(res.into_iter().map(|(_, ty, value)| {
+      match ty {
+        Doc => MarkedString::String(value),
+        MM0 => MarkedString::LanguageString(
+          LanguageString { language: "metamath-zero".into(), value })
+      }
+    }).collect())
   }))
 }
 
@@ -624,6 +642,7 @@ async fn definition<T>(path: FileRef, pos: Position,
           res.push(g(&sp.0, sp.1))
         }
       }
+      ObjectKind::Syntax(_) => {}
       ObjectKind::Import(file) => {
         res.push(g(&FileSpan {file: file.clone(), span: 0.into()}, 0.into()))
       },
@@ -829,7 +848,8 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
         Some(Key::Var(a))
       }
     }
-    ObjectKind::Import(_) => None,
+    ObjectKind::Import(_) |
+    ObjectKind::Syntax(_) => None,
     ObjectKind::Var(a) => Some(Key::Var(a)),
     ObjectKind::Sort(a) => Some(Key::Sort(a)),
     ObjectKind::Term(a, _) => Some(Key::Term(a)),
@@ -840,6 +860,10 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     let key = match to_key(k) {Some(k) => k, _ => continue};
+    match key {
+      Key::Global(a) if BuiltinProc::from_str(env.data()[a].name()).is_ok() => continue,
+      _ => {}
+    }
     let mut cont = |&(sp2, ref k2)| {
       let eq = match *k2 {
         ObjectKind::Expr(_) if !matches!(key, Key::Term(_) | Key::Var(_)) => false,

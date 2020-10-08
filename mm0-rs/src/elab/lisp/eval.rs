@@ -895,7 +895,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   StringAppend: AtLeast(0) => {
     let mut out = String::new();
-    for e in args { out.push_str(&try1!(self.as_string(&e))) }
+    for e in args { out.push_str(&self.to_string(&e)) }
     LispVal::string(ArcString::new(out))
   },
   StringLen: Exact(1) => LispVal::number(try1!(self.as_string(&args[0])).len().into()),

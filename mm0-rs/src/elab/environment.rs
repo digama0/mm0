@@ -14,7 +14,7 @@ use std::hash::Hash;
 use std::collections::HashMap;
 use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
 use crate::util::*;
-use super::lisp::LispVal;
+use super::lisp::{LispVal, Syntax};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 pub use crate::parser::ast::{Modifiers, Prec};
 
@@ -514,6 +514,8 @@ pub enum ObjectKind {
   /// This is a proof; hovering shows the intermediate statement
   /// and go-to-definition goes to the head theorem definition
   Proof(FrozenLispVal),
+  /// This is a lisp syntax item; hovering shows the doc comment
+  Syntax(Syntax),
   /// This is an import; hovering does nothing and go-to-definition goes to the file
   Import(FileRef),
 }

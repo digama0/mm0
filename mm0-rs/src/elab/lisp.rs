@@ -27,14 +27,14 @@ pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
   ($(#[$doc:meta])* enum $name:ident $($rest:tt)*) => {
-    str_enum!{inner concat!("Convert a `", stringify!($name), "` to a string.");
+    str_enum!{@inner concat!("Convert a `", stringify!($name), "` to a string.");
       $(#[$doc])* enum $name $($rest)*}
   };
-  (inner $to_str:expr;
-      $(#[$doc:meta])* enum $name:ident {$($(#[$doc2:meta])* $e:ident: $s:expr,)*}) => {
+  (@inner $to_str:expr;
+      $(#[$doc:meta])* enum $name:ident {$($(#[doc=$doc2:expr])* $e:ident: $s:expr,)*}) => {
     $(#[$doc])*
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub enum $name { $($(#[$doc2])* $e),* }
+    pub enum $name { $($(#[doc=$doc2])* $e),* }
     crate::deep_size_0!($name);
 
     impl FromStr for $name {
@@ -50,6 +50,14 @@ macro_rules! str_enum {
       #[doc=$to_str] pub fn to_str(self) -> &'static str {
         match self {
           $($name::$e => $s),*
+        }
+      }
+
+      /// The documentation comment on this item.
+      #[allow(unused)]
+      pub fn doc(self) -> &'static str {
+        match self {
+          $(Self::$e => concat!($($doc2),*),)*
         }
       }
     }
