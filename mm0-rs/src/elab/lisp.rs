@@ -57,7 +57,7 @@ macro_rules! str_enum {
       #[allow(unused)]
       pub fn doc(self) -> &'static str {
         match self {
-          $(Self::$e => concat!($($doc2),*),)*
+          $($name::$e => concat!($($doc2,"\n"),*)),*
         }
       }
     }
@@ -758,7 +758,7 @@ str_enum! {
   enum BuiltinProc {
     /// `display` takes a string and prints it. In the interactive editor mode,
     /// this appears as an info diagnostic over the word "`display`".
-    /// ```text
+    /// ```metamath-zero
     /// (display "hello world")         -- hello world
     /// (display 42)                    -- error, expected string
     /// ```
@@ -844,7 +844,7 @@ str_enum! {
     /// `(->string e)` converts an expression to a string. Numbers are converted in the usual
     /// way, strings, atoms and formulas (which are all containers for strings) get the underlying
     /// string, and other expressions are pretty printed using the same method as `print`.
-    /// ```text
+    /// ```metamath-zero
     /// (->string 42)     -- "42"
     /// (->string (- 42)) -- "-42"
     /// (->string "foo")  -- "foo"
@@ -855,40 +855,40 @@ str_enum! {
     ToString: "->string",
     /// `(string->atom s)` converts a string to an atom. This can be used to create atoms that
     /// violate the concrete syntax, for example if they have embedded spaces.
-    /// ```text
+    /// ```metamath-zero
     /// (string->atom "foo")         -- foo
     /// (string->atom "foo$bar baz") -- foo$bar baz
     /// ```
     StringToAtom: "string->atom",
     /// `(string-append s1 s2 s3)` stringifies and appends all the inputs.
-    /// ```text
+    /// ```metamath-zero
     /// (string-append "foo" 'bar 42) -- "foobar42"
     /// ```
     StringAppend: "string-append",
     /// `(string-len s)` returns the length of the string (number of bytes).
-    /// ```text
+    /// ```metamath-zero
     /// (string-len "foo") -- 3
     /// ```
     StringLen: "string-len",
     /// `(string-nth n s)` returns the character code of the nth byte (zero-indexed) in the string.
-    /// ```text
+    /// ```metamath-zero
     /// (string-nth 1 "bar") -- 97, ascii 'a'
     /// ```
     StringNth: "string-nth",
     /// `(substr start end s)` returns a newly allocated substring `s[start..end]`, the substring
     /// starting at `start` (inclusive) and ending at `end` (exclusive), where
     /// `0 <= start <= end <= (string-len s)`.
-    /// ```text
+    /// ```metamath-zero
     /// (substr 6 11 "hello world!") -- "world"
     /// ```
     Substr: "substr",
     /// `(string->list s)` converts a string to a list of character codes.
-    /// ```text
+    /// ```metamath-zero
     /// (string->list "bar") -- (98 97 114)
     /// ```
     StringToList: "string->list",
     /// `(list->string s)` constructs a string from a list of character codes.
-    /// ```text
+    /// ```metamath-zero
     /// (list->string '(98 97 114)) -- "bar"
     /// ```
     ListToString: "list->string",
@@ -993,7 +993,7 @@ str_enum! {
     IsGoal: "goal?",
     /// `(mvar! s bd)` creates a new metavariable ref-cell with sort `s` and
     /// boundedness `bd` and adds it to the list of open metavariables. To emphasize:
-    /// ```text
+    /// ```metamath-zero
     /// (mvar? (mvar! "foo" #t))            -- #f
     /// (ref? (mvar! "foo" #t))             -- #t
     /// (mvar? (get! (mvar! "foo" #t)))     -- #t
