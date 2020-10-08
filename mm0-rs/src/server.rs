@@ -100,9 +100,9 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let v = file.text.lock().unwrap().0;
   let (old_ast, old_env, old_deps) = {
     let mut g = file.parsed.lock().await;
-    let (res, senders) = match &mut *g {
-      None => ((None, None, vec![]), vec![]),
-      &mut Some(FileCache::InProgress {version, ref cancel, ref mut senders}) => {
+    let (old, res, senders) = match &mut *g {
+      None => (None, (None, None, vec![]), vec![]),
+      &mut Some(FileCache::InProgress {version, ref cancel, ref mut senders, ..}) => {
         if v == version {
           let (send, recv) = channel();
           senders.push(send);
@@ -110,8 +110,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           return Ok(recv.await.ok())
         }
         cancel.store(true, Ordering::SeqCst);
-        if let Some(FileCache::InProgress {senders, ..}) = g.take() {
-          ((None, None, vec![]), senders)
+        if let Some(FileCache::InProgress {old, senders, ..}) = g.take() {
+          (old, (None, None, vec![]), senders)
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
       &mut Some(FileCache::Ready {hash, ref deps, ref env, ..}) => {
@@ -131,11 +131,12 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         })();
         if matches { return Ok(Some((hash, env.clone()))) }
         if let Some(FileCache::Ready {ast, source, errors, deps, env, ..}) = g.take() {
-          ((start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
+          (Some((source.clone(), env.clone())),
+            (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
     };
-    *g = Some(FileCache::InProgress {version: v, cancel: cancel.clone(), senders});
+    *g = Some(FileCache::InProgress {old, version: v, cancel: cancel.clone(), senders});
     res
   };
   let (version, text) = file.text.lock().unwrap().clone();
@@ -243,6 +244,7 @@ fn dep_change(path: FileRef) -> BoxFuture<'static, ()> {
 #[derive(DeepSizeOf)]
 enum FileCache {
   InProgress {
+    old: Option<(Arc<LinedString>, FrozenEnv)>,
     version: Option<i64>,
     cancel: Arc<AtomicBool>,
     senders: Vec<FSender<(u64, FrozenEnv)>>,
@@ -778,10 +780,21 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   let Server {vfs, ..} = &*SERVER;
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+  let old = if let Some(g) = file.parsed.try_lock() {
+    g.as_ref().and_then(|fc| match fc {
+      FileCache::Ready {source, env, ..} => Some((source.clone(), env.clone())),
+      FileCache::InProgress {old, ..} => old.clone()
+    })
+  } else {None};
+  let (text, env) = match old {
+    Some(old) => old,
+    None => {
+      let env = elaborate(path.clone(), Some(Position::default()), Default::default())
+        .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+        .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+      (file.text.lock().unwrap().1.clone(), env)
+    }
+  };
   let fe = unsafe { env.format_env(&text) };
   let mut res = vec![];
   for ad in env.data().iter() {
