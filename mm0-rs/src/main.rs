@@ -74,7 +74,7 @@ fn main() -> std::io::Result<()> {
     (@subcommand compile =>
       (about: "Compile MM1 files into MMB")
       (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
-      (@arg output: -o --output <FILE> "Print 'output' commands to a file (use '-' to print to stdout)")
+      (@arg output: -o --output [FILE] "Print 'output' commands to a file (use '-' to print to stdout)")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output file (.mmb or .mmu)"))
     (@subcommand join =>
