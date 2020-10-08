@@ -33,9 +33,15 @@ fn mk_arm(
     fields : &Fields, 
     variant_ident : Option<&Ident>
 ) -> syn::Arm {
-    let item_path : syn::Path = match variant_ident {
-        None => parse_quote!(#item_ident),
-        Some(variant) => parse_quote!(#item_ident::#variant)
+    let (item_path, ronpath) : (syn::Path, syn::Block)  = match variant_ident {
+        None => (
+            parse_quote!(#item_ident), 
+            parse_quote!({ ron.add_name(stringify!(#item_ident));})
+        ),
+        Some(variant) => (
+            parse_quote!(#item_ident::#variant), 
+            parse_quote!({ ron.add_name(stringify!(#item_ident)); ron.add_name(stringify!(#variant)); })
+        )
     };
 
     match fields {
@@ -48,7 +54,7 @@ fn mk_arm(
             parse_quote! {
                 #item_path { #(#all_idents),* } => {
                     let mut ron = shoebill::ron::RonStruct::new();
-                    ron.add_name(stringify!(#item_ident));
+                    #ronpath
                     #(
                         ron.add_field(stringify!(#all_idents_copy), #all_idents_copy.env_dbg(fe, p));
                     )*
@@ -63,7 +69,7 @@ fn mk_arm(
             parse_quote! {
                 #item_path (#(#field_idents),*) => {
                     let mut ron = shoebill::ron::RonTuple::new();
-                    ron.add_name(stringify!(#item_ident));
+                    #ronpath
                     #(
                         ron.add_field(#field_idents_copy.env_dbg(fe, p));
                     )*
@@ -76,7 +82,7 @@ fn mk_arm(
                 #item_path => {
                     // The prettyprinter knows how to render these properly.
                     let mut ron = shoebill::ron::RonStruct::new();
-                    ron.add_name(stringify!(#item_ident));
+                    #ronpath
                     ron.to_doc(p)
                 }
             }
@@ -87,10 +93,17 @@ fn mk_arm(
 // Same as mk_arm, but only tries to match on/print public fields
 #[allow(unused)]
 fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ident>) -> syn::Arm {
-    let item_path : syn::Path = match variant_ident {
-        None => parse_quote!(#item_ident),
-        Some(variant) => parse_quote!(#item_ident::#variant)
+    let (item_path, ronpath) : (syn::Path, syn::Block)  = match variant_ident {
+        None => (
+            parse_quote!(#item_ident), 
+            parse_quote!({ ron.add_name(stringify!(#item_ident));})
+        ),
+        Some(variant) => (
+            parse_quote!(#item_ident::#variant), 
+            parse_quote!({ ron.add_name(stringify!(#item_ident)); ron.add_name(stringify!(#variant)); })
+        )
     };
+
 
     match fields {
         Fields::Named(named) => {
@@ -116,7 +129,7 @@ fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ide
             parse_quote! {
                 #item_path { #pub_pats } => {
                     let mut ron = shoebill::ron::RonStruct::new();
-                    ron.add_name(stringify!(#item_ident));
+                    #ronpath
                     #(
                         ron.add_field(stringify!(#pub_idents), #pub_idents.env_dbg(fe, p));
                     )*
@@ -138,7 +151,7 @@ fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ide
             parse_quote! {
                 #item_path (#(#match_idents),*) => {
                     let mut ron = shoebill::ron::RonTuple::new();
-                    ron.add_name(stringify!(#item_ident));
+                    #ronpath
                     #(
                         ron.add_field(#pub_idents.env_dbg(fe, p));
                     )*
@@ -150,7 +163,7 @@ fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ide
             parse_quote! {
                 #item_path => {
                     let mut ron = shoebill::ron::RonStruct::new();
-                    ron.add_name(stringify!(#item_ident));
+                    #ronpath
                     ron.to_doc(p)
                 }
             }
