@@ -151,7 +151,7 @@ do {
 
 do {
   -- Defines e.g. theorem deca: $ 10 = xa $; for all n < 16, accessible as (decn 10)
-  (def (dn n) (atom-app 'd @ ->string n))
+  (def (dn n) (atom-app 'd n))
   (def decn @ on-hexstrings @ fn (n)
     @ let ([xn (atom-app 'x n)] [i (hex->number xn)]
            [dn '(,(dn i))] [xn '(h2n (,xn))] [name (atom-app 'dec n)])
@@ -572,10 +572,14 @@ theorem x2powS (h: $ a = 2 ^ k $): $ a :x x0 = 2 ^ (k + 4) $ =
 '(eqtr hex02 @ eqtr4 (muleq1 h) @ eqtr powadd (muleq2 d2pow4));
 
 do {
-  -- Defines e.g. theorem d5half: $ 5 = b1 2 $; for all n <= 16
+  -- Defines e.g. theorem d5half: $ 5 = b1 2 $; and x5half: $ x5 = b1 x2 $; for all n <= 16
   (def (decnhalf n) (atom-app 'd n 'half))
+  (def (hexnhalf n) (atom-app 'x n 'half))
   (for 0 16 @ fn (a)
     (def b {a // 2})
-    (def stmt '(eq (,(dn a)) (,(if {{b * 2} = a} 'b0 'b1) (,(dn b)))))
-    (add-thm! (decnhalf a) () () stmt () @ fn () '(() ,(mkcmp stmt))))
+    (def (f name g)
+      (def stmt '(eq ,(g a) (,(if {{b * 2} = a} 'b0 'b1) ,(g b))))
+      (add-thm! (name a) () () stmt () @ fn () '(() ,(mkcmp stmt))))
+    (f decnhalf @ fn (a) '(,(dn a)))
+    (f hexnhalf @ fn (a) '(h2n (,(hexdigit a)))))
 };

@@ -2663,14 +2663,14 @@ pub theorem ptToStrFunc {s: nat} (f x: nat): $ ptToStr (PTFunc f x) =
 pub theorem ptToStrPfx {s: nat} (f c x: nat): $ ptToStr (PTPfx f c x) =
   c : ljoin (map (\ s, ptToStr s) x) $ =
 (named '(eqtr ptToStr_val @ eqtr caser @ eqtr casel @ eqtr casel @
-  !! appslame _1 @ !! appslamed _2 @ !! applamed _3 @ eqtrd ,eqtac @
+  appslame @ appslamed @ applamed @ eqtrd ,eqtac @
   conseq2d @ ljoineqd @ syl mapeqg @ sylibr allal @ iald @ exp @
   eqtr4d (!! apprlamed z ,eqtac @ anwr @ sylibr elupto PTPfx_ltid) (applamed ,eqtac)));
 
 pub theorem ptToStrNota {y: nat} (f x: nat):
   $ ptToStr (PTNota f x) = ljoin (map (case (\ y, y : 0) (\ y, ptToStr y)) x) $ =
 (named '(eqtr ptToStr_val @ eqtr caser @ eqtr casel @ eqtr caser @
-  !! appslame _1 @ !! applamed _2 @ eqtrd ,eqtac @
+  appslame @ applamed @ eqtrd ,eqtac @
   ljoineqd @ syl mapeqg @ sylibr allal @ !! iald e @ exp
   ,(split-sop '{
     (1 => {(mpbiri (eqtr4 casel casel) ,eqtac) : $ _ /\ e = _ -> _$}) +
@@ -2681,15 +2681,14 @@ pub theorem ptToStrNota {y: nat} (f x: nat):
 pub theorem ptToStrInfix (r f c x y: nat):
   $ ptToStr (PTInfix r f c x y) = ptToStr x ++ c : ptToStr y $ =
 (named '(eqtr ptToStr_val @ eqtr caser @ eqtr caser @ eqtr casel @
-  !! appslame _1 @ !! appslamed _2 @ !! appslamed _3 @ !! appslamed _4 @
-  !! applamed _5 @ eqtrd ,eqtac @
-  appendeqd (!! apprlamed _6 ,eqtac @ a1i @ mpbir elupto PTInfix_ltid1) @
-  conseq2d (!! apprlamed _6 ,eqtac @ a1i @ mpbir elupto PTInfix_ltid2)));
+  appslame @ appslamed @ appslamed @ appslamed @ applamed @ eqtrd ,eqtac @
+  appendeqd (apprlamed ,eqtac @ a1i @ mpbir elupto PTInfix_ltid1) @
+  conseq2d (apprlamed ,eqtac @ a1i @ mpbir elupto PTInfix_ltid2)));
 
 pub theorem ptToStrCoe {y: nat} (f x: nat):
   $ ptToStr (PTCoe f x) = ptToStr x $ =
 (named '(eqtr ptToStr_val @ eqtr caser @ eqtr caser @ eqtr caser @
-  !! appslame _1 @ !! applamed _2 @ !! apprlamed _3 (ptToStreqd @ eqtrd anr anlr) @
+  appslame @ applamed @ apprlamed (ptToStreqd @ eqtrd anr anlr) @
   mpbiri (mpbir elupto PTCoe_ltid) (eleq1d anr)));
 
 @_ local def ptCheckNotaLs_aux (eac bis lits: nat) (IH: set) (xs es p: nat): wff =
@@ -2712,8 +2711,8 @@ theorem ptCheckNotaLs_aux_S:
         e e. IH @ y @ litsPrec lits p)} /\
     ptCheckNotaLs_aux eac bis lits IH xs2 es p) $ =
 (named '(bitr (all2eq2 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
-  aneq1i @ aneq2i @ !! sbe _1 @ !! sbed _2 @ bitrd ,eqtac @ a1i @
-  !! elsabe _3 @ !! elabed _4 ,eqtac));
+  aneq1i @ aneq2i @ sbe @ sbed @ bitrd ,eqtac @ a1i @
+  elsabe @ elabed ,eqtac));
 
 theorem ptCheckNotaLs_aux_fin_lem:
   $ ptCheckNotaLs_aux eac bis lits (ns ih) xs es p ->
@@ -2726,7 +2725,7 @@ theorem ptCheckNotaLs_aux_fin_lem:
     syl5bi ptCheckNotaLs_aux_S @ eexd @ sylibr eexb @ alimi @
     exp @ syl5bi lmemS @ eorda _ @ imp @ imp @ imim1i anr)
   '(rsyl (mpbird (eleq1d anr) @ rsyl anlr anlr) @
-    sylbi Sumr @ sylbi (!! elabe v1 ,eqtac) @
+    sylbi Sumr @ sylbi (elabe ,eqtac) @
     eex @ eex @ eex @ exp @ exp @
     syl (rsyl ellt @ mpi (letr appleid1 appleid1) ltletr) @
     mpbird (eleq1d @ sylib peano2 @ eqtr3d anr _) anllr)
@@ -2771,23 +2770,23 @@ $ pt e. Sum
 
 theorem ptCheck_aux_Var: $ ptCheck_aux1 eac ih p (PTVar v) e <->
   E. n (lookupVar (pi22 eac) v = suc n /\ e = SVar n) $ =
-(named '(bitr Suml @ bitr Suml @ bitr Suml @ !! elabe _1 ,eqtac));
+(named '(bitr Suml @ bitr Suml @ bitr Suml @ elabe ,eqtac));
 theorem ptCheck_aux_Parens: $ ptCheck_aux1 eac ih p (PTParens pt) e <->
   e e. ih @ pt @ suc 0 $ =
-(named '(bitr Suml @ bitr Suml @ bitr Sumr @ !! elabe _1 ,eqtac));
+(named '(bitr Suml @ bitr Suml @ bitr Sumr @ elabe ,eqtac));
 theorem ptCheck_aux_Func: $ ptCheck_aux1 eac ih p (PTFunc f xs) e <->
   suc (2 ^ 10) <=p p /\ E. args E. ret E. v E. e2
   (getTerm (fst eac) f args ret v /\ len xs = len args /\
     all2 x y (y e. ih @ x @ 0) xs e2 /\
     e = SApp f e2) $ =
-(named '(bitr Suml @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
+(named '(bitr Suml @ bitr Sumr @ elsabe @ elabed ,eqtac));
 theorem ptCheck_aux_Pfx: $ ptCheck_aux1 eac ih p (PTPfx f c xs) e <->
   E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
     f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
     all2 x y (y e. ih @ x @ 0) l es2 /\ e2 e. ih @ z @ q /\
     e = SApp f (es2 |> e2)) $ =
 (named '(bitr Sumr @ bitr Suml @ bitr Suml @
-  !! elsabe _1 @ !! elsabed _2 @ !! elabed _3 ,eqtac));
+  elsabe @ elsabed @ elabed ,eqtac));
 theorem ptCheck_aux_Nota: $ ptCheck_aux1 eac ih p (PTNota f xs) e <->
   E. bis E. ty E. c E. q E. lits E. es (
     f <> bis <> ty <> (b0 (c <> q) : lits) e. getNota (pi21 eac) /\
@@ -2795,7 +2794,7 @@ theorem ptCheck_aux_Nota: $ ptCheck_aux1 eac ih p (PTNota f xs) e <->
     A. n (n < len es -> E. v (b1 v IN lits /\ lookupVar bis v = suc n)) /\
     ptCheckNotaLs_aux eac bis lits ih xs es q /\
     e = SApp f es) $ =
-(named '(bitr Sumr @ bitr Suml @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
+(named '(bitr Sumr @ bitr Suml @ bitr Sumr @ elsabe @ elabed ,eqtac));
 theorem ptCheck_aux_Infix: $ ptCheck_aux1 eac ih p (PTInfix r f c x y) e <->
   E. q E. e1 E. e2 (
     f <> c <> q e. getInfix (pi21 eac) r /\ q <=p p /\
@@ -2803,13 +2802,13 @@ theorem ptCheck_aux_Infix: $ ptCheck_aux1 eac ih p (PTInfix r f c x y) e <->
     e2 e. ih @ y @ if (true r) q (precSuc q) /\
     e = SApp f (e1 : e2 : 0)) $ =
 (named '(bitr Sumr @ bitr Sumr @ bitr Suml @
-  !! elsabe _1 @ !! elsabed _2 @ !! elsabed _3 @
-  !! elsabed _4 @ !! elabed _5 ,eqtac));
+  elsabe @ elsabed @ elsabed @
+  elsabed @ elabed ,eqtac));
 theorem ptCheck_aux_Coe: $ ptCheck_aux1 eac ih p (PTCoe f x) e <->
   E. y E. e2 (
     f <> y e. getCoe (pi21 eac) /\ e2 e. ih @ x @ p /\
     e = SApp f e2) $ =
-(named '(bitr Sumr @ bitr Sumr @ bitr Sumr @ !! elsabe _1 @ !! elabed _2 ,eqtac));
+(named '(bitr Sumr @ bitr Sumr @ bitr Sumr @ elsabe @ elabed ,eqtac));
 
 theorem getPfx_precle: $ f <> c <> p e. getPfx (pi21 eac) -> p <= suc eac $ =
 '(sylbi getPfxEl @ !! eex x @ anwl @
@@ -3001,7 +3000,7 @@ pub theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
     syl6bb excomb @ exeqd @ syl6bbr (exeqi @ bitr4 (aneq2i excomb) exan1) @
     syl6bb excomb @ exeqd @ syl6bbr (exeqi @ bitr4 (aneq2i exan1) anlass) @
     syl6bbr exan1 @ syl5bb anass @ aneq2d @
-    syl5bb (aneq1i @ bitr Sumr @ !! elabe v1 ,eqtac) @
+    syl5bb (aneq1i @ bitr Sumr @ elabe ,eqtac) @
     syl5bbr exan2 @ exeqd @ syl6bb exan1 @
     syl5bbr exan2 @ exeqd @ syl5bbr exan2 @ syl6bb exan1 @ exeqd @
     syl6bb anass @ aneq1d @ syl6bb anass @ aneqd (a1i anass) @
@@ -3037,16 +3036,16 @@ pub theorem splitDummiesL (bis bis1 bis2 c x t: nat): $
   splitDummies (bis |> (c <> b0 x <> t)) =
     (bis1 |> (c <> x <> t)) <> bis2 $ =
 '(syl5eq rlrecS @ eqtrd (appeq2d @ preq2d preq2) @ a1i @
-  eqtr (!! appslame l @ !! appslamed a @ !! appslamed _1 @ !! applamed _2 ,eqtac) @
-  eqtr (!! appslame c1 @ !! appslamed b1 @ !! applamed t1 ,eqtac) @
-  eqtr casel @ !! applame _3 ,eqtac);
+  eqtr (appslame @ appslamed @ appslamed @ applamed ,eqtac) @
+  eqtr (appslame @ appslamed @ applamed ,eqtac) @
+  eqtr casel @ applame ,eqtac);
 pub theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
   splitDummies bis = bis1 <> bis2 ->
   splitDummies (bis |> (c <> b1 x <> t)) = bis1 <> (bis2 |> (x <> t)) $ =
 '(syl5eq rlrecS @ eqtrd (appeq2d @ preq2d preq2) @ a1i @
-  eqtr (!! appslame l @ !! appslamed a @ !! appslamed _1 @ !! applamed _2 ,eqtac) @
-  eqtr (!! appslame c1 @ !! appslamed b1 @ !! applamed t1 ,eqtac) @
-  eqtr caser @ !! applame _3 ,eqtac);
+  eqtr (appslame @ appslamed @ appslamed @ applamed ,eqtac) @
+  eqtr (appslame @ appslamed @ applamed ,eqtac) @
+  eqtr caser @ applame ,eqtac);
 
 @_ abstract def checkDummies (ds bis: nat): wff =
 $ all2 d bi (d e. S\ x, {t |
@@ -3063,9 +3062,7 @@ pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
     bitr (aneq2i excomb) @ bitr3 exan1 @ exeqi @
     bitr (aneq2i exan2) @ bitr3 anass @ bitr4 ancomb @ bitr4 anass @ aneq2i @
     bitr4 (aneq2i exan2) @ bitr (aneq1i _) anass)
-  '(bitr (!! sbe d @ !! sbed bi ,eqtac) @
-    bitr (!! elsabe _1 @ !! elabed _2 ,eqtac) @
-    bitr exan2 ancomb));
+  '(bitr (sbe @ sbed ,eqtac) @ bitr (elsabe @ elabed ,eqtac) @ bitr exan2 ancomb));
 
 @_ def lookupVars (ctx .s .t: nat): set = $ opab s t (lookupVar ctx s = suc t) $;
 
@@ -3079,15 +3076,15 @@ $ bi e. S\ c, S\ x, Sum {t | ifp (true c)
     (E. t2 (elabType ast ctx t (t2 <> 0) /\ s = PBound t2))} 0 $;
 pub theorem elabTermBinderFmla (ast ctx c x f s: nat):
   $ ~ elabTermBinder ast ctx (c <> x <> b1 f) s $ =
-(named '(mtbir (!! elsabe _1 @ !! elsabed _2 @ syl5bb Sumr ,eqtac) nel0));
+(named '(mtbir (elsabe @ elsabed @ syl5bb Sumr ,eqtac) nel0));
 pub theorem elabTermBinderBound {t2: nat} (ast ctx bi x t s: nat):
   $ elabTermBinder ast ctx (0 <> x <> b0 t) s <->
     E. t2 (elabType ast ctx t (t2 <> 0) /\ s = PBound t2) $ =
-(named '(bitr (!! elsabe _1 @ !! elsabed _2 @ syl5bb Suml @ !! elabed _3 ,eqtac) @ ifpneg true0));
+(named '(bitr (elsabe @ elsabed @ syl5bb Suml @ elabed ,eqtac) @ ifpneg true0));
 pub theorem elabTermBinderReg {t2 vs2: nat} (ast ctx bi x t s: nat):
   $ elabTermBinder ast ctx (1 <> x <> b0 t) s <->
     E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2) $ =
-(named '(bitr (!! elsabe _1 @ !! elsabed _2 @ syl5bb Suml @ !! elabed _3 ,eqtac) @ ifppos true1));
+(named '(bitr (elsabe @ elsabed @ syl5bb Suml @ elabed ,eqtac) @ ifppos true1));
 
 @_ local def elabTermBinders_aux (ast n: nat): wff =
 $ srecp (S\ x, {ih | x e. S\ lc, {rc |
@@ -3104,10 +3101,9 @@ theorem elabTermBinders_val: $ elabTermBinders ast ctx ctx3 <->
       elabTermBinder ast ctx1 bi bi2 /\
       ctx3 = ctx2 |> bi2))) $ =
 '(bitr {srecpval : $ _ <-> _ <> sep _ {_ | elabTermBinders_aux _ _} e. _ $} @
-  bitr (!! elsabe _1 @ !! elabed _2 ,eqtac) @
-  bitr (!! elsabe _3 @ !! elabed _4 ,eqtac) @
+  bitr (elsabe @ elabed ,eqtac) @ bitr (elsabe @ elabed ,eqtac) @
   ifpeq3 @ exeqi @ exeqi @ aneq2a @ exeqd @ exeqd @ syl aneq1a @ exp @
-  aneq1d @ syl5bb elsep @ syl6bb (!! elabe _5 elabTermBinders_auxeq2) @
+  aneq1d @ syl5bb elsep @ syl6bb (!! elabe x elabTermBinders_auxeq2) @
   syl bian1 @ sylibr elupto @ lttrd
     (anwl @ sylib ltpr1 @ mpbiri snoclt lteq2)
     (anwr @ sylib ltpr2 @ mpbiri snoclt lteq2));
@@ -3120,8 +3116,7 @@ pub theorem elabTermBindersS {ctx2 bi2: nat} (ast ctx bi ctx3: nat):
       elabTermBinder ast ctx bi bi2 /\ ctx3 = ctx2 |> bi2) $ =
 (named '(bitr elabTermBinders_val @ bitr (ifpneg snocne0) @
   bitr (exeqi @ bitr (exeqi @ bitr (aneq1i @ bitr eqcomb snocinj) anass) @
-    bitr exan1 @ aneq2i @ !! exeqe _1 ,eqtac) @
-  !! exeqe _2 ,eqtac));
+    bitr exan1 @ aneq2i @ exeqe ,eqtac) @ exeqe ,eqtac));
 
 @_ def elabFmla (env ast ctx args f e s .f2: nat): wff =
 $ E. f2 (f = b1 f2 /\ parseExpr (env <> ast <> ctx) args f2 s == sn e) $;
@@ -3145,7 +3140,7 @@ pub theorem elabDefOS {args2 e: nat} (env ast ctx s ds f o2: nat):
       elabTermBinders ast (ctx ++ ds) args2 /\
       elabFmla env ast (ctx ++ ds) args2 f e s /\
       o2 = suc (ds <> e)) $ =
-(named '(bitr ocasepS @ !! elabe f1 ,eqtac));
+(named '(bitr ocasepS @ elabe ,eqtac));
 
 @_ local def Elaborate_aux (aste: nat): wff =
 $ srecp (S\ aste1, {ih | aste1 e. S\ e2, {ast2 | ifp (ast2 = 0) (e2 = 0) (
@@ -3195,8 +3190,7 @@ theorem Elaborate_aux_val {ih}
     (,(foldr '(2 2 2 2 2 1 6) (get-decl 'Elaborate_aux) nth) <-> p) $):
   $ Elaborate_aux (e2 <> ast2) <-> p $ =
 '(bitr {srecpval : $ _ <-> _ <> sep _ {i | Elaborate_aux i} e. _ $} @
-  !! elsabe aste1 @ bitrd ,eqtac @ a1i @ elabe @
-  syl5bb (!! elsabe _1 @ !! elabed _2 ,eqtac) h);
+  elsabe @ bitrd ,eqtac @ a1i @ elabe @ syl5bb (elsabe @ elabed ,eqtac) h);
 
 theorem Elaborate_auxS {ih}
   (p: wff args bis ctx ctx2 ds e hyps hyps2 i n o o2 ret ret2 sd x)
@@ -3207,12 +3201,12 @@ theorem Elaborate_auxS {ih}
   syl5bb (bitr (exeqi @
       bitr (exeqi @ bitr (aneq1i @ bitr eqcomb snocinj) anass) @
       bitr exan1 @ aneq2i @ exeqe eleq1) @
-    !! exeqe ast1 ,eqtac) h));
+    exeqe ,eqtac) h));
 
 @_ def Elaborate (ast: nat): set = $ {e | Elaborate_aux (e <> ast)} $;
 
 theorem elElaborate: $ e e. Elaborate ast <-> Elaborate_aux (e <> ast) $ =
-(named '(!! elabe x ,eqtac));
+(named '(elabe ,eqtac));
 
 theorem Elaborate_aux_lem: $ e2 = e |> s \/ e = e2 ->
   (e <> ast e. sep (upto (e2 <> ast |> d)) {i | Elaborate_aux i} <->
@@ -3229,7 +3223,7 @@ pub theorem ElaborateSort {e: nat} (ast sd x: nat):
     (\ e, e |> DSort x sd) '' Elaborate ast $ =
 (named @ focus
   '(eqab1i @ Elaborate_auxS @ syl5bb Suml @ syl5bb Suml @ syl5bb Suml {_ : $ih = _ -> _$})
-  '(!! elsabed _1 @ !! elabed _2 @ syl6bbr ellamima @ syl6bb _ ,eqtac)
+  '(elsabed @ elabed @ syl6bbr ellamima @ syl6bb _ ,eqtac)
   '(exeqi @ aneq1a @ syl Elaborate_aux_lem orl));
 
 pub theorem ElaborateTerm {e ctx args ret2: nat} (ast x bis ret e2: nat):
@@ -3241,7 +3235,7 @@ pub theorem ElaborateTerm {e ctx args ret2: nat} (ast x bis ret e2: nat):
       e2 = e |> DTerm x args ret2) $ =
 (named @ focus
   '(bitr elElaborate @ Elaborate_auxS @ syl5bb Suml @ syl5bb Suml @ syl5bb Sumr {_ : $ih = _ -> _$})
-  '(!! elsabed _1 @ !! elsabed _2 @ !! elabed _3 @ syl6bb _ ,eqtac)
+  '(elsabed @ elsabed @ elabed @ syl6bb _ ,eqtac)
   '(exeqi @ exeqi @ exeqi @ exeqi @
     aneq1a @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
 
@@ -3256,7 +3250,7 @@ pub theorem ElaborateAxiom
       e2 = e |> DAxiom args hyps2 ret2) $ =
 (named @ focus
   '(bitr elElaborate @ Elaborate_auxS @ syl5bb Suml @ syl5bb Sumr @ syl5bb Suml {_ : $ih = _ -> _$})
-  '(!! elsabed _1 @ !! elsabed _2 @ !! elabed _3 @ syl6bb _ ,eqtac)
+  '(elsabed @ elsabed @ elabed @ syl6bb _ ,eqtac)
   '(exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
     aneq1a @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
 
@@ -3272,7 +3266,7 @@ pub theorem ElaborateDef {e ctx ds ret2 ctx2 args o2: nat} (ast x bis ret o e2: 
       e2 = e |> DDef x args ret2 o2) $ =
 (named @ focus
   '(bitr elElaborate @ Elaborate_auxS @ syl5bb Suml @ syl5bb Sumr @ syl5bb Sumr {_ : $ih = _ -> _$})
-  '(!! elsabed _1 @ !! elsabed _2 @ !! elsabed _3 @ !! elabed _4 @ syl6bb _ ,eqtac)
+  '(elsabed @ elsabed @ elsabed @ elabed @ syl6bb _ ,eqtac)
   '(exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
     aneq1a @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
 
@@ -3287,7 +3281,7 @@ pub theorem ElaborateThm
       e2 = e |> DThm args hyps2 ret2) $ =
 (named @ focus
   '(bitr elElaborate @ Elaborate_auxS @ syl5bb Sumr @ syl5bb Suml @ syl5bb Suml {_ : $ih = _ -> _$})
-  '(!! elsabed _1 @ !! elsabed _2 @ !! elabed _3 @ syl6bb _ ,eqtac)
+  '(elsabed @ elsabed @ elabed @ syl6bb _ ,eqtac)
   '(exeqi @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
     aneq1a @ aneq1d @ aneq1d @ aneq1d @ aneq1d @ syl Elaborate_aux_lem orl));
 
@@ -3299,7 +3293,7 @@ pub theorem ElaborateNota (ast n: nat):
   $ Elaborate (ast |> ASTNota n) == Elaborate ast $ =
 (named @ focus
   '(eqab1i @ Elaborate_auxS @ syl5bb Sumr @ syl5bb Sumr {_ : $ih = _ -> _$})
-  '(!! elabed _1 @ syl6bb _ ,eqtac)
+  '(elabed @ syl6bb _ ,eqtac)
   '(Elaborate_aux_lem @ orr eqid));
 
 @_ def Valid (s .ast .e: nat): wff =

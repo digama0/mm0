@@ -138,7 +138,9 @@ do {
         [_]])
       (def ctx (ref! (eqtac-ctx #t hyps)))
       (add-locals G @ match-fn* @ ((eq L R) p)
-        (set! ctx '([,(if ltr L R) ,(verb p)] . ,(get! ctx))))
+        (def v (if ltr L R))
+        (match v [(mvar s _) (set! v (dummy! s))] [_])
+        (set! ctx '([,v ,(verb p)] . ,(get! ctx))))
       (eqtac-core ltr (maybe-atom-map ctx) rhs)]
     [(eq L R) '(trud ,(eqtac-core ltr (maybe-atom-map @ eqtac-ctx #t hyps) t))])
 
@@ -791,6 +793,7 @@ theorem iexde (G) (a: nat) (b: wff x)
 theorem iexdde (G b) (a: nat) (c: wff x)
   (e: $ G /\ x = a -> b -> c $): $ G -> b -> E. x c $ =
 '(exp @ iexde @ imp @ imp @ com23 @ exp e);
+theorem iexie (a: nat) (b: wff x) (e: $ x = a -> b $): $ E. x b $ = '(trud @ iexde @ anwr e);
 theorem iexe (a: nat) (b: wff x) (c: wff)
   (e: $ x = a -> (b <-> c) $): $ c -> E. x b $ = '(iexde @ mpbird (anwr e) anl);
 theorem ealdeh (a: nat) (G b c: wff x) (h1: $ F/ x G $) (h2: $ F/ x c $)
@@ -2533,7 +2536,7 @@ pub theorem pr0: $ 0 <> 0 = 0 $ =
 theorem expr: $ E. x E. y a = x <> y $ =
 (named @ focus
   (induct '(ind) 'a
-    '(trud @ iexde @ iexde @ syl5eqr pr0 @ eqcomd @ preqd anlr anr)
+    '(iexie @ iexde @ syl5eqr pr0 @ eqcomd @ imp preq)
     '(sylib (cbvex @ cbvexd @ eqeq2d @ preqd anl anr) @
       eex @ eex @ casesd _ _))
   (focus
@@ -2896,7 +2899,7 @@ theorem lamisf (a: nat x): $ isfun (\ x, a) $ =
 theorem finlam (v: nat x): $ finite A -> finite ((\ x, v) |` A) $ =
 (named @ focus
   (have 'h $ E. n A. x (x < m -> x <> v < n) $ (induct '(ind) 'm
-    '(trud @ iexde @ iald @ a1i @ absurd lt02)
+    '(iexie @ iald @ a1i @ absurd lt02)
     '(sylibr (cbvex @ aleqd @ imeq2d @ lteq2) @
       eex @ syl (iexe @
         aleqdh (nfeq2 @ nfmax nfnv @ nfsuc @ nfpr nfnv nfsbn1) @
@@ -4817,7 +4820,8 @@ pub theorem appendS (a b c: nat): $ (a : b) ++ c = a : (b ++ c) $ =
 '(eqtr lrecS @ ! appslame _ $ _ <> append b $ _ x _ @
   !! appslamed z @ !! applamed y @ conseqd anll anr);
 
-theorem append1: $ a : 0 ++ l = a : l $ = '(eqtr appendS @ conseq2 append0);
+theorem appendSi (h: $ a ++ b = c $): $ x : a ++ b = x : c $ = '(eqtr appendS @ conseq2 h);
+theorem append1: $ a : 0 ++ l = a : l $ = '(appendSi append0);
 
 theorem append02: $ a ++ 0 = a $ =
 (named @ induct '(listind) 'a 'append0 '(syl5eq appendS conseq2));
@@ -5379,5 +5383,5 @@ theorem sublistAt_right: $ sublistAt n L1 L2 -> sublistAt (len l + n) (l ++ L1) 
   mpbiri (anim (syl6eqr appendass appendeq2) (syl5eq appendlen addeq2)) ,eqtac);
 
 theorem sublistAt_id: $ sublistAt 0 L L $ =
-(named '(trud @ !! iexde x @ !! iexde y @
+(named '(!! iexie x @ !! iexde y @
   mpbiri (ian (eqtr2 append0 append02) len0) ,eqtac));

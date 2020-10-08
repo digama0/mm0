@@ -189,6 +189,7 @@ theorem Bits_zeqm: $ a e. Bits n /\ b e. Bits n -> (modZ(2 ^ n): b0 a = b0 b <->
 '(syl5bb zeqmeqm Bits_eqm);
 theorem elBits0: $ a e. Bits 0 <-> a = 0 $ = '(bitr elBits2 @ bitr (lteq2 pow0) lt12);
 theorem elBits01: $ 0 e. Bits n $ = '(mpbir elBits ss01);
+theorem elBitsx01: $ x0 e. Bits n $ = '(mpbi (eleq1 dec0) elBits01);
 theorem elBits1: $ a e. Bits 1 <-> bool a $ = '(bitr elBits2 @ lteq2 pow12);
 theorem elBits11: $ 1 e. Bits n <-> n != 0 $ =
 '(bitr4 elBits2 @ bitr3 lt01 @ bitr (ltpow2 d1lt2) (lteq1 pow0));
@@ -354,6 +355,12 @@ theorem el_chop: $ a e. chop k n <-> a < k /\ a e. n $ = 'elmodpow2;
 theorem bitAnd_upto: $ bitAnd (upto k) a = chop k a $ =
 '(axext @ !! ax_gen x @ bitr4 elbitAnd @ bitr4 el_chop @ aneq1i elupto);
 
+theorem shlshr_chop: $ shl (shr n k) k + chop k n = n $ = '(eqtr (addeq1 mulcom) divmod);
+
+theorem shladd_uniq: $ a e. Bits k /\ shl m k + a = n <-> shr n k = m /\ chop k n = a $ =
+'(ibii (eqdivmod (sylib elBits2 anl) @ syl5eq (addeq1 mulcom) anr) @
+  mpbii (ian chopT shlshr_chop) ,(eqtac-with #f));
+
 theorem Bits_chop: $ a e. Bits k -> chop k a = a $ = 'Bits_mod;
 theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
 
@@ -478,6 +485,9 @@ pub theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $ =
 (named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> bvSize n) $} @ appslame @
   appslamed @ applamed @ addeqd (syl6eq fstpr @ fsteqd anll) anr));
 
+theorem bvSize1: $ bvSize ((k <> bs) : 0) = k $ =
+'(eqtr bvSizeS @ eqtr (addeq2 bvSize0) add0);
+
 theorem bvSizeA: $ bvSize (bs1 ++ bs2) = bvSize bs1 + bvSize bs2 $ =
 (induct '(!! listind x a b) 'bs1
   '(eqtr4 (bvSizeeq append0) @ eqtr (addeq1 bvSize0) add01)
@@ -500,6 +510,8 @@ pub theorem ofBitsS (k bs n: nat):
 (named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> ofBits n) $} @ appslame @
   appslamed @ applamed @ addeqd (syl6eq sndpr @ sndeqd anll) @
   shleqd anr (syl6eq fstpr @ fsteqd anll)));
+theorem ofBitsS2 (k bs n: nat):
+  $ ofBits ((k <> bs) : n) = shl (ofBits n) k + bs $ = '(eqtr ofBitsS addcom);
 pub theorem ofBits0T: $ ofBits 0 e. Bits 0 $ = '(mpbir elBits0 ofBits0);
 pub theorem ofBitsST (k bs n m: nat):
   $ bs e. Bits k /\ ofBits n e. Bits m ->
@@ -515,15 +527,15 @@ theorem ofBitsT (bs: nat):
     sylib (eleq1 @ ofBitseq @ conseq1 fstsnd) @
     sylbi (aneq1i @ bitr3 (eleq1 fstsnd) elBitvec2) ofBitsST))));
 
-theorem ofBitsA: $ ofBits (bs1 ++ bs2) = ofBits bs1 + shl (ofBits bs2) (bvSize bs1) $ =
+theorem ofBitsA: $ ofBits (bs1 ++ bs2) = shl (ofBits bs2) (bvSize bs1) + ofBits bs1 $ =
 (induct '(!! listind x a b) 'bs1
-  '(eqtr4 (ofBitseq append0) @ eqtr (addeq1 ofBits0) @
-    eqtr add01 @ eqtr (shleq2 bvSize0) shl02)
+  '(eqtr4 (ofBitseq append0) @ eqtr (addeq2 ofBits0) @
+    eqtr add02 @ eqtr (shleq2 bvSize0) shl02)
   '(syl5eqr (ofBitseq @ eqtr4 (conseq1 fstsnd) appendS) @
-    syl6eq (addeq (eqtr3 ofBitsS @ ofBitseq @ conseq1 fstsnd) @
-      shleq2 @ eqtr3 bvSizeS @ bvSizeeq @ conseq1 fstsnd) @
-    syl5eq ofBitsS @ syl6eqr addass @ addeq2d @
-    syl6eq (eqtr addmul @ addeq2 @ eqtr mulass @
+    syl6eq (addeq (shleq2 @ eqtr3 bvSizeS @ bvSizeeq @ conseq1 fstsnd) @
+      eqtr3 ofBitsS2 @ ofBitseq @ conseq1 fstsnd) @
+    syl5eq ofBitsS2 @ syl6eq addass @ addeq1d @
+    syl6eq (eqtr addmul @ addeq1 @ eqtr mulass @
       muleq2 @ eqtr4 mulcom powadd) shleq1));
 
 @_ def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
@@ -537,31 +549,61 @@ theorem splitBitsTi (h: $ bvSize bs = k $): $ splitBits bs n -> n e. Bits k $ =
 theorem splitBits0: $ splitBits 0 n <-> n = 0 $ =
 '(bitr (bian1 elList0) @ bitr eqcomb @ eqeq2 ofBits0);
 
+theorem splitBitsS2: $ splitBits ((k <> a) : bs) n <->
+  a e. Bits k /\ bs e. List Bitvec /\ shl (ofBits bs) k + a = n $ =
+'(bitr (aneq1i elListS) @ bitr anass @ bitr4 (aneq1i elBitvec2) @
+  bitr4 anass @ aneq2i @ aneq2i @ eqeq1 ofBitsS2);
+
 theorem splitBitsS: $ splitBits ((k <> a) : bs) n <->
-  a e. Bits k /\ E. m (n = a + shl m k /\ splitBits bs m) $ =
-'(bitr (aneq1i elListS) @ bitr anass @ bitr (aneq1i elBitvec2) @ aneq2i @
-  bitr3 (exeqe @ syl5bb ancomb @ aneq2d @
-    syl6bb (bitr4 eqcomb @ eqeq1 ofBitsS) @ eqeq2d @ addeq2d shleq1) @
+  a e. Bits k /\ E. m (shl m k + a = n /\ splitBits bs m) $ =
+'(bitr splitBitsS2 @ bitr anass @ aneq2i @
+  bitr3 (exeqe @ syl5bb ancomb @ aneq2d @ eqeq1d @ addeq1d shleq1) @
   exeqi @ bitr anlass @ aneq2i @ bitr ancomb @ aneq2i eqcomb);
 
-theorem splitBits1: $ splitBits ((k <> a) : 0) n <-> a e. Bits k /\ n = a $ =
+theorem splitBits1: $ splitBits ((k <> a) : 0) n <-> a e. Bits k /\ a = n $ =
 (named '(bitr splitBitsS @ aneq2i @
   bitr3 (exeqi @ bitr3 (aneq1i splitBits0) ancomb) @
-  exeqe @ eqeq2d @ syl6eq add02 @ addeq2d @ syl6eq shl01 shleq1));
+  exeqe @ eqeq1d @ syl6eq add01 @ addeq1d @ syl6eq shl01 shleq1));
 
 theorem splitBits1i: $ a e. Bits k -> splitBits ((k <> a) : 0) a $ =
 '(sylibr splitBits1 @ mpi eqid ian);
 
-theorem splitBitsS4: $ splitBits ((4 <> a) : bs) n <->
-  E. m (n = m :x a /\ splitBits bs m) $ =
-'(bitr splitBitsS @ bitr (bian1 h2nT) @ exeqi @ aneq1i @ eqeq2 @
-  eqtr addcom @ addeq1 @ muleq2 d2pow4);
+theorem splitBitsS_uniq:
+  $ splitBits ((k <> a) : bs) n <-> chop k n = a /\ splitBits bs (shr n k) $ =
+'(bitr splitBitsS @ bitr3 exan1 @
+  bitr (exeqi @ bitr3 anass @
+    bitr (aneq1i shladd_uniq) @ bitr anass @ aneq1i eqcomb) @
+  !! exeqe m @ aneq2d splitBitseq2);
 
-theorem splitBitsA
-  : $ bvSize bs1 = k -> splitBits bs1 a -> splitBits ((k <> a) : bs2) n ->
-  splitBits (bs1 ++ bs2) n $ =
-'(exp @ exp @ iand (sylibr appendT @ iand (anld anlr) @ anrd @ sylib elListS anrl) @
-  eqtrd (eqtr4g ofBitsA ofBitsS @ addeqd (anrd anlr) @ shleq2d anll) anrr);
+theorem splitBitsS4: $ splitBits ((4 <> a) : bs) n <->
+  E. m (m :x a = n /\ splitBits bs m) $ =
+'(bitr splitBitsS @ bitr (bian1 h2nT) @ exeqi @ aneq1i @ eqeq1 @ addeq1 @ muleq2 d2pow4);
+
+theorem splitBitsA: $ bvSize bs1 = k ->
+  (splitBits (bs1 ++ bs2) n <->
+    E. a (splitBits bs1 a /\ splitBits ((k <> a) : bs2) n)) $ =
+'(syl6bb (exeqi @ bitr3 anass @ aneq1i @ bitr ancomb @ aneq2i eqcomb) @
+  syl6bbr (exeqe @ aneq2d @ splitBitseq1d @ conseq1d preq2) @
+  syl5bb (aneq1i appendT) @ syl5bb anass @ syl aneq2a @ exp @
+  bitr3d (anwr @ syl5bb splitBitsS2 @
+    syl5bbr (aneq2i @ eqeq1 ofBitsA) @ aneq1d @ syl bian1 ofBitsT) @
+  splitBitseq1d @ conseq1d @ preq1d anl);
+
+theorem splitBits_split: $ splitBits (((k + l) <> b) : bs) n <->
+  E. a E. c (a e. Bits k /\ shl c k + a = b /\
+    splitBits ((k <> a) : (l <> c) : bs) n) $ =
+(named '(bitr3 (exeqe biidd) @ exeqi @ bitr3 (exeqe biidd) @ exeqi @
+  bitr3 anass @ bitr3 (aneq1i @ bitr shladd_uniq @ aneq eqcomb eqcomb) @
+  aneq2a @ syl6bb (splitBitseq1 @ appendSi append1) @
+  syl6bbr (splitBitsA @ eqtr bvSizeS @ addeq2 bvSize1) @
+  syl5bbr (exeqe @ splitBitseq1d @ conseq1d preq2) @ exeqd @
+  syl aneq1a @ exp @ syl6bbr splitBitsS_uniq @ syl6bbr (aneq2i splitBits1) @
+  syl6bb anlass @ bitr2d (aneq2d @ syl5bbr (aneq2i eqcomb) @
+    syl5bbr ancomb @ syl5bbr shladd_uniq @ bitrd (anwll bian1) @ eqeq1d anlr) @
+  syl6bb eqcomb @ syl bian1a @ exp @
+  mpbid (eleq1d @ anld @ sylib shladd_uniq anll) @
+  syl shrT @ mpbird (elneqd anr @ Bitseqd @ a1i addcom) @
+  sylib elBitvec2 @ elListHd @ anwl anrl));
 
 ----------------------------------------
 -- x86-64 machine code decoding
@@ -1607,8 +1649,8 @@ pub theorem mkCfgT (ex rip regs flags mem: nat):
 '(bitr prelxp @ bitr4 (bitr4 (aneq prelxp @ bitr prelxp @ aneq2i prelxp) anass) anass);
 
 theorem mkCfg_ex: $ E. e E. i E. rs E. f E. m k = mkCfg e i rs f m $ =
-'(trud @ iexde @ iexde @ iexde @ iexde @ iexde @
-  eqcomd @ syl6eq fstsnd @ preqd (syl6eq fstsnd @ preqd an4lr an3lr) @
+'(iexie @ iexde @ iexde @ iexde @ iexde @
+  eqcomd @ syl6eq fstsnd @ preqd (syl6eq fstsnd @ preqd an4l an3lr) @
   syl6eq fstsnd @ preqd anllr @ syl6eq fstsnd @ preqd anlr anr);
 
 @_ def readException (k: nat): nat = $ pi11 k $;
@@ -2676,7 +2718,7 @@ $ {m | m e. Arrow u64 (Option Prot) /\
 theorem elPageMapping:
   $ m e. PageMapping M <-> m e. Arrow u64 (Option Prot) /\
     A. a A. p (a <> suc p e. m -> E. v M @ a = p <> v) $ =
-'(!! elabe x ,eqtac);
+'(elabe ,eqtac);
 theorem PageMappingss: $ PageMapping M C_ Arrow u64 (Option Prot) $ =
 (named '(ax_gen @ sylbi elPageMapping anl));
 theorem finPageMapping: $ finite (PageMapping M) $ =
@@ -2702,9 +2744,9 @@ theorem writeMemory1PM: $ writeMemory1 m a b m2 e -> PageMapping m C_ PageMappin
 theorem writeMemoryPM: $ writeMemory m a l m2 e -> PageMapping m C_ PageMapping m2 $ =
 (named '(ax_mp (eale ,(eqtac-gen 'm)) @ ax_mp (eale ,(eqtac-gen 'a)) ,(induct '(listind) 'l
   '(ax_gen @ ax_gen @ sylbi writeMemory02 @ syl eqssr @ PageMappingeqd anlr)
-  '(sylbi (!! cbval _ a2 @ !! cbvald _ m3 ,eqtac) @
+  '(sylbi (cbval @ cbvald ,eqtac) @
     iald @ iald @ syl5bi writeMemoryS2 @ syl5 anr @
-    rsyl (!! eale a2 ,eqtac) @ sylibr eexb @ alimi @ eexd @ com12 @ imp @
+    rsyl (eale ,eqtac) @ sylibr eexb @ alimi @ eexd @ com12 @ imp @
     rsyl writeMemory1PM @ eorda
       (eimd anrr @ anwl sstr)
       (a1d @ impcom @ bi2d @ sseq2d @ PageMappingeqd anrl)))));
@@ -2723,11 +2765,11 @@ $ Xp (Xp (List u8) (List u8)) (X\ k e. Config, PageMapping (getMemory k)) $;
 pub theorem mkKS_T (i o k m: nat):
   $ mkKS i o k m e. KernelState <->
     i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) $ =
-'(bitr prelxp @ bitr4 (aneq prelxp @ !! elxabe x ,eqtac) anass);
+'(bitr prelxp @ bitr4 (aneq prelxp @ elxabe ,eqtac) anass);
 
 theorem mkKS_ex: $ E. i E. o E. k E. m ks = mkKS i o k m $ =
-'(trud @ iexde @ iexde @ iexde @ iexde @
-  eqcomd @ syl6eq fstsnd @ preqd (syl6eq fstsnd @ preqd an3lr anllr) @
+'(iexie @ iexde @ iexde @ iexde @
+  eqcomd @ syl6eq fstsnd @ preqd (syl6eq fstsnd @ preqd an3l anllr) @
   syl6eq fstsnd @ preqd anlr anr);
 
 @_ def ksIn (k: nat): nat = $ pi11 k $;
@@ -2940,18 +2982,18 @@ pub theorem mapMemoryS {x: nat} (prot m a b l: nat):
     mapMemory prot m a (b : l) =
     mapMemory prot (mapMemory1 prot m a b) (a +_64 1) l $ =
 (named '(mpi (eqtr {lrecS : $ mapMemory_aux _ _ = _ @ (_ <> _ <> mapMemory_aux _ _) $} @
-  !! appslame y @ !! appslamed z @ !! applamed w ,eqtac) @
-  !! apprlamed1 n (sylibr (ellower finMPageMapping) an3lr) @
-  !! apprlamed2 c an3lr ,eqtac));
+  appslame @ appslamed @ applamed ,eqtac) @
+  apprlamed1 (sylibr (ellower finMPageMapping) an3lr) @
+  apprlamed2 an3lr ,eqtac));
 pub theorem mapMemoryT {x: nat} (prot m a l: nat):
   $ prot e. Prot /\ m e. X\ x e. Memory, PageMapping x /\ a e. u64 /\ l e. List u8 ->
     mapMemory prot m a l e. X\ x e. Memory, PageMapping x $ =
-(named '(ax_mp (!! eale m3 ,(eqtac-gen 'm)) @ ax_mp (!! eale a2 ,(eqtac-gen 'a))
+(named '(ax_mp (eale ,(eqtac-gen 'm)) @ ax_mp (eale ,(eqtac-gen 'a))
   ,(induct '(listind) 'l
     '(ax_gen @ ax_gen @ anwl @ mpbird (eleq1d mapMemory0) anlr)
     '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
       com12 @ sylbi (bitr4 (aneq2i elListS) anass) @
-      !! ealde m4 @ !! ealde a3 @ syld (bi1d ,eqtac) @ anwll @
+      ealde @ ealde @ syld (bi1d ,eqtac) @ anwll @
       eimd (iand (iand (iand an4l @ anwl mapMemory1T) @ a1i add64T) anr) @
       bi2d @ eleq1d mapMemoryS))));
 
@@ -3120,28 +3162,28 @@ theorem ksPathS (ks ks2 l ks3: nat):
   $ ksPath ks (ks2 : l) ks3 <-> ksStep ks ks2 /\ ksPath ks2 l ks3 $ =
 (focus
   '(bitr (aneq2i @ bitr ksPath_aux_val @ bitr ocasepS _) anlass)
-  '(!! elsabe x @ !! elabed y @ bitrd ,eqtac @ aneq2d @
+  '(elsabe @ elabed @ bitrd ,eqtac @ aneq2d @
     syl5bb elsep @ syl5bb (bian1 @ mpbir elupto @ ltpr2tr ltsucid) @
-    !! elabed z ,eqtac));
+    elabed ,eqtac));
 theorem ksPathT (ks l ks2: nat):
   $ ksPath ks l ks2 ->
     ks e. KernelState /\ all KernelState l /\ ks2 e. KernelState $ =
 (named '(ax_mp (eale ,(eqtac-gen 'ks)) ,(induct '(listind) 'l
   '(ax_gen @ sylbi ksPath0 @ iand (iand anl @ a1i all0) @ impcom @ bi2d eleq1)
   '(sylbi (cbval ,eqtac) @ iald @ com12 @ sylbi ksPathS @
-    syl5 (!! eale x ,eqtac) @ eimd anr @
+    syl5 (eale ,eqtac) @ eimd anr @
     anim1d @ exp @ iand (anwll @ anld ksStepT) @ sylibr allS anr))));
 
 @_ abstract def ksReachable (ks ks2 .l: nat): wff = $ E. l ksPath ks l ks2 $;
 pub theorem ksReachable0: $ ks e. KernelState -> ksReachable ks ks $ =
-'(syl (!! iexe l ,eqtac) @ sylibr ksPath0 @ mpi eqid ian);
+'(syl (iexe ,eqtac) @ sylibr ksPath0 @ mpi eqid ian);
 pub theorem ksReachableS:
   $ ksStep ks ks2 -> ksReachable ks2 ks3 -> ksReachable ks ks3 $ =
-(named '(eexda @ sylbir ksPathS @ !! iexe l ,eqtac));
+(named '(eexda @ sylbir ksPathS @ iexe ,eqtac));
 pub theorem ksReachableInd {ks1 ks2: nat} (ks: nat) (A: set):
   $ ks e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks1 e. A -> ks2 e. A) /\
     ksReachable ks ks3 -> ks3 e. A $ =
-(named '(imp @ !! eexd l @ impcom @ syl (!! eale k ,(eqtac-gen 'ks))
+(named '(imp @ !! eexd l @ impcom @ syl (eale ,(eqtac-gen 'ks))
   ,(induct '(listindd) 'l
     '(a1i @ ax_gen @ syl5ibrcom (sylbi ksPath0 @ eleq1d anr) id)
     '(sylibr (cbval ,eqtac) @ impcom @ alimd @

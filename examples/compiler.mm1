@@ -177,7 +177,7 @@ theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
   (def h2 '(mpbir (lteq2 @ eqtr bitsNeg1 upto16) ,norm_num))
   (refine 'he2 '(ssel u8ss64 ,h1) 'elBits01
     '(ssel u8ss16 ,h0) h2 'elBits01 h2) (swap)
-  '(ax_mp (!! iexe _1 ,eqtac) @ ian elBits01 _)
+  '(ax_mp (iexe ,eqtac) @ ian elBits01 _)
   '(s2n_A ELF_IDENT_eq @ s2n_A (_ch16_eq _x02_eq) @
     s2n_A (_ch16_eq eqid) @ s2n_A (_ch32_eq _x01_eq) @
     s2n_A he @ s2n_A (_ch64_eq ,norm_num) @
@@ -231,7 +231,7 @@ theorem basic_pHeader_ok
   (refine '(ssel u8ss32 {,h0 : $ 1 e. _ $}) 'PROT_RWX_T
     '(ssel u8ss64 ,h1) 'load_start_T '(Bitsle1 hle hms2) 'hms2 'hle)
   (have 'hM '(eqtr3 load_start_eq2 @ addeq load_start_pow2 @ eqcom c2nhex))
-  '(ax_mp (!! iexe _1 ,eqtac) @ ian
+  '(ax_mp (iexe ,eqtac) @ ian
     (ian _ @ mpbir (dvdeq2 @
       eqtr (bitsSub_eq_sub (mpbir (leeq2 hM) leaddid2) load_start_T) @
       eqtr (subeq1 hM) pncan) @ powdvd _)
@@ -254,7 +254,7 @@ $ parseBasicElf elf entry PROT_RWX text_start (c ++ repeat 0 bss) $;
 
 theorem ELF_lit_ok_isBasicElf (s entry bss c)
   (h: $ ELF_lit_ok s entry bss c $): $ isBasicElf s $ =
-'(trud ,(iterate 4 (fn (x) '(!! iexde ,(dummy! 'nat) ,x)) '(mpbiri h ,eqtac)));
+'(trud ,(iterate 4 (fn (x) '(iexde ,x)) '(mpbiri h ,eqtac)));
 
 theorem basicElf_ok
   (he: $ e = u64Bytes entry $)
@@ -267,7 +267,7 @@ theorem basicElf_ok
   (hbd: $ end e. u64 $):
   $ ELF_lit_ok (ELF_lit e fs ms c) entry bss c $ =
 (focus
-  '(ian s2nT @ trud ,(iterate 6 (fn (x) '(!! iexde ,(dummy! 'nat) ,x))
+  '(ian s2nT @ trud ,(iterate 6 (fn (x) '(iexde ,x))
     '(mpbiri _ ,eqtac)))
   (have 'h1 '(eqtr s2nsadd @ appendeq2 s2nsadd))
   (have 'he2 $ entry < end $
@@ -302,36 +302,97 @@ theorem basicElf_ok
 -- Assembler --
 ---------------
 
+theorem splitBitsx0i: $ splitBits 0 x0 $ =
+'(mpbir splitBits0 @ eqcom dec0);
+
+theorem splitBitsSi
+  (h1: $ a e. Bits k $) (h2: $ shl m k + a = n $) (h3: $ splitBits bs m $):
+  $ splitBits ((k <> a) : bs) n $ =
+'(mpbir splitBitsS @ iani h1 @ ax_mp (iexe ,eqtac) @ iani h2 h3);
+
 theorem splitBits14i (a: hex): $ splitBits ((4 <> a) : 0) a $ = '(splitBits1i h2nT);
 theorem splitBits14ie (x: hex) (h: $ a = x $): $ splitBits ((4 <> a) : 0) x $ =
 '(mpbir (splitBitseq1 @ conseq1 @ preq2 h) splitBits14i);
 theorem splitBitsS4i (h: $ splitBits bs n $): $ splitBits ((4 <> a) : bs) (n :x a) $ =
-'(mpbir splitBitsS4 @ ax_mp (!! iexe _1 ,eqtac) @ iani eqid h);
+'(mpbir splitBitsS4 @ ax_mp (iexe ,eqtac) @ iani eqid h);
 
 theorem splitBitsA4i
-  (he: $ bs1 ++ bs2 = bs $)
-  (hs: $ bvSize bs1 = 4 $)
-  (h1: $ splitBits bs1 a $)
-  (h2: $ splitBits bs2 n $):
+  (he: $ bs1 ++ bs2 = bs $) (hs: $ bvSize bs1 = 4 $)
+  (h1: $ splitBits bs1 a $) (h2: $ splitBits bs2 n $):
   $ splitBits bs (n :x a) $ =
-'(mpbi (splitBitseq1 he) @ splitBitsA hs h1 @ splitBitsS4i h2);
+'(mpbi (splitBitseq1 he) @ mpbir (splitBitsA hs) @
+  iexie @ mpbiri (ian h1 @ splitBitsS4i h2) ,eqtac);
 
 theorem splitBitsA4ic
-  (he: $ bs1 ++ bs2 = bs $)
-  (hs: $ bvSize bs1 = 4 $)
-  (h1: $ splitBits bs1 b $)
-  (h2: $ splitBits bs2 a $):
+  (he: $ bs1 ++ bs2 = bs $) (hs: $ bvSize bs1 = 4 $)
+  (h1: $ splitBits bs1 b $) (h2: $ splitBits bs2 a $):
   $ splitBits bs (ch a b) $ =
 '(mpbir (splitBitseq2 c2nch) @ splitBitsA4i he hs h1 h2);
 
-theorem appendSi (h: $ a ++ b = c $): $ x : a ++ b = x : c $ = '(eqtr appendS @ conseq2 h);
+theorem splitBitsS1i (h0: $ bool x $)
+  (hn: $ b0 n2 + x = n $) (h: $ splitBits bs n2 $):
+  $ splitBits ((1 <> x) : bs) n $ =
+'(splitBitsSi (mpbir elBits1 h0) (eqtr (addeq1 shl12) hn) h);
+
+theorem splitBitsS1i0 (h1: $ n = b0 n2 $) (h2: $ splitBits bs n2 $):
+  $ splitBits ((1 <> 0) : bs) n $ = '(splitBitsS1i bool0 (eqtr4 add0 h1) h2);
+theorem splitBitsS1i1 (h1: $ n = b1 n2 $) (h2: $ splitBits bs n2 $):
+  $ splitBits ((1 <> 1) : bs) n $ = '(splitBitsS1i bool1 (eqtr4 add12 h1) h2);
+
+theorem splitBitsSSi (h0: $ bool x $)
+  (ha: $ b0 a2 + x = a $) (hn: $ b0 n2 + x = n $)
+  (h2: $ splitBits ((k <> a2) : bs) n2 $):
+  $ splitBits ((suc k <> a) : bs) n $ =
+(focus
+  '(mpbi (splitBitseq1 @ conseq1 @ preq1 add11) @ mpbir splitBits_split @
+    iexie @ iexde @ mpbiri _ ,eqtac)
+  '(ian (ian (mpbir elBits1 h0) @ eqtr (addeq1 shl12) ha) @
+    splitBitsS1i h0 hn h2));
+
+theorem splitBitsSSi0 (ha: $ a = b0 a2 $) (hn: $ n = b0 n2 $)
+  (h2: $ splitBits ((k <> a2) : bs) n2 $): $ splitBits ((suc k <> a) : bs) n $ =
+'(splitBitsSSi bool0 (eqtr4 add0 ha) (eqtr4 add0 hn) h2);
+theorem splitBitsSSi1 (ha: $ a = b1 a2 $) (hn: $ n = b1 n2 $)
+  (h2: $ splitBits ((k <> a2) : bs) n2 $): $ splitBits ((suc k <> a) : bs) n $ =
+'(splitBitsSSi bool1 (eqtr4 add12 ha) (eqtr4 add12 hn) h2);
+
+theorem b0Bitsi (h1: $ a = b0 a2 $) (h2: $ a2 e. Bits n $): $ a e. Bits (suc n) $ =
+'(mpbir (eleq1 h1) @ b0Bits h2);
+theorem b1Bitsi (h1: $ a = b1 a2 $) (h2: $ a2 e. Bits n $): $ a e. Bits (suc n) $ =
+'(mpbir (eleq1 h1) @ b1Bits h2);
+
+-- Adds theorems such as
+-- theorem xsplitBits_a121:
+--   $ splitBits ((1 <> 0) : (2 <> 1) : (1 <> 1) : 0) xa $;
+-- which decompose hex values into bits in different groupings.
+-- The naming system is 'xsplitBits_' + hex digit + partition,
+-- where partition is one of 13, 31, 121, 1111 representing a partition of 4
+do (scan '((1 3) (3 1) (1 2 1) (1 1 1 1)) @ fn (l)
+  @ for 0 16 @ fn (i)
+    (def name @ apply atom-app "xsplitBits_" (hexstring i) l)
+    @ letrec (
+      [lhs @ match-fn*
+        [(() _) $0$]
+        [((k . xs) n)
+          '(cons (pr (,(dn k)) (,(dn {n % {2 ^ k}})))
+            ,(lhs xs {n shr k}))]]
+      [f @ match-fn*
+        [(() n) 'splitBitsx0i]
+        [((k . xs) n)
+          @ if {k = 1}
+          '(,(atom-app 'splitBitsS1i {n % 2})
+            ,(hexnhalf n) ,(f xs {n // 2}))
+          '(,(atom-app 'splitBitsSSi {n % 2})
+            ,(decnhalf {n % {2 ^ k}}) ,(hexnhalf n) ,(f (cons {k - 1} xs) {n // 2}))]])
+    (add-tac-thm! name () ()
+      '(splitBits ,(lhs l i) (,(hexdigit i))) () @ fn () (f l i)));
 
 theorem decodeI
   (h1: $ readPrefixes rex l1 $)
   (h2: $ decodeAux rex ast opc l2 $)
   (he: $ l1 ++ opc : l2 = l $):
   $ decode ast l $ =
-'(trud @ !! iexde _1 @ !! iexde _2 @ !! iexde _3 @ !! iexde _4 @
+'(iexie @ iexde @ iexde @ iexde @
   mpbiri (iani (iani (eqcom he) h1) h2) ,eqtac);
 
 theorem decode0I (h: $ decodeAux 0 ast opc s $): $ decode ast (opc ': s) $ =
@@ -340,7 +401,7 @@ theorem decode0I (h: $ decodeAux 0 ast opc s $): $ decode ast (opc ': s) $ =
 theorem decode1I
   (h: $ decodeAux (suc rex) ast opc s $):
   $ decode ast (ch x4 rex ': opc ': s) $ =
-(named '(decodeI (orr @ trud @ !! iexde _1 @ !! iexde _2 @
+(named '(decodeI (orr @ iexie @ iexde @
   mpbiri (ian (ian (splitBitsS4i @ splitBits14ie dec4) eqid) eqid) ,eqtac) h @
   eqtr4 append1 @ eqtr s2nscons @ conseq c2nhex s2nscons));
 
@@ -366,7 +427,7 @@ theorem decodeMovImmI
   (h3: $ readImm sz imm l2 $):
   $ decodeAux rex (xastMov sz (Rm_i r imm)) (ch xc a) (l1 '+ l2) $ =
 (focus
-  '(decodeMovI @ orr @ trud ,(iterate 6 (fn (x) '(!! iexde ,(dummy! 'nat) ,x))
+  '(decodeMovI @ orr @ trud ,(iterate 6 (fn (x) '(iexde ,x))
     '(mpbiri (iani (iani (iani (iani s2nsadd _) h2) _) _) ,eqtac)))
   '(splitBitsA4ic (appendSi append1) ,bvSizeSi h1 @ splitBits14ie decc)
   '(mpbir (readImmeq1 he) h3)
@@ -374,7 +435,7 @@ theorem decodeMovImmI
 
 theorem decodeTwoI (h: $ ,(foldr '(2 2 2 2 6) (get-decl 'decodeTwo) nth) $):
   $ decodeAux rex ast (ch x0 xf) (b2 ': l2) $ =
-'(orr @ iani eqid @ trud @ !! iexde _1 @ !! iexde _2 @ mpbiri (iani s2nscons h) ,eqtac);
+'(orr @ iani eqid @ iexie @ iexde @ mpbiri (iani s2nscons h) ,eqtac);
 
 theorem decodeSysCallI: $ decodeAux rex xastSysCall (ch x0 xf) (s1 (ch x0 x5)) $ =
 '(decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);
@@ -437,7 +498,7 @@ theorem assemblesA
   (have 'h3 '(bitr (sublistAteq3 s2nsadd) sublistAt_append))
   '(mpand (syl h1 @ anim1 @ eximi @ anim2 @ sylbi h3 anl) @
     mpand (syl h2 @ sylbir anass @ anim1 @ impcom @ syl5 anl @
-      eexda @ !! iexde _1 @ mpbird ,eqtac @ anwl @
+      eexda @ iexde @ mpbird ,eqtac @ anwl @
       iand (syl6eq addass @ addeq1d anrl) @ rsyl anrr @ sylbi h3 anr) @
     iand (eqtrd anrl @ syl6eqr (addeq2 @ eqtr (leneq s2nsadd) appendlen) @
       syl6eq addass @ addeq1d @ anwl anrl) anrr));
@@ -451,7 +512,7 @@ theorem assembles_finish
   $ len c = n /\ p $ =
 (focus
   '(anim1 (eqcomd @ sylib addcan2 @ eqtrd (a1i h2) id) @ h1 @
-    ian (!! iexe a _ @ ian (eqcom add02) sublistAt_id) tru)
+    ian (iexe _ @ ian (eqcom add02) sublistAt_id) tru)
   eqtac);
 
 do {
