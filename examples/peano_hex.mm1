@@ -550,6 +550,7 @@ theorem d2pow2: $ 2 ^ 2 = 4 $ = '(eqtr pow22 d2mul2);
 theorem d2mul4: $ 2 * 4 = 8 $ = norm_num;
 theorem d4add4: $ 4 + 4 = 8 $ = '(eqtr3 mul21 d2mul4);
 theorem d2pow3: $ 2 ^ 3 = 8 $ = '(eqtr powS @ eqtr (muleq2 d2pow2) d2mul4);
+theorem d8mul2: $ 8 * 2 = 16 $ = norm_num;
 theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
 theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
 '(eqtr3 (poweq2 d4add4) @ eqtr powadd @ muleq d2pow4 d2pow4);

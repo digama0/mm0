@@ -254,7 +254,7 @@ $ parseBasicElf elf entry PROT_RWX text_start (c ++ repeat 0 bss) $;
 
 theorem ELF_lit_ok_isBasicElf (s entry bss c)
   (h: $ ELF_lit_ok s entry bss c $): $ isBasicElf s $ =
-'(trud ,(iterate 4 (fn (x) '(iexde ,x)) '(mpbiri h ,eqtac)));
+'(iexie @ iexde @ iexde @ iexde @ mpbiri h ,eqtac);
 
 theorem basicElf_ok
   (he: $ e = u64Bytes entry $)
@@ -267,8 +267,7 @@ theorem basicElf_ok
   (hbd: $ end e. u64 $):
   $ ELF_lit_ok (ELF_lit e fs ms c) entry bss c $ =
 (focus
-  '(ian s2nT @ trud ,(iterate 6 (fn (x) '(iexde ,x))
-    '(mpbiri _ ,eqtac)))
+  '(ian s2nT @ iexie ,(iterate 5 (fn (x) '(iexde ,x)) '(mpbiri _ ,eqtac)))
   (have 'h1 '(eqtr s2nsadd @ appendeq2 s2nsadd))
   (have 'he2 $ entry < end $
     '(ltletr (anr hea) @ mpbi (leeq2 hend) @ mpbi leadd2 @
@@ -346,8 +345,7 @@ theorem splitBitsSSi (h0: $ bool x $)
 (focus
   '(mpbi (splitBitseq1 @ conseq1 @ preq1 add11) @ mpbir splitBits_split @
     iexie @ iexde @ mpbiri _ ,eqtac)
-  '(ian (ian (mpbir elBits1 h0) @ eqtr (addeq1 shl12) ha) @
-    splitBitsS1i h0 hn h2));
+  '(ian (eqtr (addeq1 shl12) ha) @ splitBitsS1i h0 hn h2));
 
 theorem splitBitsSSi0 (ha: $ a = b0 a2 $) (hn: $ n = b0 n2 $)
   (h2: $ splitBits ((k <> a2) : bs) n2 $): $ splitBits ((suc k <> a) : bs) n $ =
@@ -366,8 +364,8 @@ theorem b1Bitsi (h1: $ a = b1 a2 $) (h2: $ a2 e. Bits n $): $ a e. Bits (suc n) 
 --   $ splitBits ((1 <> 0) : (2 <> 1) : (1 <> 1) : 0) xa $;
 -- which decompose hex values into bits in different groupings.
 -- The naming system is 'xsplitBits_' + hex digit + partition,
--- where partition is one of 13, 31, 121, 1111 representing a partition of 4
-do (scan '((1 3) (3 1) (1 2 1) (1 1 1 1)) @ fn (l)
+-- where partition is one of 13, 22, 31, 121, 1111 representing a partition of 4
+do (scan '((1 3) (2 2) (3 1) (1 2 1) (1 1 1 1)) @ fn (l)
   @ for 0 16 @ fn (i)
     (def name @ apply atom-app "xsplitBits_" (hexstring i) l)
     @ letrec (
@@ -386,6 +384,196 @@ do (scan '((1 3) (3 1) (1 2 1) (1 1 1 1)) @ fn (l)
             ,(decnhalf {n % {2 ^ k}}) ,(hexnhalf n) ,(f (cons {k - 1} xs) {n // 2}))]])
     (add-tac-thm! name () ()
       '(splitBits ,(lhs l i) (,(hexdigit i))) () @ fn () (f l i)));
+
+theorem bitb00i (h: $ a = b0 b $): $ bit a 0 = 0 $ = '(eqtr (biteq1 h) bitb00);
+theorem bitb10i (h: $ a = b1 b $): $ bit a 0 = 1 $ = '(eqtr (biteq1 h) bitb10);
+theorem bitb0Si (h: $ a = b0 b $) (h2: $ bit b n = c $): $ bit a (suc n) = c $ =
+'(eqtr (biteq1 h) @ eqtr bitb0S h2);
+theorem bitb1Si (h: $ a = b1 b $) (h2: $ bit b n = c $): $ bit a (suc n) = c $ =
+'(eqtr (biteq1 h) @ eqtr bitb1S h2);
+
+-- Adds theorems such as
+-- theorem xbita3: $ bit xa 3 = 0 $;
+-- which evaluate the bits of an individual hex digit.
+-- Naming system is "xbit" + hex digit + index
+do {
+  (def (xbit n i) @ atom-app "xbit" (hexstring n) (hexstring i))
+  (for 0 16 @ fn (n) @ for 0 4 @ fn (i)
+    @ letrec ([(f n i)
+      @ if {i = 0}
+      '(,(atom-app "bitb" {n % 2} "0i") ,(hexnhalf n))
+      '(,(atom-app "bitb" {n % 2} "Si")
+        ,(hexnhalf n) ,(f {n // 2} {i - 1}))])
+    (add-tac-thm! (xbit n i) () ()
+      '(eq (bit (h2n (,(hexdigit n))) (,(dn i))) (,(dn {{n shr i} band 1}))) ()
+      @ fn () (f n i)))
+};
+
+theorem REX_W_Si (h: $ bit rex 3 = a $): $ REX_W (suc rex) = a $ = '(eqtr (biteq1 sucsub1) h);
+theorem REX_R_Si (h: $ bit rex 2 = a $): $ REX_R (suc rex) = a $ = '(eqtr (biteq1 sucsub1) h);
+theorem REX_X_Si (h: $ bit rex 1 = a $): $ REX_X (suc rex) = a $ = '(eqtr (biteq1 sucsub1) h);
+theorem REX_B_Si (h: $ bit rex 0 = a $): $ REX_B (suc rex) = a $ = '(eqtr (biteq1 sucsub1) h);
+
+theorem rex_reg_i (h: $ splitBits ((3 <> r) : (1 <> b) : 0) n $):
+  $ rex_reg b r = n $ =
+'(eqtr3 (addeq1 @ shleq1 ofBits1) @ anri @ mpbi splitBitsS2 h);
+
+theorem splitBits_332
+  (h1: $ splitBits ((3 <> a) : (1 <> bl) : 0) y $)
+  (h2: $ splitBits ((2 <> bh) : (2 <> c) : 0) x $):
+  $ splitBits ((3 <> a) : (3 <> shl bh 1 + bl) : (2 <> c) : 0) (ch x y) $ =
+(focus
+  '(mpbi (splitBitseq1 @ eqtr append1 @ conseq2 @ conseq1 @ preq1 add11) @
+    mpbir splitBits_mid @ iexie @ iexde @ mpbiri (ian eqid _) ,eqtac)
+  '(splitBitsA4ic (eqtr4 (appendSi append1) append1) ,bvSizeSi h1 h2));
+
+theorem splitBits_121_rex_reg
+  (h1: $ splitBits ((1 <> bl) : (2 <> bh) : (1 <> r) : 0) rn $)
+  (h2: $ rex = r $): $ rn = rex_reg rex (shl bh 1 + bl) $ =
+(focus '(eqcom @ rex_reg_i @
+  mpbi (splitBitseq1 @ conseq (preq1 add11) @ conseq1 @ preq2 @ eqcom h2) @
+  mpbir splitBits_split @ iexie @ iexde @ mpbiri (ian eqid h1) ,eqtac));
+
+theorem opSize_64: $ opSize r 1 1 = wSz64 $ = '(eqtr (ifpos true1) (ifpos true1));
+theorem opSize_32: $ opSize r 0 1 = wSz32 $ = '(eqtr (ifpos true1) (ifneg true0));
+theorem opSize_8: $ opSize r w 0 = wSz8 r $ = '(ifneg true0);
+
+theorem opSizeW_0 (h: $ opSize F. 0 v = a $): $ opSizeW 0 v = a $ =
+'(eqtr (opSizeeq (mpbir neqfal eqid) REX_W_0 eqid) h);
+theorem opSizeW_S (h1: $ bit rex 3 = w $)
+  (h2: $ opSize T. w v = a $): $ opSizeW (suc rex) v = a $ =
+'(eqtr (opSizeeq (mpbir eqtru peano1) (eqtr (biteq1 sucsub1) h1) eqid) h2);
+
+theorem readSIBDisplacement_0
+  (h1: $ a e. u32 $) (h2: $ l = i32Bytes a $):
+  $ readSIBDisplacement 0 x5 (chopZ 64 a) 0 l $ =
+(named @ focus
+  '(mpbir (ifppos @ ian h2n5 eqid) _)
+  '(iexie @ mpbiri (iani (iani _ eqid) (eqtr h2 i32Bytes_val)) ,eqtac)
+  '(iani chopZT @ eqcom @ sExt_chopZ @ iani d32le64 h1));
+
+theorem readDisplacement_0: $ readDisplacement 0 0 s0 $ =
+(named '(orl @ orl @ ian (ian eqid eqid) s2ns0));
+theorem readDisplacement_8
+  (h1: $ a e. u8 $) (h2: $ l = i8Bytes a $):
+  $ readDisplacement 1 (chopZ 64 a) l $ =
+(named @ focus
+  '(orl @ orr @ iexie @ mpbiri (ian _ @ eqtr h2 i8Bytes_val) ,eqtac)
+  '(ian (ian chopZT eqid) @ eqcom @ sExt_chopZ @ iani d8le64 h1));
+theorem readDisplacement_32
+  (h1: $ a e. u32 $) (h2: $ l = i32Bytes a $):
+  $ readDisplacement 2 (chopZ 64 a) l $ =
+(named @ focus
+  '(orr @ iexie @ mpbiri (ian _ @ eqtr h2 i32Bytes_val) ,eqtac)
+  '(ian (ian chopZT eqid) @ eqcom @ sExt_chopZ @ iani d32le64 h1));
+
+theorem readSIBDisplacement_reg
+  (h1: $ bbase != x5 \/ 0 < md $)
+  (h2: $ readDisplacement md q l $):
+  $ readSIBDisplacement md bbase q (base_reg bbase) l $ =
+(named '(mpbir (ifpneg @ mpbir notan @ mpbi (oreq (neeq2 h2n5) lt01) h1) @ ian h2 eqid));
+
+theorem readModRM2_reg (h1: $ REX_B rex = b $) (h2: $ rex_reg b rm2 = r $):
+  $ readModRM2 rex (RM_reg r) rm2 3 s0 $ =
+(named '(mpbir (ifppos eqid) @ ian (RM_regeq @ eqtr2 (rex_regeq1 h1) h2) s2ns0));
+theorem readModRM2_rip
+  (h1: $ a e. u32 $) (h2: $ l = i32Bytes a $):
+  $ readModRM2 rex (RM_mem 0 base_RIP (chopZ 64 a)) 5 0 l $ =
+(named '(mpbir (ifpneg @ ltne d0lt3) @ mpbir (ifppos @ ian eqid eqid) @
+  iexie @ mpbiri (ian (ian chopZT @ RM_memeq3 @
+    eqcom @ sExt_chopZ @ iani d32le64 h1) @ eqtr h2 i32Bytes_val) ,eqtac));
+theorem readModRM2_sib (h: $ readSIB rex md rm l $):
+  $ readModRM2 rex rm 4 md l $ =
+(named '(mpbir (ifpneg @ anllr @ readSIB_T h) @
+  mpbir (ifpneg @ mt anl {,norm_num : $ 4 != 5 $}) @ mpbir (ifppos eqid) h));
+theorem readModRM2_mem
+  (h1: $ REX_B rex = b $) (h2: $ rex_reg b rm2 = r $)
+  (h3: $ rm2 != x4 $)
+  (h4: $ rm2 != x5 \/ 0 < md $)
+  (h5: $ readDisplacement md disp l $):
+  $ readModRM2 rex (RM_mem 0 (base_reg r) disp) rm2 md l $ =
+(named '(mpbir (ifpneg @ anllr @ readDisplacementT h5) @
+  mpbir (ifpneg @ mpbir notan @ mpbi (oreq (neeq2 h2n5) lt01) h4) @
+  mpbir (ifpneg @ mpbi (neeq2 h2n4) h3) @
+  iexie @ mpbiri (ian h5 @ RM_memeq2 @ base_regeq @ eqtr2 (rex_regeq1 h1) h2) ,eqtac));
+
+theorem readSIB_I
+  (h1: $ splitBits ((3 <> bs) : (1 <> ixl) : 0) y $)
+  (h2: $ splitBits ((2 <> ixh) : (2 <> sc) : 0) x $)
+  (h3: $ REX_X rex = rx $)
+  (h4: $ splitBits ((1 <> ixl) : (2 <> ixh) : (1 <> rx) : 0) index $)
+  (h5: $ REX_B rex = rb $)
+  (h6: $ splitBits ((3 <> bs) : (1 <> rb) : 0) bbase $)
+  (h7: $ readSIBDisplacement md bbase disp base l $)
+  (h8: $ if (index = RSP) 0 (suc (sc <> index)) = osi $):
+  $ readModRM2 rex (RM_mem osi base disp) 4 md (ch x y ': l) $ =
+(focus
+  '(readModRM2_sib @ iexie ,(iterate 7 (fn (x) '(iexde ,x)) '(mpbiri _ ,eqtac)))
+  '(iani (iani (iani _ _) _) s2nscons)
+  '(iani (splitBits_332 h1 h2) (splitBits_121_rex_reg h4 h3))
+  '(mpbir (readSIBDisplacementeq2 @ eqtr (rex_regeq1 h5) @ rex_reg_i h6) h7)
+  '(RM_memeq1 @ eqcom h8));
+
+theorem readSIB_0
+  (h1: $ splitBits ((3 <> bs) : (1 <> 0) : 0) y $)
+  (h2: $ splitBits ((2 <> 2) : (2 <> sc) : 0) x $)
+  (h3: $ REX_X rex = 0 $)
+  (h5: $ REX_B rex = rb $)
+  (h6: $ splitBits ((3 <> bs) : (1 <> rb) : 0) bbase $)
+  (h7: $ readSIBDisplacement md bbase disp base l $):
+  $ readModRM2 rex (RM_mem 0 base disp) 4 md (ch x y ': l) $ =
+'(readSIB_I h1 h2 h3 xsplitBits_4121 h5 h6 h7 @ ifpos h2n4);
+
+theorem readSIB_S
+  (h1: $ splitBits ((3 <> bs) : (1 <> ixl) : 0) y $)
+  (h2: $ splitBits ((2 <> ixh) : (2 <> sc) : 0) x $)
+  (h3: $ REX_X rex = rx $)
+  (h4: $ splitBits ((1 <> ixl) : (2 <> ixh) : (1 <> rx) : 0) index $)
+  (h5: $ REX_B rex = rb $)
+  (h6: $ splitBits ((3 <> bs) : (1 <> rb) : 0) bbase $)
+  (h7: $ readSIBDisplacement md bbase disp base l $)
+  (h8: $ index != x4 $):
+  $ readModRM2 rex (RM_mem (suc (sc <> index)) base disp) 4 md (ch x y ': l) $ =
+'(readSIB_I h1 h2 h3 h4 h5 h6 h7 @ ifneg @ mpbi (neeq2 h2n4) h8);
+
+theorem readModRM_I
+  (h1: $ splitBits ((3 <> rm2) : (1 <> o) : 0) y $)
+  (h2: $ splitBits ((2 <> pc) : (2 <> md) : 0) x $)
+  (h3: $ REX_R rex = r $)
+  (h4: $ splitBits ((1 <> o) : (2 <> pc) : (1 <> r) : 0) rn $)
+  (h5: $ readModRM2 rex rm rm2 md l $):
+  $ readModRM rex rn rm (ch x y ': l) $ =
+(focus
+  '(mpbir readModRM_val @ iexie @ iexde @ iexde @ iexde @
+    mpbiri (ian (ian (splitBits_332 h1 h2) (splitBits_121_rex_reg h4 h3)) _) ,eqtac)
+  '(iexie @ mpbiri (ian s2nscons h5) ,eqtac));
+
+theorem readOpcodeModRM_I
+  (h1: $ splitBits ((3 <> rm2) : (1 <> o) : 0) y $)
+  (h2: $ splitBits ((2 <> pc) : (2 <> md) : 0) x $)
+  (h3: $ splitBits ((1 <> o) : (2 <> pc) : (1 <> 0) : 0) opc $)
+  (h4: $ readModRM2 rex r rm2 md l $):
+  $ readOpcodeModRM rex opc r (ch x y ': l) $ =
+(focus
+  (suffices 'h '{_ :
+    $ splitBits ((1 <> o) : (2 <> pc) : (1 <> REX_R rex) : 0) (shl (REX_R rex) 3 + opc) /\
+      opc = chop 3 (shl (REX_R rex) 3 + opc) $})
+  '(iexie @ mpbiri (iani (readModRM_I h1 h2 eqid (anl h) h4) (anr h)) ,eqtac)
+  (have 'sp $ E. a (
+      splitBits ((1 <> o) : (2 <> pc) : 0) a /\
+      splitBits ((3 <> a) : (1 <> 0) : 0) opc) $
+   '(mpbi (splitBitsA @ eqtr4 ,bvSizeSi dec3) @
+    mpbir (splitBitseq1 @ appendSi append1) h3))
+  '(eex (imp @ syl5bi splitBitsS @ impd @ exp @ !! eexd z @ syl5 _ _) sp)
+  '(impcom @ bi2d @ eqeq1d @ syl5eqr add01 @ addeq1d @
+    syl5eqr shl01 @ shleq1d @ sylbi splitBits1 anr)
+  '(syl5ibrcom (rsyl eqcom ,eqtac) @
+    mpand (sylibr splitBitsS @ iand anr @ iexde @
+      mpbird ,eqtac @ a1i @ ian eqid @ splitBits1i @ mpbir elBits1 REX_R_T) @
+    iand _ @ eqcomd @ anld @ sylib splitBitsS_uniq anr)
+  '(sylib (splitBitseq1 @ appendSi append1) @
+    sylibr (splitBitsA @ eqtr4 ,bvSizeSi dec3) @
+    iexde @ mpbird ,eqtac @ iand an3l anlr));
 
 theorem decodeI
   (h1: $ readPrefixes rex l1 $)
@@ -427,7 +615,7 @@ theorem decodeMovImmI
   (h3: $ readImm sz imm l2 $):
   $ decodeAux rex (xastMov sz (Rm_i r imm)) (ch xc a) (l1 '+ l2) $ =
 (focus
-  '(decodeMovI @ orr @ trud ,(iterate 6 (fn (x) '(iexde ,x))
+  '(decodeMovI @ orr @ iexie ,(iterate 5 (fn (x) '(iexde ,x))
     '(mpbiri (iani (iani (iani (iani s2nsadd _) h2) _) _) ,eqtac)))
   '(splitBitsA4ic (appendSi append1) ,bvSizeSi h1 @ splitBits14ie decc)
   '(mpbir (readImmeq1 he) h3)

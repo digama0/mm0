@@ -38,8 +38,10 @@ def u16Bytes (n: nat): nat = $ toBytes 2 n $;
 def u32Bytes (n: nat): nat = $ toBytes 4 n $;
 def u64Bytes (n: nat): nat = $ toBytes 8 n $;
 
+def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
+
 -- sign extend (v: bitvec m) to length n
-def sExt (m n v: nat): nat = $ if (m - 1 e. v) (2 ^ n - 2 ^ m + v) v $;
+def sExt (m n v: nat): nat = $ if (bitsMSB m v) (2 ^ n - 2 ^ m + v) v $;
 def sExtq (n v: nat): nat = $ sExt n 64 v $;
 theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $;
 theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
@@ -65,7 +67,6 @@ theorem bitsNegT (k n: nat): $ bitsNeg k n e. Bits k $;
 def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
 theorem bitsSubT (k a b: nat): $ bitsSub k a b e. Bits k $;
 
-def bitsMSB (k n: nat): wff = $ k - 1 e. n $;
 def bitsSar (k a b: nat): nat =
 $ nat (bitsMSB k a) * (upto k - upto (k - b)) + shr a b $;
 theorem bitsSarT (k a b: nat):

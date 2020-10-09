@@ -633,15 +633,23 @@ pub theorem ifppos (p a b: wff): $ p -> (ifp p a b <-> a) $ =
 pub theorem ifpneg (p a b: wff): $ ~p -> (ifp p a b <-> b) $ =
 '(bitrd (syl bior1 @ con3 anl) bian1);
 
+theorem ifpan1: $ ifp p a b /\ c <-> ifp p (a /\ c) (b /\ c) $ =
+'(bitr andir @ oreq anass anass);
+theorem ifpan2: $ c /\ ifp p a b <-> ifp p (c /\ a) (c /\ b) $ =
+'(bitr andi @ oreq anlass anlass);
+
 term wtru: wff; prefix wtru: $T.$ prec max;
 axiom tru: $ T. $;
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 theorem trud (h: $ T. -> a $): $ a $ = '(h tru);
+theorem eqtru: $ (a <-> T.) <-> a $ =
+'(ibii (mpbiri tru id) @ bithd id (a1i tru));
 theorem notfal: $ ~F. $ = '(notnot1 tru);
 theorem efal: $ F. -> a $ = '(absurd notfal);
 theorem eqfal: $ (a <-> F.) <-> ~a $ =
 '(ibii (mpi notfal @ con3d bi1) @ ibid absurd @ a1i efal);
+theorem neqfal: $ (~a <-> F.) <-> a $ = '(bitr4 eqfal notnot);
 
 sort nat;
 term al {x: nat} (ph: wff x): wff; prefix al: $A.$ prec 41;
@@ -811,6 +819,8 @@ theorem exan2 (a: wff x) (b): $ E. x (a /\ b) <-> E. x a /\ b $ =
 '(bitr (exeqi ancomb) @ bitr exan1 ancomb);
 theorem alexan (a b: wff x): $ A. x a -> E. x b -> E. x (a /\ b) $ =
 '(syl exim @ alimi ian);
+theorem exifp (a b: wff x): $ E. x ifp p a b <-> ifp p (E. x a) (E. x b) $ =
+'(bitr exor @ oreq exan1 exan1);
 
 theorem cbvalh (p q: wff x y) (h1: $ F/ y p $) (h2: $ F/ x q $)
   (e: $ x = y -> (p <-> q) $): $ A. x p <-> A. y q $ =
@@ -1976,6 +1986,8 @@ theorem boolnat: $ bool (nat p) $ =
 
 theorem truenat: $ true (nat p) <-> p $ =
 '(ibii (con1 ifneg) (mpbiri d1ne0 (neeq1d ifpos)));
+theorem nateq1: $ nat p = 1 <-> p $ = '(bitr3 (dftrue2 boolnat) truenat);
+theorem nateq0: $ nat p = 0 <-> ~p $ = '(con2b @ bicom truenat);
 theorem nattrue: $ bool n -> nat (true n) = n $ =
 '(sylbi bool01 @ eor
   (eqtr4d (nateqd trueeq) @ syl6eqr (ifneg true0) id)
@@ -3203,6 +3215,7 @@ infixl zsub: $-Z$ prec 64;
 theorem zsubb0: $ b0 m -Z b0 n = m -ZN n $ =
 '(eqtr3 (zsubeq1 zfstsnd) @ eqtr zaddzn @
   znsubeq (eqtr (addeq zfstb0 zsndb0) add0) (eqtr (addeq zsndb0 zfstb0) add01));
+theorem zsubpos: $ n <= m -> b0 m -Z b0 n = b0 (m - n) $ = '(syl5eq zsubb0 znsubpos);
 
 theorem zsubid: $ a -Z a = 0 $ = 'znegid;
 theorem zsub01: $ 0 -Z a = -uZ a $ = 'zadd01;
@@ -4090,6 +4103,11 @@ theorem elb0: $ a e. b0 b <-> 0 < a /\ a - 1 e. ns b $ = '(bitr3 (elneq2 shl12) 
 theorem elb1: $ a e. b1 b <-> a = 0 \/ a - 1 e. ns b $ =
 '(cases (bithd (mpbiri (mpbir el01 b1odd) eleq1) orl) @
   bicomd @ bitrd bior1 @ syl5bb (bitr3 (elneq2 b1div2) eldiv2) @ eleq1d sub1can);
+
+theorem elb00: $ ~0 e. b0 b $ = '(mt (sylbi elb0 anl) ltirr);
+theorem elb10: $ 0 e. b1 b $ = '(mpbir elb1 @ orl eqid);
+theorem elb0S: $ suc a e. b0 b <-> a e. ns b $ = '(bitr elb0 @ bitr (bian1 lt01S) (eleq1 sucsub1));
+theorem elb1S: $ suc a e. b1 b <-> a e. ns b $ = '(bitr elb1 @ bitr (bior1 peano1) (eleq1 sucsub1));
 
 theorem bndextle:
   $ A. x (x < n -> x e. ns a -> x e. ns b) -> a % 2 ^ n <= b % 2 ^ n $ =
