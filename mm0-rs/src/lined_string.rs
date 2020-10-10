@@ -22,16 +22,11 @@ pub struct LinedString { s: String, unicode: bool, lines: Vec<usize> }
 
 /// Allows [`LinedString`] to be indexed with a [`Span`], since [`Span`] is essentially a range.
 ///
-/// # Safety
-/// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the `Span` used in the index
-/// was generated from the file that is being indexed.
 /// [`LinedString`]: struct.LinedString.html
 /// [`Span`]: ../utils/struct.Span.html
 impl Index<Span> for LinedString {
-  type Output = str;
-  fn index(&self, s: Span) -> &str {
-    unsafe { self.get_unchecked(s.start..s.end) }
-  }
+  type Output = [u8];
+  fn index(&self, s: Span) -> &[u8] { &self.as_bytes()[s.start..s.end] }
 }
 
 /// Calculates the largest index `n` (on a UTF8 boundary) such that `s[..n]` is at most `chs` UTF-16 codepoints.
@@ -48,6 +43,17 @@ fn lsp_to_idx(s: &str, mut chs: usize) -> usize {
 }
 
 impl LinedString {
+  /// Index a [`LinedString`] with a [`Span`], returning a `str`.
+  ///
+  /// # Safety
+  /// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the `Span` used in the index
+  /// was generated from the file that is being indexed.
+  /// [`LinedString`]: struct.LinedString.html
+  /// [`Span`]: ../utils/struct.Span.html
+  pub(crate) fn str_at(&self, s: Span) -> &str {
+    unsafe { std::str::from_utf8_unchecked(&self[s]) }
+  }
+
   /// Calculate and store information about the positions of any newline
   /// characters in the string, and set 'unicode' to true if the string contains unicode.
   /// The data in 'lines' is actually the positions of the characters immediately after
@@ -63,6 +69,9 @@ impl LinedString {
 
   /// Turn a byte index into an LSP [`Position`]
   ///
+  /// # Safety
+  /// `idx` must be a valid index in the string.
+  ///
   /// [`Position`]: ../../lsp_types/struct.Position.html
   pub fn to_pos(&self, idx: usize) -> Position {
     let (pos, line) = match self.lines.binary_search(&idx) {
@@ -72,7 +81,8 @@ impl LinedString {
     Position {
       line: line as u64,
       character: if self.unicode {
-        self[(pos..idx).into()].chars().map(char::len_utf16).sum()
+        // Safety: we know that `pos` is valid index, and we have assumed that `idx` is
+        unsafe { self.s.get_unchecked(pos..idx) }.chars().map(char::len_utf16).sum()
       } else { idx - pos } as u64
     }
   }

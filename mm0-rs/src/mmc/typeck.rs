@@ -1,7 +1,6 @@
 //! MMC type checking pass.
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
   environment::{AtomID, AtomData},
   lisp::{Uncons, LispVal, LispKind}, local_context::{try_get_span_from, try_get_span}};
@@ -102,15 +101,15 @@ pub struct TypeChecker<'a> {
   context: Vec<Variable>,
 }
 
-fn get_fresh_name(env: &mut Environment, mut base: String, mut bad: impl FnMut(AtomID, &AtomData) -> bool) -> AtomID {
+fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(AtomID, &AtomData) -> bool) -> AtomID {
   if !base.is_empty() {
     let a = env.get_atom(&base);
     if !bad(a, &env.data[a]) {return a}
   }
-  base.push('_');
+  base.push(b'_');
   let n = base.len();
   for i in 1.. {
-    use std::fmt::Write;
+    use std::io::Write;
     write!(&mut base, "{}", i).unwrap();
     let a = env.get_atom(&base);
     if !bad(a, &env.data[a]) {return a}
@@ -153,12 +152,12 @@ impl<'a> TypeChecker<'a> {
 
   fn get_fresh_decl(&mut self, base: AtomID) -> AtomID {
     let mut s = self.mmc.prefix.clone();
-    s += &self.elab.data[base].name;
+    s.extend_from_slice(&self.elab.data[base].name);
     get_fresh_name(&mut self.elab, s, |_, ad| ad.decl.is_some())
   }
 
   fn get_fresh_local(&mut self, base: AtomID) -> AtomID {
-    let s = if base == AtomID::UNDER {String::new()} else {(*self.elab.data[base].name).into()};
+    let s = if base == AtomID::UNDER {Vec::new()} else {(*self.elab.data[base].name).into()};
     let used_names = &self.used_names;
     get_fresh_name(&mut self.elab, s, |a, ad| used_names.contains(&a) || ad.decl.is_some())
   }
@@ -571,7 +570,8 @@ impl<'a> TypeChecker<'a> {
             try_get_span_from(&self.fsp, proc.span.as_ref()), "func is not implemented, use proc")),
         ProcKind::ProcDecl => {}
         ProcKind::Intrinsic => {
-          let intrinsic = Intrinsic::from_str(&self.elab.data[proc.name].name)
+          use std::convert::TryFrom;
+          let intrinsic = Intrinsic::try_from(&*self.elab.data[proc.name].name)
             .map_err(|_| ElabError::new_e(
               try_get_span_from(&self.fsp, proc.span.as_ref()), "unknown intrinsic"))?;
           // TODO: check intrinsic signature is correct?

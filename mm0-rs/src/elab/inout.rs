@@ -154,7 +154,7 @@ struct Sorts {
 
 impl Environment {
   fn check_sort(&self, s: &str) -> Result<SortID, String> {
-    self.atoms.get(s).and_then(|&a| self.data[a].sort)
+    self.atoms.get(s.as_bytes()).and_then(|&a| self.data[a].sort)
       .ok_or_else(|| format!("sort '{}' not found", s))
   }
   fn new_sorts(&self) -> Result<Sorts, String> {
@@ -167,7 +167,7 @@ impl Environment {
 
   fn check_term<'a>(&'a self, s: &str,
       args: &[SortID], ret: SortID, def: bool) -> Result<TermID, String> {
-    let t = self.atoms.get(s)
+    let t = self.atoms.get(s.as_bytes())
       .and_then(|&a| if let Some(DeclKey::Term(t)) = self.data[a].decl {Some(t)} else {None})
       .ok_or_else(|| format!("term '{}' not found", s))?;
     let td = &self.terms[t];
@@ -398,7 +398,7 @@ impl Elaborator {
   /// It is triggered only in "compile" mode, and by manual selection in server mode.
   pub fn elab_output(&mut self, sp: Span, kind: Span, hs: &[SExpr]) -> EResult<()> {
     match self.span(kind) {
-      "string" => self.elab_output_string(sp, hs),
+      b"string" => self.elab_output_string(sp, hs),
       _ => Err(ElabError::new_e(kind, "unsupported output kind")),
     }
   }

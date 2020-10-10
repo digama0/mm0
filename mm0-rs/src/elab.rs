@@ -273,7 +273,7 @@ impl Elaborator {
     }
   }
 
-  fn span(&self, s: Span) -> &str { self.ast.span(s) }
+  fn span(&self, s: Span) -> &[u8] { self.ast.span(s) }
 
   /// Converts a [`Span`] in the current elaboration file to a [`FileSpan`].
   ///
@@ -367,7 +367,7 @@ impl Elaborator {
     self.check_term_nargs(nota.id, term, nargs)?;
     self.spans.insert(nota.id, ObjectKind::Term(term, nota.id));
     let ast = self.ast.clone();
-    let mut vars = HashMap::<&str, (usize, bool)>::new();
+    let mut vars = HashMap::<&[u8], (usize, bool)>::new();
     for (idx, bi) in nota.bis.iter().enumerate() {
       match bi.kind {
         LocalKind::Dummy => return Err(ElabError::new_e(bi.local.unwrap_or(bi.span),
@@ -629,8 +629,9 @@ pub fn elaborate<T>(
   let mut recv = HashMap::new();
   let mut elab = Elaborator::new(ast.clone(), path, mm0_mode, check_proofs, cancel);
   for &(sp, ref f) in &ast.imports {
-    let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
     (|| -> Result<_> {
+      let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp, e))?;
+      let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
       let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
       let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
       recv.insert(sp, (Some(r), tok));

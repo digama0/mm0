@@ -120,8 +120,12 @@ impl<'a> Pretty<'a> {
     }
   }
 
-  fn token(&'a self, tk: &'a str) -> PP<'a> { PP::token(&self.alloc, &self.fe, tk) }
-  fn word(&'a self, data: &'a str) -> PP<'a> { PP::word(&self.alloc, data) }
+  fn token(&'a self, tk: &'a [u8]) -> PP<'a> {
+    PP::token(&self.alloc, &self.fe, unsafe {std::str::from_utf8_unchecked(tk)})
+  }
+  fn word(&'a self, data: &'a [u8]) -> PP<'a> {
+    PP::word(&self.alloc, unsafe {std::str::from_utf8_unchecked(data)})
+  }
 
   fn alloc(&'a self, doc: Doc<'a, RefDoc<'a, ()>, ()>) -> RefDoc<'a, ()> {
     self.alloc.alloc(doc)
@@ -295,7 +299,7 @@ impl<'a> Pretty<'a> {
         let mut u = Uncons::from(e.clone());
         let mut args = vec![];
         let mut doc = if let Some((ad, td)) = self.get_thm_args(&mut u, &mut args) {
-          let doc = self.alloc(Doc::BorrowedText(&ad.name));
+          let doc = self.alloc(Doc::BorrowedText(ad.name.as_str()));
           let doc = self.app_doc(doc, td.args.iter().zip(&args).map(|((_, ty), e)| {
             match ty {
               Type::Bound(_) => (true, self.pp_lisp(e)),

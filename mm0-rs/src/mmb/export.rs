@@ -671,7 +671,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.write_u64(cmd)?;
     self.write_u32(ix)?;
     self.write_u8(k)?;
-    self.write_all(name.as_bytes())?;
+    for &c in &**name {assert!(c != 0)}
+    self.write_all(name)?;
     self.write_u8(0)?;
     Ok(n)
   }

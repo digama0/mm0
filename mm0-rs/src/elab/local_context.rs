@@ -332,7 +332,7 @@ impl<'a> ElabTermMut<'a> {
     let a = if a == AtomID::UNDER {
       let mut n = 1;
       loop {
-        let a = self.env.get_atom(&format!("_{}", n));
+        let a = self.env.get_atom(format!("_{}", n).as_bytes());
         if !self.lc.vars.contains_key(&a) {break a}
         n += 1;
       }

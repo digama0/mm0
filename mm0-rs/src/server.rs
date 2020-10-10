@@ -9,7 +9,6 @@ use std::hash::{Hash, Hasher};
 use std::result::Result as StdResult;
 use std::thread::{ThreadId, self};
 use std::time::Instant;
-use std::str::FromStr;
 use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::ThreadPool;
@@ -502,7 +501,10 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
         Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg(sort, deps))) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
-          for &a in &**deps {s += " "; s += &env.data[a].name}
+          for &a in &**deps {
+            s += " ";
+            s += &String::from_utf8_lossy(&env.data[a].name)
+          }
           s + ")"
         }
         _ => return None,
@@ -664,7 +666,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
   let f = |name: &ArcString, desc, sp, full, kind| DocumentSymbol {
-    name: (*name.0).clone(),
+    name: String::from_utf8_lossy(name).into(),
     detail: Some(desc),
     kind,
     #[allow(deprecated)] deprecated: None,
@@ -739,7 +741,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   use CompletionItemKind::*;
   macro_rules! done {($desc:expr, $kind:expr) => {
     CompletionItem {
-      label: (*ad.name().0).clone(),
+      label: String::from_utf8_lossy(ad.name()).into(),
       detail: if detail {Some($desc)} else {None},
       kind: Some($kind),
       data: Some(to_value((path.url(), tk)).unwrap()),
@@ -818,7 +820,7 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
-  env.get_atom(&*ci.label).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
+  env.get_atom(ci.label.as_bytes()).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
 }
 
@@ -873,8 +875,9 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     let key = match to_key(k) {Some(k) => k, _ => continue};
+    use std::convert::TryFrom;
     match key {
-      Key::Global(a) if BuiltinProc::from_str(env.data()[a].name()).is_ok() => continue,
+      Key::Global(a) if BuiltinProc::try_from(&**env.data()[a].name()).is_ok() => continue,
       _ => {}
     }
     let mut cont = |&(sp2, ref k2)| {

@@ -125,7 +125,7 @@ pub struct Parser<'a> {
   /// The set of accumulated (non-fatal) parse errors
   pub errors: Vec<ParseError>,
   /// The span and contents of all `import` statements spotted thus far
-  pub imports: Vec<(Span, String)>,
+  pub imports: Vec<(Span, Vec<u8>)>,
   /// The current parser position in the string
   pub idx: usize,
   /// The beginning of the first word that looks like a command keyword
@@ -168,25 +168,25 @@ enum CommandKeyword {
 }
 
 impl CommandKeyword {
-  fn parse(s: &str) -> Option<CommandKeyword> {
+  fn parse(s: &[u8]) -> Option<CommandKeyword> {
     match s {
-      "sort"      => Some(CommandKeyword::Sort),
-      "delimiter" => Some(CommandKeyword::Delimiter),
-      "term"      => Some(CommandKeyword::Term),
-      "axiom"     => Some(CommandKeyword::Axiom),
-      "theorem"   => Some(CommandKeyword::Theorem),
-      "def"       => Some(CommandKeyword::Def),
-      "input"     => Some(CommandKeyword::Input),
-      "output"    => Some(CommandKeyword::Output),
-      "prefix"    => Some(CommandKeyword::Prefix),
-      "infixl"    => Some(CommandKeyword::Infixl),
-      "infixr"    => Some(CommandKeyword::Infixr),
-      "coercion"  => Some(CommandKeyword::Coercion),
-      "notation"  => Some(CommandKeyword::Notation),
-      "do"        => Some(CommandKeyword::Do),
-      "import"    => Some(CommandKeyword::Import),
-      "exit"      => Some(CommandKeyword::Exit),
-      _           => None,
+      b"sort"      => Some(CommandKeyword::Sort),
+      b"delimiter" => Some(CommandKeyword::Delimiter),
+      b"term"      => Some(CommandKeyword::Term),
+      b"axiom"     => Some(CommandKeyword::Axiom),
+      b"theorem"   => Some(CommandKeyword::Theorem),
+      b"def"       => Some(CommandKeyword::Def),
+      b"input"     => Some(CommandKeyword::Input),
+      b"output"    => Some(CommandKeyword::Output),
+      b"prefix"    => Some(CommandKeyword::Prefix),
+      b"infixl"    => Some(CommandKeyword::Infixl),
+      b"infixr"    => Some(CommandKeyword::Infixr),
+      b"coercion"  => Some(CommandKeyword::Coercion),
+      b"notation"  => Some(CommandKeyword::Notation),
+      b"do"        => Some(CommandKeyword::Do),
+      b"import"    => Some(CommandKeyword::Import),
+      b"exit"      => Some(CommandKeyword::Exit),
+      _            => None,
     }
   }
 }
@@ -233,8 +233,8 @@ impl<'a> Parser<'a> {
 
   /// Get the string slice corresponding to a region of the parser's source
   /// by passing a span.
-  pub fn span(&self, s: Span) -> &'a str {
-    unsafe { std::str::from_utf8_unchecked(&self.source[s.start..s.end]) }
+  pub fn span(&self, s: Span) -> &'a [u8] {
+    &self.source[s.start..s.end]
   }
 
   /// Attempt to parse a specific character `c` at the current parser index.
@@ -279,7 +279,7 @@ impl<'a> Parser<'a> {
   ///
   /// [`ident_`]: struct.Parser.html#method.ident_
   fn ident(&mut self) -> Option<Span> {
-    self.ident_().filter(|&s| self.span(s) != "_")
+    self.ident_().filter(|&s| self.span(s) != b"_")
   }
 
   /// Attempt to parse an ident or blank, returning an error on failure.
@@ -353,7 +353,7 @@ impl<'a> Parser<'a> {
       let x = if dummy {Some(self.ident_err_()?)} else {self.ident_()};
       if let Some(x) = x {
         let k =
-          if self.span(x) == "_" {LocalKind::Anon}
+          if self.span(x) == b"_" {LocalKind::Anon}
           else if dummy {LocalKind::Dummy}
           else if curly {LocalKind::Bound}
           else {LocalKind::Reg};
@@ -398,31 +398,46 @@ impl<'a> Parser<'a> {
   /// Returns the span of the string literal (including the quotes), and the parsed string,
   /// and returns a failure if the string is not well formed or if there is no
   /// string at the current position.
-  fn string(&mut self) -> Result<(Span, String)> {
+  fn string(&mut self) -> Result<(Span, Vec<u8>)> {
     let start = self.idx;
     if self.cur_opt() != Some(b'\"') {return self.err_str("expected an string literal")}
     self.idx += 1;
-    let mut s = String::new();
+    let mut s: Vec<u8> = Vec::new();
     while self.idx < self.source.len() {
       match (self.cur(), self.idx += 1).0 {
         b'\\' => s.push(match (self.cur_opt(), self.idx += 1).0 {
           None => break,
-          Some(b'\\') => '\\',
-          Some(b'n') => '\n',
-          Some(b'r') => '\r',
-          Some(b'\"') => '\"',
-          Some(c) => {
+          Some(b'\\') => b'\\',
+          Some(b'n') => b'\n',
+          Some(b'r') => b'\r',
+          Some(b'\"') => b'\"',
+          Some(b'x') | Some(b'X') if self.idx + 2 <= self.source.len() => {
+            let c1 = (self.cur(), self.idx += 1).0;
+            let c2 = (self.cur(), self.idx += 1).0;
+            if let (Some(h1), Some(h2)) = ((c1 as char).to_digit(16), (c2 as char).to_digit(16)) {
+              (h1 << 4 | h2) as u8
+            } else {
+              self.errors.push(ParseError {
+                pos: (self.idx - 4..self.idx).into(),
+                level: ErrorLevel::Warning,
+                msg: "invalid hex escape".into()
+              });
+              self.idx -= 3;
+              b'\\'
+            }
+          }
+          Some(_) => {
             self.errors.push(ParseError {
               pos: (self.idx - 2..self.idx).into(),
               level: ErrorLevel::Warning,
               msg: "unknown escape sequence".into()
             });
-            s.push('\\'); s.push(c as char);
-            continue
+            self.idx -= 1;
+            b'\\'
           }
         }),
         b'\"' => return (Ok(((start..self.idx).into(), s)), self.ws()).0,
-        c => s.push(c as char)
+        c => s.push(c)
       }
     }
     Err(ParseError::new(
@@ -482,7 +497,7 @@ impl<'a> Parser<'a> {
     (Ok(((start..self.idx).into(), val)), self.ws()).0
   }
 
-  fn is_atom(&self, e: &SExpr, s: &str) -> bool {
+  fn is_atom(&self, e: &SExpr, s: &[u8]) -> bool {
     if let SExpr {span, k: SExprKind::Atom(Atom::Ident)} = e {
       self.span(*span) == s
     } else {false}
@@ -491,7 +506,7 @@ impl<'a> Parser<'a> {
   /// Parse an `SExpr`.
   pub fn sexpr(&mut self) -> Result<SExpr> {
     let e = self.sexpr_dot()?;
-    if self.is_atom(&e, ".") {
+    if self.is_atom(&e, b".") {
       Err(ParseError::new(e.span, "'.' is not a valid s-expression".into()))
     } else {Ok(e)}
   }
@@ -512,7 +527,7 @@ impl<'a> Parser<'a> {
         return Ok(self.curly_list(start..end, curly, es, None))
       }
       let e = self.sexpr_dot()?;
-      if self.is_atom(&e, ".") {
+      if self.is_atom(&e, b".") {
         if es.is_empty() {
           return Err(ParseError::new(e.span,
             "(. x) partial dotted list is invalid".into()))
@@ -520,7 +535,7 @@ impl<'a> Parser<'a> {
         let e = self.sexpr()?;
         let end = self.chr_err(c)?;
         return Ok(self.curly_list(start..end, curly, es, Some(e)))
-      } else if !curly && self.is_atom(&e, "@") {
+      } else if !curly && self.is_atom(&e, b"@") {
         let e = self.sexpr_list(e.span.start, false, c)?;
         return Ok(SExpr::list(start..e.span.end, {es.push(e); es}))
       }
@@ -561,13 +576,14 @@ impl<'a> Parser<'a> {
         self.idx += 1;
         let mut span = self.ident_err()?;
         match (self.span(span), span.start -= 1).0 {
-          "t" => Ok(SExpr {span, k: SExprKind::Bool(true)}),
-          "f" => Ok(SExpr {span, k: SExprKind::Bool(false)}),
-          "undef" => Ok(SExpr {span, k: SExprKind::Undef}),
+          b"t" => Ok(SExpr {span, k: SExprKind::Bool(true)}),
+          b"f" => Ok(SExpr {span, k: SExprKind::Bool(false)}),
+          b"undef" => Ok(SExpr {span, k: SExprKind::Undef}),
           k => Err(ParseError {
             pos: span,
             level: ErrorLevel::Error,
-            msg: format!("unknown keyword '{}'", k).into()
+            msg: format!("unknown keyword '{}'",
+              unsafe {std::str::from_utf8_unchecked(k)}).into()
           })
         }
       }
@@ -633,7 +649,7 @@ impl<'a> Parser<'a> {
           ParseError::new(span, "precedence out of range".into()))?))
       }
       _ => {
-        self.ident_().filter(|&id| self.span(id) == "max")
+        self.ident_().filter(|&id| self.span(id) == b"max")
           .ok_or_else(|| self.err("expected number or 'max'".into()))?;
         Ok(Prec::Max)
       }
@@ -644,7 +660,7 @@ impl<'a> Parser<'a> {
     let id = self.ident_err()?;
     self.chr_err(b':')?;
     let c = self.cnst()?;
-    self.ident_().filter(|&id| self.span(id) == "prec")
+    self.ident_().filter(|&id| self.span(id) == b"prec")
       .ok_or_else(|| self.err("expected 'prec'".into()))?;
     let prec = self.prec()?;
     Ok((self.chr_err(b';')?, SimpleNota {k, id, c, prec}))
@@ -696,7 +712,7 @@ impl<'a> Parser<'a> {
 
   fn delim_chars(&mut self, f: Formula) -> Box<[u8]> {
     let end = f.inner().end;
-    let mut it = self.span(f.inner()).as_bytes().iter();
+    let mut it = self.span(f.inner()).iter();
     let mut delims = Vec::new();
     loop {
       delims.push(loop {
@@ -803,8 +819,8 @@ impl<'a> Parser<'a> {
             let prec = if self.chr(b':').is_some() {
               let prec = self.prec()?;
               let r = self.ident_().and_then(|s| match self.span(s) {
-                "lassoc" => Some(false),
-                "rassoc" => Some(true),
+                b"lassoc" => Some(false),
+                b"rassoc" => Some(true),
                 _ => None
               }).ok_or_else(|| self.err("expected 'lassoc' or 'rassoc'".into()))?;
               Some((prec, r))
@@ -841,7 +857,7 @@ impl<'a> Parser<'a> {
             Err(ParseError {
               pos: id,
               level: ErrorLevel::Error,
-              msg: format!("unknown command '{}'", k).into()
+              msg: format!("unknown command '{}'", unsafe {std::str::from_utf8_unchecked(k)}).into()
             })
           }
         }

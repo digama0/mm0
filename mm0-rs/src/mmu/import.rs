@@ -21,15 +21,13 @@ pub struct Importer<'a> {
   env: Environment,
 }
 
-fn span(source: &[u8], s: Span) -> &str {
-  unsafe { std::str::from_utf8_unchecked(&source[s.start..s.end]) }
-}
+fn span(source: &[u8], s: Span) -> &[u8] { &source[s.start..s.end] }
 
 impl<'a> Importer<'a> {
   fn cur(&self) -> u8 { self.source[self.idx] }
   fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
 
-  fn span(&self, s: Span) -> &'a str { span(self.source, s) }
+  fn span(&self, s: Span) -> &'a [u8] { span(self.source, s) }
 
   fn fspan(&self, s: Span) -> FileSpan {
     FileSpan {file: self.file.clone(), span: s}
@@ -61,7 +59,7 @@ impl<'a> Importer<'a> {
     (Some((start..self.idx).into()), self.ws()).0
   }
 
-  fn ident_str(&mut self) -> Option<&str> { self.ident().map(|sp| self.span(sp)) }
+  fn ident_str(&mut self) -> Option<&[u8]> { self.ident().map(|sp| self.span(sp)) }
   fn ident_atom(&mut self) -> Option<AtomID> {
     self.ident().map(|s| self.env.get_atom(span(self.source, s)))
   }
@@ -226,26 +224,26 @@ impl<'a> Importer<'a> {
     self.ws();
     while let Some(start) = self.open() {
       match self.ident_str() {
-        Some("sort") => {
+        Some(b"sort") => {
           let x = self.ident_err()?;
           let mut next = self.ident_str();
           let mut mods = Modifiers::empty();
-          if let Some("pure") = next {next = self.ident_str(); mods |= Modifiers::PURE;}
-          if let Some("strict") = next {next = self.ident_str(); mods |= Modifiers::STRICT;}
-          if let Some("provable") = next {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
-          if let Some("free") = next {mods |= Modifiers::FREE;}
+          if let Some(b"pure") = next {next = self.ident_str(); mods |= Modifiers::PURE;}
+          if let Some(b"strict") = next {next = self.ident_str(); mods |= Modifiers::STRICT;}
+          if let Some(b"provable") = next {next = self.ident_str(); mods |= Modifiers::PROVABLE;}
+          if let Some(b"free") = next {mods |= Modifiers::FREE;}
           let end = self.close_err()?;
           let a = self.env.get_atom(self.span(x));
           self.env.add_sort(a, self.fspan(x), (start..end).into(), mods)
             .map_err(|e| e.into_elab_error(x))?;
         }
-        Some("term") => self.decl(start, DeclKind::Term)?,
-        Some("axiom") => self.decl(start, DeclKind::Axiom)?,
-        Some("def") => self.decl(start, DeclKind::Def)?,
-        Some("theorem") => self.decl(start, DeclKind::Theorem)?,
-        Some("local") => match self.ident_str() {
-          Some("def") => self.decl(start, DeclKind::LocalDef)?,
-          Some("theorem") => self.decl(start, DeclKind::LocalTheorem)?,
+        Some(b"term") => self.decl(start, DeclKind::Term)?,
+        Some(b"axiom") => self.decl(start, DeclKind::Axiom)?,
+        Some(b"def") => self.decl(start, DeclKind::Def)?,
+        Some(b"theorem") => self.decl(start, DeclKind::Theorem)?,
+        Some(b"local") => match self.ident_str() {
+          Some(b"def") => self.decl(start, DeclKind::LocalDef)?,
+          Some(b"theorem") => self.decl(start, DeclKind::LocalTheorem)?,
           _ => return Err(self.err("expecting 'def' or 'theorem'".into()))
         }
         _ => return Err(self.err("expecting command keyword".into()))

@@ -171,7 +171,7 @@ impl EnvDisplay for LispKind {
       LispKind::Number(n) => n.fmt(f),
       LispKind::String(s) => {
         write!(f, "\"")?;
-        for &c in s.as_bytes() {
+        for &c in &**s {
           match c {
             b'\\' => write!(f, "\\\\")?,
             b'\n' => write!(f, "\\n")?,
@@ -233,7 +233,7 @@ impl<T: EnvDisplay> EnvDisplay for [T] {
 
 impl EnvDisplay for crate::util::Span {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fe.source[*self].fmt(f)
+    fe.source.str_at(*self).fmt(f)
   }
 }
 

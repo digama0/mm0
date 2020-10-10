@@ -176,7 +176,7 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
       annotation_type,
     }),
     slices: vec![Slice {
-      source: &file[(start2..end2).into()],
+      source: unsafe {std::str::from_utf8_unchecked(&file[(start2..end2).into()])},
       line_start: start.line as usize + 1,
       origin: Some(path.rel()),
       fold: end.line - start.line >= 5,

@@ -57,9 +57,10 @@ pub enum QExprKind {
 impl EnvDisplay for QExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
-      &QExprKind::IdentApp(sp, ref es) if es.is_empty() => fe.source[sp].fmt(f),
+      &QExprKind::IdentApp(sp, ref es) if es.is_empty() =>
+        fe.source.str_at(sp).fmt(f),
       &QExprKind::IdentApp(sp, ref es) => {
-        write!(f, "({}", &fe.source[sp])?;
+        write!(f, "({}", fe.source.str_at(sp))?;
         for e in &**es {write!(f, " {}", fe.to(e))?}
         write!(f, ")")
       }

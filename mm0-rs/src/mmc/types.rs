@@ -342,7 +342,7 @@ macro_rules! make_keywords {
       /// Make the initial MMC keyword map in the given environment.
       pub fn make_keywords(&mut self) -> HashMap<AtomID, Keyword> {
         let mut atoms = HashMap::new();
-        $(atoms.insert(self.get_atom($e), Keyword::$x);)*
+        $(atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);)*
         atoms
       }
     }

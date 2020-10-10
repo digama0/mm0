@@ -576,7 +576,7 @@ macro_rules! make_atoms {
         let mut atoms = HashMap::new();
         let mut data = AtomVec::default();
         $({
-          let s: ArcString = $e.into();
+          let s: ArcString = $e.as_bytes().into();
           atoms.insert(s.clone(), AtomID::$x);
           data.push(AtomData::new(s))
         })*
@@ -725,10 +725,6 @@ impl Remap for ThmID {
 impl Remap for AtomID {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.atom[*self] }
-}
-impl Remap for String {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { self.clone() }
 }
 impl<A: Remap, B: Remap> Remap for (A, B) {
   type Target = (A::Target, B::Target);
@@ -1203,7 +1199,7 @@ impl Environment {
   /// Convert a string to an `AtomID`. This mutates the environment because we maintain
   /// the list of all allocated atoms, and two calls with the same `&str` input
   /// will yield the same `AtomID`.
-  pub fn get_atom(&mut self, s: &str) -> AtomID {
+  pub fn get_atom(&mut self, s: &[u8]) -> AtomID {
     match self.atoms.get(s) {
       Some(&a) => a,
       None => {

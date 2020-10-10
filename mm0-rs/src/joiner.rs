@@ -53,6 +53,8 @@ impl<W: Write> Joiner<W> {
     let mut start = 0;
     for s in &ast.stmts {
       if let StmtKind::Import(_, f) = &s.k {
+        let f = std::str::from_utf8(f).map_err(|_|
+          io::Error::new(io::ErrorKind::InvalidInput, "invalid utf8"))?;
         let r: FileRef = path.path().parent()
           .map_or_else(|| PathBuf::from(f), |p| p.join(f))
           .canonicalize()?.into();

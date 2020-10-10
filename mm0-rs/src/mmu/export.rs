@@ -57,7 +57,7 @@ impl FrozenEnv {
   fn write_binders(&self, w: &mut impl Write, bis: &[(Option<AtomID>, Type)]) -> io::Result<Vec<Option<AtomID>>> {
     let mut bvs = vec![];
     list(w, bis.iter(), |w, &(a, ty)| {
-      write!(w, "({} ", a.map_or("_", |a| &self.data()[a].name()))?;
+      write!(w, "({} ", a.map_or("_", |a| self.data()[a].name().as_str()))?;
       match ty {
         Type::Bound(s) => {
           bvs.push(a);
@@ -87,7 +87,7 @@ impl FrozenEnv {
         ExprNode::Ref(i) => w.extend_from_slice(&heap[i]),
         ExprNode::Dummy(a, s) => {
           assert!(dummies.insert(a, s).map_or(true, |s2| s == s2));
-          w.extend_from_slice(env.data()[a].name().as_bytes());
+          w.extend_from_slice(env.data()[a].name());
         }
         ExprNode::App(t, ref es) => {
           write!(w, "({}", env.data()[env.term(t).atom].name()).unwrap();
@@ -148,10 +148,10 @@ impl FrozenEnv {
           }
           &ProofNode::Dummy(a, s) => {
             assert!(self.dummies.insert(a, s).map_or(true, |s2| s == s2));
-            self.l.extend_from_slice(self.env.data()[a].name().as_bytes());
+            self.l.extend_from_slice(self.env.data()[a].name());
           }
           &ProofNode::Hyp(i, _) =>
-            self.l.extend_from_slice(self.env.data()[self.hyps[i].0.unwrap()].name().as_bytes()),
+            self.l.extend_from_slice(self.env.data()[self.hyps[i].0.unwrap()].name()),
           &ProofNode::Term {term, ref args} => {
             let td = self.env.term(term);
             write!(self, "({}", self.env.data()[td.atom].name()).unwrap();
@@ -254,7 +254,7 @@ impl FrozenEnv {
               if let Some(Some(Expr {heap, head})) = &td.val {
                 let mut dummies = HashMap::new();
                 let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
-                  a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_bytes()))).collect();
+                  a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_str()))).collect();
                 for e in &heap[td.args.len()..] {
                   let c = self.write_expr_node(&mut dummies, &strs, e);
                   strs.push(c);
@@ -278,7 +278,7 @@ impl FrozenEnv {
               self.write_binders(w, &td.args)?;
               let mut dummies = HashMap::new();
               let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
-                a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_bytes()))).collect();
+                a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_str()))).collect();
               for e in &td.heap[td.args.len()..] {
                 let c = self.write_expr_node(&mut dummies, &strs, e);
                 strs.push(c);
@@ -288,11 +288,11 @@ impl FrozenEnv {
                 match it.next() {
                   None => write!(w, " ()")?,
                   Some((hyp, typ)) => if td.proof.is_some() {
-                    write!(w, "\n  (({} ", hyp.map_or("_", |a| &self.data()[a].name()))?;
+                    write!(w, "\n  (({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
                     w.write_all(&self.write_expr_node(&mut dummies, &strs, typ))?;
                     write!(w, ")")?;
                     for (hyp, typ) in it {
-                      write!(w, "\n   ({} ", hyp.map_or("_", |a| &self.data()[a].name()))?;
+                      write!(w, "\n   ({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
                       w.write_all(&self.write_expr_node(&mut dummies, &strs, typ))?;
                       write!(w, ")")?;
                     }
@@ -319,7 +319,7 @@ impl FrozenEnv {
                   for a in td.args.iter().filter_map(|&(a, _)| a)
                     .chain(td.hyps.iter().filter_map(|&(a, _)| a))
                     .chain(dummies.iter().map(|(&a, _)| a)) {
-                    let mut s = self.data()[a].name().chars();
+                    let mut s = self.data()[a].name().as_str().chars();
                     if let Some('H') = s.next() {
                       if let Ok(n) = s.as_str().parse::<u32>() {idx = n+1}
                     }

@@ -27,6 +27,14 @@ macro_rules! make_prims {
         }
       }
 
+      impl ::std::convert::TryFrom<&[u8]> for $name {
+        type Error = ();
+        fn try_from(s: &[u8]) -> ::std::result::Result<Self, ()> {
+          <Self as ::std::str::FromStr>::from_str(
+            unsafe {std::str::from_utf8_unchecked(s)})
+        }
+      }
+
       impl $name {
         /// Evaluate a function on all elements of the type, with their names.
         pub fn scan(mut f: impl FnMut(Self, &'static str)) {
@@ -273,9 +281,9 @@ impl Compiler {
       let e = names.entry(a).or_insert_with(|| Entity::Prim(Prim::default()));
       if let Entity::Prim(p) = e {p} else {unreachable!()}
     }
-    PrimType::scan(|p, s| get(&mut names, env.get_atom(s)).ty = Some(p));
-    PrimOp::scan(|p, s| get(&mut names, env.get_atom(s)).op = Some(p));
-    PrimProp::scan(|p, s| get(&mut names, env.get_atom(s)).prop = Some(p));
+    PrimType::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).ty = Some(p));
+    PrimOp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).op = Some(p));
+    PrimProp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).prop = Some(p));
     names
   }
 

@@ -16,7 +16,6 @@ use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::str::FromStr;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
@@ -37,7 +36,7 @@ macro_rules! str_enum {
     pub enum $name { $($(#[doc=$doc2])* $e),* }
     crate::deep_size_0!($name);
 
-    impl FromStr for $name {
+    impl std::str::FromStr for $name {
       type Err = ();
       fn from_str(s: &str) -> Result<Self, ()> {
         match s {
@@ -46,11 +45,23 @@ macro_rules! str_enum {
         }
       }
     }
+    impl std::convert::TryFrom<&[u8]> for $name {
+      type Error = ();
+      fn try_from(s: &[u8]) -> Result<Self, ()> {
+        // Safety: the function we defined just above doesn't do anything
+        // dangerous with the &str
+        <$name as std::str::FromStr>::from_str(unsafe {std::str::from_utf8_unchecked(s)})
+      }
+    }
+
     impl $name {
       #[doc=$to_str] pub fn to_str(self) -> &'static str {
         match self {
           $($name::$e => $s),*
         }
+      }
+      #[doc=$to_str] pub fn to_byte_str(self) -> &'static [u8] {
+        self.to_str().as_bytes()
       }
 
       /// The documentation comment on this item.
@@ -99,12 +110,13 @@ str_enum! {
 
 impl Syntax {
   /// Parse a string and atom type pair into a `Syntax`.
-  pub fn parse(s: &str, a: Atom) -> Result<Syntax, &str> {
+  pub fn parse(s: &[u8], a: Atom) -> Result<Syntax, &[u8]> {
+    use std::convert::TryInto;
     match a {
-      Atom::Ident => s.parse().map_err(|_| s),
+      Atom::Ident => s.try_into().map_err(|_| s),
       Atom::Quote => Ok(Syntax::Quote),
       Atom::Unquote => Ok(Syntax::Unquote),
-      Atom::Nfx => Err(":nfx"),
+      Atom::Nfx => Err(b":nfx"),
     }
   }
 }

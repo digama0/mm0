@@ -595,20 +595,20 @@ impl<'a> LispParser<'a> {
       match es {
         [] => return Ok(Pattern::List(pfx.into(), None)),
         &[SExpr {span, k: SExprKind::Atom(a)}, ref e] if quote =>
-          if self.ast.span_atom(span, a) == "unquote" {
+          if self.ast.span_atom(span, a) == b"unquote" {
             break self.pattern(ctx, code, false, e)?
           },
         _ if quote => {},
         [head, args @ ..] => if let SExprKind::Atom(a) = head.k {
           match self.ast.span_atom(head.span, a) {
-            "quote" => match args {
+            b"quote" => match args {
               [e] => break self.pattern(ctx, code, true, e)?,
               _ => return Err(ElabError::new_e(head.span, "expected one argument")),
             },
-            "mvar" => match args {
+            b"mvar" => match args {
               [] => break Pattern::MVar(MVarPattern::Unknown),
               &[SExpr {span, k: SExprKind::Atom(a)}]
-                if matches!(self.ast.span_atom(span, a), "___" | "...") =>
+                if matches!(self.ast.span_atom(span, a), b"___" | b"...") =>
                 break Pattern::MVar(MVarPattern::Any),
               [bd, s] => {
                 let bd = self.pattern(ctx, code, quote, bd)?;
@@ -617,14 +617,14 @@ impl<'a> LispParser<'a> {
               }
               _ => return Err(ElabError::new_e(head.span, "expected zero or two arguments")),
             },
-            "goal" => match args {
+            b"goal" => match args {
               [e] => break Pattern::Goal(Box::new(self.pattern(ctx, code, quote, e)?)),
               _ => return Err(ElabError::new_e(head.span, "expected one argument")),
             },
-            "and" => break Pattern::And(self.patterns(ctx, code, quote, args)?),
-            "or" => break Pattern::Or(self.patterns(ctx, code, quote, args)?),
-            "not" => break Pattern::Not(self.patterns(ctx, code, quote, args)?),
-            "?" => match args {
+            b"and" => break Pattern::And(self.patterns(ctx, code, quote, args)?),
+            b"or" => break Pattern::Or(self.patterns(ctx, code, quote, args)?),
+            b"not" => break Pattern::Not(self.patterns(ctx, code, quote, args)?),
+            b"?" => match args {
               [test, rest @ ..] => {
                 let p = self.ctx.len();
                 let ir = self.expr(false, test)?;
@@ -634,17 +634,17 @@ impl<'a> LispParser<'a> {
               },
               _ => return Err(ElabError::new_e(head.span, "expected at least one argument")),
             }
-            "cons" => match args {
+            b"cons" => match args {
               [] => return Err(ElabError::new_e(head.span, "expected at least one argument")),
               [es @ .., e] => break Pattern::DottedList(
                 self.patterns(ctx, code, quote, es)?,
                 self.pattern(ctx, code, quote, e)?.into())
             },
-            "___" | "..." => match args {
+            b"___" | b"..." => match args {
               [] => return Ok(Pattern::List(pfx.into(), Some(0))),
               _ => return Err(ElabError::new_e(head.span, "expected nothing after '...'")),
             },
-            "__" => match *args {
+            b"__" => match *args {
               [SExpr {span, k: SExprKind::Number(ref n)}] =>
                 return Ok(Pattern::List(pfx.into(), Some(n.to_usize().ok_or_else(||
                   ElabError::new_e(span, "number out of range"))?))),
@@ -664,7 +664,7 @@ impl<'a> LispParser<'a> {
     match e.k {
       QExprKind::IdentApp(sp, es) => {
         let head = match self.ast.clone().span(sp) {
-          "_" => Pattern::Skip,
+          b"_" => Pattern::Skip,
           s if es.is_empty() => Pattern::QExprAtom(self.elab.env.get_atom(s)),
           s => Pattern::QuoteAtom(self.elab.env.get_atom(s)),
         };
@@ -732,7 +732,7 @@ impl<'a> LispParser<'a> {
     if let Some(e2) = es.get(0) {
       if let SExprKind::List(v) = &e2.k {
         if let [SExpr {span, k: SExprKind::Atom(a)}, ref x] = **v {
-          if let "=>" = self.ast.span_atom(span, a) {
+          if let b"=>" = self.ast.span_atom(span, a) {
             cont = self.parse_ident(x)?;
             es = &es[1..];
           }

@@ -82,15 +82,15 @@ impl Modifiers {
   /// Parses a string into a singleton `Modifiers`, or [`NONE`] if the string is not valid.
   ///
   /// [`NONE`]: struct.Modifiers.html#associatedconstant.NONE
-  pub fn from_name(s: &str) -> Modifiers {
+  pub fn from_name(s: &[u8]) -> Modifiers {
     match s {
-      "pure" => Modifiers::PURE,
-      "strict" => Modifiers::STRICT,
-      "provable" => Modifiers::PROVABLE,
-      "free" => Modifiers::FREE,
-      "pub" => Modifiers::PUB,
-      "abstract" => Modifiers::ABSTRACT,
-      "local" => Modifiers::LOCAL,
+      b"pure" => Modifiers::PURE,
+      b"strict" => Modifiers::STRICT,
+      b"provable" => Modifiers::PROVABLE,
+      b"free" => Modifiers::FREE,
+      b"pub" => Modifiers::PUB,
+      b"abstract" => Modifiers::ABSTRACT,
+      b"local" => Modifiers::LOCAL,
       _ => Modifiers::NONE
     }
   }
@@ -462,7 +462,9 @@ impl SExpr {
 impl EnvDisplay for SExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
-      &SExprKind::Atom(a) => fe.source.span_atom(self.span, a).fmt(f),
+      &SExprKind::Atom(a) => {
+        unsafe {std::str::from_utf8_unchecked(fe.source.span_atom(self.span, a))}.fmt(f)
+      }
       SExprKind::List(es) => {
         let mut it = es.iter();
         match it.next() {
@@ -484,7 +486,7 @@ impl EnvDisplay for SExpr {
       SExprKind::Bool(true) => "#t".fmt(f),
       SExprKind::Bool(false) => "#f".fmt(f),
       SExprKind::Undef => "#undef".fmt(f),
-      SExprKind::Formula(s) => fe.source[s.0].fmt(f),
+      SExprKind::Formula(s) => fe.source.str_at(s.0).fmt(f),
     }
   }
 }
@@ -643,7 +645,7 @@ pub enum StmtKind {
   /// An `import` statement like `import "file.mm1";`. The span gives
   /// the string literal `"file.mm1"`, and the string is the result of parsing
   /// (after interpreting string escapes).
-  Import(Span, String),
+  Import(Span, Vec<u8>),
 }
 
 /// The elements of a parsed AST. StmtKind is the "data", with span providing
@@ -670,7 +672,7 @@ pub struct AST {
   pub source: Arc<LinedString>,
   /// The list of `import` statements in the file, giving the span of the string literal,
   /// and the parsed string
-  pub imports: Vec<(Span, String)>,
+  pub imports: Vec<(Span, Vec<u8>)>,
   /// The list of statements.
   pub stmts: Vec<Stmt>,
   /// The list of parse errors resulting from the parse of the file.
@@ -684,21 +686,21 @@ impl LinedString {
   ///
   /// [`Atom`]: ../parser/ast/enum.Atom.html
   /// [`SExprKind::Atom`]: ../parser/ast/enum.SExprKind.html#variant.Atom
-  pub fn span_atom(&self, sp: Span, a: Atom) -> &str {
+  pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] {
     match a {
       Atom::Ident => &self[sp],
-      Atom::Quote => "quote",
-      Atom::Unquote => "unquote",
-      Atom::Nfx => ":nfx",
+      Atom::Quote => b"quote",
+      Atom::Unquote => b"unquote",
+      Atom::Nfx => b":nfx",
     }
   }
 }
 
 impl AST {
   /// Return the string corresponding to a span in this AST's source.
-  pub fn span(&self, s: Span) -> &str { &self.source[s] }
+  pub fn span(&self, s: Span) -> &[u8] { &self.source[s] }
   /// Return the string corresponding to an atom.
-  pub fn span_atom(&self, sp: Span, a: Atom) -> &str { self.source.span_atom(sp, a) }
+  pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] { self.source.span_atom(sp, a) }
   /// Given a character index in the file, return `(idx, out)` where
   /// `idx` is the smallest index of a statement which does not end before the
   /// target position, and `out` is the character index of the end of `stmt[idx-1]`.

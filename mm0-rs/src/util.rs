@@ -42,27 +42,37 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
 
 /// Newtype for an `Arc<String>`, so that we can implement `From<&str>`.
 #[derive(Clone, Hash, PartialEq, Eq, DeepSizeOf)]
-pub struct ArcString(pub Arc<String>);
+pub struct ArcString(pub Arc<Vec<u8>>);
 
-impl Borrow<str> for ArcString {
-  fn borrow(&self) -> &str { &*self.0 }
+impl Borrow<[u8]> for ArcString {
+  fn borrow(&self) -> &[u8] { &*self.0 }
 }
 impl Deref for ArcString {
-  type Target = str;
-  fn deref(&self) -> &str { &*self.0 }
+  type Target = [u8];
+  fn deref(&self) -> &[u8] { &*self.0 }
 }
 impl ArcString {
   /// Constructs a new `ArcString`.
-  pub fn new(s: String) -> ArcString { ArcString(Arc::new(s)) }
+  pub fn new(s: Vec<u8>) -> ArcString { ArcString(Arc::new(s)) }
 }
 impl fmt::Display for ArcString {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", String::from_utf8_lossy(self))
+  }
 }
 impl fmt::Debug for ArcString {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{:?}", String::from_utf8_lossy(self))
+  }
 }
-impl From<&str> for ArcString {
-  fn from(s: &str) -> ArcString { ArcString::new(s.to_owned()) }
+impl From<&[u8]> for ArcString {
+  fn from(s: &[u8]) -> ArcString { ArcString::new(s.to_owned()) }
+}
+
+impl ArcString {
+  pub(crate) fn as_str(&self) -> &str {
+    unsafe {std::str::from_utf8_unchecked(self)}
+  }
 }
 
 /// A way to initialize a `Box<[T]>` by first constructing the array (giving the length),

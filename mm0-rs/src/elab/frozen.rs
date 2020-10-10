@@ -99,7 +99,7 @@ impl FrozenEnv {
   /// Accessor for [`Environment::stmts`](../environment/struct.Environment.html#structfield.stmts)
   pub fn stmts(&self) -> &[StmtTrace] { &unsafe { self.thaw() }.stmts }
   /// Parse a string into an atom.
-  pub fn get_atom(&self, s: &str) -> Option<AtomID> { unsafe { self.thaw() }.atoms.get(s).copied() }
+  pub fn get_atom(&self, s: &[u8]) -> Option<AtomID> { unsafe { self.thaw() }.atoms.get(s).copied() }
   /// Accessor for [`Environment::pe`](../environment/struct.Environment.html#structfield.pe)
   pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
 }

@@ -349,7 +349,7 @@ impl Elaborator {
   /// and calls `(foo)` using the usual name resolution, meaning that if the user redefines
   /// `foo` then that function will be called instead of the builtin.
   pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
-    let a = self.get_atom(p.to_str());
+    let a = self.get_atom(p.to_byte_str());
     let val = match &self.data[a].lisp {
       Some((_, e)) => e.clone(),
       None => LispVal::proc(Proc::Builtin(p))
@@ -398,8 +398,8 @@ impl Elaborator {
       LispKind::Annot(_, e) => self.to_string(e),
       LispKind::String(s) => s.clone(),
       &LispKind::Atom(a) => self.data[a].name.clone(),
-      LispKind::Number(n) => ArcString::new(n.to_string()),
-      _ => ArcString::new(format!("{}", self.print(e)))
+      LispKind::Number(n) => ArcString::new(n.to_string().into()),
+      _ => ArcString::new(format!("{}", self.print(e)).into())
     }
   }
 
@@ -717,12 +717,12 @@ macro_rules! make_builtins {
 make_builtins! { self, sp1, sp2, args,
   Display: Exact(1) => {
     let s = try1!(self.as_string(&args[0]));
-    print!(sp1, String::from_utf8_lossy(s.as_bytes()));
+    print!(sp1, String::from_utf8_lossy(&s));
     LispVal::undef()
   },
   Error: Exact(1) => {
     let s = try1!(self.as_string(&args[0]));
-    try1!(Err(String::from_utf8_lossy(s.as_bytes())))
+    try1!(Err(String::from_utf8_lossy(&s)))
   },
   Print: Exact(1) => {print!(sp1, format!("{}", self.print(&args[0]))); LispVal::undef()},
   ReportAt: Exact(3) => {
@@ -735,7 +735,7 @@ make_builtins! { self, sp1, sp2, args,
     let FileSpan {file, span} = try1!(args[1].fspan().ok_or("expected a span"));
     if file == self.file {
       let s = try1!(self.as_string(&args[2]));
-      let s = String::from_utf8_lossy(s.as_bytes()).into();
+      let s = String::from_utf8_lossy(&s).into();
       let msg = if let Some(true) = args[1].as_bool() {
         self.make_stack_err(Some((span, true)), level, "(report-at)".into(), s)
       } else {
@@ -894,8 +894,8 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::atom(self.get_atom(&s))
   },
   StringAppend: AtLeast(0) => {
-    let mut out = String::new();
-    for e in args { out.push_str(&self.to_string(&e)) }
+    let mut out = Vec::new();
+    for e in args { out.extend_from_slice(&self.to_string(&e)) }
     LispVal::string(ArcString::new(out))
   },
   StringLen: Exact(1) => LispVal::number(try1!(self.as_string(&args[0])).len().into()),
@@ -903,7 +903,7 @@ make_builtins! { self, sp1, sp2, args,
     let i: usize = try1!(self.with_int(&args[0],
       |n| n.try_into().map_err(|_| format!("index out of range: {}", n))));
     let s = try1!(self.as_string(&args[1]));
-    let c = *try1!(s.as_bytes().get(i).ok_or_else(||
+    let c = *try1!(s.get(i).ok_or_else(||
       format!("index out of range: index {}, length {}", i, s.len())));
     LispVal::number(c.into())
   },
@@ -915,31 +915,24 @@ make_builtins! { self, sp1, sp2, args,
     if start > end { try1!(Err(format!("start {} > end {}", start, end))) }
     let s = try1!(self.as_string(&args[2]));
     if end > s.len() { try1!(Err(format!("index out of range: end {}, length {}", end, s.len()))) }
-    let bytes = s.as_bytes()[start..end].into();
-    // SAFETY: This is abusing String to be a non-UTF8 byte vector.
-    // This can probably blow up somewhere. TODO: Lie less
-    let out = unsafe { String::from_utf8_unchecked(bytes) };
-    LispVal::string(ArcString::new(out))
+    LispVal::string(ArcString::new(s[start..end].into()))
   },
   StringToList: Exact(1) => {
     let s = try1!(self.as_string(&args[0]));
-    LispVal::list(s.as_bytes().iter()
+    LispVal::list(s.iter()
       .map(|&c| LispVal::number(c.into()))
       .collect::<Vec<_>>())
   },
   ListToString: Exact(1) => {
     let mut u = Uncons::New(args[0].clone());
-    let mut bytes: Vec<u8> = Vec::with_capacity(u.len());
+    let mut out: Vec<u8> = Vec::with_capacity(u.len());
     while let Some(e) = u.next() {
-      bytes.push(try1!(self.with_int(&e,
+      out.push(try1!(self.with_int(&e,
         |n| n.try_into().map_err(|_| format!("character out of range: {}", n)))));
     }
     if !u.is_empty() {
       try1!(Err(format!("list->string: not a list: {}", self.print(&args[0]))))
     }
-    // SAFETY: This is abusing String to be a non-UTF8 byte vector.
-    // This can probably blow up somewhere. TODO: Lie less
-    let out = unsafe { String::from_utf8_unchecked(bytes) };
     LispVal::string(ArcString::new(out))
   },
   Not: AtLeast(0) => LispVal::bool(!args.iter().any(|e| e.truthy())),
@@ -1088,7 +1081,7 @@ make_builtins! { self, sp1, sp2, args,
       Some(fsp))
   },
   PrettyPrint: Exact(1) =>
-    LispVal::string(ArcString::new(format!("{}", self.format_env().pp(&args[0], 80)))),
+    LispVal::string(ArcString::new(format!("{}", self.format_env().pp(&args[0], 80)).into())),
   NewGoal: Exact(1) => LispVal::goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
   InferType: Exact(1) => try1!(self.infer_type(sp1, &args[0]).map_err(|e| e.kind.msg())),
@@ -1167,7 +1160,7 @@ make_builtins! { self, sp1, sp2, args,
       None => {
         let mut i = 1;
         let x = loop {
-          let a = self.get_atom(&format!("_{}", i));
+          let a = self.get_atom(format!("_{}", i).as_bytes());
           if !self.lc.vars.contains_key(&a) {break a}
           i += 1;
         };
@@ -1209,8 +1202,7 @@ make_builtins! { self, sp1, sp2, args,
   EvalString: AtLeast(0) => {
     let fsp = self.fspan(sp1);
     let bytes = self.eval_string(fsp, &args)?;
-    let out = unsafe { String::from_utf8_unchecked(bytes) };
-    LispVal::string(ArcString::new(out))
+    LispVal::string(ArcString::new(bytes))
   },
   MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
     RefCell::new(crate::mmc::Compiler::new(self)))),
@@ -1274,7 +1266,7 @@ impl<'a> Evaluator<'a> {
         State::Eval(ir) => match ir {
           &IR::Local(i) => State::Ret(self.ctx[i].clone()),
           &IR::Global(sp, a) => State::Ret(match &self.data[a] {
-            AtomData {name, lisp: None, ..} => match BuiltinProc::from_str(name) {
+            AtomData {name, lisp: None, ..} => match (&**name).try_into() {
               Err(_) => throw!(sp, format!("Reference to unbound variable '{}'", name)),
               Ok(p) => {
                 let s = name.clone();
