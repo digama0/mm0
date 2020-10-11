@@ -198,13 +198,14 @@ impl FrozenLispVal {
   /// [`LispVal::unwrapped_arc`]: ../lisp/enum.LispVal.html#method.unwrapped_arc
   pub fn unwrap(&self) -> &Self {
     let mut ret = self;
-    loop {
+    for _ in 0..20 {
       match &**ret {
         FrozenLispKind::Ref(m) => ret = m,
         FrozenLispKind::Annot(_, v) => ret = v,
         _ => return ret
       }
     }
+    ret
   }
 }
 
@@ -215,13 +216,14 @@ impl FrozenLispKind {
   /// [`LispKind::unwrapped`]: ../lisp/enum.LispKind.html#method.unwrapped
   pub fn unwrap(&self) -> &Self {
     let mut ret = self;
-    loop {
+    for _ in 0..20 {
       match ret {
         FrozenLispKind::Ref(m) => ret = m,
         FrozenLispKind::Annot(_, v) => ret = v,
         _ => return ret
       }
     }
+    ret
   }
 
   /// Get the atom that this value stores, if applicable.
@@ -275,13 +277,14 @@ impl FrozenLispKind {
   /// Get a file span annotation associated to a lisp value, if possible.
   pub fn fspan(&self) -> Option<FileSpan> {
     let mut e = self;
-    loop {
+    for _ in 0..20 {
       match e.unwrap() {
         FrozenLispKind::Ref(m) => e = m,
         FrozenLispKind::Annot(Annot::Span(sp), _) => return Some(sp.clone()),
         _ => return None
       }
     }
+    None
   }
 }
 

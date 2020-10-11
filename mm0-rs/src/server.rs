@@ -717,9 +717,9 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
                 FrozenLispKind::Syntax(_) => SymbolKind::Event,
                 FrozenLispKind::Undef => return None,
                 FrozenLispKind::Proc(_) => SymbolKind::Function,
-                FrozenLispKind::AtomMap(_) => SymbolKind::Object,
+                FrozenLispKind::AtomMap(_) |
                 FrozenLispKind::Annot(_, _) |
-                FrozenLispKind::Ref(_) => unreachable!()
+                FrozenLispKind::Ref(_) => SymbolKind::Object,
               }
             }))() {
               Some(sk) => sk,
@@ -768,11 +768,11 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
         FrozenLispKind::Number(_) |
         FrozenLispKind::String(_) |
         FrozenLispKind::Bool(_) |
-        FrozenLispKind::AtomMap(_) => CompletionItemKind::Value,
+        FrozenLispKind::AtomMap(_) |
+        FrozenLispKind::Annot(_, _) |
+        FrozenLispKind::Ref(_) => CompletionItemKind::Value,
         FrozenLispKind::Syntax(_) => CompletionItemKind::Event,
         FrozenLispKind::Proc(_) => CompletionItemKind::Function,
-        FrozenLispKind::Annot(_, _) |
-        FrozenLispKind::Ref(_) => unreachable!()
       })
     })
   }

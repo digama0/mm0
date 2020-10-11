@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
-use crate::util::{ArcString, FileSpan, Span, SliceExt};
+use crate::util::{ArcString, FileSpan, Span, SliceExt, StackList};
 use super::{AtomID, ThmID, Remap, Remapper, Modifiers};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
@@ -386,6 +386,17 @@ impl LispRef {
   /// Consume the reference, yielding the stored value.
   pub fn into_inner(self) -> LispVal { self.0.into_inner() }
 
+  /// Returns true if this refcell has suspciously many readers
+  pub(crate) fn too_many_readers(&self) -> bool {
+    struct RefCell2<T: ?Sized> {
+      borrow: Cell<isize>,
+      _value: std::cell::UnsafeCell<T>,
+    }
+    // Safety: This ties us to the representation of RefCell, but I don't think
+    // that is going to change.
+    unsafe { &*(&self.0 as *const _ as *const RefCell2<LispVal>) }.borrow.get() > 30
+  }
+
   /// Get the value of this reference without changing the reference count.
   /// # Safety
   /// This function should not be used unless the value is frozen
@@ -393,7 +404,10 @@ impl LispRef {
   ///
   /// [`FrozenLispRef::deref`]: ../frozen/struct.FrozenLispRef.html
   pub(crate) unsafe fn get_unsafe(&self) -> &LispVal {
-    self.0.try_borrow_unguarded().unwrap()
+    self.0.try_borrow_unguarded().unwrap_or_else(|_| {
+      std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+      self.0.try_borrow_unguarded().unwrap()
+    })
   }
 }
 
@@ -414,11 +428,14 @@ impl LispKind {
   ///
   /// [`LispVal::unwrapped_arc`]: struct.LispVal.html#method.unwrapped_arc
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
-    match self {
-      LispKind::Ref(m) => m.get().unwrapped(f),
-      LispKind::Annot(_, v) => v.unwrapped(f),
-      _ => f(self)
+    fn rec<T>(e: &LispKind, stack: StackList<'_, *const LispRef>, f: impl FnOnce(&LispKind) -> T) -> T {
+      match e {
+        LispKind::Ref(m) if !stack.contains(m) => rec(&m.get(), StackList(Some(&(stack, m))), f),
+        LispKind::Annot(_, v) => rec(v, stack, f),
+        _ => f(e)
+      }
     }
+    rec(self, StackList(None), f)
   }
 
   /// Unwrap `Ref` and `Annot` nodes, collecting a span if one is found along the way,
@@ -426,11 +443,19 @@ impl LispKind {
   /// `fsp` is used as the default value if no span was found.
   pub fn unwrapped_span<T>(&self, fsp: Option<&FileSpan>,
       f: impl FnOnce(Option<&FileSpan>, &Self) -> T) -> T {
-    match self {
-      LispKind::Ref(m) => m.get().unwrapped_span(fsp, f),
-      LispKind::Annot(Annot::Span(fsp), v) => v.unwrapped_span(Some(fsp), f),
-      _ => f(fsp, self)
+    fn rec<T>(e: &LispKind,
+      stack: StackList<'_, *const LispRef>,
+      fsp: Option<&FileSpan>,
+      f: impl FnOnce(Option<&FileSpan>, &LispKind) -> T
+    ) -> T {
+      match e {
+        LispKind::Ref(m) if !stack.contains(m) =>
+          rec(&m.get(), StackList(Some(&(stack, m))), fsp, f),
+        LispKind::Annot(Annot::Span(fsp), v) => rec(v, stack, Some(fsp), f),
+        _ => f(fsp, e)
+      }
     }
+    rec(self, StackList(None), fsp, f)
   }
 
   /// Returns true if this value is to be treated as true in `if` statements.

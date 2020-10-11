@@ -75,6 +75,24 @@ impl ArcString {
   }
 }
 
+/// A structure that allows constructing linked lists on the call stack.
+#[derive(Debug)]
+pub struct StackList<'a, T>(pub Option<&'a (StackList<'a, T>, T)>);
+
+impl<T> StackList<'_, T> {
+  /// Returns true if this list contains the given element.
+  pub fn contains(&self, t: T) -> bool where T: PartialEq {
+    let mut s = self;
+    loop {
+      match s.0 {
+        None => return false,
+        Some((_, t2)) if *t2 == t => return true,
+        Some((s2, _)) => s = s2
+      }
+    }
+  }
+}
+
 /// A way to initialize a `Box<[T]>` by first constructing the array (giving the length),
 /// initializing the elements in some order, and then using the unsafe function
 /// [`assume_init`] to assert that every element of the array has been initialized and
