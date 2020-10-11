@@ -18,27 +18,30 @@ pub theorem bitAndEq (a b: nat): $ bitAnd a b == a i^i b $ =
 theorem elbitAnd: $ i e. bitAnd a b <-> i e. a /\ i e. b $ =
 '(bitr (eleq2 bitAndEq) elin);
 
-theorem bitAnd_sym (a b: nat): $ bitAnd a b = bitAnd b a $ =
+theorem bitAnd_sym: $ bitAnd a b = bitAnd b a $ =
 '(axext @ eqstr4 bitAndEq @ eqstr4 bitAndEq incom);
+theorem bitAnd_ass: $ bitAnd (bitAnd a b) c = bitAnd a (bitAnd b c) $ =
+'(axext @ eqstr4 bitAndEq @ eqstr4 bitAndEq @
+  eqstr4 (ineq1 bitAndEq) @ eqstr4 (ineq2 bitAndEq) inass);
 
 theorem bitAnd01 (a: nat): $ bitAnd 0 a = 0 $ = '(axext @ eqstr bitAndEq in01);
 theorem bitAnd02 (a: nat): $ bitAnd a 0 = 0 $ = '(eqtr bitAnd_sym bitAnd01);
 theorem bitAnd_idm (a: nat): $ bitAnd a a = a $ = '(axext @ eqstr bitAndEq inidm);
 
-theorem bitAndb0l (a b: nat): $ bitAnd (b0 a) b = b0 (bitAnd a (b // 2)) $ =
+theorem bitAndb0l: $ bitAnd (b0 a) b = b0 (bitAnd a (b // 2)) $ =
 (named '(axext @ ax_gen @ bitr elbitAnd @ bitr (aneq1i elb0) @
   bitr4 anass @ bitr elb0 @ aneq2a @ syl5bb elbitAnd @
   aneq2d @ syl5bb eldiv2 @ eleq1d @ syl sub1can ltner));
-theorem bitAndb0r (a b: nat): $ bitAnd a (b0 b) = b0 (bitAnd (a // 2) b) $ =
+theorem bitAndb0r: $ bitAnd a (b0 b) = b0 (bitAnd (a // 2) b) $ =
 '(eqtr bitAnd_sym @ eqtr4 bitAndb0l @ b0eq bitAnd_sym);
 
-theorem bitAndb00 (a b: nat): $ bitAnd (b0 a) (b0 b) = b0 (bitAnd a b) $ =
+theorem bitAndb00: $ bitAnd (b0 a) (b0 b) = b0 (bitAnd a b) $ =
 '(eqtr bitAndb0l @ b0eq @ bitAndeq2 b0div2);
-theorem bitAndb01 (a b: nat): $ bitAnd (b0 a) (b1 b) = b0 (bitAnd a b) $ =
+theorem bitAndb01: $ bitAnd (b0 a) (b1 b) = b0 (bitAnd a b) $ =
 '(eqtr bitAndb0l @ b0eq @ bitAndeq2 b1div2);
-theorem bitAndb10 (a b: nat): $ bitAnd (b1 a) (b0 b) = b0 (bitAnd a b) $ =
+theorem bitAndb10: $ bitAnd (b1 a) (b0 b) = b0 (bitAnd a b) $ =
 '(eqtr bitAndb0r @ b0eq @ bitAndeq1 b1div2);
-theorem bitAndb11 (a b: nat): $ bitAnd (b1 a) (b1 b) = b1 (bitAnd a b) $ =
+theorem bitAndb11: $ bitAnd (b1 a) (b1 b) = b1 (bitAnd a b) $ =
 (named '(axext @ ax_gen @ bitr elbitAnd @ bitr4 (aneq1i elb1) @
   bitr elb1 @ bitr (oreq2i elbitAnd) @ bitr4 ordi @ aneq2i elb1));
 
@@ -49,28 +52,34 @@ pub theorem bitOrEq (a b: nat): $ bitOr a b == a u. b $ =
 theorem elbitOr: $ i e. bitOr a b <-> i e. a \/ i e. b $ =
 '(bitr (eleq2 bitOrEq) elun);
 
-theorem bitOr_sym (a b: nat): $ bitOr a b = bitOr b a $ =
+theorem bitOr_sym: $ bitOr a b = bitOr b a $ =
 '(axext @ eqstr4 bitOrEq @ eqstr4 bitOrEq uncom);
+theorem bitOr_ass: $ bitOr (bitOr a b) c = bitOr a (bitOr b c) $ =
+'(axext @ eqstr4 bitOrEq @ eqstr4 bitOrEq @
+  eqstr4 (uneq1 bitOrEq) @ eqstr4 (uneq2 bitOrEq) unass);
+theorem bitAnd_di: $ bitAnd a (bitOr b c) = bitOr (bitAnd a b) (bitAnd a c) $ =
+'(axext @ eqstr4 bitAndEq @ eqstr4 bitOrEq @
+  eqstr4 (ineq2 bitOrEq) @ eqstr4 (uneq bitAndEq bitAndEq) indi);
 
 theorem bitOr01 (a: nat): $ bitOr 0 a = a $ = '(axext @ eqstr bitOrEq un01);
 theorem bitOr02 (a: nat): $ bitOr a 0 = a $ = '(eqtr bitOr_sym bitOr01);
 theorem bitOr_idm (a: nat): $ bitOr a a = a $ = '(axext @ eqstr bitOrEq unidm);
 
-theorem bitOrb1l (a b: nat): $ bitOr (b1 a) b = b1 (bitOr a (b // 2)) $ =
+theorem bitOrb1l: $ bitOr (b1 a) b = b1 (bitOr a (b // 2)) $ =
 (named '(axext @ ax_gen @ bitr elbitOr @ bitr (oreq1i elb1) @
   bitr4 orass @ bitr elb1 @ oreq2a @ syl5bb elbitOr @
   oreq2d @ syl5bb eldiv2 @ eleq1d sub1can));
-theorem bitOrb1r (a b: nat): $ bitOr a (b1 b) = b1 (bitOr (a // 2) b) $ =
+theorem bitOrb1r: $ bitOr a (b1 b) = b1 (bitOr (a // 2) b) $ =
 '(eqtr bitOr_sym @ eqtr4 bitOrb1l @ b1eq bitOr_sym);
 
-theorem bitOrb00 (a b: nat): $ bitOr (b0 a) (b0 b) = b0 (bitOr a b) $ =
+theorem bitOrb00: $ bitOr (b0 a) (b0 b) = b0 (bitOr a b) $ =
 (named '(axext @ ax_gen @ bitr elbitOr @ bitr4 (oreq1i elb0) @
   bitr elb0 @ bitr (aneq2i elbitOr) @ bitr4 andi @ oreq2i elb0));
-theorem bitOrb01 (a b: nat): $ bitOr (b0 a) (b1 b) = b1 (bitOr a b) $ =
+theorem bitOrb01: $ bitOr (b0 a) (b1 b) = b1 (bitOr a b) $ =
 '(eqtr bitOrb1r @ b1eq @ bitOreq1 b0div2);
-theorem bitOrb10 (a b: nat): $ bitOr (b1 a) (b0 b) = b1 (bitOr a b) $ =
+theorem bitOrb10: $ bitOr (b1 a) (b0 b) = b1 (bitOr a b) $ =
 '(eqtr bitOrb1l @ b1eq @ bitOreq2 b0div2);
-theorem bitOrb11 (a b: nat): $ bitOr (b1 a) (b1 b) = b1 (bitOr a b) $ =
+theorem bitOrb11: $ bitOr (b1 a) (b1 b) = b1 (bitOr a b) $ =
 '(eqtr bitOrb1l @ b1eq @ bitOreq2 b1div2);
 
 theorem bitAnd_add_bitOr: $ bitAnd a b + bitOr a b = a + b $ =
@@ -95,9 +104,11 @@ theorem bitAnd_add_bitOr: $ bitAnd a b + bitOr a b = a + b $ =
       '(bitAndb10 bitOrb10 addb01 addb10 (b1eqd))
       '(bitAndb11 bitOrb11 addb11 addb11 (b0eqd suceqd))))}));
 
+theorem bitOr_eq_add2: $ bitAnd a b = 0 -> bitOr a b = a + b $ =
+'(eqtr3g add01 bitAnd_add_bitOr @ addeq1d eqcom);
+
 theorem bitOr_eq_add: $ a i^i b == 0 -> bitOr a b = a + b $ =
-'(syl6eq bitAnd_add_bitOr @ syl5eqr add01 @
-  addeq1d @ eqcomd @ syl axext @ syl5eqs bitAndEq id);
+'(syl bitOr_eq_add2 @ syl axext @ syl5eqs bitAndEq id);
 
 @_ abstract def bitDif (a b: nat): nat = $ lower (a i^i Compl b) $;
 pub theorem bitDifEq (a b: nat): $ bitDif a b == a i^i Compl b $ =
@@ -111,9 +122,14 @@ theorem bitDifid: $ bitDif a a = 0 $ = '(axext @ eqstr bitDifEq incpl);
 theorem bitDifeq0: $ bitDif a b = 0 <-> a C_ b $ =
 '(bitr3 nsinj @ bitr (eqseq1 bitDifEq) incpleq0);
 
-theorem bitDifAnd: $ bitDif a (bitAnd a b) = bitDif a b $ =
-'(axext @ !! ax_gen x @ bitr4 elbitDif @ bitr4 elbitDif @
-  aneq2a @ noteqd @ syl5bb elbitAnd bian1);
+theorem bitDifAndss: $ a C_ c -> bitDif a (bitAnd c b) = bitDif a b $ =
+'(syl axext @ !! alimi x @ bitr4g elbitDif elbitDif @
+  syl aneq2a @ imim2i @ noteqd @ syl5bb elbitAnd bian1);
+theorem bitDifAndid: $ bitDif a (bitAnd a b) = bitDif a b $ = '(bitDifAndss ssid);
+
+theorem bitDifAnd: $ bitDif (bitAnd a b) c = bitAnd a (bitDif b c) $ =
+'(axext @ eqstr4 bitDifEq @ eqstr4 bitAndEq @
+  eqstr4 (ineq1 bitAndEq) @ eqstr4 (ineq2 bitDifEq) inass);
 
 theorem bitDifadd: $ b C_ a -> bitDif a b + b = a $ =
 '(syl5eqr (bitOr_eq_add @ mpbir ineq0 @ mpbir (sseq1 bitDifEq) inss2) @
@@ -182,6 +198,10 @@ theorem elBits: $ a e. Bits n <-> a C_ upto n $ =
 '(bitr (elneq2 Bits_eq_power) elpower);
 theorem elBits2: $ a e. Bits n <-> a < 2 ^ n $ = 'elupto;
 
+theorem elBitsS_el: $ a e. Bits (suc n) -> (a e. Bits n <-> ~n e. a) $ =
+'(sylbi elBits @ sylbi (sseq2 @ nseq uptoS_ins) @
+  syl5bb elBits @ ibid (a1i @ mpi ltirr @ con3d @ syl6ib elupto @ ssel) ssins);
+
 theorem uptoT: $ upto n e. Bits n $ = '(mpbir elBits ssid);
 
 theorem elBits8mul: $ n e. Bits (8 * k) <-> n < 256 ^ k $ =
@@ -195,13 +215,15 @@ theorem Bits_eqm: $ a e. Bits n /\ b e. Bits n -> (mod(2 ^ n): a = b <-> a = b) 
 '(eqeqd (anwl Bits_mod) (anwr Bits_mod));
 theorem Bits_zeqm: $ a e. Bits n /\ b e. Bits n -> (modZ(2 ^ n): b0 a = b0 b <-> a = b) $ =
 '(syl5bb zeqmeqm Bits_eqm);
-theorem Bits_zeqm2: $ a e. Bits n /\ b e. Bits n -> (modZ(2 ^ n): a = b <-> a = b) $;
 theorem elBits0: $ a e. Bits 0 <-> a = 0 $ = '(bitr elBits2 @ bitr (lteq2 pow0) lt12);
 theorem elBits01: $ 0 e. Bits n $ = '(mpbir elBits ss01);
 theorem elBitsx01: $ x0 e. Bits n $ = '(mpbi (eleq1 dec0) elBits01);
 theorem elBits1: $ a e. Bits 1 <-> bool a $ = '(bitr elBits2 @ lteq2 pow12);
 theorem elBits11: $ 1 e. Bits n <-> n != 0 $ =
 '(bitr4 elBits2 @ bitr3 lt01 @ bitr (ltpow2 d1lt2) (lteq1 pow0));
+
+theorem eq_bitAnd1: $ a C_ b <-> bitAnd a b = a $ = '(bitr eqin1 @ bitr3 (eqseq1 bitAndEq) nsinj);
+theorem eq_bitAnd2: $ a C_ b <-> bitAnd b a = a $ = '(bitr eq_bitAnd1 @ eqeq1 bitAnd_sym);
 
 theorem bitAndT1: $ a e. Bits n -> bitAnd a b e. Bits n $ =
 '(sylbi elBits @ sylibr elBits @ sylibr (sseq1 bitAndEq) @ sstr inss1);
@@ -228,11 +250,10 @@ theorem shrT: $ a e. Bits (n + b) -> shr a b e. Bits n $ =
 '(sylibr elBits @ sylbi elBits @ !! iald x @ syl5bi elshr @
   syl6ib (bitr4 elupto @ bitr elupto ltadd1) ssel);
 
-theorem b1Bits: $ a e. Bits n -> b1 a e. Bits (suc n) $ =
-'(sylib (eleq1 @ eqtr (addeq1 shl12) add12) @
-  sylib (elneq2 @ Bitseq add12) @ mpi (mpbir elBits1 bool1) (exp shladdT));
-theorem b0Bits: $ a e. Bits n -> b0 a e. Bits (suc n) $ =
-(named '(rsyl b1Bits @ Bitsle1 lesucid));
+theorem b1Bits: $ a e. Bits n <-> b1 a e. Bits (suc n) $ =
+'(bitr4 elBits2 @ bitr elBits2 @ bitr (lteq2 @ eqtr powS b0mul21) b1ltb0);
+theorem b0Bits: $ a e. Bits n <-> b0 a e. Bits (suc n) $ =
+'(bitr4 elBits2 @ bitr elBits2 @ bitr4 (lteq2 @ eqtr powS b0mul21) b0lt);
 
 theorem mod_el_Bits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
@@ -268,97 +289,6 @@ theorem elu32: $ n e. u32 <-> n < 256 ^ 4 $ =
 theorem elu64: $ n e. u64 <-> n < 256 ^ 8 $ =
 '(bitr (elneq2 @ Bitseq {,norm_num : $ 64 = 8 * 8 $}) elBits8mul);
 
-theorem hex_divmod256:
-  $ (a :x b :x c) // 256 = a /\ (a :x b :x c) % 256 = b :x c $ =
-'(trud @ eqdivmod (a1i @ mpbi elu8_2 @ mpbi (eleq1 c2nch) c2nT) @
-  a1i @ eqtr3 addass @ addeq1 @
-  eqtr4 (addeq1 @ eqtr4 mulcom @ eqtr mulass @ muleq2 d16mul16) addmul);
-
-theorem s2nT (s: string): $ s e. List u8 $ =
-'(mpbir elList @ mpbir (alleq1 @ !! eqab2i n elu8) s2nlt);
-
-@_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
-  \. i e. upto (suc n), (i % 256) : a @ (i // 256)) k $;
-
-theorem toBytesAux0: $ toBytesAux 0 n = 0 $ = (named 'rec0);
-theorem toBytesAux0_app: $ toBytesAux 0 n @ i = 0 $ =
-'(eqtr (appneq1 toBytesAux0) app01);
-
-theorem toBytesAuxS: $ toBytesAux (suc k) n =
-  \. i e. upto (suc n), (i % 256) : toBytesAux k n @ (i // 256) $ =
-'(eqtr {recS : $ _ = _ @ toBytesAux k n $} @
-  !! applame a @ lowereqd @ reseq1d @ lameqd @ conseq2d @ appeq1d nseq);
-
-theorem toBytesAuxS_app: $ a <= n ->
-  toBytesAux (suc k) n @ a = (a % 256) : toBytesAux k n @ (a // 256) $ =
-'(syl5eq (appneq1 toBytesAuxS) @
-  sylbi leltsuc @ sylbir elupto @ !! apprlame x @ conseqd modeq1 @ appeq2d diveq1);
-
--- little endian encoding
-@_ abstract def toBytes (k n: nat): nat = $ toBytesAux k n @ n $;
-
-pub theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
-
-theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
-(focus
-  (def e '(aleqd @ imeq2d @ imeq2d @
-    eqeqd (appneq1d toBytesAuxeq1) (appneq1d toBytesAuxeq1)))
-  (def e2 '(imeqd leeq1 @ imeqd leeq1 @ eqeqd appeq2 appeq2))
-  '(!! eale x ,e2
-    (!! ind y z ,e ,e ,e ,e
-      (ax_gen @ a1i @ a1i @ eqtr4 toBytesAux0_app toBytesAux0_app)
-      (sylbi (!! cbval x y ,e2) @
-        iald @ exp @ exp @ eqtr4d (anwr toBytesAuxS_app) @
-        eqtr4d (syl toBytesAuxS_app anlr) @
-        conseq2d @
-        mpd (letrd (a1i divleid) anr) @ mpd (letrd (a1i divleid) anlr) @
-        anwll @ eale ,e2))
-    leid));
-
-pub theorem toBytesS (k n: nat):
-  $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $ =
-'(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
-
-theorem toBytes02: $ toBytes k 0 = repeat 0 k $ =
-(named @ induct '(ind) 'k
-  '(eqtr4 toBytes0 repeat0)
-  '(syl5eq toBytesS @ syl5eq (conseq mod01 @ toByteseq2 div01) @
-    syl6eqr repeatS conseq2));
-
-pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
-'(!! eale x (eleq1d toByteseq2) ,(induct '(!! ind y z) 'k
-  '(ax_gen @ mpbir (eleq1 toBytes0) elArray0)
-  '(sylbi (!! cbval _ y @ eleq1d toByteseq2) @ iald @
-    sylibr (eleq1 toBytesS) @ syl (sylibr elArrayS @ ian mod_el_u8) @
-    eale @ eleq1d toByteseq2)));
-
-@_ def u16Bytes (n: nat): nat = $ toBytes 2 n $;
-@_ def u32Bytes (n: nat): nat = $ toBytes 4 n $;
-@_ def u64Bytes (n: nat): nat = $ toBytes 8 n $;
-theorem u16BytesT: $ u16Bytes n e. Array u8 2 $ = 'toBytesT;
-theorem u32BytesT: $ u32Bytes n e. Array u8 4 $ = 'toBytesT;
-theorem u64BytesT: $ u64Bytes n e. Array u8 8 $ = 'toBytesT;
-theorem u16BytesList: $ u16Bytes n e. List u8 $ = '(elArrayList u16BytesT);
-theorem u32BytesList: $ u32Bytes n e. List u8 $ = '(elArrayList u32BytesT);
-theorem u64BytesList: $ u64Bytes n e. List u8 $ = '(elArrayList u64BytesT);
-
-@_ def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
-
-theorem bitsMSB_b0: $ bitsMSB k n <-> k e. b0 n $ = '(bicom elb0);
-
--- sign extend (v: bitvec m) to length n
-@_ def sExt (m n v: nat): nat = $ if (bitsMSB m v) (2 ^ n - 2 ^ m + v) v $;
-@_ def sExtq (n v: nat): nat = $ sExt n 64 v $;
-
-pub theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $ =
-'(casesda
-  (mpbird (eleq1d @ anwr ifpos) @
-    sylibr elupto @ mpbid (lteq2d @ syl npcan @ anwll @ lepow2a d2ne0) @
-    sylib ltadd2 @ sylib elupto anlr)
-  (mpbird (eleq1d @ anwr ifneg) @ anwl @ imp Bitsle));
-
-pub theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $ = 'sExtT;
-
 -- get lower bits of a number
 @_ def chop (k n: nat): nat = $ n % 2 ^ k $;
 pub theorem chopT (k n: nat): $ chop k n e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
@@ -368,7 +298,14 @@ theorem el_chop: $ a e. chop k n <-> a < k /\ a e. n $ = 'elmodpow2;
 theorem bitAnd_upto: $ bitAnd (upto k) a = chop k a $ =
 '(axext @ !! ax_gen x @ bitr4 elbitAnd @ bitr4 el_chop @ aneq1i elupto);
 
+theorem chop_upto: $ m <= k <-> chop m (upto k) = upto m $ =
+'(bitr3 uptoss @ bitr eq_bitAnd1 @ eqeq1 bitAnd_upto);
+
 theorem shlshr_chop: $ shl (shr n k) k + chop k n = n $ = '(eqtr (addeq1 mulcom) divmod);
+
+theorem chop_shl_0: $ m <= k -> chop m (shl a k) = 0 $ =
+'(syl axext @ sylib ss02 @ !! iald x @ syl5bi el_chop @ impd @
+  syl6 (syl5bi elshl @ sylbi ltnle @ syl5 anl absurd) @ com12 ltletr);
 
 theorem shladd_uniq: $ a e. Bits k /\ shl m k + a = n <-> shr n k = m /\ chop k n = a $ =
 '(ibii (eqdivmod (sylib elBits2 anl) @ syl5eq (addeq1 mulcom) anr) @
@@ -376,9 +313,44 @@ theorem shladd_uniq: $ a e. Bits k /\ shl m k + a = n <-> shr n k = m /\ chop k 
 
 theorem Bits_chop: $ a e. Bits k -> chop k a = a $ = 'Bits_mod;
 theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
+theorem chop_eq_chop: $ chop k a = chop k b <-> mod(2 ^ k): a = b $ = 'biid;
 
-theorem toBytes1 (n: nat): $ toBytes 1 n = chop 8 n : 0 $ =
-'(eqtr toBytesS @ conseq2 toBytes0);
+theorem chop_chop: $ m <= n -> chop m (chop n a) = chop m a $ = '(syl modmod powdvd);
+
+theorem chop_shl: $ shl (chop n a) k = chop (n + k) (shl a k) $ =
+'(eqtr4 mulmoddir @ modeq2 powadd);
+theorem chop_shr: $ shr (chop (n + k) a) k = chop n (shr a k) $ =
+'(eqtr4 (diveq1 @ modeq2 powadd) divmod2);
+
+theorem chop_bitAnd1: $ chop m (bitAnd a b) = bitAnd (chop m a) b $ =
+'(eqtr3 bitAnd_upto @ eqtr3 bitAnd_ass @ bitAndeq1 bitAnd_upto);
+theorem chop_bitAnd2: $ chop m (bitAnd a b) = bitAnd a (chop m b) $ =
+'(eqtr (chopeq2 bitAnd_sym) @ eqtr chop_bitAnd1 bitAnd_sym);
+theorem chop_bitAnd: $ chop m (bitAnd a b) = bitAnd (chop m a) (chop m b) $ =
+'(eqtr3 (chop_chop leid) @ eqtr (chopeq2 chop_bitAnd1) chop_bitAnd2);
+theorem chop_bitOr: $ chop m (bitOr a b) = bitOr (chop m a) (chop m b) $ =
+'(eqtr3 bitAnd_upto @ eqtr bitAnd_di @ bitOreq bitAnd_upto bitAnd_upto);
+theorem chop_bitDif1: $ chop m (bitDif a b) = bitDif (chop m a) b $ =
+'(eqtr3 bitAnd_upto @ eqtr3 bitDifAnd @ bitDifeq1 bitAnd_upto);
+theorem chop_bitDif: $ chop m (bitDif a b) = bitDif (chop m a) (chop m b) $ =
+'(eqtr4 chop_bitDif1 @ eqtr3 (bitDifeq2 bitAnd_upto) @ bitDifAndss @ mpbi elBits chopT);
+
+theorem shl_bitAnd: $ shl (bitAnd a b) m = bitAnd (shl a m) (shl b m) $ =
+'(axext @ !! ax_gen x @ bitr4 elshl @ bitr4 elbitAnd @
+  bitr (aneq2i elbitAnd) @ bitr4 anandi @ aneq elshl elshl);
+theorem shl_bitOr: $ shl (bitOr a b) m = bitOr (shl a m) (shl b m) $ =
+'(axext @ !! ax_gen x @ bitr4 elshl @ bitr4 elbitOr @
+  bitr (aneq2i elbitOr) @ bitr4 andi @ oreq elshl elshl);
+theorem shl_bitDif: $ shl (bitDif a b) m = bitDif (shl a m) (shl b m) $ =
+'(axext @ !! ax_gen x @ bitr4 elshl @ bitr4 elbitDif @
+  bitr4 (aneq2i elbitDif) @ bitr (aneq elshl @ noteq elshl) @
+  bitr anass @ aneq2a @ aneq2d @ noteqd bian1);
+theorem shr_bitAnd: $ shr (bitAnd a b) m = bitAnd (shr a m) (shr b m) $ =
+'(axext @ !! ax_gen x @ bitr4 elshr @ bitr4 elbitAnd @ bitr4 elbitAnd @ aneq elshr elshr);
+theorem shr_bitOr: $ shr (bitOr a b) m = bitOr (shr a m) (shr b m) $ =
+'(axext @ !! ax_gen x @ bitr4 elshr @ bitr4 elbitOr @ bitr4 elbitOr @ oreq elshr elshr);
+theorem shr_bitDif: $ shr (bitDif a b) m = bitDif (shr a m) (shr b m) $ =
+'(axext @ !! ax_gen x @ bitr4 elshr @ bitr4 elbitDif @ bitr4 elbitDif @ aneq elshr @ noteq elshr);
 
 theorem eqm_chopd (h: $ G -> mod(2 ^ k): a = b $):
   $ G -> mod(2 ^ k): chop k a = b $ = '(syl (eqmtr eqm_chop) h);
@@ -394,39 +366,97 @@ theorem zeqm_chopZ: $ modZ(2 ^ k): b0 (chopZ k a) = a $ = '(zeqmmod pow2ne0);
 theorem zeqm_chopZd (h: $ G -> modZ(2 ^ k): a = b $):
   $ G -> modZ(2 ^ k): b0 (chopZ k a) = b $ = '(syl (zeqmtr zeqm_chopZ) h);
 
-theorem chopZ_MSB: $ a e. Bits k -> (bitsMSB k (chopZ k a) <-> odd a) $;
+theorem chopZ_eq_chopZ: $ chopZ k a = chopZ k b <-> modZ(2 ^ k): a = b $ = '(zmodeqmod pow2ne0);
 
-@_ local def toIBytes (k n: nat): nat = $ toBytes k (chopZ (8 * k) n) $;
-@_ local def i8Bytes (n: nat): nat = $ toIBytes 1 n $;
-@_ local def i16Bytes (n: nat): nat = $ toIBytes 2 n $;
-@_ local def i32Bytes (n: nat): nat = $ toIBytes 4 n $;
-@_ local def i64Bytes (n: nat): nat = $ toIBytes 8 n $;
+theorem chopZ_b1: $ a e. Bits k -> chopZ k (b1 a) = 2 ^ k - suc a $ = '(sylbi elBits2 zmodb1);
+theorem chopZ_b1_2: $ a e. Bits k -> chopZ k (b1 a) + suc a = 2 ^ k $ =
+'(eqtrd (addeq1d chopZ_b1) @ sylbi elBits2 npcan);
 
-theorem i8Bytes_val2: $ i8Bytes n = toBytes 1 (chopZ 8 n) $ = '(toByteseq2 @ chopZeq1 mul12);
-theorem i16Bytes_val: $ i16Bytes n = toBytes 2 (chopZ 16 n) $ = '(toByteseq2 @ chopZeq1 d8mul2);
-theorem i32Bytes_val: $ i32Bytes n = toBytes 4 (chopZ 32 n) $ = '(toByteseq2 @ chopZeq1 d8mul4);
-theorem i64Bytes_val: $ i64Bytes n = toBytes 8 (chopZ 64 n) $ = '(toByteseq2 @ chopZeq1 d8mul8);
+theorem hex_divmod256:
+  $ (a :x b :x c) // 256 = a /\ (a :x b :x c) % 256 = b :x c $ =
+'(trud @ eqdivmod (a1i @ mpbi elu8_2 @ mpbi (eleq1 c2nch) c2nT) @
+  a1i @ eqtr3 addass @ addeq1 @
+  eqtr4 (addeq1 @ eqtr4 mulcom @ eqtr mulass @ muleq2 d16mul16) addmul);
+theorem xchopshr8: $ shr (a :x b :x c) 8 = a /\ chop 8 (a :x b :x c) = b :x c $ = 'hex_divmod256;
 
-theorem i8Bytes_val (n: nat): $ i8Bytes n = chopZ 8 n : 0 $ =
-'(eqtr i8Bytes_val2 @ eqtr toBytes1 @ conseq1 @ Bits_chop chopZT);
+theorem s2nT (s: string): $ s e. List u8 $ =
+'(mpbir elList @ mpbir (alleq1 @ !! eqab2i n elu8) s2nlt);
 
-theorem toIBytesT: $ toIBytes k n e. Array u8 k $ = 'toBytesT;
-theorem i8BytesT: $ i8Bytes n e. Array u8 1 $ = 'toIBytesT;
-theorem i16BytesT: $ i16Bytes n e. Array u8 2 $ = 'toIBytesT;
-theorem i32BytesT: $ i32Bytes n e. Array u8 4 $ = 'toIBytesT;
-theorem i64BytesT: $ i64Bytes n e. Array u8 8 $ = 'toIBytesT;
+@_ def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
 
-theorem sExt_chopZ: $ m <= n /\ a e. Bits m -> sExt m n (chopZ m a) = chopZ n a $;
--- (focus
---   '(mpbid (sylan Bits_zeqm (sylan sExtT anl @ a1i chopZT) @ a1i chopZT) @
---     syl (mpi (zeqmcom zeqm_chopZ) zeqmtr) @
---     ifbothd (zeqmeq2d b0eq) (zeqmeq2d b0eq) _ _)
---   (focus
---     '(mpbiri zeqmaddn @ zeqmeq2d @ syl5eqr zaddb0 @
---       eqtr3d (zaddeq1d @ anwll @ syl zsubpos @ lepow2a d2ne0) @
---       syl5eqr zaddsub @ syl5eq zaddsubass @ syl6eq zaddcom @ zaddeq2d @
---       sylibr eqzsub @  _))
--- );
+theorem bitsMSB_b0: $ bitsMSB k n <-> k e. b0 n $ = '(bicom elb0);
+
+theorem bitsMSB_Bits: $ n e. Bits k -> (bitsMSB k n <-> ~n e. Bits (k - 1)) $ =
+'(syl con2b @ casesda
+  (bithd (mpbiri elBits01 @ eleq1d @ sylib elBits0 @ impcom @ bi1d @ elneq2d Bitseq)
+    (anwr @ con2 @ sylib lt01 anl))
+  (bitr4d (syl elBitsS_el @ impcom @ bi2d @ elneq2d @ Bitseqd sub1can)
+    (noteqd @ syl bian1 @ sylibr lt01 anr)));
+
+theorem bitsMSB_le: $ n e. Bits k -> (bitsMSB k n <-> 2 ^ (k - 1) <= n) $ =
+'(syl6bbr lenlt @ syl6bb (noteq elBits2) bitsMSB_Bits);
+
+theorem chopZ_MSB: $ a e. Bits k -> (bitsMSB k (chopZ k a) <-> odd a) $ =
+(focus
+  (have 'h '(Bitsle1 divleid))
+  (def h2 '(mpbid (elneqd anr @ Bitseqd @ eqcomd @ syl sub1can anlr) anll))
+  '(casesda _ @ ibid _ _)
+  '(binthd (anwr @ con2 @ sylib lt01 anl) @ mpbiri odd0 @
+    noteqd @ oddeqd @ sylib elBits0 @ impcom @ bi1d @ elneq2d Bitseq)
+  '(syl5bi (bitsMSB_Bits chopZT) @ con1d @ syl5bi eqb0 @ exp @
+    mpbird (eleq1d @ eqtrd (chopZeq2d anr) @ syl5eq chopZ_b0 @ syl Bits_chop @ anwll h) @
+    sylibr b0Bits ,h2)
+  '(syl5bi eqb1 @ exp @ sylibr (bitsMSB_le chopZT) @
+    mpbird (leeq2d @ eqtrd (chopZeq2d anr) @ syl chopZ_b1 @ anwll h) @
+    sylib (leeq1 pncan) @ syl lesub1i @
+    mpbid (leeq2d @ syl5eqr mul21 @ syl5eqr powS @ poweq2d @ syl sub1can anlr) @
+    sylib leadd2 @ sylib elBits2 @ sylibr b1Bits ,h2));
+
+theorem Bits_zeqm2: $ a e. Bits n /\ b e. Bits n -> (modZ(2 ^ n): a = b <-> a = b) $ =
+(focus
+  (have 'h $ _ -> (odd a <-> odd b) $
+    '(bitr3d (rsyl anll chopZ_MSB) @ bitrd (bitsMSBeq2d anr) (rsyl anlr chopZ_MSB)))
+  '(syl5bbr chopZ_eq_chopZ @ ibid (exp @ casesda _ _) @ a1i chopZeq2)
+  (focus
+    (have 'h1 '(sylib eqb1 anr))
+    (have 'h2 '(sylib eqb1 @ imp @ bi1d h))
+    '(eqtr4d h1 @ eqtr4d h2 @ b1eqd @ sylib peano2 @ sylib addcan2 @
+      eqtr4d (syl chopZ_b1_2 @ rsyl an3l @ Bitsle1 divleid) @
+      eqtrd (addeq1d @ eqtr3d (chopZeq2d h1) @ eqtrd anlr (chopZeq2d h2)) @
+      syl chopZ_b1_2 @ rsyl anllr @ Bitsle1 divleid))
+  (focus
+    (have 'h3 '(sylib eqb0 anr))
+    (have 'h4 '(sylib eqb0 @ imp @ con3d @ bi2d h))
+    '(eqtr4d h3 @ eqtr4d h4 @ b0eqd @
+      mpbid (sylan Bits_eqm (rsyl an3l @ Bitsle1 divleid) (rsyl anllr @ Bitsle1 divleid)) @
+      eqtr3g chopZ_b0 chopZ_b0 @ eqtr3d (chopZeq2d h3) @ eqtrd anlr (chopZeq2d h4))));
+
+-- sign extend (v: bitvec m) to length n
+@_ def sExt (m n v: nat): nat = $ if (bitsMSB m v) (2 ^ n - 2 ^ m + v) v $;
+@_ def sExtq (n v: nat): nat = $ sExt n 64 v $;
+
+pub theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $ =
+'(casesda
+  (mpbird (eleq1d @ anwr ifpos) @
+    sylibr elupto @ mpbid (lteq2d @ syl npcan @ anwll @ lepow2a d2ne0) @
+    sylib ltadd2 @ sylib elupto anlr)
+  (mpbird (eleq1d @ anwr ifneg) @ anwl @ imp Bitsle));
+
+pub theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $ = 'sExtT;
+
+theorem sExt_chopZ: $ m <= n /\ a e. Bits m -> sExt m n (chopZ m a) = chopZ n a $ =
+(focus
+  (have 'h0 '(anwr @ Bitsle1 b0leid))
+  (have 'h1 '(anwr @ Bitsle1 b1leid))
+  '(imp ,(split-sop 'a (fn (x) '(syl5ibrcom ,eqtac @ exp ,x)) '{
+    ($b0 x$ => (eqtrd (syl ifneg @ mpbiri b0odd @ noteqd @ anwr chopZ_MSB) @
+      eqtr4g chopZ_b0 chopZ_b0 @
+      eqtr4d (syl Bits_chop h0) (syl Bits_chop @ sylc Bitsle anl h0))) +
+    ($b1 x$ => (eqtrd (syl ifpos @ mpbiri b1odd @ anwr chopZ_MSB) @
+      eqtr4d (addeq2d @ syl chopZ_b1 h1) @ eqtr4d (syl chopZ_b1 @ sylc Bitsle anl h1) @
+      eqcomd @ syl eqsub1 @ syl5eq addass @
+      eqtrd (addeq2d @ syl npcan @ sylib elBits2 h1) @
+      anwl @ syl npcan @ lepow2a d2ne0))})));
 
 -- write a e. Bits m to bits k thru k+m-1 of n
 @_ def bitsUpdate (k m a n: nat): nat = $ bitDif n (shl (upto m) k) + shl a k $;
@@ -441,12 +471,23 @@ pub theorem bitsUpdateT (k m l a n: nat):
 pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $ =
 '(bitr elbitDif @ aneq1i elupto);
 
+pub theorem bitsNotT (k n: nat): $ bitsNot k n e. Bits k $ = '(bitDifT uptoT);
+
 theorem bitsNot_chop: $ bitsNot k (chop k n) = bitsNot k n $ =
-'(eqtr3 (bitsNoteq2 bitAnd_upto) bitDifAnd);
+'(eqtr3 (bitsNoteq2 bitAnd_upto) bitDifAndid);
 
 theorem bitsNot_add: $ n e. Bits k -> bitsNot k n + n = upto k $ = '(sylbi elBits bitDifadd);
 theorem bitsNot_sub: $ n e. Bits k -> bitsNot k n = upto k - n $ = '(sylbi elBits bitDifsub);
 theorem bitsNot0: $ bitsNot k 0 = upto k $ = '(eqtr (bitsNot_sub elBits01) sub02);
+
+theorem chop_bitsNot: $ m <= k -> chop m (bitsNot k n) = bitsNot m n $ =
+'(syl5eq chop_bitDif1 @ sylbi chop_upto bitDifeq1);
+theorem shl_bitsNot: $ shl (bitsNot k a) m + upto m = bitsNot (k + m) (shl a m) $ =
+'(eqtr3 (addeq1 @ shleq1 bitsNot_chop) @ eqtr (mpbi addcan1 @
+  eqtr4 addrass @ eqtr4 (eqtr4 (bitsNot_add chopT) shlupto) @ addeq1 @
+  eqtr3 (addeq2 chop_shl) @ eqtr3 shladd @ shleq1 @ bitsNot_add chopT) bitsNot_chop);
+theorem shr_bitsNot: $ shr (bitsNot k a) m = bitsNot (k - m) (shr a m) $ =
+'(eqtr shr_bitDif @ bitDifeq1 shrupto);
 
 theorem zeqm_bitsNot: $ modZ(2 ^ k): b0 (bitsNot k n) = -uZ b0 (suc n) $ =
 '(zeqmtr
@@ -454,6 +495,12 @@ theorem zeqm_bitsNot: $ modZ(2 ^ k): b0 (bitsNot k n) = -uZ b0 (suc n) $ =
     b0eq @ eqtr addS @ eqtr (suceq @ eqtr3 (addeq1 bitsNot_chop) @ bitsNot_add chopT) @
     sucupto) zeqmid0)
   (mpbir zeqmneg @ mpbir zeqmeqm @ mpbir eqmsuc eqm_chop));
+
+theorem zeqm_bitsNot2: $ modZ(2 ^ k): b0 (bitsNot k n) = b1 n $ =
+'(zeqmtr zeqm_bitsNot @ eqzeqm znegb0S);
+
+theorem chopZ_b1_bitsNot: $ chopZ k (b1 n) = bitsNot k n $ =
+'(mpbi (Bits_zeqm @ ian chopZT bitsNotT) @ zeqmtr zeqm_chopZ @ zeqmcom zeqm_bitsNot2);
 
 theorem zeqm_bitsNotd
   (h1: $ G -> modZ(2 ^ k): b0 a = x $):
@@ -522,6 +569,117 @@ pub theorem bitsSarT (k a b: nat):
 pub theorem add64T (a b: nat): $ a +_64 b e. u64 $ = 'bitsAddT;
 @_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 pub theorem sub64T (a b: nat): $ a -_64 b e. u64 $ = 'bitsSubT;
+
+@_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
+  \. i e. upto (suc n), (i % 256) : a @ (i // 256)) k $;
+
+theorem toBytesAux0: $ toBytesAux 0 n = 0 $ = (named 'rec0);
+theorem toBytesAux0_app: $ toBytesAux 0 n @ i = 0 $ =
+'(eqtr (appneq1 toBytesAux0) app01);
+
+theorem toBytesAuxS: $ toBytesAux (suc k) n =
+  \. i e. upto (suc n), (i % 256) : toBytesAux k n @ (i // 256) $ =
+'(eqtr {recS : $ _ = _ @ toBytesAux k n $} @
+  !! applame a @ lowereqd @ reseq1d @ lameqd @ conseq2d @ appeq1d nseq);
+
+theorem toBytesAuxS_app: $ a <= n ->
+  toBytesAux (suc k) n @ a = (a % 256) : toBytesAux k n @ (a // 256) $ =
+'(syl5eq (appneq1 toBytesAuxS) @
+  sylbi leltsuc @ sylbir elupto @ !! apprlame x @ conseqd modeq1 @ appeq2d diveq1);
+
+-- little endian encoding
+@_ abstract def toBytes (k n: nat): nat = $ toBytesAux k n @ n $;
+
+pub theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
+
+theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
+(focus
+  (def e '(aleqd @ imeq2d @ imeq2d @
+    eqeqd (appneq1d toBytesAuxeq1) (appneq1d toBytesAuxeq1)))
+  (def e2 '(imeqd leeq1 @ imeqd leeq1 @ eqeqd appeq2 appeq2))
+  '(!! eale x ,e2
+    (!! ind y z ,e ,e ,e ,e
+      (ax_gen @ a1i @ a1i @ eqtr4 toBytesAux0_app toBytesAux0_app)
+      (sylbi (!! cbval x y ,e2) @
+        iald @ exp @ exp @ eqtr4d (anwr toBytesAuxS_app) @
+        eqtr4d (syl toBytesAuxS_app anlr) @
+        conseq2d @
+        mpd (letrd (a1i divleid) anr) @ mpd (letrd (a1i divleid) anlr) @
+        anwll @ eale ,e2))
+    leid));
+
+pub theorem toBytesS (k n: nat):
+  $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $ =
+'(eqtr (toBytesAuxS_app leid) @ conseq2 @ toBytesAuxS_eq divleid);
+theorem toBytesS2: $ toBytes (suc k) n = chop 8 n : toBytes k (shr n 8) $ = 'toBytesS;
+
+theorem toBytes02: $ toBytes k 0 = repeat 0 k $ =
+(named @ induct '(ind) 'k
+  '(eqtr4 toBytes0 repeat0)
+  '(syl5eq toBytesS @ syl5eq (conseq mod01 @ toByteseq2 div01) @
+    syl6eqr repeatS conseq2));
+
+pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
+'(!! eale x (eleq1d toByteseq2) ,(induct '(!! ind y z) 'k
+  '(ax_gen @ mpbir (eleq1 toBytes0) elArray0)
+  '(sylbi (!! cbval _ y @ eleq1d toByteseq2) @ iald @
+    sylibr (eleq1 toBytesS) @ syl (sylibr elArrayS @ ian mod_el_u8) @
+    eale @ eleq1d toByteseq2)));
+
+theorem toBytes1: $ toBytes 1 n = chop 8 n : 0 $ =
+'(eqtr toBytesS @ conseq2 toBytes0);
+
+theorem toBytes_chop: $ toBytes k (chop (8 * k) n) = toBytes k n $ =
+(named '(ax_mp (!! eale x ,(eqtac-gen 'n)) ,(induct '(ind) 'k
+  '(ax_gen @ eqtr4 toBytes0 toBytes0)
+  '(sylbi (cbval ,eqtac) @ iald @ eqtr4g toBytesS2 toBytesS2 @ conseqd
+    (a1i @ chop_chop @ mpbi (leeq1 mul12) @ lemul2a le11S)
+    (sylibr (eqeq1 @ toByteseq2 @ eqtr (shreq1 @ chopeq1 mulS) chop_shr) @
+      eale ,eqtac)))));
+
+theorem toBytesS_bitsNot: $ toBytes (suc k) (bitsNot (8 * suc k) n) =
+  bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8)) $ =
+'(eqtr toBytesS2 @ conseq
+  (chop_bitsNot @ mpbi (leeq1 mul12) @ lemul2a le11S)
+  (toByteseq2 @ eqtr shr_bitsNot @ bitsNoteq1 @ eqtr (subeq1 mulS2) pncan));
+
+@_ def u16Bytes (n: nat): nat = $ toBytes 2 n $;
+@_ def u32Bytes (n: nat): nat = $ toBytes 4 n $;
+@_ def u64Bytes (n: nat): nat = $ toBytes 8 n $;
+theorem u16BytesT: $ u16Bytes n e. Array u8 2 $ = 'toBytesT;
+theorem u32BytesT: $ u32Bytes n e. Array u8 4 $ = 'toBytesT;
+theorem u64BytesT: $ u64Bytes n e. Array u8 8 $ = 'toBytesT;
+theorem u16BytesList: $ u16Bytes n e. List u8 $ = '(elArrayList u16BytesT);
+theorem u32BytesList: $ u32Bytes n e. List u8 $ = '(elArrayList u32BytesT);
+theorem u64BytesList: $ u64Bytes n e. List u8 $ = '(elArrayList u64BytesT);
+
+@_ local def toIBytes (k n: nat): nat = $ toBytes k (chopZ (8 * k) n) $;
+@_ local def i8Bytes (n: nat): nat = $ toIBytes 1 n $;
+@_ local def i16Bytes (n: nat): nat = $ toIBytes 2 n $;
+@_ local def i32Bytes (n: nat): nat = $ toIBytes 4 n $;
+@_ local def i64Bytes (n: nat): nat = $ toIBytes 8 n $;
+
+theorem i8Bytes_val2: $ i8Bytes n = toBytes 1 (chopZ 8 n) $ = '(toByteseq2 @ chopZeq1 mul12);
+theorem i16Bytes_val: $ i16Bytes n = toBytes 2 (chopZ 16 n) $ = '(toByteseq2 @ chopZeq1 d8mul2);
+theorem i32Bytes_val: $ i32Bytes n = toBytes 4 (chopZ 32 n) $ = '(toByteseq2 @ chopZeq1 d8mul4);
+theorem i64Bytes_val: $ i64Bytes n = toBytes 8 (chopZ 64 n) $ = '(toByteseq2 @ chopZeq1 d8mul8);
+
+theorem i8Bytes_val (n: nat): $ i8Bytes n = chopZ 8 n : 0 $ =
+'(eqtr i8Bytes_val2 @ eqtr toBytes1 @ conseq1 @ Bits_chop chopZT);
+
+theorem toIBytesT: $ toIBytes k n e. Array u8 k $ = 'toBytesT;
+theorem i8BytesT: $ i8Bytes n e. Array u8 1 $ = 'toIBytesT;
+theorem i16BytesT: $ i16Bytes n e. Array u8 2 $ = 'toIBytesT;
+theorem i32BytesT: $ i32Bytes n e. Array u8 4 $ = 'toIBytesT;
+theorem i64BytesT: $ i64Bytes n e. Array u8 8 $ = 'toIBytesT;
+
+theorem toIBytes0: $ toIBytes 0 n = 0 $ = 'toBytes0;
+theorem toIBytes_b0: $ toIBytes k (b0 n) = toBytes k n $ =
+'(eqtr (toByteseq2 chopZ_b0) toBytes_chop);
+theorem toIBytesS_b1: $ toIBytes (suc k) (b1 n) =
+  bitsNot 8 n : toIBytes k (b1 (shr n 8)) $ =
+'(eqtr (toByteseq2 chopZ_b1_bitsNot) @ eqtr4 toBytesS_bitsNot @
+  conseq2 @ toByteseq2 chopZ_b1_bitsNot);
 
 @_ def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 theorem elBitvec: $ n <> bs e. Bitvec <-> bs < 2 ^ n $ =
@@ -1045,8 +1203,8 @@ theorem binopSarT: $ binopSar e. Binop $ = '(! Binop_lem $15$ ,norm_num);
 @_ def condPos (c: nat): nat = $ suc (b0 c) $;
 @_ def condNeg (c: nat): nat = $ suc (b1 c) $;
 pub theorem condAlwaysT: $ condAlways e. Cond $ = 'opt0;
-pub theorem condPosT (c: nat): $ c e. BCond -> condPos c e. Cond $ = '(sylibr optS b0Bits);
-pub theorem condNegT (c: nat): $ c e. BCond -> condNeg c e. Cond $ = '(sylibr optS b1Bits);
+pub theorem condPosT (c: nat): $ c e. BCond <-> condPos c e. Cond $ = '(bitr4 b0Bits optS);
+pub theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $ = '(bitr4 b1Bits optS);
 
 @_ def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
@@ -1366,7 +1524,7 @@ pub theorem decodeMovSX_T (rex ast b l: nat):
   iand (iand (a1i wSz32T) @ sylibr R_rmT @ rsyl anlr @ anld readModRM_T) (a1i wSz64T)));
 
 @_ def decodeMovReg (rex ast b l .v .d .reg .r: nat): wff =
-$ E. v E. d E. reg E. r (l = ch x6 x3 /\
+$ E. v E. d E. reg E. r (
     splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
     ast = xastMov (opSizeW rex v) (if (true d) (R_rm reg r) (Rm_r r reg))) $;
@@ -1377,7 +1535,7 @@ pub theorem decodeMovRegT (rex ast b l: nat):
   sylan ifT (sylibr R_rmT anl) (sylibr Rm_rT @ anwl ancom)));
 
 @_ def decodeMov64 (rex ast b l .r .v .imm: nat): wff =
-$ E. r E. v E. imm (l = ch x6 x3 /\
+$ E. r E. v E. imm (
     splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) b /\
     readFullImm (opSizeW rex v) imm l /\
     ast = xastMov (opSizeW rex v) (Rm_i (RM_reg (rex_reg (REX_B rex) r)) imm)) $;
@@ -1386,7 +1544,7 @@ pub theorem decodeMov64T (rex ast b l: nat):
 (named '(eex @ eex @ eex @ mpbird (eleq1d anr) @
   sylibr xastMovT @ syl (ian opSizeW_T) @ sylibr Rm_iT @
   iand (sylibr RM_regT @ sylan rex_regT (a1i REX_B_T) @
-    sylib elBitvec2 @ elListHd @ anld anllr) @
+    sylib elBitvec2 @ elListHd @ anld anll) @
   anld @ rsyl anlr @ exp readFullImmT opSizeW_T));
 
 @_ def decodeMovImm (rex ast b l .v .opc .r .imm .l1 .l2: nat): wff =

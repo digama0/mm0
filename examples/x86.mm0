@@ -27,16 +27,9 @@ def u16: nat = $ Bits 16 $;
 def u32: nat = $ Bits 32 $;
 def u64: nat = $ Bits 64 $;
 
--- little endian encoding
-def toBytes (k n: nat): nat;
-theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $;
-theorem toBytesS (k n: nat):
-  $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $;
-theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
-
-def u16Bytes (n: nat): nat = $ toBytes 2 n $;
-def u32Bytes (n: nat): nat = $ toBytes 4 n $;
-def u64Bytes (n: nat): nat = $ toBytes 8 n $;
+-- get lower bits of a number
+def chop (k n: nat): nat = $ n % 2 ^ k $;
+theorem chopT (k n: nat): $ chop k n e. Bits k $;
 
 def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
 
@@ -46,10 +39,6 @@ def sExtq (n v: nat): nat = $ sExt n 64 v $;
 theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $;
 theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
 
--- get lower bits of a number
-def chop (k n: nat): nat = $ n % 2 ^ k $;
-theorem chopT (k n: nat): $ chop k n e. Bits k $;
-
 -- write a e. Bits m to bits k thru k+m-1 of n
 def bitsUpdate (k m a n: nat): nat = $ bitDif n (shl (upto m) k) + shl a k $;
 theorem bitsUpdateT (k m l a n: nat):
@@ -57,6 +46,7 @@ theorem bitsUpdateT (k m l a n: nat):
 
 def bitsNot (k n: nat): nat = $ bitDif (upto k) n $;
 theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $;
+theorem bitsNotT (k n: nat): $ bitsNot k n e. Bits k $;
 
 def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
 theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $;
@@ -76,6 +66,17 @@ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
 theorem add64T (a b: nat): $ a +_64 b e. u64 $;
 def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 theorem sub64T (a b: nat): $ a -_64 b e. u64 $;
+
+-- little endian encoding
+def toBytes (k n: nat): nat;
+theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $;
+theorem toBytesS (k n: nat):
+  $ toBytes (suc k) n = (n % 256) : toBytes k (n // 256) $;
+theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $;
+
+def u16Bytes (n: nat): nat = $ toBytes 2 n $;
+def u32Bytes (n: nat): nat = $ toBytes 4 n $;
+def u64Bytes (n: nat): nat = $ toBytes 8 n $;
 
 def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 
@@ -285,8 +286,8 @@ def condAlways: nat = $ 0 $;
 def condPos (c: nat): nat = $ suc (b0 c) $;
 def condNeg (c: nat): nat = $ suc (b1 c) $;
 theorem condAlwaysT: $ condAlways e. Cond $;
-theorem condPosT (c: nat): $ c e. BCond -> condPos c e. Cond $;
-theorem condNegT (c: nat): $ c e. BCond -> condNeg c e. Cond $;
+theorem condPosT (c: nat): $ c e. BCond <-> condPos c e. Cond $;
+theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $;
 
 def XASTArith: set =
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
@@ -500,7 +501,7 @@ theorem decodeMovSX_T (rex ast b l: nat):
   $ decodeMovSX rex ast b l -> ast e. XAST $;
 
 def decodeMovReg (rex ast b l .v .d .reg .r: nat): wff =
-$ E. v E. d E. reg E. r (l = ch x6 x3 /\
+$ E. v E. d E. reg E. r (
     splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
     ast = xastMov (opSizeW rex v) (if (true d) (R_rm reg r) (Rm_r r reg))) $;
@@ -508,7 +509,7 @@ theorem decodeMovRegT (rex ast b l: nat):
   $ decodeMovReg rex ast b l -> ast e. XAST $;
 
 def decodeMov64 (rex ast b l .r .v .imm: nat): wff =
-$ E. r E. v E. imm (l = ch x6 x3 /\
+$ E. r E. v E. imm (
     splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) b /\
     readFullImm (opSizeW rex v) imm l /\
     ast = xastMov (opSizeW rex v) (Rm_i (RM_reg (rex_reg (REX_B rex) r)) imm)) $;
