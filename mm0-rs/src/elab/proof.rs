@@ -595,6 +595,10 @@ impl NodeHash for ProofHash {
             let mut ns = Vec::new();
             for e in u { ns.push(de.dedup(nh, &e)?) }
             let td = &nh.fe.thms[tid];
+            if ns.len() != td.args.len() + td.hyps.len() {
+              return Err(nh.err_sp(fsp,
+                format!("incorrect number of theorem arguments: {}", nh.fe.to(r))))
+            }
             let mut heap = vec![None; td.heap.len()];
             let mut bvs: Vec<u64> = vec![];
             for (i, (_, t)) in td.args.iter().enumerate() {
