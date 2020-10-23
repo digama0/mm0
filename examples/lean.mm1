@@ -243,11 +243,11 @@ axiom cty_0: $ cty c0 (KS e K) e $;
 axiom cty_S: $ cty c K e $ > $ cty (cS c) (KS a K) e $;
 
 axiom ty_Ind (K: indspec t): $ spec G t F K $ > $ G |- Ind t F K : F $;
-axiom ty_Ctor (K: indspec x):
+axiom ty_Ctor (A: expr t) (K: indspec t):
   $ spec G t F K $ >
   $ cty c K A $ >
   $ subst: A [Ind t F K / t] = B $ >
-  $ G |- Ctor c x e K : B $;
+  $ G |- Ctor c t e K : B $;
 
 term LE_mem {x: expr} (e: expr): prov;
 axiom LE_mem_0 (f: expr x): $ LE_mem x (f @ x) $;
@@ -306,11 +306,11 @@ axiom Rec_beta_app (T C c A A2 e1 e: expr t):
   $ Rec_app T C A2 e $ >
   $ subst: A [T / t] = A2 $ >
   $ Rec_beta t T C c A e1 e1 (e @ c) $;
-axiom Rec_beta_Pi (A A2 C c B e1 e2 e3: expr x t):
+axiom Rec_beta_Pi (T A A2 C c B e1 e2 e3: expr x t):
   $ subst: A [T / t] = A2 $ >
   $ Rec_beta t T C (c @ x) B e1 e2 e3 $ >
   $ Rec_beta t T C c (A. x : A, B) (A. x : A2, e1) e2 e3 $;
-axiom Rec_beta_rec (A A2 C c B e1 e2 e3: expr u t):
+axiom Rec_beta_rec (T A A2 C c D B e1 e2 e3: expr u t):
   $ Rec_delta T C u A2 D $ >
   $ subst: A [T / t] = A2 $ >
   $ Rec_beta t T C (c @ u) B e1 e2 e3 $ >
@@ -324,15 +324,15 @@ axiom Rec_alpha_S (e: expr):
 
 term Rec_epsilon {t: expr} (F: expr) (L: indspec t)
   (C: expr t) (c: cidx) (K: indspec t) (e: expr t): prov;
-axiom Rec_epsilon_0:
+axiom Rec_epsilon_0 (F C e: expr t) (L: indspec t):
   $ Rec_alpha (Ind t F L) F C e $ >
   $ Rec_epsilon t F L C c K0 e $;
-axiom Rec_epsilon_S:
+axiom Rec_epsilon_S (A F C a e e2: expr t) (K L: indspec t):
   $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A e2 e2 $ >
   $ Rec_epsilon t F L C (cS c) K e $ >
   $ Rec_epsilon t F L C c (KS a K) (A -> e) $;
 
-axiom ty_Rec (e: expr C):
+axiom ty_Rec (K: indspec t) (e: expr C):
   $ spec G t F K $ >
   $ LE G t F K u $ >
   $ Rec_kappa u (Ind t F K) F ka $ >
@@ -348,13 +348,13 @@ axiom iota_delta_S (C u B e: expr x):
   $ iota_delta t C u (A. x : A, B) (\. x : A, e) $;
 
 term iota_beta (G: ctx) {t: expr} (C c A e r1 r2 v1 v2: expr t): prov;
-axiom iota_beta_app (C c A e r v: expr t):
+axiom iota_beta_app (A C c e r v: expr t):
   $ Rec_app t C A e $ >
   $ iota_beta G t C c A (e @ c) r r v v $;
 axiom iota_beta_Pi (C c B e r1 r2 v1 v2: expr x t):
   $ iota_beta G t C (c @ x) B e (r1 @ x) r2 v1 v2 $ >
   $ iota_beta G t C c (A. x : A, B) e r1 r2 v1 v2 $;
-axiom iota_beta_rec (A C c B e r1 r2 v1 v2: expr u t):
+axiom iota_beta_rec (A C c B e r1 r2 v1 v2: expr t):
   $ iota_delta t C u A v $ >
   $ iota_beta G t C (c @ u) B e (r1 @ u) r2 (v1 @ v) v2 $ >
   $ iota_beta G t C c (A -> B) e r1 r2 v1 v2 $;
@@ -363,12 +363,12 @@ term iota_epsilon2 (G: ctx) (t F: expr) (L: indspec t)
   (C: expr) (c: cidx) (K: indspec) (R e: expr): prov;
 axiom iota_epsilon2_0:
   $ iota_epsilon2 G t F L C c K0 R R $;
-axiom iota_epsilon2_S:
+axiom iota_epsilon2_S (K L: indspec t) (A C F R a e r x: expr t):
   $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
   $ G |- x : A $ >
   $ iota_epsilon2 G t F L C (cS c) K (R @ x) e $ >
   $ iota_epsilon2 G t F L C c (KS a K) R e $;
-theorem iota_epsilon2_1
+theorem iota_epsilon2_1 (L: indspec t) (A C F R a r x: expr t)
   (h1: $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $)
   (h2: $ G |- x : A $):
   $ iota_epsilon2 G t F L C c (K1 a) R (R @ x) $ =
@@ -376,19 +376,19 @@ theorem iota_epsilon2_1
 
 term iota_epsilon (G: ctx) (t F: expr) (L: indspec t)
   (C: expr) (c: cidx) (K: indspec) (R e1 e2: expr): prov;
-axiom iota_epsilon_0:
+axiom iota_epsilon_0 (K L: indspec t) (A C F R R2 a e e1 e2 r x v: expr t):
   $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
   $ G |- e : A $ >
   $ iota_beta G t R2 (Ctor c t F L) a e1 e v v e2 $ >
   $ iota_epsilon2 G t F L C (cS c) K (R @ x) R2 $ >
   $ iota_epsilon G t F L C c (KS a K) R e1 e2 $;
-axiom iota_epsilon_S:
+axiom iota_epsilon_S (K L: indspec t) (A C F R a e1 e2 r x: expr t):
   $ Rec_beta t (Ind t F L) C (Ctor c t F L) a A r r $ >
   $ G |- x : A $ >
   $ iota_epsilon G t F L C (cS c) K (R @ x) e1 e2 $ >
   $ iota_epsilon G t F L C c (KS a K) R e1 e2 $;
 
-axiom conv_iota:
+axiom conv_iota (K: indspec t) (C F ka e1 e2: expr t):
   $ spec G t F K $ >
   $ LE G t F K u $ >
   $ Rec_kappa u (Ind t F K) F ka $ >
