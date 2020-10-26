@@ -92,6 +92,7 @@ theorem mulx11: $ x1 * a = a $ = '(eqtr (muleq1 h2n1) mul11);
 theorem mulx12: $ a * x1 = a $ = '(eqtr (muleq2 h2n1) mul12);
 theorem h2n10: $ 16 = x1 :x x0 $ = '(eqtr2 hex02 mulx11);
 do {
+  (def (sucs n) (iterate n (fn (x) '(suc ,x)) '(d0)))
   (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
     (if {n < 8}
       (if {n < 4}
@@ -557,6 +558,8 @@ theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
 theorem d2pow8x: $ 2 ^ 8 = ,256 $ = '(eqtr d2pow8 ,to_hex);
 theorem d2pow16x: $ 2 ^ 16 = ,0x10000 $ =
 '(eqtr3 (poweq2 d8add8) @ eqtr powadd @ eqtr (muleq d2pow8 d2pow8) ,norm_num);
+theorem upto4: $ upto 4 = xf $ =
+'(mpbi peano2 @ eqtr sucupto @ eqtr4 d2pow4 ,norm_num);
 theorem upto16: $ upto 16 = ,0xffff $ =
 '(mpbi peano2 @ eqtr sucupto @ eqtr4 d2pow16x ,norm_num);
 
@@ -566,6 +569,10 @@ theorem xlt16pow1: $ h2n x < 16 ^ suc k $ =
 '(ltletr h2nlt @ mpbi (leeq1 pow12) @ lepow2a d16ne0 le11S);
 theorem xlt16powS (h: $ a < 16 ^ k $): $ a :x x < 16 ^ suc k $ =
 '(mpbir (lteq2 powS2) @ xltmul16 h);
+
+theorem hexshl4: $ a :x b = shl a 4 + b $ = '(addeq1 @ muleq2 @ eqcom d2pow4);
+theorem shrhex4: $ shr (a :x b) 4 = a $ =
+'(eqtr (shreq1 hexshl4) @ shrshladdid @ mpbir (lteq2 d2pow4) h2nlt);
 
 theorem x16powS (h: $ 16 ^ k = a $): $ 16 ^ suc k = a :x x0 $ =
 '(eqtr powS2 @ eqtr4 (muleq1 h) hex02);

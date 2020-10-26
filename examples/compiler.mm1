@@ -29,92 +29,191 @@ theorem xtoBytes0: $ s0 = toBytes 0 a $ = '(eqtr4 s2ns0 toBytes0);
 theorem xtoBytesS (h: $ s = toBytes k n $): $ ch a1 a0 ': s = toBytes (suc k) (n :x a1 :x a0) $ =
 '(eqtr4 (s2n_S (eqtr4 c2nhex @ anr hex_divmod256) @
     eqtr4 h @ toByteseq2 @ anl hex_divmod256) toBytesS);
-theorem xtoBytes1: $ s1 (ch a1 a0) = toBytes 1 (a1 :x a0) $ =
-'(eqtr3 s2nscons0 @ eqtr (xtoBytesS xtoBytes0) @ toByteseq2 @ hexeq1 hex01);
+theorem xtoBytesS2 (h: $ s = toBytes k x0 $): $ ch a1 a0 ': s = toBytes (suc k) (a1 :x a0) $ =
+'(eqtr (xtoBytesS h) @ toByteseq2 @ hexeq1 hex01);
+theorem xtoBytesS1 (h: $ s = toBytes k x0 $): $ ch x0 a0 ': s = toBytes (suc k) a0 $ =
+'(eqtr (xtoBytesS2 h) @ toByteseq2 hex01);
+theorem xtoBytes1S: $ s1 (ch a1 a0) = toBytes (suc 0) (n :x a1 :x a0) $ =
+'(eqtr3 s2nscons0 @ xtoBytesS xtoBytes0);
+theorem xtoBytes12: $ s1 (ch a1 a0) = toBytes (suc 0) (a1 :x a0) $ =
+'(eqtr3 s2nscons0 @ xtoBytesS2 xtoBytes0);
+theorem xtoBytes11: $ s1 (ch x0 a0) = toBytes (suc 0) a0 $ =
+'(eqtr xtoBytes12 @ toByteseq2 hex01);
+
+theorem xbitNotS (h0: $ a + b = xf $) (h1: $ c = bitsNot k n $):
+  $ c :x b = bitsNot (k + 4) (n :x a) $ = '(eqtr4 (hexeq1 h1) (bitsNot_hex h0));
+theorem xbitNot1 (h0: $ a + h2n b = xf $): $ b = bitsNot 4 (n :x a) $ =
+'(eqtr3 hex01_ @ eqtr (xbitNotS h0 @ eqcom bitsNot01) @ bitsNoteq1 add01);
+theorem xbitNot_ch (h0: $ a0 + c0 = xf $) (h1: $ a1 + c1 = xf $):
+  $ c2n (ch c1 c0) = bitsNot 8 (n :x a1 :x a0) $ =
+'(eqtr c2nch @ eqtr (xbitNotS h0 @ xbitNot1 h1) @ bitsNoteq1 d4add4);
 
 theorem xtoIBytes0: $ s0 = toIBytes 0 a $ = 'xtoBytes0;
+theorem xtoIBytesSb0_ (h: $ s = toBytes k n $): $ s = toIBytes k (b0 n) $ = '(eqtr4 h toIBytes_b0);
 theorem xtoIBytesSb0 (h: $ s = toIBytes k (b0 n) $):
   $ ch a1 a0 ': s = toIBytes (suc k) (b0 (n :x a1 :x a0)) $ =
-'(eqtr4 (xtoBytesS @ eqtr h toIBytes_b0) toIBytes_b0);
-theorem xbitNot_ch (h0: $ a0 + c0 = xf $) (h1: $ a1 + c1 = xf $):
-  $ c2n (ch c1 c0) = bitsNot 8 (n :x a1 :x a0) $;
-theorem xtoIBytesSb1 (h0: $ a0 + c0 = xf $) (h1: $ a1 + c1 = xf $)
-  (h: $ s = toIBytes k (b1 n) $):
+'(xtoIBytesSb0_ @ xtoBytesS @ eqtr h toIBytes_b0);
+theorem xtoIBytes02 (h: $ s = toBytes k 0 $): $ s2n s = toIBytes k 0 $ =
+'(eqtr (xtoIBytesSb0_ h) @ toIByteseq2 b00);
+theorem xtoIBytesSb1S (h0: $ a0 + c0 = xf $) (h1: $ a1 + c1 = xf $) (h: $ s = toIBytes k (b1 n) $):
   $ ch c1 c0 ': s = toIBytes (suc k) (b1 (n :x a1 :x a0)) $ =
 '(eqtr s2nscons @ eqtr4 (conseq (xbitNot_ch h0 h1) @
   eqtr4 h @ toIByteseq2 @ b1eq @ anli xchopshr8) toIBytesS_b1);
+theorem xtoIBytesSb12 (h0: $ a0 + c0 = xf $) (h1: $ a1 + c1 = xf $) (h: $ s = toIBytes k (b1 x0) $):
+  $ ch c1 c0 ': s = toIBytes (suc k) (b1 (h2n a1 :x a0)) $ =
+'(eqtr (xtoIBytesSb1S h0 h1 h) @ toIByteseq2 @ b1eq @ hexeq1 hex01);
+theorem xtoIBytesSb11 (h0: $ a0 + c0 = xf $) (h: $ s = toIBytes k (b1 x0) $):
+  $ ch xf c0 ': s = toIBytes (suc k) (b1 (h2n a0)) $ =
+'(eqtr (xtoIBytesSb12 h0 addx01 h) @ toIByteseq2 @ b1eq hex01);
+theorem xtoIBytesSb10 (h: $ s = toIBytes k (b1 x0) $):
+  $ ch xf xf ': s = toIBytes (suc k) (b1 x0) $ = '(xtoIBytesSb11 addx01 h);
+
+theorem xu16Bytes (h: $ s2n s = toBytes ,(sucs 2) n $): $ s = u16Bytes n $ = 'h;
+theorem xu32Bytes (h: $ s2n s = toBytes ,(sucs 4) n $): $ s = u32Bytes n $ = 'h;
+theorem xu64Bytes (h: $ s2n s = toBytes ,(sucs 8) n $): $ s = u64Bytes n $ = 'h;
+theorem xi8Bytes (h: $ s2n s = toIBytes ,(sucs 1) n $): $ s = i8Bytes n $ = 'h;
+theorem xi16Bytes (h: $ s2n s = toIBytes ,(sucs 2) n $): $ s = i16Bytes n $ = 'h;
+theorem xi32Bytes (h: $ s2n s = toIBytes ,(sucs 4) n $): $ s = i32Bytes n $ = 'h;
+theorem xi64Bytes (h: $ s2n s = toIBytes ,(sucs 8) n $): $ s = i64Bytes n $ = 'h;
 
 theorem xu8Byte_2 (a0 a1: hex): $ ch a1 a0 = a1 :x a0 $ = 'c2nhex;
 theorem xu8Byte_1 (a0: hex): $ ch x0 a0 = a0 $ = 'c2nh2n;
 theorem xelu8_1 (a0: hex): $ a0 e. u8 $ = '(mpbi (eleq1 xu8Byte_1) c2nT);
 theorem xelu8_2 (a0 a1: hex): $ a1 :x a0 e. u8 $ = '(mpbi (eleq1 xu8Byte_2) c2nT);
 
-do {
-  -- Constructs theorems like:
-  -- theorem xu32Bytes_2 (a0 a1: hex):
-  --   $ s2n (ch a1 a0 ': ch (x0) (x0) ': ch (x0) (x0) ': s1 (ch (x0) (x0))) =
-  --     u32Bytes (h2n a1 :x a0) $;
-  -- for u16, u32 and u64, and _2 counts the number of hex digits
-  -- (from 1 to n/4 for the n-bit type)
-  (scan '(16 32 64) @ fn (n)
-    (def (name max) @ atom-app 'xu n 'Bytes_ max)
-    (def (name2 max) @ atom-app 'xelu n '_ max)
-    (def m {n // 4})
-    (def (ai max i) @ if {i < max} (atom-app 'a i) '(x0))
-    (def (mk_thm max proof)
-      @ letrec (
-        [(lhs i) (def j {i + 2})
-          (def ch '(ch ,(ai max {i + 1}) ,(ai max i)))
-          (if {j == m} '(s1 ,ch) '(scons ,ch ,(lhs j)))]
-        [(rhs i) (def j {i + 1})
-          (if {j == max} '(h2n ,(ai max i)) '(hex ,(rhs j) ,(ai max i)))])
-      (def args @ rmap (range 0 max) @ fn (i) '(,(ai max i) hex ()))
-      (def rhs (rhs 0))
-      (add-tac-thm! (name max) args ()
-        '(eq (s2n ,(lhs 0)) (,(atom-app 'u n 'Bytes) ,rhs)) () proof)
-      (add-tac-thm! (name2 max) args () '(el ,rhs (,(atom-app 'u n))) () @ fn ()
-        '(mpbir ,(atom-app 'elu n)
-          ,(iterate {{max - 1} // 2} (fn (x) '(xlt256powS ,x))
-            (if {{max % 2} == 0} 'xlt256pow1 'xlt256pow0)))))
-    (mk_thm m @ fn ()
-      @ iterate {{n // 8} - 1} (fn (x) '(xtoBytesS ,x)) 'xtoBytes1)
-    (for 1 m @ fn (max)
-      @ mk_thm max @ fn ()
-      '(eqtr ,(name m) @ ,(atom-app 'u n 'Byteseq)
-        ,(iterate {max - 1} (fn (x) '(hexeq1 ,x))
-        @ iterate {m - max - 1} (fn (x) '(eqtr (hexeq1 ,x) hex01))
-        'hex01))))
+theorem xelBits4S (h: $ n e. Bits (4 * k) $): $ n :x a e. Bits (4 * suc k) $ =
+'(mpbir (elneq2 @ Bitseq mulS) (hexT h));
+theorem xelBits41: $ h2n a e. Bits (4 * suc k) $ =
+'(mpbi (eleq1 hex01_) @ xelBits4S elBits01);
+theorem xelBits8S (h: $ n e. Bits (8 * k) $): $ n :x a1 :x a0 e. Bits (8 * suc k) $ =
+'(mpbir (elneq2 @ Bitseq mulS) (hex2T h));
+theorem xelBits82: $ h2n a1 :x a0 e. Bits (8 * suc k) $ =
+'(mpbi (eleq1 @ hexeq1 hex01_) @ xelBits8S elBits01);
+theorem xelBits81: $ h2n a0 e. Bits (8 * suc k) $ =
+'(mpbi (eleq1 hex01) xelBits82);
+theorem xelBits7S (h: $ n e. Bits (8 * k + 7) $): $ n :x a1 :x a0 e. Bits (8 * suc k + 7) $ =
+'(mpbir (elneq2 @ Bitseq @ eqtr (addeq1 mulS) addrass) (hex2T h));
+theorem xelBits72S: $ h2n a1 :x a0 e. Bits (8 * suc k + 7) $ =
+'(mpbi (elneq (hexeq1 hex01_) @ Bitseq @ eqtr4 addrass @ addeq1 mulS) (hex2T elBits01));
+theorem xelBits720 (h: $ a1 < x8 $): $ h2n a1 :x a0 e. Bits (8 * 0 + 7) $ =
+'(mpbi (elneq2 @ Bitseq {,norm_num : $ 3 + 4 = _ $})
+  (hexT @ mpbir elBits2 @ mpbir (lteq2 @ eqtr d2pow3 dec8) h));
+theorem xelBits71: $ h2n a0 e. Bits (8 * k + 7) $ =
+'(Bitsle (letr {,norm_num : $ 4 <= 7 $} leaddid2) h2nT);
 
-  -- (to_u8_ch a) returns a pair `(c p)` where p: $ c2n c = a $
-  (def to_u8_ch @ match-fn
+theorem xeluNlem (e: $ 8 * k = n $) (h: $ a e. Bits (8 * k) $): $ a e. Bits n $ =
+'(mpbi (elneq2 @ Bitseq e) h);
+theorem xelu8i (h: $ a e. Bits (8 * suc 0) $): $ a e. u8 $ = '(xeluNlem mul12 h);
+theorem xelu16i (h: $ a e. Bits (8 * ,(sucs 2)) $): $ a e. u16 $ = '(xeluNlem d8mul2 h);
+theorem xelu32i (h: $ a e. Bits (8 * ,(sucs 4)) $): $ a e. u32 $ = '(xeluNlem d8mul4 h);
+theorem xelu64i (h: $ a e. Bits (8 * ,(sucs 8)) $): $ a e. u64 $ = '(xeluNlem d8mul8 h);
+theorem xelBits7b0 (h: $ a e. Bits (8 * k + 7) $): $ b0 a e. Bits (8 * suc k) $ =
+'(mpbir (elneq2 @ Bitseq @ eqtr mulS addS2) @ mpbi b0Bits h);
+theorem xelBits7b1 (h: $ a e. Bits (8 * k + 7) $): $ b1 a e. Bits (8 * suc k) $ =
+'(mpbir (elneq2 @ Bitseq @ eqtr mulS addS2) @ mpbi b1Bits h);
+theorem xelu8b0i (h: $ a e. Bits (8 * 0 + 7) $): $ b0 a e. u8 $ = '(xelu8i @ xelBits7b0 h);
+theorem xelu8b1i (h: $ a e. Bits (8 * 0 + 7) $): $ b1 a e. u8 $ = '(xelu8i @ xelBits7b1 h);
+theorem xelu16b0i (h: $ a e. Bits (8 * ,(sucs 1) + 7) $): $ b0 a e. u16 $ = '(xelu16i @ xelBits7b0 h);
+theorem xelu16b1i (h: $ a e. Bits (8 * ,(sucs 1) + 7) $): $ b1 a e. u16 $ = '(xelu16i @ xelBits7b1 h);
+theorem xelu32b0i (h: $ a e. Bits (8 * ,(sucs 3) + 7) $): $ b0 a e. u32 $ = '(xelu32i @ xelBits7b0 h);
+theorem xelu32b1i (h: $ a e. Bits (8 * ,(sucs 3) + 7) $): $ b1 a e. u32 $ = '(xelu32i @ xelBits7b1 h);
+theorem xelu64b0i (h: $ a e. Bits (8 * ,(sucs 7) + 7) $): $ b0 a e. u64 $ = '(xelu64i @ xelBits7b0 h);
+theorem xelu64b1i (h: $ a e. Bits (8 * ,(sucs 7) + 7) $): $ b1 a e. u64 $ = '(xelu64i @ xelBits7b1 h);
+
+do {
+  -- (to-u8-ch a) returns a pair `(c p)` where p: $ c2n c = a $
+  (def to-u8-ch @ match-fn
     [('hex ('h2n a) b) '((ch ,a ,b) (c2nhex ,a ,b))]
     [('h2n a) '((ch (x0) ,a) (c2nh2n ,a))])
 
-  -- (to_fixed_str N a) returns a pair `(s p)` where p: $ s2n s = uNBytes a $
-  -- assuming N = 16,32,64
-  (def (to_fixed_str n a)
-    @ letrec (
-      [get-args @ match-fn
-        [('hex a b) (cons b (get-args a))]
-        [('h2n a) (list a)]]
-      [str @ match-fn
-        [(b a) '(s1 (ch ,a ,b))]
-        [(b a . c) '(scons (ch ,a ,b) ,(str c))]])
-    (def args (get-args a))
-    (def max (len args))
-    (def m {n // 4})
-    @ list (str @ append args (repeat '(x0) {m - max}))
-    @ cons (atom-app 'xu n 'Bytes_ max) args)
+  -- (to-toBytes k n) returns (s p) where p: $ s2n s = toBytes k n $.
+  -- Note that `k` should be a unary numeral constructed by (sucs)
+  (def (to-toBytes k n) @ match k
+    [$suc ,k$ @ match k
+      [$0$ @ match n
+        [$,n :x ,a1 :x ,a0$ '($s1 (ch ,a1 ,a0)$ (xtoBytes1S ,a0 ,a1 ,n))]
+        [$h2n ,a1 :x ,a0$ '($s1 (ch ,a1 ,a0)$ (xtoBytes12 ,a0 ,a1))]
+        [$h2n ,a0$ '($s1 (ch ,'(x0) ,a0)$ (xtoBytes11 ,a0))]]
+      [_ @ match n
+        [$,n :x ,a1 :x ,a0$ @ match (to-toBytes k n) @ (s p)
+          '($ch ,a1 ,a0 ': ,s$ (xtoBytesS ,a0 ,a1 ,k ,n ,s ,p))]
+        [$h2n ,a1 :x ,a0$ @ match (to-toBytes k '(h2n @ x0)) @ (s p)
+          '($ch ,a1 ,a0 ': ,s$ (xtoBytesS2 ,a0 ,a1 ,k ,s ,p))]
+        [$h2n ,a0$ @ match (to-toBytes k '(h2n @ x0)) @ (s p)
+          '($ch ,'(x0) ,a0 ': ,s$ (xtoBytesS1 ,a0 ,k ,s ,p))]]]
+    [$0$ '($s0$ (xtoBytesS1 ,n))])
 
-  -- (to_elu N a) returns a proof that a is a hex literal in uN: $ a e. uN $
+  -- (to-uNBytes N a) returns a pair `(s p)` where p: $ s2n s = uNBytes a $
+  -- assuming N = 16,32,64
+  (def (to-uNBytes n a)
+    (def k (sucs {n // 8}))
+    @ match (to-toBytes k a) @ (s p)
+    '(,s (,(atom-app 'xu n 'Bytes) ,a ,s ,p)))
+
+  -- (decnot a) = (b p) where p: $ a + b = xf $
+  (def decnot @ match-fn @ (a)
+    @ let ([n (hexdigit->number a)] [m {15 - n}])
+    '((,(hexdigit m)) ,(nth 1 @ decaddn n m)))
+
+  -- (to-toIBytesb1 k n) = (s p) where p: $ s2n s = toIBytes k (b1 n) $
+  (def (to-toIBytesb1 k n) @ match k
+    [$0$ '(s0 (xtoIBytes0 (b1 ,n)))]
+    [$suc ,k$ @ match n
+      ['(h2n @ x0) @ match (to-toIBytesb1 k '(h2n @ x0)) @ (s p)
+        '($ ch xf xf ': ,s$ (xtoIBytesSb10 ,k ,s ,p))]
+      [$,n :x ,a1 :x ,a0$ @ match (to-toIBytesb1 k n) @ (s p)
+        @ match (decnot a0) @ (c0 p0) @ match (decnot a1) @ (c1 p1)
+        '($ch ,c1 ,c0 ': ,s$ (xtoIBytesSb1S ,a0 ,a1 ,c0 ,c1 ,k ,n ,s ,p0 ,p1 ,p))]
+      [$h2n ,a1 :x ,a0$ @ match (to-toIBytesb1 k '(h2n @ x0)) @ (s p)
+        @ match (decnot a0) @ (c0 p0) @ match (decnot a1) @ (c1 p1)
+        '($ch ,c1 ,c0 ': ,s$ (xtoIBytesSb12 ,a0 ,a1 ,c0 ,c1 ,k ,n ,s ,p0 ,p1 ,p))]
+      [$h2n ,a0$ @ match (to-toIBytesb1 k '(h2n @ x0)) @ (s p)
+        @ match (decnot a0) @ (c0 p0)
+        '($ch ,'(xf) ,c0 ': ,s$ (xtoIBytesSb11 ,a0 ,c0 ,k ,s ,p0 ,p))]])
+
+  -- (to-iNBytes N a) returns a pair `(s p)` where p: $ s2n s = iNBytes a $
   -- assuming N = 8,16,32,64
-  (def (to_elu n a)
-    @ letrec (
-      [get-args @ match-fn
-        [('hex a b) (cons b (get-args a))]
-        [('h2n a) (list a)]])
-    (def args (get-args a))
-    @ cons (atom-app 'xelu n '_ (len args)) args)
+  (def (to-iNBytes n a)
+    (def k (sucs n))
+    @ match (match a
+      [$0$ @ match (to-uNBytes n a) @ (s p) '(,s (xtoIBytes02 ,k ,s ,p))]
+      [$b0 ,a$ @ match (to-uNBytes n a) @ (s p) '(,s (xtoIBytesSb0_ ,k ,a ,s ,p))]
+      [$b1 ,a$ (to-toIBytesb1 k a)])
+    [(s p) '(,s (,(atom-app 'xi n 'Bytes) ,a ,s ,p))])
+
+  -- (to-elBits4 k n) proves $ n e. Bits (4 * k) $
+  (def (to-elBits4 k n) @ match k
+    [$suc ,k$ @ match n
+      [$,n :x ,a$ '(xelBits4S ,a ,k ,n ,(to-elBits4 k n))]
+      [$h2n ,a$ '(xelBits41 ,a ,k)]])
+
+  -- (to-elBits8 k n) proves $ n e. Bits (8 * k) $
+  (def (to-elBits8 k n) @ match k
+    [$suc ,k$ @ match n
+      [$,n :x ,a1 :x ,a0$ '(xelBits8S ,a0 ,a1 ,k ,n ,(to-elBits8 k n))]
+      [$h2n ,a1 :x ,a0$ '(xelBits82 ,a0 ,a1 ,k)]
+      [$h2n ,a0$ '(xelBits81 ,a0 ,k)]])
+
+  -- (to-elBits7 k n) proves $ n e. Bits (8 * k + 7) $
+  (def (to-elBits7 k n) @ match n
+    [$,n :x ,a1 :x ,a0$ @ match k
+      [$suc k$ '(xelBits7S ,a0 ,a1 ,k ,n ,(to-elBits8 k n))]]
+    [$h2n ,a1 :x ,a0$ @ match k
+      [$suc k$ '(xelBits72S ,a0 ,a1 ,k)]
+      [$0$ '(xelBits720 ,a0 ,a1 ,(atom-app 'declt (hexstring (hex->number a1)) 8))]]
+    [$h2n ,a0$ '(xelBits71 ,a0 ,k)])
+
+  -- (to-elu N a) returns a proof that a is a hex literal in uN: $ a e. uN $
+  -- assuming N = 8,16,32,64
+  (def (to-elu n a)
+    '(,(atom-app 'xelu n 'i) ,a ,(to-elBits8 (sucs {n // 8}) a)))
+
+  -- (to-eli N a) returns a proof that a is a signed hex literal in uN: $ a e. uN $
+  -- assuming N = 8,16,32,64
+  (def (to-eli n a) @ match a
+    [$b0 ,a$ '(,(atom-app 'xelu n 'b0i) ,a ,(to-elBits8 (sucs {{n // 8} - 1}) a))]
+    [$b1 ,a$ '(,(atom-app 'xelu n 'b1i) ,a ,(to-elBits8 (sucs {{n // 8} - 1}) a))]
+    [_ (to-elu n a)])
 };
 
 def _x00: char = 0;
@@ -169,7 +268,7 @@ theorem load_start_pow2: $ load_start x0 x0 = 2 ^ ,22 $ =
   poweq2 ,norm_num);
 
 theorem load_start_T: $ load_start x y e. u64 $ =
-'(ssel u32ss64 @ mpbir elu32 @ xlt256powS @ xlt256powS xlt256pow1);
+'(ssel u32ss64 @ xelu32i @ xelBits8S @ xelBits8S xelBits82);
 theorem load_start_eq: $ load_start_s (ch x y) = u64Bytes (load_start x y) $ =
 (focus
   '(xtoBytesS @ xtoBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
@@ -185,8 +284,8 @@ theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
   $ elfHeader (ELF_header_s e) entry 64 0 1 0 $ =
 (focus
   (for 0 7 @ fn (_) (refine '(ian _ _)))
-  (def h0 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow0))
-  (def h1 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow1))
+  (def h0 '(mpbir (eleq1 ,to_hex) xelu8_1))
+  (def h1 '(mpbir (eleq1 ,to_hex) xelu8_2))
   (def h2 '(mpbir (lteq2 @ eqtr bitsNeg1 upto16) ,norm_num))
   (refine 'he2 '(ssel u8ss64 ,h1) 'elBits01
     '(ssel u8ss16 ,h0) h2 'elBits01 h2) (swap)
@@ -239,8 +338,8 @@ theorem basic_pHeader_ok
       (ch x7 x8) text_start filesz memsz $ =
 (focus
   (for 0 7 @ fn (_) (refine '(ian _ _)))
-  (def h0 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow0))
-  (def h1 '(mpbir elu8_3 @ mpbir (lteq1 ,to_hex) xlt256pow1))
+  (def h0 '(mpbir (eleq1 ,to_hex) xelu8_1))
+  (def h1 '(mpbir (eleq1 ,to_hex) xelu8_2))
   (refine '(ssel u8ss32 {,h0 : $ 1 e. _ $}) 'PROT_RWX_T
     '(ssel u8ss64 ,h1) 'load_start_T '(Bitsle1 hle hms2) 'hms2 'hle)
   (have 'hM '(eqtr3 load_start_eq2 @ addeq load_start_pow2 @ eqcom c2nhex))
@@ -641,9 +740,6 @@ theorem decodeFlowI  (h: $ decodeFlow rex ast b l $):  $ decodeAux rex ast b l $
 theorem decodeMiscI  (h: $ decodeMisc rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orr h);
 theorem decodeHiI    (h: $ decodeHi rex ast b l $):    $ decodeAux rex ast b l $ = '(orl @ orr h);
 
--- theorem decodeMovRegI (h: $ decodeMovReg rex ast b l $): $ decodeAux rex ast b l $ =
--- '(decodeMovI @ orl @ orl @ orr h);
-
 theorem decodeMovRegI
   (h1: $ splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : 0) a $)
   (h2: $ opSizeW rex v = sz $)
@@ -862,7 +958,7 @@ do {
     (def pos (hex->number pos_x))
     (def filesz {pos - start})
     (def filesz_x (->hex filesz))
-    @ match (to_fixed_str 64 filesz_x) @ (filesz_s filesz_p)
+    @ match (to-uNBytes 64 filesz_x) @ (filesz_s filesz_p)
 
     (def asmd (atom-app pfx 'assembled))
     (add-tac-thm! asmd () ()
@@ -876,12 +972,12 @@ do {
           ,(verb @ nth 1 @ mkadd start_x filesz_x)))
 
     @ match entry @ (entry_idx entry_x)
-    @ match (to_fixed_str 64 entry_x) @ (entry_s entry_p)
+    @ match (to-uNBytes 64 entry_x) @ (entry_s entry_p)
 
     (def bss_x (->hex bss))
     (def memsz {filesz + bss})
     (def memsz_x (->hex memsz))
-    @ match (to_fixed_str 64 memsz_x) @ (memsz_s memsz_p)
+    @ match (to-uNBytes 64 memsz_x) @ (memsz_s memsz_p)
 
     (add-term! base () '(string ()) () vis
       '(ELF_lit ,entry_s ,filesz_s ,memsz_s (,content)))
@@ -900,7 +996,7 @@ do {
         (assembled_func_bound @ anri
           ,(iterate {(len xs) - 1 - entry_idx}
             (fn (x) '(anli ,x)) '(anri ,asmd)))
-        ,(verb @ to_elu 64 end_x)))
+        ,(verb @ to-elu 64 end_x)))
 
     (add-thm! (atom-app pfx 'basicElf) () ()
       '(isBasicElf (,base)) vis

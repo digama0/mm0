@@ -170,14 +170,6 @@ theorem c2nlt256 (c: char): $ c < 256 $ = '(mpbi (lteq2 d16mul16) c2nlt);
 theorem c2nlt256pow (c: char): $ c < 256 ^ suc k $ =
 '(ltletr c2nlt256 @ mpbi (leeq1 pow12) @ lepow2a d256ne0 le11S);
 
-theorem xlt256pow1 (x: hex): $ x :x y < 256 ^ suc k $ =
-'(mpbi (lteq1 c2nhex) c2nlt256pow);
-theorem xlt256pow0 (x: hex): $ x < 256 ^ suc k $ =
-'(mpbi (lteq1 hex01) xlt256pow1);
-theorem xlt256powS (h: $ a < 256 ^ k $): $ a :x x :x y < 256 ^ suc k $ =
-'(mpbir (lteq2 @ eqtr4 powS2 @ eqtr mulass @ muleq2 d16mul16) @
-  xltmul16 @ xltmul16 h);
-
 theorem d8le32: $ 8 <= 32 $ = norm_num;
 theorem d8le64: $ 8 <= 64 $ = norm_num;
 theorem d16lt32: $ 16 < 32 $ = norm_num;
@@ -259,6 +251,10 @@ theorem mod_el_Bits: $ a % (2 ^ k) e. Bits k $ = '(mpbir elupto @ modlt pow2ne0)
 
 theorem h2nT (h: hex): $ h e. Bits 4 $ =
 '(mpbir elBits2 @ mpbir (lteq2 d2pow4) h2nlt);
+theorem hexT: $ a e. Bits k -> a :x x e. Bits (k + 4) $ =
+'(sylibr (eleq1 hexshl4) @ sylan shladdT id (a1i h2nT));
+theorem hex2T: $ a e. Bits k -> a :x x :x y e. Bits (k + 8) $ =
+'(sylib (elneq2 @ Bitseq @ eqtr addass @ addeq2 d4add4) @ syl hexT hexT);
 
 @_ def u8: nat = $ Bits 8 $;
 @_ def u16: nat = $ Bits 16 $;
@@ -310,6 +306,10 @@ theorem chop_shl_0: $ m <= k -> chop m (shl a k) = 0 $ =
 theorem shladd_uniq: $ a e. Bits k /\ shl m k + a = n <-> shr n k = m /\ chop k n = a $ =
 '(ibii (eqdivmod (sylib elBits2 anl) @ syl5eq (addeq1 mulcom) anr) @
   mpbii (ian chopT shlshr_chop) ,(eqtac-with #f));
+
+theorem chop_shladd: $ b e. Bits k -> chop k (shl a k + b) = b $ =
+'(anrd @ sylib shladd_uniq @ iand id eqidd);
+theorem chop4hex: $ chop 4 (a :x b) = b $ = '(eqtr (chopeq2 hexshl4) @ chop_shladd h2nT);
 
 theorem Bits_chop: $ a e. Bits k -> chop k a = a $ = 'Bits_mod;
 theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
@@ -479,6 +479,7 @@ theorem bitsNot_chop: $ bitsNot k (chop k n) = bitsNot k n $ =
 theorem bitsNot_add: $ n e. Bits k -> bitsNot k n + n = upto k $ = '(sylbi elBits bitDifadd);
 theorem bitsNot_sub: $ n e. Bits k -> bitsNot k n = upto k - n $ = '(sylbi elBits bitDifsub);
 theorem bitsNot0: $ bitsNot k 0 = upto k $ = '(eqtr (bitsNot_sub elBits01) sub02);
+theorem bitsNot01: $ bitsNot 0 n = 0 $ = '(eqtr (bitDifeq1 upto0) bitDif01);
 
 theorem chop_bitsNot: $ m <= k -> chop m (bitsNot k n) = bitsNot m n $ =
 '(syl5eq chop_bitDif1 @ sylbi chop_upto bitDifeq1);
@@ -507,6 +508,17 @@ theorem zeqm_bitsNotd
   $ G -> modZ(2 ^ k): b0 (bitsNot k a) = -uZ (x +Z b0 1) $ =
 '(syl (zeqmtr zeqm_bitsNot) @ sylibr zeqmneg @
   sylib (zeqmeq2 @ eqtr zaddb0 @ b0eq add12) @ zeqmadd1d h1);
+
+theorem bitsNot4_h2n (a: hex): $ bitsNot 4 a + a = xf $ =
+'(eqtr (bitsNot_add h2nT) @ upto4);
+theorem bitsNot4_hex: $ bitsNot 4 (a :x b) + b = xf $ =
+'(eqtr (addeq1 @ eqtr3 bitsNot_chop @ bitsNoteq2 chop4hex) bitsNot4_h2n);
+
+theorem bitsNot_hex: $ b + c = xf -> bitsNot (k + 4) (a :x b) = bitsNot k a :x c $ =
+'(syl5eqr shlshr_chop @ syl6eqr hexshl4 @
+  addeqd (a1i @ shleq1 @ eqtr shr_bitsNot @ bitsNoteq pncan shrhex4)
+   (syl5eq (chop_bitsNot leaddid2) @ sylib addcan1 @ syl6eq addcom @
+    eqtr4d (a1i bitsNot4_hex) id));
 
 @_ def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
 pub theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $ = 'chopT;
@@ -593,19 +605,16 @@ theorem toBytesAuxS_app: $ a <= n ->
 pub theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $ = 'toBytesAux0_app;
 
 theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
-(focus
-  (def e '(aleqd @ imeq2d @ imeq2d @
-    eqeqd (appneq1d toBytesAuxeq1) (appneq1d toBytesAuxeq1)))
-  (def e2 '(imeqd leeq1 @ imeqd leeq1 @ eqeqd appeq2 appeq2))
-  '(!! eale x ,e2
-    (!! ind y z ,e ,e ,e ,e
-      (ax_gen @ a1i @ a1i @ eqtr4 toBytesAux0_app toBytesAux0_app)
-      (sylbi (!! cbval x y ,e2) @
+(named @ focus
+  '(!! eale x (imeqd leeq1 @ imeqd leeq1 @ eqeqd appeq2 appeq2)
+    ,(induct '(ind) 'k
+      '(ax_gen @ a1i @ a1i @ eqtr4 toBytesAux0_app toBytesAux0_app)
+      '(sylbi (cbval ,eqtac) @
         iald @ exp @ exp @ eqtr4d (anwr toBytesAuxS_app) @
         eqtr4d (syl toBytesAuxS_app anlr) @
         conseq2d @
         mpd (letrd (a1i divleid) anr) @ mpd (letrd (a1i divleid) anlr) @
-        anwll @ eale ,e2))
+        anwll @ eale ,eqtac))
     leid));
 
 pub theorem toBytesS (k n: nat):
@@ -3424,7 +3433,7 @@ pub theorem ksReachable0: $ ks e. KernelState -> ksReachable ks ks $ =
 pub theorem ksReachableS:
   $ ksStep ks ks2 -> ksReachable ks2 ks3 -> ksReachable ks ks3 $ =
 (named '(eexda @ sylbir ksPathS @ iexe ,eqtac));
-pub theorem ksReachableInd {ks1 ks2: nat} (ks: nat) (A: set):
+pub theorem ksReachableInd {ks1 ks2: nat} (ks ks3: nat) (A: set):
   $ ks e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks1 e. A -> ks2 e. A) /\
     ksReachable ks ks3 -> ks3 e. A $ =
 (named '(imp @ !! eexd l @ impcom @ syl (eale ,(eqtac-gen 'ks))
@@ -3435,7 +3444,7 @@ pub theorem ksReachableInd {ks1 ks2: nat} (ks: nat) (A: set):
       exp @ exp @ syl5bi ksPathS @ exp @ mpd anrr @
       mpd (mpd anrl @ mpd anlr anllr) an3l))));
 
-theorem ksReachableInd_rev {ks1 ks2: nat} (ks: nat) (A: set):
+theorem ksReachableInd_rev:
   $ ksr e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks2 e. A -> ks1 e. A) /\
     ksReachable ks ksr -> ks e. A $ =
 '(mpd anll @ sylib (elabe ,(eqtac-gen 'ksr)) @
@@ -3492,7 +3501,7 @@ pub theorem terminates_ensuring_succeeds (k i o: nat) (P: set):
   (have 'h '(sylc ksReachable_exit anllr (anwr anll)))
   '(imp @ sylibr eexb @ imp @ alimd @ com23 @ expcom @ eimd an4l @
     eexd @ eexda @ mpbid (eleq1d @
-      preqd (eqtrd (ksOuteqd h) an4lr) (eqtrd (ksOuteqd h) an3lr)) @
+      preqd (eqtrd (ksIneqd h) an4lr) (eqtrd (ksOuteqd h) an3lr)) @
     mpd (sylan execExit_determ
       (mpbid (execExiteq1d @ ksCfgeqd h) @ anwr anlr) anllr) anrr));
 
@@ -3670,7 +3679,7 @@ $ i e. List u8 /\
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
     ks = mkKS i 0 k2 km2) $;
-theorem initialConfigT (elf: string) (i ks: nat):
+pub theorem initialConfigT (elf: string) (i ks: nat):
   $ initialConfig elf i ks -> i e. List u8 /\ ks e. KernelState $ =
 (named '(anim2a @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @
   impd @ exp @ syl5ibrcom ,eqtac @ sylibr mkKS_T @ sylibr anass @

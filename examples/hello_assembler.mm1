@@ -17,7 +17,19 @@ do {
 
   -- pub theorem hello_basicElf: $ isBasicElf (hello) $;
   (get-decl 'hello_basicElf)
+  -- (display @ pp @ nth 6 @ get-decl 'hello_main)
 };
+
+theorem hello_decode_test: $ decode
+  (xastMov (wSz32) (Rm_i (RM_reg x2) (chopZ 64 (b0 xe))))
+  (s2n (ch (xb) (xa) ':
+  ch (x0) (xe) ': ch (x0) (x0) ': ch (x0) (x0) ': s1 (ch (x0) (x0)))) $ =
+'(decode0I @ decodeMov64I xsplitBits_a31
+    (opSizeW_0 opSize_32)
+    (readFullImm32I
+      ,(match-fn* @ (r '(el ,a ,_)) @ to-eli 32 a)
+      ,(match-fn* @ (r '(eq ,_ (i32Bytes ,b))) @ nth 1 @ to-iNBytes 32 b))
+    REX_B_0 xsplitBits_231);
 
 theorem hello_terminates:
   $ initialConfig hello i k -> terminates_ensuring k (S\ i2, {o |

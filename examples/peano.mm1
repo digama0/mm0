@@ -2172,6 +2172,15 @@ theorem mod12: $ a % 1 = 0 $ = '(mpbi lt12 @ modlt d1ne0);
 theorem div12: $ a // 1 = a $ =
 '(eqtr3 (eqtr (addeq mul11 mod12) add02) divmod);
 
+theorem muladddiv2: $ b != 0 /\ c < b -> (b * a + c) // b = a $ =
+'(anld @ eqdivmod anr eqidd);
+theorem muladddiv1: $ b != 0 /\ c < b -> (a * b + c) // b = a $ =
+'(syl5eq (diveq1 @ addeq1 mulcom) muladddiv2);
+theorem muladdmod2: $ b != 0 /\ c < b -> (b * a + c) % b = c $ =
+'(anrd @ eqdivmod anr eqidd);
+theorem muladdmod1: $ b != 0 /\ c < b -> (a * b + c) % b = c $ =
+'(syl5eq (modeq1 @ addeq1 mulcom) muladdmod2);
+
 theorem muldiv2: $ b != 0 -> b * a // b = a $ =
 '(anld @ eqdivmod (bi2 lt01) (a1i add0));
 theorem muldiv1: $ b != 0 -> a * b // b = a $ =
@@ -4118,6 +4127,7 @@ theorem shrmodadd2: $ shr (a % 2 ^ (b + c)) c = shr a c % 2 ^ b $ =
 '(eqtr (shreq1 @ modeq2 @ poweq2 addcom) shrmodadd1);
 theorem shrmodsub: $ c <= b -> shr (a % 2 ^ b) c = shr a c % 2 ^ (b - c) $ =
 '(syl6eq shrmodadd2 @ shreq1d @ modeq2d @ poweq2d @ eqcomd npcan);
+theorem shrshladdid: $ c < 2 ^ b -> shr (shl a b + c) b = a $ = '(exp muladddiv1 pow2ne0);
 theorem shrshlid: $ shr (shl a b) b = a $ = '(muldiv1 pow2ne0);
 theorem shrshl1: $ c <= b -> shr (shl a b) c = shl a (b - c) $ =
 '(syl6eq shrshlid @ shreq1d @ syl6eqr shlshl @ shleq2d @ eqcomd npcan);
@@ -4135,6 +4145,7 @@ theorem elneqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
   $ G -> (a e. ns c <-> b e. ns d) $ = '(eleqd h1 @ nseqd h2);
 theorem elneq2d (h: $ G -> b = c $): $ G -> (a e. ns b <-> a e. ns c) $ = '(elneqd eqidd h);
 theorem elneq2: $ b = c -> (a e. ns b <-> a e. ns c) $ = '(elneq2d id);
+theorem elneq: $ a = b -> c = d -> (a e. ns c <-> b e. ns d) $ = '(exp @ elneqd anl anr);
 theorem appneq1d (h: $ G -> f = g $): $ G -> f @ x = g @ x $ = '(appeq1d @ nseqd h);
 theorem appneq1: $ f = g -> f @ x = g @ x $ = '(appneq1d id);
 theorem nfns (a: nat x) (h: $ FN/ x a $): $ FS/ x ns a $ = (named '(nfslem nseq h));
