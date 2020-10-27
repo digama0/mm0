@@ -363,11 +363,11 @@ impl Elaborator {
     })
   }
 
-  fn as_string_atom(&mut self, e: &LispVal) -> SResult<AtomID> {
+  fn as_string_atom(&mut self, e: &LispVal) -> Option<AtomID> {
     e.unwrapped(|e| match e {
-      LispKind::String(s) => Ok(self.get_atom(s)),
-      &LispKind::Atom(a) => Ok(a),
-      _ => Err(format!("expected an atom, got {}", self.print(e)))
+      LispKind::String(s) => Some(self.get_atom(s)),
+      &LispKind::Atom(a) => Some(a),
+      _ => None
     })
   }
 
@@ -1003,7 +1003,8 @@ make_builtins! { self, sp1, sp2, args,
     for e in args {
       let mut u = Uncons::from(e);
       let e = try1!(u.next().ok_or("invalid arguments"));
-      let a = try1!(self.as_string_atom(&e));
+      let a = try1!(self.as_string_atom(&e)
+        .ok_or_else(|| format!("expected an atom, got {}", self.print(&e))));
       let ret = u.next();
       if !u.exactly(0) {try1!(Err("invalid arguments"))}
       if let Some(v) = ret {m.insert(a, v);} else {m.remove(&a);}
@@ -1011,20 +1012,25 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::new_ref(LispVal::new(LispKind::AtomMap(m)))
   },
   Lookup: AtLeast(2) => {
-    let k = self.as_string_atom(&args[1]);
-    let e = try1!(self.as_map(&args[0], |m| Ok(m.get(&k?).cloned())));
-    if let Some(e) = e {e} else {
-      let v = args.get(2).cloned().unwrap_or_else(LispVal::undef);
-      if v.is_proc() {
-        let sp = v.fspan().map_or(sp2, |fsp| fsp.span);
-        return Ok(State::App(sp1, sp, v, vec![], [].iter()))
-      } else {v}
+    match self.as_string_atom(&args[1]) {
+      None => LispVal::undef(),
+      Some(k) => {
+        let e = try1!(self.as_map(&args[0], |m| Ok(m.get(&k).cloned())));
+        if let Some(e) = e {e} else {
+          let v = args.get(2).cloned().unwrap_or_else(LispVal::undef);
+          if v.is_proc() {
+            let sp = v.fspan().map_or(sp2, |fsp| fsp.span);
+            return Ok(State::App(sp1, sp, v, vec![], [].iter()))
+          } else {v}
+        }
+      }
     }
   },
   Insert: AtLeast(2) => {
     try1!(try1!(args[0].as_ref_mut(|r| {
       r.as_map_mut(|m| -> SResult<_> {
-        let k = self.as_string_atom(&args[1])?;
+        let k = self.as_string_atom(&args[1])
+          .ok_or_else(|| format!("expected an atom, got {}", self.print(&args[1])))?;
         match args.get(2) {
           Some(v) => {m.insert(k, v.clone());}
           None => {m.remove(&k);}
@@ -1037,7 +1043,9 @@ make_builtins! { self, sp1, sp2, args,
   InsertNew: AtLeast(2) => {
     let mut it = args.into_iter();
     let mut m = it.next().unwrap();
-    let k = self.as_string_atom(&it.next().unwrap());
+    let k = it.next().unwrap();
+    let k = self.as_string_atom(&k)
+      .ok_or_else(|| format!("expected an atom, got {}", self.print(&k)));
     try1!(try1!(m.as_map_mut(|m| -> SResult<_> {
       match it.next() {
         Some(v) => {m.insert(k?, v);}

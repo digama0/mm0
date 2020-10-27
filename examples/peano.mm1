@@ -98,7 +98,7 @@ do {
   (def (maybe-atom-map hs)
     @ if (apply and @ map (fn (x) (atom? (hd x))) hs)
       (let ([m (get! @ apply atom-map! hs)])
-        @ fn (x) (if (atom? x) (lookup m x)))
+        @ fn (x) (lookup m x))
       (find hs))
   (def (eqtac-ctx ltr hyps)
     @ foldr hyps () @ fn (h ls)
