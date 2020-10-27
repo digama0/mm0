@@ -261,6 +261,11 @@ theorem hex2T: $ a e. Bits k -> a :x x :x y e. Bits (k + 8) $ =
 @_ def u32: nat = $ Bits 32 $;
 @_ def u64: nat = $ Bits 64 $;
 
+theorem d0elu8: $ 0 e. u8 $ = 'elBits01;
+theorem d0elu16: $ 0 e. u16 $ = 'elBits01;
+theorem d0elu32: $ 0 e. u32 $ = 'elBits01;
+theorem d0elu64: $ 0 e. u64 $ = 'elBits01;
+
 theorem u32ss64: $ u32 C_ u64 $ = '(Bitsss d32le64);
 theorem u16ss64: $ u16 C_ u64 $ = '(Bitsss d16le64);
 theorem u8ss32: $ u8 C_ u32 $ = '(Bitsss d8le32);

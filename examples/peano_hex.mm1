@@ -110,11 +110,7 @@ do {
     (if {n >= 16} '(hex ,(->hex {n // 16}) @ ,(hexdigit {n % 16}))
       '(h2n @ ,(hexdigit n))))
   (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
-  (def hexdigit->number
-    (def m
-      @ letrec ([(f n) @ if {n < 16} '((,(hexdigit n) ,n) . ,(f {n + 1})) ()])
-      (apply atom-map (f 0)))
-    (fn (x) (lookup m x)))
+  (def hexdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(hexdigit n) ,n])
   (def hex->number @ match-fn
     [('c2n e) (hex->number e)]
     [('h2n (e)) (hexdigit->number e)]
@@ -153,6 +149,7 @@ do {
 do {
   -- Defines e.g. theorem deca: $ 10 = xa $; for all n < 16, accessible as (decn 10)
   (def (dn n) (atom-app 'd n))
+  (def decdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(dn n) ,n])
   (def decn @ on-hexstrings @ fn (n)
     @ let ([xn (atom-app 'x n)] [i (hex->number xn)]
            [dn '(,(dn i))] [xn '(h2n (,xn))] [name (atom-app 'dec n)])
@@ -590,4 +587,10 @@ do {
       (add-thm! (name a) () () stmt () @ fn () '(() ,(mkcmp stmt))))
     (f decnhalf @ fn (a) '(,(dn a)))
     (f hexnhalf @ fn (a) '(h2n (,(hexdigit a)))))
+};
+
+do {
+  (def (->zhex n)
+    @ if {n > 0} '(b0 ,(->hex n))
+    @ if {n = 0} '(d0) '(b1 ,(->hex (bnot n))))
 };
