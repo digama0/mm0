@@ -661,11 +661,11 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path, Some(Position::default()), Default::default())
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
   let fe = unsafe { env.format_env(&text) };
-  let f = |name: &ArcString, desc, sp, full, kind| DocumentSymbol {
+  let f = |sp, name: &ArcString, desc, full, kind| DocumentSymbol {
     name: String::from_utf8_lossy(name).into(),
     detail: Some(desc),
     kind,
@@ -675,33 +675,34 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
     children: None,
   };
   let mut res = vec![];
+  macro_rules! push {($fsp:expr, $($e:expr),*) => {
+    if $fsp.file == path { res.push(f($fsp.span, $($e),*)) }
+  }}
   for s in env.stmts() {
     match *s {
       StmtTrace::Sort(a) => {
         let ad = &env.data()[a];
         let s = ad.sort().unwrap();
         let sd = env.sort(s);
-        res.push(f(ad.name(), format!("{}", sd), sd.span.span, sd.full, SymbolKind::Class))
+        push!(sd.span, ad.name(), format!("{}", sd), sd.full, SymbolKind::Class)
       }
       StmtTrace::Decl(a) => {
         let ad = &env.data()[a];
         match ad.decl().unwrap() {
           DeclKey::Term(t) => {
             let td = env.term(t);
-            res.push(f(ad.name(), format!("{}", fe.to(td)), td.span.span, td.full,
-              SymbolKind::Constructor))
+            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::Constructor)
           }
           DeclKey::Thm(t) => {
             let td = env.thm(t);
-            res.push(f(ad.name(), format!("{}", fe.to(td)), td.span.span, td.full,
-              SymbolKind::Method))
+            push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::Method)
           }
         }
       }
       StmtTrace::Global(a) => {
         let ad = &env.data()[a];
         if let Some((Some((ref fsp, full)), ref e)) = *ad.lisp() {
-          res.push(f(ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), fsp.span, full,
+          push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
             match (|| Some({
               let r = &**e.unwrap();
               match r {
@@ -724,7 +725,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
             }))() {
               Some(sk) => sk,
               None => continue,
-            }));
+            });
         }
       }
       StmtTrace::OutputString(_) => {}
