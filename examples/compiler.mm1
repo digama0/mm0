@@ -864,6 +864,19 @@ theorem assemble1_A (h1: $ assemble1 s x y $) (h2: $ assemble1 t y z $): $ assem
 theorem assemble1_S (h1: $ suc x = y $) (h2: $ assemble1 s y z $): $ assemble1 (c ': s) x z $ =
 '(assemble1_A (assemble1_1 h1) h2);
 
+-- (mk-asm1 x s) returns a pair (y p) where p: $ assemble1 s x y $
+do (def (mk-asm1 x s) @ match s
+  [('scons c s)
+    @ match (mksuc x) @ (y p)
+    @ match (mk-asm1 y s) @ (z p2)
+    '(,z (assemble1_S ,c ,s ,x ,y ,z ,p ,p2))]
+  [('sadd s t)
+    @ match (mk-asm1 x s) @ (y p)
+    @ match (mk-asm1 y t) @ (z p2)
+    '(,z (assemble1_A ,s ,t ,x ,y ,z ,p ,p2))]
+  [('s1 c) @ match (mksuc x) @ (y p) '(,y (assemble1_1 ,c ,x ,y ,p))]
+  ['(s0) '(,x (assemble1_0 ,x))]);
+
 def assembles_func (s: string) (start end: nat): wff =
 $ assemble1 s start end /\ start < end $;
 
@@ -904,20 +917,65 @@ theorem assembles_finish
     ian (iexe _ @ ian (eqcom add02) sublistAt_id) tru)
   eqtac);
 
-do {
-  -- (mk-asm1 x s) returns a pair (y p) where p: $ assemble1 s x y $
-  (def (mk-asm1 x s) @ match s
-    [('scons c s)
-      @ match (mksuc x) @ (y p)
-      @ match (mk-asm1 y s) @ (z p2)
-      '(,z (assemble1_S ,c ,s ,x ,y ,z ,p ,p2))]
-    [('sadd s t)
-      @ match (mk-asm1 x s) @ (y p)
-      @ match (mk-asm1 y t) @ (z p2)
-      '(,z (assemble1_A ,s ,t ,x ,y ,z ,p ,p2))]
-    [('s1 c) @ match (mksuc x) @ (y p) '(,y (assemble1_1 ,c ,x ,y ,p))]
-    ['(s0) '(,x (assemble1_0 ,x))])
+-------------------------------
+-- Control flow graph layout --
+-------------------------------
 
+@_ def is_CFG (A: set): wff =
+$ A C_ S\ s, S\ l, S\ x, {y | y = x + len s} $;
+
+@_ def sat_CFG (s t: string) (l x y: nat) (A: set): wff =
+$ is_CFG A /\ E. u (s = u ++ t /\ u <> l <> x <> y e. A) $;
+
+@_ def sat_CFG_func (s: string) (x: nat) (A: set): wff =
+$ E. y sat_CFG s s0 0 x y A $;
+
+@_ def CFG0: set = $ S\ s, S\ l, S\ x, {y | s = 0 /\ x = y} $;
+theorem sat_CFG0: $ sat_CFG s s l x x CFG0 $;
+
+@_ def CFG1 (ast: nat): set =
+$ S\ s, S\ l, S\ x, {y | decode ast s /\ y = x + len s} $;
+theorem sat_CFG1 (h1: $ assemble1 s x y $) (h2: $ decode ast s $):
+  $ sat_CFG (s '+ t) t l x y (CFG1 ast) $;
+
+@_ def CFG_seq (A B: set): set =
+$ S\ s, S\ l, S\ x, {y | E. t1 E. t2 E. z (s = t1 ++ t2 /\
+  t1 <> l <> x <> z e. A /\ t2 <> l <> z <> y e. B)} $;
+theorem sat_CFG_seq (h1: $ sat_CFG s t l x y A $) (h2: $ sat_CFG t u l y z B $):
+  $ sat_CFG s u l x z (CFG_seq A B) $;
+
+@_ def CFG_S (ast: nat) (A: set): set = $ CFG_seq (CFG1 ast) A $;
+theorem sat_CFG_S (h1: $ assemble1 s x y $) (h2: $ decode ast s $)
+  (h3: $ sat_CFG t u l y z A $): $ sat_CFG (s '+ t) u l x z (CFG_S ast A) $ =
+'(sat_CFG_seq (sat_CFG1 h1 h2) h3);
+
+@_ def CFG_scope (A: set): set =
+$ S\ s, S\ l, S\ x, {y | E. a (s <> (a : l) <> x <> y e. A)} $;
+theorem sat_CFG_scope (h: $ sat_CFG s t (a : l) x y A $):
+  $ sat_CFG s t l x y (CFG_scope A) $;
+
+@_ def CFG_label: set =
+$ S\ s, S\ l, S\ x, {y | s = 0 /\ x = y /\ E. l2 l = x : l2} $;
+theorem sat_CFG_label: $ sat_CFG s s (x : l) x x CFG_label $;
+
+@_ def CFG_lift (A: set): set =
+$ S\ s, S\ l, S\ x, {y | E. a E. l2 (l = a : l2 /\ s <> l2 <> x <> y e. A)} $;
+theorem sat_CFG_lift (h: $ sat_CFG s t l x y A $):
+  $ sat_CFG s t (a : l) x y (CFG_scope A) $;
+
+@_ def CFG_block (A B: set): set =
+$ CFG_seq (CFG_scope (CFG_seq A CFG_label)) B $;
+theorem sat_CFG_block (h1: $ sat_CFG s t (y : l) x y A $) (h2: $ sat_CFG t u l y z B $):
+  $ sat_CFG s u l x z (CFG_block A B) $ =
+'(sat_CFG_seq (sat_CFG_scope @ sat_CFG_seq h1 sat_CFG_label) h2);
+
+@_ def CFG_loop (A B: set): set =
+$ CFG_seq (CFG_scope (CFG_seq CFG_label A)) B $;
+theorem sat_CFG_loop (h1: $ sat_CFG s t (x : l) x y A $) (h2: $ sat_CFG t u l y z B $):
+  $ sat_CFG s u l x z (CFG_loop A B) $ =
+'(sat_CFG_seq (sat_CFG_scope @ sat_CFG_seq sat_CFG_label h1) h2);
+
+do {
   -- (reg-idx) converts atoms like 'rax, 'rcx, and 'r14 into their indexes.
   (def reg-idx @ lookup-fn @ append
     '([rax 0] [rcx 1] [rdx 2] [rbx 3] [rsp 4] [rbp 5] [rsi 6] [rdi 7])
@@ -999,19 +1057,19 @@ do {
         '(,ast $ch ,'(x4) ,rex ': ,opc ': ,s$ (decode1I ,ast ,opc ,rex ,s ,p))])
     @ match-fn
       ['(mov.32 (reg ,r2) ,(? number? imm))
-        @ match (mk-splitBits '(3 1) r2) @ (r rb h5)
+        @ match (mk-splitBits '(3 1) r2) @ (r rb hr2)
         (def v $1$) (def sz '(wSz32))
-        @ match (merge-bits '(3 1) r v) @ (a h1)
+        @ match (merge-bits '(3 1) r v) @ (a ha)
         (def r2 (hexdigit r2)) (def a '(,(hexdigit a)))
-        @ match (assemble-rex '(B ,rb) '(3 $0$)) @ (rex h4 hsz)
-        (def h2 @ match rex
+        @ match (assemble-rex '(B ,rb) '(3 $0$)) @ (rex hrb hsz)
+        (def hsz @ match rex
           [$0$ '(opSizeW_0 ,sz ,v (opSize_32 $F.$))]
           [$suc ,rex$ '(opSizeW_S ,sz ,rex ,v $0$ ,hsz (opSize_32 $F.$))])
-        (def imm_x (->zhex imm))
-        @ match (to-iNBytes 32 imm_x) @ (l heq)
-        (def h3 '(readFullImm32I ,imm_x ,l ,(to-eli 32 imm_x) ,heq))
-        @ asm-aux rex $ xastMov ,sz (Rm_i (RM_reg ,r2) ,imm_x) $ '(ch (xb) ,a) l
-        @ list 'decodeMov64I a imm_x l r r2 rb rex sz v h1 h2 h3 h4 h5]
+        (def imm (->zhex imm))
+        @ match (to-iNBytes 32 imm) @ (l heq)
+        (def himm '(readFullImm32I ,imm ,l ,(to-eli 32 imm) ,heq))
+        @ asm-aux rex $ xastMov ,sz (Rm_i (RM_reg ,r2) ,imm) $ '(ch (xb) ,a) l
+        @ list 'decodeMov64I a imm l r r2 rb rex sz v ha hsz himm hrb hr2]
       ['(syscall)
         @ asm-aux $0$ '(xastSysCall) '(ch (x0) (xf)) '(s1 @ ch (x0) (x5))
         '(decodeSysCallI $0$)])
@@ -1029,8 +1087,7 @@ do {
 
     -- items: list (pfx_name, assembled_prop, assembled_proof,
     --   option (list (inst_ast, inst_byte_str, decode_proof)))
-    (def items @ rmap xs
-      @ match-fn @ (name _ ty data)
+    (def items @ rmap xs @ match-fn @ (name _ ty data)
       (def name_asm (atom-app pfx name '_asm))
       @ match (match ty
         ['func
