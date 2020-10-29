@@ -420,7 +420,7 @@ $ E. v E. reg E. r (
 theorem decodeTwoXaddT (rex ast b l: nat):
   $ decodeTwoXadd rex ast b l -> ast e. XAST $;
 
-def decodeTwoSysCall (rex ast b l .v .reg .r: nat): wff =
+def decodeTwoSysCall (rex ast b l: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 theorem decodeTwoSysCallT (rex ast b l: nat):
   $ decodeTwoSysCall rex ast b l -> ast e. XAST $;
@@ -443,7 +443,7 @@ $ E. v E. d E. opc E. reg E. r (
 theorem decodeBinopRegT (rex ast b l: nat):
   $ decodeBinopReg rex ast b l -> ast e. XAST $;
 
-def decodeBinopRAX (rex ast b l .v .opc .imm .sz: nat): wff =
+def decodeBinopRAX (rex ast b l .v .opc .imm: nat): wff =
 $ E. v E. opc E. imm (
     splitBits ((1 <> v) : (2 <> 2) : (3 <> opc) : (2 <> 0) : 0) b /\
     readImm (opSizeW rex v) imm l /\
@@ -451,7 +451,7 @@ $ E. v E. opc E. imm (
 theorem decodeBinopRAX_T (rex ast b l: nat):
   $ decodeBinopRAX rex ast b l -> ast e. XAST $;
 
-def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2 .sz: nat): wff =
+def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2: nat): wff =
 $ E. v E. opc E. r E. l1 E. imm E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 8) : 0) b /\
     readOpcodeModRM rex opc r l1 /\
@@ -542,7 +542,7 @@ $ (E. x E. imm (
 theorem decodePushT (rex ast b l: nat):
   $ decodePush rex ast b l -> ast e. XAST $;
 
-def decodePop (rex ast b l .v .reg .r: nat): wff =
+def decodePop (rex ast b l .r: nat): wff =
 $ (l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
     ast = xastPop (RM_reg (rex_reg (REX_B rex) r)))) \/
@@ -855,6 +855,12 @@ theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
 theorem RM_EA_T (k rm: nat):
   $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $;
 
+def immRM_EA (k irm: nat): nat;
+theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $;
+theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $;
+theorem immRM_EA_T (k irm: nat):
+  $ k e. Config /\ irm e. ImmRM -> immRM_EA k irm e. EA $;
+
 def destEA (k ds: nat): nat;
 theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $;
 theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $;
@@ -868,12 +874,6 @@ theorem srcEAm_r (k v r: nat): $ srcEA k (Rm_r v r) = EA_r r $;
 theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $;
 theorem srcEA_T (k ds: nat):
   $ k e. Config /\ ds e. DestSrc -> srcEA k ds e. EA $;
-
-def immRM_EA (k irm: nat): nat;
-theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $;
-theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $;
-theorem immRM_EA_T (k irm: nat):
-  $ k e. Config /\ irm e. ImmRM -> immRM_EA k irm e. EA $;
 
 def readRegSz (k sz r: nat): nat =
 $ chop (wsizeBits sz)
@@ -1002,7 +1002,7 @@ theorem writeSFZF_T (k sz w : nat):
   $ k e. Config /\ sz e. WSize /\ w e. u64 ->
     writeSFZF k sz w e. Config $;
 
-def eraseFlags (k k2 .e .ip .rs .f .f2 .m: nat): wff =
+def eraseFlags (k k2 .f2: nat): wff =
 $ k e. Config /\ E. f2 (f2 e. Flags /\ k2 = writeFlags k f2) $;
 theorem eraseFlagsT (k k2: nat):
   $ eraseFlags k k2 -> k e. Config /\ k2 e. Config $;
@@ -1059,16 +1059,16 @@ theorem writeBinopXor (k sz ea a b k2: nat):
 theorem writeBinopOr (k sz ea a b k2: nat):
   $ writeBinop k binopOr sz ea a b k2 <->
     writeCFOFResult k sz ea (bitOr a b) F. F. k2 $;
-theorem writeBinopShl {k2: nat} (k sz ea a b k3: nat):
-  $ writeBinop k binopShl sz ea a b k3 <->
-    E. k2 (eraseFlags k k2 /\ writeEA k2 sz ea (shl a (maskShift sz b)) k3) $;
-theorem writeBinopShr {k2: nat} (k sz ea a b k3: nat):
-  $ writeBinop k binopShr sz ea a b k3 <->
-    E. k2 (eraseFlags k k2 /\ writeEA k2 sz ea (shr a (maskShift sz b)) k3) $;
-theorem writeBinopSar {k2: nat} (k sz ea a b k3: nat):
-  $ writeBinop k binopSar sz ea a b k3 <->
-    E. k2 (eraseFlags k k2 /\
-      writeEA k2 sz ea (bitsSar (wsizeBits sz) a (maskShift sz b)) k3) $;
+theorem writeBinopShl {k3: nat} (k sz ea a b k2: nat):
+  $ writeBinop k binopShl sz ea a b k2 <->
+    E. k3 (eraseFlags k k3 /\ writeEA k3 sz ea (shl a (maskShift sz b)) k2) $;
+theorem writeBinopShr {k3: nat} (k sz ea a b k2: nat):
+  $ writeBinop k binopShr sz ea a b k2 <->
+    E. k3 (eraseFlags k k3 /\ writeEA k3 sz ea (shr a (maskShift sz b)) k2) $;
+theorem writeBinopSar {k3: nat} (k sz ea a b k2: nat):
+  $ writeBinop k binopSar sz ea a b k2 <->
+    E. k3 (eraseFlags k k3 /\
+      writeEA k3 sz ea (bitsSar (wsizeBits sz) a (maskShift sz b)) k2) $;
 theorem writeBinopAdc (k sz ea a b k2: nat): $ ~ writeBinop k binopAdc sz ea a b k2 $;
 theorem writeBinopSbb (k sz ea a b k2: nat): $ ~ writeBinop k binopSbb sz ea a b k2 $;
 theorem writeBinopRol (k sz ea a b k2: nat): $ ~ writeBinop k binopRol sz ea a b k2 $;
@@ -1127,7 +1127,7 @@ $ irm e. ImmRM /\ E. q (readEA64 k (immRM_EA k irm) q /\ pushAux k q k2) $;
 theorem pushImmRM_T (k irm k2: nat):
   $ pushImmRM k irm k2 -> k e. Config /\ irm e. ImmRM /\ k2 e. Config $;
 
-def pushRIP (k k2 .q: nat): wff = $ pushAux k (readRIP k) k2 $;
+def pushRIP (k k2: nat): wff = $ pushAux k (readRIP k) k2 $;
 theorem pushRIP_T (k irm k2: nat):
   $ pushRIP k k2 -> k e. Config /\ k2 e. Config $;
 
@@ -1271,7 +1271,7 @@ theorem ksCfgT (k: nat): $ k e. KernelState -> ksCfg k e. Config $;
 theorem ksMappingT (k: nat):
   $ k e. KernelState -> ksMapping k e. PageMapping (getMemory (ksCfg k)) $;
 
-def writeMapping (ks k2 m2 ks2 .i .o .k .m: nat): wff =
+def writeMapping (ks k2 m2 ks2: nat): wff =
 $ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
   ks2 = mkKS (ksIn ks) (ksOut ks) k2 m2 $;
 theorem writeMappingT (ks m k ks2: nat):
@@ -1555,7 +1555,7 @@ theorem basicElfEH_T (file entry phoff: nat):
   $ basicElfEH file entry phoff ->
     file e. List u8 /\ entry e. u64 /\ phoff e. u64 $;
 
-def basicElf (entry prot off seg .f: nat): wff =
+def basicElf (entry prot off seg: nat): wff =
 $ entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
   off <= entry /\ entry < off + len seg $;
 theorem BasicElfT (entry prot off seg: nat):

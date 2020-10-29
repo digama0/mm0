@@ -176,8 +176,8 @@ do {
   (def (to-iNBytes n a)
     (def k (sucs {n // 8}))
     @ match (match a
-      [$0$ @ match (to-uNBytes n '(h2n @ x0)) @ (s p) '(,s (xtoIBytes02 ,k ,s ,p))]
-      [$b0 ,a$ @ match (to-uNBytes n a) @ (s p) '(,s (xtoIBytesSb0_ ,k ,a ,s ,p))]
+      [$0$ @ match (to-toBytes k '(h2n @ x0)) @ (s p) '(,s (xtoIBytes02 ,k ,s ,p))]
+      [$b0 ,a$ @ match (to-toBytes k a) @ (s p) '(,s (xtoIBytesSb0_ ,k ,a (s2n ,s) ,p))]
       [$b1 ,a$ (to-toIBytesb1 k a)])
     [(s p) '(,s (,(atom-app 'xi n 'Bytes) ,a ,s ,p))])
 
@@ -197,9 +197,9 @@ do {
   -- (to-elBits7 k n) proves $ n e. Bits (8 * k + 7) $
   (def (to-elBits7 k n) @ match n
     [$,n :x ,a1 :x ,a0$ @ match k
-      [$suc k$ '(xelBits7S ,a0 ,a1 ,k ,n ,(to-elBits8 k n))]]
+      [$suc ,k$ '(xelBits7S ,a0 ,a1 ,k ,n ,(to-elBits7 k n))]]
     [$h2n ,a1 :x ,a0$ @ match k
-      [$suc k$ '(xelBits72S ,a0 ,a1 ,k)]
+      [$suc ,k$ '(xelBits72S ,a0 ,a1 ,k)]
       [$0$ '(xelBits720 ,a0 ,a1 ,(atom-app 'declt (hexstring (hex->number a1)) 8))]]
     [$h2n ,a0$ '(xelBits71 ,a0 ,k)])
 
@@ -212,16 +212,16 @@ do {
   -- assuming N = 8,16,32,64
   (def (to-eli n a) @ match a
     [$0$ '(,(atom-app 'd0elu n))]
-    [$b0 ,a$ '(,(atom-app 'xelu n 'b0i) ,a ,(to-elBits8 (sucs {{n // 8} - 1}) a))]
-    [$b1 ,a$ '(,(atom-app 'xelu n 'b1i) ,a ,(to-elBits8 (sucs {{n // 8} - 1}) a))])
+    [$b0 ,a$ '(,(atom-app 'xelu n 'b0i) ,a ,(to-elBits7 (sucs {{n // 8} - 1}) a))]
+    [$b1 ,a$ '(,(atom-app 'xelu n 'b1i) ,a ,(to-elBits7 (sucs {{n // 8} - 1}) a))])
 };
 
-def _x00: char = 0;
-def _x01: char = 1;
-def _x02: char = 2;
-def _x00x2: string = $ _x00 ': _x00 ': s0 $;
-def _x00x4: string = $ _x00x2 '+ _x00x2 $;
-def _x00x8: string = $ _x00x4 '+ _x00x4 $;
+local def _x00: char = 0;
+local def _x01: char = 1;
+local def _x02: char = 2;
+local def _x00x2: string = $ _x00 ': _x00 ': s0 $;
+local def _x00x4: string = $ _x00x2 '+ _x00x2 $;
+local def _x00x8: string = $ _x00x4 '+ _x00x4 $;
 
 theorem _x00_eq: $ _x00 = 0 $ = '{,norm_num : $ ch = _ $};
 theorem _x01_eq: $ _x01 = 1 $ = '{,norm_num : $ ch = _ $};
@@ -234,7 +234,7 @@ theorem _x00x4_eq: $ _x00x4 = repeat 0 4 $ =
 theorem _x00x8_eq: $ _x00x8 = repeat 0 8 $ =
 '(eqtr (s2n_RA _x00x4_eq _x00x4_eq) @ repeateq2 ,norm_num);
 
-def ELF_IDENT_s: string =
+local def ELF_IDENT_s: string =
 $ ,0x7f ': ,"E" ': ,"L" ': ,"F" ':
   _x02 ': _x01 ': _x01 ': _x00 ': _x00x8 $;
 
@@ -243,9 +243,9 @@ theorem ELF_IDENT_eq: $ ELF_IDENT_s = ELF_IDENT $ =
   s2n_S _x02_eq @ s2n_S _x01_eq @ s2n_S _x01_eq @
   s2n_RS _x00_eq _x00x8_eq);
 
-def _ch16 (c: char): string = $ c ': _x00 ': s0 $;
-def _ch32 (c: char): string = $ c ': _x00 ': _x00x2 $;
-def _ch64 (c: char): string = $ _ch32 c '+ _x00x4 $;
+local def _ch16 (c: char): string = $ c ': _x00 ': s0 $;
+local def _ch32 (c: char): string = $ c ': _x00 ': _x00x2 $;
+local def _ch64 (c: char): string = $ _ch32 c '+ _x00x4 $;
 
 theorem _ch16_eq (h: $ c = a $): $ _ch16 c = u16Bytes a $ =
 '(s2n_toBytesS0 h @ s2n_RS _x00_eq @ s2n_R0);
@@ -257,9 +257,9 @@ theorem _ch64_eq (h: $ c = a $): $ _ch64 c = u64Bytes a $ =
   repeateq2 ,norm_num);
 
 -- 0x400000 as u64, the hard coded entry point
-def load_start_s (c: char): string = $ c ': _x00 ': ,0x40 ': _x00 ': _x00x4 $;
-def load_start (x y): nat = $ ,0x4000 :x x :x y $;
-def text_start: nat = $ load_start x7 x8 $;
+local def load_start_s (c: char): string = $ c ': _x00 ': ,0x40 ': _x00 ': _x00x4 $;
+local def load_start (x y): nat = $ ,0x4000 :x x :x y $;
+local def text_start: nat = $ load_start x7 x8 $;
 
 theorem load_start_eq2: $ load_start x0 x0 + x :x y = load_start x y $ =
 '(add_xx0 (add_x00 addx01) addx01);
@@ -274,7 +274,7 @@ theorem load_start_eq: $ load_start_s (ch x y) = u64Bytes (load_start x y) $ =
   '(xtoBytesS @ xtoBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
   '(xtoBytesS @ eqtr4 (s2n_RS _x00_eq _x00x4_eq) toBytes02));
 
-def ELF_header_s (e: string): string =
+local def ELF_header_s (e: string): string =
 $ ELF_IDENT_s '+ _ch16 _x02 '+ _ch16 ,0x3e '+ _ch32 _x01 '+
   e '+ _ch64 ,64 '+ _x00x8 '+
   _x00x4 '+ _ch16 ,64 '+ _ch16 ,0x38 '+ _ch16 _x01 '+
@@ -298,8 +298,8 @@ theorem ELF_header_ok (he: $ e = u64Bytes entry $) (he2: $ entry e. u64 $):
     s2n_A (_ch16_eq _x01_eq) @ s2n_A (! _ch16_eq $64$ _ ,norm_num) @
     s2n_A (eqtr4 _x00x2_eq toBytes02) (eqtr4 _x00x2_eq toBytes02)));
 
-def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ,0x20 ': _x00 ': _x00x4 $;
-def PAGE_SIZE: nat = $ 2 ^ ,21 $;
+local def PAGE_SIZE_s: string = $ _x00 ': _x00 ': ,0x20 ': _x00 ': _x00x4 $;
+local def PAGE_SIZE: nat = $ 2 ^ ,21 $;
 theorem PAGE_SIZE_val: $ PAGE_SIZE = ,0x200000 $ =
 '(eqtr2 (x2powS @ x2powS @ x2powS @ x2powS @ x2powS @ eqtr2 pow12 dec2) @
   poweq2 ,norm_num);
@@ -309,12 +309,12 @@ theorem PAGE_SIZE_eq: $ PAGE_SIZE_s = u64Bytes PAGE_SIZE $ =
   '(xtoBytesS @ xtoBytesS @ eqtr _ @ toByteseq2 @ hexeq1 hex01_)
   '(xtoBytesS @ eqtr4 (s2n_RS _x00_eq _x00x4_eq) toBytes02));
 
-def basic_pHeader_s (filesz memsz: string): string =
+local def basic_pHeader_s (filesz memsz: string): string =
 $ _ch32 _x01 '+ _ch32 ,7 '+
   _ch64 ,0x78 '+ load_start_s ,0x78 '+ _x00x8 '+
   filesz '+ memsz '+ PAGE_SIZE_s $;
 
-def PROT_RWX = $ 7 $;
+local def PROT_RWX = $ 7 $;
 theorem PROT_RWX_val: $ PROT_RWX = upto 3 $ =
 '(mpbi addcan1 @ eqtr4 (eqtr4 add12 d2pow3) uptoadd1);
 theorem ss_PROT_RWX: $ p e. Prot <-> p C_ PROT_RWX $ =
@@ -361,7 +361,7 @@ $ ELF_header_s e '+ basic_pHeader_s fs ms '+ c $;
 local def ELF_parse (entry bss: nat) (c: string): nat =
 $ entry <> PROT_RWX <> text_start <> c ++ repeat 0 bss $;
 
-def ELF_lit_ok (elf: string) (entry bss: nat) (c: string) =
+local def ELF_lit_ok (elf: string) (entry bss: nat) (c: string) =
 $ parseBasicElf elf entry PROT_RWX text_start (c ++ repeat 0 bss) $;
 
 theorem ELF_lit_ok_isBasicElf (s entry bss c)
@@ -514,7 +514,7 @@ do {
   -- Here the x_i are numbers (a partition of 4), the n_i are decimal numerals, and i is a number
   (def (merge-bits l . is)
     @ letrec ([f @ match-fn*
-      [(() () i _) '(,i ,(xsplitBits l i))]
+      [(() () i _) '(,i (,(xsplitBits l i)))]
       [((k . xs) ((a) . is) i m)
         @ f xs is {i + {(decdigit->number a) shl m}} {m + k}]])
     (f l is 0 0))
@@ -711,7 +711,7 @@ theorem readOpcodeModRM_I
     iexde @ mpbird ,eqtac @ iand an3l anlr));
 
 theorem readImmN_I (h1: $ 8 * i = k $) (h2: $ k <= 64 $)
-  (h3: $ a e. Bits k $) (h4: $ l = toIBytes i a $):
+  (h3: $ a e. Bits k $) (h4: $ s2n l = toIBytes i a $):
   $ readImmN k (chopZ 64 a) l $ =
 (named @ focus
   '(iexie @ mpbiri (ian _ _) ,eqtac)
@@ -720,16 +720,16 @@ theorem readImmN_I (h1: $ 8 * i = k $) (h2: $ k <= 64 $)
 
 theorem readFullImmI (h1: $ 8 * i = k $)
   (hs: $ sz e. WSize $) (h2: $ wsizeBits sz = k $)
-  (h3: $ a e. Bits k $) (h4: $ l = toIBytes i a $):
+  (h3: $ a e. Bits k $) (h4: $ s2n l = toIBytes i a $):
   $ readFullImm sz (chopZ 64 a) l $ =
 '(mpbir (readImmNeq1 h2) @ readImmN_I h1
   (mpbi (leeq1 h2) @ wsizeBitsle64 hs) h3 h4);
 
-theorem readFullImm32I (h1: $ a e. u32 $) (h2: $ l = i32Bytes a $):
+theorem readFullImm32I (h1: $ a e. u32 $) (h2: $ s2n l = i32Bytes a $):
   $ readFullImm wSz32 (chopZ 64 a) l $ =
 '(readFullImmI d8mul4 wSz32T wSz32Bits h1 h2);
 
-theorem readFullImm64I (h1: $ a e. u64 $) (h2: $ l = i64Bytes a $):
+theorem readFullImm64I (h1: $ a e. u64 $) (h2: $ s2n l = i64Bytes a $):
   $ readFullImm wSz64 (chopZ 64 a) l $ =
 '(readFullImmI d8mul8 wSz64T wSz64Bits h1 h2);
 
@@ -766,7 +766,7 @@ theorem decodeHiI    (h: $ decodeHi rex ast b l $):    $ decodeAux rex ast b l $
 theorem decodeMovRegI
   (h1: $ splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : 0) a $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ readModRM rex reg r l $)
+  (h3: $ readModRM rex reg r (s2n l) $)
   (h4: $ if (true d) (R_rm reg r) (Rm_r r reg) = ds $):
   $ decodeAux rex (xastMov sz ds) (ch x8 a) l $ =
 (focus
@@ -777,24 +777,24 @@ theorem decodeMovRegI
 theorem decodeMovRMI
   (h1: $ splitBits ((1 <> v) : (1 <> 1) : (2 <> 2) : 0) a $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ readModRM rex reg r l $):
+  (h3: $ readModRM rex reg r (s2n l) $):
   $ decodeAux rex (xastMov sz (R_rm reg r)) (ch x8 a) l $ =
 '(decodeMovRegI h1 h2 h3 @ ifpos true1);
 
 theorem decodeMovMRI
   (h1: $ splitBits ((1 <> v) : (1 <> 0) : (2 <> 2) : 0) a $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ readModRM rex reg r l $):
+  (h3: $ readModRM rex reg r (s2n l) $):
   $ decodeAux rex (xastMov sz (Rm_r r reg)) (ch x8 a) l $ =
 '(decodeMovRegI h1 h2 h3 @ ifneg true0);
 
 theorem decodeMov64I
   (h1: $ splitBits ((3 <> r) : (1 <> v) : 0) a $)
   (h2: $ opSizeW rex v = sz $)
-  (h3: $ readFullImm sz imm l $)
+  (h3: $ readFullImm sz (chopZ 64 imm) (s2n l) $)
   (h4: $ REX_B rex = rb $)
-  (h5: $ splitBits ((3 <> r) : (1 <> rb) : 0) r2 $):
-  $ decodeAux rex (xastMov sz (Rm_i (RM_reg r2) imm)) (ch xb a) l $ =
+  (h5: $ splitBits ((3 <> r) : (1 <> rb) : 0) (h2n r2) $):
+  $ decodeAux rex (xastMov sz (Rm_i (RM_reg r2) (chopZ 64 imm))) (ch xb a) l $ =
 (focus
   '(decodeMovI @ orl @ orr @ iexie @ iexde @ iexde @
     mpbiri (iani (iani _ _) _) ,eqtac)
@@ -827,7 +827,7 @@ theorem decodeSysCallI: $ decodeAux rex xastSysCall (ch x0 xf) (s1 (ch x0 x5)) $
 -- Linker --
 ------------
 
-def assembled (c s: string) (start end: nat): wff =
+local def assembled (c s: string) (start end: nat): wff =
 $ end = start + len s /\ E. n (start = text_start + n /\ sublistAt n c s) $;
 
 theorem assembled_start (h: $ assembled c s x y $): $ text_start <= x $ =
@@ -839,7 +839,7 @@ theorem assembled_end (h: $ assembled c s x y $): $ y <= text_start + len c $ =
   '(mpbird (leeq1d @ syl6eq addass @ addeq1d anl) @
     sylib leadd2 @ anwr sublistAt_len_le));
 
-def assembled_func (c s: string) (start end: nat): wff =
+local def assembled_func (c s: string) (start end: nat): wff =
 $ assembled c s start end /\ start < end $;
 
 theorem assembled_func_lt (h: $ assembled_func c s x y $): $ x < text_start + len c $ =
@@ -849,18 +849,26 @@ theorem assembled_func_bound (h: $ assembled_func c s x y $):
   $ text_start <= x /\ x < text_start + len c $ =
 '(ian (assembled_start @ anl h) @ assembled_func_lt h);
 
-def assembles (c s: string) (start end: nat) (p q: wff): wff =
+local def assembles (c s: string) (start end: nat) (p q: wff): wff =
 $ E. n (start = text_start + n /\ sublistAt n c s) /\ p -> end = start + len s /\ q $;
 
-def assemble1 (s: string) (start end: nat): wff =
+theorem assembles_trul (h: $ assembles c s x y p (T. /\ q) $):
+  $ assembles c s x y p q $ = (named '(sylib (aneq2i @ bian1 tru) h));
+theorem assembles_assoc (h: $ assembles c s x y p (q1 /\ q2 /\ q3) $):
+  $ assembles c s x y p (q1 /\ (q2 /\ q3)) $ = (named '(sylib (aneq2i anass) h));
+
+local def assemble1 (s: string) (start end: nat): wff =
 $ end = start + len s $;
 
 theorem assemble1_0: $ assemble1 s0 x x $ =
 '(eqtr2 (addeq2 @ eqtr (leneq s2ns0) len0) add02);
 theorem assemble1_1 (h1: $ suc x = y $): $ assemble1 (s1 c) x y $ =
 '(eqtr2 (addeq2 @ eqtr (leneq s2ns1) len1) @ eqtr add12 h1);
+theorem assemble1_A_lem: $ y = x + len s -> z = y + len t -> u = s ++ t -> z = x + len u $ =
+'(exp @ exp @ eqtrd anlr @ eqtr4d (anwll addeq1) @
+  syl6eqr addass @ addeq2d @ syl6eq appendlen @ leneqd anr);
 theorem assemble1_A (h1: $ assemble1 s x y $) (h2: $ assemble1 t y z $): $ assemble1 (s '+ t) x z $ =
-'(eqtr h2 @ eqtr (addeq1 h1) @ eqtr4 addass @ addeq2 @ eqtr (leneq s2nsadd) appendlen);
+'(assemble1_A_lem h1 h2 s2nsadd);
 theorem assemble1_S (h1: $ suc x = y $) (h2: $ assemble1 s y z $): $ assemble1 (c ': s) x z $ =
 '(assemble1_A (assemble1_1 h1) h2);
 
@@ -877,7 +885,7 @@ do (def (mk-asm1 x s) @ match s
   [('s1 c) @ match (mksuc x) @ (y p) '(,y (assemble1_1 ,c ,x ,y ,p))]
   ['(s0) '(,x (assemble1_0 ,x))]);
 
-def assembles_func (s: string) (start end: nat): wff =
+local def assembles_func (s: string) (start end: nat): wff =
 $ assemble1 s start end /\ start < end $;
 
 theorem assembles_func_I (h: $ assemble1 (c ': s '+ t) x y $):
@@ -921,61 +929,154 @@ theorem assembles_finish
 -- Control flow graph layout --
 -------------------------------
 
-@_ def is_CFG (A: set): wff =
-$ A C_ S\ s, S\ l, S\ x, {y | y = x + len s} $;
+@_ local def CFG_ok: set = $ S\ s, S\ l, S\ x, {y | y = x + len s} $;
 
-@_ def sat_CFG (s t: string) (l x y: nat) (A: set): wff =
-$ is_CFG A /\ E. u (s = u ++ t /\ u <> l <> x <> y e. A) $;
+theorem CFG_ok_i: $ A C_ CFG_ok -> s <> l <> x <> y e. A -> y = x + len s $ =
+(focus '(syl6ib _ ssel) '(elsabe @ elsabed @ elsabed @ elabed ,eqtac));
 
-@_ def sat_CFG_func (s: string) (x: nat) (A: set): wff =
+theorem mk_CFG_ok (p: wff s l x y) (h: $ p -> y = x + len s $):
+  $ S\ s, S\ l, S\ x, {y | p} C_ CFG_ok $ =
+'(sabssi @ sabssi @ sabssi @ mpbi ssab @ ax_gen h);
+
+local def sat_CFG (s t: string) (l x y: nat) (A: set): wff =
+$ A C_ CFG_ok /\ E. u (s = u ++ t /\ u <> l <> x <> y e. A) $;
+
+theorem sat_CFG_i (p: wff s l x y) (x2)
+  (h1: $ p -> y = x + len s $)
+  (h2: $ E. u (s2n s2 = u ++ s2n t2 /\ u <> l2 <> x2 <> y2 e. S\ s, S\ l, S\ x, {y | p}) $):
+  $ sat_CFG s2 t2 l2 x2 y2 (S\ s, S\ l, S\ x, {y | p}) $ = '(iani (mk_CFG_ok h1) h2);
+
+theorem sat_CFG_ie (p: wff s l x y) (x2)
+  (h1: $ p -> y = x + len s $) (h2: $ s2 = u2 ++ t2 $)
+  (h3: $ s = u2 /\ l = l2 /\ x = x2 /\ y = y2 -> (p <-> q) $) (h4: $ q $):
+  $ sat_CFG s2 t2 l2 x2 y2 (S\ s, S\ l, S\ x, {y | p}) $ =
+'(sat_CFG_i h1 @ iexie @
+  mpbiri (iani h2 @ mpbir (elsabe @ elsabed @ elsabed @ elabed h3) h4) ,eqtac);
+
+local def sat_CFG_func (s: string) (x: nat) (A: set): wff =
 $ E. y sat_CFG s s0 0 x y A $;
+theorem sat_CFG_func_i (h: $ sat_CFG s s0 0 x y A $):
+  $ sat_CFG_func s x A $ = (named '(iexie @ mpbiri h @ aneq2d ,eqtac));
+theorem sat_CFG_func_iff (h: $ assemble1 s x y $):
+  $ sat_CFG_func s x A <-> A C_ CFG_ok /\ s <> 0 <> x <> y e. A $ =
+'(bitr exan1 @ aneq2a @
+  syl5bb (exeqi @
+    bitr (exeqi @ aneq1i @ bitr eqcomb @ eqeq1 @ eqtr (appendeq2 s2ns0) append02) @
+    exeqe ,eqtac) @
+  bitr3d (exeqd @ syl bian1a @ syl6ibr (eqeq2 h) CFG_ok_i) @
+  a1i @ exeqe ,eqtac);
 
-@_ def CFG0: set = $ S\ s, S\ l, S\ x, {y | s = 0 /\ x = y} $;
-theorem sat_CFG0: $ sat_CFG s s l x x CFG0 $;
+@_ local def CFG0: set = $ S\ s, S\ l, S\ x, {y | s = 0 /\ y = x} $;
+theorem sat_CFG0: $ sat_CFG s s l x x CFG0 $ =
+'(sat_CFG_ie
+  (eqtr4d anr @ syl6eq add0 @ addeq2d @ syl6eq len0 @ leneqd anl)
+  (eqcom append0) ,eqtac @ iani eqid eqid);
 
-@_ def CFG1 (ast: nat): set =
+@_ local def CFG1 (ast: nat): set =
 $ S\ s, S\ l, S\ x, {y | decode ast s /\ y = x + len s} $;
+theorem CFG1_ok: $ CFG1 ast C_ CFG_ok $ = (named '(mk_CFG_ok anr));
 theorem sat_CFG1 (h1: $ assemble1 s x y $) (h2: $ decode ast s $):
-  $ sat_CFG (s '+ t) t l x y (CFG1 ast) $;
+  $ sat_CFG (s '+ t) t l x y (CFG1 ast) $ =
+'(sat_CFG_ie anr s2nsadd ,eqtac @ iani h2 h1);
 
-@_ def CFG_seq (A B: set): set =
+@_ local def CFG_seq (A B: set): set =
 $ S\ s, S\ l, S\ x, {y | E. t1 E. t2 E. z (s = t1 ++ t2 /\
   t1 <> l <> x <> z e. A /\ t2 <> l <> z <> y e. B)} $;
 theorem sat_CFG_seq (h1: $ sat_CFG s t l x y A $) (h2: $ sat_CFG t u l y z B $):
-  $ sat_CFG s u l x z (CFG_seq A B) $;
+  $ sat_CFG s u l x z (CFG_seq A B) $ =
+(named @ focus
+  '(sat_CFG_i _ @ eex (mpi (anri h2) @ eexda _) @ anri h1)
+  '(eex @ eex @ eex @ mpd anll @ sylc assemble1_A_lem
+    (rsyl anlr @ CFG_ok_i @ anli h1) (anwr @ CFG_ok_i @ anli h2))
+  '(sylan (iexe ,eqtac) (syl6eqr appendass @ eqtrd anll @ appendeq2d anrl) @
+    sylibr (elsabe @ elsabed @ elsabed @ elabed ,eqtac) @
+    syl (trud @ iexdde @ iexdde @ iexdde @ bi2d ,eqtac) @
+    iand (iand eqidd anlr) anrr));
 
-@_ def CFG_S (ast: nat) (A: set): set = $ CFG_seq (CFG1 ast) A $;
+@_ local def CFG_S (ast: nat) (A: set): set = $ CFG_seq (CFG1 ast) A $;
 theorem sat_CFG_S (h1: $ assemble1 s x y $) (h2: $ decode ast s $)
   (h3: $ sat_CFG t u l y z A $): $ sat_CFG (s '+ t) u l x z (CFG_S ast A) $ =
 '(sat_CFG_seq (sat_CFG1 h1 h2) h3);
 
-@_ def CFG_scope (A: set): set =
+@_ local def CFG_scope (A: set): set =
 $ S\ s, S\ l, S\ x, {y | E. a (s <> (a : l) <> x <> y e. A)} $;
 theorem sat_CFG_scope (h: $ sat_CFG s t (a : l) x y A $):
-  $ sat_CFG s t l x y (CFG_scope A) $;
+  $ sat_CFG s t l x y (CFG_scope A) $ =
+(named @ focus
+  '(sat_CFG_i (eex @ CFG_ok_i @ anli h) @ eex _ @ anri h)
+  '(syl (iexe ,eqtac) @ anim2 @
+    sylibr (elsabe @ elsabed @ elsabed @ elabed ,eqtac) @
+    iexe ,eqtac));
 
-@_ def CFG_label: set =
-$ S\ s, S\ l, S\ x, {y | s = 0 /\ x = y /\ E. l2 l = x : l2} $;
-theorem sat_CFG_label: $ sat_CFG s s (x : l) x x CFG_label $;
+@_ local def CFG_label: set =
+$ S\ s, S\ l, S\ x, {y | s = 0 /\ y = x /\ E. l2 l = x : l2} $;
+theorem sat_CFG_label: $ sat_CFG s s (x : l) x x CFG_label $ =
+(named '(sat_CFG_ie
+  (eqtr4d anlr @ syl6eq add0 @ addeq2d @ syl6eq len0 @ leneqd anll)
+  (eqcom append0) ,eqtac @ iani (iani eqid eqid) @ iexie @ eqcomd conseq2));
 
-@_ def CFG_lift (A: set): set =
+@_ local def CFG_lift (A: set): set =
 $ S\ s, S\ l, S\ x, {y | E. a E. l2 (l = a : l2 /\ s <> l2 <> x <> y e. A)} $;
 theorem sat_CFG_lift (h: $ sat_CFG s t l x y A $):
-  $ sat_CFG s t (a : l) x y (CFG_scope A) $;
+  $ sat_CFG s t (a : l) x y (CFG_lift A) $ =
+(named @ focus
+  '(sat_CFG_i (eex @ eex @ anwr @ CFG_ok_i @ anli h) @ eex _ @ anri h)
+  '(syl (iexe ,eqtac) @ anim2 @
+    sylibr (elsabe @ elsabed @ elsabed @ elabed ,eqtac) @
+    iexde @ iexde @ mpbird ,eqtac @ iand eqidd anll));
 
-@_ def CFG_block (A B: set): set =
+@_ local def CFG_block (A B: set): set =
 $ CFG_seq (CFG_scope (CFG_seq A CFG_label)) B $;
 theorem sat_CFG_block (h1: $ sat_CFG s t (y : l) x y A $) (h2: $ sat_CFG t u l y z B $):
   $ sat_CFG s u l x z (CFG_block A B) $ =
 '(sat_CFG_seq (sat_CFG_scope @ sat_CFG_seq h1 sat_CFG_label) h2);
 
-@_ def CFG_loop (A B: set): set =
+@_ local def CFG_loop (A B: set): set =
 $ CFG_seq (CFG_scope (CFG_seq CFG_label A)) B $;
 theorem sat_CFG_loop (h1: $ sat_CFG s t (x : l) x y A $) (h2: $ sat_CFG t u l y z B $):
   $ sat_CFG s u l x z (CFG_loop A B) $ =
 '(sat_CFG_seq (sat_CFG_scope @ sat_CFG_seq sat_CFG_label h1) h2);
 
+@_ local def CFG_ex (p: wff x) (A: set x): set = $ {z | E. x (p /\ z e. A)} $;
+theorem sat_CFG_ex (p: wff a) (A: set a)
+  (e1: $ a = b -> (p <-> q) $) (e2: $ a = b -> A == B $)
+  (h1: $ q $) (h2: $ A C_ CFG_ok $) (h3: $ sat_CFG s t l x y B $):
+  $ sat_CFG s t l x y (CFG_ex a p A) $ =
+(named '(iani (mpbi ssab1 @ ax_gen @ eex @ anwr @ ssel h2) @
+  eximi (anim2 @ ssel @ mpbi ssab2 @
+    ax_gen @ exp (iexe @ aneqd e1 @ eleq2d e2) h1) (anri h3)));
+
+-- @_ local def CFG_mov (sz dest src: nat) (A: set): set =
+-- $ CFG_seq (CFG_ex ds (destsrcIRM ds = dest <> src) (CFG1 (xastMov sz ds))) A $;
+-- theorem sat_CFG_mov (e: $ destsrcIRM ds = dest <> src $)
+--   (h1: $ assemble1 s x y $) (h2: $ decode (xastMov sz ds) s $)
+--   (h3: $ sat_CFG t u l y z A $): $ sat_CFG (s '+ t) u l x z (CFG_mov sz dest src A) $ =
+-- '(sat_CFG_seq (sat_CFG_ex ,eqtac ,eqtac e CFG1_ok @ sat_CFG1 h1 h2) h3);
+
 do {
+  -- Builds a sequence of applications of `push` and `reassoc` to `x1` that
+  -- would construct a balanced binary tree with `n > 0` nodes assuming
+  -- x1 = (), (push 'x) = '(x ()) and (reassoc '((a b) c)) = '(a (b c)).
+  -- (However since the actual data is simply threaded through, the functions
+  -- may have additional side state, or may not be tree operations at all.)
+  --
+  -- Ex: (ra-list 'a (fn (x) '(,x a)) (match-fn @ '((,x ,y) ,z) '(,x (,y ,z))) 8)
+  --     = (((a a) (a a)) ((a a) (a a)))
+  (def (ra-list x1 push reassoc n)
+    @ letrec (
+      [(right n x) @ if {n = 1} (push x) @ let ([m {n // 2}])
+        @ reassoc @ right m @ right {n - m} x]
+      [(left n) @ if {n = 1} x1 @ let ([m {n // 2}])
+        @ right m @ left {n - m}])
+    (left n))
+
+  -- Like (ra-list), but supports additionally the `n = 0` case. Here the base case
+  -- for n = 0 is `x0`, `push` and `reassoc` have the same behavior, and `merge1`
+  -- is called on the n = 1 case on `push x0`, for instance if `x0 = 0` then
+  -- merge1 might be defined such that (merge1 '(0 ())) = ()`.
+  (def (ra-list0 x0 push merge1 reassoc n)
+    @ if {n = 0} x0 (ra-list (merge1 @ push x0) push reassoc n))
+
   -- (reg-idx) converts atoms like 'rax, 'rcx, and 'r14 into their indexes.
   (def reg-idx @ lookup-fn @ append
     '([rax 0] [rcx 1] [rdx 2] [rbx 3] [rsp 4] [rbp 5] [rsi 6] [rdi 7])
@@ -983,60 +1084,15 @@ do {
 
   -- (asm1-len inst) gets the projected byte length of an instruction.
   (def asm1-len @ match-fn
-    ['(mov.32 ,_ ,_) 5]
+    ['(mov.32 (reg ,_) ,_) 5]
     ['(syscall) 2])
 
-  -- (assemble-measure xs) does the first assembly pass, calculating the length of
-  -- all instructions and assigning positions to the symbols.
-  -- It returns ((entry_idx entry) xs') where `entry` is the entry address and
-  -- `entry_idx` is the index of the entry function in the xs list, and xs' is
-  -- the same as `xs` but with symbol references replaced by their locations.
-  --
-  -- See (assemble) for the input grammar of xs.
-  (def (assemble-measure xs)
-    (def idx (ref! 0))
-    (def start 0x400078)
-    (def pos (ref! start))
-    (def entity @ lookup-fn @ rmap xs @ match-fn @ (ty name data)
-      (def r '[,name (,(get! idx) ,(get! pos))])
-      (set! idx {idx + 1})
-      (set! pos {pos + (match ty
-        ['func @ apply + @ map asm1-len data]
-        ['string (string-len data)])})
-      r)
-
-    @ letrec (
-      [eval-si @ match-fn ['{,k * ,x} '{,k * ,(eval x)}] [x x]]
-      [eval @ match-fn
-      ['(M {,si + ,x + ,n}) '(M ,(eval-si si) ,(eval x) ,(eval n))]
-      ['(M {,si + ,n}) @ match (eval n)
-        ['(reg ,x) '(M ,(eval-si si) (reg ,x) 0)]
-        [n '(M ,(eval-si si) 0 ,n)]]
-      ['(M ,si) '(M ,(eval-si si) 0 0)]
-      [((? atom? x)) (nth 1 (entity x))]
-      [(? number? n) n]
-      [(? atom? x) '(reg ,(reg-idx x))]])
-
-    @ list (entity 'main)
-    @ rmap xs @ match-fn @ (ty name data)
-    @ list name (nth 1 (entity name)) ty @ match ty
-      ['func @ rmap data @ match-fn
-        [(asm . args) (cons asm (map eval args))]]
-      ['string data])
-
+  -- (assemble-rex x1 ... xn) takes a list of specifications xi = (bit val)
+  -- where bit is 'B, 'X, 'R, 'W or a number 0-3 and val is $0$ or $1$,
+  -- and produces (rex p1 ... pn) where
+  -- if xi = (R val) then pi proves $ REX_R rex = val $, and
+  -- if xi = (n val) then pi proves $ bit rex n = val $.
   (def (assemble-rex . xs)
-    (def idx @ match-fn ['B 0] ['X 1] ['R 2] ['W 3])
-    (def i @ foldl xs 0 @ match-fn*
-      ['(,i (,bit (d1))) {i + {2 ^ (idx bit)}}]
-      [(i _) i])
-    @ if {i = 0}
-      (cons $0$
-        @ rmap xs @ match-fn @ (bit _) '(,(atom-app 'REX_ bit '_0)))
-      (cons (def rex '(h2n @ ,(hexdigit i))) '(suc ,rex)
-        @ rmap xs @ match-fn @ (bit a)
-          '(,(atom-app 'REX_ bit '_Si) ,a ,rex (,(xbit i (idx bit))))))
-
-  (def (mk-rex . xs)
     (def idx @ match-fn ['B 0] ['X 1] ['R 2] ['W 3] [n n])
     (def i @ foldl xs 0 @ match-fn*
       ['(,i (,bit (d1))) {i + {2 ^ (idx bit)}}]
@@ -1050,6 +1106,8 @@ do {
         (def p '(,(xbit i (idx bit))))
         @ if (number? bit) p '(,(atom-app 'REX_ bit '_Si) ,a ,rex ,p)))
 
+  -- (assemble-inst inst) assembles the instruction `inst`, and
+  -- returns (ast s p) where p proves $ decode ast s $.
   (def assemble-inst
     (def (asm-aux rex ast opc s p) @ match rex
       [$0$ '(,ast $,opc ': ,s$ (decode0I ,ast ,opc ,s ,p))]
@@ -1060,7 +1118,7 @@ do {
         @ match (mk-splitBits '(3 1) r2) @ (r rb hr2)
         (def v $1$) (def sz '(wSz32))
         @ match (merge-bits '(3 1) r v) @ (a ha)
-        (def r2 (hexdigit r2)) (def a '(,(hexdigit a)))
+        (def r2 '(,(hexdigit r2))) (def a '(,(hexdigit a)))
         @ match (assemble-rex '(B ,rb) '(3 $0$)) @ (rex hrb hsz)
         (def hsz @ match rex
           [$0$ '(opSizeW_0 ,sz ,v (opSize_32 $F.$))]
@@ -1068,17 +1126,62 @@ do {
         (def imm (->zhex imm))
         @ match (to-iNBytes 32 imm) @ (l heq)
         (def himm '(readFullImm32I ,imm ,l ,(to-eli 32 imm) ,heq))
-        @ asm-aux rex $ xastMov ,sz (Rm_i (RM_reg ,r2) ,imm) $ '(ch (xb) ,a) l
+        @ asm-aux rex
+          $ xastMov ,sz (Rm_i (RM_reg (h2n ,r2)) (chopZ 64 ,imm)) $
+          '(ch (xb) ,a) l
         @ list 'decodeMov64I a imm l r r2 rb rex sz v ha hsz himm hrb hr2]
       ['(syscall)
         @ asm-aux $0$ '(xastSysCall) '(ch (x0) (xf)) '(s1 @ ch (x0) (x5))
         '(decodeSysCallI $0$)])
 
-  -- (assemble-core base main bss vis entry_idx entry xs')
+  (def (assemble-desugar fwd-ref)
+    @ letrec (
+      [desugar-si @ match-fn ['{,k * ,x} '{,k * ,(desugar x)}] [x x]]
+      [desugar @ match-fn
+        ['(M {,si + ,x + ,n}) '(M ,(desugar-si si) ,(desugar x) ,(desugar n))]
+        ['(M {,si + ,n}) @ match (desugar n)
+          ['(reg ,x) '(M ,(desugar-si si) (reg ,x) 0)]
+          [n '(M ,(desugar-si si) 0 ,n)]]
+        ['(M ,si) '(M ,(desugar-si si) 0 0)]
+        ['(M ,si ,x ,n) '(M ,(desugar-si si) ,(desugar x) ,(desugar n))]
+        [((? atom? x)) (fwd-ref x)]
+        [(? number? n) n]
+        [(? atom? x) '(reg ,(reg-idx x))]])
+    @ match-fn @ (asm . args) (cons asm @ map desugar args))
+
+  -- (assemble-measure xs) does the first assembly pass, calculating the length of
+  -- all instructions and assigning positions to the symbols.
+  -- It returns (entry_idx entry xs') where `entry` is the entry address and
+  -- `entry_idx` is the index of the entry function in the xs list, and xs' is
+  -- the same as `xs` but with symbol references replaced by their locations.
+  --
+  -- See (assemble) for the input grammar of xs.
+  (def (assemble-measure xs)
+    (def fwd-ref
+      (def refs (atom-map!))
+      @ fn (x) @ match (lookup refs x)
+        [#undef (def r (ref! '(,x))) (insert refs x r) r]
+        [r r])
+
+    (def xs @ rmap xs @ match-fn
+      [('func name data) @ list 'func name
+        @ rmap data (assemble-desugar fwd-ref)]
+      [e e])
+
+    (def entry-idx (ref!))
+    (foldl xs '(0 0x400078) @ match-fn* @ ((idx pos) (ty name data))
+      (set! (fwd-ref name) pos)
+      (if {name == 'main} (set! entry-idx idx))
+      @ list {idx + 1} {pos + (match ty
+        ['func @ apply + @ map asm1-len data]
+        ['string (string-len data)])})
+    @ list (get! entry-idx) (get! @ fwd-ref 'main) xs)
+
+  -- (assemble-core base main bss pub entry_idx entry xs')
   -- assembles an ELF file, producing the file and a correctness theorem.
-  -- See (assemble) for the meaning of the `base main bss vis` arguments,
+  -- See (assemble) for the meaning of the `base main bss pub` arguments,
   -- and (assemble-measure) for the `entry_idx entry xs'` arguments.
-  (def (assemble-core base main bss vis entry_idx entry xs)
+  (def (assemble-core base main bss pub entry_idx entry xs)
     (def start 0x400078)
     (def start_x (->hex start))
     (def pfx (atom-app base _))
@@ -1087,7 +1190,7 @@ do {
 
     -- items: list (pfx_name, assembled_prop, assembled_proof,
     --   option (list (inst_ast, inst_byte_str, decode_proof)))
-    (def items @ rmap xs @ match-fn @ (name _ ty data)
+    (def items @ rmap xs @ match-fn @ (ty name data)
       (def name_asm (atom-app pfx name '_asm))
       @ match (match ty
         ['func
@@ -1098,7 +1201,7 @@ do {
         @ (str kind asf asm)
       @ match (mk-asm1 (get! pos_x) str) @ (pos2_x pf)
       (def name2 (atom-app pfx name))
-      (add-term! name2 () '(string ()) () () str)
+      (add-term! name2 () '(string ()) 'local () str)
       (add-tac-thm! name_asm () ()
         '(assemble1 (,name2) ,(get! pos_x) ,pos2_x) ()
         (fn () (verb pf)))
@@ -1108,7 +1211,7 @@ do {
 
     (def content_s
       @ foldl items '(s0) (fn (x y) '(sadd ,x (,(nth 0 y)))))
-    (add-term! content () '(string ()) () 'local content_s)
+    (add-term! content () '(string ()) 'local () content_s)
 
     (def pos (hex->number pos_x))
     (def filesz {pos - start})
@@ -1116,15 +1219,25 @@ do {
     @ match (to-uNBytes 64 filesz_x) @ (filesz_s filesz_p)
 
     (def asmd (atom-app pfx 'assembled))
-    (add-tac-thm! asmd () ()
-      '(an (eq (len (,content)) ,filesz_x)
-        ,(foldl items '(wtru) @ fn (x y)
-          '(an ,x ,(nth 1 y)))) ()
-      @ fn ()
-        '(assembles_finish
-          ,(foldl items 'assembles0 @ fn (x y)
-            '(assemblesA ,x ,(nth 2 y)))
-          ,(verb @ nth 1 @ mkadd start_x filesz_x)))
+    (def asmd-pf
+      (def n (len items))
+      @ match (ra-list0
+        '((wtru) assembles0 ,items)
+        (match-fn @ (t p ((_ prop asf _) . its))
+          '((an ,t ,prop) (assemblesA ,p ,asf) ,its))
+        (match-fn @ ($ T. /\ ,t $ p its)
+          '(,t (assembles_trul ,p) ,its))
+        (match-fn @ ($ ,q1 /\ ,q2 /\ ,q3 $ p its)
+          '($ ,q1 /\ (,q2 /\ ,q3) $ (assembles_assoc ,p) ,its))
+        n) @ (prop pf _)
+      (add-tac-thm! asmd () ()
+        '(an (eq (len (,content)) ,filesz_x) ,prop) ()
+        @ fn () '(assembles_finish ,pf ,(verb @ nth 1 @ mkadd start_x filesz_x)))
+      @ fn (i x)
+      @ letrec ([(f i n) @ if {n = 1} x
+        @ let ([m {n // 2}] [m2 {n - m}])
+        @ if {i < m2} '(anli ,(f i m2)) '(anri ,(f {i - m2} m))])
+      (f i n))
 
     (def entry_x (->hex entry))
     @ match (to-uNBytes 64 entry_x) @ (entry_s entry_p)
@@ -1134,7 +1247,7 @@ do {
     (def memsz_x (->hex memsz))
     @ match (to-uNBytes 64 memsz_x) @ (memsz_s memsz_p)
 
-    (add-term! base () '(string ()) () vis
+    (add-term! base () '(string ()) (if pub () 'local) ()
       '(ELF_lit ,entry_s ,filesz_s ,memsz_s (,content)))
 
     @ match (mkadd start_x memsz_x) @ (end_x end_p)
@@ -1148,22 +1261,20 @@ do {
         ,(verb @ nth 1 @ mkadd filesz_x bss_x)
         (anli ,asmd)
         ,(verb end_p)
-        (assembled_func_bound @ anri
-          ,(iterate {(len xs) - 1 - entry_idx}
-            (fn (x) '(anli ,x)) '(anri ,asmd)))
+        (assembled_func_bound ,(asmd-pf entry_idx '(anri ,asmd)))
         ,(verb @ to-elu 64 end_x)))
 
     (add-thm! (atom-app pfx 'basicElf) () ()
-      '(isBasicElf (,base)) vis
+      '(isBasicElf (,base)) (if pub 'pub ())
       '(() (ELF_lit_ok_isBasicElf (,base) ,entry_x ,bss_x (,content)
         (,parseElf)))))
 
-  -- (assemble base main bss vis xs) assembles an ELF file, producing the file
+  -- (assemble base main bss pub xs) assembles an ELF file, producing the file
   -- and a correctness theorem. `base` is the base name for all declarations,
   -- `main` is the name of the main function, `bss` is the number of bytes in the
-  -- zeroed section, `vis` is the target visibility of the main theorems
-  -- (either () or pub), and `xs` is the list of functions and data elements to
-  -- assemble.
+  -- zeroed section, `pub` is the target visibility of the main theorems
+  -- (either #t public or #f local), and `xs` is the list of functions and data
+  -- elements to assemble.
   --
   -- The xs argument is a list, where the arguments can have the form:
   -- * (func ,name ,data) where `name` is the name of the function and data
@@ -1201,25 +1312,25 @@ do {
   --     as well as a conjunction asserting that every name_i assembles to its
   --     final location.
   -- * (pub) def `base`: string;
-  --   - This is the complete ELF file string, with visibility `vis`.
+  --   - This is the complete ELF file string, with visibility `pub`.
   -- * theorem `base`_parseElf: $ ELF_lit_ok base entry bss base_content $;
   --   - The proof that `base` is an ELF file that parses to `base_content`.
   -- * (pub) def `base`_basicElf: $ isBasicElf base $;
   --   - The proof that `base` is an ELF file.
-  (def (assemble base main bss vis xs)
-    @ match (assemble-measure xs) @ ((entry_idx entry) xs)
-    (assemble-core base main bss vis entry_idx entry xs))
+  (def (assemble base main bss pub xs)
+    @ match (assemble-measure xs) @ (entry_idx entry xs)
+    (assemble-core base main bss pub entry_idx entry xs))
 };
 
-@_ def X86P_Input = $ b0 0 $;
-@_ def X86P_Output = $ b0 1 $;
-@_ def X86P_RIP = $ b0 2 $;
-@_ def X86P_Flags = $ b0 3 $;
-@_ def X86P_Virtual (n: nat) = $ b0 (n + 4) $;
-@_ def X86P_Reg (n: nat) = $ b1 (b0 n) $;
-@_ def X86P_Mem (n: nat) = $ b1 (b1 n) $;
+@_ local def X86P_Input = $ b0 0 $;
+@_ local def X86P_Output = $ b0 1 $;
+@_ local def X86P_RIP = $ b0 2 $;
+@_ local def X86P_Flags = $ b0 3 $;
+@_ local def X86P_Virtual (n: nat) = $ b0 (n + 4) $;
+@_ local def X86P_Reg (n: nat) = $ b1 (b0 n) $;
+@_ local def X86P_Mem (n: nat) = $ b1 (b1 n) $;
 
-@_ def read_place (ks: nat): set =
+@_ local def read_place (ks: nat): set =
 $ case
     (ocase (pi11 ks)
       (ocase (pi12 ks)
@@ -1230,24 +1341,24 @@ $ case
       (\ r, readReg (ksCfg ks) r)
       (\ a, getMemory (ksCfg ks) @ a <> ksMapping ks @ a)) $;
 
-@_ def heap_sat (h ks: nat): wff =
+@_ local def heap_sat (h ks: nat): wff =
 $ A. p A. x (p <> x e. h -> read_place ks @ p = x) $;
 
-@_ def heap_join (h1 h2: nat): nat =
+@_ local def heap_join (h1 h2: nat): nat =
 $ if (Dom h1 i^i Dom h2 == 0) (lower (h1 u. h2)) 0 $;
 
-@_ def s_and (P Q: set): set = $ Union P Q $;
+@_ local def s_and (P Q: set): set = $ Union P Q $;
 
-@_ def s_sep (P Q: set): set =
+@_ local def s_sep (P Q: set): set =
 $ {h | E. h1 E. h2 (h1 e. P /\ h2 e. Q /\ heap_join h1 h2 = suc h)} $;
 
-@_ def s_wand (P Q: set): set =
+@_ local def s_wand (P Q: set): set =
 $ {h2 | A. h1 A. h (h1 e. P -> heap_join h1 h2 = suc h -> h e. Q)} $;
 
-@_ def x86_sat (P: set) (ks: nat): wff =
+@_ local def x86_sat (P: set) (ks: nat): wff =
 $ A. p A. x (p <> x e. P -> read_place ks @ p = x) $;
 
-def prog_ok (elf: string) (i: nat) (P: set): wff =
+local def prog_ok (elf: string) (i: nat) (P: set): wff =
 $ A. k (initialConfig elf i k -> terminates_ensuring k P) $;
 
 do {

@@ -1,0 +1,6 @@
+import "x86.mm0";
+
+def hello: string;
+theorem hello_basicElf: $ isBasicElf hello $;
+
+output string: $ hello $;

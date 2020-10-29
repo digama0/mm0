@@ -1,7 +1,7 @@
 import "compiler.mm1";
 
 do {
-  (assemble 'hello 'main 0 'pub '(
+  (assemble 'hello 'main 0 #t '(
     (func main (
       (mov.32 rdx 0xe)
       (mov.32 rsi (data))
@@ -24,15 +24,47 @@ theorem hello_decode_test: $ decode
   (xastMov (wSz32) (Rm_i (RM_reg x2) (chopZ 64 (b0 xe))))
   (s2n (ch (xb) (xa) ':
   ch (x0) (xe) ': ch (x0) (x0) ': ch (x0) (x0) ': s1 (ch (x0) (x0)))) $ =
-'(decode0I @ decodeMov64I xsplitBits_a31
-    (opSizeW_0 opSize_32)
-    (readFullImm32I
-      ,(match-fn* @ (r '(el ,a ,_)) @ to-eli 32 a)
-      ,(match-fn* @ (r '(eq ,_ (i32Bytes ,b))) @ nth 1 @ to-iNBytes 32 b))
-    REX_B_0 xsplitBits_231);
+(match (assemble-inst @ (assemble-desugar list) '(mov.32 rdx 0xe))
+  [(t s p) '{,(verb p) : $ decode ,t ,s $}]);
+
+theorem hello_main_CFG: $ sat_CFG_func hello_main ,0x400078
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x2))) (chopZ 64 (b0 (h2n (xe))))))
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x6)))
+    (chopZ 64 (b0 (h2n (x4) :x x0 :x x0 :x x0 :x x9 :x xa)))))
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x7))) (chopZ 64 (b0 (h2n (x1))))))
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x0))) (chopZ 64 (b0 (h2n (x1))))))
+  (CFG_S (xastSysCall)
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x7))) (chopZ 64 0)))
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x0))) (chopZ 64 (b0 (h2n (x3) :x xc)))))
+  (CFG_S (xastSysCall)
+  (CFG0))))))))) $ =
+(focus
+  '(sat_CFG_func_i _)
+  (def pos (ref! @ ->hex 0x400078))
+  @ match (assemble-measure '(
+    (func main (
+      (mov.32 rdx 0xe)
+      (mov.32 rsi (data))
+      (mov.32 rdi 1)
+      (mov.32 rax 1)
+      (syscall)
+      (mov.32 rdi 0)
+      (mov.32 rax 0x3c)
+      (syscall)))
+    (string data "Hello, world!\n")
+  )) @ (_ _ ((_ _ xs) _))
+  (scan xs @ fn (inst)
+    @ match (assemble-inst inst) @ (t s p)
+    @ match (mk-asm1 (get! pos) s) @ (pos2 p2)
+    (refine '(sat_CFG_S
+      {,(verb p2) : $ assemble1 ,s ,(get! pos) ,pos2 $}
+      {,(verb p) : $ decode ,t ,s $}
+      _))
+    (set! pos pos2))
+  (refine 'sat_CFG0));
 
 theorem hello_terminates:
   $ initialConfig hello i k -> terminates_ensuring k (S\ i2, {o |
-      i2 = i /\ o = ,"Hello, World!"}) $;
+      i2 = i /\ o = ,"Hello, World!\n"}) $;
 
 output string: $ hello $;

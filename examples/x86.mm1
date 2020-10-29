@@ -1412,7 +1412,7 @@ pub theorem decodeTwoXaddT (rex ast b l: nat):
   mpbird (eleq1d anr) @ sylibr xastXaddT @
   rsyl anlr @ rsyl readModRM_T @ iand (rsyl anlr @ ian opSizeW_T) anll));
 
-@_ def decodeTwoSysCall (rex ast b l .v .reg .r: nat): wff =
+@_ def decodeTwoSysCall (rex ast b l: nat): wff =
 $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 pub theorem decodeTwoSysCallT (rex ast b l: nat):
   $ decodeTwoSysCall rex ast b l -> ast e. XAST $ =
@@ -1447,7 +1447,7 @@ pub theorem decodeBinopRegT (rex ast b l: nat):
   '(syl Binop_low @ sylib elBitvec2 @
     elListHd @ elListTl @ elListTl @ elListTl an3l));
 
-@_ def decodeBinopRAX (rex ast b l .v .opc .imm .sz: nat): wff =
+@_ def decodeBinopRAX (rex ast b l .v .opc .imm: nat): wff =
 $ E. v E. opc E. imm (
     splitBits ((1 <> v) : (2 <> 2) : (3 <> opc) : (2 <> 0) : 0) b /\
     readImm (opSizeW rex v) imm l /\
@@ -1461,7 +1461,7 @@ pub theorem decodeBinopRAX_T (rex ast b l: nat):
     anld @ rsyl anlr @ exp readImmT opSizeW_T)
   '(syl Binop_low @ sylib elBitvec2 @ elListHd @ elListTl @ elListTl an3l));
 
-@_ def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2 .sz: nat): wff =
+@_ def decodeBinopImm (rex ast b l .v .opc .r .l1 .imm .l2: nat): wff =
 $ E. v E. opc E. r E. l1 E. imm E. l2 (l = l1 ++ l2 /\
     splitBits ((1 <> v) : (3 <> 0) : (4 <> 8) : 0) b /\
     readOpcodeModRM rex opc r l1 /\
@@ -1601,7 +1601,7 @@ pub theorem decodePushT (rex ast b l: nat):
     sylibr immRM_rmT @ sylibr RM_regT @ sylan rex_regT (a1i REX_B_T) @
     sylib elBitvec2 @ elListHd anll)));
 
-@_ def decodePop (rex ast b l .v .reg .r: nat): wff =
+@_ def decodePop (rex ast b l .r: nat): wff =
 $ (l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
     ast = xastPop (RM_reg (rex_reg (REX_B rex) r)))) \/
@@ -2166,47 +2166,10 @@ pub theorem RM_EA_T (k rm: nat):
       (sylibr EA_rT @ sylib RM_regT @ mpbid (eleq1d anr) anlr)) +
     ($RM_mem si base q$ => RM_EAmem (a1i @ mpbir EA_mT add64T))});
 
-@_ local def destsrcEA (k ds: nat): nat =
-$ case (\\ v, case
-    (\ q, RM_EA k v <> EA_i q)
-    (\ r, RM_EA k v <> EA_r r))
-  (\\ r, \ rm, EA_r r <> RM_EA k rm) @ ds $;
-theorem destsrcEAm_i (k v q: nat): $ destsrcEA k (Rm_i v q) = RM_EA k v <> EA_i q $ =
-(named '(eqtr casel @ appslame @ syl5eq casel @ applamed @ preqd (RM_EAeq2d anl) (EA_ieqd anr)));
-theorem destsrcEAm_r (k v r: nat): $ destsrcEA k (Rm_r v r) = RM_EA k v <> EA_r r $ =
-(named '(eqtr casel @ appslame @ syl5eq caser @ applamed @ preqd (RM_EAeq2d anl) (EA_reqd anr)));
-theorem destsrcEA_rm (k r rm: nat): $ destsrcEA k (R_rm r rm) = EA_r r <> RM_EA k rm $ =
-(named '(eqtr caser @ appslame @ applamed @ preqd (EA_reqd anl) (RM_EAeq2d anr)));
-theorem destsrcEA_T (k ds: nat):
-  $ k e. Config /\ ds e. DestSrc -> destsrcEA k ds e. Xp EA EA $ =
-(named
-  (def (f x h1 h2 h3 h4)
-    '(! exp _ (eq _ ,x) _ @ mpbird (eleq1d @ syl6eq ,h1 @ destsrcEAeq2d anr) @
-      mpand (sylib ,h2 @ mpbid (eleq1d anr) anlr) @ xpTd ,h3 ,h4))
-  -- TODO: make (split-sop) handle this
-  '(splitb (splitpr @ splitb
-    (eqerd @ splitb0 @ splitpr2 @ splitb0
-      ,(f $Rm_i v q$ 'destsrcEAm_i 'Rm_iT '(sylan RM_EA_T an3l anrl) '(sylibr EA_iT anrr)))
-    (eqerd @ splitb1 @ splitpr2 @ splitb0
-      ,(f $Rm_r v r$ 'destsrcEAm_r 'Rm_rT '(sylan RM_EA_T an3l anrl) '(sylibr EA_rT anrr))))
-    (splitpr @ splitb1
-      ,(f $R_rm r rm$ 'destsrcEA_rm 'R_rmT '(sylibr EA_rT anrl) '(sylan RM_EA_T an3l anrr)))));
-
-@_ abstract def destEA (k ds: nat): nat = $ fst (destsrcEA k ds) $;
-pub theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $ = '(eqtr (fsteq destsrcEAm_i) fstpr);
-pub theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $ = '(eqtr (fsteq destsrcEAm_r) fstpr);
-pub theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $ = '(eqtr (fsteq destsrcEA_rm) fstpr);
-pub theorem destEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> destEA k ds e. EA $ = '(syl xpfst destsrcEA_T);
-
-@_ abstract def srcEA (k ds: nat): nat = $ snd (destsrcEA k ds) $;
-pub theorem srcEAm_i (k v q: nat): $ srcEA k (Rm_i v q) = EA_i q $ = '(eqtr (sndeq destsrcEAm_i) sndpr);
-pub theorem srcEAm_r (k v r: nat): $ srcEA k (Rm_r v r) = EA_r r $ = '(eqtr (sndeq destsrcEAm_r) sndpr);
-pub theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $ = '(eqtr (sndeq destsrcEA_rm) sndpr);
-pub theorem srcEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> srcEA k ds e. EA $ = '(syl xpsnd destsrcEA_T);
-
 @_ abstract def immRM_EA (k irm: nat): nat = $ case (\ rm, RM_EA k rm) (\ q, EA_i q) @ irm $;
 pub theorem immRM_EArm (k rm: nat): $ immRM_EA k (immRM_rm rm) = RM_EA k rm $ =
 (named '(eqtr casel @ applame RM_EAeq2));
+theorem immRM_EAreg: $ immRM_EA k (immRM_rm (RM_reg r)) = EA_r r $ = '(eqtr immRM_EArm RM_EAreg);
 pub theorem immRM_EAimm (k q: nat): $ immRM_EA k (immRM_imm q) = EA_i q $ =
 (named '(eqtr caser @ applame EA_ieq));
 pub theorem immRM_EA_T (k irm: nat): $ k e. Config /\ irm e. ImmRM -> immRM_EA k irm e. EA $ =
@@ -2215,6 +2178,59 @@ pub theorem immRM_EA_T (k irm: nat): $ k e. Config /\ irm e. ImmRM -> immRM_EA k
       mpand (sylib ,h2 @ mpbid (eleq1d anr) anlr) ,h3))
   '{($immRM_rm rm$ => ,(f 'immRM_EArm 'immRM_rmT '(sylan RM_EA_T an3l anr))) +
     ($immRM_imm q$ => ,(f 'immRM_EAimm 'immRM_immT '(sylibr EA_iT anr)))});
+
+@_ local def destsrcIRM (ds: nat): nat =
+$ case (\\ v, case
+    (\ q, immRM_rm v <> immRM_imm q)
+    (\ r, immRM_rm v <> immRM_rm (RM_reg r)))
+  (\\ r, \ rm, immRM_rm (RM_reg r) <> immRM_rm rm) @ ds $;
+theorem destsrcIRMm_i (v q: nat): $ destsrcIRM (Rm_i v q) = immRM_rm v <> immRM_imm q $ =
+(named '(eqtr casel @ appslame @ syl5eq casel @ applamed ,eqtac));
+theorem destsrcIRMm_r (v r: nat): $ destsrcIRM (Rm_r v r) = immRM_rm v <> immRM_rm (RM_reg r) $ =
+(named '(eqtr casel @ appslame @ syl5eq caser @ applamed ,eqtac));
+theorem destsrcIRM_rm (r rm: nat): $ destsrcIRM (R_rm r rm) = immRM_rm (RM_reg r) <> immRM_rm rm $ =
+(named '(eqtr caser @ appslame @ applamed ,eqtac));
+theorem destsrcIRM_T (ds: nat):
+  $ ds e. DestSrc -> destsrcIRM ds e. Xp ImmRM ImmRM $ =
+(named
+  (def (f x h1 h2 h3 h4)
+    '(! exp _ (eq _ ,x) _ @ mpbird (eleq1d @ syl6eq ,h1 @ destsrcIRMeqd anr) @
+      mpand (sylib ,h2 @ mpbid (eleq1d anr) anl) @ xpTd ,h3 ,h4))
+  -- TODO: make (split-sop) handle this
+  '(splitb (splitpr @ splitb
+    (eqerd @ splitb0 @ splitpr2 @ splitb0
+      ,(f $Rm_i v q$ 'destsrcIRMm_i 'Rm_iT
+        '(sylibr immRM_rmT anrl) '(sylibr immRM_immT anrr)))
+    (eqerd @ splitb1 @ splitpr2 @ splitb0
+      ,(f $Rm_r v r$ 'destsrcIRMm_r 'Rm_rT
+        '(sylibr immRM_rmT anrl) '(sylibr immRM_rmT @ sylibr RM_regT anrr))))
+    (splitpr @ splitb1
+      ,(f $R_rm r rm$ 'destsrcIRM_rm 'R_rmT
+        '(sylibr immRM_rmT @ sylibr RM_regT anrl) '(sylibr immRM_rmT anrr)))));
+
+@_ local def destIRM (ds: nat): nat = $ fst (destsrcIRM ds) $;
+theorem destIRMm_i (v q: nat): $ destIRM (Rm_i v q) = immRM_rm v $ = '(eqtr (fsteq destsrcIRMm_i) fstpr);
+theorem destIRMm_r (v r: nat): $ destIRM (Rm_r v r) = immRM_rm v $ = '(eqtr (fsteq destsrcIRMm_r) fstpr);
+theorem destIRM_rm (r rm: nat): $ destIRM (R_rm r rm) = immRM_rm (RM_reg r) $ = '(eqtr (fsteq destsrcIRM_rm) fstpr);
+theorem destIRM_T (ds: nat): $ ds e. DestSrc -> destIRM ds e. ImmRM $ = '(syl xpfst destsrcIRM_T);
+
+@_ local def srcIRM (ds: nat): nat = $ snd (destsrcIRM ds) $;
+theorem srcIRMm_i (v q: nat): $ srcIRM (Rm_i v q) = immRM_imm q $ = '(eqtr (sndeq destsrcIRMm_i) sndpr);
+theorem srcIRMm_r (v r: nat): $ srcIRM (Rm_r v r) = immRM_rm (RM_reg r) $ = '(eqtr (sndeq destsrcIRMm_r) sndpr);
+theorem srcIRM_rm (r rm: nat): $ srcIRM (R_rm r rm) = immRM_rm rm $ = '(eqtr (sndeq destsrcIRM_rm) sndpr);
+theorem srcIRM_T (ds: nat): $ ds e. DestSrc -> srcIRM ds e. ImmRM $ = '(syl xpsnd destsrcIRM_T);
+
+@_ abstract def destEA (k ds: nat): nat = $ immRM_EA k (destIRM ds) $;
+pub theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $ = '(eqtr (immRM_EAeq2 destIRMm_i) immRM_EArm);
+pub theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $ = '(eqtr (immRM_EAeq2 destIRMm_r) immRM_EArm);
+pub theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $ = '(eqtr (immRM_EAeq2 destIRM_rm) immRM_EAreg);
+pub theorem destEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> destEA k ds e. EA $ = '(syl immRM_EA_T @ anim2 destIRM_T);
+
+@_ abstract def srcEA (k ds: nat): nat = $ immRM_EA k (srcIRM ds) $;
+pub theorem srcEAm_i (k v q: nat): $ srcEA k (Rm_i v q) = EA_i q $ = '(eqtr (immRM_EAeq2 srcIRMm_i) immRM_EAimm);
+pub theorem srcEAm_r (k v r: nat): $ srcEA k (Rm_r v r) = EA_r r $ = '(eqtr (immRM_EAeq2 srcIRMm_r) immRM_EAreg);
+pub theorem srcEA_rm (k r rm: nat): $ srcEA k (R_rm r rm) = RM_EA k rm $ = '(eqtr (immRM_EAeq2 srcIRM_rm) immRM_EArm);
+pub theorem srcEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> srcEA k ds e. EA $ = '(syl immRM_EA_T @ anim2 srcIRM_T);
 
 @_ def readRegSz (k sz r: nat): nat =
 $ chop (wsizeBits sz)
@@ -2460,7 +2476,7 @@ pub theorem writeSFZF_T (k sz w : nat):
   $ k e. Config /\ sz e. WSize /\ w e. u64 ->
     writeSFZF k sz w e. Config $ = 'writeResultFlagsT;
 
-@_ def eraseFlags (k k2 .e .ip .rs .f .f2 .m: nat): wff =
+@_ def eraseFlags (k k2 .f2: nat): wff =
 $ k e. Config /\ E. f2 (f2 e. Flags /\ k2 = writeFlags k f2) $;
 pub theorem eraseFlagsT (k k2: nat):
   $ eraseFlags k k2 -> k e. Config /\ k2 e. Config $ =
@@ -2625,7 +2641,7 @@ pub theorem pushImmRM_T (k irm k2: nat):
   $ pushImmRM k irm k2 -> k e. Config /\ irm e. ImmRM /\ k2 e. Config $ =
 (named '(sylibr anass @ sylib anlass @ anim2 @ eex @ anwr @ rsyl pushAuxT @ anim1 anl));
 
-@_ def pushRIP (k k2 .q: nat): wff = $ pushAux k (readRIP k) k2 $;
+@_ def pushRIP (k k2: nat): wff = $ pushAux k (readRIP k) k2 $;
 pub theorem pushRIP_T (k irm k2: nat):
   $ pushRIP k k2 -> k e. Config /\ k2 e. Config $ = '(rsyl pushAuxT @ anim1 anl);
 
@@ -3047,7 +3063,7 @@ theorem ksOut_mk: $ ksOut (mkKS i o k m) = o $ = 'pi12pr;
 theorem ksCfg_mk: $ ksCfg (mkKS i o k m) = k $ = 'pi21pr;
 theorem ksMapping_mk: $ ksMapping (mkKS i o k m) = m $ = 'pi22pr;
 
-@_ def writeMapping (ks k2 m2 ks2 .i .o .k .m: nat): wff =
+@_ def writeMapping (ks k2 m2 ks2: nat): wff =
 $ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
   ks2 = mkKS (ksIn ks) (ksOut ks) k2 m2 $;
 pub theorem writeMappingT (ks m k ks2: nat):
@@ -3080,7 +3096,7 @@ pub theorem readCStrT (k a s: nat):
 
 @_ def O_RDONLY: nat = $ 0 $;
 @_ def O_WRONLY: nat = $ 1 $;
-@_ def O_CREA_T: nat = $ shl 1 6 $;
+@_ def O_CREAT: nat = $ shl 1 6 $;
 @_ def O_TRUNC: nat = $ shl 1 9 $;
 
 @_ def sys_open: nat = $ 2 $;
@@ -3089,7 +3105,7 @@ $ k e. Config /\ readReg k RAX = sys_open /\
   E. filename E. flags (
     readCStr k (readReg k RDI) filename /\
     flags = readReg k RSI /\ readReg k RDX = 0 /\
-    (flags = O_RDONLY \/ flags = O_WRONLY + O_CREA_T + O_TRUNC) /\
+    (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
     ret e. u64) $;
 pub theorem execOpenT (k ret: nat):
   $ execOpen k ret -> k e. Config /\ ret e. u64 $ =
@@ -3603,7 +3619,7 @@ pub theorem basicElfEH_T (file entry phoff: nat):
     file e. List u8 /\ entry e. u64 /\ phoff e. u64 $ =
 (named '(sylibr anass @ anim2 @ eex @ anwr @ rsyl elfHeaderT @ iand an4lr an3lr));
 
-@_ def basicElf (entry prot off seg .f: nat): wff =
+@_ def basicElf (entry prot off seg: nat): wff =
 $ entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
   off <= entry /\ entry < off + len seg $;
 pub theorem BasicElfT (entry prot off seg: nat):

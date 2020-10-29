@@ -905,6 +905,8 @@ theorem aleqe (a: nat) (p: wff x) (q: wff)
   (e: $ x = a -> (p <-> q) $): $ A. x (x = a -> p) <-> q $ = '(bitr3 dfsb2 @ sbe e);
 theorem exeqe (a: nat) (p: wff x) (q: wff)
   (e: $ x = a -> (p <-> q) $): $ E. x (x = a /\ p) <-> q $ = '(bitr3 dfsb3 @ sbe e);
+theorem exeqed (a: nat) (p: wff x) (q: wff)
+  (e: $ G /\ x = a -> (p <-> q) $): $ G -> (E. x (x = a /\ p) <-> q) $ = '(syl5bbr dfsb3 @ sbed e);
 theorem cbvals (p: wff x): $ A. x p <-> A. y ([y / x] p) $ = '(cbvalh nfv nfsb1 sbq);
 theorem cbvexs (p: wff x): $ E. x p <-> E. y ([y / x] p) $ = '(cbvexh nfv nfsb1 sbq);
 theorem cbvald (G) (p: wff x) (q: wff y)
@@ -2764,6 +2766,15 @@ theorem eexsabd {z} (y: nat x z) (A: set x) (h: $ G -> z e. A -> p $):
   syl5bir (eleq1 fstsnd) @ syl5bi elsabs @
   syl5 (iexe eleq1) @ eexd @
   sbethh (nfim nfv @ nfim (nfel2 nfsbs1) nfv) (imeq2d @ imeq1d @ eleq2d sbsq) h);
+
+theorem sabss (A B: set x): $ S\ x, A C_ S\ x, B <-> A. x A C_ B $ =
+(named @ focus
+  '(bitr3 ssab @ ibii _ _)
+  (def h '(eleqd (syl6eq sndpr sndeq) @ eqscomd @ syl sbsq @ eqcomd @ syl6eq fstpr fsteq))
+  '(ialdh (nfal @ nfim (nfel2 nfsbs1) (nfel2 nfsbs1)) @ iald @ eale @ imeqd ,h ,h)
+  '(iald @ syl ssel @ ealeh (nfss nfsbs1 nfsbs1) @ sseqd sbsq sbsq));
+theorem sabssi (A B: set x) (h: $ A C_ B $): $ S\ x, A C_ S\ x, B $ = '(mpbir sabss @ ax_gen h);
+theorem sabssd (A B: set x) (h: $ G -> A C_ B $): $ G -> S\ x, A C_ S\ x, B $ = '(sylibr sabss @ iald h);
 
 -- Indexed disjoint union, a restricted version of S\
 @_ def xab {x: nat} (A: set) (B: set x): set =
