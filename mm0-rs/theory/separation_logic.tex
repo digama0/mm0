@@ -33,7 +33,7 @@
 \newcommand*{\N}{\mathbb{N}}
 \newcommand*{\Z}{\mathbb{Z}}
 \newcommand{\wand}{\mathrel{-\!\!\ast}}
-\newcommand{\core}[1]{{\mid}#1{\mid}}
+\newcommand{\core}[1]{\left| #1 \right|}
 \newcommand{\proves}{\vdash}
 \newcommand{\makes}{\dashv}
 \newcommand{\constep}{\Rightarrow}
@@ -238,19 +238,23 @@ For propositions, the effect is more dramatic:
   \core{\exists x:\tau,\;A}={}&\exists x:\core\tau,\;\core A\\
   \core{A_1\land A_2}={}&\core{A_1}\land \core{A_2}\\
   \core{A_1\lor A_2}={}&\core{A_1}\lor \core{A_2}\\
-  \core{A_1\ast A_2}={}&\core{A_1}\ast \core{A_2}\\
   \core{A\to A'}={}& \begin{cases}
     A\to \core{A'}&\mbox{if $A\;\mathsf{copy}$}\\
-    \mathsf{emp}&o.w.\\
-  \end{cases}\\
-  \core{A\wand A'}={}& \begin{cases}
-    A\wand \core{A'}&\mbox{if $A\;\mathsf{copy}$}\\
     \mathsf{emp}&o.w.\\
   \end{cases}\\
   \core{\neg A}={}& \begin{cases}
     A&\mbox{if $A\;\mathsf{copy}$}\\
     \mathsf{emp}&o.w.\\
   \end{cases}\\
+\end{align*}
+\begin{align*}
+  \core{A_1\ast A_2}={}&\core{A_1}\ast \core{A_2}\\
+  \core{A\wand A'}={}& \begin{cases}
+    A\wand \core{A'}&\mbox{if $A\;\mathsf{copy}$}\\
+    \mathsf{emp}&o.w.\\
+  \end{cases}\\
+  \core{pe\mapsto pe'}={}&\mathsf{emp}\\
+  \core{\boxed{x:A}}={}&\boxed{x:\core{A}}\\
 \end{align*}
 Because moving is monotonic, that is $A\to \core A$ but not the other way around, negative uses of a non-persistent proposition cause it to completely collapse to \textsf{emp} when moved.
 
@@ -272,7 +276,7 @@ We now give the main typing rules for the logic. This corresponds roughly to the
     {\Gamma \proves (t:A):A\Rightarrow \overline{R}}\and
   \infer[tpt-sum]
     {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
-      \Gamma \proves \langle \overline{t'}\rangle:\textstyle \overline{R}[t/x]\Rightarrow \bar{S}'}
+      \Gamma,\bar{S} \proves \langle \overline{t'}\rangle:\textstyle \overline{R}[t/x]\Rightarrow \bar{S}'}
     {\Gamma \proves \langle t,\overline{t'}\rangle:\textstyle\sum x:\tau,\overline{R}\Rightarrow \bar{S},\bar{S}'}\and
   \infer[tpp-ex]
     {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
@@ -341,6 +345,11 @@ This one is simple so we get it out of the way first. We will avoid dealing with
     {\Gamma \proves R_0\;\mathsf{arg}\quad
       \Gamma, R_0 \proves \textstyle\sum\overline{R}\;\mathsf{type}}
     {\Gamma \proves \textstyle\sum R_0,\overline{R}\;\mathsf{type}}\and
+  \infer[ty-user]
+    {\mathsf{type}\;S(\overline{\alpha}, \overline{R})\quad
+      \forall i,\ \Gamma \proves \tau_i\;\mathsf{type}\quad
+      \Gamma \proves \langle \overline{pe}\rangle:\textstyle\sum\overline{R}[\overline{\tau}/\overline{\alpha}]}
+    {\Gamma \proves S(\overline{\tau},\overline{pe})\;\mathsf{type}}\and
 \end{mathparpagebreakable}
 
 Type validity is also relatively straightforward. Type variables are looked up in the context, and structs can have dependent types, but the only way dependencies can appear is through \textsc{ty-array}, which can have a natural number size bound, and in hypotheses that appear in struct declarations.
@@ -796,7 +805,44 @@ Arrays here are fixed length, depending on another variable in the context.
     {\Gamma \proves \mathsf{array}\;\tau\;n\;\mathsf{type}}\and
 \end{mathparpagebreakable}
 
+TODO
 
 \section{The Layout pass}\label{sec:layout}
+
+The layout pass is responsible for assigning concrete memory locations to variables in the code. In particular, multiple variables may overlap the same memory location if they are never \emph{live} at the same time, which is to say, the last use of one variable comes before the definition of the second. The analysis pass that determines these relations is considered part of the ``nondeterministic'' part of the compiler, meaning that it requires no proof. Instead, the analysis pass produces a satisfying layout, and the typing relation will validate that a layout puts variables in disjoint locations if they are live at the same time.
+
+To that end, we introduce another syntactic category not present in the source language, a \emph{machine place}, or M-place for short.
+
+$$\mu::=\mathsf{Reg}\;r\mid \mathsf{Stack}\;s$$
+
+The registers $r$ correspond to the registers on the machine, so there is one for every general-purpose register. (On x86-64 there are 16 general purpose registers, but RSP is the stack pointer, and one register is reserved by the compiler for spilling, so there are 14 registers available for use.)
+
+The stack locations $s$ correspond to an abstraction of the stack frame, optimized for disjointness proofs. A stack frame has a series-parallel layout:
+$$\phi ::= \phi_0\ast\phi_1\mid \phi_0\cup \phi_1\mid |\tau|$$
+and $s$ is a path into the stack frame:
+$$s ::= \mathsf{id}\mid s.0\mid s.1 \mid s.l \mid s.r$$
+with the following typing rules:
+
+\judgment[Stack variable typing]{\phi\proves s:\phi'}
+\begin{mathparpagebreakable}
+  \axiom[stk-id]{\phi\proves \mathsf{id}:\phi}\and
+  \infer[stk-fst]
+    {\phi\proves s:\phi_1\ast \phi_2}
+    {\phi\proves s.0:\phi_1}\and
+  \infer[stk-snd]
+    {\phi\proves s:\phi_1\ast \phi_2}
+    {\phi\proves s.1:\phi_2}\and
+  \infer[stk-left]
+    {\phi\proves s:\phi_1\cup \phi_2}
+    {\phi\proves s.l:\phi_1}\and
+  \infer[stk-right]
+    {\phi\proves s:\phi_1\cup \phi_2}
+    {\phi\proves s.r:\phi_2}
+\end{mathparpagebreakable}
+
+Intuitively, $\phi_1\ast\phi_2$ is the stack layout consisting of the layout $\phi_1$ followed by $\phi_2$ in the bytes immediately after, while $\phi_1\cup\phi_2$ consists of $\phi_1$ and $\phi_2$ superimposed on the same bytes (taking up size equal to the larger of the two).
+
+At a given point in execution, each of the unions has one of its members ``active'' and the other ``inactive'', and a variable can only be accessed if it is active in all parent unions.
+A ghost variable is never assigned any stack location and hence it can never be accessed. More formally, we say that two stack paths are \emph{incompatible}, written $s_1\perp s_2$, if there exists $s$ such that $s_1$ extends $s.l$ and $s_2$ extends $s.r$, or vice versa. We will maintain the invariant that if two variables in the context are represented by stack paths $s_1$ and $s_2$ then they are compatible.
 
 \end{document}
