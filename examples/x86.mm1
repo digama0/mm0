@@ -2181,17 +2181,17 @@ pub theorem immRM_EA_T (k irm: nat): $ k e. Config /\ irm e. ImmRM -> immRM_EA k
 
 @_ local def destsrcIRM (ds: nat): nat =
 $ case (\\ v, case
-    (\ q, immRM_rm v <> immRM_imm q)
-    (\ r, immRM_rm v <> immRM_rm (RM_reg r)))
-  (\\ r, \ rm, immRM_rm (RM_reg r) <> immRM_rm rm) @ ds $;
-theorem destsrcIRMm_i (v q: nat): $ destsrcIRM (Rm_i v q) = immRM_rm v <> immRM_imm q $ =
+    (\ q, v <> immRM_imm q)
+    (\ r, v <> immRM_rm (RM_reg r)))
+  (\\ r, \ rm, RM_reg r <> immRM_rm rm) @ ds $;
+theorem destsrcIRMm_i (v q: nat): $ destsrcIRM (Rm_i v q) = v <> immRM_imm q $ =
 (named '(eqtr casel @ appslame @ syl5eq casel @ applamed ,eqtac));
-theorem destsrcIRMm_r (v r: nat): $ destsrcIRM (Rm_r v r) = immRM_rm v <> immRM_rm (RM_reg r) $ =
+theorem destsrcIRMm_r (v r: nat): $ destsrcIRM (Rm_r v r) = v <> immRM_rm (RM_reg r) $ =
 (named '(eqtr casel @ appslame @ syl5eq caser @ applamed ,eqtac));
-theorem destsrcIRM_rm (r rm: nat): $ destsrcIRM (R_rm r rm) = immRM_rm (RM_reg r) <> immRM_rm rm $ =
+theorem destsrcIRM_rm (r rm: nat): $ destsrcIRM (R_rm r rm) = RM_reg r <> immRM_rm rm $ =
 (named '(eqtr caser @ appslame @ applamed ,eqtac));
 theorem destsrcIRM_T (ds: nat):
-  $ ds e. DestSrc -> destsrcIRM ds e. Xp ImmRM ImmRM $ =
+  $ ds e. DestSrc -> destsrcIRM ds e. Xp RM ImmRM $ =
 (named
   (def (f x h1 h2 h3 h4)
     '(! exp _ (eq _ ,x) _ @ mpbird (eleq1d @ syl6eq ,h1 @ destsrcIRMeqd anr) @
@@ -2199,20 +2199,17 @@ theorem destsrcIRM_T (ds: nat):
   -- TODO: make (split-sop) handle this
   '(splitb (splitpr @ splitb
     (eqerd @ splitb0 @ splitpr2 @ splitb0
-      ,(f $Rm_i v q$ 'destsrcIRMm_i 'Rm_iT
-        '(sylibr immRM_rmT anrl) '(sylibr immRM_immT anrr)))
+      ,(f $Rm_i v q$ 'destsrcIRMm_i 'Rm_iT '(anrl) '(sylibr immRM_immT anrr)))
     (eqerd @ splitb1 @ splitpr2 @ splitb0
-      ,(f $Rm_r v r$ 'destsrcIRMm_r 'Rm_rT
-        '(sylibr immRM_rmT anrl) '(sylibr immRM_rmT @ sylibr RM_regT anrr))))
+      ,(f $Rm_r v r$ 'destsrcIRMm_r 'Rm_rT '(anrl) '(sylibr immRM_rmT @ sylibr RM_regT anrr))))
     (splitpr @ splitb1
-      ,(f $R_rm r rm$ 'destsrcIRM_rm 'R_rmT
-        '(sylibr immRM_rmT @ sylibr RM_regT anrl) '(sylibr immRM_rmT anrr)))));
+      ,(f $R_rm r rm$ 'destsrcIRM_rm 'R_rmT '(sylibr RM_regT anrl) '(sylibr immRM_rmT anrr)))));
 
-@_ local def destIRM (ds: nat): nat = $ fst (destsrcIRM ds) $;
-theorem destIRMm_i (v q: nat): $ destIRM (Rm_i v q) = immRM_rm v $ = '(eqtr (fsteq destsrcIRMm_i) fstpr);
-theorem destIRMm_r (v r: nat): $ destIRM (Rm_r v r) = immRM_rm v $ = '(eqtr (fsteq destsrcIRMm_r) fstpr);
-theorem destIRM_rm (r rm: nat): $ destIRM (R_rm r rm) = immRM_rm (RM_reg r) $ = '(eqtr (fsteq destsrcIRM_rm) fstpr);
-theorem destIRM_T (ds: nat): $ ds e. DestSrc -> destIRM ds e. ImmRM $ = '(syl xpfst destsrcIRM_T);
+@_ local def destRM (ds: nat): nat = $ fst (destsrcIRM ds) $;
+theorem destRMm_i (v q: nat): $ destRM (Rm_i v q) = v $ = '(eqtr (fsteq destsrcIRMm_i) fstpr);
+theorem destRMm_r (v r: nat): $ destRM (Rm_r v r) = v $ = '(eqtr (fsteq destsrcIRMm_r) fstpr);
+theorem destRM_rm (r rm: nat): $ destRM (R_rm r rm) = RM_reg r $ = '(eqtr (fsteq destsrcIRM_rm) fstpr);
+theorem destRM_T (ds: nat): $ ds e. DestSrc -> destRM ds e. RM $ = '(syl xpfst destsrcIRM_T);
 
 @_ local def srcIRM (ds: nat): nat = $ snd (destsrcIRM ds) $;
 theorem srcIRMm_i (v q: nat): $ srcIRM (Rm_i v q) = immRM_imm q $ = '(eqtr (sndeq destsrcIRMm_i) sndpr);
@@ -2220,11 +2217,11 @@ theorem srcIRMm_r (v r: nat): $ srcIRM (Rm_r v r) = immRM_rm (RM_reg r) $ = '(eq
 theorem srcIRM_rm (r rm: nat): $ srcIRM (R_rm r rm) = immRM_rm rm $ = '(eqtr (sndeq destsrcIRM_rm) sndpr);
 theorem srcIRM_T (ds: nat): $ ds e. DestSrc -> srcIRM ds e. ImmRM $ = '(syl xpsnd destsrcIRM_T);
 
-@_ abstract def destEA (k ds: nat): nat = $ immRM_EA k (destIRM ds) $;
-pub theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $ = '(eqtr (immRM_EAeq2 destIRMm_i) immRM_EArm);
-pub theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $ = '(eqtr (immRM_EAeq2 destIRMm_r) immRM_EArm);
-pub theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $ = '(eqtr (immRM_EAeq2 destIRM_rm) immRM_EAreg);
-pub theorem destEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> destEA k ds e. EA $ = '(syl immRM_EA_T @ anim2 destIRM_T);
+@_ abstract def destEA (k ds: nat): nat = $ RM_EA k (destRM ds) $;
+pub theorem destEAm_i (k v q: nat): $ destEA k (Rm_i v q) = RM_EA k v $ = '(RM_EAeq2 destRMm_i);
+pub theorem destEAm_r (k v r: nat): $ destEA k (Rm_r v r) = RM_EA k v $ = '(RM_EAeq2 destRMm_r);
+pub theorem destEA_rm (k r rm: nat): $ destEA k (R_rm r rm) = EA_r r $ = '(eqtr (RM_EAeq2 destRM_rm) RM_EAreg);
+pub theorem destEA_T (k ds: nat): $ k e. Config /\ ds e. DestSrc -> destEA k ds e. EA $ = '(syl RM_EA_T @ anim2 destRM_T);
 
 @_ abstract def srcEA (k ds: nat): nat = $ immRM_EA k (srcIRM ds) $;
 pub theorem srcEAm_i (k v q: nat): $ srcEA k (Rm_i v q) = EA_i q $ = '(eqtr (immRM_EAeq2 srcIRMm_i) immRM_EAimm);
@@ -3700,8 +3697,21 @@ $ i e. List u8 /\
     blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
     mapMem prot k1 km1 off seg k2 km2 /\
     ks = mkKS i 0 k2 km2) $;
-pub theorem initialConfigT (elf: string) (i ks: nat):
-  $ initialConfig elf i ks -> i e. List u8 /\ ks e. KernelState $ =
+
+@_ local def initialConfig2 (elf i ks: nat): wff =
+$ i e. List u8 /\
+  E. entry E. prot E. off E. seg E. k0 E. k1 E. km1 E. k2 E. km2 (
+    parseBasicElf elf entry prot off seg /\
+    blankConfig entry k0 /\ allocStack k0 (\. a e. u64, 0) k1 km1 /\
+    mapMem prot k1 km1 off seg k2 km2 /\
+    ks = mkKS i 0 k2 km2) $;
+theorem initialConfig2T:
+  $ initialConfig2 elf i ks -> i e. List u8 /\ ks e. KernelState $ =
 (named '(anim2a @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @
   impd @ exp @ syl5ibrcom ,eqtac @ sylibr mkKS_T @ sylibr anass @
   anim (mpi elList0 ian) @ anwr @ rsyl mapMemT @ anim1 anr));
+theorem initialConfig2_iff:
+  $ initialConfig elf i ks <-> initialConfig2 elf i ks $ = (named 'biid);
+pub theorem initialConfigT (elf: string) (i ks: nat):
+  $ initialConfig elf i ks -> i e. List u8 /\ ks e. KernelState $ =
+'(sylbi initialConfig2_iff initialConfig2T);

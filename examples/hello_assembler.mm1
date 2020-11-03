@@ -29,30 +29,26 @@ theorem hello_decode_test: $ decode
 
 theorem hello_main_CFG: $ sat_CFG_func hello_main ,0x400078
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x2))) (chopZ 64 (b0 (h2n (xe))))))
-  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x6)))
-    (chopZ 64 (b0 (h2n (x4) :x x0 :x x0 :x x0 :x x9 :x xa)))))
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x6))) (chopZ 64 (b0 ,0x40009a))))
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x7))) (chopZ 64 (b0 (h2n (x1))))))
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x0))) (chopZ 64 (b0 (h2n (x1))))))
   (CFG_S (xastSysCall)
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x7))) (chopZ 64 0)))
-  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x0))) (chopZ 64 (b0 (h2n (x3) :x xc)))))
+  (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x0))) (chopZ 64 (b0 ,0x3c))))
   (CFG_S (xastSysCall)
   (CFG0))))))))) $ =
 (focus
   '(sat_CFG_func_i _)
   (def pos (ref! @ ->hex 0x400078))
-  @ match (assemble-measure '(
-    (func main (
-      (mov.32 rdx 0xe)
-      (mov.32 rsi (data))
-      (mov.32 rdi 1)
-      (mov.32 rax 1)
-      (syscall)
-      (mov.32 rdi 0)
-      (mov.32 rax 0x3c)
-      (syscall)))
-    (string data "Hello, world!\n")
-  )) @ (_ _ ((_ _ xs) _))
+  (def xs '(
+    (mov.32 (reg 2) 14)
+    (mov.32 (reg 6) 0x40009a)
+    (mov.32 (reg 7) 1)
+    (mov.32 (reg 0) 1)
+    (syscall)
+    (mov.32 (reg 7) 0)
+    (mov.32 (reg 0) 0x3c)
+    (syscall)))
   (scan xs @ fn (inst)
     @ match (assemble-inst inst) @ (t s p)
     @ match (mk-asm1 (get! pos) s) @ (pos2 p2)

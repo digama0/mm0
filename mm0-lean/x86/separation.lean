@@ -61,6 +61,13 @@ def heaplet.read (k : config) : heaplet → Prop
 def split {α} (H h₁ h₂ : set α) : Prop :=
 H = h₁ ∪ h₂ ∧ disjoint h₁ h₂
 
+theorem sProp.split_comm {α} {h1 h2 h : set α} :
+  split h h1 h2 ↔ split h h2 h1 := sorry
+
+theorem sProp.split_assoc {α} {h1 h2 h3 h : set α} :
+  (∃ h23, split h23 h2 h3 ∧ split h h1 h23) ↔
+  (∃ h12, split h12 h1 h2 ∧ split h h12 h3) := sorry
+
 @[reducible] def heap := set heaplet
 def sProp := heap → Prop
 
@@ -73,9 +80,23 @@ def sProp.sepish (P Q : sProp) : sProp :=
 λ S, ∃ S₁ S₂, S = S₁ ∪ S₂ ∧ P S₁ ∧ Q S₂
 
 instance : has_mul sProp := ⟨sProp.sep⟩
+theorem sProp.sep_comm (P Q : sProp) : P * Q = Q * P := sorry
+theorem sProp.sep_assoc (P Q R : sProp) : P * Q * R = P * (Q * R) := sorry
 
 def sProp.wand (P Q : sProp) : sProp :=
 λ S₂, ∀ S₁ S, split S S₁ S₂ → P S₁ → Q S
+
+theorem sProp.sep_wand (P Q R : sProp) :
+  (P * Q).wand R = P.wand (Q.wand R) :=
+begin
+  funext h, apply propext, split,
+  { rintro H h' S s p a b c d,
+    obtain ⟨e,f,g⟩ := sProp.split_assoc.1 ⟨_, s, c⟩,
+    exact H _ _ g ⟨_, _, sProp.split_comm.1 f, p, d⟩, },
+  { rintro H h' S s ⟨a,b,c,d,e⟩,
+    obtain ⟨x,f,g⟩ := sProp.split_assoc.2 ⟨_, sProp.split_comm.1 c, s⟩,
+    refine H _ _ f d _ _ g e }
+end
 
 def heap.sn (H : heap) : sProp := eq H
 
@@ -88,6 +109,9 @@ def lift (p : Prop) : sProp := λ _, p
 instance lattice.complete_lattice.sProp : complete_lattice sProp :=
 pi.complete_lattice
 
+theorem sProp.wand_mp (P Q : sProp) : P * P.wand Q ≤ Q :=
+λ h ⟨a,b,c,d,H⟩, H _ _ c d
+
 def sProp.with (p : sProp) (q : Prop) : sProp := p ⊓ lift q
 
 def liftE (p : Prop) : sProp := sProp.with emp p
@@ -95,6 +119,81 @@ def liftE (p : Prop) : sProp := sProp.with emp p
 def sProp.ex {α} (p : α → sProp) : sProp := λ S, ∃ a, p a S
 
 def sProp.al {α} (p : α → sProp) : sProp := λ S, ∀ a, p a S
+
+constant heap.sat : heap → config → Prop
+constant config.ok : config → Prop
+
+def s_weak (P Q : sProp) : Prop := ∀ h, P h → ∃ h', Q h' ∧ h' ⊆ h
+axiom s_weak.sat {P Q} (H : s_weak P Q) :
+  ∀ k, (∃ h, P h ∧ h.sat k) → (∃ h, Q h ∧ h.sat k)
+
+theorem s_sep.weak₁ {P Q} : s_weak (P * Q) P :=
+by rintro k ⟨h, h1, ⟨rfl, h2⟩, h3, h4⟩;
+   exact ⟨_, h3, λ _, or.inl⟩
+theorem s_sep.weak₂ {P Q} : s_weak (P * Q) Q :=
+by rw sProp.sep_comm; exact s_sep.weak₁
+
+theorem el_s_sep_sn {x y z : heap} : (x.sn * y.sn) z ↔ split z x y := sorry
+theorem s_sep_sn {x y z : heap} : x.sn * y.sn = z.sn ↔ split z x y := sorry
+
+theorem s_sep.mono_right {P Q : sProp} (R) (H : P ≤ Q) : R * P ≤ R * Q :=
+λ a ⟨b,c,d,e,f⟩, ⟨b,c,d,e, H _ f⟩
+theorem s_sep.mono_left {P Q : sProp} (R) (H : P ≤ Q) : P * R ≤ Q * R :=
+λ a ⟨b,c,d,e,f⟩, ⟨b,c,d, H _ e, f⟩
+
+theorem s_sep.weak_right {P Q} (R) (H : s_weak P Q) : s_weak (R * P) (R * Q) :=
+by rintro x ⟨a,b,⟨rfl,c⟩,d,e⟩; obtain ⟨f,g,h⟩ := H _ e;
+  exact ⟨_, ⟨_, _, ⟨rfl,c.mono_right h⟩, d, g⟩,
+    set.union_subset_union_right _ h⟩
+theorem s_sep.weak_left {P Q} (R) : s_weak P Q → s_weak (P * R) (Q * R) :=
+by rw [sProp.sep_comm P, sProp.sep_comm Q]; exact s_sep.weak_right _
+
+def s_ok (P : sProp) : Prop :=
+∀ k h, P h → heap.sat h k → k.ok
+
+theorem s_ok_sep {R P} : s_ok (R * P) ↔ ∀ fr, R fr → s_ok (fr.sn * P) := sorry
+
+def hoare' (P Q : sProp) : Prop :=
+∀ fr:heap, s_ok (fr.sn * Q) → s_ok (fr.sn * P)
+
+theorem s_weak.hoare {P Q} (H : s_weak P Q) : hoare' P Q :=
+by rintro fr H' k h hp b;
+  obtain ⟨c,d,e⟩ := (s_sep.weak_right _ H).sat k ⟨_, hp, b⟩;
+  exact H' _ _ d e
+
+theorem hoare'.frame_ok {P Q R} :
+  hoare' P Q → s_ok (R * Q) → s_ok (R * P) := sorry
+theorem hoare'.ok {P Q} : hoare' P Q → s_ok Q → s_ok P := sorry
+theorem hoare_frame {P Q} (R) : hoare' P Q → hoare' (R * P) (R * Q) := sorry
+
+theorem unframe (R P Q : sProp) (A)
+  (hA : ∀ h, P h → heaplet.place '' h ∩ A = ∅)
+  (H : ∀ h:heap, heaplet.place '' h = A →
+    hoare' (h.sn * P) (h.sn * Q)) : hoare' P Q :=
+begin
+  rintro fr hQ k p ⟨_, a, hp, ⟨⟩, hP⟩ pk,
+  have := hA _ hP,
+  obtain ⟨x:heap, y, z, w, u, hx1, hx2, hx3, hx4, hx5⟩ :
+    ∃ x y z w u:heap,
+    heaplet.place '' x = A ∧
+    split y w p ∧
+    split x z w ∧
+    split fr z u ∧ y.sat k,
+  { sorry },
+  have : s_ok (u.sn * (x.sn * Q)),
+  { refine (s_weak.hoare _).ok hQ,
+    rw ← sProp.sep_assoc,
+    apply s_sep.weak_left,
+    rw [← s_sep_sn.2 hx4, sProp.sep_comm],
+    apply s_sep.weak_left,
+    rw [← s_sep_sn.2 hx3],
+    exact s_sep.weak₁ },
+  have := H _ hx1 u this,
+  rw [← sProp.sep_assoc, ← s_sep_sn.2 hx3,
+    ← sProp.sep_assoc, sProp.sep_comm u.sn,
+    s_sep_sn.2 hx4, sProp.sep_comm fr.sn, sProp.sep_assoc] at this,
+  refine this k _ ⟨_, _, hx2, ⟨_⟩, _, _, hp, ⟨_⟩, hP⟩ hx5,
+end
 
 theorem sep_le_sep {P₁ P₂ Q₁ Q₂ : sProp}
   (H₁ : P₁ ≤ Q₁) (H₂ : P₂ ≤ Q₂) : P₁ * P₂ ≤ Q₁ * Q₂ :=
