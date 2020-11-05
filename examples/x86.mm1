@@ -2242,7 +2242,7 @@ $ k e. Config /\ ea e. EA /\ sz e. WSize /\
   ea e. Sum {q | v = chop (wsizeBits sz) q}
     (Sum {r | v = readRegSz k sz r}
       {q | v e. Bits (wsizeBits sz) /\
-        readMem k q (toBytes (wsizeBits sz) v)}) $;
+        readMem k q (toBytes (wsizeBytes sz) v)}) $;
 pub theorem readEA_i (k q sz v: nat):
   $ k e. Config /\ q e. u64 /\ sz e. WSize ->
     (readEA k sz (EA_i q) v <-> v = chop (wsizeBits sz) q) $ =
@@ -2256,7 +2256,7 @@ pub theorem readEA_r (k sz r v: nat):
 pub theorem readEA_m (k a sz v: nat):
   $ k e. Config /\ a e. u64 /\ sz e. WSize ->
     (readEA k sz (EA_m a) v <->
-      v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v)) $ =
+      v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBytes sz) v)) $ =
 (named '(bitrd (sylbir (aneq1i @ aneq2i EA_mT) bian1) @ syl5bb Sumr @ syl5bb Sumr @
   elabed @ aneq2d @ readMemeq2d anr));
 pub theorem readEA_T (k sz ea v: nat): $ readEA k sz ea v ->

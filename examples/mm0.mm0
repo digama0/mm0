@@ -1,17 +1,5 @@
 import "peano_hex.mm0";
 
--- Some additional list operations
-
--- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
-def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
-$ len l1 = len l2 /\ A. n A. x A. y
-  (nth n l1 = suc x -> nth n l2 = suc y -> ph) $;
-
--- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
-def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
-$ len l1 = len l2 /\ E. n E. x E. y
-  (nth n l1 = suc x /\ nth n l2 = suc y /\ ph) $;
-
 -- The sort modifiers 'pure', 'strict', 'provable', 'free'
 -- sPure : SortData -> Bool
 def sPure     (n: nat): wff = $ true (pi11 n) $;

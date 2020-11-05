@@ -336,3 +336,13 @@ theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
 
 def sublistAt (n L1 L2 .l .r: nat): wff =
 $ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
+
+-- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
+def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
+$ len l1 = len l2 /\ A. n A. x A. y
+  (nth n l1 = suc x -> nth n l2 = suc y -> ph) $;
+
+-- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
+def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
+$ len l1 = len l2 /\ E. n E. x E. y
+  (nth n l1 = suc x /\ nth n l2 = suc y /\ ph) $;

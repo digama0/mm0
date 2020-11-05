@@ -892,7 +892,7 @@ theorem readEA_r (k sz r v: nat):
 theorem readEA_m (k a sz v: nat):
   $ k e. Config /\ a e. u64 /\ sz e. WSize ->
     (readEA k sz (EA_m a) v <->
-      v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBits sz) v)) $;
+      v e. Bits (wsizeBits sz) /\ readMem k a (toBytes (wsizeBytes sz) v)) $;
 theorem readEA_T (k sz ea v: nat): $ readEA k sz ea v ->
   k e. Config /\ ea e. EA /\ sz e. WSize /\ v e. Bits (wsizeBits sz) $;
 
