@@ -118,7 +118,7 @@ theorem elbitDif (a b i: nat): $ i e. bitDif a b <-> (i e. a /\ ~i e. b) $ =
 
 theorem bitDif01: $ bitDif 0 a = 0 $ = '(axext @ eqstr bitDifEq in01);
 theorem bitDif02: $ bitDif a 0 = a $ = '(axext @ eqstr bitDifEq @ eqstr (ineq2 cpl0) inv2);
-theorem bitDifid: $ bitDif a a = 0 $ = '(axext @ eqstr bitDifEq incpl);
+theorem bitDifid: $ bitDif a a = 0 $ = '(axext @ eqstr bitDifEq incpl2);
 theorem bitDifeq0: $ bitDif a b = 0 <-> a C_ b $ =
 '(bitr3 nsinj @ bitr (eqseq1 bitDifEq) incpleq0);
 
@@ -3669,11 +3669,13 @@ pub theorem blankConfigT (entry k: nat):
   sylibr mkCfgT @ sylibr anass @ anim1 @ iand (ian opt0) @
   sylibr rlamArrow @ iald @ a1i @ a1i elBits01));
 
-@_ def allocStack (k m k3 km3 .sp .stack .argc .k2 .km2 .x .arg .cstr .str: nat): wff =
-$ k e. Config /\ E. sp E. stack E. argc E. k2 E. km2 (
-    sp + len stack + 2 ^ 12 e. u64 /\
-    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m sp stack k2 km2 /\
-    mapMem 0 k2 km2 (sp + len stack) (repeat 0 (2 ^ 12)) k3 km3 /\
+@_ def allocStack (k m k3 km3: nat): wff =
+$ k e. Config /\ E. sp E. low E. stack E. argc E. k2 E. km2 (
+    low e. List u8 /\ 2 ^ 12 + len low <= sp /\ sp + len stack e. u64 /\
+    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m
+      (sp - len low) (low ++ stack) k2 km2 /\
+    E. guard (guard e. Array u8 (2 ^ 12) /\
+      mapMem 0 k2 km2 (sp - len low - 2 ^ 12) guard k3 km3) /\
     argc e. u64 /\ sublistAt 0 stack (u64Bytes argc) /\
     A. x (x < argc -> E. arg E. cstr (
       sublistAt (8 * suc x) stack (u64Bytes (sp + arg)) /\
@@ -3682,10 +3684,10 @@ pub theorem allocStackT (k m k3 km3: nat):
   $ allocStack k m k3 km3 ->
     k e. Config /\ m e. PageMapping (getMemory k) /\
     k3 e. Config /\ km3 e. PageMapping (getMemory k3) $ =
-(named '(imp @ eexd @ eexd @ eexd @ eexd @ eexd @ syl5 an3l @ exp @
+(named '(imp @ eexd @ eexd @ eexd @ eexd @ eexd @ eexd @ syl5 an3l @ exp @
   sylibr anass @ sylbir anass @ anim
     (anim2 @ anwr @ rsyl mapMemT @ sylib (eleq2 @ PageMappingeq setRegMem) an4lr)
-    (rsyl mapMemT @ anim1 anr)));
+    (eex @ anwr @ rsyl mapMemT @ anim1 anr)));
 
 -- This defines the initial state set up from a basic ELF file (only one
 -- program segment, no sections).

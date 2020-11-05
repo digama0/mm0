@@ -1589,11 +1589,14 @@ $ E. f E. m (f e. Flags /\ m e. Memory /\
 theorem blankConfigT (entry k: nat):
   $ entry e. u64 /\ blankConfig entry k -> k e. Config $;
 
-def allocStack (k m k3 km3 .sp .stack .argc .k2 .km2 .x .arg .cstr .str: nat): wff =
-$ k e. Config /\ E. sp E. stack E. argc E. k2 E. km2 (
-    sp + len stack + 2 ^ 12 e. u64 /\
-    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m sp stack k2 km2 /\
-    mapMem 0 k2 km2 (sp + len stack) (repeat 0 (2 ^ 12)) k3 km3 /\
+def allocStack (k m k3 km3
+  .sp .base .guard .low .stack .argc .k2 .km2 .x .arg .cstr .str: nat): wff =
+$ k e. Config /\ E. sp E. low E. stack E. argc E. k2 E. km2 (
+    low e. List u8 /\ 2 ^ 12 + len low <= sp /\ sp + len stack e. u64 /\
+    mapMem (PROT_READ + PROT_WRITE) (setReg k RSP sp) m
+      (sp - len low) (low ++ stack) k2 km2 /\
+    E. guard (guard e. Array u8 (2 ^ 12) /\
+      mapMem 0 k2 km2 (sp - len low - 2 ^ 12) guard k3 km3) /\
     argc e. u64 /\ sublistAt 0 stack (u64Bytes argc) /\
     A. x (x < argc -> E. arg E. cstr (
       sublistAt (8 * suc x) stack (u64Bytes (sp + arg)) /\
