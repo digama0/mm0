@@ -688,11 +688,17 @@ impl<'a> Parser<'a> {
         let p = self.prec()?;
         self.chr_err(b')')?;
         lits.push(Literal::Const(c, p));
-      } else if let Some(x) = self.ident() {
-        lits.push(Literal::Var(x))
-      } else {return Ok(lits)}
+      } else {
+        match self.ident() {
+          Some(sp) if !lits.is_empty() => { lits.push(Literal::Var(sp)); },
+          Some(sp) => return Err(
+            ParseError::new(sp, "notation declarations must start with a prec-constant; found an ident".into())
+          ),
+          None => return Ok(lits)
+        }
+      }
     }
-  }
+  }  
 
   fn inout_stmt(&mut self, start: usize, m: Modifiers, sp: Span, out: bool) -> Result<Option<Stmt>> {
     if !m.is_empty() {
