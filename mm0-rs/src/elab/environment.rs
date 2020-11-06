@@ -500,10 +500,10 @@ pub enum ObjectKind {
   /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
   /// This term must actually exist in the `Environment` if is constructed
   Term(TermID, Span),
-  /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works
+  /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works.
   /// This theorem must actually exist in the `Environment` if is constructed
   Thm(ThmID),
-  /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder
+  /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder.
   /// This should be a variable in the statement.
   Var(AtomID),
   /// This is a global lisp definition; hovering yields the lisp definition line and go-to-definition works.

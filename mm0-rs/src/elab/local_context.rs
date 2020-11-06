@@ -680,6 +680,9 @@ impl Elaborator {
     }
     let atom = self.env.get_atom(self.ast.span(d.id));
     self.spans.set_decl(atom);
+    if self.mm0_mode && atom == AtomID::UNDER {
+      self.report(ElabError::warn(d.id, "(MM0 mode) declaration name required"))
+    }
     match d.k {
       DeclKind::Term | DeclKind::Def => {
         for (bi, _, _) in ehyps {report!(bi.span, "term/def declarations have no hypotheses")}
@@ -765,14 +768,16 @@ impl Elaborator {
             }
           }
         };
-        let t = Term {
-          atom, args: args.into(), ret, val,
-          span: self.fspan(d.id),
-          vis: d.mods,
-          full,
-        };
-        let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
-        self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
+        if atom != AtomID::UNDER {
+          let t = Term {
+            atom, args: args.into(), ret, val,
+            span: self.fspan(d.id),
+            vis: d.mods,
+            full,
+          };
+          let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
+          self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
+        }
       }
       DeclKind::Axiom | DeclKind::Thm => {
         if d.val.is_none() {
@@ -853,12 +858,14 @@ impl Elaborator {
             })().unwrap_or_else(|e| {self.report(e); None})
           } else {None}
         });
-        let t = Thm {
-          atom, span, vis: d.mods, full,
-          args: args.into(), heap, hyps, ret, proof
-        };
-        let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
-        self.spans.insert(d.id, ObjectKind::Thm(tid));
+        if atom != AtomID::UNDER {
+          let t = Thm {
+            atom, span, vis: d.mods, full,
+            args: args.into(), heap, hyps, ret, proof
+          };
+          let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
+          self.spans.insert(d.id, ObjectKind::Thm(tid));
+        }
       }
     }
     self.spans.lc = Some(mem::take(&mut self.lc));

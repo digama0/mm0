@@ -603,7 +603,7 @@ impl<'a> Parser<'a> {
     if !mods.allowed_visibility(k) {
       return Err(ParseError::new(sp, "invalid modifiers for this keyword".into()))
     }
-    let id = self.ident_err()?;
+    let id = self.ident_err_()?;
     let mut bis = self.binders()?;
     let ty = if self.chr(b':').is_some() {
       let (bis2, t) = self.arrows()?;
