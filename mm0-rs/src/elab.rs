@@ -378,6 +378,11 @@ impl Elaborator {
       }
     }
 
+    if self.mm0_mode && nota.prec.is_some() {
+      return Err(ElabError::new_e(nota.id,
+        "(MM0 mode) generalized infix precedence specifier not allowed"))
+    }
+
     fn bump(yes: bool, sp: Span, p: Prec) -> Result<Prec> {
       if !yes {return Ok(p)}
       if let Prec::Prec(n) = p {
