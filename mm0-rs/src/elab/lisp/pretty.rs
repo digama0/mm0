@@ -188,9 +188,11 @@ impl<'a> Pretty<'a> {
         _ => None,
       }.unwrap_or_else(|| self.group(self.expr_paren(&args[i], q)));
       let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], &args));
-      let (last, most) = info.lits[2..].split_last()?;
-      for lit in most {doc = self.append(doc, self.group(self.lit(&lit, &args)))}
-      Some(self.append_with(doc, Self::line(), self.group(self.lit(&last, &args))))
+      if let Some((last, most)) = info.lits[2..].split_last() {
+        for lit in most {doc = self.append(doc, self.group(self.lit(&lit, &args)))}
+        doc = self.append_with(doc, Self::line(), self.group(self.lit(&last, &args)))
+      };
+      Some(doc)
     } else {None}
   }
 

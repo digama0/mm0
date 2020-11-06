@@ -240,22 +240,32 @@ impl<'a> MathParser<'a> {
       self.idx = tok_end.1;
       let mut args = SliceUninit::new(info.nargs);
       let start = lhs.span.start;
-      if let Literal::Var(i, _) = info.lits[0] {args.set(i, lhs)} else {unreachable!()}
+      let lits = match info.lits.split_first() {
+        Some((&Literal::Var(i, _), lits)) => {args.set(i, lhs); lits}
+        _ => unreachable!()
+      };
       let mut consts = vec![tk];
-      self.literals(&mut args, &info.lits[2..info.lits.len()-1], &mut consts, 0)?;
-      let (i, mut rhs) = if let Some(&Literal::Var(i, q)) = info.lits.last() {
-        (i, self.prefix(q)?)
-      } else {unreachable!()};
-      loop {
+      let end;
+      if let Some((&Literal::Var(i, q), mid)) = lits.split_last() {
+        self.literals(&mut args, &mid[1..], &mut consts, 0)?;
+        let mut rhs = self.prefix(q)?;
+        loop {
+          tok_end = self.peek_token();
+          let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
+          let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
+          let q = self.pe.consts[s].1;
+          if !(if info2.rassoc.unwrap() {q >= p1} else {q > p1}) {break}
+          rhs = self.lhs(q, rhs)?;
+        }
+        end = rhs.span.end;
+        args.set(i, rhs)
+      } else if lits.is_empty() {
+        end = tk.end
+      } else {
+        end = self.literals(&mut args, &lits[1..], &mut consts, tk.end)?;
         tok_end = self.peek_token();
-        let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
-        let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
-        let q = self.pe.consts[s].1;
-        if !(if info2.rassoc.unwrap() {q >= p1} else {q > p1}) {break}
-        rhs = self.lhs(q, rhs)?;
-      }
-      let span = (start..rhs.span.end).into();
-      args.set(i, rhs);
+      };
+      let span = (start..end).into();
       for sp in consts {self.spans.insert(sp, ObjectKind::Term(info.term, span));}
       lhs = QExpr { span, k: QExprKind::App(tk, info.term, unsafe { args.assume_init() }) };
     }

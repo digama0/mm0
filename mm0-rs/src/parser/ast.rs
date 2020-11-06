@@ -597,7 +597,7 @@ pub struct GenNota {
   /// The list of notation literals.
   pub lits: Vec<Literal>,
   /// The optional notation precedence, needed for generalized infix notations like
-  /// `x +[G] y`. This is the `50 lassoc` `notation ... = ... : 50 lassoc;`.
+  /// `x +[G] y`. This is the `50 lassoc` in `notation ... = ... : 50 lassoc;`.
   /// If provided, it is `Some((prec, right))` where `prec` is the precedence
   /// and `right` is true if it is right associative.
   pub prec: Option<(Prec, bool)>

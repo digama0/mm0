@@ -397,6 +397,9 @@ impl Elaborator {
       None => return Err(ElabError::new_e(nota.id,
         "notation requires at least one literal")),
       Some(&ALiteral::Const(ref cnst, prec)) => (vec![], Some(true), false, cnst, prec),
+      Some(&ALiteral::Var(var)) if self.mm0_mode =>
+        return Err(ElabError::new_e(var,
+          "(MM0 mode) generalized infix notations not allowed")),
       Some(&ALiteral::Var(var)) => match it.next() {
         None => return Err(ElabError::new_e(var,
           "notation requires at least one constant")),
@@ -418,6 +421,7 @@ impl Elaborator {
     };
 
     self.add_const(tk.trim, prec)?;
+    if infix && it.peek().is_none() { rassoc = Some(false) }
     while let Some(lit) = it.next() {
       match *lit {
         ALiteral::Const(ref cnst, prec) => {
