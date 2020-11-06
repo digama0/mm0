@@ -67,6 +67,16 @@ impl ErrorLevel {
   }
 }
 
+impl std::fmt::Display for ErrorLevel {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ErrorLevel::Info => "info",
+      ErrorLevel::Warning => "warning",
+      ErrorLevel::Error => "error",
+    }.fmt(f)
+  }
+}
+
 /// Error type; extends an error message with the offending [`Span`], and an [`ErrorLevel`]
 ///
 /// [`Span`]: ../util/struct.Span.html

@@ -81,6 +81,9 @@ lazy_static! {
   static ref SERVER: Server = Server::new().expect("Initialization failed");
 }
 
+static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
+pub(crate) fn get_log_errors() -> bool { LOG_ERRORS.load(Ordering::Relaxed) }
+
 #[allow(unused)]
 pub(crate) fn log(s: String) {
   LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), get_memory_usage(), s));
@@ -201,6 +204,13 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
   if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
   if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
+  if get_log_errors() {
+    for e in &errors {
+      let Position {line, character: col} = ast.source.to_pos(e.pos.start);
+      write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
+        e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
+    }
+  }
   log(log_msg);
 
   vfs.update_downstream(&old_deps, &deps, &path);
@@ -1104,6 +1114,7 @@ pub fn main(args: &ArgMatches<'_>) {
     use {simplelog::*, std::fs::File};
     let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
   }
+  if args.is_present("no_log_errors") { LOG_ERRORS.store(false, Ordering::Relaxed) }
   log_message("started".into()).unwrap();
   SERVER.run()
 }

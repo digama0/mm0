@@ -87,7 +87,8 @@ fn main() -> std::io::Result<()> {
   let app = clap_app!(@app (app)
     (@subcommand server =>
       (about: "MM1 LSP server")
-      (@arg debug: -d --debug "Enable debug logging")));
+      (@arg debug: -d --debug "Enable debug logging")
+      (@arg no_log_errors: -q --quiet "Don't print errors in server output log")));
 
   let m = app.get_matches();
 
