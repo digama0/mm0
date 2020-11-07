@@ -2830,7 +2830,7 @@ theorem splitSum
   '(splitb ,(f 'Suml 'h0) ,(f 'Sumr 'h1)));
 
 theorem splitEq {x} (h: $ G /\ x e. A -> a = x -> p $): $ G /\ a e. A -> p $ =
-'(sbeth (imeqd (aneq2d eleq1) @ syl biim1 eqcom) h);
+'(sbeth h (imeqd (aneq2d eleq1) @ syl biim1 eqcom));
 
 theorem splitXp1 (h: $ G /\ fst a e. A -> snd a e. B -> p $): $ G /\ a e. Xp A B -> p $ =
 '(imp @ syl5bi elxp @ impd @ exp h);

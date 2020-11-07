@@ -1529,6 +1529,7 @@ theorem s_anss2: $ P /\s Q C_ Q $ = 'inss2;
 theorem ss_s_an: $ A C_ P /\s Q <-> A C_ P /\ A C_ Q $ = 'ssin;
 theorem s_ancom: $ P /\s Q == Q /\s P $ = 'incom;
 theorem s_anass: $ (P /\s Q) /\s R == P /\s (Q /\s R) $ = 'inass;
+theorem s_antop2: $ P /\s T.s /\s T.s == P /\s T.s $ = '(mpbi s_antop s_anss2);
 
 theorem el_s_antop: $ h e. P /\s T.s <-> isfun h /\ h e. P $ =
 '(bitr el_s_an @ bitr ancomb @ aneq1i el_s_top);
@@ -1638,6 +1639,8 @@ theorem s_lift_sep1: $ ^s p /\s P C_ ^s p *s P $ =
 theorem s_lift_sep2: $ P /\s ^s p C_ P *s ^s p $ =
 '(mpbi (sseq s_ancom s_sep_com) s_lift_sep1);
 
+theorem s_ssseptop: $ P /\s T.s C_ P *s T.s $ = 's_lift_sep2;
+
 theorem s_lift_sepidm: $ ^s p *s ^s p == ^s p $ = '(eqstr s_lift_sep @ s_lifteq anidm);
 theorem s_top_sepidm: $ T.s *s T.s == T.s $ = 's_lift_sepidm;
 theorem s_septop2: $ A *s T.s *s T.s == A *s T.s $ = '(eqstr s_sep_ass @ s_sepeq2 s_top_sepidm);
@@ -1704,6 +1707,34 @@ notation s_Sep {x} (A P) = ($|*|s$:75) x ($e.$:50) A ($,$:0) P;
 theorem el_s_Sep (A: set) (P: set x): $ h e. |*|s x e. A, P <->
   isfun h /\ E. f (func f (Dom h) A /\
     A. x (x e. A -> lower (h |` {z | f @ z = x}) e. P)) $ = (named '(elabe ,eqtac));
+
+theorem s_Sepeq1 (P: set x): $ A == B -> |*|s x e. A, P == |*|s x e. B, P $ =
+'(s_Sepeq1d id);
+theorem s_Sepeq2a (P Q: set x):
+  $ (A. x (x e. A -> P == Q)) -> |*|s x e. A, P == |*|s x e. A, Q $ =
+(named '(abeqd @ aneq2d @ exeqd @ aneq2d @
+  syl aleq @ alimi @ syl imeq2a @ imim2i eleq2));
+theorem s_Sepeq2da (P Q: set x) (h: $ G /\ x e. A -> P == Q $):
+  $ G -> |*|s x e. A, P == |*|s x e. A, Q $ =
+'(syl s_Sepeq2a @ iald @ exp h);
+theorem nfs_Sep1 (A P: set x) (h1: $ FS/ x A $): $ FS/ x |*|s x e. A, P $ =
+(named '(nfab @ nfan nfv @ nfex @ nfan (nffunc nfsv nfsv h1) nfal1));
+theorem nfs_Sep (A P: set x y)
+  (h1: $ FS/ x A $) (h2: $ FS/ x P $): $ FS/ x |*|s y e. A, P $ =
+(named '(nfab @ nfan nfv @ nfex @ nfan (nffunc nfsv nfsv h1) @
+  nfal @ nfim (nfel2 h1) @ nfel2 h2));
+theorem cbvs_Seph (P Q: set x y) (h1: $ FS/ y P $) (h2: $ FS/ x Q $)
+  (e: $ x = y -> P == Q $): $ |*|s x e. A, P == |*|s y e. A, Q $ =
+(named '(abeqi @ aneq2i @ exeqi @ aneq2i @
+  cbvalh (nfim nfv @ nfel2 h1) (nfim nfv @ nfel2 h2) @
+  imeqd eleq1 @ eleqd ,eqtac e));
+theorem cbvs_Sep (P: set x) (Q: set y) (e: $ x = y -> P == Q $):
+  $ |*|s x e. A, P == |*|s y e. A, Q $ = '(cbvs_Seph nfsv nfsv e);
+theorem cbvs_Seps (P: set x): $ |*|s x e. A, P == |*|s y e. A, S[y / x] P $ =
+'(cbvs_Seph nfsv nfsbs1 sbsq);
+theorem cbvs_Sepd (G A) (P: set x) (Q: set y)
+  (h: $ G /\ x = y -> P == Q  $): $ G -> |*|s x e. A, P == |*|s y e. A, Q $ =
+'(syl5eqs cbvs_Seps @ s_Sepeq2d @ syl sbset @ iald @ exp h);
 
 theorem s_Sep_0 (P: set x): $ |*|s x e. 0, P == emp $ =
 (named @ focus
@@ -1812,11 +1843,91 @@ theorem s_Sep_un (P: set x): $ A i^i B == 0 ->
       (mpbird ,(f 'an4lr 'an3lr 'bior2 'h3 'h4) (anrd anllr))
       (mpbird ,(f 'an3lr 'an4lr 'bior1 '(con2d h3) '(con2d h4)) (anrd anlr)))));
 
+theorem s_Sep_ins (P: set x)
+  (e: $ G /\ x = a -> P == Q $)
+  (h: $ G -> Q C_ T.s $)
+  (h2: $ G -> ~a e. b $):
+  $ G -> |*|s x e. a ; b, P == Q *s |*|s x e. b, P $ =
+'(syl5eqs (s_Sepeq1 insunsn) @ eqstrd (syl s_Sep_un @ sylibr sndisj h2) @
+  s_sepeq1d @ s_Sep_sn e h);
+
+theorem s_Sep_bij_lem (a: nat y) (b: nat x) (P: set x) (Q: set y)
+  (h1: $ G /\ x e. A -> b e. B $)
+  (h2: $ G /\ y e. B -> a e. A $)
+  (h3: $ G /\ x e. A /\ y e. B -> (x = a <-> y = b) $)
+  (h4: $ G /\ y e. B /\ x = a -> P == Q $):
+  $ G -> |*|s x e. A, P C_ |*|s y e. B, Q $ =
+(named @ focus
+  '(iald @ sylibr (imeqi el_s_Sep el_s_Sep) @ syl anim2a @ exp @
+    eexda @ sylan (!! iexe f ,eqtac) _ _)
+  (focus
+    '(sylibr (rlamfunc2 @ mpbi eqlower @ dmfin finns) @ iald @ exp @
+      sylc _ (anw3l @ iald @ exp h1) @ syl funcT @ anim1 anrl)
+    '(ealeh (nfim nfv @ nfel nfsbn1 nfsv) @ imeqd eleq1 @ eleq1d sbnq))
+  (focus
+    '(iald @ sylbir anass @ imp @ com23 @ exp @
+      ealdeh nfv (nfel (nflower @ nfres nfsv @ nfab @
+        nf_eq (nfapp (nfns @ nfrlam nfnv nfsbn1) nfnv) nfnv) nfsv) @
+      eimd (mpbird (eleq1d anr) @ sylan h2 an4l anlr) @
+      bi1d @ eleqd _ @ sylan h4 (iand an4l anlr) anr)
+    '(lowereqd @ eqstr3g (reseq1 resdm) (reseq1 resdm) @
+      eqstr4g resres resres @ reseq2d @ sylib abeqb @ iald @
+      syl aneq2a @ exp @ bitr4g (elabe ,eqtac) (elabe ,eqtac) @
+      bitrd (eqeq2d anlr) @ bitr4d (syl6bb eqcomb _) @
+      eqeq1d @ syl (apprlame ,eqtac) @ sylibr (ellower @ dmfin finns) anr)
+    '(sylan _ (iand an5l @ sylan funcT an3lr anr) anllr)
+    '(!! sbethh x (nfim nfv @ nfbi nfv @ nfeq2 nfsbn1) h3 @
+      imeqd ,eqtac @ bieqd eqeq1 @ eqeq2d sbnq)));
+
+theorem s_Sep_bij (a: nat y) (b: nat x) (P: set x) (Q: set y)
+  (h1: $ G /\ x e. A -> b e. B $)
+  (h2: $ G /\ y e. B -> a e. A $)
+  (h3: $ G /\ x e. A /\ y e. B -> (x = a <-> y = b) $)
+  (h4: $ G /\ y e. B /\ x = a -> P == Q $):
+  $ G -> |*|s x e. A, P == |*|s y e. B, Q $ =
+'(ssasymd (s_Sep_bij_lem h1 h2 h3 h4) @
+  s_Sep_bij_lem h2 h1 (bicomd @ sylbi anrass h3) @
+  eqscomd @ mpand (mpbird (eleq1d anr) @ anwl h1) @
+  sylan h4 (iand an3l anr) @ mpbird (syl h3 @ anim1 anl) anlr);
+
+theorem s_Sep_uptoS2 (P: set x)
+  (e: $ G /\ x = n -> P == Q $)
+  (h: $ G -> Q C_ T.s $):
+  $ G -> |*|s x e. upto (suc n), P == |*|s x e. upto n, P *s Q $ =
+'(eqstr4g (s_Sepeq1 @ nseq uptoS_ins) s_sep_com @
+  s_Sep_ins e h @ a1i @ mtbir elupto ltirr);
+
+theorem s_Sep_uptoA (P: set x) (Q: set y)
+  (e: $ G /\ x = m + y -> P == Q $):
+  $ G -> |*|s x e. upto (m + n), P ==
+         |*|s x e. upto m, P *s |*|s y e. upto n, Q $ =
+(focus
+  '(syl5eqs (s_Sepeq1 @ eqstr2 unincpl @ mpbi equn1 @ mpbir uptoss leaddid1) @
+    syl5eqs (s_Sep_un inincpl) @ s_sepeq2d _)
+  (def h1 '(bitr elin @ aneq elupto @ bitr elcpl @ bitr4 (noteq elupto) lenlt))
+  '(s_Sep_bij
+    (anwr @ sylbi ,h1 @ sylibr elupto @ mpbird (anwr ltsubadd2) anl)
+    (anwr @ sylbi elupto @ sylibr ,h1 @ iand (bi1i ltadd2) @ a1i leaddid1)
+    (bitr4g eqcomb eqcomb @ bicomd @ syl subadd @ anrd @ sylib ,h1 anlr)
+    (syl e @ anim1 anl)));
+
+theorem s_Sep_uptoS (P: set x) (P1: set y)
+  (e0: $ G /\ x = 0 -> P == P0 $)
+  (e1: $ G /\ x = suc y -> P == P1 $)
+  (h: $ G -> P0 C_ T.s $):
+  $ G -> |*|s x e. upto (suc n), P == P0 *s |*|s y e. upto n, P1 $ =
+'(syl5eqsr (s_Sepeq1 @ nseq @ uptoeq add11) @
+  eqstrd (s_Sep_uptoA @ sylbi (aneq2i @ eqeq2 add11) e1) @
+  s_sepeq1d @ syl5eqs (s_Sepeq1 @ nseq upto1_sn) @ s_Sep_sn e0 h);
+
 @_ local def s_weak (P Q: set): wff = $ P /\s T.s C_ Q *s T.s $;
 infixr s_weak: $=>*s$ prec 27;
 theorem s_weak_sstop: $ P C_ T.s -> (P =>*s Q <-> P C_ Q *s T.s) $ = '(sylbi s_antop sseq1);
 theorem s_weak_sstop1: $ P C_ Q *s T.s -> P =>*s Q $ =
 '(mpbird (syl s_weak_sstop @ mpi s_sep_sstop sstr) id);
+theorem s_weak_septop: $ P =>*s Q <-> P *s T.s C_ Q *s T.s $ =
+'(bitr (ibii (sylib (sseq2 s_septop2) s_sep_ss1) @
+    sstr @ mpbi (sseq1 s_antop2) s_ssseptop) (sseq1 s_sep_antop1));
 theorem s_weak_iff: $ P =>*s Q <-> A. p (p e. P /\ isfun p -> E. q (q e. Q /\ q C_ p)) $ =
 (named '(aleqi @ bitr (imeq1i @ bitr el_s_antop ancomb) @
   imeq2a @ syl5bb el_s_sep2 @ exeqd @ aneq2d @
@@ -1836,10 +1947,7 @@ theorem s_weak_sepl: $ P *s Q =>*s P $ =
 '(mpbir (s_weak_sstop s_sep_sstop) @ mpbi (sseq1 s_sep_antop2) @ s_sep_ss2 s_anss2);
 theorem s_weak_sepr: $ P *s Q =>*s Q $ = '(mpbi (s_weakeq1 s_sep_com) s_weak_sepl);
 
-theorem s_weak_septop_ss: $ P =>*s Q -> P *s T.s C_ Q *s T.s $ =
-'(sylib (sseq s_sep_antop1 s_septop2) @ s_sep_ss1);
-
-theorem s_weak_tr: $ P =>*s Q -> Q =>*s R -> P =>*s R $ = '(syl5 s_weak_septop_ss sstr);
+theorem s_weak_tr: $ P =>*s Q -> Q =>*s R -> P =>*s R $ = '(syl5bi s_weak_septop sstr);
 
 theorem s_weak_split (h1: $ G -> subsn Q $) (hA: $ G -> A C_ T.s $)
   (hP: $ G -> A C_ P $) (hQ: $ G -> A =>*s Q $): $ G -> A C_ Q *s (Q -*s P) $ =
@@ -1959,6 +2067,9 @@ theorem hoare_ok: $ hoare T P Q -> s_ok Q T -> s_ok P T $ =
   '(sylib (imeqi ,h ,h) hoare_frame_ok));
 theorem s_weak_hoare: $ (P =>*s Q) -> hoare T P Q $ =
 (named '(iald @ syl s_weak_ok s_sep_weak2));
+theorem hoare_id: $ hoare T P P $ = (named '(ax_gen id));
+theorem hoare_tr: $ hoare T P Q -> hoare T Q R -> hoare T P R $ =
+(named '(syl ax_4 @ alimi imim2));
 
 -- The famous "frame rule" of separation logic.
 theorem hoare_frame: $ hoare T P Q -> hoare T (R *s P) (R *s Q) $ =
@@ -2129,8 +2240,8 @@ infixl s_reg: $>->r$ prec 80;
 @_ local def s_flags (v): set = $ ^s (v e. Flags) /\s sn (sn (X86P_Flags <> v)) $;
 prefix s_flags: $flags>->$ prec 80;
 
-@_ local def unused_stack_bd (bd hi): set =
-$ E.s lo e. u64, (^s (lo < bd /\ lo <= hi) /\s unused_stack lo (hi - lo)) $;
+@_ local def unused_stack_bd (hi sz): set =
+$ E.s lo e. u64, (^s (lo + sz < hi /\ lo <= hi) /\s unused_stack lo (hi - lo)) $;
 
 -- TODO
 @_ local def alloc_stack (sp hi): set =
