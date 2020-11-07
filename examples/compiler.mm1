@@ -1324,6 +1324,62 @@ do {
 -- Separation logic preliminaries --
 ------------------------------------
 
+@_ local def Heap_join (H1 H2 H: set): wff =
+$ isfun H1 /\ isfun H2 /\ Dom H1 i^i Dom H2 == 0 /\ H1 u. H2 == H $;
+
+theorem Heap_join_un: $ Heap_join H1 H2 H -> H1 u. H2 == H $ = 'anr;
+theorem Heap_join_dmun: $ Heap_join H1 H2 H -> Dom H1 u. Dom H2 == Dom H $ =
+'(syl5eqsr dmun @ dmeqd Heap_join_un);
+theorem Heap_join_dmin: $ Heap_join H1 H2 H -> Dom H1 i^i Dom H2 == 0 $ = 'anlr;
+theorem Heap_join_com: $ Heap_join H1 H2 H <-> Heap_join H2 H1 H $ =
+'(aneq (aneq ancomb @ eqseq1 incom) (eqseq1 uncom));
+theorem Heap_join_dmdif1: $ Heap_join H1 H2 H -> Dom H i^i Compl (Dom H1) == Dom H2 $ =
+'(eqstr3d (ineq1d Heap_join_dmun) @ syl5eqs indir @ syl6eqs un01 @
+  uneqd (a1i incpl2) @ sylib eqin1 @ sylib ineq0r Heap_join_dmin);
+theorem Heap_join_dmdif2: $ Heap_join H1 H2 H -> Dom H i^i Compl (Dom H2) == Dom H1 $ =
+'(sylbi Heap_join_com Heap_join_dmdif1);
+theorem Heap_join_ss: $ Heap_join H1 H2 H -> H1 C_ H /\ H2 C_ H $ =
+'(anwr @ iand (mpbii ssun1 sseq2) (mpbii ssun2 sseq2));
+theorem Heap_join_res2: $ Heap_join H1 H2 H -> H |` Dom H2 == H2 $ =
+'(eqstr3d (reseq1d Heap_join_un) @ syl5eqs unres @ syl6eqs un01 @
+  uneqd (sylib reseq0 Heap_join_dmin) (a1i resdm));
+theorem Heap_join_res1: $ Heap_join H1 H2 H -> H |` Dom H1 == H1 $ =
+'(sylbi Heap_join_com Heap_join_res2);
+theorem Heap_join_inj1: $ Heap_join H1 H2 H /\ Heap_join H3 H2 H -> H1 = H3 $ =
+'(syl axext @ eqstr3d (anwl Heap_join_res1) @
+  eqstrd (reseq2d @ eqstr3d (anwl Heap_join_dmdif2) (anwr Heap_join_dmdif2)) @
+  anwr Heap_join_res1);
+theorem Heap_join_inj2: $ Heap_join H1 H2 H /\ Heap_join H1 H3 H -> H2 = H3 $ =
+'(sylbi (aneq Heap_join_com Heap_join_com) Heap_join_inj1);
+theorem Heap_join_isf1: $ Heap_join H1 H2 H -> isfun H1 $ = 'an3l;
+theorem Heap_join_isf2: $ Heap_join H1 H2 H -> isfun H2 $ = 'anllr;
+theorem Heap_join_isf3: $ Heap_join H1 H2 H -> isfun H $ =
+'(mpbid (isfeqd anr) @ mpbird (syl unisf anlr) anll);
+
+theorem heap_join_res: $ A u. B == Dom H ->
+  (Heap_join (H |` A) (H |` B) H <-> isfun H /\ A i^i B == 0) $ =
+(focus (def (f x) '(syl5eqs dmres @ sylib eqin2 @ mpbii ,x @ sseq2d anl))
+  '(syl5bbr (bian1a Heap_join_isf3) @ syl aneq2a @ exp @
+    bitrd (syl bian2 @ syl5eqsr resun @ sylib eqres @ anwl eqssr) @
+    bitrd (syl bian1 @ anwr @ iand resisf resisf) @
+    eqseq1d @ ineqd ,(f 'ssun1) ,(f 'ssun2)));
+
+theorem Heap_join_rlam (v: nat x):
+  $ Heap_join (\. x e. A, v) (\. x e. B, v) (\. x e. C, v) <->
+    A i^i B == 0 /\ A u. B == C $ =
+'(aneq (bitr (bian1 @ iani rlamisf rlamisf) @ eqseq1 @ ineq dmrlam dmrlam) unrlam);
+theorem Heap_join_rlam2 (v: nat x):
+  $ A == a /\ B == b /\ C == c ->
+    (Heap_join (\. x e. a, v) (\. x e. b, v) (\. x e. c, v) <->
+    A i^i B == 0 /\ A u. B == C) $ =
+'(syl5bb Heap_join_rlam @ bicomd @
+  aneqd (eqseq1d @ ineqd anll anlr) (eqseqd (uneqd anll anlr) anr));
+
+theorem Heap_join_02: $ Heap_join H 0 H <-> isfun H $ =
+'(bitr (bian2 un02) @ bitr (bian2 @ eqstr (ineq2 dm0) in02) @ bian2 isf0);
+theorem Heap_join_01: $ Heap_join 0 H H <-> isfun H $ =
+'(bitr Heap_join_com Heap_join_02);
+
 @_ local def heap_join (h1 h2: nat): nat =
 $ if (isfun h1 /\ isfun h2 /\ Dom h1 i^i Dom h2 == 0) (suc (lower (h1 u. h2))) 0 $;
 
@@ -1337,60 +1393,48 @@ theorem heap_join_n0: $ heap_join h1 h2 != 0 <->
 (named '(bitr exsuc @
   bitr (exeqi @ bitr heap_join_S2 @ bitr ancomb @ aneq1i eqcomb) @ exeqe biidd));
 
-theorem heap_join_S: $ heap_join h1 h2 = suc h <->
-  isfun h1 /\ isfun h2 /\ Dom h1 i^i Dom h2 == 0 /\ h1 u. h2 == h $ =
+theorem heap_join_S: $ heap_join h1 h2 = suc h <-> Heap_join h1 h2 h $ =
 '(bitr4 heap_join_S2 @ aneq2i @ eqlower1 @ unfin finns finns);
 
 theorem heap_join_com: $ heap_join h1 h2 = heap_join h2 h1 $ =
 '(ifeq (aneq ancomb @ eqseq1 incom) (suceq @ lowereq uncom) eqid);
 
-theorem heap_join_un: $ heap_join h1 h2 = suc h -> h1 u. h2 == h $ = '(sylbi heap_join_S anr);
+theorem heap_join_un: $ heap_join h1 h2 = suc h -> h1 u. h2 == h $ =
+'(sylbi heap_join_S Heap_join_un);
 theorem heap_join_dmun: $ heap_join h1 h2 = suc h -> Dom h1 u. Dom h2 == Dom h $ =
 '(syl5eqsr dmun @ dmeqd heap_join_un);
 theorem heap_join_dmin: $ heap_join h1 h2 = suc h -> Dom h1 i^i Dom h2 == 0 $ =
-'(sylbi heap_join_S anlr);
+'(sylbi heap_join_S Heap_join_dmin);
 theorem heap_join_dmdif1: $ heap_join h1 h2 = suc h -> Dom h i^i Compl (Dom h1) == Dom h2 $ =
-'(eqstr3d (ineq1d heap_join_dmun) @ syl5eqs indir @ syl6eqs un01 @
-  uneqd (a1i incpl2) @ sylib eqin1 @ sylib ineq0r heap_join_dmin);
+'(sylbi heap_join_S Heap_join_dmdif1);
 theorem heap_join_dmdif2: $ heap_join h1 h2 = suc h -> Dom h i^i Compl (Dom h2) == Dom h1 $ =
-'(sylbi (eqeq1 heap_join_com) heap_join_dmdif1);
+'(sylbi heap_join_S Heap_join_dmdif2);
 theorem heap_join_ss: $ heap_join h1 h2 = suc h -> h1 C_ h /\ h2 C_ h $ =
-'(sylbi heap_join_S @ anwr @ iand (mpbii ssun1 sseq2) (mpbii ssun2 sseq2));
+'(sylbi heap_join_S Heap_join_ss);
 theorem heap_join_res2: $ heap_join h1 h2 = suc h -> h |` Dom h2 == h2 $ =
-'(eqstr3d (reseq1d heap_join_un) @ syl5eqs unres @ syl6eqs un01 @
-  uneqd (sylib reseq0 heap_join_dmin) (a1i resdm));
+'(sylbi heap_join_S Heap_join_res2);
 theorem heap_join_res1: $ heap_join h1 h2 = suc h -> h |` Dom h1 == h1 $ =
-'(sylbi (eqeq1 heap_join_com) heap_join_res2);
+'(sylbi heap_join_S Heap_join_res1);
 theorem heap_join_inj1: $ heap_join h1 h2 = suc h /\ heap_join h3 h2 = suc h -> h1 = h3 $ =
-'(syl axext @ eqstr3d (anwl heap_join_res1) @
-  eqstrd (reseq2d @ eqstr3d (anwl heap_join_dmdif2) (anwr heap_join_dmdif2)) @
-  anwr heap_join_res1);
+'(sylbi (aneq heap_join_S heap_join_S) Heap_join_inj1);
 theorem heap_join_inj2: $ heap_join h1 h2 = suc h /\ heap_join h1 h3 = suc h -> h2 = h3 $ =
-'(sylbi (aneq (eqeq1 heap_join_com) (eqeq1 heap_join_com)) heap_join_inj1);
+'(sylbi (aneq heap_join_S heap_join_S) Heap_join_inj2);
+theorem heap_join_isf1: $ heap_join h1 h2 = suc h -> isfun h1 $ = '(sylbi heap_join_S Heap_join_isf1);
+theorem heap_join_isf2: $ heap_join h1 h2 = suc h -> isfun h2 $ = '(sylbi heap_join_S Heap_join_isf2);
+theorem heap_join_isf3: $ heap_join h1 h2 = suc h -> isfun h $ = '(sylbi heap_join_S Heap_join_isf3);
+theorem heap_join_02: $ heap_join h 0 = suc h <-> isfun h $ = '(bitr heap_join_S Heap_join_02);
+theorem heap_join_01: $ heap_join 0 h = suc h <-> isfun h $ = '(bitr heap_join_S Heap_join_01);
 
 theorem heap_join_rlam (v: nat x):
   $ heap_join (\. x e. A, v) (\. x e. B, v) = suc (\. x e. C, v) <->
     A i^i B == 0 /\ A u. B == C $ =
-'(bitr heap_join_S @ aneq (bitr (bian1 @ iani rlamisf rlamisf) @
-    eqseq1 @ ineq dmrlam dmrlam) unrlam);
+'(bitr heap_join_S Heap_join_rlam);
 theorem heap_join_rlam2 (v: nat x):
   $ A == a /\ B == b /\ C == c ->
     (heap_join (\. x e. a, v) (\. x e. b, v) = suc (\. x e. c, v) <->
     A i^i B == 0 /\ A u. B == C) $ =
 '(syl5bb heap_join_rlam @ bicomd @
   aneqd (eqseq1d @ ineqd anll anlr) (eqseqd (uneqd anll anlr) anr));
-
-theorem heap_join_isf: $ heap_join h1 h2 = suc h -> isfun h1 /\ isfun h2 /\ isfun h $ =
-'(sylbi heap_join_S @ iand anll @ mpbid (isfeqd anr) @ mpbird (syl unisf anlr) anll);
-theorem heap_join_isf1: $ heap_join h1 h2 = suc h -> isfun h1 $ = '(syl anll heap_join_isf);
-theorem heap_join_isf2: $ heap_join h1 h2 = suc h -> isfun h2 $ = '(syl anlr heap_join_isf);
-theorem heap_join_isf3: $ heap_join h1 h2 = suc h -> isfun h $ = '(anrd heap_join_isf);
-
-theorem heap_join_02: $ isfun h <-> heap_join h 0 = suc h $ =
-'(bitr2 heap_join_S @ bitr (bian2 un02) @
-  bitr (bian2 @ eqstr (ineq2 dm0) in02) @ bian2 isf0);
-theorem heap_join_01: $ isfun h <-> heap_join 0 h = suc h $ =
-'(bitr heap_join_02 @ eqeq1 heap_join_com);
 
 theorem heap_join_ass:
   $ E. h23 (heap_join h2 h3 = suc h23 /\ heap_join h1 h23 = suc h) <->
@@ -1414,7 +1458,7 @@ theorem heap_join_ass:
 
 theorem heap_join_ex2: $ E. h2 heap_join h1 h2 = suc h <-> isfun h /\ h1 C_ h $ =
 (focus
-  '(ibii (eex @ iand (anrd heap_join_isf) @ mpbii ssun1 @ sseq2d @ sylbi heap_join_S anr) _)
+  '(ibii (eex @ iand heap_join_isf3 @ mpbii ssun1 @ sseq2d @ sylbi heap_join_S anr) _)
   (have 'h '(syl5eqs undi @ syl6eqs inv2 @ ineqd (sylib equn1 anr) @ a1i uncpl2))
   '(sylibr (exeqi heap_join_S) @ syl (iexe @ sylbir (eqlower2 @ infin1 finns) ,eqtac) @
     iand (iand (iand (impcom isfss) @ anwl @ isfss inss1) @
@@ -1570,7 +1614,7 @@ theorem s_sep_emp2a: $ P *s emp == P /\s T.s $ =
   '(bitr (aneq2i @ bitr el_s_antop ancomb) @ bitr4 anlass @ aneq2i @
     bitr (exeqi @ aneq1i elsn) @ bitr (exeqe @ eqeq1d heap_joineq2) @
     bitr3 (bian2a heap_join_isf1) @ aneq1a @
-    syl6bb peano2 @ sylbi heap_join_02 eqeq1));
+    syl6bb peano2 @ sylbir heap_join_02 eqeq1));
 theorem s_sep_emp1a: $ emp *s P == P /\s T.s $ = '(eqstr s_sep_com s_sep_emp2a);
 theorem s_sep_emp2: $ P C_ T.s <-> P *s emp == P $ =
 '(bitr4 s_antop @ eqseq1 s_sep_emp2a);
@@ -1581,8 +1625,8 @@ theorem s_lift_sep: $ ^s p *s ^s q == ^s (p /\ q) $ =
 (named '(ax_gen @ bitr4 el_s_sep @ bitr4 el_s_lift @
   bitr (exeqi @ bitr (exeqi @ bitr4 (aneq1i @
     bitr (aneq el_s_lift el_s_lift) an4) anrass) exan2) @
-  bitr exan2 @ aneq1i @ bitr4 (exeqi @ exeqi @ bian1a @ anld heap_join_isf) @
-  ibii (iexde @ iexde @ mpbird ,eqtac @ sylib heap_join_02 anll) @
+  bitr exan2 @ aneq1i @ bitr4 (exeqi @ exeqi @ bian1a @ iand heap_join_isf1 heap_join_isf2) @
+  ibii (iexde @ iexde @ mpbird ,eqtac @ sylibr heap_join_02 anll) @
   eex @ eex heap_join_isf3));
 
 theorem s_lift_sep1: $ ^s p /\s P C_ ^s p *s P $ =
@@ -1590,7 +1634,7 @@ theorem s_lift_sep1: $ ^s p /\s P C_ ^s p *s P $ =
   (have 'h '(sylib el_s_lift an3l))
   '(ax_gen @ sylbi el_s_an @ sylibr el_s_sep @ iexde @ iexde @ mpbird ,eqtac @
     iand (iand (sylibr el_s_lift @ syl (ian isf0) @ anrd h) anllr) @
-    sylib heap_join_01 @ anld h));
+    sylibr heap_join_01 @ anld h));
 theorem s_lift_sep2: $ P /\s ^s p C_ P *s ^s p $ =
 '(mpbi (sseq s_ancom s_sep_com) s_lift_sep1);
 
@@ -1682,46 +1726,91 @@ theorem s_Sep_sn (P: set x)
   (e: $ G /\ x = a -> P == Q $) (h: $ G -> Q C_ T.s $): $ G -> |*|s x e. sn a, P == Q $ =
 '(syl5eqs s_Sep_sn_sb @ eqstrd (s_aneq1d @ sbsed e) @ sylib s_antop h);
 
-theorem s_Sep_un_lem: $ isfun F -> Ran (F |` Dom (F i^i Xp _V A)) C_ A $ =
+theorem s_Sep_un_lem1: $ isfun F -> Ran (F |` Dom (F i^i Xp _V A)) C_ A $ =
 (named '(sylibr ssrn @ ssrd2 @ syl5bi prelres @ exp @
   mpd (sylib eldm anrr) @ eexd @ syl5bi elin @ exp @
   mpbird (eleq1d @ preq2d @ isfd anll (anwl anrl) anrl) @ anrr));
 
--- theorem s_Sep_un (P: set x): $ A i^i B == 0 ->
---   |*|s x e. A u. B, P == |*|s x e. A, P *s |*|s x e. B, P $ =
--- (focus
---   '(iald @ bitr4g el_s_Sep el_s_sep @
---     syl6bb (bian1a @ eex @ eex @ anwr heap_join_isf3) @ syl aneq2a @ exp @
---     syl6bbr (exeqi @ exeqi @ aneq1a @ aneqd
---       (syl5bb el_s_Sep @ syl bian1 heap_join_isf1)
---       (syl5bb el_s_Sep @ syl bian1 heap_join_isf2)) @ ibid _ _)
---   (focus
---     (def (f x y) '(sylan (iexe ,eqtac)
---       (sylib (funceq1 @ mpbi eqlower @ resfin finns) @
---         sylibr (funceq2 @ eqstr4 dmrlam ,x) @
---         iand (anld @ sylan funcres anrl @
---           mpbii (dmss inss1) @ sseq2d @ rsyl anrl funcdm) @
---         syl s_Sep_un_lem @ rsyl anrl funcisf) @
---       sylbir anass @ imp @ alimd @ syl5 (imim1i ,y) @
---       a2d @ exp @ bi2d @ eleq1d @ lowereqd @
---       mpbird (sylan eqisf (a1i @ resisf rlamisf) @ syl resisf @ anllr) @
---       iand _ _))
---     (have 'h1 '(mpbi eqlower @ dmfin finns))
---     (have 'h2 '(mpbi eqlower @ dmfin @ infin1 finns))
---     (have 'h3 '(mpbi eqlower @ dmfin @ infin1 finns))
---     (have 'h4 '(syl5eqsr indi @ sylib eqin1 @ sylib (sseq2 xpundir) @
---       sylib ssrn @ rsyl anrl funcrn))
---     '(eexda @ iexde @ iexde @ mpbird ,eqtac @ anwll @
---       iand (iand ,(f 'h2 'elun1) ,(f 'h3 'elun2)) @
---       eqtrd (sylibr (heap_join_rlam2 @ ian (ian h2 h3) h1) @
---         iand (mpbird (syl dmdisj @ mpbird (isfeqd h4) _) _) (syl5eqsr dmun _)) @
---       suceqd @ syl axext @ sylibr rlamapp @
---       iand anlr @ a1i h1)
---     )
---   (focus
---     '(eexd @ eexd @ impd @ impd @ eexda @ eexda @ exp @ syl (iexe ,eqtac) @
---       iand _ _))
--- );
+theorem s_Sep_un_lem2 (h1: $ C C_ A u. B $)
+  (h2: $ G -> func K (Dom H) (A u. B) $):
+  $ G -> func (K i^i Xp _V C) (Dom (H |` Dom (K i^i Xp _V C))) C $ =
+'(iand (iand (syl (isfss inss1) @ syl funcisf h2) @
+    eqscomd @ syl5eqs dmres @ sylib eqin2 @
+    mpbii (dmss inss1) @ sseq2d @ syl funcdm h2) @
+  a1i @ mpbir ssrn inss2);
+
+theorem s_Sep_un_lem3 (h1: $ C C_ A u. B $)
+  (h2: $ G -> func K (Dom H) (A u. B) $)
+  (h3: $ G -> x e. C $):
+  $ G -> H |` Dom (K i^i Xp _V C) |` {y | (K i^i Xp _V C) @ y = x} ==
+         H |` {y | K @ y = x} $ =
+(named '(eqrd2 @ bitr4g prelres prelres @
+  bitr4g (aneq prelres @ elabe ,eqtac) (aneq2i @ elabe ,eqtac) @
+  syl5bb anass @ syl aneq2a @ exp @
+  bitr3d (anwl @ syl isfappb @ syl (isfss inss1) @ syl funcisf h2) @
+  syl5bb elin @ bitrd (syl bian2 @ sylibr prelxp @ syl (ian elv) @ anwl h3) @
+  bitrd (anwl @ syl funcappb h2) @ anwr @ rsyl preldm bian1));
+
+theorem s_Sep_un_lem4 {p z}
+  (h1: $ G -> func F (Dom H) A $)
+  (h2: $ G -> func F1 (Dom H1) A1 $)
+  (h3: $ G -> (p <> z e. H /\ p <> x e. F <-> p <> z e. H1 /\ p <> x e. F1) $):
+  $ G -> H |` {y | F @ y = x} == H1 |` {y | F1 @ y = x} $ =
+(named @ focus
+  '(eqrd2 @ bitr4g prelres prelres @
+    bitr4g (aneq2i @ elabe ,eqtac) (aneq2i @ elabe ,eqtac) _)
+  (def (f x) '(syl aneq2a @ exp @
+    bitrd (syl funcappb @ anwl ,x) @ anwr @ syl bian1 preldm))
+  '(bitr3d ,(f 'h1) @ bitrd h3 ,(f 'h2)));
+
+theorem s_Sep_un (P: set x): $ A i^i B == 0 ->
+  |*|s x e. A u. B, P == |*|s x e. A, P *s |*|s x e. B, P $ =
+(focus
+  '(!! iald a @ bitr4g el_s_Sep el_s_sep @
+    syl6bb (bian1a @ eex @ eex @ anwr heap_join_isf3) @ syl aneq2a @ exp @
+    syl6bbr (exeqi @ exeqi @ aneq1a @ aneqd
+      (syl5bb el_s_Sep @ syl bian1 heap_join_isf1)
+      (syl5bb el_s_Sep @ syl bian1 heap_join_isf2)) @ ibid _ _)
+  (focus
+    (def (f x) '(!! iexde ,(dummy! 'nat) @
+      sylbir (aneq2i @ eqlower2 @ infin1 finns) @ mpbird (anwr ,eqtac) @ anwl @
+      iand (s_Sep_un_lem2 ,x anrl) @ sylbir anass @ imp @
+      alimd @ syl5 (imim1i @ ssel ,x) @ a2d @ exp @ bi2d @
+      eleq1d @ lowereqd @ s_Sep_un_lem3 ,x anlr anr))
+    '(eexda @ !! iexde f @ !! iexde g @
+      sylbir (aneq (aneq2i @ eqlower2 @ resfin finns) (eqlower2 @ resfin finns)) @
+      sylibr (aneq2i heap_join_S) @ mpbird (rsyl (anim1 anr) ,eqtac) @ anwll @
+      iand (iand ,(f 'ssun1) ,(f 'ssun2)) _)
+    (have 'h1 '(syl5eqsr indi @ sylib eqin1 @ sylib (sseq2 xpundir) @
+      sylib ssrn funcrn))
+    '(mpbird (rsyl anrl @
+        syl heap_join_res @ syl5eqsr dmun @ eqstrd (dmeqd h1) funcdm) @
+      iand anlr @ mpbird (syl dmdisj @ rsyl anrl @ mpbird (isfeqd h1) funcisf) @
+      syl5eqsr inindi @ syl (sseq0 inss2) @ eqstr3g xpindir xp02 @ xpeq2d anll))
+  (focus
+    (have 'h2
+      '(mpbid (funceq2d @ anwr heap_join_dmun) @ unfunc (anwr heap_join_dmin)
+        (syl (funcss3 ssun1) @ anld anllr) (syl (funcss3 ssun2) @ anld anlr)))
+    '(eexd @ eexd @ impd @ impd @ eexda @ eexda @ exp @ !! iexde h @
+      mpbird (rsyl (sylibr (eqlower2 @ unfin finns finns) anr) ,eqtac) @ anwl @
+      iand h2 @ sylibr (aleqi @ bitr (imeq1i elun) imor) @ sylibr alan _)
+    (have 'h3 $ _ -> x e. A -> ~x e. B $
+      '(sylib notan2 @ mpbiri el02 @ noteqd @ syl5bbr elin @ eleq2d an4l))
+    (have 'h4 $ _ -> z e. Dom f -> ~z e. Dom g $
+      '(sylib notan2 @ mpbiri el02 @ noteqd @ syl5bbr elin @ eleq2d @ rsyl anlr heap_join_dmin))
+    (def (f x y z u v)
+      '(rsyl (iand (anim1 @ anim (anim anl anl) anl) h2) @
+        aleqd @ syl imeq2a @ exp @ eleq1d @ lowereqd @
+        !! s_Sep_un_lem4 p z v anlr ,x @
+        bitrd (anwl @ aneqd (bitr3d (eleq2d @ syl heap_join_un anlr) (a1i elun)) (a1i elun)) @
+        bitrd (aneq2d @ syl ,z @ mtd (imp ,u) @
+          syl5 prelrn @ syl ssel @ syl funcrn ,y) @
+        syl aneq1a @ exp @ syl ,z @ mtd (imp @ syl5 preldm @
+          mpbird (imeq1d @ eleq2d @ syl funcdm ,x) (anwl ,v)) @
+        a1i preldm))
+    '(iand
+      (mpbird ,(f 'an4lr 'an3lr 'bior2 'h3 'h4) (anrd anllr))
+      (mpbird ,(f 'an3lr 'an4lr 'bior1 '(con2d h3) '(con2d h4)) (anrd anlr)))));
 
 @_ local def s_weak (P Q: set): wff = $ P /\s T.s C_ Q *s T.s $;
 infixr s_weak: $=>*s$ prec 27;

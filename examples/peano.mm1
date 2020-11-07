@@ -553,7 +553,8 @@ theorem anroti (h: $ a -> b /\ d $): $ a /\ c -> b /\ c /\ d $ = '(sylib anrass 
 theorem anrotri (h: $ b /\ d -> a $): $ b /\ c /\ d -> a /\ c $ = '(sylbi anrass @ anim1 h);
 theorem anassi (h: $ a <-> b /\ c $): $ a /\ d <-> b /\ (c /\ d) $ = '(bitr (aneq1i h) anass);
 theorem anidm: $ a /\ a <-> a $ = '(ibii anl (iand id id));
-theorem anandi: $ a /\ (b /\ c) <-> (a /\ b) /\ (a /\ c) $ = '(bitr2 anass @ aneq2a @ aneq2d bian1);
+theorem anandi: $ a /\ (b /\ c) <-> (a /\ b) /\ (a /\ c) $ = '(bitr3 (aneq1i anidm) an4);
+theorem anandir: $ (a /\ b) /\ c <-> (a /\ c) /\ (b /\ c) $ = '(bitr3 (aneq2i anidm) an4);
 theorem imandi: $ (a -> b /\ c) <-> (a -> b) /\ (a -> c) $ =
 '(ibii (iand (imim2i anl) (imim2i anr)) (com12 @ animd (com12 id) (com12 id)));
 theorem rbida (h1: $ a /\ c -> b $) (h2: $ a /\ d -> b $)
@@ -2907,6 +2908,12 @@ theorem xpundi: $ Xp (A u. B) C == Xp A C u. Xp B C $ =
 theorem xpundir: $ Xp A (B u. C) == Xp A B u. Xp A C $ =
 '(!! eqri p @ bitr elxp @ bitr4 (aneq2i elun) @
   bitr elun @ bitr4 (oreq elxp elxp) andi);
+theorem xpindi: $ Xp (A i^i B) C == Xp A C i^i Xp B C $ =
+'(!! eqri p @ bitr elxp @ bitr4 (aneq1i elin) @
+  bitr elin @ bitr4 (aneq elxp elxp) anandir);
+theorem xpindir: $ Xp A (B i^i C) == Xp A B i^i Xp A C $ =
+'(!! eqri p @ bitr elxp @ bitr4 (aneq2i elin) @
+  bitr elin @ bitr4 (aneq elxp elxp) anandi);
 theorem xpfst: $ a e. Xp A B -> fst a e. A $ = '(sylbi elxp anl);
 theorem xpsnd: $ a e. Xp A B -> snd a e. B $ = '(sylbi elxp anr);
 theorem prelxp1: $ a <> b e. Xp A B -> a e. A $ = '(sylbi prelxp anl);
@@ -3009,6 +3016,7 @@ theorem dmres: $ Dom (F |` A) == Dom F i^i A $ =
 theorem rnres: $ Ran (F |` A) == F '' A $ =
 (named '(abeqi @ exeqi @ bitr prelres ancomb));
 theorem unres: $ (F u. G) |` A == (F |` A) u. (G |` A) $ = 'indir;
+theorem resun: $ F |` (A u. B) == (F |` A) u. (F |` B) $ = '(eqstr (ineq2 xpundi) indi);
 theorem eqres: $ Dom F C_ A <-> F |` A == F $ = '(bitr ssdm eqin1);
 theorem resdm: $ F |` Dom F == F $ = '(mpbi eqres ssid);
 
@@ -4673,6 +4681,7 @@ pub theorem elsep (n: nat) (A: set) (a: nat):
 theorem funcisf: $ func F A B -> isfun F $ = 'anll;
 theorem funcdm: $ func F A B -> Dom F == A $ = 'anlr;
 theorem funcrn: $ func F A B -> Ran F C_ B $ = 'anr;
+theorem funcss3: $ B C_ C -> func F A B -> func F A C $ = '(anim2d @ com12 sstr);
 
 theorem funcal: $ func F A B <-> isfun F /\ Dom F == A /\ A. x (x e. A -> F @ x e. B) $ =
 (named '(aneq2a @ bitrd (anwl isfrnss) @ aleqd @ imeq1d @ eleq2d anr));
@@ -4708,6 +4717,18 @@ theorem func03: $ func F A 0 <-> F == 0 /\ A == 0 $ =
 (named '(bitr3 (bian1a @ sylib rneq0 @ sylib ss02 funcrn) @
   aneq2a @ syl6bb (bitr (bian2 @ eqss rn0) @
     bitr (bian1 isf0) @ bitr (eqseq1 dm0) eqscomb) funceq1));
+
+theorem unfunc (h0: $ G -> A1 i^i A2 == 0 $)
+  (h1: $ G -> func F1 A1 B $) (h2: $ G -> func F2 A2 B $):
+  $ G -> func (F1 u. F2) (A1 u. A2) B $ =
+(focus (def (f t x) '(,t (syl ,x h1) (syl ,x h2)))
+  '(iand (iand (mpbird _ ,(f 'iand 'funcisf)) _) _)
+  '(syl unisf @ eqstrd ,(f 'ineqd 'funcdm) h0)
+  '(syl5eqs dmun ,(f 'uneqd 'funcdm))
+  '(sylibr (sseq1 rnun) @ sylibr unss ,(f 'iand 'funcrn)));
+
+theorem funcappb: $ func F A B -> (a <> b e. F <-> a e. A /\ F @ a = b) $ =
+'(bitrd (syl isfappb funcisf) @ aneq1d @ eleq2d funcdm);
 
 @_ def Arrow (A B: set) (.f: nat): set =
 $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;

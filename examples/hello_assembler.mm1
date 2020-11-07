@@ -20,14 +20,14 @@ do {
   -- (display @ pp @ nth 6 @ get-decl 'hello_main)
 };
 
-theorem hello_decode_test: $ decode
+theorem _: $ decode
   (xastMov (wSz32) (Rm_i (RM_reg x2) (chopZ 64 (b0 xe))))
   (s2n (ch (xb) (xa) ':
   ch (x0) (xe) ': ch (x0) (x0) ': ch (x0) (x0) ': s1 (ch (x0) (x0)))) $ =
 (match (assemble-inst @ (assemble-desugar list) '(mov.32 rdx 0xe))
   [(t s p) '{,(verb p) : $ decode ,t ,s $}]);
 
-theorem hello_main_CFG: $ sat_CFG_func hello_main ,0x400078
+theorem _: $ sat_CFG_func hello_main ,0x400078
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x2))) (chopZ 64 (b0 (h2n (xe))))))
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x6))) (chopZ 64 (b0 ,0x40009a))))
   (CFG_S (xastMov (wSz32) (Rm_i (RM_reg (h2n (x7))) (chopZ 64 (b0 (h2n (x1))))))
