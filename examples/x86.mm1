@@ -272,6 +272,8 @@ theorem u8ss32: $ u8 C_ u32 $ = '(Bitsss d8le32);
 theorem u8ss64: $ u8 C_ u64 $ = '(Bitsss d8le64);
 theorem u8ss16: $ u8 C_ u16 $ = '(Bitsss @ ltle d8lt16);
 
+theorem u64le1: $ v <= w -> w e. u64 -> v e. u64 $ = 'Bitsle1;
+
 theorem elu8: $ n e. u8 <-> n < 16 * 16 $ = '(bitr elBits2 @ lteq2 d2pow8);
 theorem elu8_2: $ n e. u8 <-> n < 256 $ = '(bitr elu8 @ lteq2 d16mul16);
 theorem elu8_3: $ n e. u8 <-> n < 256 ^ 1 $ = '(bitr4 elu8_2 @ lteq2 pow12);
@@ -280,6 +282,7 @@ theorem elu8_lem (h: $ n < ,256 $): $ n e. u8 $ =
 '(mpbir elBits2 @ mpbir (lteq2 d2pow8x) h);
 theorem d1elu8: $ 1 e. u8 $ = '(elu8_lem ,norm_num);
 theorem d2elu8: $ 2 e. u8 $ = '(elu8_lem ,norm_num);
+theorem d1elu32: $ 1 e. u32 $ = '(ssel u8ss32 d1elu8);
 
 theorem mod_el_u8: $ a % 256 e. u8 $ = 'mod_el_Bits;
 
@@ -528,6 +531,7 @@ theorem bitsNot_hex: $ b + c = xf -> bitsNot (k + 4) (a :x b) = bitsNot k a :x c
 @_ def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
 pub theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $ = 'chopT;
 
+theorem bitsAdd_eqid: $ a + b e. Bits k -> bitsAdd k a b = a + b $ = 'Bits_chop;
 theorem eqm_bitsAdd: $ mod(2 ^ k): bitsAdd k a b = a + b $ = 'eqm_chop;
 theorem zeqm_bitsAdd: $ modZ(2 ^ k): b0 (bitsAdd k a b) = b0 a +Z b0 b $ =
 '(mpbir (zeqmeq3 zaddb0) @ mpbir zeqmeqm eqm_bitsAdd);
@@ -584,6 +588,11 @@ pub theorem bitsSarT (k a b: nat):
 
 @_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
 pub theorem add64T (a b: nat): $ a +_64 b e. u64 $ = 'bitsAddT;
+
+theorem add64_eqid: $ a + b e. u64 -> a +_64 b = a + b $ = 'bitsAdd_eqid;
+theorem add64S_eqid: $ suc a e. u64 -> a +_64 1 = suc a $ =
+'(sylbir (eleq1 add12) @ syl6eq add12 add64_eqid);
+
 @_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 pub theorem sub64T (a b: nat): $ a -_64 b e. u64 $ = 'bitsSubT;
 
@@ -1873,10 +1882,13 @@ pub theorem finiteProt: $ finite Prot $ = 'finns;
 @_ def PROT_READ: nat = $ 1 $;
 @_ def PROT_WRITE: nat = $ 2 $;
 @_ def PROT_EXEC: nat = $ 4 $;
-pub theorem PROT_READ_T: $ PROT_READ e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) d1lt8);
-pub theorem PROT_WRITE_T: $ PROT_WRITE e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) d2lt8);
-pub theorem PROT_EXEC_T: $ PROT_EXEC e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) d4lt8);
+theorem PROT_T_lem (h: $ a < 8 $): $ a e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) h);
+pub theorem PROT_READ_T: $ PROT_READ e. Prot $ = '(PROT_T_lem d1lt8);
+pub theorem PROT_WRITE_T: $ PROT_WRITE e. Prot $ = '(PROT_T_lem d2lt8);
+pub theorem PROT_EXEC_T: $ PROT_EXEC e. Prot $ = '(PROT_T_lem d4lt8);
 theorem Prot_ss: $ a C_ b -> b e. Prot -> a e. Prot $ = '(sylibr (imeqi elBits elBits) sstr);
+theorem PROT_RX_T: $ PROT_READ + PROT_EXEC e. Prot $ =
+'(PROT_T_lem {,norm_num : $ 1 + 4 < 8 $});
 
 @_ def Memory: set = $ Arrow u64 (Xp Prot u8) $;
 pub theorem finiteMemory: $ finite Memory $ = '(Arrowfin finns @ xpfin finiteProt finns);
@@ -1986,15 +1998,20 @@ $ m e. Memory /\ a e. u64 /\ b e. u8 /\
   ifp (PROT_READ + PROT_WRITE C_ prot)
     (m2 == write m a (prot <> b) /\ e = 0)
     (m2 == m /\ e = suc exGPF)) $;
+theorem write_el_Memory
+  (h1: $ G -> m e. Memory $) (h2: $ G -> a e. u64 $)
+  (h3: $ G -> prot e. Prot $) (h4: $ G -> b e. u8 $)
+  (h5: $ G -> m2 == write m a (prot <> b) $): $ G -> m2 e. Memory $ =
+'(writeArrow h1 h2 (xpTd h3 h4) (eqscomd h5));
 pub theorem writeMemory1T (m a b m2 e: nat):
   $ writeMemory1 m a b m2 e ->
     m e. Memory /\ a e. u64 /\ b e. u8 /\
     m2 e. Memory /\ e e. Option Exception $ =
 (named '(sylibr anass @ anim2a @ eexd @ eexd @ impd @ exp @ eorda
   (iand
-    (writeArrow an4l an3lr
-      (xpTd (anwl @ anld @ sylib prelxp @ mpbid (eleq1d anr) @ anwll elMemoryT) anllr)
-      (anwr @ eqscomd anrl))
+    (write_el_Memory an4l an3lr
+      (anwl @ anld @ sylib prelxp @ mpbid (eleq1d anr) @ anwll elMemoryT) anllr
+      (anwr anrl))
     (mpbiri opt0 (eleq1d @ anwr anrr)))
   (iand
     (mpbird (eleq1d @ sylib nsinj @ anwr anrl) an4l)
@@ -2099,6 +2116,19 @@ pub theorem writeMemT (k a l k2: nat):
     (sylibr mkCfgT @ iand (iand (iand (iand anrr an4lr) an3lr) anllr) (anwr anlr))
     (sylib mkCfgT @ mpbid (eleq1d @ anwr anlr) an3l)
     (anwr @ anwll writeMemoryT)));
+
+@_ local def setMemory (k m: nat): nat = $ fst k <> pi21 k <> pi221 k <> m $;
+theorem setMemoryT:
+  $ k e. Config /\ m e. Memory -> setMemory k m e. Config $ =
+(named '(xpTd (anwl xpfst) @ xpTd (anwl xppi21) @ xpTd (anwl xppi221) anr));
+theorem setMemory_mk: $ setMemory (mkCfg e ip r f m) m2 = mkCfg e ip r f m2 $ =
+'(preq fstpr @ preq pi21pr @ preq1 pi221pr);
+theorem readException_setMemory: $ readException (setMemory k m) = readException k $ =
+(named '(fsteq fstpr));
+theorem readRIP_setMemory: $ readRIP (setMemory k m) = readRIP k $ = (named '(sndeq fstpr));
+theorem readReg_setMemory: $ readReg (setMemory k m) r = readReg k r $ = (named '(appneq1 pi21pr));
+theorem readFlags_setMemory: $ readFlags (setMemory k m) = readFlags k $ = (named 'pi221pr);
+theorem get_setMemory: $ getMemory (setMemory k m2) = m2 $ = 'pi222pr;
 
 @_ def EA: set = $ Sum u64 (Sum Regs u64) $;
 @_ def EA_i (q: nat): nat = $ b0 q $;
@@ -2291,6 +2321,22 @@ pub theorem setExceptionT (k e: nat):
 
 theorem setExceptionMem: $ getMemory (setException k e) = getMemory k $ =
 '(sndeq @ sndeq sndpr);
+
+theorem writeMem_set (k a l k2: nat):
+  $ writeMem k a l k2 <-> k e. Config /\ a e. u64 /\ l e. List u8 /\
+    readException k = 0 /\ E. m2 E. e (writeMemory (getMemory k) a l m2 e /\
+      k2 = setException (setMemory k m2) e) $ =
+(named @ focus
+  '(bitr4 (aneq2a _) anass)
+  '(bitr3g (exeqe ,(eqtac-gen $0$)) (bian1 mkCfg_ex) @ syl6bb exan2 @ exeqd _)
+  (iterate 4 (fn (x) '(bitr3g exan1 exan2 @ exeqd ,x)) _)
+  '(syl5bb (bitr (aneq2i @
+      bitr (exeqi @ bitr (exeqi @ bitr anass anlass) exan1) exan1) anlass) @
+    syl aneq2a @ exp @ bicomd @
+    aneqd (eqeq1d @ syl6eq readException_mk (readExceptioneqd anr)) @
+    exeqd @ exeqd @ aneqd (writeMemoryeq1d @ syl6eq getMemory_mk @ getMemoryeqd anr) @
+    eqeq2d @ syl6eq setExceptionVal @ setExceptioneq1d @
+    syl6eq setMemory_mk @ setMemoryeq1d anr));
 
 @_ abstract def setReg (k r q: nat): nat =
 $ fst k <> lower (write (pi21 k) r q) <> pi22 k $;
@@ -3060,6 +3106,16 @@ theorem ksOut_mk: $ ksOut (mkKS i o k m) = o $ = 'pi12pr;
 theorem ksCfg_mk: $ ksCfg (mkKS i o k m) = k $ = 'pi21pr;
 theorem ksMapping_mk: $ ksMapping (mkKS i o k m) = m $ = 'pi22pr;
 
+@_ local def setMapping (ks k2 m2: nat): nat =
+$ mkKS (ksIn ks) (ksOut ks) k2 m2 $;
+theorem setMapping_mk: $ setMapping (mkKS i o k m) k2 m2 = mkKS i o k2 m2 $ =
+'(mkKSeq ksIn_mk ksOut_mk eqid eqid);
+theorem setMappingT:
+  $ ks e. KernelState ->
+    (setMapping ks k2 m2 e. KernelState <->
+      k2 e. Config /\ m2 e. PageMapping (getMemory k2)) $ =
+'(syl5bb mkKS_T @ aneq1d @ sylan bian1 ksInT ksOutT);
+
 @_ def writeMapping (ks k2 m2 ks2: nat): wff =
 $ ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
   ks2 = mkKS (ksIn ks) (ksOut ks) k2 m2 $;
@@ -3067,7 +3123,18 @@ pub theorem writeMappingT (ks m k ks2: nat):
   $ writeMapping ks k m ks2 ->
     ks e. KernelState /\ k e. Config /\
     m e. PageMapping (getMemory k) /\ ks2 e. KernelState $ =
-(named '(anim2a @ syl5ibrcom eleq1 @ sylibr mkKS_T @ anim1 @ anim1 @ iand ksInT ksOutT));
+(named '(anim2a @ syl5ibrcom eleq1 @ mpbird (anwll setMappingT) @ anim1 anr));
+
+@_ local def setCfg (ks k2: nat): nat = $ setMapping ks k2 (ksMapping ks) $;
+theorem setCfg_mk: $ setCfg (mkKS i o k m) k2 = mkKS i o k2 m $ =
+'(eqtr setMapping_mk @ mkKSeq4 ksMapping_mk);
+theorem ksIn_setCfg: $ ksIn (setCfg ks k2) = ksIn ks $ = 'pi11pr;
+theorem ksOut_setCfg: $ ksOut (setCfg ks k2) = ksOut ks $ = 'pi12pr;
+theorem ksCfg_setCfg: $ ksCfg (setCfg ks k2) = k2 $ = 'pi21pr;
+theorem ksMapping_setCfg: $ ksMapping (setCfg ks k2) = ksMapping ks $ = 'pi22pr;
+theorem setCfgT:
+  $ ks e. KernelState -> (setCfg ks k2 e. KernelState <->
+      k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2)) $ = 'setMappingT;
 
 @_ def writeCfg (ks k2 ks2: nat): wff =
 $ writeMapping ks k2 (ksMapping ks) ks2 $;
@@ -3498,6 +3565,15 @@ pub theorem terminates_ensuringT (k: nat) (P: set):
 theorem terminates_ensuring_mono:
   $ P C_ Q -> terminates_ensuring ks P -> terminates_ensuring ks Q $ =
 (named '(anim2d @ alimd @ imim2d @ eximd @ eximd @ anim2d @ imim2d ssel));
+
+theorem terminates_ensuring_fail:
+  $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
+    terminates_ensuring k P $ =
+(named '(sylbi anass @ anim2a @ exp @ iald @ exp @
+  iexde @ iexde @ mpbird ,eqtac @ anwll @ sylibr anass @
+  iand (mpbird (ksReachableeq1d @ sylc ksReachable_exit (anld anlr) anr) @
+    anwll ksReachable0) @
+  rsyl anlr @ anim2 absurd));
 
 -- `succeeds k i o` asserts that starting from initial configuration k,
 -- the program reaches the exit point and returns success (exit code 0), and

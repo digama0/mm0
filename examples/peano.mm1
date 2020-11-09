@@ -63,6 +63,12 @@ do {
     [('theorem _ _ _ _ _ pf) (hd @ tl @ pf)]
     [_ (error "not a theorem")])
   (def (pp-proof x) (display @ pp @ get-proof x))
+
+  -- (named pf) wraps a proof script `pf`, runs it, then gathers all
+  -- unassigned metavariables and assigns them to dummies.
+  -- (named x1 ... xn pf) is the same but names the first n variables x1,...,xn.
+  -- This is commonly used for proofs where we don't care to name the
+  -- dummy variables.
   (def named
     (def (assign-mvar m x) (set! m (dummy! x (mvar-sort m))))
     @ match-fn*
@@ -722,6 +728,8 @@ theorem al2imi (a b c: wff x) (h: $ a -> b -> c $): $ A. x a -> A. x b -> A. x c
 theorem alcomb (a: wff x y): $ A. x A. y a <-> A. y A. x a $ = '(ibii ax_11 ax_11);
 theorem alan (a b: wff x): $ A. x (a /\ b) <-> A. x a /\ A. x b $ =
 '(ibii (iand (alimi anl) (alimi anr)) (imp @ syl ax_4 @ alimi ian));
+theorem ralan (a b c: wff x): $ A. x (a -> (b /\ c)) <-> A. x (a -> b) /\ A. x (a -> c) $ =
+'(bitr (aleqi imandi) alan);
 theorem exim (a b: wff x): $ A. x (a -> b) -> E. x a -> E. x b $ =
 '(syl con3 @ syl ax_4 @ alimi con3);
 theorem eximi (a b: wff x) (h: $ a -> b $): $ E. x a -> E. x b $ = '(exim @ ax_gen h);
@@ -1509,18 +1517,22 @@ theorem subsni (h: $ G -> subsn A $) (h1: $ G -> a e. A $) (h2: $ G -> b e. A $)
 theorem subsnss: $ A C_ B -> subsn B -> subsn A $ =
 '(!! alimd x @ !! alimd y @ imimd ssel @ imim1d ssel);
 
-theorem subsnsn: $ subsn {x | x = a} $ =
+theorem subsnsn2: $ subsn {x | x = a} $ =
 '(!! ax_gen u @ !! ax_gen v @ exp @
   eqtr4d (sylib (elabe eqeq1) anl) (sylib (elabe eqeq1) anr));
 
 theorem eqsubsnd {x} (h: $ G -> x e. A -> x = a $): $ G -> subsn A $ =
-'(sylc subsnss (sylib ssab2 @ iald h) @ a1i subsnsn);
+'(sylc subsnss (sylib ssab2 @ iald h) @ a1i subsnsn2);
 
 theorem eqsubsnabd (p: wff x) (h: $ G -> p -> x = a $): $ G -> subsn {x | p} $ =
-'(sylc subsnss (sylib ssab @ iald h) @ a1i subsnsn);
+'(sylc subsnss (sylib ssab @ iald h) @ a1i subsnsn2);
 
 theorem subsnthe: $ subsn A -> a e. A -> the A = a $ =
 (named '(exp @ eqthed @ ibida (subsni anll anr anlr) @ mpbird (eleq1d anr) anlr));
+
+theorem subsnex: $ subsn A <-> E. a A. x (x e. A -> x = a) $ =
+(named '(ibii (syl (iexe ,eqtac) @ iald @ syl6 eqcom subsnthe)
+  (eex @ eqsubsnd @ eale ,eqtac)));
 
 theorem subsntheo: $ subsn A -> (theo A = suc a <-> a e. A) $ =
 '(syl5bbr theoid @ ibid
@@ -4387,6 +4399,12 @@ theorem rn0: $ Ran 0 == 0 $ = '(mpbir rneq0 eqsid);
 theorem isf0: $ isfun 0 $ = '(!! ax_gen x @ !! ax_gen y @ !! ax_gen z @ absurd el02);
 theorem app01: $ 0 @ a = 0 $ = '(ndmapp @ mtbir (eleq2 dm0) el02);
 
+theorem disjne (h1: $ G -> A i^i B == 0 $)
+  (h2: $ G -> x e. A $) (h3: $ G -> y e. B $):
+  $ G -> x != y $ =
+'(mpi el02 @ con3d @ exp @ mpbid (eleq2d @ anwl h1) @
+  sylibr elin @ iand (mpbid (eleq1d anr) (anwl h2)) @ anwl h3);
+
 theorem unisf: $ Dom A i^i Dom B == 0 -> (isfun (A u. B) <-> isfun A /\ isfun B) $ =
 (named @ focus
   (have 'h '(syl5bir elin @ syl6 (absurd el02) @ bi1d eleq2))
@@ -4473,6 +4491,8 @@ theorem eqlower1 (a: nat): $ finite A -> (A == a <-> lower A = a) $ =
 '(ibida (anwr @ syl6eq lowerns lowereq) @ eqstrd (sylib eqlower anl) @ nseqd anr);
 theorem eqlower2 (a: nat): $ finite A -> (a == A <-> a = lower A) $ =
 '(bitr4g eqscomb eqcomb eqlower1);
+theorem lowerinj (a: nat): $ finite A -> finite B -> (A == B <-> lower A = lower B) $ =
+'(exp @ bitrd (eqseq1d @ sylib eqlower anl) (anwr eqlower2));
 
 @_ abstract def sn (a: nat): nat = $ 2 ^ a $;
 pub theorem elsn (a b: nat): $ a e. sn b <-> a = b $ = 'elpow2;
@@ -4483,9 +4503,22 @@ theorem snss: $ sn a C_ A <-> a e. A $ =
 
 theorem sndisj: $ sn a i^i A == 0 <-> ~a e. A $ = '(bitr ineq0 @ bitr snss elcpl);
 
+theorem subsnsn: $ subsn (sn a) $ =
+(named '(mpbir (subsneq @ eqab2i elsn) subsnsn2));
+
+theorem subsnsssn: $ subsn A <-> E. a A C_ sn a $ =
+(named '(bitr4 subsnex @ exeqi @ aleqi @ imeq2i elsn));
+
 theorem isfsn: $ isfun (sn x) $ =
 (named '(ax_gen @ ax_gen @ ax_gen @
   sylbi elsn @ syl5bi elsn @ syl6 (sylbi prth anr) eqtr4));
+
+theorem dmsn: $ Dom (sn (x <> y)) == sn x $ =
+(named '(ax_gen @ bitr eldm @
+  bitr4 (exeqi @ bitr elsn @ bitr prth ancomb) @ bitr4 elsn @ exeqe biidd));
+theorem rnsn: $ Ran (sn (x <> y)) == sn y $ =
+(named '(ax_gen @ bitr elrn @
+  bitr4 (exeqi @ bitr elsn prth) @ bitr4 elsn @ exeqe biidd));
 
 @_ abstract def ins (a b: nat): nat = $ lower {x | x = a \/ x e. b} $;
 infixr ins: $;$ prec 85;
