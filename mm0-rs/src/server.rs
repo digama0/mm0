@@ -503,11 +503,20 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
   use HoverType::*;
   let mut res: Vec<(Span, HoverType, String)> = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
-    if let Some(r) = (|| Some(match k {
-      &ObjectKind::Sort(s) => (sp, MM0, format!("{}", &env.sorts[s])),
-      &ObjectKind::Term(t, sp1) => (sp1, MM0, format!("{}", fe.to(&env.terms[t]))),
-      &ObjectKind::Thm(t) => (sp, MM0, format!("{}", fe.to(&env.thms[t]))),
-      &ObjectKind::Var(x) => (sp, MM0, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+    if let Some((r, doc)) = (|| Some(match k {
+      &ObjectKind::Sort(s) => {
+        let sd = &env.sorts[s];
+        ((sp, MM0, format!("{}", sd)), sd.doc.clone())
+      }
+      &ObjectKind::Term(t, sp1) => {
+        let td = &env.terms[t];
+        ((sp1, MM0, format!("{}", fe.to(td))), td.doc.clone())
+      }
+      &ObjectKind::Thm(t) => {
+        let td = &env.thms[t];
+        ((sp, MM0, format!("{}", fe.to(td))), td.doc.clone())
+      }
+      &ObjectKind::Var(x) => ((sp, MM0, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg(sort, deps))) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -518,21 +527,22 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           s + ")"
         }
         _ => return None,
-      }),
+      }), None),
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
         let a = head.as_atom()?;
-        let s = if let Some(DeclKey::Term(t)) = env.data[a].decl {
-          env.terms[t].ret.0
+        let (s, doc) = if let Some(DeclKey::Term(t)) = env.data[a].decl {
+          let td = &env.terms[t];
+          (td.ret.0, td.doc.clone())
         } else {
-          spans.lc.as_ref()?.vars.get(&a)?.1.sort()?
+          (spans.lc.as_ref()?.vars.get(&a)?.1.sort()?, None)
         };
         let mut out = String::new();
         fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).unwrap());
         use std::fmt::Write;
         write!(out, ": {}", fe.to(&s)).unwrap();
-        (sp1, MM0, out)
+        ((sp1, MM0, out), doc)
       }
       ObjectKind::Proof(p) => {
         if let Some(e) = p.as_atom().and_then(|x|
@@ -541,7 +551,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           let mut out = String::new();
           fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
             .render_fmt(80, &mut out).unwrap());
-          (sp, MM0, out)
+          ((sp, MM0, out), None)
         } else {
           let mut u = p.uncons();
           let head = u.next()?;
@@ -560,7 +570,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
             fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
               td.hyps.iter().map(|(_, h)| subst.subst(h)),
               &ret).render_fmt(80, &mut out).unwrap());
-            (sp1, MM0, out)
+            ((sp1, MM0, out), td.doc.clone())
           } else {return None}
         }
       }
@@ -568,14 +578,25 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       // &ObjectKind::Syntax(stx) => (sp, Doc, stx.doc().into()),
       ObjectKind::Syntax(_) => return None,
       &ObjectKind::Global(a) => {
-        let bp = env.data[a].lisp.as_ref()?.1.unwrapped(|e| match e {
-          &LispKind::Proc(Proc::Builtin(p)) => Some(p),
-          _ => None
-        })?;
-        (sp, Doc, bp.doc().into())
+        let (_, doc, val) = &env.data[a].lisp.as_ref()?;
+        if let Some(doc) = doc {
+          ((sp, Doc, doc.as_str().into()), None)
+        } else {
+          let bp = val.unwrapped(|e| match e {
+            &LispKind::Proc(Proc::Builtin(p)) => Some(p),
+            _ => None
+          })?;
+          ((sp, Doc, bp.doc().into()), None)
+        }
       }
       ObjectKind::Import(_) => return None,
-    }))() {res.push(r)}
+    }))() {
+      let sp = r.0;
+      res.push(r);
+      if let Some(doc) = doc {
+        res.push((sp, Doc, doc.as_str().into()))
+      }
+    }
   }
   if res.is_empty() {return Ok(None)}
   Ok(Some(Hover {
@@ -650,7 +671,7 @@ async fn definition<T>(path: FileRef, pos: Position,
           None => {}
         }
         if let Some(s) = ad.sort() {res.push(sort(s))}
-        if let Some((Some((ref fsp, full)), _)) = *ad.lisp() {
+        if let Some((Some((ref fsp, full)), _, _)) = *ad.lisp() {
           res.push(g(&fsp, full))
         } else if let Some(sp) = ad.graveyard() {
           res.push(g(&sp.0, sp.1))
@@ -711,7 +732,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
       }
       StmtTrace::Global(a) => {
         let ad = &env.data()[a];
-        if let Some((Some((ref fsp, full)), ref e)) = *ad.lisp() {
+        if let Some((Some((ref fsp, full)), _, ref e)) = *ad.lisp() {
           push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
             match (|| Some({
               let r = &**e.unwrap();
@@ -768,7 +789,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
       DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor)}
       DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
     }),
-    TraceKind::Global => ad.lisp().as_ref().map(|(_, e)| {
+    TraceKind::Global => ad.lisp().as_ref().map(|(_, _, e)| {
       done!(format!("{}", fe.to(unsafe {e.thaw()})), match **e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |

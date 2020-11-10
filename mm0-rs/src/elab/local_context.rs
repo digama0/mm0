@@ -405,7 +405,7 @@ impl<'a> ElabTermMut<'a> {
 
   fn other(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
     let proc = match &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
-      Some((_, e)) => e.clone(),
+      Some((_, _, e)) => e.clone(),
       None => return Err(self.as_ref().err(e, format!("Not a valid expression: {}", self.print(e))))
     };
     let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
@@ -772,6 +772,7 @@ impl Elaborator {
           let t = Term {
             atom, args: args.into(), ret, val,
             span: self.fspan(d.id),
+            doc: None,
             vis: d.mods,
             full,
           };
@@ -860,7 +861,7 @@ impl Elaborator {
         });
         if atom != AtomID::UNDER {
           let t = Thm {
-            atom, span, vis: d.mods, full,
+            atom, span, vis: d.mods, full, doc: None,
             args: args.into(), heap, hyps, ret, proof
           };
           let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
@@ -1059,7 +1060,7 @@ impl Elaborator {
       })))
     } else {(Modifiers::NONE, None)};
     let full = fsp.span;
-    let t = Term {atom: x, span, full, vis, args, ret, val};
+    let t = Term {atom: x, span, full, vis, doc: None, args, ret, val};
     self.env.add_term(x, fsp, || t).map_err(|e| e.into_elab_error(full))?;
     Ok(())
   }
@@ -1121,7 +1122,7 @@ impl Elaborator {
     }).collect();
     let ret = ids[ir].take();
     let mut thm = Thm {
-      atom: x, span, full: fsp.span,
+      atom: x, span, full: fsp.span, doc: None,
       vis: Modifiers::NONE,
       proof: None,
       args, heap, hyps, ret };

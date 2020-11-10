@@ -519,7 +519,7 @@ impl Elaborator {
         let v = self.eval_lisp(e)?;
         self.elab_stmt(s, span)?;
         let ann = match &self.data[AtomID::ANNOTATE].lisp {
-          Some((_, e)) => e.clone(),
+          Some((_, _, e)) => e.clone(),
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };
         let args = vec![v, self.name_of(s)];

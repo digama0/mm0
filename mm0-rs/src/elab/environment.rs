@@ -72,6 +72,9 @@ id_wrapper!(TermID: u32, TermVec);
 id_wrapper!(ThmID: u32, ThmVec);
 id_wrapper!(AtomID: u32, AtomVec);
 
+/// A documentation comment on an item.
+pub type DocComment = ArcString;
+
 /// The information associated to a defined `Sort`.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Sort {
@@ -86,6 +89,8 @@ pub struct Sort {
   /// in the statement `sort foo;` (not including any characters after the semicolon). The file
   /// is the same as `span`.
   pub full: Span,
+  /// The documentation comment on the sort.
+  pub doc: Option<DocComment>,
   /// The sort modifiers. Any subset of [`PURE`], [`STRICT`], [`PROVABLE`], [`FREE`]. The other
   /// modifiers are not valid.
   ///
@@ -171,6 +176,8 @@ pub struct Term {
   /// The span around the entire declaration for the term, from the first modifier
   /// to the semicolon. The file is the same as in `span`.
   pub full: Span,
+  /// The documentation comment on the sort.
+  pub doc: Option<DocComment>,
   /// The list of argument binders. The names of the variables are not used except for
   /// pretty printing and conversion back to s-exprs. (A `None` variable is represented
   /// as `_` and cannot be referred to.)
@@ -301,6 +308,8 @@ pub struct Thm {
   /// The span around the entire declaration for the theorem, from the first modifier
   /// to the semicolon. The file is the same as in `span`.
   pub full: Span,
+  /// The documentation comment on the sort.
+  pub doc: Option<DocComment>,
   /// The list of argument binders. The names of the variables are not used except for
   /// pretty printing and conversion back to s-exprs. (A `None` variable is represented
   /// as `_` and cannot be referred to.)
@@ -473,7 +482,8 @@ pub struct AtomData {
   /// The global lisp definition with this name, if one exists. The `Option<(FileSpan, Span)>`
   /// is `Some((span, full))` where `span` is the name of the definition and `full` is the
   /// entire definition body, or `None`.
-  pub lisp: Option<(Option<(FileSpan, Span)>, LispVal)>,
+  /// The `DocComment` is the documentation on the declaration of the item.
+  pub lisp: Option<(Option<(FileSpan, Span)>, Option<DocComment>, LispVal)>,
   /// For global lisp definitions that have been deleted, we retain the location of the
   /// "undefinition" for go-to-definition queries.
   pub graveyard: Option<Box<(FileSpan, Span)>>,
@@ -798,6 +808,7 @@ impl Remap for Term {
       span: self.span.clone(),
       vis: self.vis,
       full: self.full,
+      doc: self.doc.clone(),
       args: self.args.remap(r),
       ret: (self.ret.0.remap(r), self.ret.1),
       val: self.val.remap(r),
@@ -851,6 +862,7 @@ impl Remap for Thm {
       span: self.span.clone(),
       vis: self.vis,
       full: self.full,
+      doc: self.doc.clone(),
       args: self.args.remap(r),
       heap: self.heap.remap(r),
       hyps: self.hyps.remap(r),
@@ -1131,7 +1143,7 @@ impl Environment {
       }
     } else {
       data.sort = Some(new_id);
-      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, mods: sd });
+      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, doc: None, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)
     }
@@ -1231,7 +1243,7 @@ impl Environment {
     };
     for (i, d) in other.data().iter().enumerate() {
       let data = &mut self.data[remap.atom[AtomID(i as u32)]];
-      data.lisp = d.lisp().as_ref().map(|(fs, v)| (fs.clone(), v.remap(remap)));
+      data.lisp = d.lisp().as_ref().map(|(fs, doc, v)| (fs.clone(), doc.clone(), v.remap(remap)));
       if data.lisp.is_none() {
         data.graveyard = d.graveyard().clone();
       }

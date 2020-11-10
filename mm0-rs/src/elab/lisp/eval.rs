@@ -351,7 +351,7 @@ impl Elaborator {
   pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
     let a = self.get_atom(p.to_byte_str());
     let val = match &self.data[a].lisp {
-      Some((_, e)) => e.clone(),
+      Some((_, _, e)) => e.clone(),
       None => LispVal::proc(Proc::Builtin(p))
     };
     self.call_func(sp, val, es)
@@ -1280,11 +1280,11 @@ impl<'a> Evaluator<'a> {
                 let s = name.clone();
                 let a = self.get_atom(&s);
                 let ret = LispVal::proc(Proc::Builtin(p));
-                self.data[a].lisp = Some((None, ret.clone()));
+                self.data[a].lisp = Some((None, None, ret.clone()));
                 ret
               }
             },
-            AtomData {lisp: Some((_, x)), ..} => x.clone(),
+            AtomData {lisp: Some((_, _, x)), ..} => x.clone(),
           }),
           IR::Const(val) => State::Ret(val.clone()),
           IR::List(sp, ls) => State::List(*sp, vec![], ls.iter()),
@@ -1362,7 +1362,7 @@ impl<'a> Evaluator<'a> {
             if let Some(&Some((sp1, sp2, a))) = x {
               let loc = (self.fspan(sp2), sp1);
               if ret.is_def_strict() {
-                if mem::replace(&mut self.data[a].lisp, Some((Some(loc), ret))).is_none() {
+                if mem::replace(&mut self.data[a].lisp, Some((Some(loc), None, ret))).is_none() {
                   self.stmts.push(StmtTrace::Global(a))
                 }
               } else if mem::take(&mut self.data[a].lisp).is_some() {
@@ -1610,7 +1610,7 @@ impl<'a> Evaluator<'a> {
               self.stack.push(Stack::Refine {sp, stack});
               match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
-                Some((_, v)) => State::App(sp, sp, v.clone(), args, [].iter()),
+                Some((_, _, v)) => State::App(sp, sp, v.clone(), args, [].iter()),
               }
             }
             RefineResult::Proc(tgt, proc) => {

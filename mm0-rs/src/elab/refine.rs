@@ -778,7 +778,7 @@ impl Elaborator {
           Ok(RefineExpr::Exact(e)) => RState::Ret(e),
           Ok(RefineExpr::Proc) => RState::Ret(e),
           Err(err) => (|| -> Result<_> {
-            if let Some((_, proc)) = &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
+            if let Some((_, _, proc)) = &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
               let proc = proc.clone();
               let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
               if let Ok(res) = self.call_func(sp, proc, args) {

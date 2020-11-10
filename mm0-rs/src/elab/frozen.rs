@@ -39,7 +39,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
 use super::{Spans, ObjectKind, Remap, Remapper,
   environment::{Environment, ParserEnv,
-    AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace,
+    AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment,
     SortID, TermID, ThmID, AtomID, Sort, Term, Thm, AtomData},
   lisp::{LispVal, LispKind, LispRef,
     InferTarget, Proc, Annot, Syntax, print::FormatEnv}};
@@ -116,8 +116,8 @@ impl FrozenAtomData {
   /// Accessor for [`AtomData::decl`](../environment/struct.AtomData.html#structfield.decl)
   pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   /// Accessor for [`AtomData::lisp`](../environment/struct.AtomData.html#structfield.lisp)
-  pub fn lisp(&self) -> &Option<(Option<(FileSpan, Span)>, FrozenLispVal)> {
-    unsafe { &*(&self.0.lisp as *const Option<(_, LispVal)> as *const _) }
+  pub fn lisp(&self) -> &Option<(Option<(FileSpan, Span)>, Option<DocComment>, FrozenLispVal)> {
+    unsafe { &*(&self.0.lisp as *const Option<(_, _, LispVal)> as *const _) }
   }
   /// Accessor for [`AtomData::graveyard`](../environment/struct.AtomData.html#structfield.graveyard)
   pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
