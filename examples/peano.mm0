@@ -192,8 +192,8 @@ infixl Im: $''$ prec 80;
 def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
 
 def comp (F G: set) (.x .y .z: nat): set =
-$ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
-infixr comp: $o.$ prec 91;
+$ opab x z (E. y (x <> y e. F /\ y <> z e. G)) $;
+infixr comp: $o>$ prec 91;
 
 def res (A B: set): set = $ A i^i Xp B _V $;
 infixl res: $|`$ prec 54;

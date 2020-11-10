@@ -3015,9 +3015,13 @@ theorem imv: $ F '' _V == Ran F $ =
 
 @_ def cnv (A: set): set = $ opab x y (y <> x e. A) $;
 
+theorem prcnv: $ x <> y e. cnv A <-> y <> x e. A $ = '(elopab ,eqtac);
+
 @(derive-eq 'co) def comp (F G: set): set =
-$ opab x z (E. y (x <> y e. G /\ y <> z e. F)) $;
-infixr comp: $o.$ prec 91;
+$ opab x z (E. y (x <> y e. F /\ y <> z e. G)) $;
+infixr comp: $o>$ prec 91;
+
+theorem prco: $ x <> z e. A o> B <-> E. y (x <> y e. A /\ y <> z e. B) $ = '(elopab ,eqtac);
 
 @_ def res (A B: set): set = $ A i^i Xp B _V $;
 infixl res: $|`$ prec 54;

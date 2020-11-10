@@ -245,7 +245,7 @@ pub theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
 (named @ focus
   '(bitr (elneq2 Expr_aux_Var) @ bitr (ellower @ subsnfin @ subsnss _ subsnsn) @
      elabe @ exeqd @ aneq2d eqeq2)
-  '(mpbi ssab @ ax_gen @ eex @ eqcomd @ eqtrd _ anr)
+  '(mpbi ssab1 @ ax_gen @ eex @ sylibr elsn @ eqtr2d _ anr)
   '(binderSorteqd @ syl6eq sucsub1 @ subeq1d anl));
 
 pub theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
@@ -1643,7 +1643,7 @@ theorem Tokenize_aux_n0 (a: nat x) {y} (h: $ y e. A -> y != 0 $):
     obindeq1d @ eqtrd (appeq1d @ sylibr (eqlower2 @ finlam finns) anl) _)
   (have 'h2 $ _ -> maxPrefix A s = suc _ $ '(eqcomd @ anwr consfstsnd))
   '(syl resapp @ sylibr elupto @ mpbid (lteq2d @ syl maxPrefixSi1 h2) @
-    sylib ltappendid2 @ syl (sbeth (imeqd eleq1 neeq1) h) @ syl maxPrefixSi2 h2));
+    sylib ltappendid2 @ syl (sbeth h @ imeqd eleq1 neeq1) @ syl maxPrefixSi2 h2));
 
 @_ def Tokenize {.s1} (s: nat): nat =
 $ srec (\ f, N[size (Dom f) / s1]
@@ -1796,7 +1796,7 @@ pub theorem TokenizeElse {x: nat} (s: nat):
 
 -- Now the parser:
 
-@_ def regexMap (F R: set): set = $ cnv F o. R $;
+@_ def regexMap (F R: set): set = $ R o> cnv F $;
 infixr regexMap: $<@>$ prec 100;
 
 @_ def regexAppL (R S: set) (.x: nat): set = $ (\ x, fst x) <@> (R <+> S) $;
@@ -2024,13 +2024,14 @@ theorem simpleTokenize_S: $ s = c : t -> simpleTokenize s =
   if (c e. white) (simpleTokenize t) (
     N[maxPrefix nonemptyNonwhite s - 1 / p]
     (fst p : (\. r e. upto s, simpleTokenize r) @ snd p)) $ =
-(named '(syl5eq simpleTokenize_val @ eqtrd lreceq3 @ syl5eq lrecS @
-  sbeth (imeq2d @ eqeq1d @ appeq2d @ preq2d preq2) @
-  appslamed @ appslamed @ applamed @ anwl @
-  ifeqd (eleq1d anlr)
-    (apprlamed (simpleTokenizeeqd @ eqtrd anr anlr) @
-      sylibr elupto @ mpbiri ltconsid2 (lteqd anr anll))
-    (sbneq1d @ subeq1d @ maxPrefixeq2d @ eqtr4d (conseqd anlr anr) anll)));
+(named @ focus
+  '(syl5eq simpleTokenize_val @ eqtrd lreceq3 @ syl5eq lrecS @
+    sbeth _ @ imeq2d @ eqeq1d @ appeq2d @ preq2d preq2)
+  '(appslamed @ appslamed @ applamed @ anwl @
+    ifeqd (eleq1d anlr)
+      (apprlamed (simpleTokenizeeqd @ eqtrd anr anlr) @
+        sylibr elupto @ mpbiri ltconsid2 (lteqd anr anll))
+      (sbneq1d @ subeq1d @ maxPrefixeq2d @ eqtr4d (conseqd anlr anr) anll)));
 
 pub theorem simpleTokenizeWS (c s: nat):
   $ c e. white -> simpleTokenize (c : s) = simpleTokenize s $ =

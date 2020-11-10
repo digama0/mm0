@@ -516,7 +516,7 @@ theorem TokenizeElse {x: nat} (s: nat):
 
 -- Now the parser:
 
-def regexMap (F R: set): set = $ cnv F o. R $;
+def regexMap (F R: set): set = $ R o> cnv F $;
 infixr regexMap: $<@>$ prec 100;
 
 def regexAppL (R S: set) (.x: nat): set = $ (\ x, fst x) <@> (R <+> S) $;

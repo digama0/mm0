@@ -2129,6 +2129,8 @@ theorem readRIP_setMemory: $ readRIP (setMemory k m) = readRIP k $ = (named '(sn
 theorem readReg_setMemory: $ readReg (setMemory k m) r = readReg k r $ = (named '(appneq1 pi21pr));
 theorem readFlags_setMemory: $ readFlags (setMemory k m) = readFlags k $ = (named 'pi221pr);
 theorem get_setMemory: $ getMemory (setMemory k m2) = m2 $ = 'pi222pr;
+theorem set_setMemory: $ setMemory (setMemory k m2) m3 = setMemory k m3 $ =
+'(preq fstpr @ preq pi21pr @ preq1 pi221pr);
 
 @_ def EA: set = $ Sum u64 (Sum Regs u64) $;
 @_ def EA_i (q: nat): nat = $ b0 q $;
@@ -3110,6 +3112,8 @@ theorem ksMapping_mk: $ ksMapping (mkKS i o k m) = m $ = 'pi22pr;
 $ mkKS (ksIn ks) (ksOut ks) k2 m2 $;
 theorem setMapping_mk: $ setMapping (mkKS i o k m) k2 m2 = mkKS i o k2 m2 $ =
 '(mkKSeq ksIn_mk ksOut_mk eqid eqid);
+theorem set_setMapping:
+  $ setMapping (setMapping ks k2 m2) k3 m3 = setMapping ks k3 m3 $ = 'setMapping_mk;
 theorem setMappingT:
   $ ks e. KernelState ->
     (setMapping ks k2 m2 e. KernelState <->
@@ -3132,6 +3136,8 @@ theorem ksIn_setCfg: $ ksIn (setCfg ks k2) = ksIn ks $ = 'pi11pr;
 theorem ksOut_setCfg: $ ksOut (setCfg ks k2) = ksOut ks $ = 'pi12pr;
 theorem ksCfg_setCfg: $ ksCfg (setCfg ks k2) = k2 $ = 'pi21pr;
 theorem ksMapping_setCfg: $ ksMapping (setCfg ks k2) = ksMapping ks $ = 'pi22pr;
+theorem set_setCfg: $ setCfg (setCfg ks k2) k3 = setCfg ks k3 $ =
+'(eqtr set_setMapping @ setMappingeq3 ksMapping_setCfg);
 theorem setCfgT:
   $ ks e. KernelState -> (setCfg ks k2 e. KernelState <->
       k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2)) $ = 'setMappingT;
@@ -3529,6 +3535,17 @@ pub theorem ksReachableInd {ks1 ks2: nat} (ks ks3: nat) (A: set):
       exp @ exp @ syl5bi ksPathS @ exp @ mpd anrr @
       mpd (mpd anrl @ mpd anlr anllr) an3l))));
 
+theorem ksReachable_ind (p: wff x) (p1: wff ks1) (p2: wff ks2)
+  (hr: $ G -> ksReachable ks ks3 $)
+  (e3: $ x = ks3 -> (p <-> p3) $)
+  (e0: $ x = ks -> (p <-> p0) $)
+  (e1: $ x = ks1 -> (p <-> p1) $)
+  (e2: $ x = ks2 -> (p <-> p2) $)
+  (h1: $ G -> p0 $)
+  (h2: $ G /\ ksStep ks1 ks2 /\ p1 -> p2 $): $ G -> p3 $ =
+(named '(sylib (elabe e3) @ sylan ksReachableInd (iand (sylibr (elabe e0) h1) @
+  iald @ iald @ exp @ syl5bi (elabe e1) @ exp @ sylibr (elabe e2) h2) hr));
+
 theorem ksReachableInd_rev:
   $ ksr e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks2 e. A -> ks1 e. A) /\
     ksReachable ks ksr -> ks e. A $ =
@@ -3537,9 +3554,35 @@ theorem ksReachableInd_rev:
     syl (ian @ mpbir (elabe ,eqtac) id) @ alimi @ alimi @ imim2i @
     sylibr (imeqi (elabe ,eqtac) (elabe ,eqtac)) imim1) anr);
 
+theorem ksReachable_rind (p: wff x) (p1: wff ks1) (p2: wff ks2)
+  (hr: $ G -> ksReachable ks ks3 $)
+  (e0: $ x = ks -> (p <-> p0) $)
+  (e1: $ x = ks1 -> (p <-> p1) $)
+  (e2: $ x = ks2 -> (p <-> p2) $)
+  (e3: $ x = ks3 -> (p <-> p3) $)
+  (h1: $ G -> p3 $)
+  (h2: $ G /\ ksStep ks1 ks2 /\ p2 -> p1 $): $ G -> p0 $ =
+'(mpd h1 @ ksReachable_ind hr (imeq1d e3) (imeq1d e0) (imeq1d e1) (imeq1d e2)
+  idd (imp @ imim1d @ exp h2));
+
 pub theorem ksReachableT (ks ks2: nat):
   $ ksReachable ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $ =
 '(!! eex l @ rsyl ksPathT @ anim1 anl);
+
+theorem ksReachable_hd: $ ksReachable ks ks3 <->
+  ks e. KernelState /\ ks = ks3 \/ E. ks2 (ksStep ks ks2 /\ ksReachable ks2 ks3) $ =
+(named '(ibii
+  (! anrd _ $ksReachable ks ks3$ _ ,(induct '(ksReachable_rind id) _
+    '(rsyl ksReachableT @ anwr @ iand ksReachable0 @ orld @ iand id eqidd)
+    '(rsyl (anim anr anl) @ iand (imp ksReachableS) @ orrd @ iexe ,eqtac)))
+  (eor (mpbid (ksReachableeq2d anr) @ anwl ksReachable0) @ eex @ imp ksReachableS)));
+
+theorem ksReachable1: $ ksStep ks ks2 -> ksReachable ks ks2 $ =
+'(mpd (syl ksReachable0 @ anrd ksStepT) ksReachableS);
+
+theorem ksReachable_tr: $ ksReachable ks ks2 ->
+  ksReachable ks2 ks3 -> ksReachable ks ks3 $ =
+(named '(exp ,(induct '(ksReachable_rind anl) _ 'anr '(imp @ anwr ksReachableS))));
 
 theorem ksReachable_exit:
   $ execExit (ksCfg ks) ret -> ksReachable ks ks2 -> ks2 = ks $ =
@@ -3562,9 +3605,47 @@ $ k e. KernelState /\
 pub theorem terminates_ensuringT (k: nat) (P: set):
   $ terminates_ensuring k P -> k e. KernelState $ = (named 'anl);
 
+@_ local def can_terminate_ensuring (k .k2 .exit_code: nat) (P: set): wff =
+$ E. k2 E. exit_code (ksReachable k k2 /\
+    execExit (ksCfg k2) exit_code /\
+    (exit_code = 0 -> ksIn k2 <> ksOut k2 e. P)) $;
+
+theorem can_terminate_ensuringT:
+  $ can_terminate_ensuring k P -> k e. KernelState $ =
+(named '(eex @ eex @ anwll @ anld ksReachableT));
+
+theorem can_terminate_ensuring_I:
+  $ ksReachable k k2 /\ execExit (ksCfg k2) exit_code /\
+    (exit_code = 0 -> ksIn k2 <> ksOut k2 e. P) ->
+    can_terminate_ensuring k P $ = (named '(trud @ iexdde @ iexdde @ bi2d ,eqtac));
+
+theorem can_terminate_ensuring_R: $ ksReachable k k2 ->
+  can_terminate_ensuring k2 P -> can_terminate_ensuring k P $ =
+(named '(eximd @ eximd @ anim1d @ anim1d ksReachable_tr));
+
+theorem can_terminate_ensuring_mono:
+  $ P C_ Q -> can_terminate_ensuring ks P -> can_terminate_ensuring ks Q $ =
+(named '(eximd @ eximd @ anim2d @ imim2d ssel));
+
+theorem terminates_ensuring_val:
+  $ terminates_ensuring k P <-> k e. KernelState /\
+    A. k2 (ksReachable k k2 -> can_terminate_ensuring k2 P) $ = (named 'biid);
+
+theorem terminates_ensuring_E:
+  $ terminates_ensuring k P -> ksReachable k k2 ->
+    can_terminate_ensuring k2 P $ = (named '(anwr @ eale ,eqtac));
+
+theorem terminates_ensuring_can:
+  $ terminates_ensuring k P -> can_terminate_ensuring k P $ =
+'(mpd (syl ksReachable0 @ terminates_ensuringT) terminates_ensuring_E);
+
+theorem terminates_ensuring_R: $ ksReachable k k2 ->
+  terminates_ensuring k P -> terminates_ensuring k2 P $ =
+(named '(animd (a1d @ anrd ksReachableT) @ alimd @ imim1d ksReachable_tr));
+
 theorem terminates_ensuring_mono:
   $ P C_ Q -> terminates_ensuring ks P -> terminates_ensuring ks Q $ =
-(named '(anim2d @ alimd @ imim2d @ eximd @ eximd @ anim2d @ imim2d ssel));
+(named '(anim2d @ alimd @ imim2d can_terminate_ensuring_mono));
 
 theorem terminates_ensuring_fail:
   $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->

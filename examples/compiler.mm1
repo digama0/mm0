@@ -2191,6 +2191,8 @@ theorem s_sat_sep_sn: $ k |=s R *s P <-> E. r (r e. R /\ k |=s sn r *s P) $ =
   bitr4 rexcomb @ exeqi @ aneq2i @
   bitr4 el_s_sep2 @ exeqi @ aneq2i el_s_sep_sn1));
 
+theorem s_sat_sn: $ k |=s sn h <-> k |=h h $ = '(bitr (exeqi @ aneq1i elsn) @ exeqe ,eqtac);
+
 theorem s_sat_ex (P: set x): $ k |=s E.s x e. A, P <-> E. x (x e. A /\ k |=s P) $ =
 (named '(bitr4 (exeqi @ bitr4 (aneq1i el_s_ex) rexan2) rexexcomb));
 
@@ -2228,6 +2230,8 @@ $ A. k (initialConfig2 elf i k -> terminates_ensuring k P) $;
 
 @_ local def s_ok (P T: set): wff =
 $ A. k (k |=s P -> terminates_ensuring k T) $;
+
+theorem s_ok_E: $ s_ok P T -> k |=s P -> terminates_ensuring k T $ = (named '(eale ,eqtac));
 
 theorem s_ok_antop: $ s_ok (P /\s T.s) T <-> s_ok P T $ =
 (named '(aleqi @ imeq1i s_sat_antop));
@@ -2343,6 +2347,113 @@ theorem hoare_save_restore (G: wff p a)
     '(sylan iex (sylibr el_s_sep_sn1 _) (anwr @ syl5eq heap_join_com anllr))
     '(sylan iex (anld an3lr) (anrd an3lr))));
 
+-- A hoare triple with explicit "modification" operand `R`, without reference to the
+-- step relation as in `hoare`. This is useful for carrying hoare triple information
+-- through the sub-steps of an instruction.
+@_ local def hoareM (P R Q: set): wff =
+$ A. fr A. k (k |=s sn fr *s P ->
+    E. k2 k <> k2 e. R /\
+    A. k2 (k <> k2 e. R -> k2 |=s sn fr *s Q)) $;
+
+theorem hoareM_step: $ hoareM P (opab ks ks2 (ksStep ks ks2)) Q -> hoare T P Q $ =
+(named '(alimi @ com12 @ !! alimd k1 @ a2d @
+  expcom @ exp @ sylibr terminates_ensuring_val @
+  iand (anwll s_sat_ks) @ !! iald k @ syl5bi ksReachable_hd @
+  eord (syl5ibrcom (rsyl (anwr eqcom) ,eqtac) @
+    imp @ impd @ com23 @ syl6ibr eexb @ !! alimd k2 @ a2d @
+    syl5bi (elopab ,eqtac) @ exp @ syld (rsyl anlr s_ok_E) @
+    syl5 terminates_ensuring_can @ anwr @ syl can_terminate_ensuring_R ksReachable1) @
+  sylibr eexb @ imp @ syl5 anr @ alimd @ syl5 (imim1i @ sylibr (elopab ,eqtac) anl) @
+  a2d @ exp @ syld (rsyl anlr s_ok_E) @
+  syl6 terminates_ensuring_can @ rsyl anrr terminates_ensuring_R));
+
+theorem hoareM_co: $ hoareM P1 R P2 -> hoareM P2 S P3 -> hoareM P1 (R o> S) P3 $ =
+(named '(syl ax_4 @ !! alimi fr @ com12 @ !! alimd k1 @ imim2d @ exp @
+  iand (imp @ impd @ com23 @ syl6ibr eexb @ syl ax_4 @ !! alimi k2 @ a2d @
+    com12 @ imim2d @ syl5 anl @ !! eximd k3 @ exp @ sylibr prco iex) @
+  sylibr (aleqi @ bitr (imeq1i prco) erexb) @ sylib ralalcomb @ imp @ syl5 anr @
+  syl ax_4 @ alimi @ imim2d @ imim2i anr));
+
+theorem hoareM_ex: $ hoareM P R Q -> k |=s P -> E. k2 k <> k2 e. R $ =
+'(rsyl (ealie @ ealde @ bi1d ,eqtac) @
+  imim (bi2i @ bitr (s_sateq2 s_sep_emp1a) s_sat_antop) anl);
+
+theorem hoareM_frame_E: $ hoareM P R Q -> k |=s F *s P ->
+  E. k2 k <> k2 e. R /\ A. k2 (k <> k2 e. R -> k2 |=s F *s Q) $ =
+(named '(exp @ iand (imp @ syl5 (s_weak_sat s_weak_sepr) hoareM_ex) @
+  iald @ exp @ sylibr s_sat_sep_sn @ sylbi anrass @ imp @
+  syl5bi s_sat_sep_sn @ syl exim @ impcom @ alimd @ syl6 anim2 @
+  syl5 (eale ,eqtac) @ imim2d @ syl5 anr @ com12 @ eale ,eqtac));
+
+theorem hoareM_E: $ hoareM P R Q -> k <> k2 e. R -> k |=s P -> k2 |=s Q $ =
+(named @ focus (def h '(bitr (s_sateq2 s_sep_emp1a) s_sat_antop))
+  '(com23 @ syl5bir ,h @ syl6 _ hoareM_frame_E)
+  '(anwr @ syl6ib ,h @ eale ,eqtac));
+
+theorem hoareM_frame: $ hoareM P R Q -> hoareM (F *s P) R (F *s Q) $ =
+(named '(iald @ iald @ exp @ sylib (aneq2i @ aleqi @ imeq2i @ s_sateq2 s_sep_ass) @
+  imp @ syl5bir (s_sateq2 s_sep_ass) hoareM_frame_E));
+
+theorem hoareM_anlift1: $ hoareM (^s p /\s P) R Q <-> (p -> hoareM P R Q) $ =
+(named '(bitr (aleqi @ bitr (aleqi @ bitr (imeq1i @
+  bitr (s_sateq2 s_sep_anlift2) s_sat_anlift1) impexp) alim1) alim1));
+
+@_ local def gsRel (G S R: set): set =
+$ S\ a, {a2 | E. b (G @ a <> b e. R /\ a2 = S @ (a <> b))} $;
+
+@_ local def gsRel_ok (G S: set): wff =
+$ A. a A. b (G @ (S @ (a <> b)) = b /\
+    A. c S @ (S @ (a <> b) <> c) = S @ (a <> c)) $;
+
+theorem gsRel_ok_GS (h: $ gsRel_ok G S $): $ G @ (S @ (a <> b)) = b $ =
+(named @ focus '(ealie (ealde @ bi1d _) @ !! alimi x (!! alimi y anl) h) eqtac);
+theorem gsRel_ok_SS (h: $ gsRel_ok G S $): $ S @ (S @ (a <> b) <> c) = S @ (a <> c) $ =
+(named @ focus '(ealie (ealde @ ealde @ bi1d _) @ !! alimi x (!! alimi y anr) h) eqtac);
+
+theorem el_gsRel: $ a <> a2 e. gsRel G S R <->
+  E. b (G @ a <> b e. R /\ a2 = S @ (a <> b)) $ = '(elsabe @ elabed ,eqtac);
+
+theorem gsRel_co (h: $ gsRel_ok G S $):
+  $ gsRel G S (R1 o> R2) == gsRel G S R1 o> gsRel G S R2 $ =
+'(mpbir axext2 @ !! ax_gen a1 @ !! ax_gen a3 @
+  bitr4 (bitr el_gsRel @
+    bitr4 (!! exeqi b2 @ bitr4 (aneq1i @ !! prco b1) rexan2) rexexcomb) @
+  bitr (bitr prco @
+    bitr4 (!! exeqi a2 @ bitr4 (aneq el_gsRel el_gsRel) rexan2) rexexcomb) @
+  exeqi @ aneq2i @ exeqe @ exeqd @ aneqd
+    (eleq1d @ preq1d @ syl6eq (gsRel_ok_GS h) appeq2)
+    (eqeq2d @ syl6eq (gsRel_ok_SS h) @ appeq2d preq1));
+
+@_ local def viaFunc (F: set): set = $ S\ a, sn (F @ a) $;
+
+@_ local def viaMemory (R: set): set =
+$ gsRel (\ k, getMemory k) (\\ k, \ m, setMemory k m) R $;
+
+theorem viaMemory_ok: $ gsRel_ok (\ k, getMemory k) (\\ k, \ m, setMemory k m) $ =
+(named '(ax_gen @ ax_gen @ iani
+  (eqtr (appeq2 @ appslame @ applamed ,eqtac) @
+    applame @ syl6eq get_setMemory ,eqtac) @
+  ax_gen @ eqtr (appeq2 @ preq1 @ appslame @ applamed ,eqtac) @
+  eqtr4 (appslame @ applamed ,eqtac) @
+  eqtr4 (appslame @ applamed ,eqtac) set_setMemory));
+
+theorem viaMemory_co: $ viaMemory (R o> S) == viaMemory R o> viaMemory S $ =
+(named '(gsRel_co viaMemory_ok));
+
+@_ local def viaCfg (R: set): set =
+$ gsRel (\ ks, ksCfg ks) (\\ ks, \ k, setCfg ks k) R $;
+
+theorem viaCfg_ok: $ gsRel_ok (\ ks, ksCfg ks) (\\ ks, \ k, setCfg ks k) $ =
+(named '(ax_gen @ ax_gen @ iani
+  (eqtr (appeq2 @ appslame @ applamed ,eqtac) @
+    applame @ syl6eq ksCfg_setCfg ,eqtac) @
+  ax_gen @ eqtr (appeq2 @ preq1 @ appslame @ applamed ,eqtac) @
+  eqtr4 (appslame @ applamed ,eqtac) @
+  eqtr4 (appslame @ applamed ,eqtac) set_setCfg));
+
+theorem viaCfg_co: $ viaCfg (R o> S) == viaCfg R o> viaCfg S $ =
+(named '(gsRel_co viaCfg_ok));
+
 -- The primitive memory heaplet: `s_mem1 p a v` says that
 -- address `a` is mapped with permission `p`,
 -- and if the data at `a` is readable then the value is `v`.
@@ -2368,36 +2479,65 @@ theorem s_mem1_readMemory1:
   iand (iand (syl getMemoryT @ syl ksCfgT anlr) @ syl anll anllr) @
   syl (iexe ,eqtac) @ iand anrl an3lr));
 
+@_ local def setMem1 (m a v: nat): nat = $ lower (write m a (fst (m @ a) <> v)) $;
+
+theorem setMem1_eqs: $ m @ a = p <> w -> setMem1 m a v == write m a (p <> v) $ =
+'(syl5eqsr (mpbi eqlower @ writefin finns) @ writeeq3d @ preq1d @ syl6eq fstpr fsteq);
+theorem setMem1_ne: $ b != a -> setMem1 m a v @ b = m @ b $ =
+'(syl5eq (appeq1 @ setMem1_eqs @ eqcom fstsnd) writeNe);
+theorem setMem1_eq: $ m @ a = p <> w -> setMem1 m a v @ a = p <> v $ =
+'(syl6eq writeEq (appeq1d setMem1_eqs));
+
+theorem setMem1T (h1: $ G -> m e. Memory $) (h2: $ G -> a e. u64 $) (h3: $ G -> v e. u8 $):
+  $ G -> setMem1 m a v e. Memory $ =
+'(write_el_Memory h1 h2 (syl xpfst @ sylan elMemoryT h1 h2) h3 @
+  syl setMem1_eqs @ a1i @ eqcom fstsnd);
+
+theorem setMem1PM: $ PageMapping m C_ PageMapping (setMem1 m a v) $ =
+'(trud @ writePM (a1i @ eqcom fstsnd) @ a1i @ eqscom @ mpbi eqlower @ writefin finns);
+
 theorem s_mem1_writeMemory1
   (h1: $ G -> ~ksFault k $)
   (h2: $ G -> e != suc exGPF $)
   (h3: $ G -> v e. u8 $)
+  (h4: $ G -> k |=s s_mem1 p a w $):
+  $ G -> (writeMemory1 (getMemory (ksCfg k)) a v m2 e <->
+    PROT_READ + PROT_WRITE C_ p /\ e = 0 /\ m2 = setMem1 (getMemory (ksCfg k)) a v) $ =
+(named @ focus
+  '(mpd h4 @ syl5bi s_sat_anlift1 @ impd @ exp @
+    syl5bi s_sat_sn @ syl5bi heap_sat_sn @ impd @ exp @ eimd (anwll h1) @
+    syl5bi (bitr (eqeq1 read_place_Mem) prth) @ exp @
+    bitrd (sylan bian1 (iand (syl getMemoryT @ syl ksCfgT anlr) @
+      rsyl anllr anll) (anw3l h3)) @ bitr4d _ @
+    bitr4g anass (bian1 expr) @ aneq2d @ syl5bb ancomb @ aneq1d @
+    syl5bbr nsinj @ eqseq2d @ syl setMem1_eqs anrl)
+  '(syl6bb exan2 @ !! exeqd pr @ syl6bb exan2 @ !! exeqd b2 @
+    syl6bbr _ @ aneqd (eqeq1d anrl) @ syl bior2 @ syl (con3 anrr) (anw3l h2))
+  '(aneq2a @ sylbi prth ,(eqtac-with #f)));
+
+theorem s_mem1_hoareM:
+  $ v e. u8 -> hoareM (s_mem1 p a w)
+      (viaCfg (viaMemory (opab m m2 (E. e writeMemory1 m a v m2 e))))
+      (^s (PROT_READ + PROT_WRITE C_ p) /\s s_mem1 p a v) $;
+
+theorem s_mem1_sat
+  (h1: $ G -> ~ksFault k $)
+  (h2: $ G -> e != suc exGPF $)
+  (h3: $ G -> v e. u8 $)
   (h4: $ G -> k |=s R *s s_mem1 p a w $):
-  $ G -> E. m (
-      A. m2 (writeMemory1 (getMemory (ksCfg k)) a v m2 e <->
-        PROT_READ + PROT_WRITE C_ p /\ e = 0 /\ m2 = m) /\
-      setCfg k (setMemory (ksCfg k) m) |=s R *s s_mem1 p a v) $ =
+  $ G -> setCfg k (setMemory (ksCfg k) (setMem1 (getMemory (ksCfg k)) a v))
+          |=s R *s s_mem1 p a v $ =
 (named @ focus
   '(mpd h4 @ syl5bi (s_sateq2 s_sep_anlift2) @ syl5bi s_sat_anlift1 @ impd @ exp @
     eexd @ impd @ syl5bi el_s_sep_sn2 @ eexda @ exp _)
   (have 'a1 '(sylib prth @ syl5eqr read_place_Mem @ mpd (anw3l h1) @ sylan heap_sat_E anr @
     mpbii (elun2 snid) @ eleq2d @ syl heap_join_un @ anrd anlr))
-  '(sylan (iexe ,eqtac) _ _)
-  (focus
-    '(iald @
-      bitrd (sylan bian1 (iand (syl getMemoryT @ syl ksCfgT @ anwr heap_sat_ks) @
-        rsyl anllr anll) (anw3l h3)) @
-      syl6bb (bitr4 (bian1 expr) @ bitr4 anass @
-        aneq2i @ bitr (aneq1i @ eqlower2 @ writefin finns) ancomb) @
-      syl6bb exan2 @ !! exeqd pr @ syl6bb exan2 @ !! exeqd b2 @
-      syl6bbr _ @ aneqd (eqeq1d @ anld a1) @ syl bior2 @ syl (con3 anrr) (anw3l h2))
-    '(aneq2a @ sylbi prth ,(eqtac-with #f)))
   (have 'a2
     '(sylibr heap_join_S2 @ iand (iand (iand heap_join_isf1 @ a1i isfsn) @
       syl5eqs (ineq2 @ eqstr4 dmsn dmsn) heap_join_dmin) eqidd))
   (have 'ksT '(anwr heap_sat_ks))
   (have 'kT '(syl ksCfgT ksT))
-  (have 'wf '(eqscom @ mpbi eqlower @ writefin finns))
+  (have 'mT '(syl getMemoryT kT))
   '(sylibr (s_sateq2 s_sep_anlift2) @ sylibr s_sat_anlift1 @
     iand (sylc (anim1d @ anim2d ax_1) (anw3l h3) anllr) @
     sylan (iexe ,eqtac)
@@ -2405,11 +2545,10 @@ theorem s_mem1_writeMemory1
     iand _ _)
   (focus
     '(iand (syl heap_join_isf3 @ rsyl anlr @ anwr a2) @
-      mpbird (syl setCfgT ksT) @ iand (sylan setMemoryT kT _) @
-      sseld (writePM (anld a1) @ a1i @ eqstr (nseq get_setMemory) wf) @
-      syl ksMappingT ksT)
-    '(write_el_Memory (syl getMemoryT kT) (syl anll anllr) (syl anr anllr) (anw3l h3) @
-      a1i wf))
+      mpbird (syl setCfgT ksT) @
+      iand (sylan setMemoryT kT @ setMem1T mT (syl anll anllr) (anw3l h3)) @
+      sseld (a1i @ mpbir (sseq2 @ PageMappingeq get_setMemory) setMem1PM) @
+      syl ksMappingT ksT))
   '(orrd @ iald @ !! iald v2 @ syl5bi (ellower @ unfin finns finns) @
     syl5bi elun @ eord _ _)
   (focus
@@ -2418,11 +2557,11 @@ theorem s_mem1_writeMemory1
       syl eal @ syl (!! eal q) @ mpd (anw3l h1) anrr)
     '(imp @ casesd (eexd _) @ a1i @ a1d read_place_setMemory_ne)
     '(syl5ibrcom ,eqtac @ exp @ eqtr4g read_place_setMemory_eq read_place_Mem @
-      preq1d @ syl5eq (appeq1 wf) @ syl writeNe @ mtd _ @ a1i X86P_Memeq)
+      preq1d @ syl setMem1_ne @ mtd _ @ a1i X86P_Memeq)
     '(disjne (rsyl anllr @ anwr heap_join_dmin) (anwr preldm) @ a1i @ preldm snid))
   (focus
     '(syl5ibrcom (sylbi elsn @ sylbi prth ,eqtac) @
-      syl5eq read_place_setMemory_eq @ preqd (a1i @ eqtr (appeq1 wf) writeEq) @
+      syl5eq read_place_setMemory_eq @ preqd (syl setMem1_eq @ anld a1) @
       anrd @ sylib prth @ syl5eqr read_place_Mem @
       sylc heap_sat_E (iand anr _) (anw3l h1))
     '(mpbii (elun2 snid) @ eleq2d @ syl heap_join_un @ anrd anlr)));
