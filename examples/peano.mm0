@@ -323,13 +323,13 @@ def repeat (a n: nat): nat;
 theorem repeat0 (a: nat): $ repeat a 0 = 0 $;
 theorem repeatS (a n: nat): $ repeat a (suc n) = a : repeat a n $;
 
--- map : (A -> B) -> list A -> list B
+--| `map : (A -> B) -> list A -> list B`
 def map (F: set) (l: nat): nat;
 theorem map0 (F: set): $ map F 0 = 0 $;
 theorem mapS (F: set) (a l: nat):
   $ map F (a : l) = F @ a : map F l $;
 
--- ljoin : list (list A) -> list A
+--| `ljoin : list (list A) -> list A`
 def ljoin (L: nat): nat;
 theorem ljoin0: $ ljoin 0 = 0 $;
 theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
@@ -337,12 +337,12 @@ theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
 def sublistAt (n L1 L2 .l .r: nat): wff =
 $ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
 
--- all2 : (A -> B -> Bool) -> list A -> list B -> Bool
+--| `all2 : (A -> B -> Bool) -> list A -> list B -> Bool`
 def all2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ A. n A. x A. y
   (nth n l1 = suc x -> nth n l2 = suc y -> ph) $;
 
--- ex2 : (A -> B -> Bool) -> list A -> list B -> Bool
+--| `ex2 : (A -> B -> Bool) -> list A -> list B -> Bool`
 def ex2 {x y .n: nat} (ph: wff x y) (l1 l2: nat): wff =
 $ len l1 = len l2 /\ E. n E. x E. y
   (nth n l1 = suc x /\ nth n l2 = suc y /\ ph) $;

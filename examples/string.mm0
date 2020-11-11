@@ -26,7 +26,7 @@ term sadd: string > string > string;
 
 def input: string;
 input string: input;
-output string: input;
+output string: $ input $;
 
 def hello: string;
-output string: hello;
+output string: $ hello $;

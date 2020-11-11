@@ -121,13 +121,13 @@ theorem xelu64b0i (h: $ a e. Bits (8 * ,(sucs 7) + 7) $): $ b0 a e. u64 $ = '(xe
 theorem xelu64b1i (h: $ a e. Bits (8 * ,(sucs 7) + 7) $): $ b1 a e. u64 $ = '(xelu64i @ xelBits7b1 h);
 
 do {
-  -- (to-u8-ch a) returns a pair `(c p)` where p: $ c2n c = a $
+  --| `(to-u8-ch a)` returns a pair `(c p)` where `p: c2n c = a`
   (def to-u8-ch @ match-fn
     [('hex ('h2n a) b) '((ch ,a ,b) (c2nhex ,a ,b))]
     [('h2n a) '((ch (x0) ,a) (c2nh2n ,a))])
 
-  -- (to-toBytes k n) returns (s p) where p: $ s2n s = toBytes k n $.
-  -- Note that `k` should be a unary numeral constructed by (sucs)
+  --| `(to-toBytes k n)` returns `(s p)` where `p: s2n s = toBytes k n`.
+  --| Note that `k` should be a unary numeral constructed by `(sucs)`
   (def (to-toBytes k n) @ match k
     [$suc ,k$ @ match k
       [$0$ @ match n
@@ -143,19 +143,19 @@ do {
           '($ch ,'(x0) ,a0 ': ,s$ (xtoBytesS1 ,a0 ,k ,s ,p))]]]
     [$0$ '($s0$ (xtoBytesS1 ,n))])
 
-  -- (to-uNBytes N a) returns a pair `(s p)` where p: $ s2n s = uNBytes a $
-  -- assuming N = 16,32,64
+  --| `(to-uNBytes N a)` returns a pair `(s p)` where `p: s2n s = uNBytes a`
+  --| assuming `N = 16,32,64`
   (def (to-uNBytes n a)
     (def k (sucs {n // 8}))
     @ match (to-toBytes k a) @ (s p)
     '(,s (,(atom-app 'xu n 'Bytes) ,a ,s ,p)))
 
-  -- (decnot a) = (b p) where p: $ a + b = xf $
+  --| `(decnot a) = (b p)` where `p: a + b = xf`
   (def decnot @ match-fn @ (a)
     @ let ([n (hexdigit->number a)] [m {15 - n}])
     '((,(hexdigit m)) ,(nth 1 @ decaddn n m)))
 
-  -- (to-toIBytesb1 k n) = (s p) where p: $ s2n s = toIBytes k (b1 n) $
+  --| `(to-toIBytesb1 k n) = (s p)` where `p: s2n s = toIBytes k (b1 n)`
   (def (to-toIBytesb1 k n) @ match k
     [$0$ '(s0 (xtoIBytes0 (b1 ,n)))]
     [$suc ,k$ @ match n
@@ -171,8 +171,8 @@ do {
         @ match (decnot a0) @ (c0 p0)
         '($ch ,'(xf) ,c0 ': ,s$ (xtoIBytesSb11 ,a0 ,c0 ,k ,s ,p0 ,p))]])
 
-  -- (to-iNBytes N a) returns a pair `(s p)` where p: $ s2n s = iNBytes a $
-  -- assuming N = 8,16,32,64
+  --| `(to-iNBytes N a)` returns a pair `(s p)` where `p: s2n s = iNBytes a`
+  --| assuming `N = 8,16,32,64`
   (def (to-iNBytes n a)
     (def k (sucs {n // 8}))
     @ match (match a
@@ -181,20 +181,20 @@ do {
       [$b1 ,a$ (to-toIBytesb1 k a)])
     [(s p) '(,s (,(atom-app 'xi n 'Bytes) ,a ,s ,p))])
 
-  -- (to-elBits4 k n) proves $ n e. Bits (4 * k) $
+  --| `(to-elBits4 k n)` proves `n e. Bits (4 * k)`
   (def (to-elBits4 k n) @ match k
     [$suc ,k$ @ match n
       [$,n :x ,a$ '(xelBits4S ,a ,k ,n ,(to-elBits4 k n))]
       [$h2n ,a$ '(xelBits41 ,a ,k)]])
 
-  -- (to-elBits8 k n) proves $ n e. Bits (8 * k) $
+  --| `(to-elBits8 k n)` proves `n e. Bits (8 * k)`
   (def (to-elBits8 k n) @ match k
     [$suc ,k$ @ match n
       [$,n :x ,a1 :x ,a0$ '(xelBits8S ,a0 ,a1 ,k ,n ,(to-elBits8 k n))]
       [$h2n ,a1 :x ,a0$ '(xelBits82 ,a0 ,a1 ,k)]
       [$h2n ,a0$ '(xelBits81 ,a0 ,k)]])
 
-  -- (to-elBits7 k n) proves $ n e. Bits (8 * k + 7) $
+  --| `(to-elBits7 k n)` proves `n e. Bits (8 * k + 7)`
   (def (to-elBits7 k n) @ match n
     [$,n :x ,a1 :x ,a0$ @ match k
       [$suc ,k$ '(xelBits7S ,a0 ,a1 ,k ,n ,(to-elBits7 k n))]]
@@ -203,13 +203,13 @@ do {
       [$0$ '(xelBits720 ,a0 ,a1 ,(atom-app 'declt (hexstring (hex->number a1)) 8))]]
     [$h2n ,a0$ '(xelBits71 ,a0 ,k)])
 
-  -- (to-elu N a) returns a proof that a is a hex literal in uN: $ a e. uN $
-  -- assuming N = 8,16,32,64
+  --| `(to-elu N a)` returns a proof that `a` is a hex literal in uN: `a e. uN`
+  --| assuming `N = 8,16,32,64`
   (def (to-elu n a)
     '(,(atom-app 'xelu n 'i) ,a ,(to-elBits8 (sucs {n // 8}) a)))
 
-  -- (to-eli N a) returns a proof that a is a signed hex literal in uN: $ a e. uN $
-  -- assuming N = 8,16,32,64
+  --| `(to-eli N a)` returns a proof that `a` is a signed hex literal in uN: `a e. uN`
+  --| assuming `N = 8,16,32,64`
   (def (to-eli n a) @ match a
     [$0$ '(,(atom-app 'd0elu n))]
     [$b0 ,a$ '(,(atom-app 'xelu n 'b0i) ,a ,(to-elBits7 (sucs {{n // 8} - 1}) a))]
@@ -260,9 +260,10 @@ theorem _ch64_eq (h: $ c = a $): $ _ch64 c = u64Bytes a $ =
   eqtr (s2n_RA (s2n_RS _x00_eq _x00x2_eq) @ _x00x4_eq) @
   repeateq2 ,norm_num);
 
--- 0x400000 as u64, the hard coded entry point
+--| `0x400000` as u64, the hard coded file start point
 local def load_start_s (c: char): string = $ c ': _x00 ': ,0x40 ': _x00 ': _x00x4 $;
 local def load_start (x y): nat = $ ,0x4000 :x x :x y $;
+--| `0x400078`, the hard coded entry point
 local def text_start: nat = $ load_start x7 x8 $;
 
 theorem load_start_eq2: $ load_start x0 x0 + x :x y = load_start x y $ =
@@ -504,18 +505,22 @@ do {
       (add-tac-thm! name () ()
         '(splitBits ,(lhs l i) (,(hexdigit i))) () @ fn () (f l i)))
 
-  -- (mk-splitBits (x_1 ... x_k) i) returns (n_1 ... n_k p) where p proves
-  --   $ splitBits ((x_1 <> n_1) : ... : (x_k <> n_k) : 0) i $;
-  -- Here the x_i are numbers (a partition of 4), the n_i are decimal numerals, and i is a number
+  --| `(mk-splitBits (x_1 ... x_k) i)` returns `(n_1 ... n_k p)` where
+  --| `p: splitBits ((x_1 <> n_1) : ... : (x_k <> n_k) : 0) i`.
+  --|
+  --| Here the `x_i` are numbers (a partition of 4),
+  --| the `n_i` are decimal numerals, and `i` is a number
   (def (mk-splitBits l i)
     @ letrec ([(f n xs) @ match xs
       [() '((,(xsplitBits l i)))]
       [(k . xs) '((,(dn {n % {2 ^ k}})) . ,(f {n // {2 ^ k}} xs))]])
     (f i l))
 
-  -- (merge-bits (x_1 ... x_k) n_1 ... n_k) returns (i p) where p proves
-  --   $ splitBits ((x_1 <> n_1) : ... : (x_k <> n_k) : 0) i $;
-  -- Here the x_i are numbers (a partition of 4), the n_i are decimal numerals, and i is a number
+  --| `(merge-bits (x_1 ... x_k) n_1 ... n_k)` returns `(i p)` where
+  --| `p: splitBits ((x_1 <> n_1) : ... : (x_k <> n_k) : 0) i`.
+  --|
+  --| Here the `x_i` are numbers (a partition of 4),
+  --| the `n_i` are decimal numerals, and `i` is a number
   (def (merge-bits l . is)
     @ letrec ([f @ match-fn*
       [(() () i _) '(,i (,(xsplitBits l i)))]
@@ -876,7 +881,7 @@ theorem assemble1_A (h1: $ assemble1 s x y $) (h2: $ assemble1 t y z $): $ assem
 theorem assemble1_S (h1: $ suc x = y $) (h2: $ assemble1 s y z $): $ assemble1 (c ': s) x z $ =
 '(assemble1_A (assemble1_1 h1) h2);
 
--- (mk-asm1 x s) returns a pair (y p) where p: $ assemble1 s x y $
+--| `(mk-asm1 x s)` returns a pair `(y p)` where `p: assemble1 s x y`
 do (def (mk-asm1 x s) @ match s
   [('scons c s)
     @ match (mksuc x) @ (y p)
@@ -1053,14 +1058,21 @@ theorem sat_CFG_ex (p: wff a) (A: set a)
 -- '(sat_CFG_seq (sat_CFG_ex ,eqtac ,eqtac e CFG1_ok @ sat_CFG1 h1 h2) h3);
 
 do {
-  -- Builds a sequence of applications of `push` and `reassoc` to `x1` that
-  -- would construct a balanced binary tree with `n > 0` nodes assuming
-  -- x1 = (), (push 'x) = '(x ()) and (reassoc '((a b) c)) = '(a (b c)).
-  -- (However since the actual data is simply threaded through, the functions
-  -- may have additional side state, or may not be tree operations at all.)
-  --
-  -- Ex: (ra-list 'a (fn (x) '(,x a)) (match-fn @ '((,x ,y) ,z) '(,x (,y ,z))) 8)
-  --     = (((a a) (a a)) ((a a) (a a)))
+  --| Builds a sequence of applications of `push` and `reassoc` to `x1` that
+  --| would construct a balanced binary tree with `n > 0` nodes assuming
+  --| `x1 = ()`, `(push 'x) = '(x ())` and `(reassoc '((a b) c)) = '(a (b c))`.
+  --| (However since the actual data is simply threaded through, the functions
+  --| may have additional side state, or may not be tree operations at all.)
+  --|
+  --| Ex:
+  --| ```
+  --| do {
+  --|   (def (push x) '(,x a))
+  --|   (def reassoc @ match-fn ['((,x ,y) ,z) '(,x (,y ,z)])
+  --|   (ra-list 'a push reassoc 8)
+  --|     -- (((a a) (a a)) ((a a) (a a)))
+  --| };
+  --| ```
   (def (ra-list x1 push reassoc n)
     @ letrec (
       [(right n x) @ if {n = 1} (push x) @ let ([m {n // 2}])
@@ -1069,28 +1081,29 @@ do {
         @ right m @ left {n - m}])
     (left n))
 
-  -- Like (ra-list), but supports additionally the `n = 0` case. Here the base case
-  -- for n = 0 is `x0`, `push` and `reassoc` have the same behavior, and `merge1`
-  -- is called on the n = 1 case on `push x0`, for instance if `x0 = 0` then
-  -- merge1 might be defined such that (merge1 '(0 ())) = ()`.
+  --| Like `(ra-list)`, but supports additionally the `n = 0` case. Here the base case
+  --| for n = 0 is `x0`, `push` and `reassoc` have the same behavior, and `merge1`
+  --| is called on the n = 1 case on `push x0`, for instance if `x0 = 0` then
+  --| `merge1` might be defined such that `(merge1 '(0 ())) = ()`.
   (def (ra-list0 x0 push merge1 reassoc n)
     @ if {n = 0} x0 (ra-list (merge1 @ push x0) push reassoc n))
 
-  -- (reg-idx) converts atoms like 'rax, 'rcx, and 'r14 into their indexes.
+  --| `(reg-idx)` converts atoms denoting x86 registers
+  --| like 'rax, 'rcx, and 'r14 into their indexes.
   (def reg-idx @ lookup-fn @ append
     '([rax 0] [rcx 1] [rdx 2] [rbx 3] [rsp 4] [rbp 5] [rsi 6] [rdi 7])
     (rmap (range 0 15) @ fn (i) '[,(atom-app 'r i) i]))
 
-  -- (asm1-len inst) gets the projected byte length of an instruction.
+  --| `(asm1-len inst)` gets the projected byte length of an instruction.
   (def asm1-len @ match-fn
     ['(mov.32 (reg ,_) ,_) 5]
     ['(syscall) 2])
 
-  -- (assemble-rex x1 ... xn) takes a list of specifications xi = (bit val)
-  -- where bit is 'B, 'X, 'R, 'W or a number 0-3 and val is $0$ or $1$,
-  -- and produces (rex p1 ... pn) where
-  -- if xi = (R val) then pi proves $ REX_R rex = val $, and
-  -- if xi = (n val) then pi proves $ bit rex n = val $.
+  --| `(assemble-rex x1 ... xn)` takes a list of specifications `xi = (bit val)`
+  --| where bit is `'B`, `'X`, `'R`, `'W` or a number 0-3 and `val` is `$0$` or `$1$`,
+  --| and produces `(rex p1 ... pn)` where
+  --| * if `xi = (R val)` then `pi` proves `REX_R rex = val`, and
+  --| * if `xi = (n val)` then `pi` proves `bit rex n = val`.
   (def (assemble-rex . xs)
     (def idx @ match-fn ['B 0] ['X 1] ['R 2] ['W 3] [n n])
     (def i @ foldl xs 0 @ match-fn*
@@ -1105,8 +1118,8 @@ do {
         (def p '(,(xbit i (idx bit))))
         @ if (number? bit) p '(,(atom-app 'REX_ bit '_Si) ,a ,rex ,p)))
 
-  -- (assemble-inst inst) assembles the instruction `inst`, and
-  -- returns (ast s p) where p proves $ decode ast s $.
+  --| `(assemble-inst inst)` assembles the instruction `inst`, and
+  --| returns `(ast s p)` where `p` proves `decode ast s`.
   (def assemble-inst
     (def (asm-aux rex ast opc s p) @ match rex
       [$0$ '(,ast $,opc ': ,s$ (decode0I ,ast ,opc ,s ,p))]
@@ -1147,13 +1160,13 @@ do {
         [(? atom? x) '(reg ,(reg-idx x))]])
     @ match-fn @ (asm . args) (cons asm @ map desugar args))
 
-  -- (assemble-measure xs) does the first assembly pass, calculating the length of
-  -- all instructions and assigning positions to the symbols.
-  -- It returns (entry_idx entry xs') where `entry` is the entry address and
-  -- `entry_idx` is the index of the entry function in the xs list, and xs' is
-  -- the same as `xs` but with symbol references replaced by their locations.
-  --
-  -- See (assemble) for the input grammar of xs.
+  --| `(assemble-measure xs)` does the first assembly pass, calculating the length of
+  --| all instructions and assigning positions to the symbols.
+  --| It returns `(entry_idx entry xs')` where `entry` is the entry address and
+  --| `entry_idx` is the index of the entry function in the `xs` list, and `xs'` is
+  --| the same as `xs` but with symbol references replaced by their locations.
+  --|
+  --| See `(assemble)` for the input grammar of `xs`.
   (def (assemble-measure xs)
     (def fwd-ref
       (def refs (atom-map!))
@@ -1175,10 +1188,10 @@ do {
         ['string (string-len data)])})
     @ list (get! entry-idx) (get! @ fwd-ref 'main) xs)
 
-  -- (assemble-core base main bss pub entry_idx entry xs')
-  -- assembles an ELF file, producing the file and a correctness theorem.
-  -- See (assemble) for the meaning of the `base main bss pub` arguments,
-  -- and (assemble-measure) for the `entry_idx entry xs'` arguments.
+  --| `(assemble-core base main bss pub entry_idx entry xs')`
+  --| assembles an ELF file, producing the file and a correctness theorem.
+  --| See `(assemble)` for the meaning of the `base main bss pub` arguments,
+  --| and `(assemble-measure)` for the `entry_idx entry xs'` arguments.
   (def (assemble-core base main bss pub entry_idx entry xs)
     (def start 0x400078)
     (def start_x (->hex start))
@@ -1267,54 +1280,68 @@ do {
       '(() (ELF_lit_ok_isBasicElf (,base) ,entry_x ,bss_x (,content)
         (,parseElf)))))
 
-  -- (assemble base main bss pub xs) assembles an ELF file, producing the file
-  -- and a correctness theorem. `base` is the base name for all declarations,
-  -- `main` is the name of the main function, `bss` is the number of bytes in the
-  -- zeroed section, `pub` is the target visibility of the main theorems
-  -- (either #t public or #f local), and `xs` is the list of functions and data
-  -- elements to assemble.
-  --
-  -- The xs argument is a list, where the arguments can have the form:
-  -- * (func ,name ,data) where `name` is the name of the function and data
-  --   is a list of assembly instructions
-  -- * (data ,name ,str) where `name` is the name of the data element
-  --   and `str` is a string literal with the target bytes
-  --
-  -- The assembly instructions in `data` are similar to those in a traditional
-  -- assembler, but written as s-expressions. Most source/destination arguments
-  -- can have the form:
-  -- * `37`, etc: an immediate argument
-  -- * `rax`, `r14`, etc: a register
-  -- * `(reg 2)`: a register referenced by index
-  -- * `(sym)`, where `sym` is a symbol: a symbol address
-  --   (these are elaborated by (assemble-measure))
-  -- * `(M 42)`, `(M rax)`, `(M {{4 * rax} + rsi + 14})`: memory reference
-  --
-  -- Available instructions:
-  -- * (mov.32 dst src): 32 bit move dst <- src
-  -- * (syscall): syscall instruction
-  --
-  -- The result of the program is a number of new definitions starting with `base`.
-  --
-  -- * def `base`_`name`: string;
-  --   - This defines the strings in xs, the individual items that were declared
-  --     with their given names
-  -- * theorem `base`_`name`_asm: $ assemble1 base_name start end $;
-  --   - The proof that base_name assembles from `start` to `end`
-  -- * def `base`_content: string;
-  --   - This is the "content" part of the ELF file, after the header. It is the
-  --     concatenation of all the items
-  -- * theorem `base`_assembled:
-  --     $ len content = n /\ (/\_i assembled content name_i x_i x_i+1) $;
-  --   - The result of assembly, which asserts the total length of the content
-  --     as well as a conjunction asserting that every name_i assembles to its
-  --     final location.
-  -- * (pub) def `base`: string;
-  --   - This is the complete ELF file string, with visibility `pub`.
-  -- * theorem `base`_parseElf: $ ELF_lit_ok base entry bss base_content $;
-  --   - The proof that `base` is an ELF file that parses to `base_content`.
-  -- * (pub) def `base`_basicElf: $ isBasicElf base $;
-  --   - The proof that `base` is an ELF file.
+  --| `(assemble base main bss pub xs)` assembles an ELF file, producing the file
+  --| and a correctness theorem. `base` is the base name for all declarations,
+  --| `main` is the name of the main function, `bss` is the number of bytes in the
+  --| zeroed section, `pub` is the target visibility of the main theorems
+  --| (either `#t` public or `#f` local), and `xs` is the list of functions and data
+  --| elements to assemble.
+  --|
+  --| The xs argument is a list, where the arguments can have the form:
+  --| * `('func name data)` where `name` is the name of the function and `data`
+  --|   is a list of assembly instructions
+  --| * `('data name str)` where `name` is the name of the data element
+  --|   and `str` is a string literal with the target bytes
+  --|
+  --| The assembly instructions in `data` are similar to those in a traditional
+  --| assembler, but written as s-expressions. Most source/destination arguments
+  --| can have the form:
+  --| * `37`, etc: an immediate argument
+  --| * `rax`, `r14`, etc: a register
+  --| * `(reg 2)`: a register referenced by index
+  --| * `(sym)`, where `sym` is a symbol: a symbol address
+  --|   (these are elaborated by (assemble-measure))
+  --| * `(M 42)`, `(M rax)`, `(M {{4 * rax} + rsi + 14})`: memory reference
+  --|
+  --| Available instructions:
+  --| * `(mov.32 dst src)`: 32 bit move dst <- src
+  --| * `(syscall)`: syscall instruction
+  --|
+  --| The result of the program is a number of new definitions starting with `base`.
+  --|
+  --| * ```
+  --|   def (base)_(name): string;
+  --|   ```
+  --|   This defines the strings in `xs`, the individual items that were declared
+  --|   with their given names
+  --| * ```
+  --|   theorem (base)_(name)_asm: $ assemble1 base_name start end $;
+  --|   ```
+  --|   The proof that base_name assembles from `start` to `end`
+  --| * ```
+  --|   def (base)_content: string;
+  --|   ```
+  --|   This is the "content" part of the ELF file, after the header. It is the
+  --|   concatenation of all the items
+  --| * ```
+  --|   theorem (base)_assembled:
+  --|     $ len content = n /\ (/\_i assembled content name_i x_i x_i+1) $;
+  --|   ```
+  --|   The result of assembly, which asserts the total length of the content
+  --|   as well as a conjunction asserting that every name_i assembles to its
+  --|   final location.
+  --| * ```
+  --|   (pub) def (base): string;
+  --|   ```
+  --|   This is the complete ELF file string, with visibility `pub`.
+  --| * ```
+  --|   theorem (base)_parseElf: $ ELF_lit_ok base entry bss base_content $;
+  --|   ```
+  --|   The proof that `base` is an ELF file that parses to `base_content`.
+  --| * ```
+  --|   (pub) def (base)_basicElf: $ isBasicElf base $;
+  --|   ```
+  --|   The proof that `base` is an ELF file.
   (def (assemble base main bss pub xs)
     @ match (assemble-measure xs) @ (entry_idx entry xs)
     (assemble-core base main bss pub entry_idx entry xs))
@@ -2246,13 +2273,12 @@ theorem s_ok_sep: $ s_ok (R *s P) T <-> A. r (r e. R -> s_ok (sn r *s P) T) $ =
 theorem s_weak_ok: $ P =>*s Q -> s_ok Q T -> s_ok P T $ =
 (named '(alimd @ imim1d s_weak_sat));
 
--- The separation logic hoare predicate.
--- It is parameterized by a final state predicate `T` that covers the property
--- to hold on early termination, and builds in the frame rule
--- (quantifying over a heap `fr` separate from P and Q).
--- The "code" part of the hoare triple is absent because this is stored in the
--- machine state; we will use top level predicates that contain the code segment
---
+--| The separation logic hoare predicate.
+--| It is parameterized by a final state predicate `T` that covers the property
+--| to hold on early termination, and builds in the frame rule
+--| (quantifying over a heap `fr` separate from `P` and `Q`).
+--| The "code" part of the hoare triple is absent because this is stored in the
+--| machine state; we will use top level predicates that contain the code segment
 @_ local def hoare (T P Q: set): wff =
 $ A. fr (s_ok (sn fr *s Q) T -> s_ok (sn fr *s P) T) $;
 
@@ -2317,12 +2343,12 @@ theorem hoare_save_restore_lem (G: wff p)
     '(eqstr3 indi @ mpbi eqin1 @ mpbir (sseq2 uncpl1) ssv2))
   (focus '(syl rlam_heap_sat @ syl heap_sat_ks h3)));
 
--- A partial inverse to the frame rule: we can "unframe" by some heap `a`
--- with specified domain `A`. This allows us to prove that as long as we return
--- the values to what they were, we are permitted to capture things not in
--- the heap of `P`. This is useful for e.g. proving that callee-saved registers
--- can be used in a function and restored at the end, without the caller having
--- to pass them in.
+--| A partial inverse to the frame rule: we can "unframe" by some heap `a`
+--| with specified domain `A`. This allows us to prove that as long as we return
+--| the values to what they were, we are permitted to capture things not in
+--| the heap of `P`. This is useful for e.g. proving that callee-saved registers
+--| can be used in a function and restored at the end, without the caller having
+--| to pass them in.
 theorem hoare_save_restore (G: wff p a)
   (hA: $ G -> finite A $)
   (h1: $ G -> A. p (p e. P -> Dom p i^i A == 0) $)
@@ -2349,9 +2375,9 @@ theorem hoare_save_restore (G: wff p a)
     '(sylan iex (sylibr el_s_sep_sn1 _) (anwr @ syl5eq heap_join_com anllr))
     '(sylan iex (anld an3lr) (anrd an3lr))));
 
--- A hoare triple with explicit "modification" operand `R`, without reference to the
--- step relation as in `hoare`. This is useful for carrying hoare triple information
--- through the sub-steps of an instruction.
+--| A hoare triple with explicit "modification" operand `R`, without reference to the
+--| step relation as in `hoare`. This is useful for carrying hoare triple information
+--| through the sub-steps of an instruction.
 @_ local def hoareM (P R Q: set): wff =
 $ A. fr A. k (k |=s sn fr *s P ->
     E. k2 k <> k2 e. R /\
@@ -2516,9 +2542,9 @@ theorem el_withEx:
 theorem withEx_fault: $ k <> k2 e. withEx R -> ksFault k -> ksFault k2 $ =
 (named '(sylbi el_withEx @ com12 @ bi1d ifppos));
 
--- The primitive memory heaplet: `s_mem1 p a v` says that
--- address `a` is mapped with permission `p`,
--- and if the data at `a` is readable then the value is `v`.
+--| The primitive memory heaplet: `s_mem1 p a v` says that
+--| address `a` is mapped with permission `p`,
+--| and if the data at `a` is readable then the value is `v`.
 @_ local def s_mem1 (p a v): set =
 $ ^s (a e. u64 /\ v e. u8 /\ p e. Prot) /\s
     sn (sn (X86P_Mem a <> ((p <> v) <> suc p))) $;
@@ -2635,10 +2661,10 @@ theorem s_mem1_sat
       sylc heap_sat_E (iand anr _) (anw3l h1))
     '(mpbii (elun2 snid) @ eleq2d @ syl heap_join_un @ anrd anlr)));
 
--- The primitive memory heaplet: `s_pto a v` or `a >->m v` says that
--- address `a` is mapped, and if the data at `a` is readable then the value is `v`.
--- It does not imply readability of the memory since if the data is not readable
--- we can conclude anything (because reading will cause a crash).
+--| The primitive memory heaplet: `s_pto a v` or `a >->m v` says that
+--| address `a` is mapped, and if the data at `a` is readable then the value is `v`.
+--| It does not imply readability of the memory since if the data is not readable
+--| we can conclude anything (because reading will cause a crash).
 @_ local def s_pto (a v): set =
 $ E.s p e. Prot, (^s (PROT_READ C_ p) /\s s_mem1 p a v) $;
 infixl s_pto: $>->m$ prec 80;
@@ -2659,8 +2685,8 @@ theorem s_pto_readMemory1:
 (named '(imp @ syl5bi s_sat_ex @ eexd @ syl5 anr @ syl5bi s_sat_anlift1 @
   syl6 s_mem1_readMemory1 @ syl5 ancom @ anim1d ian));
 
--- The primitive memory heaplet: `s_block a v` or `a >=> v` says that the
--- list of bytes `v` is at address `a`.
+--| The primitive memory heaplet: `s_block a v` or `a >=> v` says that the
+--| list of bytes `v` is at address `a`.
 @_ local def s_mem (P a v): set =
 $ ^s (a + len v e. u64 /\ v e. List u8) /\s
   |*|s i e. upto (len v), E.s p e. P, s_mem1 p (a + i) (nth i v - 1) $;
@@ -2705,8 +2731,8 @@ theorem s_mem_readMemory (G: wff x)
   '(imp @ syl5 (eale ,eqtac) @ a2d @ exp @ bi2d @ readMemoryeq3d @
     syl add64S_eqid @ syl (u64le1 leaddid1) @ anld @ anwr s_mem_T));
 
--- A block of readable or read/write memory: `a >=>m v` says that the
--- list of bytes `v` is at address `a`.
+--| A block of readable or read/write memory: `a >=>m v` says that the
+--| list of bytes `v` is at address `a`.
 @_ local def s_block (a v): set = $ s_mem {p | PROT_READ C_ p} a v $;
 infixl s_block: $>=>m$ prec 80;
 
@@ -2720,8 +2746,8 @@ theorem s_block_readMemory:
 theorem s_block_readMem: $ ~ksFault k /\ k |=s a >=>m v -> readMem (ksCfg k) a v $ =
 '(iand (syl ksCfgT @ anwr s_sat_ks) s_block_readMemory);
 
--- A block of executable code: `a >=>c v` says that the
--- list of bytes `v` is at address `a`.
+--| A block of executable code: `a >=>c v` says that the
+--| list of bytes `v` is at address `a`.
 @_ local def s_code (a v): set = $ s_mem {p | PROT_READ + PROT_EXEC C_ p} a v $;
 infixl s_code: $>=>c$ prec 80;
 
@@ -2733,19 +2759,19 @@ theorem s_code_readMemory:
 theorem s_code_readMemX: $ ~ksFault k /\ k |=s a >=>c v -> readMemX (ksCfg k) a v $ =
 '(iand (syl ksCfgT @ anwr s_sat_ks) s_code_readMemory);
 
--- A block of uninitialized memory: `a >=>. n` says that there are
--- `n` free bytes at address `a`.
--- The bytes can be written to but not read until first write.
+--| A block of uninitialized memory: `a >=>. n` says that there are
+--| `n` free bytes at address `a`.
+--| The bytes can be written to but not read until first write.
 @_ local def s_block0 (a n): set = $ E.s v e. Array u8 n, s_mem _V a v $;
 infixl s_block0: $>=>.$ prec 80;
 
--- A no-access memory heaplet: `s_block_Z a n` says that the memory at
--- `a ... a+n` is mapped but read-protected and will cause a fault if accessed.
+--| A no-access memory heaplet: `s_block_Z a n` says that the memory at
+--| `a ... a+n` is mapped but read-protected and will cause a fault if accessed.
 @_ local def s_block_Z (a n): set =
 $ |*|s i e. upto n, E.s b e. u8, s_mem1 0 (a + i) b $;
 
--- The unused portion of the stack, which contains an arbitrary block of
--- read/write data followed by a no-access guard page.
+--| The unused portion of the stack, which contains an arbitrary block of
+--| read/write data followed by a no-access guard page.
 @_ local def unused_stack (lo sz): set =
 $ E.s v e. Array u8 (sz - 2 ^ 12),
     (s_block_Z lo (min sz (2 ^ 12)) *s (lo + 2 ^ 12) >=>m v) $;

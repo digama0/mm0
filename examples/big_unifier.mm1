@@ -28,9 +28,9 @@ def _18 = $ _17 + _17 $;
 def _19 = $ _18 + _18 $;
 def _20 = $ _19 + _19 $;
 
--- This theorem is an example of a worst case for first order unification, producing a proof term
--- nominally of size 2^20. Because MM0 uses deduplicated terms under the hood, this can
--- be elaborated into a proof and checked in linear time.
+--| This theorem is an example of a worst case for first order unification, producing a proof term
+--| nominally of size 2^20. Because MM0 uses deduplicated terms under the hood, this can
+--| be elaborated into a proof and checked in linear time.
 theorem foo:
   $ ((((((((((((((((((((_0 + _0) + _1) + _2) + _3) + _4) + _5) + _6) + _7) + _8) + _9) +
       _10) + _11) + _12) + _13) + _14) + _15) + _16) + _17) + _18) + _19) + _20 =

@@ -42,9 +42,9 @@ axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
 axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
 axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
 
--- This allows us to prove facts about hex digits by case analysis.
--- It is not provable from the above axioms because the fact that the "hex"
--- sort has only the given 16 constructors is only observable from outside the theory.
+--| This allows us to prove facts about hex digits by case analysis.
+--| It is not provable from the above axioms because the fact that the "hex"
+--| sort has only the given 16 constructors is only observable from outside the theory.
 axiom h2nlt (h: hex): $ h < 16 $;
 
 term c2n: char > nat; coercion c2n: char > nat;
@@ -133,8 +133,8 @@ do {
 };
 
 do {
-  -- This allows us to use $ ,0x1234 $ and $ ,"hello" $ to splice
-  -- numbers and strings into theorem statements.
+  --| This allows us to use `$ ,0x1234 $` and `$ ,"hello" $` to splice
+  --| numbers and strings into theorem statements.
   (def (to-expr-fallback s t) @ match t
     [(? number?) @ match s
       ['hex '(,(hexdigit t))]
@@ -176,8 +176,8 @@ do {
           ,(h2nn j))))
     name)
 
-  -- Raw successor theorem generator: given a in normal form, returns (b p)
-  -- where p proves |- suc a = b
+  --| Raw successor theorem generator: given `a` in normal form, returns `(b p)`
+  --| where `p` proves `suc a = b`
   (def mksuc @ match-fn
     ['(hex ,a (,b)) @ match b
       ['xf @ match (mksuc a) @ (b p)
@@ -187,8 +187,8 @@ do {
     ['(h2n (,a)) (def i (hexdigit->number a))
       '(,(->hex {i + 1}) (,(decsucn i)))])
 
-  -- Successor tactic: usable in refine scripts when the target is $ suc a = ?b $,
-  -- producing a proof and unifying ?b
+  --| Successor tactic: usable in refine scripts when the target is `suc a = ?b`,
+  --| producing a proof and unifying `?b`
   (def (suctac refine t) @ match t @ $ suc ,a = ,_ $
     @ match (mksuc a) @ (b p)
     @ refine '{(:verb ,p) : $ suc ,a = ,b $})
@@ -213,8 +213,10 @@ do {
       (def (h a) '(h2n @ ,(hexdigit a)))
       '(() (lttri ,(h a) ,(h b) ,(h c) (,(decltn a b)) (,(decltn b c))))))
 
-  -- Raw comparison theorem generator: given a, b in normal form, returns (< p) where p: |- a < b,
-  -- '= (and a and b are identical), or (> p) where p: |- b < a
+  --| Raw comparison theorem generator: given `a`, `b` in normal form, returns
+  --| * `(< p)` where `p: a < b`,
+  --| * '= (and `a` and `b` are identical), or
+  --| * `(> p)` where `p: b < a`
   (def mkcmp2 @ match-fn*
     [(('hex a (b)) ('hex c (d))) @ match (mkcmp2 a c)
       [('< p) '(< (decltx1 ,a (,b) ,c (,d) ,p))]
@@ -234,14 +236,14 @@ do {
       @ if {ai > bi} '(> (,(decltn bi ai)))
       '=])
 
-  -- Comparison theorem generator: given a goal $ a < b $ or $ a <= b $, produces a proof
+  --| Comparison theorem generator: given a goal `a < b` or `a <= b`, produces a proof
   (def mkcmphex @ match-fn
     [('lt a b) @ match (mkcmp2 a b) @ '(< ,p) p]
     [('le a b) @ match (mkcmp2 a b) ['(< ,p) '(ltlei ,a ,b ,p)] ['= '(leid ,a)]]
     [('ne a b) @ match (mkcmp2 a b) ['(< ,p) '(ltnei ,a ,b ,p)] ['(> ,p) '(ltneri ,b ,a ,p)]])
 
-  -- Comparison tactic: usable in refine scripts when the target is $ a < b $ or $ a <= b $,
-  -- producing a proof
+  --| Comparison tactic: usable in refine scripts when the target is `a < b` or `a <= b`,
+  --| producing a proof
   (def (cmphextac refine t) @ refine '(:verb ,(mkcmphex t)))
 };
 
@@ -306,7 +308,8 @@ theorem adc_x00 (h: $ suc (b + c) = d $): $ suc (a :x b + h2n c) = a :x d $ =
 theorem adc_x01 (h1: $ suc a = d $) (h2: $ suc (b + c) = x1 :x e $): $ suc (a :x b + h2n c) = d :x e $ =
 '(eqtr3 (suceq @ addeq2 hex01) @ adc_xx1 (eqtr (suceq addx02) h1) h2);
 do {
-  -- Raw addition theorem generator: given a, b in normal form, returns (c p) where p: |- a + b = c
+  --| Raw addition theorem generator: given `a`, `b` in normal form,
+  --| returns `(c p)` where `p: a + b = c`
   (def mkadd @ match-fn*
     [(('hex a (b)) ('hex c (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
       [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (add_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
@@ -318,7 +321,8 @@ do {
       [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (add_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
       [(('h2n d) p) '((hex ,a ,d) (add_x00 ,a (,b) (,c) ,d (,p)))]]
     [(('h2n (a)) ('h2n (b))) @ match (decaddn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
-  -- Raw carry-addition theorem generator: given a, b in normal form, returns (c p) where p: |- suc (a + b) = c
+  --| Raw carry-addition theorem generator: given `a`, `b` in normal form,
+  --| returns `(c p)` where `p: suc (a + b) = c`
   (def mkadc @ match-fn*
     [(('hex a (b)) ('hex c (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
       [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (adc_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
@@ -331,8 +335,8 @@ do {
       [(('h2n d) p) '((hex ,a ,d) (adc_x00 ,a (,b) (,c) ,d (,p)))]]
     [(('h2n (a)) ('h2n (b))) @ match (decadcn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
 
-  -- Addition tactic: usable in refine scripts when the target is $ a + b = ?c $ (or $ suc (a + b) = ?c $),
-  -- producing a proof and unifying ?c
+  --| Addition tactic: usable in refine scripts when the target is `a + b = ?c` (or `suc (a + b) = ?c`),
+  --| producing a proof and unifying `?c`
   (def (addtac refine t) @ match t
     [$ ,a + ,b = ,_ $ @ match (mkadd a b) @ (c p) @ refine '{(:verb ,p) : $ ,a + ,b = ,c $}]
     [$ suc (,a + ,b) = ,_ $ @ match (mkadc a b) @ (c p) @ refine '{(:verb ,p) : $ suc (,a + ,b) = ,c $}])
@@ -381,7 +385,8 @@ theorem mul_x2x (h1: $ a * b = d $) (h2: $ a * c = e :x f $) (h3: $ d + e = g $)
 theorem mul_x20 (h1: $ a * b = d $) (h2: $ a * c = e $): $ a * b :x c = d :x e $ =
 '(mul_x2x h1 (eqtr4 h2 hex01) addx02);
 do {
-  -- Raw multiplication theorem generator: given a, b in normal form, returns (c p) where p: |- a * b = c
+  --| Raw multiplication theorem generator: given `a`, `b` in normal form,
+  --| returns `(c p)` where `p: a * b = c`
   (def mkmul @ letrec (
     [mkmul-nz @ match-fn*
       [('(h2n (x1)) a) '(,a (mulx11 ,a))]
@@ -408,8 +413,8 @@ do {
       [(e1 e2) (mkmul-nz e1 e2)]])
     mkmul)
 
-  -- Multiplication tactic: usable in refine scripts when the target is $ a * b = ?c $,
-  -- producing a proof and unifying ?c
+  --| Multiplication tactic: usable in refine scripts when the target is `a * b = ?c`,
+  --| producing a proof and unifying `?c`
   (def (multac refine t) @ match t @ $ ,a + ,b = ,_ $
     @ match (mkmul a b) @ (c p) @ refine '{(:verb ,p) : $ ,a * ,b = ,c $})
 };
@@ -430,15 +435,15 @@ theorem b0eql (ha: $ a = a2 $) (h: $ b0 a2 = b $): $ b0 a = b $ = '(eqtr (b0eq h
 theorem b1eql (ha: $ a = a2 $) (h: $ b1 a2 = b $): $ b1 a = b $ = '(eqtr (b1eq ha) h);
 do {
   (def tohex-map (atom-map!))
-  -- Core numeric evaluation function, extensible using `tohex-map`.
-  -- Given a numeric expression using +, *, suc, :x, ..., it will be evaluated to a (hexadecimal)
-  -- numeric literal.
-  -- It will either return a pair (e2 p) where `p: e = e2`,
-  -- or `#undef` meaning that `e` is already normalized
+  --| Core numeric evaluation function, extensible using `tohex-map`.
+  --| Given a numeric expression using `+`, `*`, `suc`, `:x`, ..., it will be evaluated to a
+  --| (hexadecimal) numeric literal.
+  --| It will either return a pair `(e2 p)` where `p: e = e2`,
+  --| or `#undef` meaning that `e` is already normalized
   (def (mktohex e) @ match e @ ((? atom? t) . es)
     (apply (lookup tohex-map t @ fn () @ error @ string-append "not numeric: " (->string t)) es))
 
-  -- Numeric evaluation as a refine script.
+  --| Numeric evaluation as a refine script.
   (def (to_hex refine t) @ match t @ $ ,a = ,_ $
     @ match (mktohex a)
     [(b p) @ refine t '{(:verb ,p) : $ ,a = ,b $}]
@@ -489,7 +494,7 @@ do {
       ins (dn n) @ fn () '((h2n (,(hexdigit n))) (,(decn n))))
     (ins 'd16 @ fn () '((hex (h2n (x1)) (x0)) (h2n10))))
 
-  -- Comparison theorem generator: prove a given (in)equality goal (< <= or =)
+  --| Comparison theorem generator: prove a given (in)equality goal (`<`, `<=`, or `=`)
   (def (mkcmp e) @ match e
     [('lt a b) (def pa (mktohex a)) (def pb (mktohex b))
       @ if {(def? pa) or (def? pb)}
@@ -517,8 +522,8 @@ do {
         [(#undef #undef) '(eqid ,a)])
       (error @ string-append "not equal? " (->string a2) " =?= " (->string b2))])
 
-  -- Normalize numeric expressions. Proves theorems like $ 123 * 321 = 39483 $,
-  -- used as a refine script.
+  --| Normalize numeric expressions. Proves theorems like `123 * 321 = 39483`,
+  --| used as a refine script.
   (def (norm_num refine t) @ match t
     [('eq a (? mvar?)) @ match (try-conv a @ mktohex a) @ (b p)
       @ refine t '{(:verb ,p) : $ ,a = ,b $}]

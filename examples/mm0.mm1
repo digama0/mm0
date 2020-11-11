@@ -1,24 +1,26 @@
 import "peano_hex.mm1";
 
 -- The sort modifiers 'pure', 'strict', 'provable', 'free'
--- sPure : SortData -> Bool
+
+--| `sPure : SortData -> Bool`
 @_ def sPure     (n: nat): wff = $ true (pi11 n) $;
--- sStrict : SortData -> Bool
+--| `sStrict : SortData -> Bool`
 @_ def sStrict   (n: nat): wff = $ true (pi12 n) $;
--- sProvable : SortData -> Bool
+--| `sProvable : SortData -> Bool`
 @_ def sProvable (n: nat): wff = $ true (pi21 n) $;
--- sFree : SortData -> Bool
+--| `sFree : SortData -> Bool`
 @_ def sFree     (n: nat): wff = $ true (pi22 n) $;
 
 -- A binder is either a bound variable with sort s, or a regular variable
 -- with sort s and dependencies vs.
--- PBound : SortID -> Binder
+--| `PBound : SortID -> Binder`
 @_ def PBound (s: nat): nat = $ b0 s $;
--- PReg : SortID -> set VarID -> Binder
+--| `PReg : SortID -> set VarID -> Binder`
 @_ def PReg (s vs: nat): nat = $ b1 (s <> vs) $;
 
--- Get the sort of a binder.
--- binderSort : Binder -> SortID
+--| Get the sort of a binder.
+--|
+--| `binderSort : Binder -> SortID`
 @_ def binderSort (x: nat): nat =
 $ case (\ n, n) (\ n, fst n) @ x $;
 pub theorem binderSortBound (s: nat): $ binderSort (PBound s) = s $ =
@@ -35,9 +37,10 @@ theorem binderSort_leid (s: nat): $ binderSort bi <= bi $ =
 -- An s-expression, representing the terms and formulas. It can be either a
 -- variable (v is a VarID) or an application of the term with TermID `f`
 -- to arguments `x` (a list of s-expressions).
--- SVar : VarID -> SExpr
+
+--| `SVar : VarID -> SExpr`
 @_ def SVar (v: nat): nat = $ b0 v $;
--- SApp : TermID -> list SExpr -> SExpr
+--| `SApp : TermID -> list SExpr -> SExpr`
 @_ def SApp (f x: nat): nat = $ b1 (f <> x) $;
 
 theorem SApp_ltid: $ e IN es -> e < SApp f es $ =
@@ -83,40 +86,51 @@ theorem SExpr_indd {x f es} (n) (px: wff x) (pv: wff v) (pe: wff f es)
   '(alimd @ imim1d @ syl5 SApp_ltid @ bi2d lteq2));
 
 -- The environment is composed of declarations, which come in a few types:
--- A `sort` declaration has an associated `SortData` with the sort modifiers.
--- Sorts are indexed by SortID and picked out by `getSD`.
--- DSort : SortID -> SortData -> Decl
+
+--| A `sort` declaration has an associated `SortData` with the sort modifiers.
+--| Sorts are indexed by SortID and picked out by `getSD`.
+--|
+--| `DSort : SortID -> SortData -> Decl`
 @_ def DSort (id sd: nat): nat = $ b0 (b0 (b0 (id <> sd))) $;
--- A `term` declaration has a list of binders, and a target type (a DepType,
--- which is a `(SortID, set VarID)` pair).
--- Terms are indexed by TermID and picked out by `getTerm`.
--- DTerm : TermID -> Ctx -> DepType -> Decl
+--| A `term` declaration has a list of binders, and a target type (a DepType,
+--| which is a `(SortID, set VarID)` pair).
+--| Terms are indexed by TermID and picked out by `getTerm`.
+--|
+--| `DTerm : TermID -> Ctx -> DepType -> Decl`
 @_ def DTerm (id args ret: nat): nat = $ b0 (b0 (b1 (id <> args <> ret))) $;
--- An `axiom` declaration has a list of binders, a list of hypotheses,
--- and a consequent.
--- Axioms are not indexed, they are simply found by statement.
--- DAxiom : Ctx -> list SExpr -> SExpr -> Decl
+--| An `axiom` declaration has a list of binders, a list of hypotheses,
+--| and a consequent.
+--|
+--| Axioms are not indexed, they are simply found by statement.
+--|
+--| `DAxiom : Ctx -> list SExpr -> SExpr -> Decl`
 @_ def DAxiom (args hs ret: nat): nat = $ b0 (b1 (args <> hs <> ret)) $;
--- A `def` declaration is the same as a `term` except it also has an optional
--- definition component which lists the sorts of the dummy variables and the
--- definition's expression.
--- Defs are indexed by TermID and picked out by `getTerm`.
--- DDef : TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Decl
+--| A `def` declaration is the same as a `term` except it also has an optional
+--| definition component which lists the sorts of the dummy variables and the
+--| definition's expression.
+--|
+--| Defs are indexed by TermID and picked out by `getTerm`.
+--|
+--| `DDef : TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Decl`
 @_ def DDef (id args ret def: nat): nat =
   $ b1 (b0 (id <> args <> ret <> def)) $;
--- A `theorem` declaration is exactly the same structure as an `axiom`, but
--- the interpretation is different - theorems require proofs, while axioms are
--- added in the spec.
--- Theorems are not indexed, they are simply found by statement.
--- DThm : Ctx -> list SExpr -> SExpr -> Decl
+--| A `theorem` declaration is exactly the same structure as an `axiom`, but
+--| the interpretation is different - theorems require proofs, while axioms are
+--| added in the spec.
+--|
+--| Theorems are not indexed, they are simply found by statement.
+--|
+--| `DThm : Ctx -> list SExpr -> SExpr -> Decl`
 @_ def DThm (vs hs ret: nat): nat = $ b1 (b1 (vs <> hs <> ret)) $;
 
--- This function extracts the `SortData` for a sort given by `SortID`.
--- getSD : Env -> SortID -> SortData -> Bool
+--| This function extracts the `SortData` for a sort given by `SortID`.
+--|
+--| `getSD : Env -> SortID -> SortData -> Bool`
 @_ def getSD (env id sd: nat): wff = $ DSort id sd IN env $;
 
--- This function gets the term and definition data for a term.
--- getTerm : Env -> TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Bool
+--| This function gets the term and definition data for a term.
+--|
+--| `getTerm : Env -> TermID -> Ctx -> DepType -> option (list SortID, SExpr) -> Bool`
 @_ def getTerm (env id a r v: nat): wff =
 $ v = 0 /\ DTerm id a r IN env \/ DDef id a r v IN env $;
 
@@ -140,23 +154,27 @@ theorem getTerm_ltid: $ getTerm env x a r v -> x < env /\ a < env /\ r < env /\ 
 
 theorem getTerm_retltid: $ getTerm env x a r v -> r < env $ = '(rsyl getTerm_ltid anlr);
 
--- This function gets the data for an axiom or theorem.
--- getThm : Env -> Ctx -> list SExpr -> SExpr -> Bool
+--| This function gets the data for an axiom or theorem.
+--|
+--| `getThm : Env -> Ctx -> list SExpr -> SExpr -> Bool`
 @_ def getThm (env a h r: nat): wff =
 $ DAxiom a h r IN env \/ DThm a h r IN env $;
 
--- Is this ID a valid sort?
--- isSort : Env -> SortID -> Bool
+--| Is this ID a valid sort?
+--|
+--| `isSort : Env -> SortID -> Bool`
 @_ def isSort (env s .sd: nat): wff = $ E. sd getSD env s sd $;
 
--- Looks this variable up in the context, and reports whether it represents a
--- bound variable.
--- isBound : Ctx -> VarID -> Bool
+--| Looks this variable up in the context, and reports whether it represents a
+--| bound variable.
+--|
+--| `isBound : Ctx -> VarID -> Bool`
 @_ def isBound (ctx x .s: nat): wff = $ E. s nth x ctx = suc (PBound s) $;
 
--- Checks if this a well formed dependent type in the context. A DepType is a
--- pair (SortID, set VarID) giving the sort and the variable dependencies.
--- DepType : Env -> Ctx -> DepType -> Bool
+--| Checks if this a well formed dependent type in the context. A DepType is a
+--| pair (SortID, set VarID) giving the sort and the variable dependencies.
+--|
+--| `DepType : Env -> Ctx -> DepType -> Bool`
 @_ def DepType (env ctx ty .x: nat): wff =
 $ isSort env (fst ty) /\ A. x (x e. snd ty -> isBound ctx x) $;
 
@@ -173,10 +191,11 @@ theorem Ctx_auxS (env: nat): $ Ctx_aux env (ctx |> bi) = Ctx_aux env ctx *
   appslame @ appslamed @ applamed @ muleqd anr @
   nateqd @ eleqd anlr @ Sumeq2d @ abeqd @ DepTypeeq2d anll));
 
--- Checks if this a well formed context. A context can be extended with a bound
--- variable binder if the sort of the binder is not `strict`.
--- Note `Ctx = list Binder`.
--- Ctx : Env -> Ctx -> Bool
+--| Checks if this a well formed context. A context can be extended with a bound
+--| variable binder if the sort of the binder is not `strict`.
+--| Note `Ctx = list Binder`.
+--|
+--| `Ctx : Env -> Ctx -> Bool`
 @_ def Ctx (env ctx: nat): wff = $ true (Ctx_aux env ctx) $;
 pub theorem Ctx0 (env: nat): $ Ctx env 0 $ = '(mpbir (trueeq Ctx_aux0) true1);
 pub theorem CtxBound (env ctx s: nat) {sd: nat}: $ Ctx env (ctx |> PBound s) <->
@@ -216,13 +235,14 @@ theorem Expr_aux_App: $ Expr_aux env ctx @ SApp f es =
     (getTermeq2d anll)
     (all2eq2d (zipeqd anlr anr))));
 
--- These mutually recursive functions check if an expression `e` is well-typed
--- with sort `s`, and that `e` is well-typed and valid for entry into a binder
--- `bi`. The main difference is that for an expression to be valid for a
--- BV binder, the expression must itself be a bound variable.
--- Expr : Env -> Ctx -> SExpr -> SortID -> Bool
+--| These mutually recursive functions check if an expression `e` is well-typed
+--| with sort `s`, and that `e` is well-typed and valid for entry into a binder
+--| `bi`. The main difference is that for an expression to be valid for a
+--| BV binder, the expression must itself be a bound variable.
+--|
+--| `Expr : Env -> Ctx -> SExpr -> SortID -> Bool`
 @_ def Expr (env ctx e s: nat): wff = $ s e. Expr_aux env ctx @ e $;
--- ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool
+--| `ExprBi : Env -> Ctx -> SExpr -> Binder -> Bool`
 @_ def ExprBi (env ctx e bi: nat): wff =
 $ bi e. ExprBi_aux env ctx e (Expr_aux env ctx @ e) $;
 
@@ -267,15 +287,17 @@ pub theorem ExprBiReg (env ctx e s vs: nat):
   $ ExprBi env ctx e (PReg s vs) <-> Expr env ctx e s $ =
 (named '(bitr Sumr @ elabe @ eleq1d @ syl6eq fstpr fsteq));
 
--- Is this a type correct expression of provable type? This is used to
--- typecheck expressions appearing in hypotheses and conclusions of
--- axiom/pub theorem.
--- ExprProv : Env -> Ctx -> SExpr -> Bool
+--| Is this a type correct expression of provable type? This is used to
+--| typecheck expressions appearing in hypotheses and conclusions of
+--| axiom/theorem.
+--|
+--| `ExprProv : Env -> Ctx -> SExpr -> Bool`
 @_ def ExprProv (env ctx e .s .sd: nat): wff =
 $ E. s E. sd (Expr env ctx e s /\ getSD env s sd /\ sProvable sd) $;
 
--- A helper function to add dummy variables to the context.
--- appendDummies : Ctx -> list SortID -> Ctx
+--| A helper function to add dummy variables to the context.
+--|
+--| `appendDummies : Ctx -> list SortID -> Ctx`
 @_ def appendDummies (ctx ds .d: nat): nat = $ ctx ++ map (\ d, PBound d) ds $;
 
 @_ local def HasVar_aux (ctx: nat): set =
@@ -284,10 +306,11 @@ $ SExprRec
      E. s E. vs (nth u ctx = suc (PReg s vs) /\ v e. vs)})
   (\\ f, \\ xs, \ ih, lower {v | E. s (s IN ih /\ v e. s)}) $;
 
--- Does this expression contain any occurrence of the variable `v`? This check
--- ignores bound variables, "metamath style". We use this stricter check for
--- verifying pub theorem applications.
--- HasVar : Ctx -> SExpr -> VarID -> Bool
+--| Does this expression contain any occurrence of the variable `v`? This check
+--| ignores bound variables, "metamath style". We use this stricter check for
+--| verifying theorem applications.
+--|
+--| `HasVar : Ctx -> SExpr -> VarID -> Bool`
 @_ def HasVar (ctx e v: nat): wff = $ v e. HasVar_aux ctx @ e $;
 
 theorem HasVar_Var: $ HasVar ctx (SVar u) v <->
@@ -332,9 +355,10 @@ pub theorem HasVarApp (ctx f es v: nat) {e: nat}:
     exeqe @ aneq2d elneq2)
   '(eex @ lttrd (anwr ellt) (anwl lmemlt)));
 
--- A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
--- is a regular argument and `(/)` if `a` is a bound argument.
--- MaybeFreeArgs : list SExpr -> Binder -> VarID -> Bool
+--| A helper function for `Free`. This constructs the set `_V \ deps(a)` if `a`
+--| is a regular argument and `(/)` if `a` is a bound argument.
+--|
+--| `MaybeFreeArgs : list SExpr -> Binder -> VarID -> Bool`
 @_ def MaybeFreeArgs (es a v .s .vs .u: nat): wff =
 $ E. s E. vs (a = PReg s vs /\ ~(E. u (u e. vs /\ nth u es = suc (SVar v)))) $;
 
@@ -346,13 +370,14 @@ $ SExprRec
       (ex2 ih1 a (true ih1 /\ MaybeFreeArgs es a v) ih args \/
         E. u (u e. rs /\ nth u es = suc (SVar v)))))) $;
 
--- Does this expression contain any _free_ occurrence of the variable `v`?
--- This is the more complex binder-respecting check. Intuitively, if
--- `term foo {x y: set} (ph: set x): set y;`, then `foo` binds occurrences of
--- `x` in `ph`, and adds a dependency on `y` regardless. We might write this
--- as `FV(foo x y ph) = (FV(ph) \ {x}) u {y}`, but the definition below is
--- for arbitrary binding structures.
--- Free : Env -> Ctx -> SExpr -> VarID -> Bool
+--| Does this expression contain any _free_ occurrence of the variable `v`?
+--| This is the more complex binder-respecting check. Intuitively, if
+--| `term foo {x y: set} (ph: set x): set y;`, then `foo` binds occurrences of
+--| `x` in `ph`, and adds a dependency on `y` regardless. We might write this
+--| as `FV(foo x y ph) = (FV(ph) \ {x}) u {y}`, but the definition below is
+--| for arbitrary binding structures.
+--|
+--| `Free : Env -> Ctx -> SExpr -> VarID -> Bool`
 @_ def Free (env ctx e v: nat): wff = $ true (Free_aux env ctx v @ e) $;
 pub theorem FreeVar (env ctx u v: nat):
   $ Free env ctx (SVar u) v <-> HasVar ctx (SVar u) v $ =
@@ -378,22 +403,24 @@ pub theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
     bitr (exeqi @ bitr (aneq1i @ bitr (aneq1i ancomb) anass) anass) @
     exeqe @ aneq2d @ aneq1d trueeq));
 
--- Is this a valid term in the given environment? A term is valid if
--- the argument list is valid, the return type is valid, and the return sort
--- is not `pure` (because `pure` sorts are not allowed to have term
--- constructors).
--- TermOk : Env -> TermID -> Ctx -> DepType -> Bool
+--| Is this a valid term in the given environment? A term is valid if
+--| the argument list is valid, the return type is valid, and the return sort
+--| is not `pure` (because `pure` sorts are not allowed to have term
+--| constructors).
+--|
+--| `TermOk : Env -> TermID -> Ctx -> DepType -> Bool`
 @_ def TermOk (env id args ret .a .r .v .sd: nat): wff =
 $ ~E. a E. r E. v getTerm env id a r v /\
   Ctx env args /\ DepType env args ret /\
   E. sd (getSD env (fst ret) sd /\ ~ sPure sd) $;
 
--- Is this a valid definition in the given environment? A definition is valid
--- if it is a valid term, and the definition typechecks, and all free variables
--- are declared in the return type. (Note in particular that dummies cannot
--- appear in the return type dependencies, so this ensures that all dummies are
--- bound by the definition.)
--- DefOk : Env -> TermID -> Ctx -> DepType -> Bool
+--| Is this a valid definition in the given environment? A definition is valid
+--| if it is a valid term, and the definition typechecks, and all free variables
+--| are declared in the return type. (Note in particular that dummies cannot
+--| appear in the return type dependencies, so this ensures that all dummies are
+--| bound by the definition.)
+--|
+--| `DefOk : Env -> TermID -> Ctx -> DepType -> Bool`
 @_ def DefOk (env id args ret ds e .ctx .v .s .sd: nat): wff =
 $ TermOk env id args ret /\ [ appendDummies args ds / ctx ]
   (Ctx env ctx /\ Expr env ctx e (fst ret) /\
@@ -410,8 +437,9 @@ theorem DeclThm_aux_val (env args hs ret: nat) {x: nat}:
 (named '(elsabe @ elsabed @ elabed @ aneqd (Ctxeq2d anll) @
   alleqd (abeqd @ ExprProveq2d anll) (conseqd anr anlr)));
 
--- Is this a valid declaration in the environment?
--- Decl : Env -> Decl -> Bool
+--| Is this a valid declaration in the environment?
+--|
+--| `Decl : Env -> Decl -> Bool`
 @_ def Decl (env d: nat): wff =
 $ d e. Sum
   (Sum
@@ -448,9 +476,10 @@ pub theorem DeclThm (env args hs ret: nat) {x: nat}:
 @_ local def Env_aux (e: nat): nat =
 $ rlrec 1 (\\ e1, \\ s, \ ih, ih * nat (Decl e1 s)) e $;
 
--- This defines a valid mm0 specification. These are well formed ASTs for which
--- we can assign a provability predicate.
--- Env : Env -> Bool
+--| This defines a valid mm0 specification. These are well formed ASTs for which
+--| we can assign a provability predicate.
+--|
+--| `Env : Env -> Bool`
 @_ def Env (e: nat): wff = $ true (Env_aux e) $;
 pub theorem Env0: $ Env 0 $ = (named '(mpbir (trueeq rlrec0) true1));
 pub theorem EnvS (e s: nat): $ Env (e |> s) <-> Env e /\ Decl e s $ =
@@ -478,10 +507,11 @@ $ rlrec (sn 0)
       @ d)
     e2_ $;
 
--- `EnvExtend e1 e2` means that environment `e2` is an extension of `e1`,
--- meaning that all sorts, terms, and axioms are preserved, but abstract defs
--- may be provided definitions, and new defs and pub theorems can be added.
--- EnvExtend : Env -> Env -> Bool
+--| `EnvExtend e1 e2` means that environment `e2` is an extension of `e1`,
+--| meaning that all sorts, terms, and axioms are preserved, but abstract defs
+--| may be provided definitions, and new defs and theorems can be added.
+--|
+--| `EnvExtend : Env -> Env -> Bool`
 @_ def EnvExtend (e1 e2: nat): wff = $ e1 e. EnvExtend_aux e2 $;
 pub theorem EnvExtend0 (e: nat): $ EnvExtend e 0 <-> e = 0 $ =
 (named '(bitr (elneq2 rlrec0) elsn));
@@ -598,9 +628,10 @@ pub theorem EnvExtendThm (e1 e2 id a h r: nat) {e: nat}:
 @_ local def substExpr_aux (subst: nat): set =
 $ SExprRec (\ v, nth v subst - 1) (\\ f, \\ xs, \ ih, SApp f ih) $;
 
--- This performs simultaneous substitution of the variables in `e` with the
--- expressions in `sub`.
--- substExpr : list SExpr -> SExpr => SExpr
+--| This performs simultaneous substitution of the variables in `e` with the
+--| expressions in `subst`.
+--|
+--| `substExpr : list SExpr -> SExpr => SExpr`
 @_ def substExpr (subst e: nat): nat = $ substExpr_aux subst @ e $;
 
 theorem substExpr_aux_lam: $ substExpr_aux subst == \ e, substExpr subst e $ =
@@ -615,19 +646,24 @@ pub theorem substExprApp (subst f es: nat) {e: nat}:
   ! appslame _ $_ <> map (substExpr_aux _) _$ _ _ _ @ appslamed @ applamed @
   SAppeqd anll @ syl6eq (mapeq1 substExpr_aux_lam) anr));
 
--- A CExpr is a convertibility proof.
--- CRefl e : e = e
--- CRefl : SExpr -> CExpr
+--| A CExpr is a convertibility proof:
+--| `CRefl e : e = e`
+--|
+--| `CRefl : SExpr -> CExpr`
 @_ def CRefl (e: nat): nat = $ b0 (b0 e) $;
--- If c : e = e' |- CSymm c : e' = e
--- CSymm : CExpr -> CExpr
-@_ def CSymm (c: nat): nat = $ b0 (b1 c) $;
--- {c : e = e'} |- CCong f {c} : f {e} = f {e'}
--- CCong : TermID -> list CExpr -> CExpr
+--| If `p : e = e'`, then `CSymm p : e' = e`
+--|
+--| `CSymm : CExpr -> CExpr`
+@_ def CSymm (p: nat): nat = $ b0 (b1 p) $;
+--| If `{p : e = e'}` then `CCong f {p} : f {e} = f {e'}`
+--| where the braces denote iteration
+--|
+--| `CCong : TermID -> list CExpr -> CExpr`
 @_ def CCong (f cs: nat): nat = $ b1 (b0 (f <> cs)) $;
--- If f {x} := {y}. e', then
--- c : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong f {z} c : f {e} = e''
--- CUnfold : TermID -> list VarID -> CExpr -> CExpr
+--| If `f {x} := {y}. e'`, then
+--| `p : e'[{x}, {y} -> {e}, {z}] = e'' |- CCong f {z} p : f {e} = e''`
+--|
+--| `CUnfold : TermID -> list VarID -> CExpr -> CExpr`
 @_ def CUnfold (f es zs c: nat): nat = $ b1 (b1 (f <> es <> zs <> c)) $;
 
 theorem CSymm_ltid: $ c < CSymm c $ = '(ltb0tr b1ltid);
@@ -704,19 +740,23 @@ theorem CExpr_indd {x f e c es zs cs} (n)
    ($CUnfold f es zs c$ => (indd_aux hu @ mpd (indd_aux2 hi CUnfold_ltid) (anwll @ exp h4)))}
 }));
 
--- A VExpr is a proof term.
--- A VHyp is a hypothesis step - a term is asserted from the local context.
--- Indexing is relative to the list of hypotheses to the pub theorem.
--- VHyp : HypID -> VExpr
+-- A `VExpr` is a proof term.
+
+--| A `VHyp` is a hypothesis step - a term is asserted from the local context.
+--| Indexing is relative to the list of hypotheses to the theorem.
+--|
+--| `VHyp : HypID -> VExpr`
 @_ def VHyp (n: nat): nat = $ b0 (b0 n) $;
--- A VThm is a pub theorem application - a step follows from previous steps by
--- application of a pub theorem. The arguments give the pub theorem to apply, the list
--- of substitutions of expressions for the variables, and the list of subproofs
--- for the hypotheses to the pub theorem.
--- VThm : ThmID -> list SExpr -> list VExpr -> VExpr
+--| A `VThm` is a theorem application - a step follows from previous steps by
+--| application of a theorem. The arguments give the theorem to apply, the list
+--| of substitutions of expressions for the variables, and the list of subproofs
+--| for the hypotheses to the theorem.
+--|
+--| `VThm : ThmID -> list SExpr -> list VExpr -> VExpr`
 @_ def VThm (a h r es ps: nat): nat = $ b0 (b1 (a <> h <> r <> es <> ps)) $;
--- c : A = B, p : A |- VConv c p : B
--- VConv : CExpr -> VExpr -> VExpr
+--| `c : A = B, p : A |- VConv c p : B`
+--|
+--| `VConv : CExpr -> VExpr -> VExpr`
 @_ def VConv (c p: nat): nat = $ b1 (c <> p) $;
 
 theorem VThm_ltid: $ p IN ps -> p < VThm a h r es ps $ =
@@ -801,12 +841,13 @@ $ CExprRec
           A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
         substExpr (es ++ map (\ i, SVar i) zs) val <> e2 <> s e. ih)})) $;
 
--- Checking a conversion proof c : (e1 : s) = (e2 : s).
--- VerifyConv : Env -> Ctx -> CExpr -> SExpr -> SExpr -> SortID -> Bool
-@_ def VerifyConv (env ctx c e1 e2 s: nat): wff =
+--| Checking a conversion proof `c : (e1 : s) = (e2 : s)`.
+--| `VerifyConv : Env -> Ctx -> CExpr -> SExpr -> SExpr -> SortID -> Bool`
+@_ abstract def VerifyConv (env ctx c e1 e2 s: nat): wff =
 $ e1 <> e2 <> s e. VerifyConv_aux env ctx @ c $;
 
--- VerifyConvs : Env -> Ctx -> list CExpr -> list SExpr -> list SExpr -> list Binder -> Bool
+--| `VerifyConvs : Env -> Ctx -> list CExpr -> list SExpr ->
+--|    list SExpr -> list Binder -> Bool`
 @_ def VerifyConvs (env ctx cs es1 es2 bis .n .i .c .e1 .e2 .bi: nat): wff =
 $ E. n (len cs = n /\ len es1 = n /\ len es2 = n /\ len bis = n /\
   A. i A. c A. e1 A. e2 A. bi (nth i cs = suc c ->
@@ -983,15 +1024,19 @@ $ VExprRec
     (\\ c, \\ p, \ ih, lower {ret |
       E. e1 E. s (VerifyConv env ctx c e1 ret s /\ e1 e. ih)}) $;
 
--- The main proof checking function. This typechecks a VExpr and determines the
--- SExpr that it represents. At a hypothesis step, this is just looking up the
--- nth element in the list, and at a theorem step, we get the theorem data,
--- check that all the substituting expressions match the binders they are going
--- in for, check that all the disjoint variable conditions of the theorem
--- are honored by the substitution, and then check recursively that the
--- subproofs are okay and the return is what it should be.
--- VerifyProof : Env -> Ctx -> list SExpr -> VExpr -> SExpr -> Bool
-@_ def VerifyProof (env ctx hs pf ret: nat): wff =
+--| The main proof checking function.
+--|
+--| This typechecks a `VExpr` and determines the `SExpr` that it represents.
+--| * At a hypothesis step, this is just looking up the
+--|   nth element in the list.
+--| * At a theorem step, we get the theorem data,
+--|   check that all the substituting expressions match the binders they are going
+--|   in for, check that all the disjoint variable conditions of the theorem
+--|   are honored by the substitution, and then check recursively that the
+--|   subproofs are okay and the return is what it should be.
+--|
+--| `VerifyProof : Env -> Ctx -> list SExpr -> VExpr -> SExpr -> Bool`
+@_ abstract def VerifyProof (env ctx hs pf ret: nat): wff =
 $ ret e. VerifyProof_aux env ctx hs @ pf $;
 
 theorem VerifyProof_aux_Hyp:
@@ -1116,11 +1161,12 @@ theorem Proof_aux_Thm:
   elabe @ aneqd lteq1 @ exeqd @ exeqd @ exeqd @ exeqd @
   aneq1d @ aneq1d @ aneq1d @ aneq1d eqeq1));
 
--- The main recursion for the proof judgment on an environment. Here `env` are
--- the declarations that have already been processed and `e` are the
--- declarations we are still stepping through. `p` is a proof object whose
--- existence entails provability of the environment.
--- Proof : Env -> Proof -> Bool
+--| The main recursion for the proof judgment on an environment.
+--| * `env`: The declarations that have already been processed.
+--| * `e`: The declarations we are still stepping through.
+--| * `p` is a proof object whose existence entails provability of the environment.
+--|
+--| `Proof : Env -> Proof -> Bool`
 @_ def Proof (env p: nat): wff = $ p e. Proof_aux (suc p) env $;
 
 theorem el_Proof_aux: $ p < bd -> (p e. Proof_aux bd env <-> Proof env p) $ =
@@ -1177,22 +1223,37 @@ pub theorem ProofThm (env e p a h r: nat) {p1 ds pf ctx: nat}:
 -------------
 
 -- Definition of ASCII, or at least the part of it we need
-@_ def _nl:     char = "\n"; -- "\n" newline character
-@_ def _cr:     char = "\r"; -- "\r" carriage return
-@_ def __:      char = " ";  -- " " space
-@_ def _dollar: char = "$";  -- "$" dollar sign
-@_ def _lparen: char = "(";  -- "(" left parenthesis
-@_ def _rparen: char = ")";  -- ")" right parenthesis
-@_ def _ast:    char = "*";  -- "*" asterisk / multiplication symbol
-@_ def _hyphen: char = "-";  -- "-" hyphen / minus sign
-@_ def _dot:    char = ".";  -- "." dot / period / full stop
-@_ def _colon:  char = ":";  -- ":" colon
-@_ def _semi:   char = ";";  -- ";" semicolon
-@_ def _equal:  char = "=";  -- "=" equal sign
-@_ def _gt:     char = ">";  -- ">" greater than, right arrow
-@_ def _under:  char = "_";  -- "_" underscore (note: __ is space)
-@_ def _lbrace: char = "{";  -- "{" left brace / curly bracket
-@_ def _rbrace: char = "}";  -- "}" right brace / curly bracket
+
+--| `\n`: newline character
+@_ def _nl:     char = "\n";
+--| ` `: space
+@_ def __:      char = " ";
+--| `$`: dollar sign
+@_ def _dollar: char = "$";
+--| `(`: left parenthesis
+@_ def _lparen: char = "(";
+--| `)`: right parenthesis
+@_ def _rparen: char = ")";
+--| `*`: asterisk / multiplication symbol
+@_ def _ast:    char = "*";
+--| `-`: hyphen / minus sign
+@_ def _hyphen: char = "-";
+--| `.`: dot / period / full stop
+@_ def _dot:    char = ".";
+--| `:`: colon
+@_ def _colon:  char = ":";
+--| `;`: semicolon
+@_ def _semi:   char = ";";
+--| `=`: equal sign
+@_ def _equal:  char = "=";
+--| `>`: greater than, right arrow
+@_ def _gt:     char = ">";
+--| `_`: underscore (note: __ is space)
+@_ def _under:  char = "_";
+--| `{`: left brace / curly bracket
+@_ def _lbrace: char = "{";
+--| `}`: right brace / curly bracket
+@_ def _rbrace: char = "}";
 
 -- ASCII numbers
 @_ def _0: char = "0";
@@ -1247,7 +1308,7 @@ do (begin
   (mkth 'le '_0 '_1)
   (mkth 'lt '_dollar '_hyphen)
   (mkth 'lt '_dollar '_0)
-  (scan '((_nl _cr __ _dollar _lparen _rparen _ast _hyphen _dot)
+  (scan '((_nl __ _dollar _lparen _rparen _ast _hyphen _dot)
           (_colon _semi _equal _gt)) @ fn (s)
     @ match s @ (a . l) @ match (split-last s) @ (r . m)
     (scan l @ fn (b) (mkth 'le a b))
@@ -1418,8 +1479,9 @@ $ regexStar R i^i {x | snd x != 0} $;
 @_ def regexOpt (R: set) (.s .t .y: nat): set =
 $ sn 0 u. opab s t (E. y (s <> y e. R /\ t = suc y)) $;
 
--- The set of whitespace characters
--- white : set char
+--| The set of whitespace characters
+--|
+--| `white : set char`
 @_ def white: nat = $ __ ; sn _nl $;
 
 theorem el_white: $ c e. white <-> c = __ \/ c = _nl $ = '(bitr elins @ oreq2i elsn);

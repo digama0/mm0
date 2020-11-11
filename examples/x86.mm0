@@ -27,19 +27,19 @@ def u16: nat = $ Bits 16 $;
 def u32: nat = $ Bits 32 $;
 def u64: nat = $ Bits 64 $;
 
--- get lower bits of a number
+--| Get the lower bits of a number
 def chop (k n: nat): nat = $ n % 2 ^ k $;
 theorem chopT (k n: nat): $ chop k n e. Bits k $;
 
 def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
 
--- sign extend (v: bitvec m) to length n
+--| Sign extend `(v: bitvec m)` to length `n`
 def sExt (m n v: nat): nat = $ if (bitsMSB m v) (2 ^ n - 2 ^ m + v) v $;
 def sExtq (n v: nat): nat = $ sExt n 64 v $;
 theorem sExtT (m n v: nat): $ m <= n /\ v e. Bits m -> sExt m n v e. Bits n $;
 theorem sExtqT (n v: nat): $ n <= 64 /\ v e. Bits n -> sExtq n v e. u64 $;
 
--- write a e. Bits m to bits k thru k+m-1 of n
+--| Write `a e. Bits m` to bits `k` thru `k+m-1` of `n`
 def bitsUpdate (k m a n: nat): nat = $ bitDif n (shl (upto m) k) + shl a k $;
 theorem bitsUpdateT (k m l a n: nat):
   $ k + m <= l /\ a e. Bits m /\ n e. Bits l -> bitsUpdate k m a n e. Bits l $;
@@ -67,7 +67,7 @@ theorem add64T (a b: nat): $ a +_64 b e. u64 $;
 def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 theorem sub64T (a b: nat): $ a -_64 b e. u64 $;
 
--- little endian encoding
+--| Little endian encoding
 def toBytes (k n: nat): nat;
 theorem toBytes0 (n: nat): $ toBytes 0 n = 0 $;
 theorem toBytesS (k n: nat):
@@ -732,17 +732,21 @@ theorem finiteMemory: $ finite Memory $;
 
 def Exception: set = $ upto 2 $;
 theorem finiteException: $ finite Exception $;
-def exSysCall: nat = $ 0 $; -- represents the 'syscall' function
-def exGPF: nat = $ 1 $; -- general protection fault, issued on invalid read/write
+--| Represents the 'syscall' function
+def exSysCall: nat = $ 0 $;
+--| General protection fault, issued on invalid read/write
+def exGPF: nat = $ 1 $;
 theorem exSysCallT: $ exSysCall e. Exception $;
 theorem exGPFT: $ exGPF e. Exception $;
 
--- data Config = {
---   ex: Option Exception,   -- nonnull if we are going to do IO on the next step
---   rip: u64,               -- the intruction pointer
---   regs: Regs -> u64,      -- the 16 general purpose registers
---   flags: Flags,           -- the flags CF, ZF, SF, OF
---   mem: u64 -> Prot * u8 } -- the virtual memory
+--| ```
+--| data Config = {
+--|   ex: Option Exception,   -- nonnull if we are going to do IO on the next step
+--|   rip: u64,               -- the intruction pointer
+--|   regs: Regs -> u64,      -- the 16 general purpose registers
+--|   flags: Flags,           -- the flags CF, ZF, SF, OF
+--|   mem: u64 -> Prot * u8 } -- the virtual memory
+--| ```
 def Config: set = $ Xp (Xp (Option Exception) u64) (Xp (Arrow Regs u64) (Xp Flags Memory)) $;
 theorem finiteConfig: $ finite Config $;
 def mkCfg (ex rip regs flags mem: nat): nat = $ (ex <> rip) <> regs <> flags <> mem $;
@@ -1234,10 +1238,10 @@ theorem execXASTSysCall {r11: nat} (k k2: nat):
 theorem execXAST_T (k ast k2: nat):
   $ k e. Config /\ ast e. XAST /\ execXAST k ast k2 -> k2 e. Config $;
 
--- This is the step relation for the x86 semantic model, excluding IO.
--- `step k k2` means that k2 is a possible next state after k. Multiple
--- next states may exist in the case of undefined/nondeterministic behavior,
--- and no next states means the state is either invalid or an IO call.
+--| This is the step relation for the x86 semantic model, excluding IO.
+--| `step k k2` means that k2 is a possible next state after k. Multiple
+--| next states may exist in the case of undefined/nondeterministic behavior,
+--| and no next states means the state is either invalid or an IO call.
 def step (k k2 .l .ast: nat): wff =
 $ k e. Config /\ readException k = 0 /\ E. l E. ast (
   readMemX k (readRIP k) l /\
@@ -1254,6 +1258,7 @@ $ {m | m e. Arrow u64 (Option Prot) /\
   A. a A. p (a <> suc p e. m -> E. v M @ a = p <> v)} $;
 
 -- Now we model enough of the Linux kernel to interpret a few IO system calls.
+
 def KernelState {.k: nat}: set =
 $ Xp (Xp (List u8) (List u8)) (X\ k e. Config, PageMapping (getMemory k)) $;
 def mkKS (i o k m: nat): nat = $ (i <> o) <> k <> m $;
@@ -1314,7 +1319,8 @@ $ k e. Config /\ readReg k RAX = sys_open /\
 theorem execOpenT (k ret: nat):
   $ execOpen k ret -> k e. Config /\ ret e. u64 $;
 
--- we only track progress through stdin
+--| If `l` is the initial input, reading `l1` from `fd` results in the remaining input `l2`.
+--| We only track progress through stdin.
 def readFromFD (fd l l1 l2: nat): wff =
 $ l1 e. List u8 /\ l2 e. List u8 /\
   ifp (fd = stdin) (l = l1 ++ l2 /\ (l1 = 0 -> l2 = 0)) (l = l2) $;
@@ -1339,7 +1345,8 @@ theorem execReadPM (l k l2 k2 ret: nat):
   $ execRead l k l2 k2 ret ->
     PageMapping (getMemory k) C_ PageMapping (getMemory k2) $;
 
--- we only track printing to stdout
+--| If `l` is the initial output, writing `l1` to `fd` results in the new accumulated output `l2`.
+--| We only track printing to stdout.
 def writeToFD (fd l l1 l2: nat): wff =
 $ l e. List u8 /\ l1 e. List u8 /\
   l2 = if (fd = stdout) (l ++ l1) l $;
@@ -1435,8 +1442,8 @@ theorem execIO_T (ks ks2: nat):
   $ ks e. KernelState /\ execIO ks ks2 -> ks2 e. KernelState $;
 
 def sys_exit: nat = $ ch x3 xc $;
--- We consider protection faults as a valid way to exit with a nonzero exit code
--- (usually 0xD or 0xE but often reported as 0x8D and 0x8E by shells).
+--| We consider protection faults as a valid way to exit with a nonzero exit code
+--| (usually `0xD` or `0xE` but often reported as `0x8D` and `0x8E` by shells).
 def execExit (k ret: nat): wff =
 $ k e. Config /\ ret e. u32 /\ (
     readException k = suc exGPF /\ ret != 0 \/
@@ -1444,12 +1451,12 @@ $ k e. Config /\ ret e. u32 /\ (
 theorem execExitT (k ret: nat):
   $ execExit k ret -> k e. Config /\ ret e. u32 $;
 
--- This is the composite step relation for the extended state.
--- This mixes regular steps of the machine with IO steps where
--- we hand control to the (POSIX-compliant) Linux kernel and axiomatize
--- the behavior. (We could avoid this, but if we go any lower level than
--- this we won't be able to run the result as a normal program - we will have
--- to replace the bootloader and so on to make a single program OS.)
+--| This is the composite step relation for the extended state.
+--| This mixes regular steps of the machine with IO steps where
+--| we hand control to the (POSIX-compliant) Linux kernel and axiomatize
+--| the behavior. (We could avoid this, but if we go any lower level than
+--| this we won't be able to run the result as a normal program - we will have
+--| to replace the bootloader and so on to make a single program OS.)
 def ksStep (ks ks2 .k2: nat): wff =
 $ ks e. KernelState /\ (
     E. k2 (step (ksCfg ks) k2 /\ writeCfg ks k2 ks2) \/
@@ -1467,11 +1474,11 @@ theorem ksReachableInd {ks1 ks2: nat} (ks ks3: nat) (A: set):
 theorem ksReachableT (ks ks2: nat):
   $ ksReachable ks ks2 -> ks e. KernelState /\ ks2 e. KernelState $;
 
--- `terminates_ensuring k P` asserts that starting from initial configuration k
--- containing the value on input, with the ability to read more files as
--- necessary, the program always reaches the exit point and returns a value,
--- and moreover, if it returns 0, then the relation `P` holds of the final
--- input and output.
+--| `terminates_ensuring k P` asserts that starting from initial configuration `k`
+--| containing the value on input, with the ability to read more files as
+--| necessary, the program always reaches the exit point and returns a value,
+--| and moreover, if it returns `0`, then the relation `P` holds of the final
+--| input and output.
 def terminates_ensuring (k .k2 .k3 .exit_code: nat) (P: set): wff =
 $ k e. KernelState /\
   A. k2 (ksReachable k k2 ->
@@ -1481,17 +1488,17 @@ $ k e. KernelState /\
 theorem terminates_ensuringT (k: nat) (P: set):
   $ terminates_ensuring k P -> k e. KernelState $;
 
--- `succeeds k i o` asserts that starting from initial configuration k,
--- the program reaches the exit point and returns success (exit code 0), and
--- puts `o` on standard out and leaves i on standard in.
+--| `succeeds k i o` asserts that starting from initial configuration `k`,
+--| the program reaches the exit point and returns success (exit code 0), and
+--| puts `o` on standard out and leaves `i` on standard in.
 def succeeds (k i o .k2: nat): wff =
 $ E. k2 (ksReachable k k2 /\
   ksIn k2 = i /\ ksOut k2 = o /\ execExit (ksCfg k2) 0) $;
 theorem succeedsT (k i o: nat):
   $ succeeds k i o -> k e. KernelState /\ i e. List u8 /\ o e. List u8 $;
 
--- The basic relation between `terminates_ensuring k P` and `succeeds k i o`:
--- together they imply that the property `P` is satisfied.
+--| The basic relation between `terminates_ensuring k P` and `succeeds k i o`:
+--| together they imply that the property `P` is satisfied.
 theorem terminates_ensuring_succeeds (k i o: nat) (P: set):
   $ terminates_ensuring k P /\ succeeds k i o -> i <> o e. P $;
 
@@ -1514,7 +1521,7 @@ def E_FLAGS: nat = $ u32Bytes 0 $;
 def EH_SIZE: nat = $ 64 $;
 def PH_SIZE: nat = $ ch x3 x8 $;
 def SH_SIZE: nat = $ 64 $;
--- This checks the ELF header assuming x86 architecture.
+--| This checks the ELF header assuming x86 architecture.
 def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
 $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
   phnum e. u16 /\ phnum < bitsNeg 16 1 /\
@@ -1562,8 +1569,8 @@ theorem BasicElfT (entry prot off seg: nat):
   $ basicElf entry prot off seg ->
     entry e. u64 /\ prot e. Prot /\ off e. u64 /\ seg e. List u8 $;
 
--- This defines a basic ELF file (only one program segment, no sections)
--- and extracts the program segment and its protection and location.
+--| This defines a basic ELF file (only one program segment, no sections)
+--| and extracts the program segment and its protection and location.
 def parseBasicElf (file entry prot vaddr seg: nat)
   (.off .eh .ph .phoff .fseg .memsz: nat): wff =
 $ file e. List u8 /\
@@ -1578,8 +1585,8 @@ theorem parseBasicElfT (file entry prot vaddr seg: nat):
   $ parseBasicElf file entry prot vaddr seg -> file e. List u8 /\
     basicElf entry prot vaddr seg $;
 
--- `isBasicElf elf` means that `elf` is a string that satisfies the
--- ELF specification.
+--| `isBasicElf elf` means that `elf` is a string that satisfies the
+--| ELF specification.
 def isBasicElf (elf: string) (.entry .prot .off .seg: nat): wff =
 $ E. entry E. prot E. off E. seg parseBasicElf elf entry prot off seg $;
 
@@ -1606,8 +1613,8 @@ theorem allocStackT (k m k3 km3: nat):
     k e. Config /\ m e. PageMapping (getMemory k) /\
     k3 e. Config /\ km3 e. PageMapping (getMemory k3) $;
 
--- This defines the initial state set up from a basic ELF file (only one
--- program segment, no sections).
+--| This defines the initial state set up from a basic ELF file (only one
+--| program segment, no sections).
 def initialConfig (elf: string) (i ks: nat)
   (.entry .prot .off .seg .k0 .k1 .km1 .k2 .km2 .a: nat): wff =
 $ i e. List u8 /\

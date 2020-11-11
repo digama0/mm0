@@ -5,25 +5,25 @@ import "mm0.mm1";
 -- Specification of a valid verifier --
 ---------------------------------------
 
--- The actual verifier ELF
+--| The actual verifier ELF
 def Verifier: string;
 
--- The verifier file is a valid ELF file
+--| The verifier file is a valid ELF file
 theorem Verifier_basicElf: $ isBasicElf Verifier $;
 
--- Given `mm0_file` on input, the verifier always terminates,
--- ensuring that the final input is empty (the entire input was consumed),
--- the output is empty (it outputs nothing), and the theorems in the
--- mm0 file are derivable.
+--| Given `mm0_file` on input, the verifier always terminates,
+--| ensuring that the final input is empty (the entire input was consumed),
+--| the output is empty (it outputs nothing), and the theorems in the
+--| mm0 file are derivable.
 theorem Verifier_terminates {input output: nat} (k mm0_file: nat):
   $ initialConfig Verifier mm0_file k ->
     terminates_ensuring k (S\ input, {output |
       input = 0 /\ output = 0 /\ Valid mm0_file}) $;
 
--- Unpacking the above claim: if we set up an initial configuration
--- such that `mm0_file` is on standard in, and it runs to completion
--- having consumed the input and produced no output with exit code 0,
--- then the theorems in the input are derivable.
+--| Unpacking the above claim: if we set up an initial configuration
+--| such that `mm0_file` is on standard in, and it runs to completion
+--| having consumed the input and produced no output with exit code 0,
+--| then the theorems in the input are derivable.
 theorem Verifier_Valid (k mm0_file i o: nat):
   $ initialConfig Verifier mm0_file k /\ succeeds k 0 0 ->
     Valid mm0_file $ =

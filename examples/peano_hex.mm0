@@ -42,9 +42,9 @@ axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
 axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
 axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
 
--- This allows us to prove facts about hex digits by case analysis.
--- It is not provable from the above axioms because the fact that the "hex"
--- sort has only the given 16 constructors is only observable from outside the theory.
+--| This allows us to prove facts about hex digits by case analysis.
+--| It is not provable from the above axioms because the fact that the "hex"
+--| sort has only the given 16 constructors is only observable from outside the theory.
 axiom h2nlt (h: hex): $ h < 16 $;
 
 term c2n: char > nat; coercion c2n: char > nat;
