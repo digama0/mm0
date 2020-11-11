@@ -483,6 +483,49 @@ impl RequestHandler {
   }
 }
 
+/// Calculates the maximum `n` such that every nonempty line begins with at least `n` spaces.
+fn get_margin(s: &str) -> usize {
+  let mut margin = s.len();
+  let mut it = s.chars();
+  let mut this_line = 0;
+  while let Some(c) = it.next() {
+    if c == ' ' {this_line += 1}
+    else if c == '\n' {this_line = 0}
+    else {
+      if this_line == 0 {return 0}
+      margin = margin.min(this_line);
+      while matches!(it.next(), Some(c) if c != '\n') {}
+    }
+  }
+  margin
+}
+
+/// Remove the left margin from a doc string.
+fn trim_margin(s: &str) -> String {
+  let margin = get_margin(s);
+  if margin == 0 {return s.into()}
+  let mut last = 0;
+  let mut out = String::new();
+  let s = s.as_bytes();
+  let mut nonempty = false;
+  for (i, &c) in s.iter().enumerate() {
+    if c == b'\n' {
+      if nonempty {
+        out.push_str(unsafe {
+          std::str::from_utf8_unchecked(&s[last + margin .. i + 1])
+        });
+        nonempty = false;
+      } else {
+        out.push('\n')
+      }
+      last = i + 1;
+    } else if c != b' ' {
+      nonempty = true
+    }
+  }
+  out
+}
+
 async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
   let Server {vfs, ..} = &*SERVER;
   macro_rules! or {($ret:expr, $e:expr)  => {match $e {
@@ -499,24 +542,29 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
-  enum HoverType { Doc, MM0 }
-  use HoverType::*;
-  let mut res: Vec<(Span, HoverType, String)> = vec![];
+  fn mk_mm0(value: String) -> MarkedString {
+    MarkedString::LanguageString(
+      LanguageString { language: "metamath-zero".into(), value })
+  }
+  fn mk_doc(doc: &str) -> MarkedString {
+    MarkedString::String(trim_margin(doc))
+  }
+  let mut res: Vec<(Span, MarkedString)> = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     if let Some((r, doc)) = (|| Some(match k {
       &ObjectKind::Sort(s) => {
         let sd = &env.sorts[s];
-        ((sp, MM0, format!("{}", sd)), sd.doc.clone())
+        ((sp, mk_mm0(format!("{}", sd))), sd.doc.clone())
       }
       &ObjectKind::Term(t, sp1) => {
         let td = &env.terms[t];
-        ((sp1, MM0, format!("{}", fe.to(td))), td.doc.clone())
+        ((sp1, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
       &ObjectKind::Thm(t) => {
         let td = &env.thms[t];
-        ((sp, MM0, format!("{}", fe.to(td))), td.doc.clone())
+        ((sp, mk_mm0(format!("{}", fe.to(td)))), td.doc.clone())
       }
-      &ObjectKind::Var(x) => ((sp, MM0, match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
+      &ObjectKind::Var(x) => ((sp, mk_mm0(match spans.lc.as_ref().and_then(|lc| lc.vars.get(&x)) {
         Some((_, InferSort::Bound(sort))) => format!("{{{}: {}}}", fe.to(&x), fe.to(sort)),
         Some((_, InferSort::Reg(sort, deps))) => {
           let mut s = format!("({}: {}", fe.to(&x), fe.to(sort));
@@ -527,7 +575,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           s + ")"
         }
         _ => return None,
-      }), None),
+      })), None),
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         let sp1 = head.fspan().map_or(sp, |fsp| fsp.span);
@@ -542,7 +590,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
         fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).unwrap());
         use std::fmt::Write;
         write!(out, ": {}", fe.to(&s)).unwrap();
-        ((sp1, MM0, out), doc)
+        ((sp1, mk_mm0(out)), doc)
       }
       ObjectKind::Proof(p) => {
         if let Some(e) = p.as_atom().and_then(|x|
@@ -551,7 +599,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           let mut out = String::new();
           fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
             .render_fmt(80, &mut out).unwrap());
-          ((sp, MM0, out), None)
+          ((sp, mk_mm0(out)), None)
         } else {
           let mut u = p.uncons();
           let head = u.next()?;
@@ -559,7 +607,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           let a = head.as_atom()?;
           if let Some(DeclKey::Thm(t)) = env.data[a].decl {
             let td = &env.thms[t];
-            res.push((sp, MM0, format!("{}", fe.to(td))));
+            res.push((sp, mk_mm0(format!("{}", fe.to(td)))));
             let mut args = vec![];
             for _ in 0..td.args.len() {
               args.push(unsafe {u.next()?.thaw()}.clone());
@@ -570,7 +618,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
             fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
               td.hyps.iter().map(|(_, h)| subst.subst(h)),
               &ret).render_fmt(80, &mut out).unwrap());
-            ((sp1, MM0, out), td.doc.clone())
+            ((sp1, mk_mm0(out)), td.doc.clone())
           } else {return None}
         }
       }
@@ -580,13 +628,13 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       &ObjectKind::Global(a) => {
         let (_, doc, val) = &env.data[a].lisp.as_ref()?;
         if let Some(doc) = doc {
-          ((sp, Doc, (**doc).into()), None)
+          ((sp, mk_doc(doc)), None)
         } else {
           let bp = val.unwrapped(|e| match e {
             &LispKind::Proc(Proc::Builtin(p)) => Some(p),
             _ => None
           })?;
-          ((sp, Doc, bp.doc().into()), None)
+          ((sp, mk_doc(bp.doc())), None)
         }
       }
       ObjectKind::Import(_) => return None,
@@ -594,20 +642,14 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       let sp = r.0;
       res.push(r);
       if let Some(doc) = doc {
-        res.push((sp, Doc, (*doc).into()))
+        res.push((sp, mk_doc(&doc)))
       }
     }
   }
   if res.is_empty() {return Ok(None)}
   Ok(Some(Hover {
     range: Some(text.to_range(res[0].0)),
-    contents: HoverContents::Array(res.into_iter().map(|(_, ty, value)| {
-      match ty {
-        Doc => MarkedString::String(value),
-        MM0 => MarkedString::LanguageString(
-          LanguageString { language: "metamath-zero".into(), value })
-      }
-    }).collect())
+    contents: HoverContents::Array(res.into_iter().map(|s| s.1).collect())
   }))
 }
 
