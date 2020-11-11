@@ -91,32 +91,32 @@ pub(crate) struct Context {
 
 impl Context {
     /// Adds an `Arc` to the list of visited `Arc`s
-    fn add_arc<T>(&mut self, arc: &Arc<T>) {
+    fn add_arc<T: ?Sized>(&mut self, arc: &Arc<T>) {
         // Somewhat unsafe way of getting a pointer to the inner `ArcInner`
         // object without changing the count
         let pointer: usize = unsafe { *(arc as *const Arc<T> as *const usize) };
         self.arcs.insert(pointer);
     }
     /// Checks if an `Arc` is in the list visited `Arc`s
-    fn contains_arc<T>(&self, arc: &Arc<T>) -> bool {
+    fn contains_arc<T: ?Sized>(&self, arc: &Arc<T>) -> bool {
         let pointer: usize = unsafe { *(arc as *const Arc<T> as *const usize) };
         self.arcs.contains(&pointer)
     }
 
     /// Adds an `Rc` to the list of visited `Rc`s
-    fn add_rc<T>(&mut self, rc: &Rc<T>) {
+    fn add_rc<T: ?Sized>(&mut self, rc: &Rc<T>) {
         // Somewhat unsafe way of getting a pointer to the inner `RcBox`
         // object without changing the count
         let pointer: usize = unsafe { *(rc as *const Rc<T> as *const usize) };
         self.rcs.insert(pointer);
     }
     /// Checks if an `Rc` is in the list visited `Rc`s
-    fn contains_rc<T>(&self, rc: &Rc<T>) -> bool {
+    fn contains_rc<T: ?Sized>(&self, rc: &Rc<T>) -> bool {
         let pointer: usize = unsafe { *(rc as *const Rc<T> as *const usize) };
         self.rcs.contains(&pointer)
     }
 
-    fn deep_size_of_arc<T>(&mut self, arc: &Arc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
+    fn deep_size_of_arc<T: ?Sized>(&mut self, arc: &Arc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
         if self.contains_arc(arc) {
             0
         } else {
@@ -125,7 +125,7 @@ impl Context {
         }
     }
 
-    fn deep_size_of_rc<T>(&mut self, rc: &Rc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
+    fn deep_size_of_rc<T: ?Sized>(&mut self, rc: &Rc<T>, f: impl FnOnce(&T, &mut Self) -> usize) -> usize {
         if self.contains_rc(rc) {
             0
         } else {
@@ -212,13 +212,13 @@ impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Box<T> {
 }
 
 
-impl<T: DeepSizeOf> DeepSizeOf for Arc<T> {
+impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Arc<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         context.deep_size_of_arc(self, |val, context| val.deep_size_of_with(context))
     }
 }
 
-impl<T: DeepSizeOf> DeepSizeOf for Rc<T> {
+impl<T: DeepSizeOf + ?Sized> DeepSizeOf for Rc<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         context.deep_size_of_rc(self, |val, context| val.deep_size_of_with(context))
     }

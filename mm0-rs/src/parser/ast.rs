@@ -640,6 +640,8 @@ pub enum StmtKind {
   /// An annotation on another statement, like `@(foo) sort bar;`. The
   /// annotation is a lisp s-expression.
   Annot(SExpr, Box<Stmt>),
+  /// A documentation comment on another statement.
+  DocComment(DocComment, Box<Stmt>),
   /// A `do` block like `do { (print 1) };`. This allows the evaluation of lisp
   /// code, and definitions made in a `do` block populate the global context.
   Do(Vec<SExpr>),
@@ -658,20 +660,17 @@ pub struct Stmt {
   pub span: Span,
   /// The statement kind and associated data
   pub k: StmtKind,
-  /// The doc comment associated with this statement.
-  pub doc: Option<DocComment>,
 }
 
 impl Stmt {
-  /// Make a new Stmt from a `Span` and `StmtKind`, and an optional `DocComment`
+  /// Make a new Stmt from a `Span` and `StmtKind`.
   ///
   /// [`Span`]: ../../util/struct.Span.html
   /// [`StmtKind`]: enum.StmtKind.html
-  /// [`DocComment`]: ../../elab/environment/type.DocComment.html
-  pub fn new(span: Span, k: StmtKind, doc: Option<DocComment>) -> Self {
-    Stmt { span, k, doc }
+  pub fn new(span: Span, k: StmtKind) -> Self {
+    Stmt { span, k }
   }
-} 
+}
 
 
 /// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.

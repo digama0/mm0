@@ -653,7 +653,7 @@ impl Elaborator {
   }
 
   /// Elaborate a declaration (`term`, `axiom`, `def`, `theorem`).
-  pub fn elab_decl(&mut self, full: Span, d: &Decl, doc: Option<ArcString>) -> Result<()> {
+  pub fn elab_decl(&mut self, full: Span, d: &Decl, doc: Option<DocComment>) -> Result<()> {
     let mut ehyps = Vec::new();
     let mut error = false;
     macro_rules! report {

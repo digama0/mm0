@@ -73,7 +73,7 @@ id_wrapper!(ThmID: u32, ThmVec);
 id_wrapper!(AtomID: u32, AtomVec);
 
 /// A documentation comment on an item.
-pub type DocComment = ArcString;
+pub type DocComment = Arc<str>;
 
 /// The information associated to a defined `Sort`.
 #[derive(Clone, Debug, DeepSizeOf)]
@@ -1127,7 +1127,7 @@ impl<A> AddItemError<A> {
 impl Environment {
   /// Add a sort declaration to the environment. Returns an error if the sort is redeclared,
   /// or if we hit the maximum number of sorts.
-  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<ArcString>) ->
+  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<DocComment>) ->
       Result<SortID, AddItemError<SortID>> {
     let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];

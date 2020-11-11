@@ -580,7 +580,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       &ObjectKind::Global(a) => {
         let (_, doc, val) = &env.data[a].lisp.as_ref()?;
         if let Some(doc) = doc {
-          ((sp, Doc, doc.as_str().into()), None)
+          ((sp, Doc, (**doc).into()), None)
         } else {
           let bp = val.unwrapped(|e| match e {
             &LispKind::Proc(Proc::Builtin(p)) => Some(p),
@@ -594,7 +594,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       let sp = r.0;
       res.push(r);
       if let Some(doc) = doc {
-        res.push((sp, Doc, doc.as_str().into()))
+        res.push((sp, Doc, (*doc).into()))
       }
     }
   }

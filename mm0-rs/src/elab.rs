@@ -492,17 +492,20 @@ impl Elaborator {
   ///   to the VFS to get the file this statement is referring to.
   /// - `Err(e)`: A fatal error occurred in parsing the statement.
   ///   This can just be pushed to the error list.
-  fn elab_stmt(&mut self, stmt: &Stmt, span: Span) -> Result<ElabStmt> {
+  fn elab_stmt(&mut self, mut doc: String, stmt: &Stmt, span: Span) -> Result<ElabStmt> {
     self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
     self.spans.set_stmt(span);
+    fn to_doc(doc: String) -> Option<DocComment> {
+      if doc.is_empty() {None} else {Some(doc.into())}
+    }
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        let id = self.add_sort(a, fsp, span, sd, stmt.doc.clone()).map_err(|e| e.into_elab_error(sp))?;
+        let id = self.add_sort(a, fsp, span, sd, to_doc(doc)).map_err(|e| e.into_elab_error(sp))?;
         self.spans.insert(sp, ObjectKind::Sort(id));
       }
-      StmtKind::Decl(d) => self.elab_decl(span, d, stmt.doc.clone())?,
+      StmtKind::Decl(d) => self.elab_decl(span, d, to_doc(doc))?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,
@@ -517,7 +520,7 @@ impl Elaborator {
       }
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
-        self.elab_stmt(s, span)?;
+        self.elab_stmt(doc, s, span)?;
         let ann = match &self.data[AtomID::ANNOTATE].lisp {
           Some((_, _, e)) => e.clone(),
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
@@ -525,6 +528,13 @@ impl Elaborator {
         let args = vec![v, self.name_of(s)];
         self.call_func(e.span, ann, args)?;
       },
+      StmtKind::DocComment(doc2, s) => {
+        // push an extra newline to separate multiple doc comments
+        if !doc.is_empty() {doc.push('\n');}
+        doc.push_str(doc2);
+        // use s.span to discount the span of the doc comment
+        self.elab_stmt(doc, s, s.span)?;
+      }
       &StmtKind::Inout {out: true, k, ref hs} => self.elab_output(span, k, hs)?,
       &StmtKind::Inout {out: false, k, ref hs} => self.elab_input(span, k, hs)?,
     }
@@ -613,7 +623,7 @@ pub fn elaborate<T>(
         let ast = elab.ast.clone();
         while let Some(s) = ast.stmts.get(*idx) {
           if elab.cancel.load(Ordering::Relaxed) {break}
-          match elab.elab_stmt(s, s.span) {
+          match elab.elab_stmt(String::new(), s, s.span) {
             Ok(ElabStmt::Ok) => {}
             Ok(ElabStmt::Import(sp)) => {
               let (file, recv) = recv.remove(&sp).unwrap();
