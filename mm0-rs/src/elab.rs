@@ -499,10 +499,10 @@ impl Elaborator {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
         let fsp = self.fspan(sp);
-        let id = self.add_sort(a, fsp, span, sd).map_err(|e| e.into_elab_error(sp))?;
+        let id = self.add_sort(a, fsp, span, sd, stmt.doc.clone()).map_err(|e| e.into_elab_error(sp))?;
         self.spans.insert(sp, ObjectKind::Sort(id));
       }
-      StmtKind::Decl(d) => self.elab_decl(span, d)?,
+      StmtKind::Decl(d) => self.elab_decl(span, d, stmt.doc.clone())?,
       StmtKind::Delimiter(Delimiter::Both(f)) => self.pe.add_delimiters(f, f),
       StmtKind::Delimiter(Delimiter::LeftRight(ls, rs)) => self.pe.add_delimiters(ls, rs),
       StmtKind::SimpleNota(n) => self.elab_simple_nota(n)?,

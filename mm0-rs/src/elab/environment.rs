@@ -1127,7 +1127,7 @@ impl<A> AddItemError<A> {
 impl Environment {
   /// Add a sort declaration to the environment. Returns an error if the sort is redeclared,
   /// or if we hit the maximum number of sorts.
-  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers) ->
+  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<ArcString>) ->
       Result<SortID, AddItemError<SortID>> {
     let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
@@ -1143,7 +1143,7 @@ impl Environment {
       }
     } else {
       data.sort = Some(new_id);
-      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, doc: None, mods: sd });
+      self.sorts.push(Sort { atom: a, name: data.name.clone(), span: fsp, full, doc, mods: sd });
       self.stmts.push(StmtTrace::Sort(a));
       Ok(new_id)
     }
@@ -1253,7 +1253,7 @@ impl Environment {
         StmtTrace::Sort(a) => {
           let i = other.data()[a].sort().unwrap();
           let sort = other.sort(i);
-          let id = match self.add_sort(a.remap(remap), sort.span.clone(), sort.full, sort.mods) {
+          let id = match self.add_sort(a.remap(remap), sort.span.clone(), sort.full, sort.mods, sort.doc.clone()) {
             Ok(id) => id,
             Err(AddItemError::Redeclaration(id, r)) => {
               errors.push(ElabError::with_info(sp, r.msg.into(), vec![

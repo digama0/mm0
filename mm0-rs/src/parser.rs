@@ -20,6 +20,7 @@ use num::BigUint;
 use num::cast::ToPrimitive;
 use crate::util::{Span, ArcString, BoxError, Position};
 use crate::lined_string::LinedString;
+use crate::elab::environment::DocComment;
 pub use ast::AST;
 use ast::*;
 
@@ -223,13 +224,40 @@ impl<'a> Parser<'a> {
     r.unwrap_or_else(|e| self.errors.push(e))
   }
 
+  /// Parse and return a doc comment if one is present. If not, just return None.
+  fn doc_comment(&mut self) -> Option<DocComment> {
+    let mut doc = Vec::new();
+    while self.source.get(self.idx..).map(|slice_| slice_.starts_with(b"--|")).unwrap_or(false) {
+      // move past `--|`
+      self.idx += 3;
+      // take everything up to the end of the line.
+      while !(self.cur_opt() == Some(b'\n')) {
+        doc.push(self.cur());
+        self.idx += 1;
+      }
+      // Allow '\n' to be included so users make a linebreak by inserting an empty doc comment line.
+      doc.push(self.cur());
+      // Needed if we have a blank line between otherwise valid doc comment lines.
+      self.ws();
+    }
+
+    if doc.is_empty() {
+      None
+    } else {
+      self.ws();
+      Some(DocComment::new(doc))
+    }
+  }
+
+
+
   /// Advance the parser past a region of whitespace AND skip past
   /// line comments (`--` style comments)
   fn ws(&mut self) {
     while self.idx < self.source.len() {
       let c = self.cur();
       if whitespace(c) {self.idx += 1; continue}
-      if c == b'-' && self.source.get(self.idx + 1) == Some(&b'-') {
+      if c == b'-' && self.source.get(self.idx + 1) == Some(&b'-') && self.source.get(self.idx + 2) != Some(&b'|') {
         self.idx += 1;
         // End the comment skip when you find a line break.
         while self.idx < self.source.len() {
@@ -628,7 +656,7 @@ impl<'a> Parser<'a> {
 
   fn decl_stmt(&mut self, start: usize, m: Modifiers, sp: Span, k: DeclKind) -> Result<Option<Stmt>> {
     let (end, d) = self.decl(m, sp, k)?;
-    Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Decl(d)}))
+    Ok(Some(Stmt::new((start..end).into(), StmtKind::Decl(d), None)))
   }
 
   fn cnst(&mut self) -> Result<Const> {
@@ -686,7 +714,7 @@ impl<'a> Parser<'a> {
   fn simple_nota_stmt(&mut self, start: usize, m: Modifiers, sp: Span, k: SimpleNotaKind) -> Result<Option<Stmt>> {
     self.modifiers_empty(m, sp, "notation commands do not take modifiers");
     let (end, n) = self.simple_nota(k)?;
-    Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::SimpleNota(n)}))
+    Ok(Some(Stmt::new((start..end).into(), StmtKind::SimpleNota(n), None)))
   }
 
   fn literals(&mut self) -> Result<Vec<Literal>> {
@@ -714,7 +742,7 @@ impl<'a> Parser<'a> {
     self.chr_err(b':')?;
     loop {
       if let Some(end) = self.chr(b';') {
-        return Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Inout {out, k, hs}}))
+        return Ok(Some(Stmt::new((start..end).into(), StmtKind::Inout {out, k, hs}, None)))
       }
       hs.push(self.sexpr()?)
     }
@@ -755,19 +783,25 @@ impl<'a> Parser<'a> {
   /// Try to parse a statement. Parsing essentially amounts to looping over this
   /// while handling errors.
   fn stmt(&mut self) -> Result<Option<Stmt>> {
+    let doc = self.doc_comment();
+
     let start = self.idx;
     if self.chr(b'@').is_some() {
       let e = self.sexpr()?;
       let s = self.stmt()?.ok_or_else(||
         self.err("statement expected after annotation".into()))?;
-      return Ok(Some(Stmt {
-        span: (start..s.span.end).into(),
-        k: StmtKind::Annot(e, Box::new(s))
-      }))
+      return Ok(Some(Stmt::new(
+        (start..s.span.end).into(), 
+        StmtKind::Annot(e, Box::new(s)), 
+        doc
+      )))
     }
+
+
     let m = self.modifiers();
     self.restart_pos = None;
-    match m {
+
+    let mut stmt = match m {
       (m, None) => {
         if m.is_empty() && self.idx == self.source.len() {
           Ok(None)
@@ -785,7 +819,7 @@ impl<'a> Parser<'a> {
             }
             let id = self.ident_err()?;
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Sort(id, m)}))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Sort(id, m), None)))
           }
           Some(CommandKeyword::Delimiter) => {
             if !m.is_empty() {
@@ -798,7 +832,7 @@ impl<'a> Parser<'a> {
               Some(f2) => Delimiter::LeftRight(cs1, self.delim_chars(f2)),
             };
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Delimiter(delim)}))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Delimiter(delim), None)))
           }
           Some(CommandKeyword::Term)    => self.decl_stmt(start, m, id, DeclKind::Term),
           Some(CommandKeyword::Axiom)   => self.decl_stmt(start, m, id, DeclKind::Axiom),
@@ -817,7 +851,7 @@ impl<'a> Parser<'a> {
             self.chr_err(b'>')?;
             let to = self.ident_err()?;
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Coercion {id, from, to}}))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Coercion {id, from, to}, None)))
           }
           Some(CommandKeyword::Notation) => {
             self.modifiers_empty(m, id, "notation commands do not take modifiers");
@@ -836,24 +870,26 @@ impl<'a> Parser<'a> {
               Some((prec, r))
             } else {None};
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Notation(
-              GenNota {id, bis, ty, lits, prec})}))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Notation(
+              GenNota {id, bis, ty, lits, prec}), None)))
           }
           Some(CommandKeyword::Do) => {
             self.modifiers_empty(m, id, "do blocks do not take modifiers");
             let mut es = Vec::new();
             if self.chr(b'{').is_some() {
               while self.chr(b'}').is_none() {es.push(self.sexpr()?)}
-            } else {es.push(self.sexpr()?)}
+            } else {
+              es.push(self.sexpr()?)
+            }
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt {span: (start..end).into(), k: StmtKind::Do(es)}))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Do(es), None)))
           }
           Some(CommandKeyword::Import) => {
             self.modifiers_empty(m, id, "import statements do not take modifiers");
             let (sp, s) = self.string()?;
             let span = (start..self.chr_err(b';')?).into();
             self.imports.push((sp, s.clone()));
-            Ok(Some(Stmt {span, k: StmtKind::Import(sp, s)}))
+            Ok(Some(Stmt::new(span, StmtKind::Import(sp, s), None)))
           }
           Some(CommandKeyword::Exit) => {
             self.modifiers_empty(m, id, "exit does not take modifiers");
@@ -872,7 +908,12 @@ impl<'a> Parser<'a> {
           }
         }
       }
+    };
+
+    if let Ok(Some(ref mut stmt_)) = stmt {
+      stmt_.doc = doc;
     }
+    stmt
   }
 
   /// Try to parse a [`Stmt`] item while recovering from errors.

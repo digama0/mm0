@@ -234,7 +234,7 @@ impl<'a> Importer<'a> {
           if let Some(b"free") = next {mods |= Modifiers::FREE;}
           let end = self.close_err()?;
           let a = self.env.get_atom(self.span(x));
-          self.env.add_sort(a, self.fspan(x), (start..end).into(), mods)
+          self.env.add_sort(a, self.fspan(x), (start..end).into(), mods, None)
             .map_err(|e| e.into_elab_error(x))?;
         }
         Some(b"term") => self.decl(start, DeclKind::Term)?,

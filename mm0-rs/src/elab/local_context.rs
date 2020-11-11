@@ -653,7 +653,7 @@ impl Elaborator {
   }
 
   /// Elaborate a declaration (`term`, `axiom`, `def`, `theorem`).
-  pub fn elab_decl(&mut self, full: Span, d: &Decl) -> Result<()> {
+  pub fn elab_decl(&mut self, full: Span, d: &Decl, doc: Option<ArcString>) -> Result<()> {
     let mut ehyps = Vec::new();
     let mut error = false;
     macro_rules! report {
@@ -772,7 +772,7 @@ impl Elaborator {
           let t = Term {
             atom, args: args.into(), ret, val,
             span: self.fspan(d.id),
-            doc: None,
+            doc,
             vis: d.mods,
             full,
           };
@@ -861,7 +861,7 @@ impl Elaborator {
         });
         if atom != AtomID::UNDER {
           let t = Thm {
-            atom, span, vis: d.mods, full, doc: None,
+            atom, span, vis: d.mods, full, doc,
             args: args.into(), heap, hyps, ret, proof
           };
           let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;

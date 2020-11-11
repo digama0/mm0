@@ -18,6 +18,7 @@ use num::BigUint;
 use crate::lined_string::LinedString;
 use crate::util::{Span, ArcString};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
+use crate::elab::environment::DocComment;
 use super::ParseError;
 
 bitflags! {
@@ -657,7 +658,21 @@ pub struct Stmt {
   pub span: Span,
   /// The statement kind and associated data
   pub k: StmtKind,
+  /// The doc comment associated with this statement.
+  pub doc: Option<DocComment>,
 }
+
+impl Stmt {
+  /// Make a new Stmt from a `Span` and `StmtKind`, and an optional `DocComment`
+  ///
+  /// [`Span`]: ../../util/struct.Span.html
+  /// [`StmtKind`]: enum.StmtKind.html
+  /// [`DocComment`]: ../../elab/environment/type.DocComment.html
+  pub fn new(span: Span, k: StmtKind, doc: Option<DocComment>) -> Self {
+    Stmt { span, k, doc }
+  }
+} 
+
 
 /// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.
 ///
