@@ -16,12 +16,20 @@ As mentioned above, the syntax of MM1 is based on MM0, and the grammar below mak
 
     mm1-file ::= (statement)*
     statement ::= sort-stmt
-               |  decl-stmt                ; This includes MM0's term-stmt,
-                                           ; assert-stmt and def-stmt
+               |  decl-stmt                  ; This includes MM0's term-stmt,
+                                             ; assert-stmt and def-stmt
                |  notation-stmt
                |  inout-stmt
-               |  do-stmt                  ; NEW
-               |  annot-stmt               ; NEW
+               |  do-stmt                    ; NEW
+               |  annot-stmt                 ; NEW
+               |  doc-comment* statement     ; NEW
+
+Doc Comments
+---
+
+    doc-comment ::= '--|' [^\n]* '\n'
+
+Doc comments can be placed above sort-stmt and decl-stmt items; the information displayed when hovering over later uses of the decorated item will include the contents of the doc comment.
 
 Sorts
 ---
@@ -418,7 +426,7 @@ At the beginning of execution, the global context contains a number of primitive
 * `(get! r)` dereferences the ref-cell `r` to get the value.
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
-* `(atom-map! [k1 v1] [k2 v2] ...)` creates a new mutable atom map, a key-value store.
+* `(atom-map! '[k1 v1] '[k2 v2] ...)` creates a new mutable atom map, a key-value store.
 * `(atom-map? m)` is true if the argument is an atom map.
 * `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
 * `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#undef`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
