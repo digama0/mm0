@@ -827,7 +827,7 @@ theorem splitBits_split: $ splitBits (((k + l) <> b) : bs) n <->
   bitr (aneq2a @ syl6bb (splitBitseq1 @ appendSi append1) @
     syl6bbr (splitBitsA @ eqtr bvSizeS @ addeq2 bvSize1) @
     syl5bbr (exeqe @ splitBitseq1d @ conseq1d preq2) @ exeqd @
-    syl aneq1a @ exp @ syl6bbr splitBitsS_uniq @ syl6bbr (aneq2i splitBits1) @
+    aneq1da @ syl6bbr splitBitsS_uniq @ syl6bbr (aneq2i splitBits1) @
     syl6bb anlass @ bitr2d (aneq2d @ syl5bbr (aneq2i eqcomb) @
       syl5bbr ancomb @ syl5bbr shladd_uniq @ bitrd (anwll bian1) @ eqeq1d anlr) @
     syl6bb eqcomb @ syl bian1a @ exp @
@@ -839,10 +839,10 @@ theorem splitBits_split: $ splitBits (((k + l) <> b) : bs) n <->
 theorem splitBits_mid: $ splitBits (bs1 ++ ((k + l) <> b) : bs2) n <->
   E. a E. c (shl c k + a = b /\ splitBits (bs1 ++ (k <> a) : (l <> c) : bs2) n) $ =
 (named '(bitr4 (splitBitsA eqid) @
-  bitr (exeqi @ bitr (exeqi @ bitr4 (aneq2i @ splitBitsA eqid) exan1) excomb) @
-  bitr4 excomb @ exeqi @ bitr (aneq2i splitBitsS_uniq) @ bitr3 anass @
-  bitr (aneq2i splitBits_split) @ bitr3 exan1 @ exeqi @ bitr3 exan1 @ exeqi @
-  bitr anlass @ aneq2i @ bitr4 anass @ aneq2i splitBitsS_uniq));
+  bitr (biexexi @ biexexi @ biexan2i @ splitBitsA eqid) @ exeqi @
+  bitr4 (bian1exi @ bian1exi anlass) @ aneq2i @
+  bitr4 splitBitsS_uniq @ bitr4 (bian1exi @ bian1exi @ bian12i splitBitsS_uniq) @
+  aneq2i splitBits_split));
 
 ----------------------------------------
 -- x86-64 machine code decoding
@@ -1020,14 +1020,12 @@ theorem readModRM_val (rex rn rm l: nat): $ readModRM rex rn rm l <->
     splitBits ((3 <> rm2) : (3 <> opc) : (2 <> m) : 0) b /\
     rn = rex_reg (REX_R rex) opc /\
     E. l2 (l = b : l2 /\ readModRM2 rex rm rm2 m l2)) $ =
-(named '(exeqi @ exeqi @ exeqi @ exeqi @ aneq2i @
+(named '(exeqi @ exeqi @ exeqi @ rexeqi @
   bitr2 (exeqi ifpan2) @ bitr exifp @
   ifpeq biid (bitr (exeqi @ bitr3 anass ancomb) @
     exeqe @ syl5bb ancomb @ aneq2d @ eqeq2d conseq2) @
-  bitr (exeqi ifpan2) @ bitr exifp @
-  ifpeq2 @ bitr3 (exeqi exan1) @ bitr excomb @ exeqi @
-    bitr (exeqi @ bitr3 anass ancomb) @
-    exeqe @ syl6bb ancomb @ aneq1d @ eqeq2d conseq2));
+  bitr (exeqi ifpan2) @ bitr exifp @ ifpeq2 @
+  bitr rexcomb @ rexeqi @ bitr (exeqi ancomb) @ exeqe ,eqtac));
 
 pub theorem readModRM_T (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $ =
@@ -2060,7 +2058,7 @@ theorem writeMemoryS1 {m2 e1: nat} (m a b l m3 e: nat):
     ifpeq2d @ elneq2d @ appeq2d @ add64eq1d anr))
   (focus '(syl5bb elsep @
     aneqd (a1i @ bitr (ellower @ xpfin finiteMemory @ optfin finiteException) prelxp) @
-    elsabed @ elabed @ exeqd @ exeqd @ syl aneq2a @ exp @ ifpeqd biidd
+    elsabed @ elabed @ exeqd @ rexeqda @ ifpeqd biidd
       (bitr4d (eleq1d @ preqd anllr anlr) @ syl bian1 @
         iand (iand (anwr @ rsyl writeMemory1T anlr) @ a1i add64T) an3lr)
       (aneqd (eqeq1d anllr) (eqeq1d anlr)))));
@@ -2321,8 +2319,10 @@ pub theorem setExceptionT (k e: nat):
   mpd (mpbid (syl6bb mkCfgT @ eleq1d anr) anll) @
   anim1d @ anim1d @ anim1d @ anim1d @ a1d anlr));
 
-theorem setExceptionMem: $ getMemory (setException k e) = getMemory k $ =
+theorem getMem_setException: $ getMemory (setException k e) = getMemory k $ =
 '(sndeq @ sndeq sndpr);
+theorem read_setException (ex ip rs f m e: nat):
+  $ readException (setException k e) = e $ = 'pi11pr;
 
 theorem writeMem_set (k a l k2: nat):
   $ writeMem k a l k2 <-> k e. Config /\ a e. u64 /\ l e. List u8 /\
@@ -2332,10 +2332,8 @@ theorem writeMem_set (k a l k2: nat):
   '(bitr4 (aneq2a _) anass)
   '(bitr3g (exeqe ,(eqtac-gen $0$)) (bian1 mkCfg_ex) @ syl6bb exan2 @ exeqd _)
   (iterate 4 (fn (x) '(bitr3g exan1 exan2 @ exeqd ,x)) _)
-  '(syl5bb (bitr (aneq2i @
-      bitr (exeqi @ bitr (exeqi @ bitr anass anlass) exan1) exan1) anlass) @
-    syl aneq2a @ exp @ bicomd @
-    aneqd (eqeq1d @ syl6eq readException_mk (readExceptioneqd anr)) @
+  '(syl5bb (bian12i @ bian1exi @ bian1exi @ bitr anass anlass) @ aneq2da @ bicomd @
+    aneqd (eqeq1d @ syl6eq readException_mk @ readExceptioneqd anr) @
     exeqd @ exeqd @ aneqd (writeMemoryeq1d @ syl6eq getMemory_mk @ getMemoryeqd anr) @
     eqeq2d @ syl6eq setExceptionVal @ setExceptioneq1d @
     syl6eq setMemory_mk @ setMemoryeq1d anr));
@@ -3408,7 +3406,7 @@ pub theorem execIO_T (ks ks2: nat):
     '(,a @ mpbird (eleq1d anrr) @ sylibr mkKS_T @ mpand (anwr ,b) @
       iand (iand ,io @ mpd (iand ,d @ anwr ,c) @ anwll he) @
       mpbird (eleq2d @ PageMappingeqd @
-        syl6eq setRegMem @ syl6eq setExceptionMem @
+        syl6eq setRegMem @ syl6eq getMem_setException @
         getMemoryeqd anllr) ,e))
   '(eord (eord (eord (eord _ _) _) _) _)
   -- Open
@@ -3656,6 +3654,11 @@ theorem terminates_ensuring_fail:
     anwll ksReachable0) @
   rsyl anlr @ anim2 absurd));
 
+theorem can_terminate_ensuring_fail:
+  $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
+    can_terminate_ensuring k P $ =
+'(syl terminates_ensuring_can terminates_ensuring_fail);
+
 -- `succeeds k i o` asserts that starting from initial configuration k,
 -- the program reaches the exit point and returns success (exit code 0), and
 -- puts `o` on standard out and leaves i on standard in.
@@ -3799,7 +3802,7 @@ pub theorem parseBasicElfT (file entry prot vaddr seg: nat):
 (named @ focus
   '(anim2a @ !! eexd eh @ !! eexd ph @ !! eexd phoff @ !! eexd off @
     !! eexd fseg @ !! eexd memsz @ impd @ exp @ syl5ibrcom basicElfeq4 @
-    sylbi (aneq2i @ anassi anass) @ rsyl ancom _)
+    sylbi (aneq2i @ bian11i anass) @ rsyl ancom _)
   (have 'h1 '(rsyl an5lr elfHeaderT))
   (have 'h2 '(rsyl an3lr pHeaderT))
   (have 'h3 '(syl5eq appendlen @ syl5eq (addeq2 repeatlen) @ syl pncan3 @ rsyl an3lr anlr))
