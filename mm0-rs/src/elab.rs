@@ -470,8 +470,8 @@ impl Elaborator {
       vec![(r.decl1, "declared here".into())]))
   }
 
-  fn parse_and_print(&mut self, e: &SExpr) -> Result<()> {
-    let val = self.eval_lisp(e)?;
+  fn parse_and_print(&mut self, e: &SExpr, doc: String) -> Result<()> {
+    let val = self.eval_lisp_doc(e, doc)?;
     if val.is_def() {self.print_lisp(e.span, &val)}
     Ok(())
   }
@@ -516,7 +516,7 @@ impl Elaborator {
         if self.mm0_mode {
           self.report(ElabError::warn(span, "(MM0 mode) do blocks not allowed"))
         }
-        for e in es { self.parse_and_print(e)? }
+        for e in es { self.parse_and_print(e, mem::take(&mut doc))? }
       }
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;

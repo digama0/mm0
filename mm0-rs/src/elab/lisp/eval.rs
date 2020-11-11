@@ -16,7 +16,7 @@ use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator,
-  AtomID, Environment, AtomData, DeclKey, StmtTrace,
+  AtomID, Environment, AtomData, DeclKey, StmtTrace, DocComment,
   ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   refine::{RStack, RState, RefineResult}};
 use super::*;
@@ -34,7 +34,7 @@ enum Stack<'a> {
   App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
   AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
-  Def(Option<&'a Option<(Span, Span, AtomID)>>),
+  Def(Option<&'a Option<(Span, Span, Option<DocComment>, AtomID)>>),
   Eval(&'a IR, std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
@@ -63,7 +63,7 @@ impl<'a> EnvDisplay for Stack<'a> {
         fe.to(e), fe.to(es), fe.to(irs.as_slice())),
       Stack::AppHead(_, _, e) => write!(f, "(_ {})", fe.to(e)),
       &Stack::If(e1, e2) => write!(f, "(if _ {} {})", fe.to(e1), fe.to(e2)),
-      &Stack::Def(Some(&Some((_, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
+      &Stack::Def(Some(&Some((_, _, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
       Stack::Def(_) => write!(f, "(def _ _)"),
       &Stack::Eval(ir, ref es) => write!(f, "(begin\n  _ {} {})", fe.to(ir), fe.to(es.as_slice())),
       Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
@@ -314,8 +314,13 @@ impl Elaborator {
 
   /// Parse and evaluate a lisp expression. This is the main entry point.
   pub fn eval_lisp(&mut self, e: &SExpr) -> Result<LispVal> {
+    self.eval_lisp_doc(e, String::new())
+  }
+
+  /// Parse and evaluate a lisp expression, with the given doc comment.
+  pub fn eval_lisp_doc(&mut self, e: &SExpr, doc: String) -> Result<LispVal> {
     let sp = e.span;
-    let ir = self.parse_lisp(e)?;
+    let ir = self.parse_lisp_doc(e, doc)?;
     // println!("{}", self.print(&ir));
     self.evaluate(sp, &ir)
   }
@@ -1222,7 +1227,7 @@ impl<'a> Evaluator<'a> {
   }
 
   fn proc_pos(&self, sp: Span) -> ProcPos {
-    if let Some(Stack::Def(Some(&Some((sp1, sp2, x))))) = self.stack.last() {
+    if let Some(Stack::Def(Some(&Some((sp1, sp2, _, x))))) = self.stack.last() {
       ProcPos::Named(self.fspan(sp2), sp1, x)
     } else {
       ProcPos::Unnamed(self.fspan(sp))
@@ -1359,10 +1364,10 @@ impl<'a> Evaluator<'a> {
               _ => {self.stack.push(s); State::Ret(LispVal::undef())}
             }
           } else {
-            if let Some(&Some((sp1, sp2, a))) = x {
+            if let Some(&Some((sp1, sp2, ref doc, a))) = x {
               let loc = (self.fspan(sp2), sp1);
               if ret.is_def_strict() {
-                if mem::replace(&mut self.data[a].lisp, Some((Some(loc), None, ret))).is_none() {
+                if mem::replace(&mut self.data[a].lisp, Some((Some(loc), doc.clone(), ret))).is_none() {
                   self.stmts.push(StmtTrace::Global(a))
                 }
               } else if mem::take(&mut self.data[a].lisp).is_some() {

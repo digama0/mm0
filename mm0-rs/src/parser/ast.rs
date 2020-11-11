@@ -350,6 +350,8 @@ pub enum SExprKind {
   String(ArcString),
   /// A boolean literal, `#t` or `#f`.
   Bool(bool),
+  /// A documentation comment on another expression.
+  DocComment(DocComment, Box<SExpr>),
   /// An undef literal `#undef`. (This is used as the return value of functions that don't
   /// return anything).
   Undef,
@@ -486,6 +488,7 @@ impl EnvDisplay for SExpr {
       SExprKind::String(s) => write!(f, "{:?}", s),
       SExprKind::Bool(true) => "#t".fmt(f),
       SExprKind::Bool(false) => "#f".fmt(f),
+      SExprKind::DocComment(_, e) => e.fmt(fe, f),
       SExprKind::Undef => "#undef".fmt(f),
       SExprKind::Formula(s) => fe.source.str_at(s.0).fmt(f),
     }

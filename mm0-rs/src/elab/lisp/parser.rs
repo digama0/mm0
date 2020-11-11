@@ -9,7 +9,7 @@ use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::ArcString;
-use super::super::{AtomID, Span, Elaborator, ElabError, ObjectKind};
+use super::super::{AtomID, Span, DocComment, Elaborator, ElabError, ObjectKind};
 use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
@@ -46,7 +46,7 @@ pub enum IR {
   /// the span of the variable `a`.
   ///
   /// (Some definitions are added by the compiler and have no source text.)
-  Def(usize, Option<(Span, Span, AtomID)>, Box<IR>),
+  Def(usize, Option<(Span, Span, Option<DocComment>, AtomID)>, Box<IR>),
   /// * `keep = true`: The `(begin es)` syntax form.
   ///   Evaluate the list of arguments, and return the last one.
   ///
@@ -79,7 +79,7 @@ impl<'a> EnvDisplay for IR {
         fe.to(&es.0), fe.to(&es.1), fe.to(&es.2)),
       IR::Focus(_, es) => write!(f, "(focus {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
       IR::Def(n, a, e) => write!(f, "(def {}:{} {})",
-        n, fe.to(&a.map_or(AtomID::UNDER, |(_, _, a)| a)), fe.to(e)),
+        n, fe.to(&a.as_ref().map_or(AtomID::UNDER, |&(_, _, _, a)| a)), fe.to(e)),
       IR::Eval(false, es) => write!(f, "(def _ {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
       IR::Eval(true, es) => write!(f, "(begin {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
       IR::Lambda(_, n, sp, e) => {
@@ -273,8 +273,9 @@ impl Remap for IR {
       &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
       IR::If(e) => IR::If(e.remap(r)),
       IR::Focus(sp, e) => IR::Focus(*sp, e.remap(r)),
-      &IR::Def(n, a, ref e) => IR::Def(n,
-        a.map(|(sp1, sp2, a)| (sp1, sp2, a.remap(r))), e.remap(r)),
+      &IR::Def(n, ref a, ref e) => IR::Def(n,
+        a.as_ref().map(|&(sp1, sp2, ref doc, a)| (sp1, sp2, doc.clone(), a.remap(r))),
+        e.remap(r)),
       &IR::Eval(b, ref e) => IR::Eval(b, e.remap(r)),
       &IR::Lambda(sp, n, spec, ref e) => IR::Lambda(sp, n, spec, e.remap(r)),
       &IR::Match(sp, ref e, ref br) => IR::Match(sp, e.remap(r), br.remap(r)),
@@ -562,7 +563,7 @@ impl<'a> LispParser<'a> {
       for l in ls {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let n = self.ctx.push(x);
-        cs.push(IR::Def(n, if x == AtomID::UNDER {None} else {Some((l.span, sp, x))},
+        cs.push(IR::Def(n, if x == AtomID::UNDER {None} else {Some((l.span, sp, None, x))},
           Box::new(IR::new_ref(sp, sp, IR::Const(LispVal::undef())))));
         ds.push((sp, n, e2, stk));
       }
@@ -580,7 +581,7 @@ impl<'a> LispParser<'a> {
         if x == AtomID::UNDER {
           cs.push(IR::Eval(false, v.into()))
         } else {
-          cs.push(IR::Def(self.ctx.push(x), Some((l.span, sp, x)), IR::eval(v).into()))
+          cs.push(IR::Def(self.ctx.push(x), Some((l.span, sp, None, x)), IR::eval(v).into()))
         }
       }
     }
@@ -715,6 +716,7 @@ impl<'a> LispParser<'a> {
       SExprKind::String(s) => Ok(Pattern::String(s.clone())),
       &SExprKind::Bool(b) => Ok(Pattern::Bool(b)),
       SExprKind::Undef => Ok(Pattern::Undef),
+      SExprKind::DocComment(_, e) => self.pattern(ctx, code, quote, e),
       SExprKind::List(es) => self.list_pattern(ctx, code, quote, es),
       &SExprKind::Formula(f) => {
         let q = self.parse_formula(f)?;
@@ -775,6 +777,10 @@ impl<'a> LispParser<'a> {
   }
 
   fn expr(&mut self, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
+    self.expr_doc(String::new(), quote, e)
+  }
+
+  fn expr_doc(&mut self, mut doc: String, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
     macro_rules! span {($sp:expr, $e:expr) => {{$e.span(self.fspan($sp))}}}
     let mut restore = Some(self.ctx.len());
     let res = match &e.k {
@@ -810,6 +816,12 @@ impl<'a> LispParser<'a> {
       SExprKind::String(s) => Ok(IR::Const(LispVal::string(s.clone()))),
       &SExprKind::Bool(b) => Ok(IR::Const(LispVal::bool(b))),
       SExprKind::Undef => Ok(IR::Const(LispVal::undef())),
+      SExprKind::DocComment(doc2, e) => {
+        // push an extra newline to separate multiple doc comments
+        if !doc.is_empty() {doc.push('\n');}
+        doc.push_str(doc2);
+        return self.expr_doc(doc, quote, e)
+      }
       SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, LispVal::nil()))),
       SExprKind::List(es) => if quote {
         let mut cs = vec![];
@@ -842,7 +854,8 @@ impl<'a> LispParser<'a> {
                   (_, AtomID::UNDER, cs) => IR::Eval(false, cs.into()),
                   (sp, x, cs) => {
                     restore = None;
-                    IR::Def(self.ctx.push(x), Some((e.span, sp, x)), IR::eval(cs).into())
+                    let doc = if doc.is_empty() {None} else {Some(doc.into())};
+                    IR::Def(self.ctx.push(x), Some((e.span, sp, doc, x)), IR::eval(cs).into())
                   }
                 }),
               Syntax::Lambda if es.len() < 2 => return Err(
@@ -920,7 +933,13 @@ impl<'a> LispParser<'a> {
 impl Elaborator {
   /// Parse a lisp `SExpr` from the surface syntax into an `IR` object suitable for evaluation.
   pub fn parse_lisp(&mut self, e: &SExpr) -> Result<IR, ElabError> {
-    LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr(false, e)
+    self.parse_lisp_doc(e, String::new())
+  }
+
+  /// Parse a lisp `SExpr` from the surface syntax into an `IR` object suitable for evaluation.
+  /// The `doc` argument is an additional doc string, if applicable.
+  pub fn parse_lisp_doc(&mut self, e: &SExpr, doc: String) -> Result<IR, ElabError> {
+    LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr_doc(doc, false, e)
   }
 
   /// Parse a `QExpr`, the result of parsing a math formula,

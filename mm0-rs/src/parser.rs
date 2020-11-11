@@ -549,10 +549,18 @@ impl<'a> Parser<'a> {
 
   /// Parse an `SExpr`.
   pub fn sexpr(&mut self) -> Result<SExpr> {
-    let e = self.sexpr_dot()?;
-    if self.is_atom(&e, b".") {
-      Err(ParseError::new(e.span, "'.' is not a valid s-expression".into()))
-    } else {Ok(e)}
+    if let (start, Some(doc)) = (self.idx, self.doc_comment()) {
+      let e = self.sexpr()?;
+      Ok(SExpr {
+        span: (start..e.span.end).into(),
+        k: SExprKind::DocComment(doc, Box::new(e))
+      })
+    } else {
+      let e = self.sexpr_dot()?;
+      if self.is_atom(&e, b".") {
+        Err(ParseError::new(e.span, "'.' is not a valid s-expression".into()))
+      } else {Ok(e)}
+    }
   }
 
   fn curly_list(&self, span: impl Into<Span>, curly: bool, es: Vec<SExpr>, dot: Option<SExpr>) -> SExpr {

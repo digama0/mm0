@@ -178,7 +178,7 @@ impl<A: EnvDebug + Copy> EnvDebug for std::cell::Cell<A> {
   }
 }
 
-impl<A: EnvDebug> EnvDebug for std::sync::Arc<A> {
+impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
     std::sync::Arc::as_ref(self).env_dbg(fe, p)
   }
@@ -218,7 +218,7 @@ env_debug! {
   isize,
   f32,
   f64,
-  &str,
+  str,
   String,
   std::path::PathBuf,
   std::sync::atomic::AtomicBool,
