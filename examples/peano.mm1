@@ -3062,8 +3062,12 @@ theorem sabssd (A B: set x) (h: $ G -> A C_ B $): $ G -> S\ x, A C_ S\ x, B $ = 
 --| `a <> b e. X\ x e. A, B(x)` iff `a e. A` and `b e. B(a)`.
 @_ def xab {x: nat} (A: set) (B: set x): set =
 $ {z | fst z e. A /\ snd z e. S[fst z / x] B} $;
-notation xab {x: nat} (A: set) (B: set x): set =
-  ($X\$:100) x ($e.$:50) A ($,$:0) B;
+notation xab {x: nat} (A: set) (B: set x): set = ($X\$:100) x ($e.$:50) A ($,$:0) B;
+
+theorem nfxab (A B: set x y) (h1: $ FS/ y A $) (h2: $ FS/ y B $): $ FS/ y X\ x e. A, B $ =
+(named '(nfab @ nfan (nfel2 h1) @ nfel2 @ nfsbs h2));
+theorem nfxab1 (A B: set x) (h1: $ FS/ x A $): $ FS/ x X\ x e. A, B $ =
+(named '(nfab @ nfan (nfel2 h1) @ nfel2 nfsbs1));
 
 theorem xabeq2da (B C: set x) (h: $ G /\ x e. A -> B == C $):
   $ G -> X\ x e. A, B == X\ x e. A, C $ =
@@ -3107,35 +3111,13 @@ theorem sabxab {y} (B: set x) (h: $ G -> y e. B -> x e. A $):
 '(!! eqrd2 z y @ bitr4g elsabs elxabs @ bicomd @ syl bian1a @
   sbethh (nfim nfv @ nfim (nfel2 nfsbs1) nfv) h (imeq2d @ imeqd (eleq2d sbsq) eleq1));
 
---| Ordered pair abstraction. `opab x y p` is `{(x,y) | p}`, that is,
---| `a <> b e. opab x y (p(x,y))` iff `p(a,b)`.
-@_ def opab {x y: nat} (p: wff x y): set = $ {z | E. x E. y (z = x <> y /\ p)} $;
-
-theorem elopabs (p: wff x y): $ a <> b e. opab x y p <-> [a / x] [b / y] p $ =
-'(!! elabe z @ syl6bbr dfsb3 @ exeqd @ syl6bbr (aneq2i dfsb3) @ bian1exd @
-  bian11d @ syl6bb prth @ syl6bb eqcomb eqeq1);
-
-theorem opabsab (p: wff x y): $ opab x y p == S\ x, {y | p} $ =
-'(!! eqri2 a b @ bitr4 elopabs @ bitr elsabs @ bitr elsbs @ sbeq2i elab);
-
-theorem elopabd (p: wff x y) (h: $ G /\ x = a /\ y = b -> (p <-> q) $):
-  $ G -> (a <> b e. opab x y p <-> q) $ = '(syl5bb elopabs @ sbed @ sbed h);
-theorem elopab (p: wff x y) (h: $ x = a /\ y = b -> (p <-> q) $):
-  $ a <> b e. opab x y p <-> q $ = '(bitr elopabs @ sbe @ sbed h);
-
-theorem nfopab1 (p: wff x y): $ FS/ x opab x y p $ = '(!! nfab _ z nfex1);
-theorem nfopab2 (p: wff x y): $ FS/ y opab x y p $ = '(!! nfab _ z @ nfex nfex1);
-theorem nfopab (p: wff x y z) (h: $ F/ x p $): $ FS/ x opab y z p $ =
-'(!! nfab _ w @ nfex @ nfex @ nfan nfv h);
-
 --| `Xp A B` is the cartesian product of sets:
 --| `(a,b) e. Xp A B` iff `a e. A` and `b e. B`.
-@(derive-eq 'xp) def Xp (A B: set): set = $ opab x y (x e. A /\ y e. B) $;
+@(derive-eq 'xp) def Xp (A B: set): set = $ X\ x e. A, B $;
 
 theorem nfxp (A B: set x) (h1: $ FS/ x A $) (h2: $ FS/ x B $): $ FS/ x Xp A B $ =
-'(!! nfopab _ y z @ nfan (nfel2 h1) (nfel2 h2));
-theorem prelxp: $ a <> b e. Xp A B <-> a e. A /\ b e. B $ =
-'(!! elopab x y (aneqd (eleq1d anl) (eleq1d anr)));
+'(!! nfxab y _ h1 h2);
+theorem prelxp: $ a <> b e. Xp A B <-> a e. A /\ b e. B $ = '(!! elxab x eqsidd);
 theorem elxp: $ a e. Xp A B <-> fst a e. A /\ snd a e. B $ =
 '(bitr3 (eleq1 fstsnd) prelxp);
 theorem xpvv: $ Xp _V _V == _V $ =
@@ -3249,9 +3231,9 @@ theorem imv: $ F '' _V == Ran F $ =
 '(!! eqri x @ bitr4 elima @ bitr4 elrn @ !! exeqi y @ bian1 elv);
 
 --| The converse of a relation: `(x,y) e. cnv A` if `(y,x) e. A`.
-@_ def cnv (A: set): set = $ opab x y (y <> x e. A) $;
+@_ def cnv (A: set): set = $ S\ x, {y | y <> x e. A} $;
 
-theorem prcnv: $ x <> y e. cnv A <-> y <> x e. A $ = '(elopab ,eqtac);
+theorem prcnv: $ x <> y e. cnv A <-> y <> x e. A $ = '(elsabe @ elabed ,eqtac);
 
 --| The relational composition: `(x,z) e. F o> G` if there exists `y` such that
 --| `(x,y) e. F` and `(y,z) e. G`. *Warning*: This is also applicable for functions,
@@ -3259,10 +3241,11 @@ theorem prcnv: $ x <> y e. cnv A <-> y <> x e. A $ = '(elopab ,eqtac);
 --| `(F o> G) @ x = G @ (F @ x)`. We use an arrow like notation
 --| `o>` to remind the reader of this: we apply `F` *then* `G`.
 @(derive-eq 'co) def comp (F G: set): set =
-$ opab x z (E. y (x <> y e. F /\ y <> z e. G)) $;
+$ S\ x, {z | E. y (x <> y e. F /\ y <> z e. G)} $;
 infixr comp: $o>$ prec 91;
 
-theorem prco: $ x <> z e. A o> B <-> E. y (x <> y e. A /\ y <> z e. B) $ = '(elopab ,eqtac);
+theorem prco: $ x <> z e. A o> B <-> E. y (x <> y e. A /\ y <> z e. B) $ =
+'(elsabe @ elabed ,eqtac);
 
 --| The restriction of a relation to a set: `A |` B` is
 --| the set of `(x,y) e. A` such that `y e. B`.
@@ -5253,11 +5236,11 @@ theorem Arrowsn2: $ Arrow a (sn b) == sn (\. x e. a, b) $ =
 --| `write F a b`, sometimes denoted `F[a -> b]` is
 --| the function which is `b` at `a` and returns `F @ x` for `x != a`.
 @_ def write (F: set) (a b: nat): set =
-$ opab x y (ifp (x = a) (y = b) (x <> y e. F)) $;
+$ S\ x, {y | ifp (x = a) (y = b) (x <> y e. F)} $;
 
 theorem elwrite:
   $ x <> y e. write F a b <-> ifp (x = a) (y = b) (x <> y e. F) $ =
-'(!! elopab z w @ ifpeqd (eqeq1d anl) (eqeq1d anr) (eleq1d @ imp preq));
+(named '(elsabe @ elabed @ ifpeqd (eqeq1d anl) (eqeq1d anr) (eleq1d @ imp preq)));
 
 pub theorem writeEq (F a b): $ write F a b @ a = b $ =
 '(trud @ !! eqtheabd y @ a1i @ bitr elwrite @ ifppos eqid);
@@ -5278,14 +5261,12 @@ theorem writefin: $ finite F -> finite (write F a b) $ =
 '(sylibr (fineq @ !! writeres x) @ sylc unfin resfin @ a1i finns);
 
 theorem dmwrite: $ Dom (write F a b) == Dom F u. sn a $ =
-'(!! eqri x @
-  bitr4 (ibii
-    (sylbi eldm @ !! eex y @ sylbi elwrite @ com12 @ syl6 preldm @ bi1d ifpneg)
-    (casesd
-      (a1i @ syl preldm @ sylibr elwrite @ mpbiri eqid ifppos)
-      (a2i @ syl5bi eldm @ !! eexd y @
-        mpbii preldm @ imeq1d @ syl5bb elwrite ifpneg))) @
-  bitr elun @ bitr orcomb @ oreq1 elsn);
+(focus
+  '(!! eqri x @ bitr4 (ibii _ _) @ bitr elun @ bitr orcomb @ oreq1 elsn)
+  '(sylbi eldm @ !! eex y @ sylbi elwrite @ com12 @ syl6 preldm @ bi1d ifpneg)
+  '(casesd (a1i @ syl preldm @ sylibr elwrite @ mpbiri eqid ifppos) @
+    a2i @ syl5bi eldm @ !! eexd y @
+    mpbii preldm @ imeq1d @ syl5bb elwrite ifpneg));
 
 theorem rnwrite: $ Ran (write F a b) C_ Ran F u. sn b $ =
 '(!! ax_gen x @ sylbi elrn @ !! eex y @ sylbi elwrite @ eor
@@ -5315,7 +5296,7 @@ theorem srecauxS: $ srecaux S (suc n) ==
 theorem dmsrecaux: $ Dom (srecaux S n) == upto n $ =
 (induct '(!! ind x y) 'n
   '(eqstr (dmeq @ nseq srecaux0) @ eqstr4 dm0 @ nseq upto0)
-  '(syl5eqs (eqstr (dmeq srecauxS) dmwrite) @ syl6eqsr
+  '(eqstr4g (eqstr (dmeq srecauxS) dmwrite)
     (!! eqri z @ bitr elupto @ bitr3 leltsuc @ bitr4 leloe @ bitr elun @ oreq elupto elsn)
     uneq1));
 

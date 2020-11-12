@@ -337,13 +337,9 @@ $ {z | fst z e. A /\ snd z e. S[ fst z / x ] B} $;
 notation xab {x: nat} (A: set) (B: set x): set =
   ($X\$:100) x ($e.$:50) A ($,$:0) B;
 
---| Ordered pair abstraction. `opab x y p` is `{(x,y) | p}`, that is,
---| `a <> b e. opab x y (p(x,y))` iff `p(a,b)`.
-def opab {x y .z: nat} (p: wff x y): set = $ {z | E. x E. y (z = x <> y /\ p)} $;
-
 --| `Xp A B` is the cartesian product of sets:
 --| `(a,b) e. Xp A B` iff `a e. A` and `b e. B`.
-def Xp (A B: set) (.x .y: nat): set = $ opab x y (x e. A /\ y e. B) $;
+def Xp (A B: set) (.x .y: nat): set = $ X\ x e. A, B $;
 
 --| The domain of a binary relation:
 --| `x e. Dom A` if there exists `y` such that `(x,y) e. A`.
@@ -358,7 +354,7 @@ def Im (F A: set) (.x .y: nat): set = $ {y | E. x (x e. A /\ x <> y e. F)} $;
 infixl Im: $''$ prec 80;
 
 --| The converse of a relation: `(x,y) e. cnv A` if `(y,x) e. A`.
-def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
+def cnv (A: set) (.x .y: nat): set = $ S\ x, {y | y <> x e. A} $;
 
 --| The relational composition: `(x,z) e. F o> G` if there exists `y` such that
 --| `(x,y) e. F` and `(y,z) e. G`. *Warning*: This is also applicable for functions,
@@ -366,7 +362,7 @@ def cnv (A: set) (.x .y: nat): set = $ opab x y (y <> x e. A) $;
 --| `(F o> G) @ x = G @ (F @ x)`. We use an arrow like notation
 --| `o>` to remind the reader of this: we apply `F` *then* `G`.
 def comp (F G: set) (.x .y .z: nat): set =
-$ opab x z (E. y (x <> y e. F /\ y <> z e. G)) $;
+$ S\ x, {z | E. y (x <> y e. F /\ y <> z e. G)} $;
 infixr comp: $o>$ prec 91;
 
 --| The restriction of a relation to a set: `A |` B` is
@@ -501,7 +497,7 @@ notation rlam {x: nat} (a: nat) (v: nat x): nat = ($\.$:53) x ($e.$:50) a ($,$:0
 --| `write F a b`, sometimes denoted `F[a -> b]` is
 --| the function which is `b` at `a` and returns `F @ x` for `x != a`.
 def write (F: set) (a b .x .y: nat): set =
-$ opab x y (ifp (x = a) (y = b) (x <> y e. F)) $;
+$ S\ x, {y | ifp (x = a) (y = b) (x <> y e. F)} $;
 theorem writeEq (F: set) (a b: nat): $ write F a b @ a = b $;
 theorem writeNe (F: set) (a b x: nat): $ x != a -> write F a b @ x = F @ x $;
 

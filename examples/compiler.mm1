@@ -1233,7 +1233,7 @@ do {
     (def asmd-pf
       (def n (len items))
       @ match (ra-list0
-        '((wtru) assembles0 ,items)
+        '((tru) assembles0 ,items)
         (match-fn @ (t p ((_ prop asf _) . its))
           '((an ,t ,prop) (assemblesA ,p ,asf) ,its))
         (match-fn @ ($ T. /\ ,t $ p its)
@@ -2383,15 +2383,16 @@ $ A. fr A. k (k |=s sn fr *s P ->
     E. k2 k <> k2 e. R /\
     A. k2 (k <> k2 e. R -> k2 |=s sn fr *s Q)) $;
 
-theorem hoareM_step: $ hoareM P (opab ks ks2 (ksStep ks ks2)) Q -> hoare T P Q $ =
+theorem hoareM_step: $ hoareM P (S\ ks, {ks2 | ksStep ks ks2}) Q -> hoare T P Q $ =
 (named '(alimi @ com12 @ !! alimd k1 @ a2d @
   expcom @ exp @ sylibr terminates_ensuring_val @
   iand (anwll s_sat_ks) @ !! iald k @ syl5bi ksReachable_hd @
   eord (syl5ibrcom (rsyl (anwr eqcom) ,eqtac) @
     imp @ impd @ com23 @ syl6ibr eexb @ !! alimd k2 @ a2d @
-    syl5bi (elopab ,eqtac) @ exp @ syld (rsyl anlr s_ok_E) @
+    syl5bi (elsabe @ elabed ,eqtac) @ exp @ syld (rsyl anlr s_ok_E) @
     syl5 terminates_ensuring_can @ anwr @ syl can_terminate_ensuring_R ksReachable1) @
-  sylibr eexb @ imp @ syl5 anr @ alimd @ syl5 (imim1i @ sylibr (elopab ,eqtac) anl) @
+  sylibr eexb @ imp @ syl5 anr @ alimd @
+  syl5 (imim1i @ sylibr (elsabe @ elabed ,eqtac) anl) @
   a2d @ exp @ syld (rsyl anlr s_ok_E) @
   syl6 terminates_ensuring_can @ rsyl anrr terminates_ensuring_R));
 
@@ -2426,9 +2427,10 @@ theorem hoareM_anlift1: $ hoareM (^s p /\s P) R Q <-> (p -> hoareM P R Q) $ =
 (named '(bitr (aleqi @ bitr (aleqi @ bitr (imeq1i @
   bitr (s_sateq2 s_sep_anlift2) s_sat_anlift1) impexp) alim1) alim1));
 
-@_ local def nofaultI: set = $ opab k k2 (~ksFault k /\ k = k2) $;
+@_ local def nofaultI: set = $ S\ k, {k2 | ~ksFault k /\ k = k2} $;
 
-theorem el_nofaultI: $ k <> k2 e. nofaultI <-> ~ksFault k /\ k = k2 $ = (named '(elopab ,eqtac));
+theorem el_nofaultI: $ k <> k2 e. nofaultI <-> ~ksFault k /\ k = k2 $ =
+(named '(elsabe @ elabed ,eqtac));
 theorem nofaultI_co: $ k <> k2 e. nofaultI o> R <-> ~ksFault k /\ k <> k2 e. R $ =
 (named '(bitr prco @
   bitr (exeqi @ bitr (aneq1i el_nofaultI) anass) @
@@ -2528,16 +2530,16 @@ theorem viaCfg_fault {k k2}
   syl5eq (readExceptioneq ksCfg_setCfg) @ anwr anlr));
 
 @_ local def withEx (R: set): set =
-$ opab k k2 (ifp (ksFault k)
+$ S\ k, {k2 | ifp (ksFault k)
     (ksFault k2)
     (E. e (e e. Option Exception /\
-      E. ki (e <> ksCfg k <> ki e. R /\ k2 = setCfg k (setException ki e))))) $;
+      E. ki (e <> ksCfg k <> ki e. R /\ k2 = setCfg k (setException ki e))))} $;
 
 theorem el_withEx:
   $ k <> k2 e. withEx R <-> ifp (ksFault k)
     (ksFault k2) (E. e (e e. Option Exception /\
       E. ki (e <> ksCfg k <> ki e. R /\ k2 = setCfg k (setException ki e)))) $ =
-(named '(elopab ,eqtac));
+(named '(elsabe @ elabed ,eqtac));
 
 theorem withEx_fault: $ k <> k2 e. withEx R -> ksFault k -> ksFault k2 $ =
 (named '(sylbi el_withEx @ com12 @ bi1d ifppos));
@@ -2604,7 +2606,7 @@ theorem s_mem1_writeMemory1
   '(aneq2a @ sylbi prth ,(eqtac-with #f)));
 
 @_ local def writeMemory1R (a v) =
-$ withEx (S\ e, viaMemory (opab m m2 (writeMemory1 m a v m2 e))) $;
+$ withEx (S\ e, viaMemory (S\ m, {m2 | writeMemory1 m a v m2 e})) $;
 
 theorem writeMemory1R_fault:
   $ ks <> ks2 e. writeMemory1R a v -> ksFault ks -> ksFault ks2 $ =

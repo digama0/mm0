@@ -506,7 +506,7 @@ theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
       maxPrefix A s = suc (x <> t)) $;
 
 def regexStar (R: set) (.s .t .L .x .y: nat): set =
-$ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;
+$ S\ s, {t | E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)} $;
 def regexApp (R S: set) (.z .a .b .x .y: nat): set =
 $ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
     z = (x ++ y) <> (a <> b))} $;
@@ -514,7 +514,7 @@ infixr regexApp: $<+>$ prec 75;
 def regexPlus (R: set) (.x: nat): set =
 $ regexStar R i^i {x | snd x != 0} $;
 def regexOpt (R: set) (.s .t .y: nat): set =
-$ sn 0 u. opab s t (E. y (s <> y e. R /\ t = suc y)) $;
+$ sn 0 u. S\ s, {t | E. y (s <> y e. R /\ t = suc y)} $;
 
 --| The set of whitespace characters
 --|
@@ -977,7 +977,7 @@ theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
       t = b0 (t2 <> 0) /\ checkDummies ds bis2 /\
       bis = (0 <> x <> t) : bis2) $;
 
-def lookupVars (ctx .s .t: nat): set = $ opab s t (lookupVar ctx s = suc t) $;
+def lookupVars (ctx .s .t: nat): set = $ S\ s, {t | lookupVar ctx s = suc t} $;
 
 def elabType (ast ctx s out .t .vs .vs2: nat): wff =
 $ E. t E. vs E. vs2 (s = b0 (t <> vs) /\ out = t <> vs2 /\

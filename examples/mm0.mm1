@@ -1469,7 +1469,7 @@ theorem maxPrefix_asymm {y} (h: $ x e. A /\ y e. A /\ prefix x y -> x = y $):
     maxPrefixSi3 anr (anwll @ iexe @ eqeq1d appendeq2) anlr));
 
 @_ def regexStar (R: set) (.s .t .L .x .y: nat): set =
-$ opab s t (E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)) $;
+$ S\ s, {t | E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)} $;
 @_ def regexApp (R S: set) (.z .a .b .x .y: nat): set =
 $ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
     z = (x ++ y) <> (a <> b))} $;
@@ -1477,7 +1477,7 @@ infixr regexApp: $<+>$ prec 75;
 @_ def regexPlus (R: set) (.x: nat): set =
 $ regexStar R i^i {x | snd x != 0} $;
 @_ def regexOpt (R: set) (.s .t .y: nat): set =
-$ sn 0 u. opab s t (E. y (s <> y e. R /\ t = suc y)) $;
+$ sn 0 u. S\ s, {t | E. y (s <> y e. R /\ t = suc y)} $;
 
 --| The set of whitespace characters
 --|
@@ -2974,7 +2974,7 @@ pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
     bitr4 (aneq2i exan2) @ bitr (aneq1i _) anass)
   '(bitr (sbe @ sbed ,eqtac) @ bitr (elsabe @ elabed ,eqtac) @ bitr exan2 ancomb));
 
-@_ def lookupVars (ctx .s .t: nat): set = $ opab s t (lookupVar ctx s = suc t) $;
+@_ def lookupVars (ctx .s .t: nat): set = $ S\ s, {t | lookupVar ctx s = suc t} $;
 
 @_ def elabType (ast ctx s out .t .vs .vs2: nat): wff =
 $ E. t E. vs E. vs2 (s = b0 (t <> vs) /\ out = t <> vs2 /\
