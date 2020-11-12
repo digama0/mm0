@@ -224,9 +224,12 @@ impl<'a> Parser<'a> {
     r.unwrap_or_else(|e| self.errors.push(e))
   }
 
-  /// Parse and return a doc comment if one is present. If not, just return None.
-  fn doc_comment(&mut self) -> Option<DocComment> {
+  /// Parse and return a doc comment if one is present,
+  /// along with the index of the end of the comment.
+  /// If not, just return None.
+  fn doc_comment(&mut self) -> Option<(DocComment, usize)> {
     let mut doc = Vec::new();
+    let mut end = mem::MaybeUninit::uninit();
     while self.source[self.idx..].starts_with(b"--|") {
       // move past `--|`
       self.idx += 3;
@@ -242,6 +245,7 @@ impl<'a> Parser<'a> {
       };
       doc.extend_from_slice(&self.source[self.idx..self.idx + eol]);
       self.idx += eol;
+      end = mem::MaybeUninit::new(self.idx);
 
       // Needed if doc comment lines are indented.
       while self.cur_opt() == Some(b' ') {self.idx += 1}
@@ -251,7 +255,7 @@ impl<'a> Parser<'a> {
       None
     } else {
       self.ws();
-      Some(String::from_utf8(doc).ok()?.into())
+      Some((String::from_utf8(doc).ok()?.into(), unsafe{end.assume_init()}))
     }
   }
 
@@ -549,7 +553,7 @@ impl<'a> Parser<'a> {
 
   /// Parse an `SExpr`.
   pub fn sexpr(&mut self) -> Result<SExpr> {
-    if let (start, Some(doc)) = (self.idx, self.doc_comment()) {
+    if let (start, Some((doc, _))) = (self.idx, self.doc_comment()) {
       let e = self.sexpr()?;
       Ok(SExpr {
         span: (start..e.span.end).into(),
@@ -798,9 +802,10 @@ impl<'a> Parser<'a> {
   /// while handling errors.
   fn stmt(&mut self) -> Result<Option<Stmt>> {
     let start = self.idx;
-    if let Some(doc) = self.doc_comment() {
+    if let Some((doc, end)) = self.doc_comment() {
       let s = self.stmt()?.ok_or_else(||
-        self.err("statement expected after doc comment".into()))?;
+        ParseError::new(start..end,
+          "statement expected after doc comment".into()))?;
       return Ok(Some(Stmt::new(
         (start..s.span.end).into(),
         StmtKind::DocComment(doc, Box::new(s))
@@ -810,7 +815,8 @@ impl<'a> Parser<'a> {
     if self.chr(b'@').is_some() {
       let e = self.sexpr()?;
       let s = self.stmt()?.ok_or_else(||
-        self.err("statement expected after annotation".into()))?;
+        ParseError::new(start..e.span.end,
+          "statement expected after annotation".into()))?;
       return Ok(Some(Stmt::new(
         (start..s.span.end).into(),
         StmtKind::Annot(e, Box::new(s))
