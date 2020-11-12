@@ -626,18 +626,18 @@ theorem ljoinS (l L: nat): $ ljoin (l : L) = l ++ ljoin L $;
 def sublistAt (n L1 L2 .l .r: nat): wff =
 $ E. l E. r (L1 = l ++ L2 ++ r /\ len l = n) $;
 
---| `all2 x y p(x,y) L1 L2` means that `L1` and `L2` are
---| lists of the same length that are pairwise related by `p(x,y)`.
+--| `L1 <> L2 e. all2 R` means that `L1` and `L2` are
+--| lists of the same length that are pairwise related by `R`.
 --|
---| `all2 : (A -> B -> Bool) -> list A -> list B -> Bool`
-def all2 {x y .n: nat} (p: wff x y) (l1 l2: nat): wff =
-$ len l1 = len l2 /\ A. n A. x A. y
-  (nth n l1 = suc x -> nth n l2 = suc y -> p) $;
+--| `all2 : (A -> B -> Bool) -> (list A -> list B -> Bool)`
+def all2 (R: set) {.l1 .l2 .x .y .n: nat}: set =
+$ S\ l1, {l2 | len l1 = len l2 /\ A. n A. x A. y
+  (nth n l1 = suc x -> nth n l2 = suc y -> x <> y e. R)} $;
 
---| `ex2 x y p(x,y) L1 L2` means that `L1` and `L2` are
---| lists of the same length for which some pair is related by `p(x,y)`.
+--| `L1 <> L2 e. ex2 R` means that `L1` and `L2` are
+--| lists of the same length for which some pair is related by `R`.
 --|
---| `ex2 : (A -> B -> Bool) -> list A -> list B -> Bool`
-def ex2 {x y .n: nat} (p: wff x y) (l1 l2: nat): wff =
-$ len l1 = len l2 /\ E. n E. x E. y
-  (nth n l1 = suc x /\ nth n l2 = suc y /\ p) $;
+--| `ex2 : (A -> B -> Bool) -> (list A -> list B -> Bool)`
+def ex2 (R: set) {.l1 .l2 .x .y .n: nat}: set =
+$ S\ l1, {l2 | len l1 = len l2 /\ E. n E. x E. y
+  (nth n l1 = suc x /\ nth n l2 = suc y /\ x <> y e. R)} $;

@@ -216,7 +216,7 @@ $ SExprRec
   (\ v, lower {s | E. bi (nth v ctx = suc bi /\ binderSort bi = s)})
   (\\ f, \\ xs, \ ih, lower {s | E. args E. ret E. o
     (getTerm env f args ret o /\
-     all2 x a (a e. ExprBi_aux env ctx (fst x) (snd x)) (zip xs ih) args /\
+     zip xs ih <> args e. all2 (S\ x, ExprBi_aux env ctx (fst x) (snd x)) /\
      s = fst ret)}) $;
 
 theorem Expr_aux_Var: $ Expr_aux env ctx @ SVar v =
@@ -227,13 +227,13 @@ theorem Expr_aux_Var: $ Expr_aux env ctx @ SVar v =
 theorem Expr_aux_App: $ Expr_aux env ctx @ SApp f es =
   lower {s | E. args E. ret E. o
     (getTerm env f args ret o /\
-     all2 x a (a e. ExprBi_aux env ctx (fst x) (snd x)) (zip es (map (Expr_aux env ctx) es)) args /\
+     zip es (map (Expr_aux env ctx) es) <> args e. all2 (S\ x, ExprBi_aux env ctx (fst x) (snd x)) /\
      s = fst ret)} $ =
 (named '(eqtr SExprRec_App @
   ! appslame _ $_ <> map (Expr_aux _ _) _$ _ _ _ @ appslamed @ applamed @
   lowereqd @ abeqd @ exeqd @ exeqd @ exeqd @ aneq1d @ aneqd
     (getTermeq2d anll)
-    (all2eq2d (zipeqd anlr anr))));
+    (eleq1d @ preq1d @ zipeqd anlr anr)));
 
 --| These mutually recursive functions check if an expression `e` is well-typed
 --| with sort `s`, and that `e` is well-typed and valid for entry into a binder
@@ -247,18 +247,17 @@ theorem Expr_aux_App: $ Expr_aux env ctx @ SApp f es =
 $ bi e. ExprBi_aux env ctx e (Expr_aux env ctx @ e) $;
 
 theorem ExprBi_aux_map:
-  $ all2 p a (a e. ExprBi_aux env ctx (fst p) (snd p)) (zip es (map (Expr_aux env ctx) es)) args <->
-    all2 x a (ExprBi env ctx x a) es args $ =
-(named @ let ([h '(bieqd all2eq3 all2eq3)])
-  '(eale ,h ,(induct '(listind) 'es
-    '(ax_gen @ bitr (all2eq2 zip01) @ bitr4 all201 all201)
-    '(sylbi (cbval ,h) @ iald @
-      bitr4g (bitr (all2eq2 @ eqtr (zipeq2 mapS) zipS) all2S1) all2S1 @
-      exeqd @ syl exeq @ alimi @ bitr4g anass anass @ syl aneq2a @ exp @
-      aneqd (a1i @ bitr4
-        (sbe @ sbed @ eleqd anr @ anwl @
-          ExprBi_auxeqd eqidd eqidd (syl6eq fstpr @ fsteq) (syl6eq sndpr @ sndeq))
-        (sbe @ sbed @ ExprBieqd eqidd eqidd anl anr)) anl))));
+  $ zip es (map (Expr_aux env ctx) es) <> args e. all2 (S\ p, ExprBi_aux env ctx (fst p) (snd p)) <->
+    es <> args e. all2 (S\ x, {a | ExprBi env ctx x a}) $ =
+(named @ focus
+  (def h '(bieqd (eleq1d preq2) (eleq1d preq2)))
+  '(eale ,h ,(induct '(listind) 'es _ _))
+  '(ax_gen @ bitr (eleq1 @ preq1 zip01) @ bitr4 all201 all201)
+  '(sylbi (cbval ,h) @ iald @
+    bitr4g (bitr (eleq1 @ preq1 @ eqtr (zipeq2 mapS) zipS) all2S1) all2S1 @
+    exeqd @ syl exeq @ alimi @ syl aneq2a @ exp @ aneqd (a1i _) anl)
+  '(bitr4 (elsabe @ sylbir (eqeq1 fstsnd) @ sylbi prth ,eqtac) @
+    elsabe @ eleq2d @ syl5eqs abid2 ,eqtac));
 
 pub theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
   E. bi (nth v ctx = suc bi /\ binderSort bi = s) $ =
@@ -271,7 +270,7 @@ pub theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
 pub theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
   $ Expr env ctx (SApp f xs) s <-> E. args E. ret E. o
     (getTerm env f args ret o /\
-     all2 x a (ExprBi env ctx x a) xs args /\
+     xs <> args e. all2 (S\ x, {a | ExprBi env ctx x a}) /\
      s = fst ret) $ =
 (named @ focus
   '(bitr (elneq2 Expr_aux_App) @ bitr (ellower @ finss _ ltfin) @
@@ -367,7 +366,7 @@ $ SExprRec
   (\ u, nat (HasVar ctx (SVar u) v))
   (\\ f, \\ es, \ ih, nat (E. args E. r E. rs E. o
     (getTerm env f args (r <> rs) o /\
-      (ex2 ih1 a (true ih1 /\ MaybeFreeArgs es a v) ih args \/
+      (ih <> args e. ex2 (S\ ih1, {a | true ih1 /\ MaybeFreeArgs es a v}) \/
         E. u (u e. rs /\ nth u es = suc (SVar v)))))) $;
 
 --| Does this expression contain any _free_ occurrence of the variable `v`?
@@ -388,7 +387,7 @@ pub theorem FreeVar (env ctx u v: nat):
 pub theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
   $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
     (getTerm env f args (r <> rs) o /\
-      (ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
+      (es <> args e. ex2 (S\ e, {a | Free env ctx e v /\ MaybeFreeArgs es a v}) \/
         E. u (u e. rs /\ nth u es = suc (SVar v)))) $ =
 (named @ focus
   '(bitr (trueeq _) truenat)
@@ -396,12 +395,14 @@ pub theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
   '(appslame @ appslamed @ applamed @
     nateqd @ exeqd @ exeqd @ exeqd @ exeqd @ aneqd (getTermeq2d anll) @
     oreqd _ @ exeqd @ aneq2d @ eqeq1d @ ntheq2d anlr)
-  '(syl6bb _ (ex2eqd (aneq2d @ MaybeFreeArgseq1d anlr) anr eqidd))
-  '(aneq (eqeq1 maplen) @ exeqi @ bitr excomb @ bitr (exeqi _) excomb)
+  '(syl6bb _ (eleqd (preq1d anr) (ex2eqd @ sabeqd @ abeqd @ aneq2d @ MaybeFreeArgseq1d anlr)))
+  '(bitr4 elex2 @ bitr4 elex2 @ aneq (eqeq1 maplen) @ exeqi @
+    bitr excomb @ bitr (exeqi _) excomb)
   '(bitr (exeqi @ bitr4 (aneq1i @ bitr4 (aneq1i mapnthb) exan2) exan2) @
     bitr excomb @ exeqi @
     bitr (exeqi @ bitr (aneq1i @ bitr (aneq1i ancomb) anass) anass) @
-    exeqe @ aneq2d @ aneq1d trueeq));
+    exeqe @ aneq2d @ bitr4g _ _ @ aneq1d trueeq)
+  '(elsabe @ elabed ,eqtac) '(elsabe @ elabed ,eqtac));
 
 --| Is this a valid term in the given environment? A term is valid if
 --| the argument list is valid, the return type is valid, and the return sort
@@ -836,9 +837,9 @@ $ CExprRec
       E. args E. ret E. ys E. val (
         getTerm env f args ret (suc (ys <> val)) /\
         e1 = SApp f es /\ s = fst ret /\
-        all2 e a (ExprBi env ctx e a) es args /\
-        all2 y z (nth z ctx = suc (PBound y) /\
-          A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
+        es <> args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
+        ys <> zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
+          A. e (e IN es -> ~HasVar ctx e z)}) /\
         substExpr (es ++ map (\ i, SVar i) zs) val <> e2 <> s e. ih)})) $;
 
 --| Checking a conversion proof `c : (e1 : s) = (e2 : s)`.
@@ -974,16 +975,16 @@ theorem VerifyConv_aux_Unfold:
     E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys <> val)) /\
       e1 = SApp f es /\ s = fst ret /\
-      all2 e a (ExprBi env ctx e a) es args /\
-      all2 y z (nth z ctx = suc (PBound y) /\
-        A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
+      es <> args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
+      ys <> zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
+        A. e (e IN es -> ~HasVar ctx e z)}) /\
       VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s)}) $ =
 (named '(eqtr {CExprRec_CUnfold : $_ = _ @ (_ <> _ <> _ <> _ <> VerifyConv_aux _ _ @ c)$} @
   appslame @ appslamed @ appslamed @ appslamed @ applamed @ lowereqd @ sabeqd @ sabeqd @ abeqd @
   exeqd @ exeqd @ exeqd @ exeqd @ aneqd
     (aneqd (aneqd (aneq1d @ aneqd (getTermeq2d an4l) (eqeq2d @ SAppeqd an4l an3lr))
-      (all2eq2d an3lr))
-      (all2eqd (aneq2d @ aleqd @ imeq1d @ lmemeq2d an3lr) eqidd anllr))
+      (eleq1d @ preq1d an3lr))
+      (eleqd (preq2d anllr) (all2eqd @ sabeqd @ abeqd @ aneq2d @ aleqd @ imeq1d @ lmemeq2d an3lr)))
     (elneqd (preq1d @ substExpreq1d @ appendeqd an3lr @ mapeq2d anllr) anr)));
 
 pub theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
@@ -992,9 +993,9 @@ pub theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
     E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys <> val)) /\
       e1 = SApp f es /\ s = fst ret /\
-      all2 e a (ExprBi env ctx e a) es args /\
-      all2 y z (nth z ctx = suc (PBound y) /\
-        A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
+      es <> args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
+      ys <> zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
+        A. e (e IN es -> ~HasVar ctx e z)}) /\
       VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $ =
 (named @ focus
   '(bitr (elneq2 VerifyConv_aux_Unfold) @ bitr (ellower _) @
@@ -1014,12 +1015,12 @@ $ VExprRec
     (\ n, lower {ret | nth n hs = suc ret})
     (\\ args2, \\ hs2, \\ ret2, \\ es, \\ ps, \ ih, lower {ret |
       getThm env args2 hs2 ret2 /\
-      all2 e a (ExprBi env ctx e a) es args2 /\
+      es <> args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
         A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
-      all2 p h (substExpr es h e. p) ih hs2 /\
+      ih <> hs2 e. all2 (S\ p, {h | substExpr es h e. p}) /\
       substExpr es ret2 = ret})
     (\\ c, \\ p, \ ih, lower {ret |
       E. e1 E. s (VerifyConv env ctx c e1 ret s /\ e1 e. ih)}) $;
@@ -1052,38 +1053,39 @@ pub theorem VerifyProofHyp (env ctx hs n ret: nat):
 theorem VerifyProof_aux_Thm:
   $ VerifyProof_aux env ctx hs @ VThm args2 hs2 ret2 es ps = lower {ret |
       getThm env args2 hs2 ret2 /\
-      all2 e a (ExprBi env ctx e a) es args2 /\
+      es <> args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
         A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
-      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
+      ps <> hs2 e. all2 (S\ p, {h | VerifyProof env ctx hs p (substExpr es h)}) /\
       substExpr es ret2 = ret} $ =
 (named @ focus
   '(eqtr {VExprRec_VThm : $_ = _ @ (_ <> _ <> _ <> _ <> _ <> map (VerifyProof_aux _ _ _) _)$} @
     appslame @ appslamed @ appslamed @ appslamed @ appslamed @ applamed @ lowereqd @ abeqd @
     aneqd (aneqd (aneqd (aneqd
       (getThmeqd eqidd an5l an4lr an3lr)
-      (all2eqd biidd anllr an5l))
+      (eleq1d @ preqd anllr an5l))
       (aleqd @ aleqd @ imeq2d @ imeq2d @ imeq2d @ aleqd @ aleqd @
         imeqd (eqeq1d @ ntheq2d anllr) @ imeq1d (eqeq1d @ ntheq2d anllr)))
-      (syl6bb _ @ all2eqd (eleq1d @ substExpreq1d anllr) anr an4lr))
+      (syl6bb _ @ eleqd (preqd anr an4lr) (all2eqd @ sabeqd @ abeqd @ eleq1d @ substExpreq1d anllr)))
       (eqeq1d @ substExpreqd anllr an3lr))
-  '(aneq (eqeq1 maplen) @ aleqi @
+  '(bitr4 elall2 @ bitr4 elall2 @ aneq (eqeq1 maplen) @ aleqi @
     bitr (aleqi @ bitr alim1 @ bitr (imeq1i mapnthb) @ eexb) @
     bitr alcomb @ aleqi @ bitr (aleqi @ bitr (imeq1i ancomb) impexp) @ aleqe @
-    syl6bbr alim1 @ imeq2d @ aleqd @ imeq2d elneq2));
+    syl6bbr alim1 @ imeq2d @ aleqd @ imeq2d @ bitr4g _ _ elneq2)
+  '(elsabe @ elabed ,eqtac) '(elsabe @ elabed ,eqtac));
 
 pub theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
   {args e a u v s y e2 p h: nat}:
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
     (getThm env args2 hs2 ret2 /\
-      all2 e a (ExprBi env ctx e a) es args2 /\
+      es <> args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
         A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
-      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
+      ps <> hs2 e. all2 (S\ p, {h | VerifyProof env ctx hs p (substExpr es h)}) /\
       substExpr es ret2 = ret) $ =
 (named @ focus
   '(bitr (elneq2 VerifyProof_aux_Thm) @ bitr (ellower _) @ elabe @ aneq2d eqeq2)
@@ -1469,7 +1471,7 @@ theorem maxPrefix_asymm {y} (h: $ x e. A /\ y e. A /\ prefix x y -> x = y $):
     maxPrefixSi3 anr (anwll @ iexe @ eqeq1d appendeq2) anlr));
 
 @_ def regexStar (R: set) (.s .t .L .x .y: nat): set =
-$ S\ s, {t | E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)} $;
+$ S\ s, {t | E. L (L <> t e. all2 R /\ s = ljoin L)} $;
 @_ def regexApp (R S: set) (.z .a .b .x .y: nat): set =
 $ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
     z = (x ++ y) <> (a <> b))} $;
@@ -2602,27 +2604,26 @@ pub theorem ptToStrCoe {y: nat} (f x: nat):
   mpbiri (mpbir elupto PTCoe_ltid) (eleq1d anr)));
 
 @_ local def ptCheckNotaLs_aux (eac bis lits: nat) (IH: set) (xs es p: nat): wff =
-$ all2 lits1 x (lits1 e. S\ lit, {lr | lit e. Sum
+$ nztails lits <> xs e. all2 (S\ lits1, {x | lits1 e. S\ lit, {lr | lit e. Sum
     {c | x = b0 (fst c)}
     {v | E. y E. n E. e (x = b1 y /\
       lookupVar bis v = suc n /\ nth n es = suc e /\
       e e. IH @ y @ litsPrec lr p)}
-  }) (nztails lits) xs $;
+  }}) $;
 
 theorem ptCheckNotaLs_aux_0:
   $ ptCheckNotaLs_aux eac bis 0 IH xs es p <-> xs = 0 $ =
-(named '(bitr (all2eq2 nztails0) all201));
+(named '(bitr (eleq1 @ preq1 nztails0) all201));
 theorem ptCheckNotaLs_aux_S:
   $ ptCheckNotaLs_aux eac bis (lit : lits) IH xs es p <-> E. x E. xs2 (
-    xs = x : xs2 /\ lit e. Sum
+    xs = x : xs2 /\ (lit e. Sum
       {c | x = b0 (fst c)}
       {v | E. y E. n E. e (x = b1 y /\
         lookupVar bis v = suc n /\ nth n es = suc e /\
         e e. IH @ y @ litsPrec lits p)} /\
-    ptCheckNotaLs_aux eac bis lits IH xs2 es p) $ =
-(named '(bitr (all2eq2 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
-  aneq1i @ aneq2i @ sbe @ sbed @ bitrd ,eqtac @ a1i @
-  elsabe @ elabed ,eqtac));
+    ptCheckNotaLs_aux eac bis lits IH xs2 es p)) $ =
+(named '(bitr (eleq1 @ preq1 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
+  aneq2i @ aneq1i @ elsabe @ elabed @ bitrd (eleq1d anl) @ elsabed @ elabed ,eqtac));
 
 theorem ptCheckNotaLs_aux_fin_lem:
   $ ptCheckNotaLs_aux eac bis lits (ns ih) xs es p ->
@@ -2633,8 +2634,8 @@ theorem ptCheckNotaLs_aux_fin_lem:
     ,(induct '(listind) 'lits '(ax_gen @ a1i @ absurd lmem0) _))
   '(sylbi (cbval ,eqtac) @ iald @
     syl5bi ptCheckNotaLs_aux_S @ eexd @ sylibr eexb @ alimi @
-    exp @ syl5bi lmemS @ eorda _ @ imp @ imp @ imim1i anr)
-  '(rsyl (mpbird (eleq1d anr) @ rsyl anlr anlr) @
+    exp @ syl5bi lmemS @ eorda _ @ imp @ imp @ imim1i anrr)
+  '(rsyl (mpbird (eleq1d anr) @ rsyl anlr anrl) @
     sylbi Sumr @ sylbi (elabe ,eqtac) @
     eex @ eex @ eex @ exp @ exp @
     syl (rsyl ellt @ mpi (letr appleid1 appleid1) ltletr) @
@@ -2650,14 +2651,14 @@ $ pt e. Sum
       (S\ f, {xs |
         suc (2 ^ 10) <=p p /\ E. args E. ret E. v E. e2
         (getTerm (fst eac) f args ret v /\ len xs = len args /\
-          all2 x y (y e. ih @ x @ 0) xs e2 /\
+          xs <> e2 e. all2 (S\ x, ih @ x @ 0) /\
           e = SApp f e2)}))
     (Sum
       (Sum
         (S\ f, S\ c, {xs |
           E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
             f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
-            all2 x y (y e. ih @ x @ 0) l es2 /\ e2 e. ih @ z @ q /\
+            l <> es2 e. all2 (S\ x, ih @ x @ 0) /\ e2 e. ih @ z @ q /\
             e = SApp f (es2 |> e2))})
         (S\ f, {xs |
           E. bis E. ty E. c E. q E. lits E. es (
@@ -2687,13 +2688,13 @@ theorem ptCheck_aux_Parens: $ ptCheck_aux1 eac ih p (PTParens pt) e <->
 theorem ptCheck_aux_Func: $ ptCheck_aux1 eac ih p (PTFunc f xs) e <->
   suc (2 ^ 10) <=p p /\ E. args E. ret E. v E. e2
   (getTerm (fst eac) f args ret v /\ len xs = len args /\
-    all2 x y (y e. ih @ x @ 0) xs e2 /\
+    xs <> e2 e. all2 (S\ x, ih @ x @ 0) /\
     e = SApp f e2) $ =
 (named '(bitr Suml @ bitr Sumr @ elsabe @ elabed ,eqtac));
 theorem ptCheck_aux_Pfx: $ ptCheck_aux1 eac ih p (PTPfx f c xs) e <->
   E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
     f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
-    all2 x y (y e. ih @ x @ 0) l es2 /\ e2 e. ih @ z @ q /\
+    l <> es2 e. all2 (S\ x, ih @ x @ 0) /\ e2 e. ih @ z @ q /\
     e = SApp f (es2 |> e2)) $ =
 (named '(bitr Sumr @ bitr Suml @ bitr Suml @
   elsabe @ elsabed @ elabed ,eqtac));
@@ -2757,12 +2758,12 @@ theorem ptCheck_aux1_fin: $ finite {e | ptCheck_aux1 eac (ns ih) p pt e} $ =
     '(eqab2i @ bitr elobind @ exeqi @ aneq2i @
       bitr (elneq2 @ applame @ sneqd SVareq) elsn))
   (focus -- PTFunc f xs
-    '(iand (anwr _) @ eqcomd anrl)
-    '(sylibr elList @ syl all2all2 @ all2im1i ,h2))
+    '(iand (anwr _) @ eqcomd @ anwr all2len)
+    '(sylibr elList @ syl all2all2 @ ssel @ all2ss @ sabssi @ ax_gen ,h2))
   (focus -- PTPfx f c xs
     '(iand (sylibr snocT @ iand (rsyl anlr _) (anwr ,h2)) @
-      eqtr2d (leneqd an4l) @ eqtr4g snoclen snoclen @ suceqd @ anld anlr)
-    '(sylibr elList @ syl all2all2 @ all2im1i ,h2))
+      eqtr2d (leneqd an4l) @ eqtr4g snoclen snoclen @ suceqd @ rsyl anlr all2len)
+    '(sylibr elList @ syl all2all2 @ ssel @ all2ss @ sabssi @ ax_gen ,h2))
   (focus -- PTNota f xs
     '(syl (lelttr leprid2) @ syl ellt @
       sylibr (ellower @ xabfin id (a1i @ Arrayfin finns) finns) @
@@ -2812,7 +2813,7 @@ theorem ptCheckNotaLs_lem: $ all (Sum Univ t) xs ->
   '(sylbi (cbval ,eqtac) @ iald @
     syl6ibr (bieq ptCheckNotaLs_aux_S ptCheckNotaLs_aux_S) @
     expcom @ exeqd @ syl exeq @ imp @ alimd @ expcom @
-    bitr4g anass anass @ syl aneq2a @ imp @ com23 @
+    syl aneq2a @ imp @ com23 @
     syl5ibrcom (imeq1d @ syl6bb allS alleq2) @
     syl6 (imp aneq) @ anim @ eleq2d @ Sumeq2d @ abeqd @
     exeqd @ exeqd @ exeqd @ syl aneq2a @ syl5 anll @
@@ -2828,20 +2829,23 @@ pub theorem ptCheckFunc (env ast ctx p f xs e: nat) {args r v e2 x y: nat}:
   $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
     suc (2 ^ 10) <=p p /\ E. args E. r E. v E. e2
     (getTerm env f args r v /\ len xs = len args /\
-      all2 x y (ptCheck (env <> ast <> ctx) 0 x y) xs e2 /\
+      xs <> e2 e. all2 (S\ x, {y | ptCheck (env <> ast <> ctx) 0 x y}) /\
       e = SApp f e2) $ =
-(named '(bitr ptCheck_aux_Func @ aneq2i @ exeqi @ exeqi @ exeqi @ exeqi @
-  aneq1i @ aneq (aneq1i @ getTermeq1 fstpr) @
-  all2eq1g @ ax_gen @ ax_gen @ anwl @ syl (ptCheck_lem le01) PTFunc_ltid));
+(named @ focus
+  '(bitr ptCheck_aux_Func @ aneq2i @ exeqi @ exeqi @ exeqi @ exeqi @
+    aneq1i @ aneq (aneq1i @ getTermeq1 fstpr) @
+    all2eqg @ ax_gen @ ax_gen @ anwl @ bitr4g _ _ @ syl (ptCheck_lem le01) PTFunc_ltid)
+  '(elsabe ,eqtac) '(elsabe @ elabed ,eqtac));
 pub theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
     E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
-      all2 x y (ptCheck eac 0 x y) l es2 /\ ptCheck eac q z e2 /\
+      l <> es2 e. all2 (S\ x, {y | ptCheck eac 0 x y}) /\ ptCheck eac q z e2 /\
       e = SApp f (es2 |> e2)) $ =
 (named '(bitr ptCheck_aux_Pfx @ exeqi @ exeqi @ exeqi @ exeqi @ exeqi @
   rbid an4l an4l @ aneq1d @ aneqd
-  (aneq2d @ syl all2eq1g @ iald @ iald @ exp @
+  (aneq2d @ syl all2eqg @ iald @ iald @ exp @
+    bitr4g (elsabe ,eqtac) (elsabe @ elabed ,eqtac) @
     syl (ptCheck_lem le01) @ syl PTPfx_ltid @ mpbird (lmemeq2d anll) @
     sylibr lmemsnoc @ orld anrl)
   (sylc ptCheck_lem (anwr getPfx_precle) @
@@ -2892,8 +2896,8 @@ pub theorem ptCheckNotaLsC {x xs2: nat} (eac bis c p lits xs es q: nat):
     E. xs2 (xs = b0 c : xs2 /\ ptCheckNotaLs eac bis lits xs2 es q) $ =
 (named @ focus
   '(bitr ptCheckNotaLs_aux_S @ bitr _ @ exeqe @ exeqd @ aneq1d @ eqeq2d conseq1)
-  '(exeqi @ bitr (exeqi @ bitr (aneq1i @ bitr _ ancomb) anass) exan1)
-  '(aneq2i @ bitr Suml @ elabe @ eqeq2d @ b0eqd @ syl6eq fstpr fsteq));
+  '(exeqi @ bian1rexi @ aneq1i @ bitr Suml @
+    elabe @ eqeq2d @ b0eqd @ syl6eq fstpr fsteq));
 
 pub theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
   $ litsPrec lits q <= suc eac ->
@@ -2909,8 +2913,7 @@ pub theorem ptCheckNotaLsV {n x e xs2: nat} (eac bis v lits xs es q: nat):
       aneq1d @ eqeq2d conseq1) @
     syl6bb excomb @ exeqd @ syl6bbr (exeqi @ bitr4 (aneq2i excomb) exan1) @
     syl6bb excomb @ exeqd @ syl6bbr (exeqi @ bitr4 (aneq2i exan1) anlass) @
-    syl6bbr exan1 @ syl5bb anass @ aneq2d @
-    syl5bb (aneq1i @ bitr Sumr @ elabe ,eqtac) @
+    syl6bbr exan1 @ aneq2d @ syl5bb (aneq1i @ bitr Sumr @ elabe ,eqtac) @
     syl5bbr exan2 @ exeqd @ syl6bb exan1 @
     syl5bbr exan2 @ exeqd @ syl5bbr exan2 @ syl6bb exan1 @ exeqd @
     syl6bb anass @ aneq1d @ syl6bb anass @ aneqd (a1i anass) @
@@ -2958,9 +2961,9 @@ pub theorem splitDummiesR (bis bis1 bis2 c x t: nat): $
   eqtr caser @ applame ,eqtac);
 
 @_ abstract def checkDummies (ds bis: nat): wff =
-$ all2 d bi (d e. S\ x, {t |
+$ ds <> bis e. all2 (S\ d, {bi | d e. S\ x, {t |
     E. t2 (t = b0 (t2 <> 0) /\ bi = (0 <> x <> t))
-  }) ds bis $;
+  }}) $;
 pub theorem checkDummies0 (bis: nat): $ checkDummies 0 bis <-> bis = 0 $ = (named 'all201);
 pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
   $ checkDummies ((x <> t) : ds) bis <-> E. t2 E. bis2 (
@@ -2968,11 +2971,10 @@ pub theorem checkDummiesS {t2 bis2: nat} (bis x t ds: nat):
       bis = (0 <> x <> t) : bis2) $ =
 (named @ focus
   '(bitr4 all2S1 @
-    bitr3 (exeqe @ exeqd @ exeqd @ aneq2d @ eqeq2d conseq1) @ exeqi @
-    bitr (aneq2i excomb) @ bitr3 exan1 @ exeqi @
-    bitr (aneq2i exan2) @ bitr3 anass @ bitr4 ancomb @ bitr4 anass @ aneq2i @
-    bitr4 (aneq2i exan2) @ bitr (aneq1i _) anass)
-  '(bitr (sbe @ sbed ,eqtac) @ bitr (elsabe @ elabed ,eqtac) @ bitr exan2 ancomb));
+    bitr3 (exeqe @ exeqd @ exeqd @ syl6bb ancomb @ aneq1d @ eqeq2d conseq1) @ exeqi @
+    bitr4 (birexan2i @ birexexi biid) @ rexeqi @
+    bitr4 (aneq1i @ elsabe @ elabed @ bitrd (eleq1d anl) @ elsabed @ elabed ,eqtac) @
+    bitr (bian22i exan2) @ aneq1i @ bitr4 ancomb exan2));
 
 @_ def lookupVars (ctx .s .t: nat): set = $ S\ s, {t | lookupVar ctx s = suc t} $;
 
@@ -3035,8 +3037,8 @@ $ E. f2 (f = b1 f2 /\ parseExpr (env <> ast <> ctx) args f2 s == sn e) $;
 $ E. f2 (f = b1 f2 /\ parseExprProv (env <> ast <> ctx) args f2 == sn e) $;
 
 @_ def elabHyps (env ast ctx args hyps hyps2 .hyp .hyp2 .x .f: nat): wff =
-$ all2 hyp hyp2 (E. x E. f (hyp = 1 <> b0 x <> f /\
-    elabFmlaProv env ast ctx args f hyp2)) hyps hyps2 $;
+$ hyps <> hyps2 e. all2 (S\ hyp, {hyp2 | E. x E. f (hyp = 1 <> b0 x <> f /\
+    elabFmlaProv env ast ctx args f hyp2)}) $;
 
 @_ def elabDefO (env ast ctx s ds o o2: nat): wff =
 $ o e. ocasep (ds = 0 /\ o2 = 0) {f | E. args2 E. e (

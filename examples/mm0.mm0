@@ -134,7 +134,7 @@ theorem ExprVar (env ctx v s: nat) {bi: nat}: $ Expr env ctx (SVar v) s <->
 theorem ExprApp (env ctx f xs s: nat) {args ret o x a: nat}:
   $ Expr env ctx (SApp f xs) s <-> E. args E. ret E. o
     (getTerm env f args ret o /\
-     all2 x a (ExprBi env ctx x a) xs args /\
+     xs <> args e. all2 (S\ x, {a | ExprBi env ctx x a}) /\
      s = fst ret) $;
 theorem ExprBiBound (env ctx e s: nat) {v: nat}:
   $ ExprBi env ctx e (PBound s) <->
@@ -189,7 +189,7 @@ theorem FreeVar (env ctx u v: nat):
 theorem FreeApp (env ctx f es v: nat) {args r rs o n e a u: nat}:
   $ Free env ctx (SApp f es) v <-> E. args E. r E. rs E. o
     (getTerm env f args (r <> rs) o /\
-      (ex2 e a (Free env ctx e v /\ MaybeFreeArgs es a v) es args \/
+      (es <> args e. ex2 (S\ e, {a | Free env ctx e v /\ MaybeFreeArgs es a v}) \/
         E. u (u e. rs /\ nth u es = suc (SVar v)))) $;
 
 
@@ -351,9 +351,9 @@ theorem VerifyConvUnfold (env ctx f zs c e1 e2 s: nat)
     E. args E. ret E. ys E. val (
       getTerm env f args ret (suc (ys <> val)) /\
       e1 = SApp f es /\ s = fst ret /\
-      all2 e a (ExprBi env ctx e a) es args /\
-      all2 y z (nth z ctx = suc (PBound y) /\
-        A. e (e IN es -> ~HasVar ctx e z)) ys zs /\
+      es <> args e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
+      ys <> zs e. all2 (S\ y, {z | nth z ctx = suc (PBound y) /\
+        A. e (e IN es -> ~HasVar ctx e z)}) /\
       VerifyConv env ctx c (substExpr (es ++ map (\ i, SVar i) zs) val) e2 s) $;
 
 --| The main proof checking function.
@@ -375,12 +375,12 @@ theorem VerifyProofThm (env ctx hs args2 hs2 ret2 es ps ret: nat)
   {args e a u v s y e2 p h: nat}:
   $ VerifyProof env ctx hs (VThm args2 hs2 ret2 es ps) ret <->
     (getThm env args2 hs2 ret2 /\
-      all2 e a (ExprBi env ctx e a) es args2 /\
+      es <> args2 e. all2 (S\ e, {a | ExprBi env ctx e a}) /\
       A. u A. v (E. s nth u ctx = suc (PBound s) ->
         v < len ctx -> ~HasVar ctx (SVar v) u ->
         A. y A. e2 (nth u es = suc (SVar y) -> nth v es = suc e2 ->
           ~HasVar ctx e2 y)) /\
-      all2 p h (VerifyProof env ctx hs p (substExpr es h)) ps hs2 /\
+      ps <> hs2 e. all2 (S\ p, {h | VerifyProof env ctx hs p (substExpr es h)}) /\
       substExpr es ret2 = ret) $;
 theorem VerifyProofConv (env ctx hs c p ret: nat) {e1 s: nat}:
   $ VerifyProof env ctx hs (VConv c p) ret <->
@@ -506,7 +506,7 @@ theorem maxPrefixS {x y t: nat} (A: set) (s: nat):
       maxPrefix A s = suc (x <> t)) $;
 
 def regexStar (R: set) (.s .t .L .x .y: nat): set =
-$ S\ s, {t | E. L (all2 x y (x <> y e. R) L t /\ s = ljoin L)} $;
+$ S\ s, {t | E. L (L <> t e. all2 R /\ s = ljoin L)} $;
 def regexApp (R S: set) (.z .a .b .x .y: nat): set =
 $ {z | E. x E. y E. a E. b (x <> a e. R /\ y <> b e. S /\
     z = (x ++ y) <> (a <> b))} $;
@@ -902,13 +902,13 @@ theorem ptCheckFunc (env ast ctx p f xs e: nat) {args r v e2 x y: nat}:
   $ ptCheck (env <> ast <> ctx) p (PTFunc f xs) e <->
     suc (2 ^ 10) <=p p /\ E. args E. r E. v E. e2
     (getTerm env f args r v /\ len xs = len args /\
-      all2 x y (ptCheck (env <> ast <> ctx) 0 x y) xs e2 /\
+      xs <> e2 e. all2 (S\ x, {y | ptCheck (env <> ast <> ctx) 0 x y}) /\
       e = SApp f e2) $;
 theorem ptCheckPfx (eac p f c xs e: nat) {l z f2 q es2 e2 x y: nat} :
   $ ptCheck eac p (PTPfx f c xs) e <->
     E. l E. z E. q E. es2 E. e2 (xs = l |> z /\
       f <> c <> q e. getPfx (pi21 eac) /\ q <=p p /\
-      all2 x y (ptCheck eac 0 x y) l es2 /\ ptCheck eac q z e2 /\
+      l <> es2 e. all2 (S\ x, {y | ptCheck eac 0 x y}) /\ ptCheck eac q z e2 /\
       e = SApp f (es2 |> e2)) $;
 theorem ptCheckNota {bis ty c q lits es n v: nat} (eac p f xs e: nat):
   $ ptCheck eac p (PTNota f xs) e <->
@@ -1008,8 +1008,8 @@ def elabFmlaProv (env ast ctx args f e .f2: nat): wff =
 $ E. f2 (f = b1 f2 /\ parseExprProv (env <> ast <> ctx) args f2 == sn e) $;
 
 def elabHyps (env ast ctx args hyps hyps2 .hyp .hyp2 .x .f: nat): wff =
-$ all2 hyp hyp2 (E. x E. f (hyp = 1 <> b0 x <> f /\
-    elabFmlaProv env ast ctx args f hyp2)) hyps hyps2 $;
+$ hyps <> hyps2 e. all2 (S\ hyp, {hyp2 | E. x E. f (hyp = 1 <> b0 x <> f /\
+    elabFmlaProv env ast ctx args f hyp2)}) $;
 
 def elabDefO (env ast ctx s ds o o2: nat): wff;
 theorem elabDefO0 (env ast ctx s ds o2: nat):
