@@ -3758,7 +3758,7 @@ $ consBit (PROT_EXEC C_ prot) (
 @_ def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
 $ type e. u32 /\ prot e. Prot /\ off e. u64 /\ vaddr e. u64 /\
   filesz e. u64 /\ memsz e. u64 /\ filesz <= memsz /\
-  E. i (i < 64 /\ dvd (2 ^ i) (bitsSub 64 vaddr off) /\
+  E. i (i < 64 /\ 2 ^ i || bitsSub 64 vaddr off /\
     l = u32Bytes type ++ u32Bytes (protToFlags prot) ++
         u64Bytes off ++ u64Bytes vaddr ++ u64Bytes 0 ++
         u64Bytes filesz ++ u64Bytes memsz ++ u64Bytes (2 ^ i)) $;

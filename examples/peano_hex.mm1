@@ -2,20 +2,70 @@ import "peano.mm1";
 
 -- The string preamble. This is used for interfacing with
 -- the real world, making concrete inputs and outputs.
-strict free sort hex;
-term x0: hex; term x1: hex; term x2: hex; term x3: hex;
-term x4: hex; term x5: hex; term x6: hex; term x7: hex;
-term x8: hex; term x9: hex; term xa: hex; term xb: hex;
-term xc: hex; term xd: hex; term xe: hex; term xf: hex;
 
+--| The syntactic sort of hexadecimal digits.
+--| This contains only the terms `x0..xf` and variables.
+strict free sort hex;
+
+--| Hexadecimal digit `0`.
+term x0: hex;
+--| Hexadecimal digit `1`.
+term x1: hex;
+--| Hexadecimal digit `2`.
+term x2: hex;
+--| Hexadecimal digit `3`.
+term x3: hex;
+--| Hexadecimal digit `4`.
+term x4: hex;
+--| Hexadecimal digit `5`.
+term x5: hex;
+--| Hexadecimal digit `6`.
+term x6: hex;
+--| Hexadecimal digit `7`.
+term x7: hex;
+--| Hexadecimal digit `8`.
+term x8: hex;
+--| Hexadecimal digit `9`.
+term x9: hex;
+--| Hexadecimal digit `a = 10`.
+term xa: hex;
+--| Hexadecimal digit `b = 11`.
+term xb: hex;
+--| Hexadecimal digit `c = 12`.
+term xc: hex;
+--| Hexadecimal digit `d = 13`.
+term xd: hex;
+--| Hexadecimal digit `e = 14`.
+term xe: hex;
+--| Hexadecimal digit `f = 15`.
+term xf: hex;
+
+--| The syntactic sort of (8-bit) characters.
+--| This contains only terms `ch a b` where `a` and `b` are hex digits,
+--| for example `ch x4 x1`, denoting `\x41`, the ASCII character `A`.
 strict free sort char;
+
+--| The only constructor for the sort `char`:
+--| `ch a b` is the character with high nibble `a` and low nibble `b`.
 term ch: hex > hex > char;
 
+--| The syntactic sort of byte strings.
+--| The only constructors of this sort are:
+--| * `s0`: the empty string
+--| * `s1 c` where `c: char`: a one byte string
+--| * `sadd s t`, or `s '+ t`: the concatenation of strings
+--|
+--| Because of this representation, there are multiple equivalent ways
+--| to represent a string. (Formally, the function `s2n` is not injective.)
 strict free sort string;
+--| The empty string.
 term s0: string;
+--| A singleton (length 1) string formed from a character.
 term s1: char > string;
+--| `sadd s t`, or `s '+ t`: A string formed by concatenating two smaller strings.
 term sadd: string > string > string; infixr sadd: $'+$ prec 51;
 
+--| `c ': s` appends `c` to the front of string `s`.
 def scons (c: char) (s: string): string = $ s1 c '+ s $;
 infixr scons: $':$ prec 53;
 
@@ -32,6 +82,10 @@ def d14: nat = $suc 13$; prefix d14: $14$ prec max;
 def d15: nat = $suc 14$; prefix d15: $15$ prec max;
 def d16: nat = $suc 15$; prefix d16: $16$ prec max;
 
+--| `h2n a`, the coercion `hex > nat`, embeds a hex digit to a natural number.
+--| Because we cannot define functions by case distinction on `hex`, we must
+--| axiomatize the value of this coercion on each digit.
+--| This implies that all the elements of `hex` are distinct.
 term h2n: hex > nat; coercion h2n: hex > nat;
 axiom h2n0: $ x0 = 0 $;   axiom h2n1: $ x1 = 1 $;
 axiom h2n2: $ x2 = 2 $;   axiom h2n3: $ x3 = 3 $;
@@ -47,14 +101,31 @@ axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
 --| sort has only the given 16 constructors is only observable from outside the theory.
 axiom h2nlt (h: hex): $ h < 16 $;
 
+--| `h2n a`, the coercion `char > nat`, embeds a character
+--| as a natural number less than 256.
 term c2n: char > nat; coercion c2n: char > nat;
-axiom c2nch (h1 h2: hex): $ ch h1 h2 = h1 * 16 + h2 $;
+--| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
+axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
+--| The `c2n` function is less than 256 for all elements of the type `char`.
+--| This ensures that there are no other elements in the syntactic sort `char`.
 axiom c2nlt (c: char): $ c < 16 * 16 $;
 
+--| `s2n s`, the coercion `string > nat`,
+--| interprets a string as a `List u8` in the obvious way:
+--| * `s2n s0 = 0`
+--| * `s2n (s1 c) = c2n c : 0`
+--| * `s2n (s '+ t) = s2n s ++ s2n t`
+--|
+--| Because `string` is a syntactic sort, it does not have quantifiers
+--| so our ability to prove properties about it is limited;
+--| but using this function we can obtain a `nat` which we can prove
+--| theorems about.
 term s2n: string > nat; coercion s2n: string > nat;
 axiom s2ns0: $ s0 = 0 $;
 axiom s2ns1 (c: char): $ s1 c = c : 0 $;
 axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+--| The `s2n` function returns a list all of whose elements
+--| are numbers less than 256.
 axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
 
 theorem s2nscons: $ c ': s = c : s $ =

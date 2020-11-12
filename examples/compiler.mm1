@@ -862,7 +862,7 @@ local def assembles (c s: string) (start end: nat) (p q: wff): wff =
 $ E. n (start = text_start + n /\ sublistAt n c s) /\ p -> end = start + len s /\ q $;
 
 theorem assembles_trul (h: $ assembles c s x y p (T. /\ q) $):
-  $ assembles c s x y p q $ = (named '(sylib (aneq2i @ bian1 tru) h));
+  $ assembles c s x y p q $ = (named '(sylib (aneq2i @ bian1 itru) h));
 theorem assembles_assoc (h: $ assembles c s x y p (q1 /\ q2 /\ q3) $):
   $ assembles c s x y p (q1 /\ (q2 /\ q3)) $ = (named '(sylib (aneq2i anass) h));
 
@@ -931,7 +931,7 @@ theorem assembles_finish
   $ len c = n /\ p $ =
 (focus
   '(anim1 (eqcomd @ sylib addcan2 @ eqtrd (a1i h2) id) @ h1 @
-    ian (iexe _ @ ian (eqcom add02) sublistAt_id) tru)
+    ian (iexe _ @ ian (eqcom add02) sublistAt_id) itru)
   eqtac);
 
 -------------------------------
@@ -1535,10 +1535,10 @@ theorem s_bot_ss2: $ P C_ F.s <-> P == F.s $ =
 prefix s_emp: $emp$ prec max;
 @_ local def s_top: set = $ ^s T. $;
 prefix s_top: $T.s$ prec max;
-theorem el_s_top: $ h e. T.s <-> isfun h $ = '(bitr el_s_lift @ bian2 tru);
+theorem el_s_top: $ h e. T.s <-> isfun h $ = '(bitr el_s_lift @ bian2 itru);
 theorem s_top_01: $ 0 e. T.s $ = '(mpbir el_s_top isf0);
 
-theorem s_lift_sstop: $ ^s p C_ T.s $ = '(mpbir s_lift_ss @ a1i tru);
+theorem s_lift_sstop: $ ^s p C_ T.s $ = '(mpbir s_lift_ss @ a1i itru);
 
 theorem el_sstop: $ P C_ T.s -> h e. P -> isfun h $ = '(syl6ib el_s_top ssel);
 

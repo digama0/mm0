@@ -2118,7 +2118,7 @@ pub theorem simpleTokenizeTk (s x r: nat):
 theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = a ++ x ++ b} (simpleTokenize s) $ =
 (named @ focus
   (def h '(alleqd (abeqd @ aneq2d @ exeqd @ exeqd eqeq1) simpleTokenizeeq))
-  '(!! indstr y z ,h ,h (anwr @ cases _ _) tru)
+  '(trud @ !! indstr y z ,h ,h @ anwr @ cases _ _)
   '(a1d @ mpbiri all0 @ alleq2d @ syl6eq simpleTokenize0 simpleTokenizeeq)
   '(sylbi excons @ eex @ eex @ casesda _ _)
   '(ealde @ eimd (mpbiri ltconsid2 @ lteqd anr anll) @
