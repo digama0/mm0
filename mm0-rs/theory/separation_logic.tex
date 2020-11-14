@@ -142,7 +142,7 @@ Language items that are considered but not present (yet) in the language include
 \end{itemize}
 Most of the constructs are likely familiar from other languages. We will call some attention to the more unusual features:
 \begin{itemize}
-  \item Ghost variables $\ghost x$ are used to represent computationally irrelevant data. They can be manipulated just like regular variables, but they must not appear on the data path during code generation. We will use $x^\gamma$ to generalize over ghost and non-ghost variables, where $\gamma=\top$ means this is a ghost variable and $\gamma=\bot$ means it is not.
+  \item Ghost variables $\ghost x$ are used to represent computationally irrelevant data. They can be manipulated just like regular variables, but they must not appear on the data path during code generation. We will use $x^\gamma$ to generalize over ghost and non-ghost variables, where $\gamma=\bot$ means this is a ghost variable and $\gamma=\top$ means it is not. We use $\gamma'\le \gamma$ to mean that $\gamma$ is ``more computationally relevant'' than $\gamma'$, i.e. if $x^\gamma$ is ghost then $x^{\gamma'}$ is too.
 
   \item The $\texttt{!}_s\; n$ operation performs the mathematical function $2^s-n-1$, taking $2^\infty=0$ so that $\texttt{!}_\infty\; n=-n-1$. $\texttt{!}_s\; n$ is used for bitwise negation of unsigned integers, and $\texttt{!}_\infty\; n$ is used for bitwise negation of signed integers (even those of finite width).
   \item The assignment operator $\mathsf{let}\ h^? := t := e_1\;\mathsf{in}\; e_2$ assigns the variables of $t$ to the result of $e_1$, but here it should be understood as a new binding, or shadowing declaration, rather than a reassignment to an existing variable. Even array assignments will be desugared into pure-functional update operations.
@@ -506,11 +506,11 @@ For general expressions, we must worry about the following additional effects:
       \Gamma',h\gets p:A\proves e:\tau\makes\Gamma''}}
     {\Gamma \proves (h\gets p;\ e):\tau\makes\Gamma''}\and
   \infer[tye-let-hyp\footnotemark]
-    {\!\:{\Gamma \proves pe:\tau\makes \Gamma'\qquad
-      \Gamma' \proves t:\tau\Rightarrow \overline{R}\qquad
-      \Gamma'' \proves \tau'\;\mathsf{type}\atop
-      \Gamma',\overline{R},h:t=pe \proves e:\tau'\makesto\Gamma'',\overline{R},h:t=pe}}
-    {\Gamma \proves (\mathsf{let}\ h := t := pe\;\mathsf{in}\; e):\tau'\makes\Gamma''}\and
+    {\!\:{\Gamma \proves pe:\tau\qquad
+      \Gamma \proves t:\tau\Rightarrow \overline{R}\qquad
+      \Gamma' \proves \tau'\;\mathsf{type}\atop
+      \Gamma,\overline{R},h:t=pe \proves e:\tau'\makesto\Gamma',\overline{R},h:t=pe}}
+    {\Gamma \proves (\mathsf{let}\ h := t := pe\;\mathsf{in}\; e):\tau'\makes\Gamma'}\and
   \footnotetext{In \textsc{tye-let-hyp}, $t$ must not contain ignore patterns so that $t$ is a pure expression and $t=pe$ is well defined.}
   \infer[tye-unreachable]
     {\Gamma \proves p:\bot\makes\Gamma'}
@@ -526,7 +526,7 @@ For general expressions, we must worry about the following additional effects:
       \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar R\makes\Gamma'}
     {\Gamma \proves F(\overline{e}):\textstyle\sum\bar S\makes\Gamma'}\and
   \infer[tye-let-pr]
-    {\!\:{(\Gamma \proves p:A)\in\Gamma\makes \Gamma'\quad
+    {\!\:{\Gamma \proves p:A\makes \Gamma'\quad
       \Gamma' \proves t:A\Rightarrow \overline{R}\quad
       \Gamma'' \proves t:\tau\;\mathsf{type}\atop
       \Gamma',\overline{R} \proves e:\tau\makesto\Gamma'',\overline{R}}}
@@ -633,7 +633,7 @@ Individual items are typed as follows:
   \infer[ok-func, ok-proc]
     {\mathbf{kw}\in\{\mathsf{func},\mathsf{proc}\}\quad \Gamma\proves \textstyle\sum\overline{R}\;\mathsf{type}\quad
       \Gamma,\overline{R} \proves\textstyle\sum\overline{S}\;\mathsf{type}\quad
-      \Gamma,(\mathsf{self}(\overline{R}):\overline{S}),\overline{R} \proves e:\textstyle\sum\overline{S}\makesto \core{\bar R}}
+      \Gamma,(\mathsf{self}(\overline{R}):\overline{S}),\overline{R} \proves e:\mathbf{0}\makesto \core{\bar R}}
     {\Gamma \proves \mathbf{kw}\;f(\overline{R}):\overline{S}:=e\makes \Gamma',\ \mathbf{kw}\;f(\overline{R}):\overline{S}}\and
 \end{mathparpagebreakable}
 
