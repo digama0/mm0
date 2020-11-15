@@ -4,7 +4,7 @@
 
 use std::{fs, io};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
-use std::collections::{HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
+use std::collections::{VecDeque, HashMap, HashSet, hash_map::{Entry, DefaultHasher}};
 use std::hash::{Hash, Hasher};
 use std::result::Result as StdResult;
 use std::thread::{ThreadId, self};
@@ -74,7 +74,32 @@ fn nos_id(nos: NumberOrString) -> RequestId {
   }
 }
 
-type LogMessage = (Instant, ThreadId, usize, String);
+#[cfg(feature = "memory")]
+struct MemoryData(usize, usize);
+#[cfg(not(feature = "memory"))]
+struct MemoryData;
+
+impl MemoryData {
+  #[cfg(feature = "memory")]
+  fn get() -> MemoryData {
+    use crate::deepsize::DeepSizeOf;
+    MemoryData(get_memory_usage(), SERVER.vfs.deep_size_of())
+  }
+  #[cfg(not(feature = "memory"))]
+  fn get() -> MemoryData { MemoryData }
+}
+
+impl std::fmt::Display for MemoryData {
+  fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    #[cfg(feature = "memory")]
+    if self.0 != 0 {
+      write!(_f, ", {}k / {}k", self.0/1024, self.1/1024)?
+    }
+    Ok(())
+  }
+}
+
+type LogMessage = (Instant, ThreadId, MemoryData, String);
 
 lazy_static! {
   static ref LOGGER: (Mutex<Vec<LogMessage>>, Condvar) = Default::default();
@@ -86,8 +111,35 @@ pub(crate) fn get_log_errors() -> bool { LOG_ERRORS.load(Ordering::Relaxed) }
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {
-  LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), get_memory_usage(), s));
+  LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), MemoryData::get(), s));
   LOGGER.1.notify_one();
+}
+
+struct Logger(std::thread::JoinHandle<()>, Arc<AtomicBool>);
+
+impl Logger {
+  fn start() -> Self {
+    let cancel: Arc<AtomicBool> = Default::default();
+    let cancel2 = cancel.clone();
+    let jh = std::thread::spawn(move || {
+      let mut now = Instant::now();
+      while !cancel.load(Ordering::Acquire) {
+        for (i, id, mem, s) in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
+          let d = i.saturating_duration_since(now).as_millis();
+          let msg = format!("[{:?}: {:?}ms{}] {}", id, d, mem, s);
+          log_message(msg).unwrap();
+          now = i;
+        }
+      }
+    });
+    Logger(jh, cancel2)
+  }
+
+  fn stop(self) {
+    self.1.store(true, Ordering::Release);
+    LOGGER.1.notify_one();
+    self.0.join().unwrap()
+  }
 }
 
 #[allow(unused)]
@@ -97,7 +149,7 @@ macro_rules! log {
 
 async fn elaborate(path: FileRef, start: Option<Position>,
     cancel: Arc<AtomicBool>) -> Result<Option<(u64, FrozenEnv)>> {
-  let Server {vfs, pool, ..} = &*SERVER;
+  let vfs = &SERVER.vfs;
   let (path, file) = vfs.get_or_insert(path)?;
   let v = file.text.lock().unwrap().0;
   let (old_ast, old_env, old_deps) = {
@@ -161,11 +213,11 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       ast.clone(), path.clone(), path.has_extension("mm0"),
       crate::get_check_proofs(), cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
-      |path| {
-        let path = vfs.get_or_insert(path)?.0;
+      |p| {
+        let p = vfs.get_or_insert(p)?.0;
         let (send, recv) = channel();
-        pool.spawn_ok(elaborate_and_send(path.clone(), Default::default(), send));
-        deps.push(path);
+        spawn_new(|c| elaborate_and_send(p.clone(), c, send));
+        deps.push(p);
         Ok(recv)
       }).await
   };
@@ -223,7 +275,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   drop(g);
   for d in file.downstream.lock().unwrap().iter() {
     log!("{:?} affects {:?}", path, d);
-    pool.spawn_ok(dep_change(d.clone()));
+    spawn_new(|c| dep_change(d.clone(), c));
   }
   Ok(Some((hash, env)))
 }
@@ -246,8 +298,8 @@ fn elaborate_and_send(path: FileRef,
   }.boxed()
 }
 
-fn dep_change(path: FileRef) -> BoxFuture<'static, ()> {
-  elaborate_and_report(path, None, Default::default()).boxed()
+fn dep_change(path: FileRef, cancel: Arc<AtomicBool>) -> BoxFuture<'static, ()> {
+  elaborate_and_report(path, None, cancel).boxed()
 }
 
 #[derive(DeepSizeOf)]
@@ -313,19 +365,17 @@ impl VFS {
   }
 
   fn open_virt(&self, path: FileRef, version: i64, text: String) -> Result<Arc<VirtualFile>> {
-    let pool = &SERVER.pool;
     let file = Arc::new(VirtualFile::new(Some(version), text));
     let file = match self.0.lock().unwrap().entry(path.clone()) {
       Entry::Occupied(entry) => {
         for dep in entry.get().downstream.lock().unwrap().iter() {
-          pool.spawn_ok(dep_change(dep.clone()));
+          spawn_new(|c| dep_change(dep.clone(), c));
         }
         file
       }
       Entry::Vacant(entry) => entry.insert(file).clone()
     };
-    pool.spawn_ok(elaborate_and_report(path, Some(Position::default()),
-      Arc::new(AtomicBool::new(false))));
+    spawn_new(|c| elaborate_and_report(path, Some(Position::default()), c));
     Ok(file)
   }
 
@@ -338,9 +388,8 @@ impl VFS {
       } else if e.get().text.lock().unwrap().0.take().is_some() {
         let file = e.get().clone();
         drop(g);
-        let pool = &SERVER.pool;
         for dep in file.downstream.lock().unwrap().clone() {
-          pool.spawn_ok(dep_change(dep.clone()));
+          spawn_new(|c| dep_change(dep.clone(), c));
         }
       }
     }
@@ -527,12 +576,11 @@ fn trim_margin(s: &str) -> String {
 }
 
 async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
-  let Server {vfs, ..} = &*SERVER;
   macro_rules! or {($ret:expr, $e:expr)  => {match $e {
     Some(x) => x,
     None => return $ret
   }}}
-  let file = vfs.get(&path).ok_or_else(||
+  let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or!(Ok(None), text.to_idx(pos));
@@ -656,7 +704,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
 async fn definition<T>(path: FileRef, pos: Position,
     f: impl Fn(&LinedString, &LinedString, Span, &FileSpan, Span) -> T) ->
     StdResult<Vec<T>, ResponseError> {
-  let Server {vfs, ..} = &*SERVER;
+  let vfs = &SERVER.vfs;
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
     None => return Ok(vec![])
@@ -730,8 +778,7 @@ async fn definition<T>(path: FileRef, pos: Position,
 
 #[allow(deprecated)] // workaround rust#60681
 async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
-  let Server {vfs, ..} = &*SERVER;
-  let file = vfs.get(&path).ok_or_else(||
+  let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default())
@@ -853,8 +900,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
 }
 
 async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionResponse, ResponseError> {
-  let Server {vfs, ..} = &*SERVER;
-  let file = vfs.get(&path).ok_or_else(||
+  let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let old = if let Some(g) = file.parsed.try_lock() {
     g.as_ref().and_then(|fc| match fc {
@@ -882,12 +928,11 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
 }
 
 async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, ResponseError> {
-  let Server {vfs, ..} = &*SERVER;
   let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
     response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
   let path = uri.into();
-  let file = vfs.get(&path).ok_or_else(||
+  let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default())
@@ -899,12 +944,11 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
 }
 
 async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl Fn(Range) -> T) -> StdResult<Vec<T>, ResponseError> {
-  let Server {vfs, ..} = &*SERVER;
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
     None => return Ok(vec![])
   }}}
-  let file = vfs.get(&path).ok_or_else(||
+  let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
@@ -979,11 +1023,11 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
 struct Server {
   conn: Connection,
   #[allow(unused)]
-  params: InitializeParams,
   caps: Mutex<Capabilities>,
   reqs: OpenRequests,
   vfs: VFS,
   pool: ThreadPool,
+  threads: Arc<(Mutex<VecDeque<Arc<AtomicBool>>>, Condvar)>,
 }
 
 struct Capabilities {
@@ -1029,6 +1073,29 @@ impl Capabilities {
   }
 }
 
+fn spawn(cancel: Arc<AtomicBool>, fut: impl std::future::Future<Output=()> + Send + 'static) {
+  let mut g = SERVER.threads.0.lock().unwrap();
+  g.push_back(cancel.clone());
+  drop(g);
+  SERVER.pool.spawn_ok(async move {
+    fut.await;
+    let (m, c) = &*SERVER.threads;
+    let mut vec = m.lock().unwrap();
+    let a: *const AtomicBool = &*cancel;
+    let i = vec.iter().enumerate().find(|&(_, b)| a == &**b).unwrap().0;
+    vec.swap_remove_front(i).unwrap();
+    drop(vec);
+    c.notify_all();
+  })
+}
+
+fn spawn_new<F>(fut: impl FnOnce(Arc<AtomicBool>) -> F) -> Arc<AtomicBool>
+where F: std::future::Future<Output=()> + Send + 'static {
+  let cancel: Arc<AtomicBool> = Default::default();
+  spawn(cancel.clone(), fut(cancel.clone()));
+  cancel
+}
+
 impl Server {
   fn new() -> Result<Server> {
     let (conn, _iot) = Connection::stdio();
@@ -1049,107 +1116,94 @@ impl Server {
     )?)?;
     Ok(Server {
       caps: Mutex::new(Capabilities::new(&params)),
-      params,
       conn,
       reqs: Mutex::new(HashMap::new()),
       vfs: VFS(Mutex::new(HashMap::new())),
-      pool: ThreadPool::new()?
+      pool: ThreadPool::new()?,
+      threads: Default::default(),
     })
   }
 
   fn run(&self) {
-    crossbeam::scope(|s| {
-      s.spawn(move |_| {
-        let mut now = Instant::now();
-        loop {
-          for (i, id, mem, s) in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
-            let d = i.saturating_duration_since(now).as_millis();
-            let msg = if mem == 0 {
-              format!("[{:?}: {:?}ms] {}", id, d, s)
-            } else {
-              format!("[{:?}: {:?}ms, {}k] {}", id, d, mem/1024, s)
-            };
-            log_message(msg).unwrap();
-            now = i;
-          }
-        }
-      });
-      let _ = self.caps.lock().unwrap().register();
-      let mut count: i64 = 1;
-      loop {
-        match (|| -> Result<bool> {
-          let Server {conn, caps, reqs, vfs, pool, ..} = &*SERVER;
-          match conn.receiver.recv() {
-            Err(RecvError) => return Ok(true),
-            Ok(Message::Request(req)) => {
-              if conn.handle_shutdown(&req)? {
-                return Ok(true)
-              }
-              if let Some((id, req)) = parse_request(req)? {
-                let cancel = Arc::new(AtomicBool::new(false));
+    let logger = Logger::start();
+    let _ = self.caps.lock().unwrap().register();
+    let mut count: i64 = 1;
+    loop {
+      match (|| -> Result<bool> {
+        let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
+        match conn.receiver.recv() {
+          Err(RecvError) => return Ok(true),
+          Ok(Message::Request(req)) => {
+            if conn.handle_shutdown(&req)? {
+              return Ok(true)
+            }
+            if let Some((id, req)) = parse_request(req)? {
+              spawn_new(|cancel| {
                 reqs.lock().unwrap().insert(id.clone(), cancel.clone());
-                pool.spawn_ok(async {
-                  RequestHandler {id, cancel}.handle(req).await.unwrap()
-                });
-              }
-            }
-            Ok(Message::Response(resp)) => {
-              let mut caps = caps.lock().unwrap();
-              if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
-                caps.finish_register(resp);
-              } else {
-                log!("response to unknown request {}", resp.id)
-              }
-            }
-            Ok(Message::Notification(notif)) => {
-              match notif.method.as_str() {
-                "$/cancelRequest" => {
-                  let CancelParams {id} = from_value(notif.params)?;
-                  if let Some(cancel) = reqs.lock().unwrap().get(&nos_id(id)) {
-                    cancel.store(true, Ordering::Relaxed);
-                  }
-                }
-                "textDocument/didOpen" => {
-                  let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
-                  let path = doc.uri.into();
-                  log!("open {:?}", path);
-                  vfs.open_virt(path, doc.version, doc.text)?;
-                }
-                "textDocument/didChange" => {
-                  let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
-                  if !content_changes.is_empty() {
-                    let path = doc.uri.into();
-                    log!("change {:?}", path);
-                    let start = {
-                      let file = vfs.get(&path).ok_or("changed nonexistent file")?;
-                      let (version, text) = &mut *file.text.lock().unwrap();
-                      *version = Some(doc.version.unwrap_or_else(|| {let c = count; count += 1; c}));
-                      let (start, s) = text.apply_changes(content_changes.into_iter());
-                      *text = Arc::new(s);
-                      start
-                    };
-                    pool.spawn_ok(elaborate_and_report(path, Some(start),
-                      Arc::new(AtomicBool::new(false))));
-                  }
-                }
-                "textDocument/didClose" => {
-                  let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
-                  let path = doc.uri.into();
-                  log!("close {:?}", path);
-                  vfs.close(&path)?;
-                }
-                _ => {}
-              }
+                async { RequestHandler {id, cancel}.handle(req).await.unwrap() }
+              });
             }
           }
-          Ok(false)
-        })() {
-          Ok(true) => break,
-          Ok(false) => {},
-          Err(e) => eprintln!("Server panicked: {:?}", e)
+          Ok(Message::Response(resp)) => {
+            let mut caps = caps.lock().unwrap();
+            if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
+              caps.finish_register(resp);
+            } else {
+              log!("response to unknown request {}", resp.id)
+            }
+          }
+          Ok(Message::Notification(notif)) => {
+            match notif.method.as_str() {
+              "$/cancelRequest" => {
+                let CancelParams {id} = from_value(notif.params)?;
+                if let Some(cancel) = reqs.lock().unwrap().get(&nos_id(id)) {
+                  cancel.store(true, Ordering::Relaxed);
+                }
+              }
+              "textDocument/didOpen" => {
+                let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
+                let path = doc.uri.into();
+                log!("open {:?}", path);
+                vfs.open_virt(path, doc.version, doc.text)?;
+              }
+              "textDocument/didChange" => {
+                let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
+                if !content_changes.is_empty() {
+                  let path = doc.uri.into();
+                  log!("change {:?}", path);
+                  let start = {
+                    let file = vfs.get(&path).ok_or("changed nonexistent file")?;
+                    let (version, text) = &mut *file.text.lock().unwrap();
+                    *version = Some(doc.version.unwrap_or_else(|| {let c = count; count += 1; c}));
+                    let (start, s) = text.apply_changes(content_changes.into_iter());
+                    *text = Arc::new(s);
+                    start
+                  };
+                  spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                }
+              }
+              "textDocument/didClose" => {
+                let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
+                let path = doc.uri.into();
+                log!("close {:?}", path);
+                vfs.close(&path)?;
+              }
+              _ => {}
+            }
+          }
         }
+        Ok(false)
+      })() {
+        Ok(true) => break,
+        Ok(false) => {},
+        Err(e) => eprintln!("Server panicked: {:?}", e)
       }
-    }).expect("other thread panicked")
+    }
+    logger.stop();
+    let (mutex, cvar) = &*self.threads;
+    let mut g = mutex.lock().unwrap();
+    g.iter().for_each(|c| c.store(true, Ordering::Relaxed));
+    while !g.is_empty() { g = cvar.wait(g).unwrap() }
   }
 }
 
@@ -1179,5 +1233,8 @@ pub fn main(args: &ArgMatches<'_>) {
   }
   if args.is_present("no_log_errors") { LOG_ERRORS.store(false, Ordering::Relaxed) }
   log_message("started".into()).unwrap();
-  SERVER.run()
+  SERVER.run();
+  let Server {reqs, vfs: VFS(vfs), ..} = &*SERVER;
+  std::mem::take(&mut *reqs.lock().unwrap());
+  std::mem::take(&mut *vfs.lock().unwrap());
 }

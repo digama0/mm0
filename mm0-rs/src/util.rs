@@ -324,7 +324,7 @@ impl fmt::Debug for FileSpan {
 
 /// Try to get memory usage (resident set size) in bytes using the `getrusage()` function from libc.
 #[cfg(feature = "memory")]
-fn get_memory_rusage() -> usize {
+pub(crate) fn get_memory_rusage() -> usize {
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
     assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);
