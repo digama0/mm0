@@ -270,6 +270,7 @@ deep_size_0!(
     {!Copy} atomic::AtomicBool, {!Copy} atomic::AtomicIsize, {!Copy} atomic::AtomicUsize,
     {T: ?Sized} &T,
     {!Copy T} std::cell::Cell<T>,
+    {!Copy T} std::rc::Weak<T>,
     {!Copy T} std::mem::MaybeUninit<T>,
     {T: ?Sized} core::marker::PhantomData<T>,
     {!Copy} dyn std::error::Error + Send + Sync,
@@ -373,5 +374,21 @@ impl<T: DeepSizeOf> DeepSizeOf for futures::lock::Mutex<T> {
         if let Some(g) = self.try_lock() {
             (*g).deep_size_of_with(context)
         } else {0}
+    }
+}
+
+impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
+    fn deep_size_of_children(&self, context: &mut Context) -> usize {
+        #[derive(DeepSizeOf)]
+        struct Arena<T> {
+            chunks: std::cell::RefCell<ChunkList<T>>,
+        }
+        #[derive(DeepSizeOf)]
+        struct ChunkList<T> {
+            current: Vec<T>,
+            rest: Vec<Vec<T>>,
+        }
+        let this: &Arena<T> = unsafe {std::mem::transmute(self)};
+        this.deep_size_of_children(context)
     }
 }

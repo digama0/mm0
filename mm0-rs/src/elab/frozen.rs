@@ -308,7 +308,7 @@ impl Remap for FrozenLispVal {
       FrozenLispKind::Ref(m) => match r.refs.entry(m as *const _) {
         Entry::Occupied(e) => e.get().clone(),
         Entry::Vacant(e) => {
-          let ref_ = LispVal::new(LispKind::Ref(LispRef::new(LispVal::undef())));
+          let ref_ = LispVal::new_ref(LispVal::undef());
           e.insert(ref_.clone());
           ref_.as_ref_(|val| *val = m.remap(r)).unwrap();
           r.refs.remove(&(m as *const _));

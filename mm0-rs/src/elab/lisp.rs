@@ -237,10 +237,6 @@ __mk_lisp_kind! {
   Proc
 }
 
-/// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
-#[derive(Debug, EnvDebug, DeepSizeOf)]
-pub struct LispRef(RefCell<LispVal>);
-
 impl LispVal {
   /// Make a `LispVal` from the inner enum type `LispKind`.
   pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
@@ -267,7 +263,7 @@ impl LispVal {
   /// Construct a `LispVal` for a procedure.
   pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
   /// Construct a `LispVal` for a mutable reference.
-  pub fn new_ref(e: LispVal) -> LispVal { LispVal::new(LispKind::Ref(LispRef::new(e))) }
+  pub fn new_ref(e: LispVal) -> LispVal { LispRef::new_ref(e) }
   /// Construct a `LispVal` for a goal.
   pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     LispVal::new(LispKind::Goal(ty)).span(fsp)
@@ -374,9 +370,37 @@ impl PartialEq<LispVal> for LispVal {
 }
 impl Eq for LispVal {}
 
+#[derive(Default, DeepSizeOf)]
+pub(crate) struct LispArena(typed_arena::Arena<std::rc::Weak<LispKind>>);
+
+thread_local!(static REFS: Cell<Option<*const LispArena>> = Cell::new(None));
+
+impl LispArena {
+  pub(crate) fn install_thread_local(&self) { REFS.with(|refs| refs.set(Some(self))) }
+  pub(crate) fn uninstall_thread_local() { REFS.with(|refs| refs.set(None)) }
+
+  pub(crate) fn clear(self) {
+    // for e in self.0.iter_mut() {
+      // if let Some(e) = e.upgrade() { e.as_ref_(|r| *r = LispVal::undef()); }
+    // }
+  }
+}
+
+impl std::fmt::Debug for LispArena {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "LispArena") }
+}
+
+/// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
+#[derive(Debug, EnvDebug, DeepSizeOf)]
+pub struct LispRef(RefCell<LispVal>);
+
 impl LispRef {
-  /// Creates a new `LispRef` initialized with value `e`.
-  pub fn new(e: LispVal) -> LispRef { LispRef(RefCell::new(e)) }
+  /// Construct a `LispVal` for a mutable reference.
+  fn new_ref(e: LispVal) -> LispVal {
+    let r = LispVal::new(LispKind::Ref(LispRef(RefCell::new(e))));
+    // REFS.with(|refs| {unsafe{&*refs.get().unwrap()}.0.alloc(Rc::downgrade(&r.0));});
+    r
+  }
   /// Get a reference to the stored value.
   pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.borrow() }
   /// Get a mutable reference to the stored value.

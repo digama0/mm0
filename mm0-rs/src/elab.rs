@@ -228,6 +228,8 @@ pub struct Elaborator {
   reporting: ReportMode,
   /// The handlers for different kinds of input and output.
   inout: InoutHandlers,
+  /// The arena for lisp data.
+  arena: lisp::LispArena,
 }
 
 impl Deref for Elaborator {
@@ -270,6 +272,7 @@ impl Elaborator {
       check_proofs,
       inout: InoutHandlers::default(),
       reporting: ReportMode::new(),
+      arena: Default::default(),
     }
   }
 
@@ -608,6 +611,7 @@ pub fn elaborate<T>(
       let this = &mut unsafe { self.get_unchecked_mut() }.0;
       let ElabFutureInner {elab: FrozenElaborator(elab), toks, recv, idx, progress} =
         this.as_mut().expect("poll called after Ready");
+      elab.arena.install_thread_local();
       'l: loop {
         match progress {
           UnfinishedStmt::None => {},
@@ -639,7 +643,9 @@ pub fn elaborate<T>(
           elab.push_spans();
           *idx += 1;
         }
+        lisp::LispArena::uninstall_thread_local();
         let ElabFutureInner {elab: FrozenElaborator(elab), toks, ..} = this.take().unwrap();
+        elab.arena.clear();
         return Poll::Ready((toks, elab.errors, FrozenEnv::new(elab.env)))
       }
     }
@@ -647,6 +653,7 @@ pub fn elaborate<T>(
 
   let mut recv = HashMap::new();
   let mut elab = Elaborator::new(ast.clone(), path, mm0_mode, check_proofs, cancel);
+  elab.arena.install_thread_local();
   for &(sp, ref f) in &ast.imports {
     (|| -> Result<_> {
       let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp, e))?;
@@ -657,6 +664,7 @@ pub fn elaborate<T>(
       Ok(())
     })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp, (None, channel().1)); });
   }
+  lisp::LispArena::uninstall_thread_local();
   ElabFuture(Some(ElabFutureInner {
     elab: FrozenElaborator(elab),
     toks: vec![],
