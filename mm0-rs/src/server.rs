@@ -24,7 +24,7 @@ use crate::util::*;
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::mmu::import::elab as mmu_elab;
-use crate::elab::{ElabError, self, FrozenEnv,
+use crate::elab::{ElabError, ElabResult, self, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
@@ -148,8 +148,9 @@ macro_rules! log {
 }
 
 async fn elaborate(path: FileRef, start: Option<Position>,
-    cancel: Arc<AtomicBool>) -> Result<Option<(u64, FrozenEnv)>> {
+    cancel: Arc<AtomicBool>, rd: ArcList<FileRef>) -> Result<ElabResult<u64>> {
   let vfs = &SERVER.vfs;
+  debug_assert!(!rd.contains(&path));
   let (path, file) = vfs.get_or_insert(path)?;
   let v = file.text.lock().unwrap().0;
   let (old_ast, old_env, old_deps) = {
@@ -161,14 +162,14 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           let (send, recv) = channel();
           senders.push(send);
           drop(g);
-          return Ok(recv.await.ok())
+          return Ok(recv.await.unwrap_or(ElabResult::Canceled))
         }
         cancel.store(true, Ordering::SeqCst);
         if let Some(FileCache::InProgress {old, senders, ..}) = g.take() {
           (old, (None, None, vec![]), senders)
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
-      &mut Some(FileCache::Ready {hash, ref deps, ref env, ..}) => {
+      &mut Some(FileCache::Ready {hash, ref deps, ref res, ..}) => {
         let hasher = &mut DefaultHasher::new();
         v.hash(hasher);
         let matches = (|| -> bool {
@@ -183,14 +184,21 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           }
           hasher.finish() == hash
         })();
-        if matches { return Ok(Some((hash, env.clone()))) }
-        if let Some(FileCache::Ready {ast, source, errors, deps, env, ..}) = g.take() {
-          (Some((source.clone(), env.clone())),
-            (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
+        if matches && !matches!(res, ElabResult::Canceled) {
+          return Ok(res.clone())
+        }
+        if let Some(FileCache::Ready {ast, source, errors, deps, res, ..}) = g.take() {
+          if let ElabResult::Ok(_, env) = res {
+            (Some((source.clone(), env.clone())),
+              (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
+          } else {
+            (None, (None, None, vec![]), vec![])
+          }
         } else {unsafe {std::hint::unreachable_unchecked()}}
       }
     };
     *g = Some(FileCache::InProgress {old, version: v, cancel: cancel.clone(), senders});
+    drop(g);
     res
   };
   let (version, text) = file.text.lock().unwrap().clone();
@@ -203,12 +211,13 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let ast = Arc::new(ast);
 
   let mut deps = Vec::new();
-  let (toks, errors, env) = if path.has_extension("mmb") {
+  let (cyc, toks, errors, env) = if path.has_extension("mmb") {
     unimplemented!()
   } else if path.has_extension("mmu") {
     let (error, env) = mmu_elab(path.clone(), ast.source.as_bytes());
-    (vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
+    (None, vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
+    let rd = rd.push(path.clone());
     elab::elaborate(
       ast.clone(), path.clone(), path.has_extension("mm0"),
       crate::get_check_proofs(), cancel.clone(),
@@ -216,8 +225,12 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       |p| {
         let p = vfs.get_or_insert(p)?.0;
         let (send, recv) = channel();
-        spawn_new(|c| elaborate_and_send(p.clone(), c, send));
-        deps.push(p);
+        if rd.contains(&p) {
+          send.send(ElabResult::ImportCycle(rd.clone())).unwrap();
+        } else {
+          spawn_new(|c| elaborate_and_send(p.clone(), c, send, rd.clone()));
+          deps.push(p);
+        }
         Ok(recv)
       }).await
   };
@@ -225,7 +238,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let hash = hasher.finish();
   log!("elabbed {:?}", path);
   let mut g = file.parsed.lock().await;
-  if cancel.load(Ordering::SeqCst) { return Ok(None) }
+  if cancel.load(Ordering::SeqCst) { return Ok(ElabResult::Canceled) }
   let mut srcs = HashMap::new();
   let mut to_loc = |fsp: &FileSpan| -> Location {
     if fsp.file.ptr_eq(&path) {
@@ -265,23 +278,28 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   }
   log(log_msg);
 
+  let res = match cyc.clone() {
+    None => ElabResult::Ok(hash, env.clone()),
+    Some(cyc) => ElabResult::ImportCycle(cyc.clone()),
+  };
   vfs.update_downstream(&old_deps, &deps, &path);
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {
     for s in senders {
-      let _ = s.send((hash, env.clone()));
+      let _ = s.send(res.clone());
     }
   }
-  *g = Some(FileCache::Ready {hash, source, ast, errors, deps, env: env.clone()});
+  *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), errors, deps});
   drop(g);
   for d in file.downstream.lock().unwrap().iter() {
     log!("{:?} affects {:?}", path, d);
     spawn_new(|c| dep_change(d.clone(), c));
   }
-  Ok(Some((hash, env)))
+  Ok(res)
 }
 
 async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Arc<AtomicBool>) {
-  if let Err(e) = std::panic::AssertUnwindSafe(elaborate(path, start, cancel))
+  if let Err(e) =
+    std::panic::AssertUnwindSafe(elaborate(path, start, cancel, Default::default()))
       .catch_unwind().await
       .unwrap_or_else(|_| Err("server panic".into())) {
     log_message(format!("{:?}", e)).unwrap();
@@ -289,11 +307,13 @@ async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Ar
 }
 
 fn elaborate_and_send(path: FileRef,
-  cancel: Arc<AtomicBool>, send: FSender<(u64, FrozenEnv)>) ->
-  BoxFuture<'static, ()> {
+  cancel: Arc<AtomicBool>,
+  send: FSender<ElabResult<u64>>,
+  rd: ArcList<FileRef>
+) -> BoxFuture<'static, ()> {
   async {
-    if let Ok(Some(env)) = elaborate(path, Some(Position::default()), cancel).await {
-      let _ = send.send(env);
+    if let Ok(r) = elaborate(path, Some(Position::default()), cancel, rd).await {
+      let _ = send.send(r);
     }
   }.boxed()
 }
@@ -308,14 +328,14 @@ enum FileCache {
     old: Option<(Arc<LinedString>, FrozenEnv)>,
     version: Option<i64>,
     cancel: Arc<AtomicBool>,
-    senders: Vec<FSender<(u64, FrozenEnv)>>,
+    senders: Vec<FSender<ElabResult<u64>>>,
   },
   Ready {
     hash: u64,
     source: Arc<LinedString>,
     ast: Arc<AST>,
     errors: Vec<ElabError>,
-    env: FrozenEnv,
+    res: ElabResult<u64>,
     deps: Vec<FileRef>,
   }
 }
@@ -575,6 +595,16 @@ fn trim_margin(s: &str) -> String {
   out
 }
 
+impl<T> ElabResult<T> {
+  fn to_response_error(self) -> StdResult<Option<(T, FrozenEnv)>, ResponseError> {
+    match self {
+      ElabResult::Ok(data, env) => Ok(Some((data, env))),
+      ElabResult::Canceled => Err(response_err(ErrorCode::RequestCanceled, "")),
+      ElabResult::ImportCycle(_) => Ok(None),
+    }
+  }
+}
+
 async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
   macro_rules! or {($ret:expr, $e:expr)  => {match $e {
     Some(x) => x,
@@ -584,9 +614,9 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
     response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or!(Ok(None), text.to_idx(pos));
-  let env = elaborate(path, Some(Position::default()), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = or!(Ok(None), env.to_response_error()?).1;
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
@@ -713,9 +743,9 @@ async fn definition<T>(path: FileRef, pos: Position,
     response_err(ErrorCode::InvalidRequest, "goto definition nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = or_none!(env.to_response_error()?).1;
   let spans = or_none!(env.find(idx));
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
@@ -781,9 +811,12 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = match env.to_response_error()? {
+    Some((_, env)) => env,
+    None => return Ok(DocumentSymbolResponse::Nested(vec![]))
+  };
   let fe = unsafe { env.format_env(&text) };
   let f = |sp, name: &ArcString, desc, full, kind| DocumentSymbol {
     name: String::from_utf8_lossy(name).into(),
@@ -904,17 +937,20 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let old = if let Some(g) = file.parsed.try_lock() {
     g.as_ref().and_then(|fc| match fc {
-      FileCache::Ready {source, env, ..} => Some((source.clone(), env.clone())),
+      FileCache::Ready {source, res: ElabResult::Ok(_, env), ..} => Some((source.clone(), env.clone())),
+      FileCache::Ready {..} => None,
       FileCache::InProgress {old, ..} => old.clone()
     })
   } else {None};
   let (text, env) = match old {
     Some(old) => old,
     None => {
-      let env = elaborate(path.clone(), Some(Position::default()), Default::default())
-        .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-        .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
-      (file.text.lock().unwrap().1.clone(), env)
+      let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+        .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+      match env.to_response_error()? {
+        None => return Ok(CompletionResponse::Array(vec![])),
+        Some((_, env)) => (file.text.lock().unwrap().1.clone(), env)
+      }
     }
   };
   let fe = unsafe { env.format_env(&text) };
@@ -935,9 +971,10 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default())
+  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+    .to_response_error()?
+    .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(ci.label.as_bytes()).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
@@ -952,9 +989,9 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
     response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
   let text = file.text.lock().unwrap().1.clone();
   let idx = or_none!(text.to_idx(pos));
-  let env = elaborate(path, Some(Position::default()), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .ok_or_else(|| response_err(ErrorCode::RequestCanceled, ""))?.1;
+  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = or_none!(env.to_response_error()?).1;
   let spans = or_none!(env.find(idx));
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {

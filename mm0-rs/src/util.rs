@@ -76,7 +76,7 @@ impl ArcString {
 }
 
 /// A structure that allows constructing linked lists on the call stack.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StackList<'a, T>(pub Option<&'a (StackList<'a, T>, T)>);
 
 impl<T> StackList<'_, T> {
@@ -90,6 +90,53 @@ impl<T> StackList<'_, T> {
         Some((s2, _)) => s = s2
       }
     }
+  }
+}
+
+/// A linked list data structure based on `Arc`.
+#[derive(Debug, DeepSizeOf)]
+pub struct ArcList<T>(Option<Arc<(ArcList<T>, T)>>);
+
+impl<T> Default for ArcList<T> {
+  fn default() -> Self { Self(None) }
+}
+impl<T> Clone for ArcList<T> {
+  fn clone(&self) -> Self { Self(self.0.clone()) }
+}
+
+impl<T> ArcList<T> {
+  /// Return true if the list is empty.
+  pub fn is_empty(&self) -> bool { self.0.is_none() }
+  /// Append a new node on the end of the list.
+  pub fn push(self, t: T) -> Self { Self(Some(Arc::new((self, t)))) }
+  /// Check if the list contains an item.
+  pub fn contains(&self, t: &T) -> bool where T: PartialEq {
+    let mut s = self;
+    loop {
+      match s.0.as_ref().map(Deref::deref) {
+        None => return false,
+        Some((_, t2)) if *t2 == *t => return true,
+        Some((s2, _)) => s = s2
+      }
+    }
+  }
+
+  /// Construct `self[..t2] ++ t :: tail` where `t2`
+  /// is the first element of `self` equal to `t`.
+  /// Panics if no such `t2` exists (i.e. `self.contains(t)` is a precondition).
+  pub fn join(&self, t: T, tail: ArcList<T>) -> ArcList<T> where T: PartialEq + Clone {
+    let (l, t2) = &**self.0.as_ref().unwrap();
+    if *t2 == t { return tail.push(t) }
+    l.join(t, tail).push(t2.clone())
+  }
+}
+
+impl<'a, T> Iterator for &'a ArcList<T> {
+  type Item = &'a T;
+  fn next(&mut self) -> Option<&'a T> {
+    let (l, t) = &**self.0.as_ref()?;
+    *self = l;
+    Some(t)
   }
 }
 

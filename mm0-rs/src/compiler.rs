@@ -21,12 +21,12 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use typed_arena::Arena;
 use clap::ArgMatches;
-use crate::elab::{self, ElabError, ElabErrorKind, FrozenEnv};
+use crate::elab::{self, ElabError, ElabErrorKind, ElabResult, FrozenEnv};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MMBExporter;
-use crate::util::{FileRef, FileSpan, Span, Position, Range, get_memory_usage};
+use crate::util::{FileRef, FileSpan, Span, Position, Range, ArcList, get_memory_usage};
 
 lazy_static! {
   /// The thread pool (used for running MM1 files in parallel, when possible)
@@ -52,7 +52,7 @@ enum FileCache {
   /// [`Sender`]: ../../futures_channel/oneshot/struct.Sender.html
   /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
   /// [`Elaborator::as_fut`]: ../elab/struct.Elaborator.html#method.as_fut
-  InProgress(Vec<FSender<((), FrozenEnv)>>),
+  InProgress(Vec<FSender<ElabResult<()>>>),
   /// The file has been elaborated and the result is ready.
   Ready(FrozenEnv),
 }
@@ -248,7 +248,7 @@ impl ParseError {
 /// [`Elaborator::as_fut`]: ../elab/struct.Elaborator.html#method.as_fut
 /// [`elaborate_and_send`]: fn.elaborate_and_send.html
 /// [`POOL`]: struct.POOL.html
-async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
+async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<()>> {
   let (path, file) = VFS_.get_or_insert(path)?;
   {
     let mut g = file.parsed.lock().await;
@@ -258,17 +258,17 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
         let (send, recv) = channel();
         senders.push(send);
         drop(g);
-        return Ok(recv.await.unwrap().1)
+        return Ok(recv.await.unwrap())
       }
-      Some(FileCache::Ready(env)) => return Ok(env.clone())
+      Some(FileCache::Ready(env)) => return Ok(ElabResult::Ok((), env.clone()))
     }
   }
   let text = file.text.clone();
-  let (errors, env) = if path.has_extension("mmb") {
+  let (cyc, errors, env) = if path.has_extension("mmb") {
     unimplemented!()
   } else if path.has_extension("mmu") {
     let (error, env) = mmu_elab(path.clone(), text.as_bytes());
-    (if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
+    (None, if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
     let (_, ast) = parse(text, None);
     if !ast.errors.is_empty() {
@@ -280,19 +280,28 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
     println!("elab {}, memory = {}M", path, get_memory_usage() >> 20);
-    let (_, errors, env) = elab::elaborate(
+    let rd = rd.push(path.clone());
+    let (cyc, _, errors, env) = elab::elaborate(
       ast.clone(), path.clone(), path.has_extension("mm0"),
       crate::get_check_proofs(),
       Arc::default(),
       None,
-      |path| {
-        let path = VFS_.get_or_insert(path)?.0;
+      |p| {
+        let p = VFS_.get_or_insert(p)?.0;
         let (send, recv) = channel();
-        POOL.spawn_ok(elaborate_and_send(path.clone(), send));
-        deps.push(path);
+        if rd.contains(&p) {
+          send.send(ElabResult::ImportCycle(rd.clone())).unwrap();
+        } else {
+          POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
+          deps.push(p);
+        }
         Ok(recv)
       }).await;
-    (errors, env)
+    (cyc, errors, env)
+  };
+  let res = match cyc {
+    None => ElabResult::Ok((), env.clone()),
+    Some(cyc) => ElabResult::ImportCycle(cyc),
   };
   println!("elabbed {}, memory = {}M", path, get_memory_usage() >> 20);
   if !errors.is_empty() {
@@ -306,12 +315,12 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
     let mut g = file.parsed.lock().await;
     if let Some(FileCache::InProgress(senders)) = g.take() {
       for s in senders {
-        let _ = s.send(((), env.clone()));
+        let _ = s.send(res.clone());
       }
     }
-    *g = Some(FileCache::Ready(env.clone()));
+    *g = Some(FileCache::Ready(env));
   }
-  Ok(env)
+  Ok(res)
 }
 
 /// Elaborate a file, and pass the `Environment` result to a [`Sender`].
@@ -323,11 +332,11 @@ async fn elaborate(path: FileRef) -> io::Result<FrozenEnv> {
 /// [`Sender`]: ../../futures_channel/oneshot/struct.Sender.html
 /// [`elaborate`]: fn.elaborate.html
 /// [`BoxFuture`]: ../../futures_core/future/type.BoxFuture.html
-fn elaborate_and_send(path: FileRef, send: FSender<((), FrozenEnv)>) ->
+fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<FileRef>) ->
   BoxFuture<'static, ()> {
   async {
-    if let Ok(env) = elaborate(path).await {
-      let _ = send.send(((), env));
+    if let Ok(env) = elaborate(path, rd).await {
+      let _ = send.send(env);
     }
   }.boxed()
 }
@@ -345,7 +354,10 @@ fn elaborate_and_send(path: FileRef, send: FSender<((), FrozenEnv)>) ->
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").unwrap();
   let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
-  let env = block_on(elaborate(path.clone()))?;
+  let env = match block_on(elaborate(path.clone(), Default::default()))? {
+    ElabResult::Ok(_, env) => env,
+    _ => std::process::exit(1)
+  };
   if let Some(s) = args.value_of_os("output") {
     if let Err((fsp, e)) =
       if s == "-" { env.run_output(io::stdout()) }
@@ -355,7 +367,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
       let file = VFS_.get_or_insert(fsp.file.clone())?.1;
       e.to_snippet(&fsp.file, &file.text, &mut mk_to_range(),
         |s| println!("{}\n", DisplayList::from(s).to_string()));
-      std::process::abort();
+      std::process::exit(1);
     }
   }
   if let Some(out) = args.value_of("OUTPUT") {

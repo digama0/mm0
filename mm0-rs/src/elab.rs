@@ -545,6 +545,19 @@ impl Elaborator {
   }
 }
 
+/// The result of elaboration of a dependent file.
+#[derive(Debug, Clone, DeepSizeOf)]
+pub enum ElabResult<T> {
+  /// Elaboration was successful; this carries the environment, plus additional user data.
+  Ok(T, FrozenEnv),
+  /// The elaboration was canceled.
+  Canceled,
+  /// The dependent file could not be elaborated because of an import cycle.
+  /// The provided list does not contain the target file itself, but contains a `FileRef`
+  /// that is equal to the target file, demonstrating the cycle.
+  ImportCycle(ArcList<FileRef>)
+}
+
 /// Creates a future to poll for the completed environment, given an import resolver.
 ///
 /// # Parameters
@@ -582,8 +595,8 @@ impl Elaborator {
 pub fn elaborate<T>(
   ast: Arc<AST>, path: FileRef, mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
   _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
-  mut mk: impl FnMut(FileRef) -> StdResult<Receiver<(T, FrozenEnv)>, BoxError>
-) -> impl Future<Output=(Vec<T>, Vec<ElabError>, FrozenEnv)> {
+  mut mk: impl FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError>
+) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> {
 
   type ImportMap<D> = HashMap<Span, (Option<FileRef>, D)>;
   #[derive(Debug)]
@@ -592,13 +605,14 @@ pub fn elaborate<T>(
 
   enum UnfinishedStmt<T> {
     None,
-    Import(Span, Receiver<(T, FrozenEnv)>),
+    Import(Span, Option<FileRef>, Receiver<ElabResult<T>>),
   }
 
   struct ElabFutureInner<T> {
     elab: FrozenElaborator,
     toks: Vec<T>,
-    recv: ImportMap<Receiver<(T, FrozenEnv)>>,
+    cyc: Option<ArcList<FileRef>>,
+    recv: ImportMap<Receiver<ElabResult<T>>>,
     idx: usize,
     progress: UnfinishedStmt<T>
   }
@@ -606,20 +620,34 @@ pub fn elaborate<T>(
   struct ElabFuture<T>(Option<ElabFutureInner<T>>);
 
   impl<T> Future for ElabFuture<T> {
-    type Output = (Vec<T>, Vec<ElabError>, FrozenEnv);
+    type Output = (Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv);
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
       let this = &mut unsafe { self.get_unchecked_mut() }.0;
-      let ElabFutureInner {elab: FrozenElaborator(elab), toks, recv, idx, progress} =
+      let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, recv, idx, progress} =
         this.as_mut().expect("poll called after Ready");
       elab.arena.install_thread_local();
       'l: loop {
         match progress {
           UnfinishedStmt::None => {},
-          UnfinishedStmt::Import(sp, other) => {
-            if let Ok((t, env)) = ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
-              toks.push(t);
-              let r = elab.env.merge(&env, *sp, &mut elab.errors);
-              elab.catch(r);
+          UnfinishedStmt::Import(sp, p, other) => {
+            match ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
+              Ok(ElabResult::Ok(t, env)) => {
+                toks.push(t);
+                let r = elab.env.merge(&env, *sp, &mut elab.errors);
+                elab.catch(r);
+              }
+              Ok(ElabResult::Canceled) => {
+                elab.report(ElabError::new_e(*sp, "canceled"));
+                break
+              }
+              Ok(ElabResult::ImportCycle(cyc2)) => {
+                let mut s = format!("import cycle: {}", p.clone().unwrap());
+                use std::fmt::Write;
+                for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
+                elab.report(ElabError::new_e(*sp, s));
+                if cyc.is_none() { *cyc = Some(cyc2) }
+              }
+              Err(_) => {} // already handled
             }
             *idx += 1;
           }
@@ -631,10 +659,10 @@ pub fn elaborate<T>(
             Ok(ElabStmt::Ok) => {}
             Ok(ElabStmt::Import(sp)) => {
               let (file, recv) = recv.remove(&sp).unwrap();
-              if let Some(file) = file {
+              if let Some(file) = file.clone() {
                 elab.spans.insert(sp, ObjectKind::Import(file));
               }
-              *progress = UnfinishedStmt::Import(sp, recv);
+              *progress = UnfinishedStmt::Import(sp, file, recv);
               elab.push_spans();
               continue 'l
             }
@@ -643,11 +671,12 @@ pub fn elaborate<T>(
           elab.push_spans();
           *idx += 1;
         }
-        lisp::LispArena::uninstall_thread_local();
-        let ElabFutureInner {elab: FrozenElaborator(elab), toks, ..} = this.take().unwrap();
-        elab.arena.clear();
-        return Poll::Ready((toks, elab.errors, FrozenEnv::new(elab.env)))
+        break
       }
+      lisp::LispArena::uninstall_thread_local();
+      let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, ..} = this.take().unwrap();
+      elab.arena.clear();
+      return Poll::Ready((cyc, toks, elab.errors, FrozenEnv::new(elab.env)))
     }
   }
 
@@ -668,6 +697,7 @@ pub fn elaborate<T>(
   ElabFuture(Some(ElabFutureInner {
     elab: FrozenElaborator(elab),
     toks: vec![],
+    cyc: None,
     recv,
     idx: 0,
     progress: UnfinishedStmt::None,
