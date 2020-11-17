@@ -41,7 +41,7 @@ use super::{Spans, ObjectKind, Remap, Remapper,
   environment::{Environment, ParserEnv,
     AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment,
     SortID, TermID, ThmID, AtomID, Sort, Term, Thm, AtomData},
-  lisp::{LispVal, LispKind, LispRef,
+  lisp::{LispVal, LispKind, LispRef, LispWeak,
     InferTarget, Proc, Annot, Syntax, print::FormatEnv}};
 use crate::util::{ArcString, FileSpan, Span};
 use crate::{lined_string::LinedString, __mk_lisp_kind};
@@ -191,22 +191,6 @@ impl FrozenLispVal {
 
   /// Get a iterator over frozen lisp values, for dealing with lists.
   pub fn uncons(&self) -> FrozenUncons<'_> { FrozenUncons::New(self) }
-
-  /// Like [`LispVal::unwrapped_arc`], but it can return a reference directly because
-  /// the data structure is frozen.
-  ///
-  /// [`LispVal::unwrapped_arc`]: ../lisp/enum.LispVal.html#method.unwrapped_arc
-  pub fn unwrap(&self) -> &Self {
-    let mut ret = self;
-    for _ in 0..20 {
-      match &**ret {
-        FrozenLispKind::Ref(m) => ret = m,
-        FrozenLispKind::Annot(_, v) => ret = v,
-        _ => return ret
-      }
-    }
-    ret
-  }
 }
 
 impl FrozenLispKind {
@@ -218,7 +202,10 @@ impl FrozenLispKind {
     let mut ret = self;
     for _ in 0..20 {
       match ret {
-        FrozenLispKind::Ref(m) => ret = m,
+        FrozenLispKind::Ref(m) => match m.deref() {
+          None => return ret,
+          Some(v) => ret = v
+        },
         FrozenLispKind::Annot(_, v) => ret = v,
         _ => return ret
       }
@@ -279,7 +266,7 @@ impl FrozenLispKind {
     let mut e = self;
     for _ in 0..20 {
       match e.unwrap() {
-        FrozenLispKind::Ref(m) => e = m,
+        FrozenLispKind::Ref(m) => e = m.deref()?,
         FrozenLispKind::Annot(Annot::Span(sp), _) => return Some(sp.clone()),
         _ => return None
       }
@@ -294,6 +281,11 @@ impl Deref for FrozenLispVal {
 }
 
 impl Remap for FrozenLispVal {
+  type Target = LispVal;
+  fn remap(&self, r: &mut Remapper) -> LispVal { (**self).remap(r) }
+}
+
+impl Remap for FrozenLispKind {
   type Target = LispVal;
   fn remap(&self, r: &mut Remapper) -> LispVal {
     let ptr: *const FrozenLispKind = self.deref();
@@ -310,7 +302,8 @@ impl Remap for FrozenLispVal {
         Entry::Vacant(e) => {
           let ref_ = LispVal::new_ref(LispVal::undef());
           e.insert(ref_.clone());
-          ref_.as_ref_(|val| *val = m.remap(r)).unwrap();
+          let w = m.remap(r);
+          ref_.as_lref(|val| *val.get_mut_weak() = w).unwrap();
           r.refs.remove(&(m as *const _));
           ref_
         }
@@ -324,6 +317,13 @@ impl Remap for FrozenLispVal {
       FrozenLispKind::Undef => LispVal::undef(),
     };
     r.lisp.entry(ptr).or_insert(v).clone()
+  }
+}
+
+impl Remap for FrozenLispRef {
+  type Target = LispWeak;
+  fn remap(&self, r: &mut Remapper) -> LispWeak {
+    unsafe { self.thaw().get_weak().map_unsafe(|e| e.freeze().remap(r)) }
   }
 }
 
@@ -353,12 +353,9 @@ impl FrozenLispRef {
   /// The reference derived here is only usable for reading, so in particular
   /// `Rc::clone()` should be avoided because it could race with other readers.
   pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
-}
 
-impl Deref for FrozenLispRef {
-  type Target = FrozenLispVal;
-  fn deref(&self) -> &FrozenLispVal {
-    unsafe { self.thaw().get_unsafe().freeze() }
+  pub fn deref(&self) -> Option<&FrozenLispKind> {
+    unsafe { self.thaw().get_unsafe().map(|e| e.freeze()) }
   }
 }
 
@@ -368,7 +365,7 @@ impl Deref for FrozenLispRef {
 /// [`Uncons`]: ../environment/struct.Uncons.html
 #[derive(Copy, Clone, Debug)]
 pub enum FrozenUncons<'a> {
-  New(&'a FrozenLispVal),
+  New(&'a FrozenLispKind),
   List(&'a [FrozenLispVal]),
   DottedList(&'a [FrozenLispVal], &'a FrozenLispVal),
 }
@@ -404,7 +401,7 @@ impl<'a> Iterator for FrozenUncons<'a> {
       match self {
         FrozenUncons::New(e) => {
           let e2 = e.unwrap();
-          match &**e2 {
+          match e2 {
             FrozenLispKind::List(es) => *self = FrozenUncons::List(es),
             FrozenLispKind::DottedList(es, r) => *self = FrozenUncons::DottedList(es, r),
             _ => {*e = e2; return None}

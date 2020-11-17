@@ -12,7 +12,7 @@ pub mod pretty;
 
 use std::ops::{Deref, DerefMut};
 use std::hash::Hash;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -263,7 +263,9 @@ impl LispVal {
   /// Construct a `LispVal` for a procedure.
   pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
   /// Construct a `LispVal` for a mutable reference.
-  pub fn new_ref(e: LispVal) -> LispVal { LispRef::new_ref(e) }
+  pub fn new_ref(e: LispVal) -> LispVal { LispRef::new(LispWeak::Strong(e)) }
+  /// Construct a `LispVal` for a weak reference.
+  pub fn weak_ref(e: &LispVal) -> LispVal { LispRef::new(LispWeak::Weak(Rc::downgrade(&e.0))) }
   /// Construct a `LispVal` for a goal.
   pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     LispVal::new(LispKind::Goal(ty)).span(fsp)
@@ -288,7 +290,7 @@ impl LispVal {
   /// there is only one owner.
   pub fn unwrapped_mut<T>(&mut self, f: impl FnOnce(&mut LispKind) -> T) -> Option<T> {
     Rc::get_mut(&mut self.0).and_then(|e| match e {
-      LispKind::Ref(m) => Self::unwrapped_mut(&mut m.get_mut(), f),
+      LispKind::Ref(m) => m.get_mut(|e| Self::unwrapped_mut(e, f)),
       LispKind::Annot(_, v) => Self::unwrapped_mut(v, f),
       _ => Some(f(e))
     })
@@ -297,7 +299,7 @@ impl LispVal {
   /// Traverse past any `Annot` and `Ref` nodes, and return a clone of the inner data.
   pub fn unwrapped_arc(&self) -> LispVal {
     match &**self {
-      LispKind::Ref(m) => Self::unwrapped_arc(&m.get()),
+      LispKind::Ref(m) => m.get(Self::unwrapped_arc),
       LispKind::Annot(_, v) => Self::unwrapped_arc(v),
       _ => self.clone()
     }
@@ -371,7 +373,7 @@ impl PartialEq<LispVal> for LispVal {
 impl Eq for LispVal {}
 
 #[derive(Default, DeepSizeOf)]
-pub(crate) struct LispArena(typed_arena::Arena<std::rc::Weak<LispKind>>);
+pub(crate) struct LispArena(typed_arena::Arena<Weak<LispKind>>);
 
 thread_local!(static REFS: Cell<Option<*const LispArena>> = Cell::new(None));
 
@@ -390,25 +392,87 @@ impl std::fmt::Debug for LispArena {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "LispArena") }
 }
 
+/// The target of a reference can be either a weak reference or a strong reference.
+/// Weak references are used to break cycles.
+#[derive(Debug, EnvDebug, DeepSizeOf)]
+pub enum LispWeak {
+  /// A regular (strong) reference.
+  Strong(LispVal),
+  /// A weak reference, generated via `(set-weak!)` or function references in a `letrec`.
+  Weak(Weak<LispKind>),
+}
+
+impl LispWeak {
+  fn get<T>(&self, f: impl FnOnce(&LispVal) -> T) -> T {
+    match self {
+      LispWeak::Strong(e) => f(e),
+      LispWeak::Weak(e) => match e.upgrade() {
+        None => f(&LispVal::undef()),
+        Some(e) => f(&LispVal(e))
+      }
+    }
+  }
+  fn get_mut<T>(&mut self, f: impl FnOnce(&mut LispVal) -> T) -> T {
+    match self {
+      LispWeak::Strong(e) => f(e),
+      LispWeak::Weak(e) => {
+        let e = match e.upgrade() {
+          None => LispVal::undef(),
+          Some(e) => LispVal(e)
+        };
+        *self = LispWeak::Strong(e);
+        if let LispWeak::Strong(e) = self { f(e) }
+        else { unsafe {std::hint::unreachable_unchecked()} }
+      }
+    }
+  }
+  fn upgrade(self) -> LispVal {
+    match self {
+      Self::Weak(e) => match e.upgrade() {
+        None => LispVal::undef(),
+        Some(e) => LispVal(e)
+      }
+      Self::Strong(e) => e
+    }
+  }
+  pub(crate) unsafe fn map_unsafe(&self, f: impl FnOnce(&LispKind) -> LispVal) -> LispWeak {
+    match self {
+      LispWeak::Strong(e) => LispWeak::Strong(f(e)),
+      LispWeak::Weak(e) if e.strong_count() == 0 => LispWeak::Weak(Weak::new()),
+      LispWeak::Weak(e) => LispWeak::Weak(Rc::downgrade(&f(&*e.as_ptr()).0)),
+    }
+  }
+}
 /// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
 #[derive(Debug, EnvDebug, DeepSizeOf)]
-pub struct LispRef(RefCell<LispVal>);
+pub struct LispRef(RefCell<LispWeak>);
 
 impl LispRef {
   /// Construct a `LispVal` for a mutable reference.
-  fn new_ref(e: LispVal) -> LispVal {
-    let r = LispVal::new(LispKind::Ref(LispRef(RefCell::new(e))));
+  fn new(w: LispWeak) -> LispVal {
+    LispVal::new(LispKind::Ref(LispRef(RefCell::new(w))))
     // REFS.with(|refs| {unsafe{&*refs.get().unwrap()}.0.alloc(Rc::downgrade(&r.0));});
-    r
   }
   /// Get a reference to the stored value.
-  pub fn get<'a>(&'a self) -> impl Deref<Target=LispVal> + 'a { self.0.borrow() }
+  pub fn get<T>(&self, f: impl FnOnce(&LispVal) -> T) -> T {
+    self.0.borrow().get(f)
+  }
   /// Get a mutable reference to the stored value.
-  pub fn get_mut<'a>(&'a self) -> impl DerefMut<Target=LispVal> + 'a { self.0.borrow_mut() }
+  pub fn get_mut<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> T {
+    self.0.borrow_mut().get_mut(f)
+  }
+  /// Get a reference to the stored value.
+  pub fn get_weak<'a>(&'a self) -> impl Deref<Target=LispWeak> + 'a { self.0.borrow() }
+  /// Get a mutable reference to the stored value.
+  pub fn get_mut_weak<'a>(&'a self) -> impl DerefMut<Target=LispWeak> + 'a { self.0.borrow_mut() }
+  /// Set this reference to a weak reference to `e`.
+  pub fn set_weak(&self, e: &LispVal) {
+    *self.0.borrow_mut() = LispWeak::Weak(Rc::downgrade(&e.0))
+  }
   /// Get a clone of the stored value.
-  pub fn unref(&self) -> LispVal { self.get().clone() }
+  pub fn unref(&self) -> LispVal { self.get(|c| c.clone()) }
   /// Consume the reference, yielding the stored value.
-  pub fn into_inner(self) -> LispVal { self.0.into_inner() }
+  pub fn into_inner(self) -> LispVal { self.0.into_inner().upgrade() }
 
   /// Returns true if this refcell has suspciously many readers
   pub(crate) fn too_many_readers(&self) -> bool {
@@ -418,7 +482,7 @@ impl LispRef {
     }
     // Safety: This ties us to the representation of RefCell, but I don't think
     // that is going to change.
-    unsafe { &*(&self.0 as *const _ as *const RefCell2<LispVal>) }.borrow.get() > 30
+    unsafe { &*(&self.0 as *const _ as *const RefCell2<LispWeak>) }.borrow.get() > 30
   }
 
   /// Get the value of this reference without changing the reference count.
@@ -427,16 +491,20 @@ impl LispRef {
   /// (in which case you should use [`FrozenLispRef::deref`] instead).
   ///
   /// [`FrozenLispRef::deref`]: ../frozen/struct.FrozenLispRef.html
-  pub(crate) unsafe fn get_unsafe(&self) -> &LispVal {
-    self.0.try_borrow_unguarded().unwrap_or_else(|_| {
+  pub(crate) unsafe fn get_unsafe(&self) -> Option<&LispKind> {
+    match self.0.try_borrow_unguarded().unwrap_or_else(|_| {
       std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
       self.0.try_borrow_unguarded().unwrap()
-    })
+    }) {
+      LispWeak::Strong(e) => Some(e),
+      LispWeak::Weak(e) if e.strong_count() == 0 => None,
+      LispWeak::Weak(e) => Some(&*e.as_ptr())
+    }
   }
 }
 
 impl PartialEq<LispRef> for LispRef {
-  fn eq(&self, other: &LispRef) -> bool { *self.get() == *other.get() }
+  fn eq(&self, other: &LispRef) -> bool { self.get(|a| other.get(|b| *a == *b)) }
 }
 impl Eq for LispRef {}
 
@@ -454,7 +522,7 @@ impl LispKind {
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     fn rec<T>(e: &LispKind, stack: StackList<'_, *const LispRef>, f: impl FnOnce(&LispKind) -> T) -> T {
       match e {
-        LispKind::Ref(m) if !stack.contains(m) => rec(&m.get(), StackList(Some(&(stack, m))), f),
+        LispKind::Ref(m) if !stack.contains(m) => m.get(|e| rec(e, StackList(Some(&(stack, m))), f)),
         LispKind::Annot(_, v) => rec(v, stack, f),
         _ => f(e)
       }
@@ -474,7 +542,7 @@ impl LispKind {
     ) -> T {
       match e {
         LispKind::Ref(m) if !stack.contains(m) =>
-          rec(&m.get(), StackList(Some(&(stack, m))), fsp, f),
+          m.get(|e| rec(e, StackList(Some(&(stack, m))), fsp, f)),
         LispKind::Annot(Annot::Span(fsp), v) => rec(v, stack, Some(fsp), f),
         _ => f(fsp, e)
       }
@@ -545,17 +613,21 @@ impl LispKind {
     }
   }
   /// Get a mutable reference to the value stored by the reference, if it is one.
-  pub fn as_ref_<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
+  pub fn as_lref<T>(&self, f: impl FnOnce(&LispRef) -> T) -> Option<T> {
     match self {
-      LispKind::Ref(m) => Some(f(&mut m.get_mut())),
-      LispKind::Annot(_, e) => e.as_ref_(f),
+      LispKind::Ref(m) => Some(f(m)),
+      LispKind::Annot(_, e) => e.as_lref(f),
       _ => None
     }
+  }
+  /// Get a mutable reference to the value stored by the reference, if it is one.
+  pub fn as_ref_<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
+    self.as_lref(|m| m.get_mut(f))
   }
   /// Get a file span annotation associated to a lisp value, if possible.
   pub fn fspan(&self) -> Option<FileSpan> {
     match self {
-      LispKind::Ref(m) => m.get().fspan(),
+      LispKind::Ref(m) => m.get(|e| e.fspan()),
       LispKind::Annot(Annot::Span(sp), _) => Some(sp.clone()),
       // LispKind::Annot(_, e) => e.fspan(),
       _ => None
@@ -1009,6 +1081,8 @@ str_enum! {
     GetRef: "get!",
     /// `(set! r v)` sets the value of the ref-cell `r` to `v`.
     SetRef: "set!",
+    /// `(set-weak! r v)` sets the value of the ref-cell `r` to a weak reference to `v`.
+    SetWeak: "set-weak!",
     /// `(copy-span from to)` makes a copy of `to` with its position information copied from `from`.
     /// (This can be used for improved error reporting, but
     /// otherwise has no effect on program semantics.)

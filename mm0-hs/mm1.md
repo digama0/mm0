@@ -425,6 +425,7 @@ At the beginning of execution, the global context contains a number of primitive
   `(ref!)` constructs a new ref-cell containing `#undef`.
 * `(get! r)` dereferences the ref-cell `r` to get the value.
 * `(set! r v)` sets the value of the ref-cell `r` to `v`.
+* `(set-weak! r v)` sets the value of the ref-cell `r` to a weak reference to `v`. (A weak reference is like a regular reference but can spontaneously be set to `#undef` if `v` becomes accessible only via `r`.)
 * `(async f args)` evaluates `(f args)` on another thread, and returns a procedure that will join on the thread to wait for the result.
 * `(atom-map! '[k1 v1] '[k2 v2] ...)` creates a new mutable atom map, a key-value store.
 * `(atom-map? m)` is true if the argument is an atom map.

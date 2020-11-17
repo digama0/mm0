@@ -34,6 +34,7 @@ enum Stack<'a> {
   App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
   AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
+  NoTailRec,
   Def(Option<&'a Option<(Span, Span, Option<DocComment>, AtomID)>>),
   Eval(&'a IR, std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
@@ -63,6 +64,7 @@ impl<'a> EnvDisplay for Stack<'a> {
         fe.to(e), fe.to(es), fe.to(irs.as_slice())),
       Stack::AppHead(_, _, e) => write!(f, "(_ {})", fe.to(e)),
       &Stack::If(e1, e2) => write!(f, "(if _ {} {})", fe.to(e1), fe.to(e2)),
+      Stack::NoTailRec => write!(f, "(no-tail-rec)"),
       &Stack::Def(Some(&Some((_, _, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
       Stack::Def(_) => write!(f, "(def _ _)"),
       &Stack::Eval(ir, ref es) => write!(f, "(begin\n  _ {} {})", fe.to(ir), fe.to(es.as_slice())),
@@ -91,6 +93,7 @@ impl<'a> EnvDisplay for Stack<'a> {
 #[derive(Debug)]
 enum State<'a> {
   Eval(&'a IR),
+  Evals(&'a IR, std::slice::Iter<'a, IR>),
   Refines(Span, std::slice::Iter<'a, IR>),
   Ret(LispVal),
   List(Span, Vec<LispVal>, std::slice::Iter<'a, IR>),
@@ -107,6 +110,7 @@ impl<'a> EnvDisplay for State<'a> {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       &State::Eval(ir) => write!(f, "-> {}", fe.to(ir)),
+      &State::Evals(ir, ref irs) => write!(f, "-> {}, {}", fe.to(ir), fe.to(irs.as_slice())),
       State::Refines(_, irs) => write!(f, "(refine {})", fe.to(irs.as_slice())),
       State::Ret(e) => write!(f, "<- {}", fe.to(e)),
       State::List(_, es, irs) => write!(f, "(list {}\n  {})",
@@ -130,7 +134,7 @@ impl<'a> EnvDisplay for State<'a> {
 impl LispKind {
   fn as_ref_mut<T>(&self, f: impl FnOnce(&mut LispVal) -> T) -> Option<T> {
     match self {
-      LispKind::Ref(m) => Some(f(&mut m.get_mut())),
+      LispKind::Ref(m) => Some(m.get_mut(f)),
       LispKind::Annot(_, e) => e.as_ref_mut(f),
       _ => None
     }
@@ -146,7 +150,7 @@ impl LispKind {
         (r, None) => (r, None),
         (r, Some(e)) => (r, Some(LispVal::new(LispKind::Annot(sp.clone(), e)))),
       },
-      LispKind::Ref(m) => (m.get_mut().as_map_mut(f), None),
+      LispKind::Ref(m) => (m.get_mut(|e| e.as_map_mut(f)), None),
       _ => (None, None)
     }
   }
@@ -161,7 +165,7 @@ impl LispVal {
       }
       Some(LispKind::AtomMap(m)) => Some(f(m)),
       Some(LispKind::Annot(_, e)) => Self::as_map_mut(e, f),
-      Some(LispKind::Ref(m)) => Self::as_map_mut(&mut m.get_mut(), f),
+      Some(LispKind::Ref(m)) => m.get_mut(|e| Self::as_map_mut(e, f)),
       _ => None
     }
   }
@@ -386,8 +390,12 @@ impl Elaborator {
     self.with_int(e, |n| Ok(n.clone()))
   }
 
+  fn as_lref<T>(&self, e: &LispKind, f: impl FnOnce(&LispRef) -> SResult<T>) -> SResult<T> {
+    e.as_lref(f).unwrap_or_else(|| Err(format!("not a ref-cell: {}", self.print(e))))
+  }
+
   fn as_ref<T>(&self, e: &LispKind, f: impl FnOnce(&mut LispVal) -> SResult<T>) -> SResult<T> {
-    e.as_ref_(f).unwrap_or_else(|| Err(format!("not a ref-cell: {}", self.print(e))))
+    self.as_lref(e, |m| m.get_mut(f))
   }
 
   fn as_map<T>(&self, e: &LispKind, f: impl FnOnce(&HashMap<AtomID, LispVal>) -> SResult<T>) -> SResult<T> {
@@ -399,7 +407,7 @@ impl Elaborator {
 
   fn to_string(&self, e: &LispKind) -> ArcString {
     match e {
-      LispKind::Ref(m) => self.to_string(&m.get()),
+      LispKind::Ref(m) => m.get(|e| self.to_string(e)),
       LispKind::Annot(_, e) => self.to_string(e),
       LispKind::String(s) => s.clone(),
       &LispKind::Atom(a) => self.data[a].name.clone(),
@@ -982,6 +990,10 @@ make_builtins! { self, sp1, sp2, args,
     try1!(self.as_ref(&args[0], |e| {*e = args[1].clone(); Ok(())}));
     LispVal::undef()
   },
+  SetWeak: Exact(2) => {
+    try1!(self.as_lref(&args[0], |e| Ok(e.set_weak(&args[1]))));
+    LispVal::undef()
+  },
   CopySpan: Exact(2) => {
     let mut it = args.drain(..);
     match (it.next().unwrap().fspan(), it.next().unwrap()) {
@@ -1296,6 +1308,11 @@ impl<'a> Evaluator<'a> {
           IR::DottedList(ls, e) => State::DottedList(vec![], ls.iter(), e),
           IR::App(sp1, sp2, f, es) => push!(App(*sp1, *sp2, es); Eval(f)),
           IR::If(e) => push!(If(&e.1, &e.2); Eval(&e.0)),
+          IR::NoTailRec => match self.stack.pop() {
+            None => State::Ret(LispVal::undef()),
+            Some(Stack::Eval(e, it)) => push!(NoTailRec; Evals(e, it)),
+            Some(s) => push!(s; State::Ret(LispVal::undef())),
+          }
           &IR::Focus(sp, ref irs) => {
             if self.lc.goals.is_empty() {throw!(sp, "no goals")}
             let gs = self.lc.goals.drain(1..).collect();
@@ -1342,6 +1359,7 @@ impl<'a> Evaluator<'a> {
           Some(Stack::App2(sp1, sp2, f, mut vec, it)) => { vec.push(ret); State::App(sp1, sp2, f, vec, it) }
           Some(Stack::AppHead(sp1, sp2, e)) => State::App(sp1, sp2, ret, vec![e], [].iter()),
           Some(Stack::If(e1, e2)) => State::Eval(if ret.truthy() {e1} else {e2}),
+          Some(Stack::NoTailRec) => State::Ret(ret),
           Some(Stack::Def(x)) => if let Some(s) = self.stack.pop() {
             macro_rules! push_ret {($e:expr) => {{
               if x.is_some() {
@@ -1356,10 +1374,7 @@ impl<'a> Evaluator<'a> {
                 Some((f, es)) => push_ret!(push!(App(sp1, sp2, es); Eval(f))),
               },
               Stack::App2(sp1, sp2, f, vec, it) => push_ret!(State::App(sp1, sp2, f, vec, it)),
-              Stack::Eval(e, mut it) => push_ret!(match it.next() {
-                None => State::Eval(e),
-                Some(e2) => push!(Eval(e2, it); Eval(e))
-              }),
+              Stack::Eval(e, it) => push_ret!(State::Evals(e, it)),
               Stack::Refines(sp, _, it) => push_ret!(State::Refines(sp, it)),
               _ => {self.stack.push(s); State::Ret(LispVal::undef())}
             }
@@ -1376,10 +1391,7 @@ impl<'a> Evaluator<'a> {
             }
             State::Ret(LispVal::undef())
           },
-          Some(Stack::Eval(e, mut it)) => match it.next() {
-            None => State::Eval(e),
-            Some(e2) => push!(Eval(e2, it); Eval(e)),
-          },
+          Some(Stack::Eval(e, it)) => State::Evals(e, it),
           Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
           Some(Stack::TestPattern(sp, e, it, br, pstack, vars)) =>
             State::Pattern(sp, e, it, br, pstack, vars, PatternState::Ret(ret.truthy())),
@@ -1432,6 +1444,10 @@ impl<'a> Evaluator<'a> {
             }
             State::Ret(LispVal::undef())
           },
+        },
+        State::Evals(e, mut it) => match it.next() {
+          None => State::Eval(e),
+          Some(e2) => push!(Eval(e2, it); Eval(e)),
         },
         State::List(sp, vec, mut it) => match it.next() {
           None => State::Ret(LispVal::list(vec).span(self.fspan(sp))),

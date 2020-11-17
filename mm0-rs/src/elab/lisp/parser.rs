@@ -57,6 +57,9 @@ pub enum IR {
   ///   Evaluate the list of arguments, and return `#undef`. Unlike `(def x es)`,
   ///   this does not extend the context, i.e. it does not bind any variables.
   Eval(bool, Box<[IR]>),
+  /// A tail recursion barrier. This is needed in letrec compilation in order to prop up
+  /// the weak references to the functions.
+  NoTailRec,
   /// The `(fn xs e)` syntax form. Create a closure from the current context, and return
   /// it, using the provided `ProcSpec` and code. It can later be called by the `App` instruction.
   Lambda(Span, usize, ProcSpec, Arc<IR>),
@@ -78,6 +81,7 @@ impl<'a> EnvDisplay for IR {
       IR::If(es) => write!(f, "(if {} {} {})",
         fe.to(&es.0), fe.to(&es.1), fe.to(&es.2)),
       IR::Focus(_, es) => write!(f, "(focus {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      IR::NoTailRec => write!(f, "(no-tail-rec)"),
       IR::Def(n, a, e) => write!(f, "(def {}:{} {})",
         n, fe.to(&a.as_ref().map_or(AtomID::UNDER, |&(_, _, _, a)| a)), fe.to(e)),
       IR::Eval(false, es) => write!(f, "(def _ {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
@@ -112,8 +116,8 @@ impl IR {
   fn new_ref(sp1: Span, sp2: Span, e: IR) -> IR {
     IR::builtin_app(sp1, sp2, BuiltinProc::NewRef, Box::new([e]))
   }
-  fn set_ref(sp1: Span, sp2: Span, e1: IR, e2: IR) -> IR {
-    IR::builtin_app(sp1, sp2, BuiltinProc::SetRef, Box::new([e1, e2]))
+  fn set_weak(sp1: Span, sp2: Span, e1: IR, e2: IR) -> IR {
+    IR::builtin_app(sp1, sp2, BuiltinProc::SetWeak, Box::new([e1, e2]))
   }
   fn match_fn_body(sp: Span, i: usize, brs: Box<[Branch]>) -> IR {
     IR::Match(sp, Box::new(IR::Local(i)), brs)
@@ -272,6 +276,7 @@ impl Remap for IR {
       IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
       &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
       IR::If(e) => IR::If(e.remap(r)),
+      IR::NoTailRec => IR::NoTailRec,
       IR::Focus(sp, e) => IR::Focus(*sp, e.remap(r)),
       &IR::Def(n, ref a, ref e) => IR::Def(n,
         a.as_ref().map(|&(sp1, sp2, ref doc, a)| (sp1, sp2, doc.clone(), a.remap(r))),
@@ -563,17 +568,21 @@ impl<'a> LispParser<'a> {
       for l in ls {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let n = self.ctx.push(x);
-        cs.push(IR::Def(n, if x == AtomID::UNDER {None} else {Some((l.span, sp, None, x))},
+        let sps = if x == AtomID::UNDER {None} else {Some((l.span, sp, None, x))};
+        cs.push(IR::Def(n, sps.clone(),
           Box::new(IR::new_ref(sp, sp, IR::Const(LispVal::undef())))));
-        ds.push((sp, n, e2, stk));
+        ds.push((sp, x, stk, e2, n, sps));
       }
-      for (sp, n, e2, stk) in ds {
+      for (sp, x, stk, e2, n, sps) in ds {
         let mut v = self.def_ir(sp, e2, stk)?;
         if let Some(r) = v.pop() {
           cs.extend(v);
-          cs.push(IR::set_ref(sp, sp, IR::Local(n), r))
+          let m = self.ctx.push(x);
+          cs.push(IR::Def(m, sps, r.into()));
+          cs.push(IR::set_weak(sp, sp, IR::Local(n), IR::Local(m)));
         }
       }
+      cs.push(IR::NoTailRec);
     } else {
       for l in ls {
         let ((sp, x, stk), e2) = self.let_var(l)?;

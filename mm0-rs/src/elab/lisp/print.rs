@@ -209,7 +209,7 @@ impl EnvDisplay for LispKind {
         write!(f, ")")
       }
       LispKind::Ref(m) if m.too_many_readers() => write!(f, "#[ref]"),
-      LispKind::Ref(m) => m.get().fmt(fe, f),
+      LispKind::Ref(m) => m.get(|e| e.fmt(fe, f)),
       &LispKind::MVar(n, _) => write!(f, "?{}", alphanumber(n)),
       LispKind::Goal(e) => write!(f, "(goal {})", fe.to(e)),
     }

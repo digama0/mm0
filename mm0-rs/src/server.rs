@@ -856,25 +856,22 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
         let ad = &env.data()[a];
         if let Some((Some((ref fsp, full)), _, ref e)) = *ad.lisp() {
           push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
-            match (|| Some({
-              let r = &**e.unwrap();
-              match r {
-                FrozenLispKind::Atom(_) |
-                FrozenLispKind::MVar(_, _) |
-                FrozenLispKind::Goal(_) => SymbolKind::Constant,
-                FrozenLispKind::List(_) |
-                FrozenLispKind::DottedList(_, _) =>
-                  if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
-                FrozenLispKind::Number(_) => SymbolKind::Number,
-                FrozenLispKind::String(_) => SymbolKind::String,
-                FrozenLispKind::Bool(_) => SymbolKind::Boolean,
-                FrozenLispKind::Syntax(_) => SymbolKind::Event,
-                FrozenLispKind::Undef => return None,
-                FrozenLispKind::Proc(_) => SymbolKind::Function,
-                FrozenLispKind::AtomMap(_) |
-                FrozenLispKind::Annot(_, _) |
-                FrozenLispKind::Ref(_) => SymbolKind::Object,
-              }
+            match (|| Some(match e.unwrap() {
+              FrozenLispKind::Atom(_) |
+              FrozenLispKind::MVar(_, _) |
+              FrozenLispKind::Goal(_) => SymbolKind::Constant,
+              r @ FrozenLispKind::List(_) |
+              r @ FrozenLispKind::DottedList(_, _) =>
+                if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
+              FrozenLispKind::Number(_) => SymbolKind::Number,
+              FrozenLispKind::String(_) => SymbolKind::String,
+              FrozenLispKind::Bool(_) => SymbolKind::Boolean,
+              FrozenLispKind::Syntax(_) => SymbolKind::Event,
+              FrozenLispKind::Undef => return None,
+              FrozenLispKind::Proc(_) => SymbolKind::Function,
+              FrozenLispKind::AtomMap(_) |
+              FrozenLispKind::Annot(_, _) |
+              FrozenLispKind::Ref(_) => SymbolKind::Object,
             }))() {
               Some(sk) => sk,
               None => continue,
@@ -912,7 +909,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
       DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
     }),
     TraceKind::Global => ad.lisp().as_ref().map(|(_, _, e)| {
-      done!(format!("{}", fe.to(unsafe {e.thaw()})), match **e.unwrap() {
+      done!(format!("{}", fe.to(unsafe {e.thaw()})), match *e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |
         FrozenLispKind::Goal(_) => CompletionItemKind::Constant,

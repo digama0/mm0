@@ -629,7 +629,7 @@ impl Elaborator {
                 }
               }
               if let LispKind::Ref(m) = &**e {
-                *m.get_mut() = val;
+                m.get_mut(|e| *e = val);
               } else {unreachable!()}
             }
             let new2 = if (dummy && *new) || must_bound {

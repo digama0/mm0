@@ -69,7 +69,7 @@ impl LispKind {
       LispKind::Syntax(_) |
       LispKind::Undef => true,
       LispKind::Annot(_, e) => e.small(),
-      LispKind::Ref(m) => m.get().small(),
+      LispKind::Ref(m) => m.get(|e| e.small()),
     }
   }
 }

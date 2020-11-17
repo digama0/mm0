@@ -184,9 +184,27 @@ impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<A> {
   }
 }
 
+impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
+    match self.upgrade() {
+      None => "_Weak_".alloc(p),
+      Some(arc) => arc.env_dbg(fe, p)
+    }
+  }
+}
+
 impl<A: EnvDebug> EnvDebug for std::rc::Rc<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
     std::rc::Rc::as_ref(self).env_dbg(fe, p)
+  }
+}
+
+impl<A: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<A> {
+  fn env_dbg<'a>(&self, fe: FormatEnv<'a>, p: &mut Printer<'a>) -> DocPtr<'a> {
+    match self.upgrade() {
+      None => "_Weak_".alloc(p),
+      Some(rc) => rc.env_dbg(fe, p)
+    }
   }
 }
 

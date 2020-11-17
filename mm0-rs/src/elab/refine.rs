@@ -515,7 +515,7 @@ impl Elaborator {
   fn occurs(&mut self, mv: &LispVal, e: &LispVal) -> bool {
     match &**e {
       LispKind::Annot(_, e) => self.occurs(mv, e),
-      LispKind::Ref(m) => mv.ptr_eq(e) || self.occurs(mv, &m.get()),
+      LispKind::Ref(m) => mv.ptr_eq(e) || m.get(|e2| self.occurs(mv, e2)),
       LispKind::List(es) => es.iter().any(|e| self.occurs(mv, e)),
       LispKind::DottedList(es, r) =>
         es.iter().any(|e| self.occurs(mv, e)) && self.occurs(mv, r),
@@ -541,9 +541,9 @@ impl Elaborator {
       }
       let mut e = e.clone();
       if e.fspan().is_none() {
-        if let Some(sp) = m.get().fspan() {e = e.span(sp)}
+        if let Some(sp) = m.get(|e2| e2.fspan()) {e = e.span(sp)}
       }
-      *m.get_mut() = e;
+      m.get_mut(|e2| *e2 = e);
       Ok(())
     }
   }
