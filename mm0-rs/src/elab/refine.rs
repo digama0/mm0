@@ -6,10 +6,11 @@
 //! [`mm1.md`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#pre-expressions
 
 use std::result::Result as StdResult;
-use crate::util::*;
+use crate::util::{FileSpan, Span};
 use super::{Elaborator, ElabError, Result};
-use super::environment::*;
-use super::lisp::{*, print::{FormatEnv, EnvDisplay}, eval::SResult};
+use super::environment::{AtomID, DeclKey, Modifiers, ObjectKind, SortID, TermID, ThmID, Type};
+use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons,
+  print::{FormatEnv, EnvDisplay}, eval::SResult};
 use super::local_context::{InferSort, try_get_span};
 use super::proof::Subst;
 
@@ -287,7 +288,7 @@ impl EnvDisplay for RState {
         "RefineApp {{\n  tgt: {},\n  {} {} -> {}}}",
         fe.to(tgt), fe.to(t), fe.to(u), fe.to(args)),
       RState::Ret(e) => write!(f, "Ret({})", fe.to(e)),
-      RState::RefineArgs {sp:_, tgt, ty, p, u} => write!(f,
+      RState::RefineArgs {tgt, ty, p, u, ..} => write!(f,
         "RefineArgs {{\n  tgt: {},\n  ty: {},\n  p: {},\n  u: {}}}",
         fe.to(tgt), fe.to(ty), fe.to(p), fe.to(u)),
       RState::RefineBis {tgt, im, t, u, args, ..} => write!(f,
@@ -590,14 +591,14 @@ impl Elaborator {
       (None, None) => {
         let mut u1 = Uncons::from(e1.clone());
         let mut u2 = Uncons::from(e2.clone());
-        let et1 = u1.next().ok_or_else(||
+        let e_t1 = u1.next().ok_or_else(||
           format!("bad term: {}", self.print(e1)))?;
-        let at1 = et1.as_atom().ok_or_else(||
+        let a_t1 = e_t1.as_atom().ok_or_else(||
           format!("bad term: {}", self.print(e1)))?;
-        let at2 = u2.next().and_then(|a| a.as_atom()).ok_or_else(||
+        let a_t2 = u2.next().and_then(|a| a.as_atom()).ok_or_else(||
           format!("bad term: {}", self.print(e2)))?;
-        if at1 == at2 {
-          let mut cs = vec![et1];
+        if a_t1 == a_t2 {
+          let mut cs = vec![e_t1];
           let u3 = u1.clone();
           while let (Some(x1), Some(x2)) = (u1.next(), u2.next()) {
             cs.push(self.unify_core(&x1, &x2)?);
@@ -615,14 +616,14 @@ impl Elaborator {
             Err(format!("bad terms: {}, {}", self.print(e1), self.print(e2)))
           }
         } else {
-          let t1 = self.term(at1).ok_or_else(||
+          let t1 = self.term(a_t1).ok_or_else(||
             format!("bad term: {}", self.print(e1)))?;
           let tdata1 = &self.terms[t1];
-          let t2 = self.term(at2).ok_or_else(||
+          let t2 = self.term(a_t2).ok_or_else(||
             format!("bad term: {}", self.print(e2)))?;
           let tdata2 = &self.terms[t2];
           macro_rules! s {() => {format!(
-            "terms do not match: {} != {}", self.data[at1].name, self.data[at2].name)
+            "terms do not match: {} != {}", self.data[a_t1].name, self.data[a_t2].name)
           }}
 
           match (&tdata1.val, &tdata2.val) {

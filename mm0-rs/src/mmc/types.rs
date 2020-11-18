@@ -90,7 +90,7 @@ impl TuplePattern {
   pub const UNDER: TuplePattern = TuplePattern::Name(true, AtomID::UNDER, None);
 
   /// The name of a variable binding (or `_` for a tuple pattern)
-  pub fn name(&self) -> AtomID {
+  #[must_use] pub fn name(&self) -> AtomID {
     match self {
       &TuplePattern::Name(_, a, _) => a,
       TuplePattern::Typed(p, _) => p.name(),
@@ -99,7 +99,7 @@ impl TuplePattern {
   }
 
   /// The span of a variable binding (or `None` for a tuple pattern).
-  pub fn fspan(&self) -> Option<&FileSpan> {
+  #[must_use] pub fn fspan(&self) -> Option<&FileSpan> {
     match self {
       TuplePattern::Name(_, _, fsp) => fsp.as_ref(),
       TuplePattern::Typed(p, _) => p.fspan(),
@@ -108,7 +108,7 @@ impl TuplePattern {
   }
 
   /// True if all the bindings in this pattern are ghost.
-  pub fn ghost(&self) -> bool {
+  #[must_use] pub fn ghost(&self) -> bool {
     match self {
       &TuplePattern::Name(g, _, _) => g,
       TuplePattern::Typed(p, _) => p.ghost(),
@@ -117,7 +117,7 @@ impl TuplePattern {
   }
 
   /// The type of this binding, or `_` if there is no explicit type.
-  pub fn ty(&self) -> LispVal {
+  #[must_use] pub fn ty(&self) -> LispVal {
     match self {
       TuplePattern::Typed(_, ty) => ty.clone(),
       _ => LispVal::atom(AtomID::UNDER)
@@ -260,7 +260,7 @@ pub struct Proc {
 impl Proc {
   /// Checks if this proc equals `other`, ignoring the `body` and `kind` fields.
   /// (This is how we validate a proc against a proc decl.)
-  pub fn eq_decl(&self, other: &Proc) -> bool {
+  #[must_use] pub fn eq_decl(&self, other: &Proc) -> bool {
     self.name == other.name &&
     self.args == other.args &&
     self.rets == other.rets &&
@@ -325,7 +325,7 @@ pub enum AST {
 
 impl AST {
   /// Make a new `AST::Proc`.
-  pub fn proc(p: Proc) -> AST { AST::Proc(Arc::new(p)) }
+  #[must_use] pub fn proc(p: Proc) -> AST { AST::Proc(Arc::new(p)) }
 }
 
 macro_rules! make_keywords {
@@ -538,7 +538,7 @@ pub enum Type {
 
 impl Type {
   /// Create a ghost node if the boolean is true.
-  pub fn ghost_if(ghost: bool, this: Type) -> Type {
+  #[must_use] pub fn ghost_if(ghost: bool, this: Type) -> Type {
     if ghost { Type::Ghost(Box::new(this)) } else { this }
   }
 }

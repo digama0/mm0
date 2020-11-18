@@ -56,53 +56,53 @@ unsafe impl Sync for FrozenEnv {}
 
 impl FrozenEnv {
   /// Create a new `FrozenEnv` from an Environment.
-  pub fn new(env: Environment) -> Self { Self(Arc::new(env)) }
+  #[must_use] pub fn new(env: Environment) -> Self { Self(Arc::new(env)) }
 
   /// Convert a `&FrozenEnv` into an `&Environment`.
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// `Rc::clone()` should be avoided because it could race with other readers.
-  pub unsafe fn thaw(&self) -> &Environment { &self.0 }
+  #[must_use] pub unsafe fn thaw(&self) -> &Environment { &self.0 }
 
   /// Create a `FormatEnv` object, which can be used to print objects.
   /// # Safety
   /// TODO: this gives out an `&Environment`, even though it is frozen. Don't abuse it
-  pub unsafe fn format_env<'a>(&'a self, source: &'a LinedString) -> FormatEnv<'a> {
+  #[must_use] pub unsafe fn format_env<'a>(&'a self, source: &'a LinedString) -> FormatEnv<'a> {
     FormatEnv {source, env: self.thaw()}
   }
 
   /// Get the list of `Spans` in the environment.
-  pub fn spans(&self) -> &[Spans<ObjectKind>] { &unsafe { self.thaw() }.spans }
+  #[must_use] pub fn spans(&self) -> &[Spans<ObjectKind>] { &unsafe { self.thaw() }.spans }
 
   /// Get the `Spans` object corrsponding to the statement that contains the given position,
   /// if one exists.
-  pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
+  #[must_use] pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
     Spans::find(self.spans(), pos)
   }
 
   /// Accessor for [`Environment::data`](../environment/struct.Environment.html#structfield.data)
-  pub fn data(&self) -> &AtomVec<FrozenAtomData> {
+  #[must_use] pub fn data(&self) -> &AtomVec<FrozenAtomData> {
     unsafe { &*(&self.thaw().data as *const AtomVec<AtomData> as *const _) }
   }
 
   /// Accessor for [`Environment::sorts`](../environment/struct.Environment.html#structfield.sorts)
-  pub fn sorts(&self) -> &SortVec<Sort> { &unsafe { self.thaw() }.sorts }
+  #[must_use] pub fn sorts(&self) -> &SortVec<Sort> { &unsafe { self.thaw() }.sorts }
   /// Accessor for [`Environment::sorts`](../environment/struct.Environment.html#structfield.sorts)
-  pub fn sort(&self, s: SortID) -> &Sort { &self.sorts()[s] }
+  #[must_use] pub fn sort(&self, s: SortID) -> &Sort { &self.sorts()[s] }
   /// Accessor for [`Environment::terms`](../environment/struct.Environment.html#structfield.terms)
-  pub fn terms(&self) -> &TermVec<Term> { &unsafe { self.thaw() }.terms }
+  #[must_use] pub fn terms(&self) -> &TermVec<Term> { &unsafe { self.thaw() }.terms }
   /// Accessor for [`Environment::terms`](../environment/struct.Environment.html#structfield.terms)
-  pub fn term(&self, t: TermID) -> &Term { &self.terms()[t] }
+  #[must_use] pub fn term(&self, t: TermID) -> &Term { &self.terms()[t] }
   /// Accessor for [`Environment::thms`](../environment/struct.Environment.html#structfield.thms)
-  pub fn thms(&self) -> &ThmVec<Thm> { &unsafe { self.thaw() }.thms }
+  #[must_use] pub fn thms(&self) -> &ThmVec<Thm> { &unsafe { self.thaw() }.thms }
   /// Accessor for [`Environment::thms`](../environment/struct.Environment.html#structfield.thms)
-  pub fn thm(&self, t: ThmID) -> &Thm { &self.thms()[t] }
+  #[must_use] pub fn thm(&self, t: ThmID) -> &Thm { &self.thms()[t] }
   /// Accessor for [`Environment::stmts`](../environment/struct.Environment.html#structfield.stmts)
-  pub fn stmts(&self) -> &[StmtTrace] { &unsafe { self.thaw() }.stmts }
+  #[must_use] pub fn stmts(&self) -> &[StmtTrace] { &unsafe { self.thaw() }.stmts }
   /// Parse a string into an atom.
-  pub fn get_atom(&self, s: &[u8]) -> Option<AtomID> { unsafe { self.thaw() }.atoms.get(s).copied() }
+  #[must_use] pub fn get_atom(&self, s: &[u8]) -> Option<AtomID> { unsafe { self.thaw() }.atoms.get(s).copied() }
   /// Accessor for [`Environment::pe`](../environment/struct.Environment.html#structfield.pe)
-  pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
+  #[must_use] pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
 }
 
 /// A wrapper around an [`AtomData`](../environment/struct.AtomData.html) that is frozen.
@@ -112,17 +112,17 @@ pub struct FrozenAtomData(AtomData);
 
 impl FrozenAtomData {
   /// Accessor for [`AtomData::name`](../environment/struct.AtomData.html#structfield.name)
-  pub fn name(&self) -> &ArcString { &self.0.name }
+  #[must_use] pub fn name(&self) -> &ArcString { &self.0.name }
   /// Accessor for [`AtomData::sort`](../environment/struct.AtomData.html#structfield.sort)
-  pub fn sort(&self) -> Option<SortID> { self.0.sort }
+  #[must_use] pub fn sort(&self) -> Option<SortID> { self.0.sort }
   /// Accessor for [`AtomData::decl`](../environment/struct.AtomData.html#structfield.decl)
-  pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
+  #[must_use] pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   /// Accessor for [`AtomData::lisp`](../environment/struct.AtomData.html#structfield.lisp)
-  pub fn lisp(&self) -> &Option<FrozenLispData> {
+  #[must_use] pub fn lisp(&self) -> &Option<FrozenLispData> {
     unsafe { &*(&self.0.lisp as *const Option<LispData> as *const _) }
   }
   /// Accessor for [`AtomData::graveyard`](../environment/struct.AtomData.html#structfield.graveyard)
-  pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
+  #[must_use] pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
 }
 
 /// A wrapper around a [`LispData`](../environment/struct.LispData.html) that is frozen.
@@ -132,9 +132,9 @@ pub struct FrozenLispData(LispData);
 
 impl FrozenLispData {
   /// Accessor for [`LispData::src`](../environment/struct.LispData.html#structfield.src)
-  pub fn src(&self) -> &Option<(FileSpan, Span)> { &self.0.src }
+  #[must_use] pub fn src(&self) -> &Option<(FileSpan, Span)> { &self.0.src }
   /// Accessor for [`LispData::doc`](../environment/struct.LispData.html#structfield.doc)
-  pub fn doc(&self) -> &Option<DocComment> { &self.0.doc }
+  #[must_use] pub fn doc(&self) -> &Option<DocComment> { &self.0.doc }
 }
 impl Deref for FrozenLispData {
   type Target = FrozenLispVal;
@@ -165,7 +165,7 @@ impl LispKind {
   /// Freeze a reference to a `LispKind` into a `FrozenLispKind`.
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
-  pub unsafe fn freeze(&self) -> &FrozenLispKind {
+  #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispKind {
     &*(self as *const LispKind as *const _)
   }
 }
@@ -174,7 +174,7 @@ impl LispVal {
   /// Freeze a reference to a `LispVal` into a `FrozenLispVal`.
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
-  pub unsafe fn freeze(&self) -> &FrozenLispVal {
+  #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispVal {
     &*(self as *const LispVal as *const _)
   }
 }
@@ -183,7 +183,7 @@ impl LispRef {
   /// Freeze a reference to a `LispRef` into a `FrozenLispRef`.
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
-  pub unsafe fn freeze(&self) -> &FrozenLispRef {
+  #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispRef {
     &*(self as *const LispRef as *const _)
   }
 }
@@ -192,7 +192,7 @@ impl Proc {
   /// Freeze a reference to a `Proc` into a `FrozenProc`.
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
-  pub unsafe fn freeze(&self) -> &FrozenProc {
+  #[must_use] pub unsafe fn freeze(&self) -> &FrozenProc {
     &*(self as *const Proc as *const _)
   }
 }
@@ -202,16 +202,16 @@ impl FrozenLispVal {
   /// # Safety
   /// The functions on the resulting `FrozenLispVal` should not be called
   /// until the value is frozen (meaning that all internal mutability stops).
-  pub unsafe fn new(e: LispVal) -> Self { Self(e) }
+  #[must_use] pub unsafe fn new(e: LispVal) -> Self { Self(e) }
 
   /// Convert a `&FrozenLispVal` into an `&LispVal`.
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// `Rc::clone()` should be avoided because it could race with other readers.
-  pub unsafe fn thaw(&self) -> &LispVal { &self.0 }
+  #[must_use] pub unsafe fn thaw(&self) -> &LispVal { &self.0 }
 
   /// Get a iterator over frozen lisp values, for dealing with lists.
-  pub fn uncons(&self) -> FrozenUncons<'_> { FrozenUncons::New(self) }
+  #[must_use] pub fn uncons(&self) -> FrozenUncons<'_> { FrozenUncons::New(self) }
 }
 
 impl FrozenLispKind {
@@ -219,7 +219,7 @@ impl FrozenLispKind {
   /// the data structure is frozen.
   ///
   /// [`LispKind::unwrapped`]: ../lisp/enum.LispKind.html#method.unwrapped
-  pub fn unwrap(&self) -> &Self {
+  #[must_use] pub fn unwrap(&self) -> &Self {
     let mut ret = self;
     for _ in 0..20 {
       match ret {
@@ -235,12 +235,12 @@ impl FrozenLispKind {
   }
 
   /// Get the atom that this value stores, if applicable.
-  pub fn as_atom(&self) -> Option<AtomID> {
+  #[must_use] pub fn as_atom(&self) -> Option<AtomID> {
     if let FrozenLispKind::Atom(a) = *self.unwrap() {Some(a)} else {None}
   }
 
   /// Returns true if this is a proper list.
-  pub fn is_list(&self) -> bool {
+  #[must_use] pub fn is_list(&self) -> bool {
     let mut e = self;
     loop {
       match e.unwrap() {
@@ -252,7 +252,7 @@ impl FrozenLispKind {
   }
 
   /// Returns true if this is a proper list of length `n`.
-  pub fn exactly(&self, mut n: usize) -> bool {
+  #[must_use] pub fn exactly(&self, mut n: usize) -> bool {
     let mut e = self;
     loop {
       match e.unwrap() {
@@ -265,13 +265,13 @@ impl FrozenLispKind {
   }
 
   /// Returns true if this is `()`.
-  pub fn is_nil(&self) -> bool { self.exactly(0) }
+  #[must_use] pub fn is_nil(&self) -> bool { self.exactly(0) }
   /// Returns true if this is `()`.
-  pub fn is_empty(&self) -> bool { self.exactly(0) }
+  #[must_use] pub fn is_empty(&self) -> bool { self.exactly(0) }
 
   /// Gets the length of the list-like prefix of this value,
   /// i.e. the number of cons-cells along the right spine before reaching something else.
-  pub fn len(&self) -> usize {
+  #[must_use] pub fn len(&self) -> usize {
     let (mut e, mut len) = (self, 0);
     loop {
       match e.unwrap() {
@@ -283,7 +283,7 @@ impl FrozenLispKind {
   }
 
   /// Get a file span annotation associated to a lisp value, if possible.
-  pub fn fspan(&self) -> Option<FileSpan> {
+  #[must_use] pub fn fspan(&self) -> Option<FileSpan> {
     let mut e = self;
     for _ in 0..20 {
       match e.unwrap() {
@@ -384,9 +384,9 @@ impl FrozenLispRef {
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// `Rc::clone()` should be avoided because it could race with other readers.
-  pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
+  #[must_use] pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
 
-  pub fn deref(&self) -> Option<&FrozenLispKind> {
+  #[must_use] pub fn deref(&self) -> Option<&FrozenLispKind> {
     unsafe { self.thaw().get_unsafe().map(|e| e.freeze()) }
   }
 }
@@ -404,7 +404,7 @@ pub enum FrozenUncons<'a> {
 
 impl<'a> FrozenUncons<'a> {
   /// Returns true if this is a proper list of length `n`.
-  pub fn exactly(self, n: usize) -> bool {
+  #[must_use] pub fn exactly(self, n: usize) -> bool {
     match self {
       FrozenUncons::New(e) => e.exactly(n),
       FrozenUncons::List(es) => es.len() == n,
@@ -413,11 +413,11 @@ impl<'a> FrozenUncons<'a> {
   }
 
   /// Returns true if this is `()`.
-  pub fn is_empty(self) -> bool { self.exactly(0) }
+  #[must_use] pub fn is_empty(self) -> bool { self.exactly(0) }
 
   /// Gets the length of the list-like prefix of this value,
   /// i.e. the number of cons-cells along the right spine before reaching something else.
-  pub fn len(self) -> usize {
+  #[must_use] pub fn len(self) -> usize {
     match self {
       FrozenUncons::New(e) => e.len(),
       FrozenUncons::List(es) => es.len(),

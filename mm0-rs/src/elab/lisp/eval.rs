@@ -13,13 +13,14 @@ use std::sync::atomic::Ordering;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use num::{BigInt, ToPrimitive};
-use crate::util::*;
+use crate::util::{ArcString, FileRef, FileSpan, SliceExt, Span};
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator, LispData,
   AtomID, Environment, AtomData, DeclKey, StmtTrace,
   ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   refine::{RStack, RState, RefineResult}};
-use super::*;
+use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
+  Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmID, Uncons};
 use super::parser::{IR, Branch, Pattern, MVarPattern, DefTarget};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
 use super::super::environment::{ExprNode, ProofNode};
@@ -411,8 +412,8 @@ impl Elaborator {
       LispKind::Annot(_, e) => self.to_string(e),
       LispKind::String(s) => s.clone(),
       &LispKind::Atom(a) => self.data[a].name.clone(),
-      LispKind::Number(n) => ArcString::new(n.to_string().into()),
-      _ => ArcString::new(format!("{}", self.print(e)).into())
+      LispKind::Number(n) => n.to_string().into(),
+      _ => format!("{}", self.print(e)).into()
     }
   }
 
@@ -701,7 +702,7 @@ macro_rules! make_builtins {
       $($e:ident: $ty:ident($n:expr) => $res:expr,)*) => {
     impl BuiltinProc {
       /// Get the argument specification for a builtin.
-      pub fn spec(self) -> ProcSpec {
+      #[must_use] pub fn spec(self) -> ProcSpec {
         match self {
           $(BuiltinProc::$e => ProcSpec::$ty($n)),*
         }
@@ -760,8 +761,6 @@ make_builtins! { self, sp1, sp2, args,
   },
   Begin: AtLeast(0) => args.last().cloned().unwrap_or_else(LispVal::undef),
   Apply: AtLeast(2) => {
-    let proc = args.remove(0);
-    let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
     fn gather(args: &mut Vec<LispVal>, e: &LispKind) -> bool {
       e.unwrapped(|e| match e {
         LispKind::List(es) => {args.extend_from_slice(&es); true}
@@ -769,6 +768,8 @@ make_builtins! { self, sp1, sp2, args,
         _ => false
       })
     }
+    let proc = args.remove(0);
+    let sp = proc.fspan().map_or(sp2, |fsp| fsp.span);
     let tail = args.pop().unwrap();
     if !gather(&mut args, &tail) {
       try1!(Err(format!("apply: last argument is not a list: {}", self.print(&tail))))
@@ -915,7 +916,7 @@ make_builtins! { self, sp1, sp2, args,
   StringAppend: AtLeast(0) => {
     let mut out = Vec::new();
     for e in args { out.extend_from_slice(&self.to_string(&e)) }
-    LispVal::string(ArcString::new(out))
+    LispVal::string(out.into())
   },
   StringLen: Exact(1) => LispVal::number(try1!(self.as_string(&args[0])).len().into()),
   StringNth: Exact(2) => {
@@ -952,7 +953,7 @@ make_builtins! { self, sp1, sp2, args,
     if !u.is_empty() {
       try1!(Err(format!("list->string: not a list: {}", self.print(&args[0]))))
     }
-    LispVal::string(ArcString::new(out))
+    LispVal::string(out.into())
   },
   Not: AtLeast(0) => LispVal::bool(!args.iter().any(|e| e.truthy())),
   And: AtLeast(0) => LispVal::bool(args.iter().all(|e| e.truthy())),
@@ -1112,7 +1113,7 @@ make_builtins! { self, sp1, sp2, args,
       Some(fsp))
   },
   PrettyPrint: Exact(1) =>
-    LispVal::string(ArcString::new(format!("{}", self.format_env().pp(&args[0], 80)).into())),
+    LispVal::string(format!("{}", self.format_env().pp(&args[0], 80)).into()),
   NewGoal: Exact(1) => LispVal::goal(self.fspan(sp1), args.pop().unwrap()),
   GoalType: Exact(1) => try1!(args[0].goal_type().ok_or("expected a goal")),
   InferType: Exact(1) => try1!(self.infer_type(sp1, &args[0]).map_err(|e| e.kind.msg())),
@@ -1147,12 +1148,12 @@ make_builtins! { self, sp1, sp2, args,
     let mut args = args.drain(..);
     let xarg = args.next().unwrap();
     try1!(xarg.as_atom().ok_or("expected an atom"));
-    let xsp = try_get_span(&self.fspan(sp1), &xarg);
+    let x_sp = try_get_span(&self.fspan(sp1), &xarg);
     self.stack.push(Stack::Have(sp1, xarg));
     let mut stack = vec![RStack::DeferGoals(mem::take(&mut self.lc.goals))];
     let state = match (args.next().unwrap(), args.next()) {
       (p, None) => {
-        let fsp = self.fspan(xsp);
+        let fsp = self.fspan(x_sp);
         RState::RefineProof {tgt: self.lc.new_mvar(InferTarget::Unknown, Some(fsp)), p}
       }
       (e, Some(p)) => {
@@ -1233,7 +1234,7 @@ make_builtins! { self, sp1, sp2, args,
   EvalString: AtLeast(0) => {
     let fsp = self.fspan(sp1);
     let bytes = self.eval_string(fsp, &args)?;
-    LispVal::string(ArcString::new(bytes))
+    LispVal::string(bytes.into())
   },
   MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
     RefCell::new(crate::mmc::Compiler::new(self)))),
@@ -1297,9 +1298,9 @@ impl<'a> Evaluator<'a> {
         State::Eval(ir) => match ir {
           &IR::Local(i) => State::Ret(self.ctx[i].clone()),
           &IR::Global(sp, a) => State::Ret(match &self.data[a] {
-            AtomData {name, lisp: None, ..} => match (&**name).try_into() {
-              Err(_) => throw!(sp, format!("Reference to unbound variable '{}'", name)),
-              Ok(p) => {
+            AtomData {name, lisp: None, ..} => match BuiltinProc::from_bytes(name) {
+              None => throw!(sp, format!("Reference to unbound variable '{}'", name)),
+              Some(p) => {
                 let s = name.clone();
                 let a = self.get_atom(&s);
                 let ret = LispVal::proc(Proc::Builtin(p));
@@ -1395,7 +1396,7 @@ impl<'a> Evaluator<'a> {
                 }
               } else if mem::take(&mut self.data[a].lisp).is_some() {
                 self.data[a].graveyard = Some(Box::new(loc));
-              }
+              } else {}
             }
             State::Ret(LispVal::undef())
           },
@@ -1427,7 +1428,8 @@ impl<'a> Evaluator<'a> {
             if close {
               if self.lc.closer.is_def() {
                 break push!(Focus(sp, false, gs); App(sp, sp, self.lc.closer.clone(), vec![], [].iter()))
-              } else if !self.lc.goals.is_empty() {
+              } else if self.lc.goals.is_empty() {
+              } else {
                 let stat = self.stat();
                 let span = self.fspan(sp);
                 for g in mem::take(&mut self.lc.goals) {

@@ -84,7 +84,7 @@ pub mod cmd {
   /// `UNIFY_HYP = 0x36`: See [`UnifyCmd`](../enum.UnifyCmd.html).
   pub const UNIFY_HYP: u8       = 0x36;
 }
-use cmd::*;
+#[allow(clippy::wildcard_imports)] use cmd::*;
 
 #[derive(Debug)]
 enum ProofCmd {
@@ -206,11 +206,11 @@ enum Value {
 
 impl Fixup32 {
   /// Write `val` to this fixup, closing it.
-  fn commit_val<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>, val: u32) {
+  fn commit_val<W: Write + Seek>(self, e: &mut Exporter<'_, W>, val: u32) {
     e.fixups.push((self.0, Value::U32(val)))
   }
   /// Write the current position of the exporter to this fixup, closing it.
-  fn commit<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>) {
+  fn commit<W: Write + Seek>(self, e: &mut Exporter<'_, W>) {
     let val = e.pos.try_into().unwrap();
     self.commit_val(e, val)
   }
@@ -218,11 +218,11 @@ impl Fixup32 {
 
 impl Fixup64 {
   /// Write `val` to this fixup, closing it.
-  fn commit_val<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>, val: u64) {
+  fn commit_val<W: Write + Seek>(self, e: &mut Exporter<'_, W>, val: u64) {
     e.fixups.push((self.0, Value::U64(val)))
   }
   /// Write the current position of the exporter to this fixup, closing it.
-  fn commit<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>) {
+  fn commit<W: Write + Seek>(self, e: &mut Exporter<'_, W>) {
     let val = e.pos;
     self.commit_val(e, val)
   }
@@ -240,12 +240,12 @@ impl std::ops::DerefMut for FixupLarge {
 
 impl FixupLarge {
   /// Assume that the construction of the fixup is complete, and write the stored value.
-  fn commit<'a, W: Write + Seek>(self, e: &mut Exporter<'a, W>) {
+  fn commit<W: Write + Seek>(self, e: &mut Exporter<'_, W>) {
     e.fixups.push((self.0, Value::Box(self.1)))
   }
 }
 
-impl<'a, W: Write + Seek> Write for Exporter<'a, W> {
+impl<W: Write + Seek> Write for Exporter<'_, W> {
   fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
     self.write_all(buf)?;
     Ok(buf.len())
@@ -346,10 +346,10 @@ impl ProofCmd {
 fn write_expr_proof(w: &mut impl Write,
   heap: &[ExprNode],
   reorder: &mut Reorder,
-  head: &ExprNode,
+  node: &ExprNode,
   save: bool
 ) -> io::Result<u32> {
-  Ok(match *head {
+  Ok(match *node {
     ExprNode::Ref(i) => match reorder.map[i] {
       None => {
         let n = write_expr_proof(w, heap, reorder, &heap[i], true)?;
@@ -479,13 +479,13 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
   fn write_expr_unify(&mut self,
     heap: &[ExprNode],
     reorder: &mut Reorder,
-    head: &ExprNode,
+    node: &ExprNode,
     save: &mut Vec<usize>
   ) -> io::Result<()> {
     macro_rules! commit {($n:expr) => {
       for i in save.drain(..) {reorder.map[i] = Some($n)}
     }}
-    match *head {
+    match *node {
       ExprNode::Ref(i) => match reorder.map[i] {
         None => {
           save.push(i);
@@ -519,10 +519,10 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     heap: &[ProofNode],
     reorder: &mut Reorder,
     hyps: &[u32],
-    head: &ProofNode,
+    node: &ProofNode,
     save: bool
   ) -> io::Result<u32> {
-    Ok(match head {
+    Ok(match node {
       &ProofNode::Ref(i) => match reorder.map[i] {
         None => {
           let n = self.write_proof(w, heap, reorder, hyps, &heap[i], true)?;
@@ -578,9 +578,9 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     heap: &[ProofNode],
     reorder: &mut Reorder,
     hyps: &[u32],
-    head: &ProofNode,
+    node: &ProofNode,
   ) -> io::Result<()> {
-    match head {
+    match node {
       &ProofNode::Ref(i) => match reorder.map[i] {
         None => {
           let e = &heap[i];

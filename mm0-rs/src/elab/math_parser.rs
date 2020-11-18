@@ -15,8 +15,8 @@ use crate::elab::{Elaborator, ElabError, ObjectKind};
 use crate::elab::ast::{Formula, SExpr};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use crate::elab::spans::Spans;
-use crate::util::*;
-use crate::elab::environment::*;
+use crate::util::{SliceUninit, Span};
+use crate::elab::environment::{Literal, ParserEnv, Prec, TermID};
 
 /// A parsed math expression (quoted expression). This is like [`SExpr`] but it
 /// has a much simpler grammar.
@@ -226,7 +226,7 @@ impl<'a> MathParser<'a> {
       }
       self.idx = start;
       return Ok(QExpr {span, k: QExprKind::IdentApp(sp, args.into_boxed_slice())})
-    }
+    } else {}
     Err(ParseError::new(sp, format!("expecting prefix expression >= {}", p).into()))
   }
 

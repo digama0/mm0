@@ -25,18 +25,18 @@ fn is_nonatomic_proof(e: &ProofNode) -> bool {
 }
 
 fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomID, &'a ProofNode>, checked: &mut [bool],
-  heap: &[ExprNode], head: &ExprNode, theap: &'a [ProofNode], mut tgt: &'a ProofNode) {
-  match *head {
+  heap: &[ExprNode], node: &ExprNode, t_heap: &'a [ProofNode], mut tgt: &'a ProofNode) {
+  match *node {
     ExprNode::Ref(i) => if !mem::replace(&mut checked[i], true) {
-      build_unfold_map(env, m, checked, heap, &heap[i], theap, tgt)
+      build_unfold_map(env, m, checked, heap, &heap[i], t_heap, tgt)
     },
     ExprNode::Dummy(a, _) => {m.insert(a, tgt);}
     ExprNode::App(t, ref es) => loop {
       match *tgt {
-        ProofNode::Ref(j) => tgt = &theap[j],
+        ProofNode::Ref(j) => tgt = &t_heap[j],
         ProofNode::Term {term: t2, args: ref es2} if t == t2 && es.len() == es2.len() => {
           for (e1, e2) in es.iter().zip(&**es2) {
-            build_unfold_map(env, m, checked, heap, e1, theap, e2)
+            build_unfold_map(env, m, checked, heap, e1, t_heap, e2)
           }
           break
         }
@@ -49,41 +49,41 @@ fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomID, &'a ProofNode>,
 type Line = (usize, Vec<u8>);
 
 impl FrozenEnv {
-  fn write_deps(&self, w: &mut impl Write, bvs: &[Option<AtomID>], mut vs: u64) -> io::Result<()> {
-    list(w, bvs.iter().filter(|_| {let old = vs; vs /= 2; old & 1 != 0}),
+  fn write_deps(&self, w: &mut impl Write, bvars: &[Option<AtomID>], mut vs: u64) -> io::Result<()> {
+    list(w, bvars.iter().filter(|_| {let old = vs; vs /= 2; old & 1 != 0}),
       |w, a| write!(w, "{}", self.data()[a.unwrap()].name()))
   }
 
   fn write_binders(&self, w: &mut impl Write, bis: &[(Option<AtomID>, Type)]) -> io::Result<Vec<Option<AtomID>>> {
-    let mut bvs = vec![];
+    let mut bvars = vec![];
     list(w, bis.iter(), |w, &(a, ty)| {
       write!(w, "({} ", a.map_or("_", |a| self.data()[a].name().as_str()))?;
       match ty {
         Type::Bound(s) => {
-          bvs.push(a);
+          bvars.push(a);
           write!(w, "{})", &self.sort(s).name)
         }
         Type::Reg(s, vs) => {
           write!(w, "{} ", &self.sort(s).name)?;
-          self.write_deps(w, &bvs, vs)?;
+          self.write_deps(w, &bvars, vs)?;
           write!(w, ")")
         }
       }
     })?;
-    Ok(bvs)
+    Ok(bvars)
   }
 
   fn write_expr_node(&self,
     dummies: &mut HashMap<AtomID, SortID>,
     heap: &[Vec<u8>],
-    head: &ExprNode,
+    node: &ExprNode,
   ) -> Vec<u8> {
     fn f(
       env: &FrozenEnv, w: &mut Vec<u8>,
       dummies: &mut HashMap<AtomID, SortID>,
       heap: &[Vec<u8>],
-      head: &ExprNode) {
-      match *head {
+      node: &ExprNode) {
+      match *node {
         ExprNode::Ref(i) => w.extend_from_slice(&heap[i]),
         ExprNode::Dummy(a, s) => {
           assert!(dummies.insert(a, s).map_or(true, |s2| s == s2));
@@ -100,7 +100,7 @@ impl FrozenEnv {
       }
     }
     let mut ret = Vec::new();
-    f(self, &mut ret, dummies, heap, head);
+    f(self, &mut ret, dummies, heap, node);
     ret
   }
 
@@ -109,7 +109,7 @@ impl FrozenEnv {
     hyps: &[(Option<AtomID>, ExprNode)],
     heap: &[ProofNode],
     lines: &[(Vec<Line>, Line)],
-    head: &ProofNode,
+    node: &ProofNode,
     indent: usize,
   ) -> (Vec<Line>, Line) {
     struct State<'a> {
@@ -220,7 +220,7 @@ impl FrozenEnv {
     }
 
     let mut s = State {env: self, w: vec![], i: indent, l: vec![], dummies, hyps, heap, lines};
-    s.go(head, indent);
+    s.go(node, indent);
     (s.w, (s.i, s.l))
   }
 
@@ -287,22 +287,22 @@ impl FrozenEnv {
                 let mut it = td.hyps.iter();
                 match it.next() {
                   None => write!(w, " ()")?,
-                  Some((hyp, typ)) => if td.proof.is_some() {
+                  Some((hyp, ty)) => if td.proof.is_some() {
                     write!(w, "\n  (({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
-                    w.write_all(&self.write_expr_node(&mut dummies, &strs, typ))?;
+                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
                     write!(w, ")")?;
-                    for (hyp, typ) in it {
+                    for (hyp, ty) in it {
                       write!(w, "\n   ({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
-                      w.write_all(&self.write_expr_node(&mut dummies, &strs, typ))?;
+                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
                       write!(w, ")")?;
                     }
                     write!(w, ")")?;
                   } else {
                     write!(w, "\n  (")?;
-                    w.write_all(&self.write_expr_node(&mut dummies, &strs, typ))?;
-                    for (_, typ) in it {
+                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                    for (_, ty) in it {
                       write!(w, "\n   ")?;
-                      w.write_all(&self.write_expr_node(&mut dummies, &strs, typ))?;
+                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
                     }
                     write!(w, ")")?;
                   }
@@ -314,6 +314,19 @@ impl FrozenEnv {
                 None => {},
                 Some(None) => panic!("proof {} missing", self.data()[td.atom].name()),
                 Some(Some(Proof {heap, head, ..})) => {
+                  fn write_lines(w: &mut impl Write, (mut ls, nv): (Vec<Line>, Line)) -> io::Result<()> {
+                    ls.push(nv);
+                    let mut first = true;
+                    for (n, v) in ls {
+                      if !mem::replace(&mut first, false) {
+                        w.write_all(b"\n")?;
+                        w.write_all(&vec![b' '; 2 * n])?
+                      }
+                      w.write_all(&v)?;
+                    }
+                    Ok(())
+                  }
+
                   writeln!(w)?;
                   let mut idx = 1;
                   for a in td.args.iter().filter_map(|&(a, _)| a)
@@ -328,18 +341,6 @@ impl FrozenEnv {
                   let mut lets_end = vec![];
                   let mut strs: Vec<_> = strs.into_iter().take(td.args.len())
                     .map(|v| (vec![], (0, v))).collect();
-                  fn write_lines(w: &mut impl Write, (mut ls, nv): (Vec<Line>, Line)) -> io::Result<()> {
-                    ls.push(nv);
-                    let mut first = true;
-                    for (n, v) in ls {
-                      if !mem::replace(&mut first, false) {
-                        w.write_all(b"\n")?;
-                        w.write_all(&vec![b' '; 2 * n])?
-                      }
-                      w.write_all(&v)?;
-                    }
-                    Ok(())
-                  }
                   for e in &heap[strs.len()..] {
                     let mut c = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, e, 0);
                     if is_nonatomic_proof(e) {

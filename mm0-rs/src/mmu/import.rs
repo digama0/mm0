@@ -354,8 +354,7 @@ impl<'a> Importer<'a> {
           let ip = self.proof(&mut de, &vars, &mut proofs, Expecting::Proof)?;
           let (mut ids, heap) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-          let head = ids[ip].take();
-          Some(Some(Proof {heap, hyps, head}))
+          Some(Some(Proof {heap, hyps, head: ids[ip].take()}))
         };
         let end = self.close_err()?;
         let t = Thm {

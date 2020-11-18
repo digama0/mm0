@@ -17,28 +17,24 @@ macro_rules! make_prims {
       pub enum $name { $($(#[$attr])* $x),* }
       $crate::deep_size_0!($name);
 
-      impl ::std::str::FromStr for $name {
-        type Err = ();
-        fn from_str(s: &str) -> ::std::result::Result<Self, ()> {
-          match s {
-            $($e => Ok(Self::$x),)*
-            _ => Err(())
-          }
-        }
-      }
-
-      impl ::std::convert::TryFrom<&[u8]> for $name {
-        type Error = ();
-        fn try_from(s: &[u8]) -> ::std::result::Result<Self, ()> {
-          <Self as ::std::str::FromStr>::from_str(
-            unsafe {std::str::from_utf8_unchecked(s)})
-        }
-      }
-
       impl $name {
         /// Evaluate a function on all elements of the type, with their names.
         pub fn scan(mut f: impl FnMut(Self, &'static str)) {
           $(f($name::$x, $e);)*
+        }
+        /// Convert a string into this type.
+        #[allow(clippy::should_implement_trait)]
+        #[must_use] pub fn from_str(s: &str) -> Option<Self> {
+          match s {
+            $($e => Some(Self::$x),)*
+            _ => None
+          }
+        }
+        /// Convert a byte string into this type.
+        #[must_use] pub fn from_bytes(s: &[u8]) -> Option<Self> {
+          // Safety: the function we defined just above doesn't do anything
+          // dangerous with the &str
+          Self::from_str(unsafe {std::str::from_utf8_unchecked(s)})
         }
       }
     )*
@@ -276,11 +272,11 @@ impl TuplePattern {
 impl Compiler {
   /// Construct the initial list of primitive entities.
   pub fn make_names(env: &mut Environment) -> HashMap<AtomID, Entity> {
-    let mut names = HashMap::new();
     fn get(names: &mut HashMap<AtomID, Entity>, a: AtomID) -> &mut Prim {
       let e = names.entry(a).or_insert_with(|| Entity::Prim(Prim::default()));
       if let Entity::Prim(p) = e {p} else {unreachable!()}
     }
+    let mut names = HashMap::new();
     PrimType::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).ty = Some(p));
     PrimOp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).op = Some(p));
     PrimProp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).prop = Some(p));

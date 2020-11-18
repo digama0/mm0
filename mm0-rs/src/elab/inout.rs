@@ -153,6 +153,7 @@ struct Sorts {
 }
 
 impl Environment {
+  #[allow(clippy::unnecessary_lazy_evaluations)] // see rust-clippy#6343
   fn check_sort(&self, s: &str) -> Result<SortID, String> {
     self.atoms.get(s.as_bytes()).and_then(|&a| self.data[a].sort)
       .ok_or_else(|| format!("sort '{}' not found", s))
@@ -294,9 +295,9 @@ impl Environment {
     if let Some(Some(Expr {heap, head})) = &td.val {
       let mut refs = Vec::with_capacity(heap.len() - td.args.len());
       for e in &heap[td.args.len()..] {
-        let res = StringSegBuilder::make(|out|
+        let out = StringSegBuilder::make(|out|
           self.process_node(terms, &td.args, e, &refs, out))?;
-        refs.push(res);
+        refs.push(out);
       }
       StringSegBuilder::make(|out|
         self.process_node(terms, &td.args, head, &refs, out))
@@ -306,9 +307,9 @@ impl Environment {
   }
 
   fn new_string_handler(&self) -> Result<(Sorts, HashMap<TermID, InoutStringType>), String> {
+    use InoutStringType::*;
     let s = self.new_sorts()?;
     let mut map = HashMap::new();
-    use InoutStringType::*;
     map.insert(self.check_term("s0", &[], s.str, false)?, S0);
     map.insert(self.check_term("s1", &[s.chr], s.str, false)?, S1);
     map.insert(self.check_term("sadd", &[s.str, s.str], s.str, false)?, SAdd);

@@ -104,7 +104,7 @@ fn covariant<'a>(from: RefDoc<'static, ()>) -> RefDoc<'a, ()> {
 
 impl<'a> Pretty<'a> {
   /// The empty string `""` as a `RefDoc`.
-  pub fn nil() -> RefDoc<'a, ()> {covariant(NIL)}
+  #[must_use] pub fn nil() -> RefDoc<'a, ()> {covariant(NIL)}
   // fn hardline() -> RefDoc<'a, ()> {covariant(HARDLINE)}
   // fn space() -> RefDoc<'a, ()> {covariant(SPACE)}
   fn line() -> RefDoc<'a, ()> {covariant(LINE)}
@@ -330,9 +330,9 @@ impl<'a> Pretty<'a> {
     })
   }
 
-  fn dep_type(bvs: &[AtomID], ds: u64, fe: FormatEnv<'_>, f: &mut impl fmt::Write) -> fmt::Result {
+  fn dep_type(bvars: &[AtomID], ds: u64, fe: FormatEnv<'_>, f: &mut impl fmt::Write) -> fmt::Result {
     let mut i = 1;
-    for x in bvs {
+    for x in bvars {
       if ds & i != 0 {write!(f, " {}", fe.to(x))?}
       i *= 2;
     }
@@ -340,7 +340,7 @@ impl<'a> Pretty<'a> {
   }
 
   fn grouped_binders(&'a self, mut doc: RefDoc<'a, ()>,
-    bis: &[(Option<AtomID>, Type)], bvs: &mut Vec<AtomID>) -> RefDoc<'a, ()> {
+    bis: &[(Option<AtomID>, Type)], bvars: &mut Vec<AtomID>) -> RefDoc<'a, ()> {
     let mut rest = bis;
     loop {
       let mut it = rest.iter();
@@ -353,7 +353,7 @@ impl<'a> Pretty<'a> {
       match *ty {
         Type::Bound(s) => {
           write!(buf, "{{{}: {}}}", bis1.iter().map(|(a, _)| {
-            bvs.push(a.unwrap_or(AtomID::UNDER));
+            bvars.push(a.unwrap_or(AtomID::UNDER));
             self.fe.to(a)
           }).format(" "), self.fe.to(&s)).unwrap();
         }
@@ -361,7 +361,7 @@ impl<'a> Pretty<'a> {
           write!(buf, "({}: {}",
             bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "),
             self.fe.to(&s)).unwrap();
-          Self::dep_type(bvs, ds, self.fe, &mut buf).unwrap();
+          Self::dep_type(bvars, ds, self.fe, &mut buf).unwrap();
           write!(buf, ")").unwrap();
         }
       }
@@ -378,12 +378,12 @@ impl<'a> Pretty<'a> {
       if t.val.is_some() {"def"} else {"term"},
       self.fe.to(&t.atom));
     let doc = self.alloc(Doc::text(buf));
-    let mut bvs = vec![];
-    let doc = self.grouped_binders(doc, &t.args, &mut bvs);
+    let mut bvars = vec![];
+    let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
     let doc = self.alloc(Doc::Group(doc));
     let mut buf = format!("{}", self.fe.to(&t.ret.0));
-    Self::dep_type(&bvs, t.ret.1, self.fe, &mut buf).unwrap();
+    Self::dep_type(&bvars, t.ret.1, self.fe, &mut buf).unwrap();
     buf += ";";
     self.append_doc(doc, self.append_doc(Self::softline(),
       self.alloc(Doc::text(buf))))
@@ -410,13 +410,13 @@ impl<'a> Pretty<'a> {
       if t.proof.is_some() {"theorem"} else {"axiom"},
       self.fe.to(&t.atom));
     let doc = self.alloc(Doc::text(buf));
-    let mut bvs = vec![];
-    let doc = self.grouped_binders(doc, &t.args, &mut bvs);
+    let mut bvars = vec![];
+    let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
     let doc = self.append_doc(self.alloc(Doc::Group(doc)), Self::line());
-    let mut bvs = Vec::new();
+    let mut bvars = Vec::new();
     let mut heap = Vec::new();
-    self.fe.binders(&t.args, &mut heap, &mut bvs);
+    self.fe.binders(&t.args, &mut heap, &mut bvars);
     for e in &t.heap[heap.len()..] {
       let e = self.fe.expr_node(&heap, &mut None, e);
       heap.push(e)
@@ -456,7 +456,7 @@ impl<'a> FormatEnv<'a> {
 
   /// Pretty-print an expression at the given display width. The returned struct implements
   /// `Display` and can be used to print to a writer.
-  pub fn pp(self, e: &'a LispVal, width: usize) -> PPExpr<'a> {
+  #[must_use] pub fn pp(self, e: &'a LispVal, width: usize) -> PPExpr<'a> {
     PPExpr {fe: self, e, width}
   }
 }

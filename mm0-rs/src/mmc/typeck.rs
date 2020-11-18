@@ -5,7 +5,10 @@ use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
   environment::{AtomID, AtomData},
   lisp::{Uncons, LispVal, LispKind}, local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan};
-use super::{Compiler, types::*, parser::head_keyword,
+use super::{Compiler,
+  types::{AST, Binop, Expr, Keyword, ProcKind, ProofExpr,
+    Prop, PureExpr, Size, TuplePattern, Type, Unop},
+  parser::head_keyword,
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
     Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
 
@@ -288,12 +291,12 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_lassoc1_expr(&self,
-    arg1: &LispVal,
+    arg_1: &LispVal,
     args: &[LispVal],
     binop: Binop,
     tgt: Option<&Type>,
   ) -> Result<PureExpr, ElabError> {
-    let mut e = self.check_pure_expr(arg1, tgt)?;
+    let mut e = self.check_pure_expr(arg_1, tgt)?;
     for arg in args {
       e = PureExpr::Binop(binop, Rc::new(e), Rc::new(self.check_pure_expr(arg, tgt)?))
     }
@@ -307,24 +310,24 @@ impl<'a> TypeChecker<'a> {
     binop: Binop,
     tgt: Option<&Type>,
   ) -> Result<PureExpr, ElabError> {
-    if let Some((arg1, args)) = args.split_first() {
-      f1(self.check_lassoc1_expr(arg1, args, binop, tgt)?)
+    if let Some((arg_1, rest)) = args.split_first() {
+      f1(self.check_lassoc1_expr(arg_1, rest, binop, tgt)?)
     } else {f0()}
   }
 
   fn check_ineq(&self, args: &[LispVal], binop: Binop) -> Result<PureExpr, ElabError> {
-    if let Some((arg1, args)) = args.split_first() {
-      let arg1 = self.check_pure_expr(arg1, Some(&Type::Int(Size::Inf)))?;
-      if let Some((arg2, args)) = args.split_first() {
-        let mut arg2 = Rc::new(self.check_pure_expr(arg2, Some(&Type::Int(Size::Inf)))?);
-        let mut e = PureExpr::Binop(binop, Rc::new(arg1), arg2.clone());
-        for arg3 in args {
-          let arg3 = Rc::new(self.check_pure_expr(arg3, Some(&Type::Int(Size::Inf)))?);
-          e = PureExpr::Binop(Binop::And, Rc::new(e), Rc::new(PureExpr::Binop(binop, arg2, arg3.clone())));
-          arg2 = arg3;
+    if let Some((arg_1, rest)) = args.split_first() {
+      let arg_1 = self.check_pure_expr(arg_1, Some(&Type::Int(Size::Inf)))?;
+      if let Some((arg_2, rest)) = rest.split_first() {
+        let mut arg_2 = Rc::new(self.check_pure_expr(arg_2, Some(&Type::Int(Size::Inf)))?);
+        let mut e = PureExpr::Binop(binop, Rc::new(arg_1), arg_2.clone());
+        for arg_3 in rest {
+          let arg_3 = Rc::new(self.check_pure_expr(arg_3, Some(&Type::Int(Size::Inf)))?);
+          e = PureExpr::Binop(Binop::And, Rc::new(e), Rc::new(PureExpr::Binop(binop, arg_2, arg_3.clone())));
+          arg_2 = arg_3;
         }
         Ok(e)
-      } else { Ok(arg1) }
+      } else { Ok(arg_1) }
     } else { Ok(PureExpr::Bool(true)) }
   }
 
@@ -400,6 +403,7 @@ impl<'a> TypeChecker<'a> {
           (PrimOp::BitXor, args) =>
             self.check_lassoc_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
           (PrimOp::Index, args) => {
+            enum AutoDeref { Own, Ref, Mut }
             let (arr, idx, pf) = match args {
               [arr, idx] => (arr, idx, None),
               [arr, idx, pf] => (arr, idx, Some(pf)),
@@ -408,7 +412,6 @@ impl<'a> TypeChecker<'a> {
             let mut arr = self.check_pure_expr(arr, None)?;
             let idx = Rc::new(self.check_pure_expr(idx, Some(&Type::UInt(Size::Inf)))?);
             let mut aty = self.infer_type(&arr);
-            enum AutoDeref { Own, Ref, Mut }
             let mut derefs = vec![];
             let len = loop {
               match aty {
@@ -465,7 +468,7 @@ impl<'a> TypeChecker<'a> {
           Some(&i) => match &self.find(i) {
             Some(Variable {ty: GType::Ty(_, _ty, _), ..}) => match tgt {
               None => Ok(PureExpr::Var(i)),
-              Some(_tgt) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
+              Some(_) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },
             _ => Err(ElabError::new_e(self.try_get_span(&head), "expected a regular variable")),
           },
@@ -570,9 +573,8 @@ impl<'a> TypeChecker<'a> {
             try_get_span_from(&self.fsp, proc.span.as_ref()), "func is not implemented, use proc")),
         ProcKind::ProcDecl => {}
         ProcKind::Intrinsic => {
-          use std::convert::TryFrom;
-          let intrinsic = Intrinsic::try_from(&*self.elab.data[proc.name].name)
-            .map_err(|_| ElabError::new_e(
+          let intrinsic = Intrinsic::from_bytes(&self.elab.data[proc.name].name)
+            .ok_or_else(|| ElabError::new_e(
               try_get_span_from(&self.fsp, proc.span.as_ref()), "unknown intrinsic"))?;
           // TODO: check intrinsic signature is correct?
           match self.mmc.names.get_mut(&proc.name) {

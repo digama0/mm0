@@ -26,6 +26,13 @@
 #![warn(unreachable_pub)]
 #![warn(unused)]
 #![warn(missing_docs)]
+// #![warn(clippy::all, clippy::restriction, clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![allow(clippy::as_conversions, clippy::module_name_repetitions, clippy::multiple_crate_versions,
+  clippy::implicit_return, clippy::missing_docs_in_private_items, clippy::pattern_type_mismatch,
+  clippy::missing_const_for_fn, clippy::expect_used, clippy::use_self, clippy::integer_arithmetic,
+  clippy::indexing_slicing, clippy::panic, clippy::wildcard_enum_match_arm, clippy::missing_errors_doc,
+  clippy::shadow_unrelated, clippy::too_many_lines, clippy::clone_on_ref_ptr, clippy::unimplemented,
+  clippy::let_underscore_must_use, clippy::default_trait_access, clippy::shadow_reuse)]
 
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;

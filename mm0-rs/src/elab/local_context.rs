@@ -8,7 +8,8 @@ use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
 use super::environment::{AtomID, Type as EType};
 use crate::parser::ast::{Decl, Type, DepType, LocalKind};
-use super::*;
+use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
+  Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortID, Term, TermID, Thm};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::proof::{NodeHasher, ProofHash, build, Dedup};
 use crate::util::{Span, FileSpan, BoxError};
@@ -49,7 +50,7 @@ impl InferSort {
   }
   /// The sort of this variable. For an unknown variable, it returns a sort iff
   /// this variable has inferred exactly one sort, not counting the "`None`" provable sort.
-  pub fn sort(&self) -> Option<SortID> {
+  #[must_use] pub fn sort(&self) -> Option<SortID> {
     match self {
       &InferSort::Bound(sort) => Some(sort),
       &InferSort::Reg(sort, _) => Some(sort),
@@ -114,7 +115,7 @@ fn new_mvar(mvars: &mut Vec<LispVal>, tgt: InferTarget, sp: Option<FileSpan>) ->
 
 impl LocalContext {
   /// Create a new local context.
-  pub fn new() -> LocalContext { Default::default() }
+  #[must_use] pub fn new() -> LocalContext { Default::default() }
 
   /// Reset the local context. This is the same as assigning to `new()` except it
   /// is a bit more efficient because it reuses allocations.
@@ -189,7 +190,7 @@ impl LocalContext {
   }
 
   /// Get a subproof by name.
-  pub fn get_proof(&self, a: AtomID) -> Option<&(AtomID, LispVal, LispVal)> {
+  #[must_use] pub fn get_proof(&self, a: AtomID) -> Option<&(AtomID, LispVal, LispVal)> {
     self.proofs.get(&a).map(|&i| &self.proof_order[i])
   }
 
@@ -233,7 +234,7 @@ pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
 /// span `fsp`, otherwise return `fsp`. (This prevents errors in
 /// one statement from causing error reports further up the file or
 /// even in another file.)
-pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
+#[must_use] pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
   match fsp2 {
     Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => fsp2.span,
     _ => fsp.span,
@@ -242,7 +243,7 @@ pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
 
 impl Environment {
   /// Construct the proof term corresponding to a coercion `c`.
-  pub fn apply_coe(&self, fsp: &Option<FileSpan>, c: &Coe, res: LispVal) -> LispVal {
+  #[must_use] pub fn apply_coe(&self, fsp: &Option<FileSpan>, c: &Coe, res: LispVal) -> LispVal {
     fn apply(c: &Coe, f: &mut impl FnMut(TermID, LispVal) -> LispVal, e: LispVal) -> LispVal {
       match c {
         &Coe::One(_, tid) => f(tid, e),
@@ -654,7 +655,7 @@ impl Elaborator {
 
   /// Elaborate a declaration (`term`, `axiom`, `def`, `theorem`).
   pub fn elab_decl(&mut self, full: Span, d: &Decl, doc: Option<DocComment>) -> Result<()> {
-    let mut ehyps = Vec::new();
+    let mut e_hyps = Vec::new();
     let mut error = false;
     macro_rules! report {
       ($e:expr) => {{let e = $e; self.report(e); error = true;}};
@@ -670,12 +671,12 @@ impl Elaborator {
       match self.elab_binder(&mut error, bi.local, bi.kind, bi.ty.as_ref()) {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
-          if !ehyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
+          if !e_hyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
           if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
             report!(bi.local.unwrap(), "variable occurs twice in binder list");
           }
         }
-        Ok(InferBinder::Hyp(x, e)) => ehyps.push((bi, x, e)),
+        Ok(InferBinder::Hyp(x, e)) => e_hyps.push((bi, x, e)),
       }
     }
     let atom = self.env.get_atom(self.ast.span(d.id));
@@ -685,7 +686,7 @@ impl Elaborator {
     }
     match d.k {
       DeclKind::Term | DeclKind::Def => {
-        for (bi, _, _) in ehyps {report!(bi.span, "term/def declarations have no hypotheses")}
+        for (bi, _, _) in e_hyps {report!(bi.span, "term/def declarations have no hypotheses")}
         let ret = match &d.ty {
           None => {
             if self.mm0_mode {
@@ -703,7 +704,7 @@ impl Elaborator {
           if let Some(v) = &d.val {report!(v.span, "term declarations have no definition")}
         } else if d.val.is_none() && !self.mm0_mode {
           self.report(ElabError::warn(d.id, "def declaration missing value"));
-        }
+        } else {}
         let val = match &d.val {
           None => None,
           Some(f) => (|| -> Result<Option<(Span, LispVal)>> {
@@ -759,7 +760,7 @@ impl Elaborator {
                   return Err(ElabError::new_e(sp, format!("variables {{{}}} missing from dependencies",
                     ba.map.iter().filter_map(|(&a, &i)| {
                       if let InferSort::Bound {..} = self.lc.vars[&a].1 {
-                        if i & deps & !n != 0 {Some(&self.data[a].name)} else {None}
+                        if i & deps & !n == 0 {None} else {Some(&self.data[a].name)}
                       } else {None}
                     }).format(", "))))
                 }
@@ -788,7 +789,7 @@ impl Elaborator {
             }
           }
         }
-        let eret = match &d.ty {
+        let e_ret = match &d.ty {
           None => return Err(ElabError::new_e(full, "return type required")),
           Some(Type::DepType(ty)) => return Err(ElabError::new_e(ty.sort, "expression expected")),
           &Some(Type::Formula(f)) => {
@@ -803,7 +804,8 @@ impl Elaborator {
           if self.mm0_mode {
             self.report(ElabError::warn(v.span, "(MM0 mode) theorems should not have proofs"))
           }
-        } else if !self.mm0_mode {
+        } else if self.mm0_mode {
+        } else {
           self.report(ElabError::warn(d.id, "theorem declaration missing value"))
         }
         for e in self.finalize_vars(false) {report!(e)}
@@ -819,13 +821,13 @@ impl Elaborator {
         let span = self.fspan(d.id);
         let nh = NodeHasher::new(&self.lc, self.format_env(), span.clone());
         let mut is = Vec::new();
-        for &(bi, a, ref e) in &ehyps {
+        for &(bi, a, ref e) in &e_hyps {
           if a.map_or(false, |a| self.lc.vars.contains_key(&a)) {
             return Err(ElabError::new_e(bi.span, "hypothesis shadows local variable"))
           }
           is.push((a, de.dedup(&nh, e)?))
         }
-        let ir = de.dedup(&nh, &eret)?;
+        let ir = de.dedup(&nh, &e_ret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
         let (mut ids, heap) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
@@ -835,14 +837,14 @@ impl Elaborator {
             (|| -> Result<Option<Proof>> {
               let mut de: Dedup<ProofHash> = de.map_proof();
               let mut is2 = Vec::new();
-              for (i, (_, a, e)) in ehyps.into_iter().enumerate() {
+              for (i, (_, a, e)) in e_hyps.into_iter().enumerate() {
                 if let Some(a) = a {
                   let p = LispVal::atom(a);
                   is2.push(de.add(p.clone(), ProofHash::Hyp(i, is[i].1)));
                   self.lc.add_proof(a, e, p)
                 }
               }
-              let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), eret));
+              let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), e_ret));
               self.lc.goals = vec![g.clone()];
               self.elab_lisp(e)?;
               for g in mem::take(&mut self.lc.goals) {
@@ -854,8 +856,7 @@ impl Elaborator {
               let ip = de.dedup(&nh, &g)?;
               let (mut ids, heap) = build(&de);
               let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-              let head = ids[ip].take();
-              Ok(Some(Proof {heap, hyps, head}))
+              Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
             })().unwrap_or_else(|e| {self.report(e); None})
           } else {None}
         });
@@ -893,7 +894,7 @@ pub struct AwaitingProof {
 
 impl AwaitingProof {
   /// The theorem name being added.
-  pub fn atom(&self) -> AtomID { self.thm.atom }
+  #[must_use] pub fn atom(&self) -> AtomID { self.thm.atom }
 
   /// Once the user closure completes, we can call this function to consume the suspended
   /// computation and finish adding the theorem.
@@ -1010,9 +1011,9 @@ impl Elaborator {
   /// Parse and add a term/def declaration (this is called by the `(add-term!)` lisp function).
   pub fn add_term(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or_else(|| fsp.clone()).span}}
-    let (x, bis, ret, val) = match es {
-      [x, bis, ret] => (x, bis, ret, None),
-      [x, bis, ret, vis, ds, val] => (x, bis, ret, Some((vis, ds, val))),
+    let (x, args, ret, val) = match es {
+      [x, args, ret] => (x, args, ret, None),
+      [x, args, ret, vis, ds, val] => (x, args, ret, Some((vis, ds, val))),
       _ => return Err(ElabError::new_e(fsp.span, "expected 3 or 6 arguments"))
     };
     let span = x.fspan().unwrap_or_else(|| fsp.clone());
@@ -1022,7 +1023,7 @@ impl Elaborator {
         format!("duplicate term/def declaration '{}'", self.print(&x))))
     }
     let mut vars = (HashMap::new(), 1);
-    let (mut lc, args) = self.binders(&fsp, Uncons::from(bis.clone()), &mut vars)?;
+    let (mut lc, args) = self.binders(&fsp, Uncons::from(args.clone()), &mut vars)?;
     let ret = match ret.as_atom() {
       Some(s) => {
         let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(ret),
@@ -1076,9 +1077,9 @@ impl Elaborator {
   /// [`finish`]: local_context/struct.AwaitingProof.html#method.finish
   pub fn add_thm(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<StdResult<(), (AwaitingProof, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    let (x, bis, hyps, ret, proof) = match es {
-      [x, bis, hyps, ret] => (x, bis, hyps, ret, None),
-      [x, bis, hyps, ret, vis, vtask] => (x, bis, hyps, ret, Some((vis, vtask.clone()))),
+    let (x, args, hyps, ret, proof) = match es {
+      [x, args, hyps, ret] => (x, args, hyps, ret, None),
+      [x, args, hyps, ret, vis, vtask] => (x, args, hyps, ret, Some((vis, vtask.clone()))),
       _ => return Err(ElabError::new_e(fsp.span, "expected 4 or 6 arguments"))
     };
     let span = x.fspan().unwrap_or_else(|| fsp.clone());
@@ -1088,10 +1089,10 @@ impl Elaborator {
         format!("duplicate axiom/theorem declaration '{}'", self.print(&x))))
     }
     let mut vars = (HashMap::new(), 1);
-    let (mut lc, args) = self.binders(&fsp, Uncons::from(bis.clone()), &mut vars)?;
+    let (mut lc, args) = self.binders(&fsp, Uncons::from(args.clone()), &mut vars)?;
     let mut is = Vec::new();
     mem::swap(&mut self.lc, &mut lc);
-    let eret = (|| -> Result<_> {
+    let e_ret = (|| -> Result<_> {
       for e in Uncons::from(hyps.clone()) {
         let mut u = Uncons::from(e.clone());
         if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
@@ -1106,7 +1107,7 @@ impl Elaborator {
       self.elaborate_term(sp!(ret), ret, InferTarget::Provable)
     })();
     mem::swap(&mut self.lc, &mut lc);
-    let eret = eret?;
+    let e_ret = e_ret?;
     if let Some(e) = self.finalize_vars(true).into_iter().next() { return Err(e) }
     // crate::server::log(format!("{}: {:#?}", self.print(&x), lc));
     let mut de = Dedup::new(&args);
@@ -1115,7 +1116,7 @@ impl Elaborator {
     let is = is.into_iter().map(|(a, ty)| {
       Ok((a, de.dedup(&nh, &ty)?, ty))
     }).collect::<Result<Vec<_>>>()?;
-    let ir = de.dedup(&nh, &eret)?;
+    let ir = de.dedup(&nh, &e_ret)?;
     let (mut ids, heap) = build(&de);
     let hyps = is.iter().map(|&(a, i, _)| {
       (a, ids[i].take())
@@ -1126,7 +1127,7 @@ impl Elaborator {
       vis: Modifiers::NONE,
       proof: None,
       args, heap, hyps, ret };
-    let res = if let Some((vis, proof)) = proof {
+    let out = if let Some((vis, proof)) = proof {
       thm.vis = self.visibility(&fsp, vis)?;
       if !thm.vis.allowed_visibility(DeclKind::Thm) {
         return Err(ElabError::new_e(sp!(vis), "invalid modifiers for this keyword"))
@@ -1141,14 +1142,14 @@ impl Elaborator {
           Some(de.add(p, ProofHash::Hyp(i, j)))
         }).collect();
         if proof.is_proc() {
-          lc.set_goals(Some(LispVal::goal(fsp, eret)).into_iter());
+          lc.set_goals(Some(LispVal::goal(fsp, e_ret)).into_iter());
           let lc = Box::new(mem::replace(&mut self.lc, lc));
           return Ok(Err((AwaitingProof {thm, de, var_map, lc, is}, proof)))
         }
         Some(ThmVal {de, var_map, lc: Some(Box::new(lc)), is, proof})
       } else {None})
     } else {None};
-    self.finish_add_thm(fsp, thm, res)?;
+    self.finish_add_thm(fsp, thm, out)?;
     Ok(Ok(()))
   }
 
@@ -1161,15 +1162,14 @@ impl Elaborator {
           (Some(ds), Some(pf), true) => (ds, pf),
           _ => return Err(ElabError::new_e(sp!(e), "bad proof format, expected (ds proof)"))
         };
-        let lc = lc.as_mut().map(Box::deref_mut).unwrap_or(&mut self.lc);
+        let lc = lc.as_deref_mut().unwrap_or(&mut self.lc);
         let fe = FormatEnv {source: &self.ast.source, env: &self.env};
         dummies(fe, &fsp, lc, &ds)?;
         let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
         let ip = de.dedup(&nh, &pf)?;
         let (mut ids, heap) = build(&de);
         let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-        let head = ids[ip].take();
-        Ok(Some(Proof {heap, hyps, head}))
+        Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
       })().unwrap_or_else(|e| {
         self.report(ElabError::new_e(e.pos,
           format!("while adding {}: {}", self.print(&t.atom), e.kind.msg())));

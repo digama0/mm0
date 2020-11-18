@@ -63,7 +63,7 @@ impl Modifiers {
 
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
   /// using `sort_data().contains(m)`.
-  pub fn sort_data() -> Modifiers {
+  #[must_use] pub fn sort_data() -> Modifiers {
     Modifiers::PURE | Modifiers::STRICT | Modifiers::PROVABLE | Modifiers::FREE
   }
 
@@ -71,9 +71,9 @@ impl Modifiers {
   /// - `term` and `axiom` don't allow any modifiers
   /// - `def` allows `abstract def`, `local def` and `def` (`abstract local` is not valid)
   /// - `theorem` allows `pub theorem` and `theorem`
-  pub fn allowed_visibility(self, k: DeclKind) -> bool {
+  #[must_use] pub fn allowed_visibility(self, k: DeclKind) -> bool {
     match k {
-      DeclKind::Term => self.is_empty(),
+      DeclKind::Term |
       DeclKind::Axiom => self.is_empty(),
       DeclKind::Def => self == Modifiers::ABSTRACT || self == Modifiers::LOCAL || self.is_empty(),
       DeclKind::Thm => self == Modifiers::PUB || self.is_empty(),
@@ -83,7 +83,7 @@ impl Modifiers {
   /// Parses a string into a singleton `Modifiers`, or [`NONE`] if the string is not valid.
   ///
   /// [`NONE`]: struct.Modifiers.html#associatedconstant.NONE
-  pub fn from_name(s: &[u8]) -> Modifiers {
+  #[must_use] pub fn from_name(s: &[u8]) -> Modifiers {
     match s {
       b"pure" => Modifiers::PURE,
       b"strict" => Modifiers::STRICT,
@@ -133,7 +133,7 @@ crate::deep_size_0!(Formula);
 
 impl Formula {
   /// Get the span of the interior of the formula (excluding `$` but including any inner whitespace).
-  pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
+  #[must_use] pub fn inner(&self) -> Span { (self.0.start + 1 .. self.0.end - 1).into() }
 }
 
 /// A constant literal, used in `notation` commands.
@@ -198,7 +198,7 @@ impl LocalKind {
   ///
   /// [`Bound`]: enum.LocalKind.html#variant.Bound
   /// [`Dummy`]: enum.LocalKind.html#variant.Dummy
-  pub fn is_bound(self) -> bool {
+  #[must_use] pub fn is_bound(self) -> bool {
     match self {
       LocalKind::Bound | LocalKind::Dummy => true,
       LocalKind::Reg | LocalKind::Anon => false,
@@ -218,7 +218,7 @@ pub struct DepType {
 impl DepType {
   /// The span of the declaraion, from the start of the sort until
   /// the end of the last dependency.
-  pub fn span(&self) -> Span {
+  #[must_use] pub fn span(&self) -> Span {
     (self.sort.start..self.deps.last().unwrap_or(&self.sort).end).into()
   }
 }
@@ -237,7 +237,7 @@ pub enum Type {
 
 impl Type {
   /// Get the span of a type.
-  pub fn span(&self) -> Span {
+  #[must_use] pub fn span(&self) -> Span {
     match self {
       Type::DepType(d) => d.span(),
       Type::Formula(f) => f.0
@@ -456,7 +456,7 @@ impl SExpr {
   pub fn curly_list(span: Span, curly: bool, mut es: Vec<SExpr>, dot: Option<SExpr>, eq: impl Fn(&SExpr, &SExpr) -> bool) -> SExpr {
     if curly {
       curly_transform(&mut es, dot.is_none(), eq,
-        || SExpr::atom(span.start..span.start+1, Atom::Nfx))
+        || SExpr::atom(span.start..=span.start, Atom::Nfx))
     }
     Self::dotted_list(span, es, dot)
   }
@@ -654,7 +654,7 @@ pub enum StmtKind {
   Import(Span, Vec<u8>),
 }
 
-/// The elements of a parsed AST. StmtKind is the "data", with span providing
+/// The elements of a parsed AST. `StmtKind` is the "data", with span providing
 /// information about the item's location in the source file.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Stmt {
@@ -670,7 +670,7 @@ impl Stmt {
   ///
   /// [`Span`]: ../../util/struct.Span.html
   /// [`StmtKind`]: enum.StmtKind.html
-  pub fn new(span: Span, k: StmtKind) -> Self {
+  #[must_use] pub fn new(span: Span, k: StmtKind) -> Self {
     Stmt { span, k }
   }
 }
@@ -703,7 +703,7 @@ impl LinedString {
   ///
   /// [`Atom`]: ../parser/ast/enum.Atom.html
   /// [`SExprKind::Atom`]: ../parser/ast/enum.SExprKind.html#variant.Atom
-  pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] {
+  #[must_use] pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] {
     match a {
       Atom::Ident => &self[sp],
       Atom::Quote => b"quote",
@@ -715,9 +715,9 @@ impl LinedString {
 
 impl AST {
   /// Return the string corresponding to a span in this AST's source.
-  pub fn span(&self, s: Span) -> &[u8] { &self.source[s] }
+  #[must_use] pub fn span(&self, s: Span) -> &[u8] { &self.source[s] }
   /// Return the string corresponding to an atom.
-  pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] { self.source.span_atom(sp, a) }
+  #[must_use] pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] { self.source.span_atom(sp, a) }
   /// Given a character index in the file, return `(idx, out)` where
   /// `idx` is the smallest index of a statement which does not end before the
   /// target position, and `out` is the character index of the end of `stmt[idx-1]`.
@@ -725,7 +725,7 @@ impl AST {
   /// (In other words, `out <= pos` is maximal such that `out` is the end of
   /// statement `idx-1`. This is a lower bound on the statements that are unaffected
   /// by a change at position `pos`.)
-  pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
+  #[must_use] pub fn last_checkpoint(&self, pos: usize) -> (usize, usize) {
     match self.stmts.binary_search_by_key(&pos, |stmt| stmt.span.end) {
       Ok(i) => (i+1, pos),
       Err(0) => (0, 0),

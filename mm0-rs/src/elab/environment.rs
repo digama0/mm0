@@ -13,7 +13,7 @@ use std::fmt::Write;
 use std::hash::Hash;
 use std::collections::HashMap;
 use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
-use crate::util::*;
+use crate::util::{ArcString, FileRef, FileSpan, HashMapExt, Span};
 use super::lisp::{LispVal, Syntax};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 pub use crate::parser::ast::{Modifiers, Prec};
@@ -40,9 +40,9 @@ macro_rules! id_wrapper {
     #[allow(dead_code)]
     impl<T> $vec<T> {
       /// Get a reference to the element at the given index.
-      pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
+      #[must_use] pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
       /// Get a mutable reference to the element at the given index.
-      pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
+      #[must_use] pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
     }
     impl<T> Default for $vec<T> {
       fn default() -> $vec<T> { $vec(Vec::new()) }
@@ -125,14 +125,14 @@ crate::deep_size_0!(Type);
 
 impl Type {
   /// The sort of a type.
-  pub fn sort(self) -> SortID {
+  #[must_use] pub fn sort(self) -> SortID {
     match self {
       Type::Bound(s) => s,
       Type::Reg(s, _) => s,
     }
   }
   /// True if the type is a bound variable.
-  pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
+  #[must_use] pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
 }
 
 /// An `ExprNode` is interpreted inside a context containing the `Vec<Type>`
@@ -252,7 +252,7 @@ pub enum ProofNode {
 
 impl ProofNode {
   /// Strip excess `Ref` nodes from a `ProofNode`.
-  pub fn deref<'a>(&'a self, heap: &'a [ProofNode]) -> &'a Self {
+  #[must_use] pub fn deref<'a>(&'a self, heap: &'a [ProofNode]) -> &'a Self {
     let mut e = self;
     loop {
       match *e {
@@ -552,12 +552,16 @@ impl ObjectKind {
   /// # Safety
   /// Because this function calls `FrozenLispVal::new`,
   /// the resulting object must not be examined before the elaborator is frozen.
-  pub fn expr(e: LispVal) -> ObjectKind { ObjectKind::Expr(unsafe {FrozenLispVal::new(e)}) }
+  #[must_use] pub fn expr(e: LispVal) -> ObjectKind {
+    ObjectKind::Expr(unsafe {FrozenLispVal::new(e)})
+  }
   /// Create an `ObjectKind` for a `Proof`.
   /// # Safety
   /// Because this function calls `FrozenLispVal::new`,
   /// the resulting object must not be examined before the elaborator is frozen.
-  pub fn proof(e: LispVal) -> ObjectKind { ObjectKind::Proof(unsafe {FrozenLispVal::new(e)}) }
+  #[must_use] pub fn proof(e: LispVal) -> ObjectKind {
+    ObjectKind::Proof(unsafe {FrozenLispVal::new(e)})
+  }
 }
 
 /// The main environment struct, containing all permanent data to be exported from an MM1 file.
@@ -600,7 +604,7 @@ macro_rules! make_atoms {
       ///
       /// [`AtomID`]: struct.AtomID.html
       #[allow(clippy::string_lit_as_bytes)]
-      pub fn new() -> Environment {
+      #[must_use] pub fn new() -> Environment {
         let mut atoms = HashMap::new();
         let mut data = AtomVec::default();
         $({
@@ -688,7 +692,7 @@ crate::deep_size_0!(Delims);
 
 impl Delims {
   /// Returns `self[i]`
-  pub fn get(&self, c: u8) -> bool { self.0[(c >> 3) as usize] & (1 << (c & 7)) != 0 }
+  #[must_use] pub fn get(&self, c: u8) -> bool { self.0[(c >> 3) as usize] & (1 << (c & 7)) != 0 }
   /// Sets `self[i] = true`.
   pub fn set(&mut self, c: u8) { self.0[(c >> 3) as usize] |= 1 << (c & 7) }
   /// Sets `self[i] |= other[i]` for all `i`, that is, sets this bitset to the
@@ -1104,13 +1108,13 @@ impl Default for Environment {
 impl Environment {
   /// Convert an `AtomID` into the corresponding `TermID`,
   /// if this atom denotes a declared term or def.
-  pub fn term(&self, a: AtomID) -> Option<TermID> {
+  #[must_use] pub fn term(&self, a: AtomID) -> Option<TermID> {
     if let Some(DeclKey::Term(i)) = self.data[a].decl { Some(i) } else { None }
   }
 
   /// Convert an `AtomID` into the corresponding `ThmID`,
   /// if this atom denotes a declared axiom or theorem.
-  pub fn thm(&self, a: AtomID) -> Option<ThmID> {
+  #[must_use] pub fn thm(&self, a: AtomID) -> Option<ThmID> {
     if let Some(DeclKey::Thm(i)) = self.data[a].decl { Some(i) } else { None }
   }
 }

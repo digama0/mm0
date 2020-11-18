@@ -28,7 +28,9 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use futures::channel::oneshot::{Receiver, channel};
-use environment::*;
+use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, Expr, ExprNode,
+  LispData, NotaInfo, ObjectKind, Proof, ProofNode, Remap, Remapper, Sort, SortID,
+  StmtTrace, Term, TermID, Thm, ThmID};
 use environment::Literal as ELiteral;
 use lisp::LispVal;
 use spans::Spans;
@@ -36,8 +38,11 @@ use inout::InoutHandlers;
 pub use {environment::Environment, local_context::LocalContext};
 pub use crate::parser::ErrorLevel;
 pub use frozen::{FrozenEnv, FrozenLispKind, FrozenLispVal, FrozenAtomData};
-use crate::util::*;
-use crate::parser::{*, ast::*, ast::Literal as ALiteral};
+use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span};
+use crate::parser::{ParseError,
+  ast::{self, AST, DeclKind, Delimiter, GenNota, LocalKind, Modifiers, Prec,
+    SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Literal as ALiteral}};
+
 use crate::lined_string::LinedString;
 
 #[cfg(feature = "server")]
@@ -55,7 +60,7 @@ pub enum ElabErrorKind {
 }
 impl ElabErrorKind {
   /// Converts the error message to a `String`.
-  pub fn msg(&self) -> String {
+  #[must_use] pub fn msg(&self) -> String {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
     }
@@ -75,7 +80,9 @@ impl ElabErrorKind {
   /// [`LinedString`]: ../lined_string/struct.LinedString.html
   /// [`LinedString::to_loc`]: ../lined_string/struct.LinedString.html#method.to_loc
   #[cfg(feature = "server")]
-  pub fn to_related_info(&self, mut to_loc: impl FnMut(&FileSpan) -> Location) -> Option<Vec<DiagnosticRelatedInformation>> {
+  #[must_use] pub fn to_related_info(&self,
+    mut to_loc: impl FnMut(&FileSpan) -> Location
+  ) -> Option<Vec<DiagnosticRelatedInformation>> {
     match self {
       ElabErrorKind::Boxed(_, Some(info)) =>
         Some(info.iter().map(|(fs, e)| DiagnosticRelatedInformation {
@@ -257,7 +264,7 @@ impl Elaborator {
   ///
   /// [`AST`]: ../parser/ast/struct.AST.html
   /// [`parser::parse`]: ../parser/fn.parse.html
-  pub fn new(ast: Arc<AST>, path: FileRef,
+  #[must_use] pub fn new(ast: Arc<AST>, path: FileRef,
       mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
       ast, path, cancel,
@@ -341,12 +348,12 @@ impl Elaborator {
   }
 
   fn elab_coe(&mut self, id: Span, from: Span, to: Span) -> Result<()> {
-    let aid = self.env.get_atom(self.ast.span(id));
-    let afrom = self.env.get_atom(self.ast.span(from));
-    let ato = self.env.get_atom(self.ast.span(to));
-    let t = self.term(aid).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
-    let s1 = self.data[afrom].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
-    let s2 = self.data[ato].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
+    let a_id = self.env.get_atom(self.ast.span(id));
+    let a_from = self.env.get_atom(self.ast.span(from));
+    let a_to = self.env.get_atom(self.ast.span(to));
+    let t = self.term(a_id).ok_or_else(|| ElabError::new_e(id, "term not declared"))?;
+    let s1 = self.data[a_from].sort.ok_or_else(|| ElabError::new_e(from, "sort not declared"))?;
+    let s2 = self.data[a_to].sort.ok_or_else(|| ElabError::new_e(to, "sort not declared"))?;
     self.check_term_nargs(id, t, 1)?;
     self.spans.insert(id, ObjectKind::Term(t, id));
     self.spans.insert(from, ObjectKind::Sort(s1));
@@ -364,6 +371,14 @@ impl Elaborator {
   }
 
   fn elab_gen_nota(&mut self, nota: &GenNota) -> Result<()> {
+    fn bump(yes: bool, sp: Span, p: Prec) -> Result<Prec> {
+      if !yes {return Ok(p)}
+      if let Prec::Prec(n) = p {
+        if let Some(i) = n.checked_add(1) { Ok(Prec::Prec(i)) }
+        else {Err(ElabError::new_e(sp, "precedence out of range"))}
+      } else {Err(ElabError::new_e(sp, "infix constants cannot have prec max"))}
+    }
+
     let a = self.env.get_atom(self.ast.span(nota.id));
     let term = self.term(a).ok_or_else(|| ElabError::new_e(nota.id, "term not declared"))?;
     let nargs = nota.bis.len();
@@ -386,13 +401,6 @@ impl Elaborator {
         "(MM0 mode) generalized infix precedence specifier not allowed"))
     }
 
-    fn bump(yes: bool, sp: Span, p: Prec) -> Result<Prec> {
-      if !yes {return Ok(p)}
-      if let Prec::Prec(n) = p {
-        if let Some(i) = n.checked_add(1) { Ok(Prec::Prec(i)) }
-        else {Err(ElabError::new_e(sp, "precedence out of range"))}
-      } else {Err(ElabError::new_e(sp, "infix constants cannot have prec max"))}
-    }
     let mut get_var = |sp: Span| -> Result<usize> {
       let v = vars.get_mut(ast.span(sp))
         .ok_or_else(|| ElabError::new_e(sp, "variable not found"))?;
@@ -496,11 +504,12 @@ impl Elaborator {
   /// - `Err(e)`: A fatal error occurred in parsing the statement.
   ///   This can just be pushed to the error list.
   fn elab_stmt(&mut self, mut doc: String, stmt: &Stmt, span: Span) -> Result<ElabStmt> {
-    self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
-    self.spans.set_stmt(span);
     fn to_doc(doc: String) -> Option<DocComment> {
       if doc.is_empty() {None} else {Some(doc.into())}
     }
+
+    self.cur_timeout = self.timeout.and_then(|d| Instant::now().checked_add(d));
+    self.spans.set_stmt(span);
     match &stmt.k {
       &StmtKind::Sort(sp, sd) => {
         let a = self.env.get_atom(self.ast.span(sp));
@@ -641,8 +650,8 @@ pub fn elaborate<T>(
                 break
               }
               Ok(ElabResult::ImportCycle(cyc2)) => {
-                let mut s = format!("import cycle: {}", p.clone().unwrap());
                 use std::fmt::Write;
+                let mut s = format!("import cycle: {}", p.clone().unwrap());
                 for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
                 elab.report(ElabError::new_e(*sp, s));
                 if cyc.is_none() { *cyc = Some(cyc2) }

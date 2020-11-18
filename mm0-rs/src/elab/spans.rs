@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
 use super::environment::AtomID;
 use super::local_context::LocalContext;
-use crate::util::*;
+use crate::util::Span;
 
 /// A `Spans<T>` object is created for each declaration, and maintains data on the
 /// spans of objects occurring in the statement. For example, we might register
@@ -57,7 +57,7 @@ impl<T> Default for Spans<T> {
 impl<T> Spans<T> {
   /// Create a new `Spans` object. The `stmt` and `decl` fields are initially
   /// uninitialized.
-  pub fn new() -> Spans<T> {
+  #[must_use] pub fn new() -> Spans<T> {
     Spans {
       stmt: MaybeUninit::uninit(),
       decl: MaybeUninit::uninit(),
@@ -81,7 +81,7 @@ impl<T> Spans<T> {
   ///
   /// [`Environment.spans`]: ../environment/struct.Environment.html#structfield.spans
   /// [`set_stmt`]: struct.Spans.html#method.set_stmt
-  pub fn stmt(&self) -> Span { unsafe { self.stmt.assume_init() } }
+  #[must_use] pub fn stmt(&self) -> Span { unsafe { self.stmt.assume_init() } }
 
   /// Get the `decl` field of a `Spans`.
   ///
@@ -93,7 +93,7 @@ impl<T> Spans<T> {
   ///
   /// [`Environment.spans`]: ../environment/struct.Environment.html#structfield.spans
   /// [`set_decl`]: struct.Spans.html#method.set_decl
-  pub fn decl(&self) -> AtomID { unsafe { self.decl.assume_init() } }
+  #[must_use] pub fn decl(&self) -> AtomID { unsafe { self.decl.assume_init() } }
 
   /// Insert a new data element at a given span.
   pub fn insert<'a>(&'a mut self, sp: Span, val: T) -> &'a mut T {
@@ -140,7 +140,7 @@ impl<T> Spans<T> {
 
   /// Get the data at a given `Span`.
   /// If multiple data elements exist at this span, only the first will be returned.
-  pub fn get(&self, sp: Span) -> Option<&T> {
+  #[must_use] pub fn get(&self, sp: Span) -> Option<&T> {
     self.data.get(&sp.start).and_then(|v|
       v.iter().find(|x| x.0 == sp).map(|x| &x.1))
   }
@@ -162,7 +162,7 @@ impl<T> Spans<T> {
 
   /// Get the `Spans` object corrsponding to the statement that contains the given position,
   /// if one exists.
-  pub fn find(spans: &[Self], pos: usize) -> Option<&Self> {
+  #[must_use] pub fn find(spans: &[Self], pos: usize) -> Option<&Self> {
     match spans.binary_search_by_key(&pos, |s| s.stmt().start) {
       Ok(i) => Some(&spans[i]),
       Err(i) => i.checked_sub(1).map(|j| &spans[j]),

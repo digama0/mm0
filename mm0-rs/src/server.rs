@@ -13,14 +13,16 @@ use futures::{FutureExt, future::BoxFuture};
 use futures::channel::oneshot::{Sender as FSender, channel};
 use futures::executor::ThreadPool;
 use futures::lock::Mutex as FMutex;
-use lsp_server::*;
+use lsp_server::{Connection, ErrorCode, Message, Notification, ProtocolError,
+  Request, RequestId, Response, ResponseError};
 use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
-use lsp_types::*;
+#[allow(clippy::wildcard_imports)] use lsp_types::*;
 use crossbeam::channel::{SendError, RecvError};
 use clap::ArgMatches;
-use crate::util::*;
+use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
+  MutexExt, CondvarExt};
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
 use crate::mmu::import::elab as mmu_elab;
@@ -82,7 +84,7 @@ struct MemoryData;
 impl MemoryData {
   fn get() -> MemoryData {
     #[cfg(feature = "memory")] {
-      use crate::deepsize::DeepSizeOf;
+      use crate::{deepsize::DeepSizeOf, util::get_memory_usage};
       MemoryData(get_memory_usage(), SERVER.vfs.deep_size_of())
     }
     #[cfg(not(feature = "memory"))] MemoryData
@@ -111,7 +113,7 @@ pub(crate) fn get_log_errors() -> bool { LOG_ERRORS.load(Ordering::Relaxed) }
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {
-  LOGGER.0.lock().unwrap().push((Instant::now(), thread::current().id(), MemoryData::get(), s));
+  LOGGER.0.ulock().push((Instant::now(), thread::current().id(), MemoryData::get(), s));
   LOGGER.1.notify_one();
 }
 
@@ -119,15 +121,15 @@ struct Logger(std::thread::JoinHandle<()>, Arc<AtomicBool>);
 
 impl Logger {
   fn start() -> Self {
-    let cancel: Arc<AtomicBool> = Default::default();
+    let cancel: Arc<AtomicBool> = Arc::default();
     let cancel2 = cancel.clone();
     let jh = std::thread::spawn(move || {
       let mut now = Instant::now();
       while !cancel.load(Ordering::Acquire) {
-        for (i, id, mem, s) in LOGGER.1.wait(LOGGER.0.lock().unwrap()).unwrap().drain(..) {
+        for (i, id, mem, s) in LOGGER.1.uwait(LOGGER.0.ulock()).drain(..) {
           let d = i.saturating_duration_since(now).as_millis();
           let msg = format!("[{:?}: {:?}ms{}] {}", id, d, mem, s);
-          log_message(msg).unwrap();
+          log_message(msg).expect("send failed");
           now = i;
         }
       }
@@ -138,7 +140,7 @@ impl Logger {
   fn stop(self) {
     self.1.store(true, Ordering::Release);
     LOGGER.1.notify_one();
-    self.0.join().unwrap()
+    self.0.join().expect("failed to join thread")
   }
 }
 
@@ -152,7 +154,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let vfs = &SERVER.vfs;
   debug_assert!(!rd.contains(&path));
   let (path, file) = vfs.get_or_insert(path)?;
-  let v = file.text.lock().unwrap().0;
+  let v = file.text.ulock().0;
   let (old_ast, old_env, old_deps) = {
     let mut g = file.parsed.lock().await;
     let (old, res, senders) = match &mut *g {
@@ -201,7 +203,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     drop(g);
     res
   };
-  let (version, text) = file.text.lock().unwrap().clone();
+  let (version, text) = file.text.ulock().clone();
   let old_ast = old_ast.and_then(|(s, old_text, ast)|
     if Arc::ptr_eq(&text, &old_text) {Some((s, ast))} else {None});
   let mut hasher = DefaultHasher::new();
@@ -226,7 +228,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         let p = vfs.get_or_insert(p)?.0;
         let (send, recv) = channel();
         if rd.contains(&p) {
-          send.send(ElabResult::ImportCycle(rd.clone())).unwrap();
+          send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
         } else {
           spawn_new(|c| elaborate_and_send(p.clone(), c, send, rd.clone()));
           deps.push(p);
@@ -245,8 +247,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       &ast.source
     } else {
       srcs.entry(fsp.file.ptr()).or_insert_with(||
-        vfs.0.lock().unwrap().get(&fsp.file).unwrap()
-          .text.lock().unwrap().1.clone())
+        vfs.0.ulock().get(&fsp.file).expect("missing file")
+          .text.ulock().1.clone())
     }.to_loc(fsp)
   };
 
@@ -264,19 +266,21 @@ async fn elaborate(path: FileRef, start: Option<Position>,
 
   send_diagnostics(path.url().clone(), version, errs)?;
 
-  use std::fmt::Write;
-  let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-  if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
-  if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
-  if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
-  if get_log_errors() {
-    for e in &errors {
-      let Position {line, character: col} = ast.source.to_pos(e.pos.start);
-      write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
-        e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
+  {
+    use std::fmt::Write;
+    let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
+    if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
+    if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
+    if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
+    if get_log_errors() {
+      for e in &errors {
+        let Position {line, character: col} = ast.source.to_pos(e.pos.start);
+        write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
+          e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
+      }
     }
+    log(log_msg);
   }
-  log(log_msg);
 
   let res = match cyc.clone() {
     None => ElabResult::Ok(hash, env.clone()),
@@ -290,7 +294,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   }
   *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), errors, deps});
   drop(g);
-  for d in file.downstream.lock().unwrap().iter() {
+  for d in file.downstream.ulock().iter() {
     log!("{:?} affects {:?}", path, d);
     spawn_new(|c| dep_change(d.clone(), c));
   }
@@ -302,7 +306,7 @@ async fn elaborate_and_report(path: FileRef, start: Option<Position>, cancel: Ar
     std::panic::AssertUnwindSafe(elaborate(path, start, cancel, Default::default()))
       .catch_unwind().await
       .unwrap_or_else(|_| Err("server panic".into())) {
-    log_message(format!("{:?}", e)).unwrap();
+    log_message(format!("{:?}", e)).expect("failed to send");
   }
 }
 
@@ -365,11 +369,11 @@ struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
 impl VFS {
   fn get(&self, path: &FileRef) -> Option<Arc<VirtualFile>> {
-    self.0.lock().unwrap().get(path).cloned()
+    self.0.ulock().get(path).cloned()
   }
 
   fn get_or_insert(&self, path: FileRef) -> io::Result<(FileRef, Arc<VirtualFile>)> {
-    match self.0.lock().unwrap().entry(path) {
+    match self.0.ulock().entry(path) {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();
@@ -381,14 +385,14 @@ impl VFS {
   }
 
   fn source(&self, file: &FileRef) -> Arc<LinedString> {
-    self.0.lock().unwrap().get(&file).unwrap().text.lock().unwrap().1.clone()
+    self.0.ulock().get(file).unwrap().text.ulock().1.clone()
   }
 
   fn open_virt(&self, path: FileRef, version: i32, text: String) -> Result<Arc<VirtualFile>> {
     let file = Arc::new(VirtualFile::new(Some(version), text));
-    let file = match self.0.lock().unwrap().entry(path.clone()) {
+    let file = match self.0.ulock().entry(path.clone()) {
       Entry::Occupied(entry) => {
-        for dep in entry.get().downstream.lock().unwrap().iter() {
+        for dep in entry.get().downstream.ulock().iter() {
           spawn_new(|c| dep_change(dep.clone(), c));
         }
         file
@@ -400,18 +404,18 @@ impl VFS {
   }
 
   fn close(&self, path: &FileRef) -> Result<()> {
-    let mut g = self.0.lock().unwrap();
+    let mut g = self.0.ulock();
     if let Entry::Occupied(e) = g.entry(path.clone()) {
-      if e.get().downstream.lock().unwrap().is_empty() {
+      if e.get().downstream.ulock().is_empty() {
         send_diagnostics(path.url().clone(), None, vec![])?;
         e.remove();
-      } else if e.get().text.lock().unwrap().0.take().is_some() {
+      } else if e.get().text.ulock().0.take().is_some() {
         let file = e.get().clone();
         drop(g);
-        for dep in file.downstream.lock().unwrap().clone() {
+        for dep in file.downstream.ulock().clone() {
           spawn_new(|c| dep_change(dep.clone(), c));
         }
-      }
+      } else {}
     }
     Ok(())
   }
@@ -419,14 +423,14 @@ impl VFS {
   fn update_downstream(&self, old_deps: &[FileRef], deps: &[FileRef], to: &FileRef) {
     for from in old_deps {
       if !deps.contains(from) {
-        let file = self.0.lock().unwrap().get(from).unwrap().clone();
-        file.downstream.lock().unwrap().remove(to);
+        let file = self.0.ulock().get(from).unwrap().clone();
+        file.downstream.ulock().remove(to);
       }
     }
     for from in deps {
       if !old_deps.contains(from) {
-        let file = self.0.lock().unwrap().get(from).unwrap().clone();
-        file.downstream.lock().unwrap().insert(to.clone());
+        let file = self.0.ulock().get(from).unwrap().clone();
+        file.downstream.ulock().insert(to.clone());
       }
     }
   }
@@ -505,7 +509,7 @@ impl RequestHandler {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
         self.finish(hover(doc.uri.into(), position).await),
       RequestType::Definition(TextDocumentPositionParams {text_document: doc, position}) =>
-        if USE_LOCATION_LINKS && matches!(SERVER.caps.lock().unwrap().definition_location_links, Some(true)) {
+        if USE_LOCATION_LINKS && matches!(SERVER.caps.ulock().definition_location_links, Some(true)) {
           self.finish(definition(doc.uri.into(), position,
             |text, text2, src, &FileSpan {ref file, span}, full| LocationLink {
               origin_selection_range: Some(text.to_range(src)),
@@ -543,9 +547,9 @@ impl RequestHandler {
 
   fn finish<T: Serialize>(self, resp: StdResult<T, ResponseError>) -> Result<()> {
     let Server {reqs, conn, ..} = &*SERVER;
-    reqs.lock().unwrap().remove(&self.id);
+    reqs.ulock().remove(&self.id);
     conn.sender.send(Message::Response(match resp {
-      Ok(val) => Response { id: self.id, result: Some(to_value(val).unwrap()), error: None },
+      Ok(val) => Response { id: self.id, result: Some(to_value(val)?), error: None },
       Err(e) => Response { id: self.id, result: None, error: Some(e) }
     }))?;
     Ok(())
@@ -581,16 +585,15 @@ fn trim_margin(s: &str) -> String {
     if c == b'\n' {
       if nonempty {
         out.push_str(unsafe {
-          std::str::from_utf8_unchecked(&s[last + margin .. i + 1])
+          std::str::from_utf8_unchecked(&s[last + margin ..= i])
         });
         nonempty = false;
       } else {
         out.push('\n')
       }
       last = i + 1;
-    } else if c != b' ' {
-      nonempty = true
-    }
+    } else if c == b' ' { /* skip */ }
+    else { nonempty = true }
   }
   out
 }
@@ -610,16 +613,6 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
     Some(x) => x,
     None => return $ret
   }}}
-  let file = SERVER.vfs.get(&path).ok_or_else(||
-    response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
-  let text = file.text.lock().unwrap().1.clone();
-  let idx = or!(Ok(None), text.to_idx(pos));
-  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = or!(Ok(None), env.into_response_error()?).1;
-  let env = unsafe { env.thaw() };
-  let fe = FormatEnv { source: &text, env };
-  let spans = or!(Ok(None), Spans::find(&env.spans, idx));
   fn mk_mm0(value: String) -> MarkedString {
     MarkedString::LanguageString(
       LanguageString { language: "metamath-zero".into(), value })
@@ -627,7 +620,19 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
   fn mk_doc(doc: &str) -> MarkedString {
     MarkedString::String(trim_margin(doc))
   }
-  let mut res: Vec<(Span, MarkedString)> = vec![];
+
+  let file = SERVER.vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
+  let text = file.text.ulock().1.clone();
+  let idx = or!(Ok(None), text.to_idx(pos));
+  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = or!(Ok(None), env.into_response_error()?).1;
+  let env = unsafe { env.thaw() };
+  let fe = FormatEnv { source: &text, env };
+  let spans = or!(Ok(None), Spans::find(&env.spans, idx));
+
+  let mut out: Vec<(Span, MarkedString)> = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     if let Some((r, doc)) = (|| Some(match k {
       &ObjectKind::Sort(s) => {
@@ -650,7 +655,8 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
             s += " ";
             s += &String::from_utf8_lossy(&env.data[a].name)
           }
-          s + ")"
+          s.push(')');
+          s
         }
         _ => return None,
       })), None),
@@ -665,9 +671,8 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           (spans.lc.as_ref()?.vars.get(&a)?.1.sort()?, None)
         };
         let mut out = String::new();
-        fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).unwrap());
-        use std::fmt::Write;
-        write!(out, ": {}", fe.to(&s)).unwrap();
+        fe.pretty(|p| p.expr(unsafe {e.thaw()}).render_fmt(80, &mut out).expect("impossible"));
+        { use std::fmt::Write; write!(out, ": {}", fe.to(&s)).expect("impossible"); }
         ((sp1, mk_mm0(out)), doc)
       }
       ObjectKind::Proof(p) => {
@@ -676,7 +681,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
             lc.proofs.get(&x).map(|&i| &lc.proof_order[i].1))) {
           let mut out = String::new();
           fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
-            .render_fmt(80, &mut out).unwrap());
+            .render_fmt(80, &mut out).expect("impossible"));
           ((sp, mk_mm0(out)), None)
         } else {
           let mut u = p.uncons();
@@ -685,24 +690,27 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           let a = head.as_atom()?;
           if let Some(DeclKey::Thm(t)) = env.data[a].decl {
             let td = &env.thms[t];
-            res.push((sp, mk_mm0(format!("{}", fe.to(td)))));
+            out.push((sp, mk_mm0(format!("{}", fe.to(td)))));
             let mut args = vec![];
             for _ in 0..td.args.len() {
               args.push(unsafe {u.next()?.thaw()}.clone());
             }
-            let mut subst = Subst::new(&env, &td.heap, args);
+            let mut subst = Subst::new(env, &td.heap, args);
             let mut out = String::new();
             let ret = subst.subst(&td.ret);
             fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
               td.hyps.iter().map(|(_, h)| subst.subst(h)),
-              &ret).render_fmt(80, &mut out).unwrap());
+              &ret).render_fmt(80, &mut out).expect("impossible"));
             ((sp1, mk_mm0(out)), td.doc.clone())
           } else {return None}
         }
       }
-      // Note: Uncomment this to turn on lisp syntax documentation.
-      // &ObjectKind::Syntax(stx) => (sp, Doc, stx.doc().into()),
-      ObjectKind::Syntax(_) => return None,
+      ObjectKind::Syntax(stx) => {
+        const SYNTAX_DOCS: bool = false;
+        if SYNTAX_DOCS {
+          ((sp, mk_doc(stx.doc())), None)
+        } else { return None }
+      }
       &ObjectKind::Global(a) => {
         let ld = env.data[a].lisp.as_ref()?;
         if let Some(doc) = &ld.doc {
@@ -718,21 +726,21 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       ObjectKind::Import(_) => return None,
     }))() {
       let sp = r.0;
-      res.push(r);
+      out.push(r);
       if let Some(doc) = doc {
-        res.push((sp, mk_doc(&doc)))
+        out.push((sp, mk_doc(&doc)))
       }
     }
   }
-  if res.is_empty() {return Ok(None)}
+  if out.is_empty() {return Ok(None)}
   Ok(Some(Hover {
-    range: Some(text.to_range(res[0].0)),
-    contents: HoverContents::Array(res.into_iter().map(|s| s.1).collect())
+    range: Some(text.to_range(out[0].0)),
+    contents: HoverContents::Array(out.into_iter().map(|s| s.1).collect())
   }))
 }
 
 async fn definition<T>(path: FileRef, pos: Position,
-    f: impl Fn(&LinedString, &LinedString, Span, &FileSpan, Span) -> T) ->
+    f: impl Fn(&LinedString, &LinedString, Span, &FileSpan, Span) -> T + Send) ->
     StdResult<Vec<T>, ResponseError> {
   let vfs = &SERVER.vfs;
   macro_rules! or_none {($e:expr)  => {match $e {
@@ -741,7 +749,7 @@ async fn definition<T>(path: FileRef, pos: Position,
   }}}
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "goto definition nonexistent file"))?;
-  let text = file.text.lock().unwrap().1.clone();
+  let text = file.text.ulock().1.clone();
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
@@ -771,7 +779,8 @@ async fn definition<T>(path: FileRef, pos: Position,
       &ObjectKind::Sort(s) => res.push(sort(s)),
       &ObjectKind::Term(t, _) => res.push(term(t)),
       &ObjectKind::Thm(t) => res.push(thm(t)),
-      ObjectKind::Var(_) => {}
+      ObjectKind::Var(_) |
+      ObjectKind::Syntax(_) => {}
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data()[a].decl()) {
@@ -792,12 +801,11 @@ async fn definition<T>(path: FileRef, pos: Position,
         }
         if let Some(s) = ad.sort() {res.push(sort(s))}
         if let Some(&(ref fsp, full)) = ad.lisp().as_ref().and_then(|ld| ld.src().as_ref()) {
-          res.push(g(&fsp, full))
+          res.push(g(fsp, full))
         } else if let Some(sp) = ad.graveyard() {
           res.push(g(&sp.0, sp.1))
-        }
+        } else {}
       }
-      ObjectKind::Syntax(_) => {}
       ObjectKind::Import(file) => {
         res.push(g(&FileSpan {file: file.clone(), span: 0.into()}, 0.into()))
       },
@@ -810,7 +818,7 @@ async fn definition<T>(path: FileRef, pos: Position,
 async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.lock().unwrap().1.clone();
+  let text = file.text.ulock().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
   let env = match env.into_response_error()? {
@@ -835,13 +843,13 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
     match *s {
       StmtTrace::Sort(a) => {
         let ad = &env.data()[a];
-        let s = ad.sort().unwrap();
+        let s = ad.sort().expect("env well formed");
         let sd = env.sort(s);
         push!(sd.span, ad.name(), format!("{}", sd), sd.full, SymbolKind::Class)
       }
       StmtTrace::Decl(a) => {
         let ad = &env.data()[a];
-        match ad.decl().unwrap() {
+        match ad.decl().expect("env well formed") {
           DeclKey::Term(t) => {
             let td = env.term(t);
             push!(td.span, ad.name(), format!("{}", fe.to(td)), td.full, SymbolKind::Constructor)
@@ -892,7 +900,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
 enum TraceKind {Sort, Decl, Global}
 
 fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
-  use CompletionItemKind::*;
+  use CompletionItemKind::{Class, Constructor, Method};
   macro_rules! done {($desc:expr, $kind:expr) => {
     CompletionItem {
       label: String::from_utf8_lossy(ad.name()).into(),
@@ -935,22 +943,17 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
 async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let old = if let Some(g) = file.parsed.try_lock() {
-    g.as_ref().and_then(|fc| match fc {
-      FileCache::Ready {source, res: ElabResult::Ok(_, env), ..} => Some((source.clone(), env.clone())),
-      FileCache::Ready {..} => None,
-      FileCache::InProgress {old, ..} => old.clone()
-    })
-  } else {None};
-  let (text, env) = match old {
-    Some(old) => old,
-    None => {
-      let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-        .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-      match env.into_response_error()? {
-        None => return Ok(CompletionResponse::Array(vec![])),
-        Some((_, env)) => (file.text.lock().unwrap().1.clone(), env)
-      }
+  let old = file.parsed.try_lock().and_then(|g| g.as_ref().and_then(|fc| match fc {
+    FileCache::Ready {source, res: ElabResult::Ok(_, env), ..} => Some((source.clone(), env.clone())),
+    FileCache::Ready {..} => None,
+    FileCache::InProgress {old, ..} => old.clone()
+  }));
+  let (text, env) = if let Some(old) = old { old } else {
+    let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    match env.into_response_error()? {
+      None => return Ok(CompletionResponse::Array(vec![])),
+      Some((_, env)) => (file.text.ulock().1.clone(), env)
     }
   };
   let fe = unsafe { env.format_env(&text) };
@@ -970,7 +973,7 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
   let path = uri.into();
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.lock().unwrap().1.clone();
+  let text = file.text.ulock().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .into_response_error()?
@@ -985,14 +988,6 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
     Some(x) => x,
     None => return Ok(vec![])
   }}}
-  let file = SERVER.vfs.get(&path).ok_or_else(||
-    response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
-  let text = file.text.lock().unwrap().1.clone();
-  let idx = or_none!(text.to_idx(pos));
-  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = or_none!(env.into_response_error()?).1;
-  let spans = or_none!(env.find(idx));
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {
     Var(AtomID),
@@ -1001,6 +996,16 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
     Thm(ThmID),
     Global(AtomID),
   }
+
+  let file = SERVER.vfs.get(&path).ok_or_else(||
+    response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
+  let text = file.text.ulock().1.clone();
+  let idx = or_none!(text.to_idx(pos));
+  let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
+    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+  let env = or_none!(env.into_response_error()?).1;
+  let spans = or_none!(env.find(idx));
+
   let to_key = |k: &ObjectKind| match *k {
     ObjectKind::Expr(ref e) => {
       let a = e.uncons().next().unwrap_or(e).as_atom()?;
@@ -1030,9 +1035,8 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
     let key = match to_key(k) {Some(k) => k, _ => continue};
-    use std::convert::TryFrom;
     match key {
-      Key::Global(a) if BuiltinProc::try_from(&**env.data()[a].name()).is_ok() => continue,
+      Key::Global(a) if BuiltinProc::from_bytes(env.data()[a].name()).is_some() => continue,
       _ => {}
     }
     let mut cont = |&(sp2, ref k2)| {
@@ -1111,11 +1115,11 @@ impl Capabilities {
 }
 
 fn spawn(cancel: Arc<AtomicBool>, fut: impl std::future::Future<Output=()> + Send + 'static) {
-  SERVER.threads.0.lock().unwrap().push_back(cancel.clone());
+  SERVER.threads.0.ulock().push_back(cancel.clone());
   SERVER.pool.spawn_ok(async move {
     fut.await;
     let (m, cvar) = &*SERVER.threads;
-    let mut vec = m.lock().unwrap();
+    let mut vec = m.ulock();
     let a: *const AtomicBool = &*cancel;
     let i = vec.iter().enumerate().find(|&(_, b)| a == &**b).unwrap().0;
     vec.swap_remove_front(i).unwrap();
@@ -1161,7 +1165,7 @@ impl Server {
 
   fn run(&self) {
     let logger = Logger::start();
-    let _ = self.caps.lock().unwrap().register();
+    let _ = self.caps.ulock().register();
     loop {
       match (|| -> Result<bool> {
         let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
@@ -1173,13 +1177,13 @@ impl Server {
             }
             if let Some((id, req)) = parse_request(req)? {
               spawn_new(|cancel| {
-                reqs.lock().unwrap().insert(id.clone(), cancel.clone());
+                reqs.ulock().insert(id.clone(), cancel.clone());
                 async { RequestHandler {id, cancel}.handle(req).await.unwrap() }
               });
             }
           }
           Ok(Message::Response(resp)) => {
-            let mut caps = caps.lock().unwrap();
+            let mut caps = caps.ulock();
             if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
               caps.finish_register(resp);
             } else {
@@ -1190,7 +1194,7 @@ impl Server {
             match notif.method.as_str() {
               "$/cancelRequest" => {
                 let CancelParams {id} = from_value(notif.params)?;
-                if let Some(cancel) = reqs.lock().unwrap().get(&nos_id(id)) {
+                if let Some(cancel) = reqs.ulock().get(&nos_id(id)) {
                   cancel.store(true, Ordering::Relaxed);
                 }
               }
@@ -1207,7 +1211,7 @@ impl Server {
                   log!("change {:?}", path);
                   let start = {
                     let file = vfs.get(&path).ok_or("changed nonexistent file")?;
-                    let (version, text) = &mut *file.text.lock().unwrap();
+                    let (version, text) = &mut *file.text.ulock();
                     *version = Some(doc.version);
                     let (start, s) = text.apply_changes(content_changes.into_iter());
                     *text = Arc::new(s);
@@ -1235,7 +1239,7 @@ impl Server {
     }
     logger.stop();
     let (mutex, cvar) = &*self.threads;
-    let mut g = mutex.lock().unwrap();
+    let mut g = mutex.ulock();
     g.iter().for_each(|c| c.store(true, Ordering::Relaxed));
     while !g.is_empty() { g = cvar.wait(g).unwrap() }
   }
@@ -1261,14 +1265,14 @@ fn response_err(code: ErrorCode, message: impl Into<String>) -> ResponseError {
 /// [`vscode-mm0`]: https://github.com/digama0/mm0/tree/master/vscode-mm0
 pub fn main(args: &ArgMatches<'_>) {
   if args.is_present("debug") {
+    use {simplelog::{Config, LevelFilter, WriteLogger}, std::fs::File};
     std::env::set_var("RUST_BACKTRACE", "1");
-    use {simplelog::*, std::fs::File};
     let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
   }
   if args.is_present("no_log_errors") { LOG_ERRORS.store(false, Ordering::Relaxed) }
   log_message("started".into()).unwrap();
   SERVER.run();
   let Server {reqs, vfs: VFS(vfs), ..} = &*SERVER;
-  std::mem::take(&mut *reqs.lock().unwrap());
-  std::mem::take(&mut *vfs.lock().unwrap());
+  std::mem::take(&mut *reqs.ulock());
+  std::mem::take(&mut *vfs.ulock());
 }

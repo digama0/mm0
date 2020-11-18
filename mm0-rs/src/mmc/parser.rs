@@ -7,7 +7,8 @@ use crate::elab::{Result, ElabError,
   environment::AtomID,
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
   local_context::try_get_span};
-use super::types::*;
+use super::types::{AST, Block, Invariant, Keyword, Proc, ProcKind,
+  TuplePattern, Variant, VariantType};
 
 /// A pattern, the left side of a switch statement.
 #[derive(Debug)]
@@ -118,7 +119,7 @@ fn head_atom(e: &LispVal) -> Option<(AtomID, Uncons)> {
 
 /// Try to parse the head keyword of an expression `(KEYWORD args..)`,
 /// and return the pair `(KEYWORD, args)` on success.
-pub fn head_keyword(kw: &HashMap<AtomID, Keyword>, e: &LispVal) -> Option<(Keyword, Uncons)> {
+#[must_use] pub fn head_keyword(kw: &HashMap<AtomID, Keyword>, e: &LispVal) -> Option<(Keyword, Uncons)> {
   let mut u = Uncons::from(e.clone());
   Some((*kw.get(&u.next()?.as_atom()?)?, u))
 }

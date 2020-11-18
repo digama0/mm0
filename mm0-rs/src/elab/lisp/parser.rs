@@ -10,7 +10,8 @@ use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::ArcString;
 use super::super::{AtomID, Span, DocComment, Elaborator, ElabError, ObjectKind};
-use super::*;
+use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
+  Remap, Remapper, Syntax};
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
 
@@ -129,7 +130,7 @@ impl IR {
   }
 
   /// The span of a code segment.
-  pub fn span(&self) -> Option<Span> {
+  #[must_use] pub fn span(&self) -> Option<Span> {
     match self {
       &IR::Global(sp, _) |
       &IR::List(sp, _) |
@@ -640,12 +641,12 @@ impl<'a> LispParser<'a> {
             b"or" => break Pattern::Or(self.patterns(ctx, code, quote, args)?),
             b"not" => break Pattern::Not(self.patterns(ctx, code, quote, args)?),
             b"?" => match args {
-              [test, rest @ ..] => {
+              [test, tail @ ..] => {
                 let p = self.ctx.len();
                 let ir = self.expr(false, test)?;
                 self.ctx.restore(p);
-                let rest = self.patterns(ctx, code, quote, rest)?;
-                break Pattern::Test(test.span, Box::new(ir), rest)
+                let tail = self.patterns(ctx, code, quote, tail)?;
+                break Pattern::Test(test.span, Box::new(ir), tail)
               },
               _ => return Err(ElabError::new_e(head.span, "expected at least one argument")),
             }

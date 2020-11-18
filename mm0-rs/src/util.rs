@@ -1,6 +1,6 @@
 //! Utilities, mainly path manipulation with some newtype definitions.
 
-use std::ops::{Deref, DerefMut, Add, AddAssign};
+use std::ops::{Deref, DerefMut};
 use std::borrow::Borrow;
 use std::mem::{self, MaybeUninit};
 use std::fmt;
@@ -23,7 +23,7 @@ impl<T> SliceExt<T> for [T] {
   fn cloned_box(&self) -> Box<[T]> where T: Clone { self.to_vec().into() }
 }
 
-/// Extension trait for `try_insert`.
+/// Extension trait for `HashMap<K, V>`.
 pub trait HashMapExt<K, V> {
   /// Like `insert`, but if the insertion fails then it returns the value
   /// that it attempted to insert, as well as an `OccupiedEntry` containing
@@ -39,10 +39,50 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
     }
   }
 }
+/// Extension trait for `Option<T>`.
+pub trait OptionExt<T> {
+  /// Like `unwrap`, but invokes undefined behavior instead of panicking.
+  ///
+  /// # Safety
+  /// This function must not be called on a `None` value.
+  unsafe fn unwrap_unchecked(self) -> T;
+}
+
+impl<T> OptionExt<T> for Option<T> {
+  unsafe fn unwrap_unchecked(self) -> T {
+    match self {
+      Some(x) => x,
+      None => std::hint::unreachable_unchecked()
+    }
+  }
+}
+
+/// Extension trait for `Mutex<T>`.
+pub trait MutexExt<T> {
+  /// Like `lock`, but propagates instead of catches panics.
+  fn ulock(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> MutexExt<T> for std::sync::Mutex<T> {
+  fn ulock(&self) -> std::sync::MutexGuard<'_, T> {
+    self.lock().expect("propagating poisoned mutex")
+  }
+}
+/// Extension trait for `Condvar`.
+pub trait CondvarExt {
+  /// Like `wait`, but propagates instead of catches panics.
+  fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T>;
+}
+
+impl CondvarExt for std::sync::Condvar {
+  fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T> {
+    self.wait(g).expect("propagating poisoned mutex")
+  }
+}
 
 /// Newtype for an `Arc<String>`, so that we can implement `From<&str>`.
 #[derive(Clone, Hash, PartialEq, Eq, DeepSizeOf)]
-pub struct ArcString(pub Arc<Vec<u8>>);
+pub struct ArcString(pub Arc<[u8]>);
 
 impl Borrow<[u8]> for ArcString {
   fn borrow(&self) -> &[u8] { &*self.0 }
@@ -53,7 +93,8 @@ impl Deref for ArcString {
 }
 impl ArcString {
   /// Constructs a new `ArcString`.
-  pub fn new(s: Vec<u8>) -> ArcString { ArcString(Arc::new(s)) }
+  #[must_use]
+  pub fn new(s: Box<[u8]>) -> Self { Self(s.into()) }
 }
 impl fmt::Display for ArcString {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -66,7 +107,16 @@ impl fmt::Debug for ArcString {
   }
 }
 impl From<&[u8]> for ArcString {
-  fn from(s: &[u8]) -> ArcString { ArcString::new(s.to_owned()) }
+  fn from(s: &[u8]) -> Self { Self::new(s.into()) }
+}
+impl From<Box<[u8]>> for ArcString {
+  fn from(s: Box<[u8]>) -> Self { Self::new(s) }
+}
+impl From<Vec<u8>> for ArcString {
+  fn from(s: Vec<u8>) -> Self { s.into_boxed_slice().into() }
+}
+impl From<String> for ArcString {
+  fn from(s: String) -> Self { s.into_bytes().into() }
 }
 
 impl ArcString {
@@ -81,12 +131,12 @@ pub struct StackList<'a, T>(pub Option<&'a (StackList<'a, T>, T)>);
 
 impl<T> StackList<'_, T> {
   /// Returns true if this list contains the given element.
-  pub fn contains(&self, t: T) -> bool where T: PartialEq {
+  pub fn contains(&self, t: &T) -> bool where T: PartialEq {
     let mut s = self;
     loop {
       match s.0 {
         None => return false,
-        Some((_, t2)) if *t2 == t => return true,
+        Some((_, t2)) if *t2 == *t => return true,
         Some((s2, _)) => s = s2
       }
     }
@@ -106,11 +156,11 @@ impl<T> Clone for ArcList<T> {
 
 impl<T> ArcList<T> {
   /// Return true if the list is empty.
-  pub fn is_empty(&self) -> bool { self.0.is_none() }
+  #[must_use] pub fn is_empty(&self) -> bool { self.0.is_none() }
   /// Append a new node on the end of the list.
-  pub fn push(self, t: T) -> Self { Self(Some(Arc::new((self, t)))) }
+  #[must_use] pub fn push(self, t: T) -> Self { Self(Some(Arc::new((self, t)))) }
   /// Check if the list contains an item.
-  pub fn contains(&self, t: &T) -> bool where T: PartialEq {
+  #[must_use] pub fn contains(&self, t: &T) -> bool where T: PartialEq {
     let mut s = self;
     loop {
       match s.0.as_deref() {
@@ -124,20 +174,30 @@ impl<T> ArcList<T> {
   /// Construct `self[..t2] ++ t :: tail` where `t2`
   /// is the first element of `self` equal to `t`.
   /// Panics if no such `t2` exists (i.e. `self.contains(t)` is a precondition).
-  pub fn join(&self, t: T, tail: ArcList<T>) -> ArcList<T> where T: PartialEq + Clone {
-    let (l, t2) = &**self.0.as_ref().unwrap();
+  #[must_use] pub fn join(&self, t: T, tail: Self) -> Self where T: PartialEq + Clone {
+    let (l, t2) = &**self.0.as_ref().expect("self should contain t");
     if *t2 == t { return tail.push(t) }
     l.join(t, tail).push(t2.clone())
   }
 }
 
-impl<'a, T> Iterator for &'a ArcList<T> {
+/// An iterator over an `ArcList`.
+#[derive(Debug, Clone)]
+pub struct ArcListIter<'a, T>(&'a ArcList<T>);
+
+impl<'a, T> Iterator for ArcListIter<'a, T> {
   type Item = &'a T;
   fn next(&mut self) -> Option<&'a T> {
-    let (l, t) = &**self.0.as_ref()?;
-    *self = l;
+    let (l, t) = &**self.0 .0.as_ref()?;
+    self.0 = l;
     Some(t)
   }
+}
+
+impl<'a, T> IntoIterator for &'a ArcList<T> {
+  type Item = &'a T;
+  type IntoIter = ArcListIter<'a, T>;
+  fn into_iter(self) -> ArcListIter<'a, T> { ArcListIter(self) }
 }
 
 /// A way to initialize a `Box<[T]>` by first constructing the array (giving the length),
@@ -151,12 +211,12 @@ pub struct SliceUninit<T>(Box<[MaybeUninit<T>]>);
 
 impl<T> SliceUninit<T> {
   /// Create a new uninitialized slice of length `size`.
-  pub fn new(size: usize) -> Self {
+  #[must_use] pub fn new(size: usize) -> Self {
     let mut res = Vec::with_capacity(size);
     // safety: the newly constructed elements have type MaybeUninit<T>
     // so it's fine to not initialize them
     unsafe { res.set_len(size) };
-    SliceUninit(res.into_boxed_slice())
+    Self(res.into_boxed_slice())
   }
 
   /// Assign the value `val` to location `i` of the slice. Warning: this does not
@@ -169,7 +229,7 @@ impl<T> SliceUninit<T> {
   /// # Safety
   ///
   /// This causes undefined behavior if the content is not fully initialized.
-  pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
+  #[must_use] pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
@@ -183,7 +243,15 @@ pub struct Span {
 crate::deep_size_0!(Span);
 
 impl From<std::ops::Range<usize>> for Span {
-  #[inline] fn from(r: std::ops::Range<usize>) -> Self { Span {start: r.start, end: r.end} }
+  #[inline] fn from(r: std::ops::Range<usize>) -> Self {
+    Span {start: r.start, end: r.end}
+  }
+}
+
+impl From<std::ops::RangeInclusive<usize>> for Span {
+  #[inline] fn from(r: std::ops::RangeInclusive<usize>) -> Self {
+    Span {start: *r.start(), end: *r.end()+1}
+  }
 }
 
 impl From<usize> for Span {
@@ -192,17 +260,6 @@ impl From<usize> for Span {
 
 impl From<Span> for std::ops::Range<usize> {
   #[inline] fn from(s: Span) -> Self { s.start..s.end }
-}
-
-impl Add<usize> for Span {
-  type Output = Self;
-  fn add(self, i: usize) -> Self {
-    Span {start: self.start + i, end: self.start + i}
-  }
-}
-
-impl AddAssign<usize> for Span {
-  fn add_assign(&mut self, i: usize) { *self = *self + i }
 }
 
 impl Deref for Span {
@@ -218,12 +275,10 @@ impl DerefMut for Span {
   }
 }
 
-impl Iterator for Span {
+impl IntoIterator for Span {
   type Item = usize;
-  fn next(&mut self) -> Option<usize> { self.deref_mut().next() }
-}
-impl DoubleEndedIterator for Span {
-  fn next_back(&mut self) -> Option<usize> { self.deref_mut().next_back() }
+  type IntoIter = std::ops::Range<usize>;
+  fn into_iter(self) -> std::ops::Range<usize> { (*self).clone() }
 }
 
 impl fmt::Debug for Span {
@@ -241,9 +296,9 @@ pub use lsp_types::{Position, Range};
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Default)]
 pub struct Position {
     /// Line position in a document (zero-based).
-    pub line: u64,
+    pub line: u32,
     /// Character offset on a line in a document (zero-based).
-    pub character: u64,
+    pub character: u32,
 }
 
 #[cfg(not(feature = "server"))]
@@ -258,21 +313,21 @@ pub struct Range {
 }
 
 lazy_static! {
-  /// A PathBuf created by lazy_static! pointing to a canonicalized "."
+  /// A `PathBuf` created by `lazy_static!` pointing to a canonicalized "."
   static ref CURRENT_DIR: PathBuf =
     std::fs::canonicalize(".").expect("failed to find current directory");
 }
 
-/// Given a PathBuf 'buf', constructs a relative path from [`CURRENT_DIR`]
+/// Given a `PathBuf` 'buf', constructs a relative path from [`CURRENT_DIR`]
 /// to buf, returning it as a String.
 ///
-/// Example : If CURRENT_DIR is /home/johndoe/mm0, and buf is
-/// /home/johndoe/Documents/ahoy.mm1 will return "../Documents/ahoy.mm1"
+/// Example: If [`CURRENT_DIR`] is `/home/johndoe/mm0`, and `buf` is
+/// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
 /// [`CURRENT_DIR`]: struct.CURRENT_DIR.html
 fn make_relative(buf: &PathBuf) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR).as_ref().unwrap_or(buf)
-    .to_str().unwrap().to_owned()
+    .to_str().expect("bad unicode in file path").to_owned()
 }
 
 #[derive(DeepSizeOf)]
@@ -286,7 +341,7 @@ struct FileRefInner {
 /// A reference to a file. It wraps an `Arc` so it can be cloned thread-safely.
 /// A `FileRef` can be constructed either from a `PathBuf` or a (`file://`) [`Url`],
 /// and provides (precomputed) access to these views using `path()` and `url()`,
-/// as well as `rel()` to get the relative path from CURRENT_DIR.
+/// as well as `rel()` to get the relative path from `CURRENT_DIR`.
 ///
 /// [`Url`]: ../lined_string/struct.Url.html
 #[derive(Clone, DeepSizeOf)]
@@ -314,19 +369,19 @@ impl From<lsp_types::Url> for FileRef {
 
 impl FileRef {
   /// Convert this `FileRef` to a `PathBuf`, for use with OS file actions.
-  pub fn path(&self) -> &PathBuf { &self.0.path }
+  #[must_use] pub fn path(&self) -> &PathBuf { &self.0.path }
   /// Convert this `FileRef` to a relative path (as a `&str`).
-  pub fn rel(&self) -> &str { &self.0.rel }
+  #[must_use] pub fn rel(&self) -> &str { &self.0.rel }
   /// Convert this `FileRef` to a `file:://` URL, for use with LSP.
   #[cfg(feature = "server")]
-  pub fn url(&self) -> &lsp_types::Url { &self.0.url }
+  #[must_use] pub fn url(&self) -> &lsp_types::Url { &self.0.url }
   /// Get a pointer to this allocation, for use in hashing.
-  pub fn ptr(&self) -> *const PathBuf { self.path() }
+  #[must_use] pub fn ptr(&self) -> *const PathBuf { self.path() }
   /// Compare this with `other` for pointer equality.
-  pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
+  #[must_use] pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
 
   /// Returns true if this file has the provided extension.
-  pub fn has_extension(&self, ext: &str) -> bool {
+  #[must_use] pub fn has_extension(&self, ext: &str) -> bool {
     self.path().extension().map_or(false, |s| s == ext)
   }
 }
@@ -340,9 +395,10 @@ impl Hash for FileRef {
 }
 
 impl fmt::Display for FileRef {
+  #[allow(clippy::unwrap_in_result)]
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str())
-      .to_str().unwrap().fmt(f)
+      .to_str().expect("bad unicode in path").fmt(f)
   }
 }
 

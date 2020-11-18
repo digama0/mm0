@@ -26,47 +26,48 @@ pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
   ($(#[$doc:meta])* enum $name:ident $($rest:tt)*) => {
-    str_enum!{@inner concat!("Convert a `", stringify!($name), "` to a string.");
+    str_enum!{@inner
+      concat!("Convert a `", stringify!($name), "` to a string."),
+      concat!("Convert a string into a `", stringify!($name), "`."),
+      concat!("Convert a byte string into a `", stringify!($name), "`.");
       $(#[$doc])* enum $name $($rest)*}
   };
-  (@inner $to_str:expr;
+  (@inner $to_str:expr, $from_str:expr, $from_bytes:expr;
       $(#[$doc:meta])* enum $name:ident {$($(#[doc=$doc2:expr])* $e:ident: $s:expr,)*}) => {
     $(#[$doc])*
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
     pub enum $name { $($(#[doc=$doc2])* $e),* }
     crate::deep_size_0!($name);
 
-    impl std::str::FromStr for $name {
-      type Err = ();
-      fn from_str(s: &str) -> Result<Self, ()> {
-        match s {
-          $($s => Ok(Self::$e),)*
-          _ => Err(())
-        }
-      }
-    }
-    impl std::convert::TryFrom<&[u8]> for $name {
-      type Error = ();
-      fn try_from(s: &[u8]) -> Result<Self, ()> {
-        // Safety: the function we defined just above doesn't do anything
-        // dangerous with the &str
-        <$name as std::str::FromStr>::from_str(unsafe {std::str::from_utf8_unchecked(s)})
-      }
-    }
-
     impl $name {
-      #[doc=$to_str] pub fn to_str(self) -> &'static str {
+      #[doc=$to_str]
+      #[must_use] pub fn to_str(self) -> &'static str {
         match self {
           $($name::$e => $s),*
         }
       }
-      #[doc=$to_str] pub fn to_byte_str(self) -> &'static [u8] {
+      #[doc=$to_str]
+      #[must_use] pub fn to_byte_str(self) -> &'static [u8] {
         self.to_str().as_bytes()
+      }
+      #[doc=$from_str]
+      #[allow(clippy::should_implement_trait)]
+      #[must_use] pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+          $($s => Some(Self::$e),)*
+          _ => None
+        }
+      }
+      #[doc=$from_bytes]
+      #[must_use] pub fn from_bytes(s: &[u8]) -> Option<Self> {
+        // Safety: the function we defined just above doesn't do anything
+        // dangerous with the &str
+        Self::from_str(unsafe {std::str::from_utf8_unchecked(s)})
       }
 
       /// The documentation comment on this item.
       #[allow(unused)]
-      pub fn doc(self) -> &'static str {
+      #[must_use] pub fn doc(self) -> &'static str {
         match self {
           $($name::$e => concat!($($doc2,"\n"),*)),*
         }
@@ -111,9 +112,8 @@ str_enum! {
 impl Syntax {
   /// Parse a string and atom type pair into a `Syntax`.
   pub fn parse(s: &[u8], a: Atom) -> Result<Syntax, &[u8]> {
-    use std::convert::TryInto;
     match a {
-      Atom::Ident => s.try_into().map_err(|_| s),
+      Atom::Ident => Syntax::from_bytes(s).ok_or(s),
       Atom::Quote => Ok(Syntax::Quote),
       Atom::Unquote => Ok(Syntax::Unquote),
       Atom::Nfx => Err(b":nfx"),
@@ -152,14 +152,14 @@ crate::deep_size_0!(InferTarget);
 
 impl InferTarget {
   /// The target sort of a metavariable. Returns `None` if the sort is unknown.
-  pub fn sort(self) -> Option<AtomID> {
+  #[must_use] pub fn sort(self) -> Option<AtomID> {
     match self {
       InferTarget::Bound(s) | InferTarget::Reg(s) => Some(s),
       _ => None
     }
   }
   /// Returns true if the metavariable must be a bound variable.
-  pub fn bound(self) -> bool { matches!(self, InferTarget::Bound(_)) }
+  #[must_use] pub fn bound(self) -> bool { matches!(self, InferTarget::Bound(_)) }
 }
 
 /// A lisp value. These are the "values" that are passed around by lisp code.
@@ -239,46 +239,46 @@ __mk_lisp_kind! {
 
 impl LispVal {
   /// Make a `LispVal` from the inner enum type `LispKind`.
-  pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
+  #[must_use] pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
   /// Construct a `LispVal` for an atom.
-  pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
+  #[must_use] pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
   /// Construct a `LispVal` for a list.
-  pub fn list(es: impl Into<Box<[LispVal]>>) -> LispVal { LispVal::new(LispKind::List(es.into())) }
+  #[must_use] pub fn list(es: impl Into<Box<[LispVal]>>) -> LispVal { LispVal::new(LispKind::List(es.into())) }
   /// Construct a `LispVal` for an improper list.
-  pub fn dotted_list(es: impl Into<Box<[LispVal]>>, r: LispVal) -> LispVal {
+  #[must_use] pub fn dotted_list(es: impl Into<Box<[LispVal]>>, r: LispVal) -> LispVal {
     LispVal::new(LispKind::DottedList(es.into(), r))
   }
   /// Construct a `LispVal` for an improper list.
-  pub fn number(n: BigInt) -> LispVal { LispVal::new(LispKind::Number(n)) }
+  #[must_use] pub fn number(n: BigInt) -> LispVal { LispVal::new(LispKind::Number(n)) }
   /// Construct a `LispVal` for a string.
-  pub fn string(s: ArcString) -> LispVal { LispVal::new(LispKind::String(s)) }
+  #[must_use] pub fn string(s: ArcString) -> LispVal { LispVal::new(LispKind::String(s)) }
   /// Construct a `LispVal` for a syntax element.
-  pub fn syntax(s: Syntax) -> LispVal { LispVal::new(LispKind::Syntax(s)) }
+  #[must_use] pub fn syntax(s: Syntax) -> LispVal { LispVal::new(LispKind::Syntax(s)) }
   /// Construct a `LispVal` for `#undef`.
-  pub fn undef() -> LispVal { LispVal::new(LispKind::Undef) }
+  #[must_use] pub fn undef() -> LispVal { LispVal::new(LispKind::Undef) }
   /// Construct a `LispVal` for `()`.
-  pub fn nil() -> LispVal { LispVal::list(vec![]) }
+  #[must_use] pub fn nil() -> LispVal { LispVal::list(vec![]) }
   /// Construct a `LispVal` for a boolean.
-  pub fn bool(b: bool) -> LispVal { LispVal::new(LispKind::Bool(b)) }
+  #[must_use] pub fn bool(b: bool) -> LispVal { LispVal::new(LispKind::Bool(b)) }
   /// Construct a `LispVal` for a procedure.
-  pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
+  #[must_use] pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
   /// Construct a `LispVal` for a mutable reference.
-  pub fn new_ref(e: LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Strong(e)) }
+  #[must_use] pub fn new_ref(e: LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Strong(e)) }
   /// Construct a `LispVal` for a weak reference.
-  pub fn weak_ref(e: &LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Weak(Rc::downgrade(&e.0))) }
+  #[must_use] pub fn weak_ref(e: &LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Weak(Rc::downgrade(&e.0))) }
   /// Construct a `LispVal` for a goal.
-  pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
+  #[must_use] pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     LispVal::new(LispKind::Goal(ty)).span(fsp)
   }
 
   /// Annotate this object with a file span.
-  pub fn span(self, fsp: FileSpan) -> LispVal {
+  #[must_use] pub fn span(self, fsp: FileSpan) -> LispVal {
     LispVal::new(LispKind::Annot(Annot::Span(fsp), self))
   }
 
   /// Make a copy of this object with the given span,
   /// replacing the existing one if it has one.
-  pub fn replace_span(&self, fsp: FileSpan) -> LispVal {
+  #[must_use] pub fn replace_span(&self, fsp: FileSpan) -> LispVal {
     match &**self {
       LispKind::Annot(_, v) => v.replace_span(fsp),
       _ => self.clone().span(fsp)
@@ -297,7 +297,7 @@ impl LispVal {
   }
 
   /// Traverse past any `Annot` and `Ref` nodes, and return a clone of the inner data.
-  pub fn unwrapped_arc(&self) -> LispVal {
+  #[must_use] pub fn unwrapped_arc(&self) -> LispVal {
     match &**self {
       LispKind::Ref(m) => m.get(Self::unwrapped_arc),
       LispKind::Annot(_, v) => Self::unwrapped_arc(v),
@@ -306,12 +306,12 @@ impl LispVal {
   }
 
   /// Returns true if this is a clone of `e`.
-  pub fn ptr_eq(&self, e: &Self) -> bool { Rc::ptr_eq(&self.0, &e.0) }
+  #[must_use] pub fn ptr_eq(&self, e: &Self) -> bool { Rc::ptr_eq(&self.0, &e.0) }
   /// Try to get at the inner data, if this value is not shared,
   /// otherwise return self.
   pub fn try_unwrap(self) -> Result<LispKind, LispVal> { Rc::try_unwrap(self.0).map_err(LispVal) }
   /// Try to get a mutable reference to the inner data, if this value is not shared.
-  pub fn get_mut(&mut self) -> Option<&mut LispKind> { Rc::get_mut(&mut self.0) }
+  #[must_use] pub fn get_mut(&mut self) -> Option<&mut LispKind> { Rc::get_mut(&mut self.0) }
 
   /// Try to get a mutable reference to the inner data,
   /// unwrapping any `Annot` and `Ref` nodes, if this value is not shared.
@@ -349,7 +349,7 @@ impl LispVal {
   }
 
   /// Get the head of the cons cell, if it is one.
-  pub fn head(&self) -> Option<LispVal> {
+  #[must_use] pub fn head(&self) -> Option<LispVal> {
     self.unwrapped(|e| match e {
       LispKind::List(es) => es.first().cloned(),
       LispKind::DottedList(es, r) => es.first().cloned().or_else(|| r.head()),
@@ -462,9 +462,9 @@ impl LispRef {
     self.0.borrow_mut().get_mut(f)
   }
   /// Get a reference to the stored value.
-  pub fn get_weak<'a>(&'a self) -> impl Deref<Target=LispWeak> + 'a { self.0.borrow() }
+  pub fn get_weak(&self) -> impl Deref<Target=LispWeak> + '_ { self.0.borrow() }
   /// Get a mutable reference to the stored value.
-  pub fn get_mut_weak<'a>(&'a self) -> impl DerefMut<Target=LispWeak> + 'a { self.0.borrow_mut() }
+  pub fn get_mut_weak(&self) -> impl DerefMut<Target=LispWeak> + '_ { self.0.borrow_mut() }
   /// Set this reference to a weak reference to `e`.
   pub fn set_weak(&self, e: &LispVal) {
     *self.0.borrow_mut() = LispWeak::Weak(Rc::downgrade(&e.0))
@@ -522,7 +522,7 @@ impl LispKind {
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     fn rec<T>(e: &LispKind, stack: StackList<'_, *const LispRef>, f: impl FnOnce(&LispKind) -> T) -> T {
       match e {
-        LispKind::Ref(m) if !stack.contains(m) => m.get(|e| rec(e, StackList(Some(&(stack, m))), f)),
+        LispKind::Ref(m) if !stack.contains(&(m as *const _)) => m.get(|e| rec(e, StackList(Some(&(stack, m))), f)),
         LispKind::Annot(_, v) => rec(v, stack, f),
         _ => f(e)
       }
@@ -541,7 +541,7 @@ impl LispKind {
       f: impl FnOnce(Option<&FileSpan>, &LispKind) -> T
     ) -> T {
       match e {
-        LispKind::Ref(m) if !stack.contains(m) =>
+        LispKind::Ref(m) if !stack.contains(&(m as *const _)) =>
           m.get(|e| rec(e, StackList(Some(&(stack, m))), fsp, f)),
         LispKind::Annot(Annot::Span(fsp), v) => rec(v, stack, Some(fsp), f),
         _ => f(fsp, e)
@@ -863,7 +863,7 @@ crate::deep_size_0!(ProcSpec);
 
 impl ProcSpec {
   /// Returns true if `i` is a valid number of arguments given this spec.
-  pub fn valid(self, i: usize) -> bool {
+  #[must_use] pub fn valid(self, i: usize) -> bool {
     match self {
       ProcSpec::Exact(n) => i == n,
       ProcSpec::AtLeast(n) => i >= n,
@@ -1276,10 +1276,10 @@ impl From<LispVal> for Uncons {
 
 impl Uncons {
   /// Create an empty `Uncons`.
-  pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
+  #[must_use] pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
 
   /// Returns true if this is a proper list of length `n`.
-  pub fn exactly(&self, n: usize) -> bool {
+  #[must_use] pub fn exactly(&self, n: usize) -> bool {
     match self {
       Uncons::New(e) => e.exactly(n),
       Uncons::List(es) => es.len() == n,
@@ -1290,7 +1290,7 @@ impl Uncons {
   /// Reconstruct a file span for an `Uncons`. Note that this may not be a well formed
   /// substring, for example in `(a b c)` after the first iteration the span will refer
   /// to `b c)` and at the last iteration the span will cover only `)`.
-  pub fn fspan(&self) -> Option<FileSpan> {
+  #[must_use] pub fn fspan(&self) -> Option<FileSpan> {
     match self {
       Uncons::New(e) => e.fspan(),
       Uncons::DottedList(es, r) if es.is_empty() => r.fspan(),
@@ -1306,7 +1306,7 @@ impl Uncons {
   }
 
   /// Convert an `Uncons` back into a `LispVal`.
-  pub fn as_lisp(&self) -> LispVal {
+  #[must_use] pub fn as_lisp(&self) -> LispVal {
     match self {
       Uncons::New(e) => e.clone(),
       Uncons::List(es) => LispKind::List(es.cloned_box()).decorate_span(&self.fspan()),
@@ -1317,10 +1317,10 @@ impl Uncons {
   }
 
   /// Returns true if this is `()`.
-  pub fn is_empty(&self) -> bool { self.exactly(0) }
+  #[must_use] pub fn is_empty(&self) -> bool { self.exactly(0) }
 
   /// Returns true if this is a proper or improper list of length at least `n`.
-  pub fn at_least(&self, n: usize) -> bool {
+  #[must_use] pub fn at_least(&self, n: usize) -> bool {
     n == 0 || match self {
       Uncons::New(e) => e.at_least(n),
       Uncons::List(es) => es.len() >= n,
@@ -1329,7 +1329,7 @@ impl Uncons {
   }
 
   /// Returns true if this is a proper list of length at least `n`.
-  pub fn list_at_least(&self, n: usize) -> bool {
+  #[must_use] pub fn list_at_least(&self, n: usize) -> bool {
     n == 0 || match self {
       Uncons::New(e) => e.list_at_least(n),
       Uncons::List(es) => es.len() >= n,
@@ -1339,7 +1339,7 @@ impl Uncons {
 
   /// Gets the length of the list-like prefix of this value,
   /// i.e. the number of cons-cells along the right spine before reaching something else.
-  pub fn len(&self) -> usize {
+  #[must_use] pub fn len(&self) -> usize {
     match self {
       Uncons::New(e) => e.len(),
       Uncons::List(es) => es.len(),
@@ -1350,7 +1350,7 @@ impl Uncons {
   /// This is the same as `next()`, but it does not advance the iterator.
   /// (This could almost be a `Peekable` implementation, but the reference
   /// may not be derived from `self`, so it has to clone the value.)
-  pub fn head(&self) -> Option<LispVal> {
+  #[must_use] pub fn head(&self) -> Option<LispVal> {
     match self {
       Uncons::New(e) => e.head(),
       Uncons::List(es) => es.first().cloned(),

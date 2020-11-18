@@ -18,11 +18,12 @@ use std::sync::Arc;
 use annotate_snippets::snippet::AnnotationType;
 use num::BigUint;
 use num::cast::ToPrimitive;
-use crate::util::{Span, ArcString, BoxError, Position};
+use crate::util::{Span, BoxError, Position, OptionExt};
 use crate::lined_string::LinedString;
 use crate::elab::environment::DocComment;
 pub use ast::AST;
-use ast::*;
+use ast::{Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal,
+  LocalKind, Modifiers, Prec, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type};
 
 #[cfg(feature = "server")]
 use lsp_types::{Diagnostic, DiagnosticSeverity};
@@ -48,7 +49,7 @@ impl ErrorLevel {
   ///
   /// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
   #[cfg(feature = "server")]
-  pub fn to_diag_severity(self) -> DiagnosticSeverity {
+  #[must_use] pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
       ErrorLevel::Info => DiagnosticSeverity::Information,
       ErrorLevel::Warning => DiagnosticSeverity::Warning,
@@ -59,7 +60,7 @@ impl ErrorLevel {
   /// Convert an `ErrorLevel` to [`AnnotationType`], used by the CLI compiler.
   ///
   /// [`AnnotationType`]: ../../annotate_snippets/snippet/enum.AnnotationType.html
-  pub fn to_annotation_type(self) -> AnnotationType {
+  #[must_use] pub fn to_annotation_type(self) -> AnnotationType {
     match self {
       ErrorLevel::Info => AnnotationType::Info,
       ErrorLevel::Warning => AnnotationType::Warning,
@@ -93,7 +94,7 @@ pub struct ParseError {
   pub msg: BoxError,
 }
 
-/// Newtype for std::result::Result<T, ParseError>
+/// Newtype for `Result<T, ParseError>`.
 type Result<T> = std::result::Result<T, ParseError>;
 
 impl Clone for ParseError {
@@ -115,7 +116,7 @@ impl ParseError {
   ///
   /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
   #[cfg(feature = "server")]
-  pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
+  #[must_use] pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
       range: file.to_range(self.pos),
       severity: Some(self.level.to_diag_severity()),
@@ -147,16 +148,22 @@ pub struct Parser<'a> {
 }
 
 /// return true iff a given character is an acceptable ident starter.
-pub fn ident_start(c: u8) -> bool { b'a' <= c && c <= b'z' || b'A' <= c && c <= b'Z' || c == b'_' }
+#[must_use] pub fn ident_start(c: u8) -> bool {
+  (b'a'..=b'z').contains(&c) || (b'A'..=b'Z').contains(&c) || c == b'_'
+}
 
 /// return true iff a given character is an acceptable ident character.
-pub fn ident_rest(c: u8) -> bool { ident_start(c) || b'0' <= c && c <= b'9' }
+#[must_use] pub fn ident_rest(c: u8) -> bool {
+  ident_start(c) || (b'0'..=b'9').contains(&c)
+}
 
 /// return true iff a given character is an acceptable lisp ident.
-pub fn lisp_ident(c: u8) -> bool { ident_rest(c) || b"!%&*/:<=>?^~+-.@".contains(&c) }
+#[must_use] pub fn lisp_ident(c: u8) -> bool {
+  ident_rest(c) || b"!%&*/:<=>?^~+-.@".contains(&c)
+}
 
 /// return true iff a given character is a space or newline character.
-pub fn whitespace(c: u8) -> bool { c == b' ' || c == b'\n' }
+#[must_use] pub fn whitespace(c: u8) -> bool { c == b' ' || c == b'\n' }
 
 /// Convenience enum for identifying keywords.
 enum CommandKeyword {
@@ -206,12 +213,12 @@ type BinderGroup = (Span, Vec<(Span, LocalKind)>, Option<Type>);
 
 impl<'a> Parser<'a> {
   /// Get the character at the parser's index. Does not advance.
-  pub fn cur(&self) -> u8 { self.source[self.idx] }
+  #[must_use] pub fn cur(&self) -> u8 { self.source[self.idx] }
   /// Attempt to get the character at the parser's index. Does not advance.
-  pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
+  #[must_use] pub fn cur_opt(&self) -> Option<u8> { self.source.get(self.idx).cloned() }
 
   /// Create a parse error at the current location.
-  pub fn err(&self, msg: BoxError) -> ParseError {
+  #[must_use] pub fn err(&self, msg: BoxError) -> ParseError {
     ParseError::new(self.idx..self.idx, msg)
   }
 
@@ -281,7 +288,7 @@ impl<'a> Parser<'a> {
 
   /// Get the string slice corresponding to a region of the parser's source
   /// by passing a span.
-  pub fn span(&self, s: Span) -> &'a [u8] {
+  #[must_use] pub fn span(&self, s: Span) -> &'a [u8] {
     &self.source[s.start..s.end]
   }
 
@@ -377,9 +384,9 @@ impl<'a> Parser<'a> {
     }
   }
 
-  /// Try to parse a DepType or FormulaType.
-  /// Examples are the part after the colon in either (_ : $ some formula $)
-  /// or (_ : wff x), where (_ : wff) may or may not have dependencies.
+  /// Try to parse a `DepType` or `FormulaType`.
+  /// Examples are the part after the colon in either `(_ : $ some formula $)`
+  /// or `(_ : wff x)`, where `(_ : wff)` may or may not have dependencies.
   fn ty(&mut self) -> Result<Type> {
     if let Some(fmla) = self.formula()? {
       Ok(Type::Formula(fmla))
@@ -463,7 +470,8 @@ impl<'a> Parser<'a> {
             let c1 = (self.cur(), self.idx += 1).0;
             let c2 = (self.cur(), self.idx += 1).0;
             if let (Some(h1), Some(h2)) = ((c1 as char).to_digit(16), (c2 as char).to_digit(16)) {
-              (h1 << 4 | h2) as u8
+              #[allow(clippy::cast_possible_truncation)]
+              { (h1 << 4 | h2) as u8 }
             } else {
               self.errors.push(ParseError {
                 pos: (self.idx - 4..self.idx).into(),
@@ -499,9 +507,9 @@ impl<'a> Parser<'a> {
   fn decimal(&mut self, mut val: BigUint) -> BigUint {
     while self.idx < self.source.len() {
       let c = self.cur();
-      if !(b'0' <= c && c <= b'9') {break}
+      if !(b'0'..=b'9').contains(&c) {break}
       self.idx += 1;
-      val = 10u8 * val + (c - b'0');
+      val = 10_u8 * val + (c - b'0');
     }
     val
   }
@@ -515,7 +523,7 @@ impl<'a> Parser<'a> {
   /// Does not advance the parser index on failure.
   fn number(&mut self) -> Result<(Span, BigUint)> {
     let start = self.idx;
-    let mut val: BigUint = 0u8.into();
+    let mut val: BigUint = 0_u8.into();
     if self.cur() == b'0' {
       self.idx += 1;
       match self.cur() {
@@ -523,15 +531,15 @@ impl<'a> Parser<'a> {
           self.idx += 1;
           while self.idx < self.source.len() {
             let c = self.cur();
-            if b'0' <= c && c <= b'9' {
+            if (b'0'..=b'9').contains(&c) {
               self.idx += 1;
-              val = 16u8 * val + (c - b'0');
-            } else if b'A' <= c && c <= b'F' {
+              val = 16_u8 * val + (c - b'0');
+            } else if (b'A'..=b'F').contains(&c) {
               self.idx += 1;
-              val = 16u8 * val + (c - (b'A' - 10));
-            } else if b'a' <= c && c <= b'f' {
+              val = 16_u8 * val + (c - (b'A' - 10));
+            } else if (b'a'..=b'f').contains(&c) {
               self.idx += 1;
-              val = 16u8 * val + (c - (b'a' - 10));
+              val = 16_u8 * val + (c - (b'a' - 10));
             } else {break}
           }
           if self.idx == start + 2 {return self.err_str("expected a number")}
@@ -591,7 +599,8 @@ impl<'a> Parser<'a> {
         let e = self.sexpr()?;
         let end = self.chr_err(c)?;
         return Ok(self.curly_list(start..end, curly, es, Some(e)))
-      } else if !curly && self.is_atom(&e, b"@") {
+      }
+      if !curly && self.is_atom(&e, b"@") {
         let e = self.sexpr_list(e.span.start, false, c)?;
         return Ok(SExpr::list(start..e.span.end, {es.push(e); es}))
       }
@@ -605,12 +614,12 @@ impl<'a> Parser<'a> {
       Some(b'\'') => {
         self.idx += 1;
         let e = self.sexpr()?;
-        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..start+1, Atom::Quote), e]))
+        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..=start, Atom::Quote), e]))
       }
       Some(b',') => {
         self.idx += 1;
         let e = self.sexpr()?;
-        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..start+1, Atom::Unquote), e]))
+        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..=start, Atom::Unquote), e]))
       }
       Some(b'(') => {
         let start = self.idx; self.idx += 1; self.ws();
@@ -626,7 +635,7 @@ impl<'a> Parser<'a> {
       }
       Some(b'\"') => {
         let (span, s) = self.string()?;
-        Ok(SExpr {span, k: SExprKind::String(ArcString::new(s))})
+        Ok(SExpr {span, k: SExprKind::String(s.into())})
       }
       Some(b'#') => {
         self.idx += 1;
@@ -644,10 +653,11 @@ impl<'a> Parser<'a> {
         }
       }
       Some(b'$') => {
-        let f = self.formula()?.unwrap();
+        let f = self.formula()?;
+        let f = unsafe { f.unwrap_unchecked() };
         Ok(SExpr {span: f.0, k: SExprKind::Formula(f)})
       }
-      Some(c) if b'0' <= c && c <= b'9' => {
+      Some(c) if (b'0'..=b'9').contains(&c) => {
         let (span, n) = self.number()?;
         Ok(SExpr {span, k: SExprKind::Number(n)})
       }
@@ -680,7 +690,7 @@ impl<'a> Parser<'a> {
   fn cnst(&mut self) -> Result<Const> {
     let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
-    for i in trim.rev() {
+    for i in trim.into_iter().rev() {
       if whitespace(self.source[i]) {trim.end -= 1}
       else {break}
     }
@@ -688,7 +698,7 @@ impl<'a> Parser<'a> {
       if whitespace(self.source[i]) {trim.start += 1}
       else {break}
     }
-    if trim.clone().any(|i| whitespace(self.source[i])) {
+    if {trim}.any(|i| whitespace(self.source[i])) {
       return Err(ParseError::new(trim, "constant contains embedded whitespace".into()))
     }
     if trim.start >= trim.end {
@@ -699,7 +709,7 @@ impl<'a> Parser<'a> {
 
   fn prec(&mut self) -> Result<Prec> {
     match self.cur_opt() {
-      Some(c) if b'0' <= c && c <= b'9' => {
+      Some(c) if (b'0'..=b'9').contains(&c) => {
         let (span, n) = self.number()?;
         Ok(Prec::Prec(n.to_u32().ok_or_else(||
           ParseError::new(span, "precedence out of range".into()))?))
@@ -780,13 +790,13 @@ impl<'a> Parser<'a> {
       match it.next() {
         Some(&c) if !whitespace(c) => {
           delims.push(c);
-          let mut end = end - it.as_slice().len();
-          let start = end - 2;
+          let mut delim_end = end - it.as_slice().len();
+          let start = delim_end - 2;
           loop {
             match it.next() {
               Some(&c) if !whitespace(c) => {
                 delims.push(c);
-                end += 1
+                delim_end += 1
               }
               _ => break self.errors.push(
                 ParseError::new(start..end, "delimiter must have one character".into()))
@@ -986,11 +996,13 @@ impl<'a> Parser<'a> {
 /// new file differs from the old one.
 ///
 /// [`Parser`]: struct.Parser.html
-pub fn parse(file: Arc<LinedString>, old: Option<(Position, Arc<AST>)>) ->
-    (usize, AST) {
+#[must_use] pub fn parse(
+  file: Arc<LinedString>,
+  old: Option<(Position, Arc<AST>)>
+) -> (usize, AST) {
   let (errors, imports, idx, mut stmts) =
     if let Some((pos, ast)) = old {
-      let (ix, start) = ast.last_checkpoint(file.to_idx(pos).unwrap());
+      let (ix, start) = ast.last_checkpoint(file.to_idx(pos).expect("bad line position"));
       match Arc::try_unwrap(ast) {
         Ok(mut ast) => {
           ast.errors.retain(|e| e.pos.start < start);
