@@ -39,7 +39,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
 use super::{Spans, ObjectKind, Remap, Remapper,
   environment::{Environment, ParserEnv,
-    AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment,
+    AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment, LispData,
     SortID, TermID, ThmID, AtomID, Sort, Term, Thm, AtomData},
   lisp::{LispVal, LispKind, LispRef, LispWeak,
     InferTarget, Proc, Annot, Syntax, print::FormatEnv}};
@@ -49,6 +49,7 @@ use crate::{lined_string::LinedString, __mk_lisp_kind};
 /// A "frozen" environment, which is a thread-safe read only
 /// wrapper around `Environment`.
 #[derive(Clone, Debug, DeepSizeOf)]
+#[repr(transparent)]
 pub struct FrozenEnv(Arc<Environment>);
 unsafe impl Send for FrozenEnv {}
 unsafe impl Sync for FrozenEnv {}
@@ -106,6 +107,7 @@ impl FrozenEnv {
 
 /// A wrapper around an [`AtomData`](../environment/struct.AtomData.html) that is frozen.
 #[derive(Debug, DeepSizeOf)]
+#[repr(transparent)]
 pub struct FrozenAtomData(AtomData);
 
 impl FrozenAtomData {
@@ -116,23 +118,42 @@ impl FrozenAtomData {
   /// Accessor for [`AtomData::decl`](../environment/struct.AtomData.html#structfield.decl)
   pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   /// Accessor for [`AtomData::lisp`](../environment/struct.AtomData.html#structfield.lisp)
-  pub fn lisp(&self) -> &Option<(Option<(FileSpan, Span)>, Option<DocComment>, FrozenLispVal)> {
-    unsafe { &*(&self.0.lisp as *const Option<(_, _, LispVal)> as *const _) }
+  pub fn lisp(&self) -> &Option<FrozenLispData> {
+    unsafe { &*(&self.0.lisp as *const Option<LispData> as *const _) }
   }
   /// Accessor for [`AtomData::graveyard`](../environment/struct.AtomData.html#structfield.graveyard)
   pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
 }
 
+/// A wrapper around a [`LispData`](../environment/struct.LispData.html) that is frozen.
+#[derive(Debug, DeepSizeOf)]
+#[repr(transparent)]
+pub struct FrozenLispData(LispData);
+
+impl FrozenLispData {
+  /// Accessor for [`LispData::src`](../environment/struct.LispData.html#structfield.src)
+  pub fn src(&self) -> &Option<(FileSpan, Span)> { &self.0.src }
+  /// Accessor for [`LispData::doc`](../environment/struct.LispData.html#structfield.doc)
+  pub fn doc(&self) -> &Option<DocComment> { &self.0.doc }
+}
+impl Deref for FrozenLispData {
+  type Target = FrozenLispVal;
+  fn deref(&self) -> &FrozenLispVal { unsafe { self.0.val.freeze() } }
+}
+
 /// A wrapper around a [`LispVal`](../lisp/struct.LispVal.html) that is frozen.
 #[derive(Debug, DeepSizeOf)]
+#[repr(transparent)]
 pub struct FrozenLispVal(LispVal);
 
 /// A wrapper around a [`LispRef`](../lisp/struct.LispRef.html) that is frozen.
 #[derive(Debug, DeepSizeOf)]
+#[repr(transparent)]
 pub struct FrozenLispRef(LispRef);
 
 /// A wrapper around a [`Proc`](../lisp/struct.Proc.html) that is frozen.
 #[derive(Debug, DeepSizeOf)]
+#[repr(transparent)]
 pub struct FrozenProc(Proc);
 
 __mk_lisp_kind! {
@@ -278,6 +299,17 @@ impl FrozenLispKind {
 impl Deref for FrozenLispVal {
   type Target = FrozenLispKind;
   fn deref(&self) -> &FrozenLispKind { unsafe { self.thaw().deref().freeze() } }
+}
+
+impl Remap for FrozenLispData {
+  type Target = LispData;
+  fn remap(&self, r: &mut Remapper) -> LispData {
+    LispData {
+      src: self.src().clone(),
+      doc: self.doc().clone(),
+      val: (**self).remap(r)
+    }
+  }
 }
 
 impl Remap for FrozenLispVal {

@@ -80,13 +80,13 @@ struct MemoryData(usize, usize);
 struct MemoryData;
 
 impl MemoryData {
-  #[cfg(feature = "memory")]
   fn get() -> MemoryData {
-    use crate::deepsize::DeepSizeOf;
-    MemoryData(get_memory_usage(), SERVER.vfs.deep_size_of())
+    #[cfg(feature = "memory")] {
+      use crate::deepsize::DeepSizeOf;
+      MemoryData(get_memory_usage(), SERVER.vfs.deep_size_of())
+    }
+    #[cfg(not(feature = "memory"))] MemoryData
   }
-  #[cfg(not(feature = "memory"))]
-  fn get() -> MemoryData { MemoryData }
 }
 
 impl std::fmt::Display for MemoryData {
@@ -280,7 +280,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
 
   let res = match cyc.clone() {
     None => ElabResult::Ok(hash, env.clone()),
-    Some(cyc) => ElabResult::ImportCycle(cyc.clone()),
+    Some(cyc) => ElabResult::ImportCycle(cyc),
   };
   vfs.update_downstream(&old_deps, &deps, &path);
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {
@@ -326,7 +326,7 @@ fn dep_change(path: FileRef, cancel: Arc<AtomicBool>) -> BoxFuture<'static, ()> 
 enum FileCache {
   InProgress {
     old: Option<(Arc<LinedString>, FrozenEnv)>,
-    version: Option<i64>,
+    version: Option<i32>,
     cancel: Arc<AtomicBool>,
     senders: Vec<FSender<ElabResult<u64>>>,
   },
@@ -343,7 +343,7 @@ enum FileCache {
 #[derive(DeepSizeOf)]
 struct VirtualFile {
   /// File data, saved (true) or unsaved (false)
-  text: Mutex<(Option<i64>, Arc<LinedString>)>,
+  text: Mutex<(Option<i32>, Arc<LinedString>)>,
   /// File parse
   parsed: FMutex<Option<FileCache>>,
   /// Files that depend on this one
@@ -351,7 +351,7 @@ struct VirtualFile {
 }
 
 impl VirtualFile {
-  fn new(version: Option<i64>, text: String) -> VirtualFile {
+  fn new(version: Option<i32>, text: String) -> VirtualFile {
     VirtualFile {
       text: Mutex::new((version, Arc::new(text.into()))),
       parsed: FMutex::new(None),
@@ -384,7 +384,7 @@ impl VFS {
     self.0.lock().unwrap().get(&file).unwrap().text.lock().unwrap().1.clone()
   }
 
-  fn open_virt(&self, path: FileRef, version: i64, text: String) -> Result<Arc<VirtualFile>> {
+  fn open_virt(&self, path: FileRef, version: i32, text: String) -> Result<Arc<VirtualFile>> {
     let file = Arc::new(VirtualFile::new(Some(version), text));
     let file = match self.0.lock().unwrap().entry(path.clone()) {
       Entry::Occupied(entry) => {
@@ -484,7 +484,7 @@ fn log_message(message: String) -> Result<()> {
   })
 }
 
-fn send_diagnostics(uri: Url, version: Option<i64>, diagnostics: Vec<Diagnostic>) -> Result<()> {
+fn send_diagnostics(uri: Url, version: Option<i32>, diagnostics: Vec<Diagnostic>) -> Result<()> {
   send_message(Notification {
     method: "textDocument/publishDiagnostics".to_owned(),
     params: to_value(PublishDiagnosticsParams {uri, version, diagnostics})?
@@ -596,7 +596,7 @@ fn trim_margin(s: &str) -> String {
 }
 
 impl<T> ElabResult<T> {
-  fn to_response_error(self) -> StdResult<Option<(T, FrozenEnv)>, ResponseError> {
+  fn into_response_error(self) -> StdResult<Option<(T, FrozenEnv)>, ResponseError> {
     match self {
       ElabResult::Ok(data, env) => Ok(Some((data, env))),
       ElabResult::Canceled => Err(response_err(ErrorCode::RequestCanceled, "")),
@@ -616,7 +616,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
   let idx = or!(Ok(None), text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = or!(Ok(None), env.to_response_error()?).1;
+  let env = or!(Ok(None), env.into_response_error()?).1;
   let env = unsafe { env.thaw() };
   let fe = FormatEnv { source: &text, env };
   let spans = or!(Ok(None), Spans::find(&env.spans, idx));
@@ -704,12 +704,12 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
       // &ObjectKind::Syntax(stx) => (sp, Doc, stx.doc().into()),
       ObjectKind::Syntax(_) => return None,
       &ObjectKind::Global(a) => {
-        let (_, doc, val) = &env.data[a].lisp.as_ref()?;
-        if let Some(doc) = doc {
+        let ld = env.data[a].lisp.as_ref()?;
+        if let Some(doc) = &ld.doc {
           ((sp, mk_doc(doc)), None)
         } else {
-          let bp = val.unwrapped(|e| match e {
-            &LispKind::Proc(Proc::Builtin(p)) => Some(p),
+          let bp = ld.unwrapped(|e| match *e {
+            LispKind::Proc(Proc::Builtin(p)) => Some(p),
             _ => None
           })?;
           ((sp, mk_doc(bp.doc())), None)
@@ -745,7 +745,7 @@ async fn definition<T>(path: FileRef, pos: Position,
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = or_none!(env.to_response_error()?).1;
+  let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(env.find(idx));
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
@@ -791,7 +791,7 @@ async fn definition<T>(path: FileRef, pos: Position,
           None => {}
         }
         if let Some(s) = ad.sort() {res.push(sort(s))}
-        if let Some((Some((ref fsp, full)), _, _)) = *ad.lisp() {
+        if let Some(&(ref fsp, full)) = ad.lisp().as_ref().and_then(|ld| ld.src().as_ref()) {
           res.push(g(&fsp, full))
         } else if let Some(sp) = ad.graveyard() {
           res.push(g(&sp.0, sp.1))
@@ -813,7 +813,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = match env.to_response_error()? {
+  let env = match env.into_response_error()? {
     Some((_, env)) => env,
     None => return Ok(DocumentSymbolResponse::Nested(vec![]))
   };
@@ -854,28 +854,31 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
       }
       StmtTrace::Global(a) => {
         let ad = &env.data()[a];
-        if let Some((Some((ref fsp, full)), _, ref e)) = *ad.lisp() {
-          push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
-            match (|| Some(match e.unwrap() {
-              FrozenLispKind::Atom(_) |
-              FrozenLispKind::MVar(_, _) |
-              FrozenLispKind::Goal(_) => SymbolKind::Constant,
-              r @ FrozenLispKind::List(_) |
-              r @ FrozenLispKind::DottedList(_, _) =>
-                if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
-              FrozenLispKind::Number(_) => SymbolKind::Number,
-              FrozenLispKind::String(_) => SymbolKind::String,
-              FrozenLispKind::Bool(_) => SymbolKind::Boolean,
-              FrozenLispKind::Syntax(_) => SymbolKind::Event,
-              FrozenLispKind::Undef => return None,
-              FrozenLispKind::Proc(_) => SymbolKind::Function,
-              FrozenLispKind::AtomMap(_) |
-              FrozenLispKind::Annot(_, _) |
-              FrozenLispKind::Ref(_) => SymbolKind::Object,
-            }))() {
-              Some(sk) => sk,
-              None => continue,
-            });
+        if let Some(ld) = ad.lisp() {
+          if let Some((ref fsp, full)) = *ld.src() {
+            let e = &**ld;
+            push!(fsp, ad.name(), format!("{}", fe.to(unsafe { e.thaw() })), full,
+              match (|| Some(match e.unwrap() {
+                FrozenLispKind::Atom(_) |
+                FrozenLispKind::MVar(_, _) |
+                FrozenLispKind::Goal(_) => SymbolKind::Constant,
+                r @ FrozenLispKind::List(_) |
+                r @ FrozenLispKind::DottedList(_, _) =>
+                  if r.is_list() {SymbolKind::Array} else {SymbolKind::Object},
+                FrozenLispKind::Number(_) => SymbolKind::Number,
+                FrozenLispKind::String(_) => SymbolKind::String,
+                FrozenLispKind::Bool(_) => SymbolKind::Boolean,
+                FrozenLispKind::Syntax(_) => SymbolKind::Event,
+                FrozenLispKind::Undef => return None,
+                FrozenLispKind::Proc(_) => SymbolKind::Function,
+                FrozenLispKind::AtomMap(_) |
+                FrozenLispKind::Annot(_, _) |
+                FrozenLispKind::Ref(_) => SymbolKind::Object,
+              }))() {
+                Some(sk) => sk,
+                None => continue,
+              });
+          }
         }
       }
       StmtTrace::OutputString(_) => {}
@@ -908,7 +911,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
       DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor)}
       DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
     }),
-    TraceKind::Global => ad.lisp().as_ref().map(|(_, _, e)| {
+    TraceKind::Global => ad.lisp().as_deref().map(|e| {
       done!(format!("{}", fe.to(unsafe {e.thaw()})), match *e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |
@@ -944,7 +947,7 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
     None => {
       let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
         .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-      match env.to_response_error()? {
+      match env.into_response_error()? {
         None => return Ok(CompletionResponse::Array(vec![])),
         Some((_, env)) => (file.text.lock().unwrap().1.clone(), env)
       }
@@ -970,7 +973,7 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
   let text = file.text.lock().unwrap().1.clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .to_response_error()?
+    .into_response_error()?
     .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(ci.label.as_bytes()).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
@@ -988,7 +991,7 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = or_none!(env.to_response_error()?).1;
+  let env = or_none!(env.into_response_error()?).1;
   let spans = or_none!(env.find(idx));
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {
@@ -1108,18 +1111,16 @@ impl Capabilities {
 }
 
 fn spawn(cancel: Arc<AtomicBool>, fut: impl std::future::Future<Output=()> + Send + 'static) {
-  let mut g = SERVER.threads.0.lock().unwrap();
-  g.push_back(cancel.clone());
-  drop(g);
+  SERVER.threads.0.lock().unwrap().push_back(cancel.clone());
   SERVER.pool.spawn_ok(async move {
     fut.await;
-    let (m, c) = &*SERVER.threads;
+    let (m, cvar) = &*SERVER.threads;
     let mut vec = m.lock().unwrap();
     let a: *const AtomicBool = &*cancel;
     let i = vec.iter().enumerate().find(|&(_, b)| a == &**b).unwrap().0;
     vec.swap_remove_front(i).unwrap();
     drop(vec);
-    c.notify_all();
+    cvar.notify_all();
   })
 }
 
@@ -1141,10 +1142,10 @@ impl Server {
           resolve_provider: Some(true),
           ..Default::default()
         }),
-        definition_provider: Some(true),
-        document_symbol_provider: Some(true),
-        references_provider: Some(true),
-        document_highlight_provider: Some(true),
+        definition_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
         ..Default::default()
       })?
     )?)?;
@@ -1161,7 +1162,6 @@ impl Server {
   fn run(&self) {
     let logger = Logger::start();
     let _ = self.caps.lock().unwrap().register();
-    let mut count: i64 = 1;
     loop {
       match (|| -> Result<bool> {
         let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
@@ -1208,7 +1208,7 @@ impl Server {
                   let start = {
                     let file = vfs.get(&path).ok_or("changed nonexistent file")?;
                     let (version, text) = &mut *file.text.lock().unwrap();
-                    *version = Some(doc.version.unwrap_or_else(|| {let c = count; count += 1; c}));
+                    *version = Some(doc.version);
                     let (start, s) = text.apply_changes(content_changes.into_iter());
                     *text = Arc::new(s);
                     start

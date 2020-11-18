@@ -14,6 +14,11 @@ use super::*;
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
 
+/// The target of a `def` command is either `_`, or a variable `x` with a
+/// `span, full` pair (for the span of the identifier and the span of the full statement)
+/// and an optional doc comment.
+pub type DefTarget = Option<(Span, Span, Option<DocComment>, AtomID)>;
+
 /// The intermediate representation for "compiled" lisp functions.
 /// We will do interpretation/evaluation directly on this data structure.
 #[derive(Debug, EnvDebug, DeepSizeOf)]
@@ -46,7 +51,7 @@ pub enum IR {
   /// the span of the variable `a`.
   ///
   /// (Some definitions are added by the compiler and have no source text.)
-  Def(usize, Option<(Span, Span, Option<DocComment>, AtomID)>, Box<IR>),
+  Def(usize, DefTarget, Box<IR>),
   /// * `keep = true`: The `(begin es)` syntax form.
   ///   Evaluate the list of arguments, and return the last one.
   ///

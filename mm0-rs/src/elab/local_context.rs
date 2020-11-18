@@ -405,7 +405,7 @@ impl<'a> ElabTermMut<'a> {
 
   fn other(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
     let proc = match &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
-      Some((_, _, e)) => e.clone(),
+      Some(e) => e.val.clone(),
       None => return Err(self.as_ref().err(e, format!("Not a valid expression: {}", self.print(e))))
     };
     let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];

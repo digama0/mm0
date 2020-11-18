@@ -15,12 +15,12 @@ use std::convert::TryInto;
 use num::{BigInt, ToPrimitive};
 use crate::util::*;
 use crate::parser::ast::SExpr;
-use super::super::{Result, Elaborator,
-  AtomID, Environment, AtomData, DeclKey, StmtTrace, DocComment,
+use super::super::{Result, Elaborator, LispData,
+  AtomID, Environment, AtomData, DeclKey, StmtTrace,
   ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   refine::{RStack, RState, RefineResult}};
 use super::*;
-use super::parser::{IR, Branch, Pattern, MVarPattern};
+use super::parser::{IR, Branch, Pattern, MVarPattern, DefTarget};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
 use super::super::environment::{ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
@@ -35,7 +35,7 @@ enum Stack<'a> {
   AppHead(Span, Span, LispVal),
   If(&'a IR, &'a IR),
   NoTailRec,
-  Def(Option<&'a Option<(Span, Span, Option<DocComment>, AtomID)>>),
+  Def(Option<&'a DefTarget>),
   Eval(&'a IR, std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
@@ -360,7 +360,7 @@ impl Elaborator {
   pub fn call_overridable(&mut self, sp: Span, p: BuiltinProc, es: Vec<LispVal>) -> Result<LispVal> {
     let a = self.get_atom(p.to_byte_str());
     let val = match &self.data[a].lisp {
-      Some((_, _, e)) => e.clone(),
+      Some(e) => (**e).clone(),
       None => LispVal::proc(Proc::Builtin(p))
     };
     self.call_func(sp, val, es)
@@ -841,16 +841,19 @@ make_builtins! { self, sp1, sp2, args,
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it {
-      try1!(self.with_int(&e, |e| Ok(match e.sign() {
-        num::bigint::Sign::Minus => {
-          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-          n >>= &i
+      try1!(self.with_int(&e, |e| {
+        match e.sign() {
+          num::bigint::Sign::Minus => {
+            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+            n >>= &i
+          }
+          _ =>  {
+            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+            n <<= &i
+          }
         }
-        _ =>  {
-          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-          n <<= &i
-        }
-      })))
+        Ok(())
+      }))
     }
     LispVal::number(n)
   },
@@ -858,16 +861,19 @@ make_builtins! { self, sp1, sp2, args,
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it {
-      try1!(self.with_int(&e, |e| Ok(match e.sign() {
-        num::bigint::Sign::Minus => {
-          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-          n <<= &i
+      try1!(self.with_int(&e, |e| {
+        match e.sign() {
+          num::bigint::Sign::Minus => {
+            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+            n <<= &i
+          }
+          _ =>  {
+            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+            n >>= &i
+          }
         }
-        _ =>  {
-          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-          n >>= &i
-        }
-      })))
+        Ok(())
+      }))
     }
     LispVal::number(n)
   },
@@ -991,7 +997,7 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::undef()
   },
   SetWeak: Exact(2) => {
-    try1!(self.as_lref(&args[0], |e| Ok(e.set_weak(&args[1]))));
+    try1!(self.as_lref(&args[0], |e| {e.set_weak(&args[1]); Ok(())}));
     LispVal::undef()
   },
   CopySpan: Exact(2) => {
@@ -1297,11 +1303,11 @@ impl<'a> Evaluator<'a> {
                 let s = name.clone();
                 let a = self.get_atom(&s);
                 let ret = LispVal::proc(Proc::Builtin(p));
-                self.data[a].lisp = Some((None, None, ret.clone()));
+                self.data[a].lisp = Some(LispData {src: None, doc: None, val: ret.clone()});
                 ret
               }
             },
-            AtomData {lisp: Some((_, _, x)), ..} => x.clone(),
+            AtomData {lisp: Some(x), ..} => x.val.clone(),
           }),
           IR::Const(val) => State::Ret(val.clone()),
           IR::List(sp, ls) => State::List(*sp, vec![], ls.iter()),
@@ -1382,7 +1388,9 @@ impl<'a> Evaluator<'a> {
             if let Some(&Some((sp1, sp2, ref doc, a))) = x {
               let loc = (self.fspan(sp2), sp1);
               if ret.is_def_strict() {
-                if mem::replace(&mut self.data[a].lisp, Some((Some(loc), doc.clone(), ret))).is_none() {
+                let e = mem::replace(&mut self.data[a].lisp,
+                  Some(LispData {src: Some(loc), doc: doc.clone(), val: ret}));
+                if e.is_none() {
                   self.stmts.push(StmtTrace::Global(a))
                 }
               } else if mem::take(&mut self.data[a].lisp).is_some() {
@@ -1631,7 +1639,7 @@ impl<'a> Evaluator<'a> {
               self.stack.push(Stack::Refine {sp, stack});
               match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
-                Some((_, _, v)) => State::App(sp, sp, v.clone(), args, [].iter()),
+                Some(v) => State::App(sp, sp, v.val.clone(), args, [].iter()),
               }
             }
             RefineResult::Proc(tgt, proc) => {

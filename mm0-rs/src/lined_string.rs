@@ -79,11 +79,11 @@ impl LinedString {
       Err(n) => (n.checked_sub(1).map_or(0, |i| self.lines[i]), n)
     };
     Position {
-      line: line as u64,
+      line: line as u32,
       character: if self.unicode {
         // Safety: we know that `pos` is valid index, and we have assumed that `idx` is
         unsafe { self.s.get_unchecked(pos..idx) }.chars().map(char::len_utf16).sum()
-      } else { idx - pos } as u64
+      } else { idx - pos } as u32
     }
   }
 
@@ -102,8 +102,8 @@ impl LinedString {
     lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}
   }
 
-  /// Get the total number of lines in the file (as a `u64` for LSP compatibility).
-  pub fn num_lines(&self) -> u64 { self.lines.len() as u64 }
+  /// Get the total number of lines in the file (as a `u32` for LSP compatibility).
+  pub fn num_lines(&self) -> u32 { self.lines.len() as u32 }
 
   /// Get the [`Position`] (line and UTF-16 code unit offset) of the end of the file.
   ///

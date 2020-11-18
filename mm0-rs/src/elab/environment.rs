@@ -474,6 +474,23 @@ pub struct ParserEnv {
   pub decl_nota: HashMap<TermID, (bool, Vec<(ArcString, bool)>)>,
 }
 
+/// A global lisp definition entry.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub struct LispData {
+  /// A `(span, full)` pair where `span` is the name of the definition and `full` is the
+  /// entire definition body, or `None`.
+  pub src: Option<(FileSpan, Span)>,
+  /// The documentation on the declaration of the item.
+  pub doc: Option<DocComment>,
+  /// The value associated to the name.
+  pub val: LispVal
+}
+
+impl Deref for LispData {
+  type Target = LispVal;
+  fn deref(&self) -> &LispVal { &self.val }
+}
+
 /// The data associated to an atom.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct AtomData {
@@ -483,7 +500,7 @@ pub struct AtomData {
   /// is `Some((span, full))` where `span` is the name of the definition and `full` is the
   /// entire definition body, or `None`.
   /// The `DocComment` is the documentation on the declaration of the item.
-  pub lisp: Option<(Option<(FileSpan, Span)>, Option<DocComment>, LispVal)>,
+  pub lisp: Option<LispData>,
   /// For global lisp definitions that have been deleted, we retain the location of the
   /// "undefinition" for go-to-definition queries.
   pub graveyard: Option<Box<(FileSpan, Span)>>,
@@ -582,6 +599,7 @@ macro_rules! make_atoms {
       /// atoms that are used by builtins.
       ///
       /// [`AtomID`]: struct.AtomID.html
+      #[allow(clippy::string_lit_as_bytes)]
       pub fn new() -> Environment {
         let mut atoms = HashMap::new();
         let mut data = AtomVec::default();
@@ -1243,7 +1261,7 @@ impl Environment {
     };
     for (i, d) in other.data().iter().enumerate() {
       let data = &mut self.data[remap.atom[AtomID(i as u32)]];
-      data.lisp = d.lisp().as_ref().map(|(fs, doc, v)| (fs.clone(), doc.clone(), v.remap(remap)));
+      data.lisp = d.lisp().as_ref().map(|v| v.remap(remap));
       if data.lisp.is_none() {
         data.graveyard = d.graveyard().clone();
       }

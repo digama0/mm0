@@ -113,7 +113,7 @@ impl<T> ArcList<T> {
   pub fn contains(&self, t: &T) -> bool where T: PartialEq {
     let mut s = self;
     loop {
-      match s.0.as_ref().map(Deref::deref) {
+      match s.0.as_deref() {
         None => return false,
         Some((_, t2)) if *t2 == *t => return true,
         Some((s2, _)) => s = s2

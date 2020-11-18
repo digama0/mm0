@@ -525,7 +525,7 @@ impl Elaborator {
         let v = self.eval_lisp(e)?;
         self.elab_stmt(doc, s, span)?;
         let ann = match &self.data[AtomID::ANNOTATE].lisp {
-          Some((_, _, e)) => e.clone(),
+          Some(e) => e.val.clone(),
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };
         let args = vec![v, self.name_of(s)];
@@ -676,7 +676,7 @@ pub fn elaborate<T>(
       lisp::LispArena::uninstall_thread_local();
       let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, ..} = this.take().unwrap();
       elab.arena.clear();
-      return Poll::Ready((cyc, toks, elab.errors, FrozenEnv::new(elab.env)))
+      Poll::Ready((cyc, toks, elab.errors, FrozenEnv::new(elab.env)))
     }
   }
 

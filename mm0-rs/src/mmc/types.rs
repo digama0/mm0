@@ -340,6 +340,7 @@ macro_rules! make_keywords {
 
     impl Environment {
       /// Make the initial MMC keyword map in the given environment.
+      #[allow(clippy::string_lit_as_bytes)]
       pub fn make_keywords(&mut self) -> HashMap<AtomID, Keyword> {
         let mut atoms = HashMap::new();
         $(atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);)*

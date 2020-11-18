@@ -263,9 +263,9 @@ impl LispVal {
   /// Construct a `LispVal` for a procedure.
   pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
   /// Construct a `LispVal` for a mutable reference.
-  pub fn new_ref(e: LispVal) -> LispVal { LispRef::new(LispWeak::Strong(e)) }
+  pub fn new_ref(e: LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Strong(e)) }
   /// Construct a `LispVal` for a weak reference.
-  pub fn weak_ref(e: &LispVal) -> LispVal { LispRef::new(LispWeak::Weak(Rc::downgrade(&e.0))) }
+  pub fn weak_ref(e: &LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Weak(Rc::downgrade(&e.0))) }
   /// Construct a `LispVal` for a goal.
   pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     LispVal::new(LispKind::Goal(ty)).span(fsp)
@@ -449,7 +449,7 @@ pub struct LispRef(RefCell<LispWeak>);
 
 impl LispRef {
   /// Construct a `LispVal` for a mutable reference.
-  fn new(w: LispWeak) -> LispVal {
+  fn new_as_val(w: LispWeak) -> LispVal {
     LispVal::new(LispKind::Ref(LispRef(RefCell::new(w))))
     // REFS.with(|refs| {unsafe{&*refs.get().unwrap()}.0.alloc(Rc::downgrade(&r.0));});
   }

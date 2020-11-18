@@ -666,8 +666,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     } else {Default::default()};
     self.write_u64(il)?;
     self.write_u64(ir)?;
-    self.write_u32(pos.line as u32)?;
-    self.write_u32(pos.character as u32)?;
+    self.write_u32(pos.line)?;
+    self.write_u32(pos.character)?;
     self.write_u64(cmd)?;
     self.write_u32(ix)?;
     self.write_u8(k)?;
