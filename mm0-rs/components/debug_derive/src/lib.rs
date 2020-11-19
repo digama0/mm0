@@ -13,19 +13,19 @@ use syn::{
     token::Comma,
 };
 
+
 // Make a single match arm for either a struct or single enum variant. 
 // as an example, for the mm0-rs type `Sort`, this function produces:
 // 
 // ```
 // Sort { atom, name, span, full, mods } => {
-//     let mut ron = shoebill::ron::RonStruct::new();
-//     ron.add_name("Sort");
-//     ron.add_field("atom", atom.env_dbg(fe, p));
-//     ron.add_field("name", name.env_dbg(fe, p));
-//     ron.add_field("span", span.env_dbg(fe, p));
-//     ron.add_field("full", full.env_dbg(fe, p));
-//     ron.add_field("mods", mods.env_dbg(fe, p));
-//     ron.to_doc(p)
+//     let mut base = f.debug_struct("Sort");
+//     base.field("atom", format_args!("{:#?}", fe.to(atom))
+//     base.field("name", format_args!("{:#?}", fe.to(name))
+//     base.field("span", format_args!("{:#?}", fe.to(span))
+//     base.field("full", format_args!("{:#?}", fe.to(full))
+//     base.field("mods", format_args!("{:#?}", fe.to(mods))
+//     base.finish()
 // }
 // ```
 fn mk_arm(
@@ -33,19 +33,22 @@ fn mk_arm(
     fields : &Fields, 
     variant_ident : Option<&Ident>
 ) -> syn::Arm {
-    let (item_path, ronpath) : (syn::Path, syn::Block)  = match variant_ident {
+    let (item_path, namestring) : (syn::Path, String)  = match variant_ident {
+        // if struct
         None => (
             parse_quote!(#item_ident), 
-            parse_quote!({ ron.add_name(stringify!(#item_ident));})
+            format!("{}", item_ident)
         ),
+        // if enum
         Some(variant) => (
             parse_quote!(#item_ident::#variant), 
-            parse_quote!({ ron.add_name(stringify!(#item_ident)); ron.add_name(stringify!(#variant)); })
+            format!("{}::{}", item_ident, variant)
         )
     };
 
     match fields {
         Fields::Named(named) => {
+            // the names of fields as idents (iterator).
             let all_idents = named.named.iter().map(|field| field.ident.as_ref().expect(
                 "All fields in a Field::Named should have names"
             ));
@@ -53,12 +56,14 @@ fn mk_arm(
 
             parse_quote! {
                 #item_path { #(#all_idents),* } => {
-                    let mut ron = shoebill::ron::RonStruct::new();
-                    #ronpath
+                    let mut base = f.debug_struct(#namestring);
                     #(
-                        ron.add_field(stringify!(#all_idents_copy), #all_idents_copy.env_dbg(fe, p));
+                        base.field(
+                            stringify!(#all_idents_copy), 
+                            &format_args!("{:#?}", fe.to(#all_idents_copy))
+                        );
                     )*
-                    ron.to_doc(p)
+                    base.finish()
                 }
             }
         },
@@ -68,42 +73,44 @@ fn mk_arm(
 
             parse_quote! {
                 #item_path (#(#field_idents),*) => {
-                    let mut ron = shoebill::ron::RonTuple::new();
-                    #ronpath
+                    let mut base = f.debug_tuple(#namestring);
                     #(
-                        ron.add_field(#field_idents_copy.env_dbg(fe, p));
+                        base.field(&format_args!("{:#?}", fe.to(#field_idents_copy)));
                     )*
-                    ron.to_doc(p)
+                    base.finish()
                 }
             }
-        },
+        }
         Fields::Unit => {
             parse_quote! {
                 #item_path => {
-                    // The prettyprinter knows how to render these properly.
-                    let mut ron = shoebill::ron::RonStruct::new();
-                    #ronpath
-                    ron.to_doc(p)
+                    let mut base = f.debug_struct(#namestring);
+                    base.finish()
                 }
             }
-        },
+        }
     }
 }
 
 // Same as mk_arm, but only tries to match on/print public fields
 #[allow(unused)]
-fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ident>) -> syn::Arm {
-    let (item_path, ronpath) : (syn::Path, syn::Block)  = match variant_ident {
+fn mk_arm_pub(
+    item_ident : &Ident, 
+    fields : &Fields, 
+    variant_ident : Option<&Ident>
+) -> syn::Arm {
+    let (item_path, namestring) : (syn::Path, String)  = match variant_ident {
+        // if struct
         None => (
             parse_quote!(#item_ident), 
-            parse_quote!({ ron.add_name(stringify!(#item_ident));})
+            format!("{}", item_ident)
         ),
+        // if enum
         Some(variant) => (
             parse_quote!(#item_ident::#variant), 
-            parse_quote!({ ron.add_name(stringify!(#item_ident)); ron.add_name(stringify!(#variant)); })
+            format!("{}::{}", item_ident, variant)
         )
     };
-
 
     match fields {
         Fields::Named(named) => {
@@ -128,12 +135,14 @@ fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ide
 
             parse_quote! {
                 #item_path { #pub_pats } => {
-                    let mut ron = shoebill::ron::RonStruct::new();
-                    #ronpath
+                    let mut base = f.debug_struct(#namestring);
                     #(
-                        ron.add_field(stringify!(#pub_idents), #pub_idents.env_dbg(fe, p));
+                        base.field(
+                            stringify!(#pub_idents), 
+                            &format_args!("{:#?}", fe.to(#pub_idents))
+                        );
                     )*
-                    ron.to_doc(p)
+                    base.finish()
                 }
             }
         },
@@ -147,24 +156,21 @@ fn mk_arm_pub(item_ident : &Ident, fields : &Fields, variant_ident : Option<&Ide
             });
 
             let pub_idents = match_idents.clone().filter(|id| id != &underscore);
-            
             parse_quote! {
                 #item_path (#(#match_idents),*) => {
-                    let mut ron = shoebill::ron::RonTuple::new();
-                    #ronpath
+                    let mut base = f.debug_tuple(#namestring);
                     #(
-                        ron.add_field(#pub_idents.env_dbg(fe, p));
+                        base.field(&format_args!("{:#?}", fe.to(#pub_idents)));
                     )*
-                    ron.to_doc(p)
+                    base.finish()
                 }
-            }
+            }            
         },
         Fields::Unit => {
             parse_quote! {
                 #item_path => {
-                    let mut ron = shoebill::ron::RonStruct::new();
-                    #ronpath
-                    ron.to_doc(p)
+                    let mut base = f.debug_struct(#namestring);
+                    base.finish()
                 }
             }
         },
@@ -205,7 +211,7 @@ fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemIm
             };
             parse_quote! {
                 impl #impl_generics #env_debug_path for #ident #type_generics #where_clause {
-                    fn env_dbg<'__a>(&self, fe : #format_env_path<'__a>, p : &mut shoebill::Printer<'__a>) -> shoebill::DocPtr<'__a> {
+                    fn env_dbg<'__a>(&self, fe : #format_env_path<'__a>, f : &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                       match self {
                           #fields
                       }
@@ -221,7 +227,7 @@ fn mk_item(derive_input : &mut syn::DeriveInput, pub_only : bool) -> syn::ItemIm
             };
             parse_quote! {
                 impl #impl_generics #env_debug_path for #ident #type_generics #where_clause {
-                    fn env_dbg<'__a>(&self, fe : #format_env_path<'__a>, p : &mut shoebill::Printer<'__a>) -> shoebill::DocPtr<'__a> {
+                    fn env_dbg<'__a>(&self, fe : #format_env_path<'__a>, f : &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         match self {
                             #arms
                         }

@@ -84,14 +84,10 @@ impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
-// The function body here is slightly more complicated since we need to
-// negotiate with a pretty printer before first.
-/// items implementing EnvDebug can be put in formatters using `{:?}`
+/// items implementing EnvDebug can be put in formatters using `{:#?}`
 impl<'a, D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'a, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let mut printer = shoebill::Printer::new();
-    let d = self.e.env_dbg(self.fe, &mut printer);
-    write!(f, "{}", d.render(80, &printer))
+    self.e.env_dbg(self.fe, f)
   }
 }
 

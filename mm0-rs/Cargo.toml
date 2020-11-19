@@ -33,7 +33,6 @@ serde_repr = "0.1.6"
 annotate-snippets = { version = "0.9.0", features = ["color"] }
 libc = "0.2.76"
 deepsize_derive = { path = "components/deepsize_derive", default-features = false }
-shoebill = "0.1.*"
 debug_derive = { path = "components/debug_derive" }
 
 # For "server" feature
