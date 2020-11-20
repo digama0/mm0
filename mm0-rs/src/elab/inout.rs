@@ -3,7 +3,7 @@
 use std::io;
 use super::proof::{Dedup, NodeHasher, build};
 use super::environment::{DeclKey, SortID, TermID, Type, Expr, ExprNode,
-  OutputString, StmtTrace, Environment};
+  TermKind, OutputString, StmtTrace, Environment};
 use super::{ElabError, Elaborator, Span, HashMap, Result as EResult, SExpr,
   lisp::{InferTarget, LispVal}, local_context::try_get_span, FrozenEnv};
 use crate::util::{FileSpan, BoxError};
@@ -172,9 +172,9 @@ impl Environment {
       .and_then(|&a| if let Some(DeclKey::Term(t)) = self.data[a].decl {Some(t)} else {None})
       .ok_or_else(|| format!("term '{}' not found", s))?;
     let td = &self.terms[t];
-    match (def, &td.val) {
-      (false, Some(_)) => return Err(format!("def '{}' should be a term", s)),
-      (true, None) => return Err(format!("term '{}' should be a def", s)),
+    match (def, &td.kind) {
+      (false, TermKind::Def(_)) => return Err(format!("def '{}' should be a term", s)),
+      (true, TermKind::Term) => return Err(format!("term '{}' should be a def", s)),
       _ => {}
     }
     let ok = td.ret == (ret, 0) &&
@@ -251,7 +251,7 @@ impl Environment {
           self.write_node(terms, heap, &ns[1], w)
         }
         Some(&InoutStringType::Hex(h)) => w.write_hex(h),
-        _ => if let Some(Some(expr)) = &self.terms[t].val {
+        _ => if let TermKind::Def(Some(expr)) = &self.terms[t].kind {
           let mut args: Vec<StringPart> = Vec::with_capacity(heap.len());
           for e in &**ns {
             let mut w = StringWriter::default();
@@ -292,7 +292,7 @@ impl Environment {
       terms: &HashMap<TermID, InoutStringType>,
       t: TermID, name: &str) -> Result<Box<[StringSeg]>, String> {
     let td = &self.terms[t];
-    if let Some(Some(Expr {heap, head})) = &td.val {
+    if let TermKind::Def(Some(Expr {heap, head})) = &td.kind {
       let mut refs = Vec::with_capacity(heap.len() - td.args.len());
       for e in &heap[td.args.len()..] {
         let out = StringSegBuilder::make(|out|

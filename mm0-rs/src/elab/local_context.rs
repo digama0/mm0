@@ -6,7 +6,7 @@ use std::mem;
 use std::result::Result as StdResult;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
-use super::environment::{AtomID, Type as EType};
+use super::environment::{AtomID, TermKind, ThmKind, Type as EType};
 use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
   Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortID, Term, TermID, Thm};
@@ -729,11 +729,11 @@ impl Elaborator {
             ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
           args.push((a, ty));
         }
-        let (ret, val) = match val {
+        let (ret, kind) = match val {
           None => match ret {
             None => return Err(ElabError::new_e(full, "expected type or value")),
             Some((_, s, ref deps)) => ((s, ba.deps(deps)),
-              if d.k == DeclKind::Term {None} else {Some(None)})
+              if d.k == DeclKind::Term {TermKind::Term} else {TermKind::Def(None)})
           },
           Some((sp, val)) => {
             let s = self.infer_sort(sp, &val)?;
@@ -749,7 +749,7 @@ impl Elaborator {
               Expr {heap, head: ids[i].take()}
             };
             match ret {
-              None => ((s, deps), Some(Some(val))),
+              None => ((s, deps), TermKind::Def(Some(val))),
               Some((sp, s2, ref deps2)) => {
                 if s != s2 {
                   return Err(ElabError::new_e(sp, format!("type error: expected {}, got {}",
@@ -764,20 +764,20 @@ impl Elaborator {
                       } else {None}
                     }).format(", "))))
                 }
-                ((s2, n), Some(Some(val)))
+                ((s2, n), TermKind::Def(Some(val)))
               }
             }
           }
         };
         if atom != AtomID::UNDER {
           let t = Term {
-            atom, args: args.into(), ret, val,
+            atom, args: args.into(), ret, kind,
             span: self.fspan(d.id),
             doc,
             vis: d.mods,
             full,
           };
-          let tid = self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
+          let tid = self.env.add_term(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
         }
       }
@@ -832,40 +832,43 @@ impl Elaborator {
         let (mut ids, heap) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
-        let proof = d.val.as_ref().map(|e| {
-          if self.check_proofs {
-            (|| -> Result<Option<Proof>> {
-              let mut de: Dedup<ProofHash> = de.map_proof();
-              let mut is2 = Vec::new();
-              for (i, (_, a, e)) in e_hyps.into_iter().enumerate() {
-                if let Some(a) = a {
-                  let p = LispVal::atom(a);
-                  is2.push(de.add(p.clone(), ProofHash::Hyp(i, is[i].1)));
-                  self.lc.add_proof(a, e, p)
+        let kind = match &d.val {
+          None => ThmKind::Axiom,
+          Some(e) => ThmKind::Thm({
+            if self.check_proofs {
+              (|| -> Result<Option<Proof>> {
+                let mut de: Dedup<ProofHash> = de.map_proof();
+                let mut is2 = Vec::new();
+                for (i, (_, a, e)) in e_hyps.into_iter().enumerate() {
+                  if let Some(a) = a {
+                    let p = LispVal::atom(a);
+                    is2.push(de.add(p.clone(), ProofHash::Hyp(i, is[i].1)));
+                    self.lc.add_proof(a, e, p)
+                  }
                 }
-              }
-              let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), e_ret));
-              self.lc.goals = vec![g.clone()];
-              self.elab_lisp(e)?;
-              for g in mem::take(&mut self.lc.goals) {
-                report!(try_get_span(&span, &g),
-                  format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)))
-              }
-              if error {return Ok(None)}
-              let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
-              let ip = de.dedup(&nh, &g)?;
-              let (mut ids, heap) = build(&de);
-              let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-              Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
-            })().unwrap_or_else(|e| {self.report(e); None})
-          } else {None}
-        });
+                let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), e_ret));
+                self.lc.goals = vec![g.clone()];
+                self.elab_lisp(e)?;
+                for g in mem::take(&mut self.lc.goals) {
+                  report!(try_get_span(&span, &g),
+                    format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)))
+                }
+                if error {return Ok(None)}
+                let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
+                let ip = de.dedup(&nh, &g)?;
+                let (mut ids, heap) = build(&de);
+                let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
+                Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
+              })().unwrap_or_else(|e| {self.report(e); None})
+            } else {None}
+          })
+        };
         if atom != AtomID::UNDER {
           let t = Thm {
             atom, span, vis: d.mods, full, doc,
-            args: args.into(), heap, hyps, ret, proof
+            args: args.into(), heap, hyps, ret, kind
           };
-          let tid = self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
+          let tid = self.env.add_thm(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Thm(tid));
         }
       }
@@ -1042,12 +1045,12 @@ impl Elaborator {
         }
       }
     };
-    let (vis, val) = if let Some((evis, ds, val)) = val {
+    let (vis, kind) = if let Some((evis, ds, val)) = val {
       let vis = self.visibility(&fsp, evis)?;
       if !vis.allowed_visibility(DeclKind::Def) {
         return Err(ElabError::new_e(sp!(evis), "invalid modifiers for this keyword"))
       }
-      (vis, Some((|| -> Result<Option<Expr>> {
+      (vis, TermKind::Def((|| -> Result<Option<Expr>> {
         dummies(self.format_env(), &fsp, &mut lc, ds)?;
         let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
@@ -1059,10 +1062,10 @@ impl Elaborator {
           format!("while adding {}: {}", self.print(&x), e.kind.msg())));
         None
       })))
-    } else {(Modifiers::NONE, None)};
+    } else {(Modifiers::NONE, TermKind::Term)};
     let full = fsp.span;
-    let t = Term {atom: x, span, full, vis, doc: None, args, ret, val};
-    self.env.add_term(x, fsp, || t).map_err(|e| e.into_elab_error(full))?;
+    let t = Term {atom: x, span, full, vis, doc: None, args, ret, kind};
+    self.env.add_term(x, &fsp, || t).map_err(|e| e.into_elab_error(full))?;
     Ok(())
   }
 
@@ -1124,8 +1127,7 @@ impl Elaborator {
     let ret = ids[ir].take();
     let mut thm = Thm {
       atom: x, span, full: fsp.span, doc: None,
-      vis: Modifiers::NONE,
-      proof: None,
+      vis: Modifiers::NONE, kind: ThmKind::Axiom,
       args, heap, hyps, ret };
     let out = if let Some((vis, proof)) = proof {
       thm.vis = self.visibility(&fsp, vis)?;
@@ -1155,29 +1157,32 @@ impl Elaborator {
 
   fn finish_add_thm(&mut self, fsp: FileSpan, mut t: Thm, res: Option<Option<ThmVal>>) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-    t.proof = res.map(|res| res.and_then(|ThmVal {mut de, var_map, mut lc, is: is2, proof: e}| {
-      (|| -> Result<Option<Proof>> {
-        let mut u = Uncons::from(e.clone());
-        let (ds, pf) = match (u.next(), u.next(), u.exactly(0)) {
-          (Some(ds), Some(pf), true) => (ds, pf),
-          _ => return Err(ElabError::new_e(sp!(e), "bad proof format, expected (ds proof)"))
-        };
-        let lc = lc.as_deref_mut().unwrap_or(&mut self.lc);
-        let fe = FormatEnv {source: &self.ast.source, env: &self.env};
-        dummies(fe, &fsp, lc, &ds)?;
-        let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
-        let ip = de.dedup(&nh, &pf)?;
-        let (mut ids, heap) = build(&de);
-        let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-        Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
-      })().unwrap_or_else(|e| {
-        self.report(ElabError::new_e(e.pos,
-          format!("while adding {}: {}", self.print(&t.atom), e.kind.msg())));
-        None
-      })
-    }));
+    t.kind = match res {
+      None => ThmKind::Axiom,
+      Some(res) => ThmKind::Thm(res.and_then(|ThmVal {mut de, var_map, mut lc, is: is2, proof: e}| {
+        (|| -> Result<Option<Proof>> {
+          let mut u = Uncons::from(e.clone());
+          let (ds, pf) = match (u.next(), u.next(), u.exactly(0)) {
+            (Some(ds), Some(pf), true) => (ds, pf),
+            _ => return Err(ElabError::new_e(sp!(e), "bad proof format, expected (ds proof)"))
+          };
+          let lc = lc.as_deref_mut().unwrap_or(&mut self.lc);
+          let fe = FormatEnv {source: &self.ast.source, env: &self.env};
+          dummies(fe, &fsp, lc, &ds)?;
+          let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
+          let ip = de.dedup(&nh, &pf)?;
+          let (mut ids, heap) = build(&de);
+          let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
+          Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
+        })().unwrap_or_else(|e| {
+          self.report(ElabError::new_e(e.pos,
+            format!("while adding {}: {}", self.print(&t.atom), e.kind.msg())));
+          None
+        })
+      }))
+    };
     let sp = fsp.span;
-    self.env.add_thm(t.atom, fsp, || t).map_err(|e| e.into_elab_error(sp))?;
+    self.env.add_thm(t.atom, &fsp, || t).map_err(|e| e.into_elab_error(sp))?;
     Ok(())
   }
 }

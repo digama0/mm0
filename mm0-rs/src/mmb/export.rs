@@ -4,7 +4,7 @@ use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use crate::elab::environment::{
-  Type, Expr, Proof, SortID, TermID, ThmID, AtomID,
+  Type, Expr, Proof, SortID, TermID, ThmID, AtomID, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
 use crate::util::FileRef;
@@ -644,18 +644,22 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
           let td = self.env.term(t);
           LE::write_u64(header.term(t), n);
           (&td.span, t.0,
-            if td.val.is_none() {STMT_TERM}
-            else if td.vis == Modifiers::LOCAL {STMT_DEF | STMT_LOCAL}
-            else {STMT_DEF},
+            match td.kind {
+              TermKind::Term => STMT_TERM,
+              TermKind::Def(_) if td.vis == Modifiers::LOCAL => STMT_DEF | STMT_LOCAL,
+              TermKind::Def(_) => STMT_DEF
+            },
             ad.name())
         }
         DeclKey::Thm(t) => {
           let td = self.env.thm(t);
           LE::write_u64(header.thm(t), n);
           (&td.span, t.0,
-            if td.proof.is_none() {STMT_AXIOM}
-            else if td.vis == Modifiers::PUB {STMT_THM}
-            else {STMT_THM | STMT_LOCAL},
+            match td.kind {
+              ThmKind::Axiom => STMT_AXIOM,
+              ThmKind::Thm(_) if td.vis == Modifiers::PUB => STMT_THM,
+              ThmKind::Thm(_) => STMT_THM | STMT_LOCAL
+            },
             ad.name())
         }
       }
@@ -736,11 +740,11 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       Self::write_term_header(head,
         t.args.len().try_into().expect("term has more than 65536 args"),
         t.ret.0,
-        t.val.is_some(),
+        matches!(t.kind, TermKind::Def(_)),
         self.align_to(8)?.try_into().unwrap());
       self.write_binders(&t.args)?;
       self.write_sort_deps(false, t.ret.0, t.ret.1)?;
-      let reorder = if let Some(val) = &t.val {
+      let reorder = if let TermKind::Def(val) = &t.kind {
         let Expr {heap, head} = val.as_ref().unwrap_or_else(||
           panic!("def {} missing value", self.env.data()[t.atom].name()));
         let mut reorder = Reorder::new(
@@ -788,10 +792,10 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
           match self.env.data()[a].decl().unwrap() {
             DeclKey::Term(t) => {
               let td = self.env.term(t);
-              match &td.val {
-                None => write_cmd_bytes(self, STMT_TERM, &[])?,
-                Some(None) => panic!("def {} missing definition", self.env.data()[td.atom].name()),
-                Some(Some(Expr {heap, head})) => {
+              match &td.kind {
+                TermKind::Term => write_cmd_bytes(self, STMT_TERM, &[])?,
+                TermKind::Def(None) => panic!("def {} missing definition", self.env.data()[td.atom].name()),
+                TermKind::Def(Some(Expr {heap, head})) => {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
                   write_expr_proof(vec, heap, &mut reorder, head, false)?;
@@ -804,8 +808,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
             }
             DeclKey::Thm(t) => {
               let td = self.env.thm(t);
-              let cmd = match &td.proof {
-                None => {
+              let cmd = match &td.kind {
+                ThmKind::Axiom => {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
                   for (_, h) in &*td.hyps {
@@ -815,8 +819,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   write_expr_proof(vec, &td.heap, &mut reorder, &td.ret, false)?;
                   STMT_AXIOM
                 }
-                Some(None) => panic!("proof {} missing", self.env.data()[td.atom].name()),
-                Some(Some(Proof {heap, hyps, head})) => {
+                ThmKind::Thm(None) => panic!("proof {} missing", self.env.data()[td.atom].name()),
+                ThmKind::Thm(Some(Proof {heap, hyps, head})) => {
                   let mut reorder = Reorder::new(
                     td.args.len().try_into().unwrap(), heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());

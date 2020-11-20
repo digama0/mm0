@@ -23,7 +23,7 @@ use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
   Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmID, Uncons};
 use super::parser::{IR, Branch, Pattern, MVarPattern, DefTarget};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
-use super::super::environment::{ExprNode, ProofNode};
+use super::super::environment::{TermKind, ThmKind, ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
 #[derive(Debug)]
@@ -522,8 +522,8 @@ impl Elaborator {
 
   fn get_proof(&self, t: ThmID, mut heap: Vec<LispVal>) -> LispVal {
     let tdata = &self.thms[t];
-    match &tdata.proof {
-      Some(Some(pr)) => {
+    match &tdata.kind {
+      ThmKind::Thm(Some(pr)) => {
         let mut ds = Vec::new();
         for e in &pr.heap[heap.len()..] {
           let e = self.proof_node(&tdata.hyps, &heap, &mut ds, e);
@@ -557,13 +557,16 @@ impl Elaborator {
         let mut bvs = Vec::new();
         let mut heap = Vec::new();
         let mut args = vec![
-          LispVal::atom(if tdata.val.is_some() {AtomID::TERM} else {AtomID::DEF}),
+          LispVal::atom(match tdata.kind {
+            TermKind::Term => AtomID::TERM,
+            TermKind::Def(_) => AtomID::DEF
+          }),
           LispVal::atom(x),
           self.binders(&tdata.args, &mut heap, &mut bvs),
           LispVal::list(vec![
             LispVal::atom(self.sorts[tdata.ret.0].atom),
             Environment::deps(&bvs, tdata.ret.1)])];
-        if let Some(Some(v)) = &tdata.val {
+        if let TermKind::Def(Some(v)) = &tdata.kind {
           args.push(vis(tdata.vis));
           let mut ds = Vec::new();
           for e in &v.heap[heap.len()..] {
@@ -584,7 +587,10 @@ impl Elaborator {
         let mut bvs = Vec::new();
         let mut heap = Vec::new();
         let mut args = vec![
-          LispVal::atom(if tdata.proof.is_some() {AtomID::THM} else {AtomID::AXIOM}),
+          LispVal::atom(match tdata.kind {
+            ThmKind::Axiom => AtomID::AXIOM,
+            ThmKind::Thm(_) => AtomID::THM
+          }),
           LispVal::atom(x),
           self.binders(&tdata.args, &mut heap, &mut bvs),
           {
@@ -599,7 +605,7 @@ impl Elaborator {
           },
           self.expr_node(&heap, &mut None, &tdata.ret)
         ];
-        if tdata.proof.is_some() {
+        if let ThmKind::Thm(_) = tdata.kind {
           args.push(vis(tdata.vis));
           heap.truncate(tdata.args.len());
           args.push(LispVal::proc(Proc::ProofThunk(x, RefCell::new(Err(heap.into())))));

@@ -126,10 +126,7 @@ crate::deep_size_0!(Type);
 impl Type {
   /// The sort of a type.
   #[must_use] pub fn sort(self) -> SortID {
-    match self {
-      Type::Bound(s) => s,
-      Type::Reg(s, _) => s,
-    }
+    match self { Type::Bound(s) | Type::Reg(s, _) => s }
   }
   /// True if the type is a bound variable.
   #[must_use] pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
@@ -160,6 +157,17 @@ pub struct Expr {
   pub head: ExprNode,
 }
 
+/// The value of a term or def.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub enum TermKind {
+  /// This is a `term`, which has no definition
+  Term,
+  /// This is a `def`:
+  /// - `None`: This is an abstract `def` or a `def` missing a definition
+  /// - `Some(e)`: This is a `def` which is defined to equal `e`
+  Def(Option<Expr>)
+}
+
 /// The data associated to a `term` or `def` declaration.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Term {
@@ -187,12 +195,8 @@ pub struct Term {
   ///
   /// [`Type::Reg`]: enum.Type.html#variant.Reg
   pub ret: (SortID, u64),
-  /// The definition of the expression:
-  ///
-  /// - `None`: This is a `term`, which has no definition
-  /// - `Some(None)`: This is an abstract `def` or a `def` missing a definition
-  /// - `Some(Some(e))`: This is a `def` which is defined to equal `e`
-  pub val: Option<Option<Expr>>,
+  /// The term/def classification, and the value of the def.
+  pub kind: TermKind,
 }
 
 /// A `ProofNode` is a stored proof term. This is an extension of [`ExprNode`] with
@@ -293,6 +297,17 @@ pub struct Proof {
   pub head: ProofNode,
 }
 
+/// The proof of the axiom or theorem.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub enum ThmKind {
+  /// This is an `axiom`, which has no proof.
+  Axiom,
+  /// This is a `theorem`:
+  /// - `None`: This is a `theorem` with a missing or malformed proof
+  /// - `Some(p)`: This is a `theorem` which has proof `p`
+  Thm(Option<Proof>)
+}
+
 /// The data associated to an `axiom` or `theorem` declaration.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Thm {
@@ -321,11 +336,7 @@ pub struct Thm {
   pub hyps: Box<[(Option<AtomID>, ExprNode)]>,
   /// The expression for the conclusion of the theorem.
   pub ret: ExprNode,
-  /// The proof of the theorem:
-  ///
-  /// - `None`: This is an `axiom`, which has no proof
-  /// - `Some(None)`: This is a `theorem` with a missing or malformed proof
-  /// - `Some(Some(p))`: This is a `theorem` which has proof `p`
+  /// The axiom/theorem classification, and the proof.
   ///
   /// **Note**: The [`Proof`] has its own `heap` and `hyps`, separate from the
   /// `heap` and `hyps` in this structure. They are required to be equivalent, but the
@@ -333,7 +344,7 @@ pub struct Thm {
   /// valid with the `heap` in the proof.
   ///
   /// [`Proof`]: struct.Proof.html
-  pub proof: Option<Option<Proof>>,
+  pub kind: ThmKind,
 }
 
 /// An `output string` directive, which is anonymous and hence stored directly
@@ -822,6 +833,15 @@ impl Remap for Expr {
     }
   }
 }
+impl Remap for TermKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      TermKind::Term => TermKind::Term,
+      TermKind::Def(e) => TermKind::Def(e.remap(r)),
+    }
+  }
+}
 impl Remap for Term {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
@@ -833,7 +853,7 @@ impl Remap for Term {
       doc: self.doc.clone(),
       args: self.args.remap(r),
       ret: (self.ret.0.remap(r), self.ret.1),
-      val: self.val.remap(r),
+      kind: self.kind.remap(r),
     }
   }
 }
@@ -876,6 +896,15 @@ impl Remap for Proof {
     }
   }
 }
+impl Remap for ThmKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      ThmKind::Axiom => ThmKind::Axiom,
+      ThmKind::Thm(e) => ThmKind::Thm(e.remap(r)),
+    }
+  }
+}
 impl Remap for Thm {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
@@ -889,7 +918,7 @@ impl Remap for Thm {
       heap: self.heap.remap(r),
       hyps: self.hyps.remap(r),
       ret: self.ret.remap(r),
-      proof: self.proof.remap(r),
+      kind: self.kind.remap(r),
     }
   }
 }
@@ -978,6 +1007,7 @@ impl ParserEnv {
     Self::add_nota_info(&mut self.infixes, tk, n)
   }
 
+  #[allow(clippy::unwrap_in_result)]
   fn update_provs(&mut self, sp: Span, sorts: &SortVec<Sort>) -> Result<(), ElabError> {
     let mut provs = HashMap::new();
     for (&s1, m) in &self.coes {
@@ -986,9 +1016,9 @@ impl ParserEnv {
           if let Some(s2_) = provs.insert(s1, s2) {
             let mut err = "coercion diamond to provable detected:\n".to_owned();
             let mut related = Vec::new();
-            self.coes[&s1][&s2].write_arrows(sorts, &mut err, &mut related, s1, s2).unwrap();
+            self.coes[&s1][&s2].write_arrows(sorts, &mut err, &mut related, s1, s2).expect("write to str");
             err.push_str(" provable\n");
-            self.coes[&s1][&s2_].write_arrows(sorts, &mut err, &mut related, s1, s2_).unwrap();
+            self.coes[&s1][&s2_].write_arrows(sorts, &mut err, &mut related, s1, s2_).expect("write to str");
             err.push_str(" provable");
             return Err(ElabError::with_info(sp, err.into(), related))
           }
@@ -999,6 +1029,7 @@ impl ParserEnv {
     Ok(())
   }
 
+  #[allow(clippy::unwrap_in_result)]
   fn add_coe_raw(&mut self, sp: Span, sorts: &SortVec<Sort>,
       s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
     match self.coes.get(&s1).and_then(|m| m.get(&s2).map(|c| &**c)) {
@@ -1022,15 +1053,15 @@ impl ParserEnv {
       if sl == sr {
         let mut err = "coercion cycle detected: ".to_owned();
         let mut related = Vec::new();
-        c.write_arrows(sorts, &mut err, &mut related, sl, sr).unwrap();
+        c.write_arrows(sorts, &mut err, &mut related, sl, sr).expect("write to str");
         return Err(ElabError::with_info(sp, err.into(), related))
       }
       if let Some((c, e)) = self.coes.entry(sl).or_default().try_insert(sr, c) {
         let mut err = "coercion diamond detected: ".to_owned();
         let mut related = Vec::new();
-        e.get().write_arrows(sorts, &mut err, &mut related, sl, sr).unwrap();
+        e.get().write_arrows(sorts, &mut err, &mut related, sl, sr).expect("write to str");
         err.push_str(";   ");
-        c.write_arrows(sorts, &mut err, &mut related, sl, sr).unwrap();
+        c.write_arrows(sorts, &mut err, &mut related, sl, sr).expect("write to str");
         return Err(ElabError::with_info(sp, err.into(), related))
       }
     }
@@ -1173,14 +1204,14 @@ impl Environment {
 
   /// Add a term declaration to the environment. The `Term` is behind a thunk because
   /// we check for redeclaration before inspecting the term data itself.
-  pub fn add_term(&mut self, a: AtomID, new: FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
+  pub fn add_term(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
     let new_id = TermID(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Term(old_id) => {
           let sp = &self.terms[old_id].span;
-          if *sp == new { return Ok(old_id) }
+          if *sp == *new { return Ok(old_id) }
           (Some(old_id), sp)
         }
         DeclKey::Thm(old_id) => (None, &self.thms[old_id].span)
@@ -1200,14 +1231,14 @@ impl Environment {
 
   /// Add a theorem declaration to the environment. The `Thm` is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
-  pub fn add_thm(&mut self, a: AtomID, new: FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
+  pub fn add_thm(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
     let new_id = ThmID(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
         DeclKey::Thm(old_id) => {
           let sp = &self.thms[old_id].span;
-          if *sp == new { return Ok(old_id) }
+          if *sp == *new { return Ok(old_id) }
           (Some(old_id), sp)
         }
         DeclKey::Term(old_id) => (None, &self.terms[old_id].span)
@@ -1234,16 +1265,13 @@ impl Environment {
   /// the list of all allocated atoms, and two calls with the same `&str` input
   /// will yield the same `AtomID`.
   pub fn get_atom(&mut self, s: &[u8]) -> AtomID {
-    match self.atoms.get(s) {
-      Some(&a) => a,
-      None => {
-        let id = AtomID(self.data.len().try_into().expect("too many atoms"));
-        let s: ArcString = s.into();
-        self.atoms.insert(s.clone(), id);
-        self.data.push(AtomData::new(s));
-        id
-      }
-    }
+    self.atoms.get(s).copied().unwrap_or_else(|| {
+      let id = AtomID(self.data.len().try_into().expect("too many atoms"));
+      let s: ArcString = s.into();
+      self.atoms.insert(s.clone(), id);
+      self.data.push(AtomData::new(s));
+      id
+    })
   }
 
   /// Convert an `ArcString` to an `AtomID`. This version of [`get_atom`] avoids the string clone
@@ -1258,11 +1286,13 @@ impl Environment {
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,
   /// and relabels lisp objects with the new `AtomID` mapping.
+  #[allow(clippy::unwrap_in_result)]
   pub fn merge(&mut self, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     let remap = &mut Remapper {
       atom: other.data().iter().map(|d| self.get_atom_arc(d.name().clone())).collect(),
       ..Default::default()
     };
+    #[allow(clippy::cast_possible_truncation)]
     for (i, d) in other.data().iter().enumerate() {
       let data = &mut self.data[remap.atom[AtomID(i as u32)]];
       data.lisp = d.lisp().as_ref().map(|v| v.remap(remap));
@@ -1273,7 +1303,7 @@ impl Environment {
     for s in other.stmts() {
       match *s {
         StmtTrace::Sort(a) => {
-          let i = other.data()[a].sort().unwrap();
+          let i = other.data()[a].sort().expect("wf env");
           let sort = other.sort(i);
           let id = match self.add_sort(a.remap(remap), sort.span.clone(), sort.full, sort.mods, sort.doc.clone()) {
             Ok(id) => id,
@@ -1289,10 +1319,10 @@ impl Environment {
           assert_eq!(remap.sort.len(), i.0 as usize);
           remap.sort.push(id);
         }
-        StmtTrace::Decl(a) => match other.data()[a].decl().unwrap() {
+        StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
           DeclKey::Term(tid) => {
             let otd: &Term = other.term(tid);
-            let id = match self.add_term(a.remap(remap), otd.span.clone(), || otd.remap(remap)) {
+            let id = match self.add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![
@@ -1308,7 +1338,7 @@ impl Environment {
           }
           DeclKey::Thm(tid) => {
             let otd: &Thm = other.thm(tid);
-            let id = match self.add_thm(a.remap(remap), otd.span.clone(), || otd.remap(remap)) {
+            let id = match self.add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![

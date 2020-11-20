@@ -26,11 +26,11 @@ use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MMBExporter;
-use crate::util::{FileRef, FileSpan, Span, Position, Range, ArcList, get_memory_usage};
+use crate::util::{FileRef, FileSpan, MutexExt, Span, Position, Range, ArcList, get_memory_usage};
 
 lazy_static! {
   /// The thread pool (used for running MM1 files in parallel, when possible)
-  static ref POOL: ThreadPool = ThreadPool::new().unwrap();
+  static ref POOL: ThreadPool = ThreadPool::new().expect("could not start thread pool");
   /// The virtual file system of files that have been included via
   /// transitive imports, protected for concurrent access by a mutex.
   static ref VFS_: VFS = VFS(Mutex::new(HashMap::new()));
@@ -97,7 +97,7 @@ impl VFS {
   ///
   /// [`VFS`]: struct.VFS.html
   fn get_or_insert(&self, path: FileRef) -> io::Result<(FileRef, Arc<VirtualFile>)> {
-    match self.0.lock().unwrap().entry(path) {
+    match self.0.ulock().entry(path) {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();
@@ -113,7 +113,7 @@ fn mk_to_range() -> impl FnMut(&FileSpan) -> Range {
   let mut srcs = HashMap::new();
   move |fsp: &FileSpan| -> Range {
     srcs.entry(fsp.file.ptr()).or_insert_with(||
-      VFS_.0.lock().unwrap().get(&fsp.file).unwrap().text.clone())
+      VFS_.0.ulock().get(&fsp.file).unwrap().text.clone())
       .to_range(fsp.span)
   }
 }
@@ -258,7 +258,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
         let (send, recv) = channel();
         senders.push(send);
         drop(g);
-        return Ok(recv.await.unwrap())
+        return Ok(recv.await.unwrap_or(ElabResult::Canceled))
       }
       Some(FileCache::Ready(env)) => return Ok(ElabResult::Ok((), env.clone()))
     }
@@ -290,7 +290,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
         let p = VFS_.get_or_insert(p)?.0;
         let (send, recv) = channel();
         if rd.contains(&p) {
-          send.send(ElabResult::ImportCycle(rd.clone())).unwrap();
+          send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
         } else {
           POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
           deps.push(p);
@@ -352,7 +352,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
 ///   successful. The file extension is used to determine if we are outputting
 ///   binary. If this argument is omitted, the input is only elaborated.
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
-  let path = args.value_of("INPUT").unwrap();
+  let path = args.value_of("INPUT").expect("required arg");
   let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
   let env = match block_on(elaborate(path.clone(), Default::default()))? {
     ElabResult::Ok(_, env) => env,

@@ -89,7 +89,7 @@ impl<W: Write> Joiner<W> {
 ///
 /// [module documentation]: index.html
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
-  let path = args.value_of("INPUT").unwrap();
+  let path = args.value_of("INPUT").expect("required arg");
   let file = fs::canonicalize(path)?.into();
   match args.value_of("OUTPUT") {
     None => Joiner::new(io::stdout()).write(file),

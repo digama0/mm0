@@ -8,7 +8,8 @@
 use std::result::Result as StdResult;
 use crate::util::{FileSpan, Span};
 use super::{Elaborator, ElabError, Result};
-use super::environment::{AtomID, DeclKey, Modifiers, ObjectKind, SortID, TermID, ThmID, Type};
+use super::environment::{AtomID, TermKind, DeclKey, Modifiers,
+  ObjectKind, SortID, TermID, ThmID, Type};
 use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons,
   print::{FormatEnv, EnvDisplay}, eval::SResult};
 use super::local_context::{InferSort, try_get_span};
@@ -626,10 +627,10 @@ impl Elaborator {
             "terms do not match: {} != {}", self.data[a_t1].name, self.data[a_t2].name)
           }}
 
-          match (&tdata1.val, &tdata2.val) {
-            (_, Some(_)) if t1 < t2 => self.unfold(true, t2, u2, e1).map_err(|e| format!("{}\n{}", s!(), e)),
-            (Some(_), _) => self.unfold(false, t1, u1, e2).map_err(|e| format!("{}\n{}", s!(), e)),
-            (_, Some(_)) => self.unfold(true, t2, u2, e1).map_err(|e| format!("{}\n{}", s!(), e)),
+          match (&tdata1.kind, &tdata2.kind) {
+            (_, TermKind::Def(_)) if t1 < t2 => self.unfold(true, t2, u2, e1).map_err(|e| format!("{}\n{}", s!(), e)),
+            (TermKind::Def(_), _) => self.unfold(false, t1, u1, e2).map_err(|e| format!("{}\n{}", s!(), e)),
+            (_, TermKind::Def(_)) => self.unfold(true, t2, u2, e1).map_err(|e| format!("{}\n{}", s!(), e)),
             _ => Err(s!())
           }
         }
@@ -649,7 +650,7 @@ impl Elaborator {
     let tdata = &self.env.terms[tid];
     let a = tdata.atom;
     let nargs = tdata.args.len();
-    if let Some(Some(val)) = &tdata.val {
+    if let TermKind::Def(Some(val)) = &tdata.kind {
       let mut args = Vec::with_capacity(nargs);
       if !u1.extend_into(nargs, &mut args) {
         return Err(format!("bad term: {}", self.print(&u1)))

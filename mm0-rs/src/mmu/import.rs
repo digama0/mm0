@@ -3,7 +3,8 @@ use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use crate::elab::{ElabError, Result,
   local_context::MAX_BOUND_VARS,
-  environment::{Term, Thm, AtomID, SortID, Environment, Modifiers, Type, Expr, Proof},
+  environment::{Term, Thm, TermKind, ThmKind,
+    AtomID, SortID, Environment, Modifiers, Type, Expr, Proof},
   proof::{IDedup, NodeHash, ExprHash, ProofHash, build}};
 use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
@@ -295,14 +296,14 @@ impl<'a> Importer<'a> {
           .ok_or_else(|| self.err("expecting sort".into()))?;
         let deps = self.deps(&bvs)?;
         self.close_err()?;
-        let val = if let DeclKind::Term = dk {
-          None
+        let kind = if let DeclKind::Term = dk {
+          TermKind::Term
         } else {
           self.dummies(&mut vars)?;
           let mut de = Dedup::new(&args);
           let i = self.expr(&mut de, &vars)?;
           let (mut ids, heap) = build(&de);
-          Some(Some(Expr {heap, head: ids[i].take()}))
+          TermKind::Def(Some(Expr {heap, head: ids[i].take()}))
         };
         let end = self.close_err()?;
         let t = Term {
@@ -313,9 +314,9 @@ impl<'a> Importer<'a> {
           doc: None,
           args: args.into(),
           ret: (ret, deps),
-          val,
+          kind,
         };
-        self.env.add_term(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
+        self.env.add_term(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
       }
       DeclKind::Axiom | DeclKind::Theorem | DeclKind::LocalTheorem => {
         let mut de = Dedup::new(&args);
@@ -337,8 +338,8 @@ impl<'a> Importer<'a> {
         let (mut ids, heap) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
-        let proof = if let DeclKind::Axiom = dk {
-          None
+        let kind = if let DeclKind::Axiom = dk {
+          ThmKind::Axiom
         } else {
           self.dummies(&mut vars)?;
           let mut de = de.map_proof();
@@ -354,7 +355,7 @@ impl<'a> Importer<'a> {
           let ip = self.proof(&mut de, &vars, &mut proofs, Expecting::Proof)?;
           let (mut ids, heap) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
-          Some(Some(Proof {heap, hyps, head: ids[ip].take()}))
+          ThmKind::Thm(Some(Proof {heap, hyps, head: ids[ip].take()}))
         };
         let end = self.close_err()?;
         let t = Thm {
@@ -363,9 +364,9 @@ impl<'a> Importer<'a> {
           vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
-          args: args.into(), heap, hyps, ret, proof
+          args: args.into(), heap, hyps, ret, kind
         };
-        self.env.add_thm(atom, t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
+        self.env.add_thm(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
       }
     }
     Ok(())

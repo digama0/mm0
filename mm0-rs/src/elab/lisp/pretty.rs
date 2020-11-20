@@ -15,7 +15,7 @@ use pretty::{DocAllocator, Doc, RefDoc, Arena};
 use itertools::Itertools;
 use super::{LispVal, LispKind, Uncons, print::FormatEnv,
   super::{
-    environment::{Prec, DeclKey, Literal,
+    environment::{Prec, DeclKey, Literal, TermKind, ThmKind,
       Environment, NotaInfo, AtomData, AtomID, TermID, Term, Thm, Type},
     math_parser::APP_PREC}};
 
@@ -375,7 +375,7 @@ impl<'a> Pretty<'a> {
   /// `def foo (x y: nat): nat = $ x + y $;`.
   pub fn term(&'a self, t: &Term) -> RefDoc<'a, ()> {
     let buf = format!("{}{} {}", t.vis,
-      if t.val.is_some() {"def"} else {"term"},
+      if matches!(t.kind, TermKind::Term) {"term"} else {"def"},
       self.fe.to(&t.atom));
     let doc = self.alloc(Doc::text(buf));
     let mut bvars = vec![];
@@ -407,7 +407,7 @@ impl<'a> Pretty<'a> {
   /// The proof of the theorem is omitted.
   pub fn thm(&'a self, t: &Thm) -> RefDoc<'a, ()> {
     let buf = format!("{}{} {}", t.vis,
-      if t.proof.is_some() {"theorem"} else {"axiom"},
+      if matches!(t.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
       self.fe.to(&t.atom));
     let doc = self.alloc(Doc::text(buf));
     let mut bvars = vec![];

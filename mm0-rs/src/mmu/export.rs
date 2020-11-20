@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::mem;
 use crate::elab::environment::{
-  Type, Expr, Proof, AtomID, SortID,
+  Type, Expr, Proof, AtomID, SortID, TermKind, ThmKind,
   ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
 
@@ -203,7 +203,7 @@ impl FrozenEnv {
             write!(self, "(:unfold {} ", self.env.data()[td.atom].name()).unwrap();
             list(self, args.iter(), |this, e| {this.go(e, indent); Ok(())}).unwrap();
             let mut m = HashMap::new();
-            if let Some(Some(Expr {heap: eheap, head})) = &td.val {
+            if let TermKind::Def(Some(Expr {heap: eheap, head})) = &td.kind {
               build_unfold_map(&self.env, &mut m, &mut vec![false; eheap.len()],
                 eheap, head, self.heap, sub_lhs)
             }
@@ -246,12 +246,12 @@ impl FrozenEnv {
               let td = self.term(tid);
               write!(w, "({}{} {} ",
                 if td.vis == Modifiers::LOCAL {"local "} else {""},
-                if td.val.is_some() {"def"} else {"term"}, ad.name())?;
+                if matches!(td.kind, TermKind::Term) {"term"} else {"def"}, ad.name())?;
               let bvs = self.write_binders(w, &td.args)?;
               write!(w, " ({} ", &self.sort(td.ret.0).name)?;
               self.write_deps(w, &bvs, td.ret.1)?;
               write!(w, ")")?;
-              if let Some(Some(Expr {heap, head})) = &td.val {
+              if let TermKind::Def(Some(Expr {heap, head})) = &td.kind {
                 let mut dummies = HashMap::new();
                 let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
                   a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_str()))).collect();
@@ -272,9 +272,13 @@ impl FrozenEnv {
             }
             DeclKey::Thm(tid) => {
               let td = self.thm(tid);
-              write!(w, "({}{} {} ",
-                if td.vis == Modifiers::PUB || td.proof.is_none() {""} else {"local "},
-                if td.proof.is_some() {"theorem"} else {"axiom"}, ad.name())?;
+              write!(w, "({} {} ",
+                match td.kind {
+                  ThmKind::Axiom => "axiom",
+                  ThmKind::Thm(_) if td.vis == Modifiers::PUB => "theorem",
+                  ThmKind::Thm(_) => "local theorem",
+                },
+                ad.name())?;
               self.write_binders(w, &td.args)?;
               let mut dummies = HashMap::new();
               let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
@@ -285,9 +289,18 @@ impl FrozenEnv {
               }
               {
                 let mut it = td.hyps.iter();
-                match it.next() {
-                  None => write!(w, " ()")?,
-                  Some((hyp, ty)) => if td.proof.is_some() {
+                match (it.next(), &td.kind) {
+                  (None, _) => write!(w, " ()")?,
+                  (Some((_, ty)), ThmKind::Axiom) => {
+                    write!(w, "\n  (")?;
+                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                    for (_, ty) in it {
+                      write!(w, "\n   ")?;
+                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                    }
+                    write!(w, ")")?;
+                  }
+                  (Some((hyp, ty)), ThmKind::Thm(_)) => {
                     write!(w, "\n  (({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
                     w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
                     write!(w, ")")?;
@@ -297,23 +310,15 @@ impl FrozenEnv {
                       write!(w, ")")?;
                     }
                     write!(w, ")")?;
-                  } else {
-                    write!(w, "\n  (")?;
-                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
-                    for (_, ty) in it {
-                      write!(w, "\n   ")?;
-                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
-                    }
-                    write!(w, ")")?;
                   }
                 }
               }
               write!(w, "\n  ")?;
               w.write_all(&self.write_expr_node(&mut dummies, &strs, &td.ret))?;
-              match &td.proof {
-                None => {},
-                Some(None) => panic!("proof {} missing", self.data()[td.atom].name()),
-                Some(Some(Proof {heap, head, ..})) => {
+              match &td.kind {
+                ThmKind::Axiom => {},
+                ThmKind::Thm(None) => panic!("proof {} missing", self.data()[td.atom].name()),
+                ThmKind::Thm(Some(Proof {heap, head, ..})) => {
                   fn write_lines(w: &mut impl Write, (mut ls, nv): (Vec<Line>, Line)) -> io::Result<()> {
                     ls.push(nv);
                     let mut first = true;

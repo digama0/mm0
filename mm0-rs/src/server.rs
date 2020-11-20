@@ -983,7 +983,9 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
 }
 
-async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl Fn(Range) -> T) -> StdResult<Vec<T>, ResponseError> {
+async fn references<T>(
+  path: FileRef, pos: Position, include_self: bool, f: impl Fn(Range) -> T + Send
+) -> StdResult<Vec<T>, ResponseError> {
   macro_rules! or_none {($e:expr)  => {match $e {
     Some(x) => x,
     None => return Ok(vec![])
@@ -1034,7 +1036,7 @@ async fn references<T>(path: FileRef, pos: Position, include_self: bool, f: impl
 
   let mut res = vec![];
   for &(sp, ref k) in spans.find_pos(idx) {
-    let key = match to_key(k) {Some(k) => k, _ => continue};
+    let key = match to_key(k) {Some(k) => k, None => continue};
     match key {
       Key::Global(a) if BuiltinProc::from_bytes(env.data()[a].name()).is_some() => continue,
       _ => {}
@@ -1104,7 +1106,7 @@ impl Capabilities {
     Ok(())
   }
 
-  fn finish_register(&mut self, resp: Response) {
+  fn finish_register(&mut self, resp: &Response) {
     assert!(self.reg_id.take().is_some());
     match resp {
       Response {result: None, error: None, ..} =>
@@ -1121,8 +1123,8 @@ fn spawn(cancel: Arc<AtomicBool>, fut: impl std::future::Future<Output=()> + Sen
     let (m, cvar) = &*SERVER.threads;
     let mut vec = m.ulock();
     let a: *const AtomicBool = &*cancel;
-    let i = vec.iter().enumerate().find(|&(_, b)| a == &**b).unwrap().0;
-    vec.swap_remove_front(i).unwrap();
+    let i = vec.iter().enumerate().find(|&(_, b)| a == &**b).expect("my job is missing").0;
+    vec.swap_remove_front(i);
     drop(vec);
     cvar.notify_all();
   })
@@ -1178,14 +1180,17 @@ impl Server {
             if let Some((id, req)) = parse_request(req)? {
               spawn_new(|cancel| {
                 reqs.ulock().insert(id.clone(), cancel.clone());
-                async { RequestHandler {id, cancel}.handle(req).await.unwrap() }
+                async {
+                  RequestHandler {id, cancel}.handle(req).await
+                    .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
+                }
               });
             }
           }
           Ok(Message::Response(resp)) => {
             let mut caps = caps.ulock();
             if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
-              caps.finish_register(resp);
+              caps.finish_register(&resp);
             } else {
               log!("response to unknown request {}", resp.id)
             }
@@ -1241,7 +1246,7 @@ impl Server {
     let (mutex, cvar) = &*self.threads;
     let mut g = mutex.ulock();
     g.iter().for_each(|c| c.store(true, Ordering::Relaxed));
-    while !g.is_empty() { g = cvar.wait(g).unwrap() }
+    while !g.is_empty() { g = cvar.uwait(g) }
   }
 }
 
@@ -1267,10 +1272,12 @@ pub fn main(args: &ArgMatches<'_>) {
   if args.is_present("debug") {
     use {simplelog::{Config, LevelFilter, WriteLogger}, std::fs::File};
     std::env::set_var("RUST_BACKTRACE", "1");
-    let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), File::create("lsp.log").unwrap());
+    if let Ok(f) = File::create("lsp.log") {
+      let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), f);
+    }
   }
   if args.is_present("no_log_errors") { LOG_ERRORS.store(false, Ordering::Relaxed) }
-  log_message("started".into()).unwrap();
+  let _ = log_message("started".into());
   SERVER.run();
   let Server {reqs, vfs: VFS(vfs), ..} = &*SERVER;
   std::mem::take(&mut *reqs.ulock());
