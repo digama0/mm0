@@ -230,9 +230,9 @@ theorem mulBitsT: $ a e. Bits m /\ b e. Bits n -> a * b e. Bits (m + n) $ =
 '(sylibr elBits2 @ sylibr (lteq2 powadd) @ ltmuld (sylib elBits2 anl) (sylib elBits2 anr));
 
 theorem shladdT: $ a e. Bits n /\ c e. Bits b -> shl a b + c e. Bits (n + b) $ =
-(named '(sylibr elBits2 @ ltletrd (sylib ltadd2 @ sylib elBits2 anr) @
+'(sylibr elBits2 @ ltletrd (sylib ltadd2 @ sylib elBits2 anr) @
   sylib (leeq mulS1 @ eqcom powadd) @ syl lemul1a @
-  sylib elBits2 anl));
+  sylib elBits2 anl);
 
 theorem shlT: $ a e. Bits n -> shl a b e. Bits (n + b) $ =
 '(sylib (eleq1 add0) @ mpi elBits01 @ exp shladdT);
@@ -1029,7 +1029,7 @@ theorem readModRM_val (rex rn rm l: nat): $ readModRM rex rn rm l <->
 
 pub theorem readModRM_T (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $ =
-(named @ focus
+(focus
   '(sylbi readModRM_val @ !! eex b @ !! eex rm2 @ !! eex opc @ !! eex mod _)
   (def S $ splitBits ((3 <> rm2) : (3 <> opc) : (2 <> mod) : 0) b $)
   (have 'sb1 $ ,S /\ _ /\ _ -> 3 <> rm2 e. Bitvec /\ _ $ '(sylib elListS @ anld anll))
@@ -2122,14 +2122,14 @@ pub theorem writeMemT (k a l k2: nat):
 @_ local def setMemory (k m: nat): nat = $ fst k <> pi21 k <> pi221 k <> m $;
 theorem setMemoryT:
   $ k e. Config /\ m e. Memory -> setMemory k m e. Config $ =
-(named '(xpTd (anwl xpfst) @ xpTd (anwl xppi21) @ xpTd (anwl xppi221) anr));
+'(xpTd (anwl xpfst) @ xpTd (anwl xppi21) @ xpTd (anwl xppi221) anr);
 theorem setMemory_mk: $ setMemory (mkCfg e ip r f m) m2 = mkCfg e ip r f m2 $ =
 '(preq fstpr @ preq pi21pr @ preq1 pi221pr);
 theorem readException_setMemory: $ readException (setMemory k m) = readException k $ =
-(named '(fsteq fstpr));
-theorem readRIP_setMemory: $ readRIP (setMemory k m) = readRIP k $ = (named '(sndeq fstpr));
-theorem readReg_setMemory: $ readReg (setMemory k m) r = readReg k r $ = (named '(appneq1 pi21pr));
-theorem readFlags_setMemory: $ readFlags (setMemory k m) = readFlags k $ = (named 'pi221pr);
+'(fsteq fstpr);
+theorem readRIP_setMemory: $ readRIP (setMemory k m) = readRIP k $ = '(sndeq fstpr);
+theorem readReg_setMemory: $ readReg (setMemory k m) r = readReg k r $ = '(appneq1 pi21pr);
+theorem readFlags_setMemory: $ readFlags (setMemory k m) = readFlags k $ = 'pi221pr;
 theorem get_setMemory: $ getMemory (setMemory k m2) = m2 $ = 'pi222pr;
 theorem set_setMemory: $ setMemory (setMemory k m2) m3 = setMemory k m3 $ =
 '(preq fstpr @ preq pi21pr @ preq1 pi221pr);
@@ -2194,7 +2194,7 @@ pub theorem RM_EAmem (k si base q: nat): $ RM_EA k (RM_mem si base q) =
   add64eqd (add64eqd (readIndexeq2d anll) (readBaseeq2d anlr)) anr));
 pub theorem RM_EA_T (k rm: nat):
   $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $ =
-(named @ split-sop _
+(split-sop _
   (fn (h1 h2) '(exp @ mpbird (eleq1d @ syl6eq ,h1 @ RM_EAeq2d anr) ,h2))
   '{($RM_reg r$ => RM_EAreg
       (sylibr EA_rT @ sylib RM_regT @ mpbid (eleq1d anr) anlr)) +
@@ -3130,7 +3130,7 @@ pub theorem writeMappingT (ks m k ks2: nat):
   $ writeMapping ks k m ks2 ->
     ks e. KernelState /\ k e. Config /\
     m e. PageMapping (getMemory k) /\ ks2 e. KernelState $ =
-(named '(anim2a @ syl5ibrcom eleq1 @ mpbird (anwll setMappingT) @ anim1 anr));
+'(anim2a @ syl5ibrcom eleq1 @ mpbird (anwll setMappingT) @ anim1 anr);
 
 @_ local def setCfg (ks k2: nat): nat = $ setMapping ks k2 (ksMapping ks) $;
 theorem setCfg_mk: $ setCfg (mkKS i o k m) k2 = mkKS i o k2 m $ =
@@ -3144,6 +3144,11 @@ theorem set_setCfg: $ setCfg (setCfg ks k2) k3 = setCfg ks k3 $ =
 theorem setCfgT:
   $ ks e. KernelState -> (setCfg ks k2 e. KernelState <->
       k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2)) $ = 'setMappingT;
+theorem setCfgExceptionT:
+  $ ks e. KernelState /\ e e. Option Exception ->
+    setCfg ks (setException (ksCfg ks) e) e. KernelState $ =
+'(mpbird (anwl setCfgT) @ iand (sylan setExceptionT (anwl ksCfgT) anr) @
+  sylibr (eleq2 @ PageMappingeq getMem_setException) @ anwl ksMappingT);
 
 @_ def writeCfg (ks k2 ks2: nat): wff =
 $ writeMapping ks k2 (ksMapping ks) ks2 $;
@@ -3548,8 +3553,8 @@ theorem ksReachable_ind (p: wff x) (p1: wff ks1) (p2: wff ks2)
   (e2: $ x = ks2 -> (p <-> p2) $)
   (h1: $ G -> p0 $)
   (h2: $ G /\ ksStep ks1 ks2 /\ p1 -> p2 $): $ G -> p3 $ =
-(named '(sylib (elabe e3) @ sylan ksReachableInd (iand (sylibr (elabe e0) h1) @
-  iald @ iald @ exp @ syl5bi (elabe e1) @ exp @ sylibr (elabe e2) h2) hr));
+'(sylib (elabe e3) @ sylan ksReachableInd (iand (sylibr (elabe e0) h1) @
+  iald @ iald @ exp @ syl5bi (elabe e1) @ exp @ sylibr (elabe e2) h2) hr);
 
 theorem ksReachableInd_rev:
   $ ksr e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks2 e. A -> ks1 e. A) /\
@@ -3622,7 +3627,7 @@ theorem can_terminate_ensuringT:
 theorem can_terminate_ensuring_I:
   $ ksReachable k k2 /\ execExit (ksCfg k2) exit_code /\
     (exit_code = 0 -> ksIn k2 <> ksOut k2 e. P) ->
-    can_terminate_ensuring k P $ = (named '(trud @ iexdde @ iexdde @ bi2d ,eqtac));
+    can_terminate_ensuring k P $ = '(trud @ iexdde @ iexdde @ bi2d ,eqtac);
 
 theorem can_terminate_ensuring_R: $ ksReachable k k2 ->
   can_terminate_ensuring k2 P -> can_terminate_ensuring k P $ =
@@ -3789,7 +3794,7 @@ $ entry e. u64 /\ prot e. Prot /\ seg e. List u8 /\ off + len seg e. u64 /\
 pub theorem BasicElfT (entry prot off seg: nat):
   $ basicElf entry prot off seg ->
     entry e. u64 /\ prot e. Prot /\ off e. u64 /\ seg e. List u8 $ =
-(named '(iand (iand an4l @ sylc Bitsle1 anlr an5l) an3lr));
+'(iand (iand an4l @ sylc Bitsle1 anlr an5l) an3lr);
 
 --| This defines a basic ELF file (only one program segment, no sections)
 --| and extracts the program segment and its protection and location.

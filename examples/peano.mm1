@@ -84,7 +84,8 @@ do {
       [(es) (refine es)
         (def n (ref! 1))
         (scan (get-mvars) @ fn (v)
-          (assign-mvar v (atom-app "x" n)) (set! n {n + 1}))])
+          (assign-mvar v (atom-app "x" n)) (set! n {n + 1}))
+        (if {n = 1} (display "unnecessary (named)"))])
 
   (def ((tac-thm stmt f))
     @ match (get-goals) @ (g)
@@ -552,6 +553,7 @@ theorem imeqi (h1: $ a <-> b $) (h2: $ c <-> d $): $ a -> c <-> b -> d $ = '(bit
   (h1: $ a -> (b <-> c) $) (h2: $ a -> (d <-> e) $): $ a -> (b /\ d <-> c /\ e) $ =
 '(ibid (animd (bi1d h1) (bi1d h2)) (animd (bi2d h1) (bi2d h2)));
 theorem imeq2a: $ (a -> (b <-> c)) -> (a -> b <-> a -> c) $ = '(ibid (a2d @ imim2i bi1) (a2d @ imim2i bi2));
+theorem imeq1a: $ (~c -> (a <-> b)) -> (a -> c <-> b -> c) $ = '(bitr4g con3bi con3bi @ syl imeq2a @ imim2i noteq);
 theorem aneq1d (h: $ a -> (b <-> c) $): $ a -> (b /\ d <-> c /\ d) $ = '(aneqd h biidd);
 theorem aneq2d (h: $ a -> (c <-> d) $): $ a -> (b /\ c <-> b /\ d) $ = '(aneqd biidd h);
 theorem aneq: $ (a <-> b) -> (c <-> d) -> (a /\ c <-> b /\ d) $ = '(exp @ aneqd anl anr);
@@ -3397,9 +3399,6 @@ theorem elrapp: $ b e. F @' a <-> a <> b e. F $ = '(elabe ,eqtac);
 theorem rappsabs (A: set x): $ (S\ x, A) @' a == S[a / x] A $ =
 (named '(ax_gen @ bitr elrapp elsabs));
 
-theorem rappsab (A: set x) (h: $ x = a -> A == B $):
-  $ (S\ x, A) @' a == B $ = '(eqstr rappsabs @ sbse h);
-
 theorem rappsabed (A: set x) (h: $ G /\ x = a -> A == B $):
   $ G -> (S\ x, A) @' a == B $ =
 '(syl5eqs rappsabs @ mpi ax_6 @ eexdh nfv (nfeqs nfsbs1 nfsv) @
@@ -3434,7 +3433,7 @@ theorem appelrn: $ isfun F -> a e. Dom F -> F @ a e. Ran F $ =
 (named '(syl5bi eldm @ eexda @ mpbird (eleq1d @ isfappd anl anr) @ anwr prelrn));
 
 theorem isfrn: $ isfun F -> (y e. Ran F <-> E. x (x e. Dom F /\ F @ x = y)) $ =
-(named '(syl5bb elrn @ exeqd isfappb));
+'(syl5bb elrn @ exeqd isfappb);
 
 theorem isfrnss: $ isfun F -> (Ran F C_ A <-> A. x (x e. Dom F -> F @ x e. A)) $ =
 (named '(syl6bb (aleqi @ imeq2i @ bitr (aleqi @ imeq1i eqcomb) @ aleqe eleq1) @
@@ -5092,12 +5091,12 @@ theorem funcrn: $ func F A B -> Ran F C_ B $ = 'anr;
 theorem funcss3: $ B C_ C -> func F A B -> func F A C $ = '(anim2d @ com12 sstr);
 
 theorem funcal: $ func F A B <-> isfun F /\ Dom F == A /\ A. x (x e. A -> F @ x e. B) $ =
-(named '(aneq2a @ bitrd (anwl isfrnss) @ aleqd @ imeq1d @ eleq2d anr));
+'(aneq2a @ bitrd (anwl isfrnss) @ aleqd @ imeq1d @ eleq2d anr);
 
 theorem funcres: $ func F A B /\ C C_ A -> func (F |` C) C B $ =
-(named '(iand (iand (syl resisf @ anwl funcisf) @
+'(iand (iand (syl resisf @ anwl funcisf) @
     syl5eqs dmres @ sylib eqin2 @ imp @ bi2d @ sseq2d funcdm) @
-  syl (sstr @ rnss resss) @ anwl funcrn));
+  syl (sstr @ rnss resss) @ anwl funcrn);
 
 theorem funcssxp: $ func F A B -> F C_ Xp A B $ =
 (named '(iald @ exp @ sylibr elxp @
@@ -5116,15 +5115,15 @@ theorem eqfunc: $ func F A B /\ func G A C ->
   aleqd @ imeq1d @ eleq2d @ anwl funcdm);
 
 theorem funceq0: $ func F A B -> (F == 0 <-> A == 0) $ =
-(named '(syl5bbr dmeq0 @ eqseq1d funcdm));
+'(syl5bbr dmeq0 @ eqseq1d funcdm);
 
 theorem func02: $ func F 0 B <-> F == 0 $ =
-(named '(bitr (aneq1i @ bitr (aneq2i dmeq0) @ bian1a @ mpbiri isf0 isfeq) @
-  bian2a @ mpbiri ss01 @ sylbir rneq0 sseq1));
+'(bitr (aneq1i @ bitr (aneq2i dmeq0) @ bian1a @ mpbiri isf0 isfeq) @
+  bian2a @ mpbiri ss01 @ sylbir rneq0 sseq1);
 theorem func03: $ func F A 0 <-> F == 0 /\ A == 0 $ =
-(named '(bitr3 (bian1a @ sylib rneq0 @ sylib ss02 funcrn) @
+'(bitr3 (bian1a @ sylib rneq0 @ sylib ss02 funcrn) @
   aneq2a @ syl6bb (bitr (bian2 @ eqss rn0) @
-    bitr (bian1 isf0) @ bitr (eqseq1 dm0) eqscomb) funceq1));
+    bitr (bian1 isf0) @ bitr (eqseq1 dm0) eqscomb) funceq1);
 
 theorem unfunc (h0: $ G -> A1 i^i A2 == 0 $)
   (h1: $ G -> func F1 A1 B $) (h2: $ G -> func F2 A2 B $):
@@ -5143,7 +5142,7 @@ theorem funcappb: $ func F A B -> (a <> b e. F <-> a e. A /\ F @ a = b) $ =
 @_ def Arrow (A B: set) (.f: nat): set =
 $ {f | isfun f /\ Dom f == A /\ Ran f C_ B} $;
 
-theorem elArrow: $ f e. Arrow A B <-> func f A B $ = (named '(elabe ,eqtac));
+theorem elArrow: $ f e. Arrow A B <-> func f A B $ = '(elabe ,eqtac);
 theorem Arrowisf: $ f e. Arrow A B -> isfun f $ = '(sylbi elArrow funcisf);
 theorem Arrowdm: $ f e. Arrow A B -> Dom f == A $ = '(sylbi elArrow funcdm);
 theorem Arrowrn: $ f e. Arrow A B -> Ran f C_ B $ = '(sylbi elArrow funcrn);
@@ -5249,7 +5248,7 @@ theorem eqrlam (b: nat x): $ f = (\. x e. a, b) <->
   isfun f /\ Dom f == a /\ A. x (x e. a -> f @ x = b) $ = '(bitr3 nsinj eqsrlam);
 
 theorem funcsn2: $ func F a (sn b) <-> F == \. x e. a, b $ =
-(named '(bitr4 funcal @ bitr4 eqsrlam @ aneq2i @ aleqi @ imeq2i elsn));
+'(bitr4 funcal @ bitr4 eqsrlam @ aneq2i @ aleqi @ imeq2i elsn);
 theorem Arrowsn2: $ Arrow a (sn b) == sn (\. x e. a, b) $ =
 (named '(ax_gen @ bitr4 elArrow @ bitr4 elsn @ bitr funcsn2 nsinj));
 
@@ -5368,7 +5367,7 @@ $ srec (\ f, nat (size (Dom f) <> lower {x | true (f @ x)} e. A)) n $;
 
 theorem srecpauxval:
   $ srecpaux A n = nat (n <> sep (upto n) {i | srecp A i} e. A) $ =
-(named '(eqtr {srecval : $ _ = _ @ lower ((\ i, srecpaux A i) |` _) $} @
+'(eqtr {srecval : $ _ = _ @ lower ((\ i, srecpaux A i) |` _) $} @
   eqtr4 (!! applame f @ nateqd @ eleq1d @ preqd sreclem
     (lowereqd @ !! abeqd x @ trueeqd @ appeq1d @
       bi2 @ eqlower2 @ finlam finns)) @
@@ -5376,7 +5375,7 @@ theorem srecpauxval:
   eqab2i @ bitr elsep @
   rbid anl (sylib (eleq2 dmreslam) @ con1 ndmapp) @
   bitr4d bian1 @ syl6bbr (elabe srecpeq2) @ trueeqd @
-  syl6eq (applame srecpauxeq2) resapp));
+  syl6eq (applame srecpauxeq2) resapp);
 
 pub theorem srecpval (A: set) (n: nat):
   $ srecp A n <-> n <> sep (upto n) {i | srecp A i} e. A $ =
@@ -5680,7 +5679,7 @@ pub theorem snoclt (a b: nat): $ a < a |> b $ =
   '(bi1i @ bitr4 ltcons2 @ lteq2 snocS));
 
 theorem lesnoc2: $ b <= c <-> a |> b <= a |> c $ = '(bitr lecons1 leappend2);
-theorem appendsnoc: $ l1 ++ (l2 |> b) = l1 ++ l2 |> b $ = (named '(eqcom appendass));
+theorem appendsnoc: $ l1 ++ (l2 |> b) = l1 ++ l2 |> b $ = '(eqcom appendass);
 theorem conssnoc: $ a : (l |> b) = a : l |> b $ = '(eqcom appendS);
 theorem snoclen: $ len (a |> b) = suc (len a) $ = '(eqtr appendlen @ eqtr (addeq2 len1) add12);
 theorem lmemsnoc: $ x IN a |> b <-> x IN a \/ x = b $ = '(bitr lmemappend @ oreq2i lmem1);
@@ -6196,8 +6195,8 @@ theorem sublistAt_right: $ sublistAt n L1 L2 -> sublistAt (len l + n) (l ++ L1) 
   mpbiri (anim (syl6eqr appendass appendeq2) (syl5eq appendlen addeq2)) ,eqtac);
 
 theorem sublistAt_id: $ sublistAt 0 L L $ =
-(named '(!! iexie x @ !! iexde y @
-  mpbiri (ian (eqtr2 append0 append02) len0) ,eqtac));
+'(!! iexie x @ !! iexde y @
+  mpbiri (ian (eqtr2 append0 append02) len0) ,eqtac);
 
 --| `L1 <> L2 e. all2 R` means that `L1` and `L2` are
 --| lists of the same length that are pairwise related by `R`.
@@ -6210,7 +6209,7 @@ $ S\ l1, {l2 | len l1 = len l2 /\ A. n A. x A. y
 theorem elall2:
   $ l1 <> l2 e. all2 R <-> len l1 = len l2 /\ A. n A. x A. y
     (nth n l1 = suc x -> nth n l2 = suc y -> x <> y e. R) $ =
-(named '(elsabe @ elabed ,eqtac));
+'(elsabe @ elabed ,eqtac);
 
 theorem elall22:
   $ l1 <> l2 e. all2 R <-> len l1 = len l2 /\ A. n A. x
@@ -6240,8 +6239,8 @@ theorem all2i
   (h2: $ G -> nth n l2 = suc b $)
   (h: $ G -> l1 <> l2 e. all2 R $):
   $ G -> a <> b e. R $ =
-(named '(mpd h2 @ mpd h1 @
-  mpd (anrd @ sylib elall2 h) @ ealde @ ealde @ ealde @ bi1d ,eqtac));
+'(mpd h2 @ mpd h1 @
+  mpd (anrd @ sylib elall2 h) @ ealde @ ealde @ ealde @ bi1d ,eqtac);
 
 theorem all2com: $ l1 <> l2 e. all2 (cnv R) <-> l2 <> l1 e. all2 R $ =
 (named '(bitr4 elall22 @ bitr4 elall22 @ aneq eqcomb @ aleqi @
@@ -6301,7 +6300,7 @@ $ S\ l1, {l2 | len l1 = len l2 /\ E. n E. x E. y
 theorem elex2:
   $ l1 <> l2 e. ex2 R <-> len l1 = len l2 /\ E. n E. x E. y
     (nth n l1 = suc x /\ nth n l2 = suc y /\ x <> y e. R) $ =
-(named '(elsabe @ elabed ,eqtac));
+'(elsabe @ elabed ,eqtac);
 
 theorem elex22:
   $ l1 <> l2 e. ex2 R <-> len l1 = len l2 /\ E. n E. x
@@ -6336,7 +6335,7 @@ theorem ex2cnv: $ ex2 (cnv R) == cnv (ex2 R) $ =
 theorem ex201: $ ~ 0 <> l e. ex2 R $ =
 (named '(mt (sylbi elex22 anr) @ nexi @ nexi @ mt2 (anwl sucne0) nth0));
 
-theorem ex202: $ ~ l <> 0 e. ex2 R $ = (named '(mtbi ex2com ex201));
+theorem ex202: $ ~ l <> 0 e. ex2 R $ = '(mtbi ex2com ex201);
 
 theorem all2nex:
   $ l1 <> l2 e. all2 (Compl R) <-> len l1 = len l2 /\ ~l1 <> l2 e. ex2 R $ =

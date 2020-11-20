@@ -1329,7 +1329,7 @@ do (begin
 theorem takeprefix: $ prefix (take l n) l $ = '(!! iexe l2 (eqeq1d appendeq2) takedrop);
 
 theorem prefix_eq_take: $ prefix l1 l2 <-> l1 = take l2 (len l1) $ =
-(named @ focus
+(focus
   '(ibii (!! eex r @ syl5eqr _ takeeq1) (mpbiri takeprefix prefixeq1))
   '(eqtrd takeappend1 takeall leid));
 
@@ -2491,7 +2491,7 @@ $ if (lits = 0) q (case (\\ c, \ p, precSuc p) (\ v, 0) @ (fst (lits - 1))) $;
 pub theorem litsPrec0 (q: nat): $ litsPrec 0 q = q $ = (named '(ifpos eqid));
 theorem litsPrecS:
   $ litsPrec (z : lits) q = case (\\ c, \ p, precSuc p) (\ v, 0) @ z $ =
-(named '(eqtr (ifneg peano1) @ appeq2 @ eqtr (fsteq sucsub1) fstpr));
+'(eqtr (ifneg peano1) @ appeq2 @ eqtr (fsteq sucsub1) fstpr);
 pub theorem litsPrecC (c p lits q: nat):
   $ litsPrec (b0 (c <> p) : lits) q = precSuc p $ =
 (named '(eqtr litsPrecS @ eqtr casel @ appslame @ applamed @ precSuceqd anr));
@@ -2622,8 +2622,8 @@ theorem ptCheckNotaLs_aux_S:
         lookupVar bis v = suc n /\ nth n es = suc e /\
         e e. IH @ y @ litsPrec lits p)} /\
     ptCheckNotaLs_aux eac bis lits IH xs2 es p)) $ =
-(named '(bitr (eleq1 @ preq1 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
-  aneq2i @ aneq1i @ elsabe @ elabed @ bitrd (eleq1d anl) @ elsabed @ elabed ,eqtac));
+'(bitr (eleq1 @ preq1 nztailsS) @ bitr all2S1 @ exeqi @ exeqi @
+  aneq2i @ aneq1i @ elsabe @ elabed @ bitrd (eleq1d anl) @ elsabed @ elabed ,eqtac);
 
 theorem ptCheckNotaLs_aux_fin_lem:
   $ ptCheckNotaLs_aux eac bis lits (ns ih) xs es p ->
@@ -2996,7 +2996,7 @@ pub theorem elabTermBinderBound {t2: nat} (ast ctx bi x t s: nat):
 pub theorem elabTermBinderReg {t2 vs2: nat} (ast ctx bi x t s: nat):
   $ elabTermBinder ast ctx (1 <> x <> b0 t) s <->
     E. t2 E. vs2 (elabType ast ctx t (t2 <> vs2) /\ s = PReg t2 vs2) $ =
-(named '(bitr (elsabe @ elsabed @ syl5bb Suml @ elabed ,eqtac) @ ifppos true1));
+'(bitr (elsabe @ elsabed @ syl5bb Suml @ elabed ,eqtac) @ ifppos true1);
 
 @_ local def elabTermBinders_aux (ast n: nat): wff =
 $ srecp (S\ x, {ih | x e. S\ lc, {rc |
@@ -3026,9 +3026,9 @@ pub theorem elabTermBindersS {ctx2 bi2: nat} (ast ctx bi ctx3: nat):
   $ elabTermBinders ast (ctx |> bi) ctx3 <->
     E. ctx2 E. bi2 (elabTermBinders ast ctx ctx2 /\
       elabTermBinder ast ctx bi bi2 /\ ctx3 = ctx2 |> bi2) $ =
-(named '(bitr elabTermBinders_val @ bitr (ifpneg snocne0) @
+'(bitr elabTermBinders_val @ bitr (ifpneg snocne0) @
   bitr (exeqi @ bitr (exeqi @ bitr (aneq1i @ bitr eqcomb snocinj) anass) @
-    bitr exan1 @ aneq2i @ exeqe ,eqtac) @ exeqe ,eqtac));
+    bitr exan1 @ aneq2i @ exeqe ,eqtac) @ exeqe ,eqtac);
 
 @_ def elabFmla (env ast ctx args f e s .f2: nat): wff =
 $ E. f2 (f = b1 f2 /\ parseExpr (env <> ast <> ctx) args f2 s == sn e) $;
@@ -3052,7 +3052,7 @@ pub theorem elabDefOS {args2 e: nat} (env ast ctx s ds f o2: nat):
       elabTermBinders ast (ctx ++ ds) args2 /\
       elabFmla env ast (ctx ++ ds) args2 f e s /\
       o2 = suc (ds <> e)) $ =
-(named '(bitr ocasepS @ elabe ,eqtac));
+'(bitr ocasepS @ elabe ,eqtac);
 
 @_ local def Elaborate_aux (aste: nat): wff =
 $ srecp (S\ aste1, {ih | aste1 e. S\ e2, {ast2 | ifp (ast2 = 0) (e2 = 0) (
@@ -3118,7 +3118,7 @@ theorem Elaborate_auxS {ih}
 @_ def Elaborate (ast: nat): set = $ {e | Elaborate_aux (e <> ast)} $;
 
 theorem elElaborate: $ e e. Elaborate ast <-> Elaborate_aux (e <> ast) $ =
-(named '(elabe ,eqtac));
+'(elabe ,eqtac);
 
 theorem Elaborate_aux_lem: $ e2 = e |> s \/ e = e2 ->
   (e <> ast e. sep (upto (e2 <> ast |> d)) {i | Elaborate_aux i} <->
