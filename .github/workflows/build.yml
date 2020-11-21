@@ -11,6 +11,7 @@ env:
 
 jobs:
   build-mm0-rs:
+    name: mm0-rs
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -26,8 +27,17 @@ jobs:
     - name: Build mm0-rs
       working-directory: mm0-rs
       run: cargo build --verbose
+    - name: Install nightly rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        components: clippy
+        override: true
     - name: Clippy
-      working-directory: mm0-rs
-      run: cargo clippy -Z unstable-options
+      uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: mm0-rs
+        args: --all-features
     - name: Run tests
       run: cargo test --verbose
