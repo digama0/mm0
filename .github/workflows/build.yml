@@ -34,24 +34,22 @@ jobs:
     name: Clippy mm0-rs
     runs-on: ubuntu-latest
     steps:
-    # - name: Install nightly rust
-    #   uses: actions-rs/toolchain@v1
-    #   with:
-    #     toolchain: nightly
-    #     profile: minimal
-    #     components: clippy
-    #     default: true
-    # - name: Cache clippy
-    #   id: cache-nightly-mm0-rs
-    #   uses: actions/cache@v2
-    #   with:
-    #     path: |
-    #       ~/.cargo/registry
-    #       ~/.cargo/git
-    #       mm0-rs/target
-    #     key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
-    - working-directory: .
-      run: ls -al
-    - name: Clippy
+    - uses: actions/checkout@v2
+    - name: Install nightly rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        profile: minimal
+        components: clippy
+        default: true
+    - name: Cache clippy
+      id: cache-nightly-mm0-rs
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          mm0-rs/target
+        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
       working-directory: ./mm0-rs
       run: cargo clippy --all-features
