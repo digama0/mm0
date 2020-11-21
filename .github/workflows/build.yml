@@ -47,30 +47,30 @@ jobs:
         name: mm0-rs
         path: mm0-rs/target/release/mm0-rs
 
-  # clippy-mm0-rs:
-  #   name: Clippy mm0-rs
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v2
-  #   - name: Install nightly rust
-  #     uses: actions-rs/toolchain@v1
-  #     with:
-  #       toolchain: nightly
-  #       profile: minimal
-  #       components: clippy
-  #       default: true
-  #   - name: Cache clippy
-  #     id: cache-nightly-mm0-rs
-  #     uses: actions/cache@v2
-  #     with:
-  #       path: |
-  #         ~/.cargo/registry
-  #         ~/.cargo/git
-  #         mm0-rs/target
-  #       key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
-  #   - name: Clippy
-  #     working-directory: ./mm0-rs
-  #     run: cargo clippy --all-features -- -D warnings
+  clippy-mm0-rs:
+    name: Clippy mm0-rs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install nightly rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        profile: minimal
+        components: clippy
+        default: true
+    - name: Cache clippy
+      id: cache-nightly-mm0-rs
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          mm0-rs/target
+        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
+    - name: Clippy
+      working-directory: ./mm0-rs
+      run: cargo clippy --all-features -- -D warnings
 
   peano:
     name: Peano MM1 files
