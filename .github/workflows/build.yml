@@ -50,8 +50,8 @@ jobs:
     #       ~/.cargo/git
     #       mm0-rs/target
     #     key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
-    - working-directory: ./mm0-rs
-      run: pwd
+    - working-directory: .
+      run: ls
     - name: Clippy
       working-directory: ./mm0-rs
       run: cargo clippy --all-features
