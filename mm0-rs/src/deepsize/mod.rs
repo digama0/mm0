@@ -1,12 +1,13 @@
 //! A utility for recursively measuring the size of an object
 //!
 //! This is an adaptation of the [`deepsize`](https://docs.rs/deepsize) crate.
+#![allow(clippy::redundant_pub_crate)]
 
 #[cfg(feature = "memory")]
-mod deepsize;
+mod main;
 
 #[cfg(feature = "memory")]
-pub(crate) use deepsize::*;
+pub(crate) use main::*;
 
 /// A macro to generate an impl for types with no inner allocation.
 #[cfg(not(feature = "memory"))]

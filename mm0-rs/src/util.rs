@@ -428,12 +428,14 @@ impl fmt::Debug for FileSpan {
 /// Try to get memory usage (resident set size) in bytes using the `getrusage()` function from libc.
 #[cfg(feature = "memory")]
 pub(crate) fn get_memory_rusage() -> usize {
+  use std::convert::TryInto;
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
     assert_eq!(libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()), 0);
     usage.assume_init()
   };
-  usage.ru_maxrss as usize * 1024
+  let x: usize = usage.ru_maxrss.try_into().expect("negative memory?");
+  x * 1024
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.

@@ -52,7 +52,7 @@ pub(crate) trait DeepSizeOf {
     /// The most common way to use this method, and how the derive works,
     /// is to call this method on each of the structs members and sum the
     /// results, which works as long as all members of the struct implmeent
-    /// DeepSizeOf.
+    /// `DeepSizeOf`.
     ///
     /// To implement this for a collection type, you should sum the deep sizes of
     /// the items of the collection and then add the size of the allocation of the
@@ -188,9 +188,6 @@ where
 
 impl<K: Ord + DeepSizeOf, V: DeepSizeOf> DeepSizeOf for std::collections::BTreeMap<K, V> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
-        let internal: usize = self.iter().map(|(key, val)|
-            key.deep_size_of_children(context) +
-            val.deep_size_of_children(context)).sum();
         // A btree node has 2B-1 (K,V) pairs and (usize, u32) overhead,
         // and an internal btree node additionally has 2B usize overhead.
         // A node can contain between B-1 and 2B-1 elements, so we assume
@@ -199,7 +196,11 @@ impl<K: Ord + DeepSizeOf, V: DeepSizeOf> DeepSizeOf for std::collections::BTreeM
         const MIN: usize = 2 * B - 1;
         const MAX: usize = B - 1;
         let node_overhead = size_of::<(usize, u32, [(K, V); MAX], [usize; B])>();
-        internal + self.len() * node_overhead * 2 / (MAX + MIN)
+        let internal: usize = self.iter().map(|(key, val)|
+            key.deep_size_of_children(context) +
+            val.deep_size_of_children(context)).sum();
+        #[allow(clippy::integer_division)]
+        { internal + self.len() * node_overhead * 2 / (MAX + MIN) }
     }
 }
 
@@ -388,6 +389,7 @@ impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
             current: Vec<T>,
             rest: Vec<Vec<T>>,
         }
+        #[allow(clippy::transmute_ptr_to_ptr)]
         let this: &Arena<T> = unsafe {std::mem::transmute(self)};
         this.deep_size_of_children(context)
     }
