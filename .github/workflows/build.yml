@@ -54,3 +54,8 @@ jobs:
     - name: Clippy
       working-directory: ./mm0-rs
       run: cargo clippy --all-features
+    - name: Clippy
+      uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --all-features --manifest-path mm0-rs/Cargo.toml -- -D warnings
