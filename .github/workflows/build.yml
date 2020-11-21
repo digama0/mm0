@@ -51,7 +51,7 @@ jobs:
     #       mm0-rs/target
     #     key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
     - working-directory: .
-      run: ls
+      run: ls -al
     - name: Clippy
       working-directory: ./mm0-rs
       run: cargo clippy --all-features
