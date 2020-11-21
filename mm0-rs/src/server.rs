@@ -92,10 +92,11 @@ impl MemoryData {
 }
 
 impl std::fmt::Display for MemoryData {
-  fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  #[allow(unused_variables)]
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     #[cfg(feature = "memory")]
     if self.0 != 0 {
-      write!(_f, ", {}k / {}k", self.0/1024, self.1/1024)?
+      write!(f, ", {}k / {}k", self.0 >> 10, self.1 >> 10)?
     }
     Ok(())
   }
