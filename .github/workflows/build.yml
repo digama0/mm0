@@ -78,14 +78,15 @@ jobs:
     needs: build-mm0-rs
     steps:
     - uses: actions/checkout@v2
-    - run: mkdir -p "$GITHUB_WORKSPACE/bin"
+    - run: |
+        mkdir -p "$GITHUB_WORKSPACE/bin"
+        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
     - uses: actions/download-artifact@v2
       with:
         name: mm0-rs
         path: ./bin/mm0-rs
-    - run: echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
     - working-directory: examples
       run: |
-        pwd
+        ls -al $GITHUB_WORKSPACE/bin
         echo $PATH
         mm0-rs
