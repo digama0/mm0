@@ -84,7 +84,7 @@ jobs:
     - uses: actions/download-artifact@v2
       with:
         name: mm0-rs
-        path: ./bin/mm0-rs
+        path: ./bin
     - working-directory: examples
       run: |
         ls -al $GITHUB_WORKSPACE/bin
