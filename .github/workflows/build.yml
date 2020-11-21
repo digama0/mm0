@@ -21,7 +21,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: mm0-rs/target/release/mm0-rs
-        key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/**') }}
+        key: ${{ runner.os }}-mm0-rs-${{ hashFiles('mm0-rs/**') }}
     - name: Cache build mm0-rs
       id: cache-build-mm0-rs
       if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
