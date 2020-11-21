@@ -34,13 +34,13 @@ jobs:
     name: Clippy mm0-rs
     runs-on: ubuntu-latest
     steps:
-    - name: Install nightly rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        profile: minimal
-        components: clippy
-        default: true
+    # - name: Install nightly rust
+    #   uses: actions-rs/toolchain@v1
+    #   with:
+    #     toolchain: nightly
+    #     profile: minimal
+    #     components: clippy
+    #     default: true
     # - name: Cache clippy
     #   id: cache-nightly-mm0-rs
     #   uses: actions/cache@v2
