@@ -16,8 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - name: Cache build mm0-rs
+    - name: Cache mm0-rs
       id: cache-mm0-rs
+      uses: actions/cache@v2
+      with:
+        path: mm0-rs/target/release/mm0-rs
+        key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/**') }}
+    - name: Cache build mm0-rs
+      id: cache-build-mm0-rs
+      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
       uses: actions/cache@v2
       with:
         path: |
@@ -27,18 +34,19 @@ jobs:
         key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-release-
-    # - name: Build mm0-rs
-    #   working-directory: mm0-rs
-    #   run: cargo build --verbose --release
-    - run: ls -al mm0-rs/target/release
-    - run: exit 1
-    # - name: Run tests
-    #   working-directory: mm0-rs
-    #   run: cargo test --verbose --release
-    # - uses: actions/upload-artifact@v2
-    #   with:
-    #     name: mm0-rs
-    #     path: mm0-rs/target/release/mm0-rs
+    - name: Build mm0-rs
+      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
+      working-directory: mm0-rs
+      run: cargo build --verbose --release
+    - name: Run tests
+      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
+      working-directory: mm0-rs
+      run: cargo test --verbose --release
+    - uses: actions/upload-artifact@v2
+      if: ${{ !steps.cache-mm0-rs.outputs.cache-hit }}
+      with:
+        name: mm0-rs
+        path: mm0-rs/target/release/mm0-rs
 
   # clippy-mm0-rs:
   #   name: Clippy mm0-rs
