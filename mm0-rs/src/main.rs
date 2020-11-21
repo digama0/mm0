@@ -99,7 +99,8 @@ fn main() -> std::io::Result<()> {
       (about: "MM1 LSP server")
       (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
       (@arg debug: -d --debug "Enable debug logging")
-      (@arg no_log_errors: -q --quiet "Don't print errors in server output log")));
+      (@arg no_log_errors: -q --quiet "Don't print errors in server output log")
+      (@arg elab_on: -e --("elab-on") [STRING] "apply changes & elab on [c]hange (default) or [s]ave")));
 
   let m = app.get_matches();
 

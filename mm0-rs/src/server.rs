@@ -1071,11 +1071,62 @@ struct Server {
   vfs: VFS,
   pool: ThreadPool,
   threads: Arc<(Mutex<VecDeque<Arc<AtomicBool>>>, Condvar)>,
+  options: Mutex<ServerOptions>,
 }
 
 struct Capabilities {
   reg_id: Option<RequestId>,
   definition_location_links: Option<bool>,
+}
+
+/// Options for [`Server`]; IE whether to apply changes and elaborate on change or save.
+/// The fields are `Option<T>` rather than defaults for each T since it might
+/// be useful to tell whether a certain option has been set by the user or left
+/// as the default. If they were just T, T::Default could mean that the user selected
+/// a value that's the same as the default, or it could mean that it was untouched.
+///
+/// [`Server`]: ./struct.Server.html
+#[derive(Debug, Copy, Clone)]
+struct ServerOptions {
+  elab_on: Option<ElabOn>,
+}
+
+impl std::default::Default for ServerOptions {
+  fn default() -> Self {
+    ServerOptions {
+      elab_on: None
+    }
+  }
+}
+
+/// Enum for Server::ServerOptions showing when the user wants changes to be applied
+/// and the new file to be elaborated.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ElabOn {
+  /// Apply changes and elaborate every time a change is received from the server
+  Change,
+  /// Apply changes and elaborate when a save message is received.
+  Save,
+}
+
+impl std::default::Default for ElabOn {
+  fn default() -> Self {
+    ElabOn::Change
+  }
+}
+
+impl std::str::FromStr for ElabOn {
+  type Err = &'static str;
+  fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    match s {
+      "c" | "change" => Ok(ElabOn::Change),
+      "s" | "save" => Ok(ElabOn::Save),
+      _ => Err(
+        "unrecognized elab_on option; accepted options are `c` or\
+        `change` for `on change`, and `s` for `on save`"
+      )
+    }
+  }
 }
 
 impl Capabilities {
@@ -1137,6 +1188,44 @@ where F: std::future::Future<Output=()> + Send + 'static {
   cancel
 }
 
+
+/// 1. Fetch the queued list of changes to be made to the file represented by `path`
+/// 2. Apply the changes to the file in the [`VFS`] and bump the version
+/// 3. run [`elaborate_and_report`] with the new version of the file
+///
+/// [`VFS`]: ./struct.VFS.html
+/// [`elaborate_and_report`]: ./fn.elaborate_and_report.html
+fn apply_queued_changes(
+  vfs: &VFS,
+  queue: &Mutex<HashMap<FileRef, Vec<TextDocumentContentChangeEvent>>>,
+  path: FileRef,
+  version: Option<i32>
+) -> Result<()> {
+  // make a local so we drop the mutex guard before the loop starts.
+  let chgs = 
+    queue
+    .ulock()
+    .get_mut(&path)
+    .map(|v| std::mem::replace(v, Vec::new()));
+
+  if let Some(changes) = chgs {
+    let l = changes.len();
+    let start = {
+      let file = vfs.get(&path).ok_or("saved nonexistent file")?;
+      let (vfs_version, text) = &mut *file.text.ulock();
+      // If our change included a version, use that. Otherwise, if vfs has
+      // last known version, increment it by one. Otherwise leave it as None
+      *vfs_version = version.or(vfs_version.map(|v| v + 1));
+      let (start, s) = text.apply_changes(changes.into_iter());
+      *text = Arc::new(s);
+      start
+    };
+    spawn_new(|c| elaborate_and_report(path, Some(start), c));
+    log(format!("did {} changes", l));
+  }  
+  Ok(())
+}
+
 impl Server {
   fn new() -> Result<Server> {
     let (conn, _iot) = Connection::stdio();
@@ -1162,15 +1251,20 @@ impl Server {
       vfs: VFS(Mutex::new(HashMap::new())),
       pool: ThreadPool::new()?,
       threads: Default::default(),
+      options: Mutex::new(ServerOptions::default())
     })
   }
 
   fn run(&self) {
     let logger = Logger::start();
     let _ = self.caps.ulock().register();
+    let change_queues = std::sync::Mutex::new(
+      HashMap::<FileRef, Vec<TextDocumentContentChangeEvent>>::new()
+    );
+    
     loop {
       match (|| -> Result<bool> {
-        let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
+        let Server {conn, caps, reqs, vfs, options, ..} = &*SERVER;
         match conn.receiver.recv() {
           Err(RecvError) => return Ok(true),
           Ok(Message::Request(req)) => {
@@ -1210,26 +1304,45 @@ impl Server {
                 vfs.open_virt(path, doc.version, doc.text)?;
               }
               "textDocument/didChange" => {
-                let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
+                let DidChangeTextDocumentParams {text_document: doc, mut content_changes} = from_value(notif.params)?;
                 if !content_changes.is_empty() {
                   let path = doc.uri.into();
-                  log!("change {:?}", path);
-                  let start = {
-                    let file = vfs.get(&path).ok_or("changed nonexistent file")?;
-                    let (version, text) = &mut *file.text.ulock();
-                    *version = Some(doc.version);
-                    let (start, s) = text.apply_changes(content_changes.into_iter());
-                    *text = Arc::new(s);
-                    start
-                  };
-                  spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                  if options.ulock().elab_on == Some(ElabOn::Save) {
+                    change_queues
+                      .ulock()
+                      .entry(path)
+                      .and_modify(|c| c.append(&mut content_changes))
+                      .or_insert_with(|| content_changes);
+                  } else {
+                    log!("change {:?}", path);
+                    let start = {
+                      let file = vfs.get(&path).ok_or("changed nonexistent file")?;
+                      let (version, text) = &mut *file.text.ulock();
+                      *version = Some(doc.version);
+                      let (start, s) = text.apply_changes(content_changes.into_iter());
+                      *text = Arc::new(s);
+                      start
+                    };
+                    spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                  }
                 }
-              }
+              },
               "textDocument/didClose" => {
                 let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
-                let path = doc.uri.into();
+                let path = FileRef::from(doc.uri);
                 log!("close {:?}", path);
+                if options.ulock().elab_on == Some(ElabOn::Save) {
+                  apply_queued_changes(vfs, &change_queues, path.clone(), None)?;
+                }
                 vfs.close(&path)?;
+              },
+              "textDocument/didSave" => {
+                  let DidSaveTextDocumentParams { text_document: doc, .. } = from_value(notif.params)?;
+                  let path = FileRef::from(doc.uri);
+                  log!("save {:?}", path);
+                  if options.ulock().elab_on == Some(ElabOn::Save) {
+                    apply_queued_changes(vfs, &change_queues, path, Some(doc.version))?;
+                  }
               }
               _ => {}
             }
@@ -1277,6 +1390,15 @@ pub fn main(args: &ArgMatches<'_>) {
     }
   }
   if args.is_present("no_log_errors") { LOG_ERRORS.store(false, Ordering::Relaxed) }
+
+  // if there was a command line arg for `elab_on` try to set it. 
+  // Otherwise, just pass through.
+  if let Some(s) = args.value_of("elab_on") {
+    if let Err(e) = s.parse::<ElabOn>().map(|elab_on| SERVER.options.ulock().elab_on = Some(elab_on)) {
+      let _ = log_message(format!("Error while setting elab_on in server::main @ {}: {}", line!(), e));
+    }
+  }
+
   let _ = log_message("started".into());
   SERVER.run();
   let Server {reqs, vfs: VFS(vfs), ..} = &*SERVER;
