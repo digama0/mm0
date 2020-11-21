@@ -27,7 +27,7 @@ jobs:
         key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-release-
-    - run: ls -al mm0-rs/target/release
+    - run: ls -al mm0-rs/target
     # - name: Build mm0-rs
     #   working-directory: mm0-rs
     #   run: cargo build --verbose --release
