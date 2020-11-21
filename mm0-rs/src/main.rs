@@ -88,7 +88,8 @@ fn main() -> std::io::Result<()> {
       (@arg OUTPUT: "Sets the output file (.mmb or .mmu)"))
     (@subcommand join =>
       (about: "Join MM1/MM0 files with imports by concatenation")
-      (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
+      (@arg no_header: -h --("no-header") "Skip top header")
+      (@arg bare: -b --("bare") "Don't add any comments")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
       (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted")));
 
@@ -96,6 +97,7 @@ fn main() -> std::io::Result<()> {
   let app = clap_app!(@app (app)
     (@subcommand server =>
       (about: "MM1 LSP server")
+      (@arg no_proofs: -n --("no-proofs") "Disable proof checking until (check-proofs #t)")
       (@arg debug: -d --debug "Enable debug logging")
       (@arg no_log_errors: -q --quiet "Don't print errors in server output log")));
 
