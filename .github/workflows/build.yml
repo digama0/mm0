@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: *
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-mm0-rs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Cache build mm0-rs
+      id: cache-mm0-rs
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          mm0-rs/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build mm0-rs
+      working-directory: mm0-rs
+      run: cargo build --verbose
+    - name: Clippy
+      working-directory: mm0-rs
+      run: cargo clippy -Z unstable-options
+    - name: Run tests
+      run: cargo test --verbose
