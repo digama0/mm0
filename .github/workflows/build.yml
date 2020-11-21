@@ -24,17 +24,20 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           mm0-rs/target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('mm0-rs/Cargo.lock') }}
-    - name: Build mm0-rs
-      working-directory: mm0-rs
-      run: cargo build --verbose --release
-    - name: Run tests
-      working-directory: mm0-rs
-      run: cargo test --verbose --release
-    - uses: actions/upload-artifact@v2
-      with:
-        name: mm0-rs
-        path: mm0-rs/target/release/mm0-rs
+        key: ${{ runner.os }}-cargo-release-${{ hashFiles('mm0-rs/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-release-
+    - run: ls -al mm0-rs/target/release
+    # - name: Build mm0-rs
+    #   working-directory: mm0-rs
+    #   run: cargo build --verbose --release
+    # - name: Run tests
+    #   working-directory: mm0-rs
+    #   run: cargo test --verbose --release
+    # - uses: actions/upload-artifact@v2
+    #   with:
+    #     name: mm0-rs
+    #     path: mm0-rs/target/release/mm0-rs
 
   # clippy-mm0-rs:
   #   name: Clippy mm0-rs
@@ -61,15 +64,16 @@ jobs:
   #     working-directory: ./mm0-rs
   #     run: cargo clippy --all-features -- -D warnings
 
-  peano:
-    name: Peano MM1 files
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/download-artifact@v2
-      with:
-        name: mm0-rs
-        path: .
-    - working-directory: examples
-      run: |
-        echo $PATH
+  # peano:
+  #   name: Peano MM1 files
+  #   runs-on: ubuntu-latest
+  #   needs: build-mm0-rs
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #   - uses: actions/download-artifact@v2
+  #     with:
+  #       name: mm0-rs
+  #       path: .
+  #   - working-directory: examples
+  #     run: |
+  #       echo $PATH
