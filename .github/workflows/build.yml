@@ -82,6 +82,7 @@ jobs:
       with:
         name: mm0-rs
         path: ./mm0-rs
+    - run: echo "." >> $GITHUB_PATH
     - working-directory: examples
       run: |
-        echo $PATH
+        mm0-rs
