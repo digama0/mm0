@@ -10,26 +10,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # build-mm0-rs:
-  #   name: mm0-rs
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v2
-  #   - name: Cache build mm0-rs
-  #     id: cache-mm0-rs
-  #     uses: actions/cache@v2
-  #     with:
-  #       path: |
-  #         ~/.cargo/registry
-  #         ~/.cargo/git
-  #         mm0-rs/target
-  #       key: ${{ runner.os }}-cargo-${{ hashFiles('./mm0-rs/Cargo.lock') }}
-  #   - name: Build mm0-rs
-  #     working-directory: ./mm0-rs
-  #     run: cargo build --verbose
-  #   - name: Run tests
-  #     working-directory: ./mm0-rs
-  #     run: cargo test --verbose
+  build-mm0-rs:
+    name: mm0-rs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Cache build mm0-rs
+      id: cache-mm0-rs
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          mm0-rs/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('mm0-rs/Cargo.lock') }}
+    - name: Build mm0-rs
+      working-directory: mm0-rs
+      run: cargo build --verbose
+    - name: Run tests
+      working-directory: mm0-rs
+      run: cargo test --verbose
   clippy-mm0-rs:
     name: Clippy mm0-rs
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           mm0-rs/target
-        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
     - name: Clippy
       working-directory: ./mm0-rs
       run: cargo clippy --all-features -- -D warnings
