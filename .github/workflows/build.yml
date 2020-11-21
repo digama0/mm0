@@ -15,7 +15,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - env:
-        FOO: ${{ hashFiles('**/Cargo.lock') }}
+        FOO: ${{ 2 + 2 }}
       run: echo $FOO
   # build-mm0-rs:
   #   name: mm0-rs
