@@ -112,7 +112,7 @@ impl TuplePattern {
     match self {
       &TuplePattern::Name(g, _, _) => g,
       TuplePattern::Typed(p, _) => p.ghost(),
-      TuplePattern::Tuple(ps) => ps.iter().all(|p| p.ghost()),
+      TuplePattern::Tuple(ps) => ps.iter().all(TuplePattern::ghost),
     }
   }
 

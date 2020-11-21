@@ -49,7 +49,7 @@ enum Stack<'a> {
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>},
   Focus(Span, bool, Vec<LispVal>),
-  Have(Span, LispVal),
+  Have(Span, LispVal, AtomID),
 }
 
 impl<'a> EnvDisplay for Stack<'a> {
@@ -86,7 +86,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
       &Stack::Focus(_, cl, ref es) => write!(f, "(focus {} _)\n  ->{}", cl, fe.to(es)),
-      Stack::Have(_, a) => write!(f, "(have {} _)", fe.to(a)),
+      Stack::Have(_, _, a) => write!(f, "(have {} _)", fe.to(a)),
     }
   }
 }
@@ -167,7 +167,7 @@ impl LispVal {
       Some(LispKind::AtomMap(m)) => Some(f(m)),
       Some(LispKind::Annot(_, e)) => Self::as_map_mut(e, f),
       Some(LispKind::Ref(m)) => m.get_mut(|e| Self::as_map_mut(e, f)),
-      _ => None
+      Some(_) => None
     }
   }
 }
@@ -216,95 +216,93 @@ struct TestPending<'a>(Span, LispVal, &'a IR);
 /// work without an elaboration context.
 pub type SResult<T> = std::result::Result<T, String>;
 
-impl Elaborator {
-  fn pattern_match<'b>(&mut self, stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
-      mut active: PatternState<'b>) -> std::result::Result<bool, TestPending<'b>> {
-    loop {
-      // println!("{}\n", self.print(&active));
-      active = match active {
-        PatternState::Eval(p, e) => match p {
-          Pattern::Skip => PatternState::Ret(true),
-          &Pattern::Atom(i) => {ctx[i] = e; PatternState::Ret(true)}
-          &Pattern::QuoteAtom(a) => PatternState::Ret(e.unwrapped(|e|
-            if let LispKind::Atom(a2) = *e {a == a2} else {false})),
-          Pattern::String(s) => PatternState::Ret(e.unwrapped(|e|
-            if let LispKind::String(s2) = e {s == s2} else {false})),
-          &Pattern::Bool(b) => PatternState::Ret(e.unwrapped(|e|
-            if let LispKind::Bool(b2) = *e {b == b2} else {false})),
-          Pattern::Undef => PatternState::Ret(e.unwrapped(|e| *e == LispKind::Undef)),
-          Pattern::Number(i) => PatternState::Ret(e.unwrapped(|e|
-            if let LispKind::Number(i2) = e {i == i2} else {false})),
-          Pattern::MVar(p) => e.unwrapped(|e| match e {
-            LispKind::MVar(_, is) => match (p, is) {
-              (MVarPattern::Any, _) => PatternState::Ret(true),
-              (MVarPattern::Unknown, InferTarget::Unknown) => PatternState::Ret(true),
-              (MVarPattern::Unknown, InferTarget::Provable) => PatternState::Ret(true),
-              (MVarPattern::Unknown, _) => PatternState::Ret(false),
-              (MVarPattern::Simple(_), InferTarget::Unknown) => PatternState::Ret(false),
-              (MVarPattern::Simple(_), InferTarget::Provable) => PatternState::Ret(false),
-              (MVarPattern::Simple(p), &InferTarget::Bound(s)) => {
-                stack.push(PatternStack::Bool(&p.1, true));
-                PatternState::Eval(&p.0, LispVal::atom(s))
-              }
-              (MVarPattern::Simple(p), &InferTarget::Reg(s)) => {
-                stack.push(PatternStack::Bool(&p.1, false));
-                PatternState::Eval(&p.0, LispVal::atom(s))
-              }
+fn pattern_match<'b>(stack: &mut Vec<PatternStack<'b>>, ctx: &mut [LispVal],
+    mut active: PatternState<'b>) -> std::result::Result<bool, TestPending<'b>> {
+  loop {
+    // println!("{}\n", self.print(&active));
+    active = match active {
+      PatternState::Eval(p, e) => match p {
+        Pattern::Skip => PatternState::Ret(true),
+        &Pattern::Atom(i) => {ctx[i] = e; PatternState::Ret(true)}
+        &Pattern::QuoteAtom(a) => PatternState::Ret(e.unwrapped(|e|
+          if let LispKind::Atom(a2) = *e {a == a2} else {false})),
+        Pattern::String(s) => PatternState::Ret(e.unwrapped(|e|
+          if let LispKind::String(s2) = e {s == s2} else {false})),
+        &Pattern::Bool(b) => PatternState::Ret(e.unwrapped(|e|
+          if let LispKind::Bool(b2) = *e {b == b2} else {false})),
+        Pattern::Undef => PatternState::Ret(e.unwrapped(|e| *e == LispKind::Undef)),
+        Pattern::Number(i) => PatternState::Ret(e.unwrapped(|e|
+          if let LispKind::Number(i2) = e {i == i2} else {false})),
+        Pattern::MVar(p) => e.unwrapped(|e| match e {
+          LispKind::MVar(_, is) => match (p, is) {
+            (MVarPattern::Any, _) |
+            (MVarPattern::Unknown, InferTarget::Unknown) |
+            (MVarPattern::Unknown, InferTarget::Provable) => PatternState::Ret(true),
+            (MVarPattern::Unknown, _) |
+            (MVarPattern::Simple(_), InferTarget::Unknown) |
+            (MVarPattern::Simple(_), InferTarget::Provable) => PatternState::Ret(false),
+            (MVarPattern::Simple(p), &InferTarget::Bound(s)) => {
+              stack.push(PatternStack::Bool(&p.1, true));
+              PatternState::Eval(&p.0, LispVal::atom(s))
             }
-            _ => PatternState::Ret(false),
-          }),
-          Pattern::Goal(p) => e.unwrapped(|e| match e {
-            LispKind::Goal(e) => PatternState::Eval(p, e.clone()),
-             _ => PatternState::Ret(false)
-          }),
-          &Pattern::QExprAtom(a) => PatternState::Ret(e.unwrapped(|e| match e {
-            &LispKind::Atom(a2) => a == a2,
-            LispKind::List(es) if es.len() == 1 =>
-              es[0].unwrapped(|e| if let LispKind::Atom(a2) = *e {a == a2} else {false}),
-            _ => false
-          })),
-          Pattern::DottedList(ps, r) => PatternState::List(Uncons::from(e), ps.iter(), Dot::DottedList(r)),
-          &Pattern::List(ref ps, n) => PatternState::List(Uncons::from(e), ps.iter(), Dot::List(n)),
-          Pattern::And(ps) => PatternState::Binary(false, false, e, ps.iter()),
-          Pattern::Or(ps) => PatternState::Binary(true, true, e, ps.iter()),
-          Pattern::Not(ps) => PatternState::Binary(true, false, e, ps.iter()),
-          &Pattern::Test(sp, ref ir, ref ps) => {
-            stack.push(PatternStack::Binary(false, false, e.clone(), ps.iter()));
-            return Err(TestPending(sp, e, ir))
-          },
+            (MVarPattern::Simple(p), &InferTarget::Reg(s)) => {
+              stack.push(PatternStack::Bool(&p.1, false));
+              PatternState::Eval(&p.0, LispVal::atom(s))
+            }
+          }
+          _ => PatternState::Ret(false),
+        }),
+        Pattern::Goal(p) => e.unwrapped(|e| match e {
+          LispKind::Goal(e) => PatternState::Eval(p, e.clone()),
+            _ => PatternState::Ret(false)
+        }),
+        &Pattern::QExprAtom(a) => PatternState::Ret(e.unwrapped(|e| match e {
+          &LispKind::Atom(a2) => a == a2,
+          LispKind::List(es) if es.len() == 1 =>
+            es[0].unwrapped(|e| if let LispKind::Atom(a2) = *e {a == a2} else {false}),
+          _ => false
+        })),
+        Pattern::DottedList(ps, r) => PatternState::List(Uncons::from(e), ps.iter(), Dot::DottedList(r)),
+        &Pattern::List(ref ps, n) => PatternState::List(Uncons::from(e), ps.iter(), Dot::List(n)),
+        Pattern::And(ps) => PatternState::Binary(false, false, e, ps.iter()),
+        Pattern::Or(ps) => PatternState::Binary(true, true, e, ps.iter()),
+        Pattern::Not(ps) => PatternState::Binary(true, false, e, ps.iter()),
+        &Pattern::Test(sp, ref ir, ref ps) => {
+          stack.push(PatternStack::Binary(false, false, e.clone(), ps.iter()));
+          return Err(TestPending(sp, e, ir))
         },
-        PatternState::Ret(b) => match stack.pop() {
-          None => return Ok(b),
-          Some(PatternStack::Bool(_, _)) if !b => PatternState::Ret(false),
-          Some(PatternStack::Bool(p, e)) =>
-            PatternState::Eval(p, LispVal::bool(e)),
-          Some(PatternStack::List(u, it, r)) =>
-            if b {PatternState::List(u, it, r)}
-            else {PatternState::Ret(false)},
-          Some(PatternStack::Binary(or, out, u, it)) =>
-            if b^or {PatternState::Binary(or, out, u, it)}
-            else {PatternState::Ret(out)},
+      },
+      PatternState::Ret(b) => match stack.pop() {
+        None => return Ok(b),
+        Some(PatternStack::Bool(_, _)) if !b => PatternState::Ret(false),
+        Some(PatternStack::Bool(p, e)) =>
+          PatternState::Eval(p, LispVal::bool(e)),
+        Some(PatternStack::List(u, it, r)) =>
+          if b {PatternState::List(u, it, r)}
+          else {PatternState::Ret(false)},
+        Some(PatternStack::Binary(or, out, u, it)) =>
+          if b^or {PatternState::Binary(or, out, u, it)}
+          else {PatternState::Ret(out)},
+      }
+      PatternState::List(mut u, mut it, dot) => match it.next() {
+        None => match dot {
+          Dot::List(None) => PatternState::Ret(u.exactly(0)),
+          Dot::List(Some(n)) => PatternState::Ret(u.list_at_least(n)),
+          Dot::DottedList(p) => PatternState::Eval(p, u.into()),
         }
-        PatternState::List(mut u, mut it, dot) => match it.next() {
-          None => match dot {
-            Dot::List(None) => PatternState::Ret(u.exactly(0)),
-            Dot::List(Some(n)) => PatternState::Ret(u.list_at_least(n)),
-            Dot::DottedList(p) => PatternState::Eval(p, u.into()),
+        Some(p) => match u.next() {
+          None => PatternState::Ret(false),
+          Some(l) => {
+            stack.push(PatternStack::List(u, it, dot));
+            PatternState::Eval(p, l)
           }
-          Some(p) => match u.next() {
-            None => PatternState::Ret(false),
-            Some(l) => {
-              stack.push(PatternStack::List(u, it, dot));
-              PatternState::Eval(p, l)
-            }
-          }
-        },
-        PatternState::Binary(or, out, e, mut it) => match it.next() {
-          None => PatternState::Ret(!out),
-          Some(p) => {
-            stack.push(PatternStack::Binary(or, out, e.clone(), it));
-            PatternState::Eval(p, e)
-          }
+        }
+      },
+      PatternState::Binary(or, out, e, mut it) => match it.next() {
+        None => PatternState::Ret(!out),
+        Some(p) => {
+          stack.push(PatternStack::Binary(or, out, e.clone(), it));
+          PatternState::Eval(p, e)
         }
       }
     }
@@ -419,7 +417,7 @@ impl Elaborator {
 
   fn int_bool_binop(&self, mut f: impl FnMut(&BigInt, &BigInt) -> bool, args: &[LispVal]) -> SResult<bool> {
     let mut it = args.iter();
-    let mut last = self.as_int(it.next().unwrap())?;
+    let mut last = self.as_int(it.next().expect("int_bool_binop([])"))?;
     for v in it {
       let new = self.as_int(v)?;
       if !f(&last, &new) {return Ok(false)}
@@ -432,11 +430,11 @@ impl Elaborator {
     use std::fmt::Write;
     let mut s = String::new();
     for (a, e, _) in &self.lc.proof_order {
-      writeln!(s, "{}: {}", self.print(a), self.format_env().pp(&e, 80)).unwrap()
+      writeln!(s, "{}: {}", self.print(a), self.format_env().pp(e, 80)).unwrap()
     }
     for e in &self.lc.goals {
       e.unwrapped(|r| if let LispKind::Goal(e) = r {
-        writeln!(s, "|- {}", self.format_env().pp(&e, 80)).unwrap()
+        writeln!(s, "|- {}", self.format_env().pp(e, 80)).unwrap()
       })
     }
     s
@@ -716,6 +714,7 @@ macro_rules! make_builtins {
     }
 
     impl<'a> Evaluator<'a> {
+      #[allow(clippy::unwrap_used)]
       fn evaluate_builtin(&mut $self, $sp1: Span, $sp2: Span, f: BuiltinProc, mut $args: Vec<LispVal>) -> Result<State<'a>> {
         macro_rules! print {($sp:expr, $x:expr) => {{
           let msg = $x; $self.info($sp, false, f.to_str(), msg)
@@ -769,8 +768,8 @@ make_builtins! { self, sp1, sp2, args,
   Apply: AtLeast(2) => {
     fn gather(args: &mut Vec<LispVal>, e: &LispKind) -> bool {
       e.unwrapped(|e| match e {
-        LispKind::List(es) => {args.extend_from_slice(&es); true}
-        LispKind::DottedList(es, r) => {args.extend_from_slice(&es); gather(args, r)}
+        LispKind::List(es) => {args.extend_from_slice(es); true}
+        LispKind::DottedList(es, r) => {args.extend_from_slice(es); gather(args, r)}
         _ => false
       })
     }
@@ -849,15 +848,12 @@ make_builtins! { self, sp1, sp2, args,
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it {
       try1!(self.with_int(&e, |e| {
-        match e.sign() {
-          num::bigint::Sign::Minus => {
-            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-            n >>= &i
-          }
-          _ =>  {
-            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-            n <<= &i
-          }
+        if matches!(e.sign(), num::bigint::Sign::Minus) {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n >>= &i
+        } else {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n <<= &i
         }
         Ok(())
       }))
@@ -869,15 +865,12 @@ make_builtins! { self, sp1, sp2, args,
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it {
       try1!(self.with_int(&e, |e| {
-        match e.sign() {
-          num::bigint::Sign::Minus => {
-            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-            n <<= &i
-          }
-          _ =>  {
-            let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
-            n >>= &i
-          }
+        if matches!(e.sign(), num::bigint::Sign::Minus) {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n <<= &i
+        } else {
+          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+          n >>= &i
         }
         Ok(())
       }))
@@ -900,13 +893,12 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::number(n)
   },
   BNot: AtLeast(0) => {
-    let n = match &*args {
-      [e] => try1!(self.as_int(e)),
-      _ => {
-        let mut n: BigInt = (-1).into();
-        for e in args { n &= try1!(self.as_int(&e)) }
-        n
-      }
+    let n = if let [e] = &*args {
+      try1!(self.as_int(e))
+    } else {
+      let mut n: BigInt = (-1).into();
+      for e in args { n &= try1!(self.as_int(&e)) }
+      n
     };
     LispVal::number(!n)
   },
@@ -1153,9 +1145,9 @@ make_builtins! { self, sp1, sp2, args,
     if args.len() > 3 {try1!(Err("invalid arguments"))}
     let mut args = args.drain(..);
     let xarg = args.next().unwrap();
-    try1!(xarg.as_atom().ok_or("expected an atom"));
+    let a = try1!(xarg.as_atom().ok_or("expected an atom"));
     let x_sp = try_get_span(&self.fspan(sp1), &xarg);
-    self.stack.push(Stack::Have(sp1, xarg));
+    self.stack.push(Stack::Have(sp1, xarg, a));
     let mut stack = vec![RStack::DeferGoals(mem::take(&mut self.lc.goals))];
     let state = match (args.next().unwrap(), args.next()) {
       (p, None) => {
@@ -1177,7 +1169,7 @@ make_builtins! { self, sp1, sp2, args,
   AddDecl: AtLeast(4) => {
     let fsp = self.fspan_base(sp1);
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
-      AtomID::TERM | AtomID::DEF => self.add_term(fsp, &args[1..])?,
+      AtomID::TERM | AtomID::DEF => self.add_term(&fsp, &args[1..])?,
       AtomID::AXIOM | AtomID::THM => return self.add_thm(fsp, &args[1..]),
       e => try1!(Err(format!("invalid declaration type '{}'", self.print(&e))))
     }
@@ -1185,7 +1177,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   AddTerm: AtLeast(3) => {
     let fsp = self.fspan_base(sp1);
-    self.add_term(fsp, &args)?;
+    self.add_term(&fsp, &args)?;
     LispVal::undef()
   },
   AddThm: AtLeast(4) => {
@@ -1239,7 +1231,7 @@ make_builtins! { self, sp1, sp2, args,
   },
   EvalString: AtLeast(0) => {
     let fsp = self.fspan(sp1);
-    let bytes = self.eval_string(fsp, &args)?;
+    let bytes = self.eval_string(&fsp, &args)?;
     LispVal::string(bytes.into())
   },
   MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
@@ -1421,7 +1413,7 @@ impl<'a> Evaluator<'a> {
             State::MapProc(sp1, sp2, f, us, vec)
           }
           Some(Stack::AddThmProc(fsp, ap)) => {
-            ap.finish(self, fsp, ret)?;
+            ap.finish(self, &fsp, ret)?;
             State::Ret(LispVal::undef())
           }
           Some(Stack::Refines(sp, Some(_), it)) if !ret.is_def() => State::Refines(sp, it),
@@ -1440,7 +1432,7 @@ impl<'a> Evaluator<'a> {
                 let span = self.fspan(sp);
                 for g in mem::take(&mut self.lc.goals) {
                   let err = ElabError::new_e(try_get_span(&span, &g),
-                    format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)));
+                    format!("|- {}", self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)));
                   self.report(err)
                 }
                 throw!(sp, format!("focused goal has not been solved\n\n{}", stat))
@@ -1451,10 +1443,10 @@ impl<'a> Evaluator<'a> {
           },
           Some(Stack::Refine {sp, stack}) =>
             State::Refine {sp, stack, state: RState::Ret(ret)},
-          Some(Stack::Have(sp, x)) => {
+          Some(Stack::Have(sp, x, a)) => {
             let e = self.infer_type(sp, &ret)?;
             let span = try_get_span(&self.fspan(sp), &x);
-            self.lc.add_proof(x.as_atom().unwrap(), e, ret.clone());
+            self.lc.add_proof(a, e, ret.clone());
             if span != sp {
               self.spans.insert_if(span, || ObjectKind::proof(x));
             }
@@ -1476,10 +1468,8 @@ impl<'a> Evaluator<'a> {
         State::App(sp1, sp2, func, mut args, mut it) => match it.next() {
           Some(e) => push!(App2(sp1, sp2, func, args, it); Eval(e)),
           None => func.unwrapped(|func| {
-            let func = match func {
-              LispKind::Proc(f) => f,
-              _ => throw!(sp1, "not a function, cannot apply")
-            };
+            let func = if let LispKind::Proc(f) = func { f }
+            else { throw!(sp1, "not a function, cannot apply") };
             let spec = func.spec();
             if !spec.valid(args.len()) {
               match spec {
@@ -1536,7 +1526,7 @@ impl<'a> Evaluator<'a> {
                   match self.stack.pop() {
                     Some(Stack::MatchCont(span, expr, it, a)) => {
                       a.set(false);
-                      if Rc::ptr_eq(&a, &valid) {
+                      if Rc::ptr_eq(&a, valid) {
                         break State::Match(span, expr, it)
                       }
                     }
@@ -1550,7 +1540,7 @@ impl<'a> Evaluator<'a> {
               Proc::RefineCallback => State::Refine {
                 sp: sp1, stack: vec![],
                 state: {
-                  let p = args.pop().unwrap();
+                  let p = args.pop().expect("impossible");
                   match args.pop() {
                     None => RState::RefineProof {
                       tgt: {
@@ -1560,7 +1550,7 @@ impl<'a> Evaluator<'a> {
                       p
                     },
                     Some(tgt) if args.is_empty() => RState::RefineProof {tgt, p},
-                    _ => throw!(sp1, "expected two arguments")
+                    Some(_) => throw!(sp1, "expected two arguments")
                   }
                 }
               },
@@ -1591,7 +1581,7 @@ impl<'a> Evaluator<'a> {
               PatternState::Eval(&br.pat, e))
         },
         State::Pattern(sp, e, it, br, mut pstack, mut vars, st) => {
-          match self.pattern_match(&mut pstack, &mut vars, st) {
+          match pattern_match(&mut pstack, &mut vars, st) {
             Err(TestPending(sp2, e2, ir)) => push!(
               TestPattern(sp, e, it, br, pstack, vars),
               AppHead(sp2, sp2, e2),
@@ -1613,7 +1603,7 @@ impl<'a> Evaluator<'a> {
         }
         State::MapProc(sp1, sp2, f, mut us, vec) => {
           let mut it = us.iter_mut();
-          let u0 = it.next().unwrap();
+          let u0 = it.next().expect("impossible");
           match u0.next() {
             None => {
               if !(u0.exactly(0) && it.all(|u| u.exactly(0))) {

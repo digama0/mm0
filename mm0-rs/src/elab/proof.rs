@@ -425,7 +425,7 @@ impl Environment {
       heap.push(a.clone());
       match *t {
         Type::Bound(s) => {bvars.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
-        Type::Reg(s, xs) => vec![a, LispVal::atom(self.sorts[s].atom), Self::deps(&bvars, xs)]
+        Type::Reg(s, xs) => vec![a, LispVal::atom(self.sorts[s].atom), Self::deps(bvars, xs)]
       }
     })).collect::<Vec<_>>())
   }
@@ -489,14 +489,14 @@ impl ProofHash {
   pub fn subst(de: &mut impl IDedup<Self>,
     heap: &[ExprNode], n_heap: &mut [Option<usize>], e: &ExprNode) -> usize {
     match *e {
-      ExprNode::Ref(i) => match n_heap[i] {
-        Some(n) => de.reuse(n),
-        None => {
+      ExprNode::Ref(i) =>
+        if let Some(n) = n_heap[i] {
+          de.reuse(n)
+        } else {
           let n = Self::subst(de, heap, n_heap, &heap[i]);
           n_heap[i] = Some(n);
           n
-        }
-      },
+        },
       ExprNode::Dummy(_, _) => unreachable!(),
       ExprNode::App(t, ref es) => {
         let es2 = es.iter().map(|e| Self::subst(de, heap, n_heap, e)).collect();

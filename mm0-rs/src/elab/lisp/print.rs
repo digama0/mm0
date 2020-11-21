@@ -104,7 +104,7 @@ fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv<'
   match e {
     None => if start {write!(f, "()")} else {write!(f, ")")},
     Some(LispKind::List(es)) => list(es, None, start, fe, f),
-    Some(LispKind::DottedList(es, r)) => list(es, Some(&r), start, fe, f),
+    Some(LispKind::DottedList(es, r)) => list(es, Some(r), start, fe, f),
     Some(e) if e.exactly(0) => if start {write!(f, "()")} else {write!(f, ")")},
     Some(e) => if start {write!(f, "{}", fe.to(e))} else {write!(f, " . {})", fe.to(e))}
   }
@@ -114,8 +114,10 @@ fn alphanumber(n: usize) -> String {
   let mut out = Vec::with_capacity(2);
   let mut n = n + 1;
   while n != 0 {
-    out.push(b'a' + ((n - 1) % 26) as u8);
-    n = (n - 1) / 26;
+    #[allow(clippy::cast_possible_truncation)]
+    { out.push(b'a' + ((n - 1) % 26) as u8); }
+    #[allow(clippy::integer_division)]
+    { n = (n - 1) / 26; }
   }
   out.reverse();
   unsafe { String::from_utf8_unchecked(out) }
@@ -161,7 +163,7 @@ impl EnvDisplay for LispKind {
       LispKind::Atom(a) => a.fmt(fe, f),
       LispKind::List(es) if es.is_empty() => "()".fmt(f),
       LispKind::DottedList(es, r) if es.is_empty() => r.fmt(fe, f),
-      LispKind::DottedList(es, r) => list(es, Some(&r), true, fe, f),
+      LispKind::DottedList(es, r) => list(es, Some(r), true, fe, f),
       LispKind::List(es) => list(es, None, true, fe, f),
       LispKind::Annot(_, e) => e.fmt(fe, f),
       LispKind::Number(n) => n.fmt(f),
@@ -186,12 +188,12 @@ impl EnvDisplay for LispKind {
       LispKind::Proc(Proc::Builtin(p)) => p.fmt(f),
       LispKind::Proc(Proc::Lambda {pos: ProcPos::Unnamed(pos), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
-        let fname = pos.file.path().file_name().unwrap().to_str().unwrap();
+        let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
         write!(f, "#[fn at {} {}:{}]", fname, r.line + 1, r.character + 1)
       }
       &LispKind::Proc(Proc::Lambda {pos: ProcPos::Named(ref pos, _, a), ..}) => {
         let r = fe.source.to_pos(pos.span.start);
-        let fname = pos.file.path().file_name().unwrap().to_str().unwrap();
+        let fname = pos.file.path().file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("?");
         let x = &fe.data[a].name;
         write!(f, "#[fn {} at {} {}:{}]", x, fname, r.line + 1, r.character + 1)
       }
@@ -217,7 +219,7 @@ impl EnvDisplay for Uncons {
     match self {
       Uncons::New(e) => e.fmt(fe, f),
       Uncons::List(es) => list(es, None, true, fe, f),
-      Uncons::DottedList(es, r) => list(es, Some(&r), true, fe, f),
+      Uncons::DottedList(es, r) => list(es, Some(r), true, fe, f),
     }
   }
 }

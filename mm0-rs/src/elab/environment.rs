@@ -1007,7 +1007,6 @@ impl ParserEnv {
     Self::add_nota_info(&mut self.infixes, tk, n)
   }
 
-  #[allow(clippy::unwrap_in_result)]
   fn update_provs(&mut self, sp: Span, sorts: &SortVec<Sort>) -> Result<(), ElabError> {
     let mut provs = HashMap::new();
     for (&s1, m) in &self.coes {
@@ -1029,7 +1028,6 @@ impl ParserEnv {
     Ok(())
   }
 
-  #[allow(clippy::unwrap_in_result)]
   fn add_coe_raw(&mut self, sp: Span, sorts: &SortVec<Sort>,
       s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
     match self.coes.get(&s1).and_then(|m| m.get(&s2).map(|c| &**c)) {
@@ -1286,7 +1284,6 @@ impl Environment {
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,
   /// and relabels lisp objects with the new `AtomID` mapping.
-  #[allow(clippy::unwrap_in_result)]
   pub fn merge(&mut self, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     let remap = &mut Remapper {
       atom: other.data().iter().map(|d| self.get_atom_arc(d.name().clone())).collect(),

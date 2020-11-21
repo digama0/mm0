@@ -150,7 +150,7 @@ impl<'a> TypeChecker<'a> {
   fn todo<T, U>(&self, _: U) -> EResult<T> { Err(ElabError::new_e(self.fsp.span, "unimplemented")) }
 
   fn try_get_span(&self, e: &LispVal) -> Span {
-    try_get_span(&self.fsp, &e)
+    try_get_span(&self.fsp, e)
   }
 
   fn get_fresh_decl(&mut self, base: AtomID) -> AtomID {
@@ -171,7 +171,7 @@ impl<'a> TypeChecker<'a> {
 
   fn infer_type(&'a self, e: &'a PureExpr) -> InferType<'a> {
     match e {
-      &PureExpr::Var(i) => match &self.find(i).unwrap().ty {
+      &PureExpr::Var(i) => match &self.find(i).expect("variable not found").ty {
         GType::Ty(_, ty, _) => InferType::ty(ty),
         GType::Star => InferType::Star,
         GType::Prop(p) => InferType::Prop(p),
@@ -277,14 +277,14 @@ impl<'a> TypeChecker<'a> {
         (PrimType::And, args) => Ok(Type::And(check_tys!(args))),
         (PrimType::Or, args) => Ok(Type::Or(check_tys!(args))),
         (PrimType::Ghost, [ty]) => Ok(Type::Ghost(Box::new(self.check_ty(ty)?))),
-        _ => Err(ElabError::new_e(self.try_get_span(&e), "unexpected number of arguments"))
+        _ => Err(ElabError::new_e(self.try_get_span(e), "unexpected number of arguments"))
       }
       Some(Entity::Type(NType::Unchecked)) => Err(
         ElabError::new_e(self.try_get_span(&head), "forward type references are not allowed")),
       Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a type")),
       None => match self.user_locals.get(&name) {
         Some(&i) if matches!(self.find(i), Some(Variable {ty: GType::Star, ..})) => Ok(Type::Var(i)),
-        _ => Err(ElabError::new_e(self.try_get_span(&e),
+        _ => Err(ElabError::new_e(self.try_get_span(e),
           format!("undeclared type {}", self.elab.print(&head))))
       }
     }
@@ -467,7 +467,7 @@ impl<'a> TypeChecker<'a> {
         None => match self.user_locals.get(&name) {
           Some(&i) => match &self.find(i) {
             Some(Variable {ty: GType::Ty(_, _ty, _), ..}) => match tgt {
-              None => Ok(PureExpr::Var(i)),
+              None |
               Some(_) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },
             _ => Err(ElabError::new_e(self.try_get_span(&head), "expected a regular variable")),
@@ -492,7 +492,7 @@ impl<'a> TypeChecker<'a> {
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() =>
-        return Err(ElabError::new_e(self.try_get_span(&e), "expecting a proposition, got ()")),
+        return Err(ElabError::new_e(self.try_get_span(e), "expecting a proposition, got ()")),
       None => (u.into(), vec![]),
       Some(head) => (head, u.collect()),
     };
@@ -500,10 +500,10 @@ impl<'a> TypeChecker<'a> {
       Some(Entity::Prim(Prim {prop: Some(prim), ..})) => match (prim, &*args) {
         (PrimProp::All, args) if !args.is_empty() => self.todo(args),
         (PrimProp::Ex, args) if !args.is_empty() => self.todo(args),
-        (PrimProp::And, args) => self.todo(args),
-        (PrimProp::Or, args) => self.todo(args),
-        (PrimProp::Imp, args) => self.todo(args),
-        (PrimProp::Star, args) => self.todo(args),
+        (PrimProp::And, args) |
+        (PrimProp::Or, args) |
+        (PrimProp::Imp, args) |
+        (PrimProp::Star, args) |
         (PrimProp::Wand, args) => self.todo(args),
         _ => Err(ElabError::new_e(self.try_get_span(&head), "incorrect number of arguments")),
       }

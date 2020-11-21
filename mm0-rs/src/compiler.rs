@@ -282,7 +282,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     println!("elab {}, memory = {}M", path, get_memory_usage() >> 20);
     let rd = rd.push(path.clone());
     let (cyc, _, errors, env) = elab::elaborate(
-      ast.clone(), path.clone(), path.has_extension("mm0"),
+      &ast, path.clone(), path.has_extension("mm0"),
       crate::get_check_proofs(),
       Arc::default(),
       None,

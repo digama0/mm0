@@ -6,7 +6,6 @@
 //! [`FormatEnv::pretty`]: ../print/struct.FormatEnv.html#method.pretty
 //! [`Pretty`]: struct.Pretty.html
 
-use std::ops::Deref;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::{mem, fmt::{self, Write}};
@@ -36,8 +35,8 @@ impl<'a> PP<'a> {
     PP {
       // A right delimiter like ')' has a token boundary on its left side,
       // and vice versa. This ensures that `x ( y ) z` gets notated as `x (y) z`
-      left: env.pe.delims_r.get(*tk.as_bytes().first().unwrap()),
-      right: env.pe.delims_l.get(*tk.as_bytes().last().unwrap()),
+      left: env.pe.delims_r.get(*tk.as_bytes().first().expect("empty delimiter")),
+      right: env.pe.delims_l.get(*tk.as_bytes().last().expect("empty delimiter")),
       small: true,
       doc: alloc.alloc(Doc::text(tk)),
     }
@@ -98,6 +97,7 @@ const LINE_: RefDoc<'static, ()> = RefDoc(&Doc::FlatAlt(HARDLINE, NIL));
 const SOFTLINE: RefDoc<'static, ()> = RefDoc(&Doc::Group(LINE));
 const SOFTLINE_: RefDoc<'static, ()> = RefDoc(&Doc::Group(LINE_));
 
+#[allow(clippy::useless_transmute)]
 fn covariant<'a>(from: RefDoc<'static, ()>) -> RefDoc<'a, ()> {
   unsafe {mem::transmute(from)}
 }
@@ -114,17 +114,17 @@ impl<'a> Pretty<'a> {
 
   fn new(fe: FormatEnv<'a>, alloc: &'a Arena<'a, ()>) -> Pretty<'a> {
     Pretty {
-      lparen: PP::token(&alloc, fe.env, "("),
-      rparen: PP::token(&alloc, fe.env, ")"),
+      lparen: PP::token(alloc, fe.env, "("),
+      rparen: PP::token(alloc, fe.env, ")"),
       fe, alloc, hash: RefCell::new(HashMap::new())
     }
   }
 
   fn token(&'a self, tk: &'a [u8]) -> PP<'a> {
-    PP::token(&self.alloc, &self.fe, unsafe {std::str::from_utf8_unchecked(tk)})
+    PP::token(self.alloc, &self.fe, unsafe {std::str::from_utf8_unchecked(tk)})
   }
   fn word(&'a self, data: &'a [u8]) -> PP<'a> {
-    PP::word(&self.alloc, unsafe {std::str::from_utf8_unchecked(data)})
+    PP::word(self.alloc, unsafe {std::str::from_utf8_unchecked(data)})
   }
 
   fn alloc(&'a self, doc: Doc<'a, RefDoc<'a, ()>, ()>) -> RefDoc<'a, ()> {
@@ -181,28 +181,28 @@ impl<'a> Pretty<'a> {
     }
   }
 
-  fn infixl(&'a self, t: TermID, info: &'a NotaInfo, args: Vec<LispVal>) -> Option<PP<'a>> {
+  fn infixl(&'a self, t: TermID, info: &'a NotaInfo, args: &[LispVal]) -> Option<PP<'a>> {
     if let Literal::Var(i, q) = info.lits[0] {
       let doc = match self.get_term_args(&args[i]) {
-        Some((_, t2, args2)) if t == t2 => self.infixl(t, info, args2),
+        Some((_, t2, args2)) if t == t2 => self.infixl(t, info, &args2),
         _ => None,
       }.unwrap_or_else(|| self.group(self.expr_paren(&args[i], q)));
-      let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], &args));
+      let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], args));
       if let Some((last, most)) = info.lits[2..].split_last() {
-        for lit in most {doc = self.append(doc, self.group(self.lit(&lit, &args)))}
-        doc = self.append_with(doc, Self::line(), self.group(self.lit(&last, &args)))
+        for lit in most {doc = self.append(doc, self.group(self.lit(lit, args)))}
+        doc = self.append_with(doc, Self::line(), self.group(self.lit(last, args)))
       };
       Some(doc)
     } else {None}
   }
 
-  fn infixr(&'a self, t: TermID, info: &'a NotaInfo, args: Vec<LispVal>) -> Option<PP<'a>> {
-    let doc = self.lit(&info.lits[0], &args);
-    let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], &args));
+  fn infixr(&'a self, t: TermID, info: &'a NotaInfo, args: &[LispVal]) -> Option<PP<'a>> {
+    let doc = self.lit(&info.lits[0], args);
+    let mut doc = self.append_with(doc, Self::softline(), self.lit(&info.lits[1], args));
     if let (&Literal::Var(i, q), most) = info.lits[2..].split_last()? {
-      for lit in most {doc = self.append(doc, self.group(self.lit(&lit, &args)))}
+      for lit in most {doc = self.append(doc, self.group(self.lit(lit, args)))}
       let end = match self.get_term_args(&args[i]) {
-        Some((_, t2, args2)) if t == t2 => self.infixr(t, info, args2),
+        Some((_, t2, args2)) if t == t2 => self.infixr(t, info, &args2),
         _ => None,
       }.unwrap_or_else(|| self.group(self.expr_paren(&args[i], q)));
       Some(self.append_with(doc, Self::line(), end))
@@ -223,7 +223,7 @@ impl<'a> Pretty<'a> {
   }
 
   fn pp_expr(&'a self, e: &LispVal) -> (Prec, PP<'a>) {
-    let p: *const LispKind = e.deref();
+    let p: *const LispKind = &**e;
     if let Some(v) = self.hash.borrow().get(&p) {return v.1}
     let v = (|| Some({
       let env = self.fe.env;
@@ -233,10 +233,10 @@ impl<'a> Pretty<'a> {
         if let Some(&(ref tk, infix)) = fix.first() {
           let doc = if infix {
             let info = &env.pe.infixes[tk];
-            let doc = if info.rassoc.unwrap() {
-              self.infixr(t, info, args)?
+            let doc = if info.rassoc.expect("infix notation has no associativity") {
+              self.infixr(t, info, &args)?
             } else {
-              self.infixl(t, info, args)?
+              self.infixl(t, info, &args)?
             };
             self.group(self.nest(2, doc))
           } else {
@@ -355,14 +355,14 @@ impl<'a> Pretty<'a> {
           write!(buf, "{{{}: {}}}", bis1.iter().map(|(a, _)| {
             bvars.push(a.unwrap_or(AtomID::UNDER));
             self.fe.to(a)
-          }).format(" "), self.fe.to(&s)).unwrap();
+          }).format(" "), self.fe.to(&s)).expect("writing to a String");
         }
         Type::Reg(s, ds) => {
           write!(buf, "({}: {}",
             bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "),
-            self.fe.to(&s)).unwrap();
-          Self::dep_type(bvars, ds, self.fe, &mut buf).unwrap();
-          write!(buf, ")").unwrap();
+            self.fe.to(&s)).expect("writing to a String");
+          Self::dep_type(bvars, ds, self.fe, &mut buf).expect("writing to a Vec");
+          write!(buf, ")").expect("writing to a String");
         }
       }
       doc = self.append_doc(doc, self.append_doc(Self::softline(),
@@ -383,7 +383,7 @@ impl<'a> Pretty<'a> {
     let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
     let doc = self.alloc(Doc::Group(doc));
     let mut buf = format!("{}", self.fe.to(&t.ret.0));
-    Self::dep_type(&bvars, t.ret.1, self.fe, &mut buf).unwrap();
+    Self::dep_type(&bvars, t.ret.1, self.fe, &mut buf).expect("writing to a String");
     buf += ";";
     self.append_doc(doc, self.append_doc(Self::softline(),
       self.alloc(Doc::text(buf))))

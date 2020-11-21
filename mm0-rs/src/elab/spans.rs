@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
 use super::environment::AtomID;
 use super::local_context::LocalContext;
-use crate::util::Span;
+use crate::util::{Span, OptionExt};
 
 /// A `Spans<T>` object is created for each declaration, and maintains data on the
 /// spans of objects occurring in the statement. For example, we might register
@@ -96,6 +96,7 @@ impl<T> Spans<T> {
   #[must_use] pub fn decl(&self) -> AtomID { unsafe { self.decl.assume_init() } }
 
   /// Insert a new data element at a given span.
+  #[allow(clippy::useless_transmute)]
   pub fn insert<'a>(&'a mut self, sp: Span, val: T) -> &'a mut T {
     let v: &'a mut Vec<(Span, T)> = self.data.entry(sp.start).or_default();
     // Safety: As indicated below, we would like to return k directly in the loop,
@@ -122,7 +123,7 @@ impl<T> Spans<T> {
     }
     let v = & /* 'c */ mut *v;
     v.push((sp, val));
-    &mut v.last_mut().unwrap().1
+    &mut unsafe { v.last_mut().unwrap_unchecked() }.1
   }
 
   /// Insert a data element at a given span, if it lies within the current statement's extent.

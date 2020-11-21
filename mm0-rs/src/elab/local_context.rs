@@ -52,8 +52,7 @@ impl InferSort {
   /// this variable has inferred exactly one sort, not counting the "`None`" provable sort.
   #[must_use] pub fn sort(&self) -> Option<SortID> {
     match self {
-      &InferSort::Bound(sort) => Some(sort),
-      &InferSort::Reg(sort, _) => Some(sort),
+      &InferSort::Bound(sort) | &InferSort::Reg(sort, _) => Some(sort),
       InferSort::Unknown {sorts, ..} => {
         let mut res = None;
         for s in sorts.keys() {
@@ -186,7 +185,7 @@ impl LocalContext {
           _ => false,
         }
       })
-    }).unwrap())
+    }).expect("mvars must be refs"))
   }
 
   /// Get a subproof by name.
@@ -280,7 +279,7 @@ impl<'a> ElabTerm<'a> {
       InferTarget::Provable if self.fe.sorts[from].mods.contains(Modifiers::PROVABLE) => return Ok(res),
       InferTarget::Provable => *self.fe.pe.coe_prov.get(&from).ok_or_else(||
         self.err(src, format!("type error: expected provable sort, got {}", self.fe.sorts[from].name)))?,
-      InferTarget::Reg(to) => self.fe.data[to].sort.unwrap(),
+      InferTarget::Reg(to) => self.fe.data[to].sort.expect("expected a sort"),
       InferTarget::Bound(_) => return Err(
         self.err(src, format!("expected a variable, got {}", self.fe.to(src))))
     };
@@ -288,7 +287,7 @@ impl<'a> ElabTerm<'a> {
     if let Some(c) = self.fe.pe.coes.get(&from).and_then(|m| m.get(&to)) {
       Ok(self.fe.apply_coe(&fsp, c, res))
     } else {
-      Err(self.err(&src,
+      Err(self.err(src,
         format!("type error: expected {}, got {}", self.fe.sorts[to].name, self.fe.sorts[from].name)))
     }
   }
@@ -297,7 +296,7 @@ impl<'a> ElabTerm<'a> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) => match self.lc.vars.get(&a) {
         None => Err(self.err(e, "variable not found")),
-        Some(&(_, InferSort::Bound(sort))) => Ok(sort),
+        Some(&(_, InferSort::Bound(sort))) |
         Some(&(_, InferSort::Reg(sort, _))) => Ok(sort),
         Some((_, InferSort::Unknown {..})) => panic!("finalized vars already"),
       },
@@ -346,7 +345,7 @@ impl<'a> ElabTermMut<'a> {
       (InferSort::Reg {..}, InferTarget::Bound(_)) =>
         Err(self.as_ref().err(e, "expected a bound variable, got regular variable")),
       (&mut InferSort::Bound(sort), InferTarget::Bound(sa)) => {
-        let s = self.env.data[sa].sort.unwrap();
+        let s = self.env.data[sa].sort.expect("expected a sort");
         if s == sort {Ok(LispKind::Atom(a).decorate_span(&e.fspan()))}
         else {
           Err(self.as_ref().err(e,
@@ -355,15 +354,15 @@ impl<'a> ElabTermMut<'a> {
       }
       (InferSort::Unknown {src, must_bound, sorts, ..}, tgt) => {
         let s = match tgt {
-          InferTarget::Bound(sa) => {*must_bound = true; Some(self.elab.env.data[sa].sort.unwrap())}
-          InferTarget::Reg(sa) => Some(self.elab.env.data[sa].sort.unwrap()),
+          InferTarget::Bound(sa) => {*must_bound = true; Some(self.elab.env.data[sa].sort.expect("expected a sort"))}
+          InferTarget::Reg(sa) => Some(self.elab.env.data[sa].sort.expect("expected a sort")),
           _ => None,
         };
         let mvars = &mut self.elab.lc.mvars;
         let sp = FileSpan {file: self.fsp.file.clone(), span: *src};
         Ok(sorts.entry(s).or_insert_with(|| new_mvar(mvars, tgt, Some(sp))).clone())
       }
-      (&mut InferSort::Reg(sort, _), tgt) => self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
+      (&mut InferSort::Reg(sort, _), tgt) |
       (&mut InferSort::Bound(sort), tgt) => self.as_ref().coerce(e, sort, LispVal::atom(a), tgt),
     };
     self.spans_insert(e, || ObjectKind::Var(a));
@@ -372,7 +371,7 @@ impl<'a> ElabTermMut<'a> {
 
   fn list(&mut self, e: &LispVal,
     mut it: impl Iterator<Item=LispVal>, tgt: InferTarget) -> Result<LispVal> {
-    let t = it.next().unwrap();
+    let t = it.next().expect("empty iterator");
     let a = t.as_atom().ok_or_else(|| self.as_ref().err(&t, "expected an atom"))?;
     if self.lc.vars.contains_key(&a) {
       return Err(self.as_ref().err(&t,
@@ -425,7 +424,7 @@ impl<'a> ElabTermMut<'a> {
       &LispKind::Atom(a) => self.atom(e, a, tgt),
       LispKind::List(_) | LispKind::DottedList(_, _) if e.is_list() => match e.len() {
         0 => self.other(e, tgt),
-        1 => self.expr(&e.head().unwrap(), tgt),
+        1 => self.expr(&e.head().expect("nonempty"), tgt),
         _ => self.list(e, Uncons::from(e.clone()), tgt),
       },
       _ => self.other(e, tgt),
@@ -457,7 +456,8 @@ impl BuildArgs {
 
   fn push_var(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>,
     a: Option<AtomID>, is: &Option<InferSort>) -> Option<EType> {
-    match is.as_ref().unwrap_or_else(|| &vars[&a.unwrap()].1) {
+    match is.as_ref().unwrap_or_else(||
+        &vars[&a.expect("a variable must have a name or an expected type")].1) {
       &InferSort::Bound(sort) => {
         self.push_bound(a)?;
         Some(EType::Bound(sort))
@@ -532,9 +532,9 @@ impl Elaborator {
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
     self.spans.insert(d.sort, ObjectKind::Sort(sort));
     Ok(if lk.is_bound() {
-      if !d.deps.is_empty() {
-        self.report(ElabError::new_e(
-          d.deps[0].start..d.deps.last().unwrap().end, "dependencies not allowed in curly binders or dummy variables"));
+      if let Some(&Span {end, ..}) = d.deps.last() {
+        self.report(ElabError::new_e(d.deps[0].start..end,
+          "dependencies not allowed in curly binders or dummy variables"));
         *error = true;
       }
       (lk == LocalKind::Dummy, InferSort::Bound(sort))
@@ -568,7 +568,7 @@ impl Elaborator {
     };
     Ok(match ty {
       None => {
-        let src = sp.unwrap();
+        let src = sp.expect("omitted type must come from a span");
         let fsp = self.fspan(src);
         if self.mm0_mode {
           self.report(ElabError::warn(src, "(MM0 mode) variable missing sort"))
@@ -607,7 +607,8 @@ impl Elaborator {
       if let InferSort::Unknown {src, must_bound, dummy: d2, ref sorts} = *is {
         if self.mm0_mode {errs.push(ElabError::warn(src, "(MM0 mode) inferred variable type"))}
         match if sorts.len() == 1 {
-          sorts.keys().next().unwrap().ok_or_else(|| ElabError::new_e(src, "could not infer type"))
+          sorts.keys().next().expect("impossible")
+            .ok_or_else(|| ElabError::new_e(src, "could not infer type"))
         } else {
           let env = &self.env;
           sorts.keys().find_map(|s| s.filter(|&s| {
@@ -617,7 +618,7 @@ impl Elaborator {
             }
           })).ok_or_else(|| {
             ElabError::new_e(src, format!("could not infer consistent type from {{{}}}",
-              sorts.keys().filter_map(|&k| k).map(|s| &env.sorts[s].name).format(", ")))
+              sorts.keys().filter_map(|&k| k.map(|s| &env.sorts[s].name)).format(", ")))
           })
         } {
           Ok(sort) => {
@@ -646,7 +647,7 @@ impl Elaborator {
         }
       }
     }
-    newvars.sort_by_key(|&(_, a)| self.env.data[a].name.deref());
+    newvars.sort_by_key(|&(_, a)| &*self.env.data[a].name);
     let mut vec: Vec<_> = newvars.into_iter().map(|(src, a)| (src, Some(a), None)).collect();
     vec.append(&mut self.lc.var_order);
     self.lc.var_order = vec;
@@ -673,7 +674,8 @@ impl Elaborator {
         Ok(InferBinder::Var(x, is)) => {
           if !e_hyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
           if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
-            report!(bi.local.unwrap(), "variable occurs twice in binder list");
+            report!(bi.local.expect("this can't happen unless the variable was written explicitly"),
+              "variable occurs twice in binder list");
           }
         }
         Ok(InferBinder::Hyp(x, e)) => e_hyps.push((bi, x, e)),
@@ -770,14 +772,15 @@ impl Elaborator {
           }
         };
         if atom != AtomID::UNDER {
+          let span = self.fspan(d.id);
           let t = Term {
             atom, args: args.into(), ret, kind,
-            span: self.fspan(d.id),
+            span: span.clone(),
             doc,
             vis: d.mods,
             full,
           };
-          let tid = self.env.add_term(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
+          let tid = self.env.add_term(atom, &span, || t).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
         }
       }
@@ -851,7 +854,7 @@ impl Elaborator {
                 self.elab_lisp(e)?;
                 for g in mem::take(&mut self.lc.goals) {
                   report!(try_get_span(&span, &g),
-                    format!("|- {}", self.format_env().pp(&g.goal_type().unwrap(), 80)))
+                    format!("|- {}", self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)))
                 }
                 if error {return Ok(None)}
                 let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
@@ -865,10 +868,10 @@ impl Elaborator {
         };
         if atom != AtomID::UNDER {
           let t = Thm {
-            atom, span, vis: d.mods, full, doc,
+            atom, span: span.clone(), vis: d.mods, full, doc,
             args: args.into(), heap, hyps, ret, kind
           };
-          let tid = self.env.add_thm(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(d.id))?;
+          let tid = self.env.add_thm(atom, &span, || t).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Thm(tid));
         }
       }
@@ -901,7 +904,7 @@ impl AwaitingProof {
 
   /// Once the user closure completes, we can call this function to consume the suspended
   /// computation and finish adding the theorem.
-  pub fn finish(self, elab: &mut Elaborator, fsp: FileSpan, proof: LispVal) -> Result<()> {
+  pub fn finish(self, elab: &mut Elaborator, fsp: &FileSpan, proof: LispVal) -> Result<()> {
     let AwaitingProof {thm, de, var_map, mut lc, is} = self;
     mem::swap(&mut elab.lc, &mut lc);
     elab.finish_add_thm(fsp, thm, Some(Some(ThmVal {de, var_map, lc: Some(lc), is, proof})))
@@ -986,7 +989,7 @@ impl Elaborator {
             (InferSort::Bound(sort), EType::Bound(sort))
           }
           Some(vs) => {
-            let (deps, n) = self.deps(fsp, &varmap, vs)?;
+            let (deps, n) = self.deps(fsp, varmap, vs)?;
             (InferSort::Reg(sort, deps), EType::Reg(sort, n))
           }
         };
@@ -1012,7 +1015,7 @@ impl Elaborator {
   }
 
   /// Parse and add a term/def declaration (this is called by the `(add-term!)` lisp function).
-  pub fn add_term(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<()> {
+  pub fn add_term(&mut self, fsp: &FileSpan, es: &[LispVal]) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or_else(|| fsp.clone()).span}}
     let (x, args, ret, val) = match es {
       [x, args, ret] => (x, args, ret, None),
@@ -1026,32 +1029,29 @@ impl Elaborator {
         format!("duplicate term/def declaration '{}'", self.print(&x))))
     }
     let mut vars = (HashMap::new(), 1);
-    let (mut lc, args) = self.binders(&fsp, Uncons::from(args.clone()), &mut vars)?;
-    let ret = match ret.as_atom() {
-      Some(s) => {
-        let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(ret),
+    let (mut lc, args) = self.binders(fsp, Uncons::from(args.clone()), &mut vars)?;
+    let ret = if let Some(s) = ret.as_atom() {
+      let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(ret),
+        format!("unknown sort '{}'", self.print(&s))))?;
+      (s, 0)
+    } else {
+      let mut u = Uncons::from(ret.clone());
+      if let (Some(e), Some(vs)) = (u.next(), u.next()) {
+        let s = e.as_atom().ok_or_else(|| ElabError::new_e(sp!(e), "expected an atom"))?;
+        let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(e),
           format!("unknown sort '{}'", self.print(&s))))?;
-        (s, 0)
-      }
-      None => {
-        let mut u = Uncons::from(ret.clone());
-        if let (Some(e), Some(vs)) = (u.next(), u.next()) {
-          let s = e.as_atom().ok_or_else(|| ElabError::new_e(sp!(e), "expected an atom"))?;
-          let s = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(e),
-            format!("unknown sort '{}'", self.print(&s))))?;
-          (s, self.deps(&fsp, &vars.0, vs)?.1)
-        } else {
-          return Err(ElabError::new_e(sp!(ret), format!("syntax error: {}", self.print(ret))))
-        }
+        (s, self.deps(fsp, &vars.0, vs)?.1)
+      } else {
+        return Err(ElabError::new_e(sp!(ret), format!("syntax error: {}", self.print(ret))))
       }
     };
     let (vis, kind) = if let Some((evis, ds, val)) = val {
-      let vis = self.visibility(&fsp, evis)?;
+      let vis = self.visibility(fsp, evis)?;
       if !vis.allowed_visibility(DeclKind::Def) {
         return Err(ElabError::new_e(sp!(evis), "invalid modifiers for this keyword"))
       }
       (vis, TermKind::Def((|| -> Result<Option<Expr>> {
-        dummies(self.format_env(), &fsp, &mut lc, ds)?;
+        dummies(self.format_env(), fsp, &mut lc, ds)?;
         let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
         let i = de.dedup(&nh, val)?;
@@ -1065,7 +1065,7 @@ impl Elaborator {
     } else {(Modifiers::NONE, TermKind::Term)};
     let full = fsp.span;
     let t = Term {atom: x, span, full, vis, doc: None, args, ret, kind};
-    self.env.add_term(x, &fsp, || t).map_err(|e| e.into_elab_error(full))?;
+    self.env.add_term(x, fsp, || t).map_err(|e| e.into_elab_error(full))?;
     Ok(())
   }
 
@@ -1151,11 +1151,12 @@ impl Elaborator {
         Some(ThmVal {de, var_map, lc: Some(Box::new(lc)), is, proof})
       } else {None})
     } else {None};
-    self.finish_add_thm(fsp, thm, out)?;
+    self.finish_add_thm(&fsp, thm, out)?;
     Ok(Ok(()))
   }
 
-  fn finish_add_thm(&mut self, fsp: FileSpan, mut t: Thm, res: Option<Option<ThmVal>>) -> Result<()> {
+  #[allow(clippy::option_option)]
+  fn finish_add_thm(&mut self, fsp: &FileSpan, mut t: Thm, res: Option<Option<ThmVal>>) -> Result<()> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     t.kind = match res {
       None => ThmKind::Axiom,
@@ -1168,7 +1169,7 @@ impl Elaborator {
           };
           let lc = lc.as_deref_mut().unwrap_or(&mut self.lc);
           let fe = FormatEnv {source: &self.ast.source, env: &self.env};
-          dummies(fe, &fsp, lc, &ds)?;
+          dummies(fe, fsp, lc, &ds)?;
           let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
           let ip = de.dedup(&nh, &pf)?;
           let (mut ids, heap) = build(&de);
@@ -1182,7 +1183,7 @@ impl Elaborator {
       }))
     };
     let sp = fsp.span;
-    self.env.add_thm(t.atom, &fsp, || t).map_err(|e| e.into_elab_error(sp))?;
+    self.env.add_thm(t.atom, fsp, || t).map_err(|e| e.into_elab_error(sp))?;
     Ok(())
   }
 }

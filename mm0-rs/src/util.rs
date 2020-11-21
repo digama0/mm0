@@ -49,6 +49,7 @@ pub trait OptionExt<T> {
 }
 
 impl<T> OptionExt<T> for Option<T> {
+  #[inline]
   unsafe fn unwrap_unchecked(self) -> T {
     match self {
       Some(x) => x,
@@ -395,7 +396,6 @@ impl Hash for FileRef {
 }
 
 impl fmt::Display for FileRef {
-  #[allow(clippy::unwrap_in_result)]
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str())
       .to_str().expect("bad unicode in path").fmt(f)

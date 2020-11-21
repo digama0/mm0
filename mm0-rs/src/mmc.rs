@@ -100,6 +100,7 @@ impl Compiler {
   }
 
   /// Once we are done adding functions, this function performs final linking to produce an executable.
+  #[allow(clippy::unused_self)]
   pub fn finish(&mut self, _elab: &mut Elaborator, _fsp: &FileSpan, _a1: AtomID, _a2: AtomID) -> Result<()> {
     Ok(())
   }
@@ -108,7 +109,7 @@ impl Compiler {
   /// [`add`](struct.Compiler.html#method.add) and [`finish`](struct.Compiler.html#method.finish).
   pub fn call(&mut self, elab: &mut Elaborator, fsp: FileSpan, args: Vec<LispVal>) -> Result<LispVal> {
     let mut it = args.into_iter();
-    let e = it.next().unwrap();
+    let e = it.next().expect("expected 1 argument");
     match e.as_atom().and_then(|a| self.keywords.get(&a)) {
       Some(Keyword::Add) => {
         self.add(elab, fsp, it)?;

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
-use crate::util::{ArcString, FileSpan, Span, SliceExt, StackList};
+use crate::util::{ArcString, FileSpan, Span, SliceExt, MutexExt, StackList};
 use super::{AtomID, ThmID, Remap, Remapper, Modifiers};
 use parser::IR;
 pub use super::math_parser::{QExpr, QExprKind};
@@ -337,9 +337,9 @@ impl LispVal {
           vec.extend_from_slice(&es[..n]);
           return true
         },
-        LispKind::List(es) => {vec.extend_from_slice(&es); return false},
+        LispKind::List(es) => {vec.extend_from_slice(es); return false},
         LispKind::DottedList(es, r) => {
-          vec.extend_from_slice(&es);
+          vec.extend_from_slice(es);
           n -= es.len();
           self = r.clone()
         }
@@ -381,6 +381,7 @@ impl LispArena {
   pub(crate) fn install_thread_local(&self) { REFS.with(|refs| refs.set(Some(self))) }
   pub(crate) fn uninstall_thread_local() { REFS.with(|refs| refs.set(None)) }
 
+  #[allow(clippy::unused_self)]
   pub(crate) fn clear(self) {
     // for e in self.0.iter_mut() {
       // if let Some(e) = e.upgrade() { e.as_ref_(|r| *r = LispVal::undef()); }
@@ -470,7 +471,7 @@ impl LispRef {
     *self.0.borrow_mut() = LispWeak::Weak(Rc::downgrade(&e.0))
   }
   /// Get a clone of the stored value.
-  pub fn unref(&self) -> LispVal { self.get(|c| c.clone()) }
+  pub fn unref(&self) -> LispVal { self.get(Clone::clone) }
   /// Consume the reference, yielding the stored value.
   pub fn into_inner(self) -> LispVal { self.0.into_inner().upgrade() }
 
@@ -494,7 +495,7 @@ impl LispRef {
   pub(crate) unsafe fn get_unsafe(&self) -> Option<&LispKind> {
     match self.0.try_borrow_unguarded().unwrap_or_else(|_| {
       std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
-      self.0.try_borrow_unguarded().unwrap()
+      self.0.try_borrow_unguarded().expect("could not deref refcell")
     }) {
       LispWeak::Strong(e) => Some(e),
       LispWeak::Weak(e) if e.strong_count() == 0 => None,
@@ -787,10 +788,7 @@ pub enum ProcPos {
 impl ProcPos {
   /// Get the file span for a procedure.
   fn fspan(&self) -> &FileSpan {
-    match self {
-      ProcPos::Named(fsp, _, _) => fsp,
-      ProcPos::Unnamed(fsp) => fsp,
-    }
+    match self { ProcPos::Named(fsp, _, _) | ProcPos::Unnamed(fsp) => fsp }
   }
 }
 
@@ -877,9 +875,9 @@ impl Proc {
     match self {
       Proc::Builtin(p) => p.spec(),
       &Proc::Lambda {spec, ..} => spec,
-      Proc::MatchCont(_) => ProcSpec::AtLeast(0),
-      Proc::RefineCallback => ProcSpec::AtLeast(1),
+      Proc::MatchCont(_) |
       Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
+      Proc::RefineCallback |
       Proc::MMCCompiler(_) => ProcSpec::AtLeast(1),
     }
   }
@@ -1366,9 +1364,9 @@ impl Uncons {
       Uncons::New(e) => e.clone().extend_into(n, vec),
       Uncons::List(es) | Uncons::DottedList(es, _) if n <= es.len() =>
         {vec.extend_from_slice(&es[..n]); true}
-      Uncons::List(es) => {vec.extend_from_slice(&es); false}
+      Uncons::List(es) => {vec.extend_from_slice(es); false}
       Uncons::DottedList(es, r) => {
-        vec.extend_from_slice(&es);
+        vec.extend_from_slice(es);
         r.clone().extend_into(n - es.len(), vec)
       }
     }
@@ -1434,7 +1432,7 @@ impl Iterator for Uncons {
   fn count(self) -> usize { self.len() }
 }
 
-impl<K: Clone + Hash + Eq, V: Remap> Remap for HashMap<K, V> {
+impl<K: Clone + Hash + Eq, V: Remap, S> Remap for HashMap<K, V, S> {
   type Target = HashMap<K, V::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.iter().map(|(k, v)| (k.clone(), v.remap(r))).collect() }
 }
@@ -1444,7 +1442,7 @@ impl<A: Remap> Remap for RefCell<A> {
 }
 impl<A: Remap> Remap for Mutex<A> {
   type Target = Mutex<A::Target>;
-  fn remap(&self, r: &mut Remapper) -> Self::Target { Mutex::new(self.lock().unwrap().remap(r)) }
+  fn remap(&self, r: &mut Remapper) -> Self::Target { Mutex::new(self.ulock().remap(r)) }
 }
 impl Remap for LispVal {
   type Target = Self;

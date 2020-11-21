@@ -17,23 +17,24 @@
 //!
 //! [`mm0-rs/README.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/README.md
 
-#![warn(bare_trait_objects)]
-#![warn(elided_lifetimes_in_paths)]
-#![warn(missing_copy_implementations, missing_debug_implementations)]
-#![warn(future_incompatible, rust_2018_idioms)]
-#![warn(trivial_numeric_casts)]
-#![warn(variant_size_differences)]
-#![warn(unreachable_pub)]
-#![warn(unused)]
-#![warn(missing_docs)]
-#![warn(clippy::all, clippy::restriction, clippy::pedantic, clippy::nursery, clippy::cargo)]
-#![allow(clippy::as_conversions, clippy::module_name_repetitions, clippy::multiple_crate_versions,
-  clippy::implicit_return, clippy::missing_docs_in_private_items, clippy::pattern_type_mismatch,
-  clippy::missing_const_for_fn, clippy::expect_used, clippy::use_self, clippy::integer_arithmetic,
-  clippy::indexing_slicing, clippy::panic, clippy::panic_in_result_fn, clippy::exit,
-  clippy::wildcard_enum_match_arm, clippy::missing_errors_doc, clippy::map_err_ignore,
-  clippy::shadow_unrelated, clippy::too_many_lines, clippy::clone_on_ref_ptr, clippy::unimplemented,
-  clippy::let_underscore_must_use, clippy::default_trait_access, clippy::shadow_reuse)]
+// rust lints we want
+#![warn(bare_trait_objects, elided_lifetimes_in_paths,
+  missing_copy_implementations, missing_debug_implementations, future_incompatible,
+  rust_2018_idioms, trivial_numeric_casts, variant_size_differences, unreachable_pub,
+  unused, missing_docs)]
+// all the clippy
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+// all the clippy::restriction lints we want
+#![warn(clippy::else_if_without_else, clippy::float_arithmetic,
+  clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
+  clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
+  clippy::string_add, clippy::unwrap_used, clippy::wrong_pub_self_convention)]
+// all the clippy lints we don't want
+#![allow(clippy::cognitive_complexity, clippy::default_trait_access, clippy::filter_map,
+  clippy::find_map, clippy::map_err_ignore, clippy::missing_const_for_fn,
+  clippy::missing_errors_doc, clippy::module_name_repetitions,
+  clippy::multiple_crate_versions, clippy::option_if_let_else, clippy::shadow_unrelated,
+  clippy::too_many_lines, clippy::use_self)]
 
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;

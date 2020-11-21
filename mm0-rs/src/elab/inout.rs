@@ -202,8 +202,9 @@ impl Environment {
       ExprNode::Dummy(_, _) => return Err("dummy not permitted".into()),
       &ExprNode::Ref(i) => match i.checked_sub(args.len()) {
         None => {
+          use std::convert::TryInto;
           if let (_, Type::Reg(s, 0)) = args[i] {
-            out.push_seg(StringSeg::Var(s, i as u32));
+            out.push_seg(StringSeg::Var(s, i.try_into().expect("too many refs")));
           } else {unreachable!()}
         }
         Some(j) => out.flush().built.extend_from_slice(&heap[j]),
@@ -307,7 +308,7 @@ impl Environment {
   }
 
   fn new_string_handler(&self) -> Result<(Sorts, HashMap<TermID, InoutStringType>), String> {
-    use InoutStringType::*;
+    use InoutStringType::{Ch, Hex, S0, S1, SAdd, SCons};
     let s = self.new_sorts()?;
     let mut map = HashMap::new();
     map.insert(self.check_term("s0", &[], s.str, false)?, S0);
@@ -366,12 +367,12 @@ impl Elaborator {
   /// Elaborate as if in an `output string` command, but from lisp. The input values
   /// are elaborated as type `string`, and the result is evaluated to produce a byte
   /// vector that is passed back to lisp code.
-  pub fn eval_string(&mut self, fsp: FileSpan, hs: &[LispVal]) -> EResult<Vec<u8>> {
+  pub fn eval_string(&mut self, fsp: &FileSpan, hs: &[LispVal]) -> EResult<Vec<u8>> {
     let (sorts, _) = self.get_string_handler(fsp.span)?;
     let mut es = Vec::with_capacity(hs.len());
     for e in hs {
-      let sp = try_get_span(&fsp, e);
-      let val = self.elaborate_term(sp, &e,
+      let sp = try_get_span(fsp, e);
+      let val = self.elaborate_term(sp, e,
         InferTarget::Reg(self.sorts[sorts.str].atom))?;
       let s = self.infer_sort(sp, &val)?;
       if s != sorts.str {
@@ -386,7 +387,7 @@ impl Elaborator {
     let (mut ids, heap) = build(&de);
     let exprs = is.into_iter().map(|i| ids[i].take()).collect::<Vec<_>>();
     let mut w = StringWriter::default();
-    let terms = &self.inout.string.as_ref().unwrap().1;
+    let terms = &self.inout.string.as_ref().expect("string handler should be initialized").1;
     self.env.write_output_string(terms, &mut w, &heap, &exprs).map_err(|e| match e {
       OutputError::IOError(e) => panic!(e),
       OutputError::String(e) => ElabError::new_e(fsp.span, e),
@@ -406,6 +407,7 @@ impl Elaborator {
 
   /// Elaborate an `input` command. This is not implemented, as it needs to work with the
   /// final MM0 file, which is not available. More design work is needed.
+  #[allow(clippy::unused_self)]
   pub fn elab_input(&mut self, _: Span, kind: Span, _: &[SExpr]) -> EResult<()> {
     Err(ElabError::new_e(kind, "unsupported input kind"))
   }

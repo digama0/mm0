@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
-use crate::util::ArcString;
+use crate::util::{ArcString, OptionExt};
 use super::super::{AtomID, Span, DocComment, Elaborator, ElabError, ObjectKind};
 use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
   Remap, Remapper, Syntax};
@@ -358,7 +358,7 @@ impl IR {
   fn dotted_list(sp: Span, mut cs: Vec<IR>, c: IR) -> IR {
     if cs.is_empty() {return c}
     match c {
-      IR::Const(e) => match e.deref() {
+      IR::Const(e) => match &*e {
         LispKind::List(es) => {
           cs.extend(es.iter().map(|e| IR::Const(e.clone())));
           IR::List(sp, cs.into())
@@ -412,8 +412,8 @@ impl LocalCtx {
   }
 
   fn pop(&mut self) {
-    let x = self.ctx.pop().unwrap();
-    if x != AtomID::UNDER {self.names.get_mut(&x).unwrap().pop();}
+    let x = self.ctx.pop().expect("context underflow");
+    if x != AtomID::UNDER {self.names.get_mut(&x).expect("missing name").pop();}
   }
   fn restore(&mut self, n: usize) {
     while self.ctx.len() > n { self.pop() }
@@ -905,7 +905,7 @@ impl<'a> LispParser<'a> {
                 self.expr(false, &es[1])?,
                 self.expr(false, &es[2])?,
                 if let Some(e) = es.get(3) {
-                  self.ctx.restore(restore.unwrap());
+                  self.ctx.restore(unsafe {restore.unwrap_unchecked()});
                   self.expr(false, e)?
                 } else { IR::Const(LispVal::undef()) }
               )))),
@@ -918,7 +918,7 @@ impl<'a> LispParser<'a> {
                 ElabError::new_e(es[0].span, "expected at least one argument")),
               Syntax::Match => {
                 let e = self.expr(false, &es[1])?;
-                self.ctx.restore(restore.unwrap());
+                self.ctx.restore(unsafe {restore.unwrap_unchecked()});
                 self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
               },
               Syntax::MatchFn => {

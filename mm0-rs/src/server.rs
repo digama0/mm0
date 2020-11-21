@@ -221,7 +221,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   } else {
     let rd = rd.push(path.clone());
     elab::elaborate(
-      ast.clone(), path.clone(), path.has_extension("mm0"),
+      &ast, path.clone(), path.has_extension("mm0"),
       crate::get_check_proofs(), cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
       |p| {

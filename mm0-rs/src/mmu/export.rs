@@ -51,7 +51,7 @@ type Line = (usize, Vec<u8>);
 impl FrozenEnv {
   fn write_deps(&self, w: &mut impl Write, bvars: &[Option<AtomID>], mut vs: u64) -> io::Result<()> {
     list(w, bvars.iter().filter(|_| {let old = vs; vs /= 2; old & 1 != 0}),
-      |w, a| write!(w, "{}", self.data()[a.unwrap()].name()))
+      |w, &a| write!(w, "{}", self.data()[a.expect("you can only depend on variables with names")].name()))
   }
 
   fn write_binders(&self, w: &mut impl Write, bis: &[(Option<AtomID>, Type)]) -> io::Result<Vec<Option<AtomID>>> {
@@ -77,12 +77,12 @@ impl FrozenEnv {
     dummies: &mut HashMap<AtomID, SortID>,
     heap: &[Vec<u8>],
     node: &ExprNode,
-  ) -> Vec<u8> {
+  ) -> io::Result<Vec<u8>> {
     fn f(
       env: &FrozenEnv, w: &mut Vec<u8>,
       dummies: &mut HashMap<AtomID, SortID>,
       heap: &[Vec<u8>],
-      node: &ExprNode) {
+      node: &ExprNode) -> io::Result<()> {
       match *node {
         ExprNode::Ref(i) => w.extend_from_slice(&heap[i]),
         ExprNode::Dummy(a, s) => {
@@ -90,18 +90,19 @@ impl FrozenEnv {
           w.extend_from_slice(env.data()[a].name());
         }
         ExprNode::App(t, ref es) => {
-          write!(w, "({}", env.data()[env.term(t).atom].name()).unwrap();
+          write!(w, "({}", env.data()[env.term(t).atom].name())?;
           for e in &**es {
             w.push(b' ');
-            f(env, w, dummies, heap, e);
+            f(env, w, dummies, heap, e)?;
           }
           w.push(b')');
         }
       }
+      Ok(())
     }
     let mut ret = Vec::new();
-    f(self, &mut ret, dummies, heap, node);
-    ret
+    f(self, &mut ret, dummies, heap, node)?;
+    Ok(ret)
   }
 
   fn write_proof_node(&self,
@@ -111,7 +112,7 @@ impl FrozenEnv {
     lines: &[(Vec<Line>, Line)],
     node: &ProofNode,
     indent: usize,
-  ) -> (Vec<Line>, Line) {
+  ) -> io::Result<(Vec<Line>, Line)> {
     struct State<'a> {
       env: &'a FrozenEnv,
       w: Vec<Line>, i: usize, l: Vec<u8>,
@@ -130,7 +131,7 @@ impl FrozenEnv {
         self.w.push((mem::replace(&mut self.i, indent), l));
       }
 
-      fn go(&mut self, e: &ProofNode, indent: usize) {
+      fn go(&mut self, e: &ProofNode, indent: usize) -> io::Result<()> {
         match e {
           &ProofNode::Ref(i) => {
             let (ref w2, (n, ref l2)) = self.lines[i];
@@ -151,77 +152,80 @@ impl FrozenEnv {
             self.l.extend_from_slice(self.env.data()[a].name());
           }
           &ProofNode::Hyp(i, _) =>
-            self.l.extend_from_slice(self.env.data()[self.hyps[i].0.unwrap()].name()),
+            self.l.extend_from_slice(self.env.data()[
+              self.hyps[i].0.expect("a nameless hyp can't be referred to")
+            ].name()),
           &ProofNode::Term {term, ref args} => {
             let td = self.env.term(term);
             write!(self, "({}", self.env.data()[td.atom].name()).unwrap();
             assert!(td.args.len() == args.len());
             for e in &**args {
               self.l.push(b' ');
-              self.go(e, indent);
+              self.go(e, indent)?;
             }
             self.l.push(b')');
           }
           &ProofNode::Thm {thm, ref args, ..} => {
             let td = self.env.thm(thm);
             let nargs = td.args.len();
-            write!(self, "({} ", self.env.data()[td.atom].name()).unwrap();
-            list(self, args[..nargs].iter(), |this, e| {this.go(e, indent); Ok(())}).unwrap();
+            write!(self, "({} ", self.env.data()[td.atom].name())?;
+            list(self, args[..nargs].iter(), |this, e| this.go(e, indent))?;
             for e in &args[nargs..] {
               self.line(indent + 1);
-              self.go(e, indent + 1);
+              self.go(e, indent + 1)?;
             }
             self.l.push(b')');
           }
           ProofNode::Conv(args) => {
             let (e, c, p) = &**args;
             self.l.extend_from_slice(b"(:conv ");
-            self.go(e, indent);
+            self.go(e, indent)?;
             self.line(indent + 1);
-            self.go(c, indent + 1);
+            self.go(c, indent + 1)?;
             self.line(indent + 1);
-            self.go(p, indent + 1);
+            self.go(p, indent + 1)?;
             self.l.push(b')');
           }
-          ProofNode::Refl(e) => self.go(e, indent),
+          ProofNode::Refl(e) => self.go(e, indent)?,
           ProofNode::Sym(c) => {
             self.l.extend_from_slice(b"(:sym ");
-            self.go(c, indent);
+            self.go(c, indent)?;
             self.l.push(b')');
           }
           &ProofNode::Cong {term, ref args} => {
-            write!(self, "({}", self.env.data()[self.env.term(term).atom].name()).unwrap();
+            write!(self, "({}", self.env.data()[self.env.term(term).atom].name())?;
             for e in &**args {
               self.line(indent + 1);
-              self.go(e, indent + 1);
+              self.go(e, indent + 1)?;
             }
             self.l.push(b')');
           }
           &ProofNode::Unfold {term, ref args, ref res} => {
             let (_, sub_lhs, c) = &**res;
             let td = self.env.term(term);
-            write!(self, "(:unfold {} ", self.env.data()[td.atom].name()).unwrap();
-            list(self, args.iter(), |this, e| {this.go(e, indent); Ok(())}).unwrap();
+            write!(self, "(:unfold {} ", self.env.data()[td.atom].name())?;
+            list(self, args.iter(), |this, e| this.go(e, indent))?;
             let mut m = HashMap::new();
             if let TermKind::Def(Some(Expr {heap: eheap, head})) = &td.kind {
-              build_unfold_map(&self.env, &mut m, &mut vec![false; eheap.len()],
+              build_unfold_map(self.env, &mut m, &mut vec![false; eheap.len()],
                 eheap, head, self.heap, sub_lhs)
             }
             self.l.push(b' ');
             let mut ds = m.into_iter().collect::<Vec<_>>();
             ds.sort_by_key(|&(a, _)| &**self.env.data()[a].name());
-            list(self, ds.into_iter(), |this, (_, e)| {this.go(e, indent); Ok(())}).unwrap();
+            list(self, ds.into_iter(), |this, (_, e)| this.go(e, indent))?;
             self.line(indent + 1);
-            self.go(c, indent + 1);
+            self.go(c, indent + 1)?;
             self.l.push(b')');
           }
         }
+        Ok(())
       }
     }
 
     let mut s = State {env: self, w: vec![], i: indent, l: vec![], dummies, hyps, heap, lines};
-    s.go(node, indent);
-    (s.w, (s.i, s.l))
+    s.go(node, indent)?;
+    Ok((s.w, (s.i, s.l)))
   }
 
   /// Write this environment into an `mmu` file.
@@ -231,7 +235,7 @@ impl FrozenEnv {
       match *s {
         StmtTrace::Sort(a) => {
           let ad = &self.data()[a];
-          let mods = self.sort(ad.sort().unwrap()).mods;
+          let mods = self.sort(ad.sort().expect("expected a sort")).mods;
           write!(w, "(sort {}", ad.name())?;
           if mods.contains(Modifiers::PURE) {write!(w, " pure")?}
           if mods.contains(Modifiers::STRICT) {write!(w, " strict")?}
@@ -241,7 +245,7 @@ impl FrozenEnv {
         }
         StmtTrace::Decl(a) => {
           let ad = &self.data()[a];
-          match ad.decl().unwrap() {
+          match ad.decl().expect("expected a term/thm") {
             DeclKey::Term(tid) => {
               let td = self.term(tid);
               write!(w, "({}{} {} ",
@@ -256,10 +260,10 @@ impl FrozenEnv {
                 let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
                   a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_str()))).collect();
                 for e in &heap[td.args.len()..] {
-                  let c = self.write_expr_node(&mut dummies, &strs, e);
+                  let c = self.write_expr_node(&mut dummies, &strs, e)?;
                   strs.push(c);
                 }
-                let ret = self.write_expr_node(&mut dummies, &strs, head);
+                let ret = self.write_expr_node(&mut dummies, &strs, head)?;
                 writeln!(w)?;
                 let mut dummies = dummies.into_iter().collect::<Vec<_>>();
                 dummies.sort_by_key(|&(a, _)| &**self.data()[a].name());
@@ -284,7 +288,7 @@ impl FrozenEnv {
               let mut strs: Vec<Vec<u8>> = td.args.iter().map(|&(a, _)|
                 a.map_or(vec![], |a| Vec::from(self.data()[a].name().as_str()))).collect();
               for e in &td.heap[td.args.len()..] {
-                let c = self.write_expr_node(&mut dummies, &strs, e);
+                let c = self.write_expr_node(&mut dummies, &strs, e)?;
                 strs.push(c);
               }
               {
@@ -293,20 +297,20 @@ impl FrozenEnv {
                   (None, _) => write!(w, " ()")?,
                   (Some((_, ty)), ThmKind::Axiom) => {
                     write!(w, "\n  (")?;
-                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty)?)?;
                     for (_, ty) in it {
                       write!(w, "\n   ")?;
-                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty)?)?;
                     }
                     write!(w, ")")?;
                   }
                   (Some((hyp, ty)), ThmKind::Thm(_)) => {
-                    write!(w, "\n  (({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
-                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                    write!(w, "\n  (({} ", hyp.map_or("_", |a| self.data()[a].name().as_str()))?;
+                    w.write_all(&self.write_expr_node(&mut dummies, &strs, ty)?)?;
                     write!(w, ")")?;
                     for (hyp, ty) in it {
-                      write!(w, "\n   ({} ", hyp.map_or("_", |a| &self.data()[a].name().as_str()))?;
-                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty))?;
+                      write!(w, "\n   ({} ", hyp.map_or("_", |a| self.data()[a].name().as_str()))?;
+                      w.write_all(&self.write_expr_node(&mut dummies, &strs, ty)?)?;
                       write!(w, ")")?;
                     }
                     write!(w, ")")?;
@@ -314,7 +318,7 @@ impl FrozenEnv {
                 }
               }
               write!(w, "\n  ")?;
-              w.write_all(&self.write_expr_node(&mut dummies, &strs, &td.ret))?;
+              w.write_all(&self.write_expr_node(&mut dummies, &strs, &td.ret)?)?;
               match &td.kind {
                 ThmKind::Axiom => {},
                 ThmKind::Thm(None) => panic!("proof {} missing", self.data()[td.atom].name()),
@@ -347,10 +351,10 @@ impl FrozenEnv {
                   let mut strs: Vec<_> = strs.into_iter().take(td.args.len())
                     .map(|v| (vec![], (0, v))).collect();
                   for e in &heap[strs.len()..] {
-                    let mut c = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, e, 0);
+                    let mut c = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, e, 0)?;
                     if is_nonatomic_proof(e) {
-                      write!(lets_start, "(:let H{} ", idx).unwrap();
-                      write_lines(&mut lets_start, c).unwrap();
+                      write!(lets_start, "(:let H{} ", idx)?;
+                      write_lines(&mut lets_start, c)?;
                       lets_start.push(b'\n');
                       lets_end.push(b')');
                       c = (vec![], (0, format!("H{}", idx).into_bytes()));
@@ -358,7 +362,7 @@ impl FrozenEnv {
                     }
                     strs.push(c);
                   }
-                  let pf = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, head, 0);
+                  let pf = self.write_proof_node(&mut dummies, &td.hyps, heap, &strs, head, 0)?;
                   let mut dummies = dummies.into_iter().collect::<Vec<_>>();
                   dummies.sort_by_key(|&(a, _)| &**self.data()[a].name());
                   list(w, dummies.into_iter(), |w, (a, s)|

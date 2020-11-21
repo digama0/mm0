@@ -7,7 +7,7 @@ use crate::elab::environment::{
   Type, Expr, Proof, SortID, TermID, ThmID, AtomID, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
-use crate::util::FileRef;
+use crate::util::{FileRef, OptionExt};
 use crate::lined_string::LinedString;
 
 /// Constants used in the MMB specification.
@@ -211,7 +211,7 @@ impl Fixup32 {
   }
   /// Write the current position of the exporter to this fixup, closing it.
   fn commit<W: Write + Seek>(self, e: &mut Exporter<'_, W>) {
-    let val = e.pos.try_into().unwrap();
+    let val = e.pos.try_into().expect("position out of range");
     self.commit_val(e, val)
   }
 }
@@ -227,7 +227,7 @@ impl Fixup64 {
     self.commit_val(e, val)
   }
   /// Drop the value, which has the effect of writing 0 to the original fixup.
-  #[inline] fn cancel(self) {}
+  #[inline] fn cancel(self) { drop(self) }
 }
 
 impl std::ops::Deref for FixupLarge {
@@ -299,7 +299,7 @@ fn write_cmd_bytes(w: &mut impl Write, cmd: u8, buf: &[u8]) -> io::Result<()> {
     w.write_all(buf)
   } else {
     w.write_u8(cmd | DATA_32)?;
-    w.write_u32::<LE>((buf.len() + 5).try_into().unwrap())?;
+    w.write_u32::<LE>((buf.len() + 5).try_into().expect("too large for format"))?;
     w.write_all(buf)
   }
 }
@@ -312,7 +312,7 @@ impl UnifyCmd {
       UnifyCmd::Term(tid)     => write_cmd(w, UNIFY_TERM, tid.0),
       UnifyCmd::TermSave(tid) => write_cmd(w, UNIFY_TERM_SAVE, tid.0),
       UnifyCmd::Ref(n)        => write_cmd(w, UNIFY_REF, n),
-      UnifyCmd::Dummy(sid)    => write_cmd(w, UNIFY_DUMMY, sid.0 as u32),
+      UnifyCmd::Dummy(sid)    => write_cmd(w, UNIFY_DUMMY, sid.0.into()),
       UnifyCmd::Hyp           => w.write_u8(UNIFY_HYP),
     }
   }
@@ -326,7 +326,7 @@ impl ProofCmd {
       ProofCmd::Term(tid)     => write_cmd(w, PROOF_TERM, tid.0),
       ProofCmd::TermSave(tid) => write_cmd(w, PROOF_TERM_SAVE, tid.0),
       ProofCmd::Ref(n)        => write_cmd(w, PROOF_REF, n),
-      ProofCmd::Dummy(sid)    => write_cmd(w, PROOF_DUMMY, sid.0 as u32),
+      ProofCmd::Dummy(sid)    => write_cmd(w, PROOF_DUMMY, sid.0.into()),
       ProofCmd::Thm(tid)      => write_cmd(w, PROOF_THM, tid.0),
       ProofCmd::ThmSave(tid)  => write_cmd(w, PROOF_THM_SAVE, tid.0),
       ProofCmd::Hyp           => w.write_u8(PROOF_HYP),
@@ -402,7 +402,7 @@ impl<W: Write> Seek for BigBuffer<W> {
 
 impl<W: Write> Drop for BigBuffer<W> {
   fn drop(&mut self) {
-    self.w.write_all(self.buffer.get_ref()).unwrap()
+    self.w.write_all(self.buffer.get_ref()).expect("write failed in Drop impl")
   }
 }
 
@@ -444,14 +444,15 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
 
   #[inline]
   fn align_to(&mut self, n: u8) -> io::Result<u64> {
+    #[allow(clippy::cast_possible_truncation)] // actual truncation
     let i = n.wrapping_sub(self.pos as u8) & (n - 1);
-    self.write_all(&vec![0; i as usize])?;
+    self.write_all(&vec![0; i.into()])?;
     Ok(self.pos)
   }
 
   #[inline]
   fn write_sort_deps(&mut self, bound: bool, sort: SortID, deps: u64) -> io::Result<()> {
-    self.write_u64((bound as u64) << 63 | (sort.0 as u64) << 56 | deps)
+    self.write_u64(u64::from(bound) << 63 | u64::from(sort.0) << 56 | deps)
   }
 
   #[inline]
@@ -634,12 +635,12 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     let n = self.align_to(8)?;
     let (sp, ix, k, name) = if sort {
       let ad = &self.env.data()[a];
-      let s = ad.sort().unwrap();
+      let s = ad.sort().expect("expected a sort");
       LE::write_u64(header.sort(s), n);
-      (&self.env.sort(s).span, s.0 as u32, STMT_SORT, ad.name())
+      (&self.env.sort(s).span, s.0.into(), STMT_SORT, ad.name())
     } else {
       let ad = &self.env.data()[a];
-      match ad.decl().unwrap() {
+      match ad.decl().expect("expected a term/thm") {
         DeclKey::Term(t) => {
           let td = self.env.term(t);
           LE::write_u64(header.term(t), n);
@@ -682,6 +683,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
   }
 
   fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(bool, AtomID, u64)], map: &[(bool, AtomID, u64)]) -> io::Result<u64> {
+    #[allow(clippy::integer_division)]
     let mut lo = map.len() / 2;
     let a = match map.get(lo) {
       None => {
@@ -720,11 +722,12 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.write_all(&MM0B_MAGIC)?; // magic
     let num_sorts = self.env.sorts().len();
     assert!(num_sorts <= 128, "too many sorts (max 128)");
+    #[allow(clippy::cast_possible_truncation)]
     self.write_all(&[MM0B_VERSION, num_sorts as u8, 0, 0])?; // two bytes reserved
     let num_terms = self.env.terms().len();
-    self.write_u32(num_terms.try_into().unwrap())?; // num_terms
+    self.write_u32(num_terms.try_into().expect("too many terms"))?; // num_terms
     let num_thms = self.env.thms().len();
-    self.write_u32(num_thms.try_into().unwrap())?; // num_thms
+    self.write_u32(num_thms.try_into().expect("too many thms"))?; // num_thms
     let p_terms = self.fixup32()?;
     let p_thms = self.fixup32()?;
     let p_proof = self.fixup64()?;
@@ -737,18 +740,16 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.align_to(8)?; p_terms.commit(self);
     let mut term_header = self.fixup_large(num_terms * 8)?;
     for (head, t) in term_header.chunks_exact_mut(8).zip(&self.env.terms().0) {
-      Self::write_term_header(head,
-        t.args.len().try_into().expect("term has more than 65536 args"),
-        t.ret.0,
+      let nargs: u16 = t.args.len().try_into().expect("term has more than 65536 args");
+      Self::write_term_header(head, nargs, t.ret.0,
         matches!(t.kind, TermKind::Def(_)),
-        self.align_to(8)?.try_into().unwrap());
+        self.align_to(8)?.try_into().expect("address too large"));
       self.write_binders(&t.args)?;
       self.write_sort_deps(false, t.ret.0, t.ret.1)?;
       let reorder = if let TermKind::Def(val) = &t.kind {
         let Expr {heap, head} = val.as_ref().unwrap_or_else(||
           panic!("def {} missing value", self.env.data()[t.atom].name()));
-        let mut reorder = Reorder::new(
-          t.args.len().try_into().unwrap(), heap.len(), |i| i);
+        let mut reorder = Reorder::new(nargs.into(), heap.len(), |i| i);
         self.write_expr_unify(heap, &mut reorder, head, &mut vec![])?;
         self.write_u8(0)?;
         Some(reorder)
@@ -761,12 +762,11 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.align_to(8)?; p_thms.commit(self);
     let mut thm_header = self.fixup_large(num_thms * 8)?;
     for (head, t) in thm_header.chunks_exact_mut(8).zip(&self.env.thms().0) {
-      Self::write_thm_header(head,
-        t.args.len().try_into().expect("theorem has more than 65536 args"),
-        self.align_to(8)?.try_into().unwrap());
+      let nargs = t.args.len().try_into().expect("theorem has more than 65536 args");
+      Self::write_thm_header(head, nargs,
+        self.align_to(8)?.try_into().expect("address too large"));
       self.write_binders(&t.args)?;
-      let nargs = t.args.len().try_into().unwrap();
-      let mut reorder = Reorder::new(nargs, t.heap.len(), |i| i);
+      let mut reorder = Reorder::new(nargs.into(), t.heap.len(), |i| i);
       let save = &mut vec![];
       self.write_expr_unify(&t.heap, &mut reorder, &t.ret, save)?;
       for (_, h) in t.hyps.iter().rev() {
@@ -789,15 +789,16 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         }
         StmtTrace::Decl(a) => {
           if index {index_map.push((false, a, self.pos))}
-          match self.env.data()[a].decl().unwrap() {
+          match self.env.data()[a].decl().expect("expected a term/thm") {
             DeclKey::Term(t) => {
               let td = self.env.term(t);
               match &td.kind {
                 TermKind::Term => write_cmd_bytes(self, STMT_TERM, &[])?,
                 TermKind::Def(None) => panic!("def {} missing definition", self.env.data()[td.atom].name()),
                 TermKind::Def(Some(Expr {heap, head})) => {
-                  let mut reorder = Reorder::new(
-                    td.args.len().try_into().unwrap(), heap.len(), |i| i);
+                  #[allow(clippy::cast_possible_truncation)] // no truncation
+                  let nargs = td.args.len() as u32;
+                  let mut reorder = Reorder::new(nargs, heap.len(), |i| i);
                   write_expr_proof(vec, heap, &mut reorder, head, false)?;
                   vec.write_u8(0)?;
                   let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
@@ -808,10 +809,11 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
             }
             DeclKey::Thm(t) => {
               let td = self.env.thm(t);
+              #[allow(clippy::cast_possible_truncation)] // no truncation
+              let nargs = td.args.len() as u32;
               let cmd = match &td.kind {
                 ThmKind::Axiom => {
-                  let mut reorder = Reorder::new(
-                    td.args.len().try_into().unwrap(), td.heap.len(), |i| i);
+                  let mut reorder = Reorder::new(nargs, td.heap.len(), |i| i);
                   for (_, h) in &*td.hyps {
                     write_expr_proof(vec, &td.heap, &mut reorder, h, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
@@ -821,8 +823,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                 }
                 ThmKind::Thm(None) => panic!("proof {} missing", self.env.data()[td.atom].name()),
                 ThmKind::Thm(Some(Proof {heap, hyps, head})) => {
-                  let mut reorder = Reorder::new(
-                    td.args.len().try_into().unwrap(), heap.len(), |i| i);
+                  let mut reorder = Reorder::new(nargs, heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());
                   for h in &**hyps {
                     let e = match h.deref(heap) {
@@ -834,7 +835,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                     ehyps.push(reorder.idx);
                     reorder.idx += 1;
                   }
-                  self.write_proof(vec, &heap, &mut reorder, &ehyps, head, false)?;
+                  self.write_proof(vec, heap, &mut reorder, &ehyps, head, false)?;
                   STMT_THM | if td.vis == Modifiers::PUB {0} else {STMT_LOCAL}
                 }
               };
@@ -860,7 +861,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       let header = unsafe {
         std::slice::from_raw_parts_mut(index_header.as_mut_ptr() as *mut [u8; 8], size)
       };
-      let (root, header) = header.split_first_mut().unwrap();
+      let (root, header) = unsafe { header.split_first_mut().unwrap_unchecked() };
       let (sorts, header) = header.split_at_mut(num_sorts);
       let (terms, thms) = header.split_at_mut(num_terms);
       LE::write_u64(root, self.write_index(&mut IndexHeader {sorts, terms, thms}, &[], &index_map)?);

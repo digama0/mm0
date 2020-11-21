@@ -145,7 +145,7 @@ impl<A: EnvDebug> EnvDebug for std::cell::RefCell<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.try_borrow() {
       Ok(x) => x.env_dbg(fe, f),
-      Err(_) => write!(f, "{}", "_mutably borrowed RefCell_")
+      Err(_) => write!(f, "_mutably borrowed RefCell_")
     }
   }
 }
@@ -189,7 +189,7 @@ impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Arc<A> {
 impl<A: EnvDebug + ?Sized> EnvDebug for std::sync::Weak<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.upgrade() {
-      None => write!(f, "{}", "_Weak_"),
+      None => write!(f, "_Weak_"),
       Some(arc) => arc.env_dbg(fe, f)
     }
   }
@@ -204,7 +204,7 @@ impl<A: EnvDebug> EnvDebug for std::rc::Rc<A> {
 impl<A: EnvDebug + ?Sized> EnvDebug for std::rc::Weak<A> {
   fn env_dbg<'a>(&self, fe: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.upgrade() {
-      None => write!(f, "{}", "_Weak_"),
+      None => write!(f, "_Weak_"),
       Some(arc) => arc.env_dbg(fe, f)
     }
   }

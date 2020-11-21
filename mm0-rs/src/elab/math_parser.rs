@@ -166,7 +166,7 @@ impl<'a> MathParser<'a> {
         },
         Literal::Const(ref c) => {
           let tk = self.token().ok_or_else(|| self.err(format!("expecting '{}'", c).into()))?;
-          if self.span(tk) != c.deref() {
+          if *self.span(tk) != **c {
             return Err(ParseError::new(tk, format!("expecting '{}'", c).into()))
           }
           consts.push(tk);
@@ -254,7 +254,8 @@ impl<'a> MathParser<'a> {
           let s = if let Some(tk) = tok_end.0 {self.span(tk)} else {break};
           let info2 = if let Some(i) = self.pe.infixes.get(s) {i} else {break};
           let q = self.pe.consts[s].1;
-          if !(if info2.rassoc.unwrap() {q >= p1} else {q > p1}) {break}
+          let assoc = info2.rassoc.expect("infix with no associativity");
+          if !(if assoc {q >= p1} else {q > p1}) {break}
           rhs = self.lhs(q, rhs)?;
         }
         end = rhs.span.end;

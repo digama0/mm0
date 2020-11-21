@@ -82,7 +82,7 @@ impl<'a> Importer<'a> {
   }
 
   fn chr_err(&mut self, c: u8) -> Result<usize> {
-    self.chr(c).ok_or_else(|| ElabError::new_e(self.idx..self.idx+1,
+    self.chr(c).ok_or_else(|| ElabError::new_e(self.idx..=self.idx,
       format!("expecting '{}'", c as char)))
   }
 
@@ -306,9 +306,10 @@ impl<'a> Importer<'a> {
           TermKind::Def(Some(Expr {heap, head: ids[i].take()}))
         };
         let end = self.close_err()?;
+        let fsp = self.fspan(span);
         let t = Term {
           atom,
-          span: self.fspan(span),
+          span: fsp.clone(),
           vis: if let DeclKind::LocalDef = dk {Modifiers::LOCAL} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
@@ -316,7 +317,7 @@ impl<'a> Importer<'a> {
           ret: (ret, deps),
           kind,
         };
-        self.env.add_term(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
+        self.env.add_term(atom, &fsp, || t).map_err(|e| e.into_elab_error(span))?;
       }
       DeclKind::Axiom | DeclKind::Theorem | DeclKind::LocalTheorem => {
         let mut de = Dedup::new(&args);
@@ -358,15 +359,16 @@ impl<'a> Importer<'a> {
           ThmKind::Thm(Some(Proof {heap, hyps, head: ids[ip].take()}))
         };
         let end = self.close_err()?;
+        let fsp = self.fspan(span);
         let t = Thm {
           atom,
-          span: self.fspan(span),
+          span: fsp.clone(),
           vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
           args: args.into(), heap, hyps, ret, kind
         };
-        self.env.add_thm(atom, &t.span.clone(), || t).map_err(|e| e.into_elab_error(span))?;
+        self.env.add_thm(atom, &fsp, || t).map_err(|e| e.into_elab_error(span))?;
       }
     }
     Ok(())

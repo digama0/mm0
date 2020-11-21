@@ -223,7 +223,7 @@ impl FrozenLispKind {
     let mut ret = self;
     for _ in 0..20 {
       match ret {
-        FrozenLispKind::Ref(m) => match m.deref() {
+        FrozenLispKind::Ref(m) => match m.get() {
           None => return ret,
           Some(v) => ret = v
         },
@@ -287,7 +287,7 @@ impl FrozenLispKind {
     let mut e = self;
     for _ in 0..20 {
       match e.unwrap() {
-        FrozenLispKind::Ref(m) => e = m.deref()?,
+        FrozenLispKind::Ref(m) => e = m.get()?,
         FrozenLispKind::Annot(Annot::Span(sp), _) => return Some(sp.clone()),
         _ => return None
       }
@@ -320,9 +320,9 @@ impl Remap for FrozenLispVal {
 impl Remap for FrozenLispKind {
   type Target = LispVal;
   fn remap(&self, r: &mut Remapper) -> LispVal {
-    let ptr: *const FrozenLispKind = self.deref();
+    let ptr: *const FrozenLispKind = self;
     if let Some(v) = r.lisp.get(&ptr) {return v.clone()}
-    let v = match self.deref() {
+    let v = match self {
       FrozenLispKind::Atom(a) => LispVal::atom(a.remap(r)),
       FrozenLispKind::List(v) => LispVal::list(v.remap(r)),
       FrozenLispKind::DottedList(v, l) => LispVal::dotted_list(v.remap(r), l.remap(r)),
@@ -335,7 +335,7 @@ impl Remap for FrozenLispKind {
           let ref_ = LispVal::new_ref(LispVal::undef());
           e.insert(ref_.clone());
           let w = m.remap(r);
-          ref_.as_lref(|val| *val.get_mut_weak() = w).unwrap();
+          ref_.as_lref(|val| *val.get_mut_weak() = w).expect("impossible");
           r.refs.remove(&(m as *const _));
           ref_
         }
@@ -369,7 +369,7 @@ impl Remap for FrozenProc {
       Proc::MatchCont(_) => Proc::MatchCont(Rc::new(Cell::new(false))),
       Proc::RefineCallback => Proc::RefineCallback,
       Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), RefCell::new(
-        match &*unsafe { m.try_borrow_unguarded() }.unwrap() {
+        match &*unsafe { m.try_borrow_unguarded() }.expect("failed to deref ref") {
           Ok(e) => Ok(e.remap(r)),
           Err(v) => Err(v.remap(r)),
         }
@@ -386,7 +386,7 @@ impl FrozenLispRef {
   /// `Rc::clone()` should be avoided because it could race with other readers.
   #[must_use] pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
 
-  #[must_use] pub fn deref(&self) -> Option<&FrozenLispKind> {
+  #[must_use] pub fn get(&self) -> Option<&FrozenLispKind> {
     unsafe { self.thaw().get_unsafe().map(|e| e.freeze()) }
   }
 }
@@ -395,7 +395,7 @@ impl FrozenLispRef {
 /// from the original data instead of cloning (which is not allowed for frozen values).
 ///
 /// [`Uncons`]: ../environment/struct.Uncons.html
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum FrozenUncons<'a> {
   New(&'a FrozenLispKind),
   List(&'a [FrozenLispVal]),
@@ -404,7 +404,7 @@ pub enum FrozenUncons<'a> {
 
 impl<'a> FrozenUncons<'a> {
   /// Returns true if this is a proper list of length `n`.
-  #[must_use] pub fn exactly(self, n: usize) -> bool {
+  #[must_use] pub fn exactly(&self, n: usize) -> bool {
     match self {
       FrozenUncons::New(e) => e.exactly(n),
       FrozenUncons::List(es) => es.len() == n,
@@ -413,11 +413,11 @@ impl<'a> FrozenUncons<'a> {
   }
 
   /// Returns true if this is `()`.
-  #[must_use] pub fn is_empty(self) -> bool { self.exactly(0) }
+  #[must_use] pub fn is_empty(&self) -> bool { self.exactly(0) }
 
   /// Gets the length of the list-like prefix of this value,
   /// i.e. the number of cons-cells along the right spine before reaching something else.
-  #[must_use] pub fn len(self) -> usize {
+  #[must_use] pub fn len(&self) -> usize {
     match self {
       FrozenUncons::New(e) => e.len(),
       FrozenUncons::List(es) => es.len(),

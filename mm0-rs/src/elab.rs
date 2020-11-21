@@ -27,7 +27,7 @@ use std::time::{Instant, Duration};
 use std::path::PathBuf;
 use std::collections::HashMap;
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
-use futures::channel::oneshot::{Receiver, channel};
+use futures::channel::oneshot::Receiver;
 use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, Expr, ExprNode,
   LispData, NotaInfo, ObjectKind, Proof, ProofNode, Remap, Remapper, Sort, SortID,
   StmtTrace, Term, TermID, Thm, ThmID};
@@ -473,12 +473,11 @@ impl Elaborator {
     }
     let s: ArcString = self.span(tk.trim).into();
     let info = NotaInfo { span: self.fspan(nota.id), term, nargs, rassoc, lits };
-    match infix {
-      false => self.pe.add_prefix(s.clone(), info),
-      true => self.pe.add_infix(s.clone(), info),
-    }.map_err(|r| ElabError::with_info(nota.id,
-      format!("constant '{}' already declared", s).into(),
-      vec![(r.decl1, "declared here".into())]))
+    if infix { self.pe.add_infix(s.clone(), info) }
+    else { self.pe.add_prefix(s.clone(), info) }
+      .map_err(|r| ElabError::with_info(nota.id,
+        format!("constant '{}' already declared", s).into(),
+        vec![(r.decl1, "declared here".into())]))
   }
 
   fn parse_and_print(&mut self, e: &SExpr, doc: String) -> Result<()> {
@@ -601,20 +600,20 @@ pub enum ElabResult<T> {
 /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
 /// [`Environment`]: environment/struct.Environment.html
 /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
-pub fn elaborate<T>(
-  ast: Arc<AST>, path: FileRef, mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
-  _old: Option<(usize, Vec<ElabError>, FrozenEnv)>,
+pub fn elaborate<T: Send>(
+  ast: &Arc<AST>, path: FileRef, mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
+  _: Option<(usize, Vec<ElabError>, FrozenEnv)>,
   mut mk: impl FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError>
-) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> {
+) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> + Send {
 
-  type ImportMap<D> = HashMap<Span, (Option<FileRef>, D)>;
+  type ImportMap<D> = HashMap<Span, (FileRef, D)>;
   #[derive(Debug)]
   struct FrozenElaborator(Elaborator);
   unsafe impl Send for FrozenElaborator {}
 
   enum UnfinishedStmt<T> {
     None,
-    Import(Span, Option<FileRef>, Receiver<ElabResult<T>>),
+    Import(Span, FileRef, Receiver<ElabResult<T>>),
   }
 
   struct ElabFutureInner<T> {
@@ -651,7 +650,7 @@ pub fn elaborate<T>(
               }
               Ok(ElabResult::ImportCycle(cyc2)) => {
                 use std::fmt::Write;
-                let mut s = format!("import cycle: {}", p.clone().unwrap());
+                let mut s = format!("import cycle: {}", p.clone());
                 for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
                 elab.report(ElabError::new_e(*sp, s));
                 if cyc.is_none() { *cyc = Some(cyc2) }
@@ -667,13 +666,12 @@ pub fn elaborate<T>(
           match elab.elab_stmt(String::new(), s, s.span) {
             Ok(ElabStmt::Ok) => {}
             Ok(ElabStmt::Import(sp)) => {
-              let (file, recv) = recv.remove(&sp).unwrap();
-              if let Some(file) = file.clone() {
-                elab.spans.insert(sp, ObjectKind::Import(file));
+              if let Some((file, recv)) = recv.remove(&sp) {
+                elab.spans.insert(sp, ObjectKind::Import(file.clone()));
+                *progress = UnfinishedStmt::Import(sp, file, recv);
+                elab.push_spans();
+                continue 'l
               }
-              *progress = UnfinishedStmt::Import(sp, file, recv);
-              elab.push_spans();
-              continue 'l
             }
             Err(e) => elab.report(e)
           }
@@ -683,7 +681,8 @@ pub fn elaborate<T>(
         break
       }
       lisp::LispArena::uninstall_thread_local();
-      let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, ..} = this.take().unwrap();
+      let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, ..} =
+        this.take().expect("impossible");
       elab.arena.clear();
       Poll::Ready((cyc, toks, elab.errors, FrozenEnv::new(elab.env)))
     }
@@ -698,9 +697,9 @@ pub fn elaborate<T>(
       let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
       let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
       let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
-      recv.insert(sp, (Some(r), tok));
+      recv.insert(sp, (r, tok));
       Ok(())
-    })().unwrap_or_else(|e| { elab.report(e); recv.insert(sp, (None, channel().1)); });
+    })().unwrap_or_else(|e| elab.report(e));
   }
   lisp::LispArena::uninstall_thread_local();
   ElabFuture(Some(ElabFutureInner {
