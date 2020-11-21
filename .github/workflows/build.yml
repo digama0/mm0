@@ -17,6 +17,33 @@ jobs:
     - env:
         FOO: ${{ hashFiles('**/*.md') }}
       run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('README.md') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('**/README.md') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('**/Cargo.lock') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('mm0-rs/Cargo.lock') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('./mm0-rs/Cargo.lock') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('**/mm0-rs/Cargo.lock') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('mm0-rs/Cargo.toml') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('mm0-rs/README.md') }}
+      run: echo $FOO
+    - env:
+        FOO: ${{ hashFiles('./mm0-rs/README.md') }}
+      run: echo $FOO
   # build-mm0-rs:
   #   name: mm0-rs
   #   runs-on: ubuntu-latest
