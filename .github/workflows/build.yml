@@ -81,7 +81,7 @@ jobs:
     - uses: actions/download-artifact@v2
       with:
         name: mm0-rs
-        path: .
+        path: ./mm0-rs
     - working-directory: examples
       run: |
         echo $PATH
