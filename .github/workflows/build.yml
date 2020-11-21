@@ -27,17 +27,29 @@ jobs:
     - name: Build mm0-rs
       working-directory: mm0-rs
       run: cargo build --verbose
+    - name: Run tests
+      working-directory: mm0-rs
+      run: cargo test --verbose
+  clippy-mm0-rs:
+    name: Clippy mm0-rs
     - name: Install nightly rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: nightly
         components: clippy
         override: true
+    - name: Cache clippy
+      id: cache-nightly-mm0-rs
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          mm0-rs/target
+        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('**/Cargo.lock') }}
     - name: Clippy
       uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         working-directory: mm0-rs
         args: --all-features --manifest-path mm0-rs/Cargo.toml
-    - name: Run tests
-      run: cargo test --verbose
