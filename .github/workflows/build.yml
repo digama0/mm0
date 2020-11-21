@@ -41,15 +41,16 @@ jobs:
         profile: minimal
         components: clippy
         default: true
-    - name: Cache clippy
-      id: cache-nightly-mm0-rs
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          mm0-rs/target
-        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
+    # - name: Cache clippy
+    #   id: cache-nightly-mm0-rs
+    #   uses: actions/cache@v2
+    #   with:
+    #     path: |
+    #       ~/.cargo/registry
+    #       ~/.cargo/git
+    #       mm0-rs/target
+    #     key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('./mm0-rs/Cargo.lock') }}
     - name: Clippy
-      working-directory: ./mm0-rs
+      working-directory: mm0-rs
+      run: pwd
       run: cargo clippy --all-features
