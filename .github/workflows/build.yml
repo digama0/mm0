@@ -38,6 +38,6 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         working-directory: mm0-rs
-        args: --all-features
+        args: --all-features --manifest-path mm0-rs/Cargo.toml
     - name: Run tests
       run: cargo test --verbose
