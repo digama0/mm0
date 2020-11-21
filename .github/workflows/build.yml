@@ -23,7 +23,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           mm0-rs/target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('mm0-rs/Cargo.lock') }}
     - name: Build mm0-rs
       working-directory: mm0-rs
       run: cargo build --verbose
@@ -48,10 +48,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           mm0-rs/target
-        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('mm0-rs/Cargo.lock') }}
     - name: Clippy
-      uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        working-directory: mm0-rs
-        args: --all-features --manifest-path mm0-rs/Cargo.toml
+      working-directory: mm0-rs
+      run: cargo clippy --all-features
