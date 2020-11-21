@@ -32,6 +32,8 @@ jobs:
       run: cargo test --verbose
   clippy-mm0-rs:
     name: Clippy mm0-rs
+    runs-on: ubuntu-latest
+    steps:
     - name: Install nightly rust
       uses: actions-rs/toolchain@v1
       with:
