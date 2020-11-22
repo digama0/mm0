@@ -86,6 +86,7 @@
 	},
 	"scripts": {
 		"vscode:prepublish": "npm run compile",
+		"package": "vsce package -o metamath-zero.vsix",
 		"compile": "tsc -p ./",
 		"lint": "tslint -p ./",
 		"watch": "tsc -watch -p ./"
