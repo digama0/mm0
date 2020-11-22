@@ -1080,10 +1080,11 @@ struct Capabilities {
   definition_location_links: Option<bool>,
 }
 
-/// Options for [`Server`]; IE whether to apply changes and elaborate on change or save.
+/// Options for [`Server`]; for eaxmple,  whether to apply changes and 
+/// elaborate on change or save.
 /// The fields are `Option<T>` rather than defaults for each T since it might
 /// be useful to tell whether a certain option has been set by the user or left
-/// as the default. If they were just T, T::Default could mean that the user selected
+/// as the default. If they were just T, `T::Default` could mean that the user selected
 /// a value that's the same as the default, or it could mean that it was untouched.
 ///
 /// [`Server`]: ./struct.Server.html
@@ -1095,13 +1096,15 @@ struct ServerOptions {
 impl std::default::Default for ServerOptions {
   fn default() -> Self {
     ServerOptions {
-      elab_on: None
+      elab_on: None,
     }
   }
 }
 
-/// Enum for Server::ServerOptions showing when the user wants changes to be applied
+/// Enum for use in [`ServerOptions`] showing when the user wants changes to be applied
 /// and the new file to be elaborated.
+///
+/// [`ServerOptions`]: ./struct.ServerOptions.html
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ElabOn {
   /// Apply changes and elaborate every time a change is received from the server
@@ -1189,7 +1192,6 @@ where F: std::future::Future<Output=()> + Send + 'static {
   cancel
 }
 
-
 /// 1. Fetch the queued list of changes to be made to the file represented by `path`
 /// 2. Apply the changes to the file in the [`VFS`] and bump the version
 /// 3. run [`elaborate_and_report`] with the new version of the file
@@ -1216,7 +1218,7 @@ fn apply_queued_changes(
       let (vfs_version, text) = &mut *file.text.ulock();
       // If our change included a version, use that. Otherwise, if vfs has
       // last known version, increment it by one. Otherwise leave it as None
-      *vfs_version = version.or(vfs_version.map(|v| v + 1));
+      *vfs_version = version.or_else(|| vfs_version.map(|v| v + 1));
       let (start, s) = text.apply_changes(changes.into_iter());
       *text = Arc::new(s);
       start
@@ -1301,6 +1303,7 @@ impl Server {
               "textDocument/didOpen" => {
                 let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                 let path = doc.uri.into();
+                if let Some(v) = change_queues.ulock().get_mut(&path) { v.clear() }
                 log!("open {:?}", path);
                 vfs.open_virt(path, doc.version, doc.text)?;
               }
@@ -1332,16 +1335,14 @@ impl Server {
                 let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                 let path = FileRef::from(doc.uri);
                 log!("close {:?}", path);
-                if options.ulock().elab_on == Some(ElabOn::Save) {
-                  apply_queued_changes(vfs, &change_queues, path.clone(), None)?;
-                }
+                if let Some(v) = change_queues.ulock().get_mut(&path) { v.clear() }
                 vfs.close(&path)?;
               },
               "textDocument/didSave" => {
                   let DidSaveTextDocumentParams { text_document: doc, .. } = from_value(notif.params)?;
                   let path = FileRef::from(doc.uri);
                   log!("save {:?}", path);
-                  if options.ulock().elab_on == Some(ElabOn::Save) {
+                  if options.ulock().elab_on.unwrap_or_default() == ElabOn::Save {
                     apply_queued_changes(vfs, &change_queues, path, Some(doc.version))?;
                   }
               }
