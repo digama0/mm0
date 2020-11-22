@@ -2,6 +2,7 @@
 
 use std::ops::{Deref, DerefMut};
 use std::borrow::Borrow;
+use std::ffi::CStr;
 use std::mem::{self, MaybeUninit};
 use std::fmt;
 use std::error::Error;
@@ -422,6 +423,16 @@ pub struct FileSpan {
 impl fmt::Debug for FileSpan {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}:{:?}", self.file, self.span)
+  }
+}
+
+/// Construct a `&CStr` from a prefix byte slice, by terminating at the first nul character.
+/// The second output is the remainder of the slice.
+#[must_use] pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
+  let mid = memchr::memchr(0, bytes)? + 1;
+  unsafe {
+    Some((CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
+      bytes.get_unchecked(..mid)))
   }
 }
 

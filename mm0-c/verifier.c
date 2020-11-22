@@ -642,7 +642,7 @@ void verify(u8* file, u64 len) {
   ENSURE("Term table out of range",
     len >= p->p_terms + p->num_terms * sizeof(term));
   ENSURE("Theorem table out of range",
-    len >= p->p_thms + p->num_thms * sizeof(term));
+    len >= p->p_thms + p->num_thms * sizeof(thm));
   ENSURE("Proof section out of range", len > p->p_proof);
   g_num_sorts = 0; g_sorts = p->sorts;
   g_num_terms = 0; g_terms = (term*)&file[p->p_terms];

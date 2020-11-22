@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
+use zerocopy::{AsBytes, LayoutVerified, U32, U64};
 use crate::elab::environment::{
   Type, Expr, Proof, SortID, TermID, ThmID, AtomID, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
@@ -10,110 +11,8 @@ use crate::elab::FrozenEnv;
 use crate::util::{FileRef, OptionExt};
 use crate::lined_string::LinedString;
 
-/// Constants used in the MMB specification.
-pub mod cmd {
-  /// `MM0B_MAGIC = "MM0B"`: Magic number signalling the MM0B format is in use.
-  pub const MM0B_MAGIC: [u8; 4] = *b"MM0B";
-  /// `MM0B_VERSION = 1`, maximum supported MMB version
-  pub const MM0B_VERSION: u8 = 1;
-
-  /// `DATA_8 = 0x40`, used as a command mask for an 8 bit data field
-  pub const DATA_8: u8  = 0x40;
-  /// `DATA_16 = 0x80`, used as a command mask for a 16 bit data field
-  pub const DATA_16: u8 = 0x80;
-  /// `DATA_32 = 0xC0`, used as a command mask for a 32 bit data field
-  pub const DATA_32: u8 = 0xC0;
-
-  /// `STMT_SORT = 0x04`, starts a `sort` declaration
-  pub const STMT_SORT: u8  = 0x04;
-  /// `STMT_AXIOM = 0x02`, starts an `axiom` declaration
-  pub const STMT_AXIOM: u8 = 0x02;
-  /// `STMT_TERM = 0x05`, starts a `term` declaration
-  pub const STMT_TERM: u8  = 0x05;
-  /// `STMT_DEF = 0x05`, starts a `def` declaration. (This is the same as
-  /// `STMT_TERM` because the actual indication of whether this is a
-  /// def is in the term header)
-  pub const STMT_DEF: u8   = 0x05;
-  /// `STMT_THM = 0x06`, starts a `theorem` declaration
-  pub const STMT_THM: u8   = 0x06;
-  /// `STMT_LOCAL = 0x08`, starts a `local` declaration
-  /// (a bit mask to be combined with `STMT_THM` or `STMT_DEF`)
-  pub const STMT_LOCAL: u8 = 0x08;
-
-  /// `PROOF_TERM = 0x10`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_TERM: u8      = 0x10;
-  /// `PROOF_TERM_SAVE = 0x11`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_TERM_SAVE: u8 = 0x11;
-  /// `PROOF_REF = 0x12`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_REF: u8       = 0x12;
-  /// `PROOF_DUMMY = 0x13`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_DUMMY: u8     = 0x13;
-  /// `PROOF_THM = 0x14`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_THM: u8       = 0x14;
-  /// `PROOF_THM_SAVE = 0x15`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_THM_SAVE: u8  = 0x15;
-  /// `PROOF_HYP = 0x16`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_HYP: u8       = 0x16;
-  /// `PROOF_CONV = 0x17`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_CONV: u8      = 0x17;
-  /// `PROOF_REFL = 0x18`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_REFL: u8      = 0x18;
-  /// `PROOF_SYMM = 0x19`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_SYMM: u8      = 0x19;
-  /// `PROOF_CONG = 0x1A`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_CONG: u8      = 0x1A;
-  /// `PROOF_UNFOLD = 0x1B`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_UNFOLD: u8    = 0x1B;
-  /// `PROOF_CONV_CUT = 0x1C`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_CONV_CUT: u8  = 0x1C;
-  /// `PROOF_CONV_REF = 0x1D`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_CONV_REF: u8  = 0x1D;
-  /// `PROOF_CONV_SAVE = 0x1E`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_CONV_SAVE: u8 = 0x1E;
-  /// `PROOF_SAVE = 0x1F`: See [`ProofCmd`](../enum.ProofCmd.html).
-  pub const PROOF_SAVE: u8      = 0x1F;
-
-  /// `UNIFY_TERM = 0x30`: See [`UnifyCmd`](../enum.UnifyCmd.html).
-  pub const UNIFY_TERM: u8      = 0x30;
-  /// `UNIFY_TERM_SAVE = 0x31`: See [`UnifyCmd`](../enum.UnifyCmd.html).
-  pub const UNIFY_TERM_SAVE: u8 = 0x31;
-  /// `UNIFY_REF = 0x32`: See [`UnifyCmd`](../enum.UnifyCmd.html).
-  pub const UNIFY_REF: u8       = 0x32;
-  /// `UNIFY_DUMMY = 0x33`: See [`UnifyCmd`](../enum.UnifyCmd.html).
-  pub const UNIFY_DUMMY: u8     = 0x33;
-  /// `UNIFY_HYP = 0x36`: See [`UnifyCmd`](../enum.UnifyCmd.html).
-  pub const UNIFY_HYP: u8       = 0x36;
-}
-#[allow(clippy::wildcard_imports)] use cmd::*;
-
-#[derive(Debug)]
-enum ProofCmd {
-  Term(TermID),
-  TermSave(TermID),
-  Ref(u32),
-  Dummy(SortID),
-  Thm(ThmID),
-  ThmSave(ThmID),
-  Hyp,
-  Conv,
-  Refl,
-  Sym,
-  Cong,
-  Unfold,
-  ConvCut,
-  ConvRef(u32),
-  ConvSave,
-  Save,
-}
-
-#[derive(Debug)]
-enum UnifyCmd {
-  Term(TermID),
-  TermSave(TermID),
-  Ref(u32),
-  Dummy(SortID),
-  Hyp,
-}
+#[allow(clippy::wildcard_imports)]
+use super::{ProofCmd, UnifyCmd, cmd::*};
 
 #[derive(Debug)]
 struct Reorder<T=u32> {
@@ -134,15 +33,15 @@ impl<T> Reorder<T> {
 }
 
 struct IndexHeader<'a> {
-  sorts: &'a mut [[u8; 8]],
-  terms: &'a mut [[u8; 8]],
-  thms: &'a mut [[u8; 8]]
+  sorts: &'a mut [U64<LE>],
+  terms: &'a mut [U64<LE>],
+  thms: &'a mut [U64<LE>]
 }
 
 impl<'a> IndexHeader<'a> {
-  fn sort(&mut self, i: SortID) -> &mut [u8; 8] { &mut self.sorts[i.0 as usize] }
-  fn term(&mut self, i: TermID) -> &mut [u8; 8] { &mut self.terms[i.0 as usize] }
-  fn thm(&mut self, i: ThmID) -> &mut [u8; 8] { &mut self.thms[i.0 as usize] }
+  fn sort(&mut self, i: SortID) -> &mut U64<LE> { &mut self.sorts[i.0 as usize] }
+  fn term(&mut self, i: TermID) -> &mut U64<LE> { &mut self.terms[i.0 as usize] }
+  fn thm(&mut self, i: ThmID) -> &mut U64<LE> { &mut self.thms[i.0 as usize] }
 }
 
 /// The main exporter structure. This keeps track of the underlying writer,
@@ -177,9 +76,9 @@ pub struct Exporter<'a, W: Write + Seek> {
 #[derive(Debug)]
 enum Value {
   /// A (little endian) 32 bit value
-  U32(u32),
+  U32(U32<LE>),
   /// A (little endian) 64 bit value
-  U64(u64),
+  U64(U64<LE>),
   /// An arbitrary length byte slice. (We could store everything like this but
   /// the `U32` and `U64` cases are common and this avoids some allocation.)
   Box(Box<[u8]>),
@@ -207,7 +106,7 @@ enum Value {
 impl Fixup32 {
   /// Write `val` to this fixup, closing it.
   fn commit_val<W: Write + Seek>(self, e: &mut Exporter<'_, W>, val: u32) {
-    e.fixups.push((self.0, Value::U32(val)))
+    e.fixups.push((self.0, Value::U32(U32::new(val))))
   }
   /// Write the current position of the exporter to this fixup, closing it.
   fn commit<W: Write + Seek>(self, e: &mut Exporter<'_, W>) {
@@ -219,7 +118,7 @@ impl Fixup32 {
 impl Fixup64 {
   /// Write `val` to this fixup, closing it.
   fn commit_val<W: Write + Seek>(self, e: &mut Exporter<'_, W>, val: u64) {
-    e.fixups.push((self.0, Value::U64(val)))
+    e.fixups.push((self.0, Value::U64(U64::new(val))))
   }
   /// Write the current position of the exporter to this fixup, closing it.
   fn commit<W: Write + Seek>(self, e: &mut Exporter<'_, W>) {
@@ -636,14 +535,14 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     let (sp, ix, k, name) = if sort {
       let ad = &self.env.data()[a];
       let s = ad.sort().expect("expected a sort");
-      LE::write_u64(header.sort(s), n);
+      header.sort(s).set(n);
       (&self.env.sort(s).span, s.0.into(), STMT_SORT, ad.name())
     } else {
       let ad = &self.env.data()[a];
       match ad.decl().expect("expected a term/thm") {
         DeclKey::Term(t) => {
           let td = self.env.term(t);
-          LE::write_u64(header.term(t), n);
+          header.term(t).set(n);
           (&td.span, t.0,
             match td.kind {
               TermKind::Term => STMT_TERM,
@@ -654,7 +553,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         }
         DeclKey::Thm(t) => {
           let td = self.env.thm(t);
-          LE::write_u64(header.thm(t), n);
+          header.thm(t).set(n);
           (&td.span, t.0,
             match td.kind {
               ThmKind::Axiom => STMT_AXIOM,
@@ -857,14 +756,11 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       index_map.sort_unstable_by_key(|k| &**self.env.data()[k.1].name());
       let size = 1 + num_sorts + num_terms + num_thms;
       let mut index_header = self.fixup_large(8 * size)?;
-      // Safety: index_header points to a Box<[u8; 8*size]>, and we reinterpret it as [[u8; 8]; size]
-      let header = unsafe {
-        std::slice::from_raw_parts_mut(index_header.as_mut_ptr() as *mut [u8; 8], size)
-      };
-      let (root, header) = unsafe { header.split_first_mut().unwrap_unchecked() };
+      let header = LayoutVerified::<_, [U64<LE>]>::new_slice_unaligned(&mut *index_header).expect("nonempty");
+      let (root, header) = unsafe { header.into_mut_slice().split_first_mut().unwrap_unchecked() };
       let (sorts, header) = header.split_at_mut(num_sorts);
       let (terms, thms) = header.split_at_mut(num_terms);
-      LE::write_u64(root, self.write_index(&mut IndexHeader {sorts, terms, thms}, &[], &index_map)?);
+      root.set(self.write_index(&mut IndexHeader {sorts, terms, thms}, &[], &index_map)?);
       index_header.commit(self)
     } else {
       p_index.cancel();
@@ -879,8 +775,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     for (pos, f) in fixups {
       w.seek(SeekFrom::Start(pos))?;
       match f {
-        Value::U32(n) => w.write_u32::<LE>(n)?,
-        Value::U64(n) => w.write_u64::<LE>(n)?,
+        Value::U32(n) => w.write_all(n.as_bytes())?,
+        Value::U64(n) => w.write_all(n.as_bytes())?,
         Value::Box(buf) => w.write_all(&buf)?,
       }
     }

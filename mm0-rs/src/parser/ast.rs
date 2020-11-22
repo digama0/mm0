@@ -61,6 +61,9 @@ impl Modifiers {
   /// The null modifier set. Modifiers are represented as bitfields, so this is the same as `0`.
   pub const NONE: Modifiers = Self::empty();
 
+  /// Construct a `Modifiers` from a byte.
+  #[must_use] pub fn new(bits: u8) -> Self { Self {bits} }
+
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
   /// using `sort_data().contains(m)`.
   #[must_use] pub fn sort_data() -> Modifiers {
