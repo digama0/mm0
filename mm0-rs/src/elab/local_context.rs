@@ -772,15 +772,13 @@ impl Elaborator {
           }
         };
         if atom != AtomID::UNDER {
-          let span = self.fspan(d.id);
-          let t = Term {
+          let tid = self.env.add_term(Term {
             atom, args: args.into(), ret, kind,
-            span: span.clone(),
+            span: self.fspan(d.id),
             doc,
             vis: d.mods,
             full,
-          };
-          let tid = self.env.add_term(atom, &span, || t).map_err(|e| e.into_elab_error(d.id))?;
+          }).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Term(tid, d.id));
         }
       }
@@ -867,11 +865,10 @@ impl Elaborator {
           })
         };
         if atom != AtomID::UNDER {
-          let t = Thm {
-            atom, span: span.clone(), vis: d.mods, full, doc,
+          let tid = self.env.add_thm(Thm {
+            atom, span, vis: d.mods, full, doc,
             args: args.into(), heap, hyps, ret, kind
-          };
-          let tid = self.env.add_thm(atom, &span, || t).map_err(|e| e.into_elab_error(d.id))?;
+          }).map_err(|e| e.into_elab_error(d.id))?;
           self.spans.insert(d.id, ObjectKind::Thm(tid));
         }
       }
@@ -1064,8 +1061,8 @@ impl Elaborator {
       })))
     } else {(Modifiers::NONE, TermKind::Term)};
     let full = fsp.span;
-    let t = Term {atom: x, span, full, vis, doc: None, args, ret, kind};
-    self.env.add_term(x, fsp, || t).map_err(|e| e.into_elab_error(full))?;
+    self.env.add_term(Term {atom: x, span, full, vis, doc: None, args, ret, kind})
+      .map_err(|e| e.into_elab_error(full))?;
     Ok(())
   }
 
@@ -1183,7 +1180,7 @@ impl Elaborator {
       }))
     };
     let sp = fsp.span;
-    self.env.add_thm(t.atom, fsp, || t).map_err(|e| e.into_elab_error(sp))?;
+    self.env.add_thm(t).map_err(|e| e.into_elab_error(sp))?;
     Ok(())
   }
 }

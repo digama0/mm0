@@ -538,7 +538,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         }
       } break;
 
-      // Unfold t: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
+      // Unfold: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
       //    (where Unify(t): e1, ..., en; e --> H'; .)
       //
       // Pop terms (t e1 ... en), e from the stack and run the unifier for t

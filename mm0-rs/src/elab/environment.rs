@@ -1202,7 +1202,7 @@ impl Environment {
 
   /// Add a term declaration to the environment. The `Term` is behind a thunk because
   /// we check for redeclaration before inspecting the term data itself.
-  pub fn add_term(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
+  pub fn try_add_term(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
     let new_id = TermID(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(key) = data.decl {
@@ -1227,9 +1227,15 @@ impl Environment {
     }
   }
 
+  /// Specialization of `try_add_term` when the term is constructed already.
+  pub fn add_term(&mut self, t: Term) -> AddItemResult<TermID> {
+    let fsp = t.span.clone();
+    self.try_add_term(t.atom, &fsp, || t)
+  }
+
   /// Add a theorem declaration to the environment. The `Thm` is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
-  pub fn add_thm(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
+  pub fn try_add_thm(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
     let new_id = ThmID(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(key) = data.decl {
@@ -1252,6 +1258,12 @@ impl Environment {
       self.stmts.push(StmtTrace::Decl(a));
       Ok(new_id)
     }
+  }
+
+  /// Specialization of `try_add_thm` when the term is constructed already.
+  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmID> {
+    let fsp = t.span.clone();
+    self.try_add_thm(t.atom, &fsp, || t)
   }
 
   /// Add a coercion declaration to the environment.
@@ -1319,7 +1331,7 @@ impl Environment {
         StmtTrace::Decl(a) => match other.data()[a].decl().expect("wf env") {
           DeclKey::Term(tid) => {
             let otd: &Term = other.term(tid);
-            let id = match self.add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
+            let id = match self.try_add_term(a.remap(remap), &otd.span, || otd.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![
@@ -1335,7 +1347,7 @@ impl Environment {
           }
           DeclKey::Thm(tid) => {
             let otd: &Thm = other.thm(tid);
-            let id = match self.add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
+            let id = match self.try_add_thm(a.remap(remap), &otd.span, || otd.remap(remap)) {
               Ok(id) => id,
               Err(AddItemError::Redeclaration(id, r)) => {
                 let e = ElabError::with_info(sp, r.msg.into(), vec![

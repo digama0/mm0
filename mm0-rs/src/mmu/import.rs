@@ -181,8 +181,8 @@ impl<H: NodeHash> Dedup<H> {
 }
 
 impl<H: NodeHash> std::ops::Index<usize> for Dedup<H> {
-  type Output = Rc<H>;
-  fn index(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
+  type Output = H;
+  fn index(&self, n: usize) -> &H { &self.vec[n].0 }
 }
 
 impl<H: NodeHash> IDedup<H> for Dedup<H> {
@@ -306,18 +306,16 @@ impl<'a> Importer<'a> {
           TermKind::Def(Some(Expr {heap, head: ids[i].take()}))
         };
         let end = self.close_err()?;
-        let fsp = self.fspan(span);
-        let t = Term {
+        self.env.add_term(Term {
           atom,
-          span: fsp.clone(),
+          span: self.fspan(span),
           vis: if let DeclKind::LocalDef = dk {Modifiers::LOCAL} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
           args: args.into(),
           ret: (ret, deps),
           kind,
-        };
-        self.env.add_term(atom, &fsp, || t).map_err(|e| e.into_elab_error(span))?;
+        }).map_err(|e| e.into_elab_error(span))?;
       }
       DeclKind::Axiom | DeclKind::Theorem | DeclKind::LocalTheorem => {
         let mut de = Dedup::new(&args);
@@ -359,16 +357,14 @@ impl<'a> Importer<'a> {
           ThmKind::Thm(Some(Proof {heap, hyps, head: ids[ip].take()}))
         };
         let end = self.close_err()?;
-        let fsp = self.fspan(span);
-        let t = Thm {
+        self.env.add_thm(Thm {
           atom,
-          span: fsp.clone(),
+          span: self.fspan(span),
           vis: if let DeclKind::Theorem = dk {Modifiers::PUB} else {Modifiers::empty()},
           full: (start..end).into(),
           doc: None,
           args: args.into(), heap, hyps, ret, kind
-        };
-        self.env.add_thm(atom, &fsp, || t).map_err(|e| e.into_elab_error(span))?;
+        }).map_err(|e| e.into_elab_error(span))?;
       }
     }
     Ok(())

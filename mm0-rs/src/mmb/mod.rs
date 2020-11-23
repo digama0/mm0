@@ -116,12 +116,10 @@ impl std::convert::TryFrom<u8> for StmtCmd {
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProofCmd {
-  Term(TermID),
-  TermSave(TermID),
+  Term {tid: TermID, save: bool},
   Ref(u32),
   Dummy(SortID),
-  Thm(ThmID),
-  ThmSave(ThmID),
+  Thm {tid: ThmID, save: bool},
   Hyp,
   Conv,
   Refl,
@@ -139,12 +137,12 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, ()> {
     use std::convert::TryInto;
     Ok(match cmd {
-      cmd::PROOF_TERM => ProofCmd::Term(TermID(data)),
-      cmd::PROOF_TERM_SAVE => ProofCmd::TermSave(TermID(data)),
+      cmd::PROOF_TERM => ProofCmd::Term {tid: TermID(data), save: false},
+      cmd::PROOF_TERM_SAVE => ProofCmd::Term {tid: TermID(data), save: true},
       cmd::PROOF_REF => ProofCmd::Ref(data),
       cmd::PROOF_DUMMY => ProofCmd::Dummy(SortID(data.try_into().map_err(|_| ())?)),
-      cmd::PROOF_THM => ProofCmd::Thm(ThmID(data)),
-      cmd::PROOF_THM_SAVE => ProofCmd::ThmSave(ThmID(data)),
+      cmd::PROOF_THM => ProofCmd::Thm {tid: ThmID(data), save: false},
+      cmd::PROOF_THM_SAVE => ProofCmd::Thm {tid: ThmID(data), save: true},
       cmd::PROOF_HYP => ProofCmd::Hyp,
       cmd::PROOF_CONV => ProofCmd::Conv,
       cmd::PROOF_REFL => ProofCmd::Refl,
@@ -162,8 +160,7 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnifyCmd {
-  Term(TermID),
-  TermSave(TermID),
+  Term {tid: TermID, save: bool},
   Ref(u32),
   Dummy(SortID),
   Hyp,
@@ -174,8 +171,8 @@ impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, ()> {
     use std::convert::TryInto;
     Ok(match cmd {
-      cmd::UNIFY_TERM => UnifyCmd::Term(TermID(data)),
-      cmd::UNIFY_TERM_SAVE => UnifyCmd::TermSave(TermID(data)),
+      cmd::UNIFY_TERM => UnifyCmd::Term {tid: TermID(data), save: false},
+      cmd::UNIFY_TERM_SAVE => UnifyCmd::Term {tid: TermID(data), save: true},
       cmd::UNIFY_REF => UnifyCmd::Ref(data),
       cmd::UNIFY_DUMMY => UnifyCmd::Dummy(SortID(data.try_into().map_err(|_| ())?)),
       cmd::UNIFY_HYP => UnifyCmd::Hyp,

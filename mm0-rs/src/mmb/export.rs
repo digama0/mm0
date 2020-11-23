@@ -208,11 +208,10 @@ impl UnifyCmd {
   /// [`mmb::export::cmd`](cmd/index.html).
   #[inline] fn write_to(self, w: &mut impl Write) -> io::Result<()> {
     match self {
-      UnifyCmd::Term(tid)     => write_cmd(w, UNIFY_TERM, tid.0),
-      UnifyCmd::TermSave(tid) => write_cmd(w, UNIFY_TERM_SAVE, tid.0),
-      UnifyCmd::Ref(n)        => write_cmd(w, UNIFY_REF, n),
-      UnifyCmd::Dummy(sid)    => write_cmd(w, UNIFY_DUMMY, sid.0.into()),
-      UnifyCmd::Hyp           => w.write_u8(UNIFY_HYP),
+      UnifyCmd::Term {tid, save} => write_cmd(w, if save {UNIFY_TERM_SAVE} else {UNIFY_TERM}, tid.0),
+      UnifyCmd::Ref(n)           => write_cmd(w, UNIFY_REF, n),
+      UnifyCmd::Dummy(sid)       => write_cmd(w, UNIFY_DUMMY, sid.0.into()),
+      UnifyCmd::Hyp              => w.write_u8(UNIFY_HYP),
     }
   }
 }
@@ -222,22 +221,20 @@ impl ProofCmd {
   /// [`mmb::export::cmd`](cmd/index.html).
   #[inline] fn write_to(self, w: &mut impl Write) -> io::Result<()> {
     match self {
-      ProofCmd::Term(tid)     => write_cmd(w, PROOF_TERM, tid.0),
-      ProofCmd::TermSave(tid) => write_cmd(w, PROOF_TERM_SAVE, tid.0),
-      ProofCmd::Ref(n)        => write_cmd(w, PROOF_REF, n),
-      ProofCmd::Dummy(sid)    => write_cmd(w, PROOF_DUMMY, sid.0.into()),
-      ProofCmd::Thm(tid)      => write_cmd(w, PROOF_THM, tid.0),
-      ProofCmd::ThmSave(tid)  => write_cmd(w, PROOF_THM_SAVE, tid.0),
-      ProofCmd::Hyp           => w.write_u8(PROOF_HYP),
-      ProofCmd::Conv          => w.write_u8(PROOF_CONV),
-      ProofCmd::Refl          => w.write_u8(PROOF_REFL),
-      ProofCmd::Sym           => w.write_u8(PROOF_SYMM),
-      ProofCmd::Cong          => w.write_u8(PROOF_CONG),
-      ProofCmd::Unfold        => w.write_u8(PROOF_UNFOLD),
-      ProofCmd::ConvCut       => w.write_u8(PROOF_CONV_CUT),
-      ProofCmd::ConvRef(n)    => write_cmd(w, PROOF_CONV_REF, n),
-      ProofCmd::ConvSave      => w.write_u8(PROOF_CONV_SAVE),
-      ProofCmd::Save          => w.write_u8(PROOF_SAVE),
+      ProofCmd::Term {tid, save} => write_cmd(w, if save {PROOF_TERM_SAVE} else {PROOF_TERM}, tid.0),
+      ProofCmd::Ref(n)           => write_cmd(w, PROOF_REF, n),
+      ProofCmd::Dummy(sid)       => write_cmd(w, PROOF_DUMMY, sid.0.into()),
+      ProofCmd::Thm {tid, save}  => write_cmd(w, if save {PROOF_THM_SAVE} else {PROOF_THM}, tid.0),
+      ProofCmd::Hyp              => w.write_u8(PROOF_HYP),
+      ProofCmd::Conv             => w.write_u8(PROOF_CONV),
+      ProofCmd::Refl             => w.write_u8(PROOF_REFL),
+      ProofCmd::Sym              => w.write_u8(PROOF_SYMM),
+      ProofCmd::Cong             => w.write_u8(PROOF_CONG),
+      ProofCmd::Unfold           => w.write_u8(PROOF_UNFOLD),
+      ProofCmd::ConvCut          => w.write_u8(PROOF_CONV_CUT),
+      ProofCmd::ConvRef(n)       => write_cmd(w, PROOF_CONV_REF, n),
+      ProofCmd::ConvSave         => w.write_u8(PROOF_CONV_SAVE),
+      ProofCmd::Save             => w.write_u8(PROOF_SAVE),
     }
   }
 }
@@ -261,12 +258,10 @@ fn write_expr_proof(w: &mut impl Write,
       ProofCmd::Dummy(s).write_to(w)?;
       (reorder.idx, reorder.idx += 1).0
     }
-    ExprNode::App(t, ref es) => {
+    ExprNode::App(tid, ref es) => {
       for e in &**es {write_expr_proof(w, heap, reorder, e, false)?;}
-      if save {
-        ProofCmd::TermSave(t).write_to(w)?;
-        (reorder.idx, reorder.idx += 1).0
-      } else {ProofCmd::Term(t).write_to(w)?; 0}
+      ProofCmd::Term {tid, save}.write_to(w)?;
+      if save {(reorder.idx, reorder.idx += 1).0} else {0}
     }
   })
 }
@@ -400,12 +395,12 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         commit!(reorder.idx); reorder.idx += 1;
         UnifyCmd::Dummy(s).write_to(self)?
       }
-      ExprNode::App(t, ref es) => {
+      ExprNode::App(tid, ref es) => {
         if save.is_empty() {
-          UnifyCmd::Term(t).write_to(self)?
+          UnifyCmd::Term {tid, save: false}.write_to(self)?
         } else {
           commit!(reorder.idx); reorder.idx += 1;
-          UnifyCmd::TermSave(t).write_to(self)?
+          UnifyCmd::Term {tid, save: true}.write_to(self)?
         }
         for e in &**es {
           self.write_expr_unify(heap, reorder, e, save)?
@@ -437,10 +432,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       }
       &ProofNode::Term {term, ref args} => {
         for e in &**args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
-        if save {
-          ProofCmd::TermSave(term).write_to(w)?;
-          (reorder.idx, reorder.idx += 1).0
-        } else {ProofCmd::Term(term).write_to(w)?; 0}
+        ProofCmd::Term {tid: term, save}.write_to(w)?;
+        if save {(reorder.idx, reorder.idx += 1).0} else {0}
       }
       &ProofNode::Hyp(n, _) => {
         ProofCmd::Ref(hyps[n]).write_to(w)?;
@@ -451,10 +444,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         for e in hs {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         for e in args {self.write_proof(w, heap, reorder, hyps, e, false)?;}
         self.write_proof(w, heap, reorder, hyps, res, false)?;
-        if save {
-          ProofCmd::ThmSave(thm).write_to(w)?;
-          (reorder.idx, reorder.idx += 1).0
-        } else {ProofCmd::Thm(thm).write_to(w)?; 0}
+        ProofCmd::Thm {tid: thm, save}.write_to(w)?;
+        if save {(reorder.idx, reorder.idx += 1).0} else {0}
       }
       ProofNode::Conv(p) => {
         let (e1, c, p) = &**p;

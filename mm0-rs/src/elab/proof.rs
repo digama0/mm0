@@ -173,7 +173,7 @@ impl<H: NodeHash> Dedup<H> {
 }
 
 /// A trait that abstracts a few functions on `Dedup<H>`.
-pub trait IDedup<H>: Index<usize, Output=Rc<H>> {
+pub trait IDedup<H>: Index<usize, Output=H> {
   /// Insert a new hash object `v` into the `Dedup`, returning the allocated index.
   /// Like [`add`], but does not add a record for the lisp data.
   ///
@@ -185,8 +185,8 @@ pub trait IDedup<H>: Index<usize, Output=Rc<H>> {
 }
 
 impl<H: NodeHash> Index<usize> for Dedup<H> {
-  type Output = Rc<H>;
-  fn index(&self, n: usize) -> &Rc<H> { &self.vec[n].0 }
+  type Output = H;
+  fn index(&self, n: usize) -> &H { &self.vec[n].0 }
 }
 
 impl<H: NodeHash> IDedup<H> for Dedup<H> {
@@ -277,7 +277,8 @@ pub enum Val<T: Node> {
   /// A shared value; the corresponding node is `T::REF(n)`.
   Ref(usize),
   /// An unshared value that has been moved away.
-  Done}
+  Done,
+}
 
 impl<T: Node> Default for Val<T> {
   fn default() -> Self {Val::Done}
@@ -476,7 +477,7 @@ pub enum ProofHash {
   /// `Refl(p): e2 = e1` if `p: e1 = e2`
   Sym(usize),
   /// `Cong(term, args): term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
-  Cong(TermID, Box<[usize]>),
+  Cong(TermID, Rc<[usize]>),
   /// `Unfold(term, args, lhs, sub_lhs, p)` is a proof of `lhs = rhs` if
   /// `lhs` is `term args` and `term` is a definition and `sub_lhs` is the result of
   /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
@@ -507,7 +508,7 @@ impl ProofHash {
 
   /// Returns true if this proof term represents a conversion.
   pub fn is_conv(de: &impl IDedup<Self>, i: usize) -> bool {
-    match *de[i] {
+    match de[i] {
       ProofHash::Ref(j) => j < i && Self::is_conv(de, j),
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
@@ -524,7 +525,7 @@ impl ProofHash {
   /// Get the LHS (if `right = false`) or RHS (if `right = true`) of the conversion
   /// represented by proof term index `i`.
   pub fn conv_side(de: &mut impl IDedup<Self>, i: usize, right: bool) -> usize {
-    match *de[i].clone() {
+    match de[i] {
       ProofHash::Ref(j) => Self::conv_side(de, j, right),
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
@@ -534,7 +535,7 @@ impl ProofHash {
       ProofHash::Refl(e) => de.reuse(e),
       ProofHash::Sym(c) => Self::conv_side(de, c, !right),
       ProofHash::Cong(t, ref cs) => {
-        let ns = cs.iter().map(|&c| Self::conv_side(de, c, right)).collect::<Vec<_>>();
+        let ns = cs.clone().iter().map(|&c| Self::conv_side(de, c, right)).collect::<Vec<_>>();
         de.add_direct(ProofHash::Term(t, ns.into()))
       }
       ProofHash::Unfold(_, _, _, _, c) if right => Self::conv_side(de, c, true),

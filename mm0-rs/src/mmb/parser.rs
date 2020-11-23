@@ -67,23 +67,23 @@ impl<'a> std::ops::Deref for IndexEntryRef<'a> {
   fn deref(&self) -> &IndexEntry { self.entry }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProofIter<'a> {buf: &'a [u8], pub pos: usize}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnifyIter<'a> {buf: &'a [u8], pub pos: usize}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TermRef<'a> {
   sort: u8,
   args: &'a [Arg],
-  unify: &'a [u8],
+  unify: UnifyIter<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ThmRef<'a> {
   args: &'a [Arg],
-  unify: &'a [u8],
+  unify: UnifyIter<'a>,
 }
 
 #[derive(Debug)]
@@ -99,7 +99,7 @@ impl From<io::Error> for ParseError {
   fn from(e: io::Error) -> Self { Self::IOError(e) }
 }
 
-#[inline] fn u32_as_usize(n: u32) -> usize {
+#[inline] pub(crate) fn u32_as_usize(n: u32) -> usize {
   n.try_into().expect("here's a nickel, get a better computer")
 }
 #[inline] fn u64_as_usize(n: U64<LE>) -> usize {
@@ -178,12 +178,14 @@ impl Buffer {
   #[inline] fn term_ref(&self, t: TermEntry) -> Option<TermRef<'_>> {
     let (args, unify) = new_slice_prefix(
       self.get(u32_as_usize(t.p_args.get())..)?, usize::from(t.num_args.get()) + 1)?;
+    let unify = UnifyIter {buf: self, pos: self.len() - unify.len()};
     Some(TermRef {sort: t.sort, args, unify})
   }
 
   #[inline] fn thm_ref(&self, t: ThmEntry) -> Option<ThmRef<'_>> {
     let (args, unify) = new_slice_prefix(
       self.get(u32_as_usize(t.p_args.get())..)?, t.num_args.get().into())?;
+    let unify = UnifyIter {buf: self, pos: self.len() - unify.len()};
     Some(ThmRef {args, unify})
   }
 }
@@ -241,6 +243,12 @@ impl<'a> TermRef<'a> {
   #[inline] #[must_use] pub fn sort(&self) -> SortID { SortID(self.sort & 0x7F) }
   #[inline] #[must_use] pub fn args(&self) -> &[Arg] { self.args.split_last().expect("nonempty").1 }
   #[inline] #[must_use] pub fn ret(&self) -> Arg { *self.args.last().expect("nonempty") }
+  #[inline] #[must_use] pub fn unify(&self) -> UnifyIter<'_> { self.unify.clone() }
+}
+
+impl<'a> ThmRef<'a> {
+  #[inline] #[must_use] pub fn args(&self) -> &[Arg] { self.args }
+  #[inline] #[must_use] pub fn unify(&self) -> UnifyIter<'_> { self.unify.clone() }
 }
 
 impl Arg {
