@@ -24,6 +24,7 @@ use clap::ArgMatches;
 use crate::elab::{self, ElabError, ElabErrorKind, ElabResult, FrozenEnv};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
+use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MMBExporter;
 use crate::util::{FileRef, FileSpan, MutexExt, Span, Position, Range, ArcList, get_memory_usage};
@@ -57,6 +58,46 @@ enum FileCache {
   Ready(FrozenEnv),
 }
 
+#[derive(DeepSizeOf, Clone)]
+pub(crate) enum FileContents {
+  Ascii(Arc<LinedString>),
+  Bin(Arc<memmap::Mmap>),
+}
+
+impl FileContents {
+  /// Constructs a new `VirtualFile` from source text.
+  pub(crate) fn new(text: String) -> FileContents {
+    FileContents::Ascii(Arc::new(text.into()))
+  }
+
+  /// Constructs a new `FileContents` from a memory map.
+  pub(crate) fn new_bin(data: memmap::Mmap) -> FileContents {
+    FileContents::Bin(Arc::new(data))
+  }
+
+  pub(crate) fn ascii(&self) -> &Arc<LinedString> {
+    if let Self::Ascii(e) = self {e} else {panic!("expected ASCII file")}
+  }
+
+  pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+    match (self, other) {
+      (Self::Ascii(e1), Self::Ascii(e2)) => Arc::ptr_eq(e1, e2),
+      (Self::Bin(e1), Self::Bin(e2)) => Arc::ptr_eq(e1, e2),
+      _ => false
+    }
+  }
+}
+
+impl std::ops::Deref for FileContents {
+  type Target = [u8];
+  fn deref(&self) -> &[u8] {
+    match self {
+      Self::Ascii(e) => e.as_bytes(),
+      Self::Bin(e) => e
+    }
+  }
+}
+
 /// A file that has been loaded from disk, along with the
 /// parsed representation of the file (which may be in progress on another thread).
 #[derive(DeepSizeOf)]
@@ -64,7 +105,7 @@ struct VirtualFile {
     /// The file's text as a [`LinedString`].
     ///
     /// [`LinedString`]: ../lined_string/struct.LinedString.html
-    text: Arc<LinedString>,
+    text: FileContents,
     /// The file parse. This is protected behind a future-aware mutex,
     /// so that elaboration can block on accessing the result of another file's
     /// elaboration job to represent dependency relations. A result of `None`
@@ -74,11 +115,8 @@ struct VirtualFile {
 
 impl VirtualFile {
   /// Constructs a new `VirtualFile` from source text.
-  fn new(text: String) -> VirtualFile {
-    VirtualFile {
-      text: Arc::new(text.into()),
-      parsed: FMutex::new(None),
-    }
+  fn new(text: FileContents) -> VirtualFile {
+    VirtualFile { text, parsed: FMutex::new(None) }
   }
 }
 
@@ -101,8 +139,13 @@ impl VFS {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();
-        let s = fs::read_to_string(path.path())?;
-        let val = e.insert(Arc::new(VirtualFile::new(s))).clone();
+        let fc = if path.has_extension("mmb") {
+          let file = fs::File::open(path.path())?;
+          FileContents::new_bin(unsafe { memmap::MmapOptions::new().map(&file)? })
+        } else {
+          FileContents::new(fs::read_to_string(path.path())?)
+        };
+        let val = e.insert(Arc::new(VirtualFile::new(fc))).clone();
         Ok((path, val))
       }
     }
@@ -112,8 +155,9 @@ impl VFS {
 fn mk_to_range() -> impl FnMut(&FileSpan) -> Range {
   let mut srcs = HashMap::new();
   move |fsp: &FileSpan| -> Range {
-    srcs.entry(fsp.file.ptr()).or_insert_with(||
-      VFS_.0.ulock().get(&fsp.file).unwrap().text.clone())
+    srcs.entry(fsp.file.ptr())
+      .or_insert_with(||
+        VFS_.0.ulock().get(&fsp.file).unwrap().text.ascii().clone())
       .to_range(fsp.span)
   }
 }
@@ -191,6 +235,28 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
   }
 }
 
+/// Create a [`Snippet`] from a message, when there is no source to display.
+///
+/// # Parameters
+///
+/// - `msg`: The error message
+/// - `level`: The error level
+///
+/// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
+fn make_snippet_no_source<'a>(msg: &'a str, level: ErrorLevel) -> Snippet<'a> {
+  let annotation_type = level.to_annotation_type();
+  Snippet {
+    title: Some(Annotation {
+      id: None,
+      label: Some(msg),
+      annotation_type,
+    }),
+    slices: vec![],
+    footer: vec![],
+    opt: FormatOptions { color: true, anonymized_line_numbers: false, margin: None }
+  }
+}
+
 impl ElabError {
   /// Create a [`Snippet`] from this error.
   ///
@@ -211,6 +277,25 @@ impl ElabError {
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
     f(make_snippet(path, file, self.pos, &self.kind.msg(), self.level,
       self.kind.to_footer(&Arena::new(), to_range)))
+  }
+
+  /// Create a [`Snippet`] from an error when the file source is not available
+  /// (e.g. for binary files).
+  ///
+  /// # Parameters
+  ///
+  /// - `path`: The location of the error
+  /// - `f`: The function to pass the constructed snippet
+  ///
+  /// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
+  fn to_snippet_no_source<T>(&self, path: &FileRef, span: Span,
+      f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+    let s = if span.end == span.start {
+      format!("{}:{:x}: {}", path, span.start, self.kind.msg())
+    } else {
+      format!("{}:{:x}-{:x}: {}", path, span.start, span.end, self.kind.msg())
+    };
+    f(make_snippet_no_source(&s, self.level))
   }
 }
 
@@ -265,12 +350,13 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   }
   let text = file.text.clone();
   let (cyc, errors, env) = if path.has_extension("mmb") {
-    unimplemented!()
+    let (error, env) = mmb_elab(&path, &text);
+    (None, if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else if path.has_extension("mmu") {
-    let (error, env) = mmu_elab(path.clone(), text.as_bytes());
+    let (error, env) = mmu_elab(&path, &text);
     (None, if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
   } else {
-    let (_, ast) = parse(text, None);
+    let (_, ast) = parse(text.ascii().clone(), None);
     if !ast.errors.is_empty() {
       for e in &ast.errors {
         e.to_snippet(&path, &ast.source,
@@ -305,10 +391,12 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   };
   println!("elabbed {}, memory = {}M", path, get_memory_usage() >> 20);
   if !errors.is_empty() {
+    fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s).to_string()) }
     let mut to_range = mk_to_range();
-    for e in &errors {
-      e.to_snippet(&path, &file.text, &mut to_range,
-        |s| println!("{}\n", DisplayList::from(s).to_string()))
+    if let FileContents::Ascii(text) = &file.text {
+      for e in &errors { e.to_snippet(&path, text, &mut to_range, print) }
+    } else {
+      for e in &errors { e.to_snippet_no_source(&path, e.pos, print) }
     }
   }
   {
@@ -365,7 +453,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     {
       let e = ElabError::new_e(fsp.span, e);
       let file = VFS_.get_or_insert(fsp.file.clone())?.1;
-      e.to_snippet(&fsp.file, &file.text, &mut mk_to_range(),
+      e.to_snippet(&fsp.file, file.text.ascii(), &mut mk_to_range(),
         |s| println!("{}\n", DisplayList::from(s).to_string()));
       std::process::exit(1);
     }
@@ -376,7 +464,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     if out.ends_with(".mmu") {
       env.export_mmu(w)?;
     } else {
-      let mut ex = MMBExporter::new(path, &file.text, &env, w);
+      let mut ex = MMBExporter::new(path, file.text.ascii(), &env, w);
       ex.run(true)?;
       ex.finish()?;
     }

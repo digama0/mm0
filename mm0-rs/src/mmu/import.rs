@@ -13,7 +13,7 @@ use crate::parser::{whitespace, lisp_ident};
 #[derive(Debug)]
 pub struct Importer<'a> {
   /// The input file name
-  file: FileRef,
+  file: &'a FileRef,
   /// The input source text (as a byte slice)
   source: &'a [u8],
   /// The position in the input
@@ -492,7 +492,7 @@ impl<'a> Importer<'a> {
 enum Expecting { Proof, Conv, Expr }
 
 /// Construct an `Environment` from an `mmu` file.
-pub fn elab(file: FileRef, source: &[u8]) -> (Result<()>, Environment) {
+pub fn elab(file: &FileRef, source: &[u8]) -> (Result<()>, Environment) {
   let mut p = Importer { file, source, idx: 0, env: Environment::new() };
   (p.run(), p.env)
 }

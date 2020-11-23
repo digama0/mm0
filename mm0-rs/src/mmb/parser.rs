@@ -38,7 +38,7 @@ impl std::ops::Deref for Buffer {
 
 #[derive(Debug)]
 pub struct MMBFile<'a> {
-  buf: &'a Buffer,
+  buf: &'a [u8],
   sorts: &'a [SortData],
   terms: &'a [TermEntry],
   thms: &'a [ThmEntry],
@@ -48,7 +48,7 @@ pub struct MMBFile<'a> {
 
 #[derive(Debug)]
 pub struct MMBIndex<'a> {
-  buf: &'a Buffer,
+  buf: &'a [u8],
   root: U64<LE>,
   sorts: &'a [U64<LE>],
   terms: &'a [U64<LE>],
@@ -57,7 +57,7 @@ pub struct MMBIndex<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct IndexEntryRef<'a> {
-  buf: &'a Buffer,
+  buf: &'a [u8],
   entry: &'a IndexEntry,
   value: &'a [u8],
 }
@@ -99,6 +99,18 @@ impl From<io::Error> for ParseError {
   fn from(e: io::Error) -> Self { Self::IOError(e) }
 }
 
+impl From<ParseError> for crate::elab::ElabError {
+  fn from(e: ParseError) -> Self {
+    match e {
+      ParseError::BadHeader => Self::new_e(0, "Bad header (not an MMB file?)"),
+      ParseError::BadVersion => Self::new_e(0, "Unknown MMB version"),
+      ParseError::BadIndex => Self::new_e(0, "MMB index is malformed"),
+      ParseError::StrError(s, p) => Self::new_e(p, s),
+      ParseError::IOError(e) => Self::new_e(0, e),
+    }
+  }
+}
+
 #[inline] pub(crate) fn u32_as_usize(n: u32) -> usize {
   n.try_into().expect("here's a nickel, get a better computer")
 }
@@ -135,22 +147,24 @@ impl Buffer {
   pub fn new(file: &File) -> io::Result<Self> {
     Ok(Self(unsafe { MmapOptions::new().map(file)? }))
   }
+}
 
-  pub fn parse(&self) -> Result<MMBFile<'_>, ParseError> {
+impl<'a> MMBFile<'a> {
+  pub fn parse(buf: &'a [u8]) -> Result<MMBFile<'a>, ParseError> {
     use ParseError::{BadHeader, BadVersion, BadIndex};
     use super::cmd::{MM0B_MAGIC, MM0B_VERSION};
     let (header, sorts) = LayoutVerified::<_, Header>::
-      new_unaligned_from_prefix(&**self).ok_or(BadHeader)?;
+      new_unaligned_from_prefix(buf).ok_or(BadHeader)?;
     let header = header.into_ref();
     if header.magic != MM0B_MAGIC { return Err(BadHeader) }
     if header.version != MM0B_VERSION { return Err(BadVersion) }
     let sorts = sorts.get(..header.num_sorts.into())
       .and_then(LayoutVerified::new_slice_unaligned)
       .ok_or(BadHeader)?.into_slice();
-    let terms = self.get(u32_as_usize(header.p_terms.get())..)
+    let terms = buf.get(u32_as_usize(header.p_terms.get())..)
       .and_then(|s| new_slice_prefix(s, u32_as_usize(header.num_terms.get())))
       .ok_or(BadHeader)?.0;
-    let thms = self.get(u32_as_usize(header.p_thms.get())..)
+    let thms = buf.get(u32_as_usize(header.p_thms.get())..)
       .and_then(|s| new_slice_prefix(s, u32_as_usize(header.num_thms.get())))
       .ok_or(BadHeader)?.0;
     let proof = u32_as_usize(header.p_proof.get());
@@ -158,36 +172,36 @@ impl Buffer {
       0 => None,
       n => Some((|| -> Option<_> {
         let (root, rest) = LayoutVerified::<_, U64<LE>>::
-        new_unaligned_from_prefix(&*self.get(n..)?)?;
+        new_unaligned_from_prefix(&*buf.get(n..)?)?;
         let (sorts, rest) = new_slice_prefix(rest, sorts.len())?;
         let (terms, rest) = new_slice_prefix(rest, terms.len())?;
         let (thms, _) = new_slice_prefix(rest, thms.len())?;
-        Some(MMBIndex {buf: self, root: *root, sorts, terms, thms})
+        Some(MMBIndex {buf, root: *root, sorts, terms, thms})
       })().ok_or(BadIndex)?)
     };
-    Ok(MMBFile {buf: self, sorts, terms, thms, proof, index})
+    Ok(MMBFile {buf, sorts, terms, thms, proof, index})
   }
+}
 
-  #[inline] fn index_ref(&self, n: U64<LE>) -> Option<IndexEntryRef<'_>> {
-    let (entry, value) = LayoutVerified::<_, IndexEntry>::
-      new_unaligned_from_prefix(&*self.get(u64_as_usize(n)..)?)?;
-    let entry = entry.into_ref();
-    Some(IndexEntryRef {buf: self, entry, value})
-  }
+#[inline] fn index_ref(buf: &[u8], n: U64<LE>) -> Option<IndexEntryRef<'_>> {
+  let (entry, value) = LayoutVerified::<_, IndexEntry>::
+    new_unaligned_from_prefix(&*buf.get(u64_as_usize(n)..)?)?;
+  let entry = entry.into_ref();
+  Some(IndexEntryRef {buf, entry, value})
+}
 
-  #[inline] fn term_ref(&self, t: TermEntry) -> Option<TermRef<'_>> {
-    let (args, unify) = new_slice_prefix(
-      self.get(u32_as_usize(t.p_args.get())..)?, usize::from(t.num_args.get()) + 1)?;
-    let unify = UnifyIter {buf: self, pos: self.len() - unify.len()};
-    Some(TermRef {sort: t.sort, args, unify})
-  }
+#[inline] fn term_ref(buf: &[u8], t: TermEntry) -> Option<TermRef<'_>> {
+  let (args, unify) = new_slice_prefix(
+    buf.get(u32_as_usize(t.p_args.get())..)?, usize::from(t.num_args.get()) + 1)?;
+  let unify = UnifyIter {buf, pos: buf.len() - unify.len()};
+  Some(TermRef {sort: t.sort, args, unify})
+}
 
-  #[inline] fn thm_ref(&self, t: ThmEntry) -> Option<ThmRef<'_>> {
-    let (args, unify) = new_slice_prefix(
-      self.get(u32_as_usize(t.p_args.get())..)?, t.num_args.get().into())?;
-    let unify = UnifyIter {buf: self, pos: self.len() - unify.len()};
-    Some(ThmRef {args, unify})
-  }
+#[inline] fn thm_ref(buf: &[u8], t: ThmEntry) -> Option<ThmRef<'_>> {
+  let (args, unify) = new_slice_prefix(
+    buf.get(u32_as_usize(t.p_args.get())..)?, t.num_args.get().into())?;
+  let unify = UnifyIter {buf, pos: buf.len() - unify.len()};
+  Some(ThmRef {args, unify})
 }
 
 impl<'a> MMBFile<'a> {
@@ -195,10 +209,10 @@ impl<'a> MMBFile<'a> {
     self.sorts.get(usize::from(n.0)).copied()
   }
   #[inline] #[must_use] pub fn term(&self, n: TermID) -> Option<TermRef<'_>> {
-    self.buf.term_ref(*self.terms.get(u32_as_usize(n.0))?)
+    term_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
   #[inline] #[must_use] pub fn thm(&self, n: ThmID) -> Option<ThmRef<'_>> {
-    self.buf.thm_ref(*self.thms.get(u32_as_usize(n.0))?)
+    thm_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
   }
   #[inline] #[must_use] pub fn proof(&self) -> DeclIter<'a> {
     DeclIter {buf: self.buf, pos: self.proof}
@@ -228,13 +242,13 @@ impl<'a> MMBFile<'a> {
 }
 impl<'a> MMBIndex<'a> {
   #[must_use] pub fn sort(&self, n: SortID) -> Option<IndexEntryRef<'_>> {
-    self.buf.index_ref(*self.sorts.get(usize::from(n.0))?)
+    index_ref(self.buf, *self.sorts.get(usize::from(n.0))?)
   }
   #[must_use] pub fn term(&self, n: TermID) -> Option<IndexEntryRef<'_>> {
-    self.buf.index_ref(*self.terms.get(u32_as_usize(n.0))?)
+    index_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
   #[must_use] pub fn thm(&self, n: ThmID) -> Option<IndexEntryRef<'_>> {
-    self.buf.index_ref(*self.thms.get(u32_as_usize(n.0))?)
+    index_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
   }
 }
 
@@ -316,8 +330,8 @@ impl<'a> Iterator for UnifyIter<'a> {
 }
 
 impl<'a> IndexEntryRef<'a> {
-  #[must_use] pub fn left(&self) -> Option<Self> { self.buf.index_ref(self.p_left) }
-  #[must_use] pub fn right(&self) -> Option<Self> { self.buf.index_ref(self.p_right) }
+  #[must_use] pub fn left(&self) -> Option<Self> { index_ref(self.buf, self.p_left) }
+  #[must_use] pub fn right(&self) -> Option<Self> { index_ref(self.buf, self.p_right) }
   #[must_use] pub fn value(&self) -> Option<&'a str> {
     cstr_from_bytes_prefix(self.value)?.0.to_str().ok()
   }

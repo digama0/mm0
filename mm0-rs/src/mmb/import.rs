@@ -374,11 +374,9 @@ fn parse_proof(
   Ok(Proof {heap, hyps, head: ids[ret].take()})
 }
 
-fn parse(fref: &FileRef, file: &File) -> Result<Environment> {
+fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   use ParseError::{BadIndex, StrError};
-  let mut env = Environment::new();
-  let buf = Buffer::new(file)?;
-  let file = buf.parse()?;
+  let file = MMBFile::parse(buf)?;
   let diff = |p: *const u8| p as usize - buf.as_ptr() as usize;
   let mut it = file.proof();
   let mut start = it.pos;
@@ -396,7 +394,7 @@ fn parse(fref: &FileRef, file: &File) -> Result<Environment> {
   macro_rules! next_var {($var:expr) => {{
     let var = $var;
     $var += 1;
-    get_var(&mut env, var)
+    get_var(env, var)
   }}};
   while let Some(e) = it.next() {
     let (stmt, mut pf) = e.map_err(|p| StrError("bad statement", p))?;
@@ -455,7 +453,7 @@ fn parse(fref: &FileRef, file: &File) -> Result<Environment> {
         )).collect::<Box<[_]>>();
         let mut hyps = vec![];
         let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!(var))?;
-        hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(&mut env, i)));
+        hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(env, i)));
         let kind = if matches!(stmt, StmtCmd::Axiom) {
           if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
           ThmKind::Axiom
@@ -474,5 +472,11 @@ fn parse(fref: &FileRef, file: &File) -> Result<Environment> {
     }
     start = it.pos;
   }
-  Ok(env)
+  Ok(())
+}
+
+/// Construct an `Environment` from an `mmb` file.
+pub fn elab(file: &FileRef, source: &[u8]) -> (crate::elab::Result<()>, Environment) {
+  let mut env = Environment::new();
+  (parse(file, source, &mut env).map_err(From::from), env)
 }

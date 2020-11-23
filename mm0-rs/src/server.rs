@@ -25,7 +25,9 @@ use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
   MutexExt, CondvarExt};
 use crate::lined_string::LinedString;
 use crate::parser::{AST, parse};
+use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
+use crate::compiler::FileContents;
 use crate::elab::{ElabError, ElabResult, self, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
@@ -206,22 +208,25 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   };
   let (version, text) = file.text.ulock().clone();
   let old_ast = old_ast.and_then(|(s, old_text, ast)|
-    if Arc::ptr_eq(&text, &old_text) {Some((s, ast))} else {None});
+    if text.ptr_eq(&old_text) {Some((s, ast?))} else {None});
   let mut hasher = DefaultHasher::new();
   version.hash(&mut hasher);
   let source = text.clone();
-  let (idx, ast) = parse(text, old_ast);
-  let ast = Arc::new(ast);
 
   let mut deps = Vec::new();
-  let (cyc, toks, errors, env) = if path.has_extension("mmb") {
-    unimplemented!()
+  let (ast, (cyc, toks, errors, env)) = if path.has_extension("mmb") {
+    let (error, env) = mmb_elab(&path, &text);
+    let errors = if let Err(e) = error {vec![e]} else {vec![]};
+    (None, (None, vec![], errors, FrozenEnv::new(env)))
   } else if path.has_extension("mmu") {
-    let (error, env) = mmu_elab(path.clone(), ast.source.as_bytes());
-    (None, vec![], if let Err(e) = error {vec![e]} else {vec![]}, FrozenEnv::new(env))
+    let (error, env) = mmu_elab(&path, &text);
+    let errors = if let Err(e) = error {vec![e]} else {vec![]};
+    (None, (None, vec![], errors, FrozenEnv::new(env)))
   } else {
+    let (idx, ast) = parse(text.ascii().clone(), old_ast);
+    let ast = Arc::new(ast);
     let rd = rd.push(path.clone());
-    elab::elaborate(
+    (Some(ast.clone()), elab::elaborate(
       &ast, path.clone(), path.has_extension("mm0"),
       crate::get_check_proofs(), cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
@@ -235,7 +240,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           deps.push(p);
         }
         Ok(recv)
-      }).await
+      }).await)
   };
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();
@@ -245,42 +250,45 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let mut srcs = HashMap::new();
   let mut to_loc = |fsp: &FileSpan| -> Location {
     if fsp.file.ptr_eq(&path) {
-      &ast.source
+      source.ascii()
     } else {
-      srcs.entry(fsp.file.ptr()).or_insert_with(||
+      srcs.entry(fsp.file.ptr())
+      .or_insert_with(||
         vfs.0.ulock().get(&fsp.file).expect("missing file")
-          .text.ulock().1.clone())
+          .text.ulock().1.ascii().clone())
     }.to_loc(fsp)
   };
 
-  let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
-  let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(&ast.source))
-    .chain(errors.iter().map(|e| e.to_diag(&ast.source, &mut to_loc)))
-    .filter(|e| !e.message.is_empty())
-    .inspect(|err| match err.severity {
-      None => {}
-      Some(DiagnosticSeverity::Error) => n_errs += 1,
-      Some(DiagnosticSeverity::Warning) => n_warns += 1,
-      Some(DiagnosticSeverity::Information) => n_infos += 1,
-      Some(DiagnosticSeverity::Hint) => n_hints += 1,
-    }).collect();
+  if let Some(ast) = &ast {
+    let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
+    let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(source.ascii()))
+      .chain(errors.iter().map(|e| e.to_diag(source.ascii(), &mut to_loc)))
+      .filter(|e| !e.message.is_empty())
+      .inspect(|err| match err.severity {
+        None => {}
+        Some(DiagnosticSeverity::Error) => n_errs += 1,
+        Some(DiagnosticSeverity::Warning) => n_warns += 1,
+        Some(DiagnosticSeverity::Information) => n_infos += 1,
+        Some(DiagnosticSeverity::Hint) => n_hints += 1,
+      }).collect();
 
-  send_diagnostics(path.url().clone(), version, errs)?;
+    send_diagnostics(path.url().clone(), version, errs)?;
 
-  {
-    use std::fmt::Write;
-    let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
-    if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
-    if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
-    if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
-    if get_log_errors() {
-      for e in &errors {
-        let Position {line, character: col} = ast.source.to_pos(e.pos.start);
-        write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
-          e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
+    {
+      use std::fmt::Write;
+      let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
+      if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
+      if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
+      if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
+      if get_log_errors() {
+        for e in &errors {
+          let Position {line, character: col} = source.ascii().to_pos(e.pos.start);
+          write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
+            e.level, path.rel(), line+1, col+1, e.kind.msg()).unwrap();
+        }
       }
+      log(log_msg);
     }
-    log(log_msg);
   }
 
   let res = match cyc.clone() {
@@ -330,15 +338,15 @@ fn dep_change(path: FileRef, cancel: Arc<AtomicBool>) -> BoxFuture<'static, ()> 
 #[derive(DeepSizeOf)]
 enum FileCache {
   InProgress {
-    old: Option<(Arc<LinedString>, FrozenEnv)>,
+    old: Option<(FileContents, FrozenEnv)>,
     version: Option<i32>,
     cancel: Arc<AtomicBool>,
     senders: Vec<FSender<ElabResult<u64>>>,
   },
   Ready {
     hash: u64,
-    source: Arc<LinedString>,
-    ast: Arc<AST>,
+    source: FileContents,
+    ast: Option<Arc<AST>>,
     errors: Vec<ElabError>,
     res: ElabResult<u64>,
     deps: Vec<FileRef>,
@@ -348,7 +356,7 @@ enum FileCache {
 #[derive(DeepSizeOf)]
 struct VirtualFile {
   /// File data, saved (true) or unsaved (false)
-  text: Mutex<(Option<i32>, Arc<LinedString>)>,
+  text: Mutex<(Option<i32>, FileContents)>,
   /// File parse
   parsed: FMutex<Option<FileCache>>,
   /// Files that depend on this one
@@ -356,9 +364,9 @@ struct VirtualFile {
 }
 
 impl VirtualFile {
-  fn new(version: Option<i32>, text: String) -> VirtualFile {
+  fn new(version: Option<i32>, text: FileContents) -> VirtualFile {
     VirtualFile {
-      text: Mutex::new((version, Arc::new(text.into()))),
+      text: Mutex::new((version, text)),
       parsed: FMutex::new(None),
       downstream: Mutex::new(HashSet::new())
     }
@@ -378,19 +386,24 @@ impl VFS {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
       Entry::Vacant(e) => {
         let path = e.key().clone();
-        let s = fs::read_to_string(path.path())?;
-        let val = e.insert(Arc::new(VirtualFile::new(None, s))).clone();
+        let fc = if path.has_extension("mmb") {
+          let file = fs::File::open(path.path())?;
+          FileContents::new_bin(unsafe { memmap::MmapOptions::new().map(&file)? })
+        } else {
+          FileContents::new(fs::read_to_string(path.path())?)
+        };
+        let val = e.insert(Arc::new(VirtualFile::new(None, fc))).clone();
         Ok((path, val))
       }
     }
   }
 
   fn source(&self, file: &FileRef) -> Arc<LinedString> {
-    self.0.ulock().get(file).unwrap().text.ulock().1.clone()
+    self.0.ulock().get(file).unwrap().text.ulock().1.ascii().clone()
   }
 
   fn open_virt(&self, path: FileRef, version: i32, text: String) -> Result<Arc<VirtualFile>> {
-    let file = Arc::new(VirtualFile::new(Some(version), text));
+    let file = Arc::new(VirtualFile::new(Some(version), FileContents::new(text)));
     let file = match self.0.ulock().entry(path.clone()) {
       Entry::Occupied(entry) => {
         for dep in entry.get().downstream.ulock().iter() {
@@ -624,7 +637,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
 
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "hover nonexistent file"))?;
-  let text = file.text.ulock().1.clone();
+  let text = file.text.ulock().1.ascii().clone();
   let idx = or!(Ok(None), text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
@@ -750,7 +763,7 @@ async fn definition<T>(path: FileRef, pos: Position,
   }}}
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "goto definition nonexistent file"))?;
-  let text = file.text.ulock().1.clone();
+  let text = file.text.ulock().1.ascii().clone();
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
@@ -819,7 +832,7 @@ async fn definition<T>(path: FileRef, pos: Position,
 async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.ulock().1.clone();
+  let text = file.text.ulock().1.ascii().clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
   let env = match env.into_response_error()? {
@@ -957,6 +970,7 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
       Some((_, env)) => (file.text.ulock().1.clone(), env)
     }
   };
+  let text = text.ascii().clone();
   let fe = unsafe { env.format_env(&text) };
   let mut res = vec![];
   for ad in env.data().iter() {
@@ -974,7 +988,7 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
   let path = uri.into();
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.ulock().1.clone();
+  let text = file.text.ulock().1.ascii().clone();
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
     .into_response_error()?
@@ -1002,7 +1016,7 @@ async fn references<T>(
 
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "references: nonexistent file"))?;
-  let text = file.text.ulock().1.clone();
+  let text = file.text.ulock().1.ascii().clone();
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path, Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
@@ -1219,8 +1233,8 @@ impl Server {
                     let file = vfs.get(&path).ok_or("changed nonexistent file")?;
                     let (version, text) = &mut *file.text.ulock();
                     *version = Some(doc.version);
-                    let (start, s) = text.apply_changes(content_changes.into_iter());
-                    *text = Arc::new(s);
+                    let (start, s) = text.ascii().apply_changes(content_changes.into_iter());
+                    *text = FileContents::Ascii(Arc::new(s));
                     start
                   };
                   spawn_new(|c| elaborate_and_report(path, Some(start), c));
