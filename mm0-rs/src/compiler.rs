@@ -243,7 +243,7 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
 /// - `level`: The error level
 ///
 /// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
-fn make_snippet_no_source<'a>(msg: &'a str, level: ErrorLevel) -> Snippet<'a> {
+fn make_snippet_no_source(msg: &str, level: ErrorLevel) -> Snippet<'_> {
   let annotation_type = level.to_annotation_type();
   Snippet {
     title: Some(Annotation {
