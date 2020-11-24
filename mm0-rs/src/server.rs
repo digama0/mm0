@@ -519,7 +519,7 @@ struct RequestHandler {
 }
 
 impl RequestHandler {
-  async fn handle(self, req: RequestType, elab_on: ElabOn) -> Result<()> {
+  async fn handle(self, req: RequestType) -> Result<()> {
     match req {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
         self.finish(hover(doc.uri.into(), position).await),
@@ -540,13 +540,13 @@ impl RequestHandler {
             }).await)
         },
       RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc, ..}) =>
-        self.finish(document_symbol(doc.uri.into(), elab_on).await),
+        self.finish(document_symbol(doc.uri.into()).await),
       RequestType::Completion(p) => {
         let doc = p.text_document_position;
         self.finish(completion(doc.text_document.uri.into(), doc.position).await)
       }
       RequestType::CompletionResolve(ci) =>
-        self.finish(completion_resolve(*ci, elab_on).await),
+        self.finish(completion_resolve(*ci).await),
       RequestType::References(ReferenceParams {text_document_position: doc, context, ..}) => {
         let file: FileRef = doc.text_document.uri.into();
         self.finish(references(file.clone(), doc.position, context.include_declaration,
@@ -844,11 +844,11 @@ async fn definition<T>(path: FileRef, pos: Position,
 }
 
 #[allow(deprecated)] // workaround rust#60681
-async fn document_symbol(path: FileRef, elab_on: ElabOn) -> StdResult<DocumentSymbolResponse, ResponseError> {
+async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
 
-  let maybe_old = if elab_on == ElabOn::Save { try_old(&file) } else { None };
+  let maybe_old = if SERVER.elab_on().unwrap_or_default() == ElabOn::Save { try_old(&file) } else { None };
   let (text, env) = if let Some((contents, frozen)) = maybe_old {
     (contents.ascii().clone(), frozen)
   } else {
@@ -996,7 +996,7 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   Ok(CompletionResponse::Array(res))
 }
 
-async fn completion_resolve(ci: CompletionItem, elab_on: ElabOn) -> StdResult<CompletionItem, ResponseError> {
+async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, ResponseError> {
   let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
     response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
@@ -1004,7 +1004,7 @@ async fn completion_resolve(ci: CompletionItem, elab_on: ElabOn) -> StdResult<Co
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
 
-  let maybe_old = if elab_on == ElabOn::Save { try_old(&file) } else { None };
+  let maybe_old = if SERVER.elab_on().unwrap_or_default() == ElabOn::Save { try_old(&file) } else { None };
   let (text, env) = if let Some((contents, frozen)) = maybe_old {
     (contents.ascii().clone(), frozen)
   } else {
@@ -1291,6 +1291,10 @@ impl Server {
     })
   }
 
+  fn elab_on(&self) -> Option<ElabOn> {
+    self.options.ulock().elab_on
+  }
+
   fn run(&self) {
     let logger = Logger::start();
     let _ = self.caps.ulock().register();
@@ -1315,9 +1319,8 @@ impl Server {
             if let Some((id, req)) = parse_request(req)? {
               spawn_new(|cancel| {
                 reqs.ulock().insert(id.clone(), cancel.clone());
-                let elab_on = options.ulock().elab_on.unwrap_or_default();
-                async move {
-                  RequestHandler {id, cancel}.handle(req, elab_on).await
+                async {
+                  RequestHandler {id, cancel}.handle(req).await
                     .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
                 }
               });
