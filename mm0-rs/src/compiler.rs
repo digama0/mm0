@@ -75,6 +75,7 @@ impl FileContents {
     FileContents::Bin(Arc::new(data))
   }
 
+  #[track_caller]
   pub(crate) fn ascii(&self) -> &Arc<LinedString> {
     if let Self::Ascii(e) = self {e} else {panic!("expected ASCII file")}
   }

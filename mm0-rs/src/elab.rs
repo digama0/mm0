@@ -592,7 +592,7 @@ pub enum ElabResult<T> {
 ///   (see [`Elaborator::new`]).
 ///
 /// - `report_upstream_errors`: If true, an error will be reported if a file in an import itself
-///   has an error. This can be disabled to
+///   has an error. This can be disabled to avoid reporting the same error many times.
 ///
 /// - `_old`: The last successful parse of the same file, used for incremental elaboration.
 ///   A value of `Some((idx, errs, env))` means that the new file first differs from the
@@ -621,6 +621,7 @@ pub enum ElabResult<T> {
 /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
 /// [`Environment`]: environment/struct.Environment.html
 /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn elaborate<T: Send>(
   ast: &Arc<AST>, path: FileRef,
   mm0_mode: bool, check_proofs: bool, report_upstream_errors: bool, cancel: Arc<AtomicBool>,

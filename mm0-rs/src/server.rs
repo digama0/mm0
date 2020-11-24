@@ -763,7 +763,10 @@ async fn definition<T>(path: FileRef, pos: Position,
   }}}
   let file = vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "goto definition nonexistent file"))?;
-  let text = file.text.ulock().1.ascii().clone();
+  let text = match &file.text.ulock().1 {
+    FileContents::Ascii(text) => text.clone(),
+    _ => return Ok(vec![])
+  };
   let idx = or_none!(text.to_idx(pos));
   let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
     .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
