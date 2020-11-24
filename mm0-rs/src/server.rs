@@ -18,6 +18,7 @@ use lsp_server::{Connection, ErrorCode, Message, Notification, ProtocolError,
 use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
+use serde::Deserialize;
 #[allow(clippy::wildcard_imports)] use lsp_types::*;
 use crossbeam::channel::{SendError, RecvError};
 use clap::ArgMatches;
@@ -1086,6 +1087,7 @@ struct Server {
   vfs: VFS,
   pool: ThreadPool,
   threads: Arc<(Mutex<VecDeque<Arc<AtomicBool>>>, Condvar)>,
+  options: Mutex<ServerOptions>,
 }
 
 struct Capabilities {
@@ -1114,6 +1116,13 @@ impl Capabilities {
         register_options: None
       })
     }
+
+    regs.push(Registration {
+      id: String::new(),
+      method: "workspace/didChangeConfiguration".into(),
+      register_options: None,
+    });      
+
     if !regs.is_empty() {
       register_capability("regs".into(), regs)?;
       self.reg_id = Some(String::from("regs").into());
@@ -1177,12 +1186,22 @@ impl Server {
       vfs: VFS(Mutex::new(HashMap::new())),
       pool: ThreadPool::new()?,
       threads: Default::default(),
+      options: Mutex::new(ServerOptions::default()),
     })
   }
 
   fn run(&self) {
     let logger = Logger::start();
     let _ = self.caps.ulock().register();
+
+    // We need this to be able to match on the response for the config getter, but
+    // we can't use a string slice since lsp_server doesn't export IdRepr
+    let get_config_id = lsp_server::RequestId::from(String::from("get_config"));
+    // Request the user's initial configuration on startup.
+    if let Err(e) = send_config_request() {
+      eprintln!("Server panicked: {:?}", e);
+    }
+
     loop {
       match (|| -> Result<bool> {
         let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
@@ -1200,6 +1219,17 @@ impl Server {
                     .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
                 }
               });
+            }
+          }
+          Ok(Message::Response(lsp_server::Response { 
+            id, 
+            result: Some(serde_json::value::Value::Array(xs)), 
+            .. 
+          })) if id == get_config_id => {
+            if let Some(hd) = xs.into_iter().next() {
+              let config: StdResult<ServerOptions, serde_json::Error> = from_value(hd);
+              let config = config?;
+              *self.options.ulock() = config;
             }
           }
           Ok(Message::Response(resp)) => {
@@ -1246,6 +1276,9 @@ impl Server {
                 log!("close {:?}", path);
                 vfs.close(&path)?;
               }
+              <lsp_types::notification::DidChangeConfiguration as lsp_types::notification::Notification>::METHOD => {
+                send_config_request()?
+              }              
               _ => {}
             }
           }
@@ -1297,4 +1330,86 @@ pub fn main(args: &ArgMatches<'_>) {
   let Server {reqs, vfs: VFS(vfs), ..} = &*SERVER;
   std::mem::take(&mut *reqs.ulock());
   std::mem::take(&mut *vfs.ulock());
+}
+
+
+/// Options for [`Server`]; for eaxmple,  whether to apply changes and 
+/// elaborate on change or save.
+/// The fields are `Option<T>` rather than defaults for each T since it might
+/// be useful to tell whether a certain option has been set by the user or left
+/// as the default. If they were just T, `T::Default` could mean that the user selected
+/// a value that's the same as the default, or it could mean that it was untouched.
+///
+/// [`Server`]: ./struct.Server.html
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerOptions {
+  elab_on: Option<ElabOn>,
+  executable_path: Option<std::path::PathBuf>,
+  max_number_of_problems: usize,
+  trace: Option<Trace>
+}
+
+impl std::default::Default for ServerOptions {
+  fn default() -> Self {
+    ServerOptions {
+      elab_on: None,
+      executable_path: None,
+      max_number_of_problems: 100,
+      trace: None,
+    }
+  }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Trace {
+  server: TraceLevel
+}
+
+
+/// User-configurable level of tracing
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TraceLevel {
+  /// Turn tracing off
+  Off,
+  /// Trace only message 
+  Messages,
+  /// Set trace level to verbose
+  Verbose,
+}
+
+/// Enum for use in [`ServerOptions`] showing when the user wants changes to be applied
+/// and the new file to be elaborated.
+///
+/// [`ServerOptions`]: ./struct.ServerOptions.html
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ElabOn {
+  /// Apply changes and elaborate every time a change is received from the server
+  Change,
+  /// Apply changes and elaborate when a save message is received.
+  Save,
+}
+
+impl std::default::Default for ElabOn {
+  fn default() -> Self {
+    ElabOn::Change
+  }
+}
+
+fn send_config_request() -> Result<()> {
+  let params = lsp_types::ConfigurationParams {
+    items: vec![lsp_types::ConfigurationItem {
+        scope_uri: None,
+        section: Some("metamath-zero".to_string()),
+    }],
+  };
+  let req = lsp_server::Request::new(
+    RequestId::from("get_config".to_string()), 
+    <lsp_types::request::WorkspaceConfiguration as lsp_types::request::Request>::METHOD.to_string(),
+    params
+  );
+  send_message(req)
 }

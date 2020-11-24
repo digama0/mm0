@@ -66,6 +66,16 @@
 					],
 					"default": "off",
 					"description": "Traces the communication between VS Code and the language server."
+				},
+				"metamath-zero.elabOn": {
+					"scope": "window",
+					"type": "string",
+					"enum": [
+						"change",
+						"save"
+					],
+					"default": "change",
+					"description": "Set the server to elaborate changes either on every change/keystroke, or on save."
 				}
 			}
 		},
