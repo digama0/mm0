@@ -235,7 +235,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         if rd.contains(&p) {
           send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
         } else {
-          spawn_new(|c| elaborate_and_send(p.clone(), c, send, rd.clone()));
+          Job::ElaborateDep(p.clone(), path.clone(), Some((send, rd.clone()))).spawn();
           deps.push(p);
         }
         Ok(recv)
@@ -244,37 +244,36 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();
   log!("elabbed {:?}", path);
-  let mut g = file.parsed.lock().await;
-  if cancel.load(Ordering::SeqCst) { return Ok(ElabResult::Canceled) }
-  let mut srcs = HashMap::new();
-  let mut to_loc = |fsp: &FileSpan| -> Location {
-    if fsp.file.ptr_eq(&path) {
-      source.ascii()
-    } else {
-      srcs.entry(fsp.file.ptr())
-      .or_insert_with(||
-        vfs.0.ulock().get(&fsp.file).expect("missing file")
-          .text.ulock().1.ascii().clone())
-    }.to_loc(fsp)
-  };
+  let is_canceled = cancel.load(Ordering::SeqCst);
+  if !is_canceled {
+    let mut srcs = HashMap::new();
+    let mut to_loc = |fsp: &FileSpan| -> Location {
+      if fsp.file.ptr_eq(&path) {
+        source.ascii()
+      } else {
+        srcs.entry(fsp.file.ptr())
+        .or_insert_with(||
+          vfs.0.ulock().get(&fsp.file).expect("missing file")
+            .text.ulock().1.ascii().clone())
+      }.to_loc(fsp)
+    };
 
-  if let Some(ast) = &ast {
-    let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
-    let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(source.ascii()))
-      .chain(errors.iter().map(|e| e.to_diag(source.ascii(), &mut to_loc)))
-      .filter(|e| !e.message.is_empty())
-      .inspect(|err| match err.severity {
-        None => {}
-        Some(DiagnosticSeverity::Error) => n_errs += 1,
-        Some(DiagnosticSeverity::Warning) => n_warns += 1,
-        Some(DiagnosticSeverity::Information) => n_infos += 1,
-        Some(DiagnosticSeverity::Hint) => n_hints += 1,
-      }).collect();
-
-    send_diagnostics(path.url().clone(), version, errs)?;
-
-    {
+    if let Some(ast) = &ast {
       use std::fmt::Write;
+      let (mut n_errs, mut n_warns, mut n_infos, mut n_hints) = (0, 0, 0, 0);
+      let errs: Vec<_> = ast.errors.iter().map(|e| e.to_diag(source.ascii()))
+        .chain(errors.iter().map(|e| e.to_diag(source.ascii(), &mut to_loc)))
+        .filter(|e| !e.message.is_empty())
+        .inspect(|err| match err.severity {
+          None => {}
+          Some(DiagnosticSeverity::Error) => n_errs += 1,
+          Some(DiagnosticSeverity::Warning) => n_warns += 1,
+          Some(DiagnosticSeverity::Information) => n_infos += 1,
+          Some(DiagnosticSeverity::Hint) => n_hints += 1,
+        }).collect();
+
+      send_diagnostics(path.url().clone(), version, errs)?;
+
       let mut log_msg = format!("diagged {:?}, {} errors", path, n_errs);
       if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
       if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
@@ -290,22 +289,28 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     }
   }
 
-  let errors = if errors.is_empty() { None } else { Some(errors.into()) };
-  let res = match cyc.clone() {
-    None => ElabResult::Ok(hash, errors, env.clone()),
-    Some(cyc) => ElabResult::ImportCycle(cyc),
+  let res = if is_canceled {
+    ElabResult::Canceled
+  } else if let Some(cyc) = &cyc {
+    ElabResult::ImportCycle(cyc.clone())
+  } else {
+    let errors = if errors.is_empty() { None } else { Some(errors.into()) };
+    ElabResult::Ok(hash, errors, env.clone())
   };
-  vfs.update_downstream(&old_deps, &deps, &path);
+  if !is_canceled { vfs.update_downstream(&old_deps, &deps, &path) }
+  let mut g = file.parsed.lock().await;
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {
     for s in senders {
       let _ = s.send(res.clone());
     }
   }
-  *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), deps});
-  drop(g);
-  for d in file.downstream.ulock().iter() {
-    log!("{:?} affects {:?}", path, d);
-    spawn_new(|c| dep_change(d.clone(), c));
+  if !is_canceled {
+    *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), deps});
+    drop(g);
+    for d in file.downstream.ulock().iter() {
+      log!("{:?} affects {:?}", path, d);
+      Job::DepChange(path.clone(), d.clone(), DepChangeReason::Elab).spawn();
+    }
   }
   Ok(res)
 }
@@ -406,13 +411,13 @@ impl VFS {
     let file = match self.0.ulock().entry(path.clone()) {
       Entry::Occupied(entry) => {
         for dep in entry.get().downstream.ulock().iter() {
-          spawn_new(|c| dep_change(dep.clone(), c));
+          Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Open).spawn();
         }
         file
       }
       Entry::Vacant(entry) => entry.insert(file).clone()
     };
-    spawn_new(|c| elaborate_and_report(path, Some(Position::default()), c));
+    Job::Elaborate(path, ElabReason::Open).spawn();
     Ok(file)
   }
 
@@ -426,7 +431,7 @@ impl VFS {
         let file = e.get().clone();
         drop(g);
         for dep in file.downstream.ulock().clone() {
-          spawn_new(|c| dep_change(dep.clone(), c));
+          Job::DepChange(path.clone(), dep.clone(), DepChangeReason::Close).spawn();
         }
       } else {}
     }
@@ -449,6 +454,7 @@ impl VFS {
   }
 }
 
+#[derive(Debug)]
 enum RequestType {
   Completion(CompletionParams),
   CompletionResolve(Box<CompletionItem>),
@@ -1106,7 +1112,8 @@ struct Server {
   reqs: OpenRequests,
   vfs: VFS,
   pool: ThreadPool,
-  threads: Arc<(Mutex<VecDeque<Arc<AtomicBool>>>, Condvar)>,
+  #[allow(clippy::type_complexity)]
+  threads: Arc<(Mutex<VecDeque<(Job, Arc<AtomicBool>)>>, Condvar)>,
   options: Mutex<ServerOptions>,
 }
 
@@ -1160,25 +1167,103 @@ impl Capabilities {
   }
 }
 
-fn spawn(cancel: Arc<AtomicBool>, fut: impl std::future::Future<Output=()> + Send + 'static) {
-  SERVER.threads.0.ulock().push_back(cancel.clone());
-  SERVER.pool.spawn_ok(async move {
-    fut.await;
-    let (m, cvar) = &*SERVER.threads;
-    let mut vec = m.ulock();
-    let a: *const AtomicBool = &*cancel;
-    let i = vec.iter().enumerate().find(|&(_, b)| a == &**b).expect("my job is missing").0;
-    vec.swap_remove_front(i);
-    drop(vec);
-    cvar.notify_all();
-  })
+enum DepChangeReason { Open, Close, Elab }
+
+impl std::fmt::Display for DepChangeReason {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Open => write!(f, "open"),
+      Self::Close => write!(f, "close"),
+      Self::Elab => write!(f, "elaboration"),
+    }
+  }
 }
 
-fn spawn_new<F>(fut: impl FnOnce(Arc<AtomicBool>) -> F) -> Arc<AtomicBool>
-where F: std::future::Future<Output=()> + Send + 'static {
-  let cancel: Arc<AtomicBool> = Default::default();
-  spawn(cancel.clone(), fut(cancel.clone()));
-  cancel
+enum ElabReason { Open, Save, Change(Position) }
+
+impl ElabReason {
+  fn start(&self) -> Option<Position> {
+    match *self {
+      Self::Change(p) => Some(p),
+      Self::Open => Some(Position::default()),
+      Self::Save => None
+    }
+  }
+}
+
+impl std::fmt::Display for ElabReason {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Open => write!(f, "open"),
+      Self::Save => write!(f, "save"),
+      Self::Change(_) => write!(f, "change"),
+    }
+  }
+}
+
+enum Job {
+  RequestHandler(RequestId, Option<Box<RequestType>>),
+  Elaborate(FileRef, ElabReason),
+  ElaborateDep(FileRef, FileRef, Option<(FSender<ElabResult<u64>>, ArcList<FileRef>)>),
+  DepChange(FileRef, FileRef, DepChangeReason),
+}
+
+impl std::fmt::Display for Job {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Job::RequestHandler(id, _) => write!(f, "handle request {}", id),
+      Job::Elaborate(path, ElabReason::Open) => write!(f, "elaborate {} on open", path),
+      Job::Elaborate(path, ElabReason::Save) => write!(f, "elaborate {} on save", path),
+      Job::Elaborate(path, ElabReason::Change(_)) => write!(f, "elaborate {} on change", path),
+      Job::ElaborateDep(from, to, _) => write!(f, "elaborate {} needed for {}", from, to),
+      Job::DepChange(from, to, reason) => write!(f, "elaborate {} for {} {}", to, from, reason),
+    }
+  }
+}
+
+impl Job {
+  fn spawn_core<F>(self, cancel: Arc<AtomicBool>, fut: F)
+  where F: std::future::Future<Output=()> + Send + 'static {
+    SERVER.threads.0.ulock().push_back((self, cancel.clone()));
+    SERVER.pool.spawn_ok(async move {
+      fut.await;
+      let (m, cvar) = &*SERVER.threads;
+      let mut vec = m.ulock();
+      let a: *const AtomicBool = &*cancel;
+      let i = vec.iter().enumerate().find(|&(_, (_, b))| a == &**b).expect("my job is missing").0;
+      vec.swap_remove_front(i);
+      drop(vec);
+      cvar.notify_all();
+    });
+  }
+
+  fn spawn(mut self) {
+    let cancel: Arc<AtomicBool> = Default::default();
+    match &mut self {
+      Job::RequestHandler(id, req) => {
+        SERVER.reqs.ulock().insert(id.clone(), cancel.clone());
+        let req = req.take().expect("job already started");
+        let id = id.clone();
+        self.spawn_core(cancel.clone(), async {
+          RequestHandler {id, cancel}.handle(*req).await
+            .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
+        });
+      }
+      Job::Elaborate(path, reason) => {
+        let f = elaborate_and_report(path.clone(), reason.start(), cancel.clone());
+        self.spawn_core(cancel, f)
+      }
+      Job::ElaborateDep(p, _, args) => {
+        let (send, rd) = args.take().expect("job already started");
+        let f = elaborate_and_send(p.clone(), cancel.clone(), send, rd);
+        self.spawn_core(cancel, f)
+      }
+      Job::DepChange(_, to, _) => {
+        let f = dep_change(to.clone(), cancel.clone());
+        self.spawn_core(cancel, f)
+      }
+    }
+  }
 }
 
 /// Options for [`Server`]; for example, whether to apply changes and
@@ -1311,13 +1396,7 @@ impl Server {
               return Ok(true)
             }
             if let Some((id, req)) = parse_request(req)? {
-              spawn_new(|cancel| {
-                reqs.ulock().insert(id.clone(), cancel.clone());
-                async {
-                  RequestHandler {id, cancel}.handle(req).await
-                    .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
-                }
-              });
+              Job::RequestHandler(id, Some(Box::new(req))).spawn();
             }
           }
           Ok(Message::Response(resp)) => {
@@ -1364,7 +1443,7 @@ impl Server {
                     start
                   };
                   if options.ulock().elab_on.unwrap_or_default() == ElabOn::Change {
-                    spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                    Job::Elaborate(path, ElabReason::Change(start)).spawn();
                   }
                 }
               }
@@ -1379,7 +1458,7 @@ impl Server {
                 let path = FileRef::from(doc.uri);
                 log!("save {:?}", path);
                 if options.ulock().elab_on.unwrap_or_default() == ElabOn::Save {
-                  spawn_new(|c| elaborate_and_report(path, None, c));
+                  Job::Elaborate(path, ElabReason::Save).spawn();
                 }
               }
               DidChangeConfiguration::METHOD => send_config_request()?,
@@ -1397,8 +1476,12 @@ impl Server {
     logger.stop();
     let (mutex, cvar) = &*self.threads;
     let mut g = mutex.ulock();
-    g.iter().for_each(|c| c.store(true, Ordering::Relaxed));
-    while !g.is_empty() { g = cvar.uwait(g) }
+    g.iter().for_each(|(_, c)| c.store(true, Ordering::Relaxed));
+    while !g.is_empty() {
+      // use itertools::Itertools;
+      // eprintln!("waiting on threads:\n  {}", g.iter().map(|(s, _)| s).format("\n  "));
+      g = cvar.uwait(g)
+    }
   }
 }
 
