@@ -833,12 +833,17 @@ async fn definition<T>(path: FileRef, pos: Position,
 async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.ulock().1.ascii().clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = match env.into_response_error()? {
-    Some((_, env)) => env,
-    None => return Ok(DocumentSymbolResponse::Nested(vec![]))
+
+  let maybe_old = if SERVER.elab_on().unwrap_or_default() == ElabOn::Save { try_old(&file) } else { None };
+  let (text, env) = if let Some((contents, frozen)) = maybe_old { 
+    (contents.ascii().clone(), frozen)
+  } else {
+    let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    match env.into_response_error()? {
+      None => return Ok(DocumentSymbolResponse::Nested(vec![])),
+      Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
+    }
   };
   let fe = unsafe { env.format_env(&text) };
   let f = |sp, name: &ArcString, desc, full, kind| DocumentSymbol {
@@ -958,12 +963,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
 async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let old = file.parsed.try_lock().and_then(|g| g.as_ref().and_then(|fc| match fc {
-    FileCache::Ready {source, res: ElabResult::Ok(_, env), ..} => Some((source.clone(), env.clone())),
-    FileCache::Ready {..} => None,
-    FileCache::InProgress {old, ..} => old.clone()
-  }));
-  let (text, env) = if let Some(old) = old { old } else {
+  let (text, env) = if let Some(old) = try_old(&file) { old } else {
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
       .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
     match env.into_response_error()? {
@@ -989,11 +989,19 @@ async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, Res
   let path = uri.into();
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.ulock().1.ascii().clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .into_response_error()?
-    .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
+
+  let maybe_old = if SERVER.elab_on().unwrap_or_default() == ElabOn::Save { try_old(&file) } else { None };
+  let (text, env) = if let Some((contents, frozen)) = maybe_old { 
+    (contents.ascii().clone(), frozen)
+  } else {
+    let text = file.text.ulock().1.ascii().clone();
+    let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+      .into_response_error()?
+      .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
+    (text, env)
+  };
+
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(ci.label.as_bytes()).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
@@ -1190,6 +1198,10 @@ impl Server {
     })
   }
 
+  fn elab_on(&self) -> Option<ElabOn> {
+    self.options.ulock().elab_on
+  }
+
   fn run(&self) {
     let logger = Logger::start();
     let _ = self.caps.ulock().register();
@@ -1204,7 +1216,7 @@ impl Server {
 
     loop {
       match (|| -> Result<bool> {
-        let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
+        let Server {conn, caps, reqs, vfs, options, ..} = &*SERVER;
         match conn.receiver.recv() {
           Err(RecvError) => return Ok(true),
           Ok(Message::Request(req)) => {
@@ -1215,7 +1227,7 @@ impl Server {
               spawn_new(|cancel| {
                 reqs.ulock().insert(id.clone(), cancel.clone());
                 async {
-                  RequestHandler {id, cancel}.handle(req).await
+                  RequestHandler {id, cancel}.handle(req).await                
                     .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
                 }
               });
@@ -1267,7 +1279,9 @@ impl Server {
                     *text = FileContents::Ascii(Arc::new(s));
                     start
                   };
-                  spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                  if options.ulock().elab_on.unwrap_or_default() == ElabOn::Change {
+                    spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                  }                      
                 }
               }
               "textDocument/didClose" => {
@@ -1276,6 +1290,14 @@ impl Server {
                 log!("close {:?}", path);
                 vfs.close(&path)?;
               }
+              "textDocument/didSave" => {
+                let DidSaveTextDocumentParams { text_document: doc, .. } = from_value(notif.params)?;
+                let path = FileRef::from(doc.uri);
+                log!("save {:?}", path);
+                if options.ulock().elab_on.unwrap_or_default() == ElabOn::Save {
+                  spawn_new(|c| elaborate_and_report(path, None, c));
+                }                
+              }              
               <lsp_types::notification::DidChangeConfiguration as lsp_types::notification::Notification>::METHOD => {
                 send_config_request()?
               }              
@@ -1412,4 +1434,15 @@ fn send_config_request() -> Result<()> {
     params
   );
   send_message(req)
+}
+
+/// small abstraction for trying to get the last good environment. 
+/// `completion` always uses this, but the other users will only opt for this
+/// if the user has chosen to elaborate on save instead of on change.
+fn try_old(file: &Arc<VirtualFile>)  -> Option<(FileContents, FrozenEnv)> {
+  file.parsed.try_lock().and_then(|g| g.as_ref().and_then(|fc| match fc {
+    FileCache::Ready {source, res: ElabResult::Ok(_, env), ..} => Some((source.clone(), env.clone())),
+    FileCache::Ready {..} => None,
+    FileCache::InProgress {old, ..} => old.clone()
+  }))
 }
