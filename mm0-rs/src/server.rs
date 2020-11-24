@@ -1247,13 +1247,13 @@ impl std::default::Default for ElabOn {
 }
 
 fn send_config_request() -> Result<()> {
+  use lsp_types::request::{WorkspaceConfiguration, Request};
   let params = lsp_types::ConfigurationParams {
     items: vec![lsp_types::ConfigurationItem {
         scope_uri: None,
         section: Some("metamath-zero".to_string()),
     }],
   };
-  use lsp_types::request::{WorkspaceConfiguration, Request};
   let req = lsp_server::Request::new(
     RequestId::from("get_config".to_string()),
     WorkspaceConfiguration::METHOD.to_string(),
@@ -1342,7 +1342,7 @@ impl Server {
             }
           }
           Ok(Message::Notification(notif)) => {
-            use lsp_types::notification::*;
+            #[allow(clippy::wildcard_imports)] use lsp_types::notification::*;
             match notif.method.as_str() {
               Cancel::METHOD => {
                 let CancelParams {id} = from_value(notif.params)?;
