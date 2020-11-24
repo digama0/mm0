@@ -1,4 +1,4 @@
-//! Importer for MMB files into the `Environment`.
+//! Importer for MMB files into the [`Environment`].
 
 use std::convert::{TryFrom, TryInto};
 use std::fs::File;
@@ -475,7 +475,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   Ok(())
 }
 
-/// Construct an `Environment` from an `mmb` file.
+/// Construct an [`Environment`] from an `mmb` file.
 pub fn elab(file: &FileRef, source: &[u8]) -> (crate::elab::Result<()>, Environment) {
   let mut env = Environment::new();
   (parse(file, source, &mut env).map_err(From::from), env)

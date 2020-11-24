@@ -1,4 +1,6 @@
 //! MMC type checking pass.
+#![allow(unused)]
+
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet};
 use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
@@ -36,19 +38,22 @@ impl<'a> InferType<'a> {
   }
 }
 
-/// Like rust, types can either be `Copy` or non-`Copy`.
+/// Like rust, types can either be [`Copy`] or non-[`Copy`].
 /// Unlike rust, non-copy types can still be used after they are moved
-/// away, but their type changes to the `Moved` version of the type,
+/// away, but their type changes to the [`Moved`] version of the type,
 /// which represents the "copy core" of the type, essentially an integral
 /// type of the same size as `sizeof(T)`.
+///
+/// [`Copy`]: CopyType::Copy
+/// [`Moved`]: CopyType::Moved
 #[derive(Debug)]
 enum CopyType {
-  /// This type is `Copy`, so the moved version of the type is the
+  /// This type is [`Copy`], so the moved version of the type is the
   /// same as the regular version.
-  _Copy,
-  /// This type is not `Copy`, and the moved version of the type is
+  Copy,
+  /// This type is not [`Copy`], and the moved version of the type is
   /// given here.
-  _Moved(Type),
+  Moved(Type),
 }
 
 /// The (permanent) type of a variable in the context, mixing together type variables,
@@ -59,7 +64,7 @@ enum GType {
   /// A type variable, of kind `*`
   Star,
   /// A regular variable, of the given type; the bool is true if this is ghost.
-  /// The `CopyType` keeps track of the "moved away" version of the type; it
+  /// The [`CopyType`] keeps track of the "moved away" version of the type; it
   /// is calculated lazily the first time the variable is re-used.
   Ty(bool, Type, Option<Box<CopyType>>),
   /// A hypothesis, which proves the given separating proposition
@@ -80,7 +85,7 @@ struct Variable {
 enum VariableState {
   Owned,
   Copy,
-  _Moved,
+  Moved,
 }
 #[derive(Debug)]
 struct TypeState(Vec<VariableState>);
@@ -122,14 +127,14 @@ fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(
 }
 
 impl Compiler {
-  fn _head_keyword(&self, e: &LispVal) -> Option<(Keyword, Uncons)> {
+  fn head_keyword(&self, e: &LispVal) -> Option<(Keyword, Uncons)> {
     head_keyword(&self.keywords, e)
   }
 }
 
 impl<'a> TypeChecker<'a> {
-  /// Constructs a new `TypeChecker`, which can be used to typecheck many `AST` items
-  /// via [`typeck`](struct.TypeChecker.html#method.typeck) and will reuse its internal buffers.
+  /// Constructs a new [`TypeChecker`], which can be used to typecheck many `AST` items
+  /// via [`typeck`](Self::typeck) and will reuse its internal buffers.
   pub fn new(mmc: &'a mut Compiler, elab: &'a mut Elaborator, fsp: FileSpan) -> Self {
     Self {mmc, elab, fsp,
       used_names: HashSet::new(),
@@ -142,7 +147,7 @@ impl<'a> TypeChecker<'a> {
   fn new_type_state(&self) -> TypeState {
     TypeState(self.context.iter().map(|v| match &v.ty {
       GType::Star => VariableState::Copy,
-      GType::Ty(_, _, Some(b)) if matches!(**b, CopyType::_Copy) => VariableState::Copy,
+      GType::Ty(_, _, Some(b)) if matches!(**b, CopyType::Copy) => VariableState::Copy,
       _ => VariableState::Owned,
     }).collect())
   }
@@ -466,7 +471,7 @@ impl<'a> TypeChecker<'a> {
         Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a function/operation")),
         None => match self.user_locals.get(&name) {
           Some(&i) => match &self.find(i) {
-            Some(Variable {ty: GType::Ty(_, _ty, _), ..}) => match tgt {
+            Some(Variable {ty: GType::Ty(_, ty, _), ..}) => match tgt {
               None |
               Some(_) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },

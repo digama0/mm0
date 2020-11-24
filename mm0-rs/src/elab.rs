@@ -5,14 +5,11 @@
 //! The [`Elaborator`] struct contains the working data for elaboration, and it is discarded
 //! once the file is completed. Elaborators are not shared between files, and
 //! [`Environment`]s are copied on import.
-//!
-//! [`Environment`]: environment/struct.Environment.html
-//! [`Elaborator`]: struct.Elaborator.html
 
 pub mod environment;
 pub mod spans;
 pub mod lisp;
-#[macro_use] mod frozen;
+#[macro_use] pub mod frozen;
 pub mod math_parser;
 pub mod local_context;
 pub mod refine;
@@ -54,15 +51,13 @@ pub enum ElabErrorKind {
   /// A boxed error. The main [`BoxError`] is the error message,
   /// and the `Vec<(FileSpan, BoxError)>` is a list of other positions
   /// related to the error, along with short descriptions.
-  ///
-  /// [`BoxError`]: ../util/type.BoxError.html
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
   /// This is an error from a file upstream. The `usize` is the number of
   /// number of upstream errors after the first one.
   Upstream(FileRef, Arc<[ElabError]>, usize)
 }
 impl ElabErrorKind {
-  /// Converts the error message to a `String`.
+  /// Converts the error message to a [`String`].
   #[must_use] pub fn raw_msg(&self) -> String {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
@@ -70,7 +65,7 @@ impl ElabErrorKind {
     }
   }
 
-  /// Converts the error message to a `String`.
+  /// Converts the error message to a [`String`].
   #[must_use] pub fn msg(&self) -> String {
     use std::fmt::Write;
     match self {
@@ -89,14 +84,9 @@ impl ElabErrorKind {
   ///
   /// # Parameters
   ///
-  /// - `to_loc`: A function to convert the `FileSpan` locations into the LSP [`Location`]
+  /// - `to_loc`: A function to convert the [`FileSpan`] locations into the LSP [`Location`]
   ///   type. (This is basically [`LinedString::to_loc`] but can't be done locally because
   ///   it requires the [`LinedString`] for the file to convert the index to line/col.)
-  ///
-  /// [`DiagnosticRelatedInformation`]: ../../lsp_types/struct.DiagnosticRelatedInformation.html
-  /// [`Location`]: ../../lsp_types/struct.Location.html
-  /// [`LinedString`]: ../lined_string/struct.LinedString.html
-  /// [`LinedString::to_loc`]: ../lined_string/struct.LinedString.html#method.to_loc
   #[cfg(feature = "server")]
   #[must_use] pub fn to_related_info(&self,
     mut to_loc: impl FnMut(&FileSpan) -> Location
@@ -126,8 +116,6 @@ pub struct ElabError {
   /// The severity of the error or message
   pub level: ErrorLevel,
   /// The type of error (currently there is only [`ElabErrorKind::Boxed`])
-  ///
-  /// [`ElabErrorKind::Boxed`]: enum.ElabErrorKind.html#variant.Boxed
   pub kind: ElabErrorKind,
 }
 
@@ -137,15 +125,11 @@ pub type Result<T> = StdResult<T, ElabError>;
 impl ElabError {
 
   /// Make an elaboration error from a position and an [`ElabErrorKind`].
-  ///
-  /// [`ElabErrorKind`]: enum.ElabErrorKind.html
   pub fn new(pos: impl Into<Span>, kind: ElabErrorKind) -> ElabError {
     ElabError { pos: pos.into(), level: ErrorLevel::Error, kind }
   }
 
   /// Make an elaboration error from a position and anything that can be converted to a [`BoxError`].
-  ///
-  /// [`BoxError`]: ../util/type.BoxError.html
   pub fn new_e(pos: impl Into<Span>, e: impl Into<BoxError>) -> ElabError {
     ElabError::new(pos, ElabErrorKind::Boxed(e.into(), None))
   }
@@ -165,11 +149,9 @@ impl ElabError {
     ElabError { pos: pos.into(), level: ErrorLevel::Info, kind: ElabErrorKind::Boxed(e.into(), None)}
   }
 
-  /// Convert an `ElabError` into the LSP [`Diagnostic`] type.
+  /// Convert an [`ElabError`] into the LSP [`Diagnostic`] type.
   /// Uses `file` to convert the error position to a range, and uses `to_loc` to convert
   /// the positions in other files for the related info.
-  ///
-  /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
   #[cfg(feature = "server")]
   pub fn to_diag(&self, file: &LinedString, to_loc: impl FnMut(&FileSpan) -> Location) -> Diagnostic {
     Diagnostic {
@@ -217,11 +199,9 @@ impl ReportMode {
   }
 }
 
-/// The `Elaborator` struct contains the working data for elaboration, and is the
-/// main interface to MM1 operations (along with [`Evaluator`], which a lisp
-/// execution context).
-///
-/// [`Evaluator`]: lisp/eval/struct.Evaluator.html
+/// The [`Elaborator`] struct contains the working data for elaboration, and is the
+/// main interface to MM1 operations (along with [`Evaluator`](lisp::eval::Evaluator),
+/// which a lisp execution context).
 #[derive(Debug)]
 pub struct Elaborator {
   /// The parsed abstract syntax tree for the file
@@ -266,11 +246,11 @@ impl DerefMut for Elaborator {
 }
 
 impl Elaborator {
-  /// Creates a new `Elaborator` from a parsed [`AST`].
+  /// Creates a new [`Elaborator`] from a parsed [`AST`].
   ///
   /// # Parameters
   ///
-  /// - `ast`: The [`AST`] of the parsed MM1/MM0 file (as created by [`parser::parse`])
+  /// - `ast`: The [`AST`] of the parsed MM1/MM0 file (as created by [`parser::parse`](super::parser::parse))
   /// - `path`: The location of the file being elaborated.
   /// - `mm0_mode`: True if this file is being elaborated in MM0 mode. In MM0 mode,
   ///   the `do` command is disabled, type inference is disabled, modifiers are treated
@@ -279,9 +259,6 @@ impl Elaborator {
   ///   file, which can be changed later using the `(check-proofs)` lisp command.
   /// - `cancel`: An atomic flag that can be flipped in another thread in order to cancel
   ///   the elaboration before completion.
-  ///
-  /// [`AST`]: ../parser/ast/struct.AST.html
-  /// [`parser::parse`]: ../parser/fn.parse.html
   #[must_use] pub fn new(ast: Arc<AST>, path: FileRef,
       mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>) -> Elaborator {
     Elaborator {
@@ -304,9 +281,6 @@ impl Elaborator {
   fn span(&self, s: Span) -> &[u8] { self.ast.span(s) }
 
   /// Converts a [`Span`] in the current elaboration file to a [`FileSpan`].
-  ///
-  /// [`Span`]: ../util/struct.Span.html
-  /// [`FileSpan`]: ../util/struct.FileSpan.html
   pub fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
 
   fn report(&mut self, e: ElabError) {
@@ -506,8 +480,6 @@ impl Elaborator {
 }
 
 /// The result type of [`Elaborator::elab_stmt`].
-///
-/// [`Elaborator::elab_stmt`]: struct.Elaborator.html#method.elab_stmt
 enum ElabStmt { Ok, Import(Span) }
 
 impl Elaborator {
@@ -579,7 +551,7 @@ pub enum ElabResult<T> {
   /// The elaboration was canceled.
   Canceled,
   /// The dependent file could not be elaborated because of an import cycle.
-  /// The provided list does not contain the target file itself, but contains a `FileRef`
+  /// The provided list does not contain the target file itself, but contains a [`FileRef`]
   /// that is equal to the target file, demonstrating the cycle.
   ImportCycle(ArcList<FileRef>)
 }
@@ -588,7 +560,7 @@ pub enum ElabResult<T> {
 ///
 /// # Parameters
 ///
-/// - `ast`, `path`, `mm0_mode`, `check_proofs`, `cancel`: Used to construct the inner `Elaborator`
+/// - `ast`, `path`, `mm0_mode`, `check_proofs`, `cancel`: Used to construct the inner [`Elaborator`]
 ///   (see [`Elaborator::new`]).
 ///
 /// - `report_upstream_errors`: If true, an error will be reported if a file in an import itself
@@ -615,12 +587,6 @@ pub enum ElabResult<T> {
 /// If elaboration of an individual statement fails, the error is pushed and then elaboration
 /// continues at the next statement, so the overall elaboration process cannot fail and an
 /// environment is always produced.
-///
-/// [`Elaborator::new`]: struct.Elaborator.html#method.new
-/// [`FileRef`]: ../util/struct.FileRef.html
-/// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
-/// [`Environment`]: environment/struct.Environment.html
-/// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn elaborate<T: Send>(
   ast: &Arc<AST>, path: FileRef,

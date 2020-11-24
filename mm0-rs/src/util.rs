@@ -24,10 +24,10 @@ impl<T> SliceExt<T> for [T] {
   fn cloned_box(&self) -> Box<[T]> where T: Clone { self.to_vec().into() }
 }
 
-/// Extension trait for `HashMap<K, V>`.
+/// Extension trait for [`HashMap`]`<K, V>`.
 pub trait HashMapExt<K, V> {
   /// Like `insert`, but if the insertion fails then it returns the value
-  /// that it attempted to insert, as well as an `OccupiedEntry` containing
+  /// that it attempted to insert, as well as an [`OccupiedEntry`] containing
   /// the other value that was found.
   fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)>;
 }
@@ -40,12 +40,12 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
     }
   }
 }
-/// Extension trait for `Option<T>`.
+/// Extension trait for [`Option`]`<T>`.
 pub trait OptionExt<T> {
   /// Like `unwrap`, but invokes undefined behavior instead of panicking.
   ///
   /// # Safety
-  /// This function must not be called on a `None` value.
+  /// This function must not be called on a [`None`] value.
   unsafe fn unwrap_unchecked(self) -> T;
 }
 
@@ -59,7 +59,7 @@ impl<T> OptionExt<T> for Option<T> {
   }
 }
 
-/// Extension trait for `Mutex<T>`.
+/// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
 pub trait MutexExt<T> {
   /// Like `lock`, but propagates instead of catches panics.
   fn ulock(&self) -> std::sync::MutexGuard<'_, T>;
@@ -70,7 +70,7 @@ impl<T> MutexExt<T> for std::sync::Mutex<T> {
     self.lock().expect("propagating poisoned mutex")
   }
 }
-/// Extension trait for `Condvar`.
+/// Extension trait for [`Condvar`](std::sync::Condvar).
 pub trait CondvarExt {
   /// Like `wait`, but propagates instead of catches panics.
   fn uwait<'a, T>(&self, g: std::sync::MutexGuard<'a, T>) -> std::sync::MutexGuard<'a, T>;
@@ -94,7 +94,7 @@ impl Deref for ArcString {
   fn deref(&self) -> &[u8] { &*self.0 }
 }
 impl ArcString {
-  /// Constructs a new `ArcString`.
+  /// Constructs a new [`ArcString`].
   #[must_use]
   pub fn new(s: Box<[u8]>) -> Self { Self(s.into()) }
 }
@@ -183,7 +183,7 @@ impl<T> ArcList<T> {
   }
 }
 
-/// An iterator over an `ArcList`.
+/// An iterator over an [`ArcList`].
 #[derive(Debug, Clone)]
 pub struct ArcListIter<'a, T>(&'a ArcList<T>);
 
@@ -207,7 +207,7 @@ impl<'a, T> IntoIterator for &'a ArcList<T> {
 /// [`assume_init`] to assert that every element of the array has been initialized and
 /// transmute the `SliceUninit<T>` into a `Box<[T]>`.
 ///
-/// [`assume_init`]: struct.SliceUninit.html#method.assume_init
+/// [`assume_init`]: SliceUninit::assume_init
 #[derive(Debug)]
 pub struct SliceUninit<T>(Box<[MaybeUninit<T>]>);
 
@@ -315,18 +315,18 @@ pub struct Range {
 }
 
 lazy_static! {
-  /// A `PathBuf` created by `lazy_static!` pointing to a canonicalized "."
-  static ref CURRENT_DIR: PathBuf =
+  /// A [`PathBuf`] created by `lazy_static!` pointing to a canonicalized "."
+  pub static ref CURRENT_DIR: PathBuf =
     std::fs::canonicalize(".").expect("failed to find current directory");
 }
 
-/// Given a `PathBuf` 'buf', constructs a relative path from [`CURRENT_DIR`]
+/// Given a [`PathBuf`] 'buf', constructs a relative path from [`CURRENT_DIR`]
 /// to buf, returning it as a String.
 ///
 /// Example: If [`CURRENT_DIR`] is `/home/johndoe/mm0`, and `buf` is
 /// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
-/// [`CURRENT_DIR`]: struct.CURRENT_DIR.html
+/// [`CURRENT_DIR`]: struct@CURRENT_DIR
 fn make_relative(buf: &PathBuf) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR).as_ref().unwrap_or(buf)
     .to_str().expect("bad unicode in file path").to_owned()
@@ -340,12 +340,12 @@ struct FileRefInner {
   url: lsp_types::Url
 }
 
-/// A reference to a file. It wraps an `Arc` so it can be cloned thread-safely.
-/// A `FileRef` can be constructed either from a `PathBuf` or a (`file://`) [`Url`],
-/// and provides (precomputed) access to these views using `path()` and `url()`,
-/// as well as `rel()` to get the relative path from `CURRENT_DIR`.
-///
-/// [`Url`]: ../lined_string/struct.Url.html
+/// A reference to a file. It wraps an [`Arc`] so it can be cloned thread-safely.
+/// A [`FileRef`] can be constructed either from a [`PathBuf`] or a
+/// (`file://`) [`Url`](lsp_types::Url),
+/// and provides (precomputed) access to these views using
+/// [`path()`](FileRef::path) and [`url()`](FileRef::url), as well as
+/// [`rel()`](FileRef::rel) to get the relative path from [`struct@CURRENT_DIR`].
 #[derive(Clone, DeepSizeOf)]
 pub struct FileRef(Arc<FileRefInner>);
 
@@ -370,11 +370,11 @@ impl From<lsp_types::Url> for FileRef {
 }
 
 impl FileRef {
-  /// Convert this `FileRef` to a `PathBuf`, for use with OS file actions.
+  /// Convert this [`FileRef`] to a [`PathBuf`], for use with OS file actions.
   #[must_use] pub fn path(&self) -> &PathBuf { &self.0.path }
-  /// Convert this `FileRef` to a relative path (as a `&str`).
+  /// Convert this [`FileRef`] to a relative path (as a `&str`).
   #[must_use] pub fn rel(&self) -> &str { &self.0.rel }
-  /// Convert this `FileRef` to a `file:://` URL, for use with LSP.
+  /// Convert this [`FileRef`] to a `file:://` URL, for use with LSP.
   #[cfg(feature = "server")]
   #[must_use] pub fn url(&self) -> &lsp_types::Url { &self.0.url }
   /// Get a pointer to this allocation, for use in hashing.
@@ -409,9 +409,7 @@ impl fmt::Debug for FileRef {
   }
 }
 
-/// A span paired with a [`FileRef`]
-///
-/// [`FileRef`]: struct.FileRef.html
+/// A span paired with a [`FileRef`].
 #[derive(Clone, PartialEq, Eq, DeepSizeOf)]
 pub struct FileSpan {
   /// The file in which this span occured.
@@ -426,8 +424,8 @@ impl fmt::Debug for FileSpan {
   }
 }
 
-/// Construct a `&CStr` from a prefix byte slice, by terminating at the first nul character.
-/// The second output is the remainder of the slice.
+/// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
+/// the first nul character. The second output is the remainder of the slice.
 #[must_use] pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
   let mid = memchr::memchr(0, bytes)? + 1;
   unsafe {
@@ -436,7 +434,8 @@ impl fmt::Debug for FileSpan {
   }
 }
 
-/// Try to get memory usage (resident set size) in bytes using the `getrusage()` function from libc.
+/// Try to get memory usage (resident set size) in bytes using the
+/// [`getrusage()`](libc::getrusage) function from libc.
 #[cfg(feature = "memory")]
 pub(crate) fn get_memory_rusage() -> usize {
   use std::convert::TryInto;
@@ -450,20 +449,20 @@ pub(crate) fn get_memory_rusage() -> usize {
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
-/// Falls back on `getrusage()` if procfs doesn't exist.
+/// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(all(feature = "memory", target_os = "linux"))]
 pub(crate) fn get_memory_usage() -> usize {
   procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
-/// Falls back on `getrusage()` if procfs doesn't exist.
+/// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(all(feature = "memory", not(target_os = "linux")))]
 pub(crate) fn get_memory_usage() -> usize {
   get_memory_rusage()
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
-/// Falls back on `getrusage()` if procfs doesn't exist.
+/// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(not(feature = "memory"))]
 pub(crate) fn get_memory_usage() -> usize { 0 }

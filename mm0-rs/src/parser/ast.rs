@@ -6,11 +6,6 @@
 //!  and the element's [`Span`].
 //! The actual [`AST`] type also contains data about the source file, any imports, and
 //! any errors encountered during parsing.
-//!
-//! [`AST`]: struct.AST.html
-//! [`Stmt`]: struct.Stmt.html
-//! [`StmtKind`]: enum.StmtKind.html
-//! [`Span`]: ../../util/struct.Span.html
 
 use std::sync::Arc;
 use std::fmt::{self, Display};
@@ -30,9 +25,7 @@ bitflags! {
     /// term constructors can not target this sort.
     const PURE = 1;
     /// The `strict` sort modifier, used to indicate that
-    /// bound variables (in the sense of [`is_bound`]) of this sort are not allowed.
-    ///
-    /// [`is_bound`]: enum.LocalKind.html#method.is_bound
+    /// bound variables (in the sense of [`LocalKind::is_bound`]) of this sort are not allowed.
     const STRICT = 2;
     /// The `provable` sort modifier, used to indicate that this sort
     /// can appear as the sort of hypotheses and conclusions of
@@ -61,7 +54,7 @@ impl Modifiers {
   /// The null modifier set. Modifiers are represented as bitfields, so this is the same as `0`.
   pub const NONE: Modifiers = Self::empty();
 
-  /// Construct a `Modifiers` from a byte.
+  /// Construct a [`Modifiers`] from a byte.
   #[must_use] pub fn new(bits: u8) -> Self { Self {bits} }
 
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
@@ -70,7 +63,7 @@ impl Modifiers {
     Modifiers::PURE | Modifiers::STRICT | Modifiers::PROVABLE | Modifiers::FREE
   }
 
-  /// Returns true if this modifier set is valid for the given `DeclKind`.
+  /// Returns true if this modifier set is valid for the given [`DeclKind`].
   /// - `term` and `axiom` don't allow any modifiers
   /// - `def` allows `abstract def`, `local def` and `def` (`abstract local` is not valid)
   /// - `theorem` allows `pub theorem` and `theorem`
@@ -83,9 +76,7 @@ impl Modifiers {
     }
   }
 
-  /// Parses a string into a singleton `Modifiers`, or [`NONE`] if the string is not valid.
-  ///
-  /// [`NONE`]: struct.Modifiers.html#associatedconstant.NONE
+  /// Parses a string into a singleton [`Modifiers`], or [`NONE`](Self::NONE) if the string is not valid.
   #[must_use] pub fn from_name(s: &[u8]) -> Modifiers {
     match s {
       b"pure" => Modifiers::PURE,
@@ -117,8 +108,9 @@ impl Display for Modifiers {
 /// User-supplied delimiter characters.
 ///
 /// A delimiter-stmt with only one math string is parsed
-/// as `Delimiter::Both(..)`, and the contents are put in the environment as both left and right
-/// delimiters. delimiter-stmts with two math strings are parsed as `LeftRight::(s1, s2)`.
+/// as [`Delimiter::Both`]`(..)`, and the contents are put in the environment as both left and right
+/// delimiters. delimiter-stmts with two math strings are parsed as [`Delimiter::LeftRight`]`(s1, s2)`.
+///
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Delimiter {
   /// A delimiter command `delimiter $ ( , + $;` becomes `Both([b'(', b',', b'+'])`.
@@ -153,9 +145,7 @@ pub struct Const {
 }
 crate::deep_size_0!(Const);
 
-/// Declarations; term, axiom, theorem, def. Part of a [`Decl`]
-///
-/// [`Decl`]: struct.Decl.html
+/// Declarations; term, axiom, theorem, def. Part of a [`Decl`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DeclKind {
   /// A term constructor
@@ -195,12 +185,9 @@ pub enum LocalKind {
 crate::deep_size_0!(LocalKind);
 
 impl LocalKind {
-  /// Return true iff self is a bound variable, either [`Bound`]
-  /// for inputs to the function, or [`Dummy`] for variables local to the
+  /// Return true iff self is a bound variable, either [`Bound`](LocalKind::Bound)
+  /// for inputs to the function, or [`Dummy`](LocalKind::Dummy) for variables local to the
   /// def/proof.
-  ///
-  /// [`Bound`]: enum.LocalKind.html#variant.Bound
-  /// [`Dummy`]: enum.LocalKind.html#variant.Dummy
   #[must_use] pub fn is_bound(self) -> bool {
     match self {
       LocalKind::Bound | LocalKind::Dummy => true,
@@ -227,8 +214,6 @@ impl DepType {
 }
 
 /// Types can either be a [`DepType`] or a dollar-delimited formula.
-///
-/// [`DepType`]: struct.DepType.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Type {
   /// A bound or regular variable has a type that is a sort name
@@ -261,24 +246,17 @@ pub struct Binder {
   /// the span is `"wff x"` for the implicit `(_: wff x)` binder.
   pub span: Span,
   /// The span of the local avariable, for example `"ph"` in `(ph ps: wff)` and `"x"` in `{.x: nat}`.
-  /// It is `None` for anonymous binders declared using arrow notation.
+  /// It is [`None`] for anonymous binders declared using arrow notation.
   pub local: Option<Span>,
   /// The kind of binder being declared. See [`LocalKind`] for information on the different
   /// binder kinds.
-  ///
-  /// [`LocalKind`]: enum.LocalKind.html
   pub kind: LocalKind,
   /// The type of the binder, a [`DepType`] for variables and a [`Formula`] for hypotheses.
-  /// The type is `None` for variables that are being type-inferred (not valid in MM0 mode).
-  ///
-  /// [`DepType`]: struct.DepType.html
-  /// [`Formula`]: struct.Formula.html
+  /// The type is [`None`] for variables that are being type-inferred (not valid in MM0 mode).
   pub ty: Option<Type>,
 }
 
 /// A lisp s-expression. See [`SExprKind`] for the different kinds of s-expression.
-///
-/// [`SExprKind`]: enum.SExprKind.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct SExpr {
   /// The span enclosing the entire expression. For expressions using `@`
@@ -291,9 +269,10 @@ pub struct SExpr {
 
 /// Lisp atom kind.
 ///
-/// The `Ident` atom indicates that the atom text is the span,
-/// and the `Quote`, `Unquote` and `Nfx` atoms have data `quote`, `unquote`
-/// and `:nfx` respectively, but the span does not contain this text because
+/// The [`Ident`](Atom::Ident) atom indicates that the atom text is the span,
+/// and the [`Quote`](Atom::Quote), [`Unquote`](Atom::Unquote) and [`Nfx`](Atom::Nfx)
+/// atoms have data `quote`, `unquote` and `:nfx` respectively,
+/// but the span does not contain this text because
 /// these atoms are created implicitly via keywords like `'`.
 #[derive(Copy, Clone, Debug)]
 pub enum Atom {
@@ -308,8 +287,6 @@ pub enum Atom {
   Unquote,
   /// This is an atom with the text `:nfx` that was generated by a malformed curly list
   /// (see [`curly_transform`]).
-  ///
-  /// [`curly_transform`]: fn.curly_transform.html
   Nfx,
 }
 crate::deep_size_0!(Atom);
@@ -317,7 +294,7 @@ crate::deep_size_0!(Atom);
 /// The data portion of an s-expression.
 ///
 /// Notable additions over normal lisp/scheme are
-/// `Formula`, for MM0 formulas, and the notations `{x op y}` for `(op x y)` and
+/// [`Formula`], for MM0 formulas, and the notations `{x op y}` for `(op x y)` and
 /// `(f x @ g @ h y)` for `(f x (g (h y)))` (not represented in this data structure
 /// because the transformation applies during parsing).
 /// See also the [syntax forms] section of `mm1.md` for more information on MM1 lisp syntax.
@@ -329,22 +306,21 @@ pub enum SExprKind {
   /// interpreted as variable accesses or variable declarations, unless they appear inside
   /// a quoted context, in which case they evaluate to themselves as a [`LispKind::Atom`].
   ///
-  /// [`LispKind::Atom`]: ../../elab/lisp/enum.LispKind.html#variant.Atom
+  /// [`LispKind::Atom`]: crate::elab::lisp::LispKind::Atom
   Atom(Atom),
   /// A proper list, like `(a b c)`. This is normally interpreted as a function application,
   /// unless the head of the list is a [`Syntax`], in which case it has special semantics.
   /// The empty list `()` evaluates to itself, and when quoted a list evaluates to a
   /// [`LispKind::List`] of its contents.
   ///
-  /// [`Syntax`]: ../../elab/lisp/enum.Syntax.html
-  /// [`LispKind::List`]: ../../elab/lisp/enum.LispKind.html#variant.List
+  /// [`Syntax`]: crate::elab::lisp::Syntax
+  /// [`LispKind::List`]: crate::elab::lisp::LispKind::List
   List(Vec<SExpr>),
   /// A dotted list, like `(a b c . d)`. (The dot must appear at the second to last
   /// position as in the example, but there may be one or more subexpressions before the
-  /// dot.) Normally, a dotted list means
-  ///
-  /// [`Syntax`]: ../../elab/lisp/enum.Syntax.html
-  /// [`LispKind::List`]: ../../elab/lisp/enum.LispKind.html#variant.List
+  /// dot.) Normally, a dotted list means nothing (it is an error to evaluate), but it
+  /// can be quoted to construct improper lists, and it is also used in patterns and function
+  /// argument signatures.
   DottedList(Vec<SExpr>, Box<SExpr>),
   /// An unsigned number literal like `12345` or `0xdeadbeef`. These parse into bignums;
   /// there is no fixed size integer type in MM1 lisp.
@@ -388,7 +364,7 @@ pub enum SExprKind {
 /// Returns nothing, but modifies the input `es` to reorder the elements so that the
 /// operation at odd positions comes first and the elements at even positions come later,
 /// for example `[x, op, y, op, z]` becomes `[op, x, y, z]`.
-fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool, nfx: impl FnOnce() -> T) {
+pub fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool, nfx: impl FnOnce() -> T) {
   let n = es.len();
   if n > 2 {
     let valid_curly = no_dot && n % 2 != 0 && {
@@ -413,25 +389,19 @@ fn curly_transform<T>(es: &mut Vec<T>, no_dot: bool, eq: impl Fn(&T, &T) -> bool
 
 impl SExpr {
   /// Construct a [`SExprKind::Atom`] from an atom kind and a span.
-  ///
-  /// [`SExprKind::Atom`]: enum.SExprKind.html#variant.Atom
   pub fn atom(span: impl Into<Span>, a: Atom) -> SExpr {
     SExpr {span: span.into(), k: SExprKind::Atom(a)}
   }
 
   /// Construct a [`SExprKind::List`] from a list of expressions and a span.
-  ///
-  /// [`SExprKind::List`]: enum.SExprKind.html#variant.Atom
   pub fn list(span: impl Into<Span>, es: Vec<SExpr>) -> SExpr {
     SExpr {span: span.into(), k: SExprKind::List(es)}
   }
 
   /// Construct a (possibly) dotted list from a list of expressions and a
-  /// possible final expression after the dot. (This is the same as [`list`] if `dot` is `None`.)
+  /// possible final expression after the dot.
+  /// (This is the same as [`list`](SExpr::list) if `dot` is [`None`].)
   /// If `dot` is already a list, it is normalized to a single [`SExprKind::DottedList`] node.
-  ///
-  /// [`list`]: struct.SExpr.html#method.list
-  /// [`SExprKind::DottedList`]: enum.SExprKind.html#variant.Atom
   pub fn dotted_list(span: impl Into<Span>, mut es: Vec<SExpr>, dot: Option<SExpr>) -> SExpr {
     match dot {
       None => Self::list(span, es),
@@ -454,9 +424,10 @@ impl SExpr {
   /// meaning that the list is enclosed by curly braces, then we use [`curly_transform`] with the
   /// given comparator to reorder the arguments.
   ///
-  /// [`dotted_list`]: struct.SExpr.html#method.list
-  /// [`curly_transform`]: fn.curly_transform.html
-  pub fn curly_list(span: Span, curly: bool, mut es: Vec<SExpr>, dot: Option<SExpr>, eq: impl Fn(&SExpr, &SExpr) -> bool) -> SExpr {
+  /// [`dotted_list`]: Self::dotted_list
+  pub fn curly_list(span: Span, curly: bool, mut es: Vec<SExpr>, dot: Option<SExpr>,
+    eq: impl Fn(&SExpr, &SExpr) -> bool
+  ) -> SExpr {
     if curly {
       curly_transform(&mut es, dot.is_none(), eq,
         || SExpr::atom(span.start..=span.start, Atom::Nfx))
@@ -499,15 +470,14 @@ impl EnvDisplay for SExpr {
 }
 
 /// Holds a Declaration as a [`DeclKind`] with some extra data.
-///
-/// [`DeclKind`]: enum.DeclKind.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Decl {
   /// The declaration modifiers: [`abstract`] or [`local`] for `def`,
   /// and [`pub`] for `theorem`.
-  /// [`abstract`]: struct.Modifiers.html#associatedconstant.ABSTRACT
-  /// [`local`]: struct.Modifiers.html#associatedconstant.LOCAL
-  /// [`pub`]: struct.Modifiers.html#associatedconstant.PUB
+  ///
+  /// [`abstract`]: Modifiers::ABSTRACT
+  /// [`local`]: Modifiers::LOCAL
+  /// [`pub`]: Modifiers::PUB
   pub mods: Modifiers,
   /// The declaration kind: `axiom`, `term`, `def`, `theorem`.
   pub k: DeclKind,
@@ -515,7 +485,7 @@ pub struct Decl {
   pub id: Span,
   /// The list of binders
   pub bis: Vec<Binder>,
-  /// The return type, or `None` for type-inferred (not valid in MM0 mode).
+  /// The return type, or [`None`] for type-inferred (not valid in MM0 mode).
   pub ty: Option<Type>,
   /// The definition of the `def`, or the proof of the `theorem`, as an
   /// s-expression.
@@ -559,8 +529,6 @@ pub enum SimpleNotaKind {
 
 /// Represents a notation item declared with the prefix, infixl, or infixr keywords. Notation
 /// declared with the 'notation' keyword is represented by [`GenNota`]
-///
-/// [`GenNota`]: struct.GenNota.html
 #[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub struct SimpleNota {
   /// The initial notation keyword, one of `prefix`, `infixl`, or `infixr`.
@@ -587,8 +555,6 @@ pub enum Literal {
 
 /// Represents a notation item declared with the `notation` keyword. Notation declared with
 /// the `prefix`, `infixl`, and `infixr` keywords are represented by [`SimpleNota`].
-///
-/// [`SimpleNota`]: struct.SimpleNota.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct GenNota {
   /// The span of the identifier, the `foo` in `notation foo ...`.
@@ -596,8 +562,6 @@ pub struct GenNota {
   /// The binder list. The `notation` command mimics the `def` syntax, so it accepts
   /// binders in the same way, but these are only used in order to name the parameters
   /// for use in [`Literal::Var`].
-  ///
-  /// [`Literal::Var`]: enum.Literal.html#variant.Var
   pub bis: Vec<Binder>,
   /// The return type. This is included for consistency with `def` but is unused.
   pub ty: Option<Type>,
@@ -657,7 +621,7 @@ pub enum StmtKind {
   Import(Span, Vec<u8>),
 }
 
-/// The elements of a parsed AST. `StmtKind` is the "data", with span providing
+/// The elements of a parsed AST. [`StmtKind`] is the "data", with span providing
 /// information about the item's location in the source file.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Stmt {
@@ -669,10 +633,7 @@ pub struct Stmt {
 }
 
 impl Stmt {
-  /// Make a new Stmt from a `Span` and `StmtKind`.
-  ///
-  /// [`Span`]: ../../util/struct.Span.html
-  /// [`StmtKind`]: enum.StmtKind.html
+  /// Make a new [`Stmt`] from a [`Span`] and [`StmtKind`].
   #[must_use] pub fn new(span: Span, k: StmtKind) -> Self {
     Stmt { span, k }
   }
@@ -680,15 +641,10 @@ impl Stmt {
 
 
 /// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.
-///
-/// [`Stmt`]: struct.Stmt.html
 #[derive(Debug, DeepSizeOf)]
 pub struct AST {
   /// The source [`LinedString`] for the file. This is needed in order to interpret all the
   /// [`Span`]s in the AST.
-  ///
-  /// [`LinedString`]: ../../lined_string/struct.LinedString.html
-  /// [`Span`]: ../../util/struct.Span.html
   pub source: Arc<LinedString>,
   /// The list of `import` statements in the file, giving the span of the string literal,
   /// and the parsed string
@@ -700,12 +656,9 @@ pub struct AST {
 }
 
 impl LinedString {
-  /// Given an [`Atom`] and associated `Span`, such as those associated with
+  /// Given an [`Atom`] and associated [`Span`], such as those associated with
   /// [`SExprKind::Atom`], construct a string slice with the string contents
   /// of the atom.
-  ///
-  /// [`Atom`]: ../parser/ast/enum.Atom.html
-  /// [`SExprKind::Atom`]: ../parser/ast/enum.SExprKind.html#variant.Atom
   #[must_use] pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] {
     match a {
       Atom::Ident => &self[sp],

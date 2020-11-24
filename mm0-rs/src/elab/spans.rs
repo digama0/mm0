@@ -13,20 +13,17 @@ use crate::util::{Span, OptionExt};
 /// a useful hover if the user asks for information at a location in that span.
 ///
 /// We leave `T` generic here because it isn't important in this file, but we
-/// are only going to instantiate it with `T` = [`ObjectKind`].
-///
-/// [`ObjectKind`]: ../environment/enum.ObjectKind.html
+/// are only going to instantiate it with
+/// `T` = [`ObjectKind`](super::environment::ObjectKind).
 #[derive(DeepSizeOf)]
 pub struct Spans<T> {
   /// The span that encloses the entire declaration, from the first command keyword
   /// to the final semicolon. All spans in `data` will be sub-spans of this.
   ///
   /// We will always set this value before storing the span in [`Environment.spans`].
-  ///
-  /// [`Environment.spans`]: ../environment/struct.Environment.html#structfield.spans
   stmt: MaybeUninit<Span>,
   /// The name of the present declaration. This is left uninitialized for
-  /// declarations that don't have names, like `delimiter`.
+  /// declarations that don't have names, like [`delimiter`](crate::parser::ast::Delimiter).
   decl: MaybeUninit<AtomID>,
   /// The local context as of the end of the proof. This is used to resolve variables
   /// and subproof names.
@@ -55,7 +52,7 @@ impl<T> Default for Spans<T> {
 }
 
 impl<T> Spans<T> {
-  /// Create a new `Spans` object. The `stmt` and `decl` fields are initially
+  /// Create a new [`Spans`] object. The `stmt` and `decl` fields are initially
   /// uninitialized.
   #[must_use] pub fn new() -> Spans<T> {
     Spans {
@@ -66,33 +63,27 @@ impl<T> Spans<T> {
     }
   }
 
-  /// Initialize the `stmt` field of a `Spans`.
+  /// Initialize the `stmt` field of a [`Spans`].
   pub fn set_stmt(&mut self, sp: Span) { self.stmt = MaybeUninit::new(sp) }
 
-  /// Initialize the `decl` field of a `Spans`.
+  /// Initialize the `decl` field of a [`Spans`].
   pub fn set_decl(&mut self, a: AtomID) { self.decl = MaybeUninit::new(a) }
 
-  /// Get the `stmt` field of a `Spans`.
+  /// Get the `stmt` field of a [`Spans`].
   ///
   /// # Safety
-  /// This function must only be called if `set_stmt` has previously been called.
-  /// We ensure that this is the case for any `Spans` object put into
+  /// This function must only be called if [`set_stmt`](Self::set_stmt) has previously
+  /// been called. We ensure that this is the case for any [`Spans`] object put into
   /// [`Environment.spans`].
-  ///
-  /// [`Environment.spans`]: ../environment/struct.Environment.html#structfield.spans
-  /// [`set_stmt`]: struct.Spans.html#method.set_stmt
   #[must_use] pub fn stmt(&self) -> Span { unsafe { self.stmt.assume_init() } }
 
-  /// Get the `decl` field of a `Spans`.
+  /// Get the `decl` field of a [`Spans`].
   ///
   /// # Safety
-  /// This function must only be called if [`set_decl`] has previously been called.
-  /// We ensure that this is the case for any `Spans` object put into
+  /// This function must only be called if [`set_decl`](Self::set_decl) has previously
+  /// been called. We ensure that this is the case for any [`Spans`] object put into
   /// [`Environment.spans`], but only for declarations that actually have names.
   /// (This function is also currently unused.)
-  ///
-  /// [`Environment.spans`]: ../environment/struct.Environment.html#structfield.spans
-  /// [`set_decl`]: struct.Spans.html#method.set_decl
   #[must_use] pub fn decl(&self) -> AtomID { unsafe { self.decl.assume_init() } }
 
   /// Insert a new data element at a given span.
@@ -127,26 +118,24 @@ impl<T> Spans<T> {
   }
 
   /// Insert a data element at a given span, if it lies within the current statement's extent.
-  /// We will usually use this instead of [`insert`]. By making sure that all spans are stored
-  /// according to the enclosing statement, we can quickly search for a span by getting
-  /// the `Spans` object for a statement and then searching only in that `Spans` rather than
-  /// looking in other statements' `Spans` as well.
-  ///
-  /// [`insert`]: struct.Spans.html#method.insert
+  /// We will usually use this instead of [`insert`](Self::insert). By making sure that all
+  /// spans are stored according to the enclosing statement, we can quickly search for a
+  /// span by getting the [`Spans`] object for a statement and then searching only in that
+  /// [`Spans`] rather than looking in other statements' [`Spans`] as well.
   pub fn insert_if(&mut self, sp: Span, val: impl FnOnce() -> T) {
     if sp.start >= self.stmt().start {
       self.insert(sp, val());
     }
   }
 
-  /// Get the data at a given `Span`.
+  /// Get the data at a given [`Span`].
   /// If multiple data elements exist at this span, only the first will be returned.
   #[must_use] pub fn get(&self, sp: Span) -> Option<&T> {
     self.data.get(&sp.start).and_then(|v|
       v.iter().find(|x| x.0 == sp).map(|x| &x.1))
   }
 
-  /// Get the data at a given `Span`.
+  /// Get the data at a given [`Span`].
   /// If multiple data elements exist at this span, only the first will be returned.
   pub fn get_mut(&mut self, sp: Span) -> Option<&mut T> {
     self.data.get_mut(&sp.start).and_then(|v|
@@ -154,14 +143,14 @@ impl<T> Spans<T> {
   }
 
   /// Returns an iterator over all data elements in spans that overlap the target
-  /// position. (Spans are considered as closed,
+  /// position. ([`Span`]s are considered as closed,
   /// i.e. `start <= pos <= end`, for this purpose.)
   pub fn find_pos(&self, pos: usize) -> impl Iterator<Item=&(Span, T)> {
     self.data.range(..=pos).rev().next().into_iter()
       .flat_map(move |(_, v)| v.iter().filter(move |x| pos <= x.0.end))
   }
 
-  /// Get the `Spans` object corrsponding to the statement that contains the given position,
+  /// Get the [`Spans`] object corrsponding to the statement that contains the given position,
   /// if one exists.
   #[must_use] pub fn find(spans: &[Self], pos: usize) -> Option<&Self> {
     match spans.binary_search_by_key(&pos, |s| s.stmt().start) {

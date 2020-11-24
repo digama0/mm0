@@ -3,10 +3,6 @@
 //! The [`LinedString::apply_changes`] function is used to realize changes made to a string once those
 //! changes are received by mm0-rs from a language server. [`LinedString`] Implements associated
 //! methods allowing it to be used nicely with the [`Position`] type specified by the language server protocol.
-//!
-//! [`LinedString::apply_changes`]: struct.LinedString.html#method.apply_changes
-//! [`LinedString`]: struct.LinedString.html
-//! [`Position`]: ../../lsp_types/struct.Position.html
 
 use std::ops::{Deref, Index};
 use crate::util::{Span, FileSpan, Position, Range};
@@ -21,9 +17,6 @@ use crate::util::{Span, FileSpan, Position, Range};
 pub struct LinedString { s: String, unicode: bool, lines: Vec<usize> }
 
 /// Allows [`LinedString`] to be indexed with a [`Span`], since [`Span`] is essentially a range.
-///
-/// [`LinedString`]: struct.LinedString.html
-/// [`Span`]: ../utils/struct.Span.html
 impl Index<Span> for LinedString {
   type Output = [u8];
   fn index(&self, s: Span) -> &[u8] { &self.as_bytes()[s.start..s.end] }
@@ -31,8 +24,6 @@ impl Index<Span> for LinedString {
 
 /// Calculates the largest index `n` (on a UTF8 boundary) such that `s[..n]` is at most `chs` UTF-16 codepoints.
 /// Used in [`LinedString::lsp_to_idx`] to account for additional character offset introduced by unicode.
-///
-/// [`LinedString::lsp_to_idx`]: struct.LinedString.html#method.lsp_to_idx
 fn lsp_to_idx(s: &str, mut chs: usize) -> usize {
   for (n, c) in s.char_indices() {
     let i = c.len_utf16();
@@ -46,10 +37,8 @@ impl LinedString {
   /// Index a [`LinedString`] with a [`Span`], returning a `str`.
   ///
   /// # Safety
-  /// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the `Span` used in the index
+  /// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the [`Span`] used in the index
   /// was generated from the file that is being indexed.
-  /// [`LinedString`]: struct.LinedString.html
-  /// [`Span`]: ../utils/struct.Span.html
   pub(crate) fn str_at(&self, s: Span) -> &str {
     unsafe { std::str::from_utf8_unchecked(&self[s]) }
   }
@@ -71,8 +60,6 @@ impl LinedString {
   ///
   /// # Safety
   /// `idx` must be a valid index in the string.
-  ///
-  /// [`Position`]: ../../lsp_types/struct.Position.html
   #[must_use] pub fn to_pos(&self, idx: usize) -> Position {
     use std::convert::TryInto;
     let (pos, line) = match self.lines.binary_search(&idx) {
@@ -88,16 +75,12 @@ impl LinedString {
     }
   }
 
-  /// Turn a `Span` into an LSP [`Range`].
-  ///
-  /// [`Range`]: ../../lsp_types/struct.Range.html
+  /// Turn a [`Span`] into an LSP [`Range`].
   #[must_use] pub fn to_range(&self, s: Span) -> Range {
     Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
   }
 
-  /// Turn a `FileSpan` into an LSP [`Location`].
-  ///
-  /// [`Location`]: ../../lsp_types/struct.Location.html
+  /// Turn a [`FileSpan`] into an LSP [`Location`](lsp_types::Location).
   #[cfg(feature = "server")]
   #[must_use] pub fn to_loc(&self, fs: &FileSpan) -> lsp_types::Location {
     lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}
@@ -110,21 +93,16 @@ impl LinedString {
   }
 
   /// Get the [`Position`] (line and UTF-16 code unit offset) of the end of the file.
-  ///
-  /// [`Position`]: ../../lsp_types/struct.Position.html
   #[must_use] pub fn end(&self) -> Position { self.to_pos(self.s.len()) }
 
   /// Calculates the byte index of the position `chs` UTF-16 code units after
   /// byte index `start` in the string.
   /// If there's no unicode, we can just use (start + idx).
-  /// In the presence of unicode, use the helper function [`lsp_to_idx`] to account
-  /// for any additional character offset.
+  /// In the presence of unicode, use the helper function [`lsp_to_idx`](Self::lsp_to_idx)
+  /// to account for any additional character offset.
   ///
   /// # Safety
   /// `start` must be a valid index in the string.
-  ///
-  /// [`to_idx`]: struct.LinedString.html#method.to_idx
-  /// [`lsp_to_idx`]: fn.lsp_to_idx.html
   #[must_use] fn lsp_to_idx(&self, start: usize, chs: usize) -> usize {
     start + if self.unicode {
       lsp_to_idx(unsafe { self.get_unchecked(start..) }, chs)
@@ -132,11 +110,9 @@ impl LinedString {
   }
 
   /// Turn an LSP [`Position`] into a usize index. [`Position`] is already zero-based,
-  /// but `LinedString.lines` stores `1 + position` of the actual linebreak characters,
+  /// but [`LinedString.lines`] stores `1 + position` of the actual linebreak characters,
   /// so `lines[0]` points to the start of line 1, `lines[1]` points to the start of line 2, etc.
   /// with the start of line 0 just being s.0.
-  ///
-  /// [`Position`]: ../../lsp_types/struct.Position.html
   #[must_use] pub fn to_idx(&self, pos: Position) -> Option<usize> {
     match pos.line.checked_sub(1) {
       None => Some(self.lsp_to_idx(0, pos.character as usize)),
@@ -145,7 +121,7 @@ impl LinedString {
     }
   }
 
-  /// Extend a `LinedString` with the contents of a `&str`, adding additional newline info as needed.
+  /// Extend a [`LinedString`] with the contents of a `&str`, adding additional newline info as needed.
   pub fn extend(&mut self, s: &str) {
     let len = self.s.len();
     self.s.push_str(s);
@@ -155,11 +131,9 @@ impl LinedString {
     }
   }
 
-  /// Extends a `LinedString`'s contents with the contents of a passed string slice
+  /// Extends a [`LinedString`]'s contents with the contents of a passed string slice
   /// until it reaches some [`Position`]. Returns the portion of the passed string slice
-  /// that was not added to the `LinedString`.
-  ///
-  /// [`Position`]: ../../lsp_types/struct.Position.html
+  /// that was not added to the [`LinedString`].
   pub fn extend_until<'a>(&mut self, unicode: bool, s: &'a str, pos: Position) -> &'a str {
     self.unicode |= unicode;
     let end = self.end();
@@ -191,12 +165,10 @@ impl LinedString {
     right
   }
 
-  /// Truncates a `LinedString`'s contents so that it's equal to the character position
+  /// Truncates a [`LinedString`]'s contents so that it's equal to the character position
   /// indicated by some lsp [`Position`], discarding any unneeded newline data.
-  /// Does nothing if the `LinedString`'s contents were already less than or equal
+  /// Does nothing if the [`LinedString`]'s contents were already less than or equal
   /// in length to the [`Position`]'s index.
-  ///
-  /// [`Position`]: ../../lsp_types/struct.Position.html
    pub fn truncate(&mut self, pos: Position) {
     if let Some(idx) = self.to_idx(pos) {
       if idx < self.s.len() {
@@ -209,7 +181,7 @@ impl LinedString {
   /// Does a bunch of string juggling to actually realize the contents of an iterator
   /// containing a sequence of [`TextDocumentContentChangeEvent`] messages.
   ///
-  /// [`TextDocumentContentChangeEvent`]: ../../lsp_types/struct.TextDocumentContentChangeEvent.html
+  /// [`TextDocumentContentChangeEvent`]: lsp_types::TextDocumentContentChangeEvent
   #[cfg(feature = "server")]
   #[must_use] pub fn apply_changes(&self,
     changes: impl Iterator<Item=lsp_types::TextDocumentContentChangeEvent>

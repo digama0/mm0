@@ -36,11 +36,11 @@ pub enum InferMode {
 enum RefineExpr {
   /// An application like `(foo p1 p2)` or `(!! bar x p1)`.
   App {
-    /** The span of the application. */                               sp: Span,
-    /** The span of the head term, `foo` or `bar` in the examples. */ sp2: Span,
-    /** The infer mode (see `InferMode`), the prefix `!!` or `!`. */  im: InferMode,
-    /** The head term or theorem. */                                  head: AtomID,
-    /** The remainder of the term. */                                 u: Uncons
+    /** The span of the application. */                                sp: Span,
+    /** The span of the head term, `foo` or `bar` in the examples. */  sp2: Span,
+    /** The infer mode (see [`InferMode`]), the prefix `!!` or `!`. */ im: InferMode,
+    /** The head term or theorem. */                                   head: AtomID,
+    /** The remainder of the term. */                                  u: Uncons
   },
   /// A type ascription `{e : ty}`. This is the same as `e` but where we assert that
   /// it has type `ty` (which may result in additional unification of metavariables).
@@ -94,7 +94,7 @@ pub(crate) enum RStack {
     /** The elaborated target type */              tgt: LispVal,
     /** The conversion proof, possibly `#undef` */ u: LispVal
   },
-  /// This is like `Coerce` but infers the type of `p` and uses it to determine the coercion.
+  /// This is like [`Coerce`](Self::Coerce) but infers the type of `p` and uses it to determine the coercion.
   /// ```text
   /// RStack::CoerceTo(tgt)(p) :=
   ///   let src = type_of(p)
@@ -115,13 +115,13 @@ pub(crate) enum RStack {
     /** The elaborated target type */  tgt: LispVal,
     /** The unelaborated proof */      p: LispVal
   },
-  /// Like `TypedAt` but the target type is unknown.
+  /// Like [`TypedAt`](Self::TypedAt) but the target type is unknown.
   /// ```text
   /// RStack::Typed(p)(tgt) :=
   ///   return RState::RefineProof(tgt, p)
   /// ```
   Typed(LispVal),
-  /// An application in progress. See `RState::RefineApp`.
+  /// An application in progress. See [`RState::RefineApp`].
   /// ```text
   /// RStack::RefineApp(tgt, t, u, args)(arg) :=
   ///   return RState::RefineApp(tgt, t, u, args ++ [arg])
@@ -133,19 +133,19 @@ pub(crate) enum RStack {
     /** The remainder of the application */ u: Uncons,
     /** The elaborated arguments */         args: Vec<LispVal>
   },
-  /// Elaborating the binders of a theorem application. See `RState::RefineBis`.
+  /// Elaborating the binders of a theorem application. See [`RState::RefineBis`].
   /// ```text
   /// RStack::RefineBis(tgt, im, t, u, args)(arg) :=
   ///   return RState::RefineBis(tgt, im, t, u, args ++ [arg])
   /// ```
   RefineBis {
-    /** The span of the application */      sp: Span,
-    /** The span of the theorem `t` */      sp2: Span,
-    /** The expected type */                tgt: LispVal,
-    /** The infer mode (see `InferMode`) */ im: InferMode,
-    /** The head theorem */                 t: ThmID,
-    /** The remainder of the application */ u: Uncons,
-    /** The elaborated arguments */         args: Vec<LispVal>,
+    /** The span of the application */        sp: Span,
+    /** The span of the theorem `t` */        sp2: Span,
+    /** The expected type */                  tgt: LispVal,
+    /** The infer mode (see [`InferMode`]) */ im: InferMode,
+    /** The head theorem */                   t: ThmID,
+    /** The remainder of the application */   u: Uncons,
+    /** The elaborated arguments */           args: Vec<LispVal>,
   },
   /// Elaborating the hypotheses of a theorem application. See `RState::RefineHyps`.
   /// ```text
@@ -169,7 +169,7 @@ pub(crate) enum RStack {
 /// to print out user stack traces, so we need control over the call stack itself.)
 ///
 /// Below, we have pseudocode for each state, which may call stack functions in
-/// `RStack` as well as other state functions.
+/// [`RStack`] as well as other state functions.
 #[derive(Debug)]
 pub(crate) enum RState {
   /// Initial state: we are given a sequence of goals to unify against a list
@@ -243,13 +243,13 @@ pub(crate) enum RState {
   /// Elaborates the binders (bound and regular variables) of a theorem application. The
   /// behavior of this phase depends on the infer mode.
   RefineBis {
-    /** The span of the application. */     sp: Span,
-    /** The span of `t`. */                 sp2: Span,
-    /** The expected type */                tgt: LispVal,
-    /** The infer mode (see `InferMode`) */ im: InferMode,
-    /** The head theorem */                 t: ThmID,
-    /** The remainder of the application */ u: Uncons,
-    /** The elaborated arguments */         args: Vec<LispVal>,
+    /** The span of the application. */       sp: Span,
+    /** The span of `t`. */                   sp2: Span,
+    /** The expected type */                  tgt: LispVal,
+    /** The infer mode (see [`InferMode`]) */ im: InferMode,
+    /** The head theorem */                   t: ThmID,
+    /** The remainder of the application */   u: Uncons,
+    /** The elaborated arguments */           args: Vec<LispVal>,
   },
   /// Elaborates the hypotheses of a theorem application.
   RefineHyps {
@@ -306,7 +306,8 @@ impl EnvDisplay for RState {
 
 /// Stores the result of unification, which is ready as soon as we read the first
 /// `n` arguments of the application, if the theorem has `n` arguments.
-/// If there are more arguments in the application, we go into `Extra` mode
+/// If there are more arguments in the application, we go into
+/// [`Extra`](RefineHypsResult::Extra) mode
 /// and call the user callback `refine-extra-args` to find out how to deal with it.
 #[derive(Debug)]
 pub enum RefineHypsResult {
@@ -328,8 +329,8 @@ impl EnvDisplay for RefineHypsResult {
   }
 }
 
-/// The result of the `refine` function. A regular return is `Ret`, but it can
-/// also yield in the middle of execution in order to call a lisp callback.
+/// The result of the `refine` function. A regular return is [`Ret`](RefineResult::Ret),
+/// but it can also yield in the middle of execution in order to call a lisp callback.
 #[derive(Debug)]
 #[allow(variant_size_differences)]
 pub enum RefineResult {
@@ -676,9 +677,6 @@ impl Elaborator {
   /// `stack = []` and `active = RState::Goals {gs, es}` where `es` is the input
   /// and `gs` is the current set of goals. See the [`RState`] and [`RStack`]
   /// types for a description of the different states.
-  ///
-  /// [`RState`]: refine/enum.RState.html
-  /// [`RStack`]: refine/enum.RStack.html
   #[allow(clippy::never_loop)]
   pub(crate) fn run_refine(&mut self,
     sp: Span,

@@ -1,4 +1,5 @@
-//! MMU exporter, which produces `.mmu` ASCII proof files from an `Environment` object.
+//! MMU exporter, which produces `.mmu` ASCII proof files from an
+//! [`Environment`](crate::elab::Environment) object.
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::mem;

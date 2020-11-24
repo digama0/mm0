@@ -9,16 +9,17 @@
 //! When elaboration completes, the elaborator is discarded and the environment is
 //! frozen. During this second phase, the environment is completely read-only, including
 //! in particular all internal mutability. Because [`LispVal`] is a wrapper around
-//! `Rc`, it is not safe to clone a `LispVal` during this period, and instead the
-//! [`FrozenLispVal`] type is used as a read only wrapper around `LispVal`.
+//! [`Rc`], it is not safe to clone a [`LispVal`] during this period, and instead the
+//! [`FrozenLispVal`] type is used as a read only wrapper around [`LispVal`].
 //! At this point the data becomes safe to read from other threads, such as other files
 //! that `import` this one and were waiting on elaboration to complete.
 //!
 //! There are two ways in which this strict time separation is violated. One is that
 //! an elaborator may yield when it hits an `import` statement, while waiting for that
 //! file to be ready, and it may restart on another thread since the executor is
-//! multithreaded. To represent this we use the `FrozenElaborator` wrapper, which
-//! represents a "paused" elaboration. This object is `Send` but cannot be cloned,
+//! multithreaded. To represent this we use the `FrozenElaborator` wrapper
+//! (local to [`elaborate`](crate::elab::elaborate)), which
+//! represents a "paused" elaboration. This object is [`Send`] but cannot be cloned,
 //! and it provides no access to the data under construction (and any access to the
 //! inner data by a thread that does not own the elaborator is UB).
 //!
@@ -28,8 +29,7 @@
 //! This is safe as long as the object is not mutated (via another shared reference,
 //! or a clone) during the lifetime of the object returned by `freeze`.
 //!
-//! [`LispVal`]: ../environment/struct.LispVal.html
-//! [`FrozenLispVal`]: struct.FrozenLispVal.html
+//! [`freeze`]: LispVal::freeze
 
 use std::cell::{Cell, RefCell};
 use std::ops::Deref;
@@ -47,7 +47,7 @@ use crate::util::{ArcString, FileSpan, Span};
 use crate::{lined_string::LinedString, __mk_lisp_kind};
 
 /// A "frozen" environment, which is a thread-safe read only
-/// wrapper around `Environment`.
+/// wrapper around [`Environment`].
 #[derive(Clone, Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenEnv(Arc<Environment>);
@@ -55,85 +55,85 @@ unsafe impl Send for FrozenEnv {}
 unsafe impl Sync for FrozenEnv {}
 
 impl FrozenEnv {
-  /// Create a new `FrozenEnv` from an Environment.
+  /// Create a new [`FrozenEnv`] from an [`Environment`].
   #[must_use] pub fn new(env: Environment) -> Self { Self(Arc::new(env)) }
 
-  /// Convert a `&FrozenEnv` into an `&Environment`.
+  /// Convert a [`&FrozenEnv`] into an [`&Environment`].
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
-  /// `Rc::clone()` should be avoided because it could race with other readers.
+  /// [`Rc::clone()`] should be avoided because it could race with other readers.
   #[must_use] pub unsafe fn thaw(&self) -> &Environment { &self.0 }
 
-  /// Create a `FormatEnv` object, which can be used to print objects.
+  /// Create a [`FormatEnv`] object, which can be used to print objects.
   /// # Safety
   /// TODO: this gives out an `&Environment`, even though it is frozen. Don't abuse it
   #[must_use] pub unsafe fn format_env<'a>(&'a self, source: &'a LinedString) -> FormatEnv<'a> {
     FormatEnv {source, env: self.thaw()}
   }
 
-  /// Get the list of `Spans` in the environment.
+  /// Get the list of [`Spans`] in the environment.
   #[must_use] pub fn spans(&self) -> &[Spans<ObjectKind>] { &unsafe { self.thaw() }.spans }
 
-  /// Get the `Spans` object corrsponding to the statement that contains the given position,
+  /// Get the [`Spans`] object corrsponding to the statement that contains the given position,
   /// if one exists.
   #[must_use] pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
     Spans::find(self.spans(), pos)
   }
 
-  /// Accessor for [`Environment::data`](../environment/struct.Environment.html#structfield.data)
+  /// Accessor for [`Environment::data`]
   #[must_use] pub fn data(&self) -> &AtomVec<FrozenAtomData> {
     unsafe { &*(&self.thaw().data as *const AtomVec<AtomData> as *const _) }
   }
 
-  /// Accessor for [`Environment::sorts`](../environment/struct.Environment.html#structfield.sorts)
+  /// Accessor for [`Environment::sorts`]
   #[must_use] pub fn sorts(&self) -> &SortVec<Sort> { &unsafe { self.thaw() }.sorts }
-  /// Accessor for [`Environment::sorts`](../environment/struct.Environment.html#structfield.sorts)
+  /// Accessor for [`Environment::sorts`]
   #[must_use] pub fn sort(&self, s: SortID) -> &Sort { &self.sorts()[s] }
-  /// Accessor for [`Environment::terms`](../environment/struct.Environment.html#structfield.terms)
+  /// Accessor for [`Environment::terms`]
   #[must_use] pub fn terms(&self) -> &TermVec<Term> { &unsafe { self.thaw() }.terms }
-  /// Accessor for [`Environment::terms`](../environment/struct.Environment.html#structfield.terms)
+  /// Accessor for [`Environment::terms`]
   #[must_use] pub fn term(&self, t: TermID) -> &Term { &self.terms()[t] }
-  /// Accessor for [`Environment::thms`](../environment/struct.Environment.html#structfield.thms)
+  /// Accessor for [`Environment::thms`]
   #[must_use] pub fn thms(&self) -> &ThmVec<Thm> { &unsafe { self.thaw() }.thms }
-  /// Accessor for [`Environment::thms`](../environment/struct.Environment.html#structfield.thms)
+  /// Accessor for [`Environment::thms`]
   #[must_use] pub fn thm(&self, t: ThmID) -> &Thm { &self.thms()[t] }
-  /// Accessor for [`Environment::stmts`](../environment/struct.Environment.html#structfield.stmts)
+  /// Accessor for [`Environment::stmts`]
   #[must_use] pub fn stmts(&self) -> &[StmtTrace] { &unsafe { self.thaw() }.stmts }
   /// Parse a string into an atom.
   #[must_use] pub fn get_atom(&self, s: &[u8]) -> Option<AtomID> { unsafe { self.thaw() }.atoms.get(s).copied() }
-  /// Accessor for [`Environment::pe`](../environment/struct.Environment.html#structfield.pe)
+  /// Accessor for [`Environment::pe`]
   #[must_use] pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
 }
 
-/// A wrapper around an [`AtomData`](../environment/struct.AtomData.html) that is frozen.
+/// A wrapper around an [`AtomData`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenAtomData(AtomData);
 
 impl FrozenAtomData {
-  /// Accessor for [`AtomData::name`](../environment/struct.AtomData.html#structfield.name)
+  /// Accessor for [`AtomData::name`]
   #[must_use] pub fn name(&self) -> &ArcString { &self.0.name }
-  /// Accessor for [`AtomData::sort`](../environment/struct.AtomData.html#structfield.sort)
+  /// Accessor for [`AtomData::sort`]
   #[must_use] pub fn sort(&self) -> Option<SortID> { self.0.sort }
-  /// Accessor for [`AtomData::decl`](../environment/struct.AtomData.html#structfield.decl)
+  /// Accessor for [`AtomData::decl`]
   #[must_use] pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
-  /// Accessor for [`AtomData::lisp`](../environment/struct.AtomData.html#structfield.lisp)
+  /// Accessor for [`AtomData::lisp`]
   #[must_use] pub fn lisp(&self) -> &Option<FrozenLispData> {
     unsafe { &*(&self.0.lisp as *const Option<LispData> as *const _) }
   }
-  /// Accessor for [`AtomData::graveyard`](../environment/struct.AtomData.html#structfield.graveyard)
+  /// Accessor for [`AtomData::graveyard`]
   #[must_use] pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
 }
 
-/// A wrapper around a [`LispData`](../environment/struct.LispData.html) that is frozen.
+/// A wrapper around a [`LispData`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenLispData(LispData);
 
 impl FrozenLispData {
-  /// Accessor for [`LispData::src`](../environment/struct.LispData.html#structfield.src)
+  /// Accessor for [`LispData::src`]
   #[must_use] pub fn src(&self) -> &Option<(FileSpan, Span)> { &self.0.src }
-  /// Accessor for [`LispData::doc`](../environment/struct.LispData.html#structfield.doc)
+  /// Accessor for [`LispData::doc`]
   #[must_use] pub fn doc(&self) -> &Option<DocComment> { &self.0.doc }
 }
 impl Deref for FrozenLispData {
@@ -141,28 +141,28 @@ impl Deref for FrozenLispData {
   fn deref(&self) -> &FrozenLispVal { unsafe { self.0.val.freeze() } }
 }
 
-/// A wrapper around a [`LispVal`](../lisp/struct.LispVal.html) that is frozen.
+/// A wrapper around a [`LispVal`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenLispVal(LispVal);
 
-/// A wrapper around a [`LispRef`](../lisp/struct.LispRef.html) that is frozen.
+/// A wrapper around a [`LispRef`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenLispRef(LispRef);
 
-/// A wrapper around a [`Proc`](../lisp/struct.Proc.html) that is frozen.
+/// A wrapper around a [`Proc`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]
 pub struct FrozenProc(Proc);
 
 __mk_lisp_kind! {
-  /// A wrapper around a [`LispKind`](../lisp/struct.LispKind.html) that is frozen.
+  /// A wrapper around a [`LispKind`] that is frozen.
   FrozenLispKind, FrozenLispVal, FrozenLispRef, FrozenProc
 }
 
 impl LispKind {
-  /// Freeze a reference to a `LispKind` into a `FrozenLispKind`.
+  /// Freeze a reference to a [`LispKind`] into a [`FrozenLispKind`].
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispKind {
@@ -171,7 +171,7 @@ impl LispKind {
 }
 
 impl LispVal {
-  /// Freeze a reference to a `LispVal` into a `FrozenLispVal`.
+  /// Freeze a reference to a [`LispVal`] into a [`FrozenLispVal`].
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispVal {
@@ -180,7 +180,7 @@ impl LispVal {
 }
 
 impl LispRef {
-  /// Freeze a reference to a `LispRef` into a `FrozenLispRef`.
+  /// Freeze a reference to a [`LispRef`] into a [`FrozenLispRef`].
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispRef {
@@ -189,7 +189,7 @@ impl LispRef {
 }
 
 impl Proc {
-  /// Freeze a reference to a `Proc` into a `FrozenProc`.
+  /// Freeze a reference to a [`Proc`] into a [`FrozenProc`].
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenProc {
@@ -198,16 +198,16 @@ impl Proc {
 }
 
 impl FrozenLispVal {
-  /// Freeze a `LispVal`, creating a new `FrozenLispVal`.
+  /// Freeze a [`LispVal`], creating a new [`FrozenLispVal`].
   /// # Safety
-  /// The functions on the resulting `FrozenLispVal` should not be called
+  /// The functions on the resulting [`FrozenLispVal`] should not be called
   /// until the value is frozen (meaning that all internal mutability stops).
   #[must_use] pub unsafe fn new(e: LispVal) -> Self { Self(e) }
 
-  /// Convert a `&FrozenLispVal` into an `&LispVal`.
+  /// Convert a [`&FrozenLispVal`] into an [`&LispVal`].
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
-  /// `Rc::clone()` should be avoided because it could race with other readers.
+  /// [`Rc::clone()`] should be avoided because it could race with other readers.
   #[must_use] pub unsafe fn thaw(&self) -> &LispVal { &self.0 }
 
   /// Get a iterator over frozen lisp values, for dealing with lists.
@@ -217,8 +217,6 @@ impl FrozenLispVal {
 impl FrozenLispKind {
   /// Like [`LispKind::unwrapped`], but it can return a reference directly because
   /// the data structure is frozen.
-  ///
-  /// [`LispKind::unwrapped`]: ../lisp/enum.LispKind.html#method.unwrapped
   #[must_use] pub fn unwrap(&self) -> &Self {
     let mut ret = self;
     for _ in 0..20 {
@@ -380,25 +378,29 @@ impl Remap for FrozenProc {
 }
 
 impl FrozenLispRef {
-  /// Convert a `&FrozenLispRef` into an `&LispRef`.
+  /// Convert a [`&FrozenLispRef`] into an [`&LispRef`].
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
-  /// `Rc::clone()` should be avoided because it could race with other readers.
+  /// [`Rc::clone()`] should be avoided because it could race with other readers.
   #[must_use] pub unsafe fn thaw(&self) -> &LispRef { &self.0 }
 
+  /// Dereference a [`FrozenLispRef`]. This can fail if the reference
+  /// is a weak reference and the target is gone.
   #[must_use] pub fn get(&self) -> Option<&FrozenLispKind> {
     unsafe { self.thaw().get_unsafe().map(|e| e.freeze()) }
   }
 }
 
-/// An iterator over the contents of a `LispVal`, like [`Uncons`], but borrowing
-/// from the original data instead of cloning (which is not allowed for frozen values).
-///
-/// [`Uncons`]: ../environment/struct.Uncons.html
+/// An iterator over the contents of a [`LispVal`], like [`Uncons`](super::lisp::Uncons),
+/// but borrowing from the original data instead of cloning
+/// (which is not allowed for frozen values).
 #[derive(Clone, Debug)]
 pub enum FrozenUncons<'a> {
+  /// The initial state, pointing to a lisp value.
   New(&'a FrozenLispKind),
+  /// A reference to a sub-slice of a [`LispKind::List`].
   List(&'a [FrozenLispVal]),
+  /// A reference to a sub-slice of a [`LispKind::DottedList`].
   DottedList(&'a [FrozenLispVal], &'a FrozenLispVal),
 }
 

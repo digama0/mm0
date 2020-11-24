@@ -98,7 +98,7 @@ impl TuplePattern {
     }
   }
 
-  /// The span of a variable binding (or `None` for a tuple pattern).
+  /// The span of a variable binding (or [`None`] for a tuple pattern).
   #[must_use] pub fn fspan(&self) -> Option<&FileSpan> {
     match self {
       TuplePattern::Name(_, _, fsp) => fsp.as_ref(),
@@ -171,7 +171,7 @@ pub enum Expr {
     ghost: bool,
     /// A tuple pattern, containing variable bindings.
     lhs: TuplePattern,
-    /// The expression to evaluate, or `None` for uninitialized.
+    /// The expression to evaluate, or [`None`] for uninitialized.
     rhs: Option<Box<Expr>>,
   },
   /// A function call (or something that looks like one at parse time).
@@ -393,7 +393,7 @@ pub enum Size {
   S64,
   /// Unbounded size. Used for `nat` and `int`. (These types are only legal for
   /// ghost variables, but they are also used to indicate "correct to an unbounded model"
-  /// for operations like `Unop::BitNot` when it makes sense. We do not actually support
+  /// for operations like [`Unop::BitNot`] when it makes sense. We do not actually support
   /// bignum compilation.)
   Inf,
 }

@@ -43,7 +43,7 @@ struct Joiner<W: Write> {
 }
 
 impl<W: Write> Joiner<W> {
-  /// Create a new `Joiner` from a writer.
+  /// Create a new [`Joiner`] from a writer.
   fn new(comments: bool, w: W) -> Self {
     Self {comments, stack: vec![], working: HashSet::new(), done: vec![], w}
   }
@@ -106,7 +106,7 @@ fn join_with_header(comments: bool, header: bool, mut w: impl Write, file: FileR
 
 /// Main entry point for `mm0-rs join` subcommand.
 ///
-/// See the [module documentation] for the purpose of this command.
+/// See the [module documentation](self) for the purpose of this command.
 ///
 /// # Arguments
 ///
@@ -114,8 +114,6 @@ fn join_with_header(comments: bool, header: bool, mut w: impl Write, file: FileR
 ///
 /// - `in.mm0` (or `in.mm1`) is the file to join, an MM0 file with `import`s
 /// - `out.mm0` is the output location, or stdin if omitted.
-///
-/// [module documentation]: index.html
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").expect("required arg");
   let file = fs::canonicalize(path)?.into();

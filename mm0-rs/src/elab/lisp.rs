@@ -77,7 +77,7 @@ macro_rules! str_enum {
 }
 
 str_enum! {
-  /// The `Syntax` type represents atom-like objects that are considered keywords
+  /// The [`Syntax`] type represents atom-like objects that are considered keywords
   /// of the language, and have special interpretations.
   enum Syntax {
     /// `def`, aka `defun` or `define` in other lisps: used to define new local or global variables
@@ -110,7 +110,7 @@ str_enum! {
 }
 
 impl Syntax {
-  /// Parse a string and atom type pair into a `Syntax`.
+  /// Parse a string and atom type pair into a [`Syntax`].
   pub fn parse(s: &[u8], a: Atom) -> Result<Syntax, &[u8]> {
     match a {
       Atom::Ident => Syntax::from_bytes(s).ok_or(s),
@@ -151,7 +151,7 @@ pub enum InferTarget {
 crate::deep_size_0!(InferTarget);
 
 impl InferTarget {
-  /// The target sort of a metavariable. Returns `None` if the sort is unknown.
+  /// The target sort of a metavariable. Returns [`None`] if the sort is unknown.
   #[must_use] pub fn sort(self) -> Option<AtomID> {
     match self {
       InferTarget::Bound(s) | InferTarget::Reg(s) => Some(s),
@@ -165,8 +165,6 @@ impl InferTarget {
 /// A lisp value. These are the "values" that are passed around by lisp code.
 /// See [`LispKind`] for the list of different types of lisp object. This is
 /// a wrapper around `Rc<LispKind>`, and it is cloned frequently in client code.
-///
-/// [`LispKind`]: enum.LispKind.html
 #[derive(Default, Debug, EnvDebug, Clone, DeepSizeOf)]
 pub struct LispVal(Rc<LispKind>);
 
@@ -174,8 +172,7 @@ pub struct LispVal(Rc<LispKind>);
 /// [`FrozenLispKind`] type, to ensure that they have the same representation
 /// and can be safely transmuted.
 ///
-/// [`LispKind`]: enum.LispKind.html
-/// [`FrozenLispKind`]: ../frozen/enum.FrozenLispKind.html
+/// [`FrozenLispKind`]: super::frozen::FrozenLispKind
 #[macro_export]
 macro_rules! __mk_lisp_kind {
   ($(#[$doc:meta])* $kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
@@ -191,7 +188,7 @@ macro_rules! __mk_lisp_kind {
       /// in lisp code we use arrays for this.
       List(Box<[$val]>),
       /// An improper or dotted list of values, `(a b c . d) = (a . (b . (c . d)))`.
-      /// As with `List`, we chunk several cons cells into one array. We do not make
+      /// As with [`List`](Self::List), we chunk several cons cells into one array. We do not make
       /// any guarantee that lists and dotted lists are stored in canonical form, so
       /// all functions that deal with lists should check that `(a b . (c d . (e f g)))`
       /// is treated the same as `(a b c d e f g)`.
@@ -213,13 +210,14 @@ macro_rules! __mk_lisp_kind {
       Undef,
       /// A procedure that can be called, either built in or a user lambda.
       Proc($proc),
-      /// A map from atoms to values. This can be used as a mutable map if it is behind a `Ref`.
+      /// A map from atoms to values. This can be used as a mutable map if it is behind a
+      /// [`Ref`](Self::Ref).
       AtomMap(HashMap<AtomID, $val>),
       /// A mutable reference. This is the only way to have mutable values in
       /// client code.
       Ref($ref_),
       /// A metavariable. The `usize` gives the index of the metavariable in the
-      /// local context, and the `InferTarget` is the expected type of the expression
+      /// local context, and the [`InferTarget`] is the expected type of the expression
       /// that should replace this metavariable.
       MVar(usize, InferTarget),
       /// A proof metavariable, also known as a goal. The argument is the expected
@@ -238,35 +236,35 @@ __mk_lisp_kind! {
 }
 
 impl LispVal {
-  /// Make a `LispVal` from the inner enum type `LispKind`.
+  /// Make a [`LispVal`] from the inner enum type [`LispKind`].
   #[must_use] pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
-  /// Construct a `LispVal` for an atom.
+  /// Construct a [`LispVal`] for an atom.
   #[must_use] pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
-  /// Construct a `LispVal` for a list.
+  /// Construct a [`LispVal`] for a list.
   #[must_use] pub fn list(es: impl Into<Box<[LispVal]>>) -> LispVal { LispVal::new(LispKind::List(es.into())) }
-  /// Construct a `LispVal` for an improper list.
+  /// Construct a [`LispVal`] for an improper list.
   #[must_use] pub fn dotted_list(es: impl Into<Box<[LispVal]>>, r: LispVal) -> LispVal {
     LispVal::new(LispKind::DottedList(es.into(), r))
   }
-  /// Construct a `LispVal` for an improper list.
+  /// Construct a [`LispVal`] for an improper list.
   #[must_use] pub fn number(n: BigInt) -> LispVal { LispVal::new(LispKind::Number(n)) }
-  /// Construct a `LispVal` for a string.
+  /// Construct a [`LispVal`] for a string.
   #[must_use] pub fn string(s: ArcString) -> LispVal { LispVal::new(LispKind::String(s)) }
-  /// Construct a `LispVal` for a syntax element.
+  /// Construct a [`LispVal`] for a syntax element.
   #[must_use] pub fn syntax(s: Syntax) -> LispVal { LispVal::new(LispKind::Syntax(s)) }
-  /// Construct a `LispVal` for `#undef`.
+  /// Construct a [`LispVal`] for `#undef`.
   #[must_use] pub fn undef() -> LispVal { LispVal::new(LispKind::Undef) }
-  /// Construct a `LispVal` for `()`.
+  /// Construct a [`LispVal`] for `()`.
   #[must_use] pub fn nil() -> LispVal { LispVal::list(vec![]) }
-  /// Construct a `LispVal` for a boolean.
+  /// Construct a [`LispVal`] for a boolean.
   #[must_use] pub fn bool(b: bool) -> LispVal { LispVal::new(LispKind::Bool(b)) }
-  /// Construct a `LispVal` for a procedure.
+  /// Construct a [`LispVal`] for a procedure.
   #[must_use] pub fn proc(p: Proc) -> LispVal { LispVal::new(LispKind::Proc(p)) }
-  /// Construct a `LispVal` for a mutable reference.
+  /// Construct a [`LispVal`] for a mutable reference.
   #[must_use] pub fn new_ref(e: LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Strong(e)) }
-  /// Construct a `LispVal` for a weak reference.
+  /// Construct a [`LispVal`] for a weak reference.
   #[must_use] pub fn weak_ref(e: &LispVal) -> LispVal { LispRef::new_as_val(LispWeak::Weak(Rc::downgrade(&e.0))) }
-  /// Construct a `LispVal` for a goal.
+  /// Construct a [`LispVal`] for a goal.
   #[must_use] pub fn goal(fsp: FileSpan, ty: LispVal) -> LispVal {
     LispVal::new(LispKind::Goal(ty)).span(fsp)
   }
@@ -285,8 +283,8 @@ impl LispVal {
     }
   }
 
-  /// Get a mutable reference to the inner `LispKind`, if possible, returning
-  /// `None` if the value is shared and calling `f` with the inner reference if
+  /// Get a mutable reference to the inner [`LispKind`], if possible, returning
+  /// [`None`] if the value is shared and calling `f` with the inner reference if
   /// there is only one owner.
   pub fn unwrapped_mut<T>(&mut self, f: impl FnOnce(&mut LispKind) -> T) -> Option<T> {
     Rc::get_mut(&mut self.0).and_then(|e| match e {
@@ -296,7 +294,8 @@ impl LispVal {
     })
   }
 
-  /// Traverse past any `Annot` and `Ref` nodes, and return a clone of the inner data.
+  /// Traverse past any [`Annot`](LispKind::Annot) and [`Ref`](LispKind::Ref) nodes,
+  /// and return a clone of the inner data.
   #[must_use] pub fn unwrapped_arc(&self) -> LispVal {
     match &**self {
       LispKind::Ref(m) => m.get(Self::unwrapped_arc),
@@ -314,7 +313,8 @@ impl LispVal {
   #[must_use] pub fn get_mut(&mut self) -> Option<&mut LispKind> { Rc::get_mut(&mut self.0) }
 
   /// Try to get a mutable reference to the inner data,
-  /// unwrapping any `Annot` and `Ref` nodes, if this value is not shared.
+  /// unwrapping any [`Annot`](LispKind::Annot) and [`Ref`](LispKind::Ref) nodes,
+  /// if this value is not shared.
   /// Otherwise returns the innermost shared unwrapped value.
   pub fn try_unwrapped(self) -> Result<LispKind, LispVal> {
     match Rc::try_unwrap(self.0) {
@@ -444,12 +444,12 @@ impl LispWeak {
     }
   }
 }
-/// A mutable reference to a `LispVal`, the inner type used by `ref!` and related functions.
+/// A mutable reference to a [`LispVal`], the inner type used by `ref!` and related functions.
 #[derive(Debug, EnvDebug, DeepSizeOf)]
 pub struct LispRef(RefCell<LispWeak>);
 
 impl LispRef {
-  /// Construct a `LispVal` for a mutable reference.
+  /// Construct a [`LispVal`] for a mutable reference.
   fn new_as_val(w: LispWeak) -> LispVal {
     LispVal::new(LispKind::Ref(LispRef(RefCell::new(w))))
     // REFS.with(|refs| {unsafe{&*refs.get().unwrap()}.0.alloc(Rc::downgrade(&r.0));});
@@ -489,9 +489,9 @@ impl LispRef {
   /// Get the value of this reference without changing the reference count.
   /// # Safety
   /// This function should not be used unless the value is frozen
-  /// (in which case you should use [`FrozenLispRef::deref`] instead).
+  /// (in which case you should use [`FrozenLispRef::get`] instead).
   ///
-  /// [`FrozenLispRef::deref`]: ../frozen/struct.FrozenLispRef.html
+  /// [`FrozenLispRef::get`]: super::frozen::FrozenLispRef::get
   pub(crate) unsafe fn get_unsafe(&self) -> Option<&LispKind> {
     match self.0.try_borrow_unguarded().unwrap_or_else(|_| {
       std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
@@ -514,12 +514,11 @@ impl From<&LispKind> for bool {
 }
 
 impl LispKind {
-  /// Unwrap `Ref` and `Annot` nodes, which are ignored by most
-  /// lisp primitives, and run `f` with a reference to the inner value.
+  /// Unwrap [`Ref`](Self::Ref) and [`Annot`](Self::Annot) nodes,
+  /// which are ignored by most lisp primitives, and run `f`
+  /// with a reference to the inner value.
   /// (We can't directly return the value because the lifetime is too short.)
   /// See also [`LispVal::unwrapped_arc`], which returns a clone of the inner value.
-  ///
-  /// [`LispVal::unwrapped_arc`]: struct.LispVal.html#method.unwrapped_arc
   pub fn unwrapped<T>(&self, f: impl FnOnce(&Self) -> T) -> T {
     fn rec<T>(e: &LispKind, stack: StackList<'_, *const LispRef>, f: impl FnOnce(&LispKind) -> T) -> T {
       match e {
@@ -531,7 +530,8 @@ impl LispKind {
     rec(self, StackList(None), f)
   }
 
-  /// Unwrap `Ref` and `Annot` nodes, collecting a span if one is found along the way,
+  /// Unwrap [`Ref`](Self::Ref) and [`Annot`](Self::Annot) nodes,
+  /// collecting a span if one is found along the way,
   /// and run `f` with a reference to the inner value and the span.
   /// `fsp` is used as the default value if no span was found.
   pub fn unwrapped_span<T>(&self, fsp: Option<&FileSpan>,
@@ -705,7 +705,7 @@ impl LispKind {
     })
   }
 
-  /// Puts a span on this value, if `fsp` is not `None`.
+  /// Puts a span on this value, if `fsp` is not [`None`].
   pub fn decorate_span(self, fsp: &Option<FileSpan>) -> LispVal {
     if let Some(fsp) = fsp {
       LispVal::new(self).span(fsp.clone())
@@ -767,7 +767,7 @@ pub enum Annot {
   /// used to guide error reporting, but they can also be transferred to other
   /// expressions in client code using [`(copy-span)`].
   ///
-  /// [`(copy-span)`]: enum.BuiltinProc.html#variant.CopySpan
+  /// [`(copy-span)`]: BuiltinProc::CopySpan
   Span(FileSpan),
 }
 
@@ -827,9 +827,9 @@ pub enum Proc {
   /// A callback used by `refine` when it finds a procedure in a refine script.
   /// The callback acts like `refine` as well, but it orders generated subgoals with
   /// respect to an outer invocation of `refine`. This callback also only works
-  /// inside a limited extent, but unlike `MatchCont`, there cannot be multiple
-  /// refine callbacks simultaneously in flight - a call to the refine callback
-  /// binds to the nearest enclosing `refine` call.
+  /// inside a limited extent, but unlike [`MatchCont`](Self::MatchCont),
+  /// there cannot be multiple refine callbacks simultaneously in flight -
+  /// a call to the refine callback binds to the nearest enclosing `refine` call.
   RefineCallback,
   /// A delayed proof, generated by a call to `get-decl`, which returns a lisp
   /// data structure reflecting the requested definition, but delays the proof
@@ -840,7 +840,7 @@ pub enum Proc {
   /// The compiler object, which can be called as a procedure and stores its own
   /// internal state here. See [`Compiler::call`].
   ///
-  /// [`Compiler::call`]: ../../mmc/struct.Compiler.html#method.call
+  /// [`Compiler::call`]: crate::mmc::Compiler::call
   MMCCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
 }
 
@@ -848,8 +848,6 @@ pub enum Proc {
 /// by the call. Individual procedures may have additional rules on top of
 /// this for validity, but every procedure must declare its specification
 /// in [`Proc::spec`].
-///
-/// [`Proc::spec`]: enum.Proc.html#method.spec
 #[derive(Copy, Clone, Debug)]
 pub enum ProcSpec {
   /// This function must be called with exactly `n` arguments.
@@ -1243,7 +1241,7 @@ str_enum! {
     /// `(mmc-init)` returns a new compiler object, which is itself a procedure that can
     /// be called to compile MMC functions. See [`Compiler::call`].
     ///
-    /// [`Compiler::call`]: ../../mmc/struct.Compiler.html#method.call
+    /// [`Compiler::call`]: crate::mmc::Compiler::call
     MMCInit: "mmc-init",
   }
 }
@@ -1255,16 +1253,16 @@ impl std::fmt::Display for BuiltinProc {
 }
 
 /// An iterator over lisp values, for dealing with lists. Semantically this is
-/// the same as a `LispVal`, but in order to decrease allocations this allows
-/// holding on to incomplete subparts of the arrays used in `LispKind::List`
-/// and `LispKind::DottedList`.
+/// the same as a [`LispVal`], but in order to decrease allocations this allows
+/// holding on to incomplete subparts of the arrays used in [`LispKind::List`]
+/// and [`LispKind::DottedList`].
 #[derive(Debug, DeepSizeOf)]
 pub enum Uncons {
   /// The initial state, pointing to a lisp value.
   New(LispVal),
-  /// A reference to a sub-slice of a `LispKind::List`.
+  /// A reference to a sub-slice of a [`LispKind::List`].
   List(OwningRef<LispVal, [LispVal]>),
-  /// A reference to a sub-slice of a `LispKind::DottedList`.
+  /// A reference to a sub-slice of a [`LispKind::DottedList`].
   DottedList(OwningRef<LispVal, [LispVal]>, LispVal),
 }
 
@@ -1273,7 +1271,7 @@ impl From<LispVal> for Uncons {
 }
 
 impl Uncons {
-  /// Create an empty `Uncons`.
+  /// Create an empty [`Uncons`].
   #[must_use] pub fn nil() -> Uncons { Uncons::New(LispVal::nil()) }
 
   /// Returns true if this is a proper list of length `n`.
@@ -1285,7 +1283,7 @@ impl Uncons {
     }
   }
 
-  /// Reconstruct a file span for an `Uncons`. Note that this may not be a well formed
+  /// Reconstruct a file span for an [`Uncons`]. Note that this may not be a well formed
   /// substring, for example in `(a b c)` after the first iteration the span will refer
   /// to `b c)` and at the last iteration the span will cover only `)`.
   #[must_use] pub fn fspan(&self) -> Option<FileSpan> {
@@ -1303,7 +1301,7 @@ impl Uncons {
     }
   }
 
-  /// Convert an `Uncons` back into a `LispVal`.
+  /// Convert an [`Uncons`] back into a [`LispVal`].
   #[must_use] pub fn as_lisp(&self) -> LispVal {
     match self {
       Uncons::New(e) => e.clone(),
@@ -1346,8 +1344,8 @@ impl Uncons {
   }
 
   /// This is the same as `next()`, but it does not advance the iterator.
-  /// (This could almost be a `Peekable` implementation, but the reference
-  /// may not be derived from `self`, so it has to clone the value.)
+  /// (This could almost be a [`Peekable`](std::iter::Peekable) implementation,
+  /// but the reference may not be derived from `self`, so it has to clone the value.)
   #[must_use] pub fn head(&self) -> Option<LispVal> {
     match self {
       Uncons::New(e) => e.head(),

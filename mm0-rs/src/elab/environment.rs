@@ -1,6 +1,4 @@
 //! The [`Environment`] contains all elaborated proof data, as well as the lisp global context.
-//!
-//! [`Environment`]: environment/struct.Environment.html
 
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::{concat, stringify};
@@ -21,7 +19,7 @@ pub use crate::parser::ast::{Modifiers, Prec};
 macro_rules! id_wrapper {
   ($id:ident: $ty:ty, $vec:ident) => {
     id_wrapper!($id: $ty, $vec,
-      concat!("An index into a [`", stringify!($vec), "`](struct.", stringify!($vec), ".html)"));
+      concat!("An index into a [`", stringify!($vec), "`]"));
   };
   ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
     #[doc=$svec]
@@ -75,13 +73,13 @@ id_wrapper!(AtomID: u32, AtomVec);
 /// A documentation comment on an item.
 pub type DocComment = Arc<str>;
 
-/// The information associated to a defined `Sort`.
+/// The information associated to a defined [`Sort`].
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Sort {
   /// The sort's name, as an atom.
   pub atom: AtomID,
   /// The sort's name, as a string. (This is a shortcut; you can also look up the atom in
-  /// [Environment.data](struct.Environment.html#structfield.data) and get the name from there.)
+  /// [`Environment.data`] and get the name from there.)
   pub name: ArcString,
   /// The span for the name of the sort. This is `"foo"` in the statement `sort foo;`.
   pub span: FileSpan,
@@ -91,13 +89,9 @@ pub struct Sort {
   pub full: Span,
   /// The documentation comment on the sort.
   pub doc: Option<DocComment>,
-  /// The sort modifiers. Any subset of [`PURE`], [`STRICT`], [`PROVABLE`], [`FREE`]. The other
-  /// modifiers are not valid.
-  ///
-  /// [`PURE`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.PURE
-  /// [`STRICT`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.STRICT
-  /// [`PROVABLE`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.PROVABLE
-  /// [`FREE`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.FREE
+  /// The sort modifiers. Any subset of [`PURE`](Modifiers::PURE), [`STRICT`](Modifiers::STRICT),
+  /// [`PROVABLE`](Modifiers::PROVABLE), [`FREE`](Modifiers::FREE).
+  /// The other modifiers are not valid.
   pub mods: Modifiers,
 }
 
@@ -107,9 +101,9 @@ pub struct Sort {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[allow(variant_size_differences)]
 pub enum Type {
-  /// A bound variable `{x : s}`, where `s` is the provided `SortID`.
+  /// A bound variable `{x : s}`, where `s` is the provided [`SortID`].
   Bound(SortID),
-  /// A regular variable `(ph : s x y z)`, where `s` is the provided `SortID`.
+  /// A regular variable `(ph : s x y z)`, where `s` is the provided [`SortID`].
   ///
   /// The `deps: u64` field encodes the dependencies of the variable, where the nth bit
   /// set means that this variable depends on the nth bound variable
@@ -132,7 +126,7 @@ impl Type {
   #[must_use] pub fn bound(self) -> bool { matches!(self, Type::Bound(_)) }
 }
 
-/// An `ExprNode` is interpreted inside a context containing the `Vec<Type>`
+/// An [`ExprNode`] is interpreted inside a context containing the `Vec<`[`Type`]`>`
 /// args and the `Vec<ExprNode>` heap.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum ExprNode {
@@ -146,8 +140,6 @@ pub enum ExprNode {
 
 /// The `Expr` type stores expression dags using a local context of expression nodes
 /// and a final expression. See [`ExprNode`] for explanation of the variants.
-///
-/// [`ExprNode`]: enum.ExprNode.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Expr {
   /// The heap, which is used for subexpressions that appear multiple times.
@@ -176,10 +168,8 @@ pub struct Term {
   /// The span around the name of the term. This is the `"foo"` in `def foo ...;`
   pub span: FileSpan,
   /// The modifiers for the term. For `def`, the allowed modifiers are
-  /// [`LOCAL`] and [`ABSTRACT`], and for `term` no modifiers are permitted.
-  ///
-  /// [`LOCAL`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.LOCAL
-  /// [`ABSTRACT`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.ABSTRACT
+  /// [`LOCAL`](Modifiers::LOCAL) and [`ABSTRACT`](Modifiers::ABSTRACT), and for
+  /// `term` no modifiers are permitted.
   pub vis: Modifiers,
   /// The span around the entire declaration for the term, from the first modifier
   /// to the semicolon. The file is the same as in `span`.
@@ -192,16 +182,14 @@ pub struct Term {
   pub args: Box<[(Option<AtomID>, Type)]>,
   /// The return sort and dependencies of the term constructor. See [`Type::Reg`] for
   /// the interpretation of the dependencies.
-  ///
-  /// [`Type::Reg`]: enum.Type.html#variant.Reg
   pub ret: (SortID, u64),
   /// The term/def classification, and the value of the def.
   pub kind: TermKind,
 }
 
-/// A `ProofNode` is a stored proof term. This is an extension of [`ExprNode`] with
-/// more constructors, so a `ProofNode` can represent an expr, a proof, or a conversion,
-/// and the typing determines which. A `ProofNode` is interpreted in a context of
+/// A [`ProofNode`] is a stored proof term. This is an extension of [`ExprNode`] with
+/// more constructors, so a [`ProofNode`] can represent an expr, a proof, or a conversion,
+/// and the typing determines which. A [`ProofNode`] is interpreted in a context of
 /// variables `Vec<Type>`, and a heap `Vec<ProofNode>`.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum ProofNode {
@@ -255,7 +243,7 @@ pub enum ProofNode {
 }
 
 impl ProofNode {
-  /// Strip excess `Ref` nodes from a `ProofNode`.
+  /// Strip excess [`Ref`](ProofNode::Ref) nodes from a [`ProofNode`].
   #[must_use] pub fn deref<'a>(&'a self, heap: &'a [ProofNode]) -> &'a Self {
     let mut e = self;
     loop {
@@ -279,19 +267,20 @@ impl From<&ExprNode> for ProofNode {
   }
 }
 
-/// The `Proof` type stores proof term dags using a local context of proof nodes
+/// The [`Proof`] type stores proof term dags using a local context of proof nodes
 /// and a final proof. See [`ProofNode`] for explanation of the variants.
-///
-/// [`ProofNode`]: enum.ProofNode.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Proof {
   /// The heap, which is used for subexpressions that appear multiple times.
   /// The first `args.len()` elements of the heap are fixed to the variables.
   pub heap: Box<[ProofNode]>,
-  /// The hypotheses, where `hyps[i]` points to `Hyp(i, e)`. Because these terms
-  /// are deduplicated with everything else, the `Hyp` itself will probably be
-  /// on the heap (unless it is never used), and then a `Ref` will be stored
+  /// The hypotheses, where `hyps[i]` points to [`Hyp`]`(i, e)`. Because these terms
+  /// are deduplicated with everything else, the [`Hyp`] itself will probably be
+  /// on the heap (unless it is never used), and then a [`Ref`] will be stored
   /// in the `hyps` array.
+  ///
+  /// [`Hyp`]: ProofNode::Hyp
+  /// [`Ref`]: ProofNode::Ref
   pub hyps: Box<[ProofNode]>,
   /// The target proof term.
   pub head: ProofNode,
@@ -316,9 +305,7 @@ pub struct Thm {
   /// The span around the name of the theorem. This is the `"foo"` in `theorem foo ...;`
   pub span: FileSpan,
   /// The modifiers for the term. For `theorem`, the only allowed modifier is
-  /// [`PUB`], and for `term` no modifiers are permitted.
-  ///
-  /// [`PUB`]: ../../parser/ast/struct.Modifiers.html#associatedconstant.PUB
+  /// [`PUB`](Modifiers::PUB), and for `term` no modifiers are permitted.
   pub vis: Modifiers,
   /// The span around the entire declaration for the theorem, from the first modifier
   /// to the semicolon. The file is the same as in `span`.
@@ -342,8 +329,6 @@ pub struct Thm {
   /// `heap` and `hyps` in this structure. They are required to be equivalent, but the
   /// indexing can be different between them, and the indexes in the proof are only
   /// valid with the `heap` in the proof.
-  ///
-  /// [`Proof`]: struct.Proof.html
   pub kind: ThmKind,
 }
 
@@ -361,14 +346,11 @@ pub struct OutputString {
 
 /// A global order on sorts, declarations ([`Term`] and [`Thm`]), and lisp
 /// global definitions based on declaration order.
-///
-/// [`Term`]: struct.Term.html
-/// [`Thm`]: struct.Thm.html
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum StmtTrace {
   /// A `sort foo;` declaration
   Sort(AtomID),
-  /// A declaration of a `Term` or `Thm` (i.e. `term`, `def`, `axiom`, `theorem`)
+  /// A declaration of a [`Term`] or [`Thm`] (i.e. `term`, `def`, `axiom`, `theorem`)
   Decl(AtomID),
   /// A global lisp declaration in a `do` block, i.e. `do { (def foo 1) };`
   Global(AtomID),
@@ -379,9 +361,6 @@ pub enum StmtTrace {
 /// A declaration is either a [`Term`] or a [`Thm`]. This is done because in MM1
 /// Terms and Thms share a namespace (although they are put in separate number-spaces
 /// for compilation to MM0).
-///
-/// [`Term`]: struct.Term.html
-/// [`Thm`]: struct.Thm.html
 #[derive(Copy, Clone, Debug)]
 pub enum DeclKey {
   /// A term or def, with its ID
@@ -391,7 +370,7 @@ pub enum DeclKey {
 }
 crate::deep_size_0!(DeclKey);
 
-/// A `Literal` is an element in a processed `notation` declaration. It is either a
+/// A [`Literal`] is an element in a processed `notation` declaration. It is either a
 /// constant symbol, or a variable with associated parse precedence.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Literal {
@@ -411,8 +390,7 @@ pub struct NotaInfo {
   /// The name of the term, as an atom.
   pub term: TermID,
   /// The number of arguments in the term. (This is a shortcut; you can also look up the term in
-  /// [Environment.terms](struct.Environment.html#structfield.terms) and get the
-  /// number of arguments as `args.len()`.)
+  /// [Environment.terms] and get the number of arguments as `args.len()`.)
   pub nargs: usize,
   /// The associativity of this term. This is always set, unless the notation begins and
   /// ends with a constant.
@@ -510,7 +488,7 @@ pub struct AtomData {
   /// The global lisp definition with this name, if one exists. The `Option<(FileSpan, Span)>`
   /// is `Some((span, full))` where `span` is the name of the definition and `full` is the
   /// entire definition body, or `None`.
-  /// The `DocComment` is the documentation on the declaration of the item.
+  /// The [`DocComment`] is the documentation on the declaration of the item.
   pub lisp: Option<LispData>,
   /// For global lisp definitions that have been deleted, we retain the location of the
   /// "undefinition" for go-to-definition queries.
@@ -528,18 +506,16 @@ impl AtomData {
 }
 
 /// The different kind of objects that can appear in a [`Spans`].
-///
-/// [`Spans`]: ../spans/struct.Spans.html
 #[derive(Debug, DeepSizeOf)]
 pub enum ObjectKind {
   /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
-  /// This sort must actually exist in the `Environment` if is constructed
+  /// This sort must actually exist in the [`Environment`] if is constructed
   Sort(SortID),
   /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
-  /// This term must actually exist in the `Environment` if is constructed
+  /// This term must actually exist in the [`Environment`] if is constructed
   Term(TermID, Span),
   /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works.
-  /// This theorem must actually exist in the `Environment` if is constructed
+  /// This theorem must actually exist in the [`Environment`] if is constructed
   Thm(ThmID),
   /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder.
   /// This should be a variable in the statement.
@@ -559,16 +535,16 @@ pub enum ObjectKind {
 }
 
 impl ObjectKind {
-  /// Create an `ObjectKind` for an `Expr`.
+  /// Create an [`ObjectKind`] for an [`Expr`].
   /// # Safety
-  /// Because this function calls `FrozenLispVal::new`,
+  /// Because this function calls [`FrozenLispVal::new`],
   /// the resulting object must not be examined before the elaborator is frozen.
   #[must_use] pub fn expr(e: LispVal) -> ObjectKind {
     ObjectKind::Expr(unsafe {FrozenLispVal::new(e)})
   }
-  /// Create an `ObjectKind` for a `Proof`.
+  /// Create an [`ObjectKind`] for a [`Proof`].
   /// # Safety
-  /// Because this function calls `FrozenLispVal::new`,
+  /// Because this function calls [`FrozenLispVal::new`],
   /// the resulting object must not be examined before the elaborator is frozen.
   #[must_use] pub fn proof(e: LispVal) -> ObjectKind {
     ObjectKind::Proof(unsafe {FrozenLispVal::new(e)})
@@ -612,8 +588,6 @@ macro_rules! make_atoms {
     impl Environment {
       /// Creates a new environment. The list of atoms is pre-populated with [`AtomID`]
       /// atoms that are used by builtins.
-      ///
-      /// [`AtomID`]: struct.AtomID.html
       #[allow(clippy::string_lit_as_bytes)]
       #[must_use] pub fn new() -> Environment {
         let mut atoms = HashMap::new();
@@ -714,11 +688,9 @@ impl Delims {
 }
 
 /// An auxiliary structure for performing [`Environment`] deep copies. This is needed
-/// because `AtomID`s from other, previously elaborated files may not be consistent with
+/// because [`AtomID`]s from other, previously elaborated files may not be consistent with
 /// the current file, so we have to remap them to the current file's namespace
 /// during import.
-///
-/// [`Environment`]: struct.Environment.html
 #[derive(Default, Debug)]
 pub struct Remapper {
   /// A mapping of foreign sorts into local sort IDs
@@ -729,24 +701,24 @@ pub struct Remapper {
   thm: ThmVec<ThmID>,
   /// A mapping of foreign atoms into local atom IDs
   pub(crate) atom: AtomVec<AtomID>,
-  /// A mapping of foreign `FrozenLispVal`s into local `LispVal`s.
+  /// A mapping of foreign [`FrozenLispVal`]s into local [`LispVal`]s.
   /// It uses a pointer to the underlying allocation as an identifier so that
   /// we don't remap the same lisp values many times.
   pub(crate) lisp: HashMap<*const FrozenLispKind, LispVal>,
   /// A stack of references that are currently being constructed. It is stored
   /// as a hashmap, indexed on the source lisp ref-cell, for fast lookup.
   ///
-  /// When a `Ref` is remapped, we initially create a `(ref! #undef)` and put it
-  /// in `refs` (if it is not already present), then we remap the contents of
-  /// the ref, and finally we assign the result to the ref we created and
-  /// remove the newly assigned ref-cell from `refs`. That way, a mutable cell
-  /// is remapped to another mutable cell, but we can detect cycles and correctly
-  /// remap them into cycles.
+  /// When a [`Ref`](super::lisp::LispKind::Ref) is remapped, we initially create a
+  /// `(ref! #undef)` and put it in `refs` (if it is not already present),
+  /// then we remap the contents of the ref, and finally we assign the result
+  /// to the ref we created and remove the newly assigned ref-cell from `refs`.
+  /// That way, a mutable cell is remapped to another mutable cell, but we can
+  /// detect cycles and correctly remap them into cycles.
   pub(crate) refs: HashMap<*const FrozenLispRef, LispVal>,
 }
 
-/// A trait for types that can be remapped. This is like `Clone` except it uses a `&mut R` as
-/// auxiliary state.
+/// A trait for types that can be remapped.
+/// This is like [`Clone`] except it uses a `&mut R` as auxiliary state.
 pub trait Remap: Sized {
   /// The type that is constructed as a result of the remap, usually `Self`.
   type Target;
@@ -1118,8 +1090,6 @@ impl ParserEnv {
 }
 
 /// A specialized version of [`IncompatibleError`] for name reuse errors.
-///
-/// [`IncompatibleError`]: struct.IncompatibleError.html
 #[derive(Debug)]
 pub struct RedeclarationError {
   /// The error message
@@ -1135,13 +1105,13 @@ impl Default for Environment {
 }
 
 impl Environment {
-  /// Convert an `AtomID` into the corresponding `TermID`,
+  /// Convert an [`AtomID`] into the corresponding [`TermID`],
   /// if this atom denotes a declared term or def.
   #[must_use] pub fn term(&self, a: AtomID) -> Option<TermID> {
     if let Some(DeclKey::Term(i)) = self.data[a].decl { Some(i) } else { None }
   }
 
-  /// Convert an `AtomID` into the corresponding `ThmID`,
+  /// Convert an [`AtomID`] into the corresponding [`ThmID`],
   /// if this atom denotes a declared axiom or theorem.
   #[must_use] pub fn thm(&self, a: AtomID) -> Option<ThmID> {
     if let Some(DeclKey::Thm(i)) = self.data[a].decl { Some(i) } else { None }
@@ -1159,12 +1129,12 @@ pub enum AddItemError<A> {
   Overflow
 }
 
-/// Most add item functions return `AddItemError<Option<A>>`, meaning that in the
+/// Most add item functions return [`AddItemError`]`<Option<A>>`, meaning that in the
 /// redeclaration case they can still return an `A`, namely the ID of the old declaration
 type AddItemResult<A> = Result<A, AddItemError<Option<A>>>;
 
 impl<A> AddItemError<A> {
-  /// Convert this error into an `ElabError` at the provided location.
+  /// Convert this error into an [`ElabError`] at the provided location.
   pub fn into_elab_error(self, sp: Span) -> ElabError {
     match self {
       AddItemError::Redeclaration(_, r) =>
@@ -1200,7 +1170,7 @@ impl Environment {
     }
   }
 
-  /// Add a term declaration to the environment. The `Term` is behind a thunk because
+  /// Add a term declaration to the environment. The [`Term`] is behind a thunk because
   /// we check for redeclaration before inspecting the term data itself.
   pub fn try_add_term(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
     let new_id = TermID(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
@@ -1227,13 +1197,13 @@ impl Environment {
     }
   }
 
-  /// Specialization of `try_add_term` when the term is constructed already.
+  /// Specialization of [`try_add_term`](Self::try_add_term) when the term is constructed already.
   pub fn add_term(&mut self, t: Term) -> AddItemResult<TermID> {
     let fsp = t.span.clone();
     self.try_add_term(t.atom, &fsp, || t)
   }
 
-  /// Add a theorem declaration to the environment. The `Thm` is behind a thunk because
+  /// Add a theorem declaration to the environment. The [`Thm`] is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
   pub fn try_add_thm(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
     let new_id = ThmID(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
@@ -1260,7 +1230,7 @@ impl Environment {
     }
   }
 
-  /// Specialization of `try_add_thm` when the term is constructed already.
+  /// Specialization of [`try_add_thm`](Self::try_add_thm) when the term is constructed already.
   pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmID> {
     let fsp = t.span.clone();
     self.try_add_thm(t.atom, &fsp, || t)
@@ -1271,9 +1241,9 @@ impl Environment {
     self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
   }
 
-  /// Convert a string to an `AtomID`. This mutates the environment because we maintain
+  /// Convert a string to an [`AtomID`]. This mutates the environment because we maintain
   /// the list of all allocated atoms, and two calls with the same `&str` input
-  /// will yield the same `AtomID`.
+  /// will yield the same [`AtomID`].
   pub fn get_atom(&mut self, s: &[u8]) -> AtomID {
     self.atoms.get(s).copied().unwrap_or_else(|| {
       let id = AtomID(self.data.len().try_into().expect("too many atoms"));
@@ -1284,10 +1254,8 @@ impl Environment {
     })
   }
 
-  /// Convert an `ArcString` to an `AtomID`. This version of [`get_atom`] avoids the string clone
-  /// in the case that the atom is new.
-  ///
-  /// [`get_atom`]: environment/struct.Environment.html#method.get_atom
+  /// Convert an [`ArcString`] to an [`AtomID`]. This version of [`get_atom`](Self::get_atom)
+  /// avoids the string clone in the case that the atom is new.
   pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
     let ctx = &mut self.data;
     *self.atoms.entry(s.clone()).or_insert_with(move ||
@@ -1295,7 +1263,7 @@ impl Environment {
   }
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,
-  /// and relabels lisp objects with the new `AtomID` mapping.
+  /// and relabels lisp objects with the new [`AtomID`] mapping.
   pub fn merge(&mut self, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     let remap = &mut Remapper {
       atom: other.data().iter().map(|d| self.get_atom_arc(d.name().clone())).collect(),

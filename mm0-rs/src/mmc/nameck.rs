@@ -179,7 +179,7 @@ make_prims! {
     Wand: "-*",
   }
 
-  /// Intrinsic functions, which are like `PrimProc` but are typechecked like regular
+  /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular
   /// function calls.
   enum Intrinsic {
     /// Intrinsic for the [`fstat`](https://man7.org/linux/man-pages/man2/fstat.2.html) system call.
@@ -198,7 +198,7 @@ pub enum Type {
   /// A user type that has not yet been typechecked.
   Unchecked,
   /// A user type that has been typechecked, with the original span,
-  /// the (internal) declaration name, and the compiled `Type` object.
+  /// the (internal) declaration name, and the compiled [`Type`] object.
   Checked(Option<FileSpan>, AtomID, Rc<types::Type>),
 }
 

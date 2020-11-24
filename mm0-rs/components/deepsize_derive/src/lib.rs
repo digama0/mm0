@@ -1,7 +1,7 @@
 //! A basic DeepSizeOf Derive implementation
 //!
 //! Mainly from `syn`'s heap_size derive example:
-//! https://github.com/dtolnay/syn/commits/master/examples/heapsize/heapsize_derive/src/lib.rs
+//! <https://github.com/dtolnay/syn/commits/master/examples/heapsize/heapsize_derive/src/lib.rs>
 
 extern crate proc_macro;
 

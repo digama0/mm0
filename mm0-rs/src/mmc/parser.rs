@@ -41,7 +41,7 @@ pub enum Expr {
   Let {
     /// A tuple pattern, containing variable bindings.
     lhs: TuplePattern,
-    /// The expression to evaluate, or `None` for uninitialized.
+    /// The expression to evaluate, or [`None`] for uninitialized.
     rhs: Option<LispVal>,
   },
   /// A function call (or something that looks like one at parse time).
@@ -267,8 +267,8 @@ impl<'a> Parser<'a> {
     Err(ElabError::new_e(self.try_get_span(e), "while: unexpected invariant"))
   }
 
-  /// Parse an MMC expression (shallowly), returning a `parser::Expr` containing `LispVal`s for
-  /// subexpressions.
+  /// Parse an MMC expression (shallowly), returning a [`parser::Expr`](Expr)
+  /// containing [`LispVal`]s for subexpressions.
   pub fn parse_expr(&self, e: LispVal) -> Result<Expr> {
     Ok(match &*e.unwrapped_arc() {
       &LispKind::Atom(AtomID::UNDER) => Expr::Hole(self.try_get_fspan(&e)),

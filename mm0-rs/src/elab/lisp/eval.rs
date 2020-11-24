@@ -3,8 +3,6 @@
 //! We use an explicit call stack for evaluating lisp [`IR`], so that we can give useful
 //! stack traces, as well as having a uniform location to be able to check for interrupts
 //! and timeout.
-//!
-//! [`IR`]: ../parser/enum.IR.html
 
 use std::ops::{Deref, DerefMut};
 use std::mem;
@@ -212,7 +210,7 @@ impl<'a> EnvDisplay for PatternState<'a> {
 
 struct TestPending<'a>(Span, LispVal, &'a IR);
 
-/// A `Result` type alias for string errors, used by functions that
+/// A [`Result`](std::result::Result) type alias for string errors, used by functions that
 /// work without an elaboration context.
 pub type SResult<T> = std::result::Result<T, String>;
 
@@ -614,11 +612,24 @@ impl Elaborator {
   }
 }
 
-struct Evaluator<'a> {
+/// The lisp evaluation context, representing a lisp evaluation in progress.
+/// This is an explicitly unfolled state machine (rather than using recursive functions)
+/// so that we can explicitly manipulate the program stack for error reporting purposes.
+#[derive(Debug)]
+pub struct Evaluator<'a> {
+  /// The elaborator, which is used to mediate all access to the elaboration context.
   elab: &'a mut Elaborator,
+  /// The values assigned to local variables in the current context.
   ctx: Vec<LispVal>,
+  /// The file that contains the location we are currently evaluating.
+  /// This can change when we call a function.
   file: FileRef,
+  /// The span of the statement we were originally asked to evaluate. This does
+  /// not change during elaboration, and we use it to avoid reporting spans in random
+  /// locations if an error is thrown in "library code".
   orig_span: Span,
+  /// The evaluation stack. This is a structured object containing a stack of continuations
+  /// each of which represent a context which awaiting a value from a sub-computation.
   stack: Vec<Stack<'a>>,
 }
 impl<'a> Deref for Evaluator<'a> {

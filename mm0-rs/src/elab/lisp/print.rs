@@ -2,21 +2,12 @@
 //!
 //! This is essentially an implementation of [`Display`] for lisp terms,
 //! but we can't do this literally because a [`Display`] implementation doesn't
-//! get side information besides the [`Formatter`], while we need the source text
-//! and the environment, packaged as the [`FormatEnv`] struct.
+//! get side information besides the [`Formatter`](std::fmt::Formatter), while we need
+//! the source text and the environment, packaged as the [`FormatEnv`] struct.
 //!
 //! The main trait for [`Display`] modulo [`FormatEnv`] is [`EnvDisplay`]. It is
-//! possible to use a `EnvDisplay` object in a macro like [`format!`] or [`write!`]
+//! possible to use a [`EnvDisplay`] object in a macro like [`format!`] or [`write!`]
 //! using [`FormatEnv::to`], or [`Elaborator::print`].
-//!
-//! [`Display`]: https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html
-//! [`Formatter`]: https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html
-//! [`FormatEnv`]: struct.FormatEnv.html
-//! [`EnvDisplay`]: trait.EnvDisplay.html
-//! [`format!`]: https://doc.rust-lang.org/std/macro.format.html
-//! [`write!`]: https://doc.rust-lang.org/std/macro.write.html
-//! [`FormatEnv::to`]: struct.FormatEnv.html#method.to
-//! [`Elaborator::print`]: ../struct.Elaborator.html#method.print
 
 use std::ops::Deref;
 use std::fmt::{self, Display};
@@ -39,24 +30,18 @@ pub struct FormatEnv<'a> {
 pub trait EnvDisplay {
   /// Print formatted output to the given formatter. The signature is exactly the same
   /// as [`Display::fmt`] except it has an extra argument for the environment.
-  ///
-  /// [`Display::fmt`]: https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html#tymethod.fmt
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 /// The result of [`FormatEnv::to`], a struct that implements [`Display`] if the
 /// argument implements [`EnvDisplay`].
-///
-/// [`FormatEnv::to`]: struct.FormatEnv.html#method.to
-/// [`Display`]: https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html
-/// [`EnvDisplay`]: trait.EnvDisplay.html
 pub struct Print<'a, D: ?Sized> {
   fe: FormatEnv<'a>,
   e: &'a D,
 }
 
 impl<'a> FormatEnv<'a> {
-  /// Given a `FormatEnv`, convert an `impl EnvDisplay` into an `impl Display`.
+  /// Given a [`FormatEnv`], convert an `impl EnvDisplay` into an `impl Display`.
   /// This can be used in macros like `println!("{}", fe.to(e))` to print objects.
   pub fn to<D: ?Sized>(self, e: &'a D) -> Print<'a, D> {
     Print {fe: self, e}
@@ -69,7 +54,7 @@ impl<'a> Deref for FormatEnv<'a> {
 }
 
 impl Elaborator {
-  /// Build a `FormatEnv` from the current environment.
+  /// Build a [`FormatEnv`] from the current environment.
   pub fn format_env(&self) -> FormatEnv<'_> {
     FormatEnv {source: &self.ast.source, env: self}
   }
@@ -84,7 +69,7 @@ impl<'a, D: EnvDisplay + ?Sized> fmt::Display for Print<'a, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.e.fmt(self.fe, f) }
 }
 
-/// Items implementing `EnvDebug` can be put in formatters using `{:#?}`.
+/// Items implementing [`EnvDebug`] can be put in formatters using `{:#?}`.
 impl<'a, D: crate::elab::lisp::debug::EnvDebug + ?Sized> fmt::Debug for Print<'a, D> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.e.env_dbg(self.fe, f)

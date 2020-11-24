@@ -2,15 +2,10 @@
 //!
 //! In accordance with the grammar's description of mm0/mm1 files as a sequence of
 //! statements, the parser's entry point [`parse`] will attempt to construct an AST
-//! from some input by calling [`stmt_recover`], which loops over [`stmt`]
+//! from some input by calling [`stmt_recover`](Parser::stmt_recover), which loops over [`stmt`](Parser::stmt)
 //! while attempting to recover from any parse errors. The actual [`Parser`]
 //! struct is fairly standard; it holds the source as a byte slice, keeping track of the current
 //! character as a usize among other things.
-//!
-//! [`Parser`]: struct.Parser.html
-//! [`stmt`]: struct.Parser.html#method.stmt
-//! [`stmt_recover`]: struct.Parser.html#method.stmt_recover
-//! [`parse`]: fn.parse.html
 pub mod ast;
 
 use std::mem;
@@ -31,10 +26,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity};
 /// Determines how the error is displayed in an editor.
 ///
 /// Corresponds to the lsp-type crate's [`DiagnosticSeverity`] enum, and is convertible using
-/// [`to_diag_severity`].
-///
-/// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
-/// [`to_diag_severity`]: enum.ErrorLevel.html#method.to_diag_severity
+/// [`to_diag_severity`](ErrorLevel::to_diag_severity).
 #[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum ErrorLevel {
   /// Error level for informational messages, such as the result of `(display)`.
@@ -45,9 +37,7 @@ pub enum ErrorLevel {
   Error,
 }
 impl ErrorLevel {
-  /// Convert an `ErrorLevel` to the LSP [`DiagnosticSeverity`] type.
-  ///
-  /// [`DiagnosticSeverity`]: ../../lsp_types/enum.DiagnosticSeverity.html
+  /// Convert an [`ErrorLevel`] to the LSP [`DiagnosticSeverity`] type.
   #[cfg(feature = "server")]
   #[must_use] pub fn to_diag_severity(self) -> DiagnosticSeverity {
     match self {
@@ -57,9 +47,7 @@ impl ErrorLevel {
     }
   }
 
-  /// Convert an `ErrorLevel` to [`AnnotationType`], used by the CLI compiler.
-  ///
-  /// [`AnnotationType`]: ../../annotate_snippets/snippet/enum.AnnotationType.html
+  /// Convert an [`ErrorLevel`] to [`AnnotationType`], used by the CLI compiler.
   #[must_use] pub fn to_annotation_type(self) -> AnnotationType {
     match self {
       ErrorLevel::Info => AnnotationType::Info,
@@ -80,9 +68,6 @@ impl std::fmt::Display for ErrorLevel {
 }
 
 /// Error type; extends an error message with the offending [`Span`], and an [`ErrorLevel`]
-///
-/// [`Span`]: ../util/struct.Span.html
-/// [`ErrorLevel`]: enum.ErrorLevel.html
 #[derive(Debug, DeepSizeOf)]
 pub struct ParseError {
   /// The location of the error (possibly zero-length,
@@ -105,16 +90,13 @@ impl Clone for ParseError {
 }
 
 impl ParseError {
-  /// Construct a parse error at [`Error`] severity from a position and a message
-  ///
-  /// [`Error`]: enum.ErrorLevel.html#variant.Error
+  /// Construct a parse error at [`Error`](ErrorLevel::Error) severity
+  /// from a position and a message
   pub fn new(pos: impl Into<Span>, msg: BoxError) -> ParseError {
     ParseError { pos: pos.into(), level: ErrorLevel::Error, msg }
   }
 
   /// Convert a parse error to an LSP [`Diagnostic`] object.
-  ///
-  /// [`Diagnostic`]: ../../lsp_types/struct.Diagnostic.html
   #[cfg(feature = "server")]
   #[must_use] pub fn to_diag(&self, file: &LinedString) -> Diagnostic {
     Diagnostic {
@@ -329,10 +311,9 @@ impl<'a> Parser<'a> {
     }
   }
 
-  /// Attempt to parse an `ident`. This is the same as [`ident_`], except that `_` is not accepted.
+  /// Attempt to parse an `ident`. This is the same as [`ident_`](Self::ident_),
+  /// except that `_` is not accepted.
   /// On success, advances past the ident and any trailing whitespace.
-  ///
-  /// [`ident_`]: struct.Parser.html#method.ident_
   fn ident(&mut self) -> Option<Span> {
     self.ident_().filter(|&s| self.span(s) != b"_")
   }
@@ -384,7 +365,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  /// Try to parse a `DepType` or `FormulaType`.
+  /// Try to parse a [`DepType`](Type::DepType) or [`Formula`](Type::Formula).
   /// Examples are the part after the colon in either `(_ : $ some formula $)`
   /// or `(_ : wff x)`, where `(_ : wff)` may or may not have dependencies.
   fn ty(&mut self) -> Result<Type> {
@@ -517,10 +498,7 @@ impl<'a> Parser<'a> {
   /// Parser for number literals, which can be either decimal (`12345`) or hexadecimal (`0xd00d`).
   /// Hexadecimal digits and the `0x` prefix are case insensitive.
   /// This is used for lisp number literals, while MM0 number literals are decimal only and parsed
-  /// by [`decimal`].
-  ///
-  /// [`decimal`]: struct.Parser.html#method.decimal
-  /// Does not advance the parser index on failure.
+  /// by [`decimal`](Self::decimal). Does not advance the parser index on failure.
   fn number(&mut self) -> Result<(Span, BigUint)> {
     let start = self.idx;
     let mut val: BigUint = 0_u8.into();
@@ -559,7 +537,7 @@ impl<'a> Parser<'a> {
     } else {false}
   }
 
-  /// Parse an `SExpr`.
+  /// Parse an [`SExpr`].
   pub fn sexpr(&mut self) -> Result<SExpr> {
     if let (start, Some((doc, _))) = (self.idx, self.doc_comment()) {
       let e = self.sexpr()?;
@@ -992,10 +970,8 @@ impl<'a> Parser<'a> {
 
 /// Main entry-point. Creates a [`Parser`] and parses a passed file.
 /// `old` contains the last successful parse of the same file, in order to reuse
-/// previous parsing work. The `Position` denotes the first byte where the
+/// previous parsing work. The [`Position`] denotes the first byte where the
 /// new file differs from the old one.
-///
-/// [`Parser`]: struct.Parser.html
 #[must_use] pub fn parse(
   file: Arc<LinedString>,
   old: Option<(Position, Arc<AST>)>

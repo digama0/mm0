@@ -13,7 +13,7 @@ macro_rules! make_predef {
     pub enum Predef { $(#[allow(unused)] $(#[$attr])* $x,)* }
     $crate::deep_size_0!(Predef);
 
-    /// A map from `Predef` to `A`, implemented as an array.
+    /// A map from [`Predef`] to `A`, implemented as an array.
     #[derive(Debug, DeepSizeOf)]
     pub struct PredefMap<A>([A; Predef::COUNT]);
 

@@ -28,7 +28,7 @@ pub enum IR {
   Local(usize),
   /// Access a global declaration named `a`
   Global(Span, AtomID),
-  /// Return a `LispVal` literally
+  /// Return a [`LispVal`] literally
   Const(LispVal),
   /// The `(list)` function: evaluate the list of arguments,
   /// and then create a list from the results.
@@ -67,7 +67,8 @@ pub enum IR {
   /// the weak references to the functions.
   NoTailRec,
   /// The `(fn xs e)` syntax form. Create a closure from the current context, and return
-  /// it, using the provided `ProcSpec` and code. It can later be called by the `App` instruction.
+  /// it, using the provided [`ProcSpec`] and code. It can later be called by the
+  /// [`App`](Self::App) instruction.
   Lambda(Span, usize, ProcSpec, Arc<IR>),
   /// The `(match e bs)` syntax form. Evaluate `e`, and then match it against the branches.
   Match(Span, Box<IR>, Box<[Branch]>),

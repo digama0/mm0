@@ -20,8 +20,6 @@ use crate::elab::environment::{Literal, ParserEnv, Prec, TermID};
 
 /// A parsed math expression (quoted expression). This is like [`SExpr`] but it
 /// has a much simpler grammar.
-///
-/// [`SExpr`]: ../../parser/ast/struct.SExpr.html
 #[derive(Debug)]
 pub struct QExpr {
   /// The span of the expression.
@@ -33,7 +31,7 @@ pub struct QExpr {
 /// A math expression like `$ 2 + foo (x <> y) z $` is parsed by the math parser
 /// into a representation such as `'(add (two (foo (pair x y) z)))`, and these
 /// are mostly interchangeable. The `QExpr` type is slightly different from
-/// `SExpr` because we cannot immediately resolve some aspects like whether a
+/// [`SExpr`] because we cannot immediately resolve some aspects like whether a
 /// bare name like `x` refers to a local variable or a constant or term
 /// constructor.
 pub enum QExprKind {
@@ -76,9 +74,6 @@ impl EnvDisplay for QExpr {
 
 impl Elaborator {
   /// Parse a [`Formula`] object into a [`QExpr`].
-  ///
-  /// [`Formula`]: ../parser/ast/struct.Formula.html
-  /// [`QExpr`]: math_parser/struct.QExpr.html
   pub fn parse_formula(&mut self, f: Formula) -> Result<QExpr, ElabError> {
     let mut p = MathParser {
       pe: &self.env.pe,
@@ -104,7 +99,7 @@ impl Elaborator {
 
 /// The precedence of application, `1024`. This determines whether
 /// `f x + y` is interpreted as `f (x + y)` or `(f x) + y`,
-/// by comparing the precedence of `+` to `APP_PREC`.
+/// by comparing the precedence of `+` to [`APP_PREC`].
 pub const APP_PREC: Prec = Prec::Prec(1024);
 
 struct MathParser<'a> {

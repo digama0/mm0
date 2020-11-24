@@ -6,8 +6,7 @@
 //! Additionally, unlike the server, the MM1 compiler will go on and generate MMB or MMU proofs,
 //! which can then be checked using an external MM0 checker such as [`mm0-c`].
 //!
-//! [`mm0_rs::server`]: ../server/index.html
-//! [`annotate_snippets`]: ../../annotate_snippets/index.html
+//! [`mm0_rs::server`]: crate::server
 //! [`mm0-c`]: https://github.com/digama0/mm0/tree/master/mm0-c
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, hash_map::Entry};
@@ -37,22 +36,19 @@ lazy_static! {
   static ref VFS_: VFS = VFS(Mutex::new(HashMap::new()));
 }
 
-/// The cached [`Environment`] representing a completed parse, or an incomplete
-/// parse.
-///
-/// [`Environment`]: ../elab/environment/struct.Environment.html
+/// The cached [`Environment`](crate::elab::Environment) representing a
+/// completed parse, or an incomplete parse.
 #[derive(DeepSizeOf)]
 enum FileCache {
   /// This file is currently being worked on on another thread. The list
   /// contains tasks that are waiting to be sent the completed [`Environment`];
   /// A thread that sees that the file is in progress should construct a
   /// channel, store the [`Sender`] here, and return the [`Receiver`] to
-  /// the elaborator (in the `mk` callback of [`Elaborator::as_fut`]).
+  /// the elaborator (in the `mk` callback of [`elab::elaborate`]).
   ///
-  /// [`Environment`]: ../elab/environment/struct.Environment.html
-  /// [`Sender`]: ../../futures_channel/oneshot/struct.Sender.html
-  /// [`Receiver`]: ../../futures_channel/oneshot/struct.Receiver.html
-  /// [`Elaborator::as_fut`]: ../elab/struct.Elaborator.html#method.as_fut
+  /// [`Environment`]: crate::elab::Environment
+  /// [`Sender`]: FSender
+  /// [`Receiver`]: futures::channel::oneshot::Receiver
   InProgress(Vec<FSender<ElabResult<()>>>),
   /// The file has been elaborated and the result is ready.
   Ready(FrozenEnv),
@@ -65,12 +61,12 @@ pub(crate) enum FileContents {
 }
 
 impl FileContents {
-  /// Constructs a new `VirtualFile` from source text.
+  /// Constructs a new [`FileContents`] from source text.
   pub(crate) fn new(text: String) -> FileContents {
     FileContents::Ascii(Arc::new(text.into()))
   }
 
-  /// Constructs a new `FileContents` from a memory map.
+  /// Constructs a new [`FileContents`] from a memory map.
   pub(crate) fn new_bin(data: memmap::Mmap) -> FileContents {
     FileContents::Bin(Arc::new(data))
   }
@@ -104,8 +100,6 @@ impl std::ops::Deref for FileContents {
 #[derive(DeepSizeOf)]
 struct VirtualFile {
     /// The file's text as a [`LinedString`].
-    ///
-    /// [`LinedString`]: ../lined_string/struct.LinedString.html
     text: FileContents,
     /// The file parse. This is protected behind a future-aware mutex,
     /// so that elaboration can block on accessing the result of another file's
@@ -115,15 +109,13 @@ struct VirtualFile {
 }
 
 impl VirtualFile {
-  /// Constructs a new `VirtualFile` from source text.
+  /// Constructs a new [`VirtualFile`] from source text.
   fn new(text: FileContents) -> VirtualFile {
     VirtualFile { text, parsed: FMutex::new(None) }
   }
 }
 
-/// The virtual file system (a singleton accessed through the global variable [`VFS_`]).
-///
-/// [`VFS_`]: struct.VFS_.html
+/// The virtual file system (a singleton accessed through the global variable [`struct@VFS_`]).
 #[derive(DeepSizeOf)]
 struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
@@ -133,8 +125,6 @@ impl VFS {
   /// **Note:** If the file has not yet been read, it will read the file from disk
   /// while still holding the [`VFS`] mutex, so other threads will not be able to
   /// perform file operations (although they will be able to elaborate otherwise).
-  ///
-  /// [`VFS`]: struct.VFS.html
   fn get_or_insert(&self, path: FileRef) -> io::Result<(FileRef, Arc<VirtualFile>)> {
     match self.0.ulock().entry(path) {
       Entry::Occupied(e) => Ok((e.key().clone(), e.get().clone())),
@@ -169,12 +159,9 @@ impl ElabErrorKind {
   ///
   /// # Parameters
   ///
-  /// - `arena`: A temporary [`typed_arena::Arena`] for storing `String`s that are
+  /// - `arena`: A temporary [`typed_arena::Arena`] for storing [`String`]s that are
   ///   allocated for the snippet
   /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
-  ///
-  /// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
-  /// [`typed_arena::Arena`]: ../../typed_arena/struct.Arena.html
   pub fn to_footer<'a>(&self, arena: &'a Arena<String>,
       mut to_range: impl FnMut(&FileSpan) -> Range) -> Vec<Annotation<'a>> {
     match self {
@@ -204,9 +191,6 @@ impl ElabErrorKind {
 /// - `level`: The error level
 /// - `footer`: The snippet footer (calculated by [`ElabErrorKind::to_footer`])
 /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
-///
-/// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
-/// [`ElabErrorKind::to_footer`]: ../elab/enum.ElabErrorKind.html#method.to_footer
 fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
     msg: &'a str, level: ErrorLevel, footer: Vec<Annotation<'a>>) -> Snippet<'a> {
   let annotation_type = level.to_annotation_type();
@@ -242,8 +226,6 @@ fn make_snippet<'a>(path: &'a FileRef, file: &'a LinedString, pos: Span,
 ///
 /// - `msg`: The error message
 /// - `level`: The error level
-///
-/// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
 fn make_snippet_no_source(msg: &str, level: ErrorLevel) -> Snippet<'_> {
   let annotation_type = level.to_annotation_type();
   Snippet {
@@ -271,8 +253,6 @@ impl ElabError {
   /// - `file`: The file contents
   /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
   /// - `f`: The function to pass the constructed snippet
-  ///
-  /// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
   fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
       to_range: impl FnMut(&FileSpan) -> Range,
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
@@ -287,8 +267,6 @@ impl ElabError {
   ///
   /// - `path`: The location of the error
   /// - `f`: The function to pass the constructed snippet
-  ///
-  /// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
   fn to_snippet_no_source<T>(&self, path: &FileRef, span: Span,
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
     let s = if span.end == span.start {
@@ -303,16 +281,13 @@ impl ElabError {
 impl ParseError {
   /// Create a [`Snippet`] from this error. See [`ElabError::to_snippet`] for information
   /// about the parameters.
-  ///
-  /// [`Snippet`]: ../../annotate_snippets/snippet/struct.Snippet.html
-  /// [`ElabError::to_snippet`]: ../elab/struct.ElabError.html#method.to_snippet
   fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
     f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
     f(make_snippet(path, file, self.pos, &format!("{}", self.msg), self.level, vec![]))
   }
 }
 
-/// Elaborate a file for an `Environment` result.
+/// Elaborate a file for an [`Environment`](crate::elab::Environment) result.
 ///
 /// This is the main elaboration function, as an `async fn`. Given a `path`,
 /// it gets it from the [`VFS`] (which will probably load it from the filesystem),
@@ -320,20 +295,16 @@ impl ParseError {
 /// awaiting if it is in progress in another task.
 ///
 /// If the file has not yet been elaborated, it parses it into an [`AST`], reports
-/// parse errors, then elaborates it using [`Elaborator::as_fut`] and reports
+/// parse errors, then elaborates it using [`elab::elaborate`] and reports
 /// elaboration errors. Finally, it broadcasts the completed file to all waiting
 /// tasks, and returns it.
 ///
-/// The callback passed to [`Elaborator::as_fut`], called on the imports in the file,
-/// will allocate a new [`elaborate_and_send`] task to the task pool [`POOL`], which will
-/// later be joined when the result is required. (**Note**: This can result in
-/// deadlock if the import graph has a cycle.)
+/// The callback passed to [`elab::elaborate`], called on the imports in the file,
+/// will allocate a new [`elaborate_and_send`] task to the task pool [`struct@POOL`],
+/// which will later be joined when the result is required.
+/// (**Note**: This can result in deadlock if the import graph has a cycle.)
 ///
-/// [`VFS`]: struct.VFS.html
-/// [`AST`]: ../parser/ast/struct.AST.html
-/// [`Elaborator::as_fut`]: ../elab/struct.Elaborator.html#method.as_fut
-/// [`elaborate_and_send`]: fn.elaborate_and_send.html
-/// [`POOL`]: struct.POOL.html
+/// [`AST`]: crate::parser::AST
 async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<()>> {
   let (path, file) = VFS_.get_or_insert(path)?;
   {
@@ -413,15 +384,12 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
   Ok(res)
 }
 
-/// Elaborate a file, and pass the `Environment` result to a [`Sender`].
+/// Elaborate a file, and pass the [`Environment`](crate::elab::Environment)
+/// result to a [`Sender`](FSender).
 ///
 /// See [`elaborate`] for details on elaboration. This function encapsulates
 /// the `async fn` into a [`BoxFuture`], in order to avoid a recursion between
 /// this function and [`elaborate`] resulting in infinite sized futures.
-///
-/// [`Sender`]: ../../futures_channel/oneshot/struct.Sender.html
-/// [`elaborate`]: fn.elaborate.html
-/// [`BoxFuture`]: ../../futures_core/future/type.BoxFuture.html
 fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<FileRef>) ->
   BoxFuture<'static, ()> {
   async {

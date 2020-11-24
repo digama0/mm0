@@ -36,7 +36,7 @@ pub enum InferSort {
     /// in a definition body, rather than in part of a theorem statement.
     dummy: bool,
     /// The list of sorts that this variable should have. The keys of this map
-    /// are sorts that this variable must coerce to, with `None` corresponding
+    /// are sorts that this variable must coerce to, with [`None`] corresponding
     /// to an unknown provable sort; the values of the map are metavariables
     /// of the indicated sorts that are awaiting assignment when the dummy's
     /// actual sort is determined.
@@ -49,7 +49,7 @@ impl InferSort {
     InferSort::Unknown { src, must_bound: false, dummy: true, sorts: Box::new(HashMap::new()) }
   }
   /// The sort of this variable. For an unknown variable, it returns a sort iff
-  /// this variable has inferred exactly one sort, not counting the "`None`" provable sort.
+  /// this variable has inferred exactly one sort, not counting the "[`None`]" provable sort.
   #[must_use] pub fn sort(&self) -> Option<SortID> {
     match self {
       &InferSort::Bound(sort) | &InferSort::Reg(sort, _) => Some(sort),
@@ -77,13 +77,13 @@ pub struct LocalContext {
   pub vars: HashMap<AtomID, (bool, InferSort)>,
   /// The list of variables in order of declaration. This also stores the variable span,
   /// and the atom is none if this is an anonymous (`_`) variable.
-  /// The `InferSort` contains the inferred type of the variable, but only for
+  /// The [`InferSort`] contains the inferred type of the variable, but only for
   /// variables that are not in the `vars` hashmap because they are shadowed or anonymous.
   pub var_order: Vec<(Span, Option<AtomID>, Option<InferSort>)>,
   /// The list of active metavariables. `refine` will add metavariables to this list when
   /// creating them during elaboration, and it is periodically cleaned to remove assigned
-  /// metavariables. The `usize` field of a `MVar` will refer to the variable's position in
-  /// this list.
+  /// metavariables. The `usize` field of a [`MVar`](LispKind::MVar) will refer to the
+  /// variable's position in this list.
   pub mvars: Vec<LispVal>,
   /// The list of goals, or holes in the proof. This is the main user-facing state of a proof.
   /// This can be manipulated by user code, but the builtin tactics will manage this list
@@ -97,10 +97,10 @@ pub struct LocalContext {
   /// The value is the name of the subproof, the type (theorem statement) of the proof,
   /// and the elaborated proof term.
   pub proof_order: Vec<(AtomID, LispVal, LispVal)>,
-  /// The "closer", a user-configurable (using [`set-close-fn`]) callback that gets called
-  /// at the end of a `focus` block.
+  /// The "closer", a user-configurable (using [`set-close-fn`])
+  /// callback that gets called at the end of a `focus` block.
   ///
-  /// [`set-close-fn`]: ../lisp/enum.BuiltinProc.html#variant.SetCloseFn
+  /// [`set-close-fn`]: super::lisp::BuiltinProc::SetCloseFn
   pub closer: LispVal,
 }
 
@@ -524,9 +524,6 @@ impl Elaborator {
   /// Elaborate a binder's [`DepType`] with a given [`LocalKind`]. Enforces the requirements that (1)
   /// bound and dummy variables do not have dependencies, (2) regular variables do not depend
   /// on dummy variables. The bool in the result's pair indicates whether the variable is a dummy variable.
-  ///
-  /// [`DepType`]: ../parser/ast/struct.DepType.html
-  /// [`LocalKind`]: ../parser/ast/enum.LocalKind.html
   fn elab_dep_type(&mut self, error: &mut bool, lk: LocalKind, d: &DepType) -> Result<(bool, InferSort)> {
     let a = self.env.get_atom(self.ast.span(d.sort));
     let sort = self.data[a].sort.ok_or_else(|| ElabError::new_e(d.sort, "sort not found"))?;
@@ -878,14 +875,11 @@ impl Elaborator {
   }
 }
 
-/// This is a temporary structure returned by [`add_thm`] which implements the
-/// `(add-thm! x bis hyps ret vis vtask)` user-level function, when `vtask` is a
-/// lambda instead of a direct proof. In this case, we have to suspend adding
-/// the theorem, store local variables in this structure, and execute the
-/// user closure, calling [`finish_add_thm`] afterwards.
-///
-/// [`add_thm`]: ../struct.Elaborator.html#method.add_thm
-/// [`finish_add_thm`]: ../struct.Elaborator.html#method.finish_add_thm
+/// This is a temporary structure returned by [`add_thm`](Elaborator::add_thm)
+/// which implements the `(add-thm! x bis hyps ret vis vtask)` user-level function,
+/// when `vtask` is a lambda instead of a direct proof. In this case, we have to
+/// suspend adding the theorem, store local variables in this structure, and execute the
+/// user closure, calling [`finish_add_thm`](Elaborator::finish_add_thm) afterwards.
 #[derive(Debug)]
 pub struct AwaitingProof {
   thm: Thm,
@@ -1071,10 +1065,8 @@ impl Elaborator {
   /// This function may either complete successfully, in which case it returns `Ok(Ok(()))`,
   /// or it may yield if the user provided proof term is a closure that requires evaluation,
   /// in which case it returns `Ok(Err((ap, proof_closure)))` where `(proof_closure)` should
-  /// evaluate to some value `proof`, which can be passed to [`finish`] to finish adding
-  /// the theorem to the environment.
-  ///
-  /// [`finish`]: local_context/struct.AwaitingProof.html#method.finish
+  /// evaluate to some value `proof`, which can be passed to [`AwaitingProof::finish`]
+  /// to finish adding the theorem to the environment.
   pub fn add_thm(&mut self, fsp: FileSpan, es: &[LispVal]) -> Result<StdResult<(), (AwaitingProof, LispVal)>> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let (x, args, hyps, ret, proof) = match es {

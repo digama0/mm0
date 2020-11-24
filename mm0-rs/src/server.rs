@@ -1,6 +1,4 @@
 //! Implements the bridge between mm0-rs and an editor via an lsp [`Connection`]
-//!
-//! [`Connection`]: ../../lsp_server/struct.Connection.html
 
 use std::{fs, io};
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}, Condvar};
@@ -1189,11 +1187,9 @@ where F: std::future::Future<Output=()> + Send + 'static {
 /// be useful to tell whether a certain option has been set by the user or left
 /// as the default. If they were just T, `T::Default` could mean that the user selected
 /// a value that's the same as the default, or it could mean that it was untouched.
-///
-/// [`Server`]: ./struct.Server.html
 #[derive(Debug, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ServerOptions {
+struct ServerOptions {
   elab_on: Option<ElabOn>,
   executable_path: Option<std::path::PathBuf>,
   max_number_of_problems: usize,
@@ -1220,7 +1216,7 @@ struct Trace {
 /// User-configurable level of tracing
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum TraceLevel {
+enum TraceLevel {
   /// Turn tracing off
   Off,
   /// Trace only message
@@ -1231,11 +1227,9 @@ pub enum TraceLevel {
 
 /// Enum for use in [`ServerOptions`] showing when the user wants changes to be applied
 /// and the new file to be elaborated.
-///
-/// [`ServerOptions`]: ./struct.ServerOptions.html
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum ElabOn {
+enum ElabOn {
   /// Apply changes and elaborate every time a change is received from the server
   Change,
   /// Apply changes and elaborate when a save message is received.

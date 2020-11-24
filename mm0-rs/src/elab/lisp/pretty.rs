@@ -2,9 +2,6 @@
 //!
 //! The main interface is the [`FormatEnv::pretty`] function, which provides a
 //! [`Pretty`] arena on which various methods exist to print different kinds of object.
-//!
-//! [`FormatEnv::pretty`]: ../print/struct.FormatEnv.html#method.pretty
-//! [`Pretty`]: struct.Pretty.html
 
 use std::collections::HashMap;
 use std::cell::RefCell;
@@ -103,7 +100,7 @@ fn covariant<'a>(from: RefDoc<'static, ()>) -> RefDoc<'a, ()> {
 }
 
 impl<'a> Pretty<'a> {
-  /// The empty string `""` as a `RefDoc`.
+  /// The empty string `""` as a [`RefDoc`].
   #[must_use] pub fn nil() -> RefDoc<'a, ()> {covariant(NIL)}
   // fn hardline() -> RefDoc<'a, ()> {covariant(HARDLINE)}
   // fn space() -> RefDoc<'a, ()> {covariant(SPACE)}
@@ -440,7 +437,7 @@ impl<'a> Pretty<'a> {
   }
 }
 
-/// A struct that can be used to display a `LispVal` representing a math expression.
+/// A struct that can be used to display a [`LispVal`] representing a math expression.
 #[derive(Debug)]
 pub struct PPExpr<'a> {
   fe: FormatEnv<'a>,
@@ -455,7 +452,7 @@ impl<'a> FormatEnv<'a> {
   }
 
   /// Pretty-print an expression at the given display width. The returned struct implements
-  /// `Display` and can be used to print to a writer.
+  /// [`Display`](fmt::Display) and can be used to print to a writer.
   #[must_use] pub fn pp(self, e: &'a LispVal, width: usize) -> PPExpr<'a> {
     PPExpr {fe: self, e, width}
   }

@@ -1,4 +1,4 @@
-//! MMU importer, which produces an `Environment` object from an `.mmu` file.
+//! MMU importer, which produces an [`Environment`] object from an `.mmu` file.
 use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use crate::elab::{ElabError, Result,
@@ -9,7 +9,7 @@ use crate::elab::{ElabError, Result,
 use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
 
-/// The importer, which reads the input `.mmu` file and builds an `Environment`.
+/// The importer, which reads the input `.mmu` file and builds an [`Environment`].
 #[derive(Debug)]
 pub struct Importer<'a> {
   /// The input file name
@@ -491,7 +491,7 @@ impl<'a> Importer<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Expecting { Proof, Conv, Expr }
 
-/// Construct an `Environment` from an `mmu` file.
+/// Construct an [`Environment`] from an `mmu` file.
 pub fn elab(file: &FileRef, source: &[u8]) -> (Result<()>, Environment) {
   let mut p = Importer { file, source, idx: 0, env: Environment::new() };
   (p.run(), p.env)

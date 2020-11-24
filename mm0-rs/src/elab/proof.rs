@@ -1,7 +1,5 @@
 //! The proof compacter, which takes an elaborated lisp proof s-expr and produces
-//! a [`Proof`] object that will be stored in the environment.
-//!
-//! [`Proof`]: ../environment/struct.Proof.html
+//! a [`Proof`](super::environment::Proof) object that will be stored in the environment.
 
 use std::rc::Rc;
 use std::hash::Hash;
@@ -21,7 +19,7 @@ use crate::util::{BoxError, FileSpan};
 pub struct NodeHasher<'a> {
   /// The local context, which is used to resolve local hypotheses and subproofs.
   pub lc: &'a LocalContext,
-  /// The formatting environment, used for error reporting and for access to the `Environment`.
+  /// The formatting environment, used for error reporting and for access to the [`Environment`].
   pub fe: FormatEnv<'a>,
   /// The initial variable map, which maps variable names to their indices.
   pub var_map: HashMap<AtomID, usize>,
@@ -30,7 +28,7 @@ pub struct NodeHasher<'a> {
 }
 
 impl<'a> NodeHasher<'a> {
-  /// Construct a new `NodeHasher`, using the `LocalContext` to construct the
+  /// Construct a new [`NodeHasher`], using the [`LocalContext`] to construct the
   /// variable map.
   #[must_use] pub fn new(lc: &'a LocalContext, fe: FormatEnv<'a>, fsp: FileSpan) -> Self {
     let mut var_map = HashMap::new();
@@ -52,43 +50,37 @@ impl<'a> NodeHasher<'a> {
 }
 
 /// A "hashable" type. We use this to abstract the difference between
-/// [`ExprHash`] and [`ProofHash`]. The definition of `NodeHash` is mutually recursive
-/// with the [`Dedup`] struct. A `NodeHash` type represents a nonrecursive shadow
+/// [`ExprHash`] and [`ProofHash`]. The definition of [`NodeHash`] is mutually recursive
+/// with the [`Dedup`] struct. A [`NodeHash`] type represents a nonrecursive shadow
 /// of a recursive type (namely [`ExprNode`] and [`ProofNode`], respectively),
-/// where recursive occurrences are replaced with indices tracked by the `Dedup` type.
-/// Effectively, `Dedup` is acting as an arena allocator where the pointers are
+/// where recursive occurrences are replaced with indices tracked by the [`Dedup`] type.
+/// Effectively, [`Dedup`] is acting as an arena allocator where the pointers are
 /// replaced by integers.
-///
-/// [`ExprHash`]: enum.ExprHash.html
-/// [`ProofHash`]: enum.ProofHash.html
-/// [`Dedup`]: struct.Dedup.html
-/// [`ExprNode`]: ../environment/enum.ExprNode.html
-/// [`ProofNode`]: ../environment/enum.ProofNode.html
 pub trait NodeHash: Hash + Eq + Sized {
   /// The variant that constructs a variable from an index.
   const REF: fn(usize) -> Self;
 
   /// Given a lisp expression `r` representing an element of the type,
-  /// parse it into a `NodeHash` object. If the object has already been constructed,
-  /// it may also return an index to the element in the `Dedup`.
+  /// parse it into a [`NodeHash`] object. If the object has already been constructed,
+  /// it may also return an index to the element in the [`Dedup`].
   fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
     de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>>;
 
-  /// Calculate the variable dependence of a `NodeHash` object, given a function
+  /// Calculate the variable dependence of a [`NodeHash`] object, given a function
   /// `deps` that will provide the dependencies of elements. Bump `bv` if this object
   /// is a dummy variable.
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64;
 }
 
 /// The main hash-consing state object. This tracks previously hash-consed elements
-/// and uses the `Hash` implementation required by `NodeHash` to hash elements of
+/// and uses the [`Hash`] implementation required by [`NodeHash`] to hash elements of
 /// the hash type `H`. (Since these objects may be somewhat large, we store them
-/// behind an `Rc` so that they can go in both the map and the vec.)
+/// behind an [`Rc`] so that they can go in both the map and the vec.)
 #[derive(Debug)]
 pub struct Dedup<H: NodeHash> {
   /// The map from hash objects to their assigned indexes. These indexes are
   /// incorporated in later hash objects, so hashing is constant time but equality
-  /// of the `NodeHash` objects still implies deep equality of the trees that
+  /// of the [`NodeHash`] objects still implies deep equality of the trees that
   /// they represent.
   map: HashMap<Rc<H>, usize>,
   /// In order to deduplicate lisp expressions which already have internal sharing
@@ -105,15 +97,14 @@ pub struct Dedup<H: NodeHash> {
   pub vec: Vec<(Rc<H>, bool, u64)>,
   /// `2 ^ n` where `n` is the number of bound variables currently allocated.
   /// (Yes, this puts a limit of 64 simultaneous bound variables. In fact the limit is
-  /// lower than that, [55](../local_context/constant.MAX_BOUND_VARS.html),
+  /// lower than that, [55](super::local_context::MAX_BOUND_VARS),
   /// due to the way BV sets are stored in the compiled `.mmb` format.)
   bv: u64,
 }
 
 impl<H: NodeHash> Dedup<H> {
-  /// Create a new `Dedup`, given the list of arguments ([`Term::args`]) in the context.
-  ///
-  /// [`Term::args`]: ../environment/struct.Term.html#structfield.args
+  /// Create a new [`Dedup`], given the list of arguments
+  /// ([`Term::args`](super::environment::Term::args)) in the context.
   #[must_use] pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
     let mut bv = 1;
     let vec: Vec<_> = args.iter().enumerate()
@@ -130,7 +121,7 @@ impl<H: NodeHash> Dedup<H> {
   }
 
   /// Insert a new hash object `v`, originating from lisp object `p`,
-  /// into the `Dedup`, returning the allocated index.
+  /// into the [`Dedup`], returning the allocated index.
   pub fn add(&mut self, p: LispVal, v: H) -> usize {
     let n = self.add_direct(v);
     self.prev.insert(&*p, Some((p, n)));
@@ -138,7 +129,7 @@ impl<H: NodeHash> Dedup<H> {
   }
 
   /// Insert a new hash object `v`, originating from lisp object `p`,
-  /// into the `Dedup`, returning the allocated index.
+  /// into the [`Dedup`], returning the allocated index.
   pub fn dedup(&mut self, nh: &NodeHasher<'_>, e: &LispVal) -> Result<usize> {
     let arc = e.unwrapped_arc();
     let ptr: *const _ = &*arc;
@@ -159,7 +150,7 @@ impl<H: NodeHash> Dedup<H> {
   }
 
   /// Convert a `Dedup<H>` to `Dedup<T>` given an injective function `f: H -> T`.
-  /// Here injectivity is with respect to the `Eq` implementations on `H` and `T`:
+  /// Here injectivity is with respect to the [`Eq`] implementations on `H` and `T`:
   /// If `f(x) == f(y)` then `x == y`.
   fn map_inj<T: NodeHash>(&self, mut f: impl FnMut(&H) -> T) -> Dedup<T> {
     let mut map = HashMap::new();
@@ -174,10 +165,8 @@ impl<H: NodeHash> Dedup<H> {
 
 /// A trait that abstracts a few functions on `Dedup<H>`.
 pub trait IDedup<H>: Index<usize, Output=H> {
-  /// Insert a new hash object `v` into the `Dedup`, returning the allocated index.
-  /// Like [`add`], but does not add a record for the lisp data.
-  ///
-  /// [`add`]: struct.Dedup.html#method.add
+  /// Insert a new hash object `v` into the [`Dedup`], returning the allocated index.
+  /// Like [`add`](Dedup::add), but does not add a record for the lisp data.
   fn add_direct(&mut self, v: H) -> usize;
 
   /// Mark that an already allocated index `n` is being shared.
@@ -214,10 +203,8 @@ impl<H: NodeHash> IDedup<H> for Dedup<H> {
   }
 }
 
-/// An iterator over the elements allocated by a `Dedup`, created by
-/// the `IntoIterator` implementation for [`Dedup`].
-///
-/// [`Dedup`]: struct.Dedup.html
+/// An iterator over the elements allocated by a [`Dedup`], created by
+/// the [`IntoIterator`] implementation for [`Dedup`].
 #[derive(Debug)]
 pub struct DedupIter<'a, H: NodeHash>(std::slice::Iter<'a, (Rc<H>, bool, u64)>);
 
@@ -240,19 +227,13 @@ impl<'a, H: NodeHash> IntoIterator for &'a Dedup<H> {
 
 
 /// A "hash-consable" type. We use this to abstract the difference between
-/// [`ExprNode`] and [`ProofNode`]. The `Hash` type here
+/// [`ExprNode`] and [`ProofNode`]. The [`Hash`] type here
 /// ([`ExprHash`] and [`ProofHash`]) is a de-recursified
 /// version of the type where all recursive occurrences are replaced by `usize`
 /// indexes. This trait describes how hash objects can be reconstituted
 /// into node objects.
 ///
 /// This trait is mutually recursive with the [`Val`] type.
-///
-/// [`ExprHash`]: enum.ExprHash.html
-/// [`ProofHash`]: enum.ProofHash.html
-/// [`ExprNode`]: ../environment/enum.ExprNode.html
-/// [`ProofNode`]: ../environment/enum.ProofNode.html
-/// [`Val`]: enum.Val.html
 pub trait Node: Sized {
   /// The type of hash objects.
   type Hash: NodeHash;
@@ -264,11 +245,11 @@ pub trait Node: Sized {
   fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self;
 }
 
-/// A constructed value corresponding to one index of a `Dedup`.
-/// For unshared values, we use the `Built` constructor to store
+/// A constructed value corresponding to one index of a [`Dedup`].
+/// For unshared values, we use the [`Built`](Val::Built) constructor to store
 /// a value of type `T` directly, while for shared values we only
-/// store a reference to the `Ref` node index that was allocated to it.
-/// The `Done` constructor represents an unshared value that has
+/// store a reference to the [`Ref`](Val::Ref) node index that was allocated to it.
+/// The [`Done`](Val::Done) constructor represents an unshared value that has
 /// already been "used up" by its referent.
 #[derive(Debug)]
 pub enum Val<T: Node> {
@@ -285,16 +266,14 @@ impl<T: Node> Default for Val<T> {
 }
 
 impl<T: Node> Val<T> {
-  /// Take the value of type `T` out of this `Val`, leaving it
-  /// in `Done` state for unshared values and "cloning" it
+  /// Take the value of type `T` out of this [`Val`], leaving it
+  /// in [`Done`](Val::Done) state for unshared values and "cloning" it
   /// for shared values.
   /// # Panics
-  /// Calling `take` on an unshared value that has already been taken
+  /// Calling [`take`](Val::take) on an unshared value that has already been taken
   /// causes a panic. This is usually caused by a value being marked
   /// as unshared even though it appears twice in the proof.
-  /// Calling [`reuse`] should ensure that this doesn't happen.
-  ///
-  /// [`reuse`]: trait.IDedup.html#tymethod.reuse
+  /// Calling [`reuse`](IDedup::reuse) should ensure that this doesn't happen.
   pub fn take(&mut self) -> T {
     match mem::take(self) {
       Val::Built(x) => x,
@@ -308,10 +287,8 @@ impl<T: Node> Val<T> {
 /// and produce a pair `(ids, heap)` where `ids` is a set of
 /// `Val<T>` nodes and `heap` is a list of shared values,
 /// using the sharing annotations to determine whether to put the
-/// values directly in `Built` nodes (for unshared nodes) or in
-/// the `heap` with `Ref` nodes in the `ids`.
-///
-/// [`Dedup`]: struct.Dedup.html
+/// values directly in [`Built`](Val::Built) nodes (for unshared nodes) or in
+/// the `heap` with [`Ref`](Val::Ref) nodes in the `ids`.
 pub fn build<'a, T: Node, D>(de: D) -> (Box<[Val<T>]>, Box<[T]>)
 where
   T::Hash: 'a,
@@ -333,10 +310,8 @@ where
   (ids.into(), heap.into())
 }
 
-/// The `NodeHash` version of [`ExprNode`]. It has the same structure except that
+/// The [`NodeHash`] version of [`ExprNode`]. It has the same structure except that
 /// all internal references to [`ExprNode`] are replaced by `usize` indexes.
-///
-/// [`ExprNode`]: ../environment/enum.ExprNode.html
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum ExprHash {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
@@ -431,8 +406,9 @@ impl Environment {
     })).collect::<Vec<_>>())
   }
 
-  /// Convert an `ExprNode` object to a `LispVal`, under a context `heap`. If
-  /// `ds` is set, it will accumulate any `Dummy` nodes that are encountered.
+  /// Convert an [`ExprNode`] object to a [`LispVal`], under a context `heap`. If
+  /// `ds` is set, it will accumulate any [`Dummy`](ExprNode::Dummy)
+  /// nodes that are encountered.
   pub fn expr_node(&self, heap: &[LispVal], ds: &mut Option<&mut Vec<LispVal>>, e: &ExprNode) -> LispVal {
     match *e {
       ExprNode::Ref(n) => heap[n].clone(),
@@ -452,10 +428,8 @@ impl Environment {
   }
 }
 
-/// The `NodeHash` version of [`ProofNode`]. It has the same structure except that
+/// The [`NodeHash`] version of [`ProofNode`]. It has the same structure except that
 /// all internal references to [`ProofNode`] are replaced by `usize` indexes.
-///
-/// [`ProofNode`]: ../environment/enum.ProofNode.html
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ProofHash {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
@@ -543,7 +517,7 @@ impl ProofHash {
     }
   }
 
-  /// If this is an expression, convert it to a conversion using `Refl`.
+  /// If this is an expression, convert it to a conversion using [`Refl`](ProofHash::Refl).
   /// For conversions, leave it as is.
   /// (This function should not be called on proof terms.)
   #[allow(clippy::wrong_self_convention)]
@@ -700,10 +674,8 @@ impl NodeHash for ProofHash {
 }
 
 impl ExprHash {
-  /// Convert an `ExprHash` directly to a `ProofHash`. This is an injective function,
-  /// so it can be used with [`map_inj`].
-  ///
-  /// [`map_inj`]: struct.Dedup.html#method.map_inj
+  /// Convert an [`ExprHash`] directly to a [`ProofHash`]. This is an injective function,
+  /// so it can be used with [`map_inj`](Dedup::map_inj).
   #[must_use] pub fn to_proof(&self) -> ProofHash {
     match *self {
       ExprHash::Ref(i) => ProofHash::Ref(i),
@@ -765,14 +737,14 @@ pub struct Subst<'a> {
 }
 
 impl<'a> Subst<'a> {
-  /// Contruct a new `Subst` object. `args` should be initialized to
+  /// Contruct a new [`Subst`] object. `args` should be initialized to
   /// the arguments to the theorem application (possibly metavariables).
   #[must_use] pub fn new(env: &'a Environment, heap: &'a [ExprNode], mut args: Vec<LispVal>) -> Subst<'a> {
     args.resize(heap.len(), LispVal::undef());
     Subst {env, heap, subst: args}
   }
 
-  /// Substitute in an `ExprNode`. This version does not support dummy variables,
+  /// Substitute in an [`ExprNode`]. This version does not support dummy variables,
   /// which means it can be used for theorem applications but not definition unfolding.
   pub fn subst(&mut self, e: &ExprNode) -> LispVal {
     match *e {
@@ -792,8 +764,8 @@ impl<'a> Subst<'a> {
     }
   }
 
-  /// Substitute in an `ExprNode`. This version creates new metavariables
-  /// when encountering `Dummy` nodes.
+  /// Substitute in an [`ExprNode`]. This version creates new metavariables
+  /// when encountering [`Dummy`](ExprNode::Dummy) nodes.
   pub fn subst_mut(&mut self, lc: &mut LocalContext, e: &ExprNode) -> LispVal {
     match *e {
       ExprNode::Ref(i) => {
