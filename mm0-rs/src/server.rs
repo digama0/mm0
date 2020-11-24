@@ -28,7 +28,7 @@ use crate::parser::{AST, parse};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;
-use crate::elab::{ElabError, ElabResult, self, FrozenEnv,
+use crate::elab::{ElabResult, self, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
@@ -192,8 +192,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         if matches && !matches!(res, ElabResult::Canceled) {
           return Ok(res.clone())
         }
-        if let Some(FileCache::Ready {ast, source, errors, deps, res, ..}) = g.take() {
-          if let ElabResult::Ok(_, env) = res {
+        if let Some(FileCache::Ready {ast, source, deps, res, ..}) = g.take() {
+          if let ElabResult::Ok(_, errors, env) = res {
             (Some((source.clone(), env.clone())),
               (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
           } else {
@@ -228,7 +228,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     let rd = rd.push(path.clone());
     (Some(ast.clone()), elab::elaborate(
       &ast, path.clone(), path.has_extension("mm0"),
-      crate::get_check_proofs(), cancel.clone(),
+      crate::get_check_proofs(), true, cancel.clone(),
       old_env.map(|(errs, e)| (idx, errs, e)),
       |p| {
         let p = vfs.get_or_insert(p)?.0;
@@ -291,8 +291,9 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     }
   }
 
+  let errors = if errors.is_empty() { None } else { Some(errors.into()) };
   let res = match cyc.clone() {
-    None => ElabResult::Ok(hash, env.clone()),
+    None => ElabResult::Ok(hash, errors, env.clone()),
     Some(cyc) => ElabResult::ImportCycle(cyc),
   };
   vfs.update_downstream(&old_deps, &deps, &path);
@@ -301,7 +302,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       let _ = s.send(res.clone());
     }
   }
-  *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), errors, deps});
+  *g = Some(FileCache::Ready {hash, source, ast, res: res.clone(), deps});
   drop(g);
   for d in file.downstream.ulock().iter() {
     log!("{:?} affects {:?}", path, d);
@@ -347,7 +348,6 @@ enum FileCache {
     hash: u64,
     source: FileContents,
     ast: Option<Arc<AST>>,
-    errors: Vec<ElabError>,
     res: ElabResult<u64>,
     deps: Vec<FileRef>,
   }
@@ -615,7 +615,7 @@ fn trim_margin(s: &str) -> String {
 impl<T> ElabResult<T> {
   fn into_response_error(self) -> StdResult<Option<(T, FrozenEnv)>, ResponseError> {
     match self {
-      ElabResult::Ok(data, env) => Ok(Some((data, env))),
+      ElabResult::Ok(data, _, env) => Ok(Some((data, env))),
       ElabResult::Canceled => Err(response_err(ErrorCode::RequestCanceled, "")),
       ElabResult::ImportCycle(_) => Ok(None),
     }
@@ -958,7 +958,7 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
   let old = file.parsed.try_lock().and_then(|g| g.as_ref().and_then(|fc| match fc {
-    FileCache::Ready {source, res: ElabResult::Ok(_, env), ..} => Some((source.clone(), env.clone())),
+    FileCache::Ready {source, res: ElabResult::Ok(_, _, env), ..} => Some((source.clone(), env.clone())),
     FileCache::Ready {..} => None,
     FileCache::InProgress {old, ..} => old.clone()
   }));

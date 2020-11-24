@@ -57,12 +57,30 @@ pub enum ElabErrorKind {
   ///
   /// [`BoxError`]: ../util/type.BoxError.html
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
+  /// This is an error from a file upstream. The `usize` is the number of
+  /// number of upstream errors after the first one.
+  Upstream(FileRef, Arc<[ElabError]>, usize)
 }
 impl ElabErrorKind {
   /// Converts the error message to a `String`.
-  #[must_use] pub fn msg(&self) -> String {
+  #[must_use] pub fn raw_msg(&self) -> String {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
+      ElabErrorKind::Upstream(_, e, _) => e[0].kind.raw_msg(),
+    }
+  }
+
+  /// Converts the error message to a `String`.
+  #[must_use] pub fn msg(&self) -> String {
+    use std::fmt::Write;
+    match self {
+      ElabErrorKind::Boxed(e, _) => format!("{}", e),
+      &ElabErrorKind::Upstream(ref file, ref e, n) => {
+        let mut s = format!("file contains errors:\n{}:{:x}: {}",
+          file, e[0].pos.start, e[0].kind.raw_msg());
+        if n != 0 { write!(&mut s, "\n + {} more", n).unwrap() }
+        s
+      }
     }
   }
 
@@ -557,7 +575,7 @@ impl Elaborator {
 #[derive(Debug, Clone, DeepSizeOf)]
 pub enum ElabResult<T> {
   /// Elaboration was successful; this carries the environment, plus additional user data.
-  Ok(T, FrozenEnv),
+  Ok(T, Option<Arc<[ElabError]>>, FrozenEnv),
   /// The elaboration was canceled.
   Canceled,
   /// The dependent file could not be elaborated because of an import cycle.
@@ -572,6 +590,9 @@ pub enum ElabResult<T> {
 ///
 /// - `ast`, `path`, `mm0_mode`, `check_proofs`, `cancel`: Used to construct the inner `Elaborator`
 ///   (see [`Elaborator::new`]).
+///
+/// - `report_upstream_errors`: If true, an error will be reported if a file in an import itself
+///   has an error. This can be disabled to
 ///
 /// - `_old`: The last successful parse of the same file, used for incremental elaboration.
 ///   A value of `Some((idx, errs, env))` means that the new file first differs from the
@@ -601,8 +622,9 @@ pub enum ElabResult<T> {
 /// [`Environment`]: environment/struct.Environment.html
 /// [`Future`]: https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html
 pub fn elaborate<T: Send>(
-  ast: &Arc<AST>, path: FileRef, mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
-  _: Option<(usize, Vec<ElabError>, FrozenEnv)>,
+  ast: &Arc<AST>, path: FileRef,
+  mm0_mode: bool, check_proofs: bool, report_upstream_errors: bool, cancel: Arc<AtomicBool>,
+  _: Option<(usize, Option<Arc<[ElabError]>>, FrozenEnv)>,
   mut mk: impl FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError>
 ) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> + Send {
 
@@ -619,6 +641,7 @@ pub fn elaborate<T: Send>(
   struct ElabFutureInner<T> {
     elab: FrozenElaborator,
     toks: Vec<T>,
+    report_upstream_errors: bool,
     cyc: Option<ArcList<FileRef>>,
     recv: ImportMap<Receiver<ElabResult<T>>>,
     idx: usize,
@@ -631,16 +654,32 @@ pub fn elaborate<T: Send>(
     type Output = (Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv);
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
       let this = &mut unsafe { self.get_unchecked_mut() }.0;
-      let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, recv, idx, progress} =
-        this.as_mut().expect("poll called after Ready");
+      let ElabFutureInner {
+        elab: FrozenElaborator(elab),
+        cyc, toks, recv, idx, progress, report_upstream_errors
+      } = this.as_mut().expect("poll called after Ready");
       elab.arena.install_thread_local();
       'l: loop {
         match progress {
           UnfinishedStmt::None => {},
           UnfinishedStmt::Import(sp, p, other) => {
             match ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
-              Ok(ElabResult::Ok(t, env)) => {
+              Ok(ElabResult::Ok(t, errors, env)) => {
                 toks.push(t);
+                if *report_upstream_errors {
+                  if let Some(errs) = errors {
+                    if let Some((first, rest)) = errs.split_first() {
+                      let mut n = rest.len();
+                      let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
+                        n += m;
+                        file.clone()
+                      } else {
+                        p.clone()
+                      };
+                      elab.report(ElabError::new(*sp, ElabErrorKind::Upstream(file, errs, n)));
+                    }
+                  }
+                }
                 let r = elab.env.merge(&env, *sp, &mut elab.errors);
                 elab.catch(r);
               }
@@ -708,6 +747,7 @@ pub fn elaborate<T: Send>(
     cyc: None,
     recv,
     idx: 0,
+    report_upstream_errors,
     progress: UnfinishedStmt::None,
   }))
 }

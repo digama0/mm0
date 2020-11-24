@@ -345,7 +345,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
         drop(g);
         return Ok(recv.await.unwrap_or(ElabResult::Canceled))
       }
-      Some(FileCache::Ready(env)) => return Ok(ElabResult::Ok((), env.clone()))
+      Some(FileCache::Ready(env)) => return Ok(ElabResult::Ok((), None, env.clone()))
     }
   }
   let text = file.text.clone();
@@ -369,7 +369,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let rd = rd.push(path.clone());
     let (cyc, _, errors, env) = elab::elaborate(
       &ast, path.clone(), path.has_extension("mm0"),
-      crate::get_check_proofs(),
+      crate::get_check_proofs(), false,
       Arc::default(),
       None,
       |p| {
@@ -385,12 +385,8 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
       }).await;
     (cyc, errors, env)
   };
-  let res = match cyc {
-    None => ElabResult::Ok((), env.clone()),
-    Some(cyc) => ElabResult::ImportCycle(cyc),
-  };
   println!("elabbed {}, memory = {}M", path, get_memory_usage() >> 20);
-  if !errors.is_empty() {
+  let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
     fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s).to_string()) }
     let mut to_range = mk_to_range();
     if let FileContents::Ascii(text) = &file.text {
@@ -398,7 +394,12 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     } else {
       for e in &errors { e.to_snippet_no_source(&path, e.pos, print) }
     }
-  }
+    Some(errors.into())
+  };
+  let res = match cyc {
+    None => ElabResult::Ok((), errors, env.clone()),
+    Some(cyc) => ElabResult::ImportCycle(cyc),
+  };
   {
     let mut g = file.parsed.lock().await;
     if let Some(FileCache::InProgress(senders)) = g.take() {
@@ -443,7 +444,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").expect("required arg");
   let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
   let env = match block_on(elaborate(path.clone(), Default::default()))? {
-    ElabResult::Ok(_, env) => env,
+    ElabResult::Ok(_, _, env) => env,
     _ => std::process::exit(1)
   };
   if let Some(s) = args.value_of_os("output") {
