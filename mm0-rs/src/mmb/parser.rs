@@ -5,7 +5,7 @@ use std::fs::File;
 use memmap::{MmapOptions, Mmap};
 use byteorder::LE;
 use zerocopy::{LayoutVerified, FromBytes, Unaligned, U16, U32, U64};
-use super::{Header, StmtCmd, TermEntry, ThmEntry, IndexEntry, UnifyCmd, ProofCmd};
+use super::{Header, StmtCmd, TermEntry, ThmEntry, IndexEntry, IndexKind, UnifyCmd, ProofCmd};
 use crate::elab::environment::{SortID, TermID, ThmID, Modifiers};
 use crate::util::{Position, cstr_from_bytes_prefix};
 
@@ -335,6 +335,7 @@ impl<'a> IndexEntryRef<'a> {
   #[must_use] pub fn value(&self) -> Option<&'a str> {
     cstr_from_bytes_prefix(self.value)?.0.to_str().ok()
   }
+  #[must_use] pub fn kind(&self) -> Option<IndexKind> { self.kind.try_into().ok() }
   #[must_use] pub fn decl(&self) -> Option<(StmtCmd, ProofIter<'_>)> {
     let (stmt, pf, _) = try_next_decl(self.buf, u64_as_usize(self.p_proof))??;
     Some((stmt, pf))

@@ -73,11 +73,11 @@ typedef struct {
 // that there are no name collisions. It has similar data but a different
 // purpose to the index, which contains more information about the names
 // and is unverified.
-typedef struct {
-  u32 ix;       // index into the relevant table
-  u8 kind;      // One of INDEX_KIND_SORT, INDEX_KIND_TERM, INDEX_KIND_AXIOM
-  char name[];
-} PACKED name;
+// typedef struct {
+//   u32 ix;       // index into the relevant table
+//   u8 kind;      // One of INDEX_KIND_SORT, INDEX_KIND_TERM, INDEX_KIND_AXIOM
+//   char name[];
+// } PACKED name;
 
 // An entry in the term table (8 byte aligned)
 typedef struct {

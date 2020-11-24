@@ -71,7 +71,7 @@ impl ElabErrorKind {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
       &ElabErrorKind::Upstream(ref file, ref e, n) => {
-        let mut s = format!("file contains errors:\n{}:{:x}: {}",
+        let mut s = format!("file contains errors:\n{}:{:#x}: {}",
           file, e[0].pos.start, e[0].kind.raw_msg());
         if n != 0 { write!(&mut s, "\n + {} more", n).unwrap() }
         s

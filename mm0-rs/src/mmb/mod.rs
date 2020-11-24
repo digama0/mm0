@@ -20,18 +20,18 @@ pub mod cmd {
   pub const MM0B_VERSION: u8 = 1;
 
   /// `DATA_8 = 0x40`, used as a command mask for an 8 bit data field
-  pub const DATA_8: u8  = 0x40;
+  pub const DATA_8: u8    = 0x40;
   /// `DATA_16 = 0x80`, used as a command mask for a 16 bit data field
-  pub const DATA_16: u8 = 0x80;
+  pub const DATA_16: u8   = 0x80;
   /// `DATA_32 = 0xC0`, used as a command mask for a 32 bit data field
-  pub const DATA_32: u8 = 0xC0;
+  pub const DATA_32: u8   = 0xC0;
   /// `DATA_MASK = 0xC0`, selects one of `DATA_8`, `DATA_16`, or `DATA_32` for data size
   pub const DATA_MASK: u8 = 0xC0;
 
-  /// `STMT_SORT = 0x04`, starts a `sort` declaration
-  pub const STMT_SORT: u8  = 0x04;
   /// `STMT_AXIOM = 0x02`, starts an `axiom` declaration
   pub const STMT_AXIOM: u8 = 0x02;
+  /// `STMT_SORT = 0x04`, starts a `sort` declaration
+  pub const STMT_SORT: u8  = 0x04;
   /// `STMT_TERM = 0x05`, starts a `term` declaration
   pub const STMT_TERM: u8  = 0x05;
   /// `STMT_DEF = 0x05`, starts a `def` declaration. (This is the same as
@@ -43,6 +43,30 @@ pub mod cmd {
   /// `STMT_LOCAL = 0x08`, starts a `local` declaration
   /// (a bit mask to be combined with `STMT_THM` or `STMT_DEF`)
   pub const STMT_LOCAL: u8 = 0x08;
+  /// `STMT_LOCAL_DEF = 0x0D`
+  pub const STMT_LOCAL_DEF: u8 = STMT_LOCAL | STMT_DEF;
+  /// `STMT_LOCAL_THM = 0x0E`
+  pub const STMT_LOCAL_THM: u8 = STMT_LOCAL | STMT_THM;
+
+  /// `INDEX_KIND_TERM = 0x01`, starts a `term` declaration
+  pub const INDEX_KIND_TERM: u8  = 0x01;
+  /// `INDEX_KIND_AXIOM = 0x02`, starts an `axiom` declaration
+  pub const INDEX_KIND_AXIOM: u8 = 0x02;
+  /// `INDEX_KIND_VAR = 0x03`, starts a `local` declaration
+  /// (a bit mask to be combined with `INDEX_KIND_THM` or `INDEX_KIND_DEF`)
+  pub const INDEX_KIND_VAR: u8   = 0x03;
+  /// `INDEX_KIND_SORT = 0x04`, starts a `sort` declaration
+  pub const INDEX_KIND_SORT: u8  = 0x04;
+  /// `INDEX_KIND_DEF = 0x05`, starts a `def` declaration. (This is the same as
+  /// `INDEX_KIND_TERM` because the actual indication of whether this is a
+  /// def is in the term header)
+  pub const INDEX_KIND_DEF: u8   = 0x05;
+  /// `INDEX_KIND_THM = 0x06`, starts a `theorem` declaration
+  pub const INDEX_KIND_THM: u8   = 0x06;
+  /// `INDEX_KIND_LOCAL_DEF = 0x0D`
+  pub const INDEX_KIND_LOCAL_DEF: u8 = STMT_LOCAL_DEF;
+  /// `INDEX_KIND_LOCAL_THM = 0x0E`
+  pub const INDEX_KIND_LOCAL_THM: u8 = STMT_LOCAL_THM;
 
   /// `PROOF_TERM = 0x10`: See [`ProofCmd`](super::ProofCmd).
   pub const PROOF_TERM: u8      = 0x10;
@@ -93,22 +117,20 @@ pub mod cmd {
 pub enum StmtCmd {
   Sort,
   Axiom,
-  Term {local: bool},
+  TermDef {local: bool},
   Thm {local: bool}
 }
 
 impl std::convert::TryFrom<u8> for StmtCmd {
   type Error = ();
   fn try_from(cmd: u8) -> Result<Self, ()> {
-    const STMT_LOCAL_DEF: u8 = cmd::STMT_LOCAL | cmd::STMT_DEF;
-    const STMT_LOCAL_THM: u8 = cmd::STMT_LOCAL | cmd::STMT_THM;
     Ok(match cmd {
       cmd::STMT_SORT => StmtCmd::Sort,
       cmd::STMT_AXIOM => StmtCmd::Axiom,
-      cmd::STMT_TERM => StmtCmd::Term {local: false},
-      STMT_LOCAL_DEF => StmtCmd::Term {local: true},
+      cmd::STMT_DEF => StmtCmd::TermDef {local: false},
+      cmd::STMT_LOCAL_DEF => StmtCmd::TermDef {local: true},
       cmd::STMT_THM => StmtCmd::Thm {local: false},
-      STMT_LOCAL_THM => StmtCmd::Thm {local: true},
+      cmd::STMT_LOCAL_THM => StmtCmd::Thm {local: true},
       _ => return Err(())
     })
   }
@@ -214,6 +236,33 @@ pub struct ThmEntry {
   p_args: U32<LE>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum IndexKind {
+  Sort,
+  Axiom,
+  Term,
+  Var,
+  Def {local: bool},
+  Thm {local: bool}
+}
+
+impl std::convert::TryFrom<u8> for IndexKind {
+  type Error = ();
+  fn try_from(cmd: u8) -> Result<Self, ()> {
+    Ok(match cmd {
+      cmd::INDEX_KIND_TERM => IndexKind::Term,
+      cmd::INDEX_KIND_AXIOM => IndexKind::Axiom,
+      cmd::INDEX_KIND_VAR => IndexKind::Var,
+      cmd::INDEX_KIND_SORT => IndexKind::Sort,
+      cmd::INDEX_KIND_DEF => IndexKind::Def {local: false},
+      cmd::INDEX_KIND_THM => IndexKind::Thm {local: false},
+      cmd::INDEX_KIND_LOCAL_DEF => IndexKind::Def {local: true},
+      cmd::INDEX_KIND_LOCAL_THM => IndexKind::Thm {local: true},
+      _ => return Err(())
+    })
+  }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
 pub struct IndexEntry {
@@ -223,4 +272,5 @@ pub struct IndexEntry {
   col: U32<LE>,
   p_proof: U64<LE>,
   ix: U32<LE>,
+  kind: u8,
 }

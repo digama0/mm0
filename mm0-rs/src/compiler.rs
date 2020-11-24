@@ -71,9 +71,13 @@ impl FileContents {
     FileContents::Bin(Arc::new(data))
   }
 
+  pub(crate) fn try_ascii(&self) -> Option<&Arc<LinedString>> {
+    if let Self::Ascii(e) = self {Some(e)} else {None}
+  }
+
   #[track_caller]
   pub(crate) fn ascii(&self) -> &Arc<LinedString> {
-    if let Self::Ascii(e) = self {e} else {panic!("expected ASCII file")}
+    self.try_ascii().expect("expected ASCII file")
   }
 
   pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
@@ -143,13 +147,12 @@ impl VFS {
   }
 }
 
-fn mk_to_range() -> impl FnMut(&FileSpan) -> Range {
+fn mk_to_range() -> impl FnMut(&FileSpan) -> Option<Range> {
   let mut srcs = HashMap::new();
-  move |fsp: &FileSpan| -> Range {
+  move |fsp: &FileSpan| -> Option<Range> {
     srcs.entry(fsp.file.ptr())
-      .or_insert_with(||
-        VFS_.0.ulock().get(&fsp.file).unwrap().text.ascii().clone())
-      .to_range(fsp.span)
+      .or_insert_with(|| VFS_.0.ulock().get(&fsp.file).unwrap().text.clone())
+      .try_ascii().map(|f| f.to_range(fsp.span))
   }
 }
 
@@ -163,16 +166,18 @@ impl ElabErrorKind {
   ///   allocated for the snippet
   /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
   pub fn to_footer<'a>(&self, arena: &'a Arena<String>,
-      mut to_range: impl FnMut(&FileSpan) -> Range) -> Vec<Annotation<'a>> {
+      mut to_range: impl FnMut(&FileSpan) -> Option<Range>) -> Vec<Annotation<'a>> {
     match self {
       ElabErrorKind::Boxed(_, Some(info)) =>
         info.iter().map(|(fs, e)| Annotation {
           id: None,
-          label: {
-            let start = to_range(fs).start;
-            Some(arena.alloc(format!("{}:{}:{}: {}", fs.file.rel(),
-              start.line + 1, start.character + 1, e)))
-          },
+          label: Some(arena.alloc({
+            if let Some(Range {start, ..}) = to_range(fs) {
+              format!("{}:{}:{}: {}", fs.file.rel(), start.line + 1, start.character + 1, e)
+            } else {
+              format!("{}:{:#x}: {}", fs.file.rel(), fs.span.start, e)
+            }
+          })),
           annotation_type: AnnotationType::Note,
         }).collect(),
       _ => vec![]
@@ -254,7 +259,7 @@ impl ElabError {
   /// - `to_range`: a function for converting (index-based) spans to (line/col) ranges
   /// - `f`: The function to pass the constructed snippet
   fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
-      to_range: impl FnMut(&FileSpan) -> Range,
+      to_range: impl FnMut(&FileSpan) -> Option<Range>,
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
     f(make_snippet(path, file, self.pos, &self.kind.msg(), self.level,
       self.kind.to_footer(&Arena::new(), to_range)))
@@ -270,9 +275,9 @@ impl ElabError {
   fn to_snippet_no_source<T>(&self, path: &FileRef, span: Span,
       f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
     let s = if span.end == span.start {
-      format!("{}:{:x}: {}", path, span.start, self.kind.msg())
+      format!("{}:{:#x}: {}", path, span.start, self.kind.msg())
     } else {
-      format!("{}:{:x}-{:x}: {}", path, span.start, span.end, self.kind.msg())
+      format!("{}:{:#x}-{:#x}: {}", path, span.start, span.end, self.kind.msg())
     };
     f(make_snippet_no_source(&s, self.level))
   }

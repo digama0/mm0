@@ -410,7 +410,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         env.add_sort(atom, fsp, span, sd, None)
           .map_err(|_| StrError("double add sort", start))?;
       }
-      StmtCmd::Term {local} => {
+      StmtCmd::TermDef {local} => {
         #[allow(clippy::cast_possible_truncation)]
         let term = TermID(env.terms.len() as u32);
         let atom = file.term_name(term, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
