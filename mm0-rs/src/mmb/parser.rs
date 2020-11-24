@@ -134,11 +134,11 @@ fn parse_cmd(bytes: &[u8]) -> Option<(u8, u32, &[u8])> {
   let val = cmd & !DATA_MASK;
   match cmd & DATA_MASK {
     0 => Some((val, 0, rest)),
-    DATA_8 => bytes.split_first().map(|(&n, rest)| (val, n.into(), rest)),
+    DATA_8 => rest.split_first().map(|(&n, rest)| (val, n.into(), rest)),
     DATA_16 => LayoutVerified::<_, U16<LE>>::
-      new_from_prefix(bytes).map(|(n, rest)| (val, n.get().into(), rest)),
+      new_from_prefix(rest).map(|(n, rest)| (val, n.get().into(), rest)),
     DATA_32 => LayoutVerified::<_, U32<LE>>::
-      new_from_prefix(bytes).map(|(n, rest)| (val, n.get(), rest)),
+      new_from_prefix(rest).map(|(n, rest)| (val, n.get(), rest)),
     _ => unreachable!()
   }
 }

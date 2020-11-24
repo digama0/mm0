@@ -141,7 +141,7 @@ fn parse_proof(
   type Idx = usize; // Owned index
   type Ref = usize; // Reference. Does not count toward sharing
 
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   enum Stack {
     Expr(Idx), // e
     Proof(Idx, Ref), // p: |- e (p is owned, e is not)
@@ -150,7 +150,7 @@ fn parse_proof(
   }
   type StackRef = Stack; // same as Stack but with Ref instead of Idx
 
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   enum CoConv {
     Conv {tgt: Idx, pf: Idx}, // (:conv tgt _ pf) - pf: |- src, ?c: tgt = src
     Sym(Box<CoConv>),
@@ -284,11 +284,10 @@ fn parse_proof(
           let tgt = self.pop(pos)?.as_expr(pos)?;
           let td = self.file.thm(tid).ok_or(StrError("unknown theorem", pos))?;
           let nargs = td.args().len();
-          let f = |e: Stack| Ok(e.as_proof(pos)?.0);
-          let mut args: Vec<Idx> = self.popn(nargs, pos, f)?;
+          let mut args: Vec<Idx> = self.popn(nargs, pos, |e| e.as_expr(pos))?;
           let nhyps = td.unify().filter(|e| matches!(e, Ok(UnifyCmd::Hyp))).count();
           let mid = self.popn_mid(nhyps, pos)?;
-          for e in self.stack.drain(mid..) { args.push(f(e)?); }
+          for e in self.stack.drain(mid..) { args.push(e.as_proof(pos)?.0); }
           let r = self.de.push(ProofHash::Thm(tid, args.into_boxed_slice(), tgt));
           if save { self.heap.push(StackRef::Proof(r, tgt)) }
           self.stack.push(Stack::Proof(r, tgt))
@@ -357,7 +356,7 @@ fn parse_proof(
     file, dummy,
     de: Dedup::new(nargs),
     stack: vec![],
-    heap: vec![],
+    heap: (0..nargs).map(StackRef::Expr).collect(),
     hyps: vec![],
   };
   let mut pos = it.pos;
@@ -455,7 +454,6 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!(var))?;
         hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(env, i)));
         let kind = if matches!(stmt, StmtCmd::Axiom) {
-          if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
           ThmKind::Axiom
         } else {
           ThmKind::Thm(Some(parse_proof(&file, args.len(), &mut pf, || next_var!(var))?))
