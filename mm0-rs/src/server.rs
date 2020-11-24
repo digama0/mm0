@@ -18,6 +18,7 @@ use lsp_server::{Connection, ErrorCode, Message, Notification, ProtocolError,
 use serde::ser::Serialize;
 use serde_json::{from_value, to_value};
 use serde_repr::{Serialize_repr, Deserialize_repr};
+use serde::Deserialize;
 #[allow(clippy::wildcard_imports)] use lsp_types::*;
 use crossbeam::channel::{SendError, RecvError};
 use clap::ArgMatches;
@@ -518,7 +519,7 @@ struct RequestHandler {
 }
 
 impl RequestHandler {
-  async fn handle(self, req: RequestType) -> Result<()> {
+  async fn handle(self, req: RequestType, elab_on: ElabOn) -> Result<()> {
     match req {
       RequestType::Hover(TextDocumentPositionParams {text_document: doc, position}) =>
         self.finish(hover(doc.uri.into(), position).await),
@@ -539,13 +540,13 @@ impl RequestHandler {
             }).await)
         },
       RequestType::DocumentSymbol(DocumentSymbolParams {text_document: doc, ..}) =>
-        self.finish(document_symbol(doc.uri.into()).await),
+        self.finish(document_symbol(doc.uri.into(), elab_on).await),
       RequestType::Completion(p) => {
         let doc = p.text_document_position;
         self.finish(completion(doc.text_document.uri.into(), doc.position).await)
       }
       RequestType::CompletionResolve(ci) =>
-        self.finish(completion_resolve(*ci).await),
+        self.finish(completion_resolve(*ci, elab_on).await),
       RequestType::References(ReferenceParams {text_document_position: doc, context, ..}) => {
         let file: FileRef = doc.text_document.uri.into();
         self.finish(references(file.clone(), doc.position, context.include_declaration,
@@ -620,6 +621,17 @@ impl<T> ElabResult<T> {
       ElabResult::ImportCycle(_) => Ok(None),
     }
   }
+}
+
+/// small abstraction for trying to get the last good environment.
+/// `completion` always uses this, but the other users will only opt for this
+/// if the user has chosen to elaborate on save instead of on change.
+fn try_old(file: &Arc<VirtualFile>)  -> Option<(FileContents, FrozenEnv)> {
+  file.parsed.try_lock().and_then(|g| g.as_ref().and_then(|fc| match fc {
+    FileCache::Ready {source, res: ElabResult::Ok(_, _, env), ..} => Some((source.clone(), env.clone())),
+    FileCache::Ready {..} => None,
+    FileCache::InProgress {old, ..} => old.clone()
+  }))
 }
 
 async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
@@ -832,15 +844,20 @@ async fn definition<T>(path: FileRef, pos: Position,
 }
 
 #[allow(deprecated)] // workaround rust#60681
-async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, ResponseError> {
+async fn document_symbol(path: FileRef, elab_on: ElabOn) -> StdResult<DocumentSymbolResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.ulock().1.ascii().clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
-  let env = match env.into_response_error()? {
-    Some((_, env)) => env,
-    None => return Ok(DocumentSymbolResponse::Nested(vec![]))
+
+  let maybe_old = if elab_on == ElabOn::Save { try_old(&file) } else { None };
+  let (text, env) = if let Some((contents, frozen)) = maybe_old {
+    (contents.ascii().clone(), frozen)
+  } else {
+    let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
+    match env.into_response_error()? {
+      None => return Ok(DocumentSymbolResponse::Nested(vec![])),
+      Some((_, env)) => (file.text.ulock().1.ascii().clone(), env)
+    }
   };
   let fe = unsafe { env.format_env(&text) };
   let f = |sp, name: &ArcString, desc, full, kind| DocumentSymbol {
@@ -960,12 +977,7 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
 async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionResponse, ResponseError> {
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let old = file.parsed.try_lock().and_then(|g| g.as_ref().and_then(|fc| match fc {
-    FileCache::Ready {source, res: ElabResult::Ok(_, _, env), ..} => Some((source.clone(), env.clone())),
-    FileCache::Ready {..} => None,
-    FileCache::InProgress {old, ..} => old.clone()
-  }));
-  let (text, env) = if let Some(old) = old { old } else {
+  let (text, env) = if let Some(old) = try_old(&file) { old } else {
     let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
       .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?;
     match env.into_response_error()? {
@@ -984,18 +996,26 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   Ok(CompletionResponse::Array(res))
 }
 
-async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, ResponseError> {
+async fn completion_resolve(ci: CompletionItem, elab_on: ElabOn) -> StdResult<CompletionItem, ResponseError> {
   let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
     response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
   let path = uri.into();
   let file = SERVER.vfs.get(&path).ok_or_else(||
     response_err(ErrorCode::InvalidRequest, "document symbol nonexistent file"))?;
-  let text = file.text.ulock().1.ascii().clone();
-  let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
-    .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
-    .into_response_error()?
-    .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
+
+  let maybe_old = if elab_on == ElabOn::Save { try_old(&file) } else { None };
+  let (text, env) = if let Some((contents, frozen)) = maybe_old {
+    (contents.ascii().clone(), frozen)
+  } else {
+    let text = file.text.ulock().1.ascii().clone();
+    let env = elaborate(path.clone(), Some(Position::default()), Default::default(), Default::default())
+      .await.map_err(|e| response_err(ErrorCode::InternalError, format!("{:?}", e)))?
+      .into_response_error()?
+      .ok_or_else(|| response_err(ErrorCode::InternalError, "import cycle"))?.1;
+    (text, env)
+  };
+
   let fe = unsafe { env.format_env(&text) };
   env.get_atom(ci.label.as_bytes()).and_then(|a| make_completion_item(&path, fe, &env.data()[a], true, tk))
     .ok_or_else(|| response_err(ErrorCode::ContentModified, "completion missing"))
@@ -1089,6 +1109,7 @@ struct Server {
   vfs: VFS,
   pool: ThreadPool,
   threads: Arc<(Mutex<VecDeque<Arc<AtomicBool>>>, Condvar)>,
+  options: Mutex<ServerOptions>,
 }
 
 struct Capabilities {
@@ -1117,6 +1138,13 @@ impl Capabilities {
         register_options: None
       })
     }
+
+    regs.push(Registration {
+      id: String::new(),
+      method: "workspace/didChangeConfiguration".into(),
+      register_options: None,
+    });
+
     if !regs.is_empty() {
       register_capability("regs".into(), regs)?;
       self.reg_id = Some(String::from("regs").into());
@@ -1155,6 +1183,85 @@ where F: std::future::Future<Output=()> + Send + 'static {
   cancel
 }
 
+/// Options for [`Server`]; for example, whether to apply changes and
+/// elaborate on change or save.
+/// The fields are `Option<T>` rather than defaults for each T since it might
+/// be useful to tell whether a certain option has been set by the user or left
+/// as the default. If they were just T, `T::Default` could mean that the user selected
+/// a value that's the same as the default, or it could mean that it was untouched.
+///
+/// [`Server`]: ./struct.Server.html
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerOptions {
+  elab_on: Option<ElabOn>,
+  executable_path: Option<std::path::PathBuf>,
+  max_number_of_problems: usize,
+  trace: Option<Trace>
+}
+
+impl std::default::Default for ServerOptions {
+  fn default() -> Self {
+    ServerOptions {
+      elab_on: None,
+      executable_path: None,
+      max_number_of_problems: 100,
+      trace: None,
+    }
+  }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Trace {
+  server: TraceLevel
+}
+
+/// User-configurable level of tracing
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TraceLevel {
+  /// Turn tracing off
+  Off,
+  /// Trace only message
+  Messages,
+  /// Set trace level to verbose
+  Verbose,
+}
+
+/// Enum for use in [`ServerOptions`] showing when the user wants changes to be applied
+/// and the new file to be elaborated.
+///
+/// [`ServerOptions`]: ./struct.ServerOptions.html
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ElabOn {
+  /// Apply changes and elaborate every time a change is received from the server
+  Change,
+  /// Apply changes and elaborate when a save message is received.
+  Save,
+}
+
+impl std::default::Default for ElabOn {
+  fn default() -> Self { Self::Change }
+}
+
+fn send_config_request() -> Result<()> {
+  let params = lsp_types::ConfigurationParams {
+    items: vec![lsp_types::ConfigurationItem {
+        scope_uri: None,
+        section: Some("metamath-zero".to_string()),
+    }],
+  };
+  use lsp_types::request::{WorkspaceConfiguration, Request};
+  let req = lsp_server::Request::new(
+    RequestId::from("get_config".to_string()),
+    WorkspaceConfiguration::METHOD.to_string(),
+    params
+  );
+  send_message(req)
+}
+
 impl Server {
   fn new() -> Result<Server> {
     let (conn, _iot) = Connection::stdio();
@@ -1180,15 +1287,25 @@ impl Server {
       vfs: VFS(Mutex::new(HashMap::new())),
       pool: ThreadPool::new()?,
       threads: Default::default(),
+      options: Mutex::new(ServerOptions::default()),
     })
   }
 
   fn run(&self) {
     let logger = Logger::start();
     let _ = self.caps.ulock().register();
+
+    // We need this to be able to match on the response for the config getter, but
+    // we can't use a string slice since lsp_server doesn't export IdRepr
+    let get_config_id = lsp_server::RequestId::from(String::from("get_config"));
+    // Request the user's initial configuration on startup.
+    if let Err(e) = send_config_request() {
+      eprintln!("Server panicked: {:?}", e);
+    }
+
     loop {
       match (|| -> Result<bool> {
-        let Server {conn, caps, reqs, vfs, ..} = &*SERVER;
+        let Server {conn, caps, reqs, vfs, options, ..} = &*SERVER;
         match conn.receiver.recv() {
           Err(RecvError) => return Ok(true),
           Ok(Message::Request(req)) => {
@@ -1198,36 +1315,45 @@ impl Server {
             if let Some((id, req)) = parse_request(req)? {
               spawn_new(|cancel| {
                 reqs.ulock().insert(id.clone(), cancel.clone());
-                async {
-                  RequestHandler {id, cancel}.handle(req).await
+                let elab_on = options.ulock().elab_on.unwrap_or_default();
+                async move {
+                  RequestHandler {id, cancel}.handle(req, elab_on).await
                     .unwrap_or_else(|e| eprintln!("Request failed: {:?}", e))
                 }
               });
             }
           }
           Ok(Message::Response(resp)) => {
-            let mut caps = caps.ulock();
-            if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
-              caps.finish_register(&resp);
+            if resp.id == get_config_id {
+              if let Some(val) = resp.result {
+                let [config]: [ServerOptions; 1] = from_value(val)?;
+                *self.options.ulock() = config;
+              }
             } else {
-              log!("response to unknown request {}", resp.id)
+              let mut caps = caps.ulock();
+              if caps.reg_id.as_ref().map_or(false, |rid| rid == &resp.id) {
+                caps.finish_register(&resp);
+              } else {
+                log!("response to unknown request {}", resp.id)
+              }
             }
           }
           Ok(Message::Notification(notif)) => {
+            use lsp_types::notification::*;
             match notif.method.as_str() {
-              "$/cancelRequest" => {
+              Cancel::METHOD => {
                 let CancelParams {id} = from_value(notif.params)?;
                 if let Some(cancel) = reqs.ulock().get(&nos_id(id)) {
                   cancel.store(true, Ordering::Relaxed);
                 }
               }
-              "textDocument/didOpen" => {
+              DidOpenTextDocument::METHOD => {
                 let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                 let path = doc.uri.into();
                 log!("open {:?}", path);
                 vfs.open_virt(path, doc.version, doc.text)?;
               }
-              "textDocument/didChange" => {
+              DidChangeTextDocument::METHOD => {
                 let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
                 if !content_changes.is_empty() {
                   let path = doc.uri.into();
@@ -1240,15 +1366,26 @@ impl Server {
                     *text = FileContents::Ascii(Arc::new(s));
                     start
                   };
-                  spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                  if options.ulock().elab_on.unwrap_or_default() == ElabOn::Change {
+                    spawn_new(|c| elaborate_and_report(path, Some(start), c));
+                  }
                 }
               }
-              "textDocument/didClose" => {
+              DidCloseTextDocument::METHOD => {
                 let DidCloseTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                 let path = doc.uri.into();
                 log!("close {:?}", path);
                 vfs.close(&path)?;
               }
+              DidSaveTextDocument::METHOD => {
+                let DidSaveTextDocumentParams {text_document: doc, ..} = from_value(notif.params)?;
+                let path = FileRef::from(doc.uri);
+                log!("save {:?}", path);
+                if options.ulock().elab_on.unwrap_or_default() == ElabOn::Save {
+                  spawn_new(|c| elaborate_and_report(path, None, c));
+                }
+              }
+              DidChangeConfiguration::METHOD => send_config_request()?,
               _ => {}
             }
           }
