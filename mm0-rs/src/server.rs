@@ -638,6 +638,7 @@ fn try_old(file: &Arc<VirtualFile>)  -> Option<(FileContents, FrozenEnv)> {
   }))
 }
 
+const SYNTAX_DOCS: bool = false;
 async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, ResponseError> {
   macro_rules! or {($ret:expr, $e:expr)  => {match $e {
     Some(x) => x,
@@ -736,7 +737,11 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
         }
       }
       ObjectKind::Syntax(stx) => {
-        const SYNTAX_DOCS: bool = false;
+        if SYNTAX_DOCS {
+          ((sp, mk_doc(stx.doc())), None)
+        } else { return None }
+      }
+      ObjectKind::RefineSyntax(stx) => {
         if SYNTAX_DOCS {
           ((sp, mk_doc(stx.doc())), None)
         } else { return None }
@@ -813,7 +818,8 @@ async fn definition<T>(path: FileRef, pos: Position,
       &ObjectKind::Term(t, _) => res.push(term(t)),
       &ObjectKind::Thm(t) => res.push(thm(t)),
       ObjectKind::Var(_) |
-      ObjectKind::Syntax(_) => {}
+      ObjectKind::Syntax(_) |
+      ObjectKind::RefineSyntax(_) => {}
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data()[a].decl()) {
@@ -1068,7 +1074,8 @@ async fn references<T>(
       }
     }
     ObjectKind::Import(_) |
-    ObjectKind::Syntax(_) => None,
+    ObjectKind::Syntax(_) |
+    ObjectKind::RefineSyntax(_) => None,
     ObjectKind::Var(a) => Some(Key::Var(a)),
     ObjectKind::Sort(a) => Some(Key::Sort(a)),
     ObjectKind::Term(a, _) => Some(Key::Term(a)),

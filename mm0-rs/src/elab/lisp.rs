@@ -127,6 +127,21 @@ impl std::fmt::Display for Syntax {
   }
 }
 
+str_enum! {
+  /// The `RefineSyntax` type represents atom-like objects that are considered keywords
+  /// in the refine tactic, and have special interpretations.
+  enum RefineSyntax {
+    /// `!`: A modifier on theorem application, for explicitly passing all variables.
+    /// For example `(! foo x y a b p1 p2)` is like `(foo p1 p2)`, except that here
+    /// `x y a b` are the list of all variables, both bound and regular.
+    Explicit: "!",
+    /// `!!`: A modifier on theorem application, for explicitly passing all bound variables.
+    /// For example `(!! foo x y p1 p2)` is like `(foo p1 p2)`, except that here
+    /// `x y` are the list of all bound variables.
+    BoundOnly: "!!",
+  }
+}
+
 /// The type of a metavariable. This encodes the different types of context
 /// in which a term is requested.
 #[derive(Copy, Clone, Debug, EnvDebug)]
