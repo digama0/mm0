@@ -10,7 +10,7 @@ use crate::util::{FileSpan, Span};
 use super::{Elaborator, ElabError, Result};
 use super::environment::{AtomID, TermKind, DeclKey, Modifiers,
   ObjectKind, SortID, TermID, ThmID, Type};
-use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons,
+use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons, RefineSyntax,
   print::{FormatEnv, EnvDisplay}, eval::SResult};
 use super::local_context::{InferSort, try_get_span};
 use super::proof::Subst;
@@ -381,53 +381,62 @@ impl LispVal {
 #[derive(Debug)]
 enum AssignError { Cyclic, BoundVar }
 
-fn parse_refine(fsp: &FileSpan, e: &LispVal) -> Result<RefineExpr> {
-  Ok(match &*e.unwrapped_arc() {
-    &LispKind::Atom(head) => {
-      let sp = try_get_span(fsp, e);
-      RefineExpr::App {sp, sp2: sp, im: InferMode::Regular, head, u: Uncons::nil()}
-    }
-    LispKind::List(_) | LispKind::DottedList(_, _) => {
-      let mut u = Uncons::from(e.clone());
-      let sp = try_get_span(fsp, e);
-      match u.next() {
-        None if e.is_list() => RefineExpr::App {sp, sp2: sp,
-          im: InferMode::Regular, head: AtomID::UNDER, u: Uncons::nil()},
-        None => return Err(ElabError::new_e(try_get_span(fsp, e), "refine: syntax error")),
-        Some(e) => {
-          let a = e.as_atom().ok_or_else(||
-            ElabError::new_e(try_get_span(fsp, &e), "refine: expected an atom"))?;
-          let (im, t) = match a {
-            AtomID::BANG => (InferMode::Explicit,
-              u.next().ok_or_else(|| ElabError::new_e(try_get_span(fsp, &e),
-                "!: expected at least one argument"))?),
-            AtomID::BANG2 => (InferMode::BoundOnly,
-              u.next().ok_or_else(|| ElabError::new_e(try_get_span(fsp, &e),
-                "!!: expected at least one argument"))?),
-            AtomID::VERB => if let (Some(e), true) = (u.next(), u.is_empty()) {
-              return Ok(RefineExpr::Exact(e))
-            } else {
-              return Err(ElabError::new_e(try_get_span(fsp, &e), "verb: expected one argument"))
-            },
-            AtomID::COLON => if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
-              return Ok(RefineExpr::Typed {ty, e})
-            } else {
-              return Err(ElabError::new_e(try_get_span(fsp, &e), "':' expected two arguments"))
-            },
-            _ => (InferMode::Regular, e)
-          };
-          let sp2 = try_get_span(fsp, &t);
-          let head = t.as_atom().ok_or_else(|| ElabError::new_e(sp2, "refine: expected an atom"))?;
-          RefineExpr::App {sp, sp2, im, head, u}
+impl Elaborator {
+
+  fn parse_refine(&mut self, fsp: &FileSpan, e: &LispVal) -> Result<RefineExpr> {
+    Ok(match &*e.unwrapped_arc() {
+      &LispKind::Atom(head) => {
+        let sp = try_get_span(fsp, e);
+        RefineExpr::App {sp, sp2: sp, im: InferMode::Regular, head, u: Uncons::nil()}
+      }
+      LispKind::List(_) | LispKind::DottedList(_, _) => {
+        let mut u = Uncons::from(e.clone());
+        let sp = try_get_span(fsp, e);
+        match u.next() {
+          None if e.is_list() => RefineExpr::App {sp, sp2: sp,
+            im: InferMode::Regular, head: AtomID::UNDER, u: Uncons::nil()},
+          None => return Err(ElabError::new_e(try_get_span(fsp, e), "refine: syntax error")),
+          Some(e) => {
+            let a = e.as_atom().ok_or_else(||
+              ElabError::new_e(try_get_span(fsp, &e), "refine: expected an atom"))?;
+            let (im, t) = match a {
+              AtomID::BANG => {
+                let sp2 = try_get_span(fsp, &e);
+                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Explicit));
+                let t = u.next().ok_or_else(||
+                  ElabError::new_e(sp2, "!: expected at least one argument"))?;
+                (InferMode::Explicit, t)
+              }
+              AtomID::BANG2 => {
+                let sp2 = try_get_span(fsp, &e);
+                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::BoundOnly));
+                let t = u.next().ok_or_else(||
+                  ElabError::new_e(sp2, "!!: expected at least one argument"))?;
+                (InferMode::BoundOnly, t)
+              }
+              AtomID::VERB => if let (Some(e), true) = (u.next(), u.is_empty()) {
+                return Ok(RefineExpr::Exact(e))
+              } else {
+                return Err(ElabError::new_e(try_get_span(fsp, &e), "verb: expected one argument"))
+              },
+              AtomID::COLON => if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
+                return Ok(RefineExpr::Typed {ty, e})
+              } else {
+                return Err(ElabError::new_e(try_get_span(fsp, &e), "':' expected two arguments"))
+              },
+              _ => (InferMode::Regular, e)
+            };
+            let sp2 = try_get_span(fsp, &t);
+            let head = t.as_atom().ok_or_else(|| ElabError::new_e(sp2, "refine: expected an atom"))?;
+            RefineExpr::App {sp, sp2, im, head, u}
+          }
         }
       }
-    }
-    LispKind::Proc(_) => RefineExpr::Proc,
-    _ => return Err(ElabError::new_e(try_get_span(fsp, e), "refine: syntax error")),
-  })
-}
+      LispKind::Proc(_) => RefineExpr::Proc,
+      _ => return Err(ElabError::new_e(try_get_span(fsp, e), "refine: syntax error")),
+    })
+  }
 
-impl Elaborator {
   fn new_goal(&mut self, sp: Span, ty: LispVal) -> LispVal {
     let r = LispVal::new_ref(LispVal::goal(self.fspan(sp), ty));
     self.lc.goals.push(r.clone());
@@ -700,7 +709,7 @@ impl Elaborator {
             } else {break RState::Ret(LispVal::undef())}
           }
         },
-        RState::RefineProof {tgt, p} => match parse_refine(&fsp, &p)? {
+        RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
           RefineExpr::App {sp, sp2, head: AtomID::QMARK, ..} => {
             let head = LispVal::new_ref(LispVal::goal(self.fspan(sp), tgt));
             self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
@@ -740,7 +749,7 @@ impl Elaborator {
           }
           RefineExpr::Proc => RState::Proc {tgt, p},
         },
-        RState::RefineExpr {tgt, e} => match parse_refine(&fsp, &e) {
+        RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e) {
           Ok(RefineExpr::App {sp2, head: AtomID::UNDER, ..}) => {
             let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2)));
             self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));

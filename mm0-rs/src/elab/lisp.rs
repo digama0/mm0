@@ -127,6 +127,29 @@ impl std::fmt::Display for Syntax {
   }
 }
 
+str_enum! {
+  /// The `RefineSyntax` type represents atom-like objects that are considered keywords
+  /// in the refine tactic, and have special interpretations.
+  enum RefineSyntax {
+    /// `!`: A modifier on theorem application, for explicitly passing all variables
+    /// (both bound and regular). For example, given
+    /// ```
+    /// axiom ax_gen {x: nat} (p: wff x): $ p $ > $ A. x p $;
+    /// ```
+    /// the application `(! ax_gen y $ 0 < 1 $ h)` is a proof of `$ A. y 0 < 1 $` if
+    /// `h` is a proof of `$ 0 < 1 $`.
+    Explicit: "!",
+    /// `!!`: A modifier on theorem application, for explicitly passing all bound variables.
+    /// For example, given
+    /// ```
+    /// axiom ax_gen {x: nat} (p: wff x): $ p $ > $ A. x p $;
+    /// ```
+    /// the application `(! ax_gen y h)` is a proof of `$ A. y ?p $` if
+    /// `h` is a proof of `?p` for some expression `?p`.
+    BoundOnly: "!!",
+  }
+}
+
 /// The type of a metavariable. This encodes the different types of context
 /// in which a term is requested.
 #[derive(Copy, Clone, Debug, EnvDebug)]
