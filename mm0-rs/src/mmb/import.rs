@@ -1,15 +1,14 @@
 //! Importer for MMB files into the [`Environment`].
 
 use std::convert::{TryFrom, TryInto};
-use std::fs::File;
 use std::rc::Rc;
 use crate::elab::{
   environment::{Environment, Modifiers, AtomID, SortID, TermID, ThmID,
-    Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, ProofNode, Proof},
-  proof::{IDedup, NodeHash, ExprHash, ProofHash, build}};
+    Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof},
+  proof::{IDedup, ProofHash, build}};
 use crate::util::{FileRef, FileSpan, SliceExt};
 use super::{StmtCmd, UnifyCmd, ProofCmd,
-  parser::{MMBFile, Buffer, ParseError, UnifyIter, ProofIter}};
+  parser::{MMBFile, ParseError, UnifyIter, ProofIter}};
 
 
 type Result<T> = std::result::Result<T, ParseError>;
@@ -134,7 +133,7 @@ impl<'a> IntoIterator for &'a Dedup {
 
 fn parse_proof(
   file: &MMBFile<'_>, nargs: usize, it: &mut ProofIter<'_>,
-  mut dummy: impl FnMut() -> AtomID,
+  dummy: impl FnMut() -> AtomID,
 ) -> Result<Proof> {
 
   use ParseError::StrError;
@@ -269,7 +268,6 @@ fn parse_proof(
           self.heap.get(usize::try_from(i).expect("impossible"))
             .ok_or(StrError("reference out of range", pos))?.reuse(&mut self.de)),
         ProofCmd::Dummy(s) => {
-          let h = self.heap.len();
           let r = self.de.push(ProofHash::Dummy((self.dummy)(), s));
           self.heap.push(StackRef::Expr(r));
           self.stack.push(Stack::Expr(r))
@@ -324,7 +322,6 @@ fn parse_proof(
           for &e in &*args {self.de.reuse(e);}
           let (co, lhs_, rhs) = self.pop(pos)?.as_coconv(pos)?;
           if lhs != lhs_ {return Err(StrError("Unfold mismatch", pos))}
-          let td = self.file.term(t).ok_or(StrError("Expected a term", pos))?;
           self.stack.push(Stack::CoConv(
             Box::new(CoConv::Unfold(co, t, args, lhs, sub_lhs)), sub_lhs, rhs));
         }
@@ -367,7 +364,6 @@ fn parse_proof(
   let ret = if let [e] = &*st.stack {e.clone()} else {
     return Err(StrError("stack should have one element", pos))
   }.as_proof(pos)?.0;
-  let (ids, heap) = build::<ProofNode, _>(&st.de);
   let (mut ids, heap) = build(&st.de);
   let hyps = st.hyps.into_iter().map(|i| ids[i].take()).collect();
   Ok(Proof {heap, hyps, head: ids[ret].take()})
@@ -376,7 +372,6 @@ fn parse_proof(
 fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   use ParseError::{BadIndex, StrError};
   let file = MMBFile::parse(buf)?;
-  let diff = |p: *const u8| p as usize - buf.as_ptr() as usize;
   let mut it = file.proof();
   let mut start = it.pos;
   macro_rules! get_get_var {($e:expr) => {{
@@ -417,7 +412,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let td = file.term(term).ok_or(StrError("Step term overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
         let mut var = 0;
-        let args = td.args().iter().enumerate().map(|(i, a)| (
+        let args = td.args().iter().map(|a| (
           Some(next_var!(var)),
           if a.bound() { Type::Bound(a.sort()) }
           else { Type::Reg(a.sort(), a.deps()) }
@@ -445,7 +440,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let td = file.thm(thm).ok_or(StrError("Step thm overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
         let mut var = 0;
-        let args = td.args().iter().enumerate().map(|(i, a)| (
+        let args = td.args().iter().map(|a| (
           Some(next_var!(var)),
           if a.bound() { Type::Bound(a.sort()) }
           else { Type::Reg(a.sort(), a.deps()) }

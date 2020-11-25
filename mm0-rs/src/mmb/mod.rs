@@ -3,8 +3,9 @@
 //! See [`mm0-c/verifier.c`] for information on the MMB format.
 //!
 //! [`mm0-c/verifier.c`]: https://github.com/digama0/mm0/blob/master/mm0-c/verifier.c
-#![allow(unused, missing_docs)]
-use crate::elab::environment::{SortID, TermID, ThmID};
+use std::convert::TryFrom;
+
+use crate::elab::environment::{SortID, TermID, ThmID, Modifiers};
 use byteorder::LE;
 use zerocopy::{FromBytes, Unaligned, U16, U32, U64};
 
@@ -113,12 +114,26 @@ pub mod cmd {
   pub const UNIFY_HYP: u8       = 0x36;
 }
 
+/// The main part of the proof consists of a sequence of declarations,
+/// and these commands denote the different kind of declaration that can
+/// be introduced.
 #[derive(Debug, Clone, Copy)]
 pub enum StmtCmd {
+  /// A new sort. Equivalent to `sort foo;`. This is followed by no data,
+  /// as the sort data is stored in the header.
   Sort,
+  /// A new axiom. Equivalent to `axiom foo ...`. This is followed by a proof
+  /// sequence, that should unify with the unify sequence in the header.
   Axiom,
-  TermDef {local: bool},
-  Thm {local: bool}
+  /// A new term or def. Equivalent to `term/def foo ...`.
+  /// If `local` is true, then this is `local def foo`. This is followed by
+  /// no data, as the header contains the unify sequence and can be checked on its own.
+  TermDef {/** Is this `local def`? */ local: bool},
+  /// A new theorem. Equivalent to `(pub) theorem foo ...`, where `local` means
+  /// that the theorem is not `pub`. This is followed by a proof sequence,
+  /// that will construct the statement and proof, and should unify
+  /// with the unify sequence in the header.
+  Thm {/** Is this not `pub theorem`? */ local: bool}
 }
 
 impl std::convert::TryFrom<u8> for StmtCmd {
@@ -136,21 +151,114 @@ impl std::convert::TryFrom<u8> for StmtCmd {
   }
 }
 
+/// A proof command, which acts on a stack machine with the following components:
+///
+/// * `H: Vec<StackEl>`: a "heap" consisting of indexable elements that can be copied
+///   onto the stack using [`Ref`](ProofCmd::Ref)
+/// * `S: Stack<StackEl>`: The main stack, which most operations push and pop from.
+/// * `HS: Vec<Expr>`: The hypothesis list, which grows only on [`Hyp`](ProofCmd::Hyp)
+///   operations and collects the hypotheses of the theorem.
 #[derive(Debug, Clone, Copy)]
 pub enum ProofCmd {
-  Term {tid: TermID, save: bool},
+  /// ```text
+  /// Term t: H; S, e1, ..., en --> H; S, (t e1 .. en)
+  /// Save: H; S, e --> H, e; S, e
+  /// TermSave t = Term t; Save:
+  ///   H; S, e1, ..., en --> H, (t e1 .. en); S, (t e1 .. en)
+  /// ```
+  ///
+  /// Pop `n` elements from the stack and allocate a new term `t` applied to those
+  /// expressions. When `save` is used, the new term is also saved to the heap
+  /// (this is used if the term will ever be needed more than once).
+  Term {
+    /** The term to construct */              tid: TermID,
+    /** True if we should save to the heap */ save: bool,
+  },
+  /// ```text
+  /// Ref i: H; S --> H; S, Hi
+  /// ```
+  /// Get the `i`-th heap element and push it on the stack.
   Ref(u32),
+  /// ```text
+  /// Dummy s: H; S --> H, x; S, x    alloc(x:s)
+  /// ```
+  /// Allocate a new variable `x` of sort `s`, and push it to the stack and the heap.
   Dummy(SortID),
-  Thm {tid: ThmID, save: bool},
+  /// ```text
+  /// Thm T: H; S, e1, ..., en, e --> H; S', |- e
+  ///   (where Unify(T): S; e1, ... en; e --> S'; H'; .)
+  /// Save: H; S, |- e --> H, |- e; S, |- e
+  /// ```
+  /// Pop `n` elements from the stack and put them on the unify heap, then call the
+  /// unifier for `T` with `e` as the target. The unifier will pop additional
+  /// proofs from the stack if the UHyp command is used, and when it is done,
+  /// the conclusion is pushed as a proven statement.
+  ///
+  /// When Save is used, the proven statement is also saved to the heap.
+  Thm {
+    /** The theorem to apply */               tid: ThmID,
+    /** True if we should save to the heap */ save: bool,
+  },
+  /// ```text
+  /// Hyp: HS; H; S, e --> HS, e; H, |- e; S
+  /// ```
+  /// This command means that we are finished constructing the expression `e`
+  /// which denotes a statement, and wish to assume it as a hypothesis.
+  /// Push `e` to the hypothesis stack, and push `|- e` to the heap.
   Hyp,
+  /// ```text
+  /// Conv: S, e1, |- e2 --> S, |- e1, e1 =?= e2
+  /// ```
+  /// Pop `e1` and `|- e2`, and push `|- e1`, guarded by a convertibility obligation
+  /// `e1 =?= e2`.
   Conv,
+  /// ```text
+  /// Refl: S, e =?= e --> S
+  /// ```
+  /// Pop a convertibility obligation where the two sides are equal.
   Refl,
+  /// ```text
+  /// Symm: S, e1 =?= e2 --> S, e2 =?= e1
+  /// ```
+  /// Swap the direction of a convertibility obligation.
   Sym,
+  /// ```text
+  /// Cong: S, (t e1 ... en) =?= (t e1' ... en') --> S, en =?= en', ..., e1 =?= e1'
+  /// ```
+  /// Pop a convertibility obligation for two term expressions, and
+  /// push convertibility obligations for all the parts.
+  /// The parts are pushed in reverse order so that they are dealt with
+  /// in declaration order in the proof stream.
   Cong,
+  /// ```text
+  /// Unfold: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
+  ///   (where Unify(t): e1, ..., en; e --> H'; .)
+  /// ```
+  /// Pop terms `(t e1 ... en)`, `e` from the stack and run the unifier for `t`
+  /// (which should be a definition) to make sure that `(t e1 ... en)` unfolds to `e`.
+  /// Then pop `(t e1 ... en) =?= e'` and push `e =?= e'`.
   Unfold,
+  /// ```text
+  /// ConvCut: S, e1 =?= e2 --> S, e1 = e2, e1 =?= e2
+  /// ```
+  /// Pop a convertibility obligation `e1 =?= e2`, and
+  /// push a convertability assertion `e1 = e2` guarded by `e1 =?= e2`.
   ConvCut,
+  /// ```text
+  /// ConvRef i: H; S, e1 =?= e2 --> H; S   (where Hi is e1 = e2)
+  /// ```
+  /// Pop a convertibility obligation `e1 =?= e2`, where `e1 = e2` is
+  /// `i`-th on the heap.
   ConvRef(u32),
+  /// ```text
+  /// ConvSave: H; S, e1 = e2 --> H, e1 = e2; S
+  /// ```
+  /// Pop a convertibility proof `e1 = e2` and save it to the heap.
   ConvSave,
+  /// ```text
+  /// Save: H; S, s --> H, s; S, s
+  /// ```
+  /// Save the top of the stack to the heap, without popping it.
   Save,
 }
 
@@ -180,11 +288,63 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
   }
 }
 
+/// Unify commands appear in the header data for a `def` or `axiom`/`theorem`.
+/// They are executed by the [`ProofCmd::Thm`] command in order to perform
+/// substitutions. The state of the unify stack machine is:
+///
+/// * `MS: Stack<StackEl>`: The main stack, called `S` in the [`ProofCmd`]
+///   documentation.
+///   Since a unification is called as a subroutine during a proof command,
+///   the main stack is available, but most operations don't use it.
+/// * `S: Stack<Expr>`: The unify stack, which contains expressions
+///   from the target context that are being destructured.
+/// * `H: Vec<Expr>: The unify heap, also known as the substitution. This is
+///   initialized with the expressions that the target context would like to
+///   substitute for the variable names in the theorem being applied, but
+///   it can be extended in order to support substitutions with sharing
+///   as well as dummy variables.
 #[derive(Debug, Clone, Copy)]
 pub enum UnifyCmd {
-  Term {tid: TermID, save: bool},
+  /// ```text
+  /// UTerm t: S, (t e1 ... en) --> S, en, ..., e1
+  /// USave: H; S, e --> H, e; S, e
+  /// UTermSave t = USave; UTerm t:
+  ///   H; S, (t e1 ... en) --> H, (t e1 ... en); S, en, ..., e1
+  /// ```
+  /// Pop an element from the stack, ensure that the head is `t`, then
+  /// push the `n` arguments to the term (in reverse order, so that they
+  /// are dealt with in the correct order in the command stream).
+  /// `UTermSave` does the same thing but saves the term to the unify heap
+  /// before the destructuring.
+  Term {
+    /** The term that should be at the head */                   tid: TermID,
+    /** True if we want to recall this substitution for later */ save: bool,
+  },
+  /// ```text
+  /// URef i: H; S, Hi --> H; S
+  /// ```
+  /// Get the `i`-th element from the unify heap (the substitution),
+  /// and match it against the head of the unify stack.
   Ref(u32),
+  /// ```text
+  /// UDummy s: H; S, x --> H, x; S   (where x:s)
+  /// ```
+  /// Pop a variable from the unify stack (ensure that it is a name of
+  /// the appropriate sort) and push it to the heap (ensure that it is
+  /// distinct from everything else in the substitution).
   Dummy(SortID),
+  /// ```text
+  /// UHyp (UThm mode):  MS, |- e; S --> MS; S, e
+  /// UHyp (UThmEnd mode):  HS, e; S --> HS; S, e
+  /// ```
+  /// `UHyp` is a command that is used in theorem declarations to indicate that
+  /// we are about to read a hypothesis. There are two contexts where we read
+  /// this, when we are first declaring the theorem and check the statement (`UThmEnd` mode),
+  /// and later when we are applying the theorem and have to apply a substitution (`UThm` mode).
+  /// When we are applying the theorem, we have `|- e` on the main stack, and we
+  /// pop that and load the expression onto the unify stack.
+  /// When we are checking a theorem, we have been pushing hypotheses onto the
+  /// hypothesis stack, so we pop it from there instead.
   Hyp,
 }
 
@@ -203,47 +363,110 @@ impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
   }
 }
 
+/// The header of an MMB file, which is always in the first bytes of the file.
+/// It is followed by a `sorts: [`[`SortData`]`; num_sorts]` array
+/// (which we keep separate because of the dependency).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
 pub struct Header {
-  magic: [u8; 4],
-  version: u8,
-  num_sorts: u8,
-  reserved: [u8; 2],
-  num_terms: U32<LE>,
-  num_thms: U32<LE>,
-  p_terms: U32<LE>,
-  p_thms: U32<LE>,
-  p_proof: U32<LE>,
-  reserved2: [u8; 4],
-  p_index: U64<LE>,
+  /// The magic number, which is used to identify this as an mmb file. Must be
+  /// equal to [`MM0B_MAGIC`](cmd::MM0B_MAGIC) = `"MM0B"`.
+  pub magic: [u8; 4],
+  /// The MMB format version number. Must equal [`MM0B_VERSION`](cmd::MM0B_VERSION) = 1.
+  pub version: u8,
+  /// The number of sorts in the file. This is limited to 128.
+  pub num_sorts: u8,
+  /// Padding.
+  pub reserved: [u8; 2],
+  /// The number of terms and defs in the file.
+  pub num_terms: U32<LE>,
+  /// The number of axioms and theorems in the file.
+  pub num_thms: U32<LE>,
+  /// The pointer to the term table of type `[`[`TermEntry`]`; num_terms]`.
+  pub p_terms: U32<LE>,
+  /// The pointer to the theorem table of type `[`[`ThmEntry`]`; num_thms]`.
+  pub p_thms: U32<LE>,
+  /// The pointer to the declaration stream.
+  pub p_proof: U32<LE>,
+  /// Padding.
+  pub reserved2: [u8; 4],
+  /// The pointer to the index header, an array of `1 + num_sorts + num_terms + num_thms`
+  /// pointers to [`IndexEntry`] nodes.
+  pub p_index: U64<LE>,
 }
 
+/// A sort entry in the file header. Each sort is one byte, which can be any combination
+/// of the modifiers in [`Modifiers::sort_data`]: [`PURE`](Modifiers::PURE),
+/// [`STRICT`](Modifiers::STRICT), [`PROVABLE`](Modifiers::PROVABLE), [`FREE`](Modifiers::FREE).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
+pub struct SortData(pub u8);
+
+impl TryFrom<SortData> for Modifiers {
+  type Error = ();
+  fn try_from(s: SortData) -> Result<Modifiers, ()> {
+    let m = Modifiers::new(s.0);
+    if Modifiers::sort_data().contains(m) {Ok(m)} else {Err(())}
+  }
+}
+
+/// An argument binder in a term/def or axiom/theorem.
+/// * Bit 63 (the high bit of the high byte) is 1 if this is a bound variable.
+/// * Bits 56-62 (the low 7 bits of the high byte) give the sort of the variable.
+/// * Bits 0-55 (the low 7 bytes) are a bitset giving the set of bound variables
+///   earlier in the list that this variable is allowed to depend on.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
+pub struct Arg(pub U64<LE>);
+
+/// An entry in the term table, which describes the "signature" of the term/def,
+/// the information needed to apply the term and use it in theorems.
 #[repr(C, align(8))]
 #[derive(Debug, Clone, Copy, FromBytes)]
 pub struct TermEntry {
-  num_args: U16<LE>,
-  sort: u8,
-  reserved: u8,
-  p_args: U32<LE>,
+  /// The number of arguments to the term.
+  pub num_args: U16<LE>,
+  /// The high bit is set if this is a `def`. The low 7 bits give the
+  /// return sort of the term.
+  pub sort: u8,
+  /// Padding.
+  pub reserved: u8,
+  /// The pointer to an `args: [`[`Arg`]`; num_args + 1]` array, followed by the
+  /// term's unify command sequence. `args[num_args]` is the return type and dependencies,
+  /// and `args[..num_args]` are the actual arguments.
+  pub p_args: U32<LE>,
 }
 
+/// An entry in the term table, which describes the "signature" of the axiom/theorem,
+/// the information needed to apply the theorem to use it in other theorems.
 #[repr(C, align(4))]
 #[derive(Debug, Clone, Copy, FromBytes)]
 pub struct ThmEntry {
-  num_args: U16<LE>,
-  reserved: [u8; 2],
-  p_args: U32<LE>,
+  /// The number of arguments to the theorem (exprs, not hyps).
+  pub num_args: U16<LE>,
+  /// Padding.
+  pub reserved: [u8; 2],
+  /// The pointer to an `args: [`[`Arg`]`; num_args]` array, followed by the
+  /// theorem's unify command sequence.
+  pub p_args: U32<LE>,
 }
 
+/// The kinds of entity that can appear in the index. This is similar to [`StmtCmd`],
+/// but it distinguishes `term` and `def` and adds the [`Var`](Self::Var) constructor.
 #[derive(Debug, Clone, Copy)]
 pub enum IndexKind {
+  /// This is a `sort`.
   Sort,
+  /// This is an `axiom`.
   Axiom,
+  /// This is an `term`.
   Term,
+  /// This is a variable name,
   Var,
-  Def {local: bool},
-  Thm {local: bool}
+  /// This is a `(local) def`.
+  Def {/** Is this `local def`? */ local: bool},
+  /// This is a `(!pub) theorem`.
+  Thm {/** Is this not `pub theorem`? */ local: bool}
 }
 
 impl std::convert::TryFrom<u8> for IndexKind {
@@ -263,14 +486,24 @@ impl std::convert::TryFrom<u8> for IndexKind {
   }
 }
 
+/// An individual entry in the index,
+/// which is hooked up in a binary tree structure.
+/// It is followed by a `CStr` (unsized) containing the entity's name.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
 pub struct IndexEntry {
-  p_left: U64<LE>,
-  p_right: U64<LE>,
-  row: U32<LE>,
-  col: U32<LE>,
-  p_proof: U64<LE>,
-  ix: U32<LE>,
-  kind: u8,
+  /// A pointer to the left child in the binary search tree, ordered by name.
+  pub p_left: U64<LE>,
+  /// A pointer to the right child in the binary search tree, ordered by name.
+  pub p_right: U64<LE>,
+  /// The line in the source file that introduced this entity.
+  pub row: U32<LE>,
+  /// The character in the source file that introduced this entity.
+  pub col: U32<LE>,
+  /// A pointer to the location in the proof stream which introduced this entity.
+  pub p_proof: U64<LE>,
+  /// The index ([`SortID`], [`TermID`], or [`ThmID`] or variable index) of the entity.
+  pub ix: U32<LE>,
+  /// The index entry kind as a [`IndexKind`].
+  pub kind: u8,
 }

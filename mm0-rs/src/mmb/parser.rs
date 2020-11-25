@@ -1,64 +1,65 @@
 //! Parser for MMB binary proof files.
 use std::{mem, io};
 use std::convert::{TryFrom, TryInto};
-use std::fs::File;
-use memmap::{MmapOptions, Mmap};
 use byteorder::LE;
-use zerocopy::{LayoutVerified, FromBytes, Unaligned, U16, U32, U64};
-use super::{Header, StmtCmd, TermEntry, ThmEntry, IndexEntry, IndexKind, UnifyCmd, ProofCmd};
-use crate::elab::environment::{SortID, TermID, ThmID, Modifiers};
+use zerocopy::{LayoutVerified, FromBytes, U16, U32, U64};
+use super::{Header, StmtCmd, TermEntry, ThmEntry, IndexEntry,
+  Arg, IndexKind, UnifyCmd, ProofCmd, SortData};
+use crate::elab::environment::{SortID, TermID, ThmID};
 use crate::util::{Position, cstr_from_bytes_prefix};
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
-pub struct SortData(u8);
-
-impl TryFrom<SortData> for Modifiers {
-  type Error = ();
-  fn try_from(s: SortData) -> Result<Modifiers, ()> {
-    let m = Modifiers::new(s.0);
-    if Modifiers::sort_data().contains(m) {Ok(m)} else {Err(())}
-  }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
-pub struct Arg(U64<LE>);
-
+/// An iterator over the declaration stream.
 #[derive(Debug, Clone)]
-pub struct DeclIter<'a> {buf: &'a [u8], pub pos: usize}
-
-#[derive(Debug)]
-pub struct Buffer(Mmap);
-
-impl std::ops::Deref for Buffer {
-  type Target = [u8];
-  fn deref(&self) -> &[u8] { &self.0 }
+pub struct DeclIter<'a> {
+  /// The full source file.
+  buf: &'a [u8],
+  /// The index of the current declaration in the file.
+  pub pos: usize,
 }
 
+/// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
+/// additional parsing is done on demand via functions on this type.
 #[derive(Debug)]
 pub struct MMBFile<'a> {
+  /// The full file
   buf: &'a [u8],
+  /// The sort table
   sorts: &'a [SortData],
+  /// The term table
   terms: &'a [TermEntry],
+  /// The theorem table
   thms: &'a [ThmEntry],
+  /// The index of the beginning of the proof stream
   proof: usize,
-  pub index: Option<MMBIndex<'a>>,
+  /// The index, if provided.
+  index: Option<MMBIndex<'a>>,
 }
 
+/// A parsed `MMB` file index.
 #[derive(Debug)]
 pub struct MMBIndex<'a> {
+  /// The full file
   buf: &'a [u8],
+  /// A pointer to the root of the binary search tree, for searching based on name.
   root: U64<LE>,
+  /// Pointers to the index entries for the sorts
   sorts: &'a [U64<LE>],
+  /// Pointers to the index entries for the terms
   terms: &'a [U64<LE>],
+  /// Pointers to the index entries for the theorems
   thms: &'a [U64<LE>],
 }
 
+/// A handle to an entry in the index.
 #[derive(Debug, Clone, Copy)]
 pub struct IndexEntryRef<'a> {
+  /// The full file
   buf: &'a [u8],
+  /// The index entry itself
   entry: &'a IndexEntry,
+  /// The C string for the value (actually a suffix of the file
+  /// starting at the appropriate location). Note that `strlen` has to be called
+  /// to get the end of the string in [`value()`](Self::value()).
   value: &'a [u8],
 }
 
@@ -67,31 +68,59 @@ impl<'a> std::ops::Deref for IndexEntryRef<'a> {
   fn deref(&self) -> &IndexEntry { self.entry }
 }
 
+/// An iterator over a proof command stream.
 #[derive(Debug, Clone)]
-pub struct ProofIter<'a> {buf: &'a [u8], pub pos: usize}
+pub struct ProofIter<'a> {
+  /// The full source file, but trimmed such that the end
+  /// is the expected end of the proof stream. The final call to `next`
+  /// will fail if it does not hit the expected end when the
+  /// proof stream runs out.
+  buf: &'a [u8],
+  /// The index of the current proof command in the file.
+  pub pos: usize,
+}
 
+/// An iterator over a unify command stream.
 #[derive(Debug, Clone)]
-pub struct UnifyIter<'a> {buf: &'a [u8], pub pos: usize}
+pub struct UnifyIter<'a> {
+  /// The full source file.
+  buf: &'a [u8],
+  /// The index of the current declaration in the file.
+  pub pos: usize,
+}
 
+/// A reference to an entry in the term table.
 #[derive(Debug, Clone)]
 pub struct TermRef<'a> {
+  /// The sort of the term.
   sort: u8,
+  /// The array of arguments, including the `ret` element at the end.
   args: &'a [Arg],
+  /// The pointer to the start of the unify stream.
   unify: UnifyIter<'a>,
 }
 
+/// A reference to an entry in the theorem table.
 #[derive(Debug, Clone)]
 pub struct ThmRef<'a> {
+  /// The array of arguments.
   args: &'a [Arg],
+  /// The pointer to the start of the unify stream.
   unify: UnifyIter<'a>,
 }
 
+/// An error during parsing of an `MMB` file.
 #[derive(Debug)]
 pub enum ParseError {
+  /// The header is bad; this probably means this is not an MMB file.
   BadHeader,
+  /// The version is unrecognized.
   BadVersion,
+  /// The index is malformed.
   BadIndex,
+  /// An error with the provided message and location.
   StrError(&'static str, usize),
+  /// An error in IO.
   IOError(io::Error)
 }
 
@@ -143,13 +172,10 @@ fn parse_cmd(bytes: &[u8]) -> Option<(u8, u32, &[u8])> {
   }
 }
 
-impl Buffer {
-  pub fn new(file: &File) -> io::Result<Self> {
-    Ok(Self(unsafe { MmapOptions::new().map(file)? }))
-  }
-}
-
 impl<'a> MMBFile<'a> {
+  /// Parse a `MMBFile` from a file, provided as a byte slice.
+  /// This does the minimum checking to construct the parsed object,
+  /// it is not a verifier.
   pub fn parse(buf: &'a [u8]) -> Result<MMBFile<'a>, ParseError> {
     use ParseError::{BadHeader, BadVersion, BadIndex};
     use super::cmd::{MM0B_MAGIC, MM0B_VERSION};
@@ -205,19 +231,25 @@ impl<'a> MMBFile<'a> {
 }
 
 impl<'a> MMBFile<'a> {
+  /// Get the sort data for a [`SortID`].
   #[inline] #[must_use] pub fn sort(&self, n: SortID) -> Option<SortData> {
     self.sorts.get(usize::from(n.0)).copied()
   }
+  /// Get the term data for a [`TermID`].
   #[inline] #[must_use] pub fn term(&self, n: TermID) -> Option<TermRef<'_>> {
     term_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
+  /// Get the theorem data for a [`ThmID`].
   #[inline] #[must_use] pub fn thm(&self, n: ThmID) -> Option<ThmRef<'_>> {
     thm_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
   }
+  /// Get the proof stream for the file.
   #[inline] #[must_use] pub fn proof(&self) -> DeclIter<'a> {
     DeclIter {buf: self.buf, pos: self.proof}
   }
 
+  /// Get the name of a term, supplying a default name
+  /// of the form `t123` if the index is not present.
   #[must_use] pub fn term_name<T>(&self, n: TermID, f: impl FnOnce(&str) -> T) -> Option<T> {
     if let Some(index) = &self.index {
       Some(f(index.term(n)?.value()?))
@@ -225,6 +257,8 @@ impl<'a> MMBFile<'a> {
       Some(f(&format!("t{}", n.0)))
     }
   }
+  /// Get the name of a theorem, supplying a default name
+  /// of the form `T123` if the index is not present.
   #[must_use] pub fn thm_name<T>(&self, n: ThmID, f: impl FnOnce(&str) -> T) -> Option<T> {
     if let Some(index) = &self.index {
       Some(f(index.thm(n)?.value()?))
@@ -232,6 +266,8 @@ impl<'a> MMBFile<'a> {
       Some(f(&format!("T{}", n.0)))
     }
   }
+  /// Get the name of a sort, supplying a default name
+  /// of the form `s123` if the index is not present.
   #[must_use] pub fn sort_name<T>(&self, n: SortID, f: impl FnOnce(&str) -> T) -> Option<T> {
     if let Some(index) = &self.index {
       Some(f(index.sort(n)?.value()?))
@@ -241,34 +277,47 @@ impl<'a> MMBFile<'a> {
   }
 }
 impl<'a> MMBIndex<'a> {
+  /// Get the index entry for a sort.
   #[must_use] pub fn sort(&self, n: SortID) -> Option<IndexEntryRef<'_>> {
     index_ref(self.buf, *self.sorts.get(usize::from(n.0))?)
   }
+  /// Get the index entry for a term.
   #[must_use] pub fn term(&self, n: TermID) -> Option<IndexEntryRef<'_>> {
     index_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
+  /// Get the index entry for a theorem.
   #[must_use] pub fn thm(&self, n: ThmID) -> Option<IndexEntryRef<'_>> {
     index_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
   }
 }
 
 impl<'a> TermRef<'a> {
+  /// Returns true if this is a `def`, false for a `term`.
   #[inline] #[must_use] pub fn def(&self) -> bool { self.sort & 0x80 != 0 }
+  /// The return sort of this term/def.
   #[inline] #[must_use] pub fn sort(&self) -> SortID { SortID(self.sort & 0x7F) }
+  /// The list of arguments of this term/def (not including the return).
   #[inline] #[must_use] pub fn args(&self) -> &[Arg] { self.args.split_last().expect("nonempty").1 }
+  /// The return sort and dependencies.
   #[inline] #[must_use] pub fn ret(&self) -> Arg { *self.args.last().expect("nonempty") }
+  /// The beginning of the unify stream for the term.
   #[inline] #[must_use] pub fn unify(&self) -> UnifyIter<'_> { self.unify.clone() }
 }
 
 impl<'a> ThmRef<'a> {
+  /// The list of arguments of this axiom/theorem.
   #[inline] #[must_use] pub fn args(&self) -> &[Arg] { self.args }
+  /// The beginning of the unify stream.
   #[inline] #[must_use] pub fn unify(&self) -> UnifyIter<'_> { self.unify.clone() }
 }
 
 impl Arg {
+  /// True if this argument is a bound variable.
   #[inline] #[must_use] pub fn bound(self) -> bool { self.0.get() & (1 << 63) != 0 }
+  /// The sort of this variable.
   #[allow(clippy::cast_possible_truncation)]
   #[inline] #[must_use] pub fn sort(self) -> SortID { SortID(((self.0.get() >> 56) & 0x7F) as u8) }
+  /// The set of dependencies of this variable, as a bitset.
   #[inline] #[must_use] pub fn deps(self) -> u64 { self.0.get() & !(0xFF << 56) }
 }
 
@@ -303,6 +352,9 @@ impl<'a> Iterator for DeclIter<'a> {
 }
 
 impl<'a> ProofIter<'a> {
+  /// True if this iterator is "null", meaning that it has zero commands.
+  /// This is not the same as being empty, which happens when there is one command
+  /// which is the terminating `CMD_END` command.
   #[must_use] pub fn is_null(&self) -> bool { self.buf.len() == self.pos }
 }
 
@@ -330,16 +382,22 @@ impl<'a> Iterator for UnifyIter<'a> {
 }
 
 impl<'a> IndexEntryRef<'a> {
+  /// The left child of this entry.
   #[must_use] pub fn left(&self) -> Option<Self> { index_ref(self.buf, self.p_left) }
+  /// The right child of this entry.
   #[must_use] pub fn right(&self) -> Option<Self> { index_ref(self.buf, self.p_right) }
+  /// Extract the name of this index entry as a `&str`.
   #[must_use] pub fn value(&self) -> Option<&'a str> {
     cstr_from_bytes_prefix(self.value)?.0.to_str().ok()
   }
+  /// The index kind of this entry.
   #[must_use] pub fn kind(&self) -> Option<IndexKind> { self.kind.try_into().ok() }
+  /// The statement that sourced this entry.
   #[must_use] pub fn decl(&self) -> Option<(StmtCmd, ProofIter<'_>)> {
     let (stmt, pf, _) = try_next_decl(self.buf, u64_as_usize(self.p_proof))??;
     Some((stmt, pf))
   }
+  /// Convert the location information of this entry into a [`Position`].
   #[must_use] pub fn to_pos(&self) -> Position {
     Position {line: self.row.get(), character: self.col.get() }
   }
