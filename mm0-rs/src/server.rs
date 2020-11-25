@@ -411,7 +411,7 @@ impl VFS {
     self.0.ulock().get(file).unwrap().text.ulock().1.ascii().clone()
   }
 
-  fn open_virt(&self, path: FileRef, version: i32, text: String) -> Result<Arc<VirtualFile>> {
+  fn open_virt(&self, path: FileRef, version: i32, text: String) -> Arc<VirtualFile> {
     let file = Arc::new(VirtualFile::new(Some(version), FileContents::new(text)));
     let file = match self.0.ulock().entry(path.clone()) {
       Entry::Occupied(entry) => {
@@ -423,7 +423,7 @@ impl VFS {
       Entry::Vacant(entry) => entry.insert(file).clone()
     };
     Job::Elaborate(path, ElabReason::Open).spawn();
-    Ok(file)
+    file
   }
 
   fn close(&self, path: &FileRef) -> Result<()> {
@@ -1440,7 +1440,7 @@ impl Server {
                 let DidOpenTextDocumentParams {text_document: doc} = from_value(notif.params)?;
                 let path = doc.uri.into();
                 log!("open {:?}", path);
-                vfs.open_virt(path, doc.version, doc.text)?;
+                vfs.open_virt(path, doc.version, doc.text);
               }
               DidChangeTextDocument::METHOD => {
                 let DidChangeTextDocumentParams {text_document: doc, content_changes} = from_value(notif.params)?;
