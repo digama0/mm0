@@ -255,16 +255,33 @@ impl<'a> Parser<'a> {
   fn ws(&mut self) {
     while self.idx < self.source.len() {
       let c = self.cur();
-      if whitespace(c) {self.idx += 1; continue}
-      if c == b'-' && self.source.get(self.idx + 1) == Some(&b'-') && self.source.get(self.idx + 2) != Some(&b'|') {
-        self.idx += 1;
-        // End the comment skip when you find a line break.
-        while self.idx < self.source.len() {
-          let c = self.cur();
+      match c {
+        b' ' | b'\n' => {self.idx += 1; continue}
+        b'\t' => {
+          let start = self.idx;
           self.idx += 1;
-          if c == b'\n' {break}
+          while let Some(b'\t') = self.cur_opt() {self.idx += 1}
+          self.errors.push(ParseError::new(start..self.idx,
+            "tabs are not permitted in MM0 files".into()))
         }
-      } else {break}
+        b'\r' => {
+          let start = self.idx;
+          self.idx += 1;
+          self.errors.push(ParseError::new(start..self.idx,
+            "carriage return (windows style newlines) are not permitted in MM0 files".into()))
+        }
+        b'-' if self.source.get(self.idx + 1) == Some(&b'-') &&
+                self.source.get(self.idx + 2) != Some(&b'|') => {
+          self.idx += 1;
+          // End the comment skip when you find a line break.
+          while self.idx < self.source.len() {
+            let c = self.cur();
+            self.idx += 1;
+            if c == b'\n' {break}
+          }
+        }
+        _ => break
+      }
     }
   }
 
