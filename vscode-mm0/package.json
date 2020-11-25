@@ -76,6 +76,12 @@
 					],
 					"default": "change",
 					"description": "Set the server to elaborate changes either on every change/keystroke, or on save."
+				},
+				"metamath-zero.syntaxDocs": {
+					"scope": "window",
+					"type": "boolean",
+					"default": true,
+					"description": "If true (the default), the server will show syntax documentation on hover."
 				}
 			}
 		},
