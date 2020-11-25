@@ -16,3 +16,4 @@ out.*
 *.fdb_latexmk
 *.aux
 *_join.mm0
+**/.DS_Store
