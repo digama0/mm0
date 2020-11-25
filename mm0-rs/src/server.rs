@@ -248,14 +248,19 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   if !is_canceled {
     let mut srcs = HashMap::new();
     let mut to_loc = |fsp: &FileSpan| -> Location {
-      if fsp.file.ptr_eq(&path) {
-        source.ascii()
+      let fc = if fsp.file.ptr_eq(&path) {
+        &source
       } else {
         srcs.entry(fsp.file.ptr())
         .or_insert_with(||
           vfs.0.ulock().get(&fsp.file).expect("missing file")
-            .text.ulock().1.ascii().clone())
-      }.to_loc(fsp)
+            .text.ulock().1.clone())
+      };
+      if let Some(file) = fc.try_ascii() {
+        file.to_loc(fsp)
+      } else {
+        Location {uri: fsp.file.url().clone(), range: Range::default()}
+      }
     };
 
     if let Some(ast) = &ast {
