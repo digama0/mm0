@@ -147,6 +147,30 @@ str_enum! {
     /// the application `(! ax_gen y h)` is a proof of `$ A. y ?p $` if
     /// `h` is a proof of `?p` for some expression `?p`.
     BoundOnly: "!!",
+    /// `:verb`, for "verbatim": Interpolate an already elaborated proof term into a
+    /// refine script. Elaborated proof terms have all arguments explicit, equivalent to `!`
+    /// on every application, and also include terms for conversion proofs, whereas refine
+    /// scripts can unfold definitions implicitly by unification.
+    ///
+    /// This construct is most useful for tactics, that produce full proofs but want to be
+    /// interpolated into a user's refine script without re-interpreting the proof as a
+    /// refine script. For example, `(:verb (a1i p q h))` is a proof of `$ p -> q $` if
+    /// `h` proves `$ q $`, but simply `(a1i p q h)` is ill-formed because it has too many
+    /// arguments; the equivalent refine script would be `(a1i h)` or `(! a1i p q h)` where
+    /// the former performs unification to find `p` and `q`.
+    ///
+    /// *Warning*: `refine` will perform no unification on verbatim proofs, so it is possible
+    /// to give ill formed terms to `refine` this way. The error resulting from this will
+    /// not be caught until the theorem is finalized, possibly long after the bad `refine`
+    /// call, leading to a poor user experience. So tactic authors should be careful not
+    /// to supply bad proofs.
+    Verb: ":verb",
+    /// The expression `{p : $ t $}` asserts that the current goal is `$ t $`, where `p` is
+    /// the proof. Besides the documentation use of asserting what the statement to be proved
+    /// is, this can also be used to unify metavariables in the goal, as well as force unfolding
+    /// or re-folding of definitions. In any case, `p` will be elaborated with goal exactly `t`
+    /// regardless of the original goal.
+    Typed: ":",
   }
 }
 

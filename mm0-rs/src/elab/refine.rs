@@ -414,16 +414,24 @@ impl Elaborator {
                   ElabError::new_e(sp2, "!!: expected at least one argument"))?;
                 (InferMode::BoundOnly, t)
               }
-              AtomID::VERB => if let (Some(e), true) = (u.next(), u.is_empty()) {
-                return Ok(RefineExpr::Exact(e))
-              } else {
-                return Err(ElabError::new_e(try_get_span(fsp, &e), "verb: expected one argument"))
-              },
-              AtomID::COLON => if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
-                return Ok(RefineExpr::Typed {ty, e})
-              } else {
-                return Err(ElabError::new_e(try_get_span(fsp, &e), "':' expected two arguments"))
-              },
+              AtomID::VERB => {
+                let sp2 = try_get_span(fsp, &e);
+                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Verb));
+                if let (Some(e), true) = (u.next(), u.is_empty()) {
+                  return Ok(RefineExpr::Exact(e))
+                } else {
+                  return Err(ElabError::new_e(sp2, "verb: expected one argument"))
+                }
+              }
+              AtomID::COLON => {
+                let sp2 = try_get_span(fsp, &e);
+                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Typed));
+                if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
+                  return Ok(RefineExpr::Typed {ty, e})
+                } else {
+                  return Err(ElabError::new_e(sp2, "':' expected two arguments"))
+                }
+              }
               _ => (InferMode::Regular, e)
             };
             let sp2 = try_get_span(fsp, &t);
