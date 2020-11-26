@@ -53,7 +53,7 @@ impl AxiomUse {
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
       // in the None case it is safe to drop the borrow of `self.axuse`.
-      #[allow(clippy::useless_transmute)]
+      #[allow(clippy::useless_transmute, clippy::transmute_ptr_to_ptr)]
       return unsafe { std::mem::transmute(bs) }
     }
     let mut bs = BitSet::new();
@@ -235,7 +235,7 @@ impl Mangler {
   }
   fn mangle<T>(&mut self, env: &Environment, tid: ThmID, f: impl FnOnce(&str, &str) -> T) -> T {
     let s = env.data[env.thms[tid].atom].name.as_str();
-    match self.get(&env, tid) {
+    match self.get(env, tid) {
       0 => f(s, s),
       n => f(s, &format!("{}.{}", s, n))
     }
