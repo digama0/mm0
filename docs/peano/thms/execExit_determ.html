@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `execExit_determ` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>execExit_determ - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">execExit_determ</a></h1>
+    <pre>theorem execExit_determ (k ret: nat):
+  $ execExit k ret /\ execExit k 0 -> ret = 0 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eor.html">eor</a></td>
+          <td><pre>(readException k = suc (exGPF) /\ 0 != 0 -> execExit k ret -> ret = 0) ->
+  (readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) -> execExit k ret -> ret = 0) ->
+  readException k = suc (exGPF) /\ 0 != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) ->
+  execExit k ret ->
+  ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="absurdr.html">absurdr</a></td>
+          <td><pre>0 = 0 -> ~0 = 0 -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i></td>
+          <td><pre>0 = 0 -> 0 != 0 -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="eqid.html">eqid</a></td>
+          <td><pre>0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 != 0 -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="anwr.html">anwr</a></td>
+          <td><pre>readException k = suc (exGPF) /\ 0 != 0 -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#1">1</a>, <a href="#6">6</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) -> execExit k ret -> ret = 0) ->
+  readException k = suc (exGPF) /\ 0 != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) ->
+  execExit k ret ->
+  ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>k e. Config /\ ret e. ns (u32) /\ (readException k = suc (exGPF) /\ ret != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI)) ->
+  readException k = suc (exGPF) /\ ret != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="9"/>9</td>
+          <td><a href="#8">8</a></td>
+          <td><i>conv</i></td>
+          <td><pre>execExit k ret -> readException k = suc (exGPF) /\ ret != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="absurd.html">absurd</a></td>
+          <td><pre>~1 = 0 -> 1 = 0 -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="d1ne0.html">d1ne0</a></td>
+          <td><pre>1 != 0</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><i>conv</i></td>
+          <td><pre>~1 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#10">10</a>, <a href="#12">12</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>1 = 0 -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td></td>
+          <td><a href="peano2.html">peano2</a></td>
+          <td><pre>suc 1 = suc 0 <-> 1 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td></td>
+          <td><a href="anrl.html">anrl</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> readException k = suc (exGPF)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a></td>
+          <td><i>conv</i></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> readException k = suc 1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td></td>
+          <td><a href="an3l.html">an3l</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> readException k = suc (exSysCall)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><i>conv</i></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> readException k = suc 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#16">16</a>, <a href="#18">18</a></td>
+          <td><a href="eqtr3d.html">eqtr3d</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> suc 1 = suc 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#14">14</a>, <a href="#19">19</a></td>
+          <td><a href="sylib.html">sylib</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> 1 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#13">13</a>, <a href="#20">20</a></td>
+          <td><a href="syl.html">syl</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exGPF) /\ ret != 0) -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td></td>
+          <td><a href="anrr.html">anrr</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI)) ->
+  ret = readReg k (RDI)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td></td>
+          <td><a href="anlr.html">anlr</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI)) ->
+  0 = readReg k (RDI)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td><a href="#22">22</a>, <a href="#23">23</a></td>
+          <td><a href="eqtr4d.html">eqtr4d</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) /\ (readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI)) -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td><a href="#21">21</a>, <a href="#24">24</a></td>
+          <td><a href="eorda.html">eorda</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) ->
+  readException k = suc (exGPF) /\ ret != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ ret = readReg k (RDI) ->
+  ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#9">9</a>, <a href="#25">25</a></td>
+          <td><a href="syl5.html">syl5</a></td>
+          <td><pre>readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td><a href="#7">7</a>, <a href="#26">26</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>readException k = suc (exGPF) /\ 0 != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI) -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td><a href="#27">27</a></td>
+          <td><a href="anwr.html">anwr</a></td>
+          <td><pre>k e. Config /\ 0 e. ns (u32) /\ (readException k = suc (exGPF) /\ 0 != 0 \/ readException k = suc (exSysCall) /\ readReg k (RAX) = sys_exit /\ 0 = readReg k (RDI)) -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="29"/>29</td>
+          <td><a href="#28">28</a></td>
+          <td><i>conv</i></td>
+          <td><pre>execExit k 0 -> execExit k ret -> ret = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="30"/>30</td>
+          <td><a href="#29">29</a></td>
+          <td><a href="impcom.html">impcom</a></td>
+          <td><pre>execExit k ret /\ execExit k 0 -> ret = 0</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>  </section>
+</body>
+</html>

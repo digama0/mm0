@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `xastXchgeq` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>xastXchgeq - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">xastXchgeq</a></h1>
+    <pre>theorem xastXchgeq (_sz1 _sz2 _rm1 _rm2 _rn1 _rn2: nat):
+  $ _sz1 = _sz2 ->
+    _rm1 = _rm2 ->
+    _rn1 = _rn2 ->
+    xastXchg _sz1 _rm1 _rn1 = xastXchg _sz2 _rm2 _rn2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="anl.html">anl</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 -> _sz1 = _sz2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a href="anwl.html">anwl</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 /\ _rn1 = _rn2 -> _sz1 = _sz2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 -> _rm1 = _rm2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a href="anwl.html">anwl</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 /\ _rn1 = _rn2 -> _rm1 = _rm2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 /\ _rn1 = _rn2 -> _rn1 = _rn2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#2">2</a>, <a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="xastXchgeqd.html">xastXchgeqd</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 /\ _rn1 = _rn2 -> xastXchg _sz1 _rm1 _rn1 = xastXchg _sz2 _rm2 _rn2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>_sz1 = _sz2 /\ _rm1 = _rm2 -> _rn1 = _rn2 -> xastXchg _sz1 _rm1 _rn1 = xastXchg _sz2 _rm2 _rn2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>_sz1 = _sz2 -> _rm1 = _rm2 -> _rn1 = _rn2 -> xastXchg _sz1 _rm1 _rn1 = xastXchg _sz2 _rm2 _rn2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `PageMappingeqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>PageMappingeqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">PageMappingeqd</a></h1>
+    <pre>theorem PageMappingeqd (_G: wff) (_M1 _M2: nat):
+  $ _G -> _M1 = _M2 $ >
+  $ _G -> PageMapping _M1 == PageMapping _M2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="biidd.html">biidd</a></td>
+          <td><pre>_G -> (m e. Arrow (ns (u64)) (Option (Prot)) <-> m e. Arrow (ns (u64)) (Option (Prot)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="biidd.html">biidd</a></td>
+          <td><pre>_G -> (a <> suc p e. ns m <-> a <> suc p e. ns m)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><i>hyp _Mh</i></td>
+          <td><pre>_G -> _M1 = _M2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a href="nseqd.html">nseqd</a></td>
+          <td><pre>_G -> ns _M1 == ns _M2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> a = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="appeqd.html">appeqd</a></td>
+          <td><pre>_G -> ns _M1 @ a = ns _M2 @ a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> p <> v = p <> v</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -> (ns _M1 @ a = p <> v <-> ns _M2 @ a = p <> v)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#8">8</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G -> (E. v ns _M1 @ a = p <> v <-> E. v ns _M2 @ a = p <> v)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#2">2</a>, <a href="#9">9</a></td>
+          <td><a href="imeqd.html">imeqd</a></td>
+          <td><pre>_G -> (a <> suc p e. ns m -> E. v ns _M1 @ a = p <> v <-> a <> suc p e. ns m -> E. v ns _M2 @ a = p <> v)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a href="aleqd.html">aleqd</a></td>
+          <td><pre>_G -> (A. p (a <> suc p e. ns m -> E. v ns _M1 @ a = p <> v) <-> A. p (a <> suc p e. ns m -> E. v ns _M2 @ a = p <> v))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="aleqd.html">aleqd</a></td>
+          <td><pre>_G -> (A. a A. p (a <> suc p e. ns m -> E. v ns _M1 @ a = p <> v) <-> A. a A. p (a <> suc p e. ns m -> E. v ns _M2 @ a = p <> v))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#1">1</a>, <a href="#12">12</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (m e. Arrow (ns (u64)) (Option (Prot)) /\ A. a A. p (a <> suc p e. ns m -> E. v ns _M1 @ a = p <> v) <->
+    m e. Arrow (ns (u64)) (Option (Prot)) /\ A. a A. p (a <> suc p e. ns m -> E. v ns _M2 @ a = p <> v))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><a href="abeqd.html">abeqd</a></td>
+          <td><pre>_G ->
+  {m | m e. Arrow (ns (u64)) (Option (Prot)) /\ A. a A. p (a <> suc p e. ns m -> E. v ns _M1 @ a = p <> v)} ==
+    {m | m e. Arrow (ns (u64)) (Option (Prot)) /\ A. a A. p (a <> suc p e. ns m -> E. v ns _M2 @ a = p <> v)}</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> PageMapping _M1 == PageMapping _M2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

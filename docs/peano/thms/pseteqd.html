@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `pseteqd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>pseteqd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">pseteqd</a></h1>
+    <pre>theorem pseteqd (_G: wff) (_a1 _a2: nat):
+  $ _G -> _a1 = _a2 $ >
+  $ _G -> pset _a1 == pset _a2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> 0 = 0</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><i>hyp _ah</i></td>
+          <td><pre>_G -> _a1 = _a2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="fsteqd.html">fsteqd</a></td>
+          <td><pre>_G -> fst _a1 = fst _a2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a href="lteqd.html">lteqd</a></td>
+          <td><pre>_G -> (0 < fst _a1 <-> 0 < fst _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="sndeqd.html">sndeqd</a></td>
+          <td><pre>_G -> snd _a1 = snd _a2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#1">1</a>, <a href="#5">5</a></td>
+          <td><a href="lteqd.html">lteqd</a></td>
+          <td><pre>_G -> (0 < snd _a1 <-> 0 < snd _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#4">4</a>, <a href="#6">6</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (0 < fst _a1 /\ 0 < snd _a1 <-> 0 < fst _a2 /\ 0 < snd _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="biidd.html">biidd</a></td>
+          <td><pre>_G -> (0 < x /\ x <= n <-> 0 < x /\ x <= n)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> x = x</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#9">9</a>, <a href="#3">3</a></td>
+          <td><a href="dvdeqd.html">dvdeqd</a></td>
+          <td><pre>_G -> (x || fst _a1 <-> x || fst _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#8">8</a>, <a href="#10">10</a></td>
+          <td><a href="imeqd.html">imeqd</a></td>
+          <td><pre>_G -> (0 < x /\ x <= n -> x || fst _a1 <-> 0 < x /\ x <= n -> x || fst _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="aleqd.html">aleqd</a></td>
+          <td><pre>_G -> (A. x (0 < x /\ x <= n -> x || fst _a1) <-> A. x (0 < x /\ x <= n -> x || fst _a2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#7">7</a>, <a href="#12">12</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (0 < fst _a1 /\ 0 < snd _a1 /\ A. x (0 < x /\ x <= n -> x || fst _a1) <-> 0 < fst _a2 /\ 0 < snd _a2 /\ A. x (0 < x /\ x <= n -> x || fst _a2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> suc n = suc n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#3">3</a>, <a href="#14">14</a></td>
+          <td><a href="muleqd.html">muleqd</a></td>
+          <td><pre>_G -> fst _a1 * suc n = fst _a2 * suc n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a></td>
+          <td><a href="suceqd.html">suceqd</a></td>
+          <td><pre>_G -> suc (fst _a1 * suc n) = suc (fst _a2 * suc n)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a>, <a href="#5">5</a></td>
+          <td><a href="dvdeqd.html">dvdeqd</a></td>
+          <td><pre>_G -> (suc (fst _a1 * suc n) || snd _a1 <-> suc (fst _a2 * suc n) || snd _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#13">13</a>, <a href="#17">17</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (0 < fst _a1 /\ 0 < snd _a1 /\ A. x (0 < x /\ x <= n -> x || fst _a1) /\ suc (fst _a1 * suc n) || snd _a1 <->
+    0 < fst _a2 /\ 0 < snd _a2 /\ A. x (0 < x /\ x <= n -> x || fst _a2) /\ suc (fst _a2 * suc n) || snd _a2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#18">18</a></td>
+          <td><a href="abeqd.html">abeqd</a></td>
+          <td><pre>_G ->
+  {n | 0 < fst _a1 /\ 0 < snd _a1 /\ A. x (0 < x /\ x <= n -> x || fst _a1) /\ suc (fst _a1 * suc n) || snd _a1} ==
+    {n | 0 < fst _a2 /\ 0 < snd _a2 /\ A. x (0 < x /\ x <= n -> x || fst _a2) /\ suc (fst _a2 * suc n) || snd _a2}</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="20"/>20</td>
+          <td><a href="#19">19</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> pset _a1 == pset _a2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

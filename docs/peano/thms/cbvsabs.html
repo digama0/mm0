@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `cbvsabs` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>cbvsabs - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">cbvsabs</a></h1>
+    <pre>theorem cbvsabs {x y: nat} (A: set x): $ S\ x, A == S\ y, (S[y / x] A) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eleq2.html">eleq2</a></td>
+          <td><pre>S[fst z / x] A == S[fst z / y] S[y / x] A -> (snd z e. S[fst z / x] A <-> snd z e. S[fst z / y] S[y / x] A)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqscom.html">eqscom</a></td>
+          <td><pre>S[fst z / y] S[y / x] A == S[fst z / x] A -> S[fst z / x] A == S[fst z / y] S[y / x] A</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="sbsco.html">sbsco</a></td>
+          <td><pre>S[fst z / y] S[y / x] A == S[fst z / x] A</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>S[fst z / x] A == S[fst z / y] S[y / x] A</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#1">1</a>, <a href="#4">4</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>snd z e. S[fst z / x] A <-> snd z e. S[fst z / y] S[y / x] A</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="abeqi.html">abeqi</a></td>
+          <td><pre>{z | snd z e. S[fst z / x] A} == {z | snd z e. S[fst z / y] S[y / x] A}</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><i>conv</i></td>
+          <td><pre>S\ x, A == S\ y, (S[y / x] A)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>  </section>
+</body>
+</html>

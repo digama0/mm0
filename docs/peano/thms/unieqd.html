@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `unieqd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>unieqd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">unieqd</a></h1>
+    <pre>theorem unieqd (_G: wff) (_A1 _A2: set):
+  $ _G -> _A1 == _A2 $ >
+  $ _G -> sUnion _A1 == sUnion _A2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="biidd.html">biidd</a></td>
+          <td><pre>_G -> (x e. ns y <-> x e. ns y)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> y = y</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><i>hyp _Ah</i></td>
+          <td><pre>_G -> _A1 == _A2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -> (y e. _A1 <-> y e. _A2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#1">1</a>, <a href="#4">4</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (x e. ns y /\ y e. _A1 <-> x e. ns y /\ y e. _A2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G -> (E. y (x e. ns y /\ y e. _A1) <-> E. y (x e. ns y /\ y e. _A2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a href="abeqd.html">abeqd</a></td>
+          <td><pre>_G -> {x | E. y (x e. ns y /\ y e. _A1)} == {x | E. y (x e. ns y /\ y e. _A2)}</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> sUnion _A1 == sUnion _A2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>  </section>
+</body>
+</html>

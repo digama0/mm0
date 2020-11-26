@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `excomb` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>excomb - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">excomb</a></h1>
+    <pre>theorem excomb {x y: nat} (a: wff x y): $ E. x E. y a <-> E. y E. x a $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="noteq.html">noteq</a></td>
+          <td><pre>(A. x ~E. y a <-> A. y ~E. x a) -> (~A. x ~E. y a <-> ~A. y ~E. x a)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>(A. x ~E. y a <-> A. y ~E. x a) -> (E. x E. y a <-> E. y E. x a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="bitr3.html">bitr3</a></td>
+          <td><pre>(A. x A. y ~a <-> A. x ~E. y a) -> (A. x A. y ~a <-> A. y ~E. x a) -> (A. x ~E. y a <-> A. y ~E. x a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="alnex.html">alnex</a></td>
+          <td><pre>A. y ~a <-> ~E. y a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="aleqi.html">aleqi</a></td>
+          <td><pre>A. x A. y ~a <-> A. x ~E. y a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#3">3</a>, <a href="#5">5</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(A. x A. y ~a <-> A. y ~E. x a) -> (A. x ~E. y a <-> A. y ~E. x a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="bitr.html">bitr</a></td>
+          <td><pre>(A. x A. y ~a <-> A. y A. x ~a) -> (A. y A. x ~a <-> A. y ~E. x a) -> (A. x A. y ~a <-> A. y ~E. x a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="alcomb.html">alcomb</a></td>
+          <td><pre>A. x A. y ~a <-> A. y A. x ~a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#7">7</a>, <a href="#8">8</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(A. y A. x ~a <-> A. y ~E. x a) -> (A. x A. y ~a <-> A. y ~E. x a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="alnex.html">alnex</a></td>
+          <td><pre>A. x ~a <-> ~E. x a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a href="aleqi.html">aleqi</a></td>
+          <td><pre>A. y A. x ~a <-> A. y ~E. x a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#9">9</a>, <a href="#11">11</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>A. x A. y ~a <-> A. y ~E. x a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#6">6</a>, <a href="#12">12</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>A. x ~E. y a <-> A. y ~E. x a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#2">2</a>, <a href="#13">13</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>E. x E. y a <-> E. y E. x a</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_11.html">ax_11</a>  </section>
+</body>
+</html>

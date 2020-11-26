@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `terminates_ensuring_mono` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>terminates_ensuring_mono - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">terminates_ensuring_mono</a></h1>
+    <pre>theorem terminates_ensuring_mono (P Q: set) (ks: nat):
+  $ P C_ Q -> terminates_ensuring ks P -> terminates_ensuring ks Q $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="can_terminate_ensuring_mono.html">can_terminate_ensuring_mono</a></td>
+          <td><pre>P C_ Q -> can_terminate_ensuring x5 P -> can_terminate_ensuring x5 Q</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>P C_ Q ->
+  E. x1 E. x2 (ksReachable x5 x1 /\ execExit (ksCfg x1) x2 /\ (x2 = 0 -> ksIn x1 <> ksOut x1 e. P)) ->
+  E. x3 E. x4 (ksReachable x5 x3 /\ execExit (ksCfg x3) x4 /\ (x4 = 0 -> ksIn x3 <> ksOut x3 e. Q))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="imim2d.html">imim2d</a></td>
+          <td><pre>P C_ Q ->
+  (ksReachable ks x5 -> E. x1 E. x2 (ksReachable x5 x1 /\ execExit (ksCfg x1) x2 /\ (x2 = 0 -> ksIn x1 <> ksOut x1 e. P))) ->
+  ksReachable ks x5 ->
+  E. x3 E. x4 (ksReachable x5 x3 /\ execExit (ksCfg x3) x4 /\ (x4 = 0 -> ksIn x3 <> ksOut x3 e. Q))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a href="alimd.html">alimd</a></td>
+          <td><pre>P C_ Q ->
+  A. x5 (ksReachable ks x5 -> E. x1 E. x2 (ksReachable x5 x1 /\ execExit (ksCfg x1) x2 /\ (x2 = 0 -> ksIn x1 <> ksOut x1 e. P))) ->
+  A. x5 (ksReachable ks x5 -> E. x3 E. x4 (ksReachable x5 x3 /\ execExit (ksCfg x3) x4 /\ (x4 = 0 -> ksIn x3 <> ksOut x3 e. Q)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="anim2d.html">anim2d</a></td>
+          <td><pre>P C_ Q ->
+  ks e. KernelState /\ A. x5 (ksReachable ks x5 -> E. x1 E. x2 (ksReachable x5 x1 /\ execExit (ksCfg x1) x2 /\ (x2 = 0 -> ksIn x1 <> ksOut x1 e. P))) ->
+  ks e. KernelState /\ A. x5 (ksReachable ks x5 -> E. x3 E. x4 (ksReachable x5 x3 /\ execExit (ksCfg x3) x4 /\ (x4 = 0 -> ksIn x3 <> ksOut x3 e. Q)))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><i>conv</i></td>
+          <td><pre>P C_ Q -> terminates_ensuring ks P -> terminates_ensuring ks Q</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="ax_8.html">ax_8</a>  </section>
+</body>
+</html>

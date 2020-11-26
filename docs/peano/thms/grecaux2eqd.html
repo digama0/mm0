@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `grecaux2eqd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>grecaux2eqd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">grecaux2eqd</a></h1>
+    <pre>theorem grecaux2eqd (_G: wff) (_z1 _z2: nat) (_K1 _K2 _F1 _F2: set)
+  (_x1 _x2 _n1 _n2 _k1 _k2: nat):
+  $ _G -> _z1 = _z2 $ >
+  $ _G -> _K1 == _K2 $ >
+  $ _G -> _F1 == _F2 $ >
+  $ _G -> _x1 = _x2 $ >
+  $ _G -> _n1 = _n2 $ >
+  $ _G -> _k1 = _k2 $ >
+  $ _G -> grecaux2 _z1 _K1 _F1 _x1 _n1 _k1 = grecaux2 _z2 _K2 _F2 _x2 _n2 _k2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="sh">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><i>hyp _zh</i></td>
+          <td><pre>_G -> _z1 = _z2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><i>hyp _Fh</i></td>
+          <td><pre>_G -> _F1 == _F2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> u = u</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><i>hyp _Kh</i></td>
+          <td><pre>_G -> _K1 == _K2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><i>hyp _xh</i></td>
+          <td><pre>_G -> _x1 = _x2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><i>hyp _kh</i></td>
+          <td><pre>_G -> _k1 = _k2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> suc u = suc u</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#5">5</a>, <a href="#7">7</a></td>
+          <td><a href="subeqd.html">subeqd</a></td>
+          <td><pre>_G -> _x1 - suc u = _x2 - suc u</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a>, <a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a href="grecaux1eqd.html">grecaux1eqd</a></td>
+          <td><pre>_G -> grecaux1 _K1 _x1 _k1 (_x1 - suc u) = grecaux1 _K2 _x2 _k2 (_x2 - suc u)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> i = i</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="preqd.html">preqd</a></td>
+          <td><pre>_G -> grecaux1 _K1 _x1 _k1 (_x1 - suc u) <> i = grecaux1 _K2 _x2 _k2 (_x2 - suc u) <> i</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#3">3</a>, <a href="#11">11</a></td>
+          <td><a href="preqd.html">preqd</a></td>
+          <td><pre>_G -> u <> grecaux1 _K1 _x1 _k1 (_x1 - suc u) <> i = u <> grecaux1 _K2 _x2 _k2 (_x2 - suc u) <> i</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#2">2</a>, <a href="#12">12</a></td>
+          <td><a href="appeqd.html">appeqd</a></td>
+          <td><pre>_G -> _F1 @ (u <> grecaux1 _K1 _x1 _k1 (_x1 - suc u) <> i) = _F2 @ (u <> grecaux1 _K2 _x2 _k2 (_x2 - suc u) <> i)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><a href="lameqd.html">lameqd</a></td>
+          <td><pre>_G -> \ i, _F1 @ (u <> grecaux1 _K1 _x1 _k1 (_x1 - suc u) <> i) == \ i, _F2 @ (u <> grecaux1 _K2 _x2 _k2 (_x2 - suc u) <> i)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a href="slameqd.html">slameqd</a></td>
+          <td><pre>_G -> (\\ u, \ i, _F1 @ (u <> grecaux1 _K1 _x1 _k1 (_x1 - suc u) <> i)) == (\\ u, \ i, _F2 @ (u <> grecaux1 _K2 _x2 _k2 (_x2 - suc u) <> i))</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="16"/>16</td>
+          <td></td>
+          <td><i>hyp _nh</i></td>
+          <td><pre>_G -> _n1 = _n2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#1">1</a>, <a href="#15">15</a>, <a href="#16">16</a></td>
+          <td><a href="recneqd.html">recneqd</a></td>
+          <td><pre>_G -> recn _z1 (\\ u, \ i, _F1 @ (u <> grecaux1 _K1 _x1 _k1 (_x1 - suc u) <> i)) _n1 = recn _z2 (\\ u, \ i, _F2 @ (u <> grecaux1 _K2 _x2 _k2 (_x2 - suc u) <> i)) _n2</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> grecaux2 _z1 _K1 _F1 _x1 _n1 _k1 = grecaux2 _z2 _K2 _F2 _x2 _n2 _k2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

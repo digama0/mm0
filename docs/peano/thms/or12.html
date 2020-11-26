@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `or12` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>or12 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">or12</a></h1>
+    <pre>theorem or12 (a b c: wff): $ a \/ (b \/ c) <-> b \/ (a \/ c) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="bitr3.html">bitr3</a></td>
+          <td><pre>(~a /\ ~b -> c <-> a \/ (b \/ c)) -> (~a /\ ~b -> c <-> b \/ (a \/ c)) -> (a \/ (b \/ c) <-> b \/ (a \/ c))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="impexp.html">impexp</a></td>
+          <td><pre>~a /\ ~b -> c <-> ~a -> ~b -> c</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i></td>
+          <td><pre>~a /\ ~b -> c <-> a \/ (b \/ c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(~a /\ ~b -> c <-> b \/ (a \/ c)) -> (a \/ (b \/ c) <-> b \/ (a \/ c))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="bitr.html">bitr</a></td>
+          <td><pre>(~a /\ ~b -> c <-> ~b /\ ~a -> c) -> (~b /\ ~a -> c <-> b \/ (a \/ c)) -> (~a /\ ~b -> c <-> b \/ (a \/ c))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="ancomb.html">ancomb</a></td>
+          <td><pre>~a /\ ~b <-> ~b /\ ~a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a href="imeq1i.html">imeq1i</a></td>
+          <td><pre>~a /\ ~b -> c <-> ~b /\ ~a -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#5">5</a>, <a href="#7">7</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(~b /\ ~a -> c <-> b \/ (a \/ c)) -> (~a /\ ~b -> c <-> b \/ (a \/ c))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="impexp.html">impexp</a></td>
+          <td><pre>~b /\ ~a -> c <-> ~b -> ~a -> c</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="10"/>10</td>
+          <td><a href="#9">9</a></td>
+          <td><i>conv</i></td>
+          <td><pre>~b /\ ~a -> c <-> b \/ (a \/ c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#8">8</a>, <a href="#10">10</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>~a /\ ~b -> c <-> b \/ (a \/ c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#4">4</a>, <a href="#11">11</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a \/ (b \/ c) <-> b \/ (a \/ c)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>  </section>
+</body>
+</html>

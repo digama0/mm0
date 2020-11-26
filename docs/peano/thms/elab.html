@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `elab` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>elab - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Axiom <a class="thm" href="">elab</a></h1>
+<div class="doc"><p><code>a</code> is in <code>{x | p(x)}</code> iff <code>p(a)</code> holds.</p>
+</div>
+    <pre>axiom elab (a: nat) {x: nat} (p: wff x): $ a e. {x | p} <-> [a / x] p $;</pre>
+  </section>
+</body>
+</html>

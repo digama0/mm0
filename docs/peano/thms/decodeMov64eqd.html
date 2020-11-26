@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `decodeMov64eqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>decodeMov64eqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">decodeMov64eqd</a></h1>
+    <pre>theorem decodeMov64eqd (_G: wff) (_rex1 _rex2 _ast1 _ast2 _b1 _b2 _l1 _l2: nat):
+  $ _G -> _rex1 = _rex2 $ >
+  $ _G -> _ast1 = _ast2 $ >
+  $ _G -> _b1 = _b2 $ >
+  $ _G -> _l1 = _l2 $ >
+  $ _G ->
+    (decodeMov64 _rex1 _ast1 _b1 _l1 <-> decodeMov64 _rex2 _ast2 _b2 _l2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> (3 <> r) : (1 <> v) : (4 <> 11) : 0 = (3 <> r) : (1 <> v) : (4 <> 11) : 0</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><i>hyp _bh</i></td>
+          <td><pre>_G -> _b1 = _b2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="splitBitseqd.html">splitBitseqd</a></td>
+          <td><pre>_G -> (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b1 <-> splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b2)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><i>hyp _rexh</i></td>
+          <td><pre>_G -> _rex1 = _rex2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> v = v</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="opSizeWeqd.html">opSizeWeqd</a></td>
+          <td><pre>_G -> opSizeW _rex1 v = opSizeW _rex2 v</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> imm = imm</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><i>hyp _lh</i></td>
+          <td><pre>_G -> _l1 = _l2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a>, <a href="#8">8</a></td>
+          <td><a href="readFullImmeqd.html">readFullImmeqd</a></td>
+          <td><pre>_G -> (readFullImm (opSizeW _rex1 v) imm _l1 <-> readFullImm (opSizeW _rex2 v) imm _l2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#3">3</a>, <a href="#9">9</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b1 /\ readFullImm (opSizeW _rex1 v) imm _l1 <-> splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b2 /\ readFullImm (opSizeW _rex2 v) imm _l2)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><i>hyp _asth</i></td>
+          <td><pre>_G -> _ast1 = _ast2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="REX_Beqd.html">REX_Beqd</a></td>
+          <td><pre>_G -> REX_B _rex1 = REX_B _rex2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> r = r</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#12">12</a>, <a href="#13">13</a></td>
+          <td><a href="rex_regeqd.html">rex_regeqd</a></td>
+          <td><pre>_G -> rex_reg (REX_B _rex1) r = rex_reg (REX_B _rex2) r</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a href="RM_regeqd.html">RM_regeqd</a></td>
+          <td><pre>_G -> RM_reg (rex_reg (REX_B _rex1) r) = RM_reg (rex_reg (REX_B _rex2) r)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a>, <a href="#7">7</a></td>
+          <td><a href="Rm_ieqd.html">Rm_ieqd</a></td>
+          <td><pre>_G -> Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm = Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#6">6</a>, <a href="#16">16</a></td>
+          <td><a href="xastMoveqd.html">xastMoveqd</a></td>
+          <td><pre>_G -> xastMov (opSizeW _rex1 v) (Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm) = xastMov (opSizeW _rex2 v) (Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#11">11</a>, <a href="#17">17</a></td>
+          <td><a href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -> (_ast1 = xastMov (opSizeW _rex1 v) (Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm) <-> _ast2 = xastMov (opSizeW _rex2 v) (Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#10">10</a>, <a href="#18">18</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b1 /\ readFullImm (opSizeW _rex1 v) imm _l1 /\ _ast1 = xastMov (opSizeW _rex1 v) (Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm) <->
+    splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b2 /\ readFullImm (opSizeW _rex2 v) imm _l2 /\ _ast2 = xastMov (opSizeW _rex2 v) (Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#19">19</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G ->
+  (E. imm (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b1 /\ readFullImm (opSizeW _rex1 v) imm _l1 /\ _ast1 = xastMov (opSizeW _rex1 v) (Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm)) <->
+    E. imm (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b2 /\ readFullImm (opSizeW _rex2 v) imm _l2 /\ _ast2 = xastMov (opSizeW _rex2 v) (Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#20">20</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G ->
+  (E. v E. imm (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b1 /\ readFullImm (opSizeW _rex1 v) imm _l1 /\ _ast1 = xastMov (opSizeW _rex1 v) (Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm)) <->
+    E. v E. imm (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b2 /\ readFullImm (opSizeW _rex2 v) imm _l2 /\ _ast2 = xastMov (opSizeW _rex2 v) (Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#21">21</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G ->
+  (E. r E. v E. imm (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b1 /\ readFullImm (opSizeW _rex1 v) imm _l1 /\ _ast1 = xastMov (opSizeW _rex1 v) (Rm_i (RM_reg (rex_reg (REX_B _rex1) r)) imm))
+    <->
+    E. r E. v E. imm (splitBits ((3 <> r) : (1 <> v) : (4 <> 11) : 0) _b2 /\ readFullImm (opSizeW _rex2 v) imm _l2 /\ _ast2 = xastMov (opSizeW _rex2 v) (Rm_i (RM_reg (rex_reg (REX_B _rex2) r)) imm)))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="23"/>23</td>
+          <td><a href="#22">22</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> (decodeMov64 _rex1 _ast1 _b1 _l1 <-> decodeMov64 _rex2 _ast2 _b2 _l2)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

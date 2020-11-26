@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ax_gen` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ax_gen - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Axiom <a class="thm" href="">ax_gen</a></h1>
+<div class="doc"><p>The axiom of generalization. If <code>|- p</code> is derivable
+(the lack of a precondition means this is a proof in the empty context),
+then <code>p</code> is universally true, so <code>|- A. x p</code> is also true.</p>
+</div>
+    <pre>axiom ax_gen {x: nat} (p: wff x): $ p $ > $ A. x p $;</pre>
+  </section>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `RM_EAmem` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>RM_EAmem - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">RM_EAmem</a></h1>
+    <pre>pub theorem RM_EAmem (k si base q: nat):
+  $ RM_EA k (RM_mem si base q) =
+    EA_m (readIndex k si +_64 readBase k base +_64 q) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqtr.html">eqtr</a></td>
+          <td><pre>RM_EA k (RM_mem si base q) = (\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (si <> base <> q) ->
+  (\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (si <> base <> q) = EA_m (readIndex k si +_64 readBase k base +_64 q) ->
+  RM_EA k (RM_mem si base q) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="caser.html">caser</a></td>
+          <td><pre>case (\ x1, EA_r x1) (\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ b1 (si <> base <> q) =
+  (\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (si <> base <> q)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i></td>
+          <td><pre>RM_EA k (RM_mem si base q) = (\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (si <> base <> q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (si <> base <> q) = EA_m (readIndex k si +_64 readBase k base +_64 q) ->
+  RM_EA k (RM_mem si base q) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="anll.html">anll</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> x2 = si</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="readIndexeq2d.html">readIndexeq2d</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> readIndex k x2 = readIndex k si</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="anlr.html">anlr</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> x3 = base</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a href="readBaseeq2d.html">readBaseeq2d</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> readBase k x3 = readBase k base</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a href="add64eqd.html">add64eqd</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> readIndex k x2 +_64 readBase k x3 = readIndex k si +_64 readBase k base</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> x4 = q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="add64eqd.html">add64eqd</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> readIndex k x2 +_64 readBase k x3 +_64 x4 = readIndex k si +_64 readBase k base +_64 q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="EA_meqd.html">EA_meqd</a></td>
+          <td><pre>x2 = si /\ x3 = base /\ x4 = q -> EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#12">12</a></td>
+          <td><a href="applamed.html">applamed</a></td>
+          <td><pre>x2 = si /\ x3 = base -> (\ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ q = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><a href="appslamed.html">appslamed</a></td>
+          <td><pre>x2 = si -> (\\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (base <> q) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a href="appslame.html">appslame</a></td>
+          <td><pre>(\\ x2, \\ x3, \ x4, EA_m (readIndex k x2 +_64 readBase k x3 +_64 x4)) @ (si <> base <> q) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#4">4</a>, <a href="#15">15</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>RM_EA k (RM_mem si base q) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `toBytesS_bitsNot` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>toBytesS_bitsNot - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">toBytesS_bitsNot</a></h1>
+    <pre>theorem toBytesS_bitsNot (k n: nat):
+  $ toBytes (suc k) (bitsNot (8 * suc k) n) =
+    bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8)) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqtr.html">eqtr</a></td>
+          <td><pre>toBytes (suc k) (bitsNot (8 * suc k) n) = chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8) ->
+  chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8)) ->
+  toBytes (suc k) (bitsNot (8 * suc k) n) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="toBytesS2.html">toBytesS2</a></td>
+          <td><pre>toBytes (suc k) (bitsNot (8 * suc k) n) = chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8)) ->
+  toBytes (suc k) (bitsNot (8 * suc k) n) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="conseq.html">conseq</a></td>
+          <td><pre>chop 8 (bitsNot (8 * suc k) n) = bitsNot 8 n ->
+  toBytes k (shr (bitsNot (8 * suc k) n) 8) = toBytes k (bitsNot (8 * k) (shr n 8)) ->
+  chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="chop_bitsNot.html">chop_bitsNot</a></td>
+          <td><pre>8 <= 8 * suc k -> chop 8 (bitsNot (8 * suc k) n) = bitsNot 8 n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="leeq1.html">leeq1</a></td>
+          <td><pre>8 * 1 = 8 -> (8 * 1 <= 8 * suc k <-> 8 <= 8 * suc k)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="mul12.html">mul12</a></td>
+          <td><pre>8 * 1 = 8</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>8 * 1 <= 8 * suc k <-> 8 <= 8 * suc k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="lemul2a.html">lemul2a</a></td>
+          <td><pre>1 <= suc k -> 8 * 1 <= 8 * suc k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="le11S.html">le11S</a></td>
+          <td><pre>1 <= suc k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>8 * 1 <= 8 * suc k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#8">8</a>, <a href="#11">11</a></td>
+          <td><a href="mpbi.html">mpbi</a></td>
+          <td><pre>8 <= 8 * suc k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#5">5</a>, <a href="#12">12</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>chop 8 (bitsNot (8 * suc k) n) = bitsNot 8 n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#4">4</a>, <a href="#13">13</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>toBytes k (shr (bitsNot (8 * suc k) n) 8) = toBytes k (bitsNot (8 * k) (shr n 8)) ->
+  chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td></td>
+          <td><a href="toByteseq2.html">toByteseq2</a></td>
+          <td><pre>shr (bitsNot (8 * suc k) n) 8 = bitsNot (8 * k) (shr n 8) -> toBytes k (shr (bitsNot (8 * suc k) n) 8) = toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td></td>
+          <td><a href="eqtr.html">eqtr</a></td>
+          <td><pre>shr (bitsNot (8 * suc k) n) 8 = bitsNot (8 * suc k - 8) (shr n 8) -> bitsNot (8 * suc k - 8) (shr n 8) = bitsNot (8 * k) (shr n 8) -> shr (bitsNot (8 * suc k) n) 8 = bitsNot (8 * k) (shr n 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td></td>
+          <td><a href="shr_bitsNot.html">shr_bitsNot</a></td>
+          <td><pre>shr (bitsNot (8 * suc k) n) 8 = bitsNot (8 * suc k - 8) (shr n 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#16">16</a>, <a href="#17">17</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>bitsNot (8 * suc k - 8) (shr n 8) = bitsNot (8 * k) (shr n 8) -> shr (bitsNot (8 * suc k) n) 8 = bitsNot (8 * k) (shr n 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td></td>
+          <td><a href="bitsNoteq1.html">bitsNoteq1</a></td>
+          <td><pre>8 * suc k - 8 = 8 * k -> bitsNot (8 * suc k - 8) (shr n 8) = bitsNot (8 * k) (shr n 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td></td>
+          <td><a href="eqtr.html">eqtr</a></td>
+          <td><pre>8 * suc k - 8 = 8 * k + 8 - 8 -> 8 * k + 8 - 8 = 8 * k -> 8 * suc k - 8 = 8 * k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td></td>
+          <td><a href="subeq1.html">subeq1</a></td>
+          <td><pre>8 * suc k = 8 * k + 8 -> 8 * suc k - 8 = 8 * k + 8 - 8</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td></td>
+          <td><a href="mulS2.html">mulS2</a></td>
+          <td><pre>8 * suc k = 8 * k + 8</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td><a href="#21">21</a>, <a href="#22">22</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>8 * suc k - 8 = 8 * k + 8 - 8</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td><a href="#20">20</a>, <a href="#23">23</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>8 * k + 8 - 8 = 8 * k -> 8 * suc k - 8 = 8 * k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td></td>
+          <td><a href="pncan.html">pncan</a></td>
+          <td><pre>8 * k + 8 - 8 = 8 * k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#24">24</a>, <a href="#25">25</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>8 * suc k - 8 = 8 * k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td><a href="#19">19</a>, <a href="#26">26</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>bitsNot (8 * suc k - 8) (shr n 8) = bitsNot (8 * k) (shr n 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td><a href="#18">18</a>, <a href="#27">27</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>shr (bitsNot (8 * suc k) n) 8 = bitsNot (8 * k) (shr n 8)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="29"/>29</td>
+          <td><a href="#15">15</a>, <a href="#28">28</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>toBytes k (shr (bitsNot (8 * suc k) n) 8) = toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="30"/>30</td>
+          <td><a href="#14">14</a>, <a href="#29">29</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>chop 8 (bitsNot (8 * suc k) n) : toBytes k (shr (bitsNot (8 * suc k) n) 8) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="31"/>31</td>
+          <td><a href="#3">3</a>, <a href="#30">30</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>toBytes (suc k) (bitsNot (8 * suc k) n) = bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8))</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `nfnv` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>nfnv - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">nfnv</a></h1>
+    <pre>theorem nfnv (a: nat) {x: nat}: $ FN/ x a $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="nfv.html">nfv</a></td>
+          <td><pre>F/ x y = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a href="ax_gen.html">ax_gen</a></td>
+          <td><pre>A. y (F/ x y = a)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i></td>
+          <td><pre>FN/ x a</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_5.html">ax_5</a>  </section>
+</body>
+</html>

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ax_10` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ax_10 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Axiom <a class="thm" href="">ax_10</a></h1>
+<div class="doc"><p>Axiom 10 for predicate logic: <code>x</code> is bound in <code>~(A. x p)</code>, so we can
+safely introduce a <code>A. x</code> quantifier. (This axiom is used to internalize
+the notion of &quot;bound in&quot; when axiom 5 does not apply.)</p>
+</div>
+    <pre>axiom ax_10 {x: nat} (p: wff x): $ ~A. x p -> A. x ~A. x p $;</pre>
+  </section>
+</body>
+</html>

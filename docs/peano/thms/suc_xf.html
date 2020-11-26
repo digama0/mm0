@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `suc_xf` in `../examples/peano_hex.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>suc_xf - ../examples/peano_hex.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">suc_xf</a></h1>
+    <pre>theorem suc_xf: $ suc (h2n (xf)) = 16 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="suceq.html">suceq</a></td>
+          <td><pre>h2n (xf) = 15 -> suc (h2n (xf)) = suc 15</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>h2n (xf) = 15 -> suc (h2n (xf)) = 16</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="h2nf.html">h2nf</a></td>
+          <td><pre>h2n (xf) = 15</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>suc (h2n (xf)) = 16</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="h2nf.html">h2nf</a>  </section>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `execOpenT` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>execOpenT - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">execOpenT</a></h1>
+    <pre>pub theorem execOpenT (k ret: nat):
+  $ execOpen k ret -> k e. Config /\ ret e. ns (u64) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="anim.html">anim</a></td>
+          <td><pre>(k e. Config /\ readReg k (RAX) = sys_open -> k e. Config) ->
+  (E. x1 E. x2 (readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64)) -> ret e. ns (u64)) ->
+  k e. Config /\
+    readReg k (RAX) = sys_open /\
+    E. x1 E. x2 (readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64)) ->
+  k e. Config /\ ret e. ns (u64)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>(k e. Config /\ readReg k (RAX) = sys_open -> k e. Config) ->
+  (E. x1 E. x2 (readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64)) -> ret e. ns (u64)) ->
+  execOpen k ret ->
+  k e. Config /\ ret e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="anl.html">anl</a></td>
+          <td><pre>k e. Config /\ readReg k (RAX) = sys_open -> k e. Config</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(E. x1 E. x2 (readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64)) -> ret e. ns (u64)) ->
+  execOpen k ret ->
+  k e. Config /\ ret e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64) -> ret e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x2 (readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64)) -> ret e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x1 E. x2 (readCStr k (readReg k (RDI)) x1 /\ x2 = readReg k (RSI) /\ readReg k (RDX) = 0 /\ (x2 = O_RDONLY \/ x2 = O_WRONLY + O_CREAT + O_TRUNC) /\ ret e. ns (u64)) -> ret e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#4">4</a>, <a href="#7">7</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>execOpen k ret -> k e. Config /\ ret e. ns (u64)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>  </section>
+</body>
+</html>

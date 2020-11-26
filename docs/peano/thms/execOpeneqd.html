@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `execOpeneqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>execOpeneqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">execOpeneqd</a></h1>
+    <pre>theorem execOpeneqd (_G: wff) (_k1 _k2 _ret1 _ret2: nat):
+  $ _G -> _k1 = _k2 $ >
+  $ _G -> _ret1 = _ret2 $ >
+  $ _G -> (execOpen _k1 _ret1 <-> execOpen _k2 _ret2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="sh">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><i>hyp _kh</i></td>
+          <td><pre>_G -> _k1 = _k2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -> Config == Config</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -> (_k1 e. Config <-> _k2 e. Config)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> RAX = RAX</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#1">1</a>, <a href="#4">4</a></td>
+          <td><a href="readRegeqd.html">readRegeqd</a></td>
+          <td><pre>_G -> readReg _k1 (RAX) = readReg _k2 (RAX)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> sys_open = sys_open</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -> (readReg _k1 (RAX) = sys_open <-> readReg _k2 (RAX) = sys_open)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#3">3</a>, <a href="#7">7</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (_k1 e. Config /\ readReg _k1 (RAX) = sys_open <-> _k2 e. Config /\ readReg _k2 (RAX) = sys_open)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> RDI = RDI</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#1">1</a>, <a href="#9">9</a></td>
+          <td><a href="readRegeqd.html">readRegeqd</a></td>
+          <td><pre>_G -> readReg _k1 (RDI) = readReg _k2 (RDI)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> filename = filename</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#1">1</a>, <a href="#10">10</a>, <a href="#11">11</a></td>
+          <td><a href="readCStreqd.html">readCStreqd</a></td>
+          <td><pre>_G -> (readCStr _k1 (readReg _k1 (RDI)) filename <-> readCStr _k2 (readReg _k2 (RDI)) filename)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> flags = flags</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> RSI = RSI</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#1">1</a>, <a href="#14">14</a></td>
+          <td><a href="readRegeqd.html">readRegeqd</a></td>
+          <td><pre>_G -> readReg _k1 (RSI) = readReg _k2 (RSI)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#13">13</a>, <a href="#15">15</a></td>
+          <td><a href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -> (flags = readReg _k1 (RSI) <-> flags = readReg _k2 (RSI))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#12">12</a>, <a href="#16">16</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (readCStr _k1 (readReg _k1 (RDI)) filename /\ flags = readReg _k1 (RSI) <-> readCStr _k2 (readReg _k2 (RDI)) filename /\ flags = readReg _k2 (RSI))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> RDX = RDX</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#1">1</a>, <a href="#18">18</a></td>
+          <td><a href="readRegeqd.html">readRegeqd</a></td>
+          <td><pre>_G -> readReg _k1 (RDX) = readReg _k2 (RDX)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#19">19</a>, <a href="#20">20</a></td>
+          <td><a href="eqeqd.html">eqeqd</a></td>
+          <td><pre>_G -> (readReg _k1 (RDX) = 0 <-> readReg _k2 (RDX) = 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#17">17</a>, <a href="#21">21</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (readCStr _k1 (readReg _k1 (RDI)) filename /\ flags = readReg _k1 (RSI) /\ readReg _k1 (RDX) = 0 <-> readCStr _k2 (readReg _k2 (RDI)) filename /\ flags = readReg _k2 (RSI) /\ readReg _k2 (RDX) = 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td></td>
+          <td><a href="biidd.html">biidd</a></td>
+          <td><pre>_G -> (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC <-> flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td><a href="#22">22</a>, <a href="#23">23</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (readCStr _k1 (readReg _k1 (RDI)) filename /\ flags = readReg _k1 (RSI) /\ readReg _k1 (RDX) = 0 /\ (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) <->
+    readCStr _k2 (readReg _k2 (RDI)) filename /\ flags = readReg _k2 (RSI) /\ readReg _k2 (RDX) = 0 /\ (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC))</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="25"/>25</td>
+          <td></td>
+          <td><i>hyp _reth</i></td>
+          <td><pre>_G -> _ret1 = _ret2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td></td>
+          <td><a href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -> ns (u64) == ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td><a href="#25">25</a>, <a href="#26">26</a></td>
+          <td><a href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -> (_ret1 e. ns (u64) <-> _ret2 e. ns (u64))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td><a href="#24">24</a>, <a href="#27">27</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (readCStr _k1 (readReg _k1 (RDI)) filename /\ flags = readReg _k1 (RSI) /\ readReg _k1 (RDX) = 0 /\ (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\ _ret1 e. ns (u64) <->
+    readCStr _k2 (readReg _k2 (RDI)) filename /\ flags = readReg _k2 (RSI) /\ readReg _k2 (RDX) = 0 /\ (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\ _ret2 e. ns (u64))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="29"/>29</td>
+          <td><a href="#28">28</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G ->
+  (E. flags (readCStr _k1 (readReg _k1 (RDI)) filename /\ flags = readReg _k1 (RSI) /\ readReg _k1 (RDX) = 0 /\ (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\ _ret1 e. ns (u64)) <->
+    E. flags (readCStr _k2 (readReg _k2 (RDI)) filename /\ flags = readReg _k2 (RSI) /\ readReg _k2 (RDX) = 0 /\ (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\ _ret2 e. ns (u64)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="30"/>30</td>
+          <td><a href="#29">29</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G ->
+  (E. filename E. flags (readCStr _k1 (readReg _k1 (RDI)) filename /\
+      flags = readReg _k1 (RSI) /\
+      readReg _k1 (RDX) = 0 /\
+      (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
+      _ret1 e. ns (u64)) <->
+    E. filename E. flags (readCStr _k2 (readReg _k2 (RDI)) filename /\
+      flags = readReg _k2 (RSI) /\
+      readReg _k2 (RDX) = 0 /\
+      (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
+      _ret2 e. ns (u64)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="31"/>31</td>
+          <td><a href="#8">8</a>, <a href="#30">30</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (_k1 e. Config /\
+      readReg _k1 (RAX) = sys_open /\
+      E. filename E. flags (readCStr _k1 (readReg _k1 (RDI)) filename /\
+        flags = readReg _k1 (RSI) /\
+        readReg _k1 (RDX) = 0 /\
+        (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
+        _ret1 e. ns (u64)) <->
+    _k2 e. Config /\
+      readReg _k2 (RAX) = sys_open /\
+      E. filename E. flags (readCStr _k2 (readReg _k2 (RDI)) filename /\
+        flags = readReg _k2 (RSI) /\
+        readReg _k2 (RDX) = 0 /\
+        (flags = O_RDONLY \/ flags = O_WRONLY + O_CREAT + O_TRUNC) /\
+        _ret2 e. ns (u64)))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="32"/>32</td>
+          <td><a href="#31">31</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> (execOpen _k1 _ret1 <-> execOpen _k2 _ret2)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

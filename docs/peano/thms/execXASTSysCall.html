@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `execXASTSysCall` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>execXASTSysCall - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">execXASTSysCall</a></h1>
+    <pre>pub theorem execXASTSysCall {r11: nat} (k k2: nat):
+  $ execXAST k (xastSysCall) k2 <->
+    E. r11 (r11 e. ns (u64) /\
+      k2 =
+        setException
+          (setReg (setReg k (RCX) (readRIP k)) 11 r11)
+          (suc (exSysCall))) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="Sumr.html">Sumr</a></td>
+          <td><pre>b1 (b1 3) e.
+    Sum
+      (Sum
+        (Sum
+          (Sum
+            (S\ x1, S\ x2, {x3 | E. x4 (readEA k x2 (RM_EA k x3) x4 /\ writeUnop k x1 x2 (RM_EA k x3) x4 k2)})
+            (S\ x1, S\ x2, {x5 | E. x6 E. x7 (readEA k x2 (destEA k x5) x6 /\ readEA k x2 (srcEA k x5) x7 /\ writeBinop k x1 x2 (destEA k x5) x6 x7 k2)}))
+          (Sum
+            (S\ x28, {x8 | x28 e.
+              ocasep
+                (x8 e.
+                  S\ x2, {x3 | E. x9 E. x10 E. x11 (x9 = wsizeBits x2 /\
+                    readEA k x2 (RM_EA k x3) x10 /\
+                    x11 = readRegSz k x2 (RAX) * x10 /\
+                    ifp (x9 = 8) (k2 = writeReg k (wSz16) (RAX) x11) (E. x12 E. x13 (splitBits ((x9 <> x12) : (x9 <> x13) : 0) x11 /\ k2 = writeReg (writeReg k x2 (RAX) x12) x2 (RDX) x13)))})
+                {x14 | x8 e.
+                  S\ x2, {x3 | E. x9 E. x15 E. x16 E. x6 E. x17 (x9 = wsizeBits x2 /\
+                    readEA k x2 (RM_EA k x3) x16 /\
+                    divModSz x2 x15 x16 x6 x17 /\
+                    ifp
+                      (x9 = 8)
+                      (x15 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k x2 (RAX) (shl x17 8 + x6)) k2)
+                      (splitBits ((x9 <> readRegSz k x2 (RAX)) : (x9 <> readRegSz k x2 (RDX)) : 0) x15 /\ eraseFlags (writeReg (writeReg k x2 (RAX) x6) x2 (RDX) x17) k2))}}})
+            (S\ x2, {x5 | writeEA k x2 (destEA k x5) (EA_addr (srcEA k x5)) k2})))
+        (Sum
+          (S\ x28, {x8 | x28 e.
+            {x2 | x8 e.
+              Sum
+                (S\ x14, {x18 | x14 e.
+                  ocasep
+                    (x18 e. S\ x5, {x19 | E. x10 (readEA k x2 (srcEA k x5) x10 /\ writeEA k x19 (destEA k x5) x10 k2)})
+                    {x20 | x18 e. S\ x5, {x19 | E. x10 (readEA k x2 (srcEA k x5) x10 /\ writeEA k x19 (destEA k x5) (sExt (wsizeBits x2) (wsizeBits x19) x10) k2)}}})
+                (S\ x14, {x18 | x14 e.
+                  ocasep
+                    (x18 e. S\ x3, {x21 | E. x22 (readEA k x2 (RM_EA k x3) x22 /\ writeEA (writeReg k x2 x21 x22) x2 (RM_EA k x3) (readRegSz k x2 x21) k2)})
+                    (ocasep
+                      (x18 e.
+                        S\ x3, {x21 | E. x10 E. x23 E. x24 E. x25 (x23 = readRegSz k x2 (RAX) /\
+                          readEA k x2 (RM_EA k x3) x24 /\
+                          writeBinop k (binopCmp) x2 (EA_r x21) x23 x24 x25 /\
+                          ifp (x23 = x24) (writeEA x25 x2 (RM_EA k x3) (readRegSz k x2 x21) k2) (writeEA x25 x2 (EA_r (RAX)) x24 k2))})
+                      {x20 | x18 e. S\ x3, {x21 | E. x22 (readEA k x2 (RM_EA k x3) x22 /\ writeBinop k (binopAdd) x2 (RM_EA k x3) (readRegSz k x2 x21) x22 k2)}})})}})
+          (S\ x28, {x8 | x28 e.
+            {x26 | x8 e.
+              Sum
+                (S\ x2, {x5 | ifp (readCond k x26) (E. x22 (readEA k x2 (srcEA k x5) x22 /\ writeEA k x2 (destEA k x5) x22 k2)) (k2 = k)})
+                (S\ x16, {x3 | writeEA k (wSz8 (true x16)) (RM_EA k x3) (nat (readCond k x26)) k2})}})))
+      (Sum
+        (Sum
+          (Sum
+            (Sum {x3 | E. x22 (readEA k (wSz64) (RM_EA k x3) x22 /\ k2 = writeRIP k x22)} (S\ x26, {x4 | k2 = if (readCond k x26) (writeRIP k (readRIP k +_64 x4)) k}))
+            (Sum {x27 | E. x25 (pushRIP k x25 /\ EA_jump x25 (immRM_EA k x27) k2)} {x4 | E. x25 (popRIP k x25 /\ k2 = setReg x25 (RSP) (readReg x25 (RSP) +_64 x4))}))
+          (ocasep (popWrite (setReg k (RSP) (readReg k (RBP))) (RM_reg (RBP)) k2) (Sum {x27 | pushImmRM k x27 k2} {x3 | popWrite k x3 k2})))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+          (ocasep
+            (k2 = writeFlags k (setCF (readFlags k) F.))
+            (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})))) <->
+  b1 3 e.
+    Sum
+      (Sum
+        (Sum
+          (Sum {x3 | E. x22 (readEA k (wSz64) (RM_EA k x3) x22 /\ k2 = writeRIP k x22)} (S\ x26, {x4 | k2 = if (readCond k x26) (writeRIP k (readRIP k +_64 x4)) k}))
+          (Sum {x27 | E. x25 (pushRIP k x25 /\ EA_jump x25 (immRM_EA k x27) k2)} {x4 | E. x25 (popRIP k x25 /\ k2 = setReg x25 (RSP) (readReg x25 (RSP) +_64 x4))}))
+        (ocasep (popWrite (setReg k (RSP) (readReg k (RBP))) (RM_reg (RBP)) k2) (Sum {x27 | pushImmRM k x27 k2} {x3 | popWrite k x3 k2})))
+      (ocasep
+        (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) F.))
+          (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>execXAST k (xastSysCall) k2 <->
+  b1 3 e.
+    Sum
+      (Sum
+        (Sum
+          (Sum {x3 | E. x22 (readEA k (wSz64) (RM_EA k x3) x22 /\ k2 = writeRIP k x22)} (S\ x26, {x4 | k2 = if (readCond k x26) (writeRIP k (readRIP k +_64 x4)) k}))
+          (Sum {x27 | E. x25 (pushRIP k x25 /\ EA_jump x25 (immRM_EA k x27) k2)} {x4 | E. x25 (popRIP k x25 /\ k2 = setReg x25 (RSP) (readReg x25 (RSP) +_64 x4))}))
+        (ocasep (popWrite (setReg k (RSP) (readReg k (RBP))) (RM_reg (RBP)) k2) (Sum {x27 | pushImmRM k x27 k2} {x3 | popWrite k x3 k2})))
+      (ocasep
+        (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) F.))
+          (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="Sumr.html">Sumr</a></td>
+          <td><pre>b1 3 e.
+    Sum
+      (Sum
+        (Sum
+          (Sum {x3 | E. x22 (readEA k (wSz64) (RM_EA k x3) x22 /\ k2 = writeRIP k x22)} (S\ x26, {x4 | k2 = if (readCond k x26) (writeRIP k (readRIP k +_64 x4)) k}))
+          (Sum {x27 | E. x25 (pushRIP k x25 /\ EA_jump x25 (immRM_EA k x27) k2)} {x4 | E. x25 (popRIP k x25 /\ k2 = setReg x25 (RSP) (readReg x25 (RSP) +_64 x4))}))
+        (ocasep (popWrite (setReg k (RSP) (readReg k (RBP))) (RM_reg (RBP)) k2) (Sum {x27 | pushImmRM k x27 k2} {x3 | popWrite k x3 k2})))
+      (ocasep
+        (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) F.))
+          (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}))) <->
+  3 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+      (ocasep
+        (k2 = writeFlags k (setCF (readFlags k) F.))
+        (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="ocasepS.html">ocasepS</a></td>
+          <td><pre>suc 2 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+      (ocasep
+        (k2 = writeFlags k (setCF (readFlags k) F.))
+        (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})) <->
+  2 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) F.))
+      (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><i>conv</i></td>
+          <td><pre>3 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+      (ocasep
+        (k2 = writeFlags k (setCF (readFlags k) F.))
+        (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})) <->
+  2 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) F.))
+      (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="ocasepS.html">ocasepS</a></td>
+          <td><pre>suc 1 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) F.))
+      (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}) <->
+  1 e. ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><i>conv</i></td>
+          <td><pre>2 e.
+    ocasep
+      (k2 = writeFlags k (setCF (readFlags k) F.))
+      (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}) <->
+  1 e. ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="ocasepS.html">ocasepS</a></td>
+          <td><pre>suc 0 e. ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))} <->
+  0 e. {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="9"/>9</td>
+          <td><a href="#8">8</a></td>
+          <td><i>conv</i></td>
+          <td><pre>1 e. ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))} <->
+  0 e. {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="biidd.html">biidd</a></td>
+          <td><pre>T. ->
+  (E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))) <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a href="anwl.html">anwl</a></td>
+          <td><pre>T. /\ x28 = 0 ->
+  (E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))) <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="elabed.html">elabed</a></td>
+          <td><pre>T. ->
+  (0 e. {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))} <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#9">9</a>, <a href="#12">12</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (1 e. ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))} <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#7">7</a>, <a href="#13">13</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (2 e.
+      ocasep
+        (k2 = writeFlags k (setCF (readFlags k) F.))
+        (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}) <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#5">5</a>, <a href="#14">14</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (3 e.
+      ocasep
+        (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) F.))
+          (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))})) <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#3">3</a>, <a href="#15">15</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (b1 3 e.
+      Sum
+        (Sum
+          (Sum
+            (Sum {x3 | E. x22 (readEA k (wSz64) (RM_EA k x3) x22 /\ k2 = writeRIP k x22)} (S\ x26, {x4 | k2 = if (readCond k x26) (writeRIP k (readRIP k +_64 x4)) k}))
+            (Sum {x27 | E. x25 (pushRIP k x25 /\ EA_jump x25 (immRM_EA k x27) k2)} {x4 | E. x25 (popRIP k x25 /\ k2 = setReg x25 (RSP) (readReg x25 (RSP) +_64 x4))}))
+          (ocasep (popWrite (setReg k (RSP) (readReg k (RBP))) (RM_reg (RBP)) k2) (Sum {x27 | pushImmRM k x27 k2} {x3 | popWrite k x3 k2})))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+          (ocasep
+            (k2 = writeFlags k (setCF (readFlags k) F.))
+            (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x28 | E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))}))) <->
+    E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#2">2</a>, <a href="#16">16</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. -> (execXAST k (xastSysCall) k2 <-> E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall))))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><a href="trud.html">trud</a></td>
+          <td><pre>execXAST k (xastSysCall) k2 <-> E. r11 (r11 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 r11) (suc (exSysCall)))</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `mulsub` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>mulsub - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">mulsub</a></h1>
+    <pre>theorem mulsub (a b c: nat): $ a * (b - c) = a * b - a * c $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eor.html">eor</a></td>
+          <td><pre>(c <= b -> a * (b - c) = a * b - a * c) -> (b <= c -> a * (b - c) = a * b - a * c) -> c <= b \/ b <= c -> a * (b - c) = a * b - a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqsub1.html">eqsub1</a></td>
+          <td><pre>a * (b - c) + a * c = a * b -> a * b - a * c = a * (b - c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="muladd.html">muladd</a></td>
+          <td><pre>a * (b - c + c) = a * (b - c) + a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="npcan.html">npcan</a></td>
+          <td><pre>c <= b -> b - c + c = b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="muleq2d.html">muleq2d</a></td>
+          <td><pre>c <= b -> a * (b - c + c) = a * b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#3">3</a>, <a href="#5">5</a></td>
+          <td><a href="syl5eqr.html">syl5eqr</a></td>
+          <td><pre>c <= b -> a * (b - c) + a * c = a * b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#2">2</a>, <a href="#6">6</a></td>
+          <td><a href="syl.html">syl</a></td>
+          <td><pre>c <= b -> a * b - a * c = a * (b - c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a href="eqcomd.html">eqcomd</a></td>
+          <td><pre>c <= b -> a * (b - c) = a * b - a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#1">1</a>, <a href="#8">8</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(b <= c -> a * (b - c) = a * b - a * c) -> c <= b \/ b <= c -> a * (b - c) = a * b - a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="mul02.html">mul02</a></td>
+          <td><pre>a * 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="lesubeq0.html">lesubeq0</a></td>
+          <td><pre>b <= c <-> b - c = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><a href="muleq2.html">muleq2</a></td>
+          <td><pre>b - c = 0 -> a * (b - c) = a * 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a href="sylbi.html">sylbi</a></td>
+          <td><pre>b <= c -> a * (b - c) = a * 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#10">10</a>, <a href="#13">13</a></td>
+          <td><a href="syl6eq.html">syl6eq</a></td>
+          <td><pre>b <= c -> a * (b - c) = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td></td>
+          <td><a href="lesubeq0.html">lesubeq0</a></td>
+          <td><pre>a * b <= a * c <-> a * b - a * c = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td></td>
+          <td><a href="lemul2a.html">lemul2a</a></td>
+          <td><pre>b <= c -> a * b <= a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#15">15</a>, <a href="#16">16</a></td>
+          <td><a href="sylib.html">sylib</a></td>
+          <td><pre>b <= c -> a * b - a * c = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#14">14</a>, <a href="#17">17</a></td>
+          <td><a href="eqtr4d.html">eqtr4d</a></td>
+          <td><pre>b <= c -> a * (b - c) = a * b - a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#9">9</a>, <a href="#18">18</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>c <= b \/ b <= c -> a * (b - c) = a * b - a * c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td></td>
+          <td><a href="leorle.html">leorle</a></td>
+          <td><pre>c <= b \/ b <= c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#19">19</a>, <a href="#20">20</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a * (b - c) = a * b - a * c</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

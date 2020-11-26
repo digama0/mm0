@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ssabed` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ssabed - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">ssabed</a></h1>
+    <pre>theorem ssabed (G: wff) {x: nat} (a: nat) (p: wff x) (q: wff):
+  $ G /\ x = a -> p -> q $ >
+  $ G -> a e. {x | p} -> q $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="elab2.html">elab2</a></td>
+          <td><pre>a e. {x | p} <-> [a / x] p</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="ax_6.html">ax_6</a></td>
+          <td><pre>E. x x = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="nfv.html">nfv</a></td>
+          <td><pre>F/ x G</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="nfsb1.html">nfsb1</a></td>
+          <td><pre>F/ x [a / x] p</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="nfv.html">nfv</a></td>
+          <td><pre>F/ x q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="nfim.html">nfim</a></td>
+          <td><pre>F/ x [a / x] p -> q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="sbq.html">sbq</a></td>
+          <td><pre>x = a -> (p <-> [a / x] p)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a href="anwr.html">anwr</a></td>
+          <td><pre>G /\ x = a -> (p <-> [a / x] p)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#8">8</a></td>
+          <td><a href="bi2d.html">bi2d</a></td>
+          <td><pre>G /\ x = a -> [a / x] p -> p</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>G /\ x = a -> p -> q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="syld.html">syld</a></td>
+          <td><pre>G /\ x = a -> [a / x] p -> q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>G -> x = a -> [a / x] p -> q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#3">3</a>, <a href="#6">6</a>, <a href="#12">12</a></td>
+          <td><a href="eexdh.html">eexdh</a></td>
+          <td><pre>G -> E. x x = a -> [a / x] p -> q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#2">2</a>, <a href="#13">13</a></td>
+          <td><a href="mpi.html">mpi</a></td>
+          <td><pre>G -> [a / x] p -> q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#1">1</a>, <a href="#14">14</a></td>
+          <td><a href="syl5bi.html">syl5bi</a></td>
+          <td><pre>G -> a e. {x | p} -> q</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>  </section>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `leid` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>leid - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">leid</a></h1>
+    <pre>theorem leid (a: nat): $ a <= a $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="addeq2.html">addeq2</a></td>
+          <td><pre>x = 0 -> a + x = a + 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a href="eqeq1d.html">eqeq1d</a></td>
+          <td><pre>x = 0 -> (a + x = a <-> a + 0 = a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="iexe.html">iexe</a></td>
+          <td><pre>a + 0 = a -> E. x a + x = a</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><i>conv</i></td>
+          <td><pre>a + 0 = a -> a <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="add0.html">add0</a></td>
+          <td><pre>a + 0 = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a <= a</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="add0.html">add0</a>  </section>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `basicElfEHeqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>basicElfEHeqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">basicElfEHeqd</a></h1>
+    <pre>theorem basicElfEHeqd (_G: wff)
+  (_file1 _file2 _entry1 _entry2 _phoff1 _phoff2: nat):
+  $ _G -> _file1 = _file2 $ >
+  $ _G -> _entry1 = _entry2 $ >
+  $ _G -> _phoff1 = _phoff2 $ >
+  $ _G ->
+    (basicElfEH _file1 _entry1 _phoff1 <-> basicElfEH _file2 _entry2 _phoff2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="sh">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><i>hyp _fileh</i></td>
+          <td><pre>_G -> _file1 = _file2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -> List (ns (u8)) == List (ns (u8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -> (_file1 e. List (ns (u8)) <-> _file2 e. List (ns (u8)))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> eh = eh</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#1">1</a>, <a href="#5">5</a></td>
+          <td><a href="sublistAteqd.html">sublistAteqd</a></td>
+          <td><pre>_G -> (sublistAt 0 _file1 eh <-> sublistAt 0 _file2 eh)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><i>hyp _entryh</i></td>
+          <td><pre>_G -> _entry1 = _entry2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><i>hyp _phoffh</i></td>
+          <td><pre>_G -> _phoff1 = _phoff2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> 1 = 1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#5">5</a>, <a href="#7">7</a>, <a href="#8">8</a>, <a href="#4">4</a>, <a href="#9">9</a>, <a href="#4">4</a></td>
+          <td><a href="elfHeadereqd.html">elfHeadereqd</a></td>
+          <td><pre>_G -> (elfHeader eh _entry1 _phoff1 0 1 0 <-> elfHeader eh _entry2 _phoff2 0 1 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#6">6</a>, <a href="#10">10</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (sublistAt 0 _file1 eh /\ elfHeader eh _entry1 _phoff1 0 1 0 <-> sublistAt 0 _file2 eh /\ elfHeader eh _entry2 _phoff2 0 1 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>_G -> (E. eh (sublistAt 0 _file1 eh /\ elfHeader eh _entry1 _phoff1 0 1 0) <-> E. eh (sublistAt 0 _file2 eh /\ elfHeader eh _entry2 _phoff2 0 1 0))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#3">3</a>, <a href="#12">12</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G ->
+  (_file1 e. List (ns (u8)) /\ E. eh (sublistAt 0 _file1 eh /\ elfHeader eh _entry1 _phoff1 0 1 0) <-> _file2 e. List (ns (u8)) /\ E. eh (sublistAt 0 _file2 eh /\ elfHeader eh _entry2 _phoff2 0 1 0))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> (basicElfEH _file1 _entry1 _phoff1 <-> basicElfEH _file2 _entry2 _phoff2)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

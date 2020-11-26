@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `RM_EA_T` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>RM_EA_T - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">RM_EA_T</a></h1>
+    <pre>pub theorem RM_EA_T (k rm: nat):
+  $ k e. Config /\ rm e. RM -> RM_EA k rm e. EA $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="RM_EAreg.html">RM_EAreg</a></td>
+          <td><pre>RM_EA k (RM_reg r) = EA_r r</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> rm = RM_reg r</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="RM_EAeq2d.html">RM_EAeq2d</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> RM_EA k rm = RM_EA k (RM_reg r)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#1">1</a>, <a href="#3">3</a></td>
+          <td><a href="syl6eq.html">syl6eq</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> RM_EA k rm = EA_r r</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="eleq1d.html">eleq1d</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> (RM_EA k rm e. EA <-> EA_r r e. EA)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="EA_rT.html">EA_rT</a></td>
+          <td><pre>EA_r r e. EA <-> r e. ns (Regs)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="RM_regT.html">RM_regT</a></td>
+          <td><pre>RM_reg r e. RM <-> r e. ns (Regs)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="eleq1d.html">eleq1d</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> (rm e. RM <-> RM_reg r e. RM)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="anlr.html">anlr</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> rm e. RM</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="mpbid.html">mpbid</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> RM_reg r e. RM</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#7">7</a>, <a href="#10">10</a></td>
+          <td><a href="sylib.html">sylib</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> r e. ns (Regs)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#6">6</a>, <a href="#11">11</a></td>
+          <td><a href="sylibr.html">sylibr</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> EA_r r e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#5">5</a>, <a href="#12">12</a></td>
+          <td><a href="mpbird.html">mpbird</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_reg r -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm = RM_reg r -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><i>conv</i></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm = b0 r -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a></td>
+          <td><a href="splitb0.html">splitb0</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm // 2 = r -> rm = b0 (rm // 2) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a href="eqerd.html">eqerd</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm = b0 (rm // 2) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td></td>
+          <td><a href="RM_EAmem.html">RM_EAmem</a></td>
+          <td><pre>RM_EA k (RM_mem si base q) = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_mem si base q -> rm = RM_mem si base q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#19">19</a></td>
+          <td><a href="RM_EAeq2d.html">RM_EAeq2d</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_mem si base q -> RM_EA k rm = RM_EA k (RM_mem si base q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#18">18</a>, <a href="#20">20</a></td>
+          <td><a href="syl6eq.html">syl6eq</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_mem si base q -> RM_EA k rm = EA_m (readIndex k si +_64 readBase k base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#21">21</a></td>
+          <td><a href="eleq1d.html">eleq1d</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_mem si base q -> (RM_EA k rm e. EA <-> EA_m (readIndex k si +_64 readBase k base +_64 q) e. EA)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td></td>
+          <td><a href="EA_mT.html">EA_mT</a></td>
+          <td><pre>EA_m (readIndex k si +_64 readBase k base +_64 q) e. EA <-> readIndex k si +_64 readBase k base +_64 q e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td></td>
+          <td><a href="add64T.html">add64T</a></td>
+          <td><pre>readIndex k si +_64 readBase k base +_64 q e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td><a href="#23">23</a>, <a href="#24">24</a></td>
+          <td><a href="mpbir.html">mpbir</a></td>
+          <td><pre>EA_m (readIndex k si +_64 readBase k base +_64 q) e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#25">25</a></td>
+          <td><a href="a1i.html">a1i</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_mem si base q -> EA_m (readIndex k si +_64 readBase k base +_64 q) e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td><a href="#22">22</a>, <a href="#26">26</a></td>
+          <td><a href="mpbird.html">mpbird</a></td>
+          <td><pre>k e. Config /\ rm e. RM /\ rm = RM_mem si base q -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td><a href="#27">27</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm = RM_mem si base q -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="29"/>29</td>
+          <td><a href="#28">28</a></td>
+          <td><i>conv</i></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm = b1 (si <> base <> q) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="30"/>30</td>
+          <td><a href="#29">29</a></td>
+          <td><a href="splitb1.html">splitb1</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm // 2 = si <> base <> q -> rm = b1 (rm // 2) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="31"/>31</td>
+          <td><a href="#30">30</a></td>
+          <td><a href="splitpr2.html">splitpr2</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> _1 = base <> q -> rm // 2 = si <> _1 -> rm = b1 (rm // 2) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="32"/>32</td>
+          <td><a href="#31">31</a></td>
+          <td><a href="splitpr.html">splitpr</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm // 2 = si <> _1 -> rm = b1 (rm // 2) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="33"/>33</td>
+          <td><a href="#32">32</a></td>
+          <td><a href="splitpr.html">splitpr</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> rm = b1 (rm // 2) -> RM_EA k rm e. EA</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="34"/>34</td>
+          <td><a href="#17">17</a>, <a href="#33">33</a></td>
+          <td><a href="splitb.html">splitb</a></td>
+          <td><pre>k e. Config /\ rm e. RM -> RM_EA k rm e. EA</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

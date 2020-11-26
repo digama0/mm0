@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `zaddb0` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>zaddb0 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">zaddb0</a></h1>
+    <pre>theorem zaddb0 (m n: nat): $ b0 m +Z b0 n = b0 (m + n) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqtr.html">eqtr</a></td>
+          <td><pre>b0 m +Z b0 n = m + n -ZN 0 -> m + n -ZN 0 = b0 (m + n) -> b0 m +Z b0 n = b0 (m + n)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="znsubeq.html">znsubeq</a></td>
+          <td><pre>zfst (b0 m) + zfst (b0 n) = m + n -> zsnd (b0 m) + zsnd (b0 n) = 0 -> zfst (b0 m) + zfst (b0 n) -ZN (zsnd (b0 m) + zsnd (b0 n)) = m + n -ZN 0</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i></td>
+          <td><pre>zfst (b0 m) + zfst (b0 n) = m + n -> zsnd (b0 m) + zsnd (b0 n) = 0 -> b0 m +Z b0 n = m + n -ZN 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="addeq.html">addeq</a></td>
+          <td><pre>zfst (b0 m) = m -> zfst (b0 n) = n -> zfst (b0 m) + zfst (b0 n) = m + n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="zfstb0.html">zfstb0</a></td>
+          <td><pre>zfst (b0 m) = m</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>zfst (b0 n) = n -> zfst (b0 m) + zfst (b0 n) = m + n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="zfstb0.html">zfstb0</a></td>
+          <td><pre>zfst (b0 n) = n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>zfst (b0 m) + zfst (b0 n) = m + n</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#3">3</a>, <a href="#8">8</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>zsnd (b0 m) + zsnd (b0 n) = 0 -> b0 m +Z b0 n = m + n -ZN 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="eqtr.html">eqtr</a></td>
+          <td><pre>zsnd (b0 m) + zsnd (b0 n) = 0 + 0 -> 0 + 0 = 0 -> zsnd (b0 m) + zsnd (b0 n) = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="addeq.html">addeq</a></td>
+          <td><pre>zsnd (b0 m) = 0 -> zsnd (b0 n) = 0 -> zsnd (b0 m) + zsnd (b0 n) = 0 + 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><a href="zsndb0.html">zsndb0</a></td>
+          <td><pre>zsnd (b0 m) = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>zsnd (b0 n) = 0 -> zsnd (b0 m) + zsnd (b0 n) = 0 + 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td></td>
+          <td><a href="zsndb0.html">zsndb0</a></td>
+          <td><pre>zsnd (b0 n) = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>zsnd (b0 m) + zsnd (b0 n) = 0 + 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#10">10</a>, <a href="#15">15</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 + 0 = 0 -> zsnd (b0 m) + zsnd (b0 n) = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td></td>
+          <td><a href="add0.html">add0</a></td>
+          <td><pre>0 + 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#16">16</a>, <a href="#17">17</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>zsnd (b0 m) + zsnd (b0 n) = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#9">9</a>, <a href="#18">18</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>b0 m +Z b0 n = m + n -ZN 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#1">1</a>, <a href="#19">19</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>m + n -ZN 0 = b0 (m + n) -> b0 m +Z b0 n = b0 (m + n)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td></td>
+          <td><a href="znsub02.html">znsub02</a></td>
+          <td><pre>m + n -ZN 0 = b0 (m + n)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#20">20</a>, <a href="#21">21</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>b0 m +Z b0 n = b0 (m + n)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

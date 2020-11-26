@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `powpos` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>powpos - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">powpos</a></h1>
+    <pre>theorem powpos (a b: nat): $ 0 < a -> 0 < a ^ b $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = b -> 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = b -> a = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_1 = b -> _1 = b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="poweqd.html">poweqd</a></td>
+          <td><pre>_1 = b -> a ^ _1 = a ^ b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#1">1</a>, <a href="#4">4</a></td>
+          <td><a href="lteqd.html">lteqd</a></td>
+          <td><pre>_1 = b -> (0 < a ^ _1 <-> 0 < a ^ b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = 0 -> 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = 0 -> a = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_1 = 0 -> _1 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#7">7</a>, <a href="#8">8</a></td>
+          <td><a href="poweqd.html">poweqd</a></td>
+          <td><pre>_1 = 0 -> a ^ _1 = a ^ 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#6">6</a>, <a href="#9">9</a></td>
+          <td><a href="lteqd.html">lteqd</a></td>
+          <td><pre>_1 = 0 -> (0 < a ^ _1 <-> 0 < a ^ 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = x1 -> 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = x1 -> a = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_1 = x1 -> _1 = x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#12">12</a>, <a href="#13">13</a></td>
+          <td><a href="poweqd.html">poweqd</a></td>
+          <td><pre>_1 = x1 -> a ^ _1 = a ^ x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#11">11</a>, <a href="#14">14</a></td>
+          <td><a href="lteqd.html">lteqd</a></td>
+          <td><pre>_1 = x1 -> (0 < a ^ _1 <-> 0 < a ^ x1)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = suc x1 -> 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_1 = suc x1 -> a = a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_1 = suc x1 -> _1 = suc x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#17">17</a>, <a href="#18">18</a></td>
+          <td><a href="poweqd.html">poweqd</a></td>
+          <td><pre>_1 = suc x1 -> a ^ _1 = a ^ suc x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#16">16</a>, <a href="#19">19</a></td>
+          <td><a href="lteqd.html">lteqd</a></td>
+          <td><pre>_1 = suc x1 -> (0 < a ^ _1 <-> 0 < a ^ suc x1)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td></td>
+          <td><a href="lteq2.html">lteq2</a></td>
+          <td><pre>a ^ 0 = 1 -> (0 < a ^ 0 <-> 0 < 1)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td></td>
+          <td><a href="pow0.html">pow0</a></td>
+          <td><pre>a ^ 0 = 1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td><a href="#21">21</a>, <a href="#22">22</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 < a ^ 0 <-> 0 < 1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td></td>
+          <td><a href="d0lt1.html">d0lt1</a></td>
+          <td><pre>0 < 1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td><a href="#23">23</a>, <a href="#24">24</a></td>
+          <td><a href="mpbir.html">mpbir</a></td>
+          <td><pre>0 < a ^ 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#25">25</a></td>
+          <td><a href="a1i.html">a1i</a></td>
+          <td><pre>0 < a -> 0 < a ^ 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td></td>
+          <td><a href="lteq2.html">lteq2</a></td>
+          <td><pre>a ^ suc x1 = a * a ^ x1 -> (0 < a ^ suc x1 <-> 0 < a * a ^ x1)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td></td>
+          <td><a href="powS.html">powS</a></td>
+          <td><pre>a ^ suc x1 = a * a ^ x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="29"/>29</td>
+          <td><a href="#27">27</a>, <a href="#28">28</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 < a ^ suc x1 <-> 0 < a * a ^ x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="30"/>30</td>
+          <td></td>
+          <td><a href="mulpos.html">mulpos</a></td>
+          <td><pre>0 < a * a ^ x1 <-> 0 < a /\ 0 < a ^ x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="31"/>31</td>
+          <td><a href="#30">30</a></td>
+          <td><a href="bi2i.html">bi2i</a></td>
+          <td><pre>0 < a /\ 0 < a ^ x1 -> 0 < a * a ^ x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="32"/>32</td>
+          <td><a href="#29">29</a>, <a href="#31">31</a></td>
+          <td><a href="sylibr.html">sylibr</a></td>
+          <td><pre>0 < a /\ 0 < a ^ x1 -> 0 < a ^ suc x1</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="33"/>33</td>
+          <td><a href="#5">5</a>, <a href="#10">10</a>, <a href="#15">15</a>, <a href="#20">20</a>, <a href="#26">26</a>, <a href="#32">32</a></td>
+          <td><a href="indd.html">indd</a></td>
+          <td><pre>0 < a -> 0 < a ^ b</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

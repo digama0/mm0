@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `elima` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>elima - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">elima</a></h1>
+    <pre>theorem elima (A F: set) (b: nat) {x: nat}:
+  $ b e. F '' A <-> E. x (x e. A /\ x <> b e. F) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="preq2.html">preq2</a></td>
+          <td><pre>y = b -> x <> y = x <> b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a href="eleq1d.html">eleq1d</a></td>
+          <td><pre>y = b -> (x <> y e. F <-> x <> b e. F)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="aneq2d.html">aneq2d</a></td>
+          <td><pre>y = b -> (x e. A /\ x <> y e. F <-> x e. A /\ x <> b e. F)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>y = b -> (E. x (x e. A /\ x <> y e. F) <-> E. x (x e. A /\ x <> b e. F))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="elabe.html">elabe</a></td>
+          <td><pre>b e. {y | E. x (x e. A /\ x <> y e. F)} <-> E. x (x e. A /\ x <> b e. F)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><i>conv</i></td>
+          <td><pre>b e. F '' A <-> E. x (x e. A /\ x <> b e. F)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

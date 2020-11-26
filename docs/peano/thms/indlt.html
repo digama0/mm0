@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `indlt` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>indlt - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">indlt</a></h1>
+    <pre>theorem indlt (G: wff) {x y: nat} (a: nat) (px: wff x) (p0 pa py ps: wff y):
+  $ x = a -> (px <-> pa) $ >
+  $ x = 0 -> (px <-> p0) $ >
+  $ x = y -> (px <-> py) $ >
+  $ x = suc y -> (px <-> ps) $ >
+  $ G -> p0 $ >
+  $ G /\ y < a /\ py -> ps $ >
+  $ G -> pa $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="leid.html">leid</a></td>
+          <td><pre>a <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="leeq1.html">leeq1</a></td>
+          <td><pre>x = a -> (x <= a <-> a <= a)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><i>hyp ha</i></td>
+          <td><pre>x = a -> (px <-> pa)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="imeqd.html">imeqd</a></td>
+          <td><pre>x = a -> (x <= a -> px <-> a <= a -> pa)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="leeq1.html">leeq1</a></td>
+          <td><pre>x = 0 -> (x <= a <-> 0 <= a)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><i>hyp h0</i></td>
+          <td><pre>x = 0 -> (px <-> p0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a href="imeqd.html">imeqd</a></td>
+          <td><pre>x = 0 -> (x <= a -> px <-> 0 <= a -> p0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="leeq1.html">leeq1</a></td>
+          <td><pre>x = y -> (x <= a <-> y <= a)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><i>hyp hy</i></td>
+          <td><pre>x = y -> (px <-> py)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="imeqd.html">imeqd</a></td>
+          <td><pre>x = y -> (x <= a -> px <-> y <= a -> py)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="leeq1.html">leeq1</a></td>
+          <td><pre>x = suc y -> (x <= a <-> suc y <= a)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><i>hyp hs</i></td>
+          <td><pre>x = suc y -> (px <-> ps)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a href="imeqd.html">imeqd</a></td>
+          <td><pre>x = suc y -> (x <= a -> px <-> suc y <= a -> ps)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="14"/>14</td>
+          <td></td>
+          <td><i>hyp h1</i></td>
+          <td><pre>G -> p0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a href="a1d.html">a1d</a></td>
+          <td><pre>G -> 0 <= a -> p0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td></td>
+          <td><a href="ltle.html">ltle</a></td>
+          <td><pre>y < a -> y <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a href="imim1i.html">imim1i</a></td>
+          <td><pre>(y <= a -> py) -> y < a -> py</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="18"/>18</td>
+          <td></td>
+          <td><i>hyp h2</i></td>
+          <td><pre>G /\ y < a /\ py -> ps</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#18">18</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>G /\ y < a -> py -> ps</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#19">19</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>G -> y < a -> py -> ps</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#20">20</a></td>
+          <td><a href="a2d.html">a2d</a></td>
+          <td><pre>G -> (y < a -> py) -> y < a -> ps</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="22"/>22</td>
+          <td><a href="#21">21</a></td>
+          <td><i>conv</i></td>
+          <td><pre>G -> (y < a -> py) -> suc y <= a -> ps</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td><a href="#17">17</a>, <a href="#22">22</a></td>
+          <td><a href="syl5.html">syl5</a></td>
+          <td><pre>G -> (y <= a -> py) -> suc y <= a -> ps</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td><a href="#23">23</a></td>
+          <td><a href="imp.html">imp</a></td>
+          <td><pre>G /\ (y <= a -> py) -> suc y <= a -> ps</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td><a href="#4">4</a>, <a href="#7">7</a>, <a href="#10">10</a>, <a href="#13">13</a>, <a href="#15">15</a>, <a href="#24">24</a></td>
+          <td><a href="indd.html">indd</a></td>
+          <td><pre>G -> a <= a -> pa</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#1">1</a>, <a href="#25">25</a></td>
+          <td><a href="mpi.html">mpi</a></td>
+          <td><pre>G -> pa</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>  </section>
+</body>
+</html>

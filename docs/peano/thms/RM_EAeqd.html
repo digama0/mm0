@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `RM_EAeqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>RM_EAeqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">RM_EAeqd</a></h1>
+    <pre>theorem RM_EAeqd (_G: wff) (_k1 _k2 _rm1 _rm2: nat):
+  $ _G -> _k1 = _k2 $ >
+  $ _G -> _rm1 = _rm2 $ >
+  $ _G -> RM_EA _k1 _rm1 = RM_EA _k2 _rm2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -> \ r, EA_r r == \ r, EA_r r</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><i>hyp _kh</i></td>
+          <td><pre>_G -> _k1 = _k2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> si = si</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a href="readIndexeqd.html">readIndexeqd</a></td>
+          <td><pre>_G -> readIndex _k1 si = readIndex _k2 si</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> base = base</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#2">2</a>, <a href="#5">5</a></td>
+          <td><a href="readBaseeqd.html">readBaseeqd</a></td>
+          <td><pre>_G -> readBase _k1 base = readBase _k2 base</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#4">4</a>, <a href="#6">6</a></td>
+          <td><a href="add64eqd.html">add64eqd</a></td>
+          <td><pre>_G -> readIndex _k1 si +_64 readBase _k1 base = readIndex _k2 si +_64 readBase _k2 base</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -> q = q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#7">7</a>, <a href="#8">8</a></td>
+          <td><a href="add64eqd.html">add64eqd</a></td>
+          <td><pre>_G -> readIndex _k1 si +_64 readBase _k1 base +_64 q = readIndex _k2 si +_64 readBase _k2 base +_64 q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#9">9</a></td>
+          <td><a href="EA_meqd.html">EA_meqd</a></td>
+          <td><pre>_G -> EA_m (readIndex _k1 si +_64 readBase _k1 base +_64 q) = EA_m (readIndex _k2 si +_64 readBase _k2 base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a href="lameqd.html">lameqd</a></td>
+          <td><pre>_G -> \ q, EA_m (readIndex _k1 si +_64 readBase _k1 base +_64 q) == \ q, EA_m (readIndex _k2 si +_64 readBase _k2 base +_64 q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="slameqd.html">slameqd</a></td>
+          <td><pre>_G -> (\\ base, \ q, EA_m (readIndex _k1 si +_64 readBase _k1 base +_64 q)) == (\\ base, \ q, EA_m (readIndex _k2 si +_64 readBase _k2 base +_64 q))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#12">12</a></td>
+          <td><a href="slameqd.html">slameqd</a></td>
+          <td><pre>_G -> (\\ si, \\ base, \ q, EA_m (readIndex _k1 si +_64 readBase _k1 base +_64 q)) == (\\ si, \\ base, \ q, EA_m (readIndex _k2 si +_64 readBase _k2 base +_64 q))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#1">1</a>, <a href="#13">13</a></td>
+          <td><a href="caseeqd.html">caseeqd</a></td>
+          <td><pre>_G -> case (\ r, EA_r r) (\\ si, \\ base, \ q, EA_m (readIndex _k1 si +_64 readBase _k1 base +_64 q)) == case (\ r, EA_r r) (\\ si, \\ base, \ q, EA_m (readIndex _k2 si +_64 readBase _k2 base +_64 q))</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="15"/>15</td>
+          <td></td>
+          <td><i>hyp _rmh</i></td>
+          <td><pre>_G -> _rm1 = _rm2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#14">14</a>, <a href="#15">15</a></td>
+          <td><a href="appeqd.html">appeqd</a></td>
+          <td><pre>_G ->
+  case (\ r, EA_r r) (\\ si, \\ base, \ q, EA_m (readIndex _k1 si +_64 readBase _k1 base +_64 q)) @ _rm1 =
+    case (\ r, EA_r r) (\\ si, \\ base, \ q, EA_m (readIndex _k2 si +_64 readBase _k2 base +_64 q)) @ _rm2</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> RM_EA _k1 _rm1 = RM_EA _k2 _rm2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

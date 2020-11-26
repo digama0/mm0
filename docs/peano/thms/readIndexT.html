@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `readIndexT` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>readIndexT - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">readIndexT</a></h1>
+    <pre>pub theorem readIndexT (k si: nat):
+  $ k e. Config /\ si e. Option (ScaleIndex) -> readIndex k si e. ns (u64) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="readIndex0.html">readIndex0</a></td>
+          <td><pre>readIndex k 0 = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="readIndexeq2.html">readIndexeq2</a></td>
+          <td><pre>si = 0 -> readIndex k si = readIndex k 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="syl6eq.html">syl6eq</a></td>
+          <td><pre>si = 0 -> readIndex k si = 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><a href="eleq1d.html">eleq1d</a></td>
+          <td><pre>si = 0 -> (readIndex k si e. ns (u64) <-> 0 e. ns (u64))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="elBits01.html">elBits01</a></td>
+          <td><pre>0 e. ns (Bits 64)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><i>conv</i></td>
+          <td><pre>0 e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a href="a1i.html">a1i</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> 0 e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#4">4</a>, <a href="#7">7</a></td>
+          <td><a href="syl5ibrcom.html">syl5ibrcom</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> si = 0 -> readIndex k si e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="readIndexS.html">readIndexS</a></td>
+          <td><pre>readIndex k (suc (sc <> r)) = chop 64 (shl (readReg k r) sc)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="readIndexeq2.html">readIndexeq2</a></td>
+          <td><pre>si = suc (sc <> r) -> readIndex k si = readIndex k (suc (sc <> r))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="syl6eq.html">syl6eq</a></td>
+          <td><pre>si = suc (sc <> r) -> readIndex k si = chop 64 (shl (readReg k r) sc)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="eleq1d.html">eleq1d</a></td>
+          <td><pre>si = suc (sc <> r) -> (readIndex k si e. ns (u64) <-> chop 64 (shl (readReg k r) sc) e. ns (u64))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td></td>
+          <td><a href="chopT.html">chopT</a></td>
+          <td><pre>chop 64 (shl (readReg k r) sc) e. ns (Bits 64)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><i>conv</i></td>
+          <td><pre>chop 64 (shl (readReg k r) sc) e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a href="a1i.html">a1i</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> chop 64 (shl (readReg k r) sc) e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#12">12</a>, <a href="#15">15</a></td>
+          <td><a href="syl5ibrcom.html">syl5ibrcom</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> si = suc (sc <> r) -> readIndex k si e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a href="splitoptS.html">splitoptS</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> si - 1 = sc <> r -> si = suc (si - 1) -> readIndex k si e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><a href="splitpr.html">splitpr</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> si = suc (si - 1) -> readIndex k si e. ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#8">8</a>, <a href="#18">18</a></td>
+          <td><a href="splitopt.html">splitopt</a></td>
+          <td><pre>k e. Config /\ si e. Option (ScaleIndex) -> readIndex k si e. ns (u64)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

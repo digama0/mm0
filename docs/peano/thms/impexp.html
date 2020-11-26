@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `impexp` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>impexp - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">impexp</a></h1>
+    <pre>theorem impexp (a b c: wff): $ a /\ b -> c <-> a -> b -> c $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="anim1.html">anim1</a></td>
+          <td><pre>((a /\ b -> c) /\ a -> a) -> (a /\ b -> c) /\ a /\ b -> a /\ b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>(a /\ b -> c) /\ a -> a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(a /\ b -> c) /\ a /\ b -> a /\ b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="anll.html">anll</a></td>
+          <td><pre>(a /\ b -> c) /\ a /\ b -> a /\ b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a href="mpd.html">mpd</a></td>
+          <td><pre>(a /\ b -> c) /\ a /\ b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>(a /\ b -> c) /\ a -> b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#6">6</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>(a /\ b -> c) -> a -> b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="anrr.html">anrr</a></td>
+          <td><pre>(a -> b -> c) /\ (a /\ b) -> b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="anrl.html">anrl</a></td>
+          <td><pre>(a -> b -> c) /\ (a /\ b) -> a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="anl.html">anl</a></td>
+          <td><pre>(a -> b -> c) /\ (a /\ b) -> a -> b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="mpd.html">mpd</a></td>
+          <td><pre>(a -> b -> c) /\ (a /\ b) -> b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#8">8</a>, <a href="#11">11</a></td>
+          <td><a href="mpd.html">mpd</a></td>
+          <td><pre>(a -> b -> c) /\ (a /\ b) -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#12">12</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>(a -> b -> c) -> a /\ b -> c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#7">7</a>, <a href="#13">13</a></td>
+          <td><a href="ibii.html">ibii</a></td>
+          <td><pre>a /\ b -> c <-> a -> b -> c</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>  </section>
+</body>
+</html>

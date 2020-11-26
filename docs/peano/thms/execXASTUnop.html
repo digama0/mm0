@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `execXASTUnop` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>execXASTUnop - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">execXASTUnop</a></h1>
+    <pre>pub theorem execXASTUnop {q: nat} (k op sz rm k2: nat):
+  $ execXAST k (xastUnop op sz rm) k2 <->
+    E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="Suml.html">Suml</a></td>
+          <td><pre>b0 (b0 (b0 (b0 (op <> sz <> rm)))) e.
+    Sum
+      (Sum
+        (Sum
+          (Sum
+            (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+            (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+          (Sum
+            (S\ x4, {x5 | x4 e.
+              ocasep
+                (x5 e.
+                  S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                    readEA k _2 (RM_EA k _3) x7 /\
+                    x8 = readRegSz k _2 (RAX) * x7 /\
+                    ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+                {x11 | x5 e.
+                  S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                    readEA k _2 (RM_EA k _3) x13 /\
+                    divModSz _2 x12 x13 x2 x14 /\
+                    ifp
+                      (x6 = 8)
+                      (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                      (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+            (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})))
+        (Sum
+          (S\ x4, {x5 | x4 e.
+            {_2 | x5 e.
+              Sum
+                (S\ x11, {x15 | x11 e.
+                  ocasep
+                    (x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) x7 k2)})
+                    {x17 | x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) (sExt (wsizeBits _2) (wsizeBits x16) x7) k2)}}})
+                (S\ x11, {x15 | x11 e.
+                  ocasep
+                    (x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeEA (writeReg k _2 x18 x19) _2 (RM_EA k _3) (readRegSz k _2 x18) k2)})
+                    (ocasep
+                      (x15 e.
+                        S\ _3, {x18 | E. x7 E. x20 E. x21 E. x22 (x20 = readRegSz k _2 (RAX) /\
+                          readEA k _2 (RM_EA k _3) x21 /\
+                          writeBinop k (binopCmp) _2 (EA_r x18) x20 x21 x22 /\
+                          ifp (x20 = x21) (writeEA x22 _2 (RM_EA k _3) (readRegSz k _2 x18) k2) (writeEA x22 _2 (EA_r (RAX)) x21 k2))})
+                      {x17 | x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeBinop k (binopAdd) _2 (RM_EA k _3) (readRegSz k _2 x18) x19 k2)}})})}})
+          (S\ x4, {x5 | x4 e.
+            {x23 | x5 e.
+              Sum
+                (S\ _2, {x1 | ifp (readCond k x23) (E. x19 (readEA k _2 (srcEA k x1) x19 /\ writeEA k _2 (destEA k x1) x19 k2)) (k2 = k)})
+                (S\ x13, {_3 | writeEA k (wSz8 (true x13)) (RM_EA k _3) (nat (readCond k x23)) k2})}})))
+      (Sum
+        (Sum
+          (Sum
+            (Sum {_3 | E. x19 (readEA k (wSz64) (RM_EA k _3) x19 /\ k2 = writeRIP k x19)} (S\ x23, {q | k2 = if (readCond k x23) (writeRIP k (readRIP k +_64 q)) k}))
+            (Sum {x24 | E. x22 (pushRIP k x22 /\ EA_jump x22 (immRM_EA k x24) k2)} {q | E. x22 (popRIP k x22 /\ k2 = setReg x22 (RSP) (readReg x22 (RSP) +_64 q))}))
+          (ocasep (popWrite (setReg k (RSP) (readReg k (RBP))) (RM_reg (RBP)) k2) (Sum {x24 | pushImmRM k x24 k2} {_3 | popWrite k _3 k2})))
+        (ocasep
+          (k2 = writeFlags k (setCF (readFlags k) (~CF (readFlags k))))
+          (ocasep
+            (k2 = writeFlags k (setCF (readFlags k) F.))
+            (ocasep (k2 = writeFlags k (setCF (readFlags k) T.)) {x4 | E. x25 (x25 e. ns (u64) /\ k2 = setException (setReg (setReg k (RCX) (readRIP k)) 11 x25) (suc (exSysCall)))})))) <->
+  b0 (b0 (b0 (op <> sz <> rm))) e.
+    Sum
+      (Sum
+        (Sum
+          (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+          (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+        (Sum
+          (S\ x4, {x5 | x4 e.
+            ocasep
+              (x5 e.
+                S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x7 /\
+                  x8 = readRegSz k _2 (RAX) * x7 /\
+                  ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+              {x11 | x5 e.
+                S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x13 /\
+                  divModSz _2 x12 x13 x2 x14 /\
+                  ifp
+                    (x6 = 8)
+                    (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                    (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+          (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})))
+      (Sum
+        (S\ x4, {x5 | x4 e.
+          {_2 | x5 e.
+            Sum
+              (S\ x11, {x15 | x11 e.
+                ocasep
+                  (x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) x7 k2)})
+                  {x17 | x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) (sExt (wsizeBits _2) (wsizeBits x16) x7) k2)}}})
+              (S\ x11, {x15 | x11 e.
+                ocasep
+                  (x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeEA (writeReg k _2 x18 x19) _2 (RM_EA k _3) (readRegSz k _2 x18) k2)})
+                  (ocasep
+                    (x15 e.
+                      S\ _3, {x18 | E. x7 E. x20 E. x21 E. x22 (x20 = readRegSz k _2 (RAX) /\
+                        readEA k _2 (RM_EA k _3) x21 /\
+                        writeBinop k (binopCmp) _2 (EA_r x18) x20 x21 x22 /\
+                        ifp (x20 = x21) (writeEA x22 _2 (RM_EA k _3) (readRegSz k _2 x18) k2) (writeEA x22 _2 (EA_r (RAX)) x21 k2))})
+                    {x17 | x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeBinop k (binopAdd) _2 (RM_EA k _3) (readRegSz k _2 x18) x19 k2)}})})}})
+        (S\ x4, {x5 | x4 e.
+          {x23 | x5 e.
+            Sum
+              (S\ _2, {x1 | ifp (readCond k x23) (E. x19 (readEA k _2 (srcEA k x1) x19 /\ writeEA k _2 (destEA k x1) x19 k2)) (k2 = k)})
+              (S\ x13, {_3 | writeEA k (wSz8 (true x13)) (RM_EA k _3) (nat (readCond k x23)) k2})}}))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>execXAST k (xastUnop op sz rm) k2 <->
+  b0 (b0 (b0 (op <> sz <> rm))) e.
+    Sum
+      (Sum
+        (Sum
+          (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+          (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+        (Sum
+          (S\ x4, {x5 | x4 e.
+            ocasep
+              (x5 e.
+                S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x7 /\
+                  x8 = readRegSz k _2 (RAX) * x7 /\
+                  ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+              {x11 | x5 e.
+                S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x13 /\
+                  divModSz _2 x12 x13 x2 x14 /\
+                  ifp
+                    (x6 = 8)
+                    (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                    (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+          (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})))
+      (Sum
+        (S\ x4, {x5 | x4 e.
+          {_2 | x5 e.
+            Sum
+              (S\ x11, {x15 | x11 e.
+                ocasep
+                  (x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) x7 k2)})
+                  {x17 | x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) (sExt (wsizeBits _2) (wsizeBits x16) x7) k2)}}})
+              (S\ x11, {x15 | x11 e.
+                ocasep
+                  (x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeEA (writeReg k _2 x18 x19) _2 (RM_EA k _3) (readRegSz k _2 x18) k2)})
+                  (ocasep
+                    (x15 e.
+                      S\ _3, {x18 | E. x7 E. x20 E. x21 E. x22 (x20 = readRegSz k _2 (RAX) /\
+                        readEA k _2 (RM_EA k _3) x21 /\
+                        writeBinop k (binopCmp) _2 (EA_r x18) x20 x21 x22 /\
+                        ifp (x20 = x21) (writeEA x22 _2 (RM_EA k _3) (readRegSz k _2 x18) k2) (writeEA x22 _2 (EA_r (RAX)) x21 k2))})
+                    {x17 | x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeBinop k (binopAdd) _2 (RM_EA k _3) (readRegSz k _2 x18) x19 k2)}})})}})
+        (S\ x4, {x5 | x4 e.
+          {x23 | x5 e.
+            Sum
+              (S\ _2, {x1 | ifp (readCond k x23) (E. x19 (readEA k _2 (srcEA k x1) x19 /\ writeEA k _2 (destEA k x1) x19 k2)) (k2 = k)})
+              (S\ x13, {_3 | writeEA k (wSz8 (true x13)) (RM_EA k _3) (nat (readCond k x23)) k2})}}))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="Suml.html">Suml</a></td>
+          <td><pre>b0 (b0 (b0 (op <> sz <> rm))) e.
+    Sum
+      (Sum
+        (Sum
+          (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+          (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+        (Sum
+          (S\ x4, {x5 | x4 e.
+            ocasep
+              (x5 e.
+                S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x7 /\
+                  x8 = readRegSz k _2 (RAX) * x7 /\
+                  ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+              {x11 | x5 e.
+                S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x13 /\
+                  divModSz _2 x12 x13 x2 x14 /\
+                  ifp
+                    (x6 = 8)
+                    (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                    (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+          (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})))
+      (Sum
+        (S\ x4, {x5 | x4 e.
+          {_2 | x5 e.
+            Sum
+              (S\ x11, {x15 | x11 e.
+                ocasep
+                  (x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) x7 k2)})
+                  {x17 | x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) (sExt (wsizeBits _2) (wsizeBits x16) x7) k2)}}})
+              (S\ x11, {x15 | x11 e.
+                ocasep
+                  (x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeEA (writeReg k _2 x18 x19) _2 (RM_EA k _3) (readRegSz k _2 x18) k2)})
+                  (ocasep
+                    (x15 e.
+                      S\ _3, {x18 | E. x7 E. x20 E. x21 E. x22 (x20 = readRegSz k _2 (RAX) /\
+                        readEA k _2 (RM_EA k _3) x21 /\
+                        writeBinop k (binopCmp) _2 (EA_r x18) x20 x21 x22 /\
+                        ifp (x20 = x21) (writeEA x22 _2 (RM_EA k _3) (readRegSz k _2 x18) k2) (writeEA x22 _2 (EA_r (RAX)) x21 k2))})
+                    {x17 | x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeBinop k (binopAdd) _2 (RM_EA k _3) (readRegSz k _2 x18) x19 k2)}})})}})
+        (S\ x4, {x5 | x4 e.
+          {x23 | x5 e.
+            Sum
+              (S\ _2, {x1 | ifp (readCond k x23) (E. x19 (readEA k _2 (srcEA k x1) x19 /\ writeEA k _2 (destEA k x1) x19 k2)) (k2 = k)})
+              (S\ x13, {_3 | writeEA k (wSz8 (true x13)) (RM_EA k _3) (nat (readCond k x23)) k2})}})) <->
+  b0 (b0 (op <> sz <> rm)) e.
+    Sum
+      (Sum
+        (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+        (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+      (Sum
+        (S\ x4, {x5 | x4 e.
+          ocasep
+            (x5 e.
+              S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                readEA k _2 (RM_EA k _3) x7 /\
+                x8 = readRegSz k _2 (RAX) * x7 /\
+                ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+            {x11 | x5 e.
+              S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                readEA k _2 (RM_EA k _3) x13 /\
+                divModSz _2 x12 x13 x2 x14 /\
+                ifp
+                  (x6 = 8)
+                  (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                  (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+        (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2}))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="Suml.html">Suml</a></td>
+          <td><pre>b0 (b0 (op <> sz <> rm)) e.
+    Sum
+      (Sum
+        (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+        (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+      (Sum
+        (S\ x4, {x5 | x4 e.
+          ocasep
+            (x5 e.
+              S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                readEA k _2 (RM_EA k _3) x7 /\
+                x8 = readRegSz k _2 (RAX) * x7 /\
+                ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+            {x11 | x5 e.
+              S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                readEA k _2 (RM_EA k _3) x13 /\
+                divModSz _2 x12 x13 x2 x14 /\
+                ifp
+                  (x6 = 8)
+                  (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                  (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+        (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})) <->
+  b0 (op <> sz <> rm) e.
+    Sum
+      (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+      (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)})</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="Suml.html">Suml</a></td>
+          <td><pre>b0 (op <> sz <> rm) e.
+    Sum
+      (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+      (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}) <->
+  op <> sz <> rm e. S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)}</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> k = k</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_2 = sz -> _2 = sz</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a></td>
+          <td><a href="anwr.html">anwr</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz -> _2 = sz</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#8">8</a></td>
+          <td><a href="anwl.html">anwl</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> _2 = sz</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_3 = rm -> _3 = rm</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a href="anwr.html">anwr</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> _3 = rm</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#6">6</a>, <a href="#11">11</a></td>
+          <td><a href="RM_EAeqd.html">RM_EAeqd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> RM_EA k _3 = RM_EA k rm</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> q = q</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#6">6</a>, <a href="#9">9</a>, <a href="#12">12</a>, <a href="#13">13</a></td>
+          <td><a href="readEAeqd.html">readEAeqd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> (readEA k _2 (RM_EA k _3) q <-> readEA k sz (RM_EA k rm) q)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td></td>
+          <td><a href="id.html">id</a></td>
+          <td><pre>_1 = op -> _1 = op</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a></td>
+          <td><a href="anwr.html">anwr</a></td>
+          <td><pre>T. /\ _1 = op -> _1 = op</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a href="anwl.html">anwl</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz -> _1 = op</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><a href="anwl.html">anwl</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> _1 = op</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> k2 = k2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#6">6</a>, <a href="#18">18</a>, <a href="#9">9</a>, <a href="#12">12</a>, <a href="#13">13</a>, <a href="#19">19</a></td>
+          <td><a href="writeUnopeqd.html">writeUnopeqd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> (writeUnop k _1 _2 (RM_EA k _3) q k2 <-> writeUnop k op sz (RM_EA k rm) q k2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#14">14</a>, <a href="#20">20</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2 <-> readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#21">21</a></td>
+          <td><a href="exeqd.html">exeqd</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz /\ _3 = rm -> (E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2) <-> E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td><a href="#22">22</a></td>
+          <td><a href="elabed.html">elabed</a></td>
+          <td><pre>T. /\ _1 = op /\ _2 = sz -> (rm e. {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)} <-> E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td><a href="#23">23</a></td>
+          <td><a href="elsabed.html">elsabed</a></td>
+          <td><pre>T. /\ _1 = op -> (sz <> rm e. S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)} <-> E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td><a href="#24">24</a></td>
+          <td><a href="elsabed.html">elsabed</a></td>
+          <td><pre>T. -> (op <> sz <> rm e. S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)} <-> E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#5">5</a>, <a href="#25">25</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (b0 (op <> sz <> rm) e.
+      Sum
+        (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+        (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}) <->
+    E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td><a href="#4">4</a>, <a href="#26">26</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (b0 (b0 (op <> sz <> rm)) e.
+      Sum
+        (Sum
+          (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+          (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+        (Sum
+          (S\ x4, {x5 | x4 e.
+            ocasep
+              (x5 e.
+                S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x7 /\
+                  x8 = readRegSz k _2 (RAX) * x7 /\
+                  ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+              {x11 | x5 e.
+                S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                  readEA k _2 (RM_EA k _3) x13 /\
+                  divModSz _2 x12 x13 x2 x14 /\
+                  ifp
+                    (x6 = 8)
+                    (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                    (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+          (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})) <->
+    E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td><a href="#3">3</a>, <a href="#27">27</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. ->
+  (b0 (b0 (b0 (op <> sz <> rm))) e.
+      Sum
+        (Sum
+          (Sum
+            (S\ _1, S\ _2, {_3 | E. q (readEA k _2 (RM_EA k _3) q /\ writeUnop k _1 _2 (RM_EA k _3) q k2)})
+            (S\ _1, S\ _2, {x1 | E. x2 E. x3 (readEA k _2 (destEA k x1) x2 /\ readEA k _2 (srcEA k x1) x3 /\ writeBinop k _1 _2 (destEA k x1) x2 x3 k2)}))
+          (Sum
+            (S\ x4, {x5 | x4 e.
+              ocasep
+                (x5 e.
+                  S\ _2, {_3 | E. x6 E. x7 E. x8 (x6 = wsizeBits _2 /\
+                    readEA k _2 (RM_EA k _3) x7 /\
+                    x8 = readRegSz k _2 (RAX) * x7 /\
+                    ifp (x6 = 8) (k2 = writeReg k (wSz16) (RAX) x8) (E. x9 E. x10 (splitBits ((x6 <> x9) : (x6 <> x10) : 0) x8 /\ k2 = writeReg (writeReg k _2 (RAX) x9) _2 (RDX) x10)))})
+                {x11 | x5 e.
+                  S\ _2, {_3 | E. x6 E. x12 E. x13 E. x2 E. x14 (x6 = wsizeBits _2 /\
+                    readEA k _2 (RM_EA k _3) x13 /\
+                    divModSz _2 x12 x13 x2 x14 /\
+                    ifp
+                      (x6 = 8)
+                      (x12 = readRegSz k (wSz16) (RAX) /\ eraseFlags (writeReg k _2 (RAX) (shl x14 8 + x2)) k2)
+                      (splitBits ((x6 <> readRegSz k _2 (RAX)) : (x6 <> readRegSz k _2 (RDX)) : 0) x12 /\ eraseFlags (writeReg (writeReg k _2 (RAX) x2) _2 (RDX) x14) k2))}}})
+            (S\ _2, {x1 | writeEA k _2 (destEA k x1) (EA_addr (srcEA k x1)) k2})))
+        (Sum
+          (S\ x4, {x5 | x4 e.
+            {_2 | x5 e.
+              Sum
+                (S\ x11, {x15 | x11 e.
+                  ocasep
+                    (x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) x7 k2)})
+                    {x17 | x15 e. S\ x1, {x16 | E. x7 (readEA k _2 (srcEA k x1) x7 /\ writeEA k x16 (destEA k x1) (sExt (wsizeBits _2) (wsizeBits x16) x7) k2)}}})
+                (S\ x11, {x15 | x11 e.
+                  ocasep
+                    (x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeEA (writeReg k _2 x18 x19) _2 (RM_EA k _3) (readRegSz k _2 x18) k2)})
+                    (ocasep
+                      (x15 e.
+                        S\ _3, {x18 | E. x7 E. x20 E. x21 E. x22 (x20 = readRegSz k _2 (RAX) /\
+                          readEA k _2 (RM_EA k _3) x21 /\
+                          writeBinop k (binopCmp) _2 (EA_r x18) x20 x21 x22 /\
+                          ifp (x20 = x21) (writeEA x22 _2 (RM_EA k _3) (readRegSz k _2 x18) k2) (writeEA x22 _2 (EA_r (RAX)) x21 k2))})
+                      {x17 | x15 e. S\ _3, {x18 | E. x19 (readEA k _2 (RM_EA k _3) x19 /\ writeBinop k (binopAdd) _2 (RM_EA k _3) (readRegSz k _2 x18) x19 k2)}})})}})
+          (S\ x4, {x5 | x4 e.
+            {x23 | x5 e.
+              Sum
+                (S\ _2, {x1 | ifp (readCond k x23) (E. x19 (readEA k _2 (srcEA k x1) x19 /\ writeEA k _2 (destEA k x1) x19 k2)) (k2 = k)})
+                (S\ x13, {_3 | writeEA k (wSz8 (true x13)) (RM_EA k _3) (nat (readCond k x23)) k2})}})) <->
+    E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="29"/>29</td>
+          <td><a href="#2">2</a>, <a href="#28">28</a></td>
+          <td><a href="syl5bb.html">syl5bb</a></td>
+          <td><pre>T. -> (execXAST k (xastUnop op sz rm) k2 <-> E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="30"/>30</td>
+          <td><a href="#29">29</a></td>
+          <td><a href="trud.html">trud</a></td>
+          <td><pre>execXAST k (xastUnop op sz rm) k2 <-> E. q (readEA k sz (RM_EA k rm) q /\ writeUnop k op sz (RM_EA k rm) q k2)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

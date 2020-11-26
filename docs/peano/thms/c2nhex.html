@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `c2nhex` in `../examples/peano_hex.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>c2nhex - ../examples/peano_hex.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">c2nhex</a></h1>
+    <pre>theorem c2nhex (h1 h2: hex): $ c2n (ch h1 h2) = h2n h1 :x h2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="c2nch.html">c2nch</a></td>
+          <td><pre>c2n (ch h1 h2) = h2n h1 * 16 + h2n h2</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><i>conv</i></td>
+          <td><pre>c2n (ch h1 h2) = h2n h1 :x h2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="c2nch.html">c2nch</a>  </section>
+</body>
+</html>

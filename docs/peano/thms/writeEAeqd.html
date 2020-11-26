@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `writeEAeqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>writeEAeqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">writeEAeqd</a></h1>
+    <pre>theorem writeEAeqd (_G: wff)
+  (_k1 _k2 _sz1 _sz2 _ea1 _ea2 _v1 _v2 _k21 _k22: nat):
+  $ _G -> _k1 = _k2 $ >
+  $ _G -> _sz1 = _sz2 $ >
+  $ _G -> _ea1 = _ea2 $ >
+  $ _G -> _v1 = _v2 $ >
+  $ _G -> _k21 = _k22 $ >
+  $ _G -> (writeEA _k1 _sz1 _ea1 _v1 _k21 <-> writeEA _k2 _sz2 _ea2 _v2 _k22) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="sh">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><i>hyp _vh</i></td>
+          <td><pre>_G -> _v1 = _v2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -> ns (u64) == ns (u64)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -> (_v1 e. ns (u64) <-> _v2 e. ns (u64))</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><i>hyp _kh</i></td>
+          <td><pre>_G -> _k1 = _k2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><i>hyp _szh</i></td>
+          <td><pre>_G -> _sz1 = _sz2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><i>hyp _eah</i></td>
+          <td><pre>_G -> _ea1 = _ea2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#5">5</a></td>
+          <td><a href="wsizeBitseqd.html">wsizeBitseqd</a></td>
+          <td><pre>_G -> wsizeBits _sz1 = wsizeBits _sz2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#7">7</a>, <a href="#1">1</a></td>
+          <td><a href="chopeqd.html">chopeqd</a></td>
+          <td><pre>_G -> chop (wsizeBits _sz1) _v1 = chop (wsizeBits _sz2) _v2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><i>hyp _k2h</i></td>
+          <td><pre>_G -> _k21 = _k22</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a>, <a href="#6">6</a>, <a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="writeEASzeqd.html">writeEASzeqd</a></td>
+          <td><pre>_G -> (writeEASz _k1 _sz1 _ea1 (chop (wsizeBits _sz1) _v1) _k21 <-> writeEASz _k2 _sz2 _ea2 (chop (wsizeBits _sz2) _v2) _k22)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#3">3</a>, <a href="#10">10</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (_v1 e. ns (u64) /\ writeEASz _k1 _sz1 _ea1 (chop (wsizeBits _sz1) _v1) _k21 <-> _v2 e. ns (u64) /\ writeEASz _k2 _sz2 _ea2 (chop (wsizeBits _sz2) _v2) _k22)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> (writeEA _k1 _sz1 _ea1 _v1 _k21 <-> writeEA _k2 _sz2 _ea2 _v2 _k22)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>

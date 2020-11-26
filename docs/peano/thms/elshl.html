@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `elshl` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>elshl - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">elshl</a></h1>
+    <pre>theorem elshl (a b c: nat): $ a e. ns (shl b c) <-> c <= a /\ a - c e. ns b $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="bitr.html">bitr</a></td>
+          <td><pre>(a e. ns (shl b c) <-> nel a (shl b c)) -> (nel a (shl b c) <-> c <= a /\ a - c e. ns b) -> (a e. ns (shl b c) <-> c <= a /\ a - c e. ns b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="elnel.html">elnel</a></td>
+          <td><pre>a e. ns (shl b c) <-> nel a (shl b c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(nel a (shl b c) <-> c <= a /\ a - c e. ns b) -> (a e. ns (shl b c) <-> c <= a /\ a - c e. ns b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="odddvd.html">odddvd</a></td>
+          <td><pre>odd (shr (shl b c) a) <-> ~2 || shr (shl b c) a</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><i>conv</i></td>
+          <td><pre>nel a (shl b c) <-> ~2 || shr (shl b c) a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="con1.html">con1</a></td>
+          <td><pre>(~c <= a -> 2 || shr (shl b c) a) -> ~2 || shr (shl b c) a -> c <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="ltnle.html">ltnle</a></td>
+          <td><pre>a < c <-> ~c <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="ltle.html">ltle</a></td>
+          <td><pre>a < c -> a <= c</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="shrshl1.html">shrshl1</a></td>
+          <td><pre>a <= c -> shr (shl b c) a = shl b (c - a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="rsyl.html">rsyl</a></td>
+          <td><pre>a < c -> shr (shl b c) a = shl b (c - a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#10">10</a></td>
+          <td><a href="dvdeq2d.html">dvdeq2d</a></td>
+          <td><pre>a < c -> (2 || shr (shl b c) a <-> 2 || shl b (c - a))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><a href="subpos.html">subpos</a></td>
+          <td><pre>a < c <-> 0 < c - a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td></td>
+          <td><a href="shl2dvd.html">shl2dvd</a></td>
+          <td><pre>0 < c - a -> 2 || shl b (c - a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#12">12</a>, <a href="#13">13</a></td>
+          <td><a href="sylbi.html">sylbi</a></td>
+          <td><pre>a < c -> 2 || shl b (c - a)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#11">11</a>, <a href="#14">14</a></td>
+          <td><a href="mpbird.html">mpbird</a></td>
+          <td><pre>a < c -> 2 || shr (shl b c) a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#7">7</a>, <a href="#15">15</a></td>
+          <td><a href="sylbir.html">sylbir</a></td>
+          <td><pre>~c <= a -> 2 || shr (shl b c) a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#6">6</a>, <a href="#16">16</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>~2 || shr (shl b c) a -> c <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#5">5</a>, <a href="#17">17</a></td>
+          <td><a href="sylbi.html">sylbi</a></td>
+          <td><pre>nel a (shl b c) -> c <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td></td>
+          <td><a href="anl.html">anl</a></td>
+          <td><pre>c <= a /\ a - c e. ns b -> c <= a</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td></td>
+          <td><a href="elnel.html">elnel</a></td>
+          <td><pre>a - c e. ns b <-> nel (a - c) b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td></td>
+          <td><a href="shrshl2.html">shrshl2</a></td>
+          <td><pre>c <= a -> shr (shl b c) a = shr b (a - c)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#21">21</a></td>
+          <td><a href="oddeqd.html">oddeqd</a></td>
+          <td><pre>c <= a -> (odd (shr (shl b c) a) <-> odd (shr b (a - c)))</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="23"/>23</td>
+          <td><a href="#22">22</a></td>
+          <td><i>conv</i></td>
+          <td><pre>c <= a -> (nel a (shl b c) <-> nel (a - c) b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="24"/>24</td>
+          <td><a href="#20">20</a>, <a href="#23">23</a></td>
+          <td><a href="syl6bbr.html">syl6bbr</a></td>
+          <td><pre>c <= a -> (nel a (shl b c) <-> a - c e. ns b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="25"/>25</td>
+          <td></td>
+          <td><a href="bian1.html">bian1</a></td>
+          <td><pre>c <= a -> (c <= a /\ a - c e. ns b <-> a - c e. ns b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="26"/>26</td>
+          <td><a href="#24">24</a>, <a href="#25">25</a></td>
+          <td><a href="bitr4d.html">bitr4d</a></td>
+          <td><pre>c <= a -> (nel a (shl b c) <-> c <= a /\ a - c e. ns b)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="27"/>27</td>
+          <td><a href="#18">18</a>, <a href="#19">19</a>, <a href="#26">26</a></td>
+          <td><a href="rbid.html">rbid</a></td>
+          <td><pre>nel a (shl b c) <-> c <= a /\ a - c e. ns b</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="28"/>28</td>
+          <td><a href="#3">3</a>, <a href="#27">27</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a e. ns (shl b c) <-> c <= a /\ a - c e. ns b</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

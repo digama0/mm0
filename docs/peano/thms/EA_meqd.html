@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `EA_meqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>EA_meqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">EA_meqd</a></h1>
+    <pre>theorem EA_meqd (_G: wff) (_q1 _q2: nat):
+  $ _G -> _q1 = _q2 $ >
+  $ _G -> EA_m _q1 = EA_m _q2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="sh">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><i>hyp _qh</i></td>
+          <td><pre>_G -> _q1 = _q2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td><a href="#1">1</a></td>
+          <td><a href="b1eqd.html">b1eqd</a></td>
+          <td><pre>_G -> b1 _q1 = b1 _q2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#2">2</a></td>
+          <td><a href="b1eqd.html">b1eqd</a></td>
+          <td><pre>_G -> b1 (b1 _q1) = b1 (b1 _q2)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="4"/>4</td>
+          <td><a href="#3">3</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> EA_m _q1 = EA_m _q2</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="addeq.html">addeq</a>  </section>
+</body>
+</html>

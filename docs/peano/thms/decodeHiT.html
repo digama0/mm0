@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `decodeHiT` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>decodeHiT - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">decodeHiT</a></h1>
+    <pre>pub theorem decodeHiT (rex ast b l: nat):
+  $ decodeHi rex ast b l -> ast e. XAST $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="decodeHiAuxT.html">decodeHiAuxT</a></td>
+          <td><pre>opSizeW rex x1 e. WSize /\ x4 e. RM /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6 -> ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="anlr.html">anlr</a></td>
+          <td><pre>l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6 -> readOpcodeModRM rex x3 x4 x5</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="readOpcodeModRM_T.html">readOpcodeModRM_T</a></td>
+          <td><pre>readOpcodeModRM rex x3 x4 x5 -> x3 e. ns (Bits 3) /\ x4 e. RM /\ x5 e. List (ns (u8))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="opSizeW_T.html">opSizeW_T</a></td>
+          <td><pre>opSizeW rex x1 e. WSize</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td><a href="#4">4</a></td>
+          <td><a href="a1i.html">a1i</a></td>
+          <td><pre>x3 e. ns (Bits 3) /\ x4 e. RM /\ x5 e. List (ns (u8)) -> opSizeW rex x1 e. WSize</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><a href="anlr.html">anlr</a></td>
+          <td><pre>x3 e. ns (Bits 3) /\ x4 e. RM /\ x5 e. List (ns (u8)) -> x4 e. RM</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a href="iand.html">iand</a></td>
+          <td><pre>x3 e. ns (Bits 3) /\ x4 e. RM /\ x5 e. List (ns (u8)) -> opSizeW rex x1 e. WSize /\ x4 e. RM</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#3">3</a>, <a href="#7">7</a></td>
+          <td><a href="rsyl.html">rsyl</a></td>
+          <td><pre>readOpcodeModRM rex x3 x4 x5 -> opSizeW rex x1 e. WSize /\ x4 e. RM</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#2">2</a>, <a href="#8">8</a></td>
+          <td><a href="rsyl.html">rsyl</a></td>
+          <td><pre>l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6 -> opSizeW rex x1 e. WSize /\ x4 e. RM</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><a href="anr.html">anr</a></td>
+          <td><pre>l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6 ->
+  decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#1">1</a>, <a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a href="sylan.html">sylan</a></td>
+          <td><pre>l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6 -> ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#11">11</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x6 (l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6) -> ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#12">12</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x5 E. x6 (l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6) -> ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x4 E. x5 E. x6 (l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6) -> ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#14">14</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x3 E. x4 E. x5 E. x6 (l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6) ->
+  ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x2 E. x3 E. x4 E. x5 E. x6 (l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6) ->
+  ast e. XAST</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a href="eex.html">eex</a></td>
+          <td><pre>E. x1 E. x2 E. x3 E. x4 E. x5 E. x6 (l = x5 ++ x6 /\ splitBits ((1 <> x1) : (2 <> 3) : (1 <> x2) : (4 <> 15) : 0) b /\ readOpcodeModRM rex x3 x4 x5 /\ decodeHiAux x1 (opSizeW rex x1) x4 x2 x3 ast x6)
+  ->
+  ast e. XAST</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><i>conv</i></td>
+          <td><pre>decodeHi rex ast b l -> ast e. XAST</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>,
+    <a href="h2n0.html">h2n0</a>,
+    <a href="h2n1.html">h2n1</a>,
+    <a href="h2n2.html">h2n2</a>,
+    <a href="h2n3.html">h2n3</a>,
+    <a href="h2n4.html">h2n4</a>,
+    <a href="h2n5.html">h2n5</a>,
+    <a href="h2n6.html">h2n6</a>,
+    <a href="h2n7.html">h2n7</a>,
+    <a href="h2n8.html">h2n8</a>,
+    <a href="h2n9.html">h2n9</a>,
+    <a href="h2na.html">h2na</a>,
+    <a href="h2nb.html">h2nb</a>,
+    <a href="h2nc.html">h2nc</a>,
+    <a href="h2nd.html">h2nd</a>,
+    <a href="h2ne.html">h2ne</a>,
+    <a href="h2nf.html">h2nf</a>,
+    <a href="h2nlt.html">h2nlt</a>  </section>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `dmeq0` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>dmeq0 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">dmeq0</a></h1>
+    <pre>theorem dmeq0 (A: set): $ Dom A == ns 0 <-> A == ns 0 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="bitr3.html">bitr3</a></td>
+          <td><pre>(Dom A C_ ns 0 <-> Dom A == ns 0) -> (Dom A C_ ns 0 <-> A == ns 0) -> (Dom A == ns 0 <-> A == ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="ss02.html">ss02</a></td>
+          <td><pre>Dom A C_ ns 0 <-> Dom A == ns 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(Dom A C_ ns 0 <-> A == ns 0) -> (Dom A == ns 0 <-> A == ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="bitr.html">bitr</a></td>
+          <td><pre>(Dom A C_ ns 0 <-> A C_ Xp (ns 0) _V) -> (A C_ Xp (ns 0) _V <-> A == ns 0) -> (Dom A C_ ns 0 <-> A == ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="ssdm.html">ssdm</a></td>
+          <td><pre>Dom A C_ ns 0 <-> A C_ Xp (ns 0) _V</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(A C_ Xp (ns 0) _V <-> A == ns 0) -> (Dom A C_ ns 0 <-> A == ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="bitr.html">bitr</a></td>
+          <td><pre>(A C_ Xp (ns 0) _V <-> A C_ ns 0) -> (A C_ ns 0 <-> A == ns 0) -> (A C_ Xp (ns 0) _V <-> A == ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="sseq2.html">sseq2</a></td>
+          <td><pre>Xp (ns 0) _V == ns 0 -> (A C_ Xp (ns 0) _V <-> A C_ ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><a href="xp01.html">xp01</a></td>
+          <td><pre>Xp (ns 0) _V == ns 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>A C_ Xp (ns 0) _V <-> A C_ ns 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#7">7</a>, <a href="#10">10</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(A C_ ns 0 <-> A == ns 0) -> (A C_ Xp (ns 0) _V <-> A == ns 0)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><a href="ss02.html">ss02</a></td>
+          <td><pre>A C_ ns 0 <-> A == ns 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>A C_ Xp (ns 0) _V <-> A == ns 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#6">6</a>, <a href="#13">13</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>Dom A C_ ns 0 <-> A == ns 0</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#3">3</a>, <a href="#14">14</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>Dom A == ns 0 <-> A == ns 0</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>  </section>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ksReachable_exit` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ksReachable_exit - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">ksReachable_exit</a></h1>
+    <pre>theorem ksReachable_exit (ks ks2 ret: nat):
+  $ execExit (ksCfg ks) ret -> ksReachable ks ks2 -> ks2 = ks $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="st">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><a href="elsn.html">elsn</a></td>
+          <td><pre>ks2 e. ns (sn ks) <-> ks2 = ks</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="ksReachableInd.html">ksReachableInd</a></td>
+          <td><pre>ks e. ns (sn ks) /\ A. x1 A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks)) /\ ksReachable ks ks2 -> ks2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td></td>
+          <td><a href="anim1.html">anim1</a></td>
+          <td><pre>(execExit (ksCfg ks) ret -> ks e. ns (sn ks) /\ A. x1 A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks))) ->
+  execExit (ksCfg ks) ret /\ ksReachable ks ks2 ->
+  ks e. ns (sn ks) /\ A. x1 A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks)) /\ ksReachable ks ks2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><a href="elsn.html">elsn</a></td>
+          <td><pre>ks e. ns (sn ks) <-> ks = ks</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><a href="eqidd.html">eqidd</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> ks = ks</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="6"/>6</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a href="sylibr.html">sylibr</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> ks e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><a href="elsn.html">elsn</a></td>
+          <td><pre>x1 e. ns (sn ks) <-> x1 = ks</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td></td>
+          <td><a href="ksStepeq1.html">ksStepeq1</a></td>
+          <td><pre>x1 = ks -> (ksStep x1 x2 <-> ksStep ks x2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="9"/>9</td>
+          <td><a href="#7">7</a>, <a href="#8">8</a></td>
+          <td><a href="sylbi.html">sylbi</a></td>
+          <td><pre>x1 e. ns (sn ks) -> (ksStep x1 x2 <-> ksStep ks x2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="10"/>10</td>
+          <td><a href="#9">9</a></td>
+          <td><a href="imeq1d.html">imeq1d</a></td>
+          <td><pre>x1 e. ns (sn ks) -> (ksStep x1 x2 -> x2 e. ns (sn ks) <-> ksStep ks x2 -> x2 e. ns (sn ks))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td></td>
+          <td><a href="absurd.html">absurd</a></td>
+          <td><pre>~execExit (ksCfg ks) ret -> execExit (ksCfg ks) ret -> x2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td></td>
+          <td><a href="ksStep_no_exit.html">ksStep_no_exit</a></td>
+          <td><pre>ksStep ks x2 -> ~execExit (ksCfg ks) ret</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="13"/>13</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a href="syl.html">syl</a></td>
+          <td><pre>ksStep ks x2 -> execExit (ksCfg ks) ret -> x2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="14"/>14</td>
+          <td><a href="#13">13</a></td>
+          <td><a href="com12.html">com12</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> ksStep ks x2 -> x2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="15"/>15</td>
+          <td><a href="#10">10</a>, <a href="#14">14</a></td>
+          <td><a href="syl5ibrcom.html">syl5ibrcom</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> x1 e. ns (sn ks) -> ksStep x1 x2 -> x2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="16"/>16</td>
+          <td><a href="#15">15</a></td>
+          <td><a href="com23.html">com23</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="17"/>17</td>
+          <td><a href="#16">16</a></td>
+          <td><a href="iald.html">iald</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="18"/>18</td>
+          <td><a href="#17">17</a></td>
+          <td><a href="iald.html">iald</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> A. x1 A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="19"/>19</td>
+          <td><a href="#6">6</a>, <a href="#18">18</a></td>
+          <td><a href="iand.html">iand</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> ks e. ns (sn ks) /\ A. x1 A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks))</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="20"/>20</td>
+          <td><a href="#3">3</a>, <a href="#19">19</a></td>
+          <td><a href="ax_mp.html">ax_mp</a></td>
+          <td><pre>execExit (ksCfg ks) ret /\ ksReachable ks ks2 -> ks e. ns (sn ks) /\ A. x1 A. x2 (ksStep x1 x2 -> x1 e. ns (sn ks) -> x2 e. ns (sn ks)) /\ ksReachable ks ks2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="21"/>21</td>
+          <td><a href="#2">2</a>, <a href="#20">20</a></td>
+          <td><a href="syl.html">syl</a></td>
+          <td><pre>execExit (ksCfg ks) ret /\ ksReachable ks ks2 -> ks2 e. ns (sn ks)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="22"/>22</td>
+          <td><a href="#1">1</a>, <a href="#21">21</a></td>
+          <td><a href="sylib.html">sylib</a></td>
+          <td><pre>execExit (ksCfg ks) ret /\ ksReachable ks ks2 -> ks2 = ks</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="23"/>23</td>
+          <td><a href="#22">22</a></td>
+          <td><a href="exp.html">exp</a></td>
+          <td><pre>execExit (ksCfg ks) ret -> ksReachable ks ks2 -> ks2 = ks</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano1.html">peano1</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="peano5.html">peano5</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>,
+    <a href="add0.html">add0</a>,
+    <a href="addS.html">addS</a>,
+    <a href="mul0.html">mul0</a>,
+    <a href="mulS.html">mulS</a>,
+    <a href="h2n0.html">h2n0</a>,
+    <a href="h2n1.html">h2n1</a>,
+    <a href="h2n2.html">h2n2</a>,
+    <a href="h2n3.html">h2n3</a>,
+    <a href="h2n5.html">h2n5</a>,
+    <a href="h2n9.html">h2n9</a>,
+    <a href="h2nlt.html">h2nlt</a>,
+    <a href="c2nch.html">c2nch</a>  </section>
+</body>
+</html>

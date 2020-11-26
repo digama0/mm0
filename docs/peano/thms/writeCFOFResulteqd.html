@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `writeCFOFResulteqd` in `../examples/x86.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>writeCFOFResulteqd - ../examples/x86.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <section class="main">
+    <h1 class="title">Theorem <a class="thm" href="">writeCFOFResulteqd</a></h1>
+    <pre>theorem writeCFOFResulteqd (_G: wff) (_k1 _k2 _sz1 _sz2 _ea1 _ea2 _w1 _w2: nat)
+  (_c1 _c2 _o1 _o2: wff) (_k21 _k22: nat):
+  $ _G -> _k1 = _k2 $ >
+  $ _G -> _sz1 = _sz2 $ >
+  $ _G -> _ea1 = _ea2 $ >
+  $ _G -> _w1 = _w2 $ >
+  $ _G -> (_c1 <-> _c2) $ >
+  $ _G -> (_o1 <-> _o2) $ >
+  $ _G -> _k21 = _k22 $ >
+  $ _G ->
+    (writeCFOFResult _k1 _sz1 _ea1 _w1 _c1 _o1 _k21 <->
+      writeCFOFResult _k2 _sz2 _ea2 _w2 _c2 _o2 _k22) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr class="sh">
+          <td><a name="1"/>1</td>
+          <td></td>
+          <td><i>hyp _kh</i></td>
+          <td><pre>_G -> _k1 = _k2</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="2"/>2</td>
+          <td></td>
+          <td><a href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -> Config == Config</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="3"/>3</td>
+          <td><a href="#1">1</a>, <a href="#2">2</a></td>
+          <td><a href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -> (_k1 e. Config <-> _k2 e. Config)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="4"/>4</td>
+          <td></td>
+          <td><i>hyp _szh</i></td>
+          <td><pre>_G -> _sz1 = _sz2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="5"/>5</td>
+          <td></td>
+          <td><i>hyp _wh</i></td>
+          <td><pre>_G -> _w1 = _w2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="6"/>6</td>
+          <td></td>
+          <td><i>hyp _ch</i></td>
+          <td><pre>_G -> (_c1 <-> _c2)</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="7"/>7</td>
+          <td></td>
+          <td><i>hyp _oh</i></td>
+          <td><pre>_G -> (_o1 <-> _o2)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="8"/>8</td>
+          <td><a href="#1">1</a>, <a href="#4">4</a>, <a href="#5">5</a>, <a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a href="writeResultFlagseqd.html">writeResultFlagseqd</a></td>
+          <td><pre>_G -> writeResultFlags _k1 _sz1 _w1 _c1 _o1 = writeResultFlags _k2 _sz2 _w2 _c2 _o2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="9"/>9</td>
+          <td></td>
+          <td><i>hyp _eah</i></td>
+          <td><pre>_G -> _ea1 = _ea2</pre></td>
+        </tr>        <tr class="sh">
+          <td><a name="10"/>10</td>
+          <td></td>
+          <td><i>hyp _k2h</i></td>
+          <td><pre>_G -> _k21 = _k22</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="11"/>11</td>
+          <td><a href="#8">8</a>, <a href="#4">4</a>, <a href="#9">9</a>, <a href="#5">5</a>, <a href="#10">10</a></td>
+          <td><a href="writeEAeqd.html">writeEAeqd</a></td>
+          <td><pre>_G -> (writeEA (writeResultFlags _k1 _sz1 _w1 _c1 _o1) _sz1 _ea1 _w1 _k21 <-> writeEA (writeResultFlags _k2 _sz2 _w2 _c2 _o2) _sz2 _ea2 _w2 _k22)</pre></td>
+        </tr>        <tr class="st">
+          <td><a name="12"/>12</td>
+          <td><a href="#3">3</a>, <a href="#11">11</a></td>
+          <td><a href="aneqd.html">aneqd</a></td>
+          <td><pre>_G -> (_k1 e. Config /\ writeEA (writeResultFlags _k1 _sz1 _w1 _c1 _o1) _sz1 _ea1 _w1 _k21 <-> _k2 e. Config /\ writeEA (writeResultFlags _k2 _sz2 _w2 _c2 _o2) _sz2 _ea2 _w2 _k22)</pre></td>
+        </tr>        <tr class="sc">
+          <td><a name="13"/>13</td>
+          <td><a href="#12">12</a></td>
+          <td><i>conv</i></td>
+          <td><pre>_G -> (writeCFOFResult _k1 _sz1 _ea1 _w1 _c1 _o1 _k21 <-> writeCFOFResult _k2 _sz2 _ea2 _w2 _c2 _o2 _k22)</pre></td>
+        </tr>      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a href="ax_1.html">ax_1</a>,
+    <a href="ax_2.html">ax_2</a>,
+    <a href="ax_3.html">ax_3</a>,
+    <a href="ax_mp.html">ax_mp</a>,
+    <a href="itru.html">itru</a>,
+    <a href="ax_gen.html">ax_gen</a>,
+    <a href="ax_4.html">ax_4</a>,
+    <a href="ax_5.html">ax_5</a>,
+    <a href="ax_6.html">ax_6</a>,
+    <a href="ax_7.html">ax_7</a>,
+    <a href="ax_10.html">ax_10</a>,
+    <a href="ax_11.html">ax_11</a>,
+    <a href="ax_12.html">ax_12</a>,
+    <a href="elab.html">elab</a>,
+    <a href="ax_8.html">ax_8</a>,
+    <a href="peano2.html">peano2</a>,
+    <a href="theid.html">theid</a>,
+    <a href="the0.html">the0</a>,
+    <a href="addeq.html">addeq</a>,
+    <a href="muleq.html">muleq</a>  </section>
+</body>
+</html>
