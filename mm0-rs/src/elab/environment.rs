@@ -42,7 +42,7 @@ macro_rules! id_wrapper {
       /// Get a mutable reference to the element at the given index.
       #[must_use] pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
       /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
-      #[must_use] pub fn enum_iter(&self) -> impl Iterator<Item=($id, &T)> {
+      pub fn enum_iter(&self) -> impl Iterator<Item=($id, &T)> {
         self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
     }

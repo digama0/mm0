@@ -420,7 +420,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
 /// file contents.
 pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option<FrozenEnv>)> {
   let (path, file) = VFS_.get_or_insert(path)?;
-  let env = match block_on(elaborate(path.clone(), Default::default()))? {
+  let env = match block_on(elaborate(path, Default::default()))? {
     ElabResult::Ok(_, _, env) => Some(env),
     _ => None
   };

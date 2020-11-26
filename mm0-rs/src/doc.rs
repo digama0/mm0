@@ -53,6 +53,7 @@ impl AxiomUse {
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
       // in the None case it is safe to drop the borrow of `self.axuse`.
+      #[allow(clippy::useless_transmute)]
       return unsafe { std::mem::transmute(bs) }
     }
     let mut bs = BitSet::new();
@@ -80,6 +81,7 @@ struct RenderProof<'a, W> {
   heap_lines: Box<[Option<Result<u32, LispVal>>]>,
 }
 
+#[derive(Debug, Clone, Copy)]
 enum LineKind {
   Hyp(Option<AtomID>),
   Thm(ThmID),
@@ -119,7 +121,7 @@ impl<'a, W: Write> RenderProof<'a, W> {
       LineKind::Conv => write!(self.w, "<i>conv</i>")?,
     }
     write!(self.w, "</td>\n          <td><pre>")?;
-    let w = &mut self.w;
+    let w = &mut *self.w;
     FormatEnv {source: self.source, env: self.env}
       .pretty(|pr| pr.pp_expr(e).1.doc.render(PP_WIDTH, w))?;
     write!(self.w, "</pre></td>\n        </tr>")?;
@@ -144,26 +146,26 @@ impl<'a, W: Write> RenderProof<'a, W> {
         let mut out = Vec::with_capacity(args.len()+1);
         out.push(LispVal::atom(self.env.terms[term].atom));
         for e in &**args {
-          out.push(self.render(e)?.unwrap_err());
+          out.push(self.render(e)?.expect_err("bad_proof"));
         }
         Err(LispVal::list(out))
       }
       ProofNode::Hyp(i, ref e) => {
-        let e = self.render(e)?.unwrap_err();
+        let e = self.render(e)?.expect_err("bad_proof");
         Ok(self.render_line(&[], LineKind::Hyp(self.hyps[i].0), &e)?)
       }
       ProofNode::Thm {thm, ref args, ref res} => {
         let td = &self.env.thms[thm];
         let mut hyps = Vec::with_capacity(td.hyps.len());
         for e in &args[td.args.len()..] {
-          hyps.push(self.render(e)?.unwrap())
+          hyps.push(self.render(e)?.expect("bad proof"))
         }
-        let res = self.render(res)?.unwrap_err();
+        let res = self.render(res)?.expect_err("bad_proof");
         Ok(self.render_line(&hyps, LineKind::Thm(thm), &res)?)
       }
       ProofNode::Conv(ref p) => {
-        let n = self.render(&p.2)?.unwrap();
-        let tgt = self.render(&p.0)?.unwrap_err();
+        let n = self.render(&p.2)?.expect("bad proof");
+        let tgt = self.render(&p.0)?.expect_err("bad_proof");
         Ok(self.render_line(&[n], LineKind::Conv, &tgt)?)
       }
       ProofNode::Refl(_) |
@@ -185,6 +187,7 @@ struct BuildDoc<'a, W> {
 impl<'a, W: Write> BuildDoc<'a, W> {
   fn thm_doc(&mut self, tid: ThmID) -> io::Result<()> {
     let mut file = self.thm_folder.to_owned();
+    #[allow(clippy::useless_transmute)]
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
     let thmname = &self.env.data[td.atom].name;
     let filename = td.span.file.rel();
@@ -211,7 +214,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       use pulldown_cmark::{Parser, html};
       write!(file, r#"<div class="doc">"#)?;
       html::write_html(&mut file, Parser::new(doc))?;
-      write!(file, "</div>\n")?;
+      writeln!(file, "</div>")?;
     }
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
     if let ThmKind::Thm(Some(pf)) = &td.kind {
@@ -240,7 +243,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
   }
 
   fn write_all(&mut self, path: &FileRef, stmts: &[StmtTrace]) -> io::Result<()> {
-    let file = self.index.as_mut().unwrap();
+    let file = self.index.as_mut().expect("index file missing");
     writeln!(file, r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -258,15 +261,15 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     <h1 class="index-title">Index</h1>"#,
       filename = path.rel())?;
     for s in stmts {
-      let file = self.index.as_mut().unwrap();
+      let file = self.index.as_mut().expect("index file missing");
       match *s {
         StmtTrace::Global(_) |
         StmtTrace::OutputString(_) => {}
         StmtTrace::Sort(a) =>
           writeln!(file, "    <p><pre>{}</pre></p>",
-            self.env.sorts[self.env.data[a].sort.unwrap()])?,
+            self.env.sorts[self.env.data[a].sort.expect("wf env")])?,
         StmtTrace::Decl(a) => {
-          match self.env.data[a].decl.unwrap() {
+          match self.env.data[a].decl.expect("wf env") {
             DeclKey::Term(tid) =>
               writeln!(file, "    <p><pre>{}</pre></p>",
                 FormatEnv {source: self.source, env: &self.env}
@@ -279,9 +282,10 @@ impl<'a, W: Write> BuildDoc<'a, W> {
                 if matches!(td.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
                 name = fe.to(&td.atom))?;
               fe.pretty(|pr| -> io::Result<()> {
-                let mut buf = String::new();
-                pr.thm_headless(td, Pretty::nil()).render_fmt(PP_WIDTH, &mut buf).unwrap();
                 use pulldown_cmark::escape::{escape_html, WriteWrapper};
+                let mut buf = String::new();
+                pr.thm_headless(td, Pretty::nil()).render_fmt(PP_WIDTH, &mut buf)
+                  .expect("writing to a string");
                 escape_html(WriteWrapper(&mut file), &buf)
               })?;
               writeln!(file, "</pre></p>")?;
@@ -291,7 +295,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         }
       }
     }
-    let file = self.index.as_mut().unwrap();
+    let file = self.index.as_mut().expect("index file missing");
     writeln!(file, "  </section>\n</body>\n</html>")
   }
 }
@@ -309,7 +313,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
   let old = old.unwrap_or_else(|| std::process::exit(1));
   let mut env = Environment::new();
-  env.merge(&old, (0..0).into(), &mut vec![]).unwrap();
+  env.merge(&old, (0..0).into(), &mut vec![]).expect("can't fail");
   let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
   fs::create_dir_all(&dir)?;
   let only = args.value_of("only");
