@@ -258,14 +258,20 @@ impl<'a> Pretty<'a> {
     self.hash.borrow_mut().entry(p).or_insert_with(|| (e.clone(), v)).1
   }
 
-  /// Pretty-prints a math formula surrounded by `$` delimiters, as in `$ 2 + 2 = 4 $`.
-  pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
+  /// Pretty-prints a math formula surrounded by delimiters.
+  pub fn expr_delimited(&'a self, e: &LispVal, left: &'a str, right: &'a str) -> RefDoc<'a, ()> {
     let mut doc = self.expr_paren(e, Prec::Prec(0)).doc;
     if let Doc::Group(doc2) = *doc {doc = doc2}
-    let doc = self.append_doc(self.alloc(Doc::text("$ ")),
-      self.append_doc(doc, self.alloc(Doc::text(" $"))));
+    let doc = self.append_doc(self.alloc(Doc::text(left)),
+      self.append_doc(doc, self.alloc(Doc::text(right))));
     self.alloc(Doc::Group(doc))
   }
+
+  /// Pretty-prints a math formula surrounded by `$` delimiters, as in `$ 2 + 2 = 4 $`.
+  pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
+    self.expr_delimited(e, "$ ", " $")
+  }
+
 
   fn get_thm_args(&'a self, u: &mut Uncons, args: &mut Vec<LispVal>) -> Option<(&'a AtomData, &'a Thm)> {
     let env = self.fe.env;
@@ -372,7 +378,7 @@ impl<'a> Pretty<'a> {
 
   /// Pretty-prints a `term` or `def` declaration, for example
   /// `def foo (x y: nat): nat = $ x + y $;`.
-  pub fn term(&'a self, t: &Term) -> RefDoc<'a, ()> {
+  pub fn term(&'a self, t: &Term, show_def: bool) -> RefDoc<'a, ()> {
     let buf = format!("{}{} {}", t.vis,
       if matches!(t.kind, TermKind::Term) {"term"} else {"def"},
       self.fe.to(&t.atom));
@@ -383,9 +389,26 @@ impl<'a> Pretty<'a> {
     let doc = self.alloc(Doc::Group(doc));
     let mut buf = format!("{}", self.fe.to(&t.ret.0));
     Self::dep_type(&bvars, t.ret.1, self.fe, &mut buf).expect("writing to a String");
-    buf += ";";
-    self.append_doc(doc, self.append_doc(Self::softline(),
-      self.alloc(Doc::text(buf))))
+    if let (true, TermKind::Def(Some(expr))) = (show_def, &t.kind) {
+      buf += " =";
+      let doc = self.append_doc(doc, self.append_doc(Self::softline(),
+        self.alloc(Doc::text(buf))));
+      let mut bvars = Vec::new();
+      let mut heap = Vec::new();
+      self.fe.binders(&t.args, &mut heap, &mut bvars);
+      for e in &expr.heap[heap.len()..] {
+        let e = self.fe.expr_node(&heap, &mut None, e);
+        heap.push(e)
+      }
+      let val = &self.fe.expr_node(&heap, &mut None, &expr.head);
+      let doc = self.append_doc(doc, self.append_doc(Self::line(),
+        self.expr_delimited(val, "$ ", " $;")));
+      self.alloc(Doc::Group(doc))
+    } else {
+      buf += ";";
+      self.append_doc(doc, self.append_doc(Self::softline(),
+        self.alloc(Doc::text(buf))))
+    }
   }
 
   /// Pretty-prints the hypotheses and return of an `axiom` or `theorem`, for example

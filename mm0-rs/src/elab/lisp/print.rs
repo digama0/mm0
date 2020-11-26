@@ -253,7 +253,7 @@ impl Display for Sort {
 
 impl EnvDisplay for Term {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fe.pretty(|p| p.term(self).render_fmt(80, f))
+    fe.pretty(|p| p.term(self, true).render_fmt(80, f))
   }
 }
 
