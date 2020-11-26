@@ -52,7 +52,7 @@ pub struct Exporter<'a, W: Write + Seek> {
   /// The name of the input file. This is only used in the debugging data.
   file: FileRef,
   /// The source text of the input file. This is only used in the debugging data.
-  source: &'a LinedString,
+  source: Option<&'a LinedString>,
   /// The input environment.
   env: &'a FrozenEnv,
   /// The underlying writer, which must support [`Seek`] because we write some parts
@@ -300,7 +300,7 @@ impl<W: Write> Drop for BigBuffer<W> {
 impl<'a, W: Write + Seek> Exporter<'a, W> {
   /// Construct a new [`Exporter`] from an input file `file` with text `source`,
   /// a source environment containing proved theorems, and output writer `w`.
-  pub fn new(file: FileRef, source: &'a LinedString, env: &'a FrozenEnv, w: W) -> Self {
+  pub fn new(file: FileRef, source: Option<&'a LinedString>, env: &'a FrozenEnv, w: W) -> Self {
     Self {
       term_reord: TermVec(Vec::with_capacity(env.terms().len())),
       file, source, env, w, pos: 0, fixups: vec![]
@@ -554,7 +554,9 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     };
 
     let pos = if sp.file.ptr_eq(&self.file) {
-      self.source.to_pos(sp.span.start)
+      if let Some(src) = self.source {
+        src.to_pos(sp.span.start)
+      } else {Default::default()}
     } else {Default::default()};
     self.write_u64(il)?;
     self.write_u64(ir)?;

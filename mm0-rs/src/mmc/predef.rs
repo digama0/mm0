@@ -26,6 +26,7 @@ macro_rules! make_predef {
       fn index(&self, i: Predef) -> &A { &self.0[i as usize] }
     }
 
+    #[allow(unused)]
     impl<A> PredefMap<A> {
       /// Map a function `f: &A -> B` to turn a `&PredefMap<A>` into a `PredefMap<B>`.
       pub fn map<'a, B>(&'a self, mut f: impl FnMut(&'a A) -> B) -> PredefMap<B> {
@@ -41,6 +42,6 @@ macro_rules! make_predef {
 }
 
 make_predef! {
-  /// `:sorry` is used to stub out missing proofs.
-  SORRY: ":sorry",
+  // /// `:sorry` is used to stub out missing proofs.
+  // SORRY: ":sorry",
 }

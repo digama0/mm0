@@ -51,6 +51,7 @@ pub mod parser;
 pub mod compiler;
 pub mod joiner;
 pub mod elab;
+pub mod doc;
 pub mod mmb;
 /// Import and export functionality for MMU ascii proof format
 ///
@@ -86,7 +87,12 @@ fn main() -> std::io::Result<()> {
       (@arg no_header: -h --("no-header") "Skip top header")
       (@arg bare: -b --("bare") "Don't add any comments")
       (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
-      (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted")));
+      (@arg OUTPUT: "Sets the output file (.mm1 or .mm0), or stdin if omitted"))
+    (@subcommand doc =>
+      (about: "Build documentation pages")
+      (@arg INPUT: +required "Sets the input file (.mm1 or .mm0)")
+      (@arg OUTPUT: "Sets the output folder, or 'doc' if omitted")
+      (@arg only: --only [THMS] "Show only declarations THMS (a comma separated list)")));
 
   #[cfg(feature = "server")]
   let app = clap_app!(@app (app)
@@ -104,6 +110,7 @@ fn main() -> std::io::Result<()> {
       compiler::main(m)?
     }
     ("join", Some(m)) => joiner::main(m)?,
+    ("doc", Some(m)) => doc::main(m)?,
     #[cfg(feature = "server")]
     ("server", Some(m)) => {
       if m.is_present("no_proofs") { CHECK_PROOFS.store(false, Ordering::Relaxed) }

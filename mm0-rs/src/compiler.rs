@@ -26,7 +26,7 @@ use crate::lined_string::LinedString;
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MMBExporter;
-use crate::util::{FileRef, FileSpan, MutexExt, Span, Position, Range, ArcList, get_memory_usage};
+use crate::util::{FileRef, FileSpan, MutexExt, Span, Position, Range, ArcList};
 
 lazy_static! {
   /// The thread pool (used for running MM1 files in parallel, when possible)
@@ -292,6 +292,18 @@ impl ParseError {
   }
 }
 
+fn log_msg(#[allow(unused_mut)] mut s: String) {
+  #[cfg(feature = "memory")]
+  match crate::util::get_memory_usage() {
+    0 => {}
+    n => {
+      use std::fmt::Write;
+      write!(s, ", memory = {}M", n >> 20).expect("writing to a string");
+    }
+  }
+  println!("{}", s)
+}
+
 /// Elaborate a file for an [`Environment`](crate::elab::Environment) result.
 ///
 /// This is the main elaboration function, as an `async fn`. Given a `path`,
@@ -342,7 +354,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     }
     let ast = Arc::new(ast);
     let mut deps = Vec::new();
-    println!("elab {}, memory = {}M", path, get_memory_usage() >> 20);
+    log_msg(format!("elab {}", path));
     let rd = rd.push(path.clone());
     let (cyc, _, errors, env) = elab::elaborate(
       &ast, path.clone(), path.has_extension("mm0"),
@@ -362,7 +374,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
       }).await;
     (cyc, errors, env)
   };
-  println!("elabbed {}, memory = {}M", path, get_memory_usage() >> 20);
+  log_msg(format!("elabbed {}", path));
   let errors: Option<Arc<[_]>> = if errors.is_empty() { None } else {
     fn print(s: Snippet<'_>) { println!("{}\n", DisplayList::from(s).to_string()) }
     let mut to_range = mk_to_range();
@@ -404,6 +416,17 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
   }.boxed()
 }
 
+/// Elaborate a file, and return the completed [`FrozenEnv`] result, along with the
+/// file contents.
+pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option<FrozenEnv>)> {
+  let (path, file) = VFS_.get_or_insert(path)?;
+  let env = match block_on(elaborate(path.clone(), Default::default()))? {
+    ElabResult::Ok(_, _, env) => Some(env),
+    _ => None
+  };
+  Ok((file.text.clone(), env))
+}
+
 /// Main entry point for `mm0-rs compile` subcommand.
 ///
 /// # Arguments
@@ -416,11 +439,9 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
 ///   binary. If this argument is omitted, the input is only elaborated.
 pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path = args.value_of("INPUT").expect("required arg");
-  let (path, file) = VFS_.get_or_insert(fs::canonicalize(path)?.into())?;
-  let env = match block_on(elaborate(path.clone(), Default::default()))? {
-    ElabResult::Ok(_, _, env) => env,
-    _ => std::process::exit(1)
-  };
+  let path: FileRef = fs::canonicalize(path)?.into();
+  let (file, env) = elab_for_result(path.clone())?;
+  let env = env.unwrap_or_else(|| std::process::exit(1));
   if let Some(s) = args.value_of_os("output") {
     if let Err((fsp, e)) =
       if s == "-" { env.run_output(io::stdout()) }
@@ -439,7 +460,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     if out.ends_with(".mmu") {
       env.export_mmu(w)?;
     } else {
-      let mut ex = MMBExporter::new(path, file.text.ascii(), &env, w);
+      let mut ex = MMBExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, w);
       ex.run(true)?;
       ex.finish()?;
     }

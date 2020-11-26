@@ -465,4 +465,5 @@ pub(crate) fn get_memory_usage() -> usize {
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(not(feature = "memory"))]
+#[allow(unused)]
 pub(crate) fn get_memory_usage() -> usize { 0 }

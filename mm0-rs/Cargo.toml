@@ -13,8 +13,9 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["server"]
+default = ["server", "doc"]
 server = ["lsp-types", "lsp-server", "crossbeam", "simplelog", "log"]
+doc = ["pulldown-cmark"]
 memory = ["deepsize_derive/nodummy"]
 
 [profile.release]
@@ -41,6 +42,7 @@ libc = "0.2.80"
 memmap = "0.7.0"
 zerocopy = "0.3.0"
 memchr = "2.3.4"
+bit-set = "0.5.2"
 deepsize_derive = { path = "components/deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
 
@@ -50,6 +52,9 @@ simplelog = { version = "0.8.0", optional = true }
 crossbeam = { version = "0.8.0", optional = true }
 lsp-types = { version = "0.83.1", optional = true }
 lsp-server = { version = "0.5.0", optional = true }
+
+# For "doc" feature
+pulldown-cmark = {version = "0.8.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = "0.4.2"

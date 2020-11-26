@@ -16,11 +16,11 @@ use super::{LispVal, LispKind, Uncons, print::FormatEnv,
     math_parser::APP_PREC}};
 
 #[derive(Copy, Clone, Debug)]
-struct PP<'a> {
+pub(crate) struct PP<'a> {
   left: bool,
   right: bool,
   small: bool,
-  doc: RefDoc<'a, ()>,
+  pub(crate) doc: RefDoc<'a, ()>,
 }
 
 impl<'a> From<PP<'a>> for RefDoc<'a, ()> {
@@ -219,7 +219,9 @@ impl<'a> Pretty<'a> {
     Some((ad, t, args))
   }
 
-  fn pp_expr(&'a self, e: &LispVal) -> (Prec, PP<'a>) {
+  /// Pretty-prints a math formula, returning the highest precedence
+  /// for which this expression would not need brackets.
+  pub(crate) fn pp_expr(&'a self, e: &LispVal) -> (Prec, PP<'a>) {
     let p: *const LispKind = &**e;
     if let Some(v) = self.hash.borrow().get(&p) {return v.1}
     let v = (|| Some({
@@ -399,14 +401,9 @@ impl<'a> Pretty<'a> {
     self.append_doc(doc, self.expr(ret))
   }
 
-  /// Pretty-prints an `axiom` or `theorem` declaration, for example
-  /// `theorem mp (a b: wff): $ a $ > $ a -> b $ > $ b $;`.
-  /// The proof of the theorem is omitted.
-  pub fn thm(&'a self, t: &Thm) -> RefDoc<'a, ()> {
-    let buf = format!("{}{} {}", t.vis,
-      if matches!(t.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
-      self.fe.to(&t.atom));
-    let doc = self.alloc(Doc::text(buf));
+  /// Pretty-prints everything in an `axiom` or `theorem` declaration after
+  /// the name of the theorem.
+  pub(crate) fn thm_headless(&'a self, t: &Thm, doc: RefDoc<'a, ()>) -> RefDoc<'a, ()> {
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
@@ -423,6 +420,17 @@ impl<'a> Pretty<'a> {
       &self.fe.expr_node(&heap, &mut None, &t.ret));
     let doc = self.append_doc(doc, self.alloc(Doc::text(";")));
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
+  }
+
+  /// Pretty-prints an `axiom` or `theorem` declaration, for example
+  /// `theorem mp (a b: wff): $ a $ > $ a -> b $ > $ b $;`.
+  /// The proof of the theorem is omitted.
+  pub fn thm(&'a self, t: &Thm) -> RefDoc<'a, ()> {
+    let buf = format!("{}{} {}", t.vis,
+      if matches!(t.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
+      self.fe.to(&t.atom));
+    let doc = self.alloc(Doc::text(buf));
+    self.thm_headless(t, doc)
   }
 
   /// Pretty-prints a unification error, as `failed to unify: e1 =?= e2`.
@@ -460,6 +468,6 @@ impl<'a> FormatEnv<'a> {
 
 impl<'a> fmt::Display for PPExpr<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    self.fe.pretty(|p| p.expr_paren(self.e, Prec::Prec(0)).doc.render_fmt(self.width, f))
+    self.fe.pretty(|p| p.pp_expr(self.e).1.doc.render_fmt(self.width, f))
   }
 }
