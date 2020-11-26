@@ -180,6 +180,7 @@ impl<'a, W: Write> RenderProof<'a, W> {
 struct CaseInsensitiveName(ArcString);
 
 impl<'a> From<&'a ArcString> for &'a CaseInsensitiveName {
+  #[allow(clippy::transmute_ptr_to_ptr)]
   fn from(s: &'a ArcString) -> Self { unsafe { mem::transmute(s) } }
 }
 impl Hash for CaseInsensitiveName {
