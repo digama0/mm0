@@ -234,9 +234,16 @@ pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
 /// one statement from causing error reports further up the file or
 /// even in another file.)
 #[must_use] pub fn try_get_span_from(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Span {
+  try_get_span_opt(fsp, fsp2).unwrap_or(fsp.span)
+}
+/// Get the span from `fsp2`, but only if it lies inside the
+/// span `fsp`. (This prevents errors in
+/// one statement from causing error reports further up the file or
+/// even in another file.)
+#[must_use] pub fn try_get_span_opt(fsp: &FileSpan, fsp2: Option<&FileSpan>) -> Option<Span> {
   match fsp2 {
-    Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => fsp2.span,
-    _ => fsp.span,
+    Some(fsp2) if fsp.file == fsp2.file && fsp2.span.start >= fsp.span.start => Some(fsp2.span),
+    _ => None,
   }
 }
 

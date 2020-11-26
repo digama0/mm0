@@ -12,7 +12,7 @@ use super::environment::{AtomID, TermKind, DeclKey, Modifiers,
   ObjectKind, SortID, TermID, ThmID, Type};
 use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons, RefineSyntax,
   print::{FormatEnv, EnvDisplay}, eval::SResult};
-use super::local_context::{InferSort, try_get_span};
+use super::local_context::{InferSort, try_get_span, try_get_span_opt};
 use super::proof::Subst;
 
 /// The inference mode on an application, which determines which arguments are being
@@ -268,7 +268,8 @@ pub(crate) enum RState {
   /// (and sequenced with it, called in the middle of the `refine`).
   Proc {
     /** The expected type */   tgt: LispVal,
-    /** The proof procedure */ p: LispVal},
+    /** The proof procedure */ p: LispVal,
+  },
   /// State that pops the stack and calls a stack procedure.
   /// ```text
   /// RState::Ret(ret) := return ret
@@ -401,35 +402,43 @@ impl Elaborator {
               ElabError::new_e(try_get_span(fsp, &e), "refine: expected an atom"))?;
             let (im, t) = match a {
               AtomID::BANG => {
-                let sp2 = try_get_span(fsp, &e);
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Explicit));
+                let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
+                if let Some(sp2) = sp2 {
+                  self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Explicit));
+                }
                 let t = u.next().ok_or_else(||
-                  ElabError::new_e(sp2, "!: expected at least one argument"))?;
+                  ElabError::new_e(sp2.unwrap_or(fsp.span), "!: expected at least one argument"))?;
                 (InferMode::Explicit, t)
               }
               AtomID::BANG2 => {
-                let sp2 = try_get_span(fsp, &e);
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::BoundOnly));
+                let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
+                if let Some(sp2) = sp2 {
+                  self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::BoundOnly));
+                }
                 let t = u.next().ok_or_else(||
-                  ElabError::new_e(sp2, "!!: expected at least one argument"))?;
+                  ElabError::new_e(sp2.unwrap_or(fsp.span), "!!: expected at least one argument"))?;
                 (InferMode::BoundOnly, t)
               }
               AtomID::VERB => {
-                let sp2 = try_get_span(fsp, &e);
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Verb));
+                let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
+                if let Some(sp2) = sp2 {
+                  self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Verb));
+                }
                 if let (Some(e), true) = (u.next(), u.is_empty()) {
                   return Ok(RefineExpr::Exact(e))
                 } else {
-                  return Err(ElabError::new_e(sp2, "verb: expected one argument"))
+                  return Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "verb: expected one argument"))
                 }
               }
               AtomID::COLON => {
-                let sp2 = try_get_span(fsp, &e);
-                self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Typed));
+                let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
+                if let Some(sp2) = sp2 {
+                  self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Typed));
+                }
                 if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
                   return Ok(RefineExpr::Typed {ty, e})
                 } else {
-                  return Err(ElabError::new_e(sp2, "':' expected two arguments"))
+                  return Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "':' expected two arguments"))
                 }
               }
               _ => (InferMode::Regular, e)
