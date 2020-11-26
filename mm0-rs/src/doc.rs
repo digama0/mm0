@@ -1,16 +1,16 @@
 //! Build documentation pages for MM1/MM0 files
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::{hash_map::Entry, HashMap}, hash::Hash, path::PathBuf};
 use std::mem;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use bit_set::BitSet;
 use clap::ArgMatches;
-use crate::{util::FileRef, lined_string::LinedString};
+use crate::{lined_string::LinedString, util::{ArcString, FileRef}};
 use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Pretty},
   environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, ThmID, ThmKind, Thm,
     ExprNode, Type}};
 
-const PP_WIDTH: usize = 200;
+const PP_WIDTH: usize = 160;
 
 struct AxiomUse(HashMap<ThmID, BitSet>);
 
@@ -176,12 +176,70 @@ impl<'a, W: Write> RenderProof<'a, W> {
   }
 }
 
+#[repr(transparent)]
+struct CaseInsensitiveName(ArcString);
+
+impl<'a> From<&'a ArcString> for &'a CaseInsensitiveName {
+  fn from(s: &'a ArcString) -> Self { unsafe { mem::transmute(s) } }
+}
+impl Hash for CaseInsensitiveName {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.0.len().hash(state);
+    for &c in &*self.0 {
+      c.to_ascii_lowercase().hash(state)
+    }
+  }
+}
+impl PartialEq for CaseInsensitiveName {
+  fn eq(&self, other: &Self) -> bool {
+    self.0.len() == other.0.len() &&
+    self.0.iter().zip(other.0.iter()).all(|(&x, &y)|
+      x.to_ascii_lowercase() == y.to_ascii_lowercase())
+  }
+}
+impl Eq for CaseInsensitiveName {}
+
 struct BuildDoc<'a, W> {
   thm_folder: PathBuf,
   source: &'a LinedString,
   env: Environment,
   axuse: (Vec<ThmID>, AxiomUse),
   index: Option<W>,
+  mangler: Mangler,
+}
+
+#[derive(Default)]
+struct Mangler {
+  used: HashMap<CaseInsensitiveName, usize>,
+  thms: HashMap<ThmID, usize>,
+}
+impl Mangler {
+  fn get(&mut self, env: &Environment, tid: ThmID) -> usize {
+    match self.thms.entry(tid) {
+      Entry::Occupied(e) => *e.get(),
+      Entry::Vacant(e) => {
+        let n = match self.used.entry(CaseInsensitiveName(
+          env.data[env.thms[tid].atom].name.clone()
+        )) {
+          Entry::Occupied(mut e) => {
+            let p = e.get_mut();
+            let n = *p + 1;
+            *p = n;
+            n
+          }
+          Entry::Vacant(e) => *e.insert(0),
+        };
+        *e.insert(n)
+      }
+    }
+  }
+  fn mangle<T>(&mut self, env: &Environment, tid: ThmID, f: impl FnOnce(&str, &str) -> T) -> T {
+    let s = env.data[env.thms[tid].atom].name.as_str();
+    match self.get(&env, tid) {
+      0 => f(s, s),
+      n => f(s, &format!("{}.{}", s, n))
+    }
+  }
 }
 
 impl<'a, W: Write> BuildDoc<'a, W> {
@@ -189,11 +247,11 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     let mut file = self.thm_folder.to_owned();
     #[allow(clippy::useless_transmute)]
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
-    let thmname = &self.env.data[td.atom].name;
-    let filename = td.span.file.rel();
-    file.push(&format!("{}.html", thmname));
+    self.mangler.mangle(&self.env, tid, |_, s| file.push(&format!("{}.html", s)));
     let mut file = BufWriter::new(File::create(file)?);
     let kind = if let ThmKind::Axiom = td.kind {"Axiom"} else {"Theorem"};
+    let thmname = &self.env.data[td.atom].name;
+    let filename = td.span.file.rel();
     writeln!(file, r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -234,8 +292,8 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         if i == 0 {
           write!(file, "<i>sorry</i>")?
         } else {
-          write!(file, r#"    <a href="{thm}.html">{thm}</a>"#,
-            thm = self.env.data[self.env.thms[self.axuse.0[i]].atom].name)?
+          self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
+            write!(file, r#"    <a href="{}.html">{}</a>"#, mangled, thm))?
         }
       }
     }
@@ -261,34 +319,36 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     <h1 class="index-title">Index</h1>"#,
       filename = path.rel())?;
     for s in stmts {
-      let file = self.index.as_mut().expect("index file missing");
+      use pulldown_cmark::escape::{escape_html, WriteWrapper};
+      let mut file = self.index.as_mut().expect("index file missing");
+      let fe = FormatEnv {source: self.source, env: &self.env};
       match *s {
         StmtTrace::Global(_) |
         StmtTrace::OutputString(_) => {}
         StmtTrace::Sort(a) =>
-          writeln!(file, "    <p><pre>{}</pre></p>",
+          writeln!(file, "    <pre>{}</pre>",
             self.env.sorts[self.env.data[a].sort.expect("wf env")])?,
         StmtTrace::Decl(a) => {
           match self.env.data[a].decl.expect("wf env") {
-            DeclKey::Term(tid) =>
-              writeln!(file, "    <p><pre>{}</pre></p>",
-                FormatEnv {source: self.source, env: &self.env}
-                  .to(&self.env.terms[tid]))?,
+            DeclKey::Term(tid) => {
+              write!(file, "    <pre>")?;
+              escape_html(WriteWrapper(&mut file),
+                &format!("{}", fe.to(&self.env.terms[tid])))?;
+              writeln!(file, "</pre>")?;
+            }
             DeclKey::Thm(tid) => {
-              let mut file = file;
               let td = &self.env.thms[tid];
-              let fe = FormatEnv {source: self.source, env: &self.env};
-              write!(file, r#"    <p><pre>{}{} <a href="thms/{name}.html">{name}</a>"#, td.vis,
-                if matches!(td.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
-                name = fe.to(&td.atom))?;
+              self.mangler.mangle(&self.env, tid, |name, mangled|
+                write!(file, r#"    <pre>{}{} <a href="thms/{mangled}.html">{name}</a>"#, td.vis,
+                  if matches!(td.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
+                  mangled = mangled, name = name))?;
               fe.pretty(|pr| -> io::Result<()> {
-                use pulldown_cmark::escape::{escape_html, WriteWrapper};
                 let mut buf = String::new();
                 pr.thm_headless(td, Pretty::nil()).render_fmt(PP_WIDTH, &mut buf)
                   .expect("writing to a string");
                 escape_html(WriteWrapper(&mut file), &buf)
               })?;
-              writeln!(file, "</pre></p>")?;
+              writeln!(file, "</pre>")?;
               self.thm_doc(tid)?
             }
           }
@@ -312,6 +372,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let path: FileRef = fs::canonicalize(path)?.into();
   let (fc, old) = crate::compiler::elab_for_result(path.clone())?;
   let old = old.unwrap_or_else(|| std::process::exit(1));
+  println!("writing docs");
   let mut env = Environment::new();
   env.merge(&old, (0..0).into(), &mut vec![]).expect("can't fail");
   let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
@@ -328,6 +389,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     source: fc.ascii(),
     axuse: AxiomUse::new(&env),
     thm_folder: dir, env, index,
+    mangler: Mangler::default(),
   };
   if let Some(only) = only {
     for thm in only.split(',') {
