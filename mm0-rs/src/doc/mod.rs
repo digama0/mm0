@@ -267,7 +267,7 @@ fn header(w: &mut impl Write, rel: &str, desc: &str, title: &str, h1: &str, nav:
     </h1>"#,
       rel = rel, desc = desc, title = title, h1 = h1, nav = nav)
 }
-const FOOTER: &'static str = "  </div>\n</body>\n</html>";
+const FOOTER: &str = "  </div>\n</body>\n</html>";
 
 fn render_doc(w: &mut impl Write, doc: &Option<DocComment>) -> io::Result<()> {
   if let Some(doc) = doc {
