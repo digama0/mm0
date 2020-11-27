@@ -8,76 +8,93 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>or4 - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">or4</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">or4</a>
+      <span class="nav"><a href="../index.html#or4">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L640">src</a></span>
+    </h1>
     <pre>theorem or4 (a b c d: wff): $ a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d) $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="bitr4.html">bitr4</a></td>
-          <td><pre>(a \/ b \/ (c \/ d) <-> a \/ (b \/ (c \/ d))) -> (a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d))) -> (a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><a name="1"></a><pre>(a \/ b \/ (c \/ d) <-> a \/ (b \/ (c \/ d))) -> (a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d))) -> (a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="orass.html">orass</a></td>
-          <td><pre>a \/ b \/ (c \/ d) <-> a \/ (b \/ (c \/ d))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="orass.html">orass</a></td>
+          <td><a name="2"></a><pre>a \/ b \/ (c \/ d) <-> a \/ (b \/ (c \/ d))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td><a href="#1">1</a>, <a href="#2">2</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d))) -> (a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="3"></a><pre>(a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d))) -> (a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="bitr4.html">bitr4</a></td>
-          <td><pre>(a \/ c \/ (b \/ d) <-> a \/ (c \/ (b \/ d))) -> (a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d))) -> (a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d)))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><a name="4"></a><pre>(a \/ c \/ (b \/ d) <-> a \/ (c \/ (b \/ d))) -> (a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d))) -> (a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d)))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td></td>
-          <td><a href="orass.html">orass</a></td>
-          <td><pre>a \/ c \/ (b \/ d) <-> a \/ (c \/ (b \/ d))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="orass.html">orass</a></td>
+          <td><a name="5"></a><pre>a \/ c \/ (b \/ d) <-> a \/ (c \/ (b \/ d))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td><a href="#4">4</a>, <a href="#5">5</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d))) -> (a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d)))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="6"></a><pre>(a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d))) -> (a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d)))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="oreq2.html">oreq2</a></td>
-          <td><pre>(b \/ (c \/ d) <-> c \/ (b \/ d)) -> (a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d)))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="oreq2.html">oreq2</a></td>
+          <td><a name="7"></a><pre>(b \/ (c \/ d) <-> c \/ (b \/ d)) -> (a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d)))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="or12.html">or12</a></td>
-          <td><pre>b \/ (c \/ d) <-> c \/ (b \/ d)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="or12.html">or12</a></td>
+          <td><a name="8"></a><pre>b \/ (c \/ d) <-> c \/ (b \/ d)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="9"></a><pre>a \/ (b \/ (c \/ d)) <-> a \/ (c \/ (b \/ d))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#6">6</a>, <a href="#9">9</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="10"></a><pre>a \/ c \/ (b \/ d) <-> a \/ (b \/ (c \/ d))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#3">3</a>, <a href="#10">10</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d)</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="11"></a><pre>a \/ b \/ (c \/ d) <-> a \/ c \/ (b \/ d)</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>
+  </div>
 </body>
 </html>

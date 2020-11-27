@@ -8,11 +8,16 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>muleqd - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">muleqd</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">muleqd</a>
+      <span class="nav"><a href="../index.html#muleqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1780-L1781">src</a></span>
+    </h1>
     <pre>theorem muleqd (G: wff) (a b c d: nat):
   $ G -> a = b $ >
   $ G -> c = d $ >
@@ -21,31 +26,36 @@
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="muleq.html">muleq</a></td>
-          <td><pre>a = b -> c = d -> a * c = b * d</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="muleq.html">muleq</a></td>
+          <td><a name="1"></a><pre>a = b -> c = d -> a * c = b * d</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>2</td>
           <td></td>
           <td><i>hyp h1</i></td>
-          <td><pre>G -> a = b</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="3"/>3</td>
+          <td><a name="2"></a><pre>G -> a = b</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>3</td>
           <td></td>
           <td><i>hyp h2</i></td>
-          <td><pre>G -> c = d</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a name="3"></a><pre>G -> c = d</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td><a href="#1">1</a>, <a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a href="sylc.html">sylc</a></td>
-          <td><pre>G -> a * c = b * d</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="sylc.html">sylc</a></td>
+          <td><a name="4"></a><pre>G -> a * c = b * d</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="muleq.html">muleq</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="muleq.html">muleq</a>
+  </div>
 </body>
 </html>

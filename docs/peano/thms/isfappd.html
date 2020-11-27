@@ -8,11 +8,16 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>isfappd - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">isfappd</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">isfappd</a>
+      <span class="nav"><a href="../index.html#isfappd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3419-L3421">src</a></span>
+    </h1>
     <pre>theorem isfappd (F: set) (G: wff) (a b: nat):
   $ G -> isfun F $ >
   $ G -> a <> b e. F $ >
@@ -21,77 +26,88 @@
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="elrapp.html">elrapp</a></td>
-          <td><pre>x e. F @' a <-> a <> x e. F</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="elrapp.html">elrapp</a></td>
+          <td><a name="1"></a><pre>x e. F @' a <-> a <> x e. F</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>2</td>
           <td><a href="#1">1</a></td>
           <td><i>conv</i></td>
-          <td><pre>x e. {x1 | a <> x1 e. F} <-> a <> x e. F</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a name="2"></a><pre>x e. {x1 | a <> x1 e. F} <-> a <> x e. F</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="eqcomb.html">eqcomb</a></td>
-          <td><pre>b = x <-> x = b</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="eqcomb.html">eqcomb</a></td>
+          <td><a name="3"></a><pre>b = x <-> x = b</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>4</td>
           <td></td>
           <td><i>hyp h1</i></td>
-          <td><pre>G -> isfun F</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="5"/>5</td>
+          <td><a name="4"></a><pre>G -> isfun F</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>5</td>
           <td></td>
           <td><i>hyp h2</i></td>
-          <td><pre>G -> a <> b e. F</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a name="5"></a><pre>G -> a <> b e. F</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td><a href="#4">4</a>, <a href="#5">5</a></td>
-          <td><a href="isfbd.html">isfbd</a></td>
-          <td><pre>G -> (a <> x e. F <-> b = x)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="isfbd.html">isfbd</a></td>
+          <td><a name="6"></a><pre>G -> (a <> x e. F <-> b = x)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td><a href="#3">3</a>, <a href="#6">6</a></td>
-          <td><a href="syl6bb.html">syl6bb</a></td>
-          <td><pre>G -> (a <> x e. F <-> x = b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="syl6bb.html">syl6bb</a></td>
+          <td><a name="7"></a><pre>G -> (a <> x e. F <-> x = b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td><a href="#2">2</a>, <a href="#7">7</a></td>
-          <td><a href="syl5bb.html">syl5bb</a></td>
-          <td><pre>G -> (x e. {x1 | a <> x1 e. F} <-> x = b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="syl5bb.html">syl5bb</a></td>
+          <td><a name="8"></a><pre>G -> (x e. {x1 | a <> x1 e. F} <-> x = b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#8">8</a></td>
-          <td><a href="eqthed.html">eqthed</a></td>
-          <td><pre>G -> the {x1 | a <> x1 e. F} = b</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="eqthed.html">eqthed</a></td>
+          <td><a name="9"></a><pre>G -> the {x1 | a <> x1 e. F} = b</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>10</td>
           <td><a href="#9">9</a></td>
           <td><i>conv</i></td>
-          <td><pre>G -> F @ a = b</pre></td>
-        </tr>      </tbody>
+          <td><a name="10"></a><pre>G -> F @ a = b</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>
+  </div>
 </body>
 </html>

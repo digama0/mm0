@@ -8,23 +8,30 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>alim - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">alim</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">alim</a>
+      <span class="nav"><a href="../index.html#alim">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L728">src</a></span>
+    </h1>
     <pre>theorem alim {x: nat} (p q: wff x): $ A. x (p -> q) -> A. x p -> A. x q $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="ax_4.html">ax_4</a></td>
-          <td><pre>A. x (p -> q) -> A. x p -> A. x q</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_4.html">ax_4</a></td>
+          <td><a name="1"></a><pre>A. x (p -> q) -> A. x p -> A. x q</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_4.html">ax_4</a>  </section>
+    <a class="thm" href="ax_4.html">ax_4</a>
+  </div>
 </body>
 </html>

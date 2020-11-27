@@ -8,31 +8,39 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>zlenlt - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">zlenlt</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">zlenlt</a>
+      <span class="nav"><a href="../index.html#zlenlt">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3765">src</a></span>
+    </h1>
     <pre>theorem zlenlt (a b: nat): $ a <=Z b <-> ~b <Z a $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="biid.html">biid</a></td>
-          <td><pre>a <=Z b <-> a <=Z b</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="biid.html">biid</a></td>
+          <td><a name="1"></a><pre>a <=Z b <-> a <=Z b</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>2</td>
           <td><a href="#1">1</a></td>
           <td><i>conv</i></td>
-          <td><pre>a <=Z b <-> ~b <Z a</pre></td>
-        </tr>      </tbody>
+          <td><a name="2"></a><pre>a <=Z b <-> ~b <Z a</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>
+  </div>
 </body>
 </html>

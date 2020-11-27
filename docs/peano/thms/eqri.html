@@ -8,33 +8,42 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>eqri - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">eqri</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">eqri</a>
+      <span class="nav"><a href="../index.html#eqri">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1308">src</a></span>
+    </h1>
     <pre>theorem eqri (A B: set) {x: nat}: $ x e. A <-> x e. B $ > $ A == B $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="sh">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
           <td><i>hyp h</i></td>
-          <td><pre>x e. A <-> x e. B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a name="1"></a><pre>x e. A <-> x e. B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td><a href="#1">1</a></td>
-          <td><a href="ax_gen.html">ax_gen</a></td>
-          <td><pre>A. x (x e. A <-> x e. B)</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="ax_gen.html">ax_gen</a></td>
+          <td><a name="2"></a><pre>A. x (x e. A <-> x e. B)</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>3</td>
           <td><a href="#2">2</a></td>
           <td><i>conv</i></td>
-          <td><pre>A == B</pre></td>
-        </tr>      </tbody>
+          <td><a name="3"></a><pre>A == B</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_gen.html">ax_gen</a>  </section>
+    <a class="thm" href="ax_gen.html">ax_gen</a>
+  </div>
 </body>
 </html>

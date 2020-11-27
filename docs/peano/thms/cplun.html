@@ -8,107 +8,128 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>cplun - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">cplun</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">cplun</a>
+      <span class="nav"><a href="../index.html#cplun">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1419-L1420">src</a></span>
+    </h1>
     <pre>theorem cplun (A B: set): $ Compl (A u. B) == Compl A i^i Compl B $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="eqstr.html">eqstr</a></td>
-          <td><pre>Compl (A u. B) == Compl (Compl (Compl A i^i Compl B)) -> Compl (Compl (Compl A i^i Compl B)) == Compl A i^i Compl B -> Compl (A u. B) == Compl A i^i Compl B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="eqstr.html">eqstr</a></td>
+          <td><a name="1"></a><pre>Compl (A u. B) == Compl (Compl (Compl A i^i Compl B)) -> Compl (Compl (Compl A i^i Compl B)) == Compl A i^i Compl B -> Compl (A u. B) == Compl A i^i Compl B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="cpleq.html">cpleq</a></td>
-          <td><pre>A u. B == Compl (Compl A i^i Compl B) -> Compl (A u. B) == Compl (Compl (Compl A i^i Compl B))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="cpleq.html">cpleq</a></td>
+          <td><a name="2"></a><pre>A u. B == Compl (Compl A i^i Compl B) -> Compl (A u. B) == Compl (Compl (Compl A i^i Compl B))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="eqstr2.html">eqstr2</a></td>
-          <td><pre>Compl (Compl A i^i Compl B) == Compl (Compl A) u. Compl (Compl B) -> Compl (Compl A) u. Compl (Compl B) == A u. B -> A u. B == Compl (Compl A i^i Compl B)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="eqstr2.html">eqstr2</a></td>
+          <td><a name="3"></a><pre>Compl (Compl A i^i Compl B) == Compl (Compl A) u. Compl (Compl B) -> Compl (Compl A) u. Compl (Compl B) == A u. B -> A u. B == Compl (Compl A i^i Compl B)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="cplin.html">cplin</a></td>
-          <td><pre>Compl (Compl A i^i Compl B) == Compl (Compl A) u. Compl (Compl B)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="cplin.html">cplin</a></td>
+          <td><a name="4"></a><pre>Compl (Compl A i^i Compl B) == Compl (Compl A) u. Compl (Compl B)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>Compl (Compl A) u. Compl (Compl B) == A u. B -> A u. B == Compl (Compl A i^i Compl B)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="5"></a><pre>Compl (Compl A) u. Compl (Compl B) == A u. B -> A u. B == Compl (Compl A i^i Compl B)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td></td>
-          <td><a href="uneq.html">uneq</a></td>
-          <td><pre>Compl (Compl A) == A -> Compl (Compl B) == B -> Compl (Compl A) u. Compl (Compl B) == A u. B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="uneq.html">uneq</a></td>
+          <td><a name="6"></a><pre>Compl (Compl A) == A -> Compl (Compl B) == B -> Compl (Compl A) u. Compl (Compl B) == A u. B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="cplcpl.html">cplcpl</a></td>
-          <td><pre>Compl (Compl A) == A</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="cplcpl.html">cplcpl</a></td>
+          <td><a name="7"></a><pre>Compl (Compl A) == A</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td><a href="#6">6</a>, <a href="#7">7</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>Compl (Compl B) == B -> Compl (Compl A) u. Compl (Compl B) == A u. B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="8"></a><pre>Compl (Compl B) == B -> Compl (Compl A) u. Compl (Compl B) == A u. B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td></td>
-          <td><a href="cplcpl.html">cplcpl</a></td>
-          <td><pre>Compl (Compl B) == B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="cplcpl.html">cplcpl</a></td>
+          <td><a name="9"></a><pre>Compl (Compl B) == B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#8">8</a>, <a href="#9">9</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>Compl (Compl A) u. Compl (Compl B) == A u. B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="10"></a><pre>Compl (Compl A) u. Compl (Compl B) == A u. B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#5">5</a>, <a href="#10">10</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>A u. B == Compl (Compl A i^i Compl B)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="11"></a><pre>A u. B == Compl (Compl A i^i Compl B)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td><a href="#2">2</a>, <a href="#11">11</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>Compl (A u. B) == Compl (Compl (Compl A i^i Compl B))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="12"></a><pre>Compl (A u. B) == Compl (Compl (Compl A i^i Compl B))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td><a href="#1">1</a>, <a href="#12">12</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>Compl (Compl (Compl A i^i Compl B)) == Compl A i^i Compl B -> Compl (A u. B) == Compl A i^i Compl B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="13"></a><pre>Compl (Compl (Compl A i^i Compl B)) == Compl A i^i Compl B -> Compl (A u. B) == Compl A i^i Compl B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td></td>
-          <td><a href="cplcpl.html">cplcpl</a></td>
-          <td><pre>Compl (Compl (Compl A i^i Compl B)) == Compl A i^i Compl B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="cplcpl.html">cplcpl</a></td>
+          <td><a name="14"></a><pre>Compl (Compl (Compl A i^i Compl B)) == Compl A i^i Compl B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td><a href="#13">13</a>, <a href="#14">14</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>Compl (A u. B) == Compl A i^i Compl B</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="15"></a><pre>Compl (A u. B) == Compl A i^i Compl B</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>
+  </div>
 </body>
 </html>

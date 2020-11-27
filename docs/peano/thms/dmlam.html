@@ -8,137 +8,163 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>dmlam - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">dmlam</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">dmlam</a>
+      <span class="nav"><a href="../index.html#dmlam">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3384-L3386">src</a></span>
+    </h1>
     <pre>theorem dmlam {x: nat} (a: nat x): $ Dom (\ x, a) == _V $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="bith.html">bith</a></td>
-          <td><pre>y e. Dom (\ x, a) -> y e. _V -> (y e. Dom (\ x, a) <-> y e. _V)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="bith.html">bith</a></td>
+          <td><a name="1"></a><pre>y e. Dom (\ x, a) -> y e. _V -> (y e. Dom (\ x, a) <-> y e. _V)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="preldm.html">preldm</a></td>
-          <td><pre>y <> N[y / x] a e. \ x, a -> y e. Dom (\ x, a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="preldm.html">preldm</a></td>
+          <td><a name="2"></a><pre>y <> N[y / x] a e. \ x, a -> y e. Dom (\ x, a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="eleq2.html">eleq2</a></td>
-          <td><pre>\ x, a == \ z, N[z / x] a -> (y <> N[y / x] a e. \ x, a <-> y <> N[y / x] a e. \ z, N[z / x] a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="eleq2.html">eleq2</a></td>
+          <td><a name="3"></a><pre>\ x, a == \ z, N[z / x] a -> (y <> N[y / x] a e. \ x, a <-> y <> N[y / x] a e. \ z, N[z / x] a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="cbvlams.html">cbvlams</a></td>
-          <td><pre>\ x, a == \ z, N[z / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="cbvlams.html">cbvlams</a></td>
+          <td><a name="4"></a><pre>\ x, a == \ z, N[z / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>y <> N[y / x] a e. \ x, a <-> y <> N[y / x] a e. \ z, N[z / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="5"></a><pre>y <> N[y / x] a e. \ x, a <-> y <> N[y / x] a e. \ z, N[z / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td></td>
-          <td><a href="ellam.html">ellam</a></td>
-          <td><pre>y <> N[y / x] a e. \ z, N[z / x] a <-> E. z y <> N[y / x] a = z <> N[z / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="ellam.html">ellam</a></td>
+          <td><a name="6"></a><pre>y <> N[y / x] a e. \ z, N[z / x] a <-> E. z y <> N[y / x] a = z <> N[z / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="id.html">id</a></td>
-          <td><pre>z = y -> z = y</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="id.html">id</a></td>
+          <td><a name="7"></a><pre>z = y -> z = y</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="sbneq1.html">sbneq1</a></td>
-          <td><pre>z = y -> N[z / x] a = N[y / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="sbneq1.html">sbneq1</a></td>
+          <td><a name="8"></a><pre>z = y -> N[z / x] a = N[y / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a href="preqd.html">preqd</a></td>
-          <td><pre>z = y -> z <> N[z / x] a = y <> N[y / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="preqd.html">preqd</a></td>
+          <td><a name="9"></a><pre>z = y -> z <> N[z / x] a = y <> N[y / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#9">9</a></td>
-          <td><a href="eqeq2d.html">eqeq2d</a></td>
-          <td><pre>z = y -> (y <> N[y / x] a = z <> N[z / x] a <-> y <> N[y / x] a = y <> N[y / x] a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="eqeq2d.html">eqeq2d</a></td>
+          <td><a name="10"></a><pre>z = y -> (y <> N[y / x] a = z <> N[z / x] a <-> y <> N[y / x] a = y <> N[y / x] a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#10">10</a></td>
-          <td><a href="iexe.html">iexe</a></td>
-          <td><pre>y <> N[y / x] a = y <> N[y / x] a -> E. z y <> N[y / x] a = z <> N[z / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="iexe.html">iexe</a></td>
+          <td><a name="11"></a><pre>y <> N[y / x] a = y <> N[y / x] a -> E. z y <> N[y / x] a = z <> N[z / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td></td>
-          <td><a href="eqid.html">eqid</a></td>
-          <td><pre>y <> N[y / x] a = y <> N[y / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="eqid.html">eqid</a></td>
+          <td><a name="12"></a><pre>y <> N[y / x] a = y <> N[y / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td><a href="#11">11</a>, <a href="#12">12</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>E. z y <> N[y / x] a = z <> N[z / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="13"></a><pre>E. z y <> N[y / x] a = z <> N[z / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td><a href="#6">6</a>, <a href="#13">13</a></td>
-          <td><a href="mpbir.html">mpbir</a></td>
-          <td><pre>y <> N[y / x] a e. \ z, N[z / x] a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="mpbir.html">mpbir</a></td>
+          <td><a name="14"></a><pre>y <> N[y / x] a e. \ z, N[z / x] a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td><a href="#5">5</a>, <a href="#14">14</a></td>
-          <td><a href="mpbir.html">mpbir</a></td>
-          <td><pre>y <> N[y / x] a e. \ x, a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="16"/>16</td>
+          <td><a class="thm" href="mpbir.html">mpbir</a></td>
+          <td><a name="15"></a><pre>y <> N[y / x] a e. \ x, a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>16</td>
           <td><a href="#2">2</a>, <a href="#15">15</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>y e. Dom (\ x, a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="17"/>17</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="16"></a><pre>y e. Dom (\ x, a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>17</td>
           <td><a href="#1">1</a>, <a href="#16">16</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>y e. _V -> (y e. Dom (\ x, a) <-> y e. _V)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="18"/>18</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="17"></a><pre>y e. _V -> (y e. Dom (\ x, a) <-> y e. _V)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>18</td>
           <td></td>
-          <td><a href="elv.html">elv</a></td>
-          <td><pre>y e. _V</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="19"/>19</td>
+          <td><a class="thm" href="elv.html">elv</a></td>
+          <td><a name="18"></a><pre>y e. _V</pre></td>
+        </tr>
+        <tr class="st">
+          <td>19</td>
           <td><a href="#17">17</a>, <a href="#18">18</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>y e. Dom (\ x, a) <-> y e. _V</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="20"/>20</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="19"></a><pre>y e. Dom (\ x, a) <-> y e. _V</pre></td>
+        </tr>
+        <tr class="st">
+          <td>20</td>
           <td><a href="#19">19</a></td>
-          <td><a href="eqri.html">eqri</a></td>
-          <td><pre>Dom (\ x, a) == _V</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="eqri.html">eqri</a></td>
+          <td><a name="20"></a><pre>Dom (\ x, a) == _V</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>
+  </div>
 </body>
 </html>

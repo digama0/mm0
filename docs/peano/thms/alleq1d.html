@@ -8,11 +8,16 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>alleq1d - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">alleq1d</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">alleq1d</a>
+      <span class="nav"><a href="../index.html#alleq1d">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5512">src</a></span>
+    </h1>
     <pre>theorem alleq1d (_G: wff) (_A1 _A2: set) (l: nat):
   $ _G -> _A1 == _A2 $ >
   $ _G -> (all _A1 l <-> all _A2 l) $;</pre>
@@ -20,42 +25,46 @@
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="sh">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
           <td><i>hyp _h</i></td>
-          <td><pre>_G -> _A1 == _A2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a name="1"></a><pre>_G -> _A1 == _A2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="eqidd.html">eqidd</a></td>
-          <td><pre>_G -> l = l</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><a name="2"></a><pre>_G -> l = l</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td><a href="#1">1</a>, <a href="#2">2</a></td>
-          <td><a href="alleqd.html">alleqd</a></td>
-          <td><pre>_G -> (all _A1 l <-> all _A2 l)</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="alleqd.html">alleqd</a></td>
+          <td><a name="3"></a><pre>_G -> (all _A1 l <-> all _A2 l)</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>
+  </div>
 </body>
 </html>

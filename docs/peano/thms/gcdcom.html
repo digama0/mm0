@@ -8,115 +8,139 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>gcdcom - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">gcdcom</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">gcdcom</a>
+      <span class="nav"><a href="../index.html#gcdcom">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4092-L4094">src</a></span>
+    </h1>
     <pre>theorem gcdcom (a b: nat): $ gcd a b = gcd b a $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="id.html">id</a></td>
-          <td><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)} -> {d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)}</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="id.html">id</a></td>
+          <td><a name="1"></a><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)} ->
+  {d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)}</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td><a href="#1">1</a></td>
-          <td><a href="theeqd.html">theeqd</a></td>
-          <td><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)} -> the {d1 | A. x (x || d1 <-> x || a /\ x || b)} = the {d2 | A. y (y || d2 <-> y || b /\ y || a)}</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="theeqd.html">theeqd</a></td>
+          <td><a name="2"></a><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)} ->
+  the {d1 | A. x (x || d1 <-> x || a /\ x || b)} = the {d2 | A. y (y || d2 <-> y || b /\ y || a)}</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>3</td>
           <td><a href="#2">2</a></td>
           <td><i>conv</i></td>
-          <td><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)} -> gcd a b = gcd b a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a name="3"></a><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)} -> gcd a b = gcd b a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="anr.html">anr</a></td>
-          <td><pre>d1 = d2 /\ x = y -> x = y</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><a name="4"></a><pre>d1 = d2 /\ x = y -> x = y</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td></td>
-          <td><a href="anl.html">anl</a></td>
-          <td><pre>d1 = d2 /\ x = y -> d1 = d2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="anl.html">anl</a></td>
+          <td><a name="5"></a><pre>d1 = d2 /\ x = y -> d1 = d2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td><a href="#4">4</a>, <a href="#5">5</a></td>
-          <td><a href="dvdeqd.html">dvdeqd</a></td>
-          <td><pre>d1 = d2 /\ x = y -> (x || d1 <-> y || d2)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="dvdeqd.html">dvdeqd</a></td>
+          <td><a name="6"></a><pre>d1 = d2 /\ x = y -> (x || d1 <-> y || d2)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="ancomb.html">ancomb</a></td>
-          <td><pre>x || a /\ x || b <-> x || b /\ x || a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="ancomb.html">ancomb</a></td>
+          <td><a name="7"></a><pre>x || a /\ x || b <-> x || b /\ x || a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="dvdeq1.html">dvdeq1</a></td>
-          <td><pre>x = y -> (x || b <-> y || b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="dvdeq1.html">dvdeq1</a></td>
+          <td><a name="8"></a><pre>x = y -> (x || b <-> y || b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td></td>
-          <td><a href="dvdeq1.html">dvdeq1</a></td>
-          <td><pre>x = y -> (x || a <-> y || a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="dvdeq1.html">dvdeq1</a></td>
+          <td><a name="9"></a><pre>x = y -> (x || a <-> y || a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#8">8</a>, <a href="#9">9</a></td>
-          <td><a href="aneqd.html">aneqd</a></td>
-          <td><pre>x = y -> (x || b /\ x || a <-> y || b /\ y || a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="aneqd.html">aneqd</a></td>
+          <td><a name="10"></a><pre>x = y -> (x || b /\ x || a <-> y || b /\ y || a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#10">10</a></td>
-          <td><a href="anwr.html">anwr</a></td>
-          <td><pre>d1 = d2 /\ x = y -> (x || b /\ x || a <-> y || b /\ y || a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><a name="11"></a><pre>d1 = d2 /\ x = y -> (x || b /\ x || a <-> y || b /\ y || a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td><a href="#7">7</a>, <a href="#11">11</a></td>
-          <td><a href="syl5bb.html">syl5bb</a></td>
-          <td><pre>d1 = d2 /\ x = y -> (x || a /\ x || b <-> y || b /\ y || a)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="syl5bb.html">syl5bb</a></td>
+          <td><a name="12"></a><pre>d1 = d2 /\ x = y -> (x || a /\ x || b <-> y || b /\ y || a)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td><a href="#6">6</a>, <a href="#12">12</a></td>
-          <td><a href="bieqd.html">bieqd</a></td>
-          <td><pre>d1 = d2 /\ x = y -> (x || d1 <-> x || a /\ x || b <-> (y || d2 <-> y || b /\ y || a))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="bieqd.html">bieqd</a></td>
+          <td><a name="13"></a><pre>d1 = d2 /\ x = y -> (x || d1 <-> x || a /\ x || b <-> (y || d2 <-> y || b /\ y || a))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td><a href="#13">13</a></td>
-          <td><a href="cbvald.html">cbvald</a></td>
-          <td><pre>d1 = d2 -> (A. x (x || d1 <-> x || a /\ x || b) <-> A. y (y || d2 <-> y || b /\ y || a))</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="cbvald.html">cbvald</a></td>
+          <td><a name="14"></a><pre>d1 = d2 -> (A. x (x || d1 <-> x || a /\ x || b) <-> A. y (y || d2 <-> y || b /\ y || a))</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td><a href="#14">14</a></td>
-          <td><a href="cbvab.html">cbvab</a></td>
-          <td><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)}</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="16"/>16</td>
+          <td><a class="thm" href="cbvab.html">cbvab</a></td>
+          <td><a name="15"></a><pre>{d1 | A. x (x || d1 <-> x || a /\ x || b)} == {d2 | A. y (y || d2 <-> y || b /\ y || a)}</pre></td>
+        </tr>
+        <tr class="st">
+          <td>16</td>
           <td><a href="#3">3</a>, <a href="#15">15</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>gcd a b = gcd b a</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="16"></a><pre>gcd a b = gcd b a</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="muleq.html">muleq</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="muleq.html">muleq</a>
+  </div>
 </body>
 </html>

@@ -8,11 +8,16 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>eqstr3g - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">eqstr3g</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">eqstr3g</a>
+      <span class="nav"><a href="../index.html#eqstr3g">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1290-L1291">src</a></span>
+    </h1>
     <pre>theorem eqstr3g (A B C D: set) (G: wff):
   $ A == C $ >
   $ B == D $ >
@@ -22,38 +27,44 @@
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="sh">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
           <td><i>hyp h1</i></td>
-          <td><pre>A == C</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="2"/>2</td>
+          <td><a name="1"></a><pre>A == C</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>2</td>
           <td></td>
           <td><i>hyp h2</i></td>
-          <td><pre>B == D</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="3"/>3</td>
+          <td><a name="2"></a><pre>B == D</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>3</td>
           <td></td>
           <td><i>hyp h</i></td>
-          <td><pre>G -> A == B</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a name="3"></a><pre>G -> A == B</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a href="syl6eqs.html">syl6eqs</a></td>
-          <td><pre>G -> A == D</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="syl6eqs.html">syl6eqs</a></td>
+          <td><a name="4"></a><pre>G -> A == D</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#1">1</a>, <a href="#4">4</a></td>
-          <td><a href="syl5eqsr.html">syl5eqsr</a></td>
-          <td><pre>G -> C == D</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="syl5eqsr.html">syl5eqsr</a></td>
+          <td><a name="5"></a><pre>G -> C == D</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>
+  </div>
 </body>
 </html>

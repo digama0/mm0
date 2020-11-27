@@ -8,54 +8,65 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>nfex - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">nfex</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">nfex</a>
+      <span class="nav"><a href="../index.html#nfex">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L863">src</a></span>
+    </h1>
     <pre>theorem nfex {x y: nat} (a: wff x y): $ F/ x a $ > $ F/ x E. y a $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="sh">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
           <td><i>hyp h</i></td>
-          <td><pre>F/ x a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a name="1"></a><pre>F/ x a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td><a href="#1">1</a></td>
-          <td><a href="nfnot.html">nfnot</a></td>
-          <td><pre>F/ x ~a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="nfnot.html">nfnot</a></td>
+          <td><a name="2"></a><pre>F/ x ~a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td><a href="#2">2</a></td>
-          <td><a href="nfal.html">nfal</a></td>
-          <td><pre>F/ x A. y ~a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="nfal.html">nfal</a></td>
+          <td><a name="3"></a><pre>F/ x A. y ~a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td><a href="#3">3</a></td>
-          <td><a href="nfnot.html">nfnot</a></td>
-          <td><pre>F/ x ~A. y ~a</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="nfnot.html">nfnot</a></td>
+          <td><a name="4"></a><pre>F/ x ~A. y ~a</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>5</td>
           <td><a href="#4">4</a></td>
           <td><i>conv</i></td>
-          <td><pre>F/ x E. y a</pre></td>
-        </tr>      </tbody>
+          <td><a name="5"></a><pre>F/ x E. y a</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>
+  </div>
 </body>
 </html>

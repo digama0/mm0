@@ -8,193 +8,229 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>writeisf - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">writeisf</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">writeisf</a>
+      <span class="nav"><a href="../index.html#writeisf">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5269-L5272">src</a></span>
+    </h1>
     <pre>theorem writeisf (F: set) (a b: nat): $ isfun F -> isfun (write F a b) $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="elwrite.html">elwrite</a></td>
-          <td><pre>x <> y e. write F a b <-> ifp (x = a) (y = b) (x <> y e. F)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="elwrite.html">elwrite</a></td>
+          <td><a name="1"></a><pre>x <> y e. write F a b <-> ifp (x = a) (y = b) (x <> y e. F)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="elwrite.html">elwrite</a></td>
-          <td><pre>x <> z e. write F a b <-> ifp (x = a) (z = b) (x <> z e. F)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="elwrite.html">elwrite</a></td>
+          <td><a name="2"></a><pre>x <> z e. write F a b <-> ifp (x = a) (z = b) (x <> z e. F)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="ifppos.html">ifppos</a></td>
-          <td><pre>x = a -> (ifp (x = a) (z = b) (x <> z e. F) <-> z = b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="ifppos.html">ifppos</a></td>
+          <td><a name="3"></a><pre>x = a -> (ifp (x = a) (z = b) (x <> z e. F) <-> z = b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="anrl.html">anrl</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> x = a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="anrl.html">anrl</a></td>
+          <td><a name="4"></a><pre>isfun F /\ (x = a /\ y = b) -> x = a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a href="syl.html">syl</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> (ifp (x = a) (z = b) (x <> z e. F) <-> z = b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><a name="5"></a><pre>isfun F /\ (x = a /\ y = b) -> (ifp (x = a) (z = b) (x <> z e. F) <-> z = b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td><a href="#5">5</a></td>
-          <td><a href="imeq1d.html">imeq1d</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> (ifp (x = a) (z = b) (x <> z e. F) -> y = z <-> z = b -> y = z)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="imeq1d.html">imeq1d</a></td>
+          <td><a name="6"></a><pre>isfun F /\ (x = a /\ y = b) -> (ifp (x = a) (z = b) (x <> z e. F) -> y = z <-> z = b -> y = z)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="eqtr4.html">eqtr4</a></td>
-          <td><pre>y = b -> z = b -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="eqtr4.html">eqtr4</a></td>
+          <td><a name="7"></a><pre>y = b -> z = b -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="anrr.html">anrr</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> y = b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="anrr.html">anrr</a></td>
+          <td><a name="8"></a><pre>isfun F /\ (x = a /\ y = b) -> y = b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a href="syl.html">syl</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> z = b -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><a name="9"></a><pre>isfun F /\ (x = a /\ y = b) -> z = b -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#6">6</a>, <a href="#9">9</a></td>
-          <td><a href="mpbird.html">mpbird</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> ifp (x = a) (z = b) (x <> z e. F) -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="mpbird.html">mpbird</a></td>
+          <td><a name="10"></a><pre>isfun F /\ (x = a /\ y = b) -> ifp (x = a) (z = b) (x <> z e. F) -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#2">2</a>, <a href="#10">10</a></td>
-          <td><a href="syl5bi.html">syl5bi</a></td>
-          <td><pre>isfun F /\ (x = a /\ y = b) -> x <> z e. write F a b -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="syl5bi.html">syl5bi</a></td>
+          <td><a name="11"></a><pre>isfun F /\ (x = a /\ y = b) -> x <> z e. write F a b -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td></td>
-          <td><a href="ifpneg.html">ifpneg</a></td>
-          <td><pre>~x = a -> (ifp (x = a) (z = b) (x <> z e. F) <-> x <> z e. F)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="ifpneg.html">ifpneg</a></td>
+          <td><a name="12"></a><pre>~x = a -> (ifp (x = a) (z = b) (x <> z e. F) <-> x <> z e. F)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td></td>
-          <td><a href="anrl.html">anrl</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> ~x = a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="anrl.html">anrl</a></td>
+          <td><a name="13"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> ~x = a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td><a href="#12">12</a>, <a href="#13">13</a></td>
-          <td><a href="syl.html">syl</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> (ifp (x = a) (z = b) (x <> z e. F) <-> x <> z e. F)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><a name="14"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> (ifp (x = a) (z = b) (x <> z e. F) <-> x <> z e. F)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td><a href="#14">14</a></td>
-          <td><a href="imeq1d.html">imeq1d</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> (ifp (x = a) (z = b) (x <> z e. F) -> y = z <-> x <> z e. F -> y = z)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="16"/>16</td>
+          <td><a class="thm" href="imeq1d.html">imeq1d</a></td>
+          <td><a name="15"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> (ifp (x = a) (z = b) (x <> z e. F) -> y = z <-> x <> z e. F -> y = z)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>16</td>
           <td></td>
-          <td><a href="anll.html">anll</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> isfun F</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="17"/>17</td>
+          <td><a class="thm" href="anll.html">anll</a></td>
+          <td><a name="16"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> isfun F</pre></td>
+        </tr>
+        <tr class="st">
+          <td>17</td>
           <td></td>
-          <td><a href="anrr.html">anrr</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> x <> y e. F</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="18"/>18</td>
+          <td><a class="thm" href="anrr.html">anrr</a></td>
+          <td><a name="17"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> x <> y e. F</pre></td>
+        </tr>
+        <tr class="st">
+          <td>18</td>
           <td><a href="#17">17</a></td>
-          <td><a href="anwl.html">anwl</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> x <> y e. F</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="19"/>19</td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><a name="18"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> x <> y e. F</pre></td>
+        </tr>
+        <tr class="st">
+          <td>19</td>
           <td></td>
-          <td><a href="anr.html">anr</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> x <> z e. F</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="20"/>20</td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><a name="19"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> x <> z e. F</pre></td>
+        </tr>
+        <tr class="st">
+          <td>20</td>
           <td><a href="#16">16</a>, <a href="#18">18</a>, <a href="#19">19</a></td>
-          <td><a href="isfd.html">isfd</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="21"/>21</td>
+          <td><a class="thm" href="isfd.html">isfd</a></td>
+          <td><a name="20"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) /\ x <> z e. F -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>21</td>
           <td><a href="#20">20</a></td>
-          <td><a href="exp.html">exp</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> x <> z e. F -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="22"/>22</td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><a name="21"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> x <> z e. F -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>22</td>
           <td><a href="#15">15</a>, <a href="#21">21</a></td>
-          <td><a href="mpbird.html">mpbird</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> ifp (x = a) (z = b) (x <> z e. F) -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="23"/>23</td>
+          <td><a class="thm" href="mpbird.html">mpbird</a></td>
+          <td><a name="22"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> ifp (x = a) (z = b) (x <> z e. F) -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>23</td>
           <td><a href="#2">2</a>, <a href="#22">22</a></td>
-          <td><a href="syl5bi.html">syl5bi</a></td>
-          <td><pre>isfun F /\ (~x = a /\ x <> y e. F) -> x <> z e. write F a b -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="24"/>24</td>
+          <td><a class="thm" href="syl5bi.html">syl5bi</a></td>
+          <td><a name="23"></a><pre>isfun F /\ (~x = a /\ x <> y e. F) -> x <> z e. write F a b -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>24</td>
           <td><a href="#11">11</a>, <a href="#23">23</a></td>
-          <td><a href="eorda.html">eorda</a></td>
-          <td><pre>isfun F -> x = a /\ y = b \/ ~x = a /\ x <> y e. F -> x <> z e. write F a b -> y = z</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="25"/>25</td>
+          <td><a class="thm" href="eorda.html">eorda</a></td>
+          <td><a name="24"></a><pre>isfun F -> x = a /\ y = b \/ ~x = a /\ x <> y e. F -> x <> z e. write F a b -> y = z</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>25</td>
           <td><a href="#24">24</a></td>
           <td><i>conv</i></td>
-          <td><pre>isfun F -> ifp (x = a) (y = b) (x <> y e. F) -> x <> z e. write F a b -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="26"/>26</td>
+          <td><a name="25"></a><pre>isfun F -> ifp (x = a) (y = b) (x <> y e. F) -> x <> z e. write F a b -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>26</td>
           <td><a href="#1">1</a>, <a href="#25">25</a></td>
-          <td><a href="syl5bi.html">syl5bi</a></td>
-          <td><pre>isfun F -> x <> y e. write F a b -> x <> z e. write F a b -> y = z</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="27"/>27</td>
+          <td><a class="thm" href="syl5bi.html">syl5bi</a></td>
+          <td><a name="26"></a><pre>isfun F -> x <> y e. write F a b -> x <> z e. write F a b -> y = z</pre></td>
+        </tr>
+        <tr class="st">
+          <td>27</td>
           <td><a href="#26">26</a></td>
-          <td><a href="iald.html">iald</a></td>
-          <td><pre>isfun F -> A. z (x <> y e. write F a b -> x <> z e. write F a b -> y = z)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="28"/>28</td>
+          <td><a class="thm" href="iald.html">iald</a></td>
+          <td><a name="27"></a><pre>isfun F -> A. z (x <> y e. write F a b -> x <> z e. write F a b -> y = z)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>28</td>
           <td><a href="#27">27</a></td>
-          <td><a href="iald.html">iald</a></td>
-          <td><pre>isfun F -> A. y A. z (x <> y e. write F a b -> x <> z e. write F a b -> y = z)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="29"/>29</td>
+          <td><a class="thm" href="iald.html">iald</a></td>
+          <td><a name="28"></a><pre>isfun F -> A. y A. z (x <> y e. write F a b -> x <> z e. write F a b -> y = z)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>29</td>
           <td><a href="#28">28</a></td>
-          <td><a href="iald.html">iald</a></td>
-          <td><pre>isfun F -> A. x A. y A. z (x <> y e. write F a b -> x <> z e. write F a b -> y = z)</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="30"/>30</td>
+          <td><a class="thm" href="iald.html">iald</a></td>
+          <td><a name="29"></a><pre>isfun F -> A. x A. y A. z (x <> y e. write F a b -> x <> z e. write F a b -> y = z)</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>30</td>
           <td><a href="#29">29</a></td>
           <td><i>conv</i></td>
-          <td><pre>isfun F -> isfun (write F a b)</pre></td>
-        </tr>      </tbody>
+          <td><a name="30"></a><pre>isfun F -> isfun (write F a b)</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano1.html">peano1</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="peano5.html">peano5</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>,
-    <a href="add0.html">add0</a>,
-    <a href="addS.html">addS</a>,
-    <a href="mul0.html">mul0</a>,
-    <a href="mulS.html">mulS</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano1.html">peano1</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="peano5.html">peano5</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>,
+    <a class="thm" href="add0.html">add0</a>,
+    <a class="thm" href="addS.html">addS</a>,
+    <a class="thm" href="mul0.html">mul0</a>,
+    <a class="thm" href="mulS.html">mulS</a>
+  </div>
 </body>
 </html>

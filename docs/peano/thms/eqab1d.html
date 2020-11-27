@@ -8,11 +8,16 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>eqab1d - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">eqab1d</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">eqab1d</a>
+      <span class="nav"><a href="../index.html#eqab1d">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1475">src</a></span>
+    </h1>
     <pre>theorem eqab1d (A: set) (G: wff) {x: nat} (p: wff x):
   $ G -> (p <-> x e. A) $ >
   $ G -> {x | p} == A $;</pre>
@@ -20,42 +25,47 @@
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="sh">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
           <td><i>hyp h</i></td>
-          <td><pre>G -> (p <-> x e. A)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a name="1"></a><pre>G -> (p <-> x e. A)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td><a href="#1">1</a></td>
-          <td><a href="bicomd.html">bicomd</a></td>
-          <td><pre>G -> (x e. A <-> p)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="bicomd.html">bicomd</a></td>
+          <td><a name="2"></a><pre>G -> (x e. A <-> p)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td><a href="#2">2</a></td>
-          <td><a href="eqab2d.html">eqab2d</a></td>
-          <td><pre>G -> A == {x | p}</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="eqab2d.html">eqab2d</a></td>
+          <td><a name="3"></a><pre>G -> A == {x | p}</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td><a href="#3">3</a></td>
-          <td><a href="eqscomd.html">eqscomd</a></td>
-          <td><pre>G -> {x | p} == A</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="eqscomd.html">eqscomd</a></td>
+          <td><a name="4"></a><pre>G -> {x | p} == A</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>
+  </div>
 </body>
 </html>

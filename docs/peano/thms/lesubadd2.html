@@ -8,140 +8,166 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>lesubadd2 - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">lesubadd2</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">lesubadd2</a>
+      <span class="nav"><a href="../index.html#lesubadd2">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2077-L2080">src</a></span>
+    </h1>
     <pre>theorem lesubadd2 (a b c: nat): $ a - b <= c <-> a <= b + c $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="eor.html">eor</a></td>
-          <td><pre>(a <= b -> a - b <= c -> a <= b + c) -> (b <= a -> a - b <= c -> a <= b + c) -> a <= b \/ b <= a -> a - b <= c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="eor.html">eor</a></td>
+          <td><a name="1"></a><pre>(a <= b -> a - b <= c -> a <= b + c) -> (b <= a -> a - b <= c -> a <= b + c) -> a <= b \/ b <= a -> a - b <= c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="leaddid1.html">leaddid1</a></td>
-          <td><pre>b <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="leaddid1.html">leaddid1</a></td>
+          <td><a name="2"></a><pre>b <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="letr.html">letr</a></td>
-          <td><pre>a <= b -> b <= b + c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="letr.html">letr</a></td>
+          <td><a name="3"></a><pre>a <= b -> b <= b + c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td><a href="#2">2</a>, <a href="#3">3</a></td>
-          <td><a href="mpi.html">mpi</a></td>
-          <td><pre>a <= b -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="mpi.html">mpi</a></td>
+          <td><a name="4"></a><pre>a <= b -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#4">4</a></td>
-          <td><a href="a1d.html">a1d</a></td>
-          <td><pre>a <= b -> a - b <= c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="a1d.html">a1d</a></td>
+          <td><a name="5"></a><pre>a <= b -> a - b <= c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td><a href="#1">1</a>, <a href="#5">5</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(b <= a -> a - b <= c -> a <= b + c) -> a <= b \/ b <= a -> a - b <= c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="6"></a><pre>(b <= a -> a - b <= c -> a <= b + c) -> a <= b \/ b <= a -> a - b <= c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="leadd2.html">leadd2</a></td>
-          <td><pre>a - b <= c <-> b + (a - b) <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="leadd2.html">leadd2</a></td>
+          <td><a name="7"></a><pre>a - b <= c <-> b + (a - b) <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="pncan3.html">pncan3</a></td>
-          <td><pre>b <= a -> b + (a - b) = a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="pncan3.html">pncan3</a></td>
+          <td><a name="8"></a><pre>b <= a -> b + (a - b) = a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#8">8</a></td>
-          <td><a href="leeq1d.html">leeq1d</a></td>
-          <td><pre>b <= a -> (b + (a - b) <= b + c <-> a <= b + c)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="leeq1d.html">leeq1d</a></td>
+          <td><a name="9"></a><pre>b <= a -> (b + (a - b) <= b + c <-> a <= b + c)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#7">7</a>, <a href="#9">9</a></td>
-          <td><a href="syl5bb.html">syl5bb</a></td>
-          <td><pre>b <= a -> (a - b <= c <-> a <= b + c)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="syl5bb.html">syl5bb</a></td>
+          <td><a name="10"></a><pre>b <= a -> (a - b <= c <-> a <= b + c)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#10">10</a></td>
-          <td><a href="bi1d.html">bi1d</a></td>
-          <td><pre>b <= a -> a - b <= c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="bi1d.html">bi1d</a></td>
+          <td><a name="11"></a><pre>b <= a -> a - b <= c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td><a href="#6">6</a>, <a href="#11">11</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a <= b \/ b <= a -> a - b <= c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="12"></a><pre>a <= b \/ b <= a -> a - b <= c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td></td>
-          <td><a href="leorle.html">leorle</a></td>
-          <td><pre>a <= b \/ b <= a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="leorle.html">leorle</a></td>
+          <td><a name="13"></a><pre>a <= b \/ b <= a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td><a href="#12">12</a>, <a href="#13">13</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a - b <= c -> a <= b + c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="14"></a><pre>a - b <= c -> a <= b + c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td></td>
-          <td><a href="leeq2.html">leeq2</a></td>
-          <td><pre>b + c - b = c -> (a - b <= b + c - b <-> a - b <= c)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="16"/>16</td>
+          <td><a class="thm" href="leeq2.html">leeq2</a></td>
+          <td><a name="15"></a><pre>b + c - b = c -> (a - b <= b + c - b <-> a - b <= c)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>16</td>
           <td></td>
-          <td><a href="pncan2.html">pncan2</a></td>
-          <td><pre>b + c - b = c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="17"/>17</td>
+          <td><a class="thm" href="pncan2.html">pncan2</a></td>
+          <td><a name="16"></a><pre>b + c - b = c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>17</td>
           <td><a href="#15">15</a>, <a href="#16">16</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a - b <= b + c - b <-> a - b <= c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="18"/>18</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="17"></a><pre>a - b <= b + c - b <-> a - b <= c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>18</td>
           <td></td>
-          <td><a href="lesub1i.html">lesub1i</a></td>
-          <td><pre>a <= b + c -> a - b <= b + c - b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="19"/>19</td>
+          <td><a class="thm" href="lesub1i.html">lesub1i</a></td>
+          <td><a name="18"></a><pre>a <= b + c -> a - b <= b + c - b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>19</td>
           <td><a href="#17">17</a>, <a href="#18">18</a></td>
-          <td><a href="sylib.html">sylib</a></td>
-          <td><pre>a <= b + c -> a - b <= c</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="20"/>20</td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><a name="19"></a><pre>a <= b + c -> a - b <= c</pre></td>
+        </tr>
+        <tr class="st">
+          <td>20</td>
           <td><a href="#14">14</a>, <a href="#19">19</a></td>
-          <td><a href="ibii.html">ibii</a></td>
-          <td><pre>a - b <= c <-> a <= b + c</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><a name="20"></a><pre>a - b <= c <-> a <= b + c</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano1.html">peano1</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="peano5.html">peano5</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="add0.html">add0</a>,
-    <a href="addS.html">addS</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano1.html">peano1</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="peano5.html">peano5</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="add0.html">add0</a>,
+    <a class="thm" href="addS.html">addS</a>
+  </div>
 </body>
 </html>

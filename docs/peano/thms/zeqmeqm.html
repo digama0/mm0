@@ -8,103 +8,121 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>zeqmeqm - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">zeqmeqm</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">zeqmeqm</a>
+      <span class="nav"><a href="../index.html#zeqmeqm">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4025-L4026">src</a></span>
+    </h1>
     <pre>theorem zeqmeqm (a b n: nat): $ modZ(n): b0 a = b0 b <-> mod(n): a = b $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="bitr4.html">bitr4</a></td>
-          <td><pre>(modZ(n): b0 a = b0 b <-> b0 n |Z a -ZN b) -> (mod(n): a = b <-> b0 n |Z a -ZN b) -> (modZ(n): b0 a = b0 b <-> mod(n): a = b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><a name="1"></a><pre>(modZ(n): b0 a = b0 b <-> b0 n |Z a -ZN b) -> (mod(n): a = b <-> b0 n |Z a -ZN b) -> (modZ(n): b0 a = b0 b <-> mod(n): a = b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="zdvdeq2.html">zdvdeq2</a></td>
-          <td><pre>b0 a -Z b0 b = a -ZN b -> (b0 n |Z b0 a -Z b0 b <-> b0 n |Z a -ZN b)</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="zdvdeq2.html">zdvdeq2</a></td>
+          <td><a name="2"></a><pre>b0 a -Z b0 b = a -ZN b -> (b0 n |Z b0 a -Z b0 b <-> b0 n |Z a -ZN b)</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>3</td>
           <td><a href="#2">2</a></td>
           <td><i>conv</i></td>
-          <td><pre>b0 a -Z b0 b = a -ZN b -> (modZ(n): b0 a = b0 b <-> b0 n |Z a -ZN b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a name="3"></a><pre>b0 a -Z b0 b = a -ZN b -> (modZ(n): b0 a = b0 b <-> b0 n |Z a -ZN b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="zsubb0.html">zsubb0</a></td>
-          <td><pre>b0 a -Z b0 b = a -ZN b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="zsubb0.html">zsubb0</a></td>
+          <td><a name="4"></a><pre>b0 a -Z b0 b = a -ZN b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#3">3</a>, <a href="#4">4</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>modZ(n): b0 a = b0 b <-> b0 n |Z a -ZN b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="5"></a><pre>modZ(n): b0 a = b0 b <-> b0 n |Z a -ZN b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td><a href="#1">1</a>, <a href="#5">5</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(mod(n): a = b <-> b0 n |Z a -ZN b) -> (modZ(n): b0 a = b0 b <-> mod(n): a = b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="6"></a><pre>(mod(n): a = b <-> b0 n |Z a -ZN b) -> (modZ(n): b0 a = b0 b <-> mod(n): a = b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td></td>
-          <td><a href="bitr.html">bitr</a></td>
-          <td><pre>(mod(n): a = b <-> mod(n): b = a) -> (mod(n): b = a <-> b0 n |Z a -ZN b) -> (mod(n): a = b <-> b0 n |Z a -ZN b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="bitr.html">bitr</a></td>
+          <td><a name="7"></a><pre>(mod(n): a = b <-> mod(n): b = a) -> (mod(n): b = a <-> b0 n |Z a -ZN b) -> (mod(n): a = b <-> b0 n |Z a -ZN b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="eqmcomb.html">eqmcomb</a></td>
-          <td><pre>mod(n): a = b <-> mod(n): b = a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="eqmcomb.html">eqmcomb</a></td>
+          <td><a name="8"></a><pre>mod(n): a = b <-> mod(n): b = a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>(mod(n): b = a <-> b0 n |Z a -ZN b) -> (mod(n): a = b <-> b0 n |Z a -ZN b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="9"></a><pre>(mod(n): b = a <-> b0 n |Z a -ZN b) -> (mod(n): a = b <-> b0 n |Z a -ZN b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td></td>
-          <td><a href="eqmzdvdsub.html">eqmzdvdsub</a></td>
-          <td><pre>mod(n): b = a <-> b0 n |Z a -ZN b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="eqmzdvdsub.html">eqmzdvdsub</a></td>
+          <td><a name="10"></a><pre>mod(n): b = a <-> b0 n |Z a -ZN b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#9">9</a>, <a href="#10">10</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>mod(n): a = b <-> b0 n |Z a -ZN b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="11"></a><pre>mod(n): a = b <-> b0 n |Z a -ZN b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td><a href="#6">6</a>, <a href="#11">11</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>modZ(n): b0 a = b0 b <-> mod(n): a = b</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="12"></a><pre>modZ(n): b0 a = b0 b <-> mod(n): a = b</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano1.html">peano1</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="peano5.html">peano5</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>,
-    <a href="add0.html">add0</a>,
-    <a href="addS.html">addS</a>,
-    <a href="mul0.html">mul0</a>,
-    <a href="mulS.html">mulS</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano1.html">peano1</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="peano5.html">peano5</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>,
+    <a class="thm" href="add0.html">add0</a>,
+    <a class="thm" href="addS.html">addS</a>,
+    <a class="thm" href="mul0.html">mul0</a>,
+    <a class="thm" href="mulS.html">mulS</a>
+  </div>
 </body>
 </html>

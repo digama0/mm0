@@ -8,11 +8,16 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>zipnth - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">zipnth</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">zipnth</a>
+      <span class="nav"><a href="../index.html#zipnth">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L6065-L6072">src</a></span>
+    </h1>
     <pre>theorem zipnth (G: wff) (a b i l1 l2: nat):
   $ G -> nth i l1 = suc a $ >
   $ G -> nth i l2 = suc b $ >
@@ -21,198 +26,232 @@
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="nthlfn.html">nthlfn</a></td>
-          <td><pre>i < min (len l1) (len l2) -> nth i (lfn (\ x, nth x l1 - 1 <> nth x l2 - 1) (min (len l1) (len l2))) = suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i)</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="nthlfn.html">nthlfn</a></td>
+          <td><a name="1"></a><pre>i < min (len l1) (len l2) -> nth i (lfn (\ x, nth x l1 - 1 <> nth x l2 - 1) (min (len l1) (len l2))) = suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i)</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>2</td>
           <td><a href="#1">1</a></td>
           <td><i>conv</i></td>
-          <td><pre>i < min (len l1) (len l2) -> nth i (zip l1 l2) = suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a name="2"></a><pre>i < min (len l1) (len l2) -> nth i (zip l1 l2) = suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="ltmin.html">ltmin</a></td>
-          <td><pre>i < min (len l1) (len l2) <-> i < len l1 /\ i < len l2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="ltmin.html">ltmin</a></td>
+          <td><a name="3"></a><pre>i < min (len l1) (len l2) <-> i < len l1 /\ i < len l2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="nthne0.html">nthne0</a></td>
-          <td><pre>nth i l1 != 0 <-> i < len l1</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="nthne0.html">nthne0</a></td>
+          <td><a name="4"></a><pre>nth i l1 != 0 <-> i < len l1</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td></td>
-          <td><a href="sucne0.html">sucne0</a></td>
-          <td><pre>nth i l1 = suc a -> nth i l1 != 0</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="sucne0.html">sucne0</a></td>
+          <td><a name="5"></a><pre>nth i l1 = suc a -> nth i l1 != 0</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>6</td>
           <td></td>
           <td><i>hyp h1</i></td>
-          <td><pre>G -> nth i l1 = suc a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a name="6"></a><pre>G -> nth i l1 = suc a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td><a href="#5">5</a>, <a href="#6">6</a></td>
-          <td><a href="syl.html">syl</a></td>
-          <td><pre>G -> nth i l1 != 0</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><a name="7"></a><pre>G -> nth i l1 != 0</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td><a href="#4">4</a>, <a href="#7">7</a></td>
-          <td><a href="sylib.html">sylib</a></td>
-          <td><pre>G -> i < len l1</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><a name="8"></a><pre>G -> i < len l1</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td></td>
-          <td><a href="nthne0.html">nthne0</a></td>
-          <td><pre>nth i l2 != 0 <-> i < len l2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="nthne0.html">nthne0</a></td>
+          <td><a name="9"></a><pre>nth i l2 != 0 <-> i < len l2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td></td>
-          <td><a href="sucne0.html">sucne0</a></td>
-          <td><pre>nth i l2 = suc b -> nth i l2 != 0</pre></td>
-        </tr>        <tr class="sh">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="sucne0.html">sucne0</a></td>
+          <td><a name="10"></a><pre>nth i l2 = suc b -> nth i l2 != 0</pre></td>
+        </tr>
+        <tr class="sh">
+          <td>11</td>
           <td></td>
           <td><i>hyp h2</i></td>
-          <td><pre>G -> nth i l2 = suc b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a name="11"></a><pre>G -> nth i l2 = suc b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td><a href="#10">10</a>, <a href="#11">11</a></td>
-          <td><a href="syl.html">syl</a></td>
-          <td><pre>G -> nth i l2 != 0</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><a name="12"></a><pre>G -> nth i l2 != 0</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td><a href="#9">9</a>, <a href="#12">12</a></td>
-          <td><a href="sylib.html">sylib</a></td>
-          <td><pre>G -> i < len l2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><a name="13"></a><pre>G -> i < len l2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td><a href="#8">8</a>, <a href="#13">13</a></td>
-          <td><a href="iand.html">iand</a></td>
-          <td><pre>G -> i < len l1 /\ i < len l2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="iand.html">iand</a></td>
+          <td><a name="14"></a><pre>G -> i < len l1 /\ i < len l2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td><a href="#3">3</a>, <a href="#14">14</a></td>
-          <td><a href="sylibr.html">sylibr</a></td>
-          <td><pre>G -> i < min (len l1) (len l2)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="16"/>16</td>
+          <td><a class="thm" href="sylibr.html">sylibr</a></td>
+          <td><a name="15"></a><pre>G -> i < min (len l1) (len l2)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>16</td>
           <td><a href="#2">2</a>, <a href="#15">15</a></td>
-          <td><a href="syl.html">syl</a></td>
-          <td><pre>G -> nth i (zip l1 l2) = suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="17"/>17</td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><a name="16"></a><pre>G -> nth i (zip l1 l2) = suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>17</td>
           <td></td>
-          <td><a href="sucsub1.html">sucsub1</a></td>
-          <td><pre>suc a - 1 = a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="18"/>18</td>
+          <td><a class="thm" href="sucsub1.html">sucsub1</a></td>
+          <td><a name="17"></a><pre>suc a - 1 = a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>18</td>
           <td></td>
-          <td><a href="anr.html">anr</a></td>
-          <td><pre>G /\ x = i -> x = i</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="19"/>19</td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><a name="18"></a><pre>G /\ x = i -> x = i</pre></td>
+        </tr>
+        <tr class="st">
+          <td>19</td>
           <td><a href="#18">18</a></td>
-          <td><a href="ntheq1d.html">ntheq1d</a></td>
-          <td><pre>G /\ x = i -> nth x l1 = nth i l1</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="20"/>20</td>
+          <td><a class="thm" href="ntheq1d.html">ntheq1d</a></td>
+          <td><a name="19"></a><pre>G /\ x = i -> nth x l1 = nth i l1</pre></td>
+        </tr>
+        <tr class="st">
+          <td>20</td>
           <td><a href="#6">6</a></td>
-          <td><a href="anwl.html">anwl</a></td>
-          <td><pre>G /\ x = i -> nth i l1 = suc a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="21"/>21</td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><a name="20"></a><pre>G /\ x = i -> nth i l1 = suc a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>21</td>
           <td><a href="#19">19</a>, <a href="#20">20</a></td>
-          <td><a href="eqtrd.html">eqtrd</a></td>
-          <td><pre>G /\ x = i -> nth x l1 = suc a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="22"/>22</td>
+          <td><a class="thm" href="eqtrd.html">eqtrd</a></td>
+          <td><a name="21"></a><pre>G /\ x = i -> nth x l1 = suc a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>22</td>
           <td><a href="#21">21</a></td>
-          <td><a href="subeq1d.html">subeq1d</a></td>
-          <td><pre>G /\ x = i -> nth x l1 - 1 = suc a - 1</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="23"/>23</td>
+          <td><a class="thm" href="subeq1d.html">subeq1d</a></td>
+          <td><a name="22"></a><pre>G /\ x = i -> nth x l1 - 1 = suc a - 1</pre></td>
+        </tr>
+        <tr class="st">
+          <td>23</td>
           <td><a href="#17">17</a>, <a href="#22">22</a></td>
-          <td><a href="syl6eq.html">syl6eq</a></td>
-          <td><pre>G /\ x = i -> nth x l1 - 1 = a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="24"/>24</td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><a name="23"></a><pre>G /\ x = i -> nth x l1 - 1 = a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>24</td>
           <td></td>
-          <td><a href="sucsub1.html">sucsub1</a></td>
-          <td><pre>suc b - 1 = b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="25"/>25</td>
+          <td><a class="thm" href="sucsub1.html">sucsub1</a></td>
+          <td><a name="24"></a><pre>suc b - 1 = b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>25</td>
           <td><a href="#18">18</a></td>
-          <td><a href="ntheq1d.html">ntheq1d</a></td>
-          <td><pre>G /\ x = i -> nth x l2 = nth i l2</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="26"/>26</td>
+          <td><a class="thm" href="ntheq1d.html">ntheq1d</a></td>
+          <td><a name="25"></a><pre>G /\ x = i -> nth x l2 = nth i l2</pre></td>
+        </tr>
+        <tr class="st">
+          <td>26</td>
           <td><a href="#11">11</a></td>
-          <td><a href="anwl.html">anwl</a></td>
-          <td><pre>G /\ x = i -> nth i l2 = suc b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="27"/>27</td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><a name="26"></a><pre>G /\ x = i -> nth i l2 = suc b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>27</td>
           <td><a href="#25">25</a>, <a href="#26">26</a></td>
-          <td><a href="eqtrd.html">eqtrd</a></td>
-          <td><pre>G /\ x = i -> nth x l2 = suc b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="28"/>28</td>
+          <td><a class="thm" href="eqtrd.html">eqtrd</a></td>
+          <td><a name="27"></a><pre>G /\ x = i -> nth x l2 = suc b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>28</td>
           <td><a href="#27">27</a></td>
-          <td><a href="subeq1d.html">subeq1d</a></td>
-          <td><pre>G /\ x = i -> nth x l2 - 1 = suc b - 1</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="29"/>29</td>
+          <td><a class="thm" href="subeq1d.html">subeq1d</a></td>
+          <td><a name="28"></a><pre>G /\ x = i -> nth x l2 - 1 = suc b - 1</pre></td>
+        </tr>
+        <tr class="st">
+          <td>29</td>
           <td><a href="#24">24</a>, <a href="#28">28</a></td>
-          <td><a href="syl6eq.html">syl6eq</a></td>
-          <td><pre>G /\ x = i -> nth x l2 - 1 = b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="30"/>30</td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><a name="29"></a><pre>G /\ x = i -> nth x l2 - 1 = b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>30</td>
           <td><a href="#23">23</a>, <a href="#29">29</a></td>
-          <td><a href="preqd.html">preqd</a></td>
-          <td><pre>G /\ x = i -> nth x l1 - 1 <> nth x l2 - 1 = a <> b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="31"/>31</td>
+          <td><a class="thm" href="preqd.html">preqd</a></td>
+          <td><a name="30"></a><pre>G /\ x = i -> nth x l1 - 1 <> nth x l2 - 1 = a <> b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>31</td>
           <td><a href="#30">30</a></td>
-          <td><a href="applamed.html">applamed</a></td>
-          <td><pre>G -> (\ x, nth x l1 - 1 <> nth x l2 - 1) @ i = a <> b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="32"/>32</td>
+          <td><a class="thm" href="applamed.html">applamed</a></td>
+          <td><a name="31"></a><pre>G -> (\ x, nth x l1 - 1 <> nth x l2 - 1) @ i = a <> b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>32</td>
           <td><a href="#31">31</a></td>
-          <td><a href="suceqd.html">suceqd</a></td>
-          <td><pre>G -> suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i) = suc (a <> b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="33"/>33</td>
+          <td><a class="thm" href="suceqd.html">suceqd</a></td>
+          <td><a name="32"></a><pre>G -> suc ((\ x, nth x l1 - 1 <> nth x l2 - 1) @ i) = suc (a <> b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>33</td>
           <td><a href="#16">16</a>, <a href="#32">32</a></td>
-          <td><a href="eqtrd.html">eqtrd</a></td>
-          <td><pre>G -> nth i (zip l1 l2) = suc (a <> b)</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="eqtrd.html">eqtrd</a></td>
+          <td><a name="33"></a><pre>G -> nth i (zip l1 l2) = suc (a <> b)</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano1.html">peano1</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="peano5.html">peano5</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>,
-    <a href="add0.html">add0</a>,
-    <a href="addS.html">addS</a>,
-    <a href="mul0.html">mul0</a>,
-    <a href="mulS.html">mulS</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano1.html">peano1</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="peano5.html">peano5</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>,
+    <a class="thm" href="add0.html">add0</a>,
+    <a class="thm" href="addS.html">addS</a>,
+    <a class="thm" href="mul0.html">mul0</a>,
+    <a class="thm" href="mulS.html">mulS</a>
+  </div>
 </body>
 </html>

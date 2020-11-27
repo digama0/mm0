@@ -8,34 +8,43 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>trud - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">trud</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">trud</a>
+      <span class="nav"><a href="../index.html#trud">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L690">src</a></span>
+    </h1>
     <pre>theorem trud (a: wff): $ T. -> a $ > $ a $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="sh">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
           <td><i>hyp h</i></td>
-          <td><pre>T. -> a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a name="1"></a><pre>T. -> a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="itru.html">itru</a></td>
-          <td><pre>T.</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="itru.html">itru</a></td>
+          <td><a name="2"></a><pre>T.</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td><a href="#1">1</a>, <a href="#2">2</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>a</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="3"></a><pre>a</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>  </section>
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>
+  </div>
 </body>
 </html>

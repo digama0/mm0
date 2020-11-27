@@ -8,41 +8,51 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>bitr4 - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">bitr4</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">bitr4</a>
+      <span class="nav"><a href="../index.html#bitr4">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L508">src</a></span>
+    </h1>
     <pre>theorem bitr4 (a b c: wff): $ (a <-> b) -> (c <-> b) -> (a <-> c) $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="anl.html">anl</a></td>
-          <td><pre>(a <-> b) /\ (c <-> b) -> (a <-> b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="anl.html">anl</a></td>
+          <td><a name="1"></a><pre>(a <-> b) /\ (c <-> b) -> (a <-> b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>2</td>
           <td></td>
-          <td><a href="anr.html">anr</a></td>
-          <td><pre>(a <-> b) /\ (c <-> b) -> (c <-> b)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><a name="2"></a><pre>(a <-> b) /\ (c <-> b) -> (c <-> b)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td><a href="#1">1</a>, <a href="#2">2</a></td>
-          <td><a href="bitr4d.html">bitr4d</a></td>
-          <td><pre>(a <-> b) /\ (c <-> b) -> (a <-> c)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="bitr4d.html">bitr4d</a></td>
+          <td><a name="3"></a><pre>(a <-> b) /\ (c <-> b) -> (a <-> c)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td><a href="#3">3</a></td>
-          <td><a href="exp.html">exp</a></td>
-          <td><pre>(a <-> b) -> (c <-> b) -> (a <-> c)</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><a name="4"></a><pre>(a <-> b) -> (c <-> b) -> (a <-> c)</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>
+  </div>
 </body>
 </html>

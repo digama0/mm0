@@ -8,113 +8,135 @@
   <meta name="keywords" content="mm0, metamath-zero">
   <title>dfbgcd - ../examples/peano.mm1 - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
   <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
 </head>
 <body>
-  <section class="main">
-    <h1 class="title">Theorem <a class="thm" href="">dfbgcd</a></h1>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">dfbgcd</a>
+      <span class="nav"><a href="../index.html#dfbgcd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4112-L4114">src</a></span>
+    </h1>
     <pre>theorem dfbgcd (a b: nat) {d x y: nat}:
   $ bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d} $;</pre>
     <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
         <tr class="st">
-          <td><a name="1"/>1</td>
+          <td>1</td>
           <td></td>
-          <td><a href="leasteq.html">leasteq</a></td>
-          <td><pre>{d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} == {d | 0 < d /\ E. x E. y x * a = y * b + d} -> least {d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} = least {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
-        </tr>        <tr class="sc">
-          <td><a name="2"/>2</td>
+          <td><a class="thm" href="leasteq.html">leasteq</a></td>
+          <td><a name="1"></a><pre>{d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} == {d | 0 < d /\ E. x E. y x * a = y * b + d} ->
+  least {d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} = least {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
+        </tr>
+        <tr class="sc">
+          <td>2</td>
           <td><a href="#1">1</a></td>
           <td><i>conv</i></td>
-          <td><pre>{d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} == {d | 0 < d /\ E. x E. y x * a = y * b + d} -> bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="3"/>3</td>
+          <td><a name="2"></a><pre>{d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} == {d | 0 < d /\ E. x E. y x * a = y * b + d} -> bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
+        </tr>
+        <tr class="st">
+          <td>3</td>
           <td></td>
-          <td><a href="lteq2.html">lteq2</a></td>
-          <td><pre>d2 = d -> (0 < d2 <-> 0 < d)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="4"/>4</td>
+          <td><a class="thm" href="lteq2.html">lteq2</a></td>
+          <td><a name="3"></a><pre>d2 = d -> (0 < d2 <-> 0 < d)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>4</td>
           <td></td>
-          <td><a href="anlr.html">anlr</a></td>
-          <td><pre>d2 = d /\ z = x /\ w = y -> z = x</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="5"/>5</td>
+          <td><a class="thm" href="anlr.html">anlr</a></td>
+          <td><a name="4"></a><pre>d2 = d /\ z = x /\ w = y -> z = x</pre></td>
+        </tr>
+        <tr class="st">
+          <td>5</td>
           <td><a href="#4">4</a></td>
-          <td><a href="muleq1d.html">muleq1d</a></td>
-          <td><pre>d2 = d /\ z = x /\ w = y -> z * a = x * a</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="6"/>6</td>
+          <td><a class="thm" href="muleq1d.html">muleq1d</a></td>
+          <td><a name="5"></a><pre>d2 = d /\ z = x /\ w = y -> z * a = x * a</pre></td>
+        </tr>
+        <tr class="st">
+          <td>6</td>
           <td></td>
-          <td><a href="muleq1.html">muleq1</a></td>
-          <td><pre>w = y -> w * b = y * b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="7"/>7</td>
+          <td><a class="thm" href="muleq1.html">muleq1</a></td>
+          <td><a name="6"></a><pre>w = y -> w * b = y * b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>7</td>
           <td><a href="#6">6</a></td>
-          <td><a href="anwr.html">anwr</a></td>
-          <td><pre>d2 = d /\ z = x /\ w = y -> w * b = y * b</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="8"/>8</td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><a name="7"></a><pre>d2 = d /\ z = x /\ w = y -> w * b = y * b</pre></td>
+        </tr>
+        <tr class="st">
+          <td>8</td>
           <td></td>
-          <td><a href="anll.html">anll</a></td>
-          <td><pre>d2 = d /\ z = x /\ w = y -> d2 = d</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="9"/>9</td>
+          <td><a class="thm" href="anll.html">anll</a></td>
+          <td><a name="8"></a><pre>d2 = d /\ z = x /\ w = y -> d2 = d</pre></td>
+        </tr>
+        <tr class="st">
+          <td>9</td>
           <td><a href="#7">7</a>, <a href="#8">8</a></td>
-          <td><a href="addeqd.html">addeqd</a></td>
-          <td><pre>d2 = d /\ z = x /\ w = y -> w * b + d2 = y * b + d</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="10"/>10</td>
+          <td><a class="thm" href="addeqd.html">addeqd</a></td>
+          <td><a name="9"></a><pre>d2 = d /\ z = x /\ w = y -> w * b + d2 = y * b + d</pre></td>
+        </tr>
+        <tr class="st">
+          <td>10</td>
           <td><a href="#5">5</a>, <a href="#9">9</a></td>
-          <td><a href="eqeqd.html">eqeqd</a></td>
-          <td><pre>d2 = d /\ z = x /\ w = y -> (z * a = w * b + d2 <-> x * a = y * b + d)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="11"/>11</td>
+          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
+          <td><a name="10"></a><pre>d2 = d /\ z = x /\ w = y -> (z * a = w * b + d2 <-> x * a = y * b + d)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>11</td>
           <td><a href="#10">10</a></td>
-          <td><a href="cbvexd.html">cbvexd</a></td>
-          <td><pre>d2 = d /\ z = x -> (E. w z * a = w * b + d2 <-> E. y x * a = y * b + d)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="12"/>12</td>
+          <td><a class="thm" href="cbvexd.html">cbvexd</a></td>
+          <td><a name="11"></a><pre>d2 = d /\ z = x -> (E. w z * a = w * b + d2 <-> E. y x * a = y * b + d)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>12</td>
           <td><a href="#11">11</a></td>
-          <td><a href="cbvexd.html">cbvexd</a></td>
-          <td><pre>d2 = d -> (E. z E. w z * a = w * b + d2 <-> E. x E. y x * a = y * b + d)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="13"/>13</td>
+          <td><a class="thm" href="cbvexd.html">cbvexd</a></td>
+          <td><a name="12"></a><pre>d2 = d -> (E. z E. w z * a = w * b + d2 <-> E. x E. y x * a = y * b + d)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>13</td>
           <td><a href="#3">3</a>, <a href="#12">12</a></td>
-          <td><a href="aneqd.html">aneqd</a></td>
-          <td><pre>d2 = d -> (0 < d2 /\ E. z E. w z * a = w * b + d2 <-> 0 < d /\ E. x E. y x * a = y * b + d)</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="14"/>14</td>
+          <td><a class="thm" href="aneqd.html">aneqd</a></td>
+          <td><a name="13"></a><pre>d2 = d -> (0 < d2 /\ E. z E. w z * a = w * b + d2 <-> 0 < d /\ E. x E. y x * a = y * b + d)</pre></td>
+        </tr>
+        <tr class="st">
+          <td>14</td>
           <td><a href="#13">13</a></td>
-          <td><a href="cbvab.html">cbvab</a></td>
-          <td><pre>{d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} == {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
-        </tr>        <tr class="st">
-          <td><a name="15"/>15</td>
+          <td><a class="thm" href="cbvab.html">cbvab</a></td>
+          <td><a name="14"></a><pre>{d2 | 0 < d2 /\ E. z E. w z * a = w * b + d2} == {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
+        </tr>
+        <tr class="st">
+          <td>15</td>
           <td><a href="#2">2</a>, <a href="#14">14</a></td>
-          <td><a href="ax_mp.html">ax_mp</a></td>
-          <td><pre>bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
-        </tr>      </tbody>
+          <td><a class="thm" href="ax_mp.html">ax_mp</a></td>
+          <td><a name="15"></a><pre>bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d}</pre></td>
+        </tr>
+      </tbody>
     </table>
     <h2 class="axioms">Axiom use</h2>
-    <a href="ax_1.html">ax_1</a>,
-    <a href="ax_2.html">ax_2</a>,
-    <a href="ax_3.html">ax_3</a>,
-    <a href="ax_mp.html">ax_mp</a>,
-    <a href="itru.html">itru</a>,
-    <a href="ax_gen.html">ax_gen</a>,
-    <a href="ax_4.html">ax_4</a>,
-    <a href="ax_5.html">ax_5</a>,
-    <a href="ax_6.html">ax_6</a>,
-    <a href="ax_7.html">ax_7</a>,
-    <a href="ax_10.html">ax_10</a>,
-    <a href="ax_11.html">ax_11</a>,
-    <a href="ax_12.html">ax_12</a>,
-    <a href="elab.html">elab</a>,
-    <a href="ax_8.html">ax_8</a>,
-    <a href="peano2.html">peano2</a>,
-    <a href="theid.html">theid</a>,
-    <a href="the0.html">the0</a>,
-    <a href="addeq.html">addeq</a>,
-    <a href="muleq.html">muleq</a>  </section>
+    <a class="thm" href="ax_1.html">ax_1</a>,
+    <a class="thm" href="ax_2.html">ax_2</a>,
+    <a class="thm" href="ax_3.html">ax_3</a>,
+    <a class="thm" href="ax_mp.html">ax_mp</a>,
+    <a class="thm" href="itru.html">itru</a>,
+    <a class="thm" href="ax_gen.html">ax_gen</a>,
+    <a class="thm" href="ax_4.html">ax_4</a>,
+    <a class="thm" href="ax_5.html">ax_5</a>,
+    <a class="thm" href="ax_6.html">ax_6</a>,
+    <a class="thm" href="ax_7.html">ax_7</a>,
+    <a class="thm" href="ax_10.html">ax_10</a>,
+    <a class="thm" href="ax_11.html">ax_11</a>,
+    <a class="thm" href="ax_12.html">ax_12</a>,
+    <a class="thm" href="elab.html">elab</a>,
+    <a class="thm" href="ax_8.html">ax_8</a>,
+    <a class="thm" href="peano2.html">peano2</a>,
+    <a class="thm" href="theid.html">theid</a>,
+    <a class="thm" href="the0.html">the0</a>,
+    <a class="thm" href="addeq.html">addeq</a>,
+    <a class="thm" href="muleq.html">muleq</a>
+  </div>
 </body>
 </html>
