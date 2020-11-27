@@ -5,7 +5,8 @@ use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use bit_set::BitSet;
 use clap::ArgMatches;
-use crate::{lined_string::LinedString, util::{ArcString, FileRef}};
+use lsp_types::Url;
+use crate::{elab::environment::{AtomData, DocComment}, lined_string::LinedString, util::{ArcString, FileRef}};
 use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Pretty},
   environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, ThmID, ThmKind, Thm,
     ExprNode, Type}};
@@ -104,9 +105,8 @@ impl<'a, W: Write> RenderProof<'a, W> {
       LineKind::Thm(_) => "st",
       LineKind::Conv => "sc"
     };
-    write!(self.w, r#"        <tr class="{kind_class}">
-          <td><a name="{step}"/>{step}</td>
-          <td>"#, kind_class = kind_class, step = self.line)?;
+    write!(self.w, "        <tr class=\"{}\">\n          <td>{}</td>\n          <td>",
+      kind_class, self.line)?;
     let mut first = true;
     for hyp in hyps {
       if !mem::take(&mut first) { write!(self.w, ", ")? }
@@ -116,15 +116,15 @@ impl<'a, W: Write> RenderProof<'a, W> {
     match kind {
       LineKind::Hyp(None) => write!(self.w, "<i>hyp</i>")?,
       LineKind::Hyp(Some(a)) => write!(self.w, "<i>hyp {}</i>", self.env.data[a].name)?,
-      LineKind::Thm(tid) => write!(self.w, r#"<a href="{thm}.html">{thm}</a>"#,
+      LineKind::Thm(tid) => write!(self.w, r#"<a class="thm" href="{thm}.html">{thm}</a>"#,
         thm = self.env.data[self.env.thms[tid].atom].name)?,
       LineKind::Conv => write!(self.w, "<i>conv</i>")?,
     }
-    write!(self.w, "</td>\n          <td><pre>")?;
+    write!(self.w, "</td>\n          <td><a name=\"{}\"></a><pre>", self.line)?;
     let w = &mut *self.w;
     FormatEnv {source: self.source, env: self.env}
       .pretty(|pr| pr.pp_expr(e).1.doc.render(PP_WIDTH, w))?;
-    write!(self.w, "</pre></td>\n        </tr>")?;
+    writeln!(self.w, "</pre></td>\n        </tr>")?;
     Ok((self.line, self.line += 1).0)
   }
 
@@ -203,6 +203,7 @@ impl Eq for CaseInsensitiveName {}
 struct BuildDoc<'a, W> {
   thm_folder: PathBuf,
   source: &'a LinedString,
+  base_url: Option<Url>,
   env: Environment,
   axuse: (Vec<ThmID>, AxiomUse),
   index: Option<W>,
@@ -243,6 +244,50 @@ impl Mangler {
   }
 }
 
+fn header(w: &mut impl Write, rel: &str, desc: &str, title: &str, h1: &str, nav: &str) -> io::Result<()> {
+  writeln!(w, r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="{desc}">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>{title} - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="{rel}stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
+  <!-- <link rel="shortcut icon" href="{rel}favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      {h1}
+      <span class="nav">{nav}</span>
+    </h1>"#,
+      rel = rel, desc = desc, title = title, h1 = h1, nav = nav)
+}
+const FOOTER: &'static str = "  </div>\n</body>\n</html>";
+
+fn render_doc(w: &mut impl Write, doc: &Option<DocComment>) -> io::Result<()> {
+  if let Some(doc) = doc {
+    use pulldown_cmark::{Parser, html};
+    write!(w, r#"    <div class="doc">"#)?;
+    html::write_html(&mut *w, Parser::new(doc))?;
+    writeln!(w, "</div>")?;
+  }
+  Ok(())
+}
+
+fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Result<()> {
+  match ad {
+    AtomData {sort: Some(_), decl: Some(_), ..} if sort => write!(w, "{}.sort", ad.name),
+    AtomData {sort: Some(_), decl: Some(DeclKey::Term(_)), ..} => write!(w, "{}.term", ad.name),
+    AtomData {sort: Some(_), decl: Some(DeclKey::Thm(_)), ..} => write!(w, "{}.thm", ad.name),
+    _ => write!(w, "{}", ad.name),
+  }
+}
+
 impl<'a, W: Write> BuildDoc<'a, W> {
   fn thm_doc(&mut self, tid: ThmID) -> io::Result<()> {
     let mut file = self.thm_folder.to_owned();
@@ -251,30 +296,29 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     self.mangler.mangle(&self.env, tid, |_, s| file.push(&format!("{}.html", s)));
     let mut file = BufWriter::new(File::create(file)?);
     let kind = if let ThmKind::Axiom = td.kind {"Axiom"} else {"Theorem"};
-    let thmname = &self.env.data[td.atom].name;
+    let ad = &self.env.data[td.atom];
+    let thmname = &ad.name;
     let filename = td.span.file.rel();
-    writeln!(file, r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="generator" content="mm0-doc">
-  <meta name="description" content="Documentation for theorem `{thmname}` in `{filename}`.">
-  <meta name="keywords" content="mm0, metamath-zero">
-  <title>{thmname} - {filename} - Metamath Zero</title>
-  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
-  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
-</head>
-<body>
-  <section class="main">
-    <h1 class="title">{kind} <a class="thm" href="">{thmname}</a></h1>"#,
-      thmname = thmname, filename = filename, kind = kind)?;
-    if let Some(doc) = &td.doc {
-      use pulldown_cmark::{Parser, html};
-      write!(file, r#"<div class="doc">"#)?;
-      html::write_html(&mut file, Parser::new(doc))?;
-      writeln!(file, "</div>")?;
+    let mut nav = String::from("<a href=\"../index.html#");
+    disambiguated_anchor(unsafe {nav.as_mut_vec()}, ad, true)?;
+    nav.push_str("\">index</a>");
+    if let Some(base) = &self.base_url {
+      use std::fmt::Write;
+      let url = base.join(filename).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+      write!(&mut nav, " | <a href=\"{}", url).expect("writing to a string");
+      let range = self.source.to_range(td.full);
+      if range.start.line == range.end.line {
+        write!(&mut nav, "#L{}\">src</a>", range.start.line + 1)
+      } else {
+        write!(&mut nav, "#L{}-L{}\">src</a>", range.start.line + 1, range.end.line + 1)
+      }.expect("writing to a string");
     }
+    header(&mut file, "../",
+      &format!("Documentation for theorem `{}` in `{}`.", thmname, filename),
+      &format!("{} - {}", thmname, filename),
+      &format!(r#"{} <a class="thm" href="">{}</a>"#, kind, thmname),
+      &nav)?;
+    render_doc(&mut file, &td.doc)?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
     if let ThmKind::Thm(Some(pf)) = &td.kind {
       writeln!(file, r#"    <table class="proof">
@@ -294,31 +338,27 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           write!(file, "<i>sorry</i>")?
         } else {
           self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
-            write!(file, r#"    <a href="{}.html">{}</a>"#, mangled, thm))?
+            write!(file, r#"    <a class="thm" href="{}.html">{}</a>"#, mangled, thm))?
         }
       }
+      writeln!(file)?
     }
-    writeln!(file, "  </section>\n</body>\n</html>")
+    writeln!(file, "{}", FOOTER)
   }
 
   fn write_all(&mut self, path: &FileRef, stmts: &[StmtTrace]) -> io::Result<()> {
     let file = self.index.as_mut().expect("index file missing");
-    writeln!(file, r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="generator" content="mm0-doc">
-  <meta name="description" content="Documentation index for `{filename}`.">
-  <meta name="keywords" content="mm0, metamath-zero">
-  <title>{filename} - Index - Metamath Zero</title>
-  <link rel="stylesheet" type="text/css" href="stylesheet.css" />
-  <!-- <link rel="shortcut icon" href="favicon.ico"> -->
-</head>
-<body>
-  <section class="index-main">
-    <h1 class="index-title">Index</h1>"#,
-      filename = path.rel())?;
+    let nav: String;
+    let nav = if let Some(base) = &self.base_url {
+      let url = base.join(path.rel()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+      nav = format!("<a href=\"{}\">src</a>", url);
+      &nav
+    } else {""};
+    header(file, "",
+      &format!("Documentation index for `{}`.", path.rel()),
+      &format!("{} - Index", path.rel()),
+      "Index",
+      nav)?;
     for s in stmts {
       use pulldown_cmark::escape::{escape_html, WriteWrapper};
       let mut file = self.index.as_mut().expect("index file missing");
@@ -326,21 +366,33 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       match *s {
         StmtTrace::Global(_) |
         StmtTrace::OutputString(_) => {}
-        StmtTrace::Sort(a) =>
-          writeln!(file, "    <pre>{}</pre>",
-            self.env.sorts[self.env.data[a].sort.expect("wf env")])?,
+        StmtTrace::Sort(a) => {
+          let ad = &self.env.data[a];
+          write!(file, "    <a name=\"")?;
+          disambiguated_anchor(&mut file, ad, true)?;
+          writeln!(file, "\"></a>")?;
+          let sd = &self.env.sorts[ad.sort.expect("wf env")];
+          render_doc(&mut file, &sd.doc)?;
+          writeln!(file, "    <pre>{}</pre>", sd)?
+        }
         StmtTrace::Decl(a) => {
-          match self.env.data[a].decl.expect("wf env") {
+          let ad = &self.env.data[a];
+          write!(file, "    <a name=\"")?;
+          disambiguated_anchor(&mut file, ad, false)?;
+          writeln!(file, "\"></a>")?;
+          match ad.decl.expect("wf env") {
             DeclKey::Term(tid) => {
+              let td = &self.env.terms[tid];
+              render_doc(&mut file, &td.doc)?;
               write!(file, "    <pre>")?;
-              escape_html(WriteWrapper(&mut file),
-                &format!("{}", fe.to(&self.env.terms[tid])))?;
+              escape_html(WriteWrapper(&mut file), &format!("{}", fe.to(td)))?;
               writeln!(file, "</pre>")?;
             }
             DeclKey::Thm(tid) => {
               let td = &self.env.thms[tid];
+              render_doc(&mut file, &td.doc)?;
               self.mangler.mangle(&self.env, tid, |name, mangled|
-                write!(file, r#"    <pre>{}{} <a href="thms/{mangled}.html">{name}</a>"#, td.vis,
+                write!(file, r#"    <pre>{}{} <a class="thm" href="thms/{mangled}.html">{name}</a>"#, td.vis,
                   if matches!(td.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
                   mangled = mangled, name = name))?;
               fe.pretty(|pr| -> io::Result<()> {
@@ -386,8 +438,14 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   };
   dir.push("thms");
   fs::create_dir_all(&dir)?;
+  let base_url = match args.value_of("src") {
+    Some("-") => None,
+    src => Some(Url::parse(src.unwrap_or("https://github.com/digama0/mm0/blob/master/examples/"))
+      .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?),
+  };
   let mut bd = BuildDoc {
     source: fc.ascii(),
+    base_url,
     axuse: AxiomUse::new(&env),
     thm_folder: dir, env, index,
     mangler: Mangler::default(),
