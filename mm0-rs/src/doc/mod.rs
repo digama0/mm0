@@ -430,6 +430,13 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   env.merge(&old, (0..0).into(), &mut vec![]).expect("can't fail");
   let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
   fs::create_dir_all(&dir)?;
+  {
+    let mut file = dir.to_owned();
+    file.push("stylesheet.css");
+    if !file.exists() {
+      File::create(file)?.write_all(include_bytes!("stylesheet.css"))?;
+    }
+  }
   let only = args.value_of("only");
   let index = if only.is_some() {None} else {
     let mut file = dir.to_owned();
