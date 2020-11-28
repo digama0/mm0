@@ -96,7 +96,7 @@ struct LayoutProof<'a> {
 
 impl<'a> LayoutProof<'a> {
   fn push_line(&mut self, hyps: Box<[u32]>, kind: LineKind, expr: LispVal) -> u32 {
-    let line = self.lines.len().try_into().unwrap();
+    let line = self.lines.len().try_into().expect("lines are u32");
     self.lines.push(Line {hyps, kind, expr});
     line
   }
@@ -207,13 +207,13 @@ fn render_proof<'a>(
     ProofOrder::Post =>
       for (line, Line {mut hyps, kind, expr}) in lines.into_iter().enumerate() {
         for i in &mut *hyps { *i += 1 }
-        render_line(fe, w, (line + 1).try_into().unwrap(), &hyps, kind, &expr)?;
+        render_line(fe, w, (line + 1).try_into().expect("lines are u32"), &hyps, kind, &expr)?;
       }
     ProofOrder::Pre => {
       let len = lines.len();
       for (line, Line {mut hyps, kind, expr}) in lines.into_iter().rev().enumerate() {
-        for i in &mut *hyps { *i = u32::try_from(len).unwrap() - *i }
-        render_line(fe, w, (line + 1).try_into().unwrap(), &hyps, kind, &expr)?;
+        for i in &mut *hyps { *i = u32::try_from(len).expect("lines are u32") - *i }
+        render_line(fe, w, (line + 1).try_into().expect("lines are u32"), &hyps, kind, &expr)?;
       }
     }
   }
