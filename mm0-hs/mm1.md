@@ -614,3 +614,130 @@ Compilation
 ===
 
 Once a MM1 file is elaborated successfully, the resulting definitions are compiled down to an MM0 file containing all the public theorem statements, and an MMU file containing the proofs. TODO
+
+
+Example
+===
+
+The `examples` directory contains several examples.
+
+Here's a version of demo.mm1, which shows how these can be used.
+
+
+~~~~
+    delimiter $ ( ) ! = , $;
+    provable sort wff;
+    term imp: wff > wff > wff;
+    infixr imp: $->$ prec 2;
+
+    -- The implicational axioms of intuitionistic logic
+    axiom K: $ a -> b -> a $;
+    axiom S: $ (a -> b -> c) -> (a -> b) -> (a -> c) $;
+    axiom mp: $ a -> b $ > $ a $ > $ b $;
+
+    -- Some basic metafunctions borrowed from peano.mm1
+    do {
+      (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
+      (def (refine-extra-args refine tgt e . ps)
+        (refine tgt (foldl ps '(:verb ,e) @ fn (acc p2) '(mp ,acc ,p2))))
+    };
+
+    theorem a1i (h: $ b $): $ a -> b $ = '(K h);
+    theorem mpd (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ = '(S h2 h1);
+    theorem mpi (h1: $ b $) (h2: $ a -> b -> c $): $ a -> c $ =
+                '(mpd (a1i h1) h2);
+    theorem id: $ a -> a $ = '(mpd (! K _ a) K);
+
+    theorem id2: $ a -> a $ =
+    '(S K (! K _ a));
+
+    do {
+      (def mvar-sort @ match-fn @ (mvar s _) s)
+      (def (named e)
+        (refine e)
+        (map (fn (v) (set! v @ dummy! (mvar-sort v))) (get-mvars)))
+    };
+
+    theorem id3: $ a -> a $ =
+    (named '(S K K));
+
+    sort nat;
+    term all {x: nat} (P: wff x): wff;
+    notation all (x P) = ($!$:4) x P;
+    term eq (a b: nat): wff;
+    infixl eq: $=$ prec 10;
+
+    axiom refl: $ a = a $;
+    axiom symm: $ a = b $ > $ b = a $;
+    axiom trans: $ a = b $ > $ b = c $ > $ a = c $;
+
+    do {
+      {2 + 2}
+    };
+
+    axiom foo (P Q: wff x): $ !x (P -> Q) -> !x P -> !x Q $;
+
+    term _0: nat; prefix _0: $0$ prec max;
+    term succ: nat > nat;
+    axiom succ_eq: $ a = b $ > $ succ a = succ b $;
+
+    def _1 = $ succ 0 $; prefix _1: $1$ prec max;
+    def _2 = $ succ 1 $; prefix _2: $2$ prec max;
+    def _3 = $ succ 2 $; prefix _3: $3$ prec max;
+    def _4 = $ succ 3 $; prefix _4: $4$ prec max;
+
+    term add (a b: nat): nat;
+    infixl add: $+$ prec 20;
+    axiom add_eq: $ a = b $ > $ c = d $ > $ a + c = b + d $;
+
+    axiom add_succ: $ a + succ b = succ (a + b) $;
+    axiom add_zero: $ a + 0 = a $;
+
+    theorem two_plus_two_is_four: $ 2 + 2 = 4 $ =
+    (focus
+      'trans
+      'add_succ
+      'succ_eq
+      'trans
+      'add_succ
+      'succ_eq
+      'add_zero
+    (stat));
+
+    theorem two_plus_two_is_four_ALT: $ 2 + 2 = 4 $ =
+    (focus
+      '(trans add_succ succ_eq)
+      '(trans add_succ succ_eq)
+      'add_zero
+    (stat));
+
+    theorem two_plus_two_is_four_ALT2: $ 2 + 2 = 4 $ =
+    '(trans add_succ @ succ_eq @
+      trans add_succ @ succ_eq @
+
+      add_zero);
+~~~~
+
+
+Note that a proof looks like `theorem NAME: $ ... expression... $ =`
+followed by an s-expression-like proof.
+"(stat)" prints the current proof state.
+
+There aren't too many fancy tactics right now unless you write them
+yourself (in the manner of `norm_num`). If you want to keep moving
+up the hierarchy of complexity, you can try to follow the first few
+proofs in `peano.mm1` (after the big do block, starting at theorem
+a1i). It takes quite a while before the
+proofs start getting complicated enough to need tactic mode (search
+for "focus"), although the "named" tactic is used in lots of simpler
+theorems to wrap a proof script to name dummy variables.
+
+To create a disconnected step, you can use `have` in the form
+`(have 'NAME $ EXPRESSION $ _)` and the _ will give you EXPRESSION
+as the goal, which need not have anything to do with
+what the current theorem is. You can use NAME to refer to the step later.
+
+If you want to say "unify the goal with this expression" you
+can use `{_ : $ EXPRESSION $}` and the _ will unify the goal against
+EXPRESSION, which you can obtain by copy-pasting from the goal and
+making modifications.
