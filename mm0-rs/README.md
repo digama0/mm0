@@ -37,7 +37,8 @@ click on its small "gear symbol" to change its settings.
 Note: if you click on its "gear symbol" and see nothing, that's a bug
 in the Visual Studio Code program; restart it and again select View/Extensions
 to you can see the settings to change them.
-Now modify the Metamath-zero" Executable Path metamath-zero.executablePath
+Now modify the "Metamath-zero Executable Path" setting (which corresponds
+to `metamath-zero.executablePath` in `settings.json`)
 to be the correct path for the executable
 (it defaults to `mm0-rs`).
 You should probably use an absolute path (e.g., one starting with "/"
