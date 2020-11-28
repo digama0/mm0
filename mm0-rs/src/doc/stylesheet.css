@@ -141,7 +141,7 @@ a:hover, a:hover .pre {
     text-decoration: underline;
 }
 
-a.thm {
+a.term, a.thm {
     color: #1b61d6;
     text-decoration: none;
     font-family: Fira Code,Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;

@@ -9,7 +9,7 @@ use clap::ArgMatches;
 use lsp_types::Url;
 use crate::{elab::environment::{AtomData, DocComment}, lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
 use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Pretty},
-  environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, ThmID, ThmKind, Thm,
+  environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, TermID, ThmID, ThmKind, Thm,
     ExprNode, Type}};
 
 const PP_WIDTH: usize = 160;
@@ -72,11 +72,11 @@ impl AxiomUse {
   }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum LineKind {
   Hyp(Option<AtomID>),
   Thm(ThmID),
-  Conv,
+  Conv(Box<[TermID]>),
 }
 struct Line {
   hyps: Box<[u32]>,
@@ -91,7 +91,29 @@ struct LayoutProof<'a> {
   args: &'a [(Option<AtomID>, Type)],
   heap: &'a [ProofNode],
   hyps: &'a [(Option<AtomID>, ExprNode)],
-  heap_lines: Box<[Option<Result<u32, LispVal>>]>,
+  heap_lines: Box<[Option<LayoutResult>]>,
+}
+
+#[derive(Clone)]
+enum LayoutResult {
+  Expr(LispVal),
+  Proof(u32),
+  Conv(Box<[TermID]>),
+}
+
+impl LayoutResult {
+  fn into_expr(self) -> LispVal {
+    if let LayoutResult::Expr(e) = self {e} else {panic!("bad proof")}
+  }
+  fn into_proof(self) -> u32 {
+    if let LayoutResult::Proof(e) = self {e} else {panic!("bad proof")}
+  }
+  fn into_conv(self) -> Box<[TermID]> {
+    if let LayoutResult::Conv(e) = self {e} else {panic!("bad proof")}
+  }
+  fn as_conv(&self) -> &[TermID] {
+    if let LayoutResult::Conv(e) = self {e} else {panic!("bad proof")}
+  }
 }
 
 impl<'a> LayoutProof<'a> {
@@ -101,56 +123,87 @@ impl<'a> LayoutProof<'a> {
     line
   }
 
-  fn layout(&mut self, p: &'a ProofNode) -> io::Result<Result<u32, LispVal>> {
-    Ok(match *p {
+  fn layout_conv(&mut self, defs: &mut Vec<TermID>, p: &ProofNode) {
+    match p {
+      &ProofNode::Ref(i) => {
+        for &d in
+          if let Some(h) = &self.heap_lines[i] {h} else {
+            let h = self.layout(&self.heap[i]);
+            self.heap_lines[i].get_or_insert(h)
+          }.as_conv()
+        { if !defs.contains(&d) {defs.push(d)} }
+      },
+      ProofNode::Dummy(_, _) |
+      ProofNode::Term {..} |
+      ProofNode::Hyp(_, _) |
+      ProofNode::Thm {..} |
+      ProofNode::Conv(_) => unreachable!(),
+      ProofNode::Refl(_) => {}
+      ProofNode::Sym(c) => self.layout_conv(defs, c),
+      ProofNode::Cong {args, ..} => for c in &**args { self.layout_conv(defs, c) },
+      &ProofNode::Unfold {term, ref res, ..} => {
+        if !defs.contains(&term) {defs.push(term)}
+        self.layout_conv(defs, &res.2)
+      }
+    }
+  }
+
+  fn layout(&mut self, p: &ProofNode) -> LayoutResult {
+    match *p {
       ProofNode::Ref(i) =>
         if let Some(n) = &self.heap_lines[i] {n.clone()}
         else {
           let res = if let Some((a, _)) = self.args.get(i) {
             let a = a.unwrap_or_else(|| self.env.get_atom(format!("v{}", i+1).as_bytes()));
-            Err(LispVal::atom(a))
-          } else { self.layout(&self.heap[i])? };
+            LayoutResult::Expr(LispVal::atom(a))
+          } else { self.layout(&self.heap[i]) };
           self.heap_lines[i] = Some(res.clone());
           res
         },
-      ProofNode::Dummy(a, _) => Err(LispVal::atom(a)),
+      ProofNode::Dummy(a, _) => LayoutResult::Expr(LispVal::atom(a)),
       ProofNode::Term {term, ref args} => {
         let mut out = Vec::with_capacity(args.len()+1);
         out.push(LispVal::atom(self.env.terms[term].atom));
         for e in &**args {
-          out.push(self.layout(e)?.expect_err("bad_proof"));
+          out.push(self.layout(e).into_expr());
         }
-        Err(LispVal::list(out))
+        LayoutResult::Expr(LispVal::list(out))
       }
       ProofNode::Hyp(i, ref e) => {
-        let e = self.layout(e)?.expect_err("bad_proof");
-        Ok(self.push_line(Box::new([]), LineKind::Hyp(self.hyps[i].0), e))
+        let e = self.layout(e).into_expr();
+        LayoutResult::Proof(self.push_line(Box::new([]), LineKind::Hyp(self.hyps[i].0), e))
       }
       ProofNode::Thm {thm, ref args, ref res} => {
         let td = &self.env.thms[thm];
         let mut hyps = SliceUninit::new(td.hyps.len());
         if self.rev {
           for (i, e) in args[td.args.len()..].iter().enumerate().rev() {
-            hyps.set(i, self.layout(e)?.expect("bad proof"))
+            hyps.set(i, self.layout(e).into_proof())
           }
         } else {
           for (i, e) in args[td.args.len()..].iter().enumerate() {
-            hyps.set(i, self.layout(e)?.expect("bad proof"))
+            hyps.set(i, self.layout(e).into_proof())
           }
         }
-        let res = self.layout(res)?.expect_err("bad_proof");
-        Ok(self.push_line(unsafe {hyps.assume_init()}, LineKind::Thm(thm), res))
+        let res = self.layout(res).into_expr();
+        LayoutResult::Proof(self.push_line(unsafe {hyps.assume_init()}, LineKind::Thm(thm), res))
       }
       ProofNode::Conv(ref p) => {
-        let n = self.layout(&p.2)?.expect("bad proof");
-        let tgt = self.layout(&p.0)?.expect_err("bad_proof");
-        Ok(self.push_line(Box::new([n]), LineKind::Conv, tgt))
+        let n = self.layout(&p.2).into_proof();
+        let mut defs = self.layout(&p.1).into_conv();
+        let tgt = self.layout(&p.0).into_expr();
+        defs.sort_by_key(|&t| self.env.data[self.env.terms[t].atom].name.as_str());
+        LayoutResult::Proof(self.push_line(Box::new([n]), LineKind::Conv(defs), tgt))
       }
       ProofNode::Refl(_) |
       ProofNode::Sym(_) |
       ProofNode::Cong {..} |
-      ProofNode::Unfold {..} => unreachable!()
-    })
+      ProofNode::Unfold {..} => {
+        let mut defs = vec![];
+        self.layout_conv(&mut defs, p);
+        LayoutResult::Conv(defs.into_boxed_slice())
+      }
+    }
   }
 }
 
@@ -162,9 +215,9 @@ fn escape_html(mut w: &mut impl Write, s: &str) -> io::Result<()> {
 fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
   line: u32, hyps: &[u32], kind: LineKind, e: &LispVal) -> io::Result<()> {
   let kind_class = match kind {
-    LineKind::Hyp(_) => "sh",
-    LineKind::Thm(_) => "st",
-    LineKind::Conv => "sc"
+    LineKind::Hyp(_) => "step-hyp",
+    LineKind::Thm(_) => "step-thm",
+    LineKind::Conv(_) => "step-conv"
   };
   write!(w, "        <tr id=\"{line}\" class=\"{kind}\">\n          <td>{line}</td>\n          <td>",
     kind = kind_class, line = line)?;
@@ -179,7 +232,17 @@ fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
     LineKind::Hyp(Some(a)) => write!(w, "<i>hyp {}</i>", fe.env.data[a].name)?,
     LineKind::Thm(tid) => write!(w, r#"<a class="thm" href="{thm}.html">{thm}</a>"#,
       thm = fe.env.data[fe.env.thms[tid].atom].name)?,
-    LineKind::Conv => write!(w, "<i>conv</i>")?,
+    LineKind::Conv(defs) => {
+      write!(w, "<i>conv</i>")?;
+      let mut first = true;
+      for &def in &*defs {
+        if !mem::take(&mut first) { write!(w, ",")? }
+        write!(w, " <a class=\"term\" href=\"../index.html#")?;
+        let ad = &fe.env.data[fe.env.terms[def].atom];
+        disambiguated_anchor(w, ad, false)?;
+        write!(w, "\">{}</a>", ad.name)?;
+      }
+    }
   }
   write!(w, "</td>\n          <td><pre>")?;
   let mut s = String::new();
@@ -200,7 +263,7 @@ fn render_proof<'a>(
     rev: matches!(order, ProofOrder::Pre), lines: vec![],
     heap_lines: vec![None; pf.heap.len()].into_boxed_slice()
   };
-  layout.layout(&pf.head)?.expect("bad proof");
+  layout.layout(&pf.head).into_proof();
   let lines = layout.lines;
   let fe = FormatEnv {source, env};
   match order {
