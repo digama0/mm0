@@ -6,7 +6,7 @@ Watch this space for more updates, as `mm0-rs` is under active development. See 
 
 ## Compilation
 
-To compile `mm0-rs`, first install Rust.
+To compile `mm0-rs`, first [install Rust](https://rustup.rs/).
 You then need to download this repository (e.g.,
 `git clone https://github.com/digama0/mm0.git`).
 Then cd into this `mm0-rs` directory (using `cd mm0/mm0-rs`) and run:
