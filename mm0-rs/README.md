@@ -27,8 +27,14 @@ editor / IDE which supports LSP servers.
 If you choose to do the same,
 [download and install Visual Studio Code](https://code.visualstudio.com/).
 
-Select View/Extensions, search for "Metamath"
-Look for "Metamath Zero" & press its "install" button.
+Next, install the "Metamath Zero" language support extension.
+You can do this one of two ways:
+1. Use Quick Open (Ctrl-P on Windows/Linux, Cmd-P on MacOS)),
+   paste `ext install digama0.metamath-zero` in the box and hit Enter (Return).
+   This will install the ["Metamath Zero" language support](https://marketplace.visualstudio.com/items?itemName=digama0.metamath-zero) extension.
+2. Select View/Extensions, search for "Metamath"
+  Look for "Metamath Zero"; make sure it's the correct one
+  (digama0.metamath-zero). If so, press its "install" button.
 
 If `mm0-rs` is not on your path, then you need to
 change the Visual Studio Code settings so it can execute `mm0-rs`.
@@ -57,29 +63,10 @@ You can easily use `mm0-rs` from within Visual Studio Code.
 Start Visual Studio Code, then use File/Open,
 and navigate to the mm0/examples directory.
 Select a file to look at; `do-block.mm1` and `demo.mm1`
-are good starting points.
+are good starting points
+(`demo.mm1` shows what proofs look like in MM1).
 Select "View/Problems" to see a summary.
 
-File `demo.mm1` show what proofs look like in MM1.
-A theorem proof looks like `theorem NAME: $ ... expression... $ =`
-followed by an s-expression-like proof.
-"(stat)" prints the current proof state.
-
-There aren't too many fancy tactics right now unless you write them
-yourself (in the manner of `norm_num`). If you want to keep moving
-up the hierarchy of complexity, you can try to follow the first few
-proofs in peano.mm1 (after the big do block, starting at theorem
-a1i). It takes quite a while before the
-proofs start getting complicated enough to need tactic mode (search
-for "focus"), although the "named" tactic is used in lots of simpler
-theorems to wrap a proof script to name dummy variables.
-
-To create a disconnected step, you can use `have` in the form
-`(have 'NAME $ EXPRESSION $ _)` and the _ will give you EXPRESSION
-as the goal, which need not have anything to do with
-what the current theorem is. You can use NAME to refer to the step later.
-
-If you want to say "unify the goal with this expression" you
-can use `{_ : $ EXPRESSION $}` and the _ will unify the goal against
-EXPRESSION, which you can obtain by copy-pasting from the goal and
-making modifications.
+For more about how to use MM1 to create proofs, see file `../mm0-hs/mm1.md`
+(the mm0-hs tool is deprecated, but the MM1 documentation is currently
+still there).
