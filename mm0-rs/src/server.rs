@@ -750,6 +750,10 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           ((sp, mk_doc(stx.doc())), None)
         } else { return None }
       }
+      ObjectKind::BuiltinCallback(stx) => {
+        let ld = env.data[stx.atom_id()].lisp.as_ref()?;
+        ((sp, mk_doc(stx.doc())), ld.doc.clone())
+      }
       &ObjectKind::Global(a) => {
         let ld = env.data[a].lisp.as_ref()?;
         if let Some(doc) = &ld.doc {
@@ -823,7 +827,8 @@ async fn definition<T>(path: FileRef, pos: Position,
       &ObjectKind::Thm(t) => res.push(thm(t)),
       ObjectKind::Var(_) |
       ObjectKind::Syntax(_) |
-      ObjectKind::RefineSyntax(_) => {}
+      ObjectKind::RefineSyntax(_) |
+      ObjectKind::BuiltinCallback(_) => {}
       ObjectKind::Expr(e) => {
         let head = e.uncons().next().unwrap_or(e);
         if let Some(DeclKey::Term(t)) = head.as_atom().and_then(|a| env.data()[a].decl()) {
@@ -1079,7 +1084,8 @@ async fn references<T>(
     }
     ObjectKind::Import(_) |
     ObjectKind::Syntax(_) |
-    ObjectKind::RefineSyntax(_) => None,
+    ObjectKind::RefineSyntax(_) |
+    ObjectKind::BuiltinCallback(_) => None,
     ObjectKind::Var(a) => Some(Key::Var(a)),
     ObjectKind::Sort(a) => Some(Key::Sort(a)),
     ObjectKind::Term(a, _) => Some(Key::Term(a)),

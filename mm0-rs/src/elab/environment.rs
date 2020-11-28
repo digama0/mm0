@@ -12,7 +12,7 @@ use std::hash::Hash;
 use std::collections::HashMap;
 use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
 use crate::util::{ArcString, FileRef, FileSpan, HashMapExt, Span};
-use super::lisp::{LispVal, RefineSyntax, Syntax};
+use super::lisp::{LispVal, BuiltinCallback, RefineSyntax, Syntax};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
 pub use crate::parser::ast::{Modifiers, Prec};
 
@@ -536,6 +536,8 @@ pub enum ObjectKind {
   Syntax(Syntax),
   /// This is a refine tactic syntax item; hovering shows the doc comment
   RefineSyntax(RefineSyntax),
+  /// This is a syntax item for definitions of builtin callback functions, such as `refine-extra-args`.
+  BuiltinCallback(BuiltinCallback),
   /// This is an import; hovering does nothing and go-to-definition goes to the file
   Import(FileRef),
 }

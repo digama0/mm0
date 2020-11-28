@@ -11,7 +11,7 @@ use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::{ArcString, OptionExt};
 use super::super::{AtomID, Span, DocComment, Elaborator, ElabError, ObjectKind};
 use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
-  Remap, Remapper, Syntax};
+  Remap, Remapper, BuiltinCallback, Syntax};
 use super::super::math_parser::{QExpr, QExprKind};
 use super::print::{FormatEnv, EnvDisplay};
 
@@ -492,7 +492,16 @@ impl<'a> LispParser<'a> {
     let (sp, x, stack) = self.def_var(e)?;
     let ir = self.def_ir(sp, es, stack)?;
     if self.ctx.len() == 0 {
-      self.spans.insert(sp, ObjectKind::Global(x));
+      match x {
+        AtomID::ANNOTATE =>
+        {self.spans.insert(sp, ObjectKind::BuiltinCallback(BuiltinCallback::Annotate));}
+        AtomID::REFINE_EXTRA_ARGS =>
+        {self.spans.insert(sp, ObjectKind::BuiltinCallback(BuiltinCallback::RefineExtraArgs));}
+        AtomID::TO_EXPR_FALLBACK =>
+        {self.spans.insert(sp, ObjectKind::BuiltinCallback(BuiltinCallback::ToExprFallback));}
+        _ =>
+        {self.spans.insert(sp, ObjectKind::Global(x));}
+      }
     }
     Ok((sp, x, ir))
   }

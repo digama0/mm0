@@ -174,6 +174,33 @@ str_enum! {
   }
 }
 
+str_enum! {
+  /// The `BuiltinCallback` type represents the atoms for callback functions
+  /// that are hardcoded into the interpreter.
+  enum BuiltinCallback {
+    /// The `annotate` function is a callback used to define what happens when an annotation like
+    /// `@foo def bar = ...` is used. Calling it directly results in an error.
+    Annotate: "annotate",
+    /// The `refine-extra-args` function is a callback used when an application in refine
+    /// uses too many arguments. Calling it directly results in an error.
+    RefineExtraArgs: "refine-extra-args",
+    /// `to-expr-fallback` is called when elaborating a term that is not otherwise recognized.
+    /// Calling it directly results in an error.
+    ToExprFallback: "to-expr-fallback",
+  }
+}
+
+impl BuiltinCallback {
+  /// Converts this `BuiltinCallback` to the corresponding `AtomID`.
+  #[must_use] pub fn atom_id(self) -> AtomID {
+    match self {
+      BuiltinCallback::Annotate => AtomID::ANNOTATE,
+      BuiltinCallback::RefineExtraArgs => AtomID::REFINE_EXTRA_ARGS,
+      BuiltinCallback::ToExprFallback => AtomID::TO_EXPR_FALLBACK,
+    }
+  }
+}
+
 /// The type of a metavariable. This encodes the different types of context
 /// in which a term is requested.
 #[derive(Copy, Clone, Debug, EnvDebug)]
