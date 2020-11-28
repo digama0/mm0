@@ -249,8 +249,12 @@ impl<'a> Pretty<'a> {
           return Some((env.pe.consts[tk].1, doc))
         }
       }
-      (APP_PREC, self.group(self.nest(2, self.app(self.word(&ad.name),
-        args.iter().map(|e| self.expr_paren(e, Prec::Max))))))
+      if args.is_empty() {
+        (Prec::Max, self.word(&ad.name))
+      } else {
+        (APP_PREC, self.group(self.nest(2, self.app(self.word(&ad.name),
+          args.iter().map(|e| self.expr_paren(e, Prec::Max))))))
+      }
     }))().unwrap_or_else(|| (Prec::Max, PP {
       left: false, right: false, small: e.small(),
       doc: self.pp_lisp(e)

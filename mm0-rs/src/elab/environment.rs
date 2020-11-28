@@ -1086,7 +1086,7 @@ impl ParserEnv {
     for (&s1, m) in &other.coes {
       for (&s2, coe) in m {
         if let Coe::One(ref fsp, t) = **coe {
-          self.add_coe_raw(sp, sorts, s1, s2, fsp.clone(), t.remap(r))
+          self.add_coe(sp, sorts, s1, s2, fsp.clone(), t.remap(r))
             .unwrap_or_else(|r| errors.push(r))
         }
       }
