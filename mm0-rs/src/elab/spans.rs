@@ -150,7 +150,7 @@ impl<T> Spans<T> {
       .flat_map(move |(_, v)| v.iter().filter(move |x| pos <= x.0.end))
   }
 
-  /// Get the [`Spans`] object corrsponding to the statement that contains the given position,
+  /// Get the [`Spans`] object corresponding to the statement that contains the given position,
   /// if one exists.
   #[must_use] pub fn find(spans: &[Self], pos: usize) -> Option<&Self> {
     match spans.binary_search_by_key(&pos, |s| s.stmt().start) {

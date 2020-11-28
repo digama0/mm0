@@ -74,7 +74,7 @@ impl FrozenEnv {
   /// Get the list of [`Spans`] in the environment.
   #[must_use] pub fn spans(&self) -> &[Spans<ObjectKind>] { &unsafe { self.thaw() }.spans }
 
-  /// Get the [`Spans`] object corrsponding to the statement that contains the given position,
+  /// Get the [`Spans`] object corresponding to the statement that contains the given position,
   /// if one exists.
   #[must_use] pub fn find(&self, pos: usize) -> Option<&Spans<ObjectKind>> {
     Spans::find(self.spans(), pos)
