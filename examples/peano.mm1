@@ -33,7 +33,7 @@ do {
   (def (append . ls) @ foldr ls () @ fn (l l2) @ foldr l l2 cons)
   (def (rev l) @ foldl l () (fn (l a) (cons a l)))
   (def (len l) @ foldl l 0 (fn (n _) {n + 1}))
-  (def (filter l p) @ foldl l () @ fn (x l2) @ if (p x) (cons x l2) l2)
+  (def (filter l p) @ foldl l () @ fn (l2 x) @ if (p x) (cons x l2) l2)
   (def (repeat a n) (if {n = 0} () (cons a (repeat a {n - 1}))))
   (def (iterate n f a) (if {n = 0} a (f (iterate {n - 1} f a))))
   (def (find l) @ match l
