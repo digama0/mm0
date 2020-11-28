@@ -216,9 +216,23 @@ table.proof {
     border-radius: .25rem;
 }
 
-table.proof tr th,
-table.proof tr td {
+table.proof th,
+table.proof td {
     border-bottom: 1px solid #ccc;
+}
+
+table.proof tr.selected td:first-child {
+    background-color: #f8f8dd;
+}
+
+table.proof tr.hidden td {
+    border-bottom: 0;
+}
+table.proof tr.hidden div {
+    max-height: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    /* transition: max-height 0.3s, padding 0.3s; */
 }
 
 tbody tr:hover {

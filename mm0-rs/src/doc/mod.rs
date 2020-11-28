@@ -1,12 +1,13 @@
 //! Build documentation pages for MM1/MM0 files
 use std::{collections::{hash_map::Entry, HashMap}, hash::Hash, path::PathBuf};
+use std::convert::{TryFrom, TryInto};
 use std::mem;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use bit_set::BitSet;
 use clap::ArgMatches;
 use lsp_types::Url;
-use crate::{elab::environment::{AtomData, DocComment}, lined_string::LinedString, util::{ArcString, FileRef}};
+use crate::{elab::environment::{AtomData, DocComment}, lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
 use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Pretty},
   environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, ThmID, ThmKind, Thm,
     ExprNode, Type}};
@@ -71,65 +72,36 @@ impl AxiomUse {
   }
 }
 
-struct RenderProof<'a, W> {
-  source: &'a LinedString,
-  env: &'a mut Environment,
-  w: &'a mut W,
-  line: u32,
-  args: &'a [(Option<AtomID>, Type)],
-  heap: &'a [ProofNode],
-  hyps: &'a [(Option<AtomID>, ExprNode)],
-  heap_lines: Box<[Option<Result<u32, LispVal>>]>,
-}
-
 #[derive(Debug, Clone, Copy)]
 enum LineKind {
   Hyp(Option<AtomID>),
   Thm(ThmID),
   Conv,
 }
-impl<'a, W: Write> RenderProof<'a, W> {
-  fn new(source: &'a LinedString, env: &'a mut Environment,
-    w: &'a mut W,
-    args: &'a [(Option<AtomID>, Type)],
-    hyps: &'a [(Option<AtomID>, ExprNode)],
-    heap: &'a [ProofNode],
-  ) -> Self {
-    RenderProof { source, env, w, line: 1, args, heap, hyps,
-      heap_lines: vec![None; heap.len()].into_boxed_slice() }
+struct Line {
+  hyps: Box<[u32]>,
+  kind: LineKind,
+  expr: LispVal,
+}
+
+struct LayoutProof<'a> {
+  env: &'a mut Environment,
+  lines: Vec<Line>,
+  rev: bool,
+  args: &'a [(Option<AtomID>, Type)],
+  heap: &'a [ProofNode],
+  hyps: &'a [(Option<AtomID>, ExprNode)],
+  heap_lines: Box<[Option<Result<u32, LispVal>>]>,
+}
+
+impl<'a> LayoutProof<'a> {
+  fn push_line(&mut self, hyps: Box<[u32]>, kind: LineKind, expr: LispVal) -> u32 {
+    let line = self.lines.len().try_into().unwrap();
+    self.lines.push(Line {hyps, kind, expr});
+    line
   }
 
-  fn render_line(&mut self, hyps: &[u32], kind: LineKind, e: &LispVal) -> io::Result<u32> {
-    let kind_class = match kind {
-      LineKind::Hyp(_) => "sh",
-      LineKind::Thm(_) => "st",
-      LineKind::Conv => "sc"
-    };
-    write!(self.w, "        <tr class=\"{}\">\n          <td>{}</td>\n          <td>",
-      kind_class, self.line)?;
-    let mut first = true;
-    for hyp in hyps {
-      if !mem::take(&mut first) { write!(self.w, ", ")? }
-      write!(self.w, r##"<a href="#{id}">{id}</a>"##, id = hyp)?
-    }
-    write!(self.w, "</td>\n          <td>")?;
-    match kind {
-      LineKind::Hyp(None) => write!(self.w, "<i>hyp</i>")?,
-      LineKind::Hyp(Some(a)) => write!(self.w, "<i>hyp {}</i>", self.env.data[a].name)?,
-      LineKind::Thm(tid) => write!(self.w, r#"<a class="thm" href="{thm}.html">{thm}</a>"#,
-        thm = self.env.data[self.env.thms[tid].atom].name)?,
-      LineKind::Conv => write!(self.w, "<i>conv</i>")?,
-    }
-    write!(self.w, "</td>\n          <td><a name=\"{}\"></a><pre>", self.line)?;
-    let w = &mut *self.w;
-    FormatEnv {source: self.source, env: self.env}
-      .pretty(|pr| pr.pp_expr(e).1.doc.render(PP_WIDTH, w))?;
-    writeln!(self.w, "</pre></td>\n        </tr>")?;
-    Ok((self.line, self.line += 1).0)
-  }
-
-
-  fn render(&mut self, p: &'a ProofNode) -> io::Result<Result<u32, LispVal>> {
+  fn layout(&mut self, p: &'a ProofNode) -> io::Result<Result<u32, LispVal>> {
     Ok(match *p {
       ProofNode::Ref(i) =>
         if let Some(n) = &self.heap_lines[i] {n.clone()}
@@ -137,7 +109,7 @@ impl<'a, W: Write> RenderProof<'a, W> {
           let res = if let Some((a, _)) = self.args.get(i) {
             let a = a.unwrap_or_else(|| self.env.get_atom(format!("v{}", i+1).as_bytes()));
             Err(LispVal::atom(a))
-          } else { self.render(&self.heap[i])? };
+          } else { self.layout(&self.heap[i])? };
           self.heap_lines[i] = Some(res.clone());
           res
         },
@@ -146,27 +118,33 @@ impl<'a, W: Write> RenderProof<'a, W> {
         let mut out = Vec::with_capacity(args.len()+1);
         out.push(LispVal::atom(self.env.terms[term].atom));
         for e in &**args {
-          out.push(self.render(e)?.expect_err("bad_proof"));
+          out.push(self.layout(e)?.expect_err("bad_proof"));
         }
         Err(LispVal::list(out))
       }
       ProofNode::Hyp(i, ref e) => {
-        let e = self.render(e)?.expect_err("bad_proof");
-        Ok(self.render_line(&[], LineKind::Hyp(self.hyps[i].0), &e)?)
+        let e = self.layout(e)?.expect_err("bad_proof");
+        Ok(self.push_line(Box::new([]), LineKind::Hyp(self.hyps[i].0), e))
       }
       ProofNode::Thm {thm, ref args, ref res} => {
         let td = &self.env.thms[thm];
-        let mut hyps = Vec::with_capacity(td.hyps.len());
-        for e in &args[td.args.len()..] {
-          hyps.push(self.render(e)?.expect("bad proof"))
+        let mut hyps = SliceUninit::new(td.hyps.len());
+        if self.rev {
+          for (i, e) in args[td.args.len()..].iter().enumerate().rev() {
+            hyps.set(i, self.layout(e)?.expect("bad proof"))
+          }
+        } else {
+          for (i, e) in args[td.args.len()..].iter().enumerate() {
+            hyps.set(i, self.layout(e)?.expect("bad proof"))
+          }
         }
-        let res = self.render(res)?.expect_err("bad_proof");
-        Ok(self.render_line(&hyps, LineKind::Thm(thm), &res)?)
+        let res = self.layout(res)?.expect_err("bad_proof");
+        Ok(self.push_line(unsafe {hyps.assume_init()}, LineKind::Thm(thm), res))
       }
       ProofNode::Conv(ref p) => {
-        let n = self.render(&p.2)?.expect("bad proof");
-        let tgt = self.render(&p.0)?.expect_err("bad_proof");
-        Ok(self.render_line(&[n], LineKind::Conv, &tgt)?)
+        let n = self.layout(&p.2)?.expect("bad proof");
+        let tgt = self.layout(&p.0)?.expect_err("bad_proof");
+        Ok(self.push_line(Box::new([n]), LineKind::Conv, tgt))
       }
       ProofNode::Refl(_) |
       ProofNode::Sym(_) |
@@ -174,6 +152,72 @@ impl<'a, W: Write> RenderProof<'a, W> {
       ProofNode::Unfold {..} => unreachable!()
     })
   }
+}
+
+fn escape_html(mut w: &mut impl Write, s: &str) -> io::Result<()> {
+  use pulldown_cmark::escape::{escape_html, WriteWrapper};
+  escape_html(WriteWrapper(&mut w), s)
+}
+
+fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
+  line: u32, hyps: &[u32], kind: LineKind, e: &LispVal) -> io::Result<()> {
+  let kind_class = match kind {
+    LineKind::Hyp(_) => "sh",
+    LineKind::Thm(_) => "st",
+    LineKind::Conv => "sc"
+  };
+  write!(w, "        <tr id=\"{line}\" class=\"{kind}\">\n          <td>{line}</td>\n          <td>",
+    kind = kind_class, line = line)?;
+  let mut first = true;
+  for hyp in hyps {
+    if !mem::take(&mut first) { write!(w, ", ")? }
+    write!(w, r##"<a href="#{id}">{id}</a>"##, id = hyp)?
+  }
+  write!(w, "</td>\n          <td>")?;
+  match kind {
+    LineKind::Hyp(None) => write!(w, "<i>hyp</i>")?,
+    LineKind::Hyp(Some(a)) => write!(w, "<i>hyp {}</i>", fe.env.data[a].name)?,
+    LineKind::Thm(tid) => write!(w, r#"<a class="thm" href="{thm}.html">{thm}</a>"#,
+      thm = fe.env.data[fe.env.thms[tid].atom].name)?,
+    LineKind::Conv => write!(w, "<i>conv</i>")?,
+  }
+  write!(w, "</td>\n          <td><pre>")?;
+  let mut s = String::new();
+  fe.pretty(|pr| pr.pp_expr(e).1.doc.render_fmt(PP_WIDTH, &mut s).expect("writing to a string"));
+  escape_html(w, &s)?;
+  writeln!(w, "</pre></td>\n        </tr>")
+}
+
+fn render_proof<'a>(
+  source: &'a LinedString, env: &'a mut Environment, w: &mut impl Write,
+  order: ProofOrder,
+  args: &'a [(Option<AtomID>, Type)],
+  hyps: &'a [(Option<AtomID>, ExprNode)],
+  pf: &'a Proof,
+) -> io::Result<()> {
+  let mut layout = LayoutProof {
+    env, args, heap: &pf.heap, hyps,
+    rev: matches!(order, ProofOrder::Pre), lines: vec![],
+    heap_lines: vec![None; pf.heap.len()].into_boxed_slice()
+  };
+  layout.layout(&pf.head)?.expect("bad proof");
+  let lines = layout.lines;
+  let fe = FormatEnv {source, env};
+  match order {
+    ProofOrder::Post =>
+      for (line, Line {mut hyps, kind, expr}) in lines.into_iter().enumerate() {
+        for i in &mut *hyps { *i += 1 }
+        render_line(fe, w, (line + 1).try_into().unwrap(), &hyps, kind, &expr)?;
+      }
+    ProofOrder::Pre => {
+      let len = lines.len();
+      for (line, Line {mut hyps, kind, expr}) in lines.into_iter().rev().enumerate() {
+        for i in &mut *hyps { *i = u32::try_from(len).unwrap() - *i }
+        render_line(fe, w, (line + 1).try_into().unwrap(), &hyps, kind, &expr)?;
+      }
+    }
+  }
+  Ok(())
 }
 
 #[repr(transparent)]
@@ -200,6 +244,9 @@ impl PartialEq for CaseInsensitiveName {
 }
 impl Eq for CaseInsensitiveName {}
 
+#[derive(Clone, Copy)]
+enum ProofOrder { Pre, Post }
+
 struct BuildDoc<'a, W> {
   thm_folder: PathBuf,
   source: &'a LinedString,
@@ -208,6 +255,7 @@ struct BuildDoc<'a, W> {
   axuse: (Vec<ThmID>, AxiomUse),
   index: Option<W>,
   mangler: Mangler,
+  order: ProofOrder,
 }
 
 #[derive(Default)]
@@ -244,7 +292,10 @@ impl Mangler {
   }
 }
 
-fn header(w: &mut impl Write, rel: &str, desc: &str, title: &str, h1: &str, nav: &str) -> io::Result<()> {
+fn header(w: &mut impl Write,
+  rel: &str, desc: &str, title: &str,
+  h1: &str, nav: &str, script: &[&str]
+) -> io::Result<()> {
   writeln!(w, r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -255,9 +306,13 @@ fn header(w: &mut impl Write, rel: &str, desc: &str, title: &str, h1: &str, nav:
   <meta name="keywords" content="mm0, metamath-zero">
   <title>{title} - Metamath Zero</title>
   <link rel="stylesheet" type="text/css" href="{rel}stylesheet.css" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8">
-  <!-- <link rel="shortcut icon" href="{rel}favicon.ico"> -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">"#,
+    rel = rel, desc = desc, title = title)?;
+  for s in script {
+    writeln!(w, r#"  <script src="{}"></script>"#, s)?
+  }
+  writeln!(w, r#"  <!-- <link rel="shortcut icon" href="{rel}favicon.ico"> -->
 </head>
 <body>
   <div class="body">
@@ -265,14 +320,14 @@ fn header(w: &mut impl Write, rel: &str, desc: &str, title: &str, h1: &str, nav:
       {h1}
       <span class="nav">{nav}</span>
     </h1>"#,
-      rel = rel, desc = desc, title = title, h1 = h1, nav = nav)
+      rel = rel, h1 = h1, nav = nav)
 }
 const FOOTER: &str = "  </div>\n</body>\n</html>";
 
 fn render_doc(w: &mut impl Write, doc: &Option<DocComment>) -> io::Result<()> {
   if let Some(doc) = doc {
     use pulldown_cmark::{Parser, html};
-    write!(w, r#"    <div class="doc">"#)?;
+    write!(w, r#"      <div class="doc">"#)?;
     html::write_html(&mut *w, Parser::new(doc))?;
     writeln!(w, "</div>")?;
   }
@@ -289,7 +344,7 @@ fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Re
 }
 
 impl<'a, W: Write> BuildDoc<'a, W> {
-  fn thm_doc(&mut self, tid: ThmID) -> io::Result<()> {
+  fn thm_doc(&mut self, prev: Option<ThmID>, tid: ThmID, next: Option<ThmID>) -> io::Result<()> {
     let mut file = self.thm_folder.to_owned();
     #[allow(clippy::useless_transmute)]
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
@@ -299,7 +354,14 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     let ad = &self.env.data[td.atom];
     let thmname = &ad.name;
     let filename = td.span.file.rel();
-    let mut nav = String::from("<a href=\"../index.html#");
+    let mut nav = String::new();
+    if let Some(prev) = prev {
+      use std::fmt::Write;
+      self.mangler.mangle(&self.env, prev, |thm, mangled|
+        write!(&mut nav, r#"<a href="{}.html" title="{}">&#8810;</a> | "#, mangled, thm)
+          .expect("writing to a string"));
+    }
+    nav.push_str("<a href=\"../index.html#");
     disambiguated_anchor(unsafe {nav.as_mut_vec()}, ad, true)?;
     nav.push_str("\">index</a>");
     if let Some(base) = &self.base_url {
@@ -313,19 +375,24 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         write!(&mut nav, "#L{}-L{}\">src</a>", range.start.line + 1, range.end.line + 1)
       }.expect("writing to a string");
     }
+    if let Some(next) = next {
+      use std::fmt::Write;
+      self.mangler.mangle(&self.env, next, |thm, mangled|
+        write!(&mut nav, r#" | <a href="{}.html" title="{}">&#8811;</a>"#, mangled, thm)
+          .expect("writing to a string"));
+    }
     header(&mut file, "../",
       &format!("Documentation for theorem `{}` in `{}`.", thmname, filename),
       &format!("{} - {}", thmname, filename),
       &format!(r#"{} <a class="thm" href="">{}</a>"#, kind, thmname),
-      &nav)?;
+      &nav, &["../proof.js"])?;
     render_doc(&mut file, &td.doc)?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
     if let ThmKind::Thm(Some(pf)) = &td.kind {
       writeln!(file, r#"    <table class="proof">
       <tbody>
         <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>"#)?;
-      let rp = RenderProof::new(self.source, &mut self.env, &mut file, &td.args, &td.hyps, &pf.heap);
-      let _ = {rp}.render(&pf.head)?;
+      render_proof(self.source, &mut self.env, &mut file, self.order, &td.args, &td.hyps, pf)?;
       writeln!(file, "      </tbody>\n    </table>")?;
 
     }
@@ -357,10 +424,9 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     header(file, "",
       &format!("Documentation index for `{}`.", path.rel()),
       &format!("{} - Index", path.rel()),
-      "Index",
-      nav)?;
+      "Index", nav, &[])?;
+    let mut prev = None;
     for s in stmts {
-      use pulldown_cmark::escape::{escape_html, WriteWrapper};
       let mut file = self.index.as_mut().expect("index file missing");
       let fe = FormatEnv {source: self.source, env: &self.env};
       match *s {
@@ -368,25 +434,25 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         StmtTrace::OutputString(_) => {}
         StmtTrace::Sort(a) => {
           let ad = &self.env.data[a];
-          write!(file, "    <a name=\"")?;
+          write!(file, "    <div id=\"")?;
           disambiguated_anchor(&mut file, ad, true)?;
-          writeln!(file, "\"></a>")?;
+          writeln!(file, "\">")?;
           let sd = &self.env.sorts[ad.sort.expect("wf env")];
           render_doc(&mut file, &sd.doc)?;
-          writeln!(file, "    <pre>{}</pre>", sd)?
+          writeln!(file, "      <pre>{}</pre>\n    </div>", sd)?
         }
         StmtTrace::Decl(a) => {
           let ad = &self.env.data[a];
-          write!(file, "    <a name=\"")?;
+          write!(file, "    <div id=\"")?;
           disambiguated_anchor(&mut file, ad, false)?;
-          writeln!(file, "\"></a>")?;
+          writeln!(file, "\">")?;
           match ad.decl.expect("wf env") {
             DeclKey::Term(tid) => {
               let td = &self.env.terms[tid];
               render_doc(&mut file, &td.doc)?;
-              write!(file, "    <pre>")?;
-              escape_html(WriteWrapper(&mut file), &format!("{}", fe.to(td)))?;
-              writeln!(file, "</pre>")?;
+              write!(file, "      <pre>")?;
+              escape_html(&mut file, &format!("{}", fe.to(td)))?;
+              writeln!(file, "</pre>\n    </div>")?
             }
             DeclKey::Thm(tid) => {
               let td = &self.env.thms[tid];
@@ -399,10 +465,13 @@ impl<'a, W: Write> BuildDoc<'a, W> {
                 let mut buf = String::new();
                 pr.thm_headless(td, Pretty::nil()).render_fmt(PP_WIDTH, &mut buf)
                   .expect("writing to a string");
-                escape_html(WriteWrapper(&mut file), &buf)
+                escape_html(&mut file, &buf)
               })?;
-              writeln!(file, "</pre>")?;
-              self.thm_doc(tid)?
+              writeln!(file, "</pre>\n    </div>")?;
+              let next = tid.0.checked_add(1).map(ThmID)
+                .filter(|&tid| self.env.thms.get(tid).is_some());
+              self.thm_doc(prev, tid, next)?;
+              prev = Some(tid);
             }
           }
         }
@@ -430,13 +499,19 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   env.merge(&old, (0..0).into(), &mut vec![]).expect("can't fail");
   let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
   fs::create_dir_all(&dir)?;
-  {
+  macro_rules! import {($($str:expr),*) => {$({
     let mut file = dir.to_owned();
-    file.push("stylesheet.css");
+    file.push($str);
     if !file.exists() {
-      File::create(file)?.write_all(include_bytes!("stylesheet.css"))?;
+      File::create(file)?.write_all(include_bytes!($str))?;
     }
-  }
+  })*}}
+  import!("stylesheet.css", "proof.js");
+  let order = match args.value_of("order") {
+    Some("pre") => ProofOrder::Pre,
+    Some("post") => ProofOrder::Post,
+    _ => unreachable!(),
+  };
   let only = args.value_of("only");
   let index = if only.is_some() {None} else {
     let mut file = dir.to_owned();
@@ -452,19 +527,24 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   };
   let mut bd = BuildDoc {
     source: fc.ascii(),
-    base_url,
+    base_url, order,
     axuse: AxiomUse::new(&env),
     thm_folder: dir, env, index,
     mangler: Mangler::default(),
   };
   if let Some(only) = only {
-    for thm in only.split(',') {
-      let a = bd.env.get_atom(thm.as_bytes());
-      match bd.env.data[a].decl {
-        None => eprintln!("warning: unknown theorem '{}'", thm),
-        Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
-        Some(DeclKey::Thm(tid)) => bd.thm_doc(tid)?,
-      }
+    let thms = only.split(',')
+      .filter_map(|thm| {
+        let a = bd.env.get_atom(thm.as_bytes());
+        match bd.env.data[a].decl {
+          None => eprintln!("warning: unknown theorem '{}'", thm),
+          Some(DeclKey::Term(_)) => eprintln!("warning: expected a theorem, got term '{}'", thm),
+          Some(DeclKey::Thm(tid)) => return Some(tid),
+        }
+        None
+      }).collect::<Vec<_>>();
+    for (i, &tid) in thms.iter().enumerate() {
+      bd.thm_doc(i.checked_sub(1).map(|j| thms[j]), tid, thms.get(i+1).copied())?;
     }
   } else {
     bd.write_all(&path, old.stmts())?;
