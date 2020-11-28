@@ -31,7 +31,7 @@ Select View/Extensions, search for "Metamath"
 Look for "Metamath Zero" & press its "install" button.
 
 If `mm0-rs` is not on your path, then you need to
-change the Visual Studio Code settings so it can execute `mm0-rss`.
+change the Visual Studio Code settings so it can execute `mm0-rs`.
 To do this, after you've installed "Metamath Zero" look at the name,
 click on its small "gear symbol" to change its settings.
 Note: if you click on its "gear symbol" and see nothing, that's a bug
