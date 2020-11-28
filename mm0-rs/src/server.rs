@@ -741,12 +741,12 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
         }
       }
       ObjectKind::Syntax(stx) => {
-        if SERVER.options.ulock().syntax_docs {
+        if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
           ((sp, mk_doc(stx.doc())), None)
         } else { return None }
       }
       ObjectKind::RefineSyntax(stx) => {
-        if SERVER.options.ulock().syntax_docs {
+        if SERVER.options.ulock().syntax_docs.unwrap_or(false) {
           ((sp, mk_doc(stx.doc())), None)
         } else { return None }
       }
@@ -1290,7 +1290,7 @@ struct ServerOptions {
   executable_path: Option<std::path::PathBuf>,
   max_number_of_problems: usize,
   trace: Option<Trace>,
-  syntax_docs: bool,
+  syntax_docs: Option<bool>,
 }
 
 impl std::default::Default for ServerOptions {
@@ -1300,7 +1300,7 @@ impl std::default::Default for ServerOptions {
       executable_path: None,
       max_number_of_problems: 100,
       trace: None,
-      syntax_docs: false,
+      syntax_docs: None,
     }
   }
 }
