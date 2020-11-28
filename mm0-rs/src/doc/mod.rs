@@ -521,7 +521,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
               let td = &self.env.thms[tid];
               render_doc(&mut file, &td.doc)?;
               self.mangler.mangle(&self.env, tid, |name, mangled|
-                write!(file, r#"    <pre>{}{} <a class="thm" href="thms/{mangled}.html">{name}</a>"#, td.vis,
+                write!(file, r#"      <pre>{}{} <a class="thm" href="thms/{mangled}.html">{name}</a>"#, td.vis,
                   if matches!(td.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
                   mangled = mangled, name = name))?;
               fe.pretty(|pr| -> io::Result<()> {
@@ -541,7 +541,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
       }
     }
     let file = self.index.as_mut().expect("index file missing");
-    writeln!(file, "  </section>\n</body>\n</html>")
+    writeln!(file, "{}", FOOTER)
   }
 }
 /// Main entry point for `mm0-rs doc` subcommand.
