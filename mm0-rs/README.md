@@ -17,7 +17,7 @@ You then should make it easy to execute.
 One way is to copy or symlink the resulting executable file `target/release/mm0-rs` to your system path.
 An alternative, if you're integrating with Visual Studio Code as suggested
 below, is to point `vscode-mm0` to the executable using (as
-explained below) the setting "metamath-zero.executablePath": "mm0-rs"
+explained below) the setting `"metamath-zero.executablePath": "mm0-rs"`
 in your `settings.json` file.
 
 ## Integration with Visual Studio Code
