@@ -164,6 +164,8 @@ The syntax of s-expressions here is very similar to that of [R6RS Scheme](http:/
   * Inside a quotation, `,expr` or `(unquote expr)` is unquotation and causes the result to be treated as lisp again.
   * Unquotation works also inside math strings; for example `$ foo 1 ,(bar) $` is the expression `(foo 1 v)` where `v` is the result of evaluating `bar`.
 * `[]` brackets are mere synonyms for `()` and can be used to make deeply nested brackets more readable.
+* `{x op y op z}` is parsed into `(op x y z)`, and is useful for making infix operators more readable. Such a "curly-list" expression requires that all occurrences of `op` are the same, and there must be an odd number of expressions in the list, except that `{}` and `{op x}` are ok and translate to `()` and `(op x)` respectively. For any other malformed curly list, it is translated to the list with `:nfx` is prepended on the result. For example `{x op y op2}` is parsed as `(:nfx x op y op2)`. Since `:nfx` is not a function, this will usually cause an error, but inside quoted literals this can be pattern matched to detect and do something about such expressions.
+* A list expression can contain embedded `@` signs, such as `(f @ g x @ @ h x y)`, and the entire rest of the list after each `@` is made into a list that becomes the last argument of the expression left of the `@`. So the example would be parsed as `(f (g x ((h x y))))`. This works at the parser level so it can be used with any s-expr, including quoted expressions, function calls, and even basic language constructs like `match`. (It is useful for avoiding the pile-up of close parens that lisp is known for.)
 
 Evaluation
 ===
