@@ -391,6 +391,14 @@ impl FrozenLispRef {
   }
 }
 
+impl FrozenProc {
+  /// Convert a [`&FrozenProc`] into an [`&Proc`].
+  /// # Safety
+  /// The reference derived here is only usable for reading, so in particular
+  /// [`Rc::clone()`] should be avoided because it could race with other readers.
+  #[must_use] pub unsafe fn thaw(&self) -> &Proc { &self.0 }
+}
+
 /// An iterator over the contents of a [`LispVal`], like [`Uncons`](super::lisp::Uncons),
 /// but borrowing from the original data instead of cloning
 /// (which is not allowed for frozen values).

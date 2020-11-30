@@ -43,7 +43,7 @@ macro_rules! str_enum {
       #[doc=$to_str]
       #[must_use] pub fn to_str(self) -> &'static str {
         match self {
-          $($name::$e => $s),*
+          $(Self::$e => $s),*
         }
       }
       #[doc=$to_str]
@@ -63,6 +63,11 @@ macro_rules! str_enum {
         // Safety: the function we defined just above doesn't do anything
         // dangerous with the &str
         Self::from_str(unsafe {std::str::from_utf8_unchecked(s)})
+      }
+
+      /// Iterate over all the elements in the enum.
+      pub fn for_each(mut f: impl FnMut(Self, &'static str)) {
+        $(f(Self::$e, $s);)*
       }
 
       /// The documentation comment on this item.

@@ -949,11 +949,17 @@ enum TraceKind {Sort, Decl, Global}
 
 fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, detail: bool, tk: TraceKind) -> Option<CompletionItem> {
   use CompletionItemKind::{Class, Constructor, Method};
-  macro_rules! done {($desc:expr, $kind:expr) => {
+  macro_rules! done {($desc:expr, $kind:expr, $doc:expr) => {
     CompletionItem {
       label: String::from_utf8_lossy(ad.name()).into(),
       detail: if detail {Some($desc)} else {None},
       kind: Some($kind),
+      documentation: $doc.as_ref().map(|doc| {
+        Documentation::MarkupContent(MarkupContent {
+          kind: MarkupKind::Markdown,
+          value: doc.to_string(),
+        })
+      }),
       data: Some(to_value((path.url(), tk)).unwrap()),
       ..Default::default()
     }
@@ -961,14 +967,15 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
   match tk {
     TraceKind::Sort => ad.sort().map(|s| {
       let sd = &fe.sorts[s];
-      done!(format!("{}", sd), Class)
+      done!(format!("{}", sd), Class, sd.doc)
     }),
     TraceKind::Decl => ad.decl().map(|dk| match dk {
-      DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor)}
-      DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method)}
+      DeclKey::Term(t) => {let td = &fe.terms[t]; done!(format!("{}", fe.to(td)), Constructor, td.doc)}
+      DeclKey::Thm(t) => {let td = &fe.thms[t]; done!(format!("{}", fe.to(td)), Method, td.doc)}
     }),
-    TraceKind::Global => ad.lisp().as_deref().map(|e| {
-      done!(format!("{}", fe.to(unsafe {e.thaw()})), match *e.unwrap() {
+    TraceKind::Global => {
+      let e = ad.lisp().as_ref()?;
+      Some(done!(format!("{}", fe.to(unsafe {e.thaw()})), match *e.unwrap() {
         FrozenLispKind::Atom(_) |
         FrozenLispKind::MVar(_, _) |
         FrozenLispKind::Goal(_) => CompletionItemKind::Constant,
@@ -982,9 +989,14 @@ fn make_completion_item(path: &FileRef, fe: FormatEnv<'_>, ad: &FrozenAtomData, 
         FrozenLispKind::Annot(_, _) |
         FrozenLispKind::Ref(_) => CompletionItemKind::Value,
         FrozenLispKind::Syntax(_) => CompletionItemKind::Event,
-        FrozenLispKind::Proc(_) => CompletionItemKind::Function,
-      })
-    })
+        FrozenLispKind::Proc(ref p) if
+          match *unsafe {p.thaw()} {
+            Proc::Builtin(p) => p.to_str() == ad.name().as_str(),
+            _ => false,
+          } => return None,
+        FrozenLispKind::Proc(_) => CompletionItemKind::Function
+      }, e.doc()))
+    }
   }
 }
 
@@ -1002,6 +1014,14 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
   let text = text.ascii().clone();
   let fe = unsafe { env.format_env(&text) };
   let mut res = vec![];
+  BuiltinProc::for_each(|_, s| {
+    res.push(CompletionItem {
+      label: s.into(),
+      documentation: None,
+      kind: Some(CompletionItemKind::Keyword),
+      ..Default::default()
+    })
+  });
   for ad in env.data().iter() {
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Sort) {res.push(ci)}
     if let Some(ci) = make_completion_item(&path, fe, ad, false, TraceKind::Decl) {res.push(ci)}
@@ -1011,7 +1031,19 @@ async fn completion(path: FileRef, _pos: Position) -> StdResult<CompletionRespon
 }
 
 async fn completion_resolve(ci: CompletionItem) -> StdResult<CompletionItem, ResponseError> {
-  let data = ci.data.ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
+  let data = if let Some(data) = ci.data {data} else {
+    let p = BuiltinProc::from_str(&ci.label)
+      .ok_or_else(|| response_err(ErrorCode::InvalidRequest, "missing data"))?;
+    return Ok(CompletionItem {
+      label: ci.label,
+      documentation: Some(Documentation::MarkupContent(MarkupContent {
+        kind: MarkupKind::Markdown,
+        value: p.doc().into(),
+      })),
+      kind: Some(CompletionItemKind::Keyword),
+      ..Default::default()
+    })
+  };
   let (uri, tk): (Url, TraceKind) = from_value(data).map_err(|e|
     response_err(ErrorCode::InvalidRequest, format!("bad JSON {:?}", e)))?;
   let path = uri.into();
