@@ -2851,30 +2851,206 @@ $ |*|s i e. upto n, E.s b e. u8, s_mem1 0 (a + i) b $;
 
 --| The unused portion of the stack, which contains an arbitrary block of
 --| read/write data followed by a no-access guard page.
+--|
+--| `unused_stack lo sz` means that there are `sz` bytes of stack, such that
+--| the low `min sz 4096` bytes of it are read protected, and the rest has
+--| arbitrary readable memory.
 @_ local def unused_stack (lo sz): set =
 $ E.s v e. Array u8 (sz - 2 ^ 12),
     (s_block_Z lo (min sz (2 ^ 12)) *s (lo + 2 ^ 12) >=>m v) $;
 
+--| `unused_stack_bd hi sz` means that there are at least `sz` bytes of stack
+--| "above" `hi` (the top of the stack). Note that the stack grows down so these
+--| unused bytes are at lower addresses than `hi`, and `hi` itself is not included.
+--|
+--| This means in particular that writing to any element up to `sz` bytes above `hi`
+--| is safe, because we know it is either allocated or guarded.
+@_ local def unused_stack_bd (hi sz): set =
+$ E.s lo e. u64, (^s (lo + sz <= hi /\ lo <= hi) /\s unused_stack lo (hi - lo)) $;
+
+--| `r >->r v` means that register `r e. Regs` contains value `v e. u64`.
 @_ local def s_reg (r v): set =
 $ ^s (r e. Regs /\ v e. u64) /\s sn (sn (X86P_Reg r <> v)) $;
 infixl s_reg: $>->r$ prec 80;
 
+--| `flags>-> fl` means that the flags have value `fl`.
 @_ local def s_flags (v): set = $ ^s (v e. Flags) /\s sn (sn (X86P_Flags <> v)) $;
 prefix s_flags: $flags>->$ prec 80;
 
-@_ local def unused_stack_bd (hi sz): set =
-$ E.s lo e. u64, (^s (lo + sz < hi /\ lo <= hi) /\s unused_stack lo (hi - lo)) $;
+--| `RIP>-> a` means that the instruction pointer has value `a`.
+@_ local def s_RIP (a): set = $ ^s (a e. u64) /\s sn (sn (X86P_RIP <> a)) $;
+prefix s_RIP: $RIP>->$ prec 80;
 
--- TODO
-@_ local def alloc_stack (sp hi): set =
-$ RSP >->r sp *s
-  E.s lo e. upto sp, unused_stack lo hi $;
+-- -- TODO
+-- @_ local def alloc_stack (sp hi): set =
+-- $ RSP >->r sp *s
+--   E.s lo e. upto sp, unused_stack lo hi $;
+do (check-proofs #t);
 
--- TODO
-@_ local def main_layout (bd hi c): set =
-$ text_start >=>c c *s
-  (unused_stack bd hi /\s T.s) *s
-  E.s fl e. Flags, (flags>-> fl) $;
+--| The null layout.
+@_ local def L_emp: set = $ S\ a, S\ sz, (^s (a e. u64 /\ sz = 0) /\s emp) $;
+
+--| A sequential composition of layouts.
+@_ local def L_seq (L1 L2: set): set =
+$ S\ a, S\ sz, (E.s sz1 e. u64, E.s sz2 e. u64,
+   (^s (sz e. u64 /\ sz = sz1 + sz2) /\s
+    L1 @' a @' sz1 *s L2 @' (a + sz1) @' sz2)) $;
+
+--| The layout for a single value `v: List u8`.
+@_ local def L_1 (v: nat): set = $ S\ a, S\ sz, (^s (sz = len v) /\s a >=>m v) $;
+
+--| A padding layout.
+@_ local def L_pad: set = $ S\ a, S\ sz, (a >=>. sz) $;
+
+--| An overlapping composition of layouts.
+@_ local def L_or (L1 L2: set): set =
+$ S\ a, S\ sz, (E.s sz1 e. u64, E.s sz2 e. u64,
+   (^s (sz = max sz1 sz2) /\s
+    L1 @' a @' sz1 *s L_pad @' (a + sz1) @' (sz - sz1) \/s
+    L2 @' a @' sz1 *s L_pad @' (a + sz2) @' (sz - sz2))) $;
+
+--| The portion of the layout that we always want to know in any hoare triple.
+--| `main_layout c sp ip` means that the code `c` is at `text_start`,
+--| the instruction pointer at `ip`, and the flags are assigned to an arbitrary value
+--| (i.e. we are permitted to clobber them).
+--| Additionally, the stack is laid out according to stack layout `L`
+--| (see the `L_*` functions) with at least `n` spare bytes left in the stack frame;
+--| `sp` is the value of the stack pointer relative to the stack layout.
+@_ local def main_layout (c sp ip n L): set =
+$ text_start >=>c c *s RIP>-> ip *s
+  E.s fl e. Flags, flags>-> fl *s
+  E.s lo e. u64, E.s sz e. u64, (^s (lo + sz e. u64 /\ sp <= lo + sz) /\s
+    RSP >->r (lo + sz - sp) *s (L @' lo @' sz *s unused_stack_bd lo n)) $;
+
+--| The correctness predicate for a function call.
+--| * `T`: A global parameter, the correctness predicate on final IO
+--| * `c`: A global parameter, the program code
+--| * `ip`: The address of the function
+--| * `P`: The function's precondition, arranged using a calling convention
+--| * `Q`: The function's postcondition, also determined by a calling convention
+--| This says that if we were to call a function at location `ip`,
+--| with inputs arranged according to `P`, then the function will successfully
+--| terminate and the outputs will be arranged according to `Q`.
+--|
+--| Both `P` and `Q` are allowed to depend on common logical variables `vs`.
+@_ local def func_ok (T c ip P Q): wff =
+$ A. vs A. ret (ret e. u64 -> hoare T
+    (main_layout c 8 ip (2 ^ 12) (L_1 (toBytes 8 ret)) *s (P @' vs))
+    (main_layout c 0 ret 8 L_emp *s (Q @' vs))) $;
+
+--| The correctness predicate for a jump target.
+--| * `T, c`: Global parameters
+--| * `sp`: The value of the stack pointer (a function-global parameter)
+--| * `fr`: The frame condition (a function-global parameter)
+--| * `ip`: The address of the jump target
+--| * `L`: The stack frame layout as of the jump
+--| * `P`: The jump's precondition, arranged using a calling convention
+--| This says that if we were to jump to location `ip`,
+--| with inputs arranged according to `L` and `P`, then the
+--| program will eventually terminate. This is used as an available
+--| hypothesis for every jump target in scope.
+--|
+--| Both `L` and `P` are allowed to depend on common logical variables `vs`.
+@_ local def jump_ok (T c sp fr ip L P): wff =
+$ A. vs s_ok (sn fr *s (main_layout c sp ip 8 (L @' vs) *s (P @' vs))) T $;
+
+-- A type ty is a pair of a separating proposition [v : ty] which gives truth
+-- conditions for "v has type ty", and a set of values {v : ty} which gives
+-- the valid byte strings that can represent v. A type may have no valid
+-- byte strings, in which case it is only usable for ghost values. the size
+-- of a type is the smallest `n` such that `A. l (l e. {v : ty} -> len l <= n)`.
+
+@_ local def has_ty (v: nat) (ty: set): set = $ Fst (ty @' v) $;
+@_ local def ty_Rep (v: nat) (ty: set): set = $ Snd (ty @' v) $;
+@_ local def ty_rep (ty: set) (v l: nat): set =
+$ ^s (l e. ty_Rep v ty) /\s has_ty v ty $;
+
+--| An assignment of register `r` to value `v` of type `ty`.
+@_ local def t_reg (r v: nat) (ty: set): set =
+$ E.s n e. upto (suc 8), E.s a e. Bits (8 * n), (
+  ^s (n <= 8) /\s r >->r a *s
+  ty_rep ty v (toBytes n a)) $;
+
+--| A memory allocation at `a` with value `v` of type `ty`.
+@_ local def t_mem (a v: nat) (ty: set): set =
+$ E.s l e. List u8, (a >=>m l *s ty_rep ty v l) $;
+
+@_ local def ty_u8: set = $ S\ v, Sum (^s (v e. u8) /\s emp) (sn (v : 0)) $;
+@_ local def ty_u16: set = $ S\ v, Sum (^s (v e. u16) /\s emp) (sn (u16Bytes v)) $;
+@_ local def ty_u32: set = $ S\ v, Sum (^s (v e. u32) /\s emp) (sn (u32Bytes v)) $;
+@_ local def ty_u64: set = $ S\ v, Sum (^s (v e. u64) /\s emp) (sn (u64Bytes v)) $;
+@_ local def ty_i8: set = $ S\ v, Sum (^s (v e. u8) /\s emp) (sn (i8Bytes v)) $;
+@_ local def ty_i16: set = $ S\ v, Sum (^s (v e. u16) /\s emp) (sn (i16Bytes v)) $;
+@_ local def ty_i32: set = $ S\ v, Sum (^s (v e. u32) /\s emp) (sn (i32Bytes v)) $;
+@_ local def ty_i64: set = $ S\ v, Sum (^s (v e. u64) /\s emp) (sn (i64Bytes v)) $;
+@_ local def ty_nat: set = $ S\ v, Sum emp 0 $;
+@_ local def ty_int: set = $ S\ v, Sum emp 0 $;
+
+--| A singleton has the same representation as the underlying type, but
+--| it only has one valid value.
+@_ local def ty_sn (a: nat) (ty: set): set =
+$ S\ v, Sum (^s (v = a) /\s has_ty v ty) (ty_Rep v ty) $;
+
+------------------------------------
+-- Eliminating the free variables --
+------------------------------------
+
+--| The separating conjunction lifted over functions on `vs`.
+@_ local def v_sep (P Q): set = $ S\ vs, (P @' vs *s Q @' vs) $;
+
+--| The `n`th variable as a higher order function from the variable list to a value.
+@_ local def vn (n: nat): set = $ \ vs, nth n vs - 1 $;
+
+--| An assignment of register `r` to value `v` of type `ty`.
+local def v_reg (r: hex) (v ty: set): set = $ S\ vs, t_reg r (v @ vs) (ty @' vs) $;
+
+--| A memory allocation at `a` with value `v` of type `ty`.
+@_ local def v_mem (a: nat) (v ty: set): set = $ S\ vs, t_mem a (v @ vs) (ty @' vs) $;
+
+--| Asserts that the expression `v` has type `ty`.
+@_ local def v_has_ty (v ty: set): set = $ S\ vs, has_ty (v @ vs) (ty @' vs) $;
+
+--| Lift the singleton type to functions.
+@_ local def v_ty_sn (a ty: set): set = $ S\ vs, ty_sn (a @ vs) (ty @' vs) $;
+
+--| Lift addition to functions.
+@_ local def v_add (a b: set): set = $ \ vs, a @ vs + b @ vs $;
+
+--| Lift existential quantifier to functions.
+@_ local def v_ex (a: nat) (ty P: set): set =
+$ S\ vs, (E.s b e. ty, P @' lower (write vs a b)) $;
+
+@_ local def v_ty_u32: set = $ S\ vs, ty_u32 $;
+
+local def progT = $ S\ i, {o | 2 + 2 = 4} $;
+local def prog: nat = $0$;
+local def adder: nat = $0$;
+theorem _:
+  $ func_ok progT prog adder
+      (v_sep
+        (v_reg x7 (vn x0) v_ty_u32)
+        (v_reg x6 (vn x1) v_ty_u32))
+      (v_reg x0 (v_add (vn x0) (vn x1)) (v_ty_sn (v_add (vn x0) (vn x1)) v_ty_u64)) $;
+
+-- (proc (adder {x : u32} {y : u32} : {ret : (sn {{x + y} : u64})})
+--   (cast {(cast {x + y} (assert {{x + y} < {2 ^ 64}})) : u64}))
+--
+-- (proc (main : $ 2 + 2 = 4 $)
+--   {(four h) := (adder 2 2)}
+--   -- h: $ 2 + 2 = four $
+--   {h2 := (assert {four = 4})}
+--   -- h: $ 2 + 2 = four $, h2: $ four = 4 $
+--   (return (entail h h2 eqtr)))
+
+--| Constructs a cons of 16 elements represented as a perfect binary tree in `a`.
+--| We use `cons16` nodes for storing lists of variable values with efficient lookup
+--| (still linear time but with a better constant factor). Most functions won't have
+--| more than 60-100 variables anyway so this should be fine, and if we need to do
+--| better it's possible to make this logarithmic using binary random-access lists.
+@_ local def cons16 (a l: nat): set =
+$ ,(letrec ([(f n a x)
+    @ if {n = 1} '(cons ,a ,x) (f {n - 1} '(fst ,a) @ f {n - 1} '(snd ,a) x)])
+    (f 4 'a 'l)) $;
 
 do {
   (def mmc-compiler (ref! (mmc-init)))

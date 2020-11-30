@@ -1304,7 +1304,7 @@ theorem abeq (p q: wff x): $ A. x (p <-> q) -> {x | p} == {x | q} $ =
 '(!! iald y @ bitr4g elab elab @ ealeh (nfbi nfsb1 nfsb1) (bieqd sbq sbq));
 @(register-eqd 'ab) theorem abeqd (G) {x} (p q: wff x)
   (h: $ G -> (p <-> q) $): $ G -> {x | p} == {x | q} $ = '(syl abeq @ iald h);
-theorem abeqi (p q: wff x) (h : $ p <-> q $): $ {x | p} == {x | q} $ = '(trud @ abeqd @ a1i h);
+theorem abeqi (p q: wff x) (h: $ p <-> q $): $ {x | p} == {x | q} $ = '(trud @ abeqd @ a1i h);
 theorem eqri {x} (h: $ x e. A <-> x e. B $): $ A == B $ = '(ax_gen h);
 theorem eqrd (G) {x} (h: $ G -> (x e. A <-> x e. B) $): $ G -> A == B $ = '(iald h);
 theorem cbvabh (p q: wff x y) (h1: $ F/ y p $) (h2: $ F/ x q $)
@@ -3509,6 +3509,20 @@ pub theorem Sumr (A B: set) (n: nat): $ b1 n e. Sum A B <-> n e. B $ =
   (eleq1d @ syl6eq b1div2 diveq1));
 theorem Sumld (h: $ G -> a e. A $): $ G -> b0 a e. Sum A B $ = '(sylibr Suml h);
 theorem Sumrd (h: $ G -> b e. B $): $ G -> b1 b e. Sum A B $ = '(sylibr Sumr h);
+
+--| With `Sum` as a pairing operator for classes, this is the first projection.
+@_ local def Fst (A: set): set = $ {n | b0 n e. A} $;
+--| With `Sum` as a pairing operator for classes, this is the second projection.
+@_ local def Snd (A: set): set = $ {n | b1 n e. A} $;
+
+theorem elFst: $ a e. Fst A <-> b0 a e. A $ = '(elabe ,eqtac);
+theorem elSnd: $ a e. Snd A <-> b1 a e. A $ = '(elabe ,eqtac);
+
+theorem FstSum: $ Fst (Sum A B) == A $ = (named '(ax_gen @ bitr elFst Suml));
+theorem SndSum: $ Snd (Sum A B) == B $ = (named '(ax_gen @ bitr elSnd Sumr));
+theorem FstSnd: $ Sum (Fst A) (Snd A) == A $ =
+(named (def (f x y) '(mpbiri (bitr ,x ,y) @ bieqd eleq1 eleq1))
+  '(ax_gen @ eor ,(f 'Suml 'elFst) ,(f 'Sumr 'elSnd) b0orb1));
 
 @_ local def slam {x: nat} (A: set x): set = $ S\ p, {y | snd p <> y e. (S[fst p / x] A)} $;
 notation slam {x: nat} (A: set x): set = ($\\$:30) x ($,$:0) A;

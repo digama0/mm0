@@ -204,7 +204,7 @@ Central to all of these judgments is the context $\Gamma$, which consists of:
 \begin{itemize}
   \item The global environment of previously declared items, including in particular a record $\mathsf{self}(\bar R):\bar S$ recording the type of the function being typechecked (if a function/procedure is being checked). This doesn't change during expression typing.
   \item A list of type variables $\overline{\alpha}$. This is only nonempty when type checking a type declaration.
-  \item A list of declared jump targets $\overline{k(\bar{R})}$, including a special jump target $\mathsf{return}(\bar{R})$ where $\bar{R}$ is the declared return type.
+  \item A list of declared jump targets $\overline{k(\Gamma',\bar{R})}$, including a special jump target $\mathsf{return}(\bar{R})$ where $\bar{R}$ is the declared return type. The $\Gamma'$ in each jump target is the context required for that jump to typecheck; it lies somewhere between the initial context $\Gamma$ at the point of the $\mathsf{label}$, and the moved-out context $\core{\Gamma}$.
   \item A list of regular variables, ghost variables, and hypotheses $\overline{R}$ with their types.
   \item (Used only in non-pure expression and proofs:) An unordered map of mutation records of the form $x\gets pe:\tau$ where $x$ is already in the context and $\Gamma\proves pe:\tau$. These represent mutations to elements of the context that need to be propagated forward along the control flow.
 \end{itemize}
@@ -536,11 +536,11 @@ For general expressions, we must worry about the following additional effects:
       \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar S\makesto \core{\bar R}}
     {\Gamma \proves \mathsf{return}\;\overline{e}:\tau}\and
   \infer[tye-label]
-    {\forall i,\ \core{\Gamma},\overline{k(\bar{R})},(\bar{R})_i \proves e_i:\mathbf{0}\makes\Gamma''_i\quad
-      \Gamma,\overline{k(\bar{R})}\proves e':\tau\makes\Gamma'}
-    {\Gamma \proves (\mathsf{label}\;\overline{k(\bar{R}):=e}\;\mathsf{in}\;e'):\tau\makes\Gamma'}\and
+    {\forall i,\ \Gamma'_i,\overline{k(\Gamma',\bar{R})},(\bar{R})_i \proves e_i:\mathbf{0}\makes\Gamma'''_i\quad
+      \Gamma,\overline{k(\Gamma',\bar{R})}\proves e':\tau\makes\Gamma''}
+    {\Gamma \proves (\mathsf{label}\;\overline{k(\bar{R}):=e}\;\mathsf{in}\;e'):\tau\makes\Gamma''}\and
   \infer[tye-goto]
-    {\Gamma \proves \langle\overline{e}\rangle:\textstyle\sum(\bar R)_i\makesto \Gamma',\overline{k(\bar{R})}}
+    {\Gamma \proves \langle\overline{e}\rangle:\textstyle\sum(\bar R)_i\makesto \Gamma'_i,\overline{k(\Gamma',\bar{R})}}
     {\Gamma \proves \mathsf{goto}\;k_i(\overline{e}):\tau}\and
 \end{mathparpagebreakable}
 
@@ -844,5 +844,27 @@ Intuitively, $\phi_1\ast\phi_2$ is the stack layout consisting of the layout $\p
 
 At a given point in execution, each of the unions has one of its members ``active'' and the other ``inactive'', and a variable can only be accessed if it is active in all parent unions.
 A ghost variable is never assigned any stack location and hence it can never be accessed. More formally, we say that two stack paths are \emph{incompatible}, written $s_1\perp s_2$, if there exists $s$ such that $s_1$ extends $s.l$ and $s_2$ extends $s.r$, or vice versa. We will maintain the invariant that if two variables in the context are represented by stack paths $s_1$ and $s_2$ then they are compatible.
+
+\subsection{Interpreting the context}
+
+The context $\Gamma$ in the typing rules is ultimately compiled down to a separating proposition over machine states, and we need to interpret it in such a way that a validly typed expression corresponds to a valid theorem in separation logic.
+
+Each variable in the context may or may not be associated with a component of the machine state which is currently storing the value of that variable. A ghost variable will never have machine state attached to it, and a variable may also not have machine state attached to it if it is past its last use, or if it is uninitialized. To express this, we will add a new kind of context, a machine context $\Delta$ which extends $\Gamma$ with this information at each variable site.
+
+\begin{itemize}
+\item For each procedure in the global environment of declared items, we have a (persistent) proposition $\mbox{\textsf{proc-ok}}(\ell:\overline{R}\to\overline{S})$ which asserts that location $\ell$ (an actual machine location) is the entry point to a function $f$ which, if called with arguments $\overline{R}$, will return values $\overline{S}$, according to the calling convention (which can be an additional parameter to \textsf{proc-ok}, but we can suppose that there is one fixed calling convention).
+
+Mutual recursions are more complex, as we may not be able to promise that they are safe to call without additional restrictions. Instead, for such functions we have $\mbox{\textsf{proc-ok}}(\ell:(\ghost{v:\N},h:v<n,\overline{R})\to\overline{S})$ where $v$ is the variant, and $n$ is a parameter, the value of the variant passed into this function. In other words, they must be called with a value of the variant less than the current one. We will not discuss the compilation of recursive functions here.
+
+\item Type declarations correspond to certain unfolding theorems so they have no representation in the context. We can ignore the type variables $\overline{\alpha}$ in $\Gamma$ because we don't support generic functions.
+
+\item The jump targets $\overline{k(\Gamma',\bar R)}$ in $\Gamma$ become (persistent) propositions $\textsf{jump-ok}(\ell:(\Gamma',\bar {R})\to \bf 0)$ asserting that if we jump to location $\ell$ with arguments $\bar {R}$ according to the calling convention of the jump, then this machine state is OK (will eventually reach a final termination with the desired global properties). The $\mathsf{return}(\bar R)$ continuation is also a jump target of this form (where the calling convention uses \texttt{ret} instead of \texttt{jump}).
+
+\item The regular variables, ghost variables, and hypotheses $\overline{R}$ become augmented to $\overline{\bf R}$ as follows:
+  \begin{itemize}
+  \item a variable $x^\gamma:\tau$ becomes either $x^\gamma:\tau$ or $x^{\top}:\tau\mathrel{@}\mu$ where $\mu$ is an M-place. The second form is only available for non-ghost variables, and the M-places of distinct variables in the context will always be compatible.
+  \item A mutation record $x\gets pe:\tau$ becomes $x\gets pe^\gamma:\tau$, where the ghost annotation indicates whether this mutation will leave $x$ ghost or not.
+  \end{itemize}
+\end{itemize}
 
 \end{document}
