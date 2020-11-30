@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::elab::{
   environment::{Environment, Modifiers, AtomID, SortID, TermID, ThmID,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof},
-  proof::{IDedup, ProofHash, build}};
+  proof::{IDedup, ProofKind, ProofHash, build}};
 use crate::util::{FileRef, FileSpan, SliceExt};
 use super::{StmtCmd, UnifyCmd, ProofCmd,
   parser::{MMBFile, ParseError, UnifyIter, ProofIter}};
@@ -89,7 +89,7 @@ struct Dedup(Vec<(ProofHash, bool)>);
 
 impl Dedup {
   fn new(nargs: usize) -> Dedup {
-    Self((0..nargs).map(|i| (ProofHash::Ref(i), true)).collect())
+    Self((0..nargs).map(|i| (ProofHash::Ref(ProofKind::Expr, i), true)).collect())
   }
 
   fn push(&mut self, v: ProofHash) -> usize {

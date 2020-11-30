@@ -49,6 +49,37 @@ impl<'a> NodeHasher<'a> {
   }
 }
 
+/// Because the s-expr representation of proof terms is ambiguous between terms,
+/// proofs and conversions, we have to know up front what kind of object we are looking
+/// at. This enum is used to prevent the Dedup from mixing up identical lisp expressions
+/// of different kinds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ProofKind {
+  /// This is an expr, for example [`ProofNode::Term`] or [`ProofNode::Ref`]
+  Expr,
+  /// This is a proof, for example [`ProofNode::Thm`], [`ProofNode::Conv`] or [`ProofNode::Ref`]
+  Proof,
+  /// This is a conversion, for example [`ProofNode::Sym`], [`ProofNode::Cong`] or [`ProofNode::Ref`]
+  Conv,
+}
+
+#[derive(Debug, Default, Clone)]
+struct ProofKindMap<T> {
+  expr: T,
+  proof: T,
+  conv: T,
+}
+
+impl<T> ProofKindMap<T> {
+  fn get_mut(&mut self, kind: ProofKind) -> &mut T {
+    match kind {
+      ProofKind::Expr => &mut self.expr,
+      ProofKind::Proof => &mut self.proof,
+      ProofKind::Conv => &mut self.conv,
+    }
+  }
+}
+
 /// A "hashable" type. We use this to abstract the difference between
 /// [`ExprHash`] and [`ProofHash`]. The definition of [`NodeHash`] is mutually recursive
 /// with the [`Dedup`] struct. A [`NodeHash`] type represents a nonrecursive shadow
@@ -58,12 +89,12 @@ impl<'a> NodeHasher<'a> {
 /// replaced by integers.
 pub trait NodeHash: Hash + Eq + Sized {
   /// The variant that constructs a variable from an index.
-  const REF: fn(usize) -> Self;
+  const REF: fn(ProofKind, usize) -> Self;
 
   /// Given a lisp expression `r` representing an element of the type,
   /// parse it into a [`NodeHash`] object. If the object has already been constructed,
   /// it may also return an index to the element in the [`Dedup`].
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
     de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>>;
 
   /// Calculate the variable dependence of a [`NodeHash`] object, given a function
@@ -89,7 +120,7 @@ pub struct Dedup<H: NodeHash> {
   /// a reference to the object in the map to ensure that it is not deallocated.
   /// (There is no safety problem here, but if the object gets deallocated and
   /// another takes its place, we can get a false positive hit in the map.)
-  prev: HashMap<*const LispKind, Option<(LispVal, usize)>>,
+  prev: ProofKindMap<HashMap<*const LispKind, Option<(LispVal, usize)>>>,
   /// The list of allocated objects. At each index, we store `(hash, shared, deps)` where
   /// `hash` is the hash object, `shared` is true if this object has more than one
   /// reference, and `deps` is the dependencies of this expression
@@ -108,13 +139,13 @@ impl<H: NodeHash> Dedup<H> {
   #[must_use] pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
     let mut bv = 1;
     let vec: Vec<_> = args.iter().enumerate()
-      .map(|(i, (_, t))| (Rc::new(H::REF(i)), true, match t {
+      .map(|(i, (_, t))| (Rc::new(H::REF(ProofKind::Expr, i)), true, match t {
         Type::Bound(_) => { let v = bv; bv *= 2; v }
         &Type::Reg(_, deps) => deps,
       })).collect();
     Dedup {
       map: vec.iter().enumerate().map(|(i, r)| (r.0.clone(), i)).collect(),
-      prev: HashMap::new(),
+      prev: Default::default(),
       vec,
       bv,
     }
@@ -122,29 +153,29 @@ impl<H: NodeHash> Dedup<H> {
 
   /// Insert a new hash object `v`, originating from lisp object `p`,
   /// into the [`Dedup`], returning the allocated index.
-  pub fn add(&mut self, p: LispVal, v: H) -> usize {
+  pub fn add(&mut self, kind: ProofKind, p: LispVal, v: H) -> usize {
     let n = self.add_direct(v);
-    self.prev.insert(&*p, Some((p, n)));
+    self.prev.get_mut(kind).insert(&*p, Some((p, n)));
     n
   }
 
   /// Insert a new hash object `v`, originating from lisp object `p`,
   /// into the [`Dedup`], returning the allocated index.
-  pub fn dedup(&mut self, nh: &NodeHasher<'_>, e: &LispVal) -> Result<usize> {
+  pub fn dedup(&mut self, nh: &NodeHasher<'_>, kind: ProofKind, e: &LispVal) -> Result<usize> {
     let arc = e.unwrapped_arc();
     let ptr: *const _ = &*arc;
-    Ok(match self.prev.entry(ptr) {
+    Ok(match self.prev.get_mut(kind).entry(ptr) {
       Entry::Occupied(o) => match o.get() {
         &Some((_, n)) => self.reuse(n),
         None => return Err(nh.err_sp(e.fspan().as_ref(), "cyclic proof")),
       },
       Entry::Vacant(v) => {
         v.insert(None);
-        let n = match H::from(nh, e.fspan().as_ref(), &arc, self)? {
+        let n = match H::from(nh, e.fspan().as_ref(), kind, &arc, self)? {
           Ok(v) => self.add_direct(v),
           Err(n) => n,
         };
-        self.prev.insert(ptr, Some((arc, n))); n
+        self.prev.get_mut(kind).insert(ptr, Some((arc, n))); n
       }
     })
   }
@@ -315,7 +346,7 @@ where
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum ExprHash {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
-  Ref(usize),
+  Ref(ProofKind, usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomID, SortID),
   /// `App(t, nodes)` is an application of term constructor `t` to subterms
@@ -323,13 +354,13 @@ pub enum ExprHash {
 }
 
 impl NodeHash for ExprHash {
-  const REF: fn(usize) -> Self = Self::Ref;
+  const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, _: ProofKind, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>> {
     Ok(Ok(match &**r {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
-        Some(&i) => ExprHash::Ref(i),
+        Some(&i) => ExprHash::Ref(ProofKind::Expr, i),
         None => match nh.lc.vars.get(&a) {
           Some(&(true, InferSort::Bound(sort))) => ExprHash::Dummy(a, sort),
           _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
@@ -345,7 +376,7 @@ impl NodeHash for ExprHash {
         let tid = nh.fe.term(a).ok_or_else(||
           nh.err(&head, format!("term '{}' not declared", nh.fe.data[a].name)))?;
         let mut ns = Vec::new();
-        for e in &mut u { ns.push(de.dedup(nh, &e)?) }
+        for e in &mut u { ns.push(de.dedup(nh, ProofKind::Expr, &e)?) }
         if !u.exactly(0) {
           return Err(nh.err_sp(fsp, format!("bad expression {}", nh.fe.to(r))))
         }
@@ -356,7 +387,7 @@ impl NodeHash for ExprHash {
 
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64 {
     match self {
-      &Self::Ref(n) => deps(n),
+      &Self::Ref(_, n) => deps(n),
       &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
       Self::App(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
     }
@@ -368,7 +399,7 @@ impl Node for ExprNode {
   const REF: fn(usize) -> Self = ExprNode::Ref;
   fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
     match *e {
-      ExprHash::Ref(i) => ExprNode::Ref(i),
+      ExprHash::Ref(_, i) => ExprNode::Ref(i),
       ExprHash::Dummy(a, s) => ExprNode::Dummy(a, s),
       ExprHash::App(t, ref ns) => ExprNode::App(t,
         ns.iter().map(|&i| Val::take(&mut ids[i])).collect()),
@@ -434,7 +465,7 @@ impl Environment {
 pub enum ProofHash {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables).
   /// This could be an expr, proof, or conv depending on what is referenced.
-  Ref(usize),
+  Ref(ProofKind, usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
   Dummy(AtomID, SortID),
   /// `Term(term, args)` is an application of term constructor `term` to subterms
@@ -483,7 +514,7 @@ impl ProofHash {
   /// Returns true if this proof term represents a conversion.
   pub fn is_conv(de: &impl IDedup<Self>, i: usize) -> bool {
     match de[i] {
-      ProofHash::Ref(j) => j < i && Self::is_conv(de, j),
+      ProofHash::Ref(k, _) => k == ProofKind::Conv,
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
       ProofHash::Hyp(_, _) |
@@ -500,7 +531,7 @@ impl ProofHash {
   /// represented by proof term index `i`.
   pub fn conv_side(de: &mut impl IDedup<Self>, i: usize, right: bool) -> usize {
     match de[i] {
-      ProofHash::Ref(j) => Self::conv_side(de, j, right),
+      ProofHash::Ref(_, j) => Self::conv_side(de, j, right),
       ProofHash::Dummy(_, _) |
       ProofHash::Term(_, _) |
       ProofHash::Hyp(_, _) |
@@ -531,19 +562,25 @@ impl ProofHash {
 }
 
 impl NodeHash for ProofHash {
-  const REF: fn(usize) -> Self = Self::Ref;
+  const REF: fn(ProofKind, usize) -> Self = Self::Ref;
 
-  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, r: &LispVal,
+  fn from<'a>(nh: &NodeHasher<'a>, fsp: Option<&FileSpan>, kind: ProofKind, r: &LispVal,
       de: &mut Dedup<Self>) -> Result<StdResult<Self, usize>> {
     Ok(Ok(match &**r {
-      &LispKind::Atom(a) => match nh.var_map.get(&a) {
-        Some(&i) => ProofHash::Ref(i),
-        None => match nh.lc.get_proof(a) {
-          Some((_, _, p)) => return Ok(Err(de.dedup(nh, p)?)),
+      &LispKind::Atom(a) => match kind {
+        ProofKind::Expr | ProofKind::Conv => match nh.var_map.get(&a) {
+          Some(&i) => ProofHash::Ref(kind, i),
           None => match nh.lc.vars.get(&a) {
-            Some(&(true, InferSort::Bound(sort))) => ProofHash::Dummy(a, sort),
+            Some(&(true, InferSort::Bound(sort))) => {
+              let e = ProofHash::Dummy(a, sort);
+              if kind == ProofKind::Conv { ProofHash::Refl(de.add_direct(e)) } else {e}
+            }
             _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
           }
+        },
+        ProofKind::Proof => match nh.lc.get_proof(a) {
+          Some((_, _, p)) => return Ok(Err(de.dedup(nh, ProofKind::Proof, p)?)),
+          None => return Err(nh.err_sp(fsp, format!("hypothesis '{}' not found", nh.fe.data[a].name))),
         }
       },
       LispKind::MVar(_, tgt) => return Err(nh.err_sp(fsp,
@@ -558,7 +595,7 @@ impl NodeHash for ProofHash {
         match adata.decl {
           Some(DeclKey::Term(tid)) => {
             let mut ns = Vec::new();
-            for e in u { ns.push(de.dedup(nh, &e)?) }
+            for e in u { ns.push(de.dedup(nh, ProofKind::Expr, &e)?) }
             if ns.iter().any(|&i| Self::is_conv(de, i)) {
               for i in &mut ns {*i = Self::as_conv(de, *i)}
               ProofHash::Cong(tid, ns.into())
@@ -568,8 +605,11 @@ impl NodeHash for ProofHash {
           }
           Some(DeclKey::Thm(tid)) => {
             let mut ns = Vec::new();
-            for e in u { ns.push(de.dedup(nh, &e)?) }
             let td = &nh.fe.thms[tid];
+            for (i, e) in u.enumerate() {
+              let kind = if i < td.args.len() {ProofKind::Expr} else {ProofKind::Proof};
+              ns.push(de.dedup(nh, kind, &e)?)
+            }
             if ns.len() != td.args.len() + td.hyps.len() {
               return Err(nh.err_sp(fsp,
                 format!("incorrect number of theorem arguments: {}", nh.fe.to(r))))
@@ -625,17 +665,17 @@ impl NodeHash for ProofHash {
           None => match a {
             AtomID::CONV => match (u.next(), u.next(), u.next()) {
               (Some(tgt), Some(conv), Some(prf)) if u.exactly(0) => {
-                let tgt = de.dedup(nh, &tgt)?;
-                let conv = de.dedup(nh, &conv)?;
+                let tgt = de.dedup(nh, ProofKind::Expr, &tgt)?;
+                let conv = de.dedup(nh, ProofKind::Conv, &conv)?;
                 let conv = Self::as_conv(de, conv);
-                let prf = de.dedup(nh, &prf)?;
+                let prf = de.dedup(nh, ProofKind::Proof, &prf)?;
                 ProofHash::Conv(tgt, Self::as_conv(de, conv), prf)
               }
               _ => return Err(nh.err_sp(fsp, format!("incorrect :conv format {}", nh.fe.to(r))))
             },
             AtomID::SYM => match u.next() {
               Some(p) if u.exactly(0) => {
-                let p = de.dedup(nh, &p)?;
+                let p = de.dedup(nh, ProofKind::Conv, &p)?;
                 ProofHash::Sym(Self::as_conv(de, p))
               }
               _ => return Err(nh.err_sp(fsp, format!("incorrect :sym format {}", nh.fe.to(r))))
@@ -649,9 +689,9 @@ impl NodeHash for ProofHash {
               let tid = ty.as_atom().and_then(|a| nh.fe.term(a))
                 .ok_or_else(|| nh.err(&ty, "expected a term"))?;
               let mut ns = Vec::new();
-              for e in Uncons::from(es) { ns.push(de.dedup(nh, &e)?) }
+              for e in Uncons::from(es) { ns.push(de.dedup(nh, ProofKind::Expr, &e)?) }
               let lhs = de.add_direct(ProofHash::Term(tid, ns.clone().into()));
-              let c = de.dedup(nh, &prf)?;
+              let c = de.dedup(nh, ProofKind::Conv, &prf)?;
               let c = Self::as_conv(de, c);
               let l2 = Self::conv_side(de, c, false);
               ProofHash::Unfold(tid, ns.into(), lhs, l2, c)
@@ -665,7 +705,7 @@ impl NodeHash for ProofHash {
 
   fn vars(&self, bv: &mut u64, deps: impl Fn(usize) -> u64) -> u64 {
     match self {
-      &Self::Ref(n) => deps(n),
+      &Self::Ref(_, n) => deps(n),
       &Self::Dummy(_, _) => (*bv, *bv *= 2).0,
       Self::Term(_, es) => es.iter().fold(0, |a, &i| a | deps(i)),
       _ => 0,
@@ -678,7 +718,7 @@ impl ExprHash {
   /// so it can be used with [`map_inj`](Dedup::map_inj).
   #[must_use] pub fn to_proof(&self) -> ProofHash {
     match *self {
-      ExprHash::Ref(i) => ProofHash::Ref(i),
+      ExprHash::Ref(k, i) => ProofHash::Ref(k, i),
       ExprHash::Dummy(a, s) => ProofHash::Dummy(a, s),
       ExprHash::App(t, ref ns) => ProofHash::Term(t, ns.clone()),
     }
@@ -699,7 +739,7 @@ impl Node for ProofNode {
   const REF: fn(usize) -> Self = ProofNode::Ref;
   fn from(e: &Self::Hash, ids: &mut [Val<Self>]) -> Self {
     match *e {
-      ProofHash::Ref(i) => ProofNode::Ref(i),
+      ProofHash::Ref(_, i) => ProofNode::Ref(i),
       ProofHash::Dummy(a, s) => ProofNode::Dummy(a, s),
       ProofHash::Term(term, ref ns) => ProofNode::Term {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()

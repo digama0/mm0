@@ -11,7 +11,7 @@ use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
   Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortID, Term, TermID, Thm};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
-use super::proof::{NodeHasher, ProofHash, build, Dedup};
+use super::proof::{NodeHasher, ProofKind, ProofHash, build, Dedup};
 use crate::util::{Span, FileSpan, BoxError};
 
 /// The infer status of a variable in a declaration. For example in
@@ -750,7 +750,7 @@ impl Elaborator {
             let val = {
               let mut de = Dedup::new(&args);
               let nh = NodeHasher::new(&self.lc, self.format_env(), self.fspan(sp));
-              let i = de.dedup(&nh, &val)?;
+              let i = de.dedup(&nh, ProofKind::Expr, &val)?;
               let (mut ids, heap) = build(&de);
               Expr {heap, head: ids[i].take()}
             };
@@ -766,9 +766,9 @@ impl Elaborator {
                   return Err(ElabError::new_e(sp, format!("variables {{{}}} missing from dependencies",
                     ba.map.iter().filter_map(|(&a, &i)| {
                       if let InferSort::Bound {..} = self.lc.vars[&a].1 {
-                        if i & deps & !n == 0 {None} else {Some(&self.data[a].name)}
+                        if i & deps & !n == 0 {None} else {Some(self.data[a].name.as_str())}
                       } else {None}
-                    }).format(", "))))
+                    }).sorted().format(", "))))
                 }
                 ((s2, n), TermKind::Def(Some(val)))
               }
@@ -830,9 +830,9 @@ impl Elaborator {
           if a.map_or(false, |a| self.lc.vars.contains_key(&a)) {
             return Err(ElabError::new_e(bi.span, "hypothesis shadows local variable"))
           }
-          is.push((a, de.dedup(&nh, e)?))
+          is.push((a, de.dedup(&nh, ProofKind::Expr, e)?))
         }
-        let ir = de.dedup(&nh, &e_ret)?;
+        let ir = de.dedup(&nh, ProofKind::Expr, &e_ret)?;
         let NodeHasher {var_map, fsp, ..} = nh;
         let (mut ids, heap) = build(&de);
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
@@ -847,7 +847,7 @@ impl Elaborator {
                 for (i, (_, a, e)) in e_hyps.into_iter().enumerate() {
                   if let Some(a) = a {
                     let p = LispVal::atom(a);
-                    is2.push(de.add(p.clone(), ProofHash::Hyp(i, is[i].1)));
+                    is2.push(de.add(ProofKind::Proof, p.clone(), ProofHash::Hyp(i, is[i].1)));
                     self.lc.add_proof(a, e, p)
                   }
                 }
@@ -860,7 +860,7 @@ impl Elaborator {
                 }
                 if error {return Ok(None)}
                 let nh = NodeHasher {var_map, fsp, fe: self.format_env(), lc: &self.lc};
-                let ip = de.dedup(&nh, &g)?;
+                let ip = de.dedup(&nh, ProofKind::Proof, &g)?;
                 let (mut ids, heap) = build(&de);
                 let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
                 Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))
@@ -1052,7 +1052,7 @@ impl Elaborator {
         dummies(self.format_env(), fsp, &mut lc, ds)?;
         let mut de = Dedup::new(&args);
         let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
-        let i = de.dedup(&nh, val)?;
+        let i = de.dedup(&nh, ProofKind::Expr, val)?;
         let (mut ids, heap) = build(&de);
         Ok(Some(Expr {heap, head: ids[i].take()}))
       })().unwrap_or_else(|e| {
@@ -1113,9 +1113,9 @@ impl Elaborator {
     let nh = NodeHasher::new(&lc, self.format_env(), fsp.clone());
     // crate::server::log(format!("{}: {:#?}", self.print(&x), nh.var_map));
     let is = is.into_iter().map(|(a, ty)| {
-      Ok((a, de.dedup(&nh, &ty)?, ty))
+      Ok((a, de.dedup(&nh, ProofKind::Expr, &ty)?, ty))
     }).collect::<Result<Vec<_>>>()?;
-    let ir = de.dedup(&nh, &e_ret)?;
+    let ir = de.dedup(&nh, ProofKind::Expr, &e_ret)?;
     let (mut ids, heap) = build(&de);
     let hyps = is.iter().map(|&(a, i, _)| {
       (a, ids[i].take())
@@ -1137,7 +1137,7 @@ impl Elaborator {
           let a = a?;
           let p = LispVal::atom(a);
           lc.add_proof(a, ty, p.clone());
-          Some(de.add(p, ProofHash::Hyp(i, j)))
+          Some(de.add(ProofKind::Proof, p, ProofHash::Hyp(i, j)))
         }).collect();
         if proof.is_proc() {
           lc.set_goals(Some(LispVal::goal(fsp, e_ret)).into_iter());
@@ -1167,7 +1167,7 @@ impl Elaborator {
           let fe = FormatEnv {source: &self.ast.source, env: &self.env};
           dummies(fe, fsp, lc, &ds)?;
           let nh = NodeHasher {var_map, lc, fe, fsp: fsp.clone()};
-          let ip = de.dedup(&nh, &pf)?;
+          let ip = de.dedup(&nh, ProofKind::Proof, &pf)?;
           let (mut ids, heap) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
           Ok(Some(Proof {heap, hyps, head: ids[ip].take()}))

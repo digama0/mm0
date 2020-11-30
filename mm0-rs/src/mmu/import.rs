@@ -5,7 +5,7 @@ use crate::elab::{ElabError, Result,
   local_context::MAX_BOUND_VARS,
   environment::{Term, Thm, TermKind, ThmKind,
     AtomID, SortID, Environment, Modifiers, Type, Expr, Proof},
-  proof::{IDedup, NodeHash, ExprHash, ProofHash, build}};
+  proof::{IDedup, NodeHash, ExprHash, ProofKind, ProofHash, build}};
 use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
 
@@ -142,7 +142,8 @@ struct Dedup<H: NodeHash> {
 
 impl<H: NodeHash> Dedup<H> {
   fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
-    let vec: Vec<_> = (0..args.len()).map(|i| (Rc::new(H::REF(i)), true)).collect();
+    let vec: Vec<_> = (0..args.len())
+      .map(|i| (Rc::new(H::REF(ProofKind::Expr, i)), true)).collect();
     Dedup {
       map: vec.iter().enumerate().map(|(i, r)| (r.0.clone(), i)).collect(),
       vec,
@@ -351,7 +352,7 @@ impl<'a> Importer<'a> {
               proofs.insert(a, n);
             }
           }
-          let ip = self.proof(&mut de, &vars, &mut proofs, Expecting::Proof)?;
+          let ip = self.proof(&mut de, &vars, &mut proofs, ProofKind::Proof)?;
           let (mut ids, heap) = build(&de);
           let hyps = is2.into_iter().map(|i| ids[i].take()).collect();
           ThmKind::Thm(Some(Proof {heap, hyps, head: ids[ip].take()}))
@@ -380,7 +381,7 @@ impl<'a> Importer<'a> {
     } else {
       let a = self.ident_atom_err()?;
       match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
-        VarKind::Var(i) => ExprHash::Ref(i),
+        VarKind::Var(i) => ExprHash::Ref(ProofKind::Expr, i),
         VarKind::Dummy(s) => ExprHash::Dummy(a, s),
       }
     };
@@ -391,41 +392,41 @@ impl<'a> Importer<'a> {
     vars: &HashMap<AtomID, VarKind>,
     proofs: &mut HashMap<AtomID, usize>,
   ) -> Result<usize> {
-    self.proof(de, vars, proofs, Expecting::Conv).map(|i| ProofHash::as_conv(de, i))
+    self.proof(de, vars, proofs, ProofKind::Conv).map(|i| ProofHash::as_conv(de, i))
   }
 
   fn proof(&mut self, de: &mut Dedup<ProofHash>,
     vars: &HashMap<AtomID, VarKind>,
     proofs: &mut HashMap<AtomID, usize>,
-    ty: Expecting
+    ty: ProofKind
   ) -> Result<usize> {
     let e = if self.open().is_some() {
       match self.ident_atom_err()? {
         AtomID::CONV => {
-          if ty != Expecting::Proof {
+          if ty != ProofKind::Proof {
             return Err(self.err(":conv in invalid position".into()))
           }
           (ProofHash::Conv(
-            self.proof(de, vars, proofs, Expecting::Expr)?,
+            self.proof(de, vars, proofs, ProofKind::Expr)?,
             self.conv(de, vars, proofs)?,
-            self.proof(de, vars, proofs, Expecting::Proof)?),
+            self.proof(de, vars, proofs, ProofKind::Proof)?),
           self.close_err()?).0
         }
         AtomID::SYM => {
-          if ty != Expecting::Conv {
+          if ty != ProofKind::Conv {
             return Err(self.err(":sym in invalid position".into()))
           }
           (ProofHash::Sym(self.conv(de, vars, proofs)?), self.close_err()?).0
         }
         AtomID::UNFOLD => {
-          if ty != Expecting::Conv {
+          if ty != ProofKind::Conv {
             return Err(self.err(":unfold in invalid position".into()))
           }
           let t = self.ident_atom_err()?;
           let tid = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;
           self.open_err()?;
           let mut ns = vec![];
-          while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Expr)?)}
+          while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ProofKind::Expr)?)}
           self.open_err()?;
           while self.close().is_none() {self.ident_err()?;} // ignore dummies
           let c = self.conv(de, vars, proofs)?;
@@ -435,30 +436,30 @@ impl<'a> Importer<'a> {
           ProofHash::Unfold(tid, ns.into(), lhs, l2, c)
         }
         AtomID::LET => {
-          if ty != Expecting::Proof {
+          if ty != ProofKind::Proof {
             return Err(self.err(":let in invalid position".into()))
           }
           let h = self.ident_atom_err()?;
-          let p1 = self.proof(de, vars, proofs, Expecting::Proof)?;
+          let p1 = self.proof(de, vars, proofs, ProofKind::Proof)?;
           let old = proofs.insert(h, p1);
-          let p2 = self.proof(de, vars, proofs, Expecting::Proof)?;
+          let p2 = self.proof(de, vars, proofs, ProofKind::Proof)?;
           self.close_err()?;
           if let Some(i) = old {proofs.insert(h, i);} else {proofs.remove(&h);}
           return Ok(p2)
         }
-        t => if let Expecting::Proof = ty {
+        t => if let ProofKind::Proof = ty {
           let t = self.env.thm(t).ok_or_else(|| self.err("expecting theorem".into()))?;
           self.open_err()?;
           let td = &self.env.thms[t];
           let nargs = td.args.len();
           let mut heap = vec![None; td.heap.len()];
           let mut ns = Vec::with_capacity(nargs);
-          while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Expr)?)}
+          while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ProofKind::Expr)?)}
           if ns.len() != nargs {
             return Err(self.err("incorrect number of term arguments".into()))
           }
           for (i, &n) in ns.iter().enumerate() { heap[i] = Some(n) }
-          while self.close().is_none() {ns.push(self.proof(de, vars, proofs, Expecting::Proof)?)}
+          while self.close().is_none() {ns.push(self.proof(de, vars, proofs, ProofKind::Proof)?)}
           let td = &self.env.thms[t];
           let rhs = ProofHash::subst(de, &td.heap, &mut heap, &td.ret);
           ProofHash::Thm(t, ns.into(), rhs)
@@ -476,20 +477,17 @@ impl<'a> Importer<'a> {
       }
     } else {
       let a = self.ident_atom_err()?;
-      if let Expecting::Proof = ty {
+      if let ProofKind::Proof = ty {
         return Ok(de.reuse(*proofs.get(&a).ok_or_else(|| self.err("unknown subproof".into()))?))
       }
       match *vars.get(&a).ok_or_else(|| self.err("unknown variable".into()))? {
-        VarKind::Var(i) => ProofHash::Ref(i),
+        VarKind::Var(i) => ProofHash::Ref(ProofKind::Expr, i),
         VarKind::Dummy(s) => ProofHash::Dummy(a, s),
       }
     };
     Ok(de.add(e))
   }
 }
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Expecting { Proof, Conv, Expr }
 
 /// Construct an [`Environment`] from an `mmu` file.
 pub fn elab(file: &FileRef, source: &[u8]) -> (Result<()>, Environment) {

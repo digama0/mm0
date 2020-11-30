@@ -1,7 +1,7 @@
 //! Support for the `input` and `output` commands.
 
 use std::io;
-use super::proof::{Dedup, NodeHasher, build};
+use super::proof::{Dedup, NodeHasher, ProofKind, build};
 use super::environment::{DeclKey, SortID, TermID, Type, Expr, ExprNode,
   TermKind, OutputString, StmtTrace, Environment};
 use super::{ElabError, Elaborator, Span, HashMap, Result as EResult, SExpr,
@@ -356,7 +356,8 @@ impl Elaborator {
     }
     let nh = NodeHasher::new(&self.lc, self.format_env(), fsp.clone());
     let mut de = Dedup::new(&[]);
-    let is = es.into_iter().map(|val| de.dedup(&nh, &val)).collect::<EResult<Vec<_>>>()?;
+    let is = es.into_iter().map(|val| de.dedup(&nh, ProofKind::Expr, &val))
+      .collect::<EResult<Vec<_>>>()?;
     let (mut ids, heap) = build(&de);
     let exprs = is.into_iter().map(|i| ids[i].take()).collect();
     self.stmts.push(StmtTrace::OutputString(
@@ -383,7 +384,8 @@ impl Elaborator {
     }
     let nh = NodeHasher::new(&self.lc, self.format_env(), fsp.clone());
     let mut de = Dedup::new(&[]);
-    let is = es.into_iter().map(|val| de.dedup(&nh, &val)).collect::<EResult<Vec<_>>>()?;
+    let is = es.into_iter().map(|val| de.dedup(&nh, ProofKind::Expr, &val))
+      .collect::<EResult<Vec<_>>>()?;
     let (mut ids, heap) = build(&de);
     let exprs = is.into_iter().map(|i| ids[i].take()).collect::<Vec<_>>();
     let mut w = StringWriter::default();
