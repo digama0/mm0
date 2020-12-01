@@ -200,6 +200,7 @@ impl ReportMode {
 }
 
 /// A function that gets called on goal view events.
+#[allow(clippy::type_complexity)]
 pub struct GoalListener(Box<dyn for<'a> FnMut(&'a Elaborator, &'a str)>);
 
 impl GoalListener {
