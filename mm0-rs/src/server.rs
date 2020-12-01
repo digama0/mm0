@@ -1321,7 +1321,6 @@ struct ServerOptions {
   elab_on: Option<ElabOn>,
   executable_path: Option<std::path::PathBuf>,
   max_number_of_problems: usize,
-  trace: Option<Trace>,
   syntax_docs: Option<bool>,
 }
 
@@ -1331,28 +1330,9 @@ impl std::default::Default for ServerOptions {
       elab_on: None,
       executable_path: None,
       max_number_of_problems: 100,
-      trace: None,
       syntax_docs: None,
     }
   }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Trace {
-  server: TraceLevel
-}
-
-/// User-configurable level of tracing
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum TraceLevel {
-  /// Turn tracing off
-  Off,
-  /// Trace only message
-  Messages,
-  /// Set trace level to verbose
-  Verbose,
 }
 
 /// Enum for use in [`ServerOptions`] showing when the user wants changes to be applied
