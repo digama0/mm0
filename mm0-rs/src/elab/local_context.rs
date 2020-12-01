@@ -854,6 +854,10 @@ impl Elaborator {
                 let g = LispVal::new_ref(LispVal::goal(self.fspan(e.span), e_ret));
                 self.lc.goals = vec![g.clone()];
                 self.elab_lisp(e)?;
+                if !self.lc.goals.is_empty() {
+                  let stat = self.stat();
+                  self.call_goal_listener(&stat);
+                }
                 for g in mem::take(&mut self.lc.goals) {
                   report!(try_get_span(&span, &g),
                     format!("|- {}", self.format_env().pp(&g.goal_type().expect("expected a goal"), 80)))

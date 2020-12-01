@@ -199,6 +199,20 @@ impl ReportMode {
   }
 }
 
+/// A function that gets called on goal view events.
+pub struct GoalListener(Box<dyn for<'a> FnMut(&'a Elaborator, &'a str)>);
+
+impl GoalListener {
+  /// Creates a new [`GoalListener`] from a callback.
+  pub fn new(f: impl for<'a> FnMut(&'a Elaborator, &'a str) + 'static) -> Self { Self(Box::new(f)) }
+}
+
+impl std::fmt::Debug for GoalListener {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    "GoalListener".fmt(f)
+  }
+}
+
 /// The [`Elaborator`] struct contains the working data for elaboration, and is the
 /// main interface to MM1 operations (along with [`Evaluator`](lisp::eval::Evaluator),
 /// which a lisp execution context).
@@ -224,7 +238,7 @@ pub struct Elaborator {
   /// The current proof context
   lc: LocalContext,
   /// Information attached to spans, used for hover queries
-  spans: Spans<ObjectKind>,
+  pub(crate) spans: Spans<ObjectKind>,
   /// True if we are currently elaborating an MM0 file
   mm0_mode: bool,
   /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
@@ -235,6 +249,8 @@ pub struct Elaborator {
   inout: InoutHandlers,
   /// The arena for lisp data.
   arena: lisp::LispArena,
+  /// A listener for goal view events.
+  recv_goal: Option<GoalListener>,
 }
 
 impl Deref for Elaborator {
@@ -259,8 +275,11 @@ impl Elaborator {
   ///   file, which can be changed later using the `(check-proofs)` lisp command.
   /// - `cancel`: An atomic flag that can be flipped in another thread in order to cancel
   ///   the elaboration before completion.
+  /// - `recv_goal`: A listener for goal view events.
   #[must_use] pub fn new(ast: Arc<AST>, path: FileRef,
-      mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>) -> Elaborator {
+      mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
+      recv_goal: Option<GoalListener>,
+    ) -> Elaborator {
     Elaborator {
       ast, path, cancel,
       errors: Vec::new(),
@@ -275,6 +294,7 @@ impl Elaborator {
       inout: InoutHandlers::default(),
       reporting: ReportMode::new(),
       arena: Default::default(),
+      recv_goal,
     }
   }
 
@@ -290,6 +310,13 @@ impl Elaborator {
 
   fn push_spans(&mut self) {
     self.env.spans.push(mem::take(&mut self.spans));
+  }
+
+  fn call_goal_listener(&mut self, stat: &str) {
+    if let Some(mut listener) = self.recv_goal.take() {
+      listener.0(self, stat);
+      self.recv_goal = Some(listener);
+    }
   }
 
   fn name_of(&mut self, stmt: &Stmt) -> LispVal {
@@ -584,6 +611,11 @@ pub struct ElaborateBuilder<'a, F> {
   /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
   /// extra data `T`, which is collected and passed through the function.
   pub recv_dep: F,
+  /// A function which is called when an `import` is encountered, with the [`FileRef`] of
+  /// the file being imported. It sets up a channel and passes the [`Receiver`] end here,
+  /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
+  /// extra data `T`, which is collected and passed through the function.
+  pub recv_goal: Option<GoalListener>,
 }
 
 impl<'a, T: Send, F> ElaborateBuilder<'a, F>
@@ -606,7 +638,6 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
   pub fn elab(self) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> + Send {
 
     type ImportMap<D> = HashMap<Span, (FileRef, D)>;
-    #[derive(Debug)]
     struct FrozenElaborator(Elaborator);
     unsafe impl Send for FrozenElaborator {}
 
@@ -707,7 +738,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
     let mut recv_dep = self.recv_dep;
     let mut recv = HashMap::new();
     let mut elab = Elaborator::new(self.ast.clone(),
-      self.path, self.mm0_mode, self.check_proofs, self.cancel);
+      self.path, self.mm0_mode, self.check_proofs, self.cancel, self.recv_goal);
     elab.arena.install_thread_local();
     for &(sp, ref f) in &self.ast.imports {
       (|| -> Result<_> {

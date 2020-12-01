@@ -356,26 +356,29 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let mut deps = Vec::new();
     log_msg(format!("elab {}", path));
     let rd = rd.push(path.clone());
-    let (cyc, _, errors, env) = ElaborateBuilder {
-      ast: &ast,
-      path: path.clone(),
-      mm0_mode: path.has_extension("mm0"),
-      check_proofs: crate::get_check_proofs(),
-      report_upstream_errors: false,
-      cancel: Arc::default(),
-      old: None,
-      recv_dep: |p| {
-        let p = VFS_.get_or_insert(p)?.0;
-        let (send, recv) = channel();
-        if rd.contains(&p) {
-          send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
-        } else {
-          POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
-          deps.push(p);
-        }
-        Ok(recv)
-      }
-    }.elab().await;
+    let fut =
+      ElaborateBuilder {
+        ast: &ast,
+        path: path.clone(),
+        mm0_mode: path.has_extension("mm0"),
+        check_proofs: crate::get_check_proofs(),
+        report_upstream_errors: false,
+        cancel: Arc::default(),
+        old: None,
+        recv_dep: |p| {
+          let p = VFS_.get_or_insert(p)?.0;
+          let (send, recv) = channel();
+          if rd.contains(&p) {
+            send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
+          } else {
+            POOL.spawn_ok(elaborate_and_send(p.clone(), send, rd.clone()));
+            deps.push(p);
+          }
+          Ok(recv)
+        },
+        recv_goal: None,
+      }.elab();
+    let (cyc, _, errors, env) = fut.await;
     (cyc, errors, env)
   };
   log_msg(format!("elabbed {}", path));

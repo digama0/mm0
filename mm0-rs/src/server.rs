@@ -27,7 +27,7 @@ use crate::parser::{AST, parse};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;
-use crate::elab::{ElabResult, ElaborateBuilder, FrozenEnv,
+use crate::elab::{ElabResult, ElaborateBuilder, FrozenEnv, GoalListener,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
@@ -222,7 +222,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     let (idx, ast) = parse(text.ascii().clone(), old_ast);
     let ast = Arc::new(ast);
     let rd = rd.push(path.clone());
-    (Some(ast.clone()), ElaborateBuilder {
+    let elab = ElaborateBuilder {
       ast: &ast,
       path: path.clone(),
       mm0_mode: path.has_extension("mm0"),
@@ -240,8 +240,19 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           deps.push(p);
         }
         Ok(recv)
-      }
-    }.elab().await)
+      },
+      recv_goal: start.filter(|_| SERVER.caps.ulock().goal_view)
+        .and_then(|start| ast.source.to_idx(start))
+        .filter(|&pos| pos != 0)
+        .map(|pos| {
+          GoalListener::new(move |elab: &crate::elab::Elaborator, stat| {
+            if elab.spans.stmt().contains(&pos) {
+              log(format!("\n{}", stat));
+            }
+          })
+        }),
+    }.elab();
+    (Some(ast.clone()), elab.await)
   };
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();
@@ -1153,7 +1164,7 @@ async fn references<T>(
 struct Server {
   conn: Connection,
   #[allow(unused)]
-  caps: Mutex<Capabilities>,
+  caps: Mutex<ClientCapabilities>,
   reqs: OpenRequests,
   vfs: VFS,
   pool: ThreadPool,
@@ -1162,20 +1173,44 @@ struct Server {
   options: Mutex<ServerOptions>,
 }
 
-struct Capabilities {
-  reg_id: Option<RequestId>,
-  definition_location_links: Option<bool>,
+
+/// Options for [`Server`]; for example, whether to apply changes and
+/// elaborate on change or save.
+/// The fields are `Option<T>` rather than defaults for each T since it might
+/// be useful to tell whether a certain option has been set by the user or left
+/// as the default. If they were just T, `T::Default` could mean that the user selected
+/// a value that's the same as the default, or it could mean that it was untouched.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InitOptions {
+  extra_capabilities: Option<ClientCapabilitiesExt>,
 }
 
-impl Capabilities {
-  fn new(params: &InitializeParams) -> Capabilities {
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClientCapabilitiesExt {
+  goal_view: Option<bool>,
+}
+
+struct ClientCapabilities {
+  reg_id: Option<RequestId>,
+  definition_location_links: Option<bool>,
+  goal_view: bool,
+}
+
+impl ClientCapabilities {
+  fn new(params: InitializeParams) -> ClientCapabilities {
     let dll = match params.capabilities.text_document.as_ref()
       .and_then(|d| d.definition.as_ref()) {
       Some(&GotoCapability {link_support: Some(b), ..}) => Some(b),
       Some(GotoCapability {dynamic_registration: Some(true), ..}) => Some(true),
       _ => Some(false)
     };
-    Capabilities { reg_id: None, definition_location_links: dll }
+    let goal_view = params.initialization_options
+      .and_then(|o| from_value(o).ok()).and_then(|o: InitOptions| o.extra_capabilities)
+      .and_then(|c| c.goal_view).unwrap_or(false);
+    log!("got goal view {}", goal_view);
+    ClientCapabilities { reg_id: None, definition_location_links: dll, goal_view }
   }
 
   fn register(&mut self) -> Result<()> {
@@ -1224,6 +1259,7 @@ impl std::fmt::Display for DepChangeReason {
   }
 }
 
+#[derive(Debug)]
 enum ElabReason { Open, Save, Change(Position) }
 
 impl ElabReason {
@@ -1389,7 +1425,7 @@ impl Server {
       })?
     )?)?;
     Ok(Server {
-      caps: Mutex::new(Capabilities::new(&params)),
+      caps: Mutex::new(ClientCapabilities::new(params)),
       conn,
       reqs: Mutex::new(HashMap::new()),
       vfs: VFS(Mutex::new(HashMap::new())),

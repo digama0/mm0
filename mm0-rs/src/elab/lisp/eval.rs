@@ -424,7 +424,8 @@ impl Elaborator {
     Ok(true)
   }
 
-  fn stat(&self) -> String {
+  /// Returns a string representation of the current proof context.
+  pub fn stat(&self) -> String {
     use std::fmt::Write;
     let mut s = String::new();
     for (a, e, _) in &self.lc.proof_order {
@@ -1440,6 +1441,7 @@ impl<'a> Evaluator<'a> {
               } else if self.lc.goals.is_empty() {
               } else {
                 let stat = self.stat();
+                self.call_goal_listener(&stat);
                 let span = self.fspan(sp);
                 for g in mem::take(&mut self.lc.goals) {
                   let err = ElabError::new_e(try_get_span(&span, &g),

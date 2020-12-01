@@ -25,6 +25,7 @@ function startClient() {
 	let clientOptions: LanguageClientOptions = {
 		// Register the server for MM0 files
 		documentSelector: [{ scheme: 'file', language: 'metamath-zero' }],
+		initializationOptions: { extraCapabilities: { goalView: true } }
 	};
 
 	// Create the language client and start the client.
