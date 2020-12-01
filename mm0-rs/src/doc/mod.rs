@@ -219,7 +219,10 @@ fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
     LineKind::Thm(_) => "step-thm",
     LineKind::Conv(_) => "step-conv"
   };
-  write!(w, "        <tr id=\"{line}\" class=\"{kind}\">\n          <td>{line}</td>\n          <td>",
+  write!(w, "        \
+              <tr id=\"{line}\" class=\"{kind}\">\
+    \n          <td>{line}</td>\
+    \n          <td>",
     kind = kind_class, line = line)?;
   let mut first = true;
   for hyp in hyps {
@@ -244,11 +247,13 @@ fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
       }
     }
   }
-  write!(w, "</td>\n          <td><pre>")?;
+  write!(w, "</td>\
+    \n          <td><pre>")?;
   let mut s = String::new();
   fe.pretty(|pr| pr.pp_expr(e).1.doc.render_fmt(PP_WIDTH, &mut s).expect("writing to a string"));
   escape_html(w, &s)?;
-  writeln!(w, "</pre></td>\n        </tr>")
+  writeln!(w, "</pre></td>\
+    \n        </tr>")
 }
 
 fn render_proof<'a>(
@@ -359,31 +364,33 @@ fn header(w: &mut impl Write,
   rel: &str, desc: &str, title: &str,
   h1: &str, nav: &str, script: &[&str]
 ) -> io::Result<()> {
-  writeln!(w, r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="generator" content="mm0-doc">
-  <meta name="description" content="{desc}">
-  <meta name="keywords" content="mm0, metamath-zero">
-  <title>{title} - Metamath Zero</title>
-  <link rel="stylesheet" type="text/css" href="{rel}stylesheet.css" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">"#,
+  writeln!(w, "\
+      <!DOCTYPE html>\
+    \n<html lang=\"en\">\
+    \n<head>\
+    \n  <meta charset=\"utf-8\">\
+    \n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+    \n  <meta name=\"generator\" content=\"mm0-doc\">\
+    \n  <meta name=\"description\" content=\"{desc}\">\
+    \n  <meta name=\"keywords\" content=\"mm0, metamath-zero\">\
+    \n  <title>{title} - Metamath Zero</title>\
+    \n  <link rel=\"stylesheet\" type=\"text/css\" href=\"{rel}stylesheet.css\" />\
+    \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin\" type=\"text/css\" media=\"screen\">\
+    \n  <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin\" type=\"text/css\" media=\"screen\">",
     rel = rel, desc = desc, title = title)?;
   for s in script {
     writeln!(w, r#"  <script src="{}"></script>"#, s)?
   }
-  writeln!(w, r#"  <!-- <link rel="shortcut icon" href="{rel}favicon.ico"> -->
-</head>
-<body>
-  <div class="body">
-    <h1 class="title">
-      {h1}
-      <span class="nav">{nav}</span>
-    </h1>"#,
-      rel = rel, h1 = h1, nav = nav)
+  writeln!(w, "  \
+        <!-- <link rel=\"shortcut icon\" href=\"{rel}favicon.ico\"> -->\
+    \n</head>\
+    \n<body>\
+    \n  <div class=\"body\">\
+    \n    <h1 class=\"title\">\
+    \n      {h1}\
+    \n      <span class=\"nav\">{nav}</span>\
+    \n    </h1>",
+    rel = rel, h1 = h1, nav = nav)
 }
 const FOOTER: &str = "  </div>\n</body>\n</html>";
 
@@ -452,9 +459,12 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     render_doc(&mut file, &td.doc)?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
     if let ThmKind::Thm(Some(pf)) = &td.kind {
-      writeln!(file, r#"    <table class="proof">
-      <tbody>
-        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>"#)?;
+      writeln!(file, "    \
+              <table class=\"proof\">\
+        \n      <tbody>\
+        \n        <tr class=\"proof-head\">\
+                    <th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th>\
+                  </tr>")?;
       render_proof(self.source, &mut self.env, &mut file, self.order, &td.args, &td.hyps, pf)?;
       writeln!(file, "      </tbody>\n    </table>")?;
 
