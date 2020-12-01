@@ -107,17 +107,12 @@ body {
     font-family: "Nobile", sans-serif;
     font-size: 100%;
     background-color: #eee;
-    color: #ffffff;
     margin: 0;
     padding: 0;
 }
 
 hr {
     border: 1px solid #B1B4B6;
-}
-
-div.document {
-    background-color: #eee;
 }
 
 div.body {
@@ -141,9 +136,7 @@ a:hover, a:hover .pre {
     text-decoration: underline;
 }
 
-a.thm {
-    color: #1b61d6;
-    text-decoration: none;
+a.term, a.thm {
     font-family: Fira Code,Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;
     font-size: 0.9em;
 }
@@ -155,7 +148,6 @@ div.body h4,
 div.body h5,
 div.body h6 {
     font-family: "Neuton", sans-serif;
-    background-color: #ffffff;
     font-weight: normal;
     color: #373839;
     margin: 30px 0px 10px 0px;
@@ -163,17 +155,15 @@ div.body h6 {
 }
 
 div.body h1 { border-top: 20px solid white; margin-top: 0; font-size: 200%; }
-div.body h2 { font-size: 150%; background-color: #ffffff; }
-div.body h3 { font-size: 120%; background-color: #ffffff; }
-div.body h4 { font-size: 110%; background-color: #ffffff; }
-div.body h5 { font-size: 100%; background-color: #ffffff; }
-div.body h6 { font-size: 100%; background-color: #ffffff; }
+div.body h2 { font-size: 150%; }
+div.body h3 { font-size: 120%; }
+div.body h4 { font-size: 110%; }
+div.body h5 { font-size: 100%; }
+div.body h6 { font-size: 100%; }
 
 a.headerlink {
-    color: #1b61d6;
     font-size: 0.8em;
     padding: 0 4px 0 4px;
-    text-decoration: none;
 }
 
 a.headerlink:hover {
@@ -216,9 +206,23 @@ table.proof {
     border-radius: .25rem;
 }
 
-table.proof tr th,
-table.proof tr td {
+table.proof th,
+table.proof td {
     border-bottom: 1px solid #ccc;
+}
+
+table.proof tr.selected td:first-child {
+    background-color: #f8f8dd;
+}
+
+table.proof tr.hidden td {
+    border-bottom: 0;
+}
+table.proof tr.hidden div {
+    max-height: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    /* transition: max-height 0.3s, padding 0.3s; */
 }
 
 tbody tr:hover {
@@ -262,4 +266,69 @@ h1.title span.nav {
 
 h1.title span.nav a {
     padding: 0 7px;
+}
+
+/* -- dark mode ----------------------------------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+
+    body {
+        background-color: #080808;
+    }
+
+    hr {
+        border: 1px solid #4e4b49;
+    }
+
+    div.body {
+        background-color: #121212;
+        color: #e7e8eb;
+        border: 2px solid #222;
+    }
+
+    a, a .pre {
+        color: #378ad3;
+    }
+
+    div.body h1,
+    div.body h2,
+    div.body h3,
+    div.body h4,
+    div.body h5,
+    div.body h6 {
+        color: #e7e8eb;
+    }
+
+    div.body h1 { border-top: 20px solid #121212; }
+
+    pre {
+        background-color: #0c0c0c;
+        color: #ccc;
+        border: 2px solid #393634;
+    }
+
+    table.proof {
+        border: 2px solid #333;
+    }
+
+    table.proof th,
+    table.proof td {
+        border-bottom: 1px solid #333;
+    }
+
+    table.proof tr.selected td:first-child {
+        background-color: #181814;
+    }
+
+    tbody tr:hover {
+        background-color: #0d0d0d;
+    }
+
+    th, td {
+        border-left: 1px solid #333;
+    }
+
+    code {
+        color: #ddd;
+    }
 }
