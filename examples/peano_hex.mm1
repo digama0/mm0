@@ -133,6 +133,25 @@ theorem s2nscons: $ c ': s = c : s $ =
 theorem s2nscons0: $ c ': s0 = s1 c $ =
 '(eqtr s2nsadd @ eqtr (appendeq2 s2ns0) append02);
 
+theorem s2n_A (h1: $ s = a $) (h2: $ t = b $): $ s '+ t = a ++ b $ =
+'(eqtr s2nsadd @ appendeq h1 h2);
+theorem s2n_1 (h: $ c = a $): $ s1 c = a : 0 $ = '(eqtr s2ns1 @ conseq1 h);
+theorem s2n_S (h1: $ c = a $) (h2: $ s = b $): $ c ': s = a : b $ =
+'(eqtr (s2n_A (s2n_1 h1) h2) append1);
+theorem s2n_SE (h: $ s = a $): $ c ': s = c : a $ = '(s2n_S eqid h);
+theorem s2n_SAE (h: $ s = a ++ b $): $ c ': s = c : a ++ b $ =
+'(eqtr4 (s2n_SE h) appendS);
+theorem append01i (h: $ a = b $): $ a = 0 ++ b $ = '(eqtr4 h append0);
+theorem s2n_R0: $ s0 = repeat a 0 $ = '(eqtr4 s2ns0 repeat0);
+theorem s2n_R1 (h: $ c = a $): $ s1 c = repeat a 1 $ =
+'(eqtr4 (s2n_1 h) repeat1);
+theorem s2n_RA (h1: $ s = repeat a m $) (h2: $ t = repeat a n $):
+  $ s '+ t = repeat a (m + n) $ = '(eqtr4 (s2n_A h1 h2) repeatadd);
+theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $):
+  $ c ': s = repeat a (suc n) $ = '(eqtr4 (s2n_S h1 h2) repeatS);
+theorem saddS: $ c ': s '+ t = c ': (s '+ t) $ =
+'(eqtr4 (s2n_A s2nscons eqid) @ s2n_SAE s2nsadd);
+
 local def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
 infixl hex: $:x$ prec 120;
 
@@ -142,14 +161,20 @@ infixl hex: $:x$ prec 120;
 theorem hexeq1: $ a1 = a2 -> hex a1 x = hex a2 x $ = '(hexeqd id eqidd);
 theorem hexeq2: $ x1 = x2 -> hex a x1 = hex a x2 $ = '(hexeqd eqidd id);
 
-theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
-
 theorem suc_xf: $ suc xf = 16 $ = '(suceq h2nf);
 
 theorem hex01_: $ 0 :x a = a $ = '(eqtr (addeq1 mul01) add01);
 theorem hex01: $ x0 :x a = a $ = '(eqtr (hexeq1 h2n0) hex01_);
 theorem hex02: $ n :x x0 = n * 16 $ = '(eqtr (addeq2 h2n0) add0);
 theorem hex10: $ x1 :x x0 = 16 $ = '(eqtr hex02 @ eqtr (muleq1 h2n1) mul11);
+
+theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
+theorem c2nh2n: $ ch x0 a = h2n a $ = '(eqtr c2nhex hex01);
+
+--| `(to-u8-ch a)` returns a pair `(c p)` where `p: c2n c = a`
+do (def to-u8-ch @ match-fn
+  [('hex ('h2n a) b) '((ch ,a ,b) (c2nhex ,a ,b))]
+  [('h2n a) '((ch (x0) ,a) (c2nh2n ,a))]);
 
 theorem suchexf: $ suc (a :x xf) = suc a :x x0 $ =
 '(eqtr3 addS2 @ eqtr4 (addeq2 suc_xf) @ eqtr hex02 mulS1);
@@ -350,6 +375,11 @@ do {
         '(() (decadc_lem ,xa ,xb ,xc ,xd (,(atom-app 'decadd sa sb)) ,(hd @ tl @ mksuc xc))))
       (list xd name))
     (fn (a b) ((f a) b)))
+
+  --| `(decnot a) = (b p)` where `p: a + b = xf`
+  (def decnot @ match-fn @ (a)
+    @ let ([n (hexdigit->number a)] [m {15 - n}])
+    '((,(hexdigit m)) ,(nth 1 @ decaddn n m)))
 };
 
 theorem add_xx0 (h1: $ a + c = e $) (h2: $ b + d = f $): $ a :x b + c :x d = e :x f $ =
@@ -490,7 +520,6 @@ do {
     @ match (mkmul a b) @ (c p) @ refine '{(:verb ,p) : $ ,a * ,b = ,c $})
 };
 
-theorem c2nh2n: $ ch x0 a = h2n a $ = '(eqtr c2nhex hex01);
 theorem suceql (ha: $ a = a2 $) (h: $ suc a2 = b $): $ suc a = b $ = '(eqtr (suceq ha) h);
 theorem addeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 + b2 = c $): $ a + b = c $ = '(eqtr (addeq ha hb) h);
 theorem adceql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ suc (a2 + b2) = c $):
