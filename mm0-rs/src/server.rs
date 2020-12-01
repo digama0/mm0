@@ -27,7 +27,7 @@ use crate::parser::{AST, parse};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;
-use crate::elab::{ElabResult, self, FrozenEnv,
+use crate::elab::{ElabResult, ElaborateBuilder, FrozenEnv,
   environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
@@ -225,11 +225,15 @@ async fn elaborate(path: FileRef, start: Option<Position>,
     let (idx, ast) = parse(text.ascii().clone(), old_ast);
     let ast = Arc::new(ast);
     let rd = rd.push(path.clone());
-    (Some(ast.clone()), elab::elaborate(
-      &ast, path.clone(), path.has_extension("mm0"),
-      crate::get_check_proofs(), true, cancel.clone(),
-      old_env.map(|(errs, e)| (idx, errs, e)),
-      |p| {
+    (Some(ast.clone()), ElaborateBuilder {
+      ast: &ast,
+      path: path.clone(),
+      mm0_mode: path.has_extension("mm0"),
+      check_proofs: crate::get_check_proofs(),
+      report_upstream_errors: true,
+      cancel: cancel.clone(),
+      old: old_env.map(|(errs, e)| (idx, errs, e)),
+      recv_dep: |p| {
         let p = vfs.get_or_insert(p)?.0;
         let (send, recv) = channel();
         if rd.contains(&p) {
@@ -239,7 +243,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           deps.push(p);
         }
         Ok(recv)
-      }).await)
+      }
+    }.elab().await)
   };
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();

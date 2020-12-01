@@ -556,165 +556,178 @@ pub enum ElabResult<T> {
   ImportCycle(ArcList<FileRef>)
 }
 
-/// Creates a future to poll for the completed environment, given an import resolver.
-///
-/// # Parameters
-///
-/// - `ast`, `path`, `mm0_mode`, `check_proofs`, `cancel`: Used to construct the inner [`Elaborator`]
-///   (see [`Elaborator::new`]).
-///
-/// - `report_upstream_errors`: If true, an error will be reported if a file in an import itself
-///   has an error. This can be disabled to avoid reporting the same error many times.
-///
-/// - `_old`: The last successful parse of the same file, used for incremental elaboration.
-///   A value of `Some((idx, errs, env))` means that the new file first differs from the
-///   old one at `idx`, and the last parse produced environment `env` with errors `errs`.
-///
-/// - `mk`: A function which is called when an `import` is encountered, with the [`FileRef`] of
-///   the file being imported. It sets up a channel and passes the [`Receiver`] end here,
-///   to transfer an [`Environment`] containing the elaborated theorems, as well as any
-///   extra data `T`, which is collected and passed through the function.
-///
-/// # Returns
-///
-/// A [`Future`] which returns `(toks, errs, env)` with
-///
-/// - `toks`: The accumulated `T` values passed from `mk` (in the order that `import` statements
-///   appeared in the file)
-/// - `errs`: The elaboration errors found
-/// - `env`: The final environment
-///
-/// If elaboration of an individual statement fails, the error is pushed and then elaboration
-/// continues at the next statement, so the overall elaboration process cannot fail and an
-/// environment is always produced.
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn elaborate<T: Send>(
-  ast: &Arc<AST>, path: FileRef,
-  mm0_mode: bool, check_proofs: bool, report_upstream_errors: bool, cancel: Arc<AtomicBool>,
-  _: Option<(usize, Option<Arc<[ElabError]>>, FrozenEnv)>,
-  mut mk: impl FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError>
-) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> + Send {
 
-  type ImportMap<D> = HashMap<Span, (FileRef, D)>;
-  #[derive(Debug)]
-  struct FrozenElaborator(Elaborator);
-  unsafe impl Send for FrozenElaborator {}
+/// This is a builder struct to provide inputs to [`ElaborateBuilder::elab`].
+#[derive(Debug)]
+pub struct ElaborateBuilder<'a, F> {
+  /// The parsed abstract syntax tree for the file
+  pub ast: &'a Arc<AST>,
+  /// The location and name of the currently elaborating file
+  pub path: FileRef,
+  /// True if we are currently elaborating an MM0 file
+  pub mm0_mode: bool,
+  /// True if we are checking proofs (otherwise we pretend every proof says `theorem foo = '?;`)
+  pub check_proofs: bool,
+  /// If true, an error will be reported if a file in an import itself
+  /// has an error. This can be disabled to avoid reporting the same error many times.
+  pub report_upstream_errors: bool,
+  /// A flag that will be flipped from another thread to signal that this elaboration
+  /// should be abandoned
+  pub cancel: Arc<AtomicBool>,
+  /// The last successful parse of the same file, used for incremental elaboration.
+  /// A value of `Some((idx, errs, env))` means that the new file first differs from the
+  /// old one at `idx`, and the last parse produced environment `env` with errors `errs`.
+  #[allow(clippy::type_complexity)]
+  pub old: Option<(usize, Option<Arc<[ElabError]>>, FrozenEnv)>,
+  /// A function which is called when an `import` is encountered, with the [`FileRef`] of
+  /// the file being imported. It sets up a channel and passes the [`Receiver`] end here,
+  /// to transfer an [`Environment`] containing the elaborated theorems, as well as any
+  /// extra data `T`, which is collected and passed through the function.
+  pub recv_dep: F,
+}
 
-  enum UnfinishedStmt<T> {
-    None,
-    Import(Span, FileRef, Receiver<ElabResult<T>>),
-  }
+impl<'a, T: Send, F> ElaborateBuilder<'a, F>
+where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
+  /// Creates a future to poll for the completed environment, given an import resolver.
+  ///
+  /// # Returns
+  ///
+  /// A [`Future`] which returns `(cyc, toks, errs, env)` with
+  ///
+  /// - `cyc`: An import cycle that forced this elaboration to halt, if one was found.
+  /// - `toks`: The accumulated `T` values passed from `mk` (in the order that `import` statements
+  ///   appeared in the file)
+  /// - `errs`: The elaboration errors found
+  /// - `env`: The final environment
+  ///
+  /// If elaboration of an individual statement fails, the error is pushed and then elaboration
+  /// continues at the next statement, so the overall elaboration process cannot fail and an
+  /// environment is always produced.
+  pub fn elab(self) -> impl Future<Output=(Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv)> + Send {
 
-  struct ElabFutureInner<T> {
-    elab: FrozenElaborator,
-    toks: Vec<T>,
-    report_upstream_errors: bool,
-    cyc: Option<ArcList<FileRef>>,
-    recv: ImportMap<Receiver<ElabResult<T>>>,
-    idx: usize,
-    progress: UnfinishedStmt<T>
-  }
+    type ImportMap<D> = HashMap<Span, (FileRef, D)>;
+    #[derive(Debug)]
+    struct FrozenElaborator(Elaborator);
+    unsafe impl Send for FrozenElaborator {}
 
-  struct ElabFuture<T>(Option<ElabFutureInner<T>>);
+    enum UnfinishedStmt<T> {
+      None,
+      Import(Span, FileRef, Receiver<ElabResult<T>>),
+    }
 
-  impl<T> Future for ElabFuture<T> {
-    type Output = (Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv);
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-      let this = &mut unsafe { self.get_unchecked_mut() }.0;
-      let ElabFutureInner {
-        elab: FrozenElaborator(elab),
-        cyc, toks, recv, idx, progress, report_upstream_errors
-      } = this.as_mut().expect("poll called after Ready");
-      elab.arena.install_thread_local();
-      'l: loop {
-        match progress {
-          UnfinishedStmt::None => {},
-          UnfinishedStmt::Import(sp, p, other) => {
-            match ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
-              Ok(ElabResult::Ok(t, errors, env)) => {
-                toks.push(t);
-                if *report_upstream_errors {
-                  if let Some(errs) = errors {
-                    if let Some((first, rest)) = errs.split_first() {
-                      let mut n = rest.len();
-                      let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
-                        n += m;
-                        file.clone()
-                      } else {
-                        p.clone()
-                      };
-                      elab.report(ElabError::new(*sp, ElabErrorKind::Upstream(file, errs, n)));
+    struct ElabFutureInner<T> {
+      elab: FrozenElaborator,
+      toks: Vec<T>,
+      report_upstream_errors: bool,
+      cyc: Option<ArcList<FileRef>>,
+      recv: ImportMap<Receiver<ElabResult<T>>>,
+      idx: usize,
+      progress: UnfinishedStmt<T>
+    }
+
+    struct ElabFuture<T>(Option<ElabFutureInner<T>>);
+
+    impl<T> Future for ElabFuture<T> {
+      type Output = (Option<ArcList<FileRef>>, Vec<T>, Vec<ElabError>, FrozenEnv);
+      fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = &mut unsafe { self.get_unchecked_mut() }.0;
+        let ElabFutureInner {
+          elab: FrozenElaborator(elab),
+          cyc, toks, recv, idx, progress, report_upstream_errors
+        } = this.as_mut().expect("poll called after Ready");
+        elab.arena.install_thread_local();
+        'l: loop {
+          match progress {
+            UnfinishedStmt::None => {},
+            UnfinishedStmt::Import(sp, p, other) => {
+              match ready!(unsafe { Pin::new_unchecked(other) }.poll(cx)) {
+                Ok(ElabResult::Ok(t, errors, env)) => {
+                  toks.push(t);
+                  if *report_upstream_errors {
+                    if let Some(errs) = errors {
+                      if let Some((first, rest)) = errs.split_first() {
+                        let mut n = rest.len();
+                        let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
+                          n += m;
+                          file.clone()
+                        } else {
+                          p.clone()
+                        };
+                        elab.report(ElabError::new(*sp, ElabErrorKind::Upstream(file, errs, n)));
+                      }
                     }
                   }
+                  let r = elab.env.merge(&env, *sp, &mut elab.errors);
+                  elab.catch(r);
                 }
-                let r = elab.env.merge(&env, *sp, &mut elab.errors);
-                elab.catch(r);
+                Ok(ElabResult::Canceled) => {
+                  elab.report(ElabError::new_e(*sp, "canceled"));
+                  break
+                }
+                Ok(ElabResult::ImportCycle(cyc2)) => {
+                  use std::fmt::Write;
+                  let mut s = format!("import cycle: {}", p.clone());
+                  for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
+                  elab.report(ElabError::new_e(*sp, s));
+                  if cyc.is_none() { *cyc = Some(cyc2) }
+                }
+                Err(_) => {} // already handled
               }
-              Ok(ElabResult::Canceled) => {
-                elab.report(ElabError::new_e(*sp, "canceled"));
-                break
-              }
-              Ok(ElabResult::ImportCycle(cyc2)) => {
-                use std::fmt::Write;
-                let mut s = format!("import cycle: {}", p.clone());
-                for p2 in &cyc2 { write!(&mut s, " -> {}", p2).unwrap() }
-                elab.report(ElabError::new_e(*sp, s));
-                if cyc.is_none() { *cyc = Some(cyc2) }
-              }
-              Err(_) => {} // already handled
+              *idx += 1;
             }
+          }
+          let ast = elab.ast.clone();
+          while let Some(s) = ast.stmts.get(*idx) {
+            if elab.cancel.load(Ordering::Relaxed) {break}
+            match elab.elab_stmt(String::new(), s, s.span) {
+              Ok(ElabStmt::Ok) => {}
+              Ok(ElabStmt::Import(sp)) => {
+                if let Some((file, recv)) = recv.remove(&sp) {
+                  elab.spans.insert(sp, ObjectKind::Import(file.clone()));
+                  *progress = UnfinishedStmt::Import(sp, file, recv);
+                  elab.push_spans();
+                  continue 'l
+                }
+              }
+              Err(e) => elab.report(e)
+            }
+            elab.push_spans();
             *idx += 1;
           }
+          break
         }
-        let ast = elab.ast.clone();
-        while let Some(s) = ast.stmts.get(*idx) {
-          if elab.cancel.load(Ordering::Relaxed) {break}
-          match elab.elab_stmt(String::new(), s, s.span) {
-            Ok(ElabStmt::Ok) => {}
-            Ok(ElabStmt::Import(sp)) => {
-              if let Some((file, recv)) = recv.remove(&sp) {
-                elab.spans.insert(sp, ObjectKind::Import(file.clone()));
-                *progress = UnfinishedStmt::Import(sp, file, recv);
-                elab.push_spans();
-                continue 'l
-              }
-            }
-            Err(e) => elab.report(e)
-          }
-          elab.push_spans();
-          *idx += 1;
-        }
-        break
+        lisp::LispArena::uninstall_thread_local();
+        let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, ..} =
+          this.take().expect("impossible");
+        elab.arena.clear();
+        Poll::Ready((cyc, toks, elab.errors, FrozenEnv::new(elab.env)))
       }
-      lisp::LispArena::uninstall_thread_local();
-      let ElabFutureInner {elab: FrozenElaborator(elab), cyc, toks, ..} =
-        this.take().expect("impossible");
-      elab.arena.clear();
-      Poll::Ready((cyc, toks, elab.errors, FrozenEnv::new(elab.env)))
     }
-  }
 
-  let mut recv = HashMap::new();
-  let mut elab = Elaborator::new(ast.clone(), path, mm0_mode, check_proofs, cancel);
-  elab.arena.install_thread_local();
-  for &(sp, ref f) in &ast.imports {
-    (|| -> Result<_> {
-      let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp, e))?;
-      let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
-      let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
-      let tok = mk(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
-      recv.insert(sp, (r, tok));
-      Ok(())
-    })().unwrap_or_else(|e| elab.report(e));
+    let mut recv_dep = self.recv_dep;
+    let mut recv = HashMap::new();
+    let mut elab = Elaborator::new(self.ast.clone(),
+      self.path, self.mm0_mode, self.check_proofs, self.cancel);
+    elab.arena.install_thread_local();
+    for &(sp, ref f) in &self.ast.imports {
+      (|| -> Result<_> {
+        let f = std::str::from_utf8(f).map_err(|e| ElabError::new_e(sp, e))?;
+        let path = elab.path.path().parent().map_or_else(|| PathBuf::from(f), |p| p.join(f));
+        let r: FileRef = path.canonicalize().map_err(|e| ElabError::new_e(sp, e))?.into();
+        let tok = recv_dep(r.clone()).map_err(|e| ElabError::new_e(sp, e))?;
+        recv.insert(sp, (r, tok));
+        Ok(())
+      })().unwrap_or_else(|e| elab.report(e));
+    }
+    lisp::LispArena::uninstall_thread_local();
+    ElabFuture(Some(ElabFutureInner {
+      elab: FrozenElaborator(elab),
+      toks: vec![],
+      report_upstream_errors: self.report_upstream_errors,
+      cyc: None,
+      recv,
+      idx: 0,
+      progress: UnfinishedStmt::None,
+    }))
   }
-  lisp::LispArena::uninstall_thread_local();
-  ElabFuture(Some(ElabFutureInner {
-    elab: FrozenElaborator(elab),
-    toks: vec![],
-    cyc: None,
-    recv,
-    idx: 0,
-    report_upstream_errors,
-    progress: UnfinishedStmt::None,
-  }))
 }

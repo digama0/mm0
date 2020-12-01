@@ -20,7 +20,7 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use typed_arena::Arena;
 use clap::ArgMatches;
-use crate::elab::{self, ElabError, ElabErrorKind, ElabResult, FrozenEnv};
+use crate::elab::{ElabError, ElabErrorKind, ElaborateBuilder, ElabResult, FrozenEnv};
 use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmb::import::elab as mmb_elab;
@@ -356,12 +356,15 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let mut deps = Vec::new();
     log_msg(format!("elab {}", path));
     let rd = rd.push(path.clone());
-    let (cyc, _, errors, env) = elab::elaborate(
-      &ast, path.clone(), path.has_extension("mm0"),
-      crate::get_check_proofs(), false,
-      Arc::default(),
-      None,
-      |p| {
+    let (cyc, _, errors, env) = ElaborateBuilder {
+      ast: &ast,
+      path: path.clone(),
+      mm0_mode: path.has_extension("mm0"),
+      check_proofs: crate::get_check_proofs(),
+      report_upstream_errors: false,
+      cancel: Arc::default(),
+      old: None,
+      recv_dep: |p| {
         let p = VFS_.get_or_insert(p)?.0;
         let (send, recv) = channel();
         if rd.contains(&p) {
@@ -371,7 +374,8 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
           deps.push(p);
         }
         Ok(recv)
-      }).await;
+      }
+    }.elab().await;
     (cyc, errors, env)
   };
   log_msg(format!("elabbed {}", path));
