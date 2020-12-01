@@ -110,9 +110,6 @@ lazy_static! {
   static ref SERVER: Server = Server::new().expect("Initialization failed");
 }
 
-static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
-pub(crate) fn get_log_errors() -> bool { LOG_ERRORS.load(Ordering::Relaxed) }
-
 #[allow(unused)]
 pub(crate) fn log(s: String) {
   LOGGER.0.ulock().push((Instant::now(), thread::current().id(), MemoryData::get(), s));
@@ -288,7 +285,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       if n_warns != 0 { write!(&mut log_msg, ", {} warnings", n_warns).unwrap() }
       if n_infos != 0 { write!(&mut log_msg, ", {} infos", n_infos).unwrap() }
       if n_hints != 0 { write!(&mut log_msg, ", {} hints", n_hints).unwrap() }
-      if get_log_errors() {
+      if SERVER.options.ulock().log_errors.unwrap_or(true) {
         for e in &errors {
           let Position {line, character: col} = source.ascii().to_pos(e.pos.start);
           write!(&mut log_msg, "\n\n{}: {}:{}:{}:\n{}",
@@ -1327,6 +1324,7 @@ struct ServerOptions {
   executable_path: Option<std::path::PathBuf>,
   max_number_of_problems: usize,
   syntax_docs: Option<bool>,
+  log_errors: Option<bool>,
 }
 
 impl std::default::Default for ServerOptions {
@@ -1336,6 +1334,7 @@ impl std::default::Default for ServerOptions {
       executable_path: None,
       max_number_of_problems: 100,
       syntax_docs: None,
+      log_errors: None,
     }
   }
 }
@@ -1541,10 +1540,12 @@ pub fn main(args: &ArgMatches<'_>) {
       let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), f);
     }
   }
-  if args.is_present("no_log_errors") { LOG_ERRORS.store(false, Ordering::Relaxed) }
+  let server = &*SERVER; // start the server
   let _ = log_message("started".into());
-  SERVER.run();
-  let Server {reqs, vfs: VFS(vfs), ..} = &*SERVER;
-  std::mem::take(&mut *reqs.ulock());
-  std::mem::take(&mut *vfs.ulock());
+  if args.is_present("no_log_errors") {
+    server.options.ulock().log_errors = Some(false)
+  }
+  server.run();
+  std::mem::take(&mut *server.reqs.ulock());
+  std::mem::take(&mut *server.vfs.0.ulock());
 }

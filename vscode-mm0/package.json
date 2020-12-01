@@ -82,6 +82,12 @@
 					"type": "boolean",
 					"default": true,
 					"description": "If true (the default), the server will show syntax documentation on hover."
+				},
+				"metamath-zero.logErrors": {
+					"scope": "window",
+					"type": "boolean",
+					"default": true,
+					"description": "If true (the default), errors will also be sent to the 'output' panel."
 				}
 			}
 		},
