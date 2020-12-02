@@ -259,6 +259,13 @@ theorem decsucf: $ suc xf = x1 :x x0 $ = '(eqtr4 suc_xf hex10);
 theorem decsucx (h: $ suc b = c $): $ suc (a :x b) = a :x c $ = '(eqtr3 addS2 @ addeq2 h);
 theorem decsucxf (h: $ suc a = b $): $ suc (a :x xf) = b :x x0 $ = '(eqtr suchexf @ hexeq1 h);
 do {
+  -- Defines e.g. theorem dsuca: $ suc 10 = 11 $;
+  -- for all n < 16, accessible as (dsucn 10)
+  (def dsucn @ on-hexstrings @ fn (s)
+    @ let ([i (hex->number @ atom-app 'x s)] [name (atom-app 'dsuc s)])
+    (if {i < 15} @ add-tac-thm! name () () '(eq (suc ,(dn i)) ,(dn {i + 1})) () @ fn () 'eqid)
+    name)
+
   -- Defines e.g. theorem decsuca: $ suc xa = xb $;
   -- for all n < 16, accessible as (decsucn 10)
   (def decsucn @ on-hexstrings @ fn (s)

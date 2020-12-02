@@ -82,18 +82,17 @@ def Bitvec {.n: nat}: set = $ {n | snd n < 2 ^ fst n} $;
 
 def bvSize (bs: nat): nat;
 theorem bvSize0: $ bvSize 0 = 0 $;
-theorem bvSizeS (k bs n: nat): $ bvSize ((k <> bs) : n) = k + bvSize n $;
+theorem bvSizeS (k n bs: nat): $ bvSize ((k <> n) : bs) = k + bvSize bs $;
 
 def isBitvecs (bs k: nat): wff = $ bs e. List Bitvec /\ bvSize bs = k $;
 
 def ofBits (n: nat): nat;
 theorem ofBits0: $ ofBits 0 = 0 $;
-theorem ofBitsS (k bs n: nat):
-  $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $;
+theorem ofBitsS (k n bs: nat): $ ofBits ((k <> n) : bs) = n + shl (ofBits bs) k $;
 theorem ofBits0T: $ ofBits 0 e. Bits 0 $;
-theorem ofBitsST (k bs n m: nat):
-  $ bs e. Bits k /\ ofBits n e. Bits m ->
-    ofBits ((k <> bs) : n) e. Bits (k + m) $;
+theorem ofBitsST (k n bs m: nat):
+  $ n e. Bits k /\ ofBits bs e. Bits m ->
+    ofBits ((k <> n) : bs) e. Bits (k + m) $;
 
 def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
 theorem splitBitsT (bs n k: nat):
@@ -531,24 +530,38 @@ $ decodeMovSX rex ast b l \/ decodeMovReg rex ast b l \/
 theorem decodeMovT (rex ast b l: nat):
   $ decodeMov rex ast b l -> ast e. XAST $;
 
-def decodePush (rex ast b l .x .imm .r: nat): wff =
-$ (E. x E. imm (
+def decodePushImm (rex ast b l .x .imm .r: nat): wff =
+$ E. x E. imm (
     splitBits ((1 <> 0) : (1 <> x) : (2 <> 2) : (4 <> 6) : 0) b /\
     readImmN (if (true x) 8 32) imm l /\
-    ast = xastPush (immRM_imm imm))) \/
-  (l = 0 /\ E. r (
-    splitBits ((3 <> r) : (1 <> 0) : (4 <> 5) : 0) b /\
-    ast = xastPush (immRM_rm (RM_reg (rex_reg (REX_B rex) r))))) $;
-theorem decodePushT (rex ast b l: nat):
-  $ decodePush rex ast b l -> ast e. XAST $;
+    ast = xastPush (immRM_imm imm)) $;
+theorem decodePushImmT (rex ast b l: nat):
+  $ decodePushImm rex ast b l -> ast e. XAST $;
 
-def decodePop (rex ast b l .r: nat): wff =
-$ (l = 0 /\ E. r (
+def decodePushReg (rex ast b l .x .imm .r: nat): wff =
+$ l = 0 /\ E. r (
+    splitBits ((3 <> r) : (1 <> 0) : (4 <> 5) : 0) b /\
+    ast = xastPush (immRM_rm (RM_reg (rex_reg (REX_B rex) r)))) $;
+theorem decodePushRegT (rex ast b l: nat):
+  $ decodePushReg rex ast b l -> ast e. XAST $;
+
+def decodePopReg (rex ast b l .r: nat): wff =
+$ l = 0 /\ E. r (
     splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
-    ast = xastPop (RM_reg (rex_reg (REX_B rex) r)))) \/
-  (E. r (b = ch x8 xf /\ readOpcodeModRM rex 0 r l /\ ast = xastPop r)) $;
-theorem decodePopT (rex ast b l: nat):
-  $ decodePop rex ast b l -> ast e. XAST $;
+    ast = xastPop (RM_reg (rex_reg (REX_B rex) r))) $;
+theorem decodePopRegT (rex ast b l: nat):
+  $ decodePopReg rex ast b l -> ast e. XAST $;
+
+def decodePop0 (rex ast b l .r: nat): wff =
+$ E. r (b = ch x8 xf /\ readOpcodeModRM rex 0 r l /\ ast = xastPop r) $;
+theorem decodePop0T (rex ast b l: nat):
+  $ decodePop0 rex ast b l -> ast e. XAST $;
+
+def decodeStack (rex ast b l .r: nat): wff =
+$ decodePushImm rex ast b l \/ decodePushReg rex ast b l \/
+  decodePopReg rex ast b l \/ decodePop0 rex ast b l $;
+theorem decodeStackT (rex ast b l: nat):
+  $ decodeStack rex ast b l -> ast e. XAST $;
 
 def decodeJump (rex ast b l .x .imm: nat): wff =
 $ E. x E. imm (
@@ -590,15 +603,19 @@ theorem decodeFlowT (rex ast b l: nat):
   $ decodeFlow rex ast b l -> ast e. XAST $;
 
 def decodeXchg (rex ast b l .v .reg .r: nat): wff =
-$ (E. v E. reg E. r (
+$ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 3) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
-    ast = xastXchg (opSizeW rex v) r reg)) \/
-  (l = 0 /\ E. r (
-    splitBits ((3 <> r) : (1 <> 0) : (4 <> 9) : 0) b /\
-    ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r))) $;
+    ast = xastXchg (opSizeW rex v) r reg) $;
 theorem decodeXchgT (rex ast b l: nat):
   $ decodeXchg rex ast b l -> ast e. XAST $;
+
+def decodeXchgRAX (rex ast b l .v .reg .r: nat): wff =
+$ l = 0 /\ E. r (
+    splitBits ((3 <> r) : (1 <> 0) : (4 <> 9) : 0) b /\
+    ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r)) $;
+theorem decodeXchgRAX_T (rex ast b l: nat):
+  $ decodeXchgRAX rex ast b l -> ast e. XAST $;
 
 def decodeLea (rex ast b l .reg .r: nat): wff =
 $ E. reg E. r (b = ch x8 xd /\
@@ -624,17 +641,22 @@ $ E. v E. imm E. sz (
 theorem decodeTestRAX_T (rex ast b l: nat):
   $ decodeTestRAX rex ast b l -> ast e. XAST $;
 
+def decodeCMC (rex ast b l: nat): wff = $ b = ch xf x5 /\ l = 0 /\ ast = xastCMC $;
+theorem decodeCMC_T (rex ast b l: nat): $ decodeCMC rex ast b l -> ast e. XAST $;
+def decodeCLC (rex ast b l: nat): wff = $ b = ch xf x8 /\ l = 0 /\ ast = xastCLC $;
+theorem decodeCLC_T (rex ast b l: nat): $ decodeCLC rex ast b l -> ast e. XAST $;
+def decodeSTC (rex ast b l: nat): wff = $ b = ch xf x9 /\ l = 0 /\ ast = xastSTC $;
+theorem decodeSTC_T (rex ast b l: nat): $ decodeSTC rex ast b l -> ast e. XAST $;
+
 def decodeFlag (rex ast b l: nat): wff =
-$ (b = ch xf x5 /\ l = 0 /\ ast = xastCMC) \/
-  (b = ch xf x8 /\ l = 0 /\ ast = xastCLC) \/
-  (b = ch xf x9 /\ l = 0 /\ ast = xastSTC) $;
+$ decodeCMC rex ast b l \/ decodeCLC rex ast b l \/ decodeSTC rex ast b l $;
 theorem decodeFlagT (rex ast b l: nat):
   $ decodeFlag rex ast b l -> ast e. XAST $;
 
 def decodeMisc (rex ast b l: nat): wff =
-$ decodeXchg rex ast b l \/ decodeLea rex ast b l \/
+$ decodeXchg rex ast b l \/ decodeXchgRAX rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
-  decodeFlag rex ast b l $;
+  decodeLea rex ast b l \/ decodeFlag rex ast b l $;
 theorem decodeMiscT (rex ast b l: nat):
   $ decodeMisc rex ast b l -> ast e. XAST $;
 
@@ -668,9 +690,8 @@ theorem decodeHiT (rex ast b l: nat):
 
 def decodeAux (rex ast b l: nat): wff =
 $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
-  decodePush rex ast b l \/ decodePop rex ast b l \/
-  decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
-  decodeHi rex ast b l \/ decodeTwo rex ast b l $;
+  decodeStack rex ast b l \/ decodeFlow rex ast b l \/
+  decodeMisc rex ast b l \/ decodeHi rex ast b l \/ decodeTwo rex ast b l $;
 theorem decodeAuxT (rex ast b l: nat):
   $ decodeAux rex ast b l -> ast e. XAST $;
 

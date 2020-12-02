@@ -11,6 +11,8 @@ theorem bitb10: $ bit (b1 n) 0 = 1 $ = '(mpbir nateq1 elb10);
 theorem bitb0S: $ bit (b0 n) (suc i) = bit n i $ = '(nateq elb0S);
 theorem bitb1S: $ bit (b1 n) (suc i) = bit n i $ = '(nateq elb1S);
 
+theorem bit_shr: $ bit (shr a k) i = bit a (i + k) $ = '(nateq elshr);
+
 theorem bitb00i (h: $ a = b0 b $): $ bit a 0 = 0 $ = '(eqtr (biteq1 h) bitb00);
 theorem bitb10i (h: $ a = b1 b $): $ bit a 0 = 1 $ = '(eqtr (biteq1 h) bitb10);
 theorem bitb0Si (h: $ a = b0 b $) (h2: $ bit b n = c $): $ bit a (suc n) = c $ =
@@ -408,6 +410,10 @@ do (def (to-eli n a) @ match a
 pub theorem chopT (k n: nat): $ chop k n e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
 theorem el_chop: $ a e. chop k n <-> a < k /\ a e. n $ = 'elmodpow2;
+theorem bit_chop: $ a < k -> bit (chop k n) a = bit n a $ =
+'(nateqd @ syl5bb el_chop bian1);
+theorem bit_chop_0: $ ~a < k -> bit (chop k n) a = 0 $ =
+'(sylibr nateq0 @ con3 @ sylbi el_chop anl);
 
 theorem bitAnd_upto: $ bitAnd (upto k) a = chop k a $ =
 '(axext @ !! ax_gen x @ bitr4 elbitAnd @ bitr4 el_chop @ aneq1i elupto);
@@ -439,6 +445,8 @@ theorem chop_shl: $ shl (chop n a) k = chop (n + k) (shl a k) $ =
 '(eqtr4 mulmoddir @ modeq2 powadd);
 theorem chop_shr: $ shr (chop (n + k) a) k = chop n (shr a k) $ =
 '(eqtr4 (diveq1 @ modeq2 powadd) divmod2);
+theorem chop_shr2: $ shr (chop (k + n) a) k = chop n (shr a k) $ =
+'(eqtr (shreq1 @ chopeq1 addcom) chop_shr);
 
 theorem chop_bitAnd1: $ chop m (bitAnd a b) = bitAnd (chop m a) b $ =
 '(eqtr3 bitAnd_upto @ eqtr3 bitAnd_ass @ bitAndeq1 bitAnd_upto);
@@ -953,18 +961,17 @@ do (def (bvSizeSi refine t)
 
 @_ abstract def ofBits (n: nat): nat = $ lrec 0 (\\ p, \\ z, \ ih, snd p + shl ih (fst p)) n $;
 pub theorem ofBits0: $ ofBits 0 = 0 $ = (named 'lrec0);
-pub theorem ofBitsS (k bs n: nat):
-  $ ofBits ((k <> bs) : n) = bs + shl (ofBits n) k $ =
-(named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> ofBits n) $} @ appslame @
+pub theorem ofBitsS (k n bs: nat): $ ofBits ((k <> n) : bs) = n + shl (ofBits bs) k $ =
+(named '(eqtr {lrecS : $ _ = _ @ (_ <> _ <> ofBits bs) $} @ appslame @
   appslamed @ applamed @ addeqd (syl6eq sndpr @ sndeqd anll) @
   shleqd anr (syl6eq fstpr @ fsteqd anll)));
-theorem ofBitsS2: $ ofBits ((k <> bs) : n) = shl (ofBits n) k + bs $ = '(eqtr ofBitsS addcom);
-theorem ofBits1: $ ofBits ((k <> bs) : 0) = bs $ =
+theorem ofBitsS2: $ ofBits ((k <> n) : bs) = shl (ofBits bs) k + n $ = '(eqtr ofBitsS addcom);
+theorem ofBits1: $ ofBits ((k <> n) : 0) = n $ =
 '(eqtr ofBitsS @ eqtr (addeq2 @ eqtr (shleq1 ofBits0) shl01) add0);
 pub theorem ofBits0T: $ ofBits 0 e. Bits 0 $ = '(mpbir elBits0 ofBits0);
-pub theorem ofBitsST (k bs n m: nat):
-  $ bs e. Bits k /\ ofBits n e. Bits m ->
-    ofBits ((k <> bs) : n) e. Bits (k + m) $ =
+pub theorem ofBitsST (k n bs m: nat):
+  $ n e. Bits k /\ ofBits bs e. Bits m ->
+    ofBits ((k <> n) : bs) e. Bits (k + m) $ =
 '(sylibr (eleq1 @ eqtr ofBitsS addcom) @ sylib (elneq2 @ Bitseq addcom) @
   rsyl ancom shladdT);
 theorem ofBitsT (bs: nat):
@@ -986,6 +993,11 @@ theorem ofBitsA: $ ofBits (bs1 ++ bs2) = shl (ofBits bs2) (bvSize bs1) + ofBits 
     syl5eq ofBitsS2 @ syl6eq addass @ addeq1d @
     syl6eq (eqtr addmul @ addeq1 @ eqtr mulass @
       muleq2 @ eqtr4 mulcom powadd) shleq1));
+
+theorem chop_ofBits: $ n e. Bits k -> chop k (ofBits ((k <> n) : bs)) = n $ =
+'(syl5eq (chopeq2 ofBitsS2) chop_shladd);
+theorem shr_ofBits: $ n e. Bits k -> shr (ofBits ((k <> n) : bs)) k = ofBits bs $ =
+'(syl5eq (shreq1 ofBitsS2) @ sylbi elBits2 shrshladdid);
 
 @_ def splitBits (bs n: nat): wff = $ bs e. List Bitvec /\ ofBits bs = n $;
 pub theorem splitBitsT (bs n k: nat):
@@ -1173,6 +1185,97 @@ do {
         @ f xs is {i + {(decdigit->number a) shl m}} {m + k}]])
     (f l is 0 0))
 };
+
+@_ local def splatBitsHelper (n a i j k p q) =
+$ i + k = j /\ (chop k (shr n i) = a -> p -> q) $;
+theorem splatBitsS_skip (h1: $ i + k = j $) (h2: $ splitBits bs (shr n j) -> p $):
+  $ splitBits ((k <> a) : bs) (shr n i) -> p $ =
+'(sylbi splitBitsS_uniq @ anwr @ sylbi (splitBitseq2 @ eqtr shrshr @ shreq2 h1) h2);
+theorem splatBitsS
+  (h1: $ splatBitsHelper n a i j k p q $)
+  (h2: $ splitBits bs (shr n j) -> p $):
+  $ splitBits ((k <> a) : bs) (shr n i) -> q $ =
+'(mpd (splatBitsS_skip (anli h1) h2) @ syl (anri h1) @ sylbi splitBitsS_uniq anl);
+theorem splatBits1 (h: $ splatBitsHelper n a i j k T. q $):
+  $ splitBits ((k <> a) : bs) (shr n i) -> q $ = '(splatBitsS h (a1i itru));
+theorem splatBits0 (h: $ splitBits bs (shr n x0) -> p $):
+  $ splitBits bs n -> p $ = '(sylbir (splitBitseq2 @ eqtr3 (shreq2 dec0) shr02) h);
+
+theorem splatBitsHelper0: $ splatBitsHelper n a i i 0 p p $ = '(iani add0 idd);
+theorem splatBitsHelperS (h1: $ suc i = i2 $) (h2: $ suc k2 = k $)
+  (h3: $ a // 2 = a2 $) (h4: $ nat (0 e. a) = b $)
+  (h: $ splatBitsHelper n a2 i2 j k2 p q $):
+  $ splatBitsHelper n a i j k p (q /\ bit n i = b) $ =
+(focus
+  (have 'h5 '(eqtr3 (addeq1 h1) @ eqtr addSass (addeq2 h2)))
+  '(iani (eqtr3 h5 (anli h)) @
+    syld (syl (anri h) @ syl6eq h3 @ syl5eqr chop_shr2 @
+      eqtr3g (eqtr shrshr (shreq2 @ eqtr add12 h1)) shr12 @ shreq1d @
+      syl5eq (eqtr (shreq1 @ chopeq1 h5) chop_shr2) id) @
+    syl (com12 ian) @ syl6eq h4 @ nateqd @
+    syl5bb (bitr2 el_chop @ bitr (bian1 @ mpbi (lteq2 h2) lt01S) @
+      bitr elshr @ eleq1 add01) elneq2));
+theorem splatBitsHelperSb0 (h1: $ suc i = i2 $) (h2: $ suc k2 = k $) (h3: $ a = b0 a2 $)
+  (h: $ splatBitsHelper n a2 i2 j k2 p q $):
+  $ splatBitsHelper n a i j k p (q /\ bit n i = 0) $ =
+'(splatBitsHelperS h1 h2 (eqtr (diveq1 h3) b0div2)
+    (mpbir nateq0 @ mpbir (noteq @ bitr el01 @ oddeq h3) b0odd) h);
+theorem splatBitsHelperSb1 (h1: $ suc i = i2 $) (h2: $ suc k2 = k $) (h3: $ a = b1 a2 $)
+  (h: $ splatBitsHelper n a2 i2 j k2 p q $):
+  $ splatBitsHelper n a i j k p (q /\ bit n i = 1) $ =
+'(splatBitsHelperS h1 h2 (eqtr (diveq1 h3) b1div2)
+    (mpbir nateq1 @ mpbir (bitr el01 @ oddeq h3) b1odd) h);
+
+--| Given `bs` and `n`, returns `(p pr)` where `pr: splitBits bs n -> p`
+--| and `p` is a conjunction of `bit n i = a` literals for each `i` for
+--| which the split bits expression is not a variable.
+--|
+--| For example, `(mk-splatBits $((1 <> v) : (3 <> 0) : (4 <> vs) : 0)$ $b$)` proves:
+--| ```
+--| $ splitBits ((1 <> v) : (3 <> 0) : (4 <> vs) : 0) b ->
+--|   T. /\ bit b x3 = 0 /\ bit b x2 = 0 /\ bit b x1 = 0 $
+--| ```
+do (def (mk-splatBits bs n)
+  @ letrec (
+    [(helper na a i nk k)
+      @ if {nk = 0} (list i @ fn (p) '(,p (splatBitsHelper0 ,a ,i ,n ,p))) @ begin
+      @ match (mksuc i) @ (i2 pr1)
+      @ let ([nk2 {nk - 1}] [k2 (->hex nk2)] [pr2 '(,(dsucn nk2))])
+      @ let ([na2 {na // 2}] [m {na % 2}] [a2 '(,(dn na2))] [pr3 '(,(decnhalf na))])
+      @ match (helper na2 a2 i2 nk2 k2) @ (j helper2)
+      @ list j @ fn (p) @ match (helper2 p) @ (q pr4)
+      @ list $,q /\ bit ,n ,i = ,'(,(dn m)) $
+      @ list (atom-app 'splatBitsHelperSb m) a a2 i i2 j k k2 n p q pr1 pr2 pr3 pr4]
+    [(rec i bs) @ match bs
+      [$0$]
+      [$(,k <> ,a) : ,bs$
+        @ match (match a [(a) (decdigit->number a)] [_])
+        [#undef
+          @ match (mktohex $ ,i + ,k $) @ (j pr1)
+          @ match (rec j bs)
+          [#undef]
+          [(p pr) '(,p (splatBitsS_skip ,a ,bs ,i ,j ,k ,n ,p ,pr1 ,pr))]]
+        [na @ match (helper na a i (decdigit->number @ hd k) k) @ (j helper2)
+          @ match (rec j bs)
+          [#undef @ match (helper2 $T.$) @ (q pr2)
+            '(,q (splatBits1 ,a ,bs ,i ,j ,k ,n ,q ,pr2))]
+          [(p pr) @ match (helper2 p) @ (q pr2)
+            '(,q (splatBitsS ,a ,bs ,i ,j ,k ,n ,p ,q ,pr ,pr2))]]]])
+  @ match (rec '(h2n @ x0) bs) @ (p pr) '(,p (splatBits0 ,bs ,n ,p ,pr)));
+
+theorem splatBits_ch (h1: $ m = y $) (h2: $ n = x $)
+  (h3: $ splitBits ((4 <> m) : (4 <> n) : 0) b -> p $): $ b = ch x y -> p $ =
+'(syl h3 @ mpbiri (splitBitsA4ic append1 bvSize1
+    (splitBits14ie h1) (splitBits14ie h2)) splitBitseq2);
+
+--| Given `x`, `y`, `b`, returns `(p pr)` where `pr: b = ch x y -> p`
+--| and `p` is a conjunction of `bit n i = a` literals for each `i` in 0 to 8.
+--| See also `mk-splatBits`.
+do (def (mk-splatBits-ch x y b)
+  @ let ([nx (hexdigit->number @ hd x)] [ny (hexdigit->number @ hd y)]
+         [m '(,(dn ny))] [p1 '(,(decn ny))] [n '(,(dn nx))] [p2 '(,(decn nx))])
+  @ match (mk-splatBits $ (4 <> ,m) : (4 <> ,n) : 0 $ b) @ (p p3)
+  '(,p (splatBits_ch ,b ,m ,n ,p ,x ,y ,p1 ,p2 ,p3)));
 
 ----------------------------------------
 -- x86-64 machine code decoding
@@ -2099,6 +2202,53 @@ pub theorem decodeMovT (rex ast b l: nat):
   (foldl '(Reg 64 Imm) (f 'SX_)
     @ fn (x y) '(eor ,x ,(f y))));
 
+@_ def decodePushImm (rex ast b l .x .imm .r: nat): wff =
+$ E. x E. imm (
+    splitBits ((1 <> 0) : (1 <> x) : (2 <> 2) : (4 <> 6) : 0) b /\
+    readImmN (if (true x) 8 32) imm l /\
+    ast = xastPush (immRM_imm imm)) $;
+pub theorem decodePushImmT (rex ast b l: nat):
+  $ decodePushImm rex ast b l -> ast e. XAST $ =
+(named '(eex @ eex @ mpbird (eleq1d anr) @ sylibr xastPushT @
+  sylibr immRM_immT @ rsyl anlr @ anld readImm8_32T));
+
+@_ def decodePushReg (rex ast b l .x .imm .r: nat): wff =
+$ l = 0 /\ E. r (
+    splitBits ((3 <> r) : (1 <> 0) : (4 <> 5) : 0) b /\
+    ast = xastPush (immRM_rm (RM_reg (rex_reg (REX_B rex) r)))) $;
+pub theorem decodePushRegT (rex ast b l: nat):
+  $ decodePushReg rex ast b l -> ast e. XAST $ =
+(named '(anwr @ eex @ mpbird (eleq1d anr) @ sylibr xastPushT @
+  sylibr immRM_rmT @ sylibr RM_regT @ sylan rex_regT (a1i REX_B_T) @
+  sylib elBitvec2 @ elListHd anll));
+
+@_ def decodePopReg (rex ast b l .r: nat): wff =
+$ l = 0 /\ E. r (
+    splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
+    ast = xastPop (RM_reg (rex_reg (REX_B rex) r))) $;
+pub theorem decodePopRegT (rex ast b l: nat):
+  $ decodePopReg rex ast b l -> ast e. XAST $ =
+(named '(anwr @ eex @ mpbird (eleq1d anr) @
+  sylibr xastPopT @ sylibr RM_regT @ syl (exp rex_regT REX_B_T) @
+  sylib elBitvec2 @ elListHd anll));
+
+@_ def decodePop0 (rex ast b l .r: nat): wff =
+$ E. r (b = ch x8 xf /\ readOpcodeModRM rex 0 r l /\ ast = xastPop r) $;
+pub theorem decodePop0T (rex ast b l: nat):
+  $ decodePop0 rex ast b l -> ast e. XAST $ =
+(named '(eex @ mpbird (eleq1d anr) @ sylibr xastPopT @
+  rsyl anlr @ syl anlr readOpcodeModRM_T));
+
+@_ def decodeStack (rex ast b l .r: nat): wff =
+$ decodePushImm rex ast b l \/ decodePushReg rex ast b l \/
+  decodePopReg rex ast b l \/ decodePop0 rex ast b l $;
+pub theorem decodeStackT (rex ast b l: nat):
+  $ decodeStack rex ast b l -> ast e. XAST $ =
+(focus
+  (def (f x) (atom-app 'decode x 'T))
+  (foldl '(PushReg PopReg Pop0) (f 'PushImm)
+    @ fn (x y) '(eor ,x ,(f y))));
+
 @_ def decodePush (rex ast b l .x .imm .r: nat): wff =
 $ (E. x E. imm (
     splitBits ((1 <> 0) : (1 <> x) : (2 <> 2) : (4 <> 6) : 0) b /\
@@ -2186,20 +2336,22 @@ pub theorem decodeFlowT (rex ast b l: nat):
     @ fn (x y) '(eor ,x ,(f y))));
 
 @_ def decodeXchg (rex ast b l .v .reg .r: nat): wff =
-$ (E. v E. reg E. r (
+$ E. v E. reg E. r (
     splitBits ((1 <> v) : (3 <> 3) : (4 <> 8) : 0) b /\
     readModRM rex reg r l /\
-    ast = xastXchg (opSizeW rex v) r reg)) \/
-  (l = 0 /\ E. r (
-    splitBits ((3 <> r) : (1 <> 0) : (4 <> 9) : 0) b /\
-    ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r))) $;
+    ast = xastXchg (opSizeW rex v) r reg) $;
 pub theorem decodeXchgT (rex ast b l: nat):
   $ decodeXchg rex ast b l -> ast e. XAST $ =
-(named @ focus
-  '(eor (eex @ eex @ eex _) (anwr @ eex _))
-  '(mpbird (eleq1d anr) @ rsyl anlr @ rsyl readModRM_T @
-    sylibr xastXchgT @ iand (iand (a1i opSizeW_T) anlr) anll)
-  '(mpbird (eleq1d anr) @ sylibr xastXchgT @
+(named '(eex @ eex @ eex @ mpbird (eleq1d anr) @ rsyl anlr @
+  rsyl readModRM_T @ sylibr xastXchgT @ iand (iand (a1i opSizeW_T) anlr) anll));
+
+@_ def decodeXchgRAX (rex ast b l .v .reg .r: nat): wff =
+$ l = 0 /\ E. r (
+    splitBits ((3 <> r) : (1 <> 0) : (4 <> 9) : 0) b /\
+    ast = xastXchg (opSizeW rex 1) (RM_reg RAX) (rex_reg (REX_B rex) r)) $;
+pub theorem decodeXchgRAX_T (rex ast b l: nat):
+  $ decodeXchgRAX rex ast b l -> ast e. XAST $ =
+(named '(anwr @ eex @ mpbird (eleq1d anr) @ sylibr xastXchgT @
     iand (a1i @ ian opSizeW_T @ mpbir RM_regT RAX_T) @
     sylan rex_regT (a1i REX_B_T) @ sylib elBitvec2 @
     elListHd anll));
@@ -2240,25 +2392,31 @@ pub theorem decodeTestRAX_T (rex ast b l: nat):
   '(sylibr Rm_iT @ iand (a1i @ mpbir RM_regT RAX_T) @
     anld @ sylan readImmT anr anllr));
 
+
+@_ def decodeCMC (rex ast b l: nat): wff = $ b = ch xf x5 /\ l = 0 /\ ast = xastCMC $;
+pub theorem decodeCMC_T (rex ast b l: nat):
+  $ decodeCMC rex ast b l -> ast e. XAST $ = '(anwr @ mpbiri xastCMC_T eleq1);
+@_ def decodeCLC (rex ast b l: nat): wff = $ b = ch xf x8 /\ l = 0 /\ ast = xastCLC $;
+pub theorem decodeCLC_T (rex ast b l: nat):
+  $ decodeCLC rex ast b l -> ast e. XAST $ = '(anwr @ mpbiri xastCLC_T eleq1);
+@_ def decodeSTC (rex ast b l: nat): wff = $ b = ch xf x9 /\ l = 0 /\ ast = xastSTC $;
+pub theorem decodeSTC_T (rex ast b l: nat):
+  $ decodeSTC rex ast b l -> ast e. XAST $ = '(anwr @ mpbiri xastSTC_T eleq1);
+
 @_ def decodeFlag (rex ast b l: nat): wff =
-$ (b = ch xf x5 /\ l = 0 /\ ast = xastCMC) \/
-  (b = ch xf x8 /\ l = 0 /\ ast = xastCLC) \/
-  (b = ch xf x9 /\ l = 0 /\ ast = xastSTC) $;
+$ decodeCMC rex ast b l \/ decodeCLC rex ast b l \/ decodeSTC rex ast b l $;
 pub theorem decodeFlagT (rex ast b l: nat):
-  $ decodeFlag rex ast b l -> ast e. XAST $ =
-(focus
-  (def (f x) '(anwr @ mpbiri ,(atom-app 'xast ,x '_T) eleq1))
-  '(eor (eor ,(f 'CMC) ,(f 'CLC)) ,(f 'STC)));
+  $ decodeFlag rex ast b l -> ast e. XAST $ = '(eor (eor decodeCMC_T decodeCLC_T) decodeSTC_T);
 
 @_ def decodeMisc (rex ast b l: nat): wff =
-$ decodeXchg rex ast b l \/ decodeLea rex ast b l \/
+$ decodeXchg rex ast b l \/ decodeXchgRAX rex ast b l \/
   decodeTest rex ast b l \/ decodeTestRAX rex ast b l \/
-  decodeFlag rex ast b l $;
+  decodeLea rex ast b l \/ decodeFlag rex ast b l $;
 pub theorem decodeMiscT (rex ast b l: nat):
   $ decodeMisc rex ast b l -> ast e. XAST $ =
 (focus
   (def (f x) (atom-app 'decode x 'T))
-  (foldl '(Lea Test TestRAX_ Flag) (f 'Xchg)
+  (foldl '(XchgRAX_ Test TestRAX_ Lea Flag) (f 'Xchg)
     @ fn (x y) '(eor ,x ,(f y))));
 
 @_ def decodeHiAux (v sz r hi n ast l .imm: nat): wff =
@@ -2311,23 +2469,21 @@ pub theorem decodeHiT (rex ast b l: nat):
 
 @_ def decodeAux (rex ast b l: nat): wff =
 $ decodeBinop rex ast b l \/ decodeMov rex ast b l \/
-  decodePush rex ast b l \/ decodePop rex ast b l \/
-  decodeFlow rex ast b l \/ decodeMisc rex ast b l \/
-  decodeHi rex ast b l \/ decodeTwo rex ast b l $;
+  decodeStack rex ast b l \/ decodeFlow rex ast b l \/
+  decodeMisc rex ast b l \/ decodeHi rex ast b l \/ decodeTwo rex ast b l $;
 pub theorem decodeAuxT (rex ast b l: nat):
   $ decodeAux rex ast b l -> ast e. XAST $ =
 (focus
   (def (f x) (atom-app 'decode x 'T))
-  (foldl '(Mov Push Pop Flow Misc Hi Two) (f 'Binop)
+  (foldl '(Mov Stack Flow Misc Hi Two) (f 'Binop)
     @ fn (x y) '(eor ,x ,(f y))));
 
 theorem decodeAux_s1 (h: $ decodeAux rex ast opc (c ': s0) $):
   $ decodeAux rex ast opc (s1 c) $ = '(mpbi (decodeAuxeq4 s2nscons0) h);
 
-theorem decodeBinopI (h: $ decodeBinop rex ast b l $): $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orl @ orl h);
-theorem decodeMovI   (h: $ decodeMov rex ast b l $):   $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orl @ orr h);
-theorem decodePushI  (h: $ decodePush rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orr h);
-theorem decodePopI   (h: $ decodePop rex ast b l $):   $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orr h);
+theorem decodeBinopI (h: $ decodeBinop rex ast b l $): $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orl h);
+theorem decodeMovI   (h: $ decodeMov rex ast b l $):   $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orl @ orr h);
+theorem decodeStackI (h: $ decodeStack rex ast b l $): $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orl @ orr h);
 theorem decodeFlowI  (h: $ decodeFlow rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orr h);
 theorem decodeMiscI  (h: $ decodeMisc rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orr h);
 theorem decodeHiI    (h: $ decodeHi rex ast b l $):    $ decodeAux rex ast b l $ = '(orl @ orr h);
@@ -2395,19 +2551,15 @@ $ E. rex E. l1 E. opc E. l2 (l = l1 ++ opc : l2 /\
 pub theorem decodeT (ast l: nat): $ decode ast l -> ast e. XAST $ =
 (named '(eex @ eex @ eex @ eex @ anwr decodeAuxT));
 
-theorem decodeI
-  (h1: $ readPrefixes rex l1 $)
-  (h2: $ decodeAux rex ast opc l2 $)
-  (he: $ l1 ++ opc : l2 = l $):
-  $ decode ast l $ =
+theorem decodeI (h1: $ readPrefixes rex l1 $) (h2: $ decodeAux rex ast opc l2 $)
+  (he: $ l1 ++ opc : l2 = l $): $ decode ast l $ =
 '(iexie @ iexde @ iexde @ iexde @
   mpbiri (iani (iani (eqcom he) h1) h2) ,eqtac);
 
 theorem decode0I (h: $ decodeAux 0 ast opc s $): $ decode ast (opc ': s) $ =
 (named '(decodeI (orl @ ian eqid eqid) h @ eqtr4 append0 s2nscons));
 
-theorem decode1I
-  (h: $ decodeAux (suc rex) ast opc s $):
+theorem decode1I (h: $ decodeAux (suc rex) ast opc s $):
   $ decode ast (ch x4 rex ': opc ': s) $ =
 '(decodeI (orr @ iexie @ iexde @
   mpbiri (ian (ian (splitBitsS4i @ splitBits14ie dec4) eqid) eqid) ,eqtac) h @
@@ -2415,6 +2567,103 @@ theorem decode1I
 
 theorem decodeSysCallI: $ decode xastSysCall (ch x0 xf ': s1 (ch x0 x5)) $ =
 '(decode0I @ decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);
+
+-- Builds theorems like:
+-- ```
+-- theorem decodeRet_bit (rex ast b l: nat):
+-- $ decodeRet rex ast b l ->
+--   T. /\
+--     bit b x7 = 1 /\
+--     bit b x6 = 1 /\
+--     bit b x5 = 0 /\
+--     bit b x4 = 0 /\
+--     bit b x3 = 0 /\
+--     bit b x2 = 0 /\
+--     bit b x1 = 1 $;
+-- ```
+-- which calculate all the fixed fields of a decode case.
+do (letrec (
+  [(build defn)
+    (def val (nth 6 @ get-decl defn))
+    (def name (atom-app defn "_bit"))
+    (def m (atom-map!))
+    (def (finish p pr)
+      (add-tac-thm! name (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
+        '(im (,defn rex ast b l) ,p) () @ fn () @ refine '{,pr : $ ,val -> ,p $})
+      m)
+    @ match (hd val)
+    ['or (=> break)
+      @ letrec (
+        [rec @ match-fn
+          [$ ,a \/ ,b $
+            (def ra (rec a)) (def rb (rec b))
+            @ match ra [#undef] @ (va fa) @ match rb [#undef] @ (vb fb)
+            @ list (rmap va vb @ match-fn*
+              [((b1 x) (b2 y)) @ if {b1 == b2} (list b1 @ cons x y)]
+              [_])
+            @ fn (g x) '(eori
+              ,(fa g @ map (match-fn [#undef] @ (b (cons x _)) (list b x)) x)
+              ,(fb g @ map (match-fn [#undef] @ (b (cons _ y)) (list b y)) x))]
+          ['(,th rex ast b l)
+            @ match (build th) [#undef] @ m
+            @ list (rmap (range 0 8) @ fn (i) (lookup m (hexdigit i)))
+            @ fn (g x) (g x)]])
+      @ match (rec val) [#undef (break)] @ (arr f)
+      @ letrec (
+        [(rec2 i)
+          @ if {i = 8} #undef @ begin
+          (def s (rec2 {i + 1}))
+          @ match (nth i arr) [#undef s] @ (b _)
+          (def xi (hexdigit i))
+          @ match s
+            [#undef @ fn (ctx)
+              (insert m xi @ list b ctx)
+              @ list $ bit b ,xi = ,b $
+              @ fn (arr2) (nth 1 @ nth i arr2)]
+            [recf @ fn (ctx) @ match (recf '(anld ,ctx)) @ (p f)
+              (insert m xi @ list b '(anrd ,ctx))
+              @ list $ ,p /\ bit b ,xi = ,b $
+              @ fn (arr2) '(iand ,(f arr2) ,(nth 1 @ nth i arr2))]])
+      @ match (rec2 0) [#undef (break)] @ recf
+      @ match (recf name) @ (p g)
+      @ finish p (f g arr)]
+    [(or 'ex 'an) (=> break)
+      (def res (ref!))
+      @ letrec (
+        [(rec x) @ match x
+          [$ E. _ ,val $ @ match (rec val) [#undef] [pr '(eex ,pr)]]
+          [$ ,a /\ ,b $
+            @ match (rec a)
+            [#undef @ match (rec b) [#undef] [pr '(anwr ,pr)]]
+            [pr '(anwl ,pr)]]
+          [$ splitBits ,bs ,n $
+            @ match (mk-splatBits bs n) @ (p pr)
+            @ match p [$T.$ (break)] @ _
+            (set! res p) '(:verb ,pr)]
+          [$ b = c2n (ch ,x ,y) $
+            @ match (mk-splatBits-ch x y 'b) @ (p pr)
+            (set! res p) '(:verb ,pr)]
+          [_]])
+      @ match (rec val) [#undef (break)] @ pr
+      @ letrec (
+        [(gather p ctx) @ match p
+          [$ ,p /\ bit ,_ (h2n ,(i)) = ,b $
+            (insert m i @ list b '(anrd ,ctx))
+            (gather p '(anld ,ctx))]
+          [_]])
+      (def p (get! res))
+      (gather p name)
+      (finish p pr)]
+    [_]])
+  (build 'decodeAux));
+
+-- theorem decode_determ2:
+--   $ decode ast1 l -> decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $ =
+-- '(eex @ eex @ eex @ eex @ eexd @ eexd @ eexd @ eexda @
+--   ?);
+
+-- theorem decode_determ: $ decode ast1 l -> decode ast2 l -> ast1 = ast2 $ =
+-- '(syl6 anl @ syl5bir (decodeeq2 append02) decode_determ2);
 
 ----------------------------------------
 -- Dynamic semantics
