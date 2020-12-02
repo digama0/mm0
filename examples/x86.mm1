@@ -1240,7 +1240,7 @@ do (def (mk-splatBits bs n)
     [(helper na a i nk k)
       @ if {nk = 0} (list i @ fn (p) '(,p (splatBitsHelper0 ,a ,i ,n ,p))) @ begin
       @ match (mksuc i) @ (i2 pr1)
-      @ let ([nk2 {nk - 1}] [k2 (->hex nk2)] [pr2 '(,(dsucn nk2))])
+      @ let ([nk2 {nk - 1}] [k2 '(,(dn nk2))] [pr2 '(,(dsucn nk2))])
       @ let ([na2 {na // 2}] [m {na % 2}] [a2 '(,(dn na2))] [pr3 '(,(decnhalf na))])
       @ match (helper na2 a2 i2 nk2 k2) @ (j helper2)
       @ list j @ fn (p) @ match (helper2 p) @ (q pr4)
@@ -1257,9 +1257,9 @@ do (def (mk-splatBits bs n)
           [(p pr) '(,p (splatBitsS_skip ,a ,bs ,i ,j ,k ,n ,p ,pr1 ,pr))]]
         [na @ match (helper na a i (decdigit->number @ hd k) k) @ (j helper2)
           @ match (rec j bs)
-          [#undef @ match (helper2 $T.$) @ (q pr2)
-            '(,q (splatBits1 ,a ,bs ,i ,j ,k ,n ,q ,pr2))]
-          [(p pr) @ match (helper2 p) @ (q pr2)
+          [#undef @ match (helper2 $T.$) @ (q pr)
+            '(,q (splatBits1 ,a ,bs ,i ,j ,k ,n ,q ,pr))]
+          [(p pr2) @ match (helper2 p) @ (q pr)
             '(,q (splatBitsS ,a ,bs ,i ,j ,k ,n ,p ,q ,pr ,pr2))]]]])
   @ match (rec '(h2n @ x0) bs) @ (p pr) '(,p (splatBits0 ,bs ,n ,p ,pr)));
 

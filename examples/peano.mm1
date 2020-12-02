@@ -19,6 +19,7 @@ axiom ax_mp (a b: wff): $ a -> b $ > $ a $ > $ b $;
 -- global definitions
 do {
   (def (id x) x)
+  (def (ignore . _))
   (def dbg @ match-fn* [(x) (print x) x]
     [(x y) (display @ string-append (->string x) ": " (->string y)) y])
   (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
@@ -71,6 +72,19 @@ do {
     [_ (error "not a theorem")])
   (def (pp-proof x) (display @ pp @ get-proof x))
 
+  --| This utility will take a verbatim proof and "unelaborate" it into a refine script
+  --| using ! on every step. This is useful to get `refine` to re-typecheck a term when
+  --| testing tactics which produce verbatim proofs (which bypass proof checking, at least ATM).
+  (def unelab @ letrec (
+    [(args bs xs)
+      @ if (null? bs) (map rec xs)
+      @ cons (hd xs) @ args (tl bs) (tl xs)]
+    [rec @ match-fn
+      [(f . xs)
+        (cons '! f @ args (nth 2 @ get-decl f) xs)]
+      [e e]])
+    rec)
+
   --| `(named pf)` wraps a proof script `pf`, runs it, then gathers all
   --| unassigned metavariables and assigns them to dummies.
   --| `(named x1 ... xn pf)` is the same but names the first `n` variables `x1,...,xn`.
@@ -91,7 +105,7 @@ do {
     @ match (get-goals) @ (g)
     (def res (f))
     (if (def? res) (refine res))
-    (match (get-goals) [()])
+    (match (get-goals) [()] [_ (stat) (error "not all goals are solved")])
     '(() ,g))
   (def (add-tac-thm! x bis hyps ret vis f)
     (add-thm! x bis hyps ret vis (tac-thm ret f)))
@@ -4508,6 +4522,13 @@ theorem ocasep0: $ 0 e. ocasep z S <-> z $ = (named '(elabe ifppos));
 theorem ocasepS: $ suc n e. ocasep z S <-> n e. S $ =
 (named '(elabe @ syl6bb (eleq1 sucsub1) @
   syl6bb (ifpneg peano1) @ ifpeqd eqeq1 biidd (eleq1d subeq1)));
+
+@_ local def Tail (S: set): set = $ {n | suc n e. S} $;
+theorem elTail: $ n e. Tail S <-> suc n e. S $ = '(elabe ,eqtac);
+theorem Tail_ocasep: $ Tail (ocasep z S) == S $ = (named '(ax_gen @ bitr elTail ocasepS));
+theorem ocasep_Tail: $ ocasep (0 e. S) (Tail S) == S $ =
+(named '(ax_gen @ cases (mpbiri ocasep0 @ bieqd eleq1 eleq1) @
+  sylbi exsuc @ eex @ mpbiri (bitr ocasepS elTail) @ bieqd eleq1 eleq1));
 
 --| The "bind" operator for the option monad,
 --| `obind : Option A -> (A -> Option B) -> Option B`.
