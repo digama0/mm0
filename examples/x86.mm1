@@ -2249,37 +2249,6 @@ pub theorem decodeStackT (rex ast b l: nat):
   (foldl '(PushReg PopReg Pop0) (f 'PushImm)
     @ fn (x y) '(eor ,x ,(f y))));
 
-@_ def decodePush (rex ast b l .x .imm .r: nat): wff =
-$ (E. x E. imm (
-    splitBits ((1 <> 0) : (1 <> x) : (2 <> 2) : (4 <> 6) : 0) b /\
-    readImmN (if (true x) 8 32) imm l /\
-    ast = xastPush (immRM_imm imm))) \/
-  (l = 0 /\ E. r (
-    splitBits ((3 <> r) : (1 <> 0) : (4 <> 5) : 0) b /\
-    ast = xastPush (immRM_rm (RM_reg (rex_reg (REX_B rex) r))))) $;
-pub theorem decodePushT (rex ast b l: nat):
-  $ decodePush rex ast b l -> ast e. XAST $ =
-(named '(eor
-  (eex @ eex @ mpbird (eleq1d anr) @ sylibr xastPushT @
-    sylibr immRM_immT @ rsyl anlr @ anld readImm8_32T)
-  (anwr @ eex @ mpbird (eleq1d anr) @ sylibr xastPushT @
-    sylibr immRM_rmT @ sylibr RM_regT @ sylan rex_regT (a1i REX_B_T) @
-    sylib elBitvec2 @ elListHd anll)));
-
-@_ def decodePop (rex ast b l .r: nat): wff =
-$ (l = 0 /\ E. r (
-    splitBits ((3 <> r) : (1 <> 1) : (4 <> 5) : 0) b /\
-    ast = xastPop (RM_reg (rex_reg (REX_B rex) r)))) \/
-  (E. r (b = ch x8 xf /\ readOpcodeModRM rex 0 r l /\ ast = xastPop r)) $;
-pub theorem decodePopT (rex ast b l: nat):
-  $ decodePop rex ast b l -> ast e. XAST $ =
-(named '(eor
-  (anwr @ eex @ mpbird (eleq1d anr) @
-    sylibr xastPopT @ sylibr RM_regT @ syl (exp rex_regT REX_B_T) @
-    sylib elBitvec2 @ elListHd anll)
-  (eex @ mpbird (eleq1d anr) @ sylibr xastPopT @
-    rsyl anlr @ syl anlr readOpcodeModRM_T)));
-
 @_ def decodeJump (rex ast b l .x .imm: nat): wff =
 $ E. x E. imm (
     splitBits ((1 <> 1) : (1 <> x) : (2 <> 2) : (4 <> 14) : 0) b /\
