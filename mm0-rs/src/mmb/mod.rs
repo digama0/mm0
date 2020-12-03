@@ -452,7 +452,7 @@ pub struct ThmEntry {
 }
 
 /// The kinds of entity that can appear in the index. This is similar to [`StmtCmd`],
-/// but it distinguishes `term` and `def` and adds the [`Var`](Self::Var) constructor.
+/// but it distinguishes `term` and `def` and adds the [`Var`](IndexKind::Var) constructor.
 #[derive(Debug, Clone, Copy)]
 pub enum IndexKind {
   /// This is a `sort`.

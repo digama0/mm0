@@ -138,7 +138,7 @@ str_enum! {
   enum RefineSyntax {
     /// `!`: A modifier on theorem application, for explicitly passing all variables
     /// (both bound and regular). For example, given
-    /// ```
+    /// ```metamath-zero
     /// axiom ax_gen {x: nat} (p: wff x): $ p $ > $ A. x p $;
     /// ```
     /// the application `(! ax_gen y $ 0 < 1 $ h)` is a proof of `$ A. y 0 < 1 $` if
@@ -146,7 +146,7 @@ str_enum! {
     Explicit: "!",
     /// `!!`: A modifier on theorem application, for explicitly passing all bound variables.
     /// For example, given
-    /// ```
+    /// ```metamath-zero
     /// axiom ax_gen {x: nat} (p: wff x): $ p $ > $ A. x p $;
     /// ```
     /// the application `(! ax_gen y h)` is a proof of `$ A. y ?p $` if

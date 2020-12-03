@@ -18,7 +18,7 @@
 //! an elaborator may yield when it hits an `import` statement, while waiting for that
 //! file to be ready, and it may restart on another thread since the executor is
 //! multithreaded. To represent this we use the `FrozenElaborator` wrapper
-//! (local to [`elaborate`](crate::elab::elaborate)), which
+//! (local to [`ElaborateBuilder::elab`](crate::elab::ElaborateBuilder::elab)), which
 //! represents a "paused" elaboration. This object is [`Send`] but cannot be cloned,
 //! and it provides no access to the data under construction (and any access to the
 //! inner data by a thread that does not own the elaborator is UB).

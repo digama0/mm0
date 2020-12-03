@@ -1,6 +1,6 @@
 //! MM0 toolchain. See [`mm0-rs/README.md`] for overall documentation.
 //!
-//! ```
+//! ```text
 //! USAGE:
 //! mm0-rs <SUBCOMMAND>
 //!

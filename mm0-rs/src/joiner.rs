@@ -5,9 +5,9 @@
 //! of MM0 and is not supported by the `mm0-c` verifier. This is essentially the same as
 //! the textual inclusion used by the C `#include` preprocessor directive. In order to use
 //! a file like [`mm0.mm0`], which is an MM0 file with an `import`, you have to first call
-//!
-//!     mm0-rs join mm0.mm0 mm0_join.mm0
-//!
+//! ```text
+//! mm0-rs join mm0.mm0 mm0_join.mm0
+//! ```
 //! and it will create `mm0_join.mm0` by inserting the text of `peano.mm0` at the location
 //! of the `import "peano.mm0";` statement. The resulting file will be a proper MM0 file and
 //! can be run through the `mm0-c` verifier and other conforming verifiers.

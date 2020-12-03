@@ -80,7 +80,7 @@ impl LinedString {
     Range {start: self.to_pos(s.start), end: self.to_pos(s.end)}
   }
 
-  /// Turn a [`FileSpan`] into an LSP [`Location`](lsp_types::Location).
+  /// Turn a [`FileSpan`](crate::util::FileSpan) into an LSP [`Location`](lsp_types::Location).
   #[cfg(feature = "server")]
   #[must_use] pub fn to_loc(&self, fs: &crate::util::FileSpan) -> lsp_types::Location {
     lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}

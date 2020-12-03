@@ -2,7 +2,7 @@
 //!
 //! Meant to be used in conjunction with a [`FormatEnv`] struct. Can be used
 //! with the `{:#?}` format specifier as in the following example:
-//! ```no_run
+//! ```ignore
 //! let fe = FormatEnv { source: &text, env };
 //! let thm: Thm = /* some theorem */;
 //! println!("{:#?}", fe.to(&thm));
