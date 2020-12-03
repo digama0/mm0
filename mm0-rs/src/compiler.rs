@@ -57,18 +57,37 @@ enum FileCache {
 #[derive(DeepSizeOf, Clone)]
 pub(crate) enum FileContents {
   Ascii(Arc<LinedString>),
-  Bin(Arc<memmap::Mmap>),
+  #[cfg(not(target_arch = "wasm32"))]
+  MMap(Arc<memmap::Mmap>),
+  Bin(Arc<[u8]>),
 }
 
 impl FileContents {
   /// Constructs a new [`FileContents`] from source text.
-  pub(crate) fn new(text: String) -> FileContents {
-    FileContents::Ascii(Arc::new(text.into()))
+  pub(crate) fn new(text: String) -> Self {
+    Self::Ascii(Arc::new(text.into()))
   }
 
   /// Constructs a new [`FileContents`] from a memory map.
-  pub(crate) fn new_bin(data: memmap::Mmap) -> FileContents {
-    FileContents::Bin(Arc::new(data))
+  #[cfg(not(target_arch = "wasm32"))]
+  pub(crate) fn new_mmap(data: memmap::Mmap) -> Self {
+    Self::MMap(Arc::new(data))
+  }
+
+  /// Constructs a new [`FileContents`] from a memory map.
+  #[allow(unused)]
+  pub(crate) fn new_bin(data: Box<[u8]>) -> Self {
+    Self::Bin(data.into())
+  }
+
+  pub(crate) fn new_bin_from_file(path: &std::path::Path) -> io::Result<Self> {
+    #[cfg(not(target_arch = "wasm32"))] {
+      let file = fs::File::open(path)?;
+      Ok(Self::new_mmap(unsafe { memmap::MmapOptions::new().map(&file)? }))
+    }
+    #[cfg(target_arch = "wasm32")] {
+      Ok(Self::new_bin(fs::read(path)?.into_boxed_slice()))
+    }
   }
 
   pub(crate) fn try_ascii(&self) -> Option<&Arc<LinedString>> {
@@ -80,9 +99,12 @@ impl FileContents {
     self.try_ascii().expect("expected ASCII file")
   }
 
+  #[allow(unused)]
   pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
     match (self, other) {
       (Self::Ascii(e1), Self::Ascii(e2)) => Arc::ptr_eq(e1, e2),
+      #[cfg(not(target_arch = "wasm32"))]
+      (Self::MMap(e1), Self::MMap(e2)) => Arc::ptr_eq(e1, e2),
       (Self::Bin(e1), Self::Bin(e2)) => Arc::ptr_eq(e1, e2),
       _ => false
     }
@@ -94,6 +116,8 @@ impl std::ops::Deref for FileContents {
   fn deref(&self) -> &[u8] {
     match self {
       Self::Ascii(e) => e.as_bytes(),
+      #[cfg(not(target_arch = "wasm32"))]
+      Self::MMap(e) => e,
       Self::Bin(e) => e
     }
   }
@@ -135,8 +159,7 @@ impl VFS {
       Entry::Vacant(e) => {
         let path = e.key().clone();
         let fc = if path.has_extension("mmb") {
-          let file = fs::File::open(path.path())?;
-          FileContents::new_bin(unsafe { memmap::MmapOptions::new().map(&file)? })
+          FileContents::new_bin_from_file(path.path())?
         } else {
           FileContents::new(fs::read_to_string(path.path())?)
         };

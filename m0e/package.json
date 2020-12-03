@@ -1,0 +1,44 @@
+{
+  "name": "m0e",
+  "author": "Mario Carneiro <di.gama@gmail.com>",
+  "version": "0.1.0",
+  "description": "Metamath Zero Explorer",
+  "license": "CC0-1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/digama0/mm0.git"
+  },
+  "keywords": [
+    "theorem",
+    "proving",
+    "proof",
+    "assistant"
+  ],
+  "bugs": {
+    "url": "https://github.com/digama0/mm0/issues"
+  },
+  "homepage": "https://github.com/digama0/mm0#readme",
+  "scripts": {
+    "build": "rimraf dist pkg && webpack",
+    "start": "rimraf dist pkg && webpack-dev-server --open -d",
+    "test": "cargo test && wasm-pack test --headless"
+  },
+  "dependencies": {
+    "codemirror": "^5.58.3",
+    "monaco-editor": "^0.21.2",
+    "monaco-editor-webpack-plugin": "^2.0.0",
+    "monaco-themes": "^0.3.3"
+  },
+  "devDependencies": {
+    "@wasm-tool/wasm-pack-plugin": "^1.1.0",
+    "copy-webpack-plugin": "^5.0.3",
+    "css-loader": "^5.0.1",
+    "file-loader": "^6.2.0",
+    "raw-loader": "^4.0.2",
+    "rimraf": "^3.0.0",
+    "style-loader": "^2.0.0",
+    "webpack": "^4.42.0",
+    "webpack-cli": "^3.3.3",
+    "webpack-dev-server": "^3.7.1"
+  }
+}

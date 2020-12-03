@@ -327,6 +327,7 @@ lazy_static! {
 /// `/home/johndoe/Documents/ahoy.mm1` will return `../Documents/ahoy.mm1`
 ///
 /// [`CURRENT_DIR`]: struct@CURRENT_DIR
+#[cfg(not(target_arch = "wasm32"))]
 fn make_relative(buf: &PathBuf) -> String {
   pathdiff::diff_paths(buf, &*CURRENT_DIR).as_ref().unwrap_or(buf)
     .to_str().expect("bad unicode in file path").to_owned()
@@ -350,6 +351,10 @@ struct FileRefInner {
 pub struct FileRef(Arc<FileRefInner>);
 
 impl From<PathBuf> for FileRef {
+  #[cfg(target_arch = "wasm32")]
+  fn from(_: PathBuf) -> FileRef { todo!() }
+
+  #[cfg(not(target_arch = "wasm32"))]
   fn from(path: PathBuf) -> FileRef {
     FileRef(Arc::new(FileRefInner {
       rel: make_relative(&path),
@@ -362,6 +367,10 @@ impl From<PathBuf> for FileRef {
 
 #[cfg(feature = "server")]
 impl From<lsp_types::Url> for FileRef {
+  #[cfg(target_arch = "wasm32")]
+  fn from(_: lsp_types::Url) -> FileRef { todo!() }
+
+  #[cfg(not(target_arch = "wasm32"))]
   fn from(url: lsp_types::Url) -> FileRef {
     let path = url.to_file_path().expect("bad URL");
     let rel = make_relative(&path);

@@ -5,7 +5,7 @@
 //! methods allowing it to be used nicely with the [`Position`] type specified by the language server protocol.
 
 use std::ops::{Deref, Index};
-use crate::util::{Span, FileSpan, Position, Range};
+use crate::util::{Span, Position, Range};
 
 /// Wrapper around std's String which stores data about the positions of any newline characters.
 ///
@@ -82,7 +82,7 @@ impl LinedString {
 
   /// Turn a [`FileSpan`] into an LSP [`Location`](lsp_types::Location).
   #[cfg(feature = "server")]
-  #[must_use] pub fn to_loc(&self, fs: &FileSpan) -> lsp_types::Location {
+  #[must_use] pub fn to_loc(&self, fs: &crate::util::FileSpan) -> lsp_types::Location {
     lsp_types::Location {uri: fs.file.url().clone(), range: self.to_range(fs.span)}
   }
 

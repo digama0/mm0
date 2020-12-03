@@ -409,8 +409,7 @@ impl VFS {
       Entry::Vacant(e) => {
         let path = e.key().clone();
         let fc = if path.has_extension("mmb") {
-          let file = fs::File::open(path.path())?;
-          FileContents::new_bin(unsafe { memmap::MmapOptions::new().map(&file)? })
+          FileContents::new_bin_from_file(path.path())?
         } else {
           FileContents::new(fs::read_to_string(path.path())?)
         };

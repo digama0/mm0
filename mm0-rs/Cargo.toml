@@ -17,6 +17,7 @@ default = ["server", "doc"]
 server = ["lsp-types", "lsp-server", "crossbeam", "simplelog", "log"]
 doc = ["pulldown-cmark"]
 memory = ["deepsize_derive/nodummy"]
+wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
 
 [profile.release]
 debug = true
@@ -39,7 +40,6 @@ serde_json = "1.0.59"
 serde_repr = "0.1.6"
 annotate-snippets = { version = "0.9.0", features = ["color"] }
 libc = "0.2.80"
-memmap = "0.7.0"
 zerocopy = "0.3.0"
 memchr = "2.3.4"
 bit-set = "0.5.2"
@@ -56,5 +56,21 @@ lsp-server = { version = "0.5.0", optional = true }
 # For "doc" feature
 pulldown-cmark = {version = "0.8.0", optional = true }
 
+# For "wasm" feature
+console_error_panic_hook = { version = "0.1.6", optional = true }
+wasm-bindgen = { version = "0.2.69", optional = true }
+web-sys = { version = "0.3.46", features = ["console", "Window", "Document", "HtmlElement"], optional = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = "0.4.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+memmap = "0.7.0"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.19"
+
+[[bin]]
+name = "mm0-rs"
+path = "src/main.rs"
+doc = false
