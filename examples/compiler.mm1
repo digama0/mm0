@@ -67,10 +67,14 @@ theorem ksFault_setException: $ k e. KernelState ->
 (named '(iand (sylan setCfgExceptionT id @ a1i @ mpbir optS exGPFT) @
   a1i @ eqtr (readExceptioneq ksCfg_setCfg) read_setException));
 
+theorem ksFault_exit: $ ksFault k -> execExit (ksCfg k) 1 $ =
+'(iand (iand (syl ksCfgT anl) @ a1i d1elu32) @ orld @ iand anr @ a1i d1ne0);
+
 theorem ksFault_terminates: $ ksFault k -> terminates_ensuring k T $ =
-'(sylan terminates_ensuring_fail
-  (anim2a @ exp @ iand (iand (syl ksCfgT anl) @ a1i d1elu32) @
-    orld @ iand anr @ a1i d1ne0) (a1i d1ne0));
+'(sylan terminates_ensuring_fail (anim2a @ exp ksFault_exit) (a1i d1ne0));
+
+theorem ksStep_no_fault: $ ksStep k k2 -> ~ksFault k $ =
+'(rsyl ksStep_no_exit @ con3 ksFault_exit);
 
 theorem ksFault_can_terminate: $ ksFault k -> can_terminate_ensuring k T $ =
 '(syl terminates_ensuring_can ksFault_terminates);
@@ -185,6 +189,8 @@ theorem hoare_tr: $ hoare T P Q -> hoare T Q R -> hoare T P R $ =
 -- The famous "frame rule" of separation logic.
 theorem hoare_frame: $ hoare T P Q -> hoare T (R *s P) (R *s Q) $ =
 (named '(iald @ sylib (imeqi (s_okeq1 s_sep_ass) (s_okeq1 s_sep_ass)) hoare_frame_ok));
+theorem hoare_frame_r: $ hoare T P Q -> hoare T (P *s R) (Q *s R) $ =
+'(sylib (hoareeq eqsid s_sep_com s_sep_com) hoare_frame);
 
 theorem hoare_save_restore_lem (G: wff p)
   (hA: $ G -> finite A $)
@@ -262,63 +268,118 @@ theorem hoare_save_restore (G: wff p a)
     '(sylan iex (sylibr el_s_sep_sn1 _) (anwr @ syl5eq heap_join_com anllr))
     '(sylan iex (anld anllr) (anrd anllr))));
 
---| A hoare triple with explicit "modification" operand `R`, without reference to the
---| step relation as in `hoare`. This is useful for carrying hoare triple information
---| through the sub-steps of an instruction.
-@_ local def hoareM (P R Q: set): wff =
-$ A. fr A. k (k |=s sn fr *s P ->
-    k e. Dom R /\
-    A. k2 (k <> k2 e. R -> (ksFault k -> ksFault k2) /\ k2 |=s sn fr *s Q)) $;
+theorem hoare_ksStep {k fr}
+  (h1: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> E. k2 ksStep k k2 $)
+  (h2: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> ksStep k k2 -> k2 |=s sn fr *s Q $)
+  : $ G -> hoare T P Q $ =
+'(iald @ exp @ iald @ exp @ casesda (anwr ksFault_terminates) @
+  sylibr (!! terminates_ensuring_val k3) @ iand (syl s_sat_ks anlr) @
+  iald @ syl5bi ksReachable_hd @ sylbi (bian21i anrass) @
+  eord (syl5ibrcom (anwr @ rsyl eqcom ,eqtac) @
+    imp @ mpd h1 @ eexda @
+    syld (rsyl (imp h2) @ com12 s_ok_E) @
+    syl5 terminates_ensuring_can @ syl can_terminate_ensuring_R @
+    anwr ksReachable1) @
+  imp @ com23 @ eexda @ syl5 s_ok_E @ eimd (imp @ syl5 anl h2) @
+  syl6 terminates_ensuring_can @ syl terminates_ensuring_R anrr);
 
-theorem hoareM_step: $ hoareM P (S\ ks, {ks2 | ksStep ks ks2}) Q -> hoare T P Q $ =
-(named '(alimi @ com12 @ !! alimd k1 @ a2d @
-  expcom @ exp @ sylibr terminates_ensuring_val @
-  iand (anwll s_sat_ks) @ !! iald k @ syl5bi ksReachable_hd @
-  eord (syl5ibrcom (rsyl (anwr eqcom) ,eqtac) @
-    imp @ impd @ syl5bi eldm @ com23 @ syl6ibr eexb @ !! alimd k2 @ a2d @
-    syl5bi (elsabe @ elabed ,eqtac) @ exp @ syl5 anr @ syld (rsyl anlr s_ok_E) @
-    syl5 terminates_ensuring_can @ anwr @ syl can_terminate_ensuring_R ksReachable1) @
-  sylibr eexb @ imp @ syl5 anr @ alimd @
-  syl5 (imim1i @ sylibr (elsabe @ elabed ,eqtac) anl) @
-  a2d @ exp @ syl5 anr @ syld (rsyl anlr s_ok_E) @
-  syl6 terminates_ensuring_can @ rsyl anrr terminates_ensuring_R));
+theorem hoare_step {k fr}
+  (h1: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> E. k2 step (ksCfg k) k2 $)
+  (h2: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> step (ksCfg k) k2 -> setCfg k k2 |=s sn fr *s Q $)
+  : $ G -> hoare T P Q $ =
+(focus
+  (have 'h3 '(syl s_sat_ks anlr))
+  '(hoare_ksStep _ @ syl5 anr @ eord _ _)
+  (focus '(mpd h1 @ eexda @ syl (iexe ,eqtac) @ iand (anwl h3) @ orld @
+    syl (iexe ,eqtac) @ iand anr @
+    iand (sylibr anass @ sylib (aneq2a setCfgT) @ iand (anwl h3) @
+      syl s_sat_ks @ imp h2) eqidd))
+  (focus '(eexd @ impd @ exp @ syl5ibrcom (anwr s_sateq1) @ imp h2))
+  (focus '(syl absurd @ rsyl h1 @ eex step_no_IO)));
 
-theorem hoareM_co: $ hoareM P1 R P2 -> hoareM P2 S P3 -> hoareM P1 (R o> S) P3 $ =
-(named '(syl ax_4 @ !! alimi fr @ com12 @ !! alimd k1 @ imim2d @ exp @
-  iand (imp @ impd @ syl5bi eldm @ com23 @ syl6ibr eexb @ syl ax_4 @ !! alimi k2 @ a2d @
-    com12 @ imimd (a1i anr) @ syl5 anl @ syl5bi eldm @ syl6ibr eldm @
-    !! eximd k3 @ exp @ sylibr prco iex) @
-  sylibr (aleqi @ bitr (imeq1i prco) erexb) @ sylib ralalcomb @ imp @ syl5 anr @
-  syl ax_4 @ alimi @ imim2d @ impd @ com12 @ imim2d @ syl5 anr @
-  alimd @ imim2d @ anim1d imim1));
+-- --| A hoare triple with explicit "modification" operand `R`, without reference to the
+-- --| step relation as in `hoare`. This is useful for carrying hoare triple information
+-- --| through the sub-steps of an instruction.
+-- @_ local def hoareM (P R Q: set): wff =
+-- $ A. fr A. k (k |=s sn fr *s P ->
+--     k e. Dom R /\
+--     A. k2 (k <> k2 e. R -> (ksFault k -> ksFault k2) /\ k2 |=s sn fr *s Q)) $;
 
-theorem hoareM_ex: $ hoareM P R Q -> k |=s P -> k e. Dom R $ =
-(named '(rsyl (ealie @ ealde @ bi1d ,eqtac) @
-  imim (bi2i @ bitr (s_sateq2 s_sep_emp1a) s_sat_antop) anl));
+-- theorem hoareM_step: $ hoareM P (S\ ks, {ks2 | ksStep ks ks2}) Q -> hoare T P Q $ =
+-- (named '(alimi @ com12 @ !! alimd k1 @ a2d @
+--   expcom @ exp @ sylibr terminates_ensuring_val @
+--   iand (anwll s_sat_ks) @ !! iald k @ syl5bi ksReachable_hd @
+--   eord (syl5ibrcom (rsyl (anwr eqcom) ,eqtac) @
+--     imp @ impd @ syl5bi eldm @ com23 @ syl6ibr eexb @ !! alimd k2 @ a2d @
+--     syl5bi (elsabe @ elabed ,eqtac) @ exp @ syl5 anr @ syld (rsyl anlr s_ok_E) @
+--     syl5 terminates_ensuring_can @ anwr @ syl can_terminate_ensuring_R ksReachable1) @
+--   sylibr eexb @ imp @ syl5 anr @ alimd @
+--   syl5 (imim1i @ sylibr (elsabe @ elabed ,eqtac) anl) @
+--   a2d @ exp @ syl5 anr @ syld (rsyl anlr s_ok_E) @
+--   syl6 terminates_ensuring_can @ rsyl anrr terminates_ensuring_R));
 
-theorem hoareM_fault: $ hoareM P R Q -> k <> k2 e. R -> ksFault k -> ksFault k2 $ =
-(named '(rsyl (ealie @ ealde @ bi1d ,eqtac) @
-  expd @ com12 @ eimd (anwr s_sat_fault) @ syl5 anr @
-  syl5 (eale ,eqtac) @ com12 @ impd @ imim2i anl));
+-- theorem hoareM_co: $ hoareM P1 R P2 -> hoareM P2 S P3 -> hoareM P1 (R o> S) P3 $ =
+-- (named '(syl ax_4 @ !! alimi fr @ com12 @ !! alimd k1 @ imim2d @ exp @
+--   iand (imp @ impd @ syl5bi eldm @ com23 @ syl6ibr eexb @ syl ax_4 @ !! alimi k2 @ a2d @
+--     com12 @ imimd (a1i anr) @ syl5 anl @ syl5bi eldm @ syl6ibr eldm @
+--     !! eximd k3 @ exp @ sylibr prco iex) @
+--   sylibr (aleqi @ bitr (imeq1i prco) erexb) @ sylib ralalcomb @ imp @ syl5 anr @
+--   syl ax_4 @ alimi @ imim2d @ impd @ com12 @ imim2d @ syl5 anr @
+--   alimd @ imim2d @ anim1d imim1));
 
-theorem hoareM_frame_E: $ hoareM P R Q -> k |=s F *s P ->
-  k e. Dom R /\ A. k2 (k <> k2 e. R -> (ksFault k -> ksFault k2) /\ k2 |=s F *s Q) $ =
-(named @ focus
-  '(exp @ iand (imp @ syl5 (s_weak_sat s_weak_sepr) hoareM_ex) @ iald @ exp _)
-  (have 'h '(sylc hoareM_fault anll anr))
-  '(iand h @ casesda (anwr s_sat_fault) @ mpbird (anwr s_sat_sep_sn) @
-    mpd (mpbid (syl s_sat_sep_sn @ imp @ con3d h) anllr) @
-    syl exim @ mpd an3l @ alimd @ syl6 anim2 @
-    syl5 (eale ,eqtac) @ imim2d @ syl5 anr @ rsyl anlr @ com12 @ syl6 anr @ eale ,eqtac));
+-- theorem hoareM_ex: $ hoareM P R Q -> k |=s P -> k e. Dom R $ =
+-- (named '(rsyl (ealie @ ealde @ bi1d ,eqtac) @
+--   imim (bi2i @ bitr (s_sateq2 s_sep_emp1a) s_sat_antop) anl));
 
-theorem hoareM_E: $ hoareM P R Q -> k <> k2 e. R -> k |=s P -> k2 |=s Q $ =
-(focus (def h '(bitr (s_sateq2 s_sep_emp1a) s_sat_antop))
-  '(com23 @ syl5bir ,h @ syl6 _ hoareM_frame_E)
-  '(anwr @ syl6ib ,h @ syl6 anr @ eale ,eqtac));
+-- theorem hoareM_fault: $ hoareM P R Q -> k <> k2 e. R -> ksFault k -> ksFault k2 $ =
+-- (named '(rsyl (ealie @ ealde @ bi1d ,eqtac) @
+--   expd @ com12 @ eimd (anwr s_sat_fault) @ syl5 anr @
+--   syl5 (eale ,eqtac) @ com12 @ impd @ imim2i anl));
 
-theorem hoareM_frame: $ hoareM P R Q -> hoareM (F *s P) R (F *s Q) $ =
-(named '(iald @ iald @ exp @ sylib (aneq2i @ aleqi @ imeq2i @ aneq2i @ s_sateq2 s_sep_ass) @
-  imp @ syl5bir (s_sateq2 s_sep_ass) hoareM_frame_E));
+-- theorem hoareM_frame_E: $ hoareM P R Q -> k |=s F *s P ->
+--   k e. Dom R /\ A. k2 (k <> k2 e. R -> (ksFault k -> ksFault k2) /\ k2 |=s F *s Q) $ =
+-- (named @ focus
+--   '(exp @ iand (imp @ syl5 (s_weak_sat s_weak_sepr) hoareM_ex) @ iald @ exp _)
+--   (have 'h '(sylc hoareM_fault anll anr))
+--   '(iand h @ casesda (anwr s_sat_fault) @ mpbird (anwr s_sat_sep_sn) @
+--     mpd (mpbid (syl s_sat_sep_sn @ imp @ con3d h) anllr) @
+--     syl exim @ mpd an3l @ alimd @ syl6 anim2 @
+--     syl5 (eale ,eqtac) @ imim2d @ syl5 anr @ rsyl anlr @ com12 @ syl6 anr @ eale ,eqtac));
+
+-- theorem hoareM_E: $ hoareM P R Q -> k <> k2 e. R -> k |=s P -> k2 |=s Q $ =
+-- (focus (def h '(bitr (s_sateq2 s_sep_emp1a) s_sat_antop))
+--   '(com23 @ syl5bir ,h @ syl6 _ hoareM_frame_E)
+--   '(anwr @ syl6ib ,h @ syl6 anr @ eale ,eqtac));
+
+-- theorem hoareM_frame: $ hoareM P R Q -> hoareM (F *s P) R (F *s Q) $ =
+-- (named '(iald @ iald @ exp @ sylib (aneq2i @ aleqi @ imeq2i @ aneq2i @ s_sateq2 s_sep_ass) @
+--   imp @ syl5bir (s_sateq2 s_sep_ass) hoareM_frame_E));
+
+-- theorem hoareM_ksStep_I {fr} (p: wff k k2)
+--   (h1: $ G /\ k |=s sn fr *s P -> (ksStep k k2 <-> p) $)
+--   (h2: $ G /\ k |=s sn fr *s P -> E. k2 p $)
+--   (h3: $ G /\ k |=s sn fr *s P /\ p -> k2 |=s sn fr *s Q $)
+--   : $ G -> hoareM P (S\ ks, {ks2 | ksStep ks ks2}) Q $ =
+-- (focus
+--   (suffices 'h)
+--   '(iald @ iald @ exp @ iand
+--     (sylibr eldm @ mpbird (exeqd @ syl5bb h h1) h2)
+--     (iald @ syl5bi h @ exp @ iand (anwr @ syl absurd ksStep_no_fault) @
+--       sylbi (aneq2a h1) h3))
+--   '(elsabe @ elabed ,eqtac));
+
+-- theorem hoareM_step_I {fr} (p: wff k k2)
+--   (h1: $ G /\ k |=s sn fr *s P -> (step (ksCfg k) k2 <-> p) $)
+--   (h2: $ G /\ k |=s sn fr *s P -> E. k2 p $)
+--   (h3: $ G /\ k |=s sn fr *s P /\ p -> setCfg k2 |=s sn fr *s Q $)
+--   : $ G -> hoareM P (S\ ks, {ks2 | ksStep ks ks2}) Q $ =
+-- (focus
+--   (suffices 'h)
+--   '(iald @ iald @ exp @ iand
+--     (sylibr eldm @ mpbird (exeqd @ syl5bb h h1) h2)
+--     (iald @ syl5bi h @ exp @ iand (anwr @ syl absurd ksStep_no_fault) @
+--       sylbi (aneq2a h1) h3))
+--   '(elsabe @ elabed ,eqtac));
 
 -- theorem hoareM_anlift1: $ hoareM (^s p /\s P) R Q <-> (p -> hoareM P R Q) $ =
 -- (named '(bitr (aleqi @ bitr (aleqi @ bitr (imeq1i @
@@ -825,15 +886,19 @@ $ A. vs A. ret (ret e. u64 -> hoare T
 --|
 --| Both `L` and `P` are allowed to depend on common logical variables `vs`.
 @_ local def jump_ok (T c sp fr ip L P): wff =
-$ A. vs s_ok (sn fr *s (main_layout c sp ip 8 (L @' vs) *s (P @' vs))) T $;
+$ s_ok (sn fr *s (main_layout c sp ip 8 L *s P)) T $;
 
--- A type ty is a pair of a separating proposition [v : ty] which gives truth
--- conditions for "v has type ty", and a set of values {v : ty} which gives
--- the valid byte strings that can represent v. A type may have no valid
--- byte strings, in which case it is only usable for ghost values. the size
--- of a type is the smallest `n` such that `A. l (l e. {v : ty} -> len l <= n)`.
+-- A type ty consists of:
+-- * a separating proposition [v : ty] which gives truth conditions for "v has type ty",
+-- * a proposition `v e. |ty|` which describes the "duplicable core" of the type
+-- * a set of values {v : ty} which gives the valid byte strings that can represent v.
+-- A type may have no valid byte strings, in which case it is only usable for
+-- ghost values.
+-- The size of a type is the smallest `n` such that `A. l (l e. {v : ty} -> len l <= n)`.
 
-@_ local def has_ty (v: nat) (ty: set): set = $ Fst (ty @' v) $;
+@_ local def core_of (ty: set): set = $ {v | 0 e. Fst (ty @' v)} $;
+@_ local def has_ty (v: nat) (ty: set): set =
+$ ^s (v e. core_of ty) /\s Tail (Fst (ty @' v)) $;
 @_ local def ty_Rep (v: nat) (ty: set): set = $ Snd (ty @' v) $;
 @_ local def ty_rep (ty: set) (v l: nat): set =
 $ ^s (l e. ty_Rep v ty) /\s has_ty v ty $;
@@ -848,31 +913,37 @@ $ E.s n e. upto (suc 8), E.s a e. Bits (8 * n), (
 @_ local def t_mem (a v: nat) (ty: set): set =
 $ E.s l e. List u8, (a >=>m l *s ty_rep ty v l) $;
 
-@_ local def ty_u8: set = $ S\ v, Sum (^s (v e. u8) /\s emp) (sn (v : 0)) $;
-@_ local def ty_u16: set = $ S\ v, Sum (^s (v e. u16) /\s emp) (sn (u16Bytes v)) $;
-@_ local def ty_u32: set = $ S\ v, Sum (^s (v e. u32) /\s emp) (sn (u32Bytes v)) $;
-@_ local def ty_u64: set = $ S\ v, Sum (^s (v e. u64) /\s emp) (sn (u64Bytes v)) $;
-@_ local def ty_i8: set = $ S\ v, Sum (^s (v e. u8) /\s emp) (sn (i8Bytes v)) $;
-@_ local def ty_i16: set = $ S\ v, Sum (^s (v e. u16) /\s emp) (sn (i16Bytes v)) $;
-@_ local def ty_i32: set = $ S\ v, Sum (^s (v e. u32) /\s emp) (sn (i32Bytes v)) $;
-@_ local def ty_i64: set = $ S\ v, Sum (^s (v e. u64) /\s emp) (sn (i64Bytes v)) $;
-@_ local def ty_nat: set = $ S\ v, Sum emp 0 $;
-@_ local def ty_int: set = $ S\ v, Sum emp 0 $;
+@_ local def ty_u8: set = $ S\ v, Sum (ocasep (v e. u8) emp) (sn (v : 0)) $;
+@_ local def ty_u16: set = $ S\ v, Sum (ocasep (v e. u16) emp) (sn (u16Bytes v)) $;
+@_ local def ty_u32: set = $ S\ v, Sum (ocasep (v e. u32) emp) (sn (u32Bytes v)) $;
+@_ local def ty_u64: set = $ S\ v, Sum (ocasep (v e. u64) emp) (sn (u64Bytes v)) $;
+@_ local def ty_i8: set = $ S\ v, Sum (ocasep (v e. u8) emp) (sn (i8Bytes v)) $;
+@_ local def ty_i16: set = $ S\ v, Sum (ocasep (v e. u16) emp) (sn (i16Bytes v)) $;
+@_ local def ty_i32: set = $ S\ v, Sum (ocasep (v e. u32) emp) (sn (i32Bytes v)) $;
+@_ local def ty_i64: set = $ S\ v, Sum (ocasep (v e. u64) emp) (sn (i64Bytes v)) $;
+@_ local def ty_nat: set = $ S\ v, Sum (ocasep T. emp) 0 $;
+@_ local def ty_int: set = $ S\ v, Sum (ocasep T. emp) 0 $;
+
+--| The "duplicable core" of a type.
+@_ local def ty_core (ty: set): set =
+$ S\ v, Sum (ocasep (v e. core_of ty) emp) (ty_Rep v ty) $;
 
 --| A singleton has the same representation as the underlying type, but
 --| it only has one valid value.
 @_ local def ty_sn (a: nat) (ty: set): set =
-$ S\ v, Sum (^s (v = a) /\s has_ty v ty) (ty_Rep v ty) $;
+$ S\ v, Sum (ocasep (v = a /\ v e. core_of ty) (has_ty v ty)) (ty_Rep v ty) $;
 
-------------------------------------
--- Eliminating the free variables --
-------------------------------------
+-------------------------------------
+-- Eliminating the bound variables --
+-------------------------------------
 
 --| The separating conjunction lifted over functions on `vs`.
 @_ local def v_sep (P Q): set = $ S\ vs, (P @' vs *s Q @' vs) $;
 
+@_ local def trim0 (n: nat): nat = $ lower (n i^i Xp (Compl (sn 0)) _V) $;
+
 --| The `n`th variable as a higher order function from the variable list to a value.
-@_ local def vn (n: nat): set = $ \ vs, nth n vs - 1 $;
+@_ local def vn (n: nat): set = $ \ vs, vs @ n $;
 
 --| An assignment of register `r` to value `v` of type `ty`.
 local def v_reg (r: hex) (v ty: set): set = $ S\ vs, t_reg r (v @ vs) (ty @' vs) $;
@@ -889,21 +960,52 @@ local def v_reg (r: hex) (v ty: set): set = $ S\ vs, t_reg r (v @ vs) (ty @' vs)
 --| Lift addition to functions.
 @_ local def v_add (a b: set): set = $ \ vs, a @ vs + b @ vs $;
 
---| Lift existential quantifier to functions.
-@_ local def v_ex (a: nat) (ty P: set): set =
-$ S\ vs, (E.s b e. ty, P @' lower (write vs a b)) $;
+--| Existential quantifier expressed without bound variables.
+--| `v_ex i ty P` means there exists `v_i` such that `[v_i : ty] *s P[i/v_i]`.
+--| Note that we are using explicit (named) variables here, not de Bruijn;
+--| we clobber the previous value of `v_i` inside the scope.
+@_ local def v_ex (i: nat) (ty P: set): set =
+$ S\ vs, (E.s a e. _V, (has_ty a ty *s
+  P @' trim0 (lower (write vs i a)))) $;
 
 @_ local def v_ty_u32: set = $ S\ vs, ty_u32 $;
 
-local def progT = $ S\ i, {o | 2 + 2 = 4} $;
-local def prog: nat = $0$;
-local def adder: nat = $0$;
-theorem _:
-  $ func_ok progT prog adder
-      (v_sep
-        (v_reg x7 (vn x0) v_ty_u32)
-        (v_reg x6 (vn x1) v_ty_u32))
-      (v_reg x0 (v_add (vn x0) (vn x1)) (v_ty_sn (v_add (vn x0) (vn x1)) v_ty_u64)) $;
+-- testing
+
+-- local def progT = $ S\ i, {o | 2 + 2 = 4} $;
+-- local def prog: nat = $0$;
+-- local def adder: nat = $0$;
+
+-- theorem CFG_ret
+--   (h1: $ G -> ret e. u64 $)
+--   (h2: $ G -> jump_ok T c 0 fr ret L_emp P $):
+--   $ G -> jump_ok T c 0 fr ip L P $ =
+-- '(mpd h2 @ syl hoare_frame_ok @ syl hoare_frame_r @
+--   _);
+
+-- theorem th
+--   (h1: $ G -> ret e. u64 $)
+--   (h2: $ G -> jump_ok progT prog 0 fr ret L_emp
+--     (v_ex x2
+--         (v_ty_sn (v_add (vn x0) (vn x1)) v_ty_u64)
+--         (v_reg x0 (vn x2) (v_ty_sn (v_add (vn x0) (vn x1)) v_ty_u64)) @'
+--       vs) $):
+--   $ G -> s_ok
+--     (sn fr *s
+--       (main_layout prog 8 adder (2 ^ 12) (L_1 (toBytes 8 ret)) *s
+--         v_sep (v_reg x7 (vn x0) v_ty_u32) (v_reg x6 (vn x1) v_ty_u32) @' vs))
+--     progT $ =
+-- (focus
+--   (have 'h $ G -> jump_ok $ 'h2)
+--   );
+-- theorem _:
+--   $ func_ok progT prog adder
+--       (v_sep
+--         (v_reg x7 (vn x0) v_ty_u32)
+--         (v_reg x6 (vn x1) v_ty_u32))
+--       (v_ex x2 (v_ty_sn (v_add (vn x0) (vn x1)) v_ty_u64)
+--         (v_reg x0 (vn x2) (v_ty_sn (v_add (vn x0) (vn x1)) v_ty_u64))) $ =
+-- (named '(ax_gen @ ax_gen @ iald @ exp @ th anl anr));
 
 -- (proc (adder {x : u32} {y : u32} : {ret : (sn {{x + y} : u64})})
 --   (cast {(cast {x + y} (assert {{x + y} < {2 ^ 64}})) : u64}))
