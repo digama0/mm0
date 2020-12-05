@@ -727,7 +727,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
           spans.lc.as_ref().and_then(|lc|
             lc.proofs.get(&x).map(|&i| &lc.proof_order[i].1))) {
           let mut out = String::new();
-          fe.pretty(|p| p.hyps_and_ret(p.nil(), std::iter::empty(), e)
+          fe.pretty(|p| p.hyps_and_ret(Pretty::nil(), std::iter::empty(), e)
             .render_fmt(80, &mut out).expect("impossible"));
           ((sp, mk_mm0(out)), None)
         } else {
@@ -745,7 +745,7 @@ async fn hover(path: FileRef, pos: Position) -> StdResult<Option<Hover>, Respons
             let mut subst = Subst::new(env, &td.heap, args);
             let mut out = String::new();
             let ret = subst.subst(&td.ret);
-            fe.pretty(|p| p.hyps_and_ret(p.nil(),
+            fe.pretty(|p| p.hyps_and_ret(Pretty::nil(),
               td.hyps.iter().map(|(_, h)| subst.subst(h)),
               &ret).render_fmt(80, &mut out).expect("impossible"));
             ((sp1, mk_mm0(out)), td.doc.clone())

@@ -13,7 +13,7 @@ use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
 use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID,
-  Sort, Term, Thm};
+  Sort, Term, Thm, DeclKey};
 use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
 /// The side information required to print an object in the environment.
@@ -253,12 +253,16 @@ impl Display for Sort {
 
 impl EnvDisplay for Term {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fe.pretty(|p| p.term(self, true).render_fmt(80, f))
+    if let Some(DeclKey::Term(tid)) = fe.env.data[self.atom].decl {
+      fe.pretty(|p| p.term(tid, true).render_fmt(80, f))
+    } else { panic!("undeclared term") }
   }
 }
 
 impl EnvDisplay for Thm {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fe.pretty(|p| p.thm(self).render_fmt(80, f))
+    if let Some(DeclKey::Thm(tid)) = fe.env.data[self.atom].decl {
+      fe.pretty(|p| p.thm(tid).render_fmt(80, f))
+    } else { panic!("undeclared theorem") }
   }
 }
