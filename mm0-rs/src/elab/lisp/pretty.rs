@@ -7,28 +7,42 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 use std::{mem, fmt::{self, Write}};
 use std::borrow::Cow;
-use pretty::{DocAllocator, Doc, RefDoc, Arena};
+use pretty::DocAllocator;
 use itertools::Itertools;
 use super::{LispVal, LispKind, Uncons, print::FormatEnv,
   super::{
-    environment::{Prec, DeclKey, Literal, TermKind, ThmKind,
-      Environment, NotaInfo, AtomData, AtomID, TermID, Term, Thm, Type},
+    environment::{Prec, DeclKey, Literal, TermKind, ThmKind, Modifiers,
+      Environment, NotaInfo, AtomData, AtomID, TermID, ThmID, SortID, Thm, Type},
     math_parser::APP_PREC}};
+
+#[derive(Clone, Copy, Debug)]
+pub enum Annot {
+  SortModifiers(Modifiers),
+  Visibility(Modifiers),
+  Keyword,
+  SortName(SortID),
+  TermName(TermID),
+  ThmName(ThmID),
+}
+
+type Doc<'a> = pretty::Doc<'a, RefDoc<'a>, Annot>;
+type RefDoc<'a> = pretty::RefDoc<'a, Annot>;
+type Arena<'a> = pretty::Arena<'a, Annot>;
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct PP<'a> {
   left: bool,
   right: bool,
   small: bool,
-  pub(crate) doc: RefDoc<'a, ()>,
+  pub(crate) doc: RefDoc<'a>,
 }
 
-impl<'a> From<PP<'a>> for RefDoc<'a, ()> {
-  fn from(doc: PP<'a>) -> RefDoc<'a, ()> { doc.doc }
+impl<'a> From<PP<'a>> for RefDoc<'a> {
+  fn from(doc: PP<'a>) -> RefDoc<'a> { doc.doc }
 }
 
 impl<'a> PP<'a> {
-  fn token(alloc: &'a Arena<'a, ()>, env: &Environment, tk: &'a str) -> PP<'a> {
+  fn token(alloc: &'a Arena<'a>, env: &Environment, tk: &'a str) -> PP<'a> {
     PP {
       // A right delimiter like ')' has a token boundary on its left side,
       // and vice versa. This ensures that `x ( y ) z` gets notated as `x (y) z`
@@ -39,7 +53,7 @@ impl<'a> PP<'a> {
     }
   }
 
-  fn word(alloc: &'a Arena<'a, ()>, data: impl Into<Cow<'a, str>>) -> PP<'a> {
+  fn word(alloc: &'a Arena<'a>, data: impl Into<Cow<'a, str>>) -> PP<'a> {
     PP {
       left: false,
       right: false,
@@ -76,7 +90,7 @@ type PrettyCache<'a> = (LispVal, (Prec, PP<'a>));
 /// All pretty printing nodes will be tied to the lifetime of the struct.
 pub struct Pretty<'a> {
   fe: FormatEnv<'a>,
-  alloc: &'a Arena<'a, ()>,
+  pub(crate) alloc: &'a Arena<'a>,
   hash: RefCell<HashMap<*const LispKind, PrettyCache<'a>>>,
   lparen: PP<'a>,
   rparen: PP<'a>,
@@ -86,30 +100,32 @@ impl fmt::Debug for Pretty<'_> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Pretty") }
 }
 
-const NIL: RefDoc<'static, ()> = RefDoc(&Doc::Nil);
-const HARDLINE: RefDoc<'static, ()> = RefDoc(&Doc::Line);
-const SPACE: RefDoc<'static, ()> = RefDoc(&Doc::BorrowedText(" "));
-const LINE: RefDoc<'static, ()> = RefDoc(&Doc::FlatAlt(HARDLINE, SPACE));
-const LINE_: RefDoc<'static, ()> = RefDoc(&Doc::FlatAlt(HARDLINE, NIL));
-const SOFTLINE: RefDoc<'static, ()> = RefDoc(&Doc::Group(LINE));
-const SOFTLINE_: RefDoc<'static, ()> = RefDoc(&Doc::Group(LINE_));
+macro_rules! str {($s:expr) => {pretty::RefDoc(&pretty::Doc::BorrowedText($s))}}
+
+const NIL: RefDoc<'static> = pretty::RefDoc(&Doc::Nil);
+const HARDLINE: RefDoc<'static> = pretty::RefDoc(&Doc::Line);
+const SPACE: RefDoc<'static> = str!(" ");
+const LINE: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, SPACE));
+const LINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::FlatAlt(HARDLINE, NIL));
+const SOFTLINE: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::Group(LINE));
+const SOFTLINE_: RefDoc<'static> = pretty::RefDoc(&pretty::Doc::Group(LINE_));
 
 #[allow(clippy::useless_transmute)]
-fn covariant<'a>(from: RefDoc<'static, ()>) -> RefDoc<'a, ()> {
+fn covariant<'a>(from: RefDoc<'static>) -> RefDoc<'a> {
   unsafe {mem::transmute(from)}
 }
 
 impl<'a> Pretty<'a> {
   /// The empty string `""` as a [`RefDoc`].
-  #[must_use] pub fn nil() -> RefDoc<'a, ()> {covariant(NIL)}
-  // fn hardline() -> RefDoc<'a, ()> {covariant(HARDLINE)}
-  // fn space() -> RefDoc<'a, ()> {covariant(SPACE)}
-  fn line() -> RefDoc<'a, ()> {covariant(LINE)}
-  // fn line_() -> RefDoc<'a, ()> {covariant(LINE_)}
-  fn softline() -> RefDoc<'a, ()> {covariant(SOFTLINE)}
-  fn softline_() -> RefDoc<'a, ()> {covariant(SOFTLINE_)}
+  #[must_use] pub fn nil() -> RefDoc<'a> {covariant(NIL)}
+  // fn hardline() -> RefDoc<'a> {covariant(HARDLINE)}
+  fn space() -> RefDoc<'a> {covariant(SPACE)}
+  fn line() -> RefDoc<'a> {covariant(LINE)}
+  // fn line_() -> RefDoc<'a> {covariant(LINE_)}
+  fn softline() -> RefDoc<'a> {covariant(SOFTLINE)}
+  fn softline_() -> RefDoc<'a> {covariant(SOFTLINE_)}
 
-  fn new(fe: FormatEnv<'a>, alloc: &'a Arena<'a, ()>) -> Pretty<'a> {
+  fn new(fe: FormatEnv<'a>, alloc: &'a Arena<'a>) -> Pretty<'a> {
     Pretty {
       lparen: PP::token(alloc, fe.env, "("),
       rparen: PP::token(alloc, fe.env, ")"),
@@ -124,17 +140,27 @@ impl<'a> Pretty<'a> {
     PP::word(self.alloc, unsafe {std::str::from_utf8_unchecked(data)})
   }
 
-  fn alloc(&'a self, doc: Doc<'a, RefDoc<'a, ()>, ()>) -> RefDoc<'a, ()> {
+  pub(crate) fn alloc(&'a self, doc: Doc<'a>) -> RefDoc<'a> {
     self.alloc.alloc(doc)
   }
 
-  fn append_doc(&'a self, a: impl Into<RefDoc<'a, ()>>, b: impl Into<RefDoc<'a, ()>>) -> RefDoc<'a, ()> {
+  pub(crate) fn append_doc(&'a self, a: impl Into<RefDoc<'a>>, b: impl Into<RefDoc<'a>>) -> RefDoc<'a> {
     self.alloc(Doc::Append(a.into(), b.into()))
   }
 
-  fn append_with(&'a self, a: PP<'a>, sp: RefDoc<'a, ()>, b: PP<'a>) -> PP<'a> {
+  pub(crate) fn annot(&'a self, a: Annot, doc: impl Into<RefDoc<'a>>) -> RefDoc<'a> {
+    self.alloc(Doc::Annotated(a, doc.into()))
+  }
+
+  pub(crate) fn append_annot(&'a self,
+      doc1: impl Into<RefDoc<'a>>, a: Annot, doc: impl Into<RefDoc<'a>>) -> RefDoc<'a> {
+    self.append_doc(doc1, self.annot(a, doc))
+  }
+
+  fn append_with(&'a self, a: PP<'a>, sp: RefDoc<'a>, b: PP<'a>) -> PP<'a> {
+    let (left, right) = (a.left, b.right);
     let doc = self.append_doc(self.append_doc(a, sp), b);
-    PP {left: a.left, right: b.right, small: false, doc}
+    PP {left, right, small: false, doc}
   }
 
   fn append(&'a self, a: PP<'a>, b: PP<'a>) -> PP<'a> {
@@ -223,7 +249,7 @@ impl<'a> Pretty<'a> {
   /// for which this expression would not need brackets.
   pub(crate) fn pp_expr(&'a self, e: &LispVal) -> (Prec, PP<'a>) {
     let p: *const LispKind = &**e;
-    if let Some(v) = self.hash.borrow().get(&p) {return v.1}
+    if let Some(&(_, v1)) = self.hash.borrow().get(&p) {return v1}
     let v = (|| Some({
       let env = self.fe.env;
       let (ad, t, args) = self.get_term_args(e)?;
@@ -263,7 +289,7 @@ impl<'a> Pretty<'a> {
   }
 
   /// Pretty-prints a math formula surrounded by delimiters.
-  pub fn expr_delimited(&'a self, e: &LispVal, left: &'a str, right: &'a str) -> RefDoc<'a, ()> {
+  pub fn expr_delimited(&'a self, e: &LispVal, left: &'a str, right: &'a str) -> RefDoc<'a> {
     let mut doc = self.expr_paren(e, Prec::Prec(0)).doc;
     if let Doc::Group(doc2) = *doc {doc = doc2}
     let doc = self.append_doc(self.alloc(Doc::text(left)),
@@ -272,10 +298,9 @@ impl<'a> Pretty<'a> {
   }
 
   /// Pretty-prints a math formula surrounded by `$` delimiters, as in `$ 2 + 2 = 4 $`.
-  pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
+  pub fn expr(&'a self, e: &LispVal) -> RefDoc<'a> {
     self.expr_delimited(e, "$ ", " $")
   }
-
 
   fn get_thm_args(&'a self, u: &mut Uncons, args: &mut Vec<LispVal>) -> Option<(&'a AtomData, &'a Thm)> {
     let env = self.fe.env;
@@ -289,7 +314,7 @@ impl<'a> Pretty<'a> {
     Some((ad, td))
   }
 
-  fn app_doc(&'a self, mut head: RefDoc<'a, ()>, mut es: impl Iterator<Item=(bool, RefDoc<'a, ()>)>) -> RefDoc<'a, ()> {
+  fn app_doc(&'a self, mut head: RefDoc<'a>, mut es: impl Iterator<Item=(bool, RefDoc<'a>)>) -> RefDoc<'a> {
     while let Some((small, mut doc)) = es.next() {
       if small {
         head = self.append_doc(head, self.append_doc(Self::softline(), doc));
@@ -304,7 +329,7 @@ impl<'a> Pretty<'a> {
   }
 
   /// Pretty-prints a lisp expression.
-  pub fn pp_lisp(&'a self, e: &LispVal) -> RefDoc<'a, ()> {
+  pub fn pp_lisp(&'a self, e: &LispVal) -> RefDoc<'a> {
     e.unwrapped(|r| match r {
       LispKind::List(_) | LispKind::DottedList(_, _) => {
         let mut u = Uncons::from(e.clone());
@@ -321,7 +346,7 @@ impl<'a> Pretty<'a> {
         } else {
           let mut u = Uncons::from(e.clone());
           if let Some(e) = u.next() { self.pp_lisp(&e) }
-          else if u.exactly(0) { return self.alloc(Doc::text("()")) }
+          else if u.exactly(0) { return str!("()") }
           else { return self.pp_lisp(&u.into()) }
         };
         for e in &mut u {
@@ -329,7 +354,7 @@ impl<'a> Pretty<'a> {
         }
         if !u.exactly(0) {
           doc = self.append_doc(doc,
-            self.append_doc(self.alloc(Doc::text(" .")),
+            self.append_doc(str!(" ."),
               self.append_doc(Self::line(), self.pp_lisp(&u.into()))));
         }
         let doc = self.append_doc(self.lparen, self.append_doc(doc, self.rparen));
@@ -348,8 +373,8 @@ impl<'a> Pretty<'a> {
     Ok(())
   }
 
-  fn grouped_binders(&'a self, mut doc: RefDoc<'a, ()>,
-    bis: &[(Option<AtomID>, Type)], bvars: &mut Vec<AtomID>) -> RefDoc<'a, ()> {
+  fn grouped_binders(&'a self, mut doc: RefDoc<'a>,
+    bis: &[(Option<AtomID>, Type)], bvars: &mut Vec<AtomID>) -> RefDoc<'a> {
     let mut rest = bis;
     loop {
       let mut it = rest.iter();
@@ -382,11 +407,15 @@ impl<'a> Pretty<'a> {
 
   /// Pretty-prints a `term` or `def` declaration, for example
   /// `def foo (x y: nat): nat = $ x + y $;`.
-  pub fn term(&'a self, t: &Term, show_def: bool) -> RefDoc<'a, ()> {
-    let buf = format!("{}{} {}", t.vis,
-      if matches!(t.kind, TermKind::Term) {"term"} else {"def"},
-      self.fe.to(&t.atom));
-    let doc = self.alloc(Doc::text(buf));
+  pub fn term(&'a self, tid: TermID, show_def: bool) -> RefDoc<'a> {
+    let t = &self.fe.env.terms[tid];
+    let doc = self.annot(Annot::Visibility(t.vis),
+      self.alloc(Doc::text(t.vis.to_string())));
+    let doc = self.append_annot(doc, Annot::Keyword,
+      if matches!(t.kind, TermKind::Term) {str!("term")} else {str!("def")});
+    let doc = self.append_doc(doc, Self::space());
+    let doc = self.append_annot(doc, Annot::TermName(tid),
+      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
     let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
@@ -417,23 +446,44 @@ impl<'a> Pretty<'a> {
 
   /// Pretty-prints the hypotheses and return of an `axiom` or `theorem`, for example
   /// `$ a $ > $ a -> b $ > $ b $`. This is appended to the input `doc` on the right.
-  pub fn hyps_and_ret(&'a self, mut doc: RefDoc<'a, ()>,
-      hs: impl Iterator<Item=LispVal>, ret: &LispVal) -> RefDoc<'a, ()> {
+  pub fn hyps_and_ret(&'a self, mut doc: RefDoc<'a>,
+      hs: impl Iterator<Item=LispVal>, ret: &LispVal) -> RefDoc<'a> {
     for e in hs {
       doc = self.append_doc(doc,
         self.append_doc(self.expr(&e),
-          self.append_doc(self.alloc(Doc::text(" >")),
-            Self::line())));
+          self.append_doc(str!(" >"), Self::line())));
     }
     self.append_doc(doc, self.expr(ret))
   }
 
-  /// Pretty-prints everything in an `axiom` or `theorem` declaration after
-  /// the name of the theorem.
-  pub(crate) fn thm_headless(&'a self, t: &Thm, doc: RefDoc<'a, ()>) -> RefDoc<'a, ()> {
+  /// Pretty print a sort, with annotations.
+  /// Basic form is just `<modifiers> sort <name>;`
+  pub(crate) fn pp_sort(&'a self, sid: SortID) -> RefDoc<'a> {
+    let s = &self.fe.env.sorts[sid];
+    let mut doc = self.annot(Annot::SortModifiers(s.mods),
+      self.alloc(Doc::text(s.mods.to_string())));
+    doc = self.append_annot(doc, Annot::Keyword, str!("sort"));
+    doc = self.append_doc(doc, Self::space());
+    doc = self.append_annot(doc, Annot::SortName(sid),
+      self.alloc(Doc::text(s.name.as_str())));
+    self.append_doc(doc, str!(";"))
+  }
+
+  /// Pretty-prints an `axiom` or `theorem` declaration, for example
+  /// `theorem mp (a b: wff): $ a $ > $ a -> b $ > $ b $;`.
+  /// The proof of the theorem is omitted.
+  pub fn thm(&'a self, tid: ThmID) -> RefDoc<'a> {
+    let t = &self.fe.env.thms[tid];
+    let doc = self.annot(Annot::Visibility(t.vis),
+      self.alloc(Doc::text(t.vis.to_string())));
+    let doc = self.append_annot(doc, Annot::Keyword,
+      if matches!(t.kind, ThmKind::Axiom) {str!("axiom")} else {str!("theorem")});
+    let doc = self.append_doc(doc, Self::space());
+    let doc = self.append_annot(doc, Annot::ThmName(tid),
+      self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
-    let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
+    let doc = self.append_doc(doc, str!(":"));
     let doc = self.append_doc(self.alloc(Doc::Group(doc)), Self::line());
     let mut bvars = Vec::new();
     let mut heap = Vec::new();
@@ -445,28 +495,17 @@ impl<'a> Pretty<'a> {
     let doc = self.hyps_and_ret(doc,
       t.hyps.iter().map(|(_, e)| self.fe.expr_node(&heap, &mut None, e)),
       &self.fe.expr_node(&heap, &mut None, &t.ret));
-    let doc = self.append_doc(doc, self.alloc(Doc::text(";")));
+    let doc = self.append_doc(doc, str!(";"));
     self.alloc(Doc::Group(self.alloc(Doc::Nest(2, doc))))
   }
 
-  /// Pretty-prints an `axiom` or `theorem` declaration, for example
-  /// `theorem mp (a b: wff): $ a $ > $ a -> b $ > $ b $;`.
-  /// The proof of the theorem is omitted.
-  pub fn thm(&'a self, t: &Thm) -> RefDoc<'a, ()> {
-    let buf = format!("{}{} {}", t.vis,
-      if matches!(t.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
-      self.fe.to(&t.atom));
-    let doc = self.alloc(Doc::text(buf));
-    self.thm_headless(t, doc)
-  }
-
   /// Pretty-prints a unification error, as `failed to unify: e1 =?= e2`.
-  pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a, ()> {
-    let doc = self.append_doc(RefDoc(&Doc::BorrowedText("failed to unify:")), Self::line());
+  pub fn unify_err(&'a self, e1: &LispVal, e2: &LispVal) -> RefDoc<'a> {
+    let doc = self.append_doc(str!("failed to unify:"), Self::line());
     let doc = self.append_doc(doc, self.expr_paren(e1, Prec::Prec(0)));
     let doc = self.append_doc(doc, self.alloc(Doc::Nest(2,
-      self.append_doc(Self::line(), RefDoc(&Doc::BorrowedText("=?="))))));
-    let doc = self.append_doc(doc, Self::line());
+      self.append_doc(Self::line(), str!("=?=")))));
+    let doc = self.append_doc(doc, Pretty::line());
     let doc = self.append_doc(doc, self.expr_paren(e2, Prec::Prec(0)));
     self.alloc(Doc::Group(doc))
   }

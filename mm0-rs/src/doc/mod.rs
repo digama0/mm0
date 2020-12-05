@@ -7,12 +7,84 @@ use std::io::{self, BufWriter, Write};
 use bit_set::BitSet;
 use clap::ArgMatches;
 use lsp_types::Url;
+use pulldown_cmark::escape::WriteWrapper;
 use crate::{elab::environment::{AtomData, DocComment}, lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
-use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Pretty},
+use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Annot},
   environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, TermID, ThmID, ThmKind, Thm,
     ExprNode, Type}};
 
 const PP_WIDTH: usize = 160;
+
+/// implements `RenderAnnotated`. Is currently specialized to HtmlTag.
+struct HtmlPrinter<'a, W: Write> {
+  env: &'a Environment,
+  mangler: &'a mut Mangler,
+  rel: &'static str,
+  w: WriteWrapper<&'a mut W>,
+  stack: Vec<&'static str>
+}
+
+impl<'a, W: Write> HtmlPrinter<'a, W> {
+  /// Make a new `HtmlPrinter` from some writer.
+  fn new(env: &'a Environment,
+      mangler: &'a mut Mangler, w: &'a mut W, rel: &'static str) -> Self {
+    HtmlPrinter { env, mangler, w: WriteWrapper(w), rel, stack: Vec::new() }
+  }
+}
+
+impl<'a, W: Write> pretty::Render for HtmlPrinter<'a, W> {
+  type Error = std::io::Error;
+
+  fn write_str(&mut self, s: &str) -> io::Result<usize> {
+    pulldown_cmark::escape::escape_html(&mut self.w, s)?;
+    Ok(s.len())
+  }
+
+  fn fail_doc(&self) -> Self::Error {
+    io::Error::new(io::ErrorKind::Other, "Document failed to render")
+  }
+}
+
+impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W> {
+  /// Push the close annotation's close tag to the stack for later
+  /// and write the open tag representation to the underlying writer
+  fn push_annotation(&mut self, ann: &'b Annot) -> io::Result<()> {
+    macro_rules! tag {
+      (span $cls:expr) => {tag!("span", concat!(" class=\"", $cls, "\""))};
+      ($tag:expr, $attr:expr) => {{
+        write!(self.w.0, concat!("<", $tag, $attr, ">"))?;
+        self.stack.push($tag);
+      }};
+    }
+    match *ann {
+      Annot::SortModifiers(_) => tag!(span "sortmod"),
+      Annot::Visibility(_) => tag!(span "vis"),
+      Annot::Keyword => tag!(span "kw"),
+      Annot::SortName(_) => tag!(span "sort"),
+      Annot::TermName(tid) => {
+        write!(self.w.0, "<a class=\"term\" href=\"{}index.html#", self.rel)?;
+        let ad = &self.env.data[self.env.terms[tid].atom];
+        disambiguated_anchor(&mut self.w.0, ad, false)?;
+        write!(self.w.0, "\">")?;
+        self.stack.push("a");
+      }
+      Annot::ThmName(tid) => {
+        let w = &mut self.w.0;
+        let rel = self.rel;
+        self.mangler.mangle(&self.env, tid, |_, mangled|
+          write!(w, r#"<a class="thm" href="{}thms/{}.html">"#, rel, mangled))?;
+        self.stack.push("a");
+      }
+    }
+    Ok(())
+  }
+
+  /// Used when this annotation's scope closes, so we just pop the close
+  /// tag off the stack and write it to the underlying writer
+  fn pop_annotation(&mut self) -> Result<(), Self::Error> {
+    write!(self.w.0, "</{}>", self.stack.pop().expect("stack underflow"))
+  }
+}
 
 struct AxiomUse(HashMap<ThmID, BitSet>);
 
@@ -207,12 +279,7 @@ impl<'a> LayoutProof<'a> {
   }
 }
 
-fn escape_html(mut w: &mut impl Write, s: &str) -> io::Result<()> {
-  use pulldown_cmark::escape::{escape_html, WriteWrapper};
-  escape_html(WriteWrapper(&mut w), s)
-}
-
-fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
+fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Write,
   line: u32, hyps: &[u32], kind: LineKind, e: &LispVal) -> io::Result<()> {
   let kind_class = match kind {
     LineKind::Hyp(_) => "step-hyp",
@@ -233,8 +300,9 @@ fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
   match kind {
     LineKind::Hyp(None) => write!(w, "<i>hyp</i>")?,
     LineKind::Hyp(Some(a)) => write!(w, "<i>hyp {}</i>", fe.env.data[a].name)?,
-    LineKind::Thm(tid) => write!(w, r#"<a class="thm" href="{thm}.html">{thm}</a>"#,
-      thm = fe.env.data[fe.env.thms[tid].atom].name)?,
+    LineKind::Thm(tid) =>
+      mangler.mangle(&fe.env, tid, |thm, mangled|
+        write!(w, r#"<a class="thm" href="{}.html">{}</a>"#, mangled, thm))?,
     LineKind::Conv(defs) => {
       write!(w, "<i>conv</i>")?;
       let mut first = true;
@@ -249,15 +317,15 @@ fn render_line(fe: FormatEnv<'_>, w: &mut impl Write,
   }
   write!(w, "</td>\
     \n          <td><pre>")?;
-  let mut s = String::new();
-  fe.pretty(|pr| pr.pp_expr(e).1.doc.render_fmt(PP_WIDTH, &mut s).expect("writing to a string"));
-  escape_html(w, &s)?;
+  fe.pretty(|pr| pr.pp_expr(e).1.doc
+    .render_raw(PP_WIDTH, &mut HtmlPrinter::new(fe.env, mangler, w, "../"))
+    .expect("writing to a string"));
   writeln!(w, "</pre></td>\
     \n        </tr>")
 }
 
 fn render_proof<'a>(
-  source: &'a LinedString, env: &'a mut Environment, w: &mut impl Write,
+  source: &'a LinedString, env: &'a mut Environment, mangler: &'a mut Mangler, w: &mut impl Write,
   order: ProofOrder,
   args: &'a [(Option<AtomID>, Type)],
   hyps: &'a [(Option<AtomID>, ExprNode)],
@@ -275,13 +343,13 @@ fn render_proof<'a>(
     ProofOrder::Post =>
       for (line, Line {mut hyps, kind, expr}) in lines.into_iter().enumerate() {
         for i in &mut *hyps { *i += 1 }
-        render_line(fe, w, (line + 1).try_into().expect("lines are u32"), &hyps, kind, &expr)?;
+        render_line(fe, mangler, w, (line + 1).try_into().expect("lines are u32"), &hyps, kind, &expr)?;
       }
     ProofOrder::Pre => {
       let len = lines.len();
       for (line, Line {mut hyps, kind, expr}) in lines.into_iter().rev().enumerate() {
         for i in &mut *hyps { *i = u32::try_from(len).expect("lines are u32") - *i }
-        render_line(fe, w, (line + 1).try_into().expect("lines are u32"), &hyps, kind, &expr)?;
+        render_line(fe, mangler, w, (line + 1).try_into().expect("lines are u32"), &hyps, kind, &expr)?;
       }
     }
   }
@@ -465,9 +533,9 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         \n        <tr class=\"proof-head\">\
                     <th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th>\
                   </tr>")?;
-      render_proof(self.source, &mut self.env, &mut file, self.order, &td.args, &td.hyps, pf)?;
+      render_proof(self.source, &mut self.env, &mut self.mangler,
+        &mut file, self.order, &td.args, &td.hyps, pf)?;
       writeln!(file, "      </tbody>\n    </table>")?;
-
     }
     if let ThmKind::Thm(_) = td.kind {
       writeln!(file, "    <h2 class=\"axioms\">Axiom use</h2>")?;
@@ -524,22 +592,16 @@ impl<'a, W: Write> BuildDoc<'a, W> {
               let td = &self.env.terms[tid];
               render_doc(&mut file, &td.doc)?;
               write!(file, "      <pre>")?;
-              escape_html(&mut file, &format!("{}", fe.to(td)))?;
+              let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
+              fe.pretty(|pr| pr.term(tid, true).render_raw(PP_WIDTH, w))?;
               writeln!(file, "</pre>\n    </div>")?
             }
             DeclKey::Thm(tid) => {
               let td = &self.env.thms[tid];
               render_doc(&mut file, &td.doc)?;
-              self.mangler.mangle(&self.env, tid, |name, mangled|
-                write!(file, r#"      <pre>{}{} <a class="thm" href="thms/{mangled}.html">{name}</a>"#, td.vis,
-                  if matches!(td.kind, ThmKind::Axiom) {"axiom"} else {"theorem"},
-                  mangled = mangled, name = name))?;
-              fe.pretty(|pr| -> io::Result<()> {
-                let mut buf = String::new();
-                pr.thm_headless(td, Pretty::nil()).render_fmt(PP_WIDTH, &mut buf)
-                  .expect("writing to a string");
-                escape_html(&mut file, &buf)
-              })?;
+              write!(file, "      <pre>")?;
+              let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
+              fe.pretty(|pr| pr.thm(tid).render_raw(PP_WIDTH, w))?;
               writeln!(file, "</pre>\n    </div>")?;
               let next = tid.0.checked_add(1).map(ThmID)
                 .filter(|&tid| self.env.thms.get(tid).is_some());
