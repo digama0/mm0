@@ -30,6 +30,7 @@ use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, Expr, ExprNode,
   StmtTrace, Term, TermID, Thm, ThmID};
 use environment::Literal as ELiteral;
 use lisp::LispVal;
+use local_context::try_get_span_opt;
 use spans::Spans;
 use inout::InoutHandlers;
 pub use {environment::Environment, local_context::LocalContext};
@@ -502,7 +503,28 @@ impl Elaborator {
 
   fn parse_and_print(&mut self, e: &SExpr, doc: String) -> Result<()> {
     let val = self.eval_lisp_doc(e, doc)?;
-    if val.is_def() {self.print_lisp(e.span, &val)}
+    if val.is_def() {
+      // add hover info / go to definition for `do 'thm_name;`
+      // to make it easy to look up theorems by name
+      if let Some(a) = val.as_atom() {
+        if let Some(sp) = try_get_span_opt(
+          &FileSpan {file: self.path.clone(), span: e.span},
+          val.fspan().as_ref()
+        ) {
+          let ad = &self.env.data[a];
+          if let Some(s) = ad.sort {
+            self.spans.insert(sp, ObjectKind::Sort(s));
+          }
+          if let Some(k) = ad.decl {
+            match k {
+              DeclKey::Term(t) => {self.spans.insert(sp, ObjectKind::Term(t, sp));}
+              DeclKey::Thm(t) => {self.spans.insert(sp, ObjectKind::Thm(t));}
+            }
+          }
+        }
+      }
+      self.print_lisp(e.span, &val)
+    }
     Ok(())
   }
 }
