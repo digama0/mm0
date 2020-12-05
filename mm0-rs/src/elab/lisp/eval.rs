@@ -15,7 +15,7 @@ use crate::util::{ArcString, FileRef, FileSpan, SliceExt, Span};
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator, LispData,
   AtomID, Environment, AtomData, DeclKey, StmtTrace,
-  ElabError, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
+  ElabError, ReportMode, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   refine::{RStack, RState, RefineResult}};
 use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
   Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmID, Uncons};
@@ -613,6 +613,24 @@ impl Elaborator {
   }
 }
 
+fn set_report_mode(fe: FormatEnv<'_>, mode: &mut ReportMode, args: &[LispVal]) -> SResult<()> {
+  if args.len() == 1 {
+    if let Some(b) = args[0].as_bool() {
+      mode.error = b;
+      mode.warn = b;
+      mode.info = b;
+      Ok(())
+    } else {Err("invalid arguments")?}
+  } else if let Some(b) = args[1].as_bool() {
+    match args[0].as_atom().ok_or("expected an atom")? {
+      AtomID::ERROR => Ok(mode.error = b),
+      AtomID::WARN => Ok(mode.warn = b),
+      AtomID::INFO => Ok(mode.info = b),
+      s => Err(format!("unknown error level '{}'", fe.to(&s)))
+    }
+  } else {Err("invalid arguments")?}
+}
+
 /// The lisp evaluation context, representing a lisp evaluation in progress.
 /// This is an explicitly unfolled state machine (rather than using recursive functions)
 /// so that we can explicitly manipulate the program stack for error reporting purposes.
@@ -676,7 +694,8 @@ impl<'a> Evaluator<'a> {
     ElabError {
       pos: old.map_or(self.orig_span, |(sp, _, _)| sp.span),
       level,
-      kind: ElabErrorKind::Boxed(err.into(), Some(info))
+      kind: ElabErrorKind::Boxed(err.into(),
+        if self.backtrace.active(level) {Some(info)} else {None})
     }
   }
 
@@ -1215,20 +1234,13 @@ make_builtins! { self, sp1, sp2, args,
     LispVal::atom(x)
   },
   SetReporting: AtLeast(1) => {
-    if args.len() == 1 {
-      if let Some(b) = args[0].as_bool() {
-        self.reporting.error = b;
-        self.reporting.warn = b;
-        self.reporting.info = b;
-      } else {try1!(Err("invalid arguments"))}
-    } else if let Some(b) = args[1].as_bool() {
-      match try1!(args[0].as_atom().ok_or("expected an atom")) {
-        AtomID::ERROR => self.reporting.error = b,
-        AtomID::WARN => self.reporting.warn = b,
-        AtomID::INFO => self.reporting.info = b,
-        s => try1!(Err(format!("unknown error level '{}'", self.print(&s))))
-      }
-    } else {try1!(Err("invalid arguments"))}
+    let fe = FormatEnv {source: &self.elab.ast.source, env: &self.elab.env};
+    try1!(set_report_mode(fe, &mut self.elab.reporting, &args));
+    LispVal::undef()
+  },
+  SetBacktrace: AtLeast(1) => {
+    let fe = FormatEnv {source: &self.elab.ast.source, env: &self.elab.env};
+    try1!(set_report_mode(fe, &mut self.elab.backtrace, &args));
     LispVal::undef()
   },
   CheckProofs: Exact(1) => {

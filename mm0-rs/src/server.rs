@@ -1208,7 +1208,6 @@ impl ClientCapabilities {
     let goal_view = params.initialization_options
       .and_then(|o| from_value(o).ok()).and_then(|o: InitOptions| o.extra_capabilities)
       .and_then(|c| c.goal_view).unwrap_or(false);
-    log!("got goal view {}", goal_view);
     ClientCapabilities { reg_id: None, definition_location_links: dll, goal_view }
   }
 

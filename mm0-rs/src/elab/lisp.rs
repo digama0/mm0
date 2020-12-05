@@ -515,7 +515,11 @@ impl LispRef {
     self.0.borrow_mut().get_mut(f)
   }
   /// Get a reference to the stored value.
-  pub fn get_weak(&self) -> impl Deref<Target=LispWeak> + '_ { self.0.borrow() }
+  pub fn get_weak(&self) -> impl Deref<Target=LispWeak> + '_ {
+    self.0.try_borrow().unwrap_or_else(|_| {
+      panic!("not frozen")
+    })
+  }
   /// Get a mutable reference to the stored value.
   pub fn get_mut_weak(&self) -> impl DerefMut<Target=LispWeak> + '_ { self.0.borrow_mut() }
   /// Set this reference to a weak reference to `e`.
@@ -1281,6 +1285,10 @@ str_enum! {
     ///   display is suppressed.)
     /// * `(set-reporting b)` will set the error reporting to `b` for all error types.
     SetReporting: "set-reporting",
+    /// * `(set-backtrace b)` turns on (`b = #t`) or off (`b = #f`) backtraces in lisp for theorems.
+    /// * `(set-backtrace type b)` does the same but for specific error type `type`,
+    ///   which can be `'error`, `'info` or `'warn`.
+    SetBacktrace: "set-backtrace",
     /// `refine-extra-args` can be called directly, but it simply returns an error. It is called
     /// by `refine` when elaborating a term with too many arguments, and is expected to be
     /// overridden by user code to provide a more useful behavior.

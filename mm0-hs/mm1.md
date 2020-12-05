@@ -538,6 +538,10 @@ MM0-specific builtin functions
 
 * `(check-proofs b)` turns on (`b = #t`) or off (`b = #f`) proof checking for theorems.
 
+* `(set-backtrace b)` turns on (`b = #t`) or off (`b = #f`) backtraces in lisp for theorems.
+  `(set-backtrace type b)` does the same but for specific error type `type`,
+  which can be `'error`, `'info` or `'warn`.
+
 * `(mvar? e)` returns `#t` if `e` is an unsolved metavariable value. *Note:* Holes in expressions are *not* represented as raw metavariables, they are ref-cells to metavariables. So to test if a metavariable has not been assigned you can use `(mvar? (get! e))`.
 
 * Similarly, `(goal? e)` returns `#t` if `e` is an unsolved goal expression, and `(goal? (get! e))` checks if a goal reference has not been solved.

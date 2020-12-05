@@ -247,6 +247,8 @@ pub struct Elaborator {
   check_proofs: bool,
   /// The current reporting mode, whether we will report each severity of error
   reporting: ReportMode,
+  /// Should we report backtraces in lisp errors?
+  backtrace: ReportMode,
   /// The handlers for different kinds of input and output.
   inout: InoutHandlers,
   /// The arena for lisp data.
@@ -293,6 +295,7 @@ impl Elaborator {
       spans: Spans::new(),
       mm0_mode,
       check_proofs,
+      backtrace: ReportMode {error: true, warn: false, info: false},
       inout: InoutHandlers::default(),
       reporting: ReportMode::new(),
       arena: Default::default(),
