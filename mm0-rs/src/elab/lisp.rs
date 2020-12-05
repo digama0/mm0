@@ -4,6 +4,7 @@
 //!
 //! [`mm1.md`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#evaluation
 
+pub mod annot;
 pub mod parser;
 pub mod eval;
 pub mod debug;

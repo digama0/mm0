@@ -536,7 +536,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
                   mangled = mangled, name = name))?;
               fe.pretty(|pr| -> io::Result<()> {
                 let mut buf = String::new();
-                pr.thm_headless(td, Pretty::nil()).render_fmt(PP_WIDTH, &mut buf)
+                pr.thm_headless(td, pr.nil()).render_fmt(PP_WIDTH, &mut buf)
                   .expect("writing to a string");
                 escape_html(&mut file, &buf)
               })?;
