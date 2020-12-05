@@ -15,7 +15,7 @@ use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Annot},
 
 const PP_WIDTH: usize = 160;
 
-/// implements `RenderAnnotated`. Is currently specialized to HtmlTag.
+/// A writer that implements `RenderAnnotated`, which produces HTML text.
 struct HtmlPrinter<'a, W: Write> {
   env: &'a Environment,
   mangler: &'a mut Mangler,
@@ -69,9 +69,9 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
         self.stack.push("a");
       }
       Annot::ThmName(tid) => {
-        let w = &mut self.w.0;
+        let w = &mut *self.w.0;
         let rel = self.rel;
-        self.mangler.mangle(&self.env, tid, |_, mangled|
+        self.mangler.mangle(self.env, tid, |_, mangled|
           write!(w, r#"<a class="thm" href="{}thms/{}.html">"#, rel, mangled))?;
         self.stack.push("a");
       }
@@ -301,7 +301,7 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     LineKind::Hyp(None) => write!(w, "<i>hyp</i>")?,
     LineKind::Hyp(Some(a)) => write!(w, "<i>hyp {}</i>", fe.env.data[a].name)?,
     LineKind::Thm(tid) =>
-      mangler.mangle(&fe.env, tid, |thm, mangled|
+      mangler.mangle(fe.env, tid, |thm, mangled|
         write!(w, r#"<a class="thm" href="{}.html">{}</a>"#, mangled, thm))?,
     LineKind::Conv(defs) => {
       write!(w, "<i>conv</i>")?;
@@ -324,6 +324,7 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     \n        </tr>")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_proof<'a>(
   source: &'a LinedString, env: &'a mut Environment, mangler: &'a mut Mangler, w: &mut impl Write,
   order: ProofOrder,
@@ -578,9 +579,13 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           write!(file, "    <div id=\"")?;
           disambiguated_anchor(&mut file, ad, true)?;
           writeln!(file, "\">")?;
-          let sd = &self.env.sorts[ad.sort.expect("wf env")];
+          let sid = ad.sort.expect("wf env");
+          let sd = &self.env.sorts[sid];
           render_doc(&mut file, &sd.doc)?;
-          writeln!(file, "      <pre>{}</pre>\n    </div>", sd)?
+          writeln!(file, "      <pre>")?;
+          let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
+          fe.pretty(|pr| pr.sort(sid).render_raw(PP_WIDTH, w))?;
+          writeln!(file, "</pre>\n    </div>")?
         }
         StmtTrace::Decl(a) => {
           let ad = &self.env.data[a];

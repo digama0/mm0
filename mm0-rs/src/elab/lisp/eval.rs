@@ -620,15 +620,16 @@ fn set_report_mode(fe: FormatEnv<'_>, mode: &mut ReportMode, args: &[LispVal]) -
       mode.warn = b;
       mode.info = b;
       Ok(())
-    } else {Err("invalid arguments")?}
+    } else {Err("invalid arguments".into())}
   } else if let Some(b) = args[1].as_bool() {
     match args[0].as_atom().ok_or("expected an atom")? {
-      AtomID::ERROR => Ok(mode.error = b),
-      AtomID::WARN => Ok(mode.warn = b),
-      AtomID::INFO => Ok(mode.info = b),
-      s => Err(format!("unknown error level '{}'", fe.to(&s)))
+      AtomID::ERROR => mode.error = b,
+      AtomID::WARN => mode.warn = b,
+      AtomID::INFO => mode.info = b,
+      s => return Err(format!("unknown error level '{}'", fe.to(&s)))
     }
-  } else {Err("invalid arguments")?}
+    Ok(())
+  } else {Err("invalid arguments".into())}
 }
 
 /// The lisp evaluation context, representing a lisp evaluation in progress.

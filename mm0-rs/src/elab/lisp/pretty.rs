@@ -15,13 +15,22 @@ use super::{LispVal, LispKind, Uncons, print::FormatEnv,
       Environment, NotaInfo, AtomData, AtomID, TermID, ThmID, SortID, Thm, Type},
     math_parser::APP_PREC}};
 
+/// The possible annotations around subparts of a pretty printed display.
+/// These are ignored under usual printing settings, but they are used in
+/// HTML printing for coloring and to provide more detailed information.
 #[derive(Clone, Copy, Debug)]
 pub enum Annot {
+  /// These are the sort modifiers, e.g. `strict provable` in `strict provable sort foo;`
   SortModifiers(Modifiers),
+  /// This is the visibility modifier, e.g. `pub` or `local`.
   Visibility(Modifiers),
+  /// This is a keyword, like `axiom` or `sort`.
   Keyword,
+  /// This is a sort name, like `foo` in `sort foo;`.
   SortName(SortID),
+  /// This is a term/def name, like `foo` in `term foo: nat;`.
   TermName(TermID),
+  /// This is an axiom/theorem name, like `foo` in `axiom foo: $ 1 + 1 = 2 $;`.
   ThmName(ThmID),
 }
 
@@ -409,10 +418,12 @@ impl<'a> Pretty<'a> {
   /// `def foo (x y: nat): nat = $ x + y $;`.
   pub fn term(&'a self, tid: TermID, show_def: bool) -> RefDoc<'a> {
     let t = &self.fe.env.terms[tid];
-    let doc = self.annot(Annot::Visibility(t.vis),
-      self.alloc(Doc::text(t.vis.to_string())));
-    let doc = self.append_annot(doc, Annot::Keyword,
+    let mut doc = self.annot(Annot::Keyword,
       if matches!(t.kind, TermKind::Term) {str!("term")} else {str!("def")});
+    if !t.vis.is_empty() {
+      doc = self.append_doc(self.annot(Annot::Visibility(t.vis),
+        self.alloc(Doc::text(t.vis.to_string()))), doc);
+    }
     let doc = self.append_doc(doc, Self::space());
     let doc = self.append_annot(doc, Annot::TermName(tid),
       self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
@@ -458,7 +469,7 @@ impl<'a> Pretty<'a> {
 
   /// Pretty print a sort, with annotations.
   /// Basic form is just `<modifiers> sort <name>;`
-  pub(crate) fn pp_sort(&'a self, sid: SortID) -> RefDoc<'a> {
+  pub(crate) fn sort(&'a self, sid: SortID) -> RefDoc<'a> {
     let s = &self.fe.env.sorts[sid];
     let mut doc = self.annot(Annot::SortModifiers(s.mods),
       self.alloc(Doc::text(s.mods.to_string())));
