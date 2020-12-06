@@ -204,7 +204,7 @@ theorem readPrefixesT (rex l: nat):
   $ readPrefixes rex l -> rex e. REX /\ l e. List u8 $;
 
 def readImmN (k q l .w: nat): wff =
-$ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
+$ 8 || k /\ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
 theorem readImmN_T (k q l: nat):
   $ k <= 64 /\ readImmN k q l -> q e. u64 /\ l e. List u8 $;
 
@@ -424,12 +424,16 @@ $ b = ch x0 x5 /\ l = 0 /\ ast = xastSysCall $;
 theorem decodeTwoSysCallT (rex ast b l: nat):
   $ decodeTwoSysCall rex ast b l -> ast e. XAST $;
 
+def decodeTwoAux (rex ast b l: nat): wff =
+$ decodeTwoCMov rex ast b l \/ decodeTwoJCC rex ast b l \/
+  decodeTwoSetCC rex ast b l \/ decodeTwoCmpXchg rex ast b l \/
+  decodeTwoMovX rex ast b l \/ decodeTwoXadd rex ast b l \/
+  decodeTwoSysCall rex ast b l $;
+theorem decodeTwoAuxT (rex ast b l: nat):
+  $ decodeTwoAux rex ast b l -> ast e. XAST $;
+
 def decodeTwo (rex ast b l .b2 .l2: nat): wff =
-$ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ (
-    decodeTwoCMov rex ast b2 l2 \/ decodeTwoJCC rex ast b2 l2 \/
-    decodeTwoSetCC rex ast b2 l2 \/ decodeTwoCmpXchg rex ast b2 l2 \/
-    decodeTwoMovX rex ast b2 l2 \/ decodeTwoXadd rex ast b2 l2 \/
-    decodeTwoSysCall rex ast b2 l2)) $;
+$ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ decodeTwoAux rex ast b2 l2) $;
 theorem decodeTwoT (rex ast b l: nat):
   $ decodeTwo rex ast b l -> ast e. XAST $;
 
@@ -494,7 +498,7 @@ theorem decodeBinopT (rex ast b l: nat):
   $ decodeBinop rex ast b l -> ast e. XAST $;
 
 def decodeMovSX (rex ast b l .reg .r: nat): wff =
-$ E. reg E. r (l = ch x6 x3 /\
+$ E. reg E. r (b = ch x6 x3 /\
     readModRM rex reg r l /\ ast = xastMovSX wSz32 (R_rm reg r) wSz64) $;
 theorem decodeMovSX_T (rex ast b l: nat):
   $ decodeMovSX rex ast b l -> ast e. XAST $;

@@ -409,6 +409,8 @@ do (def (to-eli n a) @ match a
 @_ def chop (k n: nat): nat = $ n % 2 ^ k $;
 pub theorem chopT (k n: nat): $ chop k n e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
+theorem chop01: $ chop 0 n = 0 $ = '(mpbi elBits0 chopT);
+theorem chop02: $ chop k 0 = 0 $ = 'mod01;
 theorem el_chop: $ a e. chop k n <-> a < k /\ a e. n $ = 'elmodpow2;
 theorem bit_chop: $ a < k -> bit (chop k n) a = bit n a $ =
 '(nateqd @ syl5bb el_chop bian1);
@@ -775,6 +777,9 @@ pub theorem toBytesT (k n: nat): $ toBytes k n e. Array u8 k $ =
     sylibr (eleq1 toBytesS) @ syl (sylibr elArrayS @ ian mod_el_u8) @
     eale @ eleq1d toByteseq2)));
 
+theorem toBytesT2 (k n: nat): $ toBytes k n e. List u8 $ = '(elArrayList toBytesT);
+theorem toBytes_len (k n: nat): $ len (toBytes k n) = k $ = '(elArraylen toBytesT);
+
 theorem toBytes1: $ toBytes 1 n = chop 8 n : 0 $ =
 '(eqtr toBytesS @ conseq2 toBytes0);
 
@@ -785,6 +790,22 @@ theorem toBytes_chop: $ toBytes k (chop (8 * k) n) = toBytes k n $ =
     (a1i @ chop_chop @ mpbi (leeq1 mul12) @ lemul2a le11S)
     (sylibr (eqeq1 @ toByteseq2 @ eqtr (shreq1 @ chopeq1 mulS) chop_shr) @
       eale ,eqtac)))));
+
+theorem toBytes_inj2: $ toBytes k a = toBytes k b <-> chop (8 * k) a = chop (8 * k) b $ =
+(named @ focus
+  '(ibii _ @ eqtr3g toBytes_chop toBytes_chop toByteseq2)
+  '(ax_mp (!! eale y ,(eqtac-gen 'b)) @ ax_mp (!! eale x ,(eqtac-gen 'a)) _)
+  (induct '(ind) 'k
+    '(ax_gen @ ax_gen @ eqtr4g (chopeq1 mul02) (chopeq1 mul02) @ a1i @ eqtr4 chop01 chop01)
+    '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
+      ealie @ ealde @ syl6 _ @ bi1d ,eqtac))
+  '(syl5bi (eqeq toBytesS2 toBytesS2) @ syl5bi consinj @
+    impd @ com12 @ imim2d @ exp @ eqtr4g (chopeq1 mulS) (chopeq1 mulS) @
+    eqtr3g shlshr_chop shlshr_chop @ addeqd (shleq1d @ eqtr4g chop_shr chop_shr anr) @
+    eqtr4g (chop_chop leaddid2) (chop_chop leaddid2) anl));
+
+theorem toBytes_inj: $ toBytes k a = toBytes k b <-> mod(2 ^ (8 * k)): a = b $ =
+'(bitr toBytes_inj2 chop_eq_chop);
 
 theorem toBytesS_bitsNot: $ toBytes (suc k) (bitsNot (8 * suc k) n) =
   bitsNot 8 n : toBytes k (bitsNot (8 * k) (shr n 8)) $ =
@@ -1263,6 +1284,12 @@ do (def (mk-splatBits bs n)
             '(,q (splatBitsS ,a ,bs ,i ,j ,k ,n ,p ,q ,pr ,pr2))]]]])
   @ match (rec '(h2n @ x0) bs) @ (p pr) '(,p (splatBits0 ,bs ,n ,p ,pr)));
 
+--| Refine script that proves goals of the form `$ splitBits bs n -> ? $`,
+--| filling in `?` with a conjunction of bits lemmas. (See also `mk-splatBits`.)
+do (def (splatBits-tac refine t) @ refine t
+  @ match t @ $ splitBits ,bs ,n -> ,_ $
+  @ match (mk-splatBits bs n) @ (p pr) '{,(verb pr) : $ _ -> ,(verb p) $});
+
 theorem splatBits_ch (h1: $ m = y $) (h2: $ n = x $)
   (h3: $ splitBits ((4 <> m) : (4 <> n) : 0) b -> p $): $ b = ch x y -> p $ =
 '(syl h3 @ mpbiri (splitBitsA4ic append1 bvSize1
@@ -1566,6 +1593,12 @@ theorem readModRM_val (rex rn rm l: nat): $ readModRM rex rn rm l <->
     exeqe @ syl5bb ancomb @ aneq2d @ eqeq2d conseq2) @
   bitr (exeqi ifpan2) @ bitr exifp @ ifpeq2 @
   bitr rexcomb @ rexeqi @ bitr (exeqi ancomb) @ exeqe ,eqtac));
+theorem readModRM_val2 (rex rn rm l: nat): $ readModRM rex rn rm l <->
+  E. b E. l2 (l = b : l2 /\ E. rm2 E. opc E. m (
+    splitBits ((3 <> rm2) : (3 <> opc) : (2 <> m) : 0) b /\
+    rn = rex_reg (REX_R rex) opc /\
+    readModRM2 rex rm rm2 m l2)) $ =
+'(bitr readModRM_val @ exeqi @ birexexi @ birexexi @ birexexi @ birexan2i biid);
 
 pub theorem readModRM_T (rex rn rm l: nat):
   $ readModRM rex rn rm l -> rn e. Regs /\ rm e. RM /\ l e. List u8 $ =
@@ -1642,12 +1675,16 @@ pub theorem readPrefixesT (rex l: nat):
     (mpbird (eleq1d anr) @ sylibr elList1 @ anwll @ splitBitsTi ,bvSizeSi))));
 
 @_ def readImmN (k q l .w: nat): wff =
-$ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
+$ 8 || k /\ E. w (w e. Bits k /\ q = sExtq k w /\ l = toBytes (k // 8) w) $;
 pub theorem readImmN_T (k q l: nat):
   $ k <= 64 /\ readImmN k q l -> q e. u64 /\ l e. List u8 $ =
-(named '(impcom @ eex @ exp @ iand
+(named '(impcom @ anwr @ eex @ exp @ iand
   (mpbird (eleq1d anllr) @ syl sExtqT @ iand anr an3l)
   (mpbiri (elArrayList toBytesT) (eleq1d anlr))));
+
+theorem readImmN_val: $ readImmN k q l <->
+  E. w (w e. Bits k /\ (8 || k /\ (q = sExtq k w /\ l = toBytes (k // 8) w))) $ =
+'(birexan2i @ exeqi anass);
 
 theorem readImm8T: $ readImmN 8 q l -> q e. u64 /\ l e. List u8 $ =
 '(syl readImmN_T @ ian d8le64);
@@ -1666,7 +1703,7 @@ theorem readImmN_I (h1: $ 8 * i = k $) (h2: $ k <= 64 $)
   (h3: $ a e. Bits k $) (h4: $ s2n l = toIBytes i a $):
   $ readImmN k (chopZ 64 a) l $ =
 (focus
-  '(iexie @ mpbiri (ian _ _) ,eqtac)
+  '(iani (mpbi (dvdeq2 h1) dvdmul2) @ iexie @ mpbiri (ian _ _) ,eqtac)
   '(ian chopZT @ eqcom @ sExt_chopZ @ iani h2 h3)
   '(eqtr h4 @ toByteseq (eqtr3 (muldiv2 peano1) (diveq1 h1)) (chopZeq1 h1)));
 
@@ -2036,19 +2073,23 @@ pub theorem decodeTwoSysCallT (rex ast b l: nat):
   $ decodeTwoSysCall rex ast b l -> ast e. XAST $ =
 '(mpbiri xastSysCallT @ eleq1d anr);
 
+@_ def decodeTwoAux (rex ast b l: nat): wff =
+$ decodeTwoCMov rex ast b l \/ decodeTwoJCC rex ast b l \/
+  decodeTwoSetCC rex ast b l \/ decodeTwoCmpXchg rex ast b l \/
+  decodeTwoMovX rex ast b l \/ decodeTwoXadd rex ast b l \/
+  decodeTwoSysCall rex ast b l $;
+pub theorem decodeTwoAuxT (rex ast b l: nat):
+  $ decodeTwoAux rex ast b l -> ast e. XAST $ =
+(focus
+  (def (f x) (atom-app 'decodeTwo x 'T))
+  (foldl '(JCC_ SetCC_ CmpXchg MovX_ Xadd SysCall) (f 'CMov)
+    @ fn (x y) '(eor ,x ,(f y))));
+
 @_ def decodeTwo (rex ast b l .b2 .l2: nat): wff =
-$ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ (
-    decodeTwoCMov rex ast b2 l2 \/ decodeTwoJCC rex ast b2 l2 \/
-    decodeTwoSetCC rex ast b2 l2 \/ decodeTwoCmpXchg rex ast b2 l2 \/
-    decodeTwoMovX rex ast b2 l2 \/ decodeTwoXadd rex ast b2 l2 \/
-    decodeTwoSysCall rex ast b2 l2)) $;
+$ b = ch x0 xf /\ E. b2 E. l2 (l = b2 : l2 /\ decodeTwoAux rex ast b2 l2) $;
 pub theorem decodeTwoT (rex ast b l: nat):
   $ decodeTwo rex ast b l -> ast e. XAST $ =
-(named @ focus
-  (def (f x) (atom-app 'decodeTwo x 'T))
-  '(anwr @ eex @ eex @ anwr
-   ,(foldl '(JCC_ SetCC_ CmpXchg MovX_ Xadd SysCall) (f 'CMov)
-    @ fn (x y) '(eor ,x ,(f y)))));
+(named '(anwr @ eex @ eex @ anwr decodeTwoAuxT));
 
 @_ def decodeBinopReg (rex ast b l .v .d .opc .reg .r: nat): wff =
 $ E. v E. d E. opc E. reg E. r (
@@ -2148,7 +2189,7 @@ pub theorem decodeBinopT (rex ast b l: nat):
     @ fn (x y) '(eor ,x ,(f y))));
 
 @_ def decodeMovSX (rex ast b l .reg .r: nat): wff =
-$ E. reg E. r (l = ch x6 x3 /\
+$ E. reg E. r (b = ch x6 x3 /\
     readModRM rex reg r l /\ ast = xastMovSX wSz32 (R_rm reg r) wSz64) $;
 pub theorem decodeMovSX_T (rex ast b l: nat):
   $ decodeMovSX rex ast b l -> ast e. XAST $ =
@@ -2536,103 +2577,6 @@ theorem decode1I (h: $ decodeAux (suc rex) ast opc s $):
 
 theorem decodeSysCallI: $ decode xastSysCall (ch x0 xf ': s1 (ch x0 x5)) $ =
 '(decode0I @ decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);
-
--- Builds theorems like:
--- ```
--- theorem decodeRet_bit (rex ast b l: nat):
--- $ decodeRet rex ast b l ->
---   T. /\
---     bit b x7 = 1 /\
---     bit b x6 = 1 /\
---     bit b x5 = 0 /\
---     bit b x4 = 0 /\
---     bit b x3 = 0 /\
---     bit b x2 = 0 /\
---     bit b x1 = 1 $;
--- ```
--- which calculate all the fixed fields of a decode case.
-do (letrec (
-  [(build defn)
-    (def val (nth 6 @ get-decl defn))
-    (def name (atom-app defn "_bit"))
-    (def m (atom-map!))
-    (def (finish p pr)
-      (add-tac-thm! name (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
-        '(im (,defn rex ast b l) ,p) () @ fn () @ refine '{,pr : $ ,val -> ,p $})
-      m)
-    @ match (hd val)
-    ['or (=> break)
-      @ letrec (
-        [rec @ match-fn
-          [$ ,a \/ ,b $
-            (def ra (rec a)) (def rb (rec b))
-            @ match ra [#undef] @ (va fa) @ match rb [#undef] @ (vb fb)
-            @ list (rmap va vb @ match-fn*
-              [((b1 x) (b2 y)) @ if {b1 == b2} (list b1 @ cons x y)]
-              [_])
-            @ fn (g x) '(eori
-              ,(fa g @ map (match-fn [#undef] @ (b (cons x _)) (list b x)) x)
-              ,(fb g @ map (match-fn [#undef] @ (b (cons _ y)) (list b y)) x))]
-          ['(,th rex ast b l)
-            @ match (build th) [#undef] @ m
-            @ list (rmap (range 0 8) @ fn (i) (lookup m (hexdigit i)))
-            @ fn (g x) (g x)]])
-      @ match (rec val) [#undef (break)] @ (arr f)
-      @ letrec (
-        [(rec2 i)
-          @ if {i = 8} #undef @ begin
-          (def s (rec2 {i + 1}))
-          @ match (nth i arr) [#undef s] @ (b _)
-          (def xi (hexdigit i))
-          @ match s
-            [#undef @ fn (ctx)
-              (insert m xi @ list b ctx)
-              @ list $ bit b ,xi = ,b $
-              @ fn (arr2) (nth 1 @ nth i arr2)]
-            [recf @ fn (ctx) @ match (recf '(anld ,ctx)) @ (p f)
-              (insert m xi @ list b '(anrd ,ctx))
-              @ list $ ,p /\ bit b ,xi = ,b $
-              @ fn (arr2) '(iand ,(f arr2) ,(nth 1 @ nth i arr2))]])
-      @ match (rec2 0) [#undef (break)] @ recf
-      @ match (recf name) @ (p g)
-      @ finish p (f g arr)]
-    [(or 'ex 'an) (=> break)
-      (def res (ref!))
-      @ letrec (
-        [(rec x) @ match x
-          [$ E. _ ,val $ @ match (rec val) [#undef] [pr '(eex ,pr)]]
-          [$ ,a /\ ,b $
-            @ match (rec a)
-            [#undef @ match (rec b) [#undef] [pr '(anwr ,pr)]]
-            [pr '(anwl ,pr)]]
-          [$ splitBits ,bs ,n $
-            @ match (mk-splatBits bs n) @ (p pr)
-            @ match p [$T.$ (break)] @ _
-            (set! res p) '(:verb ,pr)]
-          [$ b = c2n (ch ,x ,y) $
-            @ match (mk-splatBits-ch x y 'b) @ (p pr)
-            (set! res p) '(:verb ,pr)]
-          [_]])
-      @ match (rec val) [#undef (break)] @ pr
-      @ letrec (
-        [(gather p ctx) @ match p
-          [$ ,p /\ bit ,_ (h2n ,(i)) = ,b $
-            (insert m i @ list b '(anrd ,ctx))
-            (gather p '(anld ,ctx))]
-          [_]])
-      (def p (get! res))
-      (gather p name)
-      (finish p pr)]
-    [_]])
-  (build 'decodeAux));
-
--- theorem decode_determ2:
---   $ decode ast1 l -> decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $ =
--- '(eex @ eex @ eex @ eex @ eexd @ eexd @ eexd @ eexda @
---   ?);
-
--- theorem decode_determ: $ decode ast1 l -> decode ast2 l -> ast1 = ast2 $ =
--- '(syl6 anl @ syl5bir (decodeeq2 append02) decode_determ2);
 
 ----------------------------------------
 -- Dynamic semantics

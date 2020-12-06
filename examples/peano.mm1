@@ -43,6 +43,7 @@ do {
   (def (verb e) (copy-span e (list ':verb e)))
   (def (exact e) (refine (verb e)))
   (def (result) (hd (get-goals)))
+  (def (target) (goal-type (result)))
   (def (inspect-result f) (def g (result)) (refine (f)) (display @ pp g))
   (def (later) @ match (get-goals)
     [(g . gs) (apply set-goals @ append gs @ list g)])
@@ -689,10 +690,29 @@ pub theorem ifppos (p a b: wff): $ p -> (ifp p a b <-> a) $ =
 pub theorem ifpneg (p a b: wff): $ ~p -> (ifp p a b <-> b) $ =
 '(bitrd (syl bior1 @ con3 anl) bian1);
 
+theorem ifpid: $ ifp p a a <-> a $ = '(cases ifppos ifpneg);
+theorem ifpnot: $ ifp (~p) a b <-> ifp p b a $ =
+'(bitr4 orcomb @ oreq1 @ aneq1i notnot);
+
 theorem ifpan1: $ ifp p a b /\ c <-> ifp p (a /\ c) (b /\ c) $ =
 '(bitr andir @ oreq anass anass);
 theorem ifpan2: $ c /\ ifp p a b <-> ifp p (c /\ a) (c /\ b) $ =
 '(bitr andi @ oreq anlass anlass);
+theorem ifpor: $ ifp p (a \/ b) (c \/ d) <-> ifp p a c \/ ifp p b d $ =
+(let ([(f x) '(bitr4d ,x @ oreqd ,x ,x)]) '(cases ,(f 'ifppos) ,(f 'ifpneg)));
+
+theorem ifpeq1a: $ (p -> (a1 <-> a2)) -> (ifp p a1 b <-> ifp p a2 b) $ = '(oreq1d aneq2a);
+theorem ifpeq2a: $ (~p -> (b1 <-> b2)) -> (ifp p a b1 <-> ifp p a b2) $ = '(oreq2d aneq2a);
+
+theorem ifptreq (h: $ G -> (p <-> ifp a p0 p1) $)
+  (h0: $ G /\ a -> (p0 <-> q0) $) (h1: $ G /\ ~a -> (p1 <-> q1) $):
+  $ G -> (p <-> ifp a q0 q1) $ =
+'(bitrd h @ bitrd (syl ifpeq1a @ exp h0) (syl ifpeq2a @ exp h1));
+
+theorem ifppos2: $ b -> (ifp a b c <-> a \/ c) $ = '(syl6bb (oreq2a bian1) (oreq1d bian2));
+theorem ifppos3: $ c -> (ifp a b c <-> ~a \/ b) $ = '(syl5bbr ifpnot ifppos2);
+theorem ifpneg3: $ ~c -> (ifp a b c <-> a /\ b) $ = '(syl bior2 @ con3 anr);
+theorem ifpneg2: $ ~b -> (ifp a b c <-> ~a /\ c) $ = '(syl5bbr ifpnot ifpneg3);
 
 --| The constant `true`.
 term tru: wff; prefix tru: $T.$ prec max;
@@ -6192,6 +6212,27 @@ theorem appendinj2: $ len l2 = len r2 -> (l1 ++ l2 = r1 ++ r2 <-> l1 = r1 /\ l2 
     eqtrd (eqtr3g appendlen appendlen @ leneqd anr) @
     addeq2d @ eqcomd anl) anr) @
   appendeqd anrl anrr);
+
+theorem eqappendlem: $ len r1 <= len l1 /\ l1 ++ l2 = r1 ++ r2 ->
+  E. a (l1 = r1 ++ a /\ r2 = a ++ l2) $ =
+(focus
+  (have 'h1 'takedrop)
+  (have 'h2 $ _ -> l1 = r1 ++ take r2 (len l1 - len r1) /\
+                   l2 = drop r2 (len l1 - len r1) $
+    '(mpbid (syl appendinj1 @ syl6eqr appendlen @ eqcomd @
+      eqtrd (addeq2d @ syl5eq takelen @ syl eqmin2 @
+        sylibr lesubadd2 @ mpbii leaddid1 @ leeq2d @
+        eqtr3g appendlen appendlen @ leneqd anr) @ anwl pncan3) @
+      syl6eqr appendass @ syl6eqr (appendeq2 h1) anr))
+  '(syl (iexe ,eqtac) @ iand (anld h2) (eqcomd @ syl6eq h1 @ appendeq2d @ anrd h2)));
+
+theorem eqappend: $ l1 ++ l2 = r1 ++ r2 <->
+  E. a (r1 = l1 ++ a /\ l2 = a ++ r2 \/ l1 = r1 ++ a /\ r2 = a ++ l2) $ =
+(focus
+  (def (f x) '(mpbiri ,x ,eqtac))
+  '(ibii _ @ eex @ eor ,(f '(eqcom appendass)) ,(f 'appendass))
+  (def (f x) '(exp @ rsyl eqappendlem @ eximi ,x))
+  '(eor (syl5 eqcom ,(f 'orl)) ,(f 'orr) leorle));
 
 --| `sublistAt n L1 L2` means that `L2 = L1[n..n+a]`
 --| where `a` is the length of `L2`.
