@@ -106,7 +106,7 @@ h1 code, h2 code, h3 code, h4 code, h5 code, h6 code {
 body {
     font-family: "Nobile", sans-serif;
     font-size: 100%;
-    background-color: #eee;
+    background-color: #f5f7ff;
     margin: 0;
     padding: 0;
 }
@@ -132,11 +132,17 @@ a, a .pre {
     text-decoration: none;
 }
 
+a.sort, a.sortname, span.sort {color:#c08b30;}
+a.ax {color:#c94922;}
+a.def {color: #22a2c9;}
+a.thm { color: #6679cc; }
+a.term {color: #9c637a;}
+
 a:hover, a:hover .pre {
     text-decoration: underline;
 }
 
-a.term, a.thm {
+a.term, a.def, a.thm, a.ax {
     font-family: Fira Code,Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;
     font-size: 0.9em;
 }
@@ -177,7 +183,7 @@ div.body p, div.body dd, div.body li {
 pre {
     padding: 10px;
     background-color: #fafafa;
-    color: #222;
+    color: #545b78;
     line-height: 1.2em;
     border: 2px solid #C6C9CB;
     margin: 1.5em 0 1.5em 0;
@@ -253,8 +259,8 @@ table.proof pre {
 }
 
 code {
-    background-color: transparent;
-    color: #222;
+    background-color: #f0f3ff;
+    color: #545b78;
     font-family: Fira Code,Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;
     font-size: 1em;
 }
@@ -273,7 +279,7 @@ h1.title span.nav a {
 @media (prefers-color-scheme: dark) {
 
     body {
-        background-color: #080808;
+        background-color: #090c18;
     }
 
     hr {
@@ -281,14 +287,21 @@ h1.title span.nav a {
     }
 
     div.body {
-        background-color: #121212;
-        color: #e7e8eb;
+        background-color: #14192e;
+        color: #979db4;
         border: 2px solid #222;
     }
 
     a, a .pre {
-        color: #378ad3;
+        color: #1b61d6;
+        text-decoration: none;
     }
+
+    a.sort, a.sortname, span.sort {color:#c08b30;}
+    a.ax {color:#c94922;}
+    a.def {color: #22a2c9;}
+    a.thm { color: #6679cc; }
+    a.term {color: #9c637a;}
 
     div.body h1,
     div.body h2,
@@ -296,14 +309,14 @@ h1.title span.nav a {
     div.body h4,
     div.body h5,
     div.body h6 {
-        color: #e7e8eb;
+        color: #dfe2f1;
     }
 
-    div.body h1 { border-top: 20px solid #121212; }
+    div.body h1 { border-top: 20px solid #14192e; }
 
     pre {
-        background-color: #0c0c0c;
-        color: #ccc;
+        background-color: #171d33;
+        color: #979db4;
         border: 2px solid #393634;
     }
 
@@ -317,11 +330,11 @@ h1.title span.nav a {
     }
 
     table.proof tr.selected td:first-child {
-        background-color: #181814;
+        background-color: #293256;
     }
 
     tbody tr:hover {
-        background-color: #0d0d0d;
+        background-color: #202746;
     }
 
     th, td {
@@ -329,6 +342,8 @@ h1.title span.nav a {
     }
 
     code {
-        color: #ddd;
+        background-color: #171d33;
+        border-radius: 3px;
+        color: #dfe2f1;
     }
 }

@@ -60,9 +60,19 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
       Annot::SortModifiers(_) => tag!(span "sortmod"),
       Annot::Visibility(_) => tag!(span "vis"),
       Annot::Keyword => tag!(span "kw"),
-      Annot::SortName(_) => tag!(span "sort"),
+      Annot::SortName(sid) => {
+        write!(self.w.0, "<a class=\"sortname\" href=\"{}index.html#", self.rel)?;
+        let ad = &self.env.data[self.env.sorts[sid].atom];
+        disambiguated_anchor(&mut self.w.0, ad, false)?;
+        write!(self.w.0, "\">")?;
+        self.stack.push("a");
+      }
       Annot::TermName(tid) => {
-        write!(self.w.0, "<a class=\"term\" href=\"{}index.html#", self.rel)?;
+        let kind = match &self.env.terms[tid].kind {
+          crate::elab::environment::TermKind::Term => "term",
+          crate::elab::environment::TermKind::Def(_) => "def"
+        };
+        write!(self.w.0, "<a class=\"{}\" href=\"{}index.html#", kind, self.rel)?;
         let ad = &self.env.data[self.env.terms[tid].atom];
         disambiguated_anchor(&mut self.w.0, ad, false)?;
         write!(self.w.0, "\">")?;
@@ -71,8 +81,12 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
       Annot::ThmName(tid) => {
         let w = &mut *self.w.0;
         let rel = self.rel;
+        let kind = match &self.env.thms[tid].kind {
+          ThmKind::Axiom => "ax",
+          ThmKind::Thm(_) => "thm"
+        };
         self.mangler.mangle(self.env, tid, |_, mangled|
-          write!(w, r#"<a class="thm" href="{}thms/{}.html">"#, rel, mangled))?;
+          write!(w, r#"<a class="{}" href="{}thms/{}.html">"#, kind, rel, mangled))?;
         self.stack.push("a");
       }
     }
@@ -547,7 +561,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
           write!(file, "<i>sorry</i>")?
         } else {
           self.mangler.mangle(&self.env, self.axuse.0[i], |thm, mangled|
-            write!(file, r#"    <a class="thm" href="{}.html">{}</a>"#, mangled, thm))?
+            write!(file, r#"    <a class="ax" href="{}.html">{}</a>"#, mangled, thm))?
         }
       }
       writeln!(file)?

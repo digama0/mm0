@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::{mem, fmt::{self, Write}};
+use std::{mem, fmt};
 use std::borrow::Cow;
 use pretty::DocAllocator;
 use itertools::Itertools;
@@ -373,13 +373,16 @@ impl<'a> Pretty<'a> {
     })
   }
 
-  fn dep_type(bvars: &[AtomID], ds: u64, fe: FormatEnv<'_>, f: &mut impl fmt::Write) -> fmt::Result {
+  fn dep_type(&'a self, bvars: &[AtomID], ds: u64, mut doc: RefDoc<'a>) -> RefDoc<'a> {
     let mut i = 1;
     for x in bvars {
-      if ds & i != 0 {write!(f, " {}", fe.to(x))?}
+      if ds & i != 0 {
+        let rhs = Doc::text(format!(" {}", self.fe.to(x)));
+        doc = self.append_doc(doc, self.alloc(rhs));
+      }
       i *= 2;
     }
-    Ok(())
+    doc
   }
 
   fn grouped_binders(&'a self, mut doc: RefDoc<'a>,
@@ -392,24 +395,35 @@ impl<'a> Pretty<'a> {
         Some((_, ty)) => ty,
       };
       let (bis1, bis2) = rest.split_at(it.position(|(_, ty2)| ty != ty2).map_or(rest.len(), |x| x + 1));
-      let mut buf = String::new();
+      let mut buf = Self::nil();
       match *ty {
         Type::Bound(s) => {
-          write!(buf, "{{{}: {}}}", bis1.iter().map(|(a, _)| {
+          buf = self.append_doc(buf, str!("{"));
+          let lhs = format!("{}", bis1.iter().map(|(a, _)| {
             bvars.push(a.unwrap_or(AtomID::UNDER));
             self.fe.to(a)
-          }).format(" "), self.fe.to(&s)).expect("writing to a String");
+          }).format(" "));
+          buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
+          buf = self.append_doc(buf, str!(": "));
+          buf = self.append_annot(buf, Annot::SortName(s),
+            self.alloc(Doc::text(self.fe.env.sorts[s].name.to_string())));
+          buf = self.append_doc(buf, str!("}"));
         }
         Type::Reg(s, ds) => {
-          write!(buf, "({}: {}",
-            bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "),
-            self.fe.to(&s)).expect("writing to a String");
-          Self::dep_type(bvars, ds, self.fe, &mut buf).expect("writing to a Vec");
-          write!(buf, ")").expect("writing to a String");
+          buf = self.append_doc(buf, str!("("));
+          let lhs = format!("{}", bis1.iter().map(|(a, _)| {
+            bvars.push(a.unwrap_or(AtomID::UNDER));
+            self.fe.to(a)
+          }).format(" "));
+          buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
+          buf = self.append_doc(buf, str!(": "));
+          buf = self.append_annot(buf, Annot::SortName(s),
+            self.alloc(Doc::text(self.fe.env.sorts[s].name.to_string())));
+          buf = self.dep_type(bvars, ds, buf);
+          buf = self.append_doc(buf, str!(")"));
         }
       }
-      doc = self.append_doc(doc, self.append_doc(Self::softline(),
-        self.alloc(Doc::text(buf))));
+      doc = self.append_doc(doc, self.append_doc(Self::softline(), buf));
       rest = bis2;
     }
   }
@@ -429,14 +443,16 @@ impl<'a> Pretty<'a> {
       self.alloc(Doc::text(format!("{}", self.fe.to(&t.atom)))));
     let mut bvars = vec![];
     let doc = self.grouped_binders(doc, &t.args, &mut bvars);
-    let doc = self.append_doc(doc, self.alloc(Doc::text(":")));
+    let doc = self.append_doc(doc, str!(":"));
     let doc = self.alloc(Doc::Group(doc));
-    let mut buf = format!("{}", self.fe.to(&t.ret.0));
-    Self::dep_type(&bvars, t.ret.1, self.fe, &mut buf).expect("writing to a String");
+    let mut buf = self.annot(
+      Annot::SortName(t.ret.0),
+      self.alloc(Doc::text(self.fe.env.sorts[t.ret.0].name.to_string()))
+    );
+    buf = self.dep_type(&bvars, t.ret.1, buf);
     if let (true, TermKind::Def(Some(expr))) = (show_def, &t.kind) {
-      buf += " =";
-      let doc = self.append_doc(doc, self.append_doc(Self::softline(),
-        self.alloc(Doc::text(buf))));
+      buf = self.append_doc(buf, str!(" ="));
+      let doc = self.append_doc(doc, self.append_doc(Self::softline(), buf));
       let mut bvars = Vec::new();
       let mut heap = Vec::new();
       self.fe.binders(&t.args, &mut heap, &mut bvars);
@@ -449,9 +465,8 @@ impl<'a> Pretty<'a> {
         self.expr_delimited(val, "$ ", " $;")));
       self.alloc(Doc::Group(doc))
     } else {
-      buf += ";";
-      self.append_doc(doc, self.append_doc(Self::softline(),
-        self.alloc(Doc::text(buf))))
+      buf = self.append_doc(buf, str!(";"));
+      self.append_doc(doc, self.append_doc(Self::softline(), buf))
     }
   }
 
