@@ -106,7 +106,7 @@ h1 code, h2 code, h3 code, h4 code, h5 code, h6 code {
 body {
     font-family: "Nobile", sans-serif;
     font-size: 100%;
-    background-color: #eee;
+    background-color: #f5f7ff;
     margin: 0;
     padding: 0;
 }
@@ -131,6 +131,12 @@ a, a .pre {
     color: #1b61d6;
     text-decoration: none;
 }
+
+a.sort:link, a.sortname:link, span.sort {color:#c08b30;}
+a.ax:link {color:#c94922;}
+a.def:link {color: #22a2c9;}
+a.thm:link { color: #6679cc; }
+a.term:link {color: #9c637a;}
 
 a:hover, a:hover .pre {
     text-decoration: underline;
@@ -177,7 +183,7 @@ div.body p, div.body dd, div.body li {
 pre {
     padding: 10px;
     background-color: #fafafa;
-    color: #222;
+    color: #545b78;
     line-height: 1.2em;
     border: 2px solid #C6C9CB;
     margin: 1.5em 0 1.5em 0;
@@ -253,8 +259,8 @@ table.proof pre {
 }
 
 code {
-    background-color: transparent;
-    color: #222;
+    background-color: #f0f3ff;
+    color: #545b78;
     font-family: Fira Code,Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;
     font-size: 1em;
 }
