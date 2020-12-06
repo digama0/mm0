@@ -112,7 +112,8 @@ lazy_static! {
 
 #[allow(unused)]
 pub(crate) fn log(s: String) {
-  LOGGER.0.ulock().push((Instant::now(), thread::current().id(), MemoryData::get(), s));
+  let data = (Instant::now(), thread::current().id(), MemoryData::get(), s);
+  LOGGER.0.ulock().push(data);
   LOGGER.1.notify_one();
 }
 
@@ -231,10 +232,13 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       cancel: cancel.clone(),
       old: old_env.map(|(errs, e)| (idx, errs, e)),
       recv_dep: |p| {
-        let p = vfs.get_or_insert(p)?.0;
+        let (p, dep) = vfs.get_or_insert(p)?;
         let (send, recv) = channel();
         if rd.contains(&p) {
           send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
+        } else if let Some(Some(FileCache::Ready {res, ..})) =
+          dep.parsed.try_lock().as_deref() {
+          send.send(res.clone()).expect("failed to send");
         } else {
           Job::ElaborateDep(p.clone(), path.clone(), Some((send, rd.clone()))).spawn();
           deps.push(p);
@@ -258,7 +262,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let hash = hasher.finish();
   log!("elabbed {:?}", path);
   let is_canceled = cancel.load(Ordering::SeqCst);
-  if !is_canceled {
+  let no_change_since_elab = file.text.ulock().0 == version;
+  if !is_canceled && no_change_since_elab {
     let mut srcs = HashMap::new();
     let mut to_loc = |fsp: &FileSpan| -> Location {
       let fc = if fsp.file.ptr_eq(&path) {
