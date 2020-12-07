@@ -1,0 +1,539 @@
+import "x86.mm1";
+
+----------------------------------------
+-- Determinism of the decode function --
+----------------------------------------
+
+do {
+  --| `(mk-decodeAux_bit defn)` is used to construct `(decodeAux_bit)` and `is a function which given `defn = 'decodeRet`
+  --| and `x = 'x5`, returns `($0$ p)` where `p` is a refine script proving
+  --| `$ decodeRet rex ast b l -> bit b x5 = 0 $`, and similarly for other
+  --| sub-cases of `decodeAux` where `x` is a hex digit 0-7. It returns `#undef`
+  --| if the selected bit is not fixed by the decode case.
+  (def (mk-decodeAux_bit defn)
+    (def fields (atom-map!))
+    @ letrec (
+      [(build defn)
+        (def val (nth 6 @ get-decl defn))
+        (def name (atom-app defn "_bit"))
+        (def m (atom-map!))
+        (def (finish p pr)
+          (add-tac-thm! name (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
+            '(im (,defn rex ast b l) ,p) () @ fn () @ refine '{,pr : $ ,val -> ,p $})
+          (insert fields defn (get! m))
+          m)
+        @ match (hd val)
+        ['or (=> break)
+          @ letrec (
+            [rec @ match-fn
+              [$ ,a \/ ,b $
+                (def ra (rec a)) (def rb (rec b))
+                @ match ra [#undef] @ (va fa) @ match rb [#undef] @ (vb fb)
+                @ list (rmap va vb @ match-fn*
+                  [((b1 x) (b2 y)) @ if {b1 == b2} (list b1 @ cons x y)]
+                  [_])
+                @ fn (g x) '(eori
+                  ,(fa g @ map (match-fn [#undef] @ (b (cons x _)) (list b x)) x)
+                  ,(fb g @ map (match-fn [#undef] @ (b (cons _ y)) (list b y)) x))]
+              ['(,th rex ast b l)
+                @ match (build th) [#undef] @ m
+                @ list (rmap (range 0 8) @ fn (i) (lookup m (hexdigit i)))
+                @ fn (g x) (g x)]])
+          @ match (rec val) [#undef (break)] @ (arr f)
+          @ letrec (
+            [(rec2 i)
+              @ if {i = 8} #undef @ begin
+              (def s (rec2 {i + 1}))
+              @ match (nth i arr) [#undef s] @ (b _)
+              (def xi (hexdigit i))
+              @ match s
+                [#undef @ fn (ctx)
+                  (insert m xi @ list b ctx)
+                  @ list $ bit b ,xi = ,b $
+                  @ fn (arr2) (nth 1 @ nth i arr2)]
+                [recf @ fn (ctx) @ match (recf '(anld ,ctx)) @ (p f)
+                  (insert m xi @ list b '(anrd ,ctx))
+                  @ list $ ,p /\ bit b ,xi = ,b $
+                  @ fn (arr2) '(iand ,(f arr2) ,(nth 1 @ nth i arr2))]])
+          @ match (rec2 0) [#undef (break)] @ recf
+          @ match (recf name) @ (p g)
+          @ finish p (f g arr)]
+        [(or 'ex 'an)
+          (def res (ref!))
+          @ letrec (
+            [(rec x) @ match x
+              [$ E. _ ,val $ @ match (rec val) [#undef] [pr '(eex ,pr)]]
+              [$ ,a /\ ,b $
+                @ match (rec a)
+                [#undef @ match (rec b) [#undef] [pr '(anwr ,pr)]]
+                [pr '(anwl ,pr)]]
+              [$ splitBits ,bs ,n $
+                @ match (mk-splatBits bs n) @ (p pr)
+                @ match p [$T.$ (error "undistinguished case")] @ _
+                (set! res p) '(:verb ,pr)]
+              [$ b = c2n (ch ,x ,y) $
+                @ match (mk-splatBits-ch x y 'b) @ (p pr)
+                (set! res p) '(:verb ,pr)]
+              [_]])
+          @ match (rec val) [#undef (error "undistinguished case")] @ pr
+          @ letrec (
+            [(gather p ctx) @ match p
+              [$ ,p /\ bit ,_ (h2n ,(i)) = ,b $
+                (insert m i @ list b '(anrd ,ctx))
+                (gather p '(anld ,ctx))]
+              [_]])
+          (def p (get! res))
+          (gather p name)
+          (finish p pr)]
+        [_]])
+    (build defn)
+    (def fields (get! fields))
+    @ fn (defn x) (match (lookup fields defn) [#undef] [m (lookup m x)]))
+  --| `(decodeAux_bit defn x)` is a function which given `defn = 'decodeRet`
+  --| and `x = 'x5`, returns `($0$ p)` where `p` is a refine script proving
+  --| `$ decodeRet rex ast b l -> bit b x5 = 0 $`, and similarly for other
+  --| sub-cases of `decodeAux` where `x` is a hex digit 0-7. It returns `#undef`
+  --| if the selected bit is not fixed by the decode case.
+  (def decodeAux_bit (mk-decodeAux_bit 'decodeAux))
+  --| `(decodeTwoAux_bit defn x)` is a function which supplies bit proofs
+  --| for the cases of `decodeTwoAux`. See also `decodeAux_bit`.
+  (def decodeTwoAux_bit (mk-decodeAux_bit 'decodeTwoAux))
+};
+
+theorem bitsplit_split
+  (h: $ G -> (p <-> ifp a p1 p0) $)
+  (h0: $ G /\ ~a -> (p0 <-> q0) $) (h1: $ G /\ a -> (p1 <-> q1) $):
+  $ G -> (p <-> ifp a q1 q0) $ =
+'(bitrd h @ bitrd (syl ifpeq1a @ exp h1) (syl ifpeq2a @ exp h0));
+
+theorem bitsplit_fal1
+  (h0: $ G -> (a0 <-> F.) $) (h1: $ G -> (a1 <-> b) $):
+  $ G -> (a0 \/ a1 <-> b) $ = '(syl6bb (bior1 notfal) (oreqd h0 h1));
+theorem bitsplit_fal2
+  (h0: $ G -> (a0 <-> b) $) (h1: $ G -> (a1 <-> F.) $):
+  $ G -> (a0 \/ a1 <-> b) $ = '(syl6bb (bior2 notfal) (oreqd h0 h1));
+
+theorem bitsplit_or (b0 b1 c0 c1 d0 d1)
+  (h0: $ G -> (b0 <-> ifp a c0 d0) $)
+  (h1: $ G -> (b1 <-> ifp a c1 d1) $):
+  $ G -> (b0 \/ b1 <-> ifp a (c0 \/ c1) (d0 \/ d1)) $ =
+'(syl6bbr ifpor @ oreqd h0 h1);
+
+theorem bitsplit_bit0 (h: $ a -> bit v i = 0 $): $ G -> (a <-> ifp (i e. v) F. a) $ =
+'(a1i @ bitr2 (ifpneg2 notfal) @ bian1a @ sylib nateq0 h);
+theorem bitsplit_bit1 (h: $ a -> bit v i = 1 $): $ G -> (a <-> ifp (i e. v) a F.) $ =
+'(a1i @ bitr2 (ifpneg3 notfal) @ bian1a @ sylib nateq1 h);
+theorem bitsplit_id: $ G -> (b <-> ifp a b b) $ = '(a1i @ bicom ifpid);
+theorem bitsplit_bit0or
+  (h1: $ b -> bit v i = 0 $) (h2: $ G -> (a <-> ifp (i e. v) c d) $):
+  $ G -> (a \/ b <-> ifp (i e. v) c (d \/ b)) $ =
+'(syl6bb (ifpeq2 @ bior2 notfal) @ bitsplit_or h2 @ bitsplit_bit0 h1);
+theorem bitsplit_bit1or
+  (h1: $ b -> bit v i = 1 $) (h2: $ G -> (a <-> ifp (i e. v) c d) $):
+  $ G -> (a \/ b <-> ifp (i e. v) (c \/ b) d) $ =
+'(syl6bb (ifpeq3 @ bior2 notfal) @ bitsplit_or h2 @ bitsplit_bit1 h1);
+
+theorem ifp_bit0 (h: $ G -> bit v i = 0 $) (h2: $ G -> (b <-> c) $): $ G -> (ifp (i e. v) a b <-> c) $ =
+'(bitrd (syl ifpneg @ sylib nateq0 h) h2);
+theorem ifp_bit1 (h: $ G -> bit v i = 1 $) (h2: $ G -> (a <-> c) $): $ G -> (ifp (i e. v) a b <-> c) $ =
+'(bitrd (syl ifppos @ sylib nateq1 h) h2);
+
+--| This proves
+--| ```
+--| theorem decodeAux_ifp: $ decodeAux rex ast b l <-> ifp (x6 e. b) ... $;
+--| theorem decodeTwoAux_ifp: $ decodeTwoAux rex ast b l <-> ifp (x4 e. b) ... $;
+--| ```
+--| where the expression on the right involves a tree of conditionals on
+--| bits of the opcode byte, with the leaves being individual decode cases.
+do (begin
+  (def (mk-decodeAux_ifp name mkbit tree) @ letrec (
+    [(partition1 p x) @ match p
+      [(and e '(,defn rex ast b l))
+        @ match (mkbit defn x)
+        [#undef
+          (def val (nth 6 @ get-decl defn))
+          @ match (partition val x) @ (p0 p1 pr)
+          '(,p0 ,p1 {,pr : $ _ -> (,val <-> _) $})]
+        [res res]]
+      [$ ,a \/ ,b $
+        @ match (partition a x) @ (p0 p1 pr1)
+        @ match (partition1 b x)
+        [($0$ pr2) '((or ,p0 ,b) ,p1 (bitsplit_bit0or ,pr2 ,pr1))]
+        [($1$ pr2) '(,p0 (or ,p1 ,b) (bitsplit_bit1or ,pr2 ,pr1))]
+        [(q0 q1 pr2) '((or ,p0 ,q0) (or ,p1 ,q1) (bitsplit_or ,pr1 ,pr2))]]
+      [$F.$ '($F.$ $F.$ bitsplit_id)]
+      [e (error @ pp @ list x e)]]
+    [(partition p x) @ match (partition1 p x)
+      [($0$ pr) '(,p $F.$ (bitsplit_bit0 ,pr))]
+      [($1$ pr) '($F.$ ,p (bitsplit_bit1 ,pr))]
+      [res res]]
+    [(unfal p) @ match p
+      [$ ,a \/ ,b $ @ match (list (unfal a) (unfal b))
+        [(($F.$ pr1) (b pr2)) '(,b (bitsplit_fal1 ,pr1 ,pr2))]
+        [((b pr1) ($F.$ pr2)) '(,b (bitsplit_fal2 ,pr1 ,pr2))]]
+      [_ '(,p biidd)]]
+    [(go p tree) @ match tree
+      [(? atom?) (unfal p)]
+      [(n t0 t1)
+        (def x (hexdigit n))
+        @ match (partition p x) @ (p0 p1 pr)
+        @ match (go p0 t0) @ (q0 pr0)
+        @ match (go p1 t1) @ (q1 pr1)
+        '($ ifp (h2n ,'(,x) e. b) ,q1 ,q0 $ (bitsplit_split ,pr ,pr0 ,pr1))]])
+    (def p '(,name rex ast b l))
+    @ match (go p tree) @ (q pr)
+    (add-tac-thm! (atom-app name '_ifp) (map (fn (x) '(,x nat ())) '(rex ast b l)) ()
+      $ ,p <-> ,q $ () @ fn () '(trud ,pr)))
+  (mk-decodeAux_ifp 'decodeAux decodeAux_bit
+    '(6 (7 (2 _ (1 _ _)) (4 (2 (3 (1 _ _) (5 _ _)) (1 (3 _ _) (3 _ _))) (5 _ _)))
+      (4 (5 (7 _ (1 (3 _ _) (2 _ _))) (0 (7 _ _) (3 _ _)))
+        (7 (5 (3 _ _) _) (2 (3 _ (0 _ _)) (1 _ _))))))
+  (mk-decodeAux_ifp 'decodeTwoAux decodeTwoAux_bit
+    '(4 (6 (7 _ _) (7 _ _)) (5 _ (1 _ _)))));
+
+theorem orifp_disj: $ (b -> ~p) -> (p /\ a \/ b <-> ifp p a b) $ = '(oreq2d @ bicomd bian1a);
+
+theorem orifp_bd (h1: $ (q -> j <= n) /\ (q <-> r) $) (h2: $ i < j $):
+  $ (n = i /\ p \/ q -> i <= n) /\
+    (n = i /\ p \/ q <-> ifp (n = i) p r) $ =
+'(iani (eor (anwl eqler) (syl (letr @ ltle h2) @ anli h1)) @
+  oreq2 @ bitr3 (bian1a @ syl ltner @ syl (ltletr h2) @ anli h1) @ aneq2i @ anri h1);
+
+theorem orifp_anr (h: $ (b -> c) /\ (b <-> d) $):
+  $ (a /\ b -> c) /\ (a /\ b <-> a /\ d) $ =
+'(iani (anwr @ anli h) (aneq2i @ anri h));
+
+theorem orifp_eq (h: $ a <-> b $) (h2: $ (b -> c) /\ (b <-> d) $):
+  $ (a -> c) /\ (a <-> d) $ =
+'(mpbir (aneq (imeq1i h) (bieq1 h)) h2);
+
+theorem orifp_ass (h: $ (a \/ (b \/ c) -> d) /\ (a \/ (b \/ c) <-> e) $):
+  $ (a \/ b \/ c -> d) /\ (a \/ b \/ c <-> e) $ =
+'(orifp_eq orass h);
+
+theorem orifp_id: $ (n = i /\ p -> i <= n) /\ (n = i /\ p <-> n = i /\ p) $ =
+'(iani (anwl eqler) biid);
+
+theorem determ_ex (a1: wff x1) (a2: wff x2)
+  (h1: $ a1 /\ a2 -> c $): $ E. x1 a1 /\ E. x2 a2 -> c $ = '(imp @ eex @ eexda h1);
+
+theorem determ_anwl (a1 a2 b1 b2)
+  (h: $ a1 /\ a2 -> c $): $ a1 /\ b1 /\ (a2 /\ b2) -> c $ = '(syl h @ anim anl anl);
+theorem determ_anwr (a1 a2 b1 b2)
+  (h: $ b1 /\ b2 -> c $): $ a1 /\ b1 /\ (a2 /\ b2) -> c $ = '(syl h @ anim anr anr);
+theorem determ_eql: $ a = b /\ c = b -> a = c $ = '(imp eqtr4);
+theorem determ_eqr: $ b = a /\ b = c -> a = c $ = '(imp eqtr3);
+
+theorem determ_cons: $ l = a : r /\ l ++ l2 = b : r2 -> a = b /\ r2 = r ++ l2 $ =
+'(imp @ mpbiri (sylbi (eqeq1 appendS) @ sylbi consinj @ anim2 eqcom) ,eqtac);
+
+theorem determ_splitBitsS
+  (h: $ splitBits bs1 (shr b k) /\ splitBits bs2 (shr b k) -> p $):
+  $ splitBits ((k <> a1) : bs1) b /\ splitBits ((k <> a2) : bs2) b ->
+    a1 = a2 /\ p $ =
+'(sylbi (aneq splitBitsS_uniq splitBitsS_uniq) @
+  iand (determ_anwl determ_eqr) (determ_anwr h));
+theorem determ_splitBits_skip
+  (h: $ splitBits bs1 (shr b k) /\ splitBits bs2 (shr b k) -> p $):
+  $ splitBits ((k <> a1) : bs1) b /\ splitBits ((k <> a2) : bs2) b -> p $ =
+'(anrd @ determ_splitBitsS h);
+theorem determ_splitBits1:
+  $ splitBits ((k <> a1) : bs1) b /\ splitBits ((k <> a2) : bs2) b ->
+    a1 = a2 $ = '(anld @ determ_splitBitsS (a1i itru));
+
+theorem determ_subst2 (a2 b2) (h1: $ a /\ b -> e $)
+  (h2: $ e -> (a <-> a2) $) (h3: $ e -> (b <-> b2) $) (h4: $ e -> (c <-> c2) $)
+  (h5: $ a2 /\ b2 -> c2 $): $ a /\ b -> c $ =
+'(mpd h1 @ com12 @ mpbiri h5 @ imeqd (aneqd h2 h3) h4);
+theorem determ_subst (a2 b2) (h1: $ a /\ b -> e $)
+  (h2: $ e -> (a <-> a2) $) (h3: $ e -> (b <-> b2) $)
+  (h4: $ a2 /\ b2 -> c $): $ a /\ b -> c $ =
+'(determ_subst2 h1 h2 h3 biidd h4);
+
+theorem toBytes_determ
+  (he: $ G -> 8 * n = m $)
+  (h1: $ G -> a e. Bits m /\ b e. Bits m $)
+  (h2: $ G -> l = toBytes n a /\ l ++ l2 = toBytes n b $): $ G -> a = b /\ l2 = 0 $ =
+(focus
+  (have 'hl '(sylib leneq0 @ sylib addcan2 @ syl6eqr add0 @
+    syl5eqr appendlen @ eqtr4d (leneqd @ anrd h2) @
+    syl6eqr toBytes_len @ syl6eq toBytes_len @ leneqd @ anld h2))
+  '(iand (eqtr3d (syl Bits_chop @ anld h1) @ eqtrd _ (syl Bits_chop @ anrd h1)) hl)
+  '(eqtr3d (chopeq1d he) @ eqtrd _ (chopeq1d he))
+  '(sylib toBytes_inj2 @ eqtr3d (anld h2) @
+    eqtr3d (syl6eq append02 @ appendeq2d hl) (anrd h2)));
+
+theorem u32Bytes_determ (h1: $ G -> a e. u32 /\ b e. u32 $)
+  (h2: $ G -> l = u32Bytes a /\ l ++ l2 = u32Bytes b $): $ G -> a = b /\ l2 = 0 $ =
+'(toBytes_determ (a1i d8mul4) h1 h2);
+
+theorem decode_no_prefix: $ readPrefixes rex l -> b IN l -> ~decodeAux rex2 a b l2 $ =
+(named '(eor (syl absurd @ mpbiri lmem0 ,eqtac) @
+  eex @ eex @ imp @ syl5ibrcom (imeq1d lmemeq2) @ syl5bi lmem1 @
+  anwl @ syl5ibrcom ,eqtac @ rsyl ,splatBits-tac @ sylib eqfal @
+  syl5bb decodeAux_ifp @ ifp_bit1 anllr @ ifp_bit0 anr @
+  ifp_bit0 anlr @ ifp_bit0 an3lr biidd));
+
+theorem determ_ifp (a1 a2 b1 b2)
+  (h1: $ a1 /\ a2 -> c $) (h2: $ b1 /\ b2 -> c $):
+  $ ifp p a1 b1 /\ ifp p a2 b2 -> c $ =
+(focus (def (f x y) '(mpbiri ,x @ imeq1d @ aneqd ,y ,y))
+  '(cases ,(f 'h1 'ifppos) ,(f 'h2 'ifpneg)));
+
+theorem readPrefixes_determ:
+  $ readPrefixes rex l /\ readPrefixes rex2 l -> rex = rex2 $ =
+(named @ focus
+  (def h1 '(syl bior2 @ con2 @ eex @ eex @ anwr sucne0))
+  (def h2 '(syl bior1 @ con3 anr))
+  '(cases
+    (mpbiri (determ_anwl @ determ_eql) @ imeq1d @ aneqd ,h1 ,h1)
+    (mpbiri _ @ imeq1d @ aneqd ,h2 ,h2))
+  '(!! determ_ex x1 x2 @ !! determ_ex y1 y2 @
+    determ_subst (determ_anwr @ anld @ sylib consinj determ_eqr) ,eqtac ,eqtac @
+    determ_anwl @
+    determ_subst (determ_anwl determ_splitBits1) ,eqtac ,eqtac @
+    determ_anwr determ_eql));
+
+theorem readDisplacement_ifp (mod):
+$ readDisplacement mod q l <->
+  ifp (mod = 0) (q = 0 /\ l = 0) (
+  ifp (mod = 1) (E. b (b e. u8 /\ q = sExtq 8 b /\ l = b : 0)) (
+  (mod = 2 /\ E. w (w e. u32 /\ q = sExtq 32 w /\ l = u32Bytes w)))) $ =
+'(bitr (bitr orass @ oreq anass @ oreq
+    (bian1exi @ bian11i @ bian11i ancomb)
+    (bian1exi @ bian11i @ bian11i ancomb)) @
+  anri @ orifp_bd (orifp_bd orifp_id d1lt2) d0lt1);
+
+theorem decodeHiAux_ifp:
+$ decodeHiAux v sz r hi n ast l <-> ifp (true hi)
+    (l = 0 /\ (
+      ifp (n = 0) (ast = xastUnop unopInc sz r) (
+      ifp (n = 1) (ast = xastUnop unopDec sz r) (
+      true v /\ (
+        ifp (n = 2) (ast = xastCall (immRM_rm r)) (
+        ifp (n = 4) (ast = xastJump r) (
+        n = 6 /\ ast = xastPush (immRM_rm r))))))))
+    (ifp (n = 0) (E. imm (readImm sz imm l /\
+        ast = xastBinop binopTst sz (Rm_i r imm)))
+      (l = 0 /\ (
+        ifp (n = 2) (ast = xastUnop unopNot sz r) (
+        ifp (n = 3) (ast = xastUnop unopNeg sz r) (
+        ifp (n = 4) (ast = xastMul sz r) (
+        n = 6 /\ ast = xastDiv sz r)))))) $ =
+(focus
+  (def (bd x) '(orifp_bd ,x ,norm_num))
+  (def (anr x) '(orifp_anr ,x)) (def (ass x) '(orifp_ass ,x))
+  (def (S x) '(anri ,(ass @ bd @ bd @ anr @ ass @ bd @ bd 'orifp_id)))
+  '(ifpeq biid
+    (aneq2i @ anri ,(ass @ bd @ bd @ anr @ ass @ bd @ bd 'orifp_id))
+    (anri ,(bd @ anr @ ass @ ass @ bd @ bd @ bd 'orifp_id))));
+
+-- This block declares a bunch of determinism theorems that all share a common structure,
+-- so we use an abbreviated notation for the proofs. We declare all the proofs in a do block
+-- so that they can all share the same context of local declarations, without polluting the
+-- global namespace with all these one and two letter names.
+
+do (begin
+  (def idx (ref! 0))
+  @ letrec (
+  [(main p pfs) @ match p
+    [('ifp _ a b)
+      @ match (main b pfs) @ (pfs pr2)
+      @ match (main a pfs) @ (pfs pr1)
+      '(,pfs (determ_ifp ,pr1 ,pr2))]
+    [_ @ match pfs @ (pf1 . pfs) '(,pfs ,(fn (r t) (set! idx 0) @ r t pf1))]]
+  [(splitBits bs) @ match bs
+    [$ (,_ <> ,((? (fn (x) (def? @ decdigit->number x))))) : ,bs $
+      @ match (splitBits bs) [#undef] [x '(determ_splitBits_skip ,x)]]
+    [$ (,_ <> ,v) : ,bs $
+      @ match (splitBits bs) [#undef 'determ_splitBits1] [x '(determ_splitBitsS ,x)]]
+    [$0$]])
+  (def idx (ref! 0))
+  @ letrec (
+  [(main p pfs) @ match p
+    [('ifp _ a b)
+      @ match (main b pfs) @ (pfs pr2)
+      @ match (main a pfs) @ (pfs pr1)
+      '(,pfs (determ_ifp ,pr1 ,pr2))]
+    [_ @ match pfs @ (pf1 . pfs) '(,pfs ,(fn (r t) (set! idx 0) @ r t pf1))]]
+  [(splitBits bs) @ match bs
+    [$ (,_ <> ,((? (fn (x) (def? @ decdigit->number x))))) : ,bs $
+      @ match (splitBits bs) [#undef] [x '(determ_splitBits_skip ,x)]]
+    [$ (,_ <> ,v) : ,bs $
+      @ match (splitBits bs) [#undef 'determ_splitBits1] [x '(determ_splitBitsS ,x)]]
+    [$0$]])
+  (def (mk-thm name args ret f)
+    (set! idx 0)
+    (add-tac-thm! name (map (fn (x) '(,x nat ())) args) () ret () f)
+    name)
+
+  -- shorthand determ theorems
+  (def ((e x) r t)
+    (def a (dummy! (atom-app 'a idx) 'nat))
+    (def b (dummy! (atom-app 'b idx) 'nat))
+    (set! idx {idx + 1})
+    @ r t '(!! determ_ex ,a ,b ,x))
+  (def (E n x) (iterate n e x))
+  (def (l x) '(determ_anwl ,x))
+  (def (r x) '(determ_anwr ,x))
+  (def (L n x) (iterate n l x))
+  (def (R n x) (L n @ r x))
+  (def c 'determ_cons)
+  (def c0 '(a1i @ eqcom append0))
+  (def el 'determ_eql) (def er 'determ_eqr)
+  (def eq0 '(anrd @ sylib appendeq0 anr))
+  (def (ian x y) '(iand ,y ,x))
+  (def (iane x) (ian 'eqidd ,x))
+  (def (ifp x y) '(determ_ifp ,x ,y))
+  (def (q x y) '(determ_subst ,x ,eqtac ,eqtac ,y))
+  (def (q2 x y) '(determ_subst2 ,x ,eqtac ,eqtac ,eqtac ,y))
+  (def (qe x) (q2 x (iane @ r el)))
+  (def (B refine t) @ refine t @ match t
+    [$ splitBits ,bs ,_ /\ ,_ -> ,_ $ (splitBits bs)])
+  (def (U32 x y) '(u32Bytes_determ ,x ,y))
+
+  (def N @ mk-thm 'readImmN_determ '(l l2 sz w1 w2)
+    $ readImmN sz w1 l /\ readImmN sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
+    @ fn () '(sylbi (aneq readImmN_val readImmN_val)
+    ,(e @ q2 '(toBytes_determ (syl muldiv3 @ anwl anrl) ,(l 'id) ,(r @ r @ r 'id)) @
+      iane @ r @ r @ l el)))
+
+  (def I @ mk-thm 'readImm_determ '(l l2 sz w1 w2)
+    $ readImm sz w1 l /\ readImm sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
+    @ fn () 'readImmN_determ)
+
+  (def FI @ mk-thm 'readFullImm_determ '(l l2 sz w1 w2)
+    $ readFullImm sz w1 l /\ readFullImm sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
+    @ fn () 'readImmN_determ)
+
+  (def D @ mk-thm 'readDisplacement_determ '(l l2 q1 q2 mod)
+    $ readDisplacement mod q1 l /\ readDisplacement mod q2 (l ++ l2) -> q1 = q2 /\ l2 = 0 $
+    @ fn () '(sylbi (aneq readDisplacement_ifp readDisplacement_ifp)
+    ,(ifp (ian (r eq0) (l el)) @ ifp (e @ q2 (r c) @ ian c0 (R 1 el)) @
+      r @ e @ q2 (U32 (L 2 'id) (r 'id)) @ iane (R 1 el))))
+
+  (def SD @ mk-thm 'readSIBDisplacement_determ '(base1 base2 bbase l l2 q1 q2 mod)
+    $ readSIBDisplacement mod bbase q1 base1 l /\
+      readSIBDisplacement mod bbase q2 base2 (l ++ l2) -> q1 = q2 /\ base1 = base2 /\ l2 = 0 $
+    @ fn ()
+    (ifp (e @ q2 (U32 (L 3 'id) (r 'id)) @ iane @ ian (R 1 el) (R 2 el))
+      (q2 (l D) @ iane @ ian (r el) 'eqidd)))
+
+  (def S @ mk-thm 'readSIB_determ '(l l2 rex rma rmb mod)
+    $ readSIB rex mod rma l /\
+      readSIB rex mod rmb (l ++ l2) -> rma = rmb /\ l2 = 0 $
+    @ fn () (E 8 @ q (r c) @ q (L 4 B) @ q (R 3 el) @ q2 (R 2 SD) @ iane (R 1 el)))
+
+  (def M2 @ mk-thm 'readModRM2_determ '(l l2 rex rm2 rma rmb mod)
+    $ readModRM2 rex rma rm2 mod l /\
+      readModRM2 rex rmb rm2 mod (l ++ l2) -> rma = rmb /\ l2 = 0 $
+    @ fn () (ifp (ian (r eq0) (l el)) @ ifp
+      (e @ q2 (U32 (L 2 'id) (R 0 'id)) @ iane @ R 1 el)
+      (ifp S @ e @ qe (l D))))
+
+  (def M @ mk-thm 'readModRM_determ '(l l2 r1 r2 reg1 reg2 rex)
+    $ readModRM rex reg1 r1 l /\
+      readModRM rex reg2 r2 (l ++ l2) -> reg1 = reg2 /\ r1 = r2 /\ l2 = 0 $
+    @ fn () '(sylbi (aneq readModRM_val2 readModRM_val2)
+    ,(E 2 @ q (l c) @ r @ E 3 @ q (L 2 B) '(sylibr anass @ iand ,(R 1 el) ,(r M2)))))
+
+  (def O @ mk-thm 'readOpcodeModRM_determ '(l l2 r1 r2 rex v1 v2)
+    $ readOpcodeModRM rex v1 r1 l /\ readOpcodeModRM rex v2 r2 (l ++ l2) ->
+      v1 = v2 /\ r1 = r2 /\ l2 = 0 $
+    @ fn () (e @ q2 (l M) @ iane @ iane @ r el))
+
+  (add-tac-thm! 'readOpcodeModRM_determ2 '((G wff ()) .
+    ,(map (fn (x) '(,x nat ())) '(a1 a2 l l2 r1 r2 rex v1 v2 b1 b2)))
+    '((h1 $ G -> l = a1 ++ b1 /\ l ++ l2 = a2 ++ b2 $)
+      (h2 $ G -> readOpcodeModRM rex v1 r1 a1 /\ readOpcodeModRM rex v2 r2 a2 $))
+    $ G -> v1 = v2 /\ r1 = r2 /\ a1 = a2 /\ b2 = b1 ++ l2 $ () @ fn ()
+  (focus
+    '(mpd (sylib eqappend @ syl5eqr appendass @ eqtr3d (appendeq1d @ anld h1) (anrd h1)) _)
+    (def (f x y z) @ focus
+      '(impd @ com12 @ mpbiri _ ,eqtac)
+      '(rsyl ,x @ mpbiri (rsyl ,y @ ian @ iani (iani eqid eqid) ,z) ,eqtac))
+    '(!! eexd c @ rsyl h2 @ eord _ _)
+    (f 'readOpcodeModRM_determ '(syl5eqr append0 eqcom) '(eqcom append02))
+    (f '(rsyl ancom readOpcodeModRM_determ) '(syl6eq append0 id) 'append02)))
+
+  (def (O2 m n) '(readOpcodeModRM_determ2 ,(L m 'id) ,(R n 'id)))
+
+  (def Ta @ mk-thm 'decodeTwoAux_determ '(ast1 ast2 b l l2 rex)
+    $ decodeTwoAux rex ast1 b l /\
+      decodeTwoAux rex ast2 b (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
+    @ fn () @ focus
+    '(sylbi (aneq decodeTwoAux_ifp decodeTwoAux_ifp) _)
+    @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p
+    @ cons (ian (R 1 eq0) @ r el) (E 2 @ q (L 2 B) @ qe (R 1 N))
+    @ rmap '(3 3 3 3 4) @ fn (n) (E n @ q (L 2 B) @ qe (R 1 M)))
+
+  (def Tw @ mk-thm 'decodeTwo_determ '(ast1 ast2 b l l2 rex)
+    $ decodeTwo rex ast1 b l /\
+      decodeTwo rex ast2 b (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
+    @ fn () (r @ E 2 @ q (l c) @ r Ta))
+
+  (def Hi @ mk-thm 'decodeHiAux_determ '(ast1 ast2 hi l l2 n r sz v)
+    $ decodeHiAux v sz r hi n ast1 l /\
+      decodeHiAux v sz r hi n ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
+    @ fn () '(sylbi (aneq decodeHiAux_ifp decodeHiAux_ifp) ,(ifp
+      (ian (l eq0) @ r @ ifp el @ ifp el @ r @ ifp el @ ifp el @ r el)
+      (ifp (e @ qe (l I)) @ ian (l eq0) @ r @ ifp el @ ifp el @ ifp el @ r el))))
+
+  (def _ @ mk-thm 'decodeAux_determ '(ast1 ast2 b l l2 rex)
+    $ decodeAux rex ast1 b l /\
+      decodeAux rex ast2 b (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
+    @ fn () @ named @ focus
+      '(sylbi (aneq decodeAux_ifp decodeAux_ifp) _)
+      @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p @ list
+        (E 5 @ q (L 2 B) @ qe (R 1 M))
+        (E 3 @ q (L 2 B) @ qe (R 1 I))
+        Tw
+        (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
+        (E 5 @ q (O2 4 2) @ qe (R 1 N))
+        (E 4 @ q (L 2 B) @ qe (R 1 M))
+        (E 3 @ q (L 3 B) @ q (R 2 el) @ qe (R 1 I))
+        (E 3 @ q (L 2 B) @ qe (R 1 M))
+        (E 2 @ qe (R 2 M))
+        (E 3 @ q (L 2 B) @ qe (R 1 M))
+        (e @ qe (R 1 O))
+        (ian (l eq0) @ r @ e @ q (l B) @ r el)
+        (E 3 @ q (L 2 B) @ qe (R 1 FI))
+        '(anwl efal)
+        (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N))
+        (ian (R 1 eq0) @ r el)
+        (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N))
+        (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
+        (E 2 @ q (L 2 B) @ qe (R 1 N))
+        (e @ qe (R 1 N))
+        (E 2 @ qe (R 1 M))
+        (E 2 @ q (L 2 B) @ qe (R 1 N))
+        (ian (l eq0) @ r @ e @ q (l B) @ r el)
+        (ian (l eq0) @ r @ e @ q (l B) @ r el)
+        (E 2 @ q (L 2 B) @ qe (R 1 N))
+        (E 4 @ q (L 3 B) @ qe (R 2 O))
+        (ian (R 1 eq0) @ r el)
+        (ian (R 1 eq0) @ r el)
+        (ian (R 1 eq0) @ r el)
+        (E 6 @ q (R 2 B) @ q (O2 3 1) @ r Hi)));
+
+theorem decode_determ2:
+  $ decode ast1 l /\ decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $ =
+(focus
+  '(!! determ_ex rex1 rex2 @ !! determ_ex a1 a2 @
+    !! determ_ex b1 b2 @ !! determ_ex c1 c2 _)
+  @ match (target) @ $ ,G -> _ $ @ focus
+  (have 'H1 $ ,G -> a1 ++ b1 : (c1 ++ l2) = a2 ++ b2 : c2 $
+    '(syl5eqr (appendeq2 appendS) @ syl5eqr appendass @ eqtr3d (appendeq1d an3l) (anwr anll)))
+  (have 'H2 $ ,G -> len a1 = len a2 $ _) (focus
+    (def (f a b h x) '(sylibr lenlt @ mpd (,b anr) @ con2d @
+      exp @ sylc decode_no_prefix (anwl @ ,a anlr) @
+      syl nthlmem @ eqtr3d (anwr appendnth1) @ ,h (ntheq2d @ anwl H1) @
+      a1i @ eqtr3 (ntheq1 add0) @ eqtr appendnth2_ nthZ))
+    '(leasymd ,(f 'anwl 'anwr 'eqtrd _) ,(f 'anwr 'anwl 'eqtr3d _)))
+  '(mpd (mpbid (syl appendinj1 H2) H1) @ com12 @ imp @ syl5bi consinj @
+    exp @ mpbii _ ,(eqtac-with #f))
+  '(determ_subst (determ_anwl @ determ_anwr readPrefixes_determ) ,eqtac ,eqtac @
+    determ_anwr decodeAux_determ));
+
+theorem decode_determ: $ decode ast1 l /\ decode ast2 l -> ast1 = ast2 $ =
+'(anld @ sylbir (aneq2i @ decodeeq2 append02) decode_determ2);

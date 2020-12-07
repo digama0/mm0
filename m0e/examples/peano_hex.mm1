@@ -1,0 +1,708 @@
+import "peano.mm1";
+
+-- The string preamble. This is used for interfacing with
+-- the real world, making concrete inputs and outputs.
+
+--| The syntactic sort of hexadecimal digits.
+--| This contains only the terms `x0..xf` and variables.
+strict free sort hex;
+
+--| Hexadecimal digit `0`.
+term x0: hex;
+--| Hexadecimal digit `1`.
+term x1: hex;
+--| Hexadecimal digit `2`.
+term x2: hex;
+--| Hexadecimal digit `3`.
+term x3: hex;
+--| Hexadecimal digit `4`.
+term x4: hex;
+--| Hexadecimal digit `5`.
+term x5: hex;
+--| Hexadecimal digit `6`.
+term x6: hex;
+--| Hexadecimal digit `7`.
+term x7: hex;
+--| Hexadecimal digit `8`.
+term x8: hex;
+--| Hexadecimal digit `9`.
+term x9: hex;
+--| Hexadecimal digit `a = 10`.
+term xa: hex;
+--| Hexadecimal digit `b = 11`.
+term xb: hex;
+--| Hexadecimal digit `c = 12`.
+term xc: hex;
+--| Hexadecimal digit `d = 13`.
+term xd: hex;
+--| Hexadecimal digit `e = 14`.
+term xe: hex;
+--| Hexadecimal digit `f = 15`.
+term xf: hex;
+
+--| The syntactic sort of (8-bit) characters.
+--| This contains only terms `ch a b` where `a` and `b` are hex digits,
+--| for example `ch x4 x1`, denoting `\x41`, the ASCII character `A`.
+strict free sort char;
+
+--| The only constructor for the sort `char`:
+--| `ch a b` is the character with high nibble `a` and low nibble `b`.
+term ch: hex > hex > char;
+
+--| The syntactic sort of byte strings.
+--| The only constructors of this sort are:
+--| * `s0`: the empty string
+--| * `s1 c` where `c: char`: a one byte string
+--| * `sadd s t`, or `s '+ t`: the concatenation of strings
+--|
+--| Because of this representation, there are multiple equivalent ways
+--| to represent a string. (Formally, the function `s2n` is not injective.)
+strict free sort string;
+--| The empty string.
+term s0: string;
+--| A singleton (length 1) string formed from a character.
+term s1: char > string;
+--| `sadd s t`, or `s '+ t`: A string formed by concatenating two smaller strings.
+term sadd: string > string > string; infixr sadd: $'+$ prec 51;
+
+--| `c ': s` appends `c` to the front of string `s`.
+def scons (c: char) (s: string): string = $ s1 c '+ s $;
+infixr scons: $':$ prec 53;
+
+-- Peano translation functions. The sorts `hex`, `char`, `string`
+-- are closed classes, but we can embed them in `nat` as lists
+-- of numbers less than 256, and prove theorems on `nat` instead.
+-- We have to introduce some axioms to deal with the coercion
+-- functions though.
+
+def d11: nat = $suc 10$; prefix d11: $11$ prec max;
+def d12: nat = $suc 11$; prefix d12: $12$ prec max;
+def d13: nat = $suc 12$; prefix d13: $13$ prec max;
+def d14: nat = $suc 13$; prefix d14: $14$ prec max;
+def d15: nat = $suc 14$; prefix d15: $15$ prec max;
+def d16: nat = $suc 15$; prefix d16: $16$ prec max;
+
+--| `h2n a`, the coercion `hex > nat`, embeds a hex digit to a natural number.
+--| Because we cannot define functions by case distinction on `hex`, we must
+--| axiomatize the value of this coercion on each digit.
+--| This implies that all the elements of `hex` are distinct.
+term h2n: hex > nat; coercion h2n: hex > nat;
+axiom h2n0: $ x0 = 0 $;   axiom h2n1: $ x1 = 1 $;
+axiom h2n2: $ x2 = 2 $;   axiom h2n3: $ x3 = 3 $;
+axiom h2n4: $ x4 = 4 $;   axiom h2n5: $ x5 = 5 $;
+axiom h2n6: $ x6 = 6 $;   axiom h2n7: $ x7 = 7 $;
+axiom h2n8: $ x8 = 8 $;   axiom h2n9: $ x9 = 9 $;
+axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
+axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
+axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
+
+--| This allows us to prove facts about hex digits by case analysis.
+--| It is not provable from the above axioms because the fact that the "hex"
+--| sort has only the given 16 constructors is only observable from outside the theory.
+axiom h2nlt (h: hex): $ h < 16 $;
+
+--| `h2n a`, the coercion `char > nat`, embeds a character
+--| as a natural number less than 256.
+term c2n: char > nat; coercion c2n: char > nat;
+--| The value of `c2n (ch hi lo) = h2n hi * 16 + h2n lo`.
+axiom c2nch (hi lo: hex): $ ch hi lo = hi * 16 + lo $;
+--| The `c2n` function is less than 256 for all elements of the type `char`.
+--| This ensures that there are no other elements in the syntactic sort `char`.
+axiom c2nlt (c: char): $ c < 16 * 16 $;
+
+--| `s2n s`, the coercion `string > nat`,
+--| interprets a string as a `List u8` in the obvious way:
+--| * `s2n s0 = 0`
+--| * `s2n (s1 c) = c2n c : 0`
+--| * `s2n (s '+ t) = s2n s ++ s2n t`
+--|
+--| Because `string` is a syntactic sort, it does not have quantifiers
+--| so our ability to prove properties about it is limited;
+--| but using this function we can obtain a `nat` which we can prove
+--| theorems about.
+term s2n: string > nat; coercion s2n: string > nat;
+axiom s2ns0: $ s0 = 0 $;
+axiom s2ns1 (c: char): $ s1 c = c : 0 $;
+axiom s2nsadd (s t: string): $ s '+ t = s ++ t $;
+--| The `s2n` function returns a list all of whose elements
+--| are numbers less than 256.
+axiom s2nlt {c: nat} (s: string): $ all {c | c < 16 * 16} s $;
+
+theorem s2nscons: $ c ': s = c : s $ =
+'(eqtr s2nsadd @ eqtr (appendeq1 s2ns1) append1);
+theorem s2nscons0: $ c ': s0 = s1 c $ =
+'(eqtr s2nsadd @ eqtr (appendeq2 s2ns0) append02);
+
+theorem s2n_A (h1: $ s = a $) (h2: $ t = b $): $ s '+ t = a ++ b $ =
+'(eqtr s2nsadd @ appendeq h1 h2);
+theorem s2n_1 (h: $ c = a $): $ s1 c = a : 0 $ = '(eqtr s2ns1 @ conseq1 h);
+theorem s2n_S (h1: $ c = a $) (h2: $ s = b $): $ c ': s = a : b $ =
+'(eqtr (s2n_A (s2n_1 h1) h2) append1);
+theorem s2n_SE (h: $ s = a $): $ c ': s = c : a $ = '(s2n_S eqid h);
+theorem s2n_SAE (h: $ s = a ++ b $): $ c ': s = c : a ++ b $ =
+'(eqtr4 (s2n_SE h) appendS);
+theorem append01i (h: $ a = b $): $ a = 0 ++ b $ = '(eqtr4 h append0);
+theorem s2n_R0: $ s0 = repeat a 0 $ = '(eqtr4 s2ns0 repeat0);
+theorem s2n_R1 (h: $ c = a $): $ s1 c = repeat a 1 $ =
+'(eqtr4 (s2n_1 h) repeat1);
+theorem s2n_RA (h1: $ s = repeat a m $) (h2: $ t = repeat a n $):
+  $ s '+ t = repeat a (m + n) $ = '(eqtr4 (s2n_A h1 h2) repeatadd);
+theorem s2n_RS (h1: $ c = a $) (h2: $ s = repeat a n $):
+  $ c ': s = repeat a (suc n) $ = '(eqtr4 (s2n_S h1 h2) repeatS);
+theorem saddS: $ c ': s '+ t = c ': (s '+ t) $ =
+'(eqtr4 (s2n_A s2nscons eqid) @ s2n_SAE s2nsadd);
+
+local def hex (a: nat) (x: hex): nat = $ a * 16 + x $;
+infixl hex: $:x$ prec 120;
+
+@(register-eqd 'hex) theorem hexeqd (G a1 a2 x1 x2)
+  (ha: $ G -> a1 = a2 $) (hx: $ G -> x1 = x2 $): $ G -> hex a1 x1 = hex a2 x2 $ =
+'(addeqd (muleq1d ha) hx);
+theorem hexeq1: $ a1 = a2 -> hex a1 x = hex a2 x $ = '(hexeqd id eqidd);
+theorem hexeq2: $ x1 = x2 -> hex a x1 = hex a x2 $ = '(hexeqd eqidd id);
+
+theorem suc_xf: $ suc xf = 16 $ = '(suceq h2nf);
+
+theorem hex01_: $ 0 :x a = a $ = '(eqtr (addeq1 mul01) add01);
+theorem hex01: $ x0 :x a = a $ = '(eqtr (hexeq1 h2n0) hex01_);
+theorem hex02: $ n :x x0 = n * 16 $ = '(eqtr (addeq2 h2n0) add0);
+theorem hex10: $ x1 :x x0 = 16 $ = '(eqtr hex02 @ eqtr (muleq1 h2n1) mul11);
+
+theorem c2nhex (h1 h2: hex): $ ch h1 h2 = h1 :x h2 $ = 'c2nch;
+theorem c2nh2n: $ ch x0 a = h2n a $ = '(eqtr c2nhex hex01);
+
+--| `(to-u8-ch a)` returns a pair `(c p)` where `p: c2n c = a`
+do (def to-u8-ch @ match-fn
+  [('hex ('h2n a) b) '((ch ,a ,b) (c2nhex ,a ,b))]
+  [('h2n a) '((ch (x0) ,a) (c2nh2n ,a))]);
+
+theorem suchexf: $ suc (a :x xf) = suc a :x x0 $ =
+'(eqtr3 addS2 @ eqtr4 (addeq2 suc_xf) @ eqtr hex02 mulS1);
+
+theorem addx01: $ x0 + a = a $ = '(eqtr (addeq1 h2n0) add01);
+theorem addx02: $ a + x0 = a $ = '(eqtr (addeq2 h2n0) add0);
+theorem addx12: $ a + x1 = suc a $ = '(eqtr (addeq2 h2n1) add12);
+theorem mulx01: $ x0 * a = x0 $ = '(eqtr (muleq1 h2n0) @ eqtr4 mul01 h2n0);
+theorem mulx02: $ a * x0 = x0 $ = '(eqtr (muleq2 h2n0) @ eqtr4 mul0 h2n0);
+theorem mulx11: $ x1 * a = a $ = '(eqtr (muleq1 h2n1) mul11);
+theorem mulx12: $ a * x1 = a $ = '(eqtr (muleq2 h2n1) mul12);
+theorem h2n10: $ 16 = x1 :x x0 $ = '(eqtr2 hex02 mulx11);
+do {
+  (def (sucs n) (iterate n (fn (x) '(suc ,x)) '(d0)))
+  (def (map-16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf) @ fn (n)
+    (if {n < 8}
+      (if {n < 4}
+        (match n [0 v0] [1 v1] [2 v2] [3 v3])
+        (match n [4 v4] [5 v5] [6 v6] [7 v7]))
+      (if {n < 12}
+        (match n [8 v8] [9 v9] [10 va] [11 vb])
+        (match n [12 vc] [13 vd] [14 ve] [15 vf]))))
+  (def hexstrings (map ->string '(0 1 2 3 4 5 6 7 8 9 a b c d e f)))
+  (def (on-hexstrings f) (apply map-16 (map f hexstrings)))
+  (def hexstring @ on-hexstrings @ fn (s) s)
+  (def hexdigit @ on-hexstrings @ fn (s) (atom-app 'x s))
+  (def h2nn @ on-hexstrings @ fn (s) (atom-app 'h2n s))
+  (def (->hex n)
+    (if {n >= 16} '(hex ,(->hex {n // 16}) @ ,(hexdigit {n % 16}))
+      '(h2n @ ,(hexdigit n))))
+  (def ->expr @ match-fn [(? number? e) (->hex e)] [e e])
+  (def hexdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(hexdigit n) ,n])
+  (def hex->number @ match-fn
+    [('c2n e) (hex->number e)]
+    [('h2n (e)) (hexdigit->number e)]
+    [('ch (e1) (e2)) {{(hexdigit->number e1) * 16} + (hexdigit->number e2)}]
+    [('hex e1 (e2)) {{(hex->number e1) * 16} + (hexdigit->number e2)}]
+    [e (hexdigit->number e)])
+  (def (number->ch n) '(ch (,(hexdigit {n // 16})) (,(hexdigit {n % 16}))))
+  (def nz-hexnat? @ match-fn
+    [('hex e _) (nz-hexnat? e)]
+    [('h2n (e)) (def n (hexdigit->number e)) @ if (def? n) {n > 0} #f]
+    [_ #f])
+  (def hexnat? @ match-fn ['(h2n (x0)) #t] [e (nz-hexnat? e)])
+  (def (string->hex s)
+    (def n (string-len s))
+    @ letrec (
+      [(f i) @ if {i < n}
+        '(scons ,(number->ch @ string-nth i s) ,(f {i + 1}))
+        '(s0)])
+    (f 0))
+};
+
+do {
+  --| This allows us to use `$ ,0x1234 $` and `$ ,"hello" $` to splice
+  --| numbers and strings into theorem statements.
+  (def (to-expr-fallback s t) @ match t
+    [(? number?) @ match s
+      ['hex '(,(hexdigit t))]
+      ['char (number->ch t)]
+      [_ (->hex t)]]
+    [(? string?) @ match s
+      ['nat '(s2n ,(string->hex t))]
+      ['char (number->ch @ string-nth 0 t)]
+      [_ (string->hex t)]])
+};
+
+do {
+  -- Defines e.g. theorem deca: $ 10 = xa $; for all n < 16, accessible as (decn 10)
+  (def (dn n) (atom-app 'd n))
+  (def decdigit->number @ lookup-fn @ rmap (range 0 16) @ fn (n) '[,(dn n) ,n])
+  (def decn @ on-hexstrings @ fn (n)
+    @ let ([xn (atom-app 'x n)] [i (hex->number xn)]
+           [dn '(,(dn i))] [xn '(h2n (,xn))] [name (atom-app 'dec n)])
+    (add-thm! name () () '(eq ,dn ,xn) () @ fn ()
+      '(() (eqcomi ,xn ,dn @ ,(h2nn i))))
+    name)
+};
+
+theorem decsuc_lem (h1: $ h2n a = d $) (h2: $ h2n b = suc d $): $ suc a = b $ = '(eqtr4 (suceq h1) h2);
+theorem decsucf: $ suc xf = x1 :x x0 $ = '(eqtr4 suc_xf hex10);
+theorem decsucx (h: $ suc b = c $): $ suc (a :x b) = a :x c $ = '(eqtr3 addS2 @ addeq2 h);
+theorem decsucxf (h: $ suc a = b $): $ suc (a :x xf) = b :x x0 $ = '(eqtr suchexf @ hexeq1 h);
+do {
+  -- Defines e.g. theorem dsuca: $ suc 10 = 11 $;
+  -- for all n < 16, accessible as (dsucn 10)
+  (def dsucn @ on-hexstrings @ fn (s)
+    @ let ([i (hex->number @ atom-app 'x s)] [name (atom-app 'dsuc s)])
+    (if {i < 15} @ add-tac-thm! name () () '(eq (suc ,(dn i)) ,(dn {i + 1})) () @ fn () 'eqid)
+    name)
+
+  -- Defines e.g. theorem decsuca: $ suc xa = xb $;
+  -- for all n < 16, accessible as (decsucn 10)
+  (def decsucn @ on-hexstrings @ fn (s)
+    @ let ([xi (atom-app 'x s)] [i (hex->number xi)] [name (atom-app 'decsuc s)])
+    (if {i < 15}
+      @ let ([j {i + 1}] [xi '(,xi)] [xj '(,(hexdigit j))])
+      @ add-thm! name () () '(eq (suc (h2n ,xi)) (h2n ,xj)) () @ fn ()
+        @ let ([di '(,(dn i))] [sdi '(suc ,di)])
+        '(() (decsuc_lem ,xi ,xj ,di (,(h2nn i)) @
+          :conv (eq (h2n ,xj) ,sdi) (eq (h2n ,xj) @ :sym @ :unfold ,(dn j) () ,sdi) @
+          ,(h2nn j))))
+    name)
+
+  --| Raw successor theorem generator: given `a` in normal form, returns `(b p)`
+  --| where `p` proves `suc a = b`
+  (def mksuc @ match-fn
+    ['(hex ,a (,b)) @ match b
+      ['xf @ match (mksuc a) @ (b p)
+        '((hex ,b (x0)) (decsucxf ,a ,b ,p))]
+      [_ (def i (hexdigit->number b)) (def c (hexdigit {i + 1}))
+        '((hex ,a (,c)) (decsucx ,a (,b) (,c) (,(decsucn i))))]]
+    ['(h2n (,a)) (def i (hexdigit->number a))
+      '(,(->hex {i + 1}) (,(decsucn i)))])
+
+  --| Successor tactic: usable in refine scripts when the target is `suc a = ?b`,
+  --| producing a proof and unifying `?b`
+  (def (suctac refine t) @ match t @ $ suc ,a = ,_ $
+    @ match (mksuc a) @ (b p)
+    @ refine '{(:verb ,p) : $ suc ,a = ,b $})
+};
+
+theorem declt_lem (a b: hex) (h: $ suc a = b $): $ a < b $ = '(mpbi (lteq2 h) ltsucid);
+theorem decltx1 (h: $ a < c $): $ a :x b < c :x d $ =
+'(ltletr (mpbi ltadd2 h2nlt) @ letr (mpbi (leeq1 mulS1) @ lemul1a h) leaddid1);
+theorem decltx2 (h: $ b < c $): $ a :x b < a :x c $ = '(mpbi ltadd2 h);
+theorem declt0x (h: $ x0 < b $): $ h2n a < b :x c $ = '(mpbi (lteq1 hex01) @ decltx1 h);
+do {
+  -- Defines e.g. theorem declt4a: $ x4 < xa $;
+  -- for all a < b <= 15, accessible as (decltn 4 10)
+  (def (decltn m n) @ if {m < n} (atom-app 'declt (hexstring m) (hexstring n)))
+  (begin
+    (def (f a b g)
+      @ let ([xa (hexdigit a)] [xb (hexdigit b)] [name (decltn a b)])
+      @ add-thm! name () () '(lt (h2n @ ,xa) (h2n @ ,xb)) () g)
+    (for 0 15 @ fn (a) (def b {a + 1}) @ f a b @ fn ()
+      '(() (declt_lem (,(hexdigit a)) (,(hexdigit b)) (,(decsucn a)))))
+    (for 0 14 @ fn (a) @ for {a + 1} 15 @ fn (b) (def c {b + 1}) @ f a c @ fn ()
+      (def (h a) '(h2n @ ,(hexdigit a)))
+      '(() (lttri ,(h a) ,(h b) ,(h c) (,(decltn a b)) (,(decltn b c))))))
+
+  --| Raw comparison theorem generator: given `a`, `b` in normal form, returns
+  --| * `(< p)` where `p: a < b`,
+  --| * '= (and `a` and `b` are identical), or
+  --| * `(> p)` where `p: b < a`
+  (def mkcmp2 @ match-fn*
+    [(('hex a (b)) ('hex c (d))) @ match (mkcmp2 a c)
+      [('< p) '(< (decltx1 ,a (,b) ,c (,d) ,p))]
+      [('> p) '(> (decltx1 ,c (,d) ,a (,b) ,p))]
+      ['=
+        @ let ([bi (hexdigit->number b)] [di (hexdigit->number d)])
+        @ if {bi < di} '(< (decltx2 ,a (,b) (,d) (,(decltn bi di))))
+        @ if {bi > di} '(> (decltx2 ,a (,d) (,b) (,(decltn di bi))))
+        '=]]
+    [(('h2n (a)) ('hex b (c))) @ match (mkcmp2 '(h2n (x0)) b)
+      [('< p) '(< (declt0x (,a) ,b (,c) ,p))]]
+    [(('hex a (b)) ('h2n (c))) @ match (mkcmp2 '(h2n (x0)) a)
+      [('< p) '(> (declt0x (,c) ,a (,b) ,p))]]
+    [(('h2n (a)) ('h2n (b)))
+      @ let ([ai (hexdigit->number a)] [bi (hexdigit->number b)])
+      @ if {ai < bi} '(< (,(decltn ai bi)))
+      @ if {ai > bi} '(> (,(decltn bi ai)))
+      '=])
+
+  --| Comparison theorem generator: given a goal `a < b` or `a <= b`, produces a proof
+  (def mkcmphex @ match-fn
+    [('lt a b) @ match (mkcmp2 a b) @ '(< ,p) p]
+    [('le a b) @ match (mkcmp2 a b) ['(< ,p) '(ltlei ,a ,b ,p)] ['= '(leid ,a)]]
+    [('ne a b) @ match (mkcmp2 a b) ['(< ,p) '(ltnei ,a ,b ,p)] ['(> ,p) '(ltneri ,b ,a ,p)]])
+
+  --| Comparison tactic: usable in refine scripts when the target is `a < b` or `a <= b`,
+  --| producing a proof
+  (def (cmphextac refine t) @ refine '(:verb ,(mkcmphex t)))
+};
+
+theorem decadd_lem (h1: $ a + b = d $) (h2: $ suc b = c $) (h3: $ suc d = e $): $ a + c = e $ =
+'(eqtr3 (addeq2 h2) @ eqtr addS @ eqtr (suceq h1) h3);
+theorem decadc_lem (h1: $ a + b = c $) (h2: $ suc c = d $): $ suc (a + b) = d $ = '(eqtr (suceq h1) h2);
+do {
+  -- Defines e.g. theorem decadd8a: $ x8 + xa = x1 :x x2 $;
+  -- for all a, b <= 15. (decaddn 8 10) returns the pair of the rhs and the theorem
+  (def decaddn
+    (def f
+      @ on-hexstrings @ fn (sa) @ let ([xa (atom-app 'x sa)] [a (hex->number xa)] [xa '(h2n @ ,xa)])
+      @ on-hexstrings @ fn (sb) @ let ([xb (atom-app 'x sb)] [b (hex->number xb)] [xb '(h2n @ ,xb)])
+      @ let ([e {a + b}] [xe (->hex e)] [name (atom-app 'decadd sa sb)])
+      (add-thm! name () () '(eq (add ,xa ,xb) ,xe) () @ fn ()
+        @ if {b = 0} '(() (addx02 ,xa))
+        @ let ([c {b - 1}] [xc (->hex c)] [d {e - 1}] [xd (->hex d)])
+        '(() (decadd_lem ,xa ,xc ,xb ,xd ,xe
+          (,(atom-app 'decadd sa (hexstring c)))
+          (,(decsucn c))
+          ,(hd @ tl @ mksuc xd))))
+      (list xe name))
+    (fn (a b) ((f a) b)))
+
+  -- Defines e.g. theorem decadc8a: $ suc (x8 + xa) = x1 :x x3 $;
+  -- for all a, b <= 15. (decadcn 8 10) returns the pair of the rhs and the theorem
+  (def decadcn
+    (def f
+      @ on-hexstrings @ fn (sa) @ let ([xa (atom-app 'x sa)] [a (hex->number xa)] [xa '(h2n @ ,xa)])
+      @ on-hexstrings @ fn (sb) @ let ([xb (atom-app 'x sb)] [b (hex->number xb)] [xb '(h2n @ ,xb)])
+      @ let ([c {a + b}] [d {c + 1}] [xc (->hex c)] [xd (->hex d)] [name (atom-app 'decadc sa sb)])
+      (add-thm! name () () '(eq (suc (add ,xa ,xb)) ,xd) () @ fn ()
+        '(() (decadc_lem ,xa ,xb ,xc ,xd (,(atom-app 'decadd sa sb)) ,(hd @ tl @ mksuc xc))))
+      (list xd name))
+    (fn (a b) ((f a) b)))
+
+  --| `(decnot a) = (b p)` where `p: a + b = xf`
+  (def decnot @ match-fn @ (a)
+    @ let ([n (hexdigit->number a)] [m {15 - n}])
+    '((,(hexdigit m)) ,(nth 1 @ decaddn n m)))
+};
+
+theorem add_xx0 (h1: $ a + c = e $) (h2: $ b + d = f $): $ a :x b + c :x d = e :x f $ =
+'(eqtr add4 @ addeq (eqtr3 addmul @ muleq1 h1) h2);
+theorem add_xx1 (h1: $ suc (a + c) = e $) (h2: $ b + d = x1 :x f $): $ a :x b + c :x d = e :x f $ =
+'(eqtr add4 @ eqtr (addeq (eqcomi addmul) h2) @ eqtr3 addass @
+  addeq1 @ eqtr3 addmul @ muleq1 @ eqtr addx12 h1);
+theorem adc_xx0 (h1: $ a + c = e $) (h2: $ suc (b + d) = f $): $ suc (a :x b + c :x d) = e :x f $ =
+'(eqtr (suceq add4) @ eqtr3 addS2 @ addeq (eqtr3 addmul @ muleq1 h1) h2);
+theorem adc_xx1 (h1: $ suc (a + c) = e $) (h2: $ suc (b + d) = x1 :x f $): $ suc (a :x b + c :x d) = e :x f $ =
+'(eqtr (suceq add4) @ eqtr3 addS2 @ eqtr (addeq (eqcomi addmul) h2) @ eqtr3 addass @
+  addeq1 @ eqtr3 addmul @ muleq1 @ eqtr addx12 h1);
+theorem add_0x0 (h: $ a + c = d $): $ h2n a + b :x c = b :x d $ =
+'(eqtr3 (addeq1 hex01) @ add_xx0 addx01 h);
+theorem add_0x1 (h1: $ suc b = d $) (h2: $ a + c = x1 :x e $): $ h2n a + b :x c = d :x e $ =
+'(eqtr3 (addeq1 hex01) @ add_xx1 (eqtr (suceq addx01) h1) h2);
+theorem adc_0x0 (h: $ suc (a + c) = d $): $ suc (h2n a + b :x c) = b :x d $ =
+'(eqtr3 (suceq @ addeq1 hex01) @ adc_xx0 addx01 h);
+theorem adc_0x1 (h1: $ suc b = d $) (h2: $ suc (a + c) = x1 :x e $): $ suc (h2n a + b :x c) = d :x e $ =
+'(eqtr3 (suceq @ addeq1 hex01) @ adc_xx1 (eqtr (suceq addx01) h1) h2);
+theorem add_x00 (h: $ b + c = d $): $ a :x b + h2n c = a :x d $ =
+'(eqtr3 (addeq2 hex01) @ add_xx0 addx02 h);
+theorem add_x01 (h1: $ suc a = d $) (h2: $ b + c = x1 :x e $): $ a :x b + h2n c = d :x e $ =
+'(eqtr3 (addeq2 hex01) @ add_xx1 (eqtr (suceq addx02) h1) h2);
+theorem adc_x00 (h: $ suc (b + c) = d $): $ suc (a :x b + h2n c) = a :x d $ =
+'(eqtr3 (suceq @ addeq2 hex01) @ adc_xx0 addx02 h);
+theorem adc_x01 (h1: $ suc a = d $) (h2: $ suc (b + c) = x1 :x e $): $ suc (a :x b + h2n c) = d :x e $ =
+'(eqtr3 (suceq @ addeq2 hex01) @ adc_xx1 (eqtr (suceq addx02) h1) h2);
+do {
+  --| Raw addition theorem generator: given `a`, `b` in normal form,
+  --| returns `(c p)` where `p: a + b = c`
+  (def mkadd @ match-fn*
+    [(('hex a (b)) ('hex c (d))) @ match (decaddn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (add_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n   f) p2) @ match (mkadd a c) @ (e p1) '((hex ,e ,f) (add_xx0 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]]
+    [(('h2n (a)) ('hex b (c))) @ match (decaddn (hexdigit->number a) (hexdigit->number c))
+      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (add_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
+      [(('h2n d) p) '((hex ,b ,d) (add_0x0 (,a) ,b (,c) ,d (,p)))]]
+    [(('hex a (b)) ('h2n (c))) @ match (decaddn (hexdigit->number b) (hexdigit->number c))
+      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (add_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
+      [(('h2n d) p) '((hex ,a ,d) (add_x00 ,a (,b) (,c) ,d (,p)))]]
+    [(('h2n (a)) ('h2n (b))) @ match (decaddn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
+  --| Raw carry-addition theorem generator: given `a`, `b` in normal form,
+  --| returns `(c p)` where `p: suc (a + b) = c`
+  (def mkadc @ match-fn*
+    [(('hex a (b)) ('hex c (d))) @ match (decadcn (hexdigit->number b) (hexdigit->number d))
+      [(('hex _ f) p2) @ match (mkadc a c) @ (e p1) '((hex ,e ,f) (adc_xx1 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]
+      [(('h2n   f) p2) @ match (mkadd a c) @ (e p1) '((hex ,e ,f) (adc_xx0 ,a (,b) ,c (,d) ,e ,f ,p1 (,p2)))]]
+    [(('h2n (a)) ('hex b (c))) @ match (decadcn (hexdigit->number a) (hexdigit->number c))
+      [(('hex _ e) p2) @ match (mksuc b) @ (d p1) '((hex ,d ,e) (adc_0x1 (,a) ,b (,c) ,d ,e ,p1 (,p2)))]
+      [(('h2n d) p) '((hex ,b ,d) (adc_0x0 (,a) ,b (,c) ,d (,p)))]]
+    [(('hex a (b)) ('h2n (c))) @ match (decadcn (hexdigit->number b) (hexdigit->number c))
+      [(('hex _ e) p2) @ match (mksuc a) @ (d p1) '((hex ,d ,e) (adc_x01 ,a (,b) (,c) ,d ,e ,p1 (,p2)))]
+      [(('h2n d) p) '((hex ,a ,d) (adc_x00 ,a (,b) (,c) ,d (,p)))]]
+    [(('h2n (a)) ('h2n (b))) @ match (decadcn (hexdigit->number a) (hexdigit->number b)) ['(,c ,p) '(,c (,p))]])
+
+  --| Addition tactic: usable in refine scripts when the target is `a + b = ?c` (or `suc (a + b) = ?c`),
+  --| producing a proof and unifying `?c`
+  (def (addtac refine t) @ match t
+    [$ ,a + ,b = ,_ $ @ match (mkadd a b) @ (c p) @ refine '{(:verb ,p) : $ ,a + ,b = ,c $}]
+    [$ suc (,a + ,b) = ,_ $ @ match (mkadc a b) @ (c p) @ refine '{(:verb ,p) : $ suc (,a + ,b) = ,c $}])
+};
+
+theorem decb0 (h: $ a + a = b $): $ b0 a = b $ = 'h;
+theorem decb1 (h: $ suc (a + a) = b $): $ b1 a = b $ = 'h;
+do {
+  -- Theorem generator for b0 and b1
+  (def (mkb0 a) @ match (mkadd a a) @ (b p) '(,b (decb0 ,a ,b ,p)))
+  (def (mkb1 a) @ match (mkadc a a) @ (b p) '(,b (decb1 ,a ,b ,p)))
+};
+
+theorem decmul_lem (h1: $ a * b = d $) (h2: $ suc b = c $) (h3: $ d + a = e $): $ a * c = e $ =
+'(eqtr3 (muleq2 h2) @ eqtr mulS @ eqtr (addeq1 h1) h3);
+do {
+  -- Defines e.g. theorem decmul4a: $ x4 * xa = x2 :x x8 $;
+  -- for all a, b <= 15. (decmuln 4 10) returns the pair of the rhs and the theorem
+  (def decmuln
+    (def f
+      @ on-hexstrings @ fn (sa) @ let ([xa (atom-app 'x sa)] [a (hex->number xa)] [xa '(h2n @ ,xa)])
+      @ on-hexstrings @ fn (sc) @ let ([xc (atom-app 'x sc)] [c (hex->number xc)] [xc '(h2n @ ,xc)])
+      @ let ([e {a * c}] [xe (->hex e)] [name (atom-app 'decmul sa sc)])
+      (add-thm! name () () '(eq (mul ,xa ,xc) ,xe) () @ fn ()
+        @ if {c = 0} '(() (mulx02 ,xa))
+        @ let ([b {c - 1}] [xb (->hex b)] [d {e - a}] [xd (->hex d)])
+        '(() (decmul_lem ,xa ,xb ,xc ,xd ,xe
+          (,(atom-app 'decmul sa (hexstring b)))
+          (,(decsucn b))
+          ,(hd @ tl @ mkadd xd xa))))
+      (list xe name))
+    (fn (a b) ((f a) b)))
+};
+
+theorem mul_b1 (h: $ a * b = c $): $ a :x x0 * b = c :x x0 $ =
+'(eqtr (muleq1 hex02) @ eqtr mulrass @ eqtr4 (muleq1 h) hex02);
+theorem mul_b2 (h: $ a * b = c $): $ a * b :x x0 = c :x x0 $ =
+'(eqtr (muleq2 hex02) @ eqtr3 mulass @ eqtr4 (muleq1 h) hex02);
+theorem mul_x1x (h1: $ a * c = d $) (h2: $ b * c = e :x f $) (h3: $ d + e = g $): $ a :x b * c = g :x f $ =
+'(eqtr addmul @ eqtr (addeq (eqtr mulrass @ muleq1 h1) h2) @ eqtr3 addass @
+  addeq1 @ eqtr3 addmul @ muleq1 h3);
+theorem mul_x10 (h1: $ a * c = d $) (h2: $ b * c = e $): $ a :x b * c = d :x e $ =
+'(mul_x1x h1 (eqtr4 h2 hex01) addx02);
+theorem mul_x2x (h1: $ a * b = d $) (h2: $ a * c = e :x f $) (h3: $ d + e = g $): $ a * b :x c = g :x f $ =
+'(eqtr mulcom @ mul_x1x (eqtr mulcom h1) (eqtr mulcom h2) h3);
+theorem mul_x20 (h1: $ a * b = d $) (h2: $ a * c = e $): $ a * b :x c = d :x e $ =
+'(mul_x2x h1 (eqtr4 h2 hex01) addx02);
+do {
+  --| Raw multiplication theorem generator: given `a`, `b` in normal form,
+  --| returns `(c p)` where `p: a * b = c`
+  (def mkmul @ letrec (
+    [mkmul-nz @ match-fn*
+      [('(h2n (x1)) a) '(,a (mulx11 ,a))]
+      [(a '(h2n (x1))) '(,a (mulx12 ,a))]
+      [(a ('hex b '(x0))) @ match (mkmul-nz a b) @ (c p) '((hex ,c (x0)) (mul_b2 ,a ,b ,c ,p))]
+      [(('hex a '(x0)) b) @ match (mkmul-nz a b) @ (c p) '((hex ,c (x0)) (mul_b1 ,a ,b ,c ,p))]
+      [(a ('hex b c))
+        @ match (mkmul-nz a b) @ (d p1)
+        @ match (mkmul a '(h2n ,c))
+        [(('hex e f) p2) @ match (mkadd d e) @ (g p3)
+          '((hex ,g ,f) (mul_x2x ,a ,b ,c ,d ,e ,f ,g ,p1 ,p2 ,p3))]
+        [(('h2n e) p2) '((hex ,d ,e) (mul_x20 ,a ,b ,c ,d ,e ,p1 ,p2))]]
+      [(('hex a b) c)
+        @ match (mkmul-nz a c) @ (d p1)
+        @ match (mkmul '(h2n ,b) c)
+        [(('hex e f) p2) @ match (mkadd d e) @ (g p3)
+          '((hex ,g ,f) (mul_x1x ,a ,b ,c ,d ,e ,f ,g ,p1 ,p2 ,p3))]
+        [(('h2n e) p2) '((hex ,d ,e) (mul_x10 ,a ,b ,c ,d ,e ,p1 ,p2))]]
+      [(('h2n (a)) ('h2n (b))) @ match (decmuln (hexdigit->number a) (hexdigit->number b)) @ (c p)
+        '(,c (,p))]]
+    [mkmul @ match-fn*
+      [('(h2n (x0)) a) '((h2n (x0)) (mulx01 ,a))]
+      [(a '(h2n (x0))) '((h2n (x0)) (mulx02 ,a))]
+      [(e1 e2) (mkmul-nz e1 e2)]])
+    mkmul)
+
+  --| Multiplication tactic: usable in refine scripts when the target is `a * b = ?c`,
+  --| producing a proof and unifying `?c`
+  (def (multac refine t) @ match t @ $ ,a + ,b = ,_ $
+    @ match (mkmul a b) @ (c p) @ refine '{(:verb ,p) : $ ,a * ,b = ,c $})
+};
+
+theorem suceql (ha: $ a = a2 $) (h: $ suc a2 = b $): $ suc a = b $ = '(eqtr (suceq ha) h);
+theorem addeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 + b2 = c $): $ a + b = c $ = '(eqtr (addeq ha hb) h);
+theorem adceql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ suc (a2 + b2) = c $):
+  $ suc (a + b) = c $ = '(eqtr (suceq @ addeq ha hb) h);
+theorem muleql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 * b2 = c $): $ a * b = c $ = '(eqtr (muleq ha hb) h);
+theorem hexeql (ha: $ a = a2 $): $ a :x b = a2 :x b $ = '(hexeq1 ha);
+theorem hexeql0 (ha: $ a = x0 $): $ a :x b = b $ = '(eqtr (hexeql ha) hex01);
+theorem lteql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 < b2 $): $ a < b $ = '(mpbir (lteq ha hb) h);
+theorem leeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 <= b2 $): $ a <= b $ = '(mpbir (leeq ha hb) h);
+theorem neeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 != b2 $): $ a != b $ = '(mpbir (neeq ha hb) h);
+theorem eqeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 = b2 $): $ a = b $ = '(mpbir (eqeq ha hb) h);
+theorem b0eql (ha: $ a = a2 $) (h: $ b0 a2 = b $): $ b0 a = b $ = '(eqtr (b0eq ha) h);
+theorem b1eql (ha: $ a = a2 $) (h: $ b1 a2 = b $): $ b1 a = b $ = '(eqtr (b1eq ha) h);
+do {
+  (def tohex-map (atom-map!))
+  --| Core numeric evaluation function, extensible using `tohex-map`.
+  --| Given a numeric expression using `+`, `*`, `suc`, `:x`, ..., it will be evaluated to a
+  --| (hexadecimal) numeric literal.
+  --| It will either return a pair `(e2 p)` where `p: e = e2`,
+  --| or `#undef` meaning that `e` is already normalized
+  (def (mktohex e) @ match e @ ((? atom? t) . es)
+    (apply (lookup tohex-map t @ fn () @ error @ string-append "not numeric: " (->string t)) es))
+
+  --| Numeric evaluation as a refine script.
+  (def (to_hex refine t) @ match t @ $ ,a = ,_ $
+    @ match (mktohex a)
+    [(b p) @ refine t '{(:verb ,p) : $ ,a = ,b $}]
+    [#undef @ refine t 'eqid])
+
+  (def (try-conv a p) @ if (def? p) p '(,a (eqid ,a)))
+  (let ([(ins a f) (insert! tohex-map a f)])
+    (ins 'suc @ match-fn
+      [('add a b) (def pa (mktohex a)) (def pb (mktohex b))
+        @ if {(def? pa) or (def? pb)}
+          (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @ match (mkadc a2 b2) @ (c pc)
+            '(,c (adceql ,a ,a2 ,b ,b2 ,c ,pa ,pb ,pc)))
+          (mkadc a b)]
+      [a @ match (mktohex a)
+        [(a2 pa) @ match (mksuc a2) @ (b pb) '(,b (suceql ,a ,a2 ,b ,pa ,pb))]
+        [#undef (mksuc a)]])
+    (ins 'add @ fn (a b)
+      (def pa (mktohex a)) (def pb (mktohex b))
+      @ if {(def? pa) or (def? pb)}
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @ match (mkadd a2 b2) @ (c pc)
+          '(,c (addeql ,a ,a2 ,b ,b2 ,c ,pa ,pb ,pc)))
+        (mkadd a b))
+    (ins 'mul @ fn (a b)
+      (def pa (mktohex a)) (def pb (mktohex b))
+      @ if {(def? pa) or (def? pb)}
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb) @ match (mkmul a2 b2) @ (c pc)
+          '(,c (muleql ,a ,a2 ,b ,b2 ,c ,pa ,pb ,pc)))
+        (mkmul a b))
+    (ins 'b0 @ fn (a) @ match (mktohex a)
+      [(a2 pa) @ match (mkb0 a2) @ (b pb) '(,b (b0eql ,a ,a2 ,b ,pa ,pb))]
+      [#undef (mkb0 a)])
+    (ins 'b1 @ fn (a) @ match (mktohex a)
+      [(a2 pa) @ match (mkb1 a2) @ (b pb) '(,b (b1eql ,a ,a2 ,b ,pa ,pb))]
+      [#undef (mkb1 a)])
+    (ins 'c2n mktohex)
+    (ins 'ch @ fn (a b) @ match a
+      ['(x0) '((h2n ,b) (c2nh2n ,b))]
+      [_ '((hex (h2n ,a) ,b) (c2nhex ,a ,b))])
+    (ins 'hex @ fn (a b) @ match a
+      ['(x0) '((h2n ,b) (hex01 ,b))]
+      [_ @ match (mktohex a)
+        [(a2 p) @ match a2
+          ['(x0) '((h2n ,b) (hexeql0 ,a ,b ,p))]
+          [_ '((hex ,a2 ,b) (hexeql ,a ,a2 ,b ,p))]]
+        [#undef]])
+    (ins 'h2n @ fn (_))
+    (for 0 16 @ fn (n) @
+      ins (dn n) @ fn () '((h2n (,(hexdigit n))) (,(decn n))))
+    (ins 'd16 @ fn () '((hex (h2n (x1)) (x0)) (h2n10))))
+
+  --| Comparison theorem generator: prove a given (in)equality goal (`<`, `<=`, or `=`)
+  (def (mkcmp e) @ match e
+    [('lt a b) (def pa (mktohex a)) (def pb (mktohex b))
+      @ if {(def? pa) or (def? pb)}
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
+          '(lteql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(lt ,a2 ,b2))))
+        (mkcmphex e)]
+    [('le a b) (def pa (mktohex a)) (def pb (mktohex b))
+      @ if {(def? pa) or (def? pb)}
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
+          '(leeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(le ,a2 ,b2))))
+        (mkcmphex e)]
+    [('ne a b) (def pa (mktohex a)) (def pb (mktohex b))
+      @ if {(def? pa) or (def? pb)}
+        (match (try-conv a pa) @ (a2 pa) @ match (try-conv b pb) @ (b2 pb)
+          '(neeql ,a ,a2 ,b ,b2 ,pa ,pb ,(mkcmphex '(ne ,a2 ,b2))))
+        (mkcmphex e)]
+    [('eq a b) (def pa (mktohex a)) (def pb (mktohex b))
+      (def a2 (if (def? pa) (hd pa) a))
+      (def b2 (if (def? pb) (hd pb) b))
+      @ if {a2 == b2}
+      (match (list pa pb)
+        [((_ pa) (_ pb)) '(eqtr4i ,a ,a2 ,b ,pa ,pb)]
+        [((_ pa) #undef) pa]
+        [(#undef (_ pb)) '(eqcomi ,b ,a ,pb)]
+        [(#undef #undef) '(eqid ,a)])
+      (error @ string-append "not equal? " (->string a2) " =?= " (->string b2))])
+
+  --| Normalize numeric expressions. Proves theorems like `123 * 321 = 39483`,
+  --| used as a refine script.
+  (def (norm_num refine t) @ match t
+    [('eq a (? mvar?)) @ match (try-conv a @ mktohex a) @ (b p)
+      @ refine t '{(:verb ,p) : $ ,a = ,b $}]
+    [_ @ refine t '(:verb ,(mkcmp t))])
+};
+
+theorem d0lt3: $ 0 < 3 $ = norm_num;
+theorem d0lt4: $ 0 < 4 $ = norm_num;
+theorem d1lt3: $ 1 < 3 $ = norm_num;
+theorem d1lt4: $ 1 < 4 $ = norm_num;
+theorem d1lt8: $ 1 < 8 $ = norm_num;
+theorem d2lt3: $ 2 < 3 $ = norm_num;
+theorem d2lt4: $ 2 < 4 $ = norm_num;
+theorem d2lt8: $ 2 < 8 $ = norm_num;
+theorem d3lt4: $ 3 < 4 $ = norm_num;
+theorem d4lt6: $ 4 < 6 $ = norm_num;
+theorem d4lt7: $ 4 < 7 $ = norm_num;
+theorem d4lt8: $ 4 < 8 $ = norm_num;
+theorem d6lt7: $ 6 < 7 $ = norm_num;
+theorem d8lt16: $ 8 < 16 $ = norm_num;
+theorem d8add8: $ 8 + 8 = 16 $ = norm_num;
+theorem d16ne0: $ 16 != 0 $ = norm_num;
+theorem d2mul2: $ 2 * 2 = 4 $ = norm_num;
+theorem pow22lem (h1: $ 2 * a = b $) (h2: $ 2 ^ a = c $): $ 2 ^ b = c * c $ =
+'(eqtr3 (poweq2 @ eqtr mulcom h1) @ eqtr powmul @ eqtr (poweq1 h2) pow22);
+theorem d2pow2: $ 2 ^ 2 = 4 $ = '(eqtr pow22 d2mul2);
+theorem d2mul4: $ 2 * 4 = 8 $ = norm_num;
+theorem d4add4: $ 4 + 4 = 8 $ = '(eqtr3 mul21 d2mul4);
+theorem d2pow3: $ 2 ^ 3 = 8 $ = '(eqtr powS @ eqtr (muleq2 d2pow2) d2mul4);
+theorem d8mul2: $ 8 * 2 = 16 $ = norm_num;
+theorem d2pow4: $ 2 ^ 4 = 16 $ = '(eqtr4 (pow22lem d2mul2 d2pow2) ,norm_num);
+theorem d2pow8: $ 2 ^ 8 = 16 * 16 $ =
+'(eqtr3 (poweq2 d4add4) @ eqtr powadd @ muleq d2pow4 d2pow4);
+theorem d2pow8x: $ 2 ^ 8 = ,256 $ = '(eqtr d2pow8 ,to_hex);
+theorem d2pow16x: $ 2 ^ 16 = ,0x10000 $ =
+'(eqtr3 (poweq2 d8add8) @ eqtr powadd @ eqtr (muleq d2pow8 d2pow8) ,norm_num);
+theorem upto4: $ upto 4 = xf $ =
+'(mpbi peano2 @ eqtr sucupto @ eqtr4 d2pow4 ,norm_num);
+theorem upto16: $ upto 16 = ,0xffff $ =
+'(mpbi peano2 @ eqtr sucupto @ eqtr4 d2pow16x ,norm_num);
+
+theorem xltmul16 (h: $ a < b $): $ a :x x < b * 16 $ =
+'(ltletr (mpbi ltadd2 h2nlt) @ mpbi (leeq1 mulS1) @ lemul1a h);
+theorem xlt16pow1: $ h2n x < 16 ^ suc k $ =
+'(ltletr h2nlt @ mpbi (leeq1 pow12) @ lepow2a d16ne0 le11S);
+theorem xlt16powS (h: $ a < 16 ^ k $): $ a :x x < 16 ^ suc k $ =
+'(mpbir (lteq2 powS2) @ xltmul16 h);
+
+theorem hexshl4: $ a :x b = shl a 4 + b $ = '(addeq1 @ muleq2 @ eqcom d2pow4);
+theorem shrhex4: $ shr (a :x b) 4 = a $ =
+'(eqtr (shreq1 hexshl4) @ shrshladdid @ mpbir (lteq2 d2pow4) h2nlt);
+
+theorem x16powS (h: $ 16 ^ k = a $): $ 16 ^ suc k = a :x x0 $ =
+'(eqtr powS2 @ eqtr4 (muleq1 h) hex02);
+theorem x2powS (h: $ a = 2 ^ k $): $ a :x x0 = 2 ^ (k + 4) $ =
+'(eqtr hex02 @ eqtr4 (muleq1 h) @ eqtr powadd (muleq2 d2pow4));
+
+do {
+  -- Defines e.g. theorem d5half: $ 5 = b1 2 $; and x5half: $ x5 = b1 x2 $; for all n <= 16
+  (def (decnhalf n) (atom-app 'd n 'half))
+  (def (hexnhalf n) (atom-app 'x n 'half))
+  (for 0 16 @ fn (a)
+    (def b {a // 2})
+    (def (f name g)
+      (def stmt '(eq ,(g a) (,(if {{b * 2} = a} 'b0 'b1) ,(g b))))
+      (add-thm! (name a) () () stmt () @ fn () '(() ,(mkcmp stmt))))
+    (f decnhalf @ fn (a) '(,(dn a)))
+    (f hexnhalf @ fn (a) '(h2n (,(hexdigit a)))))
+};
+
+do {
+  (def (->zhex n)
+    @ if {n > 0} '(b0 ,(->hex n))
+    @ if {n = 0} '(d0) '(b1 ,(->hex (bnot n))))
+};
