@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ifpeq1a` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ifpeq1a - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">ifpeq1a</a>
+      <span class="nav"><a href="ifpor.html" title="ifpor">&#8810;</a> | <a href="../index.html#ifpeq1a">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L704">src</a> | <a href="ifpeq2a.html" title="ifpeq2a">&#8811;</a></span>
+    </h1>
+    <pre>theorem ifpeq1a (a1 a2 b p: wff):
+  $ (p -> (a1 <-> a2)) -> (ifp p a1 b <-> ifp p a2 b) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ifp">ifp</a></td>
+          <td><pre>(p -&gt; (a1 &lt;-&gt; a2)) -&gt; (ifp p a1 b &lt;-&gt; ifp p a2 b)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="oreq1d.html">oreq1d</a></td>
+          <td><pre>(p -&gt; (a1 &lt;-&gt; a2)) -&gt; (p /\ a1 \/ ~p /\ b &lt;-&gt; p /\ a2 \/ ~p /\ b)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="aneq2a.html">aneq2a</a></td>
+          <td><pre>(p -&gt; (a1 &lt;-&gt; a2)) -&gt; (p /\ a1 &lt;-&gt; p /\ a2)</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>
+  </div>
+</body>
+</html>

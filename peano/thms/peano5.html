@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `peano5` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>peano5 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Axiom <a class="ax" href="">peano5</a>
+      <span class="nav"><a href="peano2.html" title="peano2">&#8810;</a> | <a href="../index.html#peano5">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1593-L1594">src</a> | <a href="d1ne0.html" title="d1ne0">&#8811;</a></span>
+    </h1>
+      <div class="doc"><p>The induction axiom of Peano Arithmetic. If <code>p(0)</code> is true,
+and <code>p(x)</code> implies <code>p(suc x)</code> for all <code>x</code>, then <code>p(x)</code> is true for all <code>x</code>.</p>
+</div>
+    <pre>axiom peano5 {x: nat} (p: wff x):
+  $ [0 / x] p -> A. x (p -> [suc x / x] p) -> A. x p $;</pre>
+  </div>
+</body>
+</html>

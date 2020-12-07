@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `lmemeqd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>lmemeqd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">lmemeqd</a>
+      <span class="nav"><a href="lmemsS.html" title="lmemsS">&#8810;</a> | <a href="../index.html#lmemeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5554">src</a> | <a href="lmemeq.html" title="lmemeq">&#8811;</a></span>
+    </h1>
+    <pre>theorem lmemeqd (_G: wff) (_a1 _a2 _l1 _l2: nat):
+  $ _G -> _a1 = _a2 $ >
+  $ _G -> _l1 = _l2 $ >
+  $ _G -> (_a1 IN _l1 <-> _a2 IN _l2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#lmem">lmem</a></td>
+          <td><pre>_G -&gt; (_a1 IN _l1 &lt;-&gt; _a2 IN _l2)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="eleqd.html">eleqd</a></td>
+          <td><pre>_G -&gt; (_a1 e. lmems _l1 &lt;-&gt; _a2 e. lmems _l2)</pre></td>
+        </tr>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
+          <td></td>
+          <td><i>hyp _ah</i></td>
+          <td><pre>_G -&gt; _a1 = _a2</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="nseqd.html">nseqd</a></td>
+          <td><pre>_G -&gt; lmems _l1 == lmems _l2</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a></td>
+          <td><a class="thm" href="lmemseqd.html">lmemseqd</a></td>
+          <td><pre>_G -&gt; lmems _l1 = lmems _l2</pre></td>
+        </tr>
+        <tr id="6" class="step-hyp">
+          <td>6</td>
+          <td></td>
+          <td><i>hyp _lh</i></td>
+          <td><pre>_G -&gt; _l1 = _l2</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>
+  </div>
+</body>
+</html>

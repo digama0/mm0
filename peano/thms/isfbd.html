@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `isfbd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>isfbd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">isfbd</a>
+      <span class="nav"><a href="isfd.html" title="isfd">&#8810;</a> | <a href="../index.html#isfbd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3055-L3057">src</a> | <a href="isfss.html" title="isfss">&#8811;</a></span>
+    </h1>
+    <pre>theorem isfbd (F: set) (G: wff) (a b b2: nat):
+  $ G -> isfun F $ >
+  $ G -> a <> b e. F $ >
+  $ G -> (a <> b2 e. F <-> b = b2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#7">7</a></td>
+          <td><a class="thm" href="ibida.html">ibida</a></td>
+          <td><pre>G -&gt; (a &lt;&gt; b2 e. F &lt;-&gt; b = b2)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="isfd.html">isfd</a></td>
+          <td><pre>G /\ a &lt;&gt; b2 e. F -&gt; b = b2</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>G /\ a &lt;&gt; b2 e. F -&gt; isfun F</pre></td>
+        </tr>
+        <tr id="4" class="step-hyp">
+          <td>4</td>
+          <td></td>
+          <td><i>hyp h1</i></td>
+          <td><pre>G -&gt; isfun F</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#12">12</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>G /\ a &lt;&gt; b2 e. F -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>G /\ a &lt;&gt; b2 e. F -&gt; a &lt;&gt; b2 e. F</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="mpbid.html">mpbid</a></td>
+          <td><pre>G /\ b = b2 -&gt; a &lt;&gt; b2 e. F</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a></td>
+          <td><a class="thm" href="eleq1d.html">eleq1d</a></td>
+          <td><pre>G /\ b = b2 -&gt; (a &lt;&gt; b e. F &lt;-&gt; a &lt;&gt; b2 e. F)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a></td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><pre>G /\ b = b2 -&gt; a &lt;&gt; b = a &lt;&gt; b2</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="preq2.html">preq2</a></td>
+          <td><pre>b = b2 -&gt; a &lt;&gt; b = a &lt;&gt; b2</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#12">12</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>G /\ b = b2 -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+        <tr id="12" class="step-hyp">
+          <td>12</td>
+          <td></td>
+          <td><i>hyp h2</i></td>
+          <td><pre>G -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>
+  </div>
+</body>
+</html>

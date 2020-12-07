@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `indlt` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>indlt - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">indlt</a>
+      <span class="nav"><a href="subSS.html" title="subSS">&#8810;</a> | <a href="../index.html#indlt">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2178-L2186">src</a> | <a href="indstr.html" title="indstr">&#8811;</a></span>
+    </h1>
+    <pre>theorem indlt (G: wff) {x y: nat} (a: nat) (px: wff G) (p0 pa py ps: wff x):
+  $ x = a -> (px <-> pa) $ >
+  $ x = 0 -> (px <-> p0) $ >
+  $ x = y -> (px <-> py) $ >
+  $ x = suc y -> (px <-> ps) $ >
+  $ G -> p0 $ >
+  $ G /\ y < a /\ py -> ps $ >
+  $ G -> pa $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="mpi.html">mpi</a></td>
+          <td><pre>G -&gt; pa</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="thm" href="leid.html">leid</a></td>
+          <td><pre>a &lt;= a</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#7">7</a>, <a href="#10">10</a>, <a href="#13">13</a>, <a href="#16">16</a>, <a href="#18">18</a></td>
+          <td><a class="thm" href="indd.html">indd</a></td>
+          <td><pre>G -&gt; a &lt;= a -&gt; pa</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>x = a -&gt; (x &lt;= a -&gt; px &lt;-&gt; a &lt;= a -&gt; pa)</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="leeq1.html">leeq1</a></td>
+          <td><pre>x = a -&gt; (x &lt;= a &lt;-&gt; a &lt;= a)</pre></td>
+        </tr>
+        <tr id="6" class="step-hyp">
+          <td>6</td>
+          <td></td>
+          <td><i>hyp ha</i></td>
+          <td><pre>x = a -&gt; (px &lt;-&gt; pa)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>x = 0 -&gt; (x &lt;= a -&gt; px &lt;-&gt; 0 &lt;= a -&gt; p0)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td></td>
+          <td><a class="thm" href="leeq1.html">leeq1</a></td>
+          <td><pre>x = 0 -&gt; (x &lt;= a &lt;-&gt; 0 &lt;= a)</pre></td>
+        </tr>
+        <tr id="9" class="step-hyp">
+          <td>9</td>
+          <td></td>
+          <td><i>hyp h0</i></td>
+          <td><pre>x = 0 -&gt; (px &lt;-&gt; p0)</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>x = y -&gt; (x &lt;= a -&gt; px &lt;-&gt; y &lt;= a -&gt; py)</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td></td>
+          <td><a class="thm" href="leeq1.html">leeq1</a></td>
+          <td><pre>x = y -&gt; (x &lt;= a &lt;-&gt; y &lt;= a)</pre></td>
+        </tr>
+        <tr id="12" class="step-hyp">
+          <td>12</td>
+          <td></td>
+          <td><i>hyp hy</i></td>
+          <td><pre>x = y -&gt; (px &lt;-&gt; py)</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#14">14</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>x = suc y -&gt; (x &lt;= a -&gt; px &lt;-&gt; suc y &lt;= a -&gt; ps)</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="leeq1.html">leeq1</a></td>
+          <td><pre>x = suc y -&gt; (x &lt;= a &lt;-&gt; suc y &lt;= a)</pre></td>
+        </tr>
+        <tr id="15" class="step-hyp">
+          <td>15</td>
+          <td></td>
+          <td><i>hyp hs</i></td>
+          <td><pre>x = suc y -&gt; (px &lt;-&gt; ps)</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a></td>
+          <td><a class="thm" href="a1d.html">a1d</a></td>
+          <td><pre>G -&gt; 0 &lt;= a -&gt; p0</pre></td>
+        </tr>
+        <tr id="17" class="step-hyp">
+          <td>17</td>
+          <td></td>
+          <td><i>hyp h1</i></td>
+          <td><pre>G -&gt; p0</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a></td>
+          <td><a class="thm" href="imp.html">imp</a></td>
+          <td><pre>G /\ (y &lt;= a -&gt; py) -&gt; suc y &lt;= a -&gt; ps</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#20">20</a>, <a href="#22">22</a></td>
+          <td><a class="thm" href="syl5.html">syl5</a></td>
+          <td><pre>G -&gt; (y &lt;= a -&gt; py) -&gt; suc y &lt;= a -&gt; ps</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#21">21</a></td>
+          <td><a class="thm" href="imim1i.html">imim1i</a></td>
+          <td><pre>(y &lt;= a -&gt; py) -&gt; y &lt; a -&gt; py</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td></td>
+          <td><a class="thm" href="ltle.html">ltle</a></td>
+          <td><pre>y &lt; a -&gt; y &lt;= a</pre></td>
+        </tr>
+        <tr id="22" class="step-conv">
+          <td>22</td>
+          <td><a href="#23">23</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#lt">lt</a></td>
+          <td><pre>G -&gt; (y &lt; a -&gt; py) -&gt; suc y &lt;= a -&gt; ps</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td><a href="#24">24</a></td>
+          <td><a class="thm" href="a2d.html">a2d</a></td>
+          <td><pre>G -&gt; (y &lt; a -&gt; py) -&gt; y &lt; a -&gt; ps</pre></td>
+        </tr>
+        <tr id="24" class="step-thm">
+          <td>24</td>
+          <td><a href="#25">25</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>G -&gt; y &lt; a -&gt; py -&gt; ps</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#26">26</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>G /\ y &lt; a -&gt; py -&gt; ps</pre></td>
+        </tr>
+        <tr id="26" class="step-hyp">
+          <td>26</td>
+          <td></td>
+          <td><i>hyp h2</i></td>
+          <td><pre>G /\ y &lt; a /\ py -&gt; ps</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `obindeqS` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>obindeqS - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">obindeqS</a>
+      <span class="nav"><a href="obindS2.html" title="obindS2">&#8810;</a> | <a href="../index.html#obindeqS">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4565-L4571">src</a> | <a href="poweqd.html" title="poweqd">&#8811;</a></span>
+    </h1>
+    <pre>theorem obindeqS (F: set) (a: nat) {m: nat} (n: nat):
+  $ obind n F = suc a <-> E. m (n = suc m /\ F @ m = suc a) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#23">23</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>obind n F = suc a &lt;-&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="cases.html">cases</a></td>
+          <td><pre>obind n F = suc a -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="syl5.html">syl5</a></td>
+          <td><pre>n = 0 -&gt; obind n F = suc a -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td></td>
+          <td><a class="thm" href="sucne0.html">sucne0</a></td>
+          <td><pre>obind n F = suc a -&gt; obind n F != 0</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>n = 0 -&gt; obind n F != 0 -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="6" class="step-conv">
+          <td>6</td>
+          <td><a href="#7">7</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>obind n F = 0 -&gt; obind n F != 0 -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="absurdr.html">absurdr</a></td>
+          <td><pre>obind n F = 0 -&gt; ~obind n F = 0 -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>n = 0 -&gt; obind n F = 0</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td></td>
+          <td><a class="thm" href="obind0.html">obind0</a></td>
+          <td><pre>obind 0 F = 0</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="obindeq1.html">obindeq1</a></td>
+          <td><pre>n = 0 -&gt; obind n F = obind 0 F</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#12">12</a>, <a href="#14">14</a></td>
+          <td><a class="thm" href="sylbi.html">sylbi</a></td>
+          <td><pre>~n = 0 -&gt; obind n F = suc a -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="12" class="step-conv">
+          <td>12</td>
+          <td><a href="#13">13</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>~n = 0 &lt;-&gt; E. m n = suc m</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td></td>
+          <td><a class="thm" href="exsuc.html">exsuc</a></td>
+          <td><pre>n != 0 &lt;-&gt; E. m n = suc m</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td><a href="#15">15</a></td>
+          <td><a class="thm" href="com12.html">com12</a></td>
+          <td><pre>E. m n = suc m -&gt; obind n F = suc a -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="eximd.html">eximd</a></td>
+          <td><pre>obind n F = suc a -&gt; E. m n = suc m -&gt; E. m (n = suc m /\ F @ m = suc a)</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>obind n F = suc a -&gt; n = suc m -&gt; n = suc m /\ F @ m = suc a</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#21">21</a>, <a href="#18">18</a></td>
+          <td><a class="thm" href="iand.html">iand</a></td>
+          <td><pre>obind n F = suc a /\ n = suc m -&gt; n = suc m /\ F @ m = suc a</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a>, <a href="#22">22</a></td>
+          <td><a class="thm" href="eqtr3d.html">eqtr3d</a></td>
+          <td><pre>obind n F = suc a /\ n = suc m -&gt; F @ m = suc a</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#27">27</a>, <a href="#20">20</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>obind n F = suc a /\ n = suc m -&gt; obind n F = F @ m</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#21">21</a></td>
+          <td><a class="thm" href="obindeq1d.html">obindeq1d</a></td>
+          <td><pre>obind n F = suc a /\ n = suc m -&gt; obind n F = obind (suc m) F</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>obind n F = suc a /\ n = suc m -&gt; n = suc m</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td></td>
+          <td><a class="thm" href="anl.html">anl</a></td>
+          <td><pre>obind n F = suc a /\ n = suc m -&gt; obind n F = suc a</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td><a href="#24">24</a></td>
+          <td><a class="thm" href="eex.html">eex</a></td>
+          <td><pre>E. m (n = suc m /\ F @ m = suc a) -&gt; obind n F = suc a</pre></td>
+        </tr>
+        <tr id="24" class="step-thm">
+          <td>24</td>
+          <td><a href="#25">25</a>, <a href="#29">29</a></td>
+          <td><a class="thm" href="eqtrd.html">eqtrd</a></td>
+          <td><pre>n = suc m /\ F @ m = suc a -&gt; obind n F = suc a</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#26">26</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>n = suc m /\ F @ m = suc a -&gt; obind n F = F @ m</pre></td>
+        </tr>
+        <tr id="26" class="step-thm">
+          <td>26</td>
+          <td><a href="#27">27</a>, <a href="#28">28</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>n = suc m -&gt; obind n F = F @ m</pre></td>
+        </tr>
+        <tr id="27" class="step-thm">
+          <td>27</td>
+          <td></td>
+          <td><a class="thm" href="obindS.html">obindS</a></td>
+          <td><pre>obind (suc m) F = F @ m</pre></td>
+        </tr>
+        <tr id="28" class="step-thm">
+          <td>28</td>
+          <td></td>
+          <td><a class="thm" href="obindeq1.html">obindeq1</a></td>
+          <td><pre>n = suc m -&gt; obind n F = obind (suc m) F</pre></td>
+        </tr>
+        <tr id="29" class="step-thm">
+          <td>29</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>n = suc m /\ F @ m = suc a -&gt; F @ m = suc a</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>,
+    <a class="ax" href="mul0.html">mul0</a>,
+    <a class="ax" href="mulS.html">mulS</a>
+  </div>
+</body>
+</html>

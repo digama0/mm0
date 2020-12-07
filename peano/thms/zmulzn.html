@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `zmulzn` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>zmulzn - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">zmulzn</a>
+      <span class="nav"><a href="zmulznlem.html" title="zmulznlem">&#8810;</a> | <a href="../index.html#zmulzn">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3894-L3895">src</a> | <a href="zmulcom.html" title="zmulcom">&#8811;</a></span>
+    </h1>
+    <pre>theorem zmulzn (a b c d: nat):
+  $ (a -ZN c) *Z (b -ZN d) = a * b + c * d -ZN (a * d + b * c) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#4">4</a></td>
+          <td><a class="thm" href="mpbir.html">mpbir</a></td>
+          <td><pre>(a -ZN c) *Z (b -ZN d) = a * b + c * d -ZN (a * d + b * c)</pre></td>
+        </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#zmul">zmul</a></td>
+          <td><pre>(a -ZN c) *Z (b -ZN d) = a * b + c * d -ZN (a * d + b * c) &lt;-&gt;
+  zfst (a -ZN c) * zfst (b -ZN d) + zsnd (a -ZN c) * zsnd (b -ZN d) + (a * d + b * c) =
+    a * b + c * d + (zfst (a -ZN c) * zsnd (b -ZN d) + zsnd (a -ZN c) * zfst (b -ZN d))</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="zneqb.html">zneqb</a></td>
+          <td><pre>zfst (a -ZN c) * zfst (b -ZN d) + zsnd (a -ZN c) * zsnd (b -ZN d) -ZN (zfst (a -ZN c) * zsnd (b -ZN d) + zsnd (a -ZN c) * zfst (b -ZN d)) =
+    a * b + c * d -ZN (a * d + b * c) &lt;-&gt;
+  zfst (a -ZN c) * zfst (b -ZN d) + zsnd (a -ZN c) * zsnd (b -ZN d) + (a * d + b * c) =
+    a * b + c * d + (zfst (a -ZN c) * zsnd (b -ZN d) + zsnd (a -ZN c) * zfst (b -ZN d))</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="zmulznlem.html">zmulznlem</a></td>
+          <td><pre>zfst (a -ZN c) * zfst (b -ZN d) + zsnd (a -ZN c) * zsnd (b -ZN d) + (a * d + b * c) =
+  a * b + c * d + (zfst (a -ZN c) * zsnd (b -ZN d) + zsnd (a -ZN c) * zfst (b -ZN d))</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a class="thm" href="mpbi.html">mpbi</a></td>
+          <td><pre>zfst (a -ZN c) + c = a + zsnd (a -ZN c)</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td></td>
+          <td><a class="thm" href="zneqb.html">zneqb</a></td>
+          <td><pre>zfst (a -ZN c) -ZN zsnd (a -ZN c) = a -ZN c &lt;-&gt; zfst (a -ZN c) + c = a + zsnd (a -ZN c)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="zfstsnd.html">zfstsnd</a></td>
+          <td><pre>zfst (a -ZN c) -ZN zsnd (a -ZN c) = a -ZN c</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a class="thm" href="mpbi.html">mpbi</a></td>
+          <td><pre>zfst (b -ZN d) + d = b + zsnd (b -ZN d)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td></td>
+          <td><a class="thm" href="zneqb.html">zneqb</a></td>
+          <td><pre>zfst (b -ZN d) -ZN zsnd (b -ZN d) = b -ZN d &lt;-&gt; zfst (b -ZN d) + d = b + zsnd (b -ZN d)</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="zfstsnd.html">zfstsnd</a></td>
+          <td><pre>zfst (b -ZN d) -ZN zsnd (b -ZN d) = b -ZN d</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>,
+    <a class="ax" href="mul0.html">mul0</a>,
+    <a class="ax" href="mulS.html">mulS</a>
+  </div>
+</body>
+</html>

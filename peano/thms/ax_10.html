@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ax_10` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ax_10 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Axiom <a class="ax" href="">ax_10</a>
+      <span class="nav"><a href="eqtr3.html" title="eqtr3">&#8810;</a> | <a href="../index.html#ax_10">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L785">src</a> | <a href="ax_11.html" title="ax_11">&#8811;</a></span>
+    </h1>
+      <div class="doc"><p>Axiom 10 for predicate logic: <code>x</code> is bound in <code>~(A. x p)</code>, so we can
+safely introduce a <code>A. x</code> quantifier. (This axiom is used to internalize
+the notion of &quot;bound in&quot; when axiom 5 does not apply.)</p>
+</div>
+    <pre>axiom ax_10 {x: nat} (p: wff x): $ ~A. x p -> A. x ~A. x p $;</pre>
+  </div>
+</body>
+</html>

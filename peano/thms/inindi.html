@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `inindi` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>inindi - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">inindi</a>
+      <span class="nav"><a href="indir.html" title="indir">&#8810;</a> | <a href="../index.html#inindi">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1421-L1422">src</a> | <a href="undi.html" title="undi">&#8811;</a></span>
+    </h1>
+    <pre>theorem inindi (A B C: set): $ A i^i (B i^i C) == A i^i B i^i (A i^i C) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="eqri.html">eqri</a></td>
+          <td><pre>A i^i (B i^i C) == A i^i B i^i (A i^i C)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#6">6</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>x e. A i^i (B i^i C) &lt;-&gt; x e. A i^i B i^i (A i^i C)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A /\ x e. B i^i C) -&gt; (x e. A i^i (B i^i C) &lt;-&gt; x e. A i^i B i^i (A i^i C))</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td></td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><pre>(x e. A i^i (B i^i C) &lt;-&gt; x e. A /\ x e. B i^i C) -&gt;
+  (x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A /\ x e. B i^i C) -&gt;
+  (x e. A i^i (B i^i C) &lt;-&gt; x e. A i^i B i^i (A i^i C))</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="elin.html">elin</a></td>
+          <td><pre>x e. A i^i (B i^i C) &lt;-&gt; x e. A /\ x e. B i^i C</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a>, <a href="#10">10</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A /\ x e. B i^i C</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(x e. A /\ x e. B i^i C &lt;-&gt; x e. A i^i B /\ x e. A i^i C) -&gt; (x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A /\ x e. B i^i C)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td></td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><pre>(x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A i^i B /\ x e. A i^i C) -&gt;
+  (x e. A /\ x e. B i^i C &lt;-&gt; x e. A i^i B /\ x e. A i^i C) -&gt;
+  (x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A /\ x e. B i^i C)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td></td>
+          <td><a class="thm" href="elin.html">elin</a></td>
+          <td><pre>x e. A i^i B i^i (A i^i C) &lt;-&gt; x e. A i^i B /\ x e. A i^i C</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#11">11</a>, <a href="#15">15</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>x e. A /\ x e. B i^i C &lt;-&gt; x e. A i^i B /\ x e. A i^i C</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#12">12</a>, <a href="#13">13</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C)) -&gt; (x e. A /\ x e. B i^i C &lt;-&gt; x e. A i^i B /\ x e. A i^i C)</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td></td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><pre>(x e. A /\ x e. B i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C)) -&gt;
+  (x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C)) -&gt;
+  (x e. A /\ x e. B i^i C &lt;-&gt; x e. A i^i B /\ x e. A i^i C)</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#14">14</a></td>
+          <td><a class="thm" href="aneq2i.html">aneq2i</a></td>
+          <td><pre>x e. A /\ x e. B i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C)</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="elin.html">elin</a></td>
+          <td><pre>x e. B i^i C &lt;-&gt; x e. B /\ x e. C</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a>, <a href="#23">23</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C)</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a>, <a href="#18">18</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(x e. A /\ (x e. B /\ x e. C) &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C)) -&gt; (x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C))</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td></td>
+          <td><a class="thm" href="bitr4.html">bitr4</a></td>
+          <td><pre>(x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C)) -&gt;
+  (x e. A /\ (x e. B /\ x e. C) &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C)) -&gt;
+  (x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ (x e. B /\ x e. C))</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a>, <a href="#22">22</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C)</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#20">20</a>, <a href="#21">21</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(x e. A i^i C &lt;-&gt; x e. A /\ x e. C) -&gt; (x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C))</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td></td>
+          <td><a class="thm" href="aneq.html">aneq</a></td>
+          <td><pre>(x e. A i^i B &lt;-&gt; x e. A /\ x e. B) -&gt; (x e. A i^i C &lt;-&gt; x e. A /\ x e. C) -&gt; (x e. A i^i B /\ x e. A i^i C &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C))</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td></td>
+          <td><a class="thm" href="elin.html">elin</a></td>
+          <td><pre>x e. A i^i B &lt;-&gt; x e. A /\ x e. B</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td></td>
+          <td><a class="thm" href="elin.html">elin</a></td>
+          <td><pre>x e. A i^i C &lt;-&gt; x e. A /\ x e. C</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td></td>
+          <td><a class="thm" href="anandi.html">anandi</a></td>
+          <td><pre>x e. A /\ (x e. B /\ x e. C) &lt;-&gt; x e. A /\ x e. B /\ (x e. A /\ x e. C)</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>
+  </div>
+</body>
+</html>

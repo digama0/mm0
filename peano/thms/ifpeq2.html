@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `ifpeq2` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>ifpeq2 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">ifpeq2</a>
+      <span class="nav"><a href="ifpeq2d.html" title="ifpeq2d">&#8810;</a> | <a href="../index.html#ifpeq2">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L686">src</a> | <a href="ifpeq3d.html" title="ifpeq3d">&#8811;</a></span>
+    </h1>
+    <pre>theorem ifpeq2 (p _a1 _a2 b: wff):
+  $ (_a1 <-> _a2) -> (ifp p _a1 b <-> ifp p _a2 b) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="ifpeq2d.html">ifpeq2d</a></td>
+          <td><pre>(_a1 &lt;-&gt; _a2) -&gt; (ifp p _a1 b &lt;-&gt; ifp p _a2 b)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="thm" href="id.html">id</a></td>
+          <td><pre>(_a1 &lt;-&gt; _a2) -&gt; (_a1 &lt;-&gt; _a2)</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `optfin` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>optfin - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">optfin</a>
+      <span class="nav"><a href="optSd.html" title="optSd">&#8810;</a> | <a href="../index.html#optfin">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5046-L5050">src</a> | <a href="optns.html" title="optns">&#8811;</a></span>
+    </h1>
+    <pre>theorem optfin (A: set): $ finite A -> finite (Option A) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#finite">finite</a></td>
+          <td><pre>finite A -&gt; finite (Option A)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="eex.html">eex</a></td>
+          <td><pre>E. n A. y (y e. A -&gt; y &lt; n) -&gt; finite (Option A)</pre></td>
+        </tr>
+        <tr id="3" class="step-conv">
+          <td>3</td>
+          <td><a href="#4">4</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#finite">finite</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) -&gt; finite (Option A)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="iexde.html">iexde</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) -&gt; E. m A. x (x e. Option A -&gt; x &lt; m)</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a></td>
+          <td><a class="thm" href="iald.html">iald</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n -&gt; A. x (x e. Option A -&gt; x &lt; m)</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="casesda.html">casesda</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n -&gt; x e. Option A -&gt; x &lt; m</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a></td>
+          <td><a class="thm" href="a1d.html">a1d</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ x = 0 -&gt; x e. Option A -&gt; x &lt; m</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a></td>
+          <td><a class="thm" href="imp.html">imp</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ x = 0 -&gt; x &lt; m</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="syl5ibrcom.html">syl5ibrcom</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n -&gt; x = 0 -&gt; x &lt; m</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="lteq1.html">lteq1</a></td>
+          <td><pre>x = 0 -&gt; (x &lt; m &lt;-&gt; 0 &lt; m)</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#12">12</a></td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n -&gt; 0 &lt; m</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a class="thm" href="mpbiri.html">mpbiri</a></td>
+          <td><pre>m = suc n -&gt; 0 &lt; m</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td></td>
+          <td><a class="thm" href="lt01S.html">lt01S</a></td>
+          <td><pre>0 &lt; suc n</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="lteq2.html">lteq2</a></td>
+          <td><pre>m = suc n -&gt; (0 &lt; m &lt;-&gt; 0 &lt; suc n)</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a>, <a href="#24">24</a></td>
+          <td><a class="thm" href="mpbird.html">mpbird</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; x e. Option A -&gt; x &lt; m</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a>, <a href="#18">18</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; (x e. Option A -&gt; x &lt; m &lt;-&gt; suc (x - 1) e. Option A -&gt; suc (x - 1) &lt; suc n)</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#19">19</a></td>
+          <td><a class="thm" href="eleq1d.html">eleq1d</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; (x e. Option A &lt;-&gt; suc (x - 1) e. Option A)</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a>, <a href="#23">23</a></td>
+          <td><a class="thm" href="lteqd.html">lteqd</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; (x &lt; m &lt;-&gt; suc (x - 1) &lt; suc n)</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#20">20</a></td>
+          <td><a class="thm" href="eqcomd.html">eqcomd</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; x = suc (x - 1)</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#21">21</a></td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; suc (x - 1) = x</pre></td>
+        </tr>
+        <tr id="21" class="step-conv">
+          <td>21</td>
+          <td><a href="#22">22</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>~x = 0 -&gt; suc (x - 1) = x</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td></td>
+          <td><a class="thm" href="sub1can.html">sub1can</a></td>
+          <td><pre>x != 0 -&gt; suc (x - 1) = x</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td></td>
+          <td><a class="thm" href="anlr.html">anlr</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; m = suc n</pre></td>
+        </tr>
+        <tr id="24" class="step-thm">
+          <td>24</td>
+          <td><a href="#25">25</a>, <a href="#30">30</a></td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; suc (x - 1) e. Option A -&gt; suc (x - 1) &lt; suc n</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#26">26</a>, <a href="#29">29</a></td>
+          <td><a class="thm" href="imeqi.html">imeqi</a></td>
+          <td><pre>x - 1 e. A -&gt; x - 1 &lt; n &lt;-&gt; suc (x - 1) e. Option A -&gt; suc (x - 1) &lt; suc n</pre></td>
+        </tr>
+        <tr id="26" class="step-thm">
+          <td>26</td>
+          <td><a href="#27">27</a>, <a href="#28">28</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>x - 1 e. A &lt;-&gt; suc (x - 1) e. Option A</pre></td>
+        </tr>
+        <tr id="27" class="step-thm">
+          <td>27</td>
+          <td></td>
+          <td><a class="thm" href="bicom.html">bicom</a></td>
+          <td><pre>(suc (x - 1) e. Option A &lt;-&gt; x - 1 e. A) -&gt; (x - 1 e. A &lt;-&gt; suc (x - 1) e. Option A)</pre></td>
+        </tr>
+        <tr id="28" class="step-thm">
+          <td>28</td>
+          <td></td>
+          <td><a class="thm" href="optS.html">optS</a></td>
+          <td><pre>suc (x - 1) e. Option A &lt;-&gt; x - 1 e. A</pre></td>
+        </tr>
+        <tr id="29" class="step-thm">
+          <td>29</td>
+          <td></td>
+          <td><a class="thm" href="ltsuc.html">ltsuc</a></td>
+          <td><pre>x - 1 &lt; n &lt;-&gt; suc (x - 1) &lt; suc n</pre></td>
+        </tr>
+        <tr id="30" class="step-thm">
+          <td>30</td>
+          <td><a href="#31">31</a></td>
+          <td><a class="thm" href="anwll.html">anwll</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) /\ m = suc n /\ ~x = 0 -&gt; x - 1 e. A -&gt; x - 1 &lt; n</pre></td>
+        </tr>
+        <tr id="31" class="step-thm">
+          <td>31</td>
+          <td><a href="#32">32</a></td>
+          <td><a class="thm" href="eale.html">eale</a></td>
+          <td><pre>A. y (y e. A -&gt; y &lt; n) -&gt; x - 1 e. A -&gt; x - 1 &lt; n</pre></td>
+        </tr>
+        <tr id="32" class="step-thm">
+          <td>32</td>
+          <td><a href="#33">33</a>, <a href="#34">34</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>y = x - 1 -&gt; (y e. A -&gt; y &lt; n &lt;-&gt; x - 1 e. A -&gt; x - 1 &lt; n)</pre></td>
+        </tr>
+        <tr id="33" class="step-thm">
+          <td>33</td>
+          <td></td>
+          <td><a class="thm" href="eleq1.html">eleq1</a></td>
+          <td><pre>y = x - 1 -&gt; (y e. A &lt;-&gt; x - 1 e. A)</pre></td>
+        </tr>
+        <tr id="34" class="step-thm">
+          <td>34</td>
+          <td></td>
+          <td><a class="thm" href="lteq1.html">lteq1</a></td>
+          <td><pre>y = x - 1 -&gt; (y &lt; n &lt;-&gt; x - 1 &lt; n)</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>
+  </div>
+</body>
+</html>

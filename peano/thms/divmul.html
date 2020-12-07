@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `divmul` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>divmul - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">divmul</a>
+      <span class="nav"><a href="idvd2.html" title="idvd2">&#8810;</a> | <a href="../index.html#divmul">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L2563-L2566">src</a> | <a href="muldiv3.html" title="muldiv3">&#8811;</a></span>
+    </h1>
+    <pre>theorem divmul (a b: nat): $ b || a -> a // b * b = a $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#dvd">dvd</a></td>
+          <td><pre>b || a -&gt; a // b * b = a</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="eex.html">eex</a></td>
+          <td><pre>E. x x * b = a -&gt; a // b * b = a</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="eqtr3d.html">eqtr3d</a></td>
+          <td><pre>x * b = a -&gt; a // b * b = a</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="muleq1d.html">muleq1d</a></td>
+          <td><pre>x * b = a -&gt; x * b // b * b = a // b * b</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="diveq1.html">diveq1</a></td>
+          <td><pre>x * b = a -&gt; x * b // b = a // b</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a>, <a href="#18">18</a></td>
+          <td><a class="thm" href="syl5eq.html">syl5eq</a></td>
+          <td><pre>x * b = a -&gt; x * b // b * b = a</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="cases.html">cases</a></td>
+          <td><pre>x * b // b * b = x * b</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="eqtr4d.html">eqtr4d</a></td>
+          <td><pre>b = 0 -&gt; x * b // b * b = x * b</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>b = 0 -&gt; x * b // b * b = 0</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="ax" href="mul0.html">mul0</a></td>
+          <td><pre>x * b // b * 0 = 0</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td></td>
+          <td><a class="thm" href="muleq2.html">muleq2</a></td>
+          <td><pre>b = 0 -&gt; x * b // b * b = x * b // b * 0</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>b = 0 -&gt; x * b = 0</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td></td>
+          <td><a class="ax" href="mul0.html">mul0</a></td>
+          <td><pre>x * 0 = 0</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="muleq2.html">muleq2</a></td>
+          <td><pre>b = 0 -&gt; x * b = x * 0</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="muleq1d.html">muleq1d</a></td>
+          <td><pre>~b = 0 -&gt; x * b // b * b = x * b</pre></td>
+        </tr>
+        <tr id="16" class="step-conv">
+          <td>16</td>
+          <td><a href="#17">17</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#ne">ne</a></td>
+          <td><pre>~b = 0 -&gt; x * b // b = x</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td></td>
+          <td><a class="thm" href="muldiv1.html">muldiv1</a></td>
+          <td><pre>b != 0 -&gt; x * b // b = x</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td></td>
+          <td><a class="thm" href="id.html">id</a></td>
+          <td><pre>x * b = a -&gt; x * b = a</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>,
+    <a class="ax" href="mul0.html">mul0</a>,
+    <a class="ax" href="mulS.html">mulS</a>
+  </div>
+</body>
+</html>

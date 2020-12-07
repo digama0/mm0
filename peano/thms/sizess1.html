@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `sizess1` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>sizess1 - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">sizess1</a>
+      <span class="nav"><a href="sssize.html" title="sssize">&#8810;</a> | <a href="../index.html#sizess1">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5015-L5016">src</a> | <a href="sizess.html" title="sizess">&#8811;</a></span>
+    </h1>
+    <pre>theorem sizess1 (A: set) (k: nat): $ A C_ upto k -> size A <= k $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="sylbir.html">sylbir</a></td>
+          <td><pre>A C_ upto k -&gt; size A &lt;= k</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="elabe.html">elabe</a></td>
+          <td><pre>k e. {x | A C_ upto x} &lt;-&gt; A C_ upto k</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a></td>
+          <td><a class="thm" href="sseq2d.html">sseq2d</a></td>
+          <td><pre>x = k -&gt; (A C_ upto x &lt;-&gt; A C_ upto k)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="nseqd.html">nseqd</a></td>
+          <td><pre>x = k -&gt; upto x == upto k</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="uptoeq.html">uptoeq</a></td>
+          <td><pre>x = k -&gt; upto x = upto k</pre></td>
+        </tr>
+        <tr id="6" class="step-conv">
+          <td>6</td>
+          <td><a href="#7">7</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#size">size</a></td>
+          <td><pre>k e. {x | A C_ upto x} -&gt; size A &lt;= k</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="leastle.html">leastle</a></td>
+          <td><pre>k e. {x | A C_ upto x} -&gt; least {x | A C_ upto x} &lt;= k</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>
+  </div>
+</body>
+</html>

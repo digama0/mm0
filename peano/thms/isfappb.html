@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `isfappb` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>isfappb - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">isfappb</a>
+      <span class="nav"><a href="isfappd.html" title="isfappd">&#8810;</a> | <a href="../index.html#isfappb">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L3457-L3460">src</a> | <a href="eqapp.html" title="eqapp">&#8811;</a></span>
+    </h1>
+    <pre>theorem isfappb (F: set) (a b: nat):
+  $ isfun F -> (a <> b e. F <-> a e. Dom F /\ F @ a = b) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="ibida.html">ibida</a></td>
+          <td><pre>isfun F -&gt; (a &lt;&gt; b e. F &lt;-&gt; a e. Dom F /\ F @ a = b)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="iand.html">iand</a></td>
+          <td><pre>isfun F /\ a &lt;&gt; b e. F -&gt; a e. Dom F /\ F @ a = b</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a></td>
+          <td><a class="thm" href="anwr.html">anwr</a></td>
+          <td><pre>isfun F /\ a &lt;&gt; b e. F -&gt; a e. Dom F</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td></td>
+          <td><a class="thm" href="preldm.html">preldm</a></td>
+          <td><pre>a &lt;&gt; b e. F -&gt; a e. Dom F</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a>, <a href="#7">7</a></td>
+          <td><a class="thm" href="isfappd.html">isfappd</a></td>
+          <td><pre>isfun F /\ a &lt;&gt; b e. F -&gt; F @ a = b</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td></td>
+          <td><a class="thm" href="anl.html">anl</a></td>
+          <td><pre>isfun F /\ a &lt;&gt; b e. F -&gt; isfun F</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>isfun F /\ a &lt;&gt; b e. F -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="mpd.html">mpd</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) -&gt; E. x1 a &lt;&gt; x1 e. F</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="eldm.html">eldm</a></td>
+          <td><pre>a e. Dom F &lt;-&gt; E. x1 a &lt;&gt; x1 e. F</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td></td>
+          <td><a class="thm" href="anrl.html">anrl</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) -&gt; a e. Dom F</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#13">13</a></td>
+          <td><a class="thm" href="eexda.html">eexda</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) -&gt; E. x1 a &lt;&gt; x1 e. F -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#14">14</a>, <a href="#21">21</a></td>
+          <td><a class="thm" href="mpbid.html">mpbid</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; a &lt;&gt; b e. F</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td><a href="#15">15</a></td>
+          <td><a class="thm" href="eleq1d.html">eleq1d</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; (a &lt;&gt; x1 e. F &lt;-&gt; a &lt;&gt; b e. F)</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="preq2d.html">preq2d</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; a &lt;&gt; x1 = a &lt;&gt; b</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a>, <a href="#19">19</a></td>
+          <td><a class="thm" href="eqtr3d.html">eqtr3d</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; x1 = b</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#18">18</a>, <a href="#21">21</a></td>
+          <td><a class="thm" href="isfappd.html">isfappd</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; F @ a = x1</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td></td>
+          <td><a class="thm" href="anll.html">anll</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; isfun F</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#20">20</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; F @ a = b</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td></td>
+          <td><a class="thm" href="anrr.html">anrr</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) -&gt; F @ a = b</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>isfun F /\ (a e. Dom F /\ F @ a = b) /\ a &lt;&gt; x1 e. F -&gt; a &lt;&gt; x1 e. F</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>
+  </div>
+</body>
+</html>

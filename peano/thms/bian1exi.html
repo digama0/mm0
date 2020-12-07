@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `bian1exi` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>bian1exi - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">bian1exi</a>
+      <span class="nav"><a href="exan2.html" title="exan2">&#8810;</a> | <a href="../index.html#bian1exi">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L960">src</a> | <a href="bian2exi.html" title="bian2exi">&#8811;</a></span>
+    </h1>
+    <pre>theorem bian1exi (b: wff) {x: nat} (a c: wff b):
+  $ a <-> b /\ c $ >
+  $ E. x a <-> b /\ E. x c $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#6">6</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>E. x a &lt;-&gt; b /\ E. x c</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(E. x (b /\ c) &lt;-&gt; b /\ E. x c) -&gt; (E. x a &lt;-&gt; b /\ E. x c)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="bitr.html">bitr</a></td>
+          <td><pre>(E. x a &lt;-&gt; E. x (b /\ c)) -&gt; (E. x (b /\ c) &lt;-&gt; b /\ E. x c) -&gt; (E. x a &lt;-&gt; b /\ E. x c)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="exeqi.html">exeqi</a></td>
+          <td><pre>E. x a &lt;-&gt; E. x (b /\ c)</pre></td>
+        </tr>
+        <tr id="5" class="step-hyp">
+          <td>5</td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>a &lt;-&gt; b /\ c</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td></td>
+          <td><a class="thm" href="exan1.html">exan1</a></td>
+          <td><pre>E. x (b /\ c) &lt;-&gt; b /\ E. x c</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>
+  </div>
+</body>
+</html>

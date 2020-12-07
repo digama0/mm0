@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `expset` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>expset - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">expset</a>
+      <span class="nav"><a href="psetsep.html" title="psetsep">&#8810;</a> | <a href="../index.html#expset">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4423-L4433">src</a> | <a href="psetfn.html" title="psetfn">&#8811;</a></span>
+    </h1>
+    <pre>theorem expset (A: set) {a: nat}: $ finite A <-> E. a pset a == A $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#finite">finite</a></td>
+          <td><pre>finite A &lt;-&gt; E. a pset a == A</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>E. n A. x (x e. A -&gt; x &lt; n) &lt;-&gt; E. a pset a == A</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a></td>
+          <td><a class="thm" href="eex.html">eex</a></td>
+          <td><pre>E. n A. x (x e. A -&gt; x &lt; n) -&gt; E. a pset a == A</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="mpbii.html">mpbii</a></td>
+          <td><pre>A. x (x e. A -&gt; x &lt; n) -&gt; E. a pset a == A</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="psetsep.html">psetsep</a></td>
+          <td><pre>E. a pset a == {y | y &lt; n /\ y e. A}</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="exeqd.html">exeqd</a></td>
+          <td><pre>A. x (x e. A -&gt; x &lt; n) -&gt; (E. a pset a == {y | y &lt; n /\ y e. A} &lt;-&gt; E. a pset a == A)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a></td>
+          <td><a class="thm" href="eqseq2d.html">eqseq2d</a></td>
+          <td><pre>A. x (x e. A -&gt; x &lt; n) -&gt; (pset a == {y | y &lt; n /\ y e. A} &lt;-&gt; pset a == A)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a></td>
+          <td><a class="thm" href="eqab1d.html">eqab1d</a></td>
+          <td><pre>A. x (x e. A -&gt; x &lt; n) -&gt; {y | y &lt; n /\ y e. A} == A</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>A. x (x e. A -&gt; x &lt; n) -&gt; (y &lt; n /\ y e. A &lt;-&gt; y e. A)</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="bian1a.html">bian1a</a></td>
+          <td><pre>(y e. A -&gt; y &lt; n) -&gt; (y &lt; n /\ y e. A &lt;-&gt; y e. A)</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td><a href="#12">12</a></td>
+          <td><a class="thm" href="eale.html">eale</a></td>
+          <td><pre>A. x (x e. A -&gt; x &lt; n) -&gt; y e. A -&gt; y &lt; n</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a class="thm" href="imeqd.html">imeqd</a></td>
+          <td><pre>x = y -&gt; (x e. A -&gt; x &lt; n &lt;-&gt; y e. A -&gt; y &lt; n)</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td></td>
+          <td><a class="thm" href="eleq1.html">eleq1</a></td>
+          <td><pre>x = y -&gt; (x e. A &lt;-&gt; y e. A)</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="lteq1.html">lteq1</a></td>
+          <td><pre>x = y -&gt; (x &lt; n &lt;-&gt; y &lt; n)</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="eex.html">eex</a></td>
+          <td><pre>E. a pset a == A -&gt; E. n A. x (x e. A -&gt; x &lt; n)</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a></td>
+          <td><a class="thm" href="iexde.html">iexde</a></td>
+          <td><pre>pset a == A -&gt; E. n A. x (x e. A -&gt; x &lt; n)</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#18">18</a></td>
+          <td><a class="thm" href="iald.html">iald</a></td>
+          <td><pre>pset a == A /\ n = snd a -&gt; A. x (x e. A -&gt; x &lt; n)</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a></td>
+          <td><a class="thm" href="exp.html">exp</a></td>
+          <td><pre>pset a == A /\ n = snd a -&gt; x e. A -&gt; x &lt; n</pre></td>
+        </tr>
+        <tr id="19" class="step-conv">
+          <td>19</td>
+          <td><a href="#20">20</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#lt">lt</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; x &lt; n</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#21">21</a>, <a href="#34">34</a></td>
+          <td><a class="thm" href="letrd.html">letrd</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; suc x &lt;= n</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td><a href="#22">22</a>, <a href="#25">25</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; suc x &lt;= suc (fst a * suc x)</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td><a href="#23">23</a>, <a href="#24">24</a></td>
+          <td><a class="thm" href="mpi.html">mpi</a></td>
+          <td><pre>suc x &lt;= fst a * suc x -&gt; suc x &lt;= suc (fst a * suc x)</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td></td>
+          <td><a class="thm" href="lesucid.html">lesucid</a></td>
+          <td><pre>fst a * suc x &lt;= suc (fst a * suc x)</pre></td>
+        </tr>
+        <tr id="24" class="step-thm">
+          <td>24</td>
+          <td></td>
+          <td><a class="thm" href="letr.html">letr</a></td>
+          <td><pre>suc x &lt;= fst a * suc x -&gt; fst a * suc x &lt;= suc (fst a * suc x) -&gt; suc x &lt;= suc (fst a * suc x)</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#26">26</a>, <a href="#29">29</a></td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; suc x &lt;= fst a * suc x</pre></td>
+        </tr>
+        <tr id="26" class="step-thm">
+          <td>26</td>
+          <td><a href="#27">27</a>, <a href="#28">28</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>1 * suc x &lt;= fst a * suc x &lt;-&gt; suc x &lt;= fst a * suc x</pre></td>
+        </tr>
+        <tr id="27" class="step-thm">
+          <td>27</td>
+          <td></td>
+          <td><a class="thm" href="leeq1.html">leeq1</a></td>
+          <td><pre>1 * suc x = suc x -&gt; (1 * suc x &lt;= fst a * suc x &lt;-&gt; suc x &lt;= fst a * suc x)</pre></td>
+        </tr>
+        <tr id="28" class="step-thm">
+          <td>28</td>
+          <td></td>
+          <td><a class="thm" href="mul11.html">mul11</a></td>
+          <td><pre>1 * suc x = suc x</pre></td>
+        </tr>
+        <tr id="29" class="step-thm">
+          <td>29</td>
+          <td><a href="#30">30</a>, <a href="#31">31</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; 1 * suc x &lt;= fst a * suc x</pre></td>
+        </tr>
+        <tr id="30" class="step-thm">
+          <td>30</td>
+          <td></td>
+          <td><a class="thm" href="lemul1a.html">lemul1a</a></td>
+          <td><pre>1 &lt;= fst a -&gt; 1 * suc x &lt;= fst a * suc x</pre></td>
+        </tr>
+        <tr id="31" class="step-thm">
+          <td>31</td>
+          <td><a href="#32">32</a>, <a href="#33">33</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; 1 &lt;= fst a</pre></td>
+        </tr>
+        <tr id="32" class="step-thm">
+          <td>32</td>
+          <td></td>
+          <td><a class="thm" href="an3l.html">an3l</a></td>
+          <td><pre>1 &lt;= fst a /\ 0 &lt; snd a /\ A. y (0 &lt; y /\ y &lt;= x -&gt; y || fst a) /\ suc (fst a * suc x) || snd a -&gt; 1 &lt;= fst a</pre></td>
+        </tr>
+        <tr id="33" class="step-conv">
+          <td>33</td>
+          <td><a href="#41">41</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#d1">d1</a>, <a class="def" href="../index.html#lt">lt</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; 1 &lt;= fst a /\ 0 &lt; snd a /\ A. y (0 &lt; y /\ y &lt;= x -&gt; y || fst a) /\ suc (fst a * suc x) || snd a</pre></td>
+        </tr>
+        <tr id="34" class="step-thm">
+          <td>34</td>
+          <td><a href="#35">35</a>, <a href="#52">52</a></td>
+          <td><a class="thm" href="letrd.html">letrd</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; suc (fst a * suc x) &lt;= n</pre></td>
+        </tr>
+        <tr id="35" class="step-thm">
+          <td>35</td>
+          <td><a href="#36">36</a>, <a href="#40">40</a></td>
+          <td><a class="thm" href="dvdle.html">dvdle</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; suc (fst a * suc x) &lt;= snd a</pre></td>
+        </tr>
+        <tr id="36" class="step-thm">
+          <td>36</td>
+          <td><a href="#37">37</a>, <a href="#38">38</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; snd a != 0</pre></td>
+        </tr>
+        <tr id="37" class="step-thm">
+          <td>37</td>
+          <td></td>
+          <td><a class="thm" href="ltner.html">ltner</a></td>
+          <td><pre>0 &lt; snd a -&gt; snd a != 0</pre></td>
+        </tr>
+        <tr id="38" class="step-thm">
+          <td>38</td>
+          <td><a href="#39">39</a>, <a href="#41">41</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; 0 &lt; snd a</pre></td>
+        </tr>
+        <tr id="39" class="step-thm">
+          <td>39</td>
+          <td></td>
+          <td><a class="thm" href="anllr.html">anllr</a></td>
+          <td><pre>0 &lt; fst a /\ 0 &lt; snd a /\ A. y (0 &lt; y /\ y &lt;= x -&gt; y || fst a) /\ suc (fst a * suc x) || snd a -&gt; 0 &lt; snd a</pre></td>
+        </tr>
+        <tr id="40" class="step-thm">
+          <td>40</td>
+          <td><a href="#41">41</a></td>
+          <td><a class="thm" href="anrd.html">anrd</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; suc (fst a * suc x) || snd a</pre></td>
+        </tr>
+        <tr id="41" class="step-thm">
+          <td>41</td>
+          <td><a href="#42">42</a>, <a href="#43">43</a></td>
+          <td><a class="thm" href="sylib.html">sylib</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; 0 &lt; fst a /\ 0 &lt; snd a /\ A. y (0 &lt; y /\ y &lt;= x -&gt; y || fst a) /\ suc (fst a * suc x) || snd a</pre></td>
+        </tr>
+        <tr id="42" class="step-thm">
+          <td>42</td>
+          <td></td>
+          <td><a class="thm" href="elpset.html">elpset</a></td>
+          <td><pre>x e. pset (fst a &lt;&gt; snd a) &lt;-&gt; 0 &lt; fst a /\ 0 &lt; snd a /\ A. y (0 &lt; y /\ y &lt;= x -&gt; y || fst a) /\ suc (fst a * suc x) || snd a</pre></td>
+        </tr>
+        <tr id="43" class="step-thm">
+          <td>43</td>
+          <td><a href="#44">44</a>, <a href="#51">51</a></td>
+          <td><a class="thm" href="mpbird.html">mpbird</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; x e. pset (fst a &lt;&gt; snd a)</pre></td>
+        </tr>
+        <tr id="44" class="step-thm">
+          <td>44</td>
+          <td><a href="#45">45</a></td>
+          <td><a class="thm" href="eleq2d.html">eleq2d</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; (x e. pset (fst a &lt;&gt; snd a) &lt;-&gt; x e. A)</pre></td>
+        </tr>
+        <tr id="45" class="step-thm">
+          <td>45</td>
+          <td><a href="#46">46</a>, <a href="#50">50</a></td>
+          <td><a class="thm" href="eqstrd.html">eqstrd</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; pset (fst a &lt;&gt; snd a) == A</pre></td>
+        </tr>
+        <tr id="46" class="step-thm">
+          <td>46</td>
+          <td><a href="#47">47</a></td>
+          <td><a class="thm" href="a1i.html">a1i</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; pset (fst a &lt;&gt; snd a) == pset a</pre></td>
+        </tr>
+        <tr id="47" class="step-thm">
+          <td>47</td>
+          <td><a href="#48">48</a>, <a href="#49">49</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>pset (fst a &lt;&gt; snd a) == pset a</pre></td>
+        </tr>
+        <tr id="48" class="step-thm">
+          <td>48</td>
+          <td></td>
+          <td><a class="thm" href="pseteq.html">pseteq</a></td>
+          <td><pre>fst a &lt;&gt; snd a = a -&gt; pset (fst a &lt;&gt; snd a) == pset a</pre></td>
+        </tr>
+        <tr id="49" class="step-thm">
+          <td>49</td>
+          <td></td>
+          <td><a class="thm" href="fstsnd.html">fstsnd</a></td>
+          <td><pre>fst a &lt;&gt; snd a = a</pre></td>
+        </tr>
+        <tr id="50" class="step-thm">
+          <td>50</td>
+          <td></td>
+          <td><a class="thm" href="anll.html">anll</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; pset a == A</pre></td>
+        </tr>
+        <tr id="51" class="step-thm">
+          <td>51</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; x e. A</pre></td>
+        </tr>
+        <tr id="52" class="step-thm">
+          <td>52</td>
+          <td><a href="#53">53</a>, <a href="#54">54</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; snd a &lt;= n</pre></td>
+        </tr>
+        <tr id="53" class="step-thm">
+          <td>53</td>
+          <td></td>
+          <td><a class="thm" href="eqler.html">eqler</a></td>
+          <td><pre>n = snd a -&gt; snd a &lt;= n</pre></td>
+        </tr>
+        <tr id="54" class="step-thm">
+          <td>54</td>
+          <td></td>
+          <td><a class="thm" href="anlr.html">anlr</a></td>
+          <td><pre>pset a == A /\ n = snd a /\ x e. A -&gt; n = snd a</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>,
+    <a class="ax" href="mul0.html">mul0</a>,
+    <a class="ax" href="mulS.html">mulS</a>
+  </div>
+</body>
+</html>

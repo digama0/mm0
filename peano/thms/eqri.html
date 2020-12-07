@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `eqri` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>eqri - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">eqri</a>
+      <span class="nav"><a href="abeqi.html" title="abeqi">&#8810;</a> | <a href="../index.html#eqri">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L1342">src</a> | <a href="eqrd.html" title="eqrd">&#8811;</a></span>
+    </h1>
+    <pre>theorem eqri (A B: set) {x: nat}: $ x e. A <-> x e. B $ > $ A == B $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#eqs">eqs</a></td>
+          <td><pre>A == B</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="ax" href="ax_gen.html">ax_gen</a></td>
+          <td><pre>A. x (x e. A &lt;-&gt; x e. B)</pre></td>
+        </tr>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>x e. A &lt;-&gt; x e. B</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_gen.html">ax_gen</a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `a2i` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>a2i - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">a2i</a>
+      <span class="nav"><a href="a1i.html" title="a1i">&#8810;</a> | <a href="../index.html#a2i">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L359">src</a> | <a href="mpd.html" title="mpd">&#8811;</a></span>
+    </h1>
+    <pre>theorem a2i (a b c: wff): $ a -> b -> c $ > $ (a -> b) -> a -> c $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(a -&gt; b) -&gt; a -&gt; c</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td></td>
+          <td><a class="ax" href="ax_2.html">ax_2</a></td>
+          <td><pre>(a -&gt; b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c</pre></td>
+        </tr>
+        <tr id="3" class="step-hyp">
+          <td>3</td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>a -&gt; b -&gt; c</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>
+  </div>
+</body>
+</html>

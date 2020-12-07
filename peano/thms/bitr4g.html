@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `bitr4g` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>bitr4g - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">bitr4g</a>
+      <span class="nav"><a href="bitr3g.html" title="bitr3g">&#8810;</a> | <a href="../index.html#bitr4g">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L539-L540">src</a> | <a href="bitr3gi.html" title="bitr3gi">&#8811;</a></span>
+    </h1>
+    <pre>theorem bitr4g (a b c d e: wff):
+  $ d <-> b $ >
+  $ e <-> c $ >
+  $ a -> (b <-> c) $ >
+  $ a -> (d <-> e) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#3">3</a></td>
+          <td><a class="thm" href="syl5bb.html">syl5bb</a></td>
+          <td><pre>a -&gt; (d &lt;-&gt; e)</pre></td>
+        </tr>
+        <tr id="2" class="step-hyp">
+          <td>2</td>
+          <td></td>
+          <td><i>hyp h1</i></td>
+          <td><pre>d &lt;-&gt; b</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#7">7</a></td>
+          <td><a class="thm" href="syl6bb.html">syl6bb</a></td>
+          <td><pre>a -&gt; (b &lt;-&gt; e)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>c &lt;-&gt; e</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="bicom.html">bicom</a></td>
+          <td><pre>(e &lt;-&gt; c) -&gt; (c &lt;-&gt; e)</pre></td>
+        </tr>
+        <tr id="6" class="step-hyp">
+          <td>6</td>
+          <td></td>
+          <td><i>hyp h2</i></td>
+          <td><pre>e &lt;-&gt; c</pre></td>
+        </tr>
+        <tr id="7" class="step-hyp">
+          <td>7</td>
+          <td></td>
+          <td><i>hyp h</i></td>
+          <td><pre>a -&gt; (b &lt;-&gt; c)</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>
+  </div>
+</body>
+</html>

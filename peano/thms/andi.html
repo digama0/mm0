@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `andi` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>andi - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">andi</a>
+      <span class="nav"><a href="imor.html" title="imor">&#8810;</a> | <a href="../index.html#andi">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L663-L664">src</a> | <a href="andir.html" title="andir">&#8811;</a></span>
+    </h1>
+    <pre>theorem andi (a b c: wff): $ a /\ (b \/ c) <-> a /\ b \/ a /\ c $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="ibii.html">ibii</a></td>
+          <td><pre>a /\ (b \/ c) &lt;-&gt; a /\ b \/ a /\ c</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="imp.html">imp</a></td>
+          <td><pre>a /\ (b \/ c) -&gt; a /\ b \/ a /\ c</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#5">5</a></td>
+          <td><a class="thm" href="orimd.html">orimd</a></td>
+          <td><pre>a -&gt; b \/ c -&gt; a /\ b \/ a /\ c</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td></td>
+          <td><a class="thm" href="ian.html">ian</a></td>
+          <td><pre>a -&gt; b -&gt; a /\ b</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="ian.html">ian</a></td>
+          <td><pre>a -&gt; c -&gt; a /\ c</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a>, <a href="#12">12</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a /\ b \/ a /\ c -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>(a /\ c -&gt; a /\ (b \/ c)) -&gt; a /\ b \/ a /\ c -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td></td>
+          <td><a class="thm" href="eor.html">eor</a></td>
+          <td><pre>(a /\ b -&gt; a /\ (b \/ c)) -&gt; (a /\ c -&gt; a /\ (b \/ c)) -&gt; a /\ b \/ a /\ c -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a>, <a href="#11">11</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a /\ b -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td></td>
+          <td><a class="thm" href="anim2.html">anim2</a></td>
+          <td><pre>(b -&gt; b \/ c) -&gt; a /\ b -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td></td>
+          <td><a class="thm" href="orl.html">orl</a></td>
+          <td><pre>b -&gt; b \/ c</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>a /\ c -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td></td>
+          <td><a class="thm" href="anim2.html">anim2</a></td>
+          <td><pre>(c -&gt; b \/ c) -&gt; a /\ c -&gt; a /\ (b \/ c)</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="orr.html">orr</a></td>
+          <td><pre>c -&gt; b \/ c</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>
+  </div>
+</body>
+</html>

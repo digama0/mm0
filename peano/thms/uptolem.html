@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `uptolem` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>uptolem - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">uptolem</a>
+      <span class="nav"><a href="uptoS.html" title="uptoS">&#8810;</a> | <a href="../index.html#uptolem">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L4966-L4976">src</a> | <a href="shrupto.html" title="shrupto">&#8811;</a></span>
+    </h1>
+    <pre>theorem uptolem (a n: nat):
+  $ shr (upto n) a = upto (n - a) /\ upto n % 2 ^ a = upto (min n a) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><a class="thm" href="trud.html">trud</a></td>
+          <td><pre>shr (upto n) a = upto (n - a) /\ upto n % 2 ^ a = upto (min n a)</pre></td>
+        </tr>
+        <tr id="2" class="step-conv">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#shr">shr</a></td>
+          <td><pre>T. -&gt; shr (upto n) a = upto (n - a) /\ upto n % 2 ^ a = upto (min n a)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#22">22</a></td>
+          <td><a class="thm" href="eqdivmod.html">eqdivmod</a></td>
+          <td><pre>T. -&gt; upto n // 2 ^ a = upto (n - a) /\ upto n % 2 ^ a = upto (min n a)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a>, <a href="#16">16</a></td>
+          <td><a class="thm" href="ltletrd.html">ltletrd</a></td>
+          <td><pre>T. -&gt; upto (min n a) &lt; 2 ^ a</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a></td>
+          <td><a class="thm" href="a1i.html">a1i</a></td>
+          <td><pre>T. -&gt; upto (min n a) &lt; 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a>, <a href="#9">9</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>upto (min n a) &lt; 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="7" class="step-conv">
+          <td>7</td>
+          <td><a href="#8">8</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#upto">upto</a></td>
+          <td><pre>0 &lt; 2 ^ min n a /\ 0 &lt; 1 -&gt; upto (min n a) &lt; 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td></td>
+          <td><a class="thm" href="subltid.html">subltid</a></td>
+          <td><pre>0 &lt; 2 ^ min n a /\ 0 &lt; 1 -&gt; 2 ^ min n a - 1 &lt; 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td><a href="#10">10</a>, <a href="#15">15</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 &lt; 2 ^ min n a /\ 0 &lt; 1</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 &lt; 1 -&gt; 0 &lt; 2 ^ min n a /\ 0 &lt; 1</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td></td>
+          <td><a class="thm" href="ian.html">ian</a></td>
+          <td><pre>0 &lt; 2 ^ min n a -&gt; 0 &lt; 1 -&gt; 0 &lt; 2 ^ min n a /\ 0 &lt; 1</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td><a href="#13">13</a>, <a href="#14">14</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>0 &lt; 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td></td>
+          <td><a class="thm" href="powpos.html">powpos</a></td>
+          <td><pre>0 &lt; 2 -&gt; 0 &lt; 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td></td>
+          <td><a class="thm" href="d0lt2.html">d0lt2</a></td>
+          <td><pre>0 &lt; 2</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td></td>
+          <td><a class="thm" href="d0lt1.html">d0lt1</a></td>
+          <td><pre>0 &lt; 1</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#17">17</a></td>
+          <td><a class="thm" href="a1i.html">a1i</a></td>
+          <td><pre>T. -&gt; 2 ^ min n a &lt;= 2 ^ a</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#18">18</a>, <a href="#21">21</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a &lt;= 2 ^ a</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a>, <a href="#20">20</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>min n a &lt;= a -&gt; 2 ^ min n a &lt;= 2 ^ a</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td></td>
+          <td><a class="thm" href="lepow2a.html">lepow2a</a></td>
+          <td><pre>2 != 0 -&gt; min n a &lt;= a -&gt; 2 ^ min n a &lt;= 2 ^ a</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td></td>
+          <td><a class="thm" href="d2ne0.html">d2ne0</a></td>
+          <td><pre>2 != 0</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td></td>
+          <td><a class="thm" href="minle2.html">minle2</a></td>
+          <td><pre>min n a &lt;= a</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td><a href="#23">23</a></td>
+          <td><a class="thm" href="a1i.html">a1i</a></td>
+          <td><pre>T. -&gt; 2 ^ a * upto (n - a) + upto (min n a) = upto n</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td><a href="#24">24</a>, <a href="#25">25</a></td>
+          <td><a class="thm" href="mpbi.html">mpbi</a></td>
+          <td><pre>2 ^ a * upto (n - a) + upto (min n a) = upto n</pre></td>
+        </tr>
+        <tr id="24" class="step-thm">
+          <td>24</td>
+          <td></td>
+          <td><a class="thm" href="addcan1.html">addcan1</a></td>
+          <td><pre>2 ^ a * upto (n - a) + upto (min n a) + 1 = upto n + 1 &lt;-&gt; 2 ^ a * upto (n - a) + upto (min n a) = upto n</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#26">26</a>, <a href="#29">29</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ a * upto (n - a) + upto (min n a) + 1 = upto n + 1</pre></td>
+        </tr>
+        <tr id="26" class="step-thm">
+          <td>26</td>
+          <td><a href="#27">27</a>, <a href="#28">28</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ a * upto (n - a) + (upto (min n a) + 1) = upto n + 1 -&gt; 2 ^ a * upto (n - a) + upto (min n a) + 1 = upto n + 1</pre></td>
+        </tr>
+        <tr id="27" class="step-thm">
+          <td>27</td>
+          <td></td>
+          <td><a class="thm" href="eqtr.html">eqtr</a></td>
+          <td><pre>2 ^ a * upto (n - a) + upto (min n a) + 1 = 2 ^ a * upto (n - a) + (upto (min n a) + 1) -&gt;
+  2 ^ a * upto (n - a) + (upto (min n a) + 1) = upto n + 1 -&gt;
+  2 ^ a * upto (n - a) + upto (min n a) + 1 = upto n + 1</pre></td>
+        </tr>
+        <tr id="28" class="step-thm">
+          <td>28</td>
+          <td></td>
+          <td><a class="thm" href="addass.html">addass</a></td>
+          <td><pre>2 ^ a * upto (n - a) + upto (min n a) + 1 = 2 ^ a * upto (n - a) + (upto (min n a) + 1)</pre></td>
+        </tr>
+        <tr id="29" class="step-thm">
+          <td>29</td>
+          <td><a href="#30">30</a>, <a href="#35">35</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ a * upto (n - a) + (upto (min n a) + 1) = upto n + 1</pre></td>
+        </tr>
+        <tr id="30" class="step-thm">
+          <td>30</td>
+          <td><a href="#31">31</a>, <a href="#32">32</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>upto n + 1 = 2 ^ a * upto (n - a) + 2 ^ min n a -&gt; 2 ^ a * upto (n - a) + (upto (min n a) + 1) = upto n + 1</pre></td>
+        </tr>
+        <tr id="31" class="step-thm">
+          <td>31</td>
+          <td></td>
+          <td><a class="thm" href="eqtr4.html">eqtr4</a></td>
+          <td><pre>2 ^ a * upto (n - a) + (upto (min n a) + 1) = 2 ^ a * upto (n - a) + 2 ^ min n a -&gt;
+  upto n + 1 = 2 ^ a * upto (n - a) + 2 ^ min n a -&gt;
+  2 ^ a * upto (n - a) + (upto (min n a) + 1) = upto n + 1</pre></td>
+        </tr>
+        <tr id="32" class="step-thm">
+          <td>32</td>
+          <td><a href="#33">33</a>, <a href="#34">34</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ a * upto (n - a) + (upto (min n a) + 1) = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="33" class="step-thm">
+          <td>33</td>
+          <td></td>
+          <td><a class="thm" href="addeq2.html">addeq2</a></td>
+          <td><pre>upto (min n a) + 1 = 2 ^ min n a -&gt; 2 ^ a * upto (n - a) + (upto (min n a) + 1) = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="34" class="step-thm">
+          <td>34</td>
+          <td></td>
+          <td><a class="thm" href="uptoadd1.html">uptoadd1</a></td>
+          <td><pre>upto (min n a) + 1 = 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="35" class="step-thm">
+          <td>35</td>
+          <td><a href="#36">36</a>, <a href="#39">39</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>upto n + 1 = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="36" class="step-thm">
+          <td>36</td>
+          <td><a href="#37">37</a>, <a href="#38">38</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ a * upto (n - a) + 2 ^ min n a = 2 ^ n -&gt; upto n + 1 = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="37" class="step-thm">
+          <td>37</td>
+          <td></td>
+          <td><a class="thm" href="eqtr4.html">eqtr4</a></td>
+          <td><pre>upto n + 1 = 2 ^ n -&gt; 2 ^ a * upto (n - a) + 2 ^ min n a = 2 ^ n -&gt; upto n + 1 = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="38" class="step-thm">
+          <td>38</td>
+          <td></td>
+          <td><a class="thm" href="uptoadd1.html">uptoadd1</a></td>
+          <td><pre>upto n + 1 = 2 ^ n</pre></td>
+        </tr>
+        <tr id="39" class="step-thm">
+          <td>39</td>
+          <td><a href="#40">40</a>, <a href="#62">62</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ a * upto (n - a) + 2 ^ min n a = 2 ^ n</pre></td>
+        </tr>
+        <tr id="40" class="step-thm">
+          <td>40</td>
+          <td><a href="#41">41</a>, <a href="#42">42</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ n -&gt; 2 ^ a * upto (n - a) + 2 ^ min n a = 2 ^ n</pre></td>
+        </tr>
+        <tr id="41" class="step-thm">
+          <td>41</td>
+          <td></td>
+          <td><a class="thm" href="eqtr3.html">eqtr3</a></td>
+          <td><pre>2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ a * upto (n - a) + 2 ^ min n a -&gt;
+  2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ n -&gt;
+  2 ^ a * upto (n - a) + 2 ^ min n a = 2 ^ n</pre></td>
+        </tr>
+        <tr id="42" class="step-thm">
+          <td>42</td>
+          <td><a href="#43">43</a>, <a href="#61">61</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="43" class="step-thm">
+          <td>43</td>
+          <td><a href="#44">44</a>, <a href="#45">45</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * 1 = 2 ^ min n a -&gt; 2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="44" class="step-thm">
+          <td>44</td>
+          <td></td>
+          <td><a class="ax" href="addeq.html">addeq</a></td>
+          <td><pre>2 ^ min n a * upto (n - a) = 2 ^ a * upto (n - a) -&gt;
+  2 ^ min n a * 1 = 2 ^ min n a -&gt;
+  2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ a * upto (n - a) + 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="45" class="step-thm">
+          <td>45</td>
+          <td><a href="#46">46</a>, <a href="#49">49</a></td>
+          <td><a class="thm" href="cases.html">cases</a></td>
+          <td><pre>2 ^ min n a * upto (n - a) = 2 ^ a * upto (n - a)</pre></td>
+        </tr>
+        <tr id="46" class="step-thm">
+          <td>46</td>
+          <td><a href="#47">47</a></td>
+          <td><a class="thm" href="muleq1d.html">muleq1d</a></td>
+          <td><pre>a &lt;= n -&gt; 2 ^ min n a * upto (n - a) = 2 ^ a * upto (n - a)</pre></td>
+        </tr>
+        <tr id="47" class="step-thm">
+          <td>47</td>
+          <td><a href="#48">48</a></td>
+          <td><a class="thm" href="poweq2d.html">poweq2d</a></td>
+          <td><pre>a &lt;= n -&gt; 2 ^ min n a = 2 ^ a</pre></td>
+        </tr>
+        <tr id="48" class="step-thm">
+          <td>48</td>
+          <td></td>
+          <td><a class="thm" href="eqmin2.html">eqmin2</a></td>
+          <td><pre>a &lt;= n -&gt; min n a = a</pre></td>
+        </tr>
+        <tr id="49" class="step-thm">
+          <td>49</td>
+          <td><a href="#50">50</a>, <a href="#57">57</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>~a &lt;= n -&gt; 2 ^ min n a * upto (n - a) = 2 ^ a * upto (n - a)</pre></td>
+        </tr>
+        <tr id="50" class="step-thm">
+          <td>50</td>
+          <td><a href="#51">51</a>, <a href="#54">54</a></td>
+          <td><a class="thm" href="eqtr4d.html">eqtr4d</a></td>
+          <td><pre>upto (n - a) = 0 -&gt; 2 ^ min n a * upto (n - a) = 2 ^ a * upto (n - a)</pre></td>
+        </tr>
+        <tr id="51" class="step-thm">
+          <td>51</td>
+          <td><a href="#52">52</a>, <a href="#53">53</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>upto (n - a) = 0 -&gt; 2 ^ min n a * upto (n - a) = 0</pre></td>
+        </tr>
+        <tr id="52" class="step-thm">
+          <td>52</td>
+          <td></td>
+          <td><a class="ax" href="mul0.html">mul0</a></td>
+          <td><pre>2 ^ min n a * 0 = 0</pre></td>
+        </tr>
+        <tr id="53" class="step-thm">
+          <td>53</td>
+          <td></td>
+          <td><a class="thm" href="muleq2.html">muleq2</a></td>
+          <td><pre>upto (n - a) = 0 -&gt; 2 ^ min n a * upto (n - a) = 2 ^ min n a * 0</pre></td>
+        </tr>
+        <tr id="54" class="step-thm">
+          <td>54</td>
+          <td><a href="#55">55</a>, <a href="#56">56</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>upto (n - a) = 0 -&gt; 2 ^ a * upto (n - a) = 0</pre></td>
+        </tr>
+        <tr id="55" class="step-thm">
+          <td>55</td>
+          <td></td>
+          <td><a class="ax" href="mul0.html">mul0</a></td>
+          <td><pre>2 ^ a * 0 = 0</pre></td>
+        </tr>
+        <tr id="56" class="step-thm">
+          <td>56</td>
+          <td></td>
+          <td><a class="thm" href="muleq2.html">muleq2</a></td>
+          <td><pre>upto (n - a) = 0 -&gt; 2 ^ a * upto (n - a) = 2 ^ a * 0</pre></td>
+        </tr>
+        <tr id="57" class="step-thm">
+          <td>57</td>
+          <td><a href="#58">58</a>, <a href="#59">59</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>~a &lt;= n -&gt; upto (n - a) = 0</pre></td>
+        </tr>
+        <tr id="58" class="step-thm">
+          <td>58</td>
+          <td></td>
+          <td><a class="thm" href="upto0.html">upto0</a></td>
+          <td><pre>upto 0 = 0</pre></td>
+        </tr>
+        <tr id="59" class="step-thm">
+          <td>59</td>
+          <td><a href="#60">60</a></td>
+          <td><a class="thm" href="uptoeqd.html">uptoeqd</a></td>
+          <td><pre>~a &lt;= n -&gt; upto (n - a) = upto 0</pre></td>
+        </tr>
+        <tr id="60" class="step-thm">
+          <td>60</td>
+          <td></td>
+          <td><a class="thm" href="nlesubeq0.html">nlesubeq0</a></td>
+          <td><pre>~a &lt;= n -&gt; n - a = 0</pre></td>
+        </tr>
+        <tr id="61" class="step-thm">
+          <td>61</td>
+          <td></td>
+          <td><a class="thm" href="mul12.html">mul12</a></td>
+          <td><pre>2 ^ min n a * 1 = 2 ^ min n a</pre></td>
+        </tr>
+        <tr id="62" class="step-thm">
+          <td>62</td>
+          <td><a href="#63">63</a>, <a href="#66">66</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ n</pre></td>
+        </tr>
+        <tr id="63" class="step-thm">
+          <td>63</td>
+          <td><a href="#64">64</a>, <a href="#65">65</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * (upto (n - a) + 1) = 2 ^ n -&gt; 2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ n</pre></td>
+        </tr>
+        <tr id="64" class="step-thm">
+          <td>64</td>
+          <td></td>
+          <td><a class="thm" href="eqtr3.html">eqtr3</a></td>
+          <td><pre>2 ^ min n a * (upto (n - a) + 1) = 2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 -&gt;
+  2 ^ min n a * (upto (n - a) + 1) = 2 ^ n -&gt;
+  2 ^ min n a * upto (n - a) + 2 ^ min n a * 1 = 2 ^ n</pre></td>
+        </tr>
+        <tr id="65" class="step-thm">
+          <td>65</td>
+          <td></td>
+          <td><a class="thm" href="muladd.html">muladd</a></td>
+          <td><pre>2 ^ min n a * (upto (n - a) + 1) = 2 ^ min n a * upto (n - a) + 2 ^ min n a * 1</pre></td>
+        </tr>
+        <tr id="66" class="step-thm">
+          <td>66</td>
+          <td><a href="#67">67</a>, <a href="#72">72</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * (upto (n - a) + 1) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="67" class="step-thm">
+          <td>67</td>
+          <td><a href="#68">68</a>, <a href="#69">69</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * 2 ^ (n - a) = 2 ^ n -&gt; 2 ^ min n a * (upto (n - a) + 1) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="68" class="step-thm">
+          <td>68</td>
+          <td></td>
+          <td><a class="thm" href="eqtr.html">eqtr</a></td>
+          <td><pre>2 ^ min n a * (upto (n - a) + 1) = 2 ^ min n a * 2 ^ (n - a) -&gt; 2 ^ min n a * 2 ^ (n - a) = 2 ^ n -&gt; 2 ^ min n a * (upto (n - a) + 1) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="69" class="step-thm">
+          <td>69</td>
+          <td><a href="#70">70</a>, <a href="#71">71</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * (upto (n - a) + 1) = 2 ^ min n a * 2 ^ (n - a)</pre></td>
+        </tr>
+        <tr id="70" class="step-thm">
+          <td>70</td>
+          <td></td>
+          <td><a class="thm" href="muleq2.html">muleq2</a></td>
+          <td><pre>upto (n - a) + 1 = 2 ^ (n - a) -&gt; 2 ^ min n a * (upto (n - a) + 1) = 2 ^ min n a * 2 ^ (n - a)</pre></td>
+        </tr>
+        <tr id="71" class="step-thm">
+          <td>71</td>
+          <td></td>
+          <td><a class="thm" href="uptoadd1.html">uptoadd1</a></td>
+          <td><pre>upto (n - a) + 1 = 2 ^ (n - a)</pre></td>
+        </tr>
+        <tr id="72" class="step-thm">
+          <td>72</td>
+          <td><a href="#73">73</a>, <a href="#76">76</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ min n a * 2 ^ (n - a) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="73" class="step-thm">
+          <td>73</td>
+          <td><a href="#74">74</a>, <a href="#75">75</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ (min n a + (n - a)) = 2 ^ n -&gt; 2 ^ min n a * 2 ^ (n - a) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="74" class="step-thm">
+          <td>74</td>
+          <td></td>
+          <td><a class="thm" href="eqtr3.html">eqtr3</a></td>
+          <td><pre>2 ^ (min n a + (n - a)) = 2 ^ min n a * 2 ^ (n - a) -&gt; 2 ^ (min n a + (n - a)) = 2 ^ n -&gt; 2 ^ min n a * 2 ^ (n - a) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="75" class="step-thm">
+          <td>75</td>
+          <td></td>
+          <td><a class="thm" href="powadd.html">powadd</a></td>
+          <td><pre>2 ^ (min n a + (n - a)) = 2 ^ min n a * 2 ^ (n - a)</pre></td>
+        </tr>
+        <tr id="76" class="step-thm">
+          <td>76</td>
+          <td><a href="#77">77</a>, <a href="#78">78</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>2 ^ (min n a + (n - a)) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="77" class="step-thm">
+          <td>77</td>
+          <td></td>
+          <td><a class="thm" href="poweq2.html">poweq2</a></td>
+          <td><pre>min n a + (n - a) = n -&gt; 2 ^ (min n a + (n - a)) = 2 ^ n</pre></td>
+        </tr>
+        <tr id="78" class="step-thm">
+          <td>78</td>
+          <td></td>
+          <td><a class="thm" href="minaddsub.html">minaddsub</a></td>
+          <td><pre>min n a + (n - a) = n</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>,
+    <a class="ax" href="mul0.html">mul0</a>,
+    <a class="ax" href="mulS.html">mulS</a>
+  </div>
+</body>
+</html>

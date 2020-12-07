@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `srecauxeqd` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>srecauxeqd - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">srecauxeqd</a>
+      <span class="nav"><a href="writeArrow.html" title="writeArrow">&#8810;</a> | <a href="../index.html#srecauxeqd">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L5360">src</a> | <a href="srecauxeq.html" title="srecauxeq">&#8811;</a></span>
+    </h1>
+    <pre>theorem srecauxeqd (_G: wff) (_S1 _S2: set) (_n1 _n2: nat):
+  $ _G -> _S1 == _S2 $ >
+  $ _G -> _n1 = _n2 $ >
+  $ _G -> srecaux _S1 _n1 = srecaux _S2 _n2 $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-conv">
+          <td>1</td>
+          <td><a href="#2">2</a></td>
+          <td><i>conv</i> <a class="def" href="../index.html#srecaux">srecaux</a></td>
+          <td><pre>_G -&gt; srecaux _S1 _n1 = srecaux _S2 _n2</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a>, <a href="#4">4</a>, <a href="#13">13</a></td>
+          <td><a class="thm" href="recneqd.html">recneqd</a></td>
+          <td><pre>_G -&gt; recn 0 (\\ a, \ b, lower (write b a (_S1 @ b))) _n1 = recn 0 (\\ a, \ b, lower (write b a (_S2 @ b))) _n2</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; 0 = 0</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a></td>
+          <td><a class="thm" href="slameqd.html">slameqd</a></td>
+          <td><pre>_G -&gt; (\\ a, \ b, lower (write b a (_S1 @ b))) == (\\ a, \ b, lower (write b a (_S2 @ b)))</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td><a href="#6">6</a></td>
+          <td><a class="thm" href="lameqd.html">lameqd</a></td>
+          <td><pre>_G -&gt; \ b, lower (write b a (_S1 @ b)) == \ b, lower (write b a (_S2 @ b))</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a></td>
+          <td><a class="thm" href="lowereqd.html">lowereqd</a></td>
+          <td><pre>_G -&gt; lower (write b a (_S1 @ b)) = lower (write b a (_S2 @ b))</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td><a href="#8">8</a>, <a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a class="thm" href="writeeqd.html">writeeqd</a></td>
+          <td><pre>_G -&gt; write b a (_S1 @ b) == write b a (_S2 @ b)</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td></td>
+          <td><a class="thm" href="eqsidd.html">eqsidd</a></td>
+          <td><pre>_G -&gt; b == b</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; a = a</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="appeqd.html">appeqd</a></td>
+          <td><pre>_G -&gt; _S1 @ b = _S2 @ b</pre></td>
+        </tr>
+        <tr id="11" class="step-hyp">
+          <td>11</td>
+          <td></td>
+          <td><i>hyp _Sh</i></td>
+          <td><pre>_G -&gt; _S1 == _S2</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>_G -&gt; b = b</pre></td>
+        </tr>
+        <tr id="13" class="step-hyp">
+          <td>13</td>
+          <td></td>
+          <td><i>hyp _nh</i></td>
+          <td><pre>_G -&gt; _n1 = _n2</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="mm0-doc">
+  <meta name="description" content="Documentation for theorem `eqappendlem` in `../examples/peano.mm1`.">
+  <meta name="keywords" content="mm0, metamath-zero">
+  <title>eqappendlem - ../examples/peano.mm1 - Metamath Zero</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen">
+  <script src="../proof.js"></script>
+  <!-- <link rel="shortcut icon" href="../favicon.ico"> -->
+</head>
+<body>
+  <div class="body">
+    <h1 class="title">
+      Theorem <a class="thm" href="">eqappendlem</a>
+      <span class="nav"><a href="appendinj2.html" title="appendinj2">&#8810;</a> | <a href="../index.html#eqappendlem">index</a> | <a href="https://github.com/digama0/mm0/blob/master/examples/peano.mm1#L6216-L6227">src</a> | <a href="eqappend.html" title="eqappend">&#8811;</a></span>
+    </h1>
+    <pre>theorem eqappendlem {a: nat} (l1 l2 r1 r2: nat):
+  $ len r1 <= len l1 /\ l1 ++ l2 = r1 ++ r2 ->
+    E. a (l1 = r1 ++ a /\ r2 = a ++ l2) $;</pre>
+    <table class="proof">
+      <tbody>
+        <tr class="proof-head"><th>Step</th><th>Hyp</th><th>Ref</th><th>Expression</th></tr>
+        <tr id="1" class="step-thm">
+          <td>1</td>
+          <td><a href="#2">2</a>, <a href="#13">13</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; E. a (l1 = r1 ++ a /\ r2 = a ++ l2)</pre></td>
+        </tr>
+        <tr id="2" class="step-thm">
+          <td>2</td>
+          <td><a href="#3">3</a></td>
+          <td><a class="thm" href="iexe.html">iexe</a></td>
+          <td><pre>l1 = r1 ++ take r2 (len l1 - len r1) /\ r2 = take r2 (len l1 - len r1) ++ l2 -&gt; E. a (l1 = r1 ++ a /\ r2 = a ++ l2)</pre></td>
+        </tr>
+        <tr id="3" class="step-thm">
+          <td>3</td>
+          <td><a href="#4">4</a>, <a href="#8">8</a></td>
+          <td><a class="thm" href="aneqd.html">aneqd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; (l1 = r1 ++ a /\ r2 = a ++ l2 &lt;-&gt; l1 = r1 ++ take r2 (len l1 - len r1) /\ r2 = take r2 (len l1 - len r1) ++ l2)</pre></td>
+        </tr>
+        <tr id="4" class="step-thm">
+          <td>4</td>
+          <td><a href="#5">5</a>, <a href="#6">6</a></td>
+          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; (l1 = r1 ++ a &lt;-&gt; l1 = r1 ++ take r2 (len l1 - len r1))</pre></td>
+        </tr>
+        <tr id="5" class="step-thm">
+          <td>5</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; l1 = l1</pre></td>
+        </tr>
+        <tr id="6" class="step-thm">
+          <td>6</td>
+          <td><a href="#7">7</a>, <a href="#11">11</a></td>
+          <td><a class="thm" href="appendeqd.html">appendeqd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; r1 ++ a = r1 ++ take r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="7" class="step-thm">
+          <td>7</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; r1 = r1</pre></td>
+        </tr>
+        <tr id="8" class="step-thm">
+          <td>8</td>
+          <td><a href="#9">9</a>, <a href="#10">10</a></td>
+          <td><a class="thm" href="eqeqd.html">eqeqd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; (r2 = a ++ l2 &lt;-&gt; r2 = take r2 (len l1 - len r1) ++ l2)</pre></td>
+        </tr>
+        <tr id="9" class="step-thm">
+          <td>9</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; r2 = r2</pre></td>
+        </tr>
+        <tr id="10" class="step-thm">
+          <td>10</td>
+          <td><a href="#11">11</a>, <a href="#12">12</a></td>
+          <td><a class="thm" href="appendeqd.html">appendeqd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; a ++ l2 = take r2 (len l1 - len r1) ++ l2</pre></td>
+        </tr>
+        <tr id="11" class="step-thm">
+          <td>11</td>
+          <td></td>
+          <td><a class="thm" href="id.html">id</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; a = take r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="12" class="step-thm">
+          <td>12</td>
+          <td></td>
+          <td><a class="thm" href="eqidd.html">eqidd</a></td>
+          <td><pre>a = take r2 (len l1 - len r1) -&gt; l2 = l2</pre></td>
+        </tr>
+        <tr id="13" class="step-thm">
+          <td>13</td>
+          <td><a href="#14">14</a>, <a href="#15">15</a></td>
+          <td><a class="thm" href="iand.html">iand</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l1 = r1 ++ take r2 (len l1 - len r1) /\ r2 = take r2 (len l1 - len r1) ++ l2</pre></td>
+        </tr>
+        <tr id="14" class="step-thm">
+          <td>14</td>
+          <td><a href="#19">19</a></td>
+          <td><a class="thm" href="anld.html">anld</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l1 = r1 ++ take r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="15" class="step-thm">
+          <td>15</td>
+          <td><a href="#16">16</a></td>
+          <td><a class="thm" href="eqcomd.html">eqcomd</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; r2 = take r2 (len l1 - len r1) ++ l2</pre></td>
+        </tr>
+        <tr id="16" class="step-thm">
+          <td>16</td>
+          <td><a href="#47">47</a>, <a href="#17">17</a></td>
+          <td><a class="thm" href="syl6eq.html">syl6eq</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; take r2 (len l1 - len r1) ++ l2 = r2</pre></td>
+        </tr>
+        <tr id="17" class="step-thm">
+          <td>17</td>
+          <td><a href="#18">18</a></td>
+          <td><a class="thm" href="appendeq2d.html">appendeq2d</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; take r2 (len l1 - len r1) ++ l2 = take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="18" class="step-thm">
+          <td>18</td>
+          <td><a href="#19">19</a></td>
+          <td><a class="thm" href="anrd.html">anrd</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l2 = drop r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="19" class="step-thm">
+          <td>19</td>
+          <td><a href="#20">20</a>, <a href="#42">42</a></td>
+          <td><a class="thm" href="mpbid.html">mpbid</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l1 = r1 ++ take r2 (len l1 - len r1) /\ l2 = drop r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="20" class="step-thm">
+          <td>20</td>
+          <td><a href="#21">21</a>, <a href="#22">22</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt;
+  (l1 ++ l2 = (r1 ++ take r2 (len l1 - len r1)) ++ drop r2 (len l1 - len r1) &lt;-&gt; l1 = r1 ++ take r2 (len l1 - len r1) /\ l2 = drop r2 (len l1 - len r1))</pre></td>
+        </tr>
+        <tr id="21" class="step-thm">
+          <td>21</td>
+          <td></td>
+          <td><a class="thm" href="appendinj1.html">appendinj1</a></td>
+          <td><pre>len l1 = len (r1 ++ take r2 (len l1 - len r1)) -&gt;
+  (l1 ++ l2 = (r1 ++ take r2 (len l1 - len r1)) ++ drop r2 (len l1 - len r1) &lt;-&gt; l1 = r1 ++ take r2 (len l1 - len r1) /\ l2 = drop r2 (len l1 - len r1))</pre></td>
+        </tr>
+        <tr id="22" class="step-thm">
+          <td>22</td>
+          <td><a href="#23">23</a>, <a href="#24">24</a></td>
+          <td><a class="thm" href="syl6eqr.html">syl6eqr</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len l1 = len (r1 ++ take r2 (len l1 - len r1))</pre></td>
+        </tr>
+        <tr id="23" class="step-thm">
+          <td>23</td>
+          <td></td>
+          <td><a class="thm" href="appendlen.html">appendlen</a></td>
+          <td><pre>len (r1 ++ take r2 (len l1 - len r1)) = len r1 + len (take r2 (len l1 - len r1))</pre></td>
+        </tr>
+        <tr id="24" class="step-thm">
+          <td>24</td>
+          <td><a href="#25">25</a></td>
+          <td><a class="thm" href="eqcomd.html">eqcomd</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len l1 = len r1 + len (take r2 (len l1 - len r1))</pre></td>
+        </tr>
+        <tr id="25" class="step-thm">
+          <td>25</td>
+          <td><a href="#26">26</a>, <a href="#40">40</a></td>
+          <td><a class="thm" href="eqtrd.html">eqtrd</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len r1 + len (take r2 (len l1 - len r1)) = len l1</pre></td>
+        </tr>
+        <tr id="26" class="step-thm">
+          <td>26</td>
+          <td><a href="#27">27</a></td>
+          <td><a class="thm" href="addeq2d.html">addeq2d</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len r1 + len (take r2 (len l1 - len r1)) = len r1 + (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="27" class="step-thm">
+          <td>27</td>
+          <td><a href="#28">28</a>, <a href="#29">29</a></td>
+          <td><a class="thm" href="syl5eq.html">syl5eq</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len (take r2 (len l1 - len r1)) = len l1 - len r1</pre></td>
+        </tr>
+        <tr id="28" class="step-thm">
+          <td>28</td>
+          <td></td>
+          <td><a class="thm" href="takelen.html">takelen</a></td>
+          <td><pre>len (take r2 (len l1 - len r1)) = min (len r2) (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="29" class="step-thm">
+          <td>29</td>
+          <td><a href="#30">30</a>, <a href="#31">31</a></td>
+          <td><a class="thm" href="syl.html">syl</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; min (len r2) (len l1 - len r1) = len l1 - len r1</pre></td>
+        </tr>
+        <tr id="30" class="step-thm">
+          <td>30</td>
+          <td></td>
+          <td><a class="thm" href="eqmin2.html">eqmin2</a></td>
+          <td><pre>len l1 - len r1 &lt;= len r2 -&gt; min (len r2) (len l1 - len r1) = len l1 - len r1</pre></td>
+        </tr>
+        <tr id="31" class="step-thm">
+          <td>31</td>
+          <td><a href="#32">32</a>, <a href="#33">33</a></td>
+          <td><a class="thm" href="sylibr.html">sylibr</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len l1 - len r1 &lt;= len r2</pre></td>
+        </tr>
+        <tr id="32" class="step-thm">
+          <td>32</td>
+          <td></td>
+          <td><a class="thm" href="lesubadd2.html">lesubadd2</a></td>
+          <td><pre>len l1 - len r1 &lt;= len r2 &lt;-&gt; len l1 &lt;= len r1 + len r2</pre></td>
+        </tr>
+        <tr id="33" class="step-thm">
+          <td>33</td>
+          <td><a href="#34">34</a>, <a href="#35">35</a></td>
+          <td><a class="thm" href="mpbii.html">mpbii</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len l1 &lt;= len r1 + len r2</pre></td>
+        </tr>
+        <tr id="34" class="step-thm">
+          <td>34</td>
+          <td></td>
+          <td><a class="thm" href="leaddid1.html">leaddid1</a></td>
+          <td><pre>len l1 &lt;= len l1 + len l2</pre></td>
+        </tr>
+        <tr id="35" class="step-thm">
+          <td>35</td>
+          <td><a href="#36">36</a></td>
+          <td><a class="thm" href="leeq2d.html">leeq2d</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; (len l1 &lt;= len l1 + len l2 &lt;-&gt; len l1 &lt;= len r1 + len r2)</pre></td>
+        </tr>
+        <tr id="36" class="step-thm">
+          <td>36</td>
+          <td><a href="#37">37</a>, <a href="#38">38</a>, <a href="#39">39</a></td>
+          <td><a class="thm" href="eqtr3g.html">eqtr3g</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len l1 + len l2 = len r1 + len r2</pre></td>
+        </tr>
+        <tr id="37" class="step-thm">
+          <td>37</td>
+          <td></td>
+          <td><a class="thm" href="appendlen.html">appendlen</a></td>
+          <td><pre>len (l1 ++ l2) = len l1 + len l2</pre></td>
+        </tr>
+        <tr id="38" class="step-thm">
+          <td>38</td>
+          <td></td>
+          <td><a class="thm" href="appendlen.html">appendlen</a></td>
+          <td><pre>len (r1 ++ r2) = len r1 + len r2</pre></td>
+        </tr>
+        <tr id="39" class="step-thm">
+          <td>39</td>
+          <td><a href="#48">48</a></td>
+          <td><a class="thm" href="leneqd.html">leneqd</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len (l1 ++ l2) = len (r1 ++ r2)</pre></td>
+        </tr>
+        <tr id="40" class="step-thm">
+          <td>40</td>
+          <td><a href="#41">41</a></td>
+          <td><a class="thm" href="anwl.html">anwl</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; len r1 + (len l1 - len r1) = len l1</pre></td>
+        </tr>
+        <tr id="41" class="step-thm">
+          <td>41</td>
+          <td></td>
+          <td><a class="thm" href="pncan3.html">pncan3</a></td>
+          <td><pre>len r1 &lt;= len l1 -&gt; len r1 + (len l1 - len r1) = len l1</pre></td>
+        </tr>
+        <tr id="42" class="step-thm">
+          <td>42</td>
+          <td><a href="#43">43</a>, <a href="#44">44</a></td>
+          <td><a class="thm" href="syl6eqr.html">syl6eqr</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l1 ++ l2 = (r1 ++ take r2 (len l1 - len r1)) ++ drop r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="43" class="step-thm">
+          <td>43</td>
+          <td></td>
+          <td><a class="thm" href="appendass.html">appendass</a></td>
+          <td><pre>(r1 ++ take r2 (len l1 - len r1)) ++ drop r2 (len l1 - len r1) = r1 ++ take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="44" class="step-thm">
+          <td>44</td>
+          <td><a href="#45">45</a>, <a href="#48">48</a></td>
+          <td><a class="thm" href="syl6eqr.html">syl6eqr</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l1 ++ l2 = r1 ++ take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1)</pre></td>
+        </tr>
+        <tr id="45" class="step-thm">
+          <td>45</td>
+          <td><a href="#46">46</a>, <a href="#47">47</a></td>
+          <td><a class="ax" href="ax_mp.html">ax_mp</a></td>
+          <td><pre>r1 ++ take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1) = r1 ++ r2</pre></td>
+        </tr>
+        <tr id="46" class="step-thm">
+          <td>46</td>
+          <td></td>
+          <td><a class="thm" href="appendeq2.html">appendeq2</a></td>
+          <td><pre>take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1) = r2 -&gt; r1 ++ take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1) = r1 ++ r2</pre></td>
+        </tr>
+        <tr id="47" class="step-thm">
+          <td>47</td>
+          <td></td>
+          <td><a class="thm" href="takedrop.html">takedrop</a></td>
+          <td><pre>take r2 (len l1 - len r1) ++ drop r2 (len l1 - len r1) = r2</pre></td>
+        </tr>
+        <tr id="48" class="step-thm">
+          <td>48</td>
+          <td></td>
+          <td><a class="thm" href="anr.html">anr</a></td>
+          <td><pre>len r1 &lt;= len l1 /\ l1 ++ l2 = r1 ++ r2 -&gt; l1 ++ l2 = r1 ++ r2</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <h2 class="axioms">Axiom use</h2>
+    <a class="ax" href="ax_1.html">ax_1</a>,
+    <a class="ax" href="ax_2.html">ax_2</a>,
+    <a class="ax" href="ax_3.html">ax_3</a>,
+    <a class="ax" href="ax_mp.html">ax_mp</a>,
+    <a class="ax" href="itru.html">itru</a>,
+    <a class="ax" href="ax_gen.html">ax_gen</a>,
+    <a class="ax" href="ax_4.html">ax_4</a>,
+    <a class="ax" href="ax_5.html">ax_5</a>,
+    <a class="ax" href="ax_6.html">ax_6</a>,
+    <a class="ax" href="ax_7.html">ax_7</a>,
+    <a class="ax" href="ax_10.html">ax_10</a>,
+    <a class="ax" href="ax_11.html">ax_11</a>,
+    <a class="ax" href="ax_12.html">ax_12</a>,
+    <a class="ax" href="elab.html">elab</a>,
+    <a class="ax" href="ax_8.html">ax_8</a>,
+    <a class="ax" href="peano1.html">peano1</a>,
+    <a class="ax" href="peano2.html">peano2</a>,
+    <a class="ax" href="peano5.html">peano5</a>,
+    <a class="ax" href="theid.html">theid</a>,
+    <a class="ax" href="the0.html">the0</a>,
+    <a class="ax" href="addeq.html">addeq</a>,
+    <a class="ax" href="muleq.html">muleq</a>,
+    <a class="ax" href="add0.html">add0</a>,
+    <a class="ax" href="addS.html">addS</a>,
+    <a class="ax" href="mul0.html">mul0</a>,
+    <a class="ax" href="mulS.html">mulS</a>
+  </div>
+</body>
+</html>
