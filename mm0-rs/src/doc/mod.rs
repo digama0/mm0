@@ -316,13 +316,15 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
     LineKind::Hyp(Some(a)) => write!(w, "<i>hyp {}</i>", fe.env.data[a].name)?,
     LineKind::Thm(tid) =>
       mangler.mangle(fe.env, tid, |thm, mangled|
-        write!(w, r#"<a class="thm" href="{}.html">{}</a>"#, mangled, thm))?,
+        write!(w, r#"<a class="{}" href="{}.html">{}</a>"#,
+          if let ThmKind::Axiom = fe.env.thms[tid].kind {"ax"} else {"thm"},
+          mangled, thm))?,
     LineKind::Conv(defs) => {
       write!(w, "<i>conv</i>")?;
       let mut first = true;
       for &def in &*defs {
         if !mem::take(&mut first) { write!(w, ",")? }
-        write!(w, " <a class=\"term\" href=\"../index.html#")?;
+        write!(w, " <a class=\"def\" href=\"../index.html#")?;
         let ad = &fe.env.data[fe.env.terms[def].atom];
         disambiguated_anchor(w, ad, false)?;
         write!(w, "\">{}</a>", ad.name)?;
@@ -503,7 +505,6 @@ impl<'a, W: Write> BuildDoc<'a, W> {
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
     self.mangler.mangle(&self.env, tid, |_, s| file.push(&format!("{}.html", s)));
     let mut file = BufWriter::new(File::create(file)?);
-    let kind = if let ThmKind::Axiom = td.kind {"Axiom"} else {"Theorem"};
     let ad = &self.env.data[td.atom];
     let thmname = &ad.name;
     let filename = td.span.file.rel();
@@ -534,10 +535,11 @@ impl<'a, W: Write> BuildDoc<'a, W> {
         write!(&mut nav, r#" | <a href="{}.html" title="{}">&#8811;</a>"#, mangled, thm)
           .expect("writing to a string"));
     }
+    let (kind, kindclass) = if let ThmKind::Axiom = td.kind {("Axiom", "ax")} else {("Theorem", "thm")};
     header(&mut file, "../",
       &format!("Documentation for theorem `{}` in `{}`.", thmname, filename),
       &format!("{} - {}", thmname, filename),
-      &format!(r#"{} <a class="thm" href="">{}</a>"#, kind, thmname),
+      &format!(r#"{} <a class="{}" href="">{}</a>"#, kind, kindclass, thmname),
       &nav, &["../proof.js"])?;
     render_doc(&mut file, &td.doc)?;
     writeln!(file, "    <pre>{}</pre>", FormatEnv {source: self.source, env: &self.env}.to(td))?;
