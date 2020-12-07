@@ -246,6 +246,7 @@ u32 parse_new_token() {
   } while (!is_ws(c) && c != '$');
   while (is_ws(CUR())) cursor++;
   ENSURE("expecting '$'", ch('$'));
+  ENSURE("parentheses are not valid tokens", p != g_open_paren && p != g_close_paren);
   return p->data ? p->data :
     (p->data = PARSER_ALLOC(((token_info){}), sizeof(token_info)));
 }

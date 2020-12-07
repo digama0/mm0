@@ -238,6 +238,7 @@ The term constructors appear in the syntax as s-expressions at precedence level 
 * An `infix` command must have a precedence less than `max`.
 * The first token of a `notation` must be a constant, and must not be shared with any other `prefix` constant or infixy constant.
 * If two variables are adjacent in a `notation`, the first one must have precedence `max`.
+* The tokens `(` and `)` are not permitted to be declared in any notation command; they are reserved for grouping. (However the `(` and `)` characters can be used in multi-character tokens like `foo(`.)
 
 If a math string is parsed successfully, the result is a syntax tree whose nodes are given by the term constructors referenced by the notations. Type checking is performed during or after this process, from inside out. If an expression with one sort is used in an argument with a different sort, `coercion` functions are inserted. The rules on `coercions`:
 

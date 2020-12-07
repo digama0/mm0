@@ -387,7 +387,11 @@ impl Elaborator {
   }
 
   fn add_const(&mut self, tk: Span, p: Prec) -> Result<()> {
-    let s = self.span(tk).into();
+    let s: ArcString = self.span(tk).into();
+    if matches!(&*s, b"(" | b")") {
+      return Err(ElabError::new_e(tk,
+        "parentheses are not allowed in notations"))
+    }
     let fsp = self.fspan(tk);
     self.pe.add_const(s, fsp, p).map_err(|r| ElabError::with_info(tk,
       "constant already declared with a different precedence".into(),
