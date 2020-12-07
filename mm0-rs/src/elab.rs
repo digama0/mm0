@@ -723,6 +723,7 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                 }
                 Ok(ElabResult::Canceled) => {
                   elab.report(ElabError::new_e(*sp, "canceled"));
+                  elab.cancel.store(true, Ordering::Relaxed);
                   break
                 }
                 Ok(ElabResult::ImportCycle(cyc2)) => {

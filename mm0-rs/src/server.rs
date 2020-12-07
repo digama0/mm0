@@ -236,11 +236,13 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         let (send, recv) = channel();
         if rd.contains(&p) {
           send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
-        } else if let Some(Some(FileCache::Ready {res, ..})) =
-          dep.parsed.try_lock().as_deref() {
-          send.send(res.clone()).expect("failed to send");
         } else {
-          Job::ElaborateDep(p.clone(), path.clone(), Some((send, rd.clone()))).spawn();
+          if let Some(Some(FileCache::Ready {res, ..})) =
+            dep.parsed.try_lock().as_deref() {
+            send.send(res.clone()).expect("failed to send");
+          } else {
+            Job::ElaborateDep(p.clone(), path.clone(), Some((send, rd.clone()))).spawn();
+          }
           deps.push(p);
         }
         Ok(recv)
@@ -260,8 +262,8 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   };
   for tok in toks {tok.hash(&mut hasher)}
   let hash = hasher.finish();
-  log!("elabbed {:?}", path);
   let is_canceled = cancel.load(Ordering::SeqCst);
+  log!("elabbed {:?}{}", path, if is_canceled {" (canceled)"} else {""});
   let no_change_since_elab = file.text.ulock().0 == version;
   if !is_canceled && no_change_since_elab {
     let mut srcs = HashMap::new();
@@ -461,6 +463,7 @@ impl VFS {
   }
 
   fn update_downstream(&self, old_deps: &[FileRef], deps: &[FileRef], to: &FileRef) {
+    log!("update deps of {:?} from {:?} to {:?}", to, old_deps, deps);
     for from in old_deps {
       if !deps.contains(from) {
         let file = self.0.ulock().get(from).unwrap().clone();
