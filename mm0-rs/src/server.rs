@@ -463,7 +463,6 @@ impl VFS {
   }
 
   fn update_downstream(&self, old_deps: &[FileRef], deps: &[FileRef], to: &FileRef) {
-    log!("update deps of {:?} from {:?} to {:?}", to, old_deps, deps);
     for from in old_deps {
       if !deps.contains(from) {
         let file = self.0.ulock().get(from).unwrap().clone();
