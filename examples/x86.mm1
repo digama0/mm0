@@ -3086,6 +3086,10 @@ theorem getMem_setException: $ getMemory (setException k e) = getMemory k $ =
 '(sndeq @ sndeq sndpr);
 theorem read_setException (ex ip rs f m e: nat):
   $ readException (setException k e) = e $ = 'pi11pr;
+theorem readRIP_setException: $ readRIP (setException k e) = readRIP k $ = 'pi12pr;
+theorem readReg_setException: $ readReg (setException k e) r = readReg k r $ = '(appneq1 @ fsteq sndpr);
+theorem readFlags_setException: $ readFlags (setException k e) = readFlags k $ = '(pi21eq sndpr);
+theorem getMemory_setException: $ getMemory (setException k e) = getMemory k $ = '(pi22eq sndpr);
 
 theorem writeMem_set (k a l k2: nat):
   $ writeMem k a l k2 <-> k e. Config /\ a e. u64 /\ l e. List u8 /\
@@ -3201,6 +3205,12 @@ pub theorem writeRIP_T (k q: nat):
   syl5ibrcom (imeqd (syl6bb mkCfgT eleq1)
      (syl6bb mkCfgT @ eleq1d @ syl6eq writeRIPVal writeRIPeq1)) @
   anim1d @ anim1d @ anim1d @ anim2d ax_1));
+
+theorem readRIP_writeRIP: $ readRIP (writeRIP k v) = v $ = 'pi12pr;
+theorem readReg_writeRIP: $ readReg (writeRIP k v) r = readReg k r $ = '(appneq1 @ fsteq sndpr);
+theorem readFlags_writeRIP: $ readFlags (writeRIP k v) = readFlags k $ = '(pi21eq sndpr);
+theorem getMemory_writeRIP: $ getMemory (writeRIP k v) = getMemory k $ = '(pi22eq sndpr);
+theorem readException_writeRIP: $ readException (writeRIP k v) = readException k $ = 'pi11pr;
 
 @_ abstract def EA_callDest (k ea v: nat): wff =
 $ k e. Config /\ ea e. EA /\
@@ -3804,6 +3814,10 @@ theorem PageMappingss: $ PageMapping M C_ Arrow u64 (Option Prot) $ =
 theorem finPageMapping: $ finite (PageMapping M) $ =
 '(finss PageMappingss @ Arrowfin finns @ optfin finiteProt);
 
+theorem elPageMapping0: $ (\. a e. u64, 0) e. PageMapping M $ =
+(named '(mpbir elPageMapping @ iani (mpbir rlamArrow @ ax_gen @ a1i opt0) @
+  ax_gen @ ax_gen @ sylbi elrlam @ eex @ anwr @ sylbi prth @ anwr @ absurd peano1));
+
 theorem writePM
   (h1: $ G -> m @ a = prot <> x $)
   (h2: $ G -> m2 == write m a (prot <> y) $):
@@ -3848,11 +3862,6 @@ pub theorem mkKS_T (i o k m: nat):
     i e. List u8 /\ o e. List u8 /\ k e. Config /\ m e. PageMapping (getMemory k) $ =
 '(bitr prelxp @ bitr4 (aneq prelxp @ elxabe ,eqtac) anass);
 
-theorem mkKS_ex: $ E. i E. o E. k E. m ks = mkKS i o k m $ =
-'(iexie @ iexde @ iexde @ iexde @
-  eqcomd @ syl6eq fstsnd @ preqd (syl6eq fstsnd @ preqd an3l anllr) @
-  syl6eq fstsnd @ preqd anlr anr);
-
 @_ def ksIn (k: nat): nat = $ pi11 k $;
 @_ def ksOut (k: nat): nat = $ pi12 k $;
 @_ def ksCfg (k: nat): nat = $ pi21 k $;
@@ -3869,6 +3878,17 @@ theorem ksIn_mk: $ ksIn (mkKS i o k m) = i $ = 'pi11pr;
 theorem ksOut_mk: $ ksOut (mkKS i o k m) = o $ = 'pi12pr;
 theorem ksCfg_mk: $ ksCfg (mkKS i o k m) = k $ = 'pi21pr;
 theorem ksMapping_mk: $ ksMapping (mkKS i o k m) = m $ = 'pi22pr;
+theorem eq_mkKS: $ mkKS (ksIn k) (ksOut k) (ksCfg k) (ksMapping k) = k $ =
+'(eqtr (preq fstsnd fstsnd) fstsnd);
+
+theorem mkKS_ex: $ E. i E. o E. k E. m ks = mkKS i o k m $ =
+'(iexie @ iexde @ iexde @ iexde @ mpbiri (eqcom eq_mkKS) ,eqtac);
+
+theorem ex_ksCfg: $ k e. Config <-> E. ks (ks e. KernelState /\ k = ksCfg ks) $ =
+(named '(ibii (iexde @ iand (mpbird (eleq1d anr) @ sylibr mkKS_T @
+      iand (iand (a1i @ iani elList0 elList0) anl) @ a1i elPageMapping0) @
+    syl5eqr ksCfg_mk @ eqcomd @ ksCfgeqd anr) @
+  eex @ mpbird (eleq1d anr) @ anwl @ ksCfgT));
 
 @_ local def setMapping (ks k2 m2: nat): nat =
 $ mkKS (ksIn ks) (ksOut ks) k2 m2 $;
@@ -3890,6 +3910,10 @@ pub theorem writeMappingT (ks m k ks2: nat):
     ks e. KernelState /\ k e. Config /\
     m e. PageMapping (getMemory k) /\ ks2 e. KernelState $ =
 '(anim2a @ syl5ibrcom eleq1 @ mpbird (anwll setMappingT) @ anim1 anr);
+theorem writeMapping_val:
+$ writeMapping ks k2 m2 ks2 <->
+  ks e. KernelState /\ k2 e. Config /\ m2 e. PageMapping (getMemory k2) /\
+  ks2 = setMapping ks k2 m2 $ = 'biid;
 
 @_ local def setCfg (ks k2: nat): nat = $ setMapping ks k2 (ksMapping ks) $;
 theorem setCfg_mk: $ setCfg (mkKS i o k m) k2 = mkKS i o k2 m $ =
@@ -3914,6 +3938,10 @@ $ writeMapping ks k2 (ksMapping ks) ks2 $;
 pub theorem writeCfgT (ks k ks2: nat):
   $ writeCfg ks k ks2 -> ks e. KernelState /\ k e. Config /\ ks2 e. KernelState $ =
 '(rsyl writeMappingT @ anim1 anl);
+theorem writeCfg_val:
+$ writeCfg ks k2 ks2 <->
+  ks e. KernelState /\ k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2) /\
+  ks2 = setCfg ks k2 $ = 'writeMapping_val;
 
 @_ def stdin: nat = $ 0 $;
 @_ def stdout: nat = $ 1 $;

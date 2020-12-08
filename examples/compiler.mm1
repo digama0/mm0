@@ -52,6 +52,36 @@ theorem read_place_setMemory_eq:
   preq (appneq1 @ eqtr (getMemoryeq ksCfg_setCfg) get_setMemory) @
   appneq1 ksMapping_setCfg);
 
+theorem read_place_setException:
+  $ read_place (setCfg ks (setException (ksCfg ks) e)) @ p = read_place ks @ p $ =
+'(trud ,(split-sop 'p
+  (def (g x y) '(anwr @ mpbiri (eqtr4 ,x @ eqtr4 ,x ,y) ,eqtac))
+  (def (h x y z) (g x '(eqtr (,y ksCfg_setCfg) ,z)))
+  '{{($X86P_Input$ => ,(g 'read_place_Input 'ksIn_setCfg)) o
+     ($X86P_Output$ => ,(g 'read_place_Output 'ksOut_setCfg)) o
+     ($X86P_RIP$ => ,(h 'read_place_RIP 'readRIPeq 'readRIP_setException)) o
+     ($X86P_Flags$ => ,(h 'read_place_Flags 'readFlagseq 'readFlags_setException)) o
+     ($X86P_Virtual n$ => ,(g 'read_place_Virtual 'eqid))} +
+    {($X86P_Reg n$ => ,(h 'read_place_Reg 'readRegeq1 'readReg_setException)) +
+     ($X86P_Mem n$ => ,(g 'read_place_Mem
+      '(preq (appneq1 @ eqtr (getMemoryeq ksCfg_setCfg) getMemory_setException) @
+        appneq1 ksMapping_setCfg)))}}));
+
+theorem read_place_writeRIP_ne: $ p != X86P_RIP ->
+  read_place (setCfg ks (writeRIP (ksCfg ks) v)) @ p = read_place ks @ p $ =
+(split-sop 'p
+  (def (g x y) '(anwr @ mpbiri (eqtr4 ,x @ eqtr4 ,x ,y) ,eqtac))
+  (def (h x y z) (g x '(eqtr (,y ksCfg_setCfg) ,z)))
+  '{{($X86P_Input$ => ,(g 'read_place_Input 'ksIn_setCfg)) o
+     ($X86P_Output$ => ,(g 'read_place_Output 'ksOut_setCfg)) o
+     ($X86P_RIP$ => (imp absurd)) o
+     ($X86P_Flags$ => ,(h 'read_place_Flags 'readFlagseq 'readFlags_writeRIP)) o
+     ($X86P_Virtual n$ => ,(g 'read_place_Virtual 'eqid))} +
+    {($X86P_Reg n$ => ,(h 'read_place_Reg 'readRegeq1 'readReg_writeRIP)) +
+     ($X86P_Mem n$ => ,(g 'read_place_Mem
+      '(preq (appneq1 @ eqtr (getMemoryeq ksCfg_setCfg) getMemory_writeRIP) @
+        appneq1 ksMapping_setCfg)))}});
+
 @_ local def XBlock_Reg (n: nat) = $ b0 (b0 n) $;
 @_ local def XBlock_Mem (a len: nat) = $ b0 (b1 (a <> len)) $;
 @_ local def XBlock_Const (val: nat) = $ b1 val $;
@@ -86,6 +116,9 @@ infixl heap_sat: $|=h$ prec 50;
 theorem heap_sat_isf: $ k |=h h -> isfun h $ = (named 'anll);
 theorem heap_sat_ks: $ k |=h h -> k e. KernelState $ = (named 'anlr);
 
+theorem heap_sat_02: $ k e. KernelState -> k |=h 0 $ =
+(named '(iand (ian isf0) @ a1i @ ax_gen @ ax_gen @ absurd el02));
+
 theorem heap_sat_sn: $ k |=h sn (p <> x) <-> k e. KernelState /\ read_place k @ p = x $ =
 '(aneq (bian1 isfsn) @ bitr (aleqi @ bitr (aleqi @
     bitr (imeq1i @ bitr elsn prth) impexp) alim1) @
@@ -94,14 +127,24 @@ theorem heap_sat_sn: $ k |=h sn (p <> x) <-> k e. KernelState /\ read_place k @ 
 theorem heap_sat_E: $ k |=h h /\ p <> x e. h -> read_place k @ p = x $ =
 '(impcom @ syl5 anr @ com12 @ ealie @ ealde @ bi1d ,eqtac);
 
+theorem heap_sat_setException:
+  $ ks e. KernelState /\ e e. Option Exception ->
+    (setCfg ks (setException (ksCfg ks) e) |=h h <-> ks |=h h) $ =
+(named '(aneqd (aneq2d @ bitrd (anwl setCfgT) @
+    bithd (iand (syl setExceptionT @ anim1 ksCfgT) @
+      sylibr (eleq2 @ PageMappingeq getMem_setException) @ anwl ksMappingT) anl) @
+  a1i @ aleqi @ aleqi @ imeq2i @ eqeq1 read_place_setException));
+
 @_ local def s_sat (k: nat) (P: set): wff = $ ksFault k \/ E. h (h e. P /\ k |=h h) $;
 infixl s_sat: $|=s$ prec 50;
 theorem s_sat_fault: $ ksFault k -> k |=s P $ = (named 'orl);
 theorem s_sat_def: $ ~ksFault k -> (k |=s P <-> E. h (h e. P /\ k |=h h)) $ = 'bior1;
 theorem s_sat_antop: $ k |=s P /\s T.s <-> k |=s P $ =
 (named '(oreq2i @ exeqi @ aneq1a @ syl5bb el_s_antop @ syl bian1 heap_sat_isf));
-theorem s_sat_ks: $ k |=s P -> k e. KernelState $ =
-(named '(eor anl @ eex @ anwr heap_sat_ks));
+theorem s_sat_ks: $ k |=s P -> k e. KernelState $ = (named '(eor anl @ eex @ anwr heap_sat_ks));
+theorem s_sat_bot: $ k |=s F.s <-> ksFault k $ = (named '(bior2 @ nexi @ mt anl el_s_bot));
+theorem s_sat_emp: $ k e. KernelState -> k |=s emp $ =
+(named '(orrd @ sylibr (exeqi @ aneq1i el_s_emp) @ sylibr (exeqe heap_sateq2) heap_sat_02));
 
 theorem s_sat_sep_sn: $ ~ksFault k -> (k |=s R *s P <-> E. r (r e. R /\ k |=s sn r *s P)) $ =
 (named '(bitr4d (syl6bb (exeqi ancomb) s_sat_def) @
@@ -136,11 +179,48 @@ theorem s_weak_sat: $ P =>*s Q -> k |=s P -> k |=s Q $ =
 (named '(sylbi s_weak_iff @ orim2d @ sylibr eexb @ alimi @ impd @ sylbi impexp @
   imim2i @ rsyl (imim1i heap_sat_isf) @ ax_2 @ eximd @ anim2d @ com12 heap_sat_ss));
 
+theorem s_ss_sat: $ P C_ Q -> k |=s P -> k |=s Q $ = '(syl s_weak_sat ss_s_weak);
+
 theorem s_sat_an: $ k |=s P /\s Q -> k |=s P /\ k |=s Q $ =
 '(iand (s_weak_sat @ ss_s_weak s_anl) (s_weak_sat @ ss_s_weak s_anr));
 
 theorem s_sat_sep: $ k |=s P *s Q -> k |=s P /\ k |=s Q $ =
-'(iand (s_weak_sat s_weak_sepl) (s_weak_sat s_weak_sepr));
+'(iand (s_weak_sat s_sepl) (s_weak_sat s_sepr));
+
+theorem s_sat_top: $ k e. KernelState -> k |=s T.s $ =
+'(syl (s_ss_sat s_emp_sstop) s_sat_emp);
+
+theorem s_sat_lift: $ k e. KernelState /\ ~ksFault k -> (k |=s ^s p <-> p) $ =
+'(syl5bbr s_sat_antop @ bitrd (anwr s_sat_anlift1) @ syl bian2 @ anwl s_sat_top);
+theorem s_sat_elift: $ k e. KernelState /\ ~ksFault k -> (k |=s ^e p <-> p) $ =
+'(bitrd (anwr s_sat_anlift1) @ syl bian2 @ anwl s_sat_emp);
+
+theorem s_sat_frame_sn {q}
+  (h1: $ G /\ q != p -> read_place k2 @ q = read_place k @ q $)
+  (h2: $ G /\ read_place k @ p = v -> read_place k2 @ p = v2 $)
+  (h3: $ G -> k |=s R *s sn (sn (p <> v)) $)
+  (h4: $ G -> ~ksFault k $)
+  (h5: $ G -> k2 e. KernelState $):
+  $ G -> k2 |=s R *s sn (sn (p <> v2)) $ =
+(named @ focus
+  '(orrd @ mpd (mpd h4 h3) @ eexd @ impd @ syl5bi el_s_sep_sn2 @
+    eexda @ exp @ iexde _)
+  (have 'H1 '(anrd anllr))
+  (have 'H2 '(sylibr heap_join_S2 @ iand (rsyl H1 @
+    sylbi heap_join_S2 @ anwl @ anim (anim2 @ a1i isfsn) @
+    bi1i @ eqseq1 @ ineq2 @ eqstr4 dmsn dmsn) @ anwr eqcom))
+  '(iand (sylibr el_s_sep_sn2 @ sylan iex (anld anllr) H2) @
+    iand (iand (syl heap_join_isf3 H2) @ anw3l h5) @
+    !! iald q @ !! iald a @ ! casesda _ $ q = p $ _ _ _)
+  '(mpbird (anwr ,eqtac) @ anwl @
+    sylbid (syl5bbr (bian2 @ mpbir (eleq2 dmsn) snid) @
+      syl5bbr prelres @ eleq2d @ syl heap_join_res2 H2) @
+    syl5ibrcom (sylbi elsn @ sylbi prth @ anwr ,eqtac) @
+    sylan h2 an3l @ sylan heap_sat_E anlr @ sylib snss @ anrd @ syl heap_join_ss H1)
+  '(sylbird (eleq2d @ syl heap_join_un @ anwl H2) @ syl5bi elun @
+    syl5 orcom @ eimd (anwr @ con3 @ sylbi elsn @ sylbi prth anl) @
+    syl5 orl @ syl5bir elun @ sylbid (eleq2d @ syl heap_join_un @ anwl H1) @
+    sylibrd (syl (exp heap_sat_E) anllr) @ eqeq1d @ syl h1 (anim1 an3l)));
 
 @_ local def prog_ok (elf i: nat) (P: set): wff =
 $ A. k (initialConfig2 elf i k -> terminates_ensuring k P) $;
@@ -258,7 +338,7 @@ theorem hoare_save_restore (G: wff p a)
     '(sylc hoare_frame_ok _ @ sylc s_weak_ok _ an3lr)
     (focus '(sylc _ (anw4l h2) @ anwr an4l) '(eale ,eqtac))
     '(sylib (s_weakeq1 s_sep_ass) @ syl s_sep_weak1 @
-      mpbii (s_sep_weak1 @ s_weak_sepl) @ anwr @ s_weakeqd (syl5eqs s_sep_ass @
+      mpbii (s_sep_weak1 s_sepl) @ anwr @ s_weakeqd (syl5eqs s_sep_ass @
         s_sepeq2d @ sylibr s_sep_sn an3lr) @ sylibr s_sep_sn anlr))
   (focus
     '(orrd @ sylan iex (mpbird (eleq2d _) @ sylibr el_s_sep_sn1 _) anrr)
@@ -269,33 +349,150 @@ theorem hoare_save_restore (G: wff p a)
     '(sylan iex (anld anllr) (anrd anllr))));
 
 theorem hoare_ksStep {k fr}
-  (h1: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> E. k2 ksStep k k2 $)
-  (h2: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> ksStep k k2 -> k2 |=s sn fr *s Q $)
+  (h1: $ G /\ k |=s sn fr *s P /\ ~ksFault k ->
+         (P. k2 ksStep k k2 -> k2 |=s sn fr *s Q) $)
   : $ G -> hoare T P Q $ =
 '(iald @ exp @ iald @ exp @ casesda (anwr ksFault_terminates) @
   sylibr (!! terminates_ensuring_val k3) @ iand (syl s_sat_ks anlr) @
   iald @ syl5bi ksReachable_hd @ sylbi (bian21i anrass) @
   eord (syl5ibrcom (anwr @ rsyl eqcom ,eqtac) @
-    imp @ mpd h1 @ eexda @
-    syld (rsyl (imp h2) @ com12 s_ok_E) @
+    imp @ mpd (syl pimex12 h1) @ eexd @ impd @ exp @ expd @ syl5 (impcom s_ok_E) @
     syl5 terminates_ensuring_can @ syl can_terminate_ensuring_R @
     anwr ksReachable1) @
-  imp @ com23 @ eexda @ syl5 s_ok_E @ eimd (imp @ syl5 anl h2) @
+  imp @ com23 @ eexda @ syl5 s_ok_E @ eimd (imp @ syl5 anl @ syl eal @ anrd h1) @
   syl6 terminates_ensuring_can @ syl terminates_ensuring_R anrr);
 
 theorem hoare_step {k fr}
-  (h1: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> E. k2 step (ksCfg k) k2 $)
-  (h2: $ G /\ k |=s sn fr *s P /\ ~ksFault k -> step (ksCfg k) k2 -> setCfg k k2 |=s sn fr *s Q $)
+  (h1: $ G /\ k |=s sn fr *s P /\ ~ksFault k ->
+         (P. k2 step (ksCfg k) k2 -> setCfg k k2 |=s sn fr *s Q) $)
   : $ G -> hoare T P Q $ =
 (focus
   (have 'h3 '(syl s_sat_ks anlr))
-  '(hoare_ksStep _ @ syl5 anr @ eord _ _)
-  (focus '(mpd h1 @ eexda @ syl (iexe ,eqtac) @ iand (anwl h3) @ orld @
+  '(hoare_ksStep @ iand _ @ iald @ syl5 anr @ eord _ _)
+  (focus '(mpd (anld h1) @ eexda @ syl (iexe ,eqtac) @ iand (anwl h3) @ orld @
     syl (iexe ,eqtac) @ iand anr @
     iand (sylibr anass @ sylib (aneq2a setCfgT) @ iand (anwl h3) @
-      syl s_sat_ks @ imp h2) eqidd))
-  (focus '(eexd @ impd @ exp @ syl5ibrcom (anwr s_sateq1) @ imp h2))
-  (focus '(syl absurd @ rsyl h1 @ eex step_no_IO)));
+      syl s_sat_ks @ imp @ syl eal @ anrd h1) eqidd))
+  (focus '(eexd @ impd @ exp @ syl5ibrcom (anwr s_sateq1) @ imp @ syl eal @ anrd h1))
+  (focus '(syl absurd @ rsyl (anld h1) @ eex step_no_IO)));
+
+@_ local def hoareCfg (k k2: nat) (P Q: set): wff =
+$ A. ks (ksCfg ks = k -> (ksFault ks -> ksFault (setCfg ks k2)) /\
+    A. fr (ks |=s sn fr *s P -> setCfg ks k2 |=s sn fr *s Q)) $;
+
+theorem hoareCfg_frame_E: $ hoareCfg (ksCfg ks) k2 P Q ->
+  ks |=s R *s P -> setCfg ks k2 |=s R *s Q $ =
+(named '(ealie @ eimd ksCfgeq @ sylbid ,eqtac @ a1i @
+  casesd (anwl @ imim2i @ a1d s_sat_fault) @
+  exp @ sylbid (anwr s_sat_sep_sn) @ exp @
+  sylib (bior1a s_sat_fault) @ exp @ mpbird (anwr s_sat_sep_sn) @
+  sylc (syl exim @ alimi @ anim2) an3lr anlr));
+
+theorem hoareCfg_E: $ hoareCfg (ksCfg ks) k2 P Q -> ks |=s P -> setCfg ks k2 |=s Q $ =
+(begin (def h '(bitr (s_sateq2 s_sep_emp1a) s_sat_antop))
+  '(sylib (imeqi ,h ,h) hoareCfg_frame_E));
+
+theorem hoareCfg_frame: $ hoareCfg k k2 P Q -> hoareCfg k k2 (R *s P) (R *s Q) $ =
+(named '(imidm @ alimd @ a2d @ com12 @ sylbird ,(eqtac-with #f) @
+  a1i @ anim2d @ a1d @ iald @ sylib (imeqi (s_sateq2 s_sep_ass) (s_sateq2 s_sep_ass)) @
+  hoareCfg_frame_E));
+
+theorem hoareCfg_weakl: $ P =>*s Q -> hoareCfg k k2 Q R -> hoareCfg k k2 P R $ =
+(named '(alimd @ imim2d @ anim2d @ alimd @ imim1d @ syl s_weak_sat s_sep_weak2));
+
+theorem hoareCfg_weakr: $ Q =>*s R -> hoareCfg k k2 P Q -> hoareCfg k k2 P R $ =
+(named '(alimd @ imim2d @ anim2d @ alimd @ imim2d @ syl s_weak_sat s_sep_weak2));
+
+-- theorem hoareCfg_bot1:
+--   $ (readException k = suc exGPF -> readException k2 = suc exGPF) ->
+--     hoareCfg k k2 F.s Q $ =
+-- (named @ focus
+--   (suffices 'h) '(iald @ expcom @ iand (syl absurd h) _)
+--   '(iald @ syl5bi (s_sateq2 s_bot_sep2) @ syl5bi s_sat_bot @ syl absurd h)
+--   '(imp @ _));
+
+theorem hoareCfgT1: $ (k e. Config -> hoareCfg k k2 P Q) <-> hoareCfg k k2 P Q $ =
+(named '(bitr3 alim1 @ aleqi @ bitr com12b @ imeq2a @ syl biim1a @
+  syl6 (iand (syl5 anl absurd) (iald @ syl5 s_sat_ks absurd)) @
+  con3d @ syl5 ksCfgT @ bi1d eleq1));
+
+-- theorem hoareCfg_biim1a
+--   (h1: $ G /\ k e. Config /\ readException k = suc exGPF ->
+--     readException k2 = suc exGPF $)
+--   (h2: $ G -> P =>*s ^s p $):
+--   $ G -> ((p -> hoareCfg k k2 P Q) <-> hoareCfg k k2 P Q) $ =
+-- '(casesda (anwr biim1) @ bithd (anwr absurd) @
+--   mpd (syl hoareCfg_bot1 _) @ syl hoareCfg_weakl @
+--   mpbid (s_weakeq2d @ sylib s_lift_eqbot anr) _);
+
+-- theorem hoareCfg_biim1a_: $ k e. KernelState /\ ~ksFault k /\ (P =>*s ^s p) ->
+--   ((p -> hoareCfg (ksCfg k) k2 P Q) <-> hoareCfg (ksCfg k) k2 P Q) $ =
+-- '(syl hoareCfg_biim1a @ anim1 @ bi1a @ noteqd bian1);
+
+theorem hoareCfg_I {ks fr} (k2: nat ks)
+  (e: $ k = ksCfg ks -> k3 = k2 $)
+  (h1: $ G /\ ks e. KernelState -> k2 e. Config $)
+  (h2: $ G /\ ks e. KernelState -> PageMapping (getMemory (ksCfg ks)) C_ PageMapping (getMemory k2) $)
+  (h3: $ G /\ ks e. KernelState -> readException k2 = readException (ksCfg ks) $)
+  (h4: $ G /\ ks |=s sn fr *s P /\ ~ksFault ks -> setCfg ks k2 |=s sn fr *s Q $):
+  $ G -> hoareCfg k k3 P Q $ =
+(focus
+  (suffices 'h)
+  '(iald @ syl5ibrcom (rsyl eqcom @ rsyl e ,eqtac) @ iand h _) (swap)
+  '(impd @ exp @ exp @
+    iand (anwl @ mpbird (anwr setCfgT) @ iand h1 @ sseld h2 @ anwr ksMappingT) @
+    bi2a @ eqeq1d @ syl5eq (readExceptioneq ksCfg_setCfg) h3)
+  '(iald @ exp @ casesd (anwl @ syl6 s_sat_fault h) @ exp h4));
+
+theorem hoareCfg_tr:
+  $ hoareCfg k k2 P Q -> hoareCfg k2 k3 Q R -> hoareCfg k k3 P R $ =
+(named '(com12 @ alimd @ imim2d @ ealie @ sylbid ,eqtac @ a1i @
+  eim ksCfg_setCfg @ animd (imim2d @ anwl @ imim2i @ bi1i @ ksFaulteq set_setCfg) @
+  anwr @ al2imi @ imim2d @ imim2i @ bi1i @ s_sateq1 set_setCfg));
+
+theorem hoareCfg_setException:
+  $ e e. Option Exception -> readException k != suc exGPF ->
+    hoareCfg k (setException k e) emp (^e (e != suc exGPF)) $ =
+(named @ focus
+  '(exp @ iald @ com12 @ mpbii _ ,(eqtac-with #f))
+  '(iand (anwr @ syl5 anr absurd) @ iald @ exp @ casesda _ _)
+  '(syl s_sat_fault @
+    iand (sylan setCfgExceptionT (syl s_sat_ks anlr) an3l) @
+    syl5eq (readExceptioneq ksCfg_setCfg) @ syl5eq read_setException anr)
+  '(orrd @ mpbird _ @ mpd (rsyl anllr @ con3 anr) anlr)
+  '(exeqd @ aneqd (eleq2d @ s_sepeq2d @ sylib s_elift_eqtop anr) @
+    sylan heap_sat_setException (syl s_sat_ks anlr) an3l));
+
+theorem hoareCfg_sn_d {q ks} (k2: nat ks)
+  (e: $ k = ksCfg ks -> k3 = k2 $)
+  (ha: $ G -> P =>*s sn (sn (p <> v)) $)
+  (hb: $ G -> P =>*s ^s a $)
+  (h1: $ G /\ ks e. KernelState -> k2 e. Config $)
+  (h2: $ G /\ ks e. KernelState -> PageMapping (getMemory (ksCfg ks)) C_ PageMapping (getMemory k2) $)
+  (h3: $ G /\ ks e. KernelState -> readException k2 = readException (ksCfg ks) $)
+  (h4: $ G /\ a /\ q != p -> read_place (setCfg ks k2) @ q = read_place ks @ q $)
+  (h5: $ G /\ a /\ read_place ks @ p = v -> read_place (setCfg ks k2) @ p = v2 $):
+  $ G -> hoareCfg k k3 P (sn (sn (p <> v2))) $ =
+(named @ focus
+  (suffices 'H1)
+  '(hoareCfg_I e h1 h2 h3 @ s_sat_frame_sn
+      (syl h4 @ anim1 H1) (syl h5 @ anim1 H1)
+      (sylc s_weak_sat (syl s_sep_weak2 @ anwll ha) anlr) anr @
+    sylan (mpbird (anwr setCfgT) @ iand h1 @ sseld h2 @ anwr ksMappingT)
+    anll (syl s_sat_ks anlr))
+  '(iand anll @ mpbid (sylan s_sat_lift (syl s_sat_ks anlr) anr) @
+    sylc s_weak_sat (syl s_sepwr (anwll hb)) anlr));
+
+theorem hoareCfg_sn {q ks} (k2: nat ks)
+  (e: $ k = ksCfg ks -> k3 = k2 $)
+  (h1: $ G /\ ks e. KernelState -> k2 e. Config $)
+  (h2: $ G /\ ks e. KernelState -> PageMapping (getMemory (ksCfg ks)) C_ PageMapping (getMemory k2) $)
+  (h3: $ G /\ ks e. KernelState -> readException k2 = readException (ksCfg ks) $)
+  (h4: $ G /\ q != p -> read_place (setCfg ks k2) @ q = read_place ks @ q $)
+  (h5: $ G /\ read_place ks @ p = v -> read_place (setCfg ks k2) @ p = v2 $):
+  $ G -> hoareCfg k k3 (sn (sn (p <> v))) (sn (sn (p <> v2))) $ =
+'(hoareCfg_sn_d e (a1i s_weak_id) (a1i s_weak_top2)
+    h1 h2 h3 (syl h4 @ anim1 anl) (syl h5 @ anim1 anl));
 
 -- --| A hoare triple with explicit "modification" operand `R`, without reference to the
 -- --| step relation as in `hoare`. This is useful for carrying hoare triple information
@@ -713,7 +910,7 @@ $ ^s (a + len v e. u64 /\ v e. List u8) /\s
 theorem s_mem_T: $ ~ksFault k /\ k |=s s_mem P a v -> a + len v e. u64 /\ v e. List u8 $ =
 (named '(rsyl (imp @ bi1d s_sat_def) @ eex @ anwl @ sylbi el_s_an @ anwl @ sylbi el_s_lift anr));
 
-theorem s_mem_0: $ s_mem P a 0 == ^s (a e. u64) /\s emp $ =
+theorem s_mem_0: $ s_mem P a 0 == ^e (a e. u64) $ =
 (named '(s_aneq (s_lifteq @ bitr (bian2 elList0) @ eleq1 @ eqtr (addeq2 len0) add02) @
   eqstr (s_Sepeq1 @ nseq @ eqtr (uptoeq len0) upto0) s_Sep_0));
 
@@ -821,8 +1018,42 @@ prefix s_flags: $flags>->$ prec 80;
 @_ local def s_RIP (a): set = $ ^s (a e. u64) /\s sn (sn (X86P_RIP <> a)) $;
 prefix s_RIP: $RIP>->$ prec 80;
 
+theorem s_RIP_readRIP: $ ~ksFault k /\ k |=s RIP>-> ip -> readRIP (ksCfg k) = ip $ =
+'(syl5eqr read_place_RIP @ imp @ sylbid s_sat_anlift1 @ syl5 anr @
+  sylbid s_sat_sn @ a1i @ sylbi heap_sat_sn anr);
+
+theorem hoareCfg_writeRIP:
+  $ v e. u64 -> hoareCfg k (writeRIP k v) (RIP>-> ip) (RIP>-> v) $ =
+(named '(mpbird (hoareCfgeq4d @ s_bian1 @ mpbir s_sn_sstop isfsn) @
+  hoareCfg_sn_d ,eqtac
+    (a1i @ ss_s_weak s_anr) (a1i @ ss_s_weak s_anl)
+    (sylan writeRIP_T (anwr ksCfgT) anl)
+    (a1i @ eqssr @ PageMappingeq getMemory_writeRIP)
+    (a1i readException_writeRIP)
+    (anwr read_place_writeRIP_ne)
+    (a1i @ eqtr read_place_RIP @ eqtr (readRIPeq ksCfg_setCfg) readRIP_writeRIP)));
+
+theorem s_RIP_writeRIP: $ v e. u64 -> k |=s R *s RIP>-> ip ->
+  setCfg k (writeRIP (ksCfg k) v) |=s R *s RIP>-> v $ =
+'(syl hoareCfg_frame_E hoareCfg_writeRIP);
+
+-- theorem hoare_decode_step {k fr}
+--   (h1: $ G -> P =>*s ip >=>c l $)
+--   (h2: $ G -> decode ast l $)
+--   (h3: $ G -> len l = n $)
+--   (h4: $ G /\ k |=s sn fr *s RIP>-> (ip +_64 n) *s P /\ ~ksFault k ->
+--     (P. k2 execXAST k ast k2 -> setCfg k k2 |=s sn fr *s RIP>-> (ip +_64 n) *s Q) $)
+--   : $ G -> hoare T (RIP>-> ip *s P) (RIP>-> (ip +_64 n) *s Q) $ =
+-- '(hoare_step @ mpbird (pimeq1d @
+--     bitrd (sylan decode_step (mpbird (readMemXeq2d @
+--         sylan s_RIP_readRIP anr @ syl (s_weak_sat @ s_sepwr s_sepl) anlr) @
+--       sylan s_code_readMemX anr @
+--       sylc s_weak_sat (anwll @ syl s_sepwr @ syl s_sepwr h1) anlr) (anwll h2)) @
+--     bitrd (syl bian1 @ _) _) @
+--   _);
+
 --| The null layout.
-@_ local def L_emp: set = $ S\ a, S\ sz, (^s (a e. u64 /\ sz = 0) /\s emp) $;
+@_ local def L_emp: set = $ S\ a, S\ sz, (^e (a e. u64 /\ sz = 0)) $;
 
 --| A sequential composition of layouts.
 @_ local def L_seq (L1 L2: set): set =
@@ -940,7 +1171,7 @@ $ S\ v, Sum (ocasep (v = a /\ v e. core_of ty) (has_ty v ty)) (ty_Rep v ty) $;
 --| The separating conjunction lifted over functions on `vs`.
 @_ local def v_sep (P Q): set = $ S\ vs, (P @' vs *s Q @' vs) $;
 
-@_ local def trim0 (n: nat): nat = $ lower (n i^i Xp (Compl (sn 0)) _V) $;
+@_ local def trim0 (n: nat): nat = $ lower ((\ i, n @ i) i^i Xp (Compl (sn 0)) _V) $;
 
 --| The `n`th variable as a higher order function from the variable list to a value.
 @_ local def vn (n: nat): set = $ \ vs, vs @ n $;
@@ -981,9 +1212,9 @@ $ S\ vs, (E.s a e. _V, (has_ty a ty *s
 --   (h2: $ G -> jump_ok T c 0 fr ret L_emp P $):
 --   $ G -> jump_ok T c 0 fr ip L P $ =
 -- '(mpd h2 @ syl hoare_frame_ok @ syl hoare_frame_r @
---   _);
+--   hoare_step _ _);
 
--- theorem th
+-- theorem th (vs)
 --   (h1: $ G -> ret e. u64 $)
 --   (h2: $ G -> jump_ok progT prog 0 fr ret L_emp
 --     (v_ex x2
@@ -1024,7 +1255,7 @@ $ S\ vs, (E.s a e. _V, (has_ty a ty *s
 --| better it's possible to make this logarithmic using binary random-access lists.
 @_ local def cons16 (a l: nat): set =
 $ ,(letrec ([(f n a x)
-    @ if {n = 1} '(cons ,a ,x) (f {n - 1} '(fst ,a) @ f {n - 1} '(snd ,a) x)])
+    @ if {n = 0} '(cons ,a ,x) (f {n - 1} '(fst ,a) @ f {n - 1} '(snd ,a) x)])
     (f 4 'a 'l)) $;
 
 do {

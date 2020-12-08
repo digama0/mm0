@@ -537,3 +537,47 @@ theorem decode_determ2:
 
 theorem decode_determ: $ decode ast1 l /\ decode ast2 l -> ast1 = ast2 $ =
 '(anld @ sylbir (aneq2i @ decodeeq2 append02) decode_determ2);
+
+theorem readMemory1_determ: $ readMemory1 ps1 m a v1 /\ readMemory1 ps2 m a v2 -> v1 = v2 $ =
+(named '(determ_anwr @ determ_ex @ anrd @ sylib prth @ determ_anwl @ imp eqtr3));
+
+theorem readMemory_determ: $ readMemory ps1 m a l1 /\ readMemory ps2 m a l2 ->
+  len l1 <= len l2 -> E. r l2 = l1 ++ r $ =
+(named @ focus
+  '(ax_mp (!! eale l ,(eqtac-gen 'l2)) @ ax_mp (!! eale b ,(eqtac-gen 'a)) _)
+  (induct '(listind) 'l1 _ _)
+  '(ax_gen @ ax_gen @ a1i @ a1i @ ax_mp (iexe ,eqtac) @ eqcom append0)
+  '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
+    exp @ syl5bi (leeq1 lenS) @ exp @
+    mpd (sylib excons @ sylib (noteq leneq0) @ syl ltner @ anwr @ lelttr le01) @
+    sylbi anass @ imp @ com23 @ eexd @ eexd @ syl5ibrcom ,eqtac @
+    impd @ syl5bi (aneq readMemoryS readMemoryS) @
+    syl5bi an4 @ ealie @ ealde @ syld (bi1d ,eqtac) @ a1i @ impd @ com12 @ imim2d @
+    imimd (a1i @ bi1i @ bitr4 (leeq2 lenS) lesuc) @ eximd @ exp @
+    syl6eqr appendS @ conseqd (anwl @ eqcomd readMemory1_determ) anr));
+
+theorem readMem_determ: $ readMem k a l1 /\ readMem k a l2 ->
+  len l1 <= len l2 -> E. r l2 = l1 ++ r $ = '(determ_anwr readMemory_determ);
+
+theorem readMemX_determ: $ readMemX k a l1 /\ readMemX k a l2 ->
+  len l1 <= len l2 -> E. r l2 = l1 ++ r $ = '(determ_anwr readMemory_determ);
+
+theorem readMemX_decode_determ_lem:
+  $ (readMemX k a l1 /\ decode ast1 l1) /\
+    (readMemX k a l2 /\ decode ast2 l2) -> len l1 <= len l2 -> l1 = l2 $ =
+(named '(syld (determ_anwl readMemX_determ) @ eexd @ determ_anwr @ com12 @
+  mpbiri (rsyl decode_determ2 @ anwr @ syl5eqr append02 @ appendeq2d eqcom) ,eqtac));
+
+theorem readMemX_decode_determ:
+  $ (readMemX k a l1 /\ decode ast1 l1) /\
+    (readMemX k a l2 /\ decode ast2 l2) -> l1 = l2 /\ ast1 = ast2 $ =
+(focus
+  (suffices 'h) '(iand h @ determ_subst h ,eqtac biidd @ determ_anwr decode_determ)
+  '(mpi leorle @ eord readMemX_decode_determ_lem
+    (syl6 eqcom @ rsyl ancom readMemX_decode_determ_lem)));
+
+theorem decode_step: $ readMemX k (readRIP k) l /\ decode ast l ->
+  (step k k2 <-> readException k = 0 /\ execXAST (writeRIP k (readRIP k +_64 len l)) ast k2) $ =
+'(aneqd (anwll bian1) @ bitrd (!! exeqd l2 @ syl6bb exan1 @
+    !! exeqd ast2 @ syl6bb anass @ aneq1d @ ibid (expcom readMemX_decode_determ) @
+    com12 @ bi2d ,eqtac) @ exeqed @ exeqed ,eqtac);
