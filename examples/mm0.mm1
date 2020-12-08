@@ -1180,7 +1180,7 @@ theorem el_Proof_aux: $ p < bd -> (p e. Proof_aux bd env <-> Proof env p) $ =
   (focus '(a1d @ iald @ a1d @ mpbiri (elneq2 @ eqtr4 Proof_aux_0 Proof_aux_0) ,h))
   (focus
     '(sylbi exsnoc @ com12 @ sylibr eexb @ imp @ alimd @ com23 @
-      eexd @ expcom @ imld (mpbiri snoclt @ lteq2d anl) _)
+      eexd @ expcom @ eimd (mpbiri snoclt @ lteq2d anl) _)
     (def h0 '(Proof_auxeq2d @ eqtrd anll @ snoceq2d anr))
     (def h1 '(elneq2d @ syl6eq Proof_aux_b0 ,h0))
     (def h2 '(syl6bb Proof_aux_Def @ elneq2d ,h0))
