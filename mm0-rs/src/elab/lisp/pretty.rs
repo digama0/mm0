@@ -411,10 +411,7 @@ impl<'a> Pretty<'a> {
         }
         Type::Reg(s, ds) => {
           buf = self.append_doc(buf, str!("("));
-          let lhs = format!("{}", bis1.iter().map(|(a, _)| {
-            bvars.push(a.unwrap_or(AtomID::UNDER));
-            self.fe.to(a)
-          }).format(" "));
+          let lhs = format!("{}", bis1.iter().map(|(a, _)| self.fe.to(a)).format(" "));
           buf = self.append_doc(buf, self.alloc(Doc::text(lhs)));
           buf = self.append_doc(buf, str!(": "));
           buf = self.append_annot(buf, Annot::SortName(s),
