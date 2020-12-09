@@ -18,15 +18,17 @@ window.onload = () => {
 
   let graph = [];
   for (const row of document.getElementsByClassName('proof')[0].getElementsByTagName('tr')) {
-    console.log(row);
     const cells = row.getElementsByTagName('td');
     const stepTd = cells[0];
     if (stepTd) {
       for (const cell of cells) wrap(cell);
       let step = {deps: []};
       step.vdeps = step.deps;
-      let thmTd = cells[2].getElementsByClassName('thm')[0];
-      if (thmTd) step.vthm = step.thm = thmTd.innerHTML;
+      const thmTd = cells[2];
+      step.vhtml = step.html = thmTd.innerHTML;
+      const inner = thmTd.getElementsByClassName('thm')[0] ||
+                    thmTd.getElementsByClassName('ax')[0];
+      if (inner) step.vthm = step.thm = inner.innerHTML;
       const rowId = row.id;
       stepTd.onclick = () => select(rowId);
       for (const hyp of cells[1].getElementsByTagName('a')) {
@@ -40,7 +42,7 @@ window.onload = () => {
   function setThm(i, tr, thm) {
     graph[i].vthm = thm;
     const td = tr.children[2].children[0];
-    td.innerHTML = `<a class="thm" href="${thm}.html">${thm}</a>`;
+    graph[i].vhtml = td.innerHTML = `<a class="thm" href="${thm}.html">${thm}</a>`;
     return td;
   }
   function setHyps(i, tr, deps) {
@@ -48,13 +50,19 @@ window.onload = () => {
     tr.children[1].children[0].innerHTML =
       deps.map(n => { return `<a href="#${n+1}">${n+1}</a>`; }).join(', ');
   }
+  function restore(i, tr) {
+    const td = tr.children[2].children[0];
+    graph[i].vhtml = td.innerHTML = graph[i].html;
+    graph[i].vthm = graph[i].thm;
+    setHyps(i, tr, graph[i].deps);
+    return td;
+  }
 
   function unhide(i) {
     let j = i;
     let tr = getTr(j);
     while (true) {
-      setThm(j, tr, graph[j].thm);
-      setHyps(j, tr, graph[j].deps);
+      restore(j, tr);
       j = graph[j].deps[0];
       tr = getTr(j);
       tr.classList.remove('hidden');
