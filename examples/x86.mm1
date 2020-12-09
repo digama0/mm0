@@ -2658,7 +2658,7 @@ pub theorem finiteException: $ finite Exception $ = 'finns;
 --| General protection fault, issued on invalid read/write
 @_ def exGPF: nat = $ 1 $;
 pub theorem exSysCallT: $ exSysCall e. Exception $ = '(mpbir elupto d0lt2);
-pub theorem exGPFT: $ exGPF e. Exception $ = '(mpbir elupto d1lt2);
+pub theorem exGPF_T: $ exGPF e. Exception $ = '(mpbir elupto d1lt2);
 
 --| ```
 --| data Config = {
@@ -2764,10 +2764,10 @@ theorem write_el_Memory
   (h3: $ G -> prot e. Prot $) (h4: $ G -> b e. u8 $)
   (h5: $ G -> m2 == write m a (prot <> b) $): $ G -> m2 e. Memory $ =
 '(writeArrow h1 h2 (xpTd h3 h4) (eqscomd h5));
-pub theorem writeMemory1T (m a b m2 e: nat):
+theorem writeMemory1T_sn (m a b m2 e: nat):
   $ writeMemory1 m a b m2 e ->
     m e. Memory /\ a e. u64 /\ b e. u8 /\
-    m2 e. Memory /\ e e. Option Exception $ =
+    m2 e. Memory /\ e e. Option (sn exGPF) $ =
 (named '(sylibr anass @ anim2a @ eexd @ eexd @ impd @ exp @ eorda
   (iand
     (write_el_Memory an4l an3lr
@@ -2776,64 +2776,92 @@ pub theorem writeMemory1T (m a b m2 e: nat):
     (mpbiri opt0 (eleq1d @ anwr anrr)))
   (iand
     (mpbird (eleq1d @ sylib nsinj @ anwr anrl) an4l)
-    (mpbird (eleq1d @ anwr anrr) @ optSd @ a1i exGPFT))));
+    (mpbird (eleq1d @ anwr anrr) @ optSd @ a1i snid))));
 
-@_ local def writeMemory_aux (l: nat): nat =
+pub theorem writeMemory1T (m a b m2 e: nat):
+  $ writeMemory1 m a b m2 e ->
+    m e. Memory /\ a e. u64 /\ b e. u8 /\
+    m2 e. Memory /\ e e. Option Exception $ =
+'(rsyl writeMemory1T_sn @ anim2 @ ssel @ mpbir optss @ mpbir snss exGPF_T);
+
+@_ local def setMem1 (m a b: nat): nat =
+$ if (PROT_READ + PROT_WRITE C_ fst (m @ a))
+    (lower (write m a (fst (m @ a) <> b)) <> 0)
+    (m <> suc exGPF) $;
+
+theorem writeMemory1_setMem1: $ writeMemory1 m a b m2 e <->
+  m e. Memory /\ a e. u64 /\ b e. u8 /\ m2 <> e = setMem1 m a b $ =
+(named @ focus
+  '(aneq2i @ bitr (bian2exi @ bian2exi @ aneq2a @ casesda _ _) @ bian1 expr)
+  (def h1 '(syl6eq fstpr @ fsteqd anl))
+  (def (f x y z) '(bitr4d (anwr ,x) @
+    bitrd (eqeq2d @ syl ,y @ mpbird (rsyl ,h1 ,eqtac) anr) @
+    syl6bbr (aneq1i ,z) @ syl6bb prth @ eqeq2d @ rsyl ,h1 ,eqtac))
+  (f 'ifppos 'ifpos '(eqlower2 @ writefin finns))
+  (f 'ifpneg 'ifneg 'nsinj));
+
+theorem setMem1_T2: $ m e. Memory /\ a e. u64 /\ b e. u8 ->
+  setMem1 m a b = m2 <> e -> m2 e. Memory /\ e e. Option (sn exGPF) $ =
+'(syl5 eqcom @ exp @ sylbir writeMemory1_setMem1 @
+  rsyl writeMemory1T_sn @ anim1 anr);
+
+theorem setMem1_T: $ m e. Memory /\ a e. u64 /\ b e. u8 ->
+  setMem1 m a b e. Xp Memory (Option (sn exGPF)) $ =
+'(sylibr elxp @ mpi (eqcom fstsnd) setMem1_T2);
+
+@_ local def setMemAux (l: nat): nat =
 $ lrec
-  (\. m e. lower Memory, \. a e. u64, sn (m <> 0))
+  (\. m e. lower Memory, \. a e. u64, m <> 0)
   (\\ b, \\ z, \ ih, \. m e. lower Memory, \. a e. u64,
-    sep (lower (Xp Memory (Option Exception))) (S\ m3, {e |
-      E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
-      ifp (e1 = 0)
-        (m3 <> e e. ih @ m2 @ (a +_64 1))
-        (m3 = m2 /\ e = e1))}))
+    if (snd (setMem1 m a b) = 0)
+      (ih @ fst (setMem1 m a b) @ (a +_64 1))
+      (setMem1 m a b))
   l $;
+@_ local def setMem (m a l: nat): nat = $ setMemAux l @ m @ a $;
+
+theorem setMem0: $ m e. Memory /\ a e. u64 -> setMem m a 0 = m <> 0 $ =
+(named '(mpi {lrec0 : $ setMemAux 0 = _ $} @
+  apprlamed1 (sylibr (ellower finiteMemory) anl) @
+  apprlamed2 anlr ,eqtac));
+
+theorem setMemS: $ m e. Memory /\ a e. u64 ->
+  setMem1 m a b = m2 <> e1 ->
+  setMem m a (b : l) = if (e1 = 0) (setMem m2 (a +_64 1) l) (m2 <> e1) $ =
+'(exp @
+  mpd (syl5eq {lrecS : $ setMemAux (b : l) = _ @ (_ <> _ <> setMemAux l) $} @
+    appslamed @ appslamed @ applamed @ rlameq2d @ rlameq2d ,eqtac) @
+  apprlamed1 (sylibr (ellower finiteMemory) anll) @
+  apprlamed2 anllr @ eqtrd ,eqtac @ rsyl anllr @
+  ifeqd (eqeq1d @ syl6eq sndpr sndeq) (setMemeq1d @ syl6eq fstpr fsteq) id);
+
+theorem setMemT: $ m e. Memory /\ a e. u64 /\ l e. List u8 ->
+  setMem m a l e. Xp Memory (Option (sn exGPF)) $ =
+(named @ focus
+  (def (f x) '(eale ,(eqtac-gen x)))
+  '(ax_mp ,(f 'm) @ ax_mp ,(f 'a) _)
+  (induct '(listind) 'l
+    '(ax_gen @ ax_gen @ mpbird (eleq1d @ anwl setMem0) @ xpTd anll opt0d)
+    '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
+      ealie @ ealde @ sylbid ,eqtac @ a1i @ expcom @
+      mpbird (eleq1d @ anwll @ mpi (eqcom fstsnd) setMemS) _))
+  (have 'H2 '(sylib elListS anlr))
+  (have 'H1 '(sylan setMem1_T anll (anld H2)))
+  '(sylan ifT _ @ sylibr (eleq1 fstsnd) H1)
+  '(mpd (iand (iand (syl xpfst H1) (a1i add64T)) (anrd H2)) anr));
+
+theorem setMemT2: $ m e. Memory /\ a e. u64 /\ l e. List u8 ->
+  setMem m a l = m2 <> e ->
+  m2 e. Memory /\ e e. Option (sn exGPF) $ =
+'(syl5ibrcom (bicomd @ syl6bb prelxp @ eleq1) setMemT);
 
 @_ abstract def writeMemory (m a l m2 e: nat): wff =
-$ m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 <> e e. writeMemory_aux l @ m @ a $;
+$ m e. Memory /\ a e. u64 /\ l e. List u8 /\ setMem m a l = m2 <> e $;
 
 pub theorem writeMemory0 (m a m2 e: nat):
   $ m e. Memory /\ a e. u64 ->
     (writeMemory m a 0 m2 e <-> m2 = m /\ e = 0) $ =
-(named '(bitrd (syl bian1 @ mpi elList0 ian) @
-  syl6bb prth @ syl6bb elsn @ elneq2d @
-  mpi {lrec0 : $ writeMemory_aux 0 = _ $} @
-  apprlamed1 (sylibr (ellower finiteMemory) anl) @
-  apprlamed2 anlr @ sneqd @ preq1d anlr));
-
-theorem writeMemoryS1 {m2 e1: nat} (m a b l m3 e: nat):
-  $ m e. Memory /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
-    (writeMemory m a (b : l) m3 e <->
-      m3 e. Memory /\ e e. Option Exception /\
-      E. m2 E. e1 (writeMemory1 m a b m2 e1 /\
-      ifp (e1 = 0)
-        (writeMemory m2 (a +_64 1) l m3 e)
-        (m3 = m2 /\ e = e1))) $ =
-(named @ focus
-  '(bitrd (sylbir (bitr4 (aneq2i elListS) anass) bian1) @ bitrd (elneq2d @ mpd _ _) _)
-  (focus '(syl5eq {lrecS : $ writeMemory_aux (b : l) = _ @ (_ <> _ <> writeMemory_aux l) $} @
-    appslamed @ appslamed @ applamed @ rlameq2d @ rlameq2d @ sepeq2d @ sabeqd @
-    abeqd @ exeqd @ exeqd @ bitrd (aneq1d @ writeMemory1eq3d anllr) @
-    syl aneq2a @ exp @ ifpeq2d @ elneq2d @ appneq1d @ appneq1d anlr))
-  (focus '(apprlamed1 (sylibr (ellower finiteMemory) an3l) @
-    apprlamed2 an3lr @ sepeq2d @ sabeqd @ abeqd @ exeqd @ exeqd @
-    aneqd (writeMemory1eqd anlr anr eqidd eqidd eqidd) @
-    ifpeq2d @ elneq2d @ appeq2d @ add64eq1d anr))
-  (focus '(syl5bb elsep @
-    aneqd (a1i @ bitr (ellower @ xpfin finiteMemory @ optfin finiteException) prelxp) @
-    elsabed @ elabed @ exeqd @ rexeqda @ ifpeqd biidd
-      (bitr4d (eleq1d @ preqd anllr anlr) @ syl bian1 @
-        iand (iand (anwr @ rsyl writeMemory1T anlr) @ a1i add64T) an3lr)
-      (aneqd (eqeq1d anllr) (eqeq1d anlr)))));
-
-theorem writeMemoryT_aux (m a l m2 e: nat):
-  $ writeMemory m a l m2 e -> m e. Memory /\ a e. u64 /\ l e. List u8 /\ (m2 e. Memory /\ e e. Option Exception) $ =
-(named '(mpand anl @ iand anr @ impcom @ casesda
-  (syld (bi1d @ bitrd (writeMemoryeq3d anr) @ anwll writeMemory0) @
-    syl5ibrcom (aneqd (eleq1d anl) (eleq1d anr)) @ iand an3l opt0d)
-  (syl6 anl @ bi1d @ bitr3d (writeMemoryeq3d @ anwr consfstsnd) @
-    sylan (sylbir anass writeMemoryS1) anll @ sylib elListS @
-    mpbird (eleq1d @ anwr consfstsnd) anlr)));
+'(bitrd (syl bian1 @ mpi elList0 ian) @
+  syl6bb prth @ syl6bb eqcomb @ eqeq1d setMem0);
 
 pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
   $ m e. Memory /\ a e. u64 /\ b e. u8 /\ l e. List u8 ->
@@ -2842,15 +2870,25 @@ pub theorem writeMemoryS {m2 e1: nat} (m a b l m3 e: nat):
       ifp (e1 = 0)
         (writeMemory m2 (a +_64 1) l m3 e)
         (m3 = m2 /\ e = e1))) $ =
-'(bitrd writeMemoryS1 @ syl bian1a @ eexd @ eexd @ impd @ exp @ eord
-  (exp @ rsyl anrr @ anrd writeMemoryT_aux)
-  (syl5 anr @ syl5ibrcom (aneqd (eleq1d anl) (eleq1d anr)) @
-    anwr @ rsyl writeMemory1T @ anim1 anr));
+'(bitr4d (syl bian1 @ iand anll @ sylibr elListS @ anim1 anr) @
+  syl6bb (bian1 expr) @ bian2exd @ bian2exd @
+  bitr4d (aneq1d @ anwl @ bitr4g writeMemory1_setMem1 eqcomb bian1) @
+  aneq2da @ bitr4d (eqeq1d @ imp @ anwll setMemS)
+  ,(let ([(f x y z) '(bitr4d (anwr ,x) @ bitr4d (eqeq1d @ anwr ,y) ,z)])
+  '(casesda
+    ,(f 'ifppos 'ifpos '(sylan bian1
+      (iand (anld @ mpd anlr @ anw3l setMem1_T2) (a1i add64T)) anllr))
+    ,(f 'ifpneg 'ifneg '(a1i @ bitr3 prth eqcomb)))));
+
+theorem writeMemoryT_sn (m a l m2 e: nat):
+  $ writeMemory m a l m2 e ->
+    m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 e. Memory /\ e e. Option (sn exGPF) $ =
+'(sylibr anass @ anim2a setMemT2);
 
 pub theorem writeMemoryT (m a l m2 e: nat):
   $ writeMemory m a l m2 e ->
     m e. Memory /\ a e. u64 /\ l e. List u8 /\ m2 e. Memory /\ e e. Option Exception $ =
-'(sylibr anass writeMemoryT_aux);
+'(rsyl writeMemoryT_sn @ anim2 @ ssel @ mpbir optss @ mpbir snss exGPF_T);
 
 theorem writeMemory02 (m a m2 e: nat):
   $ writeMemory m a 0 m2 e <-> m e. Memory /\ a e. u64 /\ m2 = m /\ e = 0 $ =
@@ -2892,6 +2930,8 @@ theorem readFlags_setMemory: $ readFlags (setMemory k m) = readFlags k $ = 'pi22
 theorem get_setMemory: $ getMemory (setMemory k m2) = m2 $ = 'pi222pr;
 theorem set_setMemory: $ setMemory (setMemory k m2) m3 = setMemory k m3 $ =
 '(preq fstpr @ preq pi21pr @ preq1 pi221pr);
+theorem set_getMemory: $ setMemory k (getMemory k) = k $ =
+'(eqtr (preq2 @ eqtr (preq2 fstsnd) fstsnd) fstsnd);
 
 @_ def EA: set = $ Sum u64 (Sum Regs u64) $;
 @_ def EA_i (q: nat): nat = $ b0 q $;
@@ -3121,6 +3161,15 @@ pub theorem setRegT (k r q: nat):
 theorem setRegMem: $ getMemory (setReg k r q) = getMemory k $ =
 '(sndeq pi22pr);
 
+theorem readRIP_setReg: $ readRIP (setReg k r q) = readRIP k $ = '(sndeq fstpr);
+theorem readFlags_setReg: $ readFlags (setReg k r q) = readFlags k $ = '(fsteq pi22pr);
+theorem getMemory_setReg: $ getMemory (setReg k r q) = getMemory k $ = '(sndeq pi22pr);
+theorem readException_setReg: $ readException (setReg k r q) = readException k $ = '(fsteq fstpr);
+theorem read_setReg_ne: $ r2 != r -> readReg (setReg k r q) r2 = readReg k r2 $ =
+'(syl5eq (appeq1 @ mpbir (eqlower2 @ writefin finns) pi21pr) writeNe);
+theorem read_setReg: $ readReg (setReg k r q) r = q $ =
+'(eqtr (appeq1 @ mpbir (eqlower2 @ writefin finns) pi21pr) writeEq);
+
 @_ abstract def writeReg (k sz r v: nat): nat =
 $ if (wsizeBits sz = 8)
     (if (~true (snd sz) /\ 2 e. r)
@@ -3206,7 +3255,7 @@ pub theorem writeRIP_T (k q: nat):
      (syl6bb mkCfgT @ eleq1d @ syl6eq writeRIPVal writeRIPeq1)) @
   anim1d @ anim1d @ anim1d @ anim2d ax_1));
 
-theorem readRIP_writeRIP: $ readRIP (writeRIP k v) = v $ = 'pi12pr;
+theorem read_writeRIP: $ readRIP (writeRIP k v) = v $ = 'pi12pr;
 theorem readReg_writeRIP: $ readReg (writeRIP k v) r = readReg k r $ = '(appneq1 @ fsteq sndpr);
 theorem readFlags_writeRIP: $ readFlags (writeRIP k v) = readFlags k $ = '(pi21eq sndpr);
 theorem getMemory_writeRIP: $ getMemory (writeRIP k v) = getMemory k $ = '(pi22eq sndpr);
@@ -3267,6 +3316,12 @@ pub theorem writeFlagsT (k f: nat):
   syl5ibrcom (imeqd (syl6bb mkCfgT eleq1)
      (syl6bb mkCfgT @ eleq1d @ syl6eq writeFlagsVal writeFlagseq1)) @
   anim1d @ anim2d ax_1));
+
+theorem readRIP_writeFlags: $ readRIP (writeFlags k f) = readRIP k $ = '(sndeq fstpr);
+theorem readReg_writeFlags: $ readReg (writeFlags k f) r = readReg k r $ = '(appneq1 pi21pr);
+theorem read_writeFlags: $ readFlags (writeFlags k f) = f $ = 'pi221pr;
+theorem getMemory_writeFlags: $ getMemory (writeFlags k f) = getMemory k $ = 'pi222pr;
+theorem readException_writeFlags: $ readException (writeFlags k f) = readException k $ = '(fsteq fstpr);
 
 @_ abstract def setCZSO (k: nat) (c z s o : wff): nat =
 $ writeFlags k (setOF (setSF (setZF (setCF (readFlags k) c) z) s) o) $;
@@ -3835,6 +3890,10 @@ theorem writeMemory1PM: $ writeMemory1 m a b m2 e -> PageMapping m C_ PageMappin
   (writePM anlr @ anwr anrl)
   (anwr @ syl eqssr @ PageMappingeqd @ sylib nsinj anrl)));
 
+theorem setMem1PM: $ m e. Memory /\ a e. u64 /\ b e. u8 ->
+  PageMapping m C_ PageMapping (fst (setMem1 m a b)) $ =
+'(syl writeMemory1PM @ sylibr writeMemory1_setMem1 @ mpi fstsnd ian);
+
 theorem writeMemoryPM: $ writeMemory m a l m2 e -> PageMapping m C_ PageMapping m2 $ =
 (named '(ax_mp (eale ,(eqtac-gen 'm)) @ ax_mp (eale ,(eqtac-gen 'a)) ,(induct '(listind) 'l
   '(ax_gen @ ax_gen @ sylbi writeMemory02 @ syl eqssr @ PageMappingeqd anlr)
@@ -3844,6 +3903,10 @@ theorem writeMemoryPM: $ writeMemory m a l m2 e -> PageMapping m C_ PageMapping 
     rsyl writeMemory1PM @ eorda
       (eimd anrr @ anwl sstr)
       (a1d @ impcom @ bi2d @ sseq2d @ PageMappingeqd anrl)))));
+
+theorem setMemPM: $ m e. Memory /\ a e. u64 /\ l e. List u8 ->
+  PageMapping m C_ PageMapping (fst (setMem m a l)) $ =
+'(syl writeMemoryPM @ mpi (eqcom fstsnd) ian);
 
 theorem writeMemPM: $ writeMem k a l k2 -> PageMapping (getMemory k) C_ PageMapping (getMemory k2) $ =
 (named '(anwr @ eex @ eex @ eex @ eex @ eex @ eex @
@@ -3924,6 +3987,7 @@ theorem ksCfg_setCfg: $ ksCfg (setCfg ks k2) = k2 $ = 'pi21pr;
 theorem ksMapping_setCfg: $ ksMapping (setCfg ks k2) = ksMapping ks $ = 'pi22pr;
 theorem set_setCfg: $ setCfg (setCfg ks k2) k3 = setCfg ks k3 $ =
 '(eqtr set_setMapping @ setMappingeq3 ksMapping_setCfg);
+theorem set_ksCfg: $ setCfg k (ksCfg k) = k $ = '(eqtr (preq fstsnd fstsnd) fstsnd);
 theorem setCfgT:
   $ ks e. KernelState -> (setCfg ks k2 e. KernelState <->
       k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2)) $ = 'setMappingT;

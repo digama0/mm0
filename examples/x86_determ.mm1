@@ -581,3 +581,14 @@ theorem decode_step: $ readMemX k (readRIP k) l /\ decode ast l ->
 '(aneqd (anwll bian1) @ bitrd (!! exeqd l2 @ syl6bb exan1 @
     !! exeqd ast2 @ syl6bb anass @ aneq1d @ ibid (expcom readMemX_decode_determ) @
     com12 @ bi2d ,eqtac) @ exeqed @ exeqed ,eqtac);
+
+theorem writeMemory1_determ:
+  $ writeMemory1 m a b m21 e1 /\
+    writeMemory1 m a b m22 e2 -> m21 = m22 /\ e1 = e2 $ =
+'(sylbi (aneq writeMemory1_setMem1 writeMemory1_setMem1) @
+  determ_anwr @ sylib prth @ imp eqtr4);
+
+theorem writeMemory_determ:
+  $ writeMemory m a l m21 e1 /\
+    writeMemory m a l m22 e2 -> m21 = m22 /\ e1 = e2 $ =
+'(determ_anwr @ sylib prth @ imp eqtr3);

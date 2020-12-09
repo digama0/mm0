@@ -168,7 +168,7 @@ do {
       (def ctx (ref! (eqtac-ctx #t hyps)))
       (add-locals G @ match-fn* @ ((eq L R) p)
         (def v (if ltr L R))
-        (match v [(mvar s _) (set! v (dummy! s))] [_])
+        (def v @ match v [(mvar s _) (def d (dummy! s)) (set! v d) d] [_ v])
         (set! ctx '([,v ,(verb p)] . ,(get! ctx))))
       (eqtac-core ltr (maybe-atom-map ctx) rhs)]
     [(eq L R) '(trud ,(eqtac-core ltr (maybe-atom-map @ eqtac-ctx #t hyps) t))])
@@ -986,13 +986,13 @@ theorem birexan1a (p a b: wff x) (h: $ c -> (a <-> E. x (p /\ b)) $):
   $ a /\ c <-> E. x (p /\ (b /\ c)) $ = '(bitr (biexan1a h) @ exeqi anass);
 theorem birexan2a (p b c: wff x) (h: $ a -> (b <-> E. x (p /\ c)) $):
   $ a /\ b <-> E. x (p /\ (a /\ c)) $ = '(bitr (biexan2a h) @ exeqi anlass);
-theorem birexrexa (p a: wff x) (b: wff x y) (h: $ p -> (a <-> E. y (q /\ b)) $):
+theorem birexrexa (q: wff y) (p: wff x) (a b: wff x y) (h: $ p -> (a <-> E. y (q /\ b)) $):
   $ E. x (p /\ a) <-> E. y (q /\ E. x (p /\ b)) $ = '(birexexi @ birexan2a h);
 theorem birexan1i (p a b: wff x) (h: $ a <-> E. x (p /\ b) $):
   $ a /\ c <-> E. x (p /\ (b /\ c)) $ = '(birexan1a @ a1i h);
 theorem birexan2i (p b c: wff x) (h: $ b <-> E. x (p /\ c) $):
   $ a /\ b <-> E. x (p /\ (a /\ c)) $ = '(birexan2a @ a1i h);
-theorem birexrexi (p a: wff x) (b: wff x y) (h: $ a <-> E. y (q /\ b) $):
+theorem birexrexi (q: wff y) (p: wff x) (a b: wff x y) (h: $ a <-> E. y (q /\ b) $):
   $ E. x (p /\ a) <-> E. y (q /\ E. x (p /\ b)) $ = '(birexrexa @ a1i h);
 theorem rexan1 (a) (p b: wff x): $ E. x (p /\ (a /\ b)) <-> a /\ E. x (p /\ b) $ =
 '(bitr (exeqi anlass) exan1);
@@ -1050,7 +1050,7 @@ theorem pimeq1d (G: wff) {x: nat} (p1 p2 q: wff x)
 theorem pimeq2d (G: wff) {x: nat} (p q1 q2: wff x)
   (h1: $ G -> (q1 <-> q2) $): $ G -> ((P. x p -> q1) <-> (P. x p -> q2)) $ =
 '(syl pimeq2 @ iald h1);
-theorem pimeqd (G: wff) {x: nat} (p1 p2 q1 q2: wff x)
+@(register-eqd 'pim) theorem pimeqd (G: wff) {x: nat} (p1 p2 q1 q2: wff x)
   (h1: $ G -> (p1 <-> p2) $) (h2: $ G -> (q1 <-> q2) $):
   $ G -> ((P. x p1 -> q1) <-> (P. x p2 -> q2)) $ =
 '(bitrd (pimeq1d h1) (pimeq2d h2));
@@ -4957,6 +4957,8 @@ theorem sndisj: $ sn a i^i A == 0 <-> ~a e. A $ = '(bitr ineq0 @ bitr snss elcpl
 theorem subsnsn: $ subsn (sn a) $ =
 (named '(mpbir (subsneq @ eqab2i elsn) subsnsn2));
 
+theorem thesn: $ the (sn a) = a $ = (named '(trud @ eqthed @ a1i elsn));
+
 theorem subsnsssn: $ subsn A <-> E. a A C_ sn a $ =
 (named '(bitr4 subsnex @ exeqi @ aleqi @ imeq2i elsn));
 
@@ -5102,6 +5104,10 @@ theorem optS: $ suc a e. Option A <-> a e. A $ =
 '(bitr elopt @ bitr (bior1 peano1) @ eleq1 @ sucsub1);
 theorem opt0d: $ G -> 0 e. Option A $ = '(a1i opt0);
 theorem optSd (h: $ G -> a e. A $): $ G -> suc a e. Option A $ = '(sylibr optS h);
+
+theorem optss: $ Option A C_ Option B <-> A C_ B $ =
+(named '(ibii (iald @ sylib (imeqi optS optS) ssel)
+    (iald @ sylibr (imeqi elopt elopt) @ orim2d ssel)));
 
 theorem optfin: $ finite A -> finite (Option A) $ =
 '(!! eex n @ !! iexde m @ !! iald x @ casesda

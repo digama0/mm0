@@ -762,7 +762,7 @@ def exSysCall: nat = $ 0 $;
 --| General protection fault, issued on invalid read/write
 def exGPF: nat = $ 1 $;
 theorem exSysCallT: $ exSysCall e. Exception $;
-theorem exGPFT: $ exGPF e. Exception $;
+theorem exGPF_T: $ exGPF e. Exception $;
 
 --| ```
 --| data Config = {
