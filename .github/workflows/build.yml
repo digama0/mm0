@@ -123,3 +123,9 @@ jobs:
     - name: x86.mmb
       working-directory: examples
       run: mm0-c x86.mmb < x86_join.mm0
+    - name: compiler.mm1
+      working-directory: examples
+      run: mm0-rs compile compiler.mm1 compiler.mmb
+    - name: compiler.mmb
+      working-directory: examples
+      run: mm0-c compiler.mmb < x86_join.mm0
