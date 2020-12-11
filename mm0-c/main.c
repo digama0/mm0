@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
     return ERR_MMAP;
   }
 #else
-  u8* result = (u8*) mmap(0, len, PROT_READ, MAP_FILE | MAP_PRIVATE, fd, 0);
+  u8* result = (u8*) mmap(0, len, PROT_READ, MAP_PRIVATE, fd, 0);
   if (result == MAP_FAILED) {
     fprintf(stderr, "Error: Unable to memory map file\n");
     return ERR_MMAP;
