@@ -214,6 +214,25 @@ theorem orifp_ass (h: $ (a \/ (b \/ c) -> d) /\ (a \/ (b \/ c) <-> e) $):
 theorem orifp_id: $ (n = i /\ p -> i <= n) /\ (n = i /\ p <-> n = i /\ p) $ =
 '(iani (anwl eqler) biid);
 
+theorem determ_eqeq (h1: $ a -> (p1 <-> p2) $) (h2: $ p1 /\ p2 -> a $):
+  $ p2 -> (p1 <-> a) $ =
+'(ibida (rsyl ancom h2) (impcom @ bi2d h1));
+
+theorem determ_eqsn (p1: wff x)
+  (h1: $ x = a -> (p1 <-> p2) $) (h2: $ p1 /\ p2 -> x = a $):
+  $ p2 -> {x | p1} == sn a $ =
+'(eqab1d @ syl6bbr elsn @ determ_eqeq h1 h2);
+
+theorem determ_exeqe2 (p1 q1: wff x)
+  (h1: $ x = a /\ b -> (p1 <-> p2) $) (h2: $ x = a -> (b /\ q1 <-> q2) $)
+  (h3: $ p1 /\ p2 -> x = a /\ b $): $ p2 -> (E. x (p1 /\ q1) <-> q2) $ =
+'(syl6bb (exeqe h2) @ exeqd @ syl6bb anass @ aneq1d @ determ_eqeq h1 h3);
+
+theorem determ_exeqe (p1 q1: wff x)
+  (h1: $ x = a -> (p1 <-> p2) $) (h2: $ x = a -> (q1 <-> q2) $)
+  (h3: $ p1 /\ p2 -> x = a $): $ p2 -> (E. x (p1 /\ q1) <-> q2) $ =
+'(syl6bb (exeqe h2) @ exeqd @ aneq1d @ determ_eqeq h1 h3);
+
 theorem determ_ex (a1: wff x1) (a2: wff x2)
   (h1: $ a1 /\ a2 -> c $): $ E. x1 a1 /\ E. x2 a2 -> c $ = '(imp @ eex @ eexda h1);
 
@@ -250,7 +269,7 @@ theorem determ_subst (a2 b2) (h1: $ a /\ b -> e $)
   (h4: $ a2 /\ b2 -> c $): $ a /\ b -> c $ =
 '(determ_subst2 h1 h2 h3 biidd h4);
 
-theorem toBytes_determ
+theorem toBytes_determ2
   (he: $ G -> 8 * n = m $)
   (h1: $ G -> a e. Bits m /\ b e. Bits m $)
   (h2: $ G -> l = toBytes n a /\ l ++ l2 = toBytes n b $): $ G -> a = b /\ l2 = 0 $ =
@@ -263,9 +282,19 @@ theorem toBytes_determ
   '(sylib toBytes_inj2 @ eqtr3d (anld h2) @
     eqtr3d (syl6eq append02 @ appendeq2d hl) (anrd h2)));
 
-theorem u32Bytes_determ (h1: $ G -> a e. u32 /\ b e. u32 $)
+theorem toBytes_determ
+  (he: $ G -> 8 * n = m $)
+  (h1: $ G -> a e. Bits m /\ b e. Bits m $)
+  (h2: $ G -> l = toBytes n a /\ l = toBytes n b $): $ G -> a = b $ =
+'(anld @ toBytes_determ2 he h1 @ sylibr (aneq2i @ eqeq1 append02) h2);
+
+theorem u32Bytes_determ2 (h1: $ G -> a e. u32 /\ b e. u32 $)
   (h2: $ G -> l = u32Bytes a /\ l ++ l2 = u32Bytes b $): $ G -> a = b /\ l2 = 0 $ =
-'(toBytes_determ (a1i d8mul4) h1 h2);
+'(toBytes_determ2 (a1i d8mul4) h1 h2);
+
+theorem u64Bytes_determ (h1: $ G -> a e. u64 /\ b e. u64 $)
+  (h2: $ G -> l = u64Bytes a /\ l = u64Bytes b $): $ G -> a = b $ =
+'(toBytes_determ (a1i d8mul8) h1 h2);
 
 theorem decode_no_prefix: $ readPrefixes rex l -> b IN l -> ~decodeAux rex2 a b l2 $ =
 (named '(eor (syl absurd @ mpbiri lmem0 ,eqtac) @
@@ -387,60 +416,61 @@ do (begin
   (def (ifp x y) '(determ_ifp ,x ,y))
   (def (q x y) '(determ_subst ,x ,eqtac ,eqtac ,y))
   (def (q2 x y) '(determ_subst2 ,x ,eqtac ,eqtac ,eqtac ,y))
+  (def (df x y) '(sylbi (aneq ,x ,x) ,y))
   (def (qe x) (q2 x (iane @ r el)))
   (def (B refine t) @ refine t @ match t
     [$ splitBits ,bs ,_ /\ ,_ -> ,_ $ (splitBits bs)])
-  (def (U32 x y) '(u32Bytes_determ ,x ,y))
+  (def (U32 x y) '(u32Bytes_determ2 ,x ,y))
 
   (def N @ mk-thm 'readImmN_determ '(l l2 sz w1 w2)
     $ readImmN sz w1 l /\ readImmN sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
-    @ fn () '(sylbi (aneq readImmN_val readImmN_val)
-    ,(e @ q2 '(toBytes_determ (syl muldiv3 @ anwl anrl) ,(l 'id) ,(r @ r @ r 'id)) @
-      iane @ r @ r @ l el)))
+    @ fn () @ df 'readImmN_val @ e @
+      q2 '(toBytes_determ2 (syl muldiv3 @ anwl anrl) ,(l 'id) ,(r @ r @ r 'id)) @
+      iane @ r @ r @ l el)
 
   (def I @ mk-thm 'readImm_determ '(l l2 sz w1 w2)
     $ readImm sz w1 l /\ readImm sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
-    @ fn () 'readImmN_determ)
+  @ fn () 'readImmN_determ)
 
   (def FI @ mk-thm 'readFullImm_determ '(l l2 sz w1 w2)
     $ readFullImm sz w1 l /\ readFullImm sz w2 (l ++ l2) -> w1 = w2 /\ l2 = 0 $
-    @ fn () 'readImmN_determ)
+  @ fn () 'readImmN_determ)
 
   (def D @ mk-thm 'readDisplacement_determ '(l l2 q1 q2 mod)
     $ readDisplacement mod q1 l /\ readDisplacement mod q2 (l ++ l2) -> q1 = q2 /\ l2 = 0 $
-    @ fn () '(sylbi (aneq readDisplacement_ifp readDisplacement_ifp)
-    ,(ifp (ian (r eq0) (l el)) @ ifp (e @ q2 (r c) @ ian c0 (R 1 el)) @
-      r @ e @ q2 (U32 (L 2 'id) (r 'id)) @ iane (R 1 el))))
+  @ fn () @ df 'readDisplacement_ifp @
+    ifp (ian (r eq0) (l el)) @ ifp (e @ q2 (r c) @ ian c0 (R 1 el)) @
+    r @ e @ q2 (U32 (L 2 'id) (r 'id)) @ iane (R 1 el))
 
   (def SD @ mk-thm 'readSIBDisplacement_determ '(base1 base2 bbase l l2 q1 q2 mod)
     $ readSIBDisplacement mod bbase q1 base1 l /\
       readSIBDisplacement mod bbase q2 base2 (l ++ l2) -> q1 = q2 /\ base1 = base2 /\ l2 = 0 $
-    @ fn ()
-    (ifp (e @ q2 (U32 (L 3 'id) (r 'id)) @ iane @ ian (R 1 el) (R 2 el))
-      (q2 (l D) @ iane @ ian (r el) 'eqidd)))
+  @ fn ()
+  (ifp (e @ q2 (U32 (L 3 'id) (r 'id)) @ iane @ ian (R 1 el) (R 2 el))
+    (q2 (l D) @ iane @ ian (r el) 'eqidd)))
 
   (def S @ mk-thm 'readSIB_determ '(l l2 rex rma rmb mod)
     $ readSIB rex mod rma l /\
       readSIB rex mod rmb (l ++ l2) -> rma = rmb /\ l2 = 0 $
-    @ fn () (E 8 @ q (r c) @ q (L 4 B) @ q (R 3 el) @ q2 (R 2 SD) @ iane (R 1 el)))
+  @ fn () (E 8 @ q (r c) @ q (L 4 B) @ q (R 3 el) @ q2 (R 2 SD) @ iane (R 1 el)))
 
   (def M2 @ mk-thm 'readModRM2_determ '(l l2 rex rm2 rma rmb mod)
     $ readModRM2 rex rma rm2 mod l /\
       readModRM2 rex rmb rm2 mod (l ++ l2) -> rma = rmb /\ l2 = 0 $
-    @ fn () (ifp (ian (r eq0) (l el)) @ ifp
-      (e @ q2 (U32 (L 2 'id) (R 0 'id)) @ iane @ R 1 el)
-      (ifp S @ e @ qe (l D))))
+  @ fn () (ifp (ian (r eq0) (l el)) @ ifp
+    (e @ q2 (U32 (L 2 'id) (R 0 'id)) @ iane @ R 1 el)
+    (ifp S @ e @ qe (l D))))
 
   (def M @ mk-thm 'readModRM_determ '(l l2 r1 r2 reg1 reg2 rex)
     $ readModRM rex reg1 r1 l /\
       readModRM rex reg2 r2 (l ++ l2) -> reg1 = reg2 /\ r1 = r2 /\ l2 = 0 $
-    @ fn () '(sylbi (aneq readModRM_val2 readModRM_val2)
-    ,(E 2 @ q (l c) @ r @ E 3 @ q (L 2 B) '(sylibr anass @ iand ,(R 1 el) ,(r M2)))))
+  @ fn () @ df 'readModRM_val2 @
+    E 2 @ q (l c) @ r @ E 3 @ q (L 2 B) '(sylibr anass @ iand ,(R 1 el) ,(r M2)))
 
   (def O @ mk-thm 'readOpcodeModRM_determ '(l l2 r1 r2 rex v1 v2)
     $ readOpcodeModRM rex v1 r1 l /\ readOpcodeModRM rex v2 r2 (l ++ l2) ->
       v1 = v2 /\ r1 = r2 /\ l2 = 0 $
-    @ fn () (e @ q2 (l M) @ iane @ iane @ r el))
+  @ fn () (e @ q2 (l M) @ iane @ iane @ r el))
 
   (add-tac-thm! 'readOpcodeModRM_determ2 '((G wff ()) .
     ,(map (fn (x) '(,x nat ())) '(a1 a2 l l2 r1 r2 rex v1 v2 b1 b2)))
@@ -461,8 +491,8 @@ do (begin
   (def Ta @ mk-thm 'decodeTwoAux_determ '(ast1 ast2 b l l2 rex)
     $ decodeTwoAux rex ast1 b l /\
       decodeTwoAux rex ast2 b (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
-    @ fn () @ focus
-    '(sylbi (aneq decodeTwoAux_ifp decodeTwoAux_ifp) _)
+  @ fn () @ focus
+    (df 'decodeTwoAux_ifp _)
     @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p
     @ cons (ian (R 1 eq0) @ r el) (E 2 @ q (L 2 B) @ qe (R 1 N))
     @ rmap '(3 3 3 3 4) @ fn (n) (E n @ q (L 2 B) @ qe (R 1 M)))
@@ -470,125 +500,241 @@ do (begin
   (def Tw @ mk-thm 'decodeTwo_determ '(ast1 ast2 b l l2 rex)
     $ decodeTwo rex ast1 b l /\
       decodeTwo rex ast2 b (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
-    @ fn () (r @ E 2 @ q (l c) @ r Ta))
+  @ fn () (r @ E 2 @ q (l c) @ r Ta))
 
   (def Hi @ mk-thm 'decodeHiAux_determ '(ast1 ast2 hi l l2 n r sz v)
     $ decodeHiAux v sz r hi n ast1 l /\
       decodeHiAux v sz r hi n ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
-    @ fn () '(sylbi (aneq decodeHiAux_ifp decodeHiAux_ifp) ,(ifp
-      (ian (l eq0) @ r @ ifp el @ ifp el @ r @ ifp el @ ifp el @ r el)
-      (ifp (e @ qe (l I)) @ ian (l eq0) @ r @ ifp el @ ifp el @ ifp el @ r el))))
+  @ fn () @ df 'decodeHiAux_ifp @ ifp
+    (ian (l eq0) @ r @ ifp el @ ifp el @ r @ ifp el @ ifp el @ r el)
+    (ifp (e @ qe (l I)) @ ian (l eq0) @ r @ ifp el @ ifp el @ ifp el @ r el))
 
-  (def _ @ mk-thm 'decodeAux_determ '(ast1 ast2 b l l2 rex)
+  (mk-thm 'decodeAux_determ '(ast1 ast2 b l l2 rex)
     $ decodeAux rex ast1 b l /\
       decodeAux rex ast2 b (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
-    @ fn () @ named @ focus
-      '(sylbi (aneq decodeAux_ifp decodeAux_ifp) _)
-      @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p @ list
-        (E 5 @ q (L 2 B) @ qe (R 1 M))
-        (E 3 @ q (L 2 B) @ qe (R 1 I))
-        Tw
-        (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
-        (E 5 @ q (O2 4 2) @ qe (R 1 N))
-        (E 4 @ q (L 2 B) @ qe (R 1 M))
-        (E 3 @ q (L 3 B) @ q (R 2 el) @ qe (R 1 I))
-        (E 3 @ q (L 2 B) @ qe (R 1 M))
-        (E 2 @ qe (R 2 M))
-        (E 3 @ q (L 2 B) @ qe (R 1 M))
-        (e @ qe (R 1 O))
-        (ian (l eq0) @ r @ e @ q (l B) @ r el)
-        (E 3 @ q (L 2 B) @ qe (R 1 FI))
-        '(anwl efal)
-        (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N))
-        (ian (R 1 eq0) @ r el)
-        (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N))
-        (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
-        (E 2 @ q (L 2 B) @ qe (R 1 N))
-        (e @ qe (R 1 N))
-        (E 2 @ qe (R 1 M))
-        (E 2 @ q (L 2 B) @ qe (R 1 N))
-        (ian (l eq0) @ r @ e @ q (l B) @ r el)
-        (ian (l eq0) @ r @ e @ q (l B) @ r el)
-        (E 2 @ q (L 2 B) @ qe (R 1 N))
-        (E 4 @ q (L 3 B) @ qe (R 2 O))
-        (ian (R 1 eq0) @ r el)
-        (ian (R 1 eq0) @ r el)
-        (ian (R 1 eq0) @ r el)
-        (E 6 @ q (R 2 B) @ q (O2 3 1) @ r Hi)));
+  @ fn () @ named @ focus
+    (df 'decodeAux_ifp _)
+    @ match (target) @ $ ,p /\ ,_ -> ,_ $ @ nth 1 @ main p @ list
+      (E 5 @ q (L 2 B) @ qe (R 1 M))
+      (E 3 @ q (L 2 B) @ qe (R 1 I))
+      Tw
+      (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
+      (E 5 @ q (O2 4 2) @ qe (R 1 N))
+      (E 4 @ q (L 2 B) @ qe (R 1 M))
+      (E 3 @ q (L 3 B) @ q (R 2 el) @ qe (R 1 I))
+      (E 3 @ q (L 2 B) @ qe (R 1 M))
+      (E 2 @ qe (R 2 M))
+      (E 3 @ q (L 2 B) @ qe (R 1 M))
+      (e @ qe (R 1 O))
+      (ian (l eq0) @ r @ e @ q (l B) @ r el)
+      (E 3 @ q (L 2 B) @ qe (R 1 FI))
+      '(anwl efal)
+      (E 6 @ q (R 4 B) @ q (O2 5 3) @ qe (R 1 N))
+      (ian (R 1 eq0) @ r el)
+      (E 2 @ q (L 2 B) @ qe (R 1 @ ifp (ian (r eq0) (l el)) N))
+      (E 6 @ q (R 3 B) @ q (O2 4 2) @ qe (R 1 I))
+      (E 2 @ q (L 2 B) @ qe (R 1 N))
+      (e @ qe (R 1 N))
+      (E 2 @ qe (R 1 M))
+      (E 2 @ q (L 2 B) @ qe (R 1 N))
+      (ian (l eq0) @ r @ e @ q (l B) @ r el)
+      (ian (l eq0) @ r @ e @ q (l B) @ r el)
+      (E 2 @ q (L 2 B) @ qe (R 1 N))
+      (E 4 @ q (L 3 B) @ qe (R 2 O))
+      (ian (R 1 eq0) @ r el)
+      (ian (R 1 eq0) @ r el)
+      (ian (R 1 eq0) @ r el)
+      (E 6 @ q (R 2 B) @ q (O2 3 1) @ r Hi))
 
-theorem decode_determ2:
-  $ decode ast1 l /\ decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $ =
-(focus
-  '(!! determ_ex rex1 rex2 @ !! determ_ex a1 a2 @
-    !! determ_ex b1 b2 @ !! determ_ex c1 c2 _)
-  @ match (target) @ $ ,G -> _ $ @ focus
-  (have 'H1 $ ,G -> a1 ++ b1 : (c1 ++ l2) = a2 ++ b2 : c2 $
-    '(syl5eqr (appendeq2 appendS) @ syl5eqr appendass @ eqtr3d (appendeq1d an3l) (anwr anll)))
-  (have 'H2 $ ,G -> len a1 = len a2 $ _) (focus
-    (def (f a b h x) '(sylibr lenlt @ mpd (,b anr) @ con2d @
-      exp @ sylc decode_no_prefix (anwl @ ,a anlr) @
-      syl nthlmem @ eqtr3d (anwr appendnth1) @ ,h (ntheq2d @ anwl H1) @
-      a1i @ eqtr3 (ntheq1 add0) @ eqtr appendnth2_ nthZ))
-    '(leasymd ,(f 'anwl 'anwr 'eqtrd _) ,(f 'anwr 'anwl 'eqtr3d _)))
-  '(mpd (mpbid (syl appendinj1 H2) H1) @ com12 @ imp @ syl5bi consinj @
-    exp @ mpbii _ ,(eqtac-with #f))
-  '(determ_subst (determ_anwl @ determ_anwr readPrefixes_determ) ,eqtac ,eqtac @
-    determ_anwr decodeAux_determ));
+  (mk-thm 'decode_determ2 '(ast1 ast2 l l2)
+    $ decode ast1 l /\ decode ast2 (l ++ l2) -> ast1 = ast2 /\ l2 = 0 $
+  @ fn () @ focus (E 4 _)
+    @ match (target) @ $ ,G -> _ $ @ focus
+    (have 'H1 $ ,G -> a1 ++ a2 : (a3 ++ l2) = b1 ++ b2 : b3 $
+      '(syl5eqr (appendeq2 appendS) @ syl5eqr appendass @ eqtr3d (appendeq1d an3l) (anwr anll)))
+    (have 'H2 $ ,G -> len a1 = len b1 $ _) (focus
+      (def (f a b h x) '(sylibr lenlt @ mpd (,b anr) @ con2d @
+        exp @ sylc decode_no_prefix (anwl @ ,a anlr) @
+        syl nthlmem @ eqtr3d (anwr appendnth1) @ ,h (ntheq2d @ anwl H1) @
+        a1i @ eqtr3 (ntheq1 add0) @ eqtr appendnth2_ nthZ))
+      '(leasymd ,(f 'anwl 'anwr 'eqtrd _) ,(f 'anwr 'anwl 'eqtr3d _)))
+    '(mpd (mpbid (syl appendinj1 H2) H1) @ com12 @ imp @ syl5bi consinj @
+      exp @ mpbii _ ,(eqtac-with #f))
+    '(determ_subst (determ_anwl @ determ_anwr readPrefixes_determ) ,eqtac ,eqtac @
+      determ_anwr decodeAux_determ))
 
-theorem decode_determ: $ decode ast1 l /\ decode ast2 l -> ast1 = ast2 $ =
-'(anld @ sylbir (aneq2i @ decodeeq2 append02) decode_determ2);
+  (def Dec @ mk-thm 'decode_determ '(ast1 ast2 l)
+    $ decode ast1 l /\ decode ast2 l -> ast1 = ast2 $
+  @ fn () '(anld @ sylbir (aneq2i @ decodeeq2 append02) decode_determ2))
 
-theorem readMemory1_determ: $ readMemory1 ps1 m a v1 /\ readMemory1 ps2 m a v2 -> v1 = v2 $ =
-(named '(determ_anwr @ determ_ex @ anrd @ sylib prth @ determ_anwl @ imp eqtr3));
+  (mk-thm 'readMemory1_determ '(ps1 ps2 m a v1 v2)
+    $ readMemory1 ps1 m a v1 /\ readMemory1 ps2 m a v2 -> v1 = v2 $
+  @ fn () @ r @ e '(anrd @ sylib prth ,(l er)))
 
-theorem readMemory_determ: $ readMemory ps1 m a l1 /\ readMemory ps2 m a l2 ->
-  len l1 <= len l2 -> E. r l2 = l1 ++ r $ =
-(named @ focus
-  '(ax_mp (!! eale l ,(eqtac-gen 'l2)) @ ax_mp (!! eale b ,(eqtac-gen 'a)) _)
-  (induct '(listind) 'l1 _ _)
-  '(ax_gen @ ax_gen @ a1i @ a1i @ ax_mp (iexe ,eqtac) @ eqcom append0)
-  '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
-    exp @ syl5bi (leeq1 lenS) @ exp @
-    mpd (sylib excons @ sylib (noteq leneq0) @ syl ltner @ anwr @ lelttr le01) @
-    sylbi anass @ imp @ com23 @ eexd @ eexd @ syl5ibrcom ,eqtac @
-    impd @ syl5bi (aneq readMemoryS readMemoryS) @
-    syl5bi an4 @ ealie @ ealde @ syld (bi1d ,eqtac) @ a1i @ impd @ com12 @ imim2d @
-    imimd (a1i @ bi1i @ bitr4 (leeq2 lenS) lesuc) @ eximd @ exp @
-    syl6eqr appendS @ conseqd (anwl @ eqcomd readMemory1_determ) anr));
+  (add-tac-thm! 'readMemory_determ '((r nat) .
+    ,(map (fn (x) '(,x nat ())) '(ps1 ps2 m a l1 l2))) ()
+    $ readMemory ps1 m a l1 /\ readMemory ps2 m a l2 ->
+      len l1 <= len l2 -> E. r l2 = l1 ++ r $ ()
+  @ fn () @ named @ focus
+    '(ax_mp (!! eale l ,(eqtac-gen 'l2)) @ ax_mp (!! eale b ,(eqtac-gen 'a)) _)
+    (induct '(listind) 'l1 _ _)
+    '(ax_gen @ ax_gen @ a1i @ a1i @ ax_mp (iexe ,eqtac) @ eqcom append0)
+    '(sylbi (cbval @ cbvald ,eqtac) @ iald @ iald @
+      exp @ syl5bi (leeq1 lenS) @ exp @
+      mpd (sylib excons @ sylib (noteq leneq0) @ syl ltner @ anwr @ lelttr le01) @
+      sylbi anass @ imp @ com23 @ eexd @ eexd @ syl5ibrcom ,eqtac @
+      impd @ syl5bi (aneq readMemoryS readMemoryS) @
+      syl5bi an4 @ ealie @ ealde @ syld (bi1d ,eqtac) @ a1i @ impd @ com12 @ imim2d @
+      imimd (a1i @ bi1i @ bitr4 (leeq2 lenS) lesuc) @ eximd @ exp @
+      syl6eqr appendS @ conseqd (anwl @ eqcomd readMemory1_determ) anr))
 
-theorem readMem_determ: $ readMem k a l1 /\ readMem k a l2 ->
-  len l1 <= len l2 -> E. r l2 = l1 ++ r $ = '(determ_anwr readMemory_determ);
+  (add-tac-thm! 'readMem_determ '((r nat) .
+    ,(map (fn (x) '(,x nat ())) '(k a l1 l2))) ()
+    $ readMem k a l1 /\ readMem k a l2 -> len l1 <= len l2 -> E. r l2 = l1 ++ r $ ()
+  @ fn () @ r 'readMemory_determ)
 
-theorem readMemX_determ: $ readMemX k a l1 /\ readMemX k a l2 ->
-  len l1 <= len l2 -> E. r l2 = l1 ++ r $ = '(determ_anwr readMemory_determ);
+  (mk-thm 'readMem_determ_eq '(k a l1 l2)
+    $ readMem k a l1 /\ readMem k a l2 -> len l1 = len l2 -> l1 = l2 $
+  @ fn () @ named '(exp @ mpd (imp @ syl5 eqle readMem_determ) @
+    eexd @ exp @ eqtr2d anr @ syl6eq append02 @ appendeq2d @ sylib leneq0 @
+    sylib addcan2 @ syl5eqr appendlen @ syl6eqr add0 @ eqtr2d anlr (leneqd anr)))
 
-theorem readMemX_decode_determ_lem:
-  $ (readMemX k a l1 /\ decode ast1 l1) /\
-    (readMemX k a l2 /\ decode ast2 l2) -> len l1 <= len l2 -> l1 = l2 $ =
-(named '(syld (determ_anwl readMemX_determ) @ eexd @ determ_anwr @ com12 @
-  mpbiri (rsyl decode_determ2 @ anwr @ syl5eqr append02 @ appendeq2d eqcom) ,eqtac));
+  (add-tac-thm! 'readMemX_determ '((r nat) .
+    ,(map (fn (x) '(,x nat ())) '(k a l1 l2))) ()
+    $ readMemX k a l1 /\ readMemX k a l2 -> len l1 <= len l2 -> E. r l2 = l1 ++ r $ ()
+  @ fn () @ r 'readMemory_determ)
 
-theorem readMemX_decode_determ:
-  $ (readMemX k a l1 /\ decode ast1 l1) /\
-    (readMemX k a l2 /\ decode ast2 l2) -> l1 = l2 /\ ast1 = ast2 $ =
-(focus
-  (suffices 'h) '(iand h @ determ_subst h ,eqtac biidd @ determ_anwr decode_determ)
-  '(mpi leorle @ eord readMemX_decode_determ_lem
-    (syl6 eqcom @ rsyl ancom readMemX_decode_determ_lem)));
+  (mk-thm 'readMemX_decode_determ_lem '(k a ast1 ast2 l1 l2)
+    $ (readMemX k a l1 /\ decode ast1 l1) /\
+      (readMemX k a l2 /\ decode ast2 l2) -> len l1 <= len l2 -> l1 = l2 $
+  @ fn () @ named '(syld ,(l 'readMemX_determ) @ eexd @ determ_anwr @ com12 @
+    mpbiri (rsyl decode_determ2 @ anwr @ syl5eqr append02 @ appendeq2d eqcom) ,eqtac))
+
+  (mk-thm 'readMemX_decode_determ '(k a ast1 ast2 l1 l2)
+    $ (readMemX k a l1 /\ decode ast1 l1) /\
+      (readMemX k a l2 /\ decode ast2 l2) -> l1 = l2 /\ ast1 = ast2 $
+  @ fn () @ focus
+    (suffices 'h)
+    '(iand h @ determ_subst h ,eqtac biidd ,(r Dec))
+    '(mpi leorle @ eord readMemX_decode_determ_lem
+      (syl6 eqcom @ rsyl ancom readMemX_decode_determ_lem)))
+
+  (mk-thm 'writeMemory1_determ '(m a b m1 m2 e1 e2)
+    $ writeMemory1 m a b m1 e1 /\
+      writeMemory1 m a b m2 e2 -> m1 = m2 /\ e1 = e2 $
+  @ fn () @ df 'writeMemory1_setMem1 @ r '(sylib prth ,el))
+
+  (mk-thm 'writeMemory_determ '(m a l m1 m2 e1 e2)
+    $ writeMemory m a l m1 e1 /\
+      writeMemory m a l m2 e2 -> m1 = m2 /\ e1 = e2 $
+  @ fn () @ r '(sylib prth ,er))
+
+  (mk-thm 'writeMem_determ '(m a l k1 k2)
+    $ writeMem m a l k1 /\ writeMem m a l k2 -> k1 = k2 $
+  @ fn () @ df '(writeMem_setMem @ eqcom fstsnd) @ r el)
+
+  (mk-thm 'readEA_determ '(k sz ea v1 v2)
+    $ readEA k sz ea v1 /\ readEA k sz ea v2 -> v1 = v2 $
+  @ fn () @ split-sop 'ea
+    (fn (x y) '(com12 @ sylbid ,eqtac @ a1i ,(df ,x ,y)))
+    '{($EA_i q$ => readEA_i2 ,(r el)) +
+     {($EA_r r$ => readEA_r2 ,(r el)) +
+      ($EA_m q$ => readEA_m2 (toBytes_determ
+        (syl wsizeBits_bytes anllr) ,(r @ l 'id) @ iand eqidd ,(r @ r
+          '(mpi (eqtr4 toBytes_len toBytes_len) readMem_determ_eq))))}})
+
+  (mk-thm 'readEA64_determ '(k ea v1 v2)
+    $ readEA64 k ea v1 /\ readEA64 k ea v2 -> v1 = v2 $ @ fn () 'readEA_determ)
+
+  (mk-thm 'writeEASz_determ '(k sz ea v k1 k2)
+    $ writeEASz k sz ea v k1 /\ writeEASz k sz ea v k2 -> k1 = k2 $
+  @ fn () @ split-sop 'ea
+    (def (f x y) '(impcom @ sylbid ,eqtac @ a1i @ sylbi (aneq ,x ,x) ,y))
+    '{($EA_i q$ => (impcom @ impd @ sylbid ,eqtac @ a1i @ absurd writeEASz_i)) +
+    {($EA_r r$ => ,(f 'writeEASz_r2 '(determ_anwr @ imp eqtr4))) +
+      ($EA_m q$ => ,(f 'writeEASz_m2 '(determ_anwr writeMem_determ)))}})
+
+  (mk-thm 'writeEA_determ '(k sz ea v k1 k2)
+    $ writeEA k sz ea v k1 /\ writeEA k sz ea v k2 -> k1 = k2 $
+  @ fn () @ r 'writeEASz_determ)
+
+  (def cd @ mk-thm 'EA_callDest_determ '(k ea v1 v2)
+    $ EA_callDest k ea v1 /\ EA_callDest k ea v2 -> v1 = v2 $
+  @ fn () @ split-sop 'ea
+    (fn (x y) '(com12 @ sylbid ,eqtac @ a1i @ sylbi (aneq ,x ,x) ,y))
+    '{($EA_i q$ => EA_callDest_i2 (determ_anwr @ imp eqtr4)) +
+    {($EA_r r$ => EA_callDest_r2 (determ_anwr @ imp eqtr4)) +
+      ($EA_m q$ => EA_callDest_m2 (determ_anwr @
+        u64Bytes_determ (determ_anwl id) @ iand eqidd @
+        determ_anwr @ mpi (eqtr4 u64Bytes_len u64Bytes_len) readMem_determ_eq))}})
+
+  (mk-thm 'EA_jump_determ '(k ea k1 k2)
+    $ EA_jump k ea k1 /\ EA_jump k ea k2 -> k1 = k2 $
+  @ fn () @ e @ q (l cd) @ r el)
+
+  (mk-thm 'unpackFlags_determ '(f c1 c2 z1 z2 s1 s2 o1 o2)
+    $ unpackFlags f c1 z1 s1 o1 /\ unpackFlags f c2 z2 s2 o2 ->
+      c1 = c2 /\ z1 = z2 /\ s1 = s2 /\ o1 = o2 $
+  @ fn () @ ian (r el) @ l @ ian (r el) @ l @ ian (r el) (l el))
+
+  (mk-thm 'readUnpackFlags_determ '(k c1 c2 z1 z2 s1 s2 o1 o2)
+    $ readUnpackFlags k c1 z1 s1 o1 /\ readUnpackFlags k c2 z2 s2 o2 ->
+      c1 = c2 /\ z1 = z2 /\ s1 = s2 /\ o1 = o2 $
+  @ fn () @ r 'unpackFlags_determ)
+
+  -- eraseFlags_determ - false!
+
+  (mk-thm 'addCarry_determ '(sz a b w1 w2 c1 c2 o1 o2)
+    $ addCarry sz a b w1 c1 o1 /\ addCarry sz a b w2 c2 o2 ->
+      w1 = w2 /\ c1 = c2 /\ o1 = o2 $
+  @ fn () @ ian (r el) @ l @ ian (r el) (R 1 el))
+
+  (mk-thm 'subBorrow_determ '(sz a b w1 w2 c1 c2 o1 o2)
+    $ subBorrow sz a b w1 c1 o1 /\ subBorrow sz a b w2 c2 o2 ->
+      w1 = w2 /\ c1 = c2 /\ o1 = o2 $
+  @ fn () @ ian (r el) @ l @ ian (r el) (R 1 el))
+
+  (add-tac-thm! 'writeCFOFResult_determ '((c wff ()) (o wff ()) .
+    ,(map (fn (x) '(,x nat ())) '(k sz ea w k1 k2))) ()
+    $ writeCFOFResult k sz ea w c o k1 /\
+      writeCFOFResult k sz ea w c o k2 -> k1 = k2 $ ()
+  @ fn () @ r 'writeEA_determ)
+
+  -- writeBinop_determ - false!
+  -- writeUnop_determ - true for now, but this is brittle
+
+  (mk-thm 'popAux_determ '(k q1 q2 k1 k2)
+    $ popAux k q1 k1 /\ popAux k q2 k2 -> q1 = q2 /\ k1 = k2 $
+  @ fn () @ ian (r el) (l 'readEA64_determ))
+
+  (mk-thm 'popWrite_determ '(k rm k1 k2)
+    $ popWrite k rm k1 /\ popWrite k rm k2 -> k1 = k2 $
+  @ fn () @ r @ E 2 @ q (l 'popAux_determ) @ r 'writeEA_determ)
+
+  (mk-thm 'popRIP_determ '(k k1 k2)
+    $ popRIP k k1 /\ popRIP k k2 -> k1 = k2 $
+  @ fn () @ E 2 @ q (l 'popAux_determ) @ r el)
+
+  (mk-thm 'pushAux_determ '(k q k1 k2)
+    $ pushAux k q k1 /\ pushAux k q k2 -> k1 = k2 $
+  @ fn () @ r @ e @ q (l el) (r 'writeEA_determ))
+
+  (mk-thm 'pushImmRM_determ '(k irm k1 k2)
+    $ pushImmRM k irm k1 /\ pushImmRM k irm k2 -> k1 = k2 $
+  @ fn () @ r @ e @ q (l 'readEA64_determ) (r 'pushAux_determ))
+
+  (mk-thm 'pushRIP_determ '(k k1 k2)
+    $ pushRIP k k1 /\ pushRIP k k2 -> k1 = k2 $
+  @ fn () 'pushAux_determ)
+
+  (mk-thm 'divModSz_determ '(sz1 sz2 a b d1 d2 m1 m2)
+    $ divModSz sz1 a b d1 m1 /\ divModSz sz2 a b d2 m2 -> d1 = d2 /\ m1 = m2 $
+  @ fn () @ ian (r el) (R 1 el))
+
+#undef);
 
 theorem decode_step: $ readMemX k (readRIP k) l /\ decode ast l ->
   (step k k2 <-> readException k = 0 /\ execXAST (writeRIP k (readRIP k +_64 len l)) ast k2) $ =
 '(aneqd (anwll bian1) @ bitrd (!! exeqd l2 @ syl6bb exan1 @
     !! exeqd ast2 @ syl6bb anass @ aneq1d @ ibid (expcom readMemX_decode_determ) @
     com12 @ bi2d ,eqtac) @ exeqed @ exeqed ,eqtac);
-
-theorem writeMemory1_determ:
-  $ writeMemory1 m a b m21 e1 /\
-    writeMemory1 m a b m22 e2 -> m21 = m22 /\ e1 = e2 $ =
-'(sylbi (aneq writeMemory1_setMem1 writeMemory1_setMem1) @
-  determ_anwr @ sylib prth @ imp eqtr4);
-
-theorem writeMemory_determ:
-  $ writeMemory m a l m21 e1 /\
-    writeMemory m a l m22 e2 -> m21 = m22 /\ e1 = e2 $ =
-'(determ_anwr @ sylib prth @ imp eqtr3);

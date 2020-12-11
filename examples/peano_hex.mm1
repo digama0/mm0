@@ -637,6 +637,36 @@ do {
     [_ @ refine t '(:verb ,(mkcmp t))])
 };
 
+theorem decdiv (ha: $ a = a2 $) (hb: $ b = b2 $)
+  (h1: $ b2 * d = m $) (h2: $ m + r = a2 $) (h3: $ r < b2 $): $ a // b = d $ =
+'(eqtr (diveq ha hb) @ trud @ anld @ eqdivmod (a1i h3) (a1i @ eqtr (addeq1 h1) h2));
+theorem decmod (ha: $ a = a2 $) (hb: $ b = b2 $)
+  (h1: $ b2 * d = m $) (h2: $ m + r = a2 $) (h3: $ r < b2 $): $ a % b = r $ =
+'(eqtr (modeq ha hb) @ trud @ anrd @ eqdivmod (a1i h3) (a1i @ eqtr (addeq1 h1) h2));
+theorem decdiv0 (ha: $ a = a2 $) (hb: $ b = x0 $): $ a // b = x0 $ =
+'(eqtr (diveq ha @ eqtr4 hb dec0) @ eqtr div0 dec0);
+theorem decmod0 (ha: $ a = a2 $) (hb: $ b = x0 $): $ a % b = a2 $ =
+'(eqtr (modeq ha @ eqtr4 hb dec0) mod0);
+do {
+  (let ([((divmod zth sth) a b)
+    @ match (try-conv a @ mktohex a) @ (a2 pa)
+    @ match (try-conv b @ mktohex b)
+    [('(h2n (x0)) pb) (zth '(h2n (x0)) a2 '(,a ,a2 ,b ,pa ,pb))]
+    [(b2 pb)
+      @ let ([na (hex->number a2)] [nb (hex->number b2)]
+            [d (->hex {na // nb})] [r (->hex {na % nb})])
+      @ match (mkmul b2 d) @ (m p1)
+      @ match (mkadd m r) @ (_ p2)
+      @ match (mkcmp2 r b2) @ '(< ,p3)
+      (sth d r '(,a ,a2 ,b ,b2 ,d ,m ,r ,pa ,pb ,p1 ,p2 ,p3))]])
+    (insert! tohex-map 'div @ divmod
+      (fn (c _ args) '(,c (decdiv0 . ,args)))
+      (fn (c _ args) '(,c (decdiv . ,args))))
+    (insert! tohex-map 'mod @ divmod
+      (fn (_ c args) '(,c (decmod0 . ,args)))
+      (fn (_ c args) '(,c (decmod . ,args)))))
+};
+
 theorem d0lt3: $ 0 < 3 $ = norm_num;
 theorem d0lt4: $ 0 < 4 $ = norm_num;
 theorem d1lt3: $ 1 < 3 $ = norm_num;
@@ -650,6 +680,7 @@ theorem d4lt6: $ 4 < 6 $ = norm_num;
 theorem d4lt7: $ 4 < 7 $ = norm_num;
 theorem d4lt8: $ 4 < 8 $ = norm_num;
 theorem d6lt7: $ 6 < 7 $ = norm_num;
+theorem d8ne0: $ 8 != 0 $ = norm_num;
 theorem d8lt16: $ 8 < 16 $ = norm_num;
 theorem d8add8: $ 8 + 8 = 16 $ = norm_num;
 theorem d16ne0: $ 16 != 0 $ = norm_num;

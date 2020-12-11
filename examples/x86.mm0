@@ -958,7 +958,7 @@ theorem writeEASz_i (k sz i v k2: nat): $ ~ writeEASz k sz (EA_i i) v k2 $;
 theorem writeEASz_r (k sz r v k2: nat):
   $ k e. Config /\ sz e. WSize /\ r e. Regs /\ v e. Bits (wsizeBits sz) ->
     (writeEASz k sz (EA_r r) v k2 <-> k2 = writeReg k sz r v) $;
-theorem writeEASz_m {l: nat} (k sz a v k2: nat):
+theorem writeEASz_m (k sz a v k2: nat):
   $ k e. Config /\ sz e. WSize /\ a e. u64 /\ v e. Bits (wsizeBits sz) ->
     (writeEASz k sz (EA_m a) v k2 <->
      writeMem k a (toBytes (wsizeBits sz) v) k2) $;

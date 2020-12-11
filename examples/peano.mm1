@@ -574,6 +574,7 @@ theorem imeqi (h1: $ a <-> b $) (h2: $ c <-> d $): $ a -> c <-> b -> d $ = '(bit
 '(ibid (animd (bi1d h1) (bi1d h2)) (animd (bi2d h1) (bi2d h2)));
 theorem imeq2a: $ (a -> (b <-> c)) -> (a -> b <-> a -> c) $ = '(ibid (a2d @ imim2i bi1) (a2d @ imim2i bi2));
 theorem imeq1a: $ (~c -> (a <-> b)) -> (a -> c <-> b -> c) $ = '(bitr4g con3bi con3bi @ syl imeq2a @ imim2i noteq);
+theorem imeq2da (h: $ G /\ a -> (b <-> c) $): $ G -> (a -> b <-> a -> c) $ = '(syl imeq2a @ exp h);
 theorem aneq1d (h: $ a -> (b <-> c) $): $ a -> (b /\ d <-> c /\ d) $ = '(aneqd h biidd);
 theorem aneq2d (h: $ a -> (c <-> d) $): $ a -> (b /\ c <-> b /\ d) $ = '(aneqd biidd h);
 theorem aneq: $ (a <-> b) -> (c <-> d) -> (a /\ c <-> b /\ d) $ = '(exp @ aneqd anl anr);
@@ -870,6 +871,10 @@ theorem alex (a: wff x): $ A. x a <-> ~(E. x ~a) $ =
 '(bitr (aleqi notnot) alnex);
 theorem exnal (a: wff x): $ E. x ~a <-> ~(A. x a) $ = '(con2b alex);
 theorem eal (a: wff x): $ A. x a -> a $ = '(ax_3 @ sylib exnal iex);
+theorem albi: $ A. x a <-> a $ = '(ibii eal ial);
+theorem exbi: $ E. x a <-> a $ = '(con1b @ bicom albi);
+theorem alan1 (b: wff x): $ A. x (a /\ b) <-> a /\ A. x b $ = '(bitr alan @ aneq1i albi);
+theorem alan2 (a: wff x): $ A. x (a /\ b) <-> A. x a /\ b $ = '(bitr alan @ aneq2i albi);
 theorem exor (a b: wff x): $ E. x (a \/ b) <-> E. x a \/ E. x b $ =
 '(bitr (noteqi (bitr (aleqi notor) alan)) notan);
 theorem eximd (G) (a b: wff x) (h: $ G -> a -> b $): $ G -> E. x a -> E. x b $ = '(syl exim @ iald h);
@@ -878,6 +883,7 @@ theorem excomb (a: wff x y): $ E. x E. y a <-> E. y E. x a $ =
 theorem excom (a: wff x y): $ E. x E. y a -> E. y E. x a $ = '(bi1 excomb);
 theorem nexi (a: wff x) (h: $ ~a $): $ ~E. x a $ = '(mpbi alnex @ ax_gen h);
 theorem nexd (a: wff x) (h: $ G -> ~a $): $ G -> ~E. x a $ = '(sylib alnex @ iald h);
+theorem exim1 (a: wff) (b: wff x): $ E. x (a -> b) -> (a -> E. x b) $ = '(com12 @ eximd mpcom);
 
 @_ local def nf {x: nat} (a: wff x): wff = $ A. x (a -> A. x a) $;
 prefix nf: $F/$ prec 10;
@@ -936,6 +942,14 @@ theorem ralalcomb (p: wff x) (a: wff x y): $ A. x (p -> A. y a) <-> A. y A. x (p
 theorem ralcomb (p: wff x) (q: wff y) (a: wff x y):
   $ A. x (p -> A. y (q -> a)) <-> A. y (q -> A. x (p -> a)) $ =
 '(bitr ralalcomb @ aleqi ralim1);
+theorem exal (a: wff x y): $ E. x A. y a -> A. y E. x a $ = '(eexh (nfal nfex1) @ alimi iex);
+theorem exral (a: wff y) (b: wff x y):
+  $ E. x A. y (a -> b) -> A. y (a -> E. x b) $ = '(rsyl exal @ alimi exim1);
+theorem rexal (a: wff x) (b: wff x y):
+  $ E. x (a /\ A. y b) -> A. y E. x (a /\ b) $ = '(sylbir (exeqi alan1) @ exal);
+theorem rexral (a: wff x) (b: wff y) (c: wff x y):
+  $ E. x (a /\ A. y (b -> c)) -> A. y (b -> E. x (a /\ c)) $ =
+'(syl exral @ eximi @ sylbir alan1 @ alimi @ com12 @ anim2d mpcom);
 theorem eqerd {x} (h: $ G -> a = x -> p $): $ G -> p $ = '(mpi ax_6 @ eexd @ syl5 eqcom h);
 theorem eale (a: nat) (b: wff x) (c: wff)
   (e: $ x = a -> (b <-> c) $): $ A. x b -> c $ = '(ealeh nfv e);
@@ -1027,6 +1041,7 @@ theorem cbvex (p: wff x) (q: wff y)
 --| Not sure what to call this, let's say "positive implication".
 --| It quantifies both `p` and `q` and asserts that `p` implies `q`, but not vacuously.
 local def pim {x: nat} (p q: wff x): wff = $ E. x p /\ A. x (p -> q) $;
+-- uses a low prec to require parens, since the binding is not obvious
 notation pim {x} (p q) = ($P.$:10) x p ($->$:25) q;
 
 theorem pimex (p q: wff x): $ (P. x p -> q) -> E. x p $ = 'anl;
@@ -1041,30 +1056,57 @@ theorem pimeq1 (p1 p2 q: wff x):
 theorem pimim2 (p q1 q2: wff x):
   $ A. x (q1 -> q2) -> ((P. x p -> q1) -> (P. x p -> q2)) $ =
 '(anim2d @ al2imi imim2);
+theorem pimeq2a (p q1 q2: wff x):
+  $ A. x (p -> (q1 <-> q2)) -> ((P. x p -> q1) <-> (P. x p -> q2)) $ =
+'(aneq2d @ syl aleq @ alimi imeq2a);
 theorem pimeq2 (p q1 q2: wff x):
   $ A. x (q1 <-> q2) -> ((P. x p -> q1) <-> (P. x p -> q2)) $ =
-'(aneq2d @ syl aleq @ alimi @ imeq2d id);
+'(syl pimeq2a @ alimi ax_1);
 theorem pimeq1d (G: wff) {x: nat} (p1 p2 q: wff x)
   (h1: $ G -> (p1 <-> p2) $): $ G -> ((P. x p1 -> q) <-> (P. x p2 -> q)) $ =
 '(syl pimeq1 @ iald h1);
 theorem pimeq2d (G: wff) {x: nat} (p q1 q2: wff x)
   (h1: $ G -> (q1 <-> q2) $): $ G -> ((P. x p -> q1) <-> (P. x p -> q2)) $ =
 '(syl pimeq2 @ iald h1);
+theorem pimeq1i {x: nat} (p1 p2 q: wff x)
+  (h1: $ p1 <-> p2 $): $ (P. x p1 -> q) <-> (P. x p2 -> q) $ = '(trud @ pimeq1d @ a1i h1);
+theorem pimeq2i {x: nat} (p q1 q2: wff x)
+  (h1: $ q1 <-> q2 $): $ (P. x p -> q1) <-> (P. x p -> q2) $ = '(trud @ pimeq2d @ a1i h1);
 @(register-eqd 'pim) theorem pimeqd (G: wff) {x: nat} (p1 p2 q1 q2: wff x)
   (h1: $ G -> (p1 <-> p2) $) (h2: $ G -> (q1 <-> q2) $):
   $ G -> ((P. x p1 -> q1) <-> (P. x p2 -> q2)) $ =
 '(bitrd (pimeq1d h1) (pimeq2d h2));
 
+theorem cbvpimh (p1 p2 q1 q2: wff x y)
+  (h1: $ F/ y p1 $) (h2: $ F/ y q1 $) (h3: $ F/ x p2 $) (h4: $ F/ x q2 $)
+  (e1: $ x = y -> (p1 <-> p2) $) (e2: $ x = y -> (q1 <-> q2) $):
+  $ (P. x p1 -> q1) <-> (P. y p2 -> q2) $ =
+'(aneq (cbvexh h1 h3 e1) (cbvalh (nfim h1 h2) (nfim h3 h4) (imeqd e1 e2)));
+theorem cbvpim (p1 q1: wff x) (p2 q2: wff y)
+  (e1: $ x = y -> (p1 <-> p2) $) (e2: $ x = y -> (q1 <-> q2) $):
+  $ (P. x p1 -> q1) <-> (P. y p2 -> q2) $ =
+'(cbvpimh nfv nfv nfv nfv e1 e2);
+
 theorem piman (a b c: wff x): $ (P. x a -> b) /\ (P. x a -> c) -> (P. x a -> b /\ c) $ =
 '(iand anll @ sylibr ralan @ anim anr anr);
-
 theorem impim (a c: wff x): $ (P. x a -> b -> c) -> b -> (P. x a -> c) $ =
 '(com12 @ anim2d @ alimd @ imim2d mpcom);
-
+theorem expim (p: wff x) (q: wff x y): $ E. y (P. x p -> q) -> (P. x p -> E. y q) $ =
+'(iand (rsyl (eximi anl) @ rsyl excom @ eximi @ eex id) @ syl exral @ eximi anr);
+theorem rexpim (a: wff y) (p: wff x) (q: wff x y):
+  $ E. y (a /\ (P. x p -> q)) -> (P. x p -> E. y (a /\ q)) $ =
+'(syl expim @ eximi @ bi2a @ pimeq2d bian1);
 theorem pim2im (p1 q1: wff x) (p2 q2: wff y):
-  $ A. x (p1 -> (P. y p2 -> q1 -> q2)) ->
-    (P. x p1 -> q1) -> (P. y p2 -> q2) $ =
+  $ A. x (p1 -> (P. y p2 -> q1 -> q2)) -> (P. x p1 -> q1) -> (P. y p2 -> q2) $ =
 '(impd @ com23 @ syl6ibr eexb @ al2imi @ a2d @ imim2i impim);
+theorem pimtr (p: wff x) (q a: wff x y) (b: wff y):
+  $ (P. x p -> a) -> A. x (a -> (P. y q -> b)) -> (P. y E. x (p /\ q) -> b) $ =
+'(exp @ iand
+  (syl excom @ impcom @ syl5 pimex12 @ syl exim @ alimi @
+    impd @ com12 @ imim2d @ syl5 anl @ eximd ian)
+  (rsyl (anim anr @ alimi @ imim2i anr) @
+    sylibr (aleqi @ bitr eexb @ aleqi impexp) @ sylib ralalcomb @
+    imp @ al2imi @ com12 imim2));
 
 --| Not equal: `a != b` means `a` and `b` are distinct natural numbers.
 @_ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
@@ -2337,6 +2379,8 @@ theorem truenat: $ true (nat p) <-> p $ =
 '(ibii (con1 ifneg) (mpbiri d1ne0 (neeq1d ifpos)));
 theorem nateq1: $ nat p = 1 <-> p $ = '(bitr3 (dftrue2 boolnat) truenat);
 theorem nateq0: $ nat p = 0 <-> ~p $ = '(con2b @ bicom truenat);
+theorem nat1: $ nat T. = 1 $ = '(mpbir nateq1 itru);
+theorem nat0: $ nat F. = 0 $ = '(mpbir nateq0 notfal);
 theorem nattrue: $ bool n -> nat (true n) = n $ =
 '(sylbi bool01 @ eor
   (eqtr4d (nateqd trueeq) @ syl6eqr (ifneg true0) id)
@@ -4958,6 +5002,9 @@ theorem subsnsn: $ subsn (sn a) $ =
 (named '(mpbir (subsneq @ eqab2i elsn) subsnsn2));
 
 theorem thesn: $ the (sn a) = a $ = (named '(trud @ eqthed @ a1i elsn));
+
+theorem sninj: $ sn a = sn b <-> a = b $ =
+'(ibii (eqtr3g thesn thesn @ theeqd nseq) sneq);
 
 theorem subsnsssn: $ subsn A <-> E. a A C_ sn a $ =
 (named '(bitr4 subsnex @ exeqi @ aleqi @ imeq2i elsn));
