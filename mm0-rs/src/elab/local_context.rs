@@ -755,7 +755,19 @@ impl Elaborator {
               Expr {heap, head: ids[i].take()}
             };
             match ret {
-              None => ((s, deps), TermKind::Def(Some(val))),
+              None => {
+                let mut dummy_deps = vec![];
+                for (&a, &(dummy, _)) in &self.lc.vars {
+                  if dummy && deps & ba.map[&a] != 0 {
+                    dummy_deps.push(self.data[a].name.as_str())
+                  }
+                }
+                if !dummy_deps.is_empty() {
+                  return Err(ElabError::new_e(sp, format!("dummy variables {{{}}} are unbound",
+                    dummy_deps.iter().sorted().format(", "))))
+                }
+                ((s, deps), TermKind::Def(Some(val)))
+              }
               Some((sp, s2, ref deps2)) => {
                 if s != s2 {
                   return Err(ElabError::new_e(sp, format!("type error: expected {}, got {}",
