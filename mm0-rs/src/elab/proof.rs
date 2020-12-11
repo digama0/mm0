@@ -9,7 +9,7 @@ use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
 use super::environment::{AtomID, Type};
 use super::{LocalContext, ElabError, Result, Environment,
-  SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey};
+  SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey, Modifiers};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::{BoxError, FileSpan};
@@ -362,7 +362,14 @@ impl NodeHash for ExprHash {
       &LispKind::Atom(a) => match nh.var_map.get(&a) {
         Some(&i) => ExprHash::Ref(ProofKind::Expr, i),
         None => match nh.lc.vars.get(&a) {
-          Some(&(true, InferSort::Bound(sort))) => ExprHash::Dummy(a, sort),
+          Some(&(true, InferSort::Bound(sort))) => {
+            if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
+              return Err(nh.err_sp(fsp,
+                format!("dummy variable {{{}: {}}} not permitted for sort",
+                  nh.fe.data[a].name, nh.fe.sorts[sort].name)))
+            }
+            ExprHash::Dummy(a, sort)
+          }
           _ => return Err(nh.err_sp(fsp, format!("variable '{}' not found", nh.fe.data[a].name))),
         }
       },
@@ -572,6 +579,11 @@ impl NodeHash for ProofHash {
           Some(&i) => ProofHash::Ref(kind, i),
           None => match nh.lc.vars.get(&a) {
             Some(&(true, InferSort::Bound(sort))) => {
+              if nh.fe.sorts[sort].mods.intersects(Modifiers::STRICT | Modifiers::FREE) {
+                return Err(nh.err_sp(fsp,
+                  format!("dummy variable {{{}: {}}} not permitted for sort",
+                    nh.fe.data[a].name, nh.fe.sorts[sort].name)))
+              }
               let e = ProofHash::Dummy(a, sort);
               if kind == ProofKind::Conv { ProofHash::Refl(de.add_direct(e)) } else {e}
             }

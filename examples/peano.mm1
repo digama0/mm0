@@ -92,7 +92,7 @@ do {
   --| This is commonly used for proofs where we don't care to name the
   --| dummy variables.
   (def named
-    (def (assign-mvar m x) (set! m (dummy! x (mvar-sort m))))
+    (def (assign-mvar m x) @ match x ['_] [_ (set! m (dummy! x (mvar-sort m)))])
     @ match-fn*
       [((? atom? d) es) (refine es) (scan (get-mvars) (list d) assign-mvar)]
       [(ds es) (refine es) (scan (get-mvars) ds assign-mvar)]

@@ -518,7 +518,7 @@ theorem hoareCfgR_frame_E_ab (p: wff k2): $ hoareCfgR (ksCfg ks) {k2 | p} P Q ->
 (named '(syl6ib (cbvpimh (nfel2 nfab1) nfv nfv nfv (syl6bb abid eleq1) @
   s_sateq1d setCfgeq2) hoareCfgR_frame_E));
 
-theorem hoareCfgR_E_ex (p q: wff k2)
+theorem hoareCfgR_E_ex (p: wff k2)
   (h: $ G -> hoareCfgR k {k2 | p} P Q $):
   $ G /\ ksCfg ks = k /\ ks |=s P -> E. k2 p $ =
 '(syl pimex @ sylc hoareCfgR_frame_E_ab (mpbird (hoareCfgReq1d anlr) (anwll h)) @
