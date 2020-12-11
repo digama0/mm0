@@ -562,7 +562,7 @@ theorem hoareCfgR_tr (p: wff k2) (q: wff k2 k3)
   sylib (pimeq2i @ s_sateq1 set_setCfg) @ imp @ syl hoareCfgR_frame_E_ab @
   anwl @ sylibr (hoareCfgReq1 ksCfg_setCfg) h2));
 
-theorem hoareCfgR_tr1 (p: wff) (q: wff x k3) (r: wff k3)
+theorem hoareCfgR_tr1 (q: wff x k3) (r: wff k3)
   (e: $ G /\ x = k2 -> (q <-> r) $)
   (h1: $ G -> hoareCfg k k2 P Q $)
   (h2: $ G -> hoareCfgR x {k3 | q} Q R $):
