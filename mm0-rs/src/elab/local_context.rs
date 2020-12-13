@@ -677,6 +677,15 @@ impl Elaborator {
         Err(e) => { self.report(e); error = true }
         Ok(InferBinder::Var(x, is)) => {
           if !e_hyps.is_empty() {report!(bi.span, "hypothesis binders must come after variable binders")}
+          if let InferSort::Bound(s) = is.1 {
+            let sp = bi.local.expect("this can't happen unless the variable was written explicitly");
+            let mods = self.sorts[s].mods;
+            if mods.contains(Modifiers::STRICT) {
+              report!(sp, format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str()))
+            } else if is.0 && mods.contains(Modifiers::FREE) {
+              report!(sp, format!("free sort '{}' does not admit dummy variables", self.sorts[s].name.as_str()))
+            }
+          }
           if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
             report!(bi.local.expect("this can't happen unless the variable was written explicitly"),
               "variable occurs twice in binder list");
@@ -702,7 +711,13 @@ impl Elaborator {
           }
           Some(Type::Formula(f)) => return Err(ElabError::new_e(f.0, "sort expected")),
           Some(Type::DepType(ty)) => match self.elab_dep_type(&mut error, LocalKind::Anon, ty)?.1 {
-            InferSort::Reg(sort, deps) => Some((ty.sort, sort, deps)),
+            InferSort::Reg(sort, deps) => {
+              if self.sorts[sort].mods.contains(Modifiers::PURE) {
+                report!(ty.sort, format!("pure sort '{}' cannot have term constructors",
+                  self.sorts[sort].name.as_str()))
+              }
+              Some((ty.sort, sort, deps))
+            }
             _ => unreachable!(),
           },
         };
@@ -733,6 +748,12 @@ impl Elaborator {
         for &(sp, a, ref is) in &self.lc.var_order {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
             ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
+          if let EType::Bound(s) = ty {
+            if self.sorts[s].mods.contains(Modifiers::STRICT) {
+              return Err(ElabError::new_e(sp,
+                format!("sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
+            }
+          }
           args.push((a, ty));
         }
         let (ret, kind) = match val {
@@ -832,6 +853,12 @@ impl Elaborator {
         for &(sp, a, ref is) in &self.lc.var_order {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
             ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
+          if let EType::Bound(s) = ty {
+            if !self.sorts[s].mods.contains(Modifiers::STRICT) {
+              return Err(ElabError::new_e(sp,
+                format!("sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
+            }
+          }
           args.push((a, ty));
         }
         let mut de = Dedup::new(&args);
