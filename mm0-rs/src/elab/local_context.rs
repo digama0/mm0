@@ -684,7 +684,7 @@ impl Elaborator {
               report!(sp, format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str()))
             } else if is.0 && mods.contains(Modifiers::FREE) {
               report!(sp, format!("free sort '{}' does not admit dummy variables", self.sorts[s].name.as_str()))
-            }
+            } else {}
           }
           if self.lc.push_var(bi.local.unwrap_or(bi.span), x, is) {
             report!(bi.local.expect("this can't happen unless the variable was written explicitly"),
