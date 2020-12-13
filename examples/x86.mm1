@@ -754,7 +754,7 @@ theorem toBytesAuxS_eq: $ a <= n -> toBytesAux k n @ a = toBytes k a $ =
     ,(induct '(ind) 'k
       '(ax_gen @ a1i @ a1i @ eqtr4 toBytesAux0_app toBytesAux0_app)
       '(sylbi (cbval ,eqtac) @
-        iald @ exp @ exp @ eqtr4d (anwr toBytesAuxS_app) @
+        ialda @ exp @ eqtr4d (anwr toBytesAuxS_app) @
         eqtr4d (syl toBytesAuxS_app anlr) @
         conseq2d @
         mpd (letrd (a1i divleid) anr) @ mpd (letrd (a1i divleid) anlr) @
@@ -2593,6 +2593,27 @@ theorem decode1I (h: $ decodeAux (suc rex) ast opc s $):
 '(decodeI (orr @ iexie @ iexde @
   mpbiri (ian (ian (splitBitsS4i @ splitBits14ie dec4) eqid) eqid) ,eqtac) h @
   eqtr4 append1 @ eqtr s2nscons @ conseq c2nhex s2nscons);
+
+theorem decode_s1 (h: $ decode ast (c ': s0) $):
+  $ decode ast (s1 c) $ = '(mpbi (decodeeq2 s2nscons0) h);
+
+theorem decodeRetI
+  (h1: $ splitBits ((1 <> v) : (3 <> 1) : 0) a $)
+  (h2: $ ifp (true v) (imm = 0 /\ l = 0) (readImmN 16 imm l) $):
+  $ decode (xastRet imm) (ch xc a ': l) $ =
+(focus
+  '(decode0I @ decodeFlowI @ orl @ orr @ iexie @ iexde @
+    mpbiri (iani (iani _ h2) eqid) ,eqtac)
+  '(splitBitsA4ic (appendSi append1) ,bvSizeSi h1 @ splitBits14ie decc));
+
+theorem decodeRet0I: $ decode (xastRet 0) (s1 (ch xc x3)) $ =
+'(decode_s1 @ decodeRetI xsplitBits_313 @ mpbir (ifppos true1) @ iani eqid s2ns0);
+
+theorem decodeRetSI
+  (h1: $ splitBits ((1 <> v) : (3 <> 1) : 0) a $)
+  (h2: $ readImmN 16 imm l $):
+  $ decode (xastRet imm) (ch xc x2 ': l) $ =
+'(decodeRetI xsplitBits_213 @ mpbir (ifpneg true0) h2);
 
 theorem decodeSysCallI: $ decode xastSysCall (ch x0 xf ': s1 (ch x0 x5)) $ =
 '(decode0I @ decodeAux_s1 @ decodeTwoI @ orr @ iani (iani eqid s2ns0) eqid);
@@ -4459,7 +4480,7 @@ theorem ksReachable_ind (p: wff x) (p1: wff ks1) (p2: wff ks2)
   (h1: $ G -> p0 $)
   (h2: $ G /\ ksStep ks1 ks2 /\ p1 -> p2 $): $ G -> p3 $ =
 '(sylib (elabe e3) @ sylan ksReachableInd (iand (sylibr (elabe e0) h1) @
-  iald @ iald @ exp @ syl5bi (elabe e1) @ exp @ sylibr (elabe e2) h2) hr);
+  iald @ ialda @ syl5bi (elabe e1) @ exp @ sylibr (elabe e2) h2) hr);
 
 theorem ksReachableInd_rev:
   $ ksr e. A /\ A. ks1 A. ks2 (ksStep ks1 ks2 -> ks2 e. A -> ks1 e. A) /\
@@ -4565,7 +4586,7 @@ theorem terminates_ensuring_mono:
 theorem terminates_ensuring_fail:
   $ k e. KernelState /\ execExit (ksCfg k) exit_code /\ exit_code != 0 ->
     terminates_ensuring k P $ =
-(named '(sylbi anass @ anim2a @ exp @ iald @ exp @
+(named '(sylbi anass @ anim2a @ exp @ ialda @
   iexde @ iexde @ mpbird ,eqtac @ anwll @ sylibr anass @
   iand (mpbird (ksReachableeq1d @ sylc ksReachable_exit (anld anlr) anr) @
     anwll ksReachable0) @

@@ -961,7 +961,7 @@ pub theorem VerifyConvCong (env ctx f cs e1 e2 s: nat) {args ret o es1 es2: nat}
     '(ax_mp (eex _) VerifyConvs_fin)
     '(sabfin (eexsabd @ eelabd @ syl6ibr elupto @ syl6 anll h) (a1i finns) @ anwl @
       sabfin (eelabd @ syl6ibr elupto @ syl6 anlr h) (a1i finns) @ anwl @
-      syl (mpi ltfin finss) @ sylib ssab @ iald @ syl6 anr h))
+      syl (mpi ltfin finss) @ ssabd @ syl6 anr h))
   '(eexd @ eexd @ eexd @ sylibr eexb @ alimi @ sylibr eexb @ alimi @
     sylbir eexb @ com12 @ syld (rsyl anlr @ com12 @ imim1i @ iexe VerifyConvseq6) @
     syld _ (bi2d @ aneqd (aneqd (lteq1d an4l) (lteq1d an3lr)) (lteq1d anr)))
@@ -2124,7 +2124,7 @@ theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = 
   '(a1d @ mpbiri all0 @ alleq2d @ syl6eq simpleTokenize0 simpleTokenizeeq)
   '(sylbi excons @ eex @ eex @ casesda _ _)
   '(ealde @ eimd (mpbiri ltconsid2 @ lteqd anr anll) @
-    syld (syl ssall @ sylib ssab @ iald @ anim2d @
+    syld (syl ssall @ ssabd @ anim2d @
       syl5bi (cbvex @ exeqd @ eqeq2d appendeq1) @
       eexd @ iexdde @ eximd @ exp @ eqtr4d an4l @
       eqtr4d (syl6eq appendS @ appendeq1d anlr) @
@@ -2139,7 +2139,7 @@ theorem simpleTokenize_infix: $ all {x | x e. nonemptyNonwhite /\ E. a E. b s = 
     eex @ exp @ rsyl exanal @ eex @ imp @
     eimd (mpbid (lteq2d maxPrefixSi1) @
       sylib ltappendid2 @ anld @ sylib el_nonemptyNonwhite maxPrefixSi2) @
-    syld (syl ssall @ sylib ssab @ iald @ anim2d @
+    syld (syl ssall @ ssabd @ anim2d @
       syl5bi (cbvex @ exeqd @ eqeq2d appendeq1) @
       eexd @ iexdde @ eximd @ exp @ eqtr3d (anwll maxPrefixSi1) @
       eqtr4d (appendeq2d anr) @ syl6eq appendass @ appendeq1d anlr) @

@@ -610,6 +610,7 @@ theorem anandi: $ a /\ (b /\ c) <-> (a /\ b) /\ (a /\ c) $ = '(bitr3 (aneq1i ani
 theorem anandir: $ (a /\ b) /\ c <-> (a /\ c) /\ (b /\ c) $ = '(bitr3 (aneq2i anidm) an4);
 theorem imandi: $ (a -> b /\ c) <-> (a -> b) /\ (a -> c) $ =
 '(ibii (iand (imim2i anl) (imim2i anr)) (com12 @ animd mpcom mpcom));
+theorem imancom: $ a /\ (b -> c) -> b -> a /\ c $ = '(com12 @ anim2d mpcom);
 theorem rbida (h1: $ a /\ c -> b $) (h2: $ a /\ d -> b $)
   (h: $ a /\ b -> (c <-> d) $): $ a -> (c <-> d) $ =
 '(bitr3d (syla bian2a h1) @ bitrd (syla aneq1a h) (syla bian2a h2));
@@ -845,6 +846,7 @@ theorem al2imi (a b c: wff x) (h: $ a -> b -> c $): $ A. x a -> A. x b -> A. x c
 '(syl alim @ alimi h);
 @(register-eqd 'al) theorem aleqd (G) {x} (a b: wff x) (h: $ G -> (a <-> b) $):
   $ G -> (A. x a <-> A. x b) $ = '(syl aleq @ iald h);
+theorem ialda (G: wff) (a b: wff x) (h: $ G /\ a -> b $): $ G -> A. x (a -> b) $ = '(iald @ exp h);
 theorem alcomb (a: wff x y): $ A. x A. y a <-> A. y A. x a $ = '(ibii alcom alcom);
 theorem alan (a b: wff x): $ A. x (a /\ b) <-> A. x a /\ A. x b $ =
 '(ibii (iand (alimi anl) (alimi anr)) (imp @ al2imi ian));
@@ -947,9 +949,11 @@ theorem exral (a: wff y) (b: wff x y):
   $ E. x A. y (a -> b) -> A. y (a -> E. x b) $ = '(rsyl exal @ alimi exim1);
 theorem rexal (a: wff x) (b: wff x y):
   $ E. x (a /\ A. y b) -> A. y E. x (a /\ b) $ = '(sylbir (exeqi alan1) @ exal);
+theorem rexim1 (a c: wff x): $ E. x (a /\ (b -> c)) -> (b -> E. x (a /\ c)) $ =
+'(com12 @ eximd @ anim2d mpcom);
 theorem rexral (a: wff x) (b: wff y) (c: wff x y):
   $ E. x (a /\ A. y (b -> c)) -> A. y (b -> E. x (a /\ c)) $ =
-'(syl exral @ eximi @ sylbir alan1 @ alimi @ com12 @ anim2d mpcom);
+'(syl exral @ eximi @ sylbir alan1 @ alimi imancom);
 theorem eqerd {x} (h: $ G -> a = x -> p $): $ G -> p $ = '(mpi ax_6 @ eexd @ syl5 eqcom h);
 theorem eale (a: nat) (b: wff x) (c: wff)
   (e: $ x = a -> (b <-> c) $): $ A. x b -> c $ = '(ealeh nfv e);
@@ -1056,6 +1060,10 @@ theorem pimeq1 (p1 p2 q: wff x):
 theorem pimim2 (p q1 q2: wff x):
   $ A. x (q1 -> q2) -> ((P. x p -> q1) -> (P. x p -> q2)) $ =
 '(anim2d @ al2imi imim2);
+theorem pimim2i (p q1 q2: wff x) (h: $ q1 -> q2 $):
+  $ ((P. x p -> q1) -> (P. x p -> q2)) $ = '(pimim2 @ ax_gen h);
+theorem pimim2d (p q1 q2: wff x) (h: $ G -> q1 -> q2 $):
+  $ G -> ((P. x p -> q1) -> (P. x p -> q2)) $ = '(syl pimim2 @ iald h);
 theorem pimeq2a (p q1 q2: wff x):
   $ A. x (p -> (q1 <-> q2)) -> ((P. x p -> q1) <-> (P. x p -> q2)) $ =
 '(aneq2d @ syl aleq @ alimi imeq2a);
@@ -1096,6 +1104,9 @@ theorem expim (p: wff x) (q: wff x y): $ E. y (P. x p -> q) -> (P. x p -> E. y q
 theorem rexpim (a: wff y) (p: wff x) (q: wff x y):
   $ E. y (a /\ (P. x p -> q)) -> (P. x p -> E. y (a /\ q)) $ =
 '(syl expim @ eximi @ bi2a @ pimeq2d bian1);
+theorem rexpim1 (a: wff x) (b: wff y) (c: wff x y):
+  $ E. x (a /\ (P. y b -> c)) -> (P. y b -> E. x (a /\ c)) $ =
+'(iand (eex anrl) @ rsyl (eximi @ anim2 anr) rexral);
 theorem pim2im (p1 q1: wff x) (p2 q2: wff y):
   $ A. x (p1 -> (P. y p2 -> q1 -> q2)) -> (P. x p1 -> q1) -> (P. y p2 -> q2) $ =
 '(impd @ com23 @ syl6ibr eexb @ al2imi @ a2d @ imim2i impim);
@@ -1123,7 +1134,7 @@ def sb (a: nat) {x .y: nat} (p: wff x): wff =
 notation sb (a x p) = ($[$:41) a ($/$:0) x ($]$:0) p;
 
 theorem sbq (a: nat) (b: wff x): $ x = a -> (b <-> [a / x] b) $ =
-'(! ibid _ _ (al y _) (exp @ iald @ exp @ sylc ax_12 (eqtr4d anll anr) anlr)
+'(! ibid _ _ (al y _) (exp @ ialda @ sylc ax_12 (eqtr4d anll anr) anlr)
   (mpi ax_6 @ eexdh nfv (nfim nfal1 nfv) @ exp @ syl5 eal @
     syld (com12 @ imim1i anr) @ syl (com12 eal) @ imp eqtr4));
 theorem sbqcom (a: nat) (b: wff x): $ a = x -> ([a / x] b <-> b) $ = '(bicomd @ rsyl eqcom sbq);
@@ -1151,7 +1162,7 @@ theorem sbe (a: nat) (b: wff x) (c: wff)
   (e: $ x = a -> (b <-> c) $): $ [a / x] b <-> c $ = '(sbeh nfv e);
 theorem sbed (a: nat) (b: wff x) (c: wff)
   (e: $ G /\ x = a -> (b <-> c) $): $ G -> ([a / x] b <-> c) $ =
-'(syl sbet @ iald @ exp e);
+'(syl sbet @ ialda e);
 theorem dfsb2 (a: nat) (b: wff x): $ [a / x] b <-> A. x (x = a -> b) $ =
 '(! ibii (al y _) _
   (mpi ax_6 @ eexdh nfal1 nfv @ syl (a2i @ alimd @ imim1d @ com12 eqtr4) eal)
@@ -1197,10 +1208,10 @@ theorem cbvals (p: wff x): $ A. x p <-> A. y ([y / x] p) $ = '(cbvalh nfv nfsb1 
 theorem cbvexs (p: wff x): $ E. x p <-> E. y ([y / x] p) $ = '(cbvexh nfv nfsb1 sbq);
 theorem cbvald (G) (p: wff x) (q: wff y)
   (h: $ G /\ x = y -> (p <-> q) $): $ G -> (A. x p <-> A. y q) $ =
-'(bitrd (a1i cbvals) (aleqd @ syl sbet @ iald @ exp h));
+'(bitrd (a1i cbvals) (aleqd @ syl sbet @ ialda h));
 theorem cbvexd (G) (p: wff x) (q: wff y)
   (h: $ G /\ x = y -> (p <-> q) $): $ G -> (E. x p <-> E. y q) $ =
-'(bitrd (a1i cbvexs) (exeqd @ syl sbet @ iald @ exp h));
+'(bitrd (a1i cbvexs) (exeqd @ syl sbet @ ialda h));
 
 theorem pimexeqed (a: nat) (p: wff x y) (q: wff x) (p2 q2: wff y)
   (e1: $ G /\ x = a -> (p <-> p2) $)
@@ -1451,7 +1462,7 @@ theorem cbvab (p: wff x) (q: wff y)
 theorem cbvabs (p: wff x): $ {x | p} == {y | [y / x] p} $ = '(cbvabh nfv nfsb1 sbq);
 theorem cbvabd (G) (p: wff x) (q: wff y)
   (h: $ G /\ x = y -> (p <-> q) $): $ G -> {x | p} == {y | q} $ =
-'(eqstrd (a1i cbvabs) @ abeqd @ syl sbet @ iald @ exp h);
+'(eqstrd (a1i cbvabs) @ abeqd @ syl sbet @ ialda h);
 theorem elab2 (a: nat x) (p: wff x): $ a e. {x | p} <-> [a / x] p $ =
 '(bitr (bitr (eleq2 (cbvabh nfv nfsb1 sbq)) elab) (!! sbco x y));
 theorem elabe (a: nat) (p: wff x) (q: wff)
@@ -1614,6 +1625,7 @@ theorem ssab (p q: wff x): $ A. x (p -> q) <-> {x | p} C_ {x | q} $ =
 '(!! cbvalh _ y nfv (nfim (nfel2 nfab1) (nfel2 nfab1)) @
   imeqd (syl6bbr elab sbq) (syl6bbr elab sbq));
 theorem ssabi (p q: wff x) (h: $ p -> q $): $ {x | p} C_ {x | q} $ = '(mpbi ssab @ ax_gen h);
+theorem ssabd (p q: wff x) (h: $ G -> p -> q $): $ G -> {x | p} C_ {x | q} $ = '(sylib ssab @ iald h);
 theorem ssab1 (p: wff x): $ A. x (p -> x e. A) <-> {x | p} C_ A $ =
 '(!! cbvalh _ y nfv (nfim (nfel2 nfab1) nfv) @ imeqd (syl6bbr elab sbq) eleq1);
 theorem ssab2 (p: wff x): $ A. x (x e. A -> p) <-> A C_ {x | p} $ =
@@ -1661,7 +1673,7 @@ theorem sbse (a: nat) (A: set x) (B: set)
   (e: $ x = a -> A == B $): $ S[a / x] A == B $ = '(sbseh nfsv e);
 theorem sbsed (a: nat) (A: set x) (B: set)
   (e: $ G /\ x = a -> A == B $): $ G -> S[a / x] A == B $ =
-'(syl sbset @ iald @ exp e);
+'(syl sbset @ ialda e);
 theorem sbsid (a: set x): $ S[x / x] A == A $ =
 '(!! eqri y @ bitr elsbs sbid);
 theorem nfslem {y} (A: set y) (a: nat x) (B: set x)
@@ -1835,7 +1847,7 @@ theorem eqsubsnd {x} (h: $ G -> x e. A -> x = a $): $ G -> subsn A $ =
 '(sylc subsnss (sylib ssab2 @ iald h) @ a1i subsnsn2);
 
 theorem eqsubsnabd (p: wff x) (h: $ G -> p -> x = a $): $ G -> subsn {x | p} $ =
-'(sylc subsnss (sylib ssab @ iald h) @ a1i subsnsn2);
+'(sylc subsnss (ssabd h) @ a1i subsnsn2);
 
 theorem subsnthe: $ subsn A -> a e. A -> the A = a $ =
 (named '(exp @ eqthed @ ibida (subsni anll anr anlr) @ mpbird (eleq1d anr) anlr));
@@ -1877,7 +1889,7 @@ theorem sbnet (a: nat) (b: nat x) (c: nat):
 theorem sbne (a: nat) (b: nat x) (c: nat)
   (e: $ x = a -> b = c $): $ N[a / x] b = c $ = '(sbneh nfnv e);
 theorem sbned (a: nat) (b: nat x) (c: nat)
-  (e: $ G /\ x = a -> b = c $): $ G -> N[a / x] b = c $ = '(syl sbnet @ iald @ exp e);
+  (e: $ G /\ x = a -> b = c $): $ G -> N[a / x] b = c $ = '(syl sbnet @ ialda e);
 theorem sbneq1 (a b c: nat x): $ a = b -> N[a / x] c = N[b / x] c $ =
 '(theeqd @ !! abeqd y sbeq1);
 theorem sbneq1d (G: wff x) (a b c: nat x)
@@ -2048,6 +2060,8 @@ theorem pncan3: $ a <= b -> a + (b - a) = b $ =
 theorem npcan: $ b <= a -> a - b + b = a $ = '(syl5eq addcom pncan3);
 theorem subadd: $ b <= a -> (a - b = c <-> b + c = a) $ =
 '(ibid (syl5ibrcom (rsyl eqcom @ eqeq1d addeq2) pncan3) @ a1i eqsub2);
+theorem addsub: $ c <= a -> a + b - c = a - c + b $ =
+'(syl6eq pncan @ subeq1d @ syl6eq addrass @ addeq1d @ eqcomd npcan);
 
 theorem leaddid1: $ a <= a + b $ = '(!! iexe x (eqeq1d addeq2) eqid);
 theorem leaddid2: $ a <= b + a $ = '(mpbi (leeq eqid addcom) leaddid1);
@@ -3228,7 +3242,7 @@ theorem xabeq2da (B C: set x) (h: $ G /\ x e. A -> B == C $):
   $ G -> X\ x e. A, B == X\ x e. A, C $ =
 '(!! abeqd z @ syl aneq2a @ syl6 eleq2 @
   syl (ealeh (nfim nfv @ nfeqs nfsbs1 nfsbs1) @
-    imeqd eleq1 @ eqseqd sbsq sbsq) @ iald @ exp h);
+    imeqd eleq1 @ eqseqd sbsq sbsq) @ ialda h);
 
 theorem cbvxabs (B: set x): $ X\ x e. A, B == X\ y e. A, (S[y / x] B) $ =
 '(!! abeqi z @ aneq2i @ eleq2 @ eqscom sbsco);
@@ -3257,7 +3271,7 @@ theorem elxabe2 (B: set x) (h: $ x = fst a -> (snd a e. B <-> p) $):
 
 theorem xabssd (B C: set x) (h: $ G /\ x e. A -> B C_ C $):
   $ G -> X\ x e. A, B C_ X\ x e. A, C $ =
-(named '(sylib ssab @ iald @ syl anim2a @ exp @ syl ssel @
+(named '(ssabd @ syl anim2a @ exp @ syl ssel @
   sbethh (nfim nfv @ nfss nfsbs1 nfsbs1) h @
   imeqd (aneq2d eleq1) (sseqd sbsq sbsq)));
 
@@ -3461,7 +3475,7 @@ theorem cbvlam (a: nat x) (b: nat y)
 theorem cbvlams (a: nat x): $ (\ x, a) == (\ y, N[y / x] a) $ = '(cbvlamh nfnv nfsbn1 sbnq);
 theorem cbvlamd (G) (a: nat x) (b: nat y)
   (h: $ G /\ x = y -> a = b $): $ G -> (\ x, a) == (\ y, b) $ =
-'(eqstrd (a1i cbvlams) @ lameqd @ syl sbnet @ iald @ exp h);
+'(eqstrd (a1i cbvlams) @ lameqd @ syl sbnet @ ialda h);
 
 theorem lamisf (a: nat x): $ isfun (\ x, a) $ =
 '(!! ax_gen u @ !! ax_gen v @ !! ax_gen w @
@@ -3537,6 +3551,9 @@ theorem elrapp: $ b e. F @' a <-> a <> b e. F $ = '(elabe ,eqtac);
 theorem rappsabs (A: set x): $ (S\ x, A) @' a == S[a / x] A $ =
 (named '(ax_gen @ bitr elrapp elsabs));
 
+theorem rappsab (A: set x): $ (S\ x, A) @' x == A $ =
+(named '(sbeth rappsabs @ eqseqd rappeq2 @ rsyl eqcom @ eqscomd sbsq));
+
 theorem rappsabed (A: set x) (h: $ G /\ x = a -> A == B $):
   $ G -> (S\ x, A) @' a == B $ =
 '(syl5eqs rappsabs @ mpi ax_6 @ eexdh nfv (nfeqs nfsbs1 nfsv) @
@@ -3544,6 +3561,16 @@ theorem rappsabed (A: set x) (h: $ G /\ x = a -> A == B $):
 
 theorem rappsabe (A: set x) (h: $ x = a -> A == B $):
   $ (S\ x, A) @' a == B $ = '(trud @ rappsabed @ anwr h);
+
+theorem rappsabed1 (A: set x) (e: $ G /\ x = a -> F @' a == A -> P $):
+  $ G -> F == S\ x, A -> P $ =
+'(mpi ax_6 @ eexdh nfv (nfim (nfeqs nfsv nfsab1) nfv) @
+  exp @ syld (syl5ibrcom (eqseq1d rappeq1) @ syl6eqs rappsab @ eqscomd @ rappeq2d anr) e);
+theorem rappsabed2 (A: set x)
+  (e: $ G /\ x = a -> A == B $): $ G -> F == S\ x, A -> F @' a == B $ =
+'(rappsabed1 @ bi1d @ eqseq2d e);
+
+theorem rappss: $ A C_ B -> A @' a C_ B @' a $ = (named '(ssabd ssel));
 
 --| The application operator. If `F` is a function and `x` is a natural number then
 --| `F @ x` is `F` evaluated at `x`. That is, it is the value `y`
@@ -3694,7 +3721,7 @@ theorem leastlem: $ a e. A -> least A e. A /\ A. z (z e. A -> least A <= z) $ =
       '(cases
         (orrd @ sylan (iexe @ aneqd eleq1 @ aleqd @ imeq2d leeq1)
           id (a1i @ ax_gen @ a1i le01))
-        (orld @ iald @ exp @ sylibr lt01 @
+        (orld @ ialda @ sylibr lt01 @
           mtd anl @ com12 @ syl5 anr (bi1d eleq1)))
       '(eor
         (casesda
@@ -3722,7 +3749,7 @@ theorem least0: $ ~E. x x e. A -> least A = 0 $ =
 
 theorem subsnfin: $ subsn A -> finite A $ =
 (named '(syl (mpi snfin finss) @ sylib ssab2 @
-  iald @ exp @ subsni anl anr @ anwr leastel));
+  ialda @ subsni anl anr @ anwr leastel));
 
 @_ local def sapp (F: set) (x: nat): set = $ S\ y, F @' (x <> y) $;
 infixl sapp: $@@$ prec 200;
@@ -4394,7 +4421,7 @@ theorem dvdcop (h1: $ G -> coprime a b $)
 
 theorem dfcop2: $ coprime a b <-> A. x (x || a -> x || b -> x = 1) $ =
 '(ibii
-  (iald @ exp @ exp @ dvdcop anll anlr anr)
+  (ialda @ exp @ dvdcop anll anlr anr)
   (!! eqgcd y @ ibid
     (a1i @ iand (mpi dvd11 dvdtr) (mpi dvd11 dvdtr))
     (exp @ sylibr dvd12 @ mpd anrr @ mpd anrl @ anwl @
@@ -4530,7 +4557,7 @@ theorem expset: $ finite A <-> E. a pset a == A $ =
   '(! ibii $ E. n A. x _ $ _
     (eex @ mpbii psetsep @ exeqd @ eqseq2d @ !! eqab1d y @ syl bian1a @
       eale @ imeqd eleq1 lteq1)
-    (eex @ iexde @ iald @ exp @
+    (eex @ iexde @ ialda @
       letrd (syl (mpi lesucid letr) @
         sylib (leeq1 mul11) @ syl lemul1a @ syl an3l h) @
       letrd (dvdle (syl ltner @ syl anllr h) (anrd h)) @
@@ -5267,7 +5294,7 @@ theorem funcres: $ func F A B /\ C C_ A -> func (F |` C) C B $ =
   syl (sstr @ rnss resss) @ anwl funcrn);
 
 theorem funcssxp: $ func F A B -> F C_ Xp A B $ =
-(named '(iald @ exp @ sylibr elxp @
+(named '(ialda @ sylibr elxp @
   iand (mpbid (eleq2d anllr) @ anwr fsteldm) (sseld anlr @ anwr sndelrn)));
 
 theorem funcfin: $ func F A B -> finite A -> finite B -> finite F $ =
@@ -5345,7 +5372,7 @@ theorem rlameq2a (v w: nat x): $ (A. x (x e. a -> v = w)) -> \. x e. a, v = \. x
 '(syl axext @ !! iald y @ bitr4g elrlam elrlam @ syl exeq @ alimi @
   syl aneq2a @ imim2i @ eqeq2d preq2);
 theorem rlameq2da (v w: nat x) (h: $ G /\ x e. a -> v = w $): $ G -> \. x e. a, v = \. x e. a, w $ =
-'(syl rlameq2a @ iald @ exp h);
+'(syl rlameq2a @ ialda h);
 theorem nfrlam1 (a b: nat x) (h1: $ FN/ x a $): $ FN/ x \. x e. a, b $ =
 '(nflower @ nfres nflam1 (nfns h1));
 theorem nfrlam (a b: nat x y) (h1: $ FN/ x a $) (h2: $ FN/ x b $): $ FN/ x \. y e. a, b $ =
@@ -5359,7 +5386,7 @@ theorem cbvrlams (a: nat x y) (b: nat x): $ (\. x e. a, b) = (\. y e. a, N[y / x
 '(cbvrlamh nfnv nfsbn1 sbnq);
 theorem cbvrlamd (G) (a: nat x y) (b: nat x) (c: nat y)
   (h: $ G /\ x = y -> b = c $): $ G -> (\. x e. a, b) = (\. y e. a, c) $ =
-'(eqtrd (a1i cbvrlams) @ rlameq2d @ syl sbnet @ iald @ exp h);
+'(eqtrd (a1i cbvrlams) @ rlameq2d @ syl sbnet @ ialda h);
 
 theorem rlamss (a b: nat x): $ (\. x e. a, b) C_ \ x, b $ = '(mpbir (sseq1 rlameqs) resss);
 theorem rlamisf (a b: nat x): $ isfun (\. x e. a, b) $ = '(isfss rlamss lamisf);
@@ -6173,7 +6200,7 @@ theorem lfnauxnth: $ i < n -> nth i (lfnaux F k n) = suc (F @ (k + i)) $ =
     eqeqd (ntheqd anl (lfnauxeq2d anr)) (suceqd @ appeq2d @ addeqd anr anl)))
   '(ealie (ealde @ bi1d ,h) ,(induct '(ind) 'n
     '(ax_gen @ ax_gen @ absurd lt02)
-    '(sylbi (cbval @ cbvald ,h) @ iald @ iald @ exp @
+    '(sylbi (cbval @ cbvald ,h) @ iald @ ialda @
       syl5eq (ntheq2 lfnauxS) @ casesd
         (exp @ eqtr4d (syl6eq nthZ @ ntheq1d anr) @ suceqd @ appeq2d @ syl6eq add02 @ addeq2d anr)
         (syl5bi exsuc @ eexdh (nfan nfal1 nfv) nfv @ exp @
@@ -6290,6 +6317,16 @@ theorem takedrop: $ take l n ++ drop l n = l $ =
       syl5eq dropnth @ ntheq1d @
       eqtrd (addeq1d @ subeq2d @ syl5eq takelen @ syl eqmin2 @ letrd anr @ anwl ltle) @
       anwr npcan));
+
+theorem takeArray: $ m <= n /\ l e. Array A n -> take l m e. Array A m $ =
+'(sylibr elArray @ iand
+  (anld @ sylib appendT @ sylibr (eleq1 takedrop) @ anwr elArrayList)
+  (syl5eq takelen @ syl eqmin2 @ mpbird (leeq2d @ anwr elArraylen) anl));
+
+theorem dropArray: $ l e. Array A (m + n) -> drop l m e. Array A n $ =
+'(sylibr elArray @ iand
+  (anrd @ sylib appendT @ sylibr (eleq1 takedrop) elArrayList)
+  (syl5eq droplen @ syl6eq pncan2 @ subeq1d elArraylen));
 
 theorem take0: $ take l 0 = 0 $ =
 '(mpbi leneq0 @ eqtr takelen @ mpbi le02 minle2);

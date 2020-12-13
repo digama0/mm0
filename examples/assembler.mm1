@@ -203,14 +203,14 @@ theorem basicElf_ok
 ------------
 
 local def assembled (c s: string) (start end: nat): wff =
-$ end = start + len s /\ E. n (start = text_start + n /\ sublistAt n c s) $;
+$ end e. u64 /\ end = start + len s /\ E. n (start = text_start + n /\ sublistAt n c s) $;
 
 theorem assembled_start (h: $ assembled c s x y $): $ text_start <= x $ =
 (named '(eex (anwl @ mpbiri leaddid1 leeq2) @ anr h));
 
 theorem assembled_end (h: $ assembled c s x y $): $ y <= text_start + len c $ =
 (named @ focus
-  '(mpbir (leeq1 @ anl h) @ eex _ @ anr h)
+  '(mpbir (leeq1 @ anlr h) @ eex _ @ anr h)
   '(mpbird (leeq1d @ syl6eq addass @ addeq1d anl) @
     sylib leadd2 @ anwr sublistAt_len_le));
 
@@ -225,12 +225,14 @@ theorem assembled_func_bound (h: $ assembled_func c s x y $):
 '(ian (assembled_start @ anl h) @ assembled_func_lt h);
 
 local def assembles (c s: string) (start end: nat) (p q: wff): wff =
-$ E. n (start = text_start + n /\ sublistAt n c s) /\ p -> end = start + len s /\ q $;
+$ E. n (start = text_start + n /\ sublistAt n c s) ->
+  end = start + len s /\ (text_start + len c e. u64 -> p -> q) $;
 
-theorem assembles_trul (h: $ assembles c s x y p (T. /\ q) $):
-  $ assembles c s x y p q $ = (named '(sylib (aneq2i @ bian1 itru) h));
+theorem assembles_trul (h: $ assembles c s x y p (T. /\ q) $): $ assembles c s x y p q $ =
+(named '(sylib (aneq2i @ imeq2i @ imeq2i @ bian1 itru) h));
 theorem assembles_assoc (h: $ assembles c s x y p (q1 /\ q2 /\ q3) $):
-  $ assembles c s x y p (q1 /\ (q2 /\ q3)) $ = (named '(sylib (aneq2i anass) h));
+  $ assembles c s x y p (q1 /\ (q2 /\ q3)) $ =
+(named '(sylib (aneq2i @ imeq2i @ imeq2i anass) h));
 
 local def assemble1 (s: string) (start end: nat): wff =
 $ end = start + len s $;
@@ -269,11 +271,15 @@ theorem assembles_func_I (h: $ assemble1 (c ': s '+ t) x y $):
     eqtr (leneq @ eqtr s2nsadd @ eqtr (appendeq1 s2nscons) appendS) lenS) lt01S);
 
 theorem assemble_1 (h: $ assemble1 s x y $): $ assembles c s x y p (p /\ assembled c s x y) $ =
-(named '(iand (a1i h) @ iand anr (iand (a1i h) anl)));
+(named @ focus
+  '(iand (a1i h) @ expcom @ expcom @ anim2 @ anim1a @ eex @ exp @ iand _ (a1i h))
+  '(sylibr (eleq1 h) @ sylc u64le1 _ anr)
+  '(mpbird (leeq1d @ syl6eq addass (addeq1d anll)) @
+    sylib leadd2 @ rsyl anlr sublistAt_len_le));
 
 theorem assemble_func (h: $ assembles_func s x y $):
   $ assembles c s x y p (p /\ assembled_func c s x y) $ =
-(named '(sylibr (aneq2i @ aneq2i @ bian2 @ anr h) @ assemble_1 @ anl h));
+(named '(sylibr (aneq2i @ imeq2i @ imeq2i @ aneq2i @ bian2 @ anr h) @ assemble_1 @ anl h));
 
 theorem assemblesA
   (h1: $ assembles c s x y p q $)
@@ -281,24 +287,25 @@ theorem assemblesA
   $ assembles c (s '+ t) x z p r $ =
 (named @ focus
   (have 'h3 '(bitr (sublistAteq3 s2nsadd) sublistAt_append))
-  '(mpand (syl h1 @ anim1 @ eximi @ anim2 @ sylbi h3 anl) @
-    mpand (syl h2 @ sylbir anass @ anim1 @ impcom @ syl5 anl @
-      eexda @ iexde @ mpbird ,eqtac @ anwl @
-      iand (syl6eq addass @ addeq1d anrl) @ rsyl anrr @ sylbi h3 anr) @
+  '(mpand (syl h1 @ eximi @ anim2 @ sylbi h3 anl) @
+    mpand (syl h2 @ imp @ syl5 anl @ eex @ exp @ iexde @ mpbird ,eqtac @ anwl @
+      iand (syl6eq addass @ addeq1d anll) @ rsyl anlr @ sylbi h3 anr) @
     iand (eqtrd anrl @ syl6eqr (addeq2 @ eqtr (leneq s2nsadd) appendlen) @
-      syl6eq addass @ addeq1d @ anwl anrl) anrr));
+      syl6eq addass @ addeq1d @ anwl anrl) @
+    exp @ syld (imp @ anrd anlr) (imp anrr)));
 
 theorem assembles0: $ assembles c s0 x x p p $ =
-(named '(anim1 @ a1i assemble1_0));
+(named '(a1i @ iani assemble1_0 idd));
 
 theorem assembles_finish
   (h1: $ assembles c c ,0x400078 end T. p $)
-  (h2: $ ,0x400078 + n = end $):
+  (h2: $ ,0x400078 + n = end $)
+  (h3: $ end e. u64 $):
   $ len c = n /\ p $ =
 (focus
-  '(anim1 (eqcomd @ sylib addcan2 @ eqtrd (a1i h2) id) @ h1 @
-    ian (iexe _ @ ian (eqcom add02) sublistAt_id) itru)
-  eqtac);
+  (have 'H '(h1 @ iexe _ @ iani (eqcom add02) sublistAt_id)) eqtac
+  (have 'H2 '(eqcom @ mpbi addcan2 @ eqtr h2 (anli H)))
+  '(iani H2 @ anri H (mpbir (eleq1 @ eqtr (addeq2 H2) h2) h3) itru));
 
 do {
   --| Builds a sequence of applications of `push` and `reassoc` to `x1` that
@@ -484,9 +491,11 @@ do {
         (match-fn @ ($ ,q1 /\ ,q2 /\ ,q3 $ p its)
           '($ ,q1 /\ (,q2 /\ ,q3) $ (assembles_assoc ,p) ,its))
         n) @ (prop pf _)
+      @ match (mkadd start_x filesz_x) @ (fileend_x fileend_p)
       (add-tac-thm! asmd () ()
         '(an (eq (len (,content)) ,filesz_x) ,prop) ()
-        @ fn () '(assembles_finish ,pf ,(verb @ nth 1 @ mkadd start_x filesz_x)))
+        @ fn () '(assembles_finish ,pf ,(verb fileend_p)
+          ,(verb @ to-elu 64 fileend_x)))
       @ fn (i x)
       @ letrec ([(f i n) @ if {n = 1} x
         @ let ([m {n // 2}] [m2 {n - m}])

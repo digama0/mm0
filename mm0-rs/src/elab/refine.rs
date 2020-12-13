@@ -857,7 +857,7 @@ impl Elaborator {
             let ret = subst.subst(&tdata.ret);
             break RState::RefineHyps {
               res: if u.len() <= hyps.len() {
-                RefineHypsResult::Ok(self.unify(sp, &tgt, &ret)?)
+                RefineHypsResult::Ok(self.unify(sp2, &tgt, &ret)?)
               } else {
                 RefineHypsResult::Extra
               },
