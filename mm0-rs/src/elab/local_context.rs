@@ -751,7 +751,7 @@ impl Elaborator {
           if let EType::Bound(s) = ty {
             if self.sorts[s].mods.contains(Modifiers::STRICT) {
               return Err(ElabError::new_e(sp,
-                format!("sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
+                format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
             }
           }
           args.push((a, ty));
@@ -854,9 +854,9 @@ impl Elaborator {
           let ty = ba.push_var(&self.lc.vars, a, is).ok_or_else(||
             ElabError::new_e(sp, format!("too many bound variables (max {})", MAX_BOUND_VARS)))?;
           if let EType::Bound(s) = ty {
-            if !self.sorts[s].mods.contains(Modifiers::STRICT) {
+            if self.sorts[s].mods.contains(Modifiers::STRICT) {
               return Err(ElabError::new_e(sp,
-                format!("sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
+                format!("strict sort '{}' does not admit bound variables", self.sorts[s].name.as_str())))
             }
           }
           args.push((a, ty));
