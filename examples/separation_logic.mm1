@@ -215,6 +215,11 @@ theorem heap_join_sstop3: $ heap_join h1 h2 = suc h -> h e. T.s $ = '(sylibr el_
 infixl s_or: $\/s$ prec 64;
 theorem el_s_or: $ h e. P \/s Q <-> h e. P \/ h e. Q $ = 'elun;
 
+theorem s_orl: $ P C_ P \/s Q $ = 'ssun1;
+theorem s_orr: $ Q C_ P \/s Q $ = 'ssun2;
+theorem s_eorb: $ P \/s Q C_ R <-> P C_ R /\ Q C_ R $ = 'unss;
+theorem s_eor: $ P C_ R -> Q C_ R -> P \/s Q C_ R $ = '(exp @ bi2i s_eorb);
+
 @_ local def s_an (P Q: set): set = $ Inter P Q $;
 infixl s_an: $/\s$ prec 70;
 theorem el_s_an: $ h e. P /\s Q <-> h e. P /\ h e. Q $ = 'elin;
@@ -230,6 +235,10 @@ theorem s_anim1: $ P C_ Q -> P /\s R C_ Q /\s R $ = 'ssin1;
 theorem s_anim2: $ Q C_ R -> P /\s Q C_ P /\s R $ = 'ssin2;
 theorem s_ancom: $ P /\s Q == Q /\s P $ = 'incom;
 theorem s_anass: $ (P /\s Q) /\s R == P /\s (Q /\s R) $ = 'inass;
+theorem s_anlass: $ P /\s (Q /\s R) == Q /\s (P /\s R) $ =
+'(eqstr3 s_anass @ eqstr (s_aneq1 s_ancom) s_anass);
+theorem s_anrass: $ P /\s Q /\s R == P /\s R /\s Q $ =
+'(eqstr s_anass @ eqstr4 (s_aneq2 s_ancom) s_anass);
 theorem s_antop2: $ P /\s T.s /\s T.s == P /\s T.s $ = '(mpbi s_antop s_anr);
 
 theorem el_s_antop: $ h e. P /\s T.s <-> isfun h /\ h e. P $ =
@@ -246,8 +255,10 @@ theorem s_lift_an: $ ^s p /\s ^s q == ^s (p /\ q) $ =
 
 theorem s_lift_anidm: $ ^s p /\s ^s p == ^s p $ = '(eqstr s_lift_an @ s_lifteq anidm);
 
-theorem s_anlift_ass: $ ^s (p /\ q) /\s P == ^s p /\s (^s q /\s P) $ =
+theorem s_anliftass: $ ^s (p /\ q) /\s P == ^s p /\s (^s q /\s P) $ =
 '(eqstr3 (s_aneq1 s_lift_an) s_anass);
+theorem s_anliftlass: $ ^s p /\s (^s q /\s P) == ^s q /\s (^s p /\s P) $ =
+'(eqstr3 s_anliftass @ eqstr (s_aneq1 @ s_lifteq ancomb) s_anliftass);
 
 theorem s_bot_an1: $ F.s /\s P == F.s $ = '(mpbi s_bot_ss2 s_anl);
 theorem s_bot_an2: $ P /\s F.s == F.s $ = '(mpbi s_bot_ss2 s_anr);
@@ -265,6 +276,27 @@ theorem s_bian1: $ P C_ T.s -> p -> ^s p /\s P == P $ =
 theorem s_bian2: $ P C_ T.s -> p -> P /\s ^s p == P $ = '(syl6ib (eqseq1 s_ancom) s_bian1);
 theorem s_exp: $ P C_ T.s -> ^s p /\s P C_ Q -> p -> P C_ Q $ =
 '(com23 @ syl6 (bi1d sseq1) s_bian1);
+
+theorem s_bian11i (h: $ a == b /\s c $):
+  $ a /\s d == b /\s (c /\s d) $ = '(eqstr (s_aneq1 h) s_anass);
+theorem s_bian21i (h: $ a == b /\s c $):
+  $ a /\s d == (b /\s d) /\s c $ = '(eqstr (s_aneq1 h) s_anrass);
+theorem s_bian12i (h: $ a == b /\s c $):
+  $ d /\s a == b /\s (d /\s c) $ = '(eqstr (s_aneq2 h) s_anlass);
+theorem s_bian22i (h: $ a == b /\s c $):
+  $ d /\s a == (d /\s b) /\s c $ = '(eqstr4 (s_aneq2 h) s_anass);
+theorem s_bian11d (h: $ G -> (a == b /\s c) $):
+  $ G -> (a /\s d == b /\s (c /\s d)) $ = '(syl6eqs s_anass (s_aneq1d h));
+theorem s_bian21d (h: $ G -> (a == b /\s c) $):
+  $ G -> (a /\s d == (b /\s d) /\s c) $ = '(syl6eqs s_anrass (s_aneq1d h));
+theorem s_bian12d (h: $ G -> (a == b /\s c) $):
+  $ G -> (d /\s a == b /\s (d /\s c)) $ = '(syl6eqs s_anlass (s_aneq2d h));
+theorem s_bian22d (h: $ G -> (a == b /\s c) $):
+  $ G -> (d /\s a == (d /\s b) /\s c) $ = '(syl6eqsr s_anass (s_aneq2d h));
+theorem s_bian12da (h: $ G /\ d -> (a == b /\s c) $):
+  $ G -> (^s d /\s a == b /\s (^s d /\s c)) $ = '(syl6eqs s_anlass (syl s_aneq2a @ exp h));
+theorem s_bian22da (h: $ G /\ d -> (a == b /\s c) $):
+  $ G -> (^s d /\s a == (^s d /\s b) /\s c) $ = '(syl6eqsr s_anass (syl s_aneq2a @ exp h));
 
 @_ local def s_elift (p: wff): set = $ ^s p /\s emp $;
 prefix s_elift: $^e$ prec 81;
@@ -316,7 +348,7 @@ theorem el_s_im: $ h e. (P ->s Q) <-> isfun h /\ (h e. P -> h e. Q) $ = '(elabe 
 
 @_ local def s_ex {x: nat} (A: set) (P: set x): set = $ {h | E. x (x e. A /\ h e. P)} $;
 notation s_ex {x} (A P) = ($E.s$:75) x ($e.$:50) A ($,$:0) P;
-theorem el_s_ex (A: set) (P: set x):
+theorem el_s_ex (A: set x) (P: set x):
   $ h e. E.s x e. A, P <-> E. x (x e. A /\ h e. P) $ = '(elabe ,eqtac);
 
 theorem s_exeq1 (P: set x): $ A == B -> E.s x e. A, P == E.s x e. B, P $ = '(s_exeq1d id);
@@ -369,8 +401,20 @@ theorem s_eximd (P Q: set x) (h: $ G /\ x e. A -> P C_ Q $): $ G -> E.s x e. A, 
 theorem s_exim1 (P: set x): $ A C_ B -> E.s x e. A, P C_ E.s x e. B, P $ =
 (named '(iald @ sylibr (imeqi el_s_ex el_s_ex) @ eximd @ anim1d ssel));
 
-theorem s_exeqe (B: set x) (h: $ G /\ x = a -> B == C $): $ G -> E.s x e. sn a, B == C $ =
-(named '(iald @ syl5bb el_s_ex @ syl5bb (exeqi @ aneq1i elsn) @ exeqed @ eleq2d h));
+theorem s_ex_anlift1 (p: wff x) (A B P: set x) (h: $ P C_ T.s $):
+  $ A. x (x e. A /\ p <-> x e. B) -> E.s x e. A, (^s p /\s P) == E.s x e. B, P $ =
+(named '(iald @ bitr4g el_s_ex el_s_ex @ syl exeq @ alimi @
+  syl5bb (aneq2i @ el_s_anlift1 h) @ syl5bbr anass @ aneq1d id));
+theorem s_exv (A P: set x) (h: $ P C_ T.s $): $ E.s x e. A, P == E.s x e. _V, (^s (x e. A) /\s P) $ =
+'(eqscom @ s_ex_anlift1 h @ ax_gen @ bian1 elv);
+
+theorem s_exeqe (B: set x) (e: $ G /\ x = a -> B == C $): $ G -> E.s x e. sn a, B == C $ =
+(named '(iald @ syl5bb el_s_ex @ syl5bb (exeqi @ aneq1i elsn) @ exeqed @ eleq2d e));
+theorem s_exeqe2 (B: set x) (e: $ G /\ x = a -> B == C $):
+  $ G -> E.s x e. A, (^s (x = a) /\s B) == ^s (a e. A) /\s C $ =
+'(syl5eqs (s_exv @ s_anwl s_lift_sstop) @
+  eqstr3d (s_exeq2da @ a1i @ eqstr (s_aneq1 @ s_lifteq elsn) s_anliftlass) @
+  syl5eqsr (s_exv @ s_anwl s_lift_sstop) @ s_exeqe @ s_aneqd (s_lifteqd @ eleq1d anr) e);
 
 theorem s_ex_lift (p: wff x): $ E.s x e. A, ^s p == ^s (E. x (x e. A /\ p)) $ =
 (named '(ax_gen @ bitr4 el_s_ex @ bitr4 el_s_lift @ bitr (rexeqi el_s_lift) rexan1));
@@ -465,15 +509,17 @@ theorem s_sep_antop1: $ (P /\s T.s) *s Q == P *s Q $ =
 theorem s_sep_antop2: $ P *s (Q /\s T.s) == P *s Q $ =
 '(eqstr4 s_sepcom @ eqstr4 s_sepcom s_sep_antop1);
 
-theorem s_sep_ss1: $ P C_ Q -> P *s R C_ Q *s R $ =
+theorem s_sepim1: $ P C_ Q -> P *s R C_ Q *s R $ =
 (named '(sylib ssab @ iald @ eximd @ eximd @ anim1d @ anim1d ssel));
-theorem s_sep_ss2: $ Q C_ R -> P *s Q C_ P *s R $ =
-'(sylib (sseq s_sepcom s_sepcom) s_sep_ss1);
+theorem s_sepim2: $ Q C_ R -> P *s Q C_ P *s R $ =
+'(sylib (sseq s_sepcom s_sepcom) s_sepim1);
+theorem s_sepim: $ P1 C_ P2 -> Q1 C_ Q2 -> P1 *s Q1 C_ P2 *s Q2 $ =
+'(rsyl s_sepim1 @ syl5 s_sepim2 sstr);
 
 theorem s_sep_subsn: $ subsn P -> subsn Q -> subsn (P *s Q) $ =
 (named '(sylbi subsnsssn @ eex @ syl5bi subsnsssn @ eexda @
   syl (mpi subsnsn subsnss) @
-  sylc sstr (anwl s_sep_ss1) @ sylc sstr (anwr s_sep_ss2) @
+  sylc sstr (anwl s_sepim1) @ sylc sstr (anwr s_sepim2) @
   a1i @ ax_gen @ sylbi el_s_sep_sn @ sylibr elsn @
   sylib (eqlower2 @ unfin finns finns) @ eqscomd heap_join_un));
 
@@ -519,7 +565,7 @@ theorem s_bot_sep1: $ F.s *s P == F.s $ =
 theorem s_bot_sep2: $ P *s F.s == F.s $ = '(eqstr s_sepcom s_bot_sep1);
 
 theorem s_ansepdi: $ (P /\s Q) *s R C_ (P *s R) /\s (Q *s R) $ =
-'(mpbir ss_s_an @ ian (s_sep_ss1 s_anl) (s_sep_ss1 s_anr));
+'(mpbir ss_s_an @ ian (s_sepim1 s_anl) (s_sepim1 s_anr));
 theorem s_orsepdi: $ (P \/s Q) *s R == (P *s R) \/s (Q *s R) $ =
 (named '(ax_gen @ bitr el_s_sep2 @ bitr (exeqi @ bitr (aneq1i el_s_or) andir) @
   bitr4 exor @ bitr el_s_or @ oreq el_s_sep2 el_s_sep2));
@@ -538,6 +584,11 @@ theorem s_sep_anlift2: $ P *s (^s p /\s Q) == ^s p /\s (P *s Q) $ =
 theorem s_sep_anlift: $ (^s p /\s P) *s (^s q /\s Q) == ^s (p /\ q) /\s (P *s Q) $ =
 '(eqstr4 s_sep_anlift1 @ eqstr3 (s_aneq1 s_lift_an) @
   eqstr4 s_anass @ s_aneq2 s_sep_anlift2);
+
+theorem s_sepssl: $ P C_ ^s p -> P *s Q C_ ^s p $ =
+'(sylibr s_bian1a @ syl5eqsr s_sep_anlift1 @ sylbi s_bian1a s_sepeq1);
+theorem s_sepssr: $ Q C_ ^s p -> P *s Q C_ ^s p $ =
+'(sylibr s_bian1a @ syl5eqsr s_sep_anlift2 @ sylbi s_bian1a s_sepeq2);
 
 theorem s_bian1sep1i (h: $ a == ^s b /\s c $):
   $ a *s d == ^s b /\s (c *s d) $ = '(eqstr (s_sepeq1 h) s_sep_anlift1);
@@ -605,7 +656,7 @@ theorem s_wand_mp: $ (P -*s Q) *s P C_ Q $ = '(anri @ mpbi ss_s_wand_g ssid);
 theorem s_wand_mpr: $ P *s (P -*s Q) C_ Q $ = '(mpbi (sseq1 s_sepcom) s_wand_mp);
 
 theorem s_wand_ss1: $ P C_ Q -> Q -*s R C_ P -*s R $ =
-'(sylibr ss_s_wand_g @ iand (a1i s_wand_sstop) @ syl (mpi s_wand_mp sstr) s_sep_ss2);
+'(sylibr ss_s_wand_g @ iand (a1i s_wand_sstop) @ syl (mpi s_wand_mp sstr) s_sepim2);
 theorem s_wand_ss2: $ Q C_ R -> P -*s Q C_ P -*s R $ =
 '(sylibr ss_s_wand_g @ iand (a1i s_wand_sstop) @ sstr s_wand_mp);
 
@@ -877,7 +928,7 @@ theorem s_weak_sstop: $ P C_ T.s -> (P =>*s Q <-> P C_ Q *s T.s) $ = '(sylbi s_a
 theorem s_weak_sstop1: $ P C_ Q *s T.s -> P =>*s Q $ =
 '(mpbird (syl s_weak_sstop @ mpi s_sep_sstop sstr) id);
 theorem s_weak_septop: $ P =>*s Q <-> P *s T.s C_ Q *s T.s $ =
-'(bitr (ibii (sylib (sseq2 s_septop2) s_sep_ss1) @
+'(bitr (ibii (sylib (sseq2 s_septop2) s_sepim1) @
     sstr @ mpbi (sseq1 s_antop2) s_ssseptop) (sseq1 s_sep_antop1));
 theorem s_weak_iff: $ P =>*s Q <-> A. p (p e. P /\ isfun p -> E. q (q e. Q /\ q C_ p)) $ =
 (named '(aleqi @ bitr (imeq1i @ bitr el_s_antop ancomb) @
@@ -893,20 +944,22 @@ theorem s_weak_id: $ P =>*s P $ = '(ss_s_weak ssid);
 
 theorem s_sep_weak2: $ P =>*s Q -> R *s P =>*s R *s Q $ =
 '(sylibr (s_weak_sstop s_sep_sstop) @
-  sylib (sseq s_sep_antop2 @ eqscom s_sepass) s_sep_ss2);
+  sylib (sseq s_sep_antop2 @ eqscom s_sepass) s_sepim2);
 theorem s_sep_weak1: $ P =>*s Q -> P *s R =>*s Q *s R $ =
 '(sylib (s_weakeq s_sepcom s_sepcom) s_sep_weak2);
 
 theorem s_sepl: $ P *s Q =>*s P $ =
-'(mpbir (s_weak_sstop s_sep_sstop) @ mpbi (sseq1 s_sep_antop2) @ s_sep_ss2 s_anr);
+'(mpbir (s_weak_sstop s_sep_sstop) @ mpbi (sseq1 s_sep_antop2) @ s_sepim2 s_anr);
 theorem s_sepr: $ P *s Q =>*s Q $ = '(mpbi (s_weakeq1 s_sepcom) s_sepl);
+theorem s_weak_anl: $ P /\s Q =>*s P $ = '(ss_s_weak s_anl);
+theorem s_weak_anr: $ P /\s Q =>*s Q $ = '(ss_s_weak s_anr);
 
 theorem s_weak_tr: $ P =>*s Q -> Q =>*s R -> P =>*s R $ = '(syl5bi s_weak_septop sstr);
 
 theorem s_sepwl: $ P =>*s R -> P *s Q =>*s R $ = '(s_weak_tr s_sepl);
 theorem s_sepwr: $ Q =>*s R -> P *s Q =>*s R $ = '(s_weak_tr s_sepr);
-theorem s_weak_anwl: $ P =>*s R -> P /\s Q =>*s R $ = '(s_weak_tr @ ss_s_weak s_anl);
-theorem s_weak_anwr: $ Q =>*s R -> P /\s Q =>*s R $ = '(s_weak_tr @ ss_s_weak s_anr);
+theorem s_weak_anwl: $ P =>*s R -> P /\s Q =>*s R $ = '(s_weak_tr s_weak_anl);
+theorem s_weak_anwr: $ Q =>*s R -> P /\s Q =>*s R $ = '(s_weak_tr s_weak_anr);
 
 theorem s_weak_split (h1: $ G -> subsn Q $) (hA: $ G -> A C_ T.s $)
   (hP: $ G -> A C_ P $) (hQ: $ G -> A =>*s Q $): $ G -> A C_ Q *s (Q -*s P) $ =

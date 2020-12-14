@@ -1496,6 +1496,7 @@ theorem eqss: $ A == B -> A C_ B $ = '(mpbii ssid sseq2);
 theorem eqssr: $ A == B -> B C_ A $ = '(mpbii ssid sseq1);
 theorem ssasym: $ A C_ B -> B C_ A -> A == B $ = '(!! al2imi x ian);
 theorem ssasymd (h1: $ G -> A C_ B $) (h2: $ G -> B C_ A $): $ G -> A == B $ = '(sylc ssasym h1 h2);
+theorem ssasymb: $ A == B <-> A C_ B /\ B C_ A $ = '(ibii (iand eqss eqssr) (imp ssasym));
 
 --| `A i^i B` is the intersection of sets `A` and `B`.
 @(derive-eq 'in) def Inter (A B: set): set = $ {x | x e. A /\ x e. B} $;
@@ -3571,6 +3572,10 @@ theorem rappsabed2 (A: set x)
 '(rappsabed1 @ bi1d @ eqseq2d e);
 
 theorem rappss: $ A C_ B -> A @' a C_ B @' a $ = (named '(ssabd ssel));
+theorem rappssb: $ A C_ B <-> A. x A @' x C_ B @' x $ =
+(named '(bitr ssal2 @ aleqi ssab));
+theorem eqrappb: $ A == B <-> A. x A @' x == B @' x $ =
+'(bitr4 ssasymb @ bitr (aleqi ssasymb) @ bitr4 alan @ aneq rappssb rappssb);
 
 --| The application operator. If `F` is a function and `x` is a natural number then
 --| `F @ x` is `F` evaluated at `x`. That is, it is the value `y`
