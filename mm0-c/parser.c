@@ -752,7 +752,7 @@ void parse_until(u8 stmt_type) {
           } else {
             lookup_ident(gt_terms);
           }
-          ENSURE("literal number overflow", nlits++ != -1);
+          ENSURE("literal number overflow", nlits++ != (u16)-1);
         }
         cursor = start;
 
@@ -875,7 +875,7 @@ void debug_print_input() {
   fill_to(200);
   u8* end = cursor;
   while (*end && *end != '\n') end++;
-  if (write(STDERR_FILENO, start, end-start) < 0);
+  if (write(STDERR_FILENO, start, end-start) < 0) {}
   putc('\n', stderr);
   while (col-- > 0) putc(' ', stderr);
   fputs("^\n\n", stderr);

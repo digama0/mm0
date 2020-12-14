@@ -1,13 +1,20 @@
 #include <stdint.h>
 
+#if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
+#define ALIGNED(n) __attribute__((aligned(n)))
+#define PACKED __attribute__((packed))
+#define UNREACHABLE() __builtin_unreachable()
+#else
+#include <assert.h>
+#define ALIGNED(n)
+#define PACKED
+#define UNREACHABLE() assert(0)
+#endif
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
-
-#define ALIGNED(n) __attribute__((aligned(n)))
-#define PACKED __attribute__((packed))
-#define UNREACHABLE() __builtin_unreachable()
 
 // This is called by the ENSURE macro on failure. The verifier is optimized
 // for the non-failure case, and keeps very little nonessential information
