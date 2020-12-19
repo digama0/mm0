@@ -672,16 +672,6 @@ do (begin
     $ EA_jump k ea k1 /\ EA_jump k ea k2 -> k1 = k2 $
   @ fn () @ e @ q (l cd) @ r el)
 
-  (mk-thm 'unpackFlags_determ '(f c1 c2 z1 z2 s1 s2 o1 o2)
-    $ unpackFlags f c1 z1 s1 o1 /\ unpackFlags f c2 z2 s2 o2 ->
-      c1 = c2 /\ z1 = z2 /\ s1 = s2 /\ o1 = o2 $
-  @ fn () @ ian (r el) @ l @ ian (r el) @ l @ ian (r el) (l el))
-
-  (mk-thm 'readUnpackFlags_determ '(k c1 c2 z1 z2 s1 s2 o1 o2)
-    $ readUnpackFlags k c1 z1 s1 o1 /\ readUnpackFlags k c2 z2 s2 o2 ->
-      c1 = c2 /\ z1 = z2 /\ s1 = s2 /\ o1 = o2 $
-  @ fn () @ r 'unpackFlags_determ)
-
   -- eraseFlags_determ - false!
 
   (mk-thm 'addCarry_determ '(sz a b w1 w2 c1 c2 o1 o2)

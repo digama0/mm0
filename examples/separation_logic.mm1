@@ -230,7 +230,7 @@ theorem s_anl: $ P /\s Q C_ P $ = 'inss1;
 theorem s_anr: $ P /\s Q C_ Q $ = 'inss2;
 theorem s_anwl: $ P C_ R -> P /\s Q C_ R $ = '(sstr s_anl);
 theorem s_anwr: $ Q C_ R -> P /\s Q C_ R $ = '(sstr s_anr);
-theorem ss_s_an: $ A C_ P /\s Q <-> A C_ P /\ A C_ Q $ = 'ssin;
+theorem s_ian: $ A C_ P /\s Q <-> A C_ P /\ A C_ Q $ = 'ssin;
 theorem s_anim1: $ P C_ Q -> P /\s R C_ Q /\s R $ = 'ssin1;
 theorem s_anim2: $ Q C_ R -> P /\s Q C_ P /\s R $ = 'ssin2;
 theorem s_ancom: $ P /\s Q == Q /\s P $ = 'incom;
@@ -271,8 +271,10 @@ theorem s_aneq2a: $ (p -> P == Q) -> ^s p /\s P == ^s p /\s Q $ =
 theorem s_imp: $ (p -> P C_ Q) -> ^s p /\s P C_ Q $ =
 '(syl (mpi s_anr sstr) s_anim2a);
 
+theorem s_bian2_: $ p -> P /\s ^s p == P /\s T.s $ = '(s_aneq2d @ s_lifteqd @ bi2i eqtru);
+theorem s_bian1_: $ p -> ^s p /\s P == P /\s T.s $ = '(syl5eqs s_ancom s_bian2_);
 theorem s_bian1: $ P C_ T.s -> p -> ^s p /\s P == P $ =
-'(exp @ eqstrd (s_aneq1d @ sylib s_lift_eqtop anr) @ syl5eqs s_ancom @ sylib s_bian2a anl);
+'(exp @ eqstrd (anwr s_bian1_) (sylib s_bian2a anl));
 theorem s_bian2: $ P C_ T.s -> p -> P /\s ^s p == P $ = '(syl6ib (eqseq1 s_ancom) s_bian1);
 theorem s_exp: $ P C_ T.s -> ^s p /\s P C_ Q -> p -> P C_ Q $ =
 '(com23 @ syl6 (bi1d sseq1) s_bian1);
@@ -383,6 +385,28 @@ theorem s_exan1 (Q: set x): $ E.s x e. A, (P /\s Q) == P /\s E.s x e. A, Q $ =
   bitr4 (rexeqi el_s_an) @ bitr4 (aneq2i el_s_ex) rexan1));
 theorem s_exan2 (P: set x): $ E.s x e. A, (P /\s Q) == E.s x e. A, P /\s Q $ =
 '(eqstr (s_exeq2i s_ancom) @ eqstr s_exan1 s_ancom);
+theorem s_excom (P: set x y): $ E.s x e. A, E.s y e. B, P == E.s y e. B, E.s x e. A, P $ =
+(named '(ax_gen @ bitr4 el_s_ex @ bitr4 el_s_ex @
+  bitr4 (rexeqi el_s_ex) @ bitr4 (rexeqi el_s_ex) rexcomb));
+
+theorem s_bian1exi (a c: set x) (h: $ a == b /\s c $):
+  $ E.s x e. A, a == b /\s E.s x e. A, c $ = '(eqstr (s_exeq2i h) s_exan1);
+theorem s_bian2exi (a b: set x) (h: $ a == b /\s c $):
+  $ E.s x e. A, a == E.s x e. A, b /\s c $ = '(eqstr (s_exeq2i h) s_exan2);
+theorem s_bian1exd (a c: set x) (h: $ G -> (a == b /\s c) $):
+  $ G -> (E.s x e. A, a == b /\s E.s x e. A, c) $ = '(syl6eqs s_exan1 (s_exeq2d h));
+theorem s_bian2exd (a b: set x) (h: $ G -> (a == b /\s c) $):
+  $ G -> (E.s x e. A, a == E.s x e. A, b /\s c) $ = '(syl6eqs s_exan2 (s_exeq2d h));
+theorem s_biexexi (a b: set x y) (h: $ a == E.s y e. A, b $):
+  $ E.s x e. A, a == E.s y e. A, E.s x e. A, b $ = '(eqstr4 (s_exeq2i h) s_excom);
+theorem s_biexan1d (a b: set x) (h: $ G -> a == E.s x e. A, b $):
+  $ G -> a /\s c == E.s x e. A, (b /\s c) $ = '(syl6eqsr s_exan2 @ s_aneq1d h);
+theorem s_biexan2d (b c: set x) (h: $ G -> b == E.s x e. A, c $):
+  $ G -> a /\s b == E.s x e. A, (a /\s c) $ = '(syl6eqsr s_exan1 @ s_aneq2d h);
+theorem s_biexan1i (a b: set x) (h: $ a == E.s x e. A, b $):
+  $ a /\s c == E.s x e. A, (b /\s c) $ = '(trud @ s_biexan1d @ a1i h);
+theorem s_biexan2i (b c: set x) (h: $ b == E.s x e. A, c $):
+  $ a /\s b == E.s x e. A, (a /\s c) $ = '(trud @ s_biexan2d @ a1i h);
 
 theorem s_eexb (P: set x): $ A. x (x e. A -> P C_ Q) <-> E.s x e. A, P C_ Q $ =
 (named '(bitr4 ralalcomb @ aleqi @ bitr (imeq1i el_s_ex) erexb));
@@ -565,7 +589,7 @@ theorem s_bot_sep1: $ F.s *s P == F.s $ =
 theorem s_bot_sep2: $ P *s F.s == F.s $ = '(eqstr s_sepcom s_bot_sep1);
 
 theorem s_ansepdi: $ (P /\s Q) *s R C_ (P *s R) /\s (Q *s R) $ =
-'(mpbir ss_s_an @ ian (s_sepim1 s_anl) (s_sepim1 s_anr));
+'(mpbir s_ian @ ian (s_sepim1 s_anl) (s_sepim1 s_anr));
 theorem s_orsepdi: $ (P \/s Q) *s R == (P *s R) \/s (Q *s R) $ =
 (named '(ax_gen @ bitr el_s_sep2 @ bitr (exeqi @ bitr (aneq1i el_s_or) andir) @
   bitr4 exor @ bitr el_s_or @ oreq el_s_sep2 el_s_sep2));
@@ -623,6 +647,23 @@ theorem s_exsep1 (Q: set x): $ E.s x e. A, (P *s Q) == P *s E.s x e. A, Q $ =
   bitr4 (rexeqi el_s_sep2) @ birexrexi @ birexexi @ birexan1i el_s_ex));
 theorem s_exsep2 (P: set x): $ E.s x e. A, (P *s Q) == E.s x e. A, P *s Q $ =
 '(eqstr (s_exeq2i s_sepcom) @ eqstr s_exsep1 s_sepcom);
+
+theorem s_bisep1exi (a c: set x) (h: $ a == b *s c $):
+  $ E.s x e. A, a == b *s E.s x e. A, c $ = '(eqstr (s_exeq2i h) s_exsep1);
+theorem s_bisep2exi (a b: set x) (h: $ a == b *s c $):
+  $ E.s x e. A, a == E.s x e. A, b *s c $ = '(eqstr (s_exeq2i h) s_exsep2);
+theorem s_bisep1exd (a c: set x) (h: $ G -> (a == b *s c) $):
+  $ G -> (E.s x e. A, a == b *s E.s x e. A, c) $ = '(syl6eqs s_exsep1 (s_exeq2d h));
+theorem s_bisep2exd (a b: set x) (h: $ G -> (a == b *s c) $):
+  $ G -> (E.s x e. A, a == E.s x e. A, b *s c) $ = '(syl6eqs s_exsep2 (s_exeq2d h));
+theorem s_biexsep1d (a b: set x) (h: $ G -> a == E.s x e. A, b $):
+  $ G -> a *s c == E.s x e. A, (b *s c) $ = '(syl6eqsr s_exsep2 @ s_sepeq1d h);
+theorem s_biexsep2d (b c: set x) (h: $ G -> b == E.s x e. A, c $):
+  $ G -> a *s b == E.s x e. A, (a *s c) $ = '(syl6eqsr s_exsep1 @ s_sepeq2d h);
+theorem s_biexsep1i (a b: set x) (h: $ a == E.s x e. A, b $):
+  $ a *s c == E.s x e. A, (b *s c) $ = '(trud @ s_biexsep1d @ a1i h);
+theorem s_biexsep2i (b c: set x) (h: $ b == E.s x e. A, c $):
+  $ a *s b == E.s x e. A, (a *s c) $ = '(trud @ s_biexsep2d @ a1i h);
 
 @_ local def s_wand (P Q: set): set =
 $ {h1 | isfun h1 /\ A. h2 A. h (h2 e. P -> heap_join h1 h2 = suc h -> h e. Q)} $;
@@ -963,7 +1004,7 @@ theorem s_weak_anwr: $ Q =>*s R -> P /\s Q =>*s R $ = '(s_weak_tr s_weak_anr);
 
 theorem s_weak_split (h1: $ G -> subsn Q $) (hA: $ G -> A C_ T.s $)
   (hP: $ G -> A C_ P $) (hQ: $ G -> A =>*s Q $): $ G -> A C_ Q *s (Q -*s P) $ =
-'(sylc sstr (sylibr ss_s_an @
+'(sylc sstr (sylibr s_ian @
     iand (mpbid (syl s_weak_sstop hA) hQ) hP) @ syl s_split h1);
 
 theorem s_lift_weak_elift: $ ^s p =>*s ^e p $ = '(eqss @ eqstr4 s_lift_antop s_elift_septop);

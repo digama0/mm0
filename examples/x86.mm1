@@ -165,6 +165,11 @@ theorem bitDifadd: $ b C_ a -> bitDif a b + b = a $ =
 theorem bitDifsub: $ b C_ a -> bitDif a b = a - b $ =
 '(syl5eqr pncan @ subeq1d bitDifadd);
 
+theorem bitDif_upto: $ bitDif a (upto n) = shl (shr a n) n $ =
+(named '(axext @ ax_gen @ bitr4 elbitDif @ bitr4 elshl @
+  bitr4 ancomb @ bitr (aneq2a @ syl5bb elshr @ eleq1d npcan) @
+  aneq1i @ con2b @ bitr elupto ltnle));
+
 @_ abstract def bitXor (a b: nat): nat = $ lower {n | ~(n e. a <-> n e. b)} $;
 pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) $ =
 '(bitr (ellower @
@@ -418,6 +423,9 @@ theorem bit_chop: $ a < k -> bit (chop k n) a = bit n a $ =
 '(nateqd @ syl5bb el_chop bian1);
 theorem bit_chop_0: $ ~a < k -> bit (chop k n) a = 0 $ =
 '(sylibr nateq0 @ con3 @ sylbi el_chop anl);
+theorem chopT_min: $ a e. Bits m -> chop k a e. Bits (min m k) $ =
+(named '(sylibr elBits @ iald @ syl5bi el_chop @ exp @ sylibr elupto @
+  sylibr ltmin @ iand (sylib elupto @ sylc ssel (sylib elBits anl) anrr) anrl));
 
 theorem bitAnd_upto: $ bitAnd (upto k) a = chop k a $ =
 '(axext @ !! ax_gen x @ bitr4 elbitAnd @ bitr4 el_chop @ aneq1i elupto);
@@ -438,6 +446,7 @@ theorem shladd_uniq: $ a e. Bits k /\ shl m k + a = n <-> shr n k = m /\ chop k 
 theorem chop_shladd: $ b e. Bits k -> chop k (shl a k + b) = b $ =
 '(anrd @ sylib shladd_uniq @ iand id eqidd);
 theorem chop4hex: $ chop 4 (a :x b) = b $ = '(eqtr (chopeq2 hexshl4) @ chop_shladd h2nT);
+theorem chop_shladd2: $ chop k (shl a k + b) = chop k b $ = '(muladdmod1 pow2ne0);
 
 theorem Bits_chop: $ a e. Bits k -> chop k a = a $ = 'Bits_mod;
 theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
@@ -596,6 +605,60 @@ pub theorem bitsUpdateT (k m l a n: nat):
     sylibr (sseq1 bitDifEq) @ syl (sstr inss2) @
     sylib sscpl @ sylib shlss @ sylib elBits anlr) @
   sylib bitOrT @ iand (anwr bitDifT) (sylc shlT2 anlr @ sylib (leeq1 addcom) anll));
+
+theorem bitsUpdate_or: $ a e. Bits m ->
+  bitsUpdate k m a n = bitOr (bitDif n (shl (upto m) k)) (shl a k) $ =
+'(eqcomd @ syl bitOr_eq_add @ sylibr ineq0 @ sylibr (sseq1 bitDifEq) @
+  sylbi elBits @ sylbi shlss @ sylbi sscpl @ sstr inss2);
+
+theorem shr_bitsUpdate:
+  $ shr (bitsUpdate (k + i) m a n) i = bitsUpdate k m a (shr n i) $ =
+'(eqtr (shreq1 @ eqtr4 addcom @ addeq1 shlshl) @ eqtr shrshladd @
+  eqtr addcom @ addeq1 @ eqtr shr_bitDif @
+  bitDifeq2 @ eqtr3 (shreq1 shlshl) shrshlid);
+
+theorem chop_bitsUpdate_2: $ k + i = j -> a e. Bits m ->
+  chop j (bitsUpdate k m a n) = bitsUpdate k m (chop i a) (chop j n) $ =
+'(exp @ eqtr4d (chopeq2d @ anwr bitsUpdate_or) @
+  eqtr4d (syl bitsUpdate_or @ anwr @ rsyl chopT_min @ ssel @ Bitsss minle1) @
+  syl5eq chop_bitOr @ bitOreqd (a1i chop_bitDif1) @
+  eqcomd @ syl5eq chop_shl @ chopeq1d @ syl5eq addcom anl);
+
+theorem chop_bitsUpdate_id:
+  $ chop k (bitsUpdate k m a n) = chop k n $ =
+'(eqtr (chopeq2 addcom) @ eqtr chop_shladd2 @ eqtr chop_bitDif @
+  eqtr (bitDifeq2 @ chop_shl_0 leid) bitDif02);
+
+theorem chop_bitsUpdate_1: $ i <= k -> chop i (bitsUpdate k m a n) = chop i n $ =
+'(eqtr3d chop_chop @ syl5eq (chopeq2 chop_bitsUpdate_id) chop_chop);
+
+theorem bitsUpdate01: $ bitsUpdate 0 m a n = bitDif n (upto m) + a $ =
+'(addeq (bitDifeq2 shl02) shl02);
+
+theorem bitsUpdate01_: $ bitsUpdate 0 m a n = shl (shr n m) m + a $ =
+'(eqtr bitsUpdate01 @ addeq1 bitDif_upto);
+
+theorem el_bitsUpdate_1: $ i < k -> (i e. bitsUpdate k m a n <-> i e. n) $ =
+'(bitr3d bian1 @ syl5bb (bitr3 el_chop @ bitr (elneq2 chop_bitsUpdate_id) el_chop) bian1);
+
+theorem el_bitsUpdate_2: $ i < m -> (k + i e. bitsUpdate k m a n <-> i e. a) $ =
+'(syl5bb (eleq1 addcom) @ syl5bbr elshr @
+  syl5bb (elneq2 @ eqtr3 (shreq1 @ bitsUpdateeq1 add01) @ eqtr shr_bitsUpdate bitsUpdate01_) @
+  bitr3d bian1 @ syl5bbr el_chop @ syl5bb (elneq2 chop_shladd2) @ syl5bb el_chop bian1);
+
+theorem el_bitsUpdate_3: $ a e. Bits m /\ k + m <= i ->
+  (i e. bitsUpdate k m a n <-> i e. n) $ =
+(focus
+  (def (f x) '(imp @ con2d @ syl5bi elshl @ exp @ sylib ltnle @
+    mpbid (syl ltsubadd2 anrl) @ sylib elupto @ sylc ssel (sylib elBits ,x) anrr))
+  '(bitrd (elneq2d @ anwl bitsUpdate_or) @ syl5bb elbitOr @
+    bitrd (syl bior2 ,(f 'anl)) @ syl5bb elbitDif @ syl bian2 ,(f '(a1i uptoT))));
+
+theorem el_bitsUpdate1_eq: $ k e. bitsUpdate k 1 (nat p) n <-> p $ =
+'(bitr3 (eleq1 add0) @ bitr (el_bitsUpdate_2 d0lt1) @ bitr el01 oddnat);
+theorem el_bitsUpdate1_ne: $ i != k -> (i e. bitsUpdate k 1 (nat p) n <-> i e. n) $ =
+'(sylbi neltlt @ eor el_bitsUpdate_1 @ sylbir (leeq1 add12) @
+  exp el_bitsUpdate_3 @ mpbir elBits1 boolnat);
 
 @_ def bitsNot (k n: nat): nat = $ bitDif (upto k) n $;
 pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $ =
@@ -2641,11 +2704,30 @@ pub theorem setSF_T (f: nat) (p: wff): $ f e. Flags -> setSF f p e. Flags $ =
 pub theorem setOF_T (f: nat) (p: wff): $ f e. Flags -> setOF f p e. Flags $ =
 '(exp bitsUpdateT @ ian ,norm_num @ mpbir elBits1 boolnat);
 
-@_ def unpackFlags (f c z s o: nat): wff =
-$ c = nat (CF f) /\ z = nat (ZF f) /\ s = nat (SF f) /\ o = nat (OF f) $;
-pub theorem unpackFlagsT (f c z s o: nat):
-  $ unpackFlags f c z s o -> bool c /\ bool z /\ bool s /\ bool o $ =
-(let ([h '(mpbiri boolnat booleq)]) '(anim (anim (anim ,h ,h) ,h) ,h));
+theorem CF_setCF: $ CF (setCF f p) <-> p $ = 'el_bitsUpdate1_eq;
+theorem ZF_setZF: $ ZF (setZF f p) <-> p $ = 'el_bitsUpdate1_eq;
+theorem SF_setSF: $ SF (setSF f p) <-> p $ = 'el_bitsUpdate1_eq;
+theorem OF_setOF: $ OF (setOF f p) <-> p $ = 'el_bitsUpdate1_eq;
+
+theorem setF_ne (h1: $ i != j $) (h2: $ i e. f <-> q $):
+  $ i e. bitsUpdate j 1 (nat p) f <-> q $ = '(bitr (el_bitsUpdate1_ne h1) h2);
+theorem ZF_setCF (h: $ ZF f <-> q $): $ ZF (setCF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem SF_setCF (h: $ SF f <-> q $): $ SF (setCF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem OF_setCF (h: $ OF f <-> q $): $ OF (setCF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem CF_setZF (h: $ CF f <-> q $): $ CF (setZF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem SF_setZF (h: $ SF f <-> q $): $ SF (setZF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem OF_setZF (h: $ OF f <-> q $): $ OF (setZF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem CF_setSF (h: $ CF f <-> q $): $ CF (setSF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem ZF_setSF (h: $ ZF f <-> q $): $ ZF (setSF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem OF_setSF (h: $ OF f <-> q $): $ OF (setSF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem CF_setOF (h: $ CF f <-> q $): $ CF (setOF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem ZF_setOF (h: $ ZF f <-> q $): $ ZF (setOF f p) <-> q $ = '(setF_ne ,norm_num h);
+theorem SF_setOF (h: $ SF f <-> q $): $ SF (setOF f p) <-> q $ = '(setF_ne ,norm_num h);
+
+theorem CF_setCZSO: $ CF (setOF (setSF (setZF (setCF f c) z) s) o) <-> c $ = '(CF_setOF @ CF_setSF @ CF_setZF CF_setCF);
+theorem ZF_setCZSO: $ ZF (setOF (setSF (setZF (setCF f c) z) s) o) <-> z $ = '(ZF_setOF @ ZF_setSF ZF_setZF);
+theorem SF_setCZSO: $ SF (setOF (setSF (setZF (setCF f c) z) s) o) <-> s $ = '(SF_setOF SF_setSF);
+theorem OF_setCZSO: $ OF (setOF (setSF (setZF (setCF f c) z) s) o) <-> o $ = 'OF_setOF;
 
 @_ abstract def readBCond (f c: nat): wff =
 $ ifp (c < 4)
@@ -3368,14 +3450,6 @@ pub theorem EA_jumpT (k ea k2: nat):
 '(!! eex v @ mpand (anwl EA_callDestT) @ iand anrl @
   mpbird (eleq1d anlr) @ anwr @ syl writeRIP_T @ anim1 anl);
 
-@_ def readUnpackFlags (k c z s o: nat): wff =
-$ k e. Config /\ unpackFlags (readFlags k) c z s o $;
-pub theorem readUnpackFlagsT (k c z s o: nat):
-$ readUnpackFlags k c z s o ->
-  k e. Config /\ bool c /\ bool z /\ bool s /\ bool o $ =
-(let ([(f x) '(bitr3 anass @ aneq1i ,x)])
-  '(sylib ,(f @ f @ f 'biid) @ anim2 unpackFlagsT));
-
 @_ abstract def writeFlags (k f: nat): nat =
 $ fst k <> pi21 k <> f <> pi222 k $;
 pub theorem writeFlagsVal (ex ip rs f m f2: nat):
@@ -3394,29 +3468,23 @@ theorem read_writeFlags: $ readFlags (writeFlags k f) = f $ = 'pi221pr;
 theorem getMemory_writeFlags: $ getMemory (writeFlags k f) = getMemory k $ = 'pi222pr;
 theorem readException_writeFlags: $ readException (writeFlags k f) = readException k $ = '(fsteq fstpr);
 
-@_ abstract def setCZSO (k: nat) (c z s o : wff): nat =
+@_ abstract def setCZSO (k: nat) (c z s o: wff): nat =
 $ writeFlags k (setOF (setSF (setZF (setCF (readFlags k) c) z) s) o) $;
-pub theorem setCZSOVal (ex ip rs f m : nat) (c z s o: wff):
+pub theorem setCZSOVal (ex ip rs f m: nat) (c z s o: wff):
   $ setCZSO (mkCfg ex ip rs f m) c z s o =
     mkCfg ex ip rs (setOF (setSF (setZF (setCF f c) z) s) o) m $ =
 '(eqtr writeFlagsVal @ mkCfgeq4 @ setOFeq1 @ setSFeq1 @ setZFeq1 @ setCFeq1 readFlags_mk);
-pub theorem setCZSO_T (k: nat) (c z s o : wff):
+pub theorem setCZSO_T (k: nat) (c z s o: wff):
   $ k e. Config -> setCZSO k c z s o e. Config $ =
 '(sylan writeFlagsT id @ syl setOF_T @ syl setSF_T @ syl setZF_T @ syl setCF_T readFlagsT);
 
 @_ def MSB (sz w: nat): wff = $ bitsMSB (wsizeBits sz) w $;
 
-@_ def writeResultFlags (k sz w : nat) (c o : wff): nat =
+@_ def writeResultFlags (k sz w: nat) (c o: wff): nat =
 $ setCZSO k c (chop (wsizeBits sz) w = 0) (MSB sz w) o $;
-pub theorem writeResultFlagsT (k sz w : nat) (c o : wff):
+pub theorem writeResultFlagsT (k sz w: nat) (c o: wff):
   $ k e. Config /\ sz e. WSize /\ w e. u64 ->
     writeResultFlags k sz w c o e. Config $ = '(anwll setCZSO_T);
-
-@_ def writeSFZF (k sz w : nat): nat =
-$ writeResultFlags k sz w (CF (readFlags k)) (OF (readFlags k)) $;
-pub theorem writeSFZF_T (k sz w : nat):
-  $ k e. Config /\ sz e. WSize /\ w e. u64 ->
-    writeSFZF k sz w e. Config $ = 'writeResultFlagsT;
 
 @_ def eraseFlags (k k2 .f2: nat): wff =
 $ k e. Config /\ E. f2 (f2 e. Flags /\ k2 = writeFlags k f2) $;
@@ -3427,7 +3495,7 @@ pub theorem eraseFlagsT (k k2: nat):
 @_ def addCarry (sz a b w c o: nat): wff =
 $ sz e. WSize /\ a e. u64 /\ b e. u64 /\
   w = a +_64 b /\ c = nat (2 ^ wsizeBits sz <= a + b) /\
-  o = nat (MSB sz a <-> MSB sz b /\ ~(MSB sz (a +_64 b) <-> MSB sz a)) $;
+  o = nat ((MSB sz a <-> MSB sz b) /\ ~(MSB sz (a +_64 b) <-> MSB sz a)) $;
 pub theorem addCarryT (sz a b w c o: nat):
   $ addCarry sz a b w c o ->
     sz e. WSize /\ a e. u64 /\ b e. u64 /\
@@ -3446,9 +3514,9 @@ pub theorem subBorrowT (sz a b w c o: nat):
 '(anim (anim (anim2 @ mpbiri add64T eleq1)
     (mpbiri boolnat booleq)) (mpbiri boolnat booleq));
 
-@_ def writeCFOFResult (k sz ea w : nat) (c o : wff) (k2: nat): wff =
+@_ def writeCFOFResult (k sz ea w: nat) (c o: wff) (k2: nat): wff =
 $ k e. Config /\ writeEA (writeResultFlags k sz w c o) sz ea w k2 $;
-pub theorem writeCFOFResultT (k sz ea w : nat) (c o : wff) (k2: nat):
+pub theorem writeCFOFResultT (k sz ea w: nat) (c o: wff) (k2: nat):
   $ writeCFOFResult k sz ea w c o k2 ->
     k e. Config /\ sz e. WSize /\ ea e. EA /\ w e. u64 /\
     k2 e. Config $ =

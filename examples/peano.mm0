@@ -425,16 +425,12 @@ def shl (a n: nat): nat = $ a * 2 ^ n $;
 --| Right shift for natural numbers: `shr a n = a // 2 ^ n`.
 def shr (a n: nat): nat = $ a // 2 ^ n $;
 
---| Elementhood between two natural numbers, `nel a b` if
---| the `a`'th bit of `b` is 1.
---| We will usually use `a e. b` instead of `nel a b`, using the `ns` coercion.
-def nel (a b: nat): wff = $ odd (shr b a) $;
-
---| Lift a natural number to a set, via `a ~> {x | nel x a}`.
+--| Lift a natural number to a set, via `a ~> {x | odd (shr a x)}`.
+--| That is, `x e. a` if the `x`'th bit of `a` is 1.
 --| This mapping is injective, and surjective onto finite sets,
 --| so we can view the sort `nat` as a subtype of `set`
 --| consisting of the finite sets.
-def ns (a .x: nat): set = $ {x | nel x a} $; coercion ns: nat > set;
+def ns (a .x: nat): set = $ {x | odd (shr a x)} $; coercion ns: nat > set;
 theorem axext (a b: nat): $ a == b -> a = b $;
 theorem ellt (a b: nat): $ a e. b -> a < b $;
 theorem nel0 (a: nat): $ ~ a e. 0 $;

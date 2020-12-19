@@ -102,6 +102,13 @@ do {
           (assign-mvar v (atom-app "x" n)) (set! n {n + 1}))
         (if {n = 1} (display "unnecessary (named)"))])
 
+  --| `(name-all x1 ... xn)` instantiates all metavariables in the current
+  --| proof state. It is the same as `named` but it can be used in the middle of a
+  --| proof instead of as a wrapper around a complete proof.
+  (def (name-all . ds)
+    (def (assign-mvar m x) @ match x ['_] [_ (set! m (dummy! x (mvar-sort m)))])
+    (scan (get-mvars) ds assign-mvar))
+
   (def ((tac-thm stmt f))
     @ match (get-goals) @ (g)
     (def res (f))
@@ -984,7 +991,7 @@ theorem bian1exi (a c: wff x) (h: $ a <-> b /\ c $): $ E. x a <-> b /\ E. x c $ 
 theorem bian2exi (a b: wff x) (h: $ a <-> b /\ c $): $ E. x a <-> E. x b /\ c $ = '(bitr (exeqi h) exan2);
 theorem bian1exd (a c: wff x) (h: $ G -> (a <-> b /\ c) $): $ G -> (E. x a <-> b /\ E. x c) $ = '(syl6bb exan1 (exeqd h));
 theorem bian2exd (a b: wff x) (h: $ G -> (a <-> b /\ c) $): $ G -> (E. x a <-> E. x b /\ c) $ = '(syl6bb exan2 (exeqd h));
-theorem biexexi (a: wff x) (b: wff x y) (h: $ a <-> E. y b $): $ E. x a <-> E. y E. x b $ = '(bitr4 (exeqi h) excomb);
+theorem biexexi (a b: wff x y) (h: $ a <-> E. y b $): $ E. x a <-> E. y E. x b $ = '(bitr4 (exeqi h) excomb);
 theorem biexan1a (a b: wff x) (h: $ c -> (a <-> E. x b) $): $ a /\ c <-> E. x (b /\ c) $ = '(bitr4 (aneq1a h) exan2);
 theorem biexan2a (b c: wff x) (h: $ a -> (b <-> E. x c) $): $ a /\ b <-> E. x (a /\ c) $ = '(bitr4 (aneq2a h) exan1);
 theorem biexan1i (a b: wff x) (h: $ a <-> E. x b $): $ a /\ c <-> E. x (b /\ c) $ = '(biexan1a @ a1i h);
@@ -2403,6 +2410,7 @@ theorem nattrue: $ bool n -> nat (true n) = n $ =
 
 theorem natle: $ (p -> q) <-> nat p <= nat q $ =
 '(bicom @ bitr (letrueb boolnat) (imeqi truenat truenat));
+theorem natinj: $ (p <-> q) <-> nat p = nat q $ = '(bitr4 (aneq natle natle) eqlele);
 
 theorem natle1: $ nat p <= 1 $ = '(mpbi boolle1 boolnat);
 
@@ -2576,14 +2584,23 @@ theorem mod12: $ a % 1 = 0 $ = '(mpbi lt12 @ modlt d1ne0);
 theorem div12: $ a // 1 = a $ =
 '(eqtr3 (eqtr (addeq mul11 mod12) add02) divmod);
 
-theorem muladddiv2: $ b != 0 /\ c < b -> (b * a + c) // b = a $ =
-'(anld @ eqdivmod anr eqidd);
-theorem muladddiv1: $ b != 0 /\ c < b -> (a * b + c) // b = a $ =
+theorem muladddiv2: $ b != 0 -> (b * a + c) // b = a + c // b $ =
+'(anld @ eqdivmod modlt @ a1i @ eqtr (addeq1 muladd) @ eqtr addass (addeq2 divmod));
+theorem muladddiv1: $ b != 0 -> (a * b + c) // b = a + c // b $ =
 '(syl5eq (diveq1 @ addeq1 mulcom) muladddiv2);
-theorem muladdmod2: $ b != 0 /\ c < b -> (b * a + c) % b = c $ =
-'(anrd @ eqdivmod anr eqidd);
-theorem muladdmod1: $ b != 0 /\ c < b -> (a * b + c) % b = c $ =
+theorem muladdmod2: $ b != 0 -> (b * a + c) % b = c % b $ =
+'(anrd @ eqdivmod modlt @ a1i @ eqtr (addeq1 muladd) @ eqtr addass (addeq2 divmod));
+theorem muladdmod1: $ b != 0 -> (a * b + c) % b = c % b $ =
 '(syl5eq (modeq1 @ addeq1 mulcom) muladdmod2);
+
+theorem muladddiv2lt: $ b != 0 /\ c < b -> (b * a + c) // b = a $ =
+'(anld @ eqdivmod anr eqidd);
+theorem muladddiv1lt: $ b != 0 /\ c < b -> (a * b + c) // b = a $ =
+'(syl5eq (diveq1 @ addeq1 mulcom) muladddiv2lt);
+theorem muladdmod2lt: $ b != 0 /\ c < b -> (b * a + c) % b = c $ =
+'(anrd @ eqdivmod anr eqidd);
+theorem muladdmod1lt: $ b != 0 /\ c < b -> (a * b + c) % b = c $ =
+'(syl5eq (modeq1 @ addeq1 mulcom) muladdmod2lt);
 
 theorem muldiv2: $ b != 0 -> b * a // b = a $ =
 '(anld @ eqdivmod (bi2 lt01) (a1i add0));
@@ -2872,9 +2889,11 @@ theorem b1dvd2: $ ~2 || b1 n $ = '(mpbi (con2b d2dvdS) b0dvd2);
 
 theorem dfodd2: $ odd n <-> true (n % 2) $ = '(bicom @ dftrue2 boolmod2);
 theorem odddvd: $ odd n <-> ~ 2 || n $ = '(bitr dfodd2 @ noteq modeq0);
+theorem boolodd: $ bool n -> (odd n <-> true n) $ = '(syl5bb dfodd2 @ trueeqd modlteq);
 
 theorem b0odd: $ ~odd (b0 n) $ = '(mpbi (con2b odddvd) b0dvd2);
 theorem b1odd: $ odd (b1 n) $ = '(mpbir odddvd b1dvd2);
+theorem oddnat: $ odd (nat p) <-> p $ = '(bitr (boolodd boolnat) truenat);
 
 theorem b0mod2: $ b0 n % 2 = 0 $ = '(mpbir modeq0 b0dvd2);
 theorem b1mod2: $ b1 n % 2 = 1 $ = 'b1odd;
@@ -4785,7 +4804,8 @@ theorem shrmodadd2: $ shr (a % 2 ^ (b + c)) c = shr a c % 2 ^ b $ =
 '(eqtr (shreq1 @ modeq2 @ poweq2 addcom) shrmodadd1);
 theorem shrmodsub: $ c <= b -> shr (a % 2 ^ b) c = shr a c % 2 ^ (b - c) $ =
 '(syl6eq shrmodadd2 @ shreq1d @ modeq2d @ poweq2d @ eqcomd npcan);
-theorem shrshladdid: $ c < 2 ^ b -> shr (shl a b + c) b = a $ = '(exp muladddiv1 pow2ne0);
+theorem shrshladd: $ shr (shl a b + c) b = a + shr c b $ = '(muladddiv1 pow2ne0);
+theorem shrshladdid: $ c < 2 ^ b -> shr (shl a b + c) b = a $ = '(exp muladddiv1lt pow2ne0);
 theorem shrshlid: $ shr (shl a b) b = a $ = '(muldiv1 pow2ne0);
 theorem shrshl1: $ c <= b -> shr (shl a b) c = shl a (b - c) $ =
 '(syl6eq shrshlid @ shreq1d @ syl6eqr shlshl @ shleq2d @ eqcomd npcan);
@@ -4794,33 +4814,29 @@ theorem shrshl2: $ b <= c -> shr (shl a b) c = shr a (c - b) $ =
 
 theorem shreq0: $ shr a b = 0 <-> a < 2 ^ b $ = '(diveq0 pow2ne0);
 
---| Elementhood between two natural numbers, `nel a b` if
---| the `a`'th bit of `b` is 1.
---| We will usually use `a e. b` instead of `nel a b`, using the `ns` coercion.
-@_ def nel (a b: nat): wff = $ odd (shr b a) $;
-
---| Lift a natural number to a set, via `a ~> {x | nel x a}`.
+--| Lift a natural number to a set, via `a ~> {x | odd (shr a x)}`.
+--| That is, `x e. a` if the `x`'th bit of `a` is 1.
 --| This mapping is injective, and surjective onto finite sets,
 --| so we can view the sort `nat` as a subtype of `set`
 --| consisting of the finite sets.
-@_ def ns (a .x: nat): set = $ {x | nel x a} $; coercion ns: nat > set;
+@_ def ns (a .x: nat): set = $ {x | odd (shr a x)} $; coercion ns: nat > set;
 
-theorem elnel: $ a e. ns b <-> nel a b $ = '(!! elabe x neleq1);
+theorem elnel: $ a e. b <-> odd (shr b a) $ = '(elabe ,eqtac);
 theorem elneqd (h1: $ G -> a = b $) (h2: $ G -> c = d $):
-  $ G -> (a e. ns c <-> b e. ns d) $ = '(eleqd h1 @ nseqd h2);
-theorem elneq2d (h: $ G -> b = c $): $ G -> (a e. ns b <-> a e. ns c) $ = '(elneqd eqidd h);
-theorem elneq2: $ b = c -> (a e. ns b <-> a e. ns c) $ = '(elneq2d id);
-theorem elneq: $ a = b -> c = d -> (a e. ns c <-> b e. ns d) $ = '(exp @ elneqd anl anr);
+  $ G -> (a e. c <-> b e. d) $ = '(eleqd h1 @ nseqd h2);
+theorem elneq2d (h: $ G -> b = c $): $ G -> (a e. b <-> a e. c) $ = '(elneqd eqidd h);
+theorem elneq2: $ b = c -> (a e. b <-> a e. c) $ = '(elneq2d id);
+theorem elneq: $ a = b -> c = d -> (a e. c <-> b e. d) $ = '(exp @ elneqd anl anr);
 theorem appneq1d (h: $ G -> f = g $): $ G -> f @ x = g @ x $ = '(appeq1d @ nseqd h);
 theorem appneq1: $ f = g -> f @ x = g @ x $ = '(appneq1d id);
-theorem nfns (a: nat x) (h: $ FN/ x a $): $ FS/ x ns a $ = (named '(nfslem nseq h));
+theorem nfns (a: nat x) (h: $ FN/ x a $): $ FS/ x a $ = (named '(nfslem nseq h));
 
-theorem el01: $ 0 e. ns a <-> odd a $ = '(bitr elnel @ oddeq shr02);
+theorem el01: $ 0 e. a <-> odd a $ = '(bitr elnel @ oddeq shr02);
 
-theorem elshr: $ a e. shr b c <-> a + c e. ns b $ =
+theorem elshr: $ a e. shr b c <-> a + c e. b $ =
 '(bitr elnel @ bitr4 (oddeq @ eqtr shrshr @ shreq2 addcom) elnel);
 
-theorem elshl: $ a e. shl b c <-> c <= a /\ a - c e. ns b $ =
+theorem elshl: $ a e. shl b c <-> c <= a /\ a - c e. b $ =
 '(bitr elnel @
   rbid (sylbi odddvd @ con1 @ sylbir ltnle @
     mpbird (dvdeq2d @ rsyl ltle shrshl1) (sylbi subpos shl2dvd)) anl @
@@ -4840,20 +4856,20 @@ theorem shlss: $ a C_ b <-> shl a n C_ shl b n $ =
 '(ibii (!! iald x @ syl5bi elshl @ syl6ibr elshl @ anim2d ssel) @
   sylib (sseq (nseq shrshlid) (nseq shrshlid)) shrss);
 
-theorem eldiv2: $ a e. b // 2 <-> suc a e. ns b $ =
+theorem eldiv2: $ a e. b // 2 <-> suc a e. b $ =
 '(bitr3 (elneq2 shr12) @ bitr elshr @ eleq1 add12);
-theorem elb0: $ a e. b0 b <-> 0 < a /\ a - 1 e. ns b $ = '(bitr3 (elneq2 shl12) elshl);
-theorem elb1: $ a e. b1 b <-> a = 0 \/ a - 1 e. ns b $ =
+theorem elb0: $ a e. b0 b <-> 0 < a /\ a - 1 e. b $ = '(bitr3 (elneq2 shl12) elshl);
+theorem elb1: $ a e. b1 b <-> a = 0 \/ a - 1 e. b $ =
 '(cases (bithd (mpbiri (mpbir el01 b1odd) eleq1) orl) @
   bicomd @ bitrd bior1 @ syl5bb (bitr3 (elneq2 b1div2) eldiv2) @ eleq1d sub1can);
 
 theorem elb00: $ ~0 e. b0 b $ = '(mt (sylbi elb0 anl) ltirr);
 theorem elb10: $ 0 e. b1 b $ = '(mpbir elb1 @ orl eqid);
-theorem elb0S: $ suc a e. b0 b <-> a e. ns b $ = '(bitr elb0 @ bitr (bian1 lt01S) (eleq1 sucsub1));
-theorem elb1S: $ suc a e. b1 b <-> a e. ns b $ = '(bitr elb1 @ bitr (bior1 peano1) (eleq1 sucsub1));
+theorem elb0S: $ suc a e. b0 b <-> a e. b $ = '(bitr elb0 @ bitr (bian1 lt01S) (eleq1 sucsub1));
+theorem elb1S: $ suc a e. b1 b <-> a e. b $ = '(bitr elb1 @ bitr (bior1 peano1) (eleq1 sucsub1));
 
 theorem bndextle:
-  $ A. x (x < n -> x e. ns a -> x e. ns b) -> a % 2 ^ n <= b % 2 ^ n $ =
+  $ A. x (x < n -> x e. a -> x e. b) -> a % 2 ^ n <= b % 2 ^ n $ =
 (named @ induct '(ind) 'n
   '(a1i @ mpbir (leeq1 @ eqtr (modeq2 pow0) mod12) le01)
   '(rsyl (imim1i @ alimi @ imim1i @ mpi ltsucid lttr) @
@@ -4866,20 +4882,20 @@ theorem bndextle:
       syl5bir dfodd2 @ syl6ib dfodd2 @
       syl5bir elnel @ syl6ib elnel anl) anr));
 
-theorem bndext: $ A. x (x < n -> (x e. ns a <-> x e. ns b)) -> mod(2 ^ n): a = b $ =
+theorem bndext: $ A. x (x < n -> (x e. a <-> x e. b)) -> mod(2 ^ n): a = b $ =
 '(leasymd (syl bndextle @ alimi @ imim2i bi1) (syl bndextle @ alimi @ imim2i bi2));
 
-theorem ssle: $ ns a C_ ns b -> a <= b $ =
+theorem ssle: $ a C_ b -> a <= b $ =
 '(sylib (leeq
     (modlteq @ lelttr lemax1 @ powltid2 d1lt2)
     (modlteq @ lelttr lemax2 @ powltid2 d1lt2)) @
   syl bndextle @ !! alimi x ax_1);
 
-pub theorem axext: $ ns a == ns b -> a = b $ =
+pub theorem axext: $ a == b -> a = b $ =
 '(leasymd (syl ssle eqss) (syl ssle eqssr));
-theorem nsinj: $ ns a == ns b <-> a = b $ = '(ibii axext nseq);
+theorem nsinj: $ a == b <-> a = b $ = '(ibii axext nseq);
 
-pub theorem ellt: $ a e. ns b -> a < b $ =
+pub theorem ellt: $ a e. b -> a < b $ =
 '(sylbi elnel @ sylbi dfodd2 @ con1 @ sylbir lenlt @
   syl6eq mod01 @ modeq1d @ sylibr (diveq0 pow2ne0) @
   mpi (powltid2 d1lt2) lelttr);
@@ -4978,13 +4994,13 @@ theorem finns (a: nat): $ finite a $ =
 --| We use this when we wish to construct a natural number
 --| from a set expression. It returns a garbage value 0 if the set is not finite.
 --| This is the inverse to the `ns` coercion.
-@_ def lower (A: set): nat = $ the {n | ns n == A} $;
+@_ def lower (A: set): nat = $ the {n | n == A} $;
 theorem nflower (A: set x) (h: $ FS/ x A $): $ FN/ x lower A $ =
 (named '(nfthe @ nfab @ nfeqs nfsv h));
 
 pub theorem eqlower: $ finite A <-> A == lower A $ =
 (focus
-  (have 'h1 $ E. n A. x (x e. ns n <-> x + z e. A) -> E. n A == ns n $
+  (have 'h1 $ E. n A. x (x e. n <-> x + z e. A) -> E. n A == n $
     @ induct '(!! ind y z) 'z
     '(eximi @ alimi @ bicomd @ syl6bb (eleq1 add0) id)
     '(imim1i @ sylib (!! cbvex m _ @ !! cbvald y _ @
@@ -5002,7 +5018,7 @@ pub theorem eqlower: $ finite A <-> A == lower A $ =
             (bieqd (eleq1d anr) @ elneqd (eqcomd @ syl sub1can anlr) anll))
           (eleq1d @ syl5eqr addSass @ addeq1d @
             eqtrd (suceqd anr) (syl sub1can anlr)))))
-  (have 'h2 $ finite A -> E. n A == ns n $
+  (have 'h2 $ finite A -> E. n A == n $
     '(!! eex z @ syl h1 @ iexde @ iald @
       bitrd (elneq2d anr) @ binthd (a1i el02) @
       mtd (a1i @ mpbi lenlt leaddid2) (anwl @ !! eale y @ imeqd eleq1 lteq1)))
@@ -5082,12 +5098,12 @@ theorem insdiv2: $ (suc a ; b) // 2 = a ; (b // 2) $ =
     syl6eqr (inseq2 b0ins) @ syl6eq inscom @ inseq2d @ syl6eq b1ins id)
   b0orb1);
 
-theorem insunsn: $ a ; b == sn a u. ns b $ =
+theorem insunsn: $ a ; b == sn a u. b $ =
 '(!! eqri x @ bitr4gi elins elun @ oreq1 @ bicom @ elsn);
 
 theorem ins02: $ a ; 0 = sn a $ = '(axext @ eqstr insunsn un02);
 
-theorem insss: $ a ; b C_ A <-> a e. A /\ ns b C_ A $ =
+theorem insss: $ a ; b C_ A <-> a e. A /\ b C_ A $ =
 '(bitr (sseq1 insunsn) @ bitr unss @ aneq1i snss);
 
 theorem ssins: $ A C_ a ; b -> a e. A \/ A C_ b $ =
@@ -5198,9 +5214,9 @@ theorem optns: $ Option n == b1 n $ = '(!! ax_gen x @ bitr4 elopt elb1);
 theorem optupto: $ Option (upto n) == upto (suc n) $ = '(eqstr4 optns @ nseq uptoS);
 
 --| `Power A` is the set of all (finite) subsets of `A`.
-@_ def Power (A: set): set = $ {x | ns x C_ A} $;
+@_ def Power (A: set): set = $ {x | x C_ A} $;
 
-theorem elPower: $ a e. Power A <-> ns a C_ A $ = '(!! elabe x @ sseq1d nseq);
+theorem elPower: $ a e. Power A <-> a C_ A $ = '(!! elabe x @ sseq1d nseq);
 
 theorem powerfin: $ finite A -> finite (Power A) $ =
 '(sylbi dffin2 @ !! eex n @ syl (!! iexe x @ aleqd @ imeq2d lteq2) @
@@ -5546,7 +5562,7 @@ theorem srecrlam: $ (\. i e. upto n, srec S i) = srecaux S n $ =
 '(axext @ eqstr rlameqs srecres);
 
 theorem sreclem (a: nat x):
-  $ f = (\. x e. upto n, a) -> size (Dom (ns f)) = n $ =
+  $ f = (\. x e. upto n, a) -> size (Dom f) = n $ =
 '(syl6eq sizeupto @ sizeeqd @ syl6eqs dmrlam @ dmeqd nseq);
 
 theorem sreclem2 (a b: nat x):
@@ -5642,8 +5658,8 @@ pub theorem cardS (a s: nat): $ ~a e. s -> card (a ; s) = suc (card s) $ =
 --| * `lrec 0 = z`
 --| * `lrec (a : l) = S (a, l, lrec l)`
 @_ abstract def lrec (z: nat) (S: set) (n: nat): nat =
-$ srec (\ f, N[size (Dom (ns f)) / i]
-  if (i = 0) z (S @ (fst (i - 1) <> snd (i - 1) <> (ns f @ snd (i - 1))))) n $;
+$ srec (\ f, N[size (Dom f) / i]
+  if (i = 0) z (S @ (fst (i - 1) <> snd (i - 1) <> f @ snd (i - 1)))) n $;
 
 theorem lrecval: $ lrec z S n =
   if (n = 0) z (S @ (fst (n - 1) <> snd (n - 1) <> lrec z S (snd (n - 1)))) $ =
