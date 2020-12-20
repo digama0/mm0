@@ -492,6 +492,11 @@ theorem hoareCfg_frame_E: $ hoareCfg (ksCfg ks) R P Q ->
   syl5bi s_sat_sep_sn @ syl6ibr (pimeq2i s_sat_sep_sn) @
   syl6 rexpim @ syl exim @ alimi anim2));
 
+theorem hoareCfg_1: $ hoareCfg k (sn k2) P Q <->
+  A. ks (ksCfg ks = k -> A. fr (ks |=s sn fr *s P ->
+    setCfg ks k2 |=s sn fr *s Q)) $ =
+'(aleqi @ imeq2i @ aleqi @ imeq2i @ bitr (pimeq1i elsn) @ pimeqe ,eqtac);
+
 theorem hoareCfg_sn_frame_E: $ hoareCfg (ksCfg ks) (sn k2) P Q ->
   ks |=s R *s P -> setCfg ks k2 |=s R *s Q $ =
 (named '(syl6ib (bitr (pimeq1i elsn) (pimeqe @ s_sateq1d setCfgeq2)) hoareCfg_frame_E));
@@ -645,6 +650,45 @@ theorem hoareCfg_sn {q ks} (k2: nat ks)
     (syl h1 @ anim anl s_sat_ks) (syl h2 @ anim anl s_sat_ks)
     (syl h3 @ anim1 anll) (syl h4 @ anim1 anll) idd));
 
+--| `s_Except e` means that the exception flag has value `e`.
+@_ local def s_Except (e): set = $ sn (sn (X86P_Except <> e)) $;
+@_ local def s_OK: set = $ s_Except 0 $;
+@_ local def s_IO: set = $ s_Except (suc exSysCall) $;
+@_ local def s_ERR: set = $ s_Except (suc exGPF) $;
+
+theorem s_Except_sstop: $ s_Except e C_ T.s $ = '(mpbir s_sn_sstop isfsn);
+theorem s_OK_sstop: $ s_OK C_ T.s $ = 's_Except_sstop;
+theorem s_IO_sstop: $ s_IO C_ T.s $ = 's_Except_sstop;
+theorem s_ERR_sstop: $ s_ERR C_ T.s $ = 's_Except_sstop;
+theorem s_Except_subsn: $ subsn (s_Except e) $ = 'subsnsn;
+theorem s_OK_subsn: $ subsn s_OK $ = 's_Except_subsn;
+theorem s_IO_subsn: $ subsn s_IO $ = 's_Except_subsn;
+theorem s_ERR_subsn: $ subsn s_IO $ = 's_Except_subsn;
+
+theorem s_Except_readException: $ k |=s s_Except e -> readException (ksCfg k) = e $ =
+'(syl5eqr read_place_Except @ sylbi s_sat_sn @ sylbi heap_sat_sn anr);
+theorem s_OK_readException: $ k |=s s_OK -> readException (ksCfg k) = 0 $ = 's_Except_readException;
+theorem s_IO_readException: $ k |=s s_IO -> readException (ksCfg k) = suc exSysCall $ = 's_Except_readException;
+theorem s_ERR_readException: $ k |=s s_ERR -> readException (ksCfg k) = suc exGPF $ = 's_Except_readException;
+theorem s_Except_readException_d (h: $ P =>*s s_Except e $):
+  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = e $ =
+'(eqtr3d (readExceptioneqd anlr) @ anwr @ syl s_Except_readException @ s_weak_sat h);
+theorem s_OK_readException_d (h: $ P =>*s s_OK $):
+  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = 0 $ = '(s_Except_readException_d h);
+theorem s_IO_readException_d (h: $ P =>*s s_IO $):
+  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = suc exSysCall $ = '(s_Except_readException_d h);
+theorem s_ERR_readException_d (h: $ P =>*s s_ERR $):
+  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = suc exGPF $ = '(s_Except_readException_d h);
+
+theorem hoareCfg_setException (h: $ e2 e. Option Exception $):
+  $ hoareCfg k (sn (setException k e2)) (s_Except e1) (s_Except e2) $ =
+(named '(trud @ hoareCfg_sn ,eqtac
+  (sylan setExceptionT (anwr ksCfgT) (a1i h))
+  (a1i @ eqssr @ PageMappingeq getMemory_setException)
+  (anwr read_place_setException_ne)
+  (a1i @ eqtr read_place_Except @
+    eqtr (readExceptioneq ksCfg_setCfg) read_setException)));
+
 --| The primitive memory heaplet: `s_mem1 p a v` says that
 --| address `a` is mapped with permission `p`,
 --| and if the data at `a` is readable then the value is `v`.
@@ -720,6 +764,30 @@ theorem s_mem1_hoareCfg
   (focus
     '(bi2d @ s_sateq2d @ s_sepeq2d @ eqstrd (syl (s_bian1 s_mem1_sstop) H3) @
       sylan (s_bian1 @ mpbir s_sn_sstop isfsn) (iand H1a @ anwll h1) (anrd H1))));
+
+theorem s_mem1_hoareCfg_err
+  (h1: $ G -> v e. u8 $)
+  (h2: $ G -> setMem1 (getMemory k) a v = m2 <> e $)
+  (h3: $ G -> e != 0 $):
+  $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem1 p a w)
+    (^s (e = suc exGPF) /\s s_mem1 p a w) $ =
+'(mpd (mpd h3 @ con3d @ exp @ anrd @ sylib prth @ eqtr3d (anwl h2) @ anwr ifpos) @
+  syld (exp @ sylib prth @ eqtr3d (anwl h2) (anwr ifneg)) @
+  exp @ sylc hoareCfg_id2 (nseqd @ sneqd @ syl6eq set_getMemory @ setMemoryeq2d anrl) @
+  mpbii s_weak_id @ s_weakeq1d @ rsyl anrr @ s_bian1 s_mem1_sstop);
+
+theorem s_mem1_hoareCfg2
+  (h1: $ G -> v e. u8 $)
+  (h2: $ G -> setMem1 (getMemory k) a v = m2 <> e $):
+  $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem1 p a w)
+    (^s (e = suc exGPF) /\s s_mem1 p a w \/s
+     ^s (PROT_READ + PROT_WRITE C_ p) /\s s_mem1 p a v) $ =
+'(casesda (syl (hoareCfg_weakr @ ss_s_weak s_orr) @
+    s_mem1_hoareCfg (anwl h1) @ eqtrd (anwl h2) @ preq2d anr) @
+  mpd (imp @ con3d @ exp @ anrd @ sylib prth @ eqtr3d (anwl h2) @ anwr ifpos) @
+  syld (exp @ sylib prth @ eqtr3d (anwll h2) (anwr ifneg)) @
+  exp @ sylc hoareCfg_id2 (nseqd @ sneqd @ syl6eq set_getMemory @ setMemoryeq2d anrl) @
+  syl ss_s_weak @ mpbii s_orl @ sseq1d @ rsyl anrr @ s_bian1 s_mem1_sstop);
 
 --| The primitive memory heaplet: `s_pto a v` or `a >->m v` says that
 --| address `a` is mapped, and if the data at `a` is readable then the value is `v`.
@@ -813,47 +881,97 @@ theorem s_mem_readMemory {y} (G: wff x)
   '(imp @ syl5 (eale ,eqtac) @ a2d @ exp @ bi2d @ readMemoryeq3d @
     syl add64S_eqid @ syl (u64le1 leaddid1) @ anld @ anwr s_mem_T2));
 
-theorem s_mem_hoareCfg {p x}
+theorem hoareCfg_setMem {p x}
   (h1: $ G -> v e. List u8 $)
   (h2: $ G -> len w = len v $)
   (h3: $ G /\ PROT_READ + PROT_WRITE C_ p -> x <> p e. P -> x <> p e. Q $)
-  (h4: $ G -> setMem (getMemory k) a v = m2 <> 0 $):
-  $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem P a w) (s_mem Q a v) $ =
+  (h4: $ G -> setMem (getMemory k) a v = m2 <> e $):
+  $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem P a w) (^s (e != 0) \/s s_mem Q a v) $ =
 (named @ focus
   (def (f x y) '(syl (eale ,(eqtac-gen x)) ,y))
-  '(mpd (iand (iand h1 h2) h4) ,(f 'a @ f 'w @ f 'm2 @ f 'k @ induct '(listindd) 'v _ _))
+  '(mpd (iand (iand h1 h2) h4) ,(f 'a @ f 'w @ f 'm2 @ f 'e @ f 'k @ induct '(listindd) 'v _ _))
   (def (g x) '(sylib hoareCfg_T1 @ exp @
     sylib (hoareCfg_biim1a @ ss_s_weak s_anl) @
     syl5 anl @ exp ,x))
   (focus
-    '(iald @ iald @ iald @ iald @ expcom ,(g _))
-    '(sylc hoareCfg_id2 (nseqd @ sneqd @ syl6eq set_getMemory @ setMemoryeq2d @ anld @
-        sylib prth @ eqtr3d an3lr @ sylan setMem0 (syl getMemoryT anlr) (anwr @ u64le1 leaddid1)) @
-      mpbiri s_weak_id @ s_weakeq1d @ syl6eqs (eqstr4 s_mem_0 s_mem_0) @
-      s_memeq3d @ sylib leneq0 @ syl6eq len0 an4lr))
-  '(sylibr (cbval @ cbvald @ cbvald @ cbvald ,eqtac) @ iald @ iald @ !! iald l @ ialda ,(g _))
+    '(iald @ iald @ iald @ iald @ iald @ expcom ,(g _))
+    (have 'H1 '(sylib prth @ eqtr3d an3lr @
+      sylan setMem0 (syl getMemoryT anlr) (anwr @ u64le1 leaddid1)))
+    '(sylc hoareCfg_id2 (nseqd @ sneqd @ syl6eq set_getMemory @ setMemoryeq2d @ anld H1) @
+      mpbiri s_weak_id @ s_weakeq1d @
+      eqstr4d (s_memeq3d @ sylib leneq0 @ syl6eq len0 an4lr) @
+      syl6eqs (eqstr4 s_mem_0 s_mem_0) @
+      sylib s_bior1a @ syl s_lift_botss @ syl notnot1 @ anrd H1))
+  '(sylibr (cbval @ cbvald @ cbvald @ cbvald @ cbvald ,eqtac) @
+    iald @ iald @ iald @ !! iald l @ ialda ,(g _))
   '(mpd (sylib excons @ sylib (noteq leneq0) @ syl sucne0 @ syl6eq lenS @ rsyl anllr anlr) @
     eexd @ eexda @ sylbi (bian21i @ bian21i anrass) @ imp @ mpbird (anwr ,eqtac) @
     sylbid (aneqd (a1i @ aneq elListS @ bitr (eqeq lenS lenS) peano2) @
       eqeq1d @ sylan (mpi (eqcom fstsnd) setMemS)
-        (syl getMemoryT anllr) (rsyl anlr @ u64le1 leaddid1)) _)
-  (have 'H1
-    '(syl contra @ com12 @ sylbid (eqeq1d ifneg) @ a1i @ sylbi prth anr))
-  '(syl5 (anim2 @ iand H1 @ eqtr3d (syl ifpos H1) id) @ exp @
-    sylibr (hoareCfgeq eqid (nseq @ sneq @ eqcom set_setMemory) s_mem_S s_mem_S) @
-    hoareCfg_tr1 (syl hoareCfg_frame_r _) (syl hoareCfg_frame _))
+        (syl getMemoryT anllr) (rsyl anlr @ u64le1 leaddid1)) @
+    impd @ exp @ syld (casesda _ _) @
+    exp (hoareCfgeq4g s_mem_S (s_oreq2 s_mem_S) anr))
   (focus
-    '(sylc hoareCfg_weakr _ @ syl hoareCfg_exim @ ialda @
-      rsyl anlr @ s_mem1_hoareCfg an3l @ syl5eqr fstsnd @ preq2d anrl)
-    '(anw5l @ syl ss_s_weak @ iald @ sylibr (imeqi el_s_ex el_s_ex) @
-      eximd @ syl5bi (aneq2i @ el_s_anlift1 s_mem1_sstop) @
-      syl5bir anass @ anim1d @ impd @ com23 @ exp @ sylibr (imeqi elrapp elrapp) h3))
+    '(sylbid (anwr @ eqeq1d ifpos) @ exp @
+      sylibr (hoareCfgeq2 @ nseq @ sneq @ eqcom set_setMemory) @
+      hoareCfg_tr1 (syl hoareCfg_frame_r _) _)
+    (focus
+      '(sylc hoareCfg_weakr _ @ syl hoareCfg_exim @ ialda @
+        s_mem1_hoareCfg (rsyl an3lr anll) @ syl5eqr fstsnd @ preq2d anllr)
+      '(anw7l @ syl ss_s_weak @ iald @ sylibr (imeqi el_s_ex el_s_ex) @
+        eximd @ syl5bi (aneq2i @ el_s_anlift1 s_mem1_sstop) @
+        syl5bir anass @ anim1d @ impd @ com23 @ exp @ sylibr (imeqi elrapp elrapp) h3))
+    (focus
+      '(syl (hoareCfg_weakr s_weak_orsep1) @ syl hoareCfg_frame _)
+      '(mpd (iand (rsyl anllr @ anim1 anr) @ eqtrd _ anr) @
+        rsyl an6lr @ ealie @ ealde @ ealde @ ealde @ ealde @ bi1d ,eqtac)
+      '(setMemeqd (a1i get_setMemory) (eqcomd @ syl add64S_eqid _) eqidd)
+      '(sylc u64le1 (sylib (leeq1 add12) @ sylib leadd2 @
+          mpbiri le11S @ leeq2d @ syl6eq lenS @ leneqd an3lr) an4lr)))
   (focus
-    '(mpd (iand (anwr @ iand anllr anlr) @ eqtrd _ @ anwr anrr) @
-      rsyl an4lr @ ealie @ ealde @ ealde @ ealde @ bi1d ,eqtac)
-    '(setMemeqd (a1i get_setMemory) (eqcomd @ syl add64S_eqid _) eqidd)
-    '(sylc u64le1 (sylib (leeq1 add12) @ sylib leadd2 @
-        mpbiri le11S @ leeq2d @ syl6eq lenS @ leneqd anlr) anllr)));
+    '(sylbid (anwr @ eqeq1d ifneg) @ syl5bi (eqeq1 fstsnd) @ exp @
+      syl (hoareCfg_weakr @ ss_s_weak s_orl) @ syl (hoareCfg_weakl s_sepl) @
+      sylib hoareCfg_eexb @ ialda @
+      rsyl (s_mem1_hoareCfg_err (rsyl an3lr anll) anlr @
+        mpbid (neeq1d @ syl6eq sndpr @ sndeqd anlr) anllr) @
+      hoareCfg_weakr @ s_weak_anwl @ mpbir s_lift_weak sucne0)));
+
+-- theorem hoareCfg_writeMem {p x}
+--   (h1: $ G -> v e. List u8 $)
+--   (h2: $ G -> len w = len v $)
+--   (h3: $ G /\ PROT_READ + PROT_WRITE C_ p -> x <> p e. P -> x <> p e. Q $):
+--   $ G -> hoareCfg k {k2 | writeMem k a v k2}
+--     (s_OK *s s_mem P a w)
+--     (s_ERR \/s (s_OK *s s_mem Q a v)) $ =
+-- (focus
+--   (have 'H1 '(anwr @ s_sat_ss_lift @ s_sepssr s_mem_T))
+--   (have 'H2 '(syl (u64le1 leaddid1) (anld H1)))
+--   (have 'H3 '(anw3l h1))
+--   '(mpi expr @ !! eexd m2 @ !! eexd e @ exp @ hoareCfg_Td @
+--     mpbird (hoareCfgeq2d @ eqab1d @ syl6bbr elsn @
+--       bitrd (rsyl anllr writeMem_setMem) @
+--       sylan bian1 (iand (iand s_elConfig_d H2) H3) @
+--       s_OK_readException_d s_sepl) @
+--     -- mpd (sylib elopt @ anrd @ mpd anllr @
+--     --   sylan setMemT2 (iand (syl getMemoryT s_elConfig_d) H2) (anw3l h1)) @
+--     casesd _ _)
+--   '(exp @ syl (hoareCfg_weakr @ ss_s_weak s_orr) @
+--     hoareCfg_tr1 (syl hoareCfg_frame @
+--       hoareCfg_setMem (anw4l h1) (anw4l h2) (syl h3 @ anim1 an4l) @
+--       eqtrd an3lr @ preq2d anr) @
+--     syl hoareCfg_frame_r @ mpbiri (hoareCfg_setException opt0) @
+--     hoareCfgeq2d @ nseqd @ sneqd @ setExceptioneq2d anr)
+--   '(syld (exp @ eqtr3d (anwr sub1can) @ suceqd @ sylib elsn @
+--       imp @ sylib elopt @ anrd @ mpd anllr @
+--       sylan setMemT2 (iand (syl getMemoryT s_elConfig_d) H2) (anw3l h1)) @
+--     syl5ibrcom ,eqtac @
+--     --  syl (hoareCfg_weakl s_sepl) @
+--     syl (hoareCfg_weakr @ ss_s_weak s_orl) @
+--     hoareCfg_tr1 (
+--       -- sylibr hoareCfg_1 @ anwll @ ialda @ ialda @
+--       _) @
+--     a1i @ hoareCfg_setException @ mpbir optS exGPF_T)
+-- );
 
 --| A block of readable or read/write memory: `a >=> v` says that the
 --| list of bytes `v` is at address `a`.
@@ -1182,45 +1300,6 @@ theorem s_writeRIP: $ v e. u64 -> k |=s R *s RIP>-> ip ->
   setCfg k (writeRIP (ksCfg k) v) |=s R *s RIP>-> v $ =
 '(syl hoareCfg_sn_frame_E hoareCfg_writeRIP);
 
---| `s_Except e` means that the exception flag has value `e`.
-@_ local def s_Except (e): set = $ sn (sn (X86P_Except <> e)) $;
-@_ local def s_OK: set = $ s_Except 0 $;
-@_ local def s_IO: set = $ s_Except (suc exSysCall) $;
-@_ local def s_ERR: set = $ s_Except (suc exGPF) $;
-
-theorem s_Except_sstop: $ s_Except e C_ T.s $ = '(mpbir s_sn_sstop isfsn);
-theorem s_OK_sstop: $ s_OK C_ T.s $ = 's_Except_sstop;
-theorem s_IO_sstop: $ s_IO C_ T.s $ = 's_Except_sstop;
-theorem s_ERR_sstop: $ s_ERR C_ T.s $ = 's_Except_sstop;
-theorem s_Except_subsn: $ subsn (s_Except e) $ = 'subsnsn;
-theorem s_OK_subsn: $ subsn s_OK $ = 's_Except_subsn;
-theorem s_IO_subsn: $ subsn s_IO $ = 's_Except_subsn;
-theorem s_ERR_subsn: $ subsn s_ERR $ = 's_Except_subsn;
-
-theorem s_Except_readException: $ k |=s s_Except e -> readException (ksCfg k) = e $ =
-'(syl5eqr read_place_Except @ sylbi s_sat_sn @ sylbi heap_sat_sn anr);
-theorem s_OK_readException: $ k |=s s_OK -> readException (ksCfg k) = 0 $ = 's_Except_readException;
-theorem s_IO_readException: $ k |=s s_IO -> readException (ksCfg k) = suc exSysCall $ = 's_Except_readException;
-theorem s_ERR_readException: $ k |=s s_ERR -> readException (ksCfg k) = suc exGPF $ = 's_Except_readException;
-theorem s_Except_readException_d (h: $ P =>*s s_Except e $):
-  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = e $ =
-'(eqtr3d (readExceptioneqd anlr) @ anwr @ syl s_Except_readException @ s_weak_sat h);
-theorem s_OK_readException_d (h: $ P =>*s s_OK $):
-  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = 0 $ = '(s_Except_readException_d h);
-theorem s_IO_readException_d (h: $ P =>*s s_IO $):
-  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = suc exSysCall $ = '(s_Except_readException_d h);
-theorem s_ERR_readException_d (h: $ P =>*s s_ERR $):
-  $ G /\ ksCfg ks = k /\ ks |=s P -> readException k = suc exGPF $ = '(s_Except_readException_d h);
-
-theorem hoareCfg_writeException (h: $ e2 e. Option Exception $):
-  $ hoareCfg k (sn (setException k e2)) (s_Except e1) (s_Except e2) $ =
-(named '(trud @ hoareCfg_sn ,eqtac
-  (sylan setExceptionT (anwr ksCfgT) (a1i h))
-  (a1i @ eqssr @ PageMappingeq getMemory_setException)
-  (anwr read_place_setException_ne)
-  (a1i @ eqtr read_place_Except @
-    eqtr (readExceptioneq ksCfg_setCfg) read_setException)));
-
 theorem s_readRegSz_8 (h1: $ b \/ ~2 e. r $) (h: $ G -> readReg k r = v $):
   $ G -> readRegSz k (wSz8 b) r = chop 8 v $ =
 '(chopeqd (a1i wSz8Bits) @ syl5eq (ifneg @ mpbir notan @
@@ -1273,6 +1352,37 @@ theorem s_readEA64_m (ha: $ G -> a e. u64 $)
   (hv: $ G -> v e. u64 $) (hP: $ G -> P =>*s a >=> u64Bytes v $):
   $ G /\ ksCfg ks = k /\ ks |=s P -> readEA64 k (EA_m a) v $ =
 '(s_readEA_m wSz64Bits wSz64Bytes ha (a1i wSz64T) hv hP);
+
+theorem hoareCfg_writeEA
+  (h1: $ G -> v e. u64 $)
+  (h2: $ G -> chop (wsizeBits sz) v = w $)
+  (h3: $ G -> hoareCfg k {k2 | writeEASz k sz ea w k2} P Q $):
+  $ G -> hoareCfg k {k2 | writeEA k sz ea v k2} P Q $ =
+'(mpbird (hoareCfgeq2d @ abeqd @ bitrd (syl bian1 h1) @ writeEASzeq4d h2) h3);
+
+theorem hoareCfg_writeEA64_r
+  (hr: $ G -> r e. Regs $)
+  (hv: $ G -> v e. u64 $):
+  $ G -> hoareCfg k {k2 | writeEA k wSz64 (EA_r r) v k2} (r >->r w) (r >->r v) $ =
+(named @ focus
+  (have 'H1 '(sylibr (elneq2 @ Bitseq wSz64Bits) hv))
+  '(hoareCfg_writeEA hv (syl Bits_chop H1) @
+    hoareCfg_Td @ mpbird (hoareCfgeq2d @ eqab1d @ syl6bbr elsn @
+      syl6bb (eqeq2 writeReg64) @ sylan writeEASz_r
+        (iand (iand s_elConfig_d @ a1i wSz64T) (anwll hr)) (anwll H1)) @
+    anwll @ syl hoareCfg_setReg hv));
+
+-- theorem hoareCfg_writeEA_m
+--   (hr: $ G -> r e. Regs $)
+--   (hv: $ G -> v e. u64 $):
+--   $ G -> hoareCfg k {k2 | writeEA k wSz64 (EA_m a) v k2} (r >->r w) (r >->r v) $ =
+-- (named @ focus
+--   (have 'H1 '(sylibr (elneq2 @ Bitseq wSz64Bits) hv))
+--   '(hoareCfg_writeEA hv (syl Bits_chop H1) @
+--     hoareCfg_Td @ mpbird (hoareCfgeq2d @ eqab1d @ syl6bbr elsn @
+--       syl6bb (eqeq2 writeReg64) @ sylan writeEASz_r
+--         (iand (iand s_elConfig_d @ a1i wSz64T) (anwll hr)) (anwll H1)) @
+--     anwll @ syl hoareCfg_setReg hv));
 
 theorem hoare_decode_step {k}
   (h1: $ G -> P =>*s ip >=>c l $)
@@ -1412,64 +1522,6 @@ theorem s_block_blockS: $ lo + 2 ^ 12 <= a -> a >=> v C_ a >=>.[lo] len v $ =
   mpbird ,eqtac (syl s_mem_ss @ ialda @
     sylibr (sseq (rappsabe ,eqtac) (rappsabe ,eqtac)) @ ssabd @
     bi2d @ syl ifppos @ syl (mpi leaddid1 letr) anllr)));
-
--- --| The unused portion of the stack, which contains an arbitrary block of
--- --| read/write data followed by a no-access guard page.
--- --|
--- --| `unused_stack lo sz` means that there are `sz` bytes of stack, such that
--- --| the low `min sz 4096` bytes of it are read protected, and the rest has
--- --| arbitrary readable memory.
--- @_ local def unused_stack (lo sz): set =
--- $ s_blockZ lo (min sz (2 ^ 12)) *s (lo + 2 ^ 12) >=>. (sz - 2 ^ 12) $;
-
--- theorem unused_stack_lo: $ sz <= 2 ^ 12 ->
---   unused_stack lo sz == ^s (lo + 2 ^ 12 e. u64) /\s s_blockZ lo sz $ =
--- '(syl6eqs s_sep_elift @ s_sepeqd (s_blockZeq2d eqmin1) @
---   syl6eqs s_block0_0 @ s_block0eq2d @ bi1i lesubeq0);
-
--- theorem unused_stack_hi:
---   $ unused_stack lo (sz + 2 ^ 12) == s_blockZ lo (2 ^ 12) *s (lo + 2 ^ 12) >=>. sz $ =
--- '(s_sepeq (s_blockZeq2 @ eqmin2 leaddid2) (s_block0eq2 pncan));
-
--- theorem s_dealloc_stack_lem:
---   $ s_mem P hi v *s unused_stack lo sz C_ unused_stack lo (sz + len v) $ =
--- (focus
---   '(_)
--- );
-
--- theorem s_dealloc_stack:
---   $ (lo + sz) >=>. n *s unused_stack lo sz C_ unused_stack lo (sz + n) $ =
--- (focus
---   '(eor _ _ leorle)
---   '(mpbii (s_sep_ss2 @ eqssr @ eqstr s_block0_A s_sepcom) @
---     sseqd (syl5eqs s_seplass @
---       s_sepeqd (s_block0eq1d @ syl5eq addass @ addeq2d pncan3) @
---         syl5eqsr unused_stack_hi @ unused_stackeq2d npcan) @
---     syl5eqsr unused_stack_hi @ unused_stackeq2d @ syl5eq addrass @ addeq1d npcan)
---   '(mpbird (sseq1d @ s_sepeq2d unused_stack_lo) @ mpi leorle @ eorda _ _)
--- );
-
--- --| `unused_stack_bd hi sz` means that there are at least `sz` bytes of stack
--- --| "above" `hi` (the top of the stack). Note that the stack grows down so these
--- --| unused bytes are at lower addresses than `hi`, and `hi` itself is not included.
--- --|
--- --| This means in particular that writing to any element up to `sz` bytes above `hi`
--- --| is safe, because we know it is either allocated or guarded.
--- @_ local def unused_stack_bd (lo hi sz): set =
--- $ ^s (lo + sz <= hi /\ lo <= hi) /\s s_blockS lo lo (hi - lo) $;
-
--- theorem unused_stack_le2:
---   $ sz2 <= sz -> unused_stack_bd hi sz C_ unused_stack_bd hi sz2 $ =
--- (named '(s_eximd @ syl s_anim1 @
---   sylibr s_lift_ss @ anim1d @ syl letr @ sylib leadd2 anl));
-
--- theorem s_mem_dealloc_stack_bd:
---   $ s_mem P hi v *s unused_stack_bd hi sz C_ unused_stack_bd (hi + len v) (sz + len v) $ =
--- (named '(mpbi (sseq1 s_exsep1) @ s_eximi @ a1i @ mpbir (sseq1 s_sep_anlift2) @
---   sstr (s_anim2a @ mpbiri s_mem_dealloc_stack @ sseq2d @
---     unused_stackeq2d @ syl addsub anr) @
---   s_anim1 @ mpbir s_lift_ss @
---   anim (bi1i @ bitr leadd1 (leeq1 addass)) @ mpi leaddid1 letr));
 
 --| The maximal layout (an upper bound on all stack layouts).
 @_ local def L_top: set = $ S\ lo, S\ a, S\ sz, (^s (a + sz e. u64)) $;

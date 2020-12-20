@@ -437,6 +437,8 @@ theorem anwll (h: $ a -> d $): $ a /\ b /\ c -> d $ = '(anwl (anwl h));
 theorem anw3l (h: $ a -> e $): $ a /\ b /\ c /\ d -> e $ = '(anwll (anwl h));
 theorem anw4l (h: $ a -> f $): $ a /\ b /\ c /\ d /\ e -> f $ = '(anw3l (anwl h));
 theorem anw5l (h: $ a -> g $): $ a /\ b /\ c /\ d /\ e /\ f -> g $ = '(anw4l (anwl h));
+theorem anw6l (x: $ a -> h $): $ a /\ b /\ c /\ d /\ e /\ f /\ g -> h $ = '(anw5l (anwl x));
+theorem anw7l (x: $ a -> i $): $ a /\ b /\ c /\ d /\ e /\ f /\ g /\ h -> i $ = '(anw6l (anwl x));
 theorem anllr: $ a /\ b /\ c /\ d -> b $ = '(anwll anr);
 theorem an3l: $ a /\ b /\ c /\ d -> a $ = '(anwll anl);
 theorem an3lr: $ a /\ b /\ c /\ d /\ e -> b $ = '(anwl anllr);
@@ -1553,6 +1555,8 @@ theorem elun2: $ a e. B -> a e. A u. B $ = '(ssel ssun2);
 theorem unss: $ A u. B C_ C <-> A C_ C /\ B C_ C $ =
 '(ibii (iand (sstr ssun1) (sstr ssun2)) @
   !! iald x @ syl5bi elun @ eord (anwl ssel) (anwr ssel));
+theorem unss1: $ A C_ B -> A u. C C_ B u. C $ = '(sylibr unss @ iand (mpi ssun1 sstr) (a1i ssun2));
+theorem unss2: $ B C_ C -> A u. B C_ A u. C $ = '(sylibr unss @ iand (a1i ssun1) (mpi ssun2 sstr));
 
 theorem equn1: $ A C_ B <-> A u. B == B $ =
 '(ibii (ssasymd (sylibr unss @ iand id (a1i ssid)) (a1i ssun2)) (mpbii ssun1 sseq2));
@@ -5196,7 +5200,7 @@ theorem elopt: $ a e. Option A <-> a = 0 \/ a - 1 e. A $ =
 
 theorem opt0: $ 0 e. Option A $ = '(mpbir elopt (orl eqid));
 theorem optS: $ suc a e. Option A <-> a e. A $ =
-'(bitr elopt @ bitr (bior1 peano1) @ eleq1 @ sucsub1);
+'(bitr elopt @ bitr (bior1 peano1) @ eleq1 sucsub1);
 theorem opt0d: $ G -> 0 e. Option A $ = '(a1i opt0);
 theorem optSd (h: $ G -> a e. A $): $ G -> suc a e. Option A $ = '(sylibr optS h);
 
