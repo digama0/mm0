@@ -2251,6 +2251,15 @@ theorem ltaddsub2: $ a + b < c <-> b < c - a $ = '(bitr (lteq1 addcom) ltaddsub)
 theorem ltsubadd: $ b <= a -> (a - b < c <-> a < c + b) $ = '(syl5bb ltadd1 @ lteq1d npcan);
 theorem ltsubadd2: $ b <= a -> (a - b < c <-> a < b + c) $ = '(syl6bb (lteq2 addcom) ltsubadd);
 
+theorem leaddsub: $ b <= c -> (a + b <= c <-> a <= c - b) $ =
+'(bitr4g lenlt lenlt @ noteqd @ bicomd ltsubadd);
+theorem leaddsub2: $ a <= c -> (a + b <= c <-> b <= c - a) $ =
+'(syl5bb (leeq1 addcom) leaddsub);
+theorem leaddsubi: $ a + b <= c -> a <= c - b $ =
+'(mpbid (syl leaddsub @ letr leaddid2) id);
+theorem leaddsub2i: $ a + b <= c -> b <= c - a $ =
+'(sylbi (leeq1 addcom) leaddsubi);
+
 theorem mulsub: $ a * (b - c) = a * b - a * c $ =
 '(eor
   (eqcomd @ syl eqsub1 @ syl5eqr muladd @ muleq2d npcan)
@@ -2302,6 +2311,11 @@ theorem pnpcan2: $ (a + c) - (b + c) = a - b $ =
 
 theorem pnpcan1: $ (a + b) - (a + c) = b - c $ = '(eqtr (subeq addcom addcom) pnpcan2);
 theorem subSS: $ suc a - suc b = a - b $ = '(eqtr3 (subeq add12 add12) pnpcan2);
+theorem subsub: $ a - b - c = a - (b + c) $ =
+'(eor (eqtr4d (sylib lesubeq0 @ bi2i lesubadd2) @ bi1i lesubeq0)
+  (eqcomd @ syl eqsub1 @ syl5eq addlass @
+    eqtrd (addeq2d @ syl npcan leaddsub2i) @ syl pncan3 @ letr leaddid1)
+  leorle);
 
 theorem indlt (G) {x y} (a: nat) (px: wff x) (p0 pa py ps: wff y)
   (ha: $ x = a -> (px <-> pa) $)

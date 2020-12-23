@@ -1961,7 +1961,7 @@ pub theorem condNegT (c: nat): $ c e. BCond <-> condNeg c e. Cond $ = '(bitr4 b1
 $ Sum (Sum (Xp Unop (Xp WSize RM)) (Xp Binop (Xp WSize DestSrc)))
     (Sum (Xp Bool (Xp WSize RM)) (Xp WSize DestSrc)) $;
 @_ def xastUnop (unop sz rm: nat): nat = $ b0 (b0 (b0 (b0 (unop <> sz <> rm)))) $;
-@_ def xastBinop (binop sz rm: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> rm)))) $;
+@_ def xastBinop (binop sz ds: nat): nat = $ b0 (b0 (b0 (b1 (binop <> sz <> ds)))) $;
 @_ def xastMul (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (0 <> sz <> rm)))) $;
 @_ def xastDiv (sz rm: nat): nat = $ b0 (b0 (b1 (b0 (1 <> sz <> rm)))) $;
 @_ def xastLea (sz ds: nat): nat = $ b0 (b0 (b1 (b1 (sz <> ds)))) $;

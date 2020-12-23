@@ -170,6 +170,9 @@ theorem s_sat_sep_sn: $ k |=s R *s P <-> E. r (r e. R /\ k |=s sn r *s P) $ =
 theorem s_sat_sn: $ k |=s sn h <-> k |=h h $ =
 '(bitr (exeqi @ aneq1i elsn) @ exeqe ,eqtac);
 
+theorem s_sat_or: $ k |=s P \/s Q <-> k |=s P \/ k |=s Q $ =
+(named '(bitr (exeqi @ bitr (aneq1i el_s_or) andir) exor));
+
 theorem s_sat_ex (P: set x): $ k |=s E.s x e. A, P <-> E. x (x e. A /\ k |=s P) $ =
 (named '(bitr4 (exeqi @ bitr4 (aneq1i el_s_ex) rexan2) rexexcomb));
 
@@ -587,6 +590,14 @@ theorem hoareCfg_animd (h1: $ G /\ p -> q $) (h2: $ G /\ p -> hoareCfg k R P Q $
   $ G -> hoareCfg k R (^s p /\s P) (^s q /\s Q) $ =
 '(sylibr hoareCfg_impexp @ exp @ hoareCfg_iand h1 h2);
 
+theorem hoareCfg_eor: $ hoareCfg k R (P1 \/s P2) Q <-> hoareCfg k R P1 Q /\ hoareCfg k R P2 Q $ =
+(named '(bitr (raleqi @ bitr (aleqi @ bitr (imeq1i @
+    bitr (s_sateq2 s_orsepdir) s_sat_or) imor) alan) ralan));
+
+theorem hoareCfg_orim: $ hoareCfg k R P1 Q1 -> hoareCfg k R P2 Q2 ->
+  hoareCfg k R (P1 \/s P2) (Q1 \/s Q2) $ =
+'(exp @ sylibr hoareCfg_eor @ anim (hoareCfg_weakr s_weak_orl) (hoareCfg_weakr s_weak_orr));
+
 theorem hoareCfg_pim (p: wff k2) (q: wff k2 k3) (r: wff k3)
   (h1: $ G -> hoareCfg (ksCfg k) {k2 | p} P Q $)
   (h2: $ G /\ p /\ setCfg k k2 |=s F *s Q -> (P. k3 q -> r) $):
@@ -886,7 +897,8 @@ theorem hoareCfg_setMem {p x}
   (h2: $ G -> len w = len v $)
   (h3: $ G /\ PROT_READ + PROT_WRITE C_ p -> x <> p e. P -> x <> p e. Q $)
   (h4: $ G -> setMem (getMemory k) a v = m2 <> e $):
-  $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem P a w) (^s (e != 0) \/s s_mem Q a v) $ =
+  $ G -> hoareCfg k (sn (setMemory k m2)) (s_mem P a w)
+    (^s (e = suc exGPF) \/s ^s (e = 0) /\s s_mem Q a v) $ =
 (named @ focus
   (def (f x y) '(syl (eale ,(eqtac-gen x)) ,y))
   '(mpd (iand (iand h1 h2) h4) ,(f 'a @ f 'w @ f 'm2 @ f 'e @ f 'k @ induct '(listindd) 'v _ _))
@@ -901,7 +913,8 @@ theorem hoareCfg_setMem {p x}
       mpbiri s_weak_id @ s_weakeq1d @
       eqstr4d (s_memeq3d @ sylib leneq0 @ syl6eq len0 an4lr) @
       syl6eqs (eqstr4 s_mem_0 s_mem_0) @
-      sylib s_bior1a @ syl s_lift_botss @ syl notnot1 @ anrd H1))
+      eqstrd (sylib s_bior1a @ syl s_lift_botss @ syl (con2 sucne0) @ anrd H1) @
+      syl (s_bian1 s_mem_sstop) @ anrd H1))
   '(sylibr (cbval @ cbvald @ cbvald @ cbvald @ cbvald ,eqtac) @
     iald @ iald @ iald @ !! iald l @ ialda ,(g _))
   '(mpd (sylib excons @ sylib (noteq leneq0) @ syl sucne0 @ syl6eq lenS @ rsyl anllr anlr) @
@@ -910,7 +923,7 @@ theorem hoareCfg_setMem {p x}
       eqeq1d @ sylan (mpi (eqcom fstsnd) setMemS)
         (syl getMemoryT anllr) (rsyl anlr @ u64le1 leaddid1)) @
     impd @ exp @ syld (casesda _ _) @
-    exp (hoareCfgeq4g s_mem_S (s_oreq2 s_mem_S) anr))
+    exp (hoareCfgeq4g s_mem_S (s_oreq2 @ s_aneq2 s_mem_S) anr))
   (focus
     '(sylbid (anwr @ eqeq1d ifpos) @ exp @
       sylibr (hoareCfgeq2 @ nseq @ sneq @ eqcom set_setMemory) @
@@ -922,7 +935,8 @@ theorem hoareCfg_setMem {p x}
         eximd @ syl5bi (aneq2i @ el_s_anlift1 s_mem1_sstop) @
         syl5bir anass @ anim1d @ impd @ com23 @ exp @ sylibr (imeqi elrapp elrapp) h3))
     (focus
-      '(syl (hoareCfg_weakr s_weak_orsep1) @ syl hoareCfg_frame _)
+      '(syl (hoareCfg_weakr @ mpbi (s_weakeq2 @ s_oreq2 s_sep_anlift2) s_weak_orsep1) @
+        syl hoareCfg_frame _)
       '(mpd (iand (rsyl anllr @ anim1 anr) @ eqtrd _ anr) @
         rsyl an6lr @ ealie @ ealde @ ealde @ ealde @ ealde @ bi1d ,eqtac)
       '(setMemeqd (a1i get_setMemory) (eqcomd @ syl add64S_eqid _) eqidd)
@@ -934,44 +948,33 @@ theorem hoareCfg_setMem {p x}
       sylib hoareCfg_eexb @ ialda @
       rsyl (s_mem1_hoareCfg_err (rsyl an3lr anll) anlr @
         mpbid (neeq1d @ syl6eq sndpr @ sndeqd anlr) anllr) @
-      hoareCfg_weakr @ s_weak_anwl @ mpbir s_lift_weak sucne0)));
+      hoareCfg_weakr s_weak_anl)));
 
--- theorem hoareCfg_writeMem {p x}
---   (h1: $ G -> v e. List u8 $)
---   (h2: $ G -> len w = len v $)
---   (h3: $ G /\ PROT_READ + PROT_WRITE C_ p -> x <> p e. P -> x <> p e. Q $):
---   $ G -> hoareCfg k {k2 | writeMem k a v k2}
---     (s_OK *s s_mem P a w)
---     (s_ERR \/s (s_OK *s s_mem Q a v)) $ =
--- (focus
---   (have 'H1 '(anwr @ s_sat_ss_lift @ s_sepssr s_mem_T))
---   (have 'H2 '(syl (u64le1 leaddid1) (anld H1)))
---   (have 'H3 '(anw3l h1))
---   '(mpi expr @ !! eexd m2 @ !! eexd e @ exp @ hoareCfg_Td @
---     mpbird (hoareCfgeq2d @ eqab1d @ syl6bbr elsn @
---       bitrd (rsyl anllr writeMem_setMem) @
---       sylan bian1 (iand (iand s_elConfig_d H2) H3) @
---       s_OK_readException_d s_sepl) @
---     -- mpd (sylib elopt @ anrd @ mpd anllr @
---     --   sylan setMemT2 (iand (syl getMemoryT s_elConfig_d) H2) (anw3l h1)) @
---     casesd _ _)
---   '(exp @ syl (hoareCfg_weakr @ ss_s_weak s_orr) @
---     hoareCfg_tr1 (syl hoareCfg_frame @
---       hoareCfg_setMem (anw4l h1) (anw4l h2) (syl h3 @ anim1 an4l) @
---       eqtrd an3lr @ preq2d anr) @
---     syl hoareCfg_frame_r @ mpbiri (hoareCfg_setException opt0) @
---     hoareCfgeq2d @ nseqd @ sneqd @ setExceptioneq2d anr)
---   '(syld (exp @ eqtr3d (anwr sub1can) @ suceqd @ sylib elsn @
---       imp @ sylib elopt @ anrd @ mpd anllr @
---       sylan setMemT2 (iand (syl getMemoryT s_elConfig_d) H2) (anw3l h1)) @
---     syl5ibrcom ,eqtac @
---     --  syl (hoareCfg_weakl s_sepl) @
---     syl (hoareCfg_weakr @ ss_s_weak s_orl) @
---     hoareCfg_tr1 (
---       -- sylibr hoareCfg_1 @ anwll @ ialda @ ialda @
---       _) @
---     a1i @ hoareCfg_setException @ mpbir optS exGPF_T)
--- );
+theorem hoareCfg_writeMem {p x}
+  (h1: $ G -> v e. List u8 $)
+  (h2: $ G -> len w = len v $)
+  (h3: $ G /\ PROT_READ + PROT_WRITE C_ p -> x <> p e. P -> x <> p e. Q $):
+  $ G -> hoareCfg k {k2 | writeMem k a v k2}
+    (s_OK *s s_mem P a w)
+    (s_ERR \/s (s_OK *s s_mem Q a v)) $ =
+(named @ focus
+  (have 'H1 '(anwr @ s_sat_ss_lift @ s_sepssr s_mem_T))
+  (have 'H2 '(syl (u64le1 leaddid1) (anld H1)))
+  (have 'H3 '(anw3l h1))
+  '(mpi expr @ !! eexd m2 @ !! eexd e @ exp @ hoareCfg_Td @
+    mpbird (hoareCfgeq2d @ eqab1d @ syl6bbr elsn @
+      bitrd (rsyl anllr writeMem_setMem) @
+      sylan bian1 (iand (iand s_elConfig_d H2) H3) @
+      s_OK_readException_d s_sepl) @
+    hoareCfg_tr1 (syl hoareCfg_frame @
+      hoareCfg_setMem H3 (anw3l h2) (syl h3 @ anim1 an3l) anllr) @
+    sylibr (hoareCfgeq3 s_orsepdir) @ sylc hoareCfg_orim _ _)
+  '(syl (hoareCfg_weakl @ mpbi (s_weakeq2 s_sep_elift) @ s_sep_weak2 s_lift_weak_elift) @
+    sylibr hoareCfg_impexp @ syl5ibrcom ,eqtac @
+    a1i @ hoareCfg_setException @ mpbir optS exGPF_T)
+  '(sylibr (hoareCfgeq3 s_sep_anlift2) @
+    sylibr hoareCfg_impexp @ syl5ibrcom ,eqtac @
+    a1i @ hoareCfg_frame_r @ hoareCfg_setException opt0));
 
 --| A block of readable or read/write memory: `a >=> v` says that the
 --| list of bytes `v` is at address `a`.
@@ -1372,17 +1375,27 @@ theorem hoareCfg_writeEA64_r
         (iand (iand s_elConfig_d @ a1i wSz64T) (anwll hr)) (anwll H1)) @
     anwll @ syl hoareCfg_setReg hv));
 
--- theorem hoareCfg_writeEA_m
---   (hr: $ G -> r e. Regs $)
---   (hv: $ G -> v e. u64 $):
---   $ G -> hoareCfg k {k2 | writeEA k wSz64 (EA_m a) v k2} (r >->r w) (r >->r v) $ =
--- (named @ focus
---   (have 'H1 '(sylibr (elneq2 @ Bitseq wSz64Bits) hv))
---   '(hoareCfg_writeEA hv (syl Bits_chop H1) @
---     hoareCfg_Td @ mpbird (hoareCfgeq2d @ eqab1d @ syl6bbr elsn @
---       syl6bb (eqeq2 writeReg64) @ sylan writeEASz_r
---         (iand (iand s_elConfig_d @ a1i wSz64T) (anwll hr)) (anwll H1)) @
---     anwll @ syl hoareCfg_setReg hv));
+theorem hoareCfg_writeEA_m {x p}
+  (hn: $ wsizeBits sz = n $)
+  (hv: $ G -> v e. u64 $)
+  (hsz: $ G -> sz e. WSize $)
+  (hl1: $ G -> len l1 = n $)
+  (hl2: $ G -> l2 = toBytes n w $)
+  (hw: $ G -> chop n v = w $)
+  (hp: $ G /\ PROT_READ + PROT_WRITE C_ p -> x <> p e. P -> x <> p e. Q $):
+  $ G -> hoareCfg k {k2 | writeEA k sz (EA_m a) v k2}
+    (s_OK *s s_mem P a l1)
+    (s_ERR \/s s_OK *s s_mem Q a l2) $ =
+(named @ focus
+  (have 'H1 '(syl5eq (chopeq1 hn) hw))
+  (have 'H2 '(anwll @ syl6eqr (toByteseq1 hn) hl2))
+  '(hoareCfg_writeEA hv H1 @ hoareCfg_Td @
+    mpbird (hoareCfgeq2d @ abeqd @ bitr4d _ @ writeMemeq3d H2) @
+    hoareCfg_writeMem (mpbiri toBytesT2 @ eleq1d H2)
+      (anwll @ eqtr4d hl1 @ syl6eq toBytes_len @ leneqd hl2) (syl hp @ anim1 anll))
+  '(sylan writeEASz_m (iand (iand s_elConfig_d (anwll hsz)) _) @
+    anwll @ mpbii chopT @ eleq1d H1)
+  '(syl (u64le1 leaddid1) @ anld @ syl (s_sat_weak_lift @ s_sepwr @ ss_s_weak s_mem_T) anr));
 
 theorem hoare_decode_step {k}
   (h1: $ G -> P =>*s ip >=>c l $)
@@ -1406,11 +1419,15 @@ theorem hoare_decode_step {k}
         syl hoareCfg_writeRIP @ mpbid (anwll @ eleq1d h3) H3)
       (anwll @ !! sbeth k h4 ,eqtac)));
 
--- theorem hoareCfg_writeCFOFResult
---   (h1: $ G -> hoareCfg k {k2 | writeEA k sz ea w k2} P Q $):
---   $ G -> hoareCfg k {k2 | writeCFOFResult k sz ea w c o k2}
---       (flags>->. *s P) (s_resultFlags sz w c o *s Q) $ =
--- _;
+theorem hoareCfg_writeCFOFResult {ki}
+  (h1: $ G -> hoareCfg ki {k2 | writeEA ki sz ea w k2} P Q $):
+  $ G -> hoareCfg k {k2 | writeCFOFResult k sz ea w c o k2}
+      (flags>->. *s P) (s_resultFlags sz w c o *s Q) $ =
+(named '(hoareCfg_Td @ mpbird (hoareCfgeq2d @ abeqd @ syl bian1 s_elConfig_d) @
+  hoareCfg_tr1 (syl hoareCfg_frame_r @ syl hoareCfg_writeResultFlags @ syl (anim1 anlr) @
+    syl (rsyl pimex @ eex @ rsyl writeEA_T anl) @
+    sylc hoareCfg_frame_E_ab (mpbird (hoareCfgeq1d anlr) @ anwll @ !! sbeth ki h1 ,eqtac) anr) @
+  syl hoareCfg_frame @ anwll @ !! sbeth ki h1 ,eqtac));
 
 theorem hoareCfg_popAux
   (h1: $ G -> q e. u64 $)
@@ -1478,16 +1495,41 @@ theorem hoareCfg_xastBinop {ks}
   '(rsyl (sylibr (readEAeq3 head) h1) @ determ_exeqe ,eqtac ,eqtac readEA_determ)
   '(rsyl (sylibr (readEAeq3 heas) h2) @ determ_exeqe ,eqtac ,eqtac readEA_determ));
 
--- theorem hoareCfg_xastBinopAdd {ks}
---   (head: $ destEA k ds = ead $)
---   (heas: $ srcEA k ds = eas $)
---   (h1: $ G /\ ksCfg ks = k /\ ks |=s P -> readEA k sz ead d $)
---   (h2: $ G /\ ksCfg ks = k /\ ks |=s P -> readEA k sz eas s $)
---   (h3: $ G -> d +_64 s = w $)
---   (h4: $ G -> hoareCfg k {k2 | writeEA k sz ead w k2} P Q $):
---   $ G -> hoareCfg k {k2 | execXAST k (xastBinop binopAdd sz ds) k2}
---       (flags>->. *s P) (s_addFlags sz d s *s Q) $ =
--- _;
+theorem hoareCfg_xastBinopAddF {ks ki}
+  (head: $ destEA k ds = ead $)
+  (heas: $ srcEA k ds = eas $)
+  (h1: $ G /\ ksCfg ks = k /\ ks |=s P -> readEA k sz ead d $)
+  (h2: $ G /\ ksCfg ks = k /\ ks |=s P -> readEA k sz eas s $)
+  (h3: $ G -> d +_64 s = w $)
+  (h4: $ G -> hoareCfg ki {k2 | writeEA ki sz ead w k2} P Q $):
+  $ G -> hoareCfg k {k2 | execXAST k (xastBinop binopAdd sz ds) k2}
+      (flags>->. *s P) (s_addFlags sz d s *s Q) $ =
+(focus
+  (have 'H '(anim2 @ s_weak_sat s_sepr))
+  (have 'H1 '(syl h1 H))
+  (have 'H2 '(syl h2 H))
+  (have 'Hsd '(rsyl H1 @ rsyl readEA_T @ iand anlr @ sylc Bitsle (syl wsizeBits_le64 anlr) anr))
+  (have 'Hs '(rsyl H2 @ rsyl readEA_T @ sylc Bitsle (syl wsizeBits_le64 anlr) anr))
+  '(hoareCfg_xastBinop head heas H1 H2 @ hoareCfg_Td @
+    mpbird (hoareCfgeq2d @ abeqd @ syl5bb writeBinopAdd @
+      bitrd (exeqd @ bian1exd @ syl6bb anass @ bian1exd @
+        bian11d @ aneq1d @ aneq1d @ sylan bian1 Hsd Hs) @
+      exeqed @ exeqed @ exeqed @ writeCFOFResulteqd eqidd eqidd eqidd
+        anllr (syl6bb truenat ,eqtac) (syl6bb truenat ,eqtac) eqidd) @
+    mpbird (hoareCfgeq4d @ s_sepeq1d @ sylan (s_bian1 s_resultFlags_sstop) (anrd Hsd) Hs) @
+    anwll @ hoareCfg_writeCFOFResult @ mpbird (hoareCfgeq2d @ abeqd @ writeEAeq4d h3) h4));
+
+theorem hoareCfg_xastBinopAdd {ks ki}
+  (head: $ destEA k ds = ead $)
+  (heas: $ srcEA k ds = eas $)
+  (h1: $ G /\ ksCfg ks = k /\ ks |=s P -> readEA k sz ead d $)
+  (h2: $ G /\ ksCfg ks = k /\ ks |=s P -> readEA k sz eas s $)
+  (h3: $ G -> d +_64 s = w $)
+  (h4: $ G -> hoareCfg ki {k2 | writeEA ki sz ead w k2} P Q $):
+  $ G -> hoareCfg k {k2 | execXAST k (xastBinop binopAdd sz ds) k2}
+      (flags>->. *s P) (flags>->. *s Q) $ =
+'(syl (hoareCfg_weakr @ s_sep_weak1 @ ss_s_weak s_addFlags_clob) @
+  hoareCfg_xastBinopAddF head heas h1 h2 h3 h4);
 
 --| An unallocated stack block. Here `lo` is a parameter, representing the base of the
 --| stack. The bytes within one page of the stack base have no access, otherwise
@@ -1798,6 +1840,20 @@ theorem stack_dealloc
   hoare_animd anr @ anw3l @ syl hoare_frame @ syl hoare_weak @
   syl ss_s_weak @ syl rappss @ syl rappss @ syl rappss h1));
 
+theorem hoareCfg_jump_ok {k}
+  (hc: $ assembled c l ip ip2 $)
+  (ha: $ G -> decode ast l $)
+  (hj: $ G -> jump_ok T c sp2 fr ip3 L2 P2 $)
+  (h4: $ G -> hoareCfg k {k2 | execXAST k ast k2}
+    (main_layout c sp ip2 8 L *s P) (main_layout c sp2 ip3 8 L2 *s P2) $):
+  $ G -> jump_ok T c sp fr ip L P $ =
+(focus
+  (have 'H '(s_code_assembled hc))
+  (def h '(s_bisep11i @ s_bisep11i @ s_bisep11i @ eqstr s_sepass s_sepcom))
+  '(mpd hj @ syl hoare_frame_E @ sylibr (hoareeq2 ,h) @
+    hoare_decode_step (a1i @ s_sepwl @ s_sepwl @ s_sepwl @ anli H) ha (a1i @ anri H) @
+    sylib (hoareCfgeq3 ,h) h4));
+
 theorem ret_ok
   (hc: $ assembled c (s1 (ch xc x3)) ip ip2 $)
   (hr: $ G -> ret e. u64 $)
@@ -1805,16 +1861,10 @@ theorem ret_ok
   $ G -> jump_ok T c 8 fr ip (L_1 (u64Bytes ret)) P $ =
 (named @ focus
   (have 'H '(s_code_assembled hc))
-  '(mpd (stack_dealloc hj @ a1i @
+  (def h '(eqstr (s_sepeq1 @ s_bisep11i @ s_bisep11i s_sepcom) s_seprass))
+  '(hoareCfg_jump_ok hc (a1i decodeRet0I) (stack_dealloc hj @ a1i @
       mpbi (sseq2 @ eqstr4 L_pad_seq @ L_seq_emp L_pad_sstop) @ L_seq_ss ssid L_1_drop) @
-    syl hoare_frame_E @ syl hoare_frame_r @
-    sylibr (hoareeq2 @ s_bisep11i @ s_bisep11i @ eqstr s_sepass s_sepcom) @
-    hoare_decode_step (a1i @ s_sepwl @ s_sepwl @ anli H) (a1i decodeRet0I) (a1i @ anri H) @
-    hoareCfgeq4g
-      (eqstr s_sepass @ eqstr3 (s_sepeq2 s_sepass) s_seplass)
-      (s_bisep11i @ eqstr (s_sepeq1 @ eqstr s_sepcom @
-        eqstr4 (s_sepeq2 s_sepcom) s_sepass) @ eqstr s_sepass s_seprass) @
-    syl hoareCfg_frame @
+    syl hoareCfg_frame_r @ hoareCfgeq4g ,h ,h @ syl hoareCfg_frame_r @
     hoareCfgeq3g s_exsep1 s_exsep1 @ sylib hoareCfg_eexb @ !! iald lo @ a1d @
     sylib (hoareCfgeq3 s_exsep1) @ sylib hoareCfg_eexb @ !! iald sz @ a1d @
     hoareCfg_iexe ,eqtac (a1i elv) @
@@ -1834,12 +1884,34 @@ theorem ret_ok
         syl5eq (addeq1 @ subeq2 u64Bytes_len) @ syl npcan anrr) @
     syl6eqr sub02 @ eqtrd (syl add64_eqid @ mpbird (eleq1d H3) @ anwr an3l) H3));
 
--- theorem add_rsp_ok
---   (hc: $ assembled c (s1 (ch xc x3)) ip ip2 $)
---   (hr: $ G -> ret e. u64 $)
---   (hj: $ G -> jump_ok T c b fr ret L P $):
---   $ G -> jump_ok T c a fr ip L P $ =
--- _;
+theorem add_rsp_ok
+  (hc: $ assembled c l ip ip2 $)
+  (ha: $ G -> decode (xastBinop binopAdd wSz64 (Rm_i (RM_reg RSP) i)) l $)
+  (hi: $ G -> i e. u64 $)
+  (hb: $ G -> b + i = a $)
+  (hj: $ G -> jump_ok T c b fr ip2 L P $):
+  $ G -> jump_ok T c a fr ip L P $ =
+(named @ focus
+  (have 'H1 '(anwr @ anwll @ u64le1 subleid))
+  (have 'H2 $ _ -> lo + sz - a + i = lo + sz - b $
+    '(eqtr3d (addeq1d @ syl5eq subsub @ subeq2d @ anwl hb) @
+      syl npcan @ syl leaddsub2i @ mpbird (leeq1d @ anwl hb) @ anwr anlr))
+  '(hoareCfg_jump_ok hc ha hj @
+    syl hoareCfg_frame_r @ hoareCfgeq4g s_sepass s_sepass @ syl hoareCfg_frame @
+    hoareCfgeq3g s_exsep1 s_exsep1 @ syl hoareCfg_exim @ iald @ a1d @
+    hoareCfgeq3g s_exsep1 s_exsep1 @ syl hoareCfg_exim @ iald @ a1d @
+    hoareCfgeq4g s_sep_anlift2 s_sep_anlift2 @
+    hoareCfg_animd (imp @ anim1d @ anim2d @ syl letr @ mpbii leaddid1 @ leeq2d hb) @
+    hoareCfgeq3g s_sepass s_sepass @ syl hoareCfg_frame_r @
+    hoareCfg_xastBinopAdd (eqtr destEAm_i RM_EAreg) srcEAm_i
+      (mpbird (sylan readEA_r (iand s_elConfig_d @ a1i RSP_T) @ a1i wSz64T) @
+        eqcomd @ s_readRegSz_64_ @ a1i s_weak_id)
+      (mpbird (sylan readEA_i (iand s_elConfig_d @ anw3l hi) @ a1i wSz64T) @
+        eqcomd @ syl Bits_chop @ anw3l @ sylibr (elneq2 @ Bitseq wSz64Bits) hi)
+      (eqtrd (syl add64_eqid @ mpbird (eleq1d H2) H1) H2) @
+    hoareCfg_writeEA64_r (a1i RSP_T) H1)
+  '(eqtr3d (addeq1d @ syl5eq subsub @ subeq2d @ anwl hb) @
+    syl npcan @ syl leaddsub2i @ mpbird (leeq1d @ anwl hb) @ anwr anlr));
 
 -- @_ local def c_param (T: set) (c fr: nat) = $ Sum T (c <> fr) $;
 -- @_ local def c_param_T (X: set) = $ Fst X $;
