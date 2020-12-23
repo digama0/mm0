@@ -1075,7 +1075,8 @@ make_builtins! { self, sp1, sp2, args,
           if v.is_proc() {
             let sp = v.fspan().map_or(sp2, |fsp| fsp.span);
             return Ok(State::App(sp1, sp, v, vec![], [].iter()))
-          } else {v}
+          }
+          v
         }
       }
     }

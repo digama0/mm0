@@ -849,7 +849,8 @@ impl<'a> LispParser<'a> {
                 let r = it.next().ok_or_else(||
                   ElabError::new_e(arg.span, "expected at least one argument"))?;
                 break IR::dotted_list(e.span, cs, self.expr(false, r)?)
-              } else {cs.push(self.expr(true, arg)?)}
+              }
+              cs.push(self.expr(true, arg)?)
             } else {cs.push(self.expr(true, arg)?)}
           } else {break IR::list(self.fspan(e.span), cs)}
         })

@@ -424,10 +424,10 @@ impl Elaborator {
                 if let Some(sp2) = sp2 {
                   self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Verb));
                 }
-                if let (Some(e), true) = (u.next(), u.is_empty()) {
-                  return Ok(RefineExpr::Exact(e))
+                return if let (Some(e), true) = (u.next(), u.is_empty()) {
+                  Ok(RefineExpr::Exact(e))
                 } else {
-                  return Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "verb: expected one argument"))
+                  Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "verb: expected one argument"))
                 }
               }
               AtomID::COLON => {
@@ -435,10 +435,10 @@ impl Elaborator {
                 if let Some(sp2) = sp2 {
                   self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Typed));
                 }
-                if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
-                  return Ok(RefineExpr::Typed {ty, e})
+                return if let (Some(e), Some(ty), true) = (u.next(), u.next(), u.is_empty()) {
+                  Ok(RefineExpr::Typed {ty, e})
                 } else {
-                  return Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "':' expected two arguments"))
+                  Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "':' expected two arguments"))
                 }
               }
               _ => (InferMode::Regular, e)
@@ -848,9 +848,8 @@ impl Elaborator {
               if let Some(e) = if explicit {u.next()} else {None} {
                 stack.push(RStack::RefineBis {sp, sp2, tgt, im, t, u, args});
                 break 'l2 RState::RefineExpr {tgt: tgt1, e}
-              } else {
-                args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2))))
               }
+              args.push(self.lc.new_mvar(tgt1, Some(self.fspan(sp2))))
             }
             let mut subst = Subst::new(&self.env, &tdata.heap, Vec::from(&args[1..]));
             let hyps = tdata.hyps.iter().map(|(_, h)| subst.subst(h)).collect::<Vec<_>>();
@@ -871,9 +870,8 @@ impl Elaborator {
               if let Some(p) = u.next() {
                 stack.push(RStack::RefineHyps {sp, sp2, tgt, t, u, args, hyps, res});
                 break 'l3 RState::RefineProof {tgt: h, p}
-              } else {
-                args.push(self.new_goal(sp, h))
               }
+              args.push(self.new_goal(sp, h))
             }
             let head = LispVal::list(args);
             self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
