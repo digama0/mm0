@@ -91,6 +91,9 @@ make_prims! {
     /// `h` is a proof that `b + a <= n`. Computationally this corresponds to
     /// simply `x + b * sizeof T`, in the manner of C pointer arithmetic.
     Slice: "slice",
+    /// `{e : T}` is `e`, with the type `T`. This is used only to direct
+    /// type inference, it has no effect otherwise.
+    Typed: ":",
     /// If `x` has type `T`, then `(typeof! x)` is a tuple `(x', h)` where `x'` has
     /// a copy type of the same size as `T`, such as `u64` if `sizeof T == 8`, and
     /// `h` is a proof that `x' :> T`. This consumes `x`, so usually `x'` should
@@ -127,6 +130,8 @@ make_prims! {
     I32: "i32",
     /// `i64` is the type of 64 bit signed integers; `sizeof i64 = 8`.
     I64: "i64",
+    /// The input token (passed to functions that read from input)
+    Input: "Input",
     /// `int` is the type of unbounded signed integers; `sizeof int = inf`.
     Int: "int",
     /// `(list A B C)` is a tuple type with elements `A, B, C`;
@@ -139,6 +144,8 @@ make_prims! {
     /// the typehood predicate is `x :> (or A B C)` iff
     /// `x :> A \/ x :> B \/ x :> C`.
     Or: "or",
+    /// The output token (passed to functions that produce output)
+    Output: "Output",
     /// `(own T)` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
@@ -151,6 +158,10 @@ make_prims! {
     /// type `own T` in the function but must also be passed back out of the
     /// function.
     RefMut: "&mut",
+    /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
+    /// This is useful for asserting that a computationally relevant value can be
+    /// expressed in terms of computationally irrelevant parts.
+    Single: "sn",
     /// `u8` is the type of 8 bit unsigned integers; `sizeof u8 = 1`.
     U8: "u8",
     /// `u16` is the type of 16 bit unsigned integers; `sizeof u16 = 2`.
@@ -172,11 +183,13 @@ make_prims! {
     /// `p \/ q` is disjunction.
     Or: "or",
     /// `p -> q` is (regular) implication.
-    Imp: "im",
+    Imp: "->",
     /// `p * q` is separating conjunction.
     Star: "*",
     /// `p -* q` is separating implication.
     Wand: "-*",
+    /// `pure p` embeds a MM0 propositional expression.
+    Pure: "pure",
   }
 
   /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular

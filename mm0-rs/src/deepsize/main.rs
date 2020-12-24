@@ -239,7 +239,7 @@ impl<O: DeepSizeOf, T: ?Sized> DeepSizeOf for owning_ref::OwningRef<O, T> {
 
 /// A macro to generate an impl for types with no inner allocation.
 #[macro_export]
-macro_rules! deep_size_0(
+macro_rules! deep_size_0 {
     ($($({$($gen:tt)*})? $type:ty),+) => {
         $($crate::deep_size_0!(@IMPL $({$($gen)*})? $type);)+
     };
@@ -262,7 +262,7 @@ macro_rules! deep_size_0(
         };
         $crate::deep_size_0!(@GO {!Copy $($($gen)+)?} $type);
     };
-);
+}
 
 use std::sync::atomic;
 deep_size_0!(

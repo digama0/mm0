@@ -477,7 +477,7 @@ pub enum PureExpr {
 }
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Type {
   /// A type variable.
   Var(AtomID),
@@ -507,6 +507,10 @@ pub enum Type {
   /// `(list A B C)` is a tuple type with elements `A, B, C`;
   /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
   List(Box<[Type]>),
+  /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
+  /// This is useful for asserting that a computationally relevant value can be
+  /// expressed in terms of computationally irrelevant parts.
+  Single(Rc<PureExpr>),
   /// `(struct {x : A} {y : B} {z : C})` is the dependent version of `list`;
   /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
   /// themselves refer to `x, y, z`.
@@ -526,14 +530,18 @@ pub enum Type {
   /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
   Or(Box<[Type]>),
-  /// `(ghost A)` is a compoutationally irrelevant version of `A`, which means
+  /// `(ghost A)` is a computationally irrelevant version of `A`, which means
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
   Ghost(Box<Type>),
   /// A propositional type, used for hypotheses.
   Prop(Box<Prop>),
   /// A user-defined type-former.
-  _User(AtomID, Box<[Type]>, Box<[PureExpr]>),
+  User(AtomID, Box<[Type]>, Rc<[PureExpr]>),
+  /// The input token.
+  Input,
+  /// The output token.
+  Output,
 }
 
 impl Type {
@@ -548,6 +556,36 @@ impl Type {
 pub enum Prop {
   /// An unresolved metavariable.
   MVar(usize),
+  /// A true proposition.
+  True,
+  /// A false proposition.
+  False,
+  /// A universally quantified proposition.
+  All(AtomID, Box<(Type, Prop)>),
+  /// An existentially quantified proposition.
+  Ex(AtomID, Box<(Type, Prop)>),
+  /// Implication (plain, non-separating).
+  Imp(Box<(Prop, Prop)>),
+  /// Negation.
+  Not(Box<Prop>),
+  /// Conjunction (non-separating).
+  And(Box<[Prop]>),
+  /// Disjunction.
+  Or(Box<[Prop]>),
+  /// The empty heap.
+  Emp,
+  /// Separating conjunction.
+  Sep(Box<[Prop]>),
+  /// Separating implication.
+  Wand(Box<(Prop, Prop)>),
   /// An (executable) boolean expression, interpreted as a pure proposition
   Pure(Rc<PureExpr>),
+  /// Equality (possibly non-decidable).
+  Eq(Rc<PureExpr>, Rc<PureExpr>),
+  /// A heap assertion `l |-> (v: T)`.
+  Heap(Rc<PureExpr>, Rc<PureExpr>, Box<Type>),
+  /// An explicit typing assertion `[v : T]`.
+  HasTy(Rc<PureExpr>, Box<Type>),
+  /// An embedded MM0 proposition of sort `wff`.
+  MM0(LispVal),
 }

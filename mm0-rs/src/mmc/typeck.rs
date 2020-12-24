@@ -10,7 +10,7 @@ use crate::util::{Span, FileSpan};
 use super::{Compiler,
   types::{AST, Binop, Expr, Keyword, ProcKind, ProofExpr,
     Prop, PureExpr, Size, TuplePattern, Type, Unop},
-  parser::head_keyword,
+  parser::{head_keyword, Parser},
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
     Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
 
@@ -109,6 +109,27 @@ pub struct TypeChecker<'a> {
   context: Vec<Variable>,
 }
 
+#[derive(Copy, Clone)]
+enum ArgsContext {
+  TypeArgs,
+  StructFields,
+  ProcArgs,
+  Binder,
+}
+impl ArgsContext {
+  fn tyvar_allowed(self) -> bool {
+    matches!(self, ArgsContext::TypeArgs)
+  }
+  fn hyp_allowed(self) -> bool {
+    !matches!(self, ArgsContext::TypeArgs)
+  }
+  fn default_value(self) -> Option<Type> {
+    if let ArgsContext::Binder = self {
+      Some(Type::UInt(Size::Inf))
+    } else {None}
+  }
+}
+
 fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(AtomID, &AtomData) -> bool) -> AtomID {
   if !base.is_empty() {
     let a = env.get_atom(&base);
@@ -152,7 +173,13 @@ impl<'a> TypeChecker<'a> {
     }).collect())
   }
 
-  fn todo<T, U>(&self, _: U) -> EResult<T> { Err(ElabError::new_e(self.fsp.span, "unimplemented")) }
+  fn parser(&self) -> Parser<'_> {
+    Parser {fe: self.elab.format_env(), kw: &self.mmc.keywords, fsp: self.fsp.clone()}
+  }
+
+  fn todo<T, U>(&self, s: &str, _: U) -> EResult<T> {
+    Err(ElabError::new_e(self.fsp.span, format!("unimplemented: {}", s)))
+  }
 
   fn try_get_span(&self, e: &LispVal) -> Span {
     try_get_span(&self.fsp, e)
@@ -230,7 +257,7 @@ impl<'a> TypeChecker<'a> {
       Some(head) => (head, Some(u)),
     };
     let name = if let Some(name) = head.as_atom() {name} else {return false};
-    if name == AtomID::UNDER { return false }
+    if name == AtomID::UNDER { return true }
     match self.mmc.names.get(&name) {
       Some(Entity::Type(_)) => true,
       Some(Entity::Prim(Prim {ty: Some(prim), ..})) => match prim {
@@ -243,6 +270,7 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_ty(&self, e: &LispVal) -> Result<Type, ElabError> {
+    // println!("check_ty {}", self.elab.print(e));
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() => return Ok(Type::Unit),
@@ -275,6 +303,8 @@ impl<'a> TypeChecker<'a> {
         (PrimType::U32, []) => Ok(Type::UInt(Size::S32)),
         (PrimType::U64, []) => Ok(Type::UInt(Size::S64)),
         (PrimType::Nat, []) => Ok(Type::UInt(Size::Inf)),
+        (PrimType::Input, []) => Ok(Type::Input),
+        (PrimType::Output, []) => Ok(Type::Output),
         (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.check_ty(ty)?))),
         (PrimType::Ref, [ty]) => Ok(Type::Ref(Box::new(self.check_ty(ty)?))),
         (PrimType::RefMut, [ty]) => Ok(Type::RefMut(Box::new(self.check_ty(ty)?))),
@@ -282,10 +312,17 @@ impl<'a> TypeChecker<'a> {
         (PrimType::And, args) => Ok(Type::And(check_tys!(args))),
         (PrimType::Or, args) => Ok(Type::Or(check_tys!(args))),
         (PrimType::Ghost, [ty]) => Ok(Type::Ghost(Box::new(self.check_ty(ty)?))),
+        (PrimType::Single, [e]) => Ok(Type::Single(Rc::new(self.check_pure_expr(e, None)?))),
         _ => Err(ElabError::new_e(self.try_get_span(e), "unexpected number of arguments"))
       }
       Some(Entity::Type(NType::Unchecked)) => Err(
         ElabError::new_e(self.try_get_span(&head), "forward type references are not allowed")),
+      Some(&Entity::Type(NType::Checked(_, name, _))) => {
+        if !args.is_empty() {
+          return Err(ElabError::new_e(self.try_get_span(&head), "user defined type families are not supported"))
+        }
+        Ok(Type::User(name, Box::new([]), Rc::new([])))
+      }
       Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a type")),
       None => match self.user_locals.get(&name) {
         Some(&i) if matches!(self.find(i), Some(Variable {ty: GType::Star, ..})) => Ok(Type::Var(i)),
@@ -351,6 +388,7 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_pure_expr(&self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr, ElabError> {
+    // println!("check_pure_expr {}", self.elab.print(e));
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() => return Ok(PureExpr::Unit),
@@ -460,6 +498,12 @@ impl<'a> TypeChecker<'a> {
               self.check_pure_expr_list(args, tgt, |err| ElabError::new_e(self.try_get_span(&head), err))?
             }
           }))),
+          (PrimOp::Typed, [e, ty]) => {
+            /* TODO: check ty == tgt */
+            let ty = self.check_ty(ty)?;
+            self.check_pure_expr(e, Some(&ty))
+          }
+          (PrimOp::Typed, _) => return err!("expected 2 arguments"),
           (PrimOp::Pun, _) |
           (PrimOp::Slice, _) |
           (PrimOp::TypeofBang, _) |
@@ -493,7 +537,28 @@ impl<'a> TypeChecker<'a> {
     }
   }
 
-  fn check_prop(&self, e: &LispVal) -> Result<Prop, ElabError> {
+  fn check_binder(&mut self, e: &LispVal, args: &[LispVal],
+      mut mk: impl FnMut(AtomID, Type, Prop) -> Prop) -> Result<Prop, ElabError> {
+    let (last, bis) = args.split_last().expect("expected nonempty args");
+    let bis = bis.iter().map(|bi| self.parser().parse_tuple_pattern(false, bi.clone()))
+      .collect::<Result<Vec<_>, _>>()?;
+    let depth = self.context.len();
+    self.add_args_to_context(&bis, ArgsContext::Binder)?;
+    let mut body = self.check_prop(last)?;
+    for Variable {user, decl, ty} in self.context.drain(depth..).rev() {
+      let ty = match ty {
+        GType::Ty(_, ty, _) => ty,
+        GType::Prop(p) => Type::Prop(Box::new(p)),
+        GType::Star => return Err(
+          ElabError::new_e(try_get_span(&self.fsp, e), "can't quantify over types")),
+      };
+      body = mk(decl, ty, body);
+    }
+    Ok(body)
+  }
+
+  fn check_prop(&mut self, e: &LispVal) -> Result<Prop, ElabError> {
+    // println!("check_prop {}", self.elab.print(e));
     let mut u = Uncons::New(e.clone());
     let (head, args) = match u.next() {
       None if u.is_empty() =>
@@ -503,13 +568,22 @@ impl<'a> TypeChecker<'a> {
     };
     match head.as_atom().and_then(|name| self.mmc.names.get(&name)) {
       Some(Entity::Prim(Prim {prop: Some(prim), ..})) => match (prim, &*args) {
-        (PrimProp::All, args) if !args.is_empty() => self.todo(args),
-        (PrimProp::Ex, args) if !args.is_empty() => self.todo(args),
-        (PrimProp::And, args) |
-        (PrimProp::Or, args) |
-        (PrimProp::Imp, args) |
-        (PrimProp::Star, args) |
-        (PrimProp::Wand, args) => self.todo(args),
+        (PrimProp::All, args) if !args.is_empty() =>
+          self.check_binder(e, args, |decl, ty, body| Prop::All(decl, Box::new((ty, body)))),
+        (PrimProp::Ex, args) if !args.is_empty() =>
+          self.check_binder(e, args, |decl, ty, body| Prop::Ex(decl, Box::new((ty, body)))),
+        // TODO: n-ary And/Or/Sep
+        (PrimProp::And, [e1, e2]) =>
+          Ok(Prop::And(Box::new([self.check_prop(e1)?, self.check_prop(e2)?]))),
+        (PrimProp::Or, [e1, e2]) =>
+          Ok(Prop::Or(Box::new([self.check_prop(e1)?, self.check_prop(e2)?]))),
+        (PrimProp::Imp, [e1, e2]) =>
+          Ok(Prop::Imp(Box::new((self.check_prop(e1)?, self.check_prop(e2)?)))),
+        (PrimProp::Star, [e1, e2]) =>
+          Ok(Prop::Sep(Box::new([self.check_prop(e1)?, self.check_prop(e2)?]))),
+        (PrimProp::Wand, [e1, e2]) =>
+          Ok(Prop::Wand(Box::new((self.check_prop(e1)?, self.check_prop(e2)?)))),
+        (PrimProp::Pure, [e]) => Ok(Prop::MM0(e.clone())),
         _ => Err(ElabError::new_e(self.try_get_span(&head), "incorrect number of arguments")),
       }
       _ => self.check_pure_expr(e, Some(&Type::Bool)).map(|e| Prop::Pure(Rc::new(e)))
@@ -517,11 +591,11 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_proof(&self, e: &LispVal, tgt: Option<Prop>) -> EResult<ProofExpr> {
-    self.todo((e, tgt))
+    self.todo("check_proof", (e, tgt))
   }
 
   /// Add a list of arguments to the context.
-  fn add_args_to_context(&mut self, args: &[TuplePattern], tyvar_allowed: bool, hyp_allowed: bool) -> EResult<()> {
+  fn add_args_to_context(&mut self, args: &[TuplePattern], ctx: ArgsContext) -> EResult<()> {
     self.context.reserve(args.len());
     for arg in args {
       match arg {
@@ -536,12 +610,16 @@ impl<'a> TypeChecker<'a> {
         return Err(ElabError::new_e(try_get_span_from(&self.fsp, arg.fspan()), "variable declared twice"))
       }
       self.used_names.insert(decl);
-      let is_ty = tyvar_allowed && arg.ty().as_atom().map_or(false, |a| a == AtomID::UNDER ||
+      let is_ty = ctx.tyvar_allowed() && arg.ty().as_atom().map_or(false, |a| a == AtomID::UNDER ||
         matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
       let ty = if is_ty {GType::Star} else {
         let ty = arg.ty();
-        if !hyp_allowed || self.probably_a_type(&ty) {
-          GType::Ty(arg.ghost(), self.check_ty(&ty)?, None)
+        if !ctx.hyp_allowed() || self.probably_a_type(&ty) {
+          let ty = if ty.as_atom().map_or(false, |a| a == AtomID::UNDER) {
+            if let Some(ty) = ctx.default_value() {ty}
+            else {self.check_ty(&ty)?}
+          } else {self.check_ty(&ty)?};
+          GType::Ty(arg.ghost(), ty, None)
         } else {
           GType::Prop(self.check_prop(&ty)?)
         }
@@ -552,7 +630,7 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_expr(&mut self, ts: &mut TypeState, e: LispVal, tgt: Option<&Type>) -> EResult<Expr> {
-    self.todo((ts, e, tgt))
+    self.todo("check_expr", (ts, e, tgt))
   }
 
   fn check_stmts(&mut self, ts: &mut TypeState, u: Uncons, tgt: Option<&Type>) -> EResult<Box<[Expr]>> {
@@ -592,8 +670,8 @@ impl<'a> TypeChecker<'a> {
           // let Proc {kind, name,
           //   ref span, ref args, ref rets, ref variant,
           //   body: Body {ref muts, ref stmts}} = **proc;
-          self.add_args_to_context(&proc.args, false, true)?;
-          self.add_args_to_context(&proc.rets, false, true)?;
+          self.add_args_to_context(&proc.args, ArgsContext::ProcArgs)?;
+          self.add_args_to_context(&proc.rets, ArgsContext::ProcArgs)?;
           let rets = self.context.drain(proc.args.len()..).collect::<Vec<_>>();
           if let Some((e, _)) = &proc.variant {
             return Err(ElabError::new_e(self.try_get_span(e), "proc variants are not implemented"))
@@ -611,15 +689,15 @@ impl<'a> TypeChecker<'a> {
           let mut ts = self.new_type_state();
           let body = self.check_stmts(&mut ts, proc.body.stmts.clone(), None);
           // println!("{:?}", proc);
-          self.todo((rets, body))?;
+          // self.todo((rets, body))?;
           return Err(ElabError::new_e(
-            try_get_span_from(&self.fsp, proc.span.as_ref()), "unimplemented"))
+            try_get_span_from(&self.fsp, proc.span.as_ref()), "unimplemented: finish proc"))
         }
       }
-      AST::Global {lhs, rhs} => self.todo((lhs, rhs))?,
-      AST::Const {lhs, rhs} => self.todo((lhs, rhs))?,
+      AST::Global {lhs, rhs} => self.todo("global", (lhs, rhs))?,
+      AST::Const {lhs, rhs} => self.todo("const", (lhs, rhs))?,
       &AST::Typedef {name, ref span, ref args, ref val} => {
-        self.add_args_to_context(args, true, false)?;
+        self.add_args_to_context(args, ArgsContext::TypeArgs)?;
         let val = self.check_ty(val)?;
         let dname = self.get_fresh_decl(name);
         // TODO: write def dname := val
@@ -628,8 +706,8 @@ impl<'a> TypeChecker<'a> {
         } else {unreachable!()}
       },
       &AST::Struct {name, ref span, ref args, ref fields} => {
-        self.add_args_to_context(args, true, false)?;
-        self.add_args_to_context(fields, false, true)?;
+        self.add_args_to_context(args, ArgsContext::TypeArgs)?;
+        self.add_args_to_context(fields, ArgsContext::StructFields)?;
         let fields = self.context.drain(args.len()..)
           .map(|v| match v.ty {
             GType::Star => unreachable!(),

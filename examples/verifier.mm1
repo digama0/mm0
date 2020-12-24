@@ -44,7 +44,7 @@ do {
     (struct CStr
       {(ghost len) : nat}
       {buf : (array u8 {len + 1})}
-      {eq0 : $ A. i (i <= n -> (index buf i = 0 <-> i = n)) $})
+      {eq0 : (pure $ A. i (nth buf i = suc 0 <-> i = len) $)})
 
     (typedef Stat (array u8 80))
     (intrinsic (sys_fstat {fd : u32} {buf : (&mut Stat)} : u32))
@@ -62,12 +62,13 @@ do {
     (proc (main
         {argc : u32}
         {args : (& (array (& CStr) argc))}
-        {(ghost input) : Input} :
-        {(ghost output) : Output}
-        $ output = 0 /\ Valid input $)
-      (assert {0 <= (sys_open (index args 1) O_RDONLY)})
+        {(ghost input) : Input} {(ghost output) : (sn {0 : Output})} :
+        {_ : Input} {output2 : Output}
+        (pure $ output2 = 0 /\ Valid input $))
+      {(output oz) := output}
+      (assert {0 <= {(sys_open (index args 1) O_RDONLY) as i64}})
       {buf : Stat}
-      (assert {0 <= (sys_fstat fd (& buf))})
+      (assert {0 <= {(sys_fstat fd (& buf)) as i64}})
       {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ {MAP_FILE bor MAP_PRIVATE}))}
       {{ptr : (own (array u8 len))} :=
         (pun ptr (entail h (assert {ptr != MAP_FAILED})
@@ -77,7 +78,7 @@ do {
           -- ptr != MAP_FAILED
           -- |- (ptr :: (own (array u8 len))
           _))}
-      (return 0 (ian rfl (verify len ptr input))))
+      (return input output (ian (typeof oz) (verify len ptr input))))
 
     (global {g_file : u64})
     (global {g_end : u64})

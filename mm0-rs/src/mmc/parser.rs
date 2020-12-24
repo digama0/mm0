@@ -180,7 +180,8 @@ impl<'a> Parser<'a> {
     Ok(())
   }
 
-  fn parse_tuple_pattern(&self, ghost: bool, e: LispVal) -> Result<TuplePattern> {
+  /// Parse a tuple pattern.
+  pub fn parse_tuple_pattern(&self, ghost: bool, e: LispVal) -> Result<TuplePattern> {
     if let Some(a) = e.as_atom() {
       return Ok(TuplePattern::Name(ghost || a == AtomID::UNDER, a, e.fspan()))
     }
