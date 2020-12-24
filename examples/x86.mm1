@@ -1213,14 +1213,25 @@ theorem splitBitsSSi1 (ha: $ a = b1 a2 $) (hn: $ n = b1 n2 $)
   (h2: $ splitBits ((k <> a2) : bs) n2 $): $ splitBits ((suc k <> a) : bs) n $ =
 '(splitBitsSSi bool1 (eqtr4 add12 ha) (eqtr4 add12 hn) h2);
 
+theorem splitBits_332_
+  (hy: $ bs1 ++ (1 <> bl) : 0 = by $)
+  (hc: $ bs1 ++ (3 <> shl bh 1 + bl) : bs2 = bc $)
+  (hsy: $ splitBits by y $)
+  (hsx: $ splitBits ((2 <> bh) : bs2) x $)
+  (hs: $ bvSize bs1 = 3 $):
+  $ splitBits bc (ch x y) $ =
+(focus
+  '(mpbi (splitBitseq1 @ eqtr (appendeq2 @ conseq1 @ preq1 add11) hc) @
+    mpbir splitBits_mid @ iexie @ iexde @ mpbiri (ian eqid _) ,eqtac)
+  '(splitBitsA4ic (eqtr appendass @ appendeq2 append1)
+    (eqtr bvSizeA @ eqtr (addeq hs bvSize1) add12)
+    (mpbir (splitBitseq1 hy) hsy) hsx));
+
 theorem splitBits_332
   (h1: $ splitBits ((3 <> a) : (1 <> bl) : 0) y $)
   (h2: $ splitBits ((2 <> bh) : (2 <> c) : 0) x $):
   $ splitBits ((3 <> a) : (3 <> shl bh 1 + bl) : (2 <> c) : 0) (ch x y) $ =
-(focus
-  '(mpbi (splitBitseq1 @ eqtr append1 @ conseq2 @ conseq1 @ preq1 add11) @
-    mpbir splitBits_mid @ iexie @ iexde @ mpbiri (ian eqid _) ,eqtac)
-  '(splitBitsA4ic (eqtr4 (appendSi append1) append1) ,bvSizeSi h1 h2));
+'(splitBits_332_ append1 append1 h1 h2 bvSize1);
 
 do {
   (def (xsplitBits l i) (apply atom-app "xsplitBits_" (hexstring i) l))
@@ -2579,6 +2590,68 @@ theorem decodeStackI (h: $ decodeStack rex ast b l $): $ decodeAux rex ast b l $
 theorem decodeFlowI  (h: $ decodeFlow rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orl @ orr h);
 theorem decodeMiscI  (h: $ decodeMisc rex ast b l $):  $ decodeAux rex ast b l $ = '(orl @ orl @ orr h);
 theorem decodeHiI    (h: $ decodeHi rex ast b l $):    $ decodeAux rex ast b l $ = '(orl @ orr h);
+
+theorem decodeBinop_lem
+  (hy: $ bs1 ++ (1 <> o) : 0 = by $)
+  (hc: $ bs1 ++ (3 <> opc) : (2 <> 0) : 0 = bc $)
+  (h1: $ splitBits by y $)
+  (h2: $ splitBits ((2 <> pc) : (2 <> 0) : 0) x $)
+  (h3: $ splitBits ((1 <> o) : (2 <> pc) : (1 <> 0) : 0) opc $)
+  (hs: $ bvSize bs1 = 3 $):
+  $ splitBits bc (ch x y) $ =
+(focus
+  '(splitBits_332_ hy
+    (eqtr (appendeq2 @ conseq1 @ preq2 _) hc) h1 h2 hs)
+  '(eqtr3 (addeq1 @ shleq1 _) @ anri @ mpbi splitBitsS2 h3)
+  '(eqtr ofBitsS @ eqtr (addeq2 @ eqtr (shleq1 ofBits1) shl01) add0));
+
+theorem decodeBinopRegI
+  (h1: $ splitBits ((1 <> v) : (1 <> d) : (1 <> 0) : (1 <> o) : 0) y $)
+  (h2: $ splitBits ((2 <> pc) : (2 <> 0) : 0) x $)
+  (h3: $ splitBits ((1 <> o) : (2 <> pc) : (1 <> 0) : 0) opc $)
+  (h4: $ readModRM rex reg r l $)
+  (h5: $ opSizeW rex v = sz $)
+  (h6: $ if (true d) (R_rm reg r) (Rm_r r reg) = ds $):
+  $ decodeAux rex (xastBinop opc sz ds) (ch x y) l $ =
+'(decodeBinopI @ orl @ orl @ orl @ orl @ orl @ iexie @ iexde @ iexde @ iexde @ iexde @
+  mpbiri (iani (iani (decodeBinop_lem
+    (appendSi @ appendSi append1) (appendSi @ appendSi append1) h1 h2 h3 ,bvSizeSi) h4) @
+    eqcom @ xastBinopeq eqid h5 h6) ,eqtac);
+
+theorem decodeBinopRAX_I
+  (h1: $ splitBits ((1 <> v) : (2 <> 2) : (1 <> o) : 0) y $)
+  (h2: $ splitBits ((2 <> pc) : (2 <> 0) : 0) x $)
+  (h3: $ splitBits ((1 <> o) : (2 <> pc) : (1 <> 0) : 0) opc $)
+  (h4: $ readModRM rex reg r l $)
+  (h5: $ opSizeW rex v = sz $)
+  (h6: $ readImm sz imm l $):
+  $ decodeAux rex (xastBinop opc sz (Rm_i (RM_reg x0) imm)) (ch x y) l $ =
+'(decodeBinopI @ orl @ orl @ orl @ orl @ orr @ iexie @ iexde @ iexde @
+  mpbiri (iani (iani (decodeBinop_lem (appendSi append1) (appendSi append1)
+      h1 h2 h3 ,bvSizeSi) @ mpbir (readImmeq1 h5) h6) @
+    eqcom @ xastBinopeq eqid h5 @ Rm_ieq1 @ RM_regeq dec0) ,eqtac);
+
+theorem decodeBinopImmI
+  (h1: $ splitBits ((1 <> v) : (3 <> 0) : 0) y $)
+  (h2: $ readOpcodeModRM rex opc r l1 $)
+  (h3: $ opSizeW rex v = sz $)
+  (h4: $ readImm sz imm l2 $):
+  $ decodeAux rex (xastBinop opc sz (Rm_i r imm)) (ch x8 y) (l1 '+ l2) $ =
+(focus
+  '(decodeBinopI @ orl @ orl @ orl @ orr @ iexie @ iexde @ iexde @ iexde @ iexde @ iexde @
+    mpbiri (iani (iani (iani (iani s2nsadd _) h2) @ mpbir (readImmeq1 h3) h4) @
+      eqcom @ xastBinopeq2 h3) ,eqtac)
+  '(splitBitsA4ic (appendSi append1) ,bvSizeSi h1 @ splitBits14ie dec8));
+
+theorem decodeBinopImm8I
+  (h1: $ readOpcodeModRM rex opc r l1 $)
+  (h2: $ opSizeW rex 1 = sz $)
+  (h3: $ readImmN 8 imm l2 $):
+  $ decodeAux rex (xastBinop opc sz (Rm_i r imm)) (ch x8 x3) (l1 '+ l2) $ =
+(focus
+  '(decodeBinopI @ orl @ orl @ orr @ iexie @ iexde @ iexde @ iexde @ iexde @
+    mpbiri (iani (iani (iani (iani s2nsadd eqid) h1) h3) @
+      eqcom @ xastBinopeq2 h2) ,eqtac));
 
 theorem decodeMovRegI
   (h1: $ splitBits ((1 <> v) : (1 <> d) : (2 <> 2) : 0) a $)
