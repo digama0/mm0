@@ -10,9 +10,12 @@ MMC is currently written in arguments to the MMC compiler, which has an interfac
 
 A *type* is a function that maps values to separating propositions over machine states. That is, it is a true-or-false statement that applies to portions of the machine state (registers and memory). This is a very low level view, but it has the advantage that because it is so general, users can define types of arbitrary complexity, containing invariants and ownership semantics. Types also contain a size and an alignment, although for the x86 instantiation of MMC all types have alignment 1. Here are some basic types:
 
-    () | bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 | (own T) | (array T n)
+    () | bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 |
+    (own T) | (array T n) | (sn {a: T})
 
-The first few represent signed and unsigned integers of various widths. The `(own T)` type is an owned pointer to a type. The `(array T n)` type is a contiguous sequence of `n` elements of type `T`. (The value `n` is not stored anywhere in memory, it is a parameter of the type.) Types can depend on values, which is often known as dependent typing, however unlike most dependent type theories very little "computation" is done inside types, and instead a `(pun)` must be used to re-type a term given a proof that it has a type. (This is not like a C cast that can be used to reinterpret a type - the value must satisfy all invariants of the target type to be eligible for `pun`.)
+The first few represent signed and unsigned integers of various widths. The `(own T)` type is an owned pointer to a type. The `(array T n)` type is a contiguous sequence of `n` elements of type `T`. (The value `n` is not stored anywhere in memory, it is a parameter of the type.) The `(sn a)` type (singleton type) is the type of values that are equal to `a: T`.
+
+Types can depend on values, which is often known as dependent typing, however unlike most dependent type theories very little "computation" is done inside types, and instead a `(pun)` must be used to re-type a term given a proof that it has a type. (This is not like a C cast that can be used to reinterpret a type - the value must satisfy all invariants of the target type to be eligible for `pun`.)
 
 There are two other pointer types, inspired by Rust semantics:
 
@@ -67,7 +70,7 @@ Bitwise operations and logical shifts on fixed width unsigned integers do nothin
 * If `x,y: int` then `{x band y}, {x bor y}, {x bxor y}, (bnot x): int`
 * Signed values are promoted to `int` for bitwise ops
 
-In most cases where unintended `nat` promotion has occurred a `cast` will bring the value back in range, although if the proof cannot be performed automatically the user must provide it. Alternatively `as` can be used to turn a `nat`/`int` into a `uN` or `sN` by reducing modulo `2^N`.
+In most cases where unintended `nat` promotion has occurred a `cast` will bring the value back in range, although if the proof cannot be performed automatically the user must provide it. Alternatively `as` can be used to turn a `nat`/`int` into a `uN` or `iN` by reducing modulo `2^N`.
 
 ### Comparison operations
 
@@ -76,14 +79,19 @@ In most cases where unintended `nat` promotion has occurred a `cast` will bring 
 
 ## Assignment
 
-The `:=` operator in MMC has several functions. In its simplest use it binds the result of the right hand side of the equation to the place on the left, for example
+The `:=` operator in MMC is the main way to introduce new variables into the context and give them values. In its simplest use it binds the result of the right hand side of the equation to the place on the left, for example
 
     {{x : u64} := {1 + 2}}
-    -- now x: u64
+    -- now x: u64 := 1 + 2
 
-Here `{x : u64}` is a type ascription, and indicates that the storage for `x` will be 64 bits large. In subsequent lines the type checker will know that `x` is in the context and has type `u64`, but not that it has value `3`. The assignment statement is itself an expression, and it returns a proof that the value is equal to the expression (if the RHS is a pure expression).
+Here `{x : u64}` is a type ascription, and indicates that the storage for `x` will be 64 bits large. In subsequent lines the type checker will know that `x` is in the context and has type `u64`, as well as the fact that it has value `1 + 2`. This fact can be retained in two ways:
 
-    {h := {{x : u64} := {1 + 2}}}
+* After the definition (at least until some control flow that could possibly reassign the value of `x` is encountered), `x` is treated as "definitionally equal" to `1 + 2`, so it can be unfolded in proofs types involving one will unify with the other.
+* For more long range retention of the fact, it is also possible to use the `sn` function to construct and retain a proof that `x = 1 + 2`:
+
+    {x_h := (sn {{1 + 2} : u64})}
+    -- now x_h: sn (1 + 2: u64)
+    {(x h) := (sn {{1 + 2} : u64})}
     -- now x: u64 and h: $ x = 1 + 2 $
 
 This is just one example of expressions that return proofs. Another example is the `assert` function, which returns a proof of any expression:
@@ -98,27 +106,72 @@ This also works if the statement is false:
 
 because `assert` terminates the program if the assertion fails to hold, so we can safely assume that on the branch where we are still executing the program, the assertion is true.
 
-The semantics of assignments here is like that in functional programming languages, i.e. they are let bindings. However, shadowed bindings can be used as a hint to the compiler that a variable can be overwritten:
+The semantics of assignments here is like that in functional programming languages, i.e. they are let bindings. Variables that are shadowed are still in the context, but are inaccessible:
+
+    {{x : u8} := 2} -- x: u8 := 2
+    {{x : u8} := 3} -- x*: u8 := 2, x: u8 := 3
+
+The variable `x*` shown in the second state is used in printing to refer to a shadowed variable named `x`. The variable `x*: u8` is in the state but hidden by default. It cannot be typed directly in the program. Instead, we can add a `with` clause to the assignment to rename one or the other variable:
 
     {{x : u8} := 2}
-    {{x : u8} := 3} -- this shadows/overwrites the other x
+    ({{x : u8} := {3 + x}} with {x -> old_x})
+    -- old_x: u8 := 2, x: u8 := 3 + old_x
 
-However, this causes a problem with hypotheses:
+    {{x : u8} := 2}} -- x: u8 := 2
+    ({{x : u8} := {3 + x}} with {new_x <- x})
+    -- x: u8 := 2, new_x: u8 := 3 + x
 
-    {h1 := {{x : u8} := 2}} -- x: u8, h1: $ x = 2 $
-    {h2 := {{x : u8} := 3}} -- x: u8, (x*: ghost u8), h1: $ x* = 2 $, h2: $ x = 3 $
-
-The variable `x*` shown for the type of `h1` is used in printing to refer to a shadowed variable named `x`. The variable `x*: ghost u8` is in the state but hidden by default. It cannot be typed directly in the program. (We will discuss `ghost` variables in the next section.) Instead, we can add a `with` clause to the assignment to rename the old version of the variable:
-
-    {h1 := {{x : u8} := 2}}
-    {h2 := ({{x : u8} := {3 + x}} with {x -> old_x})}
-    -- old_x: u8, x: u8, h1: $ old_x = 2 $, h2: $ x = 3 + old_x $
-
-    {h1 := {{x : u8} := 2}} -- x: u8, h1: $ x = 2 $
-    {h2 := ({{x : u8} := {3 + x}} with {new_x <- x})}
-    -- x: u8, new_x: u8, h1: $ x = 2 $, h2: $ new_x = 3 + x $
+These renames get more useful with mutation, covered in the next section.
 
 The `with` modifier on an assignment allows it to simultaneously rename some variables in the state, which is especially useful for self-assignments like `{x := {x + 1}}`. Note that neither the old or new value of `x` is considered ghost in this situation because they can both be referred to later as a result of the rename. It is also possible to use `x -> (ghost old_x)` to ensure that the old value of `x` is marked ghost, so that it can be compiled to a reassignment instead of a copy.
+
+### Mutation
+
+The `<-` operator is similar in syntax to `:=`, but instead of creating a new variable, it assigns to an existing variable.
+
+    {{x : u8} := 2} -- x: u8 := 2
+    {x <- 3} -- x*: ghost u8 := 2, x: u8 := 3
+
+At first, these appear to have a similar effect to `:=`, except that the old value of `x` is now marked ghost because the storage has been overwritten. But the bigger difference, which is only visible in more complex control flow, is that an overwritten variable retains its value even if the assignment is inside a block, while a let binding will simply shadow the old value until the block ends, at which point the old value is restored. This has an effect on hypotheses, however. Consider the following example:
+
+    {{x : u8} := 2}
+    {{h : $ 0 < x $} := d0lt2} -- x: u8 := 2, h: $ 0 < x $
+    {x <- 3} -- x*: ghost u8 := 2, h: $ 0 < x* $, x: u8 := 3
+    {{h : $ 0 < x $} := d0lt3} -- x*: ghost u8, x: u8 := 3, h: $ 0 < x $
+
+In this example, we retain a variable `h` that refers to the old value of `x`. But then what happens if the write is conditional?
+
+    {{x : u8} := 2}
+    {{h : $ 0 < x $} := d0lt2} -- x: u8 := 2, h: $ 0 < x $
+    (if b then [
+      {x <- 3}
+      {{h : $ 0 < x $} := d0lt3} -- x*: ghost u8, x: u8 := 3, h: $ 0 < x $
+    ])
+    -- x*: ghost u8, x: u8
+
+We can no longer use `h` because the first one talks about an old value of `x` and the other is out of scope. The solution is to *mutate `h` as well*:
+
+    {{x : u8} := 2}
+    {{h : $ 0 < x $} := d0lt2} -- x: u8 := 2, h: $ 0 < x $
+    (if b then [
+      {x <- 3}
+      {h <- d0lt3} -- x*: ghost u8, x: u8 := 3, h: $ 0 < x $
+    ])
+    -- x*: ghost u8, x: u8, h: $ 0 < x $
+
+The type ascription on `h` is not necessary as it picks up the same type as it had originally (with `x` replaced by the new `x`).
+
+If a hypothesis variable is assigned in multiple branches, it must have the same type in all of them:
+
+    {{x : u8} := 2}
+    {{h : $ 0 < x $} := d0lt2} -- x: u8 := 2, h: $ 0 < x $
+    (if b then [
+      {x <- 3}
+      {h <- d0lt3} -- x*: ghost u8, x: u8 := 3, h: $ 0 < x $
+    ] else [
+      {x <- 3} -- x*: ghost u8, x: u8 := 3, h: $ 0 < x* $
+    ])
+    -- ERROR, type of h does not match
 
 ### Ghost variables
 
@@ -130,28 +183,17 @@ An assignment
 is like a regular assignment except that the introduced variable does not exist at run time. The compiler tracks usage of ghost variables to ensure that they do not enter the data flow, but they can be used to perform computations that are needed for the proof but not for the program. They can be used in types (like the `n` in `array T n`) as well as in loop variants and invariants. They can also have infinite types like `nat`, unlike regular variables. We can use them to store old values of variables:
 
 
-    {h := {{x : u8} := 1}}
-    -- x: u8, h: $ x = 1 $
-    {h2 := {(ghost old_x) := x}}
-    -- x: u8, h: $ x = 1 $, old_x: ghost u8, h2: $ old_x = x $
-    {h3 := (entail h2 h eqtr)}
-    -- x: u8, old_x: ghost u8, h2: $ old_x = x $, h3: $ old_x = 1 $
-    {h4 := {{x : u8} := {(reflect x (eqcom h2)) + 2}}}
-    -- x: u8, old_x: ghost u8, h3: $ old_x = 1 $, h4: $ x = old_x + 2 $
+    {{x : u8} := 1}
+    -- x: u8 := 1
+    {(ghost x_sn) := (sn x)}
+    -- x: u8 := 1, x_sn: ghost (sn x)
+    {(g h) := x_sn}
+    -- x: u8 := 1, x_sn: ghost (sn x), g: ghost u8, h: $ g = x $
+    {h2 := (assert {g = 1})} -- error, g: ghost u8 is a ghost variable
+    {h3 := (assert {(reflect g h) = 1})} -- ok, evaluates "x = 1", h3: $ g = 1 $
+    {h4 := (assert {x_sn = 1})} -- ok, evaluates "x = 1", h3: $ x_sn = 1 $
 
-We will discuss the `entail` function later, and the `eqtr` and `eqcom` functions are proofs in the ambient logic of PA. The `reflect` function allows us to have an expression whose computational realization is `x` and whose proof realization is `old_x`, so that `h4` is not discarded before it can be used. A simpler version of the above would be
-
-    {h := {{x : u8} := 1}}
-    -- x: u8, h: $ x = 1 $
-    {h2 := {{x : u8} := {(reflect x h) + 2}}}
-    -- x: u8, h2: $ x = 1 + 2 $
-
-where we have skipped the definition of `old_x` by threading the known previous value of `x`, and as seen in the previous section we can also use a `with` clause to perform the renaming directly:
-
-    {h := {{x : u8} := 1}}
-    -- x: u8, h: $ x = 1 $
-    {h2 := ({{x : u8} := {x + 2}} with {x -> old_x})}
-    -- x: u8, old_x: u8, h2: $ x = old_x + 2 $
+The `reflect` function allows us to have an expression whose computational realization is `x` and whose proof realization is `g`, so that the assert on `h3` returns a fact `g = 1` even though `x = 1` was the actual implementation. Ghost singleton types also have special support for automatically inserting the `reflect`, so they can be evaluated just like regular values.
 
 ### Tuples
 
@@ -167,6 +209,8 @@ Tuples can be constructed using the `list` function, and `list` is also the name
     {{(a b c) : (list u8 u8 u64)} := (list 1 2 3)}
     -- a: u8, b: u8, c: u64
 
+The singleton type `(sn {a : T})` is treated as equivalent to a dependent tuple `(list {x : T} {h : $ x = a $})` for the purpose of construction and destruction, and we have already used it several times to introduce equalities into the context.
+
 ### Strong updates and soft typing
 
 Because we can view a re-assignment as a mere shadowing let binder, assignments to variables can change their type:
@@ -175,6 +219,13 @@ Because we can view a re-assignment as a mere shadowing let binder, assignments 
     {{x : i64} := (- 1)}
 
 The old type of a variable can be used as a hint for the new type but the type of the RHS of the expression takes precedence (unless the RHS is an expression that takes its type from the calling context, e.g. `cast`).
+
+Less obviously, this also works for mutation:
+
+    {{x : u64} := 1}
+    {{x : i64} <- (- 1)}
+
+This is sometimes called a "strong update". This has already been demonstrated for hypotheses (generally there is no point in mutating a hypothesis unless the type changes), but it works for all types.
 
 But more unusually, a variable is "separable" from its type using the `typeof!` operator:
 
@@ -217,8 +268,8 @@ If the compiler can prove the side goal `h`, it can be omitted using `(cast x)` 
 
 For truncation and generally non-value-preserving type casts, we use the `as` function. If `x: X` then `{x as Y}: Y` under the following conditions:
 
-* If `X` is a numeric type and `Y` is `uN`, then it is upcast to `nat` and then downcast using a modulo function. The resulting formal expression is `x % 2^N` if reified in a proof.
-* If `X` is a numeric type and `Y` is `iN`, then it is upcast to `int` and then downcast using a modulo function. The resulting formal expression is `iword N x`, which is defined to equal `(x + 2^(N-1)) % 2^N - 2^(N-1)`.
+* If `X` is a numeric type and `Y` is `uN`, then it is upcast to `nat` and then downcast using a modulo function. The resulting formal expression is `chop N x`, which is defined as `x % 2^N`.
+* If `X` is a numeric type and `Y` is `iN`, then it is upcast to `int` and then downcast using a modulo function. The resulting formal expression is `chopZ N x`, which is defined to equal `(x + 2^(N-1)) % 2^N - 2^(N-1)`.
 * If `X` is `bool` and `Y` is a numeric type, it returns `0` or `1`.
 * If `X` is a numeric type and `Y` is `bool`, it returns `x != 0`.
 
@@ -230,9 +281,9 @@ For type punning and reconstituting values of complex types that have been strip
 
 ### Slicing
 
-A related operation to casting is slicing, the extraction of a subsequence of an array. If `x: (& (array T n))`, then `(slice {x + b} h): (& (array T a))` if `h` is a proof that `b + a <= n`. Computationally this corresponds to simply `x + b * sizeof T`, in the manner of C pointer arithmetic. The addition is syntactically part of the operator, but it can also be omitted when `b = 0`, in which case the slice has the same behavior as `(pun x h)`.
+A related operation to casting is slicing, the extraction of a subsequence of an array. If `x: (& (array T n))`, then `(& (slice x b h)): (& (array T a))` if `h` is a proof that `b + a <= n`. Computationally this corresponds to simply `x + b * sizeof T`, in the manner of C pointer arithmetic. When `b = 0`, the slice has the same behavior as `(pun x h)`.
 
-The `slice` operator can also be used to perform simultaneous punning: if `x: (& (array T n))`, then `(slice {x + b} h): (& U)` provided that `h` is a proof of ` b * sizeof T + sizeof U <= n * sizeof T` and `(* x) <: U` if the latter is not trivial.
+The `slice` operator can also be used to perform simultaneous punning: if `x: (& (array T n))`, then `(& (slice x b h)): (& U)` provided that `h` is a proof of ` b * sizeof T + sizeof U <= n * sizeof T` and `(* x) <: U` if the latter is not trivial.
 
 The `slice` operator uses the expected type in order to infer the type of `h`, so a type ascription will usually be necessary.
 
@@ -263,34 +314,23 @@ Control structures are mechanisms for changing the flow of control in a program:
 
 Not really a control structure, but necessary for organizing function bodies, `(begin s1 s2 ... sn)` is a sequential block of statements, similar to the use of `{` `}` in C. It can also be used in an expression context, where it acts as a scoped block of statements followed by a value:
 
-    {h := {{y : u8} := 0}}
+    {{y : u8} := 0}
     {{x : u8} := (begin
-      {h := {{y : u8} := 1}}
-      -- y: u8, h: $ y = 1 $
+      {{y : u8} := 1}
+      -- y: u8 := 1
       {y + 1})}
-    -- y: u8, h: $ y = 0 $, x: u8
+    -- y: u8 := 0, x: u8 := 1 + 1
 
-Note that `y` and `h` were shadowed in the block but are visible outside the block with their original values.
+Note that `y` was shadowed in the block but is visible outside the block with its original value.
 
-Alternatively, the `mut` keyword can be used at the start of a block to indicate that variables from the outer context should be assigned by the block. In functional style, this is equivalent to passing the marked variables as multiple return values of the block and then performing a shadowing binding in the outer context.
+If `<-` mutation is used in the block, it will assign variables outside the block. In functional style, this is equivalent to passing the marked variables as multiple return values of the block and then performing a shadowing binding in the outer context.
 
-    {h := {{y : u8} := 0}}
-    {{x : u8} := (begin (mut y)
-      {h := {{y : u8} := 1}}
-      -- y: u8, h: $ y = 1 $
+    {{y : u8} := 0}
+    {{x : u8} := (begin
+      {{y : u8} <- 1}
+      -- y: u8 := 1
       {y + 1})}
-    -- x: u8, y: u8
-
-We have lost both hypotheses in this example because the first one is obsolete and the second one was dropped at the end of the block. If we export both:
-
-    {h := {{y : u8} := 0}}
-    {{x : u8} := (begin (mut y h)
-      {h := {{y : u8} := 1}}
-      -- y: u8, h: $ y = 1 $
-      {y + 1})}
-    -- x: u8, y: u8, h: $ y = 1 $
-
-Now we can see that `y` is in fact `1` at the end of the block, and this will be compiled to a re-assignment to the storage location of `y`.
+    -- y*: ghost u8 := 0, y: u8 := 1, x: u8 := 1 + 1
 
 ### Conditional statements
 
@@ -304,11 +344,9 @@ The construct `(if p [t...] else [f...])` functions as both the `if` statement a
       (g x)
     ])}
 
-The form `(if {h : p} [t...] else [f...])` binds `h` to a proof of `p` in the body of `t` and to `~ p` in the body of `f`. The types of the branches must be the same. (It may be necessary to finish a block with `()` to ensure nothing is returned if the `if` is operating at statement level.) As with `begin`, any let bindings in the body of the branches must be marked with `mut` in order to affect the outer value of the variable.
+The form `(if {h : p} [t...] else [f...])` binds `h` to a proof of `p` in the body of `t` and to `~ p` in the body of `f`. The types of the branches must be the same. (It may be necessary to finish a block with `()` to ensure nothing is returned if the `if` is operating at statement level.)
 
 If statements can be chained with C-like `else if` syntax: `(if p [e1...] else if q [e2...] else [e3...])`.
-
-Like blocks, `if` statements can have a `mut` clause, which goes after the initial condition as in `(if p (muts xs) t else f)`. The effect of this `mut` scopes over all branches of the if-statement.
 
 ### Labels and goto
 
@@ -319,12 +357,12 @@ The most general form of control flow is a `goto`, and Metamath C does not run f
     (begin
       {{x : u8} := 1}
 
-      ((begin f (mut x))
-        {x := {x + 1}}
+      ((begin f)
+        {x <- {x + 1}}
         (g))
 
-      ((begin g (mut x))
-        {x := {x + 1}}
+      ((begin g)
+        {x <- {x + 1}}
         (f)))
 
 This definition would not work as written, because `g` and `f` call each other infinitely. (Also the addition would overflow.) Instead we can terminate when the value overflows:
@@ -332,9 +370,9 @@ This definition would not work as written, because `g` and `f` call each other i
     (begin
       {{x : u8} := 1}
 
-      ((begin f (mut x))
-        (if {h : $ x + 1 < 256 $} (mut x) [
-          {x := (cast {x + 1} h)}
+      ((begin f)
+        (if {h : $ x + 1 < 256 $} [
+          {x <- (cast {x + 1} h)}
           (f)
         ] else [
           (return)
@@ -346,21 +384,20 @@ This will still not be accepted because we need to provide a *variant*, a value 
     (begin
       {{x : u8} := 1}
 
-      ((begin f (mut x) (variant x < 256))
-        (if {h : $ x + 1 < 256 $} (mut x) [
-          (ghost {x_old := x})
-          {x := (cast {x + 1} h)}
-          (f (variant {... : $ x_old < x $} h))
+      ((begin f (variant x < 256))
+        (if {h : $ x + 1 < 256 $} [
+          ({x <- (cast {x + 1} h)} with {x -> x_old})
+          (f (variant {... : $ x_old < x $}))
         ] else [
           (return)
         ])))
 
-For examples such as this it is often convenient to assign `x` in the function call instead, since we need to talk about both old and new values in the variant. So rather than use `(mut x)` we can pass it in:
+For examples such as this it is often convenient to assign `x` in the function call instead, since we need to talk about both old and new values in the variant. So rather than use mutation we can pass it in:
 
     ((begin f {{x : u8} := 1} (variant x < 256))
       (if {h : $ x + 1 < 256 $}
         [(f (cast {x + 1} h)
-          (variant {... : $ x < x + 1 $} h))]
+          (variant {... : $ x < x + 1 $}))]
         [(return)]))
 
 Keep in mind that a labeled begin will always be compiled to a label in a function, so even though it looks like a function it does not have its own stack frame, so only tail recursion is possible. Besides `(f)` which will jump to the label `f`, one can also `(break f)` which will jump to the end of the `((begin f) ...)` block. If control reaches the end of a labeled begin, `(break f)` is automatically called.
@@ -386,10 +423,9 @@ As with `if` statements, `h` can be used on the condition to obtain a proof that
     {{x : u8} := 1}
     (while {h : $ x + 1 < 256 $}
       (variant x < 256)
-      (invariant (mut x))
 
-      (continue (cast {x + 1} h)
-        (variant {... : $ x < x + 1 $} h)))
+      ({x <- (cast {x + 1} h)} with {_ <- x})
+      (continue (variant {... : $ x < x + 1 $} h)))
     -- x: u8, h: $ ~ x + 1 < 256 $
     (return)
 
@@ -496,7 +532,7 @@ To use a value of a union type, one must prove that the value is one of the disj
 We have already seen the `(array T n)` type in several examples. Unlike C, `(array T n)` is not a pointer and does not decay to one; the type represents the bits of an array directly. Because `array` is a large type, it is usually passed around behind a pointer type.
 
 * The function `(index a i h)` is the equivalent of `C`'s `a[i]`; it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)` if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that `i` is in the bounds of the array. The variant `(index a i)` supplies `(assert {i < n})` for the proof, making this a bounds-checked access.
-* The function `{(slice {a + i} h) : (& (array T n))}` has already been discussed in the [slicing](#slicing) section. It is also possible to write this as `(& {(slice (* {a + i}) h) : (array T n)})`, using `slice` with a non-pointer type to construct the place and then getting its address. This is only a stylistic difference.
+* The function `{(& (slice a i h)) : (& (array T n))}` has already been discussed in the [slicing](#slicing) section.
 
 ### Typedefs
 
@@ -520,7 +556,7 @@ Inside a function body, the `(return a b c)` function is used to return a value.
 
 Functions and procedures in global scope can be forward referenced, but only within a single call to the MMC compiler. If compilation is done in stages then functions must be declared before use, like in C. This is done by writing `(proc/func (foo params : returns))` with no `body` component.
 
-The difference between `func` and `proc` is that a `func` is a *pure* function, in the mathematical sense. In previous sections we have indicated how language features like mutation are modelled functionally using parameters that are passed in a "local state monad", and the MMC compiler will generate a function in the logic that represents the behavior of the imperative program, without changing the generated code at all. The equality capture operation `h := {x := e}` only works when `e` is a pure expression, which includes function calls but not procedure calls. Almost everything in MMC has a pure functional equivalent; the main source of impurity is IO (and other `proc`s).
+The difference between `func` and `proc` is that a `func` is a *pure* function, in the mathematical sense. In previous sections we have indicated how language features like mutation are modelled functionally using parameters that are passed in a "local state monad", and the MMC compiler will generate a function in the logic that represents the behavior of the imperative program, without changing the generated code at all. The equality capture operation `(x h) := (sn e)` only works when `e` is a pure expression, which includes function calls but not procedure calls. Almost everything in MMC has a pure functional equivalent; the main source of impurity is IO (and other `proc`s).
 
 Because functions can be forward declared and forward referenced, they can be mutually recursive. If the call graph is not acyclic, then, similarly to labeled blocks, they must be annotated with a `(variant x)` or `(variant x < bound)` directive, which goes at the beginning of the function before any statements. The variables `x` and `bound` must be passed between all functions in the cycle, and `bound` must remain fixed while `x` decreases/increases on each call (depending on the orientation of the variant).
 
@@ -528,9 +564,9 @@ Because functions can be forward declared and forward referenced, they can be mu
 
 The underlying axiomatization includes not only the x86 architecture but also (a very small POSIX compliant subset of) the linux kernel interface, accessible from user mode programs using the `syscall` instruction. The behavior of these calls are axiomatized, and the result is a compiler intrinsic for each system call. For example:
 
-    (intrinsic sys_mmap {pos : (sn 0)} {len : u64} {prot : Prot}
+    (intrinsic sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : Prot}
       {flags : (sn $ MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS $)}
-      {fd : u64} {off : (sn 0)} :
+      {fd : u64} {off : (sn {0 : u64})} :
       (union (sn {MAP_FAILED : u64})
         (list {ret : (own (array u8 len))}
           $ fd = bitsNeg 32 1 -> all (sn 0) ,'(* ret) $)))
@@ -547,7 +583,7 @@ As has been mentioned, MMC exists as a DSL inside the MM1 proof assistant. The c
     do {
       (mmc-add '(
         (proc (adder {x : u32} {y : u32} : {ret : (sn {{x + y} : u64})})
-          (cast {(cast {x + y} (assert {{x + y} < {2 ^ 64}})) : u64}))
+          (sn (cast {x + y} (assert {{x + y} < {2 ^ 64}}))))
       ))
 
       (mmc-add '(

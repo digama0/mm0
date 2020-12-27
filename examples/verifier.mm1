@@ -110,57 +110,57 @@ do {
       {w := {v band 0x3F}}
       (switch {v >> 6}
         {0 => (return w 1 0)}
-        {1 => (return w 2 (* (slice (& u8) {cmd + 1})))}
-        {2 => (return w 3 (* (slice (& u16) {cmd + 1})))}
-        {3 => (return w 5 (* (slice (& u32) {cmd + 1})))}))
+        {1 => (return w 2 {(slice cmd 1) : u8})}
+        {2 => (return w 3 {(slice cmd 1) : u16})}
+        {3 => (return w 5 {(slice cmd 1) : u32})}))
 
     (proc (verify
         {len : u64}
         {file : (& (array u8 len))}
-        {(ghost input) : Input}
-        (mut g_file g_end g_num_sorts g_sorts
-          g_num_terms g_terms g_num_thms g_thms) :
+        {(ghost input) : Input} :
         $ Valid input $)
-      {g_file := file}
-      {{g_end : u64} := (cast {file + len})}
+      {g_file <- file}
+      {g_end <- (cast {file + len})}
       {{p : (& Header0)} :=
         (pun file (using (assert {(sizeof Header0) <= len})))}
       (assert {(p . magic) = MM0B_MAGIC})
       (assert {(p . version) = MM0B_VERSION})
       {nsorts := (p . num_sorts)}
       {h2 := (assert {nsorts <= MAX_SORTS})}
-      {g_num_sorts := 0}
-      {{g_sorts : (& (array u8 nsorts))} := (slice {file + (sizeof Header)})}
-      {g_num_terms := 0}
+      {g_num_sorts <- 0}
+      {{g_sorts : (& (array u8 nsorts))} <- (& (slice file (sizeof Header)))}
+      {(ghost a_sorts) := (sn {(slice g_sorts 0) : (& (array Sort g_num_sorts))})}
+      {{h_sorts : {g_num_sorts <= nsorts}} := _}
+      {g_num_terms <- 0}
       {p_terms := (p . p_terms)} {nterms := (p . num_terms)}
-      {{g_terms : (& (array Term0 nterms))} := (slice {file + p_terms})}
+      {{g_terms : (& (array Term0 nterms))} <- (& (slice file p_terms))}
+      {(ghost a_terms) := (sn {(slice g_terms 0) : (& (array Sort g_num_terms))})}
+      {{h_terms : {g_num_terms <= nterms}} := _}
+      {g_num_thms <- 0}
       {p_thms := (p . p_thms)} {nthms := (p . num_thms)}
-      {{g_thms : (& (array Thm0 nthms))} := (slice {file + p_thms})}
+      {{g_thms : (& (array Thm0 nthms))} <- (& (slice file p_thms))}
+      {(ghost a_thms) := (sn {(& (slice g_thms 0)) : (& (array Sort g_num_thms))})}
+      {{h_thms : {g_num_thms <= nthms}} := _}
       {(ghost remainder) := {len - (p . p_proof)}}
       {h := (assert {{(p . p_proof) + 5} <= len})}
       {{remainder_bd : {5 <= remainder}} := (entail h _)}
-      {{stmt : (& (array u8 remainder))} := (slice {file + (p . p_proof)} (entail h _))}
+      {{stmt : (& (array u8 remainder))} :=
+        (& (slice file (p . p_proof) (entail h _)))}
+      {{suff : {{stmt + remainder} = g_end}} := (entail _)}
+
+      {(ghost env) : Env} {(ghost env2) : Env}
+      {ext : (EnvExtends env env2)}
+      {repr : (Represents env2 a_sorts a_terms a_thms)}
 
       (while {(index stmt 0 (entail remainder_bd _)) != CMD_END}
-        (variant remainder)
-        (invariant
-          (mut g_num_sorts g_num_terms g_num_thms remainder remainder_bd)
-          {(ref a_sorts) : (array Sort g_num_sorts)}
-          {h_sorts : {{g_num_sorts <= nsorts} and {g_sorts => a_sorts}}}
-          {(ref a_terms) : (array Term g_num_terms)}
-          {h_terms : {{g_num_terms <= nterms} and {g_terms => a_terms}}}
-          {(ref a_thms) : (array Thm g_num_thms)}
-          {h_thms : {{g_num_thms <= nthms} and {g_thms => a_thms}}}
-          {suff : {{stmt + remainder} = g_end}}
-          {(ghost env) : Env} {(ghost env2) : Env}
-          {ext : (EnvExtends env env2)}
-          {repr : (Represents env2 a_sorts a_terms a_thms)})
+        (variant remainder >= 5 := remainder_bd)
 
-        {h_unpack := {(w sz data) := (cmd_unpack stmt)}}
-        {(ghost remainder2) := {remainder - data}}
+        {((w sz data) h_unpack) := (sn (cmd_unpack stmt))}
+        {remainder <- ({remainder - data} with {remainder -> old_rem})}
         {next_stmt_bd := (assert {{stmt + data + 5} <= g_end})}
-        {{next_stmt : (& (array u8 remainder2))} := (slice {stmt + data}
-          (entail next_stmt_bd suff _))}
+        {remainder_bd <- (entail next_stmt_bd _)}
+        {{next_stmt : (& (array u8 remainder))} := (& (slice stmt data
+          (entail next_stmt_bd suff _)))}
 
         (switch w
           {CMD_STMT_SORT => (begin
@@ -168,7 +168,7 @@ do {
             {h := (assert {g_num_sorts < nsorts})}
             {(h_sorts repr2) :=
               (parse_until CMD_STMT_SORT h (&mut env env2 ext) repr)}
-            {(g_num_sorts _) := (succ_lt g_num_sorts h)}
+            {(g_num_sorts _) <- (succ_lt g_num_sorts h)}
             {h_sorts := (pun h_sorts _)})}
 
           {{CMD_STMT_DEF or CMD_STMT_LOCAL_DEF} => (begin
@@ -177,15 +177,13 @@ do {
             )}
         )
 
+        {stmt <- next_stmt}
+        {suff <- (entail suff _)}
         (continue
-          {remainder := remainder2}
-          {remainder_bd := (entail next_stmt_bd _)}
-          {stmt := next_stmt}
-          {suff := (entail suff _)}
-          (variant (entail h_unpack remainder2
+          (variant (entail h_unpack remainder
             -- proof of
             -- w <> sz <> data = cmd_unpack (* stmt),
-            -- remainder2 = remainder - data |- remainder2 < remainder
+            -- remainder = old_rem - data |- remainder < old_rem
             _))))
       (assert {g_num_sorts = nsorts})
       (assert {g_num_terms = nterms})
