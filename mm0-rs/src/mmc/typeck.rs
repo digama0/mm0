@@ -257,10 +257,10 @@ impl<'a> TypeChecker<'a> {
 
   fn copy_prop(&self, p: &Prop) -> Option<Prop> {
     fn list<A: Clone>(tys: &[A], f: impl Fn(&A) -> Option<A>) -> Option<Box<[A]>> {
-      let otys = tys.iter().map(f).collect::<Vec<_>>();
-      if otys.iter().all(Option::is_none) {return None}
-      Some(otys.into_iter().zip(tys.iter())
-        .map(|(oty, ty)| oty.unwrap_or_else(|| ty.clone()))
+      let opts = tys.iter().map(f).collect::<Vec<_>>();
+      if opts.iter().all(Option::is_none) {return None}
+      Some(opts.into_iter().zip(tys.iter())
+        .map(|(opt, ty)| opt.unwrap_or_else(|| ty.clone()))
         .collect::<Box<[_]>>())
     }
     match p {
@@ -300,10 +300,10 @@ impl<'a> TypeChecker<'a> {
 
   fn copy_type(&self, ty: &Type) -> CopyType {
     fn list<A: Clone>(tys: &[A], f: impl Fn(&A) -> Option<A>) -> Option<Box<[A]>> {
-      let otys = tys.iter().map(f).collect::<Vec<_>>();
-      if otys.iter().all(Option::is_none) {return None}
-      Some(otys.into_iter().zip(tys.iter())
-        .map(|(oty, ty)| oty.unwrap_or_else(|| ty.clone()))
+      let opts = tys.iter().map(f).collect::<Vec<_>>();
+      if opts.iter().all(Option::is_none) {return None}
+      Some(opts.into_iter().zip(tys.iter())
+        .map(|(opt, ty)| opt.unwrap_or_else(|| ty.clone()))
         .collect::<Box<[_]>>())
     }
     match ty {
