@@ -38,8 +38,8 @@ impl<'a> InferType<'a> {
     }
   }
 
-  fn to_type(self) -> Option<Type> {
-    match self {
+  fn to_type(&self) -> Option<Type> {
+    match *self {
       InferType::Int => Some(Type::Int(Size::Inf)),
       InferType::Unit => Some(Type::Unit),
       InferType::Bool => Some(Type::Bool),
@@ -49,8 +49,8 @@ impl<'a> InferType<'a> {
       InferType::RefMut(ty) => Some(Type::RefMut(Box::new(ty.clone()))),
       InferType::Ty(ty) => Some(ty.clone()),
       InferType::Prop(p) => Some(Type::Prop(Box::new(p.clone()))),
-      InferType::List(tys) => Some(Type::List(tys.into_vec().into_iter()
-        .map(|ty| ty.to_type()).collect::<Option<Box<[_]>>>()?)),
+      InferType::List(ref tys) => Some(Type::List(tys.iter()
+        .map(InferType::to_type).collect::<Option<Box<[_]>>>()?)),
     }
   }
 
@@ -80,6 +80,7 @@ impl<'a> EnvDisplay for InferType<'a> {
   }
 }
 
+#[derive(Copy, Clone, Debug)]
 enum TypeTarget<'a> {
   Type(&'a Type),
   WithPattern(Option<&'a Type>, &'a TuplePattern),
@@ -217,7 +218,7 @@ impl<'a> TypeChecker<'a> {
 
   fn new_type_state(&self) -> TypeState {
     TypeState(self.context.iter().map(|v| match &v.ty {
-      GType::Star => VariableState::Copy,
+      GType::Star |
       GType::Ty(_, _, None) => VariableState::Copy,
       _ => VariableState::Owned,
     }).collect())
@@ -424,15 +425,17 @@ impl<'a> TypeChecker<'a> {
       },
       Expr::Ghost(e) => self.infer_expr_type(e),
       Expr::Pure(e) => self.infer_type(e),
-      Expr::Let {..} => InferType::Unit,
-      Expr::Call { f, args, variant } => todo!(),
-      Expr::Entail(_, _) => todo!(),
-      Expr::Block(_) => todo!(),
-      Expr::Label { name, args, variant, body } => todo!(),
-      Expr::If(_) => todo!(),
-      Expr::Switch(_, _) => todo!(),
-      Expr::While { hyp, cond, var, invar, body } => todo!(),
-      Expr::Hole(_) => todo!(),
+      // Expr::Call { f, args, variant } => todo!("infer_expr_type Call"),
+      // Expr::Entail(_, _) => todo!("infer_expr_type Entail"),
+      Expr::Block(es) => if let Some(e) = es.last() {
+        self.infer_expr_type(e)
+      } else {InferType::Unit},
+      // Expr::If(_) => todo!("infer_expr_type If"),
+      // Expr::Switch(_, _) => todo!("infer_expr_type Switch"),
+      // Expr::Hole(_) => todo!("infer_expr_type Hole"),
+      Expr::Let {..} |
+      Expr::While {..} |
+      Expr::Label {..} => InferType::Unit,
     }
   }
 
@@ -873,7 +876,7 @@ impl<'a> TypeChecker<'a> {
             let mut pats = pats.into_vec();
             let mut it = pats.drain(..);
             if let (Some(p1), Some(p2), None) = (it.next(), it.next(), it.next()) {
-              let x = self.add_tuple_pattern_to_context(p1, Some(InferType::ty(&ty)))?;
+              let x = self.add_tuple_pattern_to_context(p1, Some(InferType::ty(ty)))?;
               let p = Type::Prop(Box::new(Prop::Eq(Rc::new(x.to_expr()), e.clone())));
               let h = self.add_tuple_pattern_to_context(p2, Some(InferType::Ty(&p)))?;
               Ok(TypedTuplePattern::Single(Box::new((x, h))))

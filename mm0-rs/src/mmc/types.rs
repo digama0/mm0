@@ -88,7 +88,7 @@ impl TypedTuplePattern {
   /// (Note that this can't be done on user-level names, since the pattern match
   /// may contain `_` patterns that would not be valid in the expression.
   /// We always name these variables with internal names, and these are used in the tuple.)
-  pub fn to_expr(&self) -> PureExpr {
+  #[must_use] pub fn to_expr(&self) -> PureExpr {
     match self {
       &Self::Name(_, a, _, _) => PureExpr::Var(a),
       Self::Unit => PureExpr::Unit,
@@ -147,18 +147,18 @@ pub enum Expr {
     /// The expression to evaluate, or [`None`] for uninitialized.
     rhs: Option<Box<Expr>>,
   },
-  /// A function call (or something that looks like one at parse time).
-  Call {
-    /// The function to call.
-    f: AtomID,
-    /// The function arguments.
-    args: Box<[Expr]>,
-    /// The variant, if needed.
-    variant: Option<Variant>,
-  },
-  /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
-  /// `P1, ..., Pn` and is a hypothesis of type `Q`.
-  Entail(LispVal, Box<[Expr]>),
+  // /// A function call (or something that looks like one at parse time).
+  // Call {
+  //   /// The function to call.
+  //   f: AtomID,
+  //   /// The function arguments.
+  //   args: Box<[Expr]>,
+  //   /// The variant, if needed.
+  //   variant: Option<Variant>,
+  // },
+  // /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
+  // /// `P1, ..., Pn` and is a hypothesis of type `Q`.
+  // Entail(LispVal, Box<[Expr]>),
   /// A block scope.
   Block(Box<[Expr]>),
   /// A label, which looks exactly like a local function but has no independent stack frame.
@@ -173,11 +173,11 @@ pub enum Expr {
     /// The code that is executed when you jump to the label
     body: Box<[Expr]>,
   },
-  /// An if-then-else expression (at either block or statement level). The initial atom names
-  /// a hypothesis that the expression is true in one branch and false in the other.
-  If(Box<(Option<AtomID>, Expr, Expr, Expr)>),
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Switch(Box<Expr>, Box<[(Pattern, Expr)]>),
+  // /// An if-then-else expression (at either block or statement level). The initial atom names
+  // /// a hypothesis that the expression is true in one branch and false in the other.
+  // If(Box<(Option<AtomID>, Expr, Expr, Expr)>),
+  // /// A switch (pattern match) statement, given the initial expression and a list of match arms.
+  // Switch(Box<Expr>, Box<[(Pattern, Expr)]>),
   /// A while loop.
   While {
     /// A hypothesis that the condition is true in the loop and false after it.
@@ -191,8 +191,8 @@ pub enum Expr {
     /// The body of the loop.
     body: Box<[Expr]>,
   },
-  /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
-  Hole(FileSpan),
+  // /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
+  // Hole(FileSpan),
 }
 
 /// A procedure kind, which defines the different kinds of function-like declarations.
@@ -385,7 +385,7 @@ crate::deep_size_0!(Unop);
 
 impl Unop {
   /// Return a string representation of the [`Unop`].
-  pub fn to_str(self) -> &'static str {
+  #[must_use] pub fn to_str(self) -> &'static str {
     match self {
       Unop::Not => "not",
       Unop::BitNot(_) => "bnot",
@@ -431,7 +431,7 @@ crate::deep_size_0!(Binop);
 
 impl Binop {
   /// Return a string representation of the [`Binop`].
-  pub fn to_str(self) -> &'static str {
+  #[must_use] pub fn to_str(self) -> &'static str {
     match self {
       Binop::Add => "+",
       Binop::Mul => "*",
