@@ -7,7 +7,7 @@ use crate::elab::{
   local_context::try_get_span_from,
   environment::{AtomID, Environment}};
 use crate::util::FileSpan;
-use super::{Compiler, types::{self, AST, Proc, ProcKind, TuplePattern}};
+use super::{Compiler, types::{self, AST, Proc, ProcKind}, parser::TuplePattern};
 
 macro_rules! make_prims {
   {$($(#[$attr0:meta])* enum $name:ident { $($(#[$attr:meta])* $x:ident: $e:expr,)* })* } => {
@@ -276,7 +276,7 @@ impl TuplePattern {
     match self {
       &TuplePattern::Name(ghost, n, ref sp) => if n != AtomID::UNDER { f(ghost, n, sp)? },
       TuplePattern::Typed(p, _) => p.on_names(f)?,
-      TuplePattern::Tuple(ps) => for p in &**ps { p.on_names(f)? }
+      TuplePattern::Tuple(ps, _) => for p in &**ps { p.on_names(f)? }
     }
     Ok(())
   }
@@ -301,7 +301,7 @@ impl Compiler {
   /// procedure declarations.
   pub fn nameck(&mut self, fsp: &FileSpan, a: &AST) -> Result<()> {
     match a {
-      AST::Proc(p) => {
+      AST::Proc(p, _) => {
         let sp = try_get_span_from(fsp, p.span.as_ref());
         match self.names.entry(p.name) {
           Entry::Vacant(e) => {e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTC::Unchecked)));}

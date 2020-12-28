@@ -4,7 +4,7 @@ use std::{rc::Rc, collections::HashMap};
 use num::BigInt;
 use crate::util::FileSpan;
 use crate::elab::{environment::{AtomID, Environment},
-  lisp::{LispVal, Uncons}};
+  lisp::{LispKind, InferTarget, LispVal, Uncons, print::{EnvDisplay, FormatEnv}}};
 
 // /// An argument to a function.
 // #[derive(Debug, DeepSizeOf)]
@@ -60,17 +60,6 @@ pub struct Invariant {
   pub val: Option<LispVal>,
 }
 
-/// A block is a local scope. Like functions, this requires explicit importing
-/// of variables from external scope if they will be mutated after the block.
-#[derive(Debug, DeepSizeOf)]
-pub struct Block {
-  /// The list of variables that will be updated by the block. Variables
-  /// in external scope that are not in this list are treated as read only.
-  pub muts: Box<[(AtomID, Option<FileSpan>)]>,
-  /// The statements of the block.
-  pub stmts: Uncons
-}
-
 /// A tuple pattern, which destructures the results of assignments from functions with
 /// mutiple return values, as well as explicit tuple values and structs.
 #[derive(Debug, DeepSizeOf)]
@@ -78,64 +67,35 @@ pub enum TuplePattern {
   /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
   /// is ghost.
   Name(bool, AtomID, Option<FileSpan>),
-  /// A type ascription. The type is unparsed.
-  Typed(Box<TuplePattern>, LispVal),
+  /// A type ascription.
+  Typed(Box<(TuplePattern, Type)>),
   /// A tuple, with the given arguments.
-  Tuple(Box<[TuplePattern]>),
+  Tuple(Box<[TuplePattern]>, Option<FileSpan>),
+}
+/// A strongly typed tuple pattern.
+#[derive(Debug, DeepSizeOf)]
+pub enum TypedTuplePattern {
+  /// A variable binding. The `bool` is true if the variable is ghost.
+  Name(bool, AtomID, Option<FileSpan>, Box<Type>),
+  /// A unit pattern match.
+  Unit,
+  /// A singleton pattern match `(x h) := sn e`, where `x: T` and `h: x = e`.
+  Single(Box<(TypedTuplePattern, TypedTuplePattern)>),
 }
 
-impl TuplePattern {
-  /// The `_` tuple pattern. This is marked as ghost because it can't be referred to so
-  /// it is always safe to make irrelevant.
-  pub const UNDER: TuplePattern = TuplePattern::Name(true, AtomID::UNDER, None);
-
-  /// The name of a variable binding (or `_` for a tuple pattern)
-  #[must_use] pub fn name(&self) -> AtomID {
+impl TypedTuplePattern {
+  /// Get an expr representation of the tuple constructed by this pattern.
+  /// (Note that this can't be done on user-level names, since the pattern match
+  /// may contain `_` patterns that would not be valid in the expression.
+  /// We always name these variables with internal names, and these are used in the tuple.)
+  pub fn to_expr(&self) -> PureExpr {
     match self {
-      &TuplePattern::Name(_, a, _) => a,
-      TuplePattern::Typed(p, _) => p.name(),
-      _ => AtomID::UNDER
-    }
-  }
-
-  /// The span of a variable binding (or [`None`] for a tuple pattern).
-  #[must_use] pub fn fspan(&self) -> Option<&FileSpan> {
-    match self {
-      TuplePattern::Name(_, _, fsp) => fsp.as_ref(),
-      TuplePattern::Typed(p, _) => p.fspan(),
-      _ => None
-    }
-  }
-
-  /// True if all the bindings in this pattern are ghost.
-  #[must_use] pub fn ghost(&self) -> bool {
-    match self {
-      &TuplePattern::Name(g, _, _) => g,
-      TuplePattern::Typed(p, _) => p.ghost(),
-      TuplePattern::Tuple(ps) => ps.iter().all(TuplePattern::ghost),
-    }
-  }
-
-  /// The type of this binding, or `_` if there is no explicit type.
-  #[must_use] pub fn ty(&self) -> LispVal {
-    match self {
-      TuplePattern::Typed(_, ty) => ty.clone(),
-      _ => LispVal::atom(AtomID::UNDER)
+      &Self::Name(_, a, _, _) => PureExpr::Var(a),
+      Self::Unit => PureExpr::Unit,
+      Self::Single(p) => p.0.to_expr(),
     }
   }
 }
-
-impl PartialEq<TuplePattern> for TuplePattern {
-  fn eq(&self, other: &TuplePattern) -> bool {
-    match (self, other) {
-      (TuplePattern::Name(g1, a1, _), TuplePattern::Name(g2, a2, _)) => g1 == g2 && a1 == a2,
-      (TuplePattern::Typed(p1, ty1), TuplePattern::Typed(p2, ty2)) => p1 == p2 && ty1 == ty2,
-      (TuplePattern::Tuple(ps1), TuplePattern::Tuple(ps2)) => ps1 == ps2,
-      _ => false
-    }
-  }
-}
-impl Eq for TuplePattern {}
 
 /// A pattern, the left side of a switch statement.
 #[derive(Debug, DeepSizeOf)]
@@ -158,19 +118,32 @@ pub enum Pattern {
 /// An expression or statement. A block is a list of expressions.
 #[derive(Debug, DeepSizeOf)]
 pub enum Expr {
-  /// A `()` literal.
-  Nil,
-  /// A variable reference.
+  /// A pure expression.
+  Pure(PureExpr),
+  /// A variable move expression. Unlike `Pure(Var(v))`, this will take the value in `v`,
+  /// leaving it moved out.
   Var(AtomID),
-  /// A number literal.
-  Number(BigInt),
+  /// A unary operation.
+  Unop(Unop, Box<Expr>),
+  /// A binary operation.
+  Binop(Binop, Box<Expr>, Box<Expr>),
+  /// A tuple constructor.
+  Tuple(Box<[Expr]>),
+  /// An index operation `(index a i h): T` where `a: (array T n)`,
+  /// `i: nat`, and `h: i < n`.
+  Index(Box<Expr>, Box<Expr>, Box<ProofExpr>),
+  /// An deref operation `(* x): T` where `x: (own T)`.
+  DerefOwn(Box<Expr>),
+  /// An deref operation `(* x): T` where `x: (& T)`.
+  Deref(Box<Expr>),
+  /// An deref operation `(* x): T` where `x: (&mut T)`.
+  DerefMut(Box<Expr>),
+  /// A ghost expression.
+  Ghost(Box<Expr>),
   /// A let binding.
   Let {
-    /// True if the `rhs` expression should not be evaluated,
-    /// and all variables in the declaration should be considered ghost.
-    ghost: bool,
     /// A tuple pattern, containing variable bindings.
-    lhs: TuplePattern,
+    lhs: TypedTuplePattern,
     /// The expression to evaluate, or [`None`] for uninitialized.
     rhs: Option<Box<Expr>>,
   },
@@ -187,7 +160,7 @@ pub enum Expr {
   /// `P1, ..., Pn` and is a hypothesis of type `Q`.
   Entail(LispVal, Box<[Expr]>),
   /// A block scope.
-  Block(Block),
+  Block(Box<[Expr]>),
   /// A label, which looks exactly like a local function but has no independent stack frame.
   /// They are called like regular functions but can only appear in tail position.
   Label {
@@ -198,7 +171,7 @@ pub enum Expr {
     /// The variant, for recursive calls
     variant: Option<Variant>,
     /// The code that is executed when you jump to the label
-    body: Block,
+    body: Box<[Expr]>,
   },
   /// An if-then-else expression (at either block or statement level). The initial atom names
   /// a hypothesis that the expression is true in one branch and false in the other.
@@ -216,7 +189,7 @@ pub enum Expr {
     /// The invariants, which must be supplied on every round around the loop.
     invar: Box<[Invariant]>,
     /// The body of the loop.
-    body: Block,
+    body: Box<[Expr]>,
   },
   /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
   Hole(FileSpan),
@@ -248,13 +221,13 @@ pub struct Proc {
   /// The span of the procedure name.
   pub span: Option<FileSpan>,
   /// The arguments of the procedure.
-  pub args: Box<[TuplePattern]>,
+  pub args: Box<[super::parser::TuplePattern]>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: Box<[TuplePattern]>,
+  pub rets: Box<[super::parser::TuplePattern]>,
   /// The variant, used for recursive functions.
   pub variant: Option<Variant>,
   /// The body of the procedure.
-  pub body: Block,
+  pub muts: Box<[(AtomID, Option<FileSpan>)]>,
 }
 
 impl Proc {
@@ -265,7 +238,7 @@ impl Proc {
     self.args == other.args &&
     self.rets == other.rets &&
     self.variant == other.variant &&
-    self.body.muts == other.body.muts
+    self.muts == other.muts
   }
 }
 
@@ -284,18 +257,18 @@ pub struct Field {
 #[derive(Debug, DeepSizeOf)]
 pub enum AST {
   /// A procedure, behind an Arc so it can be cheaply copied.
-  Proc(Arc<Proc>),
+  Proc(Arc<Proc>, Uncons),
   /// A global variable declaration.
   Global {
     /// The variable(s) being declared
-    lhs: TuplePattern,
+    lhs: super::parser::TuplePattern,
     /// The value of the declaration
     rhs: Option<LispVal>,
   },
   /// A constant declaration.
   Const {
     /// The constant(s) being declared
-    lhs: TuplePattern,
+    lhs: super::parser::TuplePattern,
     /// The value of the declaration
     rhs: LispVal,
   },
@@ -306,7 +279,7 @@ pub enum AST {
     /// The span of the name
     span: Option<FileSpan>,
     /// The arguments of the type declaration, for a parametric type
-    args: Box<[TuplePattern]>,
+    args: Box<[super::parser::TuplePattern]>,
     /// The value of the declaration (another type)
     val: LispVal,
   },
@@ -317,15 +290,15 @@ pub enum AST {
     /// The span of the name
     span: Option<FileSpan>,
     /// The parameters of the type
-    args: Box<[TuplePattern]>,
+    args: Box<[super::parser::TuplePattern]>,
     /// The fields of the structure
-    fields: Box<[TuplePattern]>,
+    fields: Box<[super::parser::TuplePattern]>,
   },
 }
 
 impl AST {
   /// Make a new `AST::Proc`.
-  #[must_use] pub fn proc(p: Proc) -> AST { AST::Proc(Arc::new(p)) }
+  #[must_use] pub fn proc((p, body): (Proc, Uncons)) -> AST { AST::Proc(Arc::new(p), body) }
 }
 
 macro_rules! make_keywords {
@@ -410,6 +383,22 @@ pub enum Unop {
 }
 crate::deep_size_0!(Unop);
 
+impl Unop {
+  /// Return a string representation of the [`Unop`].
+  pub fn to_str(self) -> &'static str {
+    match self {
+      Unop::Not => "not",
+      Unop::BitNot(_) => "bnot",
+    }
+  }
+}
+
+impl std::fmt::Display for Unop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.to_str().fmt(f)
+  }
+}
+
 /// (Elaborated) binary operations.
 #[derive(Copy, Clone, Debug)]
 pub enum Binop {
@@ -417,6 +406,8 @@ pub enum Binop {
   Add,
   /// Integer multiplication
   Mul,
+  /// Integer subtraction
+  Sub,
   /// Logical (boolean) AND
   And,
   /// Logical (boolean) OR
@@ -437,6 +428,32 @@ pub enum Binop {
   Ne,
 }
 crate::deep_size_0!(Binop);
+
+impl Binop {
+  /// Return a string representation of the [`Binop`].
+  pub fn to_str(self) -> &'static str {
+    match self {
+      Binop::Add => "+",
+      Binop::Mul => "*",
+      Binop::Sub => "-",
+      Binop::And => "and",
+      Binop::Or => "or",
+      Binop::BitAnd => "band",
+      Binop::BitOr => "bor",
+      Binop::BitXor => "bxor",
+      Binop::Lt => "<",
+      Binop::Le => "<=",
+      Binop::Eq => "=",
+      Binop::Ne => "!=",
+    }
+  }
+}
+
+impl std::fmt::Display for Binop {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.to_str().fmt(f)
+  }
+}
 
 /// A proof expression, or "hypothesis".
 #[derive(Debug, DeepSizeOf)]
@@ -476,6 +493,27 @@ pub enum PureExpr {
   Ghost(Rc<PureExpr>),
 }
 
+impl EnvDisplay for PureExpr {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use {std::fmt::Display, itertools::Itertools};
+    match self {
+      &PureExpr::Var(v) => v.fmt(fe, f),
+      PureExpr::Int(n) => n.fmt(f),
+      PureExpr::Unit => "()".fmt(f),
+      PureExpr::Bool(b) => b.fmt(f),
+      PureExpr::Unop(op, e) => write!(f, "({} {})", op, fe.to(e)),
+      PureExpr::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", fe.to(e1), op, fe.to(e2)),
+      PureExpr::Tuple(es) => write!(f, "(list {})", es.iter().map(|e| fe.to(e)).format(" ")),
+      PureExpr::Index(a, i, _) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
+      PureExpr::DerefOwn(e) |
+      PureExpr::Deref(e) |
+      PureExpr::DerefMut(e) => write!(f, "(* {})", fe.to(e)),
+      PureExpr::Ghost(e) => write!(f, "(ghost {})", fe.to(e)),
+    }
+  }
+}
+
+
 /// A type, which classifies regular variables (not type variables, not hypotheses).
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Type {
@@ -510,7 +548,7 @@ pub enum Type {
   /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
   /// This is useful for asserting that a computationally relevant value can be
   /// expressed in terms of computationally irrelevant parts.
-  Single(Rc<PureExpr>),
+  Single(Rc<PureExpr>, Box<Type>),
   /// `(struct {x : A} {y : B} {z : C})` is the dependent version of `list`;
   /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
   /// themselves refer to `x, y, z`.
@@ -518,7 +556,7 @@ pub enum Type {
   ///
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo (struct {x : A} {y : B}))`.
-  Struct(Box<[Type]>),
+  Struct(Box<[(AtomID, Type)]>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -542,12 +580,59 @@ pub enum Type {
   Input,
   /// The output token.
   Output,
+  /// A moved-away type.
+  Moved(Box<Type>),
 }
 
 impl Type {
   /// Create a ghost node if the boolean is true.
   #[must_use] pub fn ghost_if(ghost: bool, this: Type) -> Type {
     if ghost { Type::Ghost(Box::new(this)) } else { this }
+  }
+}
+
+impl EnvDisplay for Type {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use {std::fmt::Display, itertools::Itertools};
+    match self {
+      Type::Var(v) => v.fmt(fe, f),
+      Type::Unit => "()".fmt(f),
+      Type::Bool => "bool".fmt(f),
+      Type::Int(Size::S8) => "i8".fmt(f),
+      Type::Int(Size::S16) => "i16".fmt(f),
+      Type::Int(Size::S32) => "i32".fmt(f),
+      Type::Int(Size::S64) => "i64".fmt(f),
+      Type::Int(Size::Inf) => "int".fmt(f),
+      Type::UInt(Size::S8) => "u8".fmt(f),
+      Type::UInt(Size::S16) => "u16".fmt(f),
+      Type::UInt(Size::S32) => "u32".fmt(f),
+      Type::UInt(Size::S64) => "u64".fmt(f),
+      Type::UInt(Size::Inf) => "nat".fmt(f),
+      Type::Array(ty, n) => write!(f, "(array {} {})", fe.to(ty), fe.to(n)),
+      Type::Own(ty) => write!(f, "(own {})", fe.to(ty)),
+      Type::Ref(ty) => write!(f, "(& {})", fe.to(ty)),
+      Type::RefMut(ty) => write!(f, "(&mut {})", fe.to(ty)),
+      Type::List(tys) => write!(f, "(list {})", tys.iter().map(|ty| fe.to(ty)).format(" ")),
+      Type::Single(e, ty) => write!(f, "(sn {{{}: {}}})", fe.to(e), fe.to(ty)),
+      Type::Struct(tys) => {
+        write!(f, "(struct")?;
+        for (a, ty) in &**tys { write!(f, " {{{}: {}}}", fe.to(a), fe.to(ty))? }
+        ")".fmt(f)
+      }
+      Type::And(tys) => write!(f, "(and {})", tys.iter().map(|ty| fe.to(ty)).format(" ")),
+      Type::Or(tys) => write!(f, "(or {})", tys.iter().map(|ty| fe.to(ty)).format(" ")),
+      Type::Ghost(ty) => write!(f, "(ghost {})", fe.to(ty)),
+      Type::Prop(p) => write!(f, "$ {} $", fe.to(p)),
+      Type::User(name, tys, es) => {
+        write!(f, "({}", fe.to(name))?;
+        for ty in &**tys { " ".fmt(f)?; ty.fmt(fe, f)? }
+        for e in &**es { " ".fmt(f)?; e.fmt(fe, f)? }
+        ")".fmt(f)
+      }
+      Type::Input => "Input".fmt(f),
+      Type::Output => "Output".fmt(f),
+      Type::Moved(ty) => write!(f, "|{}|", fe.to(ty)),
+    }
   }
 }
 
@@ -586,6 +671,38 @@ pub enum Prop {
   Heap(Rc<PureExpr>, Rc<PureExpr>, Box<Type>),
   /// An explicit typing assertion `[v : T]`.
   HasTy(Rc<PureExpr>, Box<Type>),
+  /// The move operator `|T|` on types.
+  Moved(Box<Prop>),
   /// An embedded MM0 proposition of sort `wff`.
   MM0(LispVal),
 }
+
+impl EnvDisplay for Prop {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use {std::fmt::Display, itertools::Itertools};
+    match self {
+      &Prop::MVar(n) => LispKind::MVar(n, InferTarget::Unknown).fmt(fe, f),
+      Prop::True => "true".fmt(f),
+      Prop::False => "false".fmt(f),
+      Prop::All(a, pr) => write!(f, "A. {}: {}, {}", fe.to(a), fe.to(&pr.0), fe.to(&pr.1)),
+      Prop::Ex(a, pr) => write!(f, "E. {}: {}, {}", fe.to(a), fe.to(&pr.0), fe.to(&pr.1)),
+      Prop::Imp(pr) => write!(f, "({} -> {})", fe.to(&pr.0), fe.to(&pr.1)),
+      Prop::Not(pr) => write!(f, "~{}", fe.to(pr)),
+      Prop::And(pr) if pr.is_empty() => "true".fmt(f),
+      Prop::And(pr) => write!(f, "({})", pr.iter().map(|p| fe.to(p)).format(" /\\ ")),
+      Prop::Or(pr) if pr.is_empty() => "false".fmt(f),
+      Prop::Or(pr) => write!(f, "({})", pr.iter().map(|p| fe.to(p)).format(" \\/ ")),
+      Prop::Emp => "emp".fmt(f),
+      Prop::Sep(pr) if pr.is_empty() => "emp".fmt(f),
+      Prop::Sep(pr) => write!(f, "({})", pr.iter().map(|p| fe.to(p)).format(" * ")),
+      Prop::Wand(pr) => write!(f, "({} -* {})", fe.to(&pr.0), fe.to(&pr.1)),
+      Prop::Pure(e) => e.fmt(fe, f),
+      Prop::Eq(e1, e2) => write!(f, "{} = {}", fe.to(e1), fe.to(e2)),
+      Prop::Heap(x, v, t) => write!(f, "{} => {}: {}", fe.to(x), fe.to(v), fe.to(t)),
+      Prop::HasTy(v, t) => write!(f, "[{}: {}]", fe.to(v), fe.to(t)),
+      Prop::Moved(p) => write!(f, "|{}|", fe.to(p)),
+      Prop::MM0(e) => e.fmt(fe, f),
+    }
+  }
+}
+
