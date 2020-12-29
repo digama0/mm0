@@ -365,7 +365,18 @@ do {
   --| `@(add-eval f) def foo ..` will add `f` as an evaluator for `foo`,
   --| which is used by the `eval` function (which can evaluate many
   --| closed terms of sort `nat` or `wff` to values).
-  (def ((add-eval f) a) (insert! eval-map a (if (fn? f) f (fn () f))))
+  (def ((add-eval . f) a)
+    (if (def? @ lookup eval-map a) (error "already defined evaluation rule"))
+    @ insert! eval-map a @ match f
+    [(f) (if (fn? f) f (fn () f))]
+    [() (def x @ eval @ nth 6 @ get-decl a) (fn () x)])
+
+  --| `@eval-check` is an annotation that can be placed on theorems or axioms which
+  --| are closed terms, and will check that the theorem/axiom evaluates to `#t`.
+  --| This is not formally rigorous as the evaluator is not verified, but it can be
+  --| viewed as a cross-check of the axiom or the evaluator, depending on your
+  --| point of view.
+  (def (eval-check a) @ match (eval @ nth 4 @ get-decl a) [#t])
 };
 
 -- configuration
@@ -755,8 +766,7 @@ term tru: wff; prefix tru: $T.$ prec max;
 --| `true` is true.
 axiom itru: $ T. $;
 --| The constant `false`.
-@(add-eval #f)
-def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
+@(add-eval) def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 theorem trud (h: $ T. -> a $): $ a $ = '(h itru);
 theorem eqtru: $ (a <-> T.) <-> a $ =
@@ -1718,22 +1728,21 @@ theorem nfslem {y} (A: set y) (a: nat x) (B: set x)
 @_ local def eu {x: nat} (p: wff x): wff = $ E. y A. x (p <-> x = y) $;
 
 --| `0` is a natural number.
-term d0: nat; prefix d0: $0$ prec max;
+@(add-eval 0) term d0: nat; prefix d0: $0$ prec max;
 --| The successor operation: `suc n` is a natural number when `n` is.
+@(add-eval @ fn (a) {(eval a) + 1})
 term suc (n: nat): nat;
 
-def d1:  nat = $suc 0$; prefix d1:  $1$  prec max;
-def d2:  nat = $suc 1$; prefix d2:  $2$  prec max;
-def d3:  nat = $suc 2$; prefix d3:  $3$  prec max;
-def d4:  nat = $suc 3$; prefix d4:  $4$  prec max;
-def d5:  nat = $suc 4$; prefix d5:  $5$  prec max;
-def d6:  nat = $suc 5$; prefix d6:  $6$  prec max;
-def d7:  nat = $suc 6$; prefix d7:  $7$  prec max;
-def d8:  nat = $suc 7$; prefix d8:  $8$  prec max;
-def d9:  nat = $suc 8$; prefix d9:  $9$  prec max;
-def d10: nat = $suc 9$; prefix d10: $10$ prec max;
-
-do (for 0 10 @ fn (n) @ (add-eval n) (atom-app 'd n));
+@(add-eval) def d1:  nat = $suc 0$; prefix d1:  $1$  prec max;
+@(add-eval) def d2:  nat = $suc 1$; prefix d2:  $2$  prec max;
+@(add-eval) def d3:  nat = $suc 2$; prefix d3:  $3$  prec max;
+@(add-eval) def d4:  nat = $suc 3$; prefix d4:  $4$  prec max;
+@(add-eval) def d5:  nat = $suc 4$; prefix d5:  $5$  prec max;
+@(add-eval) def d6:  nat = $suc 5$; prefix d6:  $6$  prec max;
+@(add-eval) def d7:  nat = $suc 6$; prefix d7:  $7$  prec max;
+@(add-eval) def d8:  nat = $suc 7$; prefix d8:  $8$  prec max;
+@(add-eval) def d9:  nat = $suc 8$; prefix d9:  $9$  prec max;
+@(add-eval) def d10: nat = $suc 9$; prefix d10: $10$ prec max;
 
 --| Zero is not a successor. Axiom 1 of Peano Arithmetic.
 axiom peano1 (a: nat): $ suc a != 0 $;

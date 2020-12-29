@@ -101,21 +101,24 @@ infixr scons: $':$ prec 53;
 --| This implies that all the elements of `hex` are distinct.
 @(add-eval eval)
 term h2n: hex > nat; coercion h2n: hex > nat;
-axiom h2n0: $ x0 = 0 $;   axiom h2n1: $ x1 = 1 $;
-axiom h2n2: $ x2 = 2 $;   axiom h2n3: $ x3 = 3 $;
-axiom h2n4: $ x4 = 4 $;   axiom h2n5: $ x5 = 5 $;
-axiom h2n6: $ x6 = 6 $;   axiom h2n7: $ x7 = 7 $;
-axiom h2n8: $ x8 = 8 $;   axiom h2n9: $ x9 = 9 $;
-axiom h2na: $ xa = 10 $;  axiom h2nb: $ xb = 11 $;
-axiom h2nc: $ xc = 12 $;  axiom h2nd: $ xd = 13 $;
-axiom h2ne: $ xe = 14 $;  axiom h2nf: $ xf = 15 $;
+-- The `eval-check` is an annotation that runs the evaluator on these expressions
+-- to make sure that they come out true.
+@eval-check axiom h2n0: $ x0 = 0 $;   @eval-check axiom h2n1: $ x1 = 1 $;
+@eval-check axiom h2n2: $ x2 = 2 $;   @eval-check axiom h2n3: $ x3 = 3 $;
+@eval-check axiom h2n4: $ x4 = 4 $;   @eval-check axiom h2n5: $ x5 = 5 $;
+@eval-check axiom h2n6: $ x6 = 6 $;   @eval-check axiom h2n7: $ x7 = 7 $;
+@eval-check axiom h2n8: $ x8 = 8 $;   @eval-check axiom h2n9: $ x9 = 9 $;
+@eval-check axiom h2na: $ xa = 10 $;  @eval-check axiom h2nb: $ xb = 11 $;
+@eval-check axiom h2nc: $ xc = 12 $;  @eval-check axiom h2nd: $ xd = 13 $;
+@eval-check axiom h2ne: $ xe = 14 $;  @eval-check axiom h2nf: $ xf = 15 $;
 
 --| This allows us to prove facts about hex digits by case analysis.
 --| It is not provable from the above axioms because the fact that the "hex"
 --| sort has only the given 16 constructors is only observable from outside the theory.
+-- We can't use `eval-check` here because the axiom has a free variable.
 axiom h2nlt (h: hex): $ h < 16 $;
 
---| `h2n a`, the coercion `char > nat`, embeds a character
+--| `c2n a`, the coercion `char > nat`, embeds a character
 --| as a natural number less than 256.
 @(add-eval eval)
 term c2n: char > nat; coercion c2n: char > nat;
@@ -230,8 +233,6 @@ do {
     [('ch (e1) (e2)) {{(hexdigit->number e1) * 16} + (hexdigit->number e2)}]
     [('hex e1 (e2)) {{(hex->number e1) * 16} + (hexdigit->number e2)}]
     [e (hexdigit->number e)])
-  ((add-eval @ fn () n) 'c2n)
-  (for 0 10 @ fn (n) @ (add-eval @ fn () n) (atom-app 'd n))
 
   (def (number->ch n) '(ch (,(hexdigit {n // 16})) (,(hexdigit {n % 16}))))
   (def nz-hexnat? @ match-fn

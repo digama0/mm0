@@ -1404,14 +1404,22 @@ do (def (mk-splatBits-ch x y b)
 
 @_ def Regs: nat = $ Bits 4 $;
 theorem Regs_lem (h: $ a < 16 $): $ a e. Regs $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow4) h);
-@_ def RAX: nat = $ 0 $; pub theorem RAX_T: $ RAX e. Regs $ = '(! Regs_lem $0$ ,norm_num);
-@_ def RCX: nat = $ 1 $; pub theorem RCX_T: $ RCX e. Regs $ = '(! Regs_lem $1$ ,norm_num);
-@_ def RDX: nat = $ 2 $; pub theorem RDX_T: $ RDX e. Regs $ = '(! Regs_lem $2$ ,norm_num);
-@_ def RBX: nat = $ 3 $; pub theorem RBX_T: $ RBX e. Regs $ = '(! Regs_lem $3$ ,norm_num);
-@_ def RSP: nat = $ 4 $; pub theorem RSP_T: $ RSP e. Regs $ = '(! Regs_lem $4$ ,norm_num);
-@_ def RBP: nat = $ 5 $; pub theorem RBP_T: $ RBP e. Regs $ = '(! Regs_lem $5$ ,norm_num);
-@_ def RSI: nat = $ 6 $; pub theorem RSI_T: $ RSI e. Regs $ = '(! Regs_lem $6$ ,norm_num);
-@_ def RDI: nat = $ 7 $; pub theorem RDI_T: $ RDI e. Regs $ = '(! Regs_lem $7$ ,norm_num);
+@(add-eval) def RAX: nat = $ 0 $;
+pub theorem RAX_T: $ RAX e. Regs $ = '(! Regs_lem $0$ ,norm_num);
+@(add-eval) def RCX: nat = $ 1 $;
+pub theorem RCX_T: $ RCX e. Regs $ = '(! Regs_lem $1$ ,norm_num);
+@(add-eval) def RDX: nat = $ 2 $;
+pub theorem RDX_T: $ RDX e. Regs $ = '(! Regs_lem $2$ ,norm_num);
+@(add-eval) def RBX: nat = $ 3 $;
+pub theorem RBX_T: $ RBX e. Regs $ = '(! Regs_lem $3$ ,norm_num);
+@(add-eval) def RSP: nat = $ 4 $;
+pub theorem RSP_T: $ RSP e. Regs $ = '(! Regs_lem $4$ ,norm_num);
+@(add-eval) def RBP: nat = $ 5 $;
+pub theorem RBP_T: $ RBP e. Regs $ = '(! Regs_lem $5$ ,norm_num);
+@(add-eval) def RSI: nat = $ 6 $;
+pub theorem RSI_T: $ RSI e. Regs $ = '(! Regs_lem $6$ ,norm_num);
+@(add-eval) def RDI: nat = $ 7 $;
+pub theorem RDI_T: $ RDI e. Regs $ = '(! Regs_lem $7$ ,norm_num);
 theorem R11_T: $ 11 e. Regs $ = '(Regs_lem ,norm_num);
 
 @_ def REX: set = $ Option (Bits 4) $;
@@ -1439,6 +1447,7 @@ theorem REX_R_Si (h: $ bit rex 2 = a $): $ REX_R (suc rex) = a $ = '(eqtr (biteq
 theorem REX_X_Si (h: $ bit rex 1 = a $): $ REX_X (suc rex) = a $ = '(eqtr (biteq1 sucsub1) h);
 theorem REX_B_Si (h: $ bit rex 0 = a $): $ REX_B (suc rex) = a $ = '(eqtr (biteq1 sucsub1) h);
 
+@(add-eval @ fn (b r) {{(eval b) shl 3} + (eval r)})
 @_ def rex_reg (b r: nat): nat = $ shl b 3 + r $;
 pub theorem rex_regT (b r: nat): $ bool b /\ r e. Bits 3 -> rex_reg b r e. Regs $ =
 '(sylibr (elneq2 @ Bitseq {,norm_num : $ 4 = 1 + 3 $}) @ sylbir (aneq1i elBits1) shladdT);
@@ -1921,32 +1930,32 @@ pub theorem immRM_rmT (rm: nat): $ immRM_rm rm e. ImmRM <-> rm e. RM $ = 'Suml;
 pub theorem immRM_immT (i: nat): $ immRM_imm i e. ImmRM <-> i e. u64 $ = 'Sumr;
 
 @_ def Unop: nat = $ upto 4 $;
-@_ def unopInc: nat = $ 0 $;
-@_ def unopDec: nat = $ 1 $;
-@_ def unopNot: nat = $ 2 $;
-@_ def unopNeg: nat = $ 3 $;
+@(add-eval) def unopInc: nat = $ 0 $;
+@(add-eval) def unopDec: nat = $ 1 $;
+@(add-eval) def unopNot: nat = $ 2 $;
+@(add-eval) def unopNeg: nat = $ 3 $;
 theorem unopIncT: $ unopInc e. Unop $ = '(mpbir elupto d0lt4);
 theorem unopDecT: $ unopDec e. Unop $ = '(mpbir elupto d1lt4);
 theorem unopNotT: $ unopNot e. Unop $ = '(mpbir elupto d2lt4);
 theorem unopNegT: $ unopNeg e. Unop $ = '(mpbir elupto d3lt4);
 
 @_ def Binop: nat = $ Bits 4 $;
-@_ def binopAdd: nat = $ 0 $;
-@_ def binopOr:  nat = $ 1 $;
-@_ def binopAdc: nat = $ 2 $;
-@_ def binopSbb: nat = $ 3 $;
-@_ def binopAnd: nat = $ 4 $;
-@_ def binopSub: nat = $ 5 $;
-@_ def binopXor: nat = $ 6 $;
-@_ def binopCmp: nat = $ 7 $;
-@_ def binopRol: nat = $ 8 $;
-@_ def binopRor: nat = $ 9 $;
-@_ def binopRcl: nat = $ 10 $;
-@_ def binopRcr: nat = $ 11 $;
-@_ def binopShl: nat = $ 12 $;
-@_ def binopShr: nat = $ 13 $;
-@_ def binopTst: nat = $ 14 $;
-@_ def binopSar: nat = $ 15 $;
+@(add-eval) def binopAdd: nat = $ 0 $;
+@(add-eval) def binopOr:  nat = $ 1 $;
+@(add-eval) def binopAdc: nat = $ 2 $;
+@(add-eval) def binopSbb: nat = $ 3 $;
+@(add-eval) def binopAnd: nat = $ 4 $;
+@(add-eval) def binopSub: nat = $ 5 $;
+@(add-eval) def binopXor: nat = $ 6 $;
+@(add-eval) def binopCmp: nat = $ 7 $;
+@(add-eval) def binopRol: nat = $ 8 $;
+@(add-eval) def binopRor: nat = $ 9 $;
+@(add-eval) def binopRcl: nat = $ 10 $;
+@(add-eval) def binopRcr: nat = $ 11 $;
+@(add-eval) def binopShl: nat = $ 12 $;
+@(add-eval) def binopShr: nat = $ 13 $;
+@(add-eval) def binopTst: nat = $ 14 $;
+@(add-eval) def binopSar: nat = $ 15 $;
 theorem Binop_lem (h: $ a < 16 $): $ a e. Binop $ = '(Regs_lem h);
 theorem Binop_low: $ a e. Bits 3 -> a e. Binop $ = '(ssel @ Bitsss ,norm_num);
 theorem binopAddT: $ binopAdd e. Binop $ = 'elBits01;
@@ -1967,16 +1976,16 @@ theorem binopTstT: $ binopTst e. Binop $ = '(! Binop_lem $14$ ,norm_num);
 theorem binopSarT: $ binopSar e. Binop $ = '(! Binop_lem $15$ ,norm_num);
 
 @_ def BCond: nat = $ Bits 3 $;
-@_ def bcondO:  nat = $ 0 $;
-@_ def bcondB:  nat = $ 1 $;
-@_ def bcondE:  nat = $ 2 $;
-@_ def bcondNA: nat = $ 3 $;
-@_ def bcondS:  nat = $ 4 $;
-@_ def bcondL:  nat = $ 6 $;
-@_ def bcondNG: nat = $ 7 $;
+@(add-eval) def bcondO:  nat = $ 0 $;
+@(add-eval) def bcondB:  nat = $ 1 $;
+@(add-eval) def bcondE:  nat = $ 2 $;
+@(add-eval) def bcondNA: nat = $ 3 $;
+@(add-eval) def bcondS:  nat = $ 4 $;
+@(add-eval) def bcondL:  nat = $ 6 $;
+@(add-eval) def bcondNG: nat = $ 7 $;
 
 @_ def Cond: set = $ Option (Bits 4) $;
-@_ def condAlways: nat = $ 0 $;
+@(add-eval) def condAlways: nat = $ 0 $;
 @_ def condPos (c: nat): nat = $ suc (b0 c) $;
 @_ def condNeg (c: nat): nat = $ suc (b1 c) $;
 pub theorem condAlwaysT: $ condAlways e. Cond $ = 'opt0;
@@ -2846,9 +2855,9 @@ pub theorem readCondFNeg (f c: nat): $ readCondF f (condNeg c) <-> ~readBCond f 
 
 @_ def Prot: set = $ Bits 3 $;
 pub theorem finiteProt: $ finite Prot $ = 'finns;
-@_ def PROT_READ: nat = $ 1 $;
-@_ def PROT_WRITE: nat = $ 2 $;
-@_ def PROT_EXEC: nat = $ 4 $;
+@(add-eval) def PROT_READ: nat = $ 1 $;
+@(add-eval) def PROT_WRITE: nat = $ 2 $;
+@(add-eval) def PROT_EXEC: nat = $ 4 $;
 theorem PROT_T_lem (h: $ a < 8 $): $ a e. Prot $ = '(mpbir elBits2 @ mpbir (lteq2 d2pow3) h);
 pub theorem PROT_READ_T: $ PROT_READ e. Prot $ = '(PROT_T_lem d1lt8);
 pub theorem PROT_WRITE_T: $ PROT_WRITE e. Prot $ = '(PROT_T_lem d2lt8);
@@ -2864,9 +2873,9 @@ theorem elMemoryT: $ m e. Memory /\ x e. u64 -> m @ x e. Xp Prot u8 $ = 'appT;
 @_ def Exception: set = $ upto 2 $;
 pub theorem finiteException: $ finite Exception $ = 'finns;
 --| Represents the 'syscall' function
-@_ def exSysCall: nat = $ 0 $;
+@(add-eval) def exSysCall: nat = $ 0 $;
 --| General protection fault, issued on invalid read/write
-@_ def exGPF: nat = $ 1 $;
+@(add-eval) def exGPF: nat = $ 1 $;
 pub theorem exSysCallT: $ exSysCall e. Exception $ = '(mpbir elupto d0lt2);
 pub theorem exGPF_T: $ exGPF e. Exception $ = '(mpbir elupto d1lt2);
 
@@ -4234,8 +4243,8 @@ $ writeCfg ks k2 ks2 <->
   ks e. KernelState /\ k2 e. Config /\ ksMapping ks e. PageMapping (getMemory k2) /\
   ks2 = setCfg ks k2 $ = 'writeMapping_val;
 
-@_ def stdin: nat = $ 0 $;
-@_ def stdout: nat = $ 1 $;
+@(add-eval) def stdin: nat = $ 0 $;
+@(add-eval) def stdout: nat = $ 1 $;
 
 @_ def isIOError (n: nat): wff = $ n e. u64 /\ bitsNeg 64 (2 ^ 12) < n $;
 pub theorem isIOErrorT (n: nat): $ isIOError n -> n e. u64 $ = 'anl;
@@ -4250,12 +4259,12 @@ pub theorem readCStrT (k a s: nat):
   $ readCStr k a s -> k e. Config /\ a e. u64 /\ s e. List u8 $ =
 (named '(eex @ imp @ syl5 readMemT @ bi2d @ aneq2d toCStrT));
 
-@_ def O_RDONLY: nat = $ 0 $;
-@_ def O_WRONLY: nat = $ 1 $;
-@_ def O_CREAT: nat = $ shl 1 6 $;
-@_ def O_TRUNC: nat = $ shl 1 9 $;
+@(add-eval) def O_RDONLY: nat = $ 0 $;
+@(add-eval) def O_WRONLY: nat = $ 1 $;
+@(add-eval) def O_CREAT: nat = $ shl 1 6 $;
+@(add-eval) def O_TRUNC: nat = $ shl 1 9 $;
 
-@_ def sys_open: nat = $ 2 $;
+@(add-eval) def sys_open: nat = $ 2 $;
 @_ def execOpen (k ret .filename .flags: nat): wff =
 $ k e. Config /\ readReg k RAX = sys_open /\
   E. filename E. flags (
@@ -4278,7 +4287,7 @@ pub theorem readFromFD_T (fd l l1 l2: nat):
   (mpbird (eleq1d @ anwr anrl) @ sylibr appendT anl)
   (mpbird (eleq1d @ anrr) anlr));
 
-@_ def sys_read: nat = $ 0 $;
+@(add-eval) def sys_read: nat = $ 0 $;
 @_ def execRead (l k l2 k2 ret .fd .buf .count .l1: nat): wff =
 $ l e. List u8 /\ readReg k RAX = sys_read /\
   E. fd E. buf E. count (readReg k RDI = fd /\
@@ -4326,7 +4335,7 @@ pub theorem writeToFD_T (fd l l1 l2: nat):
   $ writeToFD fd l l1 l2 -> l e. List u8 /\ l1 e. List u8 /\ l2 e. List u8 $ =
 '(anim2a @ syl5ibrcom eleq1 @ sylan ifT (bi2i appendT) anl);
 
-@_ def sys_write: nat = $ 1 $;
+@(add-eval) def sys_write: nat = $ 1 $;
 @_ def execWrite (l k l2 ret .fd .buf .count .l1: nat): wff =
 $ l e. List u8 /\ readReg k RAX = sys_write /\
   E. fd E. buf E. count (
@@ -4348,7 +4357,7 @@ pub theorem execWriteT (l k l2 ret: nat):
       sylan readRegT (anwl h) @ a1i RDX_T)));
 
 @_ def Stat: set = $ Array u8 (8 * 10) $;
-@_ def sys_fstat: nat = $ 5 $;
+@(add-eval) def sys_fstat: nat = $ 5 $;
 @_ def execFStat (k k2 ret .fd .stat .stat2: nat): wff =
 $ readReg k RAX = sys_fstat /\ E. fd E. stat E. stat2 (
     fd = readReg k RDI /\ fd e. u32 /\
@@ -4450,9 +4459,9 @@ pub theorem mapMemT (prot k km a l k2 km2: nat):
     sylan mapMemoryT (iand (iand an5l _) anllr) anlr)
   '(sylibr (elxabe ,eqtac) @ iand (anrd h) @ sylib ,pm an3lr));
 
-@_ def sys_mmap: nat = $ 9 $;
-@_ def MAP_PRIVATE: nat = $ 2 $;
-@_ def MAP_ANONYMOUS: nat = $ 32 $;
+@(add-eval) def sys_mmap: nat = $ 9 $;
+@(add-eval) def MAP_PRIVATE: nat = $ 2 $;
+@(add-eval) def MAP_ANONYMOUS: nat = $ 32 $;
 @_ def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
 $ k e. Config /\ m e. PageMapping (getMemory k) /\
   readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
@@ -4791,11 +4800,11 @@ theorem appendArrayi (h1: $ a e. Array A m $) (h2: $ b e. Array A n $):
 theorem ELF_MAGIC_T: $ ELF_MAGIC e. Array u8 4 $ =
 (iterate 4 (fn (x) '(elArraySi c2nT ,x)) 'elArray0);
 
-@_ def ELF_CLASS_64: nat = $ 2 $;
+@(add-eval) def ELF_CLASS_64: nat = $ 2 $;
 theorem ELF_CLASS_64_T: $ ELF_CLASS_64 e. u8 $ = 'd2elu8;
-@_ def ELF_DATA_2LSB: nat = $ 1 $;
+@(add-eval) def ELF_DATA_2LSB: nat = $ 1 $;
 theorem ELF_DATA_2LSB_T: $ ELF_DATA_2LSB e. u8 $ = 'd1elu8;
-@_ def ELF_VERSION: nat = $ 1 $;
+@(add-eval) def ELF_VERSION: nat = $ 1 $;
 theorem ELF_VERSION_T: $ ELF_VERSION e. u8 $ = 'd1elu8;
 @_ def ELF_IDENT: nat =
 $ ELF_MAGIC ++ ELF_CLASS_64 : ELF_DATA_2LSB : ELF_VERSION : repeat 0 9 $;
@@ -4809,9 +4818,9 @@ pub theorem ELF_IDENT_T: $ ELF_IDENT e. Array u8 16 $ =
 @_ def EM_X86_64: nat = $ u16Bytes (ch x3 xe) $;
 @_ def E_VERSION: nat = $ u32Bytes 1 $;
 @_ def E_FLAGS: nat = $ u32Bytes 0 $;
-@_ def EH_SIZE: nat = $ 64 $;
-@_ def PH_SIZE: nat = $ ch x3 x8 $;
-@_ def SH_SIZE: nat = $ 64 $;
+@(add-eval) def EH_SIZE: nat = $ 64 $;
+@(add-eval) def PH_SIZE: nat = $ ch x3 x8 $;
+@(add-eval) def SH_SIZE: nat = $ 64 $;
 --| This checks the ELF header assuming x86 architecture.
 @_ def elfHeader (l entry phoff shoff phnum shnum .shstrndx: nat): wff =
 $ entry e. u64 /\ phoff e. u64 /\ shoff e. u64 /\
@@ -4841,7 +4850,7 @@ pub theorem elfHeaderT (l entry phoff shoff phnum shnum: nat):
 $ consBit (PROT_EXEC C_ prot) (
     consBit (PROT_WRITE C_ prot) (nat (PROT_READ C_ prot))) $;
 
-@_ def PT_LOAD: nat = $ 1 $;
+@(add-eval) def PT_LOAD: nat = $ 1 $;
 @_ def pHeader (l type prot off vaddr filesz memsz .i: nat): wff =
 $ type e. u32 /\ prot e. Prot /\ off e. u64 /\ vaddr e. u64 /\
   filesz e. u64 /\ memsz e. u64 /\ filesz <= memsz /\
