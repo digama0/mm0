@@ -1,7 +1,9 @@
 import "peano_hex.mm1";
 
+@(add-eval @ fn (b n) (def a {(eval n) shl 1}) @ if (eval b) {a + 1} a)
 @_ def consBit (b: wff) (n: nat): nat = $ if b (b1 n) (b0 n) $;
 
+@(add-eval @ fn (n i) {{{(eval n) shr (eval i)} band 1} = 1})
 @_ def bit (n i: nat): nat = $ nat (i e. n) $;
 pub theorem bitT (n i: nat): $ bool (bit n i) $ = 'boolnat;
 
@@ -37,6 +39,7 @@ do {
       @ fn () (f n i)))
 };
 
+@(add-eval @ fn (a b) {(eval a) band (eval b)})
 @_ abstract def bitAnd (a b: nat): nat = $ lower (a i^i b) $;
 pub theorem bitAndEq (a b: nat): $ bitAnd a b == a i^i b $ =
 '(eqscom @ mpbi eqlower @ infin1 finns);
@@ -71,6 +74,7 @@ theorem bitAndb11: $ bitAnd (b1 a) (b1 b) = b1 (bitAnd a b) $ =
 (named '(axext @ ax_gen @ bitr elbitAnd @ bitr4 (aneq1i elb1) @
   bitr elb1 @ bitr (oreq2i elbitAnd) @ bitr4 ordi @ aneq2i elb1));
 
+@(add-eval @ fn (a b) {(eval a) bor (eval b)})
 @_ abstract def bitOr (a b: nat): nat = $ lower (a u. b) $;
 pub theorem bitOrEq (a b: nat): $ bitOr a b == a u. b $ =
 '(eqscom @ mpbi eqlower @ unfin finns finns);
@@ -136,6 +140,7 @@ theorem bitOr_eq_add2: $ bitAnd a b = 0 -> bitOr a b = a + b $ =
 theorem bitOr_eq_add: $ a i^i b == 0 -> bitOr a b = a + b $ =
 '(syl bitOr_eq_add2 @ syl axext @ syl5eqs bitAndEq id);
 
+@(add-eval @ fn (a b) {(eval a) band (bnot (eval b))})
 @_ abstract def bitDif (a b: nat): nat = $ lower (a i^i Compl b) $;
 pub theorem bitDifEq (a b: nat): $ bitDif a b == a i^i Compl b $ =
 '(eqscom @ mpbi eqlower @ infin1 finns);
@@ -170,6 +175,7 @@ theorem bitDif_upto: $ bitDif a (upto n) = shl (shr a n) n $ =
   bitr4 ancomb @ bitr (aneq2a @ syl5bb elshr @ eleq1d npcan) @
   aneq1i @ con2b @ bitr elupto ltnle));
 
+@(add-eval @ fn (a b) {(eval a) bxor (eval b)})
 @_ abstract def bitXor (a b: nat): nat = $ lower {n | ~(n e. a <-> n e. b)} $;
 pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) $ =
 '(bitr (ellower @
@@ -178,9 +184,9 @@ pub theorem bitXor_mem (a b i: nat): $ i e. bitXor a b <-> ~(i e. a <-> i e. b) 
     unfin finns finns) @
   elabe @ noteqd @ bieqd eleq1 eleq1);
 
-@_ def d32: nat = $ 2 ^ 5 $; prefix d32: $32$ prec max;
-@_ def d64: nat = $ 2 ^ 6 $; prefix d64: $64$ prec max;
-@_ def d256: nat = $ 2 ^ 8 $; prefix d256: $256$ prec max;
+@(add-eval 32) @_ def d32: nat = $ 2 ^ 5 $; prefix d32: $32$ prec max;
+@(add-eval 64) @_ def d64: nat = $ 2 ^ 6 $; prefix d64: $64$ prec max;
+@(add-eval 256) @_ def d256: nat = $ 2 ^ 8 $; prefix d256: $256$ prec max;
 
 theorem d2mul16: $ 2 * 16 = 32 $ = '(eqtr2 powS @ muleq2 d2pow4);
 theorem d2mul32: $ 2 * 32 = 64 $ = '(eqcom powS);
@@ -413,6 +419,7 @@ do (def (to-eli n a) @ match a
   [$b1 ,a$ '(,(atom-app 'xelu n 'b1i) ,a ,(to-elBits7 (sucs {{n // 8} - 1}) a))]);
 
 --| Get the lower bits of a number
+@(add-eval @ fn (k n) {(eval n) band {{1 shl (eval k)} - 1}})
 @_ def chop (k n: nat): nat = $ n % 2 ^ k $;
 pub theorem chopT (k n: nat): $ chop k n e. Bits k $ = '(mpbir elupto @ modlt pow2ne0);
 
@@ -497,6 +504,7 @@ theorem zeqm_chopd (h: $ G -> modZ(2 ^ k): b0 a = b $):
   $ G -> modZ(2 ^ k): b0 (chop k a) = b $ =
 '(syl (zeqmtr @ mpbir zeqmeqm eqm_chop) h);
 
+@(add-eval @ fn (k n) {(evalZ n) band {{1 shl (eval k)} - 1}})
 @_ local def chopZ (k n: nat): nat = $ n %Z 2 ^ k $;
 theorem chopZT (k n: nat): $ chopZ k n e. Bits k $ = 'chopT;
 
@@ -521,6 +529,7 @@ theorem xchopshr8: $ shr (a :x b :x c) 8 = a /\ chop 8 (a :x b :x c) = b :x c $ 
 theorem s2nT (s: string): $ s e. List u8 $ =
 '(mpbir elList @ mpbir (alleq1 @ !! eqab2i n elu8) s2nlt);
 
+@(add-eval @ fn (k n) @ match (eval k) [0 #f] [k {{{(eval n) shr {k - 1}} band 1} = 1}])
 @_ def bitsMSB (k n: nat): wff = $ 0 < k /\ k - 1 e. n $;
 
 theorem bitsMSB_b0: $ bitsMSB k n <-> k e. b0 n $ = '(bicom elb0);
@@ -660,6 +669,7 @@ theorem el_bitsUpdate1_ne: $ i != k -> (i e. bitsUpdate k 1 (nat p) n <-> i e. n
 '(sylbi neltlt @ eor el_bitsUpdate_1 @ sylbir (leeq1 add12) @
   exp el_bitsUpdate_3 @ mpbir elBits1 boolnat);
 
+@(add-eval @ fn (n v) @ match (eval k) [0 #f] [k {{{(eval n) shr {k - 1}} band 1} = 1}])
 @_ def bitsNot (k n: nat): nat = $ bitDif (upto k) n $;
 pub theorem bitsNot_mem (k n i: nat): $ i e. bitsNot k n <-> i < k /\ ~i e. n $ =
 '(bitr elbitDif @ aneq1i elupto);
@@ -721,6 +731,7 @@ theorem xbitNot_ch (h0: $ a0 + c0 = xf $) (h1: $ a1 + c1 = xf $):
   $ c2n (ch c1 c0) = bitsNot 8 (n :x a1 :x a0) $ =
 '(eqtr c2nch @ eqtr (xbitNotS h0 @ xbitNot1 h1) @ bitsNoteq1 d4add4);
 
+@(add-eval @ fn (k a b) {{(eval a) + (eval b)} band {{1 shl (eval k)} - 1}})
 @_ def bitsAdd (k a b: nat): nat = $ chop k (a + b) $;
 pub theorem bitsAddT (k a b: nat): $ bitsAdd k a b e. Bits k $ = 'chopT;
 
@@ -737,6 +748,7 @@ theorem zeqm_bitsAddd
   $ G -> modZ(2 ^ k): b0 (bitsAdd k a b) = x +Z y $ =
 '(syl (zeqmtr zeqm_bitsAdd) @ zeqmaddd h1 h2);
 
+@(add-eval @ fn (k n) {(- (eval n)) band {{1 shl (eval k)} - 1}})
 @_ def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
 pub theorem bitsNegT (k n: nat): $ bitsNeg k n e. Bits k $ = 'bitsAddT;
 
@@ -753,6 +765,7 @@ theorem bitsNeg1: $ bitsNeg k 1 = upto k $ =
   zeqmtr zeqm_bitsNeg @ zeqmcom @ mpbi zeqmsub @
   mpbir (zeqmeq2 @ eqtr zsubneg2 @ eqtr zaddb0 @ b0eq uptoadd1) zeqmid0);
 
+@(add-eval @ fn (k a b) {{(eval a) - (eval b)} band {{1 shl (eval k)} - 1}})
 @_ def bitsSub (k a b: nat): nat = $ bitsAdd k a (bitsNeg k b) $;
 pub theorem bitsSubT (k a b: nat): $ bitsSub k a b e. Bits k $ = 'bitsAddT;
 
@@ -779,6 +792,7 @@ pub theorem bitsSarT (k a b: nat):
   leltaddd (a1i @ mpbi (leeq2 mul11) (lemul1a natle1)) @
   sylib elBits2 @ syl shrT @ mpbird (elneq2d @ Bitseqd @ anwr npcan) anl);
 
+@(add-eval @ fn (a b) {{(eval a) + (eval b)} band {{1 shl 64} - 1}})
 @_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
 pub theorem add64T (a b: nat): $ a +_64 b e. u64 $ = 'bitsAddT;
 
@@ -786,6 +800,7 @@ theorem add64_eqid: $ a + b e. u64 -> a +_64 b = a + b $ = 'bitsAdd_eqid;
 theorem add64S_eqid: $ suc a e. u64 -> a +_64 1 = suc a $ =
 '(sylbir (eleq1 add12) @ syl6eq add12 add64_eqid);
 
+@(add-eval @ fn (a b) {{(eval a) - (eval b)} band {{1 shl 64} - 1}})
 @_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
 pub theorem sub64T (a b: nat): $ a -_64 b e. u64 $ = 'bitsSubT;
 

@@ -351,6 +351,21 @@ do {
       (apply add-eqd-thm s args)
       (apply add-eq-thm s args)
       (apply add-eqN-thms s args)])
+
+  (def eval-map (atom-map!
+    '[im ,(fn (a b) {(not (eval a)) or (eval b)})]
+    '[not ,(fn (a) (not (eval a)))]))
+  (def (eval e) @ match e @ ((? atom? t) . es)
+    (apply
+      (lookup eval-map t @ fn () @ error
+        @ string-append "unknown function encountered during evaluation: " (->string t))
+      es))
+
+  --| This is used as an annotation.
+  --| `@(add-eval f) def foo ..` will add `f` as an evaluator for `foo`,
+  --| which is used by the `eval` function (which can evaluate many
+  --| closed terms of sort `nat` or `wff` to values).
+  (def ((add-eval f) a) (insert! eval-map a (if (fn? f) f (fn () f))))
 };
 
 -- configuration
@@ -415,6 +430,7 @@ theorem mti (h1: $ ~b $) (h2: $ a -> c -> b $): $ a -> ~c $ = '(mtd (a1i h1) h2)
 theorem mt2d (h1: $ a -> c $) (h2: $ a -> b -> ~c $): $ a -> ~b $ = '(sylc con2 h2 h1);
 
 --| Conjunction: `a` and `b` are both true.
+@(add-eval @ fn (a b) {(eval a) and (eval b)})
 def an (a b: wff): wff = $ ~(a -> ~b) $;
 infixl an: $/\$ prec 34;
 
@@ -478,6 +494,7 @@ theorem mtand (h1: $ a -> ~b $) (h2: $ a /\ c -> b $): $ a -> ~c $ = '(mtd h1 (e
 theorem mtani (h1: $ ~b $) (h2: $ a /\ c -> b $): $ a -> ~c $ = '(mtand (a1i h1) h2);
 
 --| If and only if: `a` implies `b`, and `b` implies `a`.
+@(add-eval @ fn (a b) {(eval a) == (eval b)})
 def iff (a b: wff): wff = $ (a -> b) /\ (b -> a) $;
 infixl iff: $<->$ prec 20;
 
@@ -640,6 +657,7 @@ theorem expd (h: $ a -> b /\ c -> d $): $ a -> b -> c -> d $ = '(sylib impexp h)
 theorem com12b: $ (a -> b -> c) <-> (b -> a -> c) $ = '(ibii (com23 id) (com23 id));
 
 --| Disjunction: either `a` is true or `b` is true.
+@(add-eval @ fn (a b) {(eval a) or (eval b)})
 @_ def or (a b: wff): wff = $ ~a -> b $;
 infixl or: $\/$ prec 30;
 
@@ -699,6 +717,7 @@ theorem emr: $ ~p \/ p $ = '(orcom em);
 
 --| Selection: `ifp p a b` is equivalent to `a` if `p` is true,
 --| and equivalent to `b` if `p` is false.
+@(add-eval @ fn (a b c) (if (eval a) (eval b) (eval c)))
 @_ abstract def ifp (p a b: wff): wff = $ p /\ a \/ ~p /\ b $;
 
 pub theorem ifppos (p a b: wff): $ p -> (ifp p a b <-> a) $ =
@@ -731,10 +750,12 @@ theorem ifpneg3: $ ~c -> (ifp a b c <-> a /\ b) $ = '(syl bior2 @ con3 anr);
 theorem ifpneg2: $ ~b -> (ifp a b c <-> ~a /\ c) $ = '(syl5bbr ifpnot ifpneg3);
 
 --| The constant `true`.
+@(add-eval #t)
 term tru: wff; prefix tru: $T.$ prec max;
 --| `true` is true.
 axiom itru: $ T. $;
 --| The constant `false`.
+@(add-eval #f)
 def fal: wff = $ ~T. $; prefix fal: $F.$ prec max;
 
 theorem trud (h: $ T. -> a $): $ a $ = '(h itru);
@@ -766,6 +787,7 @@ prefix ex: $E.$ prec 41;
 
 --| Equality of natural numbers: `a = b`
 --| means that `a` and `b` have the same value.
+@(add-eval @ fn (a b) {(eval a) = (eval b)})
 term eq (a b: nat): wff; infixl eq: $=$ prec 50;
 
 --| The axiom of generalization. If `|- p` is derivable
@@ -1129,6 +1151,7 @@ theorem pimtr (p: wff x) (q a: wff x y) (b: wff y):
     imp @ al2imi @ com12 imim2));
 
 --| Not equal: `a != b` means `a` and `b` are distinct natural numbers.
+@(add-eval @ fn (a b) (not {(eval a) = (eval b)}))
 @_ def ne (a b: nat): wff = $ ~ a = b $; infixl ne: $!=$ prec 50;
 
 theorem necom: $ a != b -> b != a $ = '(con3 eqcom);
@@ -1710,6 +1733,8 @@ def d8:  nat = $suc 7$; prefix d8:  $8$  prec max;
 def d9:  nat = $suc 8$; prefix d9:  $9$  prec max;
 def d10: nat = $suc 9$; prefix d10: $10$ prec max;
 
+do (for 0 10 @ fn (n) @ (add-eval n) (atom-app 'd n));
+
 --| Zero is not a successor. Axiom 1 of Peano Arithmetic.
 axiom peano1 (a: nat): $ suc a != 0 $;
 --| The successor function is injective. Axiom 2 of Peano Arithmetic.
@@ -1918,8 +1943,10 @@ theorem nfnlem2 {y z} (c: nat y z) (a b d: nat x) (e: $ y = a /\ z = b -> c = d 
 theorem nfsuc (a: nat x) (h: $ FN/ x a $): $ FN/ x suc a $ = '(!! nfnlem _ y suceq h);
 
 --| Addition of natural numbers, a primitive term constructor in PA.
+@(add-eval @ fn (a b) {(eval a) + (eval b)})
 term add (a b: nat): nat; infixl add: $+$ prec 64;
 --| Multiplication of natural numbers, a primitive term constructor in PA.
+@(add-eval @ fn (a b) {(eval a) * (eval b)})
 term mul (a b: nat): nat; infixl mul: $*$ prec 70;
 
 --| Addition respects equalty.
@@ -2045,6 +2072,7 @@ theorem mulrass: $ (a * b) * c = (a * c) * b $ =
 
 --| (Truncated) subtraction of natural numbers.
 --| Note that `a - b = 0` when `a < b`.
+@(add-eval @ fn (a b) {{(eval a) - (eval b)} max 0})
 @_ def sub (a b: nat): nat = $ the {x | b + x = a} $;
 infixl sub: $-$ prec 64;
 
@@ -2058,6 +2086,7 @@ theorem subid: $ a - a = 0 $ = '(eqsub1 add01);
 theorem sucsub1: $ suc a - 1 = a $ = '(eqtr3 (subeq1 add12) pncan);
 
 --| `a <= b` means `a` is less than or equal to `b`.
+@(add-eval @ fn (a b) {(eval a) <= (eval b)})
 @_ def le (a b .x: nat): wff = $ E. x a + x = b $;
 infixl le: $<=$ prec 50;
 
@@ -2132,6 +2161,7 @@ theorem lemuld (h1: $ G -> a <= b $) (h2: $ G -> c <= d $): $ G -> a * c <= b * 
 '(letrd (syl lemul1a h1) (syl lemul2a h2));
 
 --| `a < b` means `a` is strictly less than `b`.
+@(add-eval @ fn (a b) {(eval a) < (eval b)})
 @_ def lt (a b: nat): wff = $ suc a <= b $;
 infixl lt: $<$ prec 50;
 
@@ -2361,6 +2391,7 @@ theorem infin2: $ finite B -> finite (A i^i B) $ = '(finss inss2);
 
 --| `if p a b` is the if-then-else construct:
 --| if `p` is true then `a`, else `b`.
+@(add-eval @ fn (a b c) (if (eval a) (eval b) (eval c)))
 @_ abstract def if (p: wff) (a b: nat): nat = $ the {n | ifp p (n = a) (n = b)} $;
 
 pub theorem ifpos (p: wff) (a b: nat): $ p -> if p a b = a $ = '(!! eqtheabd n ifppos);
@@ -2381,10 +2412,13 @@ theorem ifbothd
 theorem ifT: $ a e. A /\ b e. A -> if p a b e. A $ = '(ifbothd eleq1 eleq1 anll anlr);
 
 --| `true n` means `n` is "truthy", that is, nonzero.
+@(add-eval @ fn (a) {(eval a) != 0})
 @_ def true (n: nat): wff = $ n != 0 $;
 --| `bool n` means `n` is "boolean", that is, 0 or 1.
+@(add-eval @ fn (a) {(eval a) < 2})
 @_ def bool (n: nat): wff = $ n < 2 $;
 --| `nat p` turns wff `p` into a natural number: if `p` is true then `1`, else `0`.
+@(add-eval @ fn (a) (if (eval a) 1 0))
 @_ def nat (p: wff): nat = $ if p 1 0 $;
 
 theorem true1: $ true 1 $ = 'd1ne0;
@@ -2441,8 +2475,10 @@ theorem boolext: $ bool a -> bool b -> ((true a <-> true b) <-> a = b) $ =
   (a1i trueeq));
 
 --| `min a b` is the smaller of `a` and `b`.
+@(add-eval @ fn (a b) {(eval a) min (eval b)})
 @_ def min (a b: nat): nat = $ if (a < b) a b $;
 --| `max a b` is the larger of `a` and `b`.
+@(add-eval @ fn (a b) {(eval a) max (eval b)})
 @_ def max (a b: nat): nat = $ if (a < b) b a $;
 
 theorem nfmax {x} (a b: nat x)
@@ -2518,11 +2554,13 @@ theorem unfin: $ finite A -> finite B -> finite (A u. B) $ =
 --| (The double slash is used as in python to remind the reader that
 --| this is a rounding-down division, not exact division.)
 --| Division by 0 is defined and equal to 0.
+@(add-eval @ fn (a b) {(eval a) // (eval b)})
 @_ abstract def div (a b: nat): nat = $ the {q | E. r (r < b /\ b * q + r = a)} $;
 infixl div: $//$ prec 70;
 
 --| `a % b` is the remainder on dividing `a` by `b`.
 --| Modulus by 0 is defined and `a % 0 = a`.
+@(add-eval @ fn (a b) {(eval a) % (eval b)})
 @_ abstract def mod (a b: nat): nat = $ a - b * (a // b) $;
 infixl mod: $%$ prec 70;
 
@@ -2708,6 +2746,7 @@ theorem mulmoddir: $ (a % b) * c = (a * c) % (b * c) $ =
 
 --| `a || b` means that `a` divides `b`, or equivalently,
 --| `b` is a multiple of `a`.
+@(add-eval @ fn (a b) {{(eval b) % (eval a)} = 0})
 @_ def dvd (a b: nat): wff = $ E. c c * a = b $;
 infixl dvd: $||$ prec 50;
 
@@ -2794,6 +2833,7 @@ theorem div2lt: $ 0 < n -> n // 2 < n $ =
 
 theorem boolmod2: $ bool (n % 2) $ = '(modlt d2ne0);
 
+@(add-eval @ fn (n a b) (def e (eval n)) {{(eval a) % e} = {(eval b) % e}})
 @_ local def eqm (n a b) = $ a % n = b % n $;
 notation eqm (n a b) = ($mod($:50) n ($):$:50) a ($=$:50) b;
 
@@ -2878,15 +2918,18 @@ theorem eqm01: $ mod(0): a = b <-> a = b $ = '(eqeq mod0 mod0);
 --| It is named for "bit 0" as in binary representation of numbers.
 --|
 --| `b0` is also used as left injection when creating disjoint unions.
+@(add-eval @ fn (a) {(eval a) shl 1})
 @_ def b0 (n: nat): nat = $ n + n $;
 
 --| `b1 n` is `n * 2 + 1`.
 --| It is named for "bit 1" as in binary representation of numbers.
 --|
 --| `b1` is also used as right injection when creating disjoint unions.
+@(add-eval @ fn (a) {{(eval a) shl 1} + 1})
 @_ def b1 (n: nat): nat = $ suc (b0 n) $;
 
 --| `odd n` means `n` is odd, not divisible by 2.
+@(add-eval @ fn (a) {{(eval a) band 1} = 1})
 @_ def odd (n: nat): wff = $ n % 2 = 1 $;
 
 theorem b00: $ b0 0 = 0 $ = 'add0;
@@ -2984,6 +3027,7 @@ theorem odd1: $ odd 1 $ = '(mpbir oddS odd0);
 --| `a <> b` is the pairing operator `(a, b)`.
 --| It is defined using the Cantor pairing function.
 --| It is right associative, i.e. `a <> b <> c` means `(a, (b, c))`.
+@(add-eval @ fn (a b) (cons (eval a) (eval b)))
 @_ def pr (a b: nat): nat = $ (a + b) * suc (a + b) // 2 + b $;
 infixr pr: $<>$ prec 55;
 
@@ -3048,9 +3092,17 @@ theorem ltpr1: $ a < b <-> a <> c < b <> c $ =
 theorem ltpr2: $ b < c <-> a <> b < a <> c $ =
 '(bitr4gi ltnle ltnle @ noteq lepr2);
 
+do {
+  (def (eval-fst a) @ match a [(x . _) x] [0 0])
+  (def (eval-snd a) @ match a [(_ . x) x] [0 0])
+  (def (eval-pr a) @ match a [(and x (_ . _)) x] [0 (cons 0 0)])
+};
+
 --| The first component of a pair.
+@(add-eval @ fn (a) (eval-fst (eval a)))
 @_ abstract def fst (a: nat): nat = $ the {x | E. y a = x <> y} $;
 --| The second component of a pair.
+@(add-eval @ fn (a) (eval-snd (eval a)))
 @_ abstract def snd (a: nat): nat = $ the {y | E. x a = x <> y} $;
 
 pub theorem pr0: $ 0 <> 0 = 0 $ =
@@ -3174,16 +3226,22 @@ theorem fst0: $ fst 0 = 0 $ = '(eqtr3 (fsteq pr0) fstpr);
 theorem snd0: $ snd 0 = 0 $ = '(eqtr3 (sndeq pr0) sndpr);
 
 --| `pi11 ((a, b), c) = a`
+@(add-eval @ fn (a) (eval-fst @ eval-fst @ eval a))
 @_ def pi11 (n: nat): nat = $ fst (fst n) $;
 --| `pi12 ((a, b), c) = b`
+@(add-eval @ fn (a) (eval-snd @ eval-fst @ eval a))
 @_ def pi12 (n: nat): nat = $ snd (fst n) $;
 --| `pi21 (a, (b, c)) = b`
+@(add-eval @ fn (a) (eval-fst @ eval-snd @ eval a))
 @_ def pi21 (n: nat): nat = $ fst (snd n) $;
 --| `pi22 (a, (b, c)) = c`
+@(add-eval @ fn (a) (eval-snd @ eval-snd @ eval a))
 @_ def pi22 (n: nat): nat = $ snd (snd n) $;
 --| `pi221 (a, (b, (c, d))) = c`
+@(add-eval @ fn (a) (eval-fst @ eval-snd @ eval-snd @ eval a))
 @_ def pi221 (n: nat): nat = $ fst (pi22 n) $;
 --| `pi222 (a, (b, (c, d))) = d`
+@(add-eval @ fn (a) (eval-snd @ eval-snd @ eval-snd @ eval a))
 @_ def pi222 (n: nat): nat = $ snd (pi22 n) $;
 
 theorem pi11pr: $ pi11 ((a <> b) <> c) = a $ = '(eqtr (fsteq fstpr) fstpr);
@@ -3815,6 +3873,26 @@ theorem sappslamed (A: set x) (h: $ G /\ x = a -> A == B $):
 theorem sappslame (A: set x) (h: $ x = a -> A == B $):
   $ (\\ x, A) @@ a == B $ = '(trud @ sappslamed @ anwr h);
 
+do {
+  (def evalZ-map (atom-map!
+    '[d0 ,(fn () 0)]
+    '[b0 ,(fn (n) (eval n))]
+    '[b1 ,(fn (n) (- {(eval n) + 1}))]))
+  (def (evalZ e) @ match e @ ((? atom? t) . es)
+    (apply
+      (lookup evalZ-map t @ fn () @ error
+        @ string-append "unknown function encountered during evaluation: " (->string t))
+      es))
+
+  --| This is used as an annotation.
+  --| `@(add-evalZ f) def foo ..` will add `f` as an evaluator for `foo`
+  --| in the integer domain,
+  --| which is used by the `evalZ` function (which can evaluate many
+  --| closed terms of sort `nat`, interpreted as signed integers).
+  (def ((add-evalZ f) a) (insert! evalZ-map a f))
+};
+
+@(add-evalZ @ fn (m n) {(eval m) - (eval n)})
 @_ local def znsub (m n) = $ if (m < n) (b1 (n - suc m)) (b0 (m - n)) $;
 infixl znsub: $-ZN$ prec 64;
 
@@ -3825,7 +3903,9 @@ theorem znsub02: $ a -ZN 0 = b0 a $ = '(eqtr (znsubpos le01) @ b0eq sub02);
 theorem znsubodd: $ odd (a -ZN b) <-> a < b $ =
 '(ibii (ax_3 @ mpbiri b0odd @ noteqd @ oddeqd ifneg) (mpbiri b1odd @ oddeqd ifpos));
 
+@(add-eval @ fn (n) {(evalZ n) max 0})
 @_ local def zfst (n) = $ case (\ mpos, mpos) (\ mneg, 0) @ n $;
+@(add-eval @ fn (n) {(- (evalZ n)) max 0})
 @_ local def zsnd (n) = $ case (\ mpos, 0) (\ mneg, suc mneg) @ n $;
 
 theorem zfstb0: $ zfst (b0 n) = n $ = (named '(eqtr casel @ applame id));
@@ -3884,6 +3964,7 @@ theorem zneqb (a b c d): $ a -ZN c = b -ZN d <-> a + d = b + c $ =
 theorem znpnpcan1: $ (a + c) -ZN (b + c) = a -ZN b $ = '(mpbir zneqb @ eqtr addrass addass);
 theorem znpnpcan2: $ (a + b) -ZN (a + c) = b -ZN c $ = '(mpbir zneqb @ eqtr addass addlass);
 
+@(add-evalZ @ fn (n) (- (evalZ n)))
 @_ local def zneg (n) = $ zsnd n -ZN zfst n $;
 prefix zneg: $-uZ$ prec 100;
 
@@ -3908,6 +3989,7 @@ theorem zsndznsub: $ zsnd (m -ZN n) = n - m $ =
 theorem znegb1: $ -uZ b1 n = b0 (suc n) $ =
 '(eqtr (znsubpos @ mpbir (leeq1 zfstb1) le01) @ b0eq @ eqtr (subeq zsndb1 zfstb1) sub02);
 
+@(add-evalZ @ fn (m n) {(evalZ m) + (evalZ n)})
 @_ local def zadd (m n) = $ (zfst m + zfst n) -ZN (zsnd m + zsnd n) $;
 infixl zadd: $+Z$ prec 64;
 
@@ -3935,6 +4017,7 @@ theorem znegid: $ a +Z -uZ a = 0 $ =
 '(eqtr3 (zaddeq1 zfstsnd) @ eqtr zaddzn @ eqtr (znsubeq1 addcom) znsubid);
 theorem znegid1: $ -uZ a +Z a = 0 $ = '(eqtr zaddcom znegid);
 
+@(add-evalZ @ fn (m n) {(evalZ m) - (evalZ n)})
 @_ local def zsub (m n) = $ m +Z -uZ n $;
 infixl zsub: $-Z$ prec 64;
 
@@ -3978,8 +4061,10 @@ theorem zsubneg2: $ a -Z -uZ b = a +Z b $ = '(zaddeq2 znegneg);
 theorem znegsub2: $ -uZ a -Z -uZ b = b -Z a $ = '(eqtr zsubneg2 zaddcom);
 theorem znegb0S: $ -uZ b0 (suc n) = b1 n $ = '(mpbi znegeqcom znegb1);
 
+@(add-evalZ @ fn (m n) {(evalZ m) < (evalZ n)})
 @_ local def zlt (m n) = $ odd (m -Z n) $;
 infixr zlt: $<Z$ prec 50;
+@(add-evalZ @ fn (m n) {(evalZ m) <= (evalZ n)})
 @_ local def zle (m n) = $ ~n <Z m $;
 infixr zle: $<=Z$ prec 50;
 
@@ -4035,6 +4120,7 @@ theorem zlttr: $ a <Z b -> b <Z c -> a <Z c $ = '(syl zlelttr zltle);
 theorem zb0orb0div: $ a = b0 (a // 2) \/ a = -uZ (b0 (-uZ a // 2)) $ =
 '(mpbi (oreq zle02eq @ bitr3 zle0neg @ bitr zle02eq @ bitr znegeqcom eqcomb) zleorle);
 
+@(add-evalZ @ fn (m n) {(evalZ m) * (evalZ n)})
 @_ local def zmul (m n) =
 $ (zfst m * zfst n + zsnd m * zsnd n) -ZN
   (zfst m * zsnd n + zsnd m * zfst n) $;
@@ -4111,6 +4197,7 @@ theorem zmulb0: $ b0 a *Z b0 b = b0 (a * b) $ =
 '(eqtr3 (zmuleq znsub02 znsub02) @ eqtr4 zmulzn @ eqtr3 znsub02 @
   znsubeq (eqtr2 (addeq2 mul0) add0) (eqtr2 (addeq mul0 mul0) add0));
 
+@(add-eval @ fn (n) (def x (evalZ n)) (if {x >= 0} x (- x)))
 @_ local def zabs (n) = $ zfst n + zsnd n $;
 
 theorem zabsb0: $ zabs (b0 n) = n $ = '(eqtr (addeq zfstb0 zsndb0) add0);
@@ -4147,6 +4234,7 @@ theorem eqmdvdsub2: $ mod(n): a = b <-> n || zabs (b -ZN a) $ =
 theorem eqmdvdsub3: $ mod(n): zfst a = zsnd a <-> n || zabs a $ =
 '(bitr eqmcomb @ bitr eqmdvdsub2 @ dvdeq2 @ zabseq zfstsnd);
 
+@(add-eval @ fn (m n) {{(evalZ n) % (evalZ m)} = 0})
 @_ local def zdvd (m n) = $ zabs m || zabs n $;
 infixl zdvd: $|Z$ prec 50;
 
@@ -4199,6 +4287,8 @@ theorem zdvdadd2: $ n |Z a -> (n |Z b <-> n |Z b +Z a) $ =
 theorem zdvdmul12: $ a |Z b -> a |Z c *Z b $ = '(mpi zdvdmul1 zdvdtr);
 theorem zdvdmul11: $ a |Z b -> a |Z b *Z c $ = '(mpi zdvdmul2 zdvdtr);
 
+@(add-eval @ fn (a n) @ let ([a (evalZ a)] [n (eval n)])
+  @ if {a >= 0} {a % n} {{{a + 1} % n} + {n - 1}})
 @_ local def zmod (a n: nat): nat = $ zabs (zfst a + n -ZN zsnd a % n) % n $;
 infixl zmod: $%Z$ prec 70;
 
@@ -4233,6 +4323,7 @@ theorem zmodeq0: $ a %Z n = 0 <-> b0 n |Z a $ =
 '(bitr4 modeq0 @ bitr4 zdvdb01 @ trud @ syl6bb eqmdvdsub3 @
   syl5bbr eqmdvdsub2 @ syl6bb eqmcomb @ eqmeqm23d (a1i eqmmod) (a1i eqmaddn));
 
+@(add-eval @ fn (n a b) {{{(evalZ a) - (evalZ b)} % (eval n)} = 0})
 @_ local def zeqm (n a b) = $ b0 n |Z a -Z b $;
 notation zeqm (n a b) = ($modZ($:50) n ($):$:50) a ($=$:50) b;
 
@@ -4308,6 +4399,9 @@ theorem dvdzeqm (h1: $ G -> m || n $)
 
 theorem zeqm11: $ modZ(1): a = b $ = 'zdvd11;
 
+do (def (gcd a b) @ if {a = 0} b (gcd {b % a} a));
+
+@(add-eval @ fn (a b) (gcd (eval a) (eval b)))
 @_ local def gcd (a b: nat): nat = $ the {d | A. x (x || d <-> x || a /\ x || b)} $;
 
 theorem gcdcom: $ gcd a b = gcd b a $ =
@@ -4328,6 +4422,7 @@ theorem eqgcd {x} (h: $ G -> (x || d <-> x || a /\ x || b) $):
 theorem gcd00: $ gcd 0 0 = 0 $ =
 '(trud @ !! eqgcd x @ a1i @ bith dvd02 @ ian dvd02 dvd02);
 
+@(add-eval @ fn (a b) (def a (eval a)) @ if {a = 0} 0 (gcd a (eval b)))
 @_ local def bgcd (a b: nat): nat = $ least {d | 0 < d /\ E. x E. y x * a = y * b + d} $;
 
 theorem dfbgcd: $ bgcd a b = least {d | 0 < d /\ E. x E. y x * a = y * b + d} $ =
@@ -4453,6 +4548,7 @@ theorem gcd02: $ gcd a 0 = a $ = '(eqtr gcdcom gcd01);
 theorem bezout: $ a != 0 -> E. x E. y x * a = y * b + gcd a b $ =
 '(mpbiri bgcdbezout @ exeqd @ exeqd @ eqeq2d @ addeq2d gcdbgcd);
 
+@(add-eval @ fn (a b) {(gcd (eval a) (eval b)) = 1})
 @_ local def coprime (a b: nat): wff = $ gcd a b = 1 $;
 
 theorem copcom: $ coprime a b <-> coprime b a $ = '(eqeq1 gcdcom);
@@ -4746,6 +4842,7 @@ theorem obindeqS: $ obind n F = suc a <-> E. m (n = suc m /\ F @ m = suc a) $ =
 --| The power function on natural numbers.
 --| * `a ^ 0 = 1`
 --| * `a ^ suc b = a * a ^ b`
+@(add-eval @ fn (a b) {(eval a) ^ (eval b)})
 @_ abstract def pow (a b: nat): nat = $ rec 1 (\ n, a * n) b $;
 infixr pow: $^$ prec 81;
 
@@ -4798,8 +4895,10 @@ theorem lepow2: $ 1 < a -> (b <= c <-> a ^ b <= a ^ c) $ =
 '(syl5bb lenlt @ syl6bbr lenlt @ noteqd ltpow2);
 
 --| Left shift for natural numbers: `shl a n = a * 2 ^ n`.
+@(add-eval @ fn (a b) {(eval a) shl (eval b)})
 @_ def shl (a n: nat): nat = $ a * 2 ^ n $;
 --| Right shift for natural numbers: `shr a n = a // 2 ^ n`.
+@(add-eval @ fn (a b) {(eval a) shr (eval b)})
 @_ def shr (a n: nat): nat = $ a // 2 ^ n $;
 
 theorem shl01: $ shl 0 b = 0 $ = 'mul01;
@@ -5129,6 +5228,7 @@ theorem ssins: $ A C_ a ; b -> a e. A \/ A C_ b $ =
   syl bior1 @ impcom @ con3d @ com12 @ bi1d eleq1);
 
 --| `upto n = {x | x < n}` is the set of numbers less than `n`.
+@(add-eval @ fn (n) {{1 shl (eval n)} - 1})
 @_ def upto (n: nat): nat = $ 2 ^ n - 1 $;
 
 theorem upto0: $ upto 0 = 0 $ = '(eqtr (subeq1 pow0) subid);

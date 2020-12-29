@@ -10,7 +10,7 @@ use std::time::{Instant, Duration};
 use std::sync::atomic::Ordering;
 use std::collections::HashMap;
 use std::convert::TryInto;
-use num::{BigInt, ToPrimitive};
+use num::{BigInt, ToPrimitive, Zero};
 use crate::util::{ArcString, FileRef, FileSpan, SliceExt, Span};
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator, LispData,
@@ -861,13 +861,19 @@ make_builtins! { self, sp1, sp2, args,
   Div: AtLeast(1) => {
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
-    for e in it { n /= try1!(self.as_int(&e)) }
+    for e in it {
+      let a = try1!(self.as_int(&e));
+      if a.is_zero() {n.set_zero()} else {n /= a}
+    }
     LispVal::number(n)
   },
   Mod: AtLeast(1) => {
     let mut it = args.into_iter();
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
-    for e in it { n %= try1!(self.as_int(&e)) }
+    for e in it {
+      let a = try1!(self.as_int(&e));
+      if !a.is_zero() {n %= a}
+    }
     LispVal::number(n)
   },
   Lt: AtLeast(1) => LispVal::bool(try1!(self.int_bool_binop(|a, b| a < b, &args))),
