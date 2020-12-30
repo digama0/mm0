@@ -123,7 +123,7 @@ do {
   (def nf-for @ lookup-fn '([wff nf] [nat nfn] [set nfs]))
   (def eqid-for @ lookup-fn '([wff biid] [nat eqid] [set eqsid]))
   (def eqidd-for @ lookup-fn '([wff biidd] [nat eqidd] [set eqsidd]))
-  (def eqd-map (atom-map!))
+  (def eqd-map (atom-map!)) (set-merge-strategy eqd-map merge-map)
   (def (eqd-for . e) (apply lookup eqd-map e))
   (def (register-eqd df) (fn (tgt) (insert! eqd-map df tgt)))
   (def (get-tgt-args args df . s) @ match args
@@ -355,6 +355,7 @@ do {
   (def eval-map (atom-map!
     '[im ,(fn (a b) {(not (eval a)) or (eval b)})]
     '[not ,(fn (a) (not (eval a)))]))
+  (set-merge-strategy eval-map merge-map)
   (def (eval e) @ match e @ ((? atom? t) . es)
     (apply
       (lookup eval-map t @ fn () @ error
@@ -3887,6 +3888,7 @@ do {
     '[d0 ,(fn () 0)]
     '[b0 ,(fn (n) (eval n))]
     '[b1 ,(fn (n) (- {(eval n) + 1}))]))
+  (set-merge-strategy evalZ-map merge-map)
   (def (evalZ e) @ match e @ ((? atom? t) . es)
     (apply
       (lookup evalZ-map t @ fn () @ error

@@ -25,9 +25,9 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use futures::channel::oneshot::Receiver;
-use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, Expr, ExprNode,
-  LispData, NotaInfo, ObjectKind, Proof, ProofNode, Remap, Remapper, Sort, SortID,
-  StmtTrace, Term, TermID, Thm, ThmID};
+use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, EnvMergeIter,
+  Expr, ExprNode, LispData, NotaInfo, ObjectKind, Proof, ProofNode,
+  Remap, Remapper, Sort, SortID, StmtTrace, Term, TermID, Thm, ThmID};
 use environment::Literal as ELiteral;
 use lisp::LispVal;
 use local_context::try_get_span_opt;
@@ -311,7 +311,7 @@ impl Elaborator {
   fn report(&mut self, e: ElabError) {
     if self.reporting.active(e.level) {self.errors.push(e)}
   }
-  fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
+  // fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
 
   fn push_spans(&mut self) {
     self.env.spans.push(mem::take(&mut self.spans));
@@ -718,8 +718,19 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                       }
                     }
                   }
-                  let r = elab.env.merge(&env, *sp, &mut elab.errors);
-                  elab.catch(r);
+                  let mut it = EnvMergeIter::new(&mut elab.env, &env, *sp);
+                  loop {
+                    match it.next(&mut elab.env, &mut elab.errors) {
+                      Err(e) => {elab.report(e); break}
+                      Ok(None) => break,
+                      Ok(Some(mut merge)) => {
+                        merge.val = elab.apply_merge(*sp,
+                            merge.strat.as_deref(), merge.val.clone(), merge.new.val.clone())
+                          .unwrap_or_else(|e| {elab.report(e); merge.new.val.clone()});
+                        it.apply_merge(&mut elab.env, merge);
+                      }
+                    }
+                  }
                 }
                 Ok(ElabResult::Canceled) => {
                   elab.report(ElabError::new_e(*sp, "canceled"));

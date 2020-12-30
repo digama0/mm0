@@ -256,7 +256,7 @@
 			"patterns": [
 				{"include": "#comment"},
 				{
-					"match": "(@)\\s+(if|def|fn|let|letrec|match(-fn\\*?)?|begin|focus)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"match": "(@)\\s+(if|def|fn|let|letrec|match(-fn\\*?)?|begin|focus|set-merge-strategy)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"captures": {
 						"1": {"name": "keyword.operator.mm0.lisp"},
 						"2": {"name": "keyword.other.command.mm0.lisp"}
@@ -277,7 +277,7 @@
 					}
 				},
 				{
-					"begin": "\\(\\s*(if|def|fn|let|letrec|match(-fn\\*?)?|begin|focus)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"begin": "\\(\\s*(if|def|fn|let|letrec|match(-fn\\*?)?|begin|focus|set-merge-strategy)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "keyword.other.command.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]

@@ -308,6 +308,8 @@ Some expressions have special behavior when evaluated; these roughly correspond 
 * The `match-fn` and `match-fn*` keywords are similar to `match`, but define functions instead of matching an input argument immediately. `(match-fn clauses)` is equivalent to `(fn (x) (match x clauses))`, and `(match-fn* clauses)` is equivalent to `(fn x (match x clauses))`.
 * `focus` is a tactic that is a syntax form because it does some preprocessing before evaluating its arguments (which is not something a regular function can do). See [Elaboration](#elaboration) for more details.
 
+* `(set-merge-strategy x f)` is a function that will set the merge strategy of global definition `x` to `f`. This only works after a previous definition `(def x old)`, and means that any subsequent global redefinition `(def x new)` will replace the value of `x` by `(f old new)` instead of `new`. This is mostly relevant for attributes, which often add marked declarations to a global atom map; by setting the `merge-map` merge strategy on this atom map it will correctly accumulate all marked definitions even across multiple files (compared to the default behavior, which would overwrite the list if the `import` graph is nonlinear).
+
 Builtin functions
 ---
 
@@ -434,6 +436,8 @@ At the beginning of execution, the global context contains a number of primitive
 * `(lookup m k)` gets the value stored in the atom map `m` at `k`, or `#undef` if not present. `(lookup m k v)` will return `v` instead if the key is not present, unless `v` is a procedure, in which case it will be called with no arguments on lookup failure.
 * `(insert! m k v)` inserts the value `v` at key `k` in the mutable map `m`, and returns `#undef`. `(insert! m k)` "undefines" the value at key `k` in `m`, that is, it erases whatever is there.
 * `(insert m k v)` returns an immutable map based on the immutable map `m`, with the value `v` inserted at key `k`. `(insert m k)` returns `k` erased from `m`.
+* `(merge-map m1 m2)` will merge map `m2` into `m1`, meaning that all keys in `m2` are inserted into `m1`.
+  * `(merge-map f m1 m2)` will use `f` to resolve conflicts: if `m1` contains `a` and `m2` contains `b` at key `k`, then the resulting map will contain `(f a b)` at key `k`.
 
 * `(copy-span from to)` makes a copy of `to` with its position information copied from `from`. (This can be used for improved error reporting, but otherwise has no effect on program semantics.)
 * `(stack-span n)` gets the span from `n` calls up the stack (where `0` is the currently executing function). Returns `#undef` tagged with the target span, which can then be copied to a term using `(copy-span)`. (Useful for targeted error reporting in scripts.)

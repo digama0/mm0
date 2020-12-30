@@ -8,14 +8,15 @@ use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::time::{Instant, Duration};
 use std::sync::atomic::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::convert::TryInto;
 use num::{BigInt, ToPrimitive, Zero};
 use crate::util::{ArcString, FileRef, FileSpan, SliceExt, Span};
 use crate::parser::ast::SExpr;
-use super::super::{Result, Elaborator, LispData,
+use super::super::{Result, Elaborator, LispData, DocComment,
   AtomID, Environment, AtomData, DeclKey, StmtTrace,
   ElabError, ReportMode, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
+  environment::{MergeStrategy, MergeStrategyInner},
   refine::{RStack, RState, RefineResult}};
 use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
   Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmID, Uncons};
@@ -35,6 +36,7 @@ enum Stack<'a> {
   If(&'a IR, &'a IR),
   NoTailRec,
   Def(Option<&'a DefTarget>),
+  DefMerge((FileSpan, Span), AtomID, Option<DocComment>),
   Eval(&'a IR, std::slice::Iter<'a, IR>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
@@ -42,7 +44,9 @@ enum Stack<'a> {
   Drop(usize),
   Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Rc<Cell<bool>>),
+  SetMergeStrategy(Span, AtomID),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
+  MergeMap(Span, LispVal, MergeStrategy, std::vec::IntoIter<(AtomID, LispVal, LispVal)>, HashMap<AtomID, LispVal>, AtomID),
   AddThmProc(FileSpan, Box<AwaitingProof>),
   Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
   Refine {sp: Span, stack: Vec<RStack>},
@@ -66,6 +70,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::NoTailRec => write!(f, "(no-tail-rec)"),
       &Stack::Def(Some(&Some((_, _, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
       Stack::Def(_) => write!(f, "(def _ _)"),
+      Stack::DefMerge(_, _, _) => write!(f, "(def-merge _ _)"),
       &Stack::Eval(ir, ref es) => write!(f, "(begin\n  _ {} {})", fe.to(ir), fe.to(es.as_slice())),
       Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
       &Stack::TestPattern(_, ref e, ref bs, br, _, _) => write!(f,
@@ -78,8 +83,10 @@ impl<'a> EnvDisplay for Stack<'a> {
       },
       Stack::MatchCont(_, e, bs, _) => write!(f, "(=> match {}\n  {})",
         fe.to(e), fe.to(bs.as_slice())),
+      Stack::SetMergeStrategy(_, a) => write!(f, "(set-merge-strategy {}\n  _)", fe.to(a)),
       Stack::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{} _",
         fe.to(e), fe.to(&**us), fe.to(es)),
+      Stack::MergeMap(_, _, _, _, _, _) => write!(f, "(merge-map)"),
       Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.atom())),
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
@@ -102,6 +109,7 @@ enum State<'a> {
   Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
+  MergeMap(Span, LispVal, MergeStrategy, std::vec::IntoIter<(AtomID, LispVal, LispVal)>, HashMap<AtomID, LispVal>),
   Refine {sp: Span, stack: Vec<RStack>, state: RState},
 }
 
@@ -125,6 +133,7 @@ impl<'a> EnvDisplay for State<'a> {
         fe.to(e), fe.to(br), fe.to(bs.as_slice()), fe.to(st)),
       State::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{}",
         fe.to(e), fe.to(&**us), fe.to(es)),
+      State::MergeMap(_, _, _, _, _) => write!(f, "(merge-map)"),
       State::Refine {state, ..} => state.fmt(fe, f),
     }
   }
@@ -361,6 +370,14 @@ impl Elaborator {
       None => LispVal::proc(Proc::Builtin(p))
     };
     self.call_func(sp, val, es)
+  }
+
+  /// Run a merge operation from the top level. This is used during `import` in order to handle
+  /// merge operations that occur due to diamond dependencies.
+  pub fn apply_merge(&mut self, sp: Span, strat: Option<&MergeStrategyInner>, old: LispVal, new: LispVal) -> Result<LispVal> {
+    let mut eval = Evaluator::new(self, sp);
+    let st = eval.apply_merge(sp, strat, old, new)?;
+    eval.run(st)
   }
 
   fn as_string(&self, e: &LispVal) -> SResult<ArcString> {
@@ -730,6 +747,48 @@ impl<'a> Evaluator<'a> {
         State::App(sp, sp, proc, vec![], [].iter())
       }
     })
+  }
+
+  fn merge_map(&mut self, sp: Span, strat: MergeStrategy, mut old: LispVal, new: &LispKind) -> Result<State<'a>> {
+    new.unwrapped(|e| match e {
+      LispKind::Undef => Ok(State::Ret(old)),
+      LispKind::AtomMap(newmap) => {
+        if newmap.is_empty() {return Ok(State::Ret(old))}
+        let mut opt = Some(old.as_map_mut(mem::take).ok_or_else(||
+          self.err(Some((sp, false)), "merge-map: not an atom-map"))?);
+        let oldmap = opt.as_mut().expect("impossible");
+        let mut todo = vec![];
+        if strat.is_none() {
+          for (&k, v) in newmap { oldmap.insert(k, v.clone()); }
+        } else {
+          for (&k, v) in newmap {
+            match oldmap.entry(k) {
+              Entry::Vacant(e) => { e.insert(v.clone()); }
+              Entry::Occupied(e) => { todo.push((k, v.clone(), e.get().clone())); }
+            }
+          }
+        }
+        if todo.is_empty() {
+          Ok(State::Ret({
+            if old.is_ref() && old.as_map_mut(|m| *m = opt.take().expect("impossible")).is_some() { old }
+            else { LispVal::new(LispKind::AtomMap(opt.take().expect("impossible"))) }
+          }))
+        } else {
+          Ok(State::MergeMap(sp, old, strat, todo.into_iter(), opt.expect("impossible")))
+        }
+    },
+      _ => Err(self.err(Some((sp, false)), "merge-map: not an atom map"))
+    })
+  }
+
+  fn apply_merge(&mut self, sp: Span, strat: Option<&MergeStrategyInner>, old: LispVal, new: LispVal) -> Result<State<'a>> {
+    match strat {
+      None => Ok(State::Ret(new)),
+      Some(MergeStrategyInner::AtomMap(strat)) =>
+        self.merge_map(sp, strat.clone(), old, &new),
+      Some(MergeStrategyInner::Custom(f)) =>
+        Ok(State::App(sp, sp, f.clone(), vec![old, new], [].iter()))
+    }
   }
 }
 
@@ -1116,6 +1175,18 @@ make_builtins! { self, sp1, sp2, args,
     }).ok_or("expected a map")));
     LispVal::undef()
   },
+  MergeMap: AtLeast(0) => {
+    let mut it = args.drain(..);
+    if let Some(arg1) = it.next() {
+      if let Some(arg2) = it.next() {
+        if let Some(arg3) = it.next() {
+          if it.next().is_some() {
+            try1!(Err("merge-map: expected 0 to 3 arguments"))
+          } else {return self.merge_map(sp1, arg1.into_merge_strategy(), arg2, &arg3)}
+        } else {return self.merge_map(sp1, None, arg1, &arg2)}
+      } else {LispVal::proc(Proc::MergeMap(arg1.into_merge_strategy()))}
+    } else {LispVal::proc(Proc::MergeMap(None))}
+  },
   SetTimeout: Exact(1) => {
     match try1!(args[0].as_int(|n| n.to_u64()).ok_or("expected a number")) {
       None | Some(0) => {self.timeout = None; self.cur_timeout = None},
@@ -1334,7 +1405,7 @@ impl<'a> Evaluator<'a> {
                 let s = name.clone();
                 let a = self.get_atom(&s);
                 let ret = LispVal::proc(Proc::Builtin(p));
-                self.data[a].lisp = Some(LispData {src: None, doc: None, val: ret.clone()});
+                self.data[a].lisp = Some(LispData {src: None, doc: None, val: ret.clone(), merge: None});
                 ret
               }
             },
@@ -1355,6 +1426,7 @@ impl<'a> Evaluator<'a> {
             let gs = self.lc.goals.drain(1..).collect();
             push!(Focus(sp, true, gs); Refines(sp, irs.iter()))
           }
+          &IR::SetMergeStrategy(sp, a, ref ir) => push!(SetMergeStrategy(sp, a); Eval(ir)),
           &IR::Def(n, ref x, ref val) => {
             assert!(self.ctx.len() == n);
             push!(Def(Some(x)); Eval(val))
@@ -1415,21 +1487,37 @@ impl<'a> Evaluator<'a> {
               Stack::Refines(sp, _, it) => push_ret!(State::Refines(sp, it)),
               _ => {self.stack.push(s); State::Ret(LispVal::undef())}
             }
-          } else {
-            if let Some(&Some((sp1, sp2, ref doc, a))) = x {
-              let loc = (self.fspan(sp2), sp1);
+          } else if let Some(&Some((sp1, sp2, ref doc, a))) = x {
+            let loc = (self.fspan(sp2), sp1);
+            let lisp = &mut self.data[a].lisp;
+            if let Some(LispData {merge: strat @ Some(_), val, ..}) = lisp {
+              let (strat, old) = (strat.clone(), val.clone());
+              self.stack.push(Stack::DefMerge(loc, a, doc.clone()));
+              self.apply_merge(sp1, strat.as_deref(), old, ret)?
+            } else {
               if ret.is_def_strict() {
                 let e = mem::replace(&mut self.data[a].lisp,
-                  Some(LispData {src: Some(loc), doc: doc.clone(), val: ret}));
+                  Some(LispData {src: Some(loc), doc: doc.clone(), val: ret, merge: None}));
                 if e.is_none() {
                   self.stmts.push(StmtTrace::Global(a))
                 }
               } else if mem::take(&mut self.data[a].lisp).is_some() {
                 self.data[a].graveyard = Some(Box::new(loc));
               } else {}
+              State::Ret(LispVal::undef())
+            }
+          } else { State::Ret(LispVal::undef()) },
+          Some(Stack::DefMerge(loc1, a, doc)) => {
+            match (&mut self.data[a].lisp, ret.is_def_strict()) {
+              (l @ None, true) =>
+                *l = Some(LispData {src: Some(loc1), doc, val: ret, merge: None}),
+              (Some(LispData {val, ..}), true) => *val = ret,
+              (l, false) => if l.is_some() {
+                self.data[a].graveyard = Some(Box::new(loc1));
+              }
             }
             State::Ret(LispVal::undef())
-          },
+          }
           Some(Stack::Eval(e, it)) => State::Evals(e, it),
           Some(Stack::Match(sp, it)) => State::Match(sp, ret, it),
           Some(Stack::TestPattern(sp, e, it, br, pstack, vars)) =>
@@ -1440,9 +1528,21 @@ impl<'a> Evaluator<'a> {
             if let Err(valid) = Rc::try_unwrap(valid) {valid.set(false)}
             State::Ret(ret)
           }
+          Some(Stack::SetMergeStrategy(sp1, a)) => {
+            if let Some(ref mut data) = self.data[a].lisp {
+              data.merge = ret.into_merge_strategy()
+            } else {
+              throw!(sp1, format!("unknown definition '{}', cannot set merge strategy", self.print(&a)))
+            }
+            State::Ret(LispVal::undef())
+          }
           Some(Stack::MapProc(sp1, sp2, f, us, mut vec)) => {
             vec.push(ret);
             State::MapProc(sp1, sp2, f, us, vec)
+          }
+          Some(Stack::MergeMap(sp, old, strat, it, mut map, k)) => {
+            map.insert(k, ret);
+            State::MergeMap(sp, old, strat, it, map)
           }
           Some(Stack::AddThmProc(fsp, ap)) => {
             ap.finish(self, &fsp, ret)?;
@@ -1570,6 +1670,11 @@ impl<'a> Evaluator<'a> {
                   }
                 }
               }
+              Proc::MergeMap(strat) => {
+                let new = args.pop().expect("impossible");
+                let old = args.pop().expect("impossible");
+                self.merge_map(sp1, strat.clone(), old, &new)?
+              }
               Proc::RefineCallback => State::Refine {
                 sp: sp1, stack: vec![],
                 state: {
@@ -1654,6 +1759,19 @@ impl<'a> Evaluator<'a> {
             }
           }
         }
+        State::MergeMap(sp, mut old, strat, mut it, map) => match it.next() {
+          None => {
+            let mut opt = Some(map);
+            State::Ret({
+              if old.is_ref() && old.as_map_mut(|m| *m = opt.take().expect("impossible")).is_some() { old }
+              else { LispVal::new(LispKind::AtomMap(opt.take().expect("impossible"))) }
+            })
+          }
+          Some((k, oldv, newv)) => {
+            let st = self.apply_merge(sp, strat.as_deref(), oldv, newv)?;
+            push!(MergeMap(sp, old, strat, it, map, k); st)
+          }
+        },
         State::Refines(sp, mut it) => match it.next() {
           None => State::Ret(LispVal::undef()),
           Some(e) => push!(Refines(sp, Some(e.span().unwrap_or(sp)), it); Eval(e))

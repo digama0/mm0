@@ -45,6 +45,9 @@ pub enum IR {
   /// The `(focus es)` syntax form. This should be a regular function, but it does some
   /// preparation work before it starts executing the list of arguments.
   Focus(Span, Box<[IR]>),
+  /// The `(set-merge-strategy)` function, which is a macro because it directly binds
+  /// to a global name.
+  SetMergeStrategy(Span, AtomID, Box<IR>),
   /// The `(def x e)` syntax form. Call the argument, and extend the context with the result.
   /// The `usize` argument indicates the number of the variable that was just declared,
   /// but it is only there for sanity checking - there is only one valid value for this field.
@@ -88,6 +91,7 @@ impl<'a> EnvDisplay for IR {
       IR::If(es) => write!(f, "(if {} {} {})",
         fe.to(&es.0), fe.to(&es.1), fe.to(&es.2)),
       IR::Focus(_, es) => write!(f, "(focus {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      IR::SetMergeStrategy(_, a, _) => write!(f, "(set-merge-strategy {} _)", fe.to(a)),
       IR::NoTailRec => write!(f, "(no-tail-rec)"),
       IR::Def(n, a, e) => write!(f, "(def {}:{} {})",
         n, fe.to(&a.as_ref().map_or(AtomID::UNDER, |&(_, _, _, a)| a)), fe.to(e)),
@@ -285,6 +289,7 @@ impl Remap for IR {
       IR::If(e) => IR::If(e.remap(r)),
       IR::NoTailRec => IR::NoTailRec,
       IR::Focus(sp, e) => IR::Focus(*sp, e.remap(r)),
+      &IR::SetMergeStrategy(sp, a, ref e) => IR::SetMergeStrategy(sp, a.remap(r), e.remap(r)),
       &IR::Def(n, ref a, ref e) => IR::Def(n,
         a.as_ref().map(|&(sp1, sp2, ref doc, a)| (sp1, sp2, doc.clone(), a.remap(r))),
         e.remap(r)),
@@ -916,6 +921,15 @@ impl<'a> LispParser<'a> {
               Syntax::Focus => Ok(IR::Focus(es[0].span, self.exprs(false, &es[1..])?.into())),
               Syntax::Let => self.let_(false, &es[1..]),
               Syntax::Letrec => self.let_(true, &es[1..]),
+              Syntax::SetMergeStrategy if 2 <= es.len() && es.len() <= 3 =>
+                Ok(IR::SetMergeStrategy(es[0].span,
+                  self.parse_ident(&es[1])?,
+                  Box::new({
+                    if let Some(e) = es.get(2) { self.expr(false, e)? }
+                    else { IR::Const(LispVal::undef()) }
+                  }))),
+              Syntax::SetMergeStrategy => return Err(
+                ElabError::new_e(es[0].span, "expected one or two arguments")),
               Syntax::Match if es.len() < 2 => return Err(
                 ElabError::new_e(es[0].span, "expected at least one argument")),
               Syntax::Match => {

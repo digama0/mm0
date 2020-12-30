@@ -38,7 +38,7 @@ use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
 use super::{Spans, ObjectKind, Remap, Remapper,
-  environment::{Environment, ParserEnv,
+  environment::{Environment, ParserEnv, MergeStrategy, MergeStrategyInner,
     AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment, LispData,
     SortID, TermID, ThmID, AtomID, Sort, Term, Thm, AtomData},
   lisp::{LispVal, LispKind, LispRef, LispWeak,
@@ -125,6 +125,12 @@ impl FrozenAtomData {
   #[must_use] pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
 }
 
+/// A wrapper around a [`MergeStrategyInner`] that is frozen.
+#[derive(Debug)]
+pub struct FrozenMergeStrategyInner(MergeStrategyInner);
+/// A wrapper around a [`MergeStrategy`] that is frozen.
+pub type FrozenMergeStrategy = Option<Rc<FrozenMergeStrategyInner>>;
+
 /// A wrapper around a [`LispData`] that is frozen.
 #[derive(Debug, DeepSizeOf)]
 #[repr(transparent)]
@@ -135,6 +141,10 @@ impl FrozenLispData {
   #[must_use] pub fn src(&self) -> &Option<(FileSpan, Span)> { &self.0.src }
   /// Accessor for [`LispData::doc`]
   #[must_use] pub fn doc(&self) -> &Option<DocComment> { &self.0.doc }
+  /// Accessor for [`LispData::doc`]
+  #[must_use] pub fn merge(&self) -> &FrozenMergeStrategy {
+    unsafe { freeze_merge_strategy(&self.0.merge) }
+  }
 }
 impl Deref for FrozenLispData {
   type Target = FrozenLispVal;
@@ -185,6 +195,22 @@ impl LispRef {
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispRef {
     &*(self as *const LispRef as *const _)
+  }
+}
+
+/// Freeze a reference to a [`MergeStrategyInner`] into a [`FrozenMergeStrategyInner`].
+/// # Safety
+/// The data structure should not be modified, even via clones, while this reference is alive.
+#[must_use] pub unsafe fn freeze_merge_strategy(this: &MergeStrategy) -> &FrozenMergeStrategy {
+  &*(this as *const MergeStrategy as *const _)
+}
+
+impl MergeStrategyInner {
+  /// Freeze a reference to a [`MergeStrategyInner`] into a [`FrozenMergeStrategyInner`].
+  /// # Safety
+  /// The data structure should not be modified, even via clones, while this reference is alive.
+  #[must_use] pub unsafe fn freeze(&self) -> &FrozenMergeStrategyInner {
+    &*(self as *const MergeStrategyInner as *const _)
   }
 }
 
@@ -299,13 +325,28 @@ impl Deref for FrozenLispVal {
   fn deref(&self) -> &FrozenLispKind { unsafe { self.thaw().deref().freeze() } }
 }
 
+impl Remap for FrozenMergeStrategyInner {
+  type Target = MergeStrategyInner;
+  fn remap(&self, r: &mut Remapper) -> MergeStrategyInner {
+    unsafe {
+      match &self.0 {
+        MergeStrategyInner::AtomMap(m) =>
+          MergeStrategyInner::AtomMap(freeze_merge_strategy(m).remap(r)),
+        MergeStrategyInner::Custom(f) =>
+          MergeStrategyInner::Custom(f.freeze().remap(r))
+      }
+    }
+  }
+}
+
 impl Remap for FrozenLispData {
   type Target = LispData;
   fn remap(&self, r: &mut Remapper) -> LispData {
     LispData {
       src: self.src().clone(),
       doc: self.doc().clone(),
-      val: (**self).remap(r)
+      val: (**self).remap(r),
+      merge: self.merge().remap(r),
     }
   }
 }
@@ -366,6 +407,7 @@ impl Remap for FrozenProc {
         Proc::Lambda {pos: pos.remap(r), env: env.remap(r), spec, code: code.remap(r)},
       Proc::MatchCont(_) => Proc::MatchCont(Rc::new(Cell::new(false))),
       Proc::RefineCallback => Proc::RefineCallback,
+      Proc::MergeMap(m) => Proc::MergeMap(unsafe {freeze_merge_strategy(m)}.remap(r)),
       Proc::ProofThunk(x, m) => Proc::ProofThunk(x.remap(r), RefCell::new(
         match &*unsafe { m.try_borrow_unguarded() }.expect("failed to deref ref") {
           Ok(e) => Ok(e.remap(r)),

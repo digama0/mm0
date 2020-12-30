@@ -562,7 +562,7 @@ theorem eqeql (ha: $ a = a2 $) (hb: $ b = b2 $) (h: $ a2 = b2 $): $ a = b $ = '(
 theorem b0eql (ha: $ a = a2 $) (h: $ b0 a2 = b $): $ b0 a = b $ = '(eqtr (b0eq ha) h);
 theorem b1eql (ha: $ a = a2 $) (h: $ b1 a2 = b $): $ b1 a = b $ = '(eqtr (b1eq ha) h);
 do {
-  (def tohex-map (atom-map!))
+  (def tohex-map (atom-map!)) (set-merge-strategy tohex-map merge-map)
   --| Core numeric evaluation function, extensible using `tohex-map`.
   --| Given a numeric expression using `+`, `*`, `suc`, `:x`, ..., it will be evaluated to a
   --| (hexadecimal) numeric literal.

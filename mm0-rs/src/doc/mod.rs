@@ -8,7 +8,8 @@ use bit_set::BitSet;
 use clap::ArgMatches;
 use lsp_types::Url;
 use pulldown_cmark::escape::WriteWrapper;
-use crate::{elab::environment::{AtomData, DocComment}, lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
+use crate::{elab::environment::{AtomData, DocComment, EnvMergeIter},
+  lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
 use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Annot},
   environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, TermID, ThmID, ThmKind, Thm,
     ExprNode, Type}};
@@ -652,7 +653,8 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   let old = old.unwrap_or_else(|| std::process::exit(1));
   println!("writing docs");
   let mut env = Environment::new();
-  env.merge(&old, (0..0).into(), &mut vec![]).expect("can't fail");
+  assert!(matches!(
+    EnvMergeIter::new(&mut env, &old, (0..0).into()).next(&mut env, &mut vec![]), Ok(None)));
   let mut dir = PathBuf::from(args.value_of("OUTPUT").unwrap_or("doc"));
   fs::create_dir_all(&dir)?;
   macro_rules! import {($($str:expr),*) => {$({

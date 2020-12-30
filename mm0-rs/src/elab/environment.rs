@@ -467,6 +467,28 @@ pub struct ParserEnv {
   pub decl_nota: HashMap<TermID, (bool, Vec<(ArcString, bool)>)>,
 }
 
+/// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
+/// with the results being merged according to this strategy.
+/// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
+/// which is to overwrite the original definition.
+#[derive(Clone, Debug, EnvDebug, DeepSizeOf)]
+pub enum MergeStrategyInner {
+  /// The `atom-map` merge strategy, which assumes that both the stored value and
+  /// the new value are atom maps, and overwrites or inserts all keys in the old map
+  /// with those in the new map, preserving keys that are not in the new map.
+  /// If the old map is a mutable atom-map, it will be overwritten with the additions.
+  AtomMap(MergeStrategy),
+  /// A custom merge strategy, which calls `(f old new)` where `f` is the function
+  /// stored here, to produce the new value.
+  Custom(LispVal),
+}
+
+/// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
+/// with the results being merged according to this strategy.
+/// This is usually behind an `Option<Rc<_>>`, where `None` means the default strategy,
+/// which is to overwrite the original definition.
+pub type MergeStrategy = Option<Rc<MergeStrategyInner>>;
+
 /// A global lisp definition entry.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct LispData {
@@ -476,7 +498,11 @@ pub struct LispData {
   /// The documentation on the declaration of the item.
   pub doc: Option<DocComment>,
   /// The value associated to the name.
-  pub val: LispVal
+  pub val: LispVal,
+  /// The merge strategy, for when this declaration is defined multiple times.
+  /// (This is most important for when a global definition is used as a lookup table
+  /// and is included from multiple files in a diamond pattern.)
+  pub merge: MergeStrategy,
 }
 
 impl Deref for LispData {
@@ -1270,19 +1296,9 @@ impl Environment {
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,
   /// and relabels lisp objects with the new [`AtomID`] mapping.
-  pub fn merge(&mut self, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
-    let remap = &mut Remapper {
-      atom: other.data().iter().map(|d| self.get_atom_arc(d.name().clone())).collect(),
-      ..Default::default()
-    };
-    #[allow(clippy::cast_possible_truncation)]
-    for (i, d) in other.data().iter().enumerate() {
-      let data = &mut self.data[remap.atom[AtomID(i as u32)]];
-      data.lisp = d.lisp().as_ref().map(|v| v.remap(remap));
-      if data.lisp.is_none() {
-        data.graveyard = d.graveyard().clone();
-      }
-    }
+  ///
+  /// This function does not do any merging of lisp data. For this functionality see [`EnvMergeIter`].
+  fn merge_no_lisp(&mut self, remap: &mut Remapper, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
     for s in other.stmts() {
       match *s {
         StmtTrace::Sort(a) => {
@@ -1350,5 +1366,87 @@ impl Environment {
     if td.args.len() == nargs { return Ok(()) }
     Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
       vec![(td.span.clone(), "declared here".into())]))
+  }
+}
+
+/// An iterator-like interface to environment merging. This is required because
+/// merging can involve calls into lisp when a custom `set-merge-strategy` is used,
+/// but the environment itself doesn't have the context required to perform this evaluation.
+/// So instead, we poll [`EnvMergeIter::next`], receiving [`AwaitingMerge`] objects
+/// that represent an unevaluated merge request; the request is fulfilled by calling
+/// [`EnvMergeIter::apply_merge`].
+#[derive(Debug)]
+pub struct EnvMergeIter<'a> {
+  remap: Remapper,
+  other: &'a FrozenEnv,
+  sp: Span,
+  it: std::iter::Enumerate<std::slice::Iter<'a, super::frozen::FrozenAtomData>>,
+}
+
+/// A lisp merge request. The elaborator receives this struct containing a merge strategy
+/// and the `old` and `new` values in `val` and `new.val` respectively, and it fills
+/// `val` with the result of the request and completes the request by calling
+/// [`EnvMergeIter::apply_merge`].
+#[derive(Debug)]
+pub struct AwaitingMerge<'a> {
+  a: AtomID,
+  /// The merge strategy (always non-`None` because we handle `None` merge strategy
+  /// directly without a request).
+  pub strat: MergeStrategy,
+  /// The old value, when returned by [`next`](EnvMergeIter::next);
+  /// also the result value when passed to [`apply_merge`](EnvMergeIter::apply_merge).
+  pub val: LispVal,
+  /// The data record for the new value.
+  pub new: LispData,
+  d: &'a super::frozen::FrozenAtomData,
+}
+
+impl<'a> EnvMergeIter<'a> {
+  /// Starts an environment merge operation.
+  pub fn new(env: &mut Environment, other: &'a FrozenEnv, sp: Span) -> Self {
+    let remap = Remapper {
+      atom: other.data().iter().map(|d| env.get_atom_arc(d.name().clone())).collect(),
+      ..Default::default()
+    };
+    Self {remap, other, sp, it: other.data().iter().enumerate()}
+  }
+
+  /// Poll the environment merge iterator for a result.
+  /// * `Err(e)` means there was a fatal error during merging (like running out of indexes).
+  /// * `Ok(None)` means that merging is complete. Non-fatal errors will be accumulated into `errors`.
+  /// * `Ok(Some(req))` means that we need to handle a merge request `req`, see [`AwaitingMerge`].
+  pub fn next(&mut self, env: &mut Environment, errors: &mut Vec<ElabError>) -> Result<Option<AwaitingMerge<'a>>, ElabError> {
+    #[allow(clippy::cast_possible_truncation)]
+    while let Some((i, d)) = self.it.next() {
+      let a = AtomID(i as u32);
+      let data = &mut env.data[self.remap.atom[a]];
+      let newlisp = d.lisp().as_ref().map(|v| v.remap(&mut self.remap));
+      if let Some(LispData {merge: strat @ Some(_), val, ..}) = &mut data.lisp {
+        if let Some(new) = newlisp {
+          return Ok(Some(AwaitingMerge {a, strat: strat.clone(), val: val.clone(), new, d}))
+        }
+      } else {
+        data.lisp = newlisp;
+        if data.lisp.is_none() {
+          data.graveyard = d.graveyard().clone();
+        }
+      }
+    }
+    env.merge_no_lisp(&mut self.remap, self.other, self.sp, errors)?;
+    Ok(None)
+  }
+
+  /// Apply a completed [`AwaitingMerge`] request to the current environment.
+  pub fn apply_merge(&self, env: &mut Environment, AwaitingMerge {a, val, new, d, ..}: AwaitingMerge<'a>) {
+    let data = &mut env.data[self.remap.atom[a]];
+    if val.is_def_strict() {
+      match data.lisp {
+        ref mut o @ None => *o = Some(new),
+        Some(LispData {val: ref mut old, ..}) => *old = val,
+      }
+    } else {
+      data.lisp = None;
+      data.graveyard = d.graveyard().clone();
+    }
   }
 }
