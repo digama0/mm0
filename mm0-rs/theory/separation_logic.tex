@@ -72,13 +72,14 @@ The syntax of MMC programs, after type inference, is given by the following (inc
   s \in \mathrm{Size} ::={}& 8\mid 16\mid 32\mid 64\mid \infty&&\mbox{integer bit size}\\
   t \in \mathrm{TuplePattern} ::={}& \_\mid x\mid \ghost{x}&&\mbox{ignored, variable, ghost variable}\\
     \mid{}&t:\tau \mid \langle \overline{t}\rangle&&\mbox{type ascription, tuple}\\
-  R \in \mathrm{Arg} ::={}& x:\tau\mid \ghost{x}:\tau\mid h:A&&\mbox{regular/ghost/proof argument}\\
+  R \in \mathrm{Arg} ::={}& x:\tau\mid \ghost{x}:\tau&&\mbox{regular/ghost argument}\\
   \tau\in\mathrm{Type} ::={}& \alpha&&\mbox{type variable reference}\\
     \mid{}& \core\alpha&&\mbox{moved type variable}\\
-    \mid{}&\mathbf{0}\mid \mathbf{1}\mid \mathsf{bool}&&\mbox{void, unit, booleans}\\
+    \mid{}&\mathbf{1}\mid \mathsf{bool}&&\mbox{unit, booleans}\\
     \mid{}&\N_s\mid \Z_s&&\mbox{unsigned and signed integers of different sizes}\\
     \mid{}&\textstyle\bigcap\overline{\tau} \mid \textstyle\bigcup \overline{\tau}&&\mbox{intersection type, (undiscriminated) union type}\\
     \mid{}&\textstyle\Sep\overline{\tau} \mid \textstyle\sum\overline{R}&&\mbox{tuple type, structure (dependent tuple) type}\\
+    \mid{}&A&&\mbox{proposition}\\
     \mid{}&S(\overline{\tau},\overline{pe})&&\mbox{user-defined type}\\
 \end{align*}
 \begin{align*}
@@ -103,21 +104,20 @@ The syntax of MMC programs, after type inference, is given by the following (inc
     \mid{}&\langle\overline{e}\rangle&&\mbox{tuple}\\
     \mid{}&f(\overline{e})&&\mbox{(pure) function call}\\[2mm]
 %
-    \mid{}&\mathsf{let}\ h^? := t := e_1\;\mathsf{in}\; e_2 &&\mbox{assignment to a regular variable}\\
-    \mid{}& \mathsf{let}\ t := p\;\mathsf{in}\; e&&\mbox{assignment to a hypothesis}\\
-    \mid{}& \eta \gets pe;\ e&&\mbox{move assignment}\\
+    \mid{}&\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2 &&\mbox{assignment to a variable}\\
+    \mid{}& \eta \gets pe;\ e\mid\ghost{\eta \gets pe};\ e&&\mbox{move assignment}\\
     \mid{}&F(\overline{e})&&\mbox{procedure call}\\
-    \mid{}&\mathsf{unreachable}\;p&&\mbox{unreachable statement}\\
+    \mid{}&\mathsf{unreachable}\;e&&\mbox{unreachable statement}\\
     \mid{}&\mathsf{return}\; \overline{e}&&\mbox{procedure return}\\
     \mid{}&\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e'&&\mbox{local mutual tail recursion}\\
     \mid{}&\mathsf{goto}\;k(\overline{e})&&\mbox{local tail call}\\
+    \mid{}&\mathsf{entail}\;\overline{e}\;p&&\mbox{entailment proof}\\
+    \mid{}&\mathsf{assert}\;pe&&\mbox{assertion}\\
+    \mid{}&\mathsf{typeof}\;pe&&\mbox{take the type of a variable}\\
+  p \in \mathrm{PureProof} ::={}&\dots&&\mbox{MM0 proofs}\\
   \eta \in \mathrm{Place} ::={}& x&&\mbox{variable reference}\\
 \end{align*}
 \begin{align*}
-  p \in \mathrm{Proof} ::={}&\mathsf{entail}\;\overline{p}\;q&&\mbox{entailment proof}\\
-    \mid{}&\mathsf{assert}\;pe&&\mbox{assertion}\\
-    \mid{}&\mathsf{typeof}\;pe&&\mbox{take the type of a variable}\\
-  q \in \mathrm{PureProof} ::={}&\dots&&\mbox{MM0 proofs}\\
   it \in \mathrm{Item} ::={}&\mathsf{type}\;S(\overline{\alpha}, \overline{R}):=\tau&&\mbox{type declaration}\\
     \mid{}&\mathsf{const}\;t:=e&&\mbox{constant declaration}\\
     \mid{}&\mathsf{global}\;t:=e&&\mbox{global variable declaration}\\
@@ -145,13 +145,11 @@ Most of the constructs are likely familiar from other languages. We will call so
   \item Ghost variables $\ghost x$ are used to represent computationally irrelevant data. They can be manipulated just like regular variables, but they must not appear on the data path during code generation. We will use $x^\gamma$ to generalize over ghost and non-ghost variables, where $\gamma=\bot$ means this is a ghost variable and $\gamma=\top$ means it is not. We use $\gamma'\le \gamma$ to mean that $\gamma$ is ``more computationally relevant'' than $\gamma'$, i.e. if $x^\gamma$ is ghost then $x^{\gamma'}$ is too.
 
   \item The $\texttt{!}_s\; n$ operation performs the mathematical function $2^s-n-1$, taking $2^\infty=0$ so that $\texttt{!}_\infty\; n=-n-1$. $\texttt{!}_s\; n$ is used for bitwise negation of unsigned integers, and $\texttt{!}_\infty\; n$ is used for bitwise negation of signed integers (even those of finite width).
-  \item The assignment operator $\mathsf{let}\ h^? := t := e_1\;\mathsf{in}\; e_2$ assigns the variables of $t$ to the result of $e_1$, but here it should be understood as a new binding, or shadowing declaration, rather than a reassignment to an existing variable. Even array assignments will be desugared into pure-functional update operations.
-
-  Here $h^?$ denotes that the hypothesis binding $h$ is optional; we will write the version with no hypothesis binding as $\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2$. The version that has a hypothesis binding requires that $e_1$ is pure.
+  \item The assignment operator $\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2$ assigns the variables of $t$ to the result of $e_1$, but here it should be understood as a new binding, or shadowing declaration, rather than a reassignment to an existing variable. Even array assignments will be desugared into pure-functional update operations.
 
   The concrete version of the assignment operator also contains a ``$\mathsf{with}\ x\to y$'' clause, but this only renames variables in the source (which is to say, it changes the mapping of source names to internal names) and so is not relevant for the theoretical presentation here.
 
-  \item The operator $x\gets pe;\ e$ is the primitive for mutation of the variables in the context. Intuitively, it can be thought as moving $pe$ into $x$, but it has no effect on the type context, and is only used to coordinate data flow. In the grammar the left hand side is generalized to a type of ``places'' (a.k.a lvalues), but for now these can only be variable references. For example,
+  \item The operator $x^\gamma\gets pe;\ e$ is the primitive for mutation of the variables in the context (where, as with ghost variables, we use $\gamma$ to generalize over the ghost and non-ghost versions of the operator). Intuitively, it can be thought as moving $pe$ into $x$, but it has no effect on the type context, and is only used to coordinate data flow. In the grammar the left hand side is generalized to a type of ``places'' (a.k.a lvalues), but for now these can only be variable references. For example,
   \begin{align*}
     &\qquad\mbox{this:}
       &&\!\!\!\!\!\!\mbox{has the same effect as:}
@@ -173,9 +171,6 @@ Most of the constructs are likely familiar from other languages. We will call so
         &&e(x',y)
   \end{align*}
 
-  The surface syntax uses a combination of $\mathsf{mut}$ declarations and shadowing let bindings to signal that a move assignment is desired; $\mathsf{move}$ is the desugared form.
-  One can view this as one part of a phi expression in SSA form.
-
   \item The expression $\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e'$ is similar in behavior to a recursive let binding such as those found in functional languages, but the $\overline{k}$ are all continuations, which is to say they do not return to the caller when using $\mathsf{goto}\;l(\overline{e})$, which is how we ensure that they can be compiled to plain $\mathsf{label}$ and $\mathsf{goto}$ at the machine code level.
 
   \item The $\mathsf{typeof}\;pe$ operator ``moves'' a value $x:\tau$ and returns a fact $\boxed{x:\tau}$ that asserts ownership of the resources of $x$. See \ref{sec:moving}.
@@ -188,15 +183,17 @@ Most of the constructs are likely familiar from other languages. We will call so
 The main typing judgments are:
 
 \begin{itemize}
-  \item $\Gamma \proves t:\tau \Rightarrow \overline{R}$ and $\Gamma \proves t:A\Rightarrow \overline{R}$\\ type a tuple pattern against a value of type $\tau$ or $A$, producing additional hypotheses $\overline{R}$ that will enter the context
+  \item $\Gamma \proves t:\tau \Rightarrow \overline{R}$\\ types a tuple pattern against a value of type $\tau$, producing additional hypotheses $\overline{R}$ that will enter the context
   \item $\Gamma \proves \tau\;\mathsf{type}$\\ determines that a type $\tau$ is a valid type in the current context
   \item $\Gamma \proves A\;\mathsf{prop}$\\ determines that $A$ is a valid separating proposition in the current context
   \item $\Gamma \proves R\;\mathsf{arg}$\\ determines that $R$ is a valid argument extending the current context
-  \item $\Gamma \proves e:\tau \makes\Gamma'$\\ determines that $e$ is a valid expression of type $\tau$, which modifies the context to $\Gamma'$. In the special case where $\Gamma'=\Gamma$, we will write $\Gamma \proves e:\tau$ instead.
-  \item $\Gamma \proves pe:\tau$\\ This is only a specialization of the $\Gamma \proves e:\tau$ judgment, because pure expressions do not change the context.
-  \item $\Gamma \proves p:A \makes\Gamma'$\\ determines that $p$ is a proof of $A$, which modifies the context to $\Gamma'$. In the special case where $\Gamma'=\Gamma$, we will write $\Gamma \proves p:A$ instead.
+  \item $\Gamma;\delta \proves e:\tau \makes\delta'$\\ determines that $e$ is a valid expression of type $\tau$, which modifies the value context from $\delta$ to $\delta'$. In the special case where $\delta'=\delta$, we will write $\Gamma;\delta \proves e:\tau$ instead.
+  \item $\Gamma;\delta \proves e\Rightarrow pe:\tau \makes\delta'$\\ is the same as the previous, but additionally says that the returned value can be expressed as the pure expression $pe$ in context $\Gamma$.
+  \item $\Gamma\proves \delta$ means that $\delta$ is a valid value context.
+  It is defined as: if $(x^\gamma:=pe:\tau)\in\delta$ then $\Gamma\proves pe:\tau$ and $x\in\mathrm{Dom}(\Gamma)$, and if $(x\to y)\in\delta$ then $x,y\in\mathrm{Dom}(\Gamma)$.
+  \item $\Gamma \proves pe:\tau$\\ The typing rule for pure expressions, which does not depend on the value context.
   \item $\Gamma \constep \Gamma'$\\ an auxiliary judgment for applying pending mutations to the context.
-  \item $\Gamma \proves e:\tau\makesto\Gamma'$ is defined to mean $\Gamma \proves e:\tau\makes\Gamma_1\ \wedge\ \Gamma_1\constep\Gamma'$ for some $\Gamma_1$.
+  \item $\Gamma;\delta \proves e:\tau\makesto\delta'$ is defined to mean $\Gamma;\delta \proves e:\tau\makes\delta_1\ \wedge\ \delta_1\constep\delta'$ for some $\delta_1$.
   \item $\Gamma\proves it\;\mathsf{ok}$\\ The top level item typing judgment
 \end{itemize}
 
@@ -204,11 +201,20 @@ Central to all of these judgments is the context $\Gamma$, which consists of:
 \begin{itemize}
   \item The global environment of previously declared items, including in particular a record $\mathsf{self}(\bar R):\bar S$ recording the type of the function being typechecked (if a function/procedure is being checked). This doesn't change during expression typing.
   \item A list of type variables $\overline{\alpha}$. This is only nonempty when type checking a type declaration.
-  \item A list of declared jump targets $\overline{k(\Gamma',\bar{R})}$, including a special jump target $\mathsf{return}(\bar{R})$ where $\bar{R}$ is the declared return type. The $\Gamma'$ in each jump target is the context required for that jump to typecheck; it lies somewhere between the initial context $\Gamma$ at the point of the $\mathsf{label}$, and the moved-out context $\core{\Gamma}$.
-  \item A list of regular variables, ghost variables, and hypotheses $\overline{R}$ with their types.
-  \item (Used only in non-pure expression and proofs:) An unordered map of mutation records of the form $x\gets pe:\tau$ where $x$ is already in the context and $\Gamma\proves pe:\tau$. These represent mutations to elements of the context that need to be propagated forward along the control flow.
+  \item A list of declared jump targets $\overline{k(\delta,\bar{R})}$, including a special jump target $\mathsf{return}(\bar{R})$ where $\bar{R}$ is the declared return type. The $\delta$ in each jump target is the context required for that jump to typecheck; it lies somewhere between the initial context $\delta$ at the point of the $\mathsf{label}$, and the moved-out context $\core{\delta}$.
+  \item A list of logical variables $x:\core{\tau}$ with their types. Here $\core{\tau}$ is used to indicate that while the type $\tau$ itself is recorded, it is only accessible in ``moved'' form.
 \end{itemize}
+
 The type variables don't depend on anything and cannot be introduced in the middle of an item, so these can be assumed to come first, but jump targets can depend on regular variables. We use the notation $\Gamma,\overline{k(\bar{R})}$ and $\Gamma,\overline{R}$ to denote extension of the context with a list of jump targets or variables, respectively, and $\Gamma,x\gets pe:\tau$ to denote the insertion of $x\gets pe:\tau$ into the list of mutations, replacing $x\gets pe':\tau'$ if it is present.
+
+The secondary context used in the typing rule $\Gamma,\delta \proves e:\tau \makes\delta'$ for expressions is the ``value context'', which contains the actual current value of variables in the context. It has two components:
+
+\begin{itemize}
+\item A list of records of the form $x^\gamma:=pe:\tau$, which represent the ``actual resources'' associated to a variable $x$. Note that $x$ need not be in the context, but $\Gamma\proves pe:\tau$ so all variables in $pe$ must be in the context. For function arguments and other variables with no known value, we use $x^\gamma:\tau$, a shorthand for $x^\gamma:=x:\tau$, where $(x:\core\tau)\in\Gamma$.
+\item A rename map, which is a list of records of the form $x\to y$ where $x$ and $y$ are variables which are either in the context or in the value context. This keeps track of what a variable's ``current name'' is, after some number of renames. When a block ends, the values associated to renamed variables become the initial values of variable names in the code following the block.
+
+A variable can only be renamed once, and it is always renamed to a fresh variable; this means that the rename map is an injective partial function, i.e., if $x\to y,y'$ then $y=y'$ and if $x,x'\to y$ then $x=x'$.
+\end{itemize}
 
 \subsection{Moving types}\label{sec:moving}
 
@@ -218,7 +224,7 @@ A type/proposition is called ``$\mathsf{copy}$'' or persistent if $\core\tau=\ta
 
 The moved modality is defined like so:
 \begin{align*}
-  \core\alpha,\mathbf{0}, \mathbf{1}, \mathsf{bool},\N_s, \Z_s&\;\mathsf{copy}\\
+  \core\alpha,\mathbf{1}, \mathsf{bool},\N_s, \Z_s&\;\mathsf{copy}\\
   \core\alpha={}&\core\alpha\qquad\mbox{(that is, $\alpha$ maps to $\core\alpha$)}\\
   \core{\textstyle\bigcap\overline{\tau}}={}&\textstyle\bigcap\overline{\core\tau}\\
   \core{\textstyle\bigcup\overline{\tau}}={}&\textstyle\bigcup\overline{\core\tau}\\
@@ -262,41 +268,28 @@ Because moving is monotonic, that is $A\to \core A$ but not the other way around
 
 We now give the main typing rules for the logic. This corresponds roughly to the \texttt{typeck} phase of the compiler. Note that ghost variable markings are ignored during this phase; they will come back during the layout phase.
 
-\judgmentB[Tuple pattern typing]{\Gamma \proves t:\tau \Rightarrow \overline{R}}{\Gamma \proves t:A \Rightarrow \overline{R}}
+\judgment[Tuple pattern typing]{\Gamma \proves t:\tau \Rightarrow \overline{R}}
 \begin{mathparpagebreakable}
-  \axiom[tpt-ignore]{\Gamma \proves \_:\tau\Rightarrow \cdot}\and
-  \axiom[tpp-ignore]{\Gamma \proves \_:A\Rightarrow \cdot}\and
-  \axiom[tpt-var]{\Gamma \proves x^\gamma:\tau\Rightarrow x^\gamma:\tau}\and
-  \axiom[tpp-var]{\Gamma \proves h:A\Rightarrow h:A}\and
-  \infer[tpt-typed]
+  \axiom[tp-ignore]{\Gamma \proves \_:\tau\Rightarrow \cdot}\and
+  \axiom[tp-var]{\Gamma \proves x^\gamma:\tau\Rightarrow x^\gamma:\tau}\and
+  \infer[tp-typed]
     {\Gamma \proves t:\tau\Rightarrow \overline{R}}
     {\Gamma \proves (t:\tau):\tau\Rightarrow \overline{R}}\and
-  \infer[tpp-typed]
-    {\Gamma \proves t:A\Rightarrow \overline{R}}
-    {\Gamma \proves (t:A):A\Rightarrow \overline{R}}\and
-  \infer[tpt-sum]
+  \infer[tp-sum]
     {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
       \Gamma,\bar{S} \proves \langle \overline{t'}\rangle:\textstyle \overline{R}[t/x]\Rightarrow \bar{S}'}
     {\Gamma \proves \langle t,\overline{t'}\rangle:\textstyle\sum x:\tau,\overline{R}\Rightarrow \bar{S},\bar{S}'}\and
-  \infer[tpp-ex]
+  \infer[tp-ex]
     {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
       \Gamma,\bar{S} \proves \langle \overline{t'}\rangle:\textstyle \overline{R}[t/x]\Rightarrow \bar{S}'}
     {\Gamma,\bar{S} \proves \langle t,\overline{t'}\rangle:\textstyle\exists x:\tau,\overline{R}\Rightarrow \bar{S},\bar{S}'}\and
-  \infer[tpt-list]
+  \infer[tp-list]
     {\forall i,\ \ \Gamma \proves t_i:\tau_i\Rightarrow(\bar{R})_i}
     {\Gamma \proves \langle \overline{t}\rangle:\textstyle\Sep\overline{\tau}\Rightarrow \overline{\bar{R}}}\and
-  \infer[tpt-and]
+  \infer[tp-and]
     {\forall i,\ \tau_i\;\mathsf{copy}\quad
       \forall i,\ \Gamma \proves t_i:\tau_i\Rightarrow(\bar{R})_i}
-    {\Gamma \proves \langle \overline{t}\rangle:\textstyle\bigwedge\overline{\tau}\Rightarrow \overline{\bar{R}}}\and
-  \infer[tpp-sep]
-    {\Gamma \proves t:\textstyle A\Rightarrow \bar{R}\quad
-      \Gamma \proves t':\textstyle A'\Rightarrow \bar{R}'}
-    {\Gamma \proves \langle t,t'\rangle:A\ast A'\Rightarrow \bar{R},\bar{R}'}\and
-  \infer[tpp-and]
-    {\Gamma \proves t:\textstyle A\Rightarrow \bar{R}\quad
-      \Gamma \proves t':\textstyle \core{A'}\Rightarrow \bar{R}'}
-    {\Gamma \proves \langle t,t'\rangle:A\land A'\Rightarrow \bar{R},\bar{R}'}\and
+    {\Gamma \proves \langle \overline{t}\rangle:\textstyle\bigwedge\overline{\tau}\Rightarrow \overline{\bar{R}}}
 \end{mathparpagebreakable}
 
 The only really relevant rules here for expressiveness are the \textsc{tpt-var} and \textsc{tpp-var} rules; the rest are convenience rules for being able to destructure a type or proposition into components using the tuple pattern. For notational simplicity we show the \textsc{tpt-sum} rule in iterative form, but it actually matches an $n$-ary tuple against an $n$-ary struct type in one go.
@@ -308,17 +301,13 @@ In the \textsc{tpt-sum} and \textsc{tpp-ex} rules, we use $\overline{R}[t/x]$ to
 \begin{mathparpagebreakable}
   \infer[arg-type]
     {\Gamma \proves \tau\;\mathsf{type}}
-    {\Gamma \proves x^\gamma:\tau\;\mathsf{arg}}\and
-  \infer[arg-prop]
-    {\Gamma \proves A\;\mathsf{prop}}
-    {\Gamma \proves h:A\;\mathsf{arg}}\and
+    {\Gamma \proves x^\gamma:\tau\;\mathsf{arg}}
 \end{mathparpagebreakable}
 This one is simple so we get it out of the way first. We will avoid dealing with variable shadowing rules here; suffice it to say that variables in the context must always be distinct, and we will perform renaming from the surface syntax to ensure this property when necessary. Also remember that $x^\gamma$ represents either $x$ or $\ghost x$ in this rule.
 
 
 \judgment[Type validity]{\Gamma \proves \tau\;\mathsf{type}}
 \begin{mathparpagebreakable}
-  \axiom[ty-void]{\Gamma \proves \mathbf{0}\;\mathsf{type}}\and
   \axiom[ty-unit]{\Gamma \proves \mathbf{1}\;\mathsf{type}}\and
   \axiom[ty-bool]{\Gamma \proves \mathsf{bool}\;\mathsf{type}}\and
   \axiom[ty-nat]{\Gamma \proves \N_s\;\mathsf{type}}\and
@@ -338,6 +327,9 @@ This one is simple so we get it out of the way first. We will avoid dealing with
   \infer[ty-list]
     {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
     {\Gamma \proves \textstyle\Sep\tau\;\mathsf{type}}\and
+  \infer[ty-prop]
+    {\Gamma \proves A\;\mathsf{prop}}
+    {\Gamma \proves A\;\mathsf{type}}\and
   \infer[ty-struct-1]
     {\Gamma \proves R_0\;\mathsf{arg}}
     {\Gamma \proves \textstyle\sum R_0\;\mathsf{type}}\and
@@ -408,18 +400,18 @@ The most interesting rule is \textsc{typ-typing}, which describes the typing ass
 The typing rules for expressions make use of the following operators on contexts:
 
 \begin{itemize}
-  \item $\Gamma_{\core x}$ ``moves'' $x$ out of the context, by replacing $x:\tau$ with $x:\core\tau$ or $x:A$ with $x:\core A$. This does not invalidate the well formedness of any type, proposition, or pure expression.
+  \item $\Gamma_{\core x}$ ``moves'' $x$ out of the context, by replacing $x:\tau$ with $x:\core\tau$. This does not invalidate the well formedness of any type, proposition, or pure expression.
 \end{itemize}
 
-The rules for pure expression typing are the same as for regular expression typing, although since all the pure expression constructors do not change the context, they are all of the form $\Gamma\vdash pe:\tau\makes \Gamma$, which we abbreviate as $\Gamma\vdash pe:\tau$.
+The rules for pure expression typing are the same as for regular expression typing, although since all the pure expression constructors do not change the context, they are all of the form $\Gamma\proves pe:\tau\makes \Gamma$, which we abbreviate as $\Gamma\proves pe:\tau$.
 
-Note that the \textsc{tye-var-ref} rule ignores the effect of mutations. This is necessary so that new mutations do not cause the context to become ill-typed. Instead, mutations are applied in the translation from surface syntax, so that ``$x\gets 1;\ x+x$'' is elaborated into ``$\mathsf{move}\;x\gets 1\;\mathsf{in}\;1+1$''.
+Note that the \textsc{tye-var-ref} rule ignores the effect of mutations. This is necessary so that new mutations do not cause the context to become ill-typed. Instead, mutations are applied in the translation from surface syntax, so that ``\texttt{x <- 1; x + x}'' is elaborated into ``$x\gets 1;\;1+1$'', while ``$x\gets 1;\ x+x$'' in the core logic means that the $x$ being referred to is the one before the mutation. The surface syntax uses ``\texttt{with x -> y}'' annotations on mutations to allow referencing both the old and new versions of the variable.
 
-\judgment[Expression validity (pure expressions)]{\Gamma \proves e:\tau\makes\Gamma'}
+\judgment[Expression validity (pure expressions)]{\Gamma \proves pe:\tau}
 \begin{mathparpagebreakable}
   \infer[tye-var-ref]
-    {(x^\gamma:\tau)\in\Gamma}
-    {\Gamma \proves x:\core\tau}\and
+    {(x:\core\tau)\in\Gamma}
+    {\Gamma \proves x:\tau}\and
   \axiom[tye-unit]{\Gamma \proves ():\mathbf{1}}\and
   \axiom[tye-true]{\Gamma \proves \mathsf{true}:\mathsf{bool}}\and
   \axiom[tye-false]{\Gamma \proves \mathsf{false}:\mathsf{bool}}\and
@@ -433,53 +425,43 @@ Note that the \textsc{tye-var-ref} rule ignores the effect of mutations. This is
     {\forall i<n,\ \ \Gamma_i \proves e_i:\tau\makes\Gamma_{i+1}}
     {\Gamma_0 \proves \langle\overline{e}\rangle:\textstyle\Sep\tau\makes\Gamma_n}\and
   \infer[tye-not]
-    {\Gamma \proves e:\mathsf{bool}\makes\Gamma'}
-    {\Gamma \proves \neg e:\mathsf{bool}\makes\Gamma'}\and
+    {\Gamma \proves e:\mathsf{bool}}
+    {\Gamma \proves \neg e:\mathsf{bool}}\and
   \infer[tye-and, tye-or]
-    {\Gamma \proves e_1:\mathsf{bool}\makes\Gamma_1\quad
-      \Gamma_1 \proves e_2:\mathsf{bool}\makes\Gamma_2}
-    {\Gamma \proves e_1\land e_2:\mathsf{bool}\makes\Gamma_2 \quad
-      \Gamma \proves e_1\lor e_2:\mathsf{bool}\makes\Gamma_2}\and
+    {\Gamma \proves e_1:\mathsf{bool}\quad
+      \Gamma_1 \proves e_2:\mathsf{bool}}
+    {\Gamma \proves e_1\land e_2:\mathsf{bool} \quad
+      \Gamma \proves e_1\lor e_2:\mathsf{bool}}\and
   \infer[tye-band, tye-bor]
     {\tau\in\{\N_s,\Z_s\}\quad
-      \Gamma \proves e_1:\tau\makes\Gamma_1\quad
-      \Gamma_1 \proves e_2:\tau\makes\Gamma_2}
-    {\Gamma \proves e_1\mathrel{\texttt{\&}} e_2:\tau\makes\Gamma_2 \quad
-      \Gamma \proves e_1\mathrel{\texttt{|}} e_2:\tau\makes\Gamma_2}\and
+      \Gamma \proves e_1:\tau\quad
+      \Gamma_1 \proves e_2:\tau}
+    {\Gamma \proves e_1\mathrel{\texttt{\&}} e_2:\tau \quad
+      \Gamma \proves e_1\mathrel{\texttt{|}} e_2:\tau}\and
   \infer[tye-bnot]
     {\tau=\N_s\lor (\tau=\Z_{s'}\land s=\infty)\quad
-      \Gamma \proves e:\tau\makes\Gamma'}
-    {\Gamma \proves \texttt{!}_s\;e:\tau\makes\Gamma'}\and
+      \Gamma \proves e:\tau}
+    {\Gamma \proves \texttt{!}_s\;e:\tau}\and
   \infer[tye-lt, tye-le, tye-eq]
     {\tau,\tau'\in\{\N_s,\Z_s\}\qquad
-      \Gamma \proves e_1:\tau\makes\Gamma_1\qquad
-      \Gamma_1 \proves e_2:\tau'\makes\Gamma_2}
-    {\Gamma \proves e_1< e_2:\mathsf{bool}\makes\Gamma_2\quad
-      \Gamma \proves e_1\le e_2:\mathsf{bool}\makes\Gamma_2\quad
-      \Gamma \proves e_1= e_2:\mathsf{bool}\makes\Gamma_2}\and
-  \infer[tye-dep-if]
-    {c\ \mbox{pure}\quad \Gamma \proves c:\mathsf{bool}\quad
-      \Gamma,h:c \proves e_1:\tau\makesto\Gamma',h:c\quad
-      \Gamma,h:\neg c \proves e_2:\tau\makesto\Gamma',h:\neg c}
-    {\Gamma \proves (\mathsf{if}\;h : c\;\mathsf{then}\;e_1\;\mathsf{else}\;e_2):\tau\makes\Gamma'}\and
+      \Gamma \proves e_1:\tau\qquad
+      \Gamma \proves e_2:\tau'}
+    {\Gamma \proves e_1< e_2:\mathsf{bool}\quad
+      \Gamma \proves e_1\le e_2:\mathsf{bool}\quad
+      \Gamma \proves e_1= e_2:\mathsf{bool}}\and
   \infer[tye-if]
-    {\Gamma \proves c:\mathsf{bool}\makes\Gamma'\quad
-      \Gamma' \proves e_1:\tau\makesto\Gamma''\quad
-      \Gamma' \proves e_2:\tau\makesto\Gamma''}
-    {\Gamma \proves (\mathsf{if}\;c\;\mathsf{then}\;e_1\;\mathsf{else}\;e_2):\tau\makes\Gamma''}\and
-  \infer[tye-struct-var\footnotemark]
-    {\Gamma_0 \proves e:\tau\makes\Gamma_1\quad
-      \Gamma_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[e/x]\makes\Gamma_n}
-    {\Gamma_0 \proves \langle e,\overline{e}\rangle:\textstyle\sum x^\gamma:\tau,\bar R\makes\Gamma_n}\and
-  \footnotetext{In \textsc{tye-struct-var}, $e$ must be pure or $x\notin\mathrm{Var}(\bar R)$, so that $\bar R[e/x]$ is well defined.}
-  \infer[tye-struct-prop]
-    {\Gamma_0 \proves p:A\makes\Gamma_1\quad
-      \Gamma_1\proves \langle \overline{e}\rangle:\textstyle\sum \bar R\makes\Gamma_n}
-    {\Gamma_0 \proves \langle p,\overline{e}\rangle:\textstyle\sum h:A,\bar R\makes\Gamma_n}\and
+    {\Gamma \proves c:\mathsf{bool}\quad
+      \Gamma \proves e_1:\tau\quad
+      \Gamma \proves e_2:\tau}
+    {\Gamma \proves (\mathsf{if}\;c\;\mathsf{then}\;e_1\;\mathsf{else}\;e_2):\tau}\and
+  \infer[tye-struct]
+    {\Gamma \proves e:\tau\quad
+      \Gamma \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[e/x]}
+    {\Gamma \proves \langle e,\overline{e}\rangle:\textstyle\sum x^\gamma:\tau,\bar R}\and
   \infer[tye-func-call]
     {\mathsf{func}\;f(\overline{R}):\overline{S}\quad
-      \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar R\makes\Gamma'}
-    {\Gamma \proves f(\overline{e}):\textstyle\sum\bar S\makes\Gamma'}\and
+      \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar R}
+    {\Gamma \proves f(\overline{e}):\textstyle\sum\bar S}\and
 \end{mathparpagebreakable}
 
 The rules above are the only ones that apply to pure expressions. General expressions have additional typing rules for the other constructions, continued below.
@@ -490,112 +472,93 @@ For general expressions, we must worry about the following additional effects:
   \item Variables can be mutated, resulting in contexts with unapplied mutations. We will return to this in section \ref{sec:mutapp}.
 \end{itemize}
 
-\judgment[Expression validity]{\Gamma \proves e:\tau\makes\Gamma'}
+\judgmentB[Expression validity]{\Gamma;\delta \proves e:\tau\makes\delta'}{\Gamma;\delta \proves e\Rightarrow pe:\tau\makes\delta'}
 \begin{mathparpagebreakable}
-  \infer[tye-var-move]
-    {(x^\gamma:\tau)\in\Gamma}
-    {\Gamma \proves x:\tau\makes\Gamma_{|x|}}\and
+  \axiom[tye-var-move]{\Gamma;\delta,x^\gamma:=pe:\tau \proves x\Rightarrow pe:\tau\makes\delta,x^\gamma:=pe:\core\tau}\and
   \infer[tye-mut]
-    {\!\:{\Gamma \proves pe:\tau\makes\Gamma'\qquad
-      (x^\gamma:\tau'')\in\Gamma'\atop
-      \Gamma',x\gets pe:\tau\proves e:\tau'\makes\Gamma''}}
-    {\Gamma \proves (x\gets pe;\ e):\tau'\makes\Gamma''}\and
-  \infer[tye-mut-pr]
-    {\!\:{\Gamma \proves p:A\makes\Gamma'\qquad
-      (h:A')\in\Gamma'\atop
-      \Gamma',h\gets p:A\proves e:\tau\makes\Gamma''}}
-    {\Gamma \proves (h\gets p;\ e):\tau\makes\Gamma''}\and
-  \infer[tye-let-hyp\footnotemark]
-    {\!\:{\Gamma \proves pe:\tau\qquad
-      \Gamma \proves t:\tau\Rightarrow \overline{R}\qquad
-      \Gamma' \proves \tau'\;\mathsf{type}\atop
-      \Gamma,\overline{R},h:t=pe \proves e:\tau'\makesto\Gamma',\overline{R},h:t=pe}}
-    {\Gamma \proves (\mathsf{let}\ h := t := pe\;\mathsf{in}\; e):\tau'\makes\Gamma'}\and
-  \footnotetext{In \textsc{tye-let-hyp}, $t$ must not contain ignore patterns so that $t$ is a pure expression and $t=pe$ is well defined.}
+    {\!\:{\Gamma;\delta \proves e\Rightarrow pe:\tau\makes\delta_1\quad
+      \forall z,\ (x\to z)\notin \delta_1\quad
+      \Gamma\proves \delta_2\atop
+      \Gamma;\delta_1,(x\to y),(y^\gamma:=pe:\tau)\proves e:\tau'\makesto\delta_2\quad y\notin \delta_2}}
+    {\Gamma;\delta \proves (x^\gamma\gets e\ \mathsf{with}\ y\gets x;\ e):\tau'\makes\delta_2}\and
+  \infer[tye-let-pure]
+    {\!\:{\Gamma;\delta \proves e_1\Rightarrow pe:\tau\makes\delta_1\quad
+      \Gamma\proves\tau',\delta_2\atop
+      \Gamma,x:\core\tau;\delta_1,x^\gamma:=pe:\tau \proves e_2:\tau'\makesto\delta_2}}
+    {\Gamma;\delta \proves (\mathsf{let}\ x^\gamma := e_1\;\mathsf{in}\; e_2):\tau'\makes\delta_2}\and
   \infer[tye-unreachable]
-    {\Gamma \proves p:\bot\makes\Gamma'}
-    {\Gamma \proves \mathsf{unreachable}\;p:\tau}\and
+    {\Gamma;\delta \proves e:\bot\makes\delta_1\quad \Gamma\proves \delta_2}
+    {\Gamma;\delta \proves \mathsf{unreachable}\;e:\tau\makes\delta_2}\and
   \infer[tye-let]
-    {\!\:{\Gamma \proves e_1:\tau\makes \Gamma'\quad
-      \Gamma' \proves t:\tau\Rightarrow \overline{R}\quad
-      \Gamma'' \proves \tau'\;\mathsf{type}\atop
-      \Gamma',\overline{R} \proves e_2:\tau'\makesto\Gamma'',\overline{R}}}
-    {\Gamma \proves (\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2):\tau'\makes\Gamma''}\and
+    {\!\:{\Gamma;\delta \proves e_1:\tau\makes \delta_1\quad
+      \Gamma \proves t:\tau\Rightarrow \overline{R}\quad
+      \Gamma \proves \tau',\delta_2\atop
+      \Gamma,\overline{\core{R}};\delta_1,\overline{R} \proves e_2:\tau'\makesto\delta_2}}
+    {\Gamma \proves (\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2):\tau'\makes\delta_2}\and
   \infer[tye-proc-call]
     {\mathsf{proc}\;F(\overline{R}):\overline{S}\quad
-      \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar R\makes\Gamma'}
-    {\Gamma \proves F(\overline{e}):\textstyle\sum\bar S\makes\Gamma'}\and
-  \infer[tye-let-pr]
-    {\!\:{\Gamma \proves p:A\makes \Gamma'\quad
-      \Gamma' \proves t:A\Rightarrow \overline{R}\quad
-      \Gamma'' \proves t:\tau\;\mathsf{type}\atop
-      \Gamma',\overline{R} \proves e:\tau\makesto\Gamma'',\overline{R}}}
-    {\Gamma \proves (\mathsf{let}\ t := p\;\mathsf{in}\; e):\tau\makes\Gamma''}\and
+      \Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\sum\bar R\makes\delta'}
+    {\Gamma;\delta \proves F(\overline{e}):\textstyle\sum\bar S\makes\delta'}\and
   \infer[tye-return]
     {\mathsf{self}(\bar R):\bar S\quad
-      \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar S\makesto \core{\bar R}}
-    {\Gamma \proves \mathsf{return}\;\overline{e}:\tau}\and
+      \Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\sum\bar S\makes \delta'}
+    {\Gamma;\delta \proves \mathsf{return}\;\overline{e}:\bot\makes\delta'}\and
   \infer[tye-label]
-    {\forall i,\ \Gamma'_i,\overline{k(\Gamma',\bar{R})},(\bar{R})_i \proves e_i:\mathbf{0}\makes\Gamma'''_i\quad
-      \Gamma,\overline{k(\Gamma',\bar{R})}\proves e':\tau\makes\Gamma''}
-    {\Gamma \proves (\mathsf{label}\;\overline{k(\bar{R}):=e}\;\mathsf{in}\;e'):\tau\makes\Gamma''}\and
+    {\!\:{\forall i,\ \Gamma,\overline{k(\delta;\bar{R})},(\bar{R})_i;\delta_i,(\bar{R})_i \proves e_i:\bot\makes\delta^2_i\atop
+      \Gamma,\overline{k(\delta;\bar{R})};\delta^0\proves e':\tau\makes\delta^1}}
+    {\Gamma;\delta^0 \proves (\mathsf{label}\;\overline{k(\bar{R}):=e}\;\mathsf{in}\;e'):\tau\makes\delta^1}\and
   \infer[tye-goto]
-    {\Gamma \proves \langle\overline{e}\rangle:\textstyle\sum(\bar R)_i\makesto \Gamma'_i,\overline{k(\Gamma',\bar{R})}}
-    {\Gamma \proves \mathsf{goto}\;k_i(\overline{e}):\tau}\and
+    {\!\:{k(\delta';\bar{R})\in\Gamma\atop
+      \Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\sum(\bar R)_i\makesto\delta'}}
+    {\Gamma;\delta \proves \mathsf{goto}\;k(\overline{e}):\bot\vdash \delta'}\and
+  \infer[tye-assert]
+    {\Gamma \proves e\Rightarrow pe:\mathsf{bool} \makes \Gamma'}
+    {\Gamma \proves \mathsf{assert}\;e:pe\makes\Gamma'}\and
+  \infer[tye-typeof]
+    {\Gamma \proves e\Rightarrow pe:\tau \makes \Gamma'}
+    {\Gamma \proves \mathsf{typeof}\;e:\boxed{pe:\tau}\makes\Gamma'}\and
+  \infer[tye-entail]
+    {\Gamma \proves \langle\overline{e}\rangle:\textstyle\Sep\overline{A} \makes \Gamma'\quad
+      \proves p:\textstyle\Sep\overline{A}\wand B}
+    {\Gamma \proves \mathsf{entail}\;\overline{e}\;p:B\makes\Gamma'}\and
 \end{mathparpagebreakable}
 
-Note that the \textsf{unreachable}, \textsf{return}, \textsf{goto} functions do not return to the calling context, so they return an arbitrary type $\tau$, and also roll back the context to the initial state $\Gamma$. A more complex model here would allow the final context to be a special context $\Gamma_\bot$, which can step to any context with the same variables as $\Gamma$.
-
-Proofs are essentially (effectful) expressions with proposition type, so the rules look much the same. Pure proofs are simply imported from the MM0 logical enironment so we do not discuss them here. The main job of metamath C is to make sure that these pure proofs have simple types, not using the entire context, since the user will be directly interacting with them.
-
-\judgment[Proof validity]{\Gamma \proves p:A\makes\Gamma'}
-\begin{mathparpagebreakable}
-  \infer[tpr-assert]
-    {\Gamma \proves pe:\mathsf{bool} \makes \Gamma'}
-    {\Gamma \proves \mathsf{assert}\;pe:pe\makes\Gamma'}\and
-  \infer[tpr-typeof]
-    {\Gamma \proves pe:\tau \makes \Gamma'}
-    {\Gamma \proves \mathsf{typeof}\;pe:\boxed{pe:\tau}\makes\Gamma'}\and
-  \infer[tpr-entail]
-    {\Gamma \proves \langle\overline{p}\rangle:\textstyle\Sep\overline{A} \makes \Gamma'\quad
-      \vdash q:\textstyle\Sep\overline{A}\wand B}
-    {\Gamma \proves \mathsf{entail}\;\overline{p}\;q:B\makes\Gamma'}\and
-\end{mathparpagebreakable}
+Proofs are essentially (effectful) expressions with proposition type, so the rules look much the same. Pure proofs are simply imported from the MM0 logical enironment so we do not discuss them here. The main job of Metamath C is to make sure that these pure proofs have simple types, not using the entire context, since the user will be directly interacting with them.
 
 \subsection{Mutation application}\label{sec:mutapp}
 
-The role of the $\Gamma\proves e:\tau\makesto\Gamma'$ judgment is to clean up the context at the terminator of a basic block in the control flow graph: after the branches of an \textsf{if} statement, and at a \textsf{return} and \textsf{goto}. It is also used whenever the context has to drop a variable, such as after a $\mathsf{let}$ expression completes.
+The role of the $\Gamma;\delta\proves e:\tau\makesto\delta'$ judgment is to clean up the context at the terminator of a basic block in the control flow graph: after the branches of an \textsf{if} statement, and at a \textsf{return} and \textsf{goto}. It is also used whenever the context has to drop a variable, such as after a $\mathsf{let}$ expression completes.
 
-Recall that $\Gamma\proves e:\tau\makesto\Gamma'$ means $\Gamma\proves e:\tau\makes\Gamma_1$ and $\Gamma_1\constep\Gamma'$ for some $\Gamma_1$. The reason we can't just use $\Gamma_1$ directly is because there may be pending mutations, whose values depend on variables we are about to drop. But mutations to variables are not required to be well typed at the target variable at the time of mutation, because for example structs may be written incrementally, with the half written structs being ill-typed. Instead, we delay committing these values as long as possible, even across CFG edges if we can. However, the rules given below are not deterministic, because \textsc{cs-mut} steps can choose to apply any subset of outstanding mutations that are collectively well typed.
+Recall that $\Gamma;\delta\proves e:\tau\makesto\delta'$ means $\Gamma;\delta\proves e:\tau\makes\delta_1$ and $\Gamma\proves\delta_1\constep\delta'$ for some $\delta_1$. The reason we can't just use $\delta_1$ directly is because there may be pending mutations, whose values depend on variables we are about to drop. But mutations to variables are not required to be well typed at the target variable at the time of mutation, because for example structs may be written incrementally, with the half written structs being ill-typed. Instead, we delay committing these values as long as possible, even across CFG edges if we can. However, the rules given below are not deterministic, because \textsc{cs-mut} steps can choose to apply any subset of outstanding mutations that are collectively well typed.
 
-\judgment[Mutation application]{\Gamma \constep\Gamma'}
+\judgment[Mutation application]{\Gamma\proves\delta \constep\delta'}
 \begin{mathparpagebreakable}
-  \axiom[cs-refl]{\Gamma \constep \Gamma}\and
+  \axiom[cs-refl]{\Gamma\proves\delta \constep \delta}\and
   \infer[cs-trans]
-    {\Gamma_1 \constep \Gamma_2 \quad \Gamma_2 \constep \Gamma_3}
-    {\Gamma_1 \constep \Gamma_3}\and
+    {\Gamma\proves\delta_1 \constep \delta_2 \quad \Gamma\proves\delta_2 \constep \delta_3}
+    {\Gamma\proves\delta_1 \constep \delta_3}\and
   \infer[cs-drop]
-    {\mbox{for all $S$, if $(x\gets S)\in\Gamma$ then $\Gamma\vdash S$}}
-    {\Gamma,\overline{R}\constep\Gamma}\and
-  \axiom[cs-drop-label]{\Gamma,\overline{k(\bar R)}\constep\Gamma}\and
-  \infer[cs-move]
-    {R\in \Gamma}
-    {\Gamma \constep\Gamma_{|R|}}\and
-  \infer[cs-mut]
-    {\Gamma \proves \langle \overline{x}\rangle:\textstyle\sum\core{\overline{R}}\quad
-      \Gamma \proves \langle \overline{e}\rangle:\textstyle\sum\overline{R}}
-    {\Gamma,\overline{x\gets e} \constep\Gamma_{\overline{R}}}\and
+    {\forall x,(x\to y)\notin \delta}
+    {\Gamma\proves\delta,(y^\gamma:=pe:\tau)\constep\delta}\and
+  \axiom[cs-rename]
+    {\Gamma\proves\delta,(x\to y),(y^\gamma:=pe:\tau)\constep\delta,(x^\gamma:=pe:\tau)}\and
+  \infer[cs-forget]
+    {\Gamma\proves\Gamma[\overline{x\to pe}]}
+    {\Gamma\proves\delta,\overline{x^\gamma:=pe:\tau}\constep\delta,\overline{x^\gamma:\tau}}\and
 \end{mathparpagebreakable}
-Here $\Gamma_{|R|}$ is the context in which $R$ has been moved away to nowhere (i.e. the memory is released), and $\Gamma_{\bar R}$ is the context which restores each variable in $\bar R$ to the specified status, reflecting that they are no longer moved away after the resource is transferred into the context.
 
-To see how this plays out, recall the \textsc{tye-return} rule:
+This is a nondeterministic judgment, with the ``goal'' being to eliminate a particular variable and/or join with separate control flow which has assigned different values to the variables.
+\begin{itemize}
+\item The simplest way to drop a variable is with the \textsc{cs-drop} rule, which works as long as this is a variable that was not obtained from a mutation.
+\item For variables that are obtained by mutation, we have a $x\to y$ in the context, and we can drop its value while storing the result back in the original variable using the \textsc{cs-rename} rule.
+\item In order to join control flow, we also need to ``forget'' the value associated with a variable. For example, if one branch of an if statement sets $x\gets 1$ and the other sets $x\gets 2$, we are allowed to use these settings inside the blocks of the if statement but at the end they must agree about the setting of the variable as well as its properties. For this we use the \textsc{cs-forget} rule, which erases the information that $x:=pe$ for several variables at once. This existentially quantifies over the variables $\overline{x}$ and reintroduces them so that we no longer have access to the value. For this to be sound, we have a side condition that says that the context remains true if we replace $\overline{x}$ with $\overline{pe}$, because the actual assignments to the variables in $\Gamma$ have changed even though we are keeping the same type.
+\end{itemize}
 
-$$\infer[tye-return]
-    {\mathsf{self}(\bar R):\bar S\quad
-      \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar S\makesto \core{\bar R}}
-    {\Gamma \proves \mathsf{return}\;\overline{e}:\tau}$$
-
-After executing $\langle\overline{e}\rangle$, we obtain the return value $\sum\bar S$ in some context $\Gamma'$. This context contains the same variables as $\Gamma$, but we are executing a return statement somewere deep in the function, so $\Gamma$ will typically contain many variables that were not parameters to the function (the list $\bar R$), and these variables may appear in uncommitted mutations that are still in $\Gamma$, so to ensure consistency of the state at the return of the function, we have to commit all outstanding mutations, expressed here by saying that the final state is simply $\core{\bar R}$, the moved-out version of the original context, with all extra variables and labels dropped, and no active mutations.
+To see how this plays out, consider the code
+$$x:=0,h:x\ge 0\proves\mathsf{if}\ b\ \{\ x\gets 1\ \},$$
+which desugars to ``$\mathsf{if}\ b\ \mathsf{then}\ x^\top\gets 1;\ ()\ \mathsf{else}\ ()$''. After the mutation, we have $x\to x',x':=1$ so we can apply \textsc{cs-rename} to get $x:=1$. But the else branch has $x:=0$ so we can't merge just yet. We can apply \textsc{cs-forget} to forget $x$, because $x:\N,h:x\ge 0\proves 1:\N,1\ge 0$, provided the compiler knows how to synthesize these proofs. (The proof of $1:\N$ is already supplied by $x\gets 1:\N$, but $1\ge 0$ is not immediately available.) If the compiler cannot find this proof, it can be supplied by:
+$$x:=0,h:x\ge 0\proves\mathsf{if}\ b\ \{\ x\gets 1;\ h\gets (p:1\ge 0)\ \},$$
+where $p$ is a proof of $1\ge 0$. In this case, we are using \textsc{cs-rename} on $x$ and $h$ simultaneously, so the side goal is the same but we get the $1\ge 0$ goal for free from the typing condition on $h:=(p:1\ge 0)$.
 
 \subsection{Top level typing}
 
@@ -606,7 +569,7 @@ The full program consists of a list of top level items, which are typechecked in
   \axiom[ok-zero]{\Gamma\proves \cdot\makes \Gamma}\and
   \infer[ok-append]
     {\Gamma\proves \overline{it}\makes \Gamma'\quad
-      \Gamma'\vdash it\makes \Gamma''}
+      \Gamma'\proves it\makes \Gamma''}
     {\Gamma\proves \overline{it},it'\makes \Gamma''}\and
 \end{mathparpagebreakable}
 Individual items are typed as follows:
@@ -633,7 +596,7 @@ Individual items are typed as follows:
   \infer[ok-func, ok-proc]
     {\mathbf{kw}\in\{\mathsf{func},\mathsf{proc}\}\quad \Gamma\proves \textstyle\sum\overline{R}\;\mathsf{type}\quad
       \Gamma,\overline{R} \proves\textstyle\sum\overline{S}\;\mathsf{type}\quad
-      \Gamma,(\mathsf{self}(\overline{R}):\overline{S}),\overline{R} \proves e:\mathbf{0}\makesto \core{\bar R}}
+      \Gamma,(\mathsf{self}(\overline{R}):\overline{S}),\overline{R};\ \overline{R} \proves e:\bot\makes\delta}
     {\Gamma \proves \mathbf{kw}\;f(\overline{R}):\overline{S}:=e\makes \Gamma',\ \mathbf{kw}\;f(\overline{R}):\overline{S}}\and
 \end{mathparpagebreakable}
 
@@ -651,53 +614,51 @@ The approach for handling mutation also cleanly supports uninitialized data. We 
     {\Gamma \proves \tau^?\;\mathsf{type}}\and
   \infer[tye-uninit]
     {\Gamma \proves \tau\;\mathsf{type}}
-    {\Gamma \proves \mathsf{uninit}:\tau^?}\and
+    {\Gamma;\delta \proves \mathsf{uninit}:\tau^?\makes\delta}\and
 \end{mathparpagebreakable}
-We also modify the \textsc{cs-mut} rule:
-$$\infer[cs-mut]
-    {\Gamma \proves \langle \overline{x}\rangle:\textstyle\sum\core{\overline{R^?}}\quad
-      \Gamma \proves \langle \overline{e}\rangle:\textstyle\sum\overline{R}}
-    {\Gamma,\overline{x\gets e} \constep\Gamma_{\overline{R}}}$$
-such that the variables $x$ are allowed to be potentially uninitialized versions of the types in $e$, meaning that a variable $x:\tau^?$ can change to $x:\tau$ as the result of a mutation.
 
+That's it. Note that $\tau\le \tau^?$ because the typing predicate of $\tau^?$ is $\top$, so we can always satisfy the side condition of \textsc{cs-forget} when performing a strong update of $x:\tau^?$ to $\tau$ when we initialize it.
 \subsection{Pointers}\label{sec:pointers}
 
 Thus far the rules have only talked about local variables and mutation of local variables, that we think of as being on the stack frame of the function. To understand the representation of pointers in the type system, it will help to understand the way contexts are modeled as separating propositions. The context is a large separating conjunction of $\boxed{x:\tau}$ assertions for every $(x^\gamma:\tau)\in\Gamma$ and $A$ for every $h:A$, plus additional ``layout'' information about the relation of non-ghost variables to the stack frame that will be calculated in the layout pass (see section \ref{sec:layout}).
 
 \subsubsection{Singleton pointers}
 
-The simplest pointer type is $\&^\mathbf{sn}(\eta:\tau)$. $x:\&^\mathbf{sn}(\eta:\tau)$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\core{\&^\mathbf{sn}\eta}=\N_{64}$ and $\boxed{x:\&^\mathbf{sn}\eta}=x\mapsto \eta$. Supporting these requires no significant extensions to the language. We add the following:
+The simplest pointer type is $\&^\mathbf{sn}\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x$, where $\eta\mathrel{@}x$ means that $\eta$ is stored in memory at location $x$; see section \ref{sec:layout}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
 
 \begin{mathparpagebreakable}
-  \mathrm{Type}::=\dots\mid \&^\mathbf{sn}(\eta:\tau)\and
-  \mathrm{Expr}::=\dots\mid {}^\ast e\mid \& e\\
-  \core{\&^\mathbf{sn}(\eta:\tau)}=\N_{64}\and
-  \boxed{x:\&^\mathbf{sn}(\eta:\tau)}=x\mapsto \eta\\
+  \mathrm{Type}::=\dots\mid \&^\mathbf{sn}\eta\and
+  \mathrm{Expr}::=\dots\mid {}^\ast e\mid \& e\and
+  \&^\mathbf{sn}\eta\;\mathsf{copy}\and
+  \boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x\\
   \infer[ty-snp]
-    {\Gamma \proves \tau\;\mathsf{type}\quad
-      \Gamma \proves \eta:\core\tau}
-    {\Gamma \proves \&^\mathbf{sn}(\eta:\tau)\;\mathsf{type}}\and
+    {\Gamma \proves \eta\;\mathsf{place}}
+    {\Gamma \proves \&^\mathbf{sn}\eta\;\mathsf{type}}\and
   \infer[tye-deref]
-    {\Gamma \proves e:\&^\mathbf{sn}(\eta:\tau)\makes\Gamma'\quad
-      \Gamma' \proves \eta:\tau\makes\Gamma''}
-    {\Gamma \proves {}^* e:\tau\makes\Gamma''}\and
+    {\Gamma;\delta \proves e:\&^\mathbf{sn}\eta\makes\delta'}
+    {\Gamma;\delta \proves {}^* e\Rightarrow \eta\makes\delta'\;\mathsf{place}}\and
   \infer[tye-ref]
-    {\Gamma \proves \eta:\core\tau}
-    {\Gamma \proves \&\eta:\&^\mathbf{sn}(\eta:\tau)}\and
+    {\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}}
+    {\Gamma;\delta \proves \&e:\&^\mathbf{sn}\eta\makes\delta'}\and
 \end{mathparpagebreakable}
-To allow for mutation, we must also extend the $x\gets pe;\ e$ form to allow a pointer on the left:
+To use these generalized lvalues, we need operations to read and write them:
 
 \begin{mathparpagebreakable}
-  \mathrm{Place}::=\dots\mid {}^\ast e\and
-  \infer[tye-mut-deref]
-    {\Gamma \proves e_1:\&^\mathbf{sn}(\eta:\tau)\makes\Gamma'\quad
-      \Gamma' \proves (\eta\gets pe;\ e_2):\tau'\makes\Gamma''}
-    {\Gamma \proves ({}^\ast e_1\gets pe;\ e_2):\tau'\makes\Gamma''}\and
+  \infer[tye-read]
+    {\!\:{\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}\atop
+      \Gamma;\delta_1\proves \eta\Rightarrow pe:\tau\makes\delta_2}}
+    {\Gamma;\delta \proves e\Rightarrow pe:\tau\makes\delta_2}\and
+  \infer[tye-write]
+    {\!\:{\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}\atop
+      \Gamma;\delta_1 \proves (\eta\gets pe;\ e_2):\tau\makes\delta_2}}
+    {\Gamma \proves (e\gets pe;\ e_2):\tau\makes\delta_2}\and
 \end{mathparpagebreakable}
+
+We needed two new judgments above, $\Gamma \proves \eta\;\mathsf{place}$, which asserts that $\eta$ is a place in the context, and $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}$ which asserts that $e$ evaluates as an lvalue to place $\eta$ (which may require transforming the code to add a temporary variable). The simplest example of a place is a variable $x\in\Gamma$, but one can also take a subpart of a struct or a slice of an array. However, note that ${}^*e$ is a place expression but not a place value; it evaluates according to \textsc{tye-deref}.
 
 \subsubsection{Owned pointers}
 
-An owned pointer is also fairly simple. We define $\boxed{x:\&^\mathbf{own}\tau}$ as $\exists v:\tau,\ x\mapsto v$, but we can't directly dereference an owned pointer as we must first have access to the variable $v$, so we require that it first be destructured to be used.
+An owned pointer is fairly simple. We define $\boxed{x:\&^\mathbf{own}\tau}$ as $\exists v:\tau,\ x\mapsto v$, but we can't directly dereference an owned pointer as we must first have access to the variable $v$, so we require that it first be destructured to be used.
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^\mathbf{own}\tau\and
@@ -712,38 +673,29 @@ An owned pointer is also fairly simple. We define $\boxed{x:\&^\mathbf{own}\tau}
     {\Gamma \proves \langle t,t'\rangle:\&^\mathbf{own}\tau\Rightarrow \bar{S},\bar{S}'}\and
 \end{mathparpagebreakable}
 
+By using destructuring, it is possible to obtain a pointer such as $t:\&^\mathbf{sn}(a,b)$; this type asserts that $a$ and $b$ are contiguous in memory such that a single pointer can access them both. This type can itself be destructured as if it were $\&^\mathbf{sn}a\ast \&^\mathbf{sn}b$.
+
+\subsubsection{Mutable and out parameters}
+Before we can explain mutable pointers, we need the concept of a mutable parameter. We have already seen that the $\gets$ operator can mutate variables inside the value context $\delta$, but currently $\mathsf{return}$ will drop all mutated values and return only the return values in the function signature. In order to allow variables to be mutated through the function, we add the ability to mark a variable in the returns $\overline{S}$ as $\mathsf{out}_x\ y:\tau$, if $x$ is a function parameter (which is itself marked as $\mathsf{mut}\ x:\tau$). This has the meaning that the variable $x$ will be mutated so that $\delta\proves x\to^* y$ when the function reaches the return.
+
+The rule \textsc{tye-return} is unchanged, but we have a new rule for fulfilling an $\mathsf{out}_x\;y$ argument:
+\begin{mathparpagebreakable}
+  \infer[tye-struct-out]
+    {\delta\proves x\to^*y \quad
+      \Gamma;\delta \proves y:\tau\makes \delta_1\quad
+      \Gamma;\delta_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[pe/y]}
+    {\Gamma \proves \langle \overline{e}\rangle:\textstyle\sum (\mathsf{out}_x\,y^\gamma:\tau),\bar R}\and
+\end{mathparpagebreakable}
+Here $\delta\proves x\to^*y$ means that $x\to\dots\to y\not\to$ according to the rename map in $\delta$.
+
+Conversely, when calling a function, the $\mathsf{mut}$ parameters get captured in the calling context, and changed to their $\mathsf{out}$ variants. Describing this is technically complicated so we will use a prose description. We define only the construct $\mathsf{let}\ \langle \overline{y},t\rangle:=F(\overline{e})\;\mathsf{in}\; e_2$ where $t$ is a tuple pattern and $\overline{y}$ has the same length as the number of out parameters of $F$; that is, $\mathsf{proc}\ F(\overline{R}):\overline{\mathsf{out}_x\;y^\gamma:\tau},\overline{S}$.
+
+The arguments of $F$ must be $e:\tau$ if $R=(x^\gamma:\tau)$, and must be $\eta:\tau\;\mathsf{place}$ if $R=(\mathsf{mut}\ x^\gamma:\tau)$. If $\eta$ is provided for argument $x$, and $\mathsf{out}_x\ y^\gamma:\tau'$ is among the out arguments of the function, and $y$ is the corresponding element of the tuple in the $\mathsf{let}\ \langle \overline{y},t\rangle$ pattern match, then we perform an assignment $\eta \gets y$ on return from the function. All these $\eta$ places are disjoint because they were passed simultaneously to $F$, so there is no ambiguity about the order of writes. Finally, the result of the $F(\overline{e})$ invocation is pattern matched against the tuple pattern $t$ and $e_2$ is executed.
+
 \subsubsection{Mutable pointers}
-The type $\&^\mathbf{mut}\tau$ is not a true type, but is allowed in function signatures to indicate a $\&^\mathbf{sn}(\eta:\tau)$ value where $\eta$ is external to the function. To support this we have to rewrite the provided function signature to include these $\eta$ ghost values and then match them with provided expressions.
+The type $\&^\mathbf{mut}\tau$ is not a true type, but is allowed in function signatures to indicate a $\&^\mathbf{sn}\eta$ value where $\eta$ is external to the function. The changes to $\eta$ are a ``side effect'' and so we use the $\mathsf{out}_x\;y$ functionality from the previous section to support it.
 
-\begin{align*}
-  \rho\in\mathrm{FArg}::={}&R\mid x:\&^\mathbf{mut}\tau\\
-  \mathrm{Item}::={}&\dots\mid\mathsf{func}\;f(\overline{\rho}):\overline{R}:=e\mid\mathsf{proc}\;f(\overline{\rho}):\overline{R}:=e
-\end{align*}
-We have to modify \textsf{ok-proc} to accomodate the new arguments:
-\begin{mathparpagebreakable}
-  \infer[ok-func, ok-proc]
-    {\mathbf{kw}\in\{\mathsf{func},\mathsf{proc}\}\quad \Gamma\proves \overline{\rho}\;\mathsf{args}\Rightarrow\overline R\quad
-      \Gamma,\overline{R} \proves\textstyle\sum\overline{S}\;\mathsf{type}\quad
-      \Gamma,(\mathsf{self}(\overline{\rho}):\overline{S}),\overline{R} \proves e:\textstyle\sum\overline{S}\makesto \core{\bar \rho}}
-    {\Gamma \proves \mathbf{kw}\;f(\overline{\rho}):\overline{S}:=e\makes \Gamma',\ \mathbf{kw}\;f(\overline{\rho}):\overline{S}}\and
-\end{mathparpagebreakable}
-where we have a new judgment for elaborating function arguments, whose only interesting case elaborates $x:\&^\mathbf{mut}\tau$ to $\ghost v:\tau,x:\&^\mathbf{sn}v$:
-
-\judgment[Argument elaboration]{\Gamma\proves \overline{\rho}\;\mathsf{args}\Rightarrow\overline R}
-\begin{mathparpagebreakable}
-  \axiom[args-zero]{\Gamma\proves \cdot\Rightarrow\cdot}\and
-  \infer[args-arg]
-    {\Gamma\proves \overline{\rho}\Rightarrow \bar R}
-    {\Gamma\proves \overline{\rho},R'\Rightarrow R,R'}\and
-  \infer[args-mut]
-    {\Gamma\proves \overline{\rho}\Rightarrow \bar R\quad
-      \Gamma,\bar R\proves \tau\;\mathsf{type}}
-    {\Gamma\proves \overline{\rho},x:\&^\mathbf{mut}\tau\Rightarrow \bar R,\ghost v:\tau,x:\&^\mathbf{sn}v}\and
-\end{mathparpagebreakable}
-
-The $\core{\bar \rho}$ that appears in \textsc{ok-proc} denotes a final function context that moves all regular function arguments, but the $\ghost v:\tau$ variables generated by $x:\&^\mathbf{mut}\tau$ elaboration are not moved. This ensures that they are still valid at function return.
-
-Finally, we have to describe how a function is called. In short, $e$ matches an argument of type $x:\&^\mathbf{mut}\tau$ if $e:\&^\mathbf{sn}\eta$ for some $\eta$, which is ``captured'' by the function and modified, generating a fresh $v':\tau$ and a mutation record $\eta\gets v'$.
+In brief, if $x:\&^\mathbf{mut}\tau$ appears in the function arguments, we replace it by $\ghost v:\tau,x:\&^\mathbf{sn}v$ in the function arguments and add $\mathsf{out}_v\;\ghost{v'}:\tau$ at the beginning of the function returns. $\&^\mathbf{mut}\tau$ is not allowed to appear any other place than the top level of a function argument.
 
 \subsubsection{Shared pointers}
 
@@ -858,13 +810,10 @@ Mutual recursions are more complex, as we may not be able to promise that they a
 
 \item Type declarations correspond to certain unfolding theorems so they have no representation in the context. We can ignore the type variables $\overline{\alpha}$ in $\Gamma$ because we don't support generic functions.
 
-\item The jump targets $\overline{k(\Gamma',\bar R)}$ in $\Gamma$ become (persistent) propositions $\textsf{jump-ok}(\ell:(\Gamma',\bar {R})\to \bf 0)$ asserting that if we jump to location $\ell$ with arguments $\bar {R}$ according to the calling convention of the jump, then this machine state is OK (will eventually reach a final termination with the desired global properties). The $\mathsf{return}(\bar R)$ continuation is also a jump target of this form (where the calling convention uses \texttt{ret} instead of \texttt{jump}).
+\item The jump targets $\overline{k(\delta,\bar R)}$ in $\Gamma$ become (persistent) propositions $\textsf{jump-ok}(\ell:(\delta,\bar {R})\to \bot)$ asserting that if we jump to location $\ell$ with arguments $\bar {R}$ according to the calling convention of the jump, then this machine state is OK (will eventually reach a final termination with the desired global properties). The $\mathsf{return}(\bar R)$ continuation is also a jump target of this form (where the calling convention uses \texttt{ret} instead of \texttt{jump}).
 
-\item The regular variables, ghost variables, and hypotheses $\overline{R}$ become augmented to $\overline{\bf R}$ as follows:
-  \begin{itemize}
-  \item a variable $x^\gamma:\tau$ becomes either $x^\gamma:\tau$ or $x^{\top}:\tau\mathrel{@}\mu$ where $\mu$ is an M-place. The second form is only available for non-ghost variables, and the M-places of distinct variables in the context will always be compatible.
-  \item A mutation record $x\gets pe:\tau$ becomes $x\gets pe^\gamma:\tau$, where the ghost annotation indicates whether this mutation will leave $x$ ghost or not.
-  \end{itemize}
+\item Each variable $x^\gamma:\core\tau$ becomes either $x^\gamma:\core\tau$ or $x^{\top}:\core\tau\mathrel{@}\mu$ where $\mu$ is an M-place. The second form is only available for non-ghost variables, and the M-places of distinct variables in the context will always be compatible.
 \end{itemize}
 
+For the value context, we store no additional information regarding the rename map, but each $x^\gamma:=pe:\tau$ corresponds to the separating proposition $\boxed{pe:\tau}$.
 \end{document}
