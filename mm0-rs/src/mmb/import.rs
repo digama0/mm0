@@ -382,14 +382,14 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       }
       vars[i]
     }
-  }}};
+  }}}
   let mut get_var = get_get_var!("v{}");
   let mut get_hyp = get_get_var!("h{}");
   macro_rules! next_var {($var:expr) => {{
     let var = $var;
     $var += 1;
     get_var(env, var)
-  }}};
+  }}}
   while let Some(e) = it.next() {
     let (stmt, mut pf) = e.map_err(|p| StrError("bad statement", p))?;
     match stmt {
