@@ -292,9 +292,9 @@ We now give the main typing rules for the logic. This corresponds roughly to the
     {\Gamma \proves \langle \overline{t}\rangle:\textstyle\bigwedge\overline{\tau}\Rightarrow \overline{\bar{R}}}
 \end{mathparpagebreakable}
 
-The only really relevant rules here for expressiveness are the \textsc{tpt-var} and \textsc{tpp-var} rules; the rest are convenience rules for being able to destructure a type or proposition into components using the tuple pattern. For notational simplicity we show the \textsc{tpt-sum} rule in iterative form, but it actually matches an $n$-ary tuple against an $n$-ary struct type in one go.
+The only really relevant rules here for expressiveness are the \textsc{tp-var} and \textsc{tpp-var} rules; the rest are convenience rules for being able to destructure a type or proposition into components using the tuple pattern. For notational simplicity we show the \textsc{tp-sum} rule in iterative form, but it actually matches an $n$-ary tuple against an $n$-ary struct type in one go.
 
-In the \textsc{tpt-sum} and \textsc{tpp-ex} rules, we use $\overline{R}[t/x]$ to denote the result of substituting $t$ for $x$ in $R$. For this to work, $t$ must be reified as a tuple of variables rather than simply a destructuring pattern, which in particular means that `$\_$' ignore patterns are interpreted as inserting internal variables with no user-specified name rather than being omitted from the context entirely as the \textsc{tpt-ignore} rule would suggest.
+In the \textsc{tp-sum} and \textsc{tpp-ex} rules, we use $\overline{R}[t/x]$ to denote the result of substituting $t$ for $x$ in $R$. For this to work, $t$ must be reified as a tuple of variables rather than simply a destructuring pattern, which in particular means that `$\_$' ignore patterns are interpreted as inserting internal variables with no user-specified name rather than being omitted from the context entirely as the \textsc{tp-ignore} rule would suggest.
 
 
 \judgment[Argument typing]{\Gamma \proves R\;\mathsf{arg}}
@@ -667,7 +667,7 @@ An owned pointer is fairly simple. We define $\boxed{x:\&^\mathbf{own}\tau}$ as 
   \infer[ty-own]
     {\Gamma \proves \tau\;\mathsf{type}}
     {\Gamma \proves \&^\mathbf{own}\tau\;\mathsf{type}}\and
-  \infer[tpt-own]
+  \infer[tp-own]
     {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
       \Gamma,\bar{S} \proves t':\textstyle \&^\mathbf{sn}t\Rightarrow \bar{S}'}
     {\Gamma \proves \langle t,t'\rangle:\&^\mathbf{own}\tau\Rightarrow \bar{S},\bar{S}'}\and
@@ -675,25 +675,24 @@ An owned pointer is fairly simple. We define $\boxed{x:\&^\mathbf{own}\tau}$ as 
 
 By using destructuring, it is possible to obtain a pointer such as $t:\&^\mathbf{sn}(a,b)$; this type asserts that $a$ and $b$ are contiguous in memory such that a single pointer can access them both. This type can itself be destructured as if it were $\&^\mathbf{sn}a\ast \&^\mathbf{sn}b$.
 
-\subsubsection{Mutable and out parameters}
-Before we can explain mutable pointers, we need the concept of a mutable parameter. We have already seen that the $\gets$ operator can mutate variables inside the value context $\delta$, but currently $\mathsf{return}$ will drop all mutated values and return only the return values in the function signature. In order to allow variables to be mutated through the function, we add the ability to mark a variable in the returns $\overline{S}$ as $\mathsf{out}_x\ y:\tau$, if $x$ is a function parameter (which is itself marked as $\mathsf{mut}\ x:\tau$). This has the meaning that the variable $x$ will be mutated so that $\delta\proves x\to^* y$ when the function reaches the return.
+\subsubsection{Mutable pointers}
+Before we can explain mutable pointers, we need the concept of a mutable parameter. We have already seen that the $\gets$ operator can mutate variables inside the value context $\delta$, but currently $\mathsf{return}$ will drop all mutated values and return only the return values in the function signature. In order to allow variables to be mutated through the function, we add the ability to mark a variable in the returns $\overline{S}$ as $\mathsf{out}^x\ y:\tau$, if $x$ is a function parameter (which is itself marked as $\mathsf{mut}\ x:\tau$). This has the meaning that the variable $x$ will be mutated so that $\delta\proves x\to^* y$ when the function reaches the return.
 
-The rule \textsc{tye-return} is unchanged, but we have a new rule for fulfilling an $\mathsf{out}_x\;y$ argument:
+The rule \textsc{tye-return} is unchanged, but we have a new rule for fulfilling an $\mathsf{out}^x\;y$ argument:
 \begin{mathparpagebreakable}
   \infer[tye-struct-out]
     {\delta\proves x\to^*y \quad
       \Gamma;\delta \proves y:\tau\makes \delta_1\quad
       \Gamma;\delta_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[pe/y]}
-    {\Gamma \proves \langle \overline{e}\rangle:\textstyle\sum (\mathsf{out}_x\,y^\gamma:\tau),\bar R}\and
+    {\Gamma \proves \langle \overline{e}\rangle:\textstyle\sum (\mathsf{out}^x\,y^\gamma:\tau),\bar R}\and
 \end{mathparpagebreakable}
 Here $\delta\proves x\to^*y$ means that $x\to\dots\to y\not\to$ according to the rename map in $\delta$.
 
-Conversely, when calling a function, the $\mathsf{mut}$ parameters get captured in the calling context, and changed to their $\mathsf{out}$ variants. Describing this is technically complicated so we will use a prose description. We define only the construct $\mathsf{let}\ \langle \overline{y},t\rangle:=F(\overline{e})\;\mathsf{in}\; e_2$ where $t$ is a tuple pattern and $\overline{y}$ has the same length as the number of out parameters of $F$; that is, $\mathsf{proc}\ F(\overline{R}):\overline{\mathsf{out}_x\;y^\gamma:\tau},\overline{S}$.
+Conversely, when calling a function, the $\mathsf{mut}$ parameters get captured in the calling context, and changed to their $\mathsf{out}$ variants. Describing this is technically complicated so we will use a prose description. We define only the construct $\mathsf{let}\ \langle \overline{y},t\rangle:=F(\overline{e})\;\mathsf{in}\; e_2$ where $t$ is a tuple pattern and $\overline{y}$ has the same length as the number of out parameters of $F$; that is, $\mathsf{proc}\ F(\overline{R}):\overline{\mathsf{out}^x\;y^\gamma:\tau},\overline{S}$.
 
-The arguments of $F$ must be $e:\tau$ if $R=(x^\gamma:\tau)$, and must be $\eta:\tau\;\mathsf{place}$ if $R=(\mathsf{mut}\ x^\gamma:\tau)$. If $\eta$ is provided for argument $x$, and $\mathsf{out}_x\ y^\gamma:\tau'$ is among the out arguments of the function, and $y$ is the corresponding element of the tuple in the $\mathsf{let}\ \langle \overline{y},t\rangle$ pattern match, then we perform an assignment $\eta \gets y$ on return from the function. All these $\eta$ places are disjoint because they were passed simultaneously to $F$, so there is no ambiguity about the order of writes. Finally, the result of the $F(\overline{e})$ invocation is pattern matched against the tuple pattern $t$ and $e_2$ is executed.
+The arguments of $F$ must be $e:\tau$ if $R=(x^\gamma:\tau)$, and must be $\eta:\tau\;\mathsf{place}$ if $R=(\mathsf{mut}\ x^\gamma:\tau)$. If $\eta$ is provided for argument $x$, and $\mathsf{out}^x\ y^\gamma:\tau'$ is among the out arguments of the function, and $y$ is the corresponding element of the tuple in the $\mathsf{let}\ \langle \overline{y},t\rangle$ pattern match, then we perform an assignment $\eta \gets y$ on return from the function. All these $\eta$ places are disjoint because they were passed simultaneously to $F$, so there is no ambiguity about the order of writes. Finally, the result of the $F(\overline{e})$ invocation is pattern matched against the tuple pattern $t$ and $e_2$ is executed.
 
-\subsubsection{Mutable pointers}
-The type $\&^\mathbf{mut}\tau$ is not a true type, but is allowed in function signatures to indicate a $\&^\mathbf{sn}\eta$ value where $\eta$ is external to the function. The changes to $\eta$ are a ``side effect'' and so we use the $\mathsf{out}_x\;y$ functionality from the previous section to support it.
+The type $\&^\mathbf{mut}\tau$ is not a true type, but is allowed in function signatures to indicate a $\&^\mathbf{sn}\eta$ value where $\eta$ is external to the function. The changes to $\eta$ are a ``side effect'' and so we use the $\mathsf{out}^x\;y$ functionality from the previous section to support it.
 
 In brief, if $x:\&^\mathbf{mut}\tau$ appears in the function arguments, we replace it by $\ghost v:\tau,x:\&^\mathbf{sn}v$ in the function arguments and add $\mathsf{out}_v\;\ghost{v'}:\tau$ at the beginning of the function returns. $\&^\mathbf{mut}\tau$ is not allowed to appear any other place than the top level of a function argument.
 
@@ -705,27 +704,53 @@ We introduce a new kind of variable modifier, a heap variable. $\hat x:\tau$ mea
 
 Heap variables resemble shared references from Rust, and in particular they are annotated with a ``lifetime''. The difference is that the pointer-ness is separated out; a heap variable directly has the type of the pointee, and the pointer is just a $\&^\mathbf{sn}\eta$ where $\eta$ is a heap variable.
 
+A lifetime $a$ is modeled roughly as a (precise, aka subsingleton) separating proposition $P$, with each $\mathsf{ref}^a\;x:=pe:\tau$ being modeled as a place $\eta$ for which $P\Rightarrow (\eta:=pe:\tau)$. That is, we can weaken $P$ to obtain the fact that $\eta:=pe:\tau$. (The relation $P\Rightarrow Q$, which is a regular (not separating) proposition, is defined as $\vdash P\to (Q*\top)$.) Because $P$ is a precise proposition, it satisfies $(P\Rightarrow \exists x, Q)\to (\exists x,(P\Rightarrow Q))$, which means we can pattern match on heap variables like regular variables, for example to obtain $\&\tau$ from $\&\&^\mathbf{own}\tau$. But this is only relevant for the semantic model; in the type checker we simply need some rules for how to manipulate these variables.
+
+Syntactically, a lifetime can be either $\mathsf{extern}$, referring to data outside the current context, or $x$, some variable in the context. These denote the scope of the borrow; a variable which is borrowed cannot be mutated. (Possible extensions include lifetimes with scope $\{x,y,z\}$ for creating data that spans multiple variables, and lifetimes with scope $x.\mathsf{field}$ in order to borrow only parts of a variable without locking the whole variable.) The proposition $P$ from the previous paragraph is the implicit frame proposition in the $\mathsf{extern}$ case, and $x:=pe:\tau$ from the value context at the time of the borrow in the case of $x$. (In the case of multiple variables, it is the separating conjunction of these $x:=pe:\tau$ conditions and in the case of a subobject we destructure this proposition and pull out the $\eta:=pe:\tau$ component.)
+
 \begin{mathparpagebreakable}
   a\in\mathrm{Lft}::=\mathsf{extern}\mid x\and
   \mathrm{Arg}::=\dots\mid \mathsf{ref}^a\;x:\tau\and
-  \mathrm{FArg}::=\dots\mid \mathsf{ref}\;x\and
-  \mathrm{TuplePattern}::=\dots\mid \mathsf{ref}^a\;x\and
-  \axiom[tpt-ref]{\Gamma \proves \mathsf{ref}^a\;x:\tau\Rightarrow \mathsf{ref}^a\;x:\tau}\and
+  \infer[tp-sum-ref]
+    {\Gamma,\mathsf{ref}^a\;y:\tau \proves \langle \overline{t}\rangle:\textstyle \overline{R}[y/x]\Rightarrow \bar{S}}
+    {\Gamma \proves \langle y,\overline{t'}\rangle:\textstyle\sum \mathsf{ref}^a\;x:\tau,\overline{R}\Rightarrow \mathsf{ref}^a\;y:\tau,\bar{S}}\and
   \infer[arg-ref]
     {\mathrm{Var}(a)\subseteq \Gamma\quad
       \Gamma \proves \tau\;\mathsf{type}}
     {\Gamma \proves \mathsf{ref}^a\; x:\tau\;\mathsf{arg}}\and
-  \infer[args-ref]
-    {\Gamma\proves \overline{\rho}\Rightarrow \bar R\quad
-      \Gamma,\bar R\proves \tau\;\mathsf{type}}
-    {\Gamma\proves \overline{\rho},\mathsf{ref}\;x:\tau\Rightarrow \bar R,\mathsf{ref}^\mathsf{extern}\;x:\tau}\and
   \infer[tye-struct-ref]
-    {\Gamma \proves \eta:\core\tau\quad
-      \Gamma \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[\eta/x]\makes\Gamma'}
-    {\Gamma \proves \langle \eta,\overline{e}\rangle: \textstyle\sum \mathsf{ref}^{\mathrm{Lft}(\eta)}\;x:\tau,\bar R\makes\Gamma'}\and
-  {\mathrm{Lft}(x)=x\atop
-    \mathrm{Lft}(\eta[pe])=\mathrm{Lft}(\eta)}
+    {\!\:{\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makesto\delta_1\;\mathsf{read}\atop
+      \Gamma;\delta_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[pe/x]\makes\delta_2}}
+    {\Gamma;\delta \proves \langle \eta,\overline{e}\rangle: \textstyle\sum \mathsf{ref}^{\mathrm{Lft}(\eta)}\;x:\tau,\bar R\makes\delta_2}\and
+  {\begin{matrix}
+    \mathrm{Lft}(\mathsf{ref}^a\;x)=a\\
+    \mathrm{Lft}(x)=x\\
+    \mathrm{Lft}(\eta[pe])=\mathrm{Lft}(\eta)
+  \end{matrix}}
 \end{mathparpagebreakable}
+
+Here the $\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makesto\delta'\;\mathsf{read}$ judgment is a conjunction of $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}$ followed by $\Gamma\proves\delta_1 \Rightarrow \delta'$, such that $\Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}$. That is, first we evaluate the place expression, then we use $\Gamma\proves\delta_1 \Rightarrow \delta'$ to ensure that $\eta$ is locked and readable at type $\tau$, and the final judgment asserts that in the result state we can in fact read $\eta:\tau$.
+
+\begin{mathparpagebreakable}
+  \delta\in\mathrm{VCtx}::=\delta,(\mathsf{ref}^a\;x:=pe:\tau)\\
+  \axiom[cs-lock]
+    {\Gamma\proves\delta,(x:=pe:\tau) \constep \delta,(\mathsf{ref}^x\;x:=pe:\tau)}\and
+  \infer[cs-unlock]
+    {\forall y, (\mathsf{ref}^x\;y:=-)\notin \delta}
+    {\Gamma\proves\delta,(\mathsf{ref}^x\;x:=pe:\tau) \constep \delta,(x:=pe:\tau)}\and
+  \infer[tyr-var]
+    {(\mathsf{ref}^a\;x:=pe:\tau)\in\delta}
+    {\Gamma;\delta \proves x:=pe:\tau\;\mathsf{read}}\and
+  \infer[tyr-place]
+    {(\mathsf{ref}^a\;x:=pe:\tau)\in\delta}
+    {\Gamma;\delta \proves \eta:=pe:\tau\;\mathsf{read}}\and
+  \infer[tye-read-ref]
+    {\!\:{\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}\atop
+      \Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}}}
+    {\Gamma;\delta \proves e\Rightarrow pe:\core\tau\makes\delta'}\and
+\end{mathparpagebreakable}
+
+Note that we cannot move out a value from a ref variable, which is reflected in the use of $\core\tau$ in \textsc{tye-read-ref}. We also cannot mutate a ref, meaning that while a variable is locked (meaning that it is represented in the value context as a $\mathsf{ref}^x\;x$), mutation is not possible; however it is possible to mutate a variable that is currently locked by first unlocking it using the \textsc{cs-unlock} rule, which requires first deleting all the heap variables that reference $x$ using the \textsc{cs-drop} rule.
 
 Using heap variables, we can desugar shared references similarly to owned pointers:
 
@@ -737,7 +762,7 @@ Using heap variables, we can desugar shared references similarly to owned pointe
     {\mathrm{Var}(a)\subseteq \Gamma\quad
       \Gamma \proves \tau\;\mathsf{type}}
     {\Gamma \proves \&^a\tau\;\mathsf{type}}\and
-  \infer[tpt-shr]
+  \infer[tp-shr]
     {\Gamma \proves \mathsf{ref}^a\; t:\textstyle \tau\Rightarrow \bar{S}\quad
       \Gamma,\bar{S} \proves t':\textstyle \&^\mathbf{sn}t\Rightarrow \bar{S}'}
     {\Gamma \proves \langle t,t'\rangle:\&^a\tau\Rightarrow \bar{S},\bar{S}'}\and
