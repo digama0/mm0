@@ -36,6 +36,7 @@
 \newcommand{\core}[1]{\left| #1 \right|}
 \newcommand{\proves}{\vdash}
 \newcommand{\makes}{\dashv}
+\newcommand{\reach}{\rightsquigarrow}
 \newcommand{\constep}{\Rightarrow}
 \newcommand{\makesto}{\dashv\!\constep}
 \newcommand{\judgment}[2][]{\noindent\\\textbf{#1}\hspace{\stretch{1}}\fbox{$#2$}\nopagebreak}
@@ -826,7 +827,7 @@ A ghost variable is never assigned any stack location and hence it can never be 
 
 The context $\Gamma$ in the typing rules is ultimately compiled down to a separating proposition over machine states, and we need to interpret it in such a way that a validly typed expression corresponds to a valid theorem in separation logic.
 
-Each variable in the context may or may not be associated with a component of the machine state which is currently storing the value of that variable. A ghost variable will never have machine state attached to it, and a variable may also not have machine state attached to it if it is past its last use, or if it is uninitialized. To express this, we will add a new kind of context, a machine context $\Delta$ which extends $\Gamma$ with this information at each variable site.
+Each variable in the context may or may not be associated with a component of the machine state which is currently storing the value of that variable. A ghost variable will never have machine state attached to it, and a variable may also not have machine state attached to it if it is past its last use, or if it is uninitialized. To express this, we will add a new kind of context, a machine context $\Delta$ which extends $\delta$ with this information at each variable site.
 
 \begin{itemize}
 \item For each procedure in the global environment of declared items, we have a (persistent) proposition $\mbox{\textsf{proc-ok}}(\ell:\overline{R}\to\overline{S})$ which asserts that location $\ell$ (an actual machine location) is the entry point to a function $f$ which, if called with arguments $\overline{R}$, will return values $\overline{S}$, according to the calling convention (which can be an additional parameter to \textsf{proc-ok}, but we can suppose that there is one fixed calling convention).
@@ -837,8 +838,93 @@ Mutual recursions are more complex, as we may not be able to promise that they a
 
 \item The jump targets $\overline{k(\delta,\bar R)}$ in $\Gamma$ become (persistent) propositions $\textsf{jump-ok}(\ell:(\delta,\bar {R})\to \bot)$ asserting that if we jump to location $\ell$ with arguments $\bar {R}$ according to the calling convention of the jump, then this machine state is OK (will eventually reach a final termination with the desired global properties). The $\mathsf{return}(\bar R)$ continuation is also a jump target of this form (where the calling convention uses \texttt{ret} instead of \texttt{jump}).
 
-\item Each variable $x^\gamma:\core\tau$ becomes either $x^\gamma:\core\tau$ or $x^{\top}:\core\tau\mathrel{@}\mu$ where $\mu$ is an M-place. The second form is only available for non-ghost variables, and the M-places of distinct variables in the context will always be compatible.
+\item Each variable $x:\core\tau$ becomes a (regular) proposition $\boxed{x:\core\tau}$.
 \end{itemize}
 
-For the value context, we store no additional information regarding the rename map, but each $x^\gamma:=pe:\tau$ corresponds to the separating proposition $\boxed{pe:\tau}$.
+The value context $\delta$ is extended to $\Delta$ by extending some of the variable records with $\mathrel{@}\mu$ annotations. They are interpreted like so:
+\begin{itemize}
+\item We store no additional information regarding the rename map.
+\item Each $x^\gamma:=pe:\tau$ may either be left as is or extended to $x^{\top}\mathrel{@}\mu:=pe:\tau$ where $\mu$ is an M-place. The second form is only available for non-ghost variables, and the M-places of distinct variables in the context will always be compatible. The former corresponds to the separating proposition $\boxed{pe:\tau}$, and the latter to $\mu\mapsto pe\ast{}\boxed{pe:\tau}$.
+\item For the shared variables extension, we store a list of active locks $x:=pe:\tau$ corresponding to uses of the \textsc{cs-lock} rule. We say $x:=pe:\tau$ is an active lock if $(\mathsf{ref}^x\;x:=pe:\tau)\in\delta$. For each active lock, we also store $\boxed{pe:\tau}$.
+\item For each heap variable $\mathsf{ref}^x\;y^\gamma:=pe':\tau'$ such that $x:=pe:\tau$ is an active lock, we store the pure proposition $(\mu\mapsto pe\ast{}\boxed{pe:\tau}\Rightarrow \mu'\mapsto pe'\ast\boxed{pe':\tau'})$ if $x\mathrel{@}\mu$ and $y\mathrel{@}\mu'$, with the $\mu$ conjuncts omitted if one or both of $x$ and $y$ is ghost.
+\end{itemize}
+
+\subsection{Reachability}
+The first thing we need is a reachability analysis, in the form of the relation $e\reach e'$, which asserts that if the beginning of $e$ is reached, then the beginning of $e'$ is reachable, and $e\downarrow$, which asserts that if the beginning of $e$ is reached then the end of $e$ is reachable.
+
+\judgmentB[Reachability]{e\reach e'}{e\downarrow}
+\begin{mathparpagebreakable}
+  \axiom[reach-id]
+    {e\reach e}\and
+  \infer[reach-tr]
+    {e_1\reach e_2\quad e_2\reach e_3}
+    {e_1\reach e_3}\and
+  \axiom[fin-var, fin-const]{x\downarrow\ \mathsf{true}\downarrow\ \mathsf{false}\downarrow\ n\downarrow}\and
+  \infer[reach-unop]
+    {\square\in\{\neg,\cdots\}}
+    {\square e\reach e}\and
+  \infer[fin-unop]
+    {\square\in\{\neg,\cdots\}\quad e\downarrow}
+    {\square e\downarrow}\and
+  \infer[reach-binop-1]
+    {\square\in\{+,\cdots\}}
+    {e_1\mathrel{\square} e_2\reach e_1}\and
+  \infer[reach-binop-2]
+    {\square\in\{+,\cdots\}\quad e_1\downarrow}
+    {e_1\mathrel{\square} e_2\reach e_2}\and
+  \infer[fin-binop]
+    {\square\in\{+,\cdots\}\quad e_1\downarrow\quad e_2\downarrow}
+    {e_1\mathrel{\square} e_2\downarrow}\and
+  \axiom[reach-if-1]
+    {(\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3)\reach e_1}\and
+  \infer[reach-if-2]
+    {e_1\downarrow}
+    {(\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3)\reach e_2,e_3}\and
+  \infer[fin-if]
+    {e_1\downarrow\quad (e_2\downarrow\ \lor\ e_3\downarrow)}
+    {(\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3)\downarrow}\and
+  \axiom[reach-call]
+    {F(\overline{e})\reach \langle\overline{e}\rangle}\and
+  \infer[fin-call]
+    {\langle\overline{e}\rangle\downarrow}
+    {F(\overline{e})\downarrow}\and
+  \axiom[reach-unreachable]
+    {\mathsf{unreachable}\;e\reach e}\and
+  \axiom[reach-return]
+    {\mathsf{return}\;\overline{e}\reach \langle\overline{e}\rangle}\and
+  \axiom[reach-goto]
+    {\mathsf{goto}\;k(\overline{e})\reach \langle\overline{e}\rangle}\and
+  \infer[fin-label]
+    {e'\downarrow}
+    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\downarrow}\and
+  \axiom[reach-label-1]
+    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\reach e'}\and
+  \axiom[reach-entail]
+    {\mathsf{entail}\;\overline{e}\;p\reach \langle\overline{e}\rangle}\and
+  \infer[fin-entail]
+    {\langle\overline{e}\rangle\downarrow}
+    {\mathsf{entail}\;\overline{e}\;p\downarrow}\and
+  \infer[reach-label-2]
+    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\reach \mathsf{goto}\;k_i(\overline{e''})\quad \langle\overline{e''}\rangle\downarrow}
+    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\reach e_i}\and
+\end{mathparpagebreakable}
+
+The rules for tuples, assert, typeof, and let, and mutation are omitted because they are the same as \textsc{reach-binop-1}, \textsc{reach-binop-2}, \textsc{fin-binop}, since they all have left to right evaluation order. The main interesting cases here are \textsf{if}, which terminates if either of the branches terminates, and \textsf{unreachable} (and return and goto), for which $(\mathsf{unreachable}\;e)\downarrow$ is false. \textsc{reach-label-2} says that a label is reachable only it is possible to get to a goto of that label. By iterating this rule it is possible to show also that gotos in reachable labels are also reachable.
+
+For unreachable code, we have no constraints on computational relevance, so we can just make everything ghost.
+
+\subsection{Side effects}
+Next, in order to determine what absolutely must be computationally relevant, we look for code with side effects. Most operations in Metamath C are side effect free, with the main exception being intrinsics and \textsf{assert}. If a side effectful operation is reachable from a procedure, then we mark the procedure itself as side effectful (note that \textsf{func} functions cannot have side effects). Note in particular that mutation is not considered a side effect, because the compiler has full visibility into what is going on and can track the values appropriately.
+
+TODO
+
+\subsection{Ghost propagation}
+Ghost annotations are optional in most cases, because of the ghost propagation pass that automatically makes as many things ghost as possible. The invariant that we uphold is that a ghost variable \emph{must not} have an M-place associated with it, while a regular variable \emph{may} have an M-place. However, it is consistent with this that there are no M-places at all, so we have some inductive conditions on what variables must have M-places, which are roughly analogous to dead-code elimination.
+
+TODO
+
+\subsection{Interpreting the judgments}
+
+TODO
+
 \end{document}
