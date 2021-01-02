@@ -37,7 +37,7 @@
 \newcommand{\proves}{\vdash}
 \newcommand{\makes}{\dashv}
 \newcommand{\reach}{\rightsquigarrow}
-\newcommand{\constep}{\Rightarrow}
+\newcommand{\constep}{\proves\cdot\makes}
 \newcommand{\makesto}{\dashv\!\constep}
 \newcommand{\judgment}[2][]{\noindent\\\textbf{#1}\hspace{\stretch{1}}\fbox{$#2$}\nopagebreak}
 \newcommand{\judgmentB}[3][]{\noindent\\\textbf{#1}\hspace{\stretch{1}}\fbox{$#2$}\ \ \fbox{$#3$}\nopagebreak}
@@ -194,7 +194,6 @@ The main typing judgments are:
   It is defined as: if $(x^\gamma:=pe:\tau)\in\delta$ then $\Gamma\proves pe:\tau$ and $x\in\mathrm{Dom}(\Gamma)$, and if $(x\to y)\in\delta$ then $x,y\in\mathrm{Dom}(\Gamma)$.
   \item $\Gamma \proves pe:\tau$\\ The typing rule for pure expressions, which does not depend on the value context.
   \item $\Gamma \constep \Gamma'$\\ an auxiliary judgment for applying pending mutations to the context.
-  \item $\Gamma;\delta \proves e:\tau\makesto\delta'$ is defined to mean $\Gamma;\delta \proves e:\tau\makes\delta_1\ \wedge\ \delta_1\constep\delta'$ for some $\delta_1$.
   \item $\Gamma\proves it\;\mathsf{ok}$\\ The top level item typing judgment
 \end{itemize}
 
@@ -321,13 +320,13 @@ This one is simple so we get it out of the way first. We will avoid dealing with
     {\Gamma \proves \core\alpha\;\mathsf{type}}\and
   \infer[ty-inter]
     {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
-    {\Gamma \proves \textstyle\bigcap\tau\;\mathsf{type}}\and
+    {\Gamma \proves \textstyle\bigcap\overline{\tau}\;\mathsf{type}}\and
   \infer[ty-union]
     {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
-    {\Gamma \proves \textstyle\bigcup\tau\;\mathsf{type}}\and
+    {\Gamma \proves \textstyle\bigcup\overline{\tau}\;\mathsf{type}}\and
   \infer[ty-list]
     {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
-    {\Gamma \proves \textstyle\Sep\tau\;\mathsf{type}}\and
+    {\Gamma \proves \textstyle\Sep\overline{\tau}\;\mathsf{type}}\and
   \infer[ty-prop]
     {\Gamma \proves A\;\mathsf{prop}}
     {\Gamma \proves A\;\mathsf{type}}\and
@@ -470,22 +469,28 @@ The rules above are the only ones that apply to pure expressions. General expres
 For general expressions, we must worry about the following additional effects:
 \begin{itemize}
   \item Variables in the context can be moved by their being referenced (in the \textsc{tye-var-move} rule).
-  \item Variables can be mutated, resulting in contexts with unapplied mutations. We will return to this in section \ref{sec:mutapp}.
+  \item Varables can be changed using no-op rules (the \textsc{tye-cs-left} and \textsc{tye-cs-right} rules). We will return to this in section \ref{sec:noop}.
 \end{itemize}
 
 \judgmentB[Expression validity]{\Gamma;\delta \proves e:\tau\makes\delta'}{\Gamma;\delta \proves e\Rightarrow pe:\tau\makes\delta'}
 \begin{mathparpagebreakable}
+  \infer[tye-cs-left]
+    {\Gamma;\delta\constep\delta_1\quad \Gamma;\delta_1\proves e\Rightarrow pe^?:\tau\makes\delta_2}
+    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
+  \infer[tye-cs-right]
+    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_1\quad \Gamma;\delta_1\constep\delta_2}
+    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
   \axiom[tye-var-move]{\Gamma;\delta,x^\gamma:=pe:\tau \proves x\Rightarrow pe:\tau\makes\delta,x^\gamma:=pe:\core\tau}\and
   \infer[tye-mut]
-    {\!\:{\Gamma;\delta \proves e\Rightarrow pe:\tau\makes\delta_1\quad
+    {\!\:{\Gamma;\delta \proves e_1\Rightarrow pe:\tau\makes\delta_1\quad
       \forall z,\ (x\to z)\notin \delta_1\quad
       \Gamma\proves \delta_2\atop
-      \Gamma;\delta_1,(x\to y),(y^\gamma:=pe:\tau)\proves e:\tau'\makesto\delta_2\quad y\notin \delta_2}}
-    {\Gamma;\delta \proves (x^\gamma\gets e\ \mathsf{with}\ y\gets x;\ e):\tau'\makes\delta_2}\and
+      \Gamma;\delta_1,(x\to y),(y^\gamma:=pe:\tau)\proves e_2:\tau'\makes\delta_2\quad y\notin \delta_2}}
+    {\Gamma;\delta \proves (x^\gamma\gets e_1\ \mathsf{with}\ y\gets x;\ e_2):\tau'\makes\delta_2}\and
   \infer[tye-let-pure]
     {\!\:{\Gamma;\delta \proves e_1\Rightarrow pe:\tau\makes\delta_1\quad
       \Gamma\proves\tau',\delta_2\atop
-      \Gamma,x:\core\tau;\delta_1,x^\gamma:=pe:\tau \proves e_2:\tau'\makesto\delta_2}}
+      \Gamma,x:\core\tau;\delta_1,x^\gamma:=pe:\tau \proves e_2:\tau'\makes\delta_2}}
     {\Gamma;\delta \proves (\mathsf{let}\ x^\gamma := e_1\;\mathsf{in}\; e_2):\tau'\makes\delta_2}\and
   \infer[tye-unreachable]
     {\Gamma;\delta \proves e:\bot\makes\delta_1\quad \Gamma\proves \delta_2}
@@ -494,8 +499,8 @@ For general expressions, we must worry about the following additional effects:
     {\!\:{\Gamma;\delta \proves e_1:\tau\makes \delta_1\quad
       \Gamma \proves t:\tau\Rightarrow \overline{R}\quad
       \Gamma \proves \tau',\delta_2\atop
-      \Gamma,\overline{\core{R}};\delta_1,\overline{R} \proves e_2:\tau'\makesto\delta_2}}
-    {\Gamma \proves (\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2):\tau'\makes\delta_2}\and
+      \Gamma,\overline{\core{R}};\delta_1,\overline{R} \proves e_2:\tau'\makes\delta_2}}
+    {\Gamma;\delta \proves (\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2):\tau'\makes\delta_2}\and
   \infer[tye-proc-call]
     {\mathsf{proc}\;F(\overline{R}):\overline{S}\quad
       \Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\sum\bar R\makes\delta'}
@@ -510,42 +515,43 @@ For general expressions, we must worry about the following additional effects:
     {\Gamma;\delta^0 \proves (\mathsf{label}\;\overline{k(\bar{R}):=e}\;\mathsf{in}\;e'):\tau\makes\delta^1}\and
   \infer[tye-goto]
     {\!\:{k(\delta';\bar{R})\in\Gamma\atop
-      \Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\sum(\bar R)_i\makesto\delta'}}
-    {\Gamma;\delta \proves \mathsf{goto}\;k(\overline{e}):\bot\vdash \delta'}\and
+      \Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\sum\bar R\makes\delta'}}
+    {\Gamma;\delta \proves \mathsf{goto}\;k(\overline{e}):\bot\proves \delta'}\and
   \infer[tye-assert]
-    {\Gamma \proves e\Rightarrow pe:\mathsf{bool} \makes \Gamma'}
-    {\Gamma \proves \mathsf{assert}\;e:pe\makes\Gamma'}\and
+    {\Gamma;\delta \proves e\Rightarrow pe:\mathsf{bool} \makes \delta'}
+    {\Gamma;\delta \proves \mathsf{assert}\;e:pe\makes\delta'}\and
   \infer[tye-typeof]
-    {\Gamma \proves e\Rightarrow pe:\tau \makes \Gamma'}
-    {\Gamma \proves \mathsf{typeof}\;e:\boxed{pe:\tau}\makes\Gamma'}\and
+    {\Gamma;\delta \proves e\Rightarrow pe:\tau \makes \delta'}
+    {\Gamma;\delta \proves \mathsf{typeof}\;e:\boxed{pe:\tau}\makes\delta'}\and
   \infer[tye-entail]
-    {\Gamma \proves \langle\overline{e}\rangle:\textstyle\Sep\overline{A} \makes \Gamma'\quad
+    {\Gamma;\delta \proves \langle\overline{e}\rangle:\textstyle\Sep\overline{A} \makes \delta'\quad
       \proves p:\textstyle\Sep\overline{A}\wand B}
-    {\Gamma \proves \mathsf{entail}\;\overline{e}\;p:B\makes\Gamma'}\and
+    {\Gamma;\delta \proves \mathsf{entail}\;\overline{e}\;p:B\makes\delta'}\and
 \end{mathparpagebreakable}
 
 Proofs are essentially (effectful) expressions with proposition type, so the rules look much the same. Pure proofs are simply imported from the MM0 logical enironment so we do not discuss them here. The main job of Metamath C is to make sure that these pure proofs have simple types, not using the entire context, since the user will be directly interacting with them.
 
-\subsection{Mutation application}\label{sec:mutapp}
+\subsection{No-op steps}\label{sec:noop}
 
-The role of the $\Gamma;\delta\proves e:\tau\makesto\delta'$ judgment is to clean up the context at the terminator of a basic block in the control flow graph: after the branches of an \textsf{if} statement, and at a \textsf{return} and \textsf{goto}. It is also used whenever the context has to drop a variable, such as after a $\mathsf{let}$ expression completes.
+In addition to being able to step as a result of executing some expression, we also need the ability to step without anything happening physically. This is primarily needed in order to clean up the context to eliminate a variable, or to merge control flow to a common context, i.e. after the branches of an \textsf{if} statement, and at a \textsf{return} and \textsf{goto}. It is also used whenever the context has to drop a variable, such as after a $\mathsf{let}$ expression completes.
 
-Recall that $\Gamma;\delta\proves e:\tau\makesto\delta'$ means $\Gamma;\delta\proves e:\tau\makes\delta_1$ and $\Gamma\proves\delta_1\constep\delta'$ for some $\delta_1$. The reason we can't just use $\delta_1$ directly is because there may be pending mutations, whose values depend on variables we are about to drop. But mutations to variables are not required to be well typed at the target variable at the time of mutation, because for example structs may be written incrementally, with the half written structs being ill-typed. Instead, we delay committing these values as long as possible, even across CFG edges if we can. However, the rules given below are not deterministic, because \textsc{cs-mut} steps can choose to apply any subset of outstanding mutations that are collectively well typed.
+The rules given below are not deterministic, but they are used whenever we can't otherwise make progress. Using them too much may end up in a state where a variable is missing, causing later typechecking to fail, so the compiler will try to apply these only as necessary.
 
-\judgment[Mutation application]{\Gamma\proves\delta \constep\delta'}
+\judgment[No-op step]{\Gamma;\delta \constep\delta'}
 \begin{mathparpagebreakable}
-  \axiom[cs-refl]{\Gamma\proves\delta \constep \delta}\and
+  \axiom[cs-refl]{\Gamma;\delta \constep \delta}\and
   \infer[cs-trans]
-    {\Gamma\proves\delta_1 \constep \delta_2 \quad \Gamma\proves\delta_2 \constep \delta_3}
-    {\Gamma\proves\delta_1 \constep \delta_3}\and
+    {\Gamma;\delta_1 \constep \delta_2 \quad \Gamma;\delta_2 \constep \delta_3}
+    {\Gamma;\delta_1 \constep \delta_3}\and
   \infer[cs-drop]
     {\forall x,(x\to y)\notin \delta}
-    {\Gamma\proves\delta,(y^\gamma:=pe:\tau)\constep\delta}\and
-  \axiom[cs-rename]
-    {\Gamma\proves\delta,(x\to y),(y^\gamma:=pe:\tau)\constep\delta,(x^\gamma:=pe:\tau)}\and
+    {\Gamma;\delta,(y^\gamma:=pe:\tau)\constep\delta}\and
+  \axiom[cs-rename\footnotemark]
+    {\Gamma;\delta,(x\to y),(y^\gamma:=pe:\tau)\constep\delta,(x^\gamma:=pe:\tau)}\and
+  \footnotetext{The \textsc{cs-rename} rule should only be used if it is the only way to make progress, i.e. when $y$ is going out of scope. This is needed because it changes the interpretation of expressions containing $x$.}
   \infer[cs-forget]
     {\Gamma\proves\Gamma[\overline{x\to pe}]}
-    {\Gamma\proves\delta,\overline{x^\gamma:=pe:\tau}\constep\delta,\overline{x^\gamma:\tau}}\and
+    {\Gamma;\delta,\overline{x^\gamma:=pe:\tau}\constep\delta,\overline{x^\gamma:\tau}}\and
 \end{mathparpagebreakable}
 
 This is a nondeterministic judgment, with the ``goal'' being to eliminate a particular variable and/or join with separate control flow which has assigned different values to the variables.
@@ -705,7 +711,7 @@ We introduce a new kind of variable modifier, a heap variable. $\hat x:\tau$ mea
 
 Heap variables resemble shared references from Rust, and in particular they are annotated with a ``lifetime''. The difference is that the pointer-ness is separated out; a heap variable directly has the type of the pointee, and the pointer is just a $\&^\mathbf{sn}\eta$ where $\eta$ is a heap variable.
 
-A lifetime $a$ is modeled roughly as a (precise, aka subsingleton) separating proposition $P$, with each $\mathsf{ref}^a\;x:=pe:\tau$ being modeled as a place $\eta$ for which $P\Rightarrow (\eta:=pe:\tau)$. That is, we can weaken $P$ to obtain the fact that $\eta:=pe:\tau$. (The relation $P\Rightarrow Q$, which is a regular (not separating) proposition, is defined as $\vdash P\to (Q*\top)$.) Because $P$ is a precise proposition, it satisfies $(P\Rightarrow \exists x, Q)\to (\exists x,(P\Rightarrow Q))$, which means we can pattern match on heap variables like regular variables, for example to obtain $\&\tau$ from $\&\&^\mathbf{own}\tau$. But this is only relevant for the semantic model; in the type checker we simply need some rules for how to manipulate these variables.
+A lifetime $a$ is modeled roughly as a (precise, aka subsingleton) separating proposition $P$, with each $\mathsf{ref}^a\;x:=pe:\tau$ being modeled as a place $\eta$ for which $P\Rightarrow (\eta:=pe:\tau)$. That is, we can weaken $P$ to obtain the fact that $\eta:=pe:\tau$. (The relation $P\Rightarrow Q$, which is a regular (not separating) proposition, is defined as $\proves P\to (Q*\top)$.) Because $P$ is a precise proposition, it satisfies $(P\Rightarrow \exists x, Q)\to (\exists x,(P\Rightarrow Q))$, which means we can pattern match on heap variables like regular variables, for example to obtain $\&\tau$ from $\&\&^\mathbf{own}\tau$. But this is only relevant for the semantic model; in the type checker we simply need some rules for how to manipulate these variables.
 
 Syntactically, a lifetime can be either $\mathsf{extern}$, referring to data outside the current context, or $x$, some variable in the context. These denote the scope of the borrow; a variable which is borrowed cannot be mutated. (Possible extensions include lifetimes with scope $\{x,y,z\}$ for creating data that spans multiple variables, and lifetimes with scope $x.\mathsf{field}$ in order to borrow only parts of a variable without locking the whole variable.) The proposition $P$ from the previous paragraph is the implicit frame proposition in the $\mathsf{extern}$ case, and $x:=pe:\tau$ from the value context at the time of the borrow in the case of $x$. (In the case of multiple variables, it is the separating conjunction of these $x:=pe:\tau$ conditions and in the case of a subobject we destructure this proposition and pull out the $\eta:=pe:\tau$ component.)
 
@@ -720,7 +726,7 @@ Syntactically, a lifetime can be either $\mathsf{extern}$, referring to data out
       \Gamma \proves \tau\;\mathsf{type}}
     {\Gamma \proves \mathsf{ref}^a\; x:\tau\;\mathsf{arg}}\and
   \infer[tye-struct-ref]
-    {\!\:{\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makesto\delta_1\;\mathsf{read}\atop
+    {\!\:{\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta_1\;\mathsf{read}\atop
       \Gamma;\delta_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[pe/x]\makes\delta_2}}
     {\Gamma;\delta \proves \langle \eta,\overline{e}\rangle: \textstyle\sum \mathsf{ref}^{\mathrm{Lft}(\eta)}\;x:\tau,\bar R\makes\delta_2}\and
   {\begin{matrix}
@@ -730,7 +736,7 @@ Syntactically, a lifetime can be either $\mathsf{extern}$, referring to data out
   \end{matrix}}
 \end{mathparpagebreakable}
 
-Here the $\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makesto\delta'\;\mathsf{read}$ judgment is a conjunction of $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}$ followed by $\Gamma\proves\delta_1 \Rightarrow \delta'$, such that $\Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}$. That is, first we evaluate the place expression, then we use $\Gamma\proves\delta_1 \Rightarrow \delta'$ to ensure that $\eta$ is locked and readable at type $\tau$, and the final judgment asserts that in the result state we can in fact read $\eta:\tau$.
+Here the $\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta'\;\mathsf{read}$ judgment is a conjunction of $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}$ followed by $\Gamma\proves\delta_1 \Rightarrow \delta'$, such that $\Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}$. That is, first we evaluate the place expression, then we use $\Gamma\proves\delta_1 \Rightarrow \delta'$ to ensure that $\eta$ is locked and readable at type $\tau$, and the final judgment asserts that in the result state we can in fact read $\eta:\tau$.
 
 \begin{mathparpagebreakable}
   \delta\in\mathrm{VCtx}::=\delta,(\mathsf{ref}^a\;x:=pe:\tau)\\
@@ -785,7 +791,197 @@ Arrays here are fixed length, depending on another variable in the context.
 
 TODO
 
+\section{Ghost propagation}
+
+Ghost annotations are optional in most cases, because of the ghost propagation pass that automatically makes as many things ghost as possible. The invariant that we uphold is that a ghost variable \emph{must not} have an M-place associated with it, while a regular variable \emph{may} have an M-place. However, it is consistent with this that there are no M-places at all, so we have some inductive conditions on what variables must have M-places, which are roughly analogous to dead-code elimination.
+
+Ghost propagation (dead-store elimination) has to be done in tandem with reachability analysis (dead-code elimination), because \textsf{if} can convert data dependencies into control dependencies, meaning that parts of the code may in fact have the program counter itself being ghost. When this happens, we can't execute anything with side effects or anything whose value is computationally relevant, because the physical machine never reaches these lines.
+
+To express all this, we will use a judgment $\Gamma^\alpha;\delta^\rho\proves e:\tau^\gamma\makes {\delta'}^{\rho'}$ that augments the typing condition with four ghost annotations; in addition we will be modifying the ghost annotations inside $\delta$ and $\delta_1$ to make them more strict (i.e. possibly turning $x^\top$ to $x^\bot$).
+
+\begin{itemize}
+  \item $\alpha$, the variable on $\Gamma$, is either $\top$ or $\bot$. If $\alpha=\bot$ then the program counter is ghost, which is to say, we are unable to perform any operation that involves emitting code. This happens when we branch on a ghost variable.
+  \item $\rho$, the variables associated to the before and after value contexts, are also $\bot$ or $\top$ and indicate whether the beginning or end of $e$ is reachable.
+  \item Because type inference is complete, we can treat the type $\tau$ of $e$ as an input to the judgment. Here $\tau^{\gamma}$ is a type extended with ghost annotations in all subexpressions. The typing rules for such extended types assert that a type is ghost only if all subexpressions are ghost.
+\end{itemize}
+
+\subsection{Ghost annotated types and tuple patterns}
+
+The types that show up in the expression judgment are annotated with $\gamma$ ghost annotations at all levels, subject to a local coherence condition that states that a ghost type must only have ghost parts. This allows us to only compute some parts of a type as long as we have all the parts we actually need for downstream processing. While the language itself admits ghost annotations on variables in a tuple pattern and variable binders in a struct, these are only upper bounds on the computational relevance, because we are interested in eliminating parts of a type for optimization purposes even if they were not claimed to be ghost.
+
+\judgment[Ghost-annotated type validity]{\tau^\gamma\;\mathsf{ctype}}
+\begin{mathparpagebreakable}
+  \axiom[cty-unit, cty-bool]{\mathbf{1}^\gamma,\ \mathsf{bool}^\gamma\;\mathsf{ctype}}\and
+  \infer[cty-nat, cty-int]
+    {\gamma\le (s\ne\infty)}
+    {\N_s^\gamma,\ \Z_s^\gamma\;\mathsf{ctype}}\and
+  \infer[cty-var, cty-core-var]
+    {\alpha\in\Gamma}
+    {\alpha^\gamma,\ \core\alpha^\gamma\;\mathsf{ctype}}\and
+  \infer[cty-inter, cty-union, cty-list]
+    {\forall i,\ \tau_i^{\gamma_i}\;\mathsf{ctype}\quad
+      \forall i,\ \gamma_i\le \gamma'}
+    {(\textstyle\bigcap\overline{\tau^\gamma})^{\gamma'},
+      \ (\textstyle\bigcup\overline{\tau^\gamma})^{\gamma'},
+      \ (\textstyle\Sep\overline{\tau^\gamma})^{\gamma'}\;\mathsf{ctype}}\and
+  \axiom[cty-prop]{A^\gamma\;\mathsf{ctype}}\and
+  \infer[cty-struct]
+    {\gamma_2\le\gamma_1,\gamma\quad
+      \tau^{\gamma_2}\;\mathsf{ctype}\quad
+      {\tau'}^{\gamma}\;\mathsf{ctype}}
+    {(\textstyle\sum x^{\gamma_1}:{\tau^{\gamma_2}},\tau')^{\gamma}\;\mathsf{ctype}}\and
+\end{mathparpagebreakable}
+\judgment[Ghost-annotated tuple pattern validity]{t:\tau^\gamma\Rightarrow\overline{R^{\gamma'}}}
+\begin{mathparpagebreakable}
+  \axiom[ctp-ignore]{\_:\tau^\gamma\Rightarrow\cdot}\and
+  \infer[ctp-var]
+    {\gamma'\le \gamma}
+    {x^\gamma:\tau^{\gamma'}\Rightarrow x^{\gamma'}:\tau}\and
+  \infer[ctp-typed]
+    {t:\tau^\gamma\Rightarrow\overline{R^{\gamma'}}}
+    {(t:\tau):\tau^\gamma\Rightarrow\overline{R^{\gamma'}}}\and
+  \infer[ctp-sum]
+    {\gamma_2\le\gamma_1,\gamma_3\quad
+      t:\textstyle \tau^{\gamma_2}\Rightarrow \overline{R^\gamma}\quad
+      \langle \overline{t'}\rangle:\textstyle (\tau'[t/x])^{\gamma_3}\Rightarrow \overline{R^\gamma}'}
+    {\langle t,\overline{t'}\rangle:(\textstyle\sum x^{\gamma_1}:{\tau^{\gamma_2}},\tau')^{\gamma_3}\Rightarrow \overline{R^\gamma},\overline{R^\gamma}'}\and
+\end{mathparpagebreakable}
+
+The intuitive meaning of $\tau^\gamma$ is that $\tau^\top$ is a value that will actually have storage space allocated for it, while $\tau^\bot$ is a value that will not need to be calculated (even if it is stored in a non-ghost variable). These rules assume that the full ghost annotation assignment is known and just give constraints on that assignment, but in practice we will start from an assignment that makes everything ghost, and incrementally shift this upward in a coordinated fashion, causing an error if we run afoul of the $\gamma_2\le\gamma_1$ requirement in \textsc{carg-type} or $\gamma\to s\ne\infty$ in \textsc{cty-nat} or \textsc{cty-int} (which express that unbounded integers are not representable in the physical machine).
+
+\subsection{The expression typing judgment}
+
+For the expression judgment $\Gamma^\alpha;\delta^{\rho} \proves e:\tau^\gamma\makes{\delta'}^{\rho'}$, we have $\Gamma,\delta,e,\tau$ as inputs and $\delta$ as output, with the annotations $\alpha,\rho,\rho',\gamma$ being solved for by a fixed point algorithm. It is safe to assume that $\gamma\le \rho'\le \rho$ and $\gamma\le \alpha$ in this judgment (that is, the end of a statement is only reachable if the beginning is, and the return value is only needed if the end of the statement is reached), unless $\tau$ is a ghost type like $\mathbf{1}$ or $A$ in which case $\gamma\le \rho',\alpha$ need not hold.
+
+We also add an annotation $\sigma\in\{\bot,\top\}$ on functions (including $\mathsf{self}$), which can be seen in rule \textsc{tyc-proc-call}, for example; this is the side effect analysis, see section \ref{sec:sideeffect}.
+
+\judgment[Ghost-annotated expression validity]{\Gamma^\alpha;\delta_1^{\rho_1} \proves e:\tau^\gamma\makes\delta_2^{\rho_2}}
+\begin{mathparpagebreakable}
+  \infer[tyc-cs-left]
+    {\Gamma;\delta\constep\delta_1\quad \Gamma;\delta_1\proves e\Rightarrow pe^?:\tau\makes\delta_2}
+    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
+  \infer[tyc-cs-right]
+    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_1\quad \Gamma;\delta_1\constep\delta_2}
+    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
+  \infer[tyc-var-ref]
+    {(x^{\gamma'}:=pe:\tau)\in\delta\quad |\tau| = \tau'\quad \gamma\le\alpha,\rho,\gamma'}
+    {\Gamma^\alpha;\delta^{\rho} \proves x:{\tau'}^{\gamma}\makes \delta^{\rho}}\and
+  \axiom[tyc-unit]
+    {\Gamma^\alpha;\delta^{\rho} \proves ():\mathbf{1}^{\gamma}\makes \delta^{\rho}}\and
+  \infer[tyc-true, tyc-false]
+    {\gamma\le \alpha,\rho}
+    {\Gamma^\alpha;\delta^{\rho} \proves \mathsf{true},\ \mathsf{false}:\mathsf{bool}^{\gamma}\makes \delta^{\rho}}\and
+  \infer[tyc-nat, tyc-int]
+    {\gamma\le \alpha,\rho,(s\ne \infty)}
+    {\Gamma^\alpha;\delta^{\rho} \proves n:\N_s^{\gamma},\ \Z_s^{\gamma}\makes \delta^{\rho}}\and
+  \infer[tyc-not]
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves e:\mathsf{bool}^\gamma\makes \delta_2^{\rho_2}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves \neg e:\mathsf{bool}^\gamma\makes \delta_2^{\rho_2}}\and
+  \infer[tyc-and, tyc-or, \dots]
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves e_1:\mathsf{bool}^\gamma\makes \delta_2^{\rho_2}\quad
+      \Gamma^\alpha;\delta_2^{\rho_2} \proves e_2:\mathsf{bool}^\gamma\makes \delta_3^{\rho_3}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves e_1\land e_2,\ e_1\lor e_2:\mathsf{bool}^\gamma\makes \delta_3^{\rho_3}}\and
+  \infer[tyc-if]
+    {\!\:{\Gamma^\alpha;\delta_1^{\rho_1} \proves c:\mathsf{bool}^{\gamma'}\makes \delta_2^{\rho_2} \atop
+      \Gamma^{\alpha\wedge \gamma'};\delta_2^{\rho_2} \proves e_1,\ e_2:\tau^\gamma\makes \delta_3^{\rho_3}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves (\mathsf{if}\;c\;\mathsf{then}\;e_1\;\mathsf{else}\;e_2):\tau^\gamma\makes \delta_3^{\rho_3}}\and
+  \infer[tyc-struct]
+    {\!\:{\gamma_2\le\gamma_1, \gamma\quad
+      \Gamma^\alpha;\delta_1^{\rho_1} \proves e:\tau^{\gamma_2}\makes \delta_2^{\rho_2}\atop
+      \Gamma^\alpha;\delta_2^{\rho_2} \proves \langle \overline{e}\rangle:(\tau'[e/x])^{\gamma}\makes \delta_3^{\rho_3}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves \langle e,\overline{e}\rangle:(\textstyle\sum x^{\gamma_1}:{\tau^{\gamma_2}},\tau')^{\gamma}\makes \delta_3^{\rho_3}}\and
+  \infer[tyc-var-move]
+    {\gamma\le \alpha,\rho,\gamma'}
+    {\Gamma^\alpha;(\delta,x^{\gamma'}:=pe:\tau)^\rho \proves x:\tau^\gamma\makes(\delta,x^{\gamma'}:=pe:\core\tau)^\rho}\and
+  \infer[tyc-mut]
+    {\!\:{\gamma_1\le\gamma\quad
+      \Gamma^\alpha;\delta_1^{\rho_1} \proves e_1:\tau_1^{\gamma_1}\makes\delta_2^{\rho_2}\atop
+      \Gamma^\alpha;\delta_2^{\rho_2},(x\to y),(y^{\gamma_1}:=e_1:\tau_1)\proves e_2:\tau_2^{\gamma_2}\makes\delta_3^{\rho_3}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves (x^{\gamma}\gets e_1\ \mathsf{with}\ y\gets x;\ e_2):\tau_2^{\gamma_2}\makes\delta_3^{\rho_3}}\and
+  \infer[tyc-unreachable]
+    {\rho_2\le\rho\quad
+      \Gamma^\alpha;\delta^\rho \proves e:\bot^\bot\makes\delta_1^{\rho_1}}
+    {\Gamma^\alpha;\delta^\rho \proves \mathsf{unreachable}\;e:\tau^\gamma\makes\delta_2^{\rho_2}}\and
+  \infer[tyc-let]
+    {\!\:{\Gamma^\alpha;\delta_1^{\rho_1} \proves e_1:\tau_1^{\gamma_1}\makes \delta_2^{\rho_2}\quad
+      t:\tau_1^{\gamma_1}\Rightarrow \overline{R^\gamma}\atop
+      (\Gamma,\overline{\core{R}})^\alpha;(\delta_2,\overline{R^\gamma})^{\rho_2} \proves e_2:\tau_2^{\gamma_2}\makes\delta_3^{\rho_3}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves (\mathsf{let}\ t := e_1\;\mathsf{in}\; e_2):\tau_2^{\gamma_2}\makes\delta_3^{\rho_3}}\and
+  \infer[tyc-return]
+    {\!\:{\rho_2\le\rho\quad\rho_1\le\alpha,\gamma' \quad
+      (\textstyle\sum\bar S)^{\gamma'}\;\mathsf{ctype}\atop
+      \mathsf{self}^\sigma(\bar R):\bar S\quad
+      \Gamma^\alpha;\delta^\rho \proves \langle\overline{e}\rangle:(\textstyle\sum\bar S)^{\gamma'}\makes \delta_1^{\rho_1}}}
+    {\Gamma^\alpha;\delta^\rho \proves \mathsf{return}\;\overline{e}:\bot^\gamma\makes \delta_2^{\rho_2}}\and
+  \infer[tyc-proc-call]
+    {\!\:{\gamma'\le\gamma\quad \sigma\wedge\rho_2\le \alpha,\gamma,\sigma'\quad (\textstyle\sum\bar R)^\gamma,\ (\textstyle\sum\bar S)^{\gamma'}\;\mathsf{ctype}\atop
+      \mathsf{self}^{\sigma'}(-):-\quad
+      \mathsf{proc}^\sigma\;F(\overline{R}):\overline{S}\quad
+      \Gamma^\alpha;\delta_1^{\rho_1} \proves \langle\overline{e}\rangle:(\textstyle\sum\bar R)^\gamma\makes\delta_2^{\rho_2}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves F(\overline{e}):(\textstyle\sum\bar S)^{\gamma'}\makes\delta_2^{\rho_2}}\and
+  \infer[tyc-label]
+    {\!\:{\forall i,\ (\Gamma,\overline{k^\alpha(\delta;\bar{R})},(\bar{R})_i)^{\alpha_i};(\delta_i,(\bar{R})_i)^{\rho_i} \proves e_i:\bot^\bot\makes{\delta'_i}^{\rho'_i}\atop
+      (\Gamma,\overline{k^\alpha(\delta;\bar{R})})^\alpha;\delta_1^{\rho_1}\proves e':\tau^\gamma\makes\delta_3^{\rho_3}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves (\mathsf{label}\;\overline{k(\bar{R}):=e}\;\mathsf{in}\;e'):\tau^\gamma\makes\delta_3^{\rho_3}}\and
+  \infer[tyc-goto]
+    {\!\:{\alpha'\le \alpha\ \ \rho_2\le \rho\ \ \rho_1\le\gamma\quad
+      k^{\alpha'}(\delta_1^{\rho_1};\bar{R})\in\Gamma\atop
+      \Gamma^\alpha;\delta^{\rho} \proves \langle\overline{e}\rangle:(\textstyle\sum\bar R)^\gamma\makes\delta_1^{\rho_1}}}
+    {\Gamma^\alpha;\delta^{\rho} \proves \mathsf{goto}\;k(\overline{e}):\bot^{\gamma'}\proves \delta_2^{\rho_2}}\and
+  \infer[tyc-assert]
+    {\!\:{\rho_2\le \sigma,\alpha,\gamma\quad
+      \mathsf{self}^\sigma(-):-\atop
+      \Gamma^\alpha;\delta_1^{\rho_1} \proves e:\mathsf{bool}^\gamma \makes \delta_2^{\rho_2}}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves \mathsf{assert}\;e:e^{\gamma'}\makes\delta_2^{\rho_2}}\and
+  \infer[tyc-typeof]
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves e:\tau^\bot \makes \delta_2^{\rho_2}}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves \mathsf{typeof}\;e:\boxed{e:\tau}^{\gamma}\makes\delta_2^{\rho_2}}\and
+  \infer[tyc-entail]
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves \langle\overline{e}\rangle:\textstyle(\Sep\overline{A})^\bot \makes \delta_2^{\rho_2}\quad
+      \proves p:\textstyle\Sep\overline{A}\wand B}
+    {\Gamma^\alpha;\delta_1^{\rho_1} \proves \mathsf{entail}\;\overline{e}\;p:B^\gamma\makes\delta_2^{\rho_2}}\and
+\end{mathparpagebreakable}
+
+These rules have the same form as the \textsc{tye-*} rules (slightly simplified to focus on the new part, the $\alpha,\rho,\gamma$ annotations). The key new thing to notice is the inequality side conditions in most of the rules. For example:
+\begin{itemize}
+\item \textsc{tyc-var-move} requires $\gamma\le \alpha,\rho,\gamma'$ because if the result of the move is actually needed ($\gamma$) then we must execute code ($\alpha$) that is reachable ($\rho$) and the data to move must actually be available ($\gamma'$).
+\item \textsc{tyc-if} is the main rule that changes $\alpha$. Inside the branches, $\alpha$ becomes $\alpha\wedge \gamma'$, because if we did not evaluate the condition we can't enter the branches.
+\item \textsc{tyc-return} requires $\rho_2\le \rho$, just to ensure the lemma $(\Gamma^\alpha;\delta_1^{\rho_1} \proves e:\tau^\gamma\makes\delta_2^{\rho_2})\to\rho_2\le\rho_1$, but in practice we can always set $\rho_2$ to $\bot$ because it is unreachable. Similar conditions appear in \textsc{tyc-unreachable} and \textsc{tyc-goto}, since these expressions do not terminate normally. The other condition, $\rho_1\le\alpha,\gamma$ says that if we reach the return ($\rho_1$), then we must be able to execute the return statement ($\alpha$), and we need the value to return ($\gamma'$).
+\item \textsc{tyc-proc-call} makes use of the $\sigma$ annotations on functions. If a function has $\sigma=\top$, then it may perform a side effect, so we cannot omit it. We require $\gamma'\le \gamma$ because if we need the result ($\gamma'$) then we need the arguments ($\gamma$), and we require $\sigma\wedge\rho_2\le\alpha,\gamma,\sigma'$ because if the function $F$ is side effecting ($\sigma$) and the call is reachable ($\rho_2$), then we must execute the call ($\alpha$), we need the arguments ($\gamma$), and this function is itself side-effecting ($\sigma'$).
+\item \textsc{tyc-assert} requires that $\rho_2\le\sigma,\alpha,\gamma$ because if we reach the assert ($\rho_2$), then because failure is a side effect ($\sigma$) we have to execute it ($\alpha$) and we need the condition ($\gamma$).
+\item In \textsc{tyc-goto}, we add $\alpha$ and $\rho$ annotations to $k(\delta,\bar{R})$ to coordinate the entry to this block. Here $\alpha'=\bot$ is a bit unusual, because it means that the block we are jumping to does not physically exist. In this case, we don't need to jump to it, so no code is needed ($\alpha'\le \alpha$), we have an arbitrary postcondition $\rho_2$ that may as well be $\bot$, and we need $\rho_1\le\gamma$ because if the goto is reachable then we need the value.
+\end{itemize}
+
+We also need an annotated version of the no-op step judgment, in order to weaken variables when they are no longer live. This is exactly the same as \textsc{cs-*}, but with the new rule \textsc{ccs-ghost} that allows us to make a variable ghost. In particular, since the \textsc{tyc-mut} rule does not remove the old value of the variable, it is in general a copy and not actually a mutation, so we will want to use \textsc{ccs-ghost} just after constructing the expression $e_1$ to kill the old value so that we can safely replace it in-place with the new value.
+
+\judgment[Ghost annotated no-op step]{\Gamma;\delta \constep\delta'}
+\begin{mathparpagebreakable}
+  \axiom[ccs-refl]{\Gamma;\delta \constep \delta}\and
+  \infer[ccs-trans]
+    {\Gamma;\delta_1 \constep \delta_2 \quad \Gamma;\delta_2 \constep \delta_3}
+    {\Gamma;\delta_1 \constep \delta_3}\and
+  \infer[ccs-drop]
+    {\forall x,(x\to y)\notin \delta}
+    {\Gamma;\delta,(y^\gamma:=pe:\tau)\constep\delta}\and
+  \axiom[ccs-rename]
+    {\Gamma;\delta,(x\to y),(y^\gamma:=pe:\tau)\constep\delta,(x^\gamma:=pe:\tau)}\and
+  \infer[ccs-forget]
+    {\Gamma\proves\Gamma[\overline{x\to pe}]}
+    {\Gamma;\delta,\overline{x^\gamma:=pe:\tau}\constep\delta,\overline{x^\gamma:\tau}}\and
+  \infer[ccs-ghost]
+    {\gamma'\le \gamma}
+    {\Gamma;\delta,(x^\gamma:=pe:\tau)\constep\delta,(x^{\gamma'}:=pe:\tau)}\and
+\end{mathparpagebreakable}
+
+\subsection{Side effects}\label{sec:sideeffect}
+
+While the ghost analysis pass is primarily intraprocedural, it contains one interprocedural part, namely the assignment of $\sigma$ annotations to the procedures. When $\sigma=\top$, the procedure may perform a side effect, which is defined as anything which performs IO (i.e. compiler intrinsics and syscalls), plus $\mathsf{assert}\;\mathsf{false}$ which causes early termination (which is also observable).
+
+If a side effectful operation is reachable from a procedure, then we mark the procedure itself as side effectful (note that \textsf{func} functions cannot have side effects). Note in particular that mutation is not considered a side effect, because the compiler has full visibility into what is going on and can track the values appropriately.
+
 \section{The Layout pass}\label{sec:layout}
+
+The ghost analysis pass has already determined \emph{which} variables are required for the computation to proceed, but to determine \emph{where} to put them, we have another pass, the layout pass.
 
 The layout pass is responsible for assigning concrete memory locations to variables in the code. In particular, multiple variables may overlap the same memory location if they are never \emph{live} at the same time, which is to say, the last use of one variable comes before the definition of the second. The analysis pass that determines these relations is considered part of the ``nondeterministic'' part of the compiler, meaning that it requires no proof. Instead, the analysis pass produces a satisfying layout, and the typing relation will validate that a layout puts variables in disjoint locations if they are live at the same time.
 
@@ -823,6 +1019,10 @@ Intuitively, $\phi_1\ast\phi_2$ is the stack layout consisting of the layout $\p
 At a given point in execution, each of the unions has one of its members ``active'' and the other ``inactive'', and a variable can only be accessed if it is active in all parent unions.
 A ghost variable is never assigned any stack location and hence it can never be accessed. More formally, we say that two stack paths are \emph{incompatible}, written $s_1\perp s_2$, if there exists $s$ such that $s_1$ extends $s.l$ and $s_2$ extends $s.r$, or vice versa. We will maintain the invariant that if two variables in the context are represented by stack paths $s_1$ and $s_2$ then they are compatible.
 
+\section{Semantics}
+
+Semantics plays a rather more important role in Metamath C compared to other languages because the target architecture for the compiler is literally separation logic. So we need a way to interpret every judgment just described into a separating proposition or theorem.
+
 \subsection{Interpreting the context}
 
 The context $\Gamma$ in the typing rules is ultimately compiled down to a separating proposition over machine states, and we need to interpret it in such a way that a validly typed expression corresponds to a valid theorem in separation logic.
@@ -847,81 +1047,8 @@ The value context $\delta$ is extended to $\Delta$ by extending some of the vari
 \item Each $x^\gamma:=pe:\tau$ may either be left as is or extended to $x^{\top}\mathrel{@}\mu:=pe:\tau$ where $\mu$ is an M-place. The second form is only available for non-ghost variables, and the M-places of distinct variables in the context will always be compatible. The former corresponds to the separating proposition $\boxed{pe:\tau}$, and the latter to $\mu\mapsto pe\ast{}\boxed{pe:\tau}$.
 \item For the shared variables extension, we store a list of active locks $x:=pe:\tau$ corresponding to uses of the \textsc{cs-lock} rule. We say $x:=pe:\tau$ is an active lock if $(\mathsf{ref}^x\;x:=pe:\tau)\in\delta$. For each active lock, we also store $\boxed{pe:\tau}$.
 \item For each heap variable $\mathsf{ref}^x\;y^\gamma:=pe':\tau'$ such that $x:=pe:\tau$ is an active lock, we store the pure proposition $(\mu\mapsto pe\ast{}\boxed{pe:\tau}\Rightarrow \mu'\mapsto pe'\ast\boxed{pe':\tau'})$ if $x\mathrel{@}\mu$ and $y\mathrel{@}\mu'$, with the $\mu$ conjuncts omitted if one or both of $x$ and $y$ is ghost.
+\item For each heap variable $\mathsf{ref}^\mathsf{extern}\;y^\gamma:=pe':\tau'$, we store the pure proposition $(P\Rightarrow \mu'\mapsto pe'\ast\boxed{pe':\tau'})$ where $P$ is the frame proposition (that is, $P$ is an implicit additional precise separating proposition passed in and out of the function).
 \end{itemize}
-
-\subsection{Reachability}
-The first thing we need is a reachability analysis, in the form of the relation $e\reach e'$, which asserts that if the beginning of $e$ is reached, then the beginning of $e'$ is reachable, and $e\downarrow$, which asserts that if the beginning of $e$ is reached then the end of $e$ is reachable.
-
-\judgmentB[Reachability]{e\reach e'}{e\downarrow}
-\begin{mathparpagebreakable}
-  \axiom[reach-id]
-    {e\reach e}\and
-  \infer[reach-tr]
-    {e_1\reach e_2\quad e_2\reach e_3}
-    {e_1\reach e_3}\and
-  \axiom[fin-var, fin-const]{x\downarrow\ \mathsf{true}\downarrow\ \mathsf{false}\downarrow\ n\downarrow}\and
-  \infer[reach-unop]
-    {\square\in\{\neg,\cdots\}}
-    {\square e\reach e}\and
-  \infer[fin-unop]
-    {\square\in\{\neg,\cdots\}\quad e\downarrow}
-    {\square e\downarrow}\and
-  \infer[reach-binop-1]
-    {\square\in\{+,\cdots\}}
-    {e_1\mathrel{\square} e_2\reach e_1}\and
-  \infer[reach-binop-2]
-    {\square\in\{+,\cdots\}\quad e_1\downarrow}
-    {e_1\mathrel{\square} e_2\reach e_2}\and
-  \infer[fin-binop]
-    {\square\in\{+,\cdots\}\quad e_1\downarrow\quad e_2\downarrow}
-    {e_1\mathrel{\square} e_2\downarrow}\and
-  \axiom[reach-if-1]
-    {(\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3)\reach e_1}\and
-  \infer[reach-if-2]
-    {e_1\downarrow}
-    {(\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3)\reach e_2,e_3}\and
-  \infer[fin-if]
-    {e_1\downarrow\quad (e_2\downarrow\ \lor\ e_3\downarrow)}
-    {(\mathsf{if}\;h^? : e_1\;\mathsf{then}\;e_2\;\mathsf{else}\;e_3)\downarrow}\and
-  \axiom[reach-call]
-    {F(\overline{e})\reach \langle\overline{e}\rangle}\and
-  \infer[fin-call]
-    {\langle\overline{e}\rangle\downarrow}
-    {F(\overline{e})\downarrow}\and
-  \axiom[reach-unreachable]
-    {\mathsf{unreachable}\;e\reach e}\and
-  \axiom[reach-return]
-    {\mathsf{return}\;\overline{e}\reach \langle\overline{e}\rangle}\and
-  \axiom[reach-goto]
-    {\mathsf{goto}\;k(\overline{e})\reach \langle\overline{e}\rangle}\and
-  \infer[fin-label]
-    {e'\downarrow}
-    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\downarrow}\and
-  \axiom[reach-label-1]
-    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\reach e'}\and
-  \axiom[reach-entail]
-    {\mathsf{entail}\;\overline{e}\;p\reach \langle\overline{e}\rangle}\and
-  \infer[fin-entail]
-    {\langle\overline{e}\rangle\downarrow}
-    {\mathsf{entail}\;\overline{e}\;p\downarrow}\and
-  \infer[reach-label-2]
-    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\reach \mathsf{goto}\;k_i(\overline{e''})\quad \langle\overline{e''}\rangle\downarrow}
-    {(\mathsf{label}\;\overline{k(\overline{R}):=e}\;\mathsf{in}\;e')\reach e_i}\and
-\end{mathparpagebreakable}
-
-The rules for tuples, assert, typeof, and let, and mutation are omitted because they are the same as \textsc{reach-binop-1}, \textsc{reach-binop-2}, \textsc{fin-binop}, since they all have left to right evaluation order. The main interesting cases here are \textsf{if}, which terminates if either of the branches terminates, and \textsf{unreachable} (and return and goto), for which $(\mathsf{unreachable}\;e)\downarrow$ is false. \textsc{reach-label-2} says that a label is reachable only it is possible to get to a goto of that label. By iterating this rule it is possible to show also that gotos in reachable labels are also reachable.
-
-For unreachable code, we have no constraints on computational relevance, so we can just make everything ghost.
-
-\subsection{Side effects}
-Next, in order to determine what absolutely must be computationally relevant, we look for code with side effects. Most operations in Metamath C are side effect free, with the main exception being intrinsics and \textsf{assert}. If a side effectful operation is reachable from a procedure, then we mark the procedure itself as side effectful (note that \textsf{func} functions cannot have side effects). Note in particular that mutation is not considered a side effect, because the compiler has full visibility into what is going on and can track the values appropriately.
-
-TODO
-
-\subsection{Ghost propagation}
-Ghost annotations are optional in most cases, because of the ghost propagation pass that automatically makes as many things ghost as possible. The invariant that we uphold is that a ghost variable \emph{must not} have an M-place associated with it, while a regular variable \emph{may} have an M-place. However, it is consistent with this that there are no M-places at all, so we have some inductive conditions on what variables must have M-places, which are roughly analogous to dead-code elimination.
-
-TODO
 
 \subsection{Interpreting the judgments}
 
