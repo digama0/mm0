@@ -1,0 +1,15 @@
+
+-- MM0 repository: https://github.com/digama0/mm0
+-- VS Code extension: search "metamath-zero"
+-- MM1 proof assistant: https://github.com/digama0/mm0/tree/master/mm0-rs
+-- this file: https://github.com/digama0/mm0/tree/master/examples/tutorial/01-installation.mm0
+
+-- Installation:
+-- * Get VS Code (https://code.visualstudio.com/)
+-- * Get the vscode extension (search for metamath-zero in the marketplace)
+-- * Get mm0-rs
+--   * Get Rust (https://rustup.rs/)
+--   * Go to mm0-rs/ directory
+--   * Run `cargo build --release`
+--   * Copy `mm0-rs/target/release/mm0-rs` to your system PATH
+--     * or set "Metamath-zero: Executable Path" in vscode settings
