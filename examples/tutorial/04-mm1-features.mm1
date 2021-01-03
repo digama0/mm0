@@ -1,0 +1,96 @@
+import "03-mm1-intro.mm1";
+
+do {
+  (def (fact x)
+    (if {x = 0} 1 {x * (fact {x - 1})}))
+  (fact 100)
+};
+
+do {
+  (def (id x) x)
+  (def (ignore . _))
+  (def dbg @ match-fn* [(x) (print x) x]
+    [(x y) (display @ string-append (->string x) ": " (->string y)) y])
+  (def (foldl l z s) (if (null? l) z (foldl (tl l) (s z (hd l)) s)))
+  (def (foldr l z s) (if (null? l) z (s (hd l) (foldr (tl l) z s))))
+  (def (range a b) (if {a = b} () (cons a (range {a + 1} b))))
+  (def (for a b f) (if {a = b} #undef (begin (f a) (for {a + 1} b f))))
+  (def last (match-fn [(a) a] [(_ . l) (last l)]))
+  (def split-last @ match-fn
+    [(and (_) l) l]
+    [(a . l) @ match (split-last l) @ (r . l2) '(,r ,a . ,l2)]
+    [() ()])
+  (def (verb e) (copy-span e (list ':verb e)))
+};
+
+do (for 1 6 (fn (x) (print x)));
+
+do 'absurd;
+
+theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
+(foldl '(h2 h1) 'ax_2 @ fn (x y) '(ax_mp ,x ,y));
+
+do {
+  (def (refine-extra-args refine tgt e . ps)
+    @ refine tgt (foldl ps (verb e) @ fn (acc p2) @ copy-span e '(ax_mp ,acc ,p2)))
+};
+
+theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
+'(ax_2 h2 h1);
+
+theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
+(refine '(ax_2 h2 h1));
+
+
+theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
+(focus
+  '(ax_2 _ _)
+  'h2
+  'h1
+);
+
+theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
+(focus
+  (have 'H $ a -> a $ 'id)
+  '(ax_2 h2 h1)
+);
+
+theorem a1d (h: $ a -> b $): $ a -> c -> b $ = '(syl ax_1 h);
+theorem a2d (h: $ a -> b -> c -> d $): $ a -> (b -> c) -> (b -> d) $ = '(syl ax_2 h);
+theorem syld (h1: $ a -> b -> c $) (h2: $ a -> c -> d $): $ a -> b -> d $ = '(mpd h1 @ a2d @ a1d h2);
+theorem syl5 (h1: $ b -> c $) (h2: $ a -> c -> d $): $ a -> b -> d $ = '(syld (a1i h1) h2);
+theorem imim2: $ (b -> c) -> (a -> b) -> (a -> c) $ = '(a2d ax_1);
+theorem imim2i (h: $ b -> c $): $ (a -> b) -> (a -> c) $ = '(imim2 h);
+theorem mpcom: $ a -> (a -> b) -> b $ = '(com12 id);
+theorem imidm: $ (a -> a -> b) -> a -> b $ = '(a2i mpcom);
+theorem contra: $ (~a -> a) -> a $ = '(imidm (a3d (a2i absurd)));
+theorem dne: $ ~~a -> a $ = '(syl contra absurd);
+theorem con2: $ (a -> ~b) -> (b -> ~a) $ = '(a3d (syl5 dne id));
+theorem notnot1: $ a -> ~~a $ = '(con2 id);
+theorem con1: $ (~a -> b) -> (~b -> a) $ = '(a3d (imim2i notnot1));
+theorem anl: $ a /\ b -> a $ = '(con1 absurd);
+theorem anr: $ a /\ b -> b $ = '(con1 ax_1);
+theorem anwl (h: $ a -> c $): $ a /\ b -> c $ = '(syl h anl);
+theorem anwr (h: $ b -> c $): $ a /\ b -> c $ = '(syl h anr);
+
+
+do (def (conj-prove refine t)
+  @ match t @ $ ,lhs -> ,rhs $
+  @ letrec (
+    [(f lhs) @ match lhs
+      [$ ,l /\ ,r $
+        @ match (f l)
+          [#undef
+            @ match (f r)
+            [#undef]
+            [result '(anwr ,result)]]
+          [result '(anwl ,result)]]
+      [_ @ if {lhs == rhs} 'id]]
+  )
+  (refine t (f lhs)));
+
+theorem _: $ a /\ b /\ c /\ (d /\ e) -> d $ = conj-prove;
+theorem _: $ a /\ b /\ (d /\ e) -> d $ = conj-prove;
+theorem _: $ a /\ b /\ (d /\ d) -> d $ = conj-prove;
+theorem _: $ a /\ b /\ (e /\ d) -> d $ = conj-prove;
+theorem _: $ d -> d $ = conj-prove;
