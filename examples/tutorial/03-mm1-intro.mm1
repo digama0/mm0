@@ -36,8 +36,9 @@ theorem absurdr: $ a -> ~a -> b $ = '(com12 absurd);
 theorem or_left: $ a -> a \/ b $ = 'absurdr;
 
 -- To compile the file to make a proof:
--- * run:
---   mm0-rs compile 03-mm1-intro.mm1 03-mm1-intro.mmb
--- * go to mm0-c/
--- * run:
---   gcc main.c -o mm0-c
+-- * from examples/tutorial/
+--   run: mm0-rs compile 03-mm1-intro.mm1 03-mm1-intro.mmb
+-- * from mm0-c/
+--   run: gcc main.c -o mm0-c
+-- * go back to examples/tutorial/
+--   run: ../../mm0-c/mm0-c 03-mm1-intro.mm1 < 03-mm1-intro.mmb
