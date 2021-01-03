@@ -609,7 +609,6 @@ impl Elaborator {
     let mut newvars = Vec::new();
     for (&a, (new, is)) in &mut self.lc.vars {
       if let InferSort::Unknown {src, must_bound, dummy: d2, ref sorts} = *is {
-        if self.mm0_mode {errs.push(ElabError::warn(src, "(MM0 mode) inferred variable type"))}
         match if sorts.len() == 1 {
           sorts.keys().next().expect("impossible")
             .ok_or_else(|| ElabError::new_e(src, "could not infer type"))
@@ -640,9 +639,19 @@ impl Elaborator {
             }
             let new2 = if (dummy && *new) || must_bound {
               *is = InferSort::Bound(sort);
+              if self.mm0_mode {
+                errs.push(ElabError::warn(src,
+                  format!("(MM0 mode) inferred {{{}: {}}}, type inference is not allowed in MM0 files",
+                    self.env.data[a].name, self.env.sorts[sort].name)))
+              }
               dummy && d2
             } else {
               *is = InferSort::Reg(sort, Box::new([]));
+              if self.mm0_mode {
+                errs.push(ElabError::warn(src,
+                  format!("(MM0 mode) inferred ({}: {}), type inference is not allowed in MM0 files",
+                    self.env.data[a].name, self.env.sorts[sort].name)))
+              }
               false
             };
             if !new2 && *new {*new = false; newvars.push((src, a))}
