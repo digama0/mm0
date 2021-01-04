@@ -49,12 +49,14 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
 
 * [`mm0.md`](mm0.md) is an informal specification of the language.
 * The `examples/` directory contains a number of MM0 test files.
-  * [`set.mm0`](examples/set.mm0) is a hand-translation of the axiom system of [`set.mm`](https://github.com/metamath/set.mm/) into MM0. (The corresponding proof file [`set.mmu`](examples/set.mmu) is WIP.)
-  * [`peano.mm0`](examples/peano.mm0) is a formalization of Peano Arithmetic in MM0. The formalization of MM0 in MM0 will occur in this axiom system, so it is built for practical use.
-  * [`peano.mm1`](examples/peano.mm1) is a proof of the theorems in `peano.mm0`. This is the largest formalization done in MM1 thus far.
+  * [`peano.mm0`](examples/peano.mm0) and its proof [`peano.mm1`](examples/peano.mm1) is a formalization of Peano Arithmetic in MM0. The formalization of MM0 in MM0 occurs in this axiom system, so it is built for practical use.
+    * [`peano_hex.mm1`](examples/peano_hex.mm1), [`mm0.mm1`](examples/mm0.mm1), [`x86.mm1`](examples/x86.mm1), [`compiler.mm1`](examples/compiler.mm1), and [`verifier.mm1`](examples/compiler.mm1) all extend this library of results of PA.
   * [`hello.mm0`](examples/hello.mm0) / [`hello.mmu`](examples/hello.mmu) is a test of the `output` command of MM0, a somewhat unusual feature for producing verified output.
   * [`string.mm0`](examples/string.mm0) / [`string.mmu`](examples/string.mmu) is a more elaborate test of the `output` and `input` commands, to build a program that reads its own specification.
-  * [`mm0.mm0`](examples/mm0.mm0) is a complete formal specification of the `.mm0` specification file format and verification, from input strings, through the parser, to the checking of proofs. For the formally minded this may be a better reference than [`mm0.md`](mm0.md).
+  * [`set.mm0`](examples/set.mm0) is a hand-translation of the axiom system of [`set.mm`](https://github.com/metamath/set.mm/) into MM0. (The corresponding proof file [`set.mmu`](examples/set.mmu) is WIP.)
+  * [`mm0.mm0`](examples/mm0.mm0) and its proof [`mm0.mm1`](examples/mm0.mm1) is a complete formal specification of the `.mm0` specification file format and verification, from input strings, through the parser, to the checking of proofs. For the formally minded this may be a better reference than [`mm0.md`](mm0.md).
+  * [`x86.mm0`](examples/x86.mm0) and its proof [`x86.mm1`](examples/x86.mm1) is a formalization of the x86 architecture, used as the target for the MMC compiler.
+  * [`verifier.mm0`](examples/verifier.mm0) is the main goal theorem of the project, the statement of implementation correctness of an MM0 verifier. Eventually [`verifier.mm1`](examples/verifier.mm1) will be a proof of this statement.
 * `mm0-rs` is an implementation of the LSP server for MM1. It can be used as a drop-in replacement for `mm0-hs` in VSCode by adding `"metamath-zero.executablePath": "mm0-rs"`.
   * `mm0-rs compile` can be used to run a MM1 file to produce an MMB output. If there are errors in the file, it will provide similar information to the server mode.
   * `mm0-hs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
