@@ -6,7 +6,7 @@ use std::ffi::CStr;
 use std::mem::{self, MaybeUninit};
 use std::fmt;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::hash::{Hash, Hasher, BuildHasher};
 use std::collections::{HashMap, hash_map::{Entry, OccupiedEntry}};
@@ -328,8 +328,8 @@ lazy_static! {
 ///
 /// [`CURRENT_DIR`]: struct@CURRENT_DIR
 #[cfg(not(target_arch = "wasm32"))]
-fn make_relative(buf: &PathBuf) -> String {
-  pathdiff::diff_paths(buf, &*CURRENT_DIR).as_ref().unwrap_or(buf)
+fn make_relative(buf: &Path) -> String {
+  pathdiff::diff_paths(buf, &*CURRENT_DIR).as_deref().unwrap_or(buf)
     .to_str().expect("bad unicode in file path").to_owned()
 }
 

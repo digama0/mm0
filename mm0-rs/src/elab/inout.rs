@@ -96,9 +96,9 @@ impl From<&str> for OutputError {
   fn from(e: &str) -> Self { Self::String(e.into()) }
 }
 
-impl Into<BoxError> for OutputError {
-  fn into(self) -> BoxError {
-    match self {
+impl From<OutputError> for BoxError {
+  fn from(e: OutputError) -> BoxError {
+    match e {
       OutputError::IOError(e) => e.into(),
       OutputError::String(s) => s.into(),
     }
