@@ -1,6 +1,10 @@
 import "03-mm1-intro.mm1";
 
 do {
+  {2 + 2}
+};
+
+do {
   (def (fact x)
     (if {x = 0} 1 {x * (fact {x - 1})}))
   (fact 100)
@@ -29,6 +33,7 @@ do 'absurd;
 
 theorem _ (h1: $ a -> b $) (h2: $ a -> b -> c $): $ a -> c $ =
 (foldl '(h2 h1) 'ax_2 @ fn (x y) '(ax_mp ,x ,y));
+-- '(ax_mp (ax_mp ax_2 h2) h1);
 
 do {
   (def (refine-extra-args refine tgt e . ps)
@@ -73,24 +78,25 @@ theorem anr: $ a /\ b -> b $ = '(con1 ax_1);
 theorem anwl (h: $ a -> c $): $ a /\ b -> c $ = '(syl h anl);
 theorem anwr (h: $ b -> c $): $ a /\ b -> c $ = '(syl h anr);
 
-
 do (def (conj-prove refine t)
   @ match t @ $ ,lhs -> ,rhs $
   @ letrec (
-    [(f lhs) @ match lhs
+    [(f lhs)
+      @ match lhs
       [$ ,l /\ ,r $
         @ match (f l)
           [#undef
             @ match (f r)
-            [#undef]
+            [#undef #undef]
             [result '(anwr ,result)]]
           [result '(anwl ,result)]]
       [_ @ if {lhs == rhs} 'id]]
   )
-  (refine t (f lhs)));
+  @ refine t (f lhs));
 
 theorem _: $ a /\ b /\ c /\ (d /\ e) -> d $ = conj-prove;
 theorem _: $ a /\ b /\ (d /\ e) -> d $ = conj-prove;
-theorem _: $ a /\ b /\ (d /\ d) -> d $ = conj-prove;
 theorem _: $ a /\ b /\ (e /\ d) -> d $ = conj-prove;
-theorem _: $ d -> d $ = conj-prove;
+theorem _: $ d /\ b /\ (e /\ d) -> d $ = conj-prove;
+theorem _: $ d /\ b /\ (e /\ d) -> b $ = conj-prove;
+theorem _: $ b -> b $ = conj-prove;

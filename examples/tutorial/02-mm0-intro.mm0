@@ -1,8 +1,10 @@
 delimiter $ ( ~ $  $ ) $;
+
 provable sort wff;
 
 term imp: wff > wff > wff;
 infixr imp: $->$ prec 25;
+
 term not: wff > wff;
 prefix not: $~$ prec 100;
 

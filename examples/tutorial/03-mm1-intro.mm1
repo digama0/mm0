@@ -1,18 +1,20 @@
 delimiter $ ( ~ $  $ ) $;
+
 provable sort wff;
 
 term imp: wff > wff > wff;
 infixr imp: $->$ prec 25;
+
 term not: wff > wff;
 prefix not: $~$ prec 100;
 
-axiom ax_1: $ a -> b -> a $;
+axiom ax_1 (a b: wff): $ a -> b -> a $;
 
-axiom ax_2: $ (a -> b -> c) -> (a -> b) -> (a -> c) $;
+axiom ax_2 (a b c: wff): $ (a -> b -> c) -> (a -> b) -> (a -> c) $;
 
-axiom ax_3: $ (~a -> ~b) -> (b -> a) $;
+axiom ax_3 (a b: wff): $ (~a -> ~b) -> (b -> a) $;
 
-axiom ax_mp: $ a -> b $ > $ a $ > $ b $;
+axiom ax_mp (a b: wff): $ a -> b $ > $ a $ > $ b $;
 
 pub theorem id (a: wff): $ a -> a $ = '(ax_mp (ax_mp ax_2 ax_1) (! ax_1 _ $~a$));
 
