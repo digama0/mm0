@@ -5,12 +5,12 @@ The MM0 project consists of a number of tools and verifiers and a specification 
 
 ## Quick Start
 
-There are a bunch of interrelated projects in this repository. If you want to install something to play with, I recommend `mm0-hs` + `vscode-mm0` to get a decent MM0 IDE.
+There are a bunch of interrelated projects in this repository. If you want to install something to play with, I recommend `mm0-rs` + `vscode-mm0` to get a decent MM0 IDE.
 
-* `mm0-hs`: Haskell verifier and toolchain, see [`mm0-hs/README.md`](mm0-hs/README.md).
+* `mm0-rs`: An MM0/MM1 server written in Rust. See [`mm0-rs/README.md`](mm0-rs/README.md).
 * `vscode-mm0`: VSCode plugin for MM0/MM1 syntax highlighting, with advanced features enabled via an LSP server (either `mm0-hs` or `mm0-rs`). See [`vscode-mm0/README.md`](vscode-mm0/README.md).
 * `mm0-c`: A bare bones MM0 verifier, intended for formalization. See [`mm0-c/README.md`](mm0-c/README.md).
-* `mm0-rs`: An MM0/MM1 server written in Rust. See [`mm0-rs/README.md`](mm0-rs/README.md).
+* `mm0-hs`: Haskell verifier and toolchain, see [`mm0-hs/README.md`](mm0-hs/README.md). Deprecated, but contains most of the translations.
 * `mm0-lean`: A collection of lean scratch files and minor formalizations. See [`mm0-lean/README.md`](mm0-lean/README.md).
 
 
@@ -55,17 +55,19 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
   * [`hello.mm0`](examples/hello.mm0) / [`hello.mmu`](examples/hello.mmu) is a test of the `output` command of MM0, a somewhat unusual feature for producing verified output.
   * [`string.mm0`](examples/string.mm0) / [`string.mmu`](examples/string.mmu) is a more elaborate test of the `output` and `input` commands, to build a program that reads its own specification.
   * [`mm0.mm0`](examples/mm0.mm0) is a complete formal specification of the `.mm0` specification file format and verification, from input strings, through the parser, to the checking of proofs. For the formally minded this may be a better reference than [`mm0.md`](mm0.md).
+* `mm0-rs` is an implementation of the LSP server for MM1. It can be used as a drop-in replacement for `mm0-hs` in VSCode by adding `"metamath-zero.executablePath": "mm0-rs"`.
+  * `mm0-rs compile` can be used to run a MM1 file to produce an MMB output. If there are errors in the file, it will provide similar information to the server mode.
+  * `mm0-hs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
+* `mm0-c` is a verifier written in C that defines the MMB binary proof file format.
+  * You can compile the verifier using `gcc main.c -o mm0-c`, and run it with `./mm0-c file.mmb`.
 * The `mm0-hs` program is a verifier written in Haskell that contains most of the "tooling" for MM0. Most importers and exporters are implemented as subparts of this program. See [`mm0-hs/README.md`](mm0-hs/README.md) for a more complete description of capabilities.
   * `mm0-hs verify` can be used to check a MM0 specification and MMU proof.
   * `mm0-hs export` will translate an MMU file to MMB format.
-  * `mm0-hs compile` can be used to run a MM1 file to produce an MMB output. If there are errors in the file, it will provide similar information to the server mode.
-  * `mm0-hs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
+  * `mm0-hs compile` can be used to run a MM1 file to produce an MMB output, similar to `mm0-rs`. (However, the MM1 implementation is out of date and this will not work on most mm1 files in the examples directory).
+  * `mm0-hs server` is also similar to `mm0-rs server` and also out of date.
   * `mm0-hs from-mm` performs wholescale translations from Metamath to MM0 + MMU or MM0 + MMB. This is the best way to obtain a large test set, because `set.mm` is quite large and advanced.
   * `mm0-hs to-hol` will show MM0 theorems and proofs in HOL syntax. Currently the syntax is only meant to be somewhat representative of a HOL based system; this is mostly a IR for other translations.
   * `mm0-hs to-othy` will translate MM0 theorems into [OpenTheory](http://www.gilith.com/opentheory/), which can be further translated into production systems including [HOL Light](https://www.cl.cam.ac.uk/~jrh13/hol-light/index.html), [HOL4](https://hol-theorem-prover.org/), [ProofPower](http://www.lemma-one.com/ProofPower/index/) and [Isabelle](https://www.cl.cam.ac.uk/research/hvg/Isabelle/). (Unfortunately there is a ~30x blow up in this translation due to limitations of the OpenTheory axiom system. It is possible that the secondary targets can obtain better results by a direct translation.)
-  * `mm0-hs to-lean` translates MM0 into [Lean](leanprover.github.io/) source files compatible with `mm0-lean`. [WIP]
-* `mm0-c` is a verifier written in C that defines the MMB binary proof file format.
-  * You can compile the verifier using `gcc main.c -o mm0-c`, and run it with `./mm0-c file.mmb`.
-* `mm0-rs` is a reimplementation of the LSP server for MM1. It can be used as a drop-in replacement for `mm0-hs` in VSCode by adding `"metamath-zero.executablePath": "mm0-rs"`. [WIP]
+  * `mm0-hs to-lean` translates MM0 into [Lean](leanprover.github.io/) source files.
 * `mm0-lean` contains a tactic framework for writing MM0 proofs using Lean. [WIP]
   * `mm0-lean/x86.lean` is a Lean formalization of the Intel x86 semantics.
