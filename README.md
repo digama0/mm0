@@ -73,3 +73,6 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
   * `mm0-hs to-lean` translates MM0 into [Lean](leanprover.github.io/) source files.
 * `mm0-lean` contains a tactic framework for writing MM0 proofs using Lean. [WIP]
   * `mm0-lean/x86.lean` is a Lean formalization of the Intel x86 semantics.
+* `vim` contains some basic vim files for syntax coloring.
+  Copy them into `$HOME/.vim/`
+  (e.g. with `cp -r vim/* ~/.vim/`) to install them.
