@@ -5,7 +5,7 @@ The MM0 project consists of a number of tools and verifiers and a specification 
 
 ## Quick Start
 
-There are a bunch of interrelated projects in this repository. If you want to install something to play with, I recommend `mm0-rs` + `vscode-mm0` to get a decent MM0 IDE.
+There are a bunch of interrelated projects in this repository. If you want to install something to play with, I recommend `mm0-rs` + `vscode-mm0` to get a decent MM0 IDE. There is also a [video tutorial](https://www.youtube.com/watch?v=A7WfrW7-ifw) for this combination.
 
 * `mm0-rs`: An MM0/MM1 server written in Rust. See [`mm0-rs/README.md`](mm0-rs/README.md).
 * `vscode-mm0`: VSCode plugin for MM0/MM1 syntax highlighting, with advanced features enabled via an LSP server (either `mm0-hs` or `mm0-rs`). See [`vscode-mm0/README.md`](vscode-mm0/README.md).
