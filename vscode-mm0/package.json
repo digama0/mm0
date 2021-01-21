@@ -88,6 +88,12 @@
 					"type": "boolean",
 					"default": true,
 					"description": "If true (the default), errors will also be sent to the 'output' panel."
+				},
+				"metamath-zero.reportUpstreamErrors": {
+					"scope": "window",
+					"type": "boolean",
+					"default": true,
+					"description": "If true (the default), errors in imported files will be reported on the 'import' command (in addition to the files themselves)."
 				}
 			}
 		},

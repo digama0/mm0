@@ -228,7 +228,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
       path: path.clone(),
       mm0_mode: path.has_extension("mm0"),
       check_proofs: crate::get_check_proofs(),
-      report_upstream_errors: true,
+      report_upstream_errors: SERVER.options.ulock().report_upstream_errors.unwrap_or(true),
       cancel: cancel.clone(),
       old: old_env.map(|(errs, e)| (idx, errs, e)),
       recv_dep: |p| {
@@ -1366,6 +1366,7 @@ struct ServerOptions {
   max_number_of_problems: usize,
   syntax_docs: Option<bool>,
   log_errors: Option<bool>,
+  report_upstream_errors: Option<bool>,
 }
 
 impl std::default::Default for ServerOptions {
@@ -1376,6 +1377,7 @@ impl std::default::Default for ServerOptions {
       max_number_of_problems: 100,
       syntax_docs: None,
       log_errors: None,
+      report_upstream_errors: None,
     }
   }
 }
