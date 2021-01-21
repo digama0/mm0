@@ -31,6 +31,7 @@ use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, EnvMergeIter,
 use environment::Literal as ELiteral;
 use lisp::LispVal;
 use local_context::try_get_span_opt;
+use owning_ref::{ArcRef, OwningRef};
 use spans::Spans;
 use inout::InoutHandlers;
 pub use {environment::Environment, local_context::LocalContext};
@@ -55,14 +56,14 @@ pub enum ElabErrorKind {
   Boxed(BoxError, Option<Vec<(FileSpan, BoxError)>>),
   /// This is an error from a file upstream. The `usize` is the number of
   /// number of upstream errors after the first one.
-  Upstream(FileRef, Arc<[ElabError]>, usize)
+  Upstream(FileRef, ArcRef<[ElabError], ElabError>, usize)
 }
 impl ElabErrorKind {
   /// Converts the error message to a [`String`].
   #[must_use] pub fn raw_msg(&self) -> String {
     match self {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
-      ElabErrorKind::Upstream(_, e, _) => e[0].kind.raw_msg(),
+      ElabErrorKind::Upstream(_, e, _) => e.kind.raw_msg(),
     }
   }
 
@@ -73,7 +74,7 @@ impl ElabErrorKind {
       ElabErrorKind::Boxed(e, _) => format!("{}", e),
       &ElabErrorKind::Upstream(ref file, ref e, n) => {
         let mut s = format!("file contains errors:\n{}:{:#x}: {}",
-          file, e[0].pos.start, e[0].kind.raw_msg());
+          file, e.pos.start, e.kind.raw_msg());
         if n != 0 { write!(&mut s, "\n + {} more", n).unwrap() }
         s
       }
@@ -706,15 +707,17 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                   toks.push(t);
                   if *report_upstream_errors {
                     if let Some(errs) = errors {
-                      if let Some((first, rest)) = errs.split_first() {
-                        let mut n = rest.len();
+                      let mut it = errs.iter().enumerate().filter(|(_, e)| matches!(e.level, ErrorLevel::Error));
+                      if let Some((i, first)) = it.next() {
+                        let mut n = it.count();
                         let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
                           n += m;
                           file.clone()
                         } else {
                           p.clone()
                         };
-                        elab.report(ElabError::new(*sp, ElabErrorKind::Upstream(file, errs, n)));
+                        let e = OwningRef::new(errs).map(|errs| &errs[i]);
+                        elab.report(ElabError::new(*sp, ElabErrorKind::Upstream(file, e, n)));
                       }
                     }
                   }
