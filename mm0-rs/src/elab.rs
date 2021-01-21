@@ -707,17 +707,20 @@ where F: FnMut(FileRef) -> StdResult<Receiver<ElabResult<T>>, BoxError> {
                   toks.push(t);
                   if *report_upstream_errors {
                     if let Some(errs) = errors {
-                      let mut it = errs.iter().enumerate().filter(|(_, e)| matches!(e.level, ErrorLevel::Error));
-                      if let Some((i, first)) = it.next() {
-                        let mut n = it.count();
-                        let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
-                          n += m;
-                          file.clone()
-                        } else {
-                          p.clone()
-                        };
-                        let e = OwningRef::new(errs).map(|errs| &errs[i]);
-                        elab.report(ElabError::new(*sp, ElabErrorKind::Upstream(file, e, n)));
+                      for &level in &[ErrorLevel::Error, ErrorLevel::Warning] {
+                        let mut it = errs.iter().enumerate().filter(|(_, e)| e.level == level);
+                        if let Some((i, first)) = it.next() {
+                          let mut n = it.count();
+                          let file = if let ElabErrorKind::Upstream(ref file, _, m) = first.kind {
+                            n += m;
+                            file.clone()
+                          } else {
+                            p.clone()
+                          };
+                          let e = OwningRef::new(errs).map(|errs| &errs[i]);
+                          elab.report(ElabError {pos: *sp, level, kind: ElabErrorKind::Upstream(file, e, n)});
+                          break
+                        }
                       }
                     }
                   }

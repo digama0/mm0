@@ -27,7 +27,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity};
 ///
 /// Corresponds to the lsp-type crate's [`DiagnosticSeverity`] enum, and is convertible using
 /// [`to_diag_severity`](ErrorLevel::to_diag_severity).
-#[derive(Copy, Clone, Debug, DeepSizeOf)]
+#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq)]
 pub enum ErrorLevel {
   /// Error level for informational messages, such as the result of `(display)`.
   Info,
