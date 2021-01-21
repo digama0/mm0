@@ -390,6 +390,16 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
     char close = curly ? '}' : ')';
     int var_group_start = arg_idx;
     int dummy_group_start = g_num_vars;
+
+    // lookahead to see if this is a hypothesis binder
+    u8* start = cursor;
+    while (!ch(':')) {
+      ch('.');
+      parse_new_ident_(gt_terms, &gt_terms_end, TERM_TRIE_SIZE);
+    }
+    int is_hyp = CUR() == '$';
+    cursor = start;
+
     while (!ch(':')) {
       int dummy = ch('.');
       int i;
@@ -397,10 +407,11 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
         EENSURE("variable number overflow", 2, (i = g_num_vars++) < NUM_VARS);
         ENSURE("dummies are only allowed in defs", kind == KW_DEF);
       } else {
-        ENSURE("too many arguments", (i = arg_idx++) < num_args);
+        i = arg_idx++;
       }
       ident_blank x = parse_new_ident_(gt_terms, &gt_terms_end, TERM_TRIE_SIZE);
-      if (!x.blank) {
+      if (!x.blank && !is_hyp) {
+        ENSURE("hypotheses must follow variables", p_hyps == (u32)-1);
         u32* p = &x.x->next[0];
         u32* dat = &extend(gt_terms, p, &gt_terms_end, TERM_TRIE_SIZE)->data;
         ENSURE("variable shadowing is not allowed", *dat == 0);
@@ -415,9 +426,10 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       ENSURE("hypotheses are only allowed in regular binders", !curly);
       u32 e = coerce(expr(0), PROV);
       ENSURE("expecting '$)'", ch('$') && ch(')'));
-      for (; var_group_start < arg_idx; var_group_start++)
+      for (; arg_idx > var_group_start; arg_idx--)
         p_hyps = ALLOC(((parse_expr_list){e, p_hyps}), sizeof(parse_expr_list));
     } else {
+      ENSURE("too many arguments", arg_idx <= num_args);
       trie x = lookup_ident(gt_sorts);
       ENSURE("expecting sort", x->data);
       u8 sort = (u8)~x->data;
@@ -451,6 +463,7 @@ u32 binders(int kind, u16 num_args, u64* args, u64 ret) {
       p_hyps = ALLOC(((parse_expr_list){e, p_hyps}), sizeof(parse_expr_list));
       if (!ch('>')) break;
     } else {
+      ENSURE("hypotheses must follow variables", p_hyps == (u32)-1);
       trie x = lookup_ident(gt_sorts);
       ENSURE("expecting sort", x->data);
       u8 sort = (u8)~x->data;
