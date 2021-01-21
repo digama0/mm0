@@ -776,12 +776,11 @@ impl<'a> Parser<'a> {
     let mut it = self.span(f.inner()).iter();
     let mut delims = Vec::new();
     loop {
-      delims.push(loop {
-        match it.next() {
-          None => return delims.into_boxed_slice(),
-          Some(&c) => if !whitespace(c) {break c}
-        }
-      });
+      match it.next() {
+        None => return delims.into_boxed_slice(),
+        Some(&c) if whitespace(c) => continue,
+        Some(&c) => delims.push(c),
+      }
       match it.next() {
         Some(&c) if !whitespace(c) => {
           delims.push(c);

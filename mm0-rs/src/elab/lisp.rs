@@ -566,7 +566,7 @@ impl LispRef {
     }
     // Safety: This ties us to the representation of RefCell, but I don't think
     // that is going to change.
-    unsafe { &*(&self.0 as *const _ as *const RefCell2<LispWeak>) }.borrow.get() > 30
+    unsafe { &*<*const _>::cast::<RefCell2<LispWeak>>(&self.0) }.borrow.get() > 30
   }
 
   /// Get the value of this reference without changing the reference count.

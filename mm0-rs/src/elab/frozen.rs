@@ -82,7 +82,7 @@ impl FrozenEnv {
 
   /// Accessor for [`Environment::data`]
   #[must_use] pub fn data(&self) -> &AtomVec<FrozenAtomData> {
-    unsafe { &*(&self.thaw().data as *const AtomVec<AtomData> as *const _) }
+    unsafe { &*<*const _>::cast(&self.thaw().data) }
   }
 
   /// Accessor for [`Environment::sorts`]
@@ -119,7 +119,7 @@ impl FrozenAtomData {
   #[must_use] pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   /// Accessor for [`AtomData::lisp`]
   #[must_use] pub fn lisp(&self) -> &Option<FrozenLispData> {
-    unsafe { &*(&self.0.lisp as *const Option<LispData> as *const _) }
+    unsafe { &*<*const _>::cast(&self.0.lisp) }
   }
   /// Accessor for [`AtomData::graveyard`]
   #[must_use] pub fn graveyard(&self) -> &Option<Box<(FileSpan, Span)>> { &self.0.graveyard }
@@ -176,7 +176,7 @@ impl LispKind {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispKind {
-    &*(self as *const LispKind as *const _)
+    &*<*const _>::cast(self)
   }
 }
 
@@ -185,7 +185,7 @@ impl LispVal {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispVal {
-    &*(self as *const LispVal as *const _)
+    &*<*const _>::cast(self)
   }
 }
 
@@ -194,7 +194,7 @@ impl LispRef {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenLispRef {
-    &*(self as *const LispRef as *const _)
+    &*<*const _>::cast(self)
   }
 }
 
@@ -202,7 +202,7 @@ impl LispRef {
 /// # Safety
 /// The data structure should not be modified, even via clones, while this reference is alive.
 #[must_use] pub unsafe fn freeze_merge_strategy(this: &MergeStrategy) -> &FrozenMergeStrategy {
-  &*(this as *const MergeStrategy as *const _)
+  &*<*const _>::cast(this)
 }
 
 impl MergeStrategyInner {
@@ -210,7 +210,7 @@ impl MergeStrategyInner {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenMergeStrategyInner {
-    &*(self as *const MergeStrategyInner as *const _)
+    &*<*const _>::cast(self)
   }
 }
 
@@ -219,7 +219,7 @@ impl Proc {
   /// # Safety
   /// The data structure should not be modified, even via clones, while this reference is alive.
   #[must_use] pub unsafe fn freeze(&self) -> &FrozenProc {
-    &*(self as *const Proc as *const _)
+    &*<*const _>::cast(self)
   }
 }
 

@@ -267,13 +267,13 @@ impl From<Span> for std::ops::Range<usize> {
 impl Deref for Span {
   type Target = std::ops::Range<usize>;
   fn deref(&self) -> &std::ops::Range<usize> {
-    unsafe { &*(self as *const Span as *const std::ops::Range<usize>) }
+    unsafe { &*<*const _>::cast(self) }
   }
 }
 
 impl DerefMut for Span {
   fn deref_mut(&mut self) -> &mut std::ops::Range<usize> {
-    unsafe { &mut *(self as *mut Span as *mut std::ops::Range<usize>) }
+    unsafe { &mut *<*mut _>::cast(self) }
   }
 }
 

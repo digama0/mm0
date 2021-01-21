@@ -446,6 +446,7 @@ enum Item<'a> {
 type Var<'a> = (Span, AtomID, Vec<Item<'a>>);
 
 impl<'a> LispParser<'a> {
+  #[allow(clippy::vec_init_then_push)] // bug: rust-clippy#6615
   fn def_var<'c>(&mut self, mut e: &'c SExpr) -> Result<Var<'c>, ElabError> {
     let mut stack = vec![];
     loop {

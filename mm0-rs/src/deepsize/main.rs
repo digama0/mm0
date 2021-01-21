@@ -94,12 +94,12 @@ impl Context {
     fn add_arc<T: ?Sized>(&mut self, arc: &Arc<T>) {
         // Somewhat unsafe way of getting a pointer to the inner `ArcInner`
         // object without changing the count
-        let pointer: usize = unsafe { *(arc as *const Arc<T> as *const usize) };
+        let pointer: usize = unsafe { *<*const _>::cast(arc) };
         self.arcs.insert(pointer);
     }
     /// Checks if an `Arc` is in the list visited `Arc`s
     fn contains_arc<T: ?Sized>(&self, arc: &Arc<T>) -> bool {
-        let pointer: usize = unsafe { *(arc as *const Arc<T> as *const usize) };
+        let pointer: usize = unsafe { *<*const _>::cast(arc) };
         self.arcs.contains(&pointer)
     }
 
@@ -107,12 +107,12 @@ impl Context {
     fn add_rc<T: ?Sized>(&mut self, rc: &Rc<T>) {
         // Somewhat unsafe way of getting a pointer to the inner `RcBox`
         // object without changing the count
-        let pointer: usize = unsafe { *(rc as *const Rc<T> as *const usize) };
+        let pointer: usize = unsafe { *<*const _>::cast(rc) };
         self.rcs.insert(pointer);
     }
     /// Checks if an `Rc` is in the list visited `Rc`s
     fn contains_rc<T: ?Sized>(&self, rc: &Rc<T>) -> bool {
-        let pointer: usize = unsafe { *(rc as *const Rc<T> as *const usize) };
+        let pointer: usize = unsafe { *<*const _>::cast(rc) };
         self.rcs.contains(&pointer)
     }
 
@@ -337,7 +337,7 @@ impl DeepSizeOf for std::path::PathBuf {
 
 impl DeepSizeOf for num::BigUint {
     fn deep_size_of_children(&self, _: &mut Context) -> usize {
-        unsafe { &*(self as *const _ as *const Vec<u32>) }.capacity()
+        unsafe { &*<*const _>::cast::<Vec<u32>>(self) }.capacity()
     }
 }
 
