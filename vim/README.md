@@ -14,3 +14,16 @@ should work (in `.vimrc`):
 ```
 Plug 'digama0/mm0', { 'rtp': 'vim' }
 ```
+
+## LSP integration (neovim)
+
+Using [LanguageClient](https://github.com/autozimu/LanguageClient-neovim/),
+just add to your config file:
+
+```vim
+let g:LanguageClient_serverCommands = {
+\ 'metamath-zero': ['mm0-rs', 'server'],
+\ }
+```
+
+(there can be other lines for other languages, of course.)
