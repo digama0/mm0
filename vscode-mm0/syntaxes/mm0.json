@@ -283,7 +283,7 @@
 					"patterns": [{"include": "#lisp-val"}]
 				},
 				{
-					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|=|->string|string-(>atom|append)|display|error|print|apply|min|max|not|or|list|cons|hd|tl|lookup|insert|async|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|to-expr|refine|stat|have|get-decl|(pair|null|int|bool|atom|string|fn|number|ref|atom-map|def|goal|mvar)\\?|(ref|get|set|atom-map|insert|mvar|add-(decl|term|thm))\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
+					"begin": "\\(\\s*(\\+|\\*|\\-|<=?|>=?|==?|->string|string-(>atom|append)|display|error|print|apply|min|max|not|or|list|cons|hd|tl|lookup|insert|async|set-timeout|goal|goal-type|infer-type|pp|[gs]et-goals|to-expr|refine|stat|have|get-decl|(pair|null|int|bool|atom|string|fn|number|ref|atom-map|def|goal|mvar)\\?|(ref|get|set|atom-map|insert|mvar|add-(decl|term|thm))\\!|refine-extra-args)(?![\\w!%&*+\\-./:<=>?@^_~])",
 					"beginCaptures": {"1": {"name": "support.function.mm0.lisp"}},
 					"end": "\\)",
 					"patterns": [{"include": "#lisp-val"}]
