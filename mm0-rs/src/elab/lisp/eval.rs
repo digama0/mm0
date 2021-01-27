@@ -1625,10 +1625,9 @@ impl<'a> Evaluator<'a> {
                 })();
                 if let Some(i) = tail_call { // tail call
                   let s = self.stack.drain(i..).next();
-                  if let Some(Stack::Ret(fsp, _, old, _)) = s {
-                    self.ctx = (**env).into();
-                    self.stack.push(Stack::Ret(fsp, pos.clone(), old, code.clone()));
-                  } else {unsafe {std::hint::unreachable_unchecked()}}
+                  let_unchecked!((fsp, old) as Some(Stack::Ret(fsp, _, old, _)) = s);
+                  self.ctx = (**env).into();
+                  self.stack.push(Stack::Ret(fsp, pos.clone(), old, code.clone()));
                 } else {
                   self.stack.push(Stack::Ret(self.fspan(sp1), pos.clone(),
                     mem::replace(&mut self.ctx, (**env).into()), code.clone()));
@@ -1697,11 +1696,10 @@ impl<'a> Evaluator<'a> {
                 match &*g {
                   Ok(e) => State::Ret(e.clone()),
                   Err(_) => if let Some(DeclKey::Thm(t)) = self.data[x].decl {
-                    if let Err(heap) = mem::replace(&mut *g, Ok(LispVal::undef())) {
-                      let e = self.get_proof(t, heap.into());
-                      *g = Ok(e.clone());
-                      State::Ret(e)
-                    } else {unsafe {std::hint::unreachable_unchecked()}}
+                    let_unchecked!(heap as Err(heap) = mem::replace(&mut *g, Ok(LispVal::undef())));
+                    let e = self.get_proof(t, heap.into());
+                    *g = Ok(e.clone());
+                    State::Ret(e)
                   } else {unreachable!()}
                 }
               }

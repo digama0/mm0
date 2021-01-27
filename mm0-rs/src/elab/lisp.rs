@@ -501,8 +501,7 @@ impl LispWeak {
           Some(e) => LispVal(e)
         };
         *self = LispWeak::Strong(e);
-        if let LispWeak::Strong(e) = self { f(e) }
-        else { unsafe {std::hint::unreachable_unchecked()} }
+        let_unchecked!(LispWeak::Strong(e) = self, f(e))
       }
     }
   }

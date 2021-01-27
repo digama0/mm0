@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
-use crate::util::{ArcString, OptionExt};
+use crate::util::ArcString;
 use super::super::{AtomID, Span, DocComment, Elaborator, ElabError, ObjectKind};
 use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
   Remap, Remapper, Syntax};
@@ -350,9 +350,7 @@ impl Remap for MVarPattern {
 impl IR {
   fn unconst(cs: Vec<IR>) -> Result<Vec<LispVal>, Vec<IR>> {
     if cs.iter().all(|c| matches!(c, IR::Const(_))) {
-      Ok(cs.into_iter().map(|c|
-        if let IR::Const(v) = c {v}
-        else {unsafe {std::hint::unreachable_unchecked()}}).collect())
+      Ok(cs.into_iter().map(|c| let_unchecked!(IR::Const(v) = c, v)).collect())
     } else {Err(cs)}
   }
   fn list(fsp: FileSpan, cs: Vec<IR>) -> IR {
@@ -913,7 +911,7 @@ impl<'a> LispParser<'a> {
                 self.expr(false, &es[1])?,
                 self.expr(false, &es[2])?,
                 if let Some(e) = es.get(3) {
-                  self.ctx.restore(unsafe {restore.unwrap_unchecked()});
+                  self.ctx.restore(unwrap_unchecked!(restore));
                   self.expr(false, e)?
                 } else { IR::Const(LispVal::undef()) }
               )))),
@@ -935,7 +933,7 @@ impl<'a> LispParser<'a> {
                 ElabError::new_e(es[0].span, "expected at least one argument")),
               Syntax::Match => {
                 let e = self.expr(false, &es[1])?;
-                self.ctx.restore(unsafe {restore.unwrap_unchecked()});
+                self.ctx.restore(unwrap_unchecked!(restore));
                 self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
               },
               Syntax::MatchFn => {

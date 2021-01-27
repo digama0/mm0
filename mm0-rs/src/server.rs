@@ -167,9 +167,9 @@ async fn elaborate(path: FileRef, start: Option<Position>,
           return Ok(recv.await.unwrap_or(ElabResult::Canceled))
         }
         cancel.store(true, Ordering::SeqCst);
-        if let Some(FileCache::InProgress {old, senders, ..}) = g.take() {
+        let_unchecked!(Some(FileCache::InProgress {old, senders, ..}) = g.take(), {
           (old, (None, None, vec![]), senders)
-        } else {unsafe {std::hint::unreachable_unchecked()}}
+        })
       }
       &mut Some(FileCache::Ready {hash, ref deps, ref res, ..}) => {
         let hasher = &mut DefaultHasher::new();
@@ -189,14 +189,14 @@ async fn elaborate(path: FileRef, start: Option<Position>,
         if matches && !matches!(res, ElabResult::Canceled) {
           return Ok(res.clone())
         }
-        if let Some(FileCache::Ready {ast, source, deps, res, ..}) = g.take() {
+        let_unchecked!(Some(FileCache::Ready {ast, source, deps, res, ..}) = g.take(), {
           if let ElabResult::Ok(_, errors, env) = res {
             (Some((source.clone(), env.clone())),
               (start.map(|s| (s, source, ast)), Some((errors, env)), deps), vec![])
           } else {
             (None, (None, None, vec![]), vec![])
           }
-        } else {unsafe {std::hint::unreachable_unchecked()}}
+        })
       }
     };
     *g = Some(FileCache::InProgress {old, version: v, cancel: cancel.clone(), senders});

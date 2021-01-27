@@ -13,7 +13,7 @@ use std::sync::Arc;
 use annotate_snippets::snippet::AnnotationType;
 use num::BigUint;
 use num::cast::ToPrimitive;
-use crate::util::{Span, BoxError, Position, OptionExt};
+use crate::util::{Span, BoxError, Position};
 use crate::lined_string::LinedString;
 use crate::elab::environment::DocComment;
 pub use ast::AST;
@@ -648,8 +648,7 @@ impl<'a> Parser<'a> {
         }
       }
       Some(b'$') => {
-        let f = self.formula()?;
-        let f = unsafe { f.unwrap_unchecked() };
+        let f = unwrap_unchecked!(self.formula()?);
         Ok(SExpr {span: f.0, k: SExprKind::Formula(f)})
       }
       Some(c) if (b'0'..=b'9').contains(&c) => {

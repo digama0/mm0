@@ -40,24 +40,40 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
     }
   }
 }
-/// Extension trait for [`Option`]`<T>`.
-pub trait OptionExt<T> {
-  /// Like `unwrap`, but invokes undefined behavior instead of panicking.
-  ///
-  /// # Safety
-  /// This function must not be called on a [`None`] value.
-  unsafe fn unwrap_unchecked(self) -> T;
+
+/// * `let_unchecked!(x as p = e)` is the same as
+///   ```
+///   let x = if let p = e {x} else {unreachable_unchecked()};
+///   ```
+///   where `p` is a pattern containing the variable(s) `x` (which may be a tuple)
+/// * `let_unchecked!(p = e, { block })` is the same as
+///   ```
+///   if let p = e { block } else {unreachable_unchecked()}
+///   ```
+///   so the variables `x` don't have to be declared but the variables in `p` are
+///   scoped to the `block`.
+///
+/// # Safety
+/// This invokes undefined behavior when the pattern does not match.
+#[macro_export]
+macro_rules! let_unchecked {
+  ($q:ident as $p:pat = $e:expr) => {
+    let $q = let_unchecked!($p = $e, $q);
+  };
+  (($($q:tt),*) as $p:pat = $e:expr) => {
+    let ($($q),*) = let_unchecked!($p = $e, ($($q),*));
+  };
+  ($p:pat = $e:expr, $bl:expr) => {
+    if let $p = $e { $bl } else { unsafe { std::hint::unreachable_unchecked() } }
+  };
 }
 
-impl<T> OptionExt<T> for Option<T> {
-  #[inline]
-  unsafe fn unwrap_unchecked(self) -> T {
-    match self {
-      Some(x) => x,
-      None => std::hint::unreachable_unchecked()
-    }
-  }
-}
+/// Like `unwrap`, but invokes undefined behavior instead of panicking.
+///
+/// # Safety
+/// This function must not be called on a [`None`] value.
+#[macro_export]
+macro_rules! unwrap_unchecked {($e:expr) => {let_unchecked!(Some(x) = $e, x)}}
 
 /// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
 pub trait MutexExt<T> {

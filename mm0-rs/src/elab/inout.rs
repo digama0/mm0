@@ -335,8 +335,7 @@ impl Elaborator {
       let (s, map) = self.env.new_string_handler().map_err(|e| ElabError::new_e(sp, e))?;
       self.inout.string = Some((s, map));
     }
-    if let Some((s, map)) = &mut self.inout.string {Ok((*s, map))}
-    else {unsafe {std::hint::unreachable_unchecked()}}
+    let_unchecked!(Some((s, map)) = &mut self.inout.string, Ok((*s, map)))
   }
 
   fn elab_output_string(&mut self, sp: Span, hs: &[SExpr]) -> EResult<()> {
@@ -429,8 +428,7 @@ impl FrozenEnv {
           let terms = {
             handler = Some(unsafe {self.thaw()}.new_string_handler()
               .map_err(OutputError::String)?);
-            if let Some((_, t)) = &handler {t}
-            else {unsafe {std::hint::unreachable_unchecked()}}
+            let_unchecked!(Some((_, t)) = &handler, t)
           };
         env.write_output_string(terms, &mut w, heap, exprs)
         })().map_err(|e| (span.clone(), e))?;

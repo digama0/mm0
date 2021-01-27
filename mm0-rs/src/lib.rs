@@ -42,8 +42,8 @@
 #[macro_use] extern crate deepsize_derive;
 #[macro_use] extern crate debug_derive;
 
+#[macro_use] pub mod util;
 mod deepsize;
-pub mod util;
 pub mod lined_string;
 pub mod parser;
 #[cfg(feature = "server")]

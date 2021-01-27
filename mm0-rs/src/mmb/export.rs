@@ -9,7 +9,7 @@ use crate::elab::environment::{
   Type, Expr, Proof, SortID, TermID, ThmID, AtomID, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
-use crate::util::{FileRef, OptionExt};
+use crate::util::FileRef;
 use crate::lined_string::LinedString;
 
 #[allow(clippy::wildcard_imports)]
@@ -749,7 +749,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
       let size = 1 + num_sorts + num_terms + num_thms;
       let mut index_header = self.fixup_large(8 * size)?;
       let header = LayoutVerified::<_, [U64<LE>]>::new_slice_unaligned(&mut *index_header).expect("nonempty");
-      let (root, header) = unsafe { header.into_mut_slice().split_first_mut().unwrap_unchecked() };
+      let (root, header) = unwrap_unchecked!(header.into_mut_slice().split_first_mut());
       let (sorts, header) = header.split_at_mut(num_sorts);
       let (terms, thms) = header.split_at_mut(num_terms);
       root.set(self.write_index(&mut IndexHeader {sorts, terms, thms}, &[], &index_map)?);

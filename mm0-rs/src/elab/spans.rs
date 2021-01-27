@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
 use super::environment::AtomID;
 use super::local_context::LocalContext;
-use crate::util::{Span, OptionExt};
+use crate::util::Span;
 
 /// A `Spans<T>` object is created for each declaration, and maintains data on the
 /// spans of objects occurring in the statement. For example, we might register
@@ -114,7 +114,7 @@ impl<T> Spans<T> {
     }
     let v = & /* 'c */ mut *v;
     v.push((sp, val));
-    &mut unsafe { v.last_mut().unwrap_unchecked() }.1
+    &mut unwrap_unchecked!(v.last_mut()).1
   }
 
   /// Insert a data element at a given span, if it lies within the current statement's extent.
