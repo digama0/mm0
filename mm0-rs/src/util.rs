@@ -42,12 +42,12 @@ impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
 }
 
 /// * `let_unchecked!(x as p = e)` is the same as
-///   ```
+///   ```ignore
 ///   let x = if let p = e {x} else {unreachable_unchecked()};
 ///   ```
 ///   where `p` is a pattern containing the variable(s) `x` (which may be a tuple)
 /// * `let_unchecked!(p = e, { block })` is the same as
-///   ```
+///   ```ignore
 ///   if let p = e { block } else {unreachable_unchecked()}
 ///   ```
 ///   so the variables `x` don't have to be declared but the variables in `p` are
