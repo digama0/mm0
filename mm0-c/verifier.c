@@ -71,13 +71,6 @@ void fail(char* err, int e) {
   e; \
 })
 
-// Return a pointer to the conv cell at location p (checked dynamic cast)
-#define get_conv(p) ({ \
-  store_conv* e = (store_conv*)&g_store[p]; \
-  ENSURE("store type error", e->tag == EXPR_CONV); \
-  e; \
-})
-
 u64 g_next_bv;
 // scratch space
 u64 g_deps[256];
@@ -359,7 +352,12 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // Get the i-th heap element and push it on the stack.
       case CMD_PROOF_REF: {
         ENSURE("bad ref step", data < g_heap_size);
-        push_stack(g_heap[data]);
+        u32 s = g_heap[data];
+        // There is no point in pushing e1 = e2 on the stack, because the only
+        // thing you can do with that is push it back on the heap using ConvSave.
+        ENSURE("can't ref conv step using Ref; use ConvRef",
+          (s & STACK_TYPE_MASK) != STACK_TYPE_CONV);
+        push_stack(s);
       } break;
 
       // Dummy s: H; S --> H, x; S, x    alloc(x:s)
@@ -578,10 +576,10 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // i-th on the heap.
       case CMD_PROOF_CONV_REF: {
         ENSURE("bad ConvRef step", data < g_heap_size);
-        store_conv* c = get_conv(as_type(g_heap[data], STACK_TYPE_CONV));
+        store_conv c = *(store_conv*)&g_store[as_type(g_heap[data], STACK_TYPE_CONV)];
         u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
-        ENSURE("ConvRef unify error", c->e1 == e1 && c->e2 == e2);
+        ENSURE("ConvRef unify error", c.e1 == e1 && c.e2 == e2);
       } break;
 
       // ConvSave: H; S, e1 = e2 --> H, e1 = e2; S
@@ -589,8 +587,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       case CMD_PROOF_CONV_SAVE: {
         u32 e1 = as_type(pop_stack(), STACK_TYPE_CONV);
         u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
-        push_heap(STACK_TYPE_CONV |
-          ALLOC(((store_conv){e1, e2, EXPR_CONV}), sizeof(store_conv)));
+        push_heap(STACK_TYPE_CONV | ALLOC(((store_conv){e1, e2}), sizeof(store_conv)));
       } break;
 
       // Save: H; S, s --> H, s; S, s
@@ -602,8 +599,7 @@ u8* run_proof(proof_mode mode, u8* cmd) {
           case STACK_TYPE_CONV: {
             u32 e1 = s & STACK_DATA_MASK;
             u32 e2 = *(g_stack_top-2) & STACK_DATA_MASK;
-            push_heap(STACK_TYPE_CONV |
-              ALLOC(((store_conv){e1, e2, EXPR_CONV}), sizeof(store_conv)));
+            push_heap(STACK_TYPE_CONV | ALLOC(((store_conv){e1, e2}), sizeof(store_conv)));
           } break;
           default: {
             push_heap(s);

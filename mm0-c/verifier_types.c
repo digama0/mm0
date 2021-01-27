@@ -57,12 +57,9 @@ typedef struct {
   u32 args[];
 } store_term;
 
-#define EXPR_CONV 2
 typedef struct {
   u32 e1;
   u32 e2;
-  u8 tag; // = EXPR_CONV
-  u8 padding[3];
 } store_conv;
 
 #define HYP_STACK_SIZE 256
