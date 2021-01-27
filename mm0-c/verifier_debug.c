@@ -26,13 +26,6 @@ void debug_print_expr(u32 n, u32 max, bool type) {
       fprintf(stderr, ")");
     } break;
 
-    case EXPR_CONV: {
-      store_conv* c = (store_conv*)p;
-      debug_print_expr(c->e1, n, false);
-      fprintf(stderr, " = ");
-      debug_print_expr(c->e2, n, false);
-    } break;
-
     default: fprintf(stderr, "?"); break;
   }
   index_entry* ix;
@@ -40,6 +33,15 @@ void debug_print_expr(u32 n, u32 max, bool type) {
     fprintf(stderr, ":%s", ix->value);
   }
   if (type && bound) fprintf(stderr, "}");
+}
+
+void debug_print_conv(u32 n, u32 max, bool type) {
+  if (n % 4 != 0) {fprintf(stderr, "unaligned expr"); return;}
+  if (n >= max) {fprintf(stderr, "expr out of range"); return;}
+  store_conv* c = (store_conv*)&g_store[n];
+  debug_print_expr(c->e1, n, false);
+  fprintf(stderr, " = ");
+  debug_print_expr(c->e2, n, type);
 }
 
 #ifdef NO_PARSER
@@ -104,6 +106,23 @@ void debug_print_stackel(u32* p) {
   }
 }
 
+void debug_print_heapel(u32* p) {
+  switch (*p & STACK_TYPE_MASK) {
+    case STACK_TYPE_EXPR: {
+      fprintf(stderr, "expr ");
+      debug_print_expr(*p & STACK_DATA_MASK, g_store_size, true);
+    } break;
+    case STACK_TYPE_PROOF: {
+      fprintf(stderr, "proof ");
+      debug_print_expr(*p & STACK_DATA_MASK, g_store_size, true);
+    } break;
+    case STACK_TYPE_CONV: {
+      debug_print_conv(*p & STACK_DATA_MASK, g_store_size, true);
+    } break;
+    default: fprintf(stderr, "?");
+  }
+}
+
 void debug_print_stack() {
   if (!g_parsing) {
     fprintf(stderr, "stack:\n");
@@ -118,7 +137,7 @@ void debug_print_heap() {
   if (!g_parsing) {
     fprintf(stderr, "heap:\n");
     for (int i = 0; i < g_heap_size; i++) {
-      fprintf(stderr, "%d: ", i); debug_print_stackel(&g_heap[i]); fprintf(stderr, "\n");
+      fprintf(stderr, "%d: ", i); debug_print_heapel(&g_heap[i]); fprintf(stderr, "\n");
     }
   }
 }
