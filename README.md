@@ -13,8 +13,6 @@ There are a bunch of interrelated projects in this repository. If you want to in
 * `mm0-hs`: Haskell verifier and toolchain, see [`mm0-hs/README.md`](mm0-hs/README.md). Deprecated, but contains most of the translations.
 * `mm0-lean`: A collection of lean scratch files and minor formalizations. See [`mm0-lean/README.md`](mm0-lean/README.md).
 
-
-
 ## Introduction
 
 Metamath Zero is a language for writing specifications and proofs. Its emphasis is on balancing simplicity of verification and human readability of the specification. That is, it should be easy to see what exactly is the meaning of a proven theorem, but at the same time the language is as pared down as possible to minimize the number of complications in potential verifiers.
@@ -76,3 +74,4 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
 * `vim` contains some basic vim files for syntax coloring.
   Copy them into `$HOME/.vim/`
   (e.g. with `cp -r vim/* ~/.vim/`) to install them.
+* [`ammkrn/second_opinion`](https://github.com/ammkrn/second_opinion) is not in this repository, but it deserves a mention, because it is a third-party alternate verifier for MM0 + MMB, like `mm0-c`, written in Rust by @ammkrn.
