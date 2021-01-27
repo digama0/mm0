@@ -191,7 +191,7 @@ The main typing judgments are:
   \item $\Gamma;\delta \proves e:\tau \makes\delta'$\\ determines that $e$ is a valid expression of type $\tau$, which modifies the value context from $\delta$ to $\delta'$. In the special case where $\delta'=\delta$, we will write $\Gamma;\delta \proves e:\tau$ instead.
   \item $\Gamma;\delta \proves e\Rightarrow pe:\tau \makes\delta'$\\ is the same as the previous, but additionally says that the returned value can be expressed as the pure expression $pe$ in context $\Gamma$.
   \item $\Gamma\proves \delta$ means that $\delta$ is a valid value context.
-  It is defined as: if $(x^\gamma:=pe:\tau)\in\delta$ then $\Gamma\proves pe:\tau$ and $x\in\mathrm{Dom}(\Gamma)$, and if $(x\to y)\in\delta$ then $x,y\in\mathrm{Dom}(\Gamma)$.
+  It is defined as: if $(x:=pe:\tau)\in\delta$ then $\Gamma\proves pe:\tau$ and $x\in\mathrm{Dom}(\Gamma)$, and if $(x\to y)\in\delta$ then $x,y\in\mathrm{Dom}(\Gamma)$.
   \item $\Gamma \proves pe:\tau$\\ The typing rule for pure expressions, which does not depend on the value context.
   \item $\Gamma \constep \Gamma'$\\ an auxiliary judgment for applying pending mutations to the context.
   \item $\Gamma\proves it\;\mathsf{ok}$\\ The top level item typing judgment
@@ -210,7 +210,7 @@ The type variables don't depend on anything and cannot be introduced in the midd
 The secondary context used in the typing rule $\Gamma,\delta \proves e:\tau \makes\delta'$ for expressions is the ``value context'', which contains the actual current value of variables in the context. It has two components:
 
 \begin{itemize}
-\item A list of records of the form $x^\gamma:=pe:\tau$, which represent the ``actual resources'' associated to a variable $x$. Note that $x$ need not be in the context, but $\Gamma\proves pe:\tau$ so all variables in $pe$ must be in the context. For function arguments and other variables with no known value, we use $x^\gamma:\tau$, a shorthand for $x^\gamma:=x:\tau$, where $(x:\core\tau)\in\Gamma$.
+\item A list of records of the form $x:=pe:\tau$, which represent the ``actual resources'' associated to a variable $x$. Note that $x$ need not be in the context, but $\Gamma\proves pe:\tau$ so all variables in $pe$ must be in the context. For function arguments and other variables with no known value, we use $x:\tau$, a shorthand for $x:=x:\tau$, where $(x:\core\tau)\in\Gamma$.
 \item A rename map, which is a list of records of the form $x\to y$ where $x$ and $y$ are variables which are either in the context or in the value context. This keeps track of what a variable's ``current name'' is, after some number of renames. When a block ends, the values associated to renamed variables become the initial values of variable names in the code following the block.
 
 A variable can only be renamed once, and it is always renamed to a fresh variable; this means that the rename map is an injective partial function, i.e., if $x\to y,y'$ then $y=y'$ and if $x,x'\to y$ then $x=x'$.
@@ -266,12 +266,12 @@ Because moving is monotonic, that is $A\to \core A$ but not the other way around
 
 \subsection{The Typing Rules}
 
-We now give the main typing rules for the logic. This corresponds roughly to the \texttt{typeck} phase of the compiler. Note that ghost variable markings are ignored during this phase; they will come back during the layout phase.
+We now give the main typing rules for the logic. This corresponds roughly to the \texttt{typeck} phase of the compiler. Note that ghost variable markings are ignored during this phase; they will come back during the ghost propagation phase.
 
 \judgment[Tuple pattern typing]{\Gamma \proves t:\tau \Rightarrow \overline{R}}
 \begin{mathparpagebreakable}
   \axiom[tp-ignore]{\Gamma \proves \_:\tau\Rightarrow \cdot}\and
-  \axiom[tp-var]{\Gamma \proves x^\gamma:\tau\Rightarrow x^\gamma:\tau}\and
+  \axiom[tp-var]{\Gamma \proves x^\gamma:\tau\Rightarrow x:\tau}\and
   \infer[tp-typed]
     {\Gamma \proves t:\tau\Rightarrow \overline{R}}
     {\Gamma \proves (t:\tau):\tau\Rightarrow \overline{R}}\and
@@ -301,9 +301,9 @@ In the \textsc{tp-sum} and \textsc{tpp-ex} rules, we use $\overline{R}[t/x]$ to 
 \begin{mathparpagebreakable}
   \infer[arg-type]
     {\Gamma \proves \tau\;\mathsf{type}}
-    {\Gamma \proves x^\gamma:\tau\;\mathsf{arg}}
+    {\Gamma \proves x:\tau\;\mathsf{arg}}
 \end{mathparpagebreakable}
-This one is simple so we get it out of the way first. We will avoid dealing with variable shadowing rules here; suffice it to say that variables in the context must always be distinct, and we will perform renaming from the surface syntax to ensure this property when necessary. Also remember that $x^\gamma$ represents either $x$ or $\ghost x$ in this rule.
+This one is simple so we get it out of the way first. We will avoid dealing with variable shadowing rules here; suffice it to say that variables in the context must always be distinct, and we will perform renaming from the surface syntax to ensure this property when necessary.
 
 
 \judgment[Type validity]{\Gamma \proves \tau\;\mathsf{type}}
@@ -457,7 +457,7 @@ Note that the \textsc{tye-var-ref} rule ignores the effect of mutations. This is
   \infer[tye-struct]
     {\Gamma \proves e:\tau\quad
       \Gamma \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[e/x]}
-    {\Gamma \proves \langle e,\overline{e}\rangle:\textstyle\sum x^\gamma:\tau,\bar R}\and
+    {\Gamma \proves \langle e,\overline{e}\rangle:\textstyle\sum x:\tau,\bar R}\and
   \infer[tye-func-call]
     {\mathsf{func}\;f(\overline{R}):\overline{S}\quad
       \Gamma \proves \langle\overline{e}\rangle:\textstyle\sum\bar R}
@@ -480,17 +480,17 @@ For general expressions, we must worry about the following additional effects:
   \infer[tye-cs-right]
     {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_1\quad \Gamma;\delta_1\constep\delta_2}
     {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
-  \axiom[tye-var-move]{\Gamma;\delta,x^\gamma:=pe:\tau \proves x\Rightarrow pe:\tau\makes\delta,x^\gamma:=pe:\core\tau}\and
+  \axiom[tye-var-move]{\Gamma;\delta,x:=pe:\tau \proves x\Rightarrow pe:\tau\makes\delta,x:=pe:\core\tau}\and
   \infer[tye-mut]
     {\!\:{\Gamma;\delta \proves e_1\Rightarrow pe:\tau\makes\delta_1\quad
       \forall z,\ (x\to z)\notin \delta_1\quad
       \Gamma\proves \delta_2\atop
-      \Gamma;\delta_1,(x\to y),(y^\gamma:=pe:\tau)\proves e_2:\tau'\makes\delta_2\quad y\notin \delta_2}}
+      \Gamma;\delta_1,(x\to y),(y:=pe:\tau)\proves e_2:\tau'\makes\delta_2\quad y\notin \delta_2}}
     {\Gamma;\delta \proves (x^\gamma\gets e_1\ \mathsf{with}\ y\gets x;\ e_2):\tau'\makes\delta_2}\and
   \infer[tye-let-pure]
     {\!\:{\Gamma;\delta \proves e_1\Rightarrow pe:\tau\makes\delta_1\quad
       \Gamma\proves\tau',\delta_2\atop
-      \Gamma,x:\core\tau;\delta_1,x^\gamma:=pe:\tau \proves e_2:\tau'\makes\delta_2}}
+      \Gamma,x:\core\tau;\delta_1,x:=pe:\tau \proves e_2:\tau'\makes\delta_2}}
     {\Gamma;\delta \proves (\mathsf{let}\ x^\gamma := e_1\;\mathsf{in}\; e_2):\tau'\makes\delta_2}\and
   \infer[tye-unreachable]
     {\Gamma;\delta \proves e:\bot\makes\delta_1\quad \Gamma\proves \delta_2}
@@ -545,13 +545,13 @@ The rules given below are not deterministic, but they are used whenever we can't
     {\Gamma;\delta_1 \constep \delta_3}\and
   \infer[cs-drop]
     {\forall x,(x\to y)\notin \delta}
-    {\Gamma;\delta,(y^\gamma:=pe:\tau)\constep\delta}\and
+    {\Gamma;\delta,(y:=pe:\tau)\constep\delta}\and
   \axiom[cs-rename\footnotemark]
-    {\Gamma;\delta,(x\to y),(y^\gamma:=pe:\tau)\constep\delta,(x^\gamma:=pe:\tau)}\and
+    {\Gamma;\delta,(x\to y),(y:=pe:\tau)\constep\delta,(x:=pe:\tau)}\and
   \footnotetext{The \textsc{cs-rename} rule should only be used if it is the only way to make progress, i.e. when $y$ is going out of scope. This is needed because it changes the interpretation of expressions containing $x$.}
   \infer[cs-forget]
     {\Gamma\proves\Gamma[\overline{x\to pe}]}
-    {\Gamma;\delta,\overline{x^\gamma:=pe:\tau}\constep\delta,\overline{x^\gamma:\tau}}\and
+    {\Gamma;\delta,\overline{x:=pe:\tau}\constep\delta,\overline{x:\tau}}\and
 \end{mathparpagebreakable}
 
 This is a nondeterministic judgment, with the ``goal'' being to eliminate a particular variable and/or join with separate control flow which has assigned different values to the variables.
@@ -627,11 +627,11 @@ The approach for handling mutation also cleanly supports uninitialized data. We 
 That's it. Note that $\tau\le \tau^?$ because the typing predicate of $\tau^?$ is $\top$, so we can always satisfy the side condition of \textsc{cs-forget} when performing a strong update of $x:\tau^?$ to $\tau$ when we initialize it.
 \subsection{Pointers}\label{sec:pointers}
 
-Thus far the rules have only talked about local variables and mutation of local variables, that we think of as being on the stack frame of the function. To understand the representation of pointers in the type system, it will help to understand the way contexts are modeled as separating propositions. The context is a large separating conjunction of $\boxed{x:\tau}$ assertions for every $(x^\gamma:\tau)\in\Gamma$ and $A$ for every $h:A$, plus additional ``layout'' information about the relation of non-ghost variables to the stack frame that will be calculated in the layout pass (see section \ref{sec:layout}).
+Thus far the rules have only talked about local variables and mutation of local variables, that we think of as being on the stack frame of the function. To understand the representation of pointers in the type system, it will help to understand the way contexts are modeled as separating propositions. The context is a large separating conjunction of $\boxed{x:\tau}$ assertions for every $(x:\tau)\in\Gamma$ and $A$ for every $h:A$, plus additional ``layout'' information about the relation of non-ghost variables to the stack frame that will be calculated in the layout pass (see section \ref{sec:layout}).
 
 \subsubsection{Singleton pointers}
 
-The simplest pointer type is $\&^\mathbf{sn}\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x$, where $\eta\mathrel{@}x$ means that $\eta$ is stored in memory at location $x$; see section \ref{sec:layout}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
+The simplest pointer type is $\&^\mathbf{sn}\eta$. $x:\&^\mathbf{sn}\eta$ simply means that $x$ is a pointer that points to $\eta$, which is a ``place'', a writable location. $\boxed{x:\&^\mathbf{sn}\eta}=\eta\mathrel{@}x$, where $\eta\mathrel{@}x$ means that $\eta$ is stored in memory at location $x$; see section \ref{sec:semantics}. (This is not the same as $x\mapsto\eta$, because $\eta$ is a place, i.e. a direct reference to a variable in the context, not a value.) This predicate is duplicable, so $\&^\mathbf{sn}\eta$ is \textsf{copy} (and coercible to $\N_{64}$). We add the following:
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^\mathbf{sn}\eta\and
@@ -663,6 +663,8 @@ To use these generalized lvalues, we need operations to read and write them:
 
 We needed two new judgments above, $\Gamma \proves \eta\;\mathsf{place}$, which asserts that $\eta$ is a place in the context, and $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}$ which asserts that $e$ evaluates as an lvalue to place $\eta$ (which may require transforming the code to add a temporary variable). The simplest example of a place is a variable $x\in\Gamma$, but one can also take a subpart of a struct or a slice of an array. However, note that ${}^*e$ is a place expression but not a place value; it evaluates according to \textsc{tye-deref}.
 
+Note that writing to a place as in \textsc{tye-write} changes the type $\&^\mathbf{sn}\eta$ to $\&^\mathbf{sn}\eta'$ (it rewrites all occurrences of one with the other in the context), if $\eta'$ is the renamed place after the mutation. This is because the pointer has not changed, but the data being pointed to has been updated, so we should now retrieve the new value, not the (ghost) old value.
+
 \subsubsection{Owned pointers}
 
 An owned pointer is fairly simple. We define $\boxed{x:\&^\mathbf{own}\tau}$ as $\exists v:\tau,\ x\mapsto v$, but we can't directly dereference an owned pointer as we must first have access to the variable $v$, so we require that it first be destructured to be used.
@@ -691,13 +693,13 @@ The rule \textsc{tye-return} is unchanged, but we have a new rule for fulfilling
     {\delta\proves x\to^*y \quad
       \Gamma;\delta \proves y:\tau\makes \delta_1\quad
       \Gamma;\delta_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[pe/y]}
-    {\Gamma \proves \langle \overline{e}\rangle:\textstyle\sum (\mathsf{out}^x\,y^\gamma:\tau),\bar R}\and
+    {\Gamma \proves \langle \overline{e}\rangle:\textstyle\sum (\mathsf{out}^x\,y:\tau),\bar R}\and
 \end{mathparpagebreakable}
 Here $\delta\proves x\to^*y$ means that $x\to\dots\to y\not\to$ according to the rename map in $\delta$.
 
-Conversely, when calling a function, the $\mathsf{mut}$ parameters get captured in the calling context, and changed to their $\mathsf{out}$ variants. Describing this is technically complicated so we will use a prose description. We define only the construct $\mathsf{let}\ \langle \overline{y},t\rangle:=F(\overline{e})\;\mathsf{in}\; e_2$ where $t$ is a tuple pattern and $\overline{y}$ has the same length as the number of out parameters of $F$; that is, $\mathsf{proc}\ F(\overline{R}):\overline{\mathsf{out}^x\;y^\gamma:\tau},\overline{S}$.
+Conversely, when calling a function, the $\mathsf{mut}$ parameters get captured in the calling context, and changed to their $\mathsf{out}$ variants. Describing this is technically complicated so we will use a prose description. We define only the construct $\mathsf{let}\ \langle \overline{y},t\rangle:=F(\overline{e})\;\mathsf{in}\; e_2$ where $t$ is a tuple pattern and $\overline{y}$ has the same length as the number of out parameters of $F$; that is, $\mathsf{proc}\ F(\overline{R}):\overline{\mathsf{out}^x\;y:\tau},\overline{S}$.
 
-The arguments of $F$ must be $e:\tau$ if $R=(x^\gamma:\tau)$, and must be $\eta:\tau\;\mathsf{place}$ if $R=(\mathsf{mut}\ x^\gamma:\tau)$. If $\eta$ is provided for argument $x$, and $\mathsf{out}^x\ y^\gamma:\tau'$ is among the out arguments of the function, and $y$ is the corresponding element of the tuple in the $\mathsf{let}\ \langle \overline{y},t\rangle$ pattern match, then we perform an assignment $\eta \gets y$ on return from the function. All these $\eta$ places are disjoint because they were passed simultaneously to $F$, so there is no ambiguity about the order of writes. Finally, the result of the $F(\overline{e})$ invocation is pattern matched against the tuple pattern $t$ and $e_2$ is executed.
+The arguments of $F$ must be $e:\tau$ if $R=(x:\tau)$, and must be $\eta:\tau\;\mathsf{place}$ if $R=(\mathsf{mut}\ x:\tau)$. If $\eta$ is provided for argument $x$, and $\mathsf{out}^x\ y:\tau'$ is among the out arguments of the function, and $y$ is the corresponding element of the tuple in the $\mathsf{let}\ \langle \overline{y},t\rangle$ pattern match, then we perform an assignment $\eta \gets y$ on return from the function. All these $\eta$ places are disjoint because they were passed simultaneously to $F$, so there is no ambiguity about the order of writes. Finally, the result of the $F(\overline{e})$ invocation is pattern matched against the tuple pattern $t$ and $e_2$ is executed.
 
 The type $\&^\mathbf{mut}\tau$ is not a true type, but is allowed in function signatures to indicate a $\&^\mathbf{sn}\eta$ value where $\eta$ is external to the function. The changes to $\eta$ are a ``side effect'' and so we use the $\mathsf{out}^x\;y$ functionality from the previous section to support it.
 
@@ -812,8 +814,7 @@ The types that show up in the expression judgment are annotated with $\gamma$ gh
 \judgment[Ghost-annotated type validity]{\tau^\gamma\;\mathsf{ctype}}
 \begin{mathparpagebreakable}
   \axiom[cty-unit, cty-bool]{\mathbf{1}^\gamma,\ \mathsf{bool}^\gamma\;\mathsf{ctype}}\and
-  \infer[cty-nat, cty-int]
-    {\gamma\le (s\ne\infty)}
+  \axiom[cty-nat, cty-int]
     {\N_s^\gamma,\ \Z_s^\gamma\;\mathsf{ctype}}\and
   \infer[cty-var, cty-core-var]
     {\alpha\in\Gamma}
@@ -858,11 +859,11 @@ We also add an annotation $\sigma\in\{\bot,\top\}$ on functions (including $\mat
 \judgment[Ghost-annotated expression validity]{\Gamma^\alpha;\delta_1^{\rho_1} \proves e:\tau^\gamma\makes\delta_2^{\rho_2}}
 \begin{mathparpagebreakable}
   \infer[tyc-cs-left]
-    {\Gamma;\delta\constep\delta_1\quad \Gamma;\delta_1\proves e\Rightarrow pe^?:\tau\makes\delta_2}
-    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
+    {\Gamma;\delta\constep\delta_1\quad \Gamma^\alpha;\delta_1^\rho\proves e:\tau^\gamma\makes\delta_2^{\rho'}}
+    {\Gamma^\alpha;\delta^\rho\proves e:\tau^\gamma\makes\delta_2^{\rho'}}\and
   \infer[tyc-cs-right]
-    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_1\quad \Gamma;\delta_1\constep\delta_2}
-    {\Gamma;\delta\proves e\Rightarrow pe^?:\tau\makes\delta_2}\and
+    {\Gamma^\alpha;\delta^\rho\proves e:\tau^\gamma\makes\delta_1^{\rho'}\quad \Gamma;\delta_1\constep\delta_2}
+    {\Gamma^\alpha;\delta^\rho\proves e:\tau^\gamma\makes\delta_2^{\rho'}}\and
   \infer[tyc-var-ref]
     {(x^{\gamma'}:=pe:\tau)\in\delta\quad |\tau| = \tau'\quad \gamma\le\alpha,\rho,\gamma'}
     {\Gamma^\alpha;\delta^{\rho} \proves x:{\tau'}^{\gamma}\makes \delta^{\rho}}\and
@@ -872,7 +873,7 @@ We also add an annotation $\sigma\in\{\bot,\top\}$ on functions (including $\mat
     {\gamma\le \alpha,\rho}
     {\Gamma^\alpha;\delta^{\rho} \proves \mathsf{true},\ \mathsf{false}:\mathsf{bool}^{\gamma}\makes \delta^{\rho}}\and
   \infer[tyc-nat, tyc-int]
-    {\gamma\le \alpha,\rho,(s\ne \infty)}
+    {\gamma\le \alpha,\rho}
     {\Gamma^\alpha;\delta^{\rho} \proves n:\N_s^{\gamma},\ \Z_s^{\gamma}\makes \delta^{\rho}}\and
   \infer[tyc-not]
     {\Gamma^\alpha;\delta_1^{\rho_1} \proves e:\mathsf{bool}^\gamma\makes \delta_2^{\rho_2}}
@@ -979,6 +980,14 @@ While the ghost analysis pass is primarily intraprocedural, it contains one inte
 
 If a side effectful operation is reachable from a procedure, then we mark the procedure itself as side effectful (note that \textsf{func} functions cannot have side effects). Note in particular that mutation is not considered a side effect, because the compiler has full visibility into what is going on and can track the values appropriately.
 
+\section{Optimization and legalization}\label{sec:optimization}
+
+At this point, we are mostly done with user level errors; if type checking and the ghost analysis pass succeed then we should be able to complete compilation. The only exception to this is types that are too large to exist (which will be caught in this pass) and operations that cannot be compiled, such as unbounded integer operations.
+
+Because the source language makes use of unbounded integer operations even in computationally relevant positions, it is not sufficient to simply require that any variable or expression of type $\N_\infty$ is ghost; for example a reasonable operation might be $x,y:\N_{64}\vdash \mathsf{let}\;z:\N_{64}:=(x+y)\mathrel{\%}2^{64}$, which we expect to be compiled to an ADD instruction, despite the fact that $x+y:\N_{\infty}$ is an intermediate in this computation.
+
+We call this phase legalization because it performs general rewriting in order to replace source level operations with operations which exist on the target architecture. So for example we can replace the subexpression $(x+y)\mathrel{\%}2^{64}$ by $x+_{64}y$, where $x+_{64}y$ is addition modulo $2^{64}$ that we expect to exist on the target machine. Once we have done so, there are no longer any unsized intermediates in the operation, and we can proceed with compilation.
+
 \section{The Layout pass}\label{sec:layout}
 
 The ghost analysis pass has already determined \emph{which} variables are required for the computation to proceed, but to determine \emph{where} to put them, we have another pass, the layout pass.
@@ -1019,7 +1028,7 @@ Intuitively, $\phi_1\ast\phi_2$ is the stack layout consisting of the layout $\p
 At a given point in execution, each of the unions has one of its members ``active'' and the other ``inactive'', and a variable can only be accessed if it is active in all parent unions.
 A ghost variable is never assigned any stack location and hence it can never be accessed. More formally, we say that two stack paths are \emph{incompatible}, written $s_1\perp s_2$, if there exists $s$ such that $s_1$ extends $s.l$ and $s_2$ extends $s.r$, or vice versa. We will maintain the invariant that if two variables in the context are represented by stack paths $s_1$ and $s_2$ then they are compatible.
 
-\section{Semantics}
+\section{Semantics}\label{sec:semantics}
 
 Semantics plays a rather more important role in Metamath C compared to other languages because the target architecture for the compiler is literally separation logic. So we need a way to interpret every judgment just described into a separating proposition or theorem.
 
