@@ -21,7 +21,7 @@ use super::super::{Result, Elaborator, LispData, DocComment,
 use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
   Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmID, Uncons};
 use super::parser::{IR, Branch, Pattern, MVarPattern, DefTarget};
-use super::super::local_context::{InferSort, AwaitingProof, try_get_span};
+use super::super::local_context::{InferSort, AwaitingProof, try_get_span, try_get_span_from};
 use super::super::environment::{TermKind, ThmKind, ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
@@ -1346,6 +1346,13 @@ impl<'a> Evaluator<'a> {
     FileSpan {file: self.file.clone(), span}
   }
 
+  fn try_get_span(&self, fsp: Option<&FileSpan>) -> Span {
+    let orig = FileSpan {file: self.path.clone(), span: self.orig_span};
+    try_get_span_from(&orig, fsp)
+  }
+
+  fn respan(&self, sp: Span) -> Span { self.try_get_span(Some(&self.fspan(sp))) }
+
   fn proc_pos(&self, sp: Span) -> ProcPos {
     if let Some(Stack::Def(Some(&Some((sp1, sp2, _, x))))) = self.stack.last() {
       ProcPos::Named(self.fspan(sp2), sp1, x)
@@ -1704,8 +1711,8 @@ impl<'a> Evaluator<'a> {
                 }
               }
               Proc::MMCCompiler(c) => {
-                let fsp = self.fspan(sp1);
-                State::Ret(c.borrow_mut().call(self, fsp, args)?)
+                let sp = self.respan(sp1);
+                State::Ret(c.borrow_mut().call(self, sp, args)?)
               }
             })
           })?,

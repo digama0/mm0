@@ -4,7 +4,7 @@ use std::{rc::Rc, collections::HashMap};
 use num::BigInt;
 use crate::util::FileSpan;
 use crate::elab::{environment::{AtomID, Environment},
-  lisp::{LispKind, InferTarget, LispVal, Uncons, print::{EnvDisplay, FormatEnv}}};
+  lisp::{LispKind, InferTarget, LispVal, Syntax, Uncons, print::{EnvDisplay, FormatEnv}}};
 
 // /// An argument to a function.
 // #[derive(Debug, DeepSizeOf)]
@@ -131,7 +131,7 @@ pub enum Expr {
   Tuple(Box<[Expr]>),
   /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
-  Index(Box<Expr>, Box<Expr>, Box<ProofExpr>),
+  Index(Box<Expr>, Rc<PureExpr>, Box<Expr>),
   /// An deref operation `(* x): T` where `x: (own T)`.
   DerefOwn(Box<Expr>),
   /// An deref operation `(* x): T` where `x: (& T)`.
@@ -140,6 +140,8 @@ pub enum Expr {
   DerefMut(Box<Expr>),
   /// A ghost expression.
   Ghost(Box<Expr>),
+  /// A truncation / bit cast operation.
+  As(Box<(Expr, Type)>),
   /// A let binding.
   Let {
     /// A tuple pattern, containing variable bindings.
@@ -147,15 +149,17 @@ pub enum Expr {
     /// The expression to evaluate, or [`None`] for uninitialized.
     rhs: Option<Box<Expr>>,
   },
-  // /// A function call (or something that looks like one at parse time).
-  // Call {
-  //   /// The function to call.
-  //   f: AtomID,
-  //   /// The function arguments.
-  //   args: Box<[Expr]>,
-  //   /// The variant, if needed.
-  //   variant: Option<Variant>,
-  // },
+  /// A function call or intrinsic.
+  Call {
+    /// The function to call.
+    f: AtomID,
+    /// The span of the head of the function.
+    fsp: Option<FileSpan>,
+    /// The function arguments.
+    args: Box<[Expr]>,
+    /// The variant, if needed.
+    variant: Option<Box<Expr>>,
+  },
   // /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
   // /// `P1, ..., Pn` and is a hypothesis of type `Q`.
   // Entail(LispVal, Box<[Expr]>),
@@ -191,6 +195,8 @@ pub enum Expr {
     /// The body of the loop.
     body: Box<[Expr]>,
   },
+  /// `(assert p)` evaluates `p: bool` and returns a proof of `p`.
+  Assert(Rc<PureExpr>),
   // /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
   // Hole(FileSpan),
 }
@@ -260,6 +266,8 @@ pub enum AST {
   Proc(Arc<Proc>, Uncons),
   /// A global variable declaration.
   Global {
+    /// The span of the `{x := ...}` in `(global {x := ...})`
+    full: Option<FileSpan>,
     /// The variable(s) being declared
     lhs: super::parser::TuplePattern,
     /// The value of the declaration
@@ -267,6 +275,8 @@ pub enum AST {
   },
   /// A constant declaration.
   Const {
+    /// The span of the `{x := ...}` in `(const {x := ...})`
+    full: Option<FileSpan>,
     /// The constant(s) being declared
     lhs: super::parser::TuplePattern,
     /// The value of the declaration
@@ -311,12 +321,36 @@ macro_rules! make_keywords {
     pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
     crate::deep_size_0!(Keyword);
 
+    lazy_static! {
+      static ref SYNTAX_MAP: Box<[Option<Keyword>]> = {
+        let mut vec = vec![];
+        Syntax::for_each(|_, name| vec.push(Keyword::from_str(name)));
+        vec.into()
+      };
+    }
+
+    impl Keyword {
+      #[must_use] fn from_str(s: &str) -> Option<Self> {
+        match s {
+          $($e => Some(Self::$x),)*
+          _ => None
+        }
+      }
+
+      /// Get the MMC keyword corresponding to a lisp [`Syntax`].
+      #[must_use] pub fn from_syntax(s: Syntax) -> Option<Self> {
+        SYNTAX_MAP[s as usize]
+      }
+    }
+
     impl Environment {
       /// Make the initial MMC keyword map in the given environment.
       #[allow(clippy::string_lit_as_bytes)]
       pub fn make_keywords(&mut self) -> HashMap<AtomID, Keyword> {
         let mut atoms = HashMap::new();
-        $(atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);)*
+        $(if Syntax::from_str($e).is_none() {
+          atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);
+        })*
         atoms
       }
     }
@@ -455,13 +489,6 @@ impl std::fmt::Display for Binop {
   }
 }
 
-/// A proof expression, or "hypothesis".
-#[derive(Debug, DeepSizeOf)]
-pub enum ProofExpr {
-  /// An assertion expression `(assert p): p`.
-  Assert(Box<PureExpr>),
-}
-
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
 /// but most expressions operate on the type of (signed unbounded) integers.
 #[derive(Debug, DeepSizeOf)]
@@ -480,9 +507,9 @@ pub enum PureExpr {
   Binop(Binop, Rc<PureExpr>, Rc<PureExpr>),
   /// A tuple constructor.
   Tuple(Box<[PureExpr]>),
-  /// An index operation `(index a i h): T` where `a: (array T n)`,
-  /// `i: nat`, and `h: i < n`.
-  Index(Box<PureExpr>, Rc<PureExpr>, Box<ProofExpr>),
+  /// An index operation `(index a i): T` where `a: (array T n)`,
+  /// `i: nat`.
+  Index(Box<PureExpr>, Rc<PureExpr>),
   /// An deref operation `(* x): T` where `x: (own T)`.
   DerefOwn(Box<PureExpr>),
   /// An deref operation `(* x): T` where `x: (& T)`.
@@ -491,6 +518,8 @@ pub enum PureExpr {
   DerefMut(Box<PureExpr>),
   /// A ghost expression.
   Ghost(Rc<PureExpr>),
+  /// A truncation / bit cast operation.
+  As(Box<(PureExpr, Type)>)
 }
 
 impl EnvDisplay for PureExpr {
@@ -504,11 +533,12 @@ impl EnvDisplay for PureExpr {
       PureExpr::Unop(op, e) => write!(f, "({} {})", op, fe.to(e)),
       PureExpr::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", fe.to(e1), op, fe.to(e2)),
       PureExpr::Tuple(es) => write!(f, "(list {})", es.iter().map(|e| fe.to(e)).format(" ")),
-      PureExpr::Index(a, i, _) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
+      PureExpr::Index(a, i) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
       PureExpr::DerefOwn(e) |
       PureExpr::Deref(e) |
       PureExpr::DerefMut(e) => write!(f, "(* {})", fe.to(e)),
       PureExpr::Ghost(e) => write!(f, "(ghost {})", fe.to(e)),
+      PureExpr::As(e) => write!(f, "{{{} as {}}}", fe.to(&e.0), fe.to(&e.1)),
     }
   }
 }

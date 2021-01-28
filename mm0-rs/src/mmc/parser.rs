@@ -6,7 +6,7 @@ use crate::util::{Span, FileSpan};
 use crate::elab::{Result, ElabError,
   environment::AtomID,
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
-  local_context::try_get_span};
+  local_context::{try_get_span, try_get_span_from}};
 use super::types::{AST, Invariant, Keyword, Proc, ProcKind,
   Variant, VariantType};
 
@@ -114,10 +114,12 @@ pub enum Expr {
   Call {
     /// The function to call.
     f: AtomID,
+    /// The span of `f`.
+    fsp: Option<FileSpan>,
     /// The function arguments.
     args: Vec<LispVal>,
     /// The variant, if needed.
-    variant: Option<Variant>,
+    variant: Option<LispVal>,
   },
   /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
   /// `P1, ..., Pn` and is a hypothesis of type `Q`.
@@ -189,7 +191,11 @@ fn head_atom(e: &LispVal) -> Option<(AtomID, Uncons)> {
   kw: &HashMap<AtomID, Keyword, S>, e: &LispVal
 ) -> Option<(Keyword, Uncons)> {
   let mut u = Uncons::from(e.clone());
-  Some((*kw.get(&u.next()?.as_atom()?)?, u))
+  u.next()?.unwrapped(|e| match *e {
+    LispKind::Atom(a) => Some((*kw.get(&a)?, u)),
+    LispKind::Syntax(s) => Some((Keyword::from_syntax(s)?, u)),
+    _ => None
+  })
 }
 
 impl<'a> Parser<'a> {
@@ -475,20 +481,21 @@ impl<'a> Parser<'a> {
                 body: u
               }
             } else {
+              let fsp = e.fspan();
               let f = e.as_atom().ok_or_else(||
-                ElabError::new_e(self.try_get_span(&e), "only variables can be called like functions"))?;
+                ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()), "only variables can be called like functions"))?;
               let mut args = vec![];
               let mut variant = None;
               for e in u {
-                if let Some(v) = self.parse_variant(&e) {
-                  if mem::replace(&mut variant, Some(v)).is_some() {
+                if let Some((Keyword::Variant, u)) = self.head_keyword(&e) {
+                  if mem::replace(&mut variant, Some(u.as_lisp())).is_some() {
                     return Err(ElabError::new_e(self.try_get_span(&e), "call: two variants"))
                   }
                 } else {
                   args.push(e)
                 }
               }
-              Expr::Call {f, args, variant}
+              Expr::Call {f, fsp, args, variant}
             }
           }
         }
@@ -567,12 +574,13 @@ impl<'a> Parser<'a> {
         Some((Keyword::Func, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Func, u)?)),
         Some((Keyword::Intrinsic, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Intrinsic, u)?)),
         Some((Keyword::Global, u)) => for e in u {
+          let full = e.fspan();
           let (lhs, rhs) = self.parse_decl(e)?;
-          ast.push(AST::Global {lhs, rhs})
+          ast.push(AST::Global {full, lhs, rhs})
         },
         Some((Keyword::Const, u)) => for e in u {
           if let (lhs, Some(rhs)) = self.parse_decl(e.clone())? {
-            ast.push(AST::Const {lhs, rhs})
+            ast.push(AST::Const {full: e.fspan(), lhs, rhs})
           } else {
             return Err(ElabError::new_e(self.try_get_span(&e), "const: definition is required"))
           }

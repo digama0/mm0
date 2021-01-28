@@ -224,7 +224,7 @@ pub struct Elaborator {
   /// The parsed abstract syntax tree for the file
   ast: Arc<AST>,
   /// The location and name of the currently elaborating file
-  path: FileRef,
+  pub(crate) path: FileRef,
   /// A flag that will be flipped from another thread to signal that this elaboration
   /// should be abandoned
   cancel: Arc<AtomicBool>,

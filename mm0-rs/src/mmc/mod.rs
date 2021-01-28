@@ -13,7 +13,7 @@ pub mod nameck;
 pub mod typeck;
 
 use std::collections::hash_map::HashMap;
-use crate::util::FileSpan;
+use crate::util::{FileSpan, Span};
 use crate::elab::{
   Result, Elaborator, ElabError,
   environment::{AtomID, Remap, Remapper},
@@ -85,14 +85,11 @@ impl Compiler {
   /// performing typehecking but not code generation. This can be called multiple
   /// times to add multiple functions, but each lisp literal is already a list of
   /// top level items that are typechecked as a unit.
-  pub fn add(&mut self, elab: &mut Elaborator, fsp: FileSpan, it: impl Iterator<Item=LispVal>) -> Result<()> {
-    let mut p = Parser {fe: elab.format_env(), kw: &self.keywords, fsp};
+  pub fn add(&mut self, elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>) -> Result<()> {
+    let fsp = FileSpan {file: elab.path.clone(), span: sp};
+    let p = Parser {fe: elab.format_env(), kw: &self.keywords, fsp: fsp.clone()};
     let mut ast = vec![];
-    for e in it {
-      if let Some(fsp) = e.fspan() {p.fsp = fsp}
-      p.parse_ast(&mut ast, &e)?;
-    }
-    let fsp = p.fsp;
+    for e in it { p.parse_ast(&mut ast, &e)? }
     for a in &ast { self.nameck(&fsp, a)? }
     let mut tc = TypeChecker::new(self, elab, fsp);
     for item in ast { tc.typeck(&item)? }
@@ -101,30 +98,30 @@ impl Compiler {
 
   /// Once we are done adding functions, this function performs final linking to produce an executable.
   #[allow(clippy::unused_self)]
-  pub fn finish(&mut self, _elab: &mut Elaborator, _fsp: &FileSpan, _a1: AtomID, _a2: AtomID) -> Result<()> {
+  pub fn finish(&mut self, _elab: &mut Elaborator, _sp: Span, _a1: AtomID, _a2: AtomID) -> Result<()> {
     Ok(())
   }
 
   /// Main entry point to the compiler. Does basic parsing and forwards to
   /// [`add`](Self::add) and [`finish`](Self::finish).
-  pub fn call(&mut self, elab: &mut Elaborator, fsp: FileSpan, args: Vec<LispVal>) -> Result<LispVal> {
+  pub fn call(&mut self, elab: &mut Elaborator, sp: Span, args: Vec<LispVal>) -> Result<LispVal> {
     let mut it = args.into_iter();
     let e = it.next().expect("expected 1 argument");
     match e.as_atom().and_then(|a| self.keywords.get(&a)) {
       Some(Keyword::Add) => {
-        self.add(elab, fsp, it)?;
+        self.add(elab, sp, it)?;
         Ok(LispVal::undef())
       }
       Some(Keyword::Finish) => {
         let a1 = it.next().and_then(|e| e.as_atom()).ok_or_else(||
-          ElabError::new_e(fsp.span, "mmc-finish: syntax error"))?;
+          ElabError::new_e(sp, "mmc-finish: syntax error"))?;
         let a2 = it.next().and_then(|e| e.as_atom()).ok_or_else(||
-          ElabError::new_e(fsp.span, "mmc-finish: syntax error"))?;
-        self.add(elab, fsp.clone(), it)?;
-        self.finish(elab, &fsp, a1, a2)?;
+          ElabError::new_e(sp, "mmc-finish: syntax error"))?;
+        self.add(elab, sp, it)?;
+        self.finish(elab, sp, a1, a2)?;
         Ok(LispVal::undef())
       }
-      _ => Err(ElabError::new_e(fsp.span,
+      _ => Err(ElabError::new_e(sp,
         format!("mmc-compiler: unknown subcommand '{}'", elab.print(&e))))
     }
   }

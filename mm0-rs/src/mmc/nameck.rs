@@ -48,6 +48,8 @@ make_prims! {
     Add: "+",
     /// `(and x1 ... xn)` returns the boolean `AND` of the arguments.
     And: "and",
+    /// `{x as T}` performs truncation and non-value preserving casts a la `reinterpret_cast`.
+    As: "as",
     /// `(assert p)` evaluates `p` and if it is false, crashes the program with an error.
     /// It returns a proof that `p` is true (because if `p` is false then the
     /// rest of the function is not evaluated).
