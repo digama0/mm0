@@ -87,7 +87,10 @@ make_prims! {
     List: "list",
     /// `{x < y}` returns true if `x` is less than `y`
     Lt: "<",
-      /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
+    /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
+    /// one of the numeric types
+    Pure: "pure",
+    /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
     Pun: "pun",
     /// If `x: (& (array T n))`, then `(slice {x + b} h): (& (array T a))` if
     /// `h` is a proof that `b + a <= n`. Computationally this corresponds to
@@ -241,7 +244,7 @@ pub enum GlobalTC {
   Unchecked,
   /// A user type that has been typechecked, with the original span,
   /// the (internal) declaration name, and the compiled value expression.
-  Checked(Option<FileSpan>, AtomID, Option<Rc<types::Expr>>),
+  Checked(Option<FileSpan>, AtomID, Rc<types::Type>, Rc<types::Expr>),
 }
 
 /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.

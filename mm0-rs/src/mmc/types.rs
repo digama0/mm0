@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{rc::Rc, collections::HashMap};
 use num::BigInt;
 use crate::util::FileSpan;
-use crate::elab::{environment::{AtomID, Environment},
+use crate::elab::{environment::{AtomID, TermID, Environment},
   lisp::{LispKind, InferTarget, LispVal, Syntax, Uncons, print::{EnvDisplay, FormatEnv}}};
 
 // /// An argument to a function.
@@ -489,6 +489,53 @@ impl std::fmt::Display for Binop {
   }
 }
 
+/// An embedded MM0 expression inside MMC. This representation is designed to make it easy
+/// to produce substitutions of the free variables.
+#[derive(Debug, DeepSizeOf)]
+pub enum MM0ExprNode {
+  /// A constant expression, containing no free variables.
+  Const(LispVal),
+  /// A free variable. This is an index into the [`MM0Expr::subst`] array.
+  Var(u32),
+  /// A term constructor, where at least one subexpression is non-constant
+  /// (else we would use [`Const`](Self::Const)).
+  Expr(TermID, Vec<MM0ExprNode>),
+}
+
+struct MM0ExprNodePrint<'a>(&'a [AtomID], &'a MM0ExprNode);
+impl<'a> EnvDisplay for MM0ExprNodePrint<'a> {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self.1 {
+      MM0ExprNode::Const(e) => e.fmt(fe, f),
+      &MM0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
+      MM0ExprNode::Expr(t, es) => {
+        write!(f, "({}", fe.to(t))?;
+        for e in es {
+          write!(f, " {}", fe.to(&Self(self.0, e)))?
+        }
+        write!(f, ")")
+      }
+    }
+  }
+}
+
+/// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
+/// with `subst` holding the internal names of these variables.
+#[derive(Debug, DeepSizeOf)]
+pub struct MM0Expr {
+  /// The mapping from indexes in the `expr` to internal names.
+  /// (The user-facing names have been erased.)
+  pub subst: Vec<AtomID>,
+  /// The root node of the expression.
+  pub expr: MM0ExprNode,
+}
+
+impl EnvDisplay for MM0Expr {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    MM0ExprNodePrint(&self.subst, &self.expr).fmt(fe, f)
+  }
+}
+
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
 /// but most expressions operate on the type of (signed unbounded) integers.
 #[derive(Debug, DeepSizeOf)]
@@ -519,7 +566,9 @@ pub enum PureExpr {
   /// A ghost expression.
   Ghost(Rc<PureExpr>),
   /// A truncation / bit cast operation.
-  As(Box<(PureExpr, Type)>)
+  As(Box<(PureExpr, Type)>),
+  /// A truncation / bit cast operation.
+  Pure(Box<(MM0Expr, Type)>)
 }
 
 impl EnvDisplay for PureExpr {
@@ -539,6 +588,7 @@ impl EnvDisplay for PureExpr {
       PureExpr::DerefMut(e) => write!(f, "(* {})", fe.to(e)),
       PureExpr::Ghost(e) => write!(f, "(ghost {})", fe.to(e)),
       PureExpr::As(e) => write!(f, "{{{} as {}}}", fe.to(&e.0), fe.to(&e.1)),
+      PureExpr::Pure(e) => write!(f, "{{(pure {}) : {}}}", fe.to(&e.0), fe.to(&e.1)),
     }
   }
 }

@@ -3,17 +3,18 @@
 
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::convert::TryInto;
 use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
   environment::{AtomID, AtomData},
   lisp::{Uncons, LispVal, LispKind, print::{EnvDisplay, FormatEnv}},
   local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan};
 use super::{Compiler,
-  types::{AST, Binop, Expr, Keyword, ProcKind,
-    Prop, PureExpr, Size, TuplePattern, TypedTuplePattern, Type, Unop},
-  parser::{head_keyword, Parser, Expr as PExpr, TuplePattern as PTuplePattern},
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
-    Intrinsic, Entity, GlobalTC, Operator, ProcTC}};
+    Intrinsic, Entity, GlobalTC, Operator, ProcTC},
+  parser::{head_keyword, Parser, Expr as PExpr, TuplePattern as PTuplePattern},
+  types::{AST, Binop, Expr, Keyword, MM0Expr, MM0ExprNode,
+    ProcKind, Prop, PureExpr, Size, TuplePattern, Type, TypedTuplePattern, Unop}};
 
 enum InferType<'a> {
   Int,
@@ -236,8 +237,8 @@ impl<'a> TypeChecker<'a> {
     Parser {fe: self.elab.format_env(), kw: &self.mmc.keywords, fsp: self.fsp.clone()}
   }
 
-  fn todo<T, U>(&self, s: &str, _: U) -> EResult<T> {
-    Err(ElabError::new_e(self.fsp.span, format!("unimplemented: {}", s)))
+  fn todo<T, U>(&self, fsp: Option<&FileSpan>, s: &str, _: U) -> EResult<T> {
+    Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp), format!("unimplemented: {}", s)))
   }
 
   fn try_get_span(&self, e: &LispVal) -> Span {
@@ -387,6 +388,7 @@ impl<'a> TypeChecker<'a> {
       },
       PureExpr::Ghost(e) => self.infer_type(e),
       PureExpr::As(e) => InferType::ty(&e.1),
+      PureExpr::Pure(e) => InferType::ty(&e.1),
     }
   }
 
@@ -536,6 +538,50 @@ impl<'a> TypeChecker<'a> {
           format!("undeclared type {}", self.elab.print(&head))))
       }
     }
+  }
+
+  fn check_mm0_expr(&self, e: LispVal) -> Result<MM0Expr, ElabError> {
+    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>),
+      e: &LispVal, head: AtomID, args: Option<Uncons>
+    ) -> Result<Option<MM0ExprNode>, ElabError> {
+      let tid = tc.elab.term(head).ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
+        format!("term '{}' not declared", tc.elab.data[head].name)))?;
+      tc.todo(e.fspan().as_ref(), "list_opt", args)
+    }
+    fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>),
+      e: &LispVal
+    ) -> Result<Option<MM0ExprNode>, ElabError> {
+      e.unwrapped(|r| Ok(match *r {
+        LispKind::Atom(a) => match subst.1.entry(a) {
+          Entry::Occupied(entry) => Some(MM0ExprNode::Var(*entry.get())),
+          Entry::Vacant(entry) => match tc.user_locals.get(&a) {
+            Some(&(v, _)) => {
+              let n = subst.0.len().try_into().expect("overflow");
+              entry.insert(n);
+              subst.0.push(v);
+              Some(MM0ExprNode::Var(n))
+            }
+            None => list_opt(tc, subst, e, a, None)?
+          }
+        },
+        _ => {
+          let mut u = Uncons::from(e.clone());
+          let head = u.next().ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
+            format!("bad expression {}", tc.elab.print(e))))?;
+          let a = head.as_atom().ok_or_else(|| ElabError::new_e(tc.try_get_span(&head),
+            "expected an atom"))?;
+          list_opt(tc, subst, &head, a, Some(u))?
+        }
+      }))
+    }
+    fn node<'a>(tc: &TypeChecker<'a>, e: LispVal,
+      subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>)
+    ) -> Result<MM0ExprNode, ElabError> {
+      Ok(node_opt(tc, subst, &e)?.unwrap_or_else(|| MM0ExprNode::Const(e)))
+    }
+    let mut subst = (vec![], HashMap::new());
+    let expr = node(self, e, &mut subst)?;
+    Ok(MM0Expr {subst: subst.0, expr})
   }
 
   fn check_lassoc1_pure_expr(&self,
@@ -744,6 +790,12 @@ impl<'a> TypeChecker<'a> {
           }
           (PrimOp::Typed, _) |
           (PrimOp::As, _) => return err!("expected 2 arguments"),
+          (PrimOp::Pure, [e]) => {
+            let ty = tgt.ok_or_else(|| ElabError::new_e(self.try_get_span(&head), "type ascription required"))?;
+            let e = self.check_mm0_expr(e.clone())?;
+            Ok(PureExpr::Pure(Box::new((e, ty.clone()))))
+          }
+          (PrimOp::Pure, _) => return err!("expected 1 argument"),
           (PrimOp::Assert, _) |
           (PrimOp::Pun, _) |
           (PrimOp::Slice, _) |
@@ -973,7 +1025,9 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_expr(&mut self, ts: &mut TypeState, e: LispVal, tgt: TypeTarget<'_>) -> EResult<Expr> {
-    let sp = self.try_get_span(&e);
+    let fsp = e.fspan();
+    let fsp = fsp.as_ref();
+    let sp = try_get_span_from(&self.fsp, fsp);
     Ok(match self.parser().parse_expr(e)? {
       PExpr::Nil => Expr::Pure(PureExpr::Unit),
       PExpr::Var(sp, user) => {
@@ -1123,6 +1177,13 @@ impl<'a> TypeChecker<'a> {
             }
             (PrimOp::Typed, _) |
             (PrimOp::As, _) => err!("expected 2 arguments"),
+            (PrimOp::Pure, [e]) => {
+              let ty = tgt.0.ok_or_else(|| ElabError::new_e(
+                try_get_span_from(&self.fsp, fsp.as_ref()), "type ascription required"))?;
+              let e = self.check_mm0_expr(e.clone())?;
+              Expr::Pure(PureExpr::Pure(Box::new((e, ty.clone()))))
+            }
+            (PrimOp::Pure, _) => return err!("expected 1 argument"),
             (PrimOp::Pun, _) => err!("check_expr pun"),
             (PrimOp::Slice, _) => err!("check_expr slice"),
             (PrimOp::TypeofBang, _) => err!("check_expr typeof!"),
@@ -1139,17 +1200,17 @@ impl<'a> TypeChecker<'a> {
           Some(_) => err!("check_expr unimplemented entity type"),
         }
       }
-      PExpr::Entail(_, _) => self.todo("check_expr Entail", ())?,
+      PExpr::Entail(_, _) => self.todo(fsp, "check_expr Entail", ())?,
       PExpr::Block(u) => {
         let es = self.check_stmts(ts, u, tgt)?;
         if es.is_empty() {Expr::Pure(PureExpr::Unit)}
         else {Expr::Block(es)}
       }
-      PExpr::Label { name, args, variant, body } => self.todo("check_expr Label", ())?,
-      PExpr::If { muts, branches, els } => self.todo("check_expr If", ())?,
-      PExpr::Switch(_, _) => self.todo("check_expr Switch", ())?,
-      PExpr::While { hyp, cond, var, invar, body } => self.todo("check_expr While", ())?,
-      PExpr::Hole(_) => self.todo("check_expr Hole", ())?,
+      PExpr::Label { name, args, variant, body } => self.todo(fsp, "check_expr Label", ())?,
+      PExpr::If { muts, branches, els } => self.todo(fsp, "check_expr If", ())?,
+      PExpr::Switch(_, _) => self.todo(fsp, "check_expr Switch", ())?,
+      PExpr::While { hyp, cond, var, invar, body } => self.todo(fsp, "check_expr While", ())?,
+      PExpr::Hole(_) => self.todo(fsp, "check_expr Hole", ())?,
     })
   }
 
@@ -1202,7 +1263,8 @@ impl<'a> TypeChecker<'a> {
               Some(Entity::Global(GlobalTC::Unchecked)) =>
                 return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
                   "forward referencing globals is supported")),
-              Some(&Entity::Global(GlobalTC::Checked(_, decl, _))) => {self.mut_globals.insert(a, decl);}
+              Some(&Entity::Global(GlobalTC::Checked(_, decl, _, _))) =>
+                {self.mut_globals.insert(a, decl);}
               _ => return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
                 "unknown global")),
             }
@@ -1220,9 +1282,31 @@ impl<'a> TypeChecker<'a> {
           try_get_span_from(&self.fsp, full.as_ref()), "unimplemented: global"))
       },
       AST::Const {full, lhs, rhs} => {
-        return Err(ElabError::new_e(
-          try_get_span_from(&self.fsp, full.as_ref()), "unimplemented: const"))
-      },
+        match lhs {
+          PTuplePattern::Name(_, _, _) => {}
+          PTuplePattern::Typed(b, _) if matches!(**b, PTuplePattern::Name(_, _, _)) => {}
+          _ => return Err(ElabError::new_e(self.fsp.span,
+            "tuple patterns in constants are not implemented")),
+        }
+        let ty = lhs.ty();
+        let (e, ty2);
+        if ty.as_atom().map_or(false, |a| a == AtomID::UNDER) {
+          e = self.check_pure_expr(rhs, None)?;
+          ty2 = self.infer_type(&e).to_type().expect("pure exprs can't have type *")
+        } else {
+          ty2 = self.check_ty(&ty)?;
+          e = self.check_pure_expr(rhs, Some(&ty2))?;
+        };
+        let user = lhs.name();
+        if user != AtomID::UNDER {
+          let decl = self.get_fresh_decl(user);
+          self.push_user_local(user, decl);
+          // TODO: write def dname := val
+          if let Entity::Const(ty @ GlobalTC::Unchecked) = self.mmc.names.get_mut(&user).unwrap() {
+            *ty = GlobalTC::Checked(full.clone(), decl, Rc::new(ty2), Rc::new(Expr::Pure(e)))
+          } else {unreachable!()}
+        }
+      }
       &AST::Typedef {name, ref span, ref args, ref val} => {
         self.add_args_to_context(args, ArgsContext::TypeArgs)?;
         let val = self.check_ty(val)?;
@@ -1231,7 +1315,7 @@ impl<'a> TypeChecker<'a> {
         if let Entity::Type(ty @ NType::Unchecked) = self.mmc.names.get_mut(&name).unwrap() {
           *ty = NType::Checked(span.clone(), dname, Rc::new(val))
         } else {unreachable!()}
-      },
+      }
       &AST::Struct {name, ref span, ref args, ref fields} => {
         self.add_args_to_context(args, ArgsContext::TypeArgs)?;
         self.add_args_to_context(fields, ArgsContext::StructFields)?;
