@@ -103,10 +103,12 @@ impl ParseError {
       range: file.to_range(self.pos),
       severity: Some(self.level.to_diag_severity()),
       code: None,
+      code_description: None,
       source: Some("mm0-rs".to_owned()),
       message: format!("{}", self.msg),
       related_information: None,
       tags: None,
+      data: None,
     }
   }
 }

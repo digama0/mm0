@@ -901,6 +901,7 @@ async fn document_symbol(path: FileRef) -> StdResult<DocumentSymbolResponse, Res
     range: text.to_range(full),
     selection_range: text.to_range(sp),
     children: None,
+    tags: None,
   };
   let mut res = vec![];
   macro_rules! push {($fsp:expr, $($e:expr),*) => {
