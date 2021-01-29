@@ -551,8 +551,8 @@ impl<'a> TypeChecker<'a> {
     fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>),
       e: &LispVal
     ) -> Result<Option<MM0ExprNode>, ElabError> {
-      e.unwrapped(|r| Ok(match *r {
-        LispKind::Atom(a) => match subst.1.entry(a) {
+      e.unwrapped(|r| Ok(if let LispKind::Atom(a) = *r {
+        match subst.1.entry(a) {
           Entry::Occupied(entry) => Some(MM0ExprNode::Var(*entry.get())),
           Entry::Vacant(entry) => match tc.user_locals.get(&a) {
             Some(&(v, _)) => {
@@ -563,17 +563,17 @@ impl<'a> TypeChecker<'a> {
             }
             None => list_opt(tc, subst, e, a, None)?
           }
-        },
-        _ => {
-          let mut u = Uncons::from(e.clone());
-          let head = u.next().ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
-            format!("bad expression {}", tc.elab.print(e))))?;
-          let a = head.as_atom().ok_or_else(|| ElabError::new_e(tc.try_get_span(&head),
-            "expected an atom"))?;
-          list_opt(tc, subst, &head, a, Some(u))?
         }
+      } else {
+        let mut u = Uncons::from(e.clone());
+        let head = u.next().ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
+          format!("bad expression {}", tc.elab.print(e))))?;
+        let a = head.as_atom().ok_or_else(|| ElabError::new_e(tc.try_get_span(&head),
+          "expected an atom"))?;
+        list_opt(tc, subst, &head, a, Some(u))?
       }))
     }
+    #[allow(clippy::unnecessary_lazy_evaluations)]
     fn node<'a>(tc: &TypeChecker<'a>, e: LispVal,
       subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>)
     ) -> Result<MM0ExprNode, ElabError> {
