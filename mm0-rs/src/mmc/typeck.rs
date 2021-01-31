@@ -4,61 +4,74 @@
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
-use crate::elab::{Result as EResult, Elaborator, Environment, ElabError,
-  environment::{AtomID, AtomData},
-  lisp::{Uncons, LispVal, LispKind, print::{EnvDisplay, FormatEnv}},
-  local_context::{try_get_span_from, try_get_span}};
+use crate::elab::{ElabError, Elaborator, Environment, Result as EResult, environment::{AtomID, AtomData}, lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}}, local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan};
 use super::{Compiler,
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
     Intrinsic, Entity, GlobalTC, Operator, ProcTC},
   parser::{head_keyword, Parser, Expr as PExpr, TuplePattern as PTuplePattern},
-  types::{AST, Binop, Expr, Keyword, MM0Expr, MM0ExprNode,
+  types::{AST, Binop, Expr, Keyword, Lifetime, Place, MM0Expr, MM0ExprNode, VarID,
     ProcKind, Prop, PureExpr, Size, TuplePattern, Type, TypedTuplePattern, Unop}};
 
 enum InferType<'a> {
-  Int,
   Unit,
   Bool,
-  Star,
+  Int,
   Own(&'a Type),
-  Ref(&'a Type),
-  RefMut(&'a Type),
+  // Ref(Lifetime, &'a Type),
+  // RefMut(&'a Type),
   Ty(&'a Type),
   Prop(&'a Prop),
   PropPure(&'a Rc<PureExpr>),
-  List(Box<[InferType<'a>]>),
+  Subst(Box<InferType<'a>>, VarID, &'a Rc<PureExpr>),
 }
 
 impl<'a> InferType<'a> {
   fn ty(ty: &'a Type) -> Self {
     match ty {
       Type::Own(ty) => Self::Own(ty),
-      Type::Ref(ty) => Self::Ref(ty),
-      Type::RefMut(ty) => Self::RefMut(ty),
+      // Type::Ref(lft, ty) => Self::Ref(*lft, ty),
+      // Type::RefMut(ty) => Self::RefMut(ty),
       ty => Self::Ty(ty),
     }
   }
 
-  fn to_type(&self) -> Option<Type> {
-    match *self {
-      InferType::Int => Some(Type::Int(Size::Inf)),
-      InferType::Unit => Some(Type::Unit),
-      InferType::Bool => Some(Type::Bool),
-      InferType::Star => None,
-      InferType::Own(ty) => Some(Type::Own(Box::new(ty.clone()))),
-      InferType::Ref(ty) => Some(Type::Ref(Box::new(ty.clone()))),
-      InferType::RefMut(ty) => Some(Type::RefMut(Box::new(ty.clone()))),
-      InferType::Ty(ty) => Some(ty.clone()),
-      InferType::Prop(p) => Some(Type::Prop(Box::new(p.clone()))),
-      InferType::PropPure(e) => Some(Type::Prop(Box::new(Prop::Pure(e.clone())))),
-      InferType::List(ref tys) => Some(Type::List(tys.iter()
-        .map(InferType::to_type).collect::<Option<Box<[_]>>>()?)),
+  fn subst(&mut self, v: VarID, e: &'a Rc<PureExpr>) {
+    match self {
+      InferType::Int | InferType::Unit | InferType::Bool => {},
+      _ => *self = Self::Subst(Box::new(std::mem::replace(self, InferType::Unit)), v, e),
     }
   }
 
-  fn from_type(oty: &'a Option<Type>) -> Self {
-    if let Some(ty) = oty {InferType::ty(ty)} else {InferType::Star}
+  fn to_type(&self) -> Type {
+    match *self {
+      InferType::Int => Type::Int(Size::Inf),
+      InferType::Unit => Type::Unit,
+      InferType::Bool => Type::Bool,
+      InferType::Own(ty) => Type::Own(Box::new(ty.clone())),
+      // InferType::Ref(lft, ty) => Type::Ref(Box::new(ty.clone())),
+      // InferType::RefMut(ty) => Type::RefMut(Box::new(ty.clone())),
+      InferType::Ty(ty) => ty.clone(),
+      InferType::Prop(p) => Type::Prop(Box::new(p.clone())),
+      InferType::PropPure(e) => Type::Prop(Box::new(Prop::Pure(e.clone()))),
+      InferType::Subst(ref ty, v, e) => Type::Subst(Box::new(ty.to_type()), v, e.clone()),
+    }
+  }
+
+  fn proj_type(self, i: u32) -> Self {
+    match self {
+      InferType::Ty(Type::List(tys)) => InferType::Ty(&tys[i as usize]),
+      InferType::Ty(Type::Struct(_)) |
+      InferType::Subst(_, _, _) => todo!(),
+      _ => unreachable!(),
+    }
+  }
+
+  fn index_type(self) -> Self {
+    match self {
+      InferType::Ty(Type::Array(ty, _)) => InferType::Ty(ty),
+      _ => unreachable!(),
+    }
   }
 }
 
@@ -69,17 +82,14 @@ impl<'a> EnvDisplay for InferType<'a> {
       InferType::Int => "int".fmt(f),
       InferType::Unit => "()".fmt(f),
       InferType::Bool => "bool".fmt(f),
-      InferType::Star => "*".fmt(f),
+      // InferType::Star => "*".fmt(f),
       InferType::Own(ty) => write!(f, "(own {})", fe.to(ty)),
-      InferType::Ref(ty) => write!(f, "(& {})", fe.to(ty)),
-      InferType::RefMut(ty) => write!(f, "(&mut {})", fe.to(ty)),
+      // InferType::Ref(ty) => write!(f, "(& {})", fe.to(ty)),
+      // InferType::RefMut(ty) => write!(f, "(&mut {})", fe.to(ty)),
       InferType::Ty(ty) => ty.fmt(fe, f),
       InferType::Prop(p) => p.fmt(fe, f),
       InferType::PropPure(e) => e.fmt(fe, f),
-      InferType::List(ref tys) => {
-        use itertools::Itertools;
-        write!(f, "(list {})", tys.iter().map(|ty| fe.to(ty)).format(" "))
-      }
+      InferType::Subst(ref ty, v, e) => write!(f, "({})[{} -> {}]", fe.to(ty), v, fe.to(e)),
     }
   }
 }
@@ -135,7 +145,7 @@ struct Variable {
   /// The user-facing name of this variable, or `_` for auto names.
   user: AtomID,
   /// The target name of this variable.
-  decl: AtomID,
+  decl: VarID,
   /// The type of this variable.
   ty: GType,
 }
@@ -158,13 +168,13 @@ pub struct TypeChecker<'a> {
   elab: &'a mut Elaborator,
   /// The base file span, for error reporting.
   fsp: FileSpan,
-  /// The set of names that have been allocated in the declaration we are constructing.
-  used_names: HashSet<AtomID>,
+  /// The first unused variable ID.
+  next_var: VarID,
   /// Maps names from the MMC source in scope to their internal names.
   /// The vector contains shadowed variables in outer scopes.
-  user_locals: HashMap<AtomID, (AtomID, Vec<AtomID>)>,
+  user_locals: HashMap<AtomID, (VarID, Vec<VarID>)>,
   /// The set of globals that are mutable in the current context (and their mapping to internal names).
-  mut_globals: HashMap<AtomID, AtomID>,
+  mut_globals: HashMap<AtomID, VarID>,
   /// Maps internal indexes for variables in scope to their variable record.
   context: Vec<Variable>,
 }
@@ -213,12 +223,20 @@ impl Compiler {
   }
 }
 
+fn pop_user_local(m: &mut HashMap<AtomID, (VarID, Vec<VarID>)>, user: AtomID) {
+  if user != AtomID::UNDER {
+    if let Some((v, vec)) = m.get_mut(&user) {
+      *v = vec.pop().expect("stack underflow");
+    }
+  }
+}
+
 impl<'a> TypeChecker<'a> {
   /// Constructs a new [`TypeChecker`], which can be used to typecheck many `AST` items
   /// via [`typeck`](Self::typeck) and will reuse its internal buffers.
   pub fn new(mmc: &'a mut Compiler, elab: &'a mut Elaborator, fsp: FileSpan) -> Self {
     Self {mmc, elab, fsp,
-      used_names: HashSet::new(),
+      next_var: VarID::default(),
       user_locals: HashMap::new(),
       mut_globals: HashMap::new(),
       context: Vec::new(),
@@ -251,17 +269,17 @@ impl<'a> TypeChecker<'a> {
     get_fresh_name(&mut self.elab, s, |_, ad| ad.decl.is_some())
   }
 
-  fn get_fresh_local(&mut self, base: AtomID) -> AtomID {
-    let s = if base == AtomID::UNDER {Vec::new()} else {(*self.elab.data[base].name).into()};
-    let used_names = &self.used_names;
-    get_fresh_name(&mut self.elab, s, |a, ad| used_names.contains(&a) || ad.decl.is_some())
+  #[inline] fn get_fresh_local(&mut self) -> VarID {
+    let n = self.next_var;
+    self.next_var.0 += 1;
+    n
   }
 
-  fn find_index(&self, a: AtomID) -> Option<usize> {
+  fn find_index(&self, a: VarID) -> Option<usize> {
     self.context.iter().position(|v| v.decl == a)
   }
 
-  fn find(&self, a: AtomID) -> Option<&Variable> {
+  fn find(&self, a: VarID) -> Option<&Variable> {
     self.context.iter().find(|&v| v.decl == a)
   }
 
@@ -304,7 +322,8 @@ impl<'a> TypeChecker<'a> {
       } else { Some(Prop::Emp) },
       Prop::Heap(_, _, _) => Some(Prop::Emp),
       Prop::HasTy(v, ty) => self.copy_type(ty).map(|ty| Prop::HasTy(v.clone(), Box::new(ty))),
-      Prop::MVar(_) => Some(Prop::Moved(Box::new(p.clone()))),
+      // Prop::MVar(_) => Some(Prop::Moved(Box::new(p.clone()))),
+      Prop::Subst(ty, v, e) => unreachable!("unapplied substitution in context")
     }
   }
 
@@ -321,12 +340,13 @@ impl<'a> TypeChecker<'a> {
       Type::Bool |
       Type::Int(_) |
       Type::UInt(_) |
-      Type::Moved(_) => None,
+      Type::Moved(_) |
+      Type::Ref(_, _) |
+      Type::RefSn(_) => None,
       Type::Array(ty, n) => self.copy_type(ty)
         .map(|ty| Type::Array(Box::new(ty), n.clone())),
       Type::Own(_) |
-      Type::Ref(_) |
-      Type::RefMut(_) => Some(Type::UInt(Size::S64)),
+      Type::Shr(_, _) => Some(Type::UInt(Size::S64)),
       Type::List(tys) => list(tys, |ty| self.copy_type(ty)).map(Type::List),
       Type::Single(e, ty) => self.copy_type(ty).map(|ty| Type::Single(e.clone(), Box::new(ty))),
       Type::Struct(tys) => list(tys, |(a, ty)| Some((*a, self.copy_type(ty)?))).map(Type::Struct),
@@ -338,16 +358,30 @@ impl<'a> TypeChecker<'a> {
       Type::User(_, _, _) |
       Type::Input |
       Type::Output => Some(Type::Moved(Box::new(ty.clone()))),
+      &Type::Subst(ref ty, v, ref e) => self.copy_type(ty)
+        .map(|ty| Type::Subst(Box::new(ty), v, e.clone())),
+    }
+  }
+
+  fn infer_var_type(&'a self, i: VarID) -> InferType<'a> {
+    match &self.find(i).expect("variable not found").ty {
+      GType::Ty(_, ty, _) => InferType::ty(ty),
+      GType::Star => panic!("unexpected type variable"),
+      GType::Prop(p) => InferType::Prop(p),
+    }
+  }
+
+  fn infer_place_type(&'a self, e: &'a Place) -> InferType<'a> {
+    match e {
+      &Place::Var(i) => self.infer_var_type(i),
+      &Place::Proj(ref e, i) => self.infer_place_type(e).proj_type(i),
+      Place::Index(a, _) => self.infer_place_type(a).index_type(),
     }
   }
 
   fn infer_type(&'a self, e: &'a PureExpr) -> InferType<'a> {
     match e {
-      &PureExpr::Var(i) => match &self.find(i).expect("variable not found").ty {
-        GType::Ty(_, ty, _) => InferType::ty(ty),
-        GType::Star => InferType::Star,
-        GType::Prop(p) => InferType::Prop(p),
-      },
+      &PureExpr::Var(i) => self.infer_var_type(i),
       PureExpr::Unit => InferType::Unit,
       PureExpr::Bool(_) |
       PureExpr::Unop(Unop::Not, _) |
@@ -365,40 +399,27 @@ impl<'a> TypeChecker<'a> {
       PureExpr::Binop(Binop::BitAnd, _, _) |
       PureExpr::Binop(Binop::BitOr, _, _) |
       PureExpr::Binop(Binop::BitXor, _, _) => InferType::Int,
-      PureExpr::Index(a, _) => match self.infer_type(a) {
-        InferType::Ty(Type::Array(ty, _)) => InferType::Ty(ty),
-        _ => unreachable!(),
-      },
-      PureExpr::Tuple(es) => InferType::List(
-        es.iter().map(|e| self.infer_type(e)).collect::<Vec<_>>().into()),
-      PureExpr::DerefOwn(e) => match self.infer_type(e) {
-        InferType::Ty(Type::Own(ty)) => InferType::Ty(ty),
-        InferType::Own(ty) => InferType::Ty(ty),
-        _ => unreachable!(),
-      },
+      PureExpr::Index(a, _) => self.infer_type(e).index_type(),
+      PureExpr::Tuple(es, ty) => InferType::ty(ty),
+      &PureExpr::Proj(ref e, i) => self.infer_type(e).proj_type(i),
       PureExpr::Deref(e) => match self.infer_type(e) {
-        InferType::Ty(Type::Ref(ty)) => InferType::Ty(ty),
-        InferType::Ref(ty) => InferType::Ty(ty),
-        _ => unreachable!(),
-      },
-      PureExpr::DerefMut(e) => match self.infer_type(e) {
-        InferType::Ty(Type::RefMut(ty)) => InferType::Ty(ty),
-        InferType::RefMut(ty) => InferType::Ty(ty),
+        InferType::Ty(Type::RefSn(x)) => self.infer_place_type(x),
         _ => unreachable!(),
       },
       PureExpr::Ghost(e) => self.infer_type(e),
       PureExpr::As(e) => InferType::ty(&e.1),
       PureExpr::Pure(e) => InferType::ty(&e.1),
+      &PureExpr::Subst(ref x, v, ref e) => {
+        let mut ty = self.infer_type(x);
+        ty.subst(v, e);
+        ty
+      }
     }
   }
 
   fn infer_expr_type(&'a self, e: &'a Expr) -> InferType<'a> {
     match e {
-      &Expr::Var(i) => match &self.find(i).expect("variable not found").ty {
-        GType::Ty(_, ty, _) => InferType::ty(ty),
-        GType::Star => InferType::Star,
-        GType::Prop(p) => InferType::Prop(p),
-      },
+      &Expr::Var(i) => self.infer_var_type(i),
       Expr::Unop(Unop::Not, _) |
       Expr::Binop(Binop::And, _, _) |
       Expr::Binop(Binop::Or, _, _) |
@@ -413,25 +434,11 @@ impl<'a> TypeChecker<'a> {
       Expr::Binop(Binop::BitAnd, _, _) |
       Expr::Binop(Binop::BitOr, _, _) |
       Expr::Binop(Binop::BitXor, _, _) => InferType::Int,
-      Expr::Index(a, _, _) => match self.infer_expr_type(a) {
-        InferType::Ty(Type::Array(ty, _)) => InferType::Ty(ty),
-        _ => unreachable!(),
-      },
-      Expr::Tuple(es) => InferType::List(
-        es.iter().map(|e| self.infer_expr_type(e)).collect::<Vec<_>>().into()),
-      Expr::DerefOwn(e) => match self.infer_expr_type(e) {
-        InferType::Ty(Type::Own(ty)) => InferType::Ty(ty),
-        InferType::Own(ty) => InferType::Ty(ty),
-        _ => unreachable!(),
-      },
+      Expr::Index(a, _, _) => self.infer_expr_type(e).index_type(),
+      Expr::Tuple(es, ty) => InferType::ty(ty),
+      &Expr::Proj(ref e, i) => self.infer_expr_type(e).proj_type(i),
       Expr::Deref(e) => match self.infer_expr_type(e) {
-        InferType::Ty(Type::Ref(ty)) => InferType::Ty(ty),
-        InferType::Ref(ty) => InferType::Ty(ty),
-        _ => unreachable!(),
-      },
-      Expr::DerefMut(e) => match self.infer_expr_type(e) {
-        InferType::Ty(Type::RefMut(ty)) => InferType::Ty(ty),
-        InferType::RefMut(ty) => InferType::Ty(ty),
+        InferType::Ty(Type::RefSn(x)) => self.infer_place_type(x),
         _ => unreachable!(),
       },
       Expr::Ghost(e) => self.infer_expr_type(e),
@@ -509,16 +516,14 @@ impl<'a> TypeChecker<'a> {
         (PrimType::Input, []) => Ok(Type::Input),
         (PrimType::Output, []) => Ok(Type::Output),
         (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.check_ty(ty)?))),
-        (PrimType::Ref, [ty]) => Ok(Type::Ref(Box::new(self.check_ty(ty)?))),
-        (PrimType::RefMut, [ty]) => Ok(Type::RefMut(Box::new(self.check_ty(ty)?))),
+        (PrimType::Ref, [ty]) => Ok(Type::Shr(todo!(), Box::new(self.check_ty(ty)?))),
         (PrimType::List, args) => Ok(Type::List(check_tys!(args))),
         (PrimType::And, args) => Ok(Type::And(check_tys!(args))),
         (PrimType::Or, args) => Ok(Type::Or(check_tys!(args))),
         (PrimType::Ghost, [ty]) => Ok(Type::Ghost(Box::new(self.check_ty(ty)?))),
         (PrimType::Single, [e]) => {
           let pe = self.check_pure_expr(e, None)?;
-          let ty = self.infer_type(&pe).to_type().ok_or_else(||
-            ElabError::new_e(self.try_get_span(e), "type variables not allowed here"))?;
+          let ty = self.infer_type(&pe).to_type();
           Ok(Type::Single(Rc::new(pe), Box::new(ty)))
         },
         _ => Err(ElabError::new_e(self.try_get_span(e), "unexpected number of arguments"))
@@ -529,11 +534,11 @@ impl<'a> TypeChecker<'a> {
         if !args.is_empty() {
           return Err(ElabError::new_e(self.try_get_span(&head), "user defined type families are not supported"))
         }
-        Ok(Type::User(name, Box::new([]), Rc::new([])))
+        Ok(Type::User(name, Box::new([]), Box::new([])))
       }
       Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a type")),
-      None => match self.user_locals.get(&name) {
-        Some(&(i, _)) if matches!(self.find(i), Some(Variable {ty: GType::Star, ..})) => Ok(Type::Var(i)),
+      None => match self.context.iter().rfind(|v| v.user == name) {
+        Some(v) if matches!(v.ty, GType::Star) => Ok(Type::Var(v.decl)),
         _ => Err(ElabError::new_e(self.try_get_span(e),
           format!("undeclared type {}", self.elab.print(&head))))
       }
@@ -541,14 +546,25 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_mm0_expr(&self, e: LispVal) -> Result<MM0Expr, ElabError> {
-    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>),
+
+    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomID, u32>),
       e: &LispVal, head: AtomID, args: Option<Uncons>
     ) -> Result<Option<MM0ExprNode>, ElabError> {
       let tid = tc.elab.term(head).ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
         format!("term '{}' not declared", tc.elab.data[head].name)))?;
-      tc.todo(e.fspan().as_ref(), "list_opt", args)
+      Ok(if let Some(u) = args {
+        let mut cnst = true;
+        let mut vec = Vec::with_capacity(u.len());
+        for e in u {
+          let n = node(tc, e, subst)?;
+          cnst |= matches!(n, MM0ExprNode::Const(_));
+          vec.push(n)
+        }
+        if cnst {None} else {Some(MM0ExprNode::Expr(tid, vec))}
+      } else {None})
     }
-    fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>),
+
+    fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomID, u32>),
       e: &LispVal
     ) -> Result<Option<MM0ExprNode>, ElabError> {
       e.unwrapped(|r| Ok(if let LispKind::Atom(a) = *r {
@@ -558,7 +574,7 @@ impl<'a> TypeChecker<'a> {
             Some(&(v, _)) => {
               let n = subst.0.len().try_into().expect("overflow");
               entry.insert(n);
-              subst.0.push(v);
+              subst.0.push(PureExpr::Var(v));
               Some(MM0ExprNode::Var(n))
             }
             None => list_opt(tc, subst, e, a, None)?
@@ -573,14 +589,16 @@ impl<'a> TypeChecker<'a> {
         list_opt(tc, subst, &head, a, Some(u))?
       }))
     }
+
     #[allow(clippy::unnecessary_lazy_evaluations)]
     fn node<'a>(tc: &TypeChecker<'a>, e: LispVal,
-      subst: &mut (Vec<AtomID>, HashMap<AtomID, u32>)
+      subst: &mut (Vec<PureExpr>, HashMap<AtomID, u32>)
     ) -> Result<MM0ExprNode, ElabError> {
       Ok(node_opt(tc, subst, &e)?.unwrap_or_else(|| MM0ExprNode::Const(e)))
     }
+
     let mut subst = (vec![], HashMap::new());
-    let expr = node(self, e, &mut subst)?;
+    let expr = Rc::new(node(self, e, &mut subst)?);
     Ok(MM0Expr {subst: subst.0, expr})
   }
 
@@ -671,7 +689,10 @@ impl<'a> TypeChecker<'a> {
         },
       Some(ty) => return Err(err(format!("type error, expected {:?}", ty))),
     }
-    Ok(PureExpr::Tuple(vec.into()))
+    let ty = if let Some(tgt) = tgt { tgt.clone() } else {
+      Type::List(vec.iter().map(|e| self.infer_type(e).to_type()).collect())
+    };
+    Ok(PureExpr::Tuple(vec.into(), Box::new(ty)))
   }
 
   fn check_pure_expr(&self, e: &LispVal, tgt: Option<&Type>) -> Result<PureExpr, ElabError> {
@@ -732,32 +753,33 @@ impl<'a> TypeChecker<'a> {
           (PrimOp::BitXor, args) =>
             self.check_lassoc_pure_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::BitXor, Some(get_int_tgt!())),
           (PrimOp::Index, args) => {
-            enum AutoDeref { Own, Ref, Mut }
-            let (arr, idx) = match args {
-              [arr, idx] => (arr, idx),
-              _ => return err!("expected 2 or 3 arguments"),
-            };
-            let mut arr = self.check_pure_expr(arr, None)?;
-            let idx = Rc::new(self.check_pure_expr(idx, Some(&Type::UInt(Size::Inf)))?);
-            let mut aty = self.infer_type(&arr);
-            let mut derefs = vec![];
-            let len = loop {
-              match aty {
-                InferType::Own(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Own); }
-                InferType::Ref(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Ref); }
-                InferType::RefMut(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Mut); }
-                InferType::Ty(Type::Array(_, len)) => break len.clone(),
-                _ => return err!("type error, expcted an array"),
-              }
-            };
-            for s in derefs {
-              arr = match s {
-                AutoDeref::Own => PureExpr::DerefOwn(Box::new(arr)),
-                AutoDeref::Ref => PureExpr::Deref(Box::new(arr)),
-                AutoDeref::Mut => PureExpr::DerefMut(Box::new(arr)),
-              }
-            }
-            Ok(PureExpr::Index(Box::new(arr), idx))
+            self.todo(e.fspan().as_ref(), "Index", args)
+            // enum AutoDeref { Own, Ref, Mut }
+            // let (arr, idx) = match args {
+            //   [arr, idx] => (arr, idx),
+            //   _ => return err!("expected 2 or 3 arguments"),
+            // };
+            // let mut arr = self.check_pure_expr(arr, None)?;
+            // let idx = Rc::new(self.check_pure_expr(idx, Some(&Type::UInt(Size::Inf)))?);
+            // let mut aty = self.infer_type(&arr);
+            // let mut derefs = vec![];
+            // let len = loop {
+            //   match aty {
+            //     InferType::Own(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Own); }
+            //     // InferType::Ref(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Ref); }
+            //     // InferType::RefMut(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Mut); }
+            //     InferType::Ty(Type::Array(_, len)) => break len.clone(),
+            //     _ => return err!("type error, expcted an array"),
+            //   }
+            // };
+            // for s in derefs {
+            //   arr = match s {
+            //     // AutoDeref::Own => PureExpr::DerefOwn(Box::new(arr)),
+            //     AutoDeref::Ref => PureExpr::Deref(Box::new(arr)),
+            //     // AutoDeref::Mut => PureExpr::DerefMut(Box::new(arr)),
+            //   }
+            // }
+            // Ok(PureExpr::Index(Box::new(arr), idx))
           }
           (PrimOp::List, args) => self.check_pure_expr_list(args, tgt, |err| ElabError::new_e(self.try_get_span(&head), err)),
           (PrimOp::Mul, args) =>
@@ -831,7 +853,7 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_binder(&mut self, e: &LispVal, args: &[LispVal],
-      mut mk: impl FnMut(AtomID, Type, Prop) -> Prop) -> Result<Prop, ElabError> {
+      mut mk: impl FnMut(VarID, Type, Prop) -> Prop) -> Result<Prop, ElabError> {
     let (last, bis) = args.split_last().expect("expected nonempty args");
     let bis = bis.iter().map(|bi| self.parser().parse_tuple_pattern(false, bi.clone()))
       .collect::<Result<Vec<_>, _>>()?;
@@ -839,6 +861,7 @@ impl<'a> TypeChecker<'a> {
     self.add_args_to_context(&bis, ArgsContext::Binder)?;
     let mut body = self.check_prop(last)?;
     for Variable {user, decl, ty} in self.context.drain(depth..).rev() {
+      pop_user_local(&mut self.user_locals, user);
       let ty = match ty {
         GType::Ty(_, ty, _) => ty,
         GType::Prop(p) => Type::Prop(Box::new(p)),
@@ -876,14 +899,14 @@ impl<'a> TypeChecker<'a> {
           Ok(Prop::Sep(Box::new([self.check_prop(e1)?, self.check_prop(e2)?]))),
         (PrimProp::Wand, [e1, e2]) =>
           Ok(Prop::Wand(Box::new((self.check_prop(e1)?, self.check_prop(e2)?)))),
-        (PrimProp::Pure, [e]) => Ok(Prop::MM0(e.clone())),
+        (PrimProp::Pure, [e]) => Ok(Prop::MM0(self.check_mm0_expr(e.clone())?)),
         _ => Err(ElabError::new_e(self.try_get_span(&head), "incorrect number of arguments")),
       }
       _ => self.check_pure_expr(e, Some(&Type::Bool)).map(|e| Prop::Pure(Rc::new(e)))
     }
   }
 
-  fn push_user_local(&mut self, user: AtomID, decl: AtomID) {
+  fn push_user_local(&mut self, user: AtomID, decl: VarID) {
     match self.user_locals.entry(user) {
       Entry::Vacant(e) => {e.insert((decl, vec![]));}
       Entry::Occupied(mut e) => {
@@ -899,13 +922,12 @@ impl<'a> TypeChecker<'a> {
       match arg {
         PTuplePattern::Name(_, _, _) => {}
         PTuplePattern::Typed(b, _) if matches!(**b, PTuplePattern::Name(_, _, _)) => {}
-        _ => return Err(ElabError::new_e(self.fsp.span,
+        _ => return Err(ElabError::new_e(try_get_span_from(&self.fsp, arg.fspan()),
           "tuple patterns in argument position are not implemented")),
       }
       let user = arg.name();
-      let decl = self.get_fresh_local(user);
+      let decl = self.get_fresh_local();
       if user != AtomID::UNDER { self.push_user_local(user, decl) }
-      self.used_names.insert(decl);
       let is_ty = ctx.tyvar_allowed() && arg.ty().as_atom().map_or(false, |a| a == AtomID::UNDER ||
         matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
       let ty = if is_ty {GType::Star} else {
@@ -948,11 +970,10 @@ impl<'a> TypeChecker<'a> {
         self.add_tuple_pattern_to_context(pat, Some(InferType::ty(&ty)))
       }
       TuplePattern::Name(g, user, sp) => {
-        let decl = self.get_fresh_local(user);
+        let decl = self.get_fresh_local();
         if user != AtomID::UNDER { self.push_user_local(user, decl) }
-        self.used_names.insert(decl);
-        let ty = tgt.and_then(|tgt| tgt.to_type()).ok_or_else(|| ElabError::new_e(
-          try_get_span_from(&self.fsp, sp.as_ref()), "could not infer type"))?;
+        let ty = tgt.ok_or_else(|| ElabError::new_e(
+          try_get_span_from(&self.fsp, sp.as_ref()), "could not infer type"))?.to_type();
         Ok(TypedTuplePattern::Name(g, decl, sp, Box::new(ty)))
       }
       TuplePattern::Tuple(pats, sp) => {
@@ -996,7 +1017,7 @@ impl<'a> TypeChecker<'a> {
           format!("Can't pattern match, expected {} args, got {}", args.len(), pat.len())))
       }
     }
-    match tgt {
+    let ty = match tgt {
       None => {
         if let Some(TuplePattern::Tuple(pat, _)) = pat {
           for (e, pat) in (&*args).iter().zip(&**pat) {
@@ -1005,6 +1026,7 @@ impl<'a> TypeChecker<'a> {
         } else {
           for e in args { vec.push(self.check_expr(ts, e.clone(), TypeTarget::NONE)?) }
         }
+        Type::List(vec.iter().map(|e| self.infer_expr_type(e).to_type()).collect())
       }
       Some(Type::List(tys)) if tys.len() == args.len() => {
         if let Some(TuplePattern::Tuple(pat, _)) = pat {
@@ -1018,10 +1040,11 @@ impl<'a> TypeChecker<'a> {
             vec.push(self.check_expr(ts, e.clone(), ty.into())?)
           }
         }
+        Type::List(tys.clone())
       }
       Some(ty) => return Err(ElabError::new_e(sp, format!("type error, expected {:?}", ty))),
-    }
-    Ok(Expr::Tuple(vec.into()))
+    };
+    Ok(Expr::Tuple(vec.into(), Box::new(ty)))
   }
 
   fn check_expr(&mut self, ts: &mut TypeState, e: LispVal, tgt: TypeTarget<'_>) -> EResult<Expr> {
@@ -1044,18 +1067,17 @@ impl<'a> TypeChecker<'a> {
         Expr::Var(var)
       }
       PExpr::Number(n) => Expr::Pure(PureExpr::Int(n)),
-      PExpr::Let {lhs, rhs} => {
-        let lhs = self.check_tuple_pattern(lhs)?;
-        if let Some(rhs) = rhs {
-          let rhs = self.check_expr(ts, rhs, (&lhs).into())?;
-          let ty = self.infer_expr_type(&rhs).to_type();
-          let lhs = self.add_tuple_pattern_to_context(lhs, Some(InferType::from_type(&ty)))?;
-          Expr::Let {lhs, rhs: Some(Box::new(rhs))}
-        } else {
-          let lhs = self.add_tuple_pattern_to_context(lhs, None)?;
-          Expr::Let {lhs, rhs: None}
+      PExpr::Let {lhs, rhs, with} => {
+        let mut lhs = self.check_tuple_pattern(lhs)?;
+        let rhs = self.check_expr(ts, rhs, (&lhs).into())?;
+        let ty = self.infer_expr_type(&rhs).to_type();
+        if !with.is_empty() {
+
         }
+        let lhs = self.add_tuple_pattern_to_context(lhs, Some(InferType::ty(&ty)))?;
+        Expr::Let {lhs, rhs: Box::new(rhs)}
       }
+      PExpr::Assign {lhs, rhs, with} => self.todo(fsp, "check_expr Assign", (lhs, rhs, with))?,
       PExpr::Call {f, fsp, args, variant} => {
         let name = self.mmc.names.get(&f).ok_or_else(|| ElabError::new_e(sp,
           format!("unknown function '{}'", self.elab.print(&f))))?;
@@ -1112,39 +1134,40 @@ impl<'a> TypeChecker<'a> {
             (PrimOp::BitXor, args) =>
               self.check_lassoc_expr(ts, args, || Ok(Expr::Pure(PureExpr::Int(0.into()))), Ok, Binop::BitXor, get_int_tgt!())?,
             (PrimOp::Index, args) => {
-              enum AutoDeref { Own, Ref, Mut }
-              let (arr, idx, pf) = match args {
-                [arr, idx] => (arr, idx, None),
-                [arr, idx, pf] => (arr, idx, Some(pf)),
-                _ => err!("expected 2 or 3 arguments"),
-              };
-              let mut arr = self.check_expr(ts, arr.clone(), TypeTarget::NONE)?;
-              let idx = Rc::new(self.check_pure_expr(idx, Some(&Type::UInt(Size::Inf)))?);
-              let mut aty = self.infer_expr_type(&arr);
-              let mut derefs = vec![];
-              let len = loop {
-                match aty {
-                  InferType::Own(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Own); }
-                  InferType::Ref(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Ref); }
-                  InferType::RefMut(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Mut); }
-                  InferType::Ty(Type::Array(_, len)) => break len.clone(),
-                  _ => err!("type error, expcted an array"),
-                }
-              };
-              for s in derefs {
-                arr = match s {
-                  AutoDeref::Own => Expr::DerefOwn(Box::new(arr)),
-                  AutoDeref::Ref => Expr::Deref(Box::new(arr)),
-                  AutoDeref::Mut => Expr::DerefMut(Box::new(arr)),
-                }
-              }
-              let prop = PureExpr::Binop(Binop::Lt, idx.clone(), len);
-              let pf = match pf {
-                Some(pf) => self.check_expr(ts, pf.clone(),
-                  (&Type::Prop(Box::new(Prop::Pure(Rc::new(prop))))).into())?,
-                None => Expr::Assert(Rc::new(prop)),
-              };
-              Expr::Index(Box::new(arr), idx, Box::new(pf))
+              self.todo(fsp.as_ref(), "Index", args)?
+              // enum AutoDeref { Own, Ref, Mut }
+              // let (arr, idx, pf) = match args {
+              //   [arr, idx] => (arr, idx, None),
+              //   [arr, idx, pf] => (arr, idx, Some(pf)),
+              //   _ => err!("expected 2 or 3 arguments"),
+              // };
+              // let mut arr = self.check_expr(ts, arr.clone(), TypeTarget::NONE)?;
+              // let idx = Rc::new(self.check_pure_expr(idx, Some(&Type::UInt(Size::Inf)))?);
+              // let mut aty = self.infer_expr_type(&arr);
+              // let mut derefs = vec![];
+              // let len = loop {
+              //   match aty {
+              //     InferType::Own(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Own); }
+              //     InferType::Ref(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Ref); }
+              //     InferType::RefMut(ty) => { aty = InferType::ty(ty); derefs.push(AutoDeref::Mut); }
+              //     InferType::Ty(Type::Array(_, len)) => break len.clone(),
+              //     _ => err!("type error, expcted an array"),
+              //   }
+              // };
+              // for s in derefs {
+              //   arr = match s {
+              //     AutoDeref::Own => Expr::DerefOwn(Box::new(arr)),
+              //     AutoDeref::Ref => Expr::Deref(Box::new(arr)),
+              //     AutoDeref::Mut => Expr::DerefMut(Box::new(arr)),
+              //   }
+              // }
+              // let prop = PureExpr::Binop(Binop::Lt, idx.clone(), len);
+              // let pf = match pf {
+              //   Some(pf) => self.check_expr(ts, pf.clone(),
+              //     (&Type::Prop(Box::new(Prop::Pure(Rc::new(prop))))).into())?,
+              //   None => Expr::Assert(Rc::new(prop)),
+              // };
+              // Expr::Index(Box::new(arr), idx, Box::new(pf))
             }
             (PrimOp::List, args) => self.check_expr_list(ts, args, tgt, fsp1)?,
             (PrimOp::Mul, args) =>
@@ -1209,7 +1232,7 @@ impl<'a> TypeChecker<'a> {
       PExpr::Label { name, args, variant, body } => self.todo(fsp, "check_expr Label", ())?,
       PExpr::If { muts, branches, els } => self.todo(fsp, "check_expr If", ())?,
       PExpr::Switch(_, _) => self.todo(fsp, "check_expr Switch", ())?,
-      PExpr::While { hyp, cond, var, invar, body } => self.todo(fsp, "check_expr While", ())?,
+      PExpr::While { hyp, cond, var, body } => self.todo(fsp, "check_expr While", ())?,
       PExpr::Hole(_) => self.todo(fsp, "check_expr Hole", ())?,
     })
   }
@@ -1227,7 +1250,7 @@ impl<'a> TypeChecker<'a> {
 
   /// Performs type checking of the input AST.
   pub fn typeck(&mut self, item: &AST) -> EResult<()> {
-    self.used_names.clear();
+    self.next_var = Default::default();
     self.user_locals.clear();
     self.context.clear();
     self.mut_globals.clear();
@@ -1252,23 +1275,24 @@ impl<'a> TypeChecker<'a> {
           // let Proc {kind, name,
           //   ref span, ref args, ref rets, ref variant,
           //   body: Body {ref muts, ref stmts}} = **proc;
-          self.add_args_to_context(&proc.args, ArgsContext::ProcArgs)?;
-          self.add_args_to_context(&proc.rets, ArgsContext::ProcArgs)?;
-          let rets = self.context.drain(proc.args.len()..).collect::<Vec<_>>();
+          self.add_args_to_context(&proc.args.1, ArgsContext::ProcArgs)?;
+          self.add_args_to_context(&proc.rets.1, ArgsContext::ProcArgs)?;
+          let rets = self.context.drain(proc.args.1.len()..).collect::<Vec<_>>();
+          for v in rets.iter().rev() { pop_user_local(&mut self.user_locals, v.user) }
           if let Some((e, _)) = &proc.variant {
             return Err(ElabError::new_e(self.try_get_span(e), "proc variants are not implemented"))
           }
-          for &(a, ref fsp) in &*proc.muts {
-            match self.mmc.names.get(&a) {
-              Some(Entity::Global(GlobalTC::Unchecked)) =>
-                return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
-                  "forward referencing globals is supported")),
-              Some(&Entity::Global(GlobalTC::Checked(_, decl, _, _))) =>
-                {self.mut_globals.insert(a, decl);}
-              _ => return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
-                "unknown global")),
-            }
-          }
+          // for &(a, ref fsp) in &*proc.muts {
+          //   match self.mmc.names.get(&a) {
+          //     Some(Entity::Global(GlobalTC::Unchecked)) =>
+          //       return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
+          //         "forward referencing globals is supported")),
+          //     Some(&Entity::Global(GlobalTC::Checked(_, decl, _, _))) =>
+          //       {self.mut_globals.insert(a, decl);}
+          //     _ => return Err(ElabError::new_e(try_get_span_from(&self.fsp, fsp.as_ref()),
+          //       "unknown global")),
+          //   }
+          // }
           let mut ts = self.new_type_state();
           let body = self.check_stmts(&mut ts, body.clone(), TypeTarget::NONE)?;
           println!("{:?}", body);
@@ -1292,7 +1316,7 @@ impl<'a> TypeChecker<'a> {
         let (e, ty2);
         if ty.as_atom().map_or(false, |a| a == AtomID::UNDER) {
           e = self.check_pure_expr(rhs, None)?;
-          ty2 = self.infer_type(&e).to_type().expect("pure exprs can't have type *")
+          ty2 = self.infer_type(&e).to_type()
         } else {
           ty2 = self.check_ty(&ty)?;
           e = self.check_pure_expr(rhs, Some(&ty2))?;
@@ -1300,8 +1324,6 @@ impl<'a> TypeChecker<'a> {
         let user = lhs.name();
         if user != AtomID::UNDER {
           let decl = self.get_fresh_decl(user);
-          self.push_user_local(user, decl);
-          // TODO: write def dname := val
           if let Entity::Const(ty @ GlobalTC::Unchecked) = self.mmc.names.get_mut(&user).unwrap() {
             *ty = GlobalTC::Checked(full.clone(), decl, Rc::new(ty2), Rc::new(Expr::Pure(e)))
           } else {unreachable!()}
@@ -1311,7 +1333,6 @@ impl<'a> TypeChecker<'a> {
         self.add_args_to_context(args, ArgsContext::TypeArgs)?;
         let val = self.check_ty(val)?;
         let dname = self.get_fresh_decl(name);
-        // TODO: write def dname := val
         if let Entity::Type(ty @ NType::Unchecked) = self.mmc.names.get_mut(&name).unwrap() {
           *ty = NType::Checked(span.clone(), dname, Rc::new(val))
         } else {unreachable!()}
@@ -1324,9 +1345,8 @@ impl<'a> TypeChecker<'a> {
             GType::Star => unreachable!(),
             GType::Ty(g, ty, _) => Type::ghost_if(g, ty),
             GType::Prop(p) => Type::Prop(Box::new(p)),
-          })).collect::<Vec<(AtomID, Type)>>();
+          })).collect::<Vec<(VarID, Type)>>();
         let dname = self.get_fresh_decl(name);
-        // TODO: write def dname := val
         if let Entity::Type(ty @ NType::Unchecked) = self.mmc.names.get_mut(&name).unwrap() {
           *ty = NType::Checked(span.clone(), dname, Rc::new(Type::Struct(fields.into())))
         } else {unreachable!()}

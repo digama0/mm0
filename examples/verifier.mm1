@@ -63,9 +63,9 @@ do {
     (proc (main
         {argc : u32}
         {args : (& (array (& CStr) argc))}
-        {(ghost (mut input)) : Input}
-        {(ghost (mut output)) : (sn {0 : Output})} :
-        {(out output) : Output}
+        (mut {(ghost input) : Input})
+        (mut {(ghost output) : (sn {0 : Output})}) :
+        (out {output : Output})
         (pure $ output = 0 /\ Valid input $))
       {(output2 oz) := output}
       {output <- output2}
@@ -163,7 +163,7 @@ do {
         (variant remainder >= 5 := remainder_bd)
 
         {((w sz data) h_unpack) := (sn (cmd_unpack stmt))}
-        {remainder <- ({remainder - data} with {remainder -> old_rem})}
+        {{remainder <- {remainder - data}} with {remainder -> old_rem}}
         {next_stmt_bd := (assert {{stmt + data + 5} <= g_end})}
         {remainder_bd <- (entail next_stmt_bd _)}
         {{next_stmt : (& (array u8 remainder))} := (& (slice stmt data

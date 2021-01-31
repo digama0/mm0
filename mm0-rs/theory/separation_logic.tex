@@ -224,13 +224,13 @@ A type/proposition is called ``$\mathsf{copy}$'' or persistent if $\core\tau=\ta
 
 The moved modality is defined like so:
 \begin{align*}
-  \core\alpha,\mathbf{1}, \mathsf{bool},\N_s, \Z_s&\;\mathsf{copy}\\
-  \core\alpha={}&\core\alpha\qquad\mbox{(that is, $\alpha$ maps to $\core\alpha$)}\\
+  \mathbf{1}, \mathsf{bool},\N_s, \Z_s&\;\mathsf{copy}\\
+  \core\alpha={}&\mathsf{emp}\\
   \core{\textstyle\bigcap\overline{\tau}}={}&\textstyle\bigcap\overline{\core\tau}\\
   \core{\textstyle\bigcup\overline{\tau}}={}&\textstyle\bigcup\overline{\core\tau}\\
   \core{\textstyle\Sep\overline{\tau}}={}&\textstyle\Sep\overline{\core\tau}\\
   \core{\textstyle\sum\overline{\tau}}={}&\textstyle\sum\overline{\core\tau}\\
-  \core{S(\overline{\tau},\overline{pe})}={}&[S](\overline{\tau},\overline{pe})\qquad\mbox{(that is, the effect of moving $S$ is precalculated)}
+  \core{S(\overline{\tau},\overline{pe})}={}&\core{S}(\overline{\tau},\overline{pe})\qquad\mbox{(that is, the effect of moving $S$ is precalculated)}
 \end{align*}
 There are no interesting cases among the types presented here. When we get to pointer types in section \ref{sec:pointers} we will see that $\core{\&^\mathbf{own}\tau}=\core{\&^\mathbf{mut}\tau}=\N_{64}$, so pointers become ``mere integers'' after they are moved away. (Note, however, that they actually retain their original types for type inference purposes; that is, the typechecker remembers that they have type $\core{\&^\mathbf{own}\tau}$ in order to determine the type that would result from dereferencing the pointer, if it were still valid.)
 
@@ -252,8 +252,6 @@ For propositions, the effect is more dramatic:
     \neg A&\mbox{if $A\;\mathsf{copy}$}\\
     \mathsf{emp}&o.w.\\
   \end{cases}\\
-\end{align*}
-\begin{align*}
   \core{A_1\ast A_2}={}&\core{A_1}\ast \core{A_2}\\
   \core{A\wand A'}={}& \begin{cases}
     A\wand \core{A'}&\mbox{if $A\;\mathsf{copy}$}\\
@@ -262,7 +260,9 @@ For propositions, the effect is more dramatic:
   \core{pe\mapsto pe'}={}&\mathsf{emp}\\
   \core{\boxed{x:A}}={}&\boxed{x:\core{A}}\\
 \end{align*}
-Because moving is monotonic, that is $A\to \core A$ but not the other way around, negative uses of a non-persistent proposition cause it to completely collapse to \textsf{emp} when moved.
+Because moving is monotonic, that is $A\Rightarrow \core A$ but not the other way around, negative uses of a non-persistent proposition cause it to completely collapse to \textsf{emp} when moved.
+
+Note that move commutes with substitution for (expression) variables, $\core{\tau}[e/x]=\core{\tau[e/x]}$, but it only partially commutes with substitution for type variables: $\core{\tau[\tau'/\alpha]}\Rightarrow\core{\tau}[\tau'/\alpha]$, because substitution can make a non-copy type copy, so that for example $\core{\alpha[\N/\alpha]}=\core{\N}=\N$ but $\core{\alpha}[\N/\alpha]=\mathsf{emp}[\N/\alpha]=\mathsf{emp}$.
 
 \subsection{The Typing Rules}
 
@@ -644,7 +644,7 @@ The simplest pointer type is $\&^\mathbf{sn}\eta$. $x:\&^\mathbf{sn}\eta$ simply
   \infer[tye-deref]
     {\Gamma;\delta \proves e:\&^\mathbf{sn}\eta\makes\delta'}
     {\Gamma;\delta \proves {}^* e\Rightarrow \eta\makes\delta'\;\mathsf{place}}\and
-  \infer[tye-ref]
+  \infer[tye-shr]
     {\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}}
     {\Gamma;\delta \proves \&e:\&^\mathbf{sn}\eta\makes\delta'}\and
 \end{mathparpagebreakable}
@@ -709,36 +709,31 @@ In brief, if $x:\&^\mathbf{mut}\tau$ appears in the function arguments, we repla
 
 Shared pointers are the most complex, because they cannot be modeled by separating conjunctions, at least without techniques such as fractional ownership. This is not a problem until we get to the underlying separation logic. Here we only need to mark work that will be perfomed later on.
 
-We introduce a new kind of variable modifier, a heap variable. $\hat x:\tau$ means that $x:\tau$, but $x$ is not owned by the current context. Heap variables can overlap each other, but not other regular variables in the context.
+We introduce a new type, a heap reservation type called $\mathsf{ref}^a\;\tau$, the elements of which are called heap variables. The expression $x:\mathsf{ref}^a\;\tau$ means that $x:\tau$, but $x$ is not owned by the current context. Heap variables can overlap each other, but not other regular variables in the context.
 
 Heap variables resemble shared references from Rust, and in particular they are annotated with a ``lifetime''. The difference is that the pointer-ness is separated out; a heap variable directly has the type of the pointee, and the pointer is just a $\&^\mathbf{sn}\eta$ where $\eta$ is a heap variable.
 
-A lifetime $a$ is modeled roughly as a (precise, aka subsingleton) separating proposition $P$, with each $\mathsf{ref}^a\;x:=pe:\tau$ being modeled as a place $\eta$ for which $P\Rightarrow (\eta:=pe:\tau)$. That is, we can weaken $P$ to obtain the fact that $\eta:=pe:\tau$. (The relation $P\Rightarrow Q$, which is a regular (not separating) proposition, is defined as $\proves P\to (Q*\top)$.) Because $P$ is a precise proposition, it satisfies $(P\Rightarrow \exists x, Q)\to (\exists x,(P\Rightarrow Q))$, which means we can pattern match on heap variables like regular variables, for example to obtain $\&\tau$ from $\&\&^\mathbf{own}\tau$. But this is only relevant for the semantic model; in the type checker we simply need some rules for how to manipulate these variables.
+A lifetime $a$ is modeled roughly as a (precise, aka subsingleton) separating proposition $P$, with each $x:=pe:\mathsf{ref}^a\;\tau$ being modeled as a place $\eta$ for which $P\Rightarrow (\eta:=pe:\tau)$. That is, we can weaken $P$ to obtain the fact that $\eta:=pe:\tau$. (The relation $P\Rightarrow Q$, which is a regular (not separating) proposition, is defined as $\proves P\to (Q*\top)$.) Because $P$ is a precise proposition, it satisfies $(P\Rightarrow \exists x, Q)\to (\exists x,(P\Rightarrow Q))$, which means we can pattern match on heap variables like regular variables, for example to obtain $\&\tau$ from $\&\&^\mathbf{own}\tau$. But this is only relevant for the semantic model; in the type checker we simply need some rules for how to manipulate these variables.
 
 Syntactically, a lifetime can be either $\mathsf{extern}$, referring to data outside the current context, or $x$, some variable in the context. These denote the scope of the borrow; a variable which is borrowed cannot be mutated. (Possible extensions include lifetimes with scope $\{x,y,z\}$ for creating data that spans multiple variables, and lifetimes with scope $x.\mathsf{field}$ in order to borrow only parts of a variable without locking the whole variable.) The proposition $P$ from the previous paragraph is the implicit frame proposition in the $\mathsf{extern}$ case, and $x:=pe:\tau$ from the value context at the time of the borrow in the case of $x$. (In the case of multiple variables, it is the separating conjunction of these $x:=pe:\tau$ conditions and in the case of a subobject we destructure this proposition and pull out the $\eta:=pe:\tau$ component.)
 
 \begin{mathparpagebreakable}
   a\in\mathrm{Lft}::=\mathsf{extern}\mid x\and
-  \mathrm{Arg}::=\dots\mid \mathsf{ref}^a\;x:\tau\and
+  \mathrm{Type}::=\dots\mid \mathsf{ref}^a\;\tau\and
   \infer[tp-sum-ref]
-    {\Gamma,\mathsf{ref}^a\;y:\tau \proves \langle \overline{t}\rangle:\textstyle \overline{R}[y/x]\Rightarrow \bar{S}}
-    {\Gamma \proves \langle y,\overline{t'}\rangle:\textstyle\sum \mathsf{ref}^a\;x:\tau,\overline{R}\Rightarrow \mathsf{ref}^a\;y:\tau,\bar{S}}\and
-  \infer[arg-ref]
+    {\Gamma \proves t:\textstyle \mathsf{ref}^a\;\tau\Rightarrow \bar{S}\quad
+      \Gamma,\bar{S} \proves \langle \overline{t'}\rangle:\textstyle \mathsf{ref}^a(\tau'[t/x])\Rightarrow \bar{S}'}
+    {\Gamma \proves \langle t,\overline{t'}\rangle:\mathsf{ref}^a(\textstyle\sum x:\tau,\overline{R})\Rightarrow \bar{S},\bar{S}'}\and
+  \infer[ty-ref]
     {\mathrm{Var}(a)\subseteq \Gamma\quad
       \Gamma \proves \tau\;\mathsf{type}}
-    {\Gamma \proves \mathsf{ref}^a\; x:\tau\;\mathsf{arg}}\and
-  \infer[tye-struct-ref]
-    {\!\:{\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta_1\;\mathsf{read}\atop
-      \Gamma;\delta_1 \proves \langle \overline{e}\rangle:\textstyle\sum \bar R[pe/x]\makes\delta_2}}
-    {\Gamma;\delta \proves \langle \eta,\overline{e}\rangle: \textstyle\sum \mathsf{ref}^{\mathrm{Lft}(\eta)}\;x:\tau,\bar R\makes\delta_2}\and
-  {\begin{matrix}
-    \mathrm{Lft}(\mathsf{ref}^a\;x)=a\\
-    \mathrm{Lft}(x)=x\\
-    \mathrm{Lft}(\eta[pe])=\mathrm{Lft}(\eta)
-  \end{matrix}}
+    {\Gamma \proves \mathsf{ref}^a\; \tau\;\mathsf{type}}\and
+  \infer[tye-ref]
+    {\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta'\;\mathsf{read}^a}
+    {\Gamma;\delta \proves e: \mathsf{ref}^a\;\tau\makes\delta'}\and
 \end{mathparpagebreakable}
 
-Here the $\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta'\;\mathsf{read}$ judgment is a conjunction of $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}$ followed by $\Gamma\proves\delta_1 \Rightarrow \delta'$, such that $\Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}$. That is, first we evaluate the place expression, then we use $\Gamma\proves\delta_1 \Rightarrow \delta'$ to ensure that $\eta$ is locked and readable at type $\tau$, and the final judgment asserts that in the result state we can in fact read $\eta:\tau$.
+Here the $\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta'\;\mathsf{read}^a$ judgment is a conjunction of $\Gamma;\delta \proves e\Rightarrow\eta\makes\delta_1\;\mathsf{place}$ followed by $\Gamma\proves\delta_1 \Rightarrow \delta'$, such that $\Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}^a$. That is, first we evaluate the place expression, then we use $\Gamma\proves\delta_1 \Rightarrow \delta'$ to ensure that $\eta$ is locked and readable at type $\tau$, and the final judgment asserts that in the result state we can in fact read $\eta:\tau$ from origin $a$.
 
 \begin{mathparpagebreakable}
   \delta\in\mathrm{VCtx}::=\delta,(\mathsf{ref}^a\;x:=pe:\tau)\\
@@ -749,19 +744,16 @@ Here the $\Gamma;\delta \proves e\Rightarrow(\eta:=pe:\tau)\makes\delta'\;\maths
     {\Gamma\proves\delta,(\mathsf{ref}^x\;x:=pe:\tau) \constep \delta,(x:=pe:\tau)}\and
   \infer[tyr-var]
     {(\mathsf{ref}^a\;x:=pe:\tau)\in\delta}
-    {\Gamma;\delta \proves x:=pe:\tau\;\mathsf{read}}\and
-  \infer[tyr-place]
-    {(\mathsf{ref}^a\;x:=pe:\tau)\in\delta}
-    {\Gamma;\delta \proves \eta:=pe:\tau\;\mathsf{read}}\and
+    {\Gamma;\delta \proves x:=pe:\tau\;\mathsf{read}^a}\and
   \infer[tye-read-ref]
     {\!\:{\Gamma;\delta \proves e\Rightarrow\eta\makes\delta'\;\mathsf{place}\atop
-      \Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}}}
+      \Gamma;\delta' \proves \eta:=pe:\tau\;\mathsf{read}^a}}
     {\Gamma;\delta \proves e\Rightarrow pe:\core\tau\makes\delta'}\and
 \end{mathparpagebreakable}
 
 Note that we cannot move out a value from a ref variable, which is reflected in the use of $\core\tau$ in \textsc{tye-read-ref}. We also cannot mutate a ref, meaning that while a variable is locked (meaning that it is represented in the value context as a $\mathsf{ref}^x\;x$), mutation is not possible; however it is possible to mutate a variable that is currently locked by first unlocking it using the \textsc{cs-unlock} rule, which requires first deleting all the heap variables that reference $x$ using the \textsc{cs-drop} rule.
 
-Using heap variables, we can desugar shared references similarly to owned pointers:
+In fact, we can't even really read a ref; the value read is only available as a ghost value, unless it is accessed indirectly via a shared reference. Using heap variables, we can desugar shared references similarly to owned pointers:
 
 \begin{mathparpagebreakable}
   \mathrm{Type}::=\dots\mid \&^a\tau\and

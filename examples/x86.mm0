@@ -1421,6 +1421,7 @@ theorem mapMemT (prot k km a l k2 km2: nat):
 def sys_mmap: nat = $ 9 $;
 def MAP_PRIVATE: nat = $ 2 $;
 def MAP_ANONYMOUS: nat = $ 32 $;
+def MAP_FAILED: nat = $ bitsNeg 64 1 $;
 def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
 $ k e. Config /\ m e. PageMapping (getMemory k) /\
   readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
@@ -1429,7 +1430,7 @@ $ k e. Config /\ m e. PageMapping (getMemory k) /\
     fd = readReg k 8 /\ off = readReg k 9 /\
     flags = MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS /\
     prot e. Prot /\ off = 0 /\ ret e. u64 /\
-    ifp (isIOError ret) (k2 = k /\ m2 = m)
+    ifp (isIOError ret) (k2 = k /\ m2 = m /\ ret = MAP_FAILED)
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
         A. i (i < len -> m @ (ret +_64 i) = 0) /\
         mapMem prot k m ret buf k2 m2))) $;

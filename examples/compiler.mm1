@@ -2024,6 +2024,15 @@ $ S\ v, Sum (ocasep (v e. core_of ty) emp) (ty_Rep v ty) $;
 @_ local def ty_sn (a: nat) (ty: set): set =
 $ S\ v, Sum (ocasep (v = a /\ v e. core_of ty) (has_ty v ty)) (ty_Rep v ty) $;
 
+--| A heap variable's core typing predicate.
+@_ local def t_heap (Lft: set) (v: nat) (ty: set): wff =
+$ subsn Lft /\ Lft =>*s has_ty v ty $;
+
+--| A heap type, which is a ghost type such that `v: ref[Lft] ty` asserts that
+--| `Lft` is a precise proposition which implies `[v: ty]`.
+@_ local def ty_heap (Lft: set) (ty: set): set =
+$ S\ v, Sum (ocasep (t_heap Lft v ty) emp) 0 $;
+
 -------------------------------------
 -- Eliminating the bound variables --
 -------------------------------------

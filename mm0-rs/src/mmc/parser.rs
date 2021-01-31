@@ -7,7 +7,7 @@ use crate::elab::{Result, ElabError,
   environment::AtomID,
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
   local_context::{try_get_span, try_get_span_from}};
-use super::types::{AST, Invariant, Keyword, Proc, ProcKind,
+use super::types::{AST, Keyword, Proc, ProcKind,
   Variant, VariantType};
 
 /// A tuple pattern, which destructures the results of assignments from functions with
@@ -23,6 +23,8 @@ pub enum TuplePattern {
   Tuple(Box<[TuplePattern]>, Option<FileSpan>),
 }
 
+enum MutOut { None, Mut, Out(AtomID) }
+
 impl TuplePattern {
   /// The `_` tuple pattern. This is marked as ghost because it can't be referred to so
   /// it is always safe to make irrelevant.
@@ -37,12 +39,12 @@ impl TuplePattern {
     }
   }
 
-  /// The span of a variable binding (or [`None`] for a tuple pattern).
+  /// The span of a variable binding or tuple pattern.
   #[must_use] pub fn fspan(&self) -> Option<&FileSpan> {
     match self {
-      TuplePattern::Name(_, _, fsp) => fsp.as_ref(),
+      TuplePattern::Name(_, _, fsp) |
+      TuplePattern::Tuple(_, fsp) => fsp.as_ref(),
       TuplePattern::Typed(p, _) => p.fspan(),
-      _ => None
     }
   }
 
@@ -94,6 +96,24 @@ pub enum Pattern {
   Or(Box<[Pattern]>),
 }
 
+/// A rename is a `{old -> old'}` or `{new' <- new}` clause appearing in a `with`
+/// associated to a let binding or assignment, as in `{{x <- 2} with {x -> x_old}}`.
+#[derive(Clone, Copy, Debug)]
+pub enum Rename {
+  /// `{from -> to}` means that the variable `from` should be renamed to `to`
+  /// (after evaluation of the main expression).
+  Old {
+    /** The original name of the variable */ from: AtomID,
+    /** The new name of the variable */ to: AtomID
+  },
+  /// `{to <- from}` means that the new value of the variable `from` should be called `to`,
+  /// so that the old value of variable `from` is available by that name.
+  New {
+    /** The original name of the variable */ from: AtomID,
+    /** The new name of the variable */ to: AtomID
+  },
+}
+
 /// An expression or statement. A block is a list of expressions.
 #[derive(Debug)]
 pub enum Expr {
@@ -107,8 +127,19 @@ pub enum Expr {
   Let {
     /// A tuple pattern, containing variable bindings.
     lhs: TuplePattern,
-    /// The expression to evaluate, or [`None`] for uninitialized.
-    rhs: Option<LispVal>,
+    /// The expression to evaluate.
+    rhs: LispVal,
+    /// The list of simultaneous variable renames.
+    with: Vec<Rename>
+  },
+  /// An assignment / mutation.
+  Assign {
+    /// A place (lvalue) to write to.
+    lhs: LispVal,
+    /// The expression to evaluate.
+    rhs: LispVal,
+    /// The list of simultaneous variable renames.
+    with: Vec<Rename>
   },
   /// A function call (or something that looks like one at parse time).
   Call {
@@ -159,8 +190,6 @@ pub enum Expr {
     cond: LispVal,
     /// The variant, which must decrease on every round around the loop.
     var: Option<Variant>,
-    /// The invariants, which must be supplied on every round around the loop.
-    invar: Box<[Invariant]>,
     /// The body of the loop.
     body: Uncons,
   },
@@ -223,7 +252,7 @@ impl<'a> Parser<'a> {
 
   fn parse_arg1(&self, e: LispVal, name_required: bool) -> Result<TuplePattern> {
     if let Some((AtomID::COLON, _)) = head_atom(&e) {
-      self.parse_tuple_pattern(false, e)
+      Ok(self.parse_tuple_pattern(false, e)?)
     } else if name_required {
       let a = e.as_atom().ok_or_else(||
         ElabError::new_e(self.try_get_span(&e), "argument syntax error: expecting identifier"))?;
@@ -235,19 +264,25 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_arg(&self, e: LispVal, name_required: bool,
-    args: &mut Vec<TuplePattern>,
-    muts: Option<&mut Vec<(AtomID, Option<FileSpan>)>>
+    mut push_arg: impl FnMut(Span, MutOut, TuplePattern) -> Result<()>,
   ) -> Result<()> {
-    match (self.head_keyword(&e), muts) {
-      // (Some((Keyword::Ghost, u)), _) => for e in u {
-      //   args.push(self.parse_arg1(e, true, name_required)?)
-      // }
-      (Some((Keyword::Mut, u)), Some(muts)) => for e in u {
-        let a = e.as_atom().ok_or_else(||
-          ElabError::new_e(self.try_get_span(&e), "mut: expected an atom"))?;
-        muts.push((a, e.fspan()))
+    match self.head_keyword(&e) {
+      Some((Keyword::Mut, u)) => for e in u {
+        push_arg(self.try_get_span(&e), MutOut::Mut, self.parse_arg1(e, name_required)?)?
       }
-      _ => args.push(self.parse_arg1(e, name_required)?)
+      Some((Keyword::Out, mut u)) => {
+        let (a, e) = match (u.next(), u.next(), u.is_empty()) {
+          (Some(e), None, _) => (AtomID::UNDER, e),
+          (Some(e1), Some(e), true) => {
+            let a = e1.as_atom().ok_or_else(||
+              ElabError::new_e(self.try_get_span(&e1), "'out' syntax error"))?;
+            (a, e)
+          }
+          _ => return Err(ElabError::new_e(self.try_get_span(&e), "'out' syntax error")),
+        };
+        push_arg(self.try_get_span(&e), MutOut::Out(a), self.parse_arg1(e, name_required)?)?
+      }
+      _ => push_arg(self.try_get_span(&e), MutOut::None, self.parse_arg1(e, name_required)?)?
     }
     Ok(())
   }
@@ -318,28 +353,40 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_decl(&self, e: LispVal) -> Result<(TuplePattern, Option<LispVal>)> {
-    if let Some((Keyword::ColonEq, mut u)) = self.head_keyword(&e) {
-      if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
-        Ok((self.parse_tuple_pattern(false, lhs)?, Some(rhs)))
-      } else {
-        Err(ElabError::new_e(self.try_get_span(&e), "decl: syntax error"))
-      }
+  fn parse_decl_asgn(&self, e: &LispVal) -> Result<Expr> {
+    match self.head_keyword(e) {
+      Some((Keyword::ColonEq, mut u)) => if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
+        return Ok(Expr::Let {lhs: self.parse_tuple_pattern(false, lhs)?, rhs, with: vec![]})
+      },
+      Some((Keyword::ArrowL, mut u)) => if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
+        return Ok(Expr::Assign {lhs, rhs, with: vec![]})
+      },
+      _ => {}
+    }
+    Err(ElabError::new_e(self.try_get_span(e), "decl: syntax error"))
+  }
+
+  fn parse_decl(&self, e: &LispVal) -> Result<(TuplePattern, LispVal)> {
+    if let Expr::Let {lhs, rhs, ..} = self.parse_decl_asgn(e)? {
+      Ok((lhs, rhs))
     } else {
-      Ok((self.parse_tuple_pattern(false, e)?, None))
+      Err(ElabError::new_e(self.try_get_span(e), "decl: assignment not allowed here"))
     }
   }
 
-  fn parse_invariant_decl(&self, e: &LispVal) -> Result<Invariant> {
-    match self.parse_decl(e.clone())? {
-      (TuplePattern::Typed(v, ty), val) => if let TuplePattern::Name(ghost, name, _) = *v {
-        return Ok(Invariant {name, ghost, ty: Some(ty), val})
+  fn parse_rename(&self, e: &LispVal) -> Result<Option<Rename>> {
+    match self.head_keyword(e) {
+      Some((Keyword::ArrowL, mut u)) => if let (Some(to), Some(from), true) =
+        (u.next().and_then(|e| e.as_atom()), u.next().and_then(|e| e.as_atom()), u.is_empty()) {
+        return Ok(Some(Rename::New {from, to}))
       },
-      (TuplePattern::Name(ghost, name, _), val) =>
-        return Ok(Invariant {name, ghost, ty: None, val}),
-      _ => {}
+      Some((Keyword::ArrowR, mut u)) => if let (Some(from), Some(to), true) =
+        (u.next().and_then(|e| e.as_atom()), u.next().and_then(|e| e.as_atom()), u.is_empty()) {
+        return Ok(Some(Rename::Old {from, to}))
+      },
+      _ => return Ok(None)
     }
-    Err(ElabError::new_e(self.try_get_span(e), "while: unexpected invariant"))
+    Err(ElabError::new_e(self.try_get_span(e), "with: expected {old -> old'} or {new' <- new}"))
   }
 
   /// Parse an MMC expression (shallowly), returning a [`parser::Expr`](Expr)
@@ -349,17 +396,26 @@ impl<'a> Parser<'a> {
       &LispKind::Atom(AtomID::UNDER) => Expr::Hole(self.try_get_fspan(&e)),
       &LispKind::Atom(a) => Expr::Var(self.try_get_fspan(&e), a),
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
-        // Some((Keyword::Ghost, mut u)) =>
-        //   if let (Some(e), true) = (u.next(), u.is_empty()) {
-        //     let (lhs, rhs) = self.parse_decl(e)?;
-        //     Expr::Let {ghost: true, lhs, rhs}
-        //   } else {
-        //     return Err(ElabError::new_e(self.try_get_span(&e), "ghost: syntax error"))
-        //   },
-        Some((Keyword::Colon, _)) |
-        Some((Keyword::ColonEq, _)) => {
-          let (lhs, rhs) = self.parse_decl(e)?;
-          Expr::Let {lhs, rhs}
+        Some((Keyword::ColonEq, _)) |
+        Some((Keyword::ArrowL, _)) => self.parse_decl_asgn(&e)?,
+        Some((Keyword::With, mut u)) => {
+          let mut ret = self.parse_decl_asgn(&u.next().ok_or_else(||
+            ElabError::new_e(self.try_get_span(&e), "'with' syntax error"))?)?;
+          let with = match &mut ret {
+            Expr::Let {with, ..} | Expr::Assign {with, ..} => with,
+            _ => unreachable!()
+          };
+          for e in u {
+            if let Some(r) = self.parse_rename(&e)? { with.push(r) }
+            else {
+              for e in Uncons::New(e) {
+                let r = self.parse_rename(&e)?.ok_or_else(||
+                  ElabError::new_e(self.try_get_span(&e), "with: expected {old -> old'} or {new' <- new}"))?;
+                with.push(r);
+              }
+            }
+          }
+          ret
         }
         Some((Keyword::If, mut u)) => {
           let err = || ElabError::new_e(self.try_get_span(&e), "if: syntax error");
@@ -423,30 +479,23 @@ impl<'a> Parser<'a> {
         Some((Keyword::While, mut u)) => {
           let c = u.next().ok_or_else(||
             ElabError::new_e(self.try_get_span(&e), "while: syntax error"))?;
-          let (hyp, cond) = if let Some((Keyword::Invariant, mut u)) = self.head_keyword(&c) {
+          let (hyp, cond) = if let Some((Keyword::Colon, mut u)) = self.head_keyword(&c) {
             if let (Some(h), Some(c), true) = (u.next().and_then(|a| a.as_atom()), u.next(), u.is_empty()) {
               (Some(h), c)
             } else {
               return Err(ElabError::new_e(self.try_get_span(&e), "while: bad pattern"))
             }
           } else {(None, c)};
-          let mut invar = vec![];
           let mut var = None;
           while let Some(e) = u.head() {
             if let Some(v) = self.parse_variant(&e) {
               if mem::replace(&mut var, Some(v)).is_some() {
                 return Err(ElabError::new_e(self.try_get_span(&e), "while: two variants"))
               }
-            } else if let Some((Keyword::Invariant, u)) = self.head_keyword(&e) {
-              for e in u { invar.push(self.parse_invariant_decl(&e)?) }
             } else {break}
             u.next();
           }
-          Expr::While {
-            hyp, cond, var,
-            invar: invar.into_boxed_slice(),
-            body: u
-          }
+          Expr::While { hyp, cond, var, body: u }
         }
         Some((Keyword::Begin, u)) => Expr::Block(u),
         Some((Keyword::Entail, mut u)) => {
@@ -473,7 +522,7 @@ impl<'a> Parser<'a> {
                     return Err(ElabError::new_e(self.try_get_span(&e), "label: two variants"))
                   }
                 } else {
-                  self.parse_arg(e, true, &mut args, None)?
+                  args.push(self.parse_arg1(e, true)?)
                 }
               }
               Expr::Label {
@@ -510,9 +559,8 @@ impl<'a> Parser<'a> {
       None => return Err(ElabError::new_e(self.try_get_span(&u.into()), "func/proc: syntax error")),
       Some(e) => e,
     };
-    let mut muts = vec![];
-    let mut args = vec![];
-    let mut rets = vec![];
+    let mut args = (vec![], vec![]);
+    let mut rets = (vec![], vec![]);
     let (name, span) = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => (a, e.fspan()),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
@@ -523,9 +571,27 @@ impl<'a> Parser<'a> {
           ElabError::new_e(self.try_get_span(&e), "func/proc syntax error: expecting an atom"))?;
         while let Some(e) = u.next() {
           if let Some(AtomID::COLON) = e.as_atom() { break }
-          self.parse_arg(e, true, &mut args, Some(&mut muts))?
+          self.parse_arg(e, true, |sp, mo, arg| {
+            args.0.push(match mo {
+              MutOut::None => false,
+              MutOut::Mut => true,
+              MutOut::Out(_) => return Err(ElabError::new_e(sp, "'out' cannot appear in function arguments"))
+            });
+            args.1.push(arg);
+            Ok(())
+          })?
         }
-        for e in u { self.parse_arg(e, false, &mut rets, None)? }
+        for e in u {
+          self.parse_arg(e, false, |sp, mo, arg| {
+            rets.0.push(match mo {
+              MutOut::None => None,
+              MutOut::Out(a) => Some(a),
+              MutOut::Mut => return Err(ElabError::new_e(sp, "'mut' cannot appear in function returns"))
+            });
+            rets.1.push(arg);
+            Ok(())
+          })?
+        }
         (name, e.fspan())
       }
       _ => return Err(ElabError::new_e(self.try_get_span(&e), "func/proc: syntax error"))
@@ -539,14 +605,7 @@ impl<'a> Parser<'a> {
       }
       self.parse_variant(&e)
     } else {None};
-    Ok((Proc {
-      name, span,
-      args: args.into_boxed_slice(),
-      rets: rets.into_boxed_slice(),
-      variant,
-      kind,
-      muts: muts.into(),
-    }, u))
+    Ok((Proc {name, span, args, rets, variant, kind}, u))
   }
 
   fn parse_name_and_tyargs(&self, e: &LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<TuplePattern>)> {
@@ -575,15 +634,12 @@ impl<'a> Parser<'a> {
         Some((Keyword::Intrinsic, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Intrinsic, u)?)),
         Some((Keyword::Global, u)) => for e in u {
           let full = e.fspan();
-          let (lhs, rhs) = self.parse_decl(e)?;
+          let (lhs, rhs) = self.parse_decl(&e)?;
           ast.push(AST::Global {full, lhs, rhs})
         },
         Some((Keyword::Const, u)) => for e in u {
-          if let (lhs, Some(rhs)) = self.parse_decl(e.clone())? {
-            ast.push(AST::Const {full: e.fspan(), lhs, rhs})
-          } else {
-            return Err(ElabError::new_e(self.try_get_span(&e), "const: definition is required"))
-          }
+          let (lhs, rhs) = self.parse_decl(&e)?;
+          ast.push(AST::Const {full: e.fspan(), lhs, rhs});
         },
         Some((Keyword::Typedef, mut u)) =>
           if let (Some(e), Some(val), true) = (u.next(), u.next(), u.is_empty()) {

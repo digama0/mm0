@@ -139,8 +139,8 @@ make_prims! {
     Input: "Input",
     /// `int` is the type of unbounded signed integers; `sizeof int = inf`.
     Int: "int",
-    /// `(list A B C)` is a tuple type with elements `A, B, C`;
-    /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
+    /// `(A, B, C)` is a tuple type with elements `A, B, C`;
+    /// `sizeof (A, B, C) = sizeof A + sizeof B + sizeof C`.
     List: "list",
     /// `nat` is the type of unbounded unsigned integers; `sizeof nat = inf`.
     Nat: "nat",
@@ -151,18 +151,17 @@ make_prims! {
     Or: "or",
     /// The output token (passed to functions that produce output)
     Output: "Output",
-    /// `(own T)` is a type of owned pointers. The typehood predicate is
+    /// `own T` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
-    /// `(& T)` is a type of borrowed pointers. This type is treated specially;
-    /// the `x |-> v` assumption is stored separately from regular types, and
-    /// `(* x)` is treated as sugar for `v`.
+    /// `(& T)` is a type of borrowed pointers. This type is elaborated to
+    /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
+    /// (see [`Lifetime`]).
     Ref: "&",
-    /// `(&mut T)` is a type of mutable pointers. This is also treated specially;
-    /// it is sugar for `(mut {x : (own T)})`, which is to say `x` has
-    /// type `own T` in the function but must also be passed back out of the
-    /// function.
-    RefMut: "&mut",
+    /// `&sn e` is a type of pointers to a place `e`.
+    /// This type has the property that if `x: &sn e` then `*x` evaluates to
+    /// the place `e`, which can be read or written.
+    RefSn: "&sn",
     /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
     /// This is useful for asserting that a computationally relevant value can be
     /// expressed in terms of computationally irrelevant parts.

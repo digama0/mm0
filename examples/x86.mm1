@@ -252,6 +252,8 @@ theorem elBitsx01: $ x0 e. Bits n $ = '(mpbi (eleq1 dec0) elBits01);
 theorem elBits1: $ a e. Bits 1 <-> bool a $ = '(bitr elBits2 @ lteq2 pow12);
 theorem elBits11: $ 1 e. Bits n <-> n != 0 $ =
 '(bitr4 elBits2 @ bitr3 lt01 @ bitr (ltpow2 d1lt2) (lteq1 pow0));
+theorem Bits_zeqm_02: $ a e. Bits n -> (modZ(2 ^ n): b0 a = 0 <-> a = 0) $ =
+'(syl5bbr (zeqmeq3 b00) @ mpand (a1i elBits01) Bits_zeqm);
 
 theorem eq_bitAnd1: $ a C_ b <-> bitAnd a b = a $ = '(bitr eqin1 @ bitr3 (eqseq1 bitAndEq) nsinj);
 theorem eq_bitAnd2: $ a C_ b <-> bitAnd b a = a $ = '(bitr eq_bitAnd1 @ eqeq1 bitAnd_sym);
@@ -457,7 +459,10 @@ theorem chop_shladd2: $ chop k (shl a k + b) = chop k b $ = '(muladdmod1 pow2ne0
 
 theorem Bits_chop: $ a e. Bits k -> chop k a = a $ = 'Bits_mod;
 theorem eqm_chop: $ mod(2 ^ k): chop k a = a $ = 'eqmmod;
+theorem zeqm_chop: $ modZ(2 ^ k): b0 (chop k a) = b0 a $ = '(mpbir zeqmeqm eqm_chop);
 theorem chop_eq_chop: $ chop k a = chop k b <-> mod(2 ^ k): a = b $ = 'biid;
+theorem chop_eq_chop2: $ chop k a = chop k b <-> modZ(2 ^ k): b0 a = b0 b $ =
+'(bitr4 chop_eq_chop zeqmeqm);
 
 theorem chop_chop: $ m <= n -> chop m (chop n a) = chop m a $ = '(syl modmod powdvd);
 
@@ -501,8 +506,12 @@ theorem shr_bitDif: $ shr (bitDif a b) m = bitDif (shr a m) (shr b m) $ =
 theorem eqm_chopd (h: $ G -> mod(2 ^ k): a = b $):
   $ G -> mod(2 ^ k): chop k a = b $ = '(syl (eqmtr eqm_chop) h);
 theorem zeqm_chopd (h: $ G -> modZ(2 ^ k): b0 a = b $):
-  $ G -> modZ(2 ^ k): b0 (chop k a) = b $ =
-'(syl (zeqmtr @ mpbir zeqmeqm eqm_chop) h);
+  $ G -> modZ(2 ^ k): b0 (chop k a) = b $ = '(syl (zeqmtr zeqm_chop) h);
+
+theorem zeqm_chop1: $ b e. Bits n -> (modZ(2 ^ n): b0 a = b0 b <-> chop n a = b) $ =
+'(syl5bbr (zeqmeqm2 zeqm_chop) @ rsyl (ian chopT) Bits_zeqm);
+theorem zeqm_chop2: $ a e. Bits n -> (modZ(2 ^ n): b0 a = b0 b <-> a = chop n b) $ =
+'(syl5bbr (zeqmeqm3 zeqm_chop) @ mpand (a1i chopT) Bits_zeqm);
 
 @(add-eval @ fn (k n) {(evalZ n) band {{1 shl (eval k)} - 1}})
 @_ local def chopZ (k n: nat): nat = $ n %Z 2 ^ k $;
@@ -748,6 +757,9 @@ theorem zeqm_bitsAddd
   $ G -> modZ(2 ^ k): b0 (bitsAdd k a b) = x +Z y $ =
 '(syl (zeqmtr zeqm_bitsAdd) @ zeqmaddd h1 h2);
 
+theorem bitsAdd02: $ bitsAdd k 0 a = chop k a $ = '(chopeq2 add01);
+theorem bitsAdd03: $ bitsAdd k a 0 = chop k a $ = '(chopeq2 add0);
+
 @(add-eval @ fn (k n) {(- (eval n)) band {{1 shl (eval k)} - 1}})
 @_ def bitsNeg (k n: nat): nat = $ bitsAdd k (bitsNot k n) 1 $;
 pub theorem bitsNegT (k n: nat): $ bitsNeg k n e. Bits k $ = 'bitsAddT;
@@ -759,6 +771,10 @@ theorem zeqm_bitsNegd
   zeqm_bitsAddd (zeqm_bitsNotd h1) (a1i zeqmid));
 theorem zeqm_bitsNeg: $ modZ(2 ^ k): b0 (bitsNeg k n) = -uZ b0 n $ =
 '(trud @ zeqm_bitsNegd @ a1i zeqmid);
+
+theorem bitsNeg0: $ bitsNeg k 0 = 0 $ =
+'(mpbi (Bits_zeqm_02 bitsNegT) @
+  mpbi (zeqmeq3 @ eqtr (znegeq b00) zneg0) zeqm_bitsNeg);
 
 theorem bitsNeg1: $ bitsNeg k 1 = upto k $ =
 '(mpbi (Bits_zeqm @ ian bitsNegT uptoT) @
@@ -782,6 +798,15 @@ theorem bitsSub_eq_sub: $ b <= a -> a e. Bits k -> bitsSub k a b = a - b $ =
 '(exp @ mpbid (sylan Bits_zeqm (a1i bitsSubT) @ anwr @ Bitsle1 subleid) @
   mpbii zeqm_bitsSub @ zeqmeq3d @ anwl znsubpos);
 
+theorem bitsSub03: $ bitsSub k a 0 = chop k a $ = '(eqtr (bitsAddeq3 bitsNeg0) bitsAdd03);
+
+theorem bits_npcan: $ bitsAdd k (bitsSub k a b) b = chop k a $ =
+'(mpbi (zeqm_chop2 bitsAddT) @ mpbi (zeqmeq3 znpcan) @
+  trud @ zeqm_bitsAddd (a1i zeqm_bitsSub2) (a1i zeqmid));
+theorem bits_pncan: $ bitsSub k (bitsAdd k a b) b = chop k a $ =
+'(mpbi (zeqm_chop2 bitsAddT) @ mpbi (zeqmeq3 zpncan) @
+  trud @ zeqm_bitsSubd (a1i zeqm_bitsAdd) (a1i zeqmid));
+
 @_ def bitsSar (k a b: nat): nat =
 $ nat (bitsMSB k a) * (upto k - upto (k - b)) + shr a b $;
 pub theorem bitsSarT (k a b: nat):
@@ -793,7 +818,7 @@ pub theorem bitsSarT (k a b: nat):
   sylib elBits2 @ syl shrT @ mpbird (elneq2d @ Bitseqd @ anwr npcan) anl);
 
 @(add-eval @ fn (a b) {{(eval a) + (eval b)} band {{1 shl 64} - 1}})
-@_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 65;
+@_ def add64 (a b: nat): nat = $ bitsAdd 64 a b $; infixl add64: $+_64$ prec 64;
 pub theorem add64T (a b: nat): $ a +_64 b e. u64 $ = 'bitsAddT;
 
 theorem add64_eqid: $ a + b e. u64 -> a +_64 b = a + b $ = 'bitsAdd_eqid;
@@ -801,8 +826,14 @@ theorem add64S_eqid: $ suc a e. u64 -> a +_64 1 = suc a $ =
 '(sylbir (eleq1 add12) @ syl6eq add12 add64_eqid);
 
 @(add-eval @ fn (a b) {{(eval a) - (eval b)} band {{1 shl 64} - 1}})
-@_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 65;
+@_ def sub64 (a b: nat): nat = $ bitsSub 64 a b $; infixl sub64: $-_64$ prec 64;
 pub theorem sub64T (a b: nat): $ a -_64 b e. u64 $ = 'bitsSubT;
+
+theorem sub64_eqid: $ b <= a -> a e. u64 -> a -_64 b = a - b $ = 'bitsSub_eq_sub;
+
+theorem sub02_64: $ a -_64 0 = chop 64 a $ = 'bitsSub03;
+theorem npcan64: $ a -_64 b +_64 b = chop 64 a $ = 'bits_npcan;
+theorem pncan64: $ a +_64 b -_64 b = chop 64 a $ = 'bits_pncan;
 
 @_ local def toBytesAux (k n .a: nat): nat = $ rec 0 (\ a,
   \. i e. upto (suc n), (i % 256) : a @ (i // 256)) k $;
@@ -4462,6 +4493,7 @@ pub theorem mapMemT (prot k km a l k2 km2: nat):
 @(add-eval) def sys_mmap: nat = $ 9 $;
 @(add-eval) def MAP_PRIVATE: nat = $ 2 $;
 @(add-eval) def MAP_ANONYMOUS: nat = $ 32 $;
+@(add-eval) def MAP_FAILED: nat = $ bitsNeg 64 1 $;
 @_ def execMMap (k m k2 m2 ret .len .prot .flags .fd .off .buf .i: nat): wff =
 $ k e. Config /\ m e. PageMapping (getMemory k) /\
   readReg k RAX = sys_mmap /\ E. len E. prot E. flags E. fd E. off (
@@ -4470,7 +4502,7 @@ $ k e. Config /\ m e. PageMapping (getMemory k) /\
     fd = readReg k 8 /\ off = readReg k 9 /\
     flags = MAP_PRIVATE + nat (fd = bitsNeg 32 1) * MAP_ANONYMOUS /\
     prot e. Prot /\ off = 0 /\ ret e. u64 /\
-    ifp (isIOError ret) (k2 = k /\ m2 = m)
+    ifp (isIOError ret) (k2 = k /\ m2 = m /\ ret = MAP_FAILED)
       (E. buf (buf e. Array u8 len /\ (fd = bitsNeg 32 1 -> all (sn 0) buf) /\
         A. i (i < len -> m @ (ret +_64 i) = 0) /\
         mapMem prot k m ret buf k2 m2))) $;

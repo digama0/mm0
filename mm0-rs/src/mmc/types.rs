@@ -4,7 +4,18 @@ use std::{rc::Rc, collections::HashMap};
 use num::BigInt;
 use crate::util::FileSpan;
 use crate::elab::{environment::{AtomID, TermID, Environment},
-  lisp::{LispKind, InferTarget, LispVal, Syntax, Uncons, print::{EnvDisplay, FormatEnv}}};
+  lisp::{LispVal, Syntax, Uncons, print::{EnvDisplay, FormatEnv}}};
+
+/// A variable ID. These are local to a given declaration (function, constant, global),
+/// but are not de Bruijn variables - they are unique identifiers within the declaration.
+#[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq)]
+pub struct VarID(pub u32);
+
+impl std::fmt::Display for VarID {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "_{}", self.0)
+  }
+}
 
 // /// An argument to a function.
 // #[derive(Debug, DeepSizeOf)]
@@ -46,20 +57,6 @@ pub enum VariantType {
 /// well founded order that decreases on all calls.
 pub type Variant = (LispVal, VariantType);
 
-/// An invariant is a local variable in a loop, that is passed as an argument
-/// on recursive calls.
-#[derive(Debug, DeepSizeOf)]
-pub struct Invariant {
-  /// The variable name.
-  pub name: AtomID,
-  /// True if the variable is ghost (computationally irrelevant).
-  pub ghost: bool,
-  /// The type of the variable, or none for inferred.
-  pub ty: Option<LispVal>,
-  /// The initial value of the variable.
-  pub val: Option<LispVal>,
-}
-
 /// A tuple pattern, which destructures the results of assignments from functions with
 /// mutiple return values, as well as explicit tuple values and structs.
 #[derive(Debug, DeepSizeOf)]
@@ -76,7 +73,7 @@ pub enum TuplePattern {
 #[derive(Debug, DeepSizeOf)]
 pub enum TypedTuplePattern {
   /// A variable binding. The `bool` is true if the variable is ghost.
-  Name(bool, AtomID, Option<FileSpan>, Box<Type>),
+  Name(bool, VarID, Option<FileSpan>, Box<Type>),
   /// A unit pattern match.
   Unit,
   /// A singleton pattern match `(x h) := sn e`, where `x: T` and `h: x = e`.
@@ -95,6 +92,7 @@ impl TypedTuplePattern {
       Self::Single(p) => p.0.to_expr(),
     }
   }
+
 }
 
 /// A pattern, the left side of a switch statement.
@@ -122,22 +120,21 @@ pub enum Expr {
   Pure(PureExpr),
   /// A variable move expression. Unlike `Pure(Var(v))`, this will take the value in `v`,
   /// leaving it moved out.
-  Var(AtomID),
+  Var(VarID),
   /// A unary operation.
   Unop(Unop, Box<Expr>),
   /// A binary operation.
   Binop(Binop, Box<Expr>, Box<Expr>),
   /// A tuple constructor.
-  Tuple(Box<[Expr]>),
+  Tuple(Box<[Expr]>, Box<Type>),
   /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
   Index(Box<Expr>, Rc<PureExpr>, Box<Expr>),
-  /// An deref operation `(* x): T` where `x: (own T)`.
-  DerefOwn(Box<Expr>),
+  /// A projection operation `x.i: T` where
+  /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(Box<Expr>, u32),
   /// An deref operation `(* x): T` where `x: (& T)`.
   Deref(Box<Expr>),
-  /// An deref operation `(* x): T` where `x: (&mut T)`.
-  DerefMut(Box<Expr>),
   /// A ghost expression.
   Ghost(Box<Expr>),
   /// A truncation / bit cast operation.
@@ -147,7 +144,7 @@ pub enum Expr {
     /// A tuple pattern, containing variable bindings.
     lhs: TypedTuplePattern,
     /// The expression to evaluate, or [`None`] for uninitialized.
-    rhs: Option<Box<Expr>>,
+    rhs: Box<Expr>,
   },
   /// A function call or intrinsic.
   Call {
@@ -190,8 +187,6 @@ pub enum Expr {
     cond: Box<Expr>,
     /// The variant, which must decrease on every round around the loop.
     var: Option<Variant>,
-    /// The invariants, which must be supplied on every round around the loop.
-    invar: Box<[Invariant]>,
     /// The body of the loop.
     body: Box<[Expr]>,
   },
@@ -227,24 +222,21 @@ pub struct Proc {
   /// The span of the procedure name.
   pub span: Option<FileSpan>,
   /// The arguments of the procedure.
-  pub args: Box<[super::parser::TuplePattern]>,
+  pub args: (Vec<bool>, Vec<super::parser::TuplePattern>),
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: Box<[super::parser::TuplePattern]>,
+  pub rets: (Vec<Option<AtomID>>, Vec<super::parser::TuplePattern>),
   /// The variant, used for recursive functions.
   pub variant: Option<Variant>,
-  /// The body of the procedure.
-  pub muts: Box<[(AtomID, Option<FileSpan>)]>,
 }
 
 impl Proc {
-  /// Checks if this proc equals `other`, ignoring the `body` and `kind` fields.
+  /// Checks if this proc equals `other`, ignoring the `kind` field.
   /// (This is how we validate a proc against a proc decl.)
   #[must_use] pub fn eq_decl(&self, other: &Proc) -> bool {
     self.name == other.name &&
     self.args == other.args &&
     self.rets == other.rets &&
-    self.variant == other.variant &&
-    self.muts == other.muts
+    self.variant == other.variant
   }
 }
 
@@ -271,7 +263,7 @@ pub enum AST {
     /// The variable(s) being declared
     lhs: super::parser::TuplePattern,
     /// The value of the declaration
-    rhs: Option<LispVal>,
+    rhs: LispVal,
   },
   /// A constant declaration.
   Const {
@@ -360,6 +352,8 @@ macro_rules! make_keywords {
 make_keywords! {
   Add: "+",
   Arrow: "=>",
+  ArrowL: "<-",
+  ArrowR: "->",
   Begin: "begin",
   Colon: ":",
   ColonEq: ":=",
@@ -371,12 +365,12 @@ make_keywords! {
   Ghost: "ghost",
   Global: "global",
   Intrinsic: "intrinsic",
-  Invariant: "invariant",
   If: "if",
   Le: "<=",
   Lt: "<",
   Mut: "mut",
   Or: "or",
+  Out: "out",
   Proc: "proc",
   Star: "*",
   Struct: "struct",
@@ -502,7 +496,7 @@ pub enum MM0ExprNode {
   Expr(TermID, Vec<MM0ExprNode>),
 }
 
-struct MM0ExprNodePrint<'a>(&'a [AtomID], &'a MM0ExprNode);
+struct MM0ExprNodePrint<'a>(&'a [PureExpr], &'a MM0ExprNode);
 impl<'a> EnvDisplay for MM0ExprNodePrint<'a> {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.1 {
@@ -521,13 +515,13 @@ impl<'a> EnvDisplay for MM0ExprNodePrint<'a> {
 
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct MM0Expr {
   /// The mapping from indexes in the `expr` to internal names.
   /// (The user-facing names have been erased.)
-  pub subst: Vec<AtomID>,
+  pub subst: Vec<PureExpr>,
   /// The root node of the expression.
-  pub expr: MM0ExprNode,
+  pub expr: Rc<MM0ExprNode>,
 }
 
 impl EnvDisplay for MM0Expr {
@@ -536,12 +530,71 @@ impl EnvDisplay for MM0Expr {
   }
 }
 
+/// A "lifetime" in MMC is a variable or place from which references can be derived.
+/// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
+/// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
+/// There is a special lifetime `extern` that represents inputs to the current function.
+#[derive(Clone, Copy, Debug)]
+pub enum Lifetime {
+  /// The `extern` lifetime is the inferred lifetime for function arguments such as
+  /// `fn f(x: &T)`.
+  Extern,
+  /// A variable lifetime `x` is the annotation on references derived from `x`
+  /// (or derived from other references derived from `x`).
+  Place(VarID),
+}
+crate::deep_size_0!(Lifetime);
+
+impl std::fmt::Display for Lifetime {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Lifetime::Extern => "extern".fmt(f),
+      Lifetime::Place(v) => v.fmt(f),
+    }
+  }
+}
+
+/// A "place", or lvalue, is a position in the context that can be read or written.
+/// Expressions can evaluate to places, for example if `x: &sn y` then `*x` evaluates
+/// to the place `y`.
+#[derive(Clone, Debug, DeepSizeOf)]
+pub enum Place {
+  /// A variable.
+  Var(VarID),
+  /// A projection into a tuple `a.i: T` where `a: (T0, ..., Tn)`.
+  Proj(Box<Place>, u32),
+  /// An index expression `a[i]: T` where `a: [T; n]` and `i: nat`.
+  Index(Box<Place>, Rc<PureExpr>),
+}
+
+impl Place {
+  /// Substitute an expression for a variable in a place.
+  pub fn subst(&mut self, v: VarID, e: &Rc<PureExpr>) {
+    match self {
+      Self::Var(_) => {} // Substitution does not operate on lvalues
+      Self::Proj(x, _) => x.subst(v, e),
+      Self::Index(x, i) => {x.subst(v, e); PureExpr::subst_rc(i, v, e)}
+    }
+  }
+}
+
+impl EnvDisplay for Place {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use std::fmt::Display;
+    match self {
+      Place::Var(v) => v.fmt(f),
+      Place::Index(a, i) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
+      Place::Proj(a, i) => write!(f, "({} . {})", fe.to(a), i),
+    }
+  }
+}
+
 /// Pure expressions in an abstract domain. The interpretation depends on the type,
 /// but most expressions operate on the type of (signed unbounded) integers.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum PureExpr {
   /// A variable.
-  Var(AtomID),
+  Var(VarID),
   /// An integer or natural number.
   Int(BigInt),
   /// The unit value `()`.
@@ -553,90 +606,98 @@ pub enum PureExpr {
   /// A binary operation.
   Binop(Binop, Rc<PureExpr>, Rc<PureExpr>),
   /// A tuple constructor.
-  Tuple(Box<[PureExpr]>),
-  /// An index operation `(index a i): T` where `a: (array T n)`,
-  /// `i: nat`.
+  Tuple(Box<[PureExpr]>, Box<Type>),
+  /// An index operation `a[i]: T` where `a: [T; n]` and `i: nat`.
   Index(Box<PureExpr>, Rc<PureExpr>),
-  /// An deref operation `(* x): T` where `x: (own T)`.
-  DerefOwn(Box<PureExpr>),
-  /// An deref operation `(* x): T` where `x: (& T)`.
+  /// A projection operation `x.i: T` where
+  /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(Box<PureExpr>, u32),
+  /// A deref operation `*x: T` where `x: &sn e`.
   Deref(Box<PureExpr>),
-  /// An deref operation `(* x): T` where `x: (&mut T)`.
-  DerefMut(Box<PureExpr>),
   /// A ghost expression.
   Ghost(Rc<PureExpr>),
   /// A truncation / bit cast operation.
   As(Box<(PureExpr, Type)>),
   /// A truncation / bit cast operation.
-  Pure(Box<(MM0Expr, Type)>)
+  Pure(Box<(MM0Expr, Type)>),
+  /// A deferred substitution into an expression.
+  Subst(Rc<PureExpr>, VarID, Rc<PureExpr>),
+}
+
+impl PureExpr {
+  /// Substitute an expression for a variable in a pure expression.
+  pub fn subst_rc(self: &mut Rc<Self>, v: VarID, e: &Rc<PureExpr>) {
+    *self = Rc::new(PureExpr::Subst(self.clone(), v, e.clone()))
+  }
 }
 
 impl EnvDisplay for PureExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use {std::fmt::Display, itertools::Itertools};
     match self {
-      &PureExpr::Var(v) => v.fmt(fe, f),
+      PureExpr::Var(v) => v.fmt(f),
       PureExpr::Int(n) => n.fmt(f),
       PureExpr::Unit => "()".fmt(f),
       PureExpr::Bool(b) => b.fmt(f),
       PureExpr::Unop(op, e) => write!(f, "({} {})", op, fe.to(e)),
       PureExpr::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", fe.to(e1), op, fe.to(e2)),
-      PureExpr::Tuple(es) => write!(f, "(list {})", es.iter().map(|e| fe.to(e)).format(" ")),
+      PureExpr::Tuple(es, ty) => write!(f, "{{(list {}) : {}}}",
+        es.iter().map(|e| fe.to(e)).format(" "), fe.to(ty)),
       PureExpr::Index(a, i) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
-      PureExpr::DerefOwn(e) |
-      PureExpr::Deref(e) |
-      PureExpr::DerefMut(e) => write!(f, "(* {})", fe.to(e)),
+      PureExpr::Proj(a, i) => write!(f, "({} . {})", fe.to(a), i),
+      PureExpr::Deref(e) => write!(f, "(* {})", fe.to(e)),
       PureExpr::Ghost(e) => write!(f, "(ghost {})", fe.to(e)),
       PureExpr::As(e) => write!(f, "{{{} as {}}}", fe.to(&e.0), fe.to(&e.1)),
       PureExpr::Pure(e) => write!(f, "{{(pure {}) : {}}}", fe.to(&e.0), fe.to(&e.1)),
+      PureExpr::Subst(x, v, e) => write!(f, "({})[{} -> {}]", fe.to(x), v, fe.to(e)),
     }
   }
 }
 
-
 /// A type, which classifies regular variables (not type variables, not hypotheses).
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Type {
-  /// A type variable.
-  Var(AtomID),
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
+  /// A type variable.
+  Var(VarID),
   /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
   Int(Size),
   /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
   UInt(Size),
-  /// The type `(array T n)` is an array of `n` elements of type `T`;
-  /// `sizeof (array T n) = sizeof T * n`.
+  /// The type `[T; n]` is an array of `n` elements of type `T`;
+  /// `sizeof [T; n] = sizeof T * n`.
   Array(Box<Type>, Rc<PureExpr>),
-  /// `(own T)` is a type of owned pointers. The typehood predicate is
+  /// `own T` is a type of owned pointers. The typehood predicate is
   /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
   Own(Box<Type>),
-  /// `(& T)` is a type of borrowed pointers. This type is treated specially;
-  /// the `x |-> v` assumption is stored separately from regular types, and
-  /// `(* x)` is treated as sugar for `v`.
-  Ref(Box<Type>),
-  /// `(&mut T)` is a type of mutable pointers. This is also treated specially;
-  /// it is sugar for `(mut {x : (own T)})`, which is to say `x` has
-  /// type `own T` in the function but must also be passed back out of the
-  /// function.
-  RefMut(Box<Type>),
-  /// `(list A B C)` is a tuple type with elements `A, B, C`;
+  /// `(ref T)` is a type of borrowed values. This type is elaborated to
+  /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
+  /// (see [`Lifetime`]).
+  Ref(Lifetime, Box<Type>),
+  /// `(& T)` is a type of borrowed pointers. This type is elaborated to
+  /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
+  /// (see [`Lifetime`]).
+  Shr(Lifetime, Box<Type>),
+  /// `&sn x` is the type of pointers to the place `x` (a variable or indexing expression).
+  RefSn(Box<Place>),
+  /// `(A, B, C)` is a tuple type with elements `A, B, C`;
   /// `sizeof (list A B C) = sizeof A + sizeof B + sizeof C`.
   List(Box<[Type]>),
   /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
   /// This is useful for asserting that a computationally relevant value can be
   /// expressed in terms of computationally irrelevant parts.
   Single(Rc<PureExpr>, Box<Type>),
-  /// `(struct {x : A} {y : B} {z : C})` is the dependent version of `list`;
+  /// `{x : A, y : B, z : C}` is the dependent version of `list`;
   /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
   /// themselves refer to `x, y, z`.
-  /// `sizeof (struct {x : A} {_ : B x}) = sizeof A + max_x (sizeof (B x))`.
+  /// `sizeof {x : A, _ : B x} = sizeof A + max_x (sizeof (B x))`.
   ///
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
-  /// `(typedef foo (struct {x : A} {y : B}))`.
-  Struct(Box<[(AtomID, Type)]>),
+  /// `(typedef foo {x : A, y : B})`.
+  Struct(Box<[(VarID, Type)]>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -655,13 +716,15 @@ pub enum Type {
   /// A propositional type, used for hypotheses.
   Prop(Box<Prop>),
   /// A user-defined type-former.
-  User(AtomID, Box<[Type]>, Rc<[PureExpr]>),
+  User(AtomID, Box<[Type]>, Box<[Rc<PureExpr>]>),
   /// The input token.
   Input,
   /// The output token.
   Output,
   /// A moved-away type.
   Moved(Box<Type>),
+  /// A substitution into a type.
+  Subst(Box<Type>, VarID, Rc<PureExpr>),
 }
 
 impl Type {
@@ -669,13 +732,33 @@ impl Type {
   #[must_use] pub fn ghost_if(ghost: bool, this: Type) -> Type {
     if ghost { Type::Ghost(Box::new(this)) } else { this }
   }
+
+  /// Substitute an expression for a variable in a type.
+  pub fn subst(&mut self, v: VarID, e: &Rc<PureExpr>) {
+    #[allow(clippy::enum_glob_use)] use Type::*;
+    match self {
+      Var(_) | Unit | Bool | Int(_) | UInt(_) | Input | Output => {}
+      Array(ty, n) => { ty.subst(v, e); PureExpr::subst_rc(n, v, e) }
+      Own(ty) | Ghost(ty) | Moved(ty) | Ref(_, ty) | Shr(_, ty) => ty.subst(v, e),
+      RefSn(x) => x.subst(v, e),
+      List(tys) | And(tys) | Or(tys) => for ty in &mut **tys { ty.subst(v, e) },
+      Single(a, ty) => { PureExpr::subst_rc(a, v, e); ty.subst(v, e) }
+      Struct(tys) => for ty in &mut **tys { ty.1.subst(v, e) },
+      User(_, tys, es) => {
+        for ty in &mut **tys { ty.subst(v, e) }
+        for ei in &mut **es { PureExpr::subst_rc(ei, v, e) }
+      }
+      Prop(pr) => pr.subst(v, e),
+      Subst(_,_,_) => *self = Type::Subst(Box::new(std::mem::replace(self, Type::Unit)), v, e.clone()),
+    }
+  }
 }
 
 impl EnvDisplay for Type {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use {std::fmt::Display, itertools::Itertools};
     match self {
-      Type::Var(v) => v.fmt(fe, f),
+      Type::Var(v) => v.fmt(f),
       Type::Unit => "()".fmt(f),
       Type::Bool => "bool".fmt(f),
       Type::Int(Size::S8) => "i8".fmt(f),
@@ -690,13 +773,14 @@ impl EnvDisplay for Type {
       Type::UInt(Size::Inf) => "nat".fmt(f),
       Type::Array(ty, n) => write!(f, "(array {} {})", fe.to(ty), fe.to(n)),
       Type::Own(ty) => write!(f, "(own {})", fe.to(ty)),
-      Type::Ref(ty) => write!(f, "(& {})", fe.to(ty)),
-      Type::RefMut(ty) => write!(f, "(&mut {})", fe.to(ty)),
+      Type::Ref(lft, ty) => write!(f, "(ref {} {})", lft, fe.to(ty)),
+      Type::Shr(lft, ty) => write!(f, "(& {} {})", lft, fe.to(ty)),
+      Type::RefSn(x) => write!(f, "(&sn {})", fe.to(x)),
       Type::List(tys) => write!(f, "(list {})", tys.iter().map(|ty| fe.to(ty)).format(" ")),
       Type::Single(e, ty) => write!(f, "(sn {{{}: {}}})", fe.to(e), fe.to(ty)),
       Type::Struct(tys) => {
         write!(f, "(struct")?;
-        for (a, ty) in &**tys { write!(f, " {{{}: {}}}", fe.to(a), fe.to(ty))? }
+        for (a, ty) in &**tys { write!(f, " {{{}: {}}}", a, fe.to(ty))? }
         ")".fmt(f)
       }
       Type::And(tys) => write!(f, "(and {})", tys.iter().map(|ty| fe.to(ty)).format(" ")),
@@ -712,6 +796,7 @@ impl EnvDisplay for Type {
       Type::Input => "Input".fmt(f),
       Type::Output => "Output".fmt(f),
       Type::Moved(ty) => write!(f, "|{}|", fe.to(ty)),
+      Type::Subst(ty, v, e) => write!(f, "({})[{} -> {}]", fe.to(ty), v, fe.to(e)),
     }
   }
 }
@@ -719,16 +804,16 @@ impl EnvDisplay for Type {
 /// A separating proposition, which classifies hypotheses / proof terms.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Prop {
-  /// An unresolved metavariable.
-  MVar(usize),
+  // /// An unresolved metavariable.
+  // MVar(usize),
   /// A true proposition.
   True,
   /// A false proposition.
   False,
   /// A universally quantified proposition.
-  All(AtomID, Box<(Type, Prop)>),
+  All(VarID, Box<(Type, Prop)>),
   /// An existentially quantified proposition.
-  Ex(AtomID, Box<(Type, Prop)>),
+  Ex(VarID, Box<(Type, Prop)>),
   /// Implication (plain, non-separating).
   Imp(Box<(Prop, Prop)>),
   /// Negation.
@@ -754,18 +839,37 @@ pub enum Prop {
   /// The move operator `|T|` on types.
   Moved(Box<Prop>),
   /// An embedded MM0 proposition of sort `wff`.
-  MM0(LispVal),
+  MM0(MM0Expr),
+  /// A substitution into a proposition.
+  Subst(Box<Prop>, VarID, Rc<PureExpr>),
+}
+
+impl Prop {
+  /// Substitute an expression for a variable in a proposition.
+  pub fn subst(&mut self, v: VarID, e: &Rc<PureExpr>) {
+    #[allow(clippy::enum_glob_use)] use Prop::*;
+    match self {
+      True | False | Emp => {}
+      Imp(p) | Wand(p) => {p.0.subst(v, e); p.1.subst(v, e)}
+      Not(p) | Moved(p) => p.subst(v, e),
+      And(prs) | Or(prs) | Sep(prs) => for pr in &mut **prs { pr.subst(v, e) },
+      Pure(a) => PureExpr::subst_rc(a, v, e),
+      Eq(a, b) => {PureExpr::subst_rc(a, v, e); PureExpr::subst_rc(b, v, e)}
+      Heap(a, b, ty) => {PureExpr::subst_rc(a, v, e); PureExpr::subst_rc(b, v, e); ty.subst(v, e)}
+      _ => *self = Prop::Subst(Box::new(std::mem::replace(self, Prop::Emp)), v, e.clone()),
+    }
+  }
 }
 
 impl EnvDisplay for Prop {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use {std::fmt::Display, itertools::Itertools};
     match self {
-      &Prop::MVar(n) => LispKind::MVar(n, InferTarget::Unknown).fmt(fe, f),
+      // &Prop::MVar(n) => LispKind::MVar(n, InferTarget::Unknown).fmt(fe, f),
       Prop::True => "true".fmt(f),
       Prop::False => "false".fmt(f),
-      Prop::All(a, pr) => write!(f, "A. {}: {}, {}", fe.to(a), fe.to(&pr.0), fe.to(&pr.1)),
-      Prop::Ex(a, pr) => write!(f, "E. {}: {}, {}", fe.to(a), fe.to(&pr.0), fe.to(&pr.1)),
+      Prop::All(a, pr) => write!(f, "A. {}: {}, {}", a, fe.to(&pr.0), fe.to(&pr.1)),
+      Prop::Ex(a, pr) => write!(f, "E. {}: {}, {}", a, fe.to(&pr.0), fe.to(&pr.1)),
       Prop::Imp(pr) => write!(f, "({} -> {})", fe.to(&pr.0), fe.to(&pr.1)),
       Prop::Not(pr) => write!(f, "~{}", fe.to(pr)),
       Prop::And(pr) if pr.is_empty() => "true".fmt(f),
@@ -782,6 +886,7 @@ impl EnvDisplay for Prop {
       Prop::HasTy(v, t) => write!(f, "[{}: {}]", fe.to(v), fe.to(t)),
       Prop::Moved(p) => write!(f, "|{}|", fe.to(p)),
       Prop::MM0(e) => e.fmt(fe, f),
+      Prop::Subst(x, v, e) => write!(f, "({})[{} -> {}]", fe.to(x), v, fe.to(e)),
     }
   }
 }
