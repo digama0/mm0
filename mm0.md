@@ -217,28 +217,33 @@ Notations are intended to be parsed by an operator precedence parser [[1]](https
 
 The nonterminals `expression(prec)` are defined by the following productions:
 
-    expression(p1) <- expression(p2)                   (if p1 < p2)
-    expression(max) <- '(' expression(0) ')'
-    expression(max) <- VAR                             (if VAR is a variable in scope)
-    expression(1024) <- FUNC expression(max){n}        (if FUNC is an n-ary term constructor)
-    expression(p) <- OP expression(max){n} expression(p)
+    expression(p1) -> expression(p2)                   (if p1 < p2)
+    expression(max) -> '(' expression(0) ')'
+    expression(max) -> VAR                             (if VAR is a variable in scope)
+    expression(1024) -> FUNC expression(max){n}        (if FUNC is an n-ary term constructor)
+    expression(p) -> OP expression(max){n} expression(p)
                                                        (if OP is is n+1-ary prefix prec p)
-    expression(p) <- expression(p) OP expression(p+1)  (if OP is infixl prec p)
-    expression(p) <- expression(p+1) OP expression(p)  (if OP is infixr prec p)
-    expression(p) <- c X(lits, p)  where               (if notation := (c: p) lits)
-      X((c: p) lits, q) = c X(lits, q)
-      X(v (c: p) lits, q) = expression(p+1) X((c: p) lits, q)
-      X(v1 v2 lits, q) = expression(max) X(v2 lits, q)
-      X(v, q) = expression(q)
+    expression(p) -> expression(p) OP expression(p+1)  (if OP is infixl prec p)
+    expression(p) -> expression(p+1) OP expression(p)  (if OP is infixr prec p)
+    expression(p) -> c X(lits, p)  where               (if notation foo: ... = (c: p) lits)
       X([], q) = []
+      X((c: p) lits, q) = c X(lits, q)
+      X(v lits, q) = expression(P(lits, q)) X(lits, q)
+      P([], q) = q
+      P((c: p) lits, q) = p+1
+      P(v lits, q) = max
 
 The term constructors appear in the syntax as s-expressions at precedence level `1024`. `notation` commands have precedences on the constants, such that the precedence on the immediately preceding variable is one higher. There are rules on notations to prevent an ambiguous parse:
 
 * A constant is infixy if it is used in an `infix` command (with the given precedence), or if it appears immediately after a variable in a `notation` command (and it acquires the precedence of this variable). The precedence of an infixy constant must be unique.
 * An `infix` command must have a precedence less than `max`.
 * The first token of a `notation` must be a constant, and must not be shared with any other `prefix` constant or infixy constant.
-* If two variables are adjacent in a `notation`, the first one must have precedence `max`.
+* If a variable precedes a constant in a `notation`, the constant must have precedence less than `max`.
 * The tokens `(` and `)` are not permitted to be declared in any notation command; they are reserved for grouping. (However the `(` and `)` characters can be used in multi-character tokens like `foo(`.)
+
+As an example of the rule for `notation`-based productions, the notation `notation foo (a b c: T): T = ($[$:20) a b ($]$:40) c` yields the production:
+
+    expression(20) -> '[' expression(max) expression(41) ']' expression(20)
 
 If a math string is parsed successfully, the result is a syntax tree whose nodes are given by the term constructors referenced by the notations. Type checking is performed during or after this process, from inside out. If an expression with one sort is used in an argument with a different sort, `coercion` functions are inserted. The rules on `coercions`:
 
