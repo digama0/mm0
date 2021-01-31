@@ -364,6 +364,8 @@ theorem el_s_im: $ h e. (P ->s Q) <-> isfun h /\ (h e. P -> h e. Q) $ = '(elabe 
 notation s_ex {x} (A P) = ($E.s$:75) x ($e.$:50) A ($,$:0) P;
 theorem el_s_ex (A: set x) (P: set x):
   $ h e. E.s x e. A, P <-> E. x (x e. A /\ h e. P) $ = '(elabe ,eqtac);
+theorem el_s_exv (A: set x) (P: set x):
+  $ h e. E.s x e. _V, P <-> E. x h e. P $ = '(bitr el_s_ex @ exeqi @ bian1 elv);
 
 theorem s_exeq1 (P: set x): $ A == B -> E.s x e. A, P == E.s x e. B, P $ = '(s_exeq1d id);
 theorem s_exeq2a (P Q: set x):

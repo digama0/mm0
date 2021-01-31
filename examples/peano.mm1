@@ -363,9 +363,11 @@ do {
       es))
 
   --| This is used as an annotation.
-  --| `@(add-eval f) def foo ..` will add `f` as an evaluator for `foo`,
-  --| which is used by the `eval` function (which can evaluate many
-  --| closed terms of sort `nat` or `wff` to values).
+  --| * `@(add-eval f) def foo ..` will add `f` as an evaluator for `foo`,
+  --|   which is used by the `eval` function (which can evaluate many
+  --|   closed terms of sort `nat` or `wff` to values).
+  --| * `@(add-eval)` will attempt to evaluate the body of the definition
+  --|   and use that as the result.
   (def ((add-eval . f) a)
     (if (def? @ lookup eval-map a) (error "already defined evaluation rule"))
     @ insert! eval-map a @ match f
@@ -4068,6 +4070,8 @@ theorem znpncan2: $ (b -Z c) +Z (a -Z b) = a -Z c $ = '(eqtr zaddcom znpncan);
 theorem zpnpcan2: $ (a +Z b) -Z (a +Z c) = b -Z c $ = '(eqtr3 zsubsub @ zsubeq1 zpncan2);
 theorem zpnpcan1: $ (a +Z c) -Z (b +Z c) = a -Z b $ = '(eqtr (zsubeq zaddcom zaddcom) zpnpcan2);
 theorem znegsub: $ -uZ (a -Z b) = b -Z a $ = '(eqtr znegadd2 @ eqtr zaddcom @ zaddeq1 znegneg);
+theorem zsubsub2: $ a -Z (b -Z c) = a +Z (c -Z b) $ = '(zaddeq2 znegsub);
+theorem zsubadd: $ a -Z b +Z c = a -Z (b -Z c) $ = '(eqtr3 zaddsub @ eqtr4 zaddsubass zsubsub2);
 theorem zsubneg2: $ a -Z -uZ b = a +Z b $ = '(zaddeq2 znegneg);
 theorem znegsub2: $ -uZ a -Z -uZ b = b -Z a $ = '(eqtr zsubneg2 zaddcom);
 theorem znegb0S: $ -uZ b0 (suc n) = b1 n $ = '(mpbi znegeqcom znegb1);
@@ -4339,12 +4343,21 @@ theorem zmodeq0: $ a %Z n = 0 <-> b0 n |Z a $ =
 notation zeqm (n a b) = ($modZ($:50) n ($):$:50) a ($=$:50) b;
 
 theorem zeqmid: $ modZ(n): a = a $ = '(mpbir (zdvdeq2 zsubid) zdvd02);
+theorem zeqmidd: $ G -> modZ(n): a = a $ = '(a1i zeqmid);
 theorem zeqmtr: $ modZ(n): a = b -> modZ(n): b = c -> modZ(n): a = c $ =
 '(syl6ib (zdvdeq2 znpncan2) @ bi1d zdvdadd2);
+theorem zeqmtrd (h1: $ G -> modZ(n): a = b $) (h2: $ G -> modZ(n): b = c $):
+  $ G -> modZ(n): a = c $ = '(sylc zeqmtr h1 h2);
 theorem zeqmcomb: $ modZ(n): a = b <-> modZ(n): b = a $ =
 '(bitr3 zdvdneg2 @ zdvdeq2 znegsub);
 theorem zeqmcom: $ modZ(n): a = b -> modZ(n): b = a $ = '(bi1i zeqmcomb);
+theorem zeqmcomd (h: $ G -> modZ(n): a = b $): $ G -> modZ(n): b = a $ = '(syl zeqmcom h);
+theorem zeqmtr4d (h1: $ G -> modZ(n): a = b $) (h2: $ G -> modZ(n): c = b $):
+  $ G -> modZ(n): a = c $ = '(zeqmtrd h1 @ zeqmcomd h2);
+theorem zeqmtr3d (h1: $ G -> modZ(n): b = a $) (h2: $ G -> modZ(n): b = c $):
+  $ G -> modZ(n): a = c $ = '(zeqmtrd (zeqmcomd h1) h2);
 theorem eqzeqm: $ a = b -> modZ(n): a = b $ = '(mpbii zeqmid zeqmeq3);
+theorem eqzeqmd (h: $ G -> a = b $): $ G -> modZ(n): a = b $ = '(syl eqzeqm h);
 theorem zeqmeqm: $ modZ(n): b0 a = b0 b <-> mod(n): a = b $ =
 '(bitr4 (zdvdeq2 zsubb0) @ bitr eqmcomb eqmzdvdsub);
 theorem zeqm03: $ modZ(n): a = 0 <-> b0 n |Z a $ = '(zdvdeq2 zsub02);
@@ -4360,6 +4373,10 @@ theorem zeqmeqm23d (h1: $ G -> modZ(n): a = b $) (h2: $ G -> modZ(n): c = d $):
 '(ibida
   (sylc zeqmtr (syl zeqmcom @ anwl h1) @ sylc zeqmtr anr @ anwl h2)
   (sylc zeqmtr (anwl h1) @ sylc zeqmtr anr @ syl zeqmcom @ anwl h2));
+theorem zeqmeqm2: $ modZ(n): a = b -> (modZ(n): a = c <-> modZ(n): b = c) $ =
+'(zeqmeqm23d id @ a1i zeqmid);
+theorem zeqmeqm3: $ modZ(n): b = c -> (modZ(n): a = b <-> modZ(n): a = c) $ =
+'(zeqmeqm23d (a1i zeqmid) id);
 
 theorem zeqmadd1: $ modZ(n): a +Z c = b +Z c <-> modZ(n): a = b $ = '(zdvdeq2 zpnpcan1);
 theorem zeqmadd2: $ modZ(n): a +Z b = a +Z c <-> modZ(n): b = c $ = '(zdvdeq2 zpnpcan2);
