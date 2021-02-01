@@ -5,7 +5,7 @@ use byteorder::LE;
 use zerocopy::{LayoutVerified, FromBytes, U16, U32, U64};
 use super::{Header, StmtCmd, TermEntry, ThmEntry, IndexEntry,
   Arg, IndexKind, UnifyCmd, ProofCmd, SortData};
-use crate::elab::environment::{SortID, TermID, ThmID};
+use crate::elab::environment::{SortId, TermId, ThmId};
 use crate::util::{Position, cstr_from_bytes_prefix};
 
 /// An iterator over the declaration stream.
@@ -20,7 +20,7 @@ pub struct DeclIter<'a> {
 /// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
 /// additional parsing is done on demand via functions on this type.
 #[derive(Debug)]
-pub struct MMBFile<'a> {
+pub struct MmbFile<'a> {
   /// The full file
   buf: &'a [u8],
   /// The sort table
@@ -32,12 +32,12 @@ pub struct MMBFile<'a> {
   /// The index of the beginning of the proof stream
   proof: usize,
   /// The index, if provided.
-  index: Option<MMBIndex<'a>>,
+  index: Option<MmbIndex<'a>>,
 }
 
 /// A parsed `MMB` file index.
 #[derive(Debug)]
-pub struct MMBIndex<'a> {
+pub struct MmbIndex<'a> {
   /// The full file
   buf: &'a [u8],
   /// A pointer to the root of the binary search tree, for searching based on name.
@@ -121,11 +121,11 @@ pub enum ParseError {
   /// An error with the provided message and location.
   StrError(&'static str, usize),
   /// An error in IO.
-  IOError(io::Error)
+  IoError(io::Error)
 }
 
 impl From<io::Error> for ParseError {
-  fn from(e: io::Error) -> Self { Self::IOError(e) }
+  fn from(e: io::Error) -> Self { Self::IoError(e) }
 }
 
 impl From<ParseError> for crate::elab::ElabError {
@@ -135,7 +135,7 @@ impl From<ParseError> for crate::elab::ElabError {
       ParseError::BadVersion => Self::new_e(0, "Unknown MMB version"),
       ParseError::BadIndex => Self::new_e(0, "MMB index is malformed"),
       ParseError::StrError(s, p) => Self::new_e(p, s),
-      ParseError::IOError(e) => Self::new_e(0, e),
+      ParseError::IoError(e) => Self::new_e(0, e),
     }
   }
 }
@@ -172,11 +172,11 @@ fn parse_cmd(bytes: &[u8]) -> Option<(u8, u32, &[u8])> {
   }
 }
 
-impl<'a> MMBFile<'a> {
+impl<'a> MmbFile<'a> {
   /// Parse a `MMBFile` from a file, provided as a byte slice.
   /// This does the minimum checking to construct the parsed object,
   /// it is not a verifier.
-  pub fn parse(buf: &'a [u8]) -> Result<MMBFile<'a>, ParseError> {
+  pub fn parse(buf: &'a [u8]) -> Result<MmbFile<'a>, ParseError> {
     use ParseError::{BadHeader, BadVersion, BadIndex};
     use super::cmd::{MM0B_MAGIC, MM0B_VERSION};
     let (header, sorts) = LayoutVerified::<_, Header>::
@@ -202,10 +202,10 @@ impl<'a> MMBFile<'a> {
         let (sorts, rest) = new_slice_prefix(rest, sorts.len())?;
         let (terms, rest) = new_slice_prefix(rest, terms.len())?;
         let (thms, _) = new_slice_prefix(rest, thms.len())?;
-        Some(MMBIndex {buf, root: *root, sorts, terms, thms})
+        Some(MmbIndex {buf, root: *root, sorts, terms, thms})
       })().ok_or(BadIndex)?)
     };
-    Ok(MMBFile {buf, sorts, terms, thms, proof, index})
+    Ok(MmbFile {buf, sorts, terms, thms, proof, index})
   }
 }
 
@@ -230,17 +230,17 @@ impl<'a> MMBFile<'a> {
   Some(ThmRef {args, unify})
 }
 
-impl<'a> MMBFile<'a> {
-  /// Get the sort data for a [`SortID`].
-  #[inline] #[must_use] pub fn sort(&self, n: SortID) -> Option<SortData> {
+impl<'a> MmbFile<'a> {
+  /// Get the sort data for a [`SortId`].
+  #[inline] #[must_use] pub fn sort(&self, n: SortId) -> Option<SortData> {
     self.sorts.get(usize::from(n.0)).copied()
   }
-  /// Get the term data for a [`TermID`].
-  #[inline] #[must_use] pub fn term(&self, n: TermID) -> Option<TermRef<'_>> {
+  /// Get the term data for a [`TermId`].
+  #[inline] #[must_use] pub fn term(&self, n: TermId) -> Option<TermRef<'_>> {
     term_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
-  /// Get the theorem data for a [`ThmID`].
-  #[inline] #[must_use] pub fn thm(&self, n: ThmID) -> Option<ThmRef<'_>> {
+  /// Get the theorem data for a [`ThmId`].
+  #[inline] #[must_use] pub fn thm(&self, n: ThmId) -> Option<ThmRef<'_>> {
     thm_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
   }
   /// Get the proof stream for the file.
@@ -250,7 +250,7 @@ impl<'a> MMBFile<'a> {
 
   /// Get the name of a term, supplying a default name
   /// of the form `t123` if the index is not present.
-  #[must_use] pub fn term_name<T>(&self, n: TermID, f: impl FnOnce(&str) -> T) -> Option<T> {
+  #[must_use] pub fn term_name<T>(&self, n: TermId, f: impl FnOnce(&str) -> T) -> Option<T> {
     if let Some(index) = &self.index {
       Some(f(index.term(n)?.value()?))
     } else {
@@ -259,7 +259,7 @@ impl<'a> MMBFile<'a> {
   }
   /// Get the name of a theorem, supplying a default name
   /// of the form `T123` if the index is not present.
-  #[must_use] pub fn thm_name<T>(&self, n: ThmID, f: impl FnOnce(&str) -> T) -> Option<T> {
+  #[must_use] pub fn thm_name<T>(&self, n: ThmId, f: impl FnOnce(&str) -> T) -> Option<T> {
     if let Some(index) = &self.index {
       Some(f(index.thm(n)?.value()?))
     } else {
@@ -268,7 +268,7 @@ impl<'a> MMBFile<'a> {
   }
   /// Get the name of a sort, supplying a default name
   /// of the form `s123` if the index is not present.
-  #[must_use] pub fn sort_name<T>(&self, n: SortID, f: impl FnOnce(&str) -> T) -> Option<T> {
+  #[must_use] pub fn sort_name<T>(&self, n: SortId, f: impl FnOnce(&str) -> T) -> Option<T> {
     if let Some(index) = &self.index {
       Some(f(index.sort(n)?.value()?))
     } else {
@@ -276,17 +276,17 @@ impl<'a> MMBFile<'a> {
     }
   }
 }
-impl<'a> MMBIndex<'a> {
+impl<'a> MmbIndex<'a> {
   /// Get the index entry for a sort.
-  #[must_use] pub fn sort(&self, n: SortID) -> Option<IndexEntryRef<'_>> {
+  #[must_use] pub fn sort(&self, n: SortId) -> Option<IndexEntryRef<'_>> {
     index_ref(self.buf, *self.sorts.get(usize::from(n.0))?)
   }
   /// Get the index entry for a term.
-  #[must_use] pub fn term(&self, n: TermID) -> Option<IndexEntryRef<'_>> {
+  #[must_use] pub fn term(&self, n: TermId) -> Option<IndexEntryRef<'_>> {
     index_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
   /// Get the index entry for a theorem.
-  #[must_use] pub fn thm(&self, n: ThmID) -> Option<IndexEntryRef<'_>> {
+  #[must_use] pub fn thm(&self, n: ThmId) -> Option<IndexEntryRef<'_>> {
     index_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
   }
 }
@@ -295,7 +295,7 @@ impl<'a> TermRef<'a> {
   /// Returns true if this is a `def`, false for a `term`.
   #[inline] #[must_use] pub fn def(&self) -> bool { self.sort & 0x80 != 0 }
   /// The return sort of this term/def.
-  #[inline] #[must_use] pub fn sort(&self) -> SortID { SortID(self.sort & 0x7F) }
+  #[inline] #[must_use] pub fn sort(&self) -> SortId { SortId(self.sort & 0x7F) }
   /// The list of arguments of this term/def (not including the return).
   #[inline] #[must_use] pub fn args(&self) -> &[Arg] { self.args.split_last().expect("nonempty").1 }
   /// The return sort and dependencies.
@@ -316,7 +316,7 @@ impl Arg {
   #[inline] #[must_use] pub fn bound(self) -> bool { self.0.get() & (1 << 63) != 0 }
   /// The sort of this variable.
   #[allow(clippy::cast_possible_truncation)]
-  #[inline] #[must_use] pub fn sort(self) -> SortID { SortID(((self.0.get() >> 56) & 0x7F) as u8) }
+  #[inline] #[must_use] pub fn sort(self) -> SortId { SortId(((self.0.get() >> 56) & 0x7F) as u8) }
   /// The set of dependencies of this variable, as a bitset.
   #[inline] #[must_use] pub fn deps(self) -> u64 { self.0.get() & !(0xFF << 56) }
 }

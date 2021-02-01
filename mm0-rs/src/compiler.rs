@@ -25,7 +25,7 @@ use crate::parser::{parse, ParseError, ErrorLevel};
 use crate::lined_string::LinedString;
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
-use crate::mmb::export::Exporter as MMBExporter;
+use crate::mmb::export::Exporter as MmbExporter;
 use crate::util::{FileRef, FileSpan, MutexExt, Span, Position, Range, ArcList};
 
 lazy_static! {
@@ -33,7 +33,7 @@ lazy_static! {
   static ref POOL: ThreadPool = ThreadPool::new().expect("could not start thread pool");
   /// The virtual file system of files that have been included via
   /// transitive imports, protected for concurrent access by a mutex.
-  static ref VFS_: VFS = VFS(Mutex::new(HashMap::new()));
+  static ref VFS: Vfs = Vfs(Mutex::new(HashMap::new()));
 }
 
 /// The cached [`Environment`](crate::elab::Environment) representing a
@@ -143,11 +143,11 @@ impl VirtualFile {
   }
 }
 
-/// The virtual file system (a singleton accessed through the global variable [`struct@VFS_`]).
+/// The virtual file system (a singleton accessed through the global variable [`struct@VFS`]).
 #[derive(DeepSizeOf)]
-struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
+struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
-impl VFS {
+impl Vfs {
   /// Get the file at `path`, returning the canonicalized `path` and the file record.
   ///
   /// **Note:** If the file has not yet been read, it will read the file from disk
@@ -174,7 +174,7 @@ fn mk_to_range() -> impl FnMut(&FileSpan) -> Option<Range> {
   let mut srcs = HashMap::new();
   move |fsp: &FileSpan| -> Option<Range> {
     srcs.entry(fsp.file.ptr())
-      .or_insert_with(|| VFS_.0.ulock().get(&fsp.file).unwrap().text.clone())
+      .or_insert_with(|| VFS.0.ulock().get(&fsp.file).unwrap().text.clone())
       .try_ascii().map(|f| f.to_range(fsp.span))
   }
 }
@@ -334,7 +334,7 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
 /// and checks if it has already been elaborated, returning it if finished and
 /// awaiting if it is in progress in another task.
 ///
-/// If the file has not yet been elaborated, it parses it into an [`AST`], reports
+/// If the file has not yet been elaborated, it parses it into an [`Ast`], reports
 /// parse errors, then elaborates it using [`elab::elaborate`] and reports
 /// elaboration errors. Finally, it broadcasts the completed file to all waiting
 /// tasks, and returns it.
@@ -344,9 +344,9 @@ fn log_msg(#[allow(unused_mut)] mut s: String) {
 /// which will later be joined when the result is required.
 /// (**Note**: This can result in deadlock if the import graph has a cycle.)
 ///
-/// [`AST`]: crate::parser::AST
+/// [`Ast`]: crate::parser::Ast
 async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult<()>> {
-  let (path, file) = VFS_.get_or_insert(path)?;
+  let (path, file) = VFS.get_or_insert(path)?;
   {
     let mut g = file.parsed.lock().await;
     match &mut *g {
@@ -389,7 +389,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
         cancel: Arc::default(),
         old: None,
         recv_dep: |p| {
-          let p = VFS_.get_or_insert(p)?.0;
+          let p = VFS.get_or_insert(p)?.0;
           let (send, recv) = channel();
           if rd.contains(&p) {
             send.send(ElabResult::ImportCycle(rd.clone())).expect("failed to send");
@@ -449,7 +449,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
 /// Elaborate a file, and return the completed [`FrozenEnv`] result, along with the
 /// file contents.
 pub(crate) fn elab_for_result(path: FileRef) -> io::Result<(FileContents, Option<FrozenEnv>)> {
-  let (path, file) = VFS_.get_or_insert(path)?;
+  let (path, file) = VFS.get_or_insert(path)?;
   let env = match block_on(elaborate(path, Default::default()))? {
     ElabResult::Ok(_, _, env) => Some(env),
     _ => None
@@ -478,7 +478,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
       else { env.run_output(fs::File::create(s)?) }
     {
       let e = ElabError::new_e(fsp.span, e);
-      let file = VFS_.get_or_insert(fsp.file.clone())?.1;
+      let file = VFS.get_or_insert(fsp.file.clone())?.1;
       e.to_snippet(&fsp.file, file.text.ascii(), &mut mk_to_range(),
         |s| println!("{}\n", DisplayList::from(s).to_string()));
       std::process::exit(1);
@@ -487,10 +487,10 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   if let Some(out) = args.value_of("OUTPUT") {
     use {fs::File, io::BufWriter};
     let w = BufWriter::new(File::create(out)?);
-    if out.ends_with(".mmu") {
+    if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
       env.export_mmu(w)?;
     } else {
-      let mut ex = MMBExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, w);
+      let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, w);
       ex.run(true)?;
       ex.finish()?;
     }

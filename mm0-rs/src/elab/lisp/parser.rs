@@ -9,7 +9,7 @@ use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
 use crate::parser::ast::{SExpr, SExprKind, Atom};
 use crate::util::ArcString;
-use super::super::{AtomID, Span, DocComment, Elaborator, ElabError, ObjectKind};
+use super::super::{AtomId, Span, DocComment, Elaborator, ElabError, ObjectKind};
 use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
   Remap, Remapper, Syntax};
 use super::super::math_parser::{QExpr, QExprKind};
@@ -18,36 +18,36 @@ use super::print::{FormatEnv, EnvDisplay};
 /// The target of a `def` command is either `_`, or a variable `x` with a
 /// `span, full` pair (for the span of the identifier and the span of the full statement)
 /// and an optional doc comment.
-pub type DefTarget = Option<(Span, Span, Option<DocComment>, AtomID)>;
+pub type DefTarget = Option<(Span, Span, Option<DocComment>, AtomId)>;
 
 /// The intermediate representation for "compiled" lisp functions.
 /// We will do interpretation/evaluation directly on this data structure.
 #[derive(Debug, EnvDebug, DeepSizeOf)]
-pub enum IR {
+pub enum Ir {
   /// Access variable number `n` in the context
   Local(usize),
   /// Access a global declaration named `a`
-  Global(Span, AtomID),
+  Global(Span, AtomId),
   /// Return a [`LispVal`] literally
   Const(LispVal),
   /// The `(list)` function: evaluate the list of arguments,
   /// and then create a list from the results.
-  List(Span, Box<[IR]>),
+  List(Span, Box<[Ir]>),
   /// The `(cons)` function: evaluate the list of arguments, then the last argument,
   /// and then create a dotted list from the results.
-  DottedList(Box<[IR]>, Box<IR>),
+  DottedList(Box<[Ir]>, Box<Ir>),
   /// Function application: evaluate the first argument to produce a procedure,
   /// evaluate the list of arguments, then call the procedure with the list of results.
-  App(Span, Span, Box<IR>, Box<[IR]>),
+  App(Span, Span, Box<Ir>, Box<[Ir]>),
   /// The `(if c t f)` syntax form: evaluate the condition `c`, and if the result is
   /// truthy evaluate `t`, else evaluate `f`, and return the result.
-  If(Box<(IR, IR, IR)>),
+  If(Box<(Ir, Ir, Ir)>),
   /// The `(focus es)` syntax form. This should be a regular function, but it does some
   /// preparation work before it starts executing the list of arguments.
-  Focus(Span, Box<[IR]>),
+  Focus(Span, Box<[Ir]>),
   /// The `(set-merge-strategy)` function, which is a macro because it directly binds
   /// to a global name.
-  SetMergeStrategy(Span, AtomID, Box<IR>),
+  SetMergeStrategy(Span, AtomId, Box<Ir>),
   /// The `(def x e)` syntax form. Call the argument, and extend the context with the result.
   /// The `usize` argument indicates the number of the variable that was just declared,
   /// but it is only there for sanity checking - there is only one valid value for this field.
@@ -55,7 +55,7 @@ pub enum IR {
   /// the span of the variable `a`.
   ///
   /// (Some definitions are added by the compiler and have no source text.)
-  Def(usize, DefTarget, Box<IR>),
+  Def(usize, DefTarget, Box<Ir>),
   /// * `keep = true`: The `(begin es)` syntax form.
   ///   Evaluate the list of arguments, and return the last one.
   ///
@@ -65,39 +65,39 @@ pub enum IR {
   /// * `keep = false`: The `(def _ es)` syntax form.
   ///   Evaluate the list of arguments, and return `#undef`. Unlike `(def x es)`,
   ///   this does not extend the context, i.e. it does not bind any variables.
-  Eval(bool, Box<[IR]>),
+  Eval(bool, Box<[Ir]>),
   /// A tail recursion barrier. This is needed in letrec compilation in order to prop up
   /// the weak references to the functions.
   NoTailRec,
   /// The `(fn xs e)` syntax form. Create a closure from the current context, and return
   /// it, using the provided [`ProcSpec`] and code. It can later be called by the
   /// [`App`](Self::App) instruction.
-  Lambda(Span, usize, ProcSpec, Arc<IR>),
+  Lambda(Span, usize, ProcSpec, Arc<Ir>),
   /// The `(match e bs)` syntax form. Evaluate `e`, and then match it against the branches.
-  Match(Span, Box<IR>, Box<[Branch]>),
+  Match(Span, Box<Ir>, Box<[Branch]>),
 }
 
-impl<'a> EnvDisplay for IR {
+impl<'a> EnvDisplay for Ir {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      &IR::Local(i) => write!(f, "x{}", i),
-      &IR::Global(_, a) => a.fmt(fe, f),
-      IR::Const(e) => e.fmt(fe, f),
-      IR::List(_, es) => write!(f, "(list {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
-      IR::DottedList(es, r) => write!(f, "(cons {})",
+      &Ir::Local(i) => write!(f, "x{}", i),
+      &Ir::Global(_, a) => a.fmt(fe, f),
+      Ir::Const(e) => e.fmt(fe, f),
+      Ir::List(_, es) => write!(f, "(list {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      Ir::DottedList(es, r) => write!(f, "(cons {})",
         es.iter().chain(Some(&**r)).map(|ir| fe.to(ir)).format(" ")),
-      IR::App(_, _, e, es) => write!(f, "({})",
+      Ir::App(_, _, e, es) => write!(f, "({})",
         Some(&**e).into_iter().chain(&**es).map(|ir| fe.to(ir)).format(" ")),
-      IR::If(es) => write!(f, "(if {} {} {})",
+      Ir::If(es) => write!(f, "(if {} {} {})",
         fe.to(&es.0), fe.to(&es.1), fe.to(&es.2)),
-      IR::Focus(_, es) => write!(f, "(focus {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
-      IR::SetMergeStrategy(_, a, _) => write!(f, "(set-merge-strategy {} _)", fe.to(a)),
-      IR::NoTailRec => write!(f, "(no-tail-rec)"),
-      IR::Def(n, a, e) => write!(f, "(def {}:{} {})",
-        n, fe.to(&a.as_ref().map_or(AtomID::UNDER, |&(_, _, _, a)| a)), fe.to(e)),
-      IR::Eval(false, es) => write!(f, "(def _ {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
-      IR::Eval(true, es) => write!(f, "(begin {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
-      IR::Lambda(_, n, sp, e) => {
+      Ir::Focus(_, es) => write!(f, "(focus {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      Ir::SetMergeStrategy(_, a, _) => write!(f, "(set-merge-strategy {} _)", fe.to(a)),
+      Ir::NoTailRec => write!(f, "(no-tail-rec)"),
+      Ir::Def(n, a, e) => write!(f, "(def {}:{} {})",
+        n, fe.to(&a.as_ref().map_or(AtomId::UNDER, |&(_, _, _, a)| a)), fe.to(e)),
+      Ir::Eval(false, es) => write!(f, "(def _ {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      Ir::Eval(true, es) => write!(f, "(begin {})", es.iter().map(|ir| fe.to(ir)).format(" ")),
+      Ir::Lambda(_, n, sp, e) => {
         write!(f, "(lambda {}:", n)?;
         match sp {
           ProcSpec::Exact(n) => write!(f, "{}", n)?,
@@ -105,44 +105,44 @@ impl<'a> EnvDisplay for IR {
         }
         write!(f, " {})", fe.to(e))
       }
-      IR::Match(_, e, bs) => write!(f, "(match {} {})", fe.to(e), fe.to(&**bs))
+      Ir::Match(_, e, bs) => write!(f, "(match {} {})", fe.to(e), fe.to(&**bs))
     }
   }
 }
 
-impl IR {
-  fn eval(es: impl Into<Box<[IR]>>) -> IR {
-    let es: Box<[IR]> = es.into();
+impl Ir {
+  fn eval(es: impl Into<Box<[Ir]>>) -> Ir {
+    let es: Box<[Ir]> = es.into();
     match es.len() {
-      0 => IR::Const(LispVal::undef()),
+      0 => Ir::Const(LispVal::undef()),
       1 => es.into_vec().swap_remove(0),
-      _ => IR::Eval(true, es)
+      _ => Ir::Eval(true, es)
     }
   }
 
-  fn builtin_app(sp1: Span, sp2: Span, f: BuiltinProc, es: Box<[IR]>) -> IR {
-    IR::App(sp1, sp2, Box::new(IR::Const(LispVal::proc(Proc::Builtin(f)))), es)
+  fn builtin_app(sp1: Span, sp2: Span, f: BuiltinProc, es: Box<[Ir]>) -> Ir {
+    Ir::App(sp1, sp2, Box::new(Ir::Const(LispVal::proc(Proc::Builtin(f)))), es)
   }
 
-  fn new_ref(sp1: Span, sp2: Span, e: IR) -> IR {
-    IR::builtin_app(sp1, sp2, BuiltinProc::NewRef, Box::new([e]))
+  fn new_ref(sp1: Span, sp2: Span, e: Ir) -> Ir {
+    Ir::builtin_app(sp1, sp2, BuiltinProc::NewRef, Box::new([e]))
   }
-  fn set_weak(sp1: Span, sp2: Span, e1: IR, e2: IR) -> IR {
-    IR::builtin_app(sp1, sp2, BuiltinProc::SetWeak, Box::new([e1, e2]))
+  fn set_weak(sp1: Span, sp2: Span, e1: Ir, e2: Ir) -> Ir {
+    Ir::builtin_app(sp1, sp2, BuiltinProc::SetWeak, Box::new([e1, e2]))
   }
-  fn match_fn_body(sp: Span, i: usize, brs: Box<[Branch]>) -> IR {
-    IR::Match(sp, Box::new(IR::Local(i)), brs)
+  fn match_fn_body(sp: Span, i: usize, brs: Box<[Branch]>) -> Ir {
+    Ir::Match(sp, Box::new(Ir::Local(i)), brs)
   }
 
   /// The span of a code segment.
   #[must_use] pub fn span(&self) -> Option<Span> {
     match self {
-      &IR::Global(sp, _) |
-      &IR::List(sp, _) |
-      &IR::App(sp, _, _, _) |
-      &IR::Focus(sp, _) |
-      &IR::Lambda(sp, _, _, _) |
-      &IR::Match(sp, _, _) => Some(sp),
+      &Ir::Global(sp, _) |
+      &Ir::List(sp, _) |
+      &Ir::App(sp, _, _, _) |
+      &Ir::Focus(sp, _) |
+      &Ir::Lambda(sp, _, _, _) |
+      &Ir::Match(sp, _, _) => Some(sp),
       _ => None
     }
   }
@@ -167,7 +167,7 @@ pub struct Branch {
   /// The pattern to match against.
   pub pat: Pattern,
   /// The expression to evaluate with the result of the match.
-  pub eval: Box<IR>,
+  pub eval: Box<Ir>,
 }
 
 impl<'a> EnvDisplay for Branch {
@@ -192,7 +192,7 @@ pub enum Pattern {
   /// The number here is the index of the variable that will be bound.
   Atom(usize),
   /// The `'foo` pattern. Matches the literal atom `foo`, binds nothing.
-  QuoteAtom(AtomID),
+  QuoteAtom(AtomId),
   /// The `"foo"` pattern. Matches the literal string `"foo"`, binds nothing.
   String(ArcString),
   /// The `#t` or `#f` pattern. Matches a boolean value, binds nothing.
@@ -227,9 +227,9 @@ pub enum Pattern {
   /// The `(? f ps)` pattern. The expression `f` is evaluated in the context of the `match`,
   /// resulting in a procedure, and then `(f e)` is called, where `e` is the input.
   /// If this function returns truthy, then it acts like `(and ps)`, otherwise the pattern fails.
-  Test(Span, Box<IR>, Box<[Pattern]>),
+  Test(Span, Box<Ir>, Box<[Pattern]>),
   /// The `$foo$` pattern. This is equivalent to `(or 'foo ('foo))`.
-  QExprAtom(AtomID),
+  QExprAtom(AtomId),
 }
 
 /// The `(mvar)` patterns, which match a metavariable of different kinds.
@@ -276,26 +276,26 @@ impl<'a> EnvDisplay for Pattern {
   }
 }
 
-impl Remap for IR {
+impl Remap for Ir {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      &IR::Local(i) => IR::Local(i),
-      &IR::Global(sp, a) => IR::Global(sp, a.remap(r)),
-      IR::Const(v) => IR::Const(unsafe { v.freeze() }.remap(r)),
-      IR::List(sp, v) => IR::List(*sp, v.remap(r)),
-      IR::DottedList(v, e) => IR::DottedList(v.remap(r), e.remap(r)),
-      &IR::App(s, t, ref e, ref es) => IR::App(s, t, e.remap(r), es.remap(r)),
-      IR::If(e) => IR::If(e.remap(r)),
-      IR::NoTailRec => IR::NoTailRec,
-      IR::Focus(sp, e) => IR::Focus(*sp, e.remap(r)),
-      &IR::SetMergeStrategy(sp, a, ref e) => IR::SetMergeStrategy(sp, a.remap(r), e.remap(r)),
-      &IR::Def(n, ref a, ref e) => IR::Def(n,
+      &Ir::Local(i) => Ir::Local(i),
+      &Ir::Global(sp, a) => Ir::Global(sp, a.remap(r)),
+      Ir::Const(v) => Ir::Const(unsafe { v.freeze() }.remap(r)),
+      Ir::List(sp, v) => Ir::List(*sp, v.remap(r)),
+      Ir::DottedList(v, e) => Ir::DottedList(v.remap(r), e.remap(r)),
+      &Ir::App(s, t, ref e, ref es) => Ir::App(s, t, e.remap(r), es.remap(r)),
+      Ir::If(e) => Ir::If(e.remap(r)),
+      Ir::NoTailRec => Ir::NoTailRec,
+      Ir::Focus(sp, e) => Ir::Focus(*sp, e.remap(r)),
+      &Ir::SetMergeStrategy(sp, a, ref e) => Ir::SetMergeStrategy(sp, a.remap(r), e.remap(r)),
+      &Ir::Def(n, ref a, ref e) => Ir::Def(n,
         a.as_ref().map(|&(sp1, sp2, ref doc, a)| (sp1, sp2, doc.clone(), a.remap(r))),
         e.remap(r)),
-      &IR::Eval(b, ref e) => IR::Eval(b, e.remap(r)),
-      &IR::Lambda(sp, n, spec, ref e) => IR::Lambda(sp, n, spec, e.remap(r)),
-      &IR::Match(sp, ref e, ref br) => IR::Match(sp, e.remap(r), br.remap(r)),
+      &Ir::Eval(b, ref e) => Ir::Eval(b, e.remap(r)),
+      &Ir::Lambda(sp, n, spec, ref e) => Ir::Lambda(sp, n, spec, e.remap(r)),
+      &Ir::Match(sp, ref e, ref br) => Ir::Match(sp, e.remap(r), br.remap(r)),
     }
   }
 }
@@ -347,77 +347,77 @@ impl Remap for MVarPattern {
   }
 }
 
-impl IR {
-  fn unconst(cs: Vec<IR>) -> Result<Vec<LispVal>, Vec<IR>> {
-    if cs.iter().all(|c| matches!(c, IR::Const(_))) {
-      Ok(cs.into_iter().map(|c| let_unchecked!(IR::Const(v) = c, v)).collect())
+impl Ir {
+  fn unconst(cs: Vec<Ir>) -> Result<Vec<LispVal>, Vec<Ir>> {
+    if cs.iter().all(|c| matches!(c, Ir::Const(_))) {
+      Ok(cs.into_iter().map(|c| let_unchecked!(Ir::Const(v) = c, v)).collect())
     } else {Err(cs)}
   }
-  fn list(fsp: FileSpan, cs: Vec<IR>) -> IR {
-    match IR::unconst(cs) {
-      Ok(es) => IR::Const(LispVal::list(es).span(fsp)),
-      Err(cs) => IR::List(fsp.span, cs.into())
+  fn list(fsp: FileSpan, cs: Vec<Ir>) -> Ir {
+    match Ir::unconst(cs) {
+      Ok(es) => Ir::Const(LispVal::list(es).span(fsp)),
+      Err(cs) => Ir::List(fsp.span, cs.into())
     }
   }
-  fn dotted_list(sp: Span, mut cs: Vec<IR>, c: IR) -> IR {
+  fn dotted_list(sp: Span, mut cs: Vec<Ir>, c: Ir) -> Ir {
     if cs.is_empty() {return c}
     match c {
-      IR::Const(e) => match &*e {
+      Ir::Const(e) => match &*e {
         LispKind::List(es) => {
-          cs.extend(es.iter().map(|e| IR::Const(e.clone())));
-          IR::List(sp, cs.into())
+          cs.extend(es.iter().map(|e| Ir::Const(e.clone())));
+          Ir::List(sp, cs.into())
         }
         LispKind::DottedList(es, e) => {
-          cs.extend(es.iter().map(|e| IR::Const(e.clone())));
-          IR::DottedList(cs.into(), Box::new(IR::Const(e.clone())))
+          cs.extend(es.iter().map(|e| Ir::Const(e.clone())));
+          Ir::DottedList(cs.into(), Box::new(Ir::Const(e.clone())))
         }
-        _ => match IR::unconst(cs) {
-          Ok(es) => IR::Const(LispVal::dotted_list(es, e)),
-          Err(cs) => IR::DottedList(cs.into(), Box::new(IR::Const(e)))
+        _ => match Ir::unconst(cs) {
+          Ok(es) => Ir::Const(LispVal::dotted_list(es, e)),
+          Err(cs) => Ir::DottedList(cs.into(), Box::new(Ir::Const(e)))
         }
       },
-      IR::List(_, cs2) => {
+      Ir::List(_, cs2) => {
         cs.extend(cs2.into_vec());
-        IR::List(sp, cs.into())
+        Ir::List(sp, cs.into())
       }
-      IR::DottedList(cs2, c) => {
+      Ir::DottedList(cs2, c) => {
         cs.extend(cs2.into_vec());
-        IR::DottedList(cs.into(), c)
+        Ir::DottedList(cs.into(), c)
       }
-      _ => IR::DottedList(cs.into(), Box::new(c))
+      _ => Ir::DottedList(cs.into(), Box::new(c))
     }
   }
 }
 
 struct LocalCtx {
-  names: HashMap<AtomID, Vec<usize>>,
-  ctx: Vec<AtomID>,
+  names: HashMap<AtomId, Vec<usize>>,
+  ctx: Vec<AtomId>,
 }
 
 impl LocalCtx {
   fn new() -> Self { Self {names: HashMap::new(), ctx: vec![]} }
   fn len(&self) -> usize { self.ctx.len() }
-  fn get(&self, x: AtomID) -> Option<usize> {
+  fn get(&self, x: AtomId) -> Option<usize> {
     self.names.get(&x).and_then(|v| v.last().cloned())
   }
-  fn push(&mut self, x: AtomID) -> usize {
+  fn push(&mut self, x: AtomId) -> usize {
     let old = self.ctx.len();
-    if x != AtomID::UNDER { self.names.entry(x).or_insert_with(Vec::new).push(old) }
+    if x != AtomId::UNDER { self.names.entry(x).or_insert_with(Vec::new).push(old) }
     self.ctx.push(x);
     old
   }
-  fn push_list(&mut self, xs: &[AtomID]) -> usize {
+  fn push_list(&mut self, xs: &[AtomId]) -> usize {
     let old = self.ctx.len();
     for &x in xs { self.push(x); }
     old
   }
-  fn get_or_push(&mut self, x: AtomID) -> usize {
+  fn get_or_push(&mut self, x: AtomId) -> usize {
     self.get(x).unwrap_or_else(|| self.push(x))
   }
 
   fn pop(&mut self) {
     let x = self.ctx.pop().expect("context underflow");
-    if x != AtomID::UNDER {self.names.get_mut(&x).expect("missing name").pop();}
+    if x != AtomId::UNDER {self.names.get_mut(&x).expect("missing name").pop();}
   }
   fn restore(&mut self, n: usize) {
     while self.ctx.len() > n { self.pop() }
@@ -441,7 +441,7 @@ enum Item<'a> {
   DottedList(&'a [SExpr], &'a SExpr),
 }
 
-type Var<'a> = (Span, AtomID, Vec<Item<'a>>);
+type Var<'a> = (Span, AtomId, Vec<Item<'a>>);
 
 impl<'a> LispParser<'a> {
   #[allow(clippy::vec_init_then_push)] // bug: rust-clippy#6615
@@ -459,7 +459,7 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn def_ir(&mut self, sp: Span, es: &[SExpr], stack: Vec<Item<'_>>) -> Result<Vec<IR>, ElabError> {
+  fn def_ir(&mut self, sp: Span, es: &[SExpr], stack: Vec<Item<'_>>) -> Result<Vec<Ir>, ElabError> {
     for e in stack.iter().rev() {
       match e {
         Item::List(xs) => {
@@ -480,11 +480,11 @@ impl<'a> LispParser<'a> {
       ir = match e {
         Item::List(xs) => {
           len -= xs.len();
-          vec![IR::Lambda(sp, len, ProcSpec::Exact(xs.len()), IR::eval(ir).into())]
+          vec![Ir::Lambda(sp, len, ProcSpec::Exact(xs.len()), Ir::eval(ir).into())]
         }
         Item::DottedList(xs, _) => {
           len -= xs.len() + 1;
-          vec![IR::Lambda(sp, len, ProcSpec::AtLeast(xs.len()), IR::eval(ir).into())]
+          vec![Ir::Lambda(sp, len, ProcSpec::AtLeast(xs.len()), Ir::eval(ir).into())]
         }
       }
     }
@@ -492,7 +492,7 @@ impl<'a> LispParser<'a> {
     Ok(ir)
   }
 
-  fn def(&mut self, e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomID, Vec<IR>), ElabError> {
+  fn def(&mut self, e: &SExpr, es: &[SExpr]) -> Result<(Span, AtomId, Vec<Ir>), ElabError> {
     let (sp, x, stack) = self.def_var(e)?;
     let ir = self.def_ir(sp, es, stack)?;
     if self.ctx.len() == 0 {
@@ -503,19 +503,19 @@ impl<'a> LispParser<'a> {
 }
 
 impl<'a> LispParser<'a> {
-  fn parse_ident_or_syntax(&mut self, sp: Span, a: Atom) -> Result<AtomID, Syntax> {
+  fn parse_ident_or_syntax(&mut self, sp: Span, a: Atom) -> Result<AtomId, Syntax> {
     match Syntax::parse(self.ast.clone().span(sp), a) {
       Ok(s) => Err(s),
       Err(s) => Ok(self.get_atom(s))
     }
   }
 
-  fn parse_atom(&mut self, sp: Span, a: Atom) -> Result<AtomID, ElabError> {
+  fn parse_atom(&mut self, sp: Span, a: Atom) -> Result<AtomId, ElabError> {
     self.parse_ident_or_syntax(sp, a).map_err(|_|
       ElabError::new_e(sp, "keyword in invalid position"))
   }
 
-  fn parse_ident(&mut self, e: &SExpr) -> Result<AtomID, ElabError> {
+  fn parse_ident(&mut self, e: &SExpr) -> Result<AtomId, ElabError> {
     if let SExprKind::Atom(a) = e.k {
       self.parse_atom(e.span, a)
     } else {
@@ -523,28 +523,28 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn parse_idents(&mut self, es: &[SExpr]) -> Result<Vec<AtomID>, ElabError> {
+  fn parse_idents(&mut self, es: &[SExpr]) -> Result<Vec<AtomId>, ElabError> {
     let mut xs = vec![];
     for e in es {xs.push(self.parse_ident(e)?)}
     Ok(xs)
   }
 
-  fn qexpr(&mut self, e: QExpr) -> Result<IR, ElabError> {
+  fn qexpr(&mut self, e: QExpr) -> Result<Ir, ElabError> {
     match e.k {
       QExprKind::IdentApp(sp, es) => {
-        let head = IR::Const(LispVal::atom(
+        let head = Ir::Const(LispVal::atom(
           self.elab.env.get_atom(self.ast.clone().span(sp))).span(self.fspan(sp)));
         if es.is_empty() {Ok(head)} else {
           let mut cs = vec![head];
           for e in es.into_vec() { cs.push(self.qexpr(e)?) }
-          Ok(IR::list(self.fspan(e.span), cs))
+          Ok(Ir::list(self.fspan(e.span), cs))
         }
       }
       QExprKind::App(sp, t, es) => {
         let a = self.terms[t].atom;
-        let mut cs = vec![IR::Const(LispVal::atom(a).span(self.fspan(sp)))];
+        let mut cs = vec![Ir::Const(LispVal::atom(a).span(self.fspan(sp)))];
         for e in es.into_vec() { cs.push(self.qexpr(e)?) }
-        Ok(IR::list(self.fspan(e.span), cs))
+        Ok(Ir::list(self.fspan(e.span), cs))
       }
       QExprKind::Unquote(e) => {
         if self.mm0_mode {
@@ -555,7 +555,7 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn exprs(&mut self, quote: bool, es: &[SExpr]) -> Result<Vec<IR>, ElabError> {
+  fn exprs(&mut self, quote: bool, es: &[SExpr]) -> Result<Vec<Ir>, ElabError> {
     let mut cs = vec![];
     for e in es { cs.push(self.expr(quote, e)?) }
     Ok(cs)
@@ -568,8 +568,8 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn let_(&mut self, rec: bool, es: &[SExpr]) -> Result<IR, ElabError> {
-    if es.is_empty() {return Ok(IR::Const(LispVal::undef()))}
+  fn let_(&mut self, rec: bool, es: &[SExpr]) -> Result<Ir, ElabError> {
+    if es.is_empty() {return Ok(Ir::Const(LispVal::undef()))}
     let ls = if let SExprKind::List(ls) = &es[0].k {ls} else {
       return Err(ElabError::new_e(es[0].span, "let: invalid spec"))
     };
@@ -579,9 +579,9 @@ impl<'a> LispParser<'a> {
       for l in ls {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let n = self.ctx.push(x);
-        let sps = if x == AtomID::UNDER {None} else {Some((l.span, sp, None, x))};
-        cs.push(IR::Def(n, sps.clone(),
-          Box::new(IR::new_ref(sp, sp, IR::Const(LispVal::undef())))));
+        let sps = if x == AtomId::UNDER {None} else {Some((l.span, sp, None, x))};
+        cs.push(Ir::Def(n, sps.clone(),
+          Box::new(Ir::new_ref(sp, sp, Ir::Const(LispVal::undef())))));
         ds.push((sp, x, stk, e2, n, sps));
       }
       for (sp, x, stk, e2, n, sps) in ds {
@@ -589,27 +589,27 @@ impl<'a> LispParser<'a> {
         if let Some(r) = v.pop() {
           cs.extend(v);
           let m = self.ctx.push(x);
-          cs.push(IR::Def(m, sps, r.into()));
-          cs.push(IR::set_weak(sp, sp, IR::Local(n), IR::Local(m)));
+          cs.push(Ir::Def(m, sps, r.into()));
+          cs.push(Ir::set_weak(sp, sp, Ir::Local(n), Ir::Local(m)));
         }
       }
-      cs.push(IR::NoTailRec);
+      cs.push(Ir::NoTailRec);
     } else {
       for l in ls {
         let ((sp, x, stk), e2) = self.let_var(l)?;
         let v = self.def_ir(sp, e2, stk)?;
-        if x == AtomID::UNDER {
-          cs.push(IR::Eval(false, v.into()))
+        if x == AtomId::UNDER {
+          cs.push(Ir::Eval(false, v.into()))
         } else {
-          cs.push(IR::Def(self.ctx.push(x), Some((l.span, sp, None, x)), IR::eval(v).into()))
+          cs.push(Ir::Def(self.ctx.push(x), Some((l.span, sp, None, x)), Ir::eval(v).into()))
         }
       }
     }
     for e in &es[1..] { cs.push(self.expr(false, e)?) }
-    Ok(IR::Eval(true, cs.into()))
+    Ok(Ir::Eval(true, cs.into()))
   }
 
-  fn list_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
+  fn list_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<Ir>,
       quote: bool, mut es: &[SExpr]) -> Result<Pattern, ElabError> {
     let mut pfx = vec![];
     let pat = loop {
@@ -681,7 +681,7 @@ impl<'a> LispParser<'a> {
     Ok(if pfx.is_empty() {pat} else {Pattern::DottedList(pfx.into(), pat.into())})
   }
 
-  fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>, e: QExpr) -> Result<Pattern, ElabError> {
+  fn qexpr_pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<Ir>, e: QExpr) -> Result<Pattern, ElabError> {
     match e.k {
       QExprKind::IdentApp(sp, es) => {
         let head = match self.ast.clone().span(sp) {
@@ -710,14 +710,14 @@ impl<'a> LispParser<'a> {
   }
 
 
-  fn patterns(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
+  fn patterns(&mut self, ctx: &mut LocalCtx, code: &mut Vec<Ir>,
       quote: bool, es: &[SExpr]) -> Result<Box<[Pattern]>, ElabError> {
     let mut ps = vec![];
     for e in es {ps.push(self.pattern(ctx, code, quote, e)?)}
     Ok(ps.into())
   }
 
-  fn pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<IR>,
+  fn pattern(&mut self, ctx: &mut LocalCtx, code: &mut Vec<Ir>,
       quote: bool, e: &SExpr) -> Result<Pattern, ElabError> {
     match &e.k {
       &SExprKind::Atom(a) => Ok(
@@ -725,7 +725,7 @@ impl<'a> LispParser<'a> {
           Pattern::QuoteAtom(self.elab.env.get_atom(self.elab.ast.span_atom(e.span, a)))
         } else {
           let x = self.parse_atom(e.span, a)?;
-          if x == AtomID::UNDER {Pattern::Skip}
+          if x == AtomId::UNDER {Pattern::Skip}
           else {Pattern::Atom(ctx.get_or_push(x))}
         }
       ),
@@ -745,12 +745,12 @@ impl<'a> LispParser<'a> {
     }
   }
 
-  fn branch(&mut self, code: &mut Vec<IR>, e: &SExpr) -> Result<Branch, ElabError> {
+  fn branch(&mut self, code: &mut Vec<Ir>, e: &SExpr) -> Result<Branch, ElabError> {
     let (e, mut es) = match &e.k {
       SExprKind::List(es) if !es.is_empty() => (&es[0], &es[1..]),
       _ => return Err(ElabError::new_e(e.span, "match: improper syntax"))
     };
-    let mut cont = AtomID::UNDER;
+    let mut cont = AtomId::UNDER;
     if let Some(e2) = es.get(0) {
       if let SExprKind::List(v) = &e2.k {
         if let [SExpr {span, k: SExprKind::Atom(a)}, ref x] = **v {
@@ -765,47 +765,47 @@ impl<'a> LispParser<'a> {
     let pat = self.pattern(&mut ctx, code, false, e)?;
     let vars = ctx.ctx.len();
     let start = self.ctx.push_list(&ctx.ctx);
-    if cont != AtomID::UNDER {self.ctx.push(cont);}
-    let eval = Box::new(IR::eval(self.exprs(false, es)?));
+    if cont != AtomId::UNDER {self.ctx.push(cont);}
+    let eval = Box::new(Ir::eval(self.exprs(false, es)?));
     self.ctx.restore(start);
-    Ok(Branch {pat, vars, cont: cont != AtomID::UNDER, eval})
+    Ok(Branch {pat, vars, cont: cont != AtomId::UNDER, eval})
   }
-  fn branches(&mut self, code: &mut Vec<IR>, es: &[SExpr]) -> Result<Box<[Branch]>, ElabError> {
+  fn branches(&mut self, code: &mut Vec<Ir>, es: &[SExpr]) -> Result<Box<[Branch]>, ElabError> {
     let mut bs = vec![];
     for e in es { bs.push(self.branch(code, e)?) }
     Ok(bs.into())
   }
-  fn match_(&mut self, es: &[SExpr], f: impl FnOnce(Box<[Branch]>) -> IR) -> Result<IR, ElabError> {
+  fn match_(&mut self, es: &[SExpr], f: impl FnOnce(Box<[Branch]>) -> Ir) -> Result<Ir, ElabError> {
     let mut code = vec![];
     let m = self.branches(&mut code, es)?;
     if code.is_empty() {
       Ok(f(m))
     } else {
       code.push(f(m));
-      Ok(IR::Eval(true, code.into()))
+      Ok(Ir::Eval(true, code.into()))
     }
   }
 
-  fn eval_atom(&mut self, sp: Span, x: AtomID) -> IR {
+  fn eval_atom(&mut self, sp: Span, x: AtomId) -> Ir {
     match self.ctx.get(x) {
       None => {
         self.spans.insert(sp, ObjectKind::Global(x));
-        IR::Global(sp, x)
+        Ir::Global(sp, x)
       },
-      Some(i) => IR::Local(i)
+      Some(i) => Ir::Local(i)
     }
   }
 
-  fn expr(&mut self, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
+  fn expr(&mut self, quote: bool, e: &SExpr) -> Result<Ir, ElabError> {
     self.expr_doc(String::new(), quote, e)
   }
 
-  fn expr_doc(&mut self, mut doc: String, quote: bool, e: &SExpr) -> Result<IR, ElabError> {
+  fn expr_doc(&mut self, mut doc: String, quote: bool, e: &SExpr) -> Result<Ir, ElabError> {
     macro_rules! span {($sp:expr, $e:expr) => {{$e.span(self.fspan($sp))}}}
     let mut restore = Some(self.ctx.len());
     let res = match &e.k {
       &SExprKind::Atom(a) => if quote {
-        Ok(IR::Const(span!(e.span,
+        Ok(Ir::Const(span!(e.span,
           match self.parse_ident_or_syntax(e.span, a) {
             Ok(x) => LispVal::atom(x),
             Err(s) => LispVal::syntax(s),
@@ -813,7 +813,7 @@ impl<'a> LispParser<'a> {
         )))
       } else {
         Ok(match self.parse_atom(e.span, a)? {
-          AtomID::UNDER => IR::Const(span!(e.span, LispVal::atom(AtomID::UNDER))),
+          AtomId::UNDER => Ir::Const(span!(e.span, LispVal::atom(AtomId::UNDER))),
           x => self.eval_atom(e.span, x),
         })
       },
@@ -830,19 +830,19 @@ impl<'a> LispParser<'a> {
           }
           cs.push(self.expr(quote, e)?)
         }
-        Ok(IR::dotted_list(e.span, cs, self.expr(true, e)?))
+        Ok(Ir::dotted_list(e.span, cs, self.expr(true, e)?))
       }
-      SExprKind::Number(n) => Ok(IR::Const(LispVal::number(n.clone().into()))),
-      SExprKind::String(s) => Ok(IR::Const(LispVal::string(s.clone()))),
-      &SExprKind::Bool(b) => Ok(IR::Const(LispVal::bool(b))),
-      SExprKind::Undef => Ok(IR::Const(LispVal::undef())),
+      SExprKind::Number(n) => Ok(Ir::Const(LispVal::number(n.clone().into()))),
+      SExprKind::String(s) => Ok(Ir::Const(LispVal::string(s.clone()))),
+      &SExprKind::Bool(b) => Ok(Ir::Const(LispVal::bool(b))),
+      SExprKind::Undef => Ok(Ir::Const(LispVal::undef())),
       SExprKind::DocComment(doc2, e) => {
         // push an extra newline to separate multiple doc comments
         if !doc.is_empty() {doc.push('\n');}
         doc.push_str(doc2);
         return self.expr_doc(doc, quote, e)
       }
-      SExprKind::List(es) if es.is_empty() => Ok(IR::Const(span!(e.span, LispVal::nil()))),
+      SExprKind::List(es) if es.is_empty() => Ok(Ir::Const(span!(e.span, LispVal::nil()))),
       SExprKind::List(es) => if quote {
         let mut cs = vec![];
         let mut it = es.iter();
@@ -852,31 +852,31 @@ impl<'a> LispParser<'a> {
               if let Ok(Syntax::Unquote) = Syntax::parse(self.ast.span(arg.span), a) {
                 let r = it.next().ok_or_else(||
                   ElabError::new_e(arg.span, "expected at least one argument"))?;
-                break IR::dotted_list(e.span, cs, self.expr(false, r)?)
+                break Ir::dotted_list(e.span, cs, self.expr(false, r)?)
               }
               cs.push(self.expr(true, arg)?)
             } else {cs.push(self.expr(true, arg)?)}
-          } else {break IR::list(self.fspan(e.span), cs)}
+          } else {break Ir::list(self.fspan(e.span), cs)}
         })
       } else if let SExprKind::Atom(a) = es[0].k {
         match self.parse_ident_or_syntax(es[0].span, a) {
-          Ok(AtomID::UNDER) => return Err(ElabError::new_e(es[0].span, "'_' is not a function")),
+          Ok(AtomId::UNDER) => return Err(ElabError::new_e(es[0].span, "'_' is not a function")),
           Ok(x) =>
-            Ok(IR::App(e.span, es[0].span,
+            Ok(Ir::App(e.span, es[0].span,
               Box::new(self.eval_atom(es[0].span, x)), self.exprs(false, &es[1..])?.into())),
           Err(stx) => {
             self.spans.insert_if(es[0].span, || ObjectKind::Syntax(stx));
             match stx {
-              Syntax::Begin => Ok(IR::Eval(true, self.exprs(false, &es[1..])?.into())),
+              Syntax::Begin => Ok(Ir::Eval(true, self.exprs(false, &es[1..])?.into())),
               Syntax::Define if es.len() < 2 => return Err(
                 ElabError::new_e(es[0].span, "expected at least one argument")),
               Syntax::Define =>
                 Ok(match self.def(&es[1], &es[2..])? {
-                  (_, AtomID::UNDER, cs) => IR::Eval(false, cs.into()),
+                  (_, AtomId::UNDER, cs) => Ir::Eval(false, cs.into()),
                   (sp, x, cs) => {
                     restore = None;
                     let doc = if doc.is_empty() {None} else {Some(doc.into())};
-                    IR::Def(self.ctx.push(x), Some((e.span, sp, doc, x)), IR::eval(cs).into())
+                    Ir::Def(self.ctx.push(x), Some((e.span, sp, doc, x)), Ir::eval(cs).into())
                   }
                 }),
               Syntax::Lambda if es.len() < 2 => return Err(
@@ -884,21 +884,21 @@ impl<'a> LispParser<'a> {
               Syntax::Lambda => match &es[1].k {
                 SExprKind::List(xs) => {
                   let xs = self.parse_idents(xs)?;
-                  Ok(IR::Lambda(es[0].span, self.ctx.push_list(&xs), ProcSpec::Exact(xs.len()),
-                    IR::eval(self.exprs(false, &es[2..])?).into()))
+                  Ok(Ir::Lambda(es[0].span, self.ctx.push_list(&xs), ProcSpec::Exact(xs.len()),
+                    Ir::eval(self.exprs(false, &es[2..])?).into()))
                 }
                 SExprKind::DottedList(xs, y) => {
                   let xs = self.parse_idents(xs)?;
                   let y = self.parse_ident(y)?;
                   let n = self.ctx.push_list(&xs);
                   self.ctx.push(y);
-                  Ok(IR::Lambda(es[0].span, n, ProcSpec::AtLeast(xs.len()),
-                    IR::eval(self.exprs(false, &es[2..])?).into()))
+                  Ok(Ir::Lambda(es[0].span, n, ProcSpec::AtLeast(xs.len()),
+                    Ir::eval(self.exprs(false, &es[2..])?).into()))
                 }
                 _ => {
                   let x = self.parse_ident(&es[1])?;
-                  Ok(IR::Lambda(es[0].span, self.ctx.push(x), ProcSpec::AtLeast(0),
-                    IR::eval(self.exprs(false, &es[2..])?).into()))
+                  Ok(Ir::Lambda(es[0].span, self.ctx.push(x), ProcSpec::AtLeast(0),
+                    Ir::eval(self.exprs(false, &es[2..])?).into()))
                 }
               },
               Syntax::Quote if es.len() < 2 => return Err(
@@ -907,25 +907,25 @@ impl<'a> LispParser<'a> {
               Syntax::Unquote if es.len() < 2 => return Err(
                 ElabError::new_e(es[0].span, "expected at least one argument")),
               Syntax::Unquote => self.expr(false, &es[1]),
-              Syntax::If if 3 <= es.len() && es.len() <= 4 => Ok(IR::If(Box::new((
+              Syntax::If if 3 <= es.len() && es.len() <= 4 => Ok(Ir::If(Box::new((
                 self.expr(false, &es[1])?,
                 self.expr(false, &es[2])?,
                 if let Some(e) = es.get(3) {
                   self.ctx.restore(unwrap_unchecked!(restore));
                   self.expr(false, e)?
-                } else { IR::Const(LispVal::undef()) }
+                } else { Ir::Const(LispVal::undef()) }
               )))),
               Syntax::If => return Err(
                 ElabError::new_e(es[0].span, "expected two or three arguments")),
-              Syntax::Focus => Ok(IR::Focus(es[0].span, self.exprs(false, &es[1..])?.into())),
+              Syntax::Focus => Ok(Ir::Focus(es[0].span, self.exprs(false, &es[1..])?.into())),
               Syntax::Let => self.let_(false, &es[1..]),
               Syntax::Letrec => self.let_(true, &es[1..]),
               Syntax::SetMergeStrategy if 2 <= es.len() && es.len() <= 3 =>
-                Ok(IR::SetMergeStrategy(es[0].span,
+                Ok(Ir::SetMergeStrategy(es[0].span,
                   self.parse_ident(&es[1])?,
                   Box::new({
                     if let Some(e) = es.get(2) { self.expr(false, e)? }
-                    else { IR::Const(LispVal::undef()) }
+                    else { Ir::Const(LispVal::undef()) }
                   }))),
               Syntax::SetMergeStrategy => return Err(
                 ElabError::new_e(es[0].span, "expected one or two arguments")),
@@ -934,23 +934,23 @@ impl<'a> LispParser<'a> {
               Syntax::Match => {
                 let e = self.expr(false, &es[1])?;
                 self.ctx.restore(unwrap_unchecked!(restore));
-                self.match_(&es[2..], |m| IR::Match(es[0].span, Box::new(e), m))
+                self.match_(&es[2..], |m| Ir::Match(es[0].span, Box::new(e), m))
               },
               Syntax::MatchFn => {
-                let i = self.ctx.push(AtomID::UNDER);
-                Ok(IR::Lambda(es[0].span, i, ProcSpec::Exact(1),
-                  Arc::new(self.match_(&es[1..], |m| IR::match_fn_body(es[0].span, i, m))?)))
+                let i = self.ctx.push(AtomId::UNDER);
+                Ok(Ir::Lambda(es[0].span, i, ProcSpec::Exact(1),
+                  Arc::new(self.match_(&es[1..], |m| Ir::match_fn_body(es[0].span, i, m))?)))
               }
               Syntax::MatchFns => {
-                let i = self.ctx.push(AtomID::UNDER);
-                Ok(IR::Lambda(es[0].span, i, ProcSpec::AtLeast(0),
-                  Arc::new(self.match_(&es[1..], |m| IR::match_fn_body(es[0].span, i, m))?)))
+                let i = self.ctx.push(AtomId::UNDER);
+                Ok(Ir::Lambda(es[0].span, i, ProcSpec::AtLeast(0),
+                  Arc::new(self.match_(&es[1..], |m| Ir::match_fn_body(es[0].span, i, m))?)))
               }
             }
           }
         }
       } else {
-        Ok(IR::App(e.span, es[0].span, Box::new(self.expr(false, &es[0])?),
+        Ok(Ir::App(e.span, es[0].span, Box::new(self.expr(false, &es[0])?),
           self.exprs(false, &es[1..])?.into()))
       },
       &SExprKind::Formula(f) => {let q = self.parse_formula(f)?; self.qexpr(q)}
@@ -962,20 +962,20 @@ impl<'a> LispParser<'a> {
 
 impl Elaborator {
   /// Parse a lisp `SExpr` from the surface syntax into an `IR` object suitable for evaluation.
-  pub fn parse_lisp(&mut self, e: &SExpr) -> Result<IR, ElabError> {
+  pub fn parse_lisp(&mut self, e: &SExpr) -> Result<Ir, ElabError> {
     self.parse_lisp_doc(e, String::new())
   }
 
   /// Parse a lisp `SExpr` from the surface syntax into an `IR` object suitable for evaluation.
   /// The `doc` argument is an additional doc string, if applicable.
-  pub fn parse_lisp_doc(&mut self, e: &SExpr, doc: String) -> Result<IR, ElabError> {
+  pub fn parse_lisp_doc(&mut self, e: &SExpr, doc: String) -> Result<Ir, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.expr_doc(doc, false, e)
   }
 
   /// Parse a `QExpr`, the result of parsing a math formula,
   /// into an `IR` object suitable for evaluation. (Usually this will be a `IR::Const`,
   /// but `QExpr`'s can contain antiquotations which require evaluation.)
-  pub fn parse_qexpr(&mut self, e: QExpr) -> Result<IR, ElabError> {
+  pub fn parse_qexpr(&mut self, e: QExpr) -> Result<Ir, ElabError> {
     LispParser {elab: &mut *self, ctx: LocalCtx::new()}.qexpr(e)
   }
 }

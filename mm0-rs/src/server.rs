@@ -23,12 +23,12 @@ use clap::ArgMatches;
 use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
   MutexExt, CondvarExt};
 use crate::lined_string::LinedString;
-use crate::parser::{AST, parse};
+use crate::parser::{Ast, parse};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;
 use crate::elab::{ElabResult, ElaborateBuilder, FrozenEnv, GoalListener,
-  environment::{ObjectKind, DeclKey, StmtTrace, AtomID, SortID, TermID, ThmID},
+  environment::{ObjectKind, DeclKey, StmtTrace, AtomId, SortId, TermId, ThmId},
   FrozenLispKind, FrozenAtomData,
   local_context::InferSort, proof::Subst,
   lisp::{print::FormatEnv, pretty::Pretty, LispKind, Proc, BuiltinProc},
@@ -376,7 +376,7 @@ enum FileCache {
   Ready {
     hash: u64,
     source: FileContents,
-    ast: Option<Arc<AST>>,
+    ast: Option<Arc<Ast>>,
     res: ElabResult<u64>,
     deps: Vec<FileRef>,
   }
@@ -403,9 +403,9 @@ impl VirtualFile {
 }
 
 #[derive(DeepSizeOf)]
-struct VFS(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
+struct Vfs(Mutex<HashMap<FileRef, Arc<VirtualFile>>>);
 
-impl VFS {
+impl Vfs {
   fn get(&self, path: &FileRef) -> Option<Arc<VirtualFile>> {
     self.0.ulock().get(path).cloned()
   }
@@ -1096,11 +1096,11 @@ async fn references<T>(
   }}}
   #[derive(Copy, Clone, PartialEq, Eq)]
   enum Key {
-    Var(AtomID),
-    Sort(SortID),
-    Term(TermID),
-    Thm(ThmID),
-    Global(AtomID),
+    Var(AtomId),
+    Sort(SortId),
+    Term(TermId),
+    Thm(ThmId),
+    Global(AtomId),
   }
 
   let file = SERVER.vfs.get(&path).ok_or_else(||
@@ -1173,7 +1173,7 @@ struct Server {
   #[allow(unused)]
   caps: Mutex<ClientCapabilities>,
   reqs: OpenRequests,
-  vfs: VFS,
+  vfs: Vfs,
   pool: ThreadPool,
   #[allow(clippy::type_complexity)]
   threads: Arc<(Mutex<VecDeque<(Job, Arc<AtomicBool>)>>, Condvar)>,
@@ -1436,7 +1436,7 @@ impl Server {
       caps: Mutex::new(ClientCapabilities::new(params)),
       conn,
       reqs: Mutex::new(HashMap::new()),
-      vfs: VFS(Mutex::new(HashMap::new())),
+      vfs: Vfs(Mutex::new(HashMap::new())),
       pool: ThreadPool::new()?,
       threads: Default::default(),
       options: Mutex::new(ServerOptions::default()),

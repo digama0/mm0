@@ -6,7 +6,7 @@ use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
 use zerocopy::{AsBytes, LayoutVerified, U32, U64};
 use crate::elab::environment::{
-  Type, Expr, Proof, SortID, TermID, ThmID, AtomID, TermKind, ThmKind,
+  Type, Expr, Proof, SortId, TermId, ThmId, AtomId, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
 use crate::util::FileRef;
@@ -40,9 +40,9 @@ struct IndexHeader<'a> {
 }
 
 impl<'a> IndexHeader<'a> {
-  fn sort(&mut self, i: SortID) -> &mut U64<LE> { &mut self.sorts[i.0 as usize] }
-  fn term(&mut self, i: TermID) -> &mut U64<LE> { &mut self.terms[i.0 as usize] }
-  fn thm(&mut self, i: ThmID) -> &mut U64<LE> { &mut self.thms[i.0 as usize] }
+  fn sort(&mut self, i: SortId) -> &mut U64<LE> { &mut self.sorts[i.0 as usize] }
+  fn term(&mut self, i: TermId) -> &mut U64<LE> { &mut self.terms[i.0 as usize] }
+  fn thm(&mut self, i: ThmId) -> &mut U64<LE> { &mut self.thms[i.0 as usize] }
 }
 
 /// The main exporter structure. This keeps track of the underlying writer,
@@ -342,12 +342,12 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
   }
 
   #[inline]
-  fn write_sort_deps(&mut self, bound: bool, sort: SortID, deps: u64) -> io::Result<()> {
+  fn write_sort_deps(&mut self, bound: bool, sort: SortId, deps: u64) -> io::Result<()> {
     self.write_u64(u64::from(bound) << 63 | u64::from(sort.0) << 56 | deps)
   }
 
   #[inline]
-  fn write_term_header(header: &mut [u8], nargs: u16, sort: SortID, has_def: bool, p_term: u32) {
+  fn write_term_header(header: &mut [u8], nargs: u16, sort: SortId, has_def: bool, p_term: u32) {
     LE::write_u16(&mut header[0..], nargs);
     header[2] = sort.0 | if has_def {0x80} else {0};
     LE::write_u32(&mut header[4..], p_term);
@@ -518,7 +518,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
   }
 
   fn write_index_entry(&mut self, header: &mut IndexHeader<'_>, il: u64, ir: u64,
-      (sort, a, cmd): (bool, AtomID, u64)) -> io::Result<u64> {
+      (sort, a, cmd): (bool, AtomId, u64)) -> io::Result<u64> {
     let n = self.align_to(8)?;
     let (sp, ix, k, name) = if sort {
       let ad = &self.env.data()[a];
@@ -571,7 +571,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     Ok(n)
   }
 
-  fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(bool, AtomID, u64)], map: &[(bool, AtomID, u64)]) -> io::Result<u64> {
+  fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(bool, AtomId, u64)], map: &[(bool, AtomId, u64)]) -> io::Result<u64> {
     #[allow(clippy::integer_division)]
     let mut lo = map.len() / 2;
     let a = match map.get(lo) {

@@ -20,9 +20,9 @@ use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
 use crate::parser::ast::Atom;
 use crate::util::{ArcString, FileSpan, Span, SliceExt, MutexExt, StackList};
-use super::{AtomID, Modifiers, Remap, Remapper, ThmID,
+use super::{AtomId, Modifiers, Remap, Remapper, ThmId,
   environment::{MergeStrategy, MergeStrategyInner}};
-use parser::IR;
+use parser::Ir;
 pub use super::math_parser::{QExpr, QExprKind};
 
 macro_rules! str_enum {
@@ -207,17 +207,17 @@ pub enum InferTarget {
   /// This is a bound variable of sort `s`. For example, if
   /// `term all {x: var}: wff x > wff;`, in `all _ p` the `_` has type `var`
   /// and must be a variable name.
-  Bound(AtomID),
+  Bound(AtomId),
   /// This is a metavariable for an expression of sort `s`. For example, if
   /// `term all {x: var}: wff x > wff;`, in `all x _` the `_` has type `wff`
   /// and can be any expression of that sort.
-  Reg(AtomID),
+  Reg(AtomId),
 }
 crate::deep_size_0!(InferTarget);
 
 impl InferTarget {
   /// The target sort of a metavariable. Returns [`None`] if the sort is unknown.
-  #[must_use] pub fn sort(self) -> Option<AtomID> {
+  #[must_use] pub fn sort(self) -> Option<AtomId> {
     match self {
       InferTarget::Bound(s) | InferTarget::Reg(s) => Some(s),
       _ => None
@@ -246,7 +246,7 @@ macro_rules! __mk_lisp_kind {
     pub enum $kind {
       /// An atom like `'foo`. Atoms are internally represented as small integers,
       /// so equality comparison on atoms is fast.
-      Atom(AtomID),
+      Atom(AtomId),
       /// A list of values. In lisp, this is semantically an iterated cons,
       /// `(a b c d) = (a . (b . (c . (d . ()))))`, and we don't provide any
       /// functions that distinguish these, but because lists are so common
@@ -277,7 +277,7 @@ macro_rules! __mk_lisp_kind {
       Proc($proc),
       /// A map from atoms to values. This can be used as a mutable map if it is behind a
       /// [`Ref`](Self::Ref).
-      AtomMap(HashMap<AtomID, $val>),
+      AtomMap(HashMap<AtomId, $val>),
       /// A mutable reference. This is the only way to have mutable values in
       /// client code.
       Ref($ref_),
@@ -304,7 +304,7 @@ impl LispVal {
   /// Make a [`LispVal`] from the inner enum type [`LispKind`].
   #[must_use] pub fn new(e: LispKind) -> LispVal { LispVal(Rc::new(e)) }
   /// Construct a [`LispVal`] for an atom.
-  #[must_use] pub fn atom(a: AtomID) -> LispVal { LispVal::new(LispKind::Atom(a)) }
+  #[must_use] pub fn atom(a: AtomId) -> LispVal { LispVal::new(LispKind::Atom(a)) }
   /// Construct a [`LispVal`] for a list.
   #[must_use] pub fn list(es: impl Into<Box<[LispVal]>>) -> LispVal { LispVal::new(LispKind::List(es.into())) }
   /// Construct a [`LispVal`] for an improper list.
@@ -651,7 +651,7 @@ impl LispKind {
     self.unwrapped(|e| matches!(e, LispKind::Atom(_)))
   }
   /// Get the atom that this value stores, if applicable.
-  pub fn as_atom(&self) -> Option<AtomID> {
+  pub fn as_atom(&self) -> Option<AtomId> {
     self.unwrapped(|e| if let LispKind::Atom(a) = *e {Some(a)} else {None})
   }
   /// Returns true if this value is a number.
@@ -861,7 +861,7 @@ pub enum ProcPos {
   /// `(def foo (fn (x) ...))`. The file span is the definition block
   /// that created it, while the span is just the span of the name
   /// of the function, in this case `foo` (in the same file).
-  Named(FileSpan, Span, AtomID),
+  Named(FileSpan, Span, AtomId),
   /// An unnamed procedure is a lambda like `(fn (x) ...)` that is not
   /// immediately bound to a name. It is associated only with its span
   /// in the file.
@@ -897,7 +897,7 @@ pub enum Proc {
     /// is how many arguments are expected.
     spec: ProcSpec,
     /// The code of the procedure.
-    code: Arc<IR>
+    code: Arc<Ir>
   },
   /// A match continuation, which is passed to client code in the variable `k`
   /// of `(match e [pat (=> k) code])`. It is a *delimited* continuation, which means
@@ -921,12 +921,12 @@ pub enum Proc {
   /// unless forced by calling this thunk. The unevaluated form of the thunk
   /// stores `Err(args)`, where `args` is the list of variables, while the
   /// evaluated form stores `Ok(proof)`.
-  ProofThunk(AtomID, RefCell<Result<LispVal, Box<[LispVal]>>>),
+  ProofThunk(AtomId, RefCell<Result<LispVal, Box<[LispVal]>>>),
   /// The compiler object, which can be called as a procedure and stores its own
   /// internal state here. See [`Compiler::call`].
   ///
   /// [`Compiler::call`]: crate::mmc::Compiler::call
-  MMCCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
+  MmcCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
 }
 
 /// A procedure specification, which defines the number of arguments expected
@@ -962,7 +962,7 @@ impl Proc {
       Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
       Proc::MergeMap(_) => ProcSpec::Exact(2),
       Proc::RefineCallback |
-      Proc::MMCCompiler(_) => ProcSpec::AtLeast(1),
+      Proc::MmcCompiler(_) => ProcSpec::AtLeast(1),
     }
   }
 }
@@ -1340,7 +1340,7 @@ str_enum! {
     /// be called to compile MMC functions. See [`Compiler::call`].
     ///
     /// [`Compiler::call`]: crate::mmc::Compiler::call
-    MMCInit: "mmc-init",
+    MmcInit: "mmc-init",
   }
 }
 

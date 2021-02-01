@@ -11,7 +11,7 @@ use pulldown_cmark::escape::WriteWrapper;
 use crate::{elab::environment::{AtomData, DocComment, EnvMergeIter},
   lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
 use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Annot},
-  environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomID, TermID, ThmID, ThmKind, Thm,
+  environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomId, TermId, ThmId, ThmKind, Thm,
     ExprNode, Type}};
 
 const PP_WIDTH: usize = 160;
@@ -101,12 +101,12 @@ impl<'a, 'b, W: Write> pretty::RenderAnnotated<'b, Annot> for HtmlPrinter<'a, W>
   }
 }
 
-struct AxiomUse(HashMap<ThmID, BitSet>);
+struct AxiomUse(HashMap<ThmId, BitSet>);
 
 impl AxiomUse {
-  fn new(env: &Environment) -> (Vec<ThmID>, Self) {
+  fn new(env: &Environment) -> (Vec<ThmId>, Self) {
     let mut axuse = HashMap::new();
-    let mut to_tid = vec![ThmID(u32::MAX)];
+    let mut to_tid = vec![ThmId(u32::MAX)];
     for (tid, td) in env.thms.enum_iter() {
       if let ThmKind::Axiom = td.kind {
         let axid = to_tid.len();
@@ -137,7 +137,7 @@ impl AxiomUse {
     }
   }
 
-  fn get<'a, 'b>(&'a mut self, env: &'b Environment, tid: ThmID) -> &'a BitSet {
+  fn get<'a, 'b>(&'a mut self, env: &'b Environment, tid: ThmId) -> &'a BitSet {
     if let Some(bs) = self.0.get(&tid) {
       // Safety: This is the same issue that comes up in Spans::insert.
       // We are performing a lifetime cast here because rust can't see that
@@ -161,9 +161,9 @@ impl AxiomUse {
 
 #[derive(Debug, Clone)]
 enum LineKind {
-  Hyp(Option<AtomID>),
-  Thm(ThmID),
-  Conv(Box<[TermID]>),
+  Hyp(Option<AtomId>),
+  Thm(ThmId),
+  Conv(Box<[TermId]>),
 }
 struct Line {
   hyps: Box<[u32]>,
@@ -175,9 +175,9 @@ struct LayoutProof<'a> {
   env: &'a mut Environment,
   lines: Vec<Line>,
   rev: bool,
-  args: &'a [(Option<AtomID>, Type)],
+  args: &'a [(Option<AtomId>, Type)],
   heap: &'a [ProofNode],
-  hyps: &'a [(Option<AtomID>, ExprNode)],
+  hyps: &'a [(Option<AtomId>, ExprNode)],
   heap_lines: Box<[Option<LayoutResult>]>,
 }
 
@@ -185,7 +185,7 @@ struct LayoutProof<'a> {
 enum LayoutResult {
   Expr(LispVal),
   Proof(u32),
-  Conv(Box<[TermID]>),
+  Conv(Box<[TermId]>),
 }
 
 impl LayoutResult {
@@ -195,10 +195,10 @@ impl LayoutResult {
   fn into_proof(self) -> u32 {
     if let LayoutResult::Proof(e) = self {e} else {panic!("bad proof")}
   }
-  fn into_conv(self) -> Box<[TermID]> {
+  fn into_conv(self) -> Box<[TermId]> {
     if let LayoutResult::Conv(e) = self {e} else {panic!("bad proof")}
   }
-  fn as_conv(&self) -> &[TermID] {
+  fn as_conv(&self) -> &[TermId] {
     if let LayoutResult::Conv(e) = self {e} else {panic!("bad proof")}
   }
 }
@@ -210,7 +210,7 @@ impl<'a> LayoutProof<'a> {
     line
   }
 
-  fn layout_conv(&mut self, defs: &mut Vec<TermID>, p: &ProofNode) {
+  fn layout_conv(&mut self, defs: &mut Vec<TermId>, p: &ProofNode) {
     match p {
       &ProofNode::Ref(i) => {
         for &d in
@@ -345,8 +345,8 @@ fn render_line<'a>(fe: FormatEnv<'_>, mangler: &'a mut Mangler, w: &mut impl Wri
 fn render_proof<'a>(
   source: &'a LinedString, env: &'a mut Environment, mangler: &'a mut Mangler, w: &mut impl Write,
   order: ProofOrder,
-  args: &'a [(Option<AtomID>, Type)],
-  hyps: &'a [(Option<AtomID>, ExprNode)],
+  args: &'a [(Option<AtomId>, Type)],
+  hyps: &'a [(Option<AtomId>, ExprNode)],
   pf: &'a Proof,
 ) -> io::Result<()> {
   let mut layout = LayoutProof {
@@ -406,7 +406,7 @@ struct BuildDoc<'a, W> {
   source: &'a LinedString,
   base_url: Option<Url>,
   env: Environment,
-  axuse: (Vec<ThmID>, AxiomUse),
+  axuse: (Vec<ThmId>, AxiomUse),
   index: Option<W>,
   mangler: Mangler,
   order: ProofOrder,
@@ -415,10 +415,10 @@ struct BuildDoc<'a, W> {
 #[derive(Default)]
 struct Mangler {
   used: HashMap<CaseInsensitiveName, usize>,
-  thms: HashMap<ThmID, usize>,
+  thms: HashMap<ThmId, usize>,
 }
 impl Mangler {
-  fn get(&mut self, env: &Environment, tid: ThmID) -> usize {
+  fn get(&mut self, env: &Environment, tid: ThmId) -> usize {
     match self.thms.entry(tid) {
       Entry::Occupied(e) => *e.get(),
       Entry::Vacant(e) => {
@@ -437,7 +437,7 @@ impl Mangler {
       }
     }
   }
-  fn mangle<T>(&mut self, env: &Environment, tid: ThmID, f: impl FnOnce(&str, &str) -> T) -> T {
+  fn mangle<T>(&mut self, env: &Environment, tid: ThmId, f: impl FnOnce(&str, &str) -> T) -> T {
     let s = env.data[env.thms[tid].atom].name.as_str();
     match self.get(env, tid) {
       0 => f(s, s),
@@ -500,7 +500,7 @@ fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Re
 }
 
 impl<'a, W: Write> BuildDoc<'a, W> {
-  fn thm_doc(&mut self, prev: Option<ThmID>, tid: ThmID, next: Option<ThmID>) -> io::Result<()> {
+  fn thm_doc(&mut self, prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>) -> io::Result<()> {
     let mut file = self.thm_folder.to_owned();
     #[allow(clippy::useless_transmute)]
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
@@ -625,7 +625,7 @@ impl<'a, W: Write> BuildDoc<'a, W> {
               let w = &mut HtmlPrinter::new(fe.env, &mut self.mangler, file, "");
               fe.pretty(|pr| pr.thm(tid).render_raw(PP_WIDTH, w))?;
               writeln!(file, "</pre>\n    </div>")?;
-              let next = tid.0.checked_add(1).map(ThmID)
+              let next = tid.0.checked_add(1).map(ThmId)
                 .filter(|&tid| self.env.thms.get(tid).is_some());
               self.thm_doc(prev, tid, next)?;
               prev = Some(tid);

@@ -43,5 +43,5 @@ macro_rules! make_predef {
 
 make_predef! {
   /// `:sorry` is used to stub out missing proofs.
-  SORRY: ":sorry",
+  Sorry: ":sorry",
 }

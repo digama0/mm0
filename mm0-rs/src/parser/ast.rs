@@ -1,10 +1,10 @@
 
 //! Implements mm0/mm1 file AST components
 //!
-//! An [`AST`] is the result of parsing an mm0/mm1 file. The core of the AST is a
+//! An [`Ast`] is the result of parsing an mm0/mm1 file. The core of the AST is a
 //! `Vec<Stmt>`, where a [`Stmt`] holds both the element's "data" as a [`StmtKind`],
 //!  and the element's [`Span`].
-//! The actual [`AST`] type also contains data about the source file, any imports, and
+//! The actual [`Ast`] type also contains data about the source file, any imports, and
 //! any errors encountered during parsing.
 
 use std::sync::Arc;
@@ -642,7 +642,7 @@ impl Stmt {
 
 /// Contains the actual AST as a sequence of [`Stmt`]s, as well as import, source, and parse info.
 #[derive(Debug, DeepSizeOf)]
-pub struct AST {
+pub struct Ast {
   /// The source [`LinedString`] for the file. This is needed in order to interpret all the
   /// [`Span`]s in the AST.
   pub source: Arc<LinedString>,
@@ -669,7 +669,7 @@ impl LinedString {
   }
 }
 
-impl AST {
+impl Ast {
   /// Return the string corresponding to a span in this AST's source.
   #[must_use] pub fn span(&self, s: Span) -> &[u8] { &self.source[s] }
   /// Return the string corresponding to an atom.

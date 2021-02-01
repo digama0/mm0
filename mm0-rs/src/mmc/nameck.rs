@@ -5,9 +5,9 @@ use std::{rc::Rc, result::Result as StdResult};
 use crate::elab::{
   Result, ElabError,
   local_context::try_get_span_from,
-  environment::{AtomID, Environment}};
+  environment::{AtomId, Environment}};
 use crate::util::FileSpan;
-use super::{Compiler, types::{self, AST, Proc, ProcKind}, parser::TuplePattern};
+use super::{Compiler, types::{self, Ast, Proc, ProcKind}, parser::TuplePattern};
 
 macro_rules! make_prims {
   {$($(#[$attr0:meta])* enum $name:ident { $($(#[$attr:meta])* $x:ident: $e:expr,)* })* } => {
@@ -156,7 +156,7 @@ make_prims! {
     Own: "own",
     /// `(& T)` is a type of borrowed pointers. This type is elaborated to
     /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
-    /// (see [`Lifetime`]).
+    /// (see [`Lifetime`](super::types::Lifetime)).
     Ref: "&",
     /// `&sn e` is a type of pointers to a place `e`.
     /// This type has the property that if `x: &sn e` then `*x` evaluates to
@@ -216,12 +216,12 @@ pub enum Type {
   Unchecked,
   /// A user type that has been typechecked, with the original span,
   /// the (internal) declaration name, and the compiled [`Type`] object.
-  Checked(Option<FileSpan>, AtomID, Rc<types::Type>),
+  Checked(Option<FileSpan>, AtomId, Rc<types::Type>),
 }
 
 /// The typechecking status of a procedure.
 #[derive(Copy, Clone, Debug, DeepSizeOf)]
-pub enum ProcTC {
+pub enum ProcTc {
   /// We have determined that this is a procedure but we have not yet examined the body.
   Unchecked,
   /// This is a compiler intrinsic function.
@@ -233,17 +233,17 @@ pub enum ProcTC {
 #[allow(variant_size_differences)]
 pub enum Operator {
   /// A user procedure, with a link to the procedure definition and the typechecking status.
-  Proc(Arc<Proc>, ProcTC),
+  Proc(Arc<Proc>, ProcTc),
 }
 
 /// The typechecking status of a global variable.
 #[derive(Clone, Debug, DeepSizeOf)]
-pub enum GlobalTC {
+pub enum GlobalTc {
   /// We know this is a global or const but have not typechecked the body.
   Unchecked,
   /// A user type that has been typechecked, with the original span,
   /// the (internal) declaration name, and the compiled value expression.
-  Checked(Option<FileSpan>, AtomID, Rc<types::Type>, Rc<types::Expr>),
+  Checked(Option<FileSpan>, AtomId, Rc<types::Type>, Rc<types::Expr>),
 }
 
 /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
@@ -270,15 +270,15 @@ pub enum Entity {
   /// A named operator/procedure/function.
   Op(Operator),
   /// A named global variable.
-  Global(GlobalTC),
+  Global(GlobalTc),
   /// A named constant.
-  Const(GlobalTC),
+  Const(GlobalTc),
 }
 
 impl TuplePattern {
-  fn on_names<E>(&self, f: &mut impl FnMut(bool, AtomID, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
+  fn on_names<E>(&self, f: &mut impl FnMut(bool, AtomId, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
     match self {
-      &TuplePattern::Name(ghost, n, ref sp) => if n != AtomID::UNDER { f(ghost, n, sp)? },
+      &TuplePattern::Name(ghost, n, ref sp) => if n != AtomId::UNDER { f(ghost, n, sp)? },
       TuplePattern::Typed(p, _) => p.on_names(f)?,
       TuplePattern::Tuple(ps, _) => for p in &**ps { p.on_names(f)? }
     }
@@ -288,8 +288,8 @@ impl TuplePattern {
 
 impl Compiler {
   /// Construct the initial list of primitive entities.
-  pub fn make_names(env: &mut Environment) -> HashMap<AtomID, Entity> {
-    fn get(names: &mut HashMap<AtomID, Entity>, a: AtomID) -> &mut Prim {
+  pub fn make_names(env: &mut Environment) -> HashMap<AtomId, Entity> {
+    fn get(names: &mut HashMap<AtomId, Entity>, a: AtomId) -> &mut Prim {
       let e = names.entry(a).or_insert_with(|| Entity::Prim(Prim::default()));
       if let Entity::Prim(p) = e {p} else {unreachable!()}
     }
@@ -303,12 +303,12 @@ impl Compiler {
   /// Performs name resolution on the given AST, updating the compiler state with
   /// unchecked entities. This function is also responsible for checking for duplicate
   /// procedure declarations.
-  pub fn nameck(&mut self, fsp: &FileSpan, a: &AST) -> Result<()> {
+  pub fn nameck(&mut self, fsp: &FileSpan, a: &Ast) -> Result<()> {
     match a {
-      AST::Proc(p, _) => {
+      Ast::Proc(p, _) => {
         let sp = try_get_span_from(fsp, p.span.as_ref());
         match self.names.entry(p.name) {
-          Entry::Vacant(e) => {e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTC::Unchecked)));}
+          Entry::Vacant(e) => {e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTc::Unchecked)));}
           Entry::Occupied(mut e) => match e.get() {
             Entity::Op(Operator::Proc(p1, _)) => {
               if !p.eq_decl(p1) {
@@ -318,7 +318,7 @@ impl Compiler {
               match (p1.kind, p.kind) {
                 (_, ProcKind::ProcDecl) => {}
                 (ProcKind::ProcDecl, _) => {
-                  e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTC::Unchecked)));
+                  e.insert(Entity::Op(Operator::Proc(p.clone(), ProcTc::Unchecked)));
                 }
                 _ => return Err(ElabError::new_e(sp, "name already in use"))
               }
@@ -327,20 +327,20 @@ impl Compiler {
           }
         }
       }
-      AST::Global {lhs, ..} => lhs.on_names(&mut |_, a, sp| -> Result<()> {
-        if self.names.insert(a, Entity::Global(GlobalTC::Unchecked)).is_some() {
+      Ast::Global {lhs, ..} => lhs.on_names(&mut |_, a, sp| -> Result<()> {
+        if self.names.insert(a, Entity::Global(GlobalTc::Unchecked)).is_some() {
           return Err(ElabError::new_e(try_get_span_from(fsp, sp.as_ref()), "name already in use"))
         }
         Ok(())
       })?,
-      AST::Const {lhs, ..} => lhs.on_names(&mut |_, a, sp| -> Result<()> {
-        if self.names.insert(a, Entity::Const(GlobalTC::Unchecked)).is_some() {
+      Ast::Const {lhs, ..} => lhs.on_names(&mut |_, a, sp| -> Result<()> {
+        if self.names.insert(a, Entity::Const(GlobalTc::Unchecked)).is_some() {
           return Err(ElabError::new_e(try_get_span_from(fsp, sp.as_ref()), "name already in use"))
         }
         Ok(())
       })?,
-      &AST::Typedef {name, ref span, ..} |
-      &AST::Struct {name, ref span, ..} =>
+      &Ast::Typedef {name, ref span, ..} |
+      &Ast::Struct {name, ref span, ..} =>
         if self.names.insert(name, Entity::Type(Type::Unchecked)).is_some() {
           return Err(ElabError::new_e(try_get_span_from(fsp, span.as_ref()), "name already in use"))
         },

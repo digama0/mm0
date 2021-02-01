@@ -4,7 +4,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use crate::elab::{ElabError, Result,
   local_context::MAX_BOUND_VARS,
   environment::{Term, Thm, TermKind, ThmKind,
-    AtomID, SortID, Environment, Modifiers, Type, Expr, Proof},
+    AtomId, SortId, Environment, Modifiers, Type, Expr, Proof},
   proof::{IDedup, NodeHash, ExprHash, ProofKind, ProofHash, build}};
 use crate::util::{Span, BoxError, FileRef, FileSpan};
 use crate::parser::{whitespace, lisp_ident};
@@ -61,13 +61,13 @@ impl<'a> Importer<'a> {
   }
 
   fn ident_str(&mut self) -> Option<&[u8]> { self.ident().map(|sp| self.span(sp)) }
-  fn ident_atom(&mut self) -> Option<AtomID> {
+  fn ident_atom(&mut self) -> Option<AtomId> {
     self.ident().map(|s| self.env.get_atom(span(self.source, s)))
   }
   fn ident_err(&mut self) -> Result<Span> {
     self.ident().ok_or_else(|| self.err("expecting identifier".into()))
   }
-  fn ident_atom_err(&mut self) -> Result<AtomID> {
+  fn ident_atom_err(&mut self) -> Result<AtomId> {
     self.ident_atom().ok_or_else(|| self.err("expecting identifier".into()))
   }
 
@@ -91,7 +91,7 @@ impl<'a> Importer<'a> {
   fn open_err(&mut self) -> Result<usize> { self.chr_err(b'(') }
   fn close_err(&mut self) -> Result<usize> { self.chr_err(b')').map(|n| n+1) }
 
-  fn deps(&mut self, bvs: &HashMap<AtomID, u64>) -> Result<u64> {
+  fn deps(&mut self, bvs: &HashMap<AtomId, u64>) -> Result<u64> {
     self.open_err()?;
     let mut deps = 0;
     while self.close().is_none() {
@@ -101,7 +101,7 @@ impl<'a> Importer<'a> {
     Ok(deps)
   }
 
-  fn dummies(&mut self, vars: &mut HashMap<AtomID, VarKind>) -> Result<()> {
+  fn dummies(&mut self, vars: &mut HashMap<AtomId, VarKind>) -> Result<()> {
     self.open_err()?;
     while self.close().is_none() {
       self.open_err()?;
@@ -121,7 +121,7 @@ impl<'a> Importer<'a> {
 #[allow(variant_size_differences)]
 enum VarKind {
   Var(usize),
-  Dummy(SortID),
+  Dummy(SortId),
 }
 
 #[derive(Clone, Copy)]
@@ -141,7 +141,7 @@ struct Dedup<H: NodeHash> {
 }
 
 impl<H: NodeHash> Dedup<H> {
-  fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
+  fn new(args: &[(Option<AtomId>, Type)]) -> Dedup<H> {
     let vec: Vec<_> = (0..args.len())
       .map(|i| (Rc::new(H::REF(ProofKind::Expr, i)), true)).collect();
     Dedup {
@@ -269,7 +269,7 @@ impl<'a> Importer<'a> {
       self.open_err()?;
       let ysp = self.ident_err()?;
       let y = self.env.get_atom(self.span(ysp));
-      let oy = if y == AtomID::UNDER {None} else {
+      let oy = if y == AtomId::UNDER {None} else {
         vars.insert(y, VarKind::Var(args.len()));
         Some(y)
       };
@@ -280,7 +280,7 @@ impl<'a> Importer<'a> {
           return Err(ElabError::new_e(ysp,
             format!("too many bound variables (max {})", MAX_BOUND_VARS)))
         }
-        if y != AtomID::UNDER {bvs.insert(y, next_bv);}
+        if y != AtomId::UNDER {bvs.insert(y, next_bv);}
         next_bv *= 2;
         args.push((oy, Type::Bound(s)))
       } else {
@@ -328,7 +328,7 @@ impl<'a> Importer<'a> {
           } else {
             self.open_err()?;
             let h = self.ident_atom_err()?;
-            let oh = if h == AtomID::UNDER {None} else {Some(h)};
+            let oh = if h == AtomId::UNDER {None} else {Some(h)};
             let i = self.expr(&mut de, &vars)?;
             self.close_err()?;
             is.push((oh, i))
@@ -371,7 +371,7 @@ impl<'a> Importer<'a> {
     Ok(())
   }
 
-  fn expr(&mut self, de: &mut Dedup<ExprHash>, vars: &HashMap<AtomID, VarKind>) -> Result<usize> {
+  fn expr(&mut self, de: &mut Dedup<ExprHash>, vars: &HashMap<AtomId, VarKind>) -> Result<usize> {
     let e = if self.open().is_some() {
       let t = self.ident_atom_err()?;
       let t = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;
@@ -389,20 +389,20 @@ impl<'a> Importer<'a> {
   }
 
   fn conv(&mut self, de: &mut Dedup<ProofHash>,
-    vars: &HashMap<AtomID, VarKind>,
-    proofs: &mut HashMap<AtomID, usize>,
+    vars: &HashMap<AtomId, VarKind>,
+    proofs: &mut HashMap<AtomId, usize>,
   ) -> Result<usize> {
     self.proof(de, vars, proofs, ProofKind::Conv).map(|i| ProofHash::as_conv(de, i))
   }
 
   fn proof(&mut self, de: &mut Dedup<ProofHash>,
-    vars: &HashMap<AtomID, VarKind>,
-    proofs: &mut HashMap<AtomID, usize>,
+    vars: &HashMap<AtomId, VarKind>,
+    proofs: &mut HashMap<AtomId, usize>,
     ty: ProofKind
   ) -> Result<usize> {
     let e = if self.open().is_some() {
       match self.ident_atom_err()? {
-        AtomID::CONV => {
+        AtomId::CONV => {
           if ty != ProofKind::Proof {
             return Err(self.err(":conv in invalid position".into()))
           }
@@ -412,13 +412,13 @@ impl<'a> Importer<'a> {
             self.proof(de, vars, proofs, ProofKind::Proof)?),
           self.close_err()?).0
         }
-        AtomID::SYM => {
+        AtomId::SYM => {
           if ty != ProofKind::Conv {
             return Err(self.err(":sym in invalid position".into()))
           }
           (ProofHash::Sym(self.conv(de, vars, proofs)?), self.close_err()?).0
         }
-        AtomID::UNFOLD => {
+        AtomId::UNFOLD => {
           if ty != ProofKind::Conv {
             return Err(self.err(":unfold in invalid position".into()))
           }
@@ -435,7 +435,7 @@ impl<'a> Importer<'a> {
           let l2 = ProofHash::conv_side(de, c, false);
           ProofHash::Unfold(tid, ns.into(), lhs, l2, c)
         }
-        AtomID::LET => {
+        AtomId::LET => {
           if ty != ProofKind::Proof {
             return Err(self.err(":let in invalid position".into()))
           }

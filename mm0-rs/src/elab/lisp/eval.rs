@@ -1,6 +1,6 @@
 //! The lisp evaluator, where most functions are implemented.
 //!
-//! We use an explicit call stack for evaluating lisp [`IR`], so that we can give useful
+//! We use an explicit call stack for evaluating lisp [`Ir`], so that we can give useful
 //! stack traces, as well as having a uniform location to be able to check for interrupts
 //! and timeout.
 
@@ -14,44 +14,44 @@ use num::{BigInt, ToPrimitive, Zero};
 use crate::util::{ArcString, FileRef, FileSpan, SliceExt, Span};
 use crate::parser::ast::SExpr;
 use super::super::{Result, Elaborator, LispData, DocComment,
-  AtomID, Environment, AtomData, DeclKey, StmtTrace,
+  AtomId, Environment, AtomData, DeclKey, StmtTrace,
   ElabError, ReportMode, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
   environment::{MergeStrategy, MergeStrategyInner},
   refine::{RStack, RState, RefineResult}};
 use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
-  Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmID, Uncons};
-use super::parser::{IR, Branch, Pattern, MVarPattern, DefTarget};
+  Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmId, Uncons};
+use super::parser::{Ir, Branch, Pattern, MVarPattern, DefTarget};
 use super::super::local_context::{InferSort, AwaitingProof, try_get_span, try_get_span_from};
 use super::super::environment::{TermKind, ThmKind, ExprNode, ProofNode};
 use super::print::{FormatEnv, EnvDisplay};
 
 #[derive(Debug)]
 enum Stack<'a> {
-  List(Span, Vec<LispVal>, std::slice::Iter<'a, IR>),
-  DottedList(Vec<LispVal>, std::slice::Iter<'a, IR>, &'a IR),
+  List(Span, Vec<LispVal>, std::slice::Iter<'a, Ir>),
+  DottedList(Vec<LispVal>, std::slice::Iter<'a, Ir>, &'a Ir),
   DottedList2(Vec<LispVal>),
-  App(Span, Span, &'a [IR]),
-  App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
+  App(Span, Span, &'a [Ir]),
+  App2(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, Ir>),
   AppHead(Span, Span, LispVal),
-  If(&'a IR, &'a IR),
+  If(&'a Ir, &'a Ir),
   NoTailRec,
   Def(Option<&'a DefTarget>),
-  DefMerge((FileSpan, Span), AtomID, Option<DocComment>),
-  Eval(&'a IR, std::slice::Iter<'a, IR>),
+  DefMerge((FileSpan, Span), AtomId, Option<DocComment>),
+  Eval(&'a Ir, std::slice::Iter<'a, Ir>),
   Match(Span, std::slice::Iter<'a, Branch>),
   TestPattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>),
   Drop(usize),
-  Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<IR>),
+  Ret(FileSpan, ProcPos, Vec<LispVal>, Arc<Ir>),
   MatchCont(Span, LispVal, std::slice::Iter<'a, Branch>, Rc<Cell<bool>>),
-  SetMergeStrategy(Span, AtomID),
+  SetMergeStrategy(Span, AtomId),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
-  MergeMap(Span, LispVal, MergeStrategy, std::vec::IntoIter<(AtomID, LispVal, LispVal)>, HashMap<AtomID, LispVal>, AtomID),
+  MergeMap(Span, LispVal, MergeStrategy, std::vec::IntoIter<(AtomId, LispVal, LispVal)>, HashMap<AtomId, LispVal>, AtomId),
   AddThmProc(FileSpan, Box<AwaitingProof>),
-  Refines(Span, Option<Span>, std::slice::Iter<'a, IR>),
+  Refines(Span, Option<Span>, std::slice::Iter<'a, Ir>),
   Refine {sp: Span, stack: Vec<RStack>},
   Focus(Span, bool, Vec<LispVal>),
-  Have(Span, LispVal, AtomID),
+  Have(Span, LispVal, AtomId),
 }
 
 impl<'a> EnvDisplay for Stack<'a> {
@@ -98,18 +98,18 @@ impl<'a> EnvDisplay for Stack<'a> {
 
 #[derive(Debug)]
 enum State<'a> {
-  Eval(&'a IR),
-  Evals(&'a IR, std::slice::Iter<'a, IR>),
-  Refines(Span, std::slice::Iter<'a, IR>),
+  Eval(&'a Ir),
+  Evals(&'a Ir, std::slice::Iter<'a, Ir>),
+  Refines(Span, std::slice::Iter<'a, Ir>),
   Ret(LispVal),
-  List(Span, Vec<LispVal>, std::slice::Iter<'a, IR>),
-  DottedList(Vec<LispVal>, std::slice::Iter<'a, IR>, &'a IR),
-  App(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, IR>),
+  List(Span, Vec<LispVal>, std::slice::Iter<'a, Ir>),
+  DottedList(Vec<LispVal>, std::slice::Iter<'a, Ir>, &'a Ir),
+  App(Span, Span, LispVal, Vec<LispVal>, std::slice::Iter<'a, Ir>),
   Match(Span, LispVal, std::slice::Iter<'a, Branch>),
   Pattern(Span, LispVal, std::slice::Iter<'a, Branch>,
     &'a Branch, Vec<PatternStack<'a>>, Box<[LispVal]>, PatternState<'a>),
   MapProc(Span, Span, LispVal, Box<[Uncons]>, Vec<LispVal>),
-  MergeMap(Span, LispVal, MergeStrategy, std::vec::IntoIter<(AtomID, LispVal, LispVal)>, HashMap<AtomID, LispVal>),
+  MergeMap(Span, LispVal, MergeStrategy, std::vec::IntoIter<(AtomId, LispVal, LispVal)>, HashMap<AtomId, LispVal>),
   Refine {sp: Span, stack: Vec<RStack>, state: RState},
 }
 
@@ -148,7 +148,7 @@ impl LispKind {
     }
   }
 
-  fn make_map_mut<T>(&self, f: impl FnOnce(&mut HashMap<AtomID, LispVal>) -> T) -> (Option<T>, Option<LispVal>) {
+  fn make_map_mut<T>(&self, f: impl FnOnce(&mut HashMap<AtomId, LispVal>) -> T) -> (Option<T>, Option<LispVal>) {
     match self {
       LispKind::AtomMap(m) => {
         let mut m = m.clone();
@@ -164,7 +164,7 @@ impl LispKind {
   }
 }
 impl LispVal {
-  fn as_map_mut<T>(&mut self, f: impl FnOnce(&mut HashMap<AtomID, LispVal>) -> T) -> Option<T> {
+  fn as_map_mut<T>(&mut self, f: impl FnOnce(&mut HashMap<AtomId, LispVal>) -> T) -> Option<T> {
     match self.get_mut() {
       None => {
         let (r, new) = self.make_map_mut(f);
@@ -217,7 +217,7 @@ impl<'a> EnvDisplay for PatternState<'a> {
   }
 }
 
-struct TestPending<'a>(Span, LispVal, &'a IR);
+struct TestPending<'a>(Span, LispVal, &'a Ir);
 
 /// A [`Result`](std::result::Result) type alias for string errors, used by functions that
 /// work without an elaboration context.
@@ -351,7 +351,7 @@ impl Elaborator {
   }
 
   /// Evaluate a compiled lisp expression.
-  pub fn evaluate<'b>(&'b mut self, sp: Span, ir: &'b IR) -> Result<LispVal> {
+  pub fn evaluate<'b>(&'b mut self, sp: Span, ir: &'b Ir) -> Result<LispVal> {
     Evaluator::new(self, sp).run(State::Eval(ir))
   }
 
@@ -386,7 +386,7 @@ impl Elaborator {
     })
   }
 
-  fn as_string_atom(&mut self, e: &LispVal) -> Option<AtomID> {
+  fn as_string_atom(&mut self, e: &LispVal) -> Option<AtomId> {
     e.unwrapped(|e| match e {
       LispKind::String(s) => Some(self.get_atom(s)),
       &LispKind::Atom(a) => Some(a),
@@ -412,7 +412,7 @@ impl Elaborator {
     self.as_lref(e, |m| m.get_mut(f))
   }
 
-  fn as_map<T>(&self, e: &LispKind, f: impl FnOnce(&HashMap<AtomID, LispVal>) -> SResult<T>) -> SResult<T> {
+  fn as_map<T>(&self, e: &LispKind, f: impl FnOnce(&HashMap<AtomId, LispVal>) -> SResult<T>) -> SResult<T> {
     e.unwrapped(|e| match e {
       LispKind::AtomMap(m) => f(m),
       _ => Err(format!("not an atom map: {}", self.print(e)))
@@ -494,7 +494,7 @@ impl Elaborator {
     })
   }
 
-  fn proof_node(&self, hyps: &[(Option<AtomID>, ExprNode)],
+  fn proof_node(&self, hyps: &[(Option<AtomId>, ExprNode)],
     heap: &[LispVal], ds: &mut Vec<LispVal>, p: &ProofNode) -> LispVal {
     match p {
       &ProofNode::Ref(n) => heap[n].clone(),
@@ -509,7 +509,7 @@ impl Elaborator {
         args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
         LispVal::list(args)
       }
-      &ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomID::UNDER)),
+      &ProofNode::Hyp(h, _) => LispVal::atom(hyps[h].0.unwrap_or(AtomId::UNDER)),
       &ProofNode::Thm {thm, args: ref es, ..} => {
         let mut args = vec![LispVal::atom(self.thms[thm].atom)];
         args.extend(es.iter().map(|e| self.proof_node(hyps, heap, ds, e)));
@@ -517,7 +517,7 @@ impl Elaborator {
       }
       ProofNode::Conv(es) => {
         let (t, c, p) = &**es;
-        LispVal::list(vec![LispVal::atom(AtomID::CONV),
+        LispVal::list(vec![LispVal::atom(AtomId::CONV),
           self.proof_node(hyps, heap, ds, t),
           self.proof_node(hyps, heap, ds, c),
           self.proof_node(hyps, heap, ds, p),
@@ -525,16 +525,16 @@ impl Elaborator {
       }
       ProofNode::Refl(p) => self.proof_node(hyps, heap, ds, p),
       ProofNode::Sym(p) =>
-        LispVal::list(vec![LispVal::atom(AtomID::SYM), self.proof_node(hyps, heap, ds, p)]),
+        LispVal::list(vec![LispVal::atom(AtomId::SYM), self.proof_node(hyps, heap, ds, p)]),
       &ProofNode::Unfold {term, ref args, ref res} =>
-        LispVal::list(vec![LispVal::atom(AtomID::UNFOLD),
+        LispVal::list(vec![LispVal::atom(AtomId::UNFOLD),
           LispVal::atom(self.terms[term].atom),
           LispVal::list(args.iter().map(|e| self.proof_node(hyps, heap, ds, e)).collect::<Vec<_>>()),
           self.proof_node(hyps, heap, ds, &res.2)]),
     }
   }
 
-  fn get_proof(&self, t: ThmID, mut heap: Vec<LispVal>) -> LispVal {
+  fn get_proof(&self, t: ThmId, mut heap: Vec<LispVal>) -> LispVal {
     let tdata = &self.thms[t];
     match &tdata.kind {
       ThmKind::Thm(Some(pr)) => {
@@ -546,16 +546,16 @@ impl Elaborator {
         let ret = self.proof_node(&tdata.hyps, &heap, &mut ds, &pr.head);
         LispVal::list(vec![LispVal::list(ds), ret])
       }
-      _ => LispVal::atom(AtomID::SORRY),
+      _ => LispVal::atom(AtomId::SORRY),
     }
   }
 
-  fn get_decl(&mut self, fsp: Option<FileSpan>, x: AtomID) -> LispVal {
+  fn get_decl(&mut self, fsp: Option<FileSpan>, x: AtomId) -> LispVal {
     fn vis(mods: Modifiers) -> LispVal {
       match mods {
-        Modifiers::PUB => LispVal::atom(AtomID::PUB),
-        Modifiers::ABSTRACT => LispVal::atom(AtomID::ABSTRACT),
-        Modifiers::LOCAL => LispVal::atom(AtomID::LOCAL),
+        Modifiers::PUB => LispVal::atom(AtomId::PUB),
+        Modifiers::ABSTRACT => LispVal::atom(AtomId::ABSTRACT),
+        Modifiers::LOCAL => LispVal::atom(AtomId::LOCAL),
         Modifiers::NONE => LispVal::nil(),
         _ => unreachable!()
       }
@@ -572,8 +572,8 @@ impl Elaborator {
         let mut heap = Vec::new();
         let mut args = vec![
           LispVal::atom(match tdata.kind {
-            TermKind::Term => AtomID::TERM,
-            TermKind::Def(_) => AtomID::DEF
+            TermKind::Term => AtomId::TERM,
+            TermKind::Def(_) => AtomId::DEF
           }),
           LispVal::atom(x),
           self.binders(&tdata.args, &mut heap, &mut bvs),
@@ -602,8 +602,8 @@ impl Elaborator {
         let mut heap = Vec::new();
         let mut args = vec![
           LispVal::atom(match tdata.kind {
-            ThmKind::Axiom => AtomID::AXIOM,
-            ThmKind::Thm(_) => AtomID::THM
+            ThmKind::Axiom => AtomId::AXIOM,
+            ThmKind::Thm(_) => AtomId::THM
           }),
           LispVal::atom(x),
           self.binders(&tdata.args, &mut heap, &mut bvs),
@@ -613,7 +613,7 @@ impl Elaborator {
               heap.push(e)
             }
             LispVal::list(tdata.hyps.iter().map(|(a, e)| LispVal::list(vec![
-              LispVal::atom(a.unwrap_or(AtomID::UNDER)),
+              LispVal::atom(a.unwrap_or(AtomId::UNDER)),
               self.expr_node(&heap, &mut None, e)
             ])).collect::<Vec<_>>())
           },
@@ -640,9 +640,9 @@ fn set_report_mode(fe: FormatEnv<'_>, mode: &mut ReportMode, args: &[LispVal]) -
     } else {Err("invalid arguments".into())}
   } else if let Some(b) = args[1].as_bool() {
     match args[0].as_atom().ok_or("expected an atom")? {
-      AtomID::ERROR => mode.error = b,
-      AtomID::WARN => mode.warn = b,
-      AtomID::INFO => mode.info = b,
+      AtomId::ERROR => mode.error = b,
+      AtomId::WARN => mode.warn = b,
+      AtomId::INFO => mode.info = b,
       s => return Err(format!("unknown error level '{}'", fe.to(&s)))
     }
     Ok(())
@@ -837,9 +837,9 @@ make_builtins! { self, sp1, sp2, args,
   Print: Exact(1) => {print!(sp1, format!("{}", self.print(&args[0]))); LispVal::undef()},
   ReportAt: Exact(3) => {
     let level = match args[0].as_atom() {
-      Some(AtomID::ERROR) => ErrorLevel::Error,
-      Some(AtomID::WARN) => ErrorLevel::Warning,
-      Some(AtomID::INFO) =>  ErrorLevel::Info,
+      Some(AtomId::ERROR) => ErrorLevel::Error,
+      Some(AtomId::WARN) => ErrorLevel::Warning,
+      Some(AtomId::INFO) =>  ErrorLevel::Info,
       _ => try1!(Err("expected 'error, 'warn, or 'info"))
     };
     let FileSpan {file, span} = try1!(args[1].fspan().ok_or("expected a span"));
@@ -1279,8 +1279,8 @@ make_builtins! { self, sp1, sp2, args,
   AddDecl: AtLeast(4) => {
     let fsp = self.fspan_base(sp1);
     match try1!(args[0].as_atom().ok_or("expected an atom")) {
-      AtomID::TERM | AtomID::DEF => self.add_term(&fsp, &args[1..])?,
-      AtomID::AXIOM | AtomID::THM => return self.add_thm(fsp, &args[1..]),
+      AtomId::TERM | AtomId::DEF => self.add_term(&fsp, &args[1..])?,
+      AtomId::AXIOM | AtomId::THM => return self.add_thm(fsp, &args[1..]),
       e => try1!(Err(format!("invalid declaration type '{}'", self.print(&e))))
     }
     LispVal::undef()
@@ -1337,7 +1337,7 @@ make_builtins! { self, sp1, sp2, args,
     let bytes = self.eval_string(&fsp, &args)?;
     LispVal::string(bytes.into())
   },
-  MMCInit: Exact(0) => LispVal::proc(Proc::MMCCompiler(
+  MmcInit: Exact(0) => LispVal::proc(Proc::MmcCompiler(
     RefCell::new(crate::mmc::Compiler::new(self)))),
 }
 
@@ -1404,8 +1404,8 @@ impl<'a> Evaluator<'a> {
       // }
       active = match active {
         State::Eval(ir) => match ir {
-          &IR::Local(i) => State::Ret(self.ctx[i].clone()),
-          &IR::Global(sp, a) => State::Ret(match &self.data[a] {
+          &Ir::Local(i) => State::Ret(self.ctx[i].clone()),
+          &Ir::Global(sp, a) => State::Ret(match &self.data[a] {
             AtomData {name, lisp: None, ..} => match BuiltinProc::from_bytes(name) {
               None => throw!(sp, format!("Reference to unbound variable '{}'", name)),
               Some(p) => {
@@ -1418,27 +1418,27 @@ impl<'a> Evaluator<'a> {
             },
             AtomData {lisp: Some(x), ..} => x.val.clone(),
           }),
-          IR::Const(val) => State::Ret(val.clone()),
-          IR::List(sp, ls) => State::List(*sp, vec![], ls.iter()),
-          IR::DottedList(ls, e) => State::DottedList(vec![], ls.iter(), e),
-          IR::App(sp1, sp2, f, es) => push!(App(*sp1, *sp2, es); Eval(f)),
-          IR::If(e) => push!(If(&e.1, &e.2); Eval(&e.0)),
-          IR::NoTailRec => match self.stack.pop() {
+          Ir::Const(val) => State::Ret(val.clone()),
+          Ir::List(sp, ls) => State::List(*sp, vec![], ls.iter()),
+          Ir::DottedList(ls, e) => State::DottedList(vec![], ls.iter(), e),
+          Ir::App(sp1, sp2, f, es) => push!(App(*sp1, *sp2, es); Eval(f)),
+          Ir::If(e) => push!(If(&e.1, &e.2); Eval(&e.0)),
+          Ir::NoTailRec => match self.stack.pop() {
             None => State::Ret(LispVal::undef()),
             Some(Stack::Eval(e, it)) => push!(NoTailRec; Evals(e, it)),
             Some(s) => push!(s; State::Ret(LispVal::undef())),
           }
-          &IR::Focus(sp, ref irs) => {
+          &Ir::Focus(sp, ref irs) => {
             if self.lc.goals.is_empty() {throw!(sp, "no goals")}
             let gs = self.lc.goals.drain(1..).collect();
             push!(Focus(sp, true, gs); Refines(sp, irs.iter()))
           }
-          &IR::SetMergeStrategy(sp, a, ref ir) => push!(SetMergeStrategy(sp, a); Eval(ir)),
-          &IR::Def(n, ref x, ref val) => {
+          &Ir::SetMergeStrategy(sp, a, ref ir) => push!(SetMergeStrategy(sp, a); Eval(ir)),
+          &Ir::Def(n, ref x, ref val) => {
             assert!(self.ctx.len() == n);
             push!(Def(Some(x)); Eval(val))
           }
-          IR::Eval(keep, es) => {
+          Ir::Eval(keep, es) => {
             if !keep {self.stack.push(Stack::Def(None))}
             let mut it = es.iter();
             match it.next() {
@@ -1449,7 +1449,7 @@ impl<'a> Evaluator<'a> {
               }
             }
           }
-          &IR::Lambda(sp, n, spec, ref e) => {
+          &Ir::Lambda(sp, n, spec, ref e) => {
             assert!(self.ctx.len() == n);
             State::Ret(LispVal::proc(Proc::Lambda {
               pos: self.proc_pos(sp),
@@ -1458,7 +1458,7 @@ impl<'a> Evaluator<'a> {
               code: e.clone()
             }))
           }
-          &IR::Match(sp, ref e, ref brs) => push!(Match(sp, brs.iter()); Eval(e)),
+          &Ir::Match(sp, ref e, ref brs) => push!(Match(sp, brs.iter()); Eval(e)),
         },
         State::Ret(ret) => match self.stack.pop() {
           None => return Ok(ret),
@@ -1656,7 +1656,7 @@ impl<'a> Evaluator<'a> {
                 // ir (which is borrowed from f). We solve the problem by storing an Arc of
                 // the IR inside the Ret instruction above, so that it won't get deallocated
                 // while in use. Rust doesn't reason about other owners of an Arc though, so...
-                let code: *const IR = &**code;
+                let code: *const Ir = &**code;
                 State::Eval(unsafe { &*code })
               },
               Proc::MatchCont(valid) => {
@@ -1710,7 +1710,7 @@ impl<'a> Evaluator<'a> {
                   } else {unreachable!()}
                 }
               }
-              Proc::MMCCompiler(c) => {
+              Proc::MmcCompiler(c) => {
                 let sp = self.respan(sp1);
                 State::Ret(c.borrow_mut().call(self, sp, args)?)
               }
@@ -1791,7 +1791,7 @@ impl<'a> Evaluator<'a> {
               for e in u {args.push(e)}
               stack.push(RStack::CoerceTo(tgt));
               self.stack.push(Stack::Refine {sp, stack});
-              match &self.data[AtomID::REFINE_EXTRA_ARGS].lisp {
+              match &self.data[AtomId::REFINE_EXTRA_ARGS].lisp {
                 None => self.evaluate_builtin(sp, sp, BuiltinProc::RefineExtraArgs, args)?,
                 Some(v) => State::App(sp, sp, v.val.clone(), args, [].iter()),
               }

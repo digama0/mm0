@@ -40,7 +40,7 @@ use num::BigInt;
 use super::{Spans, ObjectKind, Remap, Remapper,
   environment::{Environment, ParserEnv, MergeStrategy, MergeStrategyInner,
     AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment, LispData,
-    SortID, TermID, ThmID, AtomID, Sort, Term, Thm, AtomData},
+    SortId, TermId, ThmId, AtomId, Sort, Term, Thm, AtomData},
   lisp::{LispVal, LispKind, LispRef, LispWeak,
     InferTarget, Proc, Annot, Syntax, print::FormatEnv}};
 use crate::util::{ArcString, FileSpan, Span};
@@ -58,7 +58,7 @@ impl FrozenEnv {
   /// Create a new [`FrozenEnv`] from an [`Environment`].
   #[must_use] pub fn new(env: Environment) -> Self { Self(Arc::new(env)) }
 
-  /// Convert a [`&FrozenEnv`] into an [`&Environment`].
+  /// Convert a [`&FrozenEnv`](FrozenEnv) into an [`&Environment`](Environment).
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// [`Rc::clone()`] should be avoided because it could race with other readers.
@@ -88,19 +88,19 @@ impl FrozenEnv {
   /// Accessor for [`Environment::sorts`]
   #[must_use] pub fn sorts(&self) -> &SortVec<Sort> { &unsafe { self.thaw() }.sorts }
   /// Accessor for [`Environment::sorts`]
-  #[must_use] pub fn sort(&self, s: SortID) -> &Sort { &self.sorts()[s] }
+  #[must_use] pub fn sort(&self, s: SortId) -> &Sort { &self.sorts()[s] }
   /// Accessor for [`Environment::terms`]
   #[must_use] pub fn terms(&self) -> &TermVec<Term> { &unsafe { self.thaw() }.terms }
   /// Accessor for [`Environment::terms`]
-  #[must_use] pub fn term(&self, t: TermID) -> &Term { &self.terms()[t] }
+  #[must_use] pub fn term(&self, t: TermId) -> &Term { &self.terms()[t] }
   /// Accessor for [`Environment::thms`]
   #[must_use] pub fn thms(&self) -> &ThmVec<Thm> { &unsafe { self.thaw() }.thms }
   /// Accessor for [`Environment::thms`]
-  #[must_use] pub fn thm(&self, t: ThmID) -> &Thm { &self.thms()[t] }
+  #[must_use] pub fn thm(&self, t: ThmId) -> &Thm { &self.thms()[t] }
   /// Accessor for [`Environment::stmts`]
   #[must_use] pub fn stmts(&self) -> &[StmtTrace] { &unsafe { self.thaw() }.stmts }
   /// Parse a string into an atom.
-  #[must_use] pub fn get_atom(&self, s: &[u8]) -> Option<AtomID> { unsafe { self.thaw() }.atoms.get(s).copied() }
+  #[must_use] pub fn get_atom(&self, s: &[u8]) -> Option<AtomId> { unsafe { self.thaw() }.atoms.get(s).copied() }
   /// Accessor for [`Environment::pe`]
   #[must_use] pub fn pe(&self) -> &ParserEnv { &unsafe { self.thaw() }.pe }
 }
@@ -114,7 +114,7 @@ impl FrozenAtomData {
   /// Accessor for [`AtomData::name`]
   #[must_use] pub fn name(&self) -> &ArcString { &self.0.name }
   /// Accessor for [`AtomData::sort`]
-  #[must_use] pub fn sort(&self) -> Option<SortID> { self.0.sort }
+  #[must_use] pub fn sort(&self) -> Option<SortId> { self.0.sort }
   /// Accessor for [`AtomData::decl`]
   #[must_use] pub fn decl(&self) -> Option<DeclKey> { self.0.decl }
   /// Accessor for [`AtomData::lisp`]
@@ -230,7 +230,7 @@ impl FrozenLispVal {
   /// until the value is frozen (meaning that all internal mutability stops).
   #[must_use] pub unsafe fn new(e: LispVal) -> Self { Self(e) }
 
-  /// Convert a [`&FrozenLispVal`] into an [`&LispVal`].
+  /// Convert a [`&FrozenLispVal`](FrozenLispVal) into an [`&LispVal`](LispVal).
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// [`Rc::clone()`] should be avoided because it could race with other readers.
@@ -259,7 +259,7 @@ impl FrozenLispKind {
   }
 
   /// Get the atom that this value stores, if applicable.
-  #[must_use] pub fn as_atom(&self) -> Option<AtomID> {
+  #[must_use] pub fn as_atom(&self) -> Option<AtomId> {
     if let FrozenLispKind::Atom(a) = *self.unwrap() {Some(a)} else {None}
   }
 
@@ -414,13 +414,13 @@ impl Remap for FrozenProc {
           Err(v) => Err(v.remap(r)),
         }
       )),
-      Proc::MMCCompiler(c) => Proc::MMCCompiler(c.remap(r)),
+      Proc::MmcCompiler(c) => Proc::MmcCompiler(c.remap(r)),
     }
   }
 }
 
 impl FrozenLispRef {
-  /// Convert a [`&FrozenLispRef`] into an [`&LispRef`].
+  /// Convert a [`&FrozenLispRef`](FrozenLispRef) into an [`&LispRef`](LispRef).
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// [`Rc::clone()`] should be avoided because it could race with other readers.
@@ -434,7 +434,7 @@ impl FrozenLispRef {
 }
 
 impl FrozenProc {
-  /// Convert a [`&FrozenProc`] into an [`&Proc`].
+  /// Convert a [`&FrozenProc`](FrozenProc) into an [`&Proc`](Proc).
   /// # Safety
   /// The reference derived here is only usable for reading, so in particular
   /// [`Rc::clone()`] should be avoided because it could race with other readers.

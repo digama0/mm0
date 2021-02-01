@@ -2,7 +2,7 @@
 
 use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
-use super::environment::AtomID;
+use super::environment::AtomId;
 use super::local_context::LocalContext;
 use crate::util::Span;
 
@@ -24,7 +24,7 @@ pub struct Spans<T> {
   stmt: MaybeUninit<Span>,
   /// The name of the present declaration. This is left uninitialized for
   /// declarations that don't have names, like [`delimiter`](crate::parser::ast::Delimiter).
-  decl: MaybeUninit<AtomID>,
+  decl: MaybeUninit<AtomId>,
   /// The local context as of the end of the proof. This is used to resolve variables
   /// and subproof names.
   pub lc: Option<LocalContext>,
@@ -67,7 +67,7 @@ impl<T> Spans<T> {
   pub fn set_stmt(&mut self, sp: Span) { self.stmt = MaybeUninit::new(sp) }
 
   /// Initialize the `decl` field of a [`Spans`].
-  pub fn set_decl(&mut self, a: AtomID) { self.decl = MaybeUninit::new(a) }
+  pub fn set_decl(&mut self, a: AtomId) { self.decl = MaybeUninit::new(a) }
 
   /// Get the `stmt` field of a [`Spans`].
   ///
@@ -84,7 +84,7 @@ impl<T> Spans<T> {
   /// been called. We ensure that this is the case for any [`Spans`] object put into
   /// [`Environment.spans`], but only for declarations that actually have names.
   /// (This function is also currently unused.)
-  #[must_use] pub fn decl(&self) -> AtomID { unsafe { self.decl.assume_init() } }
+  #[must_use] pub fn decl(&self) -> AtomId { unsafe { self.decl.assume_init() } }
 
   /// Insert a new data element at a given span.
   #[allow(clippy::useless_transmute)]

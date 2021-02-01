@@ -8,8 +8,8 @@
 use std::result::Result as StdResult;
 use crate::util::{FileSpan, Span};
 use super::{Elaborator, ElabError, Result};
-use super::environment::{AtomID, TermKind, DeclKey, Modifiers,
-  ObjectKind, SortID, TermID, ThmID, Type};
+use super::environment::{AtomId, TermKind, DeclKey, Modifiers,
+  ObjectKind, SortId, TermId, ThmId, Type};
 use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons, RefineSyntax,
   print::{FormatEnv, EnvDisplay}, eval::SResult};
 use super::local_context::{InferSort, try_get_span, try_get_span_opt};
@@ -39,7 +39,7 @@ enum RefineExpr {
     /** The span of the application. */                                sp: Span,
     /** The span of the head term, `foo` or `bar` in the examples. */  sp2: Span,
     /** The infer mode (see [`InferMode`]), the prefix `!!` or `!`. */ im: InferMode,
-    /** The head term or theorem. */                                   head: AtomID,
+    /** The head term or theorem. */                                   head: AtomId,
     /** The remainder of the term. */                                  u: Uncons
   },
   /// A type ascription `{e : ty}`. This is the same as `e` but where we assert that
@@ -129,7 +129,7 @@ pub(crate) enum RStack {
   RefineApp {
     /** The span of the term `t` */         sp2: Span,
     /** The expected type */                tgt: InferTarget,
-    /** The head term */                    t: TermID,
+    /** The head term */                    t: TermId,
     /** The remainder of the application */ u: Uncons,
     /** The elaborated arguments */         args: Vec<LispVal>
   },
@@ -143,7 +143,7 @@ pub(crate) enum RStack {
     /** The span of the theorem `t` */        sp2: Span,
     /** The expected type */                  tgt: LispVal,
     /** The infer mode (see [`InferMode`]) */ im: InferMode,
-    /** The head theorem */                   t: ThmID,
+    /** The head theorem */                   t: ThmId,
     /** The remainder of the application */   u: Uncons,
     /** The elaborated arguments */           args: Vec<LispVal>,
   },
@@ -156,7 +156,7 @@ pub(crate) enum RStack {
     /** The span of the application */      sp: Span,
     /** The span of the theorem `t` */      sp2: Span,
     /** The expected type */                tgt: LispVal,
-    /** The head theorem */                 t: ThmID,
+    /** The head theorem */                 t: ThmId,
     /** The remainder of the application */ u: Uncons,
     /** The elaborated arguments */         args: Vec<LispVal>,
     /** The elaborated subproofs */         hyps: std::vec::IntoIter<LispVal>,
@@ -224,7 +224,7 @@ pub(crate) enum RState {
   RefineApp {
     /** The span of `t` */            sp2: Span,
     /** The expected type */          tgt: InferTarget,
-    /** The head term */              t: TermID,
+    /** The head term */              t: TermId,
     /** The unelaborated arguments */ u: Uncons,
     /** The elaborated arguments */   args: Vec<LispVal>,
   },
@@ -247,7 +247,7 @@ pub(crate) enum RState {
     /** The span of `t`. */                   sp2: Span,
     /** The expected type */                  tgt: LispVal,
     /** The infer mode (see [`InferMode`]) */ im: InferMode,
-    /** The head theorem */                   t: ThmID,
+    /** The head theorem */                   t: ThmId,
     /** The remainder of the application */   u: Uncons,
     /** The elaborated arguments */           args: Vec<LispVal>,
   },
@@ -256,7 +256,7 @@ pub(crate) enum RState {
     /** The span of the application. */     sp: Span,
     /** The span of `t`. */                 sp2: Span,
     /** The expected type */                tgt: LispVal,
-    /** The head theorem */                 t: ThmID,
+    /** The head theorem */                 t: ThmId,
     /** The remainder of the application */ u: Uncons,
     /** The elaborated arguments */         args: Vec<LispVal>,
     /** The elaborated subproofs */         hyps: std::vec::IntoIter<LispVal>,
@@ -347,13 +347,13 @@ pub enum RefineResult {
 
 impl LispVal {
   fn conv(tgt: Self, u: Self, p: Self) -> Self {
-    Self::list(vec![Self::atom(AtomID::CONV), tgt, u, p])
+    Self::list(vec![Self::atom(AtomId::CONV), tgt, u, p])
   }
-  fn unfold(t: AtomID, es: Vec<Self>, p: Self) -> Self {
-    Self::list(vec![Self::atom(AtomID::UNFOLD), Self::atom(t), Self::list(es), p])
+  fn unfold(t: AtomId, es: Vec<Self>, p: Self) -> Self {
+    Self::list(vec![Self::atom(AtomId::UNFOLD), Self::atom(t), Self::list(es), p])
   }
   fn sym(p: Self) -> Self {
-    Self::list(vec![Self::atom(AtomID::SYM), p])
+    Self::list(vec![Self::atom(AtomId::SYM), p])
   }
   fn apply_conv(c: Self, tgt: Self, p: Self) -> Self {
     if c.is_def() {Self::conv(tgt, c, p)} else {p}
@@ -395,13 +395,13 @@ impl Elaborator {
         let sp = try_get_span(fsp, e);
         match u.next() {
           None if e.is_list() => RefineExpr::App {sp, sp2: sp,
-            im: InferMode::Regular, head: AtomID::UNDER, u: Uncons::nil()},
+            im: InferMode::Regular, head: AtomId::UNDER, u: Uncons::nil()},
           None => return Err(ElabError::new_e(try_get_span(fsp, e), "refine: syntax error")),
           Some(e) => {
             let a = e.as_atom().ok_or_else(||
               ElabError::new_e(try_get_span(fsp, &e), "refine: expected an atom"))?;
             let (im, t) = match a {
-              AtomID::BANG => {
+              AtomId::BANG => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
                 if let Some(sp2) = sp2 {
                   self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Explicit));
@@ -410,7 +410,7 @@ impl Elaborator {
                   ElabError::new_e(sp2.unwrap_or(fsp.span), "!: expected at least one argument"))?;
                 (InferMode::Explicit, t)
               }
-              AtomID::BANG2 => {
+              AtomId::BANG2 => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
                 if let Some(sp2) = sp2 {
                   self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::BoundOnly));
@@ -419,7 +419,7 @@ impl Elaborator {
                   ElabError::new_e(sp2.unwrap_or(fsp.span), "!!: expected at least one argument"))?;
                 (InferMode::BoundOnly, t)
               }
-              AtomID::VERB => {
+              AtomId::VERB => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
                 if let Some(sp2) = sp2 {
                   self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Verb));
@@ -430,7 +430,7 @@ impl Elaborator {
                   Err(ElabError::new_e(sp2.unwrap_or(fsp.span), "verb: expected one argument"))
                 }
               }
-              AtomID::COLON => {
+              AtomId::COLON => {
                 let sp2 = try_get_span_opt(fsp, e.fspan().as_ref());
                 if let Some(sp2) = sp2 {
                   self.spans.insert_if(sp2, || ObjectKind::RefineSyntax(RefineSyntax::Typed));
@@ -500,7 +500,7 @@ impl Elaborator {
         let mut u = Uncons::from(e.clone());
         let head = u.next().ok_or_else(|| err!(e, "not a proof"))?;
         match head.as_atom().ok_or_else(|| err!(head, "expected an atom"))? {
-          AtomID::CONV => u.next().ok_or_else(|| err!(e, "bad :conv"))?,
+          AtomId::CONV => u.next().ok_or_else(|| err!(e, "bad :conv"))?,
           a => {
             let tid = self.thm(a).ok_or_else(||
               err!(head, format!("unknown theorem '{}'", self.data[a].name)))?;
@@ -518,7 +518,7 @@ impl Elaborator {
   }
 
   /// Coerce term `e`, which has sort `s` and boundedness `bd`, to target `tgt`.
-  fn coerce_term(&mut self, sp: Span, tgt: InferTarget, s: SortID, bd: bool, e: LispVal) -> Result<LispVal> {
+  fn coerce_term(&mut self, sp: Span, tgt: InferTarget, s: SortId, bd: bool, e: LispVal) -> Result<LispVal> {
     let tgt = match tgt {
       InferTarget::Unknown => return Ok(e),
       InferTarget::Provable if self.sorts[s].mods.contains(Modifiers::PROVABLE) => return Ok(e),
@@ -673,7 +673,7 @@ impl Elaborator {
   }
 
   /// Produce a proof that `(tid u1) = e2` if `sym` is false, or `e2 = (tid u1)` if `sym` is true.
-  fn unfold(&mut self, sym: bool, tid: TermID, u1: &Uncons, e2: &LispVal) -> SResult<LispVal> {
+  fn unfold(&mut self, sym: bool, tid: TermId, u1: &Uncons, e2: &LispVal) -> SResult<LispVal> {
     let tdata = &self.env.terms[tid];
     let a = tdata.atom;
     let nargs = tdata.args.len();
@@ -727,12 +727,12 @@ impl Elaborator {
           }
         },
         RState::RefineProof {tgt, p} => match self.parse_refine(&fsp, &p)? {
-          RefineExpr::App {sp, sp2, head: AtomID::QMARK, ..} => {
+          RefineExpr::App {sp, sp2, head: AtomId::QMARK, ..} => {
             let head = LispVal::new_ref(LispVal::goal(self.fspan(sp), tgt));
             self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
             RState::Ret(head)
           }
-          RefineExpr::App {sp, sp2, head: AtomID::UNDER, u, ..} => {
+          RefineExpr::App {sp, sp2, head: AtomId::UNDER, u, ..} => {
             if u.is_empty() {
               let head = self.new_goal(sp, tgt);
               self.spans.insert_if(sp2, || ObjectKind::proof(head.clone()));
@@ -767,7 +767,7 @@ impl Elaborator {
           RefineExpr::Proc => RState::Proc {tgt, p},
         },
         RState::RefineExpr {tgt, e} => match self.parse_refine(&fsp, &e) {
-          Ok(RefineExpr::App {sp2, head: AtomID::UNDER, ..}) => {
+          Ok(RefineExpr::App {sp2, head: AtomId::UNDER, ..}) => {
             let head = self.lc.new_mvar(tgt, Some(self.fspan(sp2)));
             self.spans.insert_if(sp2, || ObjectKind::expr(head.clone()));
             RState::Ret(head)
@@ -804,7 +804,7 @@ impl Elaborator {
           Ok(RefineExpr::Exact(e)) => RState::Ret(e),
           Ok(RefineExpr::Proc) => RState::Ret(e),
           Err(err) => (|| -> Result<_> {
-            if let Some(proc) = &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
+            if let Some(proc) = &self.data[AtomId::TO_EXPR_FALLBACK].lisp {
               let proc = proc.val.clone();
               let args = vec![tgt.sort().map_or_else(LispVal::undef, LispVal::atom), e.clone()];
               if let Ok(res) = self.call_func(sp, proc, args) {

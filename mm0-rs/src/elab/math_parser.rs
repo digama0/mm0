@@ -16,7 +16,7 @@ use crate::elab::ast::{Formula, SExpr};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use crate::elab::spans::Spans;
 use crate::util::{SliceUninit, Span};
-use crate::elab::environment::{Literal, ParserEnv, Prec, TermID};
+use crate::elab::environment::{Literal, ParserEnv, Prec, TermId};
 
 /// A parsed math expression (quoted expression). This is like [`SExpr`] but it
 /// has a much simpler grammar.
@@ -45,7 +45,7 @@ pub enum QExprKind {
   /// This is created by notations like `x + y` - since we resolve `+` to
   /// the `add` term constructor, we know that it is a term constructor and
   /// we have ensured it has the right number of arguments.
-  App(Span, TermID, Box<[QExpr]>),
+  App(Span, TermId, Box<[QExpr]>),
   /// An unquotation `,e`. Here `e` can be any lisp expression, and its
   /// interpretation depends on whether the formula is being evaluated or
   /// is being used as a pattern.

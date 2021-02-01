@@ -4,13 +4,13 @@
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
-use crate::elab::{ElabError, Elaborator, Environment, Result as EResult, environment::{AtomID, AtomData}, lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}}, local_context::{try_get_span_from, try_get_span}};
+use crate::elab::{ElabError, Elaborator, Environment, Result as EResult, environment::{AtomId, AtomData}, lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}}, local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan};
 use super::{Compiler,
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
-    Intrinsic, Entity, GlobalTC, Operator, ProcTC},
+    Intrinsic, Entity, GlobalTc, Operator, ProcTc},
   parser::{head_keyword, Parser, Expr as PExpr, TuplePattern as PTuplePattern},
-  types::{AST, Binop, Expr, Keyword, Lifetime, Place, MM0Expr, MM0ExprNode, VarID,
+  types::{Ast, Binop, Expr, Keyword, Lifetime, Place, Mm0Expr, Mm0ExprNode, VarId,
     ProcKind, Prop, PureExpr, Size, TuplePattern, Type, TypedTuplePattern, Unop}};
 
 enum InferType<'a> {
@@ -23,7 +23,7 @@ enum InferType<'a> {
   Ty(&'a Type),
   Prop(&'a Prop),
   PropPure(&'a Rc<PureExpr>),
-  Subst(Box<InferType<'a>>, VarID, &'a Rc<PureExpr>),
+  Subst(Box<InferType<'a>>, VarId, &'a Rc<PureExpr>),
 }
 
 impl<'a> InferType<'a> {
@@ -36,7 +36,7 @@ impl<'a> InferType<'a> {
     }
   }
 
-  fn subst(&mut self, v: VarID, e: &'a Rc<PureExpr>) {
+  fn subst(&mut self, v: VarId, e: &'a Rc<PureExpr>) {
     match self {
       InferType::Int | InferType::Unit | InferType::Bool => {},
       _ => *self = Self::Subst(Box::new(std::mem::replace(self, InferType::Unit)), v, e),
@@ -143,9 +143,9 @@ enum GType {
 #[derive(Debug)]
 struct Variable {
   /// The user-facing name of this variable, or `_` for auto names.
-  user: AtomID,
+  user: AtomId,
   /// The target name of this variable.
-  decl: VarID,
+  decl: VarId,
   /// The type of this variable.
   ty: GType,
 }
@@ -169,12 +169,12 @@ pub struct TypeChecker<'a> {
   /// The base file span, for error reporting.
   fsp: FileSpan,
   /// The first unused variable ID.
-  next_var: VarID,
+  next_var: VarId,
   /// Maps names from the MMC source in scope to their internal names.
   /// The vector contains shadowed variables in outer scopes.
-  user_locals: HashMap<AtomID, (VarID, Vec<VarID>)>,
+  user_locals: HashMap<AtomId, (VarId, Vec<VarId>)>,
   /// The set of globals that are mutable in the current context (and their mapping to internal names).
-  mut_globals: HashMap<AtomID, VarID>,
+  mut_globals: HashMap<AtomId, VarId>,
   /// Maps internal indexes for variables in scope to their variable record.
   context: Vec<Variable>,
 }
@@ -200,7 +200,7 @@ impl ArgsContext {
   }
 }
 
-fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(AtomID, &AtomData) -> bool) -> AtomID {
+fn get_fresh_name(env: &mut Environment, mut base: Vec<u8>, mut bad: impl FnMut(AtomId, &AtomData) -> bool) -> AtomId {
   if !base.is_empty() {
     let a = env.get_atom(&base);
     if !bad(a, &env.data[a]) {return a}
@@ -223,8 +223,8 @@ impl Compiler {
   }
 }
 
-fn pop_user_local(m: &mut HashMap<AtomID, (VarID, Vec<VarID>)>, user: AtomID) {
-  if user != AtomID::UNDER {
+fn pop_user_local(m: &mut HashMap<AtomId, (VarId, Vec<VarId>)>, user: AtomId) {
+  if user != AtomId::UNDER {
     if let Some((v, vec)) = m.get_mut(&user) {
       *v = vec.pop().expect("stack underflow");
     }
@@ -236,7 +236,7 @@ impl<'a> TypeChecker<'a> {
   /// via [`typeck`](Self::typeck) and will reuse its internal buffers.
   pub fn new(mmc: &'a mut Compiler, elab: &'a mut Elaborator, fsp: FileSpan) -> Self {
     Self {mmc, elab, fsp,
-      next_var: VarID::default(),
+      next_var: VarId::default(),
       user_locals: HashMap::new(),
       mut_globals: HashMap::new(),
       context: Vec::new(),
@@ -263,23 +263,23 @@ impl<'a> TypeChecker<'a> {
     try_get_span(&self.fsp, e)
   }
 
-  fn get_fresh_decl(&mut self, base: AtomID) -> AtomID {
+  fn get_fresh_decl(&mut self, base: AtomId) -> AtomId {
     let mut s = self.mmc.prefix.clone();
     s.extend_from_slice(&self.elab.data[base].name);
     get_fresh_name(&mut self.elab, s, |_, ad| ad.decl.is_some())
   }
 
-  #[inline] fn get_fresh_local(&mut self) -> VarID {
+  #[inline] fn get_fresh_local(&mut self) -> VarId {
     let n = self.next_var;
     self.next_var.0 += 1;
     n
   }
 
-  fn find_index(&self, a: VarID) -> Option<usize> {
+  fn find_index(&self, a: VarId) -> Option<usize> {
     self.context.iter().position(|v| v.decl == a)
   }
 
-  fn find(&self, a: VarID) -> Option<&Variable> {
+  fn find(&self, a: VarId) -> Option<&Variable> {
     self.context.iter().find(|&v| v.decl == a)
   }
 
@@ -298,7 +298,7 @@ impl<'a> TypeChecker<'a> {
       Prop::Pure(_) |
       Prop::Eq(_, _) |
       Prop::Moved(_) |
-      Prop::MM0(_) => None,
+      Prop::Mm0(_) => None,
       &Prop::All(a, ref pr) => if self.copy_type(&pr.0).is_none() {
         self.copy_prop(&pr.1).map(|p| Prop::All(a, Box::new((pr.0.clone(), p))))
       } else { Some(Prop::Emp) },
@@ -363,7 +363,7 @@ impl<'a> TypeChecker<'a> {
     }
   }
 
-  fn infer_var_type(&'a self, i: VarID) -> InferType<'a> {
+  fn infer_var_type(&'a self, i: VarId) -> InferType<'a> {
     match &self.find(i).expect("variable not found").ty {
       GType::Ty(_, ty, _) => InferType::ty(ty),
       GType::Star => panic!("unexpected type variable"),
@@ -467,7 +467,7 @@ impl<'a> TypeChecker<'a> {
       Some(head) => (head, Some(u)),
     };
     let name = if let Some(name) = head.as_atom() {name} else {return false};
-    if name == AtomID::UNDER { return true }
+    if name == AtomId::UNDER { return true }
     match self.mmc.names.get(&name) {
       Some(Entity::Type(_)) => true,
       Some(Entity::Prim(Prim {ty: Some(prim), ..})) => match prim {
@@ -494,7 +494,7 @@ impl<'a> TypeChecker<'a> {
     }}}
     let name = head.as_atom().ok_or_else(||
       ElabError::new_e(self.try_get_span(&head), "expected an atom"))?;
-    if name == AtomID::UNDER {
+    if name == AtomId::UNDER {
       return Err(ElabError::new_e(self.try_get_span(&head), "expecting a type"));
     }
     match self.mmc.names.get(&name) {
@@ -545,11 +545,11 @@ impl<'a> TypeChecker<'a> {
     }
   }
 
-  fn check_mm0_expr(&self, e: LispVal) -> Result<MM0Expr, ElabError> {
+  fn check_mm0_expr(&self, e: LispVal) -> Result<Mm0Expr, ElabError> {
 
-    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomID, u32>),
-      e: &LispVal, head: AtomID, args: Option<Uncons>
-    ) -> Result<Option<MM0ExprNode>, ElabError> {
+    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomId, u32>),
+      e: &LispVal, head: AtomId, args: Option<Uncons>
+    ) -> Result<Option<Mm0ExprNode>, ElabError> {
       let tid = tc.elab.term(head).ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
         format!("term '{}' not declared", tc.elab.data[head].name)))?;
       Ok(if let Some(u) = args {
@@ -557,25 +557,25 @@ impl<'a> TypeChecker<'a> {
         let mut vec = Vec::with_capacity(u.len());
         for e in u {
           let n = node(tc, e, subst)?;
-          cnst |= matches!(n, MM0ExprNode::Const(_));
+          cnst |= matches!(n, Mm0ExprNode::Const(_));
           vec.push(n)
         }
-        if cnst {None} else {Some(MM0ExprNode::Expr(tid, vec))}
+        if cnst {None} else {Some(Mm0ExprNode::Expr(tid, vec))}
       } else {None})
     }
 
-    fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomID, u32>),
+    fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomId, u32>),
       e: &LispVal
-    ) -> Result<Option<MM0ExprNode>, ElabError> {
+    ) -> Result<Option<Mm0ExprNode>, ElabError> {
       e.unwrapped(|r| Ok(if let LispKind::Atom(a) = *r {
         match subst.1.entry(a) {
-          Entry::Occupied(entry) => Some(MM0ExprNode::Var(*entry.get())),
+          Entry::Occupied(entry) => Some(Mm0ExprNode::Var(*entry.get())),
           Entry::Vacant(entry) => match tc.user_locals.get(&a) {
             Some(&(v, _)) => {
               let n = subst.0.len().try_into().expect("overflow");
               entry.insert(n);
               subst.0.push(PureExpr::Var(v));
-              Some(MM0ExprNode::Var(n))
+              Some(Mm0ExprNode::Var(n))
             }
             None => list_opt(tc, subst, e, a, None)?
           }
@@ -592,14 +592,14 @@ impl<'a> TypeChecker<'a> {
 
     #[allow(clippy::unnecessary_lazy_evaluations)]
     fn node<'a>(tc: &TypeChecker<'a>, e: LispVal,
-      subst: &mut (Vec<PureExpr>, HashMap<AtomID, u32>)
-    ) -> Result<MM0ExprNode, ElabError> {
-      Ok(node_opt(tc, subst, &e)?.unwrap_or_else(|| MM0ExprNode::Const(e)))
+      subst: &mut (Vec<PureExpr>, HashMap<AtomId, u32>)
+    ) -> Result<Mm0ExprNode, ElabError> {
+      Ok(node_opt(tc, subst, &e)?.unwrap_or_else(|| Mm0ExprNode::Const(e)))
     }
 
     let mut subst = (vec![], HashMap::new());
     let expr = Rc::new(node(self, e, &mut subst)?);
-    Ok(MM0Expr {subst: subst.0, expr})
+    Ok(Mm0Expr {subst: subst.0, expr})
   }
 
   fn check_lassoc1_pure_expr(&self,
@@ -720,9 +720,9 @@ impl<'a> TypeChecker<'a> {
       }
     }}
     if let Some(name) = head.as_atom() {
-      if name == AtomID::UNDER { return err!("holes not implemented") }
+      if name == AtomId::UNDER { return err!("holes not implemented") }
       match self.mmc.names.get(&name) {
-        Some(Entity::Const(GlobalTC::Unchecked)) => err!("forward referencing constants is not allowed"),
+        Some(Entity::Const(GlobalTc::Unchecked)) => err!("forward referencing constants is not allowed"),
         Some(Entity::Prim(Prim {op: Some(prim), ..})) => match (prim, &*args) {
           (PrimOp::Add, args) =>
             self.check_lassoc_pure_expr(args, || Ok(PureExpr::Int(0.into())), Ok, Binop::Add, Some(get_int_tgt!())),
@@ -825,7 +825,7 @@ impl<'a> TypeChecker<'a> {
           (PrimOp::Typeof, _) =>
             Err(ElabError::new_e(self.try_get_span(&head), "not a pure operation")),
         }
-        Some(Entity::Op(Operator::Proc(_, ProcTC::Unchecked))) => Err(ElabError::new_e(
+        Some(Entity::Op(Operator::Proc(_, ProcTc::Unchecked))) => Err(ElabError::new_e(
           self.try_get_span(&head), "forward referencing a procedure")),
         Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a function/operation")),
         None => match self.user_locals.get(&name) {
@@ -853,7 +853,7 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_binder(&mut self, e: &LispVal, args: &[LispVal],
-      mut mk: impl FnMut(VarID, Type, Prop) -> Prop) -> Result<Prop, ElabError> {
+      mut mk: impl FnMut(VarId, Type, Prop) -> Prop) -> Result<Prop, ElabError> {
     let (last, bis) = args.split_last().expect("expected nonempty args");
     let bis = bis.iter().map(|bi| self.parser().parse_tuple_pattern(false, bi.clone()))
       .collect::<Result<Vec<_>, _>>()?;
@@ -899,14 +899,14 @@ impl<'a> TypeChecker<'a> {
           Ok(Prop::Sep(Box::new([self.check_prop(e1)?, self.check_prop(e2)?]))),
         (PrimProp::Wand, [e1, e2]) =>
           Ok(Prop::Wand(Box::new((self.check_prop(e1)?, self.check_prop(e2)?)))),
-        (PrimProp::Pure, [e]) => Ok(Prop::MM0(self.check_mm0_expr(e.clone())?)),
+        (PrimProp::Pure, [e]) => Ok(Prop::Mm0(self.check_mm0_expr(e.clone())?)),
         _ => Err(ElabError::new_e(self.try_get_span(&head), "incorrect number of arguments")),
       }
       _ => self.check_pure_expr(e, Some(&Type::Bool)).map(|e| Prop::Pure(Rc::new(e)))
     }
   }
 
-  fn push_user_local(&mut self, user: AtomID, decl: VarID) {
+  fn push_user_local(&mut self, user: AtomId, decl: VarId) {
     match self.user_locals.entry(user) {
       Entry::Vacant(e) => {e.insert((decl, vec![]));}
       Entry::Occupied(mut e) => {
@@ -927,13 +927,13 @@ impl<'a> TypeChecker<'a> {
       }
       let user = arg.name();
       let decl = self.get_fresh_local();
-      if user != AtomID::UNDER { self.push_user_local(user, decl) }
-      let is_ty = ctx.tyvar_allowed() && arg.ty().as_atom().map_or(false, |a| a == AtomID::UNDER ||
+      if user != AtomId::UNDER { self.push_user_local(user, decl) }
+      let is_ty = ctx.tyvar_allowed() && arg.ty().as_atom().map_or(false, |a| a == AtomId::UNDER ||
         matches!(self.mmc.keywords.get(&a), Some(Keyword::Star)));
       let ty = if is_ty {GType::Star} else {
         let ty = arg.ty();
         if !ctx.hyp_allowed() || self.probably_a_type(&ty) {
-          let ty = if ty.as_atom().map_or(false, |a| a == AtomID::UNDER) {
+          let ty = if ty.as_atom().map_or(false, |a| a == AtomId::UNDER) {
             if let Some(ty) = ctx.default_value() {ty}
             else {self.check_ty(&ty)?}
           } else {self.check_ty(&ty)?};
@@ -971,7 +971,7 @@ impl<'a> TypeChecker<'a> {
       }
       TuplePattern::Name(g, user, sp) => {
         let decl = self.get_fresh_local();
-        if user != AtomID::UNDER { self.push_user_local(user, decl) }
+        if user != AtomId::UNDER { self.push_user_local(user, decl) }
         let ty = tgt.ok_or_else(|| ElabError::new_e(
           try_get_span_from(&self.fsp, sp.as_ref()), "could not infer type"))?.to_type();
         Ok(TypedTuplePattern::Name(g, decl, sp, Box::new(ty)))
@@ -1100,7 +1100,7 @@ impl<'a> TypeChecker<'a> {
         }}
         match self.mmc.names.get(&f) {
           None => err!("unknown function '{}'", self.elab.print(&f)),
-          Some(Entity::Const(GlobalTC::Unchecked)) => err!("forward referencing constants is not allowed"),
+          Some(Entity::Const(GlobalTc::Unchecked)) => err!("forward referencing constants is not allowed"),
           Some(Entity::Prim(Prim {op: Some(prim), ..})) => match (prim, &*args) {
             (PrimOp::Add, args) =>
               self.check_lassoc_expr(ts, args, || Ok(Expr::Pure(PureExpr::Int(0.into()))), Ok, Binop::Add, get_int_tgt!())?,
@@ -1249,13 +1249,13 @@ impl<'a> TypeChecker<'a> {
   }
 
   /// Performs type checking of the input AST.
-  pub fn typeck(&mut self, item: &AST) -> EResult<()> {
+  pub fn typeck(&mut self, item: &Ast) -> EResult<()> {
     self.next_var = Default::default();
     self.user_locals.clear();
     self.context.clear();
     self.mut_globals.clear();
     match item {
-      AST::Proc(proc, body) => match proc.kind {
+      Ast::Proc(proc, body) => match proc.kind {
         ProcKind::Func =>
           return Err(ElabError::new_e(
             try_get_span_from(&self.fsp, proc.span.as_ref()), "func is not implemented, use proc")),
@@ -1266,8 +1266,8 @@ impl<'a> TypeChecker<'a> {
               try_get_span_from(&self.fsp, proc.span.as_ref()), "unknown intrinsic"))?;
           // TODO: check intrinsic signature is correct?
           match self.mmc.names.get_mut(&proc.name) {
-            Some(Entity::Op(Operator::Proc(_, tc @ ProcTC::Unchecked))) =>
-              *tc = ProcTC::Intrinsic(intrinsic),
+            Some(Entity::Op(Operator::Proc(_, tc @ ProcTc::Unchecked))) =>
+              *tc = ProcTc::Intrinsic(intrinsic),
             _ => unreachable!()
           }
         }
@@ -1301,11 +1301,11 @@ impl<'a> TypeChecker<'a> {
             try_get_span_from(&self.fsp, proc.span.as_ref()), "unimplemented: finish proc"))
         }
       }
-      AST::Global {full, lhs, rhs} => {
+      Ast::Global {full, lhs, rhs} => {
         return Err(ElabError::new_e(
           try_get_span_from(&self.fsp, full.as_ref()), "unimplemented: global"))
       },
-      AST::Const {full, lhs, rhs} => {
+      Ast::Const {full, lhs, rhs} => {
         match lhs {
           PTuplePattern::Name(_, _, _) => {}
           PTuplePattern::Typed(b, _) if matches!(**b, PTuplePattern::Name(_, _, _)) => {}
@@ -1314,7 +1314,7 @@ impl<'a> TypeChecker<'a> {
         }
         let ty = lhs.ty();
         let (e, ty2);
-        if ty.as_atom().map_or(false, |a| a == AtomID::UNDER) {
+        if ty.as_atom().map_or(false, |a| a == AtomId::UNDER) {
           e = self.check_pure_expr(rhs, None)?;
           ty2 = self.infer_type(&e).to_type()
         } else {
@@ -1322,14 +1322,14 @@ impl<'a> TypeChecker<'a> {
           e = self.check_pure_expr(rhs, Some(&ty2))?;
         };
         let user = lhs.name();
-        if user != AtomID::UNDER {
+        if user != AtomId::UNDER {
           let decl = self.get_fresh_decl(user);
-          if let Entity::Const(ty @ GlobalTC::Unchecked) = self.mmc.names.get_mut(&user).unwrap() {
-            *ty = GlobalTC::Checked(full.clone(), decl, Rc::new(ty2), Rc::new(Expr::Pure(e)))
+          if let Entity::Const(ty @ GlobalTc::Unchecked) = self.mmc.names.get_mut(&user).unwrap() {
+            *ty = GlobalTc::Checked(full.clone(), decl, Rc::new(ty2), Rc::new(Expr::Pure(e)))
           } else {unreachable!()}
         }
       }
-      &AST::Typedef {name, ref span, ref args, ref val} => {
+      &Ast::Typedef {name, ref span, ref args, ref val} => {
         self.add_args_to_context(args, ArgsContext::TypeArgs)?;
         let val = self.check_ty(val)?;
         let dname = self.get_fresh_decl(name);
@@ -1337,7 +1337,7 @@ impl<'a> TypeChecker<'a> {
           *ty = NType::Checked(span.clone(), dname, Rc::new(val))
         } else {unreachable!()}
       }
-      &AST::Struct {name, ref span, ref args, ref fields} => {
+      &Ast::Struct {name, ref span, ref args, ref fields} => {
         self.add_args_to_context(args, ArgsContext::TypeArgs)?;
         self.add_args_to_context(fields, ArgsContext::StructFields)?;
         let fields = self.context.drain(args.len()..)
@@ -1345,7 +1345,7 @@ impl<'a> TypeChecker<'a> {
             GType::Star => unreachable!(),
             GType::Ty(g, ty, _) => Type::ghost_if(g, ty),
             GType::Prop(p) => Type::Prop(Box::new(p)),
-          })).collect::<Vec<(VarID, Type)>>();
+          })).collect::<Vec<(VarId, Type)>>();
         let dname = self.get_fresh_decl(name);
         if let Entity::Type(ty @ NType::Unchecked) = self.mmc.names.get_mut(&name).unwrap() {
           *ty = NType::Checked(span.clone(), dname, Rc::new(Type::Struct(fields.into())))

@@ -69,10 +69,10 @@ macro_rules! id_wrapper {
   };
 }
 
-id_wrapper!(SortID: u8, SortVec);
-id_wrapper!(TermID: u32, TermVec);
-id_wrapper!(ThmID: u32, ThmVec);
-id_wrapper!(AtomID: u32, AtomVec);
+id_wrapper!(SortId: u8, SortVec);
+id_wrapper!(TermId: u32, TermVec);
+id_wrapper!(ThmId: u32, ThmVec);
+id_wrapper!(AtomId: u32, AtomVec);
 
 /// A documentation comment on an item.
 pub type DocComment = Arc<str>;
@@ -81,7 +81,7 @@ pub type DocComment = Arc<str>;
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Sort {
   /// The sort's name, as an atom.
-  pub atom: AtomID,
+  pub atom: AtomId,
   /// The sort's name, as a string. (This is a shortcut; you can also look up the atom in
   /// [`Environment.data`] and get the name from there.)
   pub name: ArcString,
@@ -105,9 +105,9 @@ pub struct Sort {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[allow(variant_size_differences)]
 pub enum Type {
-  /// A bound variable `{x : s}`, where `s` is the provided [`SortID`].
-  Bound(SortID),
-  /// A regular variable `(ph : s x y z)`, where `s` is the provided [`SortID`].
+  /// A bound variable `{x : s}`, where `s` is the provided [`SortId`].
+  Bound(SortId),
+  /// A regular variable `(ph : s x y z)`, where `s` is the provided [`SortId`].
   ///
   /// The `deps: u64` field encodes the dependencies of the variable, where the nth bit
   /// set means that this variable depends on the nth bound variable
@@ -117,13 +117,13 @@ pub enum Type {
   /// the `deps` field for `v5` would contain `0b1011` because the bound variables
   /// are `v0, v1, v3, v4` and it has dependencies on the variables at positions 0,1,3
   /// in this list.
-  Reg(SortID, u64),
+  Reg(SortId, u64),
 }
 crate::deep_size_0!(Type);
 
 impl Type {
   /// The sort of a type.
-  #[must_use] pub fn sort(self) -> SortID {
+  #[must_use] pub fn sort(self) -> SortId {
     match self { Type::Bound(s) | Type::Reg(s, _) => s }
   }
   /// True if the type is a bound variable.
@@ -137,9 +137,9 @@ pub enum ExprNode {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
   Ref(usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
-  Dummy(AtomID, SortID),
+  Dummy(AtomId, SortId),
   /// `App(t, nodes)` is an application of term constructor `t` to subterms
-  App(TermID, Box<[ExprNode]>),
+  App(TermId, Box<[ExprNode]>),
 }
 
 /// The `Expr` type stores expression dags using a local context of expression nodes
@@ -168,7 +168,7 @@ pub enum TermKind {
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Term {
   /// The name of the term, as an atom.
-  pub atom: AtomID,
+  pub atom: AtomId,
   /// The span around the name of the term. This is the `"foo"` in `def foo ...;`
   pub span: FileSpan,
   /// The modifiers for the term. For `def`, the allowed modifiers are
@@ -183,10 +183,10 @@ pub struct Term {
   /// The list of argument binders. The names of the variables are not used except for
   /// pretty printing and conversion back to s-exprs. (A `None` variable is represented
   /// as `_` and cannot be referred to.)
-  pub args: Box<[(Option<AtomID>, Type)]>,
+  pub args: Box<[(Option<AtomId>, Type)]>,
   /// The return sort and dependencies of the term constructor. See [`Type::Reg`] for
   /// the interpretation of the dependencies.
-  pub ret: (SortID, u64),
+  pub ret: (SortId, u64),
   /// The term/def classification, and the value of the def.
   pub kind: TermKind,
 }
@@ -201,10 +201,10 @@ pub enum ProofNode {
   /// This could be an expr, proof, or conv depending on what is referenced.
   Ref(usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
-  Dummy(AtomID, SortID),
+  Dummy(AtomId, SortId),
   /// `Term {term, args}` is an application of term constructor `term` to subterms
   Term {
-    /** the term constructor */ term: TermID,
+    /** the term constructor */ term: TermId,
     /** the subterms */ args: Box<[ProofNode]>,
   },
   /// `Hyp(i, e)` is hypothesis `i` (`hyps[i]` will be a reference to element),
@@ -216,7 +216,7 @@ pub enum ProofNode {
   /// and the subproofs be the result of substitution of the theorem conclusion and hypotheses
   /// under the substitution.
   Thm {
-    /** the theorem to apply */ thm: ThmID,
+    /** the theorem to apply */ thm: ThmId,
     /** the substitution, and the subproofs */ args: Box<[ProofNode]>,
     /** the substituted conclusion */ res: Box<ProofNode>,
   },
@@ -228,7 +228,7 @@ pub enum ProofNode {
   Sym(Box<ProofNode>),
   /// `Cong {term, args}: term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
   Cong {
-    /** the term constructor */ term: TermID,
+    /** the term constructor */ term: TermId,
     /** the conversion proofs for the arguments */ args: Box<[ProofNode]>,
   },
   /// `Unfold {term, args, res: (lhs, sub_lhs, p)}` is a proof of `lhs = rhs` if
@@ -236,7 +236,7 @@ pub enum ProofNode {
   /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
   Unfold {
     /// the definition to unfold
-    term: TermID,
+    term: TermId,
     /// the (non-dummy) parameters to the term
     args: Box<[ProofNode]>,
     /// - `lhs`: the term applied to the arguments, the same as `Term(term, args)`
@@ -305,7 +305,7 @@ pub enum ThmKind {
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Thm {
   /// The name of the theorem, as an atom.
-  pub atom: AtomID,
+  pub atom: AtomId,
   /// The span around the name of the theorem. This is the `"foo"` in `theorem foo ...;`
   pub span: FileSpan,
   /// The modifiers for the term. For `theorem`, the only allowed modifier is
@@ -319,12 +319,12 @@ pub struct Thm {
   /// The list of argument binders. The names of the variables are not used except for
   /// pretty printing and conversion back to s-exprs. (A `None` variable is represented
   /// as `_` and cannot be referred to.)
-  pub args: Box<[(Option<AtomID>, Type)]>,
+  pub args: Box<[(Option<AtomId>, Type)]>,
   /// The heap used as the context for the `hyps` and `ret`.
   pub heap: Box<[ExprNode]>,
   /// The expressions for the hypotheses (and their names, which are not used except
   /// in pretty printing and conversion back to s-exprs).
-  pub hyps: Box<[(Option<AtomID>, ExprNode)]>,
+  pub hyps: Box<[(Option<AtomId>, ExprNode)]>,
   /// The expression for the conclusion of the theorem.
   pub ret: ExprNode,
   /// The axiom/theorem classification, and the proof.
@@ -353,11 +353,11 @@ pub struct OutputString {
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum StmtTrace {
   /// A `sort foo;` declaration
-  Sort(AtomID),
+  Sort(AtomId),
   /// A declaration of a [`Term`] or [`Thm`] (i.e. `term`, `def`, `axiom`, `theorem`)
-  Decl(AtomID),
+  Decl(AtomId),
   /// A global lisp declaration in a `do` block, i.e. `do { (def foo 1) };`
-  Global(AtomID),
+  Global(AtomId),
   /// An `output string` directive.
   OutputString(Box<OutputString>)
 }
@@ -367,10 +367,10 @@ pub enum StmtTrace {
 /// for compilation to MM0).
 #[derive(Copy, Clone, Debug)]
 pub enum DeclKey {
-  /// A term or def, with its ID
-  Term(TermID),
-  /// An axiom or theorem, with its ID
-  Thm(ThmID),
+  /// A term or def, with its Id
+  Term(TermId),
+  /// An axiom or theorem, with its Id
+  Thm(ThmId),
 }
 crate::deep_size_0!(DeclKey);
 
@@ -392,7 +392,7 @@ pub struct NotaInfo {
   /// The span around the name of the term. This is the `"foo"` in `notation foo ...;`
   pub span: FileSpan,
   /// The name of the term, as an atom.
-  pub term: TermID,
+  pub term: TermId,
   /// The number of arguments in the term. (This is a shortcut; you can also look up the term in
   /// [Environment.terms] and get the number of arguments as `args.len()`.)
   pub nargs: usize,
@@ -409,15 +409,15 @@ pub struct NotaInfo {
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Coe {
   /// This asserts `t` is a unary term constructor from `s1` to `s2`.
-  One(FileSpan, TermID),
+  One(FileSpan, TermId),
   /// `Trans(c1, m, c2)` asserts that `c1: s1 -> m` and `c2: m -> s2` (so we get a transitive
   /// coercion from `s1` to `s2`).
-  Trans(Arc<Coe>, SortID, Arc<Coe>),
+  Trans(Arc<Coe>, SortId, Arc<Coe>),
 }
 
 impl Coe {
   fn write_arrows_r(&self, sorts: &SortVec<Sort>, s: &mut String, related: &mut Vec<(FileSpan, BoxError)>,
-      sl: SortID, sr: SortID) -> Result<(), std::fmt::Error> {
+      sl: SortId, sr: SortId) -> Result<(), std::fmt::Error> {
     match self {
       Coe::One(fsp, _) => {
         related.push((fsp.clone(), format!("{} -> {}", sorts[sl].name, sorts[sr].name).into()));
@@ -431,7 +431,7 @@ impl Coe {
   }
 
   fn write_arrows(&self, sorts: &SortVec<Sort>, s: &mut String, related: &mut Vec<(FileSpan, BoxError)>,
-      s1: SortID, s2: SortID) -> Result<(), std::fmt::Error> {
+      s1: SortId, s2: SortId) -> Result<(), std::fmt::Error> {
     write!(s, "{}", sorts[s1].name)?;
     self.write_arrows_r(sorts, s, related, s1, s2)
   }
@@ -456,15 +456,15 @@ pub struct ParserEnv {
   /// A map of constants to their notation info, for infixes (notations that start with a variable).
   pub infixes: HashMap<ArcString, NotaInfo>,
   /// A map of sort pairs `s1,s2` to the coercion `c: s1 -> s2`.
-  pub coes: HashMap<SortID, HashMap<SortID, Arc<Coe>>>,
+  pub coes: HashMap<SortId, HashMap<SortId, Arc<Coe>>>,
   /// A map of sorts `s` to some sort `t` such that `t` is provable and `c: s -> t` is in `coes`,
   /// if one exists.
-  pub coe_prov: HashMap<SortID, SortID>,
+  pub coe_prov: HashMap<SortId, SortId>,
   /// `decl_nota` maps `t` to `(has_coe, [(c, infx), ...])`, where `has_coe` is true if
   /// `t` has a coercion (in which case the sorts can be inferred from the type of `t`),
   /// and there is one `(c, infx)` for each constant `c` that maps to `t`, where `infx` is true
   /// if `c` is infix and false if `c` is prefix.
-  pub decl_nota: HashMap<TermID, (bool, Vec<(ArcString, bool)>)>,
+  pub decl_nota: HashMap<TermId, (bool, Vec<(ArcString, bool)>)>,
 }
 
 /// The merge strategy for a lisp definition, which allows a global to be multiply-declared,
@@ -524,7 +524,7 @@ pub struct AtomData {
   /// "undefinition" for go-to-definition queries.
   pub graveyard: Option<Box<(FileSpan, Span)>>,
   /// The sort with this name, if one exists.
-  pub sort: Option<SortID>,
+  pub sort: Option<SortId>,
   /// The term or theorem with this name, if one exists.
   pub decl: Option<DeclKey>,
 }
@@ -540,19 +540,19 @@ impl AtomData {
 pub enum ObjectKind {
   /// This is a sort; hovering yields `sort foo;` and go-to-definition works.
   /// This sort must actually exist in the [`Environment`] if is constructed
-  Sort(SortID),
+  Sort(SortId),
   /// This is a term/def; hovering yields `term foo ...;` and go-to-definition works.
   /// This term must actually exist in the [`Environment`] if is constructed
-  Term(TermID, Span),
+  Term(TermId, Span),
   /// This is a theorem/axiom; hovering yields `theorem foo ...;` and go-to-definition works.
   /// This theorem must actually exist in the [`Environment`] if is constructed
-  Thm(ThmID),
+  Thm(ThmId),
   /// This is a local variable; hovering yields `{x : s}` and go-to-definition takes you to the binder.
   /// This should be a variable in the statement.
-  Var(AtomID),
+  Var(AtomId),
   /// This is a global lisp definition; hovering yields the lisp definition line and go-to-definition works.
   /// Either `lisp` or `graveyard` for the atom must be non-`None` if this is constructed
-  Global(AtomID),
+  Global(AtomId),
   /// This is an expression; hovering shows the type and go-to-definition goes to the head term definition
   Expr(FrozenLispVal),
   /// This is a proof; hovering shows the intermediate statement
@@ -595,7 +595,7 @@ pub struct Environment {
   /// The theorem/axiom map, which is a vector because theorem names are allocated in order.
   pub thms: ThmVec<Thm>,
   /// The map from strings to allocated atoms. This is used to ensure atom injectivity
-  pub atoms: HashMap<ArcString, AtomID>,
+  pub atoms: HashMap<ArcString, AtomId>,
   /// The atom map, which is a vector because atoms are allocated in order.
   pub data: AtomVec<AtomData>,
   /// The global statement order.
@@ -609,16 +609,16 @@ macro_rules! make_atoms {
   {consts $n:expr; $(#[$attr:meta])* $x:ident $doc0:expr, $($xs:tt)*} => {
     #[doc=$doc0]
     $(#[$attr])*
-    pub const $x: AtomID = AtomID($n);
-    make_atoms! {consts AtomID::$x.0+1; $($xs)*}
+    pub const $x: AtomId = AtomId($n);
+    make_atoms! {consts AtomId::$x.0+1; $($xs)*}
   };
   {$($(#[$attr:meta])* $x:ident: $e:expr,)*} => {
-    impl AtomID {
+    impl AtomId {
       make_atoms! {consts 0; $($(#[$attr])* $x concat!("The atom `", $e, "`.\n"),)*}
     }
 
     impl Environment {
-      /// Creates a new environment. The list of atoms is pre-populated with [`AtomID`]
+      /// Creates a new environment. The list of atoms is pre-populated with [`AtomId`]
       /// atoms that are used by builtins.
       #[allow(clippy::string_lit_as_bytes)]
       #[must_use] pub fn new() -> Environment {
@@ -626,7 +626,7 @@ macro_rules! make_atoms {
         let mut data = AtomVec::default();
         $({
           let s: ArcString = $e.as_bytes().into();
-          atoms.insert(s.clone(), AtomID::$x);
+          atoms.insert(s.clone(), AtomId::$x);
           data.push(AtomData::new(s))
         })*
         Environment {
@@ -720,19 +720,19 @@ impl Delims {
 }
 
 /// An auxiliary structure for performing [`Environment`] deep copies. This is needed
-/// because [`AtomID`]s from other, previously elaborated files may not be consistent with
+/// because [`AtomId`]s from other, previously elaborated files may not be consistent with
 /// the current file, so we have to remap them to the current file's namespace
 /// during import.
 #[derive(Default, Debug)]
 pub struct Remapper {
   /// A mapping of foreign sorts into local sort IDs
-  sort: SortVec<SortID>,
+  sort: SortVec<SortId>,
   /// A mapping of foreign terms into local term IDs
-  term: TermVec<TermID>,
+  term: TermVec<TermId>,
   /// A mapping of foreign theorems into local theorem IDs
-  thm: ThmVec<ThmID>,
+  thm: ThmVec<ThmId>,
   /// A mapping of foreign atoms into local atom IDs
-  pub(crate) atom: AtomVec<AtomID>,
+  pub(crate) atom: AtomVec<AtomId>,
   /// A mapping of foreign [`FrozenLispVal`]s into local [`LispVal`]s.
   /// It uses a pointer to the underlying allocation as an identifier so that
   /// we don't remap the same lisp values many times.
@@ -757,19 +757,19 @@ pub trait Remap: Sized {
   /// Create a copy of `self`, using `r` as auxiliary state.
   fn remap(&self, r: &mut Remapper) -> Self::Target;
 }
-impl Remap for SortID {
+impl Remap for SortId {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.sort[*self] }
 }
-impl Remap for TermID {
+impl Remap for TermId {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.term[*self] }
 }
-impl Remap for ThmID {
+impl Remap for ThmId {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.thm[*self] }
 }
-impl Remap for AtomID {
+impl Remap for AtomId {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self { r.atom[*self] }
 }
@@ -1033,7 +1033,7 @@ impl ParserEnv {
   }
 
   fn add_coe_raw(&mut self, sp: Span, sorts: &SortVec<Sort>,
-      s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
+      s1: SortId, s2: SortId, fsp: FileSpan, t: TermId) -> Result<(), ElabError> {
     match self.coes.get(&s1).and_then(|m| m.get(&s2).map(|c| &**c)) {
       Some(&Coe::One(ref fsp2, t2)) if fsp2 == &fsp && t == t2 => return Ok(()),
       _ => {}
@@ -1074,7 +1074,7 @@ impl ParserEnv {
   ///
   /// This function can fail if the updated coercion graph contains a diamond or cycle.
   pub fn add_coe(&mut self, sp: Span, sorts: &SortVec<Sort>,
-      s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
+      s1: SortId, s2: SortId, fsp: FileSpan, t: TermId) -> Result<(), ElabError> {
     self.add_coe_raw(sp, sorts, s1, s2, fsp, t)?;
     self.update_provs(sp, sorts)?;
     self.decl_nota.entry(t).or_default().0 = true;
@@ -1137,15 +1137,15 @@ impl Default for Environment {
 }
 
 impl Environment {
-  /// Convert an [`AtomID`] into the corresponding [`TermID`],
+  /// Convert an [`AtomId`] into the corresponding [`TermId`],
   /// if this atom denotes a declared term or def.
-  #[must_use] pub fn term(&self, a: AtomID) -> Option<TermID> {
+  #[must_use] pub fn term(&self, a: AtomId) -> Option<TermId> {
     if let Some(DeclKey::Term(i)) = self.data[a].decl { Some(i) } else { None }
   }
 
-  /// Convert an [`AtomID`] into the corresponding [`ThmID`],
+  /// Convert an [`AtomId`] into the corresponding [`ThmId`],
   /// if this atom denotes a declared axiom or theorem.
-  #[must_use] pub fn thm(&self, a: AtomID) -> Option<ThmID> {
+  #[must_use] pub fn thm(&self, a: AtomId) -> Option<ThmId> {
     if let Some(DeclKey::Thm(i)) = self.data[a].decl { Some(i) } else { None }
   }
 }
@@ -1180,9 +1180,9 @@ impl<A> AddItemError<A> {
 impl Environment {
   /// Add a sort declaration to the environment. Returns an error if the sort is redeclared,
   /// or if we hit the maximum number of sorts.
-  pub fn add_sort(&mut self, a: AtomID, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<DocComment>) ->
-      Result<SortID, AddItemError<SortID>> {
-    let new_id = SortID(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
+  pub fn add_sort(&mut self, a: AtomId, fsp: FileSpan, full: Span, sd: Modifiers, doc: Option<DocComment>) ->
+      Result<SortId, AddItemError<SortId>> {
+    let new_id = SortId(self.sorts.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(old_id) = data.sort {
       let sort = &self.sorts[old_id];
@@ -1204,8 +1204,8 @@ impl Environment {
 
   /// Add a term declaration to the environment. The [`Term`] is behind a thunk because
   /// we check for redeclaration before inspecting the term data itself.
-  pub fn try_add_term(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermID> {
-    let new_id = TermID(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
+  pub fn try_add_term(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Term) -> AddItemResult<TermId> {
+    let new_id = TermId(self.terms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
@@ -1230,15 +1230,15 @@ impl Environment {
   }
 
   /// Specialization of [`try_add_term`](Self::try_add_term) when the term is constructed already.
-  pub fn add_term(&mut self, t: Term) -> AddItemResult<TermID> {
+  pub fn add_term(&mut self, t: Term) -> AddItemResult<TermId> {
     let fsp = t.span.clone();
     self.try_add_term(t.atom, &fsp, || t)
   }
 
   /// Add a theorem declaration to the environment. The [`Thm`] is behind a thunk because
   /// we check for redeclaration before inspecting the theorem data itself.
-  pub fn try_add_thm(&mut self, a: AtomID, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmID> {
-    let new_id = ThmID(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
+  pub fn try_add_thm(&mut self, a: AtomId, new: &FileSpan, t: impl FnOnce() -> Thm) -> AddItemResult<ThmId> {
+    let new_id = ThmId(self.thms.len().try_into().map_err(|_| AddItemError::Overflow)?);
     let data = &mut self.data[a];
     if let Some(key) = data.decl {
       let (res, sp) = match key {
@@ -1263,22 +1263,22 @@ impl Environment {
   }
 
   /// Specialization of [`try_add_thm`](Self::try_add_thm) when the term is constructed already.
-  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmID> {
+  pub fn add_thm(&mut self, t: Thm) -> AddItemResult<ThmId> {
     let fsp = t.span.clone();
     self.try_add_thm(t.atom, &fsp, || t)
   }
 
   /// Add a coercion declaration to the environment.
-  pub fn add_coe(&mut self, s1: SortID, s2: SortID, fsp: FileSpan, t: TermID) -> Result<(), ElabError> {
+  pub fn add_coe(&mut self, s1: SortId, s2: SortId, fsp: FileSpan, t: TermId) -> Result<(), ElabError> {
     self.pe.add_coe(fsp.span, &self.sorts, s1, s2, fsp, t)
   }
 
-  /// Convert a string to an [`AtomID`]. This mutates the environment because we maintain
+  /// Convert a string to an [`AtomId`]. This mutates the environment because we maintain
   /// the list of all allocated atoms, and two calls with the same `&str` input
-  /// will yield the same [`AtomID`].
-  pub fn get_atom(&mut self, s: &[u8]) -> AtomID {
+  /// will yield the same [`AtomId`].
+  pub fn get_atom(&mut self, s: &[u8]) -> AtomId {
     self.atoms.get(s).copied().unwrap_or_else(|| {
-      let id = AtomID(self.data.len().try_into().expect("too many atoms"));
+      let id = AtomId(self.data.len().try_into().expect("too many atoms"));
       let s: ArcString = s.into();
       self.atoms.insert(s.clone(), id);
       self.data.push(AtomData::new(s));
@@ -1286,16 +1286,16 @@ impl Environment {
     })
   }
 
-  /// Convert an [`ArcString`] to an [`AtomID`]. This version of [`get_atom`](Self::get_atom)
+  /// Convert an [`ArcString`] to an [`AtomId`]. This version of [`get_atom`](Self::get_atom)
   /// avoids the string clone in the case that the atom is new.
-  pub fn get_atom_arc(&mut self, s: ArcString) -> AtomID {
+  pub fn get_atom_arc(&mut self, s: ArcString) -> AtomId {
     let ctx = &mut self.data;
     *self.atoms.entry(s.clone()).or_insert_with(move ||
-      (AtomID(ctx.len().try_into().expect("too many atoms")), ctx.push(AtomData::new(s))).0)
+      (AtomId(ctx.len().try_into().expect("too many atoms")), ctx.push(AtomData::new(s))).0)
   }
 
   /// Merge `other` into this environment. This merges definitions with the same name and type,
-  /// and relabels lisp objects with the new [`AtomID`] mapping.
+  /// and relabels lisp objects with the new [`AtomId`] mapping.
   ///
   /// This function does not do any merging of lisp data. For this functionality see [`EnvMergeIter`].
   fn merge_no_lisp(&mut self, remap: &mut Remapper, other: &FrozenEnv, sp: Span, errors: &mut Vec<ElabError>) -> Result<(), ElabError> {
@@ -1361,7 +1361,7 @@ impl Environment {
   }
 
   /// Return an error if the term has the wrong number of arguments, based on its declaration.
-  pub(crate) fn check_term_nargs(&self, sp: Span, term: TermID, nargs: usize) -> Result<(), ElabError> {
+  pub(crate) fn check_term_nargs(&self, sp: Span, term: TermId, nargs: usize) -> Result<(), ElabError> {
     let td = &self.terms[term];
     if td.args.len() == nargs { return Ok(()) }
     Err(ElabError::with_info(sp, "incorrect number of arguments".into(),
@@ -1389,7 +1389,7 @@ pub struct EnvMergeIter<'a> {
 /// [`EnvMergeIter::apply_merge`].
 #[derive(Debug)]
 pub struct AwaitingMerge<'a> {
-  a: AtomID,
+  a: AtomId,
   /// The merge strategy (always non-`None` because we handle `None` merge strategy
   /// directly without a request).
   pub strat: MergeStrategy,
@@ -1418,7 +1418,7 @@ impl<'a> EnvMergeIter<'a> {
   pub fn next(&mut self, env: &mut Environment, errors: &mut Vec<ElabError>) -> Result<Option<AwaitingMerge<'a>>, ElabError> {
     #[allow(clippy::cast_possible_truncation)]
     while let Some((i, d)) = self.it.next() {
-      let a = AtomID(i as u32);
+      let a = AtomId(i as u32);
       let data = &mut env.data[self.remap.atom[a]];
       let newlisp = d.lisp().as_ref().map(|v| v.remap(&mut self.remap));
       if let Some(LispData {merge: strat @ Some(_), val, ..}) = &mut data.lisp {

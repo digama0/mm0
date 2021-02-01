@@ -25,9 +25,9 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
 use futures::channel::oneshot::Receiver;
-use environment::{AtomData, AtomID, Coe, DeclKey, DocComment, EnvMergeIter,
+use environment::{AtomData, AtomId, Coe, DeclKey, DocComment, EnvMergeIter,
   Expr, ExprNode, LispData, NotaInfo, ObjectKind, Proof, ProofNode,
-  Remap, Remapper, Sort, SortID, StmtTrace, Term, TermID, Thm, ThmID};
+  Remap, Remapper, Sort, SortId, StmtTrace, Term, TermId, Thm, ThmId};
 use environment::Literal as ELiteral;
 use lisp::LispVal;
 use local_context::try_get_span_opt;
@@ -39,7 +39,7 @@ pub use crate::parser::ErrorLevel;
 pub use frozen::{FrozenEnv, FrozenLispKind, FrozenLispVal, FrozenAtomData};
 use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span};
 use crate::parser::{ParseError,
-  ast::{self, AST, DeclKind, Delimiter, GenNota, LocalKind, Modifiers, Prec,
+  ast::{self, Ast, DeclKind, Delimiter, GenNota, LocalKind, Modifiers, Prec,
     SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Literal as ALiteral}};
 
 use crate::lined_string::LinedString;
@@ -224,7 +224,7 @@ impl std::fmt::Debug for GoalListener {
 #[derive(Debug)]
 pub struct Elaborator {
   /// The parsed abstract syntax tree for the file
-  ast: Arc<AST>,
+  ast: Arc<Ast>,
   /// The location and name of the currently elaborating file
   pub(crate) path: FileRef,
   /// A flag that will be flipped from another thread to signal that this elaboration
@@ -269,11 +269,11 @@ impl DerefMut for Elaborator {
 }
 
 impl Elaborator {
-  /// Creates a new [`Elaborator`] from a parsed [`AST`].
+  /// Creates a new [`Elaborator`] from a parsed [`Ast`].
   ///
   /// # Parameters
   ///
-  /// - `ast`: The [`AST`] of the parsed MM1/MM0 file (as created by [`parser::parse`](super::parser::parse))
+  /// - `ast`: The [`Ast`] of the parsed MM1/MM0 file (as created by [`parser::parse`](super::parser::parse))
   /// - `path`: The location of the file being elaborated.
   /// - `mm0_mode`: True if this file is being elaborated in MM0 mode. In MM0 mode,
   ///   the `do` command is disabled, type inference is disabled, modifiers are treated
@@ -283,7 +283,7 @@ impl Elaborator {
   /// - `cancel`: An atomic flag that can be flipped in another thread in order to cancel
   ///   the elaboration before completion.
   /// - `recv_goal`: A listener for goal view events.
-  #[must_use] pub fn new(ast: Arc<AST>, path: FileRef,
+  #[must_use] pub fn new(ast: Arc<Ast>, path: FileRef,
       mm0_mode: bool, check_proofs: bool, cancel: Arc<AtomicBool>,
       recv_goal: Option<GoalListener>,
     ) -> Elaborator {
@@ -582,7 +582,7 @@ impl Elaborator {
       StmtKind::Annot(e, s) => {
         let v = self.eval_lisp(e)?;
         self.elab_stmt(doc, s, span)?;
-        let ann = match &self.data[AtomID::ANNOTATE].lisp {
+        let ann = match &self.data[AtomId::ANNOTATE].lisp {
           Some(e) => e.val.clone(),
           None => return Err(ElabError::new_e(e.span, "define 'annotate' before using annotations")),
         };
@@ -621,7 +621,7 @@ pub enum ElabResult<T> {
 #[derive(Debug)]
 pub struct ElaborateBuilder<'a, F> {
   /// The parsed abstract syntax tree for the file
-  pub ast: &'a Arc<AST>,
+  pub ast: &'a Arc<Ast>,
   /// The location and name of the currently elaborating file
   pub path: FileRef,
   /// True if we are currently elaborating an MM0 file

@@ -6,10 +6,10 @@ use std::mem;
 use std::result::Result as StdResult;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
-use super::environment::{AtomID, TermKind, ThmKind, Type as EType};
+use super::environment::{AtomId, TermKind, ThmKind, Type as EType};
 use crate::parser::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
-  Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortID, Term, TermID, Thm};
+  Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortId, Term, TermId, Thm};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::proof::{NodeHasher, ProofKind, ProofHash, build, Dedup};
 use crate::util::{Span, FileSpan, BoxError};
@@ -22,9 +22,9 @@ use crate::util::{Span, FileSpan, BoxError};
 #[derive(Debug, EnvDebug, DeepSizeOf)]
 pub enum InferSort {
   /// This is a declared bound variable with the given sort.
-  Bound(SortID),
+  Bound(SortId),
   /// This is a declared regular variable with the given sort and dependencies.
-  Reg(SortID, Box<[AtomID]>),
+  Reg(SortId, Box<[AtomId]>),
   /// This is a variable does not have a declared type.
   Unknown {
     /// The span of the first occurrence of the variable
@@ -40,7 +40,7 @@ pub enum InferSort {
     /// to an unknown provable sort; the values of the map are metavariables
     /// of the indicated sorts that are awaiting assignment when the dummy's
     /// actual sort is determined.
-    sorts: Box<HashMap<Option<SortID>, LispVal>>,
+    sorts: Box<HashMap<Option<SortId>, LispVal>>,
   },
 }
 
@@ -50,7 +50,7 @@ impl InferSort {
   }
   /// The sort of this variable. For an unknown variable, it returns a sort iff
   /// this variable has inferred exactly one sort, not counting the "[`None`]" provable sort.
-  #[must_use] pub fn sort(&self) -> Option<SortID> {
+  #[must_use] pub fn sort(&self) -> Option<SortId> {
     match self {
       &InferSort::Bound(sort) | &InferSort::Reg(sort, _) => Some(sort),
       InferSort::Unknown {sorts, ..} => {
@@ -74,12 +74,12 @@ pub struct LocalContext {
   /// value is `(dummy, is)` where `dummy` is true if this is a dummy variable
   /// (internal to the definition or proof) and `is` is the inferred sort data of the variable.
   /// When multiple variables have the same name, only the last one will be in this map.
-  pub vars: HashMap<AtomID, (bool, InferSort)>,
+  pub vars: HashMap<AtomId, (bool, InferSort)>,
   /// The list of variables in order of declaration. This also stores the variable span,
   /// and the atom is none if this is an anonymous (`_`) variable.
   /// The [`InferSort`] contains the inferred type of the variable, but only for
   /// variables that are not in the `vars` hashmap because they are shadowed or anonymous.
-  pub var_order: Vec<(Span, Option<AtomID>, Option<InferSort>)>,
+  pub var_order: Vec<(Span, Option<AtomId>, Option<InferSort>)>,
   /// The list of active metavariables. `refine` will add metavariables to this list when
   /// creating them during elaboration, and it is periodically cleaned to remove assigned
   /// metavariables. The `usize` field of a [`MVar`](LispKind::MVar) will refer to the
@@ -91,12 +91,12 @@ pub struct LocalContext {
   pub goals: Vec<LispVal>,
   /// The proof name map. The keys are subproof name bindings created by `have` or hypothesis
   /// names from the initial proof state, and the values are indexes into `proof_order`.
-  pub proofs: HashMap<AtomID, usize>,
+  pub proofs: HashMap<AtomId, usize>,
   /// The stored subproof data. The proofs are ordered for determinism but there is no real
   /// meaning associated to the order, except that later names shadow earlier names.
   /// The value is the name of the subproof, the type (theorem statement) of the proof,
   /// and the elaborated proof term.
-  pub proof_order: Vec<(AtomID, LispVal, LispVal)>,
+  pub proof_order: Vec<(AtomId, LispVal, LispVal)>,
   /// The "closer", a user-configurable (using [`set-close-fn`])
   /// callback that gets called at the end of a `focus` block.
   ///
@@ -144,7 +144,7 @@ impl LocalContext {
     new_mvar(&mut self.mvars, tgt, sp)
   }
 
-  fn var(&mut self, x: AtomID, sp: Span) -> &mut (bool, InferSort) {
+  fn var(&mut self, x: AtomId, sp: Span) -> &mut (bool, InferSort) {
     self.vars.entry(x).or_insert_with(|| (true, InferSort::new(sp)))
   }
 
@@ -154,7 +154,7 @@ impl LocalContext {
   /// and the expected sort.
   ///
   /// It returns true if the variable was already in the binder list.
-  fn push_var(&mut self, sp: Span, a: Option<AtomID>, (dummy, is): (bool, InferSort)) -> bool {
+  fn push_var(&mut self, sp: Span, a: Option<AtomId>, (dummy, is): (bool, InferSort)) -> bool {
     if let Some(a) = a {
       let res = match self.vars.entry(a) {
         Entry::Vacant(e) => {e.insert((dummy, is)); false}
@@ -189,12 +189,12 @@ impl LocalContext {
   }
 
   /// Get a subproof by name.
-  #[must_use] pub fn get_proof(&self, a: AtomID) -> Option<&(AtomID, LispVal, LispVal)> {
+  #[must_use] pub fn get_proof(&self, a: AtomId) -> Option<&(AtomId, LispVal, LispVal)> {
     self.proofs.get(&a).map(|&i| &self.proof_order[i])
   }
 
   /// Insert a new subproof.
-  pub fn add_proof(&mut self, a: AtomID, e: LispVal, p: LispVal) {
+  pub fn add_proof(&mut self, a: AtomId, e: LispVal, p: LispVal) {
     self.proofs.insert(a, self.proof_order.len());
     self.proof_order.push((a, e, p));
   }
@@ -250,7 +250,7 @@ pub fn try_get_span(fsp: &FileSpan, e: &LispKind) -> Span {
 impl Environment {
   /// Construct the proof term corresponding to a coercion `c`.
   #[must_use] pub fn apply_coe(&self, fsp: &Option<FileSpan>, c: &Coe, res: LispVal) -> LispVal {
-    fn apply(c: &Coe, f: &mut impl FnMut(TermID, LispVal) -> LispVal, e: LispVal) -> LispVal {
+    fn apply(c: &Coe, f: &mut impl FnMut(TermId, LispVal) -> LispVal, e: LispVal) -> LispVal {
       match c {
         &Coe::One(_, tid) => f(tid, e),
         Coe::Trans(c1, _, c2) => {let e2 = apply(c1, f, e); apply(c2, f, e2)}
@@ -278,7 +278,7 @@ impl<'a> ElabTerm<'a> {
     ElabError::new_e(self.try_get_span(e), msg)
   }
 
-  fn coerce(&self, src: &LispVal, from: SortID, res: LispVal, tgt: InferTarget) -> Result<LispVal> {
+  fn coerce(&self, src: &LispVal, from: SortId, res: LispVal, tgt: InferTarget) -> Result<LispVal> {
     let fsp = src.fspan();
     let res = match &fsp { None => res, Some(fsp) => res.replace_span(fsp.clone()) };
     let to = match tgt {
@@ -299,7 +299,7 @@ impl<'a> ElabTerm<'a> {
     }
   }
 
-  fn infer_sort(&self, e: &LispKind) -> Result<SortID> {
+  fn infer_sort(&self, e: &LispKind) -> Result<SortId> {
     e.unwrapped(|r| match r {
       &LispKind::Atom(a) => match self.lc.vars.get(&a) {
         None => Err(self.err(e, "variable not found")),
@@ -335,8 +335,8 @@ impl<'a> ElabTermMut<'a> {
     }
   }
 
-  fn atom(&mut self, e: &LispVal, a: AtomID, tgt: InferTarget) -> Result<LispVal> {
-    let a = if a == AtomID::UNDER {
+  fn atom(&mut self, e: &LispVal, a: AtomId, tgt: InferTarget) -> Result<LispVal> {
+    let a = if a == AtomId::UNDER {
       let mut n = 1;
       loop {
         let a = self.env.get_atom(format!("_{}", n).as_bytes());
@@ -411,7 +411,7 @@ impl<'a> ElabTermMut<'a> {
   }
 
   fn other(&mut self, e: &LispVal, tgt: InferTarget) -> Result<LispVal> {
-    let proc = match &self.data[AtomID::TO_EXPR_FALLBACK].lisp {
+    let proc = match &self.data[AtomId::TO_EXPR_FALLBACK].lisp {
       Some(e) => e.val.clone(),
       None => return Err(self.as_ref().err(e, format!("Not a valid expression: {}", self.print(e))))
     };
@@ -441,28 +441,28 @@ impl<'a> ElabTermMut<'a> {
 
 #[derive(Default)]
 struct BuildArgs {
-  map: HashMap<AtomID, u64>,
+  map: HashMap<AtomId, u64>,
   size: usize,
 }
 
 pub(crate) const MAX_BOUND_VARS: usize = 55;
 
 impl BuildArgs {
-  fn push_bound(&mut self, a: Option<AtomID>) -> Option<()> {
+  fn push_bound(&mut self, a: Option<AtomId>) -> Option<()> {
     if self.size >= MAX_BOUND_VARS {return None}
     if let Some(a) = a {self.map.insert(a, 1 << self.size);}
     self.size += 1;
     Some(())
   }
 
-  fn deps(&self, v: &[AtomID]) -> u64 {
+  fn deps(&self, v: &[AtomId]) -> u64 {
     let mut ret = 0;
     for &a in v { ret |= self.map[&a] }
     ret
   }
 
-  fn push_var(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>,
-    a: Option<AtomID>, is: &Option<InferSort>) -> Option<EType> {
+  fn push_var(&mut self, vars: &HashMap<AtomId, (bool, InferSort)>,
+    a: Option<AtomId>, is: &Option<InferSort>) -> Option<EType> {
     match is.as_ref().unwrap_or_else(||
         &vars[&a.expect("a variable must have a name or an expected type")].1) {
       &InferSort::Bound(sort) => {
@@ -477,7 +477,7 @@ impl BuildArgs {
       InferSort::Unknown {..} => unreachable!(),
     }
   }
-  fn push_dummies(&mut self, vars: &HashMap<AtomID, (bool, InferSort)>) -> Option<()> {
+  fn push_dummies(&mut self, vars: &HashMap<AtomId, (bool, InferSort)>) -> Option<()> {
     for (&a, is) in vars {
       if let (true, InferSort::Bound {..}) = is {
         self.push_bound(Some(a))?
@@ -523,8 +523,8 @@ impl BuildArgs {
 
 #[allow(variant_size_differences)]
 enum InferBinder {
-  Var(Option<AtomID>, (bool, InferSort)),
-  Hyp(Option<AtomID>, LispVal),
+  Var(Option<AtomId>, (bool, InferSort)),
+  Hyp(Option<AtomId>, LispVal),
 }
 
 impl Elaborator {
@@ -600,7 +600,7 @@ impl Elaborator {
   }
 
   /// Get the sort of an expression, assuming it is well typed.
-  pub fn infer_sort(&self, sp: Span, e: &LispKind) -> Result<SortID> {
+  pub fn infer_sort(&self, sp: Span, e: &LispKind) -> Result<SortId> {
     ElabTerm::new(self, sp).infer_sort(e)
   }
 
@@ -705,7 +705,7 @@ impl Elaborator {
     }
     let atom = self.env.get_atom(self.ast.span(d.id));
     self.spans.set_decl(atom);
-    if self.mm0_mode && atom == AtomID::UNDER {
+    if self.mm0_mode && atom == AtomId::UNDER {
       self.report(ElabError::warn(d.id, "(MM0 mode) declaration name required"))
     }
     match d.k {
@@ -817,7 +817,7 @@ impl Elaborator {
             }
           }
         };
-        if atom != AtomID::UNDER {
+        if atom != AtomId::UNDER {
           let tid = self.env.add_term(Term {
             atom, args: args.into(), ret, kind,
             span: self.fspan(d.id),
@@ -920,7 +920,7 @@ impl Elaborator {
             } else {None}
           })
         };
-        if atom != AtomID::UNDER {
+        if atom != AtomId::UNDER {
           let tid = self.env.add_thm(Thm {
             atom, span, vis: d.mods, full, doc,
             args: args.into(), heap, hyps, ret, kind
@@ -943,14 +943,14 @@ impl Elaborator {
 pub struct AwaitingProof {
   thm: Thm,
   de: Dedup<ProofHash>,
-  var_map: HashMap<AtomID, usize>,
+  var_map: HashMap<AtomId, usize>,
   lc: Box<LocalContext>,
   is: Vec<usize>,
 }
 
 impl AwaitingProof {
   /// The theorem name being added.
-  #[must_use] pub fn atom(&self) -> AtomID { self.thm.atom }
+  #[must_use] pub fn atom(&self) -> AtomId { self.thm.atom }
 
   /// Once the user closure completes, we can call this function to consume the suspended
   /// computation and finish adding the theorem.
@@ -964,7 +964,7 @@ impl AwaitingProof {
 #[derive(Debug)]
 struct ThmVal {
   de: Dedup<ProofHash>,
-  var_map: HashMap<AtomID, usize>,
+  var_map: HashMap<AtomId, usize>,
   lc: Option<Box<LocalContext>>,
   is: Vec<usize>,
   proof: LispVal
@@ -972,11 +972,11 @@ struct ThmVal {
 
 fn dummies(fe: FormatEnv<'_>, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal) -> Result<()> {
   macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
-  let mut dummy = |x: AtomID, es: &LispKind| -> Result<()> {
+  let mut dummy = |x: AtomId, es: &LispKind| -> Result<()> {
     let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
     let sort = fe.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
       format!("unknown sort '{}'", fe.to(&s))))?;
-    if x != AtomID::UNDER {lc.vars.insert(x, (true, InferSort::Bound(sort)));}
+    if x != AtomId::UNDER {lc.vars.insert(x, (true, InferSort::Bound(sort)));}
     Ok(())
   };
   e.unwrapped(|r| {
@@ -997,10 +997,10 @@ fn dummies(fe: FormatEnv<'_>, fsp: &FileSpan, lc: &mut LocalContext, e: &LispVal
   })
 }
 
-type Binder = (Option<AtomID>, EType);
+type Binder = (Option<AtomId>, EType);
 
 impl Elaborator {
-  fn deps(&self, fsp: &FileSpan, vars: &HashMap<AtomID, u64>, vs: LispVal) -> Result<(Box<[AtomID]>, u64)> {
+  fn deps(&self, fsp: &FileSpan, vars: &HashMap<AtomId, u64>, vs: LispVal) -> Result<(Box<[AtomId]>, u64)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut n = 0;
     let mut ids = Vec::new();
@@ -1013,7 +1013,7 @@ impl Elaborator {
     Ok((ids.into(), n))
   }
 
-  fn binders(&self, fsp: &FileSpan, u: Uncons, (varmap, next_bv): &mut (HashMap<AtomID, u64>, u64)) ->
+  fn binders(&self, fsp: &FileSpan, u: Uncons, (varmap, next_bv): &mut (HashMap<AtomId, u64>, u64)) ->
       Result<(LocalContext, Box<[Binder]>)> {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     let mut lc = LocalContext::new();
@@ -1022,7 +1022,7 @@ impl Elaborator {
       let mut u = Uncons::from(e.clone());
       if let (Some(ea), Some(es)) = (u.next(), u.next()) {
         let a = ea.as_atom().ok_or_else(|| ElabError::new_e(sp!(ea), "expected an atom"))?;
-        let a = if a == AtomID::UNDER {None} else {Some(a)};
+        let a = if a == AtomId::UNDER {None} else {Some(a)};
         let s = es.as_atom().ok_or_else(|| ElabError::new_e(sp!(es), "expected an atom"))?;
         let sort = self.data[s].sort.ok_or_else(|| ElabError::new_e(sp!(es),
           format!("unknown sort '{}'", self.print(&s))))?;
@@ -1057,9 +1057,9 @@ impl Elaborator {
     macro_rules! sp {($e:expr) => {$e.fspan().unwrap_or(fsp.clone()).span}}
     match e.as_atom() {
       None if e.exactly(0) => Ok(Modifiers::NONE),
-      Some(AtomID::PUB) => Ok(Modifiers::PUB),
-      Some(AtomID::ABSTRACT) => Ok(Modifiers::ABSTRACT),
-      Some(AtomID::LOCAL) => Ok(Modifiers::LOCAL),
+      Some(AtomId::PUB) => Ok(Modifiers::PUB),
+      Some(AtomId::ABSTRACT) => Ok(Modifiers::ABSTRACT),
+      Some(AtomId::LOCAL) => Ok(Modifiers::LOCAL),
       _ => Err(ElabError::new_e(sp!(e), format!("expected visibility, got {}", self.print(e))))
     }
   }
@@ -1148,7 +1148,7 @@ impl Elaborator {
         let mut u = Uncons::from(e.clone());
         if let (Some(ex), Some(ty)) = (u.next(), u.next()) {
           let x = ex.as_atom().ok_or_else(|| ElabError::new_e(sp!(ex), "expected an atom"))?;
-          let a = if x == AtomID::UNDER {None} else {Some(x)};
+          let a = if x == AtomId::UNDER {None} else {Some(x)};
           let ty = self.elaborate_term(sp!(ty), &ty, InferTarget::Provable)?;
           is.push((a, ty));
         } else {

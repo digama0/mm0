@@ -2,7 +2,7 @@
 
 use std::io;
 use super::proof::{Dedup, NodeHasher, ProofKind, build};
-use super::environment::{DeclKey, SortID, TermID, Type, Expr, ExprNode,
+use super::environment::{DeclKey, SortId, TermId, Type, Expr, ExprNode,
   TermKind, OutputString, StmtTrace, Environment};
 use super::{ElabError, Elaborator, Span, HashMap, Result as EResult, SExpr,
   lisp::{InferTarget, LispVal}, local_context::try_get_span, FrozenEnv};
@@ -12,7 +12,7 @@ use crate::util::{FileSpan, BoxError};
 /// evaluations of `output string` commands.
 #[derive(Default, Debug)]
 pub struct InoutHandlers {
-  string: Option<(Sorts, HashMap<TermID, InoutStringType>)>
+  string: Option<(Sorts, HashMap<TermId, InoutStringType>)>
 }
 
 #[derive(Debug)]
@@ -30,8 +30,8 @@ enum InoutStringType {
 #[derive(Clone, Debug, EnvDebug, PartialEq, Eq)]
 enum StringSeg {
   Str(Box<[u8]>),
-  Var(SortID, u32),
-  Term(TermID, Box<[Box<[StringSeg]>]>),
+  Var(SortId, u32),
+  Term(TermId, Box<[Box<[StringSeg]>]>),
   Hex(u8),
 }
 
@@ -84,13 +84,13 @@ impl StringSegBuilder {
 #[derive(Debug)]
 pub enum OutputError {
   /// The underlying writer throwed an IO error
-  IOError(io::Error),
+  IoError(io::Error),
   /// There was a logical error preventing the output to be written
   String(String),
 }
 
 impl From<io::Error> for OutputError {
-  fn from(e: io::Error) -> Self { Self::IOError(e) }
+  fn from(e: io::Error) -> Self { Self::IoError(e) }
 }
 impl From<&str> for OutputError {
   fn from(e: &str) -> Self { Self::String(e.into()) }
@@ -99,7 +99,7 @@ impl From<&str> for OutputError {
 impl From<OutputError> for BoxError {
   fn from(e: OutputError) -> BoxError {
     match e {
-      OutputError::IOError(e) => e.into(),
+      OutputError::IoError(e) => e.into(),
       OutputError::String(s) => s.into(),
     }
   }
@@ -147,14 +147,14 @@ impl From<StringWriter<Vec<u8>>> for StringPart {
 
 #[derive(Copy, Clone, Debug, EnvDebug)]
 struct Sorts {
-  str: SortID,
-  hex: SortID,
-  chr: SortID,
+  str: SortId,
+  hex: SortId,
+  chr: SortId,
 }
 
 impl Environment {
   #[allow(clippy::unnecessary_lazy_evaluations)] // see rust-clippy#6343
-  fn check_sort(&self, s: &str) -> Result<SortID, String> {
+  fn check_sort(&self, s: &str) -> Result<SortId, String> {
     self.atoms.get(s.as_bytes()).and_then(|&a| self.data[a].sort)
       .ok_or_else(|| format!("sort '{}' not found", s))
   }
@@ -167,7 +167,7 @@ impl Environment {
   }
 
   fn check_term<'a>(&'a self, s: &str,
-      args: &[SortID], ret: SortID, def: bool) -> Result<TermID, String> {
+      args: &[SortId], ret: SortId, def: bool) -> Result<TermId, String> {
     let t = self.atoms.get(s.as_bytes())
       .and_then(|&a| if let Some(DeclKey::Term(t)) = self.data[a].decl {Some(t)} else {None})
       .ok_or_else(|| format!("term '{}' not found", s))?;
@@ -193,7 +193,7 @@ impl Environment {
   }
 
   fn process_node<T>(&self,
-    terms: &HashMap<TermID, InoutStringType>,
+    terms: &HashMap<TermId, InoutStringType>,
     args: &[(T, Type)], e: &ExprNode,
     heap: &[Box<[StringSeg]>],
     out: &mut StringSegBuilder,
@@ -233,7 +233,7 @@ impl Environment {
   }
 
   fn write_node<W: io::Write>(&self,
-    terms: &HashMap<TermID, InoutStringType>,
+    terms: &HashMap<TermId, InoutStringType>,
     heap: &[StringPart],
     e: &ExprNode,
     w: &mut StringWriter<W>,
@@ -273,7 +273,7 @@ impl Environment {
   }
 
   fn write_output_string<W: io::Write>(&self,
-    terms: &HashMap<TermID, InoutStringType>,
+    terms: &HashMap<TermId, InoutStringType>,
     w: &mut StringWriter<W>,
     heap: &[ExprNode], exprs: &[ExprNode]
   ) -> Result<(), OutputError> {
@@ -290,8 +290,8 @@ impl Environment {
   }
 
   fn process_def(&self,
-      terms: &HashMap<TermID, InoutStringType>,
-      t: TermID, name: &str) -> Result<Box<[StringSeg]>, String> {
+      terms: &HashMap<TermId, InoutStringType>,
+      t: TermId, name: &str) -> Result<Box<[StringSeg]>, String> {
     let td = &self.terms[t];
     if let TermKind::Def(Some(Expr {heap, head})) = &td.kind {
       let mut refs = Vec::with_capacity(heap.len() - td.args.len());
@@ -307,7 +307,7 @@ impl Environment {
     }
   }
 
-  fn new_string_handler(&self) -> Result<(Sorts, HashMap<TermID, InoutStringType>), String> {
+  fn new_string_handler(&self) -> Result<(Sorts, HashMap<TermId, InoutStringType>), String> {
     use InoutStringType::{Ch, Hex, S0, S1, SAdd, SCons};
     let s = self.new_sorts()?;
     let mut map = HashMap::new();
@@ -330,7 +330,7 @@ impl Environment {
 }
 
 impl Elaborator {
-  fn get_string_handler(&mut self, sp: Span) -> EResult<(Sorts, &mut HashMap<TermID, InoutStringType>)> {
+  fn get_string_handler(&mut self, sp: Span) -> EResult<(Sorts, &mut HashMap<TermId, InoutStringType>)> {
     if self.inout.string.is_none() {
       let (s, map) = self.env.new_string_handler().map_err(|e| ElabError::new_e(sp, e))?;
       self.inout.string = Some((s, map));
@@ -390,7 +390,7 @@ impl Elaborator {
     let mut w = StringWriter::default();
     let terms = &self.inout.string.as_ref().expect("string handler should be initialized").1;
     self.env.write_output_string(terms, &mut w, &heap, &exprs).map_err(|e| match e {
-      OutputError::IOError(e) => panic!(e),
+      OutputError::IoError(e) => panic!(e),
       OutputError::String(e) => ElabError::new_e(fsp.span, e),
     })?;
     Ok(w.w)

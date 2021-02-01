@@ -16,7 +16,7 @@ use num::cast::ToPrimitive;
 use crate::util::{Span, BoxError, Position};
 use crate::lined_string::LinedString;
 use crate::elab::environment::DocComment;
-pub use ast::AST;
+pub use ast::Ast;
 use ast::{Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal,
   LocalKind, Modifiers, Prec, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type};
 
@@ -991,8 +991,8 @@ impl<'a> Parser<'a> {
 /// new file differs from the old one.
 #[must_use] pub fn parse(
   file: Arc<LinedString>,
-  old: Option<(Position, Arc<AST>)>
-) -> (usize, AST) {
+  old: Option<(Position, Arc<Ast>)>
+) -> (usize, Ast) {
   let (errors, imports, idx, mut stmts) =
     if let Some((pos, ast)) = old {
       let (ix, start) = ast.last_checkpoint(file.to_idx(pos).expect("bad line position"));
@@ -1012,5 +1012,5 @@ impl<'a> Parser<'a> {
   let mut p = Parser {source: file.as_bytes(), errors, imports, idx, restart_pos: None};
   p.ws();
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
-  (0, AST { errors: p.errors, imports: p.imports, source: file, stmts })
+  (0, Ast { errors: p.errors, imports: p.imports, source: file, stmts })
 }

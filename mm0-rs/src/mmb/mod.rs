@@ -5,7 +5,7 @@
 //! [`mm0-c/verifier.c`]: https://github.com/digama0/mm0/blob/master/mm0-c/verifier.c
 use std::convert::TryFrom;
 
-use crate::elab::environment::{SortID, TermID, ThmID, Modifiers};
+use crate::elab::environment::{SortId, TermId, ThmId, Modifiers};
 use byteorder::LE;
 use zerocopy::{FromBytes, Unaligned, U16, U32, U64};
 
@@ -171,7 +171,7 @@ pub enum ProofCmd {
   /// expressions. When `save` is used, the new term is also saved to the heap
   /// (this is used if the term will ever be needed more than once).
   Term {
-    /** The term to construct */              tid: TermID,
+    /** The term to construct */              tid: TermId,
     /** True if we should save to the heap */ save: bool,
   },
   /// ```text
@@ -183,7 +183,7 @@ pub enum ProofCmd {
   /// Dummy s: H; S --> H, x; S, x    alloc(x:s)
   /// ```
   /// Allocate a new variable `x` of sort `s`, and push it to the stack and the heap.
-  Dummy(SortID),
+  Dummy(SortId),
   /// ```text
   /// Thm T: H; S, e1, ..., en, e --> H; S', |- e
   ///   (where Unify(T): S; e1, ... en; e --> S'; H'; .)
@@ -196,7 +196,7 @@ pub enum ProofCmd {
   ///
   /// When Save is used, the proven statement is also saved to the heap.
   Thm {
-    /** The theorem to apply */               tid: ThmID,
+    /** The theorem to apply */               tid: ThmId,
     /** True if we should save to the heap */ save: bool,
   },
   /// ```text
@@ -267,12 +267,12 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, ()> {
     use std::convert::TryInto;
     Ok(match cmd {
-      cmd::PROOF_TERM => ProofCmd::Term {tid: TermID(data), save: false},
-      cmd::PROOF_TERM_SAVE => ProofCmd::Term {tid: TermID(data), save: true},
+      cmd::PROOF_TERM => ProofCmd::Term {tid: TermId(data), save: false},
+      cmd::PROOF_TERM_SAVE => ProofCmd::Term {tid: TermId(data), save: true},
       cmd::PROOF_REF => ProofCmd::Ref(data),
-      cmd::PROOF_DUMMY => ProofCmd::Dummy(SortID(data.try_into().map_err(|_| ())?)),
-      cmd::PROOF_THM => ProofCmd::Thm {tid: ThmID(data), save: false},
-      cmd::PROOF_THM_SAVE => ProofCmd::Thm {tid: ThmID(data), save: true},
+      cmd::PROOF_DUMMY => ProofCmd::Dummy(SortId(data.try_into().map_err(|_| ())?)),
+      cmd::PROOF_THM => ProofCmd::Thm {tid: ThmId(data), save: false},
+      cmd::PROOF_THM_SAVE => ProofCmd::Thm {tid: ThmId(data), save: true},
       cmd::PROOF_HYP => ProofCmd::Hyp,
       cmd::PROOF_CONV => ProofCmd::Conv,
       cmd::PROOF_REFL => ProofCmd::Refl,
@@ -317,7 +317,7 @@ pub enum UnifyCmd {
   /// `UTermSave` does the same thing but saves the term to the unify heap
   /// before the destructuring.
   Term {
-    /** The term that should be at the head */                   tid: TermID,
+    /** The term that should be at the head */                   tid: TermId,
     /** True if we want to recall this substitution for later */ save: bool,
   },
   /// ```text
@@ -332,7 +332,7 @@ pub enum UnifyCmd {
   /// Pop a variable from the unify stack (ensure that it is a name of
   /// the appropriate sort) and push it to the heap (ensure that it is
   /// distinct from everything else in the substitution).
-  Dummy(SortID),
+  Dummy(SortId),
   /// ```text
   /// UHyp (UThm mode):  MS, |- e; S --> MS; S, e
   /// UHyp (UThmEnd mode):  HS, e; S --> HS; S, e
@@ -353,10 +353,10 @@ impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, ()> {
     use std::convert::TryInto;
     Ok(match cmd {
-      cmd::UNIFY_TERM => UnifyCmd::Term {tid: TermID(data), save: false},
-      cmd::UNIFY_TERM_SAVE => UnifyCmd::Term {tid: TermID(data), save: true},
+      cmd::UNIFY_TERM => UnifyCmd::Term {tid: TermId(data), save: false},
+      cmd::UNIFY_TERM_SAVE => UnifyCmd::Term {tid: TermId(data), save: true},
       cmd::UNIFY_REF => UnifyCmd::Ref(data),
-      cmd::UNIFY_DUMMY => UnifyCmd::Dummy(SortID(data.try_into().map_err(|_| ())?)),
+      cmd::UNIFY_DUMMY => UnifyCmd::Dummy(SortId(data.try_into().map_err(|_| ())?)),
       cmd::UNIFY_HYP => UnifyCmd::Hyp,
       _ => return Err(())
     })
@@ -502,7 +502,7 @@ pub struct IndexEntry {
   pub col: U32<LE>,
   /// A pointer to the location in the proof stream which introduced this entity.
   pub p_proof: U64<LE>,
-  /// The index ([`SortID`], [`TermID`], or [`ThmID`] or variable index) of the entity.
+  /// The index ([`SortId`], [`TermId`], or [`ThmId`] or variable index) of the entity.
   pub ix: U32<LE>,
   /// The index entry kind as a [`IndexKind`].
   pub kind: u8,

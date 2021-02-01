@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use num::BigInt;
 use crate::util::{Span, FileSpan};
 use crate::elab::{Result, ElabError,
-  environment::AtomID,
+  environment::AtomId,
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
   local_context::{try_get_span, try_get_span_from}};
-use super::types::{AST, Keyword, Proc, ProcKind,
+use super::types::{Ast, Keyword, Proc, ProcKind,
   Variant, VariantType};
 
 /// A tuple pattern, which destructures the results of assignments from functions with
@@ -16,26 +16,26 @@ use super::types::{AST, Keyword, Proc, ProcKind,
 pub enum TuplePattern {
   /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
   /// is ghost.
-  Name(bool, AtomID, Option<FileSpan>),
+  Name(bool, AtomId, Option<FileSpan>),
   /// A type ascription. The type is unparsed.
   Typed(Box<TuplePattern>, LispVal),
   /// A tuple, with the given arguments.
   Tuple(Box<[TuplePattern]>, Option<FileSpan>),
 }
 
-enum MutOut { None, Mut, Out(AtomID) }
+enum MutOut { None, Mut, Out(AtomId) }
 
 impl TuplePattern {
   /// The `_` tuple pattern. This is marked as ghost because it can't be referred to so
   /// it is always safe to make irrelevant.
-  pub const UNDER: TuplePattern = TuplePattern::Name(true, AtomID::UNDER, None);
+  pub const UNDER: TuplePattern = TuplePattern::Name(true, AtomId::UNDER, None);
 
   /// The name of a variable binding (or `_` for a tuple pattern)
-  #[must_use] pub fn name(&self) -> AtomID {
+  #[must_use] pub fn name(&self) -> AtomId {
     match self {
       &TuplePattern::Name(_, a, _) => a,
       TuplePattern::Typed(p, _) => p.name(),
-      _ => AtomID::UNDER
+      _ => AtomId::UNDER
     }
   }
 
@@ -61,7 +61,7 @@ impl TuplePattern {
   #[must_use] pub fn ty(&self) -> LispVal {
     match self {
       TuplePattern::Typed(_, ty) => ty.clone(),
-      _ => LispVal::atom(AtomID::UNDER)
+      _ => LispVal::atom(AtomId::UNDER)
     }
   }
 }
@@ -83,12 +83,12 @@ impl Eq for TuplePattern {}
 pub enum Pattern {
   /// A variable binding, unless this is the name of a constant in which case
   /// it is a constant value.
-  VarOrConst(AtomID),
+  VarOrConst(AtomId),
   /// A numeric literal.
   Number(BigInt),
   /// A hypothesis pattern, which binds the first argument to a proof that the
   /// scrutinee satisfies the pattern argument.
-  Hyped(AtomID, Box<Pattern>),
+  Hyped(AtomId, Box<Pattern>),
   /// A pattern guard: Matches the inner pattern, and then if the expression returns
   /// true, this is also considered to match.
   With(Box<(Pattern, LispVal)>),
@@ -103,14 +103,14 @@ pub enum Rename {
   /// `{from -> to}` means that the variable `from` should be renamed to `to`
   /// (after evaluation of the main expression).
   Old {
-    /** The original name of the variable */ from: AtomID,
-    /** The new name of the variable */ to: AtomID
+    /** The original name of the variable */ from: AtomId,
+    /** The new name of the variable */ to: AtomId
   },
   /// `{to <- from}` means that the new value of the variable `from` should be called `to`,
   /// so that the old value of variable `from` is available by that name.
   New {
-    /** The original name of the variable */ from: AtomID,
-    /** The new name of the variable */ to: AtomID
+    /** The original name of the variable */ from: AtomId,
+    /** The new name of the variable */ to: AtomId
   },
 }
 
@@ -120,7 +120,7 @@ pub enum Expr {
   /// A `()` literal.
   Nil,
   /// A variable reference.
-  Var(FileSpan, AtomID),
+  Var(FileSpan, AtomId),
   /// A number literal.
   Number(BigInt),
   /// A let binding.
@@ -144,7 +144,7 @@ pub enum Expr {
   /// A function call (or something that looks like one at parse time).
   Call {
     /// The function to call.
-    f: AtomID,
+    f: AtomId,
     /// The span of `f`.
     fsp: Option<FileSpan>,
     /// The function arguments.
@@ -161,7 +161,7 @@ pub enum Expr {
   /// They are called like regular functions but can only appear in tail position.
   Label {
     /// The name of the label
-    name: AtomID,
+    name: AtomId,
     /// The arguments of the label
     args: Box<[TuplePattern]>,
     /// The variant, for recursive calls
@@ -174,9 +174,9 @@ pub enum Expr {
   If {
     /// The list of variables that will be updated by each sub-block. Variables
     /// in external scope that are not in this list are treated as read only.
-    muts: Box<[(AtomID, Option<FileSpan>)]>,
+    muts: Box<[(AtomId, Option<FileSpan>)]>,
     /// The list of `(h,C,T)` triples in `if {h1 : C1} T1 if {h2 : C2} T2 else E`.
-    branches: Box<[(Option<AtomID>, LispVal, LispVal)]>,
+    branches: Box<[(Option<AtomId>, LispVal, LispVal)]>,
     /// The else case, the `E` in `if {h1 : C1} T1 if {h2 : C2} T2 else E`.
     els: LispVal
   },
@@ -185,7 +185,7 @@ pub enum Expr {
   /// A while loop.
   While {
     /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<AtomID>,
+    hyp: Option<AtomId>,
     /// The loop condition.
     cond: LispVal,
     /// The variant, which must decrease on every round around the loop.
@@ -204,12 +204,12 @@ pub struct Parser<'a> {
   /// The formatting environment.
   pub fe: FormatEnv<'a>,
   /// The keyword list.
-  pub kw: &'a HashMap<AtomID, Keyword>,
+  pub kw: &'a HashMap<AtomId, Keyword>,
   /// The base file span, for error reporting.
   pub fsp: FileSpan,
 }
 
-fn head_atom(e: &LispVal) -> Option<(AtomID, Uncons)> {
+fn head_atom(e: &LispVal) -> Option<(AtomId, Uncons)> {
   let mut u = Uncons::from(e.clone());
   Some((u.next()?.as_atom()?, u))
 }
@@ -217,7 +217,7 @@ fn head_atom(e: &LispVal) -> Option<(AtomID, Uncons)> {
 /// Try to parse the head keyword of an expression `(KEYWORD args..)`,
 /// and return the pair `(KEYWORD, args)` on success.
 #[must_use] pub fn head_keyword<S: std::hash::BuildHasher>(
-  kw: &HashMap<AtomID, Keyword, S>, e: &LispVal
+  kw: &HashMap<AtomId, Keyword, S>, e: &LispVal
 ) -> Option<(Keyword, Uncons)> {
   let mut u = Uncons::from(e.clone());
   u.next()?.unwrapped(|e| match *e {
@@ -251,13 +251,13 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_arg1(&self, e: LispVal, name_required: bool) -> Result<TuplePattern> {
-    if let Some((AtomID::COLON, _)) = head_atom(&e) {
+    if let Some((AtomId::COLON, _)) = head_atom(&e) {
       Ok(self.parse_tuple_pattern(false, e)?)
     } else if name_required {
       let a = e.as_atom().ok_or_else(||
         ElabError::new_e(self.try_get_span(&e), "argument syntax error: expecting identifier"))?;
-      Ok(TuplePattern::Name(a == AtomID::UNDER, a,
-        if a == AtomID::UNDER { None } else { Some(self.try_get_fspan(&e)) }))
+      Ok(TuplePattern::Name(a == AtomId::UNDER, a,
+        if a == AtomId::UNDER { None } else { Some(self.try_get_fspan(&e)) }))
     } else {
       Ok(TuplePattern::Typed(Box::new(TuplePattern::UNDER), e))
     }
@@ -272,7 +272,7 @@ impl<'a> Parser<'a> {
       }
       Some((Keyword::Out, mut u)) => {
         let (a, e) = match (u.next(), u.next(), u.is_empty()) {
-          (Some(e), None, _) => (AtomID::UNDER, e),
+          (Some(e), None, _) => (AtomId::UNDER, e),
           (Some(e1), Some(e), true) => {
             let a = e1.as_atom().ok_or_else(||
               ElabError::new_e(self.try_get_span(&e1), "'out' syntax error"))?;
@@ -290,7 +290,7 @@ impl<'a> Parser<'a> {
   /// Parse a tuple pattern.
   pub fn parse_tuple_pattern(&self, ghost: bool, e: LispVal) -> Result<TuplePattern> {
     if let Some(a) = e.as_atom() {
-      return Ok(TuplePattern::Name(ghost || a == AtomID::UNDER, a, e.fspan()))
+      return Ok(TuplePattern::Name(ghost || a == AtomId::UNDER, a, e.fspan()))
     }
     if !e.is_list() {
       return Err(ElabError::new_e(self.try_get_span(&e),
@@ -393,7 +393,7 @@ impl<'a> Parser<'a> {
   /// containing [`LispVal`]s for subexpressions.
   pub fn parse_expr(&self, e: LispVal) -> Result<Expr> {
     Ok(match &*e.unwrapped_arc() {
-      &LispKind::Atom(AtomID::UNDER) => Expr::Hole(self.try_get_fspan(&e)),
+      &LispKind::Atom(AtomId::UNDER) => Expr::Hole(self.try_get_fspan(&e)),
       &LispKind::Atom(a) => Expr::Var(self.try_get_fspan(&e), a),
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
         Some((Keyword::ColonEq, _)) |
@@ -436,7 +436,7 @@ impl<'a> Parser<'a> {
                 if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
                   let h = h.as_atom().ok_or_else(||
                     ElabError::new_e(self.try_get_span(&h), "expecting hypothesis name"))?;
-                  (if h == AtomID::UNDER {None} else {Some(h)}, cond)
+                  (if h == AtomId::UNDER {None} else {Some(h)}, cond)
                 } else {
                   return Err(ElabError::new_e(self.try_get_span(&cond), "':' syntax error"))
                 },
@@ -570,7 +570,7 @@ impl<'a> Parser<'a> {
         let name = e.as_atom().ok_or_else(||
           ElabError::new_e(self.try_get_span(&e), "func/proc syntax error: expecting an atom"))?;
         while let Some(e) = u.next() {
-          if let Some(AtomID::COLON) = e.as_atom() { break }
+          if let Some(AtomId::COLON) = e.as_atom() { break }
           self.parse_arg(e, true, |sp, mo, arg| {
             args.0.push(match mo {
               MutOut::None => false,
@@ -608,7 +608,7 @@ impl<'a> Parser<'a> {
     Ok((Proc {name, span, args, rets, variant, kind}, u))
   }
 
-  fn parse_name_and_tyargs(&self, e: &LispVal) -> Result<(AtomID, Option<FileSpan>, Vec<TuplePattern>)> {
+  fn parse_name_and_tyargs(&self, e: &LispVal) -> Result<(AtomId, Option<FileSpan>, Vec<TuplePattern>)> {
     let mut args = vec![];
     let (name, sp) = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => (a, e.fspan()),
@@ -625,26 +625,26 @@ impl<'a> Parser<'a> {
   }
 
   /// Parses the input lisp literal `e` into a list of top level items and appends them to `ast`.
-  pub fn parse_ast(&self, ast: &mut Vec<AST>, e: &LispVal) -> Result<()> {
+  pub fn parse_ast(&self, ast: &mut Vec<Ast>, e: &LispVal) -> Result<()> {
     let mut u = Uncons::from(e.clone());
     while let Some(e) = u.next() {
       match self.head_keyword(&e) {
-        Some((Keyword::Proc, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::ProcDecl, u)?)),
-        Some((Keyword::Func, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Func, u)?)),
-        Some((Keyword::Intrinsic, u)) => ast.push(AST::proc(self.parse_proc(ProcKind::Intrinsic, u)?)),
+        Some((Keyword::Proc, u)) => ast.push(Ast::proc(self.parse_proc(ProcKind::ProcDecl, u)?)),
+        Some((Keyword::Func, u)) => ast.push(Ast::proc(self.parse_proc(ProcKind::Func, u)?)),
+        Some((Keyword::Intrinsic, u)) => ast.push(Ast::proc(self.parse_proc(ProcKind::Intrinsic, u)?)),
         Some((Keyword::Global, u)) => for e in u {
           let full = e.fspan();
           let (lhs, rhs) = self.parse_decl(&e)?;
-          ast.push(AST::Global {full, lhs, rhs})
+          ast.push(Ast::Global {full, lhs, rhs})
         },
         Some((Keyword::Const, u)) => for e in u {
           let (lhs, rhs) = self.parse_decl(&e)?;
-          ast.push(AST::Const {full: e.fspan(), lhs, rhs});
+          ast.push(Ast::Const {full: e.fspan(), lhs, rhs});
         },
         Some((Keyword::Typedef, mut u)) =>
           if let (Some(e), Some(val), true) = (u.next(), u.next(), u.is_empty()) {
             let (name, span, args) = self.parse_name_and_tyargs(&e)?;
-            ast.push(AST::Typedef {name, span, args: args.into(), val});
+            ast.push(Ast::Typedef {name, span, args: args.into(), val});
           } else {
             return Err(ElabError::new_e(self.try_get_span(&e), "typedef: syntax error"))
           },
@@ -654,7 +654,7 @@ impl<'a> Parser<'a> {
           let (name, span, args) = self.parse_name_and_tyargs(&e)?;
           let mut fields = vec![];
           for e in u { fields.push(self.parse_arg1(e, false)?) }
-          ast.push(AST::Struct {name, span, args: args.into(), fields: fields.into()});
+          ast.push(Ast::Struct {name, span, args: args.into(), fields: fields.into()});
         }
         _ => return Err(ElabError::new_e(self.try_get_span(&e), "MMC: unknown top level item"))
       }

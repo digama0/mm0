@@ -7,9 +7,9 @@ use std::ops::Index;
 use std::result::Result as StdResult;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
-use super::environment::{AtomID, Type};
+use super::environment::{AtomId, Type};
 use super::{LocalContext, ElabError, Result, Environment,
-  SortID, TermID, ThmID, ExprNode, ProofNode, DeclKey, Modifiers};
+  SortId, TermId, ThmId, ExprNode, ProofNode, DeclKey, Modifiers};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
 use crate::util::{BoxError, FileSpan};
@@ -22,7 +22,7 @@ pub struct NodeHasher<'a> {
   /// The formatting environment, used for error reporting and for access to the [`Environment`].
   pub fe: FormatEnv<'a>,
   /// The initial variable map, which maps variable names to their indices.
-  pub var_map: HashMap<AtomID, usize>,
+  pub var_map: HashMap<AtomId, usize>,
   /// The file span for the theorem, used for error reporting.
   pub fsp: FileSpan,
 }
@@ -136,7 +136,7 @@ pub struct Dedup<H: NodeHash> {
 impl<H: NodeHash> Dedup<H> {
   /// Create a new [`Dedup`], given the list of arguments
   /// ([`Term::args`](super::environment::Term::args)) in the context.
-  #[must_use] pub fn new(args: &[(Option<AtomID>, Type)]) -> Dedup<H> {
+  #[must_use] pub fn new(args: &[(Option<AtomId>, Type)]) -> Dedup<H> {
     let mut bv = 1;
     let vec: Vec<_> = args.iter().enumerate()
       .map(|(i, (_, t))| (Rc::new(H::REF(ProofKind::Expr, i)), true, match t {
@@ -348,9 +348,9 @@ pub enum ExprHash {
   /// `Ref(n)` is a reference to heap element `n` (the first `args.len()` of them are the variables)
   Ref(ProofKind, usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
-  Dummy(AtomID, SortID),
+  Dummy(AtomId, SortId),
   /// `App(t, nodes)` is an application of term constructor `t` to subterms
-  App(TermID, Box<[usize]>),
+  App(TermId, Box<[usize]>),
 }
 
 impl NodeHash for ExprHash {
@@ -432,10 +432,10 @@ impl Environment {
   /// Given a list of binders, convert them to a lisp list, updating
   /// the `heap` mapping of variable indexes to lisp names,
   /// and the `bvs` mapping of bound variable indexes to lisp names.
-  pub fn binders(&self, bis: &[(Option<AtomID>, Type)],
+  pub fn binders(&self, bis: &[(Option<AtomId>, Type)],
       heap: &mut Vec<LispVal>, bvars: &mut Vec<LispVal>) -> LispVal {
     LispVal::list(bis.iter().map(|(a, t)| LispVal::list({
-      let a = LispVal::atom(a.unwrap_or(AtomID::UNDER));
+      let a = LispVal::atom(a.unwrap_or(AtomId::UNDER));
       heap.push(a.clone());
       match *t {
         Type::Bound(s) => {bvars.push(a.clone()); vec![a, LispVal::atom(self.sorts[s].atom)]}
@@ -474,14 +474,14 @@ pub enum ProofHash {
   /// This could be an expr, proof, or conv depending on what is referenced.
   Ref(ProofKind, usize),
   /// `Dummy(s, sort)` is a fresh dummy variable `s` with sort `sort`
-  Dummy(AtomID, SortID),
+  Dummy(AtomId, SortId),
   /// `Term(term, args)` is an application of term constructor `term` to subterms
-  Term(TermID, Box<[usize]>),
+  Term(TermId, Box<[usize]>),
   /// `Hyp(i, e)` is hypothesis `i` (`hyps[i]` will be a reference to element),
   /// which is a proof of `|- e`.
   Hyp(usize, usize),
   /// `Thm(thm, args, res)` is a proof of `|- res` by applying theorem `thm` to arguments `args`.
-  Thm(ThmID, Box<[usize]>, usize),
+  Thm(ThmId, Box<[usize]>, usize),
   /// `Conv(tgt, conv, proof)` is a proof of `|- tgt` if `proof: src` and `conv: tgt = src`.
   Conv(usize, usize, usize),
   /// `Refl(e): e = e`
@@ -489,11 +489,11 @@ pub enum ProofHash {
   /// `Refl(p): e2 = e1` if `p: e1 = e2`
   Sym(usize),
   /// `Cong(term, args): term a1 ... an = term b1 ... bn` if `args[i]: ai = bi`
-  Cong(TermID, Rc<[usize]>),
+  Cong(TermId, Rc<[usize]>),
   /// `Unfold(term, args, lhs, sub_lhs, p)` is a proof of `lhs = rhs` if
   /// `lhs` is `term args` and `term` is a definition and `sub_lhs` is the result of
   /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
-  Unfold(TermID, Box<[usize]>, usize, usize, usize),
+  Unfold(TermId, Box<[usize]>, usize, usize, usize),
 }
 
 impl ProofHash {
@@ -663,8 +663,8 @@ impl NodeHash for ProofHash {
                   if de.vec[ns[i]].2 & de.vec[ns[j]].2 != 0 {
                     use std::fmt::Write;
                     write!(err, "\n  ({}, {}) -> ({}, {})",
-                      nh.fe.to(&td.args[i].0.unwrap_or(AtomID::UNDER)),
-                      nh.fe.to(&td.args[j].0.unwrap_or(AtomID::UNDER)),
+                      nh.fe.to(&td.args[i].0.unwrap_or(AtomId::UNDER)),
+                      nh.fe.to(&td.args[j].0.unwrap_or(AtomId::UNDER)),
                       nh.fe.pp(&args[i], 80), nh.fe.pp(&args[j], 80)).unwrap();
                   }
                 }
@@ -675,7 +675,7 @@ impl NodeHash for ProofHash {
             ProofHash::Thm(tid, ns.into(), rhs)
           },
           None => match a {
-            AtomID::CONV => match (u.next(), u.next(), u.next()) {
+            AtomId::CONV => match (u.next(), u.next(), u.next()) {
               (Some(tgt), Some(conv), Some(prf)) if u.exactly(0) => {
                 let tgt = de.dedup(nh, ProofKind::Expr, &tgt)?;
                 let conv = de.dedup(nh, ProofKind::Conv, &conv)?;
@@ -685,14 +685,14 @@ impl NodeHash for ProofHash {
               }
               _ => return Err(nh.err_sp(fsp, format!("incorrect :conv format {}", nh.fe.to(r))))
             },
-            AtomID::SYM => match u.next() {
+            AtomId::SYM => match u.next() {
               Some(p) if u.exactly(0) => {
                 let p = de.dedup(nh, ProofKind::Conv, &p)?;
                 ProofHash::Sym(Self::as_conv(de, p))
               }
               _ => return Err(nh.err_sp(fsp, format!("incorrect :sym format {}", nh.fe.to(r))))
             },
-            AtomID::UNFOLD => {
+            AtomId::UNFOLD => {
               let (ty, es, prf) = match (u.next(), u.next(), u.next(), u.next()) {
                 (Some(ty), Some(es), Some(prf), None) if u.exactly(0) => (ty, es, prf),
                 (Some(ty), Some(es), Some(_), Some(prf)) if u.exactly(0) => (ty, es, prf),

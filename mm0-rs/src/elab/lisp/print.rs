@@ -12,9 +12,9 @@
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
-use super::super::{LinedString, Environment, Elaborator, TermID, ThmID, SortID,
+use super::super::{LinedString, Environment, Elaborator, TermId, ThmId, SortId,
   Sort, Term, Thm, DeclKey};
-use super::{AtomID, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
+use super::{AtomId, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
 
 /// The side information required to print an object in the environment.
 #[repr(C)]
@@ -108,12 +108,12 @@ fn alphanumber(n: usize) -> String {
   unsafe { String::from_utf8_unchecked(out) }
 }
 
-impl EnvDisplay for AtomID {
+impl EnvDisplay for AtomId {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.data[*self].name.fmt(f)
   }
 }
-impl EnvDisplay for Option<AtomID> {
+impl EnvDisplay for Option<AtomId> {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       None => "_".fmt(f),
@@ -121,17 +121,17 @@ impl EnvDisplay for Option<AtomID> {
     }
   }
 }
-impl EnvDisplay for SortID {
+impl EnvDisplay for SortId {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.sorts[*self].atom.fmt(fe, f)
   }
 }
-impl EnvDisplay for TermID {
+impl EnvDisplay for TermId {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.terms[*self].atom.fmt(fe, f)
   }
 }
-impl EnvDisplay for ThmID {
+impl EnvDisplay for ThmId {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.thms[*self].atom.fmt(fe, f)
   }
@@ -186,7 +186,7 @@ impl EnvDisplay for LispKind {
       LispKind::Proc(Proc::RefineCallback) => write!(f, "#[refine]"),
       LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#[proof of {}]", fe.to(x)),
       LispKind::Proc(Proc::MergeMap(_)) => write!(f, "#[merge-map]"),
-      LispKind::Proc(Proc::MMCCompiler(_)) => write!(f, "#[mmc-compiler]"),
+      LispKind::Proc(Proc::MmcCompiler(_)) => write!(f, "#[mmc-compiler]"),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;
         for (a, v) in m {write!(f, " [{} {}]", fe.data[*a].name, fe.to(v))?}

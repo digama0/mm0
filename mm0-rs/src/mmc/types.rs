@@ -3,15 +3,15 @@ use std::sync::Arc;
 use std::{rc::Rc, collections::HashMap};
 use num::BigInt;
 use crate::util::FileSpan;
-use crate::elab::{environment::{AtomID, TermID, Environment},
+use crate::elab::{environment::{AtomId, TermId, Environment},
   lisp::{LispVal, Syntax, Uncons, print::{EnvDisplay, FormatEnv}}};
 
 /// A variable ID. These are local to a given declaration (function, constant, global),
 /// but are not de Bruijn variables - they are unique identifiers within the declaration.
 #[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq)]
-pub struct VarID(pub u32);
+pub struct VarId(pub u32);
 
-impl std::fmt::Display for VarID {
+impl std::fmt::Display for VarId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "_{}", self.0)
   }
@@ -21,7 +21,7 @@ impl std::fmt::Display for VarID {
 // #[derive(Debug, DeepSizeOf)]
 // pub struct Arg {
 //   /// The name of the argument, if not `_`.
-//   pub name: Option<(AtomID, FileSpan)>,
+//   pub name: Option<(AtomId, FileSpan)>,
 //   /// True if the argument is a ghost variable (computationally irrelevant).
 //   pub ghost: bool,
 //   /// The (unparsed) type of the argument.
@@ -63,7 +63,7 @@ pub type Variant = (LispVal, VariantType);
 pub enum TuplePattern {
   /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
   /// is ghost.
-  Name(bool, AtomID, Option<FileSpan>),
+  Name(bool, AtomId, Option<FileSpan>),
   /// A type ascription.
   Typed(Box<(TuplePattern, Type)>),
   /// A tuple, with the given arguments.
@@ -73,7 +73,7 @@ pub enum TuplePattern {
 #[derive(Debug, DeepSizeOf)]
 pub enum TypedTuplePattern {
   /// A variable binding. The `bool` is true if the variable is ghost.
-  Name(bool, VarID, Option<FileSpan>, Box<Type>),
+  Name(bool, VarId, Option<FileSpan>, Box<Type>),
   /// A unit pattern match.
   Unit,
   /// A singleton pattern match `(x h) := sn e`, where `x: T` and `h: x = e`.
@@ -100,12 +100,12 @@ impl TypedTuplePattern {
 pub enum Pattern {
   /// A variable binding, unless this is the name of a constant in which case
   /// it is a constant value.
-  VarOrConst(AtomID),
+  VarOrConst(AtomId),
   /// A numeric literal.
   Number(BigInt),
   /// A hypothesis pattern, which binds the first argument to a proof that the
   /// scrutinee satisfies the pattern argument.
-  Hyped(AtomID, Box<Pattern>),
+  Hyped(AtomId, Box<Pattern>),
   /// A pattern guard: Matches the inner pattern, and then if the expression returns
   /// true, this is also considered to match.
   With(Box<(Pattern, LispVal)>),
@@ -120,7 +120,7 @@ pub enum Expr {
   Pure(PureExpr),
   /// A variable move expression. Unlike `Pure(Var(v))`, this will take the value in `v`,
   /// leaving it moved out.
-  Var(VarID),
+  Var(VarId),
   /// A unary operation.
   Unop(Unop, Box<Expr>),
   /// A binary operation.
@@ -149,7 +149,7 @@ pub enum Expr {
   /// A function call or intrinsic.
   Call {
     /// The function to call.
-    f: AtomID,
+    f: AtomId,
     /// The span of the head of the function.
     fsp: Option<FileSpan>,
     /// The function arguments.
@@ -166,7 +166,7 @@ pub enum Expr {
   /// They are called like regular functions but can only appear in tail position.
   Label {
     /// The name of the label
-    name: AtomID,
+    name: AtomId,
     /// The arguments of the label
     args: Box<[TuplePattern]>,
     /// The variant, for recursive calls
@@ -176,13 +176,13 @@ pub enum Expr {
   },
   // /// An if-then-else expression (at either block or statement level). The initial atom names
   // /// a hypothesis that the expression is true in one branch and false in the other.
-  // If(Box<(Option<AtomID>, Expr, Expr, Expr)>),
+  // If(Box<(Option<AtomId>, Expr, Expr, Expr)>),
   // /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   // Switch(Box<Expr>, Box<[(Pattern, Expr)]>),
   /// A while loop.
   While {
     /// A hypothesis that the condition is true in the loop and false after it.
-    hyp: Option<AtomID>,
+    hyp: Option<AtomId>,
     /// The loop condition.
     cond: Box<Expr>,
     /// The variant, which must decrease on every round around the loop.
@@ -218,13 +218,13 @@ pub struct Proc {
   /// The type of declaration: `func`, `proc`, `proc` with no body, or `intrinsic`.
   pub kind: ProcKind,
   /// The name of the procedure.
-  pub name: AtomID,
+  pub name: AtomId,
   /// The span of the procedure name.
   pub span: Option<FileSpan>,
   /// The arguments of the procedure.
   pub args: (Vec<bool>, Vec<super::parser::TuplePattern>),
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: (Vec<Option<AtomID>>, Vec<super::parser::TuplePattern>),
+  pub rets: (Vec<Option<AtomId>>, Vec<super::parser::TuplePattern>),
   /// The variant, used for recursive functions.
   pub variant: Option<Variant>,
 }
@@ -244,7 +244,7 @@ impl Proc {
 #[derive(Debug, DeepSizeOf)]
 pub struct Field {
   /// The name of the field.
-  pub name: AtomID,
+  pub name: AtomId,
   /// True if the field is computationally irrelevant.
   pub ghost: bool,
   /// The type of the field (unparsed).
@@ -253,7 +253,7 @@ pub struct Field {
 
 /// A top level program item. (A program AST is a list of program items.)
 #[derive(Debug, DeepSizeOf)]
-pub enum AST {
+pub enum Ast {
   /// A procedure, behind an Arc so it can be cheaply copied.
   Proc(Arc<Proc>, Uncons),
   /// A global variable declaration.
@@ -277,7 +277,7 @@ pub enum AST {
   /// A type definition.
   Typedef {
     /// The name of the newly declared type
-    name: AtomID,
+    name: AtomId,
     /// The span of the name
     span: Option<FileSpan>,
     /// The arguments of the type declaration, for a parametric type
@@ -288,7 +288,7 @@ pub enum AST {
   /// A structure definition.
   Struct {
     /// The name of the structure
-    name: AtomID,
+    name: AtomId,
     /// The span of the name
     span: Option<FileSpan>,
     /// The parameters of the type
@@ -298,9 +298,9 @@ pub enum AST {
   },
 }
 
-impl AST {
+impl Ast {
   /// Make a new `AST::Proc`.
-  #[must_use] pub fn proc((p, body): (Proc, Uncons)) -> AST { AST::Proc(Arc::new(p), body) }
+  #[must_use] pub fn proc((p, body): (Proc, Uncons)) -> Ast { Ast::Proc(Arc::new(p), body) }
 }
 
 macro_rules! make_keywords {
@@ -338,7 +338,7 @@ macro_rules! make_keywords {
     impl Environment {
       /// Make the initial MMC keyword map in the given environment.
       #[allow(clippy::string_lit_as_bytes)]
-      pub fn make_keywords(&mut self) -> HashMap<AtomID, Keyword> {
+      pub fn make_keywords(&mut self) -> HashMap<AtomId, Keyword> {
         let mut atoms = HashMap::new();
         $(if Syntax::from_str($e).is_none() {
           atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);
@@ -486,23 +486,23 @@ impl std::fmt::Display for Binop {
 /// An embedded MM0 expression inside MMC. This representation is designed to make it easy
 /// to produce substitutions of the free variables.
 #[derive(Debug, DeepSizeOf)]
-pub enum MM0ExprNode {
+pub enum Mm0ExprNode {
   /// A constant expression, containing no free variables.
   Const(LispVal),
-  /// A free variable. This is an index into the [`MM0Expr::subst`] array.
+  /// A free variable. This is an index into the [`Mm0Expr::subst`] array.
   Var(u32),
   /// A term constructor, where at least one subexpression is non-constant
   /// (else we would use [`Const`](Self::Const)).
-  Expr(TermID, Vec<MM0ExprNode>),
+  Expr(TermId, Vec<Mm0ExprNode>),
 }
 
-struct MM0ExprNodePrint<'a>(&'a [PureExpr], &'a MM0ExprNode);
-impl<'a> EnvDisplay for MM0ExprNodePrint<'a> {
+struct Mm0ExprNodePrint<'a>(&'a [PureExpr], &'a Mm0ExprNode);
+impl<'a> EnvDisplay for Mm0ExprNodePrint<'a> {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.1 {
-      MM0ExprNode::Const(e) => e.fmt(fe, f),
-      &MM0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
-      MM0ExprNode::Expr(t, es) => {
+      Mm0ExprNode::Const(e) => e.fmt(fe, f),
+      &Mm0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
+      Mm0ExprNode::Expr(t, es) => {
         write!(f, "({}", fe.to(t))?;
         for e in es {
           write!(f, " {}", fe.to(&Self(self.0, e)))?
@@ -516,17 +516,17 @@ impl<'a> EnvDisplay for MM0ExprNodePrint<'a> {
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
 #[derive(Clone, Debug, DeepSizeOf)]
-pub struct MM0Expr {
+pub struct Mm0Expr {
   /// The mapping from indexes in the `expr` to internal names.
   /// (The user-facing names have been erased.)
   pub subst: Vec<PureExpr>,
   /// The root node of the expression.
-  pub expr: Rc<MM0ExprNode>,
+  pub expr: Rc<Mm0ExprNode>,
 }
 
-impl EnvDisplay for MM0Expr {
+impl EnvDisplay for Mm0Expr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    MM0ExprNodePrint(&self.subst, &self.expr).fmt(fe, f)
+    Mm0ExprNodePrint(&self.subst, &self.expr).fmt(fe, f)
   }
 }
 
@@ -541,7 +541,7 @@ pub enum Lifetime {
   Extern,
   /// A variable lifetime `x` is the annotation on references derived from `x`
   /// (or derived from other references derived from `x`).
-  Place(VarID),
+  Place(VarId),
 }
 crate::deep_size_0!(Lifetime);
 
@@ -560,7 +560,7 @@ impl std::fmt::Display for Lifetime {
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum Place {
   /// A variable.
-  Var(VarID),
+  Var(VarId),
   /// A projection into a tuple `a.i: T` where `a: (T0, ..., Tn)`.
   Proj(Box<Place>, u32),
   /// An index expression `a[i]: T` where `a: [T; n]` and `i: nat`.
@@ -569,7 +569,7 @@ pub enum Place {
 
 impl Place {
   /// Substitute an expression for a variable in a place.
-  pub fn subst(&mut self, v: VarID, e: &Rc<PureExpr>) {
+  pub fn subst(&mut self, v: VarId, e: &Rc<PureExpr>) {
     match self {
       Self::Var(_) => {} // Substitution does not operate on lvalues
       Self::Proj(x, _) => x.subst(v, e),
@@ -594,7 +594,7 @@ impl EnvDisplay for Place {
 #[derive(Clone, Debug, DeepSizeOf)]
 pub enum PureExpr {
   /// A variable.
-  Var(VarID),
+  Var(VarId),
   /// An integer or natural number.
   Int(BigInt),
   /// The unit value `()`.
@@ -619,14 +619,14 @@ pub enum PureExpr {
   /// A truncation / bit cast operation.
   As(Box<(PureExpr, Type)>),
   /// A truncation / bit cast operation.
-  Pure(Box<(MM0Expr, Type)>),
+  Pure(Box<(Mm0Expr, Type)>),
   /// A deferred substitution into an expression.
-  Subst(Rc<PureExpr>, VarID, Rc<PureExpr>),
+  Subst(Rc<PureExpr>, VarId, Rc<PureExpr>),
 }
 
 impl PureExpr {
   /// Substitute an expression for a variable in a pure expression.
-  pub fn subst_rc(self: &mut Rc<Self>, v: VarID, e: &Rc<PureExpr>) {
+  pub fn subst_rc(self: &mut Rc<Self>, v: VarId, e: &Rc<PureExpr>) {
     *self = Rc::new(PureExpr::Subst(self.clone(), v, e.clone()))
   }
 }
@@ -662,7 +662,7 @@ pub enum Type {
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
   /// A type variable.
-  Var(VarID),
+  Var(VarId),
   /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
   Int(Size),
   /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
@@ -697,7 +697,7 @@ pub enum Type {
   ///
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
-  Struct(Box<[(VarID, Type)]>),
+  Struct(Box<[(VarId, Type)]>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -716,7 +716,7 @@ pub enum Type {
   /// A propositional type, used for hypotheses.
   Prop(Box<Prop>),
   /// A user-defined type-former.
-  User(AtomID, Box<[Type]>, Box<[Rc<PureExpr>]>),
+  User(AtomId, Box<[Type]>, Box<[Rc<PureExpr>]>),
   /// The input token.
   Input,
   /// The output token.
@@ -724,7 +724,7 @@ pub enum Type {
   /// A moved-away type.
   Moved(Box<Type>),
   /// A substitution into a type.
-  Subst(Box<Type>, VarID, Rc<PureExpr>),
+  Subst(Box<Type>, VarId, Rc<PureExpr>),
 }
 
 impl Type {
@@ -734,7 +734,7 @@ impl Type {
   }
 
   /// Substitute an expression for a variable in a type.
-  pub fn subst(&mut self, v: VarID, e: &Rc<PureExpr>) {
+  pub fn subst(&mut self, v: VarId, e: &Rc<PureExpr>) {
     #[allow(clippy::enum_glob_use)] use Type::*;
     match self {
       Var(_) | Unit | Bool | Int(_) | UInt(_) | Input | Output => {}
@@ -811,9 +811,9 @@ pub enum Prop {
   /// A false proposition.
   False,
   /// A universally quantified proposition.
-  All(VarID, Box<(Type, Prop)>),
+  All(VarId, Box<(Type, Prop)>),
   /// An existentially quantified proposition.
-  Ex(VarID, Box<(Type, Prop)>),
+  Ex(VarId, Box<(Type, Prop)>),
   /// Implication (plain, non-separating).
   Imp(Box<(Prop, Prop)>),
   /// Negation.
@@ -839,14 +839,14 @@ pub enum Prop {
   /// The move operator `|T|` on types.
   Moved(Box<Prop>),
   /// An embedded MM0 proposition of sort `wff`.
-  MM0(MM0Expr),
+  Mm0(Mm0Expr),
   /// A substitution into a proposition.
-  Subst(Box<Prop>, VarID, Rc<PureExpr>),
+  Subst(Box<Prop>, VarId, Rc<PureExpr>),
 }
 
 impl Prop {
   /// Substitute an expression for a variable in a proposition.
-  pub fn subst(&mut self, v: VarID, e: &Rc<PureExpr>) {
+  pub fn subst(&mut self, v: VarId, e: &Rc<PureExpr>) {
     #[allow(clippy::enum_glob_use)] use Prop::*;
     match self {
       True | False | Emp => {}
@@ -885,7 +885,7 @@ impl EnvDisplay for Prop {
       Prop::Heap(x, v, t) => write!(f, "{} => {}: {}", fe.to(x), fe.to(v), fe.to(t)),
       Prop::HasTy(v, t) => write!(f, "[{}: {}]", fe.to(v), fe.to(t)),
       Prop::Moved(p) => write!(f, "|{}|", fe.to(p)),
-      Prop::MM0(e) => e.fmt(fe, f),
+      Prop::Mm0(e) => e.fmt(fe, f),
       Prop::Subst(x, v, e) => write!(f, "({})[{} -> {}]", fe.to(x), v, fe.to(e)),
     }
   }

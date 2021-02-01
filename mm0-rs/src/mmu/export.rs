@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::mem;
 use crate::elab::environment::{
-  Type, Expr, Proof, AtomID, SortID, TermKind, ThmKind,
+  Type, Expr, Proof, AtomId, SortId, TermKind, ThmKind,
   ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
 use crate::elab::FrozenEnv;
 
@@ -25,7 +25,7 @@ fn is_nonatomic_proof(e: &ProofNode) -> bool {
   matches!(e, ProofNode::Thm {..} | ProofNode::Conv(_))
 }
 
-fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomID, &'a ProofNode>, checked: &mut [bool],
+fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomId, &'a ProofNode>, checked: &mut [bool],
   heap: &[ExprNode], node: &ExprNode, t_heap: &'a [ProofNode], mut tgt: &'a ProofNode) {
   match *node {
     ExprNode::Ref(i) => if !mem::replace(&mut checked[i], true) {
@@ -50,12 +50,12 @@ fn build_unfold_map<'a>(env: &FrozenEnv, m: &mut HashMap<AtomID, &'a ProofNode>,
 type Line = (usize, Vec<u8>);
 
 impl FrozenEnv {
-  fn write_deps(&self, w: &mut impl Write, bvars: &[Option<AtomID>], mut vs: u64) -> io::Result<()> {
+  fn write_deps(&self, w: &mut impl Write, bvars: &[Option<AtomId>], mut vs: u64) -> io::Result<()> {
     list(w, bvars.iter().filter(|_| {let old = vs; vs /= 2; old & 1 != 0}),
       |w, &a| write!(w, "{}", self.data()[a.expect("you can only depend on variables with names")].name()))
   }
 
-  fn write_binders(&self, w: &mut impl Write, bis: &[(Option<AtomID>, Type)]) -> io::Result<Vec<Option<AtomID>>> {
+  fn write_binders(&self, w: &mut impl Write, bis: &[(Option<AtomId>, Type)]) -> io::Result<Vec<Option<AtomId>>> {
     let mut bvars = vec![];
     list(w, bis.iter(), |w, &(a, ty)| {
       write!(w, "({} ", a.map_or("_", |a| self.data()[a].name().as_str()))?;
@@ -75,13 +75,13 @@ impl FrozenEnv {
   }
 
   fn write_expr_node(&self,
-    dummies: &mut HashMap<AtomID, SortID>,
+    dummies: &mut HashMap<AtomId, SortId>,
     heap: &[Vec<u8>],
     node: &ExprNode,
   ) -> io::Result<Vec<u8>> {
     fn f(
       env: &FrozenEnv, w: &mut Vec<u8>,
-      dummies: &mut HashMap<AtomID, SortID>,
+      dummies: &mut HashMap<AtomId, SortId>,
       heap: &[Vec<u8>],
       node: &ExprNode) -> io::Result<()> {
       match *node {
@@ -107,8 +107,8 @@ impl FrozenEnv {
   }
 
   fn write_proof_node(&self,
-    dummies: &mut HashMap<AtomID, SortID>,
-    hyps: &[(Option<AtomID>, ExprNode)],
+    dummies: &mut HashMap<AtomId, SortId>,
+    hyps: &[(Option<AtomId>, ExprNode)],
     heap: &[ProofNode],
     lines: &[(Vec<Line>, Line)],
     node: &ProofNode,
@@ -117,8 +117,8 @@ impl FrozenEnv {
     struct State<'a> {
       env: &'a FrozenEnv,
       w: Vec<Line>, i: usize, l: Vec<u8>,
-      dummies: &'a mut HashMap<AtomID, SortID>,
-      hyps: &'a [(Option<AtomID>, ExprNode)],
+      dummies: &'a mut HashMap<AtomId, SortId>,
+      hyps: &'a [(Option<AtomId>, ExprNode)],
       heap: &'a [ProofNode],
       lines: &'a [(Vec<Line>, Line)],
     }

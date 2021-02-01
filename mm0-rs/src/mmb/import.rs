@@ -3,31 +3,31 @@
 use std::convert::{TryFrom, TryInto};
 use std::rc::Rc;
 use crate::elab::{
-  environment::{Environment, Modifiers, AtomID, SortID, TermID, ThmID,
+  environment::{Environment, Modifiers, AtomId, SortId, TermId, ThmId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof},
   proof::{IDedup, ProofKind, ProofHash, build}};
 use crate::util::{FileRef, FileSpan, SliceExt};
 use super::{StmtCmd, UnifyCmd, ProofCmd,
-  parser::{MMBFile, ParseError, UnifyIter, ProofIter}};
+  parser::{MmbFile, ParseError, UnifyIter, ProofIter}};
 
 
 type Result<T> = std::result::Result<T, ParseError>;
 
 fn parse_unify(
-  file: &MMBFile<'_>, nargs: usize, it: UnifyIter<'_>,
-  hyps: Option<&mut Vec<(Option<AtomID>, ExprNode)>>,
-  dummy: impl FnMut() -> AtomID,
+  file: &MmbFile<'_>, nargs: usize, it: UnifyIter<'_>,
+  hyps: Option<&mut Vec<(Option<AtomId>, ExprNode)>>,
+  dummy: impl FnMut() -> AtomId,
 ) -> Result<(Box<[ExprNode]>, ExprNode)> {
   use ParseError::StrError;
   struct State<'a, F> {
     dummy: F,
-    file: &'a MMBFile<'a>,
+    file: &'a MmbFile<'a>,
     pos: usize,
     it: UnifyIter<'a>,
     heap: Vec<ExprNode>,
     fwd: Vec<Option<usize>>,
   }
-  impl<F: FnMut() -> AtomID> State<'_, F> {
+  impl<F: FnMut() -> AtomId> State<'_, F> {
     fn go(&mut self) -> Result<ExprNode> {
       let r = match self.it.next().unwrap_or(Err(self.pos)).map_err(|p| StrError("bad unify expr", p))? {
         UnifyCmd::Term {tid, save} => {
@@ -132,8 +132,8 @@ impl<'a> IntoIterator for &'a Dedup {
 }
 
 fn parse_proof(
-  file: &MMBFile<'_>, nargs: usize, it: &mut ProofIter<'_>,
-  dummy: impl FnMut() -> AtomID,
+  file: &MmbFile<'_>, nargs: usize, it: &mut ProofIter<'_>,
+  dummy: impl FnMut() -> AtomId,
 ) -> Result<Proof> {
 
   use ParseError::StrError;
@@ -153,8 +153,8 @@ fn parse_proof(
   enum CoConv {
     Conv {tgt: Idx, pf: Idx}, // (:conv tgt _ pf) - pf: |- src, ?c: tgt = src
     Sym(Box<CoConv>),
-    Cong(Box<CoConv>, TermID, std::vec::IntoIter<(Ref, Ref)>, Vec<Idx>),
-    Unfold(Box<CoConv>, TermID, Box<[Idx]>, Idx, Idx),
+    Cong(Box<CoConv>, TermId, std::vec::IntoIter<(Ref, Ref)>, Vec<Idx>),
+    Unfold(Box<CoConv>, TermId, Box<[Idx]>, Idx, Idx),
     Cut(Box<CoConv>, Ref, Ref)
   }
 
@@ -187,7 +187,7 @@ fn parse_proof(
     }
   }
 
-  fn as_term(e: &ProofHash, pos: usize) -> Result<(TermID, &[Ref])> {
+  fn as_term(e: &ProofHash, pos: usize) -> Result<(TermId, &[Ref])> {
     if let ProofHash::Term(t, args) = e {
       Ok((*t, args))
     } else {
@@ -196,7 +196,7 @@ fn parse_proof(
   }
 
   struct State<'a, F> {
-    file: &'a MMBFile<'a>,
+    file: &'a MmbFile<'a>,
     dummy: F,
     de: Dedup,
     stack: Vec<Stack>,
@@ -204,9 +204,9 @@ fn parse_proof(
     heap: Vec<StackRef>,
   }
 
-  impl<F: FnMut() -> AtomID> State<'_, F> {
+  impl<F: FnMut() -> AtomId> State<'_, F> {
     fn apply_cong(&mut self, co: Box<CoConv>,
-      t: TermID, mut it: std::vec::IntoIter<(Ref, Ref)>, args: Vec<Idx>
+      t: TermId, mut it: std::vec::IntoIter<(Ref, Ref)>, args: Vec<Idx>
     ) -> Result<()> {
       if let Some((e1, e2)) = it.next() {
         self.stack.push(Stack::CoConv(Box::new(CoConv::Cong(co, t, it, args)), e1, e2));
@@ -371,7 +371,7 @@ fn parse_proof(
 
 fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   use ParseError::{BadIndex, StrError};
-  let file = MMBFile::parse(buf)?;
+  let file = MmbFile::parse(buf)?;
   let mut it = file.proof();
   let mut start = it.pos;
   macro_rules! get_get_var {($e:expr) => {{
@@ -396,7 +396,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       StmtCmd::Sort => {
         if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
         #[allow(clippy::cast_possible_truncation)]
-        let sort = SortID(env.sorts.len() as u8);
+        let sort = SortId(env.sorts.len() as u8);
         let atom = file.sort_name(sort, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
         let span = (start..pf.pos).into();
         let fsp = FileSpan {file: fref.clone(), span};
@@ -407,7 +407,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       }
       StmtCmd::TermDef {local} => {
         #[allow(clippy::cast_possible_truncation)]
-        let term = TermID(env.terms.len() as u32);
+        let term = TermId(env.terms.len() as u32);
         let atom = file.term_name(term, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
         let td = file.term(term).ok_or(StrError("Step term overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
@@ -435,7 +435,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
       }
       StmtCmd::Axiom | StmtCmd::Thm {..} => {
         #[allow(clippy::cast_possible_truncation)]
-        let thm = ThmID(env.thms.len() as u32);
+        let thm = ThmId(env.thms.len() as u32);
         let atom = file.thm_name(thm, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
         let td = file.thm(thm).ok_or(StrError("Step thm overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
