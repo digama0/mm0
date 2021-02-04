@@ -281,6 +281,7 @@ impl TuplePattern {
       &TuplePattern::Name(ghost, n, ref sp) => if n != AtomId::UNDER { f(ghost, n, sp)? },
       TuplePattern::Typed(p, _) => p.on_names(f)?,
       TuplePattern::Tuple(ps, _) => for p in &**ps { p.on_names(f)? }
+      TuplePattern::Ready(_) => unreachable!("for unelaborated tuple patterns"),
     }
     Ok(())
   }

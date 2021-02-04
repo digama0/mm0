@@ -57,30 +57,18 @@ pub enum VariantType {
 /// well founded order that decreases on all calls.
 pub type Variant = (LispVal, VariantType);
 
-/// A tuple pattern, which destructures the results of assignments from functions with
-/// mutiple return values, as well as explicit tuple values and structs.
-#[derive(Debug, DeepSizeOf)]
-pub enum TuplePattern {
-  /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
-  /// is ghost.
-  Name(bool, AtomId, Option<FileSpan>),
-  /// A type ascription.
-  Typed(Box<(TuplePattern, Type)>),
-  /// A tuple, with the given arguments.
-  Tuple(Box<[TuplePattern]>, Option<FileSpan>),
-}
 /// A strongly typed tuple pattern.
 #[derive(Debug, DeepSizeOf)]
-pub enum TypedTuplePattern {
+pub enum TuplePattern {
   /// A variable binding. The `bool` is true if the variable is ghost.
   Name(bool, VarId, Option<FileSpan>, Box<Type>),
   /// A unit pattern match.
   Unit,
   /// A singleton pattern match `(x h) := sn e`, where `x: T` and `h: x = e`.
-  Single(Box<(TypedTuplePattern, TypedTuplePattern)>),
+  Single(Box<(TuplePattern, TuplePattern)>),
 }
 
-impl TypedTuplePattern {
+impl TuplePattern {
   /// Get an expr representation of the tuple constructed by this pattern.
   /// (Note that this can't be done on user-level names, since the pattern match
   /// may contain `_` patterns that would not be valid in the expression.
@@ -93,6 +81,14 @@ impl TypedTuplePattern {
     }
   }
 
+  /// True if all the bindings in this pattern are ghost.
+  #[must_use] pub fn ghost(&self) -> bool {
+    match self {
+      &TuplePattern::Name(g, _, _, _) => g,
+      TuplePattern::Unit => true,
+      TuplePattern::Single(p) => p.0.ghost(),
+    }
+  }
 }
 
 /// A pattern, the left side of a switch statement.
@@ -142,7 +138,7 @@ pub enum Expr {
   /// A let binding.
   Let {
     /// A tuple pattern, containing variable bindings.
-    lhs: TypedTuplePattern,
+    lhs: TuplePattern,
     /// The expression to evaluate, or [`None`] for uninitialized.
     rhs: Box<Expr>,
   },
@@ -487,7 +483,8 @@ impl std::fmt::Display for Binop {
 /// to produce substitutions of the free variables.
 #[derive(Debug, DeepSizeOf)]
 pub enum Mm0ExprNode {
-  /// A constant expression, containing no free variables.
+  /// A constant expression, containing no free variables,
+  /// or a dummy variable that will not be substituted.
   Const(LispVal),
   /// A free variable. This is an index into the [`Mm0Expr::subst`] array.
   Var(u32),
@@ -542,6 +539,8 @@ pub enum Lifetime {
   /// A variable lifetime `x` is the annotation on references derived from `x`
   /// (or derived from other references derived from `x`).
   Place(VarId),
+  /// A lifetime that has not been inferred yet.
+  Unknown,
 }
 crate::deep_size_0!(Lifetime);
 
@@ -550,6 +549,7 @@ impl std::fmt::Display for Lifetime {
     match self {
       Lifetime::Extern => "extern".fmt(f),
       Lifetime::Place(v) => v.fmt(f),
+      Lifetime::Unknown => "_".fmt(f),
     }
   }
 }

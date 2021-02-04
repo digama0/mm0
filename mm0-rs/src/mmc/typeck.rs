@@ -4,14 +4,19 @@
 use std::rc::Rc;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::convert::TryInto;
-use crate::elab::{ElabError, Elaborator, Environment, Result as EResult, environment::{AtomId, AtomData}, lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}}, local_context::{try_get_span_from, try_get_span}};
+use std::mem;
+use crate::elab::{ElabError, Elaborator, Environment,
+  Result as EResult,
+  environment::{AtomId, AtomData, Type as EType},
+  lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}},
+  local_context::{try_get_span_from, try_get_span}};
 use crate::util::{Span, FileSpan};
 use super::{Compiler,
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
     Intrinsic, Entity, GlobalTc, Operator, ProcTc},
-  parser::{head_keyword, Parser, Expr as PExpr, TuplePattern as PTuplePattern},
+  parser::{Expr as PExpr, Parser, Rename, TuplePattern as PreTuplePattern, head_keyword},
   types::{Ast, Binop, Expr, Keyword, Lifetime, Place, Mm0Expr, Mm0ExprNode, VarId,
-    ProcKind, Prop, PureExpr, Size, TuplePattern, Type, TypedTuplePattern, Unop}};
+    ProcKind, Prop, PureExpr, Size, Type, TuplePattern, Unop}};
 
 enum InferType<'a> {
   Unit,
@@ -26,6 +31,9 @@ enum InferType<'a> {
   Subst(Box<InferType<'a>>, VarId, &'a Rc<PureExpr>),
 }
 
+impl<'a> Default for InferType<'a> {
+  fn default() -> Self { Self::Unit }
+}
 impl<'a> InferType<'a> {
   fn ty(ty: &'a Type) -> Self {
     match ty {
@@ -39,7 +47,7 @@ impl<'a> InferType<'a> {
   fn subst(&mut self, v: VarId, e: &'a Rc<PureExpr>) {
     match self {
       InferType::Int | InferType::Unit | InferType::Bool => {},
-      _ => *self = Self::Subst(Box::new(std::mem::replace(self, InferType::Unit)), v, e),
+      _ => *self = Self::Subst(Box::new(mem::take(self)), v, e),
     }
   }
 
@@ -94,26 +102,73 @@ impl<'a> EnvDisplay for InferType<'a> {
   }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
-struct TypeTarget<'a>(Option<&'a Type>, Option<&'a TuplePattern>);
+impl Default for PreTuplePattern {
+  fn default() -> Self { Self::Ready(TuplePattern::Unit) }
+}
+
+impl PreTuplePattern {
+  /// The name of a variable binding (or `_` for a tuple pattern)
+  #[must_use] fn name(&self) -> AtomId {
+    match self {
+      &PreTuplePattern::Name(_, a, _) => a,
+      PreTuplePattern::Typed(p, _) => p.name(),
+      _ => AtomId::UNDER
+    }
+  }
+
+  /// The span of a variable binding or tuple pattern.
+  #[must_use] fn fspan(&self) -> Option<&FileSpan> {
+    match self {
+      PreTuplePattern::Name(_, _, fsp) |
+      PreTuplePattern::Tuple(_, fsp) => fsp.as_ref(),
+      PreTuplePattern::Typed(p, _) => p.fspan(),
+      PreTuplePattern::Ready(_) => None,
+    }
+  }
+
+  /// True if all the bindings in this pattern are ghost.
+  #[must_use] fn ghost(&self) -> bool {
+    match self {
+      &PreTuplePattern::Name(g, _, _) => g,
+      PreTuplePattern::Typed(p, _) => p.ghost(),
+      PreTuplePattern::Tuple(ps, _) => ps.iter().all(PreTuplePattern::ghost),
+      PreTuplePattern::Ready(p) => p.ghost(),
+    }
+  }
+
+  /// The type of this binding, or `_` if there is no explicit type.
+  #[must_use] fn ty(&self) -> LispVal {
+    match self {
+      PreTuplePattern::Typed(_, ty) => ty.clone(),
+      _ => LispVal::atom(AtomId::UNDER)
+    }
+  }
+}
+
+#[derive(Debug, Default)]
+struct TypeTarget<'a>(Option<&'a Type>, Option<&'a mut PreTuplePattern>);
 
 impl<'a> TypeTarget<'a> {
   const NONE: Self = TypeTarget(None, None);
+
+  fn reborrow(&mut self) -> TypeTarget<'_> {
+    TypeTarget(self.0, self.1.as_deref_mut())
+  }
 }
 
 impl<'a> From<&'a Type> for TypeTarget<'a> {
   fn from(t: &'a Type) -> Self { Self(Some(t), None) }
 }
 
-impl<'a> From<&'a TuplePattern> for TypeTarget<'a> {
-  fn from(t: &'a TuplePattern) -> Self {
-    if let TuplePattern::Typed(t) = t {
-      TypeTarget(Some(&t.1), Some(&t.0))
-    } else {
-      TypeTarget(None, Some(t))
-    }
-  }
-}
+// impl<'a> From<&'a TuplePattern> for TypeTarget<'a> {
+//   fn from(t: &'a TuplePattern) -> Self {
+//     if let TuplePattern::Typed(t) = t {
+//       TypeTarget(Some(&t.1), Some(&t.0))
+//     } else {
+//       TypeTarget(None, Some(t))
+//     }
+//   }
+// }
 
 /// Like rust, types can either be `Copy` or non-`Copy`.
 /// Unlike rust, non-copy types can still be used after they are moved
@@ -172,7 +227,7 @@ pub struct TypeChecker<'a> {
   next_var: VarId,
   /// Maps names from the MMC source in scope to their internal names.
   /// The vector contains shadowed variables in outer scopes.
-  user_locals: HashMap<AtomId, (VarId, Vec<VarId>)>,
+  user_locals: HashMap<AtomId, Vec<VarId>>,
   /// The set of globals that are mutable in the current context (and their mapping to internal names).
   mut_globals: HashMap<AtomId, VarId>,
   /// Maps internal indexes for variables in scope to their variable record.
@@ -223,12 +278,11 @@ impl Compiler {
   }
 }
 
-fn pop_user_local(m: &mut HashMap<AtomId, (VarId, Vec<VarId>)>, user: AtomId) {
+fn pop_user_local(m: &mut HashMap<AtomId, Vec<VarId>>, user: AtomId) -> Option<()> {
   if user != AtomId::UNDER {
-    if let Some((v, vec)) = m.get_mut(&user) {
-      *v = vec.pop().expect("stack underflow");
-    }
+    if let Some(vec) = m.get_mut(&user) { vec.pop()?; }
   }
+  Some(())
 }
 
 impl<'a> TypeChecker<'a> {
@@ -281,6 +335,43 @@ impl<'a> TypeChecker<'a> {
 
   fn find(&self, a: VarId) -> Option<&Variable> {
     self.context.iter().find(|&v| v.decl == a)
+  }
+
+  fn apply_rename<E>(&mut self,
+    it: impl Iterator<Item=(AtomId, AtomId)>,
+    err: impl FnOnce(String) -> E
+  ) -> Result<(), E> {
+    let mut vec = vec![];
+    for (from, to) in it {
+      if from == AtomId::UNDER { return Err(err("can't rename variable '_'".into())) }
+      let var =
+        if let Some(v) = self.user_locals.get_mut(&from).and_then(Vec::pop) { v }
+        else { return Err(err(format!("unknown variable '{}'", self.elab.print(&from)))) };
+      vec.push((var, to));
+    }
+    for (var, to) in vec {
+      self.user_locals.entry(to).or_default().push(var);
+      self.context.iter_mut().find(|v| v.decl == var)
+        .expect("unknown variable").user = to;
+    }
+    Ok(())
+  }
+
+  fn with_rename<T>(&mut self, with: &[Rename], sp: Span,
+    f: impl FnOnce(&mut Self) -> Result<T, ElabError>,
+  ) -> Result<T, ElabError> {
+    if !with.is_empty() {
+      self.apply_rename(
+        with.iter().filter_map(|x| if let Rename::Old {from, to} = *x {Some((from, to))} else {None}),
+        |e| ElabError::new_e(sp, e))?;
+    }
+    let res = f(self)?;
+    if !with.is_empty() {
+      self.apply_rename(
+        with.iter().filter_map(|x| if let Rename::New {from, to} = *x {Some((from, to))} else {None}),
+        |e| ElabError::new_e(sp, e))?;
+    }
+    Ok(res)
   }
 
   fn copy_prop(&self, p: &Prop) -> Option<Prop> {
@@ -516,7 +607,7 @@ impl<'a> TypeChecker<'a> {
         (PrimType::Input, []) => Ok(Type::Input),
         (PrimType::Output, []) => Ok(Type::Output),
         (PrimType::Own, [ty]) => Ok(Type::Own(Box::new(self.check_ty(ty)?))),
-        (PrimType::Ref, [ty]) => Ok(Type::Shr(todo!(), Box::new(self.check_ty(ty)?))),
+        (PrimType::Ref, [ty]) => Ok(Type::Shr(Lifetime::Unknown, Box::new(self.check_ty(ty)?))),
         (PrimType::List, args) => Ok(Type::List(check_tys!(args))),
         (PrimType::And, args) => Ok(Type::And(check_tys!(args))),
         (PrimType::Or, args) => Ok(Type::Or(check_tys!(args))),
@@ -546,38 +637,55 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn check_mm0_expr(&self, e: LispVal) -> Result<Mm0Expr, ElabError> {
-
-    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomId, u32>),
+    type Subst = (Vec<PureExpr>, HashMap<AtomId, u32>, Vec<AtomId>);
+    fn list_opt<'a>(tc: &TypeChecker<'a>, subst: &mut Subst,
       e: &LispVal, head: AtomId, args: Option<Uncons>
     ) -> Result<Option<Mm0ExprNode>, ElabError> {
       let tid = tc.elab.term(head).ok_or_else(|| ElabError::new_e(tc.try_get_span(e),
         format!("term '{}' not declared", tc.elab.data[head].name)))?;
+      let term = &tc.elab.terms[tid];
+      if args.as_ref().map_or(0, Uncons::len) != term.args.len() {
+        return Err(ElabError::new_e(tc.try_get_span(e),
+          format!("expected {} arguments", term.args.len())));
+      }
       Ok(if let Some(u) = args {
         let mut cnst = true;
         let mut vec = Vec::with_capacity(u.len());
-        for e in u {
-          let n = node(tc, e, subst)?;
-          cnst |= matches!(n, Mm0ExprNode::Const(_));
-          vec.push(n)
+        let len = subst.2.len();
+        for (e, (_, arg)) in u.zip(&*term.args) {
+          match *arg {
+            EType::Bound(s) => {
+              let a = e.as_atom().ok_or_else(||
+                ElabError::new_e(tc.try_get_span(&e), "expected an atom"))?;
+              subst.2.push(a);
+              vec.push(Mm0ExprNode::Const(e))
+            }
+            EType::Reg(s, deps) => {
+              let n = node(tc, subst, e)?;
+              cnst &= matches!(n, Mm0ExprNode::Const(_));
+              vec.push(n)
+            }
+          }
         }
+        subst.2.truncate(len);
         if cnst {None} else {Some(Mm0ExprNode::Expr(tid, vec))}
       } else {None})
     }
 
-    fn node_opt<'a>(tc: &TypeChecker<'a>, subst: &mut (Vec<PureExpr>, HashMap<AtomId, u32>),
-      e: &LispVal
+    fn node_opt<'a>(
+      tc: &TypeChecker<'a>, subst: &mut Subst, e: &LispVal
     ) -> Result<Option<Mm0ExprNode>, ElabError> {
       e.unwrapped(|r| Ok(if let LispKind::Atom(a) = *r {
+        if subst.2.contains(&a) {return Ok(None)}
         match subst.1.entry(a) {
           Entry::Occupied(entry) => Some(Mm0ExprNode::Var(*entry.get())),
-          Entry::Vacant(entry) => match tc.user_locals.get(&a) {
-            Some(&(v, _)) => {
-              let n = subst.0.len().try_into().expect("overflow");
-              entry.insert(n);
-              subst.0.push(PureExpr::Var(v));
-              Some(Mm0ExprNode::Var(n))
-            }
-            None => list_opt(tc, subst, e, a, None)?
+          Entry::Vacant(entry) => if let Some(&v) = tc.user_locals.get(&a).and_then(|v| v.last()) {
+            let n = subst.0.len().try_into().expect("overflow");
+            entry.insert(n);
+            subst.0.push(PureExpr::Var(v));
+            Some(Mm0ExprNode::Var(n))
+          } else {
+            list_opt(tc, subst, e, a, None)?
           }
         }
       } else {
@@ -591,14 +699,14 @@ impl<'a> TypeChecker<'a> {
     }
 
     #[allow(clippy::unnecessary_lazy_evaluations)]
-    fn node<'a>(tc: &TypeChecker<'a>, e: LispVal,
-      subst: &mut (Vec<PureExpr>, HashMap<AtomId, u32>)
+    fn node<'a>(
+      tc: &TypeChecker<'a>, subst: &mut Subst, e: LispVal
     ) -> Result<Mm0ExprNode, ElabError> {
       Ok(node_opt(tc, subst, &e)?.unwrap_or_else(|| Mm0ExprNode::Const(e)))
     }
 
-    let mut subst = (vec![], HashMap::new());
-    let expr = Rc::new(node(self, e, &mut subst)?);
+    let mut subst = (vec![], HashMap::new(), vec![]);
+    let expr = Rc::new(node(self, &mut subst, e)?);
     Ok(Mm0Expr {subst: subst.0, expr})
   }
 
@@ -631,11 +739,12 @@ impl<'a> TypeChecker<'a> {
     arg_1: LispVal,
     args: &[LispVal],
     binop: Binop,
-    tgt: TypeTarget<'_>,
+    mut tgt: TypeTarget<'_>,
   ) -> Result<Expr, ElabError> {
-    let mut e = self.check_expr(ts, arg_1, tgt)?;
+    let mut e = self.check_expr(ts, arg_1, tgt.reborrow())?;
     for arg in args {
-      e = Expr::Binop(binop, Box::new(e), Box::new(self.check_expr(ts, arg.clone(), tgt)?))
+      e = Expr::Binop(binop, Box::new(e),
+        Box::new(self.check_expr(ts, arg.clone(), tgt.reborrow())?))
     }
     Ok(e)
   }
@@ -828,15 +937,16 @@ impl<'a> TypeChecker<'a> {
         Some(Entity::Op(Operator::Proc(_, ProcTc::Unchecked))) => Err(ElabError::new_e(
           self.try_get_span(&head), "forward referencing a procedure")),
         Some(_) => Err(ElabError::new_e(self.try_get_span(&head), "expected a function/operation")),
-        None => match self.user_locals.get(&name) {
-          Some(&(i, _)) => match &self.find(i) {
+        None => if let Some(&i) = self.user_locals.get(&name).and_then(|v| v.last()) {
+          match &self.find(i) {
             Some(Variable {ty: GType::Ty(_, ty, _), ..}) => match tgt {
               None |
               Some(_) /* TODO: if *tgt == ty */ => Ok(PureExpr::Var(i)),
             },
             _ => Err(ElabError::new_e(self.try_get_span(&head), "expected a regular variable")),
-          },
-          _ => Err(ElabError::new_e(self.try_get_span(&head),
+          }
+        } else {
+          Err(ElabError::new_e(self.try_get_span(&head),
             format!("undeclared type or expression {}", self.elab.print(&head))))
         }
       }
@@ -861,7 +971,7 @@ impl<'a> TypeChecker<'a> {
     self.add_args_to_context(&bis, ArgsContext::Binder)?;
     let mut body = self.check_prop(last)?;
     for Variable {user, decl, ty} in self.context.drain(depth..).rev() {
-      pop_user_local(&mut self.user_locals, user);
+      pop_user_local(&mut self.user_locals, user).expect("stack underflow");
       let ty = match ty {
         GType::Ty(_, ty, _) => ty,
         GType::Prop(p) => Type::Prop(Box::new(p)),
@@ -907,21 +1017,16 @@ impl<'a> TypeChecker<'a> {
   }
 
   fn push_user_local(&mut self, user: AtomId, decl: VarId) {
-    match self.user_locals.entry(user) {
-      Entry::Vacant(e) => {e.insert((decl, vec![]));}
-      Entry::Occupied(mut e) => {
-        let (head, vec) = e.get_mut();
-        vec.push(std::mem::replace(head, decl))
-      }
-    }
+    self.user_locals.entry(user).or_default().push(decl)
   }
+
   /// Add a list of arguments to the context.
-  fn add_args_to_context(&mut self, args: &[PTuplePattern], ctx: ArgsContext) -> EResult<()> {
+  fn add_args_to_context(&mut self, args: &[PreTuplePattern], ctx: ArgsContext) -> EResult<()> {
     self.context.reserve(args.len());
     for arg in args {
       match arg {
-        PTuplePattern::Name(_, _, _) => {}
-        PTuplePattern::Typed(b, _) if matches!(**b, PTuplePattern::Name(_, _, _)) => {}
+        PreTuplePattern::Name(_, _, _) => {}
+        PreTuplePattern::Typed(b, _) if matches!(**b, PreTuplePattern::Name(_, _, _)) => {}
         _ => return Err(ElabError::new_e(try_get_span_from(&self.fsp, arg.fspan()),
           "tuple patterns in argument position are not implemented")),
       }
@@ -948,70 +1053,91 @@ impl<'a> TypeChecker<'a> {
     Ok(())
   }
 
-  fn check_tuple_pattern(&mut self, pat: PTuplePattern) -> EResult<TuplePattern> {
-    Ok(match pat {
-      PTuplePattern::Name(g, name, sp) => TuplePattern::Name(g, name, sp),
-      PTuplePattern::Tuple(pats, sp) => TuplePattern::Tuple(
-        pats.into_vec().into_iter().map(|pat| self.check_tuple_pattern(pat))
-          .collect::<EResult<Box<[_]>>>()?, sp),
-      PTuplePattern::Typed(pat, ty) => {
-        let ty = self.check_ty(&ty)?;
-        TuplePattern::Typed(Box::new((self.check_tuple_pattern(*pat)?, ty)))
-      }
+  fn new_tuple_pattern(&mut self, pat: PreTuplePattern) -> EResult<(PreTuplePattern, Option<Type>)> {
+    Ok(if let PreTuplePattern::Typed(pat, ty) = pat {
+      let ty = self.check_ty(&ty)?;
+      let pat = self.check_tuple_pattern(*pat, InferType::ty(&ty))?;
+      (PreTuplePattern::Ready(pat), Some(ty))
+    } else {
+      (pat, None)
     })
   }
 
-  fn add_tuple_pattern_to_context(&mut self,
-      pat: TuplePattern, tgt: Option<InferType<'_>>) -> EResult<TypedTuplePattern> {
-    match pat {
-      TuplePattern::Typed(pat) => {
-        let (pat, ty) = *pat;
-        /* TODO: tgt = ty */
-        self.add_tuple_pattern_to_context(pat, Some(InferType::ty(&ty)))
-      }
-      TuplePattern::Name(g, user, sp) => {
+  fn try_type_tuple_pattern(&mut self, pat: &mut PreTuplePattern) -> EResult<Option<Type>> {
+    if let PreTuplePattern::Typed(pat2, ty) = pat {
+      let ty = self.check_ty(ty)?;
+      *pat = mem::take(&mut **pat2);
+      self.type_tuple_pattern(pat, InferType::ty(&ty))?;
+      Ok(Some(ty))
+    } else {
+      Ok(None)
+    }
+  }
+
+  fn type_tuple_pattern<'b>(&mut self, pat: &'b mut PreTuplePattern, tgt: InferType<'b>) -> EResult<&'b mut TuplePattern> {
+    if let PreTuplePattern::Ready(pat) = pat { return Ok(pat) }
+    *pat = PreTuplePattern::Ready(self.check_tuple_pattern(std::mem::take(pat), tgt)?);
+    let_unchecked!(PreTuplePattern::Ready(pat) = pat, Ok(pat))
+  }
+
+  fn check_tuple_pattern(&mut self, pat: PreTuplePattern, tgt: InferType<'_>) -> EResult<TuplePattern> {
+    let len = self.context.len();
+    let pat = self.add_tuple_pattern_to_context(pat, tgt)?;
+    for v in self.context.drain(len..).rev() {
+      pop_user_local(&mut self.user_locals, v.user).expect("stack underflow")
+    }
+    Ok(pat)
+  }
+
+  #[allow(clippy::needless_pass_by_value)]
+  fn add_tuple_pattern_to_context(&mut self, pat: PreTuplePattern, tgt: InferType<'_>) -> EResult<TuplePattern> {
+    Ok(match pat {
+      PreTuplePattern::Name(g, user, sp) => {
         let decl = self.get_fresh_local();
         if user != AtomId::UNDER { self.push_user_local(user, decl) }
-        let ty = tgt.ok_or_else(|| ElabError::new_e(
-          try_get_span_from(&self.fsp, sp.as_ref()), "could not infer type"))?.to_type();
-        Ok(TypedTuplePattern::Name(g, decl, sp, Box::new(ty)))
+        let ty = tgt.to_type();
+        let copy = self.copy_type(&ty);
+        self.context.push(Variable {decl, user, ty: GType::Ty(g, ty.clone(), copy)});
+        TuplePattern::Name(g, decl, sp, Box::new(ty))
       }
-      TuplePattern::Tuple(pats, sp) => {
-        match tgt {
-          None => return Err(ElabError::new_e(
-            try_get_span_from(&self.fsp, sp.as_ref()), "could not infer type")),
-          Some(InferType::Unit) | Some(InferType::Ty(Type::Unit)) => {
-            if !pats.is_empty() {
-              return Err(ElabError::new_e(
-                try_get_span_from(&self.fsp, sp.as_ref()), "expected 0 subpatterns"))
-            }
-            Ok(TypedTuplePattern::Unit)
+      PreTuplePattern::Typed(pat, ty) => {
+        let ty = self.check_ty(&ty)?;
+        /* TODO: tgt = ty */
+        self.add_tuple_pattern_to_context(*pat, InferType::ty(&ty))?
+      }
+      PreTuplePattern::Ready(pat) => pat,
+      PreTuplePattern::Tuple(pats, sp) => match tgt {
+        InferType::Unit | InferType::Ty(Type::Unit) => {
+          if !pats.is_empty() {
+            return Err(ElabError::new_e(
+              try_get_span_from(&self.fsp, sp.as_ref()), "expected 0 subpatterns"))
           }
-          Some(InferType::Ty(Type::Single(e, ty))) if pats.len() == 2 => {
-            let mut pats = pats.into_vec();
-            let mut it = pats.drain(..);
-            if let (Some(p1), Some(p2), None) = (it.next(), it.next(), it.next()) {
-              let x = self.add_tuple_pattern_to_context(p1, Some(InferType::ty(ty)))?;
-              let p = Type::Prop(Box::new(Prop::Eq(Rc::new(x.to_expr()), e.clone())));
-              let h = self.add_tuple_pattern_to_context(p2, Some(InferType::Ty(&p)))?;
-              Ok(TypedTuplePattern::Single(Box::new((x, h))))
-            } else {
-              return Err(ElabError::new_e(
-                try_get_span_from(&self.fsp, sp.as_ref()), "expected 2 subpatterns"))
-            }
-          }
-          Some(tgt) => Err(ElabError::new_e(
-            try_get_span_from(&self.fsp, sp.as_ref()),
-            format!("could not pattern match at type {}", self.elab.print(&tgt)))),
+          TuplePattern::Unit
         }
+        InferType::Ty(Type::Single(e, ty)) if pats.len() == 2 => {
+          let mut pats = pats.into_vec();
+          let mut it = pats.drain(..);
+          if let (Some(p1), Some(p2), None) = (it.next(), it.next(), it.next()) {
+            let x = self.add_tuple_pattern_to_context(p1, InferType::ty(ty))?;
+            let p = Type::Prop(Box::new(Prop::Eq(Rc::new(x.to_expr()), e.clone())));
+            let h = self.add_tuple_pattern_to_context(p2, InferType::Ty(&p))?;
+            TuplePattern::Single(Box::new((x, h)))
+          } else {
+            return Err(ElabError::new_e(
+              try_get_span_from(&self.fsp, sp.as_ref()), "expected 2 subpatterns"))
+          }
+        }
+        _ => return Err(ElabError::new_e(
+          try_get_span_from(&self.fsp, sp.as_ref()),
+          format!("could not pattern match at type {}", self.elab.print(&tgt)))),
       }
-    }
+    })
   }
 
   fn check_expr_list(&mut self, ts: &mut TypeState, args: &[LispVal],
       TypeTarget(tgt, pat): TypeTarget<'_>, sp: Span) -> Result<Expr, ElabError> {
     let mut vec = Vec::with_capacity(args.len());
-    if let Some(TuplePattern::Tuple(pat, _)) = pat {
+    if let Some(PreTuplePattern::Tuple(pat, _)) = pat {
       if pat.len() != args.len() {
         return Err(ElabError::new_e(sp,
           format!("Can't pattern match, expected {} args, got {}", args.len(), pat.len())))
@@ -1019,9 +1145,10 @@ impl<'a> TypeChecker<'a> {
     }
     let ty = match tgt {
       None => {
-        if let Some(TuplePattern::Tuple(pat, _)) = pat {
-          for (e, pat) in (&*args).iter().zip(&**pat) {
-            vec.push(self.check_expr(ts, e.clone(), pat.into())?)
+        if let Some(PreTuplePattern::Tuple(pat, _)) = pat {
+          for (e, pat) in (&*args).iter().zip(&mut **pat) {
+            let tgt = self.try_type_tuple_pattern(pat)?;
+            vec.push(self.check_expr(ts, e.clone(), TypeTarget(tgt.as_ref(), Some(pat)))?)
           }
         } else {
           for e in args { vec.push(self.check_expr(ts, e.clone(), TypeTarget::NONE)?) }
@@ -1029,11 +1156,10 @@ impl<'a> TypeChecker<'a> {
         Type::List(vec.iter().map(|e| self.infer_expr_type(e).to_type()).collect())
       }
       Some(Type::List(tys)) if tys.len() == args.len() => {
-        if let Some(TuplePattern::Tuple(pat, _)) = pat {
-          for ((e, ty), pat) in (&*args).iter().zip(&**tys).zip(&**pat) {
-            let mut tgt: TypeTarget<'_> = pat.into();
-            if tgt.0.is_none() {tgt.0 = Some(ty)}
-            vec.push(self.check_expr(ts, e.clone(), tgt)?)
+        if let Some(PreTuplePattern::Tuple(pat, _)) = pat {
+          for ((e, ty), pat) in (&*args).iter().zip(&**tys).zip(&mut **pat) {
+            self.type_tuple_pattern(pat, InferType::Ty(ty))?;
+            vec.push(self.check_expr(ts, e.clone(), TypeTarget(Some(ty), Some(pat)))?)
           }
         } else {
           for (e, ty) in (&*args).iter().zip(&**tys) {
@@ -1054,9 +1180,9 @@ impl<'a> TypeChecker<'a> {
     Ok(match self.parser().parse_expr(e)? {
       PExpr::Nil => Expr::Pure(PureExpr::Unit),
       PExpr::Var(sp, user) => {
-        let var = self.user_locals.get(&user).ok_or_else(||
+        let var = *self.user_locals.get(&user).and_then(|v| v.last()).ok_or_else(||
           ElabError::new_e(try_get_span_from(&self.fsp, Some(&sp)),
-          format!("unknown variable '{}'", self.elab.print(&user))))?.0;
+          format!("unknown variable '{}'", self.elab.print(&user))))?;
         let t = &mut ts.0[self.find_index(var).expect("missing variable")];
         match t {
           VariableState::Owned => *t = VariableState::Moved,
@@ -1068,16 +1194,16 @@ impl<'a> TypeChecker<'a> {
       }
       PExpr::Number(n) => Expr::Pure(PureExpr::Int(n)),
       PExpr::Let {lhs, rhs, with} => {
-        let mut lhs = self.check_tuple_pattern(lhs)?;
-        let rhs = self.check_expr(ts, rhs, (&lhs).into())?;
+        let (mut lhs, ty) = self.new_tuple_pattern(lhs)?;
+        let rhs = self.check_expr(ts, rhs, TypeTarget(ty.as_ref(), Some(&mut lhs)))?;
         let ty = self.infer_expr_type(&rhs).to_type();
-        if !with.is_empty() {
-
-        }
-        let lhs = self.add_tuple_pattern_to_context(lhs, Some(InferType::ty(&ty)))?;
+        let lhs = self.with_rename(&with, sp,
+          |tc| tc.add_tuple_pattern_to_context(lhs, InferType::ty(&ty)))?;
         Expr::Let {lhs, rhs: Box::new(rhs)}
       }
-      PExpr::Assign {lhs, rhs, with} => self.todo(fsp, "check_expr Assign", (lhs, rhs, with))?,
+      PExpr::Assign {lhs, rhs, with} => {
+        self.todo(fsp, "check_expr Assign", (lhs, rhs, with))?
+      },
       PExpr::Call {f, fsp, args, variant} => {
         let name = self.mmc.names.get(&f).ok_or_else(|| ElabError::new_e(sp,
           format!("unknown function '{}'", self.elab.print(&f))))?;
@@ -1243,7 +1369,7 @@ impl<'a> TypeChecker<'a> {
       // return Err(ElabError::new_e(self.try_get_span(&u.as_lisp()), "expected a value, got empty block")),
       None => Box::new([]),
       Some(n) => u.enumerate()
-        .map(|(i, e)| self.check_expr(ts, e, if i == n {tgt} else {TypeTarget::NONE}))
+        .map(|(i, e)| self.check_expr(ts, e, if i == n {tgt.reborrow()} else {TypeTarget::NONE}))
         .collect::<EResult<Vec<_>>>()?.into()
     })
   }
@@ -1278,7 +1404,9 @@ impl<'a> TypeChecker<'a> {
           self.add_args_to_context(&proc.args.1, ArgsContext::ProcArgs)?;
           self.add_args_to_context(&proc.rets.1, ArgsContext::ProcArgs)?;
           let rets = self.context.drain(proc.args.1.len()..).collect::<Vec<_>>();
-          for v in rets.iter().rev() { pop_user_local(&mut self.user_locals, v.user) }
+          for v in rets.iter().rev() {
+            pop_user_local(&mut self.user_locals, v.user).expect("stack underflow")
+          }
           if let Some((e, _)) = &proc.variant {
             return Err(ElabError::new_e(self.try_get_span(e), "proc variants are not implemented"))
           }
@@ -1307,8 +1435,8 @@ impl<'a> TypeChecker<'a> {
       },
       Ast::Const {full, lhs, rhs} => {
         match lhs {
-          PTuplePattern::Name(_, _, _) => {}
-          PTuplePattern::Typed(b, _) if matches!(**b, PTuplePattern::Name(_, _, _)) => {}
+          PreTuplePattern::Name(_, _, _) => {}
+          PreTuplePattern::Typed(b, _) if matches!(**b, PreTuplePattern::Name(_, _, _)) => {}
           _ => return Err(ElabError::new_e(self.fsp.span,
             "tuple patterns in constants are not implemented")),
         }
