@@ -32,7 +32,7 @@
 // all the clippy lints we don't want
 #![allow(clippy::cognitive_complexity, clippy::default_trait_access, clippy::filter_map,
   clippy::map_err_ignore, clippy::missing_const_for_fn,
-  clippy::missing_errors_doc, clippy::module_name_repetitions,
+  clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::module_name_repetitions,
   clippy::multiple_crate_versions, clippy::option_if_let_else, clippy::shadow_unrelated,
   clippy::too_many_lines, clippy::use_self)]
 
