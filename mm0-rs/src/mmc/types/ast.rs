@@ -34,7 +34,7 @@
 //! `x` changes (or `{{(* y) <- 2} with x}` if the name shadowing is acceptable).
 
 use num::BigInt;
-use crate::elab::environment::AtomId;
+use crate::elab::environment::{AtomId, Remap, Remapper};
 use crate::elab::lisp::LispVal;
 use super::{VarId, Spanned, Size, Mm0Expr, Unop, Binop, FieldName};
 
@@ -80,6 +80,17 @@ pub enum TuplePatternKind {
   Typed(Box<TuplePattern>, Box<Type>),
   /// A tuple, with the given arguments.
   Tuple(Box<[TuplePattern]>),
+}
+
+impl Remap for TuplePatternKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      &TuplePatternKind::Name(b, v) => TuplePatternKind::Name(b, v),
+      TuplePatternKind::Typed(pat, ty) => TuplePatternKind::Typed(pat.remap(r), ty.remap(r)),
+      TuplePatternKind::Tuple(pats) => TuplePatternKind::Tuple(pats.remap(r)),
+    }
+  }
 }
 
 /// The polarity of a hypothesis binder in a match statement, which determines
@@ -148,6 +159,20 @@ pub enum PatternKind {
   With(Box<Pattern>, Box<Expr>),
   /// A disjunction of patterns.
   Or(Box<[Pattern]>),
+}
+
+impl Remap for PatternKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      &PatternKind::Var(v) => PatternKind::Var(v),
+      &PatternKind::Const(c) => PatternKind::Const(c.remap(r)),
+      PatternKind::Number(n) => PatternKind::Number(n.clone()),
+      PatternKind::Hyped(pn, v, pat) => PatternKind::Hyped(*pn, *v, pat.remap(r)),
+      PatternKind::With(pat, e) => PatternKind::With(pat.remap(r), e.remap(r)),
+      PatternKind::Or(pat) => PatternKind::Or(pat.remap(r)),
+    }
+  }
 }
 
 /// A type expression.
@@ -229,6 +254,36 @@ pub enum TypeKind {
   Subst(Box<Type>, VarId, Box<Expr>),
 }
 
+impl Remap for TypeKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      TypeKind::Unit => TypeKind::Unit,
+      TypeKind::Bool => TypeKind::Bool,
+      &TypeKind::Var(i) => TypeKind::Var(i),
+      &TypeKind::Int(i) => TypeKind::Int(i),
+      &TypeKind::UInt(i) => TypeKind::UInt(i),
+      TypeKind::Array(ty, n) => TypeKind::Array(ty.remap(r), n.remap(r)),
+      TypeKind::Own(ty) => TypeKind::Own(ty.remap(r)),
+      TypeKind::Ref(lft, ty) => TypeKind::Ref(lft.clone(), ty.remap(r)),
+      TypeKind::Shr(lft, ty) => TypeKind::Shr(lft.clone(), ty.remap(r)),
+      TypeKind::RefSn(ty) => TypeKind::RefSn(ty.remap(r)),
+      TypeKind::List(tys) => TypeKind::List(tys.remap(r)),
+      TypeKind::Single(e) => TypeKind::Single(e.remap(r)),
+      TypeKind::Struct(tys) => TypeKind::Struct(tys.remap(r)),
+      TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
+      TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
+      TypeKind::Ghost(ty) => TypeKind::Ghost(ty.remap(r)),
+      TypeKind::Prop(p) => TypeKind::Prop(p.remap(r)),
+      TypeKind::User(f, tys, es) => TypeKind::User(f.remap(r), tys.remap(r), es.remap(r)),
+      TypeKind::Input => TypeKind::Input,
+      TypeKind::Output => TypeKind::Output,
+      TypeKind::Moved(tys) => TypeKind::Moved(tys.remap(r)),
+      TypeKind::Subst(ty, v, e) => TypeKind::Subst(ty.remap(r), *v, e.remap(r)),
+    }
+  }
+}
+
 /// A propositional expression.
 pub type Prop = Spanned<PropKind>;
 
@@ -271,6 +326,31 @@ pub enum PropKind {
   Mm0(Mm0Expr<Expr>),
 }
 
+impl Remap for PropKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      PropKind::True => PropKind::True,
+      PropKind::False => PropKind::False,
+      PropKind::All(p, q) => PropKind::All(p.remap(r), q.remap(r)),
+      PropKind::Ex(p, q) => PropKind::Ex(p.remap(r), q.remap(r)),
+      PropKind::Imp(p, q) => PropKind::Imp(p.remap(r), q.remap(r)),
+      PropKind::Not(p) => PropKind::Not(p.remap(r)),
+      PropKind::And(p) => PropKind::And(p.remap(r)),
+      PropKind::Or(p) => PropKind::Or(p.remap(r)),
+      PropKind::Emp => PropKind::Emp,
+      PropKind::Sep(p) => PropKind::Sep(p.remap(r)),
+      PropKind::Wand(p, q) => PropKind::Wand(p.remap(r), q.remap(r)),
+      PropKind::Pure(p) => PropKind::Pure(p.remap(r)),
+      PropKind::Eq(p, q) => PropKind::Eq(p.remap(r), q.remap(r)),
+      PropKind::Heap(p, q) => PropKind::Heap(p.remap(r), q.remap(r)),
+      PropKind::HasTy(p, q) => PropKind::HasTy(p.remap(r), q.remap(r)),
+      PropKind::Moved(p) => PropKind::Moved(p.remap(r)),
+      PropKind::Mm0(p) => PropKind::Mm0(p.remap(r)),
+    }
+  }
+}
+
 /// The type of variant, or well founded order that recursions decrease.
 #[derive(Debug, DeepSizeOf)]
 pub enum VariantType {
@@ -282,6 +362,17 @@ pub enum VariantType {
   /// This variant is a natural number or integer which increases while
   /// remaining less than or equal to this constant.
   UpLe(Expr)
+}
+
+impl Remap for VariantType {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      VariantType::Down => VariantType::Down,
+      VariantType::UpLt(e) => VariantType::UpLt(e.remap(r)),
+      VariantType::UpLe(e) => VariantType::UpLe(e.remap(r)),
+    }
+  }
 }
 
 /// A variant is a pure expression, together with a
@@ -298,6 +389,17 @@ pub struct Label {
   pub variant: Option<Box<Variant>>,
   /// The code that is executed when you jump to the label
   pub body: Box<Expr>,
+}
+
+impl Remap for Label {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    Self {
+      args: self.args.remap(r),
+      variant: self.variant.remap(r),
+      body: self.body.remap(r)
+    }
+  }
 }
 
 /// An expression or statement.
@@ -431,10 +533,49 @@ pub enum ExprKind {
   Infer(bool),
 }
 
-impl ExprKind {
-  // pub fn let_var(span: FileSpan, v: VarId, rhs: Expr) -> Self {
-  //   Self::Let {lhs: Spanned {span, k: TuplePatternKind::Name(false, v)}, rhs: Box::new(rhs)}
-  // }
+impl Remap for ExprKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      ExprKind::Unit => ExprKind::Unit,
+      &ExprKind::Var(v) => ExprKind::Var(v),
+      &ExprKind::Const(a) => ExprKind::Const(a.remap(r)),
+      &ExprKind::Bool(b) => ExprKind::Bool(b),
+      ExprKind::Int(n) => ExprKind::Int(n.clone()),
+      ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.remap(r)),
+      ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, e1.remap(r), e2.remap(r)),
+      ExprKind::Index(a, i, h) => ExprKind::Index(a.remap(r), i.remap(r), h.remap(r)),
+      ExprKind::Slice(a, i, h) => ExprKind::Slice(a.remap(r), i.remap(r), h.remap(r)),
+      ExprKind::Proj(e, i) => ExprKind::Proj(e.remap(r), *i),
+      ExprKind::Deref(e) => ExprKind::Deref(e.remap(r)),
+      ExprKind::List(e) => ExprKind::List(e.remap(r)),
+      ExprKind::Ghost(e) => ExprKind::Ghost(e.remap(r)),
+      ExprKind::Ref(e) => ExprKind::Ref(e.remap(r)),
+      ExprKind::Mm0(e) => ExprKind::Mm0(e.remap(r)),
+      ExprKind::Typed(e, ty) => ExprKind::Typed(e.remap(r), ty.remap(r)),
+      ExprKind::As(e, ty) => ExprKind::As(e.remap(r), ty.remap(r)),
+      ExprKind::Pun(e, h) => ExprKind::Pun(e.remap(r), h.remap(r)),
+      ExprKind::Typeof(e) => ExprKind::Typeof(e.remap(r)),
+      ExprKind::Assert(e) => ExprKind::Assert(e.remap(r)),
+      ExprKind::Let { lhs, rhs } => ExprKind::Let { lhs: lhs.remap(r), rhs: rhs.remap(r) },
+      ExprKind::Assign { lhs, rhs } => ExprKind::Assign { lhs: lhs.remap(r), rhs: rhs.remap(r) },
+      ExprKind::Call { f, tys, args, variant } => ExprKind::Call {
+        f: f.remap(r), tys: tys.remap(r), args: args.remap(r), variant: variant.remap(r) },
+      ExprKind::Entail(p, q) => ExprKind::Entail(p.remap(r), q.remap(r)),
+      ExprKind::Block(e) => ExprKind::Block(e.remap(r)),
+      ExprKind::Label(v, e) => ExprKind::Label(*v, e.remap(r)),
+      ExprKind::If { hyp, cond, then, els } => ExprKind::If {
+        hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
+      ExprKind::Match(e, brs) => ExprKind::Match(e.remap(r), brs.remap(r)),
+      ExprKind::While { label, hyp, cond, var, body } => ExprKind::While {
+        label: *label, hyp: *hyp, cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
+      ExprKind::Unreachable(e) => ExprKind::Unreachable(e.remap(r)),
+      ExprKind::Jump(l, i, e) => ExprKind::Jump(*l, *i, e.remap(r)),
+      ExprKind::Break(v, e) => ExprKind::Break(*v, e.remap(r)),
+      ExprKind::Return(e) => ExprKind::Return(e.remap(r)),
+      &ExprKind::Infer(b) => ExprKind::Infer(b),
+    }
+  }
 }
 
 /// A field of a struct.

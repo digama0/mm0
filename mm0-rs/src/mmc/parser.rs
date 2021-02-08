@@ -29,11 +29,11 @@ enum ItemIterInner {
 /// An iterator over items. This is not a proper iterator in the sense of implementing `Iterator`,
 /// but it can be used with the [`Parser::parse_next_item`] method to extract a stream of items.
 #[derive(Debug, DeepSizeOf)]
-pub struct ItemIter<I>(ItemIterInner, I);
+pub struct ItemIter(ItemIterInner, Uncons);
 
-impl<I> ItemIter<I> {
+impl ItemIter {
   /// Construct a new iterator from an `I: Iterator<Item=LispVal>`.
-  pub fn new(it: I) -> Self { Self(ItemIterInner::New, it) }
+  pub fn new(e: LispVal) -> Self { Self(ItemIterInner::New, Uncons::New(e)) }
 }
 
 /// The parser, which has no real state of its own but needs access to the
@@ -441,14 +441,13 @@ impl<'a> Parser<'a> {
         for e in u { fields.push(self.parse_arg1(e, false)?) }
         ItemGroup::Item(self.spanned(e, ItemKind::Struct {name, args, fields}))
       }
-      _ => return Err(ElabError::new_e(self.try_get_span(e), "MMC: unknown top level item"))
+      _ => return Err(ElabError::new_e(self.try_get_span(e),
+        format!("MMC: unknown top level item: {}", self.fe.to(e))))
     })
   }
 
   /// Extract the next item from the provided item iterator.
-  pub fn parse_next_item<I: Iterator<Item=LispVal>>(&self,
-    ItemIter(group, u): &mut ItemIter<I>
-  ) -> Result<Option<Item>> {
+  pub fn parse_next_item(&self, ItemIter(group, u): &mut ItemIter) -> Result<Option<Item>> {
     Ok(loop {
       match group {
         ItemIterInner::New => if let Some(e) = u.next() {
@@ -516,6 +515,9 @@ impl<'a> Parser<'a> {
       ElabError::new_e(self.try_get_span(&head), "expected an atom"))?;
     if name == AtomId::UNDER {
       return Err(ElabError::new_e(self.try_get_span(&head), "expecting a type"));
+    }
+    if self.fe.env.data[name].name.as_str() == "u64" {
+      println!("{:?}", names)
     }
     Ok(self.spanned(e, match names.get(&name) {
       Some(&Entity::Prim(Prim {ty: Some(prim), ..})) => match (prim, &*args) {

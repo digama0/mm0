@@ -22,7 +22,7 @@ impl std::fmt::Display for VarId {
 }
 
 /// A spanned expression.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Spanned<T> {
   /// The span of the expression
   pub span: FileSpan,
@@ -249,6 +249,17 @@ pub enum Mm0ExprNode {
   Expr(TermId, Vec<Mm0ExprNode>),
 }
 
+impl Remap for Mm0ExprNode {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      Mm0ExprNode::Const(c) => Mm0ExprNode::Const(c.remap(r)),
+      &Mm0ExprNode::Var(i) => Mm0ExprNode::Var(i),
+      Mm0ExprNode::Expr(t, es) => Mm0ExprNode::Expr(t.remap(r), es.remap(r)),
+    }
+  }
+}
+
 struct Mm0ExprNodePrint<'a, T>(&'a [T], &'a Mm0ExprNode);
 impl<'a, T: EnvDisplay> EnvDisplay for Mm0ExprNodePrint<'a, T> {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -275,6 +286,13 @@ pub struct Mm0Expr<T> {
   pub subst: Vec<T>,
   /// The root node of the expression.
   pub expr: Rc<Mm0ExprNode>,
+}
+
+impl<T: Remap> Remap for Mm0Expr<T> {
+  type Target = Mm0Expr<T::Target>;
+  fn remap(&self, r: &mut Remapper) -> Mm0Expr<T::Target> {
+    Mm0Expr {subst: self.subst.remap(r), expr: self.expr.remap(r)}
+  }
 }
 
 impl<T: EnvDisplay> EnvDisplay for Mm0Expr<T> {

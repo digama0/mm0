@@ -32,11 +32,6 @@ impl Remap for Keyword {
   fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
-impl Remap for HashMap<AtomId, Entity> {
-  type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { HashMap::new() }
-}
-
 impl<A: Remap> Remap for PredefMap<A> {
   type Target = PredefMap<A::Target>;
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.map(|x| x.remap(r)) }

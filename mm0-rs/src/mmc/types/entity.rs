@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::elab::{Environment, environment::AtomId};
+use crate::elab::{Environment, environment::{AtomId, Remap, Remapper}};
 use crate::mmc::{Compiler, types::ast};
 // use crate::util::FileSpan;
 
@@ -238,6 +238,13 @@ pub struct Type {
   pub args: Box<[ast::TuplePattern]>,
 }
 
+impl Remap for Type {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    Self { tyargs: self.tyargs, args: self.args.remap(r) }
+  }
+}
+
 /// The typechecking status of a procedure.
 #[derive(Copy, Clone, Debug, DeepSizeOf)]
 pub enum ProcTc {
@@ -260,12 +267,28 @@ pub struct ProcTy {
   pub rets: Box<[ast::TuplePattern]>,
 }
 
+impl Remap for ProcTy {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    Self { tyargs: self.tyargs, args: self.args.remap(r), rets: self.rets.remap(r) }
+  }
+}
+
 /// A function / procedure / builtin operator, which is called with function call style.
 #[derive(Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub enum Operator {
   /// A user procedure, with a link to the procedure definition and the typechecking status.
   Proc(ProcTy, ProcTc),
+}
+
+impl Remap for Operator {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      Operator::Proc(ty, tc) => Operator::Proc(ty.remap(r), *tc)
+    }
+  }
 }
 
 /// The typechecking status of a global variable.
@@ -276,6 +299,15 @@ pub enum GlobalTc {
   // /// A user type that has been typechecked, with the original span,
   // /// the (internal) declaration name, and the compiled value expression.
   // Checked(Option<FileSpan>, AtomId, Rc<types::Type>, Rc<types::Expr>),
+}
+
+impl Remap for GlobalTc {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self {
+    match self {
+      GlobalTc::Unchecked => GlobalTc::Unchecked
+    }
+  }
 }
 
 /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
@@ -305,6 +337,19 @@ pub enum Entity {
   Global(GlobalTc),
   /// A named constant.
   Const(GlobalTc),
+}
+
+impl Remap for Entity {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      Entity::Prim(c) => Entity::Prim(*c),
+      Entity::Type(c) => Entity::Type(c.remap(r)),
+      Entity::Op(c) => Entity::Op(c.remap(r)),
+      Entity::Global(c) => Entity::Global(c.remap(r)),
+      Entity::Const(c) => Entity::Const(c.remap(r)),
+    }
+  }
 }
 
 // impl TuplePattern {
