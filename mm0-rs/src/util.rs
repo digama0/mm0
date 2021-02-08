@@ -448,6 +448,9 @@ impl fmt::Debug for FileSpan {
     write!(f, "{}:{:?}", self.file, self.span)
   }
 }
+impl<'a> From<&'a FileSpan> for Span {
+  fn from(fsp: &'a FileSpan) -> Self { fsp.span }
+}
 
 /// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
 /// the first nul character. The second output is the remainder of the slice.

@@ -115,7 +115,7 @@ do {
     (func (cmd_unpack {cmd : (& (array u8 5))} : u8 u8 u32)
       {v := (index cmd 0)}
       {w := {v band 0x3F}}
-      (switch {v >> 6}
+      (match {v >> 6}
         {0 => (return w 1 0)}
         {1 => (return w 2 {(slice cmd 1) : u8})}
         {2 => (return w 3 {(slice cmd 1) : u16})}

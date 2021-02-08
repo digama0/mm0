@@ -6,28 +6,35 @@
 //! See [`mmc.md`] for information on the MMC format.
 //!
 //! [`mmc.md`]: https://github.com/digama0/mm0/blob/master/mm0-rs/mmc.md
+
 pub mod types;
 pub mod parser;
 pub mod predef;
-pub mod nameck;
-pub mod typeck;
+pub mod build_ast;
+pub mod ast_lower;
+pub mod infer;
+// pub mod nameck;
+// pub mod typeck;
 
 use std::collections::hash_map::HashMap;
+use parser::ItemIter;
+
 use crate::util::{FileSpan, Span};
 use crate::elab::{
   Result, Elaborator, ElabError,
   environment::{AtomId, Remap, Remapper},
   lisp::LispVal};
-use {types::Keyword, parser::Parser, nameck::Entity, predef::PredefMap, typeck::TypeChecker};
+use {types::{Keyword, entity::Entity}, parser::Parser,
+  build_ast::BuildAst, predef::PredefMap};
 
 impl Remap for Keyword {
   type Target = Self;
   fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
-impl Remap for Entity {
+impl Remap for HashMap<AtomId, Entity> {
   type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self { self.clone() }
+  fn remap(&self, _: &mut Remapper) -> Self { HashMap::new() }
 }
 
 impl<A: Remap> Remap for PredefMap<A> {
@@ -87,12 +94,17 @@ impl Compiler {
   /// top level items that are typechecked as a unit.
   pub fn add(&mut self, elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>) -> Result<()> {
     let fsp = FileSpan {file: elab.path.clone(), span: sp};
-    let p = Parser {fe: elab.format_env(), kw: &self.keywords, fsp: fsp.clone()};
-    let mut ast = vec![];
-    for e in it { p.parse_ast(&mut ast, &e)? }
-    for a in &ast { self.nameck(&fsp, a)? }
-    let mut tc = TypeChecker::new(self, elab, fsp);
-    for item in ast { tc.typeck(&item)? }
+    let p = Parser {fe: elab.format_env(), kw: &self.keywords, fsp};
+    let mut ba = BuildAst::new(&self.names, p);
+    for e in it {
+      let mut it = ItemIter::new(e);
+      while let Some(item) = ba.p.parse_next_item(&mut it)? {
+        let _item = ba.build_item(item)?;
+      }
+    }
+    // for a in &ast { self.nameck(&fsp, a)? }
+    // let mut tc = TypeChecker::new(self, elab, fsp);
+    // for item in ast { tc.typeck(&item)? }
     Ok(())
   }
 

@@ -1053,13 +1053,14 @@ impl<'a> TypeChecker<'a> {
     Ok(())
   }
 
-  fn new_tuple_pattern(&mut self, pat: PreTuplePattern) -> EResult<(PreTuplePattern, Option<Type>)> {
-    Ok(if let PreTuplePattern::Typed(pat, ty) = pat {
+  fn tuple_pattern_type(&mut self, pat: &mut PreTuplePattern) -> EResult<Option<Type>> {
+    Ok(if let PreTuplePattern::Typed(pat2, ty) = pat {
       let ty = self.check_ty(&ty)?;
-      let pat = self.check_tuple_pattern(*pat, InferType::ty(&ty))?;
-      (PreTuplePattern::Ready(pat), Some(ty))
+      *pat = PreTuplePattern::Ready(
+        self.check_tuple_pattern(mem::take(&mut **pat2), InferType::ty(&ty))?);
+      Some(ty)
     } else {
-      (pat, None)
+      None
     })
   }
 
@@ -1193,8 +1194,8 @@ impl<'a> TypeChecker<'a> {
         Expr::Var(var)
       }
       PExpr::Number(n) => Expr::Pure(PureExpr::Int(n)),
-      PExpr::Let {lhs, rhs, with} => {
-        let (mut lhs, ty) = self.new_tuple_pattern(lhs)?;
+      PExpr::Let {mut lhs, rhs, with} => {
+        let ty = self.tuple_pattern_type(&mut lhs)?;
         let rhs = self.check_expr(ts, rhs, TypeTarget(ty.as_ref(), Some(&mut lhs)))?;
         let ty = self.infer_expr_type(&rhs).to_type();
         let lhs = self.with_rename(&with, sp,

@@ -1,19 +1,36 @@
 //! Types used in the rest of the compiler.
 use std::sync::Arc;
-use std::{rc::Rc, collections::HashMap};
+use std::rc::Rc;
 use num::BigInt;
 use crate::util::FileSpan;
-use crate::elab::{environment::{AtomId, TermId, Environment},
-  lisp::{LispVal, Syntax, Uncons, print::{EnvDisplay, FormatEnv}}};
+use crate::elab::{environment::AtomId,
+  lisp::{LispVal, Uncons, print::{EnvDisplay, FormatEnv}}};
+use super::{Binop, Mm0Expr, Size, Unop, VarId, ast};
 
-/// A variable ID. These are local to a given declaration (function, constant, global),
-/// but are not de Bruijn variables - they are unique identifiers within the declaration.
-#[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq)]
-pub struct VarId(pub u32);
+/// A "lifetime" in MMC is a variable or place from which references can be derived.
+/// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
+/// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
+/// There is a special lifetime `extern` that represents inputs to the current function.
+#[derive(Clone, Copy, Debug)]
+pub enum Lifetime {
+  /// The `extern` lifetime is the inferred lifetime for function arguments such as
+  /// `fn f(x: &T)`.
+  Extern,
+  /// A variable lifetime `x` is the annotation on references derived from `x`
+  /// (or derived from other references derived from `x`).
+  Place(VarId),
+  /// A lifetime that has not been inferred yet.
+  Unknown,
+}
+crate::deep_size_0!(Lifetime);
 
-impl std::fmt::Display for VarId {
+impl std::fmt::Display for Lifetime {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "_{}", self.0)
+    match self {
+      Lifetime::Extern => "extern".fmt(f),
+      Lifetime::Place(v) => v.fmt(f),
+      Lifetime::Unknown => "_".fmt(f),
+    }
   }
 }
 
@@ -107,6 +124,95 @@ pub enum Pattern {
   With(Box<(Pattern, LispVal)>),
   /// A disjunction of patterns.
   Or(Box<[Pattern]>),
+}
+
+/// An expression or statement. A block is a list of expressions.
+#[derive(Debug, DeepSizeOf)]
+pub enum PExpr {
+  /// A variable move expression. Unlike `Pure(Var(v))`, this will take the value in `v`,
+  /// leaving it moved out.
+  Var(VarId),
+  /// An integer or natural number.
+  Int(BigInt),
+  /// The unit value `()`.
+  Unit,
+  /// A boolean literal.
+  Bool(bool),
+  /// A unary operation.
+  Unop(Unop, Box<PExpr>),
+  /// A binary operation.
+  Binop(Binop, Box<PExpr>, Box<PExpr>),
+  /// A tuple constructor.
+  Tuple(Box<[PExpr]>, Box<Type>),
+  /// An index operation `(index a i h): T` where `a: (array T n)`,
+  /// `i: nat`, and `h: i < n`.
+  Index(Box<PExpr>, Rc<PExpr>, Box<PExpr>),
+  /// A projection operation `x.i: T` where
+  /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
+  Proj(Box<PExpr>, u32),
+  /// An deref operation `(* x): T` where `x: (& T)`.
+  Deref(Box<PExpr>),
+  /// A ghost expression.
+  Ghost(Box<PExpr>),
+  /// A truncation / bit cast operation.
+  As(Box<(PExpr, Type)>),
+  /// A `(pure expression.
+  Pure(Box<(Mm0Expr<PExpr>, Type)>),
+  /// A let binding.
+  Let {
+    /// A tuple pattern, containing variable bindings.
+    lhs: TuplePattern,
+    /// The expression to evaluate, or [`None`] for uninitialized.
+    rhs: Box<PExpr>,
+  },
+  /// A function call or intrinsic.
+  Call {
+    /// The function to call.
+    f: AtomId,
+    /// The span of the head of the function.
+    fsp: Option<FileSpan>,
+    /// The function arguments.
+    args: Box<[PExpr]>,
+    /// The variant, if needed.
+    variant: Option<Box<PExpr>>,
+  },
+  // /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
+  // /// `P1, ..., Pn` and is a hypothesis of type `Q`.
+  // Entail(LispVal, Box<[PExpr]>),
+  /// A block scope.
+  Block(Box<[PExpr]>),
+  /// A label, which looks exactly like a local function but has no independent stack frame.
+  /// They are called like regular functions but can only appear in tail position.
+  Label {
+    /// The name of the label
+    name: AtomId,
+    /// The arguments of the label
+    args: Box<[TuplePattern]>,
+    /// The variant, for recursive calls
+    variant: Option<Variant>,
+    /// The code that is executed when you jump to the label
+    body: Box<[PExpr]>,
+  },
+  // /// An if-then-else expression (at either block or statement level). The initial atom names
+  // /// a hypothesis that the expression is true in one branch and false in the other.
+  // If(Box<(Option<AtomId>, PExpr, PExpr, PExpr)>),
+  // /// A switch (pattern match) statement, given the initial expression and a list of match arms.
+  // Switch(Box<PExpr>, Box<[(Pattern, PExpr)]>),
+  /// A while loop.
+  While {
+    /// A hypothesis that the condition is true in the loop and false after it.
+    hyp: Option<AtomId>,
+    /// The loop condition.
+    cond: Box<PExpr>,
+    /// The variant, which must decrease on every round around the loop.
+    var: Option<Variant>,
+    /// The body of the loop.
+    body: Box<[PExpr]>,
+  },
+  /// `(assert p)` evaluates `p: bool` and returns a proof of `p`.
+  Assert(Rc<PExpr>),
+  // /// A hole `_`, which is a compile error but queries the compiler to provide a type context.
+  // Hole(FileSpan),
 }
 
 /// An expression or statement. A block is a list of expressions.
@@ -218,23 +324,23 @@ pub struct Proc {
   /// The span of the procedure name.
   pub span: Option<FileSpan>,
   /// The arguments of the procedure.
-  pub args: (Vec<bool>, Vec<super::parser::TuplePattern>),
+  pub args: (Vec<bool>, Vec<ast::TuplePattern>),
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: (Vec<Option<AtomId>>, Vec<super::parser::TuplePattern>),
+  pub rets: (Vec<Option<AtomId>>, Vec<ast::TuplePattern>),
   /// The variant, used for recursive functions.
   pub variant: Option<Variant>,
 }
 
-impl Proc {
-  /// Checks if this proc equals `other`, ignoring the `kind` field.
-  /// (This is how we validate a proc against a proc decl.)
-  #[must_use] pub fn eq_decl(&self, other: &Proc) -> bool {
-    self.name == other.name &&
-    self.args == other.args &&
-    self.rets == other.rets &&
-    self.variant == other.variant
-  }
-}
+// impl Proc {
+//   /// Checks if this proc equals `other`, ignoring the `kind` field.
+//   /// (This is how we validate a proc against a proc decl.)
+//   #[must_use] pub fn eq_decl(&self, other: &Proc) -> bool {
+//     self.name == other.name &&
+//     self.args == other.args &&
+//     self.rets == other.rets &&
+//     self.variant == other.variant
+//   }
+// }
 
 /// A field of a struct.
 #[derive(Debug, DeepSizeOf)]
@@ -257,7 +363,7 @@ pub enum Ast {
     /// The span of the `{x := ...}` in `(global {x := ...})`
     full: Option<FileSpan>,
     /// The variable(s) being declared
-    lhs: super::parser::TuplePattern,
+    lhs: ast::TuplePattern,
     /// The value of the declaration
     rhs: LispVal,
   },
@@ -266,7 +372,7 @@ pub enum Ast {
     /// The span of the `{x := ...}` in `(const {x := ...})`
     full: Option<FileSpan>,
     /// The constant(s) being declared
-    lhs: super::parser::TuplePattern,
+    lhs: ast::TuplePattern,
     /// The value of the declaration
     rhs: LispVal,
   },
@@ -277,7 +383,7 @@ pub enum Ast {
     /// The span of the name
     span: Option<FileSpan>,
     /// The arguments of the type declaration, for a parametric type
-    args: Box<[super::parser::TuplePattern]>,
+    args: Box<[ast::TuplePattern]>,
     /// The value of the declaration (another type)
     val: LispVal,
   },
@@ -288,270 +394,15 @@ pub enum Ast {
     /// The span of the name
     span: Option<FileSpan>,
     /// The parameters of the type
-    args: Box<[super::parser::TuplePattern]>,
+    args: Box<[ast::TuplePattern]>,
     /// The fields of the structure
-    fields: Box<[super::parser::TuplePattern]>,
+    fields: Box<[ast::TuplePattern]>,
   },
 }
 
 impl Ast {
   /// Make a new `AST::Proc`.
   #[must_use] pub fn proc((p, body): (Proc, Uncons)) -> Ast { Ast::Proc(Arc::new(p), body) }
-}
-
-macro_rules! make_keywords {
-  {$($(#[$attr:meta])* $x:ident: $e:expr,)*} => {
-    make_keywords! {@IMPL $($(#[$attr])* $x concat!("The keyword `", $e, "`.\n"), $e,)*}
-  };
-  {@IMPL $($(#[$attr:meta])* $x:ident $doc0:expr, $e:expr,)*} => {
-    /// The type of MMC keywords, which are atoms with a special role in the MMC parser.
-    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-    pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
-    crate::deep_size_0!(Keyword);
-
-    lazy_static! {
-      static ref SYNTAX_MAP: Box<[Option<Keyword>]> = {
-        let mut vec = vec![];
-        Syntax::for_each(|_, name| vec.push(Keyword::from_str(name)));
-        vec.into()
-      };
-    }
-
-    impl Keyword {
-      #[must_use] fn from_str(s: &str) -> Option<Self> {
-        match s {
-          $($e => Some(Self::$x),)*
-          _ => None
-        }
-      }
-
-      /// Get the MMC keyword corresponding to a lisp [`Syntax`].
-      #[must_use] pub fn from_syntax(s: Syntax) -> Option<Self> {
-        SYNTAX_MAP[s as usize]
-      }
-    }
-
-    impl Environment {
-      /// Make the initial MMC keyword map in the given environment.
-      #[allow(clippy::string_lit_as_bytes)]
-      pub fn make_keywords(&mut self) -> HashMap<AtomId, Keyword> {
-        let mut atoms = HashMap::new();
-        $(if Syntax::from_str($e).is_none() {
-          atoms.insert(self.get_atom($e.as_bytes()), Keyword::$x);
-        })*
-        atoms
-      }
-    }
-  }
-}
-
-make_keywords! {
-  Add: "+",
-  Arrow: "=>",
-  ArrowL: "<-",
-  ArrowR: "->",
-  Begin: "begin",
-  Colon: ":",
-  ColonEq: ":=",
-  Const: "const",
-  Else: "else",
-  Entail: "entail",
-  Func: "func",
-  Finish: "finish",
-  Ghost: "ghost",
-  Global: "global",
-  Intrinsic: "intrinsic",
-  If: "if",
-  Le: "<=",
-  Lt: "<",
-  Mut: "mut",
-  Or: "or",
-  Out: "out",
-  Proc: "proc",
-  Star: "*",
-  Struct: "struct",
-  Switch: "switch",
-  Typedef: "typedef",
-  Variant: "variant",
-  While: "while",
-  With: "with",
-}
-
-/// Possible sizes for integer operations and types.
-#[derive(Copy, Clone, Debug)]
-pub enum Size {
-  /// 8 bits, or 1 byte. Used for `u8` and `i8`.
-  S8,
-  /// 16 bits, or 2 bytes. Used for `u16` and `i16`.
-  S16,
-  /// 32 bits, or 4 bytes. Used for `u32` and `i32`.
-  S32,
-  /// 64 bits, or 8 bytes. Used for `u64` and `i64`.
-  S64,
-  /// Unbounded size. Used for `nat` and `int`. (These types are only legal for
-  /// ghost variables, but they are also used to indicate "correct to an unbounded model"
-  /// for operations like [`Unop::BitNot`] when it makes sense. We do not actually support
-  /// bignum compilation.)
-  Inf,
-}
-crate::deep_size_0!(Size);
-
-/// (Elaborated) unary operations.
-#[derive(Copy, Clone, Debug)]
-pub enum Unop {
-  /// Logical (boolean) NOT
-  Not,
-  /// Bitwise NOT. For fixed size this is the operation `2^n - x - 1`, and
-  /// for infinite size this is `-x - 1`. Note that signed NOT
-  BitNot(Size),
-}
-crate::deep_size_0!(Unop);
-
-impl Unop {
-  /// Return a string representation of the [`Unop`].
-  #[must_use] pub fn to_str(self) -> &'static str {
-    match self {
-      Unop::Not => "not",
-      Unop::BitNot(_) => "bnot",
-    }
-  }
-}
-
-impl std::fmt::Display for Unop {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    self.to_str().fmt(f)
-  }
-}
-
-/// (Elaborated) binary operations.
-#[derive(Copy, Clone, Debug)]
-pub enum Binop {
-  /// Integer addition
-  Add,
-  /// Integer multiplication
-  Mul,
-  /// Integer subtraction
-  Sub,
-  /// Logical (boolean) AND
-  And,
-  /// Logical (boolean) OR
-  Or,
-  /// Bitwise AND, for signed or unsigned integers of any size
-  BitAnd,
-  /// Bitwise OR, for signed or unsigned integers of any size
-  BitOr,
-  /// Bitwise XOR, for signed or unsigned integers of any size
-  BitXor,
-  /// Less than, for signed or unsigned integers of any size
-  Lt,
-  /// Less than or equal, for signed or unsigned integers of any size
-  Le,
-  /// Equal, for signed or unsigned integers of any size
-  Eq,
-  /// Not equal, for signed or unsigned integers of any size
-  Ne,
-}
-crate::deep_size_0!(Binop);
-
-impl Binop {
-  /// Return a string representation of the [`Binop`].
-  #[must_use] pub fn to_str(self) -> &'static str {
-    match self {
-      Binop::Add => "+",
-      Binop::Mul => "*",
-      Binop::Sub => "-",
-      Binop::And => "and",
-      Binop::Or => "or",
-      Binop::BitAnd => "band",
-      Binop::BitOr => "bor",
-      Binop::BitXor => "bxor",
-      Binop::Lt => "<",
-      Binop::Le => "<=",
-      Binop::Eq => "=",
-      Binop::Ne => "!=",
-    }
-  }
-}
-
-impl std::fmt::Display for Binop {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    self.to_str().fmt(f)
-  }
-}
-
-/// An embedded MM0 expression inside MMC. This representation is designed to make it easy
-/// to produce substitutions of the free variables.
-#[derive(Debug, DeepSizeOf)]
-pub enum Mm0ExprNode {
-  /// A constant expression, containing no free variables,
-  /// or a dummy variable that will not be substituted.
-  Const(LispVal),
-  /// A free variable. This is an index into the [`Mm0Expr::subst`] array.
-  Var(u32),
-  /// A term constructor, where at least one subexpression is non-constant
-  /// (else we would use [`Const`](Self::Const)).
-  Expr(TermId, Vec<Mm0ExprNode>),
-}
-
-struct Mm0ExprNodePrint<'a>(&'a [PureExpr], &'a Mm0ExprNode);
-impl<'a> EnvDisplay for Mm0ExprNodePrint<'a> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self.1 {
-      Mm0ExprNode::Const(e) => e.fmt(fe, f),
-      &Mm0ExprNode::Var(i) => self.0[i as usize].fmt(fe, f),
-      Mm0ExprNode::Expr(t, es) => {
-        write!(f, "({}", fe.to(t))?;
-        for e in es {
-          write!(f, " {}", fe.to(&Self(self.0, e)))?
-        }
-        write!(f, ")")
-      }
-    }
-  }
-}
-
-/// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
-/// with `subst` holding the internal names of these variables.
-#[derive(Clone, Debug, DeepSizeOf)]
-pub struct Mm0Expr {
-  /// The mapping from indexes in the `expr` to internal names.
-  /// (The user-facing names have been erased.)
-  pub subst: Vec<PureExpr>,
-  /// The root node of the expression.
-  pub expr: Rc<Mm0ExprNode>,
-}
-
-impl EnvDisplay for Mm0Expr {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    Mm0ExprNodePrint(&self.subst, &self.expr).fmt(fe, f)
-  }
-}
-
-/// A "lifetime" in MMC is a variable or place from which references can be derived.
-/// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
-/// heap variables referring to lifetime `x` exist, `x` cannot be modified or dropped.
-/// There is a special lifetime `extern` that represents inputs to the current function.
-#[derive(Clone, Copy, Debug)]
-pub enum Lifetime {
-  /// The `extern` lifetime is the inferred lifetime for function arguments such as
-  /// `fn f(x: &T)`.
-  Extern,
-  /// A variable lifetime `x` is the annotation on references derived from `x`
-  /// (or derived from other references derived from `x`).
-  Place(VarId),
-  /// A lifetime that has not been inferred yet.
-  Unknown,
-}
-crate::deep_size_0!(Lifetime);
-
-impl std::fmt::Display for Lifetime {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Lifetime::Extern => "extern".fmt(f),
-      Lifetime::Place(v) => v.fmt(f),
-      Lifetime::Unknown => "_".fmt(f),
-    }
-  }
 }
 
 /// A "place", or lvalue, is a position in the context that can be read or written.
@@ -619,7 +470,7 @@ pub enum PureExpr {
   /// A truncation / bit cast operation.
   As(Box<(PureExpr, Type)>),
   /// A truncation / bit cast operation.
-  Pure(Box<(Mm0Expr, Type)>),
+  Pure(Box<(Mm0Expr<PureExpr>, Type)>),
   /// A deferred substitution into an expression.
   Subst(Rc<PureExpr>, VarId, Rc<PureExpr>),
 }
@@ -839,7 +690,7 @@ pub enum Prop {
   /// The move operator `|T|` on types.
   Moved(Box<Prop>),
   /// An embedded MM0 proposition of sort `wff`.
-  Mm0(Mm0Expr),
+  Mm0(Mm0Expr<PureExpr>),
   /// A substitution into a proposition.
   Subst(Box<Prop>, VarId, Rc<PureExpr>),
 }

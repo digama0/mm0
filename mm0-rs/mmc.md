@@ -438,19 +438,19 @@ The `(unreachable h)` command takes a proof of false and cancels the current cod
     (if {h : $ 2 + 2 = 5 $}
       (unreachable (entail h <proof of 2 + 2 != 5>)))
 
-This is especially useful for exhaustiveness checking in switches, see below.
+This is especially useful for exhaustiveness checking in matches, see below.
 
-### Switches
+### Matches
 
-The `(switch x {a1 => b1} ... {an => bn})` command executes `bi` for the first `i` for which `x = ai`. The `ai` should be numeric constants (pattern matching on enums and the like are future work). In a pattern, one can use `{a or b}` to pattern match on multiple constants, `{x with p}` to evaluate a predicate, and `{h : x}` to capture the assertion that `x` matches the given pattern in `h` (and the assertion that `x` doesn't match the pattern in `h` in all subsequent branches). For example:
+The `(match x {a1 => b1} ... {an => bn})` command executes `bi` for the first `i` for which `x = ai`. The `ai` should be numeric constants (pattern matching on enums and the like are future work). In a pattern, one can use `{a or b}` to pattern match on multiple constants, `{x with p}` to evaluate a predicate, and `{h : x}` to capture the assertion that `x` matches the given pattern in `h` (and the assertion that `x` doesn't match the pattern in `h` in all subsequent branches). For example:
 
-    (switch {2 + 2}
+    (match {2 + 2}
       {{h : 4} =>
         -- h: 2 + 2 = 4 here
         "all is well"}
       {_ => (unreachable (entail h (proof of $ 2+2 != 4 -> F. $)))})
 
-    (switch x
+    (match x
       {{h : {x with (is_groovy x)}} => "x is groovy"}
       {{h2 : {1 or 2}} =>
         -- h: $ ~ is_groovy x $, h2: $ x = 1 \/ x = 2 $
@@ -490,7 +490,7 @@ Fields can be dependent (and can reference each other in any order), and can con
       {arr : (array u8 len)}
       {(ghost len) : nat})
 
-Fields can be referred to by `(x . field)`, and struct literals are written using the `mk` keyword, as `((mk Foo) arr len)`, or `(mk arr len)` when `Foo` can be inferred.
+Fields can be referred to by `(x . field)`, and struct literals are written using `list`, as `(list arr len)`, provided that the expected type is `Foo`. (If the expected type is not given, the `list` constructor constructs a nondependent tuple, see **Tuples** below.)
 
 Structs can also have parameters:
 
