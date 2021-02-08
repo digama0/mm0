@@ -33,7 +33,9 @@ pub struct ItemIter(ItemIterInner, Uncons);
 
 impl ItemIter {
   /// Construct a new iterator from an `I: Iterator<Item=LispVal>`.
-  pub fn new(e: LispVal) -> Self { Self(ItemIterInner::New, Uncons::New(e)) }
+  #[must_use] pub fn new(e: LispVal) -> Self {
+    Self(ItemIterInner::New, Uncons::New(e))
+  }
 }
 
 /// The parser, which has no real state of its own but needs access to the

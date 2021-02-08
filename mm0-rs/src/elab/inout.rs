@@ -390,7 +390,7 @@ impl Elaborator {
     let mut w = StringWriter::default();
     let terms = &self.inout.string.as_ref().expect("string handler should be initialized").1;
     self.env.write_output_string(terms, &mut w, &heap, &exprs).map_err(|e| match e {
-      OutputError::IoError(e) => panic!(e),
+      OutputError::IoError(e) => panic!("{}", e),
       OutputError::String(e) => ElabError::new_e(fsp.span, e),
     })?;
     Ok(w.w)
