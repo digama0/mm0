@@ -30,10 +30,13 @@ theorem Verifier_Valid (k mm0_file i o: nat):
 (named '(mpd (sylan terminates_ensuring_succeeds (anwl Verifier_terminates) anr) @
   eexsabd @ eelabd @ a1i anr));
 
+def Represents (env a_sorts a_terms a_thms: nat) = $ T. $;
+
 do {
   -- Import some constants from MM1
-  (mmc-add @ rmap '(O_RDONLY O_WRONLY O_CREAT O_TRUNC MAP_FAILED) @ fn (x)
-    '(const {{,x : u64} := (pure ,x)}))
+  (mmc-add @ map (fn (x) '(const {{,x : u64} := (pure ,x)}))
+    '(O_RDONLY O_WRONLY O_CREAT O_TRUNC
+      MAP_FAILED MAP_PRIVATE MAP_ANONYMOUS))
 
   -- This is just a scratchpad for now, some thoughts on MMC syntax and primitives.
   (mmc-add '(
@@ -42,7 +45,16 @@ do {
       {buf : (array u8 {len + 1})}
       {eq0 : (pure $ A. i (nth buf i = suc 0 <-> i = len) $)})
 
-    (typedef Stat (array u8 80))
+    (struct Stat
+      {st_dev : u64} {st_ino : u64} {st_nlink : u64}
+      {st_mode : u32} {st_uid : u32} {st_gid : u32} {_ : i32}
+      {st_rdev : u64} {st_size : i64}
+      {st_blksize : i64} {st_blocks : i64}
+      {st_atime : i64} {st_atime_nsec : i64}
+      {st_mtime : i64} {st_mtime_nsec : i64}
+      {st_ctime : i64} {st_ctime_nsec : i64}
+      {_ : (array i64 3)})
+
     (intrinsic (sys_fstat {fd : u32}
       {(ghost (mut buf)) : (? Stat)} {p : (&sn buf)} :
       {(out buf) : Stat}
@@ -51,7 +63,7 @@ do {
       {fname : (& CStr)}
       {flags : {(sn O_RDONLY) or (sn {O_WRONLY + O_CREAT + O_TRUNC})}} :
       u32))
-    (intrinsic (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : Prot}
+    (intrinsic (sys_mmap {pos : (sn {0 : u64})} {len : u64} {prot : u32}
       {(ghost anon) : bool}
       {flags : (sn {(if anon MAP_PRIVATE {MAP_PRIVATE + MAP_ANONYMOUS}) : u64})}
       {fd : (if anon (sn {(- 1) : i64}) i64)}
@@ -59,33 +71,6 @@ do {
       {ret : (or
         (struct {err : i64} (pure $ isIOError err $))
         (own @ struct {ret : (array u8 len)} (pure $ anon -> all (sn 0) ret $)))}))
-
-    (proc (main
-        {argc : u32}
-        {args : (& (array (& CStr) argc))}
-        (mut {(ghost input) : Input})
-        (mut {(ghost output) : (sn {0 : Output})}) :
-        (out {output : Output})
-        (pure $ output = 0 /\ Valid input $))
-      {(output2 oz) := output}
-      {output <- output2}
-      (begin
-        {n := (sys_open (index args 1) O_RDONLY)}
-        (assert {0 <= {n as i64}}))
-      {{buf : (? Stat)} := uninit}
-      (begin
-        {n := (sys_fstat fd (mut buf) _)}
-        (assert {0 <= {n as i64}}))
-      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE))}
-      {{ptr : (own (array u8 len))} :=
-        (pun ptr (entail h (assert {ptr != MAP_FAILED})
-          -- proof of
-          -- ptr :: (union (sn {MAP_FAILED : u64})
-          --   (own (Sigma {ret : (array u8 len)} $ fd = bitsNeg 32 1 -> all (sn 0) ret $))) /\
-          -- ptr != MAP_FAILED
-          -- |- (ptr :: (own (array u8 len))
-          _))}
-      (list oz (verify len ptr input)))
 
     (global {{g_file : u64} := uninit})
     (global {{g_end : u64} := uninit})
@@ -110,12 +95,15 @@ do {
     (global {{g_num_terms : u32} := uninit} {{g_terms : u64} := uninit})
     (global {{g_num_thms : u32} := uninit} {{g_thms : u64} := uninit})
 
+    (struct Sort {s : u8} {h : {s < g_sorts}})
+    (struct Env {e : nat} {h : (pure $ Env e $)})
+
     (const {{CMD_END : u8} := 0})
 
     (func (cmd_unpack {cmd : (& (array u8 5))} : u8 u8 u32)
       {v := (index cmd 0)}
       {w := {v band 0x3F}}
-      (match {v >> 6}
+      (match {v shr 6}
         {0 => (return w 1 0)}
         {1 => (return w 2 {(slice cmd 1) : u8})}
         {2 => (return w 3 {(slice cmd 1) : u16})}
@@ -125,11 +113,10 @@ do {
         {len : u64}
         {file : (& (array u8 len))}
         {(ghost (mut input)) : Input} :
-        $ Valid input $)
+        (pure $ Valid input $))
       {g_file <- file}
       {g_end <- (cast {file + len})}
-      {{p : (& Header0)} :=
-        (pun file (using (assert {(sizeof Header0) <= len})))}
+      {{p : (& Header0)} := (pun file (assert {(sizeof Header0) <= len}))}
       (assert {(p . magic) = MM0B_MAGIC})
       (assert {(p . version) = MM0B_VERSION})
       {nsorts := (p . num_sorts)}
@@ -149,18 +136,18 @@ do {
       {(ghost a_thms) := (sn {(& (slice g_thms 0)) : (& (array Sort g_num_thms))})}
       {{h_thms : {g_num_thms <= nthms}} := _}
       {(ghost remainder) := {len - (p . p_proof)}}
-      {h := (assert {{(p . p_proof) + 5} <= len})}
-      {{remainder_bd : {5 <= remainder}} := (entail h _)}
+      {remainder_bd := (assert {{(p . p_proof) + 5} <= len})}
       {{stmt : (& (array u8 remainder))} :=
-        (& (slice file (p . p_proof) (entail h _)))}
+        (& (slice file (p . p_proof) (entail remainder_bd _)))}
       {{suff : {{stmt + remainder} = g_end}} := (entail _)}
 
-      {(ghost env) : Env} {(ghost env2) : Env}
-      {ext : (EnvExtends env env2)}
-      {repr : (Represents env2 a_sorts a_terms a_thms)}
+      {{(ghost env) : Env} := _}
+      {{(ghost env2) : Env} := _}
+      {{ext : (pure $ EnvExtend env env2 $)} := _}
+      {{repr : (pure @ Represents env2 a_sorts a_terms a_thms)} := _}
 
       (while {(index stmt 0 (entail remainder_bd _)) != CMD_END}
-        (variant remainder >= 5 := remainder_bd)
+        (variant {(p . p_proof) + 5} <= len := remainder_bd)
 
         {((w sz data) h_unpack) := (sn (cmd_unpack stmt))}
         {{remainder <- {remainder - data}} with {remainder -> old_rem}}
@@ -169,7 +156,7 @@ do {
         {{next_stmt : (& (array u8 remainder))} := (& (slice stmt data
           (entail next_stmt_bd suff _)))}
 
-        (switch w
+        (match w
           {CMD_STMT_SORT => (begin
             (assert {data = sz})
             {h := (assert {g_num_sorts < nsorts})}
@@ -196,5 +183,33 @@ do {
       (assert {g_num_terms = nterms})
       (assert {g_num_thms = nthms})
       (entail (parse_until CMD_END) _))
+
+    (proc (main
+        {argc : u32}
+        {args : (& (array (& CStr) argc))}
+        (mut {(ghost input) : Input})
+        (mut {(ghost output) : (sn {0 : Output})}) :
+        (out {output : Output})
+        (pure $ output = 0 /\ Valid input $))
+      {(output2 oz) := output}
+      {output <- output2}
+      (begin
+        {n := (sys_open (index args 1) O_RDONLY)}
+        (assert {0 <= {n as i64}}))
+      {{buf : (? Stat)} := uninit}
+      (begin
+        {n := (sys_fstat fd (mut buf) _)}
+        (assert {0 <= {n as i64}}))
+      {len := (buf . st_size)}
+      {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE))}
+      {{ptr : (own (array u8 len))} :=
+        (pun ptr (entail h (assert {ptr != MAP_FAILED})
+          -- proof of
+          -- ptr :: (union (sn {MAP_FAILED : u64})
+          --   (own (Sigma {ret : (array u8 len)} $ fd = bitsNeg 32 1 -> all (sn 0) ret $))) /\
+          -- ptr != MAP_FAILED
+          -- |- (ptr :: (own (array u8 len))
+          _))}
+      (list oz (verify len ptr input)))
   ))
 };

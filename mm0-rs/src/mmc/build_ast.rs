@@ -253,7 +253,7 @@ impl<'a> BuildAst<'a> {
       TypeKind::Shr(lft, ty) => ast::TypeKind::Shr(self.build_lft(lft)?, Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::RefSn(e) => ast::TypeKind::RefSn(Box::new(self.build_expr(&span, e)?)),
       TypeKind::List(tys) => ast::TypeKind::List(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
-      TypeKind::Single(e) => ast::TypeKind::Single(Box::new(self.build_expr(&span, e)?)),
+      TypeKind::Sn(e) => ast::TypeKind::Sn(Box::new(self.build_expr(&span, e)?)),
       TypeKind::Struct(pats) => ast::TypeKind::Struct(self.with_tuple_patterns(pats.into_vec(), |_, x| Ok(x))?),
       TypeKind::And(tys) => ast::TypeKind::And(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
       TypeKind::Or(tys) => ast::TypeKind::Or(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
@@ -550,18 +550,19 @@ impl<'a> BuildAst<'a> {
     let is_label = |a| self.label_map.get(&a).map_or(false, |v| !v.is_empty());
     let k = match self.p.parse_call(&span, self.names, is_label, e)? {
       CallKind::Const(a) => ast::ExprKind::Const(a),
+      CallKind::Global(a) => ast::ExprKind::Global(a),
       CallKind::NAry(NAryCall::Add, args) => lassoc1!(args, Int(0.into()), Add),
+      CallKind::NAry(NAryCall::Mul, args) => lassoc1!(args, Int(1.into()), Mul),
       CallKind::NAry(NAryCall::And, args) => lassoc1!(args, Bool(true), And),
       CallKind::NAry(NAryCall::Or, args) => lassoc1!(args, Bool(false), Or),
+      CallKind::NAry(NAryCall::Not, args) => lassoc1!(args, Bool(true), Or, |e| {
+        ast::ExprKind::Unop(Unop::Not, Box::new(e))
+      }),
       CallKind::NAry(NAryCall::BitAnd, args) => lassoc1!(args, Int((-1).into()), BitAnd),
       CallKind::NAry(NAryCall::BitOr, args) => lassoc1!(args, Int(0.into()), BitOr),
       CallKind::NAry(NAryCall::BitXor, args) => lassoc1!(args, Int(0.into()), BitXor),
-      CallKind::NAry(NAryCall::Mul, args) => lassoc1!(args, Int(1.into()), Mul),
       CallKind::NAry(NAryCall::BitNot, args) => lassoc1!(args, Int((-1).into()), BitOr, |e| {
         ast::ExprKind::Unop(Unop::BitNot(Size::Inf), Box::new(e))
-      }),
-      CallKind::NAry(NAryCall::Not, args) => lassoc1!(args, Bool(true), Or, |e| {
-        ast::ExprKind::Unop(Unop::Not, Box::new(e))
       }),
       CallKind::NAry(NAryCall::Le, args) => self.build_ineq(&span, args, Binop::Le)?,
       CallKind::NAry(NAryCall::Lt, args) => self.build_ineq(&span, args, Binop::Lt)?,
@@ -581,18 +582,37 @@ impl<'a> BuildAst<'a> {
       }
       CallKind::NAry(NAryCall::Return, args) => ast::ExprKind::Return(
         args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?),
+      CallKind::Neg(e) => ast::ExprKind::Unop(Unop::Neg, Box::new(self.build_expr(&span, e)?)),
+      CallKind::Sub(e, it) => {
+        let mut out = self.build_expr(&span, e)?;
+        for e in it {
+          let k = ast::ExprKind::Binop(Binop::Sub, Box::new(out), Box::new(self.build_expr(&span, e)?));
+          out = Spanned {span: span.clone(), k};
+        }
+        return Ok(out)
+      }
+      CallKind::Shl(a, b) => ast::ExprKind::Binop(Binop::Shl, Box::new(self.build_expr(&span, a)?), Box::new(self.build_expr(&span, b)?)),
+      CallKind::Shr(a, b) => ast::ExprKind::Binop(Binop::Shr, Box::new(self.build_expr(&span, a)?), Box::new(self.build_expr(&span, b)?)),
       CallKind::Mm0(e) => ast::ExprKind::Mm0(self.build_mm0_expr(&span, e)?),
       CallKind::Typed(e, ty) => ast::ExprKind::Typed(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
       CallKind::As(e, ty) => ast::ExprKind::As(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
+      CallKind::Cast(e, h) => ast::ExprKind::Cast(
+        Box::new(self.build_expr(&span, e)?),
+        if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
       CallKind::Pun(e, h) => ast::ExprKind::Pun(
+        Box::new(self.build_expr(&span, e)?),
+        if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
+      CallKind::Sn(e, h) => ast::ExprKind::Sn(
         Box::new(self.build_expr(&span, e)?),
         if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
       CallKind::Uninit => ast::ExprKind::Uninit,
       CallKind::TypeofBang(e) => ast::ExprKind::Typeof(Box::new(self.build_expr(&span, e)?)),
       CallKind::Typeof(e) => {
-        let k = ast::ExprKind::Ref(Box::new(self.build_expr(&span, e)?));
+        let k = ast::ExprKind::Place(Box::new(self.build_expr(&span, e)?));
         ast::ExprKind::Typeof(Box::new(Spanned {span: span.clone(), k}))
       }
+      CallKind::Sizeof(ty) => ast::ExprKind::Sizeof(Box::new(self.build_ty(&span, &ty)?)),
+      CallKind::Ref(e) => ast::ExprKind::Ref(Box::new(self.build_expr(&span, e)?)),
       CallKind::Index(a, i, h) => ast::ExprKind::Index(
         Box::new(self.build_expr(&span, a)?),
         Box::new(self.build_expr(&span, i)?),
@@ -630,6 +650,7 @@ impl<'a> BuildAst<'a> {
             args.map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?)}
         })
       ),
+      CallKind::Error => ast::ExprKind::Error,
     };
     Ok(Spanned {span, k})
   }

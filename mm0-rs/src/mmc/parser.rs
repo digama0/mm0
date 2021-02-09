@@ -554,6 +554,7 @@ impl<'a> Parser<'a> {
             (PrimType::Own, [ty]) => TypeKind::Own(ty.clone()),
             (PrimType::Ref, [ty]) => TypeKind::Shr(None, ty.clone()),
             (PrimType::RefSn, [e]) => TypeKind::RefSn(e.clone()),
+            (PrimType::Sn, [e]) => TypeKind::Sn(e.clone()),
             (PrimType::List, _) => TypeKind::List(args),
             (PrimType::Struct, _) => TypeKind::Struct(
               args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?),
@@ -561,7 +562,6 @@ impl<'a> Parser<'a> {
             (PrimType::Or, _) => TypeKind::Or(args),
             (PrimType::Moved, [ty]) => TypeKind::Moved(ty.clone()),
             (PrimType::Ghost, [ty]) => TypeKind::Ghost(ty.clone()),
-            (PrimType::Single, [e]) => TypeKind::Single(e.clone()),
             (PrimType::Uninit, [ty]) => TypeKind::Uninit(ty.clone()),
             _ => return Err(ElabError::new_e(try_get_span(base, e), "unexpected number of arguments"))
           },
@@ -642,6 +642,7 @@ impl<'a> Parser<'a> {
     Ok(match names.get(&f) {
       None => err!("unknown function '{}'", self.fe.to(&f)),
       Some(Entity::Const(_)) => CallKind::Const(f),
+      Some(Entity::Global(_)) => CallKind::Global(f),
       Some(Entity::Prim(Prim {op: Some(prim), ..})) => match (prim, &*args) {
         (PrimOp::Add, _) => CallKind::NAry(NAryCall::Add, args),
         (PrimOp::And, _) => CallKind::NAry(NAryCall::And, args),
@@ -665,12 +666,31 @@ impl<'a> Parser<'a> {
         (PrimOp::Ne, _) => CallKind::NAry(NAryCall::Ne, args),
         (PrimOp::Ghost, _) => CallKind::NAry(NAryCall::GhostList, args),
         (PrimOp::Return, _) => CallKind::NAry(NAryCall::Return, args),
+        (PrimOp::Sub, _) => {
+          let mut it = args.into_iter();
+          let first = it.next().ok_or_else(|| ElabError::new_e(base, "expected 1 or more arguments"))?;
+          if it.len() == 0 { CallKind::Neg(first) }
+          else { CallKind::Sub(first, it) }
+        }
+        (PrimOp::Shl, [a, b]) => CallKind::Shl(a.clone(), b.clone()),
+        (PrimOp::Shr, [a, b]) => CallKind::Shr(a.clone(), b.clone()),
         (PrimOp::Typed, [e, ty]) => CallKind::Typed(e.clone(), ty.clone()),
         (PrimOp::As, [e, ty]) => CallKind::As(e.clone(), ty.clone()),
+        (PrimOp::Shl, _) | (PrimOp::Shr, _) |
         (PrimOp::Typed, _) | (PrimOp::As, _) => err!("expected 2 arguments"),
+        (PrimOp::Cast, args) => match args {
+          [e] => CallKind::Cast(e.clone(), None),
+          [e, pf] => CallKind::Cast(e.clone(), Some(pf.clone())),
+          _ => err!("expected 1 or 2 arguments"),
+        },
         (PrimOp::Pun, args) => match args {
           [e] => CallKind::Pun(e.clone(), None),
           [e, pf] => CallKind::Pun(e.clone(), Some(pf.clone())),
+          _ => err!("expected 1 or 2 arguments"),
+        },
+        (PrimOp::Sn, args) => match args {
+          [e] => CallKind::Sn(e.clone(), None),
+          [e, pf] => CallKind::Sn(e.clone(), Some(pf.clone())),
           _ => err!("expected 1 or 2 arguments"),
         },
         (PrimOp::Slice, args) => match args {
@@ -681,9 +701,12 @@ impl<'a> Parser<'a> {
         (PrimOp::Uninit, []) => CallKind::Uninit,
         (PrimOp::Uninit, _) => err!("expected 0 arguments"),
         (PrimOp::Pure, [e]) => CallKind::Mm0(e.clone()),
+        (PrimOp::Ref, [e]) => CallKind::Ref(e.clone()),
         (PrimOp::TypeofBang, [e]) => CallKind::TypeofBang(e.clone()),
         (PrimOp::Typeof, [e]) => CallKind::Typeof(e.clone()),
-        (PrimOp::Pure, _) | (PrimOp::TypeofBang, _) | (PrimOp::Typeof, _) => err!("expected 1 argument"),
+        (PrimOp::Sizeof, [ty]) => CallKind::Sizeof(ty.clone()),
+        (PrimOp::Pure, _) | (PrimOp::Ref, _) | (PrimOp::TypeofBang, _) |
+        (PrimOp::Typeof, _) |  (PrimOp::Sizeof, _) => err!("expected 1 argument"),
         (PrimOp::Unreachable, args) => match args {
           [] => CallKind::Unreachable(None),
           [e] => CallKind::Unreachable(Some(e.clone())),
@@ -697,6 +720,7 @@ impl<'a> Parser<'a> {
       }
       Some(Entity::Proc(Spanned {k: ProcTc::Typed(proc), ..})) =>
         CallKind::Call(CallExpr {f: Spanned {span: fsp, k: f}, args, variant}, proc.tyargs),
+      Some(Entity::Proc(Spanned {k: ProcTc::Unchecked, ..})) => CallKind::Error,
       Some(_) => err!("parse_expr unimplemented entity type"),
     })
   }

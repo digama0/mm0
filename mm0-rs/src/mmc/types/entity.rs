@@ -64,8 +64,10 @@ make_prims! {
     Break: "break",
     /// `(bxor e1 ... en)` returns the bitwise `XOR` of the arguments.
     BitXor: "bxor",
-    /// `{x == y}` returns true if `x` is equal to `y`
-    Eq: "==",
+    /// `{(cast {x : T} h) : U}` returns `x` of type `U` if `h` proves `x :> T -* x :> U`.
+    Cast: "cast",
+    /// `{x = y}` returns true if `x` is equal to `y`
+    Eq: "=",
     /// `(ghost x)` returns the same thing as `x` but in the type `(ghost A)`.
     Ghost: "ghost",
     /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
@@ -93,12 +95,26 @@ make_prims! {
     Pure: "pure",
     /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
     Pun: "pun",
+    /// `(& x)` constructs a reference to `x`.
+    Ref: "&",
     /// `(return e1 ... en)` returns `e1, ..., en` from the current function.
     Return: "return",
+    /// `(sizeof T)` is the size of `T` in bytes.
+    Sizeof: "sizeof",
     /// If `x: (array T n)`, then `(slice x b h): (array T a)` if
     /// `h` is a proof that `b + a <= n`. Computationally this corresponds to
     /// simply `&x + b * sizeof T`, in the manner of C pointer arithmetic.
     Slice: "slice",
+    /// `{a shl b}` computes the value `a * 2 ^ b`, a left shift of `a` by `b`.
+    Shl: "shl",
+    /// `{a shr b}` computes the value `a // 2 ^ b`, a right shift of `a` by `b`.
+    /// This is an arithmetic shift on signed integers and a logical shift on unsigned integers.
+    Shr: "shr",
+    /// `(& x)` constructs a reference to `x`.
+    Sn: "sn",
+    /// * `(- x)` returns the negative of the argument
+    /// * `{x - y}` returns the integer difference of the arguments
+    Sub: "-",
     /// `{e : T}` is `e`, with the type `T`. This is used only to direct
     /// type inference, it has no effect otherwise.
     Typed: ":",
@@ -150,14 +166,6 @@ make_prims! {
     List: "list",
     /// `(moved T)` is the moved version of `T`, the duplicable core of the type.
     Moved: "moved",
-    /// `{x : A, y : B, z : C}` is the dependent version of `list`;
-    /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
-    /// themselves refer to `x, y, z`.
-    /// `sizeof {x : A, _ : B x} = sizeof A + max_x (sizeof (B x))`.
-    ///
-    /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
-    /// `(typedef foo {x : A, y : B})`.
-    Struct: "struct",
     /// `nat` is the type of unbounded unsigned integers; `sizeof nat = inf`.
     Nat: "nat",
     /// `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
@@ -170,10 +178,6 @@ make_prims! {
     /// `own T` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
-    /// `(? T)` is the type of possibly-uninitialized `T`s. The typing predicate
-    /// for this type is vacuous, but it has the same size as `T`, so overwriting with
-    /// a `T` is possible.
-    Uninit: "?",
     /// `(& T)` is a type of borrowed pointers. This type is elaborated to
     /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
     /// (see [`Lifetime`](super::types::Lifetime)).
@@ -185,7 +189,15 @@ make_prims! {
     /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
     /// This is useful for asserting that a computationally relevant value can be
     /// expressed in terms of computationally irrelevant parts.
-    Single: "sn",
+    Sn: "sn",
+    /// `{x : A, y : B, z : C}` is the dependent version of `list`;
+    /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
+    /// themselves refer to `x, y, z`.
+    /// `sizeof {x : A, _ : B x} = sizeof A + max_x (sizeof (B x))`.
+    ///
+    /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
+    /// `(typedef foo {x : A, y : B})`.
+    Struct: "struct",
     /// `u8` is the type of 8 bit unsigned integers; `sizeof u8 = 1`.
     U8: "u8",
     /// `u16` is the type of 16 bit unsigned integers; `sizeof u16 = 2`.
@@ -194,30 +206,34 @@ make_prims! {
     U32: "u32",
     /// `u64` is the type of 64 bit unsigned integers; `sizeof u64 = 8`.
     U64: "u64",
+    /// `(? T)` is the type of possibly-uninitialized `T`s. The typing predicate
+    /// for this type is vacuous, but it has the same size as `T`, so overwriting with
+    /// a `T` is possible.
+    Uninit: "?",
   }
 
   /// A primitive propositional connective.
   enum PrimProp {
     /// `A. {x : A} p` or `(al {x : A} p)` is universal quantification over a type.
     All: "al",
-    /// `E. {x : A} p` or `(ex {x : A} p)` is existential quantification over a type.
-    Ex: "ex",
     /// `p /\ q` is the (non-separating) conjunction.
     And: "an",
-    /// `p \/ q` is disjunction.
-    Or: "or",
+    /// `p = q` is (nondecidable) equality.
+    Eq: "=",
+    /// `E. {x : A} p` or `(ex {x : A} p)` is existential quantification over a type.
+    Ex: "ex",
     /// `p -> q` is (regular) implication.
     Imp: "->",
+    /// `(moved p)` is the moved version of `p`, the duplicable core of the proposition.
+    Moved: "moved",
+    /// `p \/ q` is disjunction.
+    Or: "or",
+    /// `pure p` embeds a MM0 propositional expression.
+    Pure: "pure",
     /// `p * q` is separating conjunction.
     Star: "*",
     /// `p -* q` is separating implication.
     Wand: "-*",
-    /// `p = q` is (nondecidable) equality.
-    Eq: "=",
-    /// `(moved p)` is the moved version of `p`, the duplicable core of the proposition.
-    Moved: "moved",
-    /// `pure p` embeds a MM0 propositional expression.
-    Pure: "pure",
   }
 
   /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular

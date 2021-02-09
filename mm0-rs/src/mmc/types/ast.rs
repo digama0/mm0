@@ -228,7 +228,7 @@ pub enum TypeKind {
   /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
   /// This is useful for asserting that a computationally relevant value can be
   /// expressed in terms of computationally irrelevant parts.
-  Single(Box<Expr>),
+  Sn(Box<Expr>),
   /// `{x : A, y : B, z : C}` is the dependent version of `list`;
   /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
   /// themselves refer to `x, y, z`.
@@ -292,7 +292,7 @@ impl Remap for TypeKind {
       TypeKind::Shr(lft, ty) => TypeKind::Shr(lft.clone(), ty.remap(r)),
       TypeKind::RefSn(ty) => TypeKind::RefSn(ty.remap(r)),
       TypeKind::List(tys) => TypeKind::List(tys.remap(r)),
-      TypeKind::Single(e) => TypeKind::Single(e.remap(r)),
+      TypeKind::Sn(e) => TypeKind::Sn(e.remap(r)),
       TypeKind::Struct(tys) => TypeKind::Struct(tys.remap(r)),
       TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
       TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
@@ -440,6 +440,8 @@ pub enum ExprKind {
   Var(VarId),
   /// A user constant.
   Const(AtomId),
+  /// A global variable.
+  Global(AtomId),
   /// A number literal.
   Bool(bool),
   /// A number literal.
@@ -448,6 +450,9 @@ pub enum ExprKind {
   Unop(Unop, Box<Expr>),
   /// A binary operation.
   Binop(Binop, Box<Expr>, Box<Expr>),
+  /// `(sn x)` constructs the unique member of the type `(sn x)`.
+  /// `(sn y h)` is also a member of `(sn x)` if `h` proves `y = x`.
+  Sn(Box<Expr>, Option<Box<Expr>>),
   /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
   Index(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
@@ -465,6 +470,8 @@ pub enum ExprKind {
   Ghost(Box<Expr>),
   /// Evaluates the expression as a pure expression, so it will not take
   /// ownership of the result.
+  Place(Box<Expr>),
+  /// `(& x)` constructs a reference to `x`.
   Ref(Box<Expr>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
@@ -474,9 +481,13 @@ pub enum ExprKind {
   /// A truncation / bit cast operation.
   As(Box<Expr>, Box<Type>),
   /// Combine an expression with a proof that it has the right type.
+  Cast(Box<Expr>, Option<Box<Expr>>),
+  /// Reinterpret an expression given a proof that it has the right type.
   Pun(Box<Expr>, Option<Box<Expr>>),
   /// An expression denoting an uninitialized value.
   Uninit,
+  /// Return the size of a type.
+  Sizeof(Box<Type>),
   /// Take the type of a variable.
   Typeof(Box<Expr>),
   /// `(assert p)` evaluates `p: bool` and returns a proof of `p`.
@@ -559,6 +570,8 @@ pub enum ExprKind {
   /// was created by the user through an explicit `_`, while compiler-generated inference
   /// variables have it set to false.
   Infer(bool),
+  /// An upstream error.
+  Error
 }
 
 impl Remap for ExprKind {
@@ -568,22 +581,27 @@ impl Remap for ExprKind {
       ExprKind::Unit => ExprKind::Unit,
       &ExprKind::Var(v) => ExprKind::Var(v),
       &ExprKind::Const(a) => ExprKind::Const(a.remap(r)),
+      &ExprKind::Global(a) => ExprKind::Global(a.remap(r)),
       &ExprKind::Bool(b) => ExprKind::Bool(b),
       ExprKind::Int(n) => ExprKind::Int(n.clone()),
       ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.remap(r)),
       ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, e1.remap(r), e2.remap(r)),
+      ExprKind::Sn(e, h) => ExprKind::Sn(e.remap(r), h.remap(r)),
       ExprKind::Index(a, i, h) => ExprKind::Index(a.remap(r), i.remap(r), h.remap(r)),
       ExprKind::Slice(a, i, h) => ExprKind::Slice(a.remap(r), i.remap(r), h.remap(r)),
       ExprKind::Proj(e, i) => ExprKind::Proj(e.remap(r), *i),
       ExprKind::Deref(e) => ExprKind::Deref(e.remap(r)),
       ExprKind::List(e) => ExprKind::List(e.remap(r)),
       ExprKind::Ghost(e) => ExprKind::Ghost(e.remap(r)),
+      ExprKind::Place(e) => ExprKind::Place(e.remap(r)),
       ExprKind::Ref(e) => ExprKind::Ref(e.remap(r)),
       ExprKind::Mm0(e) => ExprKind::Mm0(e.remap(r)),
       ExprKind::Typed(e, ty) => ExprKind::Typed(e.remap(r), ty.remap(r)),
       ExprKind::As(e, ty) => ExprKind::As(e.remap(r), ty.remap(r)),
+      ExprKind::Cast(e, h) => ExprKind::Cast(e.remap(r), h.remap(r)),
       ExprKind::Pun(e, h) => ExprKind::Pun(e.remap(r), h.remap(r)),
       ExprKind::Uninit => ExprKind::Uninit,
+      ExprKind::Sizeof(ty) => ExprKind::Sizeof(ty.remap(r)),
       ExprKind::Typeof(e) => ExprKind::Typeof(e.remap(r)),
       ExprKind::Assert(e) => ExprKind::Assert(e.remap(r)),
       ExprKind::Let { lhs, rhs } => ExprKind::Let { lhs: lhs.remap(r), rhs: rhs.remap(r) },
@@ -603,6 +621,7 @@ impl Remap for ExprKind {
       ExprKind::Break(v, e) => ExprKind::Break(*v, e.remap(r)),
       ExprKind::Return(e) => ExprKind::Return(e.remap(r)),
       &ExprKind::Infer(b) => ExprKind::Infer(b),
+      ExprKind::Error => ExprKind::Error,
     }
   }
 }

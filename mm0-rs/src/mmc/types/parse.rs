@@ -161,7 +161,7 @@ pub enum TypeKind {
   /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
   /// This is useful for asserting that a computationally relevant value can be
   /// expressed in terms of computationally irrelevant parts.
-  Single(LispVal),
+  Sn(LispVal),
   /// `{x : A, y : B, z : C}` is the dependent version of `list`;
   /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
   /// themselves refer to `x, y, z`.
@@ -364,30 +364,30 @@ pub enum ExprKind {
 pub enum NAryCall {
   /// `{x + y}` returns the integer sum of the arguments
   Add,
+  /// `{x * y}` returns the integer product of the arguments
+  Mul,
   /// `(and x1 ... xn)` returns the boolean `AND` of the arguments.
   And,
   /// `(or x1 ... xn)` returns the boolean `OR` of the arguments.
   Or,
+  /// `(not x1 ... xn)` returns the boolean `NOR` of the arguments,
+  /// usually used in the unary case as `NOT`
+  Not,
   /// `(band e1 ... en)` returns the bitwise `AND` of the arguments.
   BitAnd,
-  /// `(bnot e1 ... en)` returns the bitwise `NOR` of the arguments,
-  /// usually used in the unary case as `NOT`
-  BitNot,
   /// `(bor e1 ... en)` returns the bitwise `OR` of the arguments.
   BitOr,
   /// `(bxor e1 ... en)` returns the bitwise `XOR` of the arguments.
   BitXor,
+  /// `(bnot e1 ... en)` returns the bitwise `NOR` of the arguments,
+  /// usually used in the unary case as `NOT`
+  BitNot,
   /// `(assert p)` evaluates `p` and if it is false, crashes the program with an error.
   /// It returns a proof that `p` is true (because if `p` is false then the
   /// rest of the function is not evaluated).
   Assert,
   /// `(list e1 ... en)` returns a tuple of the arguments.
   List,
-  /// `{x * y}` returns the integer product of the arguments
-  Mul,
-  /// `(not x1 ... xn)` returns the boolean `NOR` of the arguments,
-  /// usually used in the unary case as `NOT`
-  Not,
   /// `{x <= y}` returns true if `x` is less than or equal to `y`
   Le,
   /// `{x < y}` returns true if `x` is less than `y`
@@ -406,10 +406,21 @@ pub enum NAryCall {
 /// A parsed call-like expression.
 #[derive(Debug)]
 pub enum CallKind {
-  /// A user-defined constant `FOO`.
+  /// A user-defined constant.
   Const(AtomId),
+  /// A user-defined global variable.
+  Global(AtomId),
   /// An application of an [`NAryCall`] to zero or more arguments.
   NAry(NAryCall, Vec<LispVal>),
+  /// `(- x)` is the negation of x.
+  Neg(LispVal),
+  /// `{x - y - z}` returns the subtraction of `y,z,...` from `x`.
+  Sub(LispVal, std::vec::IntoIter<LispVal>),
+  /// `{a shl b}` computes the value `a * 2 ^ b`, a left shift of `a` by `b`.
+  Shl(LispVal, LispVal),
+  /// `{a shr b}` computes the value `a // 2 ^ b`, a right shift of `a` by `b`.
+  /// This is an arithmetic shift on signed integers and a logical shift on unsigned integers.
+  Shr(LispVal, LispVal),
   /// A `(pure)` expression, which embeds MM0 syntax to produce an expression
   /// of numeric or boolean type.
   Mm0(LispVal),
@@ -418,8 +429,12 @@ pub enum CallKind {
   Typed(LispVal, LispVal),
   /// `{x as T}` performs truncation and non-value preserving casts a la `reinterpret_cast`.
   As(LispVal, LispVal),
-  /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
+  /// `(cast x h)` returns `x` at type `T` if `h` proves `x` has type `T`.
+  Cast(LispVal, Option<LispVal>),
+  /// `(pun x h)` reinterprets the bits of `x` at type `T` if `h` proves this is valid.
   Pun(LispVal, Option<LispVal>),
+  /// `(sn x)` is an element of type `(sn x)`. `(sn y h)` is also a member of `(sn x)` if `h: y = x`.
+  Sn(LispVal, Option<LispVal>),
   /// `{uninit : (? T)}` is an effectful expression producing an undefined value
   /// in any `(? T)` type.
   Uninit,
@@ -430,6 +445,10 @@ pub enum CallKind {
   /// proof that `x :> T`. This version of `typeof!` only works on copy types
   /// so that it doesn't consume `x`.
   Typeof(LispVal),
+  /// `(sizeof T)` is the size of `T` in bytes.
+  Sizeof(LispVal),
+  /// `(& x)` constructs a reference to `x`.
+  Ref(LispVal),
   /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
   /// it has type `(own T)` if `a` has type `(own (array T i))` and type `(& T)`
   /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
@@ -450,6 +469,8 @@ pub enum CallKind {
   /// `(f e1 ... en)` calls a user-defined or intrinsic function called `f` with
   /// `e1 ... en` as arguments.
   Call(CallExpr, u32),
+  /// An upstream error.
+  Error,
 }
 
 /// A field of a struct.

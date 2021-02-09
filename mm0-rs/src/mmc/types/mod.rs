@@ -142,6 +142,8 @@ impl Default for Size {
 /// (Elaborated) unary operations.
 #[derive(Copy, Clone, Debug)]
 pub enum Unop {
+  /// Integer negation
+  Neg,
   /// Logical (boolean) NOT
   Not,
   /// Bitwise NOT. For fixed size this is the operation `2^n - x - 1`, and
@@ -157,6 +159,7 @@ impl Unop {
   /// Return a string representation of the [`Unop`].
   #[must_use] pub fn to_str(self) -> &'static str {
     match self {
+      Unop::Neg => "-",
       Unop::Not => "not",
       Unop::BitNot(_) => "bnot",
     }
@@ -188,6 +191,10 @@ pub enum Binop {
   BitOr,
   /// Bitwise XOR, for signed or unsigned integers of any size
   BitXor,
+  /// Shift left
+  Shl,
+  /// Shift right (arithmetic)
+  Shr,
   /// Less than, for signed or unsigned integers of any size
   Lt,
   /// Less than or equal, for signed or unsigned integers of any size
@@ -211,6 +218,8 @@ impl Binop {
       Binop::BitAnd => "band",
       Binop::BitOr => "bor",
       Binop::BitXor => "bxor",
+      Binop::Shl => "shl",
+      Binop::Shr => "shr",
       Binop::Lt => "<",
       Binop::Le => "<=",
       Binop::Eq => "=",
