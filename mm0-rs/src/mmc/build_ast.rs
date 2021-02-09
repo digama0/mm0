@@ -17,7 +17,7 @@ use crate::util::FileSpan;
 use super::types::{Binop, Mm0Expr, Size, Spanned, Unop, VarId, ast};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 use super::types::entity::Entity;
-use super::parser::Parser;
+use super::parser::{Parser, spanned};
 
 ///
 #[derive(Copy, Clone, Debug)]
@@ -78,12 +78,6 @@ impl<'a> BuildAst<'a> {
       next_var: VarId::default(),
       tyvars: vec![]
     }
-  }
-
-  fn clear(&mut self) {
-    self.name_map.clear();
-    self.ctx.clear();
-    self.next_var = VarId::default();
   }
 
   fn pop(&mut self) {
@@ -172,20 +166,21 @@ impl<'a> BuildAst<'a> {
   }
 
   fn push_tuple_pattern(&mut self, Spanned {span, k: pat}: TuplePattern) -> Result<ast::TuplePattern> {
-    Ok(Spanned {span, k: match pat {
+    let k = match pat {
       TuplePatternKind::Name(g, name) => ast::TuplePatternKind::Name(g, self.push_fresh(name)),
       TuplePatternKind::Typed(pat, ty) => {
-        let ty = self.build_ty(&ty)?;
+        let ty = self.build_ty(&span, &ty)?;
         let pat = self.push_tuple_pattern(*pat)?;
         ast::TuplePatternKind::Typed(Box::new(pat), Box::new(ty))
       }
       TuplePatternKind::Tuple(pats) => ast::TuplePatternKind::Tuple(
         pats.into_iter().map(|pat| self.push_tuple_pattern(pat)).collect::<Result<_>>()?),
-    }})
+    };
+    Ok(Spanned {span, k})
   }
 
-  fn push_pattern(&mut self, pos: bool, neg: bool, negp: &mut Vec<(AtomId, VarId)>, pat: &LispVal) -> Result<ast::Pattern> {
-    let Spanned {span, k} = self.p.parse_pattern(self.names, pat)?;
+  fn push_pattern(&mut self, base: &FileSpan, pos: bool, neg: bool, negp: &mut Vec<(AtomId, VarId)>, pat: &LispVal) -> Result<ast::Pattern> {
+    let Spanned {span, k} = self.p.parse_pattern(base, self.names, pat)?;
     let k = match k {
       PatternKind::Var(AtomId::UNDER) => ast::PatternKind::Var(self.fresh_var()),
       PatternKind::Var(a) => ast::PatternKind::Var(self.push_fresh(a)),
@@ -194,17 +189,17 @@ impl<'a> BuildAst<'a> {
       PatternKind::Hyped(name, pat) => {
         let pn = ast::PosNeg::new(pos, neg).ok_or_else(||
           ElabError::new_e(&span, "can't bind pattern either positively or negatively here"))?;
-        let pat = self.push_pattern(pos, neg, negp, &pat)?;
+        let pat = self.push_pattern(&span, pos, neg, negp, &pat)?;
         let h = self.fresh_var();
         if pos { self.push(name, h) }
         if neg { negp.push((name, h)) }
         ast::PatternKind::Hyped(pn, h, Box::new(pat))
       }
       PatternKind::With(pat, e) => ast::PatternKind::With(
-        Box::new(self.push_pattern(pos, false, negp, &pat)?),
-        Box::new(self.build_expr(e)?)),
+        Box::new(self.push_pattern(&span, pos, false, negp, &pat)?),
+        Box::new(self.build_expr(&span, e)?)),
       PatternKind::Or(pats) => ast::PatternKind::Or(
-        pats.map(|pat| self.push_pattern(false, neg, negp, &pat)).collect::<Result<_>>()?),
+        pats.map(|pat| self.push_pattern(&span, false, neg, negp, &pat)).collect::<Result<_>>()?),
     };
     Ok(Spanned {span, k})
   }
@@ -236,8 +231,8 @@ impl<'a> BuildAst<'a> {
     } else {None})
   }
 
-  fn build_ty(&mut self, ty: &LispVal) -> Result<ast::Type> {
-    let Spanned {span, k: ty} = self.p.parse_ty(self.names, ty)?;
+  fn build_ty(&mut self, base: &FileSpan, ty: &LispVal) -> Result<ast::Type> {
+    let Spanned {span, k: ty} = self.p.parse_ty(base, self.names, ty)?;
     let k = match ty {
       TypeKind::Unit => ast::TypeKind::Unit,
       TypeKind::Bool => ast::TypeKind::Bool,
@@ -249,35 +244,41 @@ impl<'a> BuildAst<'a> {
       TypeKind::Int(sz) => ast::TypeKind::Int(sz),
       TypeKind::UInt(sz) => ast::TypeKind::UInt(sz),
       TypeKind::Array(ty, n) => {
-        let ty = self.build_ty(&ty)?;
-        let n = self.build_expr(n)?;
+        let ty = self.build_ty(&span, &ty)?;
+        let n = self.build_expr(&span, n)?;
         ast::TypeKind::Array(Box::new(ty), Box::new(n))
       },
-      TypeKind::Own(ty) => ast::TypeKind::Own(Box::new(self.build_ty(&ty)?)),
-      TypeKind::Ref(lft, ty) => ast::TypeKind::Ref(self.build_lft(lft)?, Box::new(self.build_ty(&ty)?)),
-      TypeKind::Shr(lft, ty) => ast::TypeKind::Shr(self.build_lft(lft)?, Box::new(self.build_ty(&ty)?)),
-      TypeKind::RefSn(e) => ast::TypeKind::RefSn(Box::new(self.build_expr(e)?)),
-      TypeKind::List(tys) => ast::TypeKind::List(tys.iter().map(|ty| self.build_ty(ty)).collect::<Result<_>>()?),
-      TypeKind::Single(e) => ast::TypeKind::Single(Box::new(self.build_expr(e)?)),
+      TypeKind::Own(ty) => ast::TypeKind::Own(Box::new(self.build_ty(&span, &ty)?)),
+      TypeKind::Ref(lft, ty) => ast::TypeKind::Ref(self.build_lft(lft)?, Box::new(self.build_ty(&span, &ty)?)),
+      TypeKind::Shr(lft, ty) => ast::TypeKind::Shr(self.build_lft(lft)?, Box::new(self.build_ty(&span, &ty)?)),
+      TypeKind::RefSn(e) => ast::TypeKind::RefSn(Box::new(self.build_expr(&span, e)?)),
+      TypeKind::List(tys) => ast::TypeKind::List(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
+      TypeKind::Single(e) => ast::TypeKind::Single(Box::new(self.build_expr(&span, e)?)),
       TypeKind::Struct(pats) => ast::TypeKind::Struct(self.with_tuple_patterns(pats.into_vec(), |_, x| Ok(x))?),
-      TypeKind::And(tys) => ast::TypeKind::And(tys.iter().map(|ty| self.build_ty(ty)).collect::<Result<_>>()?),
-      TypeKind::Or(tys) => ast::TypeKind::Or(tys.iter().map(|ty| self.build_ty(ty)).collect::<Result<_>>()?),
-      TypeKind::Ghost(ty) => ast::TypeKind::Ghost(Box::new(self.build_ty(&ty)?)),
+      TypeKind::And(tys) => ast::TypeKind::And(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
+      TypeKind::Or(tys) => ast::TypeKind::Or(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
+      TypeKind::If([c, t, e]) => ast::TypeKind::If(
+        Box::new(self.build_expr(&span, c)?),
+        Box::new(self.build_ty(&span, &t)?),
+        Box::new(self.build_ty(&span, &e)?)),
+      TypeKind::Ghost(ty) => ast::TypeKind::Ghost(Box::new(self.build_ty(&span, &ty)?)),
+      TypeKind::Uninit(ty) => ast::TypeKind::Uninit(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Prop(pk) => ast::TypeKind::Prop(Box::new(self.build_parsed_prop(span.clone(), pk)?)),
       TypeKind::User(f, tys, es) => {
-        let tys = tys.into_vec().iter().map(|ty| self.build_ty(ty)).collect::<Result<_>>()?;
-        let es = es.into_vec().into_iter().map(|e| self.build_expr(e)).collect::<Result<_>>()?;
+        let tys = tys.into_vec().iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?;
+        let es = es.into_vec().into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
         ast::TypeKind::User(f, tys, es)
       },
       TypeKind::Input => ast::TypeKind::Input,
       TypeKind::Output => ast::TypeKind::Output,
-      TypeKind::Moved(ty) => ast::TypeKind::Moved(Box::new(self.build_ty(&ty)?)),
+      TypeKind::Moved(ty) => ast::TypeKind::Moved(Box::new(self.build_ty(&span, &ty)?)),
+      TypeKind::Error => ast::TypeKind::Error
     };
     Ok(Spanned {span, k})
   }
 
-  fn build_prop(&mut self, p: &LispVal) -> Result<ast::Prop> {
-    let Spanned {span, k} = self.p.parse_prop(self.names, p)?;
+  fn build_prop(&mut self, base: &FileSpan, p: &LispVal) -> Result<ast::Prop> {
+    let Spanned {span, k} = self.p.parse_prop(base, self.names, p)?;
     self.build_parsed_prop(span, k)
   }
 
@@ -287,36 +288,36 @@ impl<'a> BuildAst<'a> {
       PropKind::False => ast::PropKind::False,
       PropKind::Emp => ast::PropKind::Emp,
       PropKind::All(args, p) => self.with_tuple_patterns(args, |this, args| {
-        Ok(ast::PropKind::All(args, Box::new(this.build_prop(&p)?)))
+        Ok(ast::PropKind::All(args, Box::new(this.build_prop(&span, &p)?)))
       })?,
       PropKind::Ex(args, p) => self.with_tuple_patterns(args, |this, args| {
-        Ok(ast::PropKind::Ex(args, Box::new(this.build_prop(&p)?)))
+        Ok(ast::PropKind::Ex(args, Box::new(this.build_prop(&span, &p)?)))
       })?,
-      PropKind::Not(p) => ast::PropKind::Not(Box::new(self.build_prop(&p)?)),
+      PropKind::Not(p) => ast::PropKind::Not(Box::new(self.build_prop(&span, &p)?)),
       PropKind::And(ps) => ast::PropKind::And(
-        ps.iter().map(|p| self.build_prop(p)).collect::<Result<_>>()?),
+        ps.iter().map(|p| self.build_prop(&span, p)).collect::<Result<_>>()?),
       PropKind::Or(ps) => ast::PropKind::Or(
-        ps.iter().map(|p| self.build_prop(p)).collect::<Result<_>>()?),
+        ps.iter().map(|p| self.build_prop(&span, p)).collect::<Result<_>>()?),
       PropKind::Sep(ps) => ast::PropKind::Sep(
-        ps.iter().map(|p| self.build_prop(p)).collect::<Result<_>>()?),
-      PropKind::Imp(p1, p2) => ast::PropKind::Imp(Box::new(self.build_prop(&p1)?), Box::new(self.build_prop(&p2)?)),
-      PropKind::Wand(p1, p2) => ast::PropKind::Wand(Box::new(self.build_prop(&p1)?), Box::new(self.build_prop(&p2)?)),
+        ps.iter().map(|p| self.build_prop(&span, p)).collect::<Result<_>>()?),
+      PropKind::Imp(p1, p2) => ast::PropKind::Imp(Box::new(self.build_prop(&span, &p1)?), Box::new(self.build_prop(&span, &p2)?)),
+      PropKind::Wand(p1, p2) => ast::PropKind::Wand(Box::new(self.build_prop(&span, &p1)?), Box::new(self.build_prop(&span, &p2)?)),
       PropKind::Pure(e) => ast::PropKind::Pure(Box::new(self.build_parsed_expr(span.clone(), e)?)),
-      PropKind::Eq(e1, e2) => ast::PropKind::Eq(Box::new(self.build_expr(e1)?), Box::new(self.build_expr(e2)?)),
-      PropKind::Heap(e1, e2) => ast::PropKind::Heap(Box::new(self.build_expr(e1)?), Box::new(self.build_expr(e2)?)),
-      PropKind::HasTy(e, ty) => ast::PropKind::HasTy(Box::new(self.build_expr(e)?), Box::new(self.build_ty(&ty)?)),
-      PropKind::Moved(p) => ast::PropKind::Moved(Box::new(self.build_prop(&p)?)),
-      PropKind::Mm0(e) => ast::PropKind::Mm0(self.build_mm0_expr(e)?),
+      PropKind::Eq(e1, e2) => ast::PropKind::Eq(Box::new(self.build_expr(&span, e1)?), Box::new(self.build_expr(&span, e2)?)),
+      PropKind::Heap(e1, e2) => ast::PropKind::Heap(Box::new(self.build_expr(&span, e1)?), Box::new(self.build_expr(&span, e2)?)),
+      PropKind::HasTy(e, ty) => ast::PropKind::HasTy(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
+      PropKind::Moved(p) => ast::PropKind::Moved(Box::new(self.build_prop(&span, &p)?)),
+      PropKind::Mm0(e) => ast::PropKind::Mm0(self.build_mm0_expr(&span, e)?),
     };
     Ok(Spanned {span, k})
   }
 
-  fn build_expr(&mut self, e: LispVal) -> Result<ast::Expr> {
-    self.with_ctx(|this| this.push_expr(e))
+  fn build_expr(&mut self, base: &FileSpan, e: LispVal) -> Result<ast::Expr> {
+    self.with_ctx(|this| this.push_expr(base, e))
   }
 
-  fn push_expr(&mut self, e: LispVal) -> Result<ast::Expr> {
-    let Spanned {span, k} = self.p.parse_expr(e)?;
+  fn push_expr(&mut self, base: &FileSpan, e: LispVal) -> Result<ast::Expr> {
+    let Spanned {span, k} = self.p.parse_expr(base, e)?;
     self.push_parsed_expr(span, k)
   }
 
@@ -327,19 +328,25 @@ impl<'a> BuildAst<'a> {
   fn push_parsed_expr(&mut self, span: FileSpan, ek: ExprKind) -> Result<ast::Expr> {
     let k = match ek {
       ExprKind::Unit => ast::ExprKind::Unit,
-      ExprKind::Var(name) => ast::ExprKind::Var(self.get_var(&span, name)?),
+      ExprKind::Var(name) => match self.get_var(&span, name) {
+        Ok(v) => ast::ExprKind::Var(v),
+        Err(e) => {
+          let c = CallExpr {f: Spanned {span: span.clone(), k: name}, args: vec![], variant: None};
+          return self.build_call_expr(span, c).map_err(|_| e)
+        }
+      }
       ExprKind::Bool(b) => ast::ExprKind::Bool(b),
       ExprKind::Int(n) => ast::ExprKind::Int(n),
       ExprKind::Let {lhs, rhs, with: Renames {old, new}} => {
-        let rhs = Box::new(self.build_expr(rhs)?);
+        let rhs = Box::new(self.build_expr(&span, rhs)?);
         self.apply_rename(&span, &old)?;
         let lhs = self.push_tuple_pattern(*lhs)?;
         self.apply_rename(&span, &new)?;
         ast::ExprKind::Let {lhs, rhs}
       }
       ExprKind::Assign {lhs, rhs, with} => {
-        let lhs = self.build_expr(lhs)?;
-        let rhs = Box::new(self.build_expr(rhs)?);
+        let lhs = self.build_expr(&span, lhs)?;
+        let rhs = Box::new(self.build_expr(&span, rhs)?);
         let mut split = self.mk_split(&span, with)?;
         Self::add_origins(&lhs, &mut |var| {
           if let Entry::Vacant(e) = split.entry(var) {
@@ -355,39 +362,39 @@ impl<'a> BuildAst<'a> {
         }
         ast::ExprKind::Assign {lhs: Box::new(lhs), rhs}
       }
-      ExprKind::Proj(e, i) => ast::ExprKind::Proj(Box::new(self.build_expr(e)?), i),
+      ExprKind::Proj(e, i) => ast::ExprKind::Proj(Box::new(self.build_expr(&span, e)?), i),
       ExprKind::Call(c) => return self.build_call_expr(span, c),
       ExprKind::Entail(p, hs) => ast::ExprKind::Entail(p,
-        hs.into_iter().map(|h| self.build_expr(h)).collect::<Result<_>>()?),
+        hs.into_iter().map(|h| self.build_expr(&span, h)).collect::<Result<_>>()?),
       ExprKind::Block(es) => ast::ExprKind::Block(self.build_block(&span, es)?),
       ExprKind::Label(Label {args, body, ..}) if args.is_empty() => ast::ExprKind::Block(self.build_block(&span, body)?),
       ExprKind::Label(_) => return Err(ElabError::new_e(&span, "a labeled block is a statement, not an expression")),
       ExprKind::If {branches, els} => self.with_ctx(|this| -> Result<_> {
         let branches = branches.into_iter().map(|(h, cond, then)| {
-          let cond = Box::new(this.build_expr(cond)?);
+          let cond = Box::new(this.build_expr(&span, cond)?);
           let h = h.map(|h| this.push_fresh(h));
-          let then = Box::new(this.build_expr(then)?);
+          let then = Box::new(this.build_expr(&span, then)?);
           Ok((h, cond, then))
         }).collect::<Result<Vec<_>>>()?;
-        let mut ret = if let Some(els) = els {this.push_expr(els)?.k} else {ast::ExprKind::Unit};
+        let mut ret = if let Some(els) = els {this.push_expr(&span, els)?.k} else {ast::ExprKind::Unit};
         for (hyp, cond, then) in branches.into_iter().rev() {
           let els = Box::new(Spanned {span: span.clone(), k: ret});
           ret = ast::ExprKind::If {hyp, cond, then, els};
         }
         Ok(ret)
       })?,
-      ExprKind::Match(e, branches) => ast::ExprKind::Match(Box::new(self.build_expr(e)?),
+      ExprKind::Match(e, branches) => ast::ExprKind::Match(Box::new(self.build_expr(&span, e)?),
         self.with_ctx(|this| branches.into_iter().map(|(lhs, rhs)| {
           let mut negp = vec![];
           let res = this.with_ctx(|this| -> Result<_> {
-            Ok((this.push_pattern(true, true, &mut negp, &lhs)?, this.push_expr(rhs)?))
+            Ok((this.push_pattern(&span, true, true, &mut negp, &lhs)?, this.push_expr(&span, rhs)?))
           })?;
           for (name, v) in negp { this.push(name, v) }
           Ok(res)
         }).collect::<Result<_>>())?),
       ExprKind::While {hyp, cond, var, body} => {
         let label = self.fresh_var();
-        let cond = Box::new(self.build_expr(cond)?);
+        let cond = Box::new(self.build_expr(&span, cond)?);
         let var = self.build_variant(var)?;
         let hyp = hyp.map(|h| self.push_fresh(h.k));
         let body = self.with_ctx(|this| {
@@ -411,7 +418,7 @@ impl<'a> BuildAst<'a> {
         res.push(Spanned {span: span.clone(), k: ast::ExprKind::Label(v, labels)});
       }}}
       for e in es {
-        let Spanned {span: e_span, k} = this.p.parse_expr(e)?;
+        let Spanned {span: e_span, k} = this.p.parse_expr(span, e)?;
         if let ExprKind::Label(lab) = k {
           if jumps.iter().any(|l| l.k.name == lab.name) { clear_jumps!() }
           jumps.push(Spanned {span: e_span, k: lab})
@@ -430,11 +437,13 @@ impl<'a> BuildAst<'a> {
   fn build_variant(&mut self, variant: Option<Box<Variant>>) -> Result<Option<Box<ast::Variant>>> {
     Ok(if let Some(variant) = variant {
       let Spanned {span, k: (e, vt)} = *variant;
-      Some(Box::new(Spanned {span, k: (self.build_expr(e)?, match vt {
+      let e = self.build_expr(&span, e)?;
+      let vt = match vt {
         VariantType::Down => ast::VariantType::Down,
-        VariantType::UpLt(e) => ast::VariantType::UpLt(self.build_expr(e)?),
-        VariantType::UpLe(e) => ast::VariantType::UpLe(self.build_expr(e)?),
-      })}))
+        VariantType::UpLt(e) => ast::VariantType::UpLt(self.build_expr(&span, e)?),
+        VariantType::UpLe(e) => ast::VariantType::UpLe(self.build_expr(&span, e)?),
+      };
+      Some(Box::new(Spanned {span, k: (e, vt)}))
     } else {None})
   }
 
@@ -457,9 +466,9 @@ impl<'a> BuildAst<'a> {
   fn build_lassoc1(&mut self, span: &FileSpan, args: Vec<LispVal>, op: Binop) -> Result<Option<ast::Expr>> {
     let mut it = args.into_iter();
     Ok(if let Some(e) = it.next() {
-      let mut out = self.build_expr(e)?;
+      let mut out = self.build_expr(span, e)?;
       for e in it {
-        let k = ast::ExprKind::Binop(op, Box::new(out), Box::new(self.build_expr(e)?));
+        let k = ast::ExprKind::Binop(op, Box::new(out), Box::new(self.build_expr(span, e)?));
         out = Spanned {span: span.clone(), k};
       }
       Some(out)
@@ -493,14 +502,14 @@ impl<'a> BuildAst<'a> {
     }
     let mut it = args.into_iter();
     let arg_1 = it.next().ok_or_else(|| ElabError::new_e(sp, "inequality: syntax error"))?;
-    let arg_1 = self.build_expr(arg_1)?;
+    let arg_1 = self.build_expr(sp, arg_1)?;
     Ok(if let Some(arg_2) = it.next() {
-      let arg_2 = self.build_expr(arg_2)?;
+      let arg_2 = self.build_expr(sp, arg_2)?;
       if let Some(arg_3) = it.next() {
         fn mk_and(this: &mut BuildAst<'_>, sp: &FileSpan, op: Binop, v0: VarId, v1: VarId, e2: LispVal,
           mut it: std::vec::IntoIter<LispVal>
         ) -> Result<ast::Expr> {
-          let e2 = this.build_expr(e2)?;
+          let e2 = this.build_expr(sp, e2)?;
           Ok(and(sp, op, v0, v1, if let Some(e3) = it.next() {
             let v2 = this.fresh_var();
             sp!(sp, ast::ExprKind::Block(vec![
@@ -535,11 +544,11 @@ impl<'a> BuildAst<'a> {
       }
     }
     if let Some(&LabelId(v, i)) = self.label_map.get(&e.f.k).and_then(|vec| vec.last()) {
-      let args = e.args.into_iter().map(|e| self.build_expr(e)).collect::<Result<_>>()?;
+      let args = e.args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
       return Ok(Spanned {span, k: ast::ExprKind::Jump(v, i, args)})
     }
     let is_label = |a| self.label_map.get(&a).map_or(false, |v| !v.is_empty());
-    let k = match self.p.parse_call(self.names, is_label, &span, e)? {
+    let k = match self.p.parse_call(&span, self.names, is_label, e)? {
       CallKind::Const(a) => ast::ExprKind::Const(a),
       CallKind::NAry(NAryCall::Add, args) => lassoc1!(args, Int(0.into()), Add),
       CallKind::NAry(NAryCall::And, args) => lassoc1!(args, Bool(true), And),
@@ -559,52 +568,53 @@ impl<'a> BuildAst<'a> {
       CallKind::NAry(NAryCall::Eq, args) => self.build_ineq(&span, args, Binop::Eq)?,
       CallKind::NAry(NAryCall::Ne, args) => self.build_ineq(&span, args, Binop::Ne)?,
       CallKind::NAry(NAryCall::List, args) => ast::ExprKind::List(
-        args.into_iter().map(|e| self.build_expr(e)).collect::<Result<_>>()?),
+        args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?),
       CallKind::NAry(NAryCall::Assert, args) => ast::ExprKind::Assert(Box::new(
         lassoc1!(args, Spanned {span: span.clone(), k: Infer(false)}, And, |e| e))),
       CallKind::NAry(NAryCall::GhostList, args) => match args.len() {
         0 => ast::ExprKind::Unit,
-        1 => ast::ExprKind::Ghost(Box::new(self.build_expr(unwrap_unchecked!(args.into_iter().next()))?)),
+        1 => ast::ExprKind::Ghost(Box::new(self.build_expr(&span, unwrap_unchecked!(args.into_iter().next()))?)),
         _ => {
-          let args = args.into_iter().map(|e| self.build_expr(e)).collect::<Result<_>>()?;
+          let args = args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
           ast::ExprKind::Ghost(Box::new(Spanned {span: span.clone(), k: ast::ExprKind::List(args)}))
         }
       }
       CallKind::NAry(NAryCall::Return, args) => ast::ExprKind::Return(
-        args.into_iter().map(|e| self.build_expr(e)).collect::<Result<_>>()?),
-      CallKind::Mm0(e) => ast::ExprKind::Mm0(self.build_mm0_expr(e)?),
-      CallKind::Typed(e, ty) => ast::ExprKind::Typed(Box::new(self.build_expr(e)?), Box::new(self.build_ty(&ty)?)),
-      CallKind::As(e, ty) => ast::ExprKind::As(Box::new(self.build_expr(e)?), Box::new(self.build_ty(&ty)?)),
+        args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?),
+      CallKind::Mm0(e) => ast::ExprKind::Mm0(self.build_mm0_expr(&span, e)?),
+      CallKind::Typed(e, ty) => ast::ExprKind::Typed(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
+      CallKind::As(e, ty) => ast::ExprKind::As(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
       CallKind::Pun(e, h) => ast::ExprKind::Pun(
-        Box::new(self.build_expr(e)?),
-        if let Some(h) = h {Some(Box::new(self.build_expr(h)?))} else {None}),
-      CallKind::TypeofBang(e) => ast::ExprKind::Typeof(Box::new(self.build_expr(e)?)),
+        Box::new(self.build_expr(&span, e)?),
+        if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
+      CallKind::Uninit => ast::ExprKind::Uninit,
+      CallKind::TypeofBang(e) => ast::ExprKind::Typeof(Box::new(self.build_expr(&span, e)?)),
       CallKind::Typeof(e) => {
-        let k = ast::ExprKind::Ref(Box::new(self.build_expr(e)?));
+        let k = ast::ExprKind::Ref(Box::new(self.build_expr(&span, e)?));
         ast::ExprKind::Typeof(Box::new(Spanned {span: span.clone(), k}))
       }
       CallKind::Index(a, i, h) => ast::ExprKind::Index(
-        Box::new(self.build_expr(a)?),
-        Box::new(self.build_expr(i)?),
-        if let Some(h) = h {Some(Box::new(self.build_expr(h)?))} else {None}),
+        Box::new(self.build_expr(&span, a)?),
+        Box::new(self.build_expr(&span, i)?),
+        if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
       CallKind::Slice(a, i, h) => ast::ExprKind::Slice(
-        Box::new(self.build_expr(a)?),
-        Box::new(self.build_expr(i)?),
-        if let Some(h) = h {Some(Box::new(self.build_expr(h)?))} else {None}),
+        Box::new(self.build_expr(&span, a)?),
+        Box::new(self.build_expr(&span, i)?),
+        if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
       CallKind::Call(CallExpr {f, args, variant}, tyargs) => {
         let mut it = args.into_iter();
         ast::ExprKind::Call {f,
-          tys: (&mut it).take(tyargs as usize).map(|ty| self.build_ty(&ty)).collect::<Result<_>>()?,
-          args: it.map(|e| self.build_expr(e)).collect::<Result<_>>()?,
-          variant: if let Some(e) = variant {Some(Box::new(self.build_expr(e)?))} else {None},
+          tys: (&mut it).take(tyargs as usize).map(|ty| self.build_ty(&span, &ty)).collect::<Result<_>>()?,
+          args: it.map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?,
+          variant: if let Some(e) = variant {Some(Box::new(self.build_expr(&span, e)?))} else {None},
         }
       },
       CallKind::Unreachable(None) => ast::ExprKind::Unreachable(Box::new(
         Spanned {span: span.clone(), k: ast::ExprKind::Infer(false)})),
-      CallKind::Unreachable(Some(e)) => ast::ExprKind::Unreachable(Box::new(self.build_expr(e)?)),
+      CallKind::Unreachable(Some(e)) => ast::ExprKind::Unreachable(Box::new(self.build_expr(&span, e)?)),
       CallKind::Jump(name, args) => {
         let LabelId(v, i) = *self.label_map.get(&name).and_then(|v| v.last()).expect("is_label");
-        let args = args.into_iter().map(|e| self.build_expr(e)).collect::<Result<_>>()?;
+        let args = args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
         ast::ExprKind::Jump(v, i, args)
       }
       CallKind::Break(name, args) => ast::ExprKind::Break(
@@ -615,30 +625,30 @@ impl<'a> BuildAst<'a> {
         },
         Box::new(match args.len() {
           0 => Spanned {span: span.clone(), k: ast::ExprKind::Unit},
-          1 => self.build_expr(unwrap_unchecked!(args.into_iter().next()))?,
+          1 => self.build_expr(&span, unwrap_unchecked!(args.into_iter().next()))?,
           _ => Spanned {span: span.clone(), k: ast::ExprKind::List(
-            args.map(|e| self.build_expr(e)).collect::<Result<_>>()?)}
+            args.map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?)}
         })
       ),
     };
     Ok(Spanned {span, k})
   }
 
-  fn build_mm0_expr(&mut self, e: LispVal) -> Result<Mm0Expr<ast::Expr>> {
-    self.p.parse_mm0_expr(e, |e, a| {
+  fn build_mm0_expr(&mut self, base: &FileSpan, e: LispVal) -> Result<Mm0Expr<ast::Expr>> {
+    self.p.parse_mm0_expr(base, e, |e, a| {
       let v = *self.name_map.get(&a)?.last()?;
-      Some(self.p.spanned(e, ast::ExprKind::Var(v)))
+      Some(spanned(base, e, ast::ExprKind::Var(v)))
     })
   }
 
-  fn build_proc(&mut self, sp: &FileSpan, Proc {kind, name, args, rets, variant, body}: Proc) -> Result<ast::Proc> {
+  fn build_proc(&mut self, sp: &FileSpan, Proc {kind, name, args, mut rets, variant, body}: Proc) -> Result<ast::Proc> {
     let mut outmap: Vec<(u32, AtomId, bool)> = vec![];
     let args = args.into_iter().enumerate().map(|(i, (mo, pat))| {
       let pat = self.push_tuple_pattern(pat)?;
       match mo {
         MutOut::Out(_) => Err(ElabError::new_e(&pat.span, "'out' not permitted on function arguments")),
         MutOut::None => Ok((false, pat)),
-        MutOut::Mut => if let ast::TuplePatternKind::Name(_, _) = pat.k {
+        MutOut::Mut => if pat.k.as_single_name().is_some() {
           if let Some(&Ctx::Var(name, _)) = self.ctx.last() {
             if outmap.iter().any(|p| p.1 == name) {
               return Err(ElabError::new_e(&pat.span, "'mut' variables cannot shadow"))
@@ -652,9 +662,12 @@ impl<'a> BuildAst<'a> {
       }
     }).collect::<Result<Box<[_]>>>()?;
     let rets = self.with_ctx(|this| {
-      for &(mo, ref pat) in &rets {
+      for (mo, ref pat) in &mut rets {
         if let MutOut::Out(name) = mo {
-          if let Some((_, _, used)) = outmap.iter_mut().find(|p| p.1 == name) {
+          if *name == AtomId::UNDER {
+            if let Some(v) = pat.k.as_single_name() {*name = v}
+          }
+          if let Some((_, _, used)) = outmap.iter_mut().find(|p| p.1 == *name) {
             if std::mem::replace(used, true) {
               return Err(ElabError::new_e(&pat.span, "two 'out' arguments to one 'mut'"))
             }
@@ -685,25 +698,27 @@ impl<'a> BuildAst<'a> {
 
   /// Construct the AST for a top level item, as produced by [`Parser::parse_next_item`].
   pub fn build_item(&mut self, Spanned {span, k: item}: Item) -> Result<ast::Item> {
-    self.clear();
     let k = match item {
       ItemKind::Proc(proc) => ast::ItemKind::Proc(self.build_proc(&span, proc)?),
       ItemKind::Global(lhs, rhs) => {
         let lhs = self.push_tuple_pattern(*lhs)?;
-        let rhs = self.push_expr(rhs)?;
+        let rhs = self.push_expr(&span, rhs)?;
         ast::ItemKind::Global {lhs, rhs}
       }
       ItemKind::Const(lhs, rhs) => {
         let lhs = self.push_tuple_pattern(*lhs)?;
-        let rhs = self.push_expr(rhs)?;
+        let rhs = self.push_expr(&span, rhs)?;
         ast::ItemKind::Const {lhs, rhs}
       }
       ItemKind::Typedef {name, args, val} => self.with_tuple_patterns(args, |this, args| {
-        let val = this.build_ty(&val)?;
+        let val = this.build_ty(&span, &val)?;
         Ok(ast::ItemKind::Typedef {name, args, val})
       })?,
       ItemKind::Struct {name, args, fields} => self.with_tuple_patterns(args, |this, args| {
-        this.with_tuple_patterns(fields, |_, fields| Ok(ast::ItemKind::Struct {name, args, fields}))
+        this.with_tuple_patterns(fields, |_, fields| Ok(ast::ItemKind::Typedef {
+          name, args,
+          val: Spanned {span: span.clone(), k: ast::TypeKind::Struct(fields)}
+        }))
       })?,
     };
     Ok(Spanned {span, k})

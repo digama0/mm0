@@ -2,10 +2,9 @@
 //! previous declarations, in addition to intrinsics and primops.
 
 use std::collections::HashMap;
-
-use crate::elab::{Environment, environment::{AtomId, Remap, Remapper}};
+use crate::{elab::{Environment, environment::{AtomId, Remap, Remapper}}, util::FileSpan};
 use crate::mmc::{Compiler, types::ast};
-// use crate::util::FileSpan;
+use super::Spanned;
 
 macro_rules! make_prims {
   {$($(#[$attr0:meta])* enum $name:ident { $($(#[$attr:meta])* $x:ident: $e:expr,)* })* } => {
@@ -110,6 +109,9 @@ make_prims! {
     /// proof that `x :> T`. This version of `typeof!` only works on copy types
     /// so that it doesn't consume `x`.
     Typeof: "typeof",
+    /// `{uninit : (? T)}` is an effectful expression producing an undefined value
+    /// in any `(? T)` type.
+    Uninit: "uninit",
     /// `(unreachable h)` takes a proof of false and undoes the current code path.
     Unreachable: "unreachable",
   }
@@ -168,6 +170,10 @@ make_prims! {
     /// `own T` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
+    /// `(? T)` is the type of possibly-uninitialized `T`s. The typing predicate
+    /// for this type is vacuous, but it has the same size as `T`, so overwriting with
+    /// a `T` is possible.
+    Uninit: "?",
     /// `(& T)` is a type of borrowed pointers. This type is elaborated to
     /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
     /// (see [`Lifetime`](super::types::Lifetime)).
@@ -226,10 +232,39 @@ make_prims! {
   }
 }
 
+/// The typechecking status of a typedef.
+#[derive(Debug, DeepSizeOf)]
+pub enum TypeTc {
+  /// We have determined that this is a type but we have not yet examined the body.
+  Unchecked,
+  /// We have the type of the type constructor.
+  Typed(TypeTy)
+}
+
+impl Remap for TypeTc {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      TypeTc::Unchecked => TypeTc::Unchecked,
+      TypeTc::Typed(ty) => TypeTc::Typed(ty.remap(r))
+    }
+  }
+}
+
+impl TypeTc {
+  /// Get the type of the typedef, if it has been deduced.
+  #[must_use] pub fn ty(&self) -> Option<&TypeTy> {
+    match self {
+      TypeTc::Unchecked => None,
+      TypeTc::Typed(ty) => Some(ty)
+    }
+  }
+}
+
 /// An entity representing a type.
 #[derive(Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
-pub struct Type {
+pub struct TypeTy {
   /// The number of type arguments (not included in `args`). There are no higher
   /// order types so this is essentially just `{A : *} {B : *} ...` with `tyargs`
   /// variables (named by their index).
@@ -238,7 +273,7 @@ pub struct Type {
   pub args: Box<[ast::TuplePattern]>,
 }
 
-impl Remap for Type {
+impl Remap for TypeTy {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     Self { tyargs: self.tyargs, args: self.args.remap(r) }
@@ -246,17 +281,29 @@ impl Remap for Type {
 }
 
 /// The typechecking status of a procedure.
-#[derive(Copy, Clone, Debug, DeepSizeOf)]
+#[derive(Debug, DeepSizeOf)]
 pub enum ProcTc {
   /// We have determined that this is a procedure but we have not yet examined the body.
   Unchecked,
-  /// This is a compiler intrinsic function.
-  Intrinsic(Intrinsic),
+  /// We have determined the type of the procedure.
+  Typed(ProcTy),
+}
+
+impl Remap for ProcTc {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      ProcTc::Unchecked => ProcTc::Unchecked,
+      ProcTc::Typed(ty) => ProcTc::Typed(ty.remap(r))
+    }
+  }
 }
 
 /// The type of a procedure.
 #[derive(Debug, DeepSizeOf)]
 pub struct ProcTy {
+  /// The kind of the procedure (`func`, `proc`, `intrinsic`)
+  pub kind: ast::ProcKind,
   /// The number of type arguments (not included in `args`). There are no higher
   /// order types so this is essentially just `{A : *} {B : *} ...` with `tyargs`
   /// variables (named by their index).
@@ -270,23 +317,11 @@ pub struct ProcTy {
 impl Remap for ProcTy {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    Self { tyargs: self.tyargs, args: self.args.remap(r), rets: self.rets.remap(r) }
-  }
-}
-
-/// A function / procedure / builtin operator, which is called with function call style.
-#[derive(Debug, DeepSizeOf)]
-#[allow(variant_size_differences)]
-pub enum Operator {
-  /// A user procedure, with a link to the procedure definition and the typechecking status.
-  Proc(ProcTy, ProcTc),
-}
-
-impl Remap for Operator {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      Operator::Proc(ty, tc) => Operator::Proc(ty.remap(r), *tc)
+    Self {
+      kind: self.kind,
+      tyargs: self.tyargs,
+      args: self.args.remap(r),
+      rets: self.rets.remap(r)
     }
   }
 }
@@ -294,7 +329,7 @@ impl Remap for Operator {
 /// The typechecking status of a global variable.
 #[derive(Clone, Copy, Debug, DeepSizeOf)]
 pub enum GlobalTc {
-  /// We know this is a global or const but have not typechecked the body.
+  /// We know this is a global but have not typechecked the body.
   Unchecked,
   // /// A user type that has been typechecked, with the original span,
   // /// the (internal) declaration name, and the compiled value expression.
@@ -306,6 +341,25 @@ impl Remap for GlobalTc {
   fn remap(&self, _: &mut Remapper) -> Self {
     match self {
       GlobalTc::Unchecked => GlobalTc::Unchecked
+    }
+  }
+}
+
+/// The typechecking status of a constant.
+#[derive(Clone, Copy, Debug, DeepSizeOf)]
+pub enum ConstTc {
+  /// We know this is a const but have not typechecked the body.
+  Unchecked,
+  // /// A user type that has been typechecked, with the original span,
+  // /// the (internal) declaration name, and the compiled value expression.
+  // Checked(Option<FileSpan>, AtomId, Rc<types::Type>, Rc<types::Expr>),
+}
+
+impl Remap for ConstTc {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self {
+    match self {
+      ConstTc::Unchecked => ConstTc::Unchecked
     }
   }
 }
@@ -329,14 +383,14 @@ crate::deep_size_0!(Prim);
 pub enum Entity {
   /// A primitive type, operation, or proposition. Some keywords appear in multiple classes.
   Prim(Prim),
-  /// A named type.
-  Type(Type),
+  /// A named typedef.
+  Type(Spanned<TypeTc>),
   /// A named operator/procedure/function.
-  Op(Operator),
+  Proc(Spanned<ProcTc>),
   /// A named global variable.
-  Global(GlobalTc),
+  Global(Spanned<GlobalTc>),
   /// A named constant.
-  Const(GlobalTc),
+  Const(Spanned<ConstTc>),
 }
 
 impl Remap for Entity {
@@ -345,13 +399,25 @@ impl Remap for Entity {
     match self {
       Entity::Prim(c) => Entity::Prim(*c),
       Entity::Type(c) => Entity::Type(c.remap(r)),
-      Entity::Op(c) => Entity::Op(c.remap(r)),
+      Entity::Proc(c) => Entity::Proc(c.remap(r)),
       Entity::Global(c) => Entity::Global(c.remap(r)),
       Entity::Const(c) => Entity::Const(c.remap(r)),
     }
   }
 }
 
+impl Entity {
+  /// Get the place where the entity was defined, if it is not a primitive.
+  #[must_use] pub fn span(&self) -> Option<&FileSpan> {
+    match self {
+      Entity::Prim(_) => None,
+      Entity::Type(Spanned {span, ..}) |
+      Entity::Proc(Spanned {span, ..}) |
+      Entity::Global(Spanned {span, ..}) |
+      Entity::Const(Spanned {span, ..}) => Some(span)
+    }
+  }
+}
 // impl TuplePattern {
 //   fn on_names<E>(&self, f: &mut impl FnMut(bool, AtomId, &Option<FileSpan>) -> StdResult<(), E>) -> StdResult<(), E> {
 //     match self {

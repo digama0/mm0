@@ -311,10 +311,11 @@ impl Elaborator {
   /// Converts a [`Span`] in the current elaboration file to a [`FileSpan`].
   pub fn fspan(&self, span: Span) -> FileSpan { FileSpan {file: self.path.clone(), span} }
 
-  fn report(&mut self, e: ElabError) {
+  /// Report a non-fatal elaboration error. This method suppresses the error collection
+  /// if the error reporting level is low enough.
+  pub fn report(&mut self, e: ElabError) {
     if self.reporting.active(e.level) {self.errors.push(e)}
   }
-  // fn catch(&mut self, r: Result<()>) { r.unwrap_or_else(|e| self.report(e)) }
 
   fn push_spans(&mut self) {
     self.env.spans.push(mem::take(&mut self.spans));

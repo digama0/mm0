@@ -9,8 +9,9 @@
 //! types in the [`types::ast`](super::ast) module.
 
 use num::BigInt;
-use crate::elab::{environment::AtomId, lisp::{Uncons, print::{EnvDisplay, FormatEnv}}};
-use crate::elab::lisp::LispVal;
+use crate::elab::environment::AtomId;
+use crate::elab::lisp::{LispVal, Uncons, print::{EnvDisplay, FormatEnv}};
+use crate::util::FileSpan;
 use super::{Spanned, Size, FieldName};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
@@ -62,6 +63,28 @@ impl TuplePatternKind {
   /// The `_` tuple pattern. This is marked as ghost because it can't be referred to so
   /// it is always safe to make irrelevant.
   pub const UNDER: Self = Self::Name(true, AtomId::UNDER);
+
+  /// Extracts the single name of this tuple pattern, or `None`
+  /// if this does any tuple destructuring.
+  #[must_use] pub fn as_single_name(&self) -> Option<AtomId> {
+    match self {
+      &Self::Name(_, v) => Some(v),
+      Self::Typed(pat, _) => pat.k.as_single_name(),
+      Self::Tuple(_) => None
+    }
+  }
+}
+
+impl TuplePattern {
+  /// Map a function over the names in the pattern.
+  pub fn on_names<E>(&self, f: &mut impl FnMut(&FileSpan, AtomId) -> Result<(), E>) -> Result<(), E> {
+    match self.k {
+      TuplePatternKind::Name(_, v) => f(&self.span, v)?,
+      TuplePatternKind::Typed(ref pat, _) => pat.on_names(f)?,
+      TuplePatternKind::Tuple(ref pats) => for pat in pats { pat.on_names(f)? }
+    }
+    Ok(())
+  }
 }
 
 /// A pattern, the left side of a match statement.
@@ -162,6 +185,12 @@ pub enum TypeKind {
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
   Ghost(LispVal),
+  /// `(? T)` is the type of possibly-uninitialized `T`s. The typing predicate
+  /// for this type is vacuous, but it has the same size as `T`, so overwriting with
+  /// a `T` is possible.
+  Uninit(LispVal),
+  /// `(if c A B)` is a conditional type: if `c` is true then this is `A`, otherwise `B`.
+  If([LispVal; 3]),
   /// A propositional type, used for hypotheses.
   Prop(PropKind),
   /// A user-defined type-former.
@@ -172,6 +201,8 @@ pub enum TypeKind {
   Output,
   /// A moved-away type.
   Moved(LispVal),
+  /// A typechecking error that we have reported already.
+  Error
 }
 
 /// A propositional expression.
@@ -389,6 +420,9 @@ pub enum CallKind {
   As(LispVal, LispVal),
   /// `(pun x h)` returns a value of type `T` if `h` proves `x` has type `T`.
   Pun(LispVal, Option<LispVal>),
+  /// `{uninit : (? T)}` is an effectful expression producing an undefined value
+  /// in any `(? T)` type.
+  Uninit,
   /// If `x` has type `T`, then `(typeof! x)` is a proof that `x :> T`.
   /// This consumes `x`'s type.
   TypeofBang(LispVal),

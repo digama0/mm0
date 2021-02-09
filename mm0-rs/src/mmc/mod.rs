@@ -13,7 +13,7 @@ pub mod predef;
 pub mod build_ast;
 pub mod ast_lower;
 pub mod infer;
-// pub mod nameck;
+pub mod nameck;
 // pub mod typeck;
 
 use std::collections::hash_map::HashMap;
@@ -89,14 +89,19 @@ impl Compiler {
   /// top level items that are typechecked as a unit.
   pub fn add(&mut self, elab: &mut Elaborator, sp: Span, it: impl Iterator<Item=LispVal>) -> Result<()> {
     let fsp = FileSpan {file: elab.path.clone(), span: sp};
-    let p = Parser {fe: elab.format_env(), kw: &self.keywords, fsp};
-    let mut ba = BuildAst::new(&self.names, p);
+    let p = Parser {fe: elab.format_env(), kw: &self.keywords};
+    let mut errors = vec![];
     for e in it {
       let mut it = ItemIter::new(e);
-      while let Some(item) = ba.p.parse_next_item(&mut it)? {
-        let _item = ba.build_item(item)?;
+      while let Some(item) = p.parse_next_item(&fsp, &mut it)? {
+        macro_rules! try1 {($e:expr) => {
+          match $e { Ok(r) => r, Err(e) => {errors.push(e); continue}}
+        }}
+        try1!(Self::reserve_names(&mut self.names, &item));
+        let _item = try1!(BuildAst::new(&self.names, p).build_item(item));
       }
     }
+    for e in errors { elab.report(e) }
     // for a in &ast { self.nameck(&fsp, a)? }
     // let mut tc = TypeChecker::new(self, elab, fsp);
     // for item in ast { tc.typeck(&item)? }

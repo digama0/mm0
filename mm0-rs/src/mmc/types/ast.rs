@@ -36,7 +36,7 @@
 use num::BigInt;
 use crate::elab::environment::{AtomId, Remap, Remapper};
 use crate::elab::lisp::LispVal;
-use super::{VarId, Spanned, Size, Mm0Expr, Unop, Binop, FieldName};
+use super::{VarId, Spanned, Size, Mm0Expr, Unop, Binop, FieldName, entity::Intrinsic};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
@@ -89,6 +89,18 @@ impl Remap for TuplePatternKind {
       &TuplePatternKind::Name(b, v) => TuplePatternKind::Name(b, v),
       TuplePatternKind::Typed(pat, ty) => TuplePatternKind::Typed(pat.remap(r), ty.remap(r)),
       TuplePatternKind::Tuple(pats) => TuplePatternKind::Tuple(pats.remap(r)),
+    }
+  }
+}
+
+impl TuplePatternKind {
+  /// Extracts the single name of this tuple pattern, or `None`
+  /// if this does any tuple destructuring.
+  #[must_use] pub fn as_single_name(&self) -> Option<VarId> {
+    match self {
+      &Self::Name(_, v) => Some(v),
+      Self::Typed(pat, _) => pat.k.as_single_name(),
+      Self::Tuple(_) => None
     }
   }
 }
@@ -236,10 +248,19 @@ pub enum TypeKind {
   /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
   Or(Box<[Type]>),
+  /// `(or A B C)` is an undiscriminated anonymous union of types `A, B, C`.
+  /// `sizeof (or A B C) = max (sizeof A, sizeof B, sizeof C)`, and
+  /// the typehood predicate is `x :> (or A B C)` iff
+  /// `x :> A \/ x :> B \/ x :> C`.
+  If(Box<Expr>, Box<Type>, Box<Type>),
   /// `(ghost A)` is a computationally irrelevant version of `A`, which means
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
   Ghost(Box<Type>),
+  /// `(? T)` is the type of possibly-uninitialized `T`s. The typing predicate
+  /// for this type is vacuous, but it has the same size as `T`, so overwriting with
+  /// a `T` is possible.
+  Uninit(Box<Type>),
   /// A propositional type, used for hypotheses.
   Prop(Box<Prop>),
   /// A user-defined type-former.
@@ -252,6 +273,8 @@ pub enum TypeKind {
   Moved(Box<Type>),
   /// A substitution into a type.
   Subst(Box<Type>, VarId, Box<Expr>),
+  /// A type error that has been reported.
+  Error,
 }
 
 impl Remap for TypeKind {
@@ -273,13 +296,16 @@ impl Remap for TypeKind {
       TypeKind::Struct(tys) => TypeKind::Struct(tys.remap(r)),
       TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
       TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
+      TypeKind::If(c, t, e) => TypeKind::If(c.remap(r), t.remap(r), e.remap(r)),
       TypeKind::Ghost(ty) => TypeKind::Ghost(ty.remap(r)),
+      TypeKind::Uninit(ty) => TypeKind::Uninit(ty.remap(r)),
       TypeKind::Prop(p) => TypeKind::Prop(p.remap(r)),
       TypeKind::User(f, tys, es) => TypeKind::User(f.remap(r), tys.remap(r), es.remap(r)),
       TypeKind::Input => TypeKind::Input,
       TypeKind::Output => TypeKind::Output,
       TypeKind::Moved(tys) => TypeKind::Moved(tys.remap(r)),
       TypeKind::Subst(ty, v, e) => TypeKind::Subst(ty.remap(r), *v, e.remap(r)),
+      TypeKind::Error => TypeKind::Error,
     }
   }
 }
@@ -449,6 +475,8 @@ pub enum ExprKind {
   As(Box<Expr>, Box<Type>),
   /// Combine an expression with a proof that it has the right type.
   Pun(Box<Expr>, Option<Box<Expr>>),
+  /// An expression denoting an uninitialized value.
+  Uninit,
   /// Take the type of a variable.
   Typeof(Box<Expr>),
   /// `(assert p)` evaluates `p: bool` and returns a proof of `p`.
@@ -555,6 +583,7 @@ impl Remap for ExprKind {
       ExprKind::Typed(e, ty) => ExprKind::Typed(e.remap(r), ty.remap(r)),
       ExprKind::As(e, ty) => ExprKind::As(e.remap(r), ty.remap(r)),
       ExprKind::Pun(e, h) => ExprKind::Pun(e.remap(r), h.remap(r)),
+      ExprKind::Uninit => ExprKind::Uninit,
       ExprKind::Typeof(e) => ExprKind::Typeof(e.remap(r)),
       ExprKind::Assert(e) => ExprKind::Assert(e.remap(r)),
       ExprKind::Let { lhs, rhs } => ExprKind::Let { lhs: lhs.remap(r), rhs: rhs.remap(r) },
@@ -599,7 +628,7 @@ pub enum ProcKind {
   /// An intrinsic declaration, which is only here to put the function declaration in user code.
   /// The compiler will ensure this matches an existing intrinsic, and intrinsics cannot be
   /// called until they are declared using an `intrinsic` declaration.
-  Intrinsic,
+  Intrinsic(Intrinsic),
 }
 crate::deep_size_0!(ProcKind);
 
@@ -666,14 +695,5 @@ pub enum ItemKind {
     args: Box<[TuplePattern]>,
     /// The value of the declaration (another type)
     val: Type,
-  },
-  /// A structure definition.
-  Struct {
-    /// The name of the structure
-    name: Spanned<AtomId>,
-    /// The parameters of the type
-    args: Box<[TuplePattern]>,
-    /// The fields of the structure
-    fields: Box<[TuplePattern]>,
   },
 }
