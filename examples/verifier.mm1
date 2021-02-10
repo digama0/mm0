@@ -72,8 +72,12 @@ do {
         (struct {err : i64} (pure $ isIOError err $))
         (own @ struct {ret : (array u8 len)} (pure $ anon -> all (sn 0) ret $)))}))
 
-    (global {{g_file : u64} := uninit})
-    (global {{g_end : u64} := uninit})
+    (struct File
+      (implicit @ ghost {len : nat})
+      {file : (& (array u8 len))}
+      {end : (sn {{file + len} : u64})})
+
+    (global {{F : (? File)} := uninit})
 
     (struct Header0
       {magic : u32} {version : u8} {num_sorts : u8} {_ : u16}
@@ -87,88 +91,119 @@ do {
     (const {{MM0B_MAGIC : u32} := 0x42304D4D})
     (const {{MM0B_VERSION : u8} := 1})
     (const {{MAX_SORTS : u8} := 128})
+    (const {{CMD_END : u8} := 0})
 
     (struct Term0 {num_args : u16} {sort : u8} {_ : u8} {p_args : u32})
     (struct Thm0 {num_args : u16} {_ : u16} {p_args : u32})
 
-    (global {{g_num_sorts : u32} := uninit} {{g_sorts : u64} := uninit})
-    (global {{g_num_terms : u32} := uninit} {{g_terms : u64} := uninit})
-    (global {{g_num_thms : u32} := uninit} {{g_thms : u64} := uninit})
+    (struct (CData A)
+      (ghost {max : nat})
+      {buf : (& (array A max))})
 
-    (struct Sort {s : u8} {h : {s < g_sorts}})
+    (struct (MData A {c : (CData A)})
+      {cur : u32}
+      {dat : (ref (array A cur))}
+      {eq : {(c . buf) :> (&sn dat)}}
+      {le : {cur <= (c . max)}})
+
     (struct Env {e : nat} {h : (pure $ Env e $)})
 
-    (const {{CMD_END : u8} := 0})
+    (struct CState
+      {sorts : (CData u8)}
+      {terms : (CData Term0)}
+      {thms : (CData Thm0)})
+
+    (struct (MState {c : CState})
+      {sorts : (MData u8 (c . sorts))}
+      {terms : (MData Term0 (c . terms))}
+      {thms : (MData Thm0 (c . thms))}
+      {env : Env}
+      {env2 : Env}
+      {ext : (pure $ EnvExtend env env2 $)}
+      {repr : (pure
+        {sorts := (sorts . dat)}
+        {terms := (terms . dat)}
+        {thms := (thms . dat)}
+        $ Represents env2 sorts terms thms $)})
+
+    (global {{C : (? CState)} := uninit})
+    (global {{M : (? (MState C))} := uninit})
 
     (func (cmd_unpack {cmd : (& (array u8 5))} : u8 u8 u32)
       {v := (index cmd 0)}
       {w := {v band 0x3F}}
       (match {v shr 6}
         {0 => (return w 1 0)}
-        {1 => (return w 2 {(slice cmd 1) : u8})}
-        {2 => (return w 3 {(slice cmd 1) : u16})}
-        {3 => (return w 5 {(slice cmd 1) : u32})}))
+        {1 => (return w 2 {(index cmd 1) as u32})}
+        {2 => (return w 3 {{(slice cmd 1 2) pun u16} as u32})}
+        {3 => (return w 5 {(slice cmd 1 4) pun u32})}))
+
+    (proc (parse_until
+      (global {C : CState})
+      (mut @ global {M : (MState C)})
+      {stmt_type : u8}
+      {h : (match stmt_type
+        {CMD_STMT_SORT => {((M . sorts) . cur) < ((C . sorts) . max)}}
+        {_ => #f})} :
+      (out M {M2 : (MState C)})
+      {_ : (match stmt_type
+        {CMD_STMT_SORT => {((M2 . sorts) . cur) = {((M . sorts) . cur) + 1}}}
+        {_ => #f})}
+      ))
 
     (proc (verify
-        {len : u64}
-        {file : (& (array u8 len))}
-        {(ghost (mut input)) : Input} :
+        (global {F : File})
+        (mut @ ghost {input : Input}) :
         (pure $ Valid input $))
-      {g_file <- file}
-      {g_end <- (cast {file + len})}
+      {(len file end) := (ref F)}
       {{p : (& Header0)} := (pun file (assert {(sizeof Header0) <= len}))}
       (assert {(p . magic) = MM0B_MAGIC})
       (assert {(p . version) = MM0B_VERSION})
       {nsorts := (p . num_sorts)}
       {h2 := (assert {nsorts <= MAX_SORTS})}
-      {g_num_sorts <- 0}
-      {{g_sorts : (& (array u8 nsorts))} <- (& (slice file (sizeof Header)))}
-      {(ghost a_sorts) := (sn {(slice g_sorts 0) : (& (array Sort g_num_sorts))})}
-      {{h_sorts : {g_num_sorts <= nsorts}} := _}
-      {g_num_terms <- 0}
-      {p_terms := (p . p_terms)} {nterms := (p . num_terms)}
-      {{g_terms : (& (array Term0 nterms))} <- (& (slice file p_terms))}
-      {(ghost a_terms) := (sn {(slice g_terms 0) : (& (array Sort g_num_terms))})}
-      {{h_terms : {g_num_terms <= nterms}} := _}
-      {g_num_thms <- 0}
-      {p_thms := (p . p_thms)} {nthms := (p . num_thms)}
-      {{g_thms : (& (array Thm0 nthms))} <- (& (slice file p_thms))}
-      {(ghost a_thms) := (sn {(& (slice g_thms 0)) : (& (array Sort g_num_thms))})}
-      {{h_thms : {g_num_thms <= nthms}} := _}
+      {{C : CState} <- (list
+        (list nsorts (& (slice file (sizeof Header) nsorts)))
+        (list (p . num_terms) (& (slice file p_terms)))
+        (list (p . num_thms) (& (slice file p_thms))))}
+      {(dat eq) := (typeof (& (slice buf 0 0)))}
+      {(M . sorts) <- (list 0 dat eq)}
+      {(dat eq) := (typeof (& (slice buf 0 0)))}
+      {(M . terms) <- (list 0 dat eq)}
+      {(dat eq) := (typeof (& (slice buf 0 0)))}
+      {(M . thms) <- (list 0 dat eq)}
+      {(M . env) <- _}
+      {(M . env2) <- _}
+      {(M . ext) <- _}
+      {(M . repr) <- _}
+      {(ref M) : (MState C)}
       {(ghost remainder) := {len - (p . p_proof)}}
       {remainder_bd := (assert {{(p . p_proof) + 5} <= len})}
-      {{stmt : (& (array u8 remainder))} :=
-        (& (slice file (p . p_proof) (entail remainder_bd _)))}
-      {{suff : {{stmt + remainder} = g_end}} := (entail _)}
-
-      {{(ghost env) : Env} := _}
-      {{(ghost env2) : Env} := _}
-      {{ext : (pure $ EnvExtend env env2 $)} := _}
-      {{repr : (pure @ Represents env2 a_sorts a_terms a_thms)} := _}
+      {stmt := (& (slice file (p . p_proof) remainder (entail remainder_bd _)))}
+      {{suff : {{stmt + remainder} = end}} := _}
 
       (while {(index stmt 0 (entail remainder_bd _)) != CMD_END}
         (variant {(p . p_proof) + 5} <= len := remainder_bd)
 
         {((w sz data) h_unpack) := (sn (cmd_unpack stmt))}
         {{remainder <- {remainder - data}} with {remainder -> old_rem}}
-        {next_stmt_bd := (assert {{stmt + data + 5} <= g_end})}
+        {next_stmt_bd := (assert {{stmt + data + 5} <= end})}
         {remainder_bd <- (entail next_stmt_bd _)}
-        {{next_stmt : (& (array u8 remainder))} := (& (slice stmt data
+        {next_stmt := (& (slice stmt data remainder
           (entail next_stmt_bd suff _)))}
 
         (match w
           {CMD_STMT_SORT => (begin
             (assert {data = sz})
-            {h := (assert {g_num_sorts < nsorts})}
-            {(h_sorts repr2) :=
-              (parse_until CMD_STMT_SORT h (mut env env2 ext) repr)}
-            {(g_num_sorts _) <- (succ_lt g_num_sorts h)}
-            {h_sorts := (pun h_sorts _)})}
+            {h := (assert {((M . sorts) . cur) < ((C . sorts) . max)})}
+            {(h_sorts repr2) := (parse_until CMD_STMT_SORT h)}
+            {((M . sorts) . cur) <- (cast {((M . sorts) . cur) + 1} (entail h _))}
+            {((M . sorts) . le) <- (cast ((M . sorts) . le) _)}
+          )}
 
           {{CMD_STMT_DEF or CMD_STMT_LOCAL_DEF} => (begin
               _ -- this marks unfinished code, the compiler will give an error
                 -- and provide the current type context
-            )}
+          )}
         )
 
         {stmt <- next_stmt}
@@ -187,8 +222,8 @@ do {
     (proc (main
         {argc : u32}
         {args : (& (array (& CStr) argc))}
-        (mut {(ghost input) : Input})
-        (mut {(ghost output) : (sn {0 : Output})}) :
+        (mut @ ghost {input : Input})
+        (mut @ ghost {output : (sn {0 : Output})}) :
         (out {output : Output})
         (pure $ output = 0 /\ Valid input $))
       {(output2 oz) := output}
@@ -202,14 +237,15 @@ do {
         (assert {0 <= {n as i64}}))
       {len := (buf . st_size)}
       {(ptr h) := (typeof! (sys_mmap 0 len PROT_READ #f MAP_PRIVATE))}
-      {{ptr : (own (array u8 len))} :=
+      {{((ghost buf) file) : (own (array u8 len))} :=
         (pun ptr (entail h (assert {ptr != MAP_FAILED})
           -- proof of
           -- ptr :: (union (sn {MAP_FAILED : u64})
-          --   (own (Sigma {ret : (array u8 len)} $ fd = bitsNeg 32 1 -> all (sn 0) ret $))) /\
+          --   (own (struct {ret : (array u8 len)} $ fd = bitsNeg 32 1 -> all (sn 0) ret $))) /\
           -- ptr != MAP_FAILED
           -- |- (ptr :: (own (array u8 len))
           _))}
-      (list oz (verify len ptr input)))
+      {{F : File} <- (list file (sn {(& (slice file len 0)) as u64}))}
+      (list oz (verify input)))
   ))
 };
