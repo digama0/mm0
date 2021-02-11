@@ -99,6 +99,7 @@ make_keywords! {
   Finish: "finish",
   Ghost: "ghost",
   Global: "global",
+  Implicit: "implicit",
   Intrinsic: "intrinsic",
   If: "if",
   Le: "<=",

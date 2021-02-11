@@ -105,6 +105,38 @@ impl TuplePatternKind {
   }
 }
 
+/// An argument declaration for a function.
+pub type Arg = Spanned<(ArgAttr, ArgKind)>;
+
+/// An argument declaration for a function.
+#[derive(Debug, DeepSizeOf)]
+pub enum ArgKind {
+  /// A standard argument of the form `{x : T}`, a "lambda binder"
+  Lam(TuplePatternKind),
+  /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
+  /// invocations, they act as let binders in the remainder of the arguments.)
+  Let(TuplePattern, Box<Expr>),
+}
+
+impl Remap for ArgKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      ArgKind::Lam(pat) => ArgKind::Lam(pat.remap(r)),
+      ArgKind::Let(pat, val) => ArgKind::Let(pat.remap(r), val.remap(r)),
+    }
+  }
+}
+
+impl ArgKind {
+  /// Extracts the binding part of this argument.
+  #[must_use] pub fn var(&self) -> &TuplePatternKind {
+    match self {
+      Self::Lam(pat) | Self::Let(Spanned {k: pat, ..}, _) => pat,
+    }
+  }
+}
+
 /// The polarity of a hypothesis binder in a match statement, which determines
 /// whether it will appear positively and/or negatively. (A variable that cannot appear in
 /// either polarity is a compile error.)
@@ -236,7 +268,7 @@ pub enum TypeKind {
   ///
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
-  Struct(Box<[TuplePattern]>),
+  Struct(Box<[Arg]>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -410,7 +442,7 @@ pub type Variant = Spanned<(Expr, VariantType)>;
 #[derive(Debug, DeepSizeOf)]
 pub struct Label {
   /// The arguments of the label
-  pub args: Box<[TuplePattern]>,
+  pub args: Box<[Arg]>,
   /// The variant, for recursive calls
   pub variant: Option<Box<Variant>>,
   /// The code that is executed when you jump to the label
@@ -667,6 +699,27 @@ pub enum Ret {
   Out(u32, TuplePattern),
 }
 
+bitflags! {
+  /// Attributes on function arguments.
+  pub struct ArgAttr: u8 {
+    /// A `(mut x)` argument, which is modified in the body and passed out
+    /// via an `(out x x')` in the returns.
+    const MUT = 1;
+    /// An `(implicit x)` argument, which indicates that the variable will be
+    /// inferred in applications.
+    const IMPLICIT = 2;
+    /// A `(global x)` argument, which indicates that the variable is not passed directly
+    /// but is instead sourced from a global variable of the same name.
+    const GLOBAL = 4;
+  }
+}
+crate::deep_size_0!(ArgAttr);
+
+impl Remap for ArgAttr {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
+}
+
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
 #[derive(Debug, DeepSizeOf)]
 pub struct Proc {
@@ -674,8 +727,10 @@ pub struct Proc {
   pub kind: ProcKind,
   /// The name of the procedure.
   pub name: Spanned<AtomId>,
+  /// The number of type arguments
+  pub tyargs: u32,
   /// The arguments of the procedure.
-  pub args: Box<[(bool, TuplePattern)]>,
+  pub args: Box<[Arg]>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
   pub rets: Vec<Ret>,
   /// The variant, used for recursive functions.
@@ -710,8 +765,10 @@ pub enum ItemKind {
   Typedef {
     /// The name of the newly declared type
     name: Spanned<AtomId>,
+    /// The number of type arguments
+    tyargs: u32,
     /// The arguments of the type declaration, for a parametric type
-    args: Box<[TuplePattern]>,
+    args: Box<[Arg]>,
     /// The value of the declaration (another type)
     val: Type,
   },

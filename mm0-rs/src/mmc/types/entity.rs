@@ -90,6 +90,8 @@ make_prims! {
     List: "list",
     /// `{x < y}` returns true if `x` is less than `y`
     Lt: "<",
+    /// `(ref x)` constructs `x` as an lvalue (place).
+    Place: "ref",
     /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
     /// one of the numeric types
     Pure: "pure",
@@ -110,7 +112,7 @@ make_prims! {
     /// `{a shr b}` computes the value `a // 2 ^ b`, a right shift of `a` by `b`.
     /// This is an arithmetic shift on signed integers and a logical shift on unsigned integers.
     Shr: "shr",
-    /// `(& x)` constructs a reference to `x`.
+    /// `(sn x)` constructs the unique element of the singleton type `(sn x)`.
     Sn: "sn",
     /// * `(- x)` returns the negative of the argument
     /// * `{x - y}` returns the integer difference of the arguments
@@ -178,14 +180,18 @@ make_prims! {
     /// `own T` is a type of owned pointers. The typehood predicate is
     /// `x :> own T` iff `E. v (x |-> v) * v :> T`.
     Own: "own",
-    /// `(& T)` is a type of borrowed pointers. This type is elaborated to
-    /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
+    /// `(ref T)` is a type of borrowed values. This type is elaborated to
+    /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
     /// (see [`Lifetime`](super::types::Lifetime)).
-    Ref: "&",
+    Ref: "ref",
     /// `&sn e` is a type of pointers to a place `e`.
     /// This type has the property that if `x: &sn e` then `*x` evaluates to
     /// the place `e`, which can be read or written.
     RefSn: "&sn",
+    /// `(& T)` is a type of borrowed pointers. This type is elaborated to
+    /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
+    /// (see [`Lifetime`](super::types::Lifetime)).
+    Shr: "&",
     /// `(sn {a : T})` the type of values of type `T` that are equal to `a`.
     /// This is useful for asserting that a computationally relevant value can be
     /// expressed in terms of computationally irrelevant parts.
@@ -234,6 +240,8 @@ make_prims! {
     Star: "*",
     /// `p -* q` is separating implication.
     Wand: "-*",
+    /// `x :> T` is the proposition that asserts that `x` has type `T`.
+    HasTy: ":>",
   }
 
   /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular

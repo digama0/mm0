@@ -2,7 +2,7 @@
 use std::mem;
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
-use crate::util::{Span, FileSpan, SliceExt};
+use crate::util::{FileSpan, SliceExt};
 use crate::elab::{Result, ElabError,
   environment::{AtomId, Type as EType},
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
@@ -46,11 +46,6 @@ pub struct Parser<'a> {
   pub fe: FormatEnv<'a>,
   /// The keyword list.
   pub kw: &'a HashMap<AtomId, Keyword>,
-}
-
-fn head_atom(e: &LispVal) -> Option<(AtomId, Uncons)> {
-  let mut u = Uncons::from(e.clone());
-  Some((u.next()?.as_atom()?, u))
 }
 
 /// Try to parse an atom or syntax object into a keyword.
@@ -99,26 +94,25 @@ impl<'a> Parser<'a> {
     } else {None}
   }
 
-  fn parse_arg1(&self, base: &FileSpan, e: LispVal, name_required: bool) -> Result<TuplePattern> {
-    if let Some((AtomId::COLON, _)) = head_atom(&e) {
-      Ok(self.parse_tuple_pattern(base, false, e)?)
-    } else if name_required {
-      let a = e.as_atom().ok_or_else(||
-        ElabError::new_e(try_get_span(base, &e), "argument syntax error: expecting identifier"))?;
-      Ok(spanned(base, &e, TuplePatternKind::Name(a == AtomId::UNDER, a)))
-    } else {
-      let span = try_get_fspan(base, &e);
-      let under = Box::new(Spanned {span: span.clone(), k: TuplePatternKind::UNDER});
-      Ok(Spanned {span, k: TuplePatternKind::Typed(under, e)})
-    }
-  }
-
-  fn parse_arg(&self, base: &FileSpan, e: LispVal, name_required: bool,
-    mut push_arg: impl FnMut(Span, MutOut, TuplePattern) -> Result<()>,
+  fn parse_arg(&self, base: &FileSpan,
+    mut attr: (ArgAttr, bool), e: LispVal, args: &mut Vec<Arg>,
   ) -> Result<()> {
     match self.head_keyword(&e) {
-      Some((Keyword::Mut, u)) => for e in u {
-        push_arg(try_get_span(base, &e), MutOut::Mut, self.parse_arg1(base, e, name_required)?)?
+      Some((Keyword::Mut, u)) => {
+        attr.0.mut_ = true;
+        for e in u { self.parse_arg(base, attr, e, args)? }
+      }
+      Some((Keyword::Global, u)) => {
+        attr.0.global = true;
+        for e in u { self.parse_arg(base, attr, e, args)? }
+      }
+      Some((Keyword::Implicit, u)) => {
+        attr.0.implicit = true;
+        for e in u { self.parse_arg(base, attr, e, args)? }
+      }
+      Some((Keyword::Ghost, u)) => {
+        attr.1 = true;
+        for e in u { self.parse_arg(base, attr, e, args)? }
       }
       Some((Keyword::Out, mut u)) => {
         let (a, e) = match (u.next(), u.next(), u.is_empty()) {
@@ -130,9 +124,25 @@ impl<'a> Parser<'a> {
           }
           _ => return Err(ElabError::new_e(try_get_span(base, &e), "'out' syntax error")),
         };
-        push_arg(try_get_span(base, &e), MutOut::Out(a), self.parse_arg1(base, e, name_required)?)?
+        attr.0.out = Some(a);
+        self.parse_arg(base, attr, e, args)?
       }
-      _ => push_arg(try_get_span(base, &e), MutOut::None, self.parse_arg1(base, e, name_required)?)?
+      Some((Keyword::Colon, _)) => {
+        let Spanned {span, k} = self.parse_tuple_pattern(base, false, e)?;
+        args.push(Spanned {span, k: (attr.0, ArgKind::Lam(k))})
+      }
+      Some((Keyword::ColonEq, mut u)) => {
+        let span = try_get_fspan(base, &e);
+        if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
+          let lhs = self.parse_tuple_pattern(&span, attr.1, lhs)?;
+          args.push(Spanned {span, k: (attr.0, ArgKind::Let(lhs, rhs))})
+        } else { return Err(ElabError::new_e(&span, "':=' argument syntax error")) }
+      }
+      _ => {
+        let span = try_get_fspan(base, &e);
+        let under = Box::new(Spanned {span: span.clone(), k: TuplePatternKind::UNDER});
+        args.push(Spanned {span, k: (attr.0, ArgKind::Lam(TuplePatternKind::Typed(under, e)))})
+      }
     }
     Ok(())
   }
@@ -349,7 +359,7 @@ impl<'a> Parser<'a> {
                     return Err(ElabError::new_e(try_get_span(base, &e), "label: two variants"))
                   }
                 } else {
-                  args.push(self.parse_arg1(base, e, true)?)
+                  self.parse_arg(base, Default::default(), e, &mut args)?
                 }
               }
               ExprKind::Label(Label { name, args, variant, body: u })
@@ -382,22 +392,27 @@ impl<'a> Parser<'a> {
       None => return Err(ElabError::new_e(try_get_span(base, &LispVal::from(u)), "func/proc: syntax error")),
       Some(e) => e,
     };
+    let mut tyargs = vec![];
     let mut args = vec![];
     let mut rets = vec![];
     let name = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => spanned(base, &e, a),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
-        let mut u = Uncons::from(e.clone());
+        let mut u = Uncons::from(e.clone()).peekable();
         let e = u.next().ok_or_else(||
           ElabError::new_e(try_get_span(base, &e), "func/proc syntax error: expecting function name"))?;
         let name = e.as_atom().ok_or_else(||
           ElabError::new_e(try_get_span(base, &e), "func/proc syntax error: expecting an atom"))?;
+        while let Some((e, a)) = u.peek().and_then(|e| e.as_atom().map(|a| (e, a))) {
+          tyargs.push(spanned(base, e, a));
+          u.next();
+        }
         while let Some(e) = u.next() {
           if let Some(AtomId::COLON) = e.as_atom() { break }
-          self.parse_arg(base, e, true, |_, mo, arg| {args.push((mo, arg)); Ok(())})?
+          self.parse_arg(base, Default::default(), e, &mut args)?
         }
         for e in u {
-          self.parse_arg(base, e, false, |_, mo, arg| {rets.push((mo, arg)); Ok(())})?
+          self.parse_arg(base, Default::default(), e, &mut rets)?
         }
         spanned(base, &e, name)
       }
@@ -410,24 +425,30 @@ impl<'a> Parser<'a> {
       }
       self.parse_variant(base, &e)
     } else {None};
-    Ok(Proc {name, args, rets, variant, kind, body: u})
+    Ok(Proc {name, tyargs, args, rets, variant, kind, body: u})
   }
 
-  fn parse_name_and_tyargs(&self, base: &FileSpan, e: &LispVal) -> Result<(Spanned<AtomId>, Vec<TuplePattern>)> {
+  #[allow(clippy::type_complexity)]
+  fn parse_name_and_tyargs(&self, base: &FileSpan, e: &LispVal) -> Result<(Spanned<AtomId>, Vec<Spanned<AtomId>>, Vec<Arg>)> {
+    let mut tyargs = vec![];
     let mut args = vec![];
     let name = match &*e.unwrapped_arc() {
       &LispKind::Atom(a) => spanned(base, e, a),
       LispKind::List(_) | LispKind::DottedList(_, _) => {
-        let mut u = Uncons::from(e.clone());
+        let mut u = Uncons::from(e.clone()).peekable();
         let e = u.next().ok_or_else(|| ElabError::new_e(try_get_span(base, e), "typedef: syntax error"))?;
         let a = spanned(base, &e, e.as_atom().ok_or_else(||
           ElabError::new_e(try_get_span(base, &e), "typedef: expected an atom"))?);
-        for e in u { args.push(self.parse_arg1(base, e, true)?) }
+        while let Some((e, a)) = u.peek().and_then(|e| e.as_atom().map(|a| (e, a))) {
+          tyargs.push(spanned(base, e, a));
+          u.next();
+        }
+        for e in u { self.parse_arg(base, Default::default(), e, &mut args)? }
         a
       },
       _ => return Err(ElabError::new_e(try_get_span(base, e), "typedef: syntax error"))
     };
-    Ok((name, args))
+    Ok((name, tyargs, args))
   }
 
   /// Parses the input lisp literal `e` into a list of top level items and appends them to `ast`.
@@ -446,18 +467,18 @@ impl<'a> Parser<'a> {
       Some((Keyword::Const, u)) => ItemGroup::Const(u),
       Some((Keyword::Typedef, mut u)) =>
         if let (Some(e1), Some(val), true) = (u.next(), u.next(), u.is_empty()) {
-          let (name, args) = self.parse_name_and_tyargs(base, &e1)?;
-          ItemGroup::Item(spanned(base, e, ItemKind::Typedef {name, args, val}))
+          let (name, tyargs, args) = self.parse_name_and_tyargs(base, &e1)?;
+          ItemGroup::Item(spanned(base, e, ItemKind::Typedef {name, tyargs, args, val}))
         } else {
           return Err(ElabError::new_e(try_get_span(base, e), "typedef: syntax error"))
         },
       Some((Keyword::Struct, mut u)) => {
         let e1 = u.next().ok_or_else(||
           ElabError::new_e(try_get_span(base, e), "struct: expecting name"))?;
-        let (name, args) = self.parse_name_and_tyargs(base, &e1)?;
+        let (name, tyargs, args) = self.parse_name_and_tyargs(base, &e1)?;
         let mut fields = vec![];
-        for e in u { fields.push(self.parse_arg1(base, e, false)?) }
-        ItemGroup::Item(spanned(base, e, ItemKind::Struct {name, args, fields}))
+        for e in u { self.parse_arg(base, Default::default(), e, &mut fields)? }
+        ItemGroup::Item(spanned(base, e, ItemKind::Struct {name, tyargs, args, fields}))
       }
       _ => return Err(ElabError::new_e(try_get_span(base, e),
         format!("MMC: unknown top level item: {}", self.fe.to(e))))
@@ -552,12 +573,16 @@ impl<'a> Parser<'a> {
             (PrimType::Input, []) => TypeKind::Input,
             (PrimType::Output, []) => TypeKind::Output,
             (PrimType::Own, [ty]) => TypeKind::Own(ty.clone()),
-            (PrimType::Ref, [ty]) => TypeKind::Shr(None, ty.clone()),
+            (PrimType::Ref, [ty]) => TypeKind::Ref(None, ty.clone()),
             (PrimType::RefSn, [e]) => TypeKind::RefSn(e.clone()),
+            (PrimType::Shr, [ty]) => TypeKind::Shr(None, ty.clone()),
             (PrimType::Sn, [e]) => TypeKind::Sn(e.clone()),
             (PrimType::List, _) => TypeKind::List(args),
-            (PrimType::Struct, _) => TypeKind::Struct(
-              args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?),
+            (PrimType::Struct, _) => {
+              let mut out = vec![];
+              for e in args { self.parse_arg(base, Default::default(), e, &mut out)? }
+              TypeKind::Struct(out)
+            },
             (PrimType::And, _) => TypeKind::And(args),
             (PrimType::Or, _) => TypeKind::Or(args),
             (PrimType::Moved, [ty]) => TypeKind::Moved(ty.clone()),
@@ -617,8 +642,12 @@ impl<'a> Parser<'a> {
         (PrimProp::Imp, [e1, e2]) => PropKind::Imp(e1.clone(), e2.clone()),
         (PrimProp::Star, _) => PropKind::Sep(args),
         (PrimProp::Wand, [e1, e2]) => PropKind::Wand(e1.clone(), e2.clone()),
-        (PrimProp::Pure, [e]) => PropKind::Mm0(e.clone()),
+        (PrimProp::Pure, _) => {
+          let (args, last) = self.parse_pure_args(base, args)?;
+          PropKind::Mm0(args, last)
+        }
         (PrimProp::Moved, [ty]) => PropKind::Moved(ty.clone()),
+        (PrimProp::HasTy, [e, ty]) => PropKind::HasTy(e.clone(), ty.clone()),
         (PrimProp::Eq, [e1, e2]) => PropKind::Eq(e1.clone(), e2.clone()),
         _ => return Err(ElabError::new_e(try_get_span(base, &head), "incorrect number of arguments")),
       }
@@ -700,12 +729,16 @@ impl<'a> Parser<'a> {
         },
         (PrimOp::Uninit, []) => CallKind::Uninit,
         (PrimOp::Uninit, _) => err!("expected 0 arguments"),
-        (PrimOp::Pure, [e]) => CallKind::Mm0(e.clone()),
+        (PrimOp::Pure, _) => {
+          let (args, last) = self.parse_pure_args(base, args)?;
+          CallKind::Mm0(args, last)
+        }
+        (PrimOp::Place, [e]) => CallKind::Place(e.clone()),
         (PrimOp::Ref, [e]) => CallKind::Ref(e.clone()),
         (PrimOp::TypeofBang, [e]) => CallKind::TypeofBang(e.clone()),
         (PrimOp::Typeof, [e]) => CallKind::Typeof(e.clone()),
         (PrimOp::Sizeof, [ty]) => CallKind::Sizeof(ty.clone()),
-        (PrimOp::Pure, _) | (PrimOp::Ref, _) | (PrimOp::TypeofBang, _) |
+        (PrimOp::Place, _) | (PrimOp::Ref, _) | (PrimOp::TypeofBang, _) |
         (PrimOp::Typeof, _) |  (PrimOp::Sizeof, _) => err!("expected 1 argument"),
         (PrimOp::Unreachable, args) => match args {
           [] => CallKind::Unreachable(None),
@@ -725,11 +758,28 @@ impl<'a> Parser<'a> {
     })
   }
 
+  #[allow(clippy::type_complexity)]
+  fn parse_pure_args(&self, base: &FileSpan, mut args: Vec<LispVal>) -> Result<(Box<[(AtomId, LispVal)]>, LispVal)> {
+    if let Some(last) = args.pop() {
+      Ok((args.into_iter().map(|e| {
+        let span = try_get_fspan(base, &e);
+        if let Some((Keyword::ColonEq, mut u)) = self.head_keyword(&e) {
+          if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
+            return Ok((lhs.as_atom().ok_or_else(||
+              ElabError::new_e(&try_get_fspan(&span, &lhs), "pure: expected an atom"))?, rhs))
+          }
+        }
+        Err(ElabError::new_e(&span, "'pure' syntax error"))
+      }).collect::<Result<_>>()?, last))
+    } else { Err(ElabError::new_e(base, "expected 1 argument")) }
+  }
+
   /// Parse an MM0 expression. This is a sort of hybrid of MMC and MM0 syntax because it is MM0 syntax
   /// in the term constructors with variables drawn from the MMC context. For example,
   /// `(begin {x := 1} {y := 2} (pure $ x + x = y $))` will work, where `+` and `=` are the MM0 term constructors
   /// `add` and `eq`, while `x` and `y` are program variables in the MMC context. (TODO: MMC antiquotation?)
   pub fn parse_mm0_expr<T>(&self, base: &FileSpan, e: LispVal,
+    subst: Vec<(AtomId, T)>,
     get: impl FnMut(&LispVal, AtomId) -> Option<T>
   ) -> Result<Mm0Expr<T>> {
     struct Mm0<'a, T, F> {
@@ -803,10 +853,15 @@ impl<'a> Parser<'a> {
       }
     }
 
+    let mut vars = HashMap::new();
+    let subst = subst.into_iter().enumerate().map(|(i, (a, e))| {
+      vars.insert(a, i.try_into().expect("overflow"));
+      e
+    }).collect();
     let mut mm0 = Mm0 {
-      subst: vec![],
+      subst,
       base,
-      vars: HashMap::new(),
+      vars,
       dummies: vec![],
       get,
       p: self,

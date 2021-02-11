@@ -87,6 +87,28 @@ impl TuplePattern {
   }
 }
 
+/// An argument declaration for a function.
+pub type Arg = Spanned<(ArgAttr, ArgKind)>;
+
+/// An argument declaration for a function.
+#[derive(Debug, DeepSizeOf)]
+pub enum ArgKind {
+  /// A standard argument of the form `{x : T}`, a "lambda binder"
+  Lam(TuplePatternKind),
+  /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
+  /// invocations, they act as let binders in the remainder of the arguments.)
+  Let(TuplePattern, LispVal),
+}
+
+impl ArgKind {
+  /// Extracts the binding part of this argument.
+  #[must_use] pub fn var(&self) -> &TuplePatternKind {
+    match self {
+      Self::Lam(pat) | Self::Let(Spanned {k: pat, ..}, _) => pat,
+    }
+  }
+}
+
 /// A pattern, the left side of a match statement.
 pub type Pattern = Spanned<PatternKind>;
 
@@ -169,7 +191,7 @@ pub enum TypeKind {
   ///
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
-  Struct(Box<[TuplePattern]>),
+  Struct(Vec<Arg>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -244,7 +266,7 @@ pub enum PropKind {
   /// The move operator `|T|` on types.
   Moved(LispVal),
   /// An embedded MM0 proposition of sort `wff`.
-  Mm0(LispVal),
+  Mm0(Box<[(AtomId, LispVal)]>, LispVal),
 }
 
 /// The type of variant, or well founded order that recursions decrease.
@@ -283,7 +305,7 @@ pub struct Label {
   /// The name of the label
   pub name: AtomId,
   /// The arguments of the label
-  pub args: Vec<TuplePattern>,
+  pub args: Vec<Arg>,
   /// The variant, for recursive calls
   pub variant: Option<Box<Variant>>,
   /// The code that is executed when you jump to the label
@@ -423,7 +445,7 @@ pub enum CallKind {
   Shr(LispVal, LispVal),
   /// A `(pure)` expression, which embeds MM0 syntax to produce an expression
   /// of numeric or boolean type.
-  Mm0(LispVal),
+  Mm0(Box<[(AtomId, LispVal)]>, LispVal),
   /// `{e : T}` is `e`, with the type `T`. This is used only to direct
   /// type inference, it has no effect otherwise.
   Typed(LispVal, LispVal),
@@ -447,6 +469,8 @@ pub enum CallKind {
   Typeof(LispVal),
   /// `(sizeof T)` is the size of `T` in bytes.
   Sizeof(LispVal),
+  /// `(ref x)` constructs `x` as an lvalue.
+  Place(LispVal),
   /// `(& x)` constructs a reference to `x`.
   Ref(LispVal),
   /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;
@@ -487,22 +511,26 @@ pub struct Field {
 pub use super::ast::ProcKind;
 
 /// The annotations that can appear on function arguments.
-#[derive(Clone, Copy, Debug)]
-pub enum MutOut {
-  /// No annotation
-  None,
-  /// `{(mut x) : T}` in function arguments means that `x` will be mutated
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ArgAttr {
+  /// `(mut {x : T})` in function arguments means that `x` will be mutated
   /// as a side effect of the call. It should be paired with `out` in the function
   /// returns to indicate the resulting name; otherwise it will be prepended to
   /// the function returns as an `out` with the same name.
-  Mut,
-  /// `{(out x x') : T}` in function returns means that the variable `x`
+  pub mut_: bool,
+  /// `(global {x : T})` in function arguments means that `x` is the name of a global
+  /// variable that will be used in the function.
+  pub global: bool,
+  /// `(implicit {x : T})` in function arguments means that applications will
+  /// use `_` for this argument instead of supplying a value.
+  pub implicit: bool,
+  /// `(out x {x' : T})` in function returns means that the variable `x`
   /// (which must be a `(mut x)` in the function arguments) is being mutated to
   /// `x'`; this acts as a binder declaring variable `x'`, and both `x` and `x'`
   /// can be used in subsequent types.
-  Out(AtomId)
+  pub out: Option<AtomId>,
 }
-crate::deep_size_0!(MutOut);
+crate::deep_size_0!(ArgAttr);
 
 /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
 #[derive(Debug, DeepSizeOf)]
@@ -511,10 +539,12 @@ pub struct Proc {
   pub kind: ProcKind,
   /// The name of the procedure.
   pub name: Spanned<AtomId>,
+  /// The type arguments of the procedure.
+  pub tyargs: Vec<Spanned<AtomId>>,
   /// The arguments of the procedure.
-  pub args: Vec<(MutOut, TuplePattern)>,
+  pub args: Vec<Arg>,
   /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: Vec<(MutOut, TuplePattern)>,
+  pub rets: Vec<Arg>,
   /// The variant, used for recursive functions.
   pub variant: Option<Box<Variant>>,
   /// The body of the procedure.
@@ -537,8 +567,10 @@ pub enum ItemKind {
   Typedef {
     /// The name of the newly declared type
     name: Spanned<AtomId>,
+    /// The type arguments of the type declaration, for a parametric type
+    tyargs: Vec<Spanned<AtomId>>,
     /// The arguments of the type declaration, for a parametric type
-    args: Vec<TuplePattern>,
+    args: Vec<Arg>,
     /// The value of the declaration (another type)
     val: LispVal,
   },
@@ -546,9 +578,11 @@ pub enum ItemKind {
   Struct {
     /// The name of the structure
     name: Spanned<AtomId>,
+    /// The type arguments of the type
+    tyargs: Vec<Spanned<AtomId>>,
     /// The parameters of the type
-    args: Vec<TuplePattern>,
+    args: Vec<Arg>,
     /// The fields of the structure
-    fields: Vec<TuplePattern>,
+    fields: Vec<Arg>,
   },
 }

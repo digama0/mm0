@@ -127,7 +127,7 @@ do {
         $ Represents env2 sorts terms thms $)})
 
     (global {{C : (? CState)} := uninit})
-    (global {{M : (? (MState C))} := uninit})
+    (global {{M : (? (MState (cast C)))} := uninit})
 
     (func (cmd_unpack {cmd : (& (array u8 5))} : u8 u8 u32)
       {v := (index cmd 0)}
@@ -135,8 +135,8 @@ do {
       (match {v shr 6}
         {0 => (return w 1 0)}
         {1 => (return w 2 {(index cmd 1) as u32})}
-        {2 => (return w 3 {{(slice cmd 1 2) pun u16} as u32})}
-        {3 => (return w 5 {(slice cmd 1 4) pun u32})}))
+        {2 => (return w 3 {{(pun @ slice cmd 1 2) : u16} as u32})}
+        {3 => (return w 5 {(pun @ slice cmd 1 4) : u32})}))
 
     (proc (parse_until
       (global {C : CState})
