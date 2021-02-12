@@ -298,21 +298,8 @@ impl<'a> Parser<'a> {
           push(cond_tru)?;
           ExprKind::If {branches, els}
         }
-        Some((Keyword::Match, mut u)) => {
-          let c =  u.next().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "match: syntax error"))?;
-          let mut branches = vec![];
-          for e in u {
-            if let Some((Keyword::Arrow, mut u)) = self.head_keyword(&e) {
-              if let (Some(p), Some(e), true) = (u.next(), u.next(), u.is_empty()) {
-                branches.push((p, e));
-              } else {
-                return Err(ElabError::new_e(try_get_span(base, &e), "match: syntax error"))
-              }
-            } else {
-              return Err(ElabError::new_e(try_get_span(base, &e), "match: syntax error"))
-            }
-          }
+        Some((Keyword::Match, u)) => {
+          let (c, branches) = self.parse_match(&try_get_fspan(base, &e), u)?;
           ExprKind::Match(c, branches)
         }
         Some((Keyword::While, mut u)) => {
@@ -370,9 +357,13 @@ impl<'a> Parser<'a> {
               let mut args = vec![];
               let mut variant = None;
               for e in u {
-                if let Some((Keyword::Variant, u)) = self.head_keyword(&e) {
-                  if mem::replace(&mut variant, Some(u.as_lisp())).is_some() {
-                    return Err(ElabError::new_e(try_get_span(base, &e), "call: two variants"))
+                if let Some((Keyword::Variant, mut u)) = self.head_keyword(&e) {
+                  if let (Some(v), true) = (u.next(), u.is_empty()) {
+                    if mem::replace(&mut variant, Some(v)).is_some() {
+                      return Err(ElabError::new_e(try_get_span(base, &e), "call: two variants"))
+                    }
+                  } else {
+                    return Err(ElabError::new_e(try_get_span(base, &e), "variant: expected 1 argument"))
                   }
                 } else {
                   args.push(e)
@@ -385,6 +376,23 @@ impl<'a> Parser<'a> {
       },
       _ => return Err(ElabError::new_e(try_get_span(base, &e), "unknown expression"))
     }})
+  }
+
+  fn parse_match(&self, base: &FileSpan, mut u: impl Iterator<Item=LispVal>) -> Result<(LispVal, Vec<(LispVal, LispVal)>)> {
+    let c = u.next().ok_or_else(|| ElabError::new_e(base, "match: syntax error"))?;
+    let mut branches = vec![];
+    for e in u {
+      if let Some((Keyword::Arrow, mut u)) = self.head_keyword(&e) {
+        if let (Some(p), Some(e), true) = (u.next(), u.next(), u.is_empty()) {
+          branches.push((p, e));
+        } else {
+          return Err(ElabError::new_e(base, "match: syntax error"))
+        }
+      } else {
+        return Err(ElabError::new_e(base, "match: syntax error"))
+      }
+    }
+    Ok((c, branches))
   }
 
   fn parse_proc(&self, base: &FileSpan, kind: &dyn Fn(AtomId) -> Result<ProcKind>, mut u: Uncons) -> Result<Proc> {
@@ -610,7 +618,11 @@ impl<'a> Parser<'a> {
         match as_keyword(self.kw, &head) {
           Some(Keyword::If) => TypeKind::If(args.try_into().map_err(|_|
             ElabError::new_e(try_get_span(base, &head), "unexpected number of arguments"))?),
-          _ => return Err(ElabError::new_e(try_get_span(base, &head), "expected an atom"))
+          Some(Keyword::Match) => {
+            let (c, branches) = self.parse_match(&try_get_fspan(base, e), args.into_iter())?;
+            TypeKind::Match(c, branches)
+          }
+          _ => TypeKind::Prop(self.parse_prop(base, names, e)?.k),
         }
       }
     }))
@@ -666,7 +678,7 @@ impl<'a> Parser<'a> {
       return Err(ElabError::new_e(base, format!($($e),*)))
     }}
     if is_label(f) {
-      return Ok(CallKind::Jump(f, args))
+      return Ok(CallKind::Jump(Some(f), args.into_iter(), variant))
     }
     Ok(match names.get(&f) {
       None => err!("unknown function '{}'", self.fe.to(&f)),
@@ -723,9 +735,9 @@ impl<'a> Parser<'a> {
           _ => err!("expected 1 or 2 arguments"),
         },
         (PrimOp::Slice, args) => match args {
-          [arr, idx] => CallKind::Slice(arr.clone(), idx.clone(), None),
-          [arr, idx, pf] => CallKind::Slice(arr.clone(), idx.clone(), Some(pf.clone())),
-          _ => err!("expected 2 or 3 arguments"),
+          [arr, idx, len] => CallKind::Slice(arr.clone(), idx.clone(), len.clone(), None),
+          [arr, idx, len, pf] => CallKind::Slice(arr.clone(), idx.clone(), len.clone(), Some(pf.clone())),
+          _ => err!("expected 3 or 4 arguments"),
         },
         (PrimOp::Uninit, []) => CallKind::Uninit,
         (PrimOp::Uninit, _) => err!("expected 0 arguments"),
@@ -750,6 +762,11 @@ impl<'a> Parser<'a> {
         } else {
           CallKind::Break(None, args.into_iter())
         },
+        (PrimOp::Continue, args1) => if let Some(a) = args1.first().and_then(|e| e.as_atom()).filter(|&a| is_label(a)) {
+          CallKind::Jump(Some(a), {let mut it = args.into_iter(); it.next(); it}, variant)
+        } else {
+          CallKind::Jump(None, args.into_iter(), variant)
+        }
       }
       Some(Entity::Proc(Spanned {k: ProcTc::Typed(proc), ..})) =>
         CallKind::Call(CallExpr {f: Spanned {span: fsp, k: f}, args, variant}, proc.tyargs),

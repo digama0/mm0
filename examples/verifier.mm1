@@ -97,7 +97,7 @@ do {
     (struct Thm0 {num_args : u16} {_ : u16} {p_args : u32})
 
     (struct (CData A)
-      (ghost {max : nat})
+      (implicit @ ghost {max : nat})
       {buf : (& (array A max))})
 
     (struct (MData A {c : (CData A)})
@@ -162,14 +162,14 @@ do {
       {nsorts := (p . num_sorts)}
       {h2 := (assert {nsorts <= MAX_SORTS})}
       {{C : CState} <- (list
-        (list nsorts (& (slice file (sizeof Header) nsorts)))
-        (list (p . num_terms) (& (slice file p_terms)))
-        (list (p . num_thms) (& (slice file p_thms))))}
-      {(dat eq) := (typeof (& (slice buf 0 0)))}
+        (list (& (slice file (sizeof Header) nsorts)))
+        (list (& (slice file (p . p_terms) (p . num_terms))))
+        (list (& (slice file (p . p_thms) (p . num_thms)))))}
+      {(dat eq) := (typeof (& (slice ((C . sorts) . buf) 0 0)))}
       {(M . sorts) <- (list 0 dat eq)}
-      {(dat eq) := (typeof (& (slice buf 0 0)))}
+      {(dat eq) := (typeof (& (slice ((C . terms) . buf) 0 0)))}
       {(M . terms) <- (list 0 dat eq)}
-      {(dat eq) := (typeof (& (slice buf 0 0)))}
+      {(dat eq) := (typeof (& (slice ((C . thms) . buf) 0 0)))}
       {(M . thms) <- (list 0 dat eq)}
       {(M . env) <- _}
       {(M . env2) <- _}
@@ -214,9 +214,9 @@ do {
             -- w <> sz <> data = cmd_unpack (* stmt),
             -- remainder = old_rem - data |- remainder < old_rem
             _))))
-      (assert {g_num_sorts = nsorts})
-      (assert {g_num_terms = nterms})
-      (assert {g_num_thms = nthms})
+      (assert {((M . sorts) . cur) = ((C . sorts) . max)})
+      (assert {((M . terms) . cur) = ((C . terms) . max)})
+      (assert {((M . thms) . cur) = ((C . thms) . max)})
       (entail (parse_until CMD_END) _))
 
     (proc (main

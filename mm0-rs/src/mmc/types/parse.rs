@@ -213,6 +213,8 @@ pub enum TypeKind {
   Uninit(LispVal),
   /// `(if c A B)` is a conditional type: if `c` is true then this is `A`, otherwise `B`.
   If([LispVal; 3]),
+  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
+  Match(LispVal, Vec<(LispVal, LispVal)>),
   /// A propositional type, used for hypotheses.
   Prop(PropKind),
   /// A user-defined type-former.
@@ -478,14 +480,14 @@ pub enum CallKind {
   /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
   /// `i` is in the bounds of the array.
   Index(LispVal, LispVal, Option<LispVal>),
-  /// If `x: (array T n)`, then `(slice x b h): (array T a)` if
-  /// `h` is a proof that `b + a <= n`. Computationally this corresponds to
-  /// simply `&x + b * sizeof T`, in the manner of C pointer arithmetic.
-  Slice(LispVal, LispVal, Option<LispVal>),
+  /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
+  /// `h` is a proof that `a + b <= n`. Computationally this corresponds to
+  /// simply `&x + a * sizeof T`, in the manner of C pointer arithmetic.
+  Slice(LispVal, LispVal, LispVal, Option<LispVal>),
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Option<LispVal>),
   /// `(lab e1 ... en)` jumps to label `lab` with `e1 ... en` as arguments.
-  Jump(AtomId, Vec<LispVal>),
+  Jump(Option<AtomId>, std::vec::IntoIter<LispVal>, Option<LispVal>),
   /// * `(break e)` jumps out of the nearest enclosing loop, returning `e` to the enclosing scope.
   /// * `(break lab e)` jumps out of the scope containing label `lab`,
   ///   returning `e` as the result of the block.

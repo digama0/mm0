@@ -163,9 +163,9 @@ impl<'a> BuildAst<'a> {
       &ast::ExprKind::Var(v) => f(v)?,
       ast::ExprKind::Index(e, _, _) |
       ast::ExprKind::Proj(e, _) |
-      ast::ExprKind::Slice(e, _, _) |
       ast::ExprKind::Ghost(e) |
       ast::ExprKind::Ref(e) => Self::add_origins(e, f)?,
+      ast::ExprKind::Slice(e, _) => Self::add_origins(&e.0, f)?,
       ast::ExprKind::Block(es) => if let Some(e) = es.last() {Self::add_origins(e, f)?},
       ast::ExprKind::If {then, els, ..} => {Self::add_origins(then, f)?; Self::add_origins(els, f)?}
       ast::ExprKind::Match(_, pats) => for (_, e) in &**pats {Self::add_origins(e, f)?},
@@ -298,6 +298,8 @@ impl<'a> BuildAst<'a> {
         Box::new(self.build_expr(&span, c)?),
         Box::new(self.build_ty(&span, &t)?),
         Box::new(self.build_ty(&span, &e)?)),
+      TypeKind::Match(e, branches) => ast::TypeKind::Match(Box::new(self.build_expr(&span, e)?),
+        self.build_match_branches(&span, branches, |this, rhs| this.build_ty(&span, &rhs))?),
       TypeKind::Ghost(ty) => ast::TypeKind::Ghost(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Uninit(ty) => ast::TypeKind::Uninit(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Prop(pk) => ast::TypeKind::Prop(Box::new(self.build_parsed_prop(span.clone(), pk)?)),
@@ -421,14 +423,7 @@ impl<'a> BuildAst<'a> {
         Ok(ret)
       })?,
       ExprKind::Match(e, branches) => ast::ExprKind::Match(Box::new(self.build_expr(&span, e)?),
-        self.with_ctx(|this| branches.into_iter().map(|(lhs, rhs)| {
-          let mut negp = vec![];
-          let res = this.with_ctx(|this| -> Result<_> {
-            Ok((this.push_pattern(&span, true, true, &mut negp, &lhs)?, this.push_expr(&span, rhs)?))
-          })?;
-          for (name, v) in negp { this.push(name, v) }
-          Ok(res)
-        }).collect::<Result<_>>())?),
+        self.build_match_branches(&span, branches, |this, rhs| this.push_expr(&span, rhs))?),
       ExprKind::While {hyp, cond, var, body} => {
         let label = self.fresh_var();
         let cond = Box::new(self.build_expr(&span, cond)?);
@@ -444,6 +439,19 @@ impl<'a> BuildAst<'a> {
       ExprKind::Hole => ast::ExprKind::Infer(true),
     };
     Ok(Spanned {span, k})
+  }
+
+  fn build_match_branches<T>(&mut self, span: &FileSpan, branches: Vec<(LispVal, LispVal)>,
+    mut f: impl FnMut(&mut Self, LispVal) -> Result<T>
+  ) -> Result<Box<[(ast::Pattern, T)]>> {
+    self.with_ctx(|this| branches.into_iter().map(|(lhs, rhs)| {
+      let mut negp = vec![];
+      let res = this.with_ctx(|this| -> Result<_> {
+        Ok((this.push_pattern(span, true, true, &mut negp, &lhs)?, f(this, rhs)?))
+      })?;
+      for (name, v) in negp { this.push(name, v) }
+      Ok(res)
+    }).collect())
   }
 
   fn build_block(&mut self, span: &FileSpan, es: Uncons) -> Result<Vec<ast::Expr>> {
@@ -582,7 +590,8 @@ impl<'a> BuildAst<'a> {
     }
     if let Some(&LabelId(v, i)) = self.label_map.get(&e.f.k).and_then(|vec| vec.last()) {
       let args = e.args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
-      return Ok(Spanned {span, k: ast::ExprKind::Jump(v, i, args)})
+      let variant = if let Some(e) = e.variant {Some(Box::new(self.build_expr(&span, e)?))} else {None};
+      return Ok(Spanned {span, k: ast::ExprKind::Jump(v, i, args, variant)})
     }
     let is_label = |a| self.label_map.get(&a).map_or(false, |v| !v.is_empty());
     let k = match self.p.parse_call(&span, self.names, is_label, e)? {
@@ -655,9 +664,10 @@ impl<'a> BuildAst<'a> {
         Box::new(self.build_expr(&span, a)?),
         Box::new(self.build_expr(&span, i)?),
         if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
-      CallKind::Slice(a, i, h) => ast::ExprKind::Slice(
-        Box::new(self.build_expr(&span, a)?),
-        Box::new(self.build_expr(&span, i)?),
+      CallKind::Slice(a, i, len, h) => ast::ExprKind::Slice(Box::new((
+        self.build_expr(&span, a)?,
+        self.build_expr(&span, i)?,
+        self.build_expr(&span, len)?)),
         if let Some(h) = h {Some(Box::new(self.build_expr(&span, h)?))} else {None}),
       CallKind::Call(CallExpr {f, args, variant}, tyargs) => {
         let mut it = args.into_iter();
@@ -670,10 +680,15 @@ impl<'a> BuildAst<'a> {
       CallKind::Unreachable(None) => ast::ExprKind::Unreachable(Box::new(
         Spanned {span: span.clone(), k: ast::ExprKind::Infer(false)})),
       CallKind::Unreachable(Some(e)) => ast::ExprKind::Unreachable(Box::new(self.build_expr(&span, e)?)),
-      CallKind::Jump(name, args) => {
-        let LabelId(v, i) = *self.label_map.get(&name).and_then(|v| v.last()).expect("is_label");
+      CallKind::Jump(name, args, variant) => {
+        let LabelId(v, i) = if let Some(name) = name {
+          *self.label_map.get(&name).and_then(|v| v.last()).expect("is_label")
+        } else {
+          LabelId(*self.loops.last().ok_or_else(|| ElabError::new_e(&span, "can't break, not in a loop"))?, 0)
+        };
         let args = args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
-        ast::ExprKind::Jump(v, i, args)
+        let variant = if let Some(e) = variant {Some(Box::new(self.build_expr(&span, e)?))} else {None};
+        ast::ExprKind::Jump(v, i, args, variant)
       }
       CallKind::Break(name, args) => ast::ExprKind::Break(
         if let Some(name) = name {

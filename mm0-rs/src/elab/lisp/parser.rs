@@ -832,10 +832,10 @@ impl<'a> LispParser<'a> {
         }
         Ok(Ir::dotted_list(e.span, cs, self.expr(true, e)?))
       }
-      SExprKind::Number(n) => Ok(Ir::Const(LispVal::number(n.clone().into()))),
-      SExprKind::String(s) => Ok(Ir::Const(LispVal::string(s.clone()))),
-      &SExprKind::Bool(b) => Ok(Ir::Const(LispVal::bool(b))),
-      SExprKind::Undef => Ok(Ir::Const(LispVal::undef())),
+      SExprKind::Number(n) => Ok(Ir::Const(span!(e.span, LispVal::number(n.clone().into())))),
+      SExprKind::String(s) => Ok(Ir::Const(span!(e.span, LispVal::string(s.clone())))),
+      &SExprKind::Bool(b) => Ok(Ir::Const(span!(e.span, LispVal::bool(b)))),
+      SExprKind::Undef => Ok(Ir::Const(span!(e.span, LispVal::undef()))),
       SExprKind::DocComment(doc2, e) => {
         // push an extra newline to separate multiple doc comments
         if !doc.is_empty() {doc.push('\n');}

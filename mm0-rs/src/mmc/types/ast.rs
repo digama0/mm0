@@ -285,6 +285,8 @@ pub enum TypeKind {
   /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
   If(Box<Expr>, Box<Type>, Box<Type>),
+  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
+  Match(Box<Expr>, Box<[(Pattern, Type)]>),
   /// `(ghost A)` is a computationally irrelevant version of `A`, which means
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
@@ -329,6 +331,7 @@ impl Remap for TypeKind {
       TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
       TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
       TypeKind::If(c, t, e) => TypeKind::If(c.remap(r), t.remap(r), e.remap(r)),
+      TypeKind::Match(c, brs) => TypeKind::Match(c.remap(r), brs.remap(r)),
       TypeKind::Ghost(ty) => TypeKind::Ghost(ty.remap(r)),
       TypeKind::Uninit(ty) => TypeKind::Uninit(ty.remap(r)),
       TypeKind::Prop(p) => TypeKind::Prop(p.remap(r)),
@@ -488,9 +491,9 @@ pub enum ExprKind {
   /// An index operation `(index a i h): T` where `a: (array T n)`,
   /// `i: nat`, and `h: i < n`.
   Index(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
-  /// If `x: (array T n)`, then `(slice x b h): (array T a)` if
-  /// `h` is a proof that `b + a <= n`.
-  Slice(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
+  /// If `x: (array T n)`, then `(slice x a b h): (array T b)` if
+  /// `h` is a proof that `a + b <= n`.
+  Slice(Box<(Expr, Expr, Expr)>, Option<Box<Expr>>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(Box<Expr>, FieldName),
@@ -589,7 +592,7 @@ pub enum ExprKind {
   /// `(lab e1 ... en)` jumps to label `lab` with `e1 ... en` as arguments.
   /// Here the `VarId` is the target label group, and the `u16` is the index
   /// in the label group.
-  Jump(VarId, u16, Vec<Expr>),
+  Jump(VarId, u16, Vec<Expr>, Option<Box<Expr>>),
   /// `(break lab e)` jumps out of the scope containing label `lab`,
   /// returning `e` as the result of the block. Unlike [`Jump`](Self::Jump),
   /// this does not contain a label index because breaking from any label
@@ -620,7 +623,7 @@ impl Remap for ExprKind {
       ExprKind::Binop(op, e1, e2) => ExprKind::Binop(*op, e1.remap(r), e2.remap(r)),
       ExprKind::Sn(e, h) => ExprKind::Sn(e.remap(r), h.remap(r)),
       ExprKind::Index(a, i, h) => ExprKind::Index(a.remap(r), i.remap(r), h.remap(r)),
-      ExprKind::Slice(a, i, h) => ExprKind::Slice(a.remap(r), i.remap(r), h.remap(r)),
+      ExprKind::Slice(e, h) => ExprKind::Slice(e.remap(r), h.remap(r)),
       ExprKind::Proj(e, i) => ExprKind::Proj(e.remap(r), *i),
       ExprKind::Deref(e) => ExprKind::Deref(e.remap(r)),
       ExprKind::List(e) => ExprKind::List(e.remap(r)),
@@ -649,7 +652,7 @@ impl Remap for ExprKind {
       ExprKind::While { label, hyp, cond, var, body } => ExprKind::While {
         label: *label, hyp: *hyp, cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
       ExprKind::Unreachable(e) => ExprKind::Unreachable(e.remap(r)),
-      ExprKind::Jump(l, i, e) => ExprKind::Jump(*l, *i, e.remap(r)),
+      ExprKind::Jump(l, i, e, var) => ExprKind::Jump(*l, *i, e.remap(r), var.remap(r)),
       ExprKind::Break(v, e) => ExprKind::Break(*v, e.remap(r)),
       ExprKind::Return(e) => ExprKind::Return(e.remap(r)),
       &ExprKind::Infer(b) => ExprKind::Infer(b),

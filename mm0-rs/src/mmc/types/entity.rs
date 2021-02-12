@@ -66,6 +66,9 @@ make_prims! {
     BitXor: "bxor",
     /// `{(cast {x : T} h) : U}` returns `x` of type `U` if `h` proves `x :> T -* x :> U`.
     Cast: "cast",
+    /// * `(continue e)` jumps to the start of the nearest enclosing loop.
+    /// * `(continue lab e)` jumps to the start of the loop with label `lab`.
+    Continue: "continue",
     /// `{x = y}` returns true if `x` is equal to `y`
     Eq: "=",
     /// `(ghost x)` returns the same thing as `x` but in the type `(ghost A)`.
