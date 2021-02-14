@@ -247,8 +247,6 @@ env_debug! {
   num::BigInt,
   crate::util::ArcString,
   crate::elab::lisp::Syntax,
-  crate::mmc::types::Keyword,
-  crate::mmc::Compiler,
   crate::elab::lisp::BuiltinProc,
   crate::elab::lisp::ProcSpec,
   crate::parser::ast::Prec,

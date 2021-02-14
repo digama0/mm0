@@ -13,11 +13,12 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["server", "doc"]
+default = ["server", "doc", "mmc"]
 server = ["lsp-types", "lsp-server", "crossbeam", "simplelog", "log"]
 doc = ["pulldown-cmark"]
 memory = ["deepsize_derive/nodummy"]
 wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
+mmc = ["bumpalo"]
 
 [profile.release]
 debug = true
@@ -32,14 +33,15 @@ itertools = "0.10.0"
 pathdiff = "0.2.0"
 num = "0.3.1"
 typed-arena = "2.0.1"
+hashbrown = "0.9.1"
 pretty = "0.10.0"
 clap = "2.33.3"
 futures = { version = "0.3.12", features = ["thread-pool"] }
 serde = "1.0.123"
-serde_json = "1.0.61"
+serde_json = "1.0.62"
 serde_repr = "0.1.6"
 annotate-snippets = { version = "0.9.0", features = ["color"] }
-libc = "0.2.83"
+libc = "0.2.86"
 zerocopy = "0.3.0"
 memchr = "2.3.4"
 bit-set = "0.5.2"
@@ -60,6 +62,9 @@ pulldown-cmark = {version = "0.8.0", optional = true }
 console_error_panic_hook = { version = "0.1.6", optional = true }
 wasm-bindgen = { version = "0.2.70", optional = true }
 web-sys = { version = "0.3.47", features = ["console", "Window", "Document", "HtmlElement"], optional = true }
+
+# For "mmc" feature
+bumpalo = { version = "3.6.0", features = ["boxed", "collections"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = "0.4.2"

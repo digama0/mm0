@@ -60,6 +60,7 @@ pub mod mmb;
 ///
 /// [The `.mmu` file format]: https://github.com/digama0/mm0/blob/master/mm0-hs/README.md#the-mmu-file-format
 pub mod mmu { pub mod import; pub mod export; }
+#[cfg(feature = "mmc")]
 pub mod mmc;
 
 use std::sync::atomic::{AtomicBool, Ordering};

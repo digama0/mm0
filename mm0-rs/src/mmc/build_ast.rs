@@ -10,8 +10,8 @@
 //! The output of this stage is a full AST according to the types in the
 //! [`types::ast`](super::types::ast) module.
 
-use std::{collections::{HashMap, hash_map::Entry}, convert::TryInto};
-
+use std::collections::{HashMap, hash_map::Entry};
+use std::convert::TryInto;
 use crate::elab::{ElabError, Result, environment::AtomId, lisp::{LispVal, Uncons}};
 use crate::util::FileSpan;
 use super::types::{Binop, Mm0Expr, Size, Spanned, Unop, VarId, ast};
@@ -145,15 +145,15 @@ impl<'a> BuildAst<'a> {
     Ok(())
   }
 
-  fn mk_split(&mut self, sp: &FileSpan, Renames {old, new}: Renames) -> Result<HashMap<VarId, (AtomId, AtomId, VarId)>> {
+  fn mk_split(&mut self, sp: &FileSpan, Renames {old, new}: Renames) -> Result<HashMap<VarId, (VarId, AtomId, AtomId)>> {
     let mut map = HashMap::new();
     for (from, to) in old {
       if from == AtomId::UNDER { return Err(ElabError::new_e(sp, "can't rename variable '_'")) }
-      map.entry(self.get_var(sp, from)?).or_insert_with(|| (from, from, self.fresh_var())).0 = to;
+      map.entry(self.get_var(sp, from)?).or_insert_with(|| (self.fresh_var(), from, from)).2 = to;
     }
     for (from, to) in new {
       if from == AtomId::UNDER { return Err(ElabError::new_e(sp, "can't rename variable '_'")) }
-      map.entry(self.get_var(sp, from)?).or_insert_with(|| (from, from, self.fresh_var())).1 = to;
+      map.entry(self.get_var(sp, from)?).or_insert_with(|| (self.fresh_var(), from, from)).1 = to;
     }
     Ok(map)
   }
@@ -174,16 +174,24 @@ impl<'a> BuildAst<'a> {
     Ok(())
   }
 
-  fn push_tuple_pattern(&mut self, Spanned {span, k: pat}: TuplePattern) -> Result<ast::TuplePattern> {
+  fn push_tuple_pattern(&mut self, Spanned {span, k: pat}: TuplePattern, v: Option<VarId>) -> Result<ast::TuplePattern> {
     let k = match pat {
-      TuplePatternKind::Name(g, name) => ast::TuplePatternKind::Name(g, self.push_fresh(name)),
+      TuplePatternKind::Name(g, name) => {
+        let v = v.unwrap_or_else(|| self.fresh_var());
+        self.push(name, v);
+        ast::TuplePatternKind::Name(g, v)
+      }
       TuplePatternKind::Typed(pat, ty) => {
         let ty = self.build_ty(&span, &ty)?;
-        let pat = self.push_tuple_pattern(*pat)?;
+        let pat = self.push_tuple_pattern(*pat, v)?;
         ast::TuplePatternKind::Typed(Box::new(pat), Box::new(ty))
       }
       TuplePatternKind::Tuple(pats) => ast::TuplePatternKind::Tuple(
-        pats.into_iter().map(|pat| self.push_tuple_pattern(pat)).collect::<Result<_>>()?),
+        pats.into_iter().map(|pat| {
+          let v = self.fresh_var();
+          Ok((v, self.push_tuple_pattern(pat, Some(v))?))
+        }).collect::<Result<_>>()?
+      ),
     };
     Ok(Spanned {span, k})
   }
@@ -191,7 +199,7 @@ impl<'a> BuildAst<'a> {
   fn push_pattern(&mut self, base: &FileSpan, pos: bool, neg: bool, negp: &mut Vec<(AtomId, VarId)>, pat: &LispVal) -> Result<ast::Pattern> {
     let Spanned {span, k} = self.p.parse_pattern(base, self.names, pat)?;
     let k = match k {
-      PatternKind::Var(AtomId::UNDER) => ast::PatternKind::Var(self.fresh_var()),
+      PatternKind::Var(AtomId::UNDER) => ast::PatternKind::Ignore,
       PatternKind::Var(a) => ast::PatternKind::Var(self.push_fresh(a)),
       PatternKind::Const(a) => ast::PatternKind::Const(a),
       PatternKind::Number(n) => ast::PatternKind::Number(n),
@@ -222,10 +230,10 @@ impl<'a> BuildAst<'a> {
     }
     let pat = match pat {
       ArgKind::Lam(k) =>
-        ast::ArgKind::Lam(self.push_tuple_pattern(Spanned {span: span.clone(), k})?.k),
+        ast::ArgKind::Lam(self.push_tuple_pattern(Spanned {span: span.clone(), k}, None)?.k),
       ArgKind::Let(pat, val) => {
         let val = Box::new(self.build_expr(&span, val)?);
-        ast::ArgKind::Let(self.push_tuple_pattern(pat)?, val)
+        ast::ArgKind::Let(self.push_tuple_pattern(pat, None)?, val)
       }
     };
     Ok(Spanned {span, k: (attr.into(), pat)})
@@ -242,7 +250,7 @@ impl<'a> BuildAst<'a> {
     f: impl FnOnce(&mut Self, Box<[ast::TuplePattern]>) -> Result<T>
   ) -> Result<T> {
     self.with_ctx(|this| {
-      let pats = pats.into_iter().map(|pat| this.push_tuple_pattern(pat)).collect::<Result<_>>()?;
+      let pats = pats.into_iter().map(|pat| this.push_tuple_pattern(pat, None)).collect::<Result<_>>()?;
       f(this, pats)
     })
   }
@@ -379,7 +387,7 @@ impl<'a> BuildAst<'a> {
       ExprKind::Let {lhs, rhs, with: Renames {old, new}} => {
         let rhs = Box::new(self.build_expr(&span, rhs)?);
         self.apply_rename(&span, &old)?;
-        let lhs = self.push_tuple_pattern(*lhs)?;
+        let lhs = self.push_tuple_pattern(*lhs, None)?;
         self.apply_rename(&span, &new)?;
         ast::ExprKind::Let {lhs, rhs}
       }
@@ -390,16 +398,17 @@ impl<'a> BuildAst<'a> {
         Self::add_origins(&lhs, &mut |var| {
           if let Entry::Vacant(e) = split.entry(var) {
             if let Some(from) = self.ctx.iter().find_map(|v| match *v { Ctx::Var(a, v) if v == var => Some(a), _ => None}) {
-              e.insert((from, from, self.fresh_var()));
+              e.insert((self.fresh_var(), from, from));
             }
           }
           Ok(())
         })?;
-        for (vfrom, (from, to, vto)) in split {
-          self.push(from, vfrom);
-          self.push(to, vto);
-        }
-        ast::ExprKind::Assign {lhs: Box::new(lhs), rhs}
+        let oldmap = split.into_iter().map(|(vnew, (vold, new, old))| {
+          self.push(old, vold);
+          self.push(new, vnew);
+          (vnew, vold)
+        }).collect();
+        ast::ExprKind::Assign {lhs: Box::new(lhs), rhs, oldmap}
       }
       ExprKind::Proj(e, i) => ast::ExprKind::Proj(Box::new(self.build_expr(&span, e)?), i),
       ExprKind::Call(c) => return self.build_call_expr(span, c),
@@ -720,22 +729,31 @@ impl<'a> BuildAst<'a> {
 
   fn build_proc(&mut self, sp: &FileSpan,
     Proc {kind, name, tyargs, args, mut rets, variant, body}: Proc
-  ) -> Result<ast::Proc> {
+  ) -> Result<ast::ItemKind> {
+    struct OutVal {
+      ghost: bool,
+      index: u32,
+      name: AtomId,
+      used: bool,
+    }
     self.tyvars.extend(tyargs.iter().map(|p| p.k));
     let tyargs = tyargs.len().try_into().expect("too many type arguments");
-    let mut outmap: Vec<(u32, AtomId, bool)> = vec![];
+    let mut outmap: Vec<OutVal> = vec![];
     let args = args.into_iter().enumerate().map(|(i, arg)| {
       if arg.k.0.out.is_some() {
         return Err(ElabError::new_e(&arg.span, "'out' not permitted on function arguments"))
       }
       let arg = self.push_arg(true, arg)?;
       if arg.k.0.contains(ast::ArgAttr::MUT) {
-        if arg.k.1.var().as_single_name().is_some() {
+        if let Some((ghost, _)) = arg.k.1.var().as_single_name() {
           if let Some(&Ctx::Var(name, _)) = self.ctx.last() {
-            if outmap.iter().any(|p| p.1 == name) {
+            if outmap.iter().any(|p| p.name == name) {
               return Err(ElabError::new_e(&arg.span, "'mut' variables cannot shadow"))
             }
-            outmap.push((i.try_into().expect("too many arguments"), name, false));
+            outmap.push(OutVal {
+              ghost, name, used: false,
+              index: i.try_into().expect("too many arguments"),
+            });
           } else {unreachable!("bad context")}
         } else { return Err(ElabError::new_e(&arg.span, "cannot use tuple pattern with 'mut'")) }
       }
@@ -747,7 +765,7 @@ impl<'a> BuildAst<'a> {
           if *name == AtomId::UNDER {
             if let Some(v) = arg.k.1.var().as_single_name() {*name = v}
           }
-          if let Some((_, _, used)) = outmap.iter_mut().find(|p| p.1 == *name) {
+          if let Some(OutVal {used, ..}) = outmap.iter_mut().find(|p| p.name == *name) {
             if std::mem::replace(used, true) {
               return Err(ElabError::new_e(&arg.span, "two 'out' arguments to one 'mut'"))
             }
@@ -757,8 +775,8 @@ impl<'a> BuildAst<'a> {
           }
         }
       }
-      let mut rets2 = outmap.iter().filter(|&(_, _, used)| !used)
-        .map(|&(i, name, _)| ast::Ret::OutAnon(i, this.push_fresh(name)))
+      let mut rets2 = outmap.iter().filter(|val| !val.used)
+        .map(|&OutVal {ghost, index, name, ..}| ast::Ret::OutAnon(ghost, index, this.push_fresh(name)))
         .collect::<Vec<_>>();
       for arg in rets {
         if arg.k.0.mut_ {
@@ -767,10 +785,13 @@ impl<'a> BuildAst<'a> {
         match arg.k.1 {
           ArgKind::Let(_, _) => return Err(ElabError::new_e(&arg.span, "assignment not permitted here")),
           ArgKind::Lam(pat) => {
-            let pat = this.push_tuple_pattern(Spanned {span: arg.span, k: pat})?;
+            let pat = this.push_tuple_pattern(Spanned {span: arg.span, k: pat}, None)?;
             rets2.push(match arg.k.0.out {
               None => ast::Ret::Reg(pat),
-              Some(name) => ast::Ret::Out(outmap.iter().find(|p| p.1 == name).expect("checked").0, pat)
+              Some(name) => {
+                let &OutVal {ghost, index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
+                ast::Ret::Out(ghost, index, pat)
+              }
             })
           }
         }
@@ -779,20 +800,20 @@ impl<'a> BuildAst<'a> {
     })?;
     let variant = self.build_variant(variant)?;
     let body = self.build_block(sp, body)?;
-    Ok(ast::Proc {kind, name, tyargs, args, rets, variant, body})
+    Ok(ast::ItemKind::Proc {kind, name, tyargs, args, rets, variant, body})
   }
 
   /// Construct the AST for a top level item, as produced by [`Parser::parse_next_item`].
   pub fn build_item(&mut self, Spanned {span, k: item}: Item) -> Result<ast::Item> {
     let k = match item {
-      ItemKind::Proc(proc) => ast::ItemKind::Proc(self.build_proc(&span, proc)?),
+      ItemKind::Proc(proc) => self.build_proc(&span, proc)?,
       ItemKind::Global(lhs, rhs) => {
-        let lhs = self.push_tuple_pattern(*lhs)?;
+        let lhs = self.push_tuple_pattern(*lhs, None)?;
         let rhs = self.push_expr(&span, rhs)?;
         ast::ItemKind::Global {lhs, rhs}
       }
       ItemKind::Const(lhs, rhs) => {
-        let lhs = self.push_tuple_pattern(*lhs)?;
+        let lhs = self.push_tuple_pattern(*lhs, None)?;
         let rhs = self.push_expr(&span, rhs)?;
         ast::ItemKind::Const {lhs, rhs}
       }

@@ -76,16 +76,16 @@ impl LispKind {
   fn small(&self) -> bool {
     match self {
       LispKind::List(es) => es.is_empty(),
-      LispKind::DottedList(_, _) |
-      LispKind::AtomMap(_) |
-      LispKind::Goal(_) => false,
-      LispKind::Atom(_) |
-      LispKind::MVar(_, _) |
-      LispKind::Proc(_) |
-      LispKind::Number(_) |
-      LispKind::String(_) |
-      LispKind::Bool(_) |
-      LispKind::Syntax(_) |
+      LispKind::DottedList(..) |
+      LispKind::AtomMap(..) |
+      LispKind::Goal(..) => false,
+      LispKind::Atom(..) |
+      LispKind::MVar(..) |
+      LispKind::Proc(..) |
+      LispKind::Number(..) |
+      LispKind::String(..) |
+      LispKind::Bool(..) |
+      LispKind::Syntax(..) |
       LispKind::Undef => true,
       LispKind::Annot(_, e) => e.small(),
       LispKind::Ref(m) => m.get(|e| e.small()),
@@ -481,6 +481,7 @@ impl<'a> Pretty<'a> {
 
   /// Pretty print a sort, with annotations.
   /// Basic form is just `<modifiers> sort <name>;`
+  #[allow(unused)]
   pub(crate) fn sort(&'a self, sid: SortId) -> RefDoc<'a> {
     let s = &self.fe.env.sorts[sid];
     let mut doc = self.annot(Annot::SortModifiers(s.mods),

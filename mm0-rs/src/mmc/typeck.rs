@@ -70,7 +70,7 @@ impl<'a> InferType<'a> {
     match self {
       InferType::Ty(Type::List(tys)) => InferType::Ty(&tys[i as usize]),
       InferType::Ty(Type::Struct(_)) |
-      InferType::Subst(_, _, _) => todo!(),
+      InferType::Subst(..) => todo!(),
       _ => unreachable!(),
     }
   }
@@ -411,7 +411,7 @@ impl<'a> TypeChecker<'a> {
       Prop::Wand(pr) => if self.copy_prop(&pr.0).is_none() {
         self.copy_prop(&pr.1).map(|p| Prop::Wand(Box::new((pr.0.clone(), p))))
       } else { Some(Prop::Emp) },
-      Prop::Heap(_, _, _) => Some(Prop::Emp),
+      Prop::Heap(..) => Some(Prop::Emp),
       Prop::HasTy(v, ty) => self.copy_type(ty).map(|ty| Prop::HasTy(v.clone(), Box::new(ty))),
       // Prop::MVar(_) => Some(Prop::Moved(Box::new(p.clone()))),
       Prop::Subst(ty, v, e) => unreachable!("unapplied substitution in context")
@@ -432,7 +432,7 @@ impl<'a> TypeChecker<'a> {
       Type::Int(_) |
       Type::UInt(_) |
       Type::Moved(_) |
-      Type::Ref(_, _) |
+      Type::Ref(..) |
       Type::RefSn(_) => None,
       Type::Array(ty, n) => self.copy_type(ty)
         .map(|ty| Type::Array(Box::new(ty), n.clone())),
@@ -446,7 +446,7 @@ impl<'a> TypeChecker<'a> {
       Type::Ghost(ty) => Some(Type::Ghost(Box::new(self.copy_type(ty)?))),
       Type::Prop(p) => Some(Type::Prop(Box::new(self.copy_prop(p)?))),
       Type::Var(_) |
-      Type::User(_, _, _) |
+      Type::User(..) |
       Type::Input |
       Type::Output => Some(Type::Moved(Box::new(ty.clone()))),
       &Type::Subst(ref ty, v, ref e) => self.copy_type(ty)

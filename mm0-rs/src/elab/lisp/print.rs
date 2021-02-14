@@ -186,6 +186,7 @@ impl EnvDisplay for LispKind {
       LispKind::Proc(Proc::RefineCallback) => write!(f, "#[refine]"),
       LispKind::Proc(Proc::ProofThunk(x, _)) => write!(f, "#[proof of {}]", fe.to(x)),
       LispKind::Proc(Proc::MergeMap(_)) => write!(f, "#[merge-map]"),
+      #[cfg(feature = "mmc")]
       LispKind::Proc(Proc::MmcCompiler(_)) => write!(f, "#[mmc-compiler]"),
       LispKind::AtomMap(m) => {
         write!(f, "(atom-map!")?;

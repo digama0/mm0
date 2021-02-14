@@ -181,7 +181,7 @@ fn parse_proof(
         Stack::Expr(e) => de.reuse(e),
         Stack::Proof(p, _) => de.reuse(p),
         Stack::Conv(c, _, _) => de.reuse(c),
-        Stack::CoConv(_, _, _) => unreachable!("co-conv should not be saved"),
+        Stack::CoConv(..) => unreachable!("co-conv should not be saved"),
       };
       self.clone()
     }

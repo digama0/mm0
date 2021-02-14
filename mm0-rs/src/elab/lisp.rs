@@ -34,17 +34,17 @@ macro_rules! str_enum {
       $(#[$doc])* enum $name $($rest)*}
   };
   (@inner $to_str:expr, $from_str:expr, $from_bytes:expr;
-      $(#[$doc:meta])* enum $name:ident {$($(#[doc=$doc2:expr])* $e:ident: $s:expr,)*}) => {
+      $(#[$doc:meta])* enum $name:ident {$($(#[doc=$doc2:expr])* $(#[cfg($($cfgs:tt)*)])* $e:ident: $s:expr,)*}) => {
     $(#[$doc])*
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub enum $name { $($(#[doc=$doc2])* $e),* }
+    pub enum $name { $($(#[doc=$doc2])* $(#[cfg($($cfgs)*)])* $e),* }
     crate::deep_size_0!($name);
 
     impl $name {
       #[doc=$to_str]
       #[must_use] pub fn to_str(self) -> &'static str {
         match self {
-          $(Self::$e => $s),*
+          $($(#[cfg($($cfgs)*)])* Self::$e => $s),*
         }
       }
       #[doc=$to_str]
@@ -55,7 +55,7 @@ macro_rules! str_enum {
       #[allow(clippy::should_implement_trait)]
       #[must_use] pub fn from_str(s: &str) -> Option<Self> {
         match s {
-          $($s => Some(Self::$e),)*
+          $($(#[cfg($($cfgs)*)])* $s => Some(Self::$e),)*
           _ => None
         }
       }
@@ -68,14 +68,14 @@ macro_rules! str_enum {
 
       /// Iterate over all the elements in the enum.
       pub fn for_each(mut f: impl FnMut(Self, &'static str)) {
-        $(f(Self::$e, $s);)*
+        $($(#[cfg($($cfgs)*)])* {f(Self::$e, $s);})*
       }
 
       /// The documentation comment on this item.
       #[allow(unused)]
       #[must_use] pub fn doc(self) -> &'static str {
         match self {
-          $($name::$e => concat!($($doc2,"\n"),*)),*
+          $($(#[cfg($($cfgs)*)])* $name::$e => concat!($($doc2,"\n"),*)),*
         }
       }
     }
@@ -926,6 +926,7 @@ pub enum Proc {
   /// internal state here. See [`Compiler::call`].
   ///
   /// [`Compiler::call`]: crate::mmc::Compiler::call
+  #[cfg(feature = "mmc")]
   MmcCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
 }
 
@@ -961,7 +962,8 @@ impl Proc {
       Proc::MatchCont(_) |
       Proc::ProofThunk(_, _) => ProcSpec::AtLeast(0),
       Proc::MergeMap(_) => ProcSpec::Exact(2),
-      Proc::RefineCallback |
+      Proc::RefineCallback => ProcSpec::AtLeast(1),
+      #[cfg(feature = "mmc")]
       Proc::MmcCompiler(_) => ProcSpec::AtLeast(1),
     }
   }
@@ -1340,6 +1342,7 @@ str_enum! {
     /// be called to compile MMC functions. See [`Compiler::call`].
     ///
     /// [`Compiler::call`]: crate::mmc::Compiler::call
+    #[cfg(feature = "mmc")]
     MmcInit: "mmc-init",
   }
 }

@@ -78,8 +78,9 @@ pub enum TuplePatternKind {
   Name(bool, VarId),
   /// A type ascription. The type is unparsed.
   Typed(Box<TuplePattern>, Box<Type>),
-  /// A tuple, with the given arguments.
-  Tuple(Box<[TuplePattern]>),
+  /// A tuple, with the given arguments. Names are given to the intermediates,
+  /// which will agree with the `Name` at the leaves.
+  Tuple(Box<[(VarId, TuplePattern)]>),
 }
 
 impl Remap for TuplePatternKind {
@@ -96,9 +97,9 @@ impl Remap for TuplePatternKind {
 impl TuplePatternKind {
   /// Extracts the single name of this tuple pattern, or `None`
   /// if this does any tuple destructuring.
-  #[must_use] pub fn as_single_name(&self) -> Option<VarId> {
+  #[must_use] pub fn as_single_name(&self) -> Option<(bool, VarId)> {
     match self {
-      &Self::Name(_, v) => Some(v),
+      &Self::Name(g, v) => Some((g, v)),
       Self::Typed(pat, _) => pat.k.as_single_name(),
       Self::Tuple(_) => None
     }
@@ -189,6 +190,8 @@ pub type Pattern = Spanned<PatternKind>;
 /// A pattern, the left side of a switch statement.
 #[derive(Debug, DeepSizeOf)]
 pub enum PatternKind {
+  /// A wildcard binding.
+  Ignore,
   /// A variable binding.
   Var(VarId),
   /// A constant value.
@@ -209,6 +212,7 @@ impl Remap for PatternKind {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
+      PatternKind::Ignore => PatternKind::Ignore,
       &PatternKind::Var(v) => PatternKind::Var(v),
       &PatternKind::Const(c) => PatternKind::Const(c.remap(r)),
       PatternKind::Number(n) => PatternKind::Number(n.clone()),
@@ -305,8 +309,8 @@ pub enum TypeKind {
   Output,
   /// A moved-away type.
   Moved(Box<Type>),
-  /// A substitution into a type.
-  Subst(Box<Type>, VarId, Box<Expr>),
+  /// A `_` type.
+  Infer,
   /// A type error that has been reported.
   Error,
 }
@@ -339,7 +343,7 @@ impl Remap for TypeKind {
       TypeKind::Input => TypeKind::Input,
       TypeKind::Output => TypeKind::Output,
       TypeKind::Moved(tys) => TypeKind::Moved(tys.remap(r)),
-      TypeKind::Subst(ty, v, e) => TypeKind::Subst(ty.remap(r), *v, e.remap(r)),
+      TypeKind::Infer => TypeKind::Infer,
       TypeKind::Error => TypeKind::Error,
     }
   }
@@ -540,6 +544,13 @@ pub enum ExprKind {
     lhs: Box<Expr>,
     /// The expression to evaluate.
     rhs: Box<Expr>,
+    /// An array of `new -> old` mappings as `(new, old)` pairs; the `new` variable is a variable
+    /// id already in scope, while `old` is a new binding representing the previous
+    /// value of the variable before the assignment.
+    /// (This ordering is chosen so that the variable ID retains its "newest" value
+    /// through any number of writes to it, while non-updatable `old` variables are created
+    /// by the various assignments.)
+    oldmap: Box<[(VarId, VarId)]>,
   },
   /// A function call (or something that looks like one at parse time).
   Call {
@@ -639,17 +650,18 @@ impl Remap for ExprKind {
       ExprKind::Sizeof(ty) => ExprKind::Sizeof(ty.remap(r)),
       ExprKind::Typeof(e) => ExprKind::Typeof(e.remap(r)),
       ExprKind::Assert(e) => ExprKind::Assert(e.remap(r)),
-      ExprKind::Let { lhs, rhs } => ExprKind::Let { lhs: lhs.remap(r), rhs: rhs.remap(r) },
-      ExprKind::Assign { lhs, rhs } => ExprKind::Assign { lhs: lhs.remap(r), rhs: rhs.remap(r) },
-      ExprKind::Call { f, tys, args, variant } => ExprKind::Call {
+      ExprKind::Let {lhs, rhs} => ExprKind::Let { lhs: lhs.remap(r), rhs: rhs.remap(r) },
+      ExprKind::Assign {lhs, rhs, oldmap} => ExprKind::Assign {
+        lhs: lhs.remap(r), rhs: rhs.remap(r), oldmap: oldmap.clone() },
+      ExprKind::Call {f, tys, args, variant} => ExprKind::Call {
         f: f.remap(r), tys: tys.remap(r), args: args.remap(r), variant: variant.remap(r) },
       ExprKind::Entail(p, q) => ExprKind::Entail(p.remap(r), q.remap(r)),
       ExprKind::Block(e) => ExprKind::Block(e.remap(r)),
       ExprKind::Label(v, e) => ExprKind::Label(*v, e.remap(r)),
-      ExprKind::If { hyp, cond, then, els } => ExprKind::If {
+      ExprKind::If {hyp, cond, then, els} => ExprKind::If {
         hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
       ExprKind::Match(e, brs) => ExprKind::Match(e.remap(r), brs.remap(r)),
-      ExprKind::While { label, hyp, cond, var, body } => ExprKind::While {
+      ExprKind::While {label, hyp, cond, var, body} => ExprKind::While {
         label: *label, hyp: *hyp, cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
       ExprKind::Unreachable(e) => ExprKind::Unreachable(e.remap(r)),
       ExprKind::Jump(l, i, e, var) => ExprKind::Jump(*l, *i, e.remap(r), var.remap(r)),
@@ -691,15 +703,15 @@ crate::deep_size_0!(ProcKind);
 pub enum Ret {
   /// This is a regular argument, with the given argument pattern.
   Reg(TuplePattern),
-  /// This is an anonymous `out`: `OutAnon(i, v)` means that argument `i`
+  /// This is an anonymous `out`: `OutAnon(g, i, v)` means that argument `i`
   /// was marked as `mut` but there is no corresponding `out`,
   /// so this binder with name `v` was inserted to capture the outgoing value
   /// of the variable.
-  OutAnon(u32, VarId),
-  /// This is an `out` argument: `Out(i, pat)` means that this argument was marked as
+  OutAnon(bool, u32, VarId),
+  /// This is an `out` argument: `Out(g, i, pat)` means that this argument was marked as
   /// `out` corresponding to argument `i` in the inputs. `pat` contains the
   /// provided argument pattern.
-  Out(u32, TuplePattern),
+  Out(bool, u32, TuplePattern),
 }
 
 bitflags! {
@@ -723,33 +735,29 @@ impl Remap for ArgAttr {
   fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
-/// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
-#[derive(Debug, DeepSizeOf)]
-pub struct Proc {
-  /// The type of declaration: `func`, `proc`, or `intrinsic`.
-  pub kind: ProcKind,
-  /// The name of the procedure.
-  pub name: Spanned<AtomId>,
-  /// The number of type arguments
-  pub tyargs: u32,
-  /// The arguments of the procedure.
-  pub args: Box<[Arg]>,
-  /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
-  pub rets: Vec<Ret>,
-  /// The variant, used for recursive functions.
-  pub variant: Option<Box<Variant>>,
-  /// The body of the procedure.
-  pub body: Vec<Expr>
-}
-
 /// A top level program item. (A program AST is a list of program items.)
 pub type Item = Spanned<ItemKind>;
 
 /// A top level program item. (A program AST is a list of program items.)
 #[derive(Debug, DeepSizeOf)]
 pub enum ItemKind {
-  /// A procedure, behind an Arc so it can be cheaply copied.
-  Proc(Proc),
+  /// A procedure (or function or intrinsic), a top level item similar to function declarations in C.
+  Proc {
+    /// The type of declaration: `func`, `proc`, or `intrinsic`.
+    kind: ProcKind,
+    /// The name of the procedure.
+    name: Spanned<AtomId>,
+    /// The number of type arguments
+    tyargs: u32,
+    /// The arguments of the procedure.
+    args: Box<[Arg]>,
+    /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
+    rets: Vec<Ret>,
+    /// The variant, used for recursive functions.
+    variant: Option<Box<Variant>>,
+    /// The body of the procedure.
+    body: Vec<Expr>
+  },
   /// A global variable declaration.
   Global {
     /// The variable(s) being declared

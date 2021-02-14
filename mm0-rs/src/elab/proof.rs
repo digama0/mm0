@@ -522,15 +522,15 @@ impl ProofHash {
   pub fn is_conv(de: &impl IDedup<Self>, i: usize) -> bool {
     match de[i] {
       ProofHash::Ref(k, _) => k == ProofKind::Conv,
-      ProofHash::Dummy(_, _) |
-      ProofHash::Term(_, _) |
-      ProofHash::Hyp(_, _) |
-      ProofHash::Thm(_, _, _) |
-      ProofHash::Conv(_, _, _) => false,
-      ProofHash::Refl(_) |
-      ProofHash::Sym(_) |
-      ProofHash::Cong(_, _) |
-      ProofHash::Unfold(_, _, _, _, _) => true,
+      ProofHash::Dummy(..) |
+      ProofHash::Term(..) |
+      ProofHash::Hyp(..) |
+      ProofHash::Thm(..) |
+      ProofHash::Conv(..) => false,
+      ProofHash::Refl(..) |
+      ProofHash::Sym(..) |
+      ProofHash::Cong(..) |
+      ProofHash::Unfold(..) => true,
     }
   }
 
@@ -539,11 +539,11 @@ impl ProofHash {
   pub fn conv_side(de: &mut impl IDedup<Self>, i: usize, right: bool) -> usize {
     match de[i] {
       ProofHash::Ref(_, j) => Self::conv_side(de, j, right),
-      ProofHash::Dummy(_, _) |
-      ProofHash::Term(_, _) |
-      ProofHash::Hyp(_, _) |
-      ProofHash::Thm(_, _, _) |
-      ProofHash::Conv(_, _, _) => unreachable!(),
+      ProofHash::Dummy(..) |
+      ProofHash::Term(..) |
+      ProofHash::Hyp(..) |
+      ProofHash::Thm(..) |
+      ProofHash::Conv(..) => unreachable!(),
       ProofHash::Refl(e) => de.reuse(e),
       ProofHash::Sym(c) => Self::conv_side(de, c, !right),
       ProofHash::Cong(t, ref cs) => {

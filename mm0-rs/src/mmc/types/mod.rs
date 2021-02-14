@@ -3,6 +3,7 @@
 pub mod parse;
 pub mod ast;
 pub mod entity;
+pub mod ty;
 pub mod hir;
 pub mod pir;
 
@@ -19,6 +20,11 @@ impl std::fmt::Display for VarId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "_{}", self.0)
   }
+}
+
+impl Remap for VarId {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
 }
 
 /// A spanned expression.
@@ -44,7 +50,7 @@ macro_rules! make_keywords {
   };
   {@IMPL $($(#[$attr:meta])* $x:ident $doc0:expr, $e:expr,)*} => {
     /// The type of MMC keywords, which are atoms with a special role in the MMC parser.
-    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    #[derive(Debug, EnvDebug, PartialEq, Eq, Copy, Clone)]
     pub enum Keyword { $(#[doc=$doc0] $(#[$attr])* $x),* }
     crate::deep_size_0!(Keyword);
 
@@ -118,7 +124,7 @@ make_keywords! {
 }
 
 /// Possible sizes for integer operations and types.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Size {
   /// Unbounded size. Used for `nat` and `int`. (These types are only legal for
   /// ghost variables, but they are also used to indicate "correct to an unbounded model"
@@ -141,7 +147,7 @@ impl Default for Size {
 }
 
 /// (Elaborated) unary operations.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Unop {
   /// Integer negation
   Neg,
@@ -174,7 +180,7 @@ impl std::fmt::Display for Unop {
 }
 
 /// (Elaborated) binary operations.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Binop {
   /// Integer addition
   Add,
@@ -297,6 +303,20 @@ pub struct Mm0Expr<T> {
   /// The root node of the expression.
   pub expr: Rc<Mm0ExprNode>,
 }
+
+impl<T: std::hash::Hash> std::hash::Hash for Mm0Expr<T> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.subst.hash(state);
+    Rc::as_ptr(&self.expr).hash(state);
+  }
+}
+
+impl<T: PartialEq> PartialEq for Mm0Expr<T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.subst == other.subst && Rc::ptr_eq(&self.expr, &other.expr)
+  }
+}
+impl<T: Eq> Eq for Mm0Expr<T> {}
 
 impl<T: Remap> Remap for Mm0Expr<T> {
   type Target = Mm0Expr<T::Target>;

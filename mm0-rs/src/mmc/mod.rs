@@ -15,6 +15,7 @@ pub mod ast_lower;
 pub mod infer;
 pub mod nameck;
 // pub mod typeck;
+pub mod union_find;
 
 use std::collections::hash_map::HashMap;
 use parser::ItemIter;
@@ -23,7 +24,7 @@ use crate::util::{FileSpan, Span};
 use crate::elab::{
   Result, Elaborator, ElabError,
   environment::{AtomId, Remap, Remapper},
-  lisp::LispVal};
+  lisp::{LispVal, debug::EnvDebug, print::FormatEnv}};
 use {types::{Keyword, entity::Entity}, parser::Parser,
   build_ast::BuildAst, predef::PredefMap};
 
@@ -58,6 +59,12 @@ impl std::fmt::Debug for Compiler {
     write!(f, "#<mmc-compiler>")
   }
 }
+impl EnvDebug for Compiler {
+  fn env_dbg<'a>(&self, _: FormatEnv<'a>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    std::fmt::Debug::fmt(self, f)
+  }
+}
+
 
 impl Remap for Compiler {
   type Target = Self;

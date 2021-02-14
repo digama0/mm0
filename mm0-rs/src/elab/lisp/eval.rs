@@ -70,7 +70,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::NoTailRec => write!(f, "(no-tail-rec)"),
       &Stack::Def(Some(&Some((_, _, _, a)))) => write!(f, "(def {} _)", fe.to(&a)),
       Stack::Def(_) => write!(f, "(def _ _)"),
-      Stack::DefMerge(_, _, _) => write!(f, "(def-merge _ _)"),
+      Stack::DefMerge(..) => write!(f, "(def-merge _ _)"),
       &Stack::Eval(ir, ref es) => write!(f, "(begin\n  _ {} {})", fe.to(ir), fe.to(es.as_slice())),
       Stack::Match(_, bs) => write!(f, "(match _\n  {})", fe.to(bs.as_slice())),
       &Stack::TestPattern(_, ref e, ref bs, br, _, _) => write!(f,
@@ -86,7 +86,7 @@ impl<'a> EnvDisplay for Stack<'a> {
       Stack::SetMergeStrategy(_, a) => write!(f, "(set-merge-strategy {}\n  _)", fe.to(a)),
       Stack::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{} _",
         fe.to(e), fe.to(&**us), fe.to(es)),
-      Stack::MergeMap(_, _, _, _, _, _) => write!(f, "(merge-map)"),
+      Stack::MergeMap(..) => write!(f, "(merge-map)"),
       Stack::AddThmProc(_, ap) => write!(f, "(add-thm {} _)", fe.to(&ap.atom())),
       Stack::Refines(_, _, irs) => write!(f, "(refine _ {})", fe.to(irs.as_slice())),
       Stack::Refine {..} => write!(f, "(refine _)"),
@@ -133,7 +133,7 @@ impl<'a> EnvDisplay for State<'a> {
         fe.to(e), fe.to(br), fe.to(bs.as_slice()), fe.to(st)),
       State::MapProc(_, _, e, us, es) => write!(f, "(map {}\n  {})\n  ->{}",
         fe.to(e), fe.to(&**us), fe.to(es)),
-      State::MergeMap(_, _, _, _, _) => write!(f, "(merge-map)"),
+      State::MergeMap(..) => write!(f, "(merge-map)"),
       State::Refine {state, ..} => state.fmt(fe, f),
     }
   }
@@ -794,12 +794,12 @@ impl<'a> Evaluator<'a> {
 
 macro_rules! make_builtins {
   ($self:ident, $sp1:ident, $sp2:ident, $args:ident,
-      $($e:ident: $ty:ident($n:expr) => $res:expr,)*) => {
+      $($(#[$attr:meta])* $e:ident: $ty:ident($n:expr) => $res:expr,)*) => {
     impl BuiltinProc {
       /// Get the argument specification for a builtin.
       #[must_use] pub fn spec(self) -> ProcSpec {
         match self {
-          $(BuiltinProc::$e => ProcSpec::$ty($n)),*
+          $($(#[$attr])* BuiltinProc::$e => ProcSpec::$ty($n)),*
         }
       }
     }
@@ -818,7 +818,7 @@ macro_rules! make_builtins {
           }
         }}}
 
-        Ok(State::Ret(match f { $(BuiltinProc::$e => $res),* }))
+        Ok(State::Ret(match f { $($(#[$attr])* BuiltinProc::$e => $res),* }))
       }
     }
   }
@@ -1337,6 +1337,7 @@ make_builtins! { self, sp1, sp2, args,
     let bytes = self.eval_string(&fsp, &args)?;
     LispVal::string(bytes.into())
   },
+  #[cfg(feature = "mmc")]
   MmcInit: Exact(0) => LispVal::proc(Proc::MmcCompiler(
     RefCell::new(crate::mmc::Compiler::new(self)))),
 }
@@ -1351,6 +1352,7 @@ impl<'a> Evaluator<'a> {
     try_get_span_from(&orig, fsp)
   }
 
+  #[allow(unused)]
   fn respan(&self, sp: Span) -> Span { self.try_get_span(Some(&self.fspan(sp))) }
 
   fn proc_pos(&self, sp: Span) -> ProcPos {
@@ -1623,7 +1625,7 @@ impl<'a> Evaluator<'a> {
                 let tail_call = (|| {
                   for (i, s) in self.stack.iter().enumerate().rev() {
                     match s {
-                      Stack::Ret(_, _, _, _) => return Some(i),
+                      Stack::Ret(..) => return Some(i),
                       Stack::Drop(_) => {}
                       _ => break
                     }
@@ -1710,6 +1712,7 @@ impl<'a> Evaluator<'a> {
                   } else {unreachable!()}
                 }
               }
+              #[cfg(feature = "mmc")]
               Proc::MmcCompiler(c) => {
                 let sp = self.respan(sp1);
                 State::Ret(c.borrow_mut().call(self, sp, args)?)
