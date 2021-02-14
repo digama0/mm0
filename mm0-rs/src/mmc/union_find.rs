@@ -30,7 +30,7 @@
 //! type also unlocks various more ergonomic methods (e.g., `union()`
 //! in place of `unify_var_var()`).
 
-use std::fmt::Debug;
+use std::{convert::TryInto, fmt::Debug};
 
 /// This trait is implemented by any type that can serve as a type
 /// variable. We call such variables *unification keys*. For example,
@@ -139,8 +139,12 @@ impl<K: PartialEq + Copy, V> VarValue<K, V> {
 
 impl<K, V> UnificationTable<K, V> {
   /// Returns the number of keys created so far.
-  pub fn len(&self) -> usize {
+  #[must_use] pub fn len(&self) -> usize {
     self.values.len()
+  }
+  /// Returns true if there are no keys.
+  #[must_use] pub fn is_empty(&self) -> bool {
+    self.values.is_empty()
   }
 
   /// Reserve memory for `num_new_keys` to be created. Does not
@@ -154,7 +158,7 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
   /// Creates a fresh key with the given value.
   pub fn new_key(&mut self, value: V) -> K {
     let len = self.values.len();
-    let key: K = UnifyKey::from_index(len as u32);
+    let key: K = UnifyKey::from_index(len.try_into().expect("overflow"));
     self.values.push(VarValue::new_var(key, value));
     key
   }
@@ -164,7 +168,7 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
   /// the closure.
   pub fn reset_unifications(&mut self, mut value: impl FnMut(K) -> V) {
     for (i, vv) in self.values.iter_mut().enumerate() {
-      let key = UnifyKey::from_index(i as u32);
+      let key = UnifyKey::from_index(i.try_into().expect("overflow"));
       let value = value(key);
       *vv = VarValue::new_var(key, value)
     }
@@ -287,15 +291,16 @@ impl<K: UnifyKey, V> UnificationTable<K, V> {
 
     let combined = ctx.unify_values(&self.value(root_a).value, &self.value(root_b).value)?;
 
-    Ok(self.unify_roots(root_a, root_b, combined))
+    self.unify_roots(root_a, root_b, combined);
+    Ok(())
   }
 
   /// Sets the value of the key `a_id` to `b`, attempting to merge
   /// with the previous value.
-  pub fn unify_var_value<S: UnifyCtx<V>>(&mut self, ctx: &mut S, a_id: impl Into<K>, b: V) -> Result<(), S::Error> {
+  pub fn unify_var_value<S: UnifyCtx<V>>(&mut self, ctx: &mut S, a_id: impl Into<K>, b: &V) -> Result<(), S::Error> {
     let a_id = a_id.into();
     let root_a = self.uninlined_get_root_key(a_id);
-    let value = ctx.unify_values(&self.value(root_a).value, &b)?;
+    let value = ctx.unify_values(&self.value(root_a).value, b)?;
     self.update_value(root_a, |node| node.value = value);
     Ok(())
   }

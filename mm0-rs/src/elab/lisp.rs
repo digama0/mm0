@@ -955,6 +955,7 @@ impl ProcSpec {
 
 impl Proc {
   /// Returns the specification (number of expected arguments) for a procedure.
+  #[allow(clippy::match_same_arms)]
   pub fn spec(&self) -> ProcSpec {
     match self {
       Proc::Builtin(p) => p.spec(),

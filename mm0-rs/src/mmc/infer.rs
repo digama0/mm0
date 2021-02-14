@@ -1,5 +1,6 @@
 //! Type inference and elaboration
 #![allow(unused)]
+#![allow(clippy::unused_self)]
 
 use std::{borrow::Borrow, fmt::Debug, hash::{Hash, Hasher}};
 use std::result::Result as StdResult;
@@ -274,6 +275,7 @@ impl<'a> ExpectExpr<'a> {
 }
 
 /// The result of a tuple pattern analysis, see [`InferCtx::tuple_pattern_tuple`].
+#[derive(Copy, Clone)]
 enum TuplePatternResult<'a> {
   /// This type cannot be destructured, or the wrong number of arguments were provided.
   Fail,
@@ -373,10 +375,10 @@ impl<'a> InferCtx<'a> {
   }
 
   fn subst_ty(&self, ty: Ty<'a>, subst: &HashMap<VarId, Expr<'a>>) -> Ty<'a> {
-    if subst.is_empty() { ty } else { self.subst_ty(ty, subst) }
+    if subst.is_empty() { ty } else { self.subst_ty_inner(ty, subst) }
   }
 
-  fn subst_ty_inner(&self, ty: Ty<'a>, subst: HashMap<VarId, Expr<'a>>) -> Ty<'a> {
+  fn subst_ty_inner(&self, ty: Ty<'a>, subst: &HashMap<VarId, Expr<'a>>) -> Ty<'a> {
     todo!()
   }
 
@@ -425,7 +427,7 @@ impl<'a> InferCtx<'a> {
       }
       TuplePatternResult::Fail => {
         let pats = self.lower_tuple_pattern_tuple_with(pats, |_| None);
-        let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| pat.ty()));
+        let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(hir::TuplePattern::ty));
         let ty = self.intern(TyKind::List(tys));
         let pat = hir::TuplePattern {span, k: hir::TuplePatternKind::Tuple(pats, ty)};
         self.errors.push(TypeError::PatternMatch(span, tgt, ty));
@@ -467,12 +469,12 @@ impl<'a> InferCtx<'a> {
       hir::TuplePatternKind::UnelaboratedTuple(pats, tgt) => {
         let mut res = self.tuple_pattern_tuple(pats.len(), tgt);
         if let TuplePatternResult::Indeterminate = res {
-          let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| pat.ty()));
+          let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(hir::TuplePattern::ty));
           res = TuplePatternResult::List(tys)
         }
         let ty = match res {
           TuplePatternResult::Fail => {
-            let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| pat.ty()));
+            let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(hir::TuplePattern::ty));
             self.intern(TyKind::List(tys))
           }
           TuplePatternResult::Indeterminate => unreachable!(),
@@ -600,7 +602,7 @@ impl<'a> InferCtx<'a> {
       ast::TypeKind::User(f, tys, es) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
-        let f_ty = let_unchecked!(Some(Entity::Type(ty)) = self.names.get(&f),
+        let f_ty = let_unchecked!(Some(Entity::Type(ty)) = self.names.get(f),
           unwrap_unchecked!(ty.k.ty()));
         todo!()
       }
@@ -688,7 +690,7 @@ impl<'a> InferCtx<'a> {
         self.context = ctx;
         todo!()
       }
-      ast::ItemKind::Global { lhs, rhs } => todo!(),
+      ast::ItemKind::Global { lhs, rhs } |
       ast::ItemKind::Const { lhs, rhs } => todo!(),
       ast::ItemKind::Typedef { name, tyargs, args, val } => todo!(),
     }

@@ -197,7 +197,7 @@ pub enum TuplePatternKind<'a> {
 
 impl<'a> TuplePatternKind<'a> {
   /// The type of values that will be matched by the pattern.
-  pub fn ty(&self) -> Ty<'a> {
+  #[must_use] pub fn ty(&self) -> Ty<'a> {
     match *self {
       TuplePatternKind::Name(_, ty) |
       TuplePatternKind::Coercion(_, _, ty) |
@@ -455,22 +455,22 @@ impl AddFlags for TyKind<'_> {
       TyKind::Input |
       TyKind::Output => {}
       TyKind::Array(ty, e) => *f |= (ty, e),
-      TyKind::Own(ty) => *f |= ty,
-      TyKind::Ref(lft, ty) => *f |= (lft, ty),
+      TyKind::Own(ty) |
+      TyKind::Ghost(ty) |
+      TyKind::Uninit(ty) |
+      TyKind::Moved(ty) => *f |= ty,
+      TyKind::Ref(lft, ty) |
       TyKind::Shr(lft, ty) => *f |= (lft, ty),
       TyKind::RefSn(e) => *f |= e,
-      TyKind::List(tys) => *f |= tys,
       TyKind::Sn(e, ty) => *f |= (e, ty),
       TyKind::Struct(args) => *f |= args,
-      TyKind::And(tys) => *f |= tys,
+      TyKind::List(tys) |
+      TyKind::And(tys) |
       TyKind::Or(tys) => *f |= tys,
       TyKind::If(e, tru, fal) => *f |= (e, tru, fal),
       TyKind::Match(e, ty, brs) => *f |= (e, ty, brs),
-      TyKind::Ghost(ty) => *f |= ty,
-      TyKind::Uninit(ty) => *f |= ty,
       TyKind::Prop(p) => *f |= p,
       TyKind::User(_, tys, es) => *f |= (tys, es),
-      TyKind::Moved(ty) => *f |= ty,
       TyKind::Infer(_) => *f |= Flags::HAS_TY_MVAR,
       TyKind::Error => *f |= Flags::HAS_ERROR,
     }
@@ -586,19 +586,19 @@ impl AddFlags for PropKind<'_> {
       PropKind::True |
       PropKind::False |
       PropKind::Emp => {}
-      PropKind::All(pat, p) => *f |= (pat, p),
+      PropKind::All(pat, p) |
       PropKind::Ex(pat, p) => *f |= (pat, p),
-      PropKind::Imp(p, q) => *f |= (p, q),
-      PropKind::Not(p) => *f |= p,
-      PropKind::And(ps) => *f |= ps,
-      PropKind::Or(ps) => *f |= ps,
-      PropKind::Sep(ps) => *f |= ps,
+      PropKind::Imp(p, q) |
       PropKind::Wand(p, q) => *f |= (p, q),
+      PropKind::Not(p) |
+      PropKind::Moved(p) => *f |= p,
+      PropKind::And(ps) |
+      PropKind::Or(ps) |
+      PropKind::Sep(ps) => *f |= ps,
       PropKind::Pure(e) => *f |= e,
       PropKind::Eq(e1, e2) => *f |= (e1, e2),
       PropKind::Heap(e, v, ty) => *f |= (e, v, ty),
       PropKind::HasTy(v, ty) => *f |= (v, ty),
-      PropKind::Moved(p) => *f |= p,
       PropKind::Mm0(ref e) => *f |= e.subst,
       PropKind::Infer(_) => *f |= Flags::HAS_PROP_MVAR,
       PropKind::Error => *f |= Flags::HAS_ERROR,
@@ -710,11 +710,11 @@ impl AddFlags for ExprKind<'_> {
       ExprKind::Global(_) |
       ExprKind::Bool(_) |
       ExprKind::Int(_) => {}
-      ExprKind::Unop(_, e) => *f |= e,
+      ExprKind::Unop(_, e) |
+      ExprKind::Proj(e, _) => *f |= e,
       ExprKind::Binop(_, e1, e2) => *f |= (e1, e2),
       ExprKind::Index(a, i) => *f |= (a, i),
       ExprKind::Slice(a, i, n) => *f |= (a, i, n),
-      ExprKind::Proj(e, _) => *f |= e,
       ExprKind::List(es) => *f |= es,
       ExprKind::Mm0(ref e) => *f |= e.subst,
       ExprKind::Call {tys, args, ..} => *f |= (tys, args),

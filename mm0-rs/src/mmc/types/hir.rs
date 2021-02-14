@@ -60,18 +60,21 @@ impl<'a> Context<'a> {
   pub const ROOT: Self = Context(None);
 
   /// The length of a context (the number of variables).
-  pub fn len(self) -> u32 {
+  #[must_use] pub fn len(self) -> u32 {
     if let Some(c) = &self.0 {c.len} else {0}
   }
 
+  /// Is this context root?
+  #[must_use] pub fn is_empty(self) -> bool { self.0.is_none() }
+
   /// The parent context, or `ROOT` if the context is already root.
-  pub fn parent(self) -> Self {
+  #[must_use] pub fn parent(self) -> Self {
     if let Some(c) = &self.0 {c.parent} else {Self::ROOT}
   }
 
   /// The greatest lower bound of two contexts, i.e. the largest
   /// context of which both `self` and `other` are descended.
-  pub fn glb(mut self, mut other: Self) -> Self {
+  #[must_use] pub fn glb(mut self, mut other: Self) -> Self {
     if self.len() == other.len() {
       return self
     }
@@ -91,7 +94,7 @@ impl<'a> Context<'a> {
 
 impl<'a> ContextNext<'a> {
   /// Create a new `ContextNext`, automatically filling the `len` field.
-  pub fn new(parent: Context<'a>, var: VarId, gen: GenId, ty: ty::Ty<'a>) -> Self {
+  #[must_use] pub fn new(parent: Context<'a>, var: VarId, gen: GenId, ty: ty::Ty<'a>) -> Self {
     Self {len: parent.len() + 1, var, gen, ty, parent}
   }
 }
@@ -130,7 +133,7 @@ pub enum TuplePatternKind<'a> {
 
 impl<'a> TuplePattern<'a> {
   /// The type of the values matched by this tuple pattern.
-  pub fn ty(&self) -> ty::Ty<'a> {
+  #[must_use] pub fn ty(&self) -> ty::Ty<'a> {
     match self.k {
       TuplePatternKind::Name(_, &ContextNext {ty, ..}) |
       TuplePatternKind::Coercion(_, _, ty) |
@@ -151,7 +154,7 @@ pub enum Arg<'a> {
 
 impl<'a> Arg<'a> {
   /// The variable part of the argument.
-  pub fn var(&self) -> &TuplePattern<'a> {
+  #[must_use] pub fn var(&self) -> &TuplePattern<'a> {
     match self { Arg::Lam(pat) | Arg::Let(pat, _) => pat }
   }
 }
