@@ -325,13 +325,12 @@ impl Arg {
 fn try_next_decl(buf: &[u8], n: usize) -> Option<Option<(StmtCmd, ProofIter<'_>, usize)>> {
   let bytes = buf.get(n..)?;
   let (cmd, data, next) = parse_cmd(bytes)?;
-  if data == 0 {
-    return None
-  }
   if cmd == 0 {return Some(None)}
   let stmt = cmd.try_into().ok()?;
   let next2 = n + u32_as_usize(data);
-  let pr = ProofIter {buf: buf.get(..next2)?, pos: buf.len() - next.len()};
+  let pos = buf.len() - next.len();
+  if next2 < pos {return None}
+  let pr = ProofIter {buf: buf.get(..next2)?, pos};
   Some(Some((stmt, pr, next2)))
 }
 
@@ -403,5 +402,23 @@ impl<'a> IndexEntryRef<'a> {
   /// Convert the location information of this entry into a [`Position`].
   #[must_use] pub fn to_pos(&self) -> Position {
     Position {line: self.row.get(), character: self.col.get() }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::MmbFile;
+
+  #[repr(align(8))]
+  struct AlignFile<const N: usize>([u8; N]);
+
+  #[test]
+  fn try_next_decl_infinite_loop() {
+    let filedata = AlignFile([
+      77, 77, 48, 66, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 8, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0]);
+    let mut iter = MmbFile::parse(&filedata.0).unwrap().proof();
+    assert_eq!(iter.next().unwrap().unwrap_err(), 40);
   }
 }

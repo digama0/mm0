@@ -117,7 +117,7 @@ pub mod cmd {
 /// The main part of the proof consists of a sequence of declarations,
 /// and these commands denote the different kind of declaration that can
 /// be introduced.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StmtCmd {
   /// A new sort. Equivalent to `sort foo;`. This is followed by no data,
   /// as the sort data is stored in the header.
