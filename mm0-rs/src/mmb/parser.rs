@@ -325,6 +325,9 @@ impl Arg {
 fn try_next_decl(buf: &[u8], n: usize) -> Option<Option<(StmtCmd, ProofIter<'_>, usize)>> {
   let bytes = buf.get(n..)?;
   let (cmd, data, next) = parse_cmd(bytes)?;
+  if data == 0 {
+    return None
+  }
   if cmd == 0 {return Some(None)}
   let stmt = cmd.try_into().ok()?;
   let next2 = n + u32_as_usize(data);
