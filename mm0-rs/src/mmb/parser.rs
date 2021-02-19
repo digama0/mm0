@@ -410,7 +410,7 @@ mod tests {
   use super::MmbFile;
 
   #[repr(align(8))]
-  struct AlignFile<const N: usize>([u8; N]);
+  struct AlignFile<T>(T);
 
   #[test]
   fn try_next_decl_infinite_loop() {
