@@ -423,7 +423,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let mut g = file.parsed.lock().await;
     if let Some(FileCache::InProgress(senders)) = g.take() {
       for s in senders {
-        let _ = s.send(res.clone());
+        drop(s.send(res.clone()));
       }
     }
     *g = Some(FileCache::Ready(env));
@@ -441,7 +441,7 @@ fn elaborate_and_send(path: FileRef, send: FSender<ElabResult<()>>, rd: ArcList<
   BoxFuture<'static, ()> {
   async {
     if let Ok(env) = elaborate(path, rd).await {
-      let _ = send.send(env);
+      drop(send.send(env));
     }
   }.boxed()
 }

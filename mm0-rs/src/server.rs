@@ -326,7 +326,7 @@ async fn elaborate(path: FileRef, start: Option<Position>,
   let mut g = file.parsed.lock().await;
   if let Some(FileCache::InProgress {senders, ..}) = g.take() {
     for s in senders {
-      let _ = s.send(res.clone());
+      drop(s.send(res.clone()));
     }
   }
   if !is_canceled {
@@ -356,7 +356,7 @@ fn elaborate_and_send(path: FileRef,
 ) -> BoxFuture<'static, ()> {
   async {
     if let Ok(r) = elaborate(path, Some(Position::default()), cancel, rd).await {
-      let _ = send.send(r);
+      drop(send.send(r));
     }
   }.boxed()
 }
@@ -1449,7 +1449,7 @@ impl Server {
 
   fn run(&self) {
     let logger = Logger::start();
-    let _ = self.caps.ulock().register();
+    drop(self.caps.ulock().register());
 
     // We need this to be able to match on the response for the config getter, but
     // we can't use a string slice since lsp_server doesn't export IdRepr
@@ -1585,7 +1585,7 @@ pub fn main(args: &ArgMatches<'_>) {
     }
   }
   let server = &*SERVER; // start the server
-  let _ = log_message("started".into());
+  drop(log_message("started".into()));
   if args.is_present("no_log_errors") {
     server.options.ulock().log_errors = Some(false)
   }
