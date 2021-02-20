@@ -229,18 +229,19 @@ impl<'a> Parser<'a> {
   /// Parse an MMC expression (shallowly), returning a [`parser::Expr`](Expr)
   /// containing [`LispVal`]s for subexpressions.
   pub fn parse_expr(&self, base: &FileSpan, e: LispVal) -> Result<Expr> {
-    Ok(Spanned {span: try_get_fspan(base, &e), k: match &*e.unwrapped_arc() {
+    let span = try_get_fspan(base, &e);
+    let k = match &*e.unwrapped_arc() {
       &LispKind::Atom(AtomId::UNDER) => ExprKind::Hole,
       &LispKind::Atom(a) => ExprKind::Var(a),
       &LispKind::Bool(b) => ExprKind::Bool(b),
       LispKind::Number(n) => ExprKind::Int(n.clone()),
       LispKind::DottedList(es, r) if !r.is_list() && es.len() == 1 => if let Some(a) = r.as_atom() {
-        ExprKind::Proj(es[0].clone(), FieldName::Named(a))
+        ExprKind::Proj(es[0].clone(), spanned(&span, r, FieldName::Named(a)))
       } else {
         match r.as_int(|n| n.try_into()) {
-          Some(Ok(i)) => ExprKind::Proj(es[0].clone(), FieldName::Number(i)),
-          Some(Err(_)) => return Err(ElabError::new_e(try_get_span(base, &e), "field access: index out of range")),
-          None => return Err(ElabError::new_e(try_get_span(base, &e), "field access syntax error")),
+          Some(Ok(i)) => ExprKind::Proj(es[0].clone(), spanned(&span, r, FieldName::Number(i))),
+          Some(Err(_)) => return Err(ElabError::new_e(&span, "field access: index out of range")),
+          None => return Err(ElabError::new_e(&span, "field access syntax error")),
         }
       },
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
@@ -248,7 +249,7 @@ impl<'a> Parser<'a> {
         Some((Keyword::ArrowL, _)) => self.parse_decl_asgn(base, &e)?,
         Some((Keyword::With, mut u)) => {
           let mut ret = self.parse_decl_asgn(base, &u.next().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "'with' syntax error"))?)?;
+            ElabError::new_e(&span, "'with' syntax error"))?)?;
           let with = match &mut ret {
             ExprKind::Let {with, ..} | ExprKind::Assign {with, ..} => with,
             _ => unreachable!()
@@ -257,7 +258,7 @@ impl<'a> Parser<'a> {
             if !self.parse_rename(base, &e, with)? {
               for e in Uncons::New(e) {
                 if !self.parse_rename(base, &e, with)? {
-                  return Err(ElabError::new_e(try_get_span(base, &e),
+                  return Err(ElabError::new_e(&span,
                     "with: expected {old -> old'} or {new' <- new}"))
                 }
               }
@@ -266,17 +267,17 @@ impl<'a> Parser<'a> {
           ret
         }
         Some((Keyword::If, mut u)) => {
-          let err = || ElabError::new_e(try_get_span(base, &e), "if: syntax error");
+          let err = || ElabError::new_e(&span, "if: syntax error");
           let mut branches = vec![];
           let mut push = |(cond, tru)| {
             let (hyp, cond) = match self.head_keyword(&cond) {
               Some((Keyword::Colon, mut u)) =>
                 if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
                   let h = h.as_atom().ok_or_else(||
-                    ElabError::new_e(try_get_span(base, &h), "expecting hypothesis name"))?;
+                    ElabError::new_e(try_get_span(&span, &h), "expecting hypothesis name"))?;
                   (if h == AtomId::UNDER {None} else {Some(h)}, cond)
                 } else {
-                  return Err(ElabError::new_e(try_get_span(base, &cond), "':' syntax error"))
+                  return Err(ElabError::new_e(try_get_span(&span, &cond), "':' syntax error"))
                 },
               _ => (None, cond),
             };
@@ -299,25 +300,25 @@ impl<'a> Parser<'a> {
           ExprKind::If {branches, els}
         }
         Some((Keyword::Match, u)) => {
-          let (c, branches) = self.parse_match(&try_get_fspan(base, &e), u)?;
+          let (c, branches) = self.parse_match(&span, u)?;
           ExprKind::Match(c, branches)
         }
         Some((Keyword::While, mut u)) => {
           let c = u.next().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "while: syntax error"))?;
+            ElabError::new_e(&span, "while: syntax error"))?;
           let (hyp, cond) = if let Some((Keyword::Colon, mut u)) = self.head_keyword(&c) {
-            let h = u.next().and_then(|e| Some(spanned(base, &e, e.as_atom()?)));
+            let h = u.next().and_then(|e| Some(spanned(&span, &e, e.as_atom()?)));
             if let (Some(h), Some(c), true) = (h, u.next(), u.is_empty()) {
               (Some(h), c)
             } else {
-              return Err(ElabError::new_e(try_get_span(base, &e), "while: bad pattern"))
+              return Err(ElabError::new_e(&span, "while: bad pattern"))
             }
           } else {(None, c)};
           let mut var = None;
           while let Some(e) = u.head() {
-            if let Some(v) = self.parse_variant(base, &e) {
+            if let Some(v) = self.parse_variant(&span, &e) {
               if mem::replace(&mut var, Some(v)).is_some() {
-                return Err(ElabError::new_e(try_get_span(base, &e), "while: two variants"))
+                return Err(ElabError::new_e(&span, "while: two variants"))
               }
             } else {break}
             u.next();
@@ -328,7 +329,7 @@ impl<'a> Parser<'a> {
         Some((Keyword::Entail, u)) => {
           let mut args = u.collect::<Vec<_>>();
           let last = args.pop().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "entail: expected proof"))?;
+            ElabError::new_e(&span, "entail: expected proof"))?;
           ExprKind::Entail(last, args)
         }
         _ => {
@@ -337,21 +338,21 @@ impl<'a> Parser<'a> {
             None => ExprKind::Unit,
             Some(e) => if let Some((Keyword::Begin, mut u1)) = self.head_keyword(&e) {
               let name = u1.next().and_then(|e| e.as_atom()).ok_or_else(||
-                ElabError::new_e(try_get_span(base, &e), "label: expected label name"))?;
+                ElabError::new_e(&span, "label: expected label name"))?;
               let mut args = vec![];
               let mut variant = None;
               for e in u1 {
-                if let Some(v) = self.parse_variant(base, &e) {
+                if let Some(v) = self.parse_variant(&span, &e) {
                   if mem::replace(&mut variant, Some(v)).is_some() {
-                    return Err(ElabError::new_e(try_get_span(base, &e), "label: two variants"))
+                    return Err(ElabError::new_e(&span, "label: two variants"))
                   }
                 } else {
-                  self.parse_arg(base, Default::default(), e, &mut args)?
+                  self.parse_arg(&span, Default::default(), e, &mut args)?
                 }
               }
               ExprKind::Label(Label { name, args, variant, body: u })
             } else {
-              let fsp = try_get_fspan(base, &e);
+              let fsp = try_get_fspan(&span, &e);
               let f = e.as_atom().ok_or_else(|| ElabError::new_e(fsp.span,
                 "only variables can be called like functions"))?;
               let mut args = vec![];
@@ -360,10 +361,10 @@ impl<'a> Parser<'a> {
                 if let Some((Keyword::Variant, mut u)) = self.head_keyword(&e) {
                   if let (Some(v), true) = (u.next(), u.is_empty()) {
                     if mem::replace(&mut variant, Some(v)).is_some() {
-                      return Err(ElabError::new_e(try_get_span(base, &e), "call: two variants"))
+                      return Err(ElabError::new_e(&span, "call: two variants"))
                     }
                   } else {
-                    return Err(ElabError::new_e(try_get_span(base, &e), "variant: expected 1 argument"))
+                    return Err(ElabError::new_e(&span, "variant: expected 1 argument"))
                   }
                 } else {
                   args.push(e)
@@ -374,8 +375,9 @@ impl<'a> Parser<'a> {
           }
         }
       },
-      _ => return Err(ElabError::new_e(try_get_span(base, &e), "unknown expression"))
-    }})
+      _ => return Err(ElabError::new_e(&span, "unknown expression"))
+    };
+    Ok(Spanned {span, k})
   }
 
   fn parse_match(&self, base: &FileSpan, mut u: impl Iterator<Item=LispVal>) -> Result<(LispVal, Vec<(LispVal, LispVal)>)> {

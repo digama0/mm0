@@ -347,7 +347,7 @@ pub enum ExprKind {
     with: Renames
   },
   /// A field access `e.field`.
-  Proj(LispVal, FieldName),
+  Proj(LispVal, Spanned<FieldName>),
   /// A function call (or something that looks like one at parse time).
   Call(CallExpr),
   /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving

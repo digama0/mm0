@@ -164,9 +164,9 @@ impl<'a> BuildAst<'a> {
       ast::ExprKind::Index(e, _, _) |
       ast::ExprKind::Proj(e, _) |
       ast::ExprKind::Ghost(e) |
-      ast::ExprKind::Ref(e) => Self::add_origins(e, f)?,
+      ast::ExprKind::Ref(e) |
+      ast::ExprKind::Block(ast::Block {expr: Some(e), ..}) => Self::add_origins(e, f)?,
       ast::ExprKind::Slice(e, _) => Self::add_origins(&e.0, f)?,
-      ast::ExprKind::Block(es) => if let Some(e) = es.last() {Self::add_origins(e, f)?},
       ast::ExprKind::If {then, els, ..} => {Self::add_origins(then, f)?; Self::add_origins(els, f)?}
       ast::ExprKind::Match(_, pats) => for (_, e) in &**pats {Self::add_origins(e, f)?},
       _ => {}
@@ -179,7 +179,7 @@ impl<'a> BuildAst<'a> {
       TuplePatternKind::Name(g, name) => {
         let v = v.unwrap_or_else(|| self.fresh_var());
         self.push(name, v);
-        ast::TuplePatternKind::Name(g, v)
+        ast::TuplePatternKind::Name(g, name, v)
       }
       TuplePatternKind::Typed(pat, ty) => {
         let ty = self.build_ty(&span, &ty)?;
@@ -384,13 +384,7 @@ impl<'a> BuildAst<'a> {
       }
       ExprKind::Bool(b) => ast::ExprKind::Bool(b),
       ExprKind::Int(n) => ast::ExprKind::Int(n),
-      ExprKind::Let {lhs, rhs, with: Renames {old, new}} => {
-        let rhs = Box::new(self.build_expr(&span, rhs)?);
-        self.apply_rename(&span, &old)?;
-        let lhs = self.push_tuple_pattern(*lhs, None)?;
-        self.apply_rename(&span, &new)?;
-        ast::ExprKind::Let {lhs, rhs}
-      }
+      ExprKind::Let {..} => return Err(ElabError::new_e(&span, "a let statement is not an expression")),
       ExprKind::Assign {lhs, rhs, with} => {
         let lhs = self.build_expr(&span, lhs)?;
         let rhs = Box::new(self.build_expr(&span, rhs)?);
@@ -463,13 +457,13 @@ impl<'a> BuildAst<'a> {
     }).collect())
   }
 
-  fn build_block(&mut self, span: &FileSpan, es: Uncons) -> Result<Vec<ast::Expr>> {
+  fn build_block(&mut self, span: &FileSpan, es: Uncons) -> Result<ast::Block> {
     self.with_ctx(|this| {
-      let mut res = Vec::with_capacity(es.len());
+      let mut stmts = Vec::with_capacity(es.len());
       let mut jumps: Vec<Spanned<Label>> = vec![];
       macro_rules! clear_jumps {() => {if !jumps.is_empty() {
         let (v, labels) = (this.push_jumps(std::mem::take(&mut jumps))?);
-        res.push(Spanned {span: span.clone(), k: ast::ExprKind::Label(v, labels)});
+        stmts.push(Spanned {span: span.clone(), k: ast::StmtKind::Label(v, labels)});
       }}}
       for e in es {
         let Spanned {span: e_span, k} = this.p.parse_expr(span, e)?;
@@ -478,13 +472,27 @@ impl<'a> BuildAst<'a> {
           jumps.push(Spanned {span: e_span, k: lab})
         } else {
           clear_jumps!();
-          res.push(this.push_parsed_expr(e_span, k)?);
+          if let ExprKind::Let {lhs, rhs, with: Renames {old, new}} = k {
+            let rhs = this.build_expr(span, rhs)?;
+            this.apply_rename(span, &old)?;
+            let lhs = this.push_tuple_pattern(*lhs, None)?;
+            this.apply_rename(span, &new)?;
+            stmts.push(Spanned {span: e_span, k: ast::StmtKind::Let {lhs, rhs}})
+          } else {
+            stmts.push(this.push_parsed_expr(e_span, k)?.map_into(ast::StmtKind::Expr))
+          }
         }
       }
       if let Some(Spanned {span, ..}) = jumps.first() {
         return Err(ElabError::new_e(span, "a labeled block is a statement, not an expression"))
       }
-      Ok(res)
+      let expr = if let Some(Spanned {k: ast::StmtKind::Expr(_), ..}) = stmts.last() {
+        let_unchecked!(Some(Spanned {span, k: ast::StmtKind::Expr(expr)}) = stmts.pop(),
+          Some(Box::new(Spanned {span, k: expr})))
+      } else {
+        None
+      };
+      Ok(ast::Block {stmts, expr})
     })
   }
 
@@ -510,8 +518,7 @@ impl<'a> BuildAst<'a> {
       self.with_args(args, |this, args| Ok({
         let variant = this.build_variant(variant)?;
         let body = this.build_block(&span, body)?;
-        let body = Box::new(Spanned {span, k: ast::ExprKind::Block(body)});
-        ast::Label {args, variant, body}
+        ast::Label {args, variant, body: Spanned {span, k: body}}
       }))
     }).collect::<Result<_>>()?;
     Ok((group, jumps))
@@ -542,10 +549,13 @@ impl<'a> BuildAst<'a> {
 
     macro_rules! binop {($op:expr, $e1:expr, $e2:expr) => {ast::ExprKind::Binop($op, Box::new($e1), Box::new($e2))}}
     macro_rules! sp {($sp:expr, $k:expr) => {Spanned {span: $sp.clone(), k: $k}}}
-    fn let_var(sp: &FileSpan, v: VarId, e: ast::Expr) -> ast::Expr {
-      sp!(sp, ast::ExprKind::Let {
-        lhs: sp!(sp, ast::TuplePatternKind::Name(false, v)),
-        rhs: Box::new(e)
+    macro_rules! block {($($e:expr),*; $last:expr) => {
+      ast::ExprKind::Block(ast::Block {stmts: vec![$($e),*], expr: Some(Box::new($last))})
+    }}
+    fn let_var(sp: &FileSpan, v: VarId, rhs: ast::Expr) -> ast::Stmt {
+      sp!(sp, ast::StmtKind::Let {
+        lhs: sp!(sp, ast::TuplePatternKind::Name(false, AtomId::UNDER, v)),
+        rhs
       })
     }
     fn binop(sp: &FileSpan, op: Binop, v1: VarId, e2: ast::Expr) -> ast::Expr {
@@ -566,26 +576,26 @@ impl<'a> BuildAst<'a> {
           let e2 = this.build_expr(sp, e2)?;
           Ok(and(sp, op, v0, v1, if let Some(e3) = it.next() {
             let v2 = this.fresh_var();
-            sp!(sp, ast::ExprKind::Block(vec![
-              let_var(sp, v2, e2),
+            sp!(sp, block![
+              let_var(sp, v2, e2);
               mk_and(this, sp, op, v1, v2, e3, it)?
-            ]))
+            ])
           } else {
             binop(sp, op, v1, e2)
           }))
         }
         let v_1 = self.fresh_var();
         let v_2 = self.fresh_var();
-        ast::ExprKind::Block(vec![
+        block![
           let_var(sp, v_1, arg_1),
-          let_var(sp, v_2, arg_2),
-          mk_and(self, sp, op, v_1, v_2, arg_3, it)?,
-        ])
+          let_var(sp, v_2, arg_2);
+          mk_and(self, sp, op, v_1, v_2, arg_3, it)?
+        ]
       } else {
         ast::ExprKind::Binop(op, Box::new(arg_1), Box::new(arg_2))
       }
     } else {
-      ast::ExprKind::Block(vec![arg_1, sp!(sp, ast::ExprKind::Bool(true))])
+      block![arg_1.map_into(ast::StmtKind::Expr); sp!(sp, ast::ExprKind::Bool(true))]
     })
   }
 
@@ -776,7 +786,8 @@ impl<'a> BuildAst<'a> {
         }
       }
       let mut rets2 = outmap.iter().filter(|val| !val.used)
-        .map(|&OutVal {ghost, index, name, ..}| ast::Ret::OutAnon(ghost, index, this.push_fresh(name)))
+        .map(|&OutVal {ghost, index, name, ..}|
+          ast::Ret::Out(ghost, index, name, this.push_fresh(name), None))
         .collect::<Vec<_>>();
       for arg in rets {
         if arg.k.0.mut_ {
@@ -784,16 +795,33 @@ impl<'a> BuildAst<'a> {
         }
         match arg.k.1 {
           ArgKind::Let(_, _) => return Err(ElabError::new_e(&arg.span, "assignment not permitted here")),
-          ArgKind::Lam(pat) => {
-            let pat = this.push_tuple_pattern(Spanned {span: arg.span, k: pat}, None)?;
-            rets2.push(match arg.k.0.out {
-              None => ast::Ret::Reg(pat),
-              Some(name) => {
-                let &OutVal {ghost, index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
-                ast::Ret::Out(ghost, index, pat)
+          ArgKind::Lam(pat) => rets2.push(match arg.k.0.out {
+            None => ast::Ret::Reg(this.push_tuple_pattern(Spanned {span: arg.span, k: pat}, None)?),
+            Some(name) => {
+              let mut oty = None;
+              let mut sp = &arg.span;
+              let mut pat = &pat;
+              loop {
+                match pat {
+                  &TuplePatternKind::Name(g, name2) => {
+                    let v = this.fresh_var();
+                    this.push(name2, v);
+                    let &OutVal {ghost, index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
+                    break ast::Ret::Out(ghost || g, index, name, v, oty)
+                  }
+                  TuplePatternKind::Typed(pat2, ty) => {
+                    if oty.replace(Box::new(this.build_ty(sp, ty)?)).is_some() {
+                      return Err(ElabError::new_e(&arg.span, "double type ascription not permitted here"))
+                    }
+                    sp = &pat2.span;
+                    pat = &pat2.k;
+                  }
+                  TuplePatternKind::Tuple(_) =>
+                    return Err(ElabError::new_e(sp, "tuple pattern not permitted in 'out' returns"))
+                }
               }
-            })
-          }
+            }
+          })
         }
       }
       Ok(rets2)
