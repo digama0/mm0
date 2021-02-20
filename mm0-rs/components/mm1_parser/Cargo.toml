@@ -1,0 +1,29 @@
+[package]
+name = "mm1_parser"
+version = "0.1.0"
+authors = ["Mario Carneiro <di.gama@gmail.com>"]
+edition = "2018"
+description = "Parser for mm0 and mm1 files used by Metamath Zero"
+repository = "https://github.com/digama0/mm0"
+readme = "README.md"
+license = "CC0"
+keywords = ["theorem", "proving", "proof", "assistant"]
+categories = ["command-line-utilities", "development-tools", "mathematics"]
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+mm0-rs_util = { path = "../mm0-rs_util" }
+num = "0.3.1"
+annotate-snippets = { version = "0.9.0", features = ["color"] }
+
+# optional dependencies
+deepsize_0 = { path = "../deepsize_0", optional = true }
+deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
+libc = { version = "0.2.86", optional = true }
+
+[features]
+default = []
+memory = ["deepsize_0", "deepsize_derive", "libc"]
+

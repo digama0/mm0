@@ -1,0 +1,31 @@
+[package]
+name = "mm0-rs_util"
+version = "0.1.0"
+authors = ["Mario Carneiro <di.gama@gmail.com>"]
+edition = "2018"
+description = "MM0/MM1 language utilities"
+readme = "README.md"
+license = "CC0"
+keywords = ["theorem", "proving", "proof", "assistant"]
+categories = ["command-line-utilities", "development-tools", "mathematics"]
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lazy_static = "1.4.0"
+memchr = "2.3.4"
+pathdiff = "0.2.0"
+byteorder = "1.4.2"
+zerocopy = "0.3.0"
+bitflags = "1.2.1"
+
+# optional dependencies
+deepsize_0 = { path = "../deepsize_0", optional = true }
+deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
+libc = { version = "0.2.86", optional = true }
+
+[features]
+default = ["memory"]
+memory = ["deepsize_0", "deepsize_derive", "libc"]
+
