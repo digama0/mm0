@@ -523,8 +523,8 @@ impl<'a> Parser<'a> {
     let mut val: BigUint = 0_u8.into();
     if self.cur() == b'0' {
       self.idx += 1;
-      match self.cur() {
-        b'x' | b'X' => {
+      match self.cur_opt() {
+        Some(b'x') | Some(b'X') => {
           self.idx += 1;
           while self.idx < self.source.len() {
             let c = self.cur();
@@ -1013,4 +1013,12 @@ impl<'a> Parser<'a> {
   p.ws();
   while let Some(d) = p.stmt_recover() { stmts.push(d) }
   (0, Ast { errors: p.errors, imports: p.imports, source: file, stmts })
+}
+
+#[cfg(test)] mod tests {
+  use super::*;
+
+  #[test] fn parse_hex_panic() {
+    drop(parse(Arc::new(LinedString::from("@0".to_owned())), None));
+  }
 }
