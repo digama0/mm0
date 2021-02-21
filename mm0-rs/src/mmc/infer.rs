@@ -2,6 +2,7 @@
 #![allow(unused)]
 #![allow(clippy::unused_self)]
 #![allow(clippy::needless_collect)]
+#![allow(clippy::match_same_arms)]
 
 use std::{borrow::Borrow, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
 use std::result::Result as StdResult;
@@ -57,7 +58,6 @@ mk_interner! {
   args: ArgKind,
   pats: PatternKind,
   tys: TyKind,
-  props: PropKind,
   exprs: ExprKind,
 }
 
@@ -264,111 +264,37 @@ enum UnelabStmt<'a> {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-enum TyOrProp<'a> {
-  Ty(Ty<'a>),
-  Prop(Prop<'a>)
-}
-
-impl<'a> From<Prop<'a>> for TyOrProp<'a> {
-  fn from(p: Prop<'a>) -> Self { Self::Prop(p) }
-}
-impl<'a> From<Ty<'a>> for TyOrProp<'a> {
-  fn from(ty: Ty<'a>) -> Self {
-    if let TyKind::Prop(p) = ty.k {
-      Self::Prop(p)
-    } else {
-      Self::Ty(ty)
-    }
-  }
-}
-
-impl<'a> TyOrProp<'a> {
-  fn to_ty(self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
-    match self {
-      Self::Ty(ty) => ty,
-      Self::Prop(p) => ctx.intern(TyKind::Prop(p))
-    }
-  }
-  fn is_error(self) -> bool {
-    matches!(self,
-      TyOrProp::Ty(WithMeta {k: TyKind::Error, ..}) |
-      TyOrProp::Prop(WithMeta {k: PropKind::Error, ..}))
-  }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
 struct WhnfTy<'a> {
   uninit: bool,
   ghost: bool,
   moved: bool,
-  ty: TyOrProp<'a>,
+  ty: Ty<'a>,
 }
 
 impl<'a> WhnfTy<'a> {
   fn to_ty(mut self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
-    let mut ty = self.ty.to_ty(ctx);
-    if self.moved { ty = ctx.intern(TyKind::Moved(ty)) }
-    if self.ghost { ty = ctx.intern(TyKind::Ghost(ty)) }
-    if self.uninit { ty = ctx.intern(TyKind::Uninit(ty)) }
-    ty
+    if self.moved { self.ty = ctx.intern(TyKind::Moved(self.ty)) }
+    if self.ghost { self.ty = ctx.intern(TyKind::Ghost(self.ty)) }
+    if self.uninit { self.ty = ctx.intern(TyKind::Uninit(self.ty)) }
+    self.ty
   }
   fn moved(mut self, m: bool) -> Self { self.moved |= m; self }
   fn ghost(mut self) -> Self { self.ghost = true; self }
   fn uninit(mut self) -> Self { self.uninit = true; self }
-  fn map(mut self, ty: Ty<'a>) -> Self { self.ty = ty.into(); self }
+  fn map(mut self, ty: Ty<'a>) -> Self { self.ty = ty; self }
 }
 
 impl<'a> From<Ty<'a>> for WhnfTy<'a> {
   fn from(ty: Ty<'a>) -> Self {
-    let mut ret = Self {ghost: false, uninit: false, moved: false, ty: ty.into()};
+    let mut ret = Self {ghost: false, uninit: false, moved: false, ty};
     loop {
-      match ret.ty {
-        TyOrProp::Ty(ref mut ty) => match ty.k {
-          TyKind::Ghost(ty2) => {*ty = ty2; ret.ghost = true}
-          TyKind::Uninit(ty2) => {*ty = ty2; ret.uninit = true}
-          TyKind::Moved(ty2) => {*ty = ty2; ret.moved = true}
-          TyKind::Prop(p) => ret.ty = TyOrProp::Prop(p),
-          _ => return ret
-        },
-        TyOrProp::Prop(ref mut p) => match p.k {
-          PropKind::Moved(p2) => {*p = p2; ret.moved = true}
-          _ => return ret
-        },
-      }
-    }
-  }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-struct WhnfProp<'a> {
-  moved: bool,
-  p: Prop<'a>,
-}
-
-impl<'a> WhnfProp<'a> {
-  fn moved(mut self, m: bool) -> Self { self.moved |= m; self }
-  fn map(mut self, p: Prop<'a>) -> Self { WhnfProp::from(p).moved(self.moved) }
-  fn to_prop(mut self, ctx: &mut InferCtx<'a>) -> Prop<'a> {
-    if self.moved { self.p = ctx.intern(PropKind::Moved(self.p)) }
-    self.p
-  }
-}
-
-impl<'a> From<Prop<'a>> for WhnfProp<'a> {
-  fn from(p: Prop<'a>) -> Self {
-    let mut ret = Self {moved: false, p};
-    loop {
-      match ret.p.k {
-        PropKind::Moved(p) => {ret.p = p; ret.moved = true}
+      match ret.ty.k {
+        TyKind::Ghost(ty2) => {ret.ty = ty2; ret.ghost = true}
+        TyKind::Uninit(ty2) => {ret.ty = ty2; ret.uninit = true}
+        TyKind::Moved(ty2) => {ret.ty = ty2; ret.moved = true}
         _ => return ret
       }
     }
-  }
-}
-
-impl<'a> From<WhnfProp<'a>> for WhnfTy<'a> {
-  fn from(WhnfProp {moved, p}: WhnfProp<'a>) -> Self {
-    Self {ghost: false, uninit: false, moved, ty: TyOrProp::Prop(p)}
   }
 }
 
@@ -418,8 +344,6 @@ pub struct InferCtx<'a> {
   // tasks: Vec<Task>,
   /// The assignments for type metavariables.
   ty_mvars: Assignments<'a, TyMVarId, Ty<'a>>,
-  /// The assignments for proposition metavariables.
-  prop_mvars: Assignments<'a, PropMVarId, Prop<'a>>,
   /// The assignments for pure expression metavariables.
   expr_mvars: Assignments<'a, ExprMVarId, Expr<'a>>,
   /// The assignments for lifetime metavariables.
@@ -500,43 +424,6 @@ impl<'a> ExpectTy<'a> {
   }
 }
 
-/// An expectation for a proposition, used to communicate top-down typing information.
-#[derive(Copy, Clone)]
-enum ExpectProp<'a> {
-  /// No constraint.
-  Any,
-  /// We are expecting some `A` such that `R(A, B)`, where `B` is stored here.
-  Relate(Relation, Prop<'a>),
-  /// We are expecting some `B` such that `R(A, B)`, where `A` is stored here.
-  RelateRev(Relation, Prop<'a>),
-}
-
-impl<'a> ExpectProp<'a> {
-  fn exactly(tgt: Option<Prop<'a>>) -> Self {
-    tgt.map_or(Self::Any, |p| Self::Relate(Relation::Equal, p))
-  }
-  fn subtype(tgt: Option<Prop<'a>>) -> Self {
-    tgt.map_or(Self::Any, |p| Self::Relate(Relation::Subtype, p))
-  }
-  fn supertype(tgt: Option<Prop<'a>>) -> Self {
-    tgt.map_or(Self::Any, |p| Self::RelateRev(Relation::Subtype, p))
-  }
-  fn coerce_to(tgt: Option<Prop<'a>>) -> Self {
-    tgt.map_or(Self::Any, |p| Self::Relate(Relation::Coerce, p))
-  }
-  fn coerce_from(tgt: Option<Prop<'a>>) -> Self {
-    tgt.map_or(Self::Any, |p| Self::RelateRev(Relation::Coerce, p))
-  }
-
-  fn to_prop(self) -> Option<Prop<'a>> {
-    match self {
-      ExpectProp::Any => None,
-      ExpectProp::Relate(_, p) |
-      ExpectProp::RelateRev(_, p) => Some(p),
-    }
-  }
-}
-
 /// An expectation for an expression, used to communicate top-down typing information.
 #[derive(Copy, Clone)]
 enum ExpectExpr<'a> {
@@ -586,11 +473,8 @@ struct Common<'a> {
   t_unit: Ty<'a>,
   e_unit: Expr<'a>,
   t_bool: Ty<'a>,
-  p_true: Prop<'a>,
-  p_false: Prop<'a>,
   t_true: Ty<'a>,
   t_false: Ty<'a>,
-  p_emp: Prop<'a>,
   e_bool: [Expr<'a>; 2],
   nat: Ty<'a>,
   int: Ty<'a>,
@@ -600,8 +484,6 @@ struct Common<'a> {
 
 impl<'a> Common<'a> {
   fn new(i: &mut Interner<'a>, alloc: &'a Bump) -> Self {
-    let p_true = i.intern(alloc, PropKind::True);
-    let p_false = i.intern(alloc, PropKind::False);
     Self {
       t_unit: i.intern(alloc, TyKind::Unit),
       e_unit: i.intern(alloc, ExprKind::Unit),
@@ -613,9 +495,8 @@ impl<'a> Common<'a> {
       int: i.intern(alloc, TyKind::Int(Size::Inf)),
       t_error: i.intern(alloc, TyKind::Error),
       e_error: i.intern(alloc, ExprKind::Error),
-      p_true, t_true: i.intern(alloc, TyKind::Prop(p_true)),
-      p_false, t_false: i.intern(alloc, TyKind::Prop(p_false)),
-      p_emp: i.intern(alloc, PropKind::Emp),
+      t_true: i.intern(alloc, TyKind::True),
+      t_false: i.intern(alloc, TyKind::False),
     }
   }
 
@@ -645,7 +526,6 @@ impl<'a> InferCtx<'a> {
       var_names,
       // tasks: vec![],
       ty_mvars: Default::default(),
-      prop_mvars: Default::default(),
       expr_mvars: Default::default(),
       lft_mvars: Default::default(),
       gen_vars: Default::default(),
@@ -678,11 +558,6 @@ impl<'a> InferCtx<'a> {
     intern!(self, TyKind::Infer(n))
   }
 
-  fn new_prop_mvar(&mut self, span: &'a FileSpan) -> Prop<'a> {
-    let n = self.prop_mvars.new_mvar(span, self.context);
-    intern!(self, PropKind::Infer(n))
-  }
-
   fn new_expr_mvar(&mut self, span: &'a FileSpan) -> Expr<'a> {
     let n = self.expr_mvars.new_mvar(span, self.context);
     intern!(self, ExprKind::Infer(n))
@@ -702,19 +577,6 @@ impl<'a> InferCtx<'a> {
       e.on_mvars(|v2| cycle |= self.ty_mvars.root(v2) == root);
       if cycle { return false }
       self.ty_mvars.assign(v, e);
-    }
-    true
-  }
-
-  fn assign_prop(&mut self, v: PropMVarId, e: Prop<'a>) -> bool {
-    let root = self.prop_mvars.root(v);
-    if let PropKind::Infer(v2) = e.k {
-      self.prop_mvars.equate(v, v2);
-    } else {
-      let mut cycle = false;
-      e.on_mvars(|v2| cycle |= self.prop_mvars.root(v2) == root);
-      if cycle { return false }
-      self.prop_mvars.assign(v, e);
     }
     true
   }
@@ -743,77 +605,15 @@ impl<'a> InferCtx<'a> {
     val.copied().unwrap_or((c.gen, c.val, c.ty))
   }
 
-  fn whnf_prop(&mut self, wp: WhnfProp<'a>) -> WhnfProp<'a> {
-    wp.map(intern!(self, match wp.p.k {
-      PropKind::True |
-      PropKind::False |
-      PropKind::All(_, _) |
-      PropKind::Ex(_, _) |
-      PropKind::Imp(_, _) |
-      PropKind::Not(_) |
-      PropKind::And(_) |
-      PropKind::Or(_) |
-      PropKind::Emp |
-      PropKind::Sep(_) |
-      PropKind::Wand(_, _) |
-      PropKind::Eq(_, _) |
-      PropKind::Heap(_, _, _) |
-      PropKind::Mm0(_) |
-      PropKind::Error => return wp,
-      PropKind::HasTy(x, ty) => {
-        let wty = WhnfTy::from(ty);
-        if wty.uninit {return wp}
-        let wty2 = self.whnf_ty(wty);
-        macro_rules! nothing {() => {{
-          if wty == wty2 { return wp }
-          PropKind::HasTy(x, wty2.to_ty(self))
-        }}}
-        match wty2.ty {
-          TyOrProp::Prop(_) => nothing!(),
-          TyOrProp::Ty(ty) => match ty.k {
-            TyKind::List(tys) => PropKind::Sep(self.alloc.alloc_slice_fill_iter(
-              tys.iter().map(|&ty| intern!(self, PropKind::HasTy(x, ty))))),
-            TyKind::And(tys) => PropKind::And(self.alloc.alloc_slice_fill_iter(
-              tys.iter().map(|&ty| intern!(self, PropKind::HasTy(x, ty))))),
-            TyKind::Or(tys) => PropKind::Or(self.alloc.alloc_slice_fill_iter(
-              tys.iter().map(|&ty| intern!(self, PropKind::HasTy(x, ty))))),
-            TyKind::Error => PropKind::Error,
-            TyKind::Prop(_) |
-            TyKind::Moved(_) |
-            TyKind::Ghost(_) |
-            TyKind::Uninit(_) => unreachable!(),
-            _ => nothing!(),
-          }
-        }
-      }
-      PropKind::Pure(e) => {
-        let e2 = self.whnf_expr(e, self.common.t_bool);
-        if e == e2 {return wp}
-        PropKind::Pure(e2)
-      }
-      PropKind::Infer(v) => {
-        if let Some(p) = self.prop_mvars.lookup(v) {
-          return self.whnf_prop(p.into())
-        }
-        return wp
-      }
-      PropKind::Moved(_) => unreachable!()
-    }))
-  }
-
   fn whnf_expr(&self, e: Expr<'a>, ty: Ty<'a>) -> Expr<'a> {
-    // todo!()
-    e
+    e // FIXME
   }
 
   fn whnf_ty(&mut self, wty: WhnfTy<'a>) -> WhnfTy<'a> {
-    let ty = match wty.ty {
-      TyOrProp::Ty(ty) => ty,
-      TyOrProp::Prop(p) if wty.uninit => return wty,
-      TyOrProp::Prop(p) => return self.whnf_prop(WhnfProp {moved: wty.moved, p}).into(),
-    };
-    wty.map(intern!(self, match ty.k {
+    wty.map(intern!(self, match wty.ty.k {
       TyKind::Unit |
+      TyKind::True |
+      TyKind::False |
       TyKind::Bool |
       TyKind::Var(_) |
       TyKind::Int(_) |
@@ -826,8 +626,13 @@ impl<'a> InferCtx<'a> {
       TyKind::List(_) |
       TyKind::Sn(_, _) |
       TyKind::Struct(_) |
+      TyKind::All(_, _) |
+      TyKind::Imp(_, _) |
+      TyKind::Wand(_, _) |
+      TyKind::Not(_) |
       TyKind::And(_) |
       TyKind::Or(_) |
+      TyKind::Heap(_, _, _) |
       TyKind::Input |
       TyKind::Output |
       TyKind::Error => return wty,
@@ -853,6 +658,32 @@ impl<'a> InferCtx<'a> {
           _ => TyKind::Match(e2, ty, brs),
         }
       }
+      TyKind::HasTy(x, ty) => {
+        let wty = WhnfTy::from(ty);
+        if wty.uninit {return wty}
+        let wty2 = self.whnf_ty(wty);
+        match wty2.ty.k {
+          TyKind::List(tys) => TyKind::List(self.alloc.alloc_slice_fill_iter(
+            tys.iter().map(|&ty| intern!(self, TyKind::HasTy(x, ty))))),
+          TyKind::And(tys) => TyKind::And(self.alloc.alloc_slice_fill_iter(
+            tys.iter().map(|&ty| intern!(self, TyKind::HasTy(x, ty))))),
+          TyKind::Or(tys) => TyKind::Or(self.alloc.alloc_slice_fill_iter(
+            tys.iter().map(|&ty| intern!(self, TyKind::HasTy(x, ty))))),
+          TyKind::Error => TyKind::Error,
+          TyKind::Moved(_) |
+          TyKind::Ghost(_) |
+          TyKind::Uninit(_) => unreachable!(),
+          _ => {
+            if wty == wty2 { return wty }
+            TyKind::HasTy(x, wty2.to_ty(self))
+          }
+        }
+      }
+      TyKind::Pure(e) => {
+        let e2 = self.whnf_expr(e, self.common.t_bool);
+        if e == e2 {return wty}
+        TyKind::Pure(e2)
+      }
       TyKind::Infer(v) => {
         if let Some(ty) = self.ty_mvars.lookup(v) {
           return self.whnf_ty(ty.into())
@@ -861,8 +692,7 @@ impl<'a> InferCtx<'a> {
       }
       TyKind::Ghost(_) |
       TyKind::Uninit(_) |
-      TyKind::Moved(_) |
-      TyKind::Prop(_) => unreachable!(),
+      TyKind::Moved(_) => unreachable!(),
     }))
   }
 
@@ -969,18 +799,7 @@ impl<'a> InferCtx<'a> {
       check!(uninit, ghost, moved);
       return Ok(vec![])
     }
-    let (from_ty, to_ty) = match (from.ty, to.ty) {
-      (TyOrProp::Ty(a), TyOrProp::Ty(b)) => (a, b),
-      (TyOrProp::Prop(pa), TyOrProp::Prop(pb)) => {
-        check!(uninit);
-        let pa = WhnfProp::from(pa).moved(from.moved);
-        let pb = WhnfProp::from(pb).moved(to.moved);
-        if let Relation::SubtypeEqSize | Relation::Coerce = rel { rel = Relation::Subtype }
-        return self.relate_whnf_prop(pa, pb, rel);
-      }
-      _ => return Err(())
-    };
-    match (from_ty.k, to_ty.k) {
+    match (from.ty.k, to.ty.k) {
       (TyKind::Error, _) | (_, TyKind::Error) => {}
       (TyKind::Array(ty_a, e_a), TyKind::Array(ty_b, e_b)) => {
         if let Relation::Subtype = rel { rel = Relation::SubtypeEqSize }
@@ -1029,6 +848,38 @@ impl<'a> InferCtx<'a> {
           if arga != argb { return Err(()) } // TODO: alpha conversion
         }
       }
+      (TyKind::All(a1, a2), TyKind::All(b1, b2)) => {
+        check!(uninit);
+        let (a1, b1) = (a1.k.ty(), b1.k.ty());
+        let coe1 = self.relate_whnf_ty(b1.into(), a1.into(), rel)?;
+        if !coe1.is_empty() { unimplemented!() }
+        let coe2 = if a1.is_copy() && b1.is_copy() {
+          self.relate_whnf_ty(from.map(a2), to.map(b2), rel)?
+        } else {
+          check!(moved);
+          self.relate_whnf_ty(a2.into(), b2.into(), rel)?
+        };
+        if !coe2.is_empty() { unimplemented!() }
+      }
+      (TyKind::Imp(a1, a2), TyKind::Imp(b1, b2)) |
+      (TyKind::Wand(a1, a2), TyKind::Wand(b1, b2)) => {
+        check!(uninit);
+        let coe1 = self.relate_whnf_ty(b1.into(), a1.into(), rel)?;
+        if !coe1.is_empty() { unimplemented!() }
+        let coe2 = if a1.is_copy() && b1.is_copy() {
+          self.relate_whnf_ty(from.map(a2), to.map(b2), rel)?
+        } else {
+          check!(moved);
+          self.relate_whnf_ty(a2.into(), b2.into(), rel)?
+        };
+        if !coe2.is_empty() { unimplemented!() }
+      }
+      (TyKind::Not(a1), TyKind::Not(b1)) => {
+        check!(uninit);
+        if !a1.is_copy() || !b1.is_copy() { check!(moved) }
+        let coe1 = self.relate_whnf_ty(b1.into(), a1.into(), rel)?;
+        if !coe1.is_empty() { unimplemented!() }
+      }
       (TyKind::And(tys_a), TyKind::And(tys_b)) if tys_a.len() == tys_b.len() => {
         for (&ty_a, &ty_b) in tys_a.iter().zip(tys_b) {
           let coes = self.relate_whnf_ty(from.map(ty_a), to.map(ty_b), rel)?;
@@ -1057,6 +908,10 @@ impl<'a> InferCtx<'a> {
           self.relate_whnf_ty(from.map(ty_a), to.map(ty_b), rel)?;
         }
       }
+      (TyKind::Pure(e_a), TyKind::Pure(e_b)) => {
+        check!(uninit);
+        self.equate_expr(e_a, e_b)?
+      }
       (TyKind::User(fa, tys_a, argsa), TyKind::User(fb, tys_b, argsb))
       if fa == fb && tys_a.len() == tys_b.len() && argsa.len() == argsb.len() => {
         check!(uninit, ghost, moved);
@@ -1064,6 +919,23 @@ impl<'a> InferCtx<'a> {
           self.relate_whnf_ty(ty_a.into(), ty_b.into(), Relation::Equal)?;
         }
         for (&a1, &b1) in argsa.iter().zip(argsb) {self.equate_expr(a1, b1)?}
+      }
+      (TyKind::Heap(a1, a2, ty_a), TyKind::Heap(b1, b2, ty_b)) => {
+        check!(uninit, moved);
+        self.equate_expr(a1, b1)?;
+        self.equate_expr(a2, b2)?;
+        let coes = self.relate_whnf_ty(
+          WhnfTy::from(ty_a).moved(true),
+          WhnfTy::from(ty_b).moved(true), rel)?;
+        if !coes.is_empty() { unimplemented!() }
+      }
+      (TyKind::HasTy(a1, ty_a), TyKind::HasTy(b1, ty_b)) => {
+        check!(uninit);
+        self.equate_expr(a1, b1)?;
+        let coes = self.relate_whnf_ty(
+          WhnfTy::from(ty_a).moved(from.moved),
+          WhnfTy::from(ty_b).moved(to.moved), rel)?;
+        if !coes.is_empty() { unimplemented!() }
       }
       (TyKind::Infer(v), _) => {
         if let Some(ty) = self.ty_mvars.lookup(v) {
@@ -1078,104 +950,6 @@ impl<'a> InferCtx<'a> {
         }
         let from = from.to_ty(self);
         if !self.assign_ty(v, from) { return Err(()) }
-      }
-      _ => return Err(())
-    }
-    Ok(vec![])
-  }
-
-  fn relate_whnf_prop(&mut self, from: WhnfProp<'a>, to: WhnfProp<'a>, mut rel: Relation) -> StdResult<Vec<Coercion<'a>>, ()> {
-    macro_rules! check_moved {() => {{if from.moved != to.moved { return Err(()) }}}}
-    if from.p == to.p {
-      check_moved!();
-      return Ok(vec![])
-    }
-    match (from.p.k, to.p.k) {
-      (PropKind::Error, _) | (_, PropKind::Error) => {}
-      (PropKind::All(a1, a2), PropKind::All(b1, b2)) => {
-        let (a1, b1) = (a1.k.ty(), b1.k.ty());
-        let coe1 = self.relate_whnf_ty(b1.into(), a1.into(), rel)?;
-        if !coe1.is_empty() { unimplemented!() }
-        let coe2 = if a1.is_copy() && b1.is_copy() {
-          self.relate_whnf_prop(from.map(a2), to.map(b2), rel)?
-        } else {
-          check_moved!();
-          self.relate_whnf_prop(a2.into(), b2.into(), rel)?
-        };
-        if !coe2.is_empty() { unimplemented!() }
-      }
-      (PropKind::Ex(a1, a2), PropKind::Ex(b1, b2)) => {
-        let (a1, b1) = (WhnfTy::from(a1.k.ty()), WhnfTy::from(b1.k.ty()));
-        let coe1 = self.relate_whnf_ty(a1.moved(from.moved), b1.moved(to.moved), rel)?;
-        if !coe1.is_empty() { unimplemented!() }
-        let coe2 = self.relate_whnf_prop(from.map(a2), to.map(b2), rel)?;
-        if !coe2.is_empty() { unimplemented!() }
-      }
-      (PropKind::Imp(a1, a2), PropKind::Imp(b1, b2)) |
-      (PropKind::Wand(a1, a2), PropKind::Wand(b1, b2)) => {
-        let coe1 = self.relate_whnf_prop(b1.into(), a1.into(), rel)?;
-        if !coe1.is_empty() { unimplemented!() }
-        let coe2 = if a1.is_copy() && b1.is_copy() {
-          self.relate_whnf_prop(from.map(a2), to.map(b2), rel)?
-        } else {
-          check_moved!();
-          self.relate_whnf_prop(a2.into(), b2.into(), rel)?
-        };
-        if !coe2.is_empty() { unimplemented!() }
-      }
-      (PropKind::Not(a1), PropKind::Not(b1)) => {
-        if !a1.is_copy() || !b1.is_copy() { check_moved!() }
-        let coe1 = self.relate_whnf_prop(b1.into(), a1.into(), rel)?;
-        if !coe1.is_empty() { unimplemented!() }
-      }
-      (PropKind::And(ps_a), PropKind::And(ps_b)) |
-      (PropKind::Or(ps_a), PropKind::Or(ps_b)) |
-      (PropKind::Sep(ps_a), PropKind::Sep(ps_b)) if ps_a.len() == ps_b.len() => {
-        for (&pa, &pb) in ps_a.iter().zip(ps_b) {
-          let coes = self.relate_whnf_prop(from.map(pa), to.map(pb), rel)?;
-          if !coes.is_empty() { unimplemented!() }
-        }
-      }
-      (PropKind::Pure(e_a), PropKind::Pure(e_b)) => self.equate_expr(e_a, e_b)?,
-      (PropKind::Eq(a1, a2), PropKind::Eq(b1, b2)) => {
-        self.equate_expr(a1, b1)?;
-        self.equate_expr(a2, b2)?;
-      }
-      (PropKind::Heap(a1, a2, ty_a), PropKind::Heap(b1, b2, ty_b)) => {
-        check_moved!();
-        self.equate_expr(a1, b1)?;
-        self.equate_expr(a2, b2)?;
-        let coes = self.relate_whnf_ty(
-          WhnfTy::from(ty_a).moved(true),
-          WhnfTy::from(ty_b).moved(true), rel)?;
-        if !coes.is_empty() { unimplemented!() }
-      }
-      (PropKind::HasTy(a1, ty_a), PropKind::HasTy(b1, ty_b)) => {
-        self.equate_expr(a1, b1)?;
-        let coes = self.relate_whnf_ty(
-          WhnfTy::from(ty_a).moved(from.moved),
-          WhnfTy::from(ty_b).moved(to.moved), rel)?;
-        if !coes.is_empty() { unimplemented!() }
-      }
-      (PropKind::Mm0(a1), PropKind::Mm0(b1))
-      if std::ptr::eq(&a1.expr, &b1.expr) && a1.subst.len() == b1.subst.len() => {
-        for (&e_a, &e_b) in a1.subst.iter().zip(b1.subst) {
-          self.equate_expr(e_a, e_b)?
-        }
-      }
-      (PropKind::Infer(v), _) => {
-        if let Some(p) = self.prop_mvars.lookup(v) {
-          return self.relate_whnf_prop(p.into(), to, rel)
-        }
-        let to = to.to_prop(self);
-        if !self.assign_prop(v, to) { return Err(()) }
-      }
-      (_, PropKind::Infer(v)) => {
-        if let Some(p) = self.prop_mvars.lookup(v) {
-          return self.relate_whnf_prop(from, p.into(), rel)
-        }
-        let from = from.to_prop(self);
-        if !self.assign_prop(v, from) { return Err(()) }
       }
       _ => return Err(())
     }
@@ -1343,6 +1117,8 @@ impl<'a> InferCtx<'a> {
   fn lower_ty(&mut self, ty: &'a ast::Type, expect: ExpectTy<'a>) -> Ty<'a> {
     match &ty.k {
       ast::TypeKind::Unit => self.common.t_unit,
+      ast::TypeKind::True => self.common.t_true,
+      ast::TypeKind::False => self.common.t_false,
       ast::TypeKind::Bool => self.common.t_bool,
       &ast::TypeKind::Var(v) => intern!(self, TyKind::Var(v)),
       &ast::TypeKind::Int(sz) => intern!(self, TyKind::Int(sz)),
@@ -1384,6 +1160,18 @@ impl<'a> InferCtx<'a> {
         let args = self.finish_args(args);
         intern!(self, TyKind::Struct(args))
       }
+      ast::TypeKind::All(pats, ty) => {
+        let pats = pats.iter().map(|pat| self.lower_tuple_pattern(&pat.span, &pat.k, None, None)).collect::<Vec<_>>();
+        let mut ty = self.lower_ty(ty, ExpectTy::Any);
+        for pat in pats.into_iter().rev() {
+          let pat = self.finish_tuple_pattern(&pat);
+          ty = intern!(self, TyKind::All(pat, ty))
+        }
+        ty
+      }
+      ast::TypeKind::Imp(_, _) => todo!(),
+      ast::TypeKind::Wand(_, _) => todo!(),
+      ast::TypeKind::Not(_) => todo!(),
       ast::TypeKind::And(tys) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -1416,8 +1204,7 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Ghost(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Uninit(ty) =>
         intern!(self, TyKind::Uninit(self.lower_ty(ty, ExpectTy::Any))),
-      ast::TypeKind::Prop(p) =>
-        intern!(self, TyKind::Prop(self.lower_prop(p, ExpectProp::Any))),
+      ast::TypeKind::Pure(_) => todo!(),
       ast::TypeKind::User(f, tys, es) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -1425,16 +1212,14 @@ impl<'a> InferCtx<'a> {
           unwrap_unchecked!(ty.k.ty()));
         todo!()
       }
+      ast::TypeKind::Heap(_, _) |
+      ast::TypeKind::HasTy(_, _) => todo!(),
       ast::TypeKind::Input => intern!(self, TyKind::Input),
       ast::TypeKind::Output => intern!(self, TyKind::Output),
       ast::TypeKind::Moved(ty) => intern!(self, TyKind::Moved(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Infer => self.new_ty_mvar(&ty.span),
       ast::TypeKind::Error => self.common.t_error,
     }
-  }
-
-  fn lower_prop(&mut self, p: &'a ast::Prop, expect: ExpectProp<'a>) -> Prop<'a> {
-    todo!()
   }
 
   fn subst_expr(&mut self, fvars: &mut im::HashSet<VarId>, subst: &im::HashMap<VarId, Expr<'a>>, e: Expr<'a>) -> Expr<'a> {
@@ -1496,7 +1281,7 @@ impl<'a> InferCtx<'a> {
   fn finish_args(&mut self, args: Vec<UnelabArg<'a>>) -> &'a [Arg<'a>] {
     let args = args.into_iter().rev().map(|arg| self.finish_arg(arg)).collect::<Vec<_>>();
     self.alloc.alloc_slice_fill_iter(args.into_iter().rev())
-}
+  }
 
   fn lower_variant(&mut self, variant: &'a Option<Box<ast::Variant>>) -> Option<Box<hir::Variant<'a>>> {
     variant.as_deref().map(|Spanned {span, k: (e, vt)}| Box::new(match vt {
@@ -1529,17 +1314,17 @@ impl<'a> InferCtx<'a> {
     (self.coerce_expr(e_a, ty_a, arrty), a)
   }
 
-  fn prop_to_expr(&mut self, p: Prop<'a>) -> Option<Expr<'a>> {
-    Some(match self.whnf_prop(p.into()).p.k {
-      PropKind::True | PropKind::Emp => self.common.e_bool(true),
-      PropKind::False => self.common.e_bool(false),
-      PropKind::Imp(p, q) | PropKind::Wand(p, q) =>
+  fn prop_to_expr(&mut self, p: Ty<'a>) -> Option<Expr<'a>> {
+    Some(match self.whnf_ty(p.into()).ty.k {
+      TyKind::True | TyKind::Unit => self.common.e_bool(true),
+      TyKind::False => self.common.e_bool(false),
+      TyKind::Imp(p, q) | TyKind::Wand(p, q) =>
         intern!(self, ExprKind::Binop(Binop::Or,
           intern!(self, ExprKind::Unop(Unop::Not, self.prop_to_expr(p)?)),
           self.prop_to_expr(q)?)),
-      PropKind::Not(p) =>
+      TyKind::Not(p) =>
         intern!(self, ExprKind::Unop(Unop::Not, self.prop_to_expr(p)?)),
-      PropKind::And(ps) | PropKind::Sep(ps) => {
+      TyKind::And(ps) | TyKind::List(ps) => {
         let mut ret = None;
         for p in ps {
           let p = self.prop_to_expr(p)?;
@@ -1547,7 +1332,7 @@ impl<'a> InferCtx<'a> {
         }
         ret.unwrap_or_else(|| self.common.e_bool(false))
       }
-      PropKind::Or(ps) => {
+      TyKind::Or(ps) => {
         let mut ret = None;
         for p in ps {
           let p = self.prop_to_expr(p)?;
@@ -1555,12 +1340,11 @@ impl<'a> InferCtx<'a> {
         }
         ret.unwrap_or_else(|| self.common.e_bool(true))
       }
-      PropKind::Pure(e) => e,
-      PropKind::Eq(e1, e2) => intern!(self, ExprKind::Binop(Binop::Eq, e1, e2)),
-      PropKind::Infer(v) => {
-        let w = self.new_expr_mvar(self.prop_mvars[v].span);
-        let p = intern!(self, PropKind::Pure(w));
-        self.prop_mvars.assign(v, p);
+      TyKind::Pure(e) => e,
+      TyKind::Infer(v) => {
+        let w = self.new_expr_mvar(self.ty_mvars[v].span);
+        let p = intern!(self, TyKind::Pure(w));
+        self.ty_mvars.assign(v, p);
         w
       }
       _ => return None,
@@ -1572,8 +1356,7 @@ impl<'a> InferCtx<'a> {
   ) -> (hir::Expr<'a>, Option<Expr<'a>>, Ty<'a>) {
 
     fn whnf_expect<'a>(ctx: &mut InferCtx<'a>, expect: ExpectExpr<'a>) -> Option<Ty<'a>> {
-      if let TyOrProp::Ty(ty) = ctx.whnf_ty(expect.to_ty()?.into()).ty {Some(ty)}
-      else {None}
+      Some(ctx.whnf_ty(expect.to_ty()?.into()).ty)
     }
 
     fn as_int_ty<'a>(ctx: &mut InferCtx<'a>, expect: ExpectExpr<'a>) -> Option<IntTy> {
@@ -1701,7 +1484,7 @@ impl<'a> InferCtx<'a> {
         let y = self.as_pure(&x.span, pe);
         let x = if let ExpectExpr::Sn(x, _) = expect {x} else {self.new_expr_mvar(span)};
         let h = h.as_deref().map(|h| Box::new({
-          let ty = intern!(self, TyKind::Prop(intern!(self, PropKind::Eq(x, y))));
+          let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Binop(Binop::Eq, x, y))));
           self.check_expr(h, ty).0
         }));
         ret![Sn(Box::new(e), h), Some(y), intern!(self, TyKind::Sn(x, ty))]
@@ -1714,8 +1497,8 @@ impl<'a> InferCtx<'a> {
         let (e_i, idx) = self.check_expr(idx, self.common.nat);
         let hyp = hyp.as_deref().map(|h| Box::new({
           let idx = self.as_pure(e_i.span, idx);
-          let ty = intern!(self, ExprKind::Binop(Binop::Lt, idx, n));
-          let ty = intern!(self, TyKind::Prop(intern!(self, PropKind::Pure(ty))));
+          let ty = intern!(self, TyKind::Pure(
+            intern!(self, ExprKind::Binop(Binop::Lt, idx, n))));
           self.check_expr(h, ty).0
         }));
         ret![Index(Box::new(e_a), Box::new(e_i), hyp),
@@ -1735,10 +1518,9 @@ impl<'a> InferCtx<'a> {
         let e_l = self.as_pure(e_l.span, len);
         let hyp = hyp.as_deref().map(|hyp| Box::new({
           let e_i = self.as_pure(e_i.span, idx);
-          let ty = intern!(self, TyKind::Prop(
-            intern!(self, PropKind::Pure(
-              intern!(self, ExprKind::Binop(Binop::Le,
-                intern!(self, ExprKind::Binop(Binop::Add, e_i, e_l)), n))))));
+          let ty = intern!(self, TyKind::Pure(
+            intern!(self, ExprKind::Binop(Binop::Le,
+              intern!(self, ExprKind::Binop(Binop::Add, e_i, e_l)), n))));
           self.check_expr(hyp, ty).0
         }));
         ret![Index(Box::new(e_a), Box::new(e_i), hyp),
@@ -1749,30 +1531,21 @@ impl<'a> InferCtx<'a> {
       ast::ExprKind::Proj(e, field) => {
         enum TysOrStruct<'a> {
           Tys(&'a [Ty<'a>]),
-          Props(&'a [Prop<'a>]),
           Struct(&'a [Arg<'a>]),
         }
         let (mut e2, pe, ty) = self.lower_expr(e, ExpectExpr::Any);
         let mut wty = self.whnf_ty(ty.into()).ty;
         let tys = loop {
-          match wty {
-            TyOrProp::Ty(ref mut ty) => match ty.k {
-              TyKind::Ref(_, ty2) => {
-                e2 = hir::Expr {span, k: hir::ExprKind::Rval(Box::new(e2))};
-                *ty = ty2;
-              }
-              TyKind::List(tys) |
-              TyKind::And(tys) => break TysOrStruct::Tys(tys),
-              TyKind::Struct(args) => break TysOrStruct::Struct(args),
-              TyKind::Error => error!(),
-              _ => error!(e2.span, ExpectedStruct(*ty))
-            },
-            TyOrProp::Prop(p) => match p.k {
-              PropKind::And(ps) |
-              PropKind::Sep(ps) => break TysOrStruct::Props(ps),
-              PropKind::Error => error!(),
-              _ => error!(e2.span, ExpectedStruct(wty.to_ty(self))),
+          match wty.k {
+            TyKind::Ref(_, ty2) => {
+              e2 = hir::Expr {span, k: hir::ExprKind::Rval(Box::new(e2))};
+              wty = ty2;
             }
+            TyKind::List(tys) |
+            TyKind::And(tys) => break TysOrStruct::Tys(tys),
+            TyKind::Struct(args) => break TysOrStruct::Struct(args),
+            TyKind::Error => error!(),
+            _ => error!(e2.span, ExpectedStruct(wty))
           }
         };
         let ret = |i, pe, ty| ret![Proj(Box::new(e2), i), pe, ty];
@@ -1781,11 +1554,6 @@ impl<'a> InferCtx<'a> {
             TysOrStruct::Tys(tys) => if let FieldName::Number(i) = field.k {
               if let Some(&ty) = tys.get(u32_as_usize(i)) {
                 break ret(i, pe.map(|pe| intern!(self, ExprKind::Proj(pe, i))), ty)
-              }
-            },
-            TysOrStruct::Props(ps) => if let FieldName::Number(i) = field.k {
-              if let Some(&p) = ps.get(u32_as_usize(i)) {
-                break ret(i, Some(self.common.e_unit), intern!(self, TyKind::Prop(p)))
               }
             },
             TysOrStruct::Struct(args) => {
@@ -1822,7 +1590,7 @@ impl<'a> InferCtx<'a> {
               }
             }
           }
-          error!(&field.span, FieldMissing(wty.to_ty(self), field.k))
+          error!(&field.span, FieldMissing(wty, field.k))
         }
       },
 
@@ -1833,40 +1601,34 @@ impl<'a> InferCtx<'a> {
         };
         let (e2, pe, ty) = self.lower_expr(e, expect2);
         let wty = self.whnf_ty(ty.into()).ty;
-        if let TyOrProp::Ty(&WithMeta {k: TyKind::RefSn(e), ..}) = wty {
-          ret![Deref(Box::new(e2)), Some(e), self.expr_type(e)]
-        } else {
-          if wty.is_error() { error!() }
-          let tgt = intern!(self, TyKind::RefSn(self.new_expr_mvar(e2.span)));
-          error!(e2.span, Relate(ty, tgt, Relation::Equal))
+        match wty.k {
+          TyKind::RefSn(e) => ret![Deref(Box::new(e2)), Some(e), self.expr_type(e)],
+          TyKind::Error => error!(),
+          _ => {
+            let tgt = intern!(self, TyKind::RefSn(self.new_expr_mvar(e2.span)));
+            error!(e2.span, Relate(ty, tgt, Relation::Equal))
+          }
         }
       }
 
       ast::ExprKind::List(es) => {
         let tgt = expect.to_ty()
           .map(|ty| self.whnf_ty(ty.into()).ty)
-          .filter(|&typ| match typ {
-            TyOrProp::Ty(ty) => matches!(ty.k,
-              TyKind::Unit |
-              TyKind::Array(_, _) |
-              TyKind::Own(_) |
-              TyKind::Shr(_, _) |
-              TyKind::List(_) |
-              TyKind::Sn(_, _) |
-              TyKind::Struct(_) |
-              TyKind::And(_) |
-              TyKind::Error),
-            TyOrProp::Prop(p) => matches!(p.k,
-              PropKind::True |
-              PropKind::Ex(_, _) |
-              PropKind::And(_) |
-              PropKind::Emp |
-              PropKind::Sep(_) |
-              PropKind::Error)
-          }).unwrap_or_else(|| {
+          .filter(|&ty| matches!(ty.k,
+            TyKind::True |
+            TyKind::Unit |
+            TyKind::Array(_, _) |
+            TyKind::Own(_) |
+            TyKind::Shr(_, _) |
+            TyKind::List(_) |
+            TyKind::Sn(_, _) |
+            TyKind::Struct(_) |
+            TyKind::And(_) |
+            TyKind::Error))
+          .unwrap_or_else(|| {
             let tys = es.iter().map(|e| self.new_ty_mvar(&e.span)).collect::<Vec<_>>();
             let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
-            TyOrProp::Ty(intern!(self, TyKind::List(tys)))
+            intern!(self, TyKind::List(tys))
           });
         macro_rules! expect {($n:expr) => {{
           if es.len() != $n { error!(span, NumArgs($n, es.len())) }
@@ -1874,104 +1636,79 @@ impl<'a> InferCtx<'a> {
         macro_rules! proof {($e:expr, $ty:expr) => {
           ret![Proof({use hir::Proof::*; $e}), Some(self.common.e_unit), $ty]
         }}
-        match tgt {
-          TyOrProp::Ty(tgt) => match tgt.k {
-            TyKind::Unit => {
-              expect!(0);
-              ret![Unit, Some(self.common.e_unit), self.common.t_unit]
-            }
-            TyKind::Array(tgt1, n_tgt) => {
-              let n = intern!(self, ExprKind::Int(self.alloc.alloc(es.len().into())));
-              let ty = intern!(self, TyKind::Array(tgt1, n));
-              #[allow(clippy::never_loop)]
-              let n_tgt = loop {
-                if let ExprKind::Int(n) = self.whnf_expr(n_tgt, self.common.nat).k {
-                  if let Ok(n) = n.try_into() { break n }
-                }
-                error!(span, Relate(ty, tgt, Relation::Equal))
-              };
-              expect!(n_tgt);
-              let mut pes = Vec::with_capacity(n_tgt);
-              let es = es.iter().map(|e| {
-                let (e, pe) = self.check_expr(e, tgt1);
-                if let Some(pe) = pe {pes.push(pe)}
-                e
-              }).collect();
-              let pes = if pes.len() == n_tgt {
-                Some(intern!(self, ExprKind::Array(
-                  self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
-              } else { None };
-              ret![Array(es, tgt1), pes, ty]
-            }
-            TyKind::List(tgts) => {
-              expect!(tgts.len());
-              let mut pes = Vec::with_capacity(tgts.len());
-              let es = es.iter().zip(tgts).map(|(e, &tgt)| {
-                let (e, pe) = self.check_expr(e, tgt);
-                if let Some(pe) = pe {pes.push(pe)}
-                e
-              }).collect();
-              let pes = if pes.len() == tgts.len() {
-                Some(intern!(self, ExprKind::Array(
-                  self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
-              } else { None };
-              ret![List(es), pes, tgt]
-            }
-            TyKind::And(tgts) => {
-              expect!(tgts.len());
-              let mut val = None;
-              let es = es.iter().zip(tgts).map(|(e, &tgt)| {
-                let (e, pe) = self.check_expr(e, tgt);
-                let pe = self.as_pure(e.span, pe);
-                if let Some(v) = val {
-                  self.equate_expr(v, pe).unwrap_or_else(|_| {
-                    self.errors.push(hir::Spanned {span, k: TypeError::IAndUnify(v, pe)});
-                  });
-                } else { val = Some(pe) };
-                e
-              }).collect();
-              if let Some(val) = val {
-                ret![IAnd(es), Some(val), tgt]
-              } else {
-                ret![Proof(hir::Proof::ITrue), Some(self.common.e_unit), self.common.t_true]
-              }
-            }
-            TyKind::Struct(args) => {
-              expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
-              todo!()
-            }
-            TyKind::Own(_) |
-            TyKind::Shr(_, _) |
-            TyKind::Sn(_, _) => { expect!(2); todo!() }
-            _ => error!()
+        match tgt.k {
+          TyKind::Unit => {
+            expect!(0);
+            ret![Unit, Some(self.common.e_unit), self.common.t_unit]
           }
-          TyOrProp::Prop(p) => match p.k {
-            PropKind::True => {
-              expect!(0);
+          TyKind::True => {
+            expect!(0);
+            proof![ITrue, self.common.t_unit]
+          }
+          TyKind::Array(tgt1, n_tgt) => {
+            let n = intern!(self, ExprKind::Int(self.alloc.alloc(es.len().into())));
+            let ty = intern!(self, TyKind::Array(tgt1, n));
+            #[allow(clippy::never_loop)]
+            let n_tgt = loop {
+              if let ExprKind::Int(n) = self.whnf_expr(n_tgt, self.common.nat).k {
+                if let Ok(n) = n.try_into() { break n }
+              }
+              error!(span, Relate(ty, tgt, Relation::Equal))
+            };
+            expect!(n_tgt);
+            let mut pes = Vec::with_capacity(n_tgt);
+            let es = es.iter().map(|e| {
+              let (e, pe) = self.check_expr(e, tgt1);
+              if let Some(pe) = pe {pes.push(pe)}
+              e
+            }).collect();
+            let pes = if pes.len() == n_tgt {
+              Some(intern!(self, ExprKind::Array(
+                self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
+            } else { None };
+            ret![Array(es, tgt1), pes, ty]
+          }
+          TyKind::List(tgts) => {
+            expect!(tgts.len());
+            let mut pes = Vec::with_capacity(tgts.len());
+            let es = es.iter().zip(tgts).map(|(e, &tgt)| {
+              let (e, pe) = self.check_expr(e, tgt);
+              if let Some(pe) = pe {pes.push(pe)}
+              e
+            }).collect();
+            let pes = if pes.len() == tgts.len() {
+              Some(intern!(self, ExprKind::Array(
+                self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
+            } else { None };
+            ret![List(es), pes, tgt]
+          }
+          TyKind::And(tgts) => {
+            expect!(tgts.len());
+            let mut val = None;
+            let es = es.iter().zip(tgts).map(|(e, &tgt)| {
+              let (e, pe) = self.check_expr(e, tgt);
+              let pe = self.as_pure(e.span, pe);
+              if let Some(v) = val {
+                self.equate_expr(v, pe).unwrap_or_else(|_| {
+                  self.errors.push(hir::Spanned {span, k: TypeError::IAndUnify(v, pe)});
+                });
+              } else { val = Some(pe) };
+              e
+            }).collect();
+            if let Some(val) = val {
+              ret![IAnd(es), Some(val), tgt]
+            } else {
               proof![ITrue, self.common.t_unit]
             }
-            PropKind::Emp => {
-              expect!(0);
-              proof![IEmp, self.common.t_unit]
-            }
-            PropKind::Sep(tgts) |
-            PropKind::And(tgts) => {
-              expect!(tgts.len());
-              let mut pes = Vec::with_capacity(tgts.len());
-              let es = es.iter().zip(tgts).map(|(e, &tgt)| {
-                let tgt = intern!(self, TyKind::Prop(tgt));
-                self.check_expr(e, tgt).0
-              }).collect();
-              let pes = if pes.len() == tgts.len() {
-                Some(intern!(self, ExprKind::Array(
-                  self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
-              } else { None };
-              proof![if matches!(p.k, PropKind::Sep(_)) {ISep(es)} else {IAnd(es)},
-                intern!(self, TyKind::Prop(p))]
-            }
-            PropKind::Ex(_, _) => todo!(),
-            _ => error!()
           }
+          TyKind::Struct(args) => {
+            expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
+            todo!()
+          }
+          TyKind::Own(_) |
+          TyKind::Shr(_, _) |
+          TyKind::Sn(_, _) => { expect!(2); todo!() }
+          _ => error!()
         }
       }
 
@@ -2025,22 +1762,21 @@ impl<'a> InferCtx<'a> {
         let tgt = self.lower_ty(tgt, ExpectTy::Any);
         let (e, pe, ty) = self.lower_expr(e, ExpectExpr::Any);
         macro_rules! fail {() => {error!(span, UnsupportedAs(ty, tgt))}}
-        if let TyOrProp::Ty(ty) = self.whnf_ty(ty.into()).ty {
-          if let (Ok(ity), Ok(ity2)) = (IntTy::try_from(ty), IntTy::try_from(tgt)) {
-            if ity <= ity2 {
-              ret![Cast(Box::new(e), ty, tgt, hir::CastKind::Subtype(None)), pe, tgt]
-            } else if let IntTy::UInt(Size::Inf) = ity2 {
-              fail!()
-            } else {
-              let ak = AsKind::Mod(ity2);
-              let pe = pe.map(|e| intern!(self, ExprKind::As(e, ak)));
-              ret![As(Box::new(e), ty, tgt, ak), pe, tgt]
-            }
-          } else if
-            matches!(ty.k, TyKind::Own(_) | TyKind::Shr(_, _) | TyKind::RefSn(_)) &&
-            matches!(tgt.k, TyKind::UInt(Size::S64)) {
+        let ty = self.whnf_ty(ty.into()).ty;
+        if let (Ok(ity), Ok(ity2)) = (IntTy::try_from(ty), IntTy::try_from(tgt)) {
+          if ity <= ity2 {
             ret![Cast(Box::new(e), ty, tgt, hir::CastKind::Subtype(None)), pe, tgt]
-          } else { fail!() }
+          } else if let IntTy::UInt(Size::Inf) = ity2 {
+            fail!()
+          } else {
+            let ak = AsKind::Mod(ity2);
+            let pe = pe.map(|e| intern!(self, ExprKind::As(e, ak)));
+            ret![As(Box::new(e), ty, tgt, ak), pe, tgt]
+          }
+        } else if
+          matches!(ty.k, TyKind::Own(_) | TyKind::Shr(_, _) | TyKind::RefSn(_)) &&
+          matches!(tgt.k, TyKind::UInt(Size::S64)) {
+          ret![Cast(Box::new(e), ty, tgt, hir::CastKind::Subtype(None)), pe, tgt]
         } else { fail!() }
       }
 
@@ -2050,10 +1786,9 @@ impl<'a> InferCtx<'a> {
         let ck = if let Some(x) = pe {
           hir::CastKind::Wand(x, h.as_deref().map(|h| Box::new({
             // [x: ty] -* [x: tgt]
-            let hty = intern!(self, TyKind::Prop(
-              intern!(self, PropKind::Wand(
-                intern!(self, PropKind::HasTy(x, ty)),
-                intern!(self, PropKind::HasTy(x, tgt))))));
+            let hty = intern!(self, TyKind::Wand(
+              intern!(self, TyKind::HasTy(x, ty)),
+              intern!(self, TyKind::HasTy(x, tgt))));
             self.check_expr(h, hty).0
           })))
         } else {
@@ -2061,12 +1796,11 @@ impl<'a> InferCtx<'a> {
             let v = self.fresh_var();
             let x = intern!(self, ExprKind::Var(v));
             // A. x: ty, [x: ty] -* [x: tgt]
-            let hty = intern!(self, TyKind::Prop(
-              intern!(self, PropKind::All(
-                intern!(self, TuplePatternKind::Name(AtomId::UNDER, v, ty)),
-                intern!(self, PropKind::Wand(
-                  intern!(self, PropKind::HasTy(x, ty)),
-                  intern!(self, PropKind::HasTy(x, tgt))))))));
+            let hty = intern!(self, TyKind::All(
+              intern!(self, TuplePatternKind::Name(AtomId::UNDER, v, ty)),
+              intern!(self, TyKind::Wand(
+                intern!(self, TyKind::HasTy(x, ty)),
+                intern!(self, TyKind::HasTy(x, tgt))))));
             self.check_expr(h, hty).0
           })))
         };
@@ -2079,8 +1813,7 @@ impl<'a> InferCtx<'a> {
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
         let ck = hir::CastKind::Mem(pe, h.as_deref().map(|h| Box::new({
           // [x: tgt]
-          let hty = intern!(self, TyKind::Prop(
-            intern!(self, PropKind::HasTy(pe, tgt))));
+          let hty = intern!(self, TyKind::HasTy(pe, tgt));
           self.check_expr(h, hty).0
         })));
         ret![Cast(Box::new(e), ty, tgt, ck), Some(pe), tgt]
@@ -2103,22 +1836,18 @@ impl<'a> InferCtx<'a> {
       ast::ExprKind::Typeof(e) => {
         let (e, pe, ty) = self.lower_expr(e, ExpectExpr::Any);
         let pe = self.as_pure(e.span, pe);
-        let ty = intern!(self, TyKind::Prop(intern!(self, PropKind::HasTy(pe, ty))));
+        let ty = intern!(self, TyKind::HasTy(pe, ty));
         ret![Typeof(Box::new(e), ty), Some(self.common.e_unit), ty]
       }
 
       ast::ExprKind::Assert(p) => {
         let tgt = expect.to_ty();
-        let b = tgt.and_then(|ty| match ty.k {
-          TyKind::Prop(p) => self.prop_to_expr(p),
-          _ => None,
-        });
+        let b = tgt.and_then(|ty| self.prop_to_expr(ty));
         let (e, pe, _) = self.lower_expr(p, match b {
           Some(b) => ExpectExpr::Sn(b, self.common.t_bool),
           None => ExpectExpr::HasTy(self.common.t_bool)
         });
-        let tgt = tgt.unwrap_or_else(|| intern!(self, TyKind::Prop(
-          intern!(self, pe.map_or(PropKind::True, PropKind::Pure)))));
+        let tgt = tgt.unwrap_or_else(|| intern!(self, pe.map_or(TyKind::True, TyKind::Pure)));
         ret![Assert(Box::new(e), tgt), Some(self.common.e_unit), tgt]
       }
 

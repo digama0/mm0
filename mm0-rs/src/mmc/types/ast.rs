@@ -233,7 +233,13 @@ pub type TyVarId = u32;
 #[derive(Debug, DeepSizeOf)]
 pub enum TypeKind {
   /// `()` is the type with one element; `sizeof () = 0`.
+  /// This is also the proposition `emp`.
   Unit,
+  /// `true` is the true proposition; `sizeof true = 0`. Unlike `Unit`,
+  /// this does not assert the emptiness of the data, it holds of any value.
+  True,
+  /// `false` is the false proposition; `sizeof false = 0`.
+  False,
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
   /// A type variable.
@@ -273,6 +279,14 @@ pub enum TypeKind {
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
   Struct(Box<[Arg]>),
+  /// A universally quantified proposition.
+  All(Box<[TuplePattern]>, Box<Type>),
+  /// Implication (plain, non-separating).
+  Imp(Box<Type>, Box<Type>),
+  /// Separating implication.
+  Wand(Box<Type>, Box<Type>),
+  /// Negation.
+  Not(Box<Type>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -299,10 +313,14 @@ pub enum TypeKind {
   /// for this type is vacuous, but it has the same size as `T`, so overwriting with
   /// a `T` is possible.
   Uninit(Box<Type>),
-  /// A propositional type, used for hypotheses.
-  Prop(Box<Prop>),
+  /// A boolean expression, interpreted as a pure proposition
+  Pure(Box<Expr>),
   /// A user-defined type-former.
   User(AtomId, Box<[Type]>, Box<[Expr]>),
+  /// A heap assertion `l |-> (v: T)`.
+  Heap(Box<Expr>, Box<Expr>),
+  /// An explicit typing assertion `[v : T]`.
+  HasTy(Box<Expr>, Box<Type>),
   /// The input token.
   Input,
   /// The output token.
@@ -320,6 +338,8 @@ impl Remap for TypeKind {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       TypeKind::Unit => TypeKind::Unit,
+      TypeKind::True => TypeKind::True,
+      TypeKind::False => TypeKind::False,
       TypeKind::Bool => TypeKind::Bool,
       &TypeKind::Var(i) => TypeKind::Var(i),
       &TypeKind::Int(i) => TypeKind::Int(i),
@@ -332,86 +352,25 @@ impl Remap for TypeKind {
       TypeKind::List(tys) => TypeKind::List(tys.remap(r)),
       TypeKind::Sn(e) => TypeKind::Sn(e.remap(r)),
       TypeKind::Struct(tys) => TypeKind::Struct(tys.remap(r)),
+      TypeKind::All(p, q) => TypeKind::All(p.remap(r), q.remap(r)),
+      TypeKind::Imp(p, q) => TypeKind::Imp(p.remap(r), q.remap(r)),
+      TypeKind::Wand(p, q) => TypeKind::Wand(p.remap(r), q.remap(r)),
+      TypeKind::Not(p) => TypeKind::Not(p.remap(r)),
       TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
       TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
       TypeKind::If(c, t, e) => TypeKind::If(c.remap(r), t.remap(r), e.remap(r)),
       TypeKind::Match(c, brs) => TypeKind::Match(c.remap(r), brs.remap(r)),
       TypeKind::Ghost(ty) => TypeKind::Ghost(ty.remap(r)),
       TypeKind::Uninit(ty) => TypeKind::Uninit(ty.remap(r)),
-      TypeKind::Prop(p) => TypeKind::Prop(p.remap(r)),
+      TypeKind::Pure(p) => TypeKind::Pure(p.remap(r)),
       TypeKind::User(f, tys, es) => TypeKind::User(f.remap(r), tys.remap(r), es.remap(r)),
+      TypeKind::Heap(p, q) => TypeKind::Heap(p.remap(r), q.remap(r)),
+      TypeKind::HasTy(p, q) => TypeKind::HasTy(p.remap(r), q.remap(r)),
       TypeKind::Input => TypeKind::Input,
       TypeKind::Output => TypeKind::Output,
       TypeKind::Moved(tys) => TypeKind::Moved(tys.remap(r)),
       TypeKind::Infer => TypeKind::Infer,
       TypeKind::Error => TypeKind::Error,
-    }
-  }
-}
-
-/// A propositional expression.
-pub type Prop = Spanned<PropKind>;
-
-/// A separating proposition, which classifies hypotheses / proof terms.
-#[derive(Debug, DeepSizeOf)]
-pub enum PropKind {
-  /// A true proposition.
-  True,
-  /// A false proposition.
-  False,
-  /// A universally quantified proposition.
-  All(Box<[TuplePattern]>, Box<Prop>),
-  /// An existentially quantified proposition.
-  Ex(Box<[TuplePattern]>, Box<Prop>),
-  /// Implication (plain, non-separating).
-  Imp(Box<Prop>, Box<Prop>),
-  /// Negation.
-  Not(Box<Prop>),
-  /// Conjunction (non-separating).
-  And(Box<[Prop]>),
-  /// Disjunction.
-  Or(Box<[Prop]>),
-  /// The empty heap.
-  Emp,
-  /// Separating conjunction.
-  Sep(Box<[Prop]>),
-  /// Separating implication.
-  Wand(Box<Prop>, Box<Prop>),
-  /// An (executable) boolean expression, interpreted as a pure proposition
-  Pure(Box<Expr>),
-  /// Equality (possibly non-decidable).
-  Eq(Box<Expr>, Box<Expr>),
-  /// A heap assertion `l |-> (v: T)`.
-  Heap(Box<Expr>, Box<Expr>),
-  /// An explicit typing assertion `[v : T]`.
-  HasTy(Box<Expr>, Box<Type>),
-  /// The move operator `|T|` on types.
-  Moved(Box<Prop>),
-  /// An embedded MM0 proposition of sort `wff`.
-  Mm0(Mm0Expr<Expr>),
-}
-
-impl Remap for PropKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      PropKind::True => PropKind::True,
-      PropKind::False => PropKind::False,
-      PropKind::All(p, q) => PropKind::All(p.remap(r), q.remap(r)),
-      PropKind::Ex(p, q) => PropKind::Ex(p.remap(r), q.remap(r)),
-      PropKind::Imp(p, q) => PropKind::Imp(p.remap(r), q.remap(r)),
-      PropKind::Not(p) => PropKind::Not(p.remap(r)),
-      PropKind::And(p) => PropKind::And(p.remap(r)),
-      PropKind::Or(p) => PropKind::Or(p.remap(r)),
-      PropKind::Emp => PropKind::Emp,
-      PropKind::Sep(p) => PropKind::Sep(p.remap(r)),
-      PropKind::Wand(p, q) => PropKind::Wand(p.remap(r), q.remap(r)),
-      PropKind::Pure(p) => PropKind::Pure(p.remap(r)),
-      PropKind::Eq(p, q) => PropKind::Eq(p.remap(r), q.remap(r)),
-      PropKind::Heap(p, q) => PropKind::Heap(p.remap(r), q.remap(r)),
-      PropKind::HasTy(p, q) => PropKind::HasTy(p.remap(r), q.remap(r)),
-      PropKind::Moved(p) => PropKind::Moved(p.remap(r)),
-      PropKind::Mm0(p) => PropKind::Mm0(p.remap(r)),
     }
   }
 }

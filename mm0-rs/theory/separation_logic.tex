@@ -76,22 +76,15 @@ The syntax of MMC programs, after type inference, is given by the following (inc
   R \in \mathrm{Arg} ::={}& x:\tau\mid \ghost{x}:\tau&&\mbox{regular/ghost argument}\\
   \tau\in\mathrm{Type} ::={}& \alpha&&\mbox{type variable reference}\\
     \mid{}& \core\alpha&&\mbox{moved type variable}\\
-    \mid{}&\mathbf{1}\mid \mathsf{bool}&&\mbox{unit, booleans}\\
+    \mid{}&\mathbf{1}\mid\top\mid \bot\mid \mathsf{bool}&&\mbox{unit, true, false, booleans}\\
     \mid{}&\N_s\mid \Z_s&&\mbox{unsigned and signed integers of different sizes}\\
-    \mid{}&\textstyle\bigcap\overline{\tau} \mid \textstyle\bigcup \overline{\tau}&&\mbox{intersection type, (undiscriminated) union type}\\
-    \mid{}&\textstyle\Sep\overline{\tau} \mid \textstyle\sum\overline{R}&&\mbox{tuple type, structure (dependent tuple) type}\\
-    \mid{}&A&&\mbox{proposition}\\
-    \mid{}&S(\overline{\tau},\overline{pe})&&\mbox{user-defined type}\\
-\end{align*}
-\begin{align*}
-  A\in\mathrm{Prop} ::={}& pe&&\mbox{assert that a boolean value is true}\\
-    \mid{}&\top\mid \bot\mid \mathsf{emp}&&\mbox{true, false, empty heap}\\
-    \mid{}&\forall x:\tau,\;A\mid \exists x:\tau,\;A&&\mbox{universal, existential quantification}\\
-    \mid{}&A_1\to A_2\mid \neg A&&\mbox{implication, negation}\\
-    \mid{}&A_1\land A_2\mid A_1\lor A_2&&\mbox{conjunction, disjunction}\\
-    \mid{}&A_1\ast A_2\mid A_1 \wand A_2&&\mbox{separating conjunction and implication}\\
+    \mid{}&\tau_1\land \tau_2\mid \tau_1\ast \tau_2\mid \tau_1\lor \tau_2&&\mbox{conjunction (regular, separating), disjunction}\\
+    \mid{}&\tau_1\to \tau_2\mid \tau_1 \wand \tau_2\mid \neg \tau&&\mbox{implication (regular, separating), negation}\\
+    \mid{}&\forall x:\tau_1,\;\tau_2\mid \textstyle\sum x:\tau_1,\;\tau_2&&\mbox{universal, existential quantification}\\
+    \mid{}& pe&&\mbox{assert that a boolean value is true}\\
     \mid{}&pe\mapsto pe'&&\mbox{points-to assertion}\\
     \mid{}&\boxed{x:\tau}&&\mbox{typing assertion}\\
+    \mid{}&S(\overline{\tau},\overline{pe})&&\mbox{user-defined type}\\
 \end{align*}
 \begin{align*}
   pe\in \mathrm{PureExpr} ::={}&\mbox{(the first half of Expr below)}&&\mbox{pure expressions}\\
@@ -129,7 +122,7 @@ The syntax of MMC programs, after type inference, is given by the following (inc
 Missing elements of the grammar include:
 \begin{itemize}
   \item Switch statements, which are desugared to if statements.
-  \item Raw MM0 formulas can be lifted to the `Prop' type.
+  \item Raw MM0 formulas can be lifted to the `Type' type as booleans.
   \item Raw MM0 values can be lifted into $\N_\infty$ and $\Z_\infty$.
   \item There are more operations for working with pointers and arrays. These are discussed in section \ref{sec:pointers}.
   \item There are operations for moving between typed values and hypotheses, which will be discussed later.
@@ -186,7 +179,6 @@ The main typing judgments are:
 \begin{itemize}
   \item $\Gamma \proves t:\tau \Rightarrow \overline{R}$\\ types a tuple pattern against a value of type $\tau$, producing additional hypotheses $\overline{R}$ that will enter the context
   \item $\Gamma \proves \tau\;\mathsf{type}$\\ determines that a type $\tau$ is a valid type in the current context
-  \item $\Gamma \proves A\;\mathsf{prop}$\\ determines that $A$ is a valid separating proposition in the current context
   \item $\Gamma \proves R\;\mathsf{arg}$\\ determines that $R$ is a valid argument extending the current context
   \item $\Gamma;\delta \proves e:\tau \makes\delta'$\\ determines that $e$ is a valid expression of type $\tau$, which modifies the value context from $\delta$ to $\delta'$. In the special case where $\delta'=\delta$, we will write $\Gamma;\delta \proves e:\tau$ instead.
   \item $\Gamma;\delta \proves e\Rightarrow pe:\tau \makes\delta'$\\ is the same as the previous, but additionally says that the returned value can be expressed as the pure expression $pe$ in context $\Gamma$.
@@ -218,51 +210,42 @@ A variable can only be renamed once, and it is always renamed to a fresh variabl
 
 \subsection{Moving types}\label{sec:moving}
 
-The last essential element to understand the typing rules is the ``moved'' modality on types and propositions, denoted $\core\tau$ or $\core A$. For separating propositions this is also known as the persistence modality, and it represents what is left of a proposition after all the ``ownership'' is removed from it. We use moved types to represent a value that has been accessed. This satisfies the axioms $\core{\core\tau}=\core\tau$ and $A\Leftrightarrow A\ast\core A$. We extend this to arbitrary arguments and contexts $\core R$ and $\core\Gamma$ by applying the modality to all contained types and propositions.
+The last essential element to understand the typing rules is the ``moved'' modality on types, denoted $\core\tau$. For separating propositions this is also known as the persistence modality, and it represents what is left of a proposition after all the ``ownership'' is removed from it. We use moved types to represent a value that has been accessed. This satisfies the axioms $\core{\core\tau}=\core\tau$ and $A\Leftrightarrow A\ast\core A$. We extend this to arbitrary arguments and contexts $\core R$ and $\core\Gamma$ by applying the modality to all contained types.
 
-A type/proposition is called ``$\mathsf{copy}$'' or persistent if $\core\tau=\tau$, and is denoted $\tau\;\mathsf{copy}$.
+A type is called ``$\mathsf{copy}$'' or persistent if $\core\tau=\tau$, and is denoted $\tau\;\mathsf{copy}$.
 
 The moved modality is defined like so:
 \begin{align*}
-  \mathbf{1}, \mathsf{bool},\N_s, \Z_s&\;\mathsf{copy}\\
-  \core\alpha={}&\mathsf{emp}\\
-  \core{\textstyle\bigcap\overline{\tau}}={}&\textstyle\bigcap\overline{\core\tau}\\
-  \core{\textstyle\bigcup\overline{\tau}}={}&\textstyle\bigcup\overline{\core\tau}\\
-  \core{\textstyle\Sep\overline{\tau}}={}&\textstyle\Sep\overline{\core\tau}\\
-  \core{\textstyle\sum\overline{\tau}}={}&\textstyle\sum\overline{\core\tau}\\
-  \core{S(\overline{\tau},\overline{pe})}={}&\core{S}(\overline{\tau},\overline{pe})\qquad\mbox{(that is, the effect of moving $S$ is precalculated)}
+  \mathbf{1},\top,\bot,\mathsf{bool},\N_s, \Z_s,pe&\;\mathsf{copy}\\
+  \core{\tau_1\land \tau_2}={}&\core{\tau_1}\land \core{\tau_2}\\
+  \core{\tau_1\lor \tau_2}={}&\core{\tau_1}\lor \core{\tau_2}\\
+  \core{\tau_1\ast \tau_2}={}&\core{\tau_1}\ast \core{\tau_2}\\
+  \core{\textstyle\sum x:\tau_1,\;\tau_2}={}&\textstyle\sum x:\core{\tau_1},\;\core {\tau_2}\\
+  \core{S(\overline{\tau},\overline{pe})}={}&\core{S}(\overline{\tau},\overline{pe})\qquad\mbox{(that is, the effect of moving $S$ is precalculated)}\\
+  \core{pe\mapsto pe'}={}&\top\\
+  \core{\boxed{x:\tau}}={}&\boxed{x:\core{\tau}}\\
+  \core{\forall x:\tau,\;\tau}={}& \begin{cases}
+    \forall x:\tau,\;\core \tau&\mbox{if $\tau\;\mathsf{copy}$}\\
+    \top&o.w.\\
+  \end{cases}\\
+  \core{\tau\to \tau'}={}& \begin{cases}
+    \tau\to \core{\tau'}&\mbox{if $\tau\;\mathsf{copy}$}\\
+    \top&o.w.\\
+  \end{cases}\\
+  \core{\tau\wand \tau'}={}& \begin{cases}
+    \tau\wand \core{\tau'}&\mbox{if $\tau\;\mathsf{copy}$}\\
+    \top&o.w.\\
+  \end{cases}\\
+  \core{\neg \tau}={}& \begin{cases}
+    \neg \tau&\mbox{if $\tau\;\mathsf{copy}$}\\
+    \top&o.w.\\
+  \end{cases}\\
 \end{align*}
-There are no interesting cases among the types presented here. When we get to pointer types in section \ref{sec:pointers} we will see that $\core{\&^\mathbf{own}\tau}=\core{\&^\mathbf{mut}\tau}=\N_{64}$, so pointers become ``mere integers'' after they are moved away. (Note, however, that they actually retain their original types for type inference purposes; that is, the typechecker remembers that they have type $\core{\&^\mathbf{own}\tau}$ in order to determine the type that would result from dereferencing the pointer, if it were still valid.)
+Because moving is monotonic, that is $A\Rightarrow \core A$ but not the other way around, negative uses of a non-persistent proposition cause it to completely collapse to $\top$ when moved.
 
-For propositions, the effect is more dramatic:
-\begin{align*}
-  pe,\top,\bot,\mathsf{emp}&\;\mathsf{copy}\\
-  \core{\forall x:\tau,\;A}={}& \begin{cases}
-    \forall x:\tau,\;\core A&\mbox{if $\tau\;\mathsf{copy}$}\\
-    \mathsf{emp}&o.w.\\
-  \end{cases}\\
-  \core{\exists x:\tau,\;A}={}&\exists x:\core\tau,\;\core A\\
-  \core{A_1\land A_2}={}&\core{A_1}\land \core{A_2}\\
-  \core{A_1\lor A_2}={}&\core{A_1}\lor \core{A_2}\\
-  \core{A\to A'}={}& \begin{cases}
-    A\to \core{A'}&\mbox{if $A\;\mathsf{copy}$}\\
-    \mathsf{emp}&o.w.\\
-  \end{cases}\\
-  \core{\neg A}={}& \begin{cases}
-    \neg A&\mbox{if $A\;\mathsf{copy}$}\\
-    \mathsf{emp}&o.w.\\
-  \end{cases}\\
-  \core{A_1\ast A_2}={}&\core{A_1}\ast \core{A_2}\\
-  \core{A\wand A'}={}& \begin{cases}
-    A\wand \core{A'}&\mbox{if $A\;\mathsf{copy}$}\\
-    \mathsf{emp}&o.w.\\
-  \end{cases}\\
-  \core{pe\mapsto pe'}={}&\mathsf{emp}\\
-  \core{\boxed{x:A}}={}&\boxed{x:\core{A}}\\
-\end{align*}
-Because moving is monotonic, that is $A\Rightarrow \core A$ but not the other way around, negative uses of a non-persistent proposition cause it to completely collapse to \textsf{emp} when moved.
+When we get to pointer types in section \ref{sec:pointers} we will see that $\core{\&^\mathbf{own}\tau}=\core{\&^\mathbf{mut}\tau}=\N_{64}$, so pointers become ``mere integers'' after they are moved away. (Note, however, that they actually retain their original types for type inference purposes; that is, the typechecker remembers that they have type $\core{\&^\mathbf{own}\tau}$ in order to determine the type that would result from dereferencing the pointer, if it were still valid.)
 
-Note that move commutes with substitution for (expression) variables, $\core{\tau}[e/x]=\core{\tau[e/x]}$, but it only partially commutes with substitution for type variables: $\core{\tau[\tau'/\alpha]}\Rightarrow\core{\tau}[\tau'/\alpha]$, because substitution can make a non-copy type copy, so that for example $\core{\alpha[\N/\alpha]}=\core{\N}=\N$ but $\core{\alpha}[\N/\alpha]=\mathsf{emp}[\N/\alpha]=\mathsf{emp}$.
+Note that move commutes with substitution for (expression) variables, $\core{\tau}[e/x]=\core{\tau[e/x]}$, but it only partially commutes with substitution for type variables: $\core{\tau[\tau'/\alpha]}\Rightarrow\core{\tau}[\tau'/\alpha]$, because substitution can make a non-copy type copy, so that for example $\core{\alpha[\N/\alpha]}=\core{\N}=\N$ but $\core{\alpha}[\N/\alpha]=\top[\N/\alpha]=\top$.
 
 \subsection{The Typing Rules}
 
@@ -277,13 +260,9 @@ We now give the main typing rules for the logic. This corresponds roughly to the
     {\Gamma \proves (t:\tau):\tau\Rightarrow \overline{R}}\and
   \infer[tp-sum]
     {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
-      \Gamma,\bar{S} \proves \langle \overline{t'}\rangle:\textstyle \overline{R}[t/x]\Rightarrow \bar{S}'}
-    {\Gamma \proves \langle t,\overline{t'}\rangle:\textstyle\sum x:\tau,\overline{R}\Rightarrow \bar{S},\bar{S}'}\and
-  \infer[tp-ex]
-    {\Gamma \proves t:\textstyle \tau\Rightarrow \bar{S}\quad
-      \Gamma,\bar{S} \proves \langle \overline{t'}\rangle:\textstyle \overline{R}[t/x]\Rightarrow \bar{S}'}
-    {\Gamma,\bar{S} \proves \langle t,\overline{t'}\rangle:\textstyle\exists x:\tau,\overline{R}\Rightarrow \bar{S},\bar{S}'}\and
-  \infer[tp-list]
+      \Gamma,\bar{S} \proves t':\textstyle \tau'[t/x]\Rightarrow \bar{S}'}
+    {\Gamma \proves \langle t,t'\rangle:\textstyle\sum x:\tau,\tau'\Rightarrow \bar{S},\bar{S}'}\and
+  \infer[tp-sep]
     {\forall i,\ \ \Gamma \proves t_i:\tau_i\Rightarrow(\bar{R})_i}
     {\Gamma \proves \langle \overline{t}\rangle:\textstyle\Sep\overline{\tau}\Rightarrow \overline{\bar{R}}}\and
   \infer[tp-and]
@@ -309,6 +288,8 @@ This one is simple so we get it out of the way first. We will avoid dealing with
 \judgment[Type validity]{\Gamma \proves \tau\;\mathsf{type}}
 \begin{mathparpagebreakable}
   \axiom[ty-unit]{\Gamma \proves \mathbf{1}\;\mathsf{type}}\and
+  \axiom[ty-true]{\Gamma \proves \top\;\mathsf{type}}\and
+  \axiom[ty-false]{\Gamma \proves \bot\;\mathsf{type}}\and
   \axiom[ty-bool]{\Gamma \proves \mathsf{bool}\;\mathsf{type}}\and
   \axiom[ty-nat]{\Gamma \proves \N_s\;\mathsf{type}}\and
   \axiom[ty-int]{\Gamma \proves \Z_s\;\mathsf{type}}\\
@@ -318,25 +299,44 @@ This one is simple so we get it out of the way first. We will avoid dealing with
   \infer[ty-core-var]
     {\alpha\in\Gamma}
     {\Gamma \proves \core\alpha\;\mathsf{type}}\and
-  \infer[ty-inter]
-    {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
-    {\Gamma \proves \textstyle\bigcap\overline{\tau}\;\mathsf{type}}\and
-  \infer[ty-union]
-    {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
-    {\Gamma \proves \textstyle\bigcup\overline{\tau}\;\mathsf{type}}\and
-  \infer[ty-list]
-    {\forall i,\ \ \Gamma \proves \tau_i\;\mathsf{type}}
-    {\Gamma \proves \textstyle\Sep\overline{\tau}\;\mathsf{type}}\and
-  \infer[ty-prop]
-    {\Gamma \proves A\;\mathsf{prop}}
-    {\Gamma \proves A\;\mathsf{type}}\and
-  \infer[ty-struct-1]
-    {\Gamma \proves R_0\;\mathsf{arg}}
-    {\Gamma \proves \textstyle\sum R_0\;\mathsf{type}}\and
-  \infer[ty-struct-2]
-    {\Gamma \proves R_0\;\mathsf{arg}\quad
-      \Gamma, R_0 \proves \textstyle\sum\overline{R}\;\mathsf{type}}
-    {\Gamma \proves \textstyle\sum R_0,\overline{R}\;\mathsf{type}}\and
+  \infer[ty-pure]
+    {\Gamma \proves pe:\mathsf{bool}}
+    {\Gamma \proves pe\;\mathsf{type}}\and
+  \infer[ty-not]
+    {\Gamma \proves \tau\;\mathsf{type}}
+    {\Gamma \proves \neg \tau\;\mathsf{type}}\and
+  \infer[ty-and]
+    {\Gamma \proves \tau\;\mathsf{type}\and
+      \Gamma \proves \tau'\;\mathsf{type}}
+    {\Gamma \proves \tau\land \tau'\;\mathsf{type}}\and
+  \infer[ty-or]
+    {\Gamma \proves \tau\;\mathsf{type}\and
+      \Gamma \proves \tau'\;\mathsf{type}}
+    {\Gamma \proves \tau\lor \tau'\;\mathsf{type}}\and
+  \infer[ty-sep]
+    {\Gamma \proves \tau\;\mathsf{type}\and
+      \Gamma \proves \tau'\;\mathsf{type}}
+    {\Gamma \proves \tau\ast \tau'\;\mathsf{type}}\and
+  \infer[ty-wand]
+    {\Gamma \proves \tau\;\mathsf{type}\and
+      \Gamma \proves \tau'\;\mathsf{type}}
+    {\Gamma \proves \tau\wand \tau'\;\mathsf{type}}\and
+  \infer[ty-all]
+    {\Gamma \proves \tau\;\mathsf{type}\quad
+      \Gamma,x:\core\tau \proves \tau\;\mathsf{type}}
+    {\Gamma \proves \forall x:\tau,\;\tau\;\mathsf{type}}\and
+  \infer[ty-sum]
+    {\Gamma \proves \tau\;\mathsf{type}\quad
+      \Gamma,x:\core\tau \proves \tau\;\mathsf{type}}
+    {\Gamma \proves \textstyle\sum x:\tau,\;\tau\;\mathsf{type}}\and
+  \infer[ty-points-to]
+    {\Gamma \proves \ell:\mathsf{\N_{64}}\quad
+      \Gamma \proves v:\mathsf{\core\tau}}
+    {\Gamma \proves \ell\mapsto v\;\mathsf{type}}\and
+  \infer[ty-typing]
+    {\Gamma \proves x:\core\tau\quad
+      \Gamma \proves \tau\;\mathsf{type}}
+    {\Gamma \proves \boxed{x:\tau}\;\mathsf{type}}\and
   \infer[ty-user]
     {\mathsf{type}\;S(\overline{\alpha}, \overline{R})\quad
       \forall i,\ \Gamma \proves \tau_i\;\mathsf{type}\quad
@@ -344,52 +344,7 @@ This one is simple so we get it out of the way first. We will avoid dealing with
     {\Gamma \proves S(\overline{\tau},\overline{pe})\;\mathsf{type}}\and
 \end{mathparpagebreakable}
 
-Type validity is also relatively straightforward. Type variables are looked up in the context, and structs can have dependent types, but the only way dependencies can appear is through \textsc{ty-array}, which can have a natural number size bound, and in hypotheses that appear in struct declarations.
-
-\judgment[Proposition validity]{\Gamma \proves A\;\mathsf{prop}}
-\begin{mathparpagebreakable}
-  \axiom[typ-true]{\Gamma \proves \top\;\mathsf{prop}}\and
-  \axiom[typ-false]{\Gamma \proves \bot\;\mathsf{prop}}\and
-  \axiom[typ-emp]{\Gamma \proves \mathsf{emp}\;\mathsf{prop}}\and
-  \infer[typ-bool]
-    {\Gamma \proves pe:\mathsf{bool}}
-    {\Gamma \proves pe\;\mathsf{prop}}\and
-  \infer[typ-not]
-    {\Gamma \proves A\;\mathsf{prop}}
-    {\Gamma \proves \neg A\;\mathsf{prop}}\and
-  \infer[typ-and]
-    {\Gamma \proves A\;\mathsf{prop}\and
-      \Gamma \proves B\;\mathsf{prop}}
-    {\Gamma \proves A\land B\;\mathsf{prop}}\and
-  \infer[typ-or]
-    {\Gamma \proves A\;\mathsf{prop}\and
-      \Gamma \proves B\;\mathsf{prop}}
-    {\Gamma \proves A\lor B\;\mathsf{prop}}\and
-  \infer[typ-sep]
-    {\Gamma \proves A\;\mathsf{prop}\and
-      \Gamma \proves B\;\mathsf{prop}}
-    {\Gamma \proves A\ast B\;\mathsf{prop}}\and
-  \infer[typ-wand]
-    {\Gamma \proves A\;\mathsf{prop}\and
-      \Gamma \proves B\;\mathsf{prop}}
-    {\Gamma \proves A\wand B\;\mathsf{prop}}\and
-  \infer[typ-forall]
-    {\Gamma \proves \tau\;\mathsf{type}\quad
-      \Gamma,x:\core\tau \proves A\;\mathsf{prop}}
-    {\Gamma \proves \forall x:\tau,\;A\;\mathsf{prop}}\and
-  \infer[typ-exists]
-    {\Gamma \proves \tau\;\mathsf{type}\quad
-      \Gamma,x:\core\tau \proves A\;\mathsf{prop}}
-    {\Gamma \proves \exists x:\tau,\;A\;\mathsf{prop}}\and
-  \infer[typ-points-to]
-    {\Gamma \proves \ell:\mathsf{\N_{64}}\quad
-      \Gamma \proves v:\mathsf{\core\tau}}
-    {\Gamma \proves \ell\mapsto v\;\mathsf{prop}}\and
-  \infer[typ-typing]
-    {\Gamma \proves x:\core\tau\quad
-      \Gamma \proves \tau\;\mathsf{type}}
-    {\Gamma \proves \boxed{x:\tau}\;\mathsf{prop}}\and
-\end{mathparpagebreakable}
+Type validity is also relatively straightforward. Type variables are looked up in the context, and structs can have dependent types, but the only way dependencies can appear is through \textsc{ty-array} (which will appear later), which can have a natural number size bound, and in hypotheses via \textsc{ty-pure}.
 
 There is nothing non-standard in these rules, except perhaps the requirement in the \textsc{typ-forall} and \textsc{typ-exists} rules that the types are moved (needed because the assertion language itself should not be able to take ownership of variables used in the assertions).
 

@@ -8,7 +8,7 @@ use crate::elab::{Result, ElabError,
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
   local_context::try_get_span};
 use super::types::{FieldName, Keyword, Mm0Expr, Mm0ExprNode, Size, Spanned, entity::{ProcTc, Intrinsic}};
-use super::types::entity::{Entity, Prim, PrimType, PrimProp, PrimOp, TypeTy};
+use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 
 #[derive(Debug, DeepSizeOf)]
@@ -555,7 +555,7 @@ impl<'a> Parser<'a> {
   /// Parse a type (shallowly).
   pub fn parse_ty(&self, base: &FileSpan, names: &HashMap<AtomId, Entity>, e: &LispVal) -> Result<Type> {
     let mut u = Uncons::New(e.clone());
-    let (head, args) = match u.next() {
+    let (head, mut args) = match u.next() {
       None if u.is_empty() => return Ok(spanned(base, e, TypeKind::Unit)),
       None => (u.into(), vec![]),
       Some(head) => (head, u.collect()),
@@ -587,7 +587,7 @@ impl<'a> Parser<'a> {
             (PrimType::RefSn, [e]) => TypeKind::RefSn(e.clone()),
             (PrimType::Shr, [ty]) => TypeKind::Shr(None, ty.clone()),
             (PrimType::Sn, [e]) => TypeKind::Sn(e.clone()),
-            (PrimType::List, _) => TypeKind::List(args),
+            (PrimType::List, _) | (PrimType::Star, _) => TypeKind::List(args),
             (PrimType::Struct, _) => {
               let mut out = vec![];
               for e in args { self.parse_arg(base, Default::default(), e, &mut out)? }
@@ -598,10 +598,23 @@ impl<'a> Parser<'a> {
             (PrimType::Moved, [ty]) => TypeKind::Moved(ty.clone()),
             (PrimType::Ghost, [ty]) => TypeKind::Ghost(ty.clone()),
             (PrimType::Uninit, [ty]) => TypeKind::Uninit(ty.clone()),
+            (PrimType::All, args1) if !args1.is_empty() => {
+              let last = args.pop().expect("nonempty");
+              let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
+              TypeKind::All(args, last)
+            }
+            (PrimType::Ex, args1) if !args1.is_empty() => {
+              let last = args.pop().expect("nonempty");
+              let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
+              TypeKind::Ex(args, last)
+            }
+            (PrimType::Imp, [e1, e2]) => TypeKind::Imp(e1.clone(), e2.clone()),
+            (PrimType::Wand, [e1, e2]) => TypeKind::Wand(e1.clone(), e2.clone()),
+            (PrimType::HasTy, [e, ty]) => TypeKind::HasTy(e.clone(), ty.clone()),
             _ => return Err(ElabError::new_e(try_get_span(base, e), "unexpected number of arguments"))
           },
-          Some(&Entity::Prim(p)) if p.prop.is_some() || p.op.is_some() =>
-            TypeKind::Prop(self.parse_prop(base, names, e)?.k),
+          Some(&Entity::Prim(p)) if p.op.is_some() =>
+            TypeKind::Pure(self.parse_expr(base, e.clone())?.k),
           Some(Entity::Type(ty)) => if let Some(&TypeTy {tyargs, args: ref tgt}) = ty.k.ty() {
             let n = tyargs as usize;
             if args.len() != n + tgt.len() {
@@ -624,48 +637,9 @@ impl<'a> Parser<'a> {
             let (c, branches) = self.parse_match(&try_get_fspan(base, e), args.into_iter())?;
             TypeKind::Match(c, branches)
           }
-          _ => TypeKind::Prop(self.parse_prop(base, names, e)?.k),
+          _ => TypeKind::Pure(self.parse_expr(base, e.clone())?.k),
         }
       }
-    }))
-  }
-
-  /// Parse a proposition (shallowly).
-  pub fn parse_prop(&self, base: &FileSpan, names: &HashMap<AtomId, Entity>, e: &LispVal) -> Result<Prop> {
-    let mut u = Uncons::New(e.clone());
-    let (head, mut args) = match u.next() {
-      None if u.is_empty() =>
-        return Err(ElabError::new_e(try_get_span(base, e), "expecting a proposition, got ()")),
-      None => (u.into(), vec![]),
-      Some(head) => (head, u.collect()),
-    };
-    Ok(spanned(base, e, match head.as_atom().and_then(|name| names.get(&name)) {
-      Some(Entity::Prim(Prim {prop: Some(prim), ..})) => match (prim, &*args) {
-        (PrimProp::All, args1) if !args1.is_empty() => {
-          let last = args.pop().expect("nonempty");
-          let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
-          PropKind::All(args, last)
-        }
-        (PrimProp::Ex, args1) if !args1.is_empty() => {
-          let last = args.pop().expect("nonempty");
-          let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
-          PropKind::Ex(args, last)
-        }
-        (PrimProp::And, _) => PropKind::And(args),
-        (PrimProp::Or, _) => PropKind::Or(args),
-        (PrimProp::Imp, [e1, e2]) => PropKind::Imp(e1.clone(), e2.clone()),
-        (PrimProp::Star, _) => PropKind::Sep(args),
-        (PrimProp::Wand, [e1, e2]) => PropKind::Wand(e1.clone(), e2.clone()),
-        (PrimProp::Pure, _) => {
-          let (args, last) = self.parse_pure_args(base, args)?;
-          PropKind::Mm0(args, last)
-        }
-        (PrimProp::Moved, [ty]) => PropKind::Moved(ty.clone()),
-        (PrimProp::HasTy, [e, ty]) => PropKind::HasTy(e.clone(), ty.clone()),
-        (PrimProp::Eq, [e1, e2]) => PropKind::Eq(e1.clone(), e2.clone()),
-        _ => return Err(ElabError::new_e(try_get_span(base, &head), "incorrect number of arguments")),
-      }
-      _ => PropKind::Pure(self.parse_expr(base, e.clone())?.k)
     }))
   }
 

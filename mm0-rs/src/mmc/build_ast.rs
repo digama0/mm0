@@ -280,6 +280,8 @@ impl<'a> BuildAst<'a> {
     let Spanned {span, k: ty} = self.p.parse_ty(base, self.names, ty)?;
     let k = match ty {
       TypeKind::Unit => ast::TypeKind::Unit,
+      TypeKind::True => ast::TypeKind::True,
+      TypeKind::False => ast::TypeKind::False,
       TypeKind::Bool => ast::TypeKind::Bool,
       TypeKind::Var(name) => {
         let v = self.tyvars.iter().rposition(|&v| name == v).ok_or_else(||
@@ -300,6 +302,22 @@ impl<'a> BuildAst<'a> {
       TypeKind::List(tys) => ast::TypeKind::List(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
       TypeKind::Sn(e) => ast::TypeKind::Sn(Box::new(self.build_expr(&span, e)?)),
       TypeKind::Struct(pats) => ast::TypeKind::Struct(self.with_args(pats, |_, x| Ok(x))?),
+      TypeKind::All(args, p) => self.with_tuple_patterns(args, |this, args| {
+        Ok(ast::TypeKind::All(args, Box::new(this.build_ty(&span, &p)?)))
+      })?,
+      TypeKind::Ex(args, p) => self.with_tuple_patterns(args, |this, args| {
+        let mut pats = Vec::with_capacity(args.len() + 1);
+        let f = |pat| (ast::ArgAttr::empty(), ast::ArgKind::Lam(pat));
+        pats.extend(args.into_vec().into_iter().map(|pat| pat.map_into(f)));
+        let ty = this.build_ty(&span, &p)?;
+        let k = ast::TuplePatternKind::Name(true, AtomId::UNDER, this.fresh_var());
+        let k = f(ast::TuplePatternKind::Typed(Box::new(Spanned {span: span.clone(), k}), Box::new(ty)));
+        pats.push(Spanned {span: span.clone(), k});
+        Ok(ast::TypeKind::Struct(pats.into_boxed_slice()))
+      })?,
+      TypeKind::Imp(p1, p2) => ast::TypeKind::Imp(Box::new(self.build_ty(&span, &p1)?), Box::new(self.build_ty(&span, &p2)?)),
+      TypeKind::Wand(p1, p2) => ast::TypeKind::Wand(Box::new(self.build_ty(&span, &p1)?), Box::new(self.build_ty(&span, &p2)?)),
+      TypeKind::Not(p) => ast::TypeKind::Not(Box::new(self.build_ty(&span, &p)?)),
       TypeKind::And(tys) => ast::TypeKind::And(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
       TypeKind::Or(tys) => ast::TypeKind::Or(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
       TypeKind::If([c, t, e]) => ast::TypeKind::If(
@@ -310,51 +328,18 @@ impl<'a> BuildAst<'a> {
         self.build_match_branches(&span, branches, |this, rhs| this.build_ty(&span, &rhs))?),
       TypeKind::Ghost(ty) => ast::TypeKind::Ghost(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Uninit(ty) => ast::TypeKind::Uninit(Box::new(self.build_ty(&span, &ty)?)),
-      TypeKind::Prop(pk) => ast::TypeKind::Prop(Box::new(self.build_parsed_prop(span.clone(), pk)?)),
+      TypeKind::Pure(e) => ast::TypeKind::Pure(Box::new(self.build_parsed_expr(span.clone(), e)?)),
       TypeKind::User(f, tys, es) => {
         let tys = tys.into_vec().iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?;
         let es = es.into_vec().into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
         ast::TypeKind::User(f, tys, es)
       },
+      TypeKind::Heap(e1, e2) => ast::TypeKind::Heap(Box::new(self.build_expr(&span, e1)?), Box::new(self.build_expr(&span, e2)?)),
+      TypeKind::HasTy(e, ty) => ast::TypeKind::HasTy(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Input => ast::TypeKind::Input,
       TypeKind::Output => ast::TypeKind::Output,
       TypeKind::Moved(ty) => ast::TypeKind::Moved(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Error => ast::TypeKind::Error
-    };
-    Ok(Spanned {span, k})
-  }
-
-  fn build_prop(&mut self, base: &FileSpan, p: &LispVal) -> Result<ast::Prop> {
-    let Spanned {span, k} = self.p.parse_prop(base, self.names, p)?;
-    self.build_parsed_prop(span, k)
-  }
-
-  fn build_parsed_prop(&mut self, span: FileSpan, pk: PropKind) -> Result<ast::Prop> {
-    let k = match pk {
-      PropKind::True => ast::PropKind::True,
-      PropKind::False => ast::PropKind::False,
-      PropKind::Emp => ast::PropKind::Emp,
-      PropKind::All(args, p) => self.with_tuple_patterns(args, |this, args| {
-        Ok(ast::PropKind::All(args, Box::new(this.build_prop(&span, &p)?)))
-      })?,
-      PropKind::Ex(args, p) => self.with_tuple_patterns(args, |this, args| {
-        Ok(ast::PropKind::Ex(args, Box::new(this.build_prop(&span, &p)?)))
-      })?,
-      PropKind::Not(p) => ast::PropKind::Not(Box::new(self.build_prop(&span, &p)?)),
-      PropKind::And(ps) => ast::PropKind::And(
-        ps.iter().map(|p| self.build_prop(&span, p)).collect::<Result<_>>()?),
-      PropKind::Or(ps) => ast::PropKind::Or(
-        ps.iter().map(|p| self.build_prop(&span, p)).collect::<Result<_>>()?),
-      PropKind::Sep(ps) => ast::PropKind::Sep(
-        ps.iter().map(|p| self.build_prop(&span, p)).collect::<Result<_>>()?),
-      PropKind::Imp(p1, p2) => ast::PropKind::Imp(Box::new(self.build_prop(&span, &p1)?), Box::new(self.build_prop(&span, &p2)?)),
-      PropKind::Wand(p1, p2) => ast::PropKind::Wand(Box::new(self.build_prop(&span, &p1)?), Box::new(self.build_prop(&span, &p2)?)),
-      PropKind::Pure(e) => ast::PropKind::Pure(Box::new(self.build_parsed_expr(span.clone(), e)?)),
-      PropKind::Eq(e1, e2) => ast::PropKind::Eq(Box::new(self.build_expr(&span, e1)?), Box::new(self.build_expr(&span, e2)?)),
-      PropKind::Heap(e1, e2) => ast::PropKind::Heap(Box::new(self.build_expr(&span, e1)?), Box::new(self.build_expr(&span, e2)?)),
-      PropKind::HasTy(e, ty) => ast::PropKind::HasTy(Box::new(self.build_expr(&span, e)?), Box::new(self.build_ty(&span, &ty)?)),
-      PropKind::Moved(p) => ast::PropKind::Moved(Box::new(self.build_prop(&span, &p)?)),
-      PropKind::Mm0(subst, e) => ast::PropKind::Mm0(self.build_mm0_expr(&span, subst, e)?),
     };
     Ok(Spanned {span, k})
   }
