@@ -68,12 +68,13 @@ pub struct Parser<'a> {
   Some((as_keyword(kw, &u.next()?)?, u))
 }
 
-fn try_get_fspan(fsp: &FileSpan, e: &LispVal) -> FileSpan {
+/// Gets the span from a lisp expression, with the given fallback.
+#[must_use] pub fn try_get_fspan(fsp: &FileSpan, e: &LispVal) -> FileSpan {
   FileSpan { file: fsp.file.clone(), span: try_get_span(fsp, e) }
 }
 
 /// Uses the span of the [`LispVal`] to construct a [`Spanned`]`<T>`.
-pub fn spanned<T>(fsp: &FileSpan, e: &LispVal, k: T) -> Spanned<T> {
+#[must_use] pub fn spanned<T>(fsp: &FileSpan, e: &LispVal, k: T) -> Spanned<T> {
   Spanned {span: try_get_fspan(fsp, e), k}
 }
 

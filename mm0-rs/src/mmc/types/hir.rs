@@ -130,6 +130,26 @@ impl<'a> Context<'a> {
   }
 }
 
+impl<'a> IntoIterator for Context<'a> {
+  type Item = &'a ContextNext<'a>;
+  type IntoIter = ContextIter<'a>;
+  fn into_iter(self) -> ContextIter<'a> { ContextIter(self.0) }
+}
+
+/// An iterator over the context, from the most recently introduced variable
+/// to the beginning.
+#[derive(Debug)]
+pub struct ContextIter<'a>(Option<&'a ContextNext<'a>>);
+
+impl<'a> Iterator for ContextIter<'a> {
+  type Item = &'a ContextNext<'a>;
+  fn next(&mut self) -> Option<&'a ContextNext<'a>> {
+    let c = self.0?;
+    self.0 = c.parent.0;
+    Some(c)
+  }
+}
+
 impl<'a> ContextNext<'a> {
   /// Create a new `ContextNext`, automatically filling the `len` field.
   #[must_use] pub fn new(
@@ -231,6 +251,7 @@ pub type Expr<'a> = Spanned<'a, ExprKind<'a>>;
 
 /// An expression. A block is a list of expressions.
 #[derive(Debug, DeepSizeOf)]
+#[allow(clippy::type_complexity)]
 pub enum ExprKind<'a> {
   /// A `()` literal.
   Unit,
@@ -309,6 +330,8 @@ pub enum ExprKind<'a> {
     /// through any number of writes to it, while non-updatable `old` variables are created
     /// by the various assignments.)
     oldmap: Box<[(VarId, VarId)]>,
+    /// The generation after the mutation.
+    gen: GenId,
   },
   /// A function call (or something that looks like one at parse time).
   Call {
@@ -325,7 +348,7 @@ pub enum ExprKind<'a> {
   /// `P1, ..., Pn` and is a hypothesis of type `Q`.
   Proof(Proof<'a>),
   /// A block scope.
-  Block(Vec<Expr<'a>>),
+  Block(Block<'a>),
   /// An if-then-else expression (at either block or statement level). The initial atom names
   /// a hypothesis that the expression is true in one branch and false in the other.
   If {
@@ -333,10 +356,10 @@ pub enum ExprKind<'a> {
     hyp: Option<VarId>,
     /// The if condition.
     cond: Box<Expr<'a>>,
-    /// The then case.
-    then: Box<Expr<'a>>,
-    /// The else case.
-    els: Box<Expr<'a>>
+    /// The then/else cases.
+    cases: Box<[(Expr<'a>, Box<[(VarId, GenId)]>); 2]>,
+    /// The generation at the join point.
+    gen: GenId,
   },
   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   Match(Box<Expr<'a>>, Box<[(Pattern<'a>, Expr<'a>)]>),
@@ -386,9 +409,8 @@ pub enum Proof<'a> {
   IAnd(Box<[Expr<'a>]>),
   /// Sep introduction
   ISep(Box<[Expr<'a>]>),
-  /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
-  /// `P1, ..., Pn` and is a hypothesis of type `Q`.
-  Entail(LispVal, Box<[Expr<'a>]>),
+  /// A proof of `P`.
+  Mm0(&'a LispVal, ty::Ty<'a>),
 }
 
 /// A `cast` kind, which determines what the type of `h` in `(cast x h)` is.
