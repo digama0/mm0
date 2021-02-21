@@ -178,6 +178,8 @@ enum TypeError<'a> {
   UnsupportedAssign,
   /// Missing `with` clause for assignment
   MissingAssignWith(AtomId),
+  /// Provided expressions x and y do not unify in an and-intro expression
+  IAndUnify(Expr<'a>, Expr<'a>),
 }
 
 impl IntTy {
@@ -586,6 +588,8 @@ struct Common<'a> {
   t_bool: Ty<'a>,
   p_true: Prop<'a>,
   p_false: Prop<'a>,
+  t_true: Ty<'a>,
+  t_false: Ty<'a>,
   p_emp: Prop<'a>,
   e_bool: [Expr<'a>; 2],
   nat: Ty<'a>,
@@ -596,6 +600,8 @@ struct Common<'a> {
 
 impl<'a> Common<'a> {
   fn new(i: &mut Interner<'a>, alloc: &'a Bump) -> Self {
+    let p_true = i.intern(alloc, PropKind::True);
+    let p_false = i.intern(alloc, PropKind::False);
     Self {
       t_unit: i.intern(alloc, TyKind::Unit),
       e_unit: i.intern(alloc, ExprKind::Unit),
@@ -607,8 +613,8 @@ impl<'a> Common<'a> {
       int: i.intern(alloc, TyKind::Int(Size::Inf)),
       t_error: i.intern(alloc, TyKind::Error),
       e_error: i.intern(alloc, ExprKind::Error),
-      p_true: i.intern(alloc, PropKind::True),
-      p_false: i.intern(alloc, PropKind::False),
+      p_true, t_true: i.intern(alloc, TyKind::Prop(p_true)),
+      p_false, t_false: i.intern(alloc, TyKind::Prop(p_false)),
       p_emp: i.intern(alloc, PropKind::Emp),
     }
   }
@@ -1911,11 +1917,32 @@ impl<'a> InferCtx<'a> {
               } else { None };
               ret![List(es), pes, tgt]
             }
+            TyKind::And(tgts) => {
+              expect!(tgts.len());
+              let mut val = None;
+              let es = es.iter().zip(tgts).map(|(e, &tgt)| {
+                let (e, pe) = self.check_expr(e, tgt);
+                let pe = self.as_pure(e.span, pe);
+                if let Some(v) = val {
+                  self.equate_expr(v, pe).unwrap_or_else(|_| {
+                    self.errors.push(hir::Spanned {span, k: TypeError::IAndUnify(v, pe)});
+                  });
+                } else { val = Some(pe) };
+                e
+              }).collect();
+              if let Some(val) = val {
+                ret![IAnd(es), Some(val), tgt]
+              } else {
+                ret![Proof(hir::Proof::ITrue), Some(self.common.e_unit), self.common.t_true]
+              }
+            }
+            TyKind::Struct(args) => {
+              expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
+              todo!()
+            }
             TyKind::Own(_) |
             TyKind::Shr(_, _) |
-            TyKind::Sn(_, _) |
-            TyKind::Struct(_) |
-            TyKind::And(_) => todo!(),
+            TyKind::Sn(_, _) => { expect!(2); todo!() }
             _ => error!()
           }
           TyOrProp::Prop(p) => match p.k {
@@ -1923,10 +1950,26 @@ impl<'a> InferCtx<'a> {
               expect!(0);
               proof![ITrue, self.common.t_unit]
             }
-            PropKind::Ex(_, _) |
-            PropKind::And(_) |
-            PropKind::Emp |
-            PropKind::Sep(_) => todo!(),
+            PropKind::Emp => {
+              expect!(0);
+              proof![IEmp, self.common.t_unit]
+            }
+            PropKind::Sep(tgts) |
+            PropKind::And(tgts) => {
+              expect!(tgts.len());
+              let mut pes = Vec::with_capacity(tgts.len());
+              let es = es.iter().zip(tgts).map(|(e, &tgt)| {
+                let tgt = intern!(self, TyKind::Prop(tgt));
+                self.check_expr(e, tgt).0
+              }).collect();
+              let pes = if pes.len() == tgts.len() {
+                Some(intern!(self, ExprKind::Array(
+                  self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
+              } else { None };
+              proof![if matches!(p.k, PropKind::Sep(_)) {ISep(es)} else {IAnd(es)},
+                intern!(self, TyKind::Prop(p))]
+            }
+            PropKind::Ex(_, _) => todo!(),
             _ => error!()
           }
         }

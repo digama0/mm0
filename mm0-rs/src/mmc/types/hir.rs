@@ -266,6 +266,10 @@ pub enum ExprKind<'a> {
   Deref(Box<Expr<'a>>),
   /// `(list e1 ... en)` returns a tuple of the arguments.
   List(Vec<Expr<'a>>),
+  /// `(list e1 ... en)` returns a `And` of the arguments. This is only valid
+  /// when all arguments are copy or all cover the same heap location.
+  /// All expressions have to be pure and have the same value.
+  IAnd(Vec<Expr<'a>>),
   /// `[{e1: T}, ..., en]`, an array literal.
   Array(Vec<Expr<'a>>, ty::Ty<'a>),
   /// A ghost expression.
@@ -379,9 +383,9 @@ pub enum Proof<'a> {
   /// A proof of [`PropKind::Emp`]
   IEmp,
   /// And introduction
-  IAnd(Box<[Proof<'a>]>),
+  IAnd(Box<[Expr<'a>]>),
   /// Sep introduction
-  ISep(Box<[Proof<'a>]>),
+  ISep(Box<[Expr<'a>]>),
   /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving
   /// `P1, ..., Pn` and is a hypothesis of type `Q`.
   Entail(LispVal, Box<[Expr<'a>]>),

@@ -595,7 +595,7 @@ pub enum ExprKind {
     /// by the various assignments.)
     oldmap: Box<[(VarId, VarId)]>,
   },
-  /// A function call (or something that looks like one at parse time).
+  /// A function call.
   Call {
     /// The function to call.
     f: Spanned<AtomId>,
