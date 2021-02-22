@@ -172,6 +172,13 @@ impl<'a> ProofIter<'a> {
     }
 }
 
+impl<'a> ProofIter<'a> {
+    /// Peek the next element. Takes `self` by value since this it's `Copy`.
+    pub fn peek(mut self) -> Option<Result<ProofCmd, ParseError>> {
+        self.next()
+    }
+}
+
 /// Iterator doc comment
 impl<'a> Iterator for ProofIter<'a> {
     type Item = Result<ProofCmd, ParseError>;
@@ -202,6 +209,13 @@ pub struct UnifyIter<'a> {
     mmb_file: &'a [u8],
     /// The index of the current declaration in the file.
     pub pos: usize,
+}
+
+impl<'a> UnifyIter<'a> {
+    /// Peek the next element. Takes `self` by value since this it's `Copy`.
+    pub fn peek(mut self) -> Option<Result<UnifyCmd, ParseError>> {
+        self.next()
+    }
 }
 
 impl<'a> Iterator for UnifyIter<'a> {
@@ -374,6 +388,23 @@ fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8]
 }
 
 impl<'a> MmbFile<'a> {
+
+    /// Get the index entry for a sort.
+    #[must_use]
+    pub fn index_sort(&self, n: SortId) -> Option<IndexEntryRef<'a>> {
+        index_ref(self.buf, self.index.as_ref().and_then(|index| index.sorts.get(usize::from(n.0))).copied()?)
+    }
+    /// Get the index entry for a term.
+    #[must_use]
+    pub fn index_term(&self, n: TermId) -> Option<IndexEntryRef<'a>> {
+        index_ref(self.buf, *self.index.as_ref().and_then(|index| index.terms.get(u32_as_usize(n.0)))?)
+    }
+    /// Get the index entry for a theorem.
+    #[must_use]
+    pub fn index_thm(&self, n: ThmId) -> Option<IndexEntryRef<'a>> {
+        index_ref(self.buf, *self.index.as_ref().and_then(|index| index.thms.get(u32_as_usize(n.0)))?)
+    }
+
     /// For error reporting after the initial parse.
     pub fn bad_index_lookup(&self) -> ParseError {
         ParseError::BadIndexLookup {
@@ -571,13 +602,13 @@ impl<'a> MmbFile<'a> {
     /// Get the term data for a [TermId].
     #[inline]
     #[must_use]
-    pub fn term(&self, n: TermId) -> Option<TermRef<'_>> {
+    pub fn term(&self, n: TermId) -> Option<TermRef<'a>> {
         term_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?, n)
     }
     /// Get the theorem data for a [ThmId].
     #[inline]
     #[must_use]
-    pub fn thm(&self, n: ThmId) -> Option<ThmRef<'_>> {
+    pub fn thm(&self, n: ThmId) -> Option<ThmRef<'a>> {
         thm_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?, n)
     }
     /// Get the proof stream for the file.
@@ -628,17 +659,17 @@ impl<'a> MmbFile<'a> {
 impl<'a> MmbIndex<'a> {
     /// Get the index entry for a sort.
     #[must_use]
-    pub fn sort(&self, n: SortId) -> Option<IndexEntryRef<'_>> {
+    pub fn sort(&self, n: SortId) -> Option<IndexEntryRef<'a>> {
         index_ref(self.buf, *self.sorts.get(usize::from(n.0))?)
     }
     /// Get the index entry for a term.
     #[must_use]
-    pub fn term(&self, n: TermId) -> Option<IndexEntryRef<'_>> {
+    pub fn term(&self, n: TermId) -> Option<IndexEntryRef<'a>> {
         index_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
     }
     /// Get the index entry for a theorem.
     #[must_use]
-    pub fn thm(&self, n: ThmId) -> Option<IndexEntryRef<'_>> {
+    pub fn thm(&self, n: ThmId) -> Option<IndexEntryRef<'a>> {
         index_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
     }
 }
@@ -679,7 +710,7 @@ impl<'a> TermRef<'a> {
     /// The beginning of the unify stream for the term.
     #[inline]
     #[must_use]
-    pub fn unify(&self) -> UnifyIter<'_> {
+    pub fn unify(&self) -> UnifyIter<'a> {
         self.unify.clone()
     }
 }
@@ -694,7 +725,7 @@ impl<'a> ThmRef<'a> {
     /// The beginning of the unify stream.
     #[inline]
     #[must_use]
-    pub fn unify(&self) -> UnifyIter<'_> {
+    pub fn unify(&self) -> UnifyIter<'a> {
         self.unify.clone()
     }
 }
@@ -730,7 +761,7 @@ fn try_next_decl(mmb: &[u8], pos: usize) -> Result<Option<(StmtCmd, ProofIter<'_
 }
 
 /// An iterator over the declaration stream.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct DeclIter<'a> {
     /// The full source file.
     mmb_file: &'a [u8],
@@ -739,6 +770,13 @@ pub struct DeclIter<'a> {
     next_sort_id: u8,
     next_term_id: u32,
     next_thm_id: u32,
+}
+
+impl<'a> DeclIter<'a> {
+    /// Peek the next element. Takes `self` by value since this it's `Copy`.
+    pub fn peek(mut self) -> Option<Result<(NumdStmtCmd, ProofIter<'a>), ParseError>> {
+        self.next()
+    }
 }
 
 impl<'a> Iterator for DeclIter<'a> {
@@ -810,7 +848,7 @@ impl<'a> IndexEntryRef<'a> {
     }
     /// The statement that sourced this entry.
     #[must_use]
-    pub fn decl(&self) -> Result<Option<(StmtCmd, ProofIter<'_>)>, ParseError> {
+    pub fn decl(&self) -> Result<Option<(StmtCmd, ProofIter<'a>)>, ParseError> {
         Ok(try_next_decl(self.buf, u64_as_usize(self.p_proof))?
             .map(|(stmt, proof, _)| (stmt, proof)))
     }
