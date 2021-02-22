@@ -588,6 +588,8 @@ pub enum ExprKind {
   While {
     /// The name of this loop, which can be used as a target for jumps.
     label: VarId,
+    /// The variables that are mutated in the loop.
+    muts: Box<[VarId]>,
     /// A hypothesis that the condition is true in the loop and false after it.
     hyp: Option<VarId>,
     /// The loop condition.
@@ -595,7 +597,7 @@ pub enum ExprKind {
     /// The variant, which must decrease on every round around the loop.
     var: Option<Box<Variant>>,
     /// The body of the loop.
-    body: Box<Expr>,
+    body: Box<Block>,
   },
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Box<Expr>),
@@ -658,8 +660,9 @@ impl Remap for ExprKind {
       ExprKind::If {hyp, cond, then, els} => ExprKind::If {
         hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
       ExprKind::Match(e, brs) => ExprKind::Match(e.remap(r), brs.remap(r)),
-      ExprKind::While {label, hyp, cond, var, body} => ExprKind::While {
-        label: *label, hyp: *hyp, cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
+      ExprKind::While {label, muts, hyp, cond, var, body} => ExprKind::While {
+        label: *label, muts: muts.remap(r), hyp: *hyp,
+        cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
       ExprKind::Unreachable(e) => ExprKind::Unreachable(e.remap(r)),
       ExprKind::Jump(l, i, e, var) => ExprKind::Jump(*l, *i, e.remap(r), var.remap(r)),
       ExprKind::Break(v, e) => ExprKind::Break(*v, e.remap(r)),

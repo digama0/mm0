@@ -316,15 +316,22 @@ impl<'a> Parser<'a> {
             }
           } else {(None, c)};
           let mut var = None;
+          let mut muts = Vec::new();
           while let Some(e) = u.head() {
             if let Some(v) = self.parse_variant(&span, &e) {
               if mem::replace(&mut var, Some(v)).is_some() {
                 return Err(ElabError::new_e(&span, "while: two variants"))
               }
+            } else if let Some((Keyword::Mut, u)) = self.head_keyword(&e) {
+              for e in u {
+                let span = try_get_fspan(&span, &e);
+                let k = e.as_atom().ok_or_else(|| ElabError::new_e(&span, "mut: expected an atom"))?;
+                muts.push(Spanned {span, k})
+              }
             } else {break}
             u.next();
           }
-          ExprKind::While { hyp, cond, var, body: u }
+          ExprKind::While { hyp, muts, cond, var, body: u }
         }
         Some((Keyword::Begin, u)) => ExprKind::Block(u),
         Some((Keyword::Entail, u)) => {
@@ -615,7 +622,7 @@ impl<'a> Parser<'a> {
             _ => return Err(ElabError::new_e(try_get_span(base, e), "unexpected number of arguments"))
           },
           Some(&Entity::Prim(p)) if p.op.is_some() =>
-            TypeKind::Pure(self.parse_expr(base, e.clone())?.k),
+            TypeKind::Pure(Box::new(self.parse_expr(base, e.clone())?.k)),
           Some(Entity::Type(ty)) => if let Some(&TypeTy {tyargs, args: ref tgt}) = ty.k.ty() {
             let n = tyargs as usize;
             if args.len() != n + tgt.len() {
@@ -638,7 +645,7 @@ impl<'a> Parser<'a> {
             let (c, branches) = self.parse_match(&try_get_fspan(base, e), args.into_iter())?;
             TypeKind::Match(c, branches)
           }
-          _ => TypeKind::Pure(self.parse_expr(base, e.clone())?.k),
+          _ => TypeKind::Pure(Box::new(self.parse_expr(base, e.clone())?.k)),
         }
       }
     }))

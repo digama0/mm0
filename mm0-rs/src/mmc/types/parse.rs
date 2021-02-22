@@ -230,7 +230,7 @@ pub enum TypeKind {
   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   Match(LispVal, Vec<(LispVal, LispVal)>),
   /// A boolean expression, interpreted as a pure proposition
-  Pure(ExprKind),
+  Pure(Box<ExprKind>),
   /// A user-defined type-former.
   User(AtomId, Box<[LispVal]>, Box<[LispVal]>),
   /// A heap assertion `l |-> (v: T)`.
@@ -346,6 +346,8 @@ pub enum ExprKind {
   Match(LispVal, Vec<(LispVal, LispVal)>),
   /// A while loop.
   While {
+    /// The set of variables that are mutated in the while loop.
+    muts: Vec<Spanned<AtomId>>,
     /// A hypothesis that the condition is true in the loop and false after it.
     hyp: Option<Spanned<AtomId>>,
     /// The loop condition.

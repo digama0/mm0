@@ -328,7 +328,7 @@ impl<'a> BuildAst<'a> {
         self.build_match_branches(&span, branches, |this, rhs| this.build_ty(&span, &rhs))?),
       TypeKind::Ghost(ty) => ast::TypeKind::Ghost(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Uninit(ty) => ast::TypeKind::Uninit(Box::new(self.build_ty(&span, &ty)?)),
-      TypeKind::Pure(e) => ast::TypeKind::Pure(Box::new(self.build_parsed_expr(span.clone(), e)?)),
+      TypeKind::Pure(e) => ast::TypeKind::Pure(Box::new(self.build_parsed_expr(span.clone(), *e)?)),
       TypeKind::User(f, tys, es) => {
         let tys = tys.into_vec().iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?;
         let es = es.into_vec().into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
@@ -412,17 +412,24 @@ impl<'a> BuildAst<'a> {
       })?,
       ExprKind::Match(e, branches) => ast::ExprKind::Match(Box::new(self.build_expr(&span, e)?),
         self.build_match_branches(&span, branches, |this, rhs| this.push_expr(&span, rhs))?),
-      ExprKind::While {hyp, cond, var, body} => {
+      ExprKind::While {muts, hyp, cond, var, body} => {
         let label = self.fresh_var();
-        let cond = Box::new(self.build_expr(&span, cond)?);
+        let mut muts2 = Vec::with_capacity(muts.len());
+        for Spanned {span, k: name} in muts {
+          let a = self.get_var(&span, name)?;
+          if muts2.contains(&a) { return Err(ElabError::new_e(&span, "duplicate mut")) }
+          muts2.push(a);
+        }
         let var = self.build_variant(var)?;
-        let hyp = hyp.map(|h| self.push_fresh(h.k));
-        let body = self.with_ctx(|this| {
+        self.with_ctx(|this| -> Result<_> {
           this.push_loop(label);
-          this.build_block(&span, body)
-        })?;
-        let body = Box::new(Spanned {span: span.clone(), k: ast::ExprKind::Block(body)});
-        ast::ExprKind::While {label, hyp, cond, var, body}
+          Ok(ast::ExprKind::While {
+            label, muts: muts2.into(), var,
+            cond: Box::new(this.build_expr(&span, cond)?),
+            hyp: hyp.map(|h| this.push_fresh(h.k)),
+            body: Box::new(this.build_block(&span, body)?)
+          })
+        })?
       },
       ExprKind::Hole => ast::ExprKind::Infer(true),
     };

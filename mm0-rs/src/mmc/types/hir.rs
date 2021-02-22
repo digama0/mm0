@@ -285,14 +285,11 @@ pub enum ExprKind<'a> {
   Rval(Box<Expr<'a>>),
   /// An deref operation `*x: T` where `x: &T`.
   Deref(Box<Expr<'a>>),
-  /// `(list e1 ... en)` returns a tuple of the arguments.
-  List(Vec<Expr<'a>>),
-  /// `(list e1 ... en)` returns a `And` of the arguments. This is only valid
-  /// when all arguments are copy or all cover the same heap location.
-  /// All expressions have to be pure and have the same value.
-  IAnd(Vec<Expr<'a>>),
-  /// `[{e1: T}, ..., en]`, an array literal.
-  Array(Vec<Expr<'a>>, ty::Ty<'a>),
+  /// `(list e1 ... en)` returns a tuple of the arguments (of type
+  /// `List`, `Struct`, `Array` or `And`). In the `And` case,
+  /// all arguments must be copy or all cover the same heap location,
+  /// and expressions have to be pure and have the same value.
+  List(Vec<Expr<'a>>, ty::Ty<'a>),
   /// A ghost expression.
   Ghost(Box<Expr<'a>>),
   /// Evaluates the expression as a pure expression, so it will not take
@@ -374,7 +371,7 @@ pub enum ExprKind<'a> {
     /// The variant, which must decrease on every round around the loop.
     var: Option<Box<Variant<'a>>>,
     /// The body of the loop.
-    body: Box<Expr<'a>>,
+    body: Box<Block<'a>>,
   },
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Box<Expr<'a>>),
@@ -389,6 +386,9 @@ pub enum ExprKind<'a> {
   Break(VarId, Box<Expr<'a>>),
   /// `(return e1 ... en)` returns `e1, ..., en` from the current function.
   Return(Vec<Expr<'a>>),
+  /// Same as `return`, but accepts a single argument of the sigma type and unpacks it
+  /// into the returns.
+  UnpackReturn(Box<Expr<'a>>),
   /// An inference hole `_`, which will give a compile error if it cannot be inferred
   /// but queries the compiler to provide a type context. The `bool` is true if this variable
   /// was created by the user through an explicit `_`, while compiler-generated inference
