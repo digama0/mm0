@@ -36,7 +36,7 @@
 use num::BigInt;
 use crate::elab::environment::{AtomId, Remap, Remapper};
 use crate::elab::lisp::LispVal;
-use super::{VarId, Spanned, Size, Mm0Expr, Unop, Binop, FieldName, entity::Intrinsic};
+use super::{Binop, FieldName, Mm0Expr, Size, Spanned, Unop, VarId, entity::Intrinsic};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.
 /// For example, if we `let y = &x[1]` then `y` has the type `(& x T)`. As long as
@@ -75,7 +75,7 @@ pub type TuplePattern = Spanned<TuplePatternKind>;
 pub enum TuplePatternKind {
   /// A variable binding, or `_` for an ignored binding. The `bool` is true if the variable
   /// is ghost.
-  Name(bool, VarId),
+  Name(bool, AtomId, VarId),
   /// A type ascription. The type is unparsed.
   Typed(Box<TuplePattern>, Box<Type>),
   /// A tuple, with the given arguments. Names are given to the intermediates,
@@ -87,7 +87,7 @@ impl Remap for TuplePatternKind {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      &TuplePatternKind::Name(b, v) => TuplePatternKind::Name(b, v),
+      &TuplePatternKind::Name(b, n, v) => TuplePatternKind::Name(b, n.remap(r), v),
       TuplePatternKind::Typed(pat, ty) => TuplePatternKind::Typed(pat.remap(r), ty.remap(r)),
       TuplePatternKind::Tuple(pats) => TuplePatternKind::Tuple(pats.remap(r)),
     }
@@ -99,7 +99,7 @@ impl TuplePatternKind {
   /// if this does any tuple destructuring.
   #[must_use] pub fn as_single_name(&self) -> Option<(bool, VarId)> {
     match self {
-      &Self::Name(g, v) => Some((g, v)),
+      &Self::Name(g, _, v) => Some((g, v)),
       Self::Typed(pat, _) => pat.k.as_single_name(),
       Self::Tuple(_) => None
     }
@@ -233,7 +233,13 @@ pub type TyVarId = u32;
 #[derive(Debug, DeepSizeOf)]
 pub enum TypeKind {
   /// `()` is the type with one element; `sizeof () = 0`.
+  /// This is also the proposition `emp`.
   Unit,
+  /// `true` is the true proposition; `sizeof true = 0`. Unlike `Unit`,
+  /// this does not assert the emptiness of the data, it holds of any value.
+  True,
+  /// `false` is the false proposition; `sizeof false = 0`.
+  False,
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
   /// A type variable.
@@ -273,6 +279,14 @@ pub enum TypeKind {
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
   Struct(Box<[Arg]>),
+  /// A universally quantified proposition.
+  All(Box<[TuplePattern]>, Box<Type>),
+  /// Implication (plain, non-separating).
+  Imp(Box<Type>, Box<Type>),
+  /// Separating implication.
+  Wand(Box<Type>, Box<Type>),
+  /// Negation.
+  Not(Box<Type>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -299,10 +313,14 @@ pub enum TypeKind {
   /// for this type is vacuous, but it has the same size as `T`, so overwriting with
   /// a `T` is possible.
   Uninit(Box<Type>),
-  /// A propositional type, used for hypotheses.
-  Prop(Box<Prop>),
+  /// A boolean expression, interpreted as a pure proposition
+  Pure(Box<Expr>),
   /// A user-defined type-former.
   User(AtomId, Box<[Type]>, Box<[Expr]>),
+  /// A heap assertion `l |-> (v: T)`.
+  Heap(Box<Expr>, Box<Expr>),
+  /// An explicit typing assertion `[v : T]`.
+  HasTy(Box<Expr>, Box<Type>),
   /// The input token.
   Input,
   /// The output token.
@@ -320,6 +338,8 @@ impl Remap for TypeKind {
   fn remap(&self, r: &mut Remapper) -> Self {
     match self {
       TypeKind::Unit => TypeKind::Unit,
+      TypeKind::True => TypeKind::True,
+      TypeKind::False => TypeKind::False,
       TypeKind::Bool => TypeKind::Bool,
       &TypeKind::Var(i) => TypeKind::Var(i),
       &TypeKind::Int(i) => TypeKind::Int(i),
@@ -332,86 +352,25 @@ impl Remap for TypeKind {
       TypeKind::List(tys) => TypeKind::List(tys.remap(r)),
       TypeKind::Sn(e) => TypeKind::Sn(e.remap(r)),
       TypeKind::Struct(tys) => TypeKind::Struct(tys.remap(r)),
+      TypeKind::All(p, q) => TypeKind::All(p.remap(r), q.remap(r)),
+      TypeKind::Imp(p, q) => TypeKind::Imp(p.remap(r), q.remap(r)),
+      TypeKind::Wand(p, q) => TypeKind::Wand(p.remap(r), q.remap(r)),
+      TypeKind::Not(p) => TypeKind::Not(p.remap(r)),
       TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
       TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
       TypeKind::If(c, t, e) => TypeKind::If(c.remap(r), t.remap(r), e.remap(r)),
       TypeKind::Match(c, brs) => TypeKind::Match(c.remap(r), brs.remap(r)),
       TypeKind::Ghost(ty) => TypeKind::Ghost(ty.remap(r)),
       TypeKind::Uninit(ty) => TypeKind::Uninit(ty.remap(r)),
-      TypeKind::Prop(p) => TypeKind::Prop(p.remap(r)),
+      TypeKind::Pure(p) => TypeKind::Pure(p.remap(r)),
       TypeKind::User(f, tys, es) => TypeKind::User(f.remap(r), tys.remap(r), es.remap(r)),
+      TypeKind::Heap(p, q) => TypeKind::Heap(p.remap(r), q.remap(r)),
+      TypeKind::HasTy(p, q) => TypeKind::HasTy(p.remap(r), q.remap(r)),
       TypeKind::Input => TypeKind::Input,
       TypeKind::Output => TypeKind::Output,
       TypeKind::Moved(tys) => TypeKind::Moved(tys.remap(r)),
       TypeKind::Infer => TypeKind::Infer,
       TypeKind::Error => TypeKind::Error,
-    }
-  }
-}
-
-/// A propositional expression.
-pub type Prop = Spanned<PropKind>;
-
-/// A separating proposition, which classifies hypotheses / proof terms.
-#[derive(Debug, DeepSizeOf)]
-pub enum PropKind {
-  /// A true proposition.
-  True,
-  /// A false proposition.
-  False,
-  /// A universally quantified proposition.
-  All(Box<[TuplePattern]>, Box<Prop>),
-  /// An existentially quantified proposition.
-  Ex(Box<[TuplePattern]>, Box<Prop>),
-  /// Implication (plain, non-separating).
-  Imp(Box<Prop>, Box<Prop>),
-  /// Negation.
-  Not(Box<Prop>),
-  /// Conjunction (non-separating).
-  And(Box<[Prop]>),
-  /// Disjunction.
-  Or(Box<[Prop]>),
-  /// The empty heap.
-  Emp,
-  /// Separating conjunction.
-  Sep(Box<[Prop]>),
-  /// Separating implication.
-  Wand(Box<Prop>, Box<Prop>),
-  /// An (executable) boolean expression, interpreted as a pure proposition
-  Pure(Box<Expr>),
-  /// Equality (possibly non-decidable).
-  Eq(Box<Expr>, Box<Expr>),
-  /// A heap assertion `l |-> (v: T)`.
-  Heap(Box<Expr>, Box<Expr>),
-  /// An explicit typing assertion `[v : T]`.
-  HasTy(Box<Expr>, Box<Type>),
-  /// The move operator `|T|` on types.
-  Moved(Box<Prop>),
-  /// An embedded MM0 proposition of sort `wff`.
-  Mm0(Mm0Expr<Expr>),
-}
-
-impl Remap for PropKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      PropKind::True => PropKind::True,
-      PropKind::False => PropKind::False,
-      PropKind::All(p, q) => PropKind::All(p.remap(r), q.remap(r)),
-      PropKind::Ex(p, q) => PropKind::Ex(p.remap(r), q.remap(r)),
-      PropKind::Imp(p, q) => PropKind::Imp(p.remap(r), q.remap(r)),
-      PropKind::Not(p) => PropKind::Not(p.remap(r)),
-      PropKind::And(p) => PropKind::And(p.remap(r)),
-      PropKind::Or(p) => PropKind::Or(p.remap(r)),
-      PropKind::Emp => PropKind::Emp,
-      PropKind::Sep(p) => PropKind::Sep(p.remap(r)),
-      PropKind::Wand(p, q) => PropKind::Wand(p.remap(r), q.remap(r)),
-      PropKind::Pure(p) => PropKind::Pure(p.remap(r)),
-      PropKind::Eq(p, q) => PropKind::Eq(p.remap(r), q.remap(r)),
-      PropKind::Heap(p, q) => PropKind::Heap(p.remap(r), q.remap(r)),
-      PropKind::HasTy(p, q) => PropKind::HasTy(p.remap(r), q.remap(r)),
-      PropKind::Moved(p) => PropKind::Moved(p.remap(r)),
-      PropKind::Mm0(p) => PropKind::Mm0(p.remap(r)),
     }
   }
 }
@@ -453,7 +412,7 @@ pub struct Label {
   /// The variant, for recursive calls
   pub variant: Option<Box<Variant>>,
   /// The code that is executed when you jump to the label
-  pub body: Box<Expr>,
+  pub body: Spanned<Block>,
 }
 
 impl Remap for Label {
@@ -467,10 +426,60 @@ impl Remap for Label {
   }
 }
 
-/// An expression or statement.
+/// A block is a list of statements, with an optional terminating expression.
+#[derive(Debug, DeepSizeOf)]
+pub struct Block {
+  /// The list of statements in the block.
+  pub stmts: Vec<Stmt>,
+  /// The optional last statement, or `()` if not specified.
+  pub expr: Option<Box<Expr>>,
+}
+
+impl Remap for Block {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    Self {
+      stmts: self.stmts.remap(r),
+      expr: self.expr.remap(r),
+    }
+  }
+}
+
+/// A statement in a block.
+pub type Stmt = Spanned<StmtKind>;
+
+/// A statement in a block.
+#[derive(Debug, DeepSizeOf)]
+pub enum StmtKind {
+  /// A let binding.
+  Let {
+    /// A tuple pattern, containing variable bindings.
+    lhs: TuplePattern,
+    /// The expression to evaluate.
+    rhs: Expr,
+  },
+  /// An expression to be evaluated for its side effects, with the result being discarded.
+  Expr(ExprKind),
+  /// A label, which looks exactly like a local function but has no independent stack frame.
+  /// They are called like regular functions but can only appear in tail position.
+  Label(VarId, Box<[Label]>),
+}
+
+impl Remap for StmtKind {
+  type Target = Self;
+  fn remap(&self, r: &mut Remapper) -> Self {
+    match self {
+      StmtKind::Let {lhs, rhs} => StmtKind::Let {lhs: lhs.remap(r), rhs: rhs.remap(r)},
+      StmtKind::Expr(e) => StmtKind::Expr(e.remap(r)),
+      StmtKind::Label(v, ls) => StmtKind::Label(*v, ls.remap(r)),
+    }
+  }
+}
+
+/// An expression.
 pub type Expr = Spanned<ExprKind>;
 
-/// An expression or statement. A block is a list of expressions.
+/// An expression. A block is a list of expressions.
 #[derive(Debug, DeepSizeOf)]
 pub enum ExprKind {
   /// A `()` literal.
@@ -481,7 +490,7 @@ pub enum ExprKind {
   Const(AtomId),
   /// A global variable.
   Global(AtomId),
-  /// A number literal.
+  /// A boolean literal.
   Bool(bool),
   /// A number literal.
   Int(BigInt),
@@ -500,7 +509,7 @@ pub enum ExprKind {
   Slice(Box<(Expr, Expr, Expr)>, Option<Box<Expr>>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
-  Proj(Box<Expr>, FieldName),
+  Proj(Box<Expr>, Spanned<FieldName>),
   /// An deref operation `*x: T` where `x: &T`.
   Deref(Box<Expr>),
   /// `(list e1 ... en)` returns a tuple of the arguments.
@@ -531,13 +540,6 @@ pub enum ExprKind {
   Typeof(Box<Expr>),
   /// `(assert p)` evaluates `p: bool` and returns a proof of `p`.
   Assert(Box<Expr>),
-  /// A let binding.
-  Let {
-    /// A tuple pattern, containing variable bindings.
-    lhs: TuplePattern,
-    /// The expression to evaluate.
-    rhs: Box<Expr>,
-  },
   /// An assignment / mutation.
   Assign {
     /// A place (lvalue) to write to.
@@ -552,7 +554,7 @@ pub enum ExprKind {
     /// by the various assignments.)
     oldmap: Box<[(VarId, VarId)]>,
   },
-  /// A function call (or something that looks like one at parse time).
+  /// A function call.
   Call {
     /// The function to call.
     f: Spanned<AtomId>,
@@ -567,10 +569,7 @@ pub enum ExprKind {
   /// `P1, ..., Pn` and is a hypothesis of type `Q`.
   Entail(LispVal, Box<[Expr]>),
   /// A block scope.
-  Block(Vec<Expr>),
-  /// A label, which looks exactly like a local function but has no independent stack frame.
-  /// They are called like regular functions but can only appear in tail position.
-  Label(VarId, Box<[Label]>),
+  Block(Block),
   /// An if-then-else expression (at either block or statement level). The initial atom names
   /// a hypothesis that the expression is true in one branch and false in the other.
   If {
@@ -635,7 +634,7 @@ impl Remap for ExprKind {
       ExprKind::Sn(e, h) => ExprKind::Sn(e.remap(r), h.remap(r)),
       ExprKind::Index(a, i, h) => ExprKind::Index(a.remap(r), i.remap(r), h.remap(r)),
       ExprKind::Slice(e, h) => ExprKind::Slice(e.remap(r), h.remap(r)),
-      ExprKind::Proj(e, i) => ExprKind::Proj(e.remap(r), *i),
+      ExprKind::Proj(e, i) => ExprKind::Proj(e.remap(r), i.clone()),
       ExprKind::Deref(e) => ExprKind::Deref(e.remap(r)),
       ExprKind::List(e) => ExprKind::List(e.remap(r)),
       ExprKind::Ghost(e) => ExprKind::Ghost(e.remap(r)),
@@ -650,14 +649,12 @@ impl Remap for ExprKind {
       ExprKind::Sizeof(ty) => ExprKind::Sizeof(ty.remap(r)),
       ExprKind::Typeof(e) => ExprKind::Typeof(e.remap(r)),
       ExprKind::Assert(e) => ExprKind::Assert(e.remap(r)),
-      ExprKind::Let {lhs, rhs} => ExprKind::Let { lhs: lhs.remap(r), rhs: rhs.remap(r) },
       ExprKind::Assign {lhs, rhs, oldmap} => ExprKind::Assign {
         lhs: lhs.remap(r), rhs: rhs.remap(r), oldmap: oldmap.clone() },
       ExprKind::Call {f, tys, args, variant} => ExprKind::Call {
         f: f.remap(r), tys: tys.remap(r), args: args.remap(r), variant: variant.remap(r) },
       ExprKind::Entail(p, q) => ExprKind::Entail(p.remap(r), q.remap(r)),
       ExprKind::Block(e) => ExprKind::Block(e.remap(r)),
-      ExprKind::Label(v, e) => ExprKind::Label(*v, e.remap(r)),
       ExprKind::If {hyp, cond, then, els} => ExprKind::If {
         hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
       ExprKind::Match(e, brs) => ExprKind::Match(e.remap(r), brs.remap(r)),
@@ -703,15 +700,10 @@ crate::deep_size_0!(ProcKind);
 pub enum Ret {
   /// This is a regular argument, with the given argument pattern.
   Reg(TuplePattern),
-  /// This is an anonymous `out`: `OutAnon(g, i, v)` means that argument `i`
-  /// was marked as `mut` but there is no corresponding `out`,
-  /// so this binder with name `v` was inserted to capture the outgoing value
-  /// of the variable.
-  OutAnon(bool, u32, VarId),
-  /// This is an `out` argument: `Out(g, i, pat)` means that this argument was marked as
-  /// `out` corresponding to argument `i` in the inputs. `pat` contains the
-  /// provided argument pattern.
-  Out(bool, u32, TuplePattern),
+  /// This is an `out` argument: `Out(g, i, n, v, ty)` means that this argument was marked as
+  /// `out` corresponding to argument `i` in the inputs; `n` or `v` is the name of the binder,
+  /// and `ty` is the type, if provided.
+  Out(bool, u32, AtomId, VarId, Option<Box<Type>>),
 }
 
 bitflags! {
@@ -756,7 +748,7 @@ pub enum ItemKind {
     /// The variant, used for recursive functions.
     variant: Option<Box<Variant>>,
     /// The body of the procedure.
-    body: Vec<Expr>
+    body: Block
   },
   /// A global variable declaration.
   Global {

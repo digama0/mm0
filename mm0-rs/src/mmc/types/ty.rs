@@ -1,9 +1,9 @@
 //! Types used in the rest of the compiler.
 
-use std::{fmt::Display, ops::BitOrAssign};
+use std::{convert::TryInto, fmt::Display, ops::BitOrAssign};
 use num::BigInt;
 use crate::elab::{environment::AtomId, lisp::print::{EnvDisplay, FormatEnv}};
-use super::{Binop, Mm0ExprNode, Size, Unop, VarId, ast::TyVarId};
+use super::{Binop, IntTy, Mm0ExprNode, Size, Unop, VarId, ast::TyVarId};
 
 bitflags! {
   /// A list of flags that are propagated on type/expr construction
@@ -23,6 +23,8 @@ bitflags! {
     const HAS_MVAR =
       Self::HAS_TY_MVAR.bits | Self::HAS_PROP_MVAR.bits |
       Self::HAS_EXPR_MVAR.bits | Self::HAS_LFT_MVAR.bits;
+    /// (For Prop and Ty:) Is this type not (necessarily) a copy type?
+    const IS_NON_COPY   = 1 << 5;
   }
 }
 crate::deep_size_0!(Flags);
@@ -188,7 +190,7 @@ pub type TuplePatternS<'a> = WithMeta<TuplePatternKind<'a>>;
 #[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
 pub enum TuplePatternKind<'a> {
   /// A variable binding.
-  Name(VarId, Ty<'a>),
+  Name(AtomId, VarId, Ty<'a>),
   /// An inline coercion.
   Coercion(TuplePattern<'a>, &'a [Coercion<'a>], Ty<'a>),
   /// A tuple destructuring pattern.
@@ -199,9 +201,32 @@ impl<'a> TuplePatternKind<'a> {
   /// The type of values that will be matched by the pattern.
   #[must_use] pub fn ty(&self) -> Ty<'a> {
     match *self {
-      TuplePatternKind::Name(_, ty) |
+      TuplePatternKind::Name(_, _, ty) |
       TuplePatternKind::Coercion(_, _, ty) |
       TuplePatternKind::Tuple(_, ty) => ty
+    }
+  }
+
+  /// Calls function `f` on all variables in the pattern.
+  pub fn on_vars(&self, f: &mut impl FnMut(AtomId, VarId)) {
+    match *self {
+      TuplePatternKind::Name(n, v, _) => f(n, v),
+      TuplePatternKind::Coercion(pat, _, _) => pat.k.on_vars(f),
+      TuplePatternKind::Tuple(pats, _) => for pat in pats { pat.k.on_vars(f) }
+    }
+  }
+
+  fn find_field(&self, f: AtomId, idxs: &mut Vec<u32>) -> bool {
+    match *self {
+      TuplePatternKind::Name(a, _, _) => a == f,
+      TuplePatternKind::Coercion(pat, _, _) => pat.k.find_field(f, idxs),
+      TuplePatternKind::Tuple(pats, _) =>
+        pats.iter().enumerate().any(|(i, &pat)| {
+          pat.k.find_field(f, idxs) && {
+            idxs.push(i.try_into().expect("overflow"));
+            true
+          }
+        }),
     }
   }
 }
@@ -209,7 +234,7 @@ impl<'a> TuplePatternKind<'a> {
 impl AddFlags for TuplePatternKind<'_> {
   fn add(&self, f: &mut Flags) {
     match *self {
-      TuplePatternKind::Name(_, ty) => *f |= ty,
+      TuplePatternKind::Name(_, _, ty) => *f |= ty,
       TuplePatternKind::Coercion(pat, cs, ty) => *f |= (pat, cs, ty),
       TuplePatternKind::Tuple(pats, ty) => *f |= (pats, ty),
     }
@@ -220,7 +245,7 @@ impl EnvDisplay for TuplePatternKind<'_> {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match *self {
-      TuplePatternKind::Name(v, _) => write!(f, "v{}", v),
+      TuplePatternKind::Name(a, _, _) => a.fmt(fe, f),
       TuplePatternKind::Coercion(pat, _, _) => pat.fmt(fe, f),
       TuplePatternKind::Tuple(pats, _) =>
         write!(f, "({})", pats.iter().map(|&pat| fe.to(pat)).format(" ")),
@@ -241,6 +266,30 @@ pub enum ArgKind<'a> {
   /// A substitution argument of the form `{{x : T} := val}`. (These are not supplied in
   /// invocations, they act as let binders in the remainder of the arguments.)
   Let(TuplePattern<'a>, Expr<'a>),
+}
+
+impl<'a> ArgKind<'a> {
+  /// Get the argument pattern of the argument.
+  #[must_use] pub fn var(&self) -> TuplePattern<'a> {
+    match *self {
+      ArgKind::Lam(pat) |
+      ArgKind::Let(pat, _) => pat,
+    }
+  }
+
+  /// Try to find a field specified by name in the list of arguments.
+  /// On success, returns a pair `(n, path)` where `n` is the first argument
+  /// with a matching field name and `path` is the sub-indexing path required
+  /// to get to the field (since the name could be in a tuple pattern).
+  #[must_use] pub fn find_field(args: &'a [Arg<'a>], f: AtomId) -> Option<(u32, Vec<u32>)> {
+    let mut path = vec![];
+    for (i, &arg) in args.iter().enumerate() {
+      if arg.k.var().k.find_field(f, &mut path) {
+        return Some((i.try_into().expect("overflow"), path))
+      }
+    }
+    None
+  }
 }
 
 impl AddFlags for ArgKind<'_> {
@@ -359,10 +408,14 @@ pub type Ty<'a> = &'a TyS<'a>;
 pub type TyS<'a> = WithMeta<TyKind<'a>>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
 pub enum TyKind<'a> {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
+  /// A true proposition.
+  True,
+  /// A false proposition.
+  False,
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
   /// A type variable.
@@ -402,6 +455,14 @@ pub enum TyKind<'a> {
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
   Struct(&'a [Arg<'a>]),
+  /// A universally quantified proposition.
+  All(TuplePattern<'a>, Ty<'a>),
+  /// Implication (plain, non-separating).
+  Imp(Ty<'a>, Ty<'a>),
+  /// Separating implication.
+  Wand(Ty<'a>, Ty<'a>),
+  /// Negation.
+  Not(Ty<'a>),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -428,10 +489,14 @@ pub enum TyKind<'a> {
   /// for this type is vacuous, but it has the same size as `T`, so overwriting with
   /// a `T` is possible.
   Uninit(Ty<'a>),
-  /// A propositional type, used for hypotheses.
-  Prop(Prop<'a>),
+  /// A boolean expression, interpreted as a pure proposition
+  Pure(Expr<'a>),
   /// A user-defined type-former.
   User(AtomId, &'a [Ty<'a>], &'a [Expr<'a>]),
+  /// A heap assertion `l |-> (v: |T|)`.
+  Heap(Expr<'a>, Expr<'a>, Ty<'a>),
+  /// An explicit typing assertion `[v : T]`.
+  HasTy(Expr<'a>, Ty<'a>),
   /// The input token.
   Input,
   /// The output token.
@@ -444,34 +509,139 @@ pub enum TyKind<'a> {
   Error,
 }
 
-impl AddFlags for TyKind<'_> {
-  fn add(&self, f: &mut Flags) {
-    match *self {
+/// A visitor trait for the `Ty` type.
+/// This is used as the callback type of [`TyS::visit`].
+pub trait TyVisit<'a> {
+  /// Called on `Expr` subexpressions.
+  fn visit_expr(&mut self, _: Expr<'a>) {}
+  /// Called on `Pattern` subexpressions.
+  fn visit_pat(&mut self, _: Pattern<'a>) {}
+  /// Called on type `MVar` subexpressions.
+  fn visit_mvar(&mut self, _: TyMVarId) {}
+}
+impl<'a> TyS<'a> {
+  /// Calls `f` on all leaf subterms of interest, using methods in the [`TyVisit`] trait.
+  pub fn visit(&self, f: &mut impl TyVisit<'a>) {
+    match self.k {
       TyKind::Unit |
+      TyKind::True |
+      TyKind::False |
       TyKind::Bool |
       TyKind::Var(_) |
       TyKind::Int(_) |
       TyKind::UInt(_) |
       TyKind::Input |
-      TyKind::Output => {}
-      TyKind::Array(ty, e) => *f |= (ty, e),
+      TyKind::Output |
+      TyKind::Error => {}
+      TyKind::Array(ty, e) |
+      TyKind::Sn(e, ty) => {ty.visit(f); f.visit_expr(e)}
+      TyKind::All(pat, p) => {pat.k.ty().visit(f); p.visit(f)}
+      TyKind::Imp(p, q) |
+      TyKind::Wand(p, q) => {p.visit(f); q.visit(f)}
       TyKind::Own(ty) |
+      TyKind::Ref(_, ty) |
+      TyKind::Shr(_, ty) |
       TyKind::Ghost(ty) |
       TyKind::Uninit(ty) |
-      TyKind::Moved(ty) => *f |= ty,
+      TyKind::Not(ty) |
+      TyKind::Moved(ty) => ty.visit(f),
+      TyKind::RefSn(e) |
+      TyKind::Pure(e) => f.visit_expr(e),
+      TyKind::List(tys) |
+      TyKind::And(tys) |
+      TyKind::Or(tys) => for &ty in tys { ty.visit(f) },
+      TyKind::Struct(args) => for &arg in args {
+        match arg.k {
+          ArgKind::Lam(pat) => pat.k.ty().visit(f),
+          ArgKind::Let(pat, e) => {pat.k.ty().visit(f); f.visit_expr(e)}
+        }
+      },
+      TyKind::If(e, ty1, ty2) => {f.visit_expr(e); ty1.visit(f); ty2.visit(f)}
+      TyKind::Match(e, ty, brs) => {
+        f.visit_expr(e); ty.visit(f);
+        for &(pat, ty) in brs {
+          f.visit_pat(pat);
+          ty.visit(f);
+        }
+      }
+      TyKind::User(_, tys, es) => {
+        for &ty in tys { ty.visit(f) }
+        for &e in es { f.visit_expr(e) }
+      }
+      TyKind::Heap(e1, e2, ty) => {f.visit_expr(e1); f.visit_expr(e2); ty.visit(f)}
+      TyKind::HasTy(x, ty) => {f.visit_expr(x); ty.visit(f)}
+      TyKind::Infer(e) => f.visit_mvar(e),
+    }
+  }
+
+  /// Calls function `f` on all type metavariables.
+  pub fn on_mvars(&self, f: impl FnMut(TyMVarId)) {
+    struct Visitor<F>(F);
+    impl<'a, F: FnMut(TyMVarId)> TyVisit<'a> for Visitor<F> {
+      fn visit_mvar(&mut self, v: TyMVarId) { self.0(v) }
+    }
+    impl<'a, F: FnMut(TyMVarId)> ExprVisit<'a> for Visitor<F> {
+      fn visit_ty(&mut self, ty: Ty<'a>) { ty.visit(self) }
+    }
+    self.visit(&mut Visitor(f));
+  }
+
+  /// Calls function `f` on all expression variables (not type variables).
+  pub fn on_vars(&self, f: impl FnMut(VarId)) { self.visit(&mut OnVars(f)) }
+}
+
+impl AddFlags for TyKind<'_> {
+  fn add(&self, f: &mut Flags) {
+    match *self {
+      TyKind::Unit |
+      TyKind::True |
+      TyKind::False |
+      TyKind::Bool |
+      TyKind::Var(_) |
+      TyKind::Int(_) |
+      TyKind::UInt(_) => {}
+      TyKind::Input |
+      TyKind::Output => *f |= Flags::IS_NON_COPY,
+      TyKind::Array(ty, e) |
+      TyKind::Sn(e, ty) => {
+        *f |= e;
+        f.remove(Flags::IS_NON_COPY);
+        *f |= ty;
+      }
+      TyKind::Own(ty) => *f |= (Flags::IS_NON_COPY, ty),
+      TyKind::Not(ty) |
+      TyKind::Ghost(ty) => *f |= ty,
+      TyKind::Uninit(ty) |
+      TyKind::Moved(ty) => {*f |= ty; f.remove(Flags::IS_NON_COPY)}
       TyKind::Ref(lft, ty) |
-      TyKind::Shr(lft, ty) => *f |= (lft, ty),
-      TyKind::RefSn(e) => *f |= e,
-      TyKind::Sn(e, ty) => *f |= (e, ty),
+      TyKind::Shr(lft, ty) => {*f |= (lft, ty); f.remove(Flags::IS_NON_COPY)}
+      TyKind::RefSn(e) |
+      TyKind::Pure(e) => {*f |= e; f.remove(Flags::IS_NON_COPY)}
       TyKind::Struct(args) => *f |= args,
+      TyKind::All(pat, p) => *f |= (pat, p),
+      TyKind::Imp(p, q) |
+      TyKind::Wand(p, q) => *f |= (p, q),
       TyKind::List(tys) |
       TyKind::And(tys) |
       TyKind::Or(tys) => *f |= tys,
-      TyKind::If(e, tru, fal) => *f |= (e, tru, fal),
-      TyKind::Match(e, ty, brs) => *f |= (e, ty, brs),
-      TyKind::Prop(p) => *f |= p,
-      TyKind::User(_, tys, es) => *f |= (tys, es),
-      TyKind::Infer(_) => *f |= Flags::HAS_TY_MVAR,
+      TyKind::If(e, tru, fal) => {
+        *f |= e;
+        f.remove(Flags::IS_NON_COPY);
+        *f |= (tru, fal);
+      }
+      TyKind::Match(e, ty, brs) => {
+        *f |= (e, ty);
+        f.remove(Flags::IS_NON_COPY);
+        *f |= brs;
+      }
+      TyKind::User(_, tys, es) => *f |= (Flags::IS_NON_COPY, tys, es),
+      TyKind::Heap(e, v, ty) => {*f |= Flags::IS_NON_COPY; *f |= (e, v, ty)}
+      TyKind::HasTy(v, ty) => {
+        *f |= v;
+        f.remove(Flags::IS_NON_COPY);
+        *f |= ty;
+      }
+      TyKind::Infer(_) => *f |= Flags::IS_NON_COPY | Flags::HAS_TY_MVAR,
       TyKind::Error => *f |= Flags::HAS_ERROR,
     }
   }
@@ -483,6 +653,8 @@ impl EnvDisplay for TyKind<'_> {
     match *self {
       TyKind::Var(v) => v.fmt(f),
       TyKind::Unit => "()".fmt(f),
+      TyKind::True => "true".fmt(f),
+      TyKind::False => "false".fmt(f),
       TyKind::Bool => "bool".fmt(f),
       TyKind::Int(Size::S8) => "i8".fmt(f),
       TyKind::Int(Size::S16) => "i16".fmt(f),
@@ -506,8 +678,12 @@ impl EnvDisplay for TyKind<'_> {
         for &arg in args { write!(f, " {{{}}}", fe.to(arg))? }
         ")".fmt(f)
       }
-      TyKind::And(tys) => write!(f, "(and {})", tys.iter().map(|&ty| fe.to(ty)).format(" ")),
-      TyKind::Or(tys) => write!(f, "(or {})", tys.iter().map(|&ty| fe.to(ty)).format(" ")),
+      TyKind::All(a, pr) => write!(f, "A. {} {}", fe.to(a), fe.to(pr)),
+      TyKind::Imp(p, q) => write!(f, "({} -> {})", fe.to(p), fe.to(q)),
+      TyKind::Wand(p, q) => write!(f, "({} -* {})", fe.to(p), fe.to(q)),
+      TyKind::Not(pr) => write!(f, "~{}", fe.to(pr)),
+      TyKind::And(tys) => write!(f, "({})", tys.iter().map(|&p| fe.to(p)).format(" /\\ ")),
+      TyKind::Or(tys) => write!(f, "({})", tys.iter().map(|&p| fe.to(p)).format(" \\/ ")),
       TyKind::If(cond, then, els) => write!(f, "(if {} {} {})", fe.to(cond), fe.to(then), fe.to(els)),
       TyKind::Match(c, ty, brs) => {
         write!(f, "(match {{{}: {}}}", fe.to(c), fe.to(ty))?;
@@ -516,13 +692,15 @@ impl EnvDisplay for TyKind<'_> {
       }
       TyKind::Ghost(ty) => write!(f, "(ghost {})", fe.to(ty)),
       TyKind::Uninit(ty) => write!(f, "(? {})", fe.to(ty)),
-      TyKind::Prop(p) => write!(f, "$ {} $", fe.to(p)),
+      TyKind::Pure(e) => e.fmt(fe, f),
       TyKind::User(name, tys, es) => {
         write!(f, "({}", fe.to(&name))?;
         for &ty in tys { " ".fmt(f)?; ty.fmt(fe, f)? }
         for &e in es { " ".fmt(f)?; e.fmt(fe, f)? }
         ")".fmt(f)
       }
+      TyKind::Heap(x, v, t) => write!(f, "{} => {}: {}", fe.to(x), fe.to(v), fe.to(t)),
+      TyKind::HasTy(v, t) => write!(f, "[{}: {}]", fe.to(v), fe.to(t)),
       TyKind::Input => "Input".fmt(f),
       TyKind::Output => "Output".fmt(f),
       TyKind::Moved(ty) => write!(f, "|{}|", fe.to(ty)),
@@ -532,108 +710,21 @@ impl EnvDisplay for TyKind<'_> {
   }
 }
 
-/// A separating proposition, which classifies hypotheses / proof terms.
-pub type Prop<'a> = &'a PropS<'a>;
-/// A separating proposition, which classifies hypotheses / proof terms.
-pub type PropS<'a> = WithMeta<PropKind<'a>>;
-
-/// A separating proposition, which classifies hypotheses / proof terms.
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
-pub enum PropKind<'a> {
-  /// A true proposition.
-  True,
-  /// A false proposition.
-  False,
-  /// A universally quantified proposition.
-  All(TuplePattern<'a>, Prop<'a>),
-  /// An existentially quantified proposition.
-  Ex(TuplePattern<'a>, Prop<'a>),
-  /// Implication (plain, non-separating).
-  Imp(Prop<'a>, Prop<'a>),
-  /// Negation.
-  Not(Prop<'a>),
-  /// Conjunction (non-separating).
-  And(&'a [Prop<'a>]),
-  /// Disjunction.
-  Or(&'a [Prop<'a>]),
-  /// The empty heap.
-  Emp,
-  /// Separating conjunction.
-  Sep(&'a [Prop<'a>]),
-  /// Separating implication.
-  Wand(Prop<'a>, Prop<'a>),
-  /// An (executable) boolean expression, interpreted as a pure proposition
-  Pure(Expr<'a>),
-  /// Equality (possibly non-decidable).
-  Eq(Expr<'a>, Expr<'a>),
-  /// A heap assertion `l |-> (v: T)`.
-  Heap(Expr<'a>, Expr<'a>, Ty<'a>),
-  /// An explicit typing assertion `[v : T]`.
-  HasTy(Expr<'a>, Ty<'a>),
-  /// The move operator `|T|` on types.
-  Moved(Prop<'a>),
-  /// An embedded MM0 proposition of sort `wff`.
-  Mm0(Mm0Expr<'a>),
-  /// An inference variable.
-  Infer(PropMVarId),
-  /// A type error that has been reported.
-  Error,
-}
-
-impl AddFlags for PropKind<'_> {
-  fn add(&self, f: &mut Flags) {
-    match *self {
-      PropKind::True |
-      PropKind::False |
-      PropKind::Emp => {}
-      PropKind::All(pat, p) |
-      PropKind::Ex(pat, p) => *f |= (pat, p),
-      PropKind::Imp(p, q) |
-      PropKind::Wand(p, q) => *f |= (p, q),
-      PropKind::Not(p) |
-      PropKind::Moved(p) => *f |= p,
-      PropKind::And(ps) |
-      PropKind::Or(ps) |
-      PropKind::Sep(ps) => *f |= ps,
-      PropKind::Pure(e) => *f |= e,
-      PropKind::Eq(e1, e2) => *f |= (e1, e2),
-      PropKind::Heap(e, v, ty) => *f |= (e, v, ty),
-      PropKind::HasTy(v, ty) => *f |= (v, ty),
-      PropKind::Mm0(ref e) => *f |= e.subst,
-      PropKind::Infer(_) => *f |= Flags::HAS_PROP_MVAR,
-      PropKind::Error => *f |= Flags::HAS_ERROR,
-    }
+impl<'a> TyS<'a> {
+  /// Returns true if this is a copy type (i.e. `|T| = T`).
+  #[inline] #[must_use] pub fn is_copy(&self) -> bool {
+    !self.flags.contains(Flags::IS_NON_COPY)
   }
 }
 
-impl EnvDisplay for PropKind<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    use itertools::Itertools;
-    match *self {
-      PropKind::True => "true".fmt(f),
-      PropKind::False => "false".fmt(f),
-      PropKind::All(a, pr) => write!(f, "A. {} {}", fe.to(a), fe.to(pr)),
-      PropKind::Ex(a, pr) => write!(f, "E. {} {}", fe.to(a), fe.to(pr)),
-      PropKind::Imp(p, q) => write!(f, "({} -> {})", fe.to(p), fe.to(q)),
-      PropKind::Not(pr) => write!(f, "~{}", fe.to(pr)),
-      PropKind::And(pr) if pr.is_empty() => "true".fmt(f),
-      PropKind::And(pr) => write!(f, "({})", pr.iter().map(|&p| fe.to(p)).format(" /\\ ")),
-      PropKind::Or(pr) if pr.is_empty() => "false".fmt(f),
-      PropKind::Or(pr) => write!(f, "({})", pr.iter().map(|&p| fe.to(p)).format(" \\/ ")),
-      PropKind::Emp => "emp".fmt(f),
-      PropKind::Sep(pr) if pr.is_empty() => "emp".fmt(f),
-      PropKind::Sep(pr) => write!(f, "({})", pr.iter().map(|&p| fe.to(p)).format(" * ")),
-      PropKind::Wand(p, q) => write!(f, "({} -* {})", fe.to(p), fe.to(q)),
-      PropKind::Pure(e) => e.fmt(fe, f),
-      PropKind::Eq(e1, e2) => write!(f, "{} = {}", fe.to(e1), fe.to(e2)),
-      PropKind::Heap(x, v, t) => write!(f, "{} => {}: {}", fe.to(x), fe.to(v), fe.to(t)),
-      PropKind::HasTy(v, t) => write!(f, "[{}: {}]", fe.to(v), fe.to(t)),
-      PropKind::Moved(p) => write!(f, "|{}|", fe.to(p)),
-      PropKind::Mm0(e) => e.fmt(fe, f),
-      PropKind::Infer(v) => write!(f, "?P{}", v.0),
-      PropKind::Error => "??".fmt(f),
-    }
-  }
+struct OnVars<F>(F);
+
+impl<'a, F: FnMut(VarId)> TyVisit<'a> for OnVars<F> {
+  fn visit_expr(&mut self, e: Expr<'a>) { e.visit(self) }
+}
+impl<'a, F: FnMut(VarId)> ExprVisit<'a> for OnVars<F> {
+  fn visit_ty(&mut self, ty: Ty<'a>) { ty.visit(self) }
+  fn visit_var(&mut self, v: VarId) { self.0(v) }
 }
 
 /// A pure expression. (Regular expressions are not manipulated like types,
@@ -642,8 +733,12 @@ pub type Expr<'a> = &'a ExprS<'a>;
 /// A pure expression.
 pub type ExprS<'a> = WithMeta<ExprKind<'a>>;
 
+/// A pair of an optional pure expression and a type, used to classify the result
+/// of expressions that may or may not be pure.
+pub type ExprTy<'a> = (Option<Expr<'a>>, Ty<'a>);
+
 /// A pure expression.
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
 pub enum ExprKind<'a> {
   /// A `()` literal.
   Unit,
@@ -651,8 +746,6 @@ pub enum ExprKind<'a> {
   Var(VarId),
   /// A user constant.
   Const(AtomId),
-  /// A global variable.
-  Global(AtomId),
   /// A number literal.
   Bool(bool),
   /// A number literal.
@@ -661,16 +754,28 @@ pub enum ExprKind<'a> {
   Unop(Unop, Expr<'a>),
   /// A binary operation.
   Binop(Binop, Expr<'a>, Expr<'a>),
-  /// An index operation `(index a i): T` where `a: (array T n)`
+  /// An index operation `a[i]: T` where `a: (array T n)`
   /// and `i: nat`.
   Index(Expr<'a>, Expr<'a>),
-  /// If `x: (array T n)`, then `(slice x a b): (array T b)`.
+  /// If `x: (array T n)`, then `x[a..a+b]: (array T b)`.
   Slice(Expr<'a>, Expr<'a>, Expr<'a>),
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(Expr<'a>, u32),
-  /// `(list e1 ... en)` returns a tuple of the arguments.
+  /// `(update-index a i e)` is the result of `a` after `a[i] = e`.
+  UpdateIndex(Expr<'a>, Expr<'a>, Expr<'a>),
+  /// `(update-slice x a b e)` is the result of assigning `x[a..a+b] = e`.
+  UpdateSlice(Expr<'a>, Expr<'a>, Expr<'a>, Expr<'a>),
+  /// `(update-proj x i)` is the result of assigning `x.i = e`.
+  UpdateProj(Expr<'a>, u32, Expr<'a>),
+  /// `(e1, ..., en)` returns a tuple of the arguments.
   List(&'a [Expr<'a>]),
+  /// `[e1, ..., en]`, an array literal.
+  Array(&'a [Expr<'a>]),
+  /// `{e as ty}`, an as-conversion.
+  As(Expr<'a>, AsKind),
+  /// Return the size of a type.
+  Sizeof(Ty<'a>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<'a>),
@@ -701,21 +806,92 @@ pub enum ExprKind<'a> {
   Error,
 }
 
+/// A visitor trait for the `Expr` type.
+/// This is used as the callback type of [`ExprS::visit`].
+pub trait ExprVisit<'a> {
+  /// Called on `Ty` subexpressions.
+  fn visit_ty(&mut self, _: Ty<'a>) {}
+  /// Called on `Pattern` subexpressions.
+  fn visit_pat(&mut self, _: Pattern<'a>) {}
+  /// Called on variable subexpressions.
+  fn visit_var(&mut self, _: VarId) {}
+  /// Called on expression `MVar` subexpressions.
+  fn visit_mvar(&mut self, _: ExprMVarId) {}
+}
+
+impl<'a> ExprS<'a> {
+  /// Calls `f` on all leaf subterms of interest, using methods in the [`ExprVisit`] trait.
+  pub fn visit(&self, f: &mut impl ExprVisit<'a>) {
+    match self.k {
+      ExprKind::Unit |
+      ExprKind::Const(_) |
+      ExprKind::Bool(_) |
+      ExprKind::Int(_) |
+      ExprKind::Error => {}
+      ExprKind::Var(v) => f.visit_var(v),
+      ExprKind::Unop(_, e) |
+      ExprKind::Proj(e, _) |
+      ExprKind::As(e, _) => e.visit(f),
+      ExprKind::Binop(_, e1, e2) => {e1.visit(f); e2.visit(f)}
+      ExprKind::Index(a, i) => {a.visit(f); i.visit(f)}
+      ExprKind::Slice(a, i, n) => {a.visit(f); i.visit(f); n.visit(f)}
+      ExprKind::UpdateIndex(a, i, val) => {a.visit(f); i.visit(f); val.visit(f)}
+      ExprKind::UpdateSlice(a, i, n, val) => {a.visit(f); i.visit(f); n.visit(f); val.visit(f)}
+      ExprKind::UpdateProj(a, _, val) => {a.visit(f); val.visit(f)}
+      ExprKind::Sizeof(e) => f.visit_ty(e),
+      ExprKind::List(es) |
+      ExprKind::Array(es) => for e in es {e.visit(f)},
+      ExprKind::Mm0(ref e) => for e in e.subst {e.visit(f)},
+      ExprKind::Call {tys, args, ..} => {
+        for &ty in tys { f.visit_ty(ty) }
+        for &arg in args { arg.visit(f) }
+      }
+      ExprKind::If {cond, then, els} => {cond.visit(f); then.visit(f); els.visit(f)}
+      ExprKind::Match(e, brs) => {
+        e.visit(f);
+        for &(pat, br) in brs {
+          f.visit_pat(pat);
+          br.visit(f);
+        }
+      }
+      ExprKind::Infer(v) => f.visit_mvar(v),
+    }
+  }
+
+  /// Calls function `f` on all expression metavariables.
+  pub fn on_mvars(&self, f: impl FnMut(ExprMVarId)) {
+    struct Visitor<F>(F);
+    impl<'a, F: FnMut(ExprMVarId)> ExprVisit<'a> for Visitor<F> {
+      fn visit_mvar(&mut self, e: ExprMVarId) { self.0(e) }
+    }
+    self.visit(&mut Visitor(f));
+  }
+
+  /// Calls function `f` on all expression variables (not type variables).
+  pub fn on_vars(&self, f: impl FnMut(VarId)) { self.visit(&mut OnVars(f)) }
+}
+
 impl AddFlags for ExprKind<'_> {
   fn add(&self, f: &mut Flags) {
     match *self {
       ExprKind::Unit |
       ExprKind::Var(_) |
       ExprKind::Const(_) |
-      ExprKind::Global(_) |
+      // ExprKind::Global(_) |
       ExprKind::Bool(_) |
-      ExprKind::Int(_) => {}
+      ExprKind::Int(_) |
+      ExprKind::Sizeof(_) => {}
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) => *f |= e,
+      ExprKind::Proj(e, _) |
+      ExprKind::As(e, _) => *f |= e,
       ExprKind::Binop(_, e1, e2) => *f |= (e1, e2),
       ExprKind::Index(a, i) => *f |= (a, i),
       ExprKind::Slice(a, i, n) => *f |= (a, i, n),
-      ExprKind::List(es) => *f |= es,
+      ExprKind::UpdateIndex(a, i, val) => *f |= (a, i, val),
+      ExprKind::UpdateSlice(a, i, n, val) => *f |= ((a, i, n), val),
+      ExprKind::UpdateProj(a, _, val) => *f |= (a, val),
+      ExprKind::List(es) |
+      ExprKind::Array(es) => *f |= es,
       ExprKind::Mm0(ref e) => *f |= e.subst,
       ExprKind::Call {tys, args, ..} => *f |= (tys, args),
       ExprKind::If {cond, then, els} => *f |= (cond, then, els),
@@ -733,15 +909,24 @@ impl EnvDisplay for ExprKind<'_> {
       ExprKind::Unit => "()".fmt(f),
       ExprKind::Var(v) => v.fmt(f),
       ExprKind::Const(c) => c.fmt(fe, f),
-      ExprKind::Global(v) => v.fmt(fe, f),
+      // ExprKind::Global(v) => v.fmt(fe, f),
       ExprKind::Bool(b) => b.fmt(f),
       ExprKind::Int(n) => n.fmt(f),
       ExprKind::Unop(op, e) => write!(f, "({} {})", op, fe.to(e)),
       ExprKind::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", fe.to(e1), op, fe.to(e2)),
-      ExprKind::List(es) => write!(f, "(list {})", es.iter().map(|&e| fe.to(e)).format(" ")),
+      ExprKind::List(es) |
+      ExprKind::Array(es) => write!(f, "(list {})", es.iter().map(|&e| fe.to(e)).format(" ")),
       ExprKind::Index(a, i) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
       ExprKind::Slice(a, i, n) => write!(f, "(slice {} {} {})", fe.to(a), fe.to(i), fe.to(n)),
       ExprKind::Proj(a, i) => write!(f, "({} . {})", fe.to(a), i),
+      ExprKind::UpdateIndex(a, i, val) => write!(f,
+        "(update-index {} {} {})", fe.to(a), fe.to(i), fe.to(val)),
+      ExprKind::UpdateSlice(a, i, l, val) => write!(f,
+        "(update-slice {} {} {} {})", fe.to(a), fe.to(i), fe.to(l), fe.to(val)),
+      ExprKind::UpdateProj(a, n, val) => write!(f,
+        "(update-proj {} {} {})", fe.to(a), n, fe.to(val)),
+      ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", fe.to(ty)),
+      ExprKind::As(e, ak) => write!(f, "{{{} as {}}}", fe.to(e), ak),
       ExprKind::Mm0(ref e) => e.fmt(fe, f),
       ExprKind::Call {f: x, tys, args} => {
         write!(f, "({}", fe.to(&x))?;
@@ -757,6 +942,46 @@ impl EnvDisplay for ExprKind<'_> {
       }
       ExprKind::Infer(v) => write!(f, "?v{}", v.0),
       ExprKind::Error => "??".fmt(f),
+    }
+  }
+}
+
+impl<'a> From<IntTy> for TyKind<'a> {
+  fn from(ty: IntTy) -> Self {
+    match ty {
+      IntTy::Int(sz) => TyKind::Int(sz),
+      IntTy::UInt(sz) => TyKind::UInt(sz),
+    }
+  }
+}
+
+impl<'a> std::convert::TryFrom<Ty<'a>> for IntTy {
+  type Error = ();
+  fn try_from(ty: Ty<'a>) -> Result<IntTy, ()> {
+    match ty.k {
+      TyKind::Int(sz) => Ok(IntTy::Int(sz)),
+      TyKind::UInt(sz) => Ok(IntTy::UInt(sz)),
+      _ => Err(())
+    }
+  }
+}
+
+/// The kinds of non-identity transformations supported by the `as` function.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum AsKind {
+  /// Bit truncation / wrapping conversion to a (finite) integral type.
+  /// This is the `a % 2^N` function for `uN`, and
+  /// `(a + 2^(N-1)) % 2^N - 2^(N-1)` for `iN`, where `a` is any integer.
+  /// (The infinite integral types are not allowed here; `{n as int}` is
+  /// actually a cast, and `{n as nat}` is explicitly disallowed.)
+  Mod(IntTy),
+}
+crate::deep_size_0!(AsKind);
+
+impl std::fmt::Display for AsKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      AsKind::Mod(ity) => ity.fmt(f),
     }
   }
 }

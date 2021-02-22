@@ -8,7 +8,7 @@ use crate::elab::{Result, ElabError,
   lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
   local_context::try_get_span};
 use super::types::{FieldName, Keyword, Mm0Expr, Mm0ExprNode, Size, Spanned, entity::{ProcTc, Intrinsic}};
-use super::types::entity::{Entity, Prim, PrimType, PrimProp, PrimOp, TypeTy};
+use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 
 #[derive(Debug, DeepSizeOf)]
@@ -68,12 +68,13 @@ pub struct Parser<'a> {
   Some((as_keyword(kw, &u.next()?)?, u))
 }
 
-fn try_get_fspan(fsp: &FileSpan, e: &LispVal) -> FileSpan {
+/// Gets the span from a lisp expression, with the given fallback.
+#[must_use] pub fn try_get_fspan(fsp: &FileSpan, e: &LispVal) -> FileSpan {
   FileSpan { file: fsp.file.clone(), span: try_get_span(fsp, e) }
 }
 
 /// Uses the span of the [`LispVal`] to construct a [`Spanned`]`<T>`.
-pub fn spanned<T>(fsp: &FileSpan, e: &LispVal, k: T) -> Spanned<T> {
+#[must_use] pub fn spanned<T>(fsp: &FileSpan, e: &LispVal, k: T) -> Spanned<T> {
   Spanned {span: try_get_fspan(fsp, e), k}
 }
 
@@ -229,18 +230,19 @@ impl<'a> Parser<'a> {
   /// Parse an MMC expression (shallowly), returning a [`parser::Expr`](Expr)
   /// containing [`LispVal`]s for subexpressions.
   pub fn parse_expr(&self, base: &FileSpan, e: LispVal) -> Result<Expr> {
-    Ok(Spanned {span: try_get_fspan(base, &e), k: match &*e.unwrapped_arc() {
+    let span = try_get_fspan(base, &e);
+    let k = match &*e.unwrapped_arc() {
       &LispKind::Atom(AtomId::UNDER) => ExprKind::Hole,
       &LispKind::Atom(a) => ExprKind::Var(a),
       &LispKind::Bool(b) => ExprKind::Bool(b),
       LispKind::Number(n) => ExprKind::Int(n.clone()),
       LispKind::DottedList(es, r) if !r.is_list() && es.len() == 1 => if let Some(a) = r.as_atom() {
-        ExprKind::Proj(es[0].clone(), FieldName::Named(a))
+        ExprKind::Proj(es[0].clone(), spanned(&span, r, FieldName::Named(a)))
       } else {
         match r.as_int(|n| n.try_into()) {
-          Some(Ok(i)) => ExprKind::Proj(es[0].clone(), FieldName::Number(i)),
-          Some(Err(_)) => return Err(ElabError::new_e(try_get_span(base, &e), "field access: index out of range")),
-          None => return Err(ElabError::new_e(try_get_span(base, &e), "field access syntax error")),
+          Some(Ok(i)) => ExprKind::Proj(es[0].clone(), spanned(&span, r, FieldName::Number(i))),
+          Some(Err(_)) => return Err(ElabError::new_e(&span, "field access: index out of range")),
+          None => return Err(ElabError::new_e(&span, "field access syntax error")),
         }
       },
       LispKind::List(_) | LispKind::DottedList(_, _) => match self.head_keyword(&e) {
@@ -248,7 +250,7 @@ impl<'a> Parser<'a> {
         Some((Keyword::ArrowL, _)) => self.parse_decl_asgn(base, &e)?,
         Some((Keyword::With, mut u)) => {
           let mut ret = self.parse_decl_asgn(base, &u.next().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "'with' syntax error"))?)?;
+            ElabError::new_e(&span, "'with' syntax error"))?)?;
           let with = match &mut ret {
             ExprKind::Let {with, ..} | ExprKind::Assign {with, ..} => with,
             _ => unreachable!()
@@ -257,7 +259,7 @@ impl<'a> Parser<'a> {
             if !self.parse_rename(base, &e, with)? {
               for e in Uncons::New(e) {
                 if !self.parse_rename(base, &e, with)? {
-                  return Err(ElabError::new_e(try_get_span(base, &e),
+                  return Err(ElabError::new_e(&span,
                     "with: expected {old -> old'} or {new' <- new}"))
                 }
               }
@@ -266,17 +268,17 @@ impl<'a> Parser<'a> {
           ret
         }
         Some((Keyword::If, mut u)) => {
-          let err = || ElabError::new_e(try_get_span(base, &e), "if: syntax error");
+          let err = || ElabError::new_e(&span, "if: syntax error");
           let mut branches = vec![];
           let mut push = |(cond, tru)| {
             let (hyp, cond) = match self.head_keyword(&cond) {
               Some((Keyword::Colon, mut u)) =>
                 if let (Some(h), Some(cond), true) = (u.next(), u.next(), u.is_empty()) {
                   let h = h.as_atom().ok_or_else(||
-                    ElabError::new_e(try_get_span(base, &h), "expecting hypothesis name"))?;
+                    ElabError::new_e(try_get_span(&span, &h), "expecting hypothesis name"))?;
                   (if h == AtomId::UNDER {None} else {Some(h)}, cond)
                 } else {
-                  return Err(ElabError::new_e(try_get_span(base, &cond), "':' syntax error"))
+                  return Err(ElabError::new_e(try_get_span(&span, &cond), "':' syntax error"))
                 },
               _ => (None, cond),
             };
@@ -299,25 +301,25 @@ impl<'a> Parser<'a> {
           ExprKind::If {branches, els}
         }
         Some((Keyword::Match, u)) => {
-          let (c, branches) = self.parse_match(&try_get_fspan(base, &e), u)?;
+          let (c, branches) = self.parse_match(&span, u)?;
           ExprKind::Match(c, branches)
         }
         Some((Keyword::While, mut u)) => {
           let c = u.next().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "while: syntax error"))?;
+            ElabError::new_e(&span, "while: syntax error"))?;
           let (hyp, cond) = if let Some((Keyword::Colon, mut u)) = self.head_keyword(&c) {
-            let h = u.next().and_then(|e| Some(spanned(base, &e, e.as_atom()?)));
+            let h = u.next().and_then(|e| Some(spanned(&span, &e, e.as_atom()?)));
             if let (Some(h), Some(c), true) = (h, u.next(), u.is_empty()) {
               (Some(h), c)
             } else {
-              return Err(ElabError::new_e(try_get_span(base, &e), "while: bad pattern"))
+              return Err(ElabError::new_e(&span, "while: bad pattern"))
             }
           } else {(None, c)};
           let mut var = None;
           while let Some(e) = u.head() {
-            if let Some(v) = self.parse_variant(base, &e) {
+            if let Some(v) = self.parse_variant(&span, &e) {
               if mem::replace(&mut var, Some(v)).is_some() {
-                return Err(ElabError::new_e(try_get_span(base, &e), "while: two variants"))
+                return Err(ElabError::new_e(&span, "while: two variants"))
               }
             } else {break}
             u.next();
@@ -328,7 +330,7 @@ impl<'a> Parser<'a> {
         Some((Keyword::Entail, u)) => {
           let mut args = u.collect::<Vec<_>>();
           let last = args.pop().ok_or_else(||
-            ElabError::new_e(try_get_span(base, &e), "entail: expected proof"))?;
+            ElabError::new_e(&span, "entail: expected proof"))?;
           ExprKind::Entail(last, args)
         }
         _ => {
@@ -337,21 +339,21 @@ impl<'a> Parser<'a> {
             None => ExprKind::Unit,
             Some(e) => if let Some((Keyword::Begin, mut u1)) = self.head_keyword(&e) {
               let name = u1.next().and_then(|e| e.as_atom()).ok_or_else(||
-                ElabError::new_e(try_get_span(base, &e), "label: expected label name"))?;
+                ElabError::new_e(&span, "label: expected label name"))?;
               let mut args = vec![];
               let mut variant = None;
               for e in u1 {
-                if let Some(v) = self.parse_variant(base, &e) {
+                if let Some(v) = self.parse_variant(&span, &e) {
                   if mem::replace(&mut variant, Some(v)).is_some() {
-                    return Err(ElabError::new_e(try_get_span(base, &e), "label: two variants"))
+                    return Err(ElabError::new_e(&span, "label: two variants"))
                   }
                 } else {
-                  self.parse_arg(base, Default::default(), e, &mut args)?
+                  self.parse_arg(&span, Default::default(), e, &mut args)?
                 }
               }
               ExprKind::Label(Label { name, args, variant, body: u })
             } else {
-              let fsp = try_get_fspan(base, &e);
+              let fsp = try_get_fspan(&span, &e);
               let f = e.as_atom().ok_or_else(|| ElabError::new_e(fsp.span,
                 "only variables can be called like functions"))?;
               let mut args = vec![];
@@ -360,10 +362,10 @@ impl<'a> Parser<'a> {
                 if let Some((Keyword::Variant, mut u)) = self.head_keyword(&e) {
                   if let (Some(v), true) = (u.next(), u.is_empty()) {
                     if mem::replace(&mut variant, Some(v)).is_some() {
-                      return Err(ElabError::new_e(try_get_span(base, &e), "call: two variants"))
+                      return Err(ElabError::new_e(&span, "call: two variants"))
                     }
                   } else {
-                    return Err(ElabError::new_e(try_get_span(base, &e), "variant: expected 1 argument"))
+                    return Err(ElabError::new_e(&span, "variant: expected 1 argument"))
                   }
                 } else {
                   args.push(e)
@@ -374,8 +376,9 @@ impl<'a> Parser<'a> {
           }
         }
       },
-      _ => return Err(ElabError::new_e(try_get_span(base, &e), "unknown expression"))
-    }})
+      _ => return Err(ElabError::new_e(&span, "unknown expression"))
+    };
+    Ok(Spanned {span, k})
   }
 
   fn parse_match(&self, base: &FileSpan, mut u: impl Iterator<Item=LispVal>) -> Result<(LispVal, Vec<(LispVal, LispVal)>)> {
@@ -553,7 +556,7 @@ impl<'a> Parser<'a> {
   /// Parse a type (shallowly).
   pub fn parse_ty(&self, base: &FileSpan, names: &HashMap<AtomId, Entity>, e: &LispVal) -> Result<Type> {
     let mut u = Uncons::New(e.clone());
-    let (head, args) = match u.next() {
+    let (head, mut args) = match u.next() {
       None if u.is_empty() => return Ok(spanned(base, e, TypeKind::Unit)),
       None => (u.into(), vec![]),
       Some(head) => (head, u.collect()),
@@ -585,7 +588,7 @@ impl<'a> Parser<'a> {
             (PrimType::RefSn, [e]) => TypeKind::RefSn(e.clone()),
             (PrimType::Shr, [ty]) => TypeKind::Shr(None, ty.clone()),
             (PrimType::Sn, [e]) => TypeKind::Sn(e.clone()),
-            (PrimType::List, _) => TypeKind::List(args),
+            (PrimType::List, _) | (PrimType::Star, _) => TypeKind::List(args),
             (PrimType::Struct, _) => {
               let mut out = vec![];
               for e in args { self.parse_arg(base, Default::default(), e, &mut out)? }
@@ -596,10 +599,23 @@ impl<'a> Parser<'a> {
             (PrimType::Moved, [ty]) => TypeKind::Moved(ty.clone()),
             (PrimType::Ghost, [ty]) => TypeKind::Ghost(ty.clone()),
             (PrimType::Uninit, [ty]) => TypeKind::Uninit(ty.clone()),
+            (PrimType::All, args1) if !args1.is_empty() => {
+              let last = args.pop().expect("nonempty");
+              let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
+              TypeKind::All(args, last)
+            }
+            (PrimType::Ex, args1) if !args1.is_empty() => {
+              let last = args.pop().expect("nonempty");
+              let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
+              TypeKind::Ex(args, last)
+            }
+            (PrimType::Imp, [e1, e2]) => TypeKind::Imp(e1.clone(), e2.clone()),
+            (PrimType::Wand, [e1, e2]) => TypeKind::Wand(e1.clone(), e2.clone()),
+            (PrimType::HasTy, [e, ty]) => TypeKind::HasTy(e.clone(), ty.clone()),
             _ => return Err(ElabError::new_e(try_get_span(base, e), "unexpected number of arguments"))
           },
-          Some(&Entity::Prim(p)) if p.prop.is_some() || p.op.is_some() =>
-            TypeKind::Prop(self.parse_prop(base, names, e)?.k),
+          Some(&Entity::Prim(p)) if p.op.is_some() =>
+            TypeKind::Pure(self.parse_expr(base, e.clone())?.k),
           Some(Entity::Type(ty)) => if let Some(&TypeTy {tyargs, args: ref tgt}) = ty.k.ty() {
             let n = tyargs as usize;
             if args.len() != n + tgt.len() {
@@ -622,48 +638,9 @@ impl<'a> Parser<'a> {
             let (c, branches) = self.parse_match(&try_get_fspan(base, e), args.into_iter())?;
             TypeKind::Match(c, branches)
           }
-          _ => TypeKind::Prop(self.parse_prop(base, names, e)?.k),
+          _ => TypeKind::Pure(self.parse_expr(base, e.clone())?.k),
         }
       }
-    }))
-  }
-
-  /// Parse a proposition (shallowly).
-  pub fn parse_prop(&self, base: &FileSpan, names: &HashMap<AtomId, Entity>, e: &LispVal) -> Result<Prop> {
-    let mut u = Uncons::New(e.clone());
-    let (head, mut args) = match u.next() {
-      None if u.is_empty() =>
-        return Err(ElabError::new_e(try_get_span(base, e), "expecting a proposition, got ()")),
-      None => (u.into(), vec![]),
-      Some(head) => (head, u.collect()),
-    };
-    Ok(spanned(base, e, match head.as_atom().and_then(|name| names.get(&name)) {
-      Some(Entity::Prim(Prim {prop: Some(prim), ..})) => match (prim, &*args) {
-        (PrimProp::All, args1) if !args1.is_empty() => {
-          let last = args.pop().expect("nonempty");
-          let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
-          PropKind::All(args, last)
-        }
-        (PrimProp::Ex, args1) if !args1.is_empty() => {
-          let last = args.pop().expect("nonempty");
-          let args = args.into_iter().map(|e| self.parse_tuple_pattern(base, false, e)).collect::<Result<_>>()?;
-          PropKind::Ex(args, last)
-        }
-        (PrimProp::And, _) => PropKind::And(args),
-        (PrimProp::Or, _) => PropKind::Or(args),
-        (PrimProp::Imp, [e1, e2]) => PropKind::Imp(e1.clone(), e2.clone()),
-        (PrimProp::Star, _) => PropKind::Sep(args),
-        (PrimProp::Wand, [e1, e2]) => PropKind::Wand(e1.clone(), e2.clone()),
-        (PrimProp::Pure, _) => {
-          let (args, last) = self.parse_pure_args(base, args)?;
-          PropKind::Mm0(args, last)
-        }
-        (PrimProp::Moved, [ty]) => PropKind::Moved(ty.clone()),
-        (PrimProp::HasTy, [e, ty]) => PropKind::HasTy(e.clone(), ty.clone()),
-        (PrimProp::Eq, [e1, e2]) => PropKind::Eq(e1.clone(), e2.clone()),
-        _ => return Err(ElabError::new_e(try_get_span(base, &head), "incorrect number of arguments")),
-      }
-      _ => PropKind::Pure(self.parse_expr(base, e.clone())?.k)
     }))
   }
 

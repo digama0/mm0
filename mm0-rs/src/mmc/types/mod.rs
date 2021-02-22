@@ -7,9 +7,12 @@ pub mod ty;
 pub mod hir;
 pub mod pir;
 
-use std::{rc::Rc, collections::HashMap};
+use std::{collections::HashMap, convert::TryFrom, rc::Rc};
+use num::{BigInt, Signed};
+
 use crate::elab::{environment::{AtomId, Environment, Remap, Remapper, TermId}, lisp::{LispVal, Syntax, print::{EnvDisplay, FormatEnv}}};
 use crate::util::FileSpan;
+pub(crate) use crate::mmb::parser::u32_as_usize;
 
 /// A variable ID. These are local to a given declaration (function, constant, global),
 /// but are not de Bruijn variables - they are unique identifiers within the declaration.
@@ -35,6 +38,13 @@ pub struct Spanned<T> {
   /// The data (the `k` stands for `kind` because it's often a `*Kind` enum
   /// but it can be anything).
   pub k: T,
+}
+
+impl<T> Spanned<T> {
+  /// Transform a `Spanned<T>` into `Spanned<U>` given `f: T -> U`.
+  pub fn map_into<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
+    Spanned { span: self.span, k: f(self.k) }
+  }
 }
 
 impl<T: Remap> Remap for Spanned<T> {
@@ -124,13 +134,8 @@ make_keywords! {
 }
 
 /// Possible sizes for integer operations and types.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Size {
-  /// Unbounded size. Used for `nat` and `int`. (These types are only legal for
-  /// ghost variables, but they are also used to indicate "correct to an unbounded model"
-  /// for operations like [`Unop::BitNot`] when it makes sense. We do not actually support
-  /// bignum compilation.)
-  Inf,
   /// 8 bits, or 1 byte. Used for `u8` and `i8`.
   S8,
   /// 16 bits, or 2 bytes. Used for `u16` and `i16`.
@@ -139,11 +144,105 @@ pub enum Size {
   S32,
   /// 64 bits, or 8 bytes. Used for `u64` and `i64`.
   S64,
+  /// Unbounded size. Used for `nat` and `int`. (These types are only legal for
+  /// ghost variables, but they are also used to indicate "correct to an unbounded model"
+  /// for operations like [`Unop::BitNot`] when it makes sense. We do not actually support
+  /// bignum compilation.)
+  Inf,
 }
 crate::deep_size_0!(Size);
 
 impl Default for Size {
   fn default() -> Self { Self::Inf }
+}
+
+impl Size {
+  /// The number of bits of this type, or `None` for the infinite case.
+  #[must_use] pub fn bits(self) -> Option<u8> {
+    match self {
+      Size::Inf => None,
+      Size::S8 => Some(8),
+      Size::S16 => Some(16),
+      Size::S32 => Some(32),
+      Size::S64 => Some(64),
+    }
+  }
+}
+
+/// The set of integral types, `N_s` and `Z_s`, representing the signed and unsigned integers
+/// of various bit widths, plus the computationally unrepresentable types of
+/// unbounded natural numbers and unbounded integers.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum IntTy {
+  /// The type of signed integers of given bit width, or all integers.
+  Int(Size),
+  /// The type of unsigned integers of given bit width, or all nonnegative integers.
+  UInt(Size),
+}
+crate::deep_size_0!(IntTy);
+
+impl std::fmt::Display for IntTy {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.to_str().fmt(f)
+  }
+}
+
+impl IntTy {
+  /// A string description of this type.
+  #[must_use] pub fn to_str(self) -> &'static str {
+    match self {
+      IntTy::Int(Size::Inf) => "int",
+      IntTy::Int(Size::S8) => "i8",
+      IntTy::Int(Size::S16) => "i16",
+      IntTy::Int(Size::S32) => "i32",
+      IntTy::Int(Size::S64) => "i64",
+      IntTy::UInt(Size::Inf) => "nat",
+      IntTy::UInt(Size::S8) => "u8",
+      IntTy::UInt(Size::S16) => "u16",
+      IntTy::UInt(Size::S32) => "u32",
+      IntTy::UInt(Size::S64) => "u64",
+    }
+  }
+
+  /// Returns true if `n` is a valid member of this integral type.
+  #[must_use] pub fn in_range(self, n: &BigInt) -> bool {
+    match self {
+      IntTy::Int(Size::Inf) => true,
+      IntTy::Int(Size::S8) => i8::try_from(n).is_ok(),
+      IntTy::Int(Size::S16) => i16::try_from(n).is_ok(),
+      IntTy::Int(Size::S32) => i32::try_from(n).is_ok(),
+      IntTy::Int(Size::S64) => i64::try_from(n).is_ok(),
+      IntTy::UInt(Size::Inf) => !n.is_negative(),
+      IntTy::UInt(Size::S8) => u8::try_from(n).is_ok(),
+      IntTy::UInt(Size::S16) => u16::try_from(n).is_ok(),
+      IntTy::UInt(Size::S32) => u32::try_from(n).is_ok(),
+      IntTy::UInt(Size::S64) => u64::try_from(n).is_ok(),
+    }
+  }
+}
+
+impl PartialOrd for IntTy {
+  /// `IntTy` is partially ordered by inclusion.
+  fn le(&self, other: &Self) -> bool {
+    match (self, other) {
+      (IntTy::Int(sz1), IntTy::Int(sz2)) |
+      (IntTy::UInt(sz1), IntTy::UInt(sz2)) => sz1 <= sz2,
+      (IntTy::Int(_), IntTy::UInt(_)) => false,
+      (IntTy::UInt(sz1), IntTy::Int(sz2)) => sz1 < sz2,
+    }
+  }
+
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    match (self <= other, other <= self) {
+      (true, true) => Some(std::cmp::Ordering::Equal),
+      (true, false) => Some(std::cmp::Ordering::Less),
+      (false, true) => Some(std::cmp::Ordering::Greater),
+      (false, false) => None,
+    }
+  }
+  fn lt(&self, other: &Self) -> bool { self <= other && self != other }
+  fn gt(&self, other: &Self) -> bool { other < self }
+  fn ge(&self, other: &Self) -> bool { other <= self }
 }
 
 /// (Elaborated) unary operations.
@@ -231,6 +330,52 @@ impl Binop {
       Binop::Le => "<=",
       Binop::Eq => "=",
       Binop::Ne => "!=",
+    }
+  }
+
+  /// Returns true if this takes integral arguments,
+  /// and false if it takes booleans.
+  #[must_use] pub fn int_in(self) -> bool {
+    match self {
+      Binop::Add | Binop::Mul | Binop::Sub |
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
+      Binop::Shl | Binop::Shr |
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne => true,
+      Binop::And | Binop::Or => false,
+    }
+  }
+
+  /// Returns true if this returns integral values,
+  /// and false if it returns booleans.
+  #[must_use] pub fn int_out(self) -> bool {
+    match self {
+      Binop::Add | Binop::Mul | Binop::Sub |
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
+      Binop::Shl | Binop::Shr => true,
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne |
+      Binop::And | Binop::Or => false,
+    }
+  }
+
+  /// Returns true if this integral function returns a `nat` on nonnegative inputs.
+  #[must_use] pub fn preserves_nat(self) -> bool {
+    match self {
+      Binop::Add | Binop::Mul |
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
+      Binop::Shl | Binop::Shr => true,
+      Binop::Sub => false,
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne |
+      Binop::And | Binop::Or => panic!("not an int -> int binop"),
+    }
+  }
+
+  /// Returns true if this integral function returns a `UInt(sz)` on `UInt(sz)` inputs.
+  #[must_use] pub fn preserves_usize(self) -> bool {
+    match self {
+      Binop::Add | Binop::Mul | Binop::Shl | Binop::Sub => false,
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor | Binop::Shr => true,
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne |
+      Binop::And | Binop::Or => panic!("not an int -> int binop"),
     }
   }
 }

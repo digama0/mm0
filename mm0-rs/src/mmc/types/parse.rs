@@ -153,6 +153,10 @@ pub type Type = Spanned<TypeKind>;
 pub enum TypeKind {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
+  /// A true proposition.
+  True,
+  /// A false proposition.
+  False,
   /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
   Bool,
   /// A type variable.
@@ -192,6 +196,16 @@ pub enum TypeKind {
   /// The top level declaration `(struct foo {x : A} {y : B})` desugars to
   /// `(typedef foo {x : A, y : B})`.
   Struct(Vec<Arg>),
+  /// A universally quantified proposition.
+  All(Vec<TuplePattern>, LispVal),
+  /// An existentially quantified proposition.
+  Ex(Vec<TuplePattern>, LispVal),
+  /// Implication (plain, non-separating).
+  Imp(LispVal, LispVal),
+  /// Separating implication.
+  Wand(LispVal, LispVal),
+  /// Negation.
+  Not(LispVal),
   /// `(and A B C)` is an intersection type of `A, B, C`;
   /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
   /// the typehood predicate is `x :> (and A B C)` iff
@@ -215,10 +229,14 @@ pub enum TypeKind {
   If([LispVal; 3]),
   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
   Match(LispVal, Vec<(LispVal, LispVal)>),
-  /// A propositional type, used for hypotheses.
-  Prop(PropKind),
+  /// A boolean expression, interpreted as a pure proposition
+  Pure(ExprKind),
   /// A user-defined type-former.
   User(AtomId, Box<[LispVal]>, Box<[LispVal]>),
+  /// A heap assertion `l |-> (v: T)`.
+  Heap(LispVal, LispVal),
+  /// An explicit typing assertion `[v : T]`.
+  HasTy(LispVal, LispVal),
   /// The input token.
   Input,
   /// The output token.
@@ -227,48 +245,6 @@ pub enum TypeKind {
   Moved(LispVal),
   /// A typechecking error that we have reported already.
   Error
-}
-
-/// A propositional expression.
-pub type Prop = Spanned<PropKind>;
-
-/// A separating proposition, which classifies hypotheses / proof terms.
-#[derive(Debug, DeepSizeOf)]
-pub enum PropKind {
-  /// A true proposition.
-  True,
-  /// A false proposition.
-  False,
-  /// A universally quantified proposition.
-  All(Vec<TuplePattern>, LispVal),
-  /// An existentially quantified proposition.
-  Ex(Vec<TuplePattern>, LispVal),
-  /// Implication (plain, non-separating).
-  Imp(LispVal, LispVal),
-  /// Negation.
-  Not(LispVal),
-  /// Conjunction (non-separating).
-  And(Vec<LispVal>),
-  /// Disjunction.
-  Or(Vec<LispVal>),
-  /// The empty heap.
-  Emp,
-  /// Separating conjunction.
-  Sep(Vec<LispVal>),
-  /// Separating implication.
-  Wand(LispVal, LispVal),
-  /// An (executable) boolean expression, interpreted as a pure proposition
-  Pure(ExprKind),
-  /// Equality (possibly non-decidable).
-  Eq(LispVal, LispVal),
-  /// A heap assertion `l |-> (v: T)`.
-  Heap(LispVal, LispVal),
-  /// An explicit typing assertion `[v : T]`.
-  HasTy(LispVal, LispVal),
-  /// The move operator `|T|` on types.
-  Moved(LispVal),
-  /// An embedded MM0 proposition of sort `wff`.
-  Mm0(Box<[(AtomId, LispVal)]>, LispVal),
 }
 
 /// The type of variant, or well founded order that recursions decrease.
@@ -347,7 +323,7 @@ pub enum ExprKind {
     with: Renames
   },
   /// A field access `e.field`.
-  Proj(LispVal, FieldName),
+  Proj(LispVal, Spanned<FieldName>),
   /// A function call (or something that looks like one at parse time).
   Call(CallExpr),
   /// An entailment proof, which takes a proof of `P1 * ... * Pn => Q` and expressions proving

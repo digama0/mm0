@@ -139,6 +139,8 @@ make_prims! {
 
   /// The primitive types.
   enum PrimType {
+    /// `A. {x : A} p` or `(al {x : A} p)` is universal quantification over a type.
+    All: "al",
     /// `(and A B C)` is an intersection type of `A, B, C`;
     /// `sizeof (and A B C) = max (sizeof A, sizeof B, sizeof C)`, and
     /// the typehood predicate is `x :> (inter A B C)` iff
@@ -150,10 +152,14 @@ make_prims! {
     Array: "array",
     /// `bool` is the type of booleans, that is, bytes which are 0 or 1; `sizeof bool = 1`.
     Bool: "bool",
+    /// `E. {x : A} p` or `(ex {x : A} p)` is existential quantification over a type.
+    Ex: "ex",
     /// `(ghost A)` is a compoutationally irrelevant version of `A`, which means
     /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
     /// is the same as `()`. `sizeof (ghost A) = 0`.
     Ghost: "ghost",
+    /// `x :> T` is the proposition that asserts that `x` has type `T`.
+    HasTy: ":>",
     /// `i8` is the type of 8 bit signed integers; `sizeof i8 = 1`.
     I8: "i8",
     /// `i16` is the type of 16 bit signed integers; `sizeof i16 = 2`.
@@ -162,6 +168,8 @@ make_prims! {
     I32: "i32",
     /// `i64` is the type of 64 bit signed integers; `sizeof i64 = 8`.
     I64: "i64",
+    /// `p -> q` is (regular) implication.
+    Imp: "->",
     /// The input token (passed to functions that read from input)
     Input: "Input",
     /// `int` is the type of unbounded signed integers; `sizeof int = inf`.
@@ -199,6 +207,8 @@ make_prims! {
     /// This is useful for asserting that a computationally relevant value can be
     /// expressed in terms of computationally irrelevant parts.
     Sn: "sn",
+    /// `p * q` is separating conjunction.
+    Star: "*",
     /// `{x : A, y : B, z : C}` is the dependent version of `list`;
     /// it is a tuple type with elements `A, B, C`, but the types `A, B, C` can
     /// themselves refer to `x, y, z`.
@@ -219,32 +229,8 @@ make_prims! {
     /// for this type is vacuous, but it has the same size as `T`, so overwriting with
     /// a `T` is possible.
     Uninit: "?",
-  }
-
-  /// A primitive propositional connective.
-  enum PrimProp {
-    /// `A. {x : A} p` or `(al {x : A} p)` is universal quantification over a type.
-    All: "al",
-    /// `p /\ q` is the (non-separating) conjunction.
-    And: "an",
-    /// `p = q` is (nondecidable) equality.
-    Eq: "=",
-    /// `E. {x : A} p` or `(ex {x : A} p)` is existential quantification over a type.
-    Ex: "ex",
-    /// `p -> q` is (regular) implication.
-    Imp: "->",
-    /// `(moved p)` is the moved version of `p`, the duplicable core of the proposition.
-    Moved: "moved",
-    /// `p \/ q` is disjunction.
-    Or: "or",
-    /// `pure p` embeds a MM0 propositional expression.
-    Pure: "pure",
-    /// `p * q` is separating conjunction.
-    Star: "*",
     /// `p -* q` is separating implication.
     Wand: "-*",
-    /// `x :> T` is the proposition that asserts that `x` has type `T`.
-    HasTy: ":>",
   }
 
   /// Intrinsic functions, which are like [`PrimOp`] but are typechecked like regular
@@ -398,8 +384,6 @@ pub struct Prim {
   pub ty: Option<PrimType>,
   /// The primitive operation record, if applicable.
   pub op: Option<PrimOp>,
-  /// The primitive proposition record, if applicable.
-  pub prop: Option<PrimProp>
 }
 crate::deep_size_0!(Prim);
 
@@ -467,7 +451,6 @@ impl Compiler {
     let mut names = HashMap::new();
     PrimType::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).ty = Some(p));
     PrimOp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).op = Some(p));
-    PrimProp::scan(|p, s| get(&mut names, env.get_atom(s.as_bytes())).prop = Some(p));
     names
   }
 }
