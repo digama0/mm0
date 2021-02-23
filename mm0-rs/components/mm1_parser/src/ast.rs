@@ -639,6 +639,62 @@ pub struct Ast {
     pub errors: Vec<ParseError>,
 }
 
+impl std::default::Default for Ast {
+    fn default() -> Self {
+        Ast {
+            source: Arc::new(LinedString::default()),
+            imports: Vec::new(),
+            stmts: Vec::new(),
+            errors: Vec::new()
+        }
+    }
+}
+
+/// Iteartor over the AST's stmts while also traversing into the nested
+/// stmts in DocComments and Annotations.
+pub struct StmtIter<'a> {
+    stmts: std::slice::Iter<'a, Stmt>,
+    nested: Option<&'a Stmt>,
+}
+
+impl<'a> Iterator for StmtIter<'a> {
+    type Item = &'a Stmt;
+    fn next(&mut self) -> Option<Self::Item> {
+        let cur = self.nested.take().or_else(|| self.stmts.next())?;
+        match &cur.k {
+            | StmtKind::DocComment(_, s2) 
+            | StmtKind::Annot(_, s2) => {
+                self.nested = Some(s2.as_ref());
+                Some(cur)
+            },
+            _ => Some(cur)
+        }
+    }
+}
+
+impl Ast {
+    /// Get an iterator over the AST's stmts while also traversing into the nested
+    /// stmts in DocComments and Annotations.
+    pub fn stmts_iter<'a>(&'a self) -> StmtIter<'a> {
+        StmtIter {
+            stmts: self.stmts.iter(),
+            nested: None
+        }
+    }
+
+    /// Look for a [Decl] by ident (where ident is in bytes)
+    pub fn get_decl(&self, ident: &[u8]) -> Option<&Decl> {
+        for stmt in self.stmts_iter() {
+            if let StmtKind::Decl(decl @ Decl { .. }) = &stmt.k {
+                if self.span(decl.id) == ident {
+                    return Some(decl)
+                }
+            } 
+        }
+        None
+    }
+}
+
 /// Given an [`Atom`] and associated [`Span`], such as those associated with
 /// [`SExprKind::Atom`], construct a string slice with the string contents
 /// of the atom.

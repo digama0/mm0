@@ -29,7 +29,7 @@ pub struct MmbFile<'a> {
     /// The index of the beginning of the proof stream
     proof: usize,
     /// The index, if provided.
-    index: Option<MmbIndex<'a>>,
+    pub index: Option<MmbIndex<'a>>,
 }
 
 impl<'a> std::default::Default for MmbFile<'a> {
@@ -388,23 +388,6 @@ fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8]
 }
 
 impl<'a> MmbFile<'a> {
-
-    /// Get the index entry for a sort.
-    #[must_use]
-    pub fn index_sort(&self, n: SortId) -> Option<IndexEntryRef<'a>> {
-        index_ref(self.buf, self.index.as_ref().and_then(|index| index.sorts.get(usize::from(n.0))).copied()?)
-    }
-    /// Get the index entry for a term.
-    #[must_use]
-    pub fn index_term(&self, n: TermId) -> Option<IndexEntryRef<'a>> {
-        index_ref(self.buf, *self.index.as_ref().and_then(|index| index.terms.get(u32_as_usize(n.0)))?)
-    }
-    /// Get the index entry for a theorem.
-    #[must_use]
-    pub fn index_thm(&self, n: ThmId) -> Option<IndexEntryRef<'a>> {
-        index_ref(self.buf, *self.index.as_ref().and_then(|index| index.thms.get(u32_as_usize(n.0)))?)
-    }
-
     /// For error reporting after the initial parse.
     pub fn bad_index_lookup(&self) -> ParseError {
         ParseError::BadIndexLookup {
@@ -672,6 +655,18 @@ impl<'a> MmbIndex<'a> {
     pub fn thm(&self, n: ThmId) -> Option<IndexEntryRef<'a>> {
         index_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
     }
+
+    /// Convenience function for getting an index without having to destructure
+    /// the StmtCmd every time.
+    #[must_use]
+    pub fn stmt(&self, stmt: NumdStmtCmd) -> Option<IndexEntryRef<'a>> {
+        use crate::NumdStmtCmd::*;
+        match stmt {
+            Sort { sort_id } => self.sort(sort_id),
+            Axiom { thm_id } | Thm { thm_id, .. } => self.thm(thm_id),
+            TermDef { term_id, .. } => self.term(term_id)
+        }
+    }
 }
 
 impl<'a> TermRef<'a> {
@@ -761,7 +756,7 @@ fn try_next_decl(mmb: &[u8], pos: usize) -> Result<Option<(StmtCmd, ProofIter<'_
 }
 
 /// An iterator over the declaration stream.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DeclIter<'a> {
     /// The full source file.
     mmb_file: &'a [u8],
