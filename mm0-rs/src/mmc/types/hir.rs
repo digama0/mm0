@@ -2,7 +2,7 @@
 
 use num::BigInt;
 use crate::{elab::{environment::AtomId, lisp::LispVal}, util::FileSpan};
-use super::{Binop, Mm0Expr, Unop, VarId, ast::{PosNeg, ProcKind}, ty};
+use super::{Binop, Mm0Expr, Unop, VarId, ast::ProcKind, ty};
 
 /// A "generation ID", which tracks the program points where mutation
 /// can occur. The actual set of logical variables is some subset of
@@ -161,30 +161,6 @@ impl<'a> ContextNext<'a> {
 
   /// Construct an `Expr, Ty` pair from a variable record.
   #[must_use] pub fn expr_ty(&self) -> ty::ExprTy<'a> { (Some(self.val), self.ty) }
-}
-
-/// A pattern, the left side of a switch statement.
-pub type Pattern<'a> = Spanned<'a, PatternKind<'a>>;
-
-/// A pattern, the left side of a switch statement.
-#[derive(Debug, DeepSizeOf)]
-pub enum PatternKind<'a> {
-  /// A wildcard binding.
-  Ignore,
-  /// A variable binding.
-  Var(VarId),
-  /// A constant value.
-  Const(AtomId),
-  /// A numeric literal.
-  Number(BigInt),
-  /// A hypothesis pattern, which binds the first argument to a proof that the
-  /// scrutinee satisfies the pattern argument.
-  Hyped(PosNeg, VarId, Box<Pattern<'a>>),
-  /// A pattern guard: Matches the inner pattern, and then if the expression returns
-  /// true, this is also considered to match.
-  With(Box<Pattern<'a>>, Box<Expr<'a>>),
-  /// A disjunction of patterns.
-  Or(Box<[Pattern<'a>]>),
 }
 
 /// The type of variant, or well founded order that recursions decrease.
@@ -358,8 +334,6 @@ pub enum ExprKind<'a> {
     /// The generation at the join point.
     gen: GenId,
   },
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(Box<Expr<'a>>, Box<[(Pattern<'a>, Expr<'a>)]>),
   /// A while loop.
   While {
     /// The name of this loop, which can be used as a target for jumps.

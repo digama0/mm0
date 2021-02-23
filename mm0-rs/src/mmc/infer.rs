@@ -16,7 +16,7 @@ use crate::elab::{environment::AtomId, lisp::{LispVal, print::FormatEnv}};
 use crate::util::FileSpan;
 use super::{parser::try_get_fspan, types::{self, Binop, FieldName, Size, Spanned, Unop, VarId,
   u32_as_usize, ast, hir::{self, GenId}}};
-use super::types::entity::{Entity, ConstTc, GlobalTc, TypeTy};
+use super::types::entity::{Entity, ConstTc, GlobalTc, ProcTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
 
@@ -110,20 +110,7 @@ impl<'a> Interner<'a> {
   }
 }
 
-// #[derive(Debug)]
-// enum Task {
-// }
-
-// impl Task {
-//   fn trigger(&mut self) -> bool {
-//     match *self {
-//     }
-//   }
-//   fn run(&mut self) {
-//     match *self {
-//     }
-//   }
-// }
+macro_rules! intern {($ctx:expr, $t:expr) => {{let t = $t; $ctx.intern(t)}}}
 
 #[derive(Debug)]
 struct MVarData<'a> {
@@ -194,7 +181,7 @@ impl<'a, K: UnifyKey, V> Index<K> for Assignments<'a, K, V> {
 }
 
 impl IntTy {
-  fn to_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> { ctx.intern(self.into()) }
+  fn to_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> { intern!(ctx, self.into()) }
 }
 
 impl Unop {
@@ -301,9 +288,9 @@ struct WhnfTy<'a> {
 
 impl<'a> WhnfTy<'a> {
   fn to_ty(mut self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
-    if self.moved { self.ty = ctx.intern(TyKind::Moved(self.ty)) }
-    if self.ghost { self.ty = ctx.intern(TyKind::Ghost(self.ty)) }
-    if self.uninit { self.ty = ctx.intern(TyKind::Uninit(self.ty)) }
+    if self.moved { self.ty = intern!(ctx, TyKind::Moved(self.ty)) }
+    if self.ghost { self.ty = intern!(ctx, TyKind::Ghost(self.ty)) }
+    if self.uninit { self.ty = intern!(ctx, TyKind::Uninit(self.ty)) }
     self.ty
   }
   fn moved(mut self, m: bool) -> Self { self.moved |= m; self }
@@ -590,8 +577,6 @@ impl<'a> Common<'a> {
   }
 }
 
-macro_rules! intern {($ctx:expr, $t:expr) => {{let t = $t; $ctx.intern(t)}}}
-
 impl<'a> InferCtx<'a> {
   /// Create a new `InferCtx` from the given allocator.
   pub fn new(
@@ -766,14 +751,6 @@ impl<'a> InferCtx<'a> {
           _ => TyKind::If(e2, t1, t2),
         }
       }
-      TyKind::Match(e, ty, brs) => {
-        let e2 = self.whnf_expr(e, ty);
-        match e2.k {
-          // TODO: eval match
-          _ if e == e2 => return wty,
-          _ => TyKind::Match(e2, ty, brs),
-        }
-      }
       TyKind::HasTy(x, ty) => {
         let wty = WhnfTy::from(ty);
         if wty.uninit {return wty}
@@ -869,13 +846,6 @@ impl<'a> InferCtx<'a> {
         for (&a1, &b1) in args_a.iter().zip(args_b) {self.equate_expr(a1, b1)?},
       (ExprKind::If {cond: a1, then: a2, els: a3}, ExprKind::If {cond: b1, then: b2, els: b3}) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?; self.equate_expr(a3, b3)?}
-      (ExprKind::Match(a1, brs_a), ExprKind::Match(b1, brs_b)) => {
-        self.equate_expr(a1, b1)?;
-        for (&(a1, a2), &(b1, b2)) in brs_a.iter().zip(brs_b) {
-          if a1 != b1 {return Err(())}
-          self.equate_expr(a2, b2)?;
-        }
-      }
       (ExprKind::Infer(v), _) => {
         if let Some(e) = self.expr_mvars.lookup(v) { return self.equate_expr(e, b) }
         if !self.assign_expr(v, b) { return Err(()) }
@@ -1015,14 +985,6 @@ impl<'a> InferCtx<'a> {
         if !t_coes.is_empty() { unimplemented!() }
         let f_coes = self.relate_whnf_ty(from.map(fa), to.map(fb), rel)?;
         if !f_coes.is_empty() { unimplemented!() }
-      }
-      (TyKind::Match(e_a, _, brs_a), TyKind::Match(e_b, _, brs_b)) if brs_a.len() == brs_b.len() => {
-        check!(uninit);
-        self.equate_expr(e_a, e_b)?;
-        for (&(a1, ty_a), &(b1, ty_b)) in brs_a.iter().zip(brs_b) {
-          if a1 != b1 {return Err(())}
-          self.relate_whnf_ty(from.map(ty_a), to.map(ty_b), rel)?;
-        }
       }
       (TyKind::Pure(e_a), TyKind::Pure(e_b)) => {
         check!(uninit);
@@ -1261,10 +1223,6 @@ impl<'a> InferCtx<'a> {
     })
   }
 
-  fn lower_pattern(&mut self, pat: &'a ast::Pattern, tgt: Ty<'a>) -> Pattern<'a> {
-    todo!()
-  }
-
   fn lower_opt_lft(&mut self, sp: &'a FileSpan, lft: &Option<Box<Spanned<ast::Lifetime>>>) -> Lifetime {
     self.lower_lft(sp, match lft {
       None => ast::Lifetime::Infer,
@@ -1354,18 +1312,6 @@ impl<'a> InferCtx<'a> {
         let f = self.lower_ty(f, ExpectTy::Any);
         intern!(self, TyKind::If(e, t, f))
       }
-      ast::TypeKind::Match(e, brs) => {
-        let (e, ety) = self.lower_pure_expr(e, ExpectExpr::Any);
-        let ctx = self.dc.context;
-        let brs = brs.iter().map(|(pat, ty)| {
-          let pat = self.lower_pattern(pat, ety);
-          let ty = self.lower_ty(ty, expect);
-          self.dc.context = ctx;
-          (pat, ty)
-        }).collect::<Vec<_>>();
-        let brs = self.alloc.alloc_slice_fill_iter(brs.into_iter().rev());
-        intern!(self, TyKind::Match(e, ety, brs))
-      }
       ast::TypeKind::Ghost(ty) =>
         intern!(self, TyKind::Ghost(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Uninit(ty) =>
@@ -1386,10 +1332,6 @@ impl<'a> InferCtx<'a> {
       ast::TypeKind::Infer => self.new_ty_mvar(&ty.span),
       ast::TypeKind::Error => self.common.t_error,
     }
-  }
-
-  fn subst_expr(&mut self, fvars: &mut im::HashSet<VarId>, subst: &im::HashMap<VarId, Expr<'a>>, e: Expr<'a>) -> Expr<'a> {
-    todo!()
   }
 
   fn lower_pure_expr(&mut self, e: &'a ast::Expr, expect: ExpectExpr<'a>) -> (Expr<'a>, Ty<'a>) {
@@ -2144,8 +2086,6 @@ impl<'a> InferCtx<'a> {
           tgt]
     }
 
-      ast::ExprKind::Match(_, _) => todo!(),
-
       &ast::ExprKind::While {label, hyp, ref cond, ref muts, ref var, ref body} => {
         if !muts.is_empty() {
           let newgen = self.new_generation();
@@ -2244,6 +2184,8 @@ impl<'a> InferCtx<'a> {
         error!(span, Hole(Box::new(self.dc.clone()), expect.to_ty()))
       },
 
+      ast::ExprKind::Rc(e) => self.lower_expr(e, expect),
+
       ast::ExprKind::Error => error!(),
     }
   }
@@ -2305,7 +2247,6 @@ impl<'a> InferCtx<'a> {
       ExprKind::Array(_) |
       ExprKind::Mm0(_) |
       ExprKind::Call {..} |
-      ExprKind::Match(_, _) |
       ExprKind::Infer(_) => return None,
       ExprKind::Error => error!(),
     }})

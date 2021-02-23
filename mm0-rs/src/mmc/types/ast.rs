@@ -138,91 +138,6 @@ impl ArgKind {
   }
 }
 
-/// The polarity of a hypothesis binder in a match statement, which determines
-/// whether it will appear positively and/or negatively. (A variable that cannot appear in
-/// either polarity is a compile error.)
-#[derive(Copy, Clone, Debug)]
-#[repr(u8)]
-pub enum PosNeg {
-  /// This hypothesis appears positively, but not negatively:
-  /// ```text
-  /// (match e
-  ///   {{{h : 1} with {e = 2}} => can use h: $ e = 1 $}
-  ///   {_ => cannot use h: $ e != 1 $})
-  /// ```
-  Pos = 1,
-  /// This hypothesis appears negatively, but not positively:
-  /// ```text
-  /// (match e
-  ///   {{{h : 1} or 2} => cannot use h: $ e = 1 $}
-  ///   {_ => can use h: $ e != 1 $})
-  /// ```
-  Neg = 2,
-  /// This hypothesis appears both positively and negatively:
-  /// ```text
-  /// (match e
-  ///   {{h : {1 or 2}} => can use h: $ e = 1 \/ e = 2 $}
-  ///   {_ => can use h: $ ~(e = 1 \/ e = 2) $})
-  /// ```
-  Both = 3
-}
-crate::deep_size_0!(PosNeg);
-
-impl PosNeg {
-  /// Construct a `PosNeg` from positive and negative pieces.
-  #[must_use] pub fn new(pos: bool, neg: bool) -> Option<PosNeg> {
-    match (pos, neg) {
-      (false, false) => None,
-      (true, false) => Some(Self::Pos),
-      (false, true) => Some(Self::Neg),
-      (true, true) => Some(Self::Both),
-    }
-  }
-  /// Does this `PosNeg` admit positive occurrences?
-  #[inline] #[must_use] pub fn is_pos(self) -> bool { self as u8 & 1 != 0 }
-  /// Does this `PosNeg` admit negative occurrences?
-  #[inline] #[must_use] pub fn is_neg(self) -> bool { self as u8 & 2 != 0 }
-}
-
-/// A pattern, the left side of a switch statement.
-pub type Pattern = Spanned<PatternKind>;
-
-/// A pattern, the left side of a switch statement.
-#[derive(Debug, DeepSizeOf)]
-pub enum PatternKind {
-  /// A wildcard binding.
-  Ignore,
-  /// A variable binding.
-  Var(VarId),
-  /// A constant value.
-  Const(AtomId),
-  /// A numeric literal.
-  Number(BigInt),
-  /// A hypothesis pattern, which binds the first argument to a proof that the
-  /// scrutinee satisfies the pattern argument.
-  Hyped(PosNeg, VarId, Box<Pattern>),
-  /// A pattern guard: Matches the inner pattern, and then if the expression returns
-  /// true, this is also considered to match.
-  With(Box<Pattern>, Box<Expr>),
-  /// A disjunction of patterns.
-  Or(Box<[Pattern]>),
-}
-
-impl Remap for PatternKind {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    match self {
-      PatternKind::Ignore => PatternKind::Ignore,
-      &PatternKind::Var(v) => PatternKind::Var(v),
-      &PatternKind::Const(c) => PatternKind::Const(c.remap(r)),
-      PatternKind::Number(n) => PatternKind::Number(n.clone()),
-      PatternKind::Hyped(pn, v, pat) => PatternKind::Hyped(*pn, *v, pat.remap(r)),
-      PatternKind::With(pat, e) => PatternKind::With(pat.remap(r), e.remap(r)),
-      PatternKind::Or(pat) => PatternKind::Or(pat.remap(r)),
-    }
-  }
-}
-
 /// A type expression.
 pub type Type = Spanned<TypeKind>;
 
@@ -303,8 +218,6 @@ pub enum TypeKind {
   /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
   If(Box<Expr>, Box<Type>, Box<Type>),
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(Box<Expr>, Box<[(Pattern, Type)]>),
   /// `(ghost A)` is a computationally irrelevant version of `A`, which means
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
@@ -359,7 +272,6 @@ impl Remap for TypeKind {
       TypeKind::And(tys) => TypeKind::And(tys.remap(r)),
       TypeKind::Or(tys) => TypeKind::Or(tys.remap(r)),
       TypeKind::If(c, t, e) => TypeKind::If(c.remap(r), t.remap(r), e.remap(r)),
-      TypeKind::Match(c, brs) => TypeKind::Match(c.remap(r), brs.remap(r)),
       TypeKind::Ghost(ty) => TypeKind::Ghost(ty.remap(r)),
       TypeKind::Uninit(ty) => TypeKind::Uninit(ty.remap(r)),
       TypeKind::Pure(p) => TypeKind::Pure(p.remap(r)),
@@ -582,8 +494,6 @@ pub enum ExprKind {
     /// The else case.
     els: Box<Expr>
   },
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(Box<Expr>, Box<[(Pattern, Expr)]>),
   /// A while loop.
   While {
     /// The name of this loop, which can be used as a target for jumps.
@@ -617,6 +527,8 @@ pub enum ExprKind {
   /// was created by the user through an explicit `_`, while compiler-generated inference
   /// variables have it set to false.
   Infer(bool),
+  /// A cloned expr, for copied subterms.
+  Rc(std::rc::Rc<Expr>),
   /// An upstream error.
   Error
 }
@@ -659,7 +571,6 @@ impl Remap for ExprKind {
       ExprKind::Block(e) => ExprKind::Block(e.remap(r)),
       ExprKind::If {hyp, cond, then, els} => ExprKind::If {
         hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
-      ExprKind::Match(e, brs) => ExprKind::Match(e.remap(r), brs.remap(r)),
       ExprKind::While {label, muts, hyp, cond, var, body} => ExprKind::While {
         label: *label, muts: muts.remap(r), hyp: *hyp,
         cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
@@ -667,6 +578,7 @@ impl Remap for ExprKind {
       ExprKind::Jump(l, i, e, var) => ExprKind::Jump(*l, *i, e.remap(r), var.remap(r)),
       ExprKind::Break(v, e) => ExprKind::Break(*v, e.remap(r)),
       ExprKind::Return(e) => ExprKind::Return(e.remap(r)),
+      ExprKind::Rc(e) => ExprKind::Rc(e.remap(r)),
       &ExprKind::Infer(b) => ExprKind::Infer(b),
       ExprKind::Error => ExprKind::Error,
     }

@@ -388,13 +388,16 @@ impl<'a> Parser<'a> {
     Ok(Spanned {span, k})
   }
 
-  fn parse_match(&self, base: &FileSpan, mut u: impl Iterator<Item=LispVal>) -> Result<(LispVal, Vec<(LispVal, LispVal)>)> {
+  #[allow(clippy::type_complexity)]
+  fn parse_match(&self, base: &FileSpan,
+    mut u: impl Iterator<Item=LispVal>,
+  ) -> Result<(LispVal, Vec<Spanned<(LispVal, LispVal)>>)> {
     let c = u.next().ok_or_else(|| ElabError::new_e(base, "match: syntax error"))?;
     let mut branches = vec![];
     for e in u {
       if let Some((Keyword::Arrow, mut u)) = self.head_keyword(&e) {
-        if let (Some(p), Some(e), true) = (u.next(), u.next(), u.is_empty()) {
-          branches.push((p, e));
+        if let (Some(lhs), Some(rhs), true) = (u.next(), u.next(), u.is_empty()) {
+          branches.push(spanned(base, &e, (lhs, rhs)));
         } else {
           return Err(ElabError::new_e(base, "match: syntax error"))
         }

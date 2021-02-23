@@ -228,7 +228,7 @@ pub enum TypeKind {
   /// `(if c A B)` is a conditional type: if `c` is true then this is `A`, otherwise `B`.
   If([LispVal; 3]),
   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(LispVal, Vec<(LispVal, LispVal)>),
+  Match(LispVal, Vec<Spanned<(LispVal, LispVal)>>),
   /// A boolean expression, interpreted as a pure proposition
   Pure(Box<ExprKind>),
   /// A user-defined type-former.
@@ -343,7 +343,7 @@ pub enum ExprKind {
     els: Option<LispVal>
   },
   /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(LispVal, Vec<(LispVal, LispVal)>),
+  Match(LispVal, Vec<Spanned<(LispVal, LispVal)>>),
   /// A while loop.
   While {
     /// The set of variables that are mutated in the while loop.
