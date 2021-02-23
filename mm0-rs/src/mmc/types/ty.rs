@@ -191,10 +191,11 @@ pub type TuplePatternS<'a> = WithMeta<TuplePatternKind<'a>>;
 pub enum TuplePatternKind<'a> {
   /// A variable binding.
   Name(AtomId, VarId, Ty<'a>),
-  /// An inline coercion.
-  Coercion(TuplePattern<'a>, &'a [Coercion<'a>], Ty<'a>),
   /// A tuple destructuring pattern.
   Tuple(&'a [TuplePattern<'a>], Ty<'a>),
+  /// An error that has been reported.
+  /// (We keep the original tuple pattern so that name scoping still works.)
+  Error(TuplePattern<'a>, Ty<'a>),
 }
 
 impl<'a> TuplePatternKind<'a> {
@@ -202,7 +203,7 @@ impl<'a> TuplePatternKind<'a> {
   #[must_use] pub fn ty(&self) -> Ty<'a> {
     match *self {
       TuplePatternKind::Name(_, _, ty) |
-      TuplePatternKind::Coercion(_, _, ty) |
+      TuplePatternKind::Error(_, ty) |
       TuplePatternKind::Tuple(_, ty) => ty
     }
   }
@@ -211,7 +212,7 @@ impl<'a> TuplePatternKind<'a> {
   pub fn on_vars(&self, f: &mut impl FnMut(AtomId, VarId)) {
     match *self {
       TuplePatternKind::Name(n, v, _) => f(n, v),
-      TuplePatternKind::Coercion(pat, _, _) => pat.k.on_vars(f),
+      TuplePatternKind::Error(pat, _) => pat.k.on_vars(f),
       TuplePatternKind::Tuple(pats, _) => for pat in pats { pat.k.on_vars(f) }
     }
   }
@@ -219,7 +220,7 @@ impl<'a> TuplePatternKind<'a> {
   fn find_field(&self, f: AtomId, idxs: &mut Vec<u32>) -> bool {
     match *self {
       TuplePatternKind::Name(a, _, _) => a == f,
-      TuplePatternKind::Coercion(pat, _, _) => pat.k.find_field(f, idxs),
+      TuplePatternKind::Error(pat, _) => pat.k.find_field(f, idxs),
       TuplePatternKind::Tuple(pats, _) =>
         pats.iter().enumerate().any(|(i, &pat)| {
           pat.k.find_field(f, idxs) && {
@@ -235,7 +236,7 @@ impl AddFlags for TuplePatternKind<'_> {
   fn add(&self, f: &mut Flags) {
     match *self {
       TuplePatternKind::Name(_, _, ty) => *f |= ty,
-      TuplePatternKind::Coercion(pat, cs, ty) => *f |= (pat, cs, ty),
+      TuplePatternKind::Error(pat, ty) => *f |= (Flags::HAS_ERROR, pat, ty),
       TuplePatternKind::Tuple(pats, ty) => *f |= (pats, ty),
     }
   }
@@ -246,7 +247,7 @@ impl EnvDisplay for TuplePatternKind<'_> {
     use itertools::Itertools;
     match *self {
       TuplePatternKind::Name(a, _, _) => a.fmt(fe, f),
-      TuplePatternKind::Coercion(pat, _, _) => pat.fmt(fe, f),
+      TuplePatternKind::Error(pat, _) => write!(f, "??{}", fe.to(pat)),
       TuplePatternKind::Tuple(pats, _) =>
         write!(f, "({})", pats.iter().map(|&pat| fe.to(pat)).format(" ")),
     }

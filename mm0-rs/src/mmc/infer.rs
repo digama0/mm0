@@ -215,22 +215,13 @@ struct UnelabTupPat<'a> {
 enum UnelabTupPatKind<'a> {
   /// A simple pattern, containing the actual binding in the [`ContextNext`].
   Name(bool, AtomId, &'a ContextNext<'a>),
-  /// A coercion. This is not available in the surface syntax, but if we have a binder
-  /// like `let ((a, b), c) = ...` and we need to insert a coercion in the inner pattern,
-  /// we desugar it to `let (x, c) = ...; let (a, b) = coe(x);`, except that at this
-  /// point we don't want to make any structural syntax changes yet so we store the intent
-  /// to insert the `coe` function while keeping it as a nested pattern-match,
-  /// so the syntax is more like `let ((a, b) => coe, c) = ...` where `=> coe` means to apply
-  /// the `coe` function to the value matched at that level.
-  Coercion(Box<UnelabTupPat<'a>>, &'a [Coercion<'a>], Ty<'a>),
-  /// A tuple pattern match. This has been typechecked, and the `Ty` determines what kind
-  /// of pattern match it is.
-  Tuple(&'a [UnelabTupPat<'a>], Ty<'a>),
   /// An unelaborated tuple pattern match. The subpatterns are elaborated with metavariable types,
   /// but we don't yet know how to connect this list of types to the target type - for example
   /// the target type could be a metavariable, and propagating our default guess of a nondependent
   /// tuple could cause a type error if it turns out to be a dependent tuple.
-  UnelabTuple(&'a [UnelabTupPat<'a>], Ty<'a>),
+  Tuple(Vec<UnelabTupPat<'a>>, Ty<'a>),
+  /// A failed tuple pattern match.
+  Error(Box<UnelabTupPat<'a>>, Ty<'a>),
 }
 
 impl<'a> UnelabTupPat<'a> {
@@ -238,9 +229,18 @@ impl<'a> UnelabTupPat<'a> {
   #[must_use] fn ty(&self) -> Ty<'a> {
     match self.k {
       UnelabTupPatKind::Name(_, _, &ContextNext {ty, ..}) |
-      UnelabTupPatKind::Coercion(_, _, ty) |
       UnelabTupPatKind::Tuple(_, ty) |
-      UnelabTupPatKind::UnelabTuple(_, ty) => ty
+      UnelabTupPatKind::Error(_, ty) => ty,
+    }
+  }
+
+  /// The context before introducing the bindings in this tuple pattern.
+  fn base_context(&self, ctx: &mut InferCtx<'a>) {
+    match &self.k {
+      UnelabTupPatKind::Name(_, _, &ContextNext {parent, ..}) => ctx.dc.context = parent,
+      UnelabTupPatKind::Tuple(pats, _) =>
+        if let Some(pat) = pats.first() { pat.base_context(ctx) }
+      UnelabTupPatKind::Error(pat, _) => pat.base_context(ctx),
     }
   }
 }
@@ -293,6 +293,7 @@ impl<'a> WhnfTy<'a> {
     if self.uninit { self.ty = intern!(ctx, TyKind::Uninit(self.ty)) }
     self.ty
   }
+  fn is_ty(self) -> bool { !self.uninit && !self.moved && !self.ghost }
   fn moved(mut self, m: bool) -> Self { self.moved |= m; self }
   fn ghost(mut self) -> Self { self.ghost = true; self }
   fn uninit(mut self) -> Self { self.uninit = true; self }
@@ -518,15 +519,113 @@ impl<'a> ExpectExpr<'a> {
 }
 
 /// The result of a tuple pattern analysis, see [`InferCtx::tuple_pattern_tuple`].
-#[derive(Copy, Clone)]
+#[derive(Clone)]
+#[allow(variant_size_differences)]
 enum TuplePatternResult<'a> {
   /// This type cannot be destructured, or the wrong number of arguments were provided.
-  Fail,
+  /// If the bool is false, suppress the error.
+  Fail(bool),
   /// There is not enough information in the type to determine what kind of
   /// destructuring is needed.
   Indeterminate,
-  /// This is a nondependent list of length matching the pattern list.
-  List(&'a [Ty<'a>]),
+  /// This is a valid tuple pattern, which uses the [`TupleIter::next`] interface
+  /// to provide types in streaming fashion.
+  Tuple(TupleIter<'a>, TupleBuilder),
+}
+
+/// A function for converting a list of expressions from a tuple pattern into one expression.
+/// This type does not store anything in itself except the overall strategy for the merging,
+/// as no type information is needed for the reconstruction.
+#[derive(Copy, Clone)]
+enum TupleBuilder {
+  /// A unit pattern match just returns `()`.
+  Unit,
+  /// A list pattern match constructs `(e1, ..., en)`.
+  List,
+  /// An array pattern match constructs an array literal `[e1, ..., en]`.
+  Array,
+  /// An and pattern match uses the first element in the list. (All elements should be the
+  /// same, although we don't check this here.)
+  And,
+  /// A singleton pattern match `(x, h): sn {a : T}` returns `x`.
+  /// (It could also soundly return `a`, but `x` seems more useful here.)
+  Sn,
+}
+
+impl TupleBuilder {
+  /// Constructs an expression from a list of expressions for the sub-pattern matches.
+  /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
+  /// type error.
+  fn build<'a>(self, ctx: &mut InferCtx<'a>, exprs: Vec<Option<Expr<'a>>>) -> Option<Expr<'a>> {
+    Some(match self {
+      Self::Unit => ctx.common.e_unit,
+      Self::Sn => (*exprs.first()?)?,
+      Self::List => {
+        if exprs.iter().any(Option::is_none) {return None}
+        intern!(ctx, ExprKind::List(ctx.alloc.alloc_slice_fill_iter(
+          exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
+      }
+      Self::Array => {
+        if exprs.iter().any(Option::is_none) {return None}
+        intern!(ctx, ExprKind::Array(ctx.alloc.alloc_slice_fill_iter(
+          exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
+      }
+      Self::And => return exprs.first().copied().unwrap_or(Some(ctx.common.e_unit)),
+    })
+  }
+}
+
+/// An "iterator" over an expected type for a tuple pattern. Unlike a regular
+/// iterator, this has two methods, which must be called in an alternating
+/// sequence: [`TupleIter::next`] returns the next type to be unified or `None`
+/// if the iterator is done, and if it returns `Some` then the client must call
+/// [`TupleIter::push`] with the expression for the tuple pattern resulting from
+/// unification, after which point [`TupleIter::next`] can be called again.
+#[derive(Clone)]
+enum TupleIter<'a> {
+  /// A singleton pattern `{a : T}`, which expands to the expected type
+  /// `{x : T} {h : x = a}`.
+  Sn(Expr<'a>, Ty<'a>),
+  /// A single type `{_ : T}`, or an empty iterator.
+  Ty(Option<Ty<'a>>),
+  /// A list of types {_ : T1} {_ : T2} ... {_ : Tn}`, resulting from a pattern match
+  /// on `List` or `And`.
+  List(std::slice::Iter<'a, Ty<'a>>),
+  /// A dependent list of types `{xi : Ti}`, resulting from a pattern match on a `Struct`.
+  Args(std::slice::Iter<'a, Arg<'a>>),
+}
+
+impl<'a> TupleIter<'a> {
+  /// Check if the iterator is empty, and return the next type in the sequence.
+  ///
+  /// **Note**: Unlike a regular iterator, `next` cannot be called twice in a row.
+  /// If you get `Some(ty)` you have to either discard the iterator or call `push`
+  /// to get it ready for the next `next` call.
+  fn next(&mut self, ctx: &mut InferCtx<'a>) -> Option<Ty<'a>> {
+    match *self {
+      Self::Sn(e, ty) => Some(ty),
+      Self::Ty(ref mut ty) => ty.take(),
+      Self::List(ref mut it) => it.next().copied(),
+      Self::Args(ref mut it) => {
+        todo!()
+      }
+    }
+  }
+
+  /// Finishes a call to `next` by substituting `val` into all types in the
+  /// rest of the sequence of types.
+  fn push(&mut self, ctx: &mut InferCtx<'a>, val: Expr<'a>) {
+    match *self {
+      Self::Sn(e, ty) => {
+        *self = Self::Ty(Some(intern!(ctx, TyKind::Pure(
+          intern!(ctx, ExprKind::Binop(Binop::Eq, val, e))))));
+      }
+      Self::Ty(_) | Self::List(_) => {}
+      Self::Args(ref mut iter) => {
+        todo!()
+      }
+    }
+  }
 }
 
 /// Some common types and expressions.
@@ -796,8 +895,8 @@ impl<'a> InferCtx<'a> {
   fn move_tup_pat_inner(&mut self, pat: TuplePattern<'a>) -> TuplePattern<'a> {
     intern!(self, match pat.k {
       TuplePatternKind::Name(n, v, ty) => TuplePatternKind::Name(n, v, self.move_ty_shallow(ty)),
-      TuplePatternKind::Coercion(pat, coe, ty) => TuplePatternKind::Coercion(
-        self.move_tup_pat(pat), coe, self.move_ty_shallow(ty)),
+      TuplePatternKind::Error(pat, ty) => TuplePatternKind::Error(
+        self.move_tup_pat(pat), self.move_ty_shallow(ty)),
       TuplePatternKind::Tuple(pats, ty) => TuplePatternKind::Tuple(
         self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| self.move_tup_pat(pat))),
         self.move_ty_shallow(ty)),
@@ -1050,23 +1149,20 @@ impl<'a> InferCtx<'a> {
     pat: &'a ast::TuplePatternKind,
     expect_e: Option<Expr<'a>>,
     expect_t: Option<Ty<'a>>,
-  ) -> UnelabTupPat<'a> {
+  ) -> (UnelabTupPat<'a>, Option<Expr<'a>>) {
     match pat {
       &ast::TuplePatternKind::Name(g, n, v) => {
         let ty = expect_t.unwrap_or_else(|| self.new_ty_mvar(span));
         let ctx = self.new_context_next(v, expect_e, ty);
         self.dc.context = ctx.into();
-        UnelabTupPat {span, k: UnelabTupPatKind::Name(g, n, ctx)}
+        (UnelabTupPat {span, k: UnelabTupPatKind::Name(g, n, ctx)},
+         Some(intern!(self, ExprKind::Var(v))))
       }
       ast::TuplePatternKind::Typed(pat, ty) => {
-        let ty = self.lower_ty(ty, ExpectTy::coerce_from(expect_t));
+        let ty = self.lower_ty(ty, ExpectTy::supertype(expect_t));
         let pat = self.lower_tuple_pattern(&pat.span, &pat.k, expect_e, Some(ty));
         if let Some(tgt) = expect_t {
-          if let Some(coe) = self.relate_ty(pat.span, tgt, ty, Relation::Coerce) {
-            let coe = self.alloc.alloc_slice_copy(&coe);
-            let k = UnelabTupPatKind::Coercion(Box::new(pat), coe, tgt);
-            return UnelabTupPat {span, k}
-          }
+          assert!(self.relate_ty(pat.0.span, tgt, ty, Relation::Subtype).is_none());
         }
         pat
       }
@@ -1144,83 +1240,157 @@ impl<'a> InferCtx<'a> {
   }
 
   fn tuple_pattern_tuple(&mut self, nargs: usize, expect: Ty<'a>) -> TuplePatternResult<'a> {
-    todo!()
+    macro_rules! expect {($n:expr) => {{
+      if nargs != $n { return TuplePatternResult::Fail(true) }
+    }}}
+    let wty = self.whnf_ty(expect.into());
+    match wty.ty.k {
+      TyKind::Ghost(_) |
+      TyKind::Uninit(_) |
+      TyKind::Moved(_) => unreachable!(),
+      TyKind::Infer(_) => TuplePatternResult::Indeterminate,
+      TyKind::Error => TuplePatternResult::Fail(false),
+      TyKind::Unit | TyKind::True => {
+        expect!(0);
+        TuplePatternResult::Tuple(TupleIter::Ty(None), TupleBuilder::Unit)
+      }
+      TyKind::Array(ty, n) => {
+        #[allow(clippy::never_loop)]
+        let n_tgt: Option<usize> = match self.whnf_expr(n, self.common.nat()).k {
+          ExprKind::Int(n) => n.try_into().ok(),
+          _ => None
+        };
+        if let Some(n_tgt) = n_tgt { expect!(n_tgt) }
+        let e_nargs = intern!(self, ExprKind::Int(self.alloc.alloc(nargs.into())));
+        if self.equate_expr(n, e_nargs).is_err() {
+          return TuplePatternResult::Fail(true)
+        }
+        TuplePatternResult::Tuple(
+          TupleIter::List(self.alloc.alloc_slice_fill_copy(nargs, ty).iter()),
+          TupleBuilder::Array)
+      }
+      TyKind::Own(_) => todo!(),
+      TyKind::Ref(_, _) => todo!(),
+      TyKind::Shr(_, _) => todo!(),
+      TyKind::List(tys) | TyKind::And(tys) => {
+        expect!(tys.len());
+        let tys = if wty.is_ty() { tys } else {
+          let tys = tys.iter().map(|ty| wty.map(ty).to_ty(self)).collect::<Vec<_>>();
+          self.alloc.alloc_slice_fill_iter(tys.into_iter())
+        };
+        TuplePatternResult::Tuple(TupleIter::List(tys.iter()),
+          if matches!(wty.ty.k, TyKind::List(_)) {TupleBuilder::List} else {TupleBuilder::And})
+      }
+      TyKind::Sn(e, ty) => {
+        expect!(2);
+        TuplePatternResult::Tuple(TupleIter::Sn(e, ty), TupleBuilder::Sn)
+      }
+      TyKind::Struct(args) => {
+        expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
+        TuplePatternResult::Tuple(TupleIter::Args(args.iter()), TupleBuilder::List)
+      }
+      _ => TuplePatternResult::Fail(false),
+    }
   }
 
   fn lower_tuple_pattern_tuple_result(&mut self, span: &'a FileSpan,
     pats: &'a [(VarId, ast::TuplePattern)],
     res: TuplePatternResult<'a>, tgt: Ty<'a>
-  ) -> UnelabTupPat<'a> {
-    let k = match res {
+  ) -> (UnelabTupPat<'a>, Option<Expr<'a>>) {
+    let (k, e) = match res {
       TuplePatternResult::Indeterminate => {
-        let pats = self.lower_tuple_pattern_tuple_with(pats, |_| (None, None));
-        UnelabTupPatKind::UnelabTuple(pats, tgt)
+        let (pats, _) = self.lower_tuple_pattern_tuple_with(pats, TupleIter::Ty(None));
+        (UnelabTupPatKind::Tuple(pats, tgt), None)
       }
-      TuplePatternResult::Fail => {
-        let pats = self.lower_tuple_pattern_tuple_with(pats, |_| (None, None));
+      TuplePatternResult::Fail(report) => {
+        let (pats, _) = self.lower_tuple_pattern_tuple_with(pats, TupleIter::Ty(None));
         let ty = intern!(self, TyKind::List(
           self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty))));
-        let pat = UnelabTupPat {span, k: UnelabTupPatKind::Tuple(pats, ty)};
-        self.errors.push(hir::Spanned {span, k: TypeError::PatternMatch(tgt, ty)});
-        UnelabTupPatKind::Coercion(Box::new(pat), &[Coercion::Error], tgt)
+        if report {
+          self.errors.push(hir::Spanned {span, k: TypeError::PatternMatch(tgt, ty)});
+        }
+        let pat = Box::new(UnelabTupPat {span, k: UnelabTupPatKind::Tuple(pats, ty)});
+        (UnelabTupPatKind::Error(pat, tgt), Some(self.common.e_error))
       }
-      TuplePatternResult::List(tys) => {
-        let mut it = tys.iter();
-        let pats = self.lower_tuple_pattern_tuple_with(pats, |_| (None, it.next().copied()));
-        UnelabTupPatKind::Tuple(pats, tgt)
+      TuplePatternResult::Tuple(it, build) => {
+        // let mut it = tys.iter();
+        let (pats, es) = self.lower_tuple_pattern_tuple_with(pats, it);
+        (UnelabTupPatKind::Tuple(pats, tgt), build.build(self, es))
       }
     };
-    UnelabTupPat {span, k}
+    (UnelabTupPat {span, k}, e)
   }
 
   fn lower_tuple_pattern_tuple_with(&mut self,
     pats: &'a [(VarId, ast::TuplePattern)],
-    mut f: impl FnMut(&mut Self) -> (Option<Expr<'a>>, Option<Ty<'a>>)
-  ) -> &'a [UnelabTupPat<'a>] {
+    it: TupleIter<'a>,
+  ) -> (Vec<UnelabTupPat<'a>>, Vec<Option<Expr<'a>>>) {
+    let mut es = Vec::with_capacity(pats.len());
+    let mut opt_it = Some(it);
     let pats = pats.iter().map(|&(v, Spanned {ref span, k: ref pat})| {
-      let (expect_e, expect_t) = f(self);
-      self.lower_tuple_pattern(span, pat, expect_e, expect_t)
-    }).collect::<Vec<_>>();
-    self.alloc.alloc_slice_fill_iter(pats.into_iter())
+      let tgt = opt_it.as_mut().and_then(|it| it.next(self));
+      let (pat, e) = self.lower_tuple_pattern(span, pat, None, tgt);
+      if let Some(it) = &mut opt_it {
+        if let Some(e) = e { it.push(self, e) }
+        else { opt_it = None }
+      }
+      es.push(e);
+      pat
+    }).collect();
+    (pats, es)
   }
 
-  fn finish_tuple_pattern(&mut self, pat: &UnelabTupPat<'a>) -> TuplePattern<'a> {
-    intern!(self, match pat.k {
-      UnelabTupPatKind::Name(_, n, &ContextNext {var, ty, parent, ..}) => {
-        self.dc.context = parent;
-        TuplePatternKind::Name(n, var, ty)
+  fn finish_tuple_pattern_inner(&mut self, pat: &UnelabTupPat<'a>) -> (TuplePattern<'a>, Expr<'a>) {
+    let (k, e) = match &pat.k {
+      &UnelabTupPatKind::Name(_, n, c) => {
+        self.dc.context = c.into();
+        (TuplePatternKind::Name(n, c.var, c.ty), intern!(self, ExprKind::Var(c.var)))
       }
-      UnelabTupPatKind::Coercion(ref pat, coe, ty) =>
-        TuplePatternKind::Coercion(self.finish_tuple_pattern(pat), coe, ty),
+      UnelabTupPatKind::Error(pat, tgt) => {
+        let (pat, e) = self.finish_tuple_pattern_inner(pat);
+        (TuplePatternKind::Error(pat, tgt), e)
+      }
       UnelabTupPatKind::Tuple(pats, tgt) => {
-        let pats = pats.iter().rev().map(|pat| self.finish_tuple_pattern(pat)).collect::<Vec<_>>();
-        let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter().rev());
-        TuplePatternKind::Tuple(pats, tgt)
-      }
-      UnelabTupPatKind::UnelabTuple(pats, tgt) => {
         let mut res = self.tuple_pattern_tuple(pats.len(), tgt);
         if let TuplePatternResult::Indeterminate = res {
           let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty));
-          res = TuplePatternResult::List(tys)
+          res = TuplePatternResult::Tuple(TupleIter::List(tys.iter()), TupleBuilder::List)
         }
-        let ty = match res {
-          TuplePatternResult::Fail => intern!(self, TyKind::List(
-            self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty)))),
+        match res {
           TuplePatternResult::Indeterminate => unreachable!(),
-          TuplePatternResult::List(tys) => intern!(self, TyKind::List(tys)),
-        };
-        let coe = self.relate_ty(pat.span, tgt, ty, Relation::Coerce);
-        let pats = pats.iter().rev().map(|pat| self.finish_tuple_pattern(pat)).collect::<Vec<_>>();
-        let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter().rev());
-        let pat = TuplePatternKind::Tuple(pats, ty);
-        if let Some(coe) = coe {
-          let coe = self.alloc.alloc_slice_copy(&coe);
-          TuplePatternKind::Coercion(intern!(self, pat), coe, tgt)
-        } else {
-          pat
+          TuplePatternResult::Fail(_) => {
+            let ty = intern!(self, TyKind::List(
+              self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty))));
+            let pats = pats.iter().map(|pat| self.finish_tuple_pattern_inner(pat).0).collect::<Vec<_>>();
+            let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter());
+            let pat = intern!(self, TuplePatternKind::Tuple(pats, ty));
+            (TuplePatternKind::Error(pat, tgt), self.common.e_error)
+          }
+          TuplePatternResult::Tuple(mut it, build) => {
+            let mut es = Vec::with_capacity(pats.len());
+            let pats = pats.iter().map(|pat| {
+              let tgt = it.next(self);
+              let (pat, e) = self.finish_tuple_pattern_inner(pat);
+              it.push(self, e);
+              es.push(Some(e));
+              pat
+            }).collect::<Vec<_>>();
+            let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter());
+            let e = build.build(self, es).unwrap_or(self.common.e_error);
+            (TuplePatternKind::Tuple(pats, tgt), e)
+          }
         }
       }
-    })
+    };
+    (intern!(self, k), e)
+  }
+
+  fn finish_tuple_pattern(&mut self, pat: &UnelabTupPat<'a>) -> TuplePattern<'a> {
+    pat.base_context(self);
+    let base = self.dc.context;
+    let (res, _) = self.finish_tuple_pattern_inner(pat);
+    self.dc.context = base;
+    res
   }
 
   fn lower_opt_lft(&mut self, sp: &'a FileSpan, lft: &Option<Box<Spanned<ast::Lifetime>>>) -> Lifetime {
@@ -1285,7 +1455,7 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Struct(args))
       }
       ast::TypeKind::All(pats, ty) => {
-        let pats = pats.iter().map(|pat| self.lower_tuple_pattern(&pat.span, &pat.k, None, None)).collect::<Vec<_>>();
+        let pats = pats.iter().map(|pat| self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0).collect::<Vec<_>>();
         let mut ty = self.lower_ty(ty, ExpectTy::Any);
         for pat in pats.into_iter().rev() {
           let pat = self.finish_tuple_pattern(&pat);
@@ -1293,9 +1463,12 @@ impl<'a> InferCtx<'a> {
         }
         ty
       }
-      ast::TypeKind::Imp(_, _) => todo!(),
-      ast::TypeKind::Wand(_, _) => todo!(),
-      ast::TypeKind::Not(_) => todo!(),
+      ast::TypeKind::Imp(p, q) => intern!(self, TyKind::Imp(
+        self.lower_ty(p, ExpectTy::Any), self.lower_ty(q, ExpectTy::Any))),
+      ast::TypeKind::Wand(p, q) => intern!(self, TyKind::Wand(
+        self.lower_ty(p, ExpectTy::Any), self.lower_ty(q, ExpectTy::Any))),
+      ast::TypeKind::Not(p) =>
+        intern!(self, TyKind::Not(self.lower_ty(p, ExpectTy::Any))),
       ast::TypeKind::And(tys) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -1316,7 +1489,8 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Ghost(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Uninit(ty) =>
         intern!(self, TyKind::Uninit(self.lower_ty(ty, ExpectTy::Any))),
-      ast::TypeKind::Pure(_) => todo!(),
+      ast::TypeKind::Pure(e) =>
+        intern!(self, TyKind::Pure(self.check_pure_expr(e, self.common.t_bool))),
       ast::TypeKind::User(f, tys, es) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -1324,8 +1498,16 @@ impl<'a> InferCtx<'a> {
           unwrap_unchecked!(ty.k.ty()));
         todo!()
       }
-      ast::TypeKind::Heap(_, _) |
-      ast::TypeKind::HasTy(_, _) => todo!(),
+      ast::TypeKind::Heap(e1, e2) => {
+        let (e1, _) = self.lower_pure_expr(e1, ExpectExpr::Any);
+        let (e2, ty) = self.lower_pure_expr(e2, ExpectExpr::Any);
+        intern!(self, TyKind::Heap(e1, e2, ty))
+      }
+      ast::TypeKind::HasTy(e, ty) => {
+        let (e, _) = self.lower_pure_expr(e, ExpectExpr::Any);
+        let ty = self.lower_ty(ty, ExpectTy::Any);
+        intern!(self, TyKind::HasTy(e, ty))
+      }
       ast::TypeKind::Input => intern!(self, TyKind::Input),
       ast::TypeKind::Output => intern!(self, TyKind::Output),
       ast::TypeKind::Moved(ty) => intern!(self, TyKind::Moved(self.lower_ty(ty, ExpectTy::Any))),
@@ -1367,10 +1549,10 @@ impl<'a> InferCtx<'a> {
 
   fn lower_arg(&mut self, sp: &'a FileSpan, arg: &'a ast::ArgKind) -> UnelabArg<'a> {
     match arg {
-      ast::ArgKind::Lam(pat) => UnelabArg::Lam(self.lower_tuple_pattern(sp, pat, None, None)),
+      ast::ArgKind::Lam(pat) => UnelabArg::Lam(self.lower_tuple_pattern(sp, pat, None, None).0),
       ast::ArgKind::Let(Spanned {span, k: pat}, e) => {
         let ctx1 = self.dc.context;
-        let pat = self.lower_tuple_pattern(span, pat, None, None);
+        let pat = self.lower_tuple_pattern(span, pat, None, None).0;
         let ctx2 = mem::replace(&mut self.dc.context, ctx1);
         let e = self.check_pure_expr(e, pat.ty());
         self.dc.context = ctx2;
@@ -2018,7 +2200,13 @@ impl<'a> InferCtx<'a> {
         ret![e, Some(self.common.e_unit), self.common.t_unit]
       }
 
-      ast::ExprKind::Call {..} => todo!(),
+      ast::ExprKind::Call {f: Spanned {span, k: f}, tys, args, variant} => {
+        let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
+        let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
+        let f_ty = let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(f),
+          unwrap_unchecked!(ty.k.ty()));
+        todo!()
+      }
 
       ast::ExprKind::Entail(pf, ps) => {
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
@@ -2305,7 +2493,7 @@ impl<'a> InferCtx<'a> {
     match stmt {
       ast::StmtKind::Let {lhs, rhs} => {
         let mut ctx = self.dc.context;
-        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None);
+        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         mem::swap(&mut ctx, &mut self.dc.context);
         let (rhs, _) = self.check_expr(rhs, lhs.ty());
         self.dc.context = ctx;
@@ -2396,7 +2584,7 @@ impl<'a> InferCtx<'a> {
         let args2 = args.iter().map(|arg| self.lower_arg(&arg.span, &arg.k.1)).collect::<Vec<_>>();
         let mut subst = Subst::default();
         let rets = rets.iter().map(|ret| match ret {
-          ast::Ret::Reg(pat) => UnelabArg::Lam(self.lower_tuple_pattern(&pat.span, &pat.k, None, None)),
+          ast::Ret::Reg(pat) => UnelabArg::Lam(self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0),
           &ast::Ret::Out(g, i, n, v, ref ty) => {
             let ty = if let Some(ty) = ty {
               self.lower_ty(ty, ExpectTy::Any)
