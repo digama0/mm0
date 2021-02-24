@@ -174,7 +174,7 @@ impl LinedString {
   /// indicated by some lsp [`Position`], discarding any unneeded newline data.
   /// Does nothing if the [`LinedString`]'s contents were already less than or equal
   /// in length to the [`Position`]'s index.
-   pub fn truncate(&mut self, pos: Position) {
+  pub fn truncate(&mut self, pos: Position) {
     if let Some(idx) = self.to_idx(pos) {
       if idx < self.s.len() {
         self.s.truncate(idx);

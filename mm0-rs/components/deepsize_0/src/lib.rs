@@ -384,12 +384,12 @@ impl<T: DeepSizeOf> DeepSizeOf for typed_arena::Arena<T> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         #[derive(DeepSizeOf)]
         struct Arena<T> {
-            chunks: std::cell::RefCell<ChunkList<T>>,
+            _chunks: std::cell::RefCell<ChunkList<T>>,
         }
         #[derive(DeepSizeOf)]
         struct ChunkList<T> {
-            current: Vec<T>,
-            rest: Vec<Vec<T>>,
+            _current: Vec<T>,
+            _rest: Vec<Vec<T>>,
         }
         #[allow(clippy::transmute_ptr_to_ptr)]
         let this: &Arena<T> = unsafe {std::mem::transmute(self)};

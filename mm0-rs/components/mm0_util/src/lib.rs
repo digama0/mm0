@@ -39,7 +39,8 @@ use std::collections::{HashMap, hash_map::{Entry, OccupiedEntry}};
 #[cfg(feature = "memory")] use deepsize_derive::DeepSizeOf;
 
 pub mod lined_string;
-pub mod prims;
+pub mod ids;
+pub mod mmb;
 
 /// Newtype for `Box<dyn Error + Send + Sync>`
 pub type BoxError = Box<dyn Error + Send + Sync>;
@@ -348,10 +349,10 @@ pub use lsp_types::{Position, Range};
 /// A position is between two characters like an 'insert' cursor in a editor.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Default)]
 pub struct Position {
-    /// Line position in a document (zero-based).
-    pub line: u32,
-    /// Character offset on a line in a document (zero-based).
-    pub character: u32,
+  /// Line position in a document (zero-based).
+  pub line: u32,
+  /// Character offset on a line in a document (zero-based).
+  pub character: u32,
 }
 
 #[cfg(not(feature = "server"))]
@@ -359,10 +360,10 @@ pub struct Position {
 /// A range is comparable to a selection in an editor. Therefore the end position is exclusive.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default)]
 pub struct Range {
-    /// The range's start position.
-    pub start: Position,
-    /// The range's end position.
-    pub end: Position,
+  /// The range's start position.
+  pub start: Position,
+  /// The range's end position.
+  pub end: Position,
 }
 
 lazy_static! {
@@ -503,7 +504,7 @@ impl<'a> From<&'a FileSpan> for Span {
 /// [`getrusage()`](libc::getrusage) function from libc.
 #[allow(unused)]
 #[cfg(feature = "memory")]
-pub(crate) fn get_memory_rusage() -> usize {
+fn get_memory_rusage() -> usize {
   use std::convert::TryInto;
   let usage = unsafe {
     let mut usage = MaybeUninit::uninit();
@@ -517,7 +518,7 @@ pub(crate) fn get_memory_rusage() -> usize {
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(all(feature = "memory", target_os = "linux"))]
-pub(crate) fn get_memory_usage() -> usize {
+pub fn get_memory_usage() -> usize {
   procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
 }
 
@@ -525,7 +526,7 @@ pub(crate) fn get_memory_usage() -> usize {
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[allow(unused)]
 #[cfg(all(feature = "memory", not(target_os = "linux")))]
-pub(crate) fn get_memory_usage() -> usize {
+pub fn get_memory_usage() -> usize {
   get_memory_rusage()
 }
 
@@ -533,5 +534,5 @@ pub(crate) fn get_memory_usage() -> usize {
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(not(feature = "memory"))]
 #[allow(unused)]
-pub(crate) fn get_memory_usage() -> usize { 0 }
+pub fn get_memory_usage() -> usize { 0 }
 

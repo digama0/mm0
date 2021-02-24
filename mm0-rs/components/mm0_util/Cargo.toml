@@ -1,5 +1,5 @@
 [package]
-name = "mm0-rs_util"
+name = "mm0_util"
 version = "0.1.0"
 authors = ["Mario Carneiro <di.gama@gmail.com>"]
 edition = "2018"
@@ -25,7 +25,10 @@ deepsize_0 = { path = "../deepsize_0", optional = true }
 deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
 libc = { version = "0.2.86", optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+procinfo = { version = "0.4.2", optional = true }
+
 [features]
 default = ["memory"]
-memory = ["deepsize_0", "deepsize_derive", "libc"]
+memory = ["deepsize_0", "deepsize_derive", "libc", "procinfo"]
 
