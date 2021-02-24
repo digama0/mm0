@@ -1,14 +1,18 @@
 //! Primitive mm0 types that consuming crates will probably want.
 
+#[cfg(feature = "memory")]
+use deepsize_derive::DeepSizeOf;
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
-#[cfg(feature = "memory")] use deepsize_derive::DeepSizeOf;
 
 macro_rules! id_wrapper {
   ($id:ident: $ty:ty, $vec:ident) => {
-    id_wrapper!($id: $ty, $vec,
-      concat!("An index into a [`", stringify!($vec), "`]"));
+    id_wrapper!(
+      $id: $ty,
+      $vec,
+      concat!("An index into a [`", stringify!($vec), "`]")
+    );
   };
   ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
     #[doc=$svec]
@@ -20,9 +24,7 @@ macro_rules! id_wrapper {
     impl $id {
       /// Convert this newtyped integer into its underlying integer.
       #[must_use]
-      pub fn into_inner(self) -> $ty {
-        self.0
-      }
+      pub fn into_inner(self) -> $ty { self.0 }
     }
 
     impl fmt::Debug for $id {
@@ -45,7 +47,7 @@ macro_rules! id_wrapper {
       pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
 
       /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
-      pub fn enum_iter(&self) -> impl Iterator<Item=($id, &T)> {
+      pub fn enum_iter(&self) -> impl Iterator<Item = ($id, &T)> {
         self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
     }
@@ -73,7 +75,7 @@ macro_rules! id_wrapper {
     }
 
     impl<T> FromIterator<T> for $vec<T> {
-      fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self { $vec(Vec::from_iter(iter)) }
+      fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self { $vec(Vec::from_iter(iter)) }
     }
   };
 }
@@ -131,7 +133,7 @@ impl Modifiers {
 
   /// Construct a [`Modifiers`] from a byte.
   #[must_use]
-  pub fn new(bits: u8) -> Self { Self {bits} }
+  pub fn new(bits: u8) -> Self { Self { bits } }
 
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
   /// using `sort_data().contains(m)`.
@@ -151,20 +153,34 @@ impl Modifiers {
       b"pub" => Modifiers::PUB,
       b"abstract" => Modifiers::ABSTRACT,
       b"local" => Modifiers::LOCAL,
-      _ => Modifiers::NONE
+      _ => Modifiers::NONE,
     }
   }
 }
 
 impl fmt::Display for Modifiers {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    if self.contains(Modifiers::PURE) {write!(f, "pure ")?}
-    if self.contains(Modifiers::STRICT) {write!(f, "strict ")?}
-    if self.contains(Modifiers::PROVABLE) {write!(f, "provable ")?}
-    if self.contains(Modifiers::FREE) {write!(f, "free ")?}
-    if self.contains(Modifiers::PUB) {write!(f, "pub ")?}
-    if self.contains(Modifiers::ABSTRACT) {write!(f, "abstract ")?}
-    if self.contains(Modifiers::LOCAL) {write!(f, "local ")?}
+    if self.contains(Modifiers::PURE) {
+      write!(f, "pure ")?
+    }
+    if self.contains(Modifiers::STRICT) {
+      write!(f, "strict ")?
+    }
+    if self.contains(Modifiers::PROVABLE) {
+      write!(f, "provable ")?
+    }
+    if self.contains(Modifiers::FREE) {
+      write!(f, "free ")?
+    }
+    if self.contains(Modifiers::PUB) {
+      write!(f, "pub ")?
+    }
+    if self.contains(Modifiers::ABSTRACT) {
+      write!(f, "abstract ")?
+    }
+    if self.contains(Modifiers::LOCAL) {
+      write!(f, "local ")?
+    }
     Ok(())
   }
 }

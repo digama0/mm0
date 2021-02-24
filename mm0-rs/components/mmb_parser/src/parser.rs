@@ -321,10 +321,10 @@ pub enum ParseError {
     IoError(io::Error),
 }
 
-const HEADER_CAVEAT: &'static str =
-    "Be advised that the given position(s) may be the result of an \
-  untrustworthy header, and should therefore be considered \
-  suggestions for where to begin troubleshooting.";
+const HEADER_CAVEAT: &'static str = "\
+    Be advised that the given position(s) may be the result of an \
+    untrustworthy header, and should therefore be considered \
+    suggestions for where to begin troubleshooting.";
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

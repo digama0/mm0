@@ -4,42 +4,76 @@
 //! the `server` feature is enabled.
 
 // rust lints we want
-#![warn(bare_trait_objects, elided_lifetimes_in_paths,
-  missing_copy_implementations, missing_debug_implementations, future_incompatible,
-  rust_2018_idioms, trivial_numeric_casts, variant_size_differences, unreachable_pub,
-  unused, missing_docs)]
+#![warn(
+  bare_trait_objects,
+  elided_lifetimes_in_paths,
+  missing_copy_implementations,
+  missing_debug_implementations,
+  future_incompatible,
+  rust_2018_idioms,
+  trivial_numeric_casts,
+  variant_size_differences,
+  unreachable_pub,
+  unused,
+  missing_docs
+)]
 // all the clippy
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 // all the clippy::restriction lints we want
-#![warn(clippy::else_if_without_else, clippy::float_arithmetic,
-  clippy::get_unwrap, clippy::inline_asm_x86_att_syntax, clippy::integer_division,
-  clippy::rc_buffer, clippy::rest_pat_in_fully_bound_structs,
-  clippy::string_add, clippy::unwrap_used, clippy::wrong_pub_self_convention)]
+#![warn(
+  clippy::else_if_without_else,
+  clippy::float_arithmetic,
+  clippy::get_unwrap,
+  clippy::inline_asm_x86_att_syntax,
+  clippy::integer_division,
+  clippy::rc_buffer,
+  clippy::rest_pat_in_fully_bound_structs,
+  clippy::string_add,
+  clippy::unwrap_used,
+  clippy::wrong_pub_self_convention
+)]
 // all the clippy lints we don't want
-#![allow(clippy::cognitive_complexity, clippy::comparison_chain,
-  clippy::default_trait_access, clippy::filter_map, clippy::inline_always,
-  clippy::map_err_ignore, clippy::missing_const_for_fn, clippy::missing_errors_doc,
-  clippy::missing_panics_doc, clippy::module_name_repetitions,
-  clippy::multiple_crate_versions, clippy::option_if_let_else,
-  clippy::shadow_unrelated, clippy::too_many_lines, clippy::use_self)]
+#![allow(
+  clippy::cognitive_complexity,
+  clippy::comparison_chain,
+  clippy::default_trait_access,
+  clippy::filter_map,
+  clippy::inline_always,
+  clippy::map_err_ignore,
+  clippy::missing_const_for_fn,
+  clippy::missing_errors_doc,
+  clippy::missing_panics_doc,
+  clippy::module_name_repetitions,
+  clippy::multiple_crate_versions,
+  clippy::option_if_let_else,
+  clippy::shadow_unrelated,
+  clippy::too_many_lines,
+  clippy::use_self
+)]
 
-#[macro_use] extern crate lazy_static;
-#[macro_use] extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate bitflags;
 
-use std::ops::{Deref, DerefMut};
+#[cfg(feature = "memory")]
+use deepsize_derive::DeepSizeOf;
 use std::borrow::Borrow;
-use std::ffi::CStr;
-use std::mem::{self, MaybeUninit};
-use std::fmt;
+use std::collections::{
+  hash_map::{Entry, OccupiedEntry},
+  HashMap,
+};
 use std::error::Error;
+use std::ffi::CStr;
+use std::fmt;
+use std::hash::{BuildHasher, Hash, Hasher};
+use std::mem::{self, MaybeUninit};
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::hash::{Hash, Hasher, BuildHasher};
-use std::collections::{HashMap, hash_map::{Entry, OccupiedEntry}};
-#[cfg(feature = "memory")] use deepsize_derive::DeepSizeOf;
 
-pub mod lined_string;
 pub mod ids;
+pub mod lined_string;
 pub mod mmb;
 
 /// Newtype for `Box<dyn Error + Send + Sync>`
@@ -48,11 +82,15 @@ pub type BoxError = Box<dyn Error + Send + Sync>;
 /// Extension trait for `cloned_box`.
 pub trait SliceExt<T> {
   /// Clones a slice into a boxed slice.
-  fn cloned_box(&self) -> Box<[T]> where T: Clone;
+  fn cloned_box(&self) -> Box<[T]>
+  where T: Clone;
 }
 
 impl<T> SliceExt<T> for [T] {
-  fn cloned_box(&self) -> Box<[T]> where T: Clone { self.to_vec().into() }
+  fn cloned_box(&self) -> Box<[T]>
+  where T: Clone {
+    self.to_vec().into()
+  }
 }
 
 /// Extension trait for [`HashMap`]`<K, V>`.
@@ -66,8 +104,11 @@ pub trait HashMapExt<K, V> {
 impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
   fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)> {
     match self.entry(k) {
-      Entry::Vacant(e) => { e.insert(v); None }
-      Entry::Occupied(e) => Some((v, e))
+      Entry::Vacant(e) => {
+        e.insert(v);
+        None
+      }
+      Entry::Occupied(e) => Some((v, e)),
     }
   }
 }
@@ -104,7 +145,11 @@ macro_rules! let_unchecked {
 /// # Safety
 /// This function must not be called on a [`None`] value.
 #[macro_export]
-macro_rules! unwrap_unchecked {($e:expr) => {let_unchecked!(Some(x) = $e, x)}}
+macro_rules! unwrap_unchecked {
+  ($e:expr) => {
+    let_unchecked!(Some(x) = $e, x)
+  };
+}
 
 /// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
 pub trait MutexExt<T> {
@@ -171,9 +216,7 @@ impl From<String> for ArcString {
 
 impl ArcString {
   #[allow(unused)]
-  pub(crate) fn as_str(&self) -> &str {
-    unsafe {std::str::from_utf8_unchecked(self)}
-  }
+  pub(crate) fn as_str(&self) -> &str { unsafe { std::str::from_utf8_unchecked(self) } }
 }
 
 /// A structure that allows constructing linked lists on the call stack.
@@ -182,13 +225,14 @@ pub struct StackList<'a, T>(pub Option<&'a (StackList<'a, T>, T)>);
 
 impl<T> StackList<'_, T> {
   /// Returns true if this list contains the given element.
-  pub fn contains(&self, t: &T) -> bool where T: PartialEq {
+  pub fn contains(&self, t: &T) -> bool
+  where T: PartialEq {
     let mut s = self;
     loop {
       match s.0 {
         None => return false,
         Some((_, t2)) if *t2 == *t => return true,
-        Some((s2, _)) => s = s2
+        Some((s2, _)) => s = s2,
       }
     }
   }
@@ -208,17 +252,21 @@ impl<T> Clone for ArcList<T> {
 
 impl<T> ArcList<T> {
   /// Return true if the list is empty.
-  #[must_use] pub fn is_empty(&self) -> bool { self.0.is_none() }
+  #[must_use]
+  pub fn is_empty(&self) -> bool { self.0.is_none() }
   /// Append a new node on the end of the list.
-  #[must_use] pub fn push(self, t: T) -> Self { Self(Some(Arc::new((self, t)))) }
+  #[must_use]
+  pub fn push(self, t: T) -> Self { Self(Some(Arc::new((self, t)))) }
   /// Check if the list contains an item.
-  #[must_use] pub fn contains(&self, t: &T) -> bool where T: PartialEq {
+  #[must_use]
+  pub fn contains(&self, t: &T) -> bool
+  where T: PartialEq {
     let mut s = self;
     loop {
       match s.0.as_deref() {
         None => return false,
         Some((_, t2)) if *t2 == *t => return true,
-        Some((s2, _)) => s = s2
+        Some((s2, _)) => s = s2,
       }
     }
   }
@@ -226,9 +274,13 @@ impl<T> ArcList<T> {
   /// Construct `self[..t2] ++ t :: tail` where `t2`
   /// is the first element of `self` equal to `t`.
   /// Panics if no such `t2` exists (i.e. `self.contains(t)` is a precondition).
-  #[must_use] pub fn join(&self, t: T, tail: Self) -> Self where T: PartialEq + Clone {
+  #[must_use]
+  pub fn join(&self, t: T, tail: Self) -> Self
+  where T: PartialEq + Clone {
     let (l, t2) = &**self.0.as_ref().expect("self should contain t");
-    if *t2 == t { return tail.push(t) }
+    if *t2 == t {
+      return tail.push(t)
+    }
     l.join(t, tail).push(t2.clone())
   }
 }
@@ -263,7 +315,8 @@ pub struct SliceUninit<T>(Box<[MaybeUninit<T>]>);
 
 impl<T> SliceUninit<T> {
   /// Create a new uninitialized slice of length `size`.
-  #[must_use] pub fn new(size: usize) -> Self {
+  #[must_use]
+  pub fn new(size: usize) -> Self {
     let mut res = Vec::with_capacity(size);
     // safety: the newly constructed elements have type MaybeUninit<T>
     // so it's fine to not initialize them
@@ -281,7 +334,8 @@ impl<T> SliceUninit<T> {
   /// # Safety
   ///
   /// This causes undefined behavior if the content is not fully initialized.
-  #[must_use] pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
+  #[must_use]
+  pub unsafe fn assume_init(self) -> Box<[T]> { mem::transmute(self.0) }
 }
 
 /// Points to a specific region of a source file by identifying the region's start and end points.
@@ -297,36 +351,42 @@ pub struct Span {
 deepsize_0::deep_size_0!(Span);
 
 impl From<std::ops::Range<usize>> for Span {
-  #[inline] fn from(r: std::ops::Range<usize>) -> Self {
-    Span {start: r.start, end: r.end}
+  #[inline]
+  fn from(r: std::ops::Range<usize>) -> Self {
+    Span {
+      start: r.start,
+      end: r.end,
+    }
   }
 }
 
 impl From<std::ops::RangeInclusive<usize>> for Span {
-  #[inline] fn from(r: std::ops::RangeInclusive<usize>) -> Self {
-    Span {start: *r.start(), end: *r.end()+1}
+  #[inline]
+  fn from(r: std::ops::RangeInclusive<usize>) -> Self {
+    Span {
+      start: *r.start(),
+      end: *r.end() + 1,
+    }
   }
 }
 
 impl From<usize> for Span {
-  #[inline] fn from(n: usize) -> Self { Span {start: n, end: n} }
+  #[inline]
+  fn from(n: usize) -> Self { Span { start: n, end: n } }
 }
 
 impl From<Span> for std::ops::Range<usize> {
-  #[inline] fn from(s: Span) -> Self { s.start..s.end }
+  #[inline]
+  fn from(s: Span) -> Self { s.start..s.end }
 }
 
 impl Deref for Span {
   type Target = std::ops::Range<usize>;
-  fn deref(&self) -> &std::ops::Range<usize> {
-    unsafe { &*<*const _>::cast(self) }
-  }
+  fn deref(&self) -> &std::ops::Range<usize> { unsafe { &*<*const _>::cast(self) } }
 }
 
 impl DerefMut for Span {
-  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> {
-    unsafe { &mut *<*mut _>::cast(self) }
-  }
+  fn deref_mut(&mut self) -> &mut std::ops::Range<usize> { unsafe { &mut *<*mut _>::cast(self) } }
 }
 
 impl IntoIterator for Span {
@@ -381,8 +441,12 @@ lazy_static! {
 /// [`CURRENT_DIR`]: struct@CURRENT_DIR
 #[cfg(not(target_arch = "wasm32"))]
 fn make_relative(buf: &Path) -> String {
-  pathdiff::diff_paths(buf, &*CURRENT_DIR).as_deref().unwrap_or(buf)
-    .to_str().expect("bad unicode in file path").to_owned()
+  pathdiff::diff_paths(buf, &*CURRENT_DIR)
+    .as_deref()
+    .unwrap_or(buf)
+    .to_str()
+    .expect("bad unicode in file path")
+    .to_owned()
 }
 
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
@@ -390,7 +454,7 @@ struct FileRefInner {
   path: PathBuf,
   rel: String,
   #[cfg(feature = "server")]
-  url: lsp_types::Url
+  url: lsp_types::Url,
 }
 
 /// A reference to a file. It wraps an [`Arc`] so it can be cloned thread-safely.
@@ -427,25 +491,31 @@ impl From<lsp_types::Url> for FileRef {
   fn from(url: lsp_types::Url) -> FileRef {
     let path = url.to_file_path().expect("bad URL");
     let rel = make_relative(&path);
-    FileRef(Arc::new(FileRefInner {path, rel, url}))
+    FileRef(Arc::new(FileRefInner { path, rel, url }))
   }
 }
 
 impl FileRef {
   /// Convert this [`FileRef`] to a [`PathBuf`], for use with OS file actions.
-  #[must_use] pub fn path(&self) -> &PathBuf { &self.0.path }
+  #[must_use]
+  pub fn path(&self) -> &PathBuf { &self.0.path }
   /// Convert this [`FileRef`] to a relative path (as a `&str`).
-  #[must_use] pub fn rel(&self) -> &str { &self.0.rel }
+  #[must_use]
+  pub fn rel(&self) -> &str { &self.0.rel }
   /// Convert this [`FileRef`] to a `file:://` URL, for use with LSP.
   #[cfg(feature = "server")]
-  #[must_use] pub fn url(&self) -> &lsp_types::Url { &self.0.url }
+  #[must_use]
+  pub fn url(&self) -> &lsp_types::Url { &self.0.url }
   /// Get a pointer to this allocation, for use in hashing.
-  #[must_use] pub fn ptr(&self) -> *const PathBuf { self.path() }
+  #[must_use]
+  pub fn ptr(&self) -> *const PathBuf { self.path() }
   /// Compare this with `other` for pointer equality.
-  #[must_use] pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
+  #[must_use]
+  pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
 
   /// Returns true if this file has the provided extension.
-  #[must_use] pub fn has_extension(&self, ext: &str) -> bool {
+  #[must_use]
+  pub fn has_extension(&self, ext: &str) -> bool {
     self.path().extension().map_or(false, |s| s == ext)
   }
 }
@@ -460,15 +530,19 @@ impl Hash for FileRef {
 
 impl fmt::Display for FileRef {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str())
-      .to_str().expect("bad unicode in path").fmt(f)
+    self
+      .0
+      .path
+      .file_name()
+      .unwrap_or_else(|| self.0.path.as_os_str())
+      .to_str()
+      .expect("bad unicode in path")
+      .fmt(f)
   }
 }
 
 impl fmt::Debug for FileRef {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fmt::Display::fmt(self, f)
-  }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
 }
 
 /// A span paired with a [`FileRef`].
@@ -492,11 +566,14 @@ impl<'a> From<&'a FileSpan> for Span {
 
 /// Construct a `&`[`CStr`] from a prefix byte slice, by terminating at
 /// the first nul character. The second output is the remainder of the slice.
-#[must_use] pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
+#[must_use]
+pub fn cstr_from_bytes_prefix(bytes: &[u8]) -> Option<(&CStr, &[u8])> {
   let mid = memchr::memchr(0, bytes)? + 1;
   unsafe {
-    Some((CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
-      bytes.get_unchecked(..mid)))
+    Some((
+      CStr::from_bytes_with_nul_unchecked(bytes.get_unchecked(..mid)),
+      bytes.get_unchecked(..mid),
+    ))
   }
 }
 
@@ -527,13 +604,10 @@ pub fn get_memory_usage() -> usize {
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(all(feature = "memory", not(target_os = "linux")))]
 #[must_use]
-pub fn get_memory_usage() -> usize {
-  get_memory_rusage()
-}
+pub fn get_memory_usage() -> usize { get_memory_rusage() }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(not(feature = "memory"))]
 #[must_use]
 pub fn get_memory_usage() -> usize { 0 }
-

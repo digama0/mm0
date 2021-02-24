@@ -1,8 +1,8 @@
 //! Basic types involved in MMB file parsing.
 
+use super::ids::SortId;
 use byteorder::LE;
 use zerocopy::{FromBytes, Unaligned, U64};
-use super::ids::SortId;
 
 /// bound mask: `10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000`
 pub const TYPE_BOUND_MASK: u64 = 1 << 63;
@@ -26,23 +26,17 @@ pub struct Type(U64<LE>);
 pub type Arg = Type;
 
 impl std::default::Default for Type {
-  fn default() -> Self {
-    Type(U64::new(0))
-  }
+  fn default() -> Self { Type(U64::new(0)) }
 }
 
 impl From<u64> for Type {
-  fn from(n: u64) -> Type {
-    Type(U64::new(n))
-  }
+  fn from(n: u64) -> Type { Type(U64::new(n)) }
 }
 
 impl Type {
   /// Make a new `Type` of sort `sort_num`
   #[must_use]
-  pub fn new_of_sort(sort_num: u8) -> Self {
-    Type::from(u64::from(sort_num) << 56)
-  }
+  pub fn new_of_sort(sort_num: u8) -> Self { Type::from(u64::from(sort_num) << 56) }
 
   /// A brand new `Type`; bool indicates whether it's bound.
   #[must_use]
@@ -68,31 +62,23 @@ impl Type {
   }
 
   /// Add a dependency on `bv_idx`
-  pub fn add_dep(&mut self, bv_idx: u64) {
-    *self |= Type::from(1 << bv_idx)
-  }
+  pub fn add_dep(&mut self, bv_idx: u64) { *self |= Type::from(1 << bv_idx) }
 
   /// Does this type depend on the bth bound variable?
   ///
   /// This is 0 indexed.
   #[must_use]
-  pub fn depends_on(self, bv_idx: u64) -> bool {
-    self.0.get() & (1 << bv_idx) != 0
-  }
+  pub fn depends_on(self, bv_idx: u64) -> bool { self.0.get() & (1 << bv_idx) != 0 }
 
   /// True if this argument is a bound variable.
   #[inline]
   #[must_use]
-  pub fn bound(self) -> bool {
-    self.0.get() & (1 << 63) != 0
-  }
+  pub fn bound(self) -> bool { self.0.get() & (1 << 63) != 0 }
   /// The sort of this variable.
   #[allow(clippy::cast_possible_truncation)]
   #[inline]
   #[must_use]
-  pub fn sort(self) -> SortId {
-    SortId(((self.0.get() >> 56) & 0x7F) as u8)
-  }
+  pub fn sort(self) -> SortId { SortId(((self.0.get() >> 56) & 0x7F) as u8) }
 
   /// If this is the type of a bound variable, return a u64
   /// whose only activated bit is the bit indicating which bv
@@ -112,7 +98,7 @@ impl Type {
     if self.bound() {
       for i in 0..56 {
         if ((1 << i) & self.0.get()) != 0 {
-          return Some(i + 1);
+          return Some(i + 1)
         }
       }
       unreachable!("Something's wrong with `is_bound`")
@@ -145,46 +131,32 @@ impl Type {
 
   /// Get the high bit only, which holds the boundedness and the sort.
   #[must_use]
-  pub fn high_bit(self) -> Self {
-    Type(U64::new(self.0.get() & !TYPE_DEPS_MASK))
-  }
+  pub fn high_bit(self) -> Self { Type(U64::new(self.0.get() & !TYPE_DEPS_MASK)) }
 
   /// Are these two types totally bitwise-disjoint
   #[must_use]
-  pub fn disjoint(self, other: Self) -> bool {
-    (self.0.get() & other.0.get()) == 0
-  }
+  pub fn disjoint(self, other: Self) -> bool { (self.0.get() & other.0.get()) == 0 }
 }
 
 impl std::ops::BitAnd<Type> for Type {
   type Output = Self;
-  fn bitand(self, rhs: Self) -> Self::Output {
-    Type::from(self.0.get() & rhs.0.get())
-  }
+  fn bitand(self, rhs: Self) -> Self::Output { Type::from(self.0.get() & rhs.0.get()) }
 }
 
 impl std::ops::BitAndAssign<Type> for Type {
-  fn bitand_assign(&mut self, other: Self) {
-    self.0.set(self.0.get() & other.0.get())
-  }
+  fn bitand_assign(&mut self, other: Self) { self.0.set(self.0.get() & other.0.get()) }
 }
 
 impl std::ops::BitOr<Type> for Type {
   type Output = Self;
-  fn bitor(self, rhs: Self) -> Self::Output {
-    Type::from(self.0.get() | rhs.0.get())
-  }
+  fn bitor(self, rhs: Self) -> Self::Output { Type::from(self.0.get() | rhs.0.get()) }
 }
 
 impl std::ops::BitOrAssign<Type> for Type {
-  fn bitor_assign(&mut self, other: Self) {
-    self.0.set(self.0.get() | other.0.get())
-  }
+  fn bitor_assign(&mut self, other: Self) { self.0.set(self.0.get() | other.0.get()) }
 }
 
 impl std::ops::Not for Type {
   type Output = Type;
-  fn not(self) -> Self::Output {
-    Type::from(!self.0.get())
-  }
+  fn not(self) -> Self::Output { Type::from(!self.0.get()) }
 }
