@@ -4,13 +4,13 @@ use byteorder::LE;
 use zerocopy::{FromBytes, Unaligned, U64};
 use super::ids::SortId;
 
-/// bound mask: 10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000
+/// bound mask: `10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000`
 pub const TYPE_BOUND_MASK: u64 = 1 << 63;
 
-/// 10000000_11111111_11111111_11111111_11111111_11111111_11111111_11111111
+/// `10000000_11111111_11111111_11111111_11111111_11111111_11111111_11111111`
 pub const TYPE_SORT_MASK: u64 = (1 << 63) | ((1 << 56) - 1);
 
-/// deps mask: 00000000_11111111_11111111_11111111_11111111_11111111_11111111_11111111
+/// deps mask: `00000000_11111111_11111111_11111111_11111111_11111111_11111111_11111111`
 pub const TYPE_DEPS_MASK: u64 = (1 << 56) - 1;
 
 /// An argument binder in a term/def or axiom/theorem.
@@ -39,11 +39,13 @@ impl From<u64> for Type {
 
 impl Type {
   /// Make a new `Type` of sort `sort_num`
+  #[must_use]
   pub fn new_of_sort(sort_num: u8) -> Self {
-    Type::from((sort_num as u64) << 56)
+    Type::from(u64::from(sort_num) << 56)
   }
 
   /// A brand new `Type`; bool indicates whether it's bound.
+  #[must_use]
   pub fn new(bound: bool) -> Self {
     if bound {
       Type::from(1 << 63)
@@ -62,10 +64,10 @@ impl Type {
     // clear existing sort if any;
     *self &= Type::from(TYPE_SORT_MASK);
     // Add new sort
-    *self |= Type::from((sort_id.into_inner() as u64) << 56)
+    *self |= Type::from(u64::from(sort_id.into_inner()) << 56)
   }
 
-  /// Add a dependency on bv_idx
+  /// Add a dependency on `bv_idx`
   pub fn add_dep(&mut self, bv_idx: u64) {
     *self |= Type::from(1 << bv_idx)
   }
@@ -73,8 +75,9 @@ impl Type {
   /// Does this type depend on the bth bound variable?
   ///
   /// This is 0 indexed.
+  #[must_use]
   pub fn depends_on(self, bv_idx: u64) -> bool {
-    (self.0.get() & 1u64 << bv_idx) != 0
+    self.0.get() & (1 << bv_idx) != 0
   }
 
   /// True if this argument is a bound variable.
@@ -94,6 +97,7 @@ impl Type {
   /// If this is the type of a bound variable, return a u64
   /// whose only activated bit is the bit indicating which bv
   /// it is.
+  #[must_use]
   pub fn bound_digit(self) -> Option<u64> {
     if self.bound() {
       Some(self.0.get() & !(0xFF << 56))
@@ -103,6 +107,7 @@ impl Type {
   }
 
   /// The POSITION (1 - 55) of this bound variable, NOT the literal u64.
+  #[must_use]
   pub fn bound_pos(self) -> Option<u64> {
     if self.bound() {
       for i in 0..56 {
@@ -117,6 +122,7 @@ impl Type {
   }
 
   /// Does this `Type` have dependencies?
+  #[must_use]
   pub fn has_deps(self) -> bool {
     if self.bound() {
       false
@@ -128,20 +134,23 @@ impl Type {
   /// If this is a regular/not-bound variable, return a u64
   /// whose only activated bits are the ones marking the bvs
   /// on which it depends.
+  #[must_use]
   pub fn deps(self) -> Option<u64> {
-    if !self.bound() {
-      Some(self.0.get() & !(0xFF << 56))
-    } else {
+    if self.bound() {
       None
+    } else {
+      Some(self.0.get() & !(0xFF << 56))
     }
   }
 
   /// Get the high bit only, which holds the boundedness and the sort.
+  #[must_use]
   pub fn high_bit(self) -> Self {
     Type(U64::new(self.0.get() & !TYPE_DEPS_MASK))
   }
 
   /// Are these two types totally bitwise-disjoint
+  #[must_use]
   pub fn disjoint(self, other: Self) -> bool {
     (self.0.get() & other.0.get()) == 0
   }

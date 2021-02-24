@@ -1,8 +1,6 @@
 //! Primitive mm0 types that consuming crates will probably want.
 
 use std::fmt;
-use byteorder::LE;
-use zerocopy::{FromBytes, Unaligned, U64};
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 #[cfg(feature = "memory")] use deepsize_derive::DeepSizeOf;
@@ -21,6 +19,7 @@ macro_rules! id_wrapper {
 
     impl $id {
       /// Convert this newtyped integer into its underlying integer.
+      #[must_use]
       pub fn into_inner(self) -> $ty {
         self.0
       }
@@ -38,31 +37,41 @@ macro_rules! id_wrapper {
     #[allow(dead_code)]
     impl<T> $vec<T> {
       /// Get a reference to the element at the given index.
-      #[must_use] pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
+      #[must_use]
+      pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
+
       /// Get a mutable reference to the element at the given index.
-      #[must_use] pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
+      #[must_use]
+      pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
+
       /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
       pub fn enum_iter(&self) -> impl Iterator<Item=($id, &T)> {
         self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
       }
     }
+
     impl<T> Default for $vec<T> {
       fn default() -> $vec<T> { $vec(Vec::new()) }
     }
+
     impl<T> Index<$id> for $vec<T> {
       type Output = T;
       fn index(&self, i: $id) -> &T { &self.0[i.0 as usize] }
     }
+
     impl<T> IndexMut<$id> for $vec<T> {
       fn index_mut(&mut self, i: $id) -> &mut T { &mut self.0[i.0 as usize] }
     }
+
     impl<T> Deref for $vec<T> {
       type Target = Vec<T>;
       fn deref(&self) -> &Vec<T> { &self.0 }
     }
+
     impl<T> DerefMut for $vec<T> {
       fn deref_mut(&mut self) -> &mut Vec<T> { &mut self.0 }
     }
+
     impl<T> FromIterator<T> for $vec<T> {
       fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self { $vec(Vec::from_iter(iter)) }
     }
@@ -82,24 +91,30 @@ bitflags! {
     /// The `pure` sort modifier, used to indicate that
     /// term constructors can not target this sort.
     const PURE = 1;
+
     /// The `strict` sort modifier, used to indicate that
     /// bound variables (in the sense of [`LocalKind::is_bound`]) of this sort are not allowed.
     const STRICT = 2;
+
     /// The `provable` sort modifier, used to indicate that this sort
     /// can appear as the sort of hypotheses and conclusions of
     /// `axiom` and `theorem` declarations.
     const PROVABLE = 4;
+
     /// The `free` sort modifier, used to indicate that
     /// dummy variables of this sort (in `def` and `theorem`) are not allowed.
     const FREE = 8;
+
 
     /// The `pub` visibility modifier, used on `theorem` to indicate that a theorem
     /// appears in the specification file (otherwise the theorem is only
     /// usable in the proof file).
     const PUB = 16;
+
     /// The `abstract` visibility modifier, used on `def` to indicate that
     /// the definition should not be supplied in the specification file.
     const ABSTRACT = 32;
+
     /// The `local` visibility modifier, the opposite of `pub` and used on
     /// `def`, because `def`s have default public visibility. A `local def`
     /// will not appear in the specification file at all.
@@ -115,16 +130,19 @@ impl Modifiers {
   pub const NONE: Modifiers = Self::empty();
 
   /// Construct a [`Modifiers`] from a byte.
-  #[must_use] pub fn new(bits: u8) -> Self { Self {bits} }
+  #[must_use]
+  pub fn new(bits: u8) -> Self { Self {bits} }
 
   /// The set of all valid sort modifiers. One can check if a modifier set is valid for a sort
   /// using `sort_data().contains(m)`.
-  #[must_use] pub fn sort_data() -> Modifiers {
+  #[must_use]
+  pub fn sort_data() -> Modifiers {
     Modifiers::PURE | Modifiers::STRICT | Modifiers::PROVABLE | Modifiers::FREE
   }
 
   /// Parses a string into a singleton [`Modifiers`], or [`NONE`](Self::NONE) if the string is not valid.
-  #[must_use] pub fn from_name(s: &[u8]) -> Modifiers {
+  #[must_use]
+  pub fn from_name(s: &[u8]) -> Modifiers {
     match s {
       b"pure" => Modifiers::PURE,
       b"strict" => Modifiers::STRICT,

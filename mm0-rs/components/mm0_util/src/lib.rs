@@ -518,14 +518,15 @@ fn get_memory_rusage() -> usize {
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(all(feature = "memory", target_os = "linux"))]
+#[must_use]
 pub fn get_memory_usage() -> usize {
   procinfo::pid::statm_self().map_or_else(|_| get_memory_rusage(), |stat| stat.data * 4096)
 }
 
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
-#[allow(unused)]
 #[cfg(all(feature = "memory", not(target_os = "linux")))]
+#[must_use]
 pub fn get_memory_usage() -> usize {
   get_memory_rusage()
 }
@@ -533,6 +534,6 @@ pub fn get_memory_usage() -> usize {
 /// Try to get total memory usage (stack + data) in bytes using the `/proc` filesystem.
 /// Falls back on [`getrusage()`](libc::getrusage) if procfs doesn't exist.
 #[cfg(not(feature = "memory"))]
-#[allow(unused)]
+#[must_use]
 pub fn get_memory_usage() -> usize { 0 }
 
