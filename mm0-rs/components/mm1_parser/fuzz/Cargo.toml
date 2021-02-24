@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.3"
-mm0-rs_util = { path = "/Users/ammkrn_/rust/mm0-rs_util" }
+mm0_util = { path = "../mm0_util" }
 
 [dependencies.mm1_parser]
 path = ".."

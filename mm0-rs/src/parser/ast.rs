@@ -12,7 +12,6 @@ use std::fmt::{self, Display};
 use num::BigUint;
 use crate::lined_string::LinedString;
 use crate::util::{Span, ArcString};
-use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use crate::elab::environment::DocComment;
 use super::ParseError;
 
@@ -433,39 +432,6 @@ impl SExpr {
         || SExpr::atom(span.start..=span.start, Atom::Nfx))
     }
     Self::dotted_list(span, es, dot)
-  }
-}
-
-impl EnvDisplay for SExpr {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match &self.k {
-      &SExprKind::Atom(a) => {
-        unsafe {std::str::from_utf8_unchecked(fe.source.span_atom(self.span, a))}.fmt(f)
-      }
-      SExprKind::List(es) => {
-        let mut it = es.iter();
-        match it.next() {
-          None => "()".fmt(f),
-          Some(e) => {
-            write!(f, "({}", fe.to(e))?;
-            for e in it {write!(f, " {}", fe.to(e))?}
-            ")".fmt(f)
-          }
-        }
-      }
-      SExprKind::DottedList(es, r) => {
-        "(".fmt(f)?;
-        for e in es {write!(f, "{} ", fe.to(e))?}
-        write!(f, ". {})", fe.to(r))
-      }
-      SExprKind::Number(n) => n.fmt(f),
-      SExprKind::String(s) => write!(f, "{:?}", s),
-      SExprKind::Bool(true) => "#t".fmt(f),
-      SExprKind::Bool(false) => "#f".fmt(f),
-      SExprKind::DocComment(_, e) => e.fmt(fe, f),
-      SExprKind::Undef => "#undef".fmt(f),
-      SExprKind::Formula(s) => fe.source.str_at(s.0).fmt(f),
-    }
   }
 }
 

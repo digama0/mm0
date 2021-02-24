@@ -63,9 +63,7 @@ use ast::{
   Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal, LocalKind,
   Prec, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
 };
-use mm0_rs_util::lined_string::LinedString;
-use mm0_rs_util::prims::Modifiers;
-use mm0_rs_util::{let_unchecked, unwrap_unchecked, BoxError, Position, Span};
+use mm0_util::{let_unchecked, unwrap_unchecked, BoxError, LinedString, Modifiers, Position, Span};
 use num::cast::ToPrimitive;
 use num::BigUint;
 use std::mem;

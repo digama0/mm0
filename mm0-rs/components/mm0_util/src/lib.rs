@@ -76,6 +76,8 @@ pub mod ids;
 pub mod lined_string;
 pub mod mmb;
 
+pub use {ids::*, lined_string::*};
+
 /// Newtype for `Box<dyn Error + Send + Sync>`
 pub type BoxError = Box<dyn Error + Send + Sync>;
 

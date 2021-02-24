@@ -54,7 +54,7 @@
 
 use crate::parser::ParseError;
 use byteorder::LE;
-use mm0_rs_util::prims::{SortId, TermId, ThmId};
+use mm0_util::{SortId, TermId, ThmId};
 use zerocopy::{FromBytes, Unaligned, U16, U32, U64};
 
 pub mod parser;
@@ -193,23 +193,27 @@ pub enum StmtCmd {
 // The only case in which you won't have it is when fishing things out from the index
 // with IndexEntryRef::decl
 //
-/// [StmtCmd] aware of its position (represented by a typesafe integer)
+/// [`StmtCmd`] aware of its position (represented by a typesafe integer)
 /// in the mmb file relative to other declarations.
 #[derive(Debug, Clone, Copy)]
 pub enum NumdStmtCmd {
   /// A new sort. Equivalent to `sort foo;`. This is followed by no data,
   /// as the sort data is stored in the header.
-  #[allow(missing_docs)]
-  Sort { sort_id: SortId },
+  Sort {
+    /// The sort ID, the index into the sort table
+    sort_id: SortId,
+  },
   /// A new axiom. Equivalent to `axiom foo ...`. This is followed by a proof
   /// sequence, that should unify with the unify sequence in the header.
-  #[allow(missing_docs)]
-  Axiom { thm_id: ThmId },
+  Axiom {
+    /// The theorem ID, the index into the axiom/theorem table
+    thm_id: ThmId,
+  },
   /// A new term or def. Equivalent to `term/def foo ...`.
   /// If `local` is true, then this is `local def foo`. This is followed by
   /// no data, as the header contains the unify sequence and can be checked on its own.
-  #[allow(missing_docs)]
   TermDef {
+    /// The term ID, the index into the term/def table
     term_id: TermId,
     /// Is this `local def`?
     local: bool,
@@ -218,8 +222,8 @@ pub enum NumdStmtCmd {
   /// that the theorem is not `pub`. This is followed by a proof sequence,
   /// that will construct the statement and proof, and should unify
   /// with the unify sequence in the header.
-  #[allow(missing_docs)]
   Thm {
+    /// The theorem ID, the index into the axiom/theorem table
     thm_id: ThmId,
     /// Is this not `pub theorem`?
     local: bool,
@@ -227,23 +231,23 @@ pub enum NumdStmtCmd {
 }
 
 impl StmtCmd {
-  #[allow(missing_docs)]
+  /// Is this a "local" command, i.e. it does not appear in the corresponding MM0 file?
+  #[must_use]
   pub fn is_local(self) -> bool {
-    use StmtCmd::*;
     match self {
-      Sort | Axiom => false,
-      TermDef { local } | Thm { local } => local,
+      Self::Sort | Self::Axiom => false,
+      Self::TermDef { local } | Self::Thm { local } => local,
     }
   }
 }
 
 impl NumdStmtCmd {
-  #[allow(missing_docs)]
+  /// Is this a "local" command, i.e. it does not appear in the corresponding MM0 file?
+  #[must_use]
   pub fn is_local(self) -> bool {
-    use NumdStmtCmd::*;
     match self {
-      Sort { .. } | Axiom { .. } => false,
-      TermDef { local, .. } | Thm { local, .. } => local,
+      Self::Sort { .. } | Self::Axiom { .. } => false,
+      Self::TermDef { local, .. } | Self::Thm { local, .. } => local,
     }
   }
 }
@@ -564,7 +568,7 @@ impl Header {
   ///
   /// For example, none of the pointers in the header should be greater than the length
   /// of the file, the terms pointer should be less than the theorems pointer, etc.
-  pub fn check(self, mmb: &[u8]) -> Result<(), ParseError> {
+  pub fn check(&self, mmb: &[u8]) -> Result<(), ParseError> {
     use crate::cmd::{MM0B_MAGIC, MM0B_VERSION};
     use crate::parser::{u32_as_usize, u64_as_usize};
 
@@ -660,15 +664,13 @@ pub enum IndexKind {
   /// This is a variable name,
   Var,
   /// This is a `(local) def`.
-  #[allow(missing_docs)]
   Def {
-    // Is this `local def`?
+    /// Is this `local def`?
     local: bool,
   },
   /// This is a `(!pub) theorem`.
-  #[allow(missing_docs)]
   Thm {
-    // Is this not `pub theorem`?
+    /// Is this not `pub theorem`?
     local: bool,
   },
 }

@@ -6,14 +6,12 @@
 //! The actual [`Ast`] type also contains data about the source file, any imports, and
 //! any errors encountered during parsing.
 
-use mm0_rs_util::lined_string::LinedString;
-use mm0_rs_util::prims::Modifiers;
-use mm0_rs_util::{ArcString, Span};
+use mm0_util::ids::Modifiers;
+use mm0_util::lined_string::LinedString;
+use mm0_util::{ArcString, Span};
 use num::BigUint;
 use std::fmt;
 use std::sync::Arc;
-//use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
-//use mm0_rs_util::elab::environment::DocComment;
 use crate::{DocComment, ParseError};
 #[cfg(feature = "memory")]
 use deepsize_derive::DeepSizeOf;
@@ -395,41 +393,6 @@ impl SExpr {
   }
 }
 
-/*
-impl EnvDisplay for SExpr {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match &self.k {
-      &SExprKind::Atom(a) => {
-        unsafe {std::str::from_utf8_unchecked(fe.source.span_atom(self.span, a))}.fmt(f)
-      }
-      SExprKind::List(es) => {
-        let mut it = es.iter();
-        match it.next() {
-          None => "()".fmt(f),
-          Some(e) => {
-            write!(f, "({}", fe.to(e))?;
-            for e in it {write!(f, " {}", fe.to(e))?}
-            ")".fmt(f)
-          }
-        }
-      }
-      SExprKind::DottedList(es, r) => {
-        "(".fmt(f)?;
-        for e in es {write!(f, "{} ", fe.to(e))?}
-        write!(f, ". {})", fe.to(r))
-      }
-      SExprKind::Number(n) => n.fmt(f),
-      SExprKind::String(s) => write!(f, "{:?}", s),
-      SExprKind::Bool(true) => "#t".fmt(f),
-      SExprKind::Bool(false) => "#f".fmt(f),
-      SExprKind::DocComment(_, e) => e.fmt(fe, f),
-      SExprKind::Undef => "#undef".fmt(f),
-      SExprKind::Formula(s) => fe.source.str_at(s.0).fmt(f),
-    }
-  }
-}
-*/
-
 /// Holds a Declaration as a [`DeclKind`] with some extra data.
 #[cfg_attr(feature = "memory", derive(DeepSizeOf))]
 #[derive(Clone, Debug)]
@@ -475,6 +438,7 @@ impl fmt::Display for Prec {
     }
   }
 }
+
 impl fmt::Debug for Prec {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
 }
@@ -625,7 +589,7 @@ pub struct Ast {
   pub errors: Vec<ParseError>,
 }
 
-impl std::default::Default for Ast {
+impl Default for Ast {
   fn default() -> Self {
     Ast {
       source: Arc::new(LinedString::default()),
@@ -637,7 +601,8 @@ impl std::default::Default for Ast {
 }
 
 /// Iteartor over the AST's stmts while also traversing into the nested
-/// stmts in DocComments and Annotations.
+/// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
+#[derive(Debug)]
 pub struct StmtIter<'a> {
   stmts: std::slice::Iter<'a, Stmt>,
   nested: Option<&'a Stmt>,
@@ -659,15 +624,17 @@ impl<'a> Iterator for StmtIter<'a> {
 
 impl Ast {
   /// Get an iterator over the AST's stmts while also traversing into the nested
-  /// stmts in DocComments and Annotations.
-  pub fn stmts_iter<'a>(&'a self) -> StmtIter<'a> {
+  /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
+  #[must_use]
+  pub fn stmts_iter(&self) -> StmtIter<'_> {
     StmtIter {
       stmts: self.stmts.iter(),
       nested: None,
     }
   }
 
-  /// Look for a [Decl] by ident (where ident is in bytes)
+  /// Look for a [`Decl`] by `ident` (where `ident` is in bytes)
+  #[must_use]
   pub fn get_decl(&self, ident: &[u8]) -> Option<&Decl> {
     for stmt in self.stmts_iter() {
       if let StmtKind::Decl(decl @ Decl { .. }) = &stmt.k {
@@ -697,9 +664,11 @@ impl Ast {
   /// Return the string corresponding to a span in this AST's source.
   #[must_use]
   pub fn span(&self, s: Span) -> &[u8] { &self.source[s] }
+
   /// Return the string corresponding to an atom.
   #[must_use]
   pub fn span_atom(&self, sp: Span, a: Atom) -> &[u8] { span_atom(&self.source, sp, a) }
+
   /// Given a character index in the file, return `(idx, out)` where
   /// `idx` is the smallest index of a statement which does not end before the
   /// target position, and `out` is the character index of the end of `stmt[idx-1]`.

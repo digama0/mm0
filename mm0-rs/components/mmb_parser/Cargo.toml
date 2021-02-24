@@ -15,4 +15,4 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 [dependencies]
 byteorder = "1.4.2"
 zerocopy = "0.3.0"
-mm0-rs_util = { path = "../mm0-rs_util" }
+mm0_util = { path = "../mm0_util" }
