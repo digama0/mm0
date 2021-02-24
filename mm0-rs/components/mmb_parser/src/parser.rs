@@ -119,13 +119,7 @@ pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), Parse
           .map(|(&n, _)| (val, n.into(), starts_at + size_of::<u8>() + size_of::<u8>()))
           .ok_or_else(|| ParseError::Exhausted(file!(), line!())),
         DATA_16 => LayoutVerified::<_, U16<LE>>::new_from_prefix(tl)
-          .map(|(n, _)| {
-            (
-              val,
-              n.get().into(),
-              starts_at + size_of::<u8>() + size_of::<u16>(),
-            )
-          })
+          .map(|(n, _)| (val, n.get().into(), starts_at + size_of::<u8>() + size_of::<u16>()))
           .ok_or_else(|| ParseError::Exhausted(file!(), line!())),
         DATA_32 => LayoutVerified::<_, U32<LE>>::new_from_prefix(tl)
           .map(|(n, _)| (val, n.get(), starts_at + size_of::<u8>() + size_of::<u32>()))
@@ -322,32 +316,20 @@ const HEADER_CAVEAT: &str = "\
 impl std::fmt::Display for ParseError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      ParseError::BadProofLen(start) => write!(
-        f,
-        "proof starting at byte {} has an incorrect length",
-        start
-      ),
+      ParseError::BadProofLen(start) =>
+        write!(f, "proof starting at byte {} has an incorrect length", start),
       ParseError::IndexKindConv(cmd) =>
         write!(f, "bad IndexKind conversion (`TryFrom`); cmd was {}", cmd),
       ParseError::StmtCmdConv(cmd) =>
         write!(f, "bad StmtCmd conversion (`TryFrom`); cmd was {}", cmd),
-      ParseError::ProofCmdConv(cmd, data) => write!(
-        f,
-        "bad ProofCmd conversion (`TryFrom`). data: ({}, {})",
-        cmd, data
-      ),
-      ParseError::UnifyCmdConv(cmd, data) => write!(
-        f,
-        "bad UnifyCmd conversion (`TryFrom`). data: ({}, {})",
-        cmd, data
-      ),
+      ParseError::ProofCmdConv(cmd, data) =>
+        write!(f, "bad ProofCmd conversion (`TryFrom`). data: ({}, {})", cmd, data),
+      ParseError::UnifyCmdConv(cmd, data) =>
+        write!(f, "bad UnifyCmd conversion (`TryFrom`). data: ({}, {})", cmd, data),
 
       ParseError::Trace(file, line, inner) => write!(f, "trace {} : {} -> {}", file, line, inner),
-      ParseError::Exhausted(file, line) => write!(
-        f,
-        "mmb parser was prematurely exhausted at {} : {}",
-        file, line
-      ),
+      ParseError::Exhausted(file, line) =>
+        write!(f, "mmb parser was prematurely exhausted at {} : {}", file, line),
       ParseError::BadZeroCopy(file, line) =>
         write!(f, "A `zerocopy` parser failed at {} : {}", file, line),
       ParseError::BadSorts(range) => write!(
@@ -427,14 +409,11 @@ impl From<io::Error> for ParseError {
 
 #[inline]
 pub(crate) fn u32_as_usize(n: u32) -> usize {
-  n.try_into()
-    .expect("here's a nickel, get a better computer")
+  n.try_into().expect("here's a nickel, get a better computer")
 }
 #[inline]
 pub(crate) fn u64_as_usize(n: U64<LE>) -> usize {
-  n.get()
-    .try_into()
-    .expect("here's a nickel, get a better computer")
+  n.get().try_into().expect("here's a nickel, get a better computer")
 }
 
 #[inline]
@@ -452,9 +431,7 @@ impl<'a> MmbFile<'a> {
   /// For error reporting after the initial parse.
   #[must_use]
   pub fn bad_index_lookup(&self) -> ParseError {
-    ParseError::BadIndexLookup {
-      p_index: self.p_index(),
-    }
+    ParseError::BadIndexLookup { p_index: self.p_index() }
   }
 
   /// For error reporting after the initial parse.
@@ -506,28 +483,12 @@ impl<'a> MmbFile<'a> {
           let (sorts, rest) = new_slice_prefix(rest, sorts.len())?;
           let (terms, rest) = new_slice_prefix(rest, terms.len())?;
           let (thms, _) = new_slice_prefix(rest, thms.len())?;
-          Some(MmbIndex {
-            buf,
-            root: *root,
-            sorts,
-            terms,
-            thms,
-          })
+          Some(MmbIndex { buf, root: *root, sorts, terms, thms })
         })()
-        .ok_or_else(|| BadIndexParse {
-          p_index: u64_as_usize(header.p_index),
-        })?,
+        .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?,
       ),
     };
-    Ok(MmbFile {
-      header: *header,
-      buf,
-      sorts,
-      terms,
-      thms,
-      proof,
-      index,
-    })
+    Ok(MmbFile { header: *header, buf, sorts, terms, thms, proof, index })
   }
 }
 
@@ -571,15 +532,11 @@ pub fn find_header_error(mmb: &[u8]) -> ParseError {
     let (magic3, pos) = parse_u8((mmb, pos))?;
     let magic = [magic0, magic1, magic2, magic3];
     if magic != crate::cmd::MM0B_MAGIC {
-      return Err(ParseError::BadMagic {
-        parsed_magic: magic,
-      })
+      return Err(ParseError::BadMagic { parsed_magic: magic })
     }
     let (version, pos) = parse_u8((mmb, pos))?;
     if version != crate::cmd::MM0B_VERSION {
-      return Err(ParseError::BadVersion {
-        parsed_version: version,
-      })
+      return Err(ParseError::BadVersion { parsed_version: version })
     }
     let (_num_sorts, pos) = parse_u8((mmb, pos))?;
     let (_reserved, pos) = parse_u16((mmb, pos))?;
@@ -611,25 +568,16 @@ fn index_ref(buf: &[u8], n: U64<LE>) -> Option<IndexEntryRef<'_>> {
 
 #[inline]
 fn term_ref(buf: &[u8], t: TermEntry, tid: TermId) -> Option<TermRef<'_>> {
-  let (args, unify) = new_slice_prefix(
-    buf.get(u32_as_usize(t.p_args.get())..)?,
-    usize::from(t.num_args.get()) + 1,
-  )?;
+  let (args, unify) =
+    new_slice_prefix(buf.get(u32_as_usize(t.p_args.get())..)?, usize::from(t.num_args.get()) + 1)?;
   let unify = (buf, buf.len() - unify.len());
-  Some(TermRef {
-    tid,
-    sort: t.sort,
-    args,
-    unify,
-  })
+  Some(TermRef { tid, sort: t.sort, args, unify })
 }
 
 #[inline]
 fn thm_ref(buf: &[u8], t: ThmEntry, tid: ThmId) -> Option<ThmRef<'_>> {
-  let (args, unify) = new_slice_prefix(
-    buf.get(u32_as_usize(t.p_args.get())..)?,
-    t.num_args.get().into(),
-  )?;
+  let (args, unify) =
+    new_slice_prefix(buf.get(u32_as_usize(t.p_args.get())..)?, t.num_args.get().into())?;
   let unify = (buf, buf.len() - unify.len());
   Some(ThmRef { tid, args, unify })
 }
@@ -789,11 +737,7 @@ fn try_next_decl(
     return Err(ParseError::BadProofLen(pos))
   }
 
-  let pr = ProofIter {
-    mmb_source: mmb,
-    pos: proof_starts_at,
-    ends_at: pos + (proof_len as usize),
-  };
+  let pr = ProofIter { mmb_source: mmb, pos: proof_starts_at, ends_at: pos + (proof_len as usize) };
 
   Ok(Some((StmtCmd::try_from(stmt_cmd)?, pr, proof_ends_at)))
 }
@@ -828,32 +772,22 @@ impl<'a> Iterator for DeclIter<'a> {
         self.pos = rest;
         let cmd = match stmt {
           StmtCmd::Sort => {
-            let out = NumdStmtCmd::Sort {
-              sort_id: SortId(self.next_sort_id),
-            };
+            let out = NumdStmtCmd::Sort { sort_id: SortId(self.next_sort_id) };
             self.next_sort_id += 1;
             out
           }
           StmtCmd::Axiom => {
-            let out = NumdStmtCmd::Axiom {
-              thm_id: ThmId(self.next_thm_id),
-            };
+            let out = NumdStmtCmd::Axiom { thm_id: ThmId(self.next_thm_id) };
             self.next_thm_id += 1;
             out
           }
           StmtCmd::TermDef { local } => {
-            let out = NumdStmtCmd::TermDef {
-              term_id: TermId(self.next_term_id),
-              local,
-            };
+            let out = NumdStmtCmd::TermDef { term_id: TermId(self.next_term_id), local };
             self.next_term_id += 1;
             out
           }
           StmtCmd::Thm { local } => {
-            let out = NumdStmtCmd::Thm {
-              thm_id: ThmId(self.next_thm_id),
-              local,
-            };
+            let out = NumdStmtCmd::Thm { thm_id: ThmId(self.next_thm_id), local };
             self.next_thm_id += 1;
             out
           }
@@ -888,10 +822,5 @@ impl<'a> IndexEntryRef<'a> {
 
   /// Convert the location information of this entry into a [Position].
   #[must_use]
-  pub fn to_pos(&self) -> Position {
-    Position {
-      line: self.row.get(),
-      character: self.col.get(),
-    }
-  }
+  pub fn to_pos(&self) -> Position { Position { line: self.row.get(), character: self.col.get() } }
 }

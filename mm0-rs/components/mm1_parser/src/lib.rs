@@ -144,16 +144,8 @@ type Result<T> = std::result::Result<T, ParseError>;
 
 impl Clone for ParseError {
   fn clone(&self) -> Self {
-    let &ParseError {
-      pos,
-      level,
-      ref msg,
-    } = self;
-    ParseError {
-      pos,
-      level,
-      msg: format!("{}", msg).into(),
-    }
+    let &ParseError { pos, level, ref msg } = self;
+    ParseError { pos, level, msg: format!("{}", msg).into() }
   }
 }
 
@@ -161,11 +153,7 @@ impl ParseError {
   /// Construct a parse error at [`Error`](ErrorLevel::Error) severity
   /// from a position and a message
   pub fn new(pos: impl Into<Span>, msg: BoxError) -> ParseError {
-    ParseError {
-      pos: pos.into(),
-      level: ErrorLevel::Error,
-      msg,
-    }
+    ParseError { pos: pos.into(), level: ErrorLevel::Error, msg }
   }
 
   /// Convert a parse error to an LSP [`Diagnostic`] object.
@@ -318,9 +306,7 @@ impl<'a> Parser<'a> {
       None
     } else {
       self.ws();
-      Some((String::from_utf8(doc).ok()?.into(), unsafe {
-        end.assume_init()
-      }))
+      Some((String::from_utf8(doc).ok()?.into(), unsafe { end.assume_init() }))
     }
   }
 
@@ -340,10 +326,9 @@ impl<'a> Parser<'a> {
           while let Some(b'\t') = self.cur_opt() {
             self.idx += 1
           }
-          self.errors.push(ParseError::new(
-            start..self.idx,
-            "tabs are not permitted in MM0 files".into(),
-          ))
+          self
+            .errors
+            .push(ParseError::new(start..self.idx, "tabs are not permitted in MM0 files".into()))
         }
         b'\r' => {
           let start = self.idx;
@@ -393,9 +378,7 @@ impl<'a> Parser<'a> {
   /// On failure, does not advance.
   /// On success, advances one character and skips any trailing whitespace.
   pub fn chr_err(&mut self, c: u8) -> Result<usize> {
-    self
-      .chr(c)
-      .ok_or_else(|| self.err(format!("expecting '{}'", c as char).into()))
+    self.chr(c).ok_or_else(|| self.err(format!("expecting '{}'", c as char).into()))
   }
 
   /// Try to parse an `ident` item or the blank (`_`, which is not a valid `ident`).
@@ -427,15 +410,11 @@ impl<'a> Parser<'a> {
 
   /// Attempt to parse an ident or blank, returning an error on failure.
   fn ident_err_(&mut self) -> Result<Span> {
-    self
-      .ident_()
-      .ok_or_else(|| self.err("expecting identifier".into()))
+    self.ident_().ok_or_else(|| self.err("expecting identifier".into()))
   }
 
   fn ident_err(&mut self) -> Result<Span> {
-    self
-      .ident()
-      .ok_or_else(|| self.err("expecting identifier".into()))
+    self.ident().ok_or_else(|| self.err("expecting identifier".into()))
   }
 
   /// Attempt to parse a `$ .. $` delimited formula.
@@ -493,10 +472,7 @@ impl<'a> Parser<'a> {
       while let Some(x) = self.ident() {
         deps.push(x)
       }
-      Ok(Type::DepType(DepType {
-        sort,
-        deps: deps.into(),
-      }))
+      Ok(Type::DepType(DepType { sort, deps: deps.into() }))
     }
   }
 
@@ -509,11 +485,7 @@ impl<'a> Parser<'a> {
     let mut locals = Vec::new();
     loop {
       let dummy = self.chr(b'.').is_some();
-      let x = if dummy {
-        Some(self.ident_err_()?)
-      } else {
-        self.ident_()
-      };
+      let x = if dummy { Some(self.ident_err_()?) } else { self.ident_() };
       if let Some(x) = x {
         let k = if self.span(x) == b"_" {
           LocalKind::Anon
@@ -529,11 +501,7 @@ impl<'a> Parser<'a> {
         break
       }
     }
-    let ty = if self.chr(b':').is_some() {
-      Some(self.ty()?)
-    } else {
-      None
-    };
+    let ty = if self.chr(b':').is_some() { Some(self.ty()?) } else { None };
     let end = self.chr_err(if curly { b'}' } else { b')' })?;
     Ok(Some(((start..end).into(), locals, ty)))
   }
@@ -690,11 +658,7 @@ impl<'a> Parser<'a> {
   }
 
   fn is_atom(&self, e: &SExpr, s: &[u8]) -> bool {
-    if let SExpr {
-      span,
-      k: SExprKind::Atom(Atom::Ident),
-    } = e
-    {
+    if let SExpr { span, k: SExprKind::Atom(Atom::Ident) } = e {
       self.span(*span) == s
     } else {
       false
@@ -705,17 +669,11 @@ impl<'a> Parser<'a> {
   pub fn sexpr(&mut self) -> Result<SExpr> {
     if let (start, Some((doc, _))) = (self.idx, self.doc_comment()) {
       let e = self.sexpr()?;
-      Ok(SExpr {
-        span: (start..e.span.end).into(),
-        k: SExprKind::DocComment(doc, Box::new(e)),
-      })
+      Ok(SExpr { span: (start..e.span.end).into(), k: SExprKind::DocComment(doc, Box::new(e)) })
     } else {
       let e = self.sexpr_dot()?;
       if self.is_atom(&e, b".") {
-        Err(ParseError::new(
-          e.span,
-          "'.' is not a valid s-expression".into(),
-        ))
+        Err(ParseError::new(e.span, "'.' is not a valid s-expression".into()))
       } else {
         Ok(e)
       }
@@ -741,10 +699,7 @@ impl<'a> Parser<'a> {
       let e = self.sexpr_dot()?;
       if self.is_atom(&e, b".") {
         if es.is_empty() {
-          return Err(ParseError::new(
-            e.span,
-            "(. x) partial dotted list is invalid".into(),
-          ))
+          return Err(ParseError::new(e.span, "(. x) partial dotted list is invalid".into()))
         }
         let e = self.sexpr()?;
         let end = self.chr_err(c)?;
@@ -767,18 +722,12 @@ impl<'a> Parser<'a> {
       Some(b'\'') => {
         self.idx += 1;
         let e = self.sexpr()?;
-        Ok(SExpr::list(
-          start..e.span.end,
-          vec![SExpr::atom(start..=start, Atom::Quote), e],
-        ))
+        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..=start, Atom::Quote), e]))
       }
       Some(b',') => {
         self.idx += 1;
         let e = self.sexpr()?;
-        Ok(SExpr::list(
-          start..e.span.end,
-          vec![SExpr::atom(start..=start, Atom::Unquote), e],
-        ))
+        Ok(SExpr::list(start..e.span.end, vec![SExpr::atom(start..=start, Atom::Unquote), e]))
       }
       Some(b'(') => {
         let start = self.idx;
@@ -800,50 +749,30 @@ impl<'a> Parser<'a> {
       }
       Some(b'\"') => {
         let (span, s) = self.string()?;
-        Ok(SExpr {
-          span,
-          k: SExprKind::String(s.into()),
-        })
+        Ok(SExpr { span, k: SExprKind::String(s.into()) })
       }
       Some(b'#') => {
         self.idx += 1;
         let mut span = self.ident_err()?;
         match (self.span(span), span.start -= 1).0 {
-          b"t" => Ok(SExpr {
-            span,
-            k: SExprKind::Bool(true),
-          }),
-          b"f" => Ok(SExpr {
-            span,
-            k: SExprKind::Bool(false),
-          }),
-          b"undef" => Ok(SExpr {
-            span,
-            k: SExprKind::Undef,
-          }),
+          b"t" => Ok(SExpr { span, k: SExprKind::Bool(true) }),
+          b"f" => Ok(SExpr { span, k: SExprKind::Bool(false) }),
+          b"undef" => Ok(SExpr { span, k: SExprKind::Undef }),
           k => Err(ParseError {
             pos: span,
             level: ErrorLevel::Error,
-            msg: format!("unknown keyword '{}'", unsafe {
-              std::str::from_utf8_unchecked(k)
-            })
-            .into(),
+            msg: format!("unknown keyword '{}'", unsafe { std::str::from_utf8_unchecked(k) })
+              .into(),
           }),
         }
       }
       Some(b'$') => {
         let f = unwrap_unchecked!(self.formula()?);
-        Ok(SExpr {
-          span: f.0,
-          k: SExprKind::Formula(f),
-        })
+        Ok(SExpr { span: f.0, k: SExprKind::Formula(f) })
       }
       Some(c) if (b'0'..=b'9').contains(&c) => {
         let (span, n) = self.number()?;
-        Ok(SExpr {
-          span,
-          k: SExprKind::Number(n),
-        })
+        Ok(SExpr { span, k: SExprKind::Number(n) })
       }
       _ => Ok(SExpr::atom(self.lisp_ident()?, Atom::Ident)),
     }
@@ -851,10 +780,7 @@ impl<'a> Parser<'a> {
 
   fn decl(&mut self, mods: Modifiers, sp: Span, k: DeclKind) -> Result<(usize, Decl)> {
     if !k.allowed_visibility(mods) {
-      return Err(ParseError::new(
-        sp,
-        "invalid modifiers for this keyword".into(),
-      ))
+      return Err(ParseError::new(sp, "invalid modifiers for this keyword".into()))
     }
     let id = self.ident_err_()?;
     let mut bis = self.binders()?;
@@ -870,25 +796,11 @@ impl<'a> Parser<'a> {
     } else {
       None
     };
-    let val = if self.chr(b'=').is_some() {
-      Some(self.sexpr()?)
-    } else {
-      None
-    };
+    let val = if self.chr(b'=').is_some() { Some(self.sexpr()?) } else { None };
     if ty.is_none() && val.is_none() {
       return self.err_str("type or value expected")
     }
-    Ok((
-      self.chr_err(b';')?,
-      Decl {
-        mods,
-        k,
-        bis,
-        id,
-        ty,
-        val,
-      },
-    ))
+    Ok((self.chr_err(b';')?, Decl { mods, k, bis, id, ty, val }))
   }
 
   fn decl_stmt(
@@ -899,9 +811,7 @@ impl<'a> Parser<'a> {
   }
 
   fn cnst(&mut self) -> Result<Const> {
-    let fmla = self
-      .formula()?
-      .ok_or_else(|| self.err("expected a constant".into()))?;
+    let fmla = self.formula()?.ok_or_else(|| self.err("expected a constant".into()))?;
     let mut trim = fmla.inner();
     for i in trim.into_iter().rev() {
       if whitespace(self.source[i]) {
@@ -918,10 +828,7 @@ impl<'a> Parser<'a> {
       }
     }
     if { trim }.any(|i| whitespace(self.source[i])) {
-      return Err(ParseError::new(
-        trim,
-        "constant contains embedded whitespace".into(),
-      ))
+      return Err(ParseError::new(trim, "constant contains embedded whitespace".into()))
     }
     if trim.start >= trim.end {
       return Err(ParseError::new(fmla.0, "constant is empty".into()))
@@ -933,9 +840,9 @@ impl<'a> Parser<'a> {
     match self.cur_opt() {
       Some(c) if (b'0'..=b'9').contains(&c) => {
         let (span, n) = self.number()?;
-        Ok(Prec::Prec(n.to_u32().ok_or_else(|| {
-          ParseError::new(span, "precedence out of range".into())
-        })?))
+        Ok(Prec::Prec(
+          n.to_u32().ok_or_else(|| ParseError::new(span, "precedence out of range".into()))?,
+        ))
       }
       _ => {
         self
@@ -970,10 +877,7 @@ impl<'a> Parser<'a> {
   ) -> Result<Option<Stmt>> {
     self.modifiers_empty(m, sp, "notation commands do not take modifiers");
     let (end, n) = self.simple_nota(k)?;
-    Ok(Some(Stmt::new(
-      (start..end).into(),
-      StmtKind::SimpleNota(n),
-    )))
+    Ok(Some(Stmt::new((start..end).into(), StmtKind::SimpleNota(n))))
   }
 
   fn literals(&mut self) -> Result<Vec<Literal>> {
@@ -997,20 +901,14 @@ impl<'a> Parser<'a> {
     &mut self, start: usize, m: Modifiers, sp: Span, out: bool,
   ) -> Result<Option<Stmt>> {
     if !m.is_empty() {
-      self.push_err(Err(ParseError::new(
-        sp,
-        "input/output commands do not take modifiers".into(),
-      )));
+      self.push_err(Err(ParseError::new(sp, "input/output commands do not take modifiers".into())));
     }
     let mut hs = Vec::new();
     let k = self.ident_err()?;
     self.chr_err(b':')?;
     loop {
       if let Some(end) = self.chr(b';') {
-        return Ok(Some(Stmt::new(
-          (start..end).into(),
-          StmtKind::Inout { out, k, hs },
-        )))
+        return Ok(Some(Stmt::new((start..end).into(), StmtKind::Inout { out, k, hs })))
       }
       hs.push(self.sexpr()?)
     }
@@ -1038,10 +936,9 @@ impl<'a> Parser<'a> {
                 delim_end += 1
               }
               _ =>
-                break self.errors.push(ParseError::new(
-                  start..end,
-                  "delimiter must have one character".into(),
-                )),
+                break self
+                  .errors
+                  .push(ParseError::new(start..end, "delimiter must have one character".into())),
             }
           }
         }
@@ -1058,24 +955,15 @@ impl<'a> Parser<'a> {
       let s = self.stmt()?.ok_or_else(|| {
         ParseError::new(start..end, "statement expected after doc comment".into())
       })?;
-      return Ok(Some(Stmt::new(
-        (start..s.span.end).into(),
-        StmtKind::DocComment(doc, Box::new(s)),
-      )))
+      return Ok(Some(Stmt::new((start..s.span.end).into(), StmtKind::DocComment(doc, Box::new(s)))))
     }
 
     if self.chr(b'@').is_some() {
       let e = self.sexpr()?;
       let s = self.stmt()?.ok_or_else(|| {
-        ParseError::new(
-          start..e.span.end,
-          "statement expected after annotation".into(),
-        )
+        ParseError::new(start..e.span.end, "statement expected after annotation".into())
       })?;
-      return Ok(Some(Stmt::new(
-        (start..s.span.end).into(),
-        StmtKind::Annot(e, Box::new(s)),
-      )))
+      return Ok(Some(Stmt::new((start..s.span.end).into(), StmtKind::Annot(e, Box::new(s)))))
     }
 
     let m = self.modifiers();
@@ -1104,19 +992,14 @@ impl<'a> Parser<'a> {
             if !m.is_empty() {
               self.push_err(self.err_str("'delimiter' does not take modifiers"));
             }
-            let f1 = self
-              .formula()?
-              .ok_or_else(|| self.err("expected formula".into()))?;
+            let f1 = self.formula()?.ok_or_else(|| self.err("expected formula".into()))?;
             let cs1 = self.delim_chars(f1);
             let delim = match self.formula()? {
               None => Delimiter::Both(cs1),
               Some(f2) => Delimiter::LeftRight(cs1, self.delim_chars(f2)),
             };
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt::new(
-              (start..end).into(),
-              StmtKind::Delimiter(delim),
-            )))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Delimiter(delim))))
           }
           Some(CommandKeyword::Term) => self.decl_stmt(start, m, id, DeclKind::Term),
           Some(CommandKeyword::Axiom) => self.decl_stmt(start, m, id, DeclKind::Axiom),
@@ -1138,20 +1021,13 @@ impl<'a> Parser<'a> {
             self.chr_err(b'>')?;
             let to = self.ident_err()?;
             let end = self.chr_err(b';')?;
-            Ok(Some(Stmt::new(
-              (start..end).into(),
-              StmtKind::Coercion { id, from, to },
-            )))
+            Ok(Some(Stmt::new((start..end).into(), StmtKind::Coercion { id, from, to })))
           }
           Some(CommandKeyword::Notation) => {
             self.modifiers_empty(m, id, "notation commands do not take modifiers");
             let id = self.ident_err()?;
             let bis = self.binders()?;
-            let ty = if self.chr(b':').is_some() {
-              Some(self.ty()?)
-            } else {
-              None
-            };
+            let ty = if self.chr(b':').is_some() { Some(self.ty()?) } else { None };
             self.chr_err(b'=')?;
             let lits = self.literals()?;
             let prec = if self.chr(b':').is_some() {
@@ -1171,13 +1047,7 @@ impl<'a> Parser<'a> {
             let end = self.chr_err(b';')?;
             Ok(Some(Stmt::new(
               (start..end).into(),
-              StmtKind::Notation(GenNota {
-                id,
-                bis,
-                ty,
-                lits,
-                prec,
-              }),
+              StmtKind::Notation(GenNota { id, bis, ty, lits, prec }),
             )))
           }
           Some(CommandKeyword::Do) => {
@@ -1203,9 +1073,7 @@ impl<'a> Parser<'a> {
           Some(CommandKeyword::Exit) => {
             self.modifiers_empty(m, id, "exit does not take modifiers");
             self.chr_err(b';')?;
-            self
-              .errors
-              .push(ParseError::new(id, "early exit on 'exit' command".into()));
+            self.errors.push(ParseError::new(id, "early exit on 'exit' command".into()));
             Ok(None)
           }
           None => {
@@ -1213,10 +1081,8 @@ impl<'a> Parser<'a> {
             Err(ParseError {
               pos: id,
               level: ErrorLevel::Error,
-              msg: format!("unknown command '{}'", unsafe {
-                std::str::from_utf8_unchecked(k)
-              })
-              .into(),
+              msg: format!("unknown command '{}'", unsafe { std::str::from_utf8_unchecked(k) })
+                .into(),
             })
           }
         }
@@ -1290,18 +1156,8 @@ pub fn parse(file: Arc<LinedString>, old: Option<(Position, Arc<Ast>)>) -> (usiz
         (ast.errors, ast.imports, start, ast.stmts)
       }
       Err(ast) => (
-        ast
-          .errors
-          .iter()
-          .filter(|e| e.pos.start < start)
-          .cloned()
-          .collect(),
-        ast
-          .imports
-          .iter()
-          .filter(|e| e.0.start < start)
-          .cloned()
-          .collect(),
+        ast.errors.iter().filter(|e| e.pos.start < start).cloned().collect(),
+        ast.imports.iter().filter(|e| e.0.start < start).cloned().collect(),
         start,
         ast.stmts[..ix].into(),
       ),
@@ -1309,24 +1165,10 @@ pub fn parse(file: Arc<LinedString>, old: Option<(Position, Arc<Ast>)>) -> (usiz
   } else {
     Default::default()
   };
-  let mut p = Parser {
-    source: file.as_bytes(),
-    errors,
-    imports,
-    idx,
-    restart_pos: None,
-  };
+  let mut p = Parser { source: file.as_bytes(), errors, imports, idx, restart_pos: None };
   p.ws();
   while let Some(d) = p.stmt_recover() {
     stmts.push(d)
   }
-  (
-    0,
-    Ast {
-      errors: p.errors,
-      imports: p.imports,
-      source: file,
-      stmts,
-    },
-  )
+  (0, Ast { errors: p.errors, imports: p.imports, source: file, stmts })
 }

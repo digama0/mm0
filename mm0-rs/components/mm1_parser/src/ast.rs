@@ -6,15 +6,15 @@
 //! The actual [`Ast`] type also contains data about the source file, any imports, and
 //! any errors encountered during parsing.
 
+use crate::{DocComment, ParseError};
+#[cfg(feature = "memory")]
+use deepsize_derive::DeepSizeOf;
 use mm0_util::ids::Modifiers;
 use mm0_util::lined_string::LinedString;
 use mm0_util::{ArcString, Span};
 use num::BigUint;
 use std::fmt;
 use std::sync::Arc;
-use crate::{DocComment, ParseError};
-#[cfg(feature = "memory")]
-use deepsize_derive::DeepSizeOf;
 
 /// User-supplied delimiter characters.
 ///
@@ -333,18 +333,12 @@ pub fn curly_transform<T>(
 impl SExpr {
   /// Construct a [`SExprKind::Atom`] from an atom kind and a span.
   pub fn atom(span: impl Into<Span>, a: Atom) -> SExpr {
-    SExpr {
-      span: span.into(),
-      k: SExprKind::Atom(a),
-    }
+    SExpr { span: span.into(), k: SExprKind::Atom(a) }
   }
 
   /// Construct a [`SExprKind::List`] from a list of expressions and a span.
   pub fn list(span: impl Into<Span>, es: Vec<SExpr>) -> SExpr {
-    SExpr {
-      span: span.into(),
-      k: SExprKind::List(es),
-    }
+    SExpr { span: span.into(), k: SExprKind::List(es) }
   }
 
   /// Construct a (possibly) dotted list from a list of expressions and a
@@ -357,19 +351,13 @@ impl SExpr {
       Some(e) => match e.k {
         SExprKind::DottedList(es2, e2) => {
           es.extend(es2);
-          SExpr {
-            span: span.into(),
-            k: SExprKind::DottedList(es, e2),
-          }
+          SExpr { span: span.into(), k: SExprKind::DottedList(es, e2) }
         }
         SExprKind::List(es2) => {
           es.extend(es2);
           SExpr::list(span, es)
         }
-        _ => SExpr {
-          span: span.into(),
-          k: SExprKind::DottedList(es, Box::new(e)),
-        },
+        _ => SExpr { span: span.into(), k: SExprKind::DottedList(es, Box::new(e)) },
       },
     }
   }
@@ -626,12 +614,7 @@ impl Ast {
   /// Get an iterator over the AST's stmts while also traversing into the nested
   /// stmts in [`DocComment`s](StmtKind::DocComment) and [`Annotation`s](StmtKind::Annot).
   #[must_use]
-  pub fn stmts_iter(&self) -> StmtIter<'_> {
-    StmtIter {
-      stmts: self.stmts.iter(),
-      nested: None,
-    }
-  }
+  pub fn stmts_iter(&self) -> StmtIter<'_> { StmtIter { stmts: self.stmts.iter(), nested: None } }
 
   /// Look for a [`Decl`] by `ident` (where `ident` is in bytes)
   #[must_use]

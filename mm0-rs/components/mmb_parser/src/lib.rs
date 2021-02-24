@@ -387,28 +387,13 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
     use std::convert::TryInto;
     Ok(match cmd {
-      cmd::PROOF_TERM => ProofCmd::Term {
-        tid: TermId(data),
-        save: false,
-      },
-      cmd::PROOF_TERM_SAVE => ProofCmd::Term {
-        tid: TermId(data),
-        save: true,
-      },
+      cmd::PROOF_TERM => ProofCmd::Term { tid: TermId(data), save: false },
+      cmd::PROOF_TERM_SAVE => ProofCmd::Term { tid: TermId(data), save: true },
       cmd::PROOF_REF => ProofCmd::Ref(data),
-      cmd::PROOF_DUMMY => ProofCmd::Dummy(SortId(
-        data
-          .try_into()
-          .map_err(|_| ParseError::ProofCmdConv(cmd, data))?,
-      )),
-      cmd::PROOF_THM => ProofCmd::Thm {
-        tid: ThmId(data),
-        save: false,
-      },
-      cmd::PROOF_THM_SAVE => ProofCmd::Thm {
-        tid: ThmId(data),
-        save: true,
-      },
+      cmd::PROOF_DUMMY =>
+        ProofCmd::Dummy(SortId(data.try_into().map_err(|_| ParseError::ProofCmdConv(cmd, data))?)),
+      cmd::PROOF_THM => ProofCmd::Thm { tid: ThmId(data), save: false },
+      cmd::PROOF_THM_SAVE => ProofCmd::Thm { tid: ThmId(data), save: true },
       cmd::PROOF_HYP => ProofCmd::Hyp,
       cmd::PROOF_CONV => ProofCmd::Conv,
       cmd::PROOF_REFL => ProofCmd::Refl,
@@ -491,20 +476,11 @@ impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
     use std::convert::TryInto;
     Ok(match cmd {
-      cmd::UNIFY_TERM => UnifyCmd::Term {
-        tid: TermId(data),
-        save: false,
-      },
-      cmd::UNIFY_TERM_SAVE => UnifyCmd::Term {
-        tid: TermId(data),
-        save: true,
-      },
+      cmd::UNIFY_TERM => UnifyCmd::Term { tid: TermId(data), save: false },
+      cmd::UNIFY_TERM_SAVE => UnifyCmd::Term { tid: TermId(data), save: true },
       cmd::UNIFY_REF => UnifyCmd::Ref(data),
-      cmd::UNIFY_DUMMY => UnifyCmd::Dummy(SortId(
-        data
-          .try_into()
-          .map_err(|_| ParseError::UnifyCmdConv(cmd, data))?,
-      )),
+      cmd::UNIFY_DUMMY =>
+        UnifyCmd::Dummy(SortId(data.try_into().map_err(|_| ParseError::UnifyCmdConv(cmd, data))?)),
       cmd::UNIFY_HYP => UnifyCmd::Hyp,
       _ => return Err(ParseError::UnifyCmdConv(cmd, data)),
     })
@@ -573,14 +549,10 @@ impl Header {
     use crate::parser::{u32_as_usize, u64_as_usize};
 
     if self.magic != MM0B_MAGIC {
-      return Err(ParseError::BadMagic {
-        parsed_magic: self.magic,
-      })
+      return Err(ParseError::BadMagic { parsed_magic: self.magic })
     }
     if self.version != MM0B_VERSION {
-      return Err(ParseError::BadVersion {
-        parsed_version: self.version,
-      })
+      return Err(ParseError::BadVersion { parsed_version: self.version })
     }
 
     if u32_as_usize(self.p_terms.get()) <= std::mem::size_of::<Header>()

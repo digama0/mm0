@@ -8,11 +8,7 @@ use std::ops::{Deref, DerefMut, Index, IndexMut};
 
 macro_rules! id_wrapper {
   ($id:ident: $ty:ty, $vec:ident) => {
-    id_wrapper!(
-      $id: $ty,
-      $vec,
-      concat!("An index into a [`", stringify!($vec), "`]")
-    );
+    id_wrapper!($id: $ty, $vec, concat!("An index into a [`", stringify!($vec), "`]"));
   };
   ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
     #[doc=$svec]

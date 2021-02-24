@@ -86,10 +86,7 @@ impl LinedString {
       line: line.try_into().expect("too many lines"),
       character: if self.unicode {
         // Safety: we know that `pos` is valid index, and we have assumed that `idx` is
-        unsafe { self.s.get_unchecked(pos..idx) }
-          .chars()
-          .map(char::len_utf16)
-          .sum()
+        unsafe { self.s.get_unchecked(pos..idx) }.chars().map(char::len_utf16).sum()
       } else {
         idx - pos
       }
@@ -101,20 +98,14 @@ impl LinedString {
   /// Turn a [`Span`] into an LSP [`Range`].
   #[must_use]
   pub fn to_range(&self, s: Span) -> Range {
-    Range {
-      start: self.to_pos(s.start),
-      end: self.to_pos(s.end),
-    }
+    Range { start: self.to_pos(s.start), end: self.to_pos(s.end) }
   }
 
-  /// Turn a [`FileSpan`](crate::util::FileSpan) into an LSP [`Location`](lsp_types::Location).
+  /// Turn a [`FileSpan`](crate::FileSpan) into an LSP [`Location`](lsp_types::Location).
   #[cfg(feature = "server")]
   #[must_use]
-  pub fn to_loc(&self, fs: &crate::util::FileSpan) -> lsp_types::Location {
-    lsp_types::Location {
-      uri: fs.file.url().clone(),
-      range: self.to_range(fs.span),
-    }
+  pub fn to_loc(&self, fs: &crate::FileSpan) -> lsp_types::Location {
+    lsp_types::Location { uri: fs.file.url().clone(), range: self.to_range(fs.span) }
   }
 
   /// Get the total number of lines in the file (as a `u32` for LSP compatibility).
@@ -138,12 +129,7 @@ impl LinedString {
   /// `start` must be a valid index in the string.
   #[must_use]
   fn lsp_to_idx(&self, start: usize, chs: usize) -> usize {
-    start
-      + if self.unicode {
-        lsp_to_idx(unsafe { self.get_unchecked(start..) }, chs)
-      } else {
-        chs
-      }
+    start + if self.unicode { lsp_to_idx(unsafe { self.get_unchecked(start..) }, chs) } else { chs }
   }
 
   /// Turn an LSP [`Position`] into a usize index. [`Position`] is already zero-based,
@@ -154,10 +140,8 @@ impl LinedString {
   pub fn to_idx(&self, pos: Position) -> Option<usize> {
     match pos.line.checked_sub(1) {
       None => Some(self.lsp_to_idx(0, pos.character as usize)),
-      Some(n) => self
-        .lines
-        .get(n as usize)
-        .map(|&idx| self.lsp_to_idx(idx, pos.character as usize)),
+      Some(n) =>
+        self.lines.get(n as usize).map(|&idx| self.lsp_to_idx(idx, pos.character as usize)),
     }
   }
 

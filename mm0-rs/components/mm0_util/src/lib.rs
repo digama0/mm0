@@ -354,21 +354,13 @@ deepsize_0::deep_size_0!(Span);
 
 impl From<std::ops::Range<usize>> for Span {
   #[inline]
-  fn from(r: std::ops::Range<usize>) -> Self {
-    Span {
-      start: r.start,
-      end: r.end,
-    }
-  }
+  fn from(r: std::ops::Range<usize>) -> Self { Span { start: r.start, end: r.end } }
 }
 
 impl From<std::ops::RangeInclusive<usize>> for Span {
   #[inline]
   fn from(r: std::ops::RangeInclusive<usize>) -> Self {
-    Span {
-      start: *r.start(),
-      end: *r.end() + 1,
-    }
+    Span { start: *r.start(), end: *r.end() + 1 }
   }
 }
 
@@ -501,16 +493,20 @@ impl FileRef {
   /// Convert this [`FileRef`] to a [`PathBuf`], for use with OS file actions.
   #[must_use]
   pub fn path(&self) -> &PathBuf { &self.0.path }
+
   /// Convert this [`FileRef`] to a relative path (as a `&str`).
   #[must_use]
   pub fn rel(&self) -> &str { &self.0.rel }
+
   /// Convert this [`FileRef`] to a `file:://` URL, for use with LSP.
   #[cfg(feature = "server")]
   #[must_use]
   pub fn url(&self) -> &lsp_types::Url { &self.0.url }
+
   /// Get a pointer to this allocation, for use in hashing.
   #[must_use]
   pub fn ptr(&self) -> *const PathBuf { self.path() }
+
   /// Compare this with `other` for pointer equality.
   #[must_use]
   pub fn ptr_eq(&self, other: &FileRef) -> bool { Arc::ptr_eq(&self.0, &other.0) }
@@ -532,14 +528,8 @@ impl Hash for FileRef {
 
 impl fmt::Display for FileRef {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    self
-      .0
-      .path
-      .file_name()
-      .unwrap_or_else(|| self.0.path.as_os_str())
-      .to_str()
-      .expect("bad unicode in path")
-      .fmt(f)
+    let s = self.0.path.file_name().unwrap_or_else(|| self.0.path.as_os_str());
+    s.to_str().expect("bad unicode in path").fmt(f)
   }
 }
 
