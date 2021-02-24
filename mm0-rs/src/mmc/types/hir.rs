@@ -2,7 +2,7 @@
 
 use num::BigInt;
 use crate::{elab::{environment::AtomId, lisp::LispVal}, util::FileSpan};
-use super::{Binop, Mm0Expr, Unop, VarId, ast::{PosNeg, ProcKind}, ty};
+use super::{Binop, Mm0Expr, Unop, VarId, ast::ProcKind, ty};
 
 /// A "generation ID", which tracks the program points where mutation
 /// can occur. The actual set of logical variables is some subset of
@@ -163,30 +163,6 @@ impl<'a> ContextNext<'a> {
   #[must_use] pub fn expr_ty(&self) -> ty::ExprTy<'a> { (Some(self.val), self.ty) }
 }
 
-/// A pattern, the left side of a switch statement.
-pub type Pattern<'a> = Spanned<'a, PatternKind<'a>>;
-
-/// A pattern, the left side of a switch statement.
-#[derive(Debug, DeepSizeOf)]
-pub enum PatternKind<'a> {
-  /// A wildcard binding.
-  Ignore,
-  /// A variable binding.
-  Var(VarId),
-  /// A constant value.
-  Const(AtomId),
-  /// A numeric literal.
-  Number(BigInt),
-  /// A hypothesis pattern, which binds the first argument to a proof that the
-  /// scrutinee satisfies the pattern argument.
-  Hyped(PosNeg, VarId, Box<Pattern<'a>>),
-  /// A pattern guard: Matches the inner pattern, and then if the expression returns
-  /// true, this is also considered to match.
-  With(Box<Pattern<'a>>, Box<Expr<'a>>),
-  /// A disjunction of patterns.
-  Or(Box<[Pattern<'a>]>),
-}
-
 /// The type of variant, or well founded order that recursions decrease.
 #[derive(Debug, DeepSizeOf)]
 pub enum VariantType<'a> {
@@ -285,14 +261,11 @@ pub enum ExprKind<'a> {
   Rval(Box<Expr<'a>>),
   /// An deref operation `*x: T` where `x: &T`.
   Deref(Box<Expr<'a>>),
-  /// `(list e1 ... en)` returns a tuple of the arguments.
-  List(Vec<Expr<'a>>),
-  /// `(list e1 ... en)` returns a `And` of the arguments. This is only valid
-  /// when all arguments are copy or all cover the same heap location.
-  /// All expressions have to be pure and have the same value.
-  IAnd(Vec<Expr<'a>>),
-  /// `[{e1: T}, ..., en]`, an array literal.
-  Array(Vec<Expr<'a>>, ty::Ty<'a>),
+  /// `(list e1 ... en)` returns a tuple of the arguments (of type
+  /// `List`, `Struct`, `Array` or `And`). In the `And` case,
+  /// all arguments must be copy or all cover the same heap location,
+  /// and expressions have to be pure and have the same value.
+  List(Vec<Expr<'a>>, ty::Ty<'a>),
   /// A ghost expression.
   Ghost(Box<Expr<'a>>),
   /// Evaluates the expression as a pure expression, so it will not take
@@ -361,8 +334,6 @@ pub enum ExprKind<'a> {
     /// The generation at the join point.
     gen: GenId,
   },
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(Box<Expr<'a>>, Box<[(Pattern<'a>, Expr<'a>)]>),
   /// A while loop.
   While {
     /// The name of this loop, which can be used as a target for jumps.
@@ -374,7 +345,7 @@ pub enum ExprKind<'a> {
     /// The variant, which must decrease on every round around the loop.
     var: Option<Box<Variant<'a>>>,
     /// The body of the loop.
-    body: Box<Expr<'a>>,
+    body: Box<Block<'a>>,
   },
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Box<Expr<'a>>),
@@ -389,6 +360,9 @@ pub enum ExprKind<'a> {
   Break(VarId, Box<Expr<'a>>),
   /// `(return e1 ... en)` returns `e1, ..., en` from the current function.
   Return(Vec<Expr<'a>>),
+  /// Same as `return`, but accepts a single argument of the sigma type and unpacks it
+  /// into the returns.
+  UnpackReturn(Box<Expr<'a>>),
   /// An inference hole `_`, which will give a compile error if it cannot be inferred
   /// but queries the compiler to provide a type context. The `bool` is true if this variable
   /// was created by the user through an explicit `_`, while compiler-generated inference

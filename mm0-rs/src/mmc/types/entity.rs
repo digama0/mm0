@@ -302,6 +302,16 @@ pub enum ProcTc {
   Typed(ProcTy),
 }
 
+impl ProcTc {
+  /// Get the type of the procedure, if it has been deduced.
+  #[must_use] pub fn ty(&self) -> Option<&ProcTy> {
+    match self {
+      ProcTc::Unchecked => None,
+      ProcTc::Typed(ty) => Some(ty)
+    }
+  }
+}
+
 impl Remap for ProcTc {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {

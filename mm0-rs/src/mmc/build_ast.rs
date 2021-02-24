@@ -12,9 +12,10 @@
 
 use std::collections::{HashMap, hash_map::Entry};
 use std::convert::TryInto;
+use std::rc::Rc;
 use crate::elab::{ElabError, Result, environment::AtomId, lisp::{LispVal, Uncons}};
 use crate::util::FileSpan;
-use super::types::{Binop, Mm0Expr, Size, Spanned, Unop, VarId, ast};
+use super::types::{Binop, Mm0Expr, Size, Spanned, FieldName, Unop, VarId, ast};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 use super::types::entity::Entity;
 use super::parser::{Parser, spanned};
@@ -37,6 +38,14 @@ impl From<ArgAttr> for ast::ArgAttr {
     if implicit {ret |= ast::ArgAttr::IMPLICIT}
     ret
   }
+}
+
+fn let_var(sp: &FileSpan, name: AtomId, v: VarId, rhs: ast::Expr) -> ast::Stmt {
+  Spanned {span: sp.clone(), k: ast::StmtKind::Let {
+    lhs: Spanned {span: sp.clone(), k:
+      ast::TuplePatternKind::Name(false, name, v)},
+    rhs
+  }}
 }
 
 /// The state of the AST building pass.
@@ -168,7 +177,6 @@ impl<'a> BuildAst<'a> {
       ast::ExprKind::Block(ast::Block {expr: Some(e), ..}) => Self::add_origins(e, f)?,
       ast::ExprKind::Slice(e, _) => Self::add_origins(&e.0, f)?,
       ast::ExprKind::If {then, els, ..} => {Self::add_origins(then, f)?; Self::add_origins(els, f)?}
-      ast::ExprKind::Match(_, pats) => for (_, e) in &**pats {Self::add_origins(e, f)?},
       _ => {}
     }
     Ok(())
@@ -192,31 +200,6 @@ impl<'a> BuildAst<'a> {
           Ok((v, self.push_tuple_pattern(pat, Some(v))?))
         }).collect::<Result<_>>()?
       ),
-    };
-    Ok(Spanned {span, k})
-  }
-
-  fn push_pattern(&mut self, base: &FileSpan, pos: bool, neg: bool, negp: &mut Vec<(AtomId, VarId)>, pat: &LispVal) -> Result<ast::Pattern> {
-    let Spanned {span, k} = self.p.parse_pattern(base, self.names, pat)?;
-    let k = match k {
-      PatternKind::Var(AtomId::UNDER) => ast::PatternKind::Ignore,
-      PatternKind::Var(a) => ast::PatternKind::Var(self.push_fresh(a)),
-      PatternKind::Const(a) => ast::PatternKind::Const(a),
-      PatternKind::Number(n) => ast::PatternKind::Number(n),
-      PatternKind::Hyped(name, pat) => {
-        let pn = ast::PosNeg::new(pos, neg).ok_or_else(||
-          ElabError::new_e(&span, "can't bind pattern either positively or negatively here"))?;
-        let pat = self.push_pattern(&span, pos, neg, negp, &pat)?;
-        let h = self.fresh_var();
-        if pos { self.push(name, h) }
-        if neg { negp.push((name, h)) }
-        ast::PatternKind::Hyped(pn, h, Box::new(pat))
-      }
-      PatternKind::With(pat, e) => ast::PatternKind::With(
-        Box::new(self.push_pattern(&span, pos, false, negp, &pat)?),
-        Box::new(self.build_expr(&span, e)?)),
-      PatternKind::Or(pats) => ast::PatternKind::Or(
-        pats.map(|pat| self.push_pattern(&span, false, neg, negp, &pat)).collect::<Result<_>>()?),
     };
     Ok(Spanned {span, k})
   }
@@ -324,11 +307,16 @@ impl<'a> BuildAst<'a> {
         Box::new(self.build_expr(&span, c)?),
         Box::new(self.build_ty(&span, &t)?),
         Box::new(self.build_ty(&span, &e)?)),
-      TypeKind::Match(e, branches) => ast::TypeKind::Match(Box::new(self.build_expr(&span, e)?),
-        self.build_match_branches(&span, branches, |this, rhs| this.build_ty(&span, &rhs))?),
+      TypeKind::Match(e, branches) => {
+        let e = Rc::new(self.build_expr(&span, e)?);
+        self.build_match(&span, None, &e, branches, false,
+          |_, e| e.k,
+          |_, c, t, e| ast::TypeKind::If(c, t, e),
+          |this, rhs| this.build_ty(&span, &rhs))?
+      }
       TypeKind::Ghost(ty) => ast::TypeKind::Ghost(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Uninit(ty) => ast::TypeKind::Uninit(Box::new(self.build_ty(&span, &ty)?)),
-      TypeKind::Pure(e) => ast::TypeKind::Pure(Box::new(self.build_parsed_expr(span.clone(), e)?)),
+      TypeKind::Pure(e) => ast::TypeKind::Pure(Box::new(self.build_parsed_expr(span.clone(), *e)?)),
       TypeKind::User(f, tys, es) => {
         let tys = tys.into_vec().iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?;
         let es = es.into_vec().into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
@@ -410,36 +398,218 @@ impl<'a> BuildAst<'a> {
         }
         Ok(ret)
       })?,
-      ExprKind::Match(e, branches) => ast::ExprKind::Match(Box::new(self.build_expr(&span, e)?),
-        self.build_match_branches(&span, branches, |this, rhs| this.push_expr(&span, rhs))?),
-      ExprKind::While {hyp, cond, var, body} => {
+      ExprKind::Match(e, branches) => {
+        let e = Rc::new(self.build_expr(&span, e)?);
+        let v = self.fresh_var();
+        let k = self.build_match(&span, Some(v), &e, branches, true,
+          |stmts, e| ast::ExprKind::Block(ast::Block { stmts, expr: Some(Box::new(e)) }),
+          |hyp, cond, then, els| ast::ExprKind::If {hyp, cond, then, els},
+          |this, rhs| this.push_expr(&span, rhs))?;
+        ast::ExprKind::Block(ast::Block {
+          stmts: vec![let_var(&span, AtomId::UNDER, v,
+            Spanned {span: span.clone(), k: ast::ExprKind::Rc(e)})],
+          expr: Some(Box::new(Spanned {span: span.clone(), k}))
+        })
+      }
+      ExprKind::While {muts, hyp, cond, var, body} => {
         let label = self.fresh_var();
-        let cond = Box::new(self.build_expr(&span, cond)?);
+        let mut muts2 = Vec::with_capacity(muts.len());
+        for Spanned {span, k: name} in muts {
+          let a = self.get_var(&span, name)?;
+          if muts2.contains(&a) { return Err(ElabError::new_e(&span, "duplicate mut")) }
+          muts2.push(a);
+        }
         let var = self.build_variant(var)?;
-        let hyp = hyp.map(|h| self.push_fresh(h.k));
-        let body = self.with_ctx(|this| {
+        self.with_ctx(|this| -> Result<_> {
           this.push_loop(label);
-          this.build_block(&span, body)
-        })?;
-        let body = Box::new(Spanned {span: span.clone(), k: ast::ExprKind::Block(body)});
-        ast::ExprKind::While {label, hyp, cond, var, body}
+          Ok(ast::ExprKind::While {
+            label, muts: muts2.into(), var,
+            cond: Box::new(this.build_expr(&span, cond)?),
+            hyp: hyp.map(|h| this.push_fresh(h.k)),
+            body: Box::new(this.build_block(&span, body)?)
+          })
+        })?
       },
       ExprKind::Hole => ast::ExprKind::Infer(true),
     };
     Ok(Spanned {span, k})
   }
 
-  fn build_match_branches<T>(&mut self, span: &FileSpan, branches: Vec<(LispVal, LispVal)>,
-    mut f: impl FnMut(&mut Self, LispVal) -> Result<T>
-  ) -> Result<Box<[(ast::Pattern, T)]>> {
-    self.with_ctx(|this| branches.into_iter().map(|(lhs, rhs)| {
-      let mut negp = vec![];
-      let res = this.with_ctx(|this| -> Result<_> {
-        Ok((this.push_pattern(span, true, true, &mut negp, &lhs)?, f(this, rhs)?))
-      })?;
-      for (name, v) in negp { this.push(name, v) }
-      Ok(res)
-    }).collect())
+  #[allow(clippy::too_many_arguments)]
+  fn build_match<T>(&mut self, span: &FileSpan,
+    scvar: Option<VarId>, scrut: &Rc<ast::Expr>, branches: Vec<Spanned<(LispVal, LispVal)>>,
+    allow_hyps: bool,
+    mut mkblock: impl FnMut(Vec<ast::Stmt>, Spanned<T>) -> T,
+    mut mkif: impl FnMut(Option<VarId>, Box<ast::Expr>, Box<Spanned<T>>, Box<Spanned<T>>) -> T,
+    mut case: impl FnMut(&mut Self, LispVal) -> Result<Spanned<T>>
+  ) -> Result<T> {
+    macro_rules! sp {($sp:expr, $k:expr) => {Spanned {span: $sp.clone(), k: $k}}}
+
+    struct PushPattern<'a, 'p> {
+      ba: &'p mut BuildAst<'a>,
+      bind: bool,
+      scvar: Option<VarId>,
+      scrut: &'p Rc<ast::Expr>,
+      uses_hyp: bool,
+      posblock: Vec<ast::Stmt>,
+      negblock: Vec<ast::Stmt>,
+    }
+
+    impl<'a, 'p> PushPattern<'a, 'p> {
+      fn push_pattern(&mut self,
+        base: &FileSpan,
+        pos: Option<&dyn Fn() -> ast::Expr>,
+        neg: Option<&dyn Fn() -> ast::Expr>,
+        pat: &LispVal,
+      ) -> Result<Option<ast::Expr>> {
+        macro_rules! binop {($op:expr, $e1:expr, $e2:expr) => {ast::ExprKind::Binop($op, Box::new($e1), Box::new($e2))}}
+        fn binop(sp: &FileSpan, op: Binop, e1: ast::Expr, e2: ast::Expr) -> ast::Expr {
+          sp!(sp, binop!(op, e1, e2))
+        }
+        let Spanned {span, k} = self.ba.p.parse_pattern(base, self.ba.names, pat)?;
+        let sp = &span;
+        let mkscr = || sp!(sp, ast::ExprKind::Rc(self.scrut.clone()));
+        Ok(match k {
+          PatternKind::Var(AtomId::UNDER) => None,
+          PatternKind::Var(a) => {
+            if let Some(v) = self.scvar { self.ba.push(a, v) }
+            else if self.bind { unreachable!() }
+            else { return Err(ElabError::new_e(&span, "can't bind variables in this context")) }
+            None
+          }
+          PatternKind::Const(a) => Some(binop(sp, Binop::Eq, mkscr(), sp!(sp, ast::ExprKind::Const(a)))),
+          PatternKind::Number(n) => Some(binop(sp, Binop::Eq, mkscr(), sp!(sp, ast::ExprKind::Int(n)))),
+          PatternKind::Hyped(name, pat) => {
+            if !self.bind || pos.is_none() && neg.is_none() {
+              return Err(ElabError::new_e(&span, "can't bind variables in this context"))
+            }
+            self.uses_hyp = true;
+            let v = self.ba.fresh_var();
+            let cl = move || sp!(sp, ast::ExprKind::Var(v));
+            let pos: Option<&dyn Fn() -> ast::Expr> = if let Some(f) = pos {
+              self.posblock.push(let_var(sp, name, v, f()));
+              Some(&cl)
+            } else { pos };
+            let neg: Option<&dyn Fn() -> ast::Expr> = if let Some(f) = neg {
+              self.negblock.push(let_var(sp, name, v, f()));
+              Some(&cl)
+            } else { neg };
+            Some(self.push_pattern(sp, pos, neg, &pat)?
+              .unwrap_or_else(|| sp!(sp, ast::ExprKind::Bool(true))))
+          }
+          PatternKind::With(pat, e) => {
+            let cl;
+            let pos: Option<&dyn Fn() -> ast::Expr> = match pos {
+              None => None,
+              Some(f) => {
+                cl = move || sp!(sp, ast::ExprKind::Proj(Box::new(f()),
+                  sp!(sp, FieldName::Number(0))));
+                Some(&cl)
+              }
+            };
+            let pat = self.push_pattern(sp, pos, None, &pat)?;
+            let e = self.ba.build_expr(&span, e)?;
+            Some(match pat {
+              Some(p) => binop(sp, Binop::And, p, e),
+              None => e
+            })
+          }
+          PatternKind::Or(pats) => {
+            fn projn(sp: &FileSpan, mut x: ast::Expr, n: usize) -> ast::Expr {
+              macro_rules! proj {($e:expr, $n:expr) => {
+                sp!(sp, ast::ExprKind::Proj(Box::new($e), sp!(sp, FieldName::Number($n))))
+              }}
+              for _ in 0..n { x = proj!(x, 1) }
+              proj!(x, 0)
+            }
+            let mut args = Some(vec![]);
+            for pat in pats {
+              let cl;
+              let neg: Option<&dyn Fn() -> ast::Expr> = if let (Some(f), Some(args)) = (neg, &args) {
+                let n = args.len();
+                cl = move || projn(sp, f(), n);
+                Some(&cl)
+              } else {
+                None
+              };
+              if let Some(p) = self.push_pattern(sp, None, neg, &pat)? {
+                if let Some(args) = &mut args {args.push(p)}
+              } else { args = None }
+            }
+            args.map(|args| {
+              let mut e = sp!(sp, ast::ExprKind::Bool(false));
+              for arg in args.into_iter().rev() {
+                e = binop(sp, Binop::Or, arg, e);
+              }
+              e
+            })
+          }
+        })
+      }
+    }
+
+    fn push_stmts<'a>(ba: &mut BuildAst<'a>, stmts: &[ast::Stmt]) {
+      for st in stmts {
+        if let ast::StmtKind::Let {lhs, ..} = &st.k {
+          if let ast::TuplePatternKind::Name(_, name, v) = lhs.k {
+            if name != AtomId::UNDER {
+              ba.push(name, v)
+            }
+          }
+        }
+      }
+    }
+
+    let mut block = move |span: &FileSpan, stmts: Vec<ast::Stmt>, e: Spanned<T>| -> Spanned<T> {
+      if stmts.is_empty() { e }
+      else { Spanned {span: span.clone(), k: mkblock(stmts, e)} }
+    };
+    self.with_ctx(|this| {
+      let mut stack = vec![];
+      let mut iter = branches.into_iter();
+      let mut e = loop {
+        if let Some(Spanned {span, k: (lhs, rhs)}) = iter.next() {
+          let hyp = this.fresh_var();
+          let hvar = || Spanned {span: span.clone(), k: ast::ExprKind::Var(hyp)};
+          let mut pp = PushPattern {
+            ba: this,
+            bind: allow_hyps,
+            uses_hyp: false,
+            scvar,
+            scrut,
+            posblock: vec![],
+            negblock: vec![],
+          };
+          let result = pp.push_pattern(&span, Some(&hvar), Some(&hvar), &lhs)?;
+          let PushPattern {posblock, negblock, uses_hyp, ..} = pp;
+          let rhs = this.with_ctx(|this| {
+            push_stmts(this, &posblock);
+            case(this, rhs)
+          })?;
+          let rhs = block(&span, posblock, rhs);
+          if let Some(cond) = result {
+            stack.push((
+              if uses_hyp {Some(hyp)} else {None},
+              Box::new(cond),
+              Box::new(rhs),
+              negblock,
+            ));
+          } else {
+            break rhs
+          }
+        } else {
+          return Err(ElabError::new_e(&scrut.span, "incomplete pattern match"))
+        }
+      };
+      if let Some(arm) = iter.next() {
+        return Err(ElabError::new_e(&arm.span, "unreachable pattern"))
+      }
+      for (hyp, cond, tru, negblock) in stack.into_iter().rev() {
+        e = block(span, negblock, e);
+        e = Spanned {span: span.clone(), k: mkif(hyp, cond, tru, Box::new(e))};
+      }
+      Ok(e.k)
+    })
   }
 
   fn build_block(&mut self, span: &FileSpan, es: Uncons) -> Result<ast::Block> {
@@ -537,12 +707,6 @@ impl<'a> BuildAst<'a> {
     macro_rules! block {($($e:expr),*; $last:expr) => {
       ast::ExprKind::Block(ast::Block {stmts: vec![$($e),*], expr: Some(Box::new($last))})
     }}
-    fn let_var(sp: &FileSpan, v: VarId, rhs: ast::Expr) -> ast::Stmt {
-      sp!(sp, ast::StmtKind::Let {
-        lhs: sp!(sp, ast::TuplePatternKind::Name(false, AtomId::UNDER, v)),
-        rhs
-      })
-    }
     fn binop(sp: &FileSpan, op: Binop, v1: VarId, e2: ast::Expr) -> ast::Expr {
       sp!(sp, binop!(op, sp!(sp, ast::ExprKind::Var(v1)), e2))
     }
@@ -562,7 +726,7 @@ impl<'a> BuildAst<'a> {
           Ok(and(sp, op, v0, v1, if let Some(e3) = it.next() {
             let v2 = this.fresh_var();
             sp!(sp, block![
-              let_var(sp, v2, e2);
+              let_var(sp, AtomId::UNDER, v2, e2);
               mk_and(this, sp, op, v1, v2, e3, it)?
             ])
           } else {
@@ -572,8 +736,8 @@ impl<'a> BuildAst<'a> {
         let v_1 = self.fresh_var();
         let v_2 = self.fresh_var();
         block![
-          let_var(sp, v_1, arg_1),
-          let_var(sp, v_2, arg_2);
+          let_var(sp, AtomId::UNDER, v_1, arg_1),
+          let_var(sp, AtomId::UNDER, v_2, arg_2);
           mk_and(self, sp, op, v_1, v_2, arg_3, it)?
         ]
       } else {

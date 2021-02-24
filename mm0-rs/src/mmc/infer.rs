@@ -16,9 +16,48 @@ use crate::elab::{environment::AtomId, lisp::{LispVal, print::FormatEnv}};
 use crate::util::FileSpan;
 use super::{parser::try_get_fspan, types::{self, Binop, FieldName, Size, Spanned, Unop, VarId,
   u32_as_usize, ast, hir::{self, GenId}}};
-use super::types::entity::{Entity, ConstTc, GlobalTc, TypeTy};
+use super::types::entity::{Entity, ConstTc, GlobalTc, ProcTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
+
+#[derive(Debug)]
+enum TypeError<'a> {
+  /// Failed to pattern match type T with the given pattern of type U
+  PatternMatch(Ty<'a>, Ty<'a>),
+  /// Failed to relate type T to type U according to the relation
+  Relate(Ty<'a>, Ty<'a>, Relation),
+  /// Expected a pure expression
+  ExpectedPure,
+  /// Expected a struct expression
+  ExpectedStruct(Ty<'a>),
+  /// Expected a pointer expression
+  ExpectedPtr,
+  /// Expected a place expression
+  ExpectedPlace,
+  /// Expected a type ascription
+  ExpectedType,
+  /// Struct does not have this field
+  FieldMissing(Ty<'a>, FieldName),
+  /// Expected `x` args, found `y`
+  NumArgs(usize, usize),
+  /// `as` conversion from `T` to `U` not supported
+  UnsupportedAs(Ty<'a>, Ty<'a>),
+  /// Cannot assign to this lvalue
+  UnsupportedAssign,
+  /// Missing `with` clause for assignment
+  MissingAssignWith(AtomId),
+  /// Provided expressions x and y do not unify in an and-intro expression
+  IAndUnify(Expr<'a>, Expr<'a>),
+  /// An explicit hole expression, which queries for the full type context.
+  /// (This form assumes we don't have an expected expression, else we would just fill it in.)
+  Hole(Box<DynContext<'a>>, Option<Ty<'a>>),
+  /// Don't know how to evaluate this expression
+  UnsupportedSynthesis(Box<DynContext<'a>>, Expr<'a>, Ty<'a>),
+  /// Can't use return in this position
+  InvalidReturn,
+  /// While loop mutates a value without marking it as `mut` in the loop header
+  MissingMuts(Vec<VarId>),
+}
 
 #[derive(Copy, Clone, Debug)]
 struct Interned<T>(T);
@@ -71,20 +110,7 @@ impl<'a> Interner<'a> {
   }
 }
 
-// #[derive(Debug)]
-// enum Task {
-// }
-
-// impl Task {
-//   fn trigger(&mut self) -> bool {
-//     match *self {
-//     }
-//   }
-//   fn run(&mut self) {
-//     match *self {
-//     }
-//   }
-// }
+macro_rules! intern {($ctx:expr, $t:expr) => {{let t = $t; $ctx.intern(t)}}}
 
 #[derive(Debug)]
 struct MVarData<'a> {
@@ -154,41 +180,8 @@ impl<'a, K: UnifyKey, V> Index<K> for Assignments<'a, K, V> {
   fn index(&self, k: K) -> &Self::Output { &self.mvars[u32_as_usize(k.index())] }
 }
 
-#[derive(Debug)]
-enum TypeError<'a> {
-  /// Failed to pattern match type T with the given pattern of type U
-  PatternMatch(Ty<'a>, Ty<'a>),
-  /// Failed to relate type T to type U according to the relation
-  Relate(Ty<'a>, Ty<'a>, Relation),
-  /// Expected a pure expression
-  ExpectedPure,
-  /// Expected a struct expression
-  ExpectedStruct(Ty<'a>),
-  /// Expected a pointer expression
-  ExpectedPtr,
-  /// Expected a type ascription
-  ExpectedType,
-  /// Struct does not have this field
-  FieldMissing(Ty<'a>, FieldName),
-  /// Expected `x` args, found `y`
-  NumArgs(usize, usize),
-  /// `as` conversion from `T` to `U` not supported
-  UnsupportedAs(Ty<'a>, Ty<'a>),
-  /// Cannot assign to this lvalue
-  UnsupportedAssign,
-  /// Missing `with` clause for assignment
-  MissingAssignWith(AtomId),
-  /// Provided expressions x and y do not unify in an and-intro expression
-  IAndUnify(Expr<'a>, Expr<'a>),
-  /// An explicit hole expression, which queries for the full type context.
-  /// (This form assumes we don't have an expected expression, else we would just fill it in.)
-  Hole(Box<DynContext<'a>>, Option<Ty<'a>>),
-  /// Don't know how to evaluate this expression
-  UnsupportedSynthesis(Box<DynContext<'a>>, Expr<'a>, Ty<'a>),
-}
-
 impl IntTy {
-  fn to_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> { ctx.intern(self.into()) }
+  fn to_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> { intern!(ctx, self.into()) }
 }
 
 impl Unop {
@@ -222,22 +215,13 @@ struct UnelabTupPat<'a> {
 enum UnelabTupPatKind<'a> {
   /// A simple pattern, containing the actual binding in the [`ContextNext`].
   Name(bool, AtomId, &'a ContextNext<'a>),
-  /// A coercion. This is not available in the surface syntax, but if we have a binder
-  /// like `let ((a, b), c) = ...` and we need to insert a coercion in the inner pattern,
-  /// we desugar it to `let (x, c) = ...; let (a, b) = coe(x);`, except that at this
-  /// point we don't want to make any structural syntax changes yet so we store the intent
-  /// to insert the `coe` function while keeping it as a nested pattern-match,
-  /// so the syntax is more like `let ((a, b) => coe, c) = ...` where `=> coe` means to apply
-  /// the `coe` function to the value matched at that level.
-  Coercion(Box<UnelabTupPat<'a>>, &'a [Coercion<'a>], Ty<'a>),
-  /// A tuple pattern match. This has been typechecked, and the `Ty` determines what kind
-  /// of pattern match it is.
-  Tuple(&'a [UnelabTupPat<'a>], Ty<'a>),
   /// An unelaborated tuple pattern match. The subpatterns are elaborated with metavariable types,
   /// but we don't yet know how to connect this list of types to the target type - for example
   /// the target type could be a metavariable, and propagating our default guess of a nondependent
   /// tuple could cause a type error if it turns out to be a dependent tuple.
-  UnelabTuple(&'a [UnelabTupPat<'a>], Ty<'a>),
+  Tuple(Vec<UnelabTupPat<'a>>, Ty<'a>),
+  /// A failed tuple pattern match.
+  Error(Box<UnelabTupPat<'a>>, Ty<'a>),
 }
 
 impl<'a> UnelabTupPat<'a> {
@@ -245,9 +229,18 @@ impl<'a> UnelabTupPat<'a> {
   #[must_use] fn ty(&self) -> Ty<'a> {
     match self.k {
       UnelabTupPatKind::Name(_, _, &ContextNext {ty, ..}) |
-      UnelabTupPatKind::Coercion(_, _, ty) |
       UnelabTupPatKind::Tuple(_, ty) |
-      UnelabTupPatKind::UnelabTuple(_, ty) => ty
+      UnelabTupPatKind::Error(_, ty) => ty,
+    }
+  }
+
+  /// The context before introducing the bindings in this tuple pattern.
+  fn base_context(&self, ctx: &mut InferCtx<'a>) {
+    match &self.k {
+      UnelabTupPatKind::Name(_, _, &ContextNext {parent, ..}) => ctx.dc.context = parent,
+      UnelabTupPatKind::Tuple(pats, _) =>
+        if let Some(pat) = pats.first() { pat.base_context(ctx) }
+      UnelabTupPatKind::Error(pat, _) => pat.base_context(ctx),
     }
   }
 }
@@ -295,11 +288,12 @@ struct WhnfTy<'a> {
 
 impl<'a> WhnfTy<'a> {
   fn to_ty(mut self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
-    if self.moved { self.ty = ctx.intern(TyKind::Moved(self.ty)) }
-    if self.ghost { self.ty = ctx.intern(TyKind::Ghost(self.ty)) }
-    if self.uninit { self.ty = ctx.intern(TyKind::Uninit(self.ty)) }
+    if self.moved { self.ty = intern!(ctx, TyKind::Moved(self.ty)) }
+    if self.ghost { self.ty = intern!(ctx, TyKind::Ghost(self.ty)) }
+    if self.uninit { self.ty = intern!(ctx, TyKind::Uninit(self.ty)) }
     self.ty
   }
+  fn is_ty(self) -> bool { !self.uninit && !self.moved && !self.ghost }
   fn moved(mut self, m: bool) -> Self { self.moved |= m; self }
   fn ghost(mut self) -> Self { self.ghost = true; self }
   fn uninit(mut self) -> Self { self.uninit = true; self }
@@ -386,12 +380,13 @@ enum AgreeExpr<'a> {
 /// The temporary data associated to a label group during elaboration.
 #[derive(Debug)]
 struct LabelData<'a> {
-  /// The list of labels in the group.
+  /// The list of labels in the group. (Note that the `body` field of
+  /// labels is not set during type inference)
   labels: Box<[hir::Label<'a>]>,
   /// The pure expression in the break position.
-  /// * `None` means we haven't seen any `break`s yet,
-  /// * `Some(Some(e))` means all breaks have the same value `e`, and
-  /// * `Some(None)` means that there are multiple exit values.
+  /// * `Unset` means we haven't seen any `break`s yet,
+  /// * `Set(Some(e))` means all breaks have the same value `e`, and
+  /// * `Set(None)` means that there are multiple exit values.
   value: AgreeExpr<'a>,
   /// The return type of the block containing the label group.
   ret: Ty<'a>,
@@ -429,6 +424,8 @@ pub struct InferCtx<'a> {
   var_names: HashMap<VarId, AtomId>,
   /// The set of labels in scope.
   labels: HashMap<VarId, LabelData<'a>>,
+  /// The return type of the current function.
+  returns: Option<&'a [Arg<'a>]>,
   /// The list of type errors collected so far.
   /// We delay outputting these so that we can report many errors at once,
   /// as well as waiting for all variables to be as unified as possible so that
@@ -522,15 +519,113 @@ impl<'a> ExpectExpr<'a> {
 }
 
 /// The result of a tuple pattern analysis, see [`InferCtx::tuple_pattern_tuple`].
-#[derive(Copy, Clone)]
+#[derive(Clone)]
+#[allow(variant_size_differences)]
 enum TuplePatternResult<'a> {
   /// This type cannot be destructured, or the wrong number of arguments were provided.
-  Fail,
+  /// If the bool is false, suppress the error.
+  Fail(bool),
   /// There is not enough information in the type to determine what kind of
   /// destructuring is needed.
   Indeterminate,
-  /// This is a nondependent list of length matching the pattern list.
-  List(&'a [Ty<'a>]),
+  /// This is a valid tuple pattern, which uses the [`TupleIter::next`] interface
+  /// to provide types in streaming fashion.
+  Tuple(TupleIter<'a>, TupleBuilder),
+}
+
+/// A function for converting a list of expressions from a tuple pattern into one expression.
+/// This type does not store anything in itself except the overall strategy for the merging,
+/// as no type information is needed for the reconstruction.
+#[derive(Copy, Clone)]
+enum TupleBuilder {
+  /// A unit pattern match just returns `()`.
+  Unit,
+  /// A list pattern match constructs `(e1, ..., en)`.
+  List,
+  /// An array pattern match constructs an array literal `[e1, ..., en]`.
+  Array,
+  /// An and pattern match uses the first element in the list. (All elements should be the
+  /// same, although we don't check this here.)
+  And,
+  /// A singleton pattern match `(x, h): sn {a : T}` returns `x`.
+  /// (It could also soundly return `a`, but `x` seems more useful here.)
+  Sn,
+}
+
+impl TupleBuilder {
+  /// Constructs an expression from a list of expressions for the sub-pattern matches.
+  /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
+  /// type error.
+  fn build<'a>(self, ctx: &mut InferCtx<'a>, exprs: Vec<Option<Expr<'a>>>) -> Option<Expr<'a>> {
+    Some(match self {
+      Self::Unit => ctx.common.e_unit,
+      Self::Sn => (*exprs.first()?)?,
+      Self::List => {
+        if exprs.iter().any(Option::is_none) {return None}
+        intern!(ctx, ExprKind::List(ctx.alloc.alloc_slice_fill_iter(
+          exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
+      }
+      Self::Array => {
+        if exprs.iter().any(Option::is_none) {return None}
+        intern!(ctx, ExprKind::Array(ctx.alloc.alloc_slice_fill_iter(
+          exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
+      }
+      Self::And => return exprs.first().copied().unwrap_or(Some(ctx.common.e_unit)),
+    })
+  }
+}
+
+/// An "iterator" over an expected type for a tuple pattern. Unlike a regular
+/// iterator, this has two methods, which must be called in an alternating
+/// sequence: [`TupleIter::next`] returns the next type to be unified or `None`
+/// if the iterator is done, and if it returns `Some` then the client must call
+/// [`TupleIter::push`] with the expression for the tuple pattern resulting from
+/// unification, after which point [`TupleIter::next`] can be called again.
+#[derive(Clone)]
+enum TupleIter<'a> {
+  /// A singleton pattern `{a : T}`, which expands to the expected type
+  /// `{x : T} {h : x = a}`.
+  Sn(Expr<'a>, Ty<'a>),
+  /// A single type `{_ : T}`, or an empty iterator.
+  Ty(Option<Ty<'a>>),
+  /// A list of types {_ : T1} {_ : T2} ... {_ : Tn}`, resulting from a pattern match
+  /// on `List` or `And`.
+  List(std::slice::Iter<'a, Ty<'a>>),
+  /// A dependent list of types `{xi : Ti}`, resulting from a pattern match on a `Struct`.
+  Args(std::slice::Iter<'a, Arg<'a>>),
+}
+
+impl<'a> TupleIter<'a> {
+  /// Check if the iterator is empty, and return the next type in the sequence.
+  ///
+  /// **Note**: Unlike a regular iterator, `next` cannot be called twice in a row.
+  /// If you get `Some(ty)` you have to either discard the iterator or call `push`
+  /// to get it ready for the next `next` call.
+  fn next(&mut self, ctx: &mut InferCtx<'a>) -> Option<Ty<'a>> {
+    match *self {
+      Self::Sn(e, ty) => Some(ty),
+      Self::Ty(ref mut ty) => ty.take(),
+      Self::List(ref mut it) => it.next().copied(),
+      Self::Args(ref mut it) => {
+        todo!()
+      }
+    }
+  }
+
+  /// Finishes a call to `next` by substituting `val` into all types in the
+  /// rest of the sequence of types.
+  fn push(&mut self, ctx: &mut InferCtx<'a>, val: Expr<'a>) {
+    match *self {
+      Self::Sn(e, ty) => {
+        *self = Self::Ty(Some(intern!(ctx, TyKind::Pure(
+          intern!(ctx, ExprKind::Binop(Binop::Eq, val, e))))));
+      }
+      Self::Ty(_) | Self::List(_) => {}
+      Self::Args(ref mut iter) => {
+        todo!()
+      }
+    }
+  }
 }
 
 /// Some common types and expressions.
@@ -581,8 +676,6 @@ impl<'a> Common<'a> {
   }
 }
 
-macro_rules! intern {($ctx:expr, $t:expr) => {{let t = $t; $ctx.intern(t)}}}
-
 impl<'a> InferCtx<'a> {
   /// Create a new `InferCtx` from the given allocator.
   pub fn new(
@@ -613,6 +706,7 @@ impl<'a> InferCtx<'a> {
       },
       generation_count: GenId::ROOT,
       labels: HashMap::new(),
+      returns: None,
       errors: vec![],
     }
   }
@@ -756,14 +850,6 @@ impl<'a> InferCtx<'a> {
           _ => TyKind::If(e2, t1, t2),
         }
       }
-      TyKind::Match(e, ty, brs) => {
-        let e2 = self.whnf_expr(e, ty);
-        match e2.k {
-          // TODO: eval match
-          _ if e == e2 => return wty,
-          _ => TyKind::Match(e2, ty, brs),
-        }
-      }
       TyKind::HasTy(x, ty) => {
         let wty = WhnfTy::from(ty);
         if wty.uninit {return wty}
@@ -809,8 +895,8 @@ impl<'a> InferCtx<'a> {
   fn move_tup_pat_inner(&mut self, pat: TuplePattern<'a>) -> TuplePattern<'a> {
     intern!(self, match pat.k {
       TuplePatternKind::Name(n, v, ty) => TuplePatternKind::Name(n, v, self.move_ty_shallow(ty)),
-      TuplePatternKind::Coercion(pat, coe, ty) => TuplePatternKind::Coercion(
-        self.move_tup_pat(pat), coe, self.move_ty_shallow(ty)),
+      TuplePatternKind::Error(pat, ty) => TuplePatternKind::Error(
+        self.move_tup_pat(pat), self.move_ty_shallow(ty)),
       TuplePatternKind::Tuple(pats, ty) => TuplePatternKind::Tuple(
         self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| self.move_tup_pat(pat))),
         self.move_ty_shallow(ty)),
@@ -859,13 +945,6 @@ impl<'a> InferCtx<'a> {
         for (&a1, &b1) in args_a.iter().zip(args_b) {self.equate_expr(a1, b1)?},
       (ExprKind::If {cond: a1, then: a2, els: a3}, ExprKind::If {cond: b1, then: b2, els: b3}) =>
         {self.equate_expr(a1, b1)?; self.equate_expr(a2, b2)?; self.equate_expr(a3, b3)?}
-      (ExprKind::Match(a1, brs_a), ExprKind::Match(b1, brs_b)) => {
-        self.equate_expr(a1, b1)?;
-        for (&(a1, a2), &(b1, b2)) in brs_a.iter().zip(brs_b) {
-          if a1 != b1 {return Err(())}
-          self.equate_expr(a2, b2)?;
-        }
-      }
       (ExprKind::Infer(v), _) => {
         if let Some(e) = self.expr_mvars.lookup(v) { return self.equate_expr(e, b) }
         if !self.assign_expr(v, b) { return Err(()) }
@@ -1006,14 +1085,6 @@ impl<'a> InferCtx<'a> {
         let f_coes = self.relate_whnf_ty(from.map(fa), to.map(fb), rel)?;
         if !f_coes.is_empty() { unimplemented!() }
       }
-      (TyKind::Match(e_a, _, brs_a), TyKind::Match(e_b, _, brs_b)) if brs_a.len() == brs_b.len() => {
-        check!(uninit);
-        self.equate_expr(e_a, e_b)?;
-        for (&(a1, ty_a), &(b1, ty_b)) in brs_a.iter().zip(brs_b) {
-          if a1 != b1 {return Err(())}
-          self.relate_whnf_ty(from.map(ty_a), to.map(ty_b), rel)?;
-        }
-      }
       (TyKind::Pure(e_a), TyKind::Pure(e_b)) => {
         check!(uninit);
         self.equate_expr(e_a, e_b)?
@@ -1078,23 +1149,20 @@ impl<'a> InferCtx<'a> {
     pat: &'a ast::TuplePatternKind,
     expect_e: Option<Expr<'a>>,
     expect_t: Option<Ty<'a>>,
-  ) -> UnelabTupPat<'a> {
+  ) -> (UnelabTupPat<'a>, Option<Expr<'a>>) {
     match pat {
       &ast::TuplePatternKind::Name(g, n, v) => {
         let ty = expect_t.unwrap_or_else(|| self.new_ty_mvar(span));
         let ctx = self.new_context_next(v, expect_e, ty);
         self.dc.context = ctx.into();
-        UnelabTupPat {span, k: UnelabTupPatKind::Name(g, n, ctx)}
+        (UnelabTupPat {span, k: UnelabTupPatKind::Name(g, n, ctx)},
+         Some(intern!(self, ExprKind::Var(v))))
       }
       ast::TuplePatternKind::Typed(pat, ty) => {
-        let ty = self.lower_ty(ty, ExpectTy::coerce_from(expect_t));
+        let ty = self.lower_ty(ty, ExpectTy::supertype(expect_t));
         let pat = self.lower_tuple_pattern(&pat.span, &pat.k, expect_e, Some(ty));
         if let Some(tgt) = expect_t {
-          if let Some(coe) = self.relate_ty(pat.span, tgt, ty, Relation::Coerce) {
-            let coe = self.alloc.alloc_slice_copy(&coe);
-            let k = UnelabTupPatKind::Coercion(Box::new(pat), coe, tgt);
-            return UnelabTupPat {span, k}
-          }
+          assert!(self.relate_ty(pat.0.span, tgt, ty, Relation::Subtype).is_none());
         }
         pat
       }
@@ -1106,95 +1174,223 @@ impl<'a> InferCtx<'a> {
     }
   }
 
-  fn expr_type(&mut self, e: Expr<'a>) -> Ty<'a> {
-    match e.k {
+  /// Get a plausible type for the given expression. (This is only heuristic,
+  /// as a lot of information is lost in translating `hir::Expr` to `ty::Expr`,
+  /// the latter of which is only weakly typed.
+  /// It gives correct results for lvalues though.)
+  fn expr_type(&mut self, e: Expr<'a>) -> Option<Ty<'a>> {
+    Some(match e.k {
       ExprKind::Var(v) => self.dc.get_var(v).2,
-      _ => todo!()
-    }
+      ExprKind::Index(a, _) => match self.expr_type(a)?.k {
+        TyKind::Array(ty, _) => ty,
+        _ => return None,
+      }
+      ExprKind::Slice(a, _, len) => match self.expr_type(a)?.k {
+        TyKind::Array(ty, _) => intern!(self, TyKind::Array(ty, len)),
+        _ => return None,
+      }
+      ExprKind::Proj(a, i) => match self.expr_type(a)?.k {
+        TyKind::List(tys) => *tys.get(u32_as_usize(i))?,
+        TyKind::Struct(args) => {
+          let ty = args.get(u32_as_usize(i))?.k.var().k.ty();
+          let mut subst = Subst::default();
+          subst.add_fvars(a);
+          for (j, &arg) in args.iter().enumerate().take(u32_as_usize(i)) {
+            match arg.k.var().k {
+              TuplePatternKind::Name(_, v, _) =>
+                subst.push_raw(v, intern!(self,
+                  ExprKind::Proj(a, j.try_into().expect("overflow")))),
+              _ => unimplemented!("subfields"),
+            }
+          }
+          subst.subst_ty(self, ty)
+        }
+        _ => return None,
+      }
+      ExprKind::Unit => self.common.t_unit,
+      ExprKind::Const(c) => {
+        let_unchecked!(c as Some(Entity::Const(c)) = self.names.get(&c));
+        match c.k {
+          ConstTc::Unchecked => return None,
+        }
+      }
+      ExprKind::Bool(_) => self.common.t_bool,
+      ExprKind::Int(n) => if n.is_negative() {self.common.int()} else {self.common.nat()},
+      ExprKind::Unop(op, _) => op.ret_ty(self),
+      ExprKind::Binop(op, e1, e2) => if op.int_out() {
+        if op.preserves_nat() &&
+          matches!(self.expr_type(e1)?.k, TyKind::UInt(_)) &&
+          matches!(self.expr_type(e2)?.k, TyKind::UInt(_)) {
+          self.common.nat()
+        } else { self.common.int() }
+      } else { self.common.t_bool },
+      ExprKind::List(es) => {
+        let tys = es.iter().map(|e| self.expr_type(e)).collect::<Option<Vec<_>>>()?;
+        intern!(self, TyKind::List(self.alloc.alloc_slice_fill_iter(tys.into_iter())))
+      }
+      ExprKind::Array(es) => if let Some(&e) = es.first() {
+        intern!(self, TyKind::Array(self.expr_type(e)?,
+          intern!(self, ExprKind::Int(self.alloc.alloc(es.len().into())))))
+      } else { self.common.t_unit },
+      ExprKind::As(_, AsKind::Mod(ity)) => self.common.int_ty(ity),
+      ExprKind::Sizeof(_) => self.common.nat(),
+      _ => return None,
+      ExprKind::Error => self.common.t_error,
+    })
   }
 
   fn tuple_pattern_tuple(&mut self, nargs: usize, expect: Ty<'a>) -> TuplePatternResult<'a> {
-    todo!()
+    macro_rules! expect {($n:expr) => {{
+      if nargs != $n { return TuplePatternResult::Fail(true) }
+    }}}
+    let wty = self.whnf_ty(expect.into());
+    match wty.ty.k {
+      TyKind::Ghost(_) |
+      TyKind::Uninit(_) |
+      TyKind::Moved(_) => unreachable!(),
+      TyKind::Infer(_) => TuplePatternResult::Indeterminate,
+      TyKind::Error => TuplePatternResult::Fail(false),
+      TyKind::Unit | TyKind::True => {
+        expect!(0);
+        TuplePatternResult::Tuple(TupleIter::Ty(None), TupleBuilder::Unit)
+      }
+      TyKind::Array(ty, n) => {
+        #[allow(clippy::never_loop)]
+        let n_tgt: Option<usize> = match self.whnf_expr(n, self.common.nat()).k {
+          ExprKind::Int(n) => n.try_into().ok(),
+          _ => None
+        };
+        if let Some(n_tgt) = n_tgt { expect!(n_tgt) }
+        let e_nargs = intern!(self, ExprKind::Int(self.alloc.alloc(nargs.into())));
+        if self.equate_expr(n, e_nargs).is_err() {
+          return TuplePatternResult::Fail(true)
+        }
+        TuplePatternResult::Tuple(
+          TupleIter::List(self.alloc.alloc_slice_fill_copy(nargs, ty).iter()),
+          TupleBuilder::Array)
+      }
+      TyKind::Own(_) => todo!(),
+      TyKind::Ref(_, _) => todo!(),
+      TyKind::Shr(_, _) => todo!(),
+      TyKind::List(tys) | TyKind::And(tys) => {
+        expect!(tys.len());
+        let tys = if wty.is_ty() { tys } else {
+          let tys = tys.iter().map(|ty| wty.map(ty).to_ty(self)).collect::<Vec<_>>();
+          self.alloc.alloc_slice_fill_iter(tys.into_iter())
+        };
+        TuplePatternResult::Tuple(TupleIter::List(tys.iter()),
+          if matches!(wty.ty.k, TyKind::List(_)) {TupleBuilder::List} else {TupleBuilder::And})
+      }
+      TyKind::Sn(e, ty) => {
+        expect!(2);
+        TuplePatternResult::Tuple(TupleIter::Sn(e, ty), TupleBuilder::Sn)
+      }
+      TyKind::Struct(args) => {
+        expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
+        TuplePatternResult::Tuple(TupleIter::Args(args.iter()), TupleBuilder::List)
+      }
+      _ => TuplePatternResult::Fail(false),
+    }
   }
 
   fn lower_tuple_pattern_tuple_result(&mut self, span: &'a FileSpan,
     pats: &'a [(VarId, ast::TuplePattern)],
     res: TuplePatternResult<'a>, tgt: Ty<'a>
-  ) -> UnelabTupPat<'a> {
-    let k = match res {
+  ) -> (UnelabTupPat<'a>, Option<Expr<'a>>) {
+    let (k, e) = match res {
       TuplePatternResult::Indeterminate => {
-        let pats = self.lower_tuple_pattern_tuple_with(pats, |_| (None, None));
-        UnelabTupPatKind::UnelabTuple(pats, tgt)
+        let (pats, _) = self.lower_tuple_pattern_tuple_with(pats, TupleIter::Ty(None));
+        (UnelabTupPatKind::Tuple(pats, tgt), None)
       }
-      TuplePatternResult::Fail => {
-        let pats = self.lower_tuple_pattern_tuple_with(pats, |_| (None, None));
+      TuplePatternResult::Fail(report) => {
+        let (pats, _) = self.lower_tuple_pattern_tuple_with(pats, TupleIter::Ty(None));
         let ty = intern!(self, TyKind::List(
           self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty))));
-        let pat = UnelabTupPat {span, k: UnelabTupPatKind::Tuple(pats, ty)};
-        self.errors.push(hir::Spanned {span, k: TypeError::PatternMatch(tgt, ty)});
-        UnelabTupPatKind::Coercion(Box::new(pat), &[Coercion::Error], tgt)
+        if report {
+          self.errors.push(hir::Spanned {span, k: TypeError::PatternMatch(tgt, ty)});
+        }
+        let pat = Box::new(UnelabTupPat {span, k: UnelabTupPatKind::Tuple(pats, ty)});
+        (UnelabTupPatKind::Error(pat, tgt), Some(self.common.e_error))
       }
-      TuplePatternResult::List(tys) => {
-        let mut it = tys.iter();
-        let pats = self.lower_tuple_pattern_tuple_with(pats, |_| (None, it.next().copied()));
-        UnelabTupPatKind::Tuple(pats, tgt)
+      TuplePatternResult::Tuple(it, build) => {
+        // let mut it = tys.iter();
+        let (pats, es) = self.lower_tuple_pattern_tuple_with(pats, it);
+        (UnelabTupPatKind::Tuple(pats, tgt), build.build(self, es))
       }
     };
-    UnelabTupPat {span, k}
+    (UnelabTupPat {span, k}, e)
   }
 
   fn lower_tuple_pattern_tuple_with(&mut self,
     pats: &'a [(VarId, ast::TuplePattern)],
-    mut f: impl FnMut(&mut Self) -> (Option<Expr<'a>>, Option<Ty<'a>>)
-  ) -> &'a [UnelabTupPat<'a>] {
+    it: TupleIter<'a>,
+  ) -> (Vec<UnelabTupPat<'a>>, Vec<Option<Expr<'a>>>) {
+    let mut es = Vec::with_capacity(pats.len());
+    let mut opt_it = Some(it);
     let pats = pats.iter().map(|&(v, Spanned {ref span, k: ref pat})| {
-      let (expect_e, expect_t) = f(self);
-      self.lower_tuple_pattern(span, pat, expect_e, expect_t)
-    }).collect::<Vec<_>>();
-    self.alloc.alloc_slice_fill_iter(pats.into_iter())
+      let tgt = opt_it.as_mut().and_then(|it| it.next(self));
+      let (pat, e) = self.lower_tuple_pattern(span, pat, None, tgt);
+      if let Some(it) = &mut opt_it {
+        if let Some(e) = e { it.push(self, e) }
+        else { opt_it = None }
+      }
+      es.push(e);
+      pat
+    }).collect();
+    (pats, es)
   }
 
-  fn finish_tuple_pattern(&mut self, pat: &UnelabTupPat<'a>) -> TuplePattern<'a> {
-    intern!(self, match pat.k {
-      UnelabTupPatKind::Name(_, n, &ContextNext {var, ty, parent, ..}) => {
-        self.dc.context = parent;
-        TuplePatternKind::Name(n, var, ty)
+  fn finish_tuple_pattern_inner(&mut self, pat: &UnelabTupPat<'a>) -> (TuplePattern<'a>, Expr<'a>) {
+    let (k, e) = match &pat.k {
+      &UnelabTupPatKind::Name(_, n, c) => {
+        self.dc.context = c.into();
+        (TuplePatternKind::Name(n, c.var, c.ty), intern!(self, ExprKind::Var(c.var)))
       }
-      UnelabTupPatKind::Coercion(ref pat, coe, ty) =>
-        TuplePatternKind::Coercion(self.finish_tuple_pattern(pat), coe, ty),
+      UnelabTupPatKind::Error(pat, tgt) => {
+        let (pat, e) = self.finish_tuple_pattern_inner(pat);
+        (TuplePatternKind::Error(pat, tgt), e)
+      }
       UnelabTupPatKind::Tuple(pats, tgt) => {
-        let pats = pats.iter().rev().map(|pat| self.finish_tuple_pattern(pat)).collect::<Vec<_>>();
-        let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter().rev());
-        TuplePatternKind::Tuple(pats, tgt)
-      }
-      UnelabTupPatKind::UnelabTuple(pats, tgt) => {
         let mut res = self.tuple_pattern_tuple(pats.len(), tgt);
         if let TuplePatternResult::Indeterminate = res {
           let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty));
-          res = TuplePatternResult::List(tys)
+          res = TuplePatternResult::Tuple(TupleIter::List(tys.iter()), TupleBuilder::List)
         }
-        let ty = match res {
-          TuplePatternResult::Fail => intern!(self, TyKind::List(
-            self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty)))),
+        match res {
           TuplePatternResult::Indeterminate => unreachable!(),
-          TuplePatternResult::List(tys) => intern!(self, TyKind::List(tys)),
-        };
-        let coe = self.relate_ty(pat.span, tgt, ty, Relation::Coerce);
-        let pats = pats.iter().rev().map(|pat| self.finish_tuple_pattern(pat)).collect::<Vec<_>>();
-        let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter().rev());
-        let pat = TuplePatternKind::Tuple(pats, ty);
-        if let Some(coe) = coe {
-          let coe = self.alloc.alloc_slice_copy(&coe);
-          TuplePatternKind::Coercion(intern!(self, pat), coe, tgt)
-        } else {
-          pat
+          TuplePatternResult::Fail(_) => {
+            let ty = intern!(self, TyKind::List(
+              self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty))));
+            let pats = pats.iter().map(|pat| self.finish_tuple_pattern_inner(pat).0).collect::<Vec<_>>();
+            let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter());
+            let pat = intern!(self, TuplePatternKind::Tuple(pats, ty));
+            (TuplePatternKind::Error(pat, tgt), self.common.e_error)
+          }
+          TuplePatternResult::Tuple(mut it, build) => {
+            let mut es = Vec::with_capacity(pats.len());
+            let pats = pats.iter().map(|pat| {
+              let tgt = it.next(self);
+              let (pat, e) = self.finish_tuple_pattern_inner(pat);
+              it.push(self, e);
+              es.push(Some(e));
+              pat
+            }).collect::<Vec<_>>();
+            let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter());
+            let e = build.build(self, es).unwrap_or(self.common.e_error);
+            (TuplePatternKind::Tuple(pats, tgt), e)
+          }
         }
       }
-    })
+    };
+    (intern!(self, k), e)
   }
 
-  fn lower_pattern(&mut self, pat: &'a ast::Pattern, tgt: Ty<'a>) -> Pattern<'a> {
-    todo!()
+  fn finish_tuple_pattern(&mut self, pat: &UnelabTupPat<'a>) -> TuplePattern<'a> {
+    pat.base_context(self);
+    let base = self.dc.context;
+    let (res, _) = self.finish_tuple_pattern_inner(pat);
+    self.dc.context = base;
+    res
   }
 
   fn lower_opt_lft(&mut self, sp: &'a FileSpan, lft: &Option<Box<Spanned<ast::Lifetime>>>) -> Lifetime {
@@ -1259,7 +1455,7 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Struct(args))
       }
       ast::TypeKind::All(pats, ty) => {
-        let pats = pats.iter().map(|pat| self.lower_tuple_pattern(&pat.span, &pat.k, None, None)).collect::<Vec<_>>();
+        let pats = pats.iter().map(|pat| self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0).collect::<Vec<_>>();
         let mut ty = self.lower_ty(ty, ExpectTy::Any);
         for pat in pats.into_iter().rev() {
           let pat = self.finish_tuple_pattern(&pat);
@@ -1267,9 +1463,12 @@ impl<'a> InferCtx<'a> {
         }
         ty
       }
-      ast::TypeKind::Imp(_, _) => todo!(),
-      ast::TypeKind::Wand(_, _) => todo!(),
-      ast::TypeKind::Not(_) => todo!(),
+      ast::TypeKind::Imp(p, q) => intern!(self, TyKind::Imp(
+        self.lower_ty(p, ExpectTy::Any), self.lower_ty(q, ExpectTy::Any))),
+      ast::TypeKind::Wand(p, q) => intern!(self, TyKind::Wand(
+        self.lower_ty(p, ExpectTy::Any), self.lower_ty(q, ExpectTy::Any))),
+      ast::TypeKind::Not(p) =>
+        intern!(self, TyKind::Not(self.lower_ty(p, ExpectTy::Any))),
       ast::TypeKind::And(tys) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -1286,23 +1485,12 @@ impl<'a> InferCtx<'a> {
         let f = self.lower_ty(f, ExpectTy::Any);
         intern!(self, TyKind::If(e, t, f))
       }
-      ast::TypeKind::Match(e, brs) => {
-        let (e, ety) = self.lower_pure_expr(e, ExpectExpr::Any);
-        let ctx = self.dc.context;
-        let brs = brs.iter().map(|(pat, ty)| {
-          let pat = self.lower_pattern(pat, ety);
-          let ty = self.lower_ty(ty, expect);
-          self.dc.context = ctx;
-          (pat, ty)
-        }).collect::<Vec<_>>();
-        let brs = self.alloc.alloc_slice_fill_iter(brs.into_iter().rev());
-        intern!(self, TyKind::Match(e, ety, brs))
-      }
       ast::TypeKind::Ghost(ty) =>
         intern!(self, TyKind::Ghost(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Uninit(ty) =>
         intern!(self, TyKind::Uninit(self.lower_ty(ty, ExpectTy::Any))),
-      ast::TypeKind::Pure(_) => todo!(),
+      ast::TypeKind::Pure(e) =>
+        intern!(self, TyKind::Pure(self.check_pure_expr(e, self.common.t_bool))),
       ast::TypeKind::User(f, tys, es) => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
@@ -1310,18 +1498,22 @@ impl<'a> InferCtx<'a> {
           unwrap_unchecked!(ty.k.ty()));
         todo!()
       }
-      ast::TypeKind::Heap(_, _) |
-      ast::TypeKind::HasTy(_, _) => todo!(),
+      ast::TypeKind::Heap(e1, e2) => {
+        let (e1, _) = self.lower_pure_expr(e1, ExpectExpr::Any);
+        let (e2, ty) = self.lower_pure_expr(e2, ExpectExpr::Any);
+        intern!(self, TyKind::Heap(e1, e2, ty))
+      }
+      ast::TypeKind::HasTy(e, ty) => {
+        let (e, _) = self.lower_pure_expr(e, ExpectExpr::Any);
+        let ty = self.lower_ty(ty, ExpectTy::Any);
+        intern!(self, TyKind::HasTy(e, ty))
+      }
       ast::TypeKind::Input => intern!(self, TyKind::Input),
       ast::TypeKind::Output => intern!(self, TyKind::Output),
       ast::TypeKind::Moved(ty) => intern!(self, TyKind::Moved(self.lower_ty(ty, ExpectTy::Any))),
       ast::TypeKind::Infer => self.new_ty_mvar(&ty.span),
       ast::TypeKind::Error => self.common.t_error,
     }
-  }
-
-  fn subst_expr(&mut self, fvars: &mut im::HashSet<VarId>, subst: &im::HashMap<VarId, Expr<'a>>, e: Expr<'a>) -> Expr<'a> {
-    todo!()
   }
 
   fn lower_pure_expr(&mut self, e: &'a ast::Expr, expect: ExpectExpr<'a>) -> (Expr<'a>, Ty<'a>) {
@@ -1357,10 +1549,10 @@ impl<'a> InferCtx<'a> {
 
   fn lower_arg(&mut self, sp: &'a FileSpan, arg: &'a ast::ArgKind) -> UnelabArg<'a> {
     match arg {
-      ast::ArgKind::Lam(pat) => UnelabArg::Lam(self.lower_tuple_pattern(sp, pat, None, None)),
+      ast::ArgKind::Lam(pat) => UnelabArg::Lam(self.lower_tuple_pattern(sp, pat, None, None).0),
       ast::ArgKind::Let(Spanned {span, k: pat}, e) => {
         let ctx1 = self.dc.context;
-        let pat = self.lower_tuple_pattern(span, pat, None, None);
+        let pat = self.lower_tuple_pattern(span, pat, None, None).0;
         let ctx2 = mem::replace(&mut self.dc.context, ctx1);
         let e = self.check_pure_expr(e, pat.ty());
         self.dc.context = ctx2;
@@ -1700,7 +1892,11 @@ impl<'a> InferCtx<'a> {
         let (e2, pe, ty) = self.lower_expr(e, expect2);
         let wty = self.whnf_ty(ty.into()).ty;
         match wty.k {
-          TyKind::RefSn(e) => ret![Deref(Box::new(e2)), Some(e), self.expr_type(e)],
+          TyKind::RefSn(e) => if let Some(ty) = self.expr_type(e) {
+            ret![Deref(Box::new(e2)), Some(e), ty]
+          } else {
+            error!(e2.span, ExpectedPlace)
+          }
           TyKind::Error => error!(),
           _ => {
             let tgt = intern!(self, TyKind::RefSn(self.new_expr_mvar(e2.span)));
@@ -1764,7 +1960,7 @@ impl<'a> InferCtx<'a> {
               Some(intern!(self, ExprKind::Array(
                 self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
             } else { None };
-            ret![Array(es, tgt1), pes, ty]
+            ret![List(es, ty), pes, ty]
           }
           TyKind::List(tgts) => {
             expect!(tgts.len());
@@ -1778,7 +1974,7 @@ impl<'a> InferCtx<'a> {
               Some(intern!(self, ExprKind::Array(
                 self.alloc.alloc_slice_fill_iter(pes.into_iter()))))
             } else { None };
-            ret![List(es), pes, tgt]
+            ret![List(es, tgt), pes, tgt]
           }
           TyKind::And(tgts) => {
             expect!(tgts.len());
@@ -1794,14 +1990,17 @@ impl<'a> InferCtx<'a> {
               e
             }).collect();
             if let Some(val) = val {
-              ret![IAnd(es), Some(val), tgt]
+              ret![List(es, tgt), Some(val), tgt]
             } else {
               proof![ITrue, self.common.t_unit]
             }
           }
           TyKind::Struct(args) => {
             expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
-            todo!()
+            let (es, pes) = self.check_args(es, args, |_, es, pes| (es, pes));
+            let val = pes.map(|pes| intern!(self, ExprKind::List(
+              self.alloc.alloc_slice_fill_iter(pes.into_iter()))));
+            ret![List(es, tgt), val, tgt]
           }
           TyKind::Own(_) |
           TyKind::Shr(_, _) |
@@ -2001,7 +2200,13 @@ impl<'a> InferCtx<'a> {
         ret![e, Some(self.common.e_unit), self.common.t_unit]
       }
 
-      ast::ExprKind::Call {..} => todo!(),
+      ast::ExprKind::Call {f: Spanned {span, k: f}, tys, args, variant} => {
+        let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
+        let tys = self.alloc.alloc_slice_fill_iter(tys.into_iter());
+        let f_ty = let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(f),
+          unwrap_unchecked!(ty.k.ty()));
+        todo!()
+      }
 
       ast::ExprKind::Entail(pf, ps) => {
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
@@ -2018,13 +2223,15 @@ impl<'a> InferCtx<'a> {
         } else if is_copy {
           let from = intern!(self, TyKind::And(self.alloc.alloc_slice_fill_iter(tys.into_iter())));
           let ty = intern!(self, TyKind::Imp(from, tgt));
-          hir::ExprKind::Cast(Box::new(hir::Spanned {span, k: hir::ExprKind::IAnd(ps)}),
-            from, tgt, hir::CastKind::Subtype(Some(Box::new(self.elab_proof(span, ty, pf)))))
+          let e = Box::new(hir::Spanned {span, k: hir::ExprKind::List(ps, from)});
+          let ck = hir::CastKind::Subtype(Some(Box::new(self.elab_proof(span, ty, pf))));
+          hir::ExprKind::Cast(e, from, tgt, ck)
         } else {
           let from = intern!(self, TyKind::List(self.alloc.alloc_slice_fill_iter(tys.into_iter())));
           let ty = intern!(self, TyKind::Wand(from, tgt));
-          hir::ExprKind::Cast(Box::new(hir::Spanned {span, k: hir::ExprKind::List(ps)}), from, tgt,
-            hir::CastKind::Wand(self.common.e_unit, Some(Box::new(self.elab_proof(span, ty, pf)))))
+          let e = Box::new(hir::Spanned {span, k: hir::ExprKind::List(ps, from)});
+          let ck = hir::CastKind::Wand(self.common.e_unit, Some(Box::new(self.elab_proof(span, ty, pf))));
+          hir::ExprKind::Cast(e, from, tgt, ck)
         };
         ret![pr, Some(self.common.e_unit), tgt]
       }
@@ -2034,37 +2241,86 @@ impl<'a> InferCtx<'a> {
         ret![Block(bl), pe, ty]
       }
 
-      ast::ExprKind::If {hyp, cond, then, els} => {
+      &ast::ExprKind::If {hyp, ref cond, ref then, ref els} => {
         let (cond, pe) = self.check_expr(cond, self.common.t_bool);
         let tgt = expect.to_ty().unwrap_or_else(|| self.new_ty_mvar(span));
-        if let Some(v) = *hyp {
+        let (dc1, dc2, e1, e2);
+        let mut base = self.dc.clone();
+        if let Some(v) = hyp {
           let pe = self.as_pure(cond.span, pe);
-          let mut base = self.dc.clone();
           let ty = intern!(self, TyKind::Pure(pe));
           let ctx1 = self.new_context_next(v, Some(self.common.e_unit), ty);
           self.dc.context = ctx1.into();
-          let (then, pe_1) = self.check_expr(then, tgt);
-          let dc1 = mem::replace(&mut self.dc, base.clone());
+          e1 = self.check_expr(then, tgt);
+          dc1 = mem::replace(&mut self.dc, base.clone());
           let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
           let ctx2 = self.new_context_next(v, Some(self.common.e_unit), ty);
           self.dc.context = ctx2.into();
-          let (els, pe_2) = self.check_expr(els, tgt);
-          let dc2 = mem::replace(&mut self.dc, base);
-          let mut branches = [(dc1, vec![]), (dc2, vec![])];
-          self.merge(span, &mut branches);
-          let [(_, vec1), (_, vec2)] = branches;
-          let cases = Box::new([(then, vec1.into()), (els, vec2.into())]);
-          ret![If {hyp: Some(v), cond: Box::new(cond), cases, gen: self.dc.generation},
-            pe_1.and_then(|pe_1| Some(intern!(self, ExprKind::If {cond: pe, then: pe_1, els: pe_2?}))),
-            tgt]
+          e2 = self.check_expr(els, tgt);
+          dc2 = mem::replace(&mut self.dc, base);
         } else {
-          todo!()
+          e1 = self.check_expr(then, tgt);
+          dc1 = mem::replace(&mut self.dc, base.clone());
+          e2 = self.check_expr(els, tgt);
+          dc2 = mem::replace(&mut self.dc, base);
         }
+        let mut branches = [(dc1, vec![]), (dc2, vec![])];
+        self.merge(span, &mut branches);
+        let [(_, vec1), (_, vec2)] = branches;
+        let ((then, p_then), (els, p_els)) = (e1, e2);
+        let cases = Box::new([(then, vec1.into()), (els, vec2.into())]);
+        ret![If {hyp, cond: Box::new(cond), cases, gen: self.dc.generation},
+          pe.and_then(|cond| Some(intern!(self, ExprKind::If {cond, then: p_then?, els: p_els?}))),
+          tgt]
+    }
+
+      &ast::ExprKind::While {label, hyp, ref cond, ref muts, ref var, ref body} => {
+        if !muts.is_empty() {
+          let newgen = self.new_generation();
+          for &v in &**muts {
+            let e = intern!(self, ExprKind::Var(v));
+            let ty = self.dc.get_var(v).2;
+            self.dc.gen_vars.insert(v, (newgen, e, ty));
+          }
+        }
+        let variant = self.check_variant(var.as_deref());
+        let mut base = self.dc.clone();
+        self.labels.insert(label, LabelData {
+          labels: Box::new([hir::Label { args: &[], variant, body: Default::default() }]),
+          value: AgreeExpr::Set(None),
+          ret: self.common.t_unit,
+        });
+        let (cond, pe) = self.check_expr(cond, self.common.t_bool);
+        let mut split = self.dc.clone();
+        let (body, ctx2) = if let Some(v) = hyp {
+          let pe = self.as_pure(cond.span, pe);
+          let ty = intern!(self, TyKind::Pure(pe));
+          let ctx1 = self.new_context_next(v, Some(self.common.e_unit), ty);
+          self.dc.context = ctx1.into();
+          let body = Box::new(self.check_block(span, body, self.common.t_unit).0);
+          let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
+          (body, self.new_context_next(v, Some(self.common.e_unit), ty).into())
+        } else {
+          (Box::new(self.check_block(span, body, self.common.t_unit).0), self.dc.context)
+        };
+
+        // TODO: remove this when the typechecker is complete, this isn't needed for inference
+        let missing = || self.dc.gen_vars.iter()
+          .filter(|&(v, &(gen, _, _))| {
+            base.gen_vars.get(v).map_or(true, |&(gen2, _, _)| gen != gen2) &&
+            !muts.contains(v)
+          });
+        if missing().next().is_some() {
+          error!(span, MissingMuts(missing().map(|(&v, _)| v).collect()))
+        }
+
+        self.dc.context = ctx2;
+        let hir::Label {variant, ..} =
+          self.labels.remove(&label).expect("labels should be well scoped")
+            .labels.into_vec().into_iter().next().expect("while label");
+        ret![While {label, hyp, cond: Box::new(cond), var: variant, body},
+          Some(self.common.e_unit), self.common.t_unit]
       }
-
-      ast::ExprKind::Match(_, _) => todo!(),
-
-      ast::ExprKind::While {..} => todo!(),
 
       ast::ExprKind::Unreachable(h) => {
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
@@ -2075,7 +2331,7 @@ impl<'a> InferCtx<'a> {
       &ast::ExprKind::Jump(lab, i, ref args, ref variant) => {
         let label = self.labels[&lab].labels[i as usize].args;
         let (args, variant) = self.check_args(args, label,
-          |this, args| (args, this.check_variant(variant.as_deref())));
+          |this, args, _| (args, this.check_variant_use(variant.as_deref())));
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
         ret![Jump(lab, i, args, variant), Some(self.common.e_unit), tgt]
       }
@@ -2097,7 +2353,13 @@ impl<'a> InferCtx<'a> {
       }
 
       ast::ExprKind::Return(args) => {
-        todo!()
+        if let Some(tys) = self.returns {
+          let args = self.check_args(args, tys, |this, args, _| args);
+          let tgt = expect.to_ty().unwrap_or(self.common.t_false);
+          ret![Return(args), Some(self.common.e_unit), tgt]
+        } else {
+          error!(span, InvalidReturn)
+        }
       }
 
       &ast::ExprKind::Infer(user) => if let ExpectExpr::Sn(pe, ty) = expect {
@@ -2109,6 +2371,8 @@ impl<'a> InferCtx<'a> {
       } else {
         error!(span, Hole(Box::new(self.dc.clone()), expect.to_ty()))
       },
+
+      ast::ExprKind::Rc(e) => self.lower_expr(e, expect),
 
       ast::ExprKind::Error => error!(),
     }
@@ -2171,7 +2435,6 @@ impl<'a> InferCtx<'a> {
       ExprKind::Array(_) |
       ExprKind::Mm0(_) |
       ExprKind::Call {..} |
-      ExprKind::Match(_, _) |
       ExprKind::Infer(_) => return None,
       ExprKind::Error => error!(),
     }})
@@ -2196,13 +2459,19 @@ impl<'a> InferCtx<'a> {
   }
 
   fn check_args<R>(&mut self, args: &'a [ast::Expr], tgt: &'a [Arg<'a>],
-    f: impl FnOnce(&mut Self, Vec<hir::Expr<'a>>) -> R
+    f: impl FnOnce(&mut Self, Vec<hir::Expr<'a>>, Option<Vec<Expr<'a>>>) -> R
   ) -> R {
     todo!();
     // f(self, args)
   }
 
-  fn check_variant(&mut self, variant: Option<&'a ast::Expr>) -> Option<Box<hir::Expr<'a>>> {
+  fn check_variant(&mut self, variant: Option<&'a ast::Variant>) -> Option<Box<hir::Variant<'a>>> {
+    let e = variant?;
+    todo!();
+    // Some(Box::new(e))
+  }
+
+  fn check_variant_use(&mut self, variant: Option<&'a ast::Expr>) -> Option<Box<hir::Expr<'a>>> {
     let e = variant?;
     todo!();
     // Some(Box::new(e))
@@ -2224,7 +2493,7 @@ impl<'a> InferCtx<'a> {
     match stmt {
       ast::StmtKind::Let {lhs, rhs} => {
         let mut ctx = self.dc.context;
-        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None);
+        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         mem::swap(&mut ctx, &mut self.dc.context);
         let (rhs, _) = self.check_expr(rhs, lhs.ty());
         self.dc.context = ctx;
@@ -2315,7 +2584,7 @@ impl<'a> InferCtx<'a> {
         let args2 = args.iter().map(|arg| self.lower_arg(&arg.span, &arg.k.1)).collect::<Vec<_>>();
         let mut subst = Subst::default();
         let rets = rets.iter().map(|ret| match ret {
-          ast::Ret::Reg(pat) => UnelabArg::Lam(self.lower_tuple_pattern(&pat.span, &pat.k, None, None)),
+          ast::Ret::Reg(pat) => UnelabArg::Lam(self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0),
           &ast::Ret::Out(g, i, n, v, ref ty) => {
             let ty = if let Some(ty) = ty {
               self.lower_ty(ty, ExpectTy::Any)
@@ -2334,10 +2603,19 @@ impl<'a> InferCtx<'a> {
         let ctx = self.dc.context;
         let variant = self.lower_variant(variant);
         let args = self.finish_args(args2);
-        // TODO: Record procedure header here
         self.dc.context = ctx;
-        let sigma = intern!(self, TyKind::Struct(args));
-        let body = self.check_block(span, body, sigma).0;
+        let sigma =
+          if let [arg] = *args { arg.k.var().k.ty() }
+          else { intern!(self, TyKind::Struct(args)) };
+        let mut body = self.check_block(span, body, sigma).0;
+        let e = body.expr.take().map_or_else(|| hir::Spanned {span, k: hir::ExprKind::Unit}, |e| *e);
+        body.expr = Some(Box::new(if args.len() == 1 {
+          hir::Spanned {span, k: hir::ExprKind::Return(vec![e])}
+        } else if let hir::Spanned {span, k: hir::ExprKind::List(es, _)} = e {
+          hir::Spanned {span, k: hir::ExprKind::Return(es)}
+        } else {
+          hir::Spanned {span, k: hir::ExprKind::UnpackReturn(Box::new(e))}
+        }));
         hir::ItemKind::Proc {kind, name, tyargs, args, rets, variant, body}
       }
       ast::ItemKind::Global { lhs, rhs } |

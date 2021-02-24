@@ -191,10 +191,11 @@ pub type TuplePatternS<'a> = WithMeta<TuplePatternKind<'a>>;
 pub enum TuplePatternKind<'a> {
   /// A variable binding.
   Name(AtomId, VarId, Ty<'a>),
-  /// An inline coercion.
-  Coercion(TuplePattern<'a>, &'a [Coercion<'a>], Ty<'a>),
   /// A tuple destructuring pattern.
   Tuple(&'a [TuplePattern<'a>], Ty<'a>),
+  /// An error that has been reported.
+  /// (We keep the original tuple pattern so that name scoping still works.)
+  Error(TuplePattern<'a>, Ty<'a>),
 }
 
 impl<'a> TuplePatternKind<'a> {
@@ -202,7 +203,7 @@ impl<'a> TuplePatternKind<'a> {
   #[must_use] pub fn ty(&self) -> Ty<'a> {
     match *self {
       TuplePatternKind::Name(_, _, ty) |
-      TuplePatternKind::Coercion(_, _, ty) |
+      TuplePatternKind::Error(_, ty) |
       TuplePatternKind::Tuple(_, ty) => ty
     }
   }
@@ -211,7 +212,7 @@ impl<'a> TuplePatternKind<'a> {
   pub fn on_vars(&self, f: &mut impl FnMut(AtomId, VarId)) {
     match *self {
       TuplePatternKind::Name(n, v, _) => f(n, v),
-      TuplePatternKind::Coercion(pat, _, _) => pat.k.on_vars(f),
+      TuplePatternKind::Error(pat, _) => pat.k.on_vars(f),
       TuplePatternKind::Tuple(pats, _) => for pat in pats { pat.k.on_vars(f) }
     }
   }
@@ -219,7 +220,7 @@ impl<'a> TuplePatternKind<'a> {
   fn find_field(&self, f: AtomId, idxs: &mut Vec<u32>) -> bool {
     match *self {
       TuplePatternKind::Name(a, _, _) => a == f,
-      TuplePatternKind::Coercion(pat, _, _) => pat.k.find_field(f, idxs),
+      TuplePatternKind::Error(pat, _) => pat.k.find_field(f, idxs),
       TuplePatternKind::Tuple(pats, _) =>
         pats.iter().enumerate().any(|(i, &pat)| {
           pat.k.find_field(f, idxs) && {
@@ -235,7 +236,7 @@ impl AddFlags for TuplePatternKind<'_> {
   fn add(&self, f: &mut Flags) {
     match *self {
       TuplePatternKind::Name(_, _, ty) => *f |= ty,
-      TuplePatternKind::Coercion(pat, cs, ty) => *f |= (pat, cs, ty),
+      TuplePatternKind::Error(pat, ty) => *f |= (Flags::HAS_ERROR, pat, ty),
       TuplePatternKind::Tuple(pats, ty) => *f |= (pats, ty),
     }
   }
@@ -246,7 +247,7 @@ impl EnvDisplay for TuplePatternKind<'_> {
     use itertools::Itertools;
     match *self {
       TuplePatternKind::Name(a, _, _) => a.fmt(fe, f),
-      TuplePatternKind::Coercion(pat, _, _) => pat.fmt(fe, f),
+      TuplePatternKind::Error(pat, _) => write!(f, "??{}", fe.to(pat)),
       TuplePatternKind::Tuple(pats, _) =>
         write!(f, "({})", pats.iter().map(|&pat| fe.to(pat)).format(" ")),
     }
@@ -479,8 +480,6 @@ pub enum TyKind<'a> {
   /// the typehood predicate is `x :> (or A B C)` iff
   /// `x :> A \/ x :> B \/ x :> C`.
   If(Expr<'a>, Ty<'a>, Ty<'a>),
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(Expr<'a>, Ty<'a>, &'a [(Pattern<'a>, Ty<'a>)]),
   /// `(ghost A)` is a computationally irrelevant version of `A`, which means
   /// that the logical storage of `(ghost A)` is the same as `A` but the physical storage
   /// is the same as `()`. `sizeof (ghost A) = 0`.
@@ -514,8 +513,6 @@ pub enum TyKind<'a> {
 pub trait TyVisit<'a> {
   /// Called on `Expr` subexpressions.
   fn visit_expr(&mut self, _: Expr<'a>) {}
-  /// Called on `Pattern` subexpressions.
-  fn visit_pat(&mut self, _: Pattern<'a>) {}
   /// Called on type `MVar` subexpressions.
   fn visit_mvar(&mut self, _: TyMVarId) {}
 }
@@ -557,13 +554,6 @@ impl<'a> TyS<'a> {
         }
       },
       TyKind::If(e, ty1, ty2) => {f.visit_expr(e); ty1.visit(f); ty2.visit(f)}
-      TyKind::Match(e, ty, brs) => {
-        f.visit_expr(e); ty.visit(f);
-        for &(pat, ty) in brs {
-          f.visit_pat(pat);
-          ty.visit(f);
-        }
-      }
       TyKind::User(_, tys, es) => {
         for &ty in tys { ty.visit(f) }
         for &e in es { f.visit_expr(e) }
@@ -629,11 +619,6 @@ impl AddFlags for TyKind<'_> {
         f.remove(Flags::IS_NON_COPY);
         *f |= (tru, fal);
       }
-      TyKind::Match(e, ty, brs) => {
-        *f |= (e, ty);
-        f.remove(Flags::IS_NON_COPY);
-        *f |= brs;
-      }
       TyKind::User(_, tys, es) => *f |= (Flags::IS_NON_COPY, tys, es),
       TyKind::Heap(e, v, ty) => {*f |= Flags::IS_NON_COPY; *f |= (e, v, ty)}
       TyKind::HasTy(v, ty) => {
@@ -685,11 +670,6 @@ impl EnvDisplay for TyKind<'_> {
       TyKind::And(tys) => write!(f, "({})", tys.iter().map(|&p| fe.to(p)).format(" /\\ ")),
       TyKind::Or(tys) => write!(f, "({})", tys.iter().map(|&p| fe.to(p)).format(" \\/ ")),
       TyKind::If(cond, then, els) => write!(f, "(if {} {} {})", fe.to(cond), fe.to(then), fe.to(els)),
-      TyKind::Match(c, ty, brs) => {
-        write!(f, "(match {{{}: {}}}", fe.to(c), fe.to(ty))?;
-        for &(pat, e) in brs { write!(f, " {{{} => {}}}", fe.to(pat), fe.to(e))? }
-        ")".fmt(f)
-      }
       TyKind::Ghost(ty) => write!(f, "(ghost {})", fe.to(ty)),
       TyKind::Uninit(ty) => write!(f, "(? {})", fe.to(ty)),
       TyKind::Pure(e) => e.fmt(fe, f),
@@ -798,8 +778,6 @@ pub enum ExprKind<'a> {
     /// The else case.
     els: Expr<'a>
   },
-  /// A switch (pattern match) statement, given the initial expression and a list of match arms.
-  Match(Expr<'a>, &'a [(Pattern<'a>, Expr<'a>)]),
   /// An inference variable.
   Infer(ExprMVarId),
   /// A type error that has been reported.
@@ -847,13 +825,6 @@ impl<'a> ExprS<'a> {
         for &arg in args { arg.visit(f) }
       }
       ExprKind::If {cond, then, els} => {cond.visit(f); then.visit(f); els.visit(f)}
-      ExprKind::Match(e, brs) => {
-        e.visit(f);
-        for &(pat, br) in brs {
-          f.visit_pat(pat);
-          br.visit(f);
-        }
-      }
       ExprKind::Infer(v) => f.visit_mvar(v),
     }
   }
@@ -895,7 +866,6 @@ impl AddFlags for ExprKind<'_> {
       ExprKind::Mm0(ref e) => *f |= e.subst,
       ExprKind::Call {tys, args, ..} => *f |= (tys, args),
       ExprKind::If {cond, then, els} => *f |= (cond, then, els),
-      ExprKind::Match(e, brs) => *f |= (e, brs),
       ExprKind::Infer(_) => *f |= Flags::HAS_EXPR_MVAR,
       ExprKind::Error => *f |= Flags::HAS_ERROR,
     }
@@ -935,11 +905,6 @@ impl EnvDisplay for ExprKind<'_> {
         ")".fmt(f)
       }
       ExprKind::If {cond, then, els} => write!(f, "(if {} {} {})", fe.to(cond), fe.to(then), fe.to(els)),
-      ExprKind::Match(c, brs) => {
-        write!(f, "(match {}", fe.to(c))?;
-        for &(pat, e) in brs { write!(f, " {{{} => {}}}", fe.to(pat), fe.to(e))? }
-        ")".fmt(f)
-      }
       ExprKind::Infer(v) => write!(f, "?v{}", v.0),
       ExprKind::Error => "??".fmt(f),
     }
