@@ -2,11 +2,8 @@
 use std::mem;
 use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
-use crate::util::{FileSpan, SliceExt};
-use crate::elab::{Result, ElabError,
-  environment::{AtomId, Type as EType},
-  lisp::{LispKind, LispVal, Uncons, print::FormatEnv},
-  local_context::try_get_span};
+use crate::{FileSpan, SliceExt, AtomId, Type as EType, elab::Result, ElabError,
+  LispKind, LispVal, Uncons, FormatEnv, try_get_span};
 use super::types::{FieldName, Keyword, Mm0Expr, Mm0ExprNode, Size, Spanned, entity::{ProcTc, Intrinsic}};
 use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;

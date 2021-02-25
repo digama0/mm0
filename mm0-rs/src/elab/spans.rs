@@ -2,9 +2,9 @@
 
 use std::mem::MaybeUninit;
 use std::collections::BTreeMap;
-use super::environment::AtomId;
+use crate::AtomId;
 use super::local_context::LocalContext;
-use crate::util::Span;
+use crate::Span;
 
 /// A `Spans<T>` object is created for each declaration, and maintains data on the
 /// spans of objects occurring in the statement. For example, we might register

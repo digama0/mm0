@@ -13,8 +13,7 @@
 use std::collections::{HashMap, hash_map::Entry};
 use std::convert::TryInto;
 use std::rc::Rc;
-use crate::elab::{ElabError, Result, environment::AtomId, lisp::{LispVal, Uncons}};
-use crate::util::FileSpan;
+use crate::{ElabError, elab::Result, AtomId, LispVal, Uncons, FileSpan};
 use super::types::{Binop, Mm0Expr, Size, Spanned, FieldName, Unop, VarId, ast};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 use super::types::entity::Entity;

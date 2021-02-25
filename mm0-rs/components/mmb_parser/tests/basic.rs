@@ -1,7 +1,20 @@
-use mmb_parser::parser::MmbFile;
+use mmb_parser::parser::{MmbFile, ParseError};
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::PathBuf;
+
+#[repr(align(1))]
+struct AlignFile<T>(T);
+
+#[test]
+fn try_next_decl_infinite_loop() {
+  let filedata = AlignFile([
+    77, 77, 48, 66, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 40, 0, 0, 0, 40, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0,
+  ]);
+  let mut iter = MmbFile::parse(&filedata.0).unwrap().proof();
+  assert!(matches!(iter.next().unwrap().unwrap_err(), ParseError::BadProofLen(40)));
+}
 
 #[test]
 fn peano0() {

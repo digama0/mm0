@@ -9,11 +9,10 @@ use std::{mem, fmt};
 use std::borrow::Cow;
 use pretty::DocAllocator;
 use itertools::Itertools;
-use super::{LispVal, LispKind, Uncons, print::FormatEnv,
-  super::{
-    environment::{Prec, DeclKey, Literal, TermKind, ThmKind, Modifiers,
-      Environment, NotaInfo, AtomData, AtomId, TermId, ThmId, SortId, Thm, Type},
-    math_parser::APP_PREC}};
+use crate::{LispVal, LispKind, Uncons, FormatEnv,
+  Prec, DeclKey, Literal, TermKind, ThmKind, Modifiers,
+  Environment, NotaInfo, AtomData, AtomId, TermId, ThmId, SortId, Thm, Type,
+  APP_PREC};
 
 /// The possible annotations around subparts of a pretty printed display.
 /// These are ignored under usual printing settings, but they are used in

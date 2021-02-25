@@ -1,18 +1,16 @@
 //! Build documentation pages for MM1/MM0 files
 use std::{collections::{hash_map::Entry, HashMap}, hash::Hash, path::PathBuf};
-use std::convert::{TryFrom, TryInto};
-use std::mem;
-use std::fs::{self, File};
-use std::io::{self, BufWriter, Write};
 use bit_set::BitSet;
 use clap::ArgMatches;
 use lsp_types::Url;
 use pulldown_cmark::escape::WriteWrapper;
-use crate::{elab::environment::{AtomData, DocComment, EnvMergeIter},
-  lined_string::LinedString, util::{ArcString, FileRef, SliceUninit}};
-use crate::elab::{Environment, lisp::{LispVal, print::FormatEnv, pretty::Annot},
-  environment::{DeclKey, Proof, ProofNode, StmtTrace, AtomId, TermId, ThmId, ThmKind, Thm,
-    ExprNode, Type}};
+use std::convert::{TryFrom, TryInto};
+use std::fs::{self, File};
+use std::io::{self, BufWriter, Write};
+use std::mem;
+use crate::{lisp::pretty::Annot, ArcString, AtomData, AtomId, DeclKey, DocComment, EnvMergeIter,
+  Environment, ExprNode, FileRef, FormatEnv, LinedString, LispVal, Proof, ProofNode, SliceUninit,
+  StmtTrace, TermId, Thm, ThmId, ThmKind, Type};
 
 const PP_WIDTH: usize = 160;
 

@@ -12,10 +12,9 @@
 use std::ops::Deref;
 use std::fmt::{self, Display};
 use itertools::Itertools;
-use crate::parser::ast::{SExpr, SExprKind};
-use super::super::{LinedString, Environment, Elaborator, TermId, ThmId, SortId,
-  Sort, Term, Thm, DeclKey};
-use super::{AtomId, LispKind, LispVal, Uncons, InferTarget, Proc, ProcPos};
+use crate::{AtomId, LispKind, LispVal, lisp::{Uncons, InferTarget, Proc, ProcPos},
+  LinedString, Environment, Elaborator, TermId, ThmId, SortId,
+  Sort, Term, Thm, DeclKey, ast::{SExpr, SExprKind, span_atom}};
 
 /// The side information required to print an object in the environment.
 #[repr(C)]
@@ -218,7 +217,7 @@ impl<T: EnvDisplay> EnvDisplay for [T] {
   }
 }
 
-impl EnvDisplay for crate::util::Span {
+impl EnvDisplay for crate::Span {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     fe.source.str_at(*self).fmt(f)
   }
@@ -274,7 +273,7 @@ impl EnvDisplay for SExpr {
   fn fmt(&self, fe: FormatEnv<'_>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match &self.k {
       &SExprKind::Atom(a) => {
-        unsafe {std::str::from_utf8_unchecked(fe.source.span_atom(self.span, a))}.fmt(f)
+        unsafe {std::str::from_utf8_unchecked(span_atom(fe.source, self.span, a))}.fmt(f)
       }
       SExprKind::List(es) => {
         let mut it = es.iter();

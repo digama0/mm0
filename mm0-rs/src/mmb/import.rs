@@ -2,13 +2,12 @@
 
 use std::convert::{TryFrom, TryInto};
 use std::rc::Rc;
-use crate::elab::{
-  environment::{Environment, Modifiers, AtomId, SortId, TermId, ThmId,
-    Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof},
-  proof::{IDedup, ProofKind, ProofHash, build}};
-use crate::util::{FileRef, FileSpan, SliceExt};
-use super::{StmtCmd, UnifyCmd, ProofCmd,
-  parser::{MmbFile, ParseError, UnifyIter, ProofIter}};
+use crate::{Environment, Modifiers, AtomId, TermId,
+    Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
+use crate::elab::proof::{IDedup, ProofKind, ProofHash, build};
+use crate::{FileRef, FileSpan, SliceExt};
+use mmb_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, MmbFile,
+  ParseError, UnifyIter, ProofIter, exhausted};
 
 
 type Result<T> = std::result::Result<T, ParseError>;
@@ -29,7 +28,7 @@ fn parse_unify(
   }
   impl<F: FnMut() -> AtomId> State<'_, F> {
     fn go(&mut self) -> Result<ExprNode> {
-      let r = match self.it.next().unwrap_or(Err(self.pos)).map_err(|p| StrError("bad unify expr", p))? {
+      let r = match self.it.next().unwrap_or_else(|| Err(exhausted!()))? {
         UnifyCmd::Term {tid, save} => {
           let n = self.fwd.len();
           if save {self.fwd.push(None)}
@@ -70,10 +69,9 @@ fn parse_unify(
   let ret = st.go()?;
   if let Some(hyps) = hyps {
     while let Some(e) = st.it.next() {
-      match e {
-        Err(p) => return Err(StrError("bad unify expr", p)),
-        Ok(UnifyCmd::Hyp) => {st.pos = st.it.pos; hyps.push((None, st.go()?))}
-        Ok(_) => return Err(StrError("unify stack underflow", st.pos))
+      match e? {
+        UnifyCmd::Hyp => {st.pos = st.it.pos; hyps.push((None, st.go()?))}
+        _ => return Err(StrError("unify stack underflow", st.pos))
       }
     }
     hyps.reverse()
@@ -358,7 +356,7 @@ fn parse_proof(
   };
   let mut pos = it.pos;
   while let Some(e) = it.next() {
-    st.apply_cmd(e.map_err(|p| StrError("bad unify expr", p))?, pos)?;
+    st.apply_cmd(e?, pos)?;
     pos = it.pos;
   }
   let ret = if let [e] = &*st.stack {e.clone()} else {
@@ -370,7 +368,7 @@ fn parse_proof(
 }
 
 fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
-  use ParseError::{BadIndex, StrError};
+  use ParseError::StrError;
   let file = MmbFile::parse(buf)?;
   let mut it = file.proof();
   let mut start = it.pos;
@@ -391,31 +389,29 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
     get_var(env, var)
   }}}
   while let Some(e) = it.next() {
-    let (stmt, mut pf) = e.map_err(|p| StrError("bad statement", p))?;
+    let (stmt, mut pf) = e?;
     match stmt {
-      StmtCmd::Sort => {
+      NumdStmtCmd::Sort {sort_id} => {
         if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
-        #[allow(clippy::cast_possible_truncation)]
-        let sort = SortId(env.sorts.len() as u8);
-        let atom = file.sort_name(sort, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
+        let atom = env.get_atom(
+          file.sort_name(sort_id).ok_or_else(|| file.bad_index_lookup())?.as_bytes());
         let span = (start..pf.pos).into();
         let fsp = FileSpan {file: fref.clone(), span};
-        let sd = file.sort(sort).and_then(|sd| sd.try_into().ok())
+        let sd = file.sort(sort_id).and_then(|sd| sd.try_into().ok())
           .ok_or(StrError("Step sort overflow", start))?;
         env.add_sort(atom, fsp, span, sd, None)
           .map_err(|_| StrError("double add sort", start))?;
       }
-      StmtCmd::TermDef {local} => {
-        #[allow(clippy::cast_possible_truncation)]
-        let term = TermId(env.terms.len() as u32);
-        let atom = file.term_name(term, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
-        let td = file.term(term).ok_or(StrError("Step term overflow", start))?;
+      NumdStmtCmd::TermDef {term_id, local} => {
+        let atom = env.get_atom(
+          file.term_name(term_id).ok_or_else(|| file.bad_index_lookup())?.as_bytes());
+        let td = file.term(term_id).ok_or(StrError("Step term overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
         let mut var = 0;
         let args = td.args().iter().map(|a| (
           Some(next_var!(var)),
           if a.bound() { Type::Bound(a.sort()) }
-          else { Type::Reg(a.sort(), a.deps()) }
+          else { Type::Reg(a.sort(), a.deps_unchecked()) }
         )).collect::<Box<[_]>>();
         let ret = td.ret();
         if ret.bound() { return Err(StrError("bad return type", start)) }
@@ -430,32 +426,31 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         env.add_term(Term {
           atom, span: fsp, full, doc: None, args, kind,
           vis: if local {Modifiers::LOCAL} else {Modifiers::empty()},
-          ret: (ret.sort(), ret.deps()),
+          ret: (ret.sort(), ret.deps_unchecked()),
         }).map_err(|_| StrError("double add term", start))?;
       }
-      StmtCmd::Axiom | StmtCmd::Thm {..} => {
-        #[allow(clippy::cast_possible_truncation)]
-        let thm = ThmId(env.thms.len() as u32);
-        let atom = file.thm_name(thm, |s| env.get_atom(s.as_bytes())).ok_or(BadIndex)?;
-        let td = file.thm(thm).ok_or(StrError("Step thm overflow", start))?;
+      NumdStmtCmd::Axiom {thm_id} | NumdStmtCmd::Thm {thm_id, ..} => {
+        let atom = env.get_atom(
+          file.thm_name(thm_id).ok_or_else(|| file.bad_index_lookup())?.as_bytes());
+        let td = file.thm(thm_id).ok_or(StrError("Step thm overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
         let mut var = 0;
         let args = td.args().iter().map(|a| (
           Some(next_var!(var)),
           if a.bound() { Type::Bound(a.sort()) }
-          else { Type::Reg(a.sort(), a.deps()) }
+          else { Type::Reg(a.sort(), a.deps_unchecked()) }
         )).collect::<Box<[_]>>();
         let mut hyps = vec![];
         let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!(var))?;
         hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(env, i)));
-        let kind = if matches!(stmt, StmtCmd::Axiom) {
+        let kind = if matches!(stmt, NumdStmtCmd::Axiom {..}) {
           ThmKind::Axiom
         } else {
           ThmKind::Thm(Some(parse_proof(&file, args.len(), &mut pf, || next_var!(var))?))
         };
         let full = (start..pf.pos).into();
         let vis =
-          if matches!(stmt, StmtCmd::Thm {local: false}) {Modifiers::PUB}
+          if matches!(stmt, NumdStmtCmd::Thm {local: false, ..}) {Modifiers::PUB}
           else {Modifiers::empty()};
         env.add_thm(Thm {
           atom, span: fsp, full, doc: None, args, kind,

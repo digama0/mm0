@@ -20,13 +20,12 @@ use annotate_snippets::{
   display_list::{DisplayList, FormatOptions}};
 use typed_arena::Arena;
 use clap::ArgMatches;
-use crate::elab::{ElabError, ElabErrorKind, ElaborateBuilder, ElabResult, FrozenEnv};
-use crate::parser::{parse, ParseError, ErrorLevel};
-use crate::lined_string::LinedString;
+use mm1_parser::{parse, ErrorLevel, ParseError};
+use crate::elab::{ElabError, ElabErrorKind, ElabResult, ElaborateBuilder};
+use crate::{ArcList, FileRef, FileSpan, FrozenEnv, LinedString, MutexExt, Position, Range, Span};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::mmb::export::Exporter as MmbExporter;
-use crate::util::{FileRef, FileSpan, MutexExt, Span, Position, Range, ArcList};
 
 lazy_static! {
   /// The thread pool (used for running MM1 files in parallel, when possible)
@@ -306,18 +305,16 @@ impl ElabError {
   }
 }
 
-impl ParseError {
-  /// Create a [`Snippet`] from this error. See [`ElabError::to_snippet`] for information
-  /// about the parameters.
-  fn to_snippet<T>(&self, path: &FileRef, file: &LinedString,
-    f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
-    f(make_snippet(path, file, self.pos, &format!("{}", self.msg), self.level, vec![]))
-  }
+/// Create a [`Snippet`] from this error. See [`ElabError::to_snippet`] for information
+/// about the parameters.
+fn to_snippet<T>(err: &ParseError, path: &FileRef, file: &LinedString,
+  f: impl for<'a> FnOnce(Snippet<'a>) -> T) -> T {
+  f(make_snippet(path, file, err.pos, &format!("{}", err.msg), err.level, vec![]))
 }
 
 fn log_msg(#[allow(unused_mut)] mut s: String) {
   #[cfg(feature = "memory")]
-  match crate::util::get_memory_usage() {
+  match crate::get_memory_usage() {
     0 => {}
     n => {
       use std::fmt::Write;
@@ -371,7 +368,7 @@ async fn elaborate(path: FileRef, rd: ArcList<FileRef>) -> io::Result<ElabResult
     let (_, ast) = parse(text.ascii().clone(), None);
     if !ast.errors.is_empty() {
       for e in &ast.errors {
-        e.to_snippet(&path, &ast.source,
+        to_snippet(e, &path, &ast.source,
           |s| println!("{}", DisplayList::from(s).to_string()))
       }
     }

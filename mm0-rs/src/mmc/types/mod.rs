@@ -10,9 +10,8 @@ pub mod pir;
 use std::{collections::HashMap, convert::TryFrom, rc::Rc};
 use num::{BigInt, Signed};
 
-use crate::elab::{environment::{AtomId, Environment, Remap, Remapper, TermId}, lisp::{LispVal, Syntax, print::{EnvDisplay, FormatEnv}}};
-use crate::util::FileSpan;
-pub(crate) use crate::mmb::parser::u32_as_usize;
+use crate::{AtomId, Environment, Remap, Remapper, TermId, LispVal, lisp::Syntax,
+  EnvDisplay, FormatEnv, FileSpan};
 
 /// A variable ID. These are local to a given declaration (function, constant, global),
 /// but are not de Bruijn variables - they are unique identifiers within the declaration.

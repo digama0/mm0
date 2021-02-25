@@ -1,7 +1,7 @@
 //! The high level IR, used during type inference.
 
 use num::BigInt;
-use crate::{elab::{environment::AtomId, lisp::LispVal}, util::FileSpan};
+use crate::{AtomId, LispVal, FileSpan};
 use super::{Binop, Mm0Expr, Unop, VarId, ast::ProcKind, ty};
 
 /// A "generation ID", which tracks the program points where mutation

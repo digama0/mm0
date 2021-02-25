@@ -9,11 +9,8 @@
 use crate::{DocComment, ParseError};
 #[cfg(feature = "memory")]
 use deepsize_derive::DeepSizeOf;
-use mm0_util::ids::Modifiers;
-use mm0_util::lined_string::LinedString;
-use mm0_util::{ArcString, Span};
+use mm0_util::{ArcString, LinedString, Modifiers, Prec, Span};
 use num::BigUint;
-use std::fmt;
 use std::sync::Arc;
 
 /// User-supplied delimiter characters.
@@ -403,32 +400,6 @@ pub struct Decl {
   /// The definition of the `def`, or the proof of the `theorem`, as an
   /// s-expression.
   pub val: Option<SExpr>,
-}
-
-/// A precedence literal, such as `123` or `max`. These are used in notations like
-/// `notation add = ($+$:23)` or `infix add: $+$ prec 23;`.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Prec {
-  /// A finite precedence, an unsigned integer like `23`.
-  Prec(u32),
-  /// The maximum precedence, the precedence class containing atomic literals
-  /// and parentheses.
-  Max,
-}
-#[cfg(feature = "memory")]
-deepsize_0::deep_size_0!(Prec);
-
-impl fmt::Display for Prec {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      &Prec::Prec(p) => p.fmt(f),
-      Prec::Max => "max".fmt(f),
-    }
-  }
-}
-
-impl fmt::Debug for Prec {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
 }
 
 /// A simple notation, one of `prefix`, `infixl`, and `infixr` (which have the same

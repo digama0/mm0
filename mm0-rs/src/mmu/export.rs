@@ -3,10 +3,8 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::mem;
-use crate::elab::environment::{
-  Type, Expr, Proof, AtomId, SortId, TermKind, ThmKind,
-  ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers};
-use crate::elab::FrozenEnv;
+use crate::{Type, Expr, Proof, AtomId, SortId, TermKind, ThmKind,
+  ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers, FrozenEnv};
 
 fn list<A, W: Write>(w: &mut W, mut es: impl Iterator<Item=A>,
     mut f: impl FnMut(&mut W, A) -> io::Result<()>) -> io::Result<()> {

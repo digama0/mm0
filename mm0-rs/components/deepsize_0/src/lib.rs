@@ -4,6 +4,8 @@
 //! Copyright (c) 2019 Aeledfyr, which is MIT licensed (see the LICENSE file
 //! in this directory).
 
+extern crate self as deepsize_0;
+
 use std::mem::{size_of, size_of_val};
 use std::sync::Arc;
 use std::rc::Rc;

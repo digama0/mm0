@@ -10,7 +10,7 @@ use crate::elab::{ElabError, Elaborator, Environment,
   environment::{AtomId, AtomData, Type as EType},
   lisp::{LispKind, LispVal, Uncons, debug, print::{EnvDisplay, FormatEnv}},
   local_context::{try_get_span_from, try_get_span}};
-use crate::util::{Span, FileSpan};
+use crate::{Span, FileSpan};
 use super::{Compiler,
   nameck::{Type as NType, Prim, PrimType, PrimOp, PrimProp,
     Intrinsic, Entity, GlobalTc, Operator, ProcTc},

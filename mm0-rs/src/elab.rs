@@ -16,33 +16,28 @@ pub mod refine;
 pub mod proof;
 pub mod inout;
 
-use std::ops::{Deref, DerefMut};
-use std::mem;
-use std::result::Result as StdResult;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::time::{Instant, Duration};
-use std::path::PathBuf;
+
 use std::collections::HashMap;
+use std::mem;
+use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
+use std::result::Result as StdResult;
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::{future::Future, pin::Pin, task::{Context, Poll}};
+use std::time::{Duration, Instant};
 use futures::channel::oneshot::Receiver;
-use environment::{AtomData, AtomId, Coe, DeclKey, DocComment, EnvMergeIter,
-  Expr, ExprNode, LispData, NotaInfo, ObjectKind, Proof, ProofNode,
-  Remap, Remapper, Sort, SortId, StmtTrace, Term, TermId, Thm, ThmId};
+use owning_ref::{ArcRef, OwningRef};
+use spans::Spans;
+use crate::ast::{self, Ast, DeclKind, Delimiter, GenNota, Literal as ALiteral,
+  LocalKind, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind};
+use inout::InoutHandlers;
 use environment::Literal as ELiteral;
 use lisp::LispVal;
 use local_context::try_get_span_opt;
-use owning_ref::{ArcRef, OwningRef};
-use spans::Spans;
-use inout::InoutHandlers;
-pub use {environment::Environment, local_context::LocalContext};
-pub use crate::parser::ErrorLevel;
-pub use frozen::{FrozenEnv, FrozenLispKind, FrozenLispVal, FrozenAtomData};
-use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span};
-use crate::parser::{ParseError,
-  ast::{self, Ast, DeclKind, Delimiter, GenNota, LocalKind, Modifiers, Prec,
-    SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Literal as ALiteral}};
-
-use crate::lined_string::LinedString;
+use crate::{ArcList, ArcString, AtomId, BoxError, Coe, DeclKey, DocComment, EnvMergeIter,
+  Environment, ErrorLevel, Expr, ExprNode, FileRef, FileSpan, FrozenEnv,
+  FrozenLispVal, LinedString, LocalContext, Modifiers, NotaInfo, ObjectKind, Prec,
+  Proof, ProofNode, Remap, Remapper, SortId, Span, Term, TermId, Thm, ThmId};
 
 #[cfg(feature = "server")]
 use lsp_types::{Diagnostic, DiagnosticRelatedInformation, Location};
@@ -170,10 +165,14 @@ impl ElabError {
   }
 }
 
-impl From<ParseError> for ElabError {
-  fn from(e: ParseError) -> Self {
+impl From<mm1_parser::ParseError> for ElabError {
+  fn from(e: mm1_parser::ParseError) -> Self {
     ElabError {pos: e.pos, level: e.level, kind: ElabErrorKind::Boxed(e.msg, None) }
   }
+}
+
+impl From<mmb_parser::ParseError> for ElabError {
+  fn from(e: mmb_parser::ParseError) -> Self { Self::new_e(0, format!("{:?}", e)) }
 }
 
 /// Records the current reporting setting. A report that is suppressed by the reporting mode

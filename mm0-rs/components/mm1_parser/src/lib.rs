@@ -58,12 +58,13 @@
 pub mod ast;
 
 use annotate_snippets::snippet::AnnotationType;
-pub use ast::Ast;
 use ast::{
   Atom, Binder, Const, Decl, DeclKind, Delimiter, DepType, Formula, GenNota, Literal, LocalKind,
-  Prec, SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
+  SExpr, SExprKind, SimpleNota, SimpleNotaKind, Stmt, StmtKind, Type,
 };
-use mm0_util::{let_unchecked, unwrap_unchecked, BoxError, LinedString, Modifiers, Position, Span};
+use mm0_util::{
+  let_unchecked, unwrap_unchecked, BoxError, LinedString, Modifiers, Position, Prec, Span,
+};
 use num::cast::ToPrimitive;
 use num::BigUint;
 use std::mem;
@@ -74,6 +75,8 @@ use deepsize_derive::DeepSizeOf;
 
 #[cfg(feature = "server")]
 use lsp_types::{Diagnostic, DiagnosticSeverity};
+
+pub use ast::Ast;
 
 /// A documentation comment on an item.
 pub type DocComment = Arc<str>;

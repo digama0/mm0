@@ -52,12 +52,22 @@
   clippy::use_self
 )]
 
-use crate::parser::ParseError;
-use byteorder::LE;
-use mm0_util::{SortId, TermId, ThmId};
-use zerocopy::{FromBytes, Unaligned, U16, U32, U64};
+mod parser;
+mod ty;
+mod write;
 
-pub mod parser;
+use std::convert::{TryFrom, TryInto};
+use std::mem::size_of;
+
+use byteorder::LE;
+use mm0_util::{Modifiers, SortId, TermId, ThmId};
+use zerocopy::{AsBytes, FromBytes, Unaligned, U16, U32, U64};
+
+pub use mm0_util::u32_as_usize;
+pub use {parser::*, ty::*, write::*};
+
+/// The maximum number of bound variables supported by the MMB format.
+pub const MAX_BOUND_VARS: usize = 55;
 
 /// Constants used in the MMB specification.
 pub mod cmd {
@@ -158,6 +168,11 @@ pub mod cmd {
   pub const UNIFY_DUMMY: u8 = 0x33;
   /// `UNIFY_HYP = 0x36`: See [`UnifyCmd`](super::UnifyCmd).
   pub const UNIFY_HYP: u8 = 0x36;
+}
+
+#[inline]
+fn u64_as_usize(n: U64<LE>) -> usize {
+  n.get().try_into().expect("here's a nickel, get a better computer")
 }
 
 /// The main part of the proof consists of a sequence of declarations,
@@ -385,7 +400,6 @@ pub enum ProofCmd {
 impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
   type Error = ParseError;
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
-    use std::convert::TryInto;
     Ok(match cmd {
       cmd::PROOF_TERM => ProofCmd::Term { tid: TermId(data), save: false },
       cmd::PROOF_TERM_SAVE => ProofCmd::Term { tid: TermId(data), save: true },
@@ -419,7 +433,7 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
 ///   the main stack is available, but most operations don't use it.
 /// * `S: Stack<Expr>`: The unify stack, which contains expressions
 ///   from the target context that are being destructured.
-/// * `H: Vec<Expr>: The unify heap, also known as the substitution. This is
+/// * `H: Vec<Expr>`: The unify heap, also known as the substitution. This is
 ///   initialized with the expressions that the target context would like to
 ///   substitute for the variable names in the theorem being applied, but
 ///   it can be extended in order to support substitutions with sharing
@@ -474,7 +488,6 @@ pub enum UnifyCmd {
 impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
   type Error = ParseError;
   fn try_from((cmd, data): (u8, u32)) -> Result<Self, Self::Error> {
-    use std::convert::TryInto;
     Ok(match cmd {
       cmd::UNIFY_TERM => UnifyCmd::Term { tid: TermId(data), save: false },
       cmd::UNIFY_TERM_SAVE => UnifyCmd::Term { tid: TermId(data), save: true },
@@ -490,8 +503,8 @@ impl std::convert::TryFrom<(u8, u32)> for UnifyCmd {
 /// The header of an MMB file, which is always in the first bytes of the file.
 /// It is followed by a `sorts: [`[`SortData`]`; num_sorts]` array
 /// (which we keep separate because of the dependency).
-#[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
+#[repr(C, align(8))]
+#[derive(Debug, Clone, Copy, Default, FromBytes, AsBytes)]
 pub struct Header {
   /// The magic number, which is used to identify this as an mmb file. Must be
   /// equal to [`MM0B_MAGIC`](cmd::MM0B_MAGIC) = `"MM0B"`.
@@ -519,24 +532,6 @@ pub struct Header {
   pub p_index: U64<LE>,
 }
 
-impl std::default::Default for Header {
-  fn default() -> Self {
-    Header {
-      magic: [0; 4],
-      version: 0,
-      num_sorts: 0,
-      reserved: [0; 2],
-      num_terms: U32::new(0),
-      num_thms: U32::new(0),
-      p_terms: U32::new(0),
-      p_thms: U32::new(0),
-      p_proof: U32::new(0),
-      reserved2: [0; 4],
-      p_index: U64::new(0),
-    }
-  }
-}
-
 impl Header {
   /// On top of the magic number and version checks, perform a non-exhaustive list of
   /// miscellaneous checks to see whether there are issues with
@@ -546,7 +541,6 @@ impl Header {
   /// of the file, the terms pointer should be less than the theorems pointer, etc.
   pub fn check(&self, mmb: &[u8]) -> Result<(), ParseError> {
     use crate::cmd::{MM0B_MAGIC, MM0B_VERSION};
-    use crate::parser::{u32_as_usize, u64_as_usize};
 
     if self.magic != MM0B_MAGIC {
       return Err(ParseError::BadMagic { parsed_magic: self.magic })
@@ -555,31 +549,23 @@ impl Header {
       return Err(ParseError::BadVersion { parsed_version: self.version })
     }
 
-    if u32_as_usize(self.p_terms.get()) <= std::mem::size_of::<Header>()
-      || u32_as_usize(self.p_thms.get()) <= std::mem::size_of::<Header>()
-      || u32_as_usize(self.p_proof.get()) <= std::mem::size_of::<Header>()
-      || u64_as_usize(self.p_index) <= std::mem::size_of::<Header>()
-      || mmb.len() < u32_as_usize(self.p_terms.get())
-      || mmb.len() < u32_as_usize(self.p_thms.get())
-      || mmb.len() < u32_as_usize(self.p_proof.get())
-      || mmb.len() < u64_as_usize(self.p_index)
-      || self.p_thms.get() <= self.p_terms.get()
-      || self.p_proof.get() <= self.p_terms.get()
-      || self.p_proof.get() <= self.p_thms.get()
-      || u64_as_usize(self.p_index) <= u32_as_usize(self.p_terms.get())
-      || u64_as_usize(self.p_index) <= u32_as_usize(self.p_thms.get())
-      || u64_as_usize(self.p_index) <= u32_as_usize(self.p_proof.get())
-      || {
-        let headerspace = std::mem::size_of::<Header>();
-        let sortspace = self.num_sorts as usize;
-        let termspace = std::mem::size_of::<u32>() * u32_as_usize(self.num_terms.get());
-        let thmspace = std::mem::size_of::<u32>() * u32_as_usize(self.num_thms.get());
-        mmb.len() < headerspace + sortspace + termspace + thmspace
-      }
+    let p_terms = u32_as_usize(self.p_terms.get());
+    let p_thms = u32_as_usize(self.p_thms.get());
+    let p_proof = u32_as_usize(self.p_proof.get());
+    let p_index = u64_as_usize(self.p_index);
+    let headerspace = size_of::<Header>();
+    let sortspace = self.num_sorts as usize;
+    let termspace = size_of::<u32>() * u32_as_usize(self.num_terms.get());
+    let thmspace = size_of::<u32>() * u32_as_usize(self.num_thms.get());
+    if headerspace + sortspace <= p_terms
+      && p_terms + termspace <= p_thms
+      && p_thms + thmspace <= p_proof
+      && p_proof <= mmb.len()
+      && (p_index == 0 || p_proof < p_index && p_index <= mmb.len())
     {
-      Err(ParseError::SuspectHeader)
-    } else {
       Ok(())
+    } else {
+      Err(ParseError::SuspectHeader)
     }
   }
 }
@@ -588,13 +574,26 @@ impl Header {
 /// of the modifiers in [`Modifiers::sort_data`]: [`PURE`](Modifiers::PURE),
 /// [`STRICT`](Modifiers::STRICT), [`PROVABLE`](Modifiers::PROVABLE), [`FREE`](Modifiers::FREE).
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
+#[derive(Debug, Clone, Copy, FromBytes, AsBytes, Unaligned)]
 pub struct SortData(pub u8);
+
+impl TryFrom<SortData> for Modifiers {
+  type Error = ();
+  #[inline]
+  fn try_from(s: SortData) -> Result<Modifiers, ()> {
+    let m = Modifiers::new(s.0);
+    if Modifiers::sort_data().contains(m) {
+      Ok(m)
+    } else {
+      Err(())
+    }
+  }
+}
 
 /// An entry in the term table, which describes the "signature" of the term/def,
 /// the information needed to apply the term and use it in theorems.
 #[repr(C, align(8))]
-#[derive(Debug, Clone, Copy, FromBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
 pub struct TermEntry {
   /// The number of arguments to the term.
   pub num_args: U16<LE>,
@@ -612,7 +611,7 @@ pub struct TermEntry {
 /// An entry in the term table, which describes the "signature" of the axiom/theorem,
 /// the information needed to apply the theorem to use it in other theorems.
 #[repr(C, align(4))]
-#[derive(Debug, Clone, Copy, FromBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
 pub struct ThmEntry {
   /// The number of arguments to the theorem (exprs, not hyps).
   pub num_args: U16<LE>,
@@ -668,7 +667,7 @@ impl std::convert::TryFrom<u8> for IndexKind {
 /// which is hooked up in a binary tree structure.
 /// It is followed by a `CStr` (unsized) containing the entity's name.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, Unaligned)]
+#[derive(Debug, Clone, Copy, FromBytes, AsBytes, Unaligned)]
 pub struct IndexEntry {
   /// A pointer to the left child in the binary search tree, ordered by name.
   pub p_left: U64<LE>,

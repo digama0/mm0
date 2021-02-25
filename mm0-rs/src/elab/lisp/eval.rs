@@ -4,26 +4,25 @@
 //! stack traces, as well as having a uniform location to be able to check for interrupts
 //! and timeout.
 
-use std::ops::{Deref, DerefMut};
-use std::mem;
-use std::time::{Instant, Duration};
-use std::sync::atomic::Ordering;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{hash_map::Entry, HashMap};
 use std::convert::TryInto;
+use std::mem;
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use num::{BigInt, ToPrimitive, Zero};
-use crate::util::{ArcString, FileRef, FileSpan, SliceExt, Span};
-use crate::parser::ast::SExpr;
-use super::super::{Result, Elaborator, LispData, DocComment,
-  AtomId, Environment, AtomData, DeclKey, StmtTrace,
-  ElabError, ReportMode, ElabErrorKind, ErrorLevel, BoxError, ObjectKind,
-  environment::{MergeStrategy, MergeStrategyInner},
-  refine::{RStack, RState, RefineResult}};
-use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal,
-  Modifiers, Proc, ProcPos, ProcSpec, QExpr, Rc, RefCell, ThmId, Uncons};
-use super::parser::{Ir, Branch, Pattern, MVarPattern, DefTarget};
-use super::super::local_context::{InferSort, AwaitingProof, try_get_span, try_get_span_from};
-use super::super::environment::{TermKind, ThmKind, ExprNode, ProofNode};
-use super::print::{FormatEnv, EnvDisplay};
+use crate::{ast::SExpr, ArcString, AtomData, AtomId, BoxError, DeclKey, DocComment, ElabError,
+  Elaborator, Environment, ErrorLevel, FileRef, FileSpan, LispData,
+  MergeStrategy, MergeStrategyInner, ObjectKind, SliceExt, Span, StmtTrace,
+  ExprNode, ProofNode, TermKind, ThmKind, ThmId};
+use crate::elab::local_context::{try_get_span, try_get_span_from, AwaitingProof, InferSort};
+use crate::elab::{
+  refine::{RStack, RState, RefineResult},
+  ElabErrorKind, ReportMode, Result};
+use super::parser::{Branch, DefTarget, Ir, MVarPattern, Pattern};
+use super::print::{EnvDisplay, FormatEnv};
+use super::{Arc, BuiltinProc, Cell, InferTarget, LispKind, LispRef, LispVal, Modifiers, Proc,
+  ProcPos, ProcSpec, QExpr, Rc, RefCell, Uncons};
 
 #[derive(Debug)]
 enum Stack<'a> {

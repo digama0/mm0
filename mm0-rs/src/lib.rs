@@ -40,13 +40,19 @@
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
-#[macro_use] extern crate deepsize_derive;
 #[macro_use] extern crate debug_derive;
+#[macro_use] extern crate mm0_util;
 
-#[macro_use] pub mod util;
-mod deepsize;
-pub mod lined_string;
-pub mod parser;
+#[cfg(feature = "memory")]
+#[macro_use] extern crate deepsize_0;
+
+#[cfg(feature = "memory")]
+pub use deepsize_0::deep_size_0;
+
+#[cfg(not(feature = "memory"))]
+/// A macro to generate an impl for types with no inner allocation.
+#[macro_export] macro_rules! deep_size_0 {($($e:tt)*) => {}}
+
 #[cfg(feature = "server")]
 #[macro_use] pub mod server;
 pub mod compiler;
@@ -54,7 +60,12 @@ pub mod joiner;
 pub mod elab;
 #[cfg(feature = "doc")]
 pub mod doc;
-pub mod mmb;
+/// Import and export functionality for MMB binary proof format
+///
+/// See [`mm0-c/verifier.c`] for information on the MMB format.
+///
+/// [`mm0-c/verifier.c`]: https://github.com/digama0/mm0/blob/master/mm0-c/verifier.c
+pub mod mmb { pub mod export; pub mod import; }
 /// Import and export functionality for MMU ascii proof format
 ///
 /// See [The `.mmu` file format] for information on the MMU format.
@@ -65,6 +76,15 @@ pub mod mmu { pub mod import; pub mod export; }
 pub mod mmc;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+
+pub use elab::{environment::*,
+  frozen::{FrozenAtomData, FrozenEnv, FrozenLispKind, FrozenLispVal},
+  lisp::{self, debug::EnvDebug, print::{EnvDisplay, FormatEnv}, LispKind, LispVal, Uncons},
+  local_context::{try_get_span, LocalContext},
+  ElabError, Elaborator};
+pub use mm0_util::*;
+pub use mm1_parser::{ast, DocComment, ErrorLevel};
+pub use mmb_parser::MAX_BOUND_VARS;
 
 static CHECK_PROOFS: AtomicBool = AtomicBool::new(true);
 pub(crate) fn get_check_proofs() -> bool { CHECK_PROOFS.load(Ordering::Relaxed) }

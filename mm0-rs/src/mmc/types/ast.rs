@@ -34,8 +34,7 @@
 //! `x` changes (or `{{(* y) <- 2} with x}` if the name shadowing is acceptable).
 
 use num::BigInt;
-use crate::elab::environment::{AtomId, Remap, Remapper};
-use crate::elab::lisp::LispVal;
+use crate::{AtomId, Remap, Remapper, LispVal};
 use super::{Binop, FieldName, Mm0Expr, Size, Spanned, Unop, VarId, entity::Intrinsic};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.

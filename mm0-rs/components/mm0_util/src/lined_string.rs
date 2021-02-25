@@ -49,9 +49,7 @@ impl LinedString {
   /// This function uses `str::get_unchecked()` internally, so it is *unsafe* unless the [`Span`] used in the index
   /// was generated from the file that is being indexed.
   #[allow(unused)]
-  pub(crate) fn str_at(&self, s: Span) -> &str {
-    unsafe { std::str::from_utf8_unchecked(&self[s]) }
-  }
+  pub fn str_at(&self, s: Span) -> &str { unsafe { std::str::from_utf8_unchecked(&self[s]) } }
 
   /// Calculate and store information about the positions of any newline
   /// characters in the string, and set 'unicode' to true if the string contains unicode.

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::fmt::{self, Display};
 use num::BigUint;
 use crate::lined_string::LinedString;
-use crate::util::{Span, ArcString};
+use crate::{Span, ArcString};
 use crate::elab::environment::DocComment;
 use super::ParseError;
 

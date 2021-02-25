@@ -14,9 +14,10 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 
 [features]
 default = ["server", "doc", "mmc"]
-server = ["lsp-types", "lsp-server", "crossbeam", "simplelog", "log"]
+server = ["lsp-types", "lsp-server", "crossbeam", "simplelog", "log",
+  "mm0_util/server", "mm1_parser/server"]
 doc = ["pulldown-cmark"]
-memory = ["deepsize_derive/nodummy"]
+memory = ["deepsize_0", "deepsize_derive/nodummy", "mm0_util/memory", "mm1_parser/memory"]
 wasm = ["console_error_panic_hook", "wasm-bindgen", "web-sys"]
 mmc = ["bumpalo"]
 
@@ -48,6 +49,10 @@ memchr = "2.3.4"
 bit-set = "0.5.2"
 deepsize_derive = { path = "components/deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
+deepsize_0 = { path = "components/deepsize_0", optional = true }
+mm0_util = { path = "components/mm0_util", default-features = false, features = ["debug"] }
+mmb_parser = { path = "components/mmb_parser" }
+mm1_parser = { path = "components/mm1_parser" }
 
 # For "server" feature
 log = { version = "0.4.14", optional = true }

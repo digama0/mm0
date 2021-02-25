@@ -1,7 +1,7 @@
 //! Basic types involved in MMB file parsing.
 
-use super::ids::SortId;
 use byteorder::LE;
+use mm0_util::SortId;
 use zerocopy::{FromBytes, Unaligned, U64};
 
 /// bound mask: `10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000`
@@ -83,6 +83,7 @@ impl Type {
   /// If this is the type of a bound variable, return a u64
   /// whose only activated bit is the bit indicating which bv
   /// it is.
+  #[inline]
   #[must_use]
   pub fn bound_digit(self) -> Option<u64> {
     if self.bound() {
@@ -108,6 +109,7 @@ impl Type {
   }
 
   /// Does this `Type` have dependencies?
+  #[inline]
   #[must_use]
   pub fn has_deps(self) -> bool {
     if self.bound() {
@@ -120,14 +122,22 @@ impl Type {
   /// If this is a regular/not-bound variable, return a u64
   /// whose only activated bits are the ones marking the bvs
   /// on which it depends.
+  #[inline]
   #[must_use]
   pub fn deps(self) -> Option<u64> {
     if self.bound() {
       None
     } else {
-      Some(self.0.get() & !(0xFF << 56))
+      Some(self.deps_unchecked())
     }
   }
+
+  /// Assuming this is a regular/not-bound variable, return a u64
+  /// whose only activated bits are the ones marking the bvs
+  /// on which it depends.
+  #[inline]
+  #[must_use]
+  pub fn deps_unchecked(self) -> u64 { self.0.get() & !(0xFF << 56) }
 
   /// Get the high bit only, which holds the boundedness and the sort.
   #[must_use]

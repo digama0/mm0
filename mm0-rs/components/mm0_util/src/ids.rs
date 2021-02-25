@@ -180,3 +180,34 @@ impl fmt::Display for Modifiers {
     Ok(())
   }
 }
+
+/// A precedence literal, such as `123` or `max`. These are used in notations like
+/// `notation add = ($+$:23)` or `infix add: $+$ prec 23;`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Prec {
+  /// A finite precedence, an unsigned integer like `23`.
+  Prec(u32),
+  /// The maximum precedence, the precedence class containing atomic literals
+  /// and parentheses.
+  Max,
+}
+#[cfg(feature = "memory")]
+deepsize_0::deep_size_0!(Prec);
+
+impl fmt::Display for Prec {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      &Prec::Prec(p) => p.fmt(f),
+      Prec::Max => "max".fmt(f),
+    }
+  }
+}
+
+impl fmt::Debug for Prec {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(self, f) }
+}
+
+/// The precedence of application, `1024`. This determines whether
+/// `f x + y` is interpreted as `f (x + y)` or `(f x) + y`,
+/// by comparing the precedence of `+` to [`APP_PREC`].
+pub const APP_PREC: Prec = Prec::Prec(1024);

@@ -2,7 +2,7 @@
 use std::sync::Arc;
 use std::rc::Rc;
 use num::BigInt;
-use crate::util::FileSpan;
+use crate::FileSpan;
 use crate::elab::{environment::AtomId,
   lisp::{LispVal, Uncons, print::{EnvDisplay, FormatEnv}}};
 use super::{Binop, Mm0Expr, Size, Unop, VarId, ast};

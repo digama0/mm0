@@ -6,13 +6,12 @@ use std::mem;
 use std::result::Result as StdResult;
 use std::collections::{HashMap, hash_map::Entry};
 use itertools::Itertools;
-use super::environment::{AtomId, TermKind, ThmKind, Type as EType};
-use crate::parser::ast::{Decl, Type, DepType, LocalKind};
+use crate::{AtomId, TermKind, ThmKind, Type as EType, Span, FileSpan, BoxError, MAX_BOUND_VARS};
+use crate::ast::{Decl, Type, DepType, LocalKind};
 use super::{Coe, DeclKind, DerefMut, DocComment, ElabError, Elaborator, Environment,
   Expr, Modifiers, ObjectKind, Proof, Result, SExprKind, SortId, Term, TermId, Thm};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::proof::{NodeHasher, ProofKind, ProofHash, build, Dedup};
-use crate::util::{Span, FileSpan, BoxError};
 
 /// The infer status of a variable in a declaration. For example in
 /// `def foo {x} (ph: wff x y): wff = $ all z ph $;`, `x` has no declared type
@@ -444,8 +443,6 @@ struct BuildArgs {
   map: HashMap<AtomId, u64>,
   size: usize,
 }
-
-pub(crate) const MAX_BOUND_VARS: usize = 55;
 
 impl BuildArgs {
   fn push_bound(&mut self, a: Option<AtomId>) -> Option<()> {
@@ -1097,7 +1094,7 @@ impl Elaborator {
     };
     let (vis, kind) = if let Some((evis, ds, val)) = val {
       let vis = self.visibility(fsp, evis)?;
-      if !vis.allowed_visibility(DeclKind::Def) {
+      if !DeclKind::Def.allowed_visibility(vis) {
         return Err(ElabError::new_e(sp!(evis), "invalid modifiers for this keyword"))
       }
       (vis, TermKind::Def((|| -> Result<Option<Expr>> {
@@ -1179,7 +1176,7 @@ impl Elaborator {
       args, heap, hyps, ret };
     let out = if let Some((vis, proof)) = proof {
       thm.vis = self.visibility(&fsp, vis)?;
-      if !thm.vis.allowed_visibility(DeclKind::Thm) {
+      if !DeclKind::Thm.allowed_visibility(thm.vis) {
         return Err(ElabError::new_e(sp!(vis), "invalid modifiers for this keyword"))
       }
       Some(if self.check_proofs {

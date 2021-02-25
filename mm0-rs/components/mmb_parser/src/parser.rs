@@ -1,11 +1,10 @@
 //! Parser for MMB binary proof files.
 use crate::{
-  Header, IndexEntry, IndexKind, NumdStmtCmd, ProofCmd, SortData, StmtCmd, TermEntry, ThmEntry,
-  UnifyCmd,
+  exhausted, u32_as_usize, u64_as_usize, Arg, Header, IndexEntry, IndexKind, NumdStmtCmd, ProofCmd,
+  SortData, StmtCmd, TermEntry, ThmEntry, UnifyCmd,
 };
-
 use byteorder::LE;
-use mm0_util::{cstr_from_bytes_prefix, mmb::Arg, Position, SortId, TermId, ThmId};
+use mm0_util::{cstr_from_bytes_prefix, Position, SortId, TermId, ThmId};
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Range;
@@ -108,22 +107,22 @@ pub fn try_next_cmd(mmb: &[u8], start_at: usize) -> Result<Option<(u8, u32, usiz
 pub fn parse_cmd(mmb: &[u8], starts_at: usize) -> Result<(u8, u32, usize), ParseError> {
   use super::cmd::{DATA_16, DATA_32, DATA_8, DATA_MASK};
   match mmb.get(starts_at..) {
-    None | Some([]) => Err(ParseError::Exhausted(file!(), line!())),
+    None | Some([]) => Err(exhausted!()),
     Some([cmd, tl @ ..]) => {
       let val = cmd & !DATA_MASK;
       #[allow(clippy::unnecessary_lazy_evaluations)]
       match cmd & DATA_MASK {
         0 => Ok((val, 0, starts_at + size_of::<u8>())),
         DATA_8 => tl
-          .split_first()
-          .map(|(&n, _)| (val, n.into(), starts_at + size_of::<u8>() + size_of::<u8>()))
-          .ok_or_else(|| ParseError::Exhausted(file!(), line!())),
+          .first()
+          .map(|&n| (val, n.into(), starts_at + size_of::<u8>() + size_of::<u8>()))
+          .ok_or_else(|| exhausted!()),
         DATA_16 => LayoutVerified::<_, U16<LE>>::new_from_prefix(tl)
           .map(|(n, _)| (val, n.get().into(), starts_at + size_of::<u8>() + size_of::<u16>()))
-          .ok_or_else(|| ParseError::Exhausted(file!(), line!())),
+          .ok_or_else(|| exhausted!()),
         DATA_32 => LayoutVerified::<_, U32<LE>>::new_from_prefix(tl)
           .map(|(n, _)| (val, n.get(), starts_at + size_of::<u8>() + size_of::<u32>()))
-          .ok_or_else(|| ParseError::Exhausted(file!(), line!())),
+          .ok_or_else(|| exhausted!()),
         _ => unreachable!(),
       }
     }
@@ -166,7 +165,7 @@ impl<'a> Iterator for ProofIter<'a> {
       // `try_next_cmd` got `Ok(None)` by receiving a 0 command at the correct position
       Ok(None) if self.ends_at == self.pos + 1 => None,
       // `try_next_cmd` got `Ok(None)` by receiving a 0 command at the WRONG position
-      Ok(None) => Some(Err(ParseError::Exhausted(file!(), line!()))),
+      Ok(None) => Some(Err(exhausted!())),
       // `try_next_cmd` parsed a new command.
       Ok(Some((cmd, data, rest))) => match ProofCmd::try_from((cmd, data)) {
         Err(e) => Some(Err(e)),
@@ -225,7 +224,7 @@ pub struct TermRef<'a> {
   /// The sort of the term.
   sort: u8,
   /// The array of arguments, including the `ret` element at the end.
-  args: &'a [Arg],
+  args_and_ret: &'a [Arg],
   /// The pointer to the start of the unify stream.
   unify: (&'a [u8], usize),
 }
@@ -259,14 +258,15 @@ pub enum ParseError {
   Trace(&'static str, u32, Box<ParseError>),
   /// Something using an mmb file unexpectedly exhausted its input source.
   Exhausted(&'static str, u32),
-  /// A parser from the `zerocopy` crate failed. There's no additional information
-  /// because the `zerocopy` methods only return Option<A>
-  BadZeroCopy(&'static str, u32),
   /// The parser wasn't able to find the mmb magic number in the expected location.
   BadMagic {
     /// The magic value that we actually found
     parsed_magic: [u8; 4],
   },
+  /// The file is not aligned to a multiple of 8 bytes, which is required for
+  /// parsing the term table. (This is generally true automatically for buffers sourced
+  /// from a file or mmap, but it has to be explicitly ensured in unit tests.)
+  Unaligned,
   /// The header parsed "correctly", but the data in the header indicates that
   /// either the header's numbers are off, or the rest of the MMB file is bad.
   /// For example, a header stating that the term declarations begin at a
@@ -284,13 +284,13 @@ pub enum ParseError {
     /// The MMB file version, greater than [`MM0B_VERSION`](crate::cmd::MM0B_VERSION)
     parsed_version: u8,
   },
-  /// The prtion of the mmb file that's supposed to contain sorts was malformed.
+  /// The portion of the mmb file that's supposed to contain sorts was malformed.
   BadSorts(Range<usize>),
-  /// The prtion of the mmb file that's supposed to contain terms was malformed.
+  /// The portion of the mmb file that's supposed to contain terms was malformed.
   BadTerms(Range<usize>),
-  /// The prtion of the mmb file that's supposed to contain thms was malformed.
+  /// The portion of the mmb file that's supposed to contain thms was malformed.
   BadThms(Range<usize>),
-  /// The prtion of the mmb file that's supposed to contain proofs was malformed.
+  /// The portion of the mmb file that's supposed to contain proofs was malformed.
   BadProofs(Range<usize>),
   /// There was an issue parsing the index
   BadIndexParse {
@@ -306,6 +306,22 @@ pub enum ParseError {
   StrError(&'static str, usize),
   /// An error in IO.
   IoError(io::Error),
+}
+
+/// Something using an mmb file unexpectedly exhausted its input source.
+#[macro_export]
+macro_rules! exhausted {
+  () => {
+    ParseError::Exhausted(file!(), line!())
+  };
+}
+
+/// Wrap other errors to allow for some backtracing.
+#[macro_export]
+macro_rules! trace {
+  ($e:expr) => {
+    ParseError::Trace(file!(), line!(), Box::new($e))
+  };
 }
 
 const HEADER_CAVEAT: &str = "\
@@ -330,8 +346,6 @@ impl std::fmt::Display for ParseError {
       ParseError::Trace(file, line, inner) => write!(f, "trace {} : {} -> {}", file, line, inner),
       ParseError::Exhausted(file, line) =>
         write!(f, "mmb parser was prematurely exhausted at {} : {}", file, line),
-      ParseError::BadZeroCopy(file, line) =>
-        write!(f, "A `zerocopy` parser failed at {} : {}", file, line),
       ParseError::BadSorts(range) => write!(
         f,
         "Failed to parse list of sorts in MMB file. \
@@ -363,7 +377,7 @@ impl std::fmt::Display for ParseError {
         crate::cmd::MM0B_MAGIC,
         parsed_magic
       ),
-
+      ParseError::Unaligned => write!(f, "The MMB file is not 8-byte aligned."),
       // This should be broken up into more specific errors.
       ParseError::SuspectHeader => write!(
         f,
@@ -408,15 +422,6 @@ impl From<io::Error> for ParseError {
 }
 
 #[inline]
-pub(crate) fn u32_as_usize(n: u32) -> usize {
-  n.try_into().expect("here's a nickel, get a better computer")
-}
-#[inline]
-pub(crate) fn u64_as_usize(n: U64<LE>) -> usize {
-  n.get().try_into().expect("here's a nickel, get a better computer")
-}
-
-#[inline]
 fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8])> {
   let mid = mem::size_of::<T>().checked_mul(n)?;
   if mid <= bytes.len() {
@@ -445,8 +450,8 @@ impl<'a> MmbFile<'a> {
   /// it is not a verifier.
   pub fn parse(buf: &'a [u8]) -> Result<MmbFile<'a>, ParseError> {
     use ParseError::{BadIndexParse, BadSorts, BadTerms, BadThms};
-    let (zc_header, sorts) = LayoutVerified::<_, Header>::new_unaligned_from_prefix(buf)
-      .ok_or_else(|| find_header_error(buf))?;
+    let (zc_header, sorts) =
+      LayoutVerified::<_, Header>::new_from_prefix(buf).ok_or_else(|| find_header_error(buf))?;
     // For potential error reporting
     let p_sorts = zc_header.bytes().len();
     let header = zc_header.into_ref();
@@ -526,6 +531,9 @@ bin_parser! {
 #[must_use]
 pub fn find_header_error(mmb: &[u8]) -> ParseError {
   fn find_header_error_aux(mmb: &[u8]) -> Result<(), ParseError> {
+    if <*const [u8]>::cast::<u8>(mmb).align_offset(8) != 0 {
+      return Err(ParseError::Unaligned)
+    }
     let (magic0, pos) = parse_u8((mmb, 0))?;
     let (magic1, pos) = parse_u8((mmb, pos))?;
     let (magic2, pos) = parse_u8((mmb, pos))?;
@@ -568,10 +576,10 @@ fn index_ref(buf: &[u8], n: U64<LE>) -> Option<IndexEntryRef<'_>> {
 
 #[inline]
 fn term_ref(buf: &[u8], t: TermEntry, tid: TermId) -> Option<TermRef<'_>> {
-  let (args, unify) =
+  let (args_and_ret, unify) =
     new_slice_prefix(buf.get(u32_as_usize(t.p_args.get())..)?, usize::from(t.num_args.get()) + 1)?;
   let unify = (buf, buf.len() - unify.len());
-  Some(TermRef { tid, sort: t.sort, args, unify })
+  Some(TermRef { tid, sort: t.sort, args_and_ret, unify })
 }
 
 #[inline]
@@ -587,18 +595,21 @@ impl<'a> MmbFile<'a> {
   #[inline]
   #[must_use]
   pub fn sort(&self, n: SortId) -> Option<SortData> { self.sorts.get(usize::from(n.0)).copied() }
+
   /// Get the term data for a [`TermId`].
   #[inline]
   #[must_use]
   pub fn term(&self, n: TermId) -> Option<TermRef<'a>> {
     term_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?, n)
   }
+
   /// Get the theorem data for a [`ThmId`].
   #[inline]
   #[must_use]
   pub fn thm(&self, n: ThmId) -> Option<ThmRef<'a>> {
     thm_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?, n)
   }
+
   /// Get the proof stream for the file.
   #[inline]
   #[must_use]
@@ -615,27 +626,29 @@ impl<'a> MmbFile<'a> {
   /// Get the name of a term, supplying a default name
   /// of the form `t123` if the index is not present.
   #[must_use]
-  pub fn term_name<T>(&self, n: TermId) -> Option<Cow<'a, str>> {
+  pub fn term_name(&self, n: TermId) -> Option<Cow<'a, str>> {
     if let Some(index) = &self.index {
       Some(Cow::Borrowed(index.term(n)?.value()?))
     } else {
       Some(Cow::Owned(format!("t{}", n.0)))
     }
   }
+
   /// Get the name of a theorem, supplying a default name
   /// of the form `T123` if the index is not present.
   #[must_use]
-  pub fn thm_name<T>(&self, n: ThmId) -> Option<Cow<'a, str>> {
+  pub fn thm_name(&self, n: ThmId) -> Option<Cow<'a, str>> {
     if let Some(index) = &self.index {
       Some(Cow::Borrowed(index.thm(n)?.value()?))
     } else {
       Some(Cow::Owned(format!("T{}", n.0)))
     }
   }
+
   /// Get the name of a sort, supplying a default name
   /// of the form `s123` if the index is not present.
   #[must_use]
-  pub fn sort_name<T>(&self, n: SortId) -> Option<Cow<'a, str>> {
+  pub fn sort_name(&self, n: SortId) -> Option<Cow<'a, str>> {
     if let Some(index) = &self.index {
       Some(Cow::Borrowed(index.sort(n)?.value()?))
     } else {
@@ -650,11 +663,13 @@ impl<'a> MmbIndex<'a> {
   pub fn sort(&self, n: SortId) -> Option<IndexEntryRef<'a>> {
     index_ref(self.buf, *self.sorts.get(usize::from(n.0))?)
   }
+
   /// Get the index entry for a term.
   #[must_use]
   pub fn term(&self, n: TermId) -> Option<IndexEntryRef<'a>> {
     index_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
   }
+
   /// Get the index entry for a theorem.
   #[must_use]
   pub fn thm(&self, n: ThmId) -> Option<IndexEntryRef<'a>> {
@@ -679,24 +694,28 @@ impl<'a> TermRef<'a> {
   #[inline]
   #[must_use]
   pub fn def(&self) -> bool { self.sort & 0x80 != 0 }
+
   /// The return sort of this term/def.
   #[inline]
   #[must_use]
   pub fn sort(&self) -> SortId { SortId(self.sort & 0x7F) }
+
   /// The list of arguments of this term/def, not including the return).
   #[inline]
   #[must_use]
-  pub fn args_no_ret(&self) -> &[Arg] { self.args.split_last().expect("nonempty").1 }
+  pub fn args(&self) -> &[Arg] { self.args_and_ret.split_last().expect("nonempty").1 }
 
   #[inline]
   #[must_use]
   /// Get the termdef's arguments as a slice, INCLUDING the
   /// return type
-  pub fn args_w_ret(&self) -> &[Arg] { self.args }
+  pub fn args_and_ret(&self) -> &[Arg] { self.args_and_ret }
+
   /// The return sort and dependencies.
   #[inline]
   #[must_use]
-  pub fn ret(&self) -> Arg { *self.args.last().expect("nonempty") }
+  pub fn ret(&self) -> Arg { *self.args_and_ret.last().expect("nonempty") }
+
   /// The beginning of the unify stream for the term.
   #[inline]
   #[must_use]
@@ -708,6 +727,7 @@ impl<'a> ThmRef<'a> {
   #[inline]
   #[must_use]
   pub fn args(&self) -> &[Arg] { self.args }
+
   /// The beginning of the unify stream.
   #[inline]
   #[must_use]

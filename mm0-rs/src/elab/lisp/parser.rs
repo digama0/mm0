@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use num::{BigInt, ToPrimitive};
 use itertools::Itertools;
-use crate::parser::ast::{SExpr, SExprKind, Atom};
-use crate::util::ArcString;
+use crate::ast::{SExpr, SExprKind, Atom};
+use crate::ArcString;
 use super::super::{AtomId, Span, DocComment, Elaborator, ElabError, ObjectKind};
 use super::{BuiltinProc, FileSpan, LispKind, LispVal, Proc, ProcSpec,
   Remap, Remapper, Syntax};

@@ -1,7 +1,6 @@
 //! MMC name resolution pass.
 use std::collections::{HashMap, hash_map::Entry};
-use crate::elab::{Result, ElabError, environment::AtomId};
-use crate::util::FileSpan;
+use crate::{elab::Result, ElabError, AtomId, FileSpan};
 use super::{Compiler, types};
 use types::Spanned;
 use types::entity::{ConstTc, Entity, GlobalTc, ProcTc, TypeTc};

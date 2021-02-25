@@ -37,14 +37,11 @@ use std::sync::Arc;
 use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
 use num::BigInt;
-use super::{Spans, ObjectKind, Remap, Remapper,
-  environment::{Environment, ParserEnv, MergeStrategy, MergeStrategyInner,
-    AtomVec, TermVec, ThmVec, SortVec, DeclKey, StmtTrace, DocComment, LispData,
-    SortId, TermId, ThmId, AtomId, Sort, Term, Thm, AtomData},
-  lisp::{LispVal, LispKind, LispRef, LispWeak,
-    InferTarget, Proc, Annot, Syntax, print::FormatEnv}};
-use crate::util::{ArcString, FileSpan, Span};
-use crate::{lined_string::LinedString, __mk_lisp_kind};
+use crate::{mk_lisp_kind, ArcString, AtomData, AtomId, AtomVec, DeclKey, DocComment, Environment,
+  FileSpan, LinedString, LispData, LispKind, LispVal, MergeStrategy, MergeStrategyInner, ParserEnv, Sort,
+  SortId, SortVec, Span, StmtTrace, Term, TermId, TermVec, Thm, ThmId, ThmVec,
+  lisp::{print::FormatEnv, Annot, InferTarget, LispRef, LispWeak, Proc, Syntax}};
+use super::{ObjectKind, Remap, Remapper, Spans};
 
 /// A "frozen" environment, which is a thread-safe read only
 /// wrapper around [`Environment`].
@@ -166,7 +163,7 @@ pub struct FrozenLispRef(LispRef);
 #[repr(transparent)]
 pub struct FrozenProc(Proc);
 
-__mk_lisp_kind! {
+mk_lisp_kind! {
   /// A wrapper around a [`LispKind`] that is frozen.
   FrozenLispKind, FrozenLispVal, FrozenLispRef, FrozenProc
 }

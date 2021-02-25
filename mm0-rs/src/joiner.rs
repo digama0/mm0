@@ -19,9 +19,8 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use clap::ArgMatches;
-use crate::util::FileRef;
-use crate::lined_string::LinedString;
-use crate::parser::{parse, ast::StmtKind};
+use mm0_util::{FileRef, LinedString};
+use mm1_parser::{parse, ast::StmtKind};
 
 /// Running data for the file join process.
 struct Joiner<W: Write> {

@@ -20,11 +20,8 @@ pub mod union_find;
 use std::collections::hash_map::HashMap;
 use parser::ItemIter;
 
-use crate::util::{FileSpan, Span};
-use crate::elab::{
-  Result, Elaborator, ElabError,
-  environment::{AtomId, Remap, Remapper},
-  lisp::{LispVal, debug::EnvDebug, print::FormatEnv}};
+use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
+  elab::Result, LispVal, EnvDebug, FormatEnv};
 use {types::{Keyword, entity::Entity}, parser::Parser,
   build_ast::BuildAst, predef::PredefMap};
 

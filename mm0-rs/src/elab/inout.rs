@@ -2,11 +2,10 @@
 
 use std::io;
 use super::proof::{Dedup, NodeHasher, ProofKind, build};
-use super::environment::{DeclKey, SortId, TermId, Type, Expr, ExprNode,
-  TermKind, OutputString, StmtTrace, Environment};
+use crate::{DeclKey, SortId, TermId, Type, Expr, ExprNode,
+  TermKind, OutputString, StmtTrace, Environment, FileSpan, BoxError};
 use super::{ElabError, Elaborator, Span, HashMap, Result as EResult, SExpr,
   lisp::{InferTarget, LispVal}, local_context::try_get_span, FrozenEnv};
-use crate::util::{FileSpan, BoxError};
 
 /// The elaboration data used by input/output commands. This caches precomputed
 /// evaluations of `output string` commands.

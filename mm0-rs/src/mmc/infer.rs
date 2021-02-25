@@ -12,10 +12,9 @@ use hashbrown::{HashMap, HashSet, hash_map::RawEntryMut};
 use hir::{Context, ContextNext};
 use num::{BigInt, Signed};
 use types::IntTy;
-use crate::elab::{environment::AtomId, lisp::{LispVal, print::FormatEnv}};
-use crate::util::FileSpan;
+use crate::{AtomId, LispVal, FormatEnv, u32_as_usize, FileSpan};
 use super::{parser::try_get_fspan, types::{self, Binop, FieldName, Size, Spanned, Unop, VarId,
-  u32_as_usize, ast, hir::{self, GenId}}};
+  ast, hir::{self, GenId}}};
 use super::types::entity::{Entity, ConstTc, GlobalTc, ProcTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;

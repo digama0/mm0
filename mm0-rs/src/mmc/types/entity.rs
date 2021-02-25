@@ -2,7 +2,7 @@
 //! previous declarations, in addition to intrinsics and primops.
 
 use std::collections::HashMap;
-use crate::{elab::{Environment, environment::{AtomId, Remap, Remapper}}, util::FileSpan};
+use crate::{Environment, AtomId, Remap, Remapper, FileSpan};
 use crate::mmc::{Compiler, types::ast};
 use super::Spanned;
 

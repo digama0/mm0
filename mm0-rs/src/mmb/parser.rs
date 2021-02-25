@@ -6,7 +6,7 @@ use zerocopy::{LayoutVerified, FromBytes, U16, U32, U64};
 use super::{Header, StmtCmd, TermEntry, ThmEntry, IndexEntry,
   Arg, IndexKind, UnifyCmd, ProofCmd, SortData};
 use crate::elab::environment::{SortId, TermId, ThmId};
-use crate::util::{Position, cstr_from_bytes_prefix};
+use crate::{Position, cstr_from_bytes_prefix};
 
 /// An iterator over the declaration stream.
 #[derive(Debug, Clone)]

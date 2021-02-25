@@ -9,9 +9,7 @@
 //! types in the [`types::ast`](super::ast) module.
 
 use num::BigInt;
-use crate::elab::environment::AtomId;
-use crate::elab::lisp::{LispVal, Uncons, print::{EnvDisplay, FormatEnv}};
-use crate::util::FileSpan;
+use crate::{AtomId, LispVal, Uncons, EnvDisplay, FormatEnv, FileSpan};
 use super::{Spanned, Size, FieldName};
 
 /// A "lifetime" in MMC is a variable or place from which references can be derived.

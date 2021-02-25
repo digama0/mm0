@@ -10,13 +10,12 @@
 use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::fmt::{self, Display};
-use crate::parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
+use mm1_parser::{Parser, ParseError, ident_start, ident_rest, whitespace};
 use crate::elab::{Elaborator, ElabError, ObjectKind};
 use crate::elab::ast::{Formula, SExpr};
 use crate::elab::lisp::print::{EnvDisplay, FormatEnv};
 use crate::elab::spans::Spans;
-use crate::util::{SliceUninit, Span};
-use crate::elab::environment::{Literal, ParserEnv, Prec, TermId};
+use crate::{SliceUninit, Span, Literal, ParserEnv, Prec, TermId, APP_PREC};
 
 /// A parsed math expression (quoted expression). This is like [`SExpr`] but it
 /// has a much simpler grammar.
@@ -96,11 +95,6 @@ impl Elaborator {
     Ok(expr)
   }
 }
-
-/// The precedence of application, `1024`. This determines whether
-/// `f x + y` is interpreted as `f (x + y)` or `(f x) + y`,
-/// by comparing the precedence of `+` to [`APP_PREC`].
-pub const APP_PREC: Prec = Prec::Prec(1024);
 
 struct MathParser<'a> {
   p: Parser<'a>,

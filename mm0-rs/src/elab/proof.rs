@@ -7,12 +7,12 @@ use std::ops::Index;
 use std::result::Result as StdResult;
 use std::mem;
 use std::collections::{HashMap, hash_map::Entry};
-use super::environment::{AtomId, Type};
+use crate::{AtomId, Type};
 use super::{LocalContext, ElabError, Result, Environment,
   SortId, TermId, ThmId, ExprNode, ProofNode, DeclKey, Modifiers};
 use super::lisp::{LispVal, LispKind, Uncons, InferTarget, print::FormatEnv};
 use super::local_context::{InferSort, try_get_span_from};
-use crate::util::{BoxError, FileSpan};
+use crate::{BoxError, FileSpan};
 
 /// This struct represents the context for the hash-consing step of proof compaction
 #[derive(Debug)]

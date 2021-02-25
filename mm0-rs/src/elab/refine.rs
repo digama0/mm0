@@ -6,9 +6,9 @@
 //! [`mm1.md`]: https://github.com/digama0/mm0/blob/master/mm0-hs/mm1.md#pre-expressions
 
 use std::result::Result as StdResult;
-use crate::util::{FileSpan, Span};
+use crate::{FileSpan, Span};
 use super::{Elaborator, ElabError, Result};
-use super::environment::{AtomId, TermKind, DeclKey, Modifiers,
+use crate::{AtomId, TermKind, DeclKey, Modifiers,
   ObjectKind, SortId, TermId, ThmId, Type};
 use super::lisp::{InferTarget, LispKind, LispRef, LispVal, Uncons, RefineSyntax,
   print::{FormatEnv, EnvDisplay}, eval::SResult};

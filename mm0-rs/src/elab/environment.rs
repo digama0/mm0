@@ -1,81 +1,16 @@
 //! The [`Environment`] contains all elaborated proof data, as well as the lisp global context.
 
-use std::ops::{Deref, DerefMut, Index, IndexMut};
-use std::{concat, stringify};
-use std::fmt;
+use std::ops::Deref;
 use std::convert::TryInto;
-use std::iter::FromIterator;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::fmt::Write;
-use std::hash::Hash;
 use std::collections::HashMap;
 use super::{ElabError, BoxError, spans::Spans, FrozenEnv, FrozenLispVal};
-use crate::util::{ArcString, FileRef, FileSpan, HashMapExt, Span};
-use super::lisp::{LispVal, RefineSyntax, Syntax};
+use crate::{ArcString, AtomId, AtomVec, DocComment, FileRef, FileSpan, HashMapExt, Modifiers,
+  Prec, SortId, SortVec, Span, TermId, TermVec, ThmId, ThmVec,
+  lisp::{LispVal, RefineSyntax, Syntax}};
 use super::frozen::{FrozenLispKind, FrozenLispRef};
-pub use crate::parser::ast::{Modifiers, Prec};
-
-macro_rules! id_wrapper {
-  ($id:ident: $ty:ty, $vec:ident) => {
-    id_wrapper!($id: $ty, $vec,
-      concat!("An index into a [`", stringify!($vec), "`]"));
-  };
-  ($id:ident: $ty:ty, $vec:ident, $svec:expr) => {
-    #[doc=$svec]
-    #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
-    pub struct $id(pub $ty);
-    $crate::deep_size_0!($id);
-
-    impl fmt::Debug for $id {
-      fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
-    }
-
-    /// A vector wrapper with a strongly typed index interface.
-    #[derive(Clone, Debug, DeepSizeOf)]
-    pub struct $vec<T>(pub Vec<T>);
-
-    #[allow(dead_code)]
-    impl<T> $vec<T> {
-      /// Get a reference to the element at the given index.
-      #[must_use] pub fn get(&self, i: $id) -> Option<&T> { self.0.get(i.0 as usize) }
-      /// Get a mutable reference to the element at the given index.
-      #[must_use] pub fn get_mut(&mut self, i: $id) -> Option<&mut T> { self.0.get_mut(i.0 as usize) }
-      /// Returns the equivalent of `iter().enumerate()` but with the right indexing type.
-      pub fn enum_iter(&self) -> impl Iterator<Item=($id, &T)> {
-        self.0.iter().enumerate().map(|(i, t)| ($id(i as $ty), t))
-      }
-    }
-    impl<T> Default for $vec<T> {
-      fn default() -> $vec<T> { $vec(Vec::new()) }
-    }
-    impl<T> Index<$id> for $vec<T> {
-      type Output = T;
-      fn index(&self, i: $id) -> &T { &self.0[i.0 as usize] }
-    }
-    impl<T> IndexMut<$id> for $vec<T> {
-      fn index_mut(&mut self, i: $id) -> &mut T { &mut self.0[i.0 as usize] }
-    }
-    impl<T> Deref for $vec<T> {
-      type Target = Vec<T>;
-      fn deref(&self) -> &Vec<T> { &self.0 }
-    }
-    impl<T> DerefMut for $vec<T> {
-      fn deref_mut(&mut self) -> &mut Vec<T> { &mut self.0 }
-    }
-    impl<T> FromIterator<T> for $vec<T> {
-      fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self { $vec(Vec::from_iter(iter)) }
-    }
-  };
-}
-
-id_wrapper!(SortId: u8, SortVec);
-id_wrapper!(TermId: u32, TermVec);
-id_wrapper!(ThmId: u32, ThmVec);
-id_wrapper!(AtomId: u32, AtomVec);
-
-/// A documentation comment on an item.
-pub type DocComment = Arc<str>;
 
 /// The information associated to a defined [`Sort`].
 #[derive(Clone, Debug, DeepSizeOf)]
@@ -604,102 +539,28 @@ pub struct Environment {
   pub spans: Vec<Spans<ObjectKind>>,
 }
 
-macro_rules! make_atoms {
-  {consts $n:expr;} => {};
-  {consts $n:expr; $(#[$attr:meta])* $x:ident $doc0:expr, $($xs:tt)*} => {
-    #[doc=$doc0]
-    $(#[$attr])*
-    pub const $x: AtomId = AtomId($n);
-    make_atoms! {consts AtomId::$x.0+1; $($xs)*}
-  };
-  {$($(#[$attr:meta])* $x:ident: $e:expr,)*} => {
-    impl AtomId {
-      make_atoms! {consts 0; $($(#[$attr])* $x concat!("The atom `", $e, "`.\n"),)*}
-    }
-
-    impl Environment {
-      /// Creates a new environment. The list of atoms is pre-populated with [`AtomId`]
-      /// atoms that are used by builtins.
-      #[allow(clippy::string_lit_as_bytes)]
-      #[must_use] pub fn new() -> Environment {
-        let mut atoms = HashMap::new();
-        let mut data = AtomVec::default();
-        $({
-          let s: ArcString = $e.as_bytes().into();
-          atoms.insert(s.clone(), AtomId::$x);
-          data.push(AtomData::new(s))
-        })*
-        Environment {
-          atoms, data,
-          sorts: Default::default(),
-          pe: Default::default(),
-          terms: Default::default(),
-          thms: Default::default(),
-          stmts: Default::default(),
-          spans: Default::default(),
-        }
-      }
+impl Environment {
+  /// Creates a new environment. The list of atoms is pre-populated with [`AtomId`]
+  /// atoms that are used by builtins.
+  #[allow(clippy::string_lit_as_bytes)]
+  #[must_use] pub fn new() -> Environment {
+    let mut atoms = HashMap::new();
+    let mut data = AtomVec::default();
+    AtomId::on_atoms(|name, a| {
+      let s: ArcString = name.as_bytes().into();
+      atoms.insert(s.clone(), a);
+      data.push(AtomData::new(s))
+    });
+    Environment {
+      atoms, data,
+      sorts: Default::default(),
+      pe: Default::default(),
+      terms: Default::default(),
+      thms: Default::default(),
+      stmts: Default::default(),
+      spans: Default::default(),
     }
   }
-}
-
-make_atoms! {
-  /// The blank, used to represent wildcards in `match`
-  UNDER: "_",
-  /// In refine, `(! thm x y e1 e2 p1 p2)` allows passing bound and regular variables,
-  /// in addition to subproofs
-  BANG: "!",
-  /// In refine, `(!! thm x y p1 p2)` allows passing bound variables and subproofs but not
-  /// regular variables, in addition to subproofs
-  BANG2: "!!",
-  /// In refine, `(:verb p)` allows passing an elaborated proof term `p` in a refine script
-  /// (without this, the applications in `p` would be interpreted incorrectly)
-  VERB: ":verb",
-  /// In elaborated proofs, `(:conv e c p)` is a conversion proof.
-  /// (The initial colon avoids name collision with MM0 theorems, which don't allow `:` in identifiers.)
-  CONV: ":conv",
-  /// In elaborated proofs, `(:sym c)` is a proof of symmetry.
-  /// (The initial colon avoids name collision with MM0 theorems, which don't allow `:` in identifiers.)
-  SYM: ":sym",
-  /// In elaborated proofs, `(:unfold t es c)` is a proof of definitional unfolding.
-  /// (The initial colon avoids name collision with MM0 theorems, which don't allow `:` in identifiers.)
-  UNFOLD: ":unfold",
-  /// In MMU proofs, `(:let h p1 p2)` is a let-binding for supporting deduplication.
-  LET: ":let",
-  /// In refine, `{p : t}` is a type ascription for proofs.
-  COLON: ":",
-  /// In refine, `?` is a proof by "sorry" (stubbing the proof without immediate error)
-  QMARK: "?",
-  /// `term` is an atom used by `add-decl` to add a term/def declaration
-  TERM: "term",
-  /// `def` is an atom used by `add-decl` to add a term/def declaration
-  DEF: "def",
-  /// `axiom` is an atom used by `add-decl` to add an axiom/theorem declaration
-  AXIOM: "axiom",
-  /// `theorem` is an atom used by `add-decl` to add an axiom/theorem declaration
-  THM: "theorem",
-  /// `pub` is an atom used to specify the visibility modifier in `add-decl`
-  PUB: "pub",
-  /// `abstract` is an atom used to specify the visibility modifier in `add-decl`
-  ABSTRACT: "abstract",
-  /// `local` is an atom used to specify the visibility modifier in `add-decl`
-  LOCAL: "local",
-  /// `:sorry` is an atom used by `get-decl` to print missing proofs
-  SORRY: ":sorry",
-  /// `error` is an error level recognized by `set-reporting`
-  ERROR: "error",
-  /// `warn` is an error level recognized by `set-reporting`
-  WARN: "warn",
-  /// `info` is an error level recognized by `set-reporting`
-  INFO: "info",
-  /// The `annotate` function is a callback used to define what happens when an annotation like
-  /// `@foo def bar = ...` is used.
-  ANNOTATE: "annotate",
-  /// The `refine-extra-args` function is a callback used when an application in refine
-  /// uses too many arguments.
-  REFINE_EXTRA_ARGS: "refine-extra-args",
-  /// `to-expr-fallback` is called when elaborating a term that is not otherwise recognized
-  TO_EXPR_FALLBACK: "to-expr-fallback",
 }
 
 /// An implementation of a map `u8 -> bool` using a 32 byte array as a bitset.

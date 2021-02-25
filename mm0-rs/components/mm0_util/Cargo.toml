@@ -17,14 +17,14 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 lazy_static = "1.4.0"
 memchr = "2.3.4"
 pathdiff = "0.2.0"
-byteorder = "1.4.2"
-zerocopy = "0.3.0"
 bitflags = "1.2.1"
 
 # optional dependencies
 deepsize_0 = { path = "../deepsize_0", optional = true }
+debug_derive = { path = "../debug_derive", optional = true }
 deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
 libc = { version = "0.2.86", optional = true }
+lsp-types = { version = "0.86.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procinfo = { version = "0.4.2", optional = true }
@@ -32,4 +32,5 @@ procinfo = { version = "0.4.2", optional = true }
 [features]
 default = ["memory"]
 memory = ["deepsize_0", "deepsize_derive", "libc", "procinfo"]
-
+debug = ["debug_derive"]
+server = ["lsp-types"]

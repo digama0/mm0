@@ -1,13 +1,12 @@
 //! MMU importer, which produces an [`Environment`] object from an `.mmu` file.
 use std::rc::Rc;
 use std::collections::{HashMap, hash_map::Entry};
+use crate::{Term, Thm, TermKind, ThmKind,
+  AtomId, SortId, Environment, Modifiers, Type, Expr, Proof,
+  MAX_BOUND_VARS, Span, BoxError, FileRef, FileSpan};
 use crate::elab::{ElabError, Result,
-  local_context::MAX_BOUND_VARS,
-  environment::{Term, Thm, TermKind, ThmKind,
-    AtomId, SortId, Environment, Modifiers, Type, Expr, Proof},
   proof::{IDedup, NodeHash, ExprHash, ProofKind, ProofHash, build}};
-use crate::util::{Span, BoxError, FileRef, FileSpan};
-use crate::parser::{whitespace, lisp_ident};
+use mm1_parser::{whitespace, lisp_ident};
 
 /// The importer, which reads the input `.mmu` file and builds an [`Environment`].
 #[derive(Debug)]

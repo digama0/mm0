@@ -20,16 +20,15 @@ use serde::Deserialize;
 #[allow(clippy::wildcard_imports)] use lsp_types::*;
 use crossbeam::channel::{SendError, RecvError};
 use clap::ArgMatches;
-use crate::util::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
+use crate::{ArcList, ArcString, BoxError, FileRef, FileSpan, Span,
   MutexExt, CondvarExt};
-use crate::lined_string::LinedString;
-use crate::parser::{Ast, parse};
+use mm1_parser::{Ast, parse};
 use crate::mmb::import::elab as mmb_elab;
 use crate::mmu::import::elab as mmu_elab;
 use crate::compiler::FileContents;
-use crate::elab::{ElabResult, ElaborateBuilder, FrozenEnv, GoalListener,
-  environment::{ObjectKind, DeclKey, StmtTrace, AtomId, SortId, TermId, ThmId},
-  FrozenLispKind, FrozenAtomData,
+use crate::{ObjectKind, DeclKey, StmtTrace, AtomId, SortId, TermId, ThmId, LinedString, FrozenEnv,
+  FrozenLispKind, FrozenAtomData};
+use crate::elab::{ElabResult, ElaborateBuilder, GoalListener,
   local_context::InferSort, proof::Subst,
   lisp::{print::FormatEnv, pretty::Pretty, LispKind, Proc, BuiltinProc},
   spans::Spans};
@@ -85,8 +84,8 @@ struct MemoryData;
 impl MemoryData {
   fn get() -> MemoryData {
     #[cfg(feature = "memory")] {
-      use crate::{deepsize::DeepSizeOf, util::get_memory_usage};
-      MemoryData(get_memory_usage(), SERVER.vfs.deep_size_of())
+      use deepsize_0::DeepSizeOf;
+      MemoryData(crate::get_memory_usage(), SERVER.vfs.deep_size_of())
     }
     #[cfg(not(feature = "memory"))] MemoryData
   }

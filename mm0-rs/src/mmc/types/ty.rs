@@ -2,7 +2,7 @@
 
 use std::{convert::TryInto, fmt::Display, ops::BitOrAssign};
 use num::BigInt;
-use crate::elab::{environment::AtomId, lisp::print::{EnvDisplay, FormatEnv}};
+use crate::{AtomId, EnvDisplay, FormatEnv};
 use super::{Binop, IntTy, Mm0ExprNode, Size, Unop, VarId, ast::TyVarId};
 
 bitflags! {

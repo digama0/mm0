@@ -58,7 +58,6 @@ extern crate bitflags;
 
 #[cfg(feature = "memory")]
 use deepsize_derive::DeepSizeOf;
-use std::borrow::Borrow;
 use std::collections::{
   hash_map::{Entry, OccupiedEntry},
   HashMap,
@@ -71,10 +70,11 @@ use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{borrow::Borrow, convert::TryInto};
 
-pub mod ids;
-pub mod lined_string;
-pub mod mmb;
+mod ids;
+mod atoms;
+mod lined_string;
 
 pub use {ids::*, lined_string::*};
 
@@ -153,6 +153,13 @@ macro_rules! unwrap_unchecked {
   };
 }
 
+/// Converts `n` from `u32` to `usize` or panics (which should not happen since we don't support
+/// 16 bit systems).
+#[inline]
+pub fn u32_as_usize(n: u32) -> usize {
+  n.try_into().expect("here's a nickel, get a better computer")
+}
+
 /// Extension trait for [`Mutex`](std::sync::Mutex)`<T>`.
 pub trait MutexExt<T> {
   /// Like `lock`, but propagates instead of catches panics.
@@ -217,8 +224,11 @@ impl From<String> for ArcString {
 }
 
 impl ArcString {
-  #[allow(unused)]
-  pub(crate) fn as_str(&self) -> &str { unsafe { std::str::from_utf8_unchecked(self) } }
+  /// Turn this `ArcString` into a `&str`.
+  ///
+  /// # Safety
+  /// This is potentially unsafe because `ArcString` do not have to be valid unicode.
+  pub fn as_str(&self) -> &str { unsafe { std::str::from_utf8_unchecked(self) } }
 }
 
 /// A structure that allows constructing linked lists on the call stack.

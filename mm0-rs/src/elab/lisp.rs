@@ -18,10 +18,8 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use num::BigInt;
 use owning_ref::{OwningRef, StableAddress, CloneStableAddress};
-use crate::parser::ast::Atom;
-use crate::util::{ArcString, FileSpan, Span, SliceExt, MutexExt, StackList};
-use super::{AtomId, Modifiers, Remap, Remapper, ThmId,
-  environment::{MergeStrategy, MergeStrategyInner}};
+use crate::{ast::Atom, ArcString, AtomId, FileSpan, MergeStrategy, MergeStrategyInner, Modifiers,
+  MutexExt, Remap, Remapper, SliceExt, Span, StackList};
 use parser::Ir;
 pub use super::math_parser::{QExpr, QExprKind};
 
@@ -239,7 +237,7 @@ pub struct LispVal(Rc<LispKind>);
 ///
 /// [`FrozenLispKind`]: super::frozen::FrozenLispKind
 #[macro_export]
-macro_rules! __mk_lisp_kind {
+macro_rules! mk_lisp_kind {
   ($(#[$doc:meta])* $kind:ident, $val:ident, $ref_:ident, $proc:ident) => {
     $(#[$doc])*
     #[derive(Debug, DeepSizeOf)]
@@ -291,7 +289,7 @@ macro_rules! __mk_lisp_kind {
     }
   }
 }
-__mk_lisp_kind! {
+mk_lisp_kind! {
   /// The underlying enum of types of lisp data.
   #[derive(EnvDebug)]
   LispKind,
