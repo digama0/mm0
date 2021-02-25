@@ -56,6 +56,8 @@ enum TypeError<'a> {
   InvalidReturn,
   /// While loop mutates a value without marking it as `mut` in the loop header
   MissingMuts(Vec<VarId>),
+  /// A `(variant h)` clause was provided to a function or label that does not declare a variant
+  UnexpectedVariant,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -316,21 +318,43 @@ impl<'a> From<Ty<'a>> for WhnfTy<'a> {
 #[derive(Clone, Default, Debug)]
 struct Subst<'a> {
   fvars: im::HashSet<VarId>,
-  subst: im::HashMap<VarId, Expr<'a>>,
+  subst: im::HashMap<VarId, Result<Expr<'a>, &'a FileSpan>>,
 }
 
 impl<'a> Subst<'a> {
-  fn push_raw(&mut self, v: VarId, e: Expr<'a>) {
+  fn push_raw(&mut self, v: VarId, e: Result<Expr<'a>, &'a FileSpan>) {
     assert!(self.subst.insert(v, e).is_none())
   }
 
-  fn add_fvars(&mut self, e: Expr<'a>) {
-    e.on_vars(|v| { self.fvars.insert(v); })
+  fn add_fvars(&mut self, e: Result<Expr<'a>, &'a FileSpan>) {
+    if let Ok(e) = e { e.on_vars(|v| { self.fvars.insert(v); }) }
   }
 
-  fn push(&mut self, v: VarId, e: Expr<'a>) {
+  fn push(&mut self, v: VarId, e: Result<Expr<'a>, &'a FileSpan>) {
     self.add_fvars(e);
     self.push_raw(v, e);
+  }
+
+  fn push_tuple_pattern_raw(&mut self,
+    ctx: &mut InferCtx<'a>, pat: TuplePattern<'a>, e: Result<Expr<'a>, &'a FileSpan>
+  ) {
+    match pat.k {
+      TuplePatternKind::Name(_, v, _) => self.push_raw(v, e),
+      TuplePatternKind::Error(pat, _) => self.push_tuple_pattern_raw(ctx, pat, e),
+      TuplePatternKind::Tuple(pats, mk, _) => {
+        for (i, &pat) in pats.iter().enumerate() {
+          let e = e.map(|e| mk.proj(ctx, e, pats.len(), i.try_into().expect("overflow")));
+          self.push_tuple_pattern_raw(ctx, pat, e)
+        }
+      }
+    }
+  }
+
+  fn push_tuple_pattern(&mut self,
+    ctx: &mut InferCtx<'a>, pat: TuplePattern<'a>, e: Result<Expr<'a>, &'a FileSpan>
+  ) {
+    self.add_fvars(e);
+    self.push_tuple_pattern_raw(ctx, pat, e);
   }
 
   fn subst_expr(&mut self, ctx: &mut InferCtx<'a>, e: Expr<'a>) -> Expr<'a> {
@@ -529,37 +553,18 @@ enum TuplePatternResult<'a> {
   Indeterminate,
   /// This is a valid tuple pattern, which uses the [`TupleIter::next`] interface
   /// to provide types in streaming fashion.
-  Tuple(TupleIter<'a>, TupleBuilder),
+  Tuple(TupleMatchKind, TupleIter<'a>),
 }
 
-/// A function for converting a list of expressions from a tuple pattern into one expression.
-/// This type does not store anything in itself except the overall strategy for the merging,
-/// as no type information is needed for the reconstruction.
-#[derive(Copy, Clone)]
-enum TupleBuilder {
-  /// A unit pattern match just returns `()`.
-  Unit,
-  /// A list pattern match constructs `(e1, ..., en)`.
-  List,
-  /// An array pattern match constructs an array literal `[e1, ..., en]`.
-  Array,
-  /// An and pattern match uses the first element in the list. (All elements should be the
-  /// same, although we don't check this here.)
-  And,
-  /// A singleton pattern match `(x, h): sn {a : T}` returns `x`.
-  /// (It could also soundly return `a`, but `x` seems more useful here.)
-  Sn,
-}
-
-impl TupleBuilder {
+impl TupleMatchKind {
   /// Constructs an expression from a list of expressions for the sub-pattern matches.
   /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
   /// type error.
   fn build<'a>(self, ctx: &mut InferCtx<'a>, exprs: Vec<Option<Expr<'a>>>) -> Option<Expr<'a>> {
     Some(match self {
-      Self::Unit => ctx.common.e_unit,
+      Self::Unit | Self::True => ctx.common.e_unit,
       Self::Sn => (*exprs.first()?)?,
-      Self::List => {
+      Self::List | Self::Struct => {
         if exprs.iter().any(Option::is_none) {return None}
         intern!(ctx, ExprKind::List(ctx.alloc.alloc_slice_fill_iter(
           exprs.into_iter().map(|e| unwrap_unchecked!(e)))))
@@ -572,6 +577,24 @@ impl TupleBuilder {
       Self::And => return exprs.first().copied().unwrap_or(Some(ctx.common.e_unit)),
     })
   }
+
+  /// Constructs an expression from a list of expressions for the sub-pattern matches.
+  /// This will always return `Some` if the `exprs` are all `Some`, unless there is an upstream
+  /// type error.
+  fn proj<'a>(self, ctx: &mut InferCtx<'a>, e: Expr<'a>, num: usize, idx: u32) -> Expr<'a> {
+    match self {
+      Self::Unit | Self::True => return ctx.common.e_unit,
+      Self::Sn => return if idx == 0 { e } else { ctx.common.e_unit },
+      Self::And => return e,
+      Self::List | Self::Struct => if let ExprKind::List(es) = e.k {
+        if es.len() == num { return es[idx as usize] }
+      },
+      Self::Array => if let ExprKind::Array(es) = e.k {
+        if es.len() == num { return es[idx as usize] }
+      },
+    }
+    intern!(ctx, ExprKind::Proj(e, idx))
+  }
 }
 
 /// An "iterator" over an expected type for a tuple pattern. Unlike a regular
@@ -582,46 +605,66 @@ impl TupleBuilder {
 /// unification, after which point [`TupleIter::next`] can be called again.
 #[derive(Clone)]
 enum TupleIter<'a> {
+  /// A single type `{_ : T}`, or an empty iterator.
+  Ty(Option<Ty<'a>>),
   /// A singleton pattern `{a : T}`, which expands to the expected type
   /// `{x : T} {h : x = a}`.
   Sn(Expr<'a>, Ty<'a>),
-  /// A single type `{_ : T}`, or an empty iterator.
-  Ty(Option<Ty<'a>>),
   /// A list of types {_ : T1} {_ : T2} ... {_ : Tn}`, resulting from a pattern match
   /// on `List` or `And`.
   List(std::slice::Iter<'a, Ty<'a>>),
   /// A dependent list of types `{xi : Ti}`, resulting from a pattern match on a `Struct`.
-  Args(std::slice::Iter<'a, Arg<'a>>),
+  Args(Box<(Subst<'a>, TuplePattern<'a>, std::slice::Iter<'a, Arg<'a>>)>),
+}
+
+impl Default for TupleIter<'_> {
+  fn default() -> Self { Self::Ty(None) }
 }
 
 impl<'a> TupleIter<'a> {
+  /// Construct an `Args` variant, pulling the next non-`Let` argument from the list.
+  fn mk_args(ctx: &mut InferCtx<'a>,
+    mut subst: Subst<'a>, mut it: std::slice::Iter<'a, Arg<'a>>
+  ) -> Self {
+    while let Some(arg) = it.next() {
+      match arg.k {
+        ArgKind::Lam(pat) => return Self::Args(Box::new((subst, pat, it))),
+        ArgKind::Let(pat, e) => {
+          let e = subst.subst_expr(ctx, e);
+          subst.push_tuple_pattern_raw(ctx, pat, Ok(e))
+        }
+      }
+    }
+    Self::Ty(None)
+  }
+
   /// Check if the iterator is empty, and return the next type in the sequence.
   ///
   /// **Note**: Unlike a regular iterator, `next` cannot be called twice in a row.
   /// If you get `Some(ty)` you have to either discard the iterator or call `push`
   /// to get it ready for the next `next` call.
   fn next(&mut self, ctx: &mut InferCtx<'a>) -> Option<Ty<'a>> {
-    match *self {
-      Self::Sn(e, ty) => Some(ty),
-      Self::Ty(ref mut ty) => ty.take(),
-      Self::List(ref mut it) => it.next().copied(),
-      Self::Args(ref mut it) => {
-        todo!()
-      }
+    match self {
+      Self::Ty(ty) => ty.take(),
+      &mut Self::Sn(e, ty) => Some(ty),
+      Self::List(it) => it.next().copied(),
+      Self::Args(x) => Some(x.0.subst_ty(ctx, x.1.k.ty())),
     }
   }
 
   /// Finishes a call to `next` by substituting `val` into all types in the
   /// rest of the sequence of types.
   fn push(&mut self, ctx: &mut InferCtx<'a>, val: Expr<'a>) {
-    match *self {
-      Self::Sn(e, ty) => {
+    match self {
+      Self::Ty(_) | Self::List(_) => {}
+      &mut Self::Sn(e, ty) => {
         *self = Self::Ty(Some(intern!(ctx, TyKind::Pure(
           intern!(ctx, ExprKind::Binop(Binop::Eq, val, e))))));
       }
-      Self::Ty(_) | Self::List(_) => {}
-      Self::Args(ref mut iter) => {
-        todo!()
+      Self::Args(x) => {
+        let (ref mut subst, pat, _) = **x;
+        subst.push_tuple_pattern(ctx, pat, Ok(val));
+        let_unchecked!(Self::Args(x) = mem::take(self), *self = Self::mk_args(ctx, x.0, x.2))
       }
     }
   }
@@ -885,25 +928,6 @@ impl<'a> InferCtx<'a> {
       TyKind::Uninit(_) |
       TyKind::Moved(_) => unreachable!(),
     }))
-  }
-
-  fn move_ty_shallow(&mut self, ty: Ty<'a>) -> Ty<'a> {
-    if ty.is_copy() {ty} else {intern!(self, TyKind::Moved(ty))}
-  }
-
-  fn move_tup_pat_inner(&mut self, pat: TuplePattern<'a>) -> TuplePattern<'a> {
-    intern!(self, match pat.k {
-      TuplePatternKind::Name(n, v, ty) => TuplePatternKind::Name(n, v, self.move_ty_shallow(ty)),
-      TuplePatternKind::Error(pat, ty) => TuplePatternKind::Error(
-        self.move_tup_pat(pat), self.move_ty_shallow(ty)),
-      TuplePatternKind::Tuple(pats, ty) => TuplePatternKind::Tuple(
-        self.alloc.alloc_slice_fill_iter(pats.iter().map(|pat| self.move_tup_pat(pat))),
-        self.move_ty_shallow(ty)),
-    })
-  }
-
-  fn move_tup_pat(&mut self, pat: TuplePattern<'a>) -> TuplePattern<'a> {
-    if pat.k.ty().is_copy() { pat } else { self.move_tup_pat_inner(pat) }
   }
 
   fn equate_lft(&mut self, a: Lifetime, b: Lifetime) -> StdResult<(), ()> {
@@ -1193,12 +1217,12 @@ impl<'a> InferCtx<'a> {
         TyKind::Struct(args) => {
           let ty = args.get(u32_as_usize(i))?.k.var().k.ty();
           let mut subst = Subst::default();
-          subst.add_fvars(a);
+          subst.add_fvars(Ok(a));
           for (j, &arg) in args.iter().enumerate().take(u32_as_usize(i)) {
             match arg.k.var().k {
               TuplePatternKind::Name(_, v, _) =>
-                subst.push_raw(v, intern!(self,
-                  ExprKind::Proj(a, j.try_into().expect("overflow")))),
+                subst.push_raw(v, Ok(intern!(self,
+                  ExprKind::Proj(a, j.try_into().expect("overflow"))))),
               _ => unimplemented!("subfields"),
             }
           }
@@ -1249,9 +1273,13 @@ impl<'a> InferCtx<'a> {
       TyKind::Moved(_) => unreachable!(),
       TyKind::Infer(_) => TuplePatternResult::Indeterminate,
       TyKind::Error => TuplePatternResult::Fail(false),
-      TyKind::Unit | TyKind::True => {
+      TyKind::Unit => {
         expect!(0);
-        TuplePatternResult::Tuple(TupleIter::Ty(None), TupleBuilder::Unit)
+        TuplePatternResult::Tuple(TupleMatchKind::Unit, TupleIter::Ty(None))
+      }
+      TyKind::True => {
+        expect!(0);
+        TuplePatternResult::Tuple(TupleMatchKind::True, TupleIter::Ty(None))
       }
       TyKind::Array(ty, n) => {
         #[allow(clippy::never_loop)]
@@ -1264,9 +1292,8 @@ impl<'a> InferCtx<'a> {
         if self.equate_expr(n, e_nargs).is_err() {
           return TuplePatternResult::Fail(true)
         }
-        TuplePatternResult::Tuple(
-          TupleIter::List(self.alloc.alloc_slice_fill_copy(nargs, ty).iter()),
-          TupleBuilder::Array)
+        TuplePatternResult::Tuple(TupleMatchKind::Array,
+          TupleIter::List(self.alloc.alloc_slice_fill_copy(nargs, ty).iter()))
       }
       TyKind::Own(_) => todo!(),
       TyKind::Ref(_, _) => todo!(),
@@ -1277,16 +1304,17 @@ impl<'a> InferCtx<'a> {
           let tys = tys.iter().map(|ty| wty.map(ty).to_ty(self)).collect::<Vec<_>>();
           self.alloc.alloc_slice_fill_iter(tys.into_iter())
         };
-        TuplePatternResult::Tuple(TupleIter::List(tys.iter()),
-          if matches!(wty.ty.k, TyKind::List(_)) {TupleBuilder::List} else {TupleBuilder::And})
+        let mk = if matches!(wty.ty.k, TyKind::List(_)) {TupleMatchKind::List} else {TupleMatchKind::And};
+        TuplePatternResult::Tuple(mk, TupleIter::List(tys.iter()))
       }
       TyKind::Sn(e, ty) => {
         expect!(2);
-        TuplePatternResult::Tuple(TupleIter::Sn(e, ty), TupleBuilder::Sn)
+        TuplePatternResult::Tuple(TupleMatchKind::Sn, TupleIter::Sn(e, ty))
       }
       TyKind::Struct(args) => {
         expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
-        TuplePatternResult::Tuple(TupleIter::Args(args.iter()), TupleBuilder::List)
+        TuplePatternResult::Tuple(TupleMatchKind::Struct,
+          TupleIter::mk_args(self, Subst::default(), args.iter()))
       }
       _ => TuplePatternResult::Fail(false),
     }
@@ -1311,10 +1339,10 @@ impl<'a> InferCtx<'a> {
         let pat = Box::new(UnelabTupPat {span, k: UnelabTupPatKind::Tuple(pats, ty)});
         (UnelabTupPatKind::Error(pat, tgt), Some(self.common.e_error))
       }
-      TuplePatternResult::Tuple(it, build) => {
+      TuplePatternResult::Tuple(mk, it) => {
         // let mut it = tys.iter();
         let (pats, es) = self.lower_tuple_pattern_tuple_with(pats, it);
-        (UnelabTupPatKind::Tuple(pats, tgt), build.build(self, es))
+        (UnelabTupPatKind::Tuple(pats, tgt), mk.build(self, es))
       }
     };
     (UnelabTupPat {span, k}, e)
@@ -1353,7 +1381,7 @@ impl<'a> InferCtx<'a> {
         let mut res = self.tuple_pattern_tuple(pats.len(), tgt);
         if let TuplePatternResult::Indeterminate = res {
           let tys = self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty));
-          res = TuplePatternResult::Tuple(TupleIter::List(tys.iter()), TupleBuilder::List)
+          res = TuplePatternResult::Tuple(TupleMatchKind::List, TupleIter::List(tys.iter()))
         }
         match res {
           TuplePatternResult::Indeterminate => unreachable!(),
@@ -1362,10 +1390,10 @@ impl<'a> InferCtx<'a> {
               self.alloc.alloc_slice_fill_iter(pats.iter().map(UnelabTupPat::ty))));
             let pats = pats.iter().map(|pat| self.finish_tuple_pattern_inner(pat).0).collect::<Vec<_>>();
             let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter());
-            let pat = intern!(self, TuplePatternKind::Tuple(pats, ty));
+            let pat = intern!(self, TuplePatternKind::Tuple(pats, TupleMatchKind::List, ty));
             (TuplePatternKind::Error(pat, tgt), self.common.e_error)
           }
-          TuplePatternResult::Tuple(mut it, build) => {
+          TuplePatternResult::Tuple(mk, mut it) => {
             let mut es = Vec::with_capacity(pats.len());
             let pats = pats.iter().map(|pat| {
               let tgt = it.next(self);
@@ -1375,8 +1403,8 @@ impl<'a> InferCtx<'a> {
               pat
             }).collect::<Vec<_>>();
             let pats = self.alloc.alloc_slice_fill_iter(pats.into_iter());
-            let e = build.build(self, es).unwrap_or(self.common.e_error);
-            (TuplePatternKind::Tuple(pats, tgt), e)
+            let e = mk.build(self, es).unwrap_or(self.common.e_error);
+            (TuplePatternKind::Tuple(pats, mk, tgt), e)
           }
         }
       }
@@ -1454,7 +1482,9 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Struct(args))
       }
       ast::TypeKind::All(pats, ty) => {
-        let pats = pats.iter().map(|pat| self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0).collect::<Vec<_>>();
+        let pats = pats.iter().map(|pat| {
+          self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0
+        }).collect::<Vec<_>>();
         let mut ty = self.lower_ty(ty, ExpectTy::Any);
         for pat in pats.into_iter().rev() {
           let pat = self.finish_tuple_pattern(&pat);
@@ -1572,8 +1602,8 @@ impl<'a> InferCtx<'a> {
     self.alloc.alloc_slice_fill_iter(args.into_iter().rev())
   }
 
-  fn lower_variant(&mut self, variant: &'a Option<Box<ast::Variant>>) -> Option<Box<hir::Variant<'a>>> {
-    variant.as_deref().map(|Spanned {span, k: (e, vt)}| Box::new(match vt {
+  fn lower_variant(&mut self, variant: &'a Option<Box<ast::Variant>>) -> Option<hir::Variant<'a>> {
+    variant.as_deref().map(|Spanned {span, k: (e, vt)}| match vt {
       ast::VariantType::Down => {
         let e = self.check_pure_expr(e, self.common.nat());
         hir::Variant(e, hir::VariantType::Down)
@@ -1588,7 +1618,7 @@ impl<'a> InferCtx<'a> {
         let e2 = self.check_pure_expr(e2, self.common.int());
         hir::Variant(e, hir::VariantType::UpLe(e2))
       }
-    }))
+    })
   }
 
   fn check_array(&mut self, span: &'a FileSpan,
@@ -1818,8 +1848,9 @@ impl<'a> InferCtx<'a> {
       },
 
       ast::ExprKind::Proj(e, field) => {
-        enum TysOrStruct<'a> {
-          Tys(&'a [Ty<'a>]),
+        enum ProjKind<'a> {
+          And(&'a [Ty<'a>]),
+          List(&'a [Ty<'a>]),
           Struct(&'a [Arg<'a>]),
         }
         let (mut e2, pe, ty) = self.lower_expr(e, ExpectExpr::Any);
@@ -1830,9 +1861,9 @@ impl<'a> InferCtx<'a> {
               e2 = hir::Expr {span, k: hir::ExprKind::Rval(Box::new(e2))};
               wty = ty2;
             }
-            TyKind::List(tys) |
-            TyKind::And(tys) => break TysOrStruct::Tys(tys),
-            TyKind::Struct(args) => break TysOrStruct::Struct(args),
+            TyKind::List(tys) => break ProjKind::List(tys),
+            TyKind::And(tys) => break ProjKind::And(tys),
+            TyKind::Struct(args) => break ProjKind::Struct(args),
             TyKind::Error => error!(),
             _ => error!(e2.span, ExpectedStruct(wty))
           }
@@ -1840,12 +1871,17 @@ impl<'a> InferCtx<'a> {
         let ret = |i, pe, ty| ret![Proj(Box::new(e2), i), pe, ty];
         #[allow(clippy::never_loop)] loop { // try block, not a loop
           match tys {
-            TysOrStruct::Tys(tys) => if let FieldName::Number(i) = field.k {
+            ProjKind::List(tys) => if let FieldName::Number(i) = field.k {
               if let Some(&ty) = tys.get(u32_as_usize(i)) {
                 break ret(i, pe.map(|pe| intern!(self, ExprKind::Proj(pe, i))), ty)
               }
             },
-            TysOrStruct::Struct(args) => {
+            ProjKind::And(tys) => if let FieldName::Number(i) = field.k {
+              if let Some(&ty) = tys.get(u32_as_usize(i)) {
+                break ret(i, pe, ty)
+              }
+            },
+            ProjKind::Struct(args) => {
               if let Some((i, vec)) = match field.k {
                 FieldName::Number(i) if u32_as_usize(i) < args.len() => Some((i, vec![])),
                 FieldName::Number(i) => None,
@@ -1853,29 +1889,19 @@ impl<'a> InferCtx<'a> {
               } {
                 if !vec.is_empty() { unimplemented!("subfields") }
                 let ty = args[u32_as_usize(i)].k.var().k.ty();
-                break if let Some(pe) = pe {
-                  let mut subst = Subst::default();
-                  subst.add_fvars(pe);
-                  for (j, &arg) in args.iter().enumerate().take(u32_as_usize(i)) {
-                    match arg.k.var().k {
-                      TuplePatternKind::Name(_, v, _) =>
-                        subst.push_raw(v, intern!(self,
-                          ExprKind::Proj(pe, j.try_into().expect("overflow")))),
-                      _ => unimplemented!("subfields"),
-                    }
+                let mut subst = Subst::default();
+                let per = pe.ok_or(&e.span);
+                subst.add_fvars(per);
+                for (j, &arg) in args.iter().enumerate().take(u32_as_usize(i)) {
+                  match arg.k.var().k {
+                    TuplePatternKind::Name(_, v, _) =>
+                      subst.push_raw(v, per.map(|pe| intern!(self,
+                        ExprKind::Proj(pe, j.try_into().expect("overflow"))))),
+                    _ => unimplemented!("subfields"),
                   }
-                  let ty = subst.subst_ty(self, ty);
-                  ret(i, Some(intern!(self, ExprKind::Proj(pe, i))), ty)
-                } else {
-                  let mut fvars = HashSet::new();
-                  ty.on_vars(|v| {fvars.insert(v);});
-                  let mut bad = false;
-                  for &arg in &args[..u32_as_usize(i)] {
-                    arg.k.var().k.on_vars(&mut |_, v| bad |= fvars.contains(&v))
-                  }
-                  if bad { error!(&e.span, ExpectedPure) }
-                  ret(i, None, ty)
                 }
+                let ty = subst.subst_ty(self, ty);
+                break ret(i, pe.map(|pe| intern!(self, ExprKind::Proj(pe, i))), ty)
               }
             }
           }
@@ -1924,7 +1950,8 @@ impl<'a> InferCtx<'a> {
             intern!(self, TyKind::List(tys))
           });
         macro_rules! expect {($n:expr) => {{
-          if es.len() != $n { error!(span, NumArgs($n, es.len())) }
+          let n = $n;
+          if es.len() != n { error!(span, NumArgs(n, es.len())) }
         }}}
         macro_rules! proof {($e:expr, $ty:expr) => {
           ret![Proof({use hir::Proof::*; $e}), Some(self.common.e_unit), $ty]
@@ -1996,7 +2023,7 @@ impl<'a> InferCtx<'a> {
           }
           TyKind::Struct(args) => {
             expect!(args.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count());
-            let (es, pes) = self.check_args(es, args, |_, es, pes| (es, pes));
+            let (es, pes, _) = self.check_args(es, args);
             let val = pes.map(|pes| intern!(self, ExprKind::List(
               self.alloc.alloc_slice_fill_iter(pes.into_iter()))));
             ret![List(es, tgt), val, tgt]
@@ -2327,10 +2354,12 @@ impl<'a> InferCtx<'a> {
         ret![Unreachable(Box::new(h)), Some(self.common.e_unit), tgt]
       }
 
-      &ast::ExprKind::Jump(lab, i, ref args, ref variant) => {
-        let label = self.labels[&lab].labels[i as usize].args;
-        let (args, variant) = self.check_args(args, label,
-          |this, args, _| (args, this.check_variant_use(variant.as_deref())));
+      &ast::ExprKind::Jump(lab, i, ref args, ref pf) => {
+        let hir::Label {args: tgt, variant, ..} = self.labels[&lab].labels[i as usize];
+        let num_args = tgt.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count();
+        if args.len() != num_args { error!(span, NumArgs(num_args, args.len())) }
+        let (args, _, subst) = self.check_args(args, tgt);
+        let variant = self.check_variant_use(subst, pf.as_deref(), variant);
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
         ret![Jump(lab, i, args, variant), Some(self.common.e_unit), tgt]
       }
@@ -2353,7 +2382,9 @@ impl<'a> InferCtx<'a> {
 
       ast::ExprKind::Return(args) => {
         if let Some(tys) = self.returns {
-          let args = self.check_args(args, tys, |this, args, _| args);
+          let num_args = tys.iter().filter(|&arg| matches!(arg.k, ArgKind::Lam(_))).count();
+          if args.len() != num_args { error!(span, NumArgs(num_args, args.len())) }
+          let (args, _, _) = self.check_args(args, tys);
           let tgt = expect.to_ty().unwrap_or(self.common.t_false);
           ret![Return(args), Some(self.common.e_unit), tgt]
         } else {
@@ -2457,28 +2488,74 @@ impl<'a> InferCtx<'a> {
     (self.coerce_expr(e, ty, tgt), pe)
   }
 
-  fn check_args<R>(&mut self, args: &'a [ast::Expr], tgt: &'a [Arg<'a>],
-    f: impl FnOnce(&mut Self, Vec<hir::Expr<'a>>, Option<Vec<Expr<'a>>>) -> R
-  ) -> R {
-    todo!();
-    // f(self, args)
+  fn check_args(&mut self,
+    es: &'a [ast::Expr], tgt: &'a [Arg<'a>]
+  ) -> (Vec<hir::Expr<'a>>, Option<Vec<Expr<'a>>>, Subst<'a>) {
+    debug_assert!(es.len() == tgt.iter().filter(|&a| matches!(a.k, ArgKind::Lam(_))).count());
+    let mut es_out = Vec::with_capacity(es.len());
+    let mut pes = Some(vec![]);
+    let mut es_it = es.iter();
+    let mut subst = Subst::default();
+    for &arg in tgt {
+      match arg.k {
+        ArgKind::Lam(arg) => {
+          let e = es_it.next().expect("checked");
+          let ty = subst.subst_ty(self, arg.k.ty());
+          let (e, pe) = self.check_expr(e, ty);
+          let pr = pe.ok_or(e.span);
+          if let Some(ref mut vec) = pes {
+            if let Some(pe) = pe { vec.push(pe) }
+            else { pes = None }
+          }
+          subst.push_tuple_pattern(self, arg, pr);
+          es_out.push(e);
+        }
+        ArgKind::Let(arg, e) => {
+          let e = subst.subst_expr(self, e);
+          subst.push_tuple_pattern_raw(self, arg, Ok(e))
+        }
+      }
+    }
+    (es_out, pes, subst)
   }
 
-  fn check_variant(&mut self, variant: Option<&'a ast::Variant>) -> Option<Box<hir::Variant<'a>>> {
-    let e = variant?;
-    todo!();
-    // Some(Box::new(e))
+  fn check_variant(&mut self, variant: Option<&'a ast::Variant>) -> Option<hir::Variant<'a>> {
+    let variant = variant?;
+    let (e, vt) = &variant.k;
+    Some(match vt {
+      ast::VariantType::Down =>
+        hir::Variant(self.check_pure_expr(e, self.common.nat()), hir::VariantType::Down),
+      ast::VariantType::UpLt(ub) => {
+        let e = self.check_pure_expr(e, self.common.int());
+        hir::Variant(e, hir::VariantType::UpLt(self.check_pure_expr(ub, self.common.int())))
+      },
+      ast::VariantType::UpLe(ub) => {
+        let e = self.check_pure_expr(e, self.common.int());
+        hir::Variant(e, hir::VariantType::UpLe(self.check_pure_expr(ub, self.common.int())))
+      },
+    })
   }
 
-  fn check_variant_use(&mut self, variant: Option<&'a ast::Expr>) -> Option<Box<hir::Expr<'a>>> {
-    let e = variant?;
-    todo!();
-    // Some(Box::new(e))
-  }
-
-  fn check_proc_args(&mut self, args: impl ExactSizeIterator<Item=ast::Expr>, tgt: &'a [Arg<'a>]) {
-    drop((args, tgt));
-    todo!()
+  fn check_variant_use(&mut self,
+    mut subst: Subst<'a>, variant: Option<&'a ast::Expr>, tgt: Option<hir::Variant<'a>>,
+  ) -> Option<Box<hir::Expr<'a>>> {
+    let variant = variant?;
+    if let Some(hir::Variant(e, vt)) = tgt {
+      let e2 = subst.subst_expr(self, e);
+      let ty = intern!(self, TyKind::Pure(intern!(self, match vt {
+        hir::VariantType::Down => ExprKind::Binop(Binop::Lt, e2, e),
+        hir::VariantType::UpLt(ub) => ExprKind::Binop(Binop::And,
+          intern!(self, ExprKind::Binop(Binop::Lt, e, e2)),
+          intern!(self, ExprKind::Binop(Binop::Lt, e2, ub))),
+        hir::VariantType::UpLe(ub) => ExprKind::Binop(Binop::And,
+          intern!(self, ExprKind::Binop(Binop::Lt, e, e2)),
+          intern!(self, ExprKind::Binop(Binop::Le, e2, ub))),
+      })));
+      Some(Box::new(self.check_expr(variant, ty).0))
+    } else {
+      self.errors.push(hir::Spanned {span: &variant.span, k: TypeError::UnexpectedVariant});
+      None
+    }
   }
 
   fn as_pure(&mut self, span: &'a FileSpan, pe: Option<Expr<'a>>) -> Expr<'a> {
@@ -2582,8 +2659,8 @@ impl<'a> InferCtx<'a> {
         let name = hir::Spanned {span: &name.span, k: name.k};
         let args2 = args.iter().map(|arg| self.lower_arg(&arg.span, &arg.k.1)).collect::<Vec<_>>();
         let mut subst = Subst::default();
-        let rets = rets.iter().map(|ret| match ret {
-          ast::Ret::Reg(pat) => UnelabArg::Lam(self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0),
+        let rets = rets.iter().map(|ret| UnelabArg::Lam(match ret {
+          ast::Ret::Reg(pat) => self.lower_tuple_pattern(&pat.span, &pat.k, None, None).0,
           &ast::Ret::Out(g, i, n, v, ref ty) => {
             let ty = if let Some(ty) = ty {
               self.lower_ty(ty, ExpectTy::Any)
@@ -2592,12 +2669,12 @@ impl<'a> InferCtx<'a> {
             };
             let ctx = self.new_context_next(v, None, ty);
             self.dc.context = ctx.into();
-            UnelabArg::Lam(UnelabTupPat {
+            UnelabTupPat {
               span: &args[u32_as_usize(i)].span,
               k: UnelabTupPatKind::Name(g, n, ctx)
-            })
+            }
           }
-        }).collect();
+        })).collect();
         let rets = self.finish_args(rets);
         let ctx = self.dc.context;
         let variant = self.lower_variant(variant);
@@ -2617,9 +2694,30 @@ impl<'a> InferCtx<'a> {
         }));
         hir::ItemKind::Proc {kind, name, tyargs, args, rets, variant, body}
       }
-      ast::ItemKind::Global { lhs, rhs } |
-      ast::ItemKind::Const { lhs, rhs } => todo!(),
-      ast::ItemKind::Typedef { name, tyargs, args, val } => todo!(),
+      ast::ItemKind::Global {lhs, rhs} => {
+        let mut ctx = self.dc.context;
+        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
+        self.dc.context = ctx;
+        let (rhs, _) = self.check_expr(rhs, lhs.ty());
+        let lhs = self.finish_tuple_pattern_inner(&lhs).0;
+        hir::ItemKind::Global {lhs, rhs}
+      }
+      ast::ItemKind::Const {lhs, rhs} => {
+        let mut ctx = self.dc.context;
+        let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
+        self.dc.context = ctx;
+        let rhs = self.check_pure_expr(rhs, lhs.ty());
+        let lhs = self.finish_tuple_pattern_inner(&lhs).0;
+        hir::ItemKind::Const {lhs, rhs}
+      }
+      &ast::ItemKind::Typedef {ref name, tyargs, ref args, ref val} => {
+        let name = hir::Spanned {span: &name.span, k: name.k};
+        if tyargs != 0 { todo!() }
+        let args2 = args.iter().map(|arg| self.lower_arg(&arg.span, &arg.k.1)).collect::<Vec<_>>();
+        let val = self.lower_ty(val, ExpectTy::Any);
+        let args = self.finish_args(args2);
+        hir::ItemKind::Typedef {name, tyargs, args, val}
+      }
     };
     hir::Spanned {span, k: item}
   }

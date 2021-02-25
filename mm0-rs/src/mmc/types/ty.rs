@@ -192,11 +192,35 @@ pub enum TuplePatternKind<'a> {
   /// A variable binding.
   Name(AtomId, VarId, Ty<'a>),
   /// A tuple destructuring pattern.
-  Tuple(&'a [TuplePattern<'a>], Ty<'a>),
+  Tuple(&'a [TuplePattern<'a>], TupleMatchKind, Ty<'a>),
   /// An error that has been reported.
   /// (We keep the original tuple pattern so that name scoping still works.)
   Error(TuplePattern<'a>, Ty<'a>),
 }
+
+/// Defines the kind of pattern match being performed by a [`TuplePatternKind::Tuple`]. The [`Ty`]
+/// part defines this uniquely, but there is some weak head normalization required to determine
+/// this, so it is easier to have an enum to quickly match against.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TupleMatchKind {
+  /// A unit pattern match just returns `()`.
+  Unit,
+  /// A true pattern match just returns `()`.
+  True,
+  /// A list pattern match constructs `(e1, ..., en)`.
+  List,
+  /// A dependent list pattern match constructs `(e1, ..., en)`.
+  Struct,
+  /// An array pattern match constructs an array literal `[e1, ..., en]`.
+  Array,
+  /// An and pattern match uses the first element in the list. (All elements should be the
+  /// same, although we don't check this here.)
+  And,
+  /// A singleton pattern match `(x, h): sn {a : T}` returns `x`.
+  /// (It could also soundly return `a`, but `x` seems more useful here.)
+  Sn,
+}
+crate::deep_size_0!(TupleMatchKind);
 
 impl<'a> TuplePatternKind<'a> {
   /// The type of values that will be matched by the pattern.
@@ -204,7 +228,7 @@ impl<'a> TuplePatternKind<'a> {
     match *self {
       TuplePatternKind::Name(_, _, ty) |
       TuplePatternKind::Error(_, ty) |
-      TuplePatternKind::Tuple(_, ty) => ty
+      TuplePatternKind::Tuple(_, _, ty) => ty
     }
   }
 
@@ -213,7 +237,7 @@ impl<'a> TuplePatternKind<'a> {
     match *self {
       TuplePatternKind::Name(n, v, _) => f(n, v),
       TuplePatternKind::Error(pat, _) => pat.k.on_vars(f),
-      TuplePatternKind::Tuple(pats, _) => for pat in pats { pat.k.on_vars(f) }
+      TuplePatternKind::Tuple(pats, _, _) => for pat in pats { pat.k.on_vars(f) }
     }
   }
 
@@ -221,7 +245,7 @@ impl<'a> TuplePatternKind<'a> {
     match *self {
       TuplePatternKind::Name(a, _, _) => a == f,
       TuplePatternKind::Error(pat, _) => pat.k.find_field(f, idxs),
-      TuplePatternKind::Tuple(pats, _) =>
+      TuplePatternKind::Tuple(pats, _, _) =>
         pats.iter().enumerate().any(|(i, &pat)| {
           pat.k.find_field(f, idxs) && {
             idxs.push(i.try_into().expect("overflow"));
@@ -237,7 +261,7 @@ impl AddFlags for TuplePatternKind<'_> {
     match *self {
       TuplePatternKind::Name(_, _, ty) => *f |= ty,
       TuplePatternKind::Error(pat, ty) => *f |= (Flags::HAS_ERROR, pat, ty),
-      TuplePatternKind::Tuple(pats, ty) => *f |= (pats, ty),
+      TuplePatternKind::Tuple(pats, _, ty) => *f |= (pats, ty),
     }
   }
 }
@@ -248,7 +272,7 @@ impl EnvDisplay for TuplePatternKind<'_> {
     match *self {
       TuplePatternKind::Name(a, _, _) => a.fmt(fe, f),
       TuplePatternKind::Error(pat, _) => write!(f, "??{}", fe.to(pat)),
-      TuplePatternKind::Tuple(pats, _) =>
+      TuplePatternKind::Tuple(pats, _, _) =>
         write!(f, "({})", pats.iter().map(|&pat| fe.to(pat)).format(" ")),
     }
   }

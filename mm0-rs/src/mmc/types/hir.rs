@@ -164,7 +164,7 @@ impl<'a> ContextNext<'a> {
 }
 
 /// The type of variant, or well founded order that recursions decrease.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Copy, Debug, DeepSizeOf)]
 pub enum VariantType<'a> {
   /// This variant is a nonnegative natural number which decreases to 0.
   Down,
@@ -178,7 +178,7 @@ pub enum VariantType<'a> {
 
 /// A variant is a pure expression, together with a
 /// well founded order that decreases on all calls.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Copy, Debug, DeepSizeOf)]
 pub struct Variant<'a>(pub ty::Expr<'a>, pub VariantType<'a>);
 
 /// A label in a label group declaration. Individual labels in the group
@@ -188,7 +188,7 @@ pub struct Label<'a> {
   /// The arguments of the label
   pub args: &'a [ty::Arg<'a>],
   /// The variant, for recursive calls
-  pub variant: Option<Box<Variant<'a>>>,
+  pub variant: Option<Variant<'a>>,
   /// The code that is executed when you jump to the label
   pub body: Block<'a>,
 }
@@ -343,7 +343,7 @@ pub enum ExprKind<'a> {
     /// The loop condition.
     cond: Box<Expr<'a>>,
     /// The variant, which must decrease on every round around the loop.
-    var: Option<Box<Variant<'a>>>,
+    var: Option<Variant<'a>>,
     /// The body of the loop.
     body: Box<Block<'a>>,
   },
@@ -417,7 +417,7 @@ pub enum ItemKind<'a> {
     /// The return values of the procedure. (Functions and procedures return multiple values in MMC.)
     rets: &'a [ty::Arg<'a>],
     /// The variant, used for recursive functions.
-    variant: Option<Box<Variant<'a>>>,
+    variant: Option<Variant<'a>>,
     /// The body of the procedure.
     body: Block<'a>
   },
