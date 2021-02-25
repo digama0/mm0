@@ -28,7 +28,7 @@ fn parse_unify(
   }
   impl<F: FnMut() -> AtomId> State<'_, F> {
     fn go(&mut self) -> Result<ExprNode> {
-      let r = match self.it.next().unwrap_or_else(|| Err(exhausted!()))? {
+      let r = match self.it.next().unwrap_or(Err(exhausted!()))? {
         UnifyCmd::Term {tid, save} => {
           let n = self.fwd.len();
           if save {self.fwd.push(None)}
