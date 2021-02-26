@@ -882,7 +882,7 @@ impl<'a> TupleIter<'a> {
     while let Some(arg) = rest.next() {
       match arg.k {
         ArgKind::Lam(first) =>
-          return Self::Args(Box::new(TupleIterArgs {subst, first, span, rest})),
+          return Self::Args(Box::new(TupleIterArgs {subst, span, first, rest})),
         ArgKind::Let(pat, e) => {
           let e = subst.subst_expr(ctx, span, e);
           subst.push_tuple_pattern_raw(ctx, pat, Ok(e))

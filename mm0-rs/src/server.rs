@@ -533,7 +533,7 @@ fn log_message(message: String) -> Result<()> {
 fn send_diagnostics(uri: Url, version: Option<i32>, diagnostics: Vec<Diagnostic>) -> Result<()> {
   send_message(Notification {
     method: "textDocument/publishDiagnostics".to_owned(),
-    params: to_value(PublishDiagnosticsParams {uri, version, diagnostics})?
+    params: to_value(PublishDiagnosticsParams {uri, diagnostics, version})?
   })
 }
 
