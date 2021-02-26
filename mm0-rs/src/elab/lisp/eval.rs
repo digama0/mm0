@@ -10,7 +10,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use num::{BigInt, ToPrimitive, Zero};
+use num::{BigInt, Signed, ToPrimitive, Zero};
 use crate::{ast::SExpr, ArcString, AtomData, AtomId, BoxError, DeclKey, DocComment, ElabError,
   Elaborator, Environment, ErrorLevel, FileRef, FileSpan, LispData,
   MergeStrategy, MergeStrategyInner, ObjectKind, SliceExt, Span, StmtTrace,
@@ -944,8 +944,8 @@ make_builtins! { self, sp1, sp2, args,
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it {
       try1!(self.with_int(&e, |e| {
-        if matches!(e.sign(), num::bigint::Sign::Minus) {
-          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+        if e.is_negative() {
+          let i: u64 = e.magnitude().try_into().map_err(|_| "shift out of range")?;
           n >>= &i
         } else {
           let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
@@ -961,8 +961,8 @@ make_builtins! { self, sp1, sp2, args,
     let mut n: BigInt = try1!(self.as_int(&it.next().unwrap()));
     for e in it {
       try1!(self.with_int(&e, |e| {
-        if matches!(e.sign(), num::bigint::Sign::Minus) {
-          let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
+        if e.is_negative() {
+          let i: u64 = e.magnitude().try_into().map_err(|_| "shift out of range")?;
           n <<= &i
         } else {
           let i: u64 = e.try_into().map_err(|_| "shift out of range")?;
