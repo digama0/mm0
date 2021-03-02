@@ -4,17 +4,19 @@
 #![allow(clippy::needless_collect)]
 #![allow(clippy::match_same_arms)]
 
-use std::{borrow::Borrow, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
+use std::{borrow::{Borrow, Cow}, cell::RefCell, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Index};
 use std::result::Result as StdResult;
 use std::convert::{TryFrom, TryInto};
 use bumpalo::Bump;
 use hashbrown::{HashMap, HashSet, hash_map::RawEntryMut};
 use hir::{Context, ContextNext};
+use itertools::Itertools;
 use num::{BigInt, Signed};
 use types::IntTy;
 use crate::{AtomId, LispVal, FormatEnv, u32_as_usize, FileSpan};
-use super::{parser::try_get_fspan, types::{self, Binop, FieldName, Size, Spanned, Unop, VarId,
-  ast, hir::{self, GenId}}};
+use super::{parser::try_get_fspan,
+  types::{self, Binop, BinopType, FieldName, Size, Spanned, Unop, VarId,
+    ast, hir::{self, GenId}}};
 use super::types::entity::{Entity, ConstTc, GlobalTc, ProcTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
@@ -181,15 +183,13 @@ impl<'a, K: UnifyKey, V> Index<K> for Assignments<'a, K, V> {
   fn index(&self, k: K) -> &Self::Output { &self.mvars[u32_as_usize(k.index())] }
 }
 
-impl IntTy {
-  fn to_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> { intern!(ctx, self.into()) }
-}
-
 impl Unop {
   #[must_use] fn arg_ty<'a>(self, ctx: &mut InferCtx<'a>) -> Ty<'a> {
     match self {
       Unop::Not => ctx.common.t_bool,
-      Unop::Neg | Unop::BitNot(Size::Inf) => ctx.common.int(),
+      Unop::Neg |
+      Unop::BitNot(Size::Inf) |
+      Unop::As(_) => ctx.common.int(),
       Unop::BitNot(sz) => ctx.common.t_uint(sz),
     }
   }
@@ -198,6 +198,7 @@ impl Unop {
       Unop::Not => ctx.common.t_bool,
       Unop::Neg | Unop::BitNot(Size::Inf) => ctx.common.int(),
       Unop::BitNot(sz) => ctx.common.t_uint(sz),
+      Unop::As(ity) => ctx.common.int_ty(ity),
     }
   }
 }
@@ -411,7 +412,6 @@ impl<'a> Subst<'a> {
         if es == es2 { return e }
         intern!(ctx, ExprKind::Array(ctx.alloc.alloc_slice_fill_iter(es2.into_iter())))
       }
-      ExprKind::As(e, ak@AsKind::Mod(_)) => subst!(|e| ExprKind::As(e, ak), e),
       ExprKind::Sizeof(ty) => {
         let ty2 = self.subst_ty(ctx, sp, ty);
         if ty == ty2 { return e }
@@ -938,11 +938,12 @@ struct Common<'a> {
   t_int: [Ty<'a>; 5],
   t_error: Ty<'a>,
   e_error: Expr<'a>,
+  e_num: [Expr<'a>; 5],
 }
 
 impl<'a> Common<'a> {
   fn new(i: &mut Interner<'a>, alloc: &'a Bump) -> Self {
-    macro_rules! alloc {($e:expr) => {i.intern(alloc, $e)}}
+    macro_rules! alloc {($e:expr) => {{let e = $e; i.intern(alloc, e)}}}
     macro_rules! allocs {($f:expr; $($e:expr),*) => {[$(alloc!($f($e))),*]}}
     #[allow(clippy::enum_glob_use)] use Size::*;
     Self {
@@ -956,6 +957,7 @@ impl<'a> Common<'a> {
       e_error: alloc!(ExprKind::Error),
       t_true: alloc!(TyKind::True),
       t_false: alloc!(TyKind::False),
+      e_num: allocs!(|x: u32| ExprKind::Int(alloc.alloc(x.into())); 0, 1, 2, 4, 8),
     }
   }
 
@@ -969,6 +971,17 @@ impl<'a> Common<'a> {
     match ity {
       IntTy::Int(sz) => self.t_int(sz),
       IntTy::UInt(sz) => self.t_uint(sz),
+    }
+  }
+
+  #[inline] const fn num(&self, i: u32) -> Expr<'a> {
+    match i {
+      0 => self.e_num[0],
+      1 => self.e_num[1],
+      2 => self.e_num[2],
+      4 => self.e_num[3],
+      8 => self.e_num[4],
+      _ => [][0], // const panic
     }
   }
 }
@@ -1102,8 +1115,144 @@ impl<'a> InferCtx<'a> {
     true
   }
 
-  fn whnf_expr(&self, e: Expr<'a>, ty: Ty<'a>) -> Expr<'a> {
-    e // FIXME
+  fn whnf_unop(&mut self, op: Unop, e: Expr<'a>) -> Expr<'a> {
+    if op.int_in_out() {
+      if_chain! {
+        if let ExprKind::Int(n) = self.whnf_expr(e).k;
+        if let Some(n2) = op.apply_int(n);
+        let n2 = match n2 {
+          Cow::Borrowed(n2) => n2,
+          Cow::Owned(n2) => self.alloc.alloc(n2)
+        };
+        then { return intern!(self, ExprKind::Int(n2)) }
+      }
+    } else if let ExprKind::Bool(b) = self.whnf_expr(e).k {
+      return self.common.e_bool(op.apply_bool(b))
+    }
+    intern!(self, ExprKind::Unop(op, e))
+  }
+
+  fn whnf_binop(&mut self, op: Binop, e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
+    if op.ty().int_in() {
+      if_chain! {
+        if let ExprKind::Int(n1) = self.whnf_expr(e1).k;
+        if let ExprKind::Int(n2) = self.whnf_expr(e2).k;
+        then {
+          if op.ty().int_out() {
+            if let Some(n) = op.apply_int_int(n1, n2) {
+              return intern!(self, ExprKind::Int(self.alloc.alloc(n)))
+            }
+          } else {
+            return self.common.e_bool(op.apply_int_bool(n1, n2))
+          }
+        }
+      }
+    } else {
+      if_chain! {
+        if let ExprKind::Bool(b1) = self.whnf_expr(e1).k;
+        if let ExprKind::Bool(b2) = self.whnf_expr(e2).k;
+        then { return self.common.e_bool(op.apply_bool_bool(b1, b2)) }
+      }
+    }
+    intern!(self, ExprKind::Binop(op, e1, e2))
+  }
+
+  fn whnf_expr(&mut self, e: Expr<'a>) -> Expr<'a> {
+    match e.k {
+      ExprKind::Unit |
+      ExprKind::Bool(_) |
+      ExprKind::Int(_) |
+      ExprKind::List(_) |
+      ExprKind::Array(_) |
+      ExprKind::Mm0(_) |
+      ExprKind::Error => e,
+      ExprKind::Var(v) => {
+        let (_, e2, _) = self.dc.get_var(v);
+        if e == e2 { return e }
+        self.whnf_expr(e2)
+      }
+      ExprKind::Const(_) => e, // TODO
+      ExprKind::Unop(op, e) => self.whnf_unop(op, e),
+      ExprKind::Binop(op, e1, e2) => self.whnf_binop(op, e1, e2),
+      ExprKind::Index(a, i) => if_chain! {
+        if let ExprKind::Array(es) = self.whnf_expr(a).k;
+        if let ExprKind::Int(i) = self.whnf_expr(i).k;
+        if let Ok(i) = usize::try_from(i);
+        if i < es.len();
+        then { self.whnf_expr(es[i]) }
+        else { e }
+      },
+      ExprKind::Slice(a, i, l) => if_chain! {
+        if let ExprKind::Array(es) = self.whnf_expr(a).k;
+        if let ExprKind::Int(i) = self.whnf_expr(i).k;
+        if let Ok(i) = usize::try_from(i);
+        if let ExprKind::Int(l) = self.whnf_expr(l).k;
+        if let Ok(l) = l.try_into();
+        if let Some(il) = i.checked_add(l);
+        if il < es.len();
+        then { intern!(self, ExprKind::Array(&es[i..il])) }
+        else { e }
+      },
+      ExprKind::Proj(p, i) => if_chain! {
+        if let ExprKind::List(es) = self.whnf_expr(p).k;
+        let i = u32_as_usize(i);
+        if i < es.len();
+        then { self.whnf_expr(es[i]) }
+        else { e }
+      },
+      ExprKind::UpdateIndex(a, i, val) => if_chain! {
+        if let ExprKind::Array(es) = self.whnf_expr(a).k;
+        if let ExprKind::Int(i) = self.whnf_expr(i).k;
+        if let Ok(i) = usize::try_from(i);
+        if i < es.len();
+        then {{ // see rust-analyzer#7845
+          let es2 = self.alloc.alloc_slice_copy(es);
+          es2[i] = val;
+          intern!(self, ExprKind::Array(es2))
+        }}
+        else { e }
+      },
+      ExprKind::UpdateSlice(a, i, l, val) => if_chain! {
+        if let ExprKind::Array(es) = self.whnf_expr(a).k;
+        if let ExprKind::Int(i) = self.whnf_expr(i).k;
+        if let Ok(i) = usize::try_from(i);
+        if let ExprKind::Int(l) = self.whnf_expr(l).k;
+        if let Ok(l) = l.try_into();
+        if let Some(il) = i.checked_add(l);
+        if il < es.len();
+        if let ExprKind::Array(val2) = self.whnf_expr(val).k;
+        if l == val2.len();
+        then {{ // see rust-analyzer#7845
+          let es2 = self.alloc.alloc_slice_copy(es);
+          for j in 0..l { es2[i+j] = val2[j] }
+          intern!(self, ExprKind::Array(es2))
+        }}
+        else { e }
+      },
+      ExprKind::UpdateProj(p, i, val) => if_chain! {
+        if let ExprKind::List(es) = self.whnf_expr(p).k;
+        let i = u32_as_usize(i);
+        if i < es.len();
+        then {{ // see rust-analyzer#7845
+          let es2 = self.alloc.alloc_slice_copy(es);
+          es2[i] = val;
+          intern!(self, ExprKind::List(es2))
+        }}
+        else { e }
+      },
+      ExprKind::Sizeof(ty) => self.whnf_sizeof(Default::default(), ty),
+      ExprKind::Call {f, tys, args} => {
+        let f_ty = let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f),
+          unwrap_unchecked!(ty.k.ty()));
+        todo!()
+      }
+      ExprKind::If {cond, then, els} =>
+        if let ExprKind::Bool(b) = self.whnf_expr(cond).k {
+          self.whnf_expr(if b {then} else {els})
+        } else { e },
+      ExprKind::Infer(v) =>
+        if let Some(e) = self.expr_mvars.lookup(v) { self.whnf_expr(e) } else { e }
+    }
   }
 
   fn whnf_ty(&mut self, wty: WhnfTy<'a>) -> WhnfTy<'a> {
@@ -1139,7 +1288,7 @@ impl<'a> InferCtx<'a> {
         todo!()
       }
       TyKind::If(e, t1, t2) => {
-        let e2 = self.whnf_expr(e, self.common.t_bool);
+        let e2 = self.whnf_expr(e);
         match e2.k {
           ExprKind::Bool(false) => return self.whnf_ty(wty.map(t1)),
           ExprKind::Bool(true) => return self.whnf_ty(wty.map(t2)),
@@ -1169,7 +1318,7 @@ impl<'a> InferCtx<'a> {
         }
       }
       TyKind::Pure(e) => {
-        let e2 = self.whnf_expr(e, self.common.t_bool);
+        let e2 = self.whnf_expr(e);
         if e == e2 {return wty}
         TyKind::Pure(e2)
       }
@@ -1183,6 +1332,93 @@ impl<'a> InferCtx<'a> {
       TyKind::Uninit(_) |
       TyKind::Moved(_) => unreachable!(),
     }))
+  }
+
+  fn whnf_sizeof(&mut self, mut qvars: im::HashSet<VarId>, ty: Ty<'a>) -> Expr<'a> {
+    let wty = self.whnf_ty(ty.into());
+    macro_rules! fail {() => { intern!(self, ExprKind::Sizeof(wty.to_ty(self))) }}
+    match wty.ty.k {
+      TyKind::Unit |
+      TyKind::True |
+      TyKind::False |
+      TyKind::Ref(_, _) |
+      TyKind::Imp(_, _) |
+      TyKind::Wand(_, _) |
+      TyKind::Not(_) |
+      TyKind::Pure(_) |
+      TyKind::Heap(_, _, _) |
+      TyKind::HasTy(_, _) |
+      TyKind::Input |
+      TyKind::Output |
+      TyKind::Ghost(_) => self.common.num(0),
+      TyKind::Bool => self.common.num(1),
+      TyKind::Own(_) |
+      TyKind::Shr(_, _) |
+      TyKind::RefSn(_) => self.common.num(8),
+      TyKind::User(_, _, _) | // TODO
+      TyKind::Infer(_) |
+      TyKind::Var(_) => fail!(),
+      TyKind::Sn(_, ty) |
+      TyKind::Uninit(ty) |
+      TyKind::Moved(ty) => self.whnf_sizeof(qvars, ty),
+      TyKind::Int(sz) |
+      TyKind::UInt(sz) => match sz.bits() {
+        Some(n) => self.common.num((n / 8) as _),
+        None => fail!(),
+      },
+      TyKind::Array(ty, n) => {
+        let mut has_qvar = false;
+        n.on_vars(|v| has_qvar |= qvars.contains(&v));
+        let size = self.whnf_sizeof(qvars, ty);
+        if has_qvar {
+          if size == self.common.num(0) { size } else { fail!() }
+        } else {
+          self.whnf_binop(Binop::Mul, size, n)
+        }
+      }
+      TyKind::List(tys) => {
+        let this = RefCell::new(&mut *self);
+        tys.iter()
+          .map(|ty| this.borrow_mut().whnf_sizeof(qvars.clone(), ty))
+          .fold1(|e, e2| this.borrow_mut().whnf_binop(Binop::Add, e, e2))
+          .unwrap_or_else(|| self.common.num(0))
+      }
+      TyKind::Struct(args) => {
+        let this = RefCell::new(&mut *self);
+        args.iter()
+          .filter_map(|arg| match arg.k {
+            ArgKind::Lam(pat) => {
+              let e = this.borrow_mut().whnf_sizeof(qvars.clone(), pat.k.ty());
+              pat.k.on_vars(&mut |_, v| { qvars.insert(v); });
+              Some(e)
+            }
+            ArgKind::Let(pat, _) => {
+              pat.k.on_vars(&mut |_, v| { qvars.insert(v); });
+              None
+            }
+          })
+          .fold1(|e, e2| this.borrow_mut().whnf_binop(Binop::Add, e, e2))
+          .unwrap_or_else(|| self.common.num(0))
+      }
+      TyKind::All(pat, ty) => {
+        pat.k.on_vars(&mut |_, v| { qvars.insert(v); });
+        self.whnf_sizeof(qvars, ty)
+      }
+      TyKind::And(tys) |
+      TyKind::Or(tys) => {
+        let this = RefCell::new(&mut *self);
+        tys.iter()
+          .map(|ty| this.borrow_mut().whnf_sizeof(qvars.clone(), ty))
+          .fold1(|e, e2| this.borrow_mut().whnf_binop(Binop::Max, e, e2))
+          .unwrap_or_else(|| self.common.num(0))
+      }
+      TyKind::If(_, ty1, ty2) => {
+        let e1 = self.whnf_sizeof(qvars.clone(), ty1);
+        let e2 = self.whnf_sizeof(qvars.clone(), ty2);
+        self.whnf_binop(Binop::Max, e1, e2) // TODO: this is wrong if sizeof e1 != sizeof e2
+      }
+      TyKind::Error => self.common.e_error,
+    }
   }
 
   fn equate_lft(&mut self, a: Lifetime, b: Lifetime) -> StdResult<(), ()> {
@@ -1495,7 +1731,7 @@ impl<'a> InferCtx<'a> {
       ExprKind::Bool(_) => self.common.t_bool,
       ExprKind::Int(n) => if n.is_negative() {self.common.int()} else {self.common.nat()},
       ExprKind::Unop(op, _) => op.ret_ty(self),
-      ExprKind::Binop(op, e1, e2) => if op.int_out() {
+      ExprKind::Binop(op, e1, e2) => if op.ty().int_out() {
         if op.preserves_nat() &&
           matches!(self.expr_type(sp, e1)?.k, TyKind::UInt(_)) &&
           matches!(self.expr_type(sp, e2)?.k, TyKind::UInt(_)) {
@@ -1510,7 +1746,6 @@ impl<'a> InferCtx<'a> {
         intern!(self, TyKind::Array(self.expr_type(sp, e)?,
           intern!(self, ExprKind::Int(self.alloc.alloc(es.len().into())))))
       } else { self.common.t_unit },
-      ExprKind::As(_, AsKind::Mod(ity)) => self.common.int_ty(ity),
       ExprKind::Sizeof(_) => self.common.nat(),
       _ => return None,
       ExprKind::Error => self.common.t_error,
@@ -1540,7 +1775,7 @@ impl<'a> InferCtx<'a> {
       }
       TyKind::Array(ty, n) => {
         #[allow(clippy::never_loop)]
-        let n_tgt: Option<usize> = match self.whnf_expr(n, self.common.nat()).k {
+        let n_tgt: Option<usize> = match self.whnf_expr(n).k {
           ExprKind::Int(n) => n.try_into().ok(),
           _ => None
         };
@@ -1983,7 +2218,7 @@ impl<'a> InferCtx<'a> {
         #[allow(clippy::map_unwrap_or)]
         let ty = as_int_ty(self, expect)
           .filter(|ity| ity.in_range(n))
-          .map(|ity| ity.to_ty(self))
+          .map(|ity| self.common.int_ty(ity))
           .unwrap_or_else(|| {
             if n.is_negative() { self.common.int() }
             else { self.common.nat() }
@@ -2018,12 +2253,20 @@ impl<'a> InferCtx<'a> {
           ty]
       }
 
+      ast::ExprKind::Unop(Unop::As(_), e) =>
+        unreachable!("parsed as-conversions are not emitted by the front end"),
+
       &ast::ExprKind::Binop(op, ref e1, ref e2) => {
-        let ((e1, pe1), (e2, pe2), tyout) = if op.int_in() {
-          let tyin = as_int_ty(self, expect).unwrap_or(IntTy::Int(Size::Inf)).to_ty(self);
+        let opty = op.ty();
+        let ((e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
+          let ityin = as_int_ty(self, expect).unwrap_or(IntTy::Int(Size::Inf));
+          let mut tyin = self.common.int_ty(ityin);
           let (e1, pe1, ty1) = self.lower_expr(e1, ExpectExpr::HasTy(tyin));
+          if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
+            tyin = self.common.t_uint(sz)
+          }
           let (e2, pe2, ty2) = self.lower_expr(e2, ExpectExpr::HasTy(tyin));
-          let (tyin2, tyout) = if op.int_out() {
+          let (tyin2, tyout) = if opty.int_out() {
             let ty = (|| -> Option<_> {
               if !op.preserves_nat() {return None}
               let sz1 = if let Some(IntTy::UInt(sz1)) =
@@ -2227,7 +2470,7 @@ impl<'a> InferCtx<'a> {
             let ty = intern!(self, TyKind::Array(tgt1, n));
             #[allow(clippy::never_loop)]
             let n_tgt = loop {
-              if let ExprKind::Int(n) = self.whnf_expr(n_tgt, self.common.nat()).k {
+              if let ExprKind::Int(n) = self.whnf_expr(n_tgt).k {
                 if let Ok(n) = n.try_into() { break n }
               }
               error!(span, Relate(ty, tgt, Relation::Equal))
@@ -2349,9 +2592,9 @@ impl<'a> InferCtx<'a> {
           } else if let IntTy::UInt(Size::Inf) = ity2 {
             fail!()
           } else {
-            let ak = AsKind::Mod(ity2);
-            let pe = pe.map(|e| intern!(self, ExprKind::As(e, ak)));
-            ret![As(Box::new(e), ty, tgt, ak), pe, tgt]
+            let op = Unop::As(ity2);
+            let pe = pe.map(|e| intern!(self, ExprKind::Unop(op, e)));
+            ret![Unop(op, Box::new(e)), pe, tgt]
           }
         } else if
           matches!(ty.k, TyKind::Own(_) | TyKind::Shr(_, _) | TyKind::RefSn(_)) &&
@@ -2650,7 +2893,7 @@ impl<'a> InferCtx<'a> {
       }
 
       &ast::ExprKind::Infer(user) => if let ExpectExpr::Sn(pe, ty) = expect {
-        if let Some(e) = self.eval_expr(span, pe, ty) {
+        if let Some(e) = self.eval_expr(span, pe) {
           (e, Some(pe), ty)
         } else {
           error!(span, UnsupportedSynthesis(Box::new(self.dc.clone()), pe, ty))
@@ -2670,7 +2913,7 @@ impl<'a> InferCtx<'a> {
     hir::Spanned {span: self.alloc.alloc(span), k: hir::ExprKind::Proof(hir::Proof::Mm0(pf, ty))}
   }
 
-  fn eval_expr(&mut self, span: &'a FileSpan, e: Expr<'a>, ty: Ty<'a>) -> Option<hir::Expr<'a>> {
+  fn eval_expr(&mut self, span: &'a FileSpan, e: Expr<'a>) -> Option<hir::Expr<'a>> {
     macro_rules! error {($($es:expr),*) => {{
       $({
         use TypeError::*; let k = $es;
@@ -2686,29 +2929,24 @@ impl<'a> InferCtx<'a> {
       ExprKind::Int(n) => hir::ExprKind::Int(n),
       ExprKind::Unop(op, e) => {
         let ty = op.arg_ty(self);
-        hir::ExprKind::Unop(op, Box::new(self.eval_expr(span, e, ty)?))
+        hir::ExprKind::Unop(op, Box::new(self.eval_expr(span, e)?))
       }
       ExprKind::Binop(op, e1, e2) => {
-        let ty = if op.int_in() {self.common.int()} else {self.common.t_bool};
-        let e1 = Box::new(self.eval_expr(span, e1, ty)?);
-        let e2 = Box::new(self.eval_expr(span, e2, ty)?);
+        let e1 = Box::new(self.eval_expr(span, e1)?);
+        let e2 = Box::new(self.eval_expr(span, e2)?);
         hir::ExprKind::Binop(op, e1, e2)
       }
-      ExprKind::As(e, AsKind::Mod(ity)) => {
-        let e = Box::new(self.eval_expr(span, e, self.common.int())?);
-        hir::ExprKind::As(e, self.common.int(), self.common.int_ty(ity), AsKind::Mod(ity))
-      }
       ExprKind::Sizeof(ty) => {
-        let e2 = self.whnf_expr(e, ty);
-        if e != e2 { return self.eval_expr(span, e2, ty) }
+        let e2 = self.whnf_expr(e);
+        if e != e2 { return self.eval_expr(span, e2) }
         hir::ExprKind::Sizeof(ty)
       }
       ExprKind::If {cond, then, els} => hir::ExprKind::If {
         hyp: None,
-        cond: Box::new(self.eval_expr(span, cond, self.common.t_bool)?),
+        cond: Box::new(self.eval_expr(span, cond)?),
         cases: Box::new([
-          (self.eval_expr(span, then, ty)?, [].into()),
-          (self.eval_expr(span, els, ty)?, [].into()),
+          (self.eval_expr(span, then)?, [].into()),
+          (self.eval_expr(span, els)?, [].into()),
         ]),
         gen: self.dc.generation,
       },

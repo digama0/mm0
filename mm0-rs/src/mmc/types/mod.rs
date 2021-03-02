@@ -7,7 +7,7 @@ pub mod ty;
 pub mod hir;
 pub mod pir;
 
-use std::{collections::HashMap, convert::TryFrom, rc::Rc};
+use std::{borrow::Cow, collections::HashMap, convert::{TryFrom, TryInto}, rc::Rc};
 use num::{BigInt, Signed};
 
 use crate::{AtomId, Environment, Remap, Remapper, TermId, LispVal, lisp::Syntax,
@@ -257,6 +257,9 @@ pub enum Unop {
   ///
   /// Infinite size is also the default value before type checking.
   BitNot(Size),
+  /// Truncation into the given type. For fixed size this is the operation `x % 2^n`,
+  /// for `int` this is the identity, and for `nat` this is invalid.
+  As(IntTy),
 }
 crate::deep_size_0!(Unop);
 
@@ -267,6 +270,61 @@ impl Unop {
       Unop::Neg => "-",
       Unop::Not => "not",
       Unop::BitNot(_) => "bnot",
+      Unop::As(_) => "as..",
+    }
+  }
+
+  /// Returns true if this takes integral arguments,
+  /// and false if it takes booleans.
+  #[must_use] pub fn int_in_out(self) -> bool {
+    match self {
+      Unop::Neg |
+      Unop::BitNot(_) |
+      Unop::As(_) => true,
+      Unop::Not => false,
+    }
+  }
+
+  /// Apply this unary operation as a `bool -> bool` function.
+  /// Panics if it is not a `bool -> bool` function.
+  pub fn apply_bool(self, b: bool) -> bool {
+    match self {
+      Unop::Not => !b,
+      Unop::Neg |
+      Unop::BitNot(_) |
+      Unop::As(_) => panic!("not a bool op"),
+    }
+  }
+
+  /// Apply this unary operation as a `int -> int` function. Returns `None` if the function
+  /// inputs are out of range or if it is not a `int -> int` function.
+  pub fn apply_int(self, n: &BigInt) -> Option<Cow<'_, BigInt>> {
+    macro_rules! truncate_signed {($iN:ty, $uN:ty) => {{
+      if <$iN>::try_from(n).is_ok() { Cow::Borrowed(n) }
+      else { Cow::Owned((<$uN>::try_from(n & BigInt::from(<$uN>::MAX)).unwrap() as $iN).into()) }
+    }}}
+    macro_rules! truncate_unsigned {($uN:ty) => {{
+      if <$uN>::try_from(n).is_ok() { Cow::Borrowed(n) }
+      else { Cow::Owned(n & BigInt::from(<$uN>::MAX)) }
+    }}}
+    match self {
+      Unop::Neg => Some(Cow::Owned(-n)),
+      Unop::Not => None,
+      Unop::BitNot(Size::Inf) => Some(Cow::Owned(!n)),
+      Unop::BitNot(Size::S8) => Some(Cow::Owned(u8::into(!n.try_into().ok()?))),
+      Unop::BitNot(Size::S16) => Some(Cow::Owned(u16::into(!n.try_into().ok()?))),
+      Unop::BitNot(Size::S32) => Some(Cow::Owned(u32::into(!n.try_into().ok()?))),
+      Unop::BitNot(Size::S64) => Some(Cow::Owned(u64::into(!n.try_into().ok()?))),
+      Unop::As(IntTy::Int(Size::Inf)) => Some(Cow::Borrowed(n)),
+      Unop::As(IntTy::Int(Size::S8)) => Some(truncate_signed!(i8, u8)),
+      Unop::As(IntTy::Int(Size::S16)) => Some(truncate_signed!(i16, u16)),
+      Unop::As(IntTy::Int(Size::S32)) => Some(truncate_signed!(i32, u32)),
+      Unop::As(IntTy::Int(Size::S64)) => Some(truncate_signed!(i64, u64)),
+      Unop::As(IntTy::UInt(Size::Inf)) => panic!("{}", "{n as nat} does not exist"),
+      Unop::As(IntTy::UInt(Size::S8)) => Some(truncate_unsigned!(u8)),
+      Unop::As(IntTy::UInt(Size::S16)) => Some(truncate_unsigned!(u16)),
+      Unop::As(IntTy::UInt(Size::S32)) => Some(truncate_unsigned!(u32)),
+      Unop::As(IntTy::UInt(Size::S64)) => Some(truncate_unsigned!(u64)),
     }
   }
 }
@@ -274,6 +332,30 @@ impl Unop {
 impl std::fmt::Display for Unop {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     self.to_str().fmt(f)
+  }
+}
+
+/// Classification of the binary operations into types.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BinopType {
+  /// `(int, int) -> int` functions, like `x + y`, `x * y`, `x & y`
+  IntIntInt,
+  /// `(int, int) -> bool` functions, like `x < y`, `x = y`, `x <= y`
+  IntIntBool,
+  /// `(int, nat) -> int` functions: `x << y` and `x >> y`
+  IntNatInt,
+  /// `(bool, bool) -> bool` functions: `x && y` and `x || y`
+  BoolBoolBool,
+}
+
+impl BinopType {
+  /// Does this function take integral types as input, or booleans?
+  pub fn int_in(self) -> bool {
+    matches!(self, Self::IntIntInt | Self::IntIntBool | Self::IntNatInt)
+  }
+  /// Does this function produce integral types as output, or booleans?
+  pub fn int_out(self) -> bool {
+    matches!(self, Self::IntIntInt | Self::IntNatInt)
   }
 }
 
@@ -286,6 +368,10 @@ pub enum Binop {
   Mul,
   /// Integer subtraction
   Sub,
+  /// Maximum
+  Max,
+  /// Minimum
+  Min,
   /// Logical (boolean) AND
   And,
   /// Logical (boolean) OR
@@ -318,6 +404,8 @@ impl Binop {
       Binop::Add => "+",
       Binop::Mul => "*",
       Binop::Sub => "-",
+      Binop::Max => "max",
+      Binop::Min => "min",
       Binop::And => "and",
       Binop::Or => "or",
       Binop::BitAnd => "band",
@@ -332,27 +420,15 @@ impl Binop {
     }
   }
 
-  /// Returns true if this takes integral arguments,
-  /// and false if it takes booleans.
-  #[must_use] pub fn int_in(self) -> bool {
+  /// Returns the type of this binop.
+  #[must_use] pub fn ty(self) -> BinopType {
     match self {
       Binop::Add | Binop::Mul | Binop::Sub |
-      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
-      Binop::Shl | Binop::Shr |
-      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne => true,
-      Binop::And | Binop::Or => false,
-    }
-  }
-
-  /// Returns true if this returns integral values,
-  /// and false if it returns booleans.
-  #[must_use] pub fn int_out(self) -> bool {
-    match self {
-      Binop::Add | Binop::Mul | Binop::Sub |
-      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
-      Binop::Shl | Binop::Shr => true,
-      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne |
-      Binop::And | Binop::Or => false,
+      Binop::Max | Binop::Min |
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor => BinopType::IntIntInt,
+      Binop::Shl | Binop::Shr => BinopType::IntNatInt,
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne => BinopType::IntIntBool,
+      Binop::And | Binop::Or => BinopType::BoolBoolBool,
     }
   }
 
@@ -360,6 +436,7 @@ impl Binop {
   #[must_use] pub fn preserves_nat(self) -> bool {
     match self {
       Binop::Add | Binop::Mul |
+      Binop::Max | Binop::Min |
       Binop::BitAnd | Binop::BitOr | Binop::BitXor |
       Binop::Shl | Binop::Shr => true,
       Binop::Sub => false,
@@ -371,10 +448,62 @@ impl Binop {
   /// Returns true if this integral function returns a `UInt(sz)` on `UInt(sz)` inputs.
   #[must_use] pub fn preserves_usize(self) -> bool {
     match self {
-      Binop::Add | Binop::Mul | Binop::Shl | Binop::Sub => false,
+      Binop::Add | Binop::Mul |
+      Binop::Max | Binop::Min |
+      Binop::Shl | Binop::Sub => false,
       Binop::BitAnd | Binop::BitOr | Binop::BitXor | Binop::Shr => true,
       Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne |
       Binop::And | Binop::Or => panic!("not an int -> int binop"),
+    }
+  }
+
+  /// Apply this unary operation as a `(int, int) -> int` function. Returns `None` if the function
+  /// inputs are out of range or if it is not a `(int, int) -> int` function.
+  /// (The `(int, nat) -> int` functions are also evaluated here.)
+  pub fn apply_int_int(self, n1: &BigInt, n2: &BigInt) -> Option<BigInt> {
+    match self {
+      Binop::Add => Some(n1 + n2),
+      Binop::Mul => Some(n1 * n2),
+      Binop::Sub => Some(n1 - n2),
+      Binop::Max => Some(n1.max(n2).clone()),
+      Binop::Min => Some(n1.min(n2).clone()),
+      Binop::BitAnd => Some(n1 & n2),
+      Binop::BitOr => Some(n1 | n2),
+      Binop::BitXor => Some(n1 ^ n2),
+      Binop::Shl => Some(n1 << usize::try_from(n2).ok()?),
+      Binop::Shr => Some(n1 >> usize::try_from(n2).ok()?),
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne |
+      Binop::And | Binop::Or => None,
+    }
+  }
+
+  /// Apply this unary operation as a `(int, int) -> bool` function.
+  /// Panics if it is not a `(int, int) -> bool` function.
+  pub fn apply_int_bool(self, n1: &BigInt, n2: &BigInt) -> bool {
+    match self {
+      Binop::Lt => n1 < n2,
+      Binop::Le => n1 <= n2,
+      Binop::Eq => n1 == n2,
+      Binop::Ne => n1 != n2,
+      Binop::Add | Binop::Mul | Binop::Sub |
+      Binop::Max | Binop::Min |
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
+      Binop::Shl | Binop::Shr |
+      Binop::And | Binop::Or => panic!("not int -> int -> bool binop"),
+    }
+  }
+
+  /// Apply this unary operation as a `(bool, bool) -> bool` function.
+  /// Panics if it is not a `(bool, bool) -> bool` function.
+  pub fn apply_bool_bool(self, b1: bool, b2: bool) -> bool {
+    match self {
+      Binop::Add | Binop::Mul | Binop::Sub |
+      Binop::Max | Binop::Min |
+      Binop::BitAnd | Binop::BitOr | Binop::BitXor |
+      Binop::Shl | Binop::Shr |
+      Binop::Lt | Binop::Le | Binop::Eq | Binop::Ne => panic!("not bool -> bool -> bool binop"),
+      Binop::And => b1 && b2,
+      Binop::Or => b1 || b2,
     }
   }
 }

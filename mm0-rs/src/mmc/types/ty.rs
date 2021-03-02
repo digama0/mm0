@@ -776,8 +776,6 @@ pub enum ExprKind<'a> {
   List(&'a [Expr<'a>]),
   /// `[e1, ..., en]`, an array literal.
   Array(&'a [Expr<'a>]),
-  /// `{e as ty}`, an as-conversion.
-  As(Expr<'a>, AsKind),
   /// Return the size of a type.
   Sizeof(Ty<'a>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
@@ -832,8 +830,7 @@ impl<'a> ExprS<'a> {
       ExprKind::Error => {}
       ExprKind::Var(v) => f.visit_var(v),
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) |
-      ExprKind::As(e, _) => e.visit(f),
+      ExprKind::Proj(e, _) => e.visit(f),
       ExprKind::Binop(_, e1, e2) => {e1.visit(f); e2.visit(f)}
       ExprKind::Index(a, i) => {a.visit(f); i.visit(f)}
       ExprKind::Slice(a, i, n) => {a.visit(f); i.visit(f); n.visit(f)}
@@ -877,8 +874,7 @@ impl AddFlags for ExprKind<'_> {
       ExprKind::Int(_) |
       ExprKind::Sizeof(_) => {}
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) |
-      ExprKind::As(e, _) => *f |= e,
+      ExprKind::Proj(e, _) => *f |= e,
       ExprKind::Binop(_, e1, e2) => *f |= (e1, e2),
       ExprKind::Index(a, i) => *f |= (a, i),
       ExprKind::Slice(a, i, n) => *f |= (a, i, n),
@@ -906,6 +902,7 @@ impl EnvDisplay for ExprKind<'_> {
       // ExprKind::Global(v) => v.fmt(fe, f),
       ExprKind::Bool(b) => b.fmt(f),
       ExprKind::Int(n) => n.fmt(f),
+      ExprKind::Unop(Unop::As(ity), e) => write!(f, "{{{} as {}}}", fe.to(e), ity),
       ExprKind::Unop(op, e) => write!(f, "({} {})", op, fe.to(e)),
       ExprKind::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", fe.to(e1), op, fe.to(e2)),
       ExprKind::List(es) |
@@ -920,7 +917,6 @@ impl EnvDisplay for ExprKind<'_> {
       ExprKind::UpdateProj(a, n, val) => write!(f,
         "(update-proj {} {} {})", fe.to(a), n, fe.to(val)),
       ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", fe.to(ty)),
-      ExprKind::As(e, ak) => write!(f, "{{{} as {}}}", fe.to(e), ak),
       ExprKind::Mm0(ref e) => e.fmt(fe, f),
       ExprKind::Call {f: x, tys, args} => {
         write!(f, "({}", fe.to(&x))?;
@@ -951,26 +947,6 @@ impl<'a> std::convert::TryFrom<Ty<'a>> for IntTy {
       TyKind::Int(sz) => Ok(IntTy::Int(sz)),
       TyKind::UInt(sz) => Ok(IntTy::UInt(sz)),
       _ => Err(())
-    }
-  }
-}
-
-/// The kinds of non-identity transformations supported by the `as` function.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum AsKind {
-  /// Bit truncation / wrapping conversion to a (finite) integral type.
-  /// This is the `a % 2^N` function for `uN`, and
-  /// `(a + 2^(N-1)) % 2^N - 2^(N-1)` for `iN`, where `a` is any integer.
-  /// (The infinite integral types are not allowed here; `{n as int}` is
-  /// actually a cast, and `{n as nat}` is explicitly disallowed.)
-  Mod(IntTy),
-}
-crate::deep_size_0!(AsKind);
-
-impl std::fmt::Display for AsKind {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      AsKind::Mod(ity) => ity.fmt(f),
     }
   }
 }

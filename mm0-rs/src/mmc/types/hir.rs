@@ -276,8 +276,6 @@ pub enum ExprKind<'a> {
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<Expr<'a>>, ty::Ty<'a>),
-  /// A truncation / bit cast operation.
-  As(Box<Expr<'a>>, ty::Ty<'a>, ty::Ty<'a>, ty::AsKind),
   /// Combine an expression with a proof that it has the right type.
   Cast(Box<Expr<'a>>, ty::Ty<'a>, ty::Ty<'a>, CastKind<'a>),
   /// Reinterpret an expression given a proof that it has the right type.

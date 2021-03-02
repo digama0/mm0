@@ -683,6 +683,10 @@ impl<'a> Parser<'a> {
           _ => err!("expected 2 or 3 arguments"),
         },
         (PrimOp::List, _) => CallKind::NAry(NAryCall::List, args),
+        (PrimOp::Max, _) | (PrimOp::Min, _) if args.is_empty() =>
+          err!("expected 2 arguments"),
+        (PrimOp::Max, _) => CallKind::NAry(NAryCall::Max, args),
+        (PrimOp::Min, _) => CallKind::NAry(NAryCall::Min, args),
         (PrimOp::Mul, _) => CallKind::NAry(NAryCall::Mul, args),
         (PrimOp::Not, _) => CallKind::NAry(NAryCall::Not, args),
         (PrimOp::Le, _) => CallKind::NAry(NAryCall::Le, args),

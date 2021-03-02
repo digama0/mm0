@@ -752,7 +752,7 @@ impl<'a> BuildAst<'a> {
       ($args:expr, $zero:expr, $op:expr) => { lassoc1!($args, $zero, $op, |e| return Ok(e)) };
       ($args:expr, $zero:expr, $op:expr, |$e:pat| $arg:expr) => {
         if let Some($e) = self.build_lassoc1(&span, $args, {use Binop::*; $op})? { $arg }
-        else { use ast::ExprKind::*; $zero }
+        else { #[allow(unused)] use ast::ExprKind::*; $zero }
       }
     }
     if let Some(&LabelId(v, i)) = self.label_map.get(&e.f.k).and_then(|vec| vec.last()) {
@@ -766,6 +766,8 @@ impl<'a> BuildAst<'a> {
       CallKind::Global(a) => ast::ExprKind::Global(a),
       CallKind::NAry(NAryCall::Add, args) => lassoc1!(args, Int(0.into()), Add),
       CallKind::NAry(NAryCall::Mul, args) => lassoc1!(args, Int(1.into()), Mul),
+      CallKind::NAry(NAryCall::Min, args) => lassoc1!(args, unreachable!(), Min),
+      CallKind::NAry(NAryCall::Max, args) => lassoc1!(args, unreachable!(), Max),
       CallKind::NAry(NAryCall::And, args) => lassoc1!(args, Bool(true), And),
       CallKind::NAry(NAryCall::Or, args) => lassoc1!(args, Bool(false), Or),
       CallKind::NAry(NAryCall::Not, args) => lassoc1!(args, Bool(true), Or, |e| {

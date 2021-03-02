@@ -41,6 +41,7 @@
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate futures;
 #[macro_use] extern crate debug_derive;
+#[macro_use] extern crate if_chain;
 #[macro_use] extern crate mm0_util;
 
 #[cfg(feature = "memory")]

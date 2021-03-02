@@ -78,6 +78,10 @@ make_prims! {
     /// if `a` has type `(& (array T i))`. The hypothesis `h` is a proof that
     /// `i` is in the bounds of the array.
     Index: "index",
+    /// `{x max y}` returns the maximum of the arguments
+    Max: "max",
+    /// `{x min y}` returns the minimum of the arguments
+    Min: "min",
     /// `{x * y}` returns the integer product of the arguments
     Mul: "*",
     /// `{x != y}` returns true if `x` is not equal to `y`

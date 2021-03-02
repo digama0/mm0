@@ -366,6 +366,10 @@ pub enum NAryCall {
   Add,
   /// `{x * y}` returns the integer product of the arguments
   Mul,
+  /// `{x max y}` returns the maximum of the arguments
+  Max,
+  /// `{x min y}` returns the minimum of the arguments
+  Min,
   /// `(and x1 ... xn)` returns the boolean `AND` of the arguments.
   And,
   /// `(or x1 ... xn)` returns the boolean `OR` of the arguments.
