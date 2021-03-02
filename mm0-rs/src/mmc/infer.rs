@@ -1128,7 +1128,7 @@ impl<'a> InferCtx<'a> {
       }
     } else if let ExprKind::Bool(b) = self.whnf_expr(e).k {
       return self.common.e_bool(op.apply_bool(b))
-    }
+    } else {}
     intern!(self, ExprKind::Unop(op, e))
   }
 
@@ -1224,7 +1224,7 @@ impl<'a> InferCtx<'a> {
         if l == val2.len();
         then {{ // see rust-analyzer#7845
           let es2 = self.alloc.alloc_slice_copy(es);
-          for j in 0..l { es2[i+j] = val2[j] }
+          es2[i..il].clone_from_slice(val2);
           intern!(self, ExprKind::Array(es2))
         }}
         else { e }
@@ -1362,10 +1362,9 @@ impl<'a> InferCtx<'a> {
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) => self.whnf_sizeof(qvars, ty),
       TyKind::Int(sz) |
-      TyKind::UInt(sz) => match sz.bits() {
-        Some(n) => self.common.num((n / 8) as _),
-        None => fail!(),
-      },
+      TyKind::UInt(sz) =>
+        if let Some(n) = sz.bytes() { self.common.num(n.into()) }
+        else { fail!() },
       TyKind::Array(ty, n) => {
         let mut has_qvar = false;
         n.on_vars(|v| has_qvar |= qvars.contains(&v));
@@ -2260,12 +2259,12 @@ impl<'a> InferCtx<'a> {
         let opty = op.ty();
         let ((e1, pe1), (e2, pe2), tyout) = if opty.int_in() {
           let ityin = as_int_ty(self, expect).unwrap_or(IntTy::Int(Size::Inf));
-          let mut tyin = self.common.int_ty(ityin);
-          let (e1, pe1, ty1) = self.lower_expr(e1, ExpectExpr::HasTy(tyin));
-          if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
-            tyin = self.common.t_uint(sz)
-          }
-          let (e2, pe2, ty2) = self.lower_expr(e2, ExpectExpr::HasTy(tyin));
+          let tyin1 = self.common.int_ty(ityin);
+          let (e1, pe1, ty1) = self.lower_expr(e1, ExpectExpr::HasTy(tyin1));
+          let tyin2 = if let (BinopType::IntNatInt, IntTy::Int(sz)) = (opty, ityin) {
+            self.common.t_uint(sz)
+          } else { tyin1 };
+          let (e2, pe2, ty2) = self.lower_expr(e2, ExpectExpr::HasTy(tyin2));
           let (tyin2, tyout) = if opty.int_out() {
             let ty = (|| -> Option<_> {
               if !op.preserves_nat() {return None}

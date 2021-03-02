@@ -166,6 +166,17 @@ impl Size {
       Size::S64 => Some(64),
     }
   }
+
+  /// The number of bytes of this type, or `None` for the infinite case.
+  #[must_use] pub fn bytes(self) -> Option<u8> {
+    match self {
+      Size::Inf => None,
+      Size::S8 => Some(1),
+      Size::S16 => Some(2),
+      Size::S32 => Some(4),
+      Size::S64 => Some(8),
+    }
+  }
 }
 
 /// The set of integral types, `N_s` and `Z_s`, representing the signed and unsigned integers
@@ -287,7 +298,7 @@ impl Unop {
 
   /// Apply this unary operation as a `bool -> bool` function.
   /// Panics if it is not a `bool -> bool` function.
-  pub fn apply_bool(self, b: bool) -> bool {
+  #[must_use] pub fn apply_bool(self, b: bool) -> bool {
     match self {
       Unop::Not => !b,
       Unop::Neg |
@@ -298,7 +309,7 @@ impl Unop {
 
   /// Apply this unary operation as a `int -> int` function. Returns `None` if the function
   /// inputs are out of range or if it is not a `int -> int` function.
-  pub fn apply_int(self, n: &BigInt) -> Option<Cow<'_, BigInt>> {
+  #[must_use] pub fn apply_int(self, n: &BigInt) -> Option<Cow<'_, BigInt>> {
     macro_rules! truncate_signed {($iN:ty, $uN:ty) => {{
       if <$iN>::try_from(n).is_ok() { Cow::Borrowed(n) }
       else { Cow::Owned((<$uN>::try_from(n & BigInt::from(<$uN>::MAX)).unwrap() as $iN).into()) }
@@ -350,11 +361,11 @@ pub enum BinopType {
 
 impl BinopType {
   /// Does this function take integral types as input, or booleans?
-  pub fn int_in(self) -> bool {
+  #[must_use] pub fn int_in(self) -> bool {
     matches!(self, Self::IntIntInt | Self::IntIntBool | Self::IntNatInt)
   }
   /// Does this function produce integral types as output, or booleans?
-  pub fn int_out(self) -> bool {
+  #[must_use] pub fn int_out(self) -> bool {
     matches!(self, Self::IntIntInt | Self::IntNatInt)
   }
 }
@@ -460,7 +471,7 @@ impl Binop {
   /// Apply this unary operation as a `(int, int) -> int` function. Returns `None` if the function
   /// inputs are out of range or if it is not a `(int, int) -> int` function.
   /// (The `(int, nat) -> int` functions are also evaluated here.)
-  pub fn apply_int_int(self, n1: &BigInt, n2: &BigInt) -> Option<BigInt> {
+  #[must_use] pub fn apply_int_int(self, n1: &BigInt, n2: &BigInt) -> Option<BigInt> {
     match self {
       Binop::Add => Some(n1 + n2),
       Binop::Mul => Some(n1 * n2),
@@ -479,7 +490,7 @@ impl Binop {
 
   /// Apply this unary operation as a `(int, int) -> bool` function.
   /// Panics if it is not a `(int, int) -> bool` function.
-  pub fn apply_int_bool(self, n1: &BigInt, n2: &BigInt) -> bool {
+  #[must_use] pub fn apply_int_bool(self, n1: &BigInt, n2: &BigInt) -> bool {
     match self {
       Binop::Lt => n1 < n2,
       Binop::Le => n1 <= n2,
@@ -495,7 +506,7 @@ impl Binop {
 
   /// Apply this unary operation as a `(bool, bool) -> bool` function.
   /// Panics if it is not a `(bool, bool) -> bool` function.
-  pub fn apply_bool_bool(self, b1: bool, b2: bool) -> bool {
+  #[must_use] pub fn apply_bool_bool(self, b1: bool, b2: bool) -> bool {
     match self {
       Binop::Add | Binop::Mul | Binop::Sub |
       Binop::Max | Binop::Min |
