@@ -981,7 +981,7 @@ impl<'a> Common<'a> {
       2 => self.e_num[2],
       4 => self.e_num[3],
       8 => self.e_num[4],
-      _ => [][0], // const panic
+      _ => const_panic!(),
     }
   }
 }
