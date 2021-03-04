@@ -492,8 +492,8 @@ impl<'a> Subst<'a> {
         loop {
           match origin.k {
             ExprKind::Var(v) => break Lifetime::Place(v),
-            ExprKind::Index(a, _) => origin = a,
-            ExprKind::Slice(a, _, _) => origin = a,
+            ExprKind::Index(a, _) |
+            ExprKind::Slice(a, _, _) |
             ExprKind::Proj(a, _) => origin = a,
             ExprKind::Error => return None,
             ExprKind::Infer(_) => {
@@ -1311,6 +1311,7 @@ impl<'a> InferCtx<'a> {
       ExprKind::Unit |
       ExprKind::Bool(_) |
       ExprKind::Int(_) |
+      ExprKind::Const(_) | // TODO
       ExprKind::List(_) |
       ExprKind::Array(_) |
       ExprKind::Ref(_) |
@@ -1321,7 +1322,6 @@ impl<'a> InferCtx<'a> {
         if e == e2 { return e }
         self.whnf_expr(e2)
       }
-      ExprKind::Const(_) => e, // TODO
       ExprKind::Unop(op, e) => self.whnf_unop(op, e),
       ExprKind::Binop(op, e1, e2) => self.whnf_binop(op, e1, e2),
       ExprKind::Index(a, i) => if_chain! {
@@ -1912,7 +1912,7 @@ impl<'a> InferCtx<'a> {
       TyKind::Uninit(_) |
       TyKind::Moved(_) => unreachable!(),
       TyKind::Infer(_) => TuplePatternResult::Indeterminate,
-      TyKind::Error => TuplePatternResult::Fail(false),
+      TyKind::Error => TuplePatternResult::Fail(true),
       TyKind::Unit => {
         expect!(0);
         TuplePatternResult::Tuple(TupleMatchKind::Unit, TupleIter::Ty(None))
@@ -2084,7 +2084,6 @@ impl<'a> InferCtx<'a> {
   }
 
   fn lower_ty(&mut self, ty: &'a ast::Type, _expect: ExpectTy<'a>) -> Ty<'a> {
-  fn lower_ty(&mut self, ty: &'a ast::Type, expect: ExpectTy<'a>) -> Ty<'a> {
     match &ty.k {
       ast::TypeKind::Unit => self.common.t_unit,
       ast::TypeKind::True => self.common.t_true,
@@ -2203,6 +2202,7 @@ impl<'a> InferCtx<'a> {
   }
 
   fn apply_coe_expr(&mut self, c: Coercion<'a>, e: hir::Expr<'a>) -> hir::Expr<'a> {
+    let _ = self;
     match c {
       Coercion::Error => e.map_into(|_| hir::ExprKind::Error),
       Coercion::Phantom(_) => unreachable!()
@@ -3245,6 +3245,7 @@ impl<'a> InferCtx<'a> {
     stmt: hir::Spanned<'a, UnelabStmt<'a>>,
     tgt: &mut ExprTy<'a>
   ) -> hir::Stmt<'a> {
+    #[allow(clippy::needless_collect)]
     stmt.map_into(|stmt| match stmt {
       UnelabStmt::Let {lhs, rhs} => {
         let lhs = self.finish_tuple_pattern(&lhs);

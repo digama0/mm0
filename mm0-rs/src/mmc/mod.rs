@@ -109,9 +109,9 @@ impl Compiler {
         let mut ctx = infer::InferCtx::new(&alloc, &self.names, p.fe, ba.var_names);
         let _item = ctx.lower_item(&item);
         let errs = std::mem::take(&mut ctx.errors);
-        let mut pr = ctx.print();
+        let pr = ctx.print();
         errors.extend(errs.into_iter().map(|e|
-          ElabError::new_e(e.span, format!("{}", CtxPrint(&mut pr, &e.k)))));
+          ElabError::new_e(e.span, format!("{}", CtxPrint(&pr, &e.k)))));
       }
     }
     for e in errors { elab.report(e) }
