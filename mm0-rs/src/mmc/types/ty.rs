@@ -5,6 +5,43 @@ use num::BigInt;
 use crate::{AtomId, EnvDisplay, FormatEnv};
 use super::{Binop, IntTy, Mm0ExprNode, Size, Unop, VarId, ast::TyVarId};
 
+/// A trait for displaying with a "context" struct. This is a generalization of [`EnvDisplay`] to
+/// other forms of context.
+pub trait CtxDisplay<C> {
+  /// Display this object, using the given context and printing into the given formatter.
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+}
+
+/// A printing struct for printing a [`CtxDisplay`] type.
+#[derive(Debug)]
+pub struct CtxPrint<'a, C, A>(pub &'a C, pub &'a A);
+
+impl<C, A: CtxDisplay<C>> Display for CtxPrint<'_, C, A> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.1.fmt(self.0, f)
+  }
+}
+
+/// A display context sufficient to print the types in this module.
+pub trait DisplayCtx {
+  /// Get a [`FormatEnv`] from the context, so that we can print [`EnvDisplay`] objects.
+  fn format_env(&self) -> FormatEnv<'_>;
+  /// Print a variable.
+  fn fmt_var(&self, v: VarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+  /// Print a lifetime metavariable.
+  fn fmt_lft_mvar(&self, v: LftMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+  /// Print an expression metavariable.
+  fn fmt_expr_mvar(&self, v: ExprMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+  /// Print a type metavariable.
+  fn fmt_ty_mvar(&self, v: TyMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+}
+
+impl<C: DisplayCtx> CtxDisplay<C> for VarId {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    ctx.fmt_var(*self, f)
+  }
+}
+
 bitflags! {
   /// A list of flags that are propagated on type/expr construction
   /// for quick answers to some basic questions.
@@ -96,6 +133,11 @@ impl<T: EnvDisplay> EnvDisplay for WithMeta<T> {
     self.k.fmt(fe, f)
   }
 }
+impl<C, T: CtxDisplay<C>> CtxDisplay<C> for WithMeta<T> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.k.fmt(ctx, f)
+  }
+}
 
 impl<T> AddFlags for WithMeta<T> {
   #[inline] fn add(&self, f: &mut Flags) { *f |= self.flags }
@@ -140,12 +182,12 @@ pub enum Lifetime {
 }
 crate::deep_size_0!(Lifetime);
 
-impl std::fmt::Display for Lifetime {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
+impl<C: DisplayCtx> CtxDisplay<C> for Lifetime {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match *self {
       Lifetime::Extern => "extern".fmt(f),
-      Lifetime::Place(v) => v.fmt(f),
-      Lifetime::Infer(_) => "_".fmt(f),
+      Lifetime::Place(v) => ctx.fmt_var(v, f),
+      Lifetime::Infer(v) => ctx.fmt_lft_mvar(v, f),
     }
   }
 }
@@ -266,14 +308,14 @@ impl AddFlags for TuplePatternKind<'_> {
   }
 }
 
-impl EnvDisplay for TuplePatternKind<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: DisplayCtx> CtxDisplay<C> for TuplePatternKind<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
     match *self {
-      TuplePatternKind::Name(a, _, _) => a.fmt(fe, f),
-      TuplePatternKind::Error(pat, _) => write!(f, "??{}", fe.to(pat)),
+      TuplePatternKind::Name(_, v, _) => ctx.fmt_var(v, f),
+      TuplePatternKind::Error(pat, _) => write!(f, "??{}", CtxPrint(ctx, pat)),
       TuplePatternKind::Tuple(pats, _, _) =>
-        write!(f, "({})", pats.iter().map(|&pat| fe.to(pat)).format(" ")),
+        write!(f, "({})", pats.iter().map(|&pat| CtxPrint(ctx, pat)).format(" ")),
     }
   }
 }
@@ -326,62 +368,13 @@ impl AddFlags for ArgKind<'_> {
   }
 }
 
-impl EnvDisplay for ArgKind<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: DisplayCtx> CtxDisplay<C> for ArgKind<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match *self {
-      ArgKind::Lam(pat) => write!(f, "{}: {}", fe.to(pat), fe.to(pat.k.ty())),
-      ArgKind::Let(pat, e) => write!(f, "{}: {} := {}", fe.to(pat), fe.to(pat.k.ty()), fe.to(e)),
-    }
-  }
-}
-
-/// A pattern, the left side of a switch statement.
-pub type Pattern<'a> = &'a PatternS<'a>;
-/// A pattern, the left side of a switch statement.
-pub type PatternS<'a> = WithMeta<PatternKind<'a>>;
-
-/// A pattern, the left side of a switch statement.
-#[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
-pub enum PatternKind<'a> {
-  /// A wildcard binding.
-  Ignore,
-  /// A variable binding.
-  Var(VarId),
-  /// A constant value.
-  Const(AtomId),
-  /// A numeric literal.
-  Number(&'a BigInt),
-  /// A pattern guard: Matches the inner pattern, and then if the expression returns
-  /// true, this is also considered to match.
-  With(Pattern<'a>, Expr<'a>),
-  /// A disjunction of patterns.
-  Or(&'a [Pattern<'a>]),
-}
-
-impl AddFlags for PatternKind<'_> {
-  fn add(&self, f: &mut Flags) {
-    match *self {
-      PatternKind::Ignore |
-      PatternKind::Var(_) |
-      PatternKind::Const(_) |
-      PatternKind::Number(_) => {}
-      PatternKind::With(_, e) => *f |= e,
-      PatternKind::Or(pats) => *f |= pats,
-    }
-  }
-}
-
-impl EnvDisplay for PatternKind<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    use itertools::Itertools;
-    match *self {
-      PatternKind::Ignore => "_".fmt(f),
-      PatternKind::Var(v) => write!(f, "v{}", v),
-      PatternKind::Const(c) => c.fmt(fe, f),
-      PatternKind::Number(n) => n.fmt(f),
-      PatternKind::With(pat, e) => write!(f, "{{{} with {}}}", fe.to(pat), fe.to(e)),
-      PatternKind::Or(pats) =>
-        write!(f, "{{{}}}", pats.iter().map(|&pat| fe.to(pat)).format(" or ")),
+      ArgKind::Lam(pat) =>
+        write!(f, "{}: {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty())),
+      ArgKind::Let(pat, e) =>
+        write!(f, "{}: {} := {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty()), CtxPrint(ctx, e)),
     }
   }
 }
@@ -411,15 +404,15 @@ impl PartialEq for Mm0Expr<'_> {
 }
 impl Eq for Mm0Expr<'_> {}
 
-impl EnvDisplay for Mm0Expr<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: DisplayCtx> CtxDisplay<C> for Mm0Expr<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.expr {
-      Mm0ExprNode::Const(e) => e.fmt(fe, f),
-      &Mm0ExprNode::Var(i) => self.subst[i as usize].fmt(fe, f),
+      Mm0ExprNode::Const(e) => e.fmt(ctx.format_env(), f),
+      &Mm0ExprNode::Var(i) => self.subst[i as usize].fmt(ctx, f),
       Mm0ExprNode::Expr(t, es) => {
-        write!(f, "({}", fe.to(t))?;
+        write!(f, "({}", ctx.format_env().to(t))?;
         for expr in es {
-          write!(f, " {}", fe.to(&Mm0Expr {subst: self.subst, expr}))?
+          write!(f, " {}", CtxPrint(ctx, &Mm0Expr {subst: self.subst, expr}))?
         }
         write!(f, ")")
       }
@@ -656,9 +649,10 @@ impl AddFlags for TyKind<'_> {
   }
 }
 
-impl EnvDisplay for TyKind<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: DisplayCtx> CtxDisplay<C> for TyKind<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
+    macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
     match *self {
       TyKind::Var(v) => v.fmt(f),
       TyKind::Unit => "()".fmt(f),
@@ -675,39 +669,39 @@ impl EnvDisplay for TyKind<'_> {
       TyKind::UInt(Size::S32) => "u32".fmt(f),
       TyKind::UInt(Size::S64) => "u64".fmt(f),
       TyKind::UInt(Size::Inf) => "nat".fmt(f),
-      TyKind::Array(ty, n) => write!(f, "(array {} {})", fe.to(ty), fe.to(n)),
-      TyKind::Own(ty) => write!(f, "(own {})", fe.to(ty)),
-      TyKind::Ref(lft, ty) => write!(f, "(ref {} {})", lft, fe.to(ty)),
-      TyKind::Shr(lft, ty) => write!(f, "(& {} {})", lft, fe.to(ty)),
-      TyKind::RefSn(x) => write!(f, "(&sn {})", fe.to(x)),
-      TyKind::List(tys) => write!(f, "(list {})", tys.iter().map(|&ty| fe.to(ty)).format(" ")),
-      TyKind::Sn(e, ty) => write!(f, "(sn {{{}: {}}})", fe.to(e), fe.to(ty)),
+      TyKind::Array(ty, n) => write!(f, "(array {} {})", p!(ty), p!(n)),
+      TyKind::Own(ty) => write!(f, "(own {})", p!(ty)),
+      TyKind::Ref(lft, ty) => write!(f, "(ref {} {})", p!(&lft), p!(ty)),
+      TyKind::Shr(lft, ty) => write!(f, "(& {} {})", p!(&lft), p!(ty)),
+      TyKind::RefSn(x) => write!(f, "(&sn {})", p!(x)),
+      TyKind::List(tys) => write!(f, "(list {})", tys.iter().map(|&ty| p!(ty)).format(" ")),
+      TyKind::Sn(e, ty) => write!(f, "(sn {{{}: {}}})", p!(e), p!(ty)),
       TyKind::Struct(args) => {
         "(struct".fmt(f)?;
-        for &arg in args { write!(f, " {{{}}}", fe.to(arg))? }
+        for &arg in args { write!(f, " {{{}}}", p!(arg))? }
         ")".fmt(f)
       }
-      TyKind::All(a, pr) => write!(f, "A. {} {}", fe.to(a), fe.to(pr)),
-      TyKind::Imp(p, q) => write!(f, "({} -> {})", fe.to(p), fe.to(q)),
-      TyKind::Wand(p, q) => write!(f, "({} -* {})", fe.to(p), fe.to(q)),
-      TyKind::Not(pr) => write!(f, "~{}", fe.to(pr)),
-      TyKind::And(tys) => write!(f, "({})", tys.iter().map(|&p| fe.to(p)).format(" /\\ ")),
-      TyKind::Or(tys) => write!(f, "({})", tys.iter().map(|&p| fe.to(p)).format(" \\/ ")),
-      TyKind::If(cond, then, els) => write!(f, "(if {} {} {})", fe.to(cond), fe.to(then), fe.to(els)),
-      TyKind::Ghost(ty) => write!(f, "(ghost {})", fe.to(ty)),
-      TyKind::Uninit(ty) => write!(f, "(? {})", fe.to(ty)),
-      TyKind::Pure(e) => e.fmt(fe, f),
+      TyKind::All(a, pr) => write!(f, "A. {} {}", p!(a), p!(pr)),
+      TyKind::Imp(p, q) => write!(f, "({} -> {})", p!(p), p!(q)),
+      TyKind::Wand(p, q) => write!(f, "({} -* {})", p!(p), p!(q)),
+      TyKind::Not(pr) => write!(f, "~{}", p!(pr)),
+      TyKind::And(tys) => write!(f, "({})", tys.iter().map(|&p| p!(p)).format(" /\\ ")),
+      TyKind::Or(tys) => write!(f, "({})", tys.iter().map(|&p| p!(p)).format(" \\/ ")),
+      TyKind::If(cond, then, els) => write!(f, "(if {} {} {})", p!(cond), p!(then), p!(els)),
+      TyKind::Ghost(ty) => write!(f, "(ghost {})", p!(ty)),
+      TyKind::Uninit(ty) => write!(f, "(? {})", p!(ty)),
+      TyKind::Pure(e) => e.fmt(ctx, f),
       TyKind::User(name, tys, es) => {
-        write!(f, "({}", fe.to(&name))?;
-        for &ty in tys { " ".fmt(f)?; ty.fmt(fe, f)? }
-        for &e in es { " ".fmt(f)?; e.fmt(fe, f)? }
+        write!(f, "({}", ctx.format_env().to(&name))?;
+        for &ty in tys { " ".fmt(f)?; ty.fmt(ctx, f)? }
+        for &e in es { " ".fmt(f)?; e.fmt(ctx, f)? }
         ")".fmt(f)
       }
-      TyKind::Heap(x, v, t) => write!(f, "{} => {}: {}", fe.to(x), fe.to(v), fe.to(t)),
-      TyKind::HasTy(v, t) => write!(f, "[{}: {}]", fe.to(v), fe.to(t)),
+      TyKind::Heap(x, v, t) => write!(f, "{} => {}: {}", p!(x), p!(v), p!(t)),
+      TyKind::HasTy(v, t) => write!(f, "[{}: {}]", p!(v), p!(t)),
       TyKind::Input => "Input".fmt(f),
       TyKind::Output => "Output".fmt(f),
-      TyKind::Moved(ty) => write!(f, "|{}|", fe.to(ty)),
+      TyKind::Moved(ty) => write!(f, "|{}|", p!(ty)),
       TyKind::Infer(v) => write!(f, "?T{}", v.0),
       TyKind::Error => "??".fmt(f),
     }
@@ -811,8 +805,6 @@ pub enum ExprKind<'a> {
 pub trait ExprVisit<'a> {
   /// Called on `Ty` subexpressions.
   fn visit_ty(&mut self, _: Ty<'a>) {}
-  /// Called on `Pattern` subexpressions.
-  fn visit_pat(&mut self, _: Pattern<'a>) {}
   /// Called on variable subexpressions.
   fn visit_var(&mut self, _: VarId) {}
   /// Called on expression `MVar` subexpressions.
@@ -892,39 +884,40 @@ impl AddFlags for ExprKind<'_> {
   }
 }
 
-impl EnvDisplay for ExprKind<'_> {
-  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C: DisplayCtx> CtxDisplay<C> for ExprKind<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use itertools::Itertools;
+    macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
     match *self {
       ExprKind::Unit => "()".fmt(f),
-      ExprKind::Var(v) => v.fmt(f),
-      ExprKind::Const(c) => c.fmt(fe, f),
+      ExprKind::Var(v) => ctx.fmt_var(v, f),
+      ExprKind::Const(c) => c.fmt(ctx.format_env(), f),
       // ExprKind::Global(v) => v.fmt(fe, f),
       ExprKind::Bool(b) => b.fmt(f),
       ExprKind::Int(n) => n.fmt(f),
-      ExprKind::Unop(Unop::As(ity), e) => write!(f, "{{{} as {}}}", fe.to(e), ity),
-      ExprKind::Unop(op, e) => write!(f, "({} {})", op, fe.to(e)),
-      ExprKind::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", fe.to(e1), op, fe.to(e2)),
+      ExprKind::Unop(Unop::As(ity), e) => write!(f, "{{{} as {}}}", p!(e), ity),
+      ExprKind::Unop(op, e) => write!(f, "({} {})", op, p!(e)),
+      ExprKind::Binop(op, e1, e2) => write!(f, "{{{} {} {}}}", p!(e1), op, p!(e2)),
       ExprKind::List(es) |
-      ExprKind::Array(es) => write!(f, "(list {})", es.iter().map(|&e| fe.to(e)).format(" ")),
-      ExprKind::Index(a, i) => write!(f, "(index {} {})", fe.to(a), fe.to(i)),
-      ExprKind::Slice(a, i, n) => write!(f, "(slice {} {} {})", fe.to(a), fe.to(i), fe.to(n)),
-      ExprKind::Proj(a, i) => write!(f, "({} . {})", fe.to(a), i),
+      ExprKind::Array(es) => write!(f, "(list {})", es.iter().map(|&e| p!(e)).format(" ")),
+      ExprKind::Index(a, i) => write!(f, "(index {} {})", p!(a), p!(i)),
+      ExprKind::Slice(a, i, n) => write!(f, "(slice {} {} {})", p!(a), p!(i), p!(n)),
+      ExprKind::Proj(a, i) => write!(f, "({} . {})", p!(a), i),
       ExprKind::UpdateIndex(a, i, val) => write!(f,
-        "(update-index {} {} {})", fe.to(a), fe.to(i), fe.to(val)),
+        "(update-index {} {} {})", p!(a), p!(i), p!(val)),
       ExprKind::UpdateSlice(a, i, l, val) => write!(f,
-        "(update-slice {} {} {} {})", fe.to(a), fe.to(i), fe.to(l), fe.to(val)),
+        "(update-slice {} {} {} {})", p!(a), p!(i), p!(l), p!(val)),
       ExprKind::UpdateProj(a, n, val) => write!(f,
-        "(update-proj {} {} {})", fe.to(a), n, fe.to(val)),
-      ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", fe.to(ty)),
-      ExprKind::Mm0(ref e) => e.fmt(fe, f),
+        "(update-proj {} {} {})", p!(a), n, p!(val)),
+      ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", p!(ty)),
+      ExprKind::Mm0(ref e) => e.fmt(ctx, f),
       ExprKind::Call {f: x, tys, args} => {
-        write!(f, "({}", fe.to(&x))?;
-        for &ty in tys { write!(f, " {}", fe.to(ty))? }
-        for &arg in args { write!(f, " {}", fe.to(arg))? }
+        write!(f, "({}", ctx.format_env().to(&x))?;
+        for &ty in tys { write!(f, " {}", p!(ty))? }
+        for &arg in args { write!(f, " {}", p!(arg))? }
         ")".fmt(f)
       }
-      ExprKind::If {cond, then, els} => write!(f, "(if {} {} {})", fe.to(cond), fe.to(then), fe.to(els)),
+      ExprKind::If {cond, then, els} => write!(f, "(if {} {} {})", p!(cond), p!(then), p!(els)),
       ExprKind::Infer(v) => write!(f, "?v{}", v.0),
       ExprKind::Error => "??".fmt(f),
     }

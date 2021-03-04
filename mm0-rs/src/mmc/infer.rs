@@ -8,12 +8,12 @@ use std::{borrow::{Borrow, Cow}, cell::RefCell, fmt::Debug, hash::{Hash, Hasher}
 use std::result::Result as StdResult;
 use std::convert::{TryFrom, TryInto};
 use bumpalo::Bump;
-use hashbrown::{HashMap, HashSet, hash_map::RawEntryMut};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use hir::{Context, ContextNext};
 use itertools::Itertools;
 use num::{BigInt, Signed};
 use types::IntTy;
-use crate::{AtomId, LispVal, FormatEnv, u32_as_usize, FileSpan};
+use crate::{AtomId, FileSpan, FormatEnv, LispVal, lisp::print::alphanumber, u32_as_usize};
 use super::{parser::try_get_fspan,
   types::{self, Binop, BinopType, FieldName, Size, Spanned, Unop, VarId,
     ast, hir::{self, GenId}}};
@@ -21,8 +21,9 @@ use super::types::entity::{Entity, ConstTc, GlobalTc, ProcTc, TypeTy};
 use super::union_find::{UnifyCtx, UnifyKey, UnificationTable};
 #[allow(clippy::wildcard_imports)] use super::types::ty::*;
 
+/// The possible errors that can occur during type inference and type checking.
 #[derive(Debug)]
-enum TypeError<'a> {
+pub enum TypeError<'a> {
   /// Failed to pattern match type T with the given pattern of type U
   PatternMatch(Ty<'a>, Ty<'a>),
   /// Failed to relate type T to type U according to the relation
@@ -46,7 +47,7 @@ enum TypeError<'a> {
   /// Cannot assign to this lvalue
   UnsupportedAssign,
   /// Missing `with` clause for assignment
-  MissingAssignWith(AtomId),
+  MissingAssignWith(VarId),
   /// Provided expressions x and y do not unify in an and-intro expression
   IAndUnify(Expr<'a>, Expr<'a>),
   /// An explicit hole expression, which queries for the full type context.
@@ -60,6 +61,54 @@ enum TypeError<'a> {
   MissingMuts(Vec<VarId>),
   /// A `(variant h)` clause was provided to a function or label that does not declare a variant
   UnexpectedVariant,
+}
+
+impl<C: DisplayCtx> CtxDisplay<C> for TypeError<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use itertools::Itertools;
+    macro_rules! p {($e:expr) => {CtxPrint(ctx, $e)}}
+    match *self {
+      TypeError::PatternMatch(t1, t2) => write!(f,
+        "Failed to pattern match type\n  {}\n \
+        with the given pattern of type\n  {}",
+        p!(t1), p!(t2)),
+      TypeError::Relate(t1, t2, Relation::Equal) => write!(f,
+        "Type mismatch: type\n  {}\n is not equal to type\n  {}", p!(t1), p!(t2)),
+      TypeError::Relate(t1, t2, Relation::Subtype) => write!(f,
+        "Type mismatch: type\n  {}\n is not a subtype of\n  {}", p!(t1), p!(t2)),
+      TypeError::Relate(t1, t2, Relation::SubtypeEqSize) => write!(f,
+        "Type mismatch: type\n  {}\n is not a binary compatible subtype of\n  {}", p!(t1), p!(t2)),
+      TypeError::Relate(t1, t2, Relation::Coerce) => write!(f,
+        "Type mismatch: type\n  {}\n is not coercible to\n  {}", p!(t1), p!(t2)),
+      TypeError::ExpectedPure => write!(f, "Expected a pure expression"),
+      TypeError::ExpectedStruct(t) => write!(f, "Expected a struct expression, got\n  {}", p!(t)),
+      TypeError::ExpectedPtr => write!(f, "Expected a pointer expression"),
+      TypeError::ExpectedPlace => write!(f, "Expected a place expression"),
+      TypeError::ExpectedType => write!(f, "Can't infer type, try inserting a type ascription"),
+      TypeError::FieldMissing(t, name) => write!(f, "Struct\n  {}\ndoes not have field '{}'",
+        p!(t), ctx.format_env().to(&name)),
+      TypeError::NumArgs(want, got) => write!(f, "expected {} arguments, got {}", want, got),
+      TypeError::UnsupportedAs(t1, t2) => write!(f,
+        "{} as {} conversion not supported", p!(t1), p!(t2)),
+      TypeError::UnsupportedAssign => write!(f, "Cannot assign to this lvalue"),
+      TypeError::MissingAssignWith(v) => write!(f,
+        "Missing 'with' clause for assignment. Try inserting {{... with {}}}", p!(&v)),
+      TypeError::IAndUnify(e1, e2) => write!(f,
+        "And introduction expression mismatch:\n  {}\n!=\n  {}\n\
+        Note: and-intro requires all expressions evaluate to the same value", p!(e1), p!(e2)),
+      TypeError::Hole(ref dc, None) => write!(f, "{}|- ?", p!(&**dc)),
+      TypeError::Hole(ref dc, Some(t)) => write!(f, "{}|- {}", p!(&**dc), p!(t)),
+      TypeError::UnsupportedSynthesis(ref dc, e, t) => write!(f, "{}|- {}\n:= {}\n\
+        Note: the target expression is known but we don't know how to evaluate it",
+        p!(&**dc), p!(t), p!(e)),
+      TypeError::InvalidReturn => write!(f, "Can't use return in this position"),
+      TypeError::MissingMuts(ref muts) => write!(f, "\
+        While loop mutates a value without marking it as 'mut' in the loop header. \
+        Try adding:\n  (mut {})", muts.iter().map(|v| p!(v)).format(" ")),
+      TypeError::UnexpectedVariant => write!(f, "A (variant h) clause was provided \
+        to a function or label that does not declare a variant"),
+    }
+  }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -76,7 +125,7 @@ impl<T> Borrow<T> for Interned<&WithMeta<T>> {
   fn borrow(&self) -> &T { &self.0.k }
 }
 
-type InternedSet<T> = HashMap<Interned<T>, ()>;
+type InternedSet<T> = hashbrown::HashMap<Interned<T>, ()>;
 
 trait Internable<'a>: Sized + Eq + Hash + AddFlags {
   fn get<'b>(_: &'b Interner<'a>) -> &'b InternedSet<&'a WithMeta<Self>>;
@@ -98,13 +147,13 @@ macro_rules! mk_interner {($($field:ident: $ty:ident,)*) => {
 mk_interner! {
   tups: TuplePatternKind,
   args: ArgKind,
-  pats: PatternKind,
   tys: TyKind,
   exprs: ExprKind,
 }
 
 impl<'a> Interner<'a> {
   fn intern<T: Internable<'a>>(&mut self, alloc: &'a Bump, t: T) -> &'a WithMeta<T> {
+    use hashbrown::hash_map::RawEntryMut;
     match T::get_mut(self).raw_entry_mut().from_key(&t) {
       RawEntryMut::Occupied(e) => e.key().0,
       RawEntryMut::Vacant(e) =>
@@ -481,7 +530,7 @@ impl<'a> Subst<'a> {
       TuplePatternKind::Name(g, v, ty) => {
         let ty2 = self.subst_ty(ctx, sp, ty);
         let v2 = if self.fvars.contains(&v) {
-          let w = ctx.fresh_var();
+          let w = ctx.fresh_var(ctx.var_name(v));
           self.subst.insert(v, Ok(intern!(ctx, ExprKind::Var(w))));
           w
         } else { v };
@@ -642,6 +691,116 @@ impl<'a> DynContext<'a> {
   }
 }
 
+impl<C: DisplayCtx> CtxDisplay<C> for DynContext<'_> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    for &c in self.context.into_iter().collect::<Vec<_>>().iter().rev() {
+      let (val, ty) = if_chain! {
+        if c.gen == GenId::LATEST;
+        if let Some(&(_, val, ty)) = self.gen_vars.get(&c.var);
+        then { (val, ty) }
+        else { (c.val, c.ty) }
+      };
+      write!(f, "{}: {}", CtxPrint(ctx, &c.var), CtxPrint(ctx, ty))?;
+      if matches!(val.k, ExprKind::Var(v) if v == c.var) {
+        writeln!(f)?
+      } else {
+        writeln!(f, " := {}", CtxPrint(ctx, val))?
+      }
+    }
+    Ok(())
+  }
+}
+
+#[derive(Debug)]
+struct Counter<V> {
+  vars: HashMap<V, usize>,
+  max: usize
+}
+
+impl<V> Default for Counter<V> {
+  fn default() -> Self { Self { vars: Default::default(), max: 0 } }
+}
+
+impl<V: Hash + Eq> Counter<V> {
+  fn get(&mut self, v: V) -> usize {
+    let Counter {vars, max} = self;
+    *vars.entry(v).or_insert_with(|| { let n = *max; *max += 1; n })
+  }
+}
+
+#[derive(Debug)]
+struct PrintCtxInner<'a, 'b> {
+  ctx: &'b mut InferCtx<'a>,
+  lft_mvars: Counter<LftMVarId>,
+  expr_mvars: Counter<ExprMVarId>,
+  ty_mvars: Counter<TyMVarId>,
+  vars: HashMap<AtomId, Counter<VarId>>,
+}
+
+/// A wrapper struct for printing error messages. It is stateful, meaning that it keeps track
+/// of variables it sees so that it can number things in the order they are printed (rather than
+/// using the internal numbering, which might involve a lot of temporaries). Variables and
+/// metavariables are numbered consistently as long as this object is kept around.
+#[derive(Debug)]
+pub struct PrintCtx<'a, 'b> {
+  fe: FormatEnv<'a>,
+  inner: RefCell<PrintCtxInner<'a, 'b>>,
+}
+
+impl<'a> InferCtx<'a> {
+  /// Constructs a stateful printer for error messages, which should be used on all error messages
+  /// in a group.
+  pub fn print(&mut self, fe: FormatEnv<'a>) -> PrintCtx<'a, '_> {
+    PrintCtx {
+      fe,
+      inner: RefCell::new(PrintCtxInner {
+        ctx: self,
+        lft_mvars: Default::default(),
+        expr_mvars: Default::default(),
+        ty_mvars: Default::default(),
+        vars: Default::default()
+      }),
+    }
+  }
+}
+
+impl<'a, 'b> DisplayCtx for PrintCtx<'a, 'b> {
+  fn format_env(&self) -> FormatEnv<'_> { self.fe }
+
+  fn fmt_var(&self, v: VarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let mut inner = self.inner.borrow_mut();
+    let name = inner.ctx.var_name(v);
+    let n = inner.vars.entry(name).or_default().get(v);
+    if name == AtomId::UNDER {
+      write!(f, "_{}", n+1)
+    } else if n == 0 {
+      write!(f, "{}", self.fe.to(&name))
+    } else {
+      write!(f, "{}_{}", self.fe.to(&name), n)
+    }
+  }
+
+  fn fmt_lft_mvar(&self, v: LftMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let mut inner = self.inner.borrow_mut();
+    if let Some(lft) = inner.ctx.lft_mvars.lookup(v) { return CtxDisplay::fmt(&lft, self, f) }
+    write!(f, "'{}", self.inner.borrow_mut().lft_mvars.get(v))
+  }
+
+  fn fmt_expr_mvar(&self, v: ExprMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let mut inner = self.inner.borrow_mut();
+    if let Some(e) = inner.ctx.expr_mvars.lookup(v) { return CtxDisplay::fmt(e, self, f) }
+    write!(f, "?{}", alphanumber(inner.expr_mvars.get(v)))
+  }
+
+  fn fmt_ty_mvar(&self, v: TyMVarId, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let mut inner = self.inner.borrow_mut();
+    if let Some(ty) = inner.ctx.ty_mvars.lookup(v) { return CtxDisplay::fmt(ty, self, f) }
+    let mut s = alphanumber(inner.ty_mvars.get(v));
+    s.make_ascii_uppercase();
+    write!(f, "?{}", s)
+  }
+}
+
 #[derive(Debug)]
 enum AgreeExpr<'a> {
   Unset,
@@ -666,15 +825,11 @@ struct LabelData<'a> {
 /// The main inference context for the type inference pass.
 #[derive(Debug)]
 pub struct InferCtx<'a> {
-  /// The formatting environment, so we can print things.
-  fe: FormatEnv<'a>,
   /// The bump allocator that stores all the data structures
   /// (the `'a` in all the borrowed types).
   alloc: &'a Bump,
   /// The name map, for global variables and functions.
   names: &'a HashMap<AtomId, Entity>,
-  /// The largest allocated variable so far, for fresh naming.
-  max_var: VarId,
   /// The interner, which is used to deduplicate types and terms that are
   /// constructed multiple times.
   interner: Interner<'a>,
@@ -692,7 +847,7 @@ pub struct InferCtx<'a> {
   /// The next generation.
   generation_count: GenId,
   /// The mapping from variables to their user-provided names.
-  var_names: HashMap<VarId, AtomId>,
+  var_names: Vec<AtomId>,
   /// The set of labels in scope.
   labels: HashMap<VarId, LabelData<'a>>,
   /// The return type of the current function.
@@ -701,12 +856,12 @@ pub struct InferCtx<'a> {
   /// We delay outputting these so that we can report many errors at once,
   /// as well as waiting for all variables to be as unified as possible so that
   /// the error messages are as precise as possible.
-  errors: Vec<hir::Spanned<'a, TypeError<'a>>>,
+  pub errors: Vec<hir::Spanned<'a, TypeError<'a>>>,
 }
 
 /// A relation between types, used as an argument to [`InferCtx::relate_ty`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Relation {
+pub enum Relation {
   /// Enforce that rvalues of type `A` can be converted to type `B`,
   /// possibly via a non-identity function.
   Coerce,
@@ -989,21 +1144,17 @@ impl<'a> Common<'a> {
 impl<'a> InferCtx<'a> {
   /// Create a new `InferCtx` from the given allocator.
   pub fn new(
-    fe: FormatEnv<'a>,
     alloc: &'a Bump,
     names: &'a HashMap<AtomId, Entity>,
-    var_names: HashMap<VarId, AtomId>,
-    max_var: VarId,
+    var_names: Vec<AtomId>,
   ) -> Self {
     let mut interner = Default::default();
     let common = Common::new(&mut interner, alloc);
     Self {
-      fe,
       alloc,
       names,
       interner,
       common,
-      max_var,
       var_names,
       // tasks: vec![],
       ty_mvars: Default::default(),
@@ -1031,9 +1182,13 @@ impl<'a> InferCtx<'a> {
     self.interner.intern(self.alloc, t)
   }
 
-  fn fresh_var(&mut self) -> VarId {
-    let n = self.max_var;
-    self.max_var.0 += 1;
+  fn var_name(&self, v: VarId) -> AtomId {
+    self.var_names[u32_as_usize(v.0)]
+  }
+
+  fn fresh_var(&mut self, name: AtomId) -> VarId {
+    let n = VarId(self.var_names.len().try_into().expect("overflow"));
+    self.var_names.push(name);
     n
   }
 
@@ -2615,7 +2770,7 @@ impl<'a> InferCtx<'a> {
           })))
         } else {
           hir::CastKind::Subtype(h.as_deref().map(|h| Box::new({
-            let v = self.fresh_var();
+            let v = self.fresh_var(AtomId::UNDER);
             let x = intern!(self, ExprKind::Var(v));
             // A. x: ty, [x: ty] -* [x: tgt]
             let hty = intern!(self, TyKind::All(
@@ -2697,8 +2852,7 @@ impl<'a> InferCtx<'a> {
         let (rhs, prhs, _) = self.lower_expr(rhs, ExpectExpr::HasTy(lty));
         let (gen, e, ty) = self.dc.get_var(v);
         let old = if let Some(&(_, old)) = oldmap.iter().find(|p| p.0 == v) {old} else {
-          let name = self.var_names.get(&v).copied().unwrap_or(AtomId::UNDER);
-          error!(span, MissingAssignWith(name))
+          error!(span, MissingAssignWith(v))
         };
         let e = Some(intern!(self, ExprKind::Var(old)));
         self.dc.context = self.new_context_next(old, e, ty).into();
@@ -3147,7 +3301,8 @@ impl<'a> InferCtx<'a> {
     (bl, pe)
   }
 
-  fn lower_item(&mut self, Spanned {span, k: item}: &'a ast::Item) -> hir::Item<'a> {
+  /// Construct the HIR for a top level item, performing type inference.
+  pub fn lower_item(&mut self, Spanned {span, k: item}: &'a ast::Item) -> hir::Item<'a> {
     let item = match item {
       &ast::ItemKind::Proc {kind, ref name, tyargs, ref args, ref rets, ref variant, ref body} => {
         let name = hir::Spanned {span: &name.span, k: name.k};

@@ -95,7 +95,12 @@ fn list(init: &[LispVal], e: Option<&LispKind>, mut start: bool, fe: FormatEnv<'
   }
 }
 
-fn alphanumber(n: usize) -> String {
+/// Translate a number into an alphabetic numbering system, indexing into the following infinite
+/// sequence:
+/// ```ignore
+/// a, b, c, ... z, aa, ab, ... az, ba, ... bz, ... zz, aaa, ...
+/// ```
+pub(crate) fn alphanumber(n: usize) -> String {
   let mut out = Vec::with_capacity(2);
   let mut n = n + 1;
   while n != 0 {

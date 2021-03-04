@@ -79,8 +79,8 @@ pub struct BuildAst<'a> {
   ctx: Vec<Ctx>,
   /// The list of type variables in scope.
   tyvars: Vec<AtomId>,
-  /// The first unused variable ID, used for fresh name generation.
-  next_var: VarId,
+  /// The mapping from allocated variables to their user facing names.
+  pub(crate) var_names: Vec<AtomId>,
 }
 
 impl<'a> BuildAst<'a> {
@@ -92,7 +92,7 @@ impl<'a> BuildAst<'a> {
       label_map: HashMap::new(),
       loops: vec![],
       ctx: vec![],
-      next_var: VarId::default(),
+      var_names: vec![],
       tyvars: vec![]
     }
   }
@@ -105,14 +105,14 @@ impl<'a> BuildAst<'a> {
     }
   }
 
-  fn fresh_var(&mut self) -> VarId {
-    let v = self.next_var;
-    self.next_var.0 += 1;
+  fn fresh_var(&mut self, name: AtomId) -> VarId {
+    let v = VarId(self.var_names.len().try_into().expect("overflow"));
+    self.var_names.push(name);
     v
   }
 
   fn push_fresh(&mut self, name: AtomId) -> VarId {
-    let v = self.fresh_var();
+    let v = self.fresh_var(name);
     self.push(name, v);
     v
   }
@@ -157,11 +157,13 @@ impl<'a> BuildAst<'a> {
     let mut map = HashMap::new();
     for (from, to) in old {
       if from == AtomId::UNDER { return Err(ElabError::new_e(sp, "can't rename variable '_'")) }
-      map.entry(self.get_var(sp, from)?).or_insert_with(|| (self.fresh_var(), from, from)).2 = to;
+      map.entry(self.get_var(sp, from)?)
+        .or_insert_with(|| (self.fresh_var(from), from, from)).2 = to;
     }
     for (from, to) in new {
       if from == AtomId::UNDER { return Err(ElabError::new_e(sp, "can't rename variable '_'")) }
-      map.entry(self.get_var(sp, from)?).or_insert_with(|| (self.fresh_var(), from, from)).1 = to;
+      map.entry(self.get_var(sp, from)?)
+        .or_insert_with(|| (self.fresh_var(from), from, from)).1 = to;
     }
     Ok(map)
   }
@@ -184,7 +186,7 @@ impl<'a> BuildAst<'a> {
   fn push_tuple_pattern(&mut self, Spanned {span, k: pat}: TuplePattern, v: Option<VarId>) -> Result<ast::TuplePattern> {
     let k = match pat {
       TuplePatternKind::Name(g, name) => {
-        let v = v.unwrap_or_else(|| self.fresh_var());
+        let v = v.unwrap_or_else(|| self.fresh_var(name));
         self.push(name, v);
         ast::TuplePatternKind::Name(g, name, v)
       }
@@ -195,7 +197,7 @@ impl<'a> BuildAst<'a> {
       }
       TuplePatternKind::Tuple(pats) => ast::TuplePatternKind::Tuple(
         pats.into_iter().map(|pat| {
-          let v = self.fresh_var();
+          let v = self.fresh_var(AtomId::UNDER);
           Ok((v, self.push_tuple_pattern(pat, Some(v))?))
         }).collect::<Result<_>>()?
       ),
@@ -292,7 +294,7 @@ impl<'a> BuildAst<'a> {
         let f = |pat| (ast::ArgAttr::empty(), ast::ArgKind::Lam(pat));
         pats.extend(args.into_vec().into_iter().map(|pat| pat.map_into(f)));
         let ty = this.build_ty(&span, &p)?;
-        let k = ast::TuplePatternKind::Name(true, AtomId::UNDER, this.fresh_var());
+        let k = ast::TuplePatternKind::Name(true, AtomId::UNDER, this.fresh_var(AtomId::UNDER));
         let k = f(ast::TuplePatternKind::Typed(Box::new(Spanned {span: span.clone(), k}), Box::new(ty)));
         pats.push(Spanned {span: span.clone(), k});
         Ok(ast::TypeKind::Struct(pats.into_boxed_slice()))
@@ -364,7 +366,7 @@ impl<'a> BuildAst<'a> {
         Self::add_origins(&lhs, &mut |var| {
           if let Entry::Vacant(e) = split.entry(var) {
             if let Some(from) = self.ctx.iter().find_map(|v| match *v { Ctx::Var(a, v) if v == var => Some(a), _ => None}) {
-              e.insert((self.fresh_var(), from, from));
+              e.insert((self.fresh_var(from), from, from));
             }
           }
           Ok(())
@@ -399,7 +401,7 @@ impl<'a> BuildAst<'a> {
       })?,
       ExprKind::Match(e, branches) => {
         let e = Rc::new(self.build_expr(&span, e)?);
-        let v = self.fresh_var();
+        let v = self.fresh_var(AtomId::UNDER);
         let k = self.build_match(&span, Some(v), &e, branches, true,
           |stmts, e| ast::ExprKind::Block(ast::Block { stmts, expr: Some(Box::new(e)) }),
           |hyp, cond, then, els| ast::ExprKind::If {hyp, cond, then, els},
@@ -411,7 +413,7 @@ impl<'a> BuildAst<'a> {
         })
       }
       ExprKind::While {muts, hyp, cond, var, body} => {
-        let label = self.fresh_var();
+        let label = self.fresh_var(AtomId::UNDER);
         let mut muts2 = Vec::with_capacity(muts.len());
         for Spanned {span, k: name} in muts {
           let a = self.get_var(&span, name)?;
@@ -483,7 +485,7 @@ impl<'a> BuildAst<'a> {
               return Err(ElabError::new_e(&span, "can't bind variables in this context"))
             }
             self.uses_hyp = true;
-            let v = self.ba.fresh_var();
+            let v = self.ba.fresh_var(name);
             let cl = move || sp!(sp, ast::ExprKind::Var(v));
             let pos: Option<&dyn Fn() -> ast::Expr> = if let Some(f) = pos {
               self.posblock.push(let_var(sp, name, v, f()));
@@ -568,7 +570,7 @@ impl<'a> BuildAst<'a> {
       let mut iter = branches.into_iter();
       let mut e = loop {
         if let Some(Spanned {span, k: (lhs, rhs)}) = iter.next() {
-          let hyp = this.fresh_var();
+          let hyp = this.fresh_var(AtomId::UNDER);
           let hvar = || Spanned {span: span.clone(), k: ast::ExprKind::Var(hyp)};
           let mut pp = PushPattern {
             ba: this,
@@ -664,7 +666,7 @@ impl<'a> BuildAst<'a> {
   }
 
   fn push_jumps(&mut self, jumps: Vec<Spanned<Label>>) -> Result<(VarId, Box<[ast::Label]>)> {
-    let group = self.fresh_var();
+    let group = self.fresh_var(AtomId::UNDER);
     for (i, name) in jumps.iter().map(|j| j.k.name).enumerate() {
       self.push_label(name, LabelId(group, i.try_into().expect("label number overflow")));
     }
@@ -723,7 +725,7 @@ impl<'a> BuildAst<'a> {
         ) -> Result<ast::Expr> {
           let e2 = this.build_expr(sp, e2)?;
           Ok(and(sp, op, v0, v1, if let Some(e3) = it.next() {
-            let v2 = this.fresh_var();
+            let v2 = this.fresh_var(AtomId::UNDER);
             sp!(sp, block![
               let_var(sp, AtomId::UNDER, v2, e2);
               mk_and(this, sp, op, v1, v2, e3, it)?
@@ -732,8 +734,8 @@ impl<'a> BuildAst<'a> {
             binop(sp, op, v1, e2)
           }))
         }
-        let v_1 = self.fresh_var();
-        let v_2 = self.fresh_var();
+        let v_1 = self.fresh_var(AtomId::UNDER);
+        let v_2 = self.fresh_var(AtomId::UNDER);
         block![
           let_var(sp, AtomId::UNDER, v_1, arg_1),
           let_var(sp, AtomId::UNDER, v_2, arg_2);
@@ -954,7 +956,7 @@ impl<'a> BuildAst<'a> {
               loop {
                 match pat {
                   &TuplePatternKind::Name(g, name2) => {
-                    let v = this.fresh_var();
+                    let v = this.fresh_var(name2);
                     this.push(name2, v);
                     let &OutVal {ghost, index, ..} = outmap.iter().find(|p| p.name == name).expect("checked");
                     break ast::Ret::Out(ghost || g, index, name, v, oty)

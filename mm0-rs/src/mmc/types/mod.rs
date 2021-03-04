@@ -535,6 +535,16 @@ pub enum FieldName {
 }
 crate::deep_size_0!(FieldName);
 
+impl EnvDisplay for FieldName {
+  fn fmt(&self, fe: FormatEnv<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use std::fmt::Display;
+    match *self {
+      FieldName::Number(n) => n.fmt(f),
+      FieldName::Named(a) => a.fmt(fe, f),
+    }
+  }
+}
+
 /// An embedded MM0 expression inside MMC. This representation is designed to make it easy
 /// to produce substitutions of the free variables.
 #[derive(Debug, DeepSizeOf)]

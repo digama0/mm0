@@ -17,12 +17,13 @@ pub mod nameck;
 // pub mod typeck;
 pub mod union_find;
 
-use std::collections::hash_map::HashMap;
+use std::collections::HashMap;
+use bumpalo::Bump;
 use parser::ItemIter;
 
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv};
-use {types::{Keyword, entity::Entity}, parser::Parser,
+use {types::{Keyword, entity::Entity, ty::CtxPrint}, parser::Parser,
   build_ast::BuildAst, predef::PredefMap};
 
 impl Remap for Keyword {
@@ -102,7 +103,15 @@ impl Compiler {
           match $e { Ok(r) => r, Err(e) => {errors.push(e); continue}}
         }}
         try1!(Self::reserve_names(&mut self.names, &item));
-        let _item = try1!(BuildAst::new(&self.names, p).build_item(item));
+        let mut ba = BuildAst::new(&self.names, p);
+        let item = try1!(ba.build_item(item));
+        let alloc = Bump::new();
+        let mut ctx = infer::InferCtx::new(&alloc, &self.names, ba.var_names);
+        let _item = ctx.lower_item(&item);
+        let errs = std::mem::take(&mut ctx.errors);
+        let mut pr = ctx.print(p.fe);
+        errors.extend(errs.into_iter().map(|e|
+          ElabError::new_e(e.span, format!("{}", CtxPrint(&mut pr, &e.k)))));
       }
     }
     for e in errors { elab.report(e) }
