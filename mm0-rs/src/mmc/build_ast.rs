@@ -281,7 +281,10 @@ impl<'a> BuildAst<'a> {
       },
       TypeKind::Own(ty) => ast::TypeKind::Own(Box::new(self.build_ty(&span, &ty)?)),
       TypeKind::Ref(lft, ty) => ast::TypeKind::Ref(self.build_lft(lft)?, Box::new(self.build_ty(&span, &ty)?)),
-      TypeKind::Shr(lft, ty) => ast::TypeKind::Shr(self.build_lft(lft)?, Box::new(self.build_ty(&span, &ty)?)),
+      TypeKind::Shr(lft, ty) => {
+        let k = ast::TypeKind::Ref(self.build_lft(lft)?, Box::new(self.build_ty(&span, &ty)?));
+        ast::TypeKind::Own(Box::new(Spanned {span: span.clone(), k}))
+      }
       TypeKind::RefSn(e) => ast::TypeKind::RefSn(Box::new(self.build_expr(&span, e)?)),
       TypeKind::List(tys) => ast::TypeKind::List(tys.iter().map(|ty| self.build_ty(&span, ty)).collect::<Result<_>>()?),
       TypeKind::Sn(e) => ast::TypeKind::Sn(Box::new(self.build_expr(&span, e)?)),
@@ -988,13 +991,13 @@ impl<'a> BuildAst<'a> {
     let k = match item {
       ItemKind::Proc(proc) => self.build_proc(&span, proc)?,
       ItemKind::Global(lhs, rhs) => {
+        let rhs = self.build_expr(&span, rhs)?;
         let lhs = self.push_tuple_pattern(*lhs, None)?;
-        let rhs = self.push_expr(&span, rhs)?;
         ast::ItemKind::Global {lhs, rhs}
       }
       ItemKind::Const(lhs, rhs) => {
+        let rhs = self.build_expr(&span, rhs)?;
         let lhs = self.push_tuple_pattern(*lhs, None)?;
-        let rhs = self.push_expr(&span, rhs)?;
         ast::ItemKind::Const {lhs, rhs}
       }
       ItemKind::Typedef {name, tyargs, args, val} => {

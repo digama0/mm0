@@ -172,10 +172,6 @@ pub enum TypeKind {
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
   Ref(Option<Box<Spanned<Lifetime>>>, Box<Type>),
-  /// `(& T)` is a type of borrowed pointers. This type is elaborated to
-  /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
-  /// (see [`Lifetime`]).
-  Shr(Option<Box<Spanned<Lifetime>>>, Box<Type>),
   /// `&sn x` is the type of pointers to the place `x` (a variable or indexing expression).
   RefSn(Box<Expr>),
   /// `(A, B, C)` is a tuple type with elements `A, B, C`;
@@ -259,7 +255,6 @@ impl Remap for TypeKind {
       TypeKind::Array(ty, n) => TypeKind::Array(ty.remap(r), n.remap(r)),
       TypeKind::Own(ty) => TypeKind::Own(ty.remap(r)),
       TypeKind::Ref(lft, ty) => TypeKind::Ref(lft.clone(), ty.remap(r)),
-      TypeKind::Shr(lft, ty) => TypeKind::Shr(lft.clone(), ty.remap(r)),
       TypeKind::RefSn(ty) => TypeKind::RefSn(ty.remap(r)),
       TypeKind::List(tys) => TypeKind::List(tys.remap(r)),
       TypeKind::Sn(e) => TypeKind::Sn(e.remap(r)),

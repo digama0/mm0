@@ -261,6 +261,8 @@ pub enum TupleMatchKind {
   /// A singleton pattern match `(x, h): sn {a : T}` returns `x`.
   /// (It could also soundly return `a`, but `x` seems more useful here.)
   Sn,
+  /// An `own` pattern match `(x, h): own T` returns `& x`.
+  Own,
 }
 crate::deep_size_0!(TupleMatchKind);
 
@@ -452,10 +454,6 @@ pub enum TyKind<'a> {
   /// `(ref a T)` where `a` is a lifetime; this is handled a bit differently than rust
   /// (see [`Lifetime`]).
   Ref(Lifetime, Ty<'a>),
-  /// `(& T)` is a type of borrowed pointers. This type is elaborated to
-  /// `(& a T)` where `a` is a lifetime; this is handled a bit differently than rust
-  /// (see [`Lifetime`]).
-  Shr(Lifetime, Ty<'a>),
   /// `&sn x` is the type of pointers to the place `x` (a variable or indexing expression).
   RefSn(Expr<'a>),
   /// `(A, B, C)` is a tuple type with elements `A, B, C`;
@@ -554,7 +552,6 @@ impl<'a> TyS<'a> {
       TyKind::Wand(p, q) => {p.visit(f); q.visit(f)}
       TyKind::Own(ty) |
       TyKind::Ref(_, ty) |
-      TyKind::Shr(_, ty) |
       TyKind::Ghost(ty) |
       TyKind::Uninit(ty) |
       TyKind::Not(ty) |
@@ -620,8 +617,7 @@ impl AddFlags for TyKind<'_> {
       TyKind::Ghost(ty) => *f |= ty,
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) => {*f |= ty; f.remove(Flags::IS_NON_COPY)}
-      TyKind::Ref(lft, ty) |
-      TyKind::Shr(lft, ty) => {*f |= (lft, ty); f.remove(Flags::IS_NON_COPY)}
+      TyKind::Ref(lft, ty) => {*f |= (lft, ty); f.remove(Flags::IS_NON_COPY)}
       TyKind::RefSn(e) |
       TyKind::Pure(e) => {*f |= e; f.remove(Flags::IS_NON_COPY)}
       TyKind::Struct(args) => *f |= args,
@@ -672,7 +668,6 @@ impl<C: DisplayCtx> CtxDisplay<C> for TyKind<'_> {
       TyKind::Array(ty, n) => write!(f, "(array {} {})", p!(ty), p!(n)),
       TyKind::Own(ty) => write!(f, "(own {})", p!(ty)),
       TyKind::Ref(lft, ty) => write!(f, "(ref {} {})", p!(&lft), p!(ty)),
-      TyKind::Shr(lft, ty) => write!(f, "(& {} {})", p!(&lft), p!(ty)),
       TyKind::RefSn(x) => write!(f, "(&sn {})", p!(x)),
       TyKind::List(tys) => write!(f, "(list {})", tys.iter().map(|&ty| p!(ty)).format(" ")),
       TyKind::Sn(e, ty) => write!(f, "(sn {{{}: {}}})", p!(e), p!(ty)),
@@ -772,6 +767,8 @@ pub enum ExprKind<'a> {
   Array(&'a [Expr<'a>]),
   /// Return the size of a type.
   Sizeof(Ty<'a>),
+  /// A pointer to a place.
+  Ref(Expr<'a>),
   /// `(pure $e$)` embeds an MM0 expression `$e$` as the target type,
   /// one of the numeric types
   Mm0(Mm0Expr<'a>),
@@ -822,7 +819,8 @@ impl<'a> ExprS<'a> {
       ExprKind::Error => {}
       ExprKind::Var(v) => f.visit_var(v),
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) => e.visit(f),
+      ExprKind::Proj(e, _) |
+      ExprKind::Ref(e) => e.visit(f),
       ExprKind::Binop(_, e1, e2) => {e1.visit(f); e2.visit(f)}
       ExprKind::Index(a, i) => {a.visit(f); i.visit(f)}
       ExprKind::Slice(a, i, n) => {a.visit(f); i.visit(f); n.visit(f)}
@@ -866,7 +864,8 @@ impl AddFlags for ExprKind<'_> {
       ExprKind::Int(_) |
       ExprKind::Sizeof(_) => {}
       ExprKind::Unop(_, e) |
-      ExprKind::Proj(e, _) => *f |= e,
+      ExprKind::Proj(e, _) |
+      ExprKind::Ref(e) => *f |= e,
       ExprKind::Binop(_, e1, e2) => *f |= (e1, e2),
       ExprKind::Index(a, i) => *f |= (a, i),
       ExprKind::Slice(a, i, n) => *f |= (a, i, n),
@@ -909,6 +908,7 @@ impl<C: DisplayCtx> CtxDisplay<C> for ExprKind<'_> {
         "(update-slice {} {} {} {})", p!(a), p!(i), p!(l), p!(val)),
       ExprKind::UpdateProj(a, n, val) => write!(f,
         "(update-proj {} {} {})", p!(a), n, p!(val)),
+      ExprKind::Ref(e) => write!(f, "(& {})", p!(e)),
       ExprKind::Sizeof(ty) => write!(f, "(sizeof {})", p!(ty)),
       ExprKind::Mm0(ref e) => e.fmt(ctx, f),
       ExprKind::Call {f: x, tys, args} => {

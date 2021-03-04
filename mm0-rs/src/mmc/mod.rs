@@ -106,10 +106,10 @@ impl Compiler {
         let mut ba = BuildAst::new(&self.names, p);
         let item = try1!(ba.build_item(item));
         let alloc = Bump::new();
-        let mut ctx = infer::InferCtx::new(&alloc, &self.names, ba.var_names);
+        let mut ctx = infer::InferCtx::new(&alloc, &self.names, p.fe, ba.var_names);
         let _item = ctx.lower_item(&item);
         let errs = std::mem::take(&mut ctx.errors);
-        let mut pr = ctx.print(p.fe);
+        let mut pr = ctx.print();
         errors.extend(errs.into_iter().map(|e|
           ElabError::new_e(e.span, format!("{}", CtxPrint(&mut pr, &e.k)))));
       }
