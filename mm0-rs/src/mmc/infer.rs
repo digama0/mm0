@@ -1435,7 +1435,7 @@ impl<'a> InferCtx<'a> {
       TyKind::User(f, tys, es) => {
         let_unchecked!(ty as Some(Entity::Type(ty)) = self.names.get(&f));
         let_unchecked!(args as Some(TypeTy {args, ..}) = ty.k.ty());
-        let _ = (tys, es);
+        let _ = (args, tys, es);
         todo!()
       }
       TyKind::If(e, t1, t2) => {
