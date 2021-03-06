@@ -394,8 +394,6 @@ pub enum ExprKind {
   Var(VarId),
   /// A user constant.
   Const(AtomId),
-  /// A global variable.
-  Global(AtomId),
   /// A boolean literal.
   Bool(bool),
   /// A number literal.
@@ -534,7 +532,6 @@ impl Remap for ExprKind {
       ExprKind::Unit => ExprKind::Unit,
       &ExprKind::Var(v) => ExprKind::Var(v),
       &ExprKind::Const(a) => ExprKind::Const(a.remap(r)),
-      &ExprKind::Global(a) => ExprKind::Global(a.remap(r)),
       &ExprKind::Bool(b) => ExprKind::Bool(b),
       ExprKind::Int(n) => ExprKind::Int(n.clone()),
       ExprKind::Unop(op, e) => ExprKind::Unop(*op, e.remap(r)),

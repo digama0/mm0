@@ -105,8 +105,11 @@ impl Compiler {
         try1!(Self::reserve_names(&mut self.names, &item));
         let mut ba = BuildAst::new(&self.names, p);
         let item = try1!(ba.build_item(item));
+        let BuildAst {var_names, globals, ..} = ba;
         let alloc = Bump::new();
-        let mut ctx = infer::InferCtx::new(&alloc, &self.names, p.fe, ba.var_names);
+        let mm0_alloc = Default::default();
+        let mut ctx = infer::InferCtx::new(&alloc, &mm0_alloc,
+          &mut self.names, p.fe, var_names, globals);
         let _item = ctx.lower_item(&item);
         let errs = std::mem::take(&mut ctx.errors);
         let pr = ctx.print();

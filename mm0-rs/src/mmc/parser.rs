@@ -4,8 +4,8 @@ use std::convert::TryInto;
 use std::collections::{HashMap, hash_map::Entry};
 use crate::{FileSpan, SliceExt, AtomId, Type as EType, elab::Result, ElabError,
   LispKind, LispVal, Uncons, FormatEnv, try_get_span};
-use super::types::{FieldName, Keyword, Mm0Expr, Mm0ExprNode, Size, Spanned, entity::{ProcTc, Intrinsic}};
-use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy};
+use super::types::{FieldName, Keyword, Mm0Expr, Mm0ExprNode, Size, Spanned, global};
+use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy, ProcTc, Intrinsic};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 
 #[derive(Debug, DeepSizeOf)]
@@ -623,9 +623,10 @@ impl<'a> Parser<'a> {
           },
           Some(&Entity::Prim(p)) if p.op.is_some() =>
             TypeKind::Pure(Box::new(self.parse_expr(base, e.clone())?.k)),
-          Some(Entity::Type(ty)) => if let Some(&TypeTy {tyargs, args: ref tgt}) = ty.k.ty() {
+          Some(Entity::Type(ty)) => if let Some(&TypeTy {tyargs, args: ref tgt, ..}) = ty.k.ty() {
             let n = tyargs as usize;
-            if args.len() != n + tgt.len() {
+            let nargs = tgt.iter().filter(|&a| matches!(**a, global::ArgKind::Lam(_))).count();
+            if args.len() != n + nargs {
               return Err(ElabError::new_e(try_get_span(base, &head), "unexpected number of arguments"))
             }
             TypeKind::User(name, args[..n].cloned_box(), args[n..].cloned_box())

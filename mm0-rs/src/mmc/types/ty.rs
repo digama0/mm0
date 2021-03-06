@@ -205,20 +205,16 @@ impl BitOrAssign<Lifetime> for Flags {
 /// An adjustment to an expr that can happen with no syntax,
 /// simply because types don't line up.
 #[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
-pub enum Coercion<'a> {
+pub enum Coercion {
   /// An error coercion maps `X -> Y` for any `X, Y`. To use this variant,
   /// an error must have been previously reported regarding this type error.
   Error,
-  /// A fake variant so that `Coercion` depends on `'a`.
-  /// Will be deleted when the real thing arrives.
-  Phantom(&'a ())
 }
 
-impl BitOrAssign<Coercion<'_>> for Flags {
-  fn bitor_assign(&mut self, coe: Coercion<'_>) {
+impl BitOrAssign<Coercion> for Flags {
+  fn bitor_assign(&mut self, coe: Coercion) {
     match coe {
       Coercion::Error => *self |= Flags::HAS_ERROR,
-      Coercion::Phantom(_) => unreachable!()
     }
   }
 }
@@ -389,13 +385,13 @@ pub struct Mm0Expr<'a> {
   /// (The user-facing names have been erased.)
   pub subst: &'a [Expr<'a>],
   /// The root node of the expression.
-  pub expr: &'a Mm0ExprNode,
+  pub expr: &'a std::rc::Rc<Mm0ExprNode>,
 }
 
 impl std::hash::Hash for Mm0Expr<'_> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.subst.hash(state);
-    (self.expr as *const Mm0ExprNode).hash(state);
+    (&**self.expr as *const Mm0ExprNode).hash(state);
   }
 }
 
@@ -406,19 +402,24 @@ impl PartialEq for Mm0Expr<'_> {
 }
 impl Eq for Mm0Expr<'_> {}
 
-impl<C: DisplayCtx> CtxDisplay<C> for Mm0Expr<'_> {
-  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self.expr {
-      Mm0ExprNode::Const(e) => e.fmt(ctx.format_env(), f),
-      &Mm0ExprNode::Var(i) => self.subst[i as usize].fmt(ctx, f),
+impl<'a, C: DisplayCtx> CtxDisplay<(&'a C, &'a [Expr<'a>])> for Mm0ExprNode {
+  fn fmt(&self, ctx: &(&'a C, &'a [Expr<'a>]), f: &mut std::fmt::Formatter<'_>
+  ) -> std::fmt::Result {
+    match self {
+      Mm0ExprNode::Const(e) => e.fmt(ctx.0.format_env(), f),
+      &Mm0ExprNode::Var(i) => ctx.1[i as usize].fmt(ctx.0, f),
       Mm0ExprNode::Expr(t, es) => {
-        write!(f, "({}", ctx.format_env().to(t))?;
-        for expr in es {
-          write!(f, " {}", CtxPrint(ctx, &Mm0Expr {subst: self.subst, expr}))?
-        }
+        write!(f, "({}", ctx.0.format_env().to(t))?;
+        for expr in es { write!(f, " {}", CtxPrint(ctx, expr))? }
         write!(f, ")")
       }
     }
+  }
+}
+
+impl<'a, C: DisplayCtx> CtxDisplay<C> for Mm0Expr<'a> {
+  fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    self.expr.fmt(&(ctx, self.subst), f)
   }
 }
 

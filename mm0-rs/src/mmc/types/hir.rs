@@ -309,7 +309,7 @@ pub enum ExprKind<'a> {
     /// The function to call.
     f: Spanned<'a, AtomId>,
     /// The type arguments.
-    tys: Vec<ty::Ty<'a>>,
+    tys: &'a [ty::Ty<'a>],
     /// The function arguments.
     args: Vec<Expr<'a>>,
     /// The variant, if needed.

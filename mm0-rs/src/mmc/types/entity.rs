@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use crate::{Environment, AtomId, Remap, Remapper, FileSpan};
-use crate::mmc::{Compiler, types::ast};
+use crate::mmc::{Compiler, types::{ast, global}};
 use super::Spanned;
 
 macro_rules! make_prims {
@@ -279,7 +279,7 @@ impl TypeTc {
 }
 
 /// An entity representing a type.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 #[allow(variant_size_differences)]
 pub struct TypeTy {
   /// The number of type arguments (not included in `args`). There are no higher
@@ -287,13 +287,15 @@ pub struct TypeTy {
   /// variables (named by their index).
   pub tyargs: u32,
   /// The non-type arguments to the type constructor.
-  pub args: Box<[ast::TuplePattern]>,
+  pub args: Box<[global::Arg]>,
+  /// The value of the definition.
+  pub val: global::Ty,
 }
 
 impl Remap for TypeTy {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    Self { tyargs: self.tyargs, args: self.args.remap(r) }
+    Self { tyargs: self.tyargs, args: self.args.remap(r), val: self.val.remap(r) }
   }
 }
 
@@ -327,7 +329,7 @@ impl Remap for ProcTc {
 }
 
 /// The type of a procedure.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct ProcTy {
   /// The kind of the procedure (`func`, `proc`, `intrinsic`)
   pub kind: ast::ProcKind,
@@ -336,9 +338,11 @@ pub struct ProcTy {
   /// variables (named by their index).
   pub tyargs: u32,
   /// The non-type input arguments to the procedure.
-  pub args: Box<[ast::TuplePattern]>,
+  pub args: Box<[global::Arg]>,
   /// The output arguments / return values of the procedure.
-  pub rets: Box<[ast::TuplePattern]>,
+  pub rets: Box<[global::Arg]>,
+  /// The output arguments / return values of the procedure.
+  pub variant: Option<global::Variant>,
 }
 
 impl Remap for ProcTy {
@@ -348,45 +352,47 @@ impl Remap for ProcTy {
       kind: self.kind,
       tyargs: self.tyargs,
       args: self.args.remap(r),
-      rets: self.rets.remap(r)
+      rets: self.rets.remap(r),
+      variant: self.variant.remap(r),
     }
   }
 }
 
 /// The typechecking status of a global variable.
-#[derive(Clone, Copy, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum GlobalTc {
   /// We know this is a global but have not typechecked the body.
   Unchecked,
-  // /// A user type that has been typechecked, with the original span,
-  // /// the (internal) declaration name, and the compiled value expression.
-  // Checked(Option<FileSpan>, AtomId, Rc<types::Type>, Rc<types::Expr>),
+  /// A user global that has been typechecked, to an expression with the given type.
+  Checked(global::Ty),
 }
 
 impl Remap for GlobalTc {
   type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      GlobalTc::Unchecked => GlobalTc::Unchecked
+      GlobalTc::Unchecked => GlobalTc::Unchecked,
+      GlobalTc::Checked(ty) => GlobalTc::Checked(ty.remap(r))
     }
   }
 }
 
 /// The typechecking status of a constant.
-#[derive(Clone, Copy, Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum ConstTc {
   /// We know this is a const but have not typechecked the body.
   Unchecked,
-  // /// A user type that has been typechecked, with the original span,
-  // /// the (internal) declaration name, and the compiled value expression.
-  // Checked(Option<FileSpan>, AtomId, Rc<types::Type>, Rc<types::Expr>),
+  /// A user type that has been typechecked, with the original span,
+  /// the (internal) declaration name, and the compiled value expression.
+  Checked(global::Ty, global::Expr),
 }
 
 impl Remap for ConstTc {
   type Target = Self;
-  fn remap(&self, _: &mut Remapper) -> Self {
+  fn remap(&self, r: &mut Remapper) -> Self {
     match self {
-      ConstTc::Unchecked => ConstTc::Unchecked
+      ConstTc::Unchecked => ConstTc::Unchecked,
+      ConstTc::Checked(ty, e) => ConstTc::Checked(ty.remap(r), e.remap(r))
     }
   }
 }

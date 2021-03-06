@@ -81,6 +81,14 @@ pub struct BuildAst<'a> {
   tyvars: Vec<AtomId>,
   /// The mapping from allocated variables to their user facing names.
   pub(crate) var_names: Vec<AtomId>,
+  /// The mapping from globals to their local names.
+  pub(crate) globals: HashMap<AtomId, VarId>,
+}
+
+fn fresh_var(var_names: &mut Vec<AtomId>, name: AtomId) -> VarId {
+  let v = VarId(var_names.len().try_into().expect("overflow"));
+  var_names.push(name);
+  v
 }
 
 impl<'a> BuildAst<'a> {
@@ -90,6 +98,7 @@ impl<'a> BuildAst<'a> {
       names, p,
       name_map: HashMap::new(),
       label_map: HashMap::new(),
+      globals: HashMap::new(),
       loops: vec![],
       ctx: vec![],
       var_names: vec![],
@@ -105,11 +114,7 @@ impl<'a> BuildAst<'a> {
     }
   }
 
-  fn fresh_var(&mut self, name: AtomId) -> VarId {
-    let v = VarId(self.var_names.len().try_into().expect("overflow"));
-    self.var_names.push(name);
-    v
-  }
+  fn fresh_var(&mut self, name: AtomId) -> VarId { fresh_var(&mut self.var_names, name) }
 
   fn push_fresh(&mut self, name: AtomId) -> VarId {
     let v = self.fresh_var(name);
@@ -768,7 +773,10 @@ impl<'a> BuildAst<'a> {
     let is_label = |a| self.label_map.get(&a).map_or(false, |v| !v.is_empty());
     let k = match self.p.parse_call(&span, self.names, is_label, e)? {
       CallKind::Const(a) => ast::ExprKind::Const(a),
-      CallKind::Global(a) => ast::ExprKind::Global(a),
+      CallKind::Global(a) => {
+        let var_names = &mut self.var_names;
+        ast::ExprKind::Var(*self.globals.entry(a).or_insert_with(|| fresh_var(var_names, a)))
+      }
       CallKind::NAry(NAryCall::Add, args) => lassoc1!(args, Int(0.into()), Add),
       CallKind::NAry(NAryCall::Mul, args) => lassoc1!(args, Int(1.into()), Mul),
       CallKind::NAry(NAryCall::Min, args) => lassoc1!(args, unreachable!(), Min),

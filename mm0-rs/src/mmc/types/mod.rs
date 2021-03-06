@@ -4,6 +4,7 @@ pub mod parse;
 pub mod ast;
 pub mod entity;
 pub mod ty;
+pub mod global;
 pub mod hir;
 pub mod pir;
 
@@ -547,7 +548,7 @@ impl EnvDisplay for FieldName {
 
 /// An embedded MM0 expression inside MMC. This representation is designed to make it easy
 /// to produce substitutions of the free variables.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub enum Mm0ExprNode {
   /// A constant expression, containing no free variables,
   /// or a dummy variable that will not be substituted.
