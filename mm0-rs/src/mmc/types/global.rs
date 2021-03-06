@@ -45,7 +45,7 @@ pub(crate) trait ToGlobal<'a> {
   fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output;
 }
 
-impl<'a, T: Internable<'a> + ToGlobal<'a, Output=Rc<T::Inner>>> ToGlobal<'a> for &'a WithMeta<T> {
+impl<'a, T: Internable<'a> + ToGlobal<'a, Output=Rc<<T as Internable<'a>>::Inner>>> ToGlobal<'a> for &'a WithMeta<T> {
   type Output = Rc<T::Inner>;
   fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Rc<T::Inner> {
     if let Some(e) = T::interner(&mut ctx.gctx).get(self) { return e.clone() }
