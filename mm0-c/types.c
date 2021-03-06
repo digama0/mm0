@@ -292,6 +292,15 @@ typedef struct { u8 cmd; u32 data; } PACKED cmd32;
 // Uses data = 0
 #define CMD_PROOF_SAVE 0x1F
 
+// Sorry: Pop an expression e from the stack, and push |- e. This step exists
+// only for debugging purposes and incomplete proofs, it is not a valid step
+// under any circumstances.
+//
+// ConvSorry: Pop a convertibility obligation e1 =?= e2. This reuses the Sorry
+// command, and depends on the type of the head of stack for its behavior.
+// Uses data = 0
+#define CMD_PROOF_SORRY 0x20
+
 // Unify commands are used in definitions and theorem statements.
 // They are consumed when a definition is unfolded, or when a theorem is
 // applied, and interact with both the main stack and a separate unification

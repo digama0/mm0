@@ -342,6 +342,7 @@ fn parse_proof(
           Stack::CoConv(_, _, _) => return Err(StrError("Can't save co-conv", pos)),
           s => self.heap.push(s.clone()),
         }
+        ProofCmd::Sorry => return Err(ParseError::SorryError),
       }
       Ok(())
     }
@@ -446,7 +447,11 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let kind = if matches!(stmt, NumdStmtCmd::Axiom {..}) {
           ThmKind::Axiom
         } else {
-          ThmKind::Thm(Some(parse_proof(&file, args.len(), &mut pf, || next_var!(var))?))
+          match parse_proof(&file, args.len(), &mut pf, || next_var!(var)) {
+            Ok(proof) => ThmKind::Thm(Some(proof)),
+            Err(ParseError::SorryError) => ThmKind::Thm(None),
+            Err(e) => return Err(e)
+          }
         };
         let full = (start..pf.pos).into();
         let vis =

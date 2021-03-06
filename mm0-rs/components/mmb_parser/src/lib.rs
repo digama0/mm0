@@ -157,6 +157,8 @@ pub mod cmd {
   pub const PROOF_CONV_SAVE: u8 = 0x1E;
   /// `PROOF_SAVE = 0x1F`: See [`ProofCmd`](super::ProofCmd).
   pub const PROOF_SAVE: u8 = 0x1F;
+  /// `PROOF_SORRY = 0x20`: See [`ProofCmd`](super::ProofCmd).
+  pub const PROOF_SORRY: u8 = 0x20;
 
   /// `UNIFY_TERM = 0x30`: See [`UnifyCmd`](super::UnifyCmd).
   pub const UNIFY_TERM: u8 = 0x30;
@@ -395,6 +397,17 @@ pub enum ProofCmd {
   /// ```
   /// Save the top of the stack to the heap, without popping it.
   Save,
+  /// ```text
+  /// Sorry: S, e -> S, |- e
+  /// ConvSorry: S, e1 =?= e2 -> S
+  /// ```
+  /// * Sorry: Pop an expression `e` from the stack, and push `|- e`. This step exists
+  ///   only for debugging purposes and incomplete proofs, it is not a valid step
+  ///   under any circumstances, and verifiers are free to pretend it doesn't exist.
+  ///
+  /// * ConvSorry: Pop a convertibility obligation `e1 =?= e2`. This reuses the Sorry
+  ///   command, and depends on the type of the head of stack for its behavior.
+  Sorry,
 }
 
 impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
@@ -418,6 +431,7 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
       cmd::PROOF_CONV_REF => ProofCmd::ConvRef(data),
       cmd::PROOF_CONV_SAVE => ProofCmd::ConvSave,
       cmd::PROOF_SAVE => ProofCmd::Save,
+      cmd::PROOF_SORRY => ProofCmd::Sorry,
       _ => return Err(ParseError::ProofCmdConv(cmd, data)),
     })
   }

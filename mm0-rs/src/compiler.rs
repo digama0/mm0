@@ -477,7 +477,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
       let e = ElabError::new_e(fsp.span, e);
       let file = VFS.get_or_insert(fsp.file.clone())?.1;
       e.to_snippet(&fsp.file, file.text.ascii(), &mut mk_to_range(),
-        |s| println!("{}\n", DisplayList::from(s).to_string()));
+        |s| println!("{}\n", DisplayList::from(s)));
       std::process::exit(1);
     }
   }
@@ -487,7 +487,20 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
     if out.rsplit('.').next().map_or(false, |ext| ext.eq_ignore_ascii_case("mmu")) {
       env.export_mmu(w)?;
     } else {
-      let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, w);
+      fn report(lvl: ErrorLevel, err: &str) {
+        println!("{}\n", DisplayList::from(Snippet {
+          title: Some(Annotation {
+            label: Some(err),
+            id: None,
+            annotation_type: lvl.to_annotation_type(),
+          }),
+          footer: vec![],
+          slices: vec![],
+          opt: FormatOptions { color: true, ..Default::default() },
+        }))
+      }
+      let mut report = report;
+      let mut ex = MmbExporter::new(path, file.try_ascii().map(|fc| &**fc), &env, &mut report, w);
       ex.run(true)?;
       ex.finish()?;
     }

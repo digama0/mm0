@@ -9,6 +9,10 @@ u8* g_cmd;
 u8* g_ucmd_start;
 u8* g_ucmd;
 
+#ifndef BARE
+bool g_uses_sorry = false;
+#endif
+
 // This is called by the ENSURE macro on failure. The verifier is optimized
 // for the non-failure case, and keeps very little nonessential information
 // about what is going on, so this function is responsible for reconstructing
@@ -331,6 +335,11 @@ typedef enum { Def, Thm } proof_mode;
 u8* run_proof(proof_mode mode, u8* cmd) {
   // u8* last_cmd = cmd;
   u8* cmd_start = cmd;
+
+#ifndef BARE
+  bool uses_sorry = false;
+#endif
+
   while (true) {
     g_cmd = cmd;
     g_cmd_start = cmd_start;
@@ -346,6 +355,15 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       // The stack should have exactly one element on it at this point
       case CMD_END: {
         cmd += sz;
+#ifndef BARE
+        if (uses_sorry) {
+          g_uses_sorry = true;
+          fprintf(stderr, "at %lX: ", (u8*)g_stmt - g_file);
+          index_entry* ix = lookup_stmt(g_stmt);
+          if (ix) fprintf(stderr, "'%s' uses sorry\n", ix->value);
+          else fprintf(stderr, "stmt uses sorry\n");
+        }
+#endif
       } return cmd;
 
       // Ref i: H; S --> H; S, Hi
@@ -607,6 +625,24 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         }
       } break;
 
+#ifndef BARE
+      // Sorry: S, e -> S, |- e
+      // ConvSorry: S, e1 =?= e2 -> S
+      // Uses data = 0
+      case CMD_PROOF_SORRY: {
+        ENSURE("invalid opcode in def", mode != Def);
+        uses_sorry = true;
+        u32 e = pop_stack();
+        if ((e & STACK_TYPE_MASK) == STACK_TYPE_EXPR) {
+          e &= STACK_DATA_MASK;
+          push_stack(STACK_TYPE_PROOF | e);
+        } else {
+          as_type(e, STACK_TYPE_CONV);
+          as_type(pop_stack(), STACK_TYPE_EXPR);
+        }
+      } break;
+#endif
+
       default: {
         if (mode == Def) {
           ENSURE("unknown opcode in def", false);
@@ -759,6 +795,12 @@ void verify(u8* file, u64 len) {
   ENSURE("not all sorts proved", g_num_sorts == p->num_sorts);
   ENSURE("not all terms proved", g_num_terms == p->num_terms);
   ENSURE("not all theorems proved", g_num_thms == p->num_thms);
+#ifndef BARE
+  if (g_uses_sorry) {
+    fprintf(stderr, "error: some theorems used sorry\n");
+    exit(3);
+  }
+#endif
   parse_until(CMD_END);
 
 #ifdef HIGHWATER

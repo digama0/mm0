@@ -8,7 +8,7 @@ use zerocopy::{AsBytes, LayoutVerified, U32, U64};
 use crate::{
   Type, Expr, Proof, SortId, TermId, ThmId, AtomId, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers,
-  FrozenEnv, FileRef, LinedString};
+  FrozenEnv, FileRef, LinedString, ErrorLevel};
 
 #[allow(clippy::wildcard_imports)]
 use mmb_parser::{ProofCmd, UnifyCmd, cmd::*, write_cmd_bytes};
@@ -45,14 +45,15 @@ impl<'a> IndexHeader<'a> {
 
 /// The main exporter structure. This keeps track of the underlying writer,
 /// as well as tracking values that are written out of order.
-#[derive(Debug)]
-pub struct Exporter<'a, W: Write + Seek> {
+pub struct Exporter<'a, W> {
   /// The name of the input file. This is only used in the debugging data.
   file: FileRef,
   /// The source text of the input file. This is only used in the debugging data.
   source: Option<&'a LinedString>,
   /// The input environment.
   env: &'a FrozenEnv,
+  /// Error reporting.
+  report: &'a mut dyn FnMut(ErrorLevel, &str),
   /// The underlying writer, which must support [`Seek`] because we write some parts
   /// of the file out of order. The [`BigBuffer`] wrapper can be used to equip a
   /// writer that doesn't support it with a [`Seek`] implementation.
@@ -65,6 +66,20 @@ pub struct Exporter<'a, W: Write + Seek> {
   /// than the current writer location. We buffer these to avoid too many seeks
   /// of the underlying writer.
   fixups: Vec<(u64, Value)>,
+}
+
+impl<'a, W: std::fmt::Debug> std::fmt::Debug for Exporter<'a, W> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Exporter")
+      .field("file", &self.file)
+      .field("source", &self.source)
+      .field("env", &self.env)
+      .field("w", &self.w)
+      .field("pos", &self.pos)
+      .field("term_reord", &self.term_reord)
+      .field("fixups", &self.fixups)
+      .finish()
+  }
 }
 
 /// A chunk of data that needs to be written out of order.
@@ -215,10 +230,16 @@ impl<W: Write> Drop for BigBuffer<W> {
 impl<'a, W: Write + Seek> Exporter<'a, W> {
   /// Construct a new [`Exporter`] from an input file `file` with text `source`,
   /// a source environment containing proved theorems, and output writer `w`.
-  pub fn new(file: FileRef, source: Option<&'a LinedString>, env: &'a FrozenEnv, w: W) -> Self {
+  pub fn new(
+    file: FileRef,
+    source: Option<&'a LinedString>,
+    env: &'a FrozenEnv,
+    report: &'a mut dyn FnMut(ErrorLevel, &str),
+    w: W
+  ) -> Self {
     Self {
       term_reord: TermVec(Vec::with_capacity(env.terms().len())),
-      file, source, env, w, pos: 0, fixups: vec![]
+      file, source, env, report, w, pos: 0, fixups: vec![]
     }
   }
 
@@ -618,16 +639,22 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
               #[allow(clippy::cast_possible_truncation)] // no truncation
               let nargs = td.args.len() as u32;
               let cmd = match &td.kind {
-                ThmKind::Axiom => {
+                ThmKind::Axiom | ThmKind::Thm(None) => {
                   let mut reorder = Reorder::new(nargs, td.heap.len(), |i| i);
                   for (_, h) in &*td.hyps {
                     write_expr_proof(vec, &td.heap, &mut reorder, h, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
                   }
                   write_expr_proof(vec, &td.heap, &mut reorder, &td.ret, false)?;
-                  STMT_AXIOM
+                  if let ThmKind::Axiom = td.kind {
+                    STMT_AXIOM
+                  } else {
+                    ProofCmd::Sorry.write_to(vec)?;
+                    (self.report)(ErrorLevel::Warning, &format!(
+                      "theorem {} contains sorry", self.env.data()[td.atom].name()));
+                    STMT_THM | if td.vis == Modifiers::PUB {0} else {STMT_LOCAL}
+                  }
                 }
-                ThmKind::Thm(None) => panic!("proof {} missing", self.env.data()[td.atom].name()),
                 ThmKind::Thm(Some(Proof {heap, hyps, head})) => {
                   let mut reorder = Reorder::new(nargs, heap.len(), |i| i);
                   let mut ehyps = Vec::with_capacity(hyps.len());

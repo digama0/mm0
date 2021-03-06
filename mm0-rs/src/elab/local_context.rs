@@ -883,7 +883,8 @@ impl Elaborator {
         let hyps = is.iter().map(|&(a, i)| (a, ids[i].take())).collect();
         let ret = ids[ir].take();
         let kind = match &d.val {
-          None => ThmKind::Axiom,
+          None if d.k == DeclKind::Axiom => ThmKind::Axiom,
+          None => ThmKind::Thm(None),
           Some(e) => ThmKind::Thm({
             if self.check_proofs {
               (|| -> Result<Option<Proof>> {

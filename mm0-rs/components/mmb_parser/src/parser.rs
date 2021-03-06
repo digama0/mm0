@@ -302,6 +302,8 @@ pub enum ParseError {
     /// The (ostensible) location of the index in the file, or `None` if there is no index
     p_index: Option<usize>,
   },
+  /// A 'sorry' was detected and the function has no support for it
+  SorryError,
   /// An error with the provided message and location.
   StrError(&'static str, usize),
   /// An error in IO.
@@ -411,6 +413,7 @@ impl std::fmt::Display for ParseError {
         "MMB index is malformed. According to the header, it begins at byte {}. {}",
         b, HEADER_CAVEAT
       ),
+      ParseError::SorryError => write!(f, "Proof uses 'sorry'."),
       ParseError::StrError(s, _) => write!(f, "{}", s),
       ParseError::IoError(e) => write!(f, "{}", e),
     }
