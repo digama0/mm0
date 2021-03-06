@@ -100,11 +100,12 @@ pub trait HashMapExt<K, V> {
   /// Like `insert`, but if the insertion fails then it returns the value
   /// that it attempted to insert, as well as an [`OccupiedEntry`] containing
   /// the other value that was found.
-  fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)>;
+  // TODO: Change this to try_insert when #82766 lands
+  fn try_insert_ext(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)>;
 }
 
 impl<K: Hash + Eq, V, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
-  fn try_insert(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)> {
+  fn try_insert_ext(&mut self, k: K, v: V) -> Option<(V, OccupiedEntry<'_, K, V>)> {
     match self.entry(k) {
       Entry::Vacant(e) => {
         e.insert(v);

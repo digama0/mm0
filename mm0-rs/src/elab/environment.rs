@@ -830,7 +830,7 @@ impl ParserEnv {
   /// Add a constant to the parser, at the given precedence. This function will fail
   /// if the constant has already been previously added at a different precedence.
   pub fn add_const(&mut self, tk: ArcString, sp: FileSpan, p: Prec) -> Result<(), IncompatibleError> {
-    if let Some((_, e)) = self.consts.try_insert(tk, (sp.clone(), p)) {
+    if let Some((_, e)) = self.consts.try_insert_ext(tk, (sp.clone(), p)) {
       if e.get().1 == p { return Ok(()) }
       Err(IncompatibleError { decl1: e.get().0.clone(), decl2: sp })
     } else { Ok(()) }
@@ -846,7 +846,7 @@ impl ParserEnv {
   /// This function will fail if `p` has previously been associated with the opposite
   /// associativity.
   pub fn add_prec_assoc(&mut self, p: u32, sp: FileSpan, r: bool) -> Result<(), IncompatibleError> {
-    if let Some((_, e)) = self.prec_assoc.try_insert(p, (sp.clone(), r)) {
+    if let Some((_, e)) = self.prec_assoc.try_insert_ext(p, (sp.clone(), r)) {
       if e.get().1 == r { return Ok(()) }
       let (decl1, decl2) = if r { (e.get().0.clone(), sp) } else { (sp, e.get().0.clone()) };
       Err(IncompatibleError {decl1, decl2})
@@ -854,7 +854,7 @@ impl ParserEnv {
   }
 
   fn add_nota_info(m: &mut HashMap<ArcString, NotaInfo>, tk: ArcString, n: NotaInfo) -> Result<(), IncompatibleError> {
-    if let Some((n, e)) = m.try_insert(tk, n) {
+    if let Some((n, e)) = m.try_insert_ext(tk, n) {
       if e.get().span == n.span { return Ok(()) }
       Err(IncompatibleError { decl1: e.get().span.clone(), decl2: n.span })
     } else { Ok(()) }
@@ -919,7 +919,7 @@ impl ParserEnv {
         c.write_arrows(sorts, &mut err, &mut related, sl, sr).expect("write to str");
         return Err(ElabError::with_info(sp, err.into(), related))
       }
-      if let Some((c, e)) = self.coes.entry(sl).or_default().try_insert(sr, c) {
+      if let Some((c, e)) = self.coes.entry(sl).or_default().try_insert_ext(sr, c) {
         let mut err = "coercion diamond detected: ".to_owned();
         let mut related = Vec::new();
         e.get().write_arrows(sorts, &mut err, &mut related, sl, sr).expect("write to str");
