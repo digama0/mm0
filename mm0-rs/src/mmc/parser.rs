@@ -138,8 +138,16 @@ impl<'a> Parser<'a> {
       }
       _ => {
         let span = try_get_fspan(base, &e);
-        let under = Box::new(Spanned {span: span.clone(), k: TuplePatternKind::UNDER});
-        args.push(Spanned {span, k: (attr.0, ArgKind::Lam(TuplePatternKind::Typed(under, e)))})
+        let k = if_chain! {
+          if attr.0.global;
+          if let Some(name) = e.as_atom();
+          then { ArgKind::Lam(TuplePatternKind::Name(false, name)) }
+          else {
+            let under = Box::new(Spanned {span: span.clone(), k: TuplePatternKind::UNDER});
+            ArgKind::Lam(TuplePatternKind::Typed(under, e))
+          }
+        };
+        args.push(Spanned {span, k: (attr.0, k)})
       }
     }
     Ok(())
@@ -572,7 +580,7 @@ impl<'a> Parser<'a> {
     Ok(spanned(base, e, {
       if let Some(name) = head.as_atom() {
         if name == AtomId::UNDER {
-          return Err(ElabError::new_e(try_get_span(base, &head), "expecting a type"));
+          return Ok(spanned(base, e, TypeKind::Infer))
         }
         match names.get(&name) {
           Some(&Entity::Prim(Prim {ty: Some(prim), ..})) => match (prim, &*args) {
@@ -625,7 +633,7 @@ impl<'a> Parser<'a> {
             TypeKind::Pure(Box::new(self.parse_expr(base, e.clone())?.k)),
           Some(Entity::Type(ty)) => if let Some(&TypeTy {tyargs, args: ref tgt, ..}) = ty.k.ty() {
             let n = tyargs as usize;
-            let nargs = tgt.iter().filter(|&a| matches!(**a, global::ArgKind::Lam(_))).count();
+            let nargs = tgt.iter().filter(|&a| matches!(a.1, global::ArgKind::Lam(_))).count();
             if args.len() != n + nargs {
               return Err(ElabError::new_e(try_get_span(base, &head), "unexpected number of arguments"))
             }
@@ -688,7 +696,8 @@ impl<'a> Parser<'a> {
           err!("expected 2 arguments"),
         (PrimOp::Max, _) => CallKind::NAry(NAryCall::Max, args),
         (PrimOp::Min, _) => CallKind::NAry(NAryCall::Min, args),
-        (PrimOp::Mul, _) => CallKind::NAry(NAryCall::Mul, args),
+        (PrimOp::MulDeref, [e]) => CallKind::Deref(e.clone()),
+        (PrimOp::MulDeref, _) => CallKind::NAry(NAryCall::Mul, args),
         (PrimOp::Not, _) => CallKind::NAry(NAryCall::Not, args),
         (PrimOp::Le, _) => CallKind::NAry(NAryCall::Le, args),
         (PrimOp::Lt, _) => CallKind::NAry(NAryCall::Lt, args),

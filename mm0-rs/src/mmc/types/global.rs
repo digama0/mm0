@@ -4,8 +4,8 @@ use std::{collections::HashMap, rc::Rc};
 use num::BigInt;
 use crate::{AtomId, Remap, Remapper};
 use super::{ty, super::infer::InferCtx};
-pub use ty::{WithMeta, TupleMatchKind, Lifetime};
-use super::{Binop, Mm0ExprNode, Size, Unop, VarId, ast::TyVarId, hir};
+pub use ty::{WithMeta, TupleMatchKind, Lifetime, ArgAttr};
+use super::{Binop, Mm0ExprNode, IntTy, Unop, VarId, ast::TyVarId, hir};
 
 type Mapper<'a, T> = HashMap<&'a WithMeta<T>, <&'a WithMeta<T> as ToGlobal<'a>>::Output>;
 
@@ -17,7 +17,7 @@ pub(crate) trait Internable<'a>: Sized + 'a where &'a WithMeta<Self>: ToGlobal<'
 #[derive(Default, Debug)]
 pub(crate) struct ToGlobalCtx<'a> {
   tpat: Mapper<'a, ty::TuplePatternKind<'a>>,
-  arg: Mapper<'a, ty::ArgKind<'a>>,
+  arg: Mapper<'a, ty::ArgS<'a>>,
   expr: Mapper<'a, ty::ExprKind<'a>>,
   ty: Mapper<'a, ty::TyKind<'a>>,
   mm0: HashMap<*const Mm0ExprNode, Rc<Mm0ExprNode>>,
@@ -27,8 +27,8 @@ impl<'a> Internable<'a> for ty::TuplePatternKind<'a> {
   type Inner = TuplePatternKind;
   fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.tpat }
 }
-impl<'a> Internable<'a> for ty::ArgKind<'a> {
-  type Inner = ArgKind;
+impl<'a> Internable<'a> for ty::ArgS<'a> {
+  type Inner = ArgS;
   fn interner<'s>(ctx: &'s mut ToGlobalCtx<'a>) -> &'s mut Mapper<'a, Self> { &mut ctx.arg }
 }
 impl<'a> Internable<'a> for ty::ExprKind<'a> {
@@ -111,7 +111,9 @@ impl Remap for TuplePatternKind {
 }
 
 /// An argument declaration for a function.
-pub type Arg = Rc<ArgKind>;
+pub type Arg = Rc<ArgS>;
+/// An argument declaration for a function.
+pub type ArgS = (ArgAttr, ArgKind);
 
 /// An argument declaration for a function.
 #[derive(Debug, DeepSizeOf)]
@@ -123,13 +125,13 @@ pub enum ArgKind {
   Let(TuplePattern, Expr),
 }
 
-impl<'a> ToGlobal<'a> for ty::ArgKind<'a> {
-  type Output = Rc<ArgKind>;
+impl<'a> ToGlobal<'a> for ty::ArgS<'a> {
+  type Output = Rc<ArgS>;
   fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
-    Rc::new(match *self {
+    Rc::new((self.0, match self.1 {
       ty::ArgKind::Lam(arg) => ArgKind::Lam(arg.to_global(ctx)),
       ty::ArgKind::Let(arg, e) => ArgKind::Let(arg.to_global(ctx), e.to_global(ctx)),
-    })
+    }))
   }
 }
 
@@ -201,10 +203,10 @@ pub enum TyKind {
   Bool,
   /// A type variable.
   Var(TyVarId),
-  /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
-  Int(Size),
-  /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
-  UInt(Size),
+  /// The integral types:
+  /// * `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
+  /// * `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
+  Int(IntTy),
   /// The type `[T; n]` is an array of `n` elements of type `T`;
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Ty, Expr),
@@ -291,8 +293,7 @@ impl<'a> ToGlobal<'a> for ty::TyKind<'a> {
       ty::TyKind::False => TyKind::False,
       ty::TyKind::Bool => TyKind::Bool,
       ty::TyKind::Var(v) => TyKind::Var(v),
-      ty::TyKind::Int(sz) => TyKind::Int(sz),
-      ty::TyKind::UInt(sz) => TyKind::UInt(sz),
+      ty::TyKind::Int(ity) => TyKind::Int(ity),
       ty::TyKind::Array(ty, n) => TyKind::Array(ty.to_global(ctx), n.to_global(ctx)),
       ty::TyKind::Own(ty) => TyKind::Own(ty.to_global(ctx)),
       ty::TyKind::Ref(lft, ty) => TyKind::Ref(lft.to_global(ctx), ty.to_global(ctx)),
@@ -332,8 +333,7 @@ impl Remap for TyKind {
       TyKind::False => TyKind::False,
       TyKind::Bool => TyKind::Bool,
       &TyKind::Var(v) => TyKind::Var(v),
-      &TyKind::Int(sz) => TyKind::Int(sz),
-      &TyKind::UInt(sz) => TyKind::UInt(sz),
+      &TyKind::Int(ity) => TyKind::Int(ity),
       TyKind::Array(ty, n) => TyKind::Array(ty.remap(r), n.remap(r)),
       TyKind::Own(ty) => TyKind::Own(ty.remap(r)),
       TyKind::Ref(lft, ty) => TyKind::Ref(*lft, ty.remap(r)),

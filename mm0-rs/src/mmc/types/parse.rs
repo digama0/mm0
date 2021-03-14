@@ -241,8 +241,10 @@ pub enum TypeKind {
   Output,
   /// A moved-away type.
   Moved(LispVal),
+  /// A hole `_`, an inferred type.
+  Infer,
   /// A typechecking error that we have reported already.
-  Error
+  Error,
 }
 
 /// The type of variant, or well founded order that recursions decrease.
@@ -453,6 +455,8 @@ pub enum CallKind {
   Sizeof(LispVal),
   /// `(ref x)` constructs `x` as an lvalue.
   Place(LispVal),
+  /// `(* x)` is a deref operation `*x: T` where `x: &T`.
+  Deref(LispVal),
   /// `(& x)` constructs a reference to `x`.
   Ref(LispVal),
   /// The function `(index a i h)` is the equivalent of `C`'s `a[i]`;

@@ -81,8 +81,6 @@ pub struct BuildAst<'a> {
   tyvars: Vec<AtomId>,
   /// The mapping from allocated variables to their user facing names.
   pub(crate) var_names: Vec<AtomId>,
-  /// The mapping from globals to their local names.
-  pub(crate) globals: HashMap<AtomId, VarId>,
 }
 
 fn fresh_var(var_names: &mut Vec<AtomId>, name: AtomId) -> VarId {
@@ -98,7 +96,6 @@ impl<'a> BuildAst<'a> {
       names, p,
       name_map: HashMap::new(),
       label_map: HashMap::new(),
-      globals: HashMap::new(),
       loops: vec![],
       ctx: vec![],
       var_names: vec![],
@@ -336,7 +333,8 @@ impl<'a> BuildAst<'a> {
       TypeKind::Input => ast::TypeKind::Input,
       TypeKind::Output => ast::TypeKind::Output,
       TypeKind::Moved(ty) => ast::TypeKind::Moved(Box::new(self.build_ty(&span, &ty)?)),
-      TypeKind::Error => ast::TypeKind::Error
+      TypeKind::Infer => ast::TypeKind::Infer,
+      TypeKind::Error => ast::TypeKind::Error,
     };
     Ok(Spanned {span, k})
   }
@@ -773,10 +771,10 @@ impl<'a> BuildAst<'a> {
     let is_label = |a| self.label_map.get(&a).map_or(false, |v| !v.is_empty());
     let k = match self.p.parse_call(&span, self.names, is_label, e)? {
       CallKind::Const(a) => ast::ExprKind::Const(a),
-      CallKind::Global(a) => {
-        let var_names = &mut self.var_names;
-        ast::ExprKind::Var(*self.globals.entry(a).or_insert_with(|| fresh_var(var_names, a)))
-      }
+      CallKind::Global(a) => return Err(ElabError::new_e(&span, format!(
+        "variable '{}' not found. \
+        A global with this name exists but must be imported into scope with\n  (global {0})\
+        \nin the function signature.", self.p.fe.to(&a)))),
       CallKind::NAry(NAryCall::Add, args) => lassoc1!(args, Int(0.into()), Add),
       CallKind::NAry(NAryCall::Mul, args) => lassoc1!(args, Int(1.into()), Mul),
       CallKind::NAry(NAryCall::Min, args) => lassoc1!(args, unreachable!(), Min),
@@ -841,6 +839,7 @@ impl<'a> BuildAst<'a> {
       }
       CallKind::Sizeof(ty) => ast::ExprKind::Sizeof(Box::new(self.build_ty(&span, &ty)?)),
       CallKind::Place(e) => ast::ExprKind::Place(Box::new(self.build_expr(&span, e)?)),
+      CallKind::Deref(e) => ast::ExprKind::Deref(Box::new(self.build_expr(&span, e)?)),
       CallKind::Ref(e) => ast::ExprKind::Ref(Box::new(self.build_expr(&span, e)?)),
       CallKind::Index(a, i, h) => ast::ExprKind::Index(
         Box::new(self.build_expr(&span, a)?),

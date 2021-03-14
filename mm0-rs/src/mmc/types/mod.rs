@@ -199,6 +199,11 @@ impl std::fmt::Display for IntTy {
 }
 
 impl IntTy {
+  /// The size of this integral type.
+  #[must_use] pub fn size(self) -> Size {
+    match self { IntTy::Int(sz) | IntTy::UInt(sz) => sz }
+  }
+
   /// A string description of this type.
   #[must_use] pub fn to_str(self) -> &'static str {
     match self {
@@ -216,7 +221,7 @@ impl IntTy {
   }
 
   /// Returns true if `n` is a valid member of this integral type.
-  #[must_use] pub fn in_range(self, n: &BigInt) -> bool {
+  #[must_use] pub fn contains(self, n: &BigInt) -> bool {
     match self {
       IntTy::Int(Size::Inf) => true,
       IntTy::Int(Size::S8) => i8::try_from(n).is_ok(),

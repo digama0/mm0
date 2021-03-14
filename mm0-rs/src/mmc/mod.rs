@@ -23,7 +23,7 @@ use parser::ItemIter;
 
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv};
-use {types::{Keyword, entity::Entity, ty::CtxPrint}, parser::Parser,
+use {types::{Keyword, entity::Entity}, parser::Parser,
   build_ast::BuildAst, predef::PredefMap};
 
 impl Remap for Keyword {
@@ -105,16 +105,15 @@ impl Compiler {
         try1!(Self::reserve_names(&mut self.names, &item));
         let mut ba = BuildAst::new(&self.names, p);
         let item = try1!(ba.build_item(item));
-        let BuildAst {var_names, globals, ..} = ba;
-        let alloc = Bump::new();
+        let BuildAst {var_names, ..} = ba;
+        let hir_alloc = Bump::new();
         let mm0_alloc = Default::default();
-        let mut ctx = infer::InferCtx::new(&alloc, &mm0_alloc,
-          &mut self.names, p.fe, var_names, globals);
+        let mut ctx = infer::InferCtx::new(&hir_alloc, &mm0_alloc,
+          &mut self.names, p.fe, var_names);
         let _item = ctx.lower_item(&item);
         let errs = std::mem::take(&mut ctx.errors);
         let pr = ctx.print();
-        errors.extend(errs.into_iter().map(|e|
-          ElabError::new_e(e.span, format!("{}", CtxPrint(&pr, &e.k)))));
+        errors.extend(errs.into_iter().map(|e| e.into_elab_error(&pr)));
       }
     }
     for e in errors { elab.report(e) }

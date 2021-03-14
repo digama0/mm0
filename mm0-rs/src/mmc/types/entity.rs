@@ -82,8 +82,9 @@ make_prims! {
     Max: "max",
     /// `{x min y}` returns the minimum of the arguments
     Min: "min",
-    /// `{x * y}` returns the integer product of the arguments
-    Mul: "*",
+    /// * `{x * y}` returns the integer product of the arguments
+    /// * `(* x)` is a deref operation `*x: T` where `x: &T`.
+    MulDeref: "*",
     /// `{x != y}` returns true if `x` is not equal to `y`
     Ne: "!=",
     /// `(not x1 ... xn)` returns the boolean `NOR` of the arguments,

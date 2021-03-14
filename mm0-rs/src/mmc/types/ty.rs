@@ -2,8 +2,9 @@
 
 use std::{convert::TryInto, fmt::Display, ops::BitOrAssign};
 use num::BigInt;
-use crate::{AtomId, EnvDisplay, FormatEnv};
-use super::{Binop, IntTy, Mm0ExprNode, Size, Unop, VarId, ast::TyVarId};
+use crate::{AtomId, EnvDisplay, FormatEnv, FileSpan};
+use super::{Binop, IntTy, Mm0ExprNode, Unop, VarId, ast::TyVarId};
+pub use super::ast::ArgAttr;
 
 /// A trait for displaying with a "context" struct. This is a generalization of [`EnvDisplay`] to
 /// other forms of context.
@@ -319,9 +320,9 @@ impl<C: DisplayCtx> CtxDisplay<C> for TuplePatternKind<'_> {
 }
 
 /// An argument declaration for a function.
-pub type Arg<'a> = &'a ArgS<'a>;
+pub type Arg<'a> = &'a WithMeta<ArgS<'a>>;
 /// An argument declaration for a function.
-pub type ArgS<'a> = WithMeta<ArgKind<'a>>;
+pub type ArgS<'a> = (ArgAttr, ArgKind<'a>);
 
 /// An argument declaration for a function.
 #[derive(Debug, DeepSizeOf, PartialEq, Eq, Hash)]
@@ -349,7 +350,7 @@ impl<'a> ArgKind<'a> {
   #[must_use] pub fn find_field(args: &'a [Arg<'a>], f: AtomId) -> Option<(u32, Vec<u32>)> {
     let mut path = vec![];
     for (i, &arg) in args.iter().enumerate() {
-      if arg.k.var().k.find_field(f, &mut path) {
+      if arg.k.1.var().k.find_field(f, &mut path) {
         return Some((i.try_into().expect("overflow"), path))
       }
     }
@@ -357,18 +358,18 @@ impl<'a> ArgKind<'a> {
   }
 }
 
-impl AddFlags for ArgKind<'_> {
+impl AddFlags for ArgS<'_> {
   fn add(&self, f: &mut Flags) {
-    match *self {
+    match self.1 {
       ArgKind::Lam(pat) => *f |= pat,
       ArgKind::Let(pat, e) => *f |= (pat, e),
     }
   }
 }
 
-impl<C: DisplayCtx> CtxDisplay<C> for ArgKind<'_> {
+impl<C: DisplayCtx> CtxDisplay<C> for ArgS<'_> {
   fn fmt(&self, ctx: &C, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match *self {
+    match self.1 {
       ArgKind::Lam(pat) =>
         write!(f, "{}: {}", CtxPrint(ctx, pat), CtxPrint(ctx, pat.k.ty())),
       ArgKind::Let(pat, e) =>
@@ -441,10 +442,10 @@ pub enum TyKind<'a> {
   Bool,
   /// A type variable.
   Var(TyVarId),
-  /// `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
-  Int(Size),
-  /// `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
-  UInt(Size),
+  /// The integral types:
+  /// * `i(8*N)` is the type of N byte signed integers `sizeof i(8*N) = N`.
+  /// * `u(8*N)` is the type of N byte unsigned integers; `sizeof u(8*N) = N`.
+  Int(IntTy),
   /// The type `[T; n]` is an array of `n` elements of type `T`;
   /// `sizeof [T; n] = sizeof T * n`.
   Array(Ty<'a>, Expr<'a>),
@@ -542,7 +543,6 @@ impl<'a> TyS<'a> {
       TyKind::Bool |
       TyKind::Var(_) |
       TyKind::Int(_) |
-      TyKind::UInt(_) |
       TyKind::Input |
       TyKind::Output |
       TyKind::Error => {}
@@ -563,7 +563,7 @@ impl<'a> TyS<'a> {
       TyKind::And(tys) |
       TyKind::Or(tys) => for &ty in tys { ty.visit(f) },
       TyKind::Struct(args) => for &arg in args {
-        match arg.k {
+        match arg.k.1 {
           ArgKind::Lam(pat) => pat.k.ty().visit(f),
           ArgKind::Let(pat, e) => {pat.k.ty().visit(f); f.visit_expr(e)}
         }
@@ -603,8 +603,7 @@ impl AddFlags for TyKind<'_> {
       TyKind::False |
       TyKind::Bool |
       TyKind::Var(_) |
-      TyKind::Int(_) |
-      TyKind::UInt(_) => {}
+      TyKind::Int(_) => {}
       TyKind::Input |
       TyKind::Output => *f |= Flags::IS_NON_COPY,
       TyKind::Array(ty, e) |
@@ -656,18 +655,12 @@ impl<C: DisplayCtx> CtxDisplay<C> for TyKind<'_> {
       TyKind::True => "true".fmt(f),
       TyKind::False => "false".fmt(f),
       TyKind::Bool => "bool".fmt(f),
-      TyKind::Int(Size::S8) => "i8".fmt(f),
-      TyKind::Int(Size::S16) => "i16".fmt(f),
-      TyKind::Int(Size::S32) => "i32".fmt(f),
-      TyKind::Int(Size::S64) => "i64".fmt(f),
-      TyKind::Int(Size::Inf) => "int".fmt(f),
-      TyKind::UInt(Size::S8) => "u8".fmt(f),
-      TyKind::UInt(Size::S16) => "u16".fmt(f),
-      TyKind::UInt(Size::S32) => "u32".fmt(f),
-      TyKind::UInt(Size::S64) => "u64".fmt(f),
-      TyKind::UInt(Size::Inf) => "nat".fmt(f),
+      TyKind::Int(ity) => ity.fmt(f),
       TyKind::Array(ty, n) => write!(f, "(array {} {})", p!(ty), p!(n)),
-      TyKind::Own(ty) => write!(f, "(own {})", p!(ty)),
+      TyKind::Own(ty) => match ty.k {
+        TyKind::Ref(lft, ty) => write!(f, "(& {} {})", p!(&lft), p!(ty)),
+        _ => write!(f, "(own {})", p!(ty))
+      },
       TyKind::Ref(lft, ty) => write!(f, "(ref {} {})", p!(&lft), p!(ty)),
       TyKind::RefSn(x) => write!(f, "(&sn {})", p!(x)),
       TyKind::List(tys) => write!(f, "(list {})", tys.iter().map(|&ty| p!(ty)).format(" ")),
@@ -727,9 +720,12 @@ pub type Expr<'a> = &'a ExprS<'a>;
 /// A pure expression.
 pub type ExprS<'a> = WithMeta<ExprKind<'a>>;
 
+/// A pure expression, or a "place to blame" for why it's not pure.
+pub type OExpr<'a> = Result<Expr<'a>, &'a FileSpan>;
+
 /// A pair of an optional pure expression and a type, used to classify the result
 /// of expressions that may or may not be pure.
-pub type ExprTy<'a> = (Option<Expr<'a>>, Ty<'a>);
+pub type ExprTy<'a> = (OExpr<'a>, Ty<'a>);
 
 /// A pure expression.
 #[derive(Copy, Clone, Debug, DeepSizeOf, PartialEq, Eq, Hash)]
@@ -921,26 +917,6 @@ impl<C: DisplayCtx> CtxDisplay<C> for ExprKind<'_> {
       ExprKind::If {cond, then, els} => write!(f, "(if {} {} {})", p!(cond), p!(then), p!(els)),
       ExprKind::Infer(v) => write!(f, "?v{}", v.0),
       ExprKind::Error => "??".fmt(f),
-    }
-  }
-}
-
-impl<'a> From<IntTy> for TyKind<'a> {
-  fn from(ty: IntTy) -> Self {
-    match ty {
-      IntTy::Int(sz) => TyKind::Int(sz),
-      IntTy::UInt(sz) => TyKind::UInt(sz),
-    }
-  }
-}
-
-impl<'a> std::convert::TryFrom<Ty<'a>> for IntTy {
-  type Error = ();
-  fn try_from(ty: Ty<'a>) -> Result<IntTy, ()> {
-    match ty.k {
-      TyKind::Int(sz) => Ok(IntTy::Int(sz)),
-      TyKind::UInt(sz) => Ok(IntTy::UInt(sz)),
-      _ => Err(())
     }
   }
 }

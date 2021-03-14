@@ -414,7 +414,7 @@ pub enum ExprKind {
   /// A projection operation `x.i: T` where
   /// `x: (T0, ..., T(n-1))` or `x: {f0: T0, ..., f(n-1): T(n-1)}`.
   Proj(Box<Expr>, Spanned<FieldName>),
-  /// An deref operation `*x: T` where `x: &T`.
+  /// A deref operation `*x: T` where `x: &T`.
   Deref(Box<Expr>),
   /// `(list e1 ... en)` returns a tuple of the arguments.
   List(Vec<Expr>),
