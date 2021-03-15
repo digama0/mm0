@@ -1758,8 +1758,8 @@ impl<'a> InferCtx<'a> {
       TyKind::Sn(_, ty) |
       TyKind::Uninit(ty) |
       TyKind::Moved(ty) => self.whnf_sizeof(sp, qvars, ty),
-      TyKind::Int(ity) =>
-        if let Some(n) = ity.size().bytes() { self.common.num(n.into()) }
+      TyKind::Int(i_ty) =>
+        if let Some(n) = i_ty.size().bytes() { self.common.num(n.into()) }
         else { fail!() },
       TyKind::Array(ty, n) => {
         let mut has_qvar = false;

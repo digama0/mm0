@@ -160,7 +160,7 @@ impl<'a> ContextNext<'a> {
   }
 
   /// Construct an `Expr, Ty` pair from a variable record.
-  #[must_use] pub fn expr_ty(&self) -> ty::ExprTy<'a> { (Ok(self.val), self.ty) }
+  pub fn expr_ty(&self) -> ty::ExprTy<'a> { (Ok(self.val), self.ty) }
 }
 
 /// The type of variant, or well founded order that recursions decrease.
