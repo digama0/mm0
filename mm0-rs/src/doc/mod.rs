@@ -499,7 +499,7 @@ fn disambiguated_anchor(w: &mut impl Write, ad: &AtomData, sort: bool) -> io::Re
 
 impl<'a, W: Write> BuildDoc<'a, W> {
   fn thm_doc(&mut self, prev: Option<ThmId>, tid: ThmId, next: Option<ThmId>) -> io::Result<()> {
-    let mut file = self.thm_folder.to_owned();
+    let mut file = self.thm_folder.clone();
     #[allow(clippy::useless_transmute)]
     let td: &Thm = unsafe { mem::transmute(&self.env.thms[tid]) };
     self.mangler.mangle(&self.env, tid, |_, s| file.push(&format!("{}.html", s)));
@@ -670,7 +670,7 @@ pub fn main(args: &ArgMatches<'_>) -> io::Result<()> {
   };
   let only = args.value_of("only");
   let index = if only.is_some() {None} else {
-    let mut file = dir.to_owned();
+    let mut file = dir.clone();
     file.push("index.html");
     Some(BufWriter::new(File::create(file)?))
   };
