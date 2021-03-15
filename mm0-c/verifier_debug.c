@@ -11,13 +11,16 @@ void debug_print_expr(u32 n, u32 max, bool type) {
   if (type && bound) fprintf(stderr, "{");
   switch (((store_expr*)&g_store[n])->tag) {
     case EXPR_VAR: {
-      fprintf(stderr, "v%d", ((store_var*)p)->var);
+      store_var* v = (store_var*)p;
+      char* name = lookup_var_name(v->var);
+      if (name) fprintf(stderr, "%s", name);
+      else fprintf(stderr, "v%d", v->var);
     } break;
 
     case EXPR_TERM: {
       store_term* t = (store_term*)p;
-      index_entry* ix = lookup_term(t->termid);
-      if (ix) fprintf(stderr, "(%s", ix->value);
+      char* name = lookup_term(t->termid);
+      if (name) fprintf(stderr, "(%s", name);
       else fprintf(stderr, "(t%d", t->termid);
       for (int i = 0; i < t->num_args; i++) {
         fprintf(stderr, " ");
@@ -28,9 +31,9 @@ void debug_print_expr(u32 n, u32 max, bool type) {
 
     default: fprintf(stderr, "?"); break;
   }
-  index_entry* ix;
-  if (type && (ix = lookup_sort((p->type >> 56) & 0x7F))) {
-    fprintf(stderr, ":%s", ix->value);
+  char* name;
+  if (type && (name = lookup_sort((p->type >> 56) & 0x7F))) {
+    fprintf(stderr, ":%s", name);
   }
   if (type && bound) fprintf(stderr, "}");
 }
@@ -57,8 +60,8 @@ void debug_print_parse_expr(u32 n) {
 
     case EXPR_TERM: {
       parse_term* t = (parse_term*)&g_store[n];
-      index_entry* ix = lookup_term(t->termid);
-      if (ix) fprintf(stderr, "(%s", ix->value);
+      char* name = lookup_term(t->termid);
+      if (name) fprintf(stderr, "(%s", name);
       else fprintf(stderr, "(t%d", t->termid);
       for (int i = 0; i < t->num_args; i++) {
         fprintf(stderr, " ");
@@ -222,27 +225,27 @@ void debug_print_cmd(u8* cmd, u32 data) {
     case CMD_PROOF_TERM:
     case CMD_PROOF_TERM_SAVE: {
       fprintf(stderr, "%lX: Term %d", pos, data);
-      index_entry* ix;
-      if (data < g_num_terms && (ix = lookup_term(data))) {
-        fprintf(stderr, "  // = %s", ix->value);
+      char* name;
+      if (data < g_num_terms && (name = lookup_term(data))) {
+        fprintf(stderr, "  // = %s", name);
       }
       if (*cmd & 0x01) fprintf(stderr, "\n  %lX: Save", pos);
     } break;
 
     case CMD_PROOF_DUMMY: {
       fprintf(stderr, "%lX: Dummy %d", pos, data);
-      index_entry* ix;
-      if (data < g_num_sorts && (ix = lookup_sort(data))) {
-        fprintf(stderr, "  // = %s", ix->value);
+      char* name;
+      if (data < g_num_sorts && (name = lookup_sort(data))) {
+        fprintf(stderr, "  // = %s", name);
       }
     } break;
 
     case CMD_PROOF_THM:
     case CMD_PROOF_THM_SAVE: {
       fprintf(stderr, "%lX: Thm %d", pos, data);
-      index_entry* ix;
-      if (data < g_num_thms && (ix = lookup_thm(data))) {
-        fprintf(stderr, "  // = %s", ix->value);
+      char* name;
+      if (data < g_num_thms && (name = lookup_thm(data))) {
+        fprintf(stderr, "  // = %s", name);
       }
       if (*cmd & 0x01) fprintf(stderr, "\n%lX: Save", pos);
     } break;
@@ -280,9 +283,9 @@ void debug_print_cmd(u8* cmd, u32 data) {
     case CMD_UNIFY_TERM:
     case CMD_UNIFY_TERM_SAVE: {
       fprintf(stderr, "%lX: UTerm %d", pos, data);
-      index_entry* ix;
-      if (data < g_num_terms && (ix = lookup_term(data))) {
-        fprintf(stderr, "  // = %s", ix->value);
+      char* name;
+      if (data < g_num_terms && (name = lookup_term(data))) {
+        fprintf(stderr, "  // = %s", name);
       }
       if (*cmd & 0x01) fprintf(stderr, "\n%lX: Save", pos);
     } break;

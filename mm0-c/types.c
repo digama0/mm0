@@ -139,14 +139,9 @@ typedef struct {
 // should be enumerable by following right-child pointers once the first entry
 // with that key is reached).
 typedef struct {
-  u64 left;                  // pointer to left subchild (for binary searching by strings)
-  u64 right;                 // pointer to right subchild
-  u32 row, col;              // For locating in the source file
   u64 proof;                 // pointer to the command that declares this item
-  u32 ix;                    // Index of the object in the relevant table
-  u8 kind;                   // sort, term, thm, var
-  char value[];              // zero-terminated char* buffer
-} PACKED index_entry;
+  u64 name;                  // pointer to the name of the item
+} name_entry;
 
 // A command is a variable length instruction that forms the bulk of the proof
 // file. The commands are processed by a stack machine.

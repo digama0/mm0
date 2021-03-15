@@ -24,6 +24,7 @@ bool g_uses_sorry = false;
 void fail(char* err, int e) {
 #ifndef BARE
   if (g_stmt) {
+    char* name = lookup_stmt(g_stmt);
     fprintf(stderr, "stmt: %lX\ncmd: ", (u8*)g_stmt - g_file);
     u32 data; debug_cmd_unpack(g_cmd, &data);
     debug_print_cmd(g_cmd, data);
@@ -33,10 +34,12 @@ void fail(char* err, int e) {
       debug_print_cmd(g_ucmd, data);
     }
     fprintf(stderr, "\n");
-    index_entry* ix = lookup_stmt(g_stmt);
-    if (ix) {
-      fprintf(stderr, "at %s: ", ix->value);
+    if (name) {
+      fprintf(stderr, "at %s: ", name);
     }
+  } else {
+    gi_cur_vars = 0;
+    gi_cur_hyps = 0;
   }
   fprintf(stderr, "%s\n\n", err);
   debug_print_input();
@@ -359,8 +362,8 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         if (uses_sorry) {
           g_uses_sorry = true;
           fprintf(stderr, "at %lX: ", (u8*)g_stmt - g_file);
-          index_entry* ix = lookup_stmt(g_stmt);
-          if (ix) fprintf(stderr, "'%s' uses sorry\n", ix->value);
+          char* name = lookup_stmt(g_stmt);
+          if (name) fprintf(stderr, "'%s' uses sorry\n", name);
           else fprintf(stderr, "stmt uses sorry\n");
         }
 #endif

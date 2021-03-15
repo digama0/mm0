@@ -6,21 +6,21 @@ use crate::{Environment, Modifiers, AtomId, TermId,
     Type, Term, Thm, TermKind, ThmKind, ExprNode, Expr, Proof};
 use crate::elab::proof::{IDedup, ProofKind, ProofHash, build};
 use crate::{FileRef, FileSpan, SliceExt};
-use mmb_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, MmbFile,
+use mmb_parser::{NumdStmtCmd, UnifyCmd, ProofCmd, BasicMmbFile,
   ParseError, UnifyIter, ProofIter, exhausted};
 
 
 type Result<T> = std::result::Result<T, ParseError>;
 
 fn parse_unify(
-  file: &MmbFile<'_>, nargs: usize, it: UnifyIter<'_>,
+  file: &BasicMmbFile<'_>, nargs: usize, it: UnifyIter<'_>,
   hyps: Option<&mut Vec<(Option<AtomId>, ExprNode)>>,
   dummy: impl FnMut() -> AtomId,
 ) -> Result<(Box<[ExprNode]>, ExprNode)> {
   use ParseError::StrError;
   struct State<'a, F> {
     dummy: F,
-    file: &'a MmbFile<'a>,
+    file: &'a BasicMmbFile<'a>,
     pos: usize,
     it: UnifyIter<'a>,
     heap: Vec<ExprNode>,
@@ -130,7 +130,7 @@ impl<'a> IntoIterator for &'a Dedup {
 }
 
 fn parse_proof(
-  file: &MmbFile<'_>, nargs: usize, it: &mut ProofIter<'_>,
+  file: &BasicMmbFile<'_>, nargs: usize, it: &mut ProofIter<'_>,
   dummy: impl FnMut() -> AtomId,
 ) -> Result<Proof> {
 
@@ -194,7 +194,7 @@ fn parse_proof(
   }
 
   struct State<'a, F> {
-    file: &'a MmbFile<'a>,
+    file: &'a BasicMmbFile<'a>,
     dummy: F,
     de: Dedup,
     stack: Vec<Stack>,
@@ -370,32 +370,28 @@ fn parse_proof(
 
 fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   use ParseError::StrError;
-  let file = MmbFile::parse(buf)?;
+  let file = BasicMmbFile::parse(buf)?;
   let mut it = file.proof();
   let mut start = it.pos;
-  macro_rules! get_get_var {($e:expr) => {{
-    let mut vars = vec![];
-    move |env: &mut Environment, i: usize| {
-      if i >= vars.len() {
-        vars.extend((vars.len()..=i).map(|j| env.get_atom(&format!($e, j).as_bytes())));
-      }
-      vars[i]
-    }
+  macro_rules! get_get_var {($list:expr, $f:ident) => {{
+    let list = $list;
+    move |env: &mut Environment, i: usize| env.get_atom(&list.$f(i).as_bytes())
   }}}
-  let mut get_var = get_get_var!("v{}");
-  let mut get_hyp = get_get_var!("h{}");
-  macro_rules! next_var {($var:expr) => {{
-    let var = $var;
-    $var += 1;
-    get_var(env, var)
-  }}}
+  macro_rules! get_next_var {($get_var:expr, $next_var:ident, $var:ident) => {
+    let get_var = $get_var;
+    let mut $var = 0;
+    macro_rules! $next_var {() => {{
+      let var = $var;
+      $var += 1;
+      get_var(env, var)
+    }}}
+  }}
   while let Some(e) = it.next() {
     let (stmt, mut pf) = e?;
     match stmt {
       NumdStmtCmd::Sort {sort_id} => {
         if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
-        let atom = env.get_atom(
-          file.sort_name(sort_id).ok_or_else(|| file.bad_index_lookup())?.as_bytes());
+        let atom = env.get_atom(file.sort_name(sort_id).as_bytes());
         let span = (start..pf.pos).into();
         let fsp = FileSpan {file: fref.clone(), span};
         let sd = file.sort(sort_id).and_then(|sd| sd.try_into().ok())
@@ -404,20 +400,19 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
           .map_err(|_| StrError("double add sort", start))?;
       }
       NumdStmtCmd::TermDef {term_id, local} => {
-        let atom = env.get_atom(
-          file.term_name(term_id).ok_or_else(|| file.bad_index_lookup())?.as_bytes());
+        let atom = env.get_atom(file.term_name(term_id).as_bytes());
         let td = file.term(term_id).ok_or(StrError("Step term overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
-        let mut var = 0;
+        get_next_var!(get_get_var!(file.term_vars(term_id), var_name), next_var, var);
         let args = td.args().iter().map(|a| (
-          Some(next_var!(var)),
+          Some(next_var!()),
           if a.bound() { Type::Bound(a.sort()) }
           else { Type::Reg(a.sort(), a.deps_unchecked()) }
         )).collect::<Box<[_]>>();
         let ret = td.ret();
         if ret.bound() { return Err(StrError("bad return type", start)) }
         let kind = if td.def() {
-          let (heap, e) = parse_unify(&file, args.len(), td.unify(), None, || next_var!(var))?;
+          let (heap, e) = parse_unify(&file, args.len(), td.unify(), None, || next_var!())?;
           TermKind::Def(Some(Expr {head: e, heap}))
         } else {
           if !pf.is_null() { return Err(StrError("Next statement incorrect", pf.pos)) }
@@ -431,23 +426,23 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         }).map_err(|_| StrError("double add term", start))?;
       }
       NumdStmtCmd::Axiom {thm_id} | NumdStmtCmd::Thm {thm_id, ..} => {
-        let atom = env.get_atom(
-          file.thm_name(thm_id).ok_or_else(|| file.bad_index_lookup())?.as_bytes());
+        let atom = env.get_atom(file.thm_name(thm_id).as_bytes());
         let td = file.thm(thm_id).ok_or(StrError("Step thm overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
-        let mut var = 0;
+        get_next_var!(get_get_var!(file.thm_vars(thm_id), var_name), next_var, var);
         let args = td.args().iter().map(|a| (
-          Some(next_var!(var)),
+          Some(next_var!()),
           if a.bound() { Type::Bound(a.sort()) }
           else { Type::Reg(a.sort(), a.deps_unchecked()) }
         )).collect::<Box<[_]>>();
         let mut hyps = vec![];
-        let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!(var))?;
+        let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!())?;
+        let get_hyp = get_get_var!(file.thm_hyps(thm_id), hyp_name);
         hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(env, i)));
         let kind = if matches!(stmt, NumdStmtCmd::Axiom {..}) {
           ThmKind::Axiom
         } else {
-          match parse_proof(&file, args.len(), &mut pf, || next_var!(var)) {
+          match parse_proof(&file, args.len(), &mut pf, || next_var!()) {
             Ok(proof) => ThmKind::Thm(Some(proof)),
             Err(ParseError::SorryError) => ThmKind::Thm(None),
             Err(e) => return Err(e)

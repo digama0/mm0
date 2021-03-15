@@ -1,4 +1,4 @@
-use mmb_parser::parser::{MmbFile, ParseError};
+use mmb_parser::{BareMmbFile, ParseError};
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::PathBuf;
@@ -12,7 +12,7 @@ fn try_next_decl_infinite_loop() {
     77, 77, 48, 66, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 40, 0, 0, 0, 40, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0,
   ]);
-  let mut iter = MmbFile::parse(&filedata.0).unwrap().proof();
+  let mut iter = BareMmbFile::parse(&filedata.0).unwrap().proof();
   assert!(matches!(iter.next().unwrap().unwrap_err(), ParseError::BadProofLen(40)));
 }
 
@@ -26,5 +26,5 @@ fn peano0() {
     .unwrap();
   mmb_file.read_to_end(&mut mmb_bytes).unwrap();
   assert!(!mmb_bytes.is_empty());
-  assert!(MmbFile::parse(mmb_bytes.as_slice()).is_ok());
+  assert!(BareMmbFile::parse(mmb_bytes.as_slice()).is_ok());
 }

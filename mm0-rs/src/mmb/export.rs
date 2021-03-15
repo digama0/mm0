@@ -4,9 +4,9 @@ use std::convert::TryInto;
 use std::mem;
 use std::io::{self, Write, Seek, SeekFrom};
 use byteorder::{LE, ByteOrder, WriteBytesExt};
-use zerocopy::{AsBytes, LayoutVerified, U32, U64};
+use zerocopy::{AsBytes, U32, U64};
 use crate::{
-  Type, Expr, Proof, SortId, TermId, ThmId, AtomId, TermKind, ThmKind,
+  Type, Expr, Proof, SortId, AtomId, AtomVec, TermKind, ThmKind,
   TermVec, ExprNode, ProofNode, StmtTrace, DeclKey, Modifiers,
   FrozenEnv, FileRef, LinedString, ErrorLevel};
 
@@ -29,18 +29,6 @@ impl<T> Reorder<T> {
     for i in 0..nargs {map[i as usize] = Some(f(i))}
     Reorder {map, idx: nargs}
   }
-}
-
-struct IndexHeader<'a> {
-  sorts: &'a mut [U64<LE>],
-  terms: &'a mut [U64<LE>],
-  thms: &'a mut [U64<LE>]
-}
-
-impl<'a> IndexHeader<'a> {
-  fn sort(&mut self, i: SortId) -> &mut U64<LE> { &mut self.sorts[i.0 as usize] }
-  fn term(&mut self, i: TermId) -> &mut U64<LE> { &mut self.terms[i.0 as usize] }
-  fn thm(&mut self, i: ThmId) -> &mut U64<LE> { &mut self.thms[i.0 as usize] }
 }
 
 /// The main exporter structure. This keeps track of the underlying writer,
@@ -169,24 +157,26 @@ impl<W: Write + Seek> Write for Exporter<'_, W> {
 fn write_expr_proof(w: &mut impl Write,
   heap: &[ExprNode],
   reorder: &mut Reorder,
+  vars: &mut Option<&mut Vec<AtomId>>,
   node: &ExprNode,
   save: bool
 ) -> io::Result<u32> {
   Ok(match *node {
     ExprNode::Ref(i) => match reorder.map[i] {
       None => {
-        let n = write_expr_proof(w, heap, reorder, &heap[i], true)?;
+        let n = write_expr_proof(w, heap, reorder, vars, &heap[i], true)?;
         reorder.map[i] = Some(n);
         n
       }
       Some(n) => {ProofCmd::Ref(n).write_to(w)?; n}
     }
-    ExprNode::Dummy(_, s) => {
+    ExprNode::Dummy(a, s) => {
+      if let Some(vec) = vars {vec.push(a)}
       ProofCmd::Dummy(s).write_to(w)?;
       (reorder.idx, reorder.idx += 1).0
     }
     ExprNode::App(tid, ref es) => {
-      for e in &**es {write_expr_proof(w, heap, reorder, e, false)?;}
+      for e in &**es {write_expr_proof(w, heap, reorder, vars, e, false)?;}
       ProofCmd::Term {tid, save}.write_to(w)?;
       if save {(reorder.idx, reorder.idx += 1).0} else {0}
     }
@@ -227,6 +217,24 @@ impl<W: Write> Drop for BigBuffer<W> {
   }
 }
 
+struct NameData {
+  name: AtomId,
+  p_proof: u64,
+}
+
+#[derive(Default)]
+struct VarData {
+  p_vars: u64,
+  vars: Vec<AtomId>,
+}
+
+struct IndexTemp {
+  sort_names: Vec<NameData>,
+  term_names: Vec<(NameData, VarData)>,
+  /// The second `VarData` is the list of hypotheses
+  thm_names: Vec<((NameData, VarData), VarData)>,
+}
+
 impl<'a, W: Write + Seek> Exporter<'a, W> {
   /// Construct a new [`Exporter`] from an input file `file` with text `source`,
   /// a source environment containing proved theorems, and output writer `w`.
@@ -249,6 +257,12 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
 
   fn write_u64(&mut self, n: u64) -> io::Result<()> {
     WriteBytesExt::write_u64::<LE>(self, n)
+  }
+
+  fn write_str(&mut self, s: &'a [u8]) -> io::Result<()> {
+    for &c in s {assert!(c != 0)}
+    self.write_all(s)?;
+    self.write_u8(0)
   }
 
   fn fixup32(&mut self) -> io::Result<Fixup32> {
@@ -453,91 +467,6 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     LE::write_u32(&mut header[4..], p_thm);
   }
 
-  fn write_index_entry(&mut self, header: &mut IndexHeader<'_>, il: u64, ir: u64,
-      (sort, a, cmd): (bool, AtomId, u64)) -> io::Result<u64> {
-    let n = self.align_to(8)?;
-    let (sp, ix, k, name) = if sort {
-      let ad = &self.env.data()[a];
-      let s = ad.sort().expect("expected a sort");
-      header.sort(s).set(n);
-      (&self.env.sort(s).span, s.0.into(), STMT_SORT, ad.name())
-    } else {
-      let ad = &self.env.data()[a];
-      match ad.decl().expect("expected a term/thm") {
-        DeclKey::Term(t) => {
-          let td = self.env.term(t);
-          header.term(t).set(n);
-          (&td.span, t.0,
-            match td.kind {
-              TermKind::Term => STMT_TERM,
-              TermKind::Def(_) if td.vis == Modifiers::LOCAL => STMT_DEF | STMT_LOCAL,
-              TermKind::Def(_) => STMT_DEF
-            },
-            ad.name())
-        }
-        DeclKey::Thm(t) => {
-          let td = self.env.thm(t);
-          header.thm(t).set(n);
-          (&td.span, t.0,
-            match td.kind {
-              ThmKind::Axiom => STMT_AXIOM,
-              ThmKind::Thm(_) if td.vis == Modifiers::PUB => STMT_THM,
-              ThmKind::Thm(_) => STMT_THM | STMT_LOCAL
-            },
-            ad.name())
-        }
-      }
-    };
-
-    let pos = if sp.file.ptr_eq(&self.file) {
-      if let Some(src) = self.source {
-        src.to_pos(sp.span.start)
-      } else {Default::default()}
-    } else {Default::default()};
-    self.write_u64(il)?;
-    self.write_u64(ir)?;
-    self.write_u32(pos.line)?;
-    self.write_u32(pos.character)?;
-    self.write_u64(cmd)?;
-    self.write_u32(ix)?;
-    self.write_u8(k)?;
-    for &c in &**name {assert!(c != 0)}
-    self.write_all(name)?;
-    self.write_u8(0)?;
-    Ok(n)
-  }
-
-  fn write_index(&mut self, header: &mut IndexHeader<'_>, left: &[(bool, AtomId, u64)], map: &[(bool, AtomId, u64)]) -> io::Result<u64> {
-    #[allow(clippy::integer_division)]
-    let mut lo = map.len() / 2;
-    let a = match map.get(lo) {
-      None => {
-        let mut n = 0;
-        for &t in left.iter().rev() {
-          n = self.write_index_entry(header, 0, n, t)?
-        }
-        return Ok(n)
-      }
-      Some(&(_, a, _)) => a
-    };
-    let mut hi = lo + 1;
-    loop {
-      match lo.checked_sub(1) {
-        Some(i) if map[i].1 == a => lo = i,
-        _ => break,
-      }
-    }
-    loop {
-      match map.get(hi) {
-        Some(k) if k.1 == a => hi += 1,
-        _ => break,
-      }
-    }
-    let il = self.write_index(header, left, &map[..lo])?;
-    let ir = self.write_index(header, &map[lo+1..hi], &map[hi..])?;
-    self.write_index_entry(header, il, ir, map[lo])
-  }
-
   /// Perform the actual export. If `index` is true, also output the
   /// (optional) debugging table to the file.
   ///
@@ -607,18 +536,33 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     // main body (proofs of theorems)
     p_proof.commit(self);
     let vec = &mut vec![];
-    let mut index_map = Vec::with_capacity(if index {num_sorts + num_terms + num_thms} else {0});
+    let mut index_temp = if index {
+      Some(IndexTemp {
+        sort_names: Vec::with_capacity(num_sorts),
+        term_names: Vec::with_capacity(num_terms),
+        thm_names: Vec::with_capacity(num_thms),
+      })
+    } else { None };
     for s in self.env.stmts() {
       match *s {
         StmtTrace::Sort(a) => {
-          if index {index_map.push((true, a, self.pos))}
+          if let Some(temp) = &mut index_temp {
+            temp.sort_names.push(NameData { name: a, p_proof: self.pos });
+          }
           write_cmd_bytes(self, STMT_SORT, &[])?
         }
         StmtTrace::Decl(a) => {
-          if index {index_map.push((false, a, self.pos))}
           match self.env.data()[a].decl().expect("expected a term/thm") {
             DeclKey::Term(t) => {
               let td = self.env.term(t);
+              let vars = &mut index_temp.as_mut().map(|temp| {
+                let vars = td.args.iter().map(|p| p.0.unwrap_or(AtomId::UNDER)).collect();
+                temp.term_names.push((
+                  NameData {name: a, p_proof: self.pos},
+                  VarData {p_vars: 0, vars}
+                ));
+                &mut unwrap_unchecked!(temp.term_names.last_mut()).1.vars
+              });
               match &td.kind {
                 TermKind::Term => write_cmd_bytes(self, STMT_TERM, &[])?,
                 TermKind::Def(None) => panic!("def {} missing definition", self.env.data()[td.atom].name()),
@@ -626,7 +570,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
                   #[allow(clippy::cast_possible_truncation)] // no truncation
                   let nargs = td.args.len() as u32;
                   let mut reorder = Reorder::new(nargs, heap.len(), |i| i);
-                  write_expr_proof(vec, heap, &mut reorder, head, false)?;
+                  write_expr_proof(vec, heap, &mut reorder, vars, head, false)?;
                   vec.write_u8(0)?;
                   let cmd = STMT_DEF | if td.vis == Modifiers::LOCAL {STMT_LOCAL} else {0};
                   write_cmd_bytes(self, cmd, vec)?;
@@ -636,16 +580,26 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
             }
             DeclKey::Thm(t) => {
               let td = self.env.thm(t);
+              let vars = &mut index_temp.as_mut().map(|temp| {
+                temp.thm_names.push(((
+                  NameData {name: a, p_proof: self.pos},
+                  VarData {p_vars: 0, vars: td.args.iter()
+                    .map(|p| p.0.unwrap_or(AtomId::UNDER)).collect()}),
+                  VarData {p_vars: 0, vars: td.hyps.iter()
+                    .map(|p| p.0.unwrap_or(AtomId::UNDER)).collect()},
+                ));
+                &mut unwrap_unchecked!(temp.thm_names.last_mut()).1.vars
+              });
               #[allow(clippy::cast_possible_truncation)] // no truncation
               let nargs = td.args.len() as u32;
               let cmd = match &td.kind {
                 ThmKind::Axiom | ThmKind::Thm(None) => {
                   let mut reorder = Reorder::new(nargs, td.heap.len(), |i| i);
                   for (_, h) in &*td.hyps {
-                    write_expr_proof(vec, &td.heap, &mut reorder, h, false)?;
+                    write_expr_proof(vec, &td.heap, &mut reorder, vars, h, false)?;
                     ProofCmd::Hyp.write_to(vec)?;
                   }
-                  write_expr_proof(vec, &td.heap, &mut reorder, &td.ret, false)?;
+                  write_expr_proof(vec, &td.heap, &mut reorder, vars, &td.ret, false)?;
                   if let ThmKind::Axiom = td.kind {
                     STMT_AXIOM
                   } else {
@@ -685,17 +639,59 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
     self.write_u8(0)?;
 
     // debugging index
-    if index {
-      self.align_to(8)?; p_index.commit(self);
-      index_map.sort_unstable_by_key(|k| &**self.env.data()[k.1].name());
-      let size = 1 + num_sorts + num_terms + num_thms;
-      let mut index_header = self.fixup_large(8 * size)?;
-      let header = LayoutVerified::<_, [U64<LE>]>::new_slice_unaligned(&mut *index_header).expect("nonempty");
-      let (root, header) = unwrap_unchecked!(header.into_mut_slice().split_first_mut());
-      let (sorts, header) = header.split_at_mut(num_sorts);
-      let (terms, thms) = header.split_at_mut(num_terms);
-      root.set(self.write_index(&mut IndexHeader {sorts, terms, thms}, &[], &index_map)?);
-      index_header.commit(self)
+    if let Some(IndexTemp { mut sort_names, mut term_names, mut thm_names }) = index_temp {
+      assert_eq!(sort_names.len(), num_sorts);
+      assert_eq!(term_names.len(), num_terms);
+      assert_eq!(thm_names.len(), num_thms);
+
+      let mut atom_pos = AtomVec(self.env.data().enum_iter().map(|(_, ad)| -> io::Result<_> {
+        if ad.sort().is_some() || ad.decl().is_some() {
+          let pos = self.pos;
+          self.write_str(ad.name())?;
+          Ok(pos)
+        } else { Ok(0) }
+      }).collect::<io::Result<Vec<u64>>>()?);
+
+      macro_rules! decls {() => {
+        term_names.iter_mut().chain(thm_names.iter_mut().map(|p| &mut p.0))
+      }}
+      let mut add_atom = |a| if atom_pos[a] == 0 {
+        atom_pos[a] = self.pos;
+        self.write_str(self.env.data()[a].name())
+      } else { Ok(()) };
+      for &a in decls!().flat_map(|n| &n.1.vars) { add_atom(a)? }
+      for &a in thm_names.iter().flat_map(|n| &n.1.vars) { add_atom(a)? }
+
+      self.align_to(8)?;
+      let mut write_vd = |vd: &mut VarData| -> io::Result<()> {
+        vd.p_vars = self.pos;
+        self.write_u64(vd.vars.len() as u64)?;
+        for &a in &vd.vars { self.write_u64(atom_pos[a])? }
+        Ok(())
+      };
+      for (_, vd) in &mut term_names { write_vd(vd)? }
+      for ((_, vd), hs) in &mut thm_names { write_vd(vd)?; write_vd(hs)? }
+
+      let p_names = self.pos;
+      for n in sort_names.iter_mut().chain(decls!().map(|(n, _)| n)) {
+        self.write_u64(n.p_proof)?;
+        self.write_u64(atom_pos[n.name])?;
+      }
+
+      let p_vars = self.pos;
+      for (_, vd) in decls!() { self.write_u64(vd.p_vars)? }
+
+      let p_hyps = self.pos;
+      for (_, hs) in &thm_names { self.write_u64(hs.p_vars)? }
+
+      p_index.commit(self);
+      let index = [(INDEX_NAME, p_names), (INDEX_VAR_NAME, p_vars), (INDEX_HYP_NAME, p_hyps)];
+      self.write_u64(index.len() as u64)?;
+      for (name, ptr) in &index {
+        self.write_all(name)?;
+        self.write_u32(0)?;
+        self.write_u64(*ptr)?;
+      }
     } else {
       p_index.cancel();
       self.write_u32(0)?; // padding

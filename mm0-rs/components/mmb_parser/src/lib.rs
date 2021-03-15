@@ -105,26 +105,6 @@ pub mod cmd {
   /// `STMT_LOCAL_THM = 0x0E`
   pub const STMT_LOCAL_THM: u8 = STMT_LOCAL | STMT_THM;
 
-  /// `INDEX_KIND_TERM = 0x01`, starts a `term` declaration
-  pub const INDEX_KIND_TERM: u8 = 0x01;
-  /// `INDEX_KIND_AXIOM = 0x02`, starts an `axiom` declaration
-  pub const INDEX_KIND_AXIOM: u8 = 0x02;
-  /// `INDEX_KIND_VAR = 0x03`, starts a `local` declaration
-  /// (a bit mask to be combined with `INDEX_KIND_THM` or `INDEX_KIND_DEF`)
-  pub const INDEX_KIND_VAR: u8 = 0x03;
-  /// `INDEX_KIND_SORT = 0x04`, starts a `sort` declaration
-  pub const INDEX_KIND_SORT: u8 = 0x04;
-  /// `INDEX_KIND_DEF = 0x05`, starts a `def` declaration. (This is the same as
-  /// `INDEX_KIND_TERM` because the actual indication of whether this is a
-  /// def is in the term header)
-  pub const INDEX_KIND_DEF: u8 = 0x05;
-  /// `INDEX_KIND_THM = 0x06`, starts a `theorem` declaration
-  pub const INDEX_KIND_THM: u8 = 0x06;
-  /// `INDEX_KIND_LOCAL_DEF = 0x0D`
-  pub const INDEX_KIND_LOCAL_DEF: u8 = STMT_LOCAL_DEF;
-  /// `INDEX_KIND_LOCAL_THM = 0x0E`
-  pub const INDEX_KIND_LOCAL_THM: u8 = STMT_LOCAL_THM;
-
   /// `PROOF_TERM = 0x10`: See [`ProofCmd`](super::ProofCmd).
   pub const PROOF_TERM: u8 = 0x10;
   /// `PROOF_TERM_SAVE = 0x11`: See [`ProofCmd`](super::ProofCmd).
@@ -170,6 +150,13 @@ pub mod cmd {
   pub const UNIFY_DUMMY: u8 = 0x33;
   /// `UNIFY_HYP = 0x36`: See [`UnifyCmd`](super::UnifyCmd).
   pub const UNIFY_HYP: u8 = 0x36;
+
+  /// `"Name"` is the magic number for the name table.
+  pub const INDEX_NAME: [u8; 4] = *b"Name";
+  /// `"VarN"` is the magic number for the variable name table.
+  pub const INDEX_VAR_NAME: [u8; 4] = *b"VarN";
+  /// `"HypN"` is the magic number for the hypothesis name table.
+  pub const INDEX_HYP_NAME: [u8; 4] = *b"HypN";
 }
 
 #[inline]
@@ -636,65 +623,27 @@ pub struct ThmEntry {
   pub p_args: U32<LE>,
 }
 
-/// The kinds of entity that can appear in the index. This is similar to [`StmtCmd`],
-/// but it distinguishes `term` and `def` and adds the [`Var`](IndexKind::Var) constructor.
-#[derive(Debug, Clone, Copy)]
-pub enum IndexKind {
-  /// This is a `sort`.
-  Sort,
-  /// This is an `axiom`.
-  Axiom,
-  /// This is an `term`.
-  Term,
-  /// This is a variable name,
-  Var,
-  /// This is a `(local) def`.
-  Def {
-    /// Is this `local def`?
-    local: bool,
-  },
-  /// This is a `(!pub) theorem`.
-  Thm {
-    /// Is this not `pub theorem`?
-    local: bool,
-  },
+/// An index table entry, which is essentially an ID describing the table format, and some
+/// additional data to find the actual table.
+#[repr(C, align(4))]
+#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+pub struct TableEntry {
+  /// A magic number that identifies this table entry, and determines the interpretation of the
+  /// rest of the data.
+  id: [u8; 4],
+  /// A 4 byte data field whose interpretation depends on the entry type.
+  data: U32<LE>,
+  /// An 8 byte data field whose interpretation depends on the entry type, but is generally a
+  /// pointer to the actual table data.
+  ptr: U64<LE>,
 }
 
-impl std::convert::TryFrom<u8> for IndexKind {
-  type Error = ParseError;
-  fn try_from(cmd: u8) -> Result<Self, Self::Error> {
-    Ok(match cmd {
-      cmd::INDEX_KIND_TERM => IndexKind::Term,
-      cmd::INDEX_KIND_AXIOM => IndexKind::Axiom,
-      cmd::INDEX_KIND_VAR => IndexKind::Var,
-      cmd::INDEX_KIND_SORT => IndexKind::Sort,
-      cmd::INDEX_KIND_DEF => IndexKind::Def { local: false },
-      cmd::INDEX_KIND_THM => IndexKind::Thm { local: false },
-      cmd::INDEX_KIND_LOCAL_DEF => IndexKind::Def { local: true },
-      cmd::INDEX_KIND_LOCAL_THM => IndexKind::Thm { local: true },
-      _ => return Err(ParseError::IndexKindConv(cmd)),
-    })
-  }
-}
-
-/// An individual entry in the index,
-/// which is hooked up in a binary tree structure.
-/// It is followed by a `CStr` (unsized) containing the entity's name.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, AsBytes, Unaligned)]
-pub struct IndexEntry {
-  /// A pointer to the left child in the binary search tree, ordered by name.
-  pub p_left: U64<LE>,
-  /// A pointer to the right child in the binary search tree, ordered by name.
-  pub p_right: U64<LE>,
-  /// The line in the source file that introduced this entity.
-  pub row: U32<LE>,
-  /// The character in the source file that introduced this entity.
-  pub col: U32<LE>,
+/// An individual symbol name entry in the index.
+#[repr(C, align(8))]
+#[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
+pub struct NameEntry {
   /// A pointer to the location in the proof stream which introduced this entity.
   pub p_proof: U64<LE>,
-  /// The index ([`SortId`], [`TermId`], or [`ThmId`] or variable index) of the entity.
-  pub ix: U32<LE>,
-  /// The index entry kind as a [`IndexKind`].
-  pub kind: u8,
+  /// A pointer to the entity's name as a UTF-8 C string.
+  pub p_name: U64<LE>,
 }

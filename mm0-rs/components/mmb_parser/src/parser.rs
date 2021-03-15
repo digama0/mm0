@@ -1,10 +1,8 @@
 //! Parser for MMB binary proof files.
-use crate::{
-  exhausted, u32_as_usize, u64_as_usize, Arg, Header, IndexEntry, IndexKind, NumdStmtCmd, ProofCmd,
-  SortData, StmtCmd, TermEntry, ThmEntry, UnifyCmd,
-};
+use crate::{cmd, Arg, Header, NameEntry, NumdStmtCmd, ProofCmd, SortData,
+  StmtCmd, TableEntry, TermEntry, ThmEntry, UnifyCmd, exhausted, u32_as_usize, u64_as_usize};
 use byteorder::LE;
-use mm0_util::{cstr_from_bytes_prefix, Position, SortId, TermId, ThmId};
+use mm0_util::{cstr_from_bytes_prefix, SortId, TermId, ThmId};
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Range;
@@ -13,8 +11,8 @@ use zerocopy::{FromBytes, LayoutVerified, U16, U32, U64};
 
 /// A parsed `MMB` file, as a borrowed type. This does only shallow parsing;
 /// additional parsing is done on demand via functions on this type.
-#[derive(Debug)]
-pub struct MmbFile<'a> {
+#[derive(Debug, Default)]
+pub struct MmbFile<'a, X = BasicIndex<'a>> {
   /// The file's header.
   pub header: Header,
   /// The full file
@@ -28,55 +26,194 @@ pub struct MmbFile<'a> {
   /// The index of the beginning of the proof stream
   proof: usize,
   /// The index, if provided.
-  pub index: Option<MmbIndex<'a>>,
+  pub index: X,
 }
 
-impl<'a> std::default::Default for MmbFile<'a> {
-  fn default() -> Self {
-    MmbFile {
-      header: Header::default(),
-      buf: &[],
-      sorts: &[],
-      terms: &[],
-      thms: &[],
-      proof: 0,
-      index: None,
+/// An MMB file parser with a basic index, usable for getting names of declarations and variables.
+pub type BasicMmbFile<'a> = MmbFile<'a, BasicIndex<'a>>;
+/// An MMB file parser with no index parser.
+pub type BareMmbFile<'a> = MmbFile<'a, ()>;
+
+/// A trait for populating the `data` field on [`MmbIndex`] given a table entry.
+pub trait MmbIndexBuilder<'a>: Default {
+  /// Implementors are expected to match on the [`TableEntry::id`] field, and use the data if it
+  /// matches a particular name.
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError>;
+}
+
+impl<'a> MmbIndexBuilder<'a> for () {
+  #[inline]
+  fn build<X>(&mut self, _: &mut MmbFile<'a, X>, _: &'a TableEntry) -> Result<(), ParseError> {
+    Ok(())
+  }
+}
+
+impl<'a, A: MmbIndexBuilder<'a>, B: MmbIndexBuilder<'a>> MmbIndexBuilder<'a> for (A, B) {
+  #[inline]
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
+    self.0.build(f, e)?;
+    self.1.build(f, e)
+  }
+}
+
+/// Constructs a new trait for accessing a subcomponent of the [`MmbIndex`] data, with automatic
+/// impls for `()`, `(A, B)` and the subcomponent itself.
+#[macro_export]
+macro_rules! make_index_trait {
+  ([<$($lft:lifetime),*>, $ty:ident, $trait:ident, $notrait:ident, $f:ident, $f_mut:ident]
+    $($fns:item)*) => {
+    /// A trait for looking up a subcomponent of the data of [`MmbIndex`].
+    pub trait $trait<$($lft),*> {
+      /// Get shared access to the subcomponent.
+      fn $f(&self) -> Option<&$ty<$($lft),*>>;
+      /// Get mutable access to the subcomponent.
+      fn $f_mut(&mut self) -> Option<&mut $ty<$($lft),*>>;
+      $($fns)*
+    }
+    /// Signals that this type does not implement the respective index trait.
+    pub trait $notrait {}
+
+    impl $notrait for () {}
+
+    impl<$($lft),*, T: $notrait> $trait<$($lft),*> for T {
+      #[inline]
+      fn $f(&self) -> Option<&$ty<$($lft),*>> { None }
+      #[inline]
+      fn $f_mut(&mut self) -> Option<&mut $ty<$($lft),*>> { None }
+    }
+
+    impl<$($lft),*> $trait<$($lft),*> for $ty<$($lft),*> {
+      #[inline]
+      fn $f(&self) -> Option<&$ty<$($lft),*>> { Some(self) }
+      #[inline]
+      fn $f_mut(&mut self) -> Option<&mut $ty<$($lft),*>> { Some(self) }
+    }
+
+    impl<$($lft),*> $trait<$($lft),*> for Option<$ty<$($lft),*>> {
+      #[inline]
+      fn $f(&self) -> Option<&$ty<$($lft),*>> { self.as_ref() }
+      #[inline]
+      fn $f_mut(&mut self) -> Option<&mut $ty<$($lft),*>> { self.as_mut() }
+    }
+
+    impl<$($lft),*, A: $trait<$($lft),*>, B: $trait<$($lft),*>> $trait<$($lft),*> for (A, B) {
+      #[inline]
+      fn $f(&self) -> Option<&$ty<$($lft),*>> {
+        match self.0.$f() {
+          Some(e) => Some(e),
+          None => self.1.$f()
+        }
+      }
+      #[inline]
+      fn $f_mut(&mut self) -> Option<&mut $ty<$($lft),*>> {
+        match self.0.$f_mut() {
+          Some(e) => Some(e),
+          None => self.1.$f_mut()
+        }
+      }
     }
   }
 }
 
-/// A parsed `MMB` file index.
+/// This index subcomponent supplies names for sorts, terms, and theorems.
 #[derive(Debug)]
-pub struct MmbIndex<'a> {
-  /// The full file
-  buf: &'a [u8],
-  /// A pointer to the root of the binary search tree, for searching based on name.
-  root: U64<LE>,
+pub struct SymbolNames<'a> {
   /// Pointers to the index entries for the sorts
-  sorts: &'a [U64<LE>],
+  sorts: &'a [NameEntry],
+  /// Pointers to the index entries for the terms
+  terms: &'a [NameEntry],
+  /// Pointers to the index entries for the theorems
+  thms: &'a [NameEntry],
+}
+
+impl<'a> MmbIndexBuilder<'a> for Option<SymbolNames<'a>> {
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
+    if e.id == cmd::INDEX_NAME {
+      let rest = f.buf.get(u64_as_usize(e.ptr)..).ok_or_else(|| f.bad_index_parse())?;
+      let (sorts, rest) = new_slice_prefix(rest, f.sorts.len()).ok_or_else(|| f.bad_index_parse())?;
+      let (terms, rest) = new_slice_prefix(rest, f.terms.len()).ok_or_else(|| f.bad_index_parse())?;
+      let (thms, _) = new_slice_prefix(rest, f.thms.len()).ok_or_else(|| f.bad_index_parse())?;
+      if self.replace(SymbolNames { sorts, terms, thms }).is_some() {
+        return Err(ParseError::DuplicateIndexTable {
+          p_index: u64_as_usize(f.header.p_index),
+          id: e.id
+        })
+      }
+    }
+    Ok(())
+  }
+}
+
+make_index_trait! {
+  [<'a>, SymbolNames, HasSymbolNames, NoSymbolNames, get_symbol_names, get_symbol_names_mut]
+}
+impl<'a> NoSymbolNames for Option<VarNames<'a>> {}
+impl<'a> NoSymbolNames for Option<HypNames<'a>> {}
+
+/// This index subcomponent supplies names for sorts, terms, and theorems.
+#[derive(Debug)]
+pub struct VarNames<'a> {
   /// Pointers to the index entries for the terms
   terms: &'a [U64<LE>],
   /// Pointers to the index entries for the theorems
   thms: &'a [U64<LE>],
 }
 
-/// A handle to an entry in the index.
-#[derive(Debug, Clone, Copy)]
-pub struct IndexEntryRef<'a> {
-  /// The full file
-  buf: &'a [u8],
-  /// The index entry itself
-  entry: &'a IndexEntry,
-  /// The C string for the value (actually a suffix of the file
-  /// starting at the appropriate location). Note that `strlen` has to be called
-  /// to get the end of the string in [value()](Self::value()).
-  value: &'a [u8],
+impl<'a> MmbIndexBuilder<'a> for Option<VarNames<'a>> {
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
+    if e.id == cmd::INDEX_VAR_NAME {
+      let rest = f.buf.get(u64_as_usize(e.ptr)..).ok_or_else(|| f.bad_index_parse())?;
+      let (terms, rest) = new_slice_prefix(rest, f.terms.len()).ok_or_else(|| f.bad_index_parse())?;
+      let (thms, _) = new_slice_prefix(rest, f.thms.len()).ok_or_else(|| f.bad_index_parse())?;
+      if self.replace(VarNames { terms, thms }).is_some() {
+        return Err(ParseError::DuplicateIndexTable {
+          p_index: u64_as_usize(f.header.p_index),
+          id: e.id
+        })
+      }
+    }
+    Ok(())
+  }
 }
 
-impl<'a> std::ops::Deref for IndexEntryRef<'a> {
-  type Target = IndexEntry;
-  fn deref(&self) -> &IndexEntry { self.entry }
+make_index_trait! {
+  [<'a>, VarNames, HasVarNames, NoVarNames, get_var_names, get_var_names_mut]
 }
+impl<'a> NoVarNames for Option<SymbolNames<'a>> {}
+impl<'a> NoVarNames for Option<HypNames<'a>> {}
+
+/// This index subcomponent supplies names for sorts, terms, and theorems.
+#[derive(Debug)]
+pub struct HypNames<'a> {
+  /// Pointers to the index entries for the theorems
+  thms: &'a [U64<LE>],
+}
+
+impl<'a> MmbIndexBuilder<'a> for Option<HypNames<'a>> {
+  fn build<X>(&mut self, f: &mut MmbFile<'a, X>, e: &'a TableEntry) -> Result<(), ParseError> {
+    if e.id == cmd::INDEX_HYP_NAME {
+      let rest = f.buf.get(u64_as_usize(e.ptr)..).ok_or_else(|| f.bad_index_parse())?;
+      let (thms, _) = new_slice_prefix(rest, f.thms.len()).ok_or_else(|| f.bad_index_parse())?;
+      if self.replace(HypNames { thms }).is_some() {
+        return Err(ParseError::DuplicateIndexTable {
+          p_index: u64_as_usize(f.header.p_index),
+          id: e.id
+        })
+      }
+    }
+    Ok(())
+  }
+}
+
+make_index_trait! {
+  [<'a>, HypNames, HasHypNames, NoHypNames, get_hyp_names, get_hyp_names_mut]
+}
+impl<'a> NoHypNames for Option<SymbolNames<'a>> {}
+impl<'a> NoHypNames for Option<VarNames<'a>> {}
+
+/// A basic index, usable for getting names of declarations and variables.
+pub type BasicIndex<'a> =
+  (Option<SymbolNames<'a>>, (Option<VarNames<'a>>, Option<HypNames<'a>>));
 
 /// Return the raw command data (a pair `[(u8, u32)]`)
 /// while ensuring that an iterator which is literally empty
@@ -297,6 +434,13 @@ pub enum ParseError {
     /// The (ostensible) location of the index in the file
     p_index: usize,
   },
+  /// An index table ID was used more than once, for an ID that does not accept duplicates
+  DuplicateIndexTable {
+    /// The location of the index in the file
+    p_index: usize,
+    /// The duplicate ID
+    id: [u8; 4],
+  },
   /// An index lookup failed
   BadIndexLookup {
     /// The (ostensible) location of the index in the file, or `None` if there is no index
@@ -403,6 +547,14 @@ impl std::fmt::Display for ParseError {
         "MMB index is malformed. According to the header, it begins at byte {}. {}",
         p_index, HEADER_CAVEAT
       ),
+      ParseError::DuplicateIndexTable { p_index, id } => {
+        write!(f, "MMB index at {} contains a duplicate index entry for key = ", p_index)?;
+        match std::str::from_utf8(id) {
+          Ok(s) => write!(f, "'{}'", s)?,
+          Err(_) => write!(f, "{:?}", id)?,
+        }
+        write!(f, ". {}", HEADER_CAVEAT)
+      }
       ParseError::BadIndexLookup { p_index: None } => write!(
         f,
         "There was an error looking up an item in the MMB index, \
@@ -435,7 +587,7 @@ fn new_slice_prefix<T: FromBytes>(bytes: &[u8], n: usize) -> Option<(&[T], &[u8]
   }
 }
 
-impl<'a> MmbFile<'a> {
+impl<'a, X> MmbFile<'a, X> {
   /// For error reporting after the initial parse.
   #[must_use]
   pub fn bad_index_lookup(&self) -> ParseError {
@@ -445,13 +597,21 @@ impl<'a> MmbFile<'a> {
   /// For error reporting after the initial parse.
   #[must_use]
   pub fn p_index(&self) -> Option<usize> {
-    self.index.as_ref().map(|ii| self.buf.len() - ii.buf.len())
+    let n = u64_as_usize(self.header.p_index);
+    if n == 0 { None } else { Some(n) }
   }
 
+  /// Returns a bad index parse error, for error reporting during index parsing.
+  pub fn bad_index_parse(&self) -> ParseError {
+    ParseError::BadIndexParse { p_index: u64_as_usize(self.header.p_index) }
+  }
+}
+
+impl<'a, X: MmbIndexBuilder<'a>> MmbFile<'a, X> {
   /// Parse a [`MmbFile`] from a file, provided as a byte slice.
   /// This does the minimum checking to construct the parsed object,
   /// it is not a verifier.
-  pub fn parse(buf: &'a [u8]) -> Result<MmbFile<'a>, ParseError> {
+  pub fn parse(buf: &'a [u8]) -> Result<Self, ParseError> {
     use ParseError::{BadIndexParse, BadSorts, BadTerms, BadThms};
     let (zc_header, sorts) =
       LayoutVerified::<_, Header>::new_from_prefix(buf).ok_or_else(|| find_header_error(buf))?;
@@ -482,21 +642,21 @@ impl<'a> MmbFile<'a> {
       })?
       .0;
     let proof = u32_as_usize(header.p_proof.get());
-    let index = match u64_as_usize(header.p_index) {
-      0 => None,
-      n => Some(
-        (|| -> Option<_> {
-          let (root, rest) =
-            LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(&*buf.get(n..)?)?;
-          let (sorts, rest) = new_slice_prefix(rest, sorts.len())?;
-          let (terms, rest) = new_slice_prefix(rest, terms.len())?;
-          let (thms, _) = new_slice_prefix(rest, thms.len())?;
-          Some(MmbIndex { buf, root: *root, sorts, terms, thms })
-        })()
-        .ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?,
-      ),
-    };
-    Ok(MmbFile { header: *header, buf, sorts, terms, thms, proof, index })
+    let mut file = MmbFile { header: *header, buf, sorts, terms, thms, proof, index: X::default() };
+    let n = u64_as_usize(header.p_index);
+    if n != 0 {
+      let (entries, _) = (|| -> Option<_> {
+        let (num_entries, rest) =
+          LayoutVerified::<_, U64<LE>>::new_unaligned_from_prefix(&*buf.get(n..)?)?;
+        new_slice_prefix(rest, num_entries.get().try_into().ok()?)
+      })().ok_or_else(|| BadIndexParse { p_index: u64_as_usize(header.p_index) })?;
+      let mut index = X::default();
+      for e in entries {
+        index.build(&mut file, e)?
+      }
+      file.index = index;
+    }
+    Ok(file)
   }
 }
 
@@ -570,14 +730,6 @@ pub fn find_header_error(mmb: &[u8]) -> ParseError {
 }
 
 #[inline]
-fn index_ref(buf: &[u8], n: U64<LE>) -> Option<IndexEntryRef<'_>> {
-  let (entry, value) =
-    LayoutVerified::<_, IndexEntry>::new_unaligned_from_prefix(&*buf.get(u64_as_usize(n)..)?)?;
-  let entry = entry.into_ref();
-  Some(IndexEntryRef { buf, entry, value })
-}
-
-#[inline]
 fn term_ref(buf: &[u8], t: TermEntry, tid: TermId) -> Option<TermRef<'_>> {
   let (args_and_ret, unify) =
     new_slice_prefix(buf.get(u32_as_usize(t.p_args.get())..)?, usize::from(t.num_args.get()) + 1)?;
@@ -593,7 +745,7 @@ fn thm_ref(buf: &[u8], t: ThmEntry, tid: ThmId) -> Option<ThmRef<'_>> {
   Some(ThmRef { tid, args, unify })
 }
 
-impl<'a> MmbFile<'a> {
+impl<'a, X> MmbFile<'a, X> {
   /// Get the sort data for a [`SortId`].
   #[inline]
   #[must_use]
@@ -625,69 +777,208 @@ impl<'a> MmbFile<'a> {
       next_thm_id: 0_u32,
     }
   }
+}
+
+/// A handle to an symbol name entry in the index.
+#[derive(Debug, Clone, Copy)]
+pub struct NameEntryRef<'a> {
+  /// The full file
+  buf: &'a [u8],
+  /// The proof stream index
+  p_proof: U64<LE>,
+  /// The C string for the value (actually a suffix of the file
+  /// starting at the appropriate location). Note that `strlen` has to be called
+  /// to get the end of the string in [value()](Self::value()).
+  value: &'a [u8],
+}
+
+#[inline]
+fn name_entry_ref(
+  buf: &[u8],
+  NameEntry { p_proof, p_name }: NameEntry
+) -> Option<NameEntryRef<'_>> {
+  let value = buf.get(u64_as_usize(p_name)..)?;
+  Some(NameEntryRef { buf, p_proof, value })
+}
+
+impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
+  /// Get the index entry for a sort.
+  #[must_use]
+  pub fn sort_index(&self, n: SortId) -> Option<NameEntryRef<'a>> {
+    name_entry_ref(self.buf, *self.index.get_symbol_names()?.sorts.get(usize::from(n.0))?)
+  }
+
+  /// Get the index entry for a term.
+  #[must_use]
+  pub fn term_index(&self, n: TermId) -> Option<NameEntryRef<'a>> {
+    name_entry_ref(self.buf, *self.index.get_symbol_names()?.terms.get(u32_as_usize(n.0))?)
+  }
+
+  /// Get the index entry for a theorem.
+  #[must_use]
+  pub fn thm_index(&self, n: ThmId) -> Option<NameEntryRef<'a>> {
+    name_entry_ref(self.buf, *self.index.get_symbol_names()?.thms.get(u32_as_usize(n.0))?)
+  }
+
+  /// Convenience function for getting an index without having to destructure
+  /// the [`StmtCmd`] every time.
+  #[must_use]
+  pub fn stmt_index(&self, stmt: NumdStmtCmd) -> Option<NameEntryRef<'a>> {
+    use crate::NumdStmtCmd::{Axiom, Sort, TermDef, Thm};
+    match stmt {
+      Sort { sort_id } => self.sort_index(sort_id),
+      Axiom { thm_id } | Thm { thm_id, .. } => self.thm_index(thm_id),
+      TermDef { term_id, .. } => self.term_index(term_id),
+    }
+  }
 
   /// Get the name of a term, supplying a default name
   /// of the form `t123` if the index is not present.
   #[must_use]
-  pub fn term_name(&self, n: TermId) -> Option<Cow<'a, str>> {
-    if let Some(index) = &self.index {
-      Some(Cow::Borrowed(index.term(n)?.value()?))
-    } else {
-      Some(Cow::Owned(format!("t{}", n.0)))
+  pub fn term_name(&self, n: TermId) -> Cow<'a, str> {
+    match self.term_index(n).and_then(|t| t.value()) {
+      Some(v) => Cow::Borrowed(v),
+      None => Cow::Owned(format!("t{}", n.0))
     }
   }
 
   /// Get the name of a theorem, supplying a default name
   /// of the form `T123` if the index is not present.
   #[must_use]
-  pub fn thm_name(&self, n: ThmId) -> Option<Cow<'a, str>> {
-    if let Some(index) = &self.index {
-      Some(Cow::Borrowed(index.thm(n)?.value()?))
-    } else {
-      Some(Cow::Owned(format!("T{}", n.0)))
+  pub fn thm_name(&self, n: ThmId) -> Cow<'a, str> {
+    match self.thm_index(n).and_then(|t| t.value()) {
+      Some(v) => Cow::Borrowed(v),
+      None => Cow::Owned(format!("T{}", n.0))
     }
   }
 
   /// Get the name of a sort, supplying a default name
   /// of the form `s123` if the index is not present.
   #[must_use]
-  pub fn sort_name(&self, n: SortId) -> Option<Cow<'a, str>> {
-    if let Some(index) = &self.index {
-      Some(Cow::Borrowed(index.sort(n)?.value()?))
-    } else {
-      Some(Cow::Owned(format!("s{}", n.0)))
+  pub fn sort_name(&self, n: SortId) -> Cow<'a, str> {
+    match self.sort_index(n).and_then(|t| t.value()) {
+      Some(v) => Cow::Borrowed(v),
+      None => Cow::Owned(format!("s{}", n.0))
     }
   }
 }
 
-impl<'a> MmbIndex<'a> {
-  /// Get the index entry for a sort.
-  #[must_use]
-  pub fn sort(&self, n: SortId) -> Option<IndexEntryRef<'a>> {
-    index_ref(self.buf, *self.sorts.get(usize::from(n.0))?)
+/// A handle to an symbol name entry in the index.
+#[derive(Debug, Clone, Copy)]
+pub struct StrListRef<'a> {
+  /// The full file
+  buf: &'a [u8],
+  /// The strings
+  pub strs: &'a [U64<LE>],
+}
+
+impl<'a> StrListRef<'a> {
+  /// Create a new empty [`StrListRef`].
+  pub fn new(buf: &'a [u8]) -> Self { Self { buf, strs: &[] } }
+
+  /// Get the name of the string with index `n`. The range of valid `n` is `self.strs.len()`,
+  pub fn get(&self, n: usize) -> Option<&'a str> {
+    cstr_from_bytes_prefix(self.buf.get(u64_as_usize(*self.strs.get(n)?)..)?)?.0.to_str().ok()
   }
 
-  /// Get the index entry for a term.
-  #[must_use]
-  pub fn term(&self, n: TermId) -> Option<IndexEntryRef<'a>> {
-    index_ref(self.buf, *self.terms.get(u32_as_usize(n.0))?)
+  /// Get the name of the variable with index `n`, using `vN` naming if the variable
+  /// name cannot be found.
+  pub fn var_name(&self, n: usize) -> Cow<'a, str> {
+    match self.get(n) {
+      Some(v) => Cow::Borrowed(v),
+      None => Cow::Owned(format!("v{}", n))
+    }
   }
 
-  /// Get the index entry for a theorem.
+  /// Get the name of the hypothesis with index `n`, using `hN` naming if the hypothesis
+  /// name cannot be found.
+  pub fn hyp_name(&self, n: usize) -> Cow<'a, str> {
+    match self.get(n) {
+      Some(v) => Cow::Borrowed(v),
+      None => Cow::Owned(format!("h{}", n))
+    }
+  }
+}
+
+impl<'a, X> MmbFile<'a, X> {
+  fn str_list_ref(&self, p_vars: U64<LE>) -> Option<StrListRef<'a>> {
+    let (num_vars, rest) = LayoutVerified::<_, U64<LE>>::
+      new_unaligned_from_prefix(&*self.buf.get(u64_as_usize(p_vars)..)?)?;
+    Some(StrListRef {
+      buf: self.buf,
+      strs: new_slice_prefix(rest, num_vars.get().try_into().ok()?)?.0
+    })
+  }
+}
+
+impl<'a, X: HasVarNames<'a>> MmbFile<'a, X> {
+  /// Get the list of variables used in a term, or `None` if the index does not exist.
   #[must_use]
-  pub fn thm(&self, n: ThmId) -> Option<IndexEntryRef<'a>> {
-    index_ref(self.buf, *self.thms.get(u32_as_usize(n.0))?)
+  pub fn term_vars_opt(&self, n: TermId) -> Option<StrListRef<'a>> {
+    self.str_list_ref(*self.index.get_var_names()?.terms.get(u32_as_usize(n.0))?)
+  }
+
+  /// Get the list of variables used in a term.
+  #[must_use]
+  pub fn term_vars(&self, n: TermId) -> StrListRef<'a> {
+    self.term_vars_opt(n).unwrap_or_else(|| StrListRef::new(self.buf))
+  }
+
+  /// Get the list of variables used in a theorem, or `None` if the index does not exist.
+  #[must_use]
+  pub fn thm_vars_opt(&self, n: ThmId) -> Option<StrListRef<'a>> {
+    self.str_list_ref(*self.index.get_var_names()?.thms.get(u32_as_usize(n.0))?)
+  }
+
+  /// Get the list of variables used in a theorem.
+  #[must_use]
+  pub fn thm_vars(&self, n: ThmId) -> StrListRef<'a> {
+    self.thm_vars_opt(n).unwrap_or_else(|| StrListRef::new(self.buf))
   }
 
   /// Convenience function for getting an index without having to destructure
   /// the [`StmtCmd`] every time.
   #[must_use]
-  pub fn stmt(&self, stmt: NumdStmtCmd) -> Option<IndexEntryRef<'a>> {
+  pub fn stmt_vars(&self, stmt: NumdStmtCmd) -> StrListRef<'a> {
     use crate::NumdStmtCmd::{Axiom, Sort, TermDef, Thm};
     match stmt {
-      Sort { sort_id } => self.sort(sort_id),
-      Axiom { thm_id } | Thm { thm_id, .. } => self.thm(thm_id),
-      TermDef { term_id, .. } => self.term(term_id),
+      Sort { .. } => StrListRef::new(self.buf),
+      Axiom { thm_id } | Thm { thm_id, .. } => self.thm_vars(thm_id),
+      TermDef { term_id, .. } => self.term_vars(term_id),
+    }
+  }
+}
+
+/// A handle to an symbol name entry in the index.
+#[derive(Debug, Clone, Copy)]
+pub struct HypsEntryRef<'a> {
+  /// The full file
+  buf: &'a [u8],
+  /// The variables
+  pub vars: &'a [U64<LE>],
+}
+
+impl<'a, X: HasHypNames<'a>> MmbFile<'a, X> {
+  /// Get the hypothesis name list for a theorem.
+  #[must_use]
+  pub fn thm_hyps_opt(&self, n: ThmId) -> Option<StrListRef<'a>> {
+    self.str_list_ref(*self.index.get_hyp_names()?.thms.get(u32_as_usize(n.0))?)
+  }
+
+  /// Get the hypothesis name list for a theorem.
+  #[must_use]
+  pub fn thm_hyps(&self, n: ThmId) -> StrListRef<'a> {
+    self.thm_hyps_opt(n).unwrap_or_else(|| StrListRef::new(self.buf))
+  }
+
+  /// Convenience function for getting an index without having to destructure
+  /// the [`StmtCmd`] every time.
+  #[must_use]
+  pub fn stmt_hyps(&self, stmt: NumdStmtCmd) -> StrListRef<'a> {
+    use crate::NumdStmtCmd::{Axiom, Sort, TermDef, Thm};
+    match stmt {
+      Sort { .. } | TermDef { .. } => StrListRef::new(self.buf),
+      Axiom { thm_id } | Thm { thm_id, .. } => self.thm_hyps(thm_id),
     }
   }
 }
@@ -821,29 +1112,13 @@ impl<'a> Iterator for DeclIter<'a> {
   }
 }
 
-impl<'a> IndexEntryRef<'a> {
-  /// The left child of this entry.
-  #[must_use]
-  pub fn left(&self) -> Option<Self> { index_ref(self.buf, self.p_left) }
-
-  /// The right child of this entry.
-  #[must_use]
-  pub fn right(&self) -> Option<Self> { index_ref(self.buf, self.p_right) }
-
+impl<'a> NameEntryRef<'a> {
   /// Extract the name of this index entry as a `&str`.
   #[must_use]
   pub fn value(&self) -> Option<&'a str> { cstr_from_bytes_prefix(self.value)?.0.to_str().ok() }
-
-  /// The index kind of this entry.
-  #[must_use]
-  pub fn kind(&self) -> Option<IndexKind> { self.kind.try_into().ok() }
 
   /// The statement that sourced this entry.
   pub fn decl(&self) -> Result<Option<(StmtCmd, ProofIter<'a>)>, ParseError> {
     Ok(try_next_decl(self.buf, u64_as_usize(self.p_proof))?.map(|(stmt, proof, _)| (stmt, proof)))
   }
-
-  /// Convert the location information of this entry into a [Position].
-  #[must_use]
-  pub fn to_pos(&self) -> Position { Position { line: self.row.get(), character: self.col.get() } }
 }
