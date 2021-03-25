@@ -865,39 +865,58 @@ impl<'a, X: HasSymbolNames<'a>> MmbFile<'a, X> {
 
 /// A handle to an symbol name entry in the index.
 #[derive(Debug, Clone, Copy)]
-pub struct StrListRef<'a> {
+struct StrListRef<'a> {
   /// The full file
   buf: &'a [u8],
   /// The strings
-  pub strs: &'a [U64<LE>],
+  strs: &'a [U64<LE>],
 }
 
 impl<'a> StrListRef<'a> {
   /// Create a new empty [`StrListRef`].
-  pub fn new(buf: &'a [u8]) -> Self { Self { buf, strs: &[] } }
+  fn new(buf: &'a [u8]) -> Self { Self { buf, strs: &[] } }
 
   /// Get the name of the string with index `n`. The range of valid `n` is `self.strs.len()`,
-  pub fn get(&self, n: usize) -> Option<&'a str> {
+  fn get(&self, n: usize) -> Option<&'a str> {
     cstr_from_bytes_prefix(self.buf.get(u64_as_usize(*self.strs.get(n)?)..)?)?.0.to_str().ok()
   }
+}
 
-  /// Get the name of the variable with index `n`, using `vN` naming if the variable
-  /// name cannot be found.
-  pub fn var_name(&self, n: usize) -> Cow<'a, str> {
-    match self.get(n) {
-      Some(v) => Cow::Borrowed(v),
-      None => Cow::Owned(format!("v{}", n))
-    }
-  }
+macro_rules! str_list_wrapper {
+  ($($(#[$m:meta])* $ty:ident($e:expr);)*) => {$(
+    $(#[$m])*
+    #[derive(Debug, Clone, Copy)]
+    pub struct $ty<'a>(StrListRef<'a>);
 
-  /// Get the name of the hypothesis with index `n`, using `hN` naming if the hypothesis
-  /// name cannot be found.
-  pub fn hyp_name(&self, n: usize) -> Cow<'a, str> {
-    match self.get(n) {
-      Some(v) => Cow::Borrowed(v),
-      None => Cow::Owned(format!("h{}", n))
+    impl<'a> std::ops::Deref for $ty<'a> {
+      type Target = &'a [U64<LE>];
+      fn deref(&self) -> &&'a [U64<LE>] { &self.0.strs }
     }
-  }
+
+    impl<'a> $ty<'a> {
+      /// Create a new empty wrapper.
+      fn new(buf: &'a [u8]) -> Self { Self(StrListRef::new(buf)) }
+
+      /// Get the name of the string with index `n`. The range of valid `n` is `self.strs.len()`,
+      pub fn get_opt(&self, n: usize) -> Option<&'a str> { self.0.get(n) }
+
+      /// Get the name of the string with index `n`, with a fallback if the value cannot be found.
+      pub fn get(&self, n: usize) -> Cow<'a, str> {
+        match self.get_opt(n) {
+          Some(v) => Cow::Borrowed(v),
+          None => Cow::Owned(format!($e, n))
+        }
+      }
+    }
+  )*}
+}
+
+str_list_wrapper!{
+  /// A handle to an list of variable names in the index.
+  VarListRef("v{}");
+
+  /// A handle to an list of hypothesis names in the index.
+  HypListRef("h{}");
 }
 
 impl<'a, X> MmbFile<'a, X> {
@@ -914,35 +933,37 @@ impl<'a, X> MmbFile<'a, X> {
 impl<'a, X: HasVarNames<'a>> MmbFile<'a, X> {
   /// Get the list of variables used in a term, or `None` if the index does not exist.
   #[must_use]
-  pub fn term_vars_opt(&self, n: TermId) -> Option<StrListRef<'a>> {
-    self.str_list_ref(*self.index.get_var_names()?.terms.get(u32_as_usize(n.0))?)
+  pub fn term_vars_opt(&self, n: TermId) -> Option<VarListRef<'a>> {
+    let strs = self.str_list_ref(*self.index.get_var_names()?.terms.get(u32_as_usize(n.0))?)?;
+    Some(VarListRef(strs))
   }
 
   /// Get the list of variables used in a term.
   #[must_use]
-  pub fn term_vars(&self, n: TermId) -> StrListRef<'a> {
-    self.term_vars_opt(n).unwrap_or_else(|| StrListRef::new(self.buf))
+  pub fn term_vars(&self, n: TermId) -> VarListRef<'a> {
+    self.term_vars_opt(n).unwrap_or_else(|| VarListRef::new(self.buf))
   }
 
   /// Get the list of variables used in a theorem, or `None` if the index does not exist.
   #[must_use]
-  pub fn thm_vars_opt(&self, n: ThmId) -> Option<StrListRef<'a>> {
-    self.str_list_ref(*self.index.get_var_names()?.thms.get(u32_as_usize(n.0))?)
+  pub fn thm_vars_opt(&self, n: ThmId) -> Option<VarListRef<'a>> {
+    let strs = self.str_list_ref(*self.index.get_var_names()?.thms.get(u32_as_usize(n.0))?)?;
+    Some(VarListRef(strs))
   }
 
   /// Get the list of variables used in a theorem.
   #[must_use]
-  pub fn thm_vars(&self, n: ThmId) -> StrListRef<'a> {
-    self.thm_vars_opt(n).unwrap_or_else(|| StrListRef::new(self.buf))
+  pub fn thm_vars(&self, n: ThmId) -> VarListRef<'a> {
+    self.thm_vars_opt(n).unwrap_or_else(|| VarListRef::new(self.buf))
   }
 
   /// Convenience function for getting an index without having to destructure
   /// the [`StmtCmd`] every time.
   #[must_use]
-  pub fn stmt_vars(&self, stmt: NumdStmtCmd) -> StrListRef<'a> {
+  pub fn stmt_vars(&self, stmt: NumdStmtCmd) -> VarListRef<'a> {
     use crate::NumdStmtCmd::{Axiom, Sort, TermDef, Thm};
     match stmt {
-      Sort { .. } => StrListRef::new(self.buf),
+      Sort { .. } => VarListRef::new(self.buf),
       Axiom { thm_id } | Thm { thm_id, .. } => self.thm_vars(thm_id),
       TermDef { term_id, .. } => self.term_vars(term_id),
     }
@@ -961,23 +982,24 @@ pub struct HypsEntryRef<'a> {
 impl<'a, X: HasHypNames<'a>> MmbFile<'a, X> {
   /// Get the hypothesis name list for a theorem.
   #[must_use]
-  pub fn thm_hyps_opt(&self, n: ThmId) -> Option<StrListRef<'a>> {
-    self.str_list_ref(*self.index.get_hyp_names()?.thms.get(u32_as_usize(n.0))?)
+  pub fn thm_hyps_opt(&self, n: ThmId) -> Option<HypListRef<'a>> {
+    let strs = self.str_list_ref(*self.index.get_hyp_names()?.thms.get(u32_as_usize(n.0))?)?;
+    Some(HypListRef(strs))
   }
 
   /// Get the hypothesis name list for a theorem.
   #[must_use]
-  pub fn thm_hyps(&self, n: ThmId) -> StrListRef<'a> {
-    self.thm_hyps_opt(n).unwrap_or_else(|| StrListRef::new(self.buf))
+  pub fn thm_hyps(&self, n: ThmId) -> HypListRef<'a> {
+    self.thm_hyps_opt(n).unwrap_or_else(|| HypListRef::new(self.buf))
   }
 
   /// Convenience function for getting an index without having to destructure
   /// the [`StmtCmd`] every time.
   #[must_use]
-  pub fn stmt_hyps(&self, stmt: NumdStmtCmd) -> StrListRef<'a> {
+  pub fn stmt_hyps(&self, stmt: NumdStmtCmd) -> HypListRef<'a> {
     use crate::NumdStmtCmd::{Axiom, Sort, TermDef, Thm};
     match stmt {
-      Sort { .. } | TermDef { .. } => StrListRef::new(self.buf),
+      Sort { .. } | TermDef { .. } => HypListRef::new(self.buf),
       Axiom { thm_id } | Thm { thm_id, .. } => self.thm_hyps(thm_id),
     }
   }
