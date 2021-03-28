@@ -373,9 +373,9 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
   let file = BasicMmbFile::parse(buf)?;
   let mut it = file.proof();
   let mut start = it.pos;
-  macro_rules! get_get_var {($list:expr, $f:ident) => {{
+  macro_rules! get_get_var {($list:expr) => {{
     let list = $list;
-    move |env: &mut Environment, i: usize| env.get_atom(&list.$f(i).as_bytes())
+    move |env: &mut Environment, i: usize| env.get_atom(&list.get(i).as_bytes())
   }}}
   macro_rules! get_next_var {($get_var:expr, $next_var:ident, $var:ident) => {
     let get_var = $get_var;
@@ -403,7 +403,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let atom = env.get_atom(file.term_name(term_id).as_bytes());
         let td = file.term(term_id).ok_or(StrError("Step term overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
-        get_next_var!(get_get_var!(file.term_vars(term_id), var_name), next_var, var);
+        get_next_var!(get_get_var!(file.term_vars(term_id)), next_var, var);
         let args = td.args().iter().map(|a| (
           Some(next_var!()),
           if a.bound() { Type::Bound(a.sort()) }
@@ -429,7 +429,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         let atom = env.get_atom(file.thm_name(thm_id).as_bytes());
         let td = file.thm(thm_id).ok_or(StrError("Step thm overflow", start))?;
         let fsp = FileSpan {file: fref.clone(), span: (start..pf.pos).into()};
-        get_next_var!(get_get_var!(file.thm_vars(thm_id), var_name), next_var, var);
+        get_next_var!(get_get_var!(file.thm_vars(thm_id)), next_var, var);
         let args = td.args().iter().map(|a| (
           Some(next_var!()),
           if a.bound() { Type::Bound(a.sort()) }
@@ -437,7 +437,7 @@ fn parse(fref: &FileRef, buf: &[u8], env: &mut Environment) -> Result<()> {
         )).collect::<Box<[_]>>();
         let mut hyps = vec![];
         let (heap, ret) = parse_unify(&file, args.len(), td.unify(), Some(&mut hyps), || next_var!())?;
-        let get_hyp = get_get_var!(file.thm_hyps(thm_id), hyp_name);
+        let get_hyp = get_get_var!(file.thm_hyps(thm_id));
         hyps.iter_mut().enumerate().for_each(|(i, (a, _))| *a = Some(get_hyp(env, i)));
         let kind = if matches!(stmt, NumdStmtCmd::Axiom {..}) {
           ThmKind::Axiom
