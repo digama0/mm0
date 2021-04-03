@@ -5,7 +5,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use crate::{FileSpan, SliceExt, AtomId, Type as EType, elab::Result, ElabError,
   LispKind, LispVal, Uncons, FormatEnv, try_get_span};
 use super::types::{FieldName, Keyword, Mm0Expr, Mm0ExprNode, Size, Spanned, global};
-use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy, ProcTc, Intrinsic};
+use super::types::entity::{Entity, Prim, PrimType, PrimOp, TypeTy, Intrinsic};
 #[allow(clippy::wildcard_imports)] use super::types::parse::*;
 
 #[derive(Debug, DeepSizeOf)]
@@ -766,9 +766,10 @@ impl<'a> Parser<'a> {
           CallKind::Jump(None, args.into_iter(), variant)
         }
       }
-      Some(Entity::Proc(Spanned {k: ProcTc::Typed(proc), ..})) =>
-        CallKind::Call(CallExpr {f: Spanned {span: fsp, k: f}, args, variant}, proc.tyargs),
-      Some(Entity::Proc(Spanned {k: ProcTc::Unchecked, ..})) => CallKind::Error,
+      Some(Entity::Proc(Spanned {k, ..})) => match k.ty() {
+        Some(proc) => CallKind::Call(CallExpr {f: Spanned {span: fsp, k: f}, args, variant}, proc.tyargs),
+        None => CallKind::Error,
+      }
       Some(_) => err!("parse_expr unimplemented entity type"),
     })
   }

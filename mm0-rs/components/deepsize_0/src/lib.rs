@@ -156,12 +156,7 @@ impl<T: DeepSizeOf> DeepSizeOf for std::collections::VecDeque<T> {
     }
 }
 
-impl<K, V, S> DeepSizeOf for std::collections::HashMap<K, V, S>
-where
-    K: DeepSizeOf + Eq + std::hash::Hash,
-    V: DeepSizeOf,
-    S: std::hash::BuildHasher
-{
+impl<K: DeepSizeOf, V: DeepSizeOf, S> DeepSizeOf for std::collections::HashMap<K, V, S> {
     // FIXME
     // How much more overhead is there to a hashmap? The docs say it is
     // essentially just a Vec<Option<(u64, K, V)>>
@@ -177,11 +172,7 @@ where
     }
 }
 
-impl<T, S> DeepSizeOf for std::collections::HashSet<T, S>
-where
-    T: DeepSizeOf + Eq + std::hash::Hash,
-    S: std::hash::BuildHasher
-{
+impl<T: DeepSizeOf, S> DeepSizeOf for std::collections::HashSet<T, S> {
     fn deep_size_of_children(&self, context: &mut Context) -> usize {
         self.iter()
             .fold(0, |sum, item| sum + item.deep_size_of_children(context))

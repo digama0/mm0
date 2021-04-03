@@ -12,10 +12,11 @@ pub mod parser;
 pub mod predef;
 pub mod build_ast;
 pub mod ast_lower;
+pub mod union_find;
 pub mod infer;
 pub mod nameck;
 // pub mod typeck;
-pub mod union_find;
+pub mod build_mir;
 
 use std::collections::HashMap;
 use bumpalo::Bump;
@@ -23,7 +24,7 @@ use parser::ItemIter;
 
 use crate::{FileSpan, Span, AtomId, Remap, Remapper, Elaborator, ElabError,
   elab::Result, LispVal, EnvDebug, FormatEnv};
-use {types::{Keyword, entity::Entity}, parser::Parser,
+use {types::{Keyword, entity::Entity, mir}, parser::Parser,
   build_ast::BuildAst, predef::PredefMap};
 
 impl Remap for Keyword {
@@ -36,6 +37,9 @@ impl<A: Remap> Remap for PredefMap<A> {
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.map(|x| x.remap(r)) }
 }
 
+#[derive(DeepSizeOf)]
+struct IndexMap<K, V>(Vec<V>, HashMap<K, usize>);
+
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
 #[derive(DeepSizeOf)]
@@ -45,6 +49,10 @@ pub struct Compiler {
   keywords: HashMap<AtomId, Keyword>,
   /// The map of atoms for defined entities (operations and types).
   names: HashMap<AtomId, Entity>,
+  /// The compiled MIR representation of pre-monomorphization functions.
+  mir: HashMap<AtomId, mir::Cfg>,
+  /// The accumulated global initializers, to be placed in the start routine.
+  init: (mir::Cfg, mir::BlockId),
   /// The map from [`Predef`](predef::Predef) to atoms, used for constructing proofs and referencing
   /// compiler lemmas.
   predef: PredefMap<AtomId>,
@@ -70,6 +78,8 @@ impl Remap for Compiler {
     Compiler {
       keywords: self.keywords.remap(r),
       names: self.names.remap(r),
+      mir: self.mir.remap(r),
+      init: self.init.remap(r),
       predef: self.predef.remap(r),
       prefix: self.prefix.clone(),
     }
@@ -83,6 +93,8 @@ impl Compiler {
     Compiler {
       keywords: e.env.make_keywords(),
       names: Compiler::make_names(&mut e.env),
+      mir: Default::default(),
+      init: Default::default(),
       predef: PredefMap::new(|_, s| e.env.get_atom(s.as_bytes())),
       prefix: "_mmc_".into(),
     }

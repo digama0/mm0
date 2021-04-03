@@ -1274,7 +1274,7 @@ impl<'a> Common<'a> {
   fn new(i: &mut Interner<'a>, alloc: &'a Bump) -> Self {
     macro_rules! alloc {($e:expr) => {{let e = $e; i.intern(alloc, e)}}}
     macro_rules! allocs {($f:expr; $($e:expr),*) => {[$(alloc!($f($e))),*]}}
-    #[allow(clippy::enum_glob_use)] use Size::*;
+    use Size::*;
     Self {
       t_unit: alloc!(TyKind::Unit),
       e_unit: alloc!(ExprKind::Unit),
@@ -1600,9 +1600,9 @@ impl<'a> InferCtx<'a> {
       },
       ExprKind::Sizeof(ty) => self.whnf_sizeof(sp, Default::default(), ty),
       ExprKind::Call {f, tys, args: es} =>
-        match let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f), ty).k {
-          ProcTc::Unchecked => self.common.e_error,
-          ProcTc::Typed(ProcTy {kind, tyargs, ref args, ref rets, ..}) => {
+        match let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(&f), ty).k.ty() {
+          None => self.common.e_error,
+          Some(&ProcTy {kind, tyargs, ref args, ref rets, ..}) => {
             assert_eq!(tys.len(), u32_as_usize(tyargs));
             match kind {
               ProcKind::Intrinsic(_) | ProcKind::Proc => unreachable!(),
@@ -3185,9 +3185,9 @@ impl<'a> InferCtx<'a> {
       ast::ExprKind::Call {f: Spanned {span, k: f}, tys, args: es, variant: pf} => {
         let tys = tys.iter().map(|ty| self.lower_ty(ty, ExpectTy::Any)).collect::<Vec<_>>();
         let tys = &*self.alloc.alloc_slice_fill_iter(tys.into_iter());
-        let ty = match &let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(f), ty).k {
-          ProcTc::Unchecked => error!(),
-          ProcTc::Typed(ty) => ty,
+        let ty = match let_unchecked!(Some(Entity::Proc(ty)) = self.names.get(f), ty).k.ty() {
+          None => error!(),
+          Some(ty) => ty,
         };
         let ProcTy {kind, tyargs, args, rets, variant} = ty.clone();
         assert_eq!(tys.len(), u32_as_usize(tyargs));
@@ -3649,7 +3649,7 @@ impl<'a> InferCtx<'a> {
             args: args.to_global(self),
             rets: rets.to_global(self),
             variant: variant.to_global(self),
-          });
+          }, None);
         self.dc.context = ctx;
         let sigma = match *args {
           [] => self.common.t_unit,

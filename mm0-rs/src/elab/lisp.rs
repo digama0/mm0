@@ -925,7 +925,7 @@ pub enum Proc {
   ///
   /// [`Compiler::call`]: crate::mmc::Compiler::call
   #[cfg(feature = "mmc")]
-  MmcCompiler(RefCell<crate::mmc::Compiler>) // TODO: use extern instead
+  MmcCompiler(RefCell<Box<crate::mmc::Compiler>>) // TODO: use extern instead
 }
 
 /// A procedure specification, which defines the number of arguments expected

@@ -6,6 +6,7 @@ pub mod entity;
 pub mod ty;
 pub mod global;
 pub mod hir;
+pub mod mir;
 pub mod pir;
 
 use std::{borrow::Cow, collections::HashMap, convert::{TryFrom, TryInto}, rc::Rc};

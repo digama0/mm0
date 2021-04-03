@@ -73,7 +73,7 @@ impl<'a, T: ToGlobal<'a>> ToGlobal<'a> for Option<T> {
 pub type TuplePattern = Rc<TuplePatternKind>;
 
 /// A strongly typed tuple pattern.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
 pub enum TuplePatternKind {
   /// A variable binding.
   Name(AtomId, VarId, Ty),
@@ -116,7 +116,7 @@ pub type Arg = Rc<ArgS>;
 pub type ArgS = (ArgAttr, ArgKind);
 
 /// An argument declaration for a function.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
 pub enum ArgKind {
   /// A standard argument of the form `{x : T}`, a "lambda binder"
   Lam(TuplePattern),
@@ -148,13 +148,27 @@ impl Remap for ArgKind {
 /// An embedded MM0 expression inside MMC. All free variables have been replaced by indexes,
 /// with `subst` holding the internal names of these variables.
 #[derive(Debug, DeepSizeOf)]
-pub struct Mm0Expr {
+pub struct Mm0Expr<T=Expr> {
   /// The mapping from indexes in the `expr` to internal names.
   /// (The user-facing names have been erased.)
-  pub subst: Box<[Expr]>,
+  pub subst: Box<[T]>,
   /// The root node of the expression.
   pub expr: Rc<Mm0ExprNode>,
 }
+
+impl<T: std::hash::Hash> std::hash::Hash for Mm0Expr<T> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.subst.hash(state);
+    (&*self.expr as *const Mm0ExprNode).hash(state);
+  }
+}
+
+impl<T: PartialEq> PartialEq for Mm0Expr<T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.subst == other.subst && std::ptr::eq(&*self.expr, &*other.expr)
+  }
+}
+impl<T: Eq> Eq for Mm0Expr<T> {}
 
 impl<'a> ToGlobal<'a> for &'a Mm0ExprNode {
   type Output = Rc<Mm0ExprNode>;
@@ -164,16 +178,16 @@ impl<'a> ToGlobal<'a> for &'a Mm0ExprNode {
 }
 
 impl<'a> ToGlobal<'a> for ty::Mm0Expr<'a> {
-  type Output = Mm0Expr;
+  type Output = Mm0Expr<Expr>;
   fn to_global<'s>(&self, ctx: &'s mut InferCtx<'a>) -> Self::Output {
     Mm0Expr { subst: self.subst.to_global(ctx), expr: self.expr.clone() }
   }
 }
 
-impl Remap for Mm0Expr {
-  type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self {
-    Self { subst: self.subst.remap(r), expr: self.expr.remap(r) }
+impl<T: Remap> Remap for Mm0Expr<T> {
+  type Target = Mm0Expr<T::Target>;
+  fn remap(&self, r: &mut Remapper) -> Mm0Expr<T::Target> {
+    Mm0Expr { subst: self.subst.remap(r), expr: self.expr.remap(r) }
   }
 }
 
@@ -191,7 +205,7 @@ impl<'a> ToGlobal<'a> for Lifetime {
 pub type Ty = Rc<TyKind>;
 
 /// A type, which classifies regular variables (not type variables, not hypotheses).
-#[derive(Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
 pub enum TyKind {
   /// `()` is the type with one element; `sizeof () = 0`.
   Unit,
@@ -358,7 +372,8 @@ impl Remap for TyKind {
       TyKind::Input => TyKind::Input,
       TyKind::Output => TyKind::Output,
       TyKind::Moved(ty) => TyKind::Moved(ty.remap(r)),
-      TyKind::Error => TyKind::Error,    }
+      TyKind::Error => TyKind::Error,
+    }
   }
 }
 
@@ -421,7 +436,7 @@ impl Remap for Variant {
 pub type Expr = Rc<ExprKind>;
 
 /// A pure expression.
-#[derive(Debug, DeepSizeOf)]
+#[derive(Hash, PartialEq, Eq, Debug, DeepSizeOf)]
 pub enum ExprKind {
   /// A `()` literal.
   Unit,

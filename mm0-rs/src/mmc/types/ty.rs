@@ -398,7 +398,7 @@ impl std::hash::Hash for Mm0Expr<'_> {
 
 impl PartialEq for Mm0Expr<'_> {
   fn eq(&self, other: &Self) -> bool {
-    self.subst == other.subst && std::ptr::eq(self.expr, other.expr)
+    self.subst == other.subst && std::ptr::eq(&**self.expr, &**other.expr)
   }
 }
 impl Eq for Mm0Expr<'_> {}
