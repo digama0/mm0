@@ -9,7 +9,7 @@ use super::{Binop, Mm0Expr, Unop, VarId, ast::ProcKind, ty};
 /// all `(VarId, GenId)` pairs; one of the roles of the type inference pass
 /// is to determine which variables change across each generation
 /// and which do not.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GenId(pub u32);
 crate::deep_size_0!(GenId);
 
@@ -214,6 +214,8 @@ pub enum StmtKind<'a> {
     lhs: ty::TuplePattern<'a>,
     /// The expression to evaluate.
     rhs: Expr<'a>,
+    /// The logical value of `rhs`.
+    val: ty::OExpr<'a>,
   },
   /// An expression to be evaluated for its side effects, with the result being discarded.
   Expr(ExprKind<'a>),
@@ -287,7 +289,7 @@ pub enum ExprKind<'a> {
   /// Take the type of a variable, producing a proof of type `T`.
   Typeof(Box<Expr<'a>>, ty::Ty<'a>),
   /// `(assert p)` evaluates `p: bool` and returns a proof of `T` (coerced from `p`).
-  Assert(Box<Expr<'a>>, ty::Ty<'a>),
+  Assert(Box<Expr<'a>>, ty::ExprTy<'a>),
   /// An assignment / mutation.
   Assign {
     /// A place (lvalue) to write to.
@@ -344,6 +346,9 @@ pub enum ExprKind<'a> {
     var: Option<Variant<'a>>,
     /// The body of the loop.
     body: Box<Block<'a>>,
+    /// True if there is an early `break` inside the loop. If this is true, then the loop does
+    /// not introduce a `hyp: !cond` assumption after the loop.
+    has_break: bool,
   },
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Box<Expr<'a>>),

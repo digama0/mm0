@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc, fmt::Debug, hash::{Hash, Hasher}, mem, ops::Ind
 use std::result::Result as StdResult;
 use std::convert::{TryFrom, TryInto};
 use bumpalo::Bump;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use hir::{Context, ContextNext};
 use itertools::Itertools;
 use num::Signed;
@@ -108,7 +108,7 @@ impl<C: DisplayCtx> CtxDisplay<C> for TypeError<'_> {
       TypeError::InvalidReturn => write!(f, "Can't use return in this position"),
       TypeError::MissingMuts(ref muts) => write!(f, "\
         While loop mutates a value without marking it as 'mut' in the loop header. \
-        Try adding:\n  (mut {})", muts.iter().map(|v| p!(v)).format(" ")),
+        Try adding:\n  (mut {})", muts.iter().unique().map(|v| p!(v)).format(" ")),
       TypeError::UnexpectedVariant => write!(f, "A (variant h) clause was provided \
         to a function or label that does not declare a variant"),
     }
@@ -312,6 +312,15 @@ impl<'a> UnelabTupPat<'a> {
       UnelabTupPatKind::Error(pat, _) => pat.base_context(ctx),
     }
   }
+
+  /// Calls function `f` on all variables in the pattern, in right-to-left order.
+  fn on_vars_rev(&self, f: &mut impl FnMut(VarId)) {
+    match &self.k {
+      &UnelabTupPatKind::Name(_, _, &ContextNext {var, ..}) => f(var),
+      UnelabTupPatKind::Tuple(pats, _) => for pat in pats.iter().rev() { pat.on_vars_rev(f) }
+      UnelabTupPatKind::Error(pat, _) => pat.on_vars_rev(f),
+    }
+  }
 }
 
 /// An argument in a `struct` or function parameters.
@@ -341,6 +350,8 @@ enum UnelabStmt<'a> {
     lhs: UnelabTupPat<'a>,
     /// The expression to evaluate.
     rhs: hir::Expr<'a>,
+    /// The logical value of `rhs`.
+    val: OExpr<'a>,
   },
   /// An expression to be evaluated for its side effects, with the result being discarded.
   Expr(hir::ExprKind<'a>),
@@ -834,6 +845,9 @@ pub struct DynContext<'a> {
   gen_vars: im::HashMap<VarId, (GenId, Expr<'a>, Ty<'a>)>,
   /// The logical context.
   context: Context<'a>,
+  /// True if we have previously hit an `unreachable` or other diverging operation,
+  /// so that we are currently in dead code
+  diverged: bool,
 }
 
 impl<'a> DynContext<'a> {
@@ -970,6 +984,8 @@ struct LabelData<'a> {
   value: AgreeExpr<'a>,
   /// The return type of the block containing the label group.
   ret: Ty<'a>,
+  /// The dynamic contexts at `break` points that need to be merged into the block exit context.
+  dcs: Vec<DynContext<'a>>,
 }
 
 struct Mm0Arena<'a>(&'a typed_arena::Arena<Rc<Mm0ExprNode>>);
@@ -1341,6 +1357,7 @@ impl<'a> InferCtx<'a> {
         gen_vars: Default::default(),
         generation: GenId::ROOT,
         context: Context::ROOT,
+        diverged: false,
       },
       generation_count: GenId::ROOT,
       labels: HashMap::new(),
@@ -1441,9 +1458,16 @@ impl<'a> InferCtx<'a> {
   }
 
   fn merge(&mut self, span: &'a FileSpan, contexts: &mut [(DynContext<'a>, Vec<(VarId, GenId)>)]) -> bool {
-    if contexts.iter().all(|(dc, _)| dc.generation == self.dc.generation) {return false}
+    if contexts.iter().all(|(dc, _)| {
+      self.dc.diverged &= dc.diverged;
+      dc.generation == self.dc.generation
+    }) {return false}
     if let [(dc, _)] = contexts {
       mem::swap(&mut self.dc, dc);
+      return true
+    }
+    if self.dc.diverged {
+      if let [(dc, _), ..] = contexts { mem::swap(&mut self.dc, dc) }
       return true
     }
     let mut newdc = self.dc.clone();
@@ -1454,12 +1478,14 @@ impl<'a> InferCtx<'a> {
       let mut new_e = Some(old_e);
       let mut modified = false;
       for (dc, vec) in &mut *contexts {
-        if let Some(&(gen, e, ty)) = dc.gen_vars.get(&v) {
-          if gen != old_gen {
-            new_e = new_e.filter(|new_e| self.equate_expr(new_e, e).is_ok());
-            self.relate_ty(span, Some(e), ty, old_ty, Relation::Subtype);
-            vec.push((v, gen));
-            modified = true;
+        if !dc.diverged {
+          if let Some(&(gen, e, ty)) = dc.gen_vars.get(&v) {
+            if gen != old_gen {
+              new_e = new_e.filter(|new_e| self.equate_expr(new_e, e).is_ok());
+              self.relate_ty(span, Some(e), ty, old_ty, Relation::Subtype);
+              vec.push((v, gen));
+              modified = true;
+            }
           }
         }
       }
@@ -2531,15 +2557,28 @@ impl<'a> InferCtx<'a> {
     })
   }
 
-  fn finish_arg(&mut self, (attr, arg): UnelabArg<'a>) -> Arg<'a> {
+  fn finish_arg(&mut self, (mut attr, arg): UnelabArg<'a>, fvars: &mut HashSet<VarId>) -> Arg<'a> {
+    let mut dep = false;
+    arg.var().on_vars_rev(&mut |v| dep |= fvars.remove(&v));
+    if !dep { attr |= ArgAttr::NONDEP }
     intern!(self, (attr, match arg {
-      UnelabArgKind::Lam(pat) => ArgKind::Lam(self.finish_tuple_pattern(&pat)),
-      UnelabArgKind::Let(pat, e) => ArgKind::Let(self.finish_tuple_pattern(&pat), e),
+      UnelabArgKind::Lam(pat) => {
+        pat.ty().on_vars(|v| { fvars.insert(v); });
+        ArgKind::Lam(self.finish_tuple_pattern(&pat))
+      }
+      UnelabArgKind::Let(pat, e) => {
+        pat.ty().on_vars(|v| { fvars.insert(v); });
+        let pat = self.finish_tuple_pattern(&pat);
+        e.on_vars(|v| { fvars.insert(v); });
+        ArgKind::Let(pat, e)
+      }
     }))
   }
 
   fn finish_args(&mut self, args: Vec<UnelabArg<'a>>) -> &'a [Arg<'a>] {
-    let args = args.into_iter().rev().map(|arg| self.finish_arg(arg)).collect::<Vec<_>>();
+    let mut fvars = HashSet::new();
+    let args = args.into_iter().rev()
+      .map(|arg| self.finish_arg(arg, &mut fvars)).collect::<Vec<_>>();
     self.alloc.alloc_slice_fill_iter(args.into_iter().rev())
   }
 
@@ -3126,7 +3165,8 @@ impl<'a> InferCtx<'a> {
           None => ExpectExpr::HasTy(self.common.t_bool)
         });
         let tgt = tgt.unwrap_or_else(|| intern!(self, pe.map_or(TyKind::True, TyKind::Pure)));
-        ret![Assert(Box::new(e), tgt), Ok(self.common.e_unit), tgt]
+        let pe = Ok(self.common.e_unit);
+        ret![Assert(Box::new(e), (pe, tgt)), pe, tgt]
       }
 
       ast::ExprKind::Assign {lhs, rhs, oldmap} => {
@@ -3267,9 +3307,9 @@ impl<'a> InferCtx<'a> {
         ret![If {hyp, cond: Box::new(cond), cases, gen: self.dc.generation},
           pe.and_then(|cond| Ok(intern!(self, ExprKind::If {cond, then: p_then?, els: p_els?}))),
           tgt]
-    }
+      }
 
-      &ast::ExprKind::While {label, hyp, ref cond, ref muts, ref var, ref body} => {
+      &ast::ExprKind::While {label, mut hyp, ref cond, ref muts, ref var, ref body, has_break} => {
         if !muts.is_empty() {
           let newgen = self.new_generation();
           for &v in &**muts {
@@ -3284,21 +3324,39 @@ impl<'a> InferCtx<'a> {
           labels: Box::new([hir::Label { args: &[], variant, body: Default::default() }]),
           value: AgreeExpr::Set(Err(span)),
           ret: self.common.t_unit,
+          dcs: vec![],
         });
         let (cond, pe) = self.check_expr(cond, self.common.t_bool);
         let mut after = self.dc.clone();
+        self.labels.get_mut(&label).expect("just added").dcs.push(after.clone());
+        let trivial = if_chain! {
+          if let Ok(e) = pe;
+          if let ExprKind::Bool(b) = self.whnf_expr(cond.span, e).k;
+          then {
+            if hyp.is_none() { hyp = Some(self.fresh_var(AtomId::UNDER)) }
+            Some(b)
+          }
+          else { None }
+        };
         if let Some(v) = hyp {
           let pe = self.as_pure(cond.span, pe);
           let ty = intern!(self, TyKind::Pure(pe));
           let ctx1 = self.new_context_next(v, Some(self.common.e_unit), ty);
           self.dc.context = ctx1.into();
-          let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
-          after.context = self.new_context_next(v, Some(self.common.e_unit), ty).into();
+          self.dc.diverged |= trivial == Some(false);
+          if !has_break {
+            let ty = intern!(self, TyKind::Pure(intern!(self, ExprKind::Unop(Unop::Not, pe))));
+            after.context = self.new_context_next(v, Some(self.common.e_unit), ty).into();
+            after.diverged |= trivial == Some(true);
+          }
         }
         let body = Box::new(self.check_block(span, body, self.common.t_unit).0);
+        let LabelData {labels, dcs, ..} =
+          self.labels.remove(&label).expect("labels should be well scoped");
 
         // TODO: remove this when the typechecker is complete, this isn't needed for inference
         let missing = || self.dc.gen_vars.iter()
+          .chain(dcs.iter().flat_map(|dc| dc.gen_vars.iter()))
           .filter(|&(v, &(gen, _, _))| {
             base.gen_vars.get(v).map_or(true, |&(gen2, _, _)| gen != gen2) &&
             !muts.contains(v)
@@ -3308,16 +3366,15 @@ impl<'a> InferCtx<'a> {
         }
 
         self.dc = after;
-        let hir::Label {variant, ..} =
-          self.labels.remove(&label).expect("labels should be well scoped")
-            .labels.into_vec().into_iter().next().expect("while label");
-        ret![While {label, hyp, cond: Box::new(cond), var: variant, body},
+        let hir::Label {variant, ..} = labels.into_vec().into_iter().next().expect("while label");
+        ret![While {label, hyp, cond: Box::new(cond), var: variant, body, has_break},
           Ok(self.common.e_unit), self.common.t_unit]
       }
 
       ast::ExprKind::Unreachable(h) => {
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
         let (h, _) = self.check_expr(h, self.common.t_false);
+        self.dc.diverged = true;
         ret![Unreachable(Box::new(h)), Ok(self.common.e_unit), tgt]
       }
 
@@ -3328,6 +3385,7 @@ impl<'a> InferCtx<'a> {
         let (args, _, subst) = self.check_args(span, args, tgt);
         let variant = self.check_variant_use(subst, pf.as_deref(), variant);
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
+        self.dc.diverged = true;
         ret![Jump(lab, i, args, variant), Ok(self.common.e_unit), tgt]
       }
 
@@ -3335,15 +3393,19 @@ impl<'a> InferCtx<'a> {
         let ty = self.labels[lab].ret;
         let tgt = expect.to_ty().unwrap_or(self.common.t_false);
         let (e, pe) = self.check_expr(e, ty);
-        let old_pe = &mut self.labels.get_mut(lab).expect("well formed").value;
-        match *old_pe {
-          AgreeExpr::Unset => *old_pe = AgreeExpr::Set(pe),
-          AgreeExpr::Set(Ok(pe_1)) => match pe {
-            Ok(pe) if self.equate_expr(pe_1, pe).is_ok() => {}
-            _ => self.labels.get_mut(lab).expect("well formed").value =
-              AgreeExpr::Set(Err(pe.err().unwrap_or(e.span))),
+        if !self.dc.diverged {
+          let LabelData {value: old_pe, dcs, ..} = self.labels.get_mut(lab).expect("well formed");
+          dcs.push(self.dc.clone());
+          match *old_pe {
+            AgreeExpr::Unset => *old_pe = AgreeExpr::Set(pe),
+            AgreeExpr::Set(Ok(pe_1)) => match pe {
+              Ok(pe) if self.equate_expr(pe_1, pe).is_ok() => {}
+              _ => self.labels.get_mut(lab).expect("well formed").value =
+                AgreeExpr::Set(Err(pe.err().unwrap_or(e.span))),
+            }
+            AgreeExpr::Set(Err(_)) => {}
           }
-          AgreeExpr::Set(Err(_)) => {}
+          self.dc.diverged = true;
         }
         ret![Break(*lab, Box::new(e)), Ok(self.common.e_unit), tgt]
       }
@@ -3354,6 +3416,7 @@ impl<'a> InferCtx<'a> {
           if args.len() != num_args { error!(span, NumArgs(num_args, args.len())) }
           let (args, _, _) = self.check_args(span, args, tys);
           let tgt = expect.to_ty().unwrap_or(self.common.t_false);
+          self.dc.diverged = true;
           ret![Return(args), Ok(self.common.e_unit), tgt]
         } else { error!(span, InvalidReturn) }
 
@@ -3528,22 +3591,23 @@ impl<'a> InferCtx<'a> {
         let mut ctx = self.dc.context;
         let lhs = self.lower_tuple_pattern(&lhs.span, &lhs.k, None, None).0;
         mem::swap(&mut ctx, &mut self.dc.context);
-        let (rhs, _) = self.check_expr(rhs, lhs.ty());
+        let (rhs, val) = self.check_expr(rhs, lhs.ty());
         self.dc.context = ctx;
-        UnelabStmt::Let {lhs, rhs}
+        UnelabStmt::Let {lhs, rhs, val}
       }
       ast::StmtKind::Expr(e) => UnelabStmt::Expr(
         self.lower_expr_kind(span, e, ExpectExpr::Any).0.k),
       &ast::StmtKind::Label(v, ref labs) => {
         let mut todo = Vec::with_capacity(labs.len());
         let labs2 = labs.iter().map(|ast::Label {args, variant, body}| {
-          let args = args.iter().map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
+          let args = args.iter()
+            .map(|arg| self.lower_arg(&arg.span, arg.k.0, &arg.k.1)).collect::<Vec<_>>();
           let variant = self.lower_variant(variant);
           todo.push((self.dc.context, body));
           let args = self.finish_args(args);
           hir::Label {args, variant, body: Default::default()}
         }).collect::<Box<[_]>>();
-        let data = LabelData {labels: labs2, value: AgreeExpr::Unset, ret: tgt};
+        let data = LabelData {labels: labs2, value: AgreeExpr::Unset, ret: tgt, dcs: vec![]};
         assert!(self.labels.insert(v, data).is_none());
         UnelabStmt::Label(v, todo.into())
       }
@@ -3552,13 +3616,14 @@ impl<'a> InferCtx<'a> {
 
   fn finish_stmt(&mut self,
     hir::Spanned {span, k: stmt}: hir::Spanned<'a, UnelabStmt<'a>>,
-    tgt: &mut ExprTy<'a>
+    tgt: &mut ExprTy<'a>,
+    breaks: &mut Vec<(DynContext<'a>, Vec<(VarId, GenId)>)>,
   ) -> hir::Stmt<'a> {
     #[allow(clippy::needless_collect)]
     hir::Spanned {span, k: match stmt {
-      UnelabStmt::Let {lhs, rhs} => {
+      UnelabStmt::Let {lhs, rhs, val} => {
         let lhs = self.finish_tuple_pattern(&lhs);
-        hir::StmtKind::Let {lhs, rhs}
+        hir::StmtKind::Let {lhs, rhs, val}
       }
       UnelabStmt::Expr(e) => hir::StmtKind::Expr(e),
       UnelabStmt::Label(v, labs) => {
@@ -3572,7 +3637,9 @@ impl<'a> InferCtx<'a> {
           }
           bl2
         }).collect::<Vec<_>>();
-        let LabelData {mut labels, value, ..} = self.labels.remove(&v).expect("missing label group");
+        let LabelData {mut labels, dcs, value, ..} =
+          self.labels.remove(&v).expect("missing label group");
+        breaks.extend(dcs.into_iter().map(|dc| (dc, vec![])));
         if let AgreeExpr::Set(pe2) = value {
           if let Ok(e_tgt) = tgt.0 {
             if !matches!(pe2, Ok(pe) if self.equate_expr(pe, e_tgt).is_ok()) {
@@ -3593,15 +3660,23 @@ impl<'a> InferCtx<'a> {
     let ty = expect.to_ty().unwrap_or_else(|| {
       if expr.is_some() { self.new_ty_mvar(sp) } else { self.common.t_unit }
     });
-    let stmts = stmts.iter().map(|stmt| stmt.map_hir(|_| self.lower_stmt(stmt, ty))).collect::<Vec<_>>();
+    let base = self.dc.clone();
+    let stmts = stmts.iter()
+      .map(|stmt| stmt.map_hir(|_| self.lower_stmt(stmt, ty))).collect::<Vec<_>>();
     let (expr, mut ety) = if let Some(e) = expr {
       let (e, pe) = self.check_expr(e, ty);
       (Some(Box::new(e)), (pe, ty))
     } else {
       (None, (Ok(self.common.e_unit), ty))
     };
-    let mut stmts = stmts.into_iter().rev().map(|stmt| self.finish_stmt(stmt, &mut ety)).collect::<Vec<_>>();
+    let mut breaks = vec![];
+    let mut stmts = stmts.into_iter().rev()
+      .map(|stmt| self.finish_stmt(stmt, &mut ety, &mut breaks)).collect::<Vec<_>>();
     stmts.reverse();
+    breaks.push((mem::replace(&mut self.dc, base), vec![]));
+    let n = breaks.len() - 1;
+    breaks.swap(0, n);
+    self.merge(sp, &mut breaks);
     (hir::Block {stmts, expr}, ety)
   }
 

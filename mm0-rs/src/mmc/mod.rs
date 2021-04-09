@@ -11,7 +11,6 @@ pub mod types;
 pub mod parser;
 pub mod predef;
 pub mod build_ast;
-pub mod ast_lower;
 pub mod union_find;
 pub mod infer;
 pub mod nameck;

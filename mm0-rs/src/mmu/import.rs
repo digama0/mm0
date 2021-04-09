@@ -371,6 +371,7 @@ impl<'a> Importer<'a> {
   }
 
   fn expr(&mut self, de: &mut Dedup<ExprHash>, vars: &HashMap<AtomId, VarKind>) -> Result<usize> {
+    #[allow(clippy::branches_sharing_code)]
     let e = if self.open().is_some() {
       let t = self.ident_atom_err()?;
       let t = self.env.term(t).ok_or_else(|| self.err("expecting term".into()))?;

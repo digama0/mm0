@@ -500,6 +500,9 @@ pub enum ExprKind {
     var: Option<Box<Variant>>,
     /// The body of the loop.
     body: Box<Block>,
+    /// True if there is an early `break` inside the loop. If this is true, then the loop does
+    /// not introduce a `hyp: !cond` assumption after the loop.
+    has_break: bool,
   },
   /// `(unreachable h)` takes a proof of false and undoes the current code path.
   Unreachable(Box<Expr>),
@@ -562,8 +565,8 @@ impl Remap for ExprKind {
       ExprKind::Block(e) => ExprKind::Block(e.remap(r)),
       ExprKind::If {hyp, cond, then, els} => ExprKind::If {
         hyp: *hyp, cond: cond.remap(r), then: then.remap(r), els: els.remap(r) },
-      ExprKind::While {label, muts, hyp, cond, var, body} => ExprKind::While {
-        label: *label, muts: muts.remap(r), hyp: *hyp,
+      ExprKind::While {label, muts, hyp, cond, var, body, has_break} => ExprKind::While {
+        label: *label, muts: muts.remap(r), hyp: *hyp, has_break: *has_break,
         cond: cond.remap(r), var: var.remap(r), body: body.remap(r) },
       ExprKind::Unreachable(e) => ExprKind::Unreachable(e.remap(r)),
       ExprKind::Jump(l, i, e, var) => ExprKind::Jump(*l, *i, e.remap(r), var.remap(r)),
@@ -624,6 +627,8 @@ bitflags! {
     /// A `(global x)` argument, which indicates that the variable is not passed directly
     /// but is instead sourced from a global variable of the same name.
     const GLOBAL = 4;
+    /// An argument is nondependent if the remainder of the type does not depend on this variable.
+    const NONDEP = 8;
   }
 }
 crate::deep_size_0!(ArgAttr);

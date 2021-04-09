@@ -55,14 +55,16 @@ bitflags! {
     const HAS_EXPR_MVAR = 1 << 2;
     /// Does this type/expr have a lifetime metavariable?
     const HAS_LFT_MVAR  = 1 << 3;
+    /// Does this type/expr contain a variable (not in pattern position)?
+    const HAS_VAR       = 1 << 4;
     /// Does this type/expr have an `Error` subexpression?
-    const HAS_ERROR     = 1 << 4;
+    const HAS_ERROR     = 1 << 5;
     /// Does this type/expr have a metavariable?
     const HAS_MVAR =
       Self::HAS_TY_MVAR.bits | Self::HAS_PROP_MVAR.bits |
       Self::HAS_EXPR_MVAR.bits | Self::HAS_LFT_MVAR.bits;
     /// (For Prop and Ty:) Is this type not (necessarily) a copy type?
-    const IS_NON_COPY   = 1 << 5;
+    const IS_NON_COPY   = 1 << 6;
   }
 }
 crate::deep_size_0!(Flags);
@@ -280,6 +282,11 @@ impl<'a> TuplePatternKind<'a> {
       TuplePatternKind::Error(pat, _) => pat.k.on_vars(f),
       TuplePatternKind::Tuple(pats, _, _) => for pat in pats { pat.k.on_vars(f) }
     }
+  }
+
+  /// Returns the variable of this pattern, if it is a simple (non-tuple) pattern.
+  #[must_use] pub fn var(&self) -> Option<VarId> {
+    if let TuplePatternKind::Name(_, v, _) = *self { Some(v) } else { None }
   }
 
   fn find_field(&self, f: AtomId, idxs: &mut Vec<u32>) -> bool {
@@ -854,12 +861,11 @@ impl AddFlags for ExprKind<'_> {
   fn add(&self, f: &mut Flags) {
     match *self {
       ExprKind::Unit |
-      ExprKind::Var(_) |
       ExprKind::Const(_) |
-      // ExprKind::Global(_) |
       ExprKind::Bool(_) |
       ExprKind::Int(_) |
       ExprKind::Sizeof(_) => {}
+      ExprKind::Var(_) => *f |= Flags::HAS_VAR,
       ExprKind::Unop(_, e) |
       ExprKind::Proj(e, _) |
       ExprKind::Ref(e) => *f |= e,

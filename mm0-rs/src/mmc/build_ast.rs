@@ -26,7 +26,6 @@ struct LabelId(VarId, u16);
 enum Ctx {
   Var(AtomId, VarId),
   Label(AtomId, LabelId),
-  Loop(VarId),
 }
 
 impl From<ArgAttr> for ast::ArgAttr {
@@ -69,10 +68,8 @@ pub struct BuildAst<'a> {
   label_map: HashMap<AtomId, Vec<LabelId>>,
   /// The mapping of anonymous loop targets to internal label IDs.
   /// The vector represents scoping, with the active loop being the last in the list.
-  ///
-  /// This is a cache for `ctx`: `loops` is exactly the
-  /// list of `v` such that `Loop(v)` is in `ctx` (in order).
-  loops: Vec<VarId>,
+  /// The boolean is true if there is a `break` to this loop target.
+  loops: Vec<(VarId, bool)>,
   /// The context, which contains information about scoped names. Scopes are created by
   /// [`with_ctx`](Self::with_ctx), which remembers the size of the context on entering the scope
   /// and pops everything that has been added when we get to the end of the scope.
@@ -107,7 +104,6 @@ impl<'a> BuildAst<'a> {
     match self.ctx.pop().expect("stack underflow") {
       Ctx::Var(name, _) => {self.name_map.get_mut(&name).and_then(Vec::pop).expect("stack underflow");}
       Ctx::Label(name, _) => {self.label_map.get_mut(&name).and_then(Vec::pop).expect("stack underflow");}
-      Ctx::Loop(_) => {self.loops.pop().expect("stack underflow");}
     }
   }
 
@@ -127,11 +123,6 @@ impl<'a> BuildAst<'a> {
   fn push_label(&mut self, name: AtomId, label: LabelId) {
     self.ctx.push(Ctx::Label(name, label));
     self.label_map.entry(name).or_default().push(label);
-  }
-
-  fn push_loop(&mut self, label: VarId) {
-    self.ctx.push(Ctx::Loop(label));
-    self.loops.push(label);
   }
 
   fn get_var(&mut self, sp: &FileSpan, name: AtomId) -> Result<VarId> {
@@ -427,16 +418,18 @@ impl<'a> BuildAst<'a> {
           muts2.push(a);
         }
         let var = self.build_variant(var)?;
-        self.with_ctx(|this| -> Result<_> {
-          this.push_loop(label);
-          Ok(ast::ExprKind::While {
-            label, muts: muts2.into(), var,
-            cond: Box::new(this.build_expr(&span, cond)?),
-            hyp: hyp.map(|h| this.push_fresh(h.k)),
-            body: Box::new(this.build_block(&span, body)?)
-          })
-        })?
-      },
+        self.loops.push((label, false));
+        let (cond, hyp2, body) = self.with_ctx(|this| -> Result<_> { Ok((
+          Box::new(this.build_expr(&span, cond)?),
+          hyp.as_ref().map(|h| this.push_fresh(h.k)),
+          Box::new(this.build_block(&span, body)?),
+        ))})?;
+        let has_break = self.loops.pop().expect("stack underflow").1;
+        if !has_break {
+          if let (Some(h), Some(v)) = (hyp, hyp2) { self.push(h.k, v) }
+        }
+        ast::ExprKind::While {label, muts: muts2.into(), var, cond, hyp: hyp2, body, has_break}
+      }
       ExprKind::Hole => ast::ExprKind::Infer(true),
     };
     Ok(Spanned {span, k})
@@ -865,7 +858,8 @@ impl<'a> BuildAst<'a> {
         let LabelId(v, i) = if let Some(name) = name {
           *self.label_map.get(&name).and_then(|v| v.last()).expect("is_label")
         } else {
-          LabelId(*self.loops.last().ok_or_else(|| ElabError::new_e(&span, "can't break, not in a loop"))?, 0)
+          LabelId(self.loops.last().ok_or_else(||
+            ElabError::new_e(&span, "can't break, not in a loop"))?.0, 0)
         };
         let args = args.into_iter().map(|e| self.build_expr(&span, e)).collect::<Result<_>>()?;
         let variant = if let Some(e) = variant {Some(Box::new(self.build_expr(&span, e)?))} else {None};
@@ -875,7 +869,10 @@ impl<'a> BuildAst<'a> {
         if let Some(name) = name {
           self.label_map.get(&name).and_then(|v| v.last()).expect("is_label").0
         } else {
-          *self.loops.last().ok_or_else(|| ElabError::new_e(&span, "can't break, not in a loop"))?
+          let l = self.loops.last_mut().ok_or_else(||
+            ElabError::new_e(&span, "can't break, not in a loop"))?;
+          l.1 = true;
+          l.0
         },
         Box::new(match args.len() {
           0 => Spanned {span: span.clone(), k: ast::ExprKind::Unit},
@@ -889,7 +886,9 @@ impl<'a> BuildAst<'a> {
     Ok(Spanned {span, k})
   }
 
-  fn build_mm0_expr(&mut self, base: &FileSpan, subst: Box<[(AtomId, LispVal)]>, e: LispVal) -> Result<Mm0Expr<ast::Expr>> {
+  fn build_mm0_expr(&mut self,
+    base: &FileSpan, subst: Box<[(AtomId, LispVal)]>, e: LispVal
+  ) -> Result<Mm0Expr<ast::Expr>> {
     let subst = subst.into_vec().into_iter()
       .map(|(a, e)| Ok((a, self.build_expr(base, e)?)))
       .collect::<Result<_>>()?;
