@@ -14,20 +14,20 @@ categories = ["command-line-utilities", "development-tools", "mathematics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lazy_static = "1.4.0"
-memchr = "2.3.4"
-pathdiff = "0.2.0"
-bitflags = "1.2.1"
+lazy_static = "1.4"
+memchr = "2.3"
+pathdiff = "0.2"
+bitflags = "1.2"
 
 # optional dependencies
 deepsize_0 = { path = "../deepsize_0", optional = true }
 debug_derive = { path = "../debug_derive", optional = true }
 deepsize_derive = { path = "../deepsize_derive", default-features = false, optional = true }
-libc = { version = "0.2.86", optional = true }
-lsp-types = { version = "0.86.0", optional = true }
+libc = { version = "0.2", optional = true }
+lsp-types = { version = "0.89", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procinfo = { version = "0.4.2", optional = true }
+procinfo = { version = "0.4", optional = true }
 
 [features]
 default = ["memory"]

@@ -25,29 +25,30 @@ mmc = ["bumpalo"]
 debug = true
 
 [dependencies]
-either = "1.6.1"
-owning_ref = "0.4.1"
-bitflags = "1.2.1"
-byteorder = "1.4.2"
-lazy_static = "1.4.0"
-itertools = "0.10.0"
-if_chain = "1.0.1"
-pathdiff = "0.2.0"
-num = "0.3.1"
-typed-arena = "2.0.1"
-hashbrown = "0.9.1"
-im = "15.0.0"
-pretty = "0.10.0"
-clap = "2.33.3"
-futures = { version = "0.3.12", features = ["thread-pool"] }
-serde = "1.0.123"
-serde_json = "1.0.62"
-serde_repr = "0.1.6"
-annotate-snippets = { version = "0.9.0", features = ["color"] }
-libc = "0.2.86"
-zerocopy = "0.3.0"
-memchr = "2.3.4"
-bit-set = "0.5.2"
+either = "1.6"
+owning_ref = "0.4"
+bitflags = "1.2"
+byteorder = "1.4"
+lazy_static = "1.4"
+itertools = "0.10"
+if_chain = "1.0"
+pathdiff = "0.2"
+num = "0.4"
+typed-arena = "2.0"
+arrayvec = "0.7"
+hashbrown = "0.11"
+im = "15.0"
+pretty = "0.10"
+clap = "2.33"
+futures = { version = "0.3", features = ["thread-pool"] }
+serde = "1.0"
+serde_json = "1.0"
+serde_repr = "0.1"
+annotate-snippets = { version = "0.9", features = ["color"] }
+libc = "0.2"
+zerocopy = "0.4"
+memchr = "2.3"
+bit-set = "0.5"
 deepsize_derive = { path = "components/deepsize_derive", default-features = false }
 debug_derive = { path = "components/debug_derive" }
 deepsize_0 = { path = "components/deepsize_0", optional = true }
@@ -56,28 +57,28 @@ mmb_parser = { path = "components/mmb_parser" }
 mm1_parser = { path = "components/mm1_parser" }
 
 # For "server" feature
-log = { version = "0.4.14", optional = true }
-simplelog = { version = "0.9.0", optional = true }
-crossbeam = { version = "0.8.0", optional = true }
-lsp-types = { version = "0.86.0", optional = true }
-lsp-server = { version = "0.5.0", optional = true }
+log = { version = "0.4", optional = true }
+simplelog = { version = "0.10", optional = true }
+crossbeam = { version = "0.8", optional = true }
+lsp-types = { version = "0.89", optional = true }
+lsp-server = { version = "0.5", optional = true }
 
 # For "doc" feature
-pulldown-cmark = {version = "0.8.0", optional = true }
+pulldown-cmark = {version = "0.8", optional = true }
 
 # For "wasm" feature
-console_error_panic_hook = { version = "0.1.6", optional = true }
-wasm-bindgen = { version = "0.2.70", optional = true }
-web-sys = { version = "0.3.47", features = ["console", "Window", "Document", "HtmlElement"], optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+web-sys = { version = "0.3", features = ["console", "Window", "Document", "HtmlElement"], optional = true }
 
 # For "mmc" feature
-bumpalo = { version = "3.6.0", features = ["boxed", "collections"], optional = true }
+bumpalo = { version = "3.6", features = ["boxed", "collections"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procinfo = "0.4.2"
+procinfo = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-memmap = "0.7.0"
+memmap = "0.7"
 
 [[bin]]
 name = "mm0-rs"

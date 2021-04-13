@@ -36,9 +36,6 @@ impl<A: Remap> Remap for PredefMap<A> {
   fn remap(&self, r: &mut Remapper) -> Self::Target { self.map(|x| x.remap(r)) }
 }
 
-#[derive(DeepSizeOf)]
-struct IndexMap<K, V>(Vec<V>, HashMap<K, usize>);
-
 /// The MMC compiler, which contains local state for the functions that have been
 /// loaded and typechecked thus far.
 #[derive(DeepSizeOf)]
