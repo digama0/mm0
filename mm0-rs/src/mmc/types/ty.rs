@@ -541,6 +541,11 @@ pub trait TyVisit<'a> {
   fn visit_mvar(&mut self, _: TyMVarId) {}
 }
 impl<'a> TyS<'a> {
+  /// If this type is an integral type, return the underlying [`IntTy`], otherwise `None`.
+  #[must_use] pub fn as_int_ty(&self) -> Option<IntTy> {
+    if let TyKind::Int(ity) = self.k { Some(ity) } else { None }
+  }
+
   /// Calls `f` on all leaf subterms of interest, using methods in the [`TyVisit`] trait.
   pub fn visit(&self, f: &mut impl TyVisit<'a>) {
     match self.k {
@@ -727,8 +732,15 @@ pub type Expr<'a> = &'a ExprS<'a>;
 /// A pure expression.
 pub type ExprS<'a> = WithMeta<ExprKind<'a>>;
 
+/// A pure expression, or `None` if it's not pure.
+pub type OExpr<'a> = Option<Expr<'a>>;
+
 /// A pure expression, or a "place to blame" for why it's not pure.
-pub type OExpr<'a> = Result<Expr<'a>, &'a FileSpan>;
+pub type RExpr<'a> = Result<Expr<'a>, &'a FileSpan>;
+
+/// A pair of an optional pure expression and a type, used to classify the result
+/// of expressions that may or may not be pure.
+pub type RExprTy<'a> = (RExpr<'a>, Ty<'a>);
 
 /// A pair of an optional pure expression and a type, used to classify the result
 /// of expressions that may or may not be pure.

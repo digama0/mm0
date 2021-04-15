@@ -419,16 +419,13 @@ impl<'a> BuildAst<'a> {
         }
         let var = self.build_variant(var)?;
         self.loops.push((label, false));
-        let (cond, hyp2, body) = self.with_ctx(|this| -> Result<_> { Ok((
+        let (cond, hyp, body) = self.with_ctx(|this| -> Result<_> { Ok((
           Box::new(this.build_expr(&span, cond)?),
           hyp.as_ref().map(|h| this.push_fresh(h.k)),
           Box::new(this.build_block(&span, body)?),
         ))})?;
         let has_break = self.loops.pop().expect("stack underflow").1;
-        if !has_break {
-          if let (Some(h), Some(v)) = (hyp, hyp2) { self.push(h.k, v) }
-        }
-        ast::ExprKind::While {label, muts: muts2.into(), var, cond, hyp: hyp2, body, has_break}
+        ast::ExprKind::While {label, muts: muts2.into(), var, cond, hyp, body, has_break}
       }
       ExprKind::Hole => ast::ExprKind::Infer(true),
     };

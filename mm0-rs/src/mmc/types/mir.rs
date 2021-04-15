@@ -6,8 +6,23 @@ use std::convert::{TryFrom, TryInto};
 use std::mem;
 use num::BigInt;
 use crate::{AtomId, FileSpan, LispVal, Remap, Remapper};
-use super::{Binop, Unop, VarId, Spanned, IntTy, ast::ProcKind, ty, ast, global};
+use super::{Binop, Unop, Spanned, IntTy, ast::ProcKind, ty, ast, global};
 pub use {ast::TyVarId, ty::Lifetime};
+
+/// A variable ID. We use a different numbering here to avoid confusion with `VarId`s from HIR.
+#[derive(Clone, Copy, Debug, Default, DeepSizeOf, PartialEq, Eq, Hash)]
+pub struct VarId(pub u32);
+
+impl std::fmt::Display for VarId {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "_{}", self.0)
+  }
+}
+
+impl Remap for VarId {
+  type Target = Self;
+  fn remap(&self, _: &mut Remapper) -> Self { *self }
+}
 
 bitflags! {
   /// Attributes on arguments in a `(struct)` dependent tuple type.
@@ -375,7 +390,34 @@ impl Contexts {
     self.unshare(&mut ctx).vars.push((var, ty));
     ctx
   }
+
+  /// Returns an iterator over the variables and their values, in reverse order (from most
+  /// recently added to least recent). This is more efficient than forward iteration, which must
+  /// keep a stack.
+  #[must_use] pub fn rev_iter(&self, CtxId(buf, i): CtxId) -> CtxIter<'_> {
+    CtxIter {ctxs: self, buf, iter: self[buf].vars[..i as usize].iter()}
+  }
 }
+
+/// The iterator struct returned by [`CtxIter::rev_iter`].
+#[derive(Clone, Debug)]
+pub struct CtxIter<'a> {
+  ctxs: &'a Contexts,
+  buf: CtxBufId,
+  iter: std::slice::Iter<'a, (VarId, ExprTy)>,
+}
+
+impl<'a> Iterator for CtxIter<'a> {
+  type Item = &'a (VarId, ExprTy);
+  fn next(&mut self) -> Option<Self::Item> {
+    loop {
+      if let Some(v) = self.iter.next_back() {return Some(v)}
+      if self.buf == CtxBufId::ROOT {return None}
+      *self = self.ctxs.rev_iter(self.ctxs[self.buf].parent);
+    }
+  }
+}
+
 
 /// A CFG, or control flow graph, for a function. This consists of a set of basic blocks,
 /// with block ID 0 being the entry block. The `ctxs` is the context data used to supply the
@@ -422,7 +464,7 @@ impl IndexMut<BlockId> for Cfg {
 }
 
 /// A "context buffer ID", which points to one of the context buffers in the [`Contexts`] struct.
-#[derive(Copy, Clone, Debug, Default, DeepSizeOf)]
+#[derive(Copy, Clone, Debug, Default, DeepSizeOf, PartialEq, Eq)]
 pub struct CtxBufId(u32);
 
 impl CtxBufId {
@@ -516,22 +558,43 @@ impl Remap for Place {
 /// A constant value.
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Constant {
-  /// The type of the constant.
-  ty: Ty,
+  /// The type and value of the constant.
+  pub ety: ExprTy,
   /// The value of the constant.
-  k: ConstKind,
+  pub k: ConstKind,
 }
 
 impl Constant {
   /// Returns a unit constant.
   #[must_use] pub fn unit() -> Self {
-    Self { ty: Rc::new(TyKind::Unit), k: ConstKind::Unit }
+    Self { ety: (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Unit)), k: ConstKind::Unit }
+  }
+
+  /// Returns a true constant.
+  #[must_use] pub fn itrue() -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::True)), k: ConstKind::ITrue }
+  }
+
+  /// Returns an uninit constant of the specified type.
+  #[must_use] pub fn uninit(ty: Ty) -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Unit)), Rc::new(TyKind::Uninit(ty))), k: ConstKind::Uninit }
+  }
+
+  /// Returns a unit constant.
+  #[must_use] pub fn bool(b: bool) -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Bool(b))), Rc::new(TyKind::Bool)), k: ConstKind::Bool }
+  }
+
+  /// Returns an integral constant.
+  #[must_use] pub fn int(ty: IntTy, n: BigInt) -> Self {
+    Self { ety: (Some(Rc::new(ExprKind::Int(n))), Rc::new(TyKind::Int(ty))), k: ConstKind::Int }
   }
 }
+
 impl Remap for Constant {
   type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    Self { ty: self.ty.remap(r), k: self.k.remap(r) }
+    Self { ety: self.ety.remap(r), k: self.k.remap(r) }
   }
 }
 
@@ -540,6 +603,15 @@ impl Remap for Constant {
 pub enum ConstKind {
   /// A unit constant `()`.
   Unit,
+  /// A true constant `()`.
+  ITrue,
+  /// A boolean constant.
+  Bool,
+  /// An integer constant.
+  Int,
+  /// The constant `uninit`, which has type `(? T)`. Used as an rvalue,
+  /// this means the target place can receive any bit pattern.
+  Uninit,
 }
 
 impl Remap for ConstKind {
@@ -547,6 +619,10 @@ impl Remap for ConstKind {
   fn remap(&self, r: &mut Remapper) -> Self {
     match *self {
       ConstKind::Unit => ConstKind::Unit,
+      ConstKind::ITrue => ConstKind::ITrue,
+      ConstKind::Bool => ConstKind::Bool,
+      ConstKind::Int => ConstKind::Int,
+      ConstKind::Uninit => ConstKind::Uninit,
     }
   }
 }
@@ -631,26 +707,27 @@ impl Remap for Statement {
 
 /// A terminator is the final statement in a basic block. Anything with nontrivial control flow
 /// is a terminator, and it determines where to jump afterward.
-#[derive(Copy, Clone, Debug, DeepSizeOf)]
-pub struct Terminator(pub TerminatorKind);
+#[derive(Clone, Debug, DeepSizeOf)]
+pub enum Terminator {
+  /// A `goto label(x -> arg,*);` statement - unconditionally jump to the basic block `label`.
+  /// The `x -> arg` values assign values to variables, where `x` is a variable in the context of
+  /// the target and `arg` is an operand evaluated in the current basic block context.
+  /// Any variables `x` that do not exist in the target context are ignored, and variables in the
+  /// intersection of the two contexts are optional, where if they are not specified then they
+  /// are assumed to keep their values. Variables in the target context but not the source must
+  /// be specified.
+  Jump(BlockId, Vec<(VarId, Operand)>),
+  /// A `unreachable e;` statement takes a proof `e` of false and cancels this basic block.
+  /// Later optimization passes will attempt to delete the entire block.
+  Unreachable(RValue),
+}
 
 impl Remap for Terminator {
   type Target = Self;
-  fn remap(&self, r: &mut Remapper) -> Self { Self(self.0.remap(r)) }
-}
-
-/// The different kinds of terminator statement.
-#[derive(Clone, Copy, Debug, DeepSizeOf)]
-pub enum TerminatorKind {
-  /// A `goto label;` statement - unconditionally jump to the basic block `label`.
-  Goto(BlockId),
-}
-
-impl Remap for TerminatorKind {
-  type Target = Self;
   fn remap(&self, r: &mut Remapper) -> Self {
-    match *self {
-      Self::Goto(id) => Self::Goto(id),
+    match self {
+      Self::Jump(id, args) => Self::Jump(*id, args.remap(r)),
+      Self::Unreachable(rv) => Self::Unreachable(rv.remap(r)),
     }
   }
 }
@@ -679,6 +756,12 @@ impl Remap for BasicBlock {
 impl BasicBlock {
   fn new(ctx: CtxId, term: Option<Terminator>) -> Self {
     Self { ctx, stmts: vec![], term }
+  }
+
+  /// Finish this basic block by adding the terminator.
+  /// It is a bug to terminate a basic block that is already terminated.
+  pub fn terminate(&mut self, term: Terminator) {
+    assert!(mem::replace(&mut self.term, Some(term)).is_none())
   }
 }
 
