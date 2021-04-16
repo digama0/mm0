@@ -17,9 +17,9 @@ All numbers are expressed in little endian fixed width types. Some tables requir
 * `[T; n]`: a list of exactly `n` elements of type `T`
 * `p32<T>`: a 32 bit pointer to `T`, relative to the start of the file
 * `p64<T>`: a 64 bit pointer to `T`, relative to the start of the file
-* `cmd<data>`: see below
+* `(cmd, data)`: see below
 
-Command pairs are denoted `cmd<data>` and use a variable length encoding, from 1 to 5 bytes. The low six bits of the first byte are `cmd`, while the high two bits give the number of `data` bytes:
+Command pairs are denoted `(cmd, data)` and use a variable length encoding, from 1 to 5 bytes. The low six bits of the first byte are `cmd`, while the high two bits give the number of `data` bytes:
 
 * `00xxxxxx: cmd = x, data = 0`
 * `01xxxxxx yyyyyyyy: cmd = x, data = y` (1 byte `data` field)
