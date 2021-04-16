@@ -17,6 +17,8 @@ All numbers are expressed in little endian fixed width types. Some tables requir
 * `[T; n]`: a list of exactly `n` elements of type `T`
 * `p32<T>`: a 32 bit pointer to `T`, relative to the start of the file
 * `p64<T>`: a 64 bit pointer to `T`, relative to the start of the file
+* `str4`: a fixed length 4 byte string
+* `cstr`: a UTF-8 null terminated string
 * `(cmd, data)`: see below
 
 Command pairs are denoted `(cmd, data)` and use a variable length encoding, from 1 to 5 bytes. The low six bits of the first byte are `cmd`, while the high two bits give the number of `data` bytes:
@@ -33,7 +35,7 @@ The file header contains basic information about the format and pointers to the 
 `sizeof(header) = 40; align(header) = 8; header =`
 | Field       | Type                     | Description                                         |
 | ----------- | ------------------------ | --------------------------------------------------- |
-| `magic`     | `u32 = "MM0B"`           | Indicates that this file uses MMB format            |
+| `magic`     | `str4 = "MM0B"`          | Indicates that this file uses MMB format            |
 | `version`   | `u8 = 1`                 | Indicates the version of the MMB format in use;<br/>this document details version `1`. |
 | `num_sorts` | `u8`                     | The number of sorts in the file.                    |
 | `reserved`  | `u16`                    | Reserved, should be set to `0`.                     |
@@ -430,11 +432,11 @@ The `p_index` field in the header points to an `index` which contains a list of 
 Each index entry has a `type` which determines the meaning of the fields.
 
 `sizeof(index_entry) = 16; align(index_entry) = 8; index_entry =`
-| Field  | Type  | Description       |
-| ------ | ----- | ----------------- |
-| `type` | `u32` | The type of table |
-| `data` | `u32` | Varies            |
-| `ptr`  | `u64` | Varies            |
+| Field  | Type   | Description       |
+| ------ | ------ | ----------------- |
+| `type` | `str4` | The type of table |
+| `data` | `u32`  | Varies            |
+| `ptr`  | `u64`  | Varies            |
 
 The collection of valid `type` settings is open-ended, but extensions should coordinate in order to avoid overlaps. The following table types are defined:
 
@@ -456,10 +458,10 @@ The collection of valid `type` settings is open-ended, but extensions should coo
 Each name entry consists of a pointer to the statement in the proof stream where it was introduced, and a UTF-8 C string with the name. (MM0 itself doesn't support non-ASCII names, but the names listed here are allowed to include arbitrary unicode.)
 
 `sizeof(name_entry) = 16; align(name_entry) = 8; name_entry =`
-| Field   | Type                | Description                                               |
-| ------- | ------------------- | --------------------------------------------------------- |
-| `proof` | `p64<proof_stream>` | A pointer to this statement in the proof stream           |
-| `name`  | `p64<cstr>`         | A pointer to a UTF-8 null-terminated string with the name |
+| Field   | Type                | Description                                     |
+| ------- | ------------------- | ----------------------------------------------- |
+| `proof` | `p64<proof_stream>` | A pointer to this statement in the proof stream |
+| `name`  | `p64<cstr>`         | A pointer to the name string                    |
 
 ## The `VarN` table: names for variables
 
@@ -475,7 +477,7 @@ The `str_list` type is just a list of pointers to UTF-8 null-terminated strings:
 | Field      | Type                    | Description                       |
 | ---------- | ----------------------- | --------------------------------- |
 | `num_strs` | `u64`                   | The number of strings in the list |
-| `strs`     | `[p64<cstr>; num_strs]` | A UTF-8 C string pointer          |
+| `strs`     | `[p64<cstr>; num_strs]` | A list of string pointers         |
 
 The list `term_vars[t]` is the list of variable names in `term[t]` in the order of declaration, but the list continues past `num_args` to include the dummies, named by order of appearance of `Dummy` steps in the proof stream, which happens to coincide with the order of `UDummy` steps in the unify stream version. Similarly, the `thm_vars[T]` list gives the variable names in `thm[T]`, including the dummy variables.
 
