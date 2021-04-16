@@ -611,7 +611,7 @@ pub struct TermEntry {
 
 /// An entry in the term table, which describes the "signature" of the axiom/theorem,
 /// the information needed to apply the theorem to use it in other theorems.
-#[repr(C, align(4))]
+#[repr(C, align(8))]
 #[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
 pub struct ThmEntry {
   /// The number of arguments to the theorem (exprs, not hyps).
@@ -625,7 +625,7 @@ pub struct ThmEntry {
 
 /// An index table entry, which is essentially an ID describing the table format, and some
 /// additional data to find the actual table.
-#[repr(C, align(4))]
+#[repr(C, align(8))]
 #[derive(Debug, Clone, Copy, FromBytes, AsBytes)]
 pub struct TableEntry {
   /// A magic number that identifies this table entry, and determines the interpretation of the

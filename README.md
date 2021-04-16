@@ -56,11 +56,14 @@ The MM1 files in the `examples/` directory have been written using the VSCode ex
   * [`x86.mm0`](examples/x86.mm0) and its proof [`x86.mm1`](examples/x86.mm1) is a formalization of the x86 architecture, used as the target for the MMC compiler.
   * [`verifier.mm0`](examples/verifier.mm0) is the main goal theorem of the project, the statement of implementation correctness of an MM0 verifier. Eventually [`verifier.mm1`](examples/verifier.mm1) will be a proof of this statement.
 * `mm0-rs` is an implementation of the LSP server for MM1. It can be used as a drop-in replacement for `mm0-hs` in VSCode by adding `"metamath-zero.executablePath": "mm0-rs"`.
+  * [`mm1.md`](mm0-hs/mm1.md) is a description of the MM1 language (this is in the `mm0-hs` directory but it is up to date for `mm0-rs`).
   * `mm0-rs compile` can be used to run a MM1 file to produce an MMB output. If there are errors in the file, it will provide similar information to the server mode.
   * `mm0-hs server` is not meant to be used directly, but starts the program in server mode, where it sends and receives JSON data along stdin and stdout according to the [LSP](https://microsoft.github.io/language-server-protocol/) specification. This is used by the [`vscode-mm0`](vscode-mm0/) extension.
 * `mm0-c` is a verifier written in C that defines the MMB binary proof file format.
+  * [`mmb.md`](mm0-c/mmb.md) is an informal specification of the MMB format.
   * You can compile the verifier using `gcc main.c -o mm0-c`, and run it with `./mm0-c file.mmb`.
 * The `mm0-hs` program is a verifier written in Haskell that contains most of the "tooling" for MM0. Most importers and exporters are implemented as subparts of this program. See [`mm0-hs/README.md`](mm0-hs/README.md) for a more complete description of capabilities.
+  * [`mm1.md`](mm0-hs/mm1.md) is a description of the MM1 language.
   * `mm0-hs verify` can be used to check a MM0 specification and MMU proof.
   * `mm0-hs export` will translate an MMU file to MMB format.
   * `mm0-hs compile` can be used to run a MM1 file to produce an MMB output, similar to `mm0-rs`. (However, the MM1 implementation is out of date and this will not work on most mm1 files in the examples directory).
