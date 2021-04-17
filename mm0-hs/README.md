@@ -53,78 +53,74 @@ A (necessarily more complicated) example is [string.mm0](/examples/string.mm0), 
 
 The `.mmu` file format
 ---
-For demonstration purposes, this verifier accepts a text format for the proof file. (A production quality verifier should probably use a binary file format, but the information contained in the file should be about the same.) Lexing is very simple:
+For demonstration purposes, this verifier accepts a text format for the proof file. (A production quality verifier should probably use a binary file format, but the information contained in the file should be about the same.) To simplify parsing, the whole file is written using lisp s-expression syntax:
 
 * Whitespace is ignored except to separate tokens
-* An identifier token matches `[0-9a-zA-Z_]+`
-* Characters `( ) { } [ ] , : =` are single character symbol tokens
+* An identifier token matches `[0-9a-zA-Z_:]+`
+* Characters `( )` are single character symbol tokens
 * Anything else is forbidden
 
-The declarations are visually similar to the `.mm0` format, except that there is no terminating semicolon after each definition.
+The syntax is as follows:
 
     mmu-file ::= (directive)*
-    directive ::= step-stmt | def-stmt | thm-stmt
-    step-stmt ::= 'sort' sort-name
-               |  'term' term-name
-               |  'axiom' assert-name
-               |  'input' input-kind
-               |  'output' output-kind
-    def-stmt ::= ('local')? 'def' term-name (binder)* ':' type '='
-                   (dummy-binder)* expr
-    thm-stmt ::= ('local')? 'theorem' assert-name (binder)* ',' (unfolding-stmt)?
-                   (hyp-binder)* ':' expr '=' (dummy-binder)* proof-expr
-    unfolding-stmt ::= 'unfolding' (term-name)+ '(' var-name ')'
+    directive ::= sort-stmt | term-stmt | def-stmt | axiom-stmt | thm-stmt | io-stmt
+    sort-stmt ::= '(' 'sort' sort-name ('pure')? ('strict')? ('provable')? ('free')? ')'
+    term-stmt ::= '(' 'term' term-name binders ret-type ')'
+    def-stmt ::= '(' ('local')? 'def' term-name binders ret-type dummies expr ')'
+    axiom-stmt ::= '(' 'axiom' assert-name binders axiom-hyps expr ')'
+    thm-stmt ::= '(' ('local')? 'theorem' assert-name binders thm-hyps expr dummies proof-expr ')'
+    io-stmt ::= '(' 'input' input-kind ')'
+             |  '(' 'output' output-kind ')'
     identifier ::= [0-9a-zA-Z_]+
     sort-name ::= identifier
     term-name ::= identifier
     assert-name ::= identifier
     var-name ::= identifier
+    hyp-name ::= identifier
     input-kind ::= 'string'
     output-kind ::= 'string'
-    dummy-binder ::= '{' var-name ':' sort-name '}'
-    binder ::= '{' var-name ':' sort-name '}'
-            |  '(' var-name ':' sort-name ')'
-    hyp-binder ::= '(' var-name ':' expr ')'
-    type ::= sort-name (var-name)*
-    expr ::= var-name | term-name | '(' term-name (expr)* ')'
-    proof-expr ::= '?' | expr
-                |  '(' assert-name (expr)* (proof-expr)* ')'
-                |  '[' proof-expr '=' var-name ']'
+    binders ::= '(' (binder)* ')'
+    binder ::= '(' var-name sort-name ')'
+            |  '(' var-name sort-name '(' (var-name)* ')' ')'
+    dummies ::= '(' (dummy-binder)* ')'
+    dummy-binder ::= '(' var-name sort-name ')'
+    ret-type ::= '(' sort-name '(' (var-name)* ')' ')'
+    axiom-hyps := '(' (expr)* ')'
+    thm-hyps ::= '(' (hyp-binder)* ')'
+    hyp-binder ::= '(' hyp-name expr ')'
+    expr ::= var-name | '(' term-name (expr)* ')'
+    proof-expr ::= hyp-name
+                |  '(' assert-name '(' (expr)* ')' (proof-expr)* ')'
+                |  '(' ':let' hyp-name proof-expr proof-expr ')'
+                |  '(' ':conv' expr conv-expr proof-expr ')'
+    conv-expr ::= var-name
+               |  '(' term-name (conv-expr)* ')'
+               |  '(' ':sym' conv-expr ')'
+               |  '(' ':unfold' term-name '(' (expr)* ')' '(' (var-name)* ')' conv-expr ')'
 
 A proof file is a list of declarations, mirroring the declarations in the specification file. The verification of the proof proceeds in lock step with the declarations in the spec, but the proof file will potentially add additional definitions and theorems that are not present in the specification.
 
-* A `step-stmt` has very little content because it is just a directive to "step" the specification; that is, it instructs the verifier to proceed to the next declaration in the specification file. As a sanity check, we require step statements to say the type and name of the declaration, although there is exactly one correct choice. So for example the `sort nat` step statement says "the next declaration in the spec is `sort nat;`, please move past this point so that now we can use the declaration in theorems and defs". But we do not recapitulate the types of `term`s or the statement of `axiom`s, we just say the name.
+* A `sort-stmt` declares a new sort. The syntax is the same as in `.mm0` files except that the sort modifiers come after the word `sort`.
 
-* A `def-stmt` makes a new declaration, and here we must provide the full type and value of the declaration. Like in the spec, curly binders like `{x: set}` denote bound variables and parentheses denote regular variables. Unlike the `.mm0` format, dummy variables here come after the `=` sign, before the expression itself. (This requires no lookahead because the dummy binders use curly braces and expressions don't.) For example:
+* A `term-stmt` declares a new term, and `def-stmt` declares a new definition. These are also the same as `.mm0` files, except that bodies are required for definitions.
 
-      local def df_eu {x: set} (ph: wff x): wff =
-      {y: set} (ex y (all x (iff (eq x y) ph)))
+* An `axiom-stmt` declares a new axiom, and `thm-stmt` declares a new theorem. The list of hypotheses is slightly different between axioms and theorems because axiom hypotheses don't need (or accept) names. Unlike the `.mm0` format, theorems have proofs, and we also must pre-declare the list of dummy variables used in the proof.
 
-  If a definition is marked `local`, then it does not step the specification and the definition is only checked for correctness. If it is not marked `local` then it steps the specification, and checks that the next statement in the spec is a `def` with the same name and type, and if the specification gives a value to the `def` then that must also match.
+* An `io-stmt` is an input or output statement, which for `mm0-hs` can only be `(input string)` or `(output string)`.
 
-* A `thm-stmt` proves a theorem.
-  * Like the `def` statement, if it is not marked `local` then it will also step the specification and check that the next declaration is a `theorem` with the same name and statement.
-  * Unlike the `.mm0` format, there is a mandatory `','` to separate the bound/regular variables from the dummy/hypothesis variables.
-  * A theorem can declare that it wants to unfold some definitions in the statement using `unfolding foo bar (v1 v2)` just after the comma. This will unfold all occurrences of `foo` and `bar` in the hypotheses and conclusion of the theorem, and if these definitions have dummy variables then the list `(v1 v2)` gives them names. (There will be `n` new dummy variables for each occurrence of an unfolded definition `T` with `n` dummy variables.) Then the dummy variables and hypotheses are given names, and finally the proof expression.
-* Expressions are given as pure s-expressions, with mandatory brackets for all term constructors with 1 or more arguments.
-* Proof expressions are also formatted as s-expressions, where a theorem application accepts the variable substitutions followed by the hypothesis subproofs.
-  * The `[foo=x]` backreference syntax can be used to name an expression or proof expression inside a proof expression. It is equivalent to a notation like `let x = foo in bar[x]`, where occurrences of `x` in `bar` refer to `foo` (which could be a commonly occurring expression or a local lemma), but it is not lexically scoped - it is valid everywhere to the right of the `x` until the end of the proof. For example, if we have the axiom
+Binders have a simplified syntax:
+* A bound variable binder like `{x: set}` is rendered `(x set)`
+* A regular variable binder like `(ph: wff x)` is rendered `(ph wff (x))`. Even if there are no dependencies, a regular variable will have the third argument: `(ph: wff)` becomes `(ph wff ())`.
 
-        axiom mulpos (a b: nat): $ pos a $ > $ pos b $ > $ pos (a * b) $;
+Proof expressions are composed of theorem applications on hypotheses, but special rules have keywords starting with `:` for them.
 
-    then we can prove a highly redundant theorem using backreferences:
+* `H` is the application of hypothesis `H`, or a saved local proof `H`.
+* `(thm (e1 e2) p1 p2)` is the application of theorem `thm`, substituting `e1` and `e2` for the variables in the theorem and `p1` and `p2` are subproofs proving the hypotheses to the theorem.
+* `(:let H p1 p2)` constructs a subproof `p1` and binds it to a name `H`, which can be used in the proof of `p2` as if it were an additional hypothesis.
+* `(:conv rhs c p)` is a proof of `|- rhs` if `c` is a conversion proof of `lhs = rhs` and `p` is a proof of `|- lhs`.
 
-        theorem eightpos (a: nat), (h: pos a):
-          pos (mul (mul (mul a a) (mul a a)) (mul (mul a a) (mul a a))) =
-        (mulpos [(mul [(mul a a)=a2] a2)=a4] a4
-                [(mulpos a2 a2 [(mulpos a a h h)=h2] h2)=h4] h4)
-
-    Without deduplication the theorem would look like this:
-
-        theorem eightpos (a: nat), (h: pos a):
-          pos (mul (mul (mul a a) (mul a a)) (mul (mul a a) (mul a a))) =
-        (mulpos (mul (mul a a) (mul a a)) (mul (mul a a) (mul a a))
-          (mulpos (mul a a) (mul a a) (mulpos a a h h) (mulpos a a h h))
-          (mulpos (mul a a) (mul a a) (mulpos a a h h) (mulpos a a h h)))
-
-    In the worst case the redundantly stated version can be exponentially larger than its deduplicated version. Currently deduplication inside expressions is not supported, but you can use definitions to achieve a similar asymptotic gain.
+Conversion expressions are "proofs of definitional equality":
+* `x` is a proof that `x = x`
+* `(t c1 .. cn)` is a proof that `(t l1 .. ln) = (t r1 .. rn)` if `ci: li = ri`. Note that because of this rule and the previous one, any expr `t` is a proof of `t = t` when interpreted as a conversion.
+* `(:sym c)` is a proof of `r = l` if `c: l = r`.
+* `(:unfold t (e1 .. en) (d1 .. dm) c)` is a proof of `(t e1 .. en) = rhs` if `t` is a definition, and substituting `e1 .. en` for the arguments and `d1 .. dm` for the dummy variables in `t`'s definition expression yields `sub_lhs`, and `c: sub_lhs = rhs`.
