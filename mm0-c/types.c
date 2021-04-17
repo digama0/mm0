@@ -274,11 +274,6 @@ typedef struct { u8 cmd; u32 data; } PACKED cmd32;
 // Uses data = 0
 #define CMD_PROOF_CONV_CUT 0x1C
 
-// ConvRef: Pop a convertibility obligation e1 =?= e2, where e1 = e2 is the
-// referenced heap element.
-// Uses data = heapid
-#define CMD_PROOF_CONV_REF 0x1D
-
 // ConvSave: Pop a convertibility proof e1 = e2, add e1 = e2 to the heap.
 // Uses data = 0
 #define CMD_PROOF_CONV_SAVE 0x1E

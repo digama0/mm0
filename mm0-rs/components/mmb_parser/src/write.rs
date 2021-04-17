@@ -84,7 +84,6 @@ impl ProofCmd {
       ProofCmd::Cong => w.write_u8(PROOF_CONG),
       ProofCmd::Unfold => w.write_u8(PROOF_UNFOLD),
       ProofCmd::ConvCut => w.write_u8(PROOF_CONV_CUT),
-      ProofCmd::ConvRef(n) => write_cmd(w, PROOF_CONV_REF, n),
       ProofCmd::ConvSave => w.write_u8(PROOF_CONV_SAVE),
       ProofCmd::Save => w.write_u8(PROOF_SAVE),
       ProofCmd::Sorry => w.write_u8(PROOF_SORRY),

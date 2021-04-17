@@ -166,18 +166,17 @@ pub enum ProofNode {
     /** the term constructor */ term: TermId,
     /** the conversion proofs for the arguments */ args: Box<[ProofNode]>,
   },
-  /// `Unfold {term, args, res: (lhs, sub_lhs, p)}` is a proof of `lhs = rhs` if
-  /// `lhs` is `term args` and `term` is a definition and `sub_lhs` is the result of
+  /// `Unfold {term, args, res: (sub_lhs, p)}` is a proof of `term args = rhs` if
+  /// `term` is a definition and `sub_lhs` is the result of
   /// substituting `args` into the definition of `term`, and `p: sub_lhs = rhs`
   Unfold {
     /// the definition to unfold
     term: TermId,
     /// the (non-dummy) parameters to the term
     args: Box<[ProofNode]>,
-    /// - `lhs`: the term applied to the arguments, the same as `Term(term, args)`
     /// - `sub_lhs`: the result of unfolding the definition (for some choice of dummy names)
     /// - `p`: the proof that `sub_lhs = rhs`
-    res: Box<(ProofNode, ProofNode, ProofNode)>,
+    res: Box<(ProofNode, ProofNode)>,
   },
 }
 

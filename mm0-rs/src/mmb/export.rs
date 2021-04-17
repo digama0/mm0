@@ -434,7 +434,7 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
             }
           };
         }
-        Some(n) => ProofCmd::ConvRef(n).write_to(w)?,
+        Some(n) => ProofCmd::Ref(n).write_to(w)?,
       }
       ProofNode::Dummy(_, _) |
       ProofNode::Term {..} |
@@ -451,9 +451,8 @@ impl<'a, W: Write + Seek> Exporter<'a, W> {
         for a in &**args {self.write_conv(w, heap, reorder, hyps, a)?}
       }
       ProofNode::Unfold {res, ..} => {
-        let (l, l2, c) = &**res;
-        self.write_proof(w, heap, reorder, hyps, l, false)?;
-        self.write_proof(w, heap, reorder, hyps, l2, false)?;
+        let (sub_lhs, c) = &**res;
+        self.write_proof(w, heap, reorder, hyps, sub_lhs, false)?;
         ProofCmd::Unfold.write_to(w)?;
         self.write_conv(w, heap, reorder, hyps, c)?;
       }

@@ -228,7 +228,7 @@ impl<'a> LayoutProof<'a> {
       ProofNode::Cong {args, ..} => for c in &**args { self.layout_conv(defs, c) },
       &ProofNode::Unfold {term, ref res, ..} => {
         if !defs.contains(&term) {defs.push(term)}
-        self.layout_conv(defs, &res.2)
+        self.layout_conv(defs, &res.1)
       }
     }
   }

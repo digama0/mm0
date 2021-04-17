@@ -257,15 +257,6 @@ void debug_print_cmd(u8* cmd, u32 data) {
     case CMD_PROOF_CONG: fprintf(stderr, "%lX: Cong", pos); break;
     case CMD_PROOF_UNFOLD: fprintf(stderr, "%lX: Unfold", pos); break;
     case CMD_PROOF_CONV_CUT: fprintf(stderr, "%lX: ConvCut", pos); break;
-
-    case CMD_PROOF_CONV_REF: {
-      fprintf(stderr, "%lX: ConvRef %d", pos, data);
-      if (data < g_heap_size) {
-        fprintf(stderr, "  // = ");
-        debug_print_stackel(&g_heap[data]);
-      }
-    } break;
-
     case CMD_PROOF_CONV_SAVE: fprintf(stderr, "%lX: ConvSave", pos); break;
     case CMD_PROOF_SAVE: fprintf(stderr, "%lX: Save", pos); break;
 

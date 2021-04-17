@@ -262,9 +262,16 @@ fn parse_proof(
           if save { self.heap.push(StackRef::Expr(r)) }
           self.stack.push(Stack::Expr(r))
         }
-        ProofCmd::Ref(i) => self.stack.push(
-          self.heap.get(usize::try_from(i).expect("impossible"))
-            .ok_or(StrError("reference out of range", pos))?.reuse(&mut self.de)),
+        ProofCmd::Ref(i) =>
+          match self.heap.get(usize::try_from(i).expect("impossible"))
+            .ok_or(StrError("reference out of range", pos))?.reuse(&mut self.de) {
+            Stack::Conv(c, e1, e2) => {
+              let (co, e1_, e2_) = self.pop(pos)?.as_coconv(pos)?;
+              if e1 != e1_ || e2 != e2_ {return Err(StrError("ConvRef mismatch", pos))}
+              self.apply_coconv(co, c)?;
+            }
+            el => self.stack.push(el)
+          },
         ProofCmd::Dummy(s) => {
           let r = self.de.push(ProofHash::Dummy((self.dummy)(), s));
           self.heap.push(StackRef::Expr(r));
@@ -314,25 +321,16 @@ fn parse_proof(
         }
         ProofCmd::Unfold => {
           let sub_lhs = self.pop(pos)?.as_expr(pos)?;
-          let lhs = self.pop(pos)?.as_expr(pos)?;
+          let (co, lhs, rhs) = self.pop(pos)?.as_coconv(pos)?;
           let (t, args) = as_term(&self.de[lhs], pos)?;
           let args = args.cloned_box();
           for &e in &*args {self.de.reuse(e);}
-          let (co, lhs_, rhs) = self.pop(pos)?.as_coconv(pos)?;
-          if lhs != lhs_ {return Err(StrError("Unfold mismatch", pos))}
           self.stack.push(Stack::CoConv(
             Box::new(CoConv::Unfold(co, t, args, lhs, sub_lhs)), sub_lhs, rhs));
         }
         ProofCmd::ConvCut => {
           let (co, e1, e2) = self.pop(pos)?.as_coconv(pos)?;
           self.stack.push(Stack::CoConv(Box::new(CoConv::Cut(co, e1, e2)), e1, e2));
-        }
-        ProofCmd::ConvRef(i) => {
-          let (c, e1, e2) = self.heap.get(usize::try_from(i).expect("impossible"))
-            .ok_or(StrError("reference out of range", pos))?.reuse(&mut self.de).as_conv(pos)?;
-          let (co, e1_, e2_) = self.pop(pos)?.as_coconv(pos)?;
-          if e1 != e1_ || e2 != e2_ {return Err(StrError("ConvRef mismatch", pos))}
-          self.apply_coconv(co, c)?;
         }
         ProofCmd::ConvSave => {
           let (c, e1, e2) = self.pop(pos)?.as_conv(pos)?;

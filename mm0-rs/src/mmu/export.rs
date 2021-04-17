@@ -200,7 +200,7 @@ impl FrozenEnv {
             self.l.push(b')');
           }
           &ProofNode::Unfold {term, ref args, ref res} => {
-            let (_, sub_lhs, c) = &**res;
+            let (sub_lhs, c) = &**res;
             let td = self.env.term(term);
             write!(self, "(:unfold {} ", self.env.data()[td.atom].name())?;
             list(self, args.iter(), |this, e| this.go(e, indent))?;

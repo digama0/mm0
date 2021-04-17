@@ -370,15 +370,21 @@ u8* run_proof(proof_mode mode, u8* cmd) {
       } return cmd;
 
       // Ref i: H; S --> H; S, Hi
-      // Get the i-th heap element and push it on the stack.
+      // ConvRef i: H; S, e1 =?= e2 --> H; S   (where Hi is e1 = e2)
+      // Get the i-th heap element.
+      // * If it is e1 = e2, pop a convertibility obligation e1 =?= e2.
+      // * Otherwise push it on the stack.
       case CMD_PROOF_REF: {
         ENSURE("bad ref step", data < g_heap_size);
         u32 s = g_heap[data];
-        // There is no point in pushing e1 = e2 on the stack, because the only
-        // thing you can do with that is push it back on the heap using ConvSave.
-        ENSURE("can't ref conv step using Ref; use ConvRef",
-          (s & STACK_TYPE_MASK) != STACK_TYPE_CONV);
-        push_stack(s);
+        if ((s & STACK_TYPE_MASK) == STACK_TYPE_CONV) {
+          store_conv c = *(store_conv*)&g_store[s & STACK_DATA_MASK];
+          u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
+          u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
+          ENSURE("ConvRef unify error", c.e1 == e1 && c.e2 == e2);
+        } else {
+          push_stack(s);
+        }
       } break;
 
       // Dummy s: H; S --> H, x; S, x    alloc(x:s)
@@ -557,15 +563,15 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         }
       } break;
 
-      // Unfold: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
+      // Unfold: S, (t e1 ... en) =?= e', e --> S, e =?= e'
       //    (where Unify(t): e1, ..., en; e --> H'; .)
       //
-      // Pop terms (t e1 ... en), e from the stack and run the unifier for t
+      // Pop e and (t e1 ... en) =?= e' from the stack and run the unifier for t
       // (which should be a definition) to make sure that (t e1 ... en) unfolds to e.
-      // Then pop (t e1 ... en) =?= e' and push e =?= e'.
+      // Then push e =?= e'.
       case CMD_PROOF_UNFOLD: {
         u32 e = as_type(pop_stack(), STACK_TYPE_EXPR);
-        u32 e1 = as_type(pop_stack(), STACK_TYPE_EXPR);
+        u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
         store_term* p = get_term(e1);
         term* t = &g_terms[p->termid];
         ENSURE("Unfold: not a definition", (t->sort & 0x80) != 0);
@@ -574,9 +580,6 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         for (u16 i = 0; i < p->num_args; i++)
           g_uheap[i] = p->args[i];
         run_unify(UDef, (u8*)&targs[p->num_args+1], e);
-        ENSURE("Unfold unify error", e1 == as_type(pop_stack(), STACK_TYPE_CO_CONV));
-        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
-        push_stack(STACK_TYPE_EXPR | e2);
         push_stack(STACK_TYPE_CO_CONV | e);
       } break;
 
@@ -590,17 +593,6 @@ u8* run_proof(proof_mode mode, u8* cmd) {
         push_stack(STACK_TYPE_CONV | e1);
         push_stack(STACK_TYPE_EXPR | e2);
         push_stack(STACK_TYPE_CO_CONV | e1);
-      } break;
-
-      // ConvRef i: H; S, e1 =?= e2 --> H; S   (where Hi is e1 = e2)
-      // Pop a convertibility obligation e1 =?= e2, where e1 = e2 is
-      // i-th on the heap.
-      case CMD_PROOF_CONV_REF: {
-        ENSURE("bad ConvRef step", data < g_heap_size);
-        store_conv c = *(store_conv*)&g_store[as_type(g_heap[data], STACK_TYPE_CONV)];
-        u32 e1 = as_type(pop_stack(), STACK_TYPE_CO_CONV);
-        u32 e2 = as_type(pop_stack(), STACK_TYPE_EXPR);
-        ENSURE("ConvRef unify error", c.e1 == e1 && c.e2 == e2);
       } break;
 
       // ConvSave: H; S, e1 = e2 --> H, e1 = e2; S

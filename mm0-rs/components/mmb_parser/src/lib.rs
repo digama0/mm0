@@ -131,8 +131,6 @@ pub mod cmd {
   pub const PROOF_UNFOLD: u8 = 0x1B;
   /// `PROOF_CONV_CUT = 0x1C`: See [`ProofCmd`](super::ProofCmd).
   pub const PROOF_CONV_CUT: u8 = 0x1C;
-  /// `PROOF_CONV_REF = 0x1D`: See [`ProofCmd`](super::ProofCmd).
-  pub const PROOF_CONV_REF: u8 = 0x1D;
   /// `PROOF_CONV_SAVE = 0x1E`: See [`ProofCmd`](super::ProofCmd).
   pub const PROOF_CONV_SAVE: u8 = 0x1E;
   /// `PROOF_SAVE = 0x1F`: See [`ProofCmd`](super::ProofCmd).
@@ -298,8 +296,11 @@ pub enum ProofCmd {
   },
   /// ```text
   /// Ref i: H; S --> H; S, Hi
+  /// ConvRef i: H; S, e1 =?= e2 --> H; S   (where Hi is e1 = e2)
   /// ```
-  /// Get the `i`-th heap element and push it on the stack.
+  /// Get the `i`-th heap element.
+  /// * If it is `e1 = e2`, pop a convertibility obligation `e1 =?= e2`.
+  /// * Otherwise push it on the stack.
   Ref(u32),
   /// ```text
   /// Dummy s: H; S --> H, x; S, x    alloc(x:s)
@@ -355,12 +356,12 @@ pub enum ProofCmd {
   /// in declaration order in the proof stream.
   Cong,
   /// ```text
-  /// Unfold: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
+  /// Unfold: S, (t e1 ... en) =?= e', e --> S, e =?= e'
   ///   (where Unify(t): e1, ..., en; e --> H'; .)
   /// ```
-  /// Pop terms `(t e1 ... en)`, `e` from the stack and run the unifier for `t`
+  /// Pop `e` and `(t e1 ... en) =?= e'` from the stack and run the unifier for `t`
   /// (which should be a definition) to make sure that `(t e1 ... en)` unfolds to `e`.
-  /// Then pop `(t e1 ... en) =?= e'` and push `e =?= e'`.
+  /// Then push `e =?= e'`.
   Unfold,
   /// ```text
   /// ConvCut: S, e1 =?= e2 --> S, e1 = e2, e1 =?= e2
@@ -368,12 +369,6 @@ pub enum ProofCmd {
   /// Pop a convertibility obligation `e1 =?= e2`, and
   /// push a convertability assertion `e1 = e2` guarded by `e1 =?= e2`.
   ConvCut,
-  /// ```text
-  /// ConvRef i: H; S, e1 =?= e2 --> H; S   (where Hi is e1 = e2)
-  /// ```
-  /// Pop a convertibility obligation `e1 =?= e2`, where `e1 = e2` is
-  /// `i`-th on the heap.
-  ConvRef(u32),
   /// ```text
   /// ConvSave: H; S, e1 = e2 --> H, e1 = e2; S
   /// ```
@@ -415,7 +410,6 @@ impl std::convert::TryFrom<(u8, u32)> for ProofCmd {
       cmd::PROOF_CONG => ProofCmd::Cong,
       cmd::PROOF_UNFOLD => ProofCmd::Unfold,
       cmd::PROOF_CONV_CUT => ProofCmd::ConvCut,
-      cmd::PROOF_CONV_REF => ProofCmd::ConvRef(data),
       cmd::PROOF_CONV_SAVE => ProofCmd::ConvSave,
       cmd::PROOF_SAVE => ProofCmd::Save,
       cmd::PROOF_SORRY => ProofCmd::Sorry,

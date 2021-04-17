@@ -33,20 +33,20 @@ Command pairs are denoted `(cmd, data)` and use a variable length encoding, from
 The file header contains basic information about the format and pointers to the other tables in the file, and starts at the first byte of the file.
 
 `sizeof(header) = 40; align(header) = 8; header =`
-| Field       | Type                     | Description                                         |
-| ----------- | ------------------------ | --------------------------------------------------- |
-| `magic`     | `str4 = "MM0B"`          | Indicates that this file uses MMB format            |
-| `version`   | `u8 = 1`                 | Indicates the version of the MMB format in use;<br/>this document details version `1`. |
-| `num_sorts` | `u8`                     | The number of sorts in the file.                    |
-| `reserved`  | `u16`                    | Reserved, should be set to `0`.                     |
-| `num_terms` | `u32`                    | The number of `term` and `def` in the file.         |
-| `num_thms`  | `u32`                    | The number of `axiom` and `theorem` in the file.    |
-| `p_terms`   | `p32<[term; num_terms]>` | The pointer to the [term table](#term-table).       |
-| `p_thms`    | `p64<[thm; num_thms]>`   | The pointer to the [theorem table](#theorem-table). |
-| `p_proof`   | `p32<proof_stream>`      | The pointer to the [proof stream](#proof-stream).   |
-| `reserved2` | `u32`                    | Reserved, should be set to `0`.                     |
-| `p_index`   | `p64<index>`             | The pointer to the [index](#debugging-index).       |
-| `sorts`     | `[sort_data; num_sorts]` | The [sort table](#sort-table).                      |
+| Field       | Type                         | Description                                         |
+| ----------- | ---------------------------- | --------------------------------------------------- |
+| `magic`     | `str4 = "MM0B" = 0x42304D4D` | Indicates that this file uses MMB format            |
+| `version`   | `u8 = 1`                     | Indicates the version of the MMB format in use;<br/>this document details version `1`. |
+| `num_sorts` | `u8`                         | The number of sorts in the file.                    |
+| `reserved`  | `u16`                        | Reserved, should be set to `0`.                     |
+| `num_terms` | `u32`                        | The number of `term` and `def` in the file.         |
+| `num_thms`  | `u32`                        | The number of `axiom` and `theorem` in the file.    |
+| `p_terms`   | `p32<[term; num_terms]>`     | The pointer to the [term table](#term-table).       |
+| `p_thms`    | `p64<[thm; num_thms]>`       | The pointer to the [theorem table](#theorem-table). |
+| `p_proof`   | `p32<proof_stream>`          | The pointer to the [proof stream](#proof-stream).   |
+| `reserved2` | `u32`                        | Reserved, should be set to `0`.                     |
+| `p_index`   | `p64<index>`                 | The pointer to the [index](#debugging-index).       |
+| `sorts`     | `[sort_data; num_sorts]`     | The [sort table](#sort-table).                      |
 
 ## Sort Table
 
@@ -64,7 +64,7 @@ See [mm0.md](../mm0.md) for a description of the sort modifiers.
 
 ## Term Table
 
-The term table an array `[term; num_terms]` where `term` is as follows:
+The term table is an array `[term; num_terms]` where `term` is as follows:
 
 `sizeof(term) = 8; align(term) = 8; term =`
 | Field      | Type             | Description                                           |
@@ -100,7 +100,7 @@ The `ret` field of the `term_data` does not use `bound` and sets it to `0`; also
 
 ## Theorem Table
 
-The theorem table an array `[thm; num_thms]` where `thm` is as follows:
+The theorem table is an array `[thm; num_thms]` where `thm` is as follows:
 
 `sizeof(thm) = 8; align(thm) = 8; thm =`
 | Field      | Type            | Description                                         |
@@ -134,7 +134,7 @@ Definitions, axioms, and theorems contain a pointer to `unify_stream`, which is 
 
 (*) The summary column is not a complete description of the behavior of the command. See [Unification](#unification) for the full stack machine semantics.
 
-The operations are written in "polish notation", where a term constructor like `UTerm t` comes before the subterms. At the beginning of the unify stream, the heap is initialized with the variables in the order of declaration at indexes `0..num_args`, but the heap grows every time a `UTermSave` or `UDummy` operaation is encountered, and is assigned the next available index.
+The operations are written in "polish notation", where a term constructor like `UTerm t` comes before the subterms. At the beginning of the unify stream, the heap is initialized with the variables in the order of declaration at indexes `0..num_args`, but the heap grows every time a `UTermSave` or `UDummy` operation is encountered, and is assigned the next available index.
 
 Since a term is "saved" before the contents of the term are read, cyclic terms are representable in this encoding; for example `UTermSave 0, URef 0` is the term `x = (t0 x)`. Cyclic terms are not legal in MMB files.
 
@@ -184,7 +184,6 @@ The valid proof commands are:
 | `Cong`      | `0x1A` | `0`       | Congruence `e1 = e1' /\ ... /\ en = en' -> t es = t es'`    |
 | `Unfold`    | `0x1B` | `0`       | Unfolding: `e = e' -> D es = e'` if `D es` unfolds to `e`   |
 | `ConvCut`   | `0x1C` | `0`       | Prove a conversion `e1 = e2`                                |
-| `ConvRef`   | `0x1D` | `heap_id` | Use a conversion `e1 = e2` on the heap                      |
 | `ConvSave`  | `0x1E` | `0`       | Save a conversion `e1 = e2` to the heap                     |
 | `Save`      | `0x1F` | `0`       | Save an element on the stack to the heap without popping it |
 | `Sorry`     | `0x20` | `0`       | Push a proof of anything, or a conversion (**)              |
@@ -253,9 +252,13 @@ The proof opcodes have the following operation on the state:
   `TermSave t` has exactly the same effect as `Term t, Save`. Specifically, it constructs the expression `(t e1 .. en)`, and puts it on both the stack and on the heap.
 
 * ```
-  Ref i: H; S --> H; S, H[i]
+  Ref i: H; S, e1 =?= e2 --> H; S    (if H[i] = (e1 = e2))
+  Ref i: H; S --> H; S, H[i]         (otherwise)
   ```
-  `Ref i` retrieves a `e` or `|- e` stack element at `H[i]` and pushes it to the heap. It is an error to use `Ref i` if `H[i]` is a conversion `e1 = e2`. (Use `ConvRef` instead.)
+  `Ref i` does the following:
+  * Look up `H[i]`, which should be in range of the heap.
+  * If `H[i] = e` or `|- e`, push it to the stack.
+  * If `H[i] = (e1 = e2)`, pop `e1 =?= e2` and ensure that the expressions match.
 
 * ```
   Dummy s: H; S --> H, x; S, x
@@ -327,26 +330,19 @@ The proof opcodes have the following operation on the state:
   * Push `en =?= en`, ..., `e1 =?= e1`. (Note that the obligations are pushed in reverse order.)
 
 * ```
-  Unfold: S, (t e1 ... en) =?= e', (t e1 ... en), e --> S, e =?= e'
+  Unfold: S, (t e1 ... en) =?= e', e --> S, e =?= e'
   where Unify(t): e1, ..., en; e --> H'; .
   ```
   * Pop `e`.
-  * Pop `(t e1 ... en)`.
+  * Pop `(t e1 ... en) =?= e'`.
   * Ensure that `t` is a term constructor such that `term[t].is_def`.
   * Run [unification](#unification) for `term[t].unify`, with `[e1, ..., en]` as the original unification heap and with `[e]` on the unification stack.
-  * Pop `lhs =?= e'`, and ensure that `lhs = (t e1 ... en)`.
   * Push `e =?= e'`.
 
 * ```
   ConvCut: S, e1 =?= e2 --> S, e1 = e2, e1 =?= e2
   ```
   * Pop `e1 =?= e2`, push `e1 = e2`, push `e1 =?= e2`.
-
-* ```
-  ConvRef i: H; S, e1 =?= e2 --> H; S
-  where H[i] = (e1 = e2)
-  ```
-  * Pop `e1 =?= e2`, ensure that `H[i] = (e1 = e2)`.
 
 * ```
   ConvSave: H; S, e1 = e2 --> H, e1 = e2; S
@@ -440,11 +436,11 @@ Each index entry has a `type` which determines the meaning of the fields.
 
 The collection of valid `type` settings is open-ended, but extensions should coordinate in order to avoid overlaps. The following table types are defined:
 
-| `type`   | `data` | `ptr`            | Description                                 |
-| -------- | ------ | ---------------- | ------------------------------------------- |
-| `"Name"` | `0`    | `p64<names>`     | String names for sorts, terms, and theorems |
-| `"VarN"` | `0`    | `p64<var_names>` | String names for variables                  |
-| `"HypN"` | `0`    | `p64<hyp_names>` | String names for hypotheses                 |
+| `type`                | `data` | `ptr`            | Description                                 |
+| --------------------- | ------ | ---------------- | ------------------------------------------- |
+| `"Name" = 0x656D614E` | `0`    | `p64<names>`     | String names for sorts, terms, and theorems |
+| `"VarN" = 0x4E726156` | `0`    | `p64<var_names>` | String names for variables                  |
+| `"HypN" = 0x4E726156` | `0`    | `p64<hyp_names>` | String names for hypotheses                 |
 
 ## The `Name` table: names for statements
 

@@ -768,9 +768,9 @@ impl Node for ProofNode {
       ProofHash::Cong(term, ref ns) => ProofNode::Cong {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect()
       },
-      ProofHash::Unfold(term, ref ns, l, m, c) => ProofNode::Unfold {
+      ProofHash::Unfold(term, ref ns, _, m, c) => ProofNode::Unfold {
         term, args: ns.iter().map(|&i| Val::take(&mut ids[i])).collect(),
-        res: Box::new((Val::take(&mut ids[l]), Val::take(&mut ids[m]), Val::take(&mut ids[c])))
+        res: Box::new((Val::take(&mut ids[m]), Val::take(&mut ids[c])))
       },
     }
   }
